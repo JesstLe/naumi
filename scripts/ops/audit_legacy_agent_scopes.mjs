@@ -55,14 +55,93 @@ async function safeCleanupReferences(natives,expected){
  ensure(process.result?.objectId&&process.result.subtype!=='proxy'&&!process.exceptionDetails,'TRUSTED_PROCESS_UNAVAILABLE');
  const props=await properties(process.result.objectId),get=props.result.find(p=>p.name==='getBuiltinModule')?.value;
  const getId=await verifiedCoreFunction(get,expected.getBuiltin,natives);
- const handles={};
- for(const [module,name,role]of [['node:inspector','close','close'],['node:timers','setImmediate','schedule']]){
+ const handles={process:process.result.objectId};
+ const requested=[['node:inspector','close','close'],['node:timers','setImmediate','schedule']];
+ for(const [module,name,role]of requested){
   const loaded=await send('Runtime.callFunctionOn',{objectId:getId,functionDeclaration:'function(id){return this(id)}',arguments:[{value:module}],objectGroup:'agent-safe-cleanup',returnByValue:false,silent:true});
   ensure(loaded.result?.objectId&&loaded.result.subtype!=='proxy'&&!loaded.exceptionDetails,'CORE_MODULE_UNAVAILABLE');
   const fields=await properties(loaded.result.objectId),fn=fields.result.find(p=>p.name===name)?.value;
   handles[role]=await verifiedCoreFunction(fn,expected[role],natives);
  }
+ if(flag('--observe-native-continuations')){
+  // Optional observation failure must not discard already-verified cleanup.
+  try{
+   const loaded=await send('Runtime.callFunctionOn',{objectId:getId,functionDeclaration:'function(id){return this(id)}',arguments:[{value:'node:timers'}],objectGroup:'agent-safe-cleanup',returnByValue:false,silent:true});
+   ensure(loaded.result?.objectId&&loaded.result.subtype!=='proxy'&&!loaded.exceptionDetails,'CORE_MODULE_UNAVAILABLE');
+   const fields=await properties(loaded.result.objectId);
+   handles.timeout=await verifiedCoreFunction(fields.result.find(p=>p.name==='setTimeout')?.value,expected.timeout,natives);
+   handles.requests=await verifiedCoreFunction(props.result.find(p=>p.name==='_getActiveRequests')?.value,expected.requests,natives);
+  }catch(error){handles.continuationError=error.message;}
+ }
  report.trustedCoreCleanupValidated=true;return handles;
+}
+
+async function observeNativeContinuations(handles,expected,natives,deadline){
+ ensure(!handles.continuationError,handles.continuationError);
+ const observation={coverage:'default-node-builtin-timer-prototypes-and-native-active-request-snapshot',
+  allApplicationContinuationsObserved:false,ordinaryDrainReceipt:null,activeRequests:null,
+  classes:[],activeTimers:0,destroyedTimers:0,callbacks:[],unknown:0};
+ report.nativeContinuations=observation;
+ const sourceHashes=new Map();
+ const group='native-continuations';groups.push(group);
+ for(const [exportRole,className]of [['timeout','Timeout'],['schedule','Immediate']]){
+  deadline();const fn=await properties(handles[exportRole]);
+  const scopeId=fn.internalProperties?.find(p=>p.name==='[[Scopes]]')?.value?.objectId;
+  ensure(scopeId,'BUILTIN_TIMER_SCOPES_UNAVAILABLE');
+  const scopes=await properties(scopeId),items=scopes.result.filter(p=>/^\d+$/.test(p.name));
+  ensure(items.length<=32,'BUILTIN_TIMER_SCOPE_LIMIT');let ctor=null;
+  for(const item of items){
+   if(!item.value?.objectId||!/^Closure\b/.test(item.value.description||''))continue;
+   const fields=await properties(item.value.objectId),candidate=fields.result.find(p=>p.name===className)?.value;
+   if(!candidate)continue;ensure(!ctor,'AMBIGUOUS_BUILTIN_TIMER_CLASS');
+   ctor=await verifiedCoreFunction(candidate,expected[className],natives);
+  }
+  ensure(ctor,'BUILTIN_TIMER_CLASS_UNAVAILABLE');
+  const props=await properties(ctor),prototype=props.result.find(p=>p.name==='prototype')?.value;
+  ensure(prototype?.objectId&&prototype.subtype!=='proxy','BUILTIN_TIMER_PROTOTYPE_UNAVAILABLE');
+  const queried=await send('Runtime.queryObjects',{prototypeObjectId:prototype.objectId,objectGroup:group});
+  ensure(queried.objects?.subtype==='array','BUILTIN_TIMER_QUERY_FAILED');
+  const count=await length(queried.objects.objectId);ensure(count<=2048,'BUILTIN_TIMER_OBJECT_LIMIT');
+  const timers=await properties(queried.objects.objectId),entries=timers.result.filter(p=>/^\d+$/.test(p.name));
+  ensure(entries.length===count,'BUILTIN_TIMER_ARRAY_INCOMPLETE');
+  const summary={className,matched:count,active:0,destroyed:0};observation.classes.push(summary);
+  for(const entry of entries){
+   deadline();const timer=entry.value;
+   if(!timer?.objectId||timer.subtype==='proxy'){observation.unknown++;continue;}
+   const state=await properties(timer.objectId),destroyed=state.result.find(p=>p.name==='_destroyed');
+   if(destroyed?.value?.value===true){summary.destroyed++;observation.destroyedTimers++;continue;}
+   if(destroyed?.value?.value!==false){observation.unknown++;continue;}
+   summary.active++;observation.activeTimers++;
+   let callback=state.result.find(p=>p.name===(className==='Timeout'?'_onTimeout':'_onImmediate'))?.value;
+   if(callback?.type!=='function'||!callback.objectId||callback.subtype==='proxy'){observation.unknown++;continue;}
+   let detail,location,boundDepth=0;
+   for(;boundDepth<=4;boundDepth++){
+    detail=await properties(callback.objectId);
+    location=detail.internalProperties?.find(p=>p.name==='[[FunctionLocation]]')?.value?.value;
+    if(location)break;
+    const target=detail.internalProperties?.find(p=>p.name==='[[TargetFunction]]')?.value;
+    if(target?.type!=='function'||!target.objectId||target.subtype==='proxy')break;
+    callback=target;
+   }
+   const script=scripts.get(location?.scriptId);
+   if(!script){observation.unknown++;continue;}
+   if(!sourceHashes.has(location.scriptId)){
+    const source=await send('Debugger.getScriptSource',{scriptId:location.scriptId});
+    ensure(typeof source.scriptSource==='string'&&Buffer.byteLength(source.scriptSource)<=2*1048576,'TIMER_CALLBACK_SOURCE_BOUND');
+    sourceHashes.set(location.scriptId,hash(source.scriptSource));
+   }
+   const builtinKey=script.url?.replace(/^node:/,'');
+   observation.callbacks.push({className,scriptUrlSha256:hash(script.url||''),scriptSourceSha256:sourceHashes.get(location.scriptId),
+    builtinSourceVerified:!!(builtinKey&&Object.hasOwn(natives,builtinKey)&&hash(natives[builtinKey])===sourceHashes.get(location.scriptId)),
+    line:location.lineNumber,column:location.columnNumber,boundDepth});
+  }
+ }
+ deadline();const requests=await send('Runtime.callFunctionOn',{objectId:handles.requests,
+  functionDeclaration:'function(){return this()}',objectGroup:group,returnByValue:false,silent:true});
+ ensure(!requests.exceptionDetails&&requests.result?.subtype==='array','NATIVE_ACTIVE_REQUESTS_UNAVAILABLE');
+ observation.activeRequests=await length(requests.result.objectId);
+ ensure(observation.unknown===0,'NATIVE_CONTINUATION_STATE_UNKNOWN');
+ observation.completedSnapshot=true;
 }
 try{
  ensure(process.platform==='linux'&&process.env.NODE_OPTIONS===''&&Number.isSafeInteger(pid)&&pid>0&&pid!==process.pid,'LINUX_LOCAL_TARGET_REQUIRED');
@@ -71,6 +150,13 @@ try{
  const natives=process.binding('natives'),expected={getProcess:Object.getOwnPropertyDescriptor(globalThis,'process')?.get?.toString(),
   getBuiltin:process.getBuiltinModule.toString(),close:process.getBuiltinModule('node:inspector').close.toString(),
   schedule:process.getBuiltinModule('node:timers').setImmediate.toString()};
+ if(flag('--observe-native-continuations')){
+  const timers=process.getBuiltinModule('node:timers'),timer=timers.setTimeout(()=>{},60000),immediate=timers.setImmediate(()=>{});
+  try{
+   expected.Timeout=Object.getPrototypeOf(timer).constructor.toString();expected.Immediate=Object.getPrototypeOf(immediate).constructor.toString();
+   expected.timeout=timers.setTimeout.toString();expected.requests=process._getActiveRequests.toString();
+  }finally{timers.clearTimeout(timer);timers.clearImmediate(immediate);}
+ }
  const maxFunctions=Number(value('--max-functions','100000')),maxAuditMs=Number(value('--max-audit-ms','120000'));
  ensure(Number.isSafeInteger(maxFunctions)&&maxFunctions>0&&maxFunctions<=250000&&Number.isSafeInteger(maxAuditMs)&&maxAuditMs>=1000&&maxAuditMs<=300000,'BOUNDED_LIMITS_REQUIRED');
  const deadline=()=>ensure(Date.now()-started<maxAuditMs,'AUDIT_DEADLINE_EXCEEDED');
@@ -158,6 +244,7 @@ try{
   }
  }
  for(const [scriptId]of bound)ensure(report.clones.some(c=>c.scriptId===scriptId),'DECLARED_SCRIPT_CLONES_NOT_OBSERVED');
+ if(flag('--observe-native-continuations'))await observeNativeContinuations(cleanup,expected,natives,deadline);
  ensure(JSON.stringify(before)===JSON.stringify([...contexts.keys()].sort((a,b)=>a-b))&&workers===0&&!report.debuggerPausedByAudit,'REALM_OR_WORKER_SET_CHANGED');
  deadline();report.allMatchedPrototypeFunctionsProcessed=true;complete=true;
 }catch(error){report.holdReason=/^[A-Z0-9_]+$/.test(error?.message||'')?error.message:'AGENT_SCOPE_OBSERVATION_FAILED'}
