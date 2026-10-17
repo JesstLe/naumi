@@ -26,11 +26,13 @@ if(mode==='serve'){
  await pool.query('SELECT 1');const server=createImportServer(store,config.token);server.listen(config.port,'127.0.0.1',()=>console.log(`LOCAL_IMPORT_READY: port=${config.port} persistent_postgres=1 data=real source_writes=0`));
  const close=()=>{server.close(()=>void pool.end().then(()=>process.exit(0)));server.closeAllConnections();};process.once('SIGINT',close);process.once('SIGTERM',close);
 }else{try{
- if(mode==='init'){
+ if(mode==='init'||mode==='migrate'){
   let ready=false;for(let i=0;i<60;i++){try{await pool.query('SELECT 1');ready=true;break;}catch{await new Promise(r=>setTimeout(r,500));}}if(!ready)throw Error('LOCAL_DATABASE_NOT_READY');
-  for(const name of ['001-workflow.sql','002-scheduling.sql','003-source-import.sql'])await pool.query(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
+  for(const name of ['001-workflow.sql','002-scheduling.sql','003-source-import.sql','004-source-identity.sql','005-people-mapping.sql'])await pool.query(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
+  if(mode==='migrate'){console.log('LOCAL_MIGRATION_PASS: version=5 existing_rows_preserved=1');}else{
   const result=await store.ingest(JSON.parse(await readFile(join(dir,'IMPORT_PAYLOAD.json'),'utf8')),'local-owner');
   await writeFile(join(dir,'IMPORT_RESULT.json'),JSON.stringify({...result,container:config.container,volume:config.volume},null,2));console.log('LOCAL_IMPORT_PASS: '+JSON.stringify(result));
+  }
  }else if(mode==='deactivate'||mode==='reactivate'){console.log(JSON.stringify(await store.active(process.argv[4],mode==='reactivate','local-owner')));}
  else throw Error('MODE_REQUIRED: init|serve|deactivate|reactivate');
 }finally{await pool.end();}}

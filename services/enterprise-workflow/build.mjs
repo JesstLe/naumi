@@ -8,4 +8,6 @@ await build({ entryPoints: [fileURLToPath(new URL('./src/server.ts', import.meta
 await copyFile(new URL('./migrations/001-workflow.sql', import.meta.url), new URL('./dist/001-workflow.sql', import.meta.url));
 await copyFile(new URL('./migrations/002-scheduling.sql', import.meta.url), new URL('./dist/002-scheduling.sql', import.meta.url));
 await copyFile(new URL('./migrations/004-source-identity.sql', import.meta.url), new URL('./dist/004-source-identity.sql', import.meta.url));
+await copyFile(new URL('./migrations/003-source-import.sql', import.meta.url), new URL('./dist/003-source-import.sql', import.meta.url));
+await copyFile(new URL('./migrations/005-people-mapping.sql', import.meta.url), new URL('./dist/005-people-mapping.sql', import.meta.url));
 console.log('BUILD_PASS: independent service factory; no Next.js or provider credentials');
