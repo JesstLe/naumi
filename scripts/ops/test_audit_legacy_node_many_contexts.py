@@ -16,7 +16,7 @@ def run(argv,**kwargs):
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--image',required=True);p.add_argument('--output',required=True)
-    p.add_argument('--mode',choices=('idle-last','pending-last','deadline-last'));a=p.parse_args()
+    p.add_argument('--mode',choices=('idle-last','pending-last','deadline-last','budget-window'));a=p.parse_args()
     root=Path(a.output).resolve();root.mkdir(parents=True,exist_ok=False)
     script=Path(__file__).with_name('audit_legacy_node_maps.mjs').read_bytes();results=[]
     for mode in ([a.mode] if a.mode else ('idle-last','pending-last','deadline-last')):
@@ -28,6 +28,8 @@ if(process.env.FIXTURE_PENDING==='1')vm.runInContext(`globalThis.creating=new Ma
 require('node:http').createServer((q,s)=>s.end('fixture')).listen(9081,'127.0.0.1');console.log('FIXTURE_READY');"""
         if mode=='deadline-last':
             code="globalThis.sessions=new Map(Array.from({length:1800},(_,i)=>['private-fixture@example.invalid::ag-'+i,{id:'ag-'+i,email:'private-fixture@example.invalid',agent:{},running:false,lastUsedAt:0,canvasExecuting:false}]));require('node:http').createServer((q,s)=>s.end('fixture')).listen(9081,'127.0.0.1');console.log('FIXTURE_READY');"
+        if mode=='budget-window':
+            code="globalThis.sessions=new Map([['private-fixture@example.invalid::ag-late',{id:'ag-late',email:'private-fixture@example.invalid',agent:{},running:false,lastUsedAt:0,canvasExecuting:false}]]);require('node:http').createServer((q,s)=>s.end('fixture')).listen(9081,'127.0.0.1');console.log('FIXTURE_READY');"
         entry=root/(mode+'.cjs');entry.write_text(code)
         try:
             run(['docker','run','-d','--name',name,'--label',label,'--network','none','--memory','512m','--memory-swap','512m',
@@ -40,6 +42,22 @@ require('node:http').createServer((q,s)=>s.end('fixture')).listen(9081,'127.0.0.
             command=['docker','exec','-i','-e','NODE_OPTIONS=',name,'node','--input-type=module','-',
                      '--pid','1','--allow-sigusr1','--accept-full-gc','--allowed-target-listen-ports','9081',
                      '--max-contexts','512','--max-audit-ms','480000']
+            if mode=='budget-window':
+                command[command.index('--max-audit-ms')+1]='540001'
+                rejected=subprocess.run(command+['--accept-many-contexts'],input=script,capture_output=True,timeout=30)
+                bad=json.loads(rejected.stdout)
+                assert rejected.returncode==2 and bad['holdReason']=='BOUNDED_AUDIT_DEADLINE_REQUIRED'
+                assert bad['inspectorOpenedByAudit'] is False
+                (root/'above-hard-limit.json').write_text(json.dumps(bad,indent=2))
+                command[command.index('--max-audit-ms')+1]='540000'
+                observed=subprocess.run(command+['--accept-many-contexts'],input=script,capture_output=True,timeout=60)
+                report=json.loads(observed.stdout)
+                assert observed.returncode==0 and report['status']=='OBSERVED_MAPS_IDLE' and report['counts']['sessions']==1
+                assert report['inspectorClosedConfirmed'] and report['contextMapEnumerationComplete']
+                (root/'explicit-window.json').write_text(json.dumps(report,indent=2))
+                results.append({'mode':mode,'status':'PASS','explicitMaximumAccepted':540000,'aboveMaximumRejectedBeforeInspector':True})
+                print(json.dumps(results[-1]),flush=True)
+                continue
             if mode=='deadline-last':
                 command[command.index('--max-audit-ms')+1]='1000'
                 observed=subprocess.run(command+['--accept-many-contexts'],input=script,capture_output=True,timeout=60)

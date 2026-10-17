@@ -89,7 +89,7 @@ try{
  ensure(maxContexts>=1&&maxContexts<=512&&maxMaps>=1&&maxMaps<=50000&&maxEntries>=1&&maxEntries<=500000,'BOUNDED_LIMITS_REQUIRED');
  ensure(maxContexts<=32||flag('--accept-many-contexts'),'EXPLICIT_MANY_CONTEXTS_OPT_IN_REQUIRED');
  const maxAuditMs=Number(value('--max-audit-ms','120000'));
- ensure(Number.isSafeInteger(maxAuditMs)&&maxAuditMs>=1000&&maxAuditMs<=480000,'BOUNDED_AUDIT_DEADLINE_REQUIRED');
+ ensure(Number.isSafeInteger(maxAuditMs)&&maxAuditMs>=1000&&maxAuditMs<=540000,'BOUNDED_AUDIT_DEADLINE_REQUIRED');
  const deadline=()=>ensure(Date.now()-started<maxAuditMs,'AUDIT_CONTEXT_DEADLINE_EXCEEDED');
  publicSummary.limits.maxAuditMs=maxAuditMs;publicSummary.aggregateScan={maps:0,entries:0};
  const cmd=fs.readFileSync(`/proc/${pid}/cmdline`,'utf8').split('\0').filter(Boolean),env=fs.readFileSync(`/proc/${pid}/environ`,'utf8').split('\0');
