@@ -1,6 +1,8 @@
 import { build } from 'esbuild';
 import { mkdir, copyFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+const {execFileSync:checkRosterEmbed}=await import('node:child_process');
+checkRosterEmbed(process.execPath,[fileURLToPath(new URL('../../scripts/build-people-roster.mjs',import.meta.url)),'--check'],{stdio:'inherit'});
 await mkdir(new URL('./dist/', import.meta.url), { recursive: true });
 await build({absWorkingDir:fileURLToPath(new URL('.',import.meta.url)), entryPoints: [fileURLToPath(new URL('./src/server.ts', import.meta.url))],
   outfile: fileURLToPath(new URL('./dist/service.mjs', import.meta.url)),

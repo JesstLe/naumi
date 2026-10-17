@@ -32,9 +32,9 @@ export function createImportServer(store:ImportStore,secret:string){
    }
    if(req.method==='GET'&&url.pathname==='/v1/import/people')return json(200,await people.list(local,source));
    if(req.method==='GET'&&url.pathname==='/v1/import/people-audit')return json(200,await people.audit(local));
-   if(req.method==='POST'&&['/v1/import/people-profile','/v1/import/people-preview','/v1/import/people-apply'].includes(url.pathname)){
+   if(req.method==='POST'&&['/v1/import/people-roster-preview','/v1/import/people-roster-apply','/v1/import/people-profile','/v1/import/people-preview','/v1/import/people-apply'].includes(url.pathname)){
     if(!req.headers['content-type']?.startsWith('application/json'))throw new WorkflowError(415,'JSON_REQUIRED');let size=0;const chunks:Buffer[]=[];for await(const chunk of req){size+=chunk.length;if(size>256*1024)throw new WorkflowError(413,'BODY_TOO_LARGE');chunks.push(chunk);}let body;try{body=JSON.parse(Buffer.concat(chunks).toString());}catch{throw new WorkflowError(400,'INVALID_JSON');}
-    return json(200,await (url.pathname.endsWith('people-profile')?people.profile(local,body):url.pathname.endsWith('people-preview')?people.preview(local,body):people.apply(local,body)));
+    return json(200,await (url.pathname.endsWith('people-roster-preview')?people.rosterPreview(local,body):url.pathname.endsWith('people-roster-apply')?people.rosterApply(local,body):url.pathname.endsWith('people-profile')?people.profile(local,body):url.pathname.endsWith('people-preview')?people.preview(local,body):people.apply(local,body)));
    }
    if(req.method==='GET'&&url.pathname==='/v1/import/asset'){
     const a=(await store.assets(source)).find(a=>a.id===url.searchParams.get('id'));if(!a)throw new WorkflowError(404,'ASSET_NOT_FOUND');

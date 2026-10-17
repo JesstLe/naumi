@@ -69,6 +69,8 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       }
       if(people&&req.method==='GET'&&url.pathname==='/v1/people')return json(res,200,await people.list(principal,url.searchParams.get('source')||''));
       if(people&&req.method==='GET'&&url.pathname==='/v1/people/audit')return json(res,200,await people.audit(principal));
+      if(people&&req.method==='POST'&&url.pathname==='/v1/people/roster-preview')return json(res,200,await people.rosterPreview(principal,await body(req)));
+      if(people&&req.method==='POST'&&url.pathname==='/v1/people/roster-apply')return json(res,200,await people.rosterApply(principal,await body(req)));
       if(people&&req.method==='POST'&&url.pathname==='/v1/people/profile')return json(res,200,await people.profile(principal,await body(req)));
       if(people&&req.method==='POST'&&url.pathname==='/v1/people/preview')return json(res,200,await people.preview(principal,await body(req)));
       if(people&&req.method==='POST'&&url.pathname==='/v1/people/apply')return json(res,200,await people.apply(principal,await body(req)));

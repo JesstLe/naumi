@@ -41,14 +41,14 @@ export async function GET(request:Request){
  }catch(e){if(e instanceof IntegrationError)return teamJson({error:e.code},e.status);return teamFailure(e);}
 }
 export async function POST(request:Request){
- const q=z.strictObject({source:z.string().regex(/^[a-f0-9]{64}$/).optional(),action:z.enum(['imports-resolve','people-profile','people-preview','people-apply','intake','command','schedule-command','batch-preview']),...scope}).safeParse(Object.fromEntries(new URL(request.url).searchParams));if(!q.success)return teamJson({error:'工作区参数无效'},400);
+ const q=z.strictObject({source:z.string().regex(/^[a-f0-9]{64}$/).optional(),action:z.enum(['imports-resolve','people-roster-preview','people-roster-apply','people-profile','people-preview','people-apply','intake','command','schedule-command','batch-preview']),...scope}).safeParse(Object.fromEntries(new URL(request.url).searchParams));if(!q.success)return teamJson({error:'工作区参数无效'},400);
  if(!workflowSameOrigin(request))return teamJson({error:'ORIGIN_REQUIRED'},403);
  if(!request.headers.get('content-type')?.startsWith('application/json'))return teamJson({error:'JSON_REQUIRED'},415);
  try{
   const identity=await workflowSourceIdentity(request,q.data.enterpriseId);if(!rateLimit('workflow-write:'+JSON.stringify(identity),60,60_000))return teamJson({error:'请求过于频繁'},429);
   const chunks:Uint8Array[]=[];let size=0;const reader=request.body?.getReader();if(reader)for(;;){const next=await reader.read();if(next.done)break;size+=next.value.byteLength;if(size>128*1024){await reader.cancel();return teamJson({error:'BODY_TOO_LARGE'},413);}chunks.push(next.value);}const text=Buffer.concat(chunks).toString('utf8');try{JSON.parse(text);}catch{return teamJson({error:'INVALID_JSON'},400);}
   if(q.data.action==='imports-resolve'&&!q.data.source)return teamJson({error:'INVALID_SOURCE'},400);
-  const config=workflowBridgeConfig(),path={ 'imports-resolve':'/v1/imports/resolve?source='+q.data.source,'people-profile':'/v1/people/profile','people-preview':'/v1/people/preview','people-apply':'/v1/people/apply','batch-preview':'/v1/batch-preview',intake:'/v1/intake',command:'/v1/commands','schedule-command':'/v1/scheduling/commands' }[q.data.action];let response:Response;
+  const config=workflowBridgeConfig(),path={ 'people-roster-preview':'/v1/people/roster-preview','people-roster-apply':'/v1/people/roster-apply','imports-resolve':'/v1/imports/resolve?source='+q.data.source,'people-profile':'/v1/people/profile','people-preview':'/v1/people/preview','people-apply':'/v1/people/apply','batch-preview':'/v1/batch-preview',intake:'/v1/intake',command:'/v1/commands','schedule-command':'/v1/scheduling/commands' }[q.data.action];let response:Response;
   try{response=await fetch(config.origin+path,{method:'POST',headers:{authorization:'Bearer '+workflowIdentityToken(identity,config,q.data.teamId),'content-type':'application/json'},body:text,cache:'no-store',redirect:'error',signal:AbortSignal.timeout(15000)});}catch{return teamJson({error:'WORKFLOW_WRITE_UNCERTAIN',uncertain:true},503);}
   if(!response.headers.get('content-type')?.includes('application/json'))return teamJson({error:'WORKFLOW_RESPONSE_INVALID'},502);
   return teamJson(await response.json(),response.status);

@@ -1,3 +1,4 @@
+import {peopleRosterChecks} from './people-roster.test';
 import {formalImportChecks} from './formal-import.test';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -72,6 +73,7 @@ test('import persistence, exact source data, isolation, replay, CAS, rollback an
   assert.equal((await fetch(api+'action=intake',{method:'POST',headers:{cookie,origin:base,'content-type':'application/json'},body:'{}'})).status,403);
   assert.equal((await fetch(api+'action=orders',{headers:{cookie}})).status,200);
   assert.equal((await fetch(api+'action=command',{method:'POST',headers,body:JSON.stringify({action:{type:'accept-delivery'}})})).status,403);
+  const rosterEntry={personId:randomUUID(),expectedVersion:0,realName:'本机批量验收',nickname:'占位花名',source:null,enabled:true},rosterBody={entries:[rosterEntry],reason:'local proxy check'};assert.equal((await fetch(api+'action=people-roster-preview',{method:'POST',headers:{cookie,origin:base,'content-type':'application/json'},body:JSON.stringify(rosterBody)})).status,403);const rosterResult=await fetch(api+'action=people-roster-preview',{method:'POST',headers,body:JSON.stringify(rosterBody)});assert.equal(rosterResult.status,200);const rosterPreview=await rosterResult.json() as any;assert(rosterPreview.valid);assert.equal((await pool.query('SELECT count(*) n FROM enterprise_workflow.person_profiles WHERE person_id=$1',[rosterEntry.personId])).rows[0].n,'0');
   await intakeChecks(pool,tenant,source);
   await tasksChecks(pool);
   await deliveryChecks(pool);
@@ -79,7 +81,7 @@ test('import persistence, exact source data, isolation, replay, CAS, rollback an
   await handoverBatchChecks(pool);
   await sourceLinksChecks(pool);
   await performanceChecks(pool);
-  await routingOpsChecks(pool);await notificationChecks(pool);await formalImportChecks(pool);
+  await routingOpsChecks(pool);await notificationChecks(pool);await formalImportChecks(pool);await peopleRosterChecks(pool);
   console.log('IMPORT_SERVICE_PASS: persisted=3 replay=1 source_status_preserved=1 corrupt_blob_denied=1 atomic_rollback=1 cross_tenant_denied=1 cas_winners=1 rollback_pending=1 reopen=1 workflow_orders=0 asset_hash=1 anonymous=401 cross_origin=403 csrf=403 conflict=409');
  }finally{proxy?.kill();if(server){server.closeAllConnections();await new Promise<void>(r=>server!.close(()=>r()));}await pool.end();}
 });
