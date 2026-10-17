@@ -70,7 +70,7 @@ import { restoredOrbOutcome, type AgentOrbOutcome, type AgentOrbStep } from "@/l
 import { useOrbCompanion } from "../naumi-orb/use-orb-companion";
 import { classifyAgentFailure } from "@/lib/agent/recovery";
 import { agentOrbState } from "@/lib/canvas/agent-orb";
-import { agentToolLabel, agentToolSummary } from "@/lib/canvas/agent-activity";
+import { reduceAgentProgress } from "@/lib/canvas/agent-progress";
 import { useCanvasAssistantDisclosure } from "@/lib/canvas/assistant-disclosure";
 import { defaultNodeSettings, validNodeSettings, nodeTextStyle, type CanvasNodeSettings, type CanvasCrop } from "@/lib/canvas/node-settings";
 const DEFAULT_CANVAS_SETTINGS = defaultNodeSettings();
@@ -5062,13 +5062,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         if(controller.signal.aborted||assistantController.current!==controller)return;
         setAssistantArtworkId(data.session.anchorId||null);setSelectedId(data.session.anchorId||null);setSelectedTextId(null);
         setAssistantTurns(data.session.turns);
-        const steps=new Map<string,AgentOrbStep>();
+        let steps: AgentOrbStep[] = [];
         const historySteps=data.session.steps||[], currentTurn=historySteps.findLastIndex((step:{type:string})=>step.type==="canvas_turn");
-        for(const step of historySteps.slice(Math.max(0,currentTurn)))if(["tool_start","tool_end"].includes(step.type))steps.set(step.id,{id:step.id,tool:step.tool,label:agentToolLabel(step.tool, locale === "en"),summary:agentToolSummary(step.summary),status:step.type==="tool_start"?(data.session.running?"running":"error"):step.isError?"error":"done"});
-        setAssistantSteps([...steps.values()].slice(-10));
+        for (const step of historySteps.slice(Math.max(0,currentTurn))) steps = reduceAgentProgress(steps, step, locale === "en", !!data.session.running);
+        setAssistantSteps(steps.slice(-10));
         setAssistantOutcome(restoredOrbOutcome(data.session));
         {
-          orbCue({ type: "restore", recall: !recalled, running: !!data.session.running, outcome: restoredOrbOutcome(data.session), attention: data.session.attention, phase: agentOrbState(!!data.session.running, restoredOrbOutcome(data.session), [...steps.values()]) });
+          orbCue({ type: "restore", recall: !recalled, running: !!data.session.running, outcome: restoredOrbOutcome(data.session), attention: data.session.attention, phase: agentOrbState(!!data.session.running, restoredOrbOutcome(data.session), steps) });
           recalled = true;
         }
         if(!data.session.running){if(data.session.error)setAssistantError(data.session.error);const ids=data.session.turns.flatMap((turn:AssistantTurn)=>(turn.artifacts||[]).map(art=>art.id));if(ids.length)await mergeWorks(ids);break;}
@@ -5177,6 +5177,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           if(type==="open"){serverSessionId=String(data.sessionId||acceptedSession);assistantLiveSessionId.current=serverSessionId;}
           if(type==="done" && data.ok===true)completed=true;
           if (type === "attention") {
+            setAssistantSteps(current => reduceAgentProgress(current, { ...data, type }, locale === "en"));
             const attention = data.kind === "waiting" || data.kind === "restricted" ? data.kind : undefined;
             if (attention) orbCue({ type: "attention", kind: attention });
             else if (data.kind === "resolved") orbCue({ type: "attention-resolved", tool: String(data.tool || "") });
@@ -5196,11 +5197,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           } else if (type === "tool_start" || type === "tool_end") {
             orbCue(type === "tool_start" ? { type: "tool-start", tool: String(data.tool || "") } : { type: "tool-end", error: !!data.isError });
             setAssistantResponding(false);
-            const id = String(data.id || data.tool), label = agentToolLabel(String(data.tool || ""), locale === "en");
-            setAssistantSteps(current => {
-              const next: AgentOrbStep = {id,label,tool:String(data.tool || ""),summary:agentToolSummary(data.summary),status:type === "tool_start" ? "running" : data.isError ? "error" : "done"};
-              return current.some(step => step.id === id) ? current.map(step => step.id === id ? next : step) : [...current, next];
-            });
+            setAssistantSteps(current => reduceAgentProgress(current, { ...data, type }, locale === "en"));
           } else if(type==="video_nodes"&&Array.isArray(data.nodes)){
             const nodes=data.nodes as {id:string;projectKey:string}[];
             if(acceptedVideoProject){if(nodes.some(node=>node.projectKey===acceptedVideoProject))await videoNodesStore.refresh();}

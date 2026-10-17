@@ -4,7 +4,7 @@ import { agentOrbState, type AgentOrbStep } from "../src/lib/canvas/agent-orb";
 
 const step = (tool: string, status: AgentOrbStep["status"] = "running"): AgentOrbStep => ({id:tool,tool,label:agentToolLabel(tool),status});
 const generation = step("generate_image"), credits = step("get_balance", "done");
-assert.equal(agentActivityLabel(true, "running", []), "正在处理请求");
+assert.equal(agentActivityLabel(true, "running", []), "等待模型响应");
 assert.equal(agentActivityLabel(true, "running", [], false, true), "正在回复");
 assert.equal(agentActivityLabel(true, "running", [generation], false, true), "正在生成图片");
 assert.equal(agentActivityLabel(true, "running", [credits, generation]), "正在生成图片");

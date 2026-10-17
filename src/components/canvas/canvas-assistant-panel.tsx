@@ -264,11 +264,11 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
         </article>)}
         {!!steps.length && <div data-testid="canvas-assistant-progress" className="space-y-2 rounded-xl border border-[var(--canvas-ui-border)] p-3 text-[12px]">{steps.map(step => {
           // A disconnected/stopped client cannot claim the supplier's task is still running or cancelled.
-          const unconfirmed = step.status === "running" && !busy;
-          const Icon = unconfirmed ? CircleHelp : step.status === "running" ? Loader2 : step.status === "error" ? X : Check;
-          const statusLabel = unconfirmed ? english ? "Check history" : "待核对" : step.status === "running" ? english ? "Running" : "执行中" : step.status === "error" ? english ? "Failed" : "失败" : english ? "Done" : "已完成";
-          return <div key={step.id} data-tool-status={unconfirmed ? "unconfirmed" : step.status} className="flex items-start gap-2">
-            <Icon className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", busy && step.status === "running" && "animate-spin")} />
+          const unconfirmed = step.status === "running" && !busy && !step.attention;
+          const Icon = step.attention ? CircleHelp : unconfirmed ? CircleHelp : step.status === "running" ? Loader2 : step.status === "error" ? X : Check;
+          const statusLabel = step.attention === "waiting" ? english ? "Awaiting confirmation" : "等待确认" : step.attention === "restricted" ? english ? "Not executed" : "未执行" : unconfirmed ? english ? "Check history" : "待核对" : step.status === "running" ? english ? "Running" : "执行中" : step.status === "error" ? english ? "Failed" : "失败" : english ? "Done" : "已完成";
+          return <div key={step.id} data-tool-status={step.attention || (unconfirmed ? "unconfirmed" : step.status)} className="flex items-start gap-2">
+            <Icon className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", busy && !step.attention && step.status === "running" && "animate-spin")} />
             <div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><span>{step.label}</span><span className="canvas-ui-muted shrink-0 text-[10px]">{statusLabel}</span></div>
               {step.summary && <p className="canvas-ui-muted mt-0.5 break-words text-[11px]">{step.summary}</p>}
             </div>

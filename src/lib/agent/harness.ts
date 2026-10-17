@@ -3,6 +3,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { Check } from "typebox/value";
 import type { TSchema } from "typebox";
 import { agentMediaUrl } from "./media-policy";
+import { publicOutputBoundary } from "./public-output";
 
 /** Authority is server-owned. Model/user/Skill/tool text never supplies these fields. */
 export const HARNESS_LIMITS = Object.freeze({
@@ -65,8 +66,9 @@ export function explicitQuoteConsent(message: string) {
   return /^(?:确认(?:报价|生成|执行|继续)?|同意(?:报价|生成|执行|继续)?|按(?:这个|该|此)报价(?:生成|执行|继续)|yes|confirm|approved|proceed)[。.!！\s]*$/i.test(message.trim());
 }
 export function creativeIntent(message: string) {
+  if (/(?:不要|不需要|别|不必)[^,，;；。！？\n]{0,20}(?:换色|换成|换为)/.test(message)) return false;
   if (/只(?:分析|总结|解释|讨论)|^(?:请|帮我)?(?:分析|总结|解释|讨论)|(?:不要|不需要|别|不必)(?:再)?(?:生成|生图|调用|执行)|如何|怎么|how (?:to|does)/i.test(message)) return false;
-  return /转换(?:图片|图像)?格式|压缩图片|缩小图片|去底色|chroma.?key|resize.*image|convert.*(?:png|webp|jpeg)|生成|生图|出图|画(?:图|一|个|张)|做(?:一|个|张|套)|来(?:一|个|张|套)|绘制|创作|精修|换色|替换|修改|调整|换.{0,4}视角|改(?:图|色|成|为)|变成|抠图|清晰|去水印|去皱|复刻|裂变|融图|试穿|服装上身|详情页|包装|印刷|导入|风格(?:转换|迁移)|(?:写|拟|起|优化|想).{0,12}(?:标题|卖点)|执行工作流|运行工作流|generate|create|draw|render|retouch|recolor|upscale|inpaint|remove.*(?:background|watermark)|try.?on|replicate|import|run.*workflow/i.test(message);
+  return /转换(?:图片|图像)?格式|压缩图片|缩小图片|去底色|chroma.?key|resize.*image|convert.*(?:png|webp|jpeg)|生成|生图|出图|画(?:图|一|个|张)|做(?:一|个|张|套)|来(?:一|个|张|套)|绘制|创作|精修|换色|替换|修改|调整|换(?:成|为)(?:.{0,8}(?:色|配色)|\s*#[a-f\d]{6}\b)|换.{0,4}视角|改(?:图|色|成|为)|变成|抠图|清晰|去水印|去皱|复刻|裂变|融图|试穿|服装上身|详情页|包装|印刷|导入|风格(?:转换|迁移)|(?:写|拟|起|优化|想).{0,12}(?:标题|卖点)|执行工作流|运行工作流|generate|create|draw|render|retouch|recolor|upscale|inpaint|remove.*(?:background|watermark)|try.?on|replicate|import|run.*workflow/i.test(message);
 }
 export function untrustedAgentData(source: string, value: unknown) {
   return `\n[UNTRUSTED_DATA ${source}]\n${JSON.stringify(value)}\n[/UNTRUSTED_DATA]\n`;
@@ -78,7 +80,7 @@ function requestedWriteCapabilities(message: string): Set<string> {
   if (creativeIntent(message)) {
     allowed.add("generate_image");
     grant(/精修|修复|retouch/i,["retouch_product"]);
-    grant(/换色|颜色|替换|[红蓝绿黑白黄紫橙粉灰]色|recolor|colou?r/i,["recolor_product"]);
+    grant(/换色|颜色|替换|换(?:成|为)\s*#[a-f\d]{6}\b|[红蓝绿黑白黄紫橙粉灰]色|recolor|colou?r/i,["recolor_product"]);
     grant(/复刻|replicate/i,["replicate_hot","replicate_competitor"]);
     grant(/套图|一套|整套|suite/i,["generate_suite"]);
     grant(/a\+|详情页|aplus/i,["generate_aplus","continue_aplus_generation"]);
@@ -248,10 +250,10 @@ export class AgentHarness {
     };
     return clean(value, 0) as T;
   }
-  outputHoldback() { return Math.max(512, ...[...this.secrets, ...this.protectedLines].map(x => x.length + 32)); }
+  outputBoundary(text: string) { return publicOutputBoundary(text, [...this.secrets, ...this.protectedLines]); }
 }
 function canonical(v: unknown): string { return Array.isArray(v) ? `[${v.map(canonical).join(",")}]` : record(v) ? `{${Object.keys(v).sort().map(key => `${JSON.stringify(key)}:${canonical(v[key])}`).join(",")}}` : JSON.stringify(v); }
-/** Delay suffixes across arbitrary provider chunks; never sanitize each delta in isolation. */
+/** Retain only ambiguous suffixes across provider chunks; ordinary text has no length/newline gate. */
 export class PublicOutputBuffer {
   private pending = "";
   private total = 0;
@@ -260,12 +262,10 @@ export class PublicOutputBuffer {
     this.total += text.length;
     if (this.total > HARNESS_LIMITS.outputChars) throw new HarnessError("OUTPUT_BLOCKED");
     this.pending += text;
-    // A private-key block may contain newlines. Never release an incomplete block's prefix.
-    if (/-----BEGIN [^-]*PRIVATE KEY-----/.test(this.pending) && !/-----END [^-]*PRIVATE KEY-----/.test(this.pending)) return;
-    const end = this.pending.lastIndexOf("\n", this.pending.length - this.harness.outputHoldback());
-    if (end < 0) return;
-    const prefix = this.pending.slice(0, end + 1), cleaned = this.harness.publicText(prefix);
-    this.emit(cleaned); this.pending = this.pending.slice(end + 1);
+    const end = this.harness.outputBoundary(this.pending);
+    if (end <= 0) return;
+    this.emit(this.harness.publicText(this.pending.slice(0, end)));
+    this.pending = this.pending.slice(end);
   }
   finish() { if (this.pending) this.emit(this.harness.publicText(this.pending)); this.pending = ""; }
 }
