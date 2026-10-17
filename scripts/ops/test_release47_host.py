@@ -101,6 +101,19 @@ class Gates(unittest.TestCase):
                'State': {'Running': True, 'StartedAt': 'old'}, 'HostConfig': {'RestartPolicy': {'Name': 'unless-stopped'}}}
         self.assertNotIn('SECRET', repr(m.public_identity(row)))
 
+    def test_new_web_cannot_share_existing_control_state(self):
+        row = {'Config': {'Cmd': ['node', 'server.js'], 'Env': []},
+               'NetworkSettings': {'Networks': {'net': {}}},
+               'Mounts': [{'Type': 'bind', 'Source': '/opt/naumi-staging/releases/prior/web',
+                           'Destination': '/release-state', 'RW': True}]}
+        tx = m.HostTransaction(m.TARGET, 'a'*64, '/tmp/unused')
+        tx.pin = lambda _: row
+        with self.assertRaisesRegex(m.Hold, 'EXACT_PRIOR_SLOT_STATE_REVIEW_REQUIRED'):
+            tx.clone_web({}, name='naumi47-new', port=13102, image='sha256:'+'a'*64, commit='b'*40,
+                         memory_mib=2048, cpu=0.5, release_secret='s'*40,
+                         state_dir='/opt/naumi-staging/releases/prior/web', build_version='1792146767',
+                         reviewed_prior_state_dir='/opt/naumi-staging/releases/prior/web')
+
 
 if __name__ == '__main__':
     unittest.main()

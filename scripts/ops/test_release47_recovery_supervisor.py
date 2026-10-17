@@ -128,5 +128,33 @@ class Recovery(unittest.TestCase):
         recovery_binding(s, m); s['runtimeRecovery']['phase'] = 'UNKNOWN'
         with self.assertRaisesRegex(Hold, 'NOT_ACKNOWLEDGED'): recovery_binding(s, m)
 
+    def test_mount_order_is_not_configuration_change_but_path_is(self):
+        row = dict(Id='id', Name='web', Image='image', Config={}, HostConfig={},
+                   Mounts=[{'Destination': '/a', 'Source': '/one'}, {'Destination': '/b', 'Source': '/two'}])
+        pin = static_pin(row); row['Mounts'].reverse()
+        self.assertEqual(static_pin(row), pin)
+        row['Mounts'][0]['Source'] = '/different'
+        self.assertNotEqual(static_pin(row), pin)
+
+    def test_low_ram_defers_without_consuming_restart_attempt(self):
+        self.fake.available_kib = lambda: 100
+        self.fake.rows['web']['State'].update(Running=False, ExitCode=137)
+        with self.assertRaisesRegex(Hold, 'PHYSICAL_MEMORY'): self.supervisor.once()
+        self.assertFalse((pathlib.Path(self.tmp.name) / 'web-restart.json').exists())
+        self.assertEqual(self.fake.starts, [])
+
+    def test_new_host_boot_restores_only_enrolled_crash_scope(self):
+        self.manifest['initialHostBootId'] = 'host1'
+        self.fake.host_boot_id = lambda: 'host2'
+        self.manifest['web']['runningAtEnrollment'] = True
+        self.fake.rows['web']['State'].update(Running=False, ExitCode=0)
+        self.supervisor.once()
+        self.assertEqual(self.fake.starts, ['web'])
+
+    def test_active_healthy_tick_does_not_block_observation(self):
+        self.fake.worker.update(phase='RUNNING', lastTick={'phase': 'dispatched'}, activeTicks=1)
+        self.assertEqual(self.supervisor.once()['workerState']['phase'], 'RUNNING')
+        self.assertEqual(self.fake.controls, [])
+
 
 if __name__ == '__main__': unittest.main()

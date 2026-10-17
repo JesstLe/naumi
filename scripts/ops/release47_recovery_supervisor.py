@@ -29,6 +29,10 @@ def encoded(value):
 def static_pin(row):
     """No secret leaves the host. Pins include RAM, mounts, ports, env and image."""
     value = {k: row[k] for k in ['Id', 'Name', 'Image', 'Config', 'HostConfig', 'Mounts']}
+    # Docker may reorder its inspect Mounts array at a stop/start. Destination
+    # identity is unique; order has no semantics and must not invalidate pins.
+    value['Mounts'] = sorted(row['Mounts'], key=lambda m: m['Destination'])
+    value['Networks'] = sorted(row.get('NetworkSettings', {}).get('Networks', {}))
     # Docker changes anonymous-volume propagation details at start; use actual
     # mount identity, not a synthesized command or a name-only match.
     return sha(encoded(value))
@@ -102,6 +106,9 @@ class Adapter:
         return int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines()
                         if l.startswith('MemAvailable:')))
 
+    def host_boot_id(self):
+        return pathlib.Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+
     def wait_ready(self, spec):
         for attempt in range(12):
             try:
@@ -129,7 +136,14 @@ class Supervisor:
             return row
         # A deliberate clean stop or docker stop is not an instruction to undo
         # maintenance. No restart loops on unhealthy-but-running applications.
-        require(row['State'].get('OOMKilled') is True or row['State'].get('ExitCode') not in [0, 143],
+        latest_path = self.folder / 'latest.json'
+        latest = json.loads(latest_path.read_bytes()) if latest_path.exists() else {}
+        host_boot = getattr(self.adapter, 'host_boot_id', lambda: None)()
+        prior_boot = latest.get('hostBootId') or self.manifest.get('initialHostBootId')
+        reboot = bool(host_boot and prior_boot and host_boot != prior_boot and
+                      (latest.get(spec['role'], {}).get('running') is True or
+                       spec.get('runningAtEnrollment') is True))
+        require(reboot or row['State'].get('OOMKilled') is True or row['State'].get('ExitCode') not in [0, 143],
                 'INTENTIONAL_STOP_REMAINS_STOPPED')
         filename = spec['role'] + '-restart.json'
         path = self.folder / filename
@@ -145,11 +159,11 @@ class Supervisor:
         attempt = {'operationId': str(uuid.uuid4()), 'epoch': time.time(), 'at': now(),
                    'failedStartedAt': row['State']['StartedAt'], 'exitCode': row['State']['ExitCode'],
                    'oomKilled': row['State'].get('OOMKilled'), 'phase': 'INTENT_RECORDED'}
-        log['attempts'] = recent + [attempt]
-        self.record(filename, log)
         available_kib = getattr(self.adapter, 'available_kib', lambda: 10**9)()
         require(available_kib >= spec.get('memoryMiB', 2048) * 1024 + 1024 * 1024,
                 'RECOVERY_PHYSICAL_MEMORY_INSUFFICIENT')
+        log['attempts'] = recent + [attempt]
+        self.record(filename, log)
         self.adapter.start(spec)
         fresh = self.adapter.inspect(spec)
         require(fresh['State']['Running'] and fresh['State']['StartedAt'] != row['State']['StartedAt'],
@@ -212,7 +226,8 @@ class Supervisor:
             require(app['admission']['mode'] == 'open', 'OPERATOR_DRAIN_REMAINS_DRAINED')
         app = self.admit(web, app)
         if not enrollment.exists(): self.record(enrollment.name, {'at': now(), 'bootId': boot})
-        result = {'at': now(), 'web': public_identity(row), 'webBootId': boot, 'readiness': ready,
+        result = {'at': now(), 'hostBootId': getattr(self.adapter, 'host_boot_id', lambda: None)(),
+                  'web': public_identity(row), 'webBootId': boot, 'readiness': ready,
                   'admission': app['admission'], 'supplierSubmissions': 0}
         if worker:
             wr = self.ensure_running(worker)
@@ -255,6 +270,8 @@ def main():
             if recovery.get('effectiveWeb') != result['web'] or recovery.get('effectiveWorker') != result.get('worker'):
                 recovery.update(effectiveWeb=result['web'], effectiveWorker=result.get('worker'),
                                 webBootId=result['webBootId'], workerBootId=result.get('workerBootId'), reboundAt=now())
+                state['webs']['main']['running'] = result['web']
+                if result.get('worker'): state['worker']['running'] = result['worker']
                 state['revision'] += 1
                 _atomic_private(canonical, state)
             print('RECOVERY_SUPERVISOR=PASS WEB_OPEN=YES WORKER=' + (result.get('workerState', {}).get('phase') or 'NOT_ENROLLED'))
