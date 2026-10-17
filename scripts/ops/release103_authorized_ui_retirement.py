@@ -13,6 +13,7 @@ import urllib.request
 
 from release47_host import HostTransaction, environment, public_identity
 from release_legacy_ui_retirement import immutable, network_binding, identity
+import release_legacy_ui_retirement as old
 
 AUTHORIZATION = '允许维护退役无入口旧 UI：保留数据库、媒体、容器及回滚，接受历史内存态无法完整证明（推荐）'
 MACHINE = '26721373f7ecea7a5a9173a43bb017cd362d1f7ed9864b402874576a9e4fee35'
@@ -28,6 +29,31 @@ def require(ok, reason):
 
 def sha(raw):
     return hashlib.sha256(raw).hexdigest()
+
+
+def network_configuration(row):
+    # Same declaration boundary as release_runtime_ui_retirement: Docker
+    # allocates EndpointID/IP/MAC anew for a retained-CID stop/start.
+    fields = ('NetworkID', 'Aliases', 'Links', 'IPAMConfig', 'DriverOpts', 'GwPriority')
+    return {name: {key: network.get(key) for key in fields} for name, network in old.canonical_networks(row['NetworkSettings']['Networks']).items()}
+
+
+def restored_network_changes(original, restored):
+    require(network_configuration(original) == network_configuration(restored), 'RESTORED_NETWORK_DECLARATION_CHANGED')
+    before = old.canonical_networks(original['NetworkSettings']['Networks'])
+    after = old.canonical_networks(restored['NetworkSettings']['Networks'])
+    require(set(before) == set(after), 'RESTORED_NETWORK_SET_CHANGED')
+    changes = {}
+    allowed = {'EndpointID', 'IPAddress', 'IPPrefixLen', 'MacAddress', 'GlobalIPv6Address', 'GlobalIPv6PrefixLen'}
+    for name, values in after.items():
+        changed = {key for key in set(values) | set(before[name]) if values.get(key) != before[name].get(key)}
+        require(changed <= allowed, 'UNEXPLAINED_RESTORED_NETWORK_CHANGE')
+        request = values.get('IPAMConfig') or {}
+        for requested, allocated in (('IPv4Address', 'IPAddress'), ('IPv6Address', 'GlobalIPv6Address')):
+            require(not request.get(requested) or request[requested] == values.get(allocated), 'STATIC_NETWORK_ADDRESS_NOT_RESTORED')
+        if changed:
+            changes[name] = sorted(changed)
+    return changes
 
 
 def emit(value):
@@ -251,9 +277,10 @@ def execute(plan):
                         tx.run(['docker', 'update', '--restart=' + flag, cid])
                         restored = tx.inspect(cid)
                         require(restored['HostConfig']['RestartPolicy'] == policy and restored['HostConfig']['PortBindings'] == intent['originalPortBindings'], 'ORIGINAL_POLICY_NOT_RESTORED')
-                        require(network_binding(restored) == intent['networkSha256'], 'RESTORED_NETWORK_REQUIRES_RECONCILIATION')
+                        network_changes = restored_network_changes(original, restored)
+                        no_references(tx, restored)
                         probe = restore_probe(original, intent['port'])
-                        entry = {'id': cid, 'status': 'RETAINED_CID_RESTORED', 'version': probe}
+                        entry = {'id': cid, 'status': 'RETAINED_CID_RESTORED', 'version': probe, 'currentIdentity': identity(restored), 'runtimeNetworkAllocationChanges': network_changes, 'originalRuntimeNetworkSha256': intent['networkSha256'], 'currentRuntimeNetworkSha256': network_binding(restored)}
                         tx.save('restore-complete-' + cid[:12] + '.json', entry)
                 except BaseException as recovery_error:
                     entry = {'id': cid, 'status': 'RECOVERY_REQUIRES_RECONCILIATION', 'errorType': type(recovery_error).__name__}

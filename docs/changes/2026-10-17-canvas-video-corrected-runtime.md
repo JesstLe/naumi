@@ -54,3 +54,5 @@
 证据：compiled-app-63df208-rollback-20261017/ 下的 COMPLETE.json、RESULTS.json、restore.json、fixture.dump、restore-list.txt，以及 output/canvas-video-fusion-20261013/checkpoint-d/rollback-d11a25b1-0d3b-4fcc-af32-c57dd09e06e2/result.json。备份193829字节，SHA 4873784d245322e36e7b5bdad40e7ea921ec43e247b21e4f13349cac72f6507d。结束按随机label确认并删除本轮SDK/PG，CLEANUP.json已保存。没有重用生产数据库或在103启动测试。
 
 本轮收尾再次fetch发现main新增5b62918（README现状整理），仅README与独立文档改变；保留并整合该提交，不因此重建业务源63df或重复通过的应用验收。
+
+最新103容量维护：12个无入口历史UI已在备份/两锁内停止过，因仍低于5120MiB而恢复；全部同CID、原配置/策略/声明网络与原版本200已核对，两锁释放。没有安装或切换新候选。历史“未停止UI”为当时阶段记录，当前实际结果以[授权容量维护](2026-10-17-canvas-video-authorized-capacity.md)顶节为准。

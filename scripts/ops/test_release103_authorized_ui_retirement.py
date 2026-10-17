@@ -139,5 +139,20 @@ class Tests(unittest.TestCase):
         self.assertNotIn('restore-complete-'+'a'*12+'.json', self.tx.saved)
         self.assertEqual(self.tx.saved['CAPACITY_RECOVERY.json']['rows'][0]['status'], 'RECOVERY_REQUIRES_RECONCILIATION')
 
+    def test_explained_docker_allocation_changes_keep_declared_identity(self):
+        before = row('a'*64, 13033)
+        before['NetworkSettings']['Networks'] = {'fixture': {'NetworkID': 'same-network', 'Aliases': ['legacy-ui'], 'IPAMConfig': None, 'EndpointID': 'before', 'IPAddress': '172.20.0.8', 'MacAddress': 'before', 'Gateway': '172.20.0.1'}}
+        after = copy.deepcopy(before)
+        after['NetworkSettings']['Networks']['fixture'].update(EndpointID='after', IPAddress='172.20.0.9', MacAddress='after')
+        changes = module.restored_network_changes(before, after)
+        self.assertEqual(changes, {'fixture': ['EndpointID', 'IPAddress', 'MacAddress']})
+        after['NetworkSettings']['Networks']['fixture']['Gateway'] = '172.20.0.2'
+        self.assertRaisesRegex(RuntimeError, 'UNEXPLAINED', lambda: module.restored_network_changes(before, after))
+    def test_declared_static_address_must_match_actual_allocation(self):
+        before = row('a'*64, 13033)
+        before['NetworkSettings']['Networks'] = {'fixture': {'NetworkID': 'same-network', 'IPAMConfig': {'IPv4Address': '172.20.0.8'}, 'IPAddress': '172.20.0.8'}}
+        after = copy.deepcopy(before); after['NetworkSettings']['Networks']['fixture']['IPAddress'] = '172.20.0.9'
+        self.assertRaisesRegex(RuntimeError, 'STATIC_NETWORK_ADDRESS', lambda: module.restored_network_changes(before, after))
+
 
 if __name__ == '__main__': unittest.main()
