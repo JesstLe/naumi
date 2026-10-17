@@ -1,0 +1,33 @@
+# 103画布视频：开放前业务状态基线
+
+## 本模块状态
+
+开工先fetch origin/main，基线e0b8a5408428240e720d1d37e0cec4318f21135b。继续Task16的发布安全工具，不修改已固定e997b290b39fc9df63e4c3b6387fa008b7b0e18d业务镜像，也没有重跑无变化的完整应用测试、连接生产数据库、操作103或占用部署锁。本模块提供回退所需的业务状态证明；公网入口封闭与完整切流后回滚尚未完成，原POST_ACTIVATION_ACCEPTED_WORK_AUDIT_REQUIRED保护保留。
+
+## 实现与边界
+
+- 新release_rollback_guard.py在同一READ ONLY REPEATABLE READ事务中枚举public全部真实表并保存目录/字段结构摘要，对每张业务表完整行内容逐行SHA256后排序聚合；只输出哈希与计数，不输出任务正文、模型配置、凭据或用户资料。相同行数的参数修改、已完成新任务、业务表新增及空表结构变化也会拒绝。未查到表不当作零行。
+- 仅四类有来源的运行记账表独立处理：app_release_boots、app_release_controls、app_release_activities、app_worker_tick_receipts。候选所有boot的未完成活动、未知/运行tick必须为零；新增已结束的空扫描回执允许变化。Agent活动历史单独完整摘要，所有session owner仍是业务表，新增已完成Agent执行或idle归属也不能当作空扫描跳过。
+- 每表/候选活动/tick最多25000行，读取25001作为越界检测；目录最多512表。单语句8秒、锁1秒、事务空闲8秒，命令及输出沿用受限只读采集器。超过界限、输出缺失/重复/截断、未知状态均拒绝，不用截断后的零计数当成功。
+- 基线绑定releaseId、业务SHA/版号、精确数据库容器/启动、候选Web容器与App boot、调用Worker；数据库容器在读取前后pin，App在读取前后检查同一boot。HTTP进程覆盖须verified且accountingFault严格false；activeRequests/trackedRequests/trackedAcceptedWork/agentRuns/unknownLeases均要求真实整数零，acceptedTasks/agentSessions的null不解释为零。
+- MaintenanceSession.activate只在首次App resume之前采集并持久保存rollbackBoundary。已存在app-open或openGateway却缺少原基线时拒绝重新建立，不能把开放后的状态冒充开放前状态。回滚先关闭自动恢复并排空，再重新读取业务证明；旧PASS不重复充当许可。旧47发布路径不启用此功能。
+
+这是保守的“业务状态未变化”证明，允许原有非终态业务行保持原样；不是强行要求整个数据库任务数量为零。任何业务行变化都要求后续兼容性交接，不更新/删除任务以换取通过，不恢复数据库、不重放已接受任务。当前App后台覆盖仍有partial字段，不能将本模块解释为全部任务已排空。
+
+## 集中验收
+
+Linux单元/会话55项，53通过、2项原Nginx用例跳过；覆盖未知/缺失/重复快照、只读事务身份、空扫描差异、业务/Agent修改、原始绑定漂移、null与HTTP记账故障、首次resume前保存及开放后禁止补建基线。首次以普通WSL用户运行时，旧恢复测试的chown因权限失败；随后以实际宿主工具所需root重跑这组成功，没有将环境错误记成通过。
+
+独立Docker PostgreSQL16固定0ea6700a3b4f0ae6ce746519073558aed4d88a79d8d07622a9a644946c7319c4，network=none、192MiB等额swap cap、仅合成业务行。最终12种场景通过：不变基线、已结束空扫描、新完成业务、等行数冻结参数变更、旧boot遗留活动、未知tick、新完成Agent执行、新idle owner、新空表、空表字段变化、25001活动越界、超512表在哈希派发前拒绝。首次SQL输出包含gexec命令文本被解析器拒绝；修正psql命令边界后完成实际场景。保留失败及首轮成功目录，没有覆盖它们。
+
+最终实际PG容器25d432426edad6e42f4f8c1783f0ad44483630f2bb91c93f6b3e671465b67a28，合成验证完成后按精确CID与自有label删除容器及其匿名volume。结果与11次成功采集保存在output/canvas-video-fusion-20261013/checkpoint-d/rollback-boundary-20261017/pg-final-evidence/，Linux原件/var/tmp/video-rollback-guard-20261017-v3。App状态在这个数据库矩阵中是明确的合成输入，不能把它称为真实Next或公网回滚验收。供应商调用、正式数据库连接、入口切换、任务重放全部0。
+
+## 独立复核修正
+
+Native新上下文实际完整读取5份来源并核对workspace/声明/内嵌SHA，提出1项P2：目录512表上限原在解析阶段，可能先执行过多哈希语句。已将上限前移到同一只读事务、所有动态SQL派发前，以固定DO块只看最多513条目录记录，超限立即异常终止，不截断覆盖范围。增加SQL顺序断言及真实513额外合成表拒绝测试，受影响8项单元通过，真实PG最终12场景通过。修正复核完整读取3份变更来源23804字节、逐份workspace/声明/内嵌SHA一致，结论No actionable findings in the P2 correction。原会话及恢复文件未再变更。首轮与修正复核材料保存在本模块证据目录。
+
+## 剩余门槛
+
+公网仍指向候选时，状态采集后可能进入新请求。因此尚未解除切流后回退限制。下一步准备和验证candidate→maintenance的精确网关CAS，保存原始意图以处理响应丢失，封闭入口后排空并重新取证，证明成立后才切回旧入口/恢复旧调用Worker；需用固定Next与实际Nginx联合验收。另有历史UI精确可恢复退役、真实可用RAM、锁内备份/上线和最终审计待完成。34/34应用条件及55份原应用证据不因本宿主工具模块变为生产交付；成功发布次数不增加。
+
+后续模块已补齐上述入口封闭与固定Next/真实Nginx/合成PG联合验收，见[回滚入口封闭](2026-10-17-canvas-video-rollback-ingress.md)。仅原始业务状态未变化时允许回退；业务变化或未知工作继续HOLD。其余生产资源与上线门槛仍待完成，不把本节历史待办继续误读为入口模块尚未实现。

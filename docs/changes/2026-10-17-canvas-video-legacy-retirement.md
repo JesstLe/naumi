@@ -1,0 +1,42 @@
+# 103历史UI容量回收：实际源码与执行环境观察
+
+## 当前交付边界
+
+本模块是发布前观察工具和真实证据，不是退役完成。开工先fetch，任务与origin/main均69b0511d1870c4e026db4bdf4683edfbdbef04e2。画布视频业务仍固定e997 / 1792200281，正式103仍旧版本；没有持发布锁、安装候选、切流、停止/重启业务服务，也没有恢复DB、修改任务状态或重放供应商请求。34/34应用条件、55份注册应用证据保持；容量、正式发布和最终审计仍未完成。
+
+观测曾对一个精确历史UI的Node PID1临时启用并关闭容器内回环Inspector。命令绑定CID/image/StartedAt/PID、业务监听3000、无预存debug选项/监听；执行前后环境哈希/启动身份/Nginx哈希保持，关闭后核对原监听集合。不是仅凭“无公网路由”判定空闲，不声称观察绝无运行时开销。
+
+## 发现与实现
+
+1. 当前13033 CID0b8ff61f47f23d781f3d156e0c84685854d02551bdd17138b07616a8968e4685、image8f6d2dc56ef6dc92a666108311a35081ef13ebbe69cc3f0b5d902e9b0f1f8b03、业务3bbebee2cfe31e884268c539373b81afff263207 / 1791956188。服务器重启后StartedAt已为2026-10-16T22:23:13.894146717Z，旧PINS中10月14日启动时间已过期；不得删除启动时间校验或用旧pin执行stop。
+2. 只读流式提取实际server.js和完整.next/server JS/CJS/MJS：650文件、21950546字节；tar22599680字节，SHA256 2d5985def8f1ecd8d2ddffa8394ffeca1b58537c1f97156457ebf22a7968dbd2。每份源码重新验size/SHA。没有读取配置/env/业务媒体。外部vendor dependencies尚未纳入，因此sourceClosureProven=false；这些650文件不能冒充完整启动/路由/自治任务审计。
+3. 编译Agent模块实际为.next/server/chunks/186.js，90576字节、SHA032d028163c65f6b6c97a494c4f4d765ba9bbe7a21eb0a55f034d18fef17282c；原SESSIONS/CREATING/providerModels变成M/N/O。已对照不可变3bb源码及实际片段，但未把原变量名正则硬套到编译代码。实际5044.js视频Worker入口含NAUMI_VIDEO_WORKER=0门槛，进程显式为0；其他自治入口/依赖仍需完整复核。
+4. 原Map审计器默认16、最大32执行环境，现场实际280，故两个初始观察返回HOLD/EXECUTION_CONTEXT_LIMIT_OR_MISSING；计数字段的0是未执行扫描时占位，绝不作为排空。新增observedExecutionContexts诊断字段。
+5. 新audit_legacy_node_realms.mjs先按完整文件集合和逐size/SHA核对编译目录，支持2MiB上限gzip清单；借Runtime/Debugger元数据枚举脚本/环境，启用前设置skip-all-pauses，不调用业务getter/方法，不拿堆快照或全堆GC。按实际已加载脚本内容SHA绑定Agent模块，报告仅OBSERVED_SCRIPT_REALMS、sourceClosureProven=false，不生成普通drain回执。
+6. 现场1249个已报告脚本、280环境，Agent模块只出现在context1；Debugger.getScriptSource取到的字节SHA与采集值一致。工作线程0，临时Inspector关闭确认。原SSH启动命令受单参数长度限制的一次失败没有执行Node；gzip目录清单后脚本71381字节成功。
+7. Map审计器增加显式--context-ids，仅扫描指定已知环境。其coverage为selected-context-native-map-prototypes、contextMapEnumerationComplete=false、contextSelection=explicit-subset-not-complete；默认全环境行为和已有退役门禁保持。开始/结束仍核对整个环境集合，未知/重复/缺失ID拒绝。
+8. 审阅后真实context1扫描：93 Maps、75空、2870条已扫描项目；会话/创建承诺/运行/画布/待persist/待工具结果/未知均0，2136ms，Inspector关闭且原容器/Nginx身份保持。这只是一次指定环境观察，不能当作完整实例排空。已把这份真实零计数报告交给未修改的inspector_check，实际返回INSPECTOR_ENUMERATION_INCOMPLETE，确认不能混入stop许可。
+
+## 集中验证与复核
+
+实际隔离Linux/固定9fea Docker、network none、512MiB cap且等额swap cap，281个执行环境：loaded/lazy/changed-catalogue三场景均通过。已加载Agent脚本准确定位到唯一环境；未加载模块明确记录而不擅自加载；目录哈希变化在开Inspector前拒绝。loaded场景额外真实指定环境Map扫描发现现有合成会话1个，输出无原始邮箱/会话ID，并保持“不完整”标签；每场景目标存活、无OOM，精确自有CID/label清理。无DB/供应商/生产连接。
+
+Native新上下文复核39137实际Node REPL读取4份全文并核对声明/内嵌/workspace SHA；No actionable findings in the reviewed scope。确认不完整指定环境报告仍被原退役门禁拒绝。审阅不替代上述实际执行，也不代表已完成发布或完整排空。
+
+证据：output/canvas-video-fusion-20261013/checkpoint-d/legacy-realms-20261017/，同级legacy-realms-review-source.json/log/verdict.txt。完整编译源码只在外部受保护目标目录legacy-ui-13033-compiled-20261017，未提交原始22MiB编译代码。模板、实例化脚本和编译清单的SHA分别记录，传输只经过原有授权47 TCP中继，未在47执行命令或操作其文件/服务。
+
+## 持久任务只读现状与下一步
+
+通过精确103 DB CID e39220c01cb2242abef8bc3604404859849808b0b4777f128aff5b4c85c76f74 / image16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229，在READ ONLY REPEATABLE READ事务内按release47_task_snapshot.SPECS读取计数及整行摘要，不输出请求正文、凭据或用户身份。app_image_jobs1298行中11未终态，app_billing_operations1395中26未终态，supplier_calls1515中158未终态，supplier_cost_jobs4中4待处理；canvas_image/video/workflow-node/batch表当前0。reference_operations、video_media_jobs及release ownership/activity/tick表缺失明确记absent-no-zero-inference。未终态不等于此刻正在执行，不能当作安全重试/结算授权。
+
+当时PG仅2条idle连接、事务0，来源172.18.0.16经实时容器IP表匹配原核心App18c31dc9e0cf。一次无连接不证明目标从未接受任务；聚合报告targetOwnershipProven=false、ordinaryDrainReceipt=null。尚须按持久ID/冻结配置/供应商回执关系核清这些记录，沿用现有未知提交保护，不重放或删除旧收费记录。
+
+接下来必须完成：实际编译/外部依赖的完整源码自治入口审计和原生Map构造证明；将完整来源绑定到同一轮运行时观察，不能把两次Inspector的历史context1关联自动当作永远有效；目标socket/DB/内部systemd与Docker引用闭包、任务归属和保留证明；刷新启动pin后的一项一项可恢复退役及真实RAM增量。现有retire_one要求维护配置而maintenance前置容量不满足，需在已确认不再被当前网关/内部调用引用的历史UI上实现并审查“发布前容量回收”独立串行步骤，不能假装维护已开启或绕过5120MiB预算。
+
+之后仍需新实例自动恢复/持久身份、已接受新任务的安全回退保护、生产备份、全锁蓝绿切换/旧槽排空停止/线上验收与维护计数和最终交接。当前没有实际回收RAM或成功发布计数增加。
+
+## 后续进度索引
+
+以上为本模块当时记录。随后[自动恢复](2026-10-17-canvas-video-runtime-recovery.md)、[开放前基线](2026-10-17-canvas-video-rollback-boundary.md)、[入口封闭与回退](2026-10-17-canvas-video-rollback-ingress.md)已分别实现并验收。实际[完整Map观察](2026-10-17-canvas-video-many-context-runtime.md)已280/280完成、原运行时子门禁PASS；[源码绑定辅助观察](2026-10-17-canvas-video-agent-scopes.md)取得实际M/N各0，但明确PARTIAL，不能替代完整源码/归属/引用证明。外部依赖现已采集校验，不能继续把“尚未取得文件”误写为阻塞。
+
+新的原始证据也确认有效挂载数组顺序会在docker inspect之间变化，原retirement库的原始列表摘要需处理后才可稳定执行；不得删掉字段校验。图片记录pending9/needs_attention2，执行令牌且有效租约0，两个未来时间是无令牌延期；不将其称为两条正在运行任务。历史UI尚未真正退役，资源/生产交付及最终审计仍待完成。

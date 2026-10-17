@@ -86,7 +86,12 @@ publicSummary.observedAt=new Date().toISOString();publicSummary.monotonicNs=proc
 try{
  ensure(process.platform==='linux'&&process.env.NODE_OPTIONS===''&&Number.isSafeInteger(pid)&&pid>0&&pid!==process.pid,'LINUX_CONTAINER_LOCAL_PID_AND_EMPTY_NODE_OPTIONS_REQUIRED');
  ensure(flag('--allow-sigusr1')&&flag('--accept-full-gc'),'EXPLICIT_SIGUSR1_AND_FULL_GC_OPT_IN_REQUIRED');
- ensure(maxContexts>=1&&maxContexts<=32&&maxMaps>=1&&maxMaps<=50000&&maxEntries>=1&&maxEntries<=500000,'BOUNDED_LIMITS_REQUIRED');
+ ensure(maxContexts>=1&&maxContexts<=512&&maxMaps>=1&&maxMaps<=50000&&maxEntries>=1&&maxEntries<=500000,'BOUNDED_LIMITS_REQUIRED');
+ ensure(maxContexts<=32||flag('--accept-many-contexts'),'EXPLICIT_MANY_CONTEXTS_OPT_IN_REQUIRED');
+ const maxAuditMs=Number(value('--max-audit-ms','120000'));
+ ensure(Number.isSafeInteger(maxAuditMs)&&maxAuditMs>=1000&&maxAuditMs<=540000,'BOUNDED_AUDIT_DEADLINE_REQUIRED');
+ const deadline=()=>ensure(Date.now()-started<maxAuditMs,'AUDIT_CONTEXT_DEADLINE_EXCEEDED');
+ publicSummary.limits.maxAuditMs=maxAuditMs;publicSummary.aggregateScan={maps:0,entries:0};
  const cmd=fs.readFileSync(`/proc/${pid}/cmdline`,'utf8').split('\0').filter(Boolean),env=fs.readFileSync(`/proc/${pid}/environ`,'utf8').split('\0');
  const executable=fs.readlinkSync(`/proc/${pid}/exe`);ensure(/(?:^|\/)node$/.test(executable),'TARGET_EXECUTABLE_NOT_NODE');
  ensure(!cmd.some(x=>/^--(?:inspect|debug)/.test(x))&&!env.some(x=>x.startsWith('NODE_OPTIONS=')&&/--(?:inspect|debug)/.test(x)),'TARGET_PREEXISTING_DEBUG_OPTIONS_REJECTED');
@@ -111,32 +116,46 @@ try{
  const meminfo=fs.readFileSync('/proc/meminfo','utf8'),available=Number(meminfo.match(/^MemAvailable:\s+(\d+)/m)?.[1]||0)*1024;
  publicSummary.hostMemAvailableBytes=available;
  ensure(available>=Number(value('--min-mem-available-mib','1024'))*1048576,'HOST_MEMORY_HEADROOM_BELOW_EXPLICIT_AUDIT_GATE');
- ensure(contexts.size>0&&contexts.size<=maxContexts,'EXECUTION_CONTEXT_LIMIT_OR_MISSING');
- const initialContextIds=[...contexts.keys()].sort((a,b)=>a-b),seenPrototypes=[];
+ publicSummary.observedExecutionContexts=contexts.size;
+ const requestedContexts=value('--context-ids','');
+ const selected=requestedContexts?requestedContexts.split(',').map(Number):null;
+ ensure(!selected||(selected.length<=maxContexts&&new Set(selected).size===selected.length&&selected.every(id=>Number.isSafeInteger(id)&&id>0&&contexts.has(id))),'EXPLICIT_SELECTED_CONTEXTS_INVALID');
+ ensure(contexts.size>0&&contexts.size<=(selected?1024:maxContexts),'EXECUTION_CONTEXT_LIMIT_OR_MISSING');
+ const allContextIds=[...contexts.keys()].sort((a,b)=>a-b);
+ const initialContextIds=selected?[...selected].sort((a,b)=>a-b):allContextIds,seenPrototypes=[];
+ publicSummary.contextSelection=selected?'explicit-subset-not-complete':'all-enumerated';
+ publicSummary.selectedContextIds=initialContextIds;
+ publicSummary.prototypeDeduplication=initialContextIds.length>32?'disabled-many-contexts-upper-bound':'cross-context-identity-when-supported';
  for(const contextId of initialContextIds){
+  deadline();
   const group='legacy-map-audit-'+process.pid+'-'+contextId;
   groups.push(group);
   try{
    const prototype=await send('Runtime.evaluate',{expression:'Map.prototype',contextId,objectGroup:group,silent:true,throwOnSideEffect:true,timeout:1000});
    ensure(prototype.result?.objectId&&!prototype.exceptionDetails,'MAP_PROTOTYPE_UNAVAILABLE');
    let duplicate=false;
-   for(const other of seenPrototypes){try{const equal=await send('Runtime.callFunctionOn',{objectId:prototype.result.objectId,functionDeclaration:'function(other){return this===other}',arguments:[{objectId:other}],returnByValue:true,silent:true});if(equal.result?.value){duplicate=true;break;}}catch{publicSummary.crossRealmEqualityComparisonsUnsupported=true;}}
+   if(initialContextIds.length<=32&&!publicSummary.crossRealmEqualityComparisonsUnsupported)for(const other of seenPrototypes){try{const equal=await send('Runtime.callFunctionOn',{objectId:prototype.result.objectId,functionDeclaration:'function(other){return this===other}',arguments:[{objectId:other}],returnByValue:true,silent:true});if(equal.result?.value){duplicate=true;break;}}catch{publicSummary.crossRealmEqualityComparisonsUnsupported=true;break;}}
    if(duplicate){publicSummary.contexts.push({contextId,duplicatePrototype:true});continue;}
    // Preserve prototype handles until all contexts are compared; one GC per
    // genuinely distinct realm Map prototype, never explicit gc()/snapshot.
    seenPrototypes.push(prototype.result.objectId);
    const queried=await send('Runtime.queryObjects',{prototypeObjectId:prototype.result.objectId,objectGroup:group});
+   deadline();
    ensure(queried.objects?.objectId,'MAP_QUERY_FAILED');
-   const collected=await send('Runtime.callFunctionOn',{objectId:queried.objects.objectId,functionDeclaration:'function(a,b){return ('+summarize+').call(this,a,b,('+hashSource+'))}',arguments:[{value:maxMaps},{value:maxEntries}],returnByValue:false,objectGroup:group,silent:true});
+   const remainingMaps=maxMaps-publicSummary.aggregateScan.maps,remainingEntries=maxEntries-publicSummary.aggregateScan.entries;
+   ensure(remainingMaps>=0&&remainingEntries>=0,'AGGREGATE_MAP_SCAN_LIMIT');
+   const collected=await send('Runtime.callFunctionOn',{objectId:queried.objects.objectId,functionDeclaration:'function(a,b){return ('+summarize+').call(this,a,b,('+hashSource+'))}',arguments:[{value:remainingMaps},{value:remainingEntries}],returnByValue:false,objectGroup:group,silent:true});
    ensure(collected.result?.objectId&&!collected.exceptionDetails,'MAP_SUMMARY_FAILED');
    const fields=await send('Runtime.getProperties',{objectId:collected.result.objectId,ownProperties:true,generatePreview:false});
    const plain=await send('Runtime.callFunctionOn',{objectId:collected.result.objectId,functionDeclaration:'function(){return {maps:this.maps,emptyMaps:this.emptyMaps,scannedEntries:this.scannedEntries,nonMapPrototypeMatches:this.nonMapPrototypeMatches,truncated:this.truncated,mapAccessErrors:this.mapAccessErrors}}',returnByValue:true,silent:true});
    const data=plain.result?.value;if(data&&(data.truncated||data.mapAccessErrors))publicSummary.scanFailure={contextId,...data};ensure(data&&!data.truncated&&!data.mapAccessErrors,'MAP_SCAN_LIMIT_OR_ACCESS_ERROR');
+   publicSummary.aggregateScan.maps+=data.maps;publicSummary.aggregateScan.entries+=data.scannedEntries;
    const candidatesId=fields.result.find(x=>x.name==='candidates')?.value?.objectId;
    ensure(candidatesId,'MAP_CANDIDATES_UNAVAILABLE');
    const entries=await send('Runtime.getProperties',{objectId:candidatesId,ownProperties:true,generatePreview:false});
    const counts=publicSummary.counts;let sessions=0,creating=0;
    for(const entry of entries.result.filter(x=>/^\d+$/.test(x.name))){
+    deadline();
     const item=await send('Runtime.getProperties',{objectId:entry.value.objectId,ownProperties:true,generatePreview:false});
     const keyHash=item.result.find(x=>x.name==='keyHash')?.value?.value,remote=item.result.find(x=>x.name==='value')?.value;
     ensure(/^[a-f0-9]{64}$/.test(keyHash),'KEY_HASH_INVALID');
@@ -173,12 +192,13 @@ try{
 
   }finally{/* object groups released after cross-context prototype dedupe */}
  }
- ensure([...contexts.keys()].sort((a,b)=>a-b).join(',')===initialContextIds.join(','),'CONTEXT_SET_CHANGED_DURING_AUDIT');
+ ensure([...contexts.keys()].sort((a,b)=>a-b).join(',')===allContextIds.join(','),'CONTEXT_SET_CHANGED_DURING_AUDIT');
  publicSummary.workerTargets=workerTargets;ensure(workerTargets===0,'WORKER_ISOLATES_REQUIRE_SEPARATE_AUDIT');
- publicSummary.contextMapEnumerationComplete=true;publicSummary.uniqueCountsGuaranteed=initialContextIds.length===1;
+ publicSummary.contextMapEnumerationComplete=!selected;publicSummary.uniqueCountsGuaranteed=initialContextIds.length===1;
  const aggregate=new Map();for(const row of publicSummary.sessionObservations){const old=aggregate.get(row.keyHash);if(old&&JSON.stringify(old)!==JSON.stringify(row))throw new Error('SAME_KEY_SESSION_STATE_CONFLICT');aggregate.set(row.keyHash,row);}
  publicSummary.sessionObservations=[...aggregate.values()].sort((a,b)=>a.keyHash.localeCompare(b.keyHash));publicSummary.identityHashes=[...new Set(publicSummary.identityHashes)].sort();
- publicSummary.coverage='all-enumerated-context-native-map-prototypes';
+ publicSummary.coverage=selected?'selected-context-native-map-prototypes':'all-enumerated-context-native-map-prototypes';
+ deadline();
  complete=true;
 }catch(error){publicSummary.holdReason=safeError(error);}
 finally{
