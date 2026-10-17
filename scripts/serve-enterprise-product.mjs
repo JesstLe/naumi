@@ -25,10 +25,10 @@ const server=createServer(async(req,res)=>{
       }
       const cookie=String(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('enterprise_import_session='))?.slice('enterprise_import_session='.length);
       if(!same(cookie,localSession))return fail(401,'LOCAL_SESSION_REQUIRED');
-      if(!['context','rows','asset','resolve','people','people-audit','people-profile','people-preview','people-apply'].includes(action))return fail(400,'INVALID_ACTION');
-      const write=['resolve','people-profile','people-preview','people-apply'].includes(action);if(req.method!==(write?'POST':'GET'))return fail(405,'METHOD_NOT_ALLOWED');
+      if(!['context','rows','asset','resolve','people','people-audit','people-profile','people-preview','people-apply','orders','order','intake','command'].includes(action))return fail(400,'INVALID_ACTION');
+      const write=['resolve','people-profile','people-preview','people-apply','intake','command'].includes(action);if(req.method!==(write?'POST':'GET'))return fail(405,'METHOD_NOT_ALLOWED');
       if(write&&(!same(req.headers['x-csrf-token'],csrf)||req.headers.origin!==u.origin))return fail(403,'CSRF_REQUIRED');
-      const args=new URLSearchParams();for(const key of ['source','id','download','thumb'])if(u.searchParams.has(key))args.set(key,u.searchParams.get(key));
+      const args=new URLSearchParams();for(const key of ['source','id','download','thumb','query','status','page'])if(u.searchParams.has(key))args.set(key,u.searchParams.get(key));
       const chunks=[];let size=0;if(write){for await(const chunk of req){size+=chunk.length;if(size>(action==='resolve'?8192:256*1024))return fail(413,'BODY_TOO_LARGE');chunks.push(chunk);}}
       const response=await fetch(`http://127.0.0.1:${config.port}/v1/import/${action}?${args}`,{method:req.method,headers:{authorization:'Bearer '+config.token,'content-type':'application/json'},...(write?{body:Buffer.concat(chunks)}:{}),signal:AbortSignal.timeout(30000),redirect:'error'});
       res.writeHead(response.status,{...Object.fromEntries(response.headers),'cache-control':'private, no-store'});

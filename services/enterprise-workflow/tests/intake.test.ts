@@ -1,0 +1,44 @@
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import type {Pool} from 'pg';
+import {WorkflowStore} from '../src/store';
+import type {Principal,Actor,Action} from '../src/contracts';
+export async function intakeChecks(pool:Pool,tenant:string,source:string){
+ const team=randomUUID(),p={enterpriseId:tenant,subject:'intake-admin',teamId:team};
+ let enabled=true;const actor=(v:Principal):Actor=>({...v,permissions:v.subject==='intake-admin'?['manage','request','dispatch']:['request'],workKinds:[]});
+ // Explicitly injected test-local owner; production default demands directory admin.
+ const store=new WorkflowStore(pool,async(_tx,v)=>enabled?actor(v):null,async()=>false,p);
+ const create=(title='正式需求')=>({commandId:randomUUID(),orderId:randomUUID(),expectedVersion:0,action:{type:'create' as const,title,brief:'明确需求',acceptance:'明确验收标准'}});
+ const input=(row:number)=>({command:create(),source:{sourceHash:source,row,expectedVersion:1,intent:'standalone',confirmed:true}});
+ const original=(await pool.query('SELECT document FROM enterprise_workflow.import_rows WHERE enterprise_id=$1 AND source_hash=$2 ORDER BY row_number',[tenant,source])).rows;
+ const c=input(2);
+ const noGrant=new WorkflowStore(pool,async(_tx,v)=>actor(v),async()=>false);
+ await assert.rejects(noGrant.promote(p,c),/DIRECTORY_ADMIN_REQUIRED/);
+ await assert.rejects(store.promote({...p,subject:'employee'},c),/SOURCE_INTAKE_FORBIDDEN/);
+ await assert.rejects(store.promote(p,{...c,source:{...c.source,confirmed:false}}));
+ await assert.rejects(store.promote(p,{...c,source:{...c.source,expectedVersion:99}}),/SOURCE_VERSION_CONFLICT/);
+ const r=await store.promote(p,c);assert.equal(r.order.status,'draft');assert.equal(r.order.requester,p.subject);assert.equal(r.order.tasks.length,0);
+ assert.equal((await store.promote(p,c)).replayed,true);
+ await assert.rejects(store.promote(p,{...c,command:{...c.command,action:{...c.command.action,title:'changed'}}}),/IDEMPOTENCY_CONFLICT/);
+ await assert.rejects(store.promote(p,input(2)),/SOURCE_ALREADY_PROMOTED/);
+ enabled=false;await assert.rejects(store.promote(p,c),/MEMBERSHIP_REQUIRED/);enabled=true;
+ const other={...p,teamId:randomUUID()};assert.equal((await store.list(other)).total,0);await assert.rejects(store.detail(other,r.order.id),/NOT_FOUND/);
+ const foreign={...p,enterpriseId:randomUUID()};assert.equal((await store.list(foreign)).total,0);await assert.rejects(store.detail(foreign,r.order.id),/NOT_FOUND/);
+ const detail=await store.detail(p,r.order.id);assert.equal(detail.source.snapshot.requesterName,'王运营');assert.equal(detail.source.snapshot.identityTransferred,false);assert.equal(detail.events.length,1);
+ let o=r.order;const act=async(action:Action)=>{o=(await store.execute(p,{commandId:randomUUID(),orderId:o.id,expectedVersion:o.version,action})).order;};
+ await act({type:'revise-requirement',title:'修订需求',brief:'保留输入',acceptance:'验收内容'});await act({type:'submit-requirement'});assert.equal(o.status,'submitted');await act({type:'return-requirement',reason:'补充尺寸'});assert.equal(o.status,'draft');await act({type:'submit-requirement'});await act({type:'approve-requirement'});assert.equal(o.status,'approved');
+ await assert.rejects(store.execute(p,{commandId:randomUUID(),orderId:o.id,expectedVersion:1,action:{type:'approve-requirement'}}),/VERSION_CONFLICT/);
+ assert.equal((await store.detail(p,o.id)).events.length,6);
+ await pool.query("CREATE FUNCTION enterprise_workflow.fail_intake() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected intake failure'; END $$; CREATE TRIGGER fail_intake BEFORE INSERT ON enterprise_workflow.order_sources FOR EACH ROW EXECUTE FUNCTION enterprise_workflow.fail_intake()");
+ const atomic=input(3);await assert.rejects(store.promote(p,atomic),/injected intake failure/);assert.equal((await pool.query('SELECT 1 FROM enterprise_workflow.orders WHERE id=$1',[atomic.command.orderId])).rowCount,0);assert.equal((await pool.query('SELECT 1 FROM enterprise_workflow.commands WHERE id=$1',[atomic.command.commandId])).rowCount,0);
+ await pool.query('DROP TRIGGER fail_intake ON enterprise_workflow.order_sources; DROP FUNCTION enterprise_workflow.fail_intake()');
+ const race=await Promise.allSettled([store.promote(p,input(3)),store.promote(p,input(3))]);assert.equal(race.filter(x=>x.status==='fulfilled').length,1);
+ await pool.query('UPDATE enterprise_workflow.import_batches SET active=false WHERE enterprise_id=$1 AND source_hash=$2',[tenant,source]);await assert.rejects(store.promote(p,c),/SOURCE_NOT_FOUND/);await pool.query('UPDATE enterprise_workflow.import_batches SET active=true WHERE enterprise_id=$1 AND source_hash=$2',[tenant,source]);
+ const version=(await pool.query('SELECT version FROM enterprise_workflow.import_rows WHERE enterprise_id=$1 AND source_hash=$2 AND row_number=4',[tenant,source])).rows[0].version;
+ const historical=input(4);historical.source.expectedVersion=version;const h=await store.promote(p,historical);assert.equal(h.order.status,'draft');assert.equal((await store.detail(p,h.order.id)).source.snapshot.status,'已完成');assert.equal(h.order.tasks.length,0);
+ const employee={...p,subject:'employee'};for(let n=0;n<31;n++)await store.execute(employee,create('私有需求'+n));
+ assert.equal((await store.list(employee)).orders.length,30);assert.equal((await store.list(employee,{page:2})).orders.length,1);assert.equal((await store.list(employee,{status:'approved'})).total,0);assert.equal((await store.list(employee,{query:'私有需求30'})).total,1);
+ assert.deepEqual((await pool.query('SELECT document FROM enterprise_workflow.import_rows WHERE enterprise_id=$1 AND source_hash=$2 ORDER BY row_number',[tenant,source])).rows,original);
+ const reopen=new WorkflowStore(pool,async(_tx,v)=>actor(v),async()=>false,p);assert.equal((await reopen.detail(p,o.id)).order.status,'approved');
+ console.log('INTAKE_SERVICE_PASS: atomic=1 replay=1 source_unique=1 concurrent_winner=1 source_cas=1 source_inactive_denied=1 source_admin_required=1 revoked_denied=1 tenant_team_isolation=1 scoped_pagination=1 draft_submit_return_approve=1 event_history=6 source_unchanged=1 historical_acceptance=0 reopen=1');
+}

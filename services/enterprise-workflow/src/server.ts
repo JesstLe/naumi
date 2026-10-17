@@ -55,6 +55,10 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
         if (scheduleMatch[3]) return json(res, 200, await scheduling.personal(principal, teamId, scheduleMatch[3]));
         return json(res, 200, await scheduling.get(principal, teamId));
       }
+      if(req.method==='GET'&&url.pathname==='/v1/orders')return json(res,200,await store.list(principal,Object.fromEntries(url.searchParams)));
+      if(req.method==='POST'&&url.pathname==='/v1/intake')return json(res,200,await store.promote(principal,await body(req)));
+      const detailMatch=/^\/v1\/orders\/([^/]+)\/detail$/.exec(url.pathname);
+      if(req.method==='GET'&&detailMatch)return json(res,200,await store.detail(principal,id.parse(detailMatch[1])));
       if (req.method === 'POST' && url.pathname === '/v1/commands') return json(res, 200, await store.execute(principal, await body(req)));
       const match = /^\/v1\/orders\/([^/]+)$/.exec(url.pathname);
       if (req.method === 'GET' && match) {
