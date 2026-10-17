@@ -21,5 +21,5 @@ export interface NotificationAdapter {
 }
 export type NotificationConnector={id:string;revision:string;label:string;adapter:NotificationAdapter};
 export const notificationTitles:Record<string,string>={
- 'submit-requirement':'需求待受理','route-resolved':'需求已确认归属','return-requirement':'需求已退回补充','approve-requirement':'需求已批准',publish:'任务待认领',release:'任务已释放',assign:'任务待本人确认','batch-tasks':'任务批量指派','set-task-plan':'任务排期已调整',claim:'任务已认领',block:'任务执行受阻',resume:'任务已恢复','submit-delivery':'交付待独立验收','request-rework':'交付需要返工','accept-delivery':'交付已验收','propose-handover':'任务交接待确认','accept-handover':'任务交接已接收','decline-handover':'任务交接已拒绝','cancel-handover':'任务交接已撤销','operations-signoff':'运营已签收','operations-followup':'运营提出后续修改',cancel:'需求已取消'
+ 'submit-requirement':'需求待受理','route-resolved':'需求已确认归属','return-requirement':'需求已退回补充','approve-requirement':'需求已批准',publish:'任务待认领',release:'任务已释放',assign:'任务待本人确认','batch-tasks':'任务批量指派','set-task-plan':'任务排期已调整','move-task-plan':'任务日期已调整',claim:'任务已认领',block:'任务执行受阻',resume:'任务已恢复','submit-delivery':'交付待独立验收','request-rework':'交付需要返工','accept-delivery':'交付已验收','propose-handover':'任务交接待确认','accept-handover':'任务交接已接收','decline-handover':'任务交接已拒绝','cancel-handover':'任务交接已撤销','operations-signoff':'运营已签收','operations-followup':'运营提出后续修改',cancel:'需求已取消'
 };

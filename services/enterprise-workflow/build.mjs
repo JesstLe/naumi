@@ -12,6 +12,7 @@ checkRosterEmbed(process.execPath,[fileURLToPath(new URL('../../scripts/build-da
 checkRosterEmbed(process.execPath,[fileURLToPath(new URL('../../scripts/build-asset-library.mjs',import.meta.url)),'--check'],{stdio:'inherit'});
 checkRosterEmbed(process.execPath,[fileURLToPath(new URL('../../scripts/build-availability.mjs',import.meta.url)),'--check'],{stdio:'inherit'});
 checkRosterEmbed(process.execPath,[fileURLToPath(new URL('../../scripts/build-corrections.mjs',import.meta.url)),'--check'],{stdio:'inherit'});
+checkRosterEmbed(process.execPath,[fileURLToPath(new URL('../../scripts/build-plan-move.mjs',import.meta.url)),'--check'],{stdio:'inherit'});
 await mkdir(new URL('./dist/', import.meta.url), { recursive: true });
 await build({absWorkingDir:fileURLToPath(new URL('.',import.meta.url)), entryPoints: [fileURLToPath(new URL('./src/server.ts', import.meta.url))],
   outfile: fileURLToPath(new URL('./dist/service.mjs', import.meta.url)),

@@ -1,3 +1,4 @@
+import {moveDates} from './calendar';
 import { createHash } from 'node:crypto';
 import { WorkflowError, type Actor, type Command, type WorkOrder, type WorkflowEvent, type Permission, type Task } from './contracts';
 
@@ -88,6 +89,10 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
     }
     case 'set-task-tag': {
       state('approved','active');permit('dispatch');const t=order.tasks.find(t=>t.id===action.taskId);need(t,'TASK_NOT_FOUND',404);need(t.status!=='accepted','ACCEPTED_PLAN_IMMUTABLE');eventData={before:{scheduleTag:t.scheduleTag??''}};t.scheduleTag=action.scheduleTag;break;
+    }
+    case 'move-task-plan': {
+      state('approved','active');permit('dispatch');const t=order.tasks.find(t=>t.id===action.taskId);need(t,'TASK_NOT_FOUND',404);need(t.status!=='accepted','ACCEPTED_PLAN_IMMUTABLE');need(!t.pendingHandover,'HANDOVER_PENDING');need(t.planStart&&t.planEnd&&t.estimatedHours,'PLAN_REQUIRED');need(t.planStart!==action.targetStart,'PLAN_MOVE_NO_CHANGE');
+      const proposed=moveDates(t.planStart,t.planEnd,action.targetStart);eventData={before:{planStart:t.planStart,planEnd:t.planEnd},after:proposed};Object.assign(t,proposed);break;
     }
     case 'set-task-plan': {
       state('approved','active');permit('dispatch');const t=order.tasks.find(t=>t.id===action.taskId);need(t,'TASK_NOT_FOUND',404);need(t.status!=='accepted','ACCEPTED_PLAN_IMMUTABLE');

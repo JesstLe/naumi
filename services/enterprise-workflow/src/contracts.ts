@@ -39,6 +39,7 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.strictObject({type:z.literal('operations-followup'),followupId:id,title:text,brief:text,acceptance:text,reason:text}),
   z.strictObject({type:z.literal('link-source'),...taskId,ref:sourceRefSchema,reason:text}),
   z.strictObject({type:z.literal('unlink-source'),...taskId,ref:sourceRefSchema,reason:text}),
+  z.strictObject({type:z.literal('move-task-plan'),...taskId,targetStart:calendarDate,reason:text,previewHash:z.string().regex(/^[a-f0-9]{64}$/),acknowledged:z.literal(true)}),
   z.strictObject({type:z.literal('set-task-plan'),...taskId,planStart:calendarDate.nullable(),planEnd:calendarDate.nullable(),estimatedHours:z.number().positive().max(1000).nullable(),scheduleTag:z.string().regex(/^$|^[a-z][a-z0-9_]{0,63}$/),customValues:z.record(z.string().regex(/^custom_[a-zA-Z0-9_]{1,56}$/),z.union([z.string().max(2000),z.number().finite(),z.null()])).refine(v=>Object.keys(v).length<=20),reason:text}),
   z.strictObject({ type: z.literal('assign'), ...taskId, assignee: z.string().trim().min(1).max(254) }),
   z.strictObject({ type: z.literal('claim'), ...taskId }),

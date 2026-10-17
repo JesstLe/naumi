@@ -1,3 +1,4 @@
+import {moveInput,previewMove} from './plan-move';
 import {AvailabilityStore,loadAvailability,availabilityKey,capacityMinutes} from './availability-store';
 import {readScope} from './read-scope';
 import {readDashboard} from './dashboard';
@@ -99,6 +100,7 @@ export class WorkflowStore {
       return {tasks:result.rows.filter(r=>canRead(a,r.document)).map(r=>{const o=r.document as WorkOrder;return {order:{id:o.id,teamId:o.teamId,requestTeamId:o.requestTeamId,title:o.title,status:o.status,version:o.version,requester:o.requester,brief:o.brief},task:r.task};}),total,page:q.page,pageSize:30,viewer:{subject:a.subject,permissions:a.permissions,workKinds:a.workKinds}};
     });
   }
+  async movePreview(principal:Principal,raw:unknown){const input=moveInput.parse(raw);return this.transaction(async tx=>previewMove(tx,await this.actor(tx,principal),input,this.availabilityEnabled),true);}
   async week(principal:Principal,raw:unknown){
     const q=z.strictObject({start:calendarDate,assignee:z.string().max(254).default('')}).parse(raw),end=new Date(Date.parse(q.start)+6*86400000).toISOString().slice(0,10);
     if(!calendarDate.safeParse(end).success)throw new WorkflowError(400,'INVALID_WEEK_RANGE');
@@ -283,6 +285,7 @@ export class WorkflowStore {
         const verified=await this.verifySource(proof,actor,command);
         if(!actor.permissions.includes('dispatch')&&verified.sourceSubject!==actor.sourceBinding.sourceSubject)throw new WorkflowError(403,'SOURCE_SELF_ONLY');
       }
+      if(command.action.type==='move-task-plan'&&(!actor.permissions.includes('dispatch')||!previous||actor.teamId!==previous.teamId))throw new WorkflowError(403,'FORBIDDEN');
       // Revoked permissions cannot recover historical command snapshots via idempotency replay.
       if (prior) {
         if (prior.fingerprint !== fingerprint) throw new WorkflowError(409, 'IDEMPOTENCY_CONFLICT');
@@ -302,7 +305,10 @@ export class WorkflowStore {
         if(!target&&action.type==='assign')throw new WorkflowError(403,'MEMBERSHIP_REQUIRED');
         if(!target||target.enterpriseId!==principal.enterpriseId||target.teamId!==principal.teamId||target.subject!==assignment.subject||!target.permissions.includes('execute')||assignment.ids.some(id=>{const task=previous.tasks.find(t=>t.id===id);return !task||!target.workKinds.includes(task.kind);}))throw new WorkflowError(action.type==='assign'?403:409,'INVALID_ASSIGNEE');
       }
+      let moveImpact;
+      if(action.type==='move-task-plan'){moveImpact=await previewMove(tx,actor,{orderId:command.orderId,taskId:action.taskId,expectedVersion:command.expectedVersion,targetStart:action.targetStart,reason:action.reason},this.availabilityEnabled);if(moveImpact.previewHash!==action.previewHash)throw new WorkflowError(409,'PLAN_MOVE_PREVIEW_CHANGED');}
       const { order, event } = evolve(previous ?? null, actor, command, this.now().toISOString());
+      if(moveImpact)event.data.planMove={previewHash:moveImpact.previewHash,calendarRevision:moveImpact.calendarRevision,availabilityRevision:moveImpact.availabilityRevision,conflictDays:moveImpact.impact.conflictDays,noWorkingDay:moveImpact.impact.noWorkingDay,afterDue:moveImpact.impact.afterDue,dependencies:moveImpact.impact.dependencies,capacityReservation:false};
       if(action.type==='submit-requirement'&&this.routing){await this.routing.submitted(tx,actor,order,event.occurredAt);event.teamId=order.teamId;if(order.routing)event.data.routing=order.routing;}
       if(action.type==='operations-signoff'||action.type==='operations-followup')for(const task of order.tasks)if(!await this.validateAssets(tx,actor,task.assetIds,{orderId:order.id,taskId:task.id}))throw new WorkflowError(403,'INVALID_ASSETS');
       if(action.type==='operations-followup'){
@@ -336,6 +342,6 @@ export class WorkflowStore {
         await tx.query('INSERT INTO enterprise_workflow.order_sources(enterprise_id,order_id,source_hash,row_number,source_version,snapshot) VALUES($1,$2,$3,$4,$5,$6)',[principal.enterpriseId,order.id,source.sourceHash,source.row,source.expectedVersion,snapshot]);
       }
       return { order, replayed: false };
-    });
+    },command.action.type==='move-task-plan');
   }
 }

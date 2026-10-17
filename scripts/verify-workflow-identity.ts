@@ -118,6 +118,7 @@ export async function verifyWorkflowIdentity(pool:Pool,source:{root:string;forei
   const {verifyLibraryBff}=await import('./verify-library-bff');await verifyLibraryBff(pool,source,enterpriseId,teamId);
   const {verifyCorrectionsBff}=await import('./verify-corrections-bff');await verifyCorrectionsBff(pool,source,enterpriseId,delivery);
   const {verifyDashboardBff}=await import('./verify-dashboard-bff');await verifyDashboardBff(pool,source,enterpriseId,teamId);
+  const {verifyPlanMoveBff}=await import('./verify-plan-move-bff');await verifyPlanMoveBff(source,teamId);
   await pool.query('UPDATE app_users SET banned=true WHERE email=$1',[source.ordinary]);assert.equal((await GET(request(source.ordinary))).status,401);await pool.query('UPDATE app_users SET banned=false WHERE email=$1',[source.ordinary]);
   await pool.query('UPDATE app_account_teams SET enabled=false WHERE id=$1',[source.root]);assert.equal((await GET(request(source.ordinary))).status,403);await pool.query('UPDATE app_account_teams SET enabled=true WHERE id=$1',[source.root]);
   await pool.query('UPDATE app_team_access_grants SET enabled=false WHERE email=$1',[source.owner]);assert.equal((await GET(request(source.ordinary))).status,403);await pool.query('UPDATE app_team_access_grants SET enabled=true WHERE email=$1',[source.owner]);

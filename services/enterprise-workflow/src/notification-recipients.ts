@@ -12,7 +12,7 @@ export function notificationRecipients(order:WorkOrder,event:WorkflowEvent,membe
    case 'submit-requirement':case 'route-resolved':case 'claim':case 'block':case 'resume':return dispatch;
    case 'return-requirement':case 'approve-requirement':return requester;
    case 'publish':case 'release':return exec&&a.permissions.includes('execute')&&order.tasks.some(t=>t.status==='open'&&a.workKinds.includes(t.kind)&&(!action.taskId||t.id===action.taskId));
-   case 'assign':case 'set-task-plan':case 'request-rework':return exec&&task?.assignee===a.subject;
+   case 'assign':case 'set-task-plan':case 'move-task-plan':case 'request-rework':return exec&&task?.assignee===a.subject;
    case 'batch-tasks':return exec&&order.tasks.some(t=>action.taskIds?.includes(t.id)&&t.assignee===a.subject);
    case 'submit-delivery':return exec&&!!task&&a.permissions.includes('review')&&!participants(task).includes(a.subject);
    case 'accept-delivery':return exec&&!!task&&participants(task).includes(a.subject)||requester&&order.status==='completed';

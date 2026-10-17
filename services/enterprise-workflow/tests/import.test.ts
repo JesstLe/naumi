@@ -1,3 +1,4 @@
+import {moveChecks} from './plan-move.test';
 import {availabilityChecks} from './availability.test';
 import {deliveryLibraryChecks} from './delivery-library.test';
 import {dashboardChecks} from './dashboard.test';
@@ -86,7 +87,7 @@ test('import persistence, exact source data, isolation, replay, CAS, rollback an
   await intakeChecks(pool,tenant,source);
   await tasksChecks(pool);await dashboardChecks(pool);
   await deliveryChecks(pool);await deliveryLibraryChecks(pool);await deliveryScanChecks(pool);await multipartChecks(pool);await clamdProtocolChecks();
-  await planChecks(pool);await calendarChecks(pool);await availabilityChecks(pool);
+  await planChecks(pool);await calendarChecks(pool);await availabilityChecks(pool);await moveChecks(pool);
   await handoverBatchChecks(pool);await batchRecoveryChecks(pool);
   await sourceLinksChecks(pool);
   await performanceChecks(pool);

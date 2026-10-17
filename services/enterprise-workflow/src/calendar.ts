@@ -9,3 +9,10 @@ export function calendarDays(start:string,end:string){const a=Date.parse(start+'
 export function dayMinutes(c:CalendarConfig,day:string){return c.overrides.find(x=>x.date===day)?.minutes??c.weeklyMinutes[(new Date(day+'T00:00:00Z').getUTCDay()+6)%7];}
 export function minuteReader(c:CalendarConfig){const overrides=new Map(c.overrides.map(x=>[x.date,x.minutes]));return (day:string)=>overrides.get(day)??c.weeklyMinutes[(new Date(day+'T00:00:00Z').getUTCDay()+6)%7];}
 export function allocateHours(c:CalendarConfig,start:string,end:string,hours:number){const days=calendarDays(start,end),read=minuteReader(c),minutes=days.map(read),total=minutes.reduce((a,b)=>a+b,0);return {totalMinutes:total,byDay:Object.fromEntries(days.map((d,i)=>[d,total?hours*minutes[i]/total:0])),noWorkingDay:total===0};}
+
+export function moveDates(start:string,end:string,target:string){
+ const duration=calendarDays(start,end).length;
+ const nextEnd=new Date(Date.parse(target+'T00:00:00Z')+(duration-1)*86400000).toISOString().slice(0,10);
+ if(!calendarDate.safeParse(nextEnd).success)throw new WorkflowError(400,'INVALID_PLAN_RANGE');
+ return {planStart:target,planEnd:nextEnd};
+}
