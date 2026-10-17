@@ -20,7 +20,7 @@ try {
   if(!Number.isInteger(port)||port<1024||port>65535)throw new Error('INVALID_LOOPBACK_PORT');
   docker(['run','-d','--name',name,'--label','naumi.fixture=schedule-preview','-e',`POSTGRES_PASSWORD=${password}`,'-e','POSTGRES_DB=schedule_preview','-p','127.0.0.1::5432','postgres:16-alpine']); started=true;
   let ready=false;
-  for(let i=0;i<40;i++) { try{docker(['exec',name,'pg_isready','-U','postgres']);ready=true;break;}catch{await new Promise(r=>setTimeout(r,500));} }
+  for(let i=0;i<40;i++) { try{docker(['exec',name,'pg_isready','-h','127.0.0.1','-U','postgres']);ready=true;break;}catch{await new Promise(r=>setTimeout(r,500));} }
   if(!ready)throw new Error('FIXTURE_DATABASE_NOT_READY');
   const dbPort=docker(['port',name,'5432/tcp']).split(':').at(-1);
   pool=new pg.Pool({connectionString:`postgresql://postgres:${password}@127.0.0.1:${dbPort}/schedule_preview`,max:4});

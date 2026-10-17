@@ -11,7 +11,8 @@ try {
   started = true;
   let ready = false;
   for (let n = 0; n < 40; n++) {
-    try { docker(['exec', name, 'pg_isready', '-U', 'postgres']); ready = true; break; }
+    // The image's temporary init server accepts Unix sockets before its final TCP server starts.
+    try { docker(['exec', name, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres']); ready = true; break; }
     catch { await new Promise(r => setTimeout(r, 500)); }
   }
   if (!ready) throw new Error('POSTGRES_FIXTURE_NOT_READY');
