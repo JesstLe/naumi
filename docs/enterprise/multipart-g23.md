@@ -58,3 +58,40 @@ ScanPolicy内部新增maxBytes，可选值默认32MiB；超过容量记SCAN_SIZE
 - 真实浏览器操作、完整Web/API/Runtime组合验收与整套G23最终交付。
 
 本轮不迁移真实schema8，不改原364行/292附件，不创建真实身份映射，不接真实公司Naumi凭据。G23a是可测试的服务端阶段，不等于用户可用的大文件功能。
+
+## G23b HTTP、运行配置与原UI（2026-10-18）
+
+本节更新上节“待继续”状态：受保护HTTP/BFF、开关/清理CLI、原UI分片/续传/合并和原生大文件下载均已实现。集中验收记录保存在enterprise-multipart-g23b-20261018；真实公司启用及生产验收仍未完成。
+
+### 接口合同
+
+- `GET /api/enterprise/workflow/uploads`：同源员工会话，企业/团队加action=list或status；本人范围、任务范围、30条分页。
+- `POST`：24KiB有界JSON；create携带原文件名、总大小、有序SHA256清单、会话/任务/需求ID及版本；complete携带同一会话ID与明确版本；cancel/cleanup仅接受本人会话ID。
+- `PUT`：每片最多4MiB，固定part序号，BFF和服务端双重大小约束。BFF员工身份240片/分钟，未改变原直传20次/分钟限制。逐片传输使用120秒超时，明确合并和附件下载900秒上界；客户端中止传递至上游请求。未知结果返回UPLOAD_RESULT_UNCERTAIN，按同一会话查询与重试。
+- 服务端`/v1/uploads`只接受签名工作流身份；没有挂载MultipartStore时返回MULTIPART_NOT_ENABLED。文件列表返回multipart.enabled/partBytes/maxBytes，原UI据此显示入口。不存在浏览器可调用的系统清理/放宽配额入口。
+
+### 运行开关与启用门槛
+
+`multipartEnabled`默认false；启用要求runtime_installation.minimum_writer至少16。先升级并排空所有旧写入槽位，操作者通过受保护配置/admin连接执行uploads-enable-plan→uploads-enable，输入commandId/reason/confirmedAllWritersUpgraded=true；previewHash校验与审计幂等提交，writer floor只上调，不自动降级。
+
+**confirmedAllWritersUpgraded是部署操作者确认，不是程序自动发现/验证所有写入进程。** minimum_writer阻止旧运行时下次启动/就绪核验，不声称能远程停止已运行的旧进程或保证混版一致。部署仍须遵循蓝绿手册，在所有写入者已理解预留配额后再打开开关。回滚旧程序前保留新协议写入器或关闭相关写入口，不能直接把带未结束会话的数据库交给旧写入器。
+
+`uploads-cleanup --config ABSOLUTE_CONFIG --enterprise UUID --limit 1..20 --reason TEXT`使用安装实例/库/企业/存储校验及最小权限运行连接，只处理过期或结束的会话。停用员工不需要被模拟成登录员工；系统审计主体system-expiry。未提供企业、数量或理由时拒绝。
+
+`deliveryScan.maxBytes`默认32MiB、上限512MiB；timeoutMs上限180000。改变容量进入检查策略key，旧检查结果需按新策略核验。实际ClamAV隔离实例使用StreamMaxLength/MaxFileSize/MaxScanSize=64M与AlertExceedsMax=yes，验证大于32MiB的完整文件和末尾无害自定义标记；官方签名库新鲜度、512MiB实传/检查和公司容量另验收。
+
+### 用户操作与恢复
+
+原任务详情增加“大文件 / 续传”。用户逐片核验本地文件后创建会话，按服务器回执跳过已收到的片；暂停/关闭停止发起后续片，刷新后从服务器找回会话并重新选择原文件。相同文件名/修改时间不代表内容相同，错误内容在发送前拒绝。客户端不把文件、清单或上传会话放进localStorage。
+
+全部分片到达后保持open状态，用户点“准备合并”获取任务最新版本，再点“确认合并为候选文件”；任务版本变化会拒绝旧确认。成功后返回任务详情选择文件并另行提交，不自动验收。列表展示到期时间、缺片数量、完成/取消及暂存待清理，支持本人取消和清理重试。
+
+大于32MiB的下载通过原生受保护附件链接，不在浏览器构造整文件Blob；viewer参数仅核对当前登录账号，不能代替登录凭据。服务端继续使用同一文件描述符核验SHA256并流式返回。小文件保留原浏览器二次hash核验。
+
+### 已观察的验收与界限
+
+- 原生浏览器33554449字节文件：前2片真实PUT后在第3片发送前注入延迟并点暂停；刷新恢复2/9回执、文件选择框为空；错选文件被拒绝，重新选原文件只发送2..8号片；9/9后仍为open，明确合并后completed、reservedBytes=0。
+- 原生浏览器附件下载文件33554449字节，实际落盘SHA256与源文件一致；账号切换后旧弹窗关闭、上下文清空；390px视口无整页横向溢出。浏览器检查器为合成fixture，真实ClamAV另行验证。
+- 真实Next原生密码登录、BFF、独立运行时及独立来源/工作流数据库的大文件传输和下载组合通过；全源码锁定依赖类型检查通过。首次组合配置在writer floor提升前过早启用被门槛拒绝，已调整顺序；下载viewer校验曾误插入POST分支，已修复并集中复验。
+- 扩大BFF验收队列曾触发现有429；调整测试顺序并只在明确429后等待61秒重试同一命令，生产限流未放宽。
+- 原18482动态读取同一产品HTML。真实库schema8、原表/附件/身份映射保持；正式员工登录桥接仍待真实配置，本地测试通过不代表已部署或已绑定公司账号。

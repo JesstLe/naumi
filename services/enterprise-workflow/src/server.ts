@@ -12,6 +12,9 @@ import type {NotificationStore} from './notification-store';
 import type {RoutingStore} from './routing-store';
 import type {PerformanceStore} from './performance-store';
 import type { DeliveryStore } from './delivery-store';
+import type {MultipartStore} from './multipart-store';
+import {PART_BYTES,MAX_MULTIPART_BYTES} from './multipart-contracts';
+import {z} from 'zod';
 // Adapter verifies short-lived BFF authentication (issuer, audience, expiry, signature),
 // NOT x-user/x-enterprise headers or a caller-supplied permissions array.
 export type Authenticate = (request: IncomingMessage) => Promise<Principal | null>;
@@ -31,7 +34,7 @@ async function body(req: IncomingMessage) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
   catch { throw new WorkflowError(400, 'INVALID_JSON'); }
 }
-export function createWorkflowServer(store: WorkflowStore, authenticate: Authenticate, scheduling?: SchedulingStore, identity?:{store:SourceIdentityStore;authenticate:SourceAuthenticate},people?:PeopleStore,delivery?:DeliveryStore,performance?:PerformanceStore,routing?:RoutingStore,notifications?:NotificationStore,imports?:FormalImportStore,references?:ReferenceStore) {
+export function createWorkflowServer(store: WorkflowStore, authenticate: Authenticate, scheduling?: SchedulingStore, identity?:{store:SourceIdentityStore;authenticate:SourceAuthenticate},people?:PeopleStore,delivery?:DeliveryStore,performance?:PerformanceStore,routing?:RoutingStore,notifications?:NotificationStore,imports?:FormalImportStore,references?:ReferenceStore,uploads?:MultipartStore) {
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url || '/', 'http://workflow.internal');
@@ -47,6 +50,27 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       const principal = await authenticate(req);
       if (!principal) throw new WorkflowError(401, 'AUTH_REQUIRED');
       if (!id.safeParse(principal.enterpriseId).success || !principal.subject) throw new WorkflowError(401, 'INVALID_IDENTITY');
+      if(url.pathname==='/v1/uploads'){
+        if(!uploads)throw new WorkflowError(503,'MULTIPART_NOT_ENABLED');
+        if(req.method==='GET'){
+          const q=Object.fromEntries(url.searchParams);
+          if(q.action==='status'){const c=z.strictObject({action:z.literal('status'),id}).parse(q);return json(res,200,await uploads.get(principal,c.id));}
+          const c=z.strictObject({action:z.literal('list'),orderId:id,taskId:id,page:z.coerce.number().int().min(1).max(10000).optional()}).parse(q);const {action,...query}=c;return json(res,200,await uploads.list(principal,query));
+        }
+        if(req.method==='PUT'){
+          const q=z.strictObject({id,part:z.coerce.number().int().min(0).max(127)}).parse(Object.fromEntries(url.searchParams));
+          if(req.headers['content-type']!=='application/octet-stream')throw new WorkflowError(415,'BINARY_REQUIRED');
+          if(Number(req.headers['content-length']||0)>PART_BYTES)throw new WorkflowError(413,'PART_SIZE_MISMATCH');
+          return json(res,200,await uploads.put(principal,q.id,q.part,req));
+        }
+        if(req.method==='POST'){
+          if(url.search)throw new WorkflowError(400,'INVALID_UPLOAD_QUERY');const c=await body(req);
+          if(c?.operation==='create'){const {operation,...input}=c;return json(res,200,await uploads.create(principal,input));}
+          const q=z.discriminatedUnion('operation',[z.strictObject({operation:z.literal('complete'),id,expectedVersion:z.number().int().positive()}),z.strictObject({operation:z.literal('cancel'),id}),z.strictObject({operation:z.literal('cleanup'),id})]).parse(c);
+          return json(res,200,q.operation==='complete'?await uploads.complete(principal,q.id,q.expectedVersion):q.operation==='cancel'?await uploads.cancel(principal,q.id):await uploads.cleanup(principal,q.id));
+        }
+        throw new WorkflowError(405,'METHOD_NOT_ALLOWED');
+      }
       if(references&&req.method==='GET'&&url.pathname==='/v1/references')return json(res,200,await references.list(principal,id.parse(url.searchParams.get('orderId'))));
       if(references&&req.method==='GET'&&url.pathname==='/v1/references/file'){
         const {asset,stream,mime,inline}=await references.file(principal,id.parse(url.searchParams.get('orderId')),url.searchParams.get('id')||'',url.searchParams.get('download')==='1');
@@ -63,7 +87,7 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       if(routing&&url.pathname==='/v1/routing'){await routing.ready();if(req.method==='GET')return json(res,200,await routing.read(principal,Object.fromEntries(url.searchParams)));if(req.method==='POST')return json(res,200,await routing.execute(principal,await body(req)));}
       if(routing&&req.method==='POST'&&url.pathname==='/v1/routing/resolve'){await routing.ready();return json(res,200,await routing.resolve(principal,await body(req)));}
       if(performance&&url.pathname==='/v1/performance'){await performance.ready();if(req.method==='GET')return json(res,200,await performance.read(principal,Object.fromEntries(url.searchParams)));if(req.method==='POST')return json(res,200,await performance.execute(principal,await body(req)));}
-      if(delivery&&req.method==='GET'&&url.pathname==='/v1/delivery/assets')return json(res,200,await delivery.list(principal,Object.fromEntries(url.searchParams)));
+      if(delivery&&req.method==='GET'&&url.pathname==='/v1/delivery/assets')return json(res,200,{...await delivery.list(principal,Object.fromEntries(url.searchParams)),multipart:{enabled:!!uploads,partBytes:PART_BYTES,maxBytes:MAX_MULTIPART_BYTES}});
       if(delivery&&req.method==='GET'&&url.pathname==='/v1/delivery/scan-history')return json(res,200,await delivery.scanHistory(principal,id.parse(url.searchParams.get('id')),{page:url.searchParams.get('page')||'1'}));
       if(delivery&&req.method==='POST'&&url.pathname==='/v1/delivery/scan'){const q=await body(req);return json(res,200,await delivery.rescan(principal,id.parse(q.assetId)));}
       if(delivery&&req.method==='POST'&&url.pathname==='/v1/delivery/upload'){

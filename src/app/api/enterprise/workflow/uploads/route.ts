@@ -1,0 +1,29 @@
+import {z} from 'zod';
+import {workflowSameOrigin} from '@/lib/enterprise/workflow-origin';
+import {workflowSourceIdentity,workflowBridgeConfig,workflowIdentityToken} from '@/lib/enterprise/workflow-identity';
+import {IntegrationError} from '@/lib/enterprise/integration/policy';
+import {teamJson,teamFailure} from '@/lib/teams/access';
+import {rateLimit} from '@/lib/rate-limit';
+export const runtime='nodejs';export const dynamic='force-dynamic';
+const uuid=z.string().uuid(),scope={enterpriseId:uuid,teamId:uuid},partMax=4*1024*1024;
+const reads=z.discriminatedUnion('action',[z.strictObject({...scope,action:z.literal('list'),orderId:uuid,taskId:uuid,page:z.coerce.number().int().min(1).max(10000).optional()}),z.strictObject({...scope,action:z.literal('status'),id:uuid})]);
+const actions=z.discriminatedUnion('operation',[
+ z.strictObject({operation:z.literal('create'),sessionId:uuid,orderId:uuid,taskId:uuid,expectedVersion:z.number().int().positive(),name:z.string().min(1).max(180),bytes:z.number().int().min(1).max(512*1024*1024),parts:z.array(z.string().regex(/^[a-f0-9]{64}$/)).min(1).max(128)}),
+ z.strictObject({operation:z.literal('complete'),id:uuid,expectedVersion:z.number().int().positive()}),z.strictObject({operation:z.literal('cancel'),id:uuid}),z.strictObject({operation:z.literal('cleanup'),id:uuid})]);
+const fail=(e:unknown)=>e instanceof IntegrationError?teamJson({error:e.code},e.status):teamFailure(e);
+async function response(r:Response){if(!r.headers.get('content-type')?.includes('application/json'))return teamJson({error:'UPLOAD_RESPONSE_INVALID'},502);return teamJson(await r.json(),r.status);}
+export async function GET(request:Request){const q=reads.safeParse(Object.fromEntries(new URL(request.url).searchParams));if(!q.success)return teamJson({error:'INVALID_UPLOAD_QUERY'},400);try{
+ const {enterpriseId,teamId,...query}=q.data,identity=await workflowSourceIdentity(request,enterpriseId);if(!rateLimit('workflow-uploads-read:'+JSON.stringify(identity),120,60000))return teamJson({error:'RATE_LIMITED'},429);
+ const c=workflowBridgeConfig(),params=new URLSearchParams(Object.entries(query).map(([k,v])=>[k,String(v)]));try{return await response(await fetch(c.origin+'/v1/uploads?'+params,{headers:{authorization:'Bearer '+workflowIdentityToken(identity,c,teamId)},cache:'no-store',redirect:'error',signal:AbortSignal.any([request.signal,AbortSignal.timeout(30000)])}));}catch{return teamJson({error:'UPLOAD_SERVICE_UNAVAILABLE'},503);}
+ }catch(e){return fail(e);}}
+export async function POST(request:Request){const q=z.strictObject(scope).safeParse(Object.fromEntries(new URL(request.url).searchParams));if(!q.success)return teamJson({error:'INVALID_UPLOAD_QUERY'},400);if(!workflowSameOrigin(request))return teamJson({error:'ORIGIN_REQUIRED'},403);if(!request.headers.get('content-type')?.startsWith('application/json'))return teamJson({error:'JSON_REQUIRED'},415);try{
+ const identity=await workflowSourceIdentity(request,q.data.enterpriseId);if(!rateLimit('workflow-uploads-command:'+JSON.stringify(identity),40,60000))return teamJson({error:'RATE_LIMITED'},429);
+ const reader=request.body?.getReader();if(!reader)return teamJson({error:'INVALID_UPLOAD_COMMAND'},400);let bytes=0;const chunks:Uint8Array[]=[];try{for(;;){const {value,done}=await reader.read();if(done)break;bytes+=value.byteLength;if(bytes>24*1024){await reader.cancel();return teamJson({error:'BODY_TOO_LARGE'},413);}chunks.push(value);}}finally{reader.releaseLock();}
+ let body;try{body=actions.parse(JSON.parse(Buffer.concat(chunks).toString('utf8')));}catch{return teamJson({error:'INVALID_UPLOAD_COMMAND'},400);}
+ const c=workflowBridgeConfig();try{return await response(await fetch(c.origin+'/v1/uploads',{method:'POST',headers:{authorization:'Bearer '+workflowIdentityToken(identity,c,q.data.teamId),'content-type':'application/json'},body:JSON.stringify(body),cache:'no-store',redirect:'error',signal:AbortSignal.any([request.signal,AbortSignal.timeout(body.operation==='complete'?900000:30000)])}));}catch{return teamJson({error:'UPLOAD_RESULT_UNCERTAIN',uncertain:true},503);}
+ }catch(e){return fail(e);}}
+export async function PUT(request:Request){const q=z.strictObject({...scope,id:uuid,part:z.coerce.number().int().min(0).max(127)}).safeParse(Object.fromEntries(new URL(request.url).searchParams));if(!q.success)return teamJson({error:'INVALID_UPLOAD_QUERY'},400);if(!workflowSameOrigin(request))return teamJson({error:'ORIGIN_REQUIRED'},403);if(request.headers.get('content-type')!=='application/octet-stream')return teamJson({error:'BINARY_REQUIRED'},415);if(!request.body)return teamJson({error:'EMPTY_PART'},400);if(Number(request.headers.get('content-length')||0)>partMax)return teamJson({error:'PART_SIZE_MISMATCH'},413);try{
+ const identity=await workflowSourceIdentity(request,q.data.enterpriseId);if(!rateLimit('workflow-uploads-part:'+JSON.stringify(identity),240,60000))return teamJson({error:'RATE_LIMITED'},429);const c=workflowBridgeConfig();let size=0,oversize=false;
+ const input=request.body.pipeThrough(new TransformStream<Uint8Array,Uint8Array>({transform(chunk,controller){size+=chunk.byteLength;if(size>partMax){oversize=true;throw Error('PART_SIZE_MISMATCH');}controller.enqueue(chunk);}}));
+ try{return await response(await fetch(c.origin+'/v1/uploads?'+new URLSearchParams({id:q.data.id,part:String(q.data.part)}),{method:'PUT',headers:{authorization:'Bearer '+workflowIdentityToken(identity,c,q.data.teamId),'content-type':'application/octet-stream'},body:input,duplex:'half',cache:'no-store',redirect:'error',signal:AbortSignal.any([request.signal,AbortSignal.timeout(120000)])} as RequestInit&{duplex:'half'}));}catch{return teamJson({error:oversize?'PART_SIZE_MISMATCH':'UPLOAD_RESULT_UNCERTAIN',uncertain:!oversize},oversize?413:503);}
+ }catch(e){return fail(e);}}

@@ -89,7 +89,7 @@ export class MultipartStore{
   const o=await this.order(tx,a,q.orderId);ensure(o.tasks.some(t=>t.id===q.taskId),'TASK_NOT_FOUND',404);
   const args=[a.enterpriseId,a.teamId,a.subject,identity(a),q.orderId,q.taskId];const where='enterprise_id=$1 AND team_id=$2 AND subject=$3 AND identity_hash=$4 AND order_id=$5 AND task_id=$6';
   const rows=(await tx.query('SELECT * FROM enterprise_workflow.delivery_upload_sessions WHERE '+where+' ORDER BY created_at DESC,id DESC LIMIT 30 OFFSET $7',[...args,(q.page-1)*30])).rows as Session[];
-  return {sessions:await Promise.all(rows.map(s=>this.dto(tx,s))),total:Number((await tx.query('SELECT count(*) n FROM enterprise_workflow.delivery_upload_sessions WHERE '+where,args)).rows[0].n),page:q.page,pageSize:30,partBytes:PART_BYTES,maxBytes:MAX_MULTIPART_BYTES};
+  const sessions=[];for(const s of rows)sessions.push(await this.dto(tx,s));return {sessions,total:Number((await tx.query('SELECT count(*) n FROM enterprise_workflow.delivery_upload_sessions WHERE '+where,args)).rows[0].n),page:q.page,pageSize:30,partBytes:PART_BYTES,maxBytes:MAX_MULTIPART_BYTES};
  });}
  async put(p:Principal,sessionId:string,index:number,input:AsyncIterable<Uint8Array>|Iterable<Uint8Array>){
   z.number().int().min(0).max(127).parse(index);return this.io(p,sessionId,async client=>{

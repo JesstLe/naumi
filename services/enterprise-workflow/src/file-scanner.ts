@@ -5,7 +5,7 @@ export const scanVerdictSchema=z.strictObject({status:z.enum(['clean','infected'
 export type ScanVerdict=z.infer<typeof scanVerdictSchema>;
 export type FileScanner=(input:AsyncIterable<Uint8Array>)=>Promise<ScanVerdict>;
 export type ScanPolicy={mode:'disabled'}|{mode:'required';key:string;label:string;maxAgeMs:number;maxBytes?:number;scan:FileScanner};
-export const clamdConfigSchema=z.strictObject({mode:z.literal('clamd-required'),policyId:z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,79}$/),host:z.string().regex(/^[a-zA-Z0-9.:_-]{1,253}$/),port:z.number().int().min(1).max(65535),timeoutMs:z.number().int().min(100).max(30000).default(30000),maxAgeHours:z.number().int().min(1).max(168).default(24)});
+export const clamdConfigSchema=z.strictObject({mode:z.literal('clamd-required'),policyId:z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,79}$/),host:z.string().regex(/^[a-zA-Z0-9.:_-]{1,253}$/),port:z.number().int().min(1).max(65535),timeoutMs:z.number().int().min(100).max(180000).default(30000),maxBytes:z.number().int().min(1).max(512*1024*1024).default(32*1024*1024),maxAgeHours:z.number().int().min(1).max(168).default(24)});
 export type ClamdConfig=z.infer<typeof clamdConfigSchema>;
 async function exchange(c:ClamdConfig,command:string,input?:AsyncIterable<Uint8Array>){
  const socket=connect({host:c.host,port:c.port});let buffer=Buffer.alloc(0),finished=false;
