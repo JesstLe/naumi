@@ -94,6 +94,7 @@ def valid_plan(plan):
             re.fullmatch('[a-f0-9]{40}', plan.get('commit', '')) and
             re.fullmatch('[0-9]{10,13}', plan.get('buildVersion', '')), 'FIXED_SESSION_PLAN_REQUIRED')
     require(plan.get('authorization', {}).get('target') == plan['target'], 'AUTHORIZATION_TARGET_MISMATCH')
+    require(not plan.get('mediaWorker') or maintenance.canvas_video_hk(plan['authorization']), 'MEDIA_VIDEO_GOAL_ONLY')
     topology = plan.get('runtimeTopology', 'separate-compiled-variants')
     require(topology in ['separate-compiled-variants', 'unified-web-three-ui'] and
             (topology != 'unified-web-three-ui' or plan['target'] == '103.30.76.93'), 'EXPLICIT_HOST_RUNTIME_TOPOLOGY_REQUIRED')
@@ -115,7 +116,14 @@ def valid_plan(plan):
             require(set(web['requiredChecks']) >= {'desktop-ui', 'enterprise-ui'}, 'THREE_REAL_UI_ACCEPTANCE_CHECKS_REQUIRED')
     require(plan.get('restoreDatabase') is False and plan.get('replayAcceptedTasks') is False and
             plan.get('legacyCaller') and plan.get('database') and plan.get('baseline'), 'PRESERVATION_SCOPE_REQUIRED')
-    if maintenance.immediate_hk(plan['authorization']):
+    if maintenance.canvas_video_hk(plan['authorization']):
+        maintenance.authorize(plan['authorization'])
+        require(plan['releaseId'].startswith('canvas-video-fusion-') and plan.get('mediaWorker') is not None and
+                topology == 'unified-web-three-ui',
+                'VIDEO_GOAL_MEDIA_RELEASE_PLAN_REQUIRED')
+        from release_video_media import validate_spec
+        validate_spec(plan)
+    elif maintenance.immediate_hk(plan['authorization']):
         require(plan['target'] == '103.30.76.93' and
                 plan['authorization'].get('userImmediateAcknowledgement') == maintenance.IMMEDIATE_HK_ACK and
                 plan['authorization'].get('notBefore') == maintenance.IMMEDIATE_HK_NOT_BEFORE,
@@ -145,6 +153,12 @@ class LiveAdapter:
     """Only these finite operations can reach the host. Steps cannot supply argv."""
     def __init__(self, tx, plan):
         self.tx, self.plan = tx, plan
+
+    def media(self):
+        if not self.plan.get('mediaWorker'):
+            return None
+        from release_video_media import MediaLifecycle
+        return MediaLifecycle(self.tx, self.plan)
 
     def private_save(self, operation):
         def save(name, value):
@@ -254,10 +268,11 @@ class LiveAdapter:
                     'ALL_VARIANT_MEASURED_RAM_BUDGETS_REQUIRED')
             peaks.append(max(web['memoryMiB'], budget['webPeakMiB']))
             worker_peaks.append(budget['workerPeakMiB']); reserves.append(budget['hostReserveMiB'])
-        required = sum(peaks) + max(worker_peaks) + max(reserves)
+        media = self.plan.get('mediaWorker', {}).get('memoryMiB', 0)
+        required = sum(peaks) + max(worker_peaks) + max(reserves) + media
         require(available >= required, 'INSUFFICIENT_ALL_VARIANT_PRE_MAINTENANCE_MEMORY')
         return {'availableMiB': available, 'requiredMiB': required, 'webVariantBudgetsMiB': peaks,
-                'workerBudgetMiB': max(worker_peaks), 'reserveMiB': max(reserves), 'swapIncluded': False,
+                'workerBudgetMiB': max(worker_peaks), 'mediaBudgetMiB': media, 'reserveMiB': max(reserves), 'swapIncluded': False,
                 'observedAt': timestamp(), 'legacyDrainProven': False}
 
     def backup(self, operation, reconcile=False):
@@ -386,6 +401,26 @@ class LiveAdapter:
         return maintenance.freeze_legacy_caller(self.tx, caller['identity'], expected_script_sha256=caller['scriptSha256'])
 
     def web_create(self, web, operation, reconcile=False):
+        media = self.media()
+        phase_file = self.tx.folder / ('media-web-create-' + operation + '.json')
+        binding = {'operationId': operation, 'variant': web['variant'], 'name': web['name'], 'image': web['image']}
+        if media:
+            if phase_file.exists():
+                phase = load_json(phase_file)
+                require(phase.get('binding') == binding, 'MEDIA_WEB_OPERATION_CHANGED')
+            else:
+                require(not reconcile, 'MEDIA_WEB_PHASE_JOURNAL_REQUIRED')
+                phase = {'binding': binding, 'phase': 'MEDIA_PREPARING'}
+                controls._atomic_private(phase_file, phase)
+            media.prepare()
+            if phase['phase'] == 'MEDIA_PREPARING':
+                phase['phase'] = 'MEDIA_READY'; controls._atomic_private(phase_file, phase)
+            if reconcile and phase['phase'] == 'MEDIA_READY':
+                require(not self.tx.run(['docker', 'ps', '-aq', '--filter', 'name=^/' + web['name'] + '$']).decode().strip(),
+                        'APP_PRESENT_WITHOUT_CREATE_INTENT')
+                # The marker is set by clone_web immediately before Docker
+                # create, so a preceding media/validation failure is unissued.
+                reconcile = False
         if reconcile:
             row = self.tx.inspect(web['name']); env = environment(row)
             receipt = load_json(self.tx.folder / ('candidate-created-' + row['Id'][:12] + '.json'))
@@ -394,12 +429,21 @@ class LiveAdapter:
                     env.get('NAUMI_VIDEO_WORKER') == '0' and env.get('NAUMI_RELEASE_ADMISSION_START') == 'draining' and
                     receipt == public_identity(row),
                     'UNKNOWN_CREATED_WEB_REQUIRES_PRIVATE_REVIEW')
+            if media:
+                media.verify_app(row)
+                phase['phase'] = 'APP_CREATED'; controls._atomic_private(phase_file, phase)
             return public_identity(row)
         require(web['name'] not in [r.get('name') for r in self.inventory(operation)['containers']], 'CANDIDATE_NAME_ALREADY_EXISTS')
-        return self.tx.clone_web(web['source'], name=web['name'], port=web['port'], image=web['image'],
+        def mark_create():
+            phase['phase'] = 'APP_CREATING'; controls._atomic_private(phase_file, phase)
+        created = self.tx.clone_web(web['source'], name=web['name'], port=web['port'], image=web['image'],
             commit=self.plan['commit'], memory_mib=web['memoryMiB'], cpu=web['cpu'],
             release_secret=self.plan['releaseSecret'], state_dir=web['stateDir'], build_version=self.plan['buildVersion'],
-            reviewed_omitted_mounts=web.get('reviewedOmittedMounts'))
+            reviewed_omitted_mounts=web.get('reviewedOmittedMounts'),
+            **({'media_binding': media.binding(), 'before_create': mark_create} if media else {}))
+        if media:
+            phase['phase'] = 'APP_CREATED'; controls._atomic_private(phase_file, phase)
+        return created
 
     def available(self):
         text = self.tx.run(['cat', '/proc/meminfo']).decode()
@@ -428,7 +472,10 @@ class LiveAdapter:
         return self.tx.start_candidate(identity, web['budget'], self.available())
 
     def verify(self, web, identity, operation):
-        self.tx.pin(identity)
+        row = self.tx.pin(identity)
+        if self.media():
+            self.media().verify_app(row)
+            require(self.media().health()['draining'] is True, 'CANDIDATE_MEDIA_MUST_STAY_DRAINING')
         actual = json.loads(self.tx.run(['docker', 'exec', identity['id'], 'node', '--input-type=module', '-e', PROBE,
                                         self.plan['commit'], self.plan['buildVersion'], web['assetPrefix']]))
         status = controls.app_status(self.tx, identity)
@@ -480,7 +527,15 @@ class LiveAdapter:
         return worker_handoff.execute(args, folder, lambda argv: self.tx.run(argv).decode())
 
     def app_control(self, identity, action, operation):
-        return controls.control_app(self.tx, identity, action, operation)
+        if self.media() and action == 'resume':
+            self.media().mode('resume')
+        result = controls.control_app(self.tx, identity, action, operation)
+        if self.media() and action == 'drain':
+            self.media().mode('drain')
+        return result
+
+    def rollback_media(self):
+        return self.media().rollback() if self.media() else None
 
     def acceptance(self, state, descriptor, operation):
         report = load_json(relative_artifact(self.tx.folder, descriptor))
@@ -619,6 +674,8 @@ class LiveAdapter:
         return maintenance.restore_frozen_caller(self.tx, self.plan['legacyCaller']['identity'], candidate_worker_quiescent=True)
 
     def assert_activation(self, state, operation):
+        if self.media():
+            require(self.media().health()['draining'] is False, 'ACTIVE_MEDIA_NOT_RESUMED')
         report = load_json(relative_artifact(self.tx.folder, self.plan['gateways']['open']['report']))
         require(sha(self.tx.run(['nginx', '-T'])) == report['afterDumpSha256'], 'ACTIVE_GATEWAY_CLOSURE_CHANGED')
         for web in self.plan['webs']:
@@ -660,7 +717,7 @@ class MaintenanceSession:
                 require(self.state.get('planSha256') == self.plan_hash and isinstance(self.state.get('operations'), dict), 'ACTIVE_PLAN_CHANGED')
         else:
             self.state = self.new_state()
-        if self.plan['target'] == '103.30.76.93' and not maintenance.immediate_hk(self.plan['authorization']):
+        if self.plan['target'] == '103.30.76.93' and not maintenance.independent_hk(self.plan['authorization']):
             receipt = load_json(relative_artifact(self.tx.folder, self.plan['predecessor47']))
             require(receipt.get('target') == '47.105.59.142' and
                     receipt.get('phase') in ['COMPLETE', 'MIGRATED_CLEANUP_PENDING'] and
@@ -878,6 +935,9 @@ class MaintenanceSession:
             if state.get('freeze') and not state.get('rollbackCaller'):
                 adapter.legacy_safety(**rollback_legacy)
                 state['rollbackCaller'] = adapter.restore_caller(self.op(operation, 'restore-caller'))
+                self.persist()
+            if self.plan.get('mediaWorker'):
+                state['rollbackMedia'] = adapter.rollback_media()
                 self.persist()
             adapter.legacy_safety(frozen=bool(state.get('freeze')), retired=state['retired'], restored=bool(state.get('rollbackCaller')))
             after = adapter.snapshot(operation, state['before']['private'])
