@@ -137,6 +137,7 @@ export { SourceIdentityStore,createSourceVerifier,createMappedAuthenticator } fr
 export { PeopleStore } from './people-store';
 
 export { DeliveryStore } from './delivery-store';
+export { MultipartStore } from './multipart-store';
 
 export {createSourceEvidenceVerifier} from './source-evidence';
 
