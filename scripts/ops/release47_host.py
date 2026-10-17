@@ -118,6 +118,12 @@ class HostTransaction:
             require(resolved.is_relative_to(pathlib.Path('/opt/naumi-staging/evidence')), 'EVIDENCE_OUTSIDE_RELEASE_ROOT')
             self.folder.mkdir(mode=0o700, parents=True, exist_ok=True)
             require(not self.folder.stat().st_mode & 0o077, 'PRIVATE_EVIDENCE_MODE_REQUIRED')
+            for directory in (self.folder, self.folder.parent):
+                directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
             self.stack = stack
             return self
         except BaseException:
@@ -150,6 +156,11 @@ class HostTransaction:
             output.write(payload)
             output.flush()
             os.fsync(output.fileno())
+        directory_fd = os.open(self.folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
         require(path.read_bytes() == payload, 'EVIDENCE_REOPEN_FAILED')
         return {'path': str(path), 'sha256': sha(payload), 'bytes': len(payload)}
 
