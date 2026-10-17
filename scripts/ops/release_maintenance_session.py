@@ -10,6 +10,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 import uuid
 import urllib.parse
 from types import SimpleNamespace
@@ -95,6 +96,12 @@ def valid_plan(plan):
             re.fullmatch('[0-9]{10,13}', plan.get('buildVersion', '')), 'FIXED_SESSION_PLAN_REQUIRED')
     require(plan.get('authorization', {}).get('target') == plan['target'], 'AUTHORIZATION_TARGET_MISMATCH')
     require(not plan.get('mediaWorker') or maintenance.canvas_video_hk(plan['authorization']), 'MEDIA_VIDEO_GOAL_ONLY')
+    if 'supersedesUnpublished' in plan:
+        descriptor = plan['supersedesUnpublished']
+        require(maintenance.canvas_video_hk(plan['authorization']) and isinstance(descriptor, dict) and
+                set(descriptor) == {'releaseId', 'stateSha256'} and
+                re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]{0,95}', descriptor.get('releaseId', '')) and
+                HASH.fullmatch(descriptor.get('stateSha256', '')), 'PINNED_UNPUBLISHED_BASELINE_DESCRIPTOR_REQUIRED')
     topology = plan.get('runtimeTopology', 'separate-compiled-variants')
     require(topology in ['separate-compiled-variants', 'unified-web-three-ui'] and
             (topology != 'unified-web-three-ui' or plan['target'] == '103.30.76.93'), 'EXPLICIT_HOST_RUNTIME_TOPOLOGY_REQUIRED')
@@ -132,6 +139,66 @@ def valid_plan(plan):
         require(plan.get('predecessor47') and HASH.fullmatch(plan['predecessor47'].get('sha256', '')),
                 '47_BEFORE_103_RECEIPT_REQUIRED')
     return plan
+
+
+def supersede_unpublished_baseline(root, old, old_raw, plan):
+    """Archive only an explicitly SHA-bound, acknowledged read-only baseline.
+
+    Called with the current goal's HostTransaction locks held. No workload,
+    gateway, database, backup, or accepted operation is modified here.
+    """
+    descriptor = plan.get('supersedesUnpublished')
+    allowed_fields = {'schemaVersion', 'releaseId', 'target', 'planSha256', 'phase', 'revision', 'operations', 'webs',
+                      'startedAt', 'legacyDrainProven', 'legacyActiveTicks', 'acceptedTasks', 'agentSessions',
+                      'databaseRestored', 'tasksReplayed', 'retired', 'history', 'status', 'baselineInventory', 'before'}
+    require(type(old.get('schemaVersion')) is int and old['schemaVersion'] == 1 and set(old) <= allowed_fields,
+            'UNKNOWN_BASELINE_JOURNAL_SCHEMA')
+    require(maintenance.canvas_video_hk(plan['authorization']) and plan['target'] == '103.30.76.93' and
+            isinstance(descriptor, dict) and set(descriptor) == {'releaseId', 'stateSha256'},
+            'EXPLICIT_UNPUBLISHED_BASELINE_SUPERSESSION_REQUIRED')
+    require(descriptor['releaseId'] == old['releaseId'] and descriptor['stateSha256'] == sha(old_raw) and
+            old.get('target') == plan['target'] and old.get('phase') == 'BASELINED' and
+            re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]{0,95}', old['releaseId']) and
+            old.get('status') == 'PREPARED' and type(old.get('revision')) is int and old['revision'] == 2,
+            'UNPUBLISHED_BASELINE_IDENTITY_CHANGED')
+    operations = old.get('operations'); history = old.get('history')
+    require(isinstance(operations, dict) and len(operations) == 1 and isinstance(history, list) and len(history) == 1,
+            'ONLY_ONE_READONLY_BASELINE_MAY_BE_SUPERSEDED')
+    operation_id, operation = next(iter(operations.items()))
+    require(operation.get('phase') == 'ACKNOWLEDGED' and operation.get('request', {}).get('action') == 'baseline' and
+            history[0].get('operationId') == operation_id and history[0].get('action') == 'baseline' and
+            history[0].get('result') == 'ACKNOWLEDGED' and old.get('webs') == {} and old.get('retired') == [] and
+            old.get('databaseRestored') is False and old.get('tasksReplayed') is False and
+            not any(key in old for key in ['backup', 'maintenance', 'freeze', 'worker', 'openGateway', 'lastError',
+                                          'capacityPreflight', 'activation', 'after', 'rollbackGateway', 'rollbackCaller']),
+            'MUTATING_OR_UNKNOWN_RELEASE_CANNOT_BE_SUPERSEDED')
+    def preserve(path, raw):
+        require(not path.is_symlink(), 'SUPERSESSION_ARCHIVE_SYMLINK')
+        if path.exists():
+            require(path.read_bytes() == raw, 'SUPERSESSION_ARCHIVE_CONFLICT')
+            return
+        fd, temporary = tempfile.mkstemp(prefix='.' + path.name + '.', dir=path.parent)
+        try:
+            with os.fdopen(fd, 'wb') as output:
+                output.write(raw); output.flush(); os.fsync(output.fileno())
+            try:
+                os.link(temporary, path)
+            except FileExistsError:
+                require(not path.is_symlink() and path.read_bytes() == raw, 'SUPERSESSION_ARCHIVE_CONFLICT')
+            if os.name == 'posix':
+                parent = os.open(path.parent, os.O_RDONLY)
+                try: os.fsync(parent)
+                finally: os.close(parent)
+        finally:
+            pathlib.Path(temporary).unlink(missing_ok=True)
+        require(path.read_bytes() == raw, 'SUPERSESSION_ARCHIVE_REOPEN_FAILED')
+    require((root / 'current.json').read_bytes() == old_raw, 'SUPERSESSION_CURRENT_CAS_CHANGED')
+    preserve(root / (old['releaseId'] + '.baseline-original.json'), old_raw)
+    aborted = {**old, 'phase': 'ABORTED', 'status': 'ABORTED', 'supersededBy': plan['releaseId'],
+               'supersededStateSha256': sha(old_raw), 'abortReason': 'UNPUBLISHED_READONLY_BASELINE_REPLACED'}
+    preserve(root / (old['releaseId'] + '.json'), encoded(aborted) + b'\n')
+    return {'releaseId': old['releaseId'], 'stateSha256': sha(old_raw), 'onlyReadOnlyBaseline': True,
+            'originalPreserved': True, 'workloadsChanged': False}
 
 
 PROBE = r"""
@@ -710,9 +777,15 @@ class MaintenanceSession:
                     'CORRUPT_CANONICAL_RELEASE_ID')
             require(self.state.get('target') == self.plan['target'], 'CANONICAL_TARGET_MISMATCH')
             if self.state.get('releaseId') != self.plan['releaseId']:
-                require(self.state.get('phase', self.state.get('status')) in TERMINAL | {'ABORTED'}, 'UNFINISHED_RELEASE_BLOCKS_NEXT')
-                controls._atomic_private(self.root / (self.state['releaseId'] + '.json'), self.state)
+                superseded = None
+                if self.state.get('phase', self.state.get('status')) not in TERMINAL | {'ABORTED'}:
+                    require(self.plan.get('supersedesUnpublished') is not None, 'UNFINISHED_RELEASE_BLOCKS_NEXT')
+                    superseded = supersede_unpublished_baseline(self.root, self.state, self.path.read_bytes(), self.plan)
+                else:
+                    controls._atomic_private(self.root / (self.state['releaseId'] + '.json'), self.state)
                 self.state = self.new_state()
+                if superseded:
+                    self.state['supersededUnpublished'] = superseded
             else:
                 require(self.state.get('planSha256') == self.plan_hash and isinstance(self.state.get('operations'), dict), 'ACTIVE_PLAN_CHANGED')
         else:

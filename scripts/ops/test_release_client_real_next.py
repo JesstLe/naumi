@@ -14,6 +14,16 @@ def run(args):
 def read(url,data=None):
  req=urllib.request.Request(url,data=json.dumps(data).encode()if data is not None else None,headers={'Content-Type':'application/json'})
  with urllib.request.urlopen(req,timeout=30)as r:return json.load(r)
+
+def service_origin(s,name,port):
+ if os.environ.get('NAUMI_REAL_COMPAT_INTERNAL_NETWORK')=='1':
+  info=json.loads(run(['docker','inspect',name]))[0]
+  assert info['Config']['Labels'].get('io.naumi.real-next-compat')==s['tag']
+  address=info['NetworkSettings']['Networks'][s['network']]['IPAddress']
+  import ipaddress
+  assert ipaddress.ip_address(address).is_private
+  return 'http://'+address+':'+str(port)
+ return 'http://127.0.0.1:'+run(['docker','port',name,str(port)+'/tcp']).split(':')[-1]
 def wait(fn,label):
  for _ in range(90):
   try:
@@ -34,20 +44,20 @@ def start_web(s,phase,image):
  memory=os.environ.get('NAUMI_REAL_COMPAT_WEB_MEMORY','1536m')
  args=['docker','run','-d','--name',s[phase],'--label','io.naumi.real-next-compat='+s['tag'],'--network',s['network'],'--memory',memory,'--memory-swap',memory,'--cpus','1.5','--pids-limit','192','-p','127.0.0.1::3000','--tmpfs','/tmp:rw,size=64m']
  for k,v in env.items():args+=['-e',k+'='+v]
- args+=[image];run(args);s['created'].append(s[phase]);STATE.write_text(json.dumps(s,indent=2));port=run(['docker','port',s[phase],'3000/tcp']).split(':')[-1];s[phase+'Port']=int(port);STATE.write_text(json.dumps(s,indent=2));return wait(lambda:read('http://127.0.0.1:'+port+'/api/version'),'web '+phase)
+ args+=[image];run(args);s['created'].append(s[phase]);STATE.write_text(json.dumps(s,indent=2));endpoint=service_origin(s,s[phase],3000);s[phase+'Origin']=endpoint;s[phase+'Port']=int(endpoint.rsplit(':',1)[1]);STATE.write_text(json.dumps(s,indent=2));return wait(lambda:read(endpoint+'/api/version'),'web '+phase)
 mode=sys.argv[1]
 ROOT.mkdir(parents=True,exist_ok=True)
 if mode=='start':
  assert not STATE.exists(),'Runtime already exists'
  tag=uuid.uuid4().hex[:8];s={'tag':tag,'network':'real-next-compat-'+tag,'pg':'real-next-pg-'+tag,'old':'real-next-old-'+tag,'new':'real-next-new-'+tag,'gateway':'real-next-nginx-'+tag,'created':[],'candidateImage':os.environ.get('NAUMI_REAL_COMPAT_NEW_IMAGE','naumi:release47-5405d23fa37a'),'oldImage':os.environ.get('NAUMI_REAL_COMPAT_OLD_IMAGE','sha256:c952f4a407e0404e86c950003c905c1bf26f877b6b6a2558118d70dd534c9737')}
- s['candidateImageId']=run(['docker','image','inspect',s['candidateImage'],'--format','{{.Id}}']);s['oldImageId']=run(['docker','image','inspect',s['oldImage'],'--format','{{.Id}}']);assert (ROOT/'all-real-static-union/manifest.json').is_file(),'Prepare real static union first';STATE.write_text(json.dumps(s,indent=2));run(['docker','network','create',s['network']]);run(['docker','run','-d','--name',s['pg'],'--label','io.naumi.real-next-compat='+tag,'--network',s['network'],'--memory','192m','--memory-swap','192m','--cpus','.5','--pids-limit','96','-e','POSTGRES_USER=fixture','-e','POSTGRES_PASSWORD=fixture-local-only','-e','POSTGRES_DB=compat','postgres:16-alpine','postgres','-c','shared_buffers=24MB','-c','max_connections=32']);s['created'].append(s['pg']);STATE.write_text(json.dumps(s,indent=2));wait(lambda:subprocess.run(['docker','exec',s['pg'],'pg_isready','-U','fixture','-d','compat'],capture_output=True).returncode==0,'pg');version=start_web(s,'old',s['oldImage']);s['oldVersion']=version
- write_config(s,'old');run(['docker','run','-d','--name',s['gateway'],'--label','io.naumi.real-next-compat='+tag,'--network',s['network'],'--memory','128m','--memory-swap','128m','--cpus','.5','--pids-limit','64','-p','127.0.0.1::80','-v',str(ROOT)+':/fixture:ro','nginx:1.27-alpine','nginx','-c','/fixture/nginx.conf','-g','daemon off;']);s['created'].append(s['gateway']);s['origin']='http://127.0.0.1:'+run(['docker','port',s['gateway'],'80/tcp']).split(':')[-1];STATE.write_text(json.dumps(s,indent=2));wait(lambda:read(s['origin']+'/api/version'),'gateway');print('REAL_OLD_READY='+json.dumps({'origin':s['origin'],'version':version}))
+ s['candidateImageId']=run(['docker','image','inspect',s['candidateImage'],'--format','{{.Id}}']);s['oldImageId']=run(['docker','image','inspect',s['oldImage'],'--format','{{.Id}}']);assert (ROOT/'all-real-static-union/manifest.json').is_file(),'Prepare real static union first';STATE.write_text(json.dumps(s,indent=2));run(['docker','network','create',*(['--internal'] if os.environ.get('NAUMI_REAL_COMPAT_INTERNAL_NETWORK')=='1' else []),s['network']]);run(['docker','run','-d','--name',s['pg'],'--label','io.naumi.real-next-compat='+tag,'--network',s['network'],'--memory','192m','--memory-swap','192m','--cpus','.5','--pids-limit','96','-e','POSTGRES_USER=fixture','-e','POSTGRES_PASSWORD=fixture-local-only','-e','POSTGRES_DB=compat',os.environ.get('NAUMI_REAL_COMPAT_PG_IMAGE','postgres:16-alpine'),'postgres','-c','shared_buffers=24MB','-c','max_connections=32']);s['created'].append(s['pg']);STATE.write_text(json.dumps(s,indent=2));wait(lambda:subprocess.run(['docker','exec',s['pg'],'pg_isready','-U','fixture','-d','compat'],capture_output=True).returncode==0,'pg');version=start_web(s,'old',s['oldImage']);s['oldVersion']=version
+ write_config(s,'old');run(['docker','run','-d','--name',s['gateway'],'--label','io.naumi.real-next-compat='+tag,'--network',s['network'],'--memory','128m','--memory-swap','128m','--cpus','.5','--pids-limit','64','-p','127.0.0.1::80','-v',str(ROOT)+':/fixture:ro',os.environ.get('NAUMI_REAL_COMPAT_NGINX_IMAGE','nginx:1.27-alpine'),'nginx','-c','/fixture/nginx.conf','-g','daemon off;']);s['created'].append(s['gateway']);s['origin']=service_origin(s,s['gateway'],80);STATE.write_text(json.dumps(s,indent=2));wait(lambda:read(s['origin']+'/api/version'),'gateway');print('REAL_OLD_READY='+json.dumps({'origin':s['origin'],'version':version}))
 elif mode=='switch':
- s=json.loads(STATE.read_text());version=read('http://127.0.0.1:'+str(s['newPort'])+'/api/version') if 'newPort' in s else start_web(s,'new',s['candidateImage']);s['newVersion']=version;write_config(s,'new');run(['docker','exec',s['gateway'],'nginx','-t','-c','/fixture/nginx.conf']);run(['docker','exec',s['gateway'],'nginx','-s','reload','-c','/fixture/nginx.conf']);wait(lambda:read(s['origin']+'/api/version').get('commit')==version.get('commit'),'switch');time.sleep(.4);s['phase']='new';STATE.write_text(json.dumps(s,indent=2));print('REAL_CUTOVER='+json.dumps(version))
+ s=json.loads(STATE.read_text());version=read(s.get('newOrigin','http://127.0.0.1:'+str(s['newPort']))+'/api/version') if 'newPort' in s else start_web(s,'new',s['candidateImage']);s['newVersion']=version;write_config(s,'new');run(['docker','exec',s['gateway'],'nginx','-t','-c','/fixture/nginx.conf']);run(['docker','exec',s['gateway'],'nginx','-s','reload','-c','/fixture/nginx.conf']);wait(lambda:read(s['origin']+'/api/version').get('commit')==version.get('commit'),'switch');time.sleep(.4);s['phase']='new';STATE.write_text(json.dumps(s,indent=2));print('REAL_CUTOVER='+json.dumps(version))
 elif mode=='rollback':
  s=json.loads(STATE.read_text());write_config(s,'old');run(['docker','exec',s['gateway'],'nginx','-t','-c','/fixture/nginx.conf']);run(['docker','exec',s['gateway'],'nginx','-s','reload','-c','/fixture/nginx.conf']);wait(lambda:read(s['origin']+'/api/version').get('commit')==s['oldVersion'].get('commit'),'rollback');time.sleep(.4);print('REAL_ROLLBACK=PASS')
 elif mode=='bootstrap':
- s=json.loads(STATE.read_text());info=json.loads(run(['docker','inspect',s['pg']]))[0];assert info['Config']['Labels'].get('io.naumi.real-next-compat')==s['tag'];salt=b'compat-local-admin-hash-20261016';value='scrypt$'+salt.hex()+'$'+hashlib.scrypt(b'fixture-only-password',salt=salt,n=16384,r=8,p=1,dklen=32).hex();sql="INSERT INTO app_settings(k,v) VALUES('admin_password_hash','"+value+"') ON CONFLICT(k) DO UPDATE SET v=EXCLUDED.v; TRUNCATE app_canvas_text_nodes;";run(['docker','exec',s['pg'],'psql','-U','fixture','-d','compat','-c',sql]);print('ISOLATED_SETUP=CONFIGURED NO_SUPPLIER_CREDENTIALS=1')
+ s=json.loads(STATE.read_text());info=json.loads(run(['docker','inspect',s['pg']]))[0];assert info['Config']['Labels'].get('io.naumi.real-next-compat')==s['tag'];read(s.get('oldOrigin','http://127.0.0.1:'+str(s['oldPort']))+'/api/auth/register',{'email':'bootstrap-'+s['tag']+'@example.test','password':'fixture-bootstrap-password','name':'Fixture bootstrap'});salt=b'compat-local-admin-hash-20261016';value='scrypt$'+salt.hex()+'$'+hashlib.scrypt(b'fixture-only-password',salt=salt,n=16384,r=8,p=1,dklen=32).hex();sql="INSERT INTO app_settings(k,v) VALUES('admin_password_hash','"+value+"') ON CONFLICT(k) DO UPDATE SET v=EXCLUDED.v; TRUNCATE app_canvas_text_nodes;";run(['docker','exec',s['pg'],'psql','-U','fixture','-d','compat','-c',sql]);print('ISOLATED_SETUP=CONFIGURED NO_SUPPLIER_CREDENTIALS=1')
 elif mode=='memory':
  s=json.loads(STATE.read_text());result={}
  for role in ['old','new','pg','gateway','worker','varianthk','variantdesktop','variantenterprise','variantunified']:
@@ -74,7 +84,7 @@ elif mode=='variant-start':
   assert (ROOT/'unified-static/manifest.json').is_file(),'Captured three-prefix union required'
   for prefix in ['', '/desktop', '/enterprise']:
    config+='location ^~ '+prefix+'/_next/static/{alias /fixture/unified-static'+prefix+'/_next/static/;add_header Cache-Control "public,max-age=31536000,immutable" always;}'
- config+='}}';(ROOT/'nginx.conf').write_text(config);run(['docker','start',s['gateway']]);s['origin']='http://127.0.0.1:'+run(['docker','port',s['gateway'],'80/tcp']).split(':')[-1];STATE.write_text(json.dumps(s,indent=2));wait(lambda:read(s['origin']+'/api/version').get('commit')==version.get('commit'),'variant gateway');print('VARIANT_READY='+json.dumps({'variant':variant,'version':version,'origin':s['origin']}))
+ config+='}}';(ROOT/'nginx.conf').write_text(config);run(['docker','start',s['gateway']]);s['origin']=service_origin(s,s['gateway'],80);STATE.write_text(json.dumps(s,indent=2));wait(lambda:read(s['origin']+'/api/version').get('commit')==version.get('commit'),'variant gateway');print('VARIANT_READY='+json.dumps({'variant':variant,'version':version,'origin':s['origin']}))
 elif mode=='pause-webs':
  s=json.loads(STATE.read_text())
  for name in s['created']:
