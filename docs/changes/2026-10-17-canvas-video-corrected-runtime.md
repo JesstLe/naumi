@@ -1,5 +1,13 @@
 # 主线整合后的固定视频运行候选
 
+## 最新替换候选：bb98187
+
+63df的最大IO并发反例已使其失去最终发布资格，旧包保持审计用途并标注禁止部署。替换业务源bb98187a58b4e588f250d77799b1725183541af8 / 1792224867的三镜像已构建完成；普通cb9e28ec872cd3ddac5f723c9299bca6f715ae7e5388ddf83ad3585c69fbfbdb已完成不覆盖运行时代码的实际媒体HTTP大文件并发及独立原生沙箱验收，详见[流式哈希](2026-10-17-canvas-video-streamed-hashing.md)。
+
+新编译standalone App的受影响media/tasks集中验收通过，测试源来自固定bb归档，SDK package-lock匹配，UID1001执行，独立PG沿用已校正的768MiB/tmpfs512MiB。媒体模块覆盖真实App/Worker/DB和实际产物，原生Linux沙箱使用上段独立门禁；任务模块覆盖并发只创建一次、完成只结算一次、排队取消不提交、未知受理保持、完整重试、自备工作流持久化0积分。两组退出0，未复跑此前已通过且本次未改的整套协议/浏览器模块。证据compiled-app-bb98187-media-tasks-20261017/COMPLETE.json、media.log、tasks.log及CLEANUP.json，生产连接/外部付费调用0。
+
+仅普通运行镜像的离线包已导出，243026947字节，SHA09b5669bd2ccca05411db866a25e61e947fbaafac97a6f9bf7e3a84dc4cfbacb；逐blob摘要已核验。现已传至103的/opt/naumi-staging/evidence/canvas-video-prestage-bb98187-image-20261017-0900，目录0700/文件0600，服务器回读大小/SHA一致。仅私有暂存，未解包、导入镜像、改变服务或占发布锁；47仅作为既有SSH TCP中继。新静态/网关/回滚包单独生成并验证，不改写旧63包或以其回执冒充bb验收。用户已选103临时增加至少1GiB内存，保持原5120MiB完整发布预算，云控制台入口信息待补充；当前未扩容或切流。下文是原63阶段事实。
+
 ## 来源与完成范围
 
 本轮先 fetch origin/main，任务分支与 a6a87ec 主线一致。固定业务源码为 63df208771f91a98d21384c99b320f2d5e869811，版本 1792219221；后续文档提交不改变候选。三界面 Linux 镜像已全部构建，原构建会话26668正常退出。普通镜像 sha256:2534baf3247937eb510a72bb9ed31368418a610da7162ce2bc1de16367bc0151。归档源码 SHA c694efb6ea5b32cf80e61c7416294a1051e0f9dd190d77060f6108ee45443917。
