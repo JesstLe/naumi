@@ -2,7 +2,7 @@ import { build } from 'esbuild';
 import { mkdir, copyFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 await mkdir(new URL('./dist/', import.meta.url), { recursive: true });
-await build({ entryPoints: [fileURLToPath(new URL('./src/server.ts', import.meta.url))],
+await build({absWorkingDir:fileURLToPath(new URL('.',import.meta.url)), entryPoints: [fileURLToPath(new URL('./src/server.ts', import.meta.url))],
   outfile: fileURLToPath(new URL('./dist/service.mjs', import.meta.url)),
   bundle: true, platform: 'node', target: 'node24', format: 'esm', external: ['pg'] });
 await copyFile(new URL('./migrations/001-workflow.sql', import.meta.url), new URL('./dist/001-workflow.sql', import.meta.url));
@@ -22,10 +22,10 @@ await copyFile(new URL('./migrations/009-performance.sql', import.meta.url), new
 await copyFile(new URL('./migrations/010-routing.sql', import.meta.url), new URL('./dist/010-routing.sql', import.meta.url));
 
 await copyFile(new URL('./migrations/011-notifications.sql', import.meta.url), new URL('./dist/011-notifications.sql', import.meta.url));
-await build({entryPoints:[fileURLToPath(new URL('./tools/notification-worker.ts',import.meta.url))],outfile:fileURLToPath(new URL('./dist/notification-worker.mjs',import.meta.url)),bundle:true,platform:'node',target:'node24',format:'esm',external:['pg']});
+await build({absWorkingDir:fileURLToPath(new URL('.',import.meta.url)),entryPoints:[fileURLToPath(new URL('./tools/notification-worker.ts',import.meta.url))],outfile:fileURLToPath(new URL('./dist/notification-worker.mjs',import.meta.url)),bundle:true,platform:'node',target:'node24',format:'esm',external:['pg']});
 
 // Complete deployable runtime, fixed product artifact and self-verifying bundle metadata.
-await build({entryPoints:[fileURLToPath(new URL('./tools/runtime.ts',import.meta.url))],outfile:fileURLToPath(new URL('./dist/runtime.mjs',import.meta.url)),bundle:true,platform:'node',target:'node24',format:'esm',external:['pg']});
+await build({absWorkingDir:fileURLToPath(new URL('.',import.meta.url)),entryPoints:[fileURLToPath(new URL('./tools/runtime.ts',import.meta.url))],outfile:fileURLToPath(new URL('./dist/runtime.mjs',import.meta.url)),bundle:true,platform:'node',target:'node24',format:'esm',external:['pg']});
 const {readFile,writeFile,readdir}=await import('node:fs/promises'),{createHash}=await import('node:crypto'),{execFileSync}=await import('node:child_process'),{resolve}=await import('node:path');
 const hash=b=>createHash('sha256').update(b).digest('hex'),canonical=v=>Array.isArray(v)?'['+v.map(canonical).join(',')+']':v&&typeof v==='object'?'{'+Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,x])=>JSON.stringify(k)+':'+canonical(x)).join(',')+'}':JSON.stringify(v);
 const directory=new URL('./dist/',import.meta.url),migrationNames=(await readdir(new URL('./migrations/',import.meta.url))).filter(f=>/^\d{3}-[a-z0-9-]+\.sql$/.test(f)).sort();

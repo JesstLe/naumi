@@ -1,0 +1,38 @@
+# Linux host networking preserves the runtime's loopback-only listener.
+# Provisioning and migrations are explicit CLI operations, never startup hooks.
+name: enterprise-workflow-${ENTERPRISE_SLOT:?set a unique slot name}
+x-runtime: &runtime
+  image: ${ENTERPRISE_IMAGE:?set a verified immutable image ID or digest}
+  network_mode: host
+  user: "1000:1000"
+  read_only: true
+  init: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 128
+  mem_limit: 512m
+  cpus: 1.0
+  restart: "no"
+  # Use lifecycle drain/status/stop, not an unattended timeout-based compose stop.
+  stop_grace_period: 10m
+  tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]
+  volumes:
+    - type: bind
+      source: ${ENTERPRISE_RUNTIME_CONFIG:?set absolute protected JSON path}
+      target: /run/enterprise/runtime.json
+      read_only: true
+    - type: bind
+      source: ${ENTERPRISE_DELIVERY_ROOT:?set absolute independent storage directory}
+      target: /var/lib/naumi-enterprise/delivery
+services:
+  api:
+    <<: *runtime
+    environment:
+      RUNTIME_CONFIG: /run/enterprise/runtime.json
+      RUNTIME_ROLE: api
+  worker:
+    <<: *runtime
+    command: [worker, --config, /run/enterprise/runtime.json]
+    environment:
+      RUNTIME_CONFIG: /run/enterprise/runtime.json
+      RUNTIME_ROLE: worker

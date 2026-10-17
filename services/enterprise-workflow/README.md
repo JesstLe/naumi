@@ -97,3 +97,8 @@ node services/enterprise-workflow/tools/fixture-browser-check.mjs OUTPUT_DIRECTO
 浏览器版本未安装时可安装对应官方Playwright浏览器，或通过`ENTERPRISE_TEST_BROWSER_PATH`显式选择已有测试专用headless可执行文件。脚本启动全新隔离进程，不附着用户Chrome或CDP。
 
 此页是后端验收工具，不替代完整企业Demo；工具合成身份选择器不属于正式身份服务，不能随正式BFF公开。`dist/service.mjs`不包含fixture签发器、示例页和Docker启动器；正式接入采用S1契约中的公钥验证器和真实资产适配。
+# Linux运行镜像
+
+`node build-linux.mjs --output ABSOLUTE_PATH` 从干净提交构建固定基础镜像、精简上下文和非root运行镜像。`node verify-linux.mjs --output ABSOLUTE_PATH` 在独立内部网络/数据库运行Linux完整验收，再验证生产镜像API与Worker。开发验证需显式`--allow-development true`；不作为最终交付版本。
+
+部署模板：`deploy/linux/compose.example.yaml`。详细运行约束、0600配置、host网络/回环端口、独立存储、排空门禁和未完成项见`../../docs/enterprise/linux-runtime-g15b.md`。模板不自动初始化真实身份或发布服务器。
