@@ -25,14 +25,18 @@ export const batchPreviewSchema=z.strictObject({batchId:id,items:z.array(z.stric
 export const sourceRefSchema=z.strictObject({instanceId:z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,79}$/),enterpriseId:id,kind:z.enum(['artwork','image-job','canvas-task','video-task','ledger']),id:z.string().trim().min(1).max(200)});
 export type SourceRef=z.infer<typeof sourceRefSchema>;
 export type SourceLink={ref:SourceRef;linkedBy:string;linkedAt:string;reason:string};
+export const routingFieldsSchema=z.strictObject({brand:z.string().trim().max(80),shop:z.string().trim().max(80),businessUnit:z.string().trim().max(80),workKind:z.enum(['','design','artwork'])});
+export type RoutingFields=z.infer<typeof routingFieldsSchema>;
 export const actionSchema = z.discriminatedUnion('type', [
-  z.strictObject({ type: z.literal('create'), title: text, brief: text, acceptance: text }),
-  z.strictObject({ type: z.literal('revise-requirement'), title: text, brief: text, acceptance: text }),
+  z.strictObject({ type: z.literal('create'), title: text, brief: text, acceptance: text,routingFields:routingFieldsSchema.optional() }),
+  z.strictObject({ type: z.literal('revise-requirement'), title: text, brief: text, acceptance: text,routingFields:routingFieldsSchema.optional() }),
   z.strictObject({ type: z.literal('submit-requirement') }),
   z.strictObject({ type: z.literal('return-requirement'), reason: text }),
   z.strictObject({ type: z.literal('approve-requirement') }),
   z.strictObject({ type: z.literal('plan-tasks'), tasks: z.array(taskSpec).min(1).max(50) }),
   z.strictObject({ type: z.literal('publish') }),
+  z.strictObject({type:z.literal('operations-signoff'),reason:text}),
+  z.strictObject({type:z.literal('operations-followup'),followupId:id,title:text,brief:text,acceptance:text,reason:text}),
   z.strictObject({type:z.literal('link-source'),...taskId,ref:sourceRefSchema,reason:text}),
   z.strictObject({type:z.literal('unlink-source'),...taskId,ref:sourceRefSchema,reason:text}),
   z.strictObject({type:z.literal('set-task-plan'),...taskId,planStart:calendarDate.nullable(),planEnd:calendarDate.nullable(),estimatedHours:z.number().positive().max(1000).nullable(),scheduleTag:z.string().regex(/^$|^[a-z][a-z0-9_]{0,63}$/),customValues:z.record(z.string().regex(/^custom_[a-zA-Z0-9_]{1,56}$/),z.union([z.string().max(2000),z.number().finite(),z.null()])).refine(v=>Object.keys(v).length<=20),reason:text}),
@@ -72,6 +76,10 @@ export type Task = {
   submittedAt: string | null; acceptedAt: string | null; assetIds: string[]; quality: number | null;
 };
 export type WorkOrder = {
+  requestTeamId?:string;routingFields?:RoutingFields;
+  routing?:{status:'assigned'|'unmatched'|'conflict'|'unavailable';ruleVersion:number;ruleIds:string[];fromTeamId:string;toTeamId:string|null;decidedBy:string;at:string;reason:string};
+  operations?:{status:'signed'|'followup';actor:string;at:string;reason:string;followupId?:string;assetIds:string[]};
+  followsOrderId?:string;
   teamId?: string;
   id: string; enterpriseId: string; requester: string; title: string; brief: string; acceptance: string;
   status: 'draft' | 'submitted' | 'approved' | 'active' | 'completed' | 'cancelled' | 'archived';

@@ -18,3 +18,5 @@ await copyFile(new URL('./migrations/007-workspace-labels.sql', import.meta.url)
 await copyFile(new URL('./migrations/008-delivery-assets.sql', import.meta.url), new URL('./dist/008-delivery-assets.sql', import.meta.url));
 
 await copyFile(new URL('./migrations/009-performance.sql', import.meta.url), new URL('./dist/009-performance.sql', import.meta.url));
+
+await copyFile(new URL('./migrations/010-routing.sql', import.meta.url), new URL('./dist/010-routing.sql', import.meta.url));

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Pool, PoolClient } from 'pg';
 import { commandSchema,batchPreviewSchema,calendarDate, WorkflowError, type Actor, type Principal, type WorkOrder, type Command } from './contracts';
+import type {RoutingStore} from './routing-store';
 import type { Workbook } from './scheduling-contracts';
 import { canRead, evolve } from './domain';
 const sourceSchema=z.strictObject({sourceHash:z.string().regex(/^[a-f0-9]{64}$/),row:z.number().int().min(2).max(10001),expectedVersion:z.number().int().positive(),intent:z.literal('standalone'),confirmed:z.literal(true)});
@@ -10,6 +11,8 @@ const listSchema=z.strictObject({query:z.string().max(120).default(''),status:z.
 const tasksSchema=z.strictObject({query:z.string().max(120).default(''),status:z.enum(['','open','assigned','claimed','in_progress','blocked','review','rework','accepted']).default(''),scope:z.enum(['all','mine','claimable','handover']).default('all'),page:z.coerce.number().int().min(1).max(10000).default(1),assignee:z.string().max(254).default('')});
 const assigneeSchema=z.strictObject({query:z.string().max(120).default(''),kind:z.enum(['','design','artwork']).default(''),page:z.coerce.number().int().min(1).max(10000).default(1)});
 
+// Same authorization as canRead: request-side access never grants execution writes.
+function readScope(doc:string,originPermission:string){return `((((${doc}->>'teamId') IS NOT DISTINCT FROM $2::text) AND ($3::boolean OR ${doc}->>'requester'=$4 OR EXISTS(SELECT 1 FROM jsonb_array_elements(${doc}->'tasks') x WHERE x->>'assignee'=$4 OR x->'pendingHandover'->>'to'=$4 OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(x->'handoverHistory','[]'::jsonb)) h WHERE h->>'outcome'='accepted' AND (h->>'from'=$4 OR h->>'to'=$4))) OR ($5::boolean AND ${doc}->>'status'='active' AND EXISTS(SELECT 1 FROM jsonb_array_elements(${doc}->'tasks') x WHERE x->>'status'='open' AND x->>'kind'=ANY($6::text[]))))) OR (${doc}->>'requestTeamId'=$2::text AND (${doc}->>'requester'=$4 OR ${originPermission}::boolean)))`;}
 // Must check live membership, enabled/expiry, entry grant, feature policy and business permissions.
 // It is also called for an assignment target; role display names and client headers are not authority.
 export type ResolveActor = (tx: PoolClient, principal: Principal) => Promise<Actor | null>;
@@ -22,7 +25,7 @@ function stable(value: unknown): string {
 }
 export type VerifySource=(proof:string,actor:Actor,command:Command)=>Promise<{sourceSubject:string}>;
 export class WorkflowStore {
-  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date()) {}
+  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore) {}
   async ready() {
     const result = await this.pool.query('SELECT version FROM enterprise_workflow.schema_version WHERE version=1');
     if (result.rowCount !== 1) throw new WorkflowError(503, 'MIGRATION_REQUIRED');
@@ -54,12 +57,10 @@ export class WorkflowStore {
     return this.transaction(async tx=>{
       const actor=await this.actor(tx,principal);
       // Mirror canRead in SQL so authorization precedes pagination/counting.
-      const values=[principal.enterpriseId,actor.teamId??null,actor.permissions.some(p=>['manage','dispatch','review'].includes(p)),actor.subject,actor.permissions.includes('execute'),actor.workKinds,q.status,q.query];
-      const where=`enterprise_id=$1 AND (document->>'teamId') IS NOT DISTINCT FROM $2::text
-        AND ($3::boolean OR document->>'requester'=$4 OR EXISTS(SELECT 1 FROM jsonb_array_elements(document->'tasks') t WHERE (t->>'assignee'=$4 OR t->'pendingHandover'->>'to'=$4 OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(t->'handoverHistory','[]'::jsonb)) h WHERE h->>'outcome'='accepted' AND (h->>'from'=$4 OR h->>'to'=$4))))
-          OR ($5::boolean AND document->>'status'='active' AND EXISTS(SELECT 1 FROM jsonb_array_elements(document->'tasks') t WHERE t->>'status'='open' AND t->>'kind'=ANY($6::text[]))))
+      const values=[principal.enterpriseId,actor.teamId??null,actor.permissions.some(p=>['manage','dispatch','review'].includes(p)),actor.subject,actor.permissions.includes('execute'),actor.workKinds,q.status,q.query,actor.permissions.some(p=>['manage','dispatch'].includes(p))];
+      const where=`enterprise_id=$1 AND ${readScope('document','$9')}
         AND ($7='' OR document->>'status'=$7) AND ($8='' OR strpos(lower(document->>'title'),lower($8))>0)`;
-      const rows=await tx.query(`SELECT document,count(*) OVER() AS total FROM enterprise_workflow.orders WHERE ${where} ORDER BY updated_at DESC,id LIMIT 30 OFFSET $9`,[...values,(q.page-1)*30]);
+      const rows=await tx.query(`SELECT document,count(*) OVER() AS total FROM enterprise_workflow.orders WHERE ${where} ORDER BY updated_at DESC,id LIMIT 30 OFFSET $10`,[...values,(q.page-1)*30]);
       const total=rows.rows.length?Number(rows.rows[0].total):Number((await tx.query(`SELECT count(*) AS n FROM enterprise_workflow.orders WHERE ${where}`,values)).rows[0].n);
       return {orders:rows.rows.map(r=>r.document as WorkOrder).filter(o=>canRead(actor,o)),total,page:q.page,pageSize:30,viewer:{subject:actor.subject,permissions:actor.permissions,teamId:actor.teamId??null}};
     });
@@ -78,30 +79,27 @@ export class WorkflowStore {
   async tasks(principal:Principal,raw:unknown={}){
     const q=tasksSchema.parse(raw);
     return this.transaction(async tx=>{
-      const a=await this.actor(tx,principal),v=[a.enterpriseId,a.teamId??null,a.permissions.some(p=>['manage','dispatch','review'].includes(p)),a.subject,a.permissions.includes('execute'),a.workKinds,q.status,q.scope,q.query,q.assignee];
-      const where=`o.enterprise_id=$1 AND (o.document->>'teamId') IS NOT DISTINCT FROM $2::text
-       AND ($3::boolean OR o.document->>'requester'=$4 OR EXISTS(SELECT 1 FROM jsonb_array_elements(o.document->'tasks') x WHERE (x->>'assignee'=$4 OR x->'pendingHandover'->>'to'=$4 OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(x->'handoverHistory','[]'::jsonb)) h WHERE h->>'outcome'='accepted' AND (h->>'from'=$4 OR h->>'to'=$4))))
-        OR ($5::boolean AND o.document->>'status'='active' AND EXISTS(SELECT 1 FROM jsonb_array_elements(o.document->'tasks') x WHERE x->>'status'='open' AND x->>'kind'=ANY($6::text[]))))
-       AND ($7='' OR t->>'status'=$7) AND ($8='all' OR $8='mine' AND (t->>'assignee'=$4 OR t->'pendingHandover'->>'to'=$4) OR $8='handover' AND o.document->>'status'='active' AND t->'pendingHandover'->>'to'=$4 OR $8='claimable' AND $5::boolean AND o.document->>'status'='active' AND t->>'status'='open' AND t->>'kind'=ANY($6::text[]) AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(t->'dependencyIds') d WHERE NOT EXISTS(SELECT 1 FROM jsonb_array_elements(o.document->'tasks') x WHERE x->>'id'=d AND x->>'status'='accepted')))
+      const a=await this.actor(tx,principal),v=[a.enterpriseId,a.teamId??null,a.permissions.some(p=>['manage','dispatch','review'].includes(p)),a.subject,a.permissions.includes('execute'),a.workKinds,q.status,q.scope,q.query,q.assignee,a.permissions.some(p=>['manage','dispatch'].includes(p))];
+      const where=`o.enterprise_id=$1 AND ${readScope('o.document','$11')}
+       AND ($7='' OR t->>'status'=$7) AND ($8='all' OR $8='mine' AND (t->>'assignee'=$4 OR t->'pendingHandover'->>'to'=$4) OR $8='handover' AND o.document->>'status'='active' AND t->'pendingHandover'->>'to'=$4 OR $8='claimable' AND (o.document->>'teamId') IS NOT DISTINCT FROM $2::text AND $5::boolean AND o.document->>'status'='active' AND t->>'status'='open' AND t->>'kind'=ANY($6::text[]) AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(t->'dependencyIds') d WHERE NOT EXISTS(SELECT 1 FROM jsonb_array_elements(o.document->'tasks') x WHERE x->>'id'=d AND x->>'status'='accepted')))
        AND ($9='' OR strpos(lower((o.document->>'title')||' '||(t->>'title')),lower($9))>0) AND ($10='' OR t->>'assignee'=$10)`;
       const from='FROM enterprise_workflow.orders o CROSS JOIN LATERAL jsonb_array_elements(o.document->\'tasks\') t';
-      const result=await tx.query(`SELECT o.document,t AS task,count(*) OVER() AS total ${from} WHERE ${where} ORDER BY (t->>'dueAt')::timestamptz,o.id,t->>'id' LIMIT 30 OFFSET $11`,[...v,(q.page-1)*30]);
+      const result=await tx.query(`SELECT o.document,t AS task,count(*) OVER() AS total ${from} WHERE ${where} ORDER BY (t->>'dueAt')::timestamptz,o.id,t->>'id' LIMIT 30 OFFSET $12`,[...v,(q.page-1)*30]);
       const total=result.rows.length?Number(result.rows[0].total):Number((await tx.query(`SELECT count(*) AS n ${from} WHERE ${where}`,v)).rows[0].n);
-      return {tasks:result.rows.filter(r=>canRead(a,r.document)).map(r=>{const o=r.document as WorkOrder;return {order:{id:o.id,title:o.title,status:o.status,version:o.version,requester:o.requester,brief:o.brief},task:r.task};}),total,page:q.page,pageSize:30,viewer:{subject:a.subject,permissions:a.permissions,workKinds:a.workKinds}};
+      return {tasks:result.rows.filter(r=>canRead(a,r.document)).map(r=>{const o=r.document as WorkOrder;return {order:{id:o.id,teamId:o.teamId,requestTeamId:o.requestTeamId,title:o.title,status:o.status,version:o.version,requester:o.requester,brief:o.brief},task:r.task};}),total,page:q.page,pageSize:30,viewer:{subject:a.subject,permissions:a.permissions,workKinds:a.workKinds}};
     });
   }
   async week(principal:Principal,raw:unknown){
     const q=z.strictObject({start:calendarDate,assignee:z.string().max(254).default('')}).parse(raw),end=new Date(Date.parse(q.start)+6*86400000).toISOString().slice(0,10);
-    return this.transaction(async tx=>{const a=await this.actor(tx,principal),values=[a.enterpriseId,a.teamId??null,a.permissions.some(p=>['manage','dispatch','review'].includes(p)),a.subject,a.permissions.includes('execute'),a.workKinds,q.assignee,q.start,end];
-      const where=`o.enterprise_id=$1 AND (o.document->>'teamId') IS NOT DISTINCT FROM $2::text
-       AND ($3::boolean OR o.document->>'requester'=$4 OR EXISTS(SELECT 1 FROM jsonb_array_elements(o.document->'tasks') x WHERE (x->>'assignee'=$4 OR x->'pendingHandover'->>'to'=$4 OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(x->'handoverHistory','[]'::jsonb)) h WHERE h->>'outcome'='accepted' AND (h->>'from'=$4 OR h->>'to'=$4)))) OR ($5::boolean AND o.document->>'status'='active' AND EXISTS(SELECT 1 FROM jsonb_array_elements(o.document->'tasks') x WHERE x->>'status'='open' AND x->>'kind'=ANY($6::text[]))))
+    return this.transaction(async tx=>{const a=await this.actor(tx,principal),values=[a.enterpriseId,a.teamId??null,a.permissions.some(p=>['manage','dispatch','review'].includes(p)),a.subject,a.permissions.includes('execute'),a.workKinds,q.assignee,q.start,end,a.permissions.some(p=>['manage','dispatch'].includes(p))];
+      const where=`o.enterprise_id=$1 AND ${readScope('o.document','$10')}
        AND o.document->>'status' IN ('approved','active','completed') AND ($7='' OR t->>'assignee'=$7)`;
       const from="FROM enterprise_workflow.orders o CROSS JOIN LATERAL jsonb_array_elements(o.document->'tasks') t";
       const rows=(await tx.query(`SELECT o.document,t AS task ${from} WHERE ${where} AND t->>'planStart'<=$9 AND t->>'planEnd'>=$8 ORDER BY t->>'planStart',o.id,t->>'id' LIMIT 1001`,values)).rows;
       if(rows.length>1000)throw new WorkflowError(422,'WEEK_RANGE_TOO_LARGE');
-      const unplanned=Number((await tx.query(`SELECT count(*) AS n ${from} WHERE ${where} AND (t->>'planStart') IS NULL`,values.slice(0,7))).rows[0].n);
+      const unplanned=Number((await tx.query(`SELECT count(*) AS n ${from} WHERE ${where} AND (t->>'planStart') IS NULL AND $8::text IS NOT NULL AND $9::text IS NOT NULL`,values)).rows[0].n);
       const days=Array.from({length:7},(_,i)=>new Date(Date.parse(q.start)+i*86400000).toISOString().slice(0,10));const loads:Record<string,Record<string,number>>={};
-      const tasks=rows.filter(r=>canRead(a,r.document)).map(r=>{const o=r.document as WorkOrder,t=r.task as WorkOrder['tasks'][number],who=t.assignee||'__unassigned';loads[who]??={};const count=(Date.parse(t.planEnd!)-Date.parse(t.planStart!))/86400000+1;for(const day of days)if(day>=t.planStart!&&day<=t.planEnd!)loads[who][day]=(loads[who][day]||0)+(t.estimatedHours||0)/count;return {order:{id:o.id,title:o.title,status:o.status,version:o.version,requester:o.requester},task:t};});
+      const tasks=rows.filter(r=>canRead(a,r.document)).map(r=>{const o=r.document as WorkOrder,t=r.task as WorkOrder['tasks'][number],who=t.assignee||'__unassigned';loads[who]??={};const count=(Date.parse(t.planEnd!)-Date.parse(t.planStart!))/86400000+1;for(const day of days)if(day>=t.planStart!&&day<=t.planEnd!)loads[who][day]=(loads[who][day]||0)+(t.estimatedHours||0)/count;return {order:{id:o.id,teamId:o.teamId,requestTeamId:o.requestTeamId,title:o.title,status:o.status,version:o.version,requester:o.requester},task:t};});
       return {tasks,days,loads,unplanned,timezone:'Asia/Shanghai',distribution:'calendar-day-even',referenceDailyHours:8};
     });
   }
@@ -170,7 +168,7 @@ export class WorkflowStore {
       // Fixed lock order; tenant-scoped command dedupe also covers concurrent reuse across orders.
       await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`command:${principal.enterpriseId}:${command.commandId}`]);
       if(command.action.type==='accept-delivery')await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`performance:${principal.enterpriseId}:${principal.teamId}`]);
-      await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`order:${principal.enterpriseId}:${command.orderId}`]);
+      const orderLocks=command.action.type==='operations-followup'?[command.orderId,command.action.followupId].sort():[command.orderId];for(const oid of new Set(orderLocks))await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`order:${principal.enterpriseId}:${oid}`]);
       const fingerprint = createHash('sha256').update(stable({ principal, command,...(source?{source}:{}) })).digest('hex');
       let sourceRow;
       if(source){
@@ -210,6 +208,17 @@ export class WorkflowStore {
         if(!target||target.enterpriseId!==principal.enterpriseId||target.teamId!==principal.teamId||target.subject!==assignment.subject||!target.permissions.includes('execute')||assignment.ids.some(id=>{const task=previous.tasks.find(t=>t.id===id);return !task||!target.workKinds.includes(task.kind);}))throw new WorkflowError(action.type==='assign'?403:409,'INVALID_ASSIGNEE');
       }
       const { order, event } = evolve(previous ?? null, actor, command, this.now().toISOString());
+      if(action.type==='submit-requirement'&&this.routing){await this.routing.submitted(tx,actor,order,event.occurredAt);event.teamId=order.teamId;if(order.routing)event.data.routing=order.routing;}
+      if(action.type==='operations-signoff'||action.type==='operations-followup')for(const task of order.tasks)if(!await this.validateAssets(tx,actor,task.assetIds,{orderId:order.id,taskId:task.id}))throw new WorkflowError(403,'INVALID_ASSETS');
+      if(action.type==='operations-followup'){
+        if(action.followupId===order.id)throw new WorkflowError(400,'INVALID_FOLLOWUP');
+        // followup UUID is client-stable; insertion/old-order decision/dual events commit together.
+        if((await tx.query('SELECT 1 FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=$2',[actor.enterpriseId,action.followupId])).rowCount)throw new WorkflowError(409,'FOLLOWUP_EXISTS');
+        const follow:WorkOrder={id:action.followupId,enterpriseId:order.enterpriseId,teamId:order.requestTeamId??order.teamId,requestTeamId:order.requestTeamId??order.teamId,requester:actor.subject,title:action.title,brief:action.brief,acceptance:action.acceptance,...(order.routingFields?{routingFields:order.routingFields}:{}),followsOrderId:order.id,status:'draft',version:1,createdAt:event.occurredAt,updatedAt:event.occurredAt,tasks:[]};
+        await tx.query('INSERT INTO enterprise_workflow.orders(enterprise_id,id,version,document)VALUES($1,$2,1,$3)',[actor.enterpriseId,follow.id,follow]);
+        const followEvent={...event,id:createHash('sha256').update(event.id+':followup').digest('hex'),orderId:follow.id,teamId:follow.teamId,aggregateVersion:1,type:'workflow.operations-followup-created.v1',data:{action:{type:'operations-followup-created',originalOrderId:order.id,reason:action.reason}}};
+        await tx.query('INSERT INTO enterprise_workflow.events(enterprise_id,id,order_id,aggregate_version,event)VALUES($1,$2,$3,1,$4)',[actor.enterpriseId,followEvent.id,follow.id,followEvent]);
+      }
       const tag=action.type==='set-task-tag'?action.scheduleTag:action.type==='batch-tasks'&&action.operation.type==='set-task-tag'?action.operation.scheduleTag:null;
       if(tag!==null){const w=(await tx.query('SELECT document FROM enterprise_workflow.schedule_workbooks WHERE enterprise_id=$1 AND team_id=$2 FOR SHARE',[actor.enterpriseId,actor.teamId])).rows[0]?.document as Workbook|undefined;if(!w)throw new WorkflowError(409,'WORKBOOK_NOT_FOUND');if(tag&&!w.options.some(o=>o.id===tag))throw new WorkflowError(400,'INVALID_SCHEDULE_TAG');}
       if(dryRun)return {order,replayed:false,before:previous!.tasks.filter(t=>action.type==='batch-tasks'&&action.taskIds.includes(t.id)).map(t=>({taskId:t.id,assignee:t.assignee,status:t.status,scheduleTag:t.scheduleTag??''}))};

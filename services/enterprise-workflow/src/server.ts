@@ -6,6 +6,7 @@ import type { WorkflowStore } from './store';
 import type { SchedulingStore } from './scheduling-store';
 import type { SourceIdentityStore,SourceAuthenticate } from './source-identity';
 import type { PeopleStore } from './people-store';
+import type {RoutingStore} from './routing-store';
 import type {PerformanceStore} from './performance-store';
 import type { DeliveryStore } from './delivery-store';
 // Adapter verifies short-lived BFF authentication (issuer, audience, expiry, signature),
@@ -27,13 +28,13 @@ async function body(req: IncomingMessage) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
   catch { throw new WorkflowError(400, 'INVALID_JSON'); }
 }
-export function createWorkflowServer(store: WorkflowStore, authenticate: Authenticate, scheduling?: SchedulingStore, identity?:{store:SourceIdentityStore;authenticate:SourceAuthenticate},people?:PeopleStore,delivery?:DeliveryStore,performance?:PerformanceStore) {
+export function createWorkflowServer(store: WorkflowStore, authenticate: Authenticate, scheduling?: SchedulingStore, identity?:{store:SourceIdentityStore;authenticate:SourceAuthenticate},people?:PeopleStore,delivery?:DeliveryStore,performance?:PerformanceStore,routing?:RoutingStore) {
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url || '/', 'http://workflow.internal');
       if (req.method === 'GET' && url.pathname === '/healthz') return json(res, 200, { status: 'alive', service: 'enterprise-workflow', stage: 'foundation' });
       if (req.method === 'GET' && url.pathname === '/readyz') {
-        try { await store.ready(); if (scheduling) await scheduling.ready(); if(performance)await performance.ready(); } catch { throw new WorkflowError(503, 'NOT_READY'); }
+        try { await store.ready(); if (scheduling) await scheduling.ready(); if(performance)await performance.ready();if(routing)await routing.ready(); } catch { throw new WorkflowError(503, 'NOT_READY'); }
         return json(res, 200, { status: 'ready', schemaVersion: scheduling ? 2 : 1 });
       }
       if(identity&&req.method==='GET'&&url.pathname==='/v1/identity/workspaces'){
@@ -43,6 +44,8 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       const principal = await authenticate(req);
       if (!principal) throw new WorkflowError(401, 'AUTH_REQUIRED');
       if (!id.safeParse(principal.enterpriseId).success || !principal.subject) throw new WorkflowError(401, 'INVALID_IDENTITY');
+      if(routing&&url.pathname==='/v1/routing'){await routing.ready();if(req.method==='GET')return json(res,200,await routing.read(principal,Object.fromEntries(url.searchParams)));if(req.method==='POST')return json(res,200,await routing.execute(principal,await body(req)));}
+      if(routing&&req.method==='POST'&&url.pathname==='/v1/routing/resolve'){await routing.ready();return json(res,200,await routing.resolve(principal,await body(req)));}
       if(performance&&url.pathname==='/v1/performance'){await performance.ready();if(req.method==='GET')return json(res,200,await performance.read(principal,Object.fromEntries(url.searchParams)));if(req.method==='POST')return json(res,200,await performance.execute(principal,await body(req)));}
       if(delivery&&req.method==='GET'&&url.pathname==='/v1/delivery/assets')return json(res,200,await delivery.list(principal,Object.fromEntries(url.searchParams)));
       if(delivery&&req.method==='POST'&&url.pathname==='/v1/delivery/upload'){
@@ -108,3 +111,5 @@ export { DeliveryStore } from './delivery-store';
 export {createSourceEvidenceVerifier} from './source-evidence';
 
 export {PerformanceStore} from './performance-store';
+
+export {RoutingStore} from './routing-store';

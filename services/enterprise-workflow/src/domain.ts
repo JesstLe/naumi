@@ -7,7 +7,9 @@ function need(ok: unknown, code: string, status = 409): asserts ok {
 export function has(actor: Actor, p: Permission) { return actor.permissions.includes(p); }
 export const sourceKey=(r:{instanceId:string;enterpriseId:string;kind:string;id:string})=>JSON.stringify([r.instanceId,r.enterpriseId,r.kind,r.id]);
 export function participants(t:Task){return [...new Set([t.assignee,...(t.handoverHistory??[]).filter(h=>h.outcome==='accepted').flatMap(h=>[h.from,h.to])].filter((s):s is string=>!!s))];}
+export function requestSide(actor:Actor,order:WorkOrder){return actor.enterpriseId===order.enterpriseId&&!!order.requestTeamId&&actor.teamId===order.requestTeamId&&(order.requester===actor.subject||has(actor,'manage')||has(actor,'dispatch'));}
 export function canRead(actor: Actor, order: WorkOrder) {
+  if(requestSide(actor,order))return true;
   if ((actor.teamId !== undefined || order.teamId !== undefined) && actor.teamId !== order.teamId) return false;
   return actor.enterpriseId === order.enterpriseId && (has(actor, 'manage') || has(actor, 'dispatch') || has(actor, 'review') ||
     order.requester === actor.subject || order.tasks.some(t => participants(t).includes(actor.subject) || t.pendingHandover?.to===actor.subject) ||
@@ -19,8 +21,8 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
   if (!previous) {
     need(action.type === 'create', 'NOT_FOUND', 404); permit('request');
     need(command.expectedVersion === 0, 'VERSION_CONFLICT');
-    const order: WorkOrder = { id: command.orderId, enterpriseId: actor.enterpriseId, ...(actor.teamId ? { teamId: actor.teamId } : {}), requester: actor.subject,
-      title: action.title, brief: action.brief, acceptance: action.acceptance, status: 'draft', version: 1,
+    const order: WorkOrder = { id: command.orderId, enterpriseId: actor.enterpriseId, ...(actor.teamId ? { teamId: actor.teamId,requestTeamId:actor.teamId } : {}), requester: actor.subject,
+      title: action.title, brief: action.brief, acceptance: action.acceptance,...(action.routingFields?{routingFields:action.routingFields}:{}), status: 'draft', version: 1,
       createdAt: at, updatedAt: at, tasks: [] };
     return { order, event: makeEvent(order, actor, command, at) };
   }
@@ -29,15 +31,21 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
   need(canRead(actor, previous), 'FORBIDDEN', 403);
   need(previous.version === command.expectedVersion, 'VERSION_CONFLICT');
   need(action.type !== 'create', 'ALREADY_EXISTS');
+  if(actor.teamId!==previous.teamId&&!['operations-signoff','operations-followup'].includes(action.type))throw new WorkflowError(403,'EXECUTION_TEAM_REQUIRED');
   const order = structuredClone(previous);
   const state = (...allowed: WorkOrder['status'][]) => need(allowed.includes(order.status), 'INVALID_ORDER_STATE');
   const owner = () => need(order.requester === actor.subject || has(actor, 'manage'), 'FORBIDDEN', 403);
   let eventData: Record<string, unknown> = {};
   switch (action.type) {
-    case 'revise-requirement': state('draft'); permit('request'); owner(); order.title = action.title; order.brief = action.brief; order.acceptance = action.acceptance; break;
+    case 'revise-requirement': state('draft'); permit('request'); owner(); order.title = action.title; order.brief = action.brief; order.acceptance = action.acceptance;if(action.routingFields)order.routingFields=action.routingFields;delete order.routing;break;
     case 'submit-requirement': state('draft'); permit('request'); owner(); order.status = 'submitted'; break;
-    case 'return-requirement': state('submitted'); permit('dispatch'); order.status = 'draft'; break;
-    case 'approve-requirement': state('submitted'); permit('dispatch'); order.status = 'approved'; break;
+    case 'return-requirement': state('submitted'); permit('dispatch'); order.status = 'draft';order.teamId=order.requestTeamId??order.teamId;delete order.routing;break;
+    case 'approve-requirement': state('submitted'); permit('dispatch');need(!order.routing||order.routing.status==='assigned','ROUTING_REVIEW_REQUIRED'); order.status = 'approved'; break;
+    case 'operations-signoff': case 'operations-followup': {
+      state('completed');need(!order.operations,'OPERATIONS_ALREADY_DECIDED');need(actor.teamId===(order.requestTeamId??order.teamId)&&(has(actor,'manage')||order.requester===actor.subject&&has(actor,'request')),'OPERATIONS_FORBIDDEN',403);
+      need(!order.tasks.some(t=>participants(t).includes(actor.subject)),'INDEPENDENT_SIGNOFF_REQUIRED',403);
+      order.operations={status:action.type==='operations-signoff'?'signed':'followup',actor:actor.subject,at,reason:action.reason,...(action.type==='operations-followup'?{followupId:action.followupId}:{}),assetIds:[...new Set(order.tasks.flatMap(t=>t.assetIds))]};break;
+    }
     case 'plan-tasks': {
       state('approved'); permit('dispatch');
       const ids = new Set(action.tasks.map(t => t.id));
