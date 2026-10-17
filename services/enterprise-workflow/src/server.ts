@@ -12,6 +12,7 @@ import type {NotificationStore} from './notification-store';
 import type {RoutingStore} from './routing-store';
 import type {PerformanceStore} from './performance-store';
 import type { DeliveryStore } from './delivery-store';
+import {FormValidationError} from './form-validation';
 import type {MultipartStore} from './multipart-store';
 import {PART_BYTES,MAX_MULTIPART_BYTES} from './multipart-contracts';
 import {z} from 'zod';
@@ -126,6 +127,8 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
         return json(res, 200, await scheduling.get(principal, teamId));
       }
       if(req.method==='GET'&&url.pathname==='/v1/dashboard')return json(res,200,await store.dashboard(principal,Object.fromEntries(url.searchParams)));
+      if(url.pathname==='/v1/demand-forms'&&req.method==='GET')return json(res,200,await store.forms.read(principal,Object.fromEntries(url.searchParams)));
+      if(url.pathname==='/v1/demand-forms'&&req.method==='POST')return json(res,200,await store.forms.execute(principal,await body(req)));
       if(url.pathname==='/v1/catalog'&&req.method==='GET')return json(res,200,await store.catalog.read(principal,Object.fromEntries(url.searchParams)));
       if(url.pathname==='/v1/catalog/preview'&&req.method==='POST')return json(res,200,await store.catalog.preview(principal,await body(req)));
       if(url.pathname==='/v1/catalog/apply'&&req.method==='POST')return json(res,200,await store.catalog.apply(principal,await body(req)));
@@ -159,6 +162,7 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       }
       throw new WorkflowError(404, 'NOT_FOUND');
     } catch (e) {
+      if(e instanceof FormValidationError)return json(res,e.status,{error:{code:e.code,fields:e.fields}});
       const known = e instanceof WorkflowError;
       if (!known && e && typeof e === 'object' && 'code' in e && ['55P03','57014','40P01','40001'].includes(String(e.code))) return json(res, 503, { error: { code: 'RETRY_LATER' } });
       json(res, known ? e.status : e instanceof ZodError?400:500, { error: { code: known ? e.code : e instanceof ZodError?'INVALID_INPUT':'INTERNAL_ERROR' } });

@@ -1,0 +1,48 @@
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import type {Pool} from 'pg';
+import {WorkflowStore} from '../src/store';
+import {resolveDatabaseActor} from '../src/identity';
+import {formDefinition,formValues,type FormDefinition} from '../src/form-contracts';
+import {checkFormValues,visibleFields} from '../src/form-validation';
+import {sampleForm} from './forms-http';
+import type {Principal,Action} from '../src/contracts';
+export async function formsChecks(pool:Pool){
+ const d=formDefinition.parse(sampleForm()),field=d.fields[0];
+ assert.deepEqual(checkFormValues(d,{f_urgent:false,f_count:0},true),[]);
+ assert.deepEqual(checkFormValues(d,{f_urgent:true,f_count:0},true),[{fieldId:'f_reason',code:'REQUIRED'}]);
+ assert.deepEqual(checkFormValues(d,{},false),[]);assert.equal(checkFormValues(d,{f_unknown:1},false)[0].code,'UNKNOWN_FIELD');
+ assert.equal(checkFormValues(d,{f_urgent:'false'},false)[0].code,'BOOLEAN_REQUIRED');assert.equal(checkFormValues(d,{f_count:101},false)[0].code,'OUT_OF_RANGE');assert.equal(checkFormValues(d,{f_count:'0'},false)[0].code,'NUMBER_REQUIRED');
+ assert.equal(checkFormValues(d,{f_reason:'x'.repeat(101)},false)[0].code,'TEXT_TOO_LONG');
+ assert.equal(formDefinition.safeParse({...d,fields:[field,field]}).success,false);assert.equal(formValues.safeParse({__proto__:null,f_count:Infinity}).success,false);
+ assert.equal(formDefinition.safeParse({...d,fields:[d.fields[2],field]}).success,false);
+ assert.equal(formDefinition.safeParse({...d,fields:[{...field,visibleWhen:{fieldId:field.id,equals:true}}]}).success,false);
+ const select={...field,id:'f_kind',type:'select' as const,options:[{id:'main',label:'主图'}],visibleWhen:{fieldId:'f_urgent',equals:true}},chain=formDefinition.parse({...d,fields:[field,select,{...d.fields[2],visibleWhen:{fieldId:'f_kind',equals:'main'}}]});assert.equal(visibleFields(chain,{f_urgent:false,f_kind:'main'}).get('f_reason'),false);
+ assert.equal(checkFormValues(chain,{f_urgent:false,f_kind:'bad'},true)[0].code,'OPTION_INVALID');
+ for(const v of ['2026-02-29','2026-13-01','2026-1-1'])assert.equal(checkFormValues({...d,fields:[{...field,type:'date'}]},{f_urgent:v},true)[0].code,'DATE_INVALID');assert.deepEqual(checkFormValues({...d,fields:[{...field,type:'date'}]},{f_urgent:'2024-02-29'},true),[]);
+ assert.equal(formDefinition.safeParse({...d,fields:[{...select,visibleWhen:null,options:[...select.options,...select.options]}]}).success,false);
+ assert.equal(formDefinition.safeParse({...d,fields:[{...field,min:0}]}).success,false);
+ const enterpriseId=randomUUID(),teamId=randomUUID(),other=randomUUID(),p=(subject:string,team=teamId):Principal=>({enterpriseId,teamId:team,subject});
+ await pool.query('INSERT INTO enterprise_workflow.teams(enterprise_id,team_id)VALUES($1,$2),($1,$3)',[enterpriseId,teamId,other]);
+ for(const [subject,permissions]of [['author',['manage','request','review']],['reviewer',['manage','review']],['ops',['request']],['other',['request']],['worker',['execute']]] as const){await pool.query('INSERT INTO enterprise_workflow.accounts(enterprise_id,subject)VALUES($1,$2)',[enterpriseId,subject]);for(const team of [teamId,other])await pool.query('INSERT INTO enterprise_workflow.team_members(enterprise_id,team_id,subject,permissions,work_kinds)VALUES($1,$2,$3,$4,\'["design"]\')',[enterpriseId,team,subject,JSON.stringify(permissions)]);}
+ const wf=new WorkflowStore(pool,resolveDatabaseActor,async()=>true),forms=wf.forms,id=randomUUID(),author=p('author'),reviewer=p('reviewer'),ops=p('ops');let v=0;
+ const cmd=(action:unknown)=>({commandId:randomUUID(),templateId:id,expectedVersion:v,reason:'explicit fixture',action});const act=async(action:unknown,who=author)=>{const r=await forms.execute(who,cmd(action));v=r.book.version;return r;};
+ const draft=cmd({type:'save-draft',definition:d});await forms.execute(author,draft);v=1;assert.equal((await forms.execute(author,draft)).replayed,true);await assert.rejects(forms.execute(author,{...draft,reason:'changed'}),/IDEMPOTENCY_CONFLICT/);
+ await assert.rejects(forms.execute(p('worker'),draft),/FORM_MANAGER_REQUIRED/);await assert.rejects(act({type:'publish'}),/FORM_SELF_PUBLISH_FORBIDDEN/);await assert.rejects(forms.read(ops,{action:'detail',id}),/FORM_MANAGER_REQUIRED/);assert.equal((await forms.read(ops,{action:'list'}) as any).total,0);
+ await act({type:'publish'},reviewer);assert.equal((await forms.read(ops,{action:'list'}) as any).total,1);await assert.rejects(forms.read(p('author',other),{action:'detail',id}),/FORM_NOT_FOUND/);await assert.rejects(forms.read({...ops,enterpriseId:randomUUID()},{action:'list'}),/MEMBERSHIP_REQUIRED/);
+ let o=(await wf.execute(ops,{commandId:randomUUID(),orderId:randomUUID(),expectedVersion:0,action:{type:'create',title:'动态需求',brief:'fixture',acceptance:'frozen'}})).order;
+ const run=async(action:Action,who=ops)=>o=(await wf.execute(who,{commandId:randomUUID(),orderId:o.id,expectedVersion:o.version,action})).order;
+ await run({type:'set-demand-form',selection:{templateId:id,revision:1,values:{f_urgent:true,f_count:0}},reason:'draft'});await assert.rejects(run({type:'submit-requirement'}),/FORM_VALUES_INVALID/);const before=o.version;
+ await assert.rejects(run({type:'set-demand-form',selection:null,reason:'forged'},p('other')),/FORBIDDEN/);assert.equal((await wf.get(ops,o.id)).version,before);
+ await act({type:'save-draft',definition:{...d,title:'manager-only-secret'}});assert.equal((await forms.read(ops,{action:'list',query:'manager-only-secret'}) as any).total,0);await act({type:'publish'},reviewer);
+ await run({type:'set-demand-form',selection:{templateId:id,revision:1,values:{f_urgent:false,f_count:0,f_reason:'hidden retained'}},reason:'fixed v1'});await run({type:'revise-requirement',title:'updated title',brief:'fixture',acceptance:'same snapshot'});assert.equal(o.form!.revision,1);await run({type:'submit-requirement'});assert.equal(o.form!.definition.title,d.title);await assert.rejects(run({type:'set-demand-form',selection:null,reason:'clear'}),/INVALID_ORDER_STATE/);
+ await assert.rejects(act({type:'save-draft',definition:{...d,fields:[{...field,type:'text'}]}}),/FORM_FIELD_TYPE_IMMUTABLE/);
+ o=(await wf.execute(ops,{commandId:randomUUID(),orderId:randomUUID(),expectedVersion:0,action:{type:'create',title:'second',brief:'fixture',acceptance:'disabled'}})).order;await run({type:'set-demand-form',selection:{templateId:id,revision:1,values:{f_urgent:false,f_count:0}},reason:'select'});await act({type:'set-enabled',enabled:false});await assert.rejects(run({type:'submit-requirement'}),/FORM_DISABLED/);assert.equal((await wf.get(ops,o.id)).form!.revision,1);await run({type:'set-demand-form',selection:null,reason:'explicit clear'});assert.equal(o.form,null);await act({type:'set-enabled',enabled:true});
+ await act({type:'save-draft',definition:{...d,catalogRequired:true}});await act({type:'publish'},reviewer);await run({type:'set-demand-form',selection:{templateId:id,revision:3,values:{f_urgent:false,f_count:0}},reason:'requires catalog'});await assert.rejects(run({type:'submit-requirement'}),/FORM_CATALOG_REQUIRED/);
+ await act({type:'save-draft',definition:d});const fault=cmd({type:'publish'});
+ await pool.query("CREATE FUNCTION enterprise_workflow.fail_form() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'form revision failure'; END $$;CREATE TRIGGER fail_form BEFORE INSERT ON enterprise_workflow.form_revisions FOR EACH ROW EXECUTE FUNCTION enterprise_workflow.fail_form()");await assert.rejects(forms.execute(reviewer,fault),/form revision failure/);assert.equal((await pool.query('SELECT count(*) n FROM enterprise_workflow.form_commands WHERE id=$1',[fault.commandId])).rows[0].n,'0');assert.equal((await forms.read(author,{action:'detail',id}) as any).book.version,v);await pool.query('DROP TRIGGER fail_form ON enterprise_workflow.form_revisions;DROP FUNCTION enterprise_workflow.fail_form()');
+ const race=await Promise.allSettled([forms.execute(reviewer,fault),forms.execute(reviewer,{...fault,commandId:randomUUID()})]);assert.equal(race.filter(x=>x.status==='fulfilled').length,1);assert.equal((await forms.execute(reviewer,fault)).replayed,true);
+ await pool.query("UPDATE enterprise_workflow.team_members SET enabled=false WHERE enterprise_id=$1 AND subject='reviewer'",[enterpriseId]);await assert.rejects(forms.execute(reviewer,fault),/MEMBERSHIP_REQUIRED/);
+ for(let i=0;i<31;i++)await forms.execute(author,{commandId:randomUUID(),templateId:randomUUID(),expectedVersion:0,reason:'page fixture',action:{type:'save-draft',definition:d}});const paged=await forms.read(author,{action:'list',manage:'1',page:2}) as any;assert.equal(paged.total,32);assert.equal(paged.templates.length,2);assert.equal((await forms.read(author,{action:'list',manage:'1',page:99}) as any).total,32);
+ console.log('FORMS_SERVICE_PASS: fields6=1 zero_false=1 hidden_chain=1 unknown_type_date_range=1 independent_publish=1 scope=1 draft_title_private=1 replay=1 cas=1 atomic=1 frozen_revision=1 disabled_blocks_submit=1 catalog_required=1 clear_explicit=1 revoked=1 pagination=1');
+}

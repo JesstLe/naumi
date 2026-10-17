@@ -104,3 +104,11 @@ node services/enterprise-workflow/tools/fixture-browser-check.mjs OUTPUT_DIRECTO
 `node build-linux.mjs --output ABSOLUTE_PATH` 从干净提交构建固定基础镜像、精简上下文和非root运行镜像。`node verify-linux.mjs --output ABSOLUTE_PATH` 在独立内部网络/数据库运行Linux完整验收，再验证生产镜像API与Worker。开发验证需显式`--allow-development true`；不作为最终交付版本。
 
 部署模板：`deploy/linux/compose.example.yaml`。详细运行约束、0600配置、host网络/回环端口、独立存储、排空门禁和未完成项见`../../docs/enterprise/linux-runtime-g15b.md`。模板不自动初始化真实身份或发布服务器。
+
+## 动态需求表单（G31）
+
+模板草稿与发布修订分离；团队manage维护，另一位manage+review发布。字段仅六种受限类型，最多30个，不执行脚本。需求set-demand-form由服务端冻结实际已发布修订；保存草稿允许缺必填，提交时验证条件/必填/商品和模板启停。原UI入口为需求中心→需求表单，以及需求详情→选择/填写表单。
+
+运行包schema20；formsEnabled未配置时关闭。受保护配置设为true后，以`runtime.mjs forms-enable-plan --config CONFIG --admin ADMIN --input INPUT`取得planHash，再用`forms-enable ... --preview-hash HASH`启用。INPUT包含commandId、reason和confirmedAllReadersAndWritersUpgraded:true；此确认不替代真实所有读写槽位排空证据。catalog_enabled独立保持商品配置语义。生产更新仍沿蓝绿、备份、登录/DB及受影响功能验收；不直接运行在当前真实schema8导入库上。
+
+字段/接口/迁移合同及剩余附件、批量需求范围见[详细PRD](../../docs/enterprise/demand-forms-g31.md)。

@@ -14,7 +14,7 @@ async function workspaceFetch(action,params={},body,scope){
  if(epoch!==workspace.epoch)throw Error('WORKSPACE_CHANGED');
  if(!r.headers.get('content-type')?.includes('application/json'))throw Error('WORKFLOW_RESPONSE_INVALID');
  const data=await r.json();if(epoch!==workspace.epoch)throw Error('WORKSPACE_CHANGED');
- if(!r.ok){const e=Error(typeof data.error==='string'?data.error:data.error?.code||'WORKFLOW_SERVICE_UNAVAILABLE');e.status=r.status;
+ if(!r.ok){const e=Error(typeof data.error==='string'?data.error:data.error?.code||'WORKFLOW_SERVICE_UNAVAILABLE');e.status=r.status;if(Array.isArray(data.error?.fields))e.fields=data.error.fields;
   if(scope&&([401,403].includes(r.status)||e.message==='ACCOUNT_CHANGED')){workspaceClear();workspace.directory=null;workspace.enterpriseId='';workspace.error=workspaceError(e);workspace.status=r.status;workspace.loading=false;shell();}
   throw e;
  }return data;
