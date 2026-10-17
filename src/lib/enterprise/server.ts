@@ -9,6 +9,7 @@ import { settingsSecret } from '@/lib/settings-secret';
 import { hashPassword } from '@/lib/pw';
 import type { ContentPage } from '@/lib/teams/contracts';
 import type { EnterpriseIdentity, EnterpriseMember, EnterpriseRole, EnterpriseSnapshot } from './contracts';
+import { pinnedEnterpriseIds,IntegrationError } from './integration/policy';
 
 let ready: Promise<void> | null = null;
 export async function ensureEnterpriseSchema() {
@@ -63,6 +64,8 @@ export function validateHierarchy(owner:string,nodes:Node[],roles:EnterpriseRole
   }
 }
 async function scope(tx:PoolClient,actor:TeamActor,id:string):Promise<Scope> {
+  try {const pinned=pinnedEnterpriseIds();if(pinned.length&&!pinned.includes(id))throw new TeamError('企业不存在',404);}
+  catch(e){if(e instanceof IntegrationError)throw new TeamError('企业部署范围尚未配置',503);throw e;}
   const team=(await tx.query(`SELECT t.id,t.name,t.owner_email,t.authorized_until,t.enabled,s.enabled AS enterprise_enabled
     FROM app_enterprise_settings s JOIN app_account_teams t ON t.id=s.team_id WHERE s.team_id=$1 FOR SHARE OF s,t`,[id])).rows[0];
   if(!team)throw new TeamError('企业不存在',404);
@@ -106,10 +109,11 @@ export async function enterpriseRead<T>(actor:TeamActor,id:string,run:(tx:PoolCl
 }
 export async function enterpriseList(actor:TeamActor):Promise<EnterpriseIdentity[]> {
   return transaction(async tx=>{
+    let pinned:string[];try{pinned=pinnedEnterpriseIds()}catch{throw new TeamError('企业部署范围尚未配置',503)}
     const rows=(await tx.query(`SELECT t.id,t.name,t.owner_email,t.authorized_until FROM app_enterprise_settings s JOIN app_account_teams t ON t.id=s.team_id
       WHERE $2 OR t.owner_email=$1 OR EXISTS(SELECT 1 FROM app_enterprise_members m WHERE m.enterprise_id=s.team_id AND m.email=$1) ORDER BY t.name`,[actor.email,actor.admin])).rows;
     const result:EnterpriseIdentity[]=[];
-    for(const t of rows){try{result.push((await scope(tx,actor,t.id)).team)}catch(e){if(!(e instanceof TeamError)||actor.admin)throw e}}
+    for(const t of rows){if(pinned.length&&!pinned.includes(t.id))continue;try{result.push((await scope(tx,actor,t.id)).team)}catch(e){if(!(e instanceof TeamError)||actor.admin)throw e}}
     return result;
   });
 }

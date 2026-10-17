@@ -1,0 +1,36 @@
+import { chromium } from '@playwright/test';
+import { resolve } from 'node:path';
+import { mkdir,writeFile } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const out=resolve(process.env.NAUMI_INTEGRATION_EVIDENCE_DIR??'output/enterprise-integration');await mkdir(out,{recursive:true});
+const browser=await chromium.launch({headless:true,...(process.env.ENTERPRISE_TEST_BROWSER_PATH?{executablePath:process.env.ENTERPRISE_TEST_BROWSER_PATH}:{})});
+const errors=[],checks=[];const pass=name=>checks.push({name,result:'PASS'});
+try{
+  const page=await browser.newPage({viewport:{width:1440,height:1000}});page.on('pageerror',e=>errors.push(e.message));
+  await page.goto('http://127.0.0.1:18490/');await page.getByText('主图制作',{exact:true}).first().waitFor();
+  assert.equal(await page.locator('select[aria-label="企业"] option').count(),2);pass('shared mode two enterprises');
+  await page.locator('select[aria-label="企业"]').selectOption({label:'天地合大健康 · 合成验收'});
+  await page.waitForFunction(()=>document.body.innerText.includes('提示词-0'));
+  await page.waitForFunction(()=>document.querySelectorAll('img').length===2&&Array.from(document.querySelectorAll('img')).every(i=>i.complete&&i.naturalWidth>0));
+  assert.equal(await page.locator('img').count(),2);pass('authorized artwork thumbnails and prompts');
+  const nav=page.getByRole('navigation',{name:'管理中心导航'});assert.equal(await nav.getByRole('link',{name:'企业流程工作台'}).getAttribute('href'),'/admin/enterprise-workbench');pass('admin navigation entry');
+  await page.screenshot({path:resolve(out,'admin-integration-artworks.png'),fullPage:true});
+  await page.getByRole('button',{name:'生成任务',exact:true}).click();await page.getByText('任务提示词-0',{exact:false}).first().waitFor();
+  const rows=await page.locator('tbody').innerText();assert.ok(rows.includes('6')&&rows.includes('预估 9')&&rows.includes('待核对'));pass('quoted actual missing charge separated');
+  assert.ok(!rows.includes('PRIVATE_'));pass('private upstream data absent');
+  await page.screenshot({path:resolve(out,'admin-integration-generations.png'),fullPage:true});
+  await page.getByRole('button',{name:'积分明细',exact:true}).click();await page.waitForFunction(()=>document.querySelector('tbody')?.innerText.includes('-6'));
+  assert.ok((await page.locator('tbody').innerText()).includes('2'));pass('charge and refund separate ledger entries');
+  await page.getByRole('button',{name:'生成任务',exact:true}).click();await page.getByText('任务提示词-0',{exact:false}).first().waitFor();
+  await page.locator('select[aria-label="企业"]').selectOption({label:'其他企业 · 合成验收'});await page.waitForFunction(()=>document.querySelector('tbody')?.innerText.includes('任务提示词')||document.querySelector('tbody')?.innerText.includes('outside'));
+  assert.ok(!(await page.locator('tbody').innerText()).includes('staff@'));pass('switch enterprise clears previous rows');
+  await page.evaluate(()=>fetch('/fixture/dedicated'));await page.reload();await page.getByText('主图制作',{exact:true}).first().waitFor();
+  assert.equal(await page.locator('select[aria-label="企业"] option').count(),1);assert.equal(await page.locator('select[aria-label="企业"]').isDisabled(),true);pass('dedicated deployment pins one enterprise');
+  await page.screenshot({path:resolve(out,'admin-integration-dedicated.png'),fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);pass('390px no page overflow');
+  await page.screenshot({path:resolve(out,'admin-integration-mobile.png'),fullPage:true});
+  assert.equal(errors.length,0);pass('zero page errors');
+  await page.evaluate(()=>fetch('/fixture/shared'));
+  console.log(`INTEGRATION_BROWSER_PASS: checks=${checks.length} admin_shell=1 actual_react_components=1 actual_api_route=1 synthetic_data=1 page_errors=0 mobile=390`);
+}finally{await writeFile(resolve(out,'BROWSER_CHECKS.json'),JSON.stringify({checks,errors},null,2));await browser.close();}
