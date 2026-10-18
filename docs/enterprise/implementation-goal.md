@@ -454,3 +454,18 @@ guidelines-g40.md与029规范册/不可变发布版/命令，绑定现有品牌I
 schema29显式guidelines-enable-plan/enable+持久guidelines_enabled+reader/writer29，默认false依赖catalog/reviews；真实旧28与新进程漏配业务/readyz拒绝，不降低floor回退。真实schema8/364行292附件/0资料映射需求规范表保持，18482/18494不重启，未生产发布。G38/G39/G40累计3模块，收尾刷新整合origin/main并计数归零。
 
 整体目标ACTIVE。下一M18人工渠道发布台账/逐店回执；M14专用权利文件、确定性自动检测、单次例外、在途换规范审批/召回、公司制度和G29全部缺口保留，不把人工资料说明当作机器验证权利证明。
+
+
+## G41 人工渠道发布台账、逐店回执与召回（2026-10-18）
+
+对应M18第一期，详见publications-g41.md。原需求/任务/素材入口统一渠道发布；已验收任务引用固定验收事件、文件revision/hash/bytes/name与规范快照，明确选择目标SKU/shop/externalObjectId/slot/locale，不凭商品名称推测外部ID。同企业目标位置唯一占位，语言大小写/下划线归一，外部对象ID保留大小写。
+
+状态draft→独立approved→实际executor领取executing→manual_published/failed/unknown；unknown只人工核查，绝不自动发外部请求。逐店独立回执，manual证据来源明确，reportedAt与recordedAt分离。召回申请→recall_unknown/manual_recalled，旧实例人工回收后可关联同目标后建替代实例；原回执/历史/任务贡献/Naumi来源不改。
+
+create/approve/start重验当前目录、规范、扫描和实际文件字节。详情显示当前依据检查时间/阻断原因；后续依据失效不抹掉已发生回执。当前成员/原单/店铺授权每请求重验；独立核准排除创建者与任务贡献者。目标锁、命令指纹、CAS及三张表同事务；审计失败整体回滚。
+
+原UI32项浏览器检查、原生BFF以及服务集中回归通过；独立运行44组含实际旧29程序在schema30上原业务就绪/创建草稿且新发布台账不变；真实Next33组及完整锁定依赖类型检查通过。最终固定提交、固定运行和副本恢复结果以enterprise-publications-g41-20261018/VERIFICATION.txt为准。
+
+publicationsEnabled默认false，schema30附加表，不降低29 reader/writer规范门禁。真实库仍schema8、364行/292附件及0真实资料/映射/正式需求；18482动态读取同一原HTML，18482/18494无需重启。实际公司身份及渠道配置未绑定，未生产发布。G40同步归零后本轮功能计数1；开工/提交前刷新main，任务分支选择性提交推送。
+
+整体目标ACTIVE。M18剩余可下载发布包manifest/ZIP、专用截图证明文件、规格校验、真实平台API与读回授权、跨店批量、自动通知和经营归因继续保留；公司身份映射、钉钉/聚水潭接口、容量与正式蓝绿验收仍待完成。下一优先补齐可复核下载发布包与人工证据附件，降低运营在系统与商家平台之间传递文件的成本，不把人工台账替代真实平台集成。
