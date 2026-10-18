@@ -1,4 +1,7 @@
 import {PublicationStore} from './publication-store';
+import {cancellationImpact} from './cancellation-impact';
+import {cancellationPreview} from './cancellation-contracts';
+import {isCancellation,cancellationApprover,cancellationControls} from './cancellation-domain';
 import type {HandoverAsset} from './handover-materials';
 import {isChangeAction,changeCanApprove,changeControls,changeBusiness,changeExecution,changeImpact,changeBaseline} from './change-domain';
 import {changePreview} from './change-contracts';
@@ -63,7 +66,7 @@ export class WorkflowStore {
   readonly catalog:CatalogStore;
   readonly calendars:CalendarStore;
   readonly availability:AvailabilityStore;
-  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore,private notifications?:NotificationStore,private availabilityEnabled=true,catalogEnabled=true,formsEnabled=true,demandBatchEnabled=true,readonly demandAssets?:DemandAssetStore,worklogsEnabled=true,reviewsEnabled=true,reviewImage?:ReviewImage,slaEnabled=true,capacityEnabled=true,appealsEnabled=true,projectsEnabled=true,guidelinesEnabled=true,publicationsEnabled=true,readonly changesEnabled=false,readonly handoverPackagesEnabled=false) {this.guidelines=new GuidelineStore(pool,resolveActor,guidelinesEnabled,now);this.projects=new ProjectStore(pool,resolveActor,projectsEnabled,now);this.appeals=new AppealStore(pool,resolveActor,appealsEnabled,now);this.capacity=new CapacityStore(pool,resolveActor,capacityEnabled);const n=notifications??new LocalNotifications(pool,resolveActor);this.sla=new SlaStore(pool,resolveActor,n,slaEnabled,now);n.reminderGuard=(tx,row)=>this.sla.deliveryCurrent(tx,row);this.reviews=new ReviewStore(pool,resolveActor,validateAssets,reviewsEnabled,now,reviewImage,this.guidelines);this.worklogs=new WorklogStore(pool,resolveActor,worklogsEnabled,now);this.forms=new FormStore(pool,resolveActor,formsEnabled,!!demandAssets);this.catalog=new CatalogStore(pool,resolveActor,catalogEnabled);this.publications=new PublicationStore(pool,resolveActor,validateAssets,this.catalog,this.guidelines,publicationsEnabled,now);this.demandBatches=new DemandBatchStore(pool,resolveActor,this.forms,this.catalog,demandBatchEnabled);this.calendars=new CalendarStore(pool,resolveActor);this.availability=new AvailabilityStore(pool,resolveActor,availabilityEnabled);}
+  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore,private notifications?:NotificationStore,private availabilityEnabled=true,catalogEnabled=true,formsEnabled=true,demandBatchEnabled=true,readonly demandAssets?:DemandAssetStore,worklogsEnabled=true,reviewsEnabled=true,reviewImage?:ReviewImage,slaEnabled=true,capacityEnabled=true,appealsEnabled=true,projectsEnabled=true,guidelinesEnabled=true,publicationsEnabled=true,readonly changesEnabled=false,readonly handoverPackagesEnabled=false,readonly cancellationsEnabled=false) {this.guidelines=new GuidelineStore(pool,resolveActor,guidelinesEnabled,now);this.projects=new ProjectStore(pool,resolveActor,projectsEnabled,now);this.appeals=new AppealStore(pool,resolveActor,appealsEnabled,now);this.capacity=new CapacityStore(pool,resolveActor,capacityEnabled);const n=notifications??new LocalNotifications(pool,resolveActor);this.sla=new SlaStore(pool,resolveActor,n,slaEnabled,now);n.reminderGuard=(tx,row)=>this.sla.deliveryCurrent(tx,row);this.reviews=new ReviewStore(pool,resolveActor,validateAssets,reviewsEnabled,now,reviewImage,this.guidelines);this.worklogs=new WorklogStore(pool,resolveActor,worklogsEnabled,now);this.forms=new FormStore(pool,resolveActor,formsEnabled,!!demandAssets);this.catalog=new CatalogStore(pool,resolveActor,catalogEnabled);this.publications=new PublicationStore(pool,resolveActor,validateAssets,this.catalog,this.guidelines,publicationsEnabled,now);this.demandBatches=new DemandBatchStore(pool,resolveActor,this.forms,this.catalog,demandBatchEnabled);this.calendars=new CalendarStore(pool,resolveActor);this.availability=new AvailabilityStore(pool,resolveActor,availabilityEnabled);}
   async ready() {
     const result = await this.pool.query('SELECT version FROM enterprise_workflow.schema_version WHERE version=1');
     if (result.rowCount !== 1) throw new WorkflowError(503, 'MIGRATION_REQUIRED');
@@ -112,7 +115,7 @@ export class WorkflowStore {
       if(!order||!canRead(actor,order))throw new WorkflowError(404,'NOT_FOUND');
       const events=(await tx.query('SELECT event FROM enterprise_workflow.events WHERE enterprise_id=$1 AND order_id=$2 ORDER BY aggregate_version DESC LIMIT 100',[principal.enterpriseId,orderId])).rows.map(r=>r.event);
       const source=(await tx.query('SELECT source_hash AS "sourceHash",row_number AS row,source_version AS "sourceVersion",snapshot FROM enterprise_workflow.order_sources WHERE enterprise_id=$1 AND order_id=$2',[principal.enterpriseId,orderId])).rows[0]??null;
-      return {order,events,source,handoverPackages:{enabled:this.handoverPackagesEnabled},changeControl:changeControls(actor,order,this.changesEnabled)};
+      return {order,events,source,cancellationControl:cancellationControls(actor,order,this.cancellationsEnabled),handoverPackages:{enabled:this.handoverPackagesEnabled},changeControl:changeControls(actor,order,this.changesEnabled)};
     });
   }
   async tasks(principal:Principal,raw:unknown={}){
@@ -210,6 +213,18 @@ export class WorkflowStore {
   async execute(principal: Principal, raw: unknown,proof='') {
     return this.executeCommand(principal,raw,undefined,false,proof);
   }
+  private async cancellationReady(tx:PoolClient){
+    if(!this.cancellationsEnabled)throw new WorkflowError(503,'CANCELLATIONS_NOT_ENABLED');
+    if(!(await tx.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=35')).rowCount)throw new WorkflowError(503,'CANCELLATIONS_MIGRATION_REQUIRED');
+    await tx.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('enterprise-runtime:migrate',0))");
+    const f=(await tx.query('SELECT cancellations_enabled,minimum_reader,minimum_writer FROM enterprise_workflow.runtime_installation WHERE singleton')).rows[0];
+    if(!f?.cancellations_enabled||f.minimum_reader<35||f.minimum_writer<35)throw new WorkflowError(503,'CANCELLATIONS_ACTIVATION_REQUIRED');
+  }
+  async previewCancellation(p:Principal,raw:unknown){const q=cancellationPreview.parse(raw);return this.transaction(async tx=>{
+    const a=await this.actor(tx,p);await this.cancellationReady(tx);await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`order:${a.enterpriseId}:${q.orderId}`]);
+    const o=(await tx.query('SELECT document FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=$2 FOR SHARE',[a.enterpriseId,q.orderId])).rows[0]?.document as WorkOrder|undefined;
+    if(!o||!canRead(a,o))throw new WorkflowError(404,'NOT_FOUND');if(o.version!==q.expectedVersion)throw new WorkflowError(409,'VERSION_CONFLICT');if(!['approved','active'].includes(o.status))throw new WorkflowError(409,'CANCELLATION_ORDER_STATE');return {orderId:o.id,version:o.version,...await cancellationImpact(tx,a,o)};
+  });}
   private async handoverPackagesReady(tx:PoolClient){
     if(!this.handoverPackagesEnabled)throw new WorkflowError(503,'HANDOVER_PACKAGES_NOT_ENABLED');
     if(!(await tx.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=34')).rowCount)throw new WorkflowError(503,'HANDOVER_PACKAGES_MIGRATION_REQUIRED');
@@ -327,6 +342,7 @@ export class WorkflowStore {
       const actor = await this.actor(tx, principal);
       // Legacy command endpoint must not bypass a persisted plan's closure or frozen body.
       if(isChangeAction(command.action.type))await this.changeReady(tx);
+      if(isCancellation(command.action.type))await this.cancellationReady(tx);
       if(['propose-handover-package','accept-handover-package'].includes(command.action.type))await this.handoverPackagesReady(tx);
       if(this.handoverPackagesEnabled&&['propose-handover','accept-handover'].includes(command.action.type))throw new WorkflowError(409,'HANDOVER_PACKAGE_REQUIRED');
       if(!batchGuard&&command.action.type==='batch-tasks'&&(await tx.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=13')).rowCount){const saved=(await tx.query('SELECT plan_hash FROM enterprise_workflow.batch_plans WHERE enterprise_id=$1 AND id=$2',[principal.enterpriseId,command.action.batchId])).rows[0];if(saved)batchGuard={batchId:command.action.batchId,planHash:saved.plan_hash};}
@@ -369,6 +385,17 @@ export class WorkflowStore {
       }
       if(source?.sourceAssetIds!==undefined){const ids=source.sourceAssetIds;if(new Set(ids).size!==ids.length)throw new WorkflowError(400,'DUPLICATE_SOURCE_ASSET');const rowAssets=new Set<string>((sourceRow!.document.attachments??[]).flatMap((x:{assets:string[]})=>x.assets));if(ids.some(x=>!rowAssets.has(x)))throw new WorkflowError(400,'SOURCE_ASSET_NOT_IN_ROW');const docs=(await tx.query('SELECT asset_id,document FROM enterprise_workflow.import_assets WHERE enterprise_id=$1 AND source_hash=$2 AND asset_id=ANY($3::text[]) FOR SHARE',[principal.enterpriseId,source.sourceHash,ids])).rows;const assets=new Map(docs.map(x=>[x.asset_id,x.document]));referenceAssets=ids.map(id=>{const parsed=sourceAssetSchema.safeParse(assets.get(id));if(!parsed.success||parsed.data.id!==id)throw new WorkflowError(409,'SOURCE_ASSET_UNAVAILABLE');return parsed.data;});}
       const action=command.action;
+      if(action.type==='cancel'&&this.cancellationsEnabled&&previous&&['approved','active'].includes(previous.status))throw new WorkflowError(409,'CANCELLATION_REQUEST_REQUIRED');
+      let cancellationContext;
+      if(isCancellation(action.type)){
+        if(!previous||!canRead(actor,previous))throw new WorkflowError(404,'NOT_FOUND');
+        if(['request-cancellation','approve-cancellation','apply-cancellation'].includes(action.type))cancellationContext=await cancellationImpact(tx,actor,previous);
+        if(action.type==='apply-cancellation'){
+          const current=previous.cancellations?.find(c=>c.id===action.cancellationId);if(!current)throw new WorkflowError(404,'CANCELLATION_NOT_FOUND');
+          for(const approval of current.approvals){const a=await this.resolveActor(tx,{enterpriseId:actor.enterpriseId,subject:approval.subject,teamId:approval.teamId,...(approval.sourceBinding?{sourceBinding:approval.sourceBinding}:{})});if(!a||a.subject!==approval.subject||a.teamId!==approval.teamId||!cancellationApprover(a,previous,current,approval.side))throw new WorkflowError(409,'CANCELLATION_APPROVER_UNAVAILABLE');}
+        }
+      }
+
       if(isChangeAction(action.type)){
         if(action.type==='apply-change'){
           if(!previous||!canRead(actor,previous))throw new WorkflowError(404,'NOT_FOUND');
@@ -389,7 +416,7 @@ export class WorkflowStore {
       }
       let moveImpact;
       if(action.type==='move-task-plan'){moveImpact=await previewMove(tx,actor,{orderId:command.orderId,taskId:action.taskId,expectedVersion:command.expectedVersion,targetStart:action.targetStart,reason:action.reason},this.availabilityEnabled,this.capacity.enabled);if(moveImpact.previewHash!==action.previewHash)throw new WorkflowError(409,'PLAN_MOVE_PREVIEW_CHANGED');}
-      const { order, event } = evolve(previous ?? null, actor, command, this.now().toISOString());
+      const { order, event } = evolve(previous ?? null, actor, command, this.now().toISOString(),cancellationContext?.impact);
       // Leave space for approvals/withdrawal on all bounded pending proposals.
       // Terminal withdrawal/rejection must remain possible if another bounded module grew the order.
       if(isChangeAction(action.type)&&!['withdraw-change','reject-change'].includes(action.type)&&Buffer.byteLength(JSON.stringify(order),'utf8')>(action.type==='propose-change'?768:1024)*1024)throw new WorkflowError(409,'CHANGE_DOCUMENT_LIMIT');
@@ -401,6 +428,7 @@ export class WorkflowStore {
         const original=previous!.tasks.find(t=>t.id===action.taskId)!.pendingHandover!.materials!,actual=await this.handoverAssets(tx,actor,order.id,action.taskId,original.assets.map(f=>f.id));
         if(stable(actual)!==stable(original.assets))throw new WorkflowError(409,'HANDOVER_ASSET_SNAPSHOT_CHANGED');
       }
+      if(action.type==='request-cancellation'&&Buffer.byteLength(JSON.stringify(order),'utf8')>3*1024*1024)throw new WorkflowError(409,'CANCELLATION_DOCUMENT_LIMIT');
       await this.capacity.guard(tx,actor,previous??null,order);
       if(action.type==='set-demand-assets'){if(!this.demandAssets)throw new WorkflowError(503,'DEMAND_ASSETS_NOT_ENABLED');order.demandAssets=await this.demandAssets.selection(tx,actor,order,action.assetIds);event.data.demandAssets=order.demandAssets;}
       if(action.type==='submit-requirement'&&(order.demandAssets?.length||order.form?.definition.attachmentRules)){if(!this.demandAssets)throw new WorkflowError(503,'DEMAND_ASSETS_NOT_ENABLED');await this.demandAssets.validateSubmission(tx,actor,order);}

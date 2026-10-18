@@ -1,4 +1,6 @@
 import {moveDates} from './calendar';
+import {evolveCancellation,isCancellation} from './cancellation-domain';
+import type {CancellationImpact} from './cancellation-contracts';
 import {sameIds} from './handover-materials';
 import {evolveChange,isChangeAction} from './change-domain';
 import { createHash } from 'node:crypto';
@@ -18,7 +20,7 @@ export function canRead(actor: Actor, order: WorkOrder) {
     order.requester === actor.subject || order.tasks.some(t => participants(t).includes(actor.subject) || t.pendingHandover?.to===actor.subject) ||
     has(actor, 'execute') && order.status === 'active' && order.tasks.some(t => t.status === 'open' && actor.workKinds.includes(t.kind)));
 }
-export function evolve(previous: WorkOrder | null, actor: Actor, command: Command, at: string) {
+export function evolve(previous: WorkOrder | null, actor: Actor, command: Command, at: string,cancellationImpact?:CancellationImpact) {
   const action = command.action;
   const permit = (p: Permission) => need(has(actor, p), 'FORBIDDEN', 403);
   if (!previous) {
@@ -34,12 +36,13 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
   need(canRead(actor, previous), 'FORBIDDEN', 403);
   need(previous.version === command.expectedVersion, 'VERSION_CONFLICT');
   need(action.type !== 'create', 'ALREADY_EXISTS');
-  if(actor.teamId!==previous.teamId&&!['operations-signoff','operations-followup'].includes(action.type)&&!isChangeAction(action.type))throw new WorkflowError(403,'EXECUTION_TEAM_REQUIRED');
+  if(actor.teamId!==previous.teamId&&!['operations-signoff','operations-followup'].includes(action.type)&&!isChangeAction(action.type)&&!isCancellation(action.type))throw new WorkflowError(403,'EXECUTION_TEAM_REQUIRED');
   const order = structuredClone(previous);
   const state = (...allowed: WorkOrder['status'][]) => need(allowed.includes(order.status), 'INVALID_ORDER_STATE');
   const owner = () => need(order.requester === actor.subject || has(actor, 'manage'), 'FORBIDDEN', 403);
   let eventData: Record<string, unknown> = {};
   switch (action.type) {
+    case 'request-cancellation':case 'approve-cancellation':case 'reject-cancellation':case 'withdraw-cancellation':case 'apply-cancellation':eventData=evolveCancellation(order,actor,action,at,cancellationImpact);break;
     case 'propose-change':case 'approve-change':case 'reject-change':case 'withdraw-change':case 'apply-change':eventData=evolveChange(order,actor,action,at);break;
     case 'set-demand-assets':state('draft');permit('request');owner();eventData={before:order.demandAssets??[]};break;
     case 'set-demand-guideline':state('draft');permit('request');owner();eventData={before:order.guideline??null};break;
