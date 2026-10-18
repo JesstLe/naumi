@@ -2,7 +2,8 @@ import {createHash,randomUUID} from 'node:crypto';
 import type {Pool,PoolClient} from 'pg';
 import {WorkflowError,type Principal,type Actor,type WorkOrder,type WorkflowEvent} from './contracts';
 import {canRead} from './domain';
-import {readScope,type ResolveActor} from './store';
+import {readScope} from './read-scope';
+import type {ResolveActor} from './store';
 import {notificationCommand,notificationQuery,notificationTitles,type NotificationConnector,type DeliveryOutcome} from './notification-contracts';
 import {notificationRecipients} from './notification-recipients';
 function need(v:unknown,code:string,status=409):asserts v{if(!v)throw new WorkflowError(status,code);}
@@ -10,6 +11,12 @@ const values=(a:Actor)=>[a.enterpriseId,a.teamId??null,a.permissions.some(p=>['m
 const visible=`n.enterprise_id=$1 AND n.team_id=$2 AND ${readScope('o.document','$7')}`;
 const allowedError=(s:string)=>/^[A-Z0-9_]{1,80}$/.test(s)?s:'ADAPTER_ERROR';
 export class NotificationStore{
+ reminderGuard?: (tx:PoolClient,notification:any)=>Promise<boolean>;
+ async publishReminder(tx:PoolClient,a:Actor,o:WorkOrder,reminder:{id:string;kind:string;taskId:string|null;title:string},at:Date){const nid=randomUUID(),insert=await tx.query("INSERT INTO enterprise_workflow.notifications(id,enterprise_id,team_id,subject,event_id,order_id,task_id,action,actor,title,aggregate_version,created_at,reminder)VALUES($1,$2,$3,$4,$5,$6,$7,$8,'sla-worker',$9,$10,$11,$12) ON CONFLICT(enterprise_id,event_id,team_id,subject)DO NOTHING RETURNING id",[nid,a.enterpriseId,a.teamId,a.subject,reminder.id,o.id,reminder.taskId,'sla-'+reminder.kind,reminder.title,o.version,at,reminder]);if(!insert.rowCount)return;await this.queue(tx,a,nid);}
+ private async queue(tx:PoolClient,a:Actor,nid:string){const policy=(await tx.query('SELECT * FROM enterprise_workflow.notification_policies WHERE enterprise_id=$1 AND team_id=$2 FOR SHARE',[a.enterpriseId,a.teamId])).rows[0];if(!policy?.enabled)return;
+  const binding=(await tx.query('SELECT * FROM enterprise_workflow.notification_bindings WHERE enterprise_id=$1 AND team_id=$2 AND subject=$3 FOR SHARE',[a.enterpriseId,a.teamId,a.subject])).rows[0],configured=this.connectors(a.enterpriseId).find(c=>c.id===policy.connector_id),code=!configured?'CHANNEL_NOT_CONFIGURED':!binding?.enabled?'RECIPIENT_NOT_BOUND':null;
+  await tx.query('INSERT INTO enterprise_workflow.notification_deliveries(id,notification_id,enterprise_id,team_id,subject,connector_id,userid,policy_version,binding_version,state,error_code,connector_revision)VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)',[randomUUID(),nid,a.enterpriseId,a.teamId,a.subject,policy.connector_id,binding?.enabled?binding.userid:null,policy.version,binding?.enabled?binding.version:null,code?'blocked':'pending',code,configured?.revision??null]);
+ }
  constructor(readonly pool:Pool,private resolveActor:ResolveActor,private connectors:(enterpriseId:string)=>readonly NotificationConnector[]=()=>[]){}
  async ready(){need((await this.pool.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=11')).rowCount===1,'NOTIFICATION_MIGRATION_REQUIRED',503);}
  private async tx<T>(p:Principal|undefined,fn:(tx:PoolClient,a?:Actor)=>Promise<T>){const tx=await this.pool.connect();try{await tx.query('BEGIN');await tx.query("SET LOCAL lock_timeout='3s';SET LOCAL statement_timeout='10s'");const a=p?await this.resolveActor(tx,p):undefined;if(p)need(a&&a.enterpriseId===p.enterpriseId&&a.subject===p.subject&&a.teamId===p.teamId&&a.teamId,'MEMBERSHIP_REQUIRED',403);const r=await fn(tx,a??undefined);await tx.query('COMMIT');return r;}catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}}
@@ -22,9 +29,7 @@ export class NotificationStore{
   for(const a of recipients){
    const nid=randomUUID(),insert=await tx.query('INSERT INTO enterprise_workflow.notifications(id,enterprise_id,team_id,subject,event_id,order_id,task_id,action,actor,title,aggregate_version,created_at)VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT(enterprise_id,event_id,team_id,subject)DO NOTHING RETURNING id',[nid,a.enterpriseId,a.teamId,a.subject,event.id,order.id,action.taskId??null,action.type,event.actor,notificationTitles[action.type],order.version,event.occurredAt]);
    if(!insert.rowCount)continue;
-   const policy=(await tx.query('SELECT * FROM enterprise_workflow.notification_policies WHERE enterprise_id=$1 AND team_id=$2 FOR SHARE',[a.enterpriseId,a.teamId])).rows[0];if(!policy?.enabled)continue;
-   const binding=(await tx.query('SELECT * FROM enterprise_workflow.notification_bindings WHERE enterprise_id=$1 AND team_id=$2 AND subject=$3 FOR SHARE',[a.enterpriseId,a.teamId,a.subject])).rows[0],configured=this.connectors(a.enterpriseId).find(c=>c.id===policy.connector_id),code=!configured?'CHANNEL_NOT_CONFIGURED':!binding?.enabled?'RECIPIENT_NOT_BOUND':null;
-   await tx.query('INSERT INTO enterprise_workflow.notification_deliveries(id,notification_id,enterprise_id,team_id,subject,connector_id,userid,policy_version,binding_version,state,error_code,connector_revision)VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)',[randomUUID(),nid,a.enterpriseId,a.teamId,a.subject,policy.connector_id,binding?.enabled?binding.userid:null,policy.version,binding?.enabled?binding.version:null,code?'blocked':'pending',code,configured?.revision??null]);
+   await this.queue(tx,a,nid);
   }
  }
  async read(p:Principal,raw:unknown){const q=notificationQuery.parse(raw);return this.tx(p,async(tx,actor)=>{const a=actor!,v=values(a);
@@ -93,6 +98,7 @@ export class NotificationStore{
    else if(!binding?.enabled)error='RECIPIENT_NOT_BOUND';else if(binding.version!==d.binding_version||binding.userid!==d.userid)error='RECIPIENT_BINDING_CHANGED';
    const identities=(await tx.query('SELECT i.enabled,e.enabled AS enterprise_enabled FROM enterprise_workflow.source_identities i JOIN enterprise_workflow.source_enterprises e USING(source_instance,source_enterprise,enterprise_id) WHERE i.enterprise_id=$1 AND i.subject=$2 FOR SHARE OF i,e',[d.enterprise_id,d.subject])).rows;
    if(!error&&!identities.some(i=>i.enabled&&i.enterprise_enabled))error='SOURCE_IDENTITY_REQUIRED';
+   if(n.reminder&&(!this.reminderGuard||!await this.reminderGuard(tx,n))){error='SLA_REMINDER_OBSOLETE';state='cancelled';}
   }else if(new Date(d.accepted_at).getTime()<Date.now()-23*3600000){error='RECEIPT_WINDOW_EXPIRED';state='unknown';}
   if(error){await tx.query('UPDATE enterprise_workflow.notification_deliveries SET state=$2,error_code=$3,version=version+1,updated_at=now() WHERE id=$1',[d.id,state,error]);await this.audit(tx,d.enterprise_id,d.team_id,'notification-worker',state,{id:d.id,code:error});return {skipped:true} as const;}
   const lease=randomUUID(),phase=d.receipt?'polling':'sending';await tx.query("UPDATE enterprise_workflow.notification_deliveries SET state=$2,lease_id=$3,lease_until=now()+interval '60 seconds',attempts=attempts+$4,polls=polls+$5,version=version+1,updated_at=now() WHERE id=$1",[d.id,phase,lease,d.receipt?0:1,d.receipt?1:0]);

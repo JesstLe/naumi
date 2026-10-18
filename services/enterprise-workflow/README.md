@@ -137,3 +137,12 @@ API、锁顺序、幂等、回执私有和排除范围见[详细PRD](../../docs/
 显式runtime.mjs reviews-enable-plan / reviews-enable：INPUT含commandId、reason、confirmedAllReadersAndWritersUpgraded:true；核对planHash并将reader/writer提升24、reviews_enabled持久化。旧23拒绝业务与就绪，回退只能用保留schema24评审门禁的兼容程序，不能下降floor或清空评审数据。demand_assets_enabled独立保留22语义，避免新floor意外开启其他模块。
 
 配置、权限、每轮检查项、文件坐标及验收矩阵见[PRD](../../docs/enterprise/delivery-reviews-g35.md)。真实公司制度/账号/蓝绿发布另验，不把隔离账号测试当上线。
+
+
+## 定时提醒与SLA升级（G36）
+
+运行schema25，slaEnabled默认false；配置true前需runtime.mjs sla-enable-plan / sla-enable，以INPUT(commandId/reason/confirmedAllReadersAndWritersUpgraded:true)和previewHash显式提升reader/writer25并持久sla_enabled。旧24投递器没有旧提醒失效检查，因此开启SLA后不得继续作为业务/Worker槽。新Worker先standby，activate后才扫描，drain等待当前事务结束。
+
+原通知页“定时提醒”：团队manage编辑六类规则，先看至多50单抽样预览，再确认保存；作用于全部当前/后续未结束工单。原始交付dueAt与排期planEnd独立，实际经过分钟不扣休息日；当前最高阶段优先，每业务时钟每阶段最多一次。已有未知发送不自动重发，已接受仅查询。政策、扫描游标、occurrence、站内消息/外部outbox持久化；发送租约前重新校验时钟/状态/当前收件人，过期提醒取消，不声称撤回在途消息。
+
+详见[PRD](../../docs/enterprise/sla-g36.md)。本地34组运行/28组Next与真实4核8GiB/钉钉应用/公司制度分别验收，不因测试通过自动启用真实企业规则。G35独立review/需求附件flag的业务guard也与readyz对齐；不按floor隐式开启其他模块。

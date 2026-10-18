@@ -1,0 +1,12 @@
+import {z} from 'zod';
+const id=z.string().uuid().transform(s=>s.toLowerCase()),minute=z.number().int().min(0).max(43200),reason=z.string().trim().min(1).max(2000),version=z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+export const slaKind=z.enum(['due','requirement','unclaimed','blocked','review','handover']);
+export const slaRule=z.strictObject({kind:slaKind,enabled:z.boolean(),minutes:minute,escalateMinutes:minute.min(1)}).refine(r=>r.kind==='due'||r.minutes>=1);
+export const slaConfig=z.strictObject({enabled:z.boolean(),rules:z.array(slaRule).max(6).refine(a=>new Set(a.map(r=>r.kind)).size===a.length)}).refine(c=>!c.enabled||c.rules.some(r=>r.enabled));
+export const slaPreview=z.strictObject({expectedVersion:version,config:slaConfig,reason,asOf:z.string().datetime().optional()});
+export const slaSave=slaPreview.extend({commandId:id,asOf:z.string().datetime(),previewHash:z.string().regex(/^[a-f0-9]{64}$/)});
+export const slaQuery=z.discriminatedUnion('action',[z.strictObject({action:z.literal('settings')}),z.strictObject({action:z.literal('occurrences'),page:z.coerce.number().int().min(1).max(10000).default(1)}),z.strictObject({action:z.literal('history'),page:z.coerce.number().int().min(1).max(10000).default(1)})]);
+export type SlaConfig=z.infer<typeof slaConfig>;
+export type SlaRule=z.infer<typeof slaRule>;
+export type SlaClock={key:string;kind:SlaRule['kind'];orderId:string;taskId:string|null;anchor:string;at:string;stage:0|1|2;title:string;recipients:string[]};
+export const slaNames:Record<SlaRule['kind'],string>={due:'任务截止',requirement:'需求待受理',unclaimed:'任务待认领确认',blocked:'任务阻塞',review:'交付待评审验收',handover:'任务交接待确认'};

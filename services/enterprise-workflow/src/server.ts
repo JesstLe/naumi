@@ -136,6 +136,7 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
         return json(res, 200, await scheduling.get(principal, teamId));
       }
       if(req.method==='GET'&&url.pathname==='/v1/dashboard')return json(res,200,await store.dashboard(principal,Object.fromEntries(url.searchParams)));
+      if(url.pathname==='/v1/sla'){if(req.method==='GET')return json(res,200,await store.sla.read(principal,Object.fromEntries(url.searchParams)));if(req.method==='POST'){const c=await body(req);const q=z.strictObject({operation:z.enum(['preview','save']),input:z.unknown()}).parse(c);return json(res,200,q.operation==='preview'?await store.sla.preview(principal,q.input):await store.sla.save(principal,q.input));}}
       if(url.pathname==='/v1/delivery-reviews'){if(req.method==='GET')return json(res,200,await store.reviews.read(principal,Object.fromEntries(url.searchParams)));if(req.method==='POST')return json(res,200,await store.reviews.execute(principal,await body(req)));}
       if(url.pathname==='/v1/worklogs'&&req.method==='GET')return json(res,200,await store.worklogs.read(principal,Object.fromEntries(url.searchParams)));
       if(url.pathname==='/v1/worklogs'&&req.method==='POST')return json(res,200,await store.worklogs.execute(principal,await body(req)));

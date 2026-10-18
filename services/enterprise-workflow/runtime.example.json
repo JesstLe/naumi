@@ -6,6 +6,7 @@
   "demandAssetsEnabled": false,
   "worklogsEnabled": false,
   "reviewsEnabled": false,
+  "slaEnabled": false,
   "installationId": "company-workflow",
   "slot": "blue",
   "expectedDatabase": "naumi_workflow",
