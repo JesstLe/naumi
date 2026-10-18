@@ -15,7 +15,7 @@ export async function previewMove(tx:PoolClient,a:Actor,input:z.infer<typeof mov
  if(!a.teamId||a.teamId!==o.teamId)throw new WorkflowError(403,'EXECUTION_TEAM_REQUIRED');
  if(!a.permissions.includes('dispatch'))throw new WorkflowError(403,'FORBIDDEN');
  if(o.version!==input.expectedVersion)throw new WorkflowError(409,'VERSION_CONFLICT');
- if(!['approved','active'].includes(o.status))throw new WorkflowError(409,'INVALID_ORDER_STATE');
+ if(!['approved','active','paused'].includes(o.status))throw new WorkflowError(409,'INVALID_ORDER_STATE');
  const t=o.tasks.find(t=>t.id===input.taskId);
  if(!t)throw new WorkflowError(404,'TASK_NOT_FOUND');
  if(t.status==='accepted')throw new WorkflowError(409,'ACCEPTED_PLAN_IMMUTABLE');
@@ -26,7 +26,7 @@ export async function previewMove(tx:PoolClient,a:Actor,input:z.infer<typeof mov
  const calendar=(await loadCalendars(tx,a.enterpriseId,[a.teamId])).get(a.teamId)??legacyCalendar();
  const enabled=personalEnabled&&!!(await tx.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=17')).rowCount;
  const personal=t.assignee?(await loadAvailability(tx,a.enterpriseId,[{teamId:a.teamId,subject:t.assignee}],enabled)).get(availabilityKey(a.teamId,t.assignee)):undefined;
- const rows=(await tx.query(`SELECT o.id,o.version,t AS task FROM enterprise_workflow.orders o CROSS JOIN LATERAL jsonb_array_elements(o.document->'tasks') t WHERE o.enterprise_id=$1 AND o.document->>'teamId'=$2 AND o.document->>'status' IN ('approved','active','completed') AND (t->>'assignee') IS NOT DISTINCT FROM $3::text AND ((t->>'planStart'<=$5 AND t->>'planEnd'>=$4) OR (t->>'planStart'<=$7 AND t->>'planEnd'>=$6)) ORDER BY o.id,t->>'id' LIMIT 1001`,[a.enterpriseId,a.teamId,t.assignee,t.planStart,t.planEnd,proposed.planStart,proposed.planEnd])).rows as {id:string;version:number;task:WorkOrder['tasks'][number]}[];
+ const rows=(await tx.query(`SELECT o.id,o.version,t AS task FROM enterprise_workflow.orders o CROSS JOIN LATERAL jsonb_array_elements(o.document->'tasks') t WHERE o.enterprise_id=$1 AND o.document->>'teamId'=$2 AND o.document->>'status' IN ('approved','active','paused','completed') AND (t->>'assignee') IS NOT DISTINCT FROM $3::text AND ((t->>'planStart'<=$5 AND t->>'planEnd'>=$4) OR (t->>'planStart'<=$7 AND t->>'planEnd'>=$6)) ORDER BY o.id,t->>'id' LIMIT 1001`,[a.enterpriseId,a.teamId,t.assignee,t.planStart,t.planEnd,proposed.planStart,proposed.planEnd])).rows as {id:string;version:number;task:WorkOrder['tasks'][number]}[];
  if(rows.length>1000)throw new WorkflowError(422,'PLAN_MOVE_IMPACT_TOO_LARGE');
  const loads:Record<string,number>={};
  for(const row of rows){const task=row.task;const allocation=allocateHours(calendar.config,task.planStart!,task.planEnd!,task.estimatedHours||0);for(const date of days)loads[date]=(loads[date]||0)+(allocation.byDay[date]||0);}

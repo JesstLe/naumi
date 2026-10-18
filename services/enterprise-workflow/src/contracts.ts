@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import {pauseActions,type PauseRequest} from './pause-contracts';
 import {cancellationActions,type CancellationRequest} from './cancellation-contracts';
 import {handoverPackageActions,type HandoverMaterials,type HandoverConfirmation} from './handover-materials';
 import {changeActions,type ChangeRequest,type Commitment} from './change-contracts';
@@ -34,6 +35,7 @@ export type SourceLink={ref:SourceRef;linkedBy:string;linkedAt:string;reason:str
 export const routingFieldsSchema=z.strictObject({brand:z.string().trim().max(80),shop:z.string().trim().max(80),businessUnit:z.string().trim().max(80),workKind:z.enum(['','design','artwork'])});
 export type RoutingFields=z.infer<typeof routingFieldsSchema>;
 export const actionSchema = z.discriminatedUnion('type', [
+  ...pauseActions,
   ...cancellationActions,
   ...handoverPackageActions,
   ...changeActions,
@@ -91,6 +93,8 @@ export type Task = {
   submittedAt: string | null; acceptedAt: string | null; assetIds: string[]; quality: number | null;
 };
 export type WorkOrder = {
+  pauses?:PauseRequest[];
+  pausePeriods?:{pauseId:string;startedAt:string;endedAt?:string;resumeId?:string;cancelled?:boolean}[];
   cancellations?:CancellationRequest[];
   changes?:ChangeRequest[];
   requirementBaseline?:{title:string;brief:string;acceptance:string;firstChangeId:string};
@@ -105,7 +109,7 @@ export type WorkOrder = {
   followsOrderId?:string;
   teamId?: string;
   id: string; enterpriseId: string; requester: string; title: string; brief: string; acceptance: string;
-  status: 'draft' | 'submitted' | 'approved' | 'active' | 'completed' | 'cancelled' | 'archived';
+  status: 'draft' | 'submitted' | 'approved' | 'active' | 'paused' | 'completed' | 'cancelled' | 'archived';
   version: number; createdAt: string; updatedAt: string; tasks: Task[];
 };
 export type WorkflowEvent = {

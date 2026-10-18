@@ -4,7 +4,7 @@ import type {ChangeAction,ChangePatch,ChangeRequest,ChangeImpact} from './change
 const need=(v:unknown,c:string,s=409):void=>{if(!v)throw new WorkflowError(s,c);};
 const stable=(v:unknown):string=>Array.isArray(v)?'['+v.map(stable).join(',')+']':v&&typeof v==='object'?'{'+Object.entries(v).filter(([,x])=>x!==undefined).sort(([a],[b])=>a.localeCompare(b)).map(([k,x])=>JSON.stringify(k)+':'+stable(x)).join(',')+'}':JSON.stringify(v);
 export const isChangeAction=(s:string)=>['propose-change','approve-change','reject-change','withdraw-change','apply-change'].includes(s);
-export function changeBaseline(o:WorkOrder){const {changes,cancellations,version,updatedAt,...business}=o;return createHash('sha256').update(stable(business)).digest('hex');}
+export function changeBaseline(o:WorkOrder){const {changes,cancellations,pauses,version,updatedAt,...business}=o;return createHash('sha256').update(stable(business)).digest('hex');}
 const member=(a:Actor,p:string)=>a.permissions.includes(p as 'manage');
 export const changeBusiness=(a:Actor,o:WorkOrder)=>a.enterpriseId===o.enterpriseId&&a.teamId===(o.requestTeamId??o.teamId)&&(member(a,'manage')||a.subject===o.requester&&member(a,'request'));
 export const changeExecution=(a:Actor,o:WorkOrder)=>a.enterpriseId===o.enterpriseId&&a.teamId===o.teamId&&member(a,'dispatch');

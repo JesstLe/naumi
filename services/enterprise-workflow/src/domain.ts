@@ -1,3 +1,5 @@
+import {evolvePause,isPause} from './pause-domain';
+import type {PauseImpact} from './pause-contracts';
 import {moveDates} from './calendar';
 import {evolveCancellation,isCancellation} from './cancellation-domain';
 import type {CancellationImpact} from './cancellation-contracts';
@@ -20,7 +22,7 @@ export function canRead(actor: Actor, order: WorkOrder) {
     order.requester === actor.subject || order.tasks.some(t => participants(t).includes(actor.subject) || t.pendingHandover?.to===actor.subject) ||
     has(actor, 'execute') && order.status === 'active' && order.tasks.some(t => t.status === 'open' && actor.workKinds.includes(t.kind)));
 }
-export function evolve(previous: WorkOrder | null, actor: Actor, command: Command, at: string,cancellationImpact?:CancellationImpact) {
+export function evolve(previous: WorkOrder | null, actor: Actor, command: Command, at: string,cancellationImpact?:CancellationImpact,pauseImpact?:PauseImpact) {
   const action = command.action;
   const permit = (p: Permission) => need(has(actor, p), 'FORBIDDEN', 403);
   if (!previous) {
@@ -36,12 +38,13 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
   need(canRead(actor, previous), 'FORBIDDEN', 403);
   need(previous.version === command.expectedVersion, 'VERSION_CONFLICT');
   need(action.type !== 'create', 'ALREADY_EXISTS');
-  if(actor.teamId!==previous.teamId&&!['operations-signoff','operations-followup'].includes(action.type)&&!isChangeAction(action.type)&&!isCancellation(action.type))throw new WorkflowError(403,'EXECUTION_TEAM_REQUIRED');
+  if(actor.teamId!==previous.teamId&&!['operations-signoff','operations-followup'].includes(action.type)&&!isChangeAction(action.type)&&!isCancellation(action.type)&&!isPause(action.type))throw new WorkflowError(403,'EXECUTION_TEAM_REQUIRED');
   const order = structuredClone(previous);
   const state = (...allowed: WorkOrder['status'][]) => need(allowed.includes(order.status), 'INVALID_ORDER_STATE');
   const owner = () => need(order.requester === actor.subject || has(actor, 'manage'), 'FORBIDDEN', 403);
   let eventData: Record<string, unknown> = {};
   switch (action.type) {
+    case 'request-pause':case 'approve-pause':case 'reject-pause':case 'withdraw-pause':case 'apply-pause':eventData=evolvePause(order,actor,action,at,pauseImpact);break;
     case 'request-cancellation':case 'approve-cancellation':case 'reject-cancellation':case 'withdraw-cancellation':case 'apply-cancellation':eventData=evolveCancellation(order,actor,action,at,cancellationImpact);break;
     case 'propose-change':case 'approve-change':case 'reject-change':case 'withdraw-change':case 'apply-change':eventData=evolveChange(order,actor,action,at);break;
     case 'set-demand-assets':state('draft');permit('request');owner();eventData={before:order.demandAssets??[]};break;
@@ -102,11 +105,11 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
       state('approved','active');permit('dispatch');const t=order.tasks.find(t=>t.id===action.taskId);need(t,'TASK_NOT_FOUND',404);need(t.status!=='accepted','ACCEPTED_PLAN_IMMUTABLE');eventData={before:{scheduleTag:t.scheduleTag??''}};t.scheduleTag=action.scheduleTag;break;
     }
     case 'move-task-plan': {
-      state('approved','active');permit('dispatch');const t=order.tasks.find(t=>t.id===action.taskId);need(t,'TASK_NOT_FOUND',404);need(t.status!=='accepted','ACCEPTED_PLAN_IMMUTABLE');need(!t.pendingHandover,'HANDOVER_PENDING');need(t.planStart&&t.planEnd&&t.estimatedHours,'PLAN_REQUIRED');need(t.planStart!==action.targetStart,'PLAN_MOVE_NO_CHANGE');
+      state('approved','active','paused');permit('dispatch');const t=order.tasks.find(t=>t.id===action.taskId);need(t,'TASK_NOT_FOUND',404);need(t.status!=='accepted','ACCEPTED_PLAN_IMMUTABLE');need(!t.pendingHandover,'HANDOVER_PENDING');need(t.planStart&&t.planEnd&&t.estimatedHours,'PLAN_REQUIRED');need(t.planStart!==action.targetStart,'PLAN_MOVE_NO_CHANGE');
       const proposed=moveDates(t.planStart,t.planEnd,action.targetStart);eventData={before:{planStart:t.planStart,planEnd:t.planEnd},after:proposed};Object.assign(t,proposed);break;
     }
     case 'set-task-plan': {
-      state('approved','active');permit('dispatch');const t=order.tasks.find(t=>t.id===action.taskId);need(t,'TASK_NOT_FOUND',404);need(t.status!=='accepted','ACCEPTED_PLAN_IMMUTABLE');
+      state('approved','active','paused');permit('dispatch');const t=order.tasks.find(t=>t.id===action.taskId);need(t,'TASK_NOT_FOUND',404);need(t.status!=='accepted','ACCEPTED_PLAN_IMMUTABLE');
       const empty=action.planStart===null&&action.planEnd===null&&action.estimatedHours===null;
       need(empty||action.planStart!==null&&action.planEnd!==null&&action.estimatedHours!==null&&action.planEnd>=action.planStart&&(Date.parse(action.planEnd)-Date.parse(action.planStart))/86400000<366,'INVALID_PLAN_RANGE');
       eventData={before:{planStart:t.planStart??null,planEnd:t.planEnd??null,estimatedHours:t.estimatedHours??null,scheduleTag:t.scheduleTag??'',customValues:t.customValues??{}}};
