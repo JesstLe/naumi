@@ -68,14 +68,24 @@ export function bindCandidateSlot(p,c){
  return r.slotCompose;
 }
 
+/** Separate historical debt from the observed completed successor. No new authorization. */
+export function assessReleaseHistory(s){
+ const closed=s?.lifecycle?.status==='COMPLETE'&&s.lifecycle.phase==='COMPLETE'&&integer(s.lifecycle.revision);
+ const zeroDrain=s?.closureFacts?.legacyDrainProven===true&&['acceptedTasks','agentSessions','legacyActiveTicks'].every(k=>s.closureFacts[k]===0);
+ const e=s?.successorEvidence;
+ if(closed&&zeroDrain&&!e?.present)return {currentReleaseStatus:'COMPLETE',historicalDebt:false,nextReleaseAuthorized:false,blockers:[]};
+ const verified=e?.present===true&&e.verified===true&&Array.isArray(e.errors)&&e.errors.length===0&&e.phase==='COMPLETE'&&e.releaseId==='release47-alldev-20261018'&&e.retiredCount===2&&e.historicalDrainProven===false&&e.historicalIncidents===2&&e.nextReleaseAuthorized===false&&e.artifacts?.length>=5&&['web','worker'].every(role=>s.containers?.some(c=>c.id===e.identities?.[role]?.id&&c.imageId===e.imageId&&c.running===true));
+ if(verified)return {currentReleaseStatus:'COMPLETE_WITH_PRESERVED_INCIDENTS',releaseId:e.releaseId,historicalDebt:true,historicalDrainProven:false,nextReleaseAuthorized:false,blockers:['NEXT_RELEASE_INCIDENT_DISPOSITION_REQUIRED']};
+ return {currentReleaseStatus:e?.present?'SUCCESSOR_UNVERIFIED':'UNRESOLVED',historicalDebt:true,nextReleaseAuthorized:false,blockers:[...(e?.present?['SUCCESSOR_EVIDENCE_NOT_VERIFIED']:[]),...(!closed?['EXISTING_RELEASE_NOT_CLOSED']:[]),...(!zeroDrain?['LEGACY_DRAIN_UNKNOWN_OR_NONZERO']:[])]};
+}
+
 /** Advisory preflight. Freshness and immutable IDs bind a report, never authorize launch. */
 export function assessSameHostPlan(p,s,now=Date.now()){
  const rendered=renderSameHostPlan(p),blockers=[];
  const check=(ok,code)=>{if(!ok&&!blockers.includes(code))blockers.push(code);};
  check(s?.version===1&&s.target===p.target&&s.evidenceMode==='live'&&/^[a-f0-9]{64}$/.test(s.machineIdSha256||''),'LIVE_HOST_IDENTITY_REQUIRED');
  const age=now-Date.parse(s?.observedAt);check(Number.isFinite(age)&&age>=-5000&&age<=120000,'OBSERVATION_STALE');
- check(s?.lifecycle?.status==='COMPLETE'&&s.lifecycle.phase==='COMPLETE'&&integer(s.lifecycle.revision),'EXISTING_RELEASE_NOT_CLOSED');
- check(s?.closureFacts?.legacyDrainProven===true&&['acceptedTasks','agentSessions','legacyActiveTicks'].every(k=>s.closureFacts[k]===0),'LEGACY_DRAIN_UNKNOWN_OR_NONZERO');
+ const releaseAssessment=assessReleaseHistory(s);blockers.push(...releaseAssessment.blockers);
  check(Array.isArray(s?.deploymentLocks)&&s.deploymentLocks.length===3&&LOCKS.every(path=>s.deploymentLocks.some(x=>x.path===path&&x.held===false)),'DEPLOYMENT_LOCKS_HELD_OR_UNKNOWN');
  const samples=s?.samples;check(Array.isArray(samples)&&samples.length>=2,'RESOURCE_SAMPLES_MISSING');
  const valid=Array.isArray(samples)&&samples.length>=2&&samples.every(x=>integer(x.availableMiB)&&integer(x.rootFreeMiB)&&integer(x.dockerFreeMiB)&&Number.isFinite(x.load1)&&integer(x.cpus)&&x.cpus>0&&Number.isFinite(Date.parse(x.at)))&&Date.parse(samples.at(-1).at)-Date.parse(samples[0].at)>=5000&&samples.every(x=>now-Date.parse(x.at)>=-5000&&now-Date.parse(x.at)<=120000);
@@ -92,10 +102,10 @@ export function assessSameHostPlan(p,s,now=Date.now()){
  check(Array.isArray(s?.networks)&&!s.networks.includes(p.database.networkName),'PLANNED_DATABASE_NETWORK_EXISTS');
  check(Array.isArray(s?.images),'IMAGE_INVENTORY_MISSING');
  for(const kind of ['web','runtime','postgres'])check(s?.images?.some(x=>x.id===p.images[kind]),'FIXED_'+kind.toUpperCase()+'_IMAGE_NOT_LOADED');
- for(const kind of ['web','runtime']){const im=s?.images?.find(x=>x.id===p.images[kind]);check(im?.gitRevision===p.gitRevision,'FIXED_'+kind.toUpperCase()+'_REVISION_MISMATCH');if(kind==='runtime')check(im?.releaseId===p.releaseId,'FIXED_RUNTIME_RELEASE_MISMATCH');else check(im?.productSha256===p.productSha256,'FIXED_WEB_PRODUCT_MISMATCH');}
+ for(const kind of ['web','runtime']){const im=s?.images?.find(x=>x.id===p.images[kind]);if(!im)continue;check(im.gitRevision===p.gitRevision,'FIXED_'+kind.toUpperCase()+'_REVISION_MISMATCH');if(kind==='runtime')check(im.releaseId===p.releaseId,'FIXED_RUNTIME_RELEASE_MISMATCH');else check(im.productSha256===p.productSha256,'FIXED_WEB_PRODUCT_MISMATCH');}
  // Prevent this standalone plan from being treated as clearance to overwrite a newer unified Web.
  check(s?.candidateComparison?.candidateRevision===p.gitRevision&&s.candidateComparison?.onlineImageIdsSha256===hash(JSON.stringify(containers.filter(x=>x.role==='web'||x.role==='worker').map(x=>x.imageId).sort()))&&s.candidateComparison?.latestSourcesReviewed===true,'ONLINE_SOURCE_RECONCILIATION_REQUIRED');
- return {version:1,planSha256:rendered.planSha256,snapshotSha256:hash(JSON.stringify(s)),observedAt:new Date(now).toISOString(),target:p.target,blockers,preflightEligible:blockers.length===0,startAuthorized:false,requiredMiB,candidateBudgetMiB:candidateBudget,resourceMethod:'max(sum-new-container-limits,measured-combined-peak)+existing-growth+host-reserve; no credit for future retirement; swap excluded',nextGate:'recollect under all three locks; existing lifecycle and live readiness remain mandatory'};
+ return {version:1,planSha256:rendered.planSha256,snapshotSha256:hash(JSON.stringify(s)),observedAt:new Date(now).toISOString(),target:p.target,releaseAssessment,blockers,preflightEligible:blockers.length===0,startAuthorized:false,requiredMiB,candidateBudgetMiB:candidateBudget,resourceMethod:'max(sum-new-container-limits,measured-combined-peak)+existing-growth+host-reserve; no credit for future retirement; swap excluded',nextGate:'recollect under all three locks; existing lifecycle and live readiness remain mandatory'};
 }
 
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){

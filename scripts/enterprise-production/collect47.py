@@ -10,6 +10,7 @@ import os
 import pathlib
 import subprocess
 import time
+from importlib.util import module_from_spec, spec_from_file_location
 
 LOCKS = ['/opt/naumi-staging/releases/deploy.lock', '/opt/naumi-reverse-hub/releases/deploy.lock', '/opt/reference-workbench/deploy.lock']
 
@@ -22,7 +23,7 @@ def stamp():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
-def collect():
+def collect(successor_verifier=None):
     root = pathlib.Path('/opt/naumi-staging/releases/release-lifecycle/current.json')
     raw = root.read_bytes()
     state = json.loads(raw)
@@ -51,16 +52,33 @@ def collect():
         labels = d['Config'].get('Labels') or {}
         images.append({'id': d['Id'], 'gitRevision': labels.get('org.naumi.web.git-revision') or labels.get('org.opencontainers.image.revision'), 'releaseId': labels.get('org.naumi.workflow.release'), 'productSha256': labels.get('org.naumi.web.product-sha256')})
     lock_data = json.loads(command('lslocks', '--json', '-o', 'PID,PATH')).get('locks', [])
+    successor = {'present': isinstance(state.get('blueGreenSuccessor'), dict), 'verified': False, 'errors': ['SUCCESSOR_VERIFIER_NOT_LOADED']}
+    if successor_verifier:
+        def bounded_read(path):
+            root_path = pathlib.Path('/opt/naumi-staging/evidence/all-dev-release47-20261018')
+            if root_path.is_symlink() or not path.resolve().is_relative_to(root_path.resolve()) or path.is_symlink() or not path.is_file() or path.stat().st_size > 4 * 1024 * 1024:
+                raise ValueError('INVALID_ARTIFACT')
+            return path.read_bytes()
+        gateway = subprocess.check_output(['nginx', '-T'], stderr=subprocess.PIPE, timeout=30)
+        successor = successor_verifier(state, bounded_read, lambda ident: json.loads(command('docker', 'inspect', ident))[0], hashlib.sha256(gateway).hexdigest())
     time.sleep(5)
     samples.append(sample())
     if root.read_bytes() != raw:
         raise ValueError('LIFECYCLE_CHANGED_DURING_OBSERVATION')
-    return {'version': 1, 'target': '47.105.59.142', 'evidenceMode': 'live', 'machineIdSha256': hashlib.sha256(pathlib.Path('/etc/machine-id').read_bytes()).hexdigest(), 'observedAt': stamp(), 'lifecycle': {k: state.get(k) for k in ['status', 'phase', 'revision', 'releaseId']}, 'lifecycleSha256': hashlib.sha256(raw).hexdigest(), 'closureFacts': {k: state.get(k) for k in ['legacyDrainProven', 'acceptedTasks', 'agentSessions', 'legacyActiveTicks']}, 'deploymentLocks': [{'path': path, 'held': any(x.get('path') == path for x in lock_data)} for path in LOCKS], 'samples': samples, 'containers': containers, 'images': images, 'volumes': command('docker', 'volume', 'ls', '--format', '{{.Name}}').splitlines(), 'networks': command('docker', 'network', 'ls', '--format', '{{.Name}}').splitlines(), 'candidateComparison': None}
+    return {'version': 1, 'target': '47.105.59.142', 'evidenceMode': 'live', 'machineIdSha256': hashlib.sha256(pathlib.Path('/etc/machine-id').read_bytes()).hexdigest(), 'observedAt': stamp(), 'lifecycle': {k: state.get(k) for k in ['status', 'phase', 'revision', 'releaseId']}, 'lifecycleSha256': hashlib.sha256(raw).hexdigest(), 'closureFacts': {k: state.get(k) for k in ['legacyDrainProven', 'acceptedTasks', 'agentSessions', 'legacyActiveTicks']}, 'successorEvidence': successor, 'deploymentLocks': [{'path': path, 'held': any(x.get('path') == path for x in lock_data)} for path in LOCKS], 'samples': samples, 'containers': containers, 'images': images, 'volumes': command('docker', 'volume', 'ls', '--format', '{{.Name}}').splitlines(), 'networks': command('docker', 'network', 'ls', '--format', '{{.Name}}').splitlines(), 'candidateComparison': None}
 
 
 if __name__ == '__main__':
     try:
-        print(json.dumps(collect(), sort_keys=True))
+        verifier = globals().get('verify_successor')
+        if verifier is None:
+            module_path = pathlib.Path(__file__).with_name('successor-evidence.py')
+            if module_path.is_file():
+                spec = spec_from_file_location('enterprise_successor_evidence', module_path)
+                module = module_from_spec(spec)
+                spec.loader.exec_module(module)
+                verifier = module.verify_successor
+        print(json.dumps(collect(verifier), sort_keys=True))
     except Exception as exc:
         # Do not forward stderr, command arguments, environment or raw server data.
         print(json.dumps({'error': 'COLLECTION_FAILED', 'type': type(exc).__name__}))
