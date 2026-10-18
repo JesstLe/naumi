@@ -1,4 +1,5 @@
 import type {ReferenceStore} from './reference-store';
+import {PublicationFiles,publicationFileQuery,publicationFileId} from './publication-files';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { Pool } from 'pg';
 import { ZodError } from 'zod';
@@ -36,6 +37,7 @@ async function body(req: IncomingMessage,limit=128*1024) {
   catch { throw new WorkflowError(400, 'INVALID_JSON'); }
 }
 export function createWorkflowServer(store: WorkflowStore, authenticate: Authenticate, scheduling?: SchedulingStore, identity?:{store:SourceIdentityStore;authenticate:SourceAuthenticate},people?:PeopleStore,delivery?:DeliveryStore,performance?:PerformanceStore,routing?:RoutingStore,notifications?:NotificationStore,imports?:FormalImportStore,references?:ReferenceStore,uploads?:MultipartStore) {
+  const publicationFiles=delivery?new PublicationFiles(store.publications,delivery):undefined;
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url || '/', 'http://workflow.internal');
@@ -51,6 +53,20 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       const principal = await authenticate(req);
       if (!principal) throw new WorkflowError(401, 'AUTH_REQUIRED');
       if (!id.safeParse(principal.enterpriseId).success || !principal.subject) throw new WorkflowError(401, 'INVALID_IDENTITY');
+      if(url.pathname==='/v1/publication-files'){
+        if(!publicationFiles)throw new WorkflowError(503,'PUBLICATION_FILES_NOT_CONFIGURED');
+        const raw=Object.fromEntries(url.searchParams);
+        if(req.method==='POST'){
+          if(raw.action==='scan'){const q=z.strictObject({action:z.literal('scan'),publicationId:publicationFileId,id:publicationFileId}).parse(raw);z.strictObject({}).parse(await body(req));return json(res,200,await publicationFiles.rescan(principal,q.publicationId,q.id));}
+          if(req.headers['content-type']!=='application/octet-stream')throw new WorkflowError(415,'BINARY_REQUIRED');if(Number(req.headers['content-length']||0)>16*1024*1024)throw new WorkflowError(413,'ASSET_TOO_LARGE');return json(res,200,await publicationFiles.upload(principal,raw,req));
+        }
+        if(req.method!=='GET')throw new WorkflowError(405,'METHOD_NOT_ALLOWED');const q=publicationFileQuery.parse(raw);
+        if(q.action==='list')return json(res,200,await publicationFiles.list(principal,q.publicationId,q.page));
+        if(q.action==='scan-history')return json(res,200,await publicationFiles.scanHistory(principal,q.publicationId,q.id,q.page));
+        const controller=new AbortController();req.once('aborted',()=>controller.abort());res.once('close',()=>controller.abort());
+        const {asset,stream}=q.action==='package'?await publicationFiles.package(principal,q.publicationId,q.expectedVersion,controller.signal):await publicationFiles.download(principal,q.publicationId,q.id);
+        if(res.destroyed){stream.destroy();return;}res.writeHead(200,{'Content-Type':q.action==='package'?'application/zip':'application/octet-stream','Content-Length':asset.bytes,'Content-Disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(asset.name).replaceAll("'",'%27'),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox",'X-Content-SHA256':asset.sha256});stream.on('error',()=>res.destroy());res.on('close',()=>stream.destroy());stream.pipe(res);return;
+      }
       if(req.method==='GET'&&url.pathname==='/v1/availability/members')return json(res,200,await store.availability.members(principal,Object.fromEntries(url.searchParams)));
       if(req.method==='GET'&&url.pathname==='/v1/availability')return json(res,200,await store.availability.get(principal,Object.fromEntries(url.searchParams)));
       if(req.method==='GET'&&url.pathname==='/v1/availability/history')return json(res,200,await store.availability.history(principal,Object.fromEntries(url.searchParams)));

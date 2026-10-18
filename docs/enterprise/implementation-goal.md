@@ -469,3 +469,16 @@ create/approve/start重验当前目录、规范、扫描和实际文件字节。
 publicationsEnabled默认false，schema30附加表，不降低29 reader/writer规范门禁。真实库仍schema8、364行/292附件及0真实资料/映射/正式需求；18482动态读取同一原HTML，18482/18494无需重启。实际公司身份及渠道配置未绑定，未生产发布。G40同步归零后本轮功能计数1；开工/提交前刷新main，任务分支选择性提交推送。
 
 整体目标ACTIVE。M18剩余可下载发布包manifest/ZIP、专用截图证明文件、规格校验、真实平台API与读回授权、跨店批量、自动通知和经营归因继续保留；公司身份映射、钉钉/聚水潭接口、容量与正式蓝绿验收仍待完成。下一优先补齐可复核下载发布包与人工证据附件，降低运营在系统与商家平台之间传递文件的成本，不把人工台账替代真实平台集成。
+
+
+## G42 固定发布包与人工回执附件（2026-10-18）
+
+详见publication-files-g42.md。原发布详情增加固定ZIP下载/回执凭证。approved/executing且当前版本匹配才生成包；manifest固定验收、文件revision/bytes/SHA256、品牌规范与目标目录，ZIP32/UTF8/CRC确定内容，最多20文件/512MiB。逐文件真实下载检查后再验身份/店铺/版本/规范及登记包审计；不调用平台发布API。两并发、流式临时文件，下载完成/取消清理，自有超过24小时残留每次最多50个。
+
+独立publication_evidence/scans/file_audit及publication-evidence存储；上传绑定不可变receipt/resolve/recall-receipt修订，说明补录人/时间，不修改原发布状态/贡献/Naumi积分。原回执登记人仍有操作权限或manage+review可补证；版本/身份二次校验、稳定assetId重放、不同内容冲突、16MiB/文件/200个每实例/独立512MiB每企业配额。运行扫描策略沿用，感染/过期/失败不下载，复检历史保留，补录后旧规范撤回不抹除历史凭证。
+
+服务、原生BFF、18项原UI、开发运行46组、真实Next34组集中验证通过。实际浏览器ZIP经独立Python CRC及manifest/hash解码，凭证39字节/SHA一致。固定版本与源码副本回滚见enterprise-publication-files-g42-20261018/VERIFICATION.txt。测试首轮schema30旧断言与Response.json unknown类型诊断已修正并记录。
+
+schema31附加表，publicationsEnabled沿用默认false，既有reader/writer29不降低；真实固定旧30进程在31库原业务就绪/创建且证据、扫描和审计保持。真实schema8/364行/292附件与0资料/映射/正式需求保持，18482/18494不重启；没有真实账号绑定或生产发布。G40归零后本轮功能计数2，开工/提交前刷新main、任务分支选择性提交推送。
+
+整体目标ACTIVE。下一优先渠道图像规格检查与结构化缺项，不将自动检查替代品牌人工核准；真实公司规格/身份/钉钉聚水潭渠道配置、证据保留策略、容量和正式蓝绿验收继续保留。M18批量发布、真实API读回、通知/经营归因未冒充完成。
