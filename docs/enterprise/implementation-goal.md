@@ -506,6 +506,6 @@ schema32仅附加publication_preflights，publicationsEnabled默认false，reade
 
 本轮第一次独立Node辅助进程继承在线Web observer preload出现exit143；在线主进程保持，后续仅独立CLI进程不载入Web启动观察器，完成只读核对。未重启/配置/发布47、未修改18482HTML/18494进程、未写真实源或本机工作流数据。源码工具与站点配置入Git，真实账号清单/原始传输证据不入Git。
 
-集中PG只读拒写、精确企业、跨企业同名排除、撤权、缺schema拒绝、真实CLI/私密输出/重复目录拒绝及原基础回归，固定Git/推送/副本恢复以enterprise-source47-g44-20261018/VERIFICATION.txt为准。G43归零后本轮功能计数1，开工/收尾fetch main不变cb82c1cc，任务分支独立提交推送。
+集中PG只读拒写、精确企业、跨企业同名排除、撤权、缺schema拒绝、真实CLI/私密输出/重复目录拒绝及原基础回归，固定Git/推送/副本恢复以enterprise-source47-g44-20261018/VERIFICATION.txt为准。开工main为cb82c1cc；收尾fetch发现main已包含G43及新的47运维提交1852b21c，已普通合入任务分支（8a5777a6），无冲突。新增运维策略9项集中回归，功能同步计数归零。本模块选择性提交推送，不操作共享checkout或发起生产发布。
 
 整体目标ACTIVE。下一真实接入需要明确试点人员的真名映射、工作流团队/角色，再制定稳定sourceInstance与原生桥接配置、绑定预览及正式蓝绿；员工会话、源记录/账本权限和真实容量仍待验收。M12活动变更及原蓝图剩余模块继续，未把接入检查工具等同正式接通。
