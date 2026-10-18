@@ -55,7 +55,7 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
     }
     case 'plan-tasks': {
       state('approved'); permit('dispatch');
-      need(!order.changes?.some(c=>c.status==='applied'),'CHANGE_BASELINE_REPLAN_FROZEN');
+      need(!order.tasks.some(t=>t.commitmentBaseline),'CHANGE_BASELINE_REPLAN_FROZEN');
       const ids = new Set(action.tasks.map(t => t.id));
       need(ids.size === action.tasks.length, 'DUPLICATE_TASK');
       const specs = new Map(action.tasks.map(t => [t.id, t]));
