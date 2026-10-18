@@ -4,6 +4,7 @@
   "formsEnabled": false,
   "demandBatchEnabled": false,
   "demandAssetsEnabled": false,
+  "worklogsEnabled": false,
   "installationId": "company-workflow",
   "slot": "blue",
   "expectedDatabase": "naumi_workflow",

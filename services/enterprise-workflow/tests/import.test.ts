@@ -1,3 +1,4 @@
+import {worklogChecks} from './worklogs.test';
 import {demandAssetsChecks} from './demand-assets.test';
 import {demandBatchChecks} from './demand-batch.test';
 import {formsChecks} from './forms.test';
@@ -40,7 +41,7 @@ test('import persistence, exact source data, isolation, replay, CAS, rollback an
  const pool=new pg.Pool({connectionString:url}),dir=await mkdtemp(join(tmpdir(),'naumi-import-test-')),tenant=randomUUID();
  const store=new ImportStore(pool,tenant,dir),secret=randomBytes(32).toString('hex');let proxy:ReturnType<typeof spawn>|undefined;let server:ReturnType<typeof createImportServer>|undefined;
  try{
-  for(const n of ['001-workflow.sql','002-scheduling.sql','003-source-import.sql','004-source-identity.sql','005-people-mapping.sql','006-source-intake.sql','007-workspace-labels.sql','008-delivery-assets.sql','009-performance.sql','010-routing.sql','011-notifications.sql','012-runtime.sql','013-batch-plans.sql','014-team-calendars.sql','015-delivery-scans.sql','016-delivery-uploads.sql','017-person-availability.sql','018-performance-corrections.sql','019-catalog.sql','020-demand-forms.sql','021-demand-batches.sql','022-demand-assets.sql'])await pool.query(await readFile(new URL('../migrations/'+n,import.meta.url),'utf8'));
+  for(const n of ['001-workflow.sql','002-scheduling.sql','003-source-import.sql','004-source-identity.sql','005-people-mapping.sql','006-source-intake.sql','007-workspace-labels.sql','008-delivery-assets.sql','009-performance.sql','010-routing.sql','011-notifications.sql','012-runtime.sql','013-batch-plans.sql','014-team-calendars.sql','015-delivery-scans.sql','016-delivery-uploads.sql','017-person-availability.sql','018-performance-corrections.sql','019-catalog.sql','020-demand-forms.sql','021-demand-batches.sql','022-demand-assets.sql','023-worklogs.sql'])await pool.query(await readFile(new URL('../migrations/'+n,import.meta.url),'utf8'));
   const bytes=Buffer.from('synthetic attachment'),h=createHash('sha256').update(bytes).digest('hex');await writeFile(join(dir,h),bytes);
   const source='a'.repeat(64),row=(n:number,title:string,parent='')=>({excelRow:n,title,parentLabel:parent,raw:{'任务完成情况':n===4?'已完成':'','设计师':'张同名','需求方':'王运营'},rawCells:{['A'+n]:title},parentCandidates:parent?[2,3]:[],attachments:[],issues:[]});
   const input={schema:'enterprise-source-import-v1',sourceHash:source,workbookHash:'b'.repeat(64),sheet:'fixture',headers:{A:'产品需求名称'},rows:[row(2,'同名'),row(3,'同名'),row(4,'子记录','同名')],issues:[],summary:{rows:3,children:1},assets:[{id:h,sha256:h,path:'file.xlsx',name:'file.xlsx',bytes:bytes.length,extension:'.xlsx'}],links:[]};
@@ -91,7 +92,7 @@ test('import persistence, exact source data, isolation, replay, CAS, rollback an
   await intakeChecks(pool,tenant,source);
   await tasksChecks(pool);await dashboardChecks(pool);
   await deliveryChecks(pool);await deliveryLibraryChecks(pool);await deliveryScanChecks(pool);await multipartChecks(pool);await clamdProtocolChecks();
-  await planChecks(pool);await calendarChecks(pool);await availabilityChecks(pool);await moveChecks(pool);await catalogChecks(pool);await formsChecks(pool);await demandBatchChecks(pool);await demandAssetsChecks(pool);
+  await planChecks(pool);await calendarChecks(pool);await availabilityChecks(pool);await moveChecks(pool);await catalogChecks(pool);await formsChecks(pool);await demandBatchChecks(pool);await demandAssetsChecks(pool);await worklogChecks(pool);
   await handoverBatchChecks(pool);await batchRecoveryChecks(pool);
   await sourceLinksChecks(pool);
   await performanceChecks(pool);

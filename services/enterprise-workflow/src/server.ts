@@ -136,6 +136,8 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
         return json(res, 200, await scheduling.get(principal, teamId));
       }
       if(req.method==='GET'&&url.pathname==='/v1/dashboard')return json(res,200,await store.dashboard(principal,Object.fromEntries(url.searchParams)));
+      if(url.pathname==='/v1/worklogs'&&req.method==='GET')return json(res,200,await store.worklogs.read(principal,Object.fromEntries(url.searchParams)));
+      if(url.pathname==='/v1/worklogs'&&req.method==='POST')return json(res,200,await store.worklogs.execute(principal,await body(req)));
       if(url.pathname==='/v1/demand-batches'&&req.method==='GET')return json(res,200,await store.demandBatches.read(principal,Object.fromEntries(url.searchParams)));
       if(url.pathname==='/v1/demand-batches/preview'&&req.method==='POST')return json(res,200,await store.demandBatches.preview(principal,await body(req,512*1024)));
       if(url.pathname==='/v1/demand-batches/apply'&&req.method==='POST')return json(res,200,await store.demandBatches.apply(principal,await body(req,512*1024)));

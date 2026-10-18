@@ -124,3 +124,7 @@ API、锁顺序、幂等、回执私有和排除范围见[详细PRD](../../docs/
 运行schema22，demandAssetsEnabled默认false；需要独立的demand-assets-enable-plan / demand-assets-enable配置预览hash与全读写者升级确认，启用后兼容下限reader/writer22。forms_enabled独立flag保留表单开关，不随附件floor隐式开启。生产仍须完整蓝绿，不把CLI确认当现场排空证明。
 
 原需求详情→参考附件，运营先上传候选，再显式选入当前草稿。32MiB/文件、20个选用、200个保留版本；与交付及续传预留共用企业配额，文件独立在deliveryRoot/demand-reference。模板可设置数量/大小/扩展名要求，提交时重新验证扫描/字节/规则。扫描disabled仅表示未扫描可用；正式需要配置真实扫描服务。详情见[PRD](../../docs/enterprise/demand-assets-g33.md)。
+
+## 实际工时（G34）
+
+运行schema23附加worklogs/worklog_revisions/worklog_commands，配置worklogsEnabled默认false。独立记录不抬升既有22兼容下限，不改原任务状态或绩效。原任务详情登记本人分钟，原任务中心查看台账；manage+review且非任务参与人复核。已确认值仅经独立更正审批变更，修订历史保留；跨团队同subject每天1440分钟数据上限。详情见[PRD](../../docs/enterprise/worklogs-g34.md)。自报/复核工时不等于考勤、加班许可或工资结算。
