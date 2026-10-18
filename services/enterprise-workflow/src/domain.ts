@@ -1,4 +1,5 @@
 import {moveDates} from './calendar';
+import {sameIds} from './handover-materials';
 import {evolveChange,isChangeAction} from './change-domain';
 import { createHash } from 'node:crypto';
 import { WorkflowError, type Actor, type Command, type WorkOrder, type WorkflowEvent, type Permission, type Task } from './contracts';
@@ -117,18 +118,21 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
       const taskState = (...s: typeof task.status[]) => need(s.includes(task.status), 'INVALID_TASK_STATE');
       const executor = () => { permit('execute'); need(task.assignee === actor.subject && actor.workKinds.includes(task.kind), 'FORBIDDEN', 403); };
       const dependencies = () => need(task.dependencyIds.every(d => order.tasks.find(t => t.id === d)?.status === 'accepted'), 'DEPENDENCY_NOT_ACCEPTED');
-      if(task.pendingHandover&&!['accept-handover','decline-handover','cancel-handover'].includes(action.type))throw new WorkflowError(409,'HANDOVER_PENDING');
+      if(task.pendingHandover&&!['accept-handover','accept-handover-package','decline-handover','cancel-handover'].includes(action.type))throw new WorkflowError(409,'HANDOVER_PENDING');
       switch (action.type) {
-        case 'propose-handover':
+        case 'propose-handover':case 'propose-handover-package':
           taskState('in_progress','blocked','rework');permit('dispatch');need(task.assignee&&task.assignee!==action.assignee,'INVALID_HANDOVER_TARGET');
           need(!(task.handoverHistory??[]).some(h=>h.id===action.handoverId),'HANDOVER_ID_REUSED');
           need((task.handoverHistory?.length??0)<100,'HANDOVER_HISTORY_LIMIT');
-          task.pendingHandover={id:action.handoverId,from:task.assignee,to:action.assignee,reason:action.reason,requestedBy:actor.subject,requestedAt:at};break;
-        case 'accept-handover': case 'decline-handover': case 'cancel-handover': {
+          task.pendingHandover={id:action.handoverId,from:task.assignee,to:action.assignee,reason:action.reason,requestedBy:actor.subject,requestedAt:at,...(action.type==='propose-handover-package'?{materials:{version:1 as const,progressNote:action.materials.progressNote,remainingWork:action.materials.remainingWork,risks:action.materials.risks,checklist:action.materials.checklist,emptyAssetReason:action.materials.emptyAssetReason,assets:[],captured:{status:task.status,percent:task.percent,assignee:task.assignee,orderVersion:previous.version}}}:{})};break;
+        case 'accept-handover':case 'accept-handover-package': case 'decline-handover': case 'cancel-handover': {
           const h=task.pendingHandover;need(h&&h.id===action.handoverId,'HANDOVER_CHANGED');
           if(action.type==='cancel-handover')permit('dispatch');else{permit('execute');need(h.to===actor.subject&&actor.workKinds.includes(task.kind),'FORBIDDEN',403);}
-          if(action.type==='accept-handover')task.assignee=h.to;
-          const record={...h,outcome:action.type==='accept-handover'?'accepted' as const:action.type==='decline-handover'?'declined' as const:'cancelled' as const,resolvedBy:actor.subject,resolvedAt:at,resolutionReason:action.type==='accept-handover'?'':action.reason};
+          if(action.type==='accept-handover')need(!h.materials,'HANDOVER_PACKAGE_CONFIRMATION_REQUIRED');
+          if(action.type==='accept-handover-package'){need(h.materials,'HANDOVER_PACKAGE_REQUIRED');need(sameIds(action.checkedIds,h.materials.checklist.map(c=>c.id))&&sameIds(action.confirmedAssetIds,h.materials.assets.map(f=>f.id)),'HANDOVER_CONFIRMATION_INCOMPLETE');h.confirmation={checkedIds:action.checkedIds,confirmedAssetIds:action.confirmedAssetIds,statement:action.statement,confirmedAt:at,confirmedBy:actor.subject};}
+          const accepted=action.type==='accept-handover'||action.type==='accept-handover-package';
+          if(accepted)task.assignee=h.to;
+          const record={...h,outcome:accepted?'accepted' as const:action.type==='decline-handover'?'declined' as const:'cancelled' as const,resolvedBy:actor.subject,resolvedAt:at,resolutionReason:action.type==='accept-handover-package'?action.statement:action.type==='accept-handover'?'':action.reason};
           task.handoverHistory=[...(task.handoverHistory??[]),record];task.pendingHandover=null;eventData={handover:record};break;
         }
         case 'assign': taskState('open'); permit('dispatch'); task.assignee = action.assignee; task.status = 'assigned'; break;

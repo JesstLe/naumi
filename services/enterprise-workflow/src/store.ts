@@ -1,4 +1,5 @@
 import {PublicationStore} from './publication-store';
+import type {HandoverAsset} from './handover-materials';
 import {isChangeAction,changeCanApprove,changeControls,changeBusiness,changeExecution,changeImpact,changeBaseline} from './change-domain';
 import {changePreview} from './change-contracts';
 import {GuidelineStore} from './guideline-store';
@@ -48,6 +49,7 @@ function stable(value: unknown): string {
 }
 export type VerifySource=(proof:string,actor:Actor,command:Command)=>Promise<{sourceSubject:string}>;
 export class WorkflowStore {
+  private handoverFileChecks=0;
   readonly worklogs:WorklogStore;
   readonly reviews:ReviewStore;
   readonly sla:SlaStore;
@@ -61,7 +63,7 @@ export class WorkflowStore {
   readonly catalog:CatalogStore;
   readonly calendars:CalendarStore;
   readonly availability:AvailabilityStore;
-  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore,private notifications?:NotificationStore,private availabilityEnabled=true,catalogEnabled=true,formsEnabled=true,demandBatchEnabled=true,readonly demandAssets?:DemandAssetStore,worklogsEnabled=true,reviewsEnabled=true,reviewImage?:ReviewImage,slaEnabled=true,capacityEnabled=true,appealsEnabled=true,projectsEnabled=true,guidelinesEnabled=true,publicationsEnabled=true,readonly changesEnabled=false) {this.guidelines=new GuidelineStore(pool,resolveActor,guidelinesEnabled,now);this.projects=new ProjectStore(pool,resolveActor,projectsEnabled,now);this.appeals=new AppealStore(pool,resolveActor,appealsEnabled,now);this.capacity=new CapacityStore(pool,resolveActor,capacityEnabled);const n=notifications??new LocalNotifications(pool,resolveActor);this.sla=new SlaStore(pool,resolveActor,n,slaEnabled,now);n.reminderGuard=(tx,row)=>this.sla.deliveryCurrent(tx,row);this.reviews=new ReviewStore(pool,resolveActor,validateAssets,reviewsEnabled,now,reviewImage,this.guidelines);this.worklogs=new WorklogStore(pool,resolveActor,worklogsEnabled,now);this.forms=new FormStore(pool,resolveActor,formsEnabled,!!demandAssets);this.catalog=new CatalogStore(pool,resolveActor,catalogEnabled);this.publications=new PublicationStore(pool,resolveActor,validateAssets,this.catalog,this.guidelines,publicationsEnabled,now);this.demandBatches=new DemandBatchStore(pool,resolveActor,this.forms,this.catalog,demandBatchEnabled);this.calendars=new CalendarStore(pool,resolveActor);this.availability=new AvailabilityStore(pool,resolveActor,availabilityEnabled);}
+  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore,private notifications?:NotificationStore,private availabilityEnabled=true,catalogEnabled=true,formsEnabled=true,demandBatchEnabled=true,readonly demandAssets?:DemandAssetStore,worklogsEnabled=true,reviewsEnabled=true,reviewImage?:ReviewImage,slaEnabled=true,capacityEnabled=true,appealsEnabled=true,projectsEnabled=true,guidelinesEnabled=true,publicationsEnabled=true,readonly changesEnabled=false,readonly handoverPackagesEnabled=false) {this.guidelines=new GuidelineStore(pool,resolveActor,guidelinesEnabled,now);this.projects=new ProjectStore(pool,resolveActor,projectsEnabled,now);this.appeals=new AppealStore(pool,resolveActor,appealsEnabled,now);this.capacity=new CapacityStore(pool,resolveActor,capacityEnabled);const n=notifications??new LocalNotifications(pool,resolveActor);this.sla=new SlaStore(pool,resolveActor,n,slaEnabled,now);n.reminderGuard=(tx,row)=>this.sla.deliveryCurrent(tx,row);this.reviews=new ReviewStore(pool,resolveActor,validateAssets,reviewsEnabled,now,reviewImage,this.guidelines);this.worklogs=new WorklogStore(pool,resolveActor,worklogsEnabled,now);this.forms=new FormStore(pool,resolveActor,formsEnabled,!!demandAssets);this.catalog=new CatalogStore(pool,resolveActor,catalogEnabled);this.publications=new PublicationStore(pool,resolveActor,validateAssets,this.catalog,this.guidelines,publicationsEnabled,now);this.demandBatches=new DemandBatchStore(pool,resolveActor,this.forms,this.catalog,demandBatchEnabled);this.calendars=new CalendarStore(pool,resolveActor);this.availability=new AvailabilityStore(pool,resolveActor,availabilityEnabled);}
   async ready() {
     const result = await this.pool.query('SELECT version FROM enterprise_workflow.schema_version WHERE version=1');
     if (result.rowCount !== 1) throw new WorkflowError(503, 'MIGRATION_REQUIRED');
@@ -110,7 +112,7 @@ export class WorkflowStore {
       if(!order||!canRead(actor,order))throw new WorkflowError(404,'NOT_FOUND');
       const events=(await tx.query('SELECT event FROM enterprise_workflow.events WHERE enterprise_id=$1 AND order_id=$2 ORDER BY aggregate_version DESC LIMIT 100',[principal.enterpriseId,orderId])).rows.map(r=>r.event);
       const source=(await tx.query('SELECT source_hash AS "sourceHash",row_number AS row,source_version AS "sourceVersion",snapshot FROM enterprise_workflow.order_sources WHERE enterprise_id=$1 AND order_id=$2',[principal.enterpriseId,orderId])).rows[0]??null;
-      return {order,events,source,changeControl:changeControls(actor,order,this.changesEnabled)};
+      return {order,events,source,handoverPackages:{enabled:this.handoverPackagesEnabled},changeControl:changeControls(actor,order,this.changesEnabled)};
     });
   }
   async tasks(principal:Principal,raw:unknown={}){
@@ -208,6 +210,37 @@ export class WorkflowStore {
   async execute(principal: Principal, raw: unknown,proof='') {
     return this.executeCommand(principal,raw,undefined,false,proof);
   }
+  private async handoverPackagesReady(tx:PoolClient){
+    if(!this.handoverPackagesEnabled)throw new WorkflowError(503,'HANDOVER_PACKAGES_NOT_ENABLED');
+    if(!(await tx.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=34')).rowCount)throw new WorkflowError(503,'HANDOVER_PACKAGES_MIGRATION_REQUIRED');
+    await tx.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('enterprise-runtime:migrate',0))");
+    const f=(await tx.query('SELECT handover_packages_enabled,minimum_reader,minimum_writer FROM enterprise_workflow.runtime_installation WHERE singleton')).rows[0];
+    if(!f?.handover_packages_enabled||f.minimum_reader<34||f.minimum_writer<34)throw new WorkflowError(503,'HANDOVER_PACKAGES_ACTIVATION_REQUIRED');
+  }
+  private async handoverAssets(tx:PoolClient,a:Actor,orderId:string,taskId:string,ids:string[]):Promise<HandoverAsset[]>{
+    if(!ids.length)return [];
+    if(this.handoverFileChecks>=2)throw new WorkflowError(429,'HANDOVER_FILES_BUSY');this.handoverFileChecks++;
+    try{
+    const rows=(await tx.query('SELECT id,revision,name,bytes,sha256 FROM enterprise_workflow.delivery_assets WHERE enterprise_id=$1 AND order_id=$2 AND task_id=$3 AND id=ANY($4::uuid[]) ORDER BY id FOR SHARE',[a.enterpriseId,orderId,taskId,ids])).rows;
+    if(rows.length!==ids.length)throw new WorkflowError(409,'HANDOVER_ASSET_UNAVAILABLE');
+    if(rows.reduce((n,r)=>n+Number(r.bytes),0)>128*1024*1024)throw new WorkflowError(413,'HANDOVER_ASSET_BYTES_LIMIT');
+    if(!await this.validateAssets(tx,a,ids,{orderId,taskId}))throw new WorkflowError(409,'HANDOVER_ASSET_UNAVAILABLE');
+    return rows.map(r=>({id:r.id,revision:r.revision,name:r.name,bytes:Number(r.bytes),sha256:r.sha256}));
+    }finally{this.handoverFileChecks--;}
+  }
+  async handoverCandidates(p:Principal,raw:unknown={}){const q=z.strictObject({page:z.coerce.number().int().min(1).max(10000).default(1)}).parse(raw);return this.transaction(async tx=>{
+    const a=await this.actor(tx,p);await this.handoverPackagesReady(tx);if(!a.teamId||!a.permissions.includes('dispatch'))throw new WorkflowError(403,'DISPATCH_REQUIRED');
+    const from=`FROM enterprise_workflow.orders o CROSS JOIN LATERAL jsonb_array_elements(o.document->'tasks') t
+      LEFT JOIN enterprise_workflow.accounts u ON u.enterprise_id=o.enterprise_id AND u.subject=t->>'assignee'
+      LEFT JOIN enterprise_workflow.team_members m ON m.enterprise_id=o.enterprise_id AND m.team_id=$2 AND m.subject=t->>'assignee'`;
+    const where=`o.enterprise_id=$1 AND o.document->>'teamId'=$2::text AND o.document->>'status'='active' AND t->>'assignee' IS NOT NULL AND t->>'status'<>'accepted'
+      AND (u.subject IS NULL OR NOT u.enabled OR u.expires_at<=now() OR m.subject IS NULL OR NOT m.enabled OR m.expires_at<=now() OR NOT(m.permissions ? 'execute') OR NOT(m.work_kinds ? (t->>'kind')))`;
+    const total=Number((await tx.query(`SELECT count(*) n ${from} WHERE ${where}`,[a.enterpriseId,a.teamId])).rows[0].n);
+    const rows=(await tx.query(`SELECT o.id AS "orderId",o.version AS "orderVersion",o.document->>'title' AS "orderTitle",t->>'id' AS "taskId",t->>'title' AS title,t->>'assignee' AS assignee,t->>'status' AS status,(t->'pendingHandover' IS NOT NULL AND t->'pendingHandover'<>'null'::jsonb) AS "pendingHandover",
+      CASE WHEN u.subject IS NULL OR NOT u.enabled OR u.expires_at<=now() THEN 'ACCOUNT_UNAVAILABLE' WHEN m.subject IS NULL OR NOT m.enabled OR m.expires_at<=now() THEN 'MEMBERSHIP_UNAVAILABLE' ELSE 'EXECUTION_PERMISSION_CHANGED' END AS reason
+      ${from} WHERE ${where} ORDER BY o.updated_at DESC,o.id,t->>'id' LIMIT 30 OFFSET $3`,[a.enterpriseId,a.teamId,(q.page-1)*30])).rows;
+    return {items:rows,total,page:q.page,pageSize:30,automaticTransfer:false,source:'current-workflow-membership-not-hr-departure'};
+  },true);}
   private async changeReady(tx:PoolClient){
     if(!this.changesEnabled)throw new WorkflowError(503,'CHANGES_NOT_ENABLED');
     if(!(await tx.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=33')).rowCount)throw new WorkflowError(503,'CHANGES_MIGRATION_REQUIRED');
@@ -294,6 +327,8 @@ export class WorkflowStore {
       const actor = await this.actor(tx, principal);
       // Legacy command endpoint must not bypass a persisted plan's closure or frozen body.
       if(isChangeAction(command.action.type))await this.changeReady(tx);
+      if(['propose-handover-package','accept-handover-package'].includes(command.action.type))await this.handoverPackagesReady(tx);
+      if(this.handoverPackagesEnabled&&['propose-handover','accept-handover'].includes(command.action.type))throw new WorkflowError(409,'HANDOVER_PACKAGE_REQUIRED');
       if(!batchGuard&&command.action.type==='batch-tasks'&&(await tx.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=13')).rowCount){const saved=(await tx.query('SELECT plan_hash FROM enterprise_workflow.batch_plans WHERE enterprise_id=$1 AND id=$2',[principal.enterpriseId,command.action.batchId])).rows[0];if(saved)batchGuard={batchId:command.action.batchId,planHash:saved.plan_hash};}
       if(batchGuard){const row=await this.batchRow(tx,principal,batchGuard.batchId,'FOR SHARE');if(row.closed_at)throw new WorkflowError(409,'BATCH_CLOSED');if(row.plan_hash!==batchGuard.planHash)throw new WorkflowError(409,'BATCH_PLAN_CHANGED');const group=row.document.groups.find((g:{command:Command;ok:boolean})=>g.command.orderId===command.orderId);if(!group?.ok||sourceDigest(group.command)!==sourceDigest(command))throw new WorkflowError(409,'BATCH_COMMAND_CHANGED');}
       // Fixed lock order; tenant-scoped command dedupe also covers concurrent reuse across orders.
@@ -345,7 +380,7 @@ export class WorkflowStore {
           }
         }
       }
-      const assignment=action.type==='assign'||action.type==='propose-handover'?{subject:action.assignee,ids:[action.taskId]}:action.type==='batch-tasks'&&action.operation.type==='assign'?{subject:action.operation.assignee,ids:action.taskIds}:null;
+      const assignment=action.type==='assign'||action.type==='propose-handover'||action.type==='propose-handover-package'?{subject:action.assignee,ids:[action.taskId]}:action.type==='batch-tasks'&&action.operation.type==='assign'?{subject:action.operation.assignee,ids:action.taskIds}:null;
       if(assignment){
         if(!previous||!canRead(actor,previous)||!actor.permissions.includes('dispatch'))throw new WorkflowError(403,'FORBIDDEN');
         const target=await this.resolveActor(tx,{enterpriseId:principal.enterpriseId,subject:assignment.subject,...(principal.teamId?{teamId:principal.teamId}:{})});
@@ -357,6 +392,14 @@ export class WorkflowStore {
       const { order, event } = evolve(previous ?? null, actor, command, this.now().toISOString());
       // Leave space for approvals/withdrawal on all bounded pending proposals.
       if(isChangeAction(action.type)&&Buffer.byteLength(JSON.stringify(order),'utf8')>(action.type==='propose-change'?768:1024)*1024)throw new WorkflowError(409,'CHANGE_DOCUMENT_LIMIT');
+      if(action.type==='propose-handover-package'){
+        const h=order.tasks.find(t=>t.id===action.taskId)!.pendingHandover!;h.materials!.assets=await this.handoverAssets(tx,actor,order.id,action.taskId,action.materials.assetIds);event.data.handover=h;
+        if(Buffer.byteLength(JSON.stringify(order),'utf8')>2*1024*1024)throw new WorkflowError(409,'HANDOVER_DOCUMENT_LIMIT');
+      }
+      if(action.type==='accept-handover-package'){
+        const original=previous!.tasks.find(t=>t.id===action.taskId)!.pendingHandover!.materials!,actual=await this.handoverAssets(tx,actor,order.id,action.taskId,original.assets.map(f=>f.id));
+        if(stable(actual)!==stable(original.assets))throw new WorkflowError(409,'HANDOVER_ASSET_SNAPSHOT_CHANGED');
+      }
       await this.capacity.guard(tx,actor,previous??null,order);
       if(action.type==='set-demand-assets'){if(!this.demandAssets)throw new WorkflowError(503,'DEMAND_ASSETS_NOT_ENABLED');order.demandAssets=await this.demandAssets.selection(tx,actor,order,action.assetIds);event.data.demandAssets=order.demandAssets;}
       if(action.type==='submit-requirement'&&(order.demandAssets?.length||order.form?.definition.attachmentRules)){if(!this.demandAssets)throw new WorkflowError(503,'DEMAND_ASSETS_NOT_ENABLED');await this.demandAssets.validateSubmission(tx,actor,order);}

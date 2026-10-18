@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import {handoverPackageActions,type HandoverMaterials,type HandoverConfirmation} from './handover-materials';
 import {changeActions,type ChangeRequest,type Commitment} from './change-contracts';
 import {guidelineSelection,type GuidelineSnapshot} from './guideline-contracts';
 import {formSelection,type FormSnapshot} from './form-contracts';
@@ -32,6 +33,7 @@ export type SourceLink={ref:SourceRef;linkedBy:string;linkedAt:string;reason:str
 export const routingFieldsSchema=z.strictObject({brand:z.string().trim().max(80),shop:z.string().trim().max(80),businessUnit:z.string().trim().max(80),workKind:z.enum(['','design','artwork'])});
 export type RoutingFields=z.infer<typeof routingFieldsSchema>;
 export const actionSchema = z.discriminatedUnion('type', [
+  ...handoverPackageActions,
   ...changeActions,
   z.strictObject({type:z.literal('set-demand-assets'),assetIds:z.array(id.transform(s=>s.toLowerCase())).max(20),reason:text}),
   z.strictObject({type:z.literal('set-demand-guideline'),selection:guidelineSelection.nullable(),reason:text}),
@@ -74,7 +76,7 @@ export const commandSchema = z.strictObject({
 });
 export type Action = z.infer<typeof actionSchema>;
 export type Command = z.infer<typeof commandSchema>;
-export type Handover = {id:string;from:string;to:string;reason:string;requestedBy:string;requestedAt:string};
+export type Handover = {id:string;from:string;to:string;reason:string;requestedBy:string;requestedAt:string;materials?:HandoverMaterials;confirmation?:HandoverConfirmation};
 export type HandoverRecord = Handover & {outcome:'accepted'|'declined'|'cancelled';resolvedBy:string;resolvedAt:string;resolutionReason:string};
 export type Task = {
   commitmentBaseline?:Commitment;

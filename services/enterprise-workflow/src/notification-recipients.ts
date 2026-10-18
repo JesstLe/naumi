@@ -17,8 +17,8 @@ export function notificationRecipients(order:WorkOrder,event:WorkflowEvent,membe
    case 'batch-tasks':return exec&&order.tasks.some(t=>action.taskIds?.includes(t.id)&&t.assignee===a.subject);
    case 'submit-delivery':return exec&&!!task&&a.permissions.includes('review')&&!participants(task).includes(a.subject);
    case 'accept-delivery':return exec&&!!task&&participants(task).includes(a.subject)||requester&&order.status==='completed';
-   case 'propose-handover':return exec&&!!task?.pendingHandover&&[task.pendingHandover.from,task.pendingHandover.to].includes(a.subject);
-   case 'accept-handover':case 'decline-handover':case 'cancel-handover':{const h=event.data.handover as {from:string;to:string;requestedBy:string}|undefined;return exec&&!!h&&[h.from,h.to,h.requestedBy].includes(a.subject);}
+   case 'propose-handover':case 'propose-handover-package':return exec&&!!task?.pendingHandover&&[task.pendingHandover.from,task.pendingHandover.to].includes(a.subject);
+   case 'accept-handover':case 'accept-handover-package':case 'decline-handover':case 'cancel-handover':{const h=event.data.handover as {from:string;to:string;requestedBy:string}|undefined;return exec&&!!h&&[h.from,h.to,h.requestedBy].includes(a.subject);}
    case 'operations-signoff':case 'operations-followup':return requester||dispatch;
    case 'cancel':return requester||exec&&order.tasks.some(t=>participants(t).includes(a.subject));
    default:return false;
