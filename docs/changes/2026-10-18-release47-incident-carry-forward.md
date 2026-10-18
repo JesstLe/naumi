@@ -21,3 +21,17 @@
 ## 验收与剩余
 
 策略9项回归覆盖精确授权、过期授权、未知扩展拒绝、付费状态/原字节保护、当前非零执行拒绝、Worker未知拒绝及原canonical不重标完成。线上结果另追加本文件或运维证据；此文档本身不代表已切流。
+
+## 线上执行完成（2026-10-18 12:42:24）
+
+实际SOURCE_COMMIT=1852b21c5db9ff40332e25d840d98086761209c5，BUILD_VERSION=1792297790，Web/Worker同sha256:d036e1d14f631f167df953b660df97d57e1b866ce37323af5b26839e6afb6932。新blueGreenSuccessor.phase=COMPLETE，原根历史phase仍MIGRATED_CLEANUP_PENDING/legacyDrainProven=false，revision74，未知活动/付费needs_attention/hold原样保留。Web切流UUID38ea674f-b379-41e9-a50b-db8a9015bf46。
+
+真实旁路及公网既有登录/DB/画布/3D WebGL、旧页跨切流document保留和编辑保存/读回、16旧JS CSS逐hash、390px及私有媒体200/匿名401通过；pageerror0。Worker直连新Web，真实服务端tick完成；任务快照preservationVerified=true、unknownTables/violations为空、无原供应商变更。两当前旧槽已优雅停止restart=no，连历史共10槽停止，运行7容器。基础服务/原独立工作台保持，供应商生成提交0，临时测试节点已删除。
+
+真实/api/imagegen/plan：目录IDgemini-3.0-pro-image-three-four，单张实际有权参考、medium/1K/3:4/png，HTTP200、modelVersion117/billingVersion8、报价6，eligible=[geeknow-nano-banana-pro]；未创建任务。模型配置基线及当前117不变；既有publication47b785a6-d653-4376-b23b-1126937abb49 phase=applied属于2026-10-16，不归因本次。未执行repair APPLY。
+
+可读DB备份47,232,956字节；新版、7bd、f4b三版镜像及两版回退材料保留，actual nginx-t候选/回退均通过；服务器可执行ROLLBACK.sh默认只读check通过，--apply未执行，不宣称生产实切回。源副本实际685路径/2622原hash回退通过；配置副本原hash回退通过。恢复timer重绑定新两个槽且实际success。结束可用RAM约4.77GiB/Swap0/磁盘79%15GiB。
+
+执行器与回退程序保存scripts/ops/release47_successor_controller.py及release47_successor_rollback.py，固定本轮主机/目录/身份，不能盲用于下一版本。此发布后运维归档提交及企业仅离线来源审计工具167f2daa不改变1852运行镜像；企业独立服务/公司身份/第三方尚未配置启用。
+
+证据output/all-dev-release47-20261017/REPORT-20261018.md及VERIFICATION.txt；服务器/opt/naumi-staging/evidence/all-dev-release47-20261018。跨线程结果send返回parent_not_active，结果留handoff-banana-result.txt，未声称送达。本机临时会话/隧道密钥与服务器临时browser-private已清理，supervisor原受保护会话材料保留。
