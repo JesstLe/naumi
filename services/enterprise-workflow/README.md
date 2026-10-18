@@ -146,3 +146,14 @@ API、锁顺序、幂等、回执私有和排除范围见[详细PRD](../../docs/
 原通知页“定时提醒”：团队manage编辑六类规则，先看至多50单抽样预览，再确认保存；作用于全部当前/后续未结束工单。原始交付dueAt与排期planEnd独立，实际经过分钟不扣休息日；当前最高阶段优先，每业务时钟每阶段最多一次。已有未知发送不自动重发，已接受仅查询。政策、扫描游标、occurrence、站内消息/外部outbox持久化；发送租约前重新校验时钟/状态/当前收件人，过期提醒取消，不声称撤回在途消息。
 
 详见[PRD](../../docs/enterprise/sla-g36.md)。本地34组运行/28组Next与真实4核8GiB/钉钉应用/公司制度分别验收，不因测试通过自动启用真实企业规则。G35独立review/需求附件flag的业务guard也与readyz对齐；不按floor隐式开启其他模块。
+
+
+## 跨团队个人产能与WIP（G37）
+
+运行schema26，capacityEnabled默认false；显式capacity-enable-plan / capacity-enable持久capacity_enabled并提升reader/writer26。旧25不能绕过全企业WIP门禁；回退保留26兼容程序及已承接任务，不降低floor或回灌数据库。
+
+同企业同subject全局个人政策：weeklyMinutes/日期例外与maxWip。未配置则容量未知、WIP不限，不默认把多个团队的8小时相加。本人及本团队manage/dispatch读取全局合计，其他团队业务仅汇总不披露明细；全局政策须企业人员目录管理员+manage维护。
+
+WIP含active订单assigned/claimed/in_progress/blocked/review/rework的执行人以及待接收交接预留。原指派/批量/认领/交接事务持同账号锁，跨团队并发最后名额单赢家；释放/取消/验收释放占用，超额旧任务继续执行。原任务中心/团队排期“跨团队产能”和执行人详情入口；改期预览包含跨组总量警示与防过期hash，但计划工时仍非预约或实际工时。
+
+字段/权限/锁序/剩余真实制度见[PRD](../../docs/enterprise/capacity-g37.md)。本轮还修正G36测试随机选错团队通知的不稳定断言，基线失败与修正证据保留，不改变SLA业务口径。

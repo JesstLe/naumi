@@ -406,3 +406,14 @@ sla-g36.md与025持久政策/修订/命令/时钟发生记录；六类时钟从d
 运行slaEnabled默认false，显式floor25+持久sla_enabled，真实旧24拒绝；真实独立Worker待命0扫描、显式activate生成、排空保持cursor。G35的API入口遗漏独立review/附件flag校验在此补齐并通过真实HTTP，与readyz一致。原真实schema8/364行/292附件/0资料映射需求/SLA表保持，18482/18494不重启，真实公司规则和钉钉未启用。
 
 功能同步计数2（G34归零，G35为1）；开工与提交前刷新origin/main，任务分支不切共享checkout，不合main/生产发布。整体目标ACTIVE。下一优先M09跨团队同一员工容量汇总和WIP约束，再按G29原全目标逐项继续；真实Naumi来源/身份花名映射、公司制度和目标机器蓝绿余量仍单独待确认验收，不缩减目标。
+
+
+## 2026-10-18 G37：跨团队个人产能与WIP
+
+capacity-g37.md与026企业subject级政策/修订/回执；本团队与其他团队仅数值汇总，按各任务执行团队日历分摊，全球容量一份明确政策，未配置null不猜8h。本人或当前团队manage/dispatch可查有效执行成员，企业目录管理员+manage编辑，跨组不披露订单/任务/团队ID或标题。
+
+原业务事务在order锁后按subject排序加人员锁，active assigned/claimed/in_progress/blocked/review/rework加待接收交接预留计WIP；分配/批量/认领/交接新增强制门禁，释放/验收/取消释放，已有超额继续执行不强制清退。原改期预览追加跨组总量警示和全局hash，其他组变动使旧预览409，不冒充工时预约。原任务/排期入口、详情快捷入口及全局政策preview/save/history已接入。
+
+服务/BFF/浏览器18项、开发运行36组、真实Next29组及全类型通过；最终固定/远端/副本回滚见enterprise-capacity-g37-20261018/VERIFICATION.txt。修复G36旧SLA测试未限定通知team的不稳定断言；基线首次失败及原版隔离重测通过都保留。BFF限流冷却、旧包与新HTML不匹配失败均保留，不放宽生产校验。
+
+capacityEnabled默认false，显式floor26+capacity_enabled，实际旧25和新进程漏配拒绝。真实库仍schema8/364行292附件/0资料映射需求capacity表，18482/18494不重启，未生产发布。G35/G36/G37累计3功能模块，收尾刷新并整合origin/main，计数归零。整体目标ACTIVE；下一M23员工正式申诉/独立复核，其他全目标缺口与真实身份/配置/蓝绿容量不删减。

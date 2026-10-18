@@ -1,3 +1,4 @@
+import {capacityProjection} from './capacity-store';
 import {z} from 'zod';
 import type {PoolClient} from 'pg';
 import {id,calendarDate,WorkflowError,type Actor,type WorkOrder} from './contracts';
@@ -8,7 +9,7 @@ import {sourceDigest} from './source-files';
 import {canRead} from './domain';
 
 export const moveInput=z.strictObject({orderId:id,taskId:id,expectedVersion:z.number().int().positive(),targetStart:calendarDate,reason:z.string().trim().min(1).max(2000)});
-export async function previewMove(tx:PoolClient,a:Actor,input:z.infer<typeof moveInput>,personalEnabled:boolean){
+export async function previewMove(tx:PoolClient,a:Actor,input:z.infer<typeof moveInput>,personalEnabled:boolean,globalEnabled=false){
  const o=(await tx.query('SELECT document FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=$2',[a.enterpriseId,input.orderId])).rows[0]?.document as WorkOrder|undefined;
  if(!o||!canRead(a,o))throw new WorkflowError(404,'NOT_FOUND');
  if(!a.teamId||a.teamId!==o.teamId)throw new WorkflowError(403,'EXECUTION_TEAM_REQUIRED');
@@ -34,6 +35,7 @@ export async function previewMove(tx:PoolClient,a:Actor,input:z.infer<typeof mov
  const dependencies=o.tasks.filter(x=>x.id!==t.id&&x.status!=='accepted').flatMap<{taskId:string;title:string;kind:'predecessor'|'successor';date:string|null}>(x=>t.dependencyIds.includes(x.id)?(!x.planEnd||x.planEnd>=proposed.planStart?[{taskId:x.id,title:x.title,kind:'predecessor' as const,date:x.planEnd??null}]:[]):x.dependencyIds.includes(t.id)?(!x.planStart||x.planStart<=proposed.planEnd?[{taskId:x.id,title:x.title,kind:'successor' as const,date:x.planStart??null}]:[]):[]);
  const dueDate=new Date(Date.parse(t.dueAt)+8*3600000).toISOString().slice(0,10);
  const impact={days:daily,conflictDays:daily.filter(d=>d.overloaded).length,noWorkingDay:after.noWorkingDay,afterDue:proposed.planEnd>dueDate,dependencies,relatedTasks:rows.length};
- const basis={principal:{enterpriseId:a.enterpriseId,teamId:a.teamId,subject:a.subject},input,order:o.version,calendar,personal:personal??null,enabled,plans:rows.map(r=>({orderId:r.id,version:r.version,taskId:r.task.id}))};
- return {previewHash:sourceDigest(basis),orderId:o.id,taskId:t.id,title:t.title,expectedVersion:o.version,assignee:t.assignee,before:{planStart:t.planStart,planEnd:t.planEnd},proposed,estimatedHours:t.estimatedHours,dueAt:t.dueAt,calendarRevision:calendar.revision,calendarConfigured:calendar.configured,availabilityRevision:personal?.revision||0,availabilityEnabled:enabled,impact,timezone:'Asia/Shanghai',capacityScope:'execution-team-person',capacityReservation:false};
+ let globalCapacity;let globalBasis=null;if(globalEnabled&&t.assignee&&(await tx.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=26')).rowCount&&(await tx.query("SELECT 1 FROM enterprise_workflow.team_members m JOIN enterprise_workflow.accounts a USING(enterprise_id,subject) WHERE m.enterprise_id=$1 AND m.team_id=$2 AND m.subject=$3 AND m.enabled AND a.enabled AND (m.expires_at IS NULL OR m.expires_at>now()) AND (a.expires_at IS NULL OR a.expires_at>now()) AND m.permissions ? 'execute'",[a.enterpriseId,a.teamId,t.assignee])).rowCount){const before=await capacityProjection(tx,a,t.assignee,days),after=await capacityProjection(tx,a,t.assignee,days,{order:o,task:{...t,...proposed}});globalCapacity={configured:!!before.policy.config,wip:before.wip,days:before.days.map((d,i)=>({date:d.date,beforeHours:d.totalHours,afterHours:after.days[i].totalHours,otherTeamsHours:d.otherTeamsHours,capacityMinutes:d.capacityMinutes,overloaded:after.days[i].overloaded})),noWorkingDayTasks:after.noWorkingDayTasks,unplannedTasks:after.unplannedTasks,capacityReservation:false};globalBasis=[before.basisHash,after.basisHash];}
+ const basis={globalBasis,principal:{enterpriseId:a.enterpriseId,teamId:a.teamId,subject:a.subject},input,order:o.version,calendar,personal:personal??null,enabled,plans:rows.map(r=>({orderId:r.id,version:r.version,taskId:r.task.id}))};
+ return {...(globalCapacity?{globalCapacity}:{}),previewHash:sourceDigest(basis),orderId:o.id,taskId:t.id,title:t.title,expectedVersion:o.version,assignee:t.assignee,before:{planStart:t.planStart,planEnd:t.planEnd},proposed,estimatedHours:t.estimatedHours,dueAt:t.dueAt,calendarRevision:calendar.revision,calendarConfigured:calendar.configured,availabilityRevision:personal?.revision||0,availabilityEnabled:enabled,impact,timezone:'Asia/Shanghai',capacityScope:'execution-team-person',capacityReservation:false};
 }
