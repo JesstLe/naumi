@@ -8,6 +8,8 @@ import {formSelection,type FormSnapshot} from './form-contracts';
 import {catalogSelection,type CatalogSnapshot} from './catalog-contracts';
 
 export const id = z.string().uuid();
+// Native Naumi username accounts may use Unicode local parts; require a canonical account key, not an email delivery address.
+export const sourceAccountSubject=z.string().trim().max(254).regex(/^[^\s@\u0000-\u001f\u007f]+@[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$/).transform(s=>s.toLowerCase());
 const text = z.string().trim().min(1).max(2000);
 const kind = z.enum(['design', 'artwork']);
 export const calendarDate=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(s=>{const d=new Date(s+'T00:00:00Z');return !isNaN(+d)&&d.toISOString().slice(0,10)===s;});

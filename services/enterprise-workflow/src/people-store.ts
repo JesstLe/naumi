@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import type { Pool,PoolClient } from 'pg';
 import { z } from 'zod';
-import { id,WorkflowError,type Principal,type Actor } from './contracts';
+import { id,sourceAccountSubject,WorkflowError,type Principal,type Actor } from './contracts';
 import type { ResolveActor } from './store';
 const hash=z.string().regex(/^[a-f0-9]{64}$/),name=z.string().trim().min(1).max(100),reason=z.string().trim().min(1).max(200);
-const source=z.strictObject({instance:z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,79}$/),enterpriseId:id,subject:z.string().trim().email().max(254).transform(x=>x.toLowerCase())}).nullable();
+const source=z.strictObject({instance:z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,79}$/),enterpriseId:id,subject:sourceAccountSubject}).nullable();
 const profileCommand=z.strictObject({commandId:id,personId:id,expectedVersion:z.number().int().nonnegative(),realName:name,nickname:z.string().trim().max(100),source,enabled:z.boolean(),reason});
 const cleanText=(v:string)=>!/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(v);
 const profileFields=profileCommand.omit({commandId:true,reason:true}).extend({personId:id.transform(v=>v.toLowerCase()),realName:name.refine(cleanText),nickname:z.string().trim().max(100).refine(cleanText),source:source.transform(v=>v?{...v,enterpriseId:v.enterpriseId.toLowerCase()}:null)});
