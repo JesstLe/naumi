@@ -75,7 +75,7 @@ export function assessReleaseHistory(s){
  const e=s?.successorEvidence;
  if(closed&&zeroDrain&&!e?.present)return {currentReleaseStatus:'COMPLETE',historicalDebt:false,nextReleaseAuthorized:false,blockers:[]};
  const verified=e?.present===true&&e.verified===true&&Array.isArray(e.errors)&&e.errors.length===0&&e.phase==='COMPLETE'&&e.releaseId==='release47-alldev-20261018'&&e.retiredCount===2&&e.historicalDrainProven===false&&e.historicalIncidents===2&&e.nextReleaseAuthorized===false&&e.artifacts?.length>=5&&['web','worker'].every(role=>s.containers?.some(c=>c.id===e.identities?.[role]?.id&&c.imageId===e.imageId&&c.running===true));
- if(verified)return {currentReleaseStatus:'COMPLETE_WITH_PRESERVED_INCIDENTS',releaseId:e.releaseId,historicalDebt:true,historicalDrainProven:false,nextReleaseAuthorized:false,blockers:['NEXT_RELEASE_INCIDENT_DISPOSITION_REQUIRED']};
+ if(verified)return {currentReleaseStatus:'COMPLETE_WITH_PRESERVED_INCIDENTS',releaseId:e.releaseId,historicalDebt:true,historicalDrainProven:false,nextReleaseAuthorized:false,incidentPolicy:'resolve-before-deploy',carryForwardAllowed:false,requiredResolvedIncidents:2,blockers:['HISTORICAL_INCIDENTS_MUST_BE_RESOLVED']};
  return {currentReleaseStatus:e?.present?'SUCCESSOR_UNVERIFIED':'UNRESOLVED',historicalDebt:true,nextReleaseAuthorized:false,blockers:[...(e?.present?['SUCCESSOR_EVIDENCE_NOT_VERIFIED']:[]),...(!closed?['EXISTING_RELEASE_NOT_CLOSED']:[]),...(!zeroDrain?['LEGACY_DRAIN_UNKNOWN_OR_NONZERO']:[])]};
 }
 
