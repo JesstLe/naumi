@@ -1,4 +1,5 @@
 import type {ReferenceStore} from './reference-store';
+import {PreflightStore} from './preflight-store';
 import {PublicationFiles,publicationFileQuery,publicationFileId} from './publication-files';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { Pool } from 'pg';
@@ -38,6 +39,7 @@ async function body(req: IncomingMessage,limit=128*1024) {
 }
 export function createWorkflowServer(store: WorkflowStore, authenticate: Authenticate, scheduling?: SchedulingStore, identity?:{store:SourceIdentityStore;authenticate:SourceAuthenticate},people?:PeopleStore,delivery?:DeliveryStore,performance?:PerformanceStore,routing?:RoutingStore,notifications?:NotificationStore,imports?:FormalImportStore,references?:ReferenceStore,uploads?:MultipartStore) {
   const publicationFiles=delivery?new PublicationFiles(store.publications,delivery):undefined;
+  const preflights=delivery?new PreflightStore(store.publications,delivery):undefined;
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url || '/', 'http://workflow.internal');
@@ -53,6 +55,7 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       const principal = await authenticate(req);
       if (!principal) throw new WorkflowError(401, 'AUTH_REQUIRED');
       if (!id.safeParse(principal.enterpriseId).success || !principal.subject) throw new WorkflowError(401, 'INVALID_IDENTITY');
+      if(url.pathname==='/v1/publication-preflight'){if(!preflights)throw new WorkflowError(503,'PREFLIGHT_NOT_CONFIGURED');if(req.method==='GET')return json(res,200,await preflights.read(principal,Object.fromEntries(url.searchParams)));if(req.method==='POST'){if(url.search)throw new WorkflowError(400,'INVALID_PREFLIGHT_QUERY');return json(res,200,await preflights.execute(principal,await body(req)));}throw new WorkflowError(405,'METHOD_NOT_ALLOWED');}
       if(url.pathname==='/v1/publication-files'){
         if(!publicationFiles)throw new WorkflowError(503,'PUBLICATION_FILES_NOT_CONFIGURED');
         const raw=Object.fromEntries(url.searchParams);
