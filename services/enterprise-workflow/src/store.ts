@@ -1,3 +1,4 @@
+import {AppealStore} from './appeal-store';
 import {CapacityStore} from './capacity-store';
 import {SlaStore} from './sla-store';
 import {NotificationStore as LocalNotifications} from './notification-store';
@@ -46,12 +47,13 @@ export class WorkflowStore {
   readonly reviews:ReviewStore;
   readonly sla:SlaStore;
   readonly capacity:CapacityStore;
+  readonly appeals:AppealStore;
   readonly demandBatches:DemandBatchStore;
   readonly forms:FormStore;
   readonly catalog:CatalogStore;
   readonly calendars:CalendarStore;
   readonly availability:AvailabilityStore;
-  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore,private notifications?:NotificationStore,private availabilityEnabled=true,catalogEnabled=true,formsEnabled=true,demandBatchEnabled=true,readonly demandAssets?:DemandAssetStore,worklogsEnabled=true,reviewsEnabled=true,reviewImage?:ReviewImage,slaEnabled=true,capacityEnabled=true) {this.capacity=new CapacityStore(pool,resolveActor,capacityEnabled);const n=notifications??new LocalNotifications(pool,resolveActor);this.sla=new SlaStore(pool,resolveActor,n,slaEnabled,now);n.reminderGuard=(tx,row)=>this.sla.deliveryCurrent(tx,row);this.reviews=new ReviewStore(pool,resolveActor,validateAssets,reviewsEnabled,now,reviewImage);this.worklogs=new WorklogStore(pool,resolveActor,worklogsEnabled,now);this.forms=new FormStore(pool,resolveActor,formsEnabled,!!demandAssets);this.catalog=new CatalogStore(pool,resolveActor,catalogEnabled);this.demandBatches=new DemandBatchStore(pool,resolveActor,this.forms,this.catalog,demandBatchEnabled);this.calendars=new CalendarStore(pool,resolveActor);this.availability=new AvailabilityStore(pool,resolveActor,availabilityEnabled);}
+  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore,private notifications?:NotificationStore,private availabilityEnabled=true,catalogEnabled=true,formsEnabled=true,demandBatchEnabled=true,readonly demandAssets?:DemandAssetStore,worklogsEnabled=true,reviewsEnabled=true,reviewImage?:ReviewImage,slaEnabled=true,capacityEnabled=true,appealsEnabled=true) {this.appeals=new AppealStore(pool,resolveActor,appealsEnabled,now);this.capacity=new CapacityStore(pool,resolveActor,capacityEnabled);const n=notifications??new LocalNotifications(pool,resolveActor);this.sla=new SlaStore(pool,resolveActor,n,slaEnabled,now);n.reminderGuard=(tx,row)=>this.sla.deliveryCurrent(tx,row);this.reviews=new ReviewStore(pool,resolveActor,validateAssets,reviewsEnabled,now,reviewImage);this.worklogs=new WorklogStore(pool,resolveActor,worklogsEnabled,now);this.forms=new FormStore(pool,resolveActor,formsEnabled,!!demandAssets);this.catalog=new CatalogStore(pool,resolveActor,catalogEnabled);this.demandBatches=new DemandBatchStore(pool,resolveActor,this.forms,this.catalog,demandBatchEnabled);this.calendars=new CalendarStore(pool,resolveActor);this.availability=new AvailabilityStore(pool,resolveActor,availabilityEnabled);}
   async ready() {
     const result = await this.pool.query('SELECT version FROM enterprise_workflow.schema_version WHERE version=1');
     if (result.rowCount !== 1) throw new WorkflowError(503, 'MIGRATION_REQUIRED');
