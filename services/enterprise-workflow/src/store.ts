@@ -391,7 +391,8 @@ export class WorkflowStore {
       if(action.type==='move-task-plan'){moveImpact=await previewMove(tx,actor,{orderId:command.orderId,taskId:action.taskId,expectedVersion:command.expectedVersion,targetStart:action.targetStart,reason:action.reason},this.availabilityEnabled,this.capacity.enabled);if(moveImpact.previewHash!==action.previewHash)throw new WorkflowError(409,'PLAN_MOVE_PREVIEW_CHANGED');}
       const { order, event } = evolve(previous ?? null, actor, command, this.now().toISOString());
       // Leave space for approvals/withdrawal on all bounded pending proposals.
-      if(isChangeAction(action.type)&&Buffer.byteLength(JSON.stringify(order),'utf8')>(action.type==='propose-change'?768:1024)*1024)throw new WorkflowError(409,'CHANGE_DOCUMENT_LIMIT');
+      // Terminal withdrawal/rejection must remain possible if another bounded module grew the order.
+      if(isChangeAction(action.type)&&!['withdraw-change','reject-change'].includes(action.type)&&Buffer.byteLength(JSON.stringify(order),'utf8')>(action.type==='propose-change'?768:1024)*1024)throw new WorkflowError(409,'CHANGE_DOCUMENT_LIMIT');
       if(action.type==='propose-handover-package'){
         const h=order.tasks.find(t=>t.id===action.taskId)!.pendingHandover!;h.materials!.assets=await this.handoverAssets(tx,actor,order.id,action.taskId,action.materials.assetIds);event.data.handover=h;
         if(Buffer.byteLength(JSON.stringify(order),'utf8')>2*1024*1024)throw new WorkflowError(409,'HANDOVER_DOCUMENT_LIMIT');
