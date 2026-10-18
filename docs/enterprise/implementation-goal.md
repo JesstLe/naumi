@@ -1,5 +1,13 @@
 # 企业协作 Demo 全量落地实施台账
 
+## 最新接续 G51（2026-10-18）
+
+用户已确认47同机独立工作流服务/数据库，覆盖下文G49/G50时点“地点待回复”。新增same-host-deployment-g51.md：原host-network模板与47实际容器Web回环不互通，补齐独立数据库Compose及API/Worker绑定候选Web完整Docker ID的同namespace配置，固定镜像/目录/端口/资源/现场预检与候选身份二次绑定CLI。保留签名/回环约束，不公开工作流端口，不新增常驻功能Web。
+
+实际Linux网络模块使用G50固定镜像验证原生Next、独立DB显式迁移/合成provision、API ready/Worker standby、同网络其他容器拒绝和先工作流后Web正常退出。33项单元/CLI与6组真实Docker拓扑验收为本模块范围，不重复计G50的完整业务验收。原数据、真实身份、生产配置保持。
+
+47只读revision74 CLEANUP_PENDING/MIGRATED_CLEANUP_PENDING；legacyDrainProven=false，任务/Agent/旧tick计数未知。当前预算下界4736MiB而最终可用最低4532MiB，且组合峰值/原业务增长未测；镜像未导入、线上源码整合未核实。生成配置不授权启动，不能把预检文件当成发布收尾。下一按真实证据先收尾与容量，再蓝绿独立基础服务和原生员工桥接。整体ACTIVE，G49后的第三模块同步main后计数归零；最终提交/回滚与原数据见G51证据。
+
 2026-10-17；用户明确“设置目标开始全部实现”。目标状态：ACTIVE。最终产品沿用18482原界面，/admin仅为来源后台，同一代码主干不分叉。
 
 ## 总体验收定义
