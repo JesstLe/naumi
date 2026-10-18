@@ -128,3 +128,12 @@ API、锁顺序、幂等、回执私有和排除范围见[详细PRD](../../docs/
 ## 实际工时（G34）
 
 运行schema23附加worklogs/worklog_revisions/worklog_commands，配置worklogsEnabled默认false。独立记录不抬升既有22兼容下限，不改原任务状态或绩效。原任务详情登记本人分钟，原任务中心查看台账；manage+review且非任务参与人复核。已确认值仅经独立更正审批变更，修订历史保留；跨团队同subject每天1440分钟数据上限。详情见[PRD](../../docs/enterprise/worklogs-g34.md)。自报/复核工时不等于考勤、加班许可或工资结算。
+
+
+## 交付版本评审（G35）
+
+运行schema24，reviewsEnabled默认false。原任务详情→交付评审，以提交事件哈希和真实交付assetId/revision/SHA256冻结轮次；逐项检查、1—5人独立评审、图片点批注与回复/解决/重开。发起过结构化评审的任务后续提交均须完成本轮批准，原accept-delivery事务复核，不因UI按钮或配置关闭绕过。未采用结构化评审的任务保留原简单验收，不把新制度追溯写入历史。
+
+显式runtime.mjs reviews-enable-plan / reviews-enable：INPUT含commandId、reason、confirmedAllReadersAndWritersUpgraded:true；核对planHash并将reader/writer提升24、reviews_enabled持久化。旧23拒绝业务与就绪，回退只能用保留schema24评审门禁的兼容程序，不能下降floor或清空评审数据。demand_assets_enabled独立保留22语义，避免新floor意外开启其他模块。
+
+配置、权限、每轮检查项、文件坐标及验收矩阵见[PRD](../../docs/enterprise/delivery-reviews-g35.md)。真实公司制度/账号/蓝绿发布另验，不把隔离账号测试当上线。

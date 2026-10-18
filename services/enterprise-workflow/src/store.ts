@@ -1,3 +1,4 @@
+import {ReviewStore,type ReviewImage} from './review-store';
 import {WorklogStore} from './worklog-store';
 import type {DemandAssetStore} from './demand-asset-store';
 import {DemandBatchStore} from './demand-batch-store';
@@ -39,12 +40,13 @@ function stable(value: unknown): string {
 export type VerifySource=(proof:string,actor:Actor,command:Command)=>Promise<{sourceSubject:string}>;
 export class WorkflowStore {
   readonly worklogs:WorklogStore;
+  readonly reviews:ReviewStore;
   readonly demandBatches:DemandBatchStore;
   readonly forms:FormStore;
   readonly catalog:CatalogStore;
   readonly calendars:CalendarStore;
   readonly availability:AvailabilityStore;
-  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore,private notifications?:NotificationStore,private availabilityEnabled=true,catalogEnabled=true,formsEnabled=true,demandBatchEnabled=true,readonly demandAssets?:DemandAssetStore,worklogsEnabled=true) {this.worklogs=new WorklogStore(pool,resolveActor,worklogsEnabled,now);this.forms=new FormStore(pool,resolveActor,formsEnabled,!!demandAssets);this.catalog=new CatalogStore(pool,resolveActor,catalogEnabled);this.demandBatches=new DemandBatchStore(pool,resolveActor,this.forms,this.catalog,demandBatchEnabled);this.calendars=new CalendarStore(pool,resolveActor);this.availability=new AvailabilityStore(pool,resolveActor,availabilityEnabled);}
+  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore,private notifications?:NotificationStore,private availabilityEnabled=true,catalogEnabled=true,formsEnabled=true,demandBatchEnabled=true,readonly demandAssets?:DemandAssetStore,worklogsEnabled=true,reviewsEnabled=true,reviewImage?:ReviewImage) {this.reviews=new ReviewStore(pool,resolveActor,validateAssets,reviewsEnabled,now,reviewImage);this.worklogs=new WorklogStore(pool,resolveActor,worklogsEnabled,now);this.forms=new FormStore(pool,resolveActor,formsEnabled,!!demandAssets);this.catalog=new CatalogStore(pool,resolveActor,catalogEnabled);this.demandBatches=new DemandBatchStore(pool,resolveActor,this.forms,this.catalog,demandBatchEnabled);this.calendars=new CalendarStore(pool,resolveActor);this.availability=new AvailabilityStore(pool,resolveActor,availabilityEnabled);}
   async ready() {
     const result = await this.pool.query('SELECT version FROM enterprise_workflow.schema_version WHERE version=1');
     if (result.rowCount !== 1) throw new WorkflowError(503, 'MIGRATION_REQUIRED');
@@ -346,7 +348,7 @@ export class WorkflowStore {
           const valid=field.type==='number'?typeof value==='number':field.type==='date'?calendarDate.safeParse(value).success:field.type==='select'?typeof value==='string'&&field.options.includes(value):typeof value==='string';if(!valid)throw new WorkflowError(400,'INVALID_CUSTOM_VALUE');}
       }
       if (command.action.type === 'submit-delivery' && !await this.validateAssets(tx, actor, command.action.assetIds,{orderId:command.orderId,taskId:command.action.taskId})) throw new WorkflowError(403, 'INVALID_ASSETS');
-      if(command.action.type==='accept-delivery'){const action=command.action;const task=previous?.tasks.find(t=>t.id===action.taskId);if(!task||!await this.validateAssets(tx,actor,task.assetIds,{orderId:command.orderId,taskId:task.id}))throw new WorkflowError(403,'INVALID_ASSETS');}
+      if(command.action.type==='accept-delivery'){const action=command.action;const task=previous?.tasks.find(t=>t.id===action.taskId);if(!task||!await this.validateAssets(tx,actor,task.assetIds,{orderId:command.orderId,taskId:task.id}))throw new WorkflowError(403,'INVALID_ASSETS');await this.reviews.assertAcceptance(tx,actor,previous!,task);}
       await tx.query(`INSERT INTO enterprise_workflow.orders(enterprise_id,id,version,document) VALUES($1,$2,$3,$4)
         ON CONFLICT(enterprise_id,id) DO UPDATE SET version=EXCLUDED.version,document=EXCLUDED.document,updated_at=now()`, [principal.enterpriseId, order.id, order.version, order]);
       await tx.query('INSERT INTO enterprise_workflow.events(enterprise_id,id,order_id,aggregate_version,event) VALUES($1,$2,$3,$4,$5)', [principal.enterpriseId, event.id, order.id, order.version, event]);
