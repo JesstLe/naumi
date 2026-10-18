@@ -573,3 +573,15 @@ schema36 pauses_enabled默认false，显式plan/enable，reader/writer36；实�
 已确认首位试点及设计/分配执行验收职责，真实准备包保留原导入租户作为目标候选，新设计teamId/personId/内部subject固定为新对象提案，源实例键明确proposed-not-configured；私人材料只进ACL目录，不入Git或源码包。真实人员尚未应用、原schema8/364行292附件保持。开工/收尾刷新main并保留其他工作区；G48同步归零后本轮计数1。
 
 整体目标ACTIVE。下一按选定部署地点完成持锁的基础服务与Web桥接蓝绿、原生员工登录和首位人员正式授权，再由独立需求方/验收人跑真实闭环。47同机路线先处理已存在发布债务；单独公司服务器路线仍需明确连接与部署资料。跨团队/HR与商品规范/依赖结构换版等未完成项继续保留，不因本地初始化工具完成缩小总目标。
+
+## G50 当前完整Linux生产镜像组合刷新（2026-10-18）
+
+详见production-refresh-g50.md。不再只依赖Windows运行和Next开发态结果。原Linux验证器实际基线因sharp被打包成动态require而exit1，修复external原生依赖与过时16项断言；当前Linux46组加实际非root只读API/Worker启动/私有下载/drain/stop通过。原根Dockerfile完整Web编译/类型检查/90页/standalone通过。
+
+生产组合默认fullModules，显式启用目前全部已实现工作流模块，测试驱动包含实际验收依赖/测试源码，生产镜像不带fixture入口。实际生产组合41项原生密码登录/原HTML/BFF/业务及附件权限通过；不再以原10项声称当前全部链路。仅明确429等待61秒同命令重试，生产限流保持。旧跨版本proxy显式legacy覆盖范围，不把旧schema作为当前全模块兼容证明。
+
+固定Web与工作流镜像通过--web-report/--runtime-report复核后复用，避免同releaseId重复build attestation造成镜像索引不同。最终同Git/image固定验收、镜像导出/load/内容核对、源码副本恢复及原数据见enterprise-production-refresh-g50-20261018/VERIFICATION.txt。基线与恢复副本的原Linux缺陷据实记录，不伪造baseline通过。
+
+只删除4个本项目无容器引用的一次性旧Linux验收镜像并保留最近2个；生产和有效回滚镜像/volume未删，先前被拒绝的文件缓存不触碰。Docker磁盘位于D，上下文/交付在E，不在低余量C做镜像构建。
+
+47只读刷新仍revision74 CLEANUP_PENDING且三锁有其他运行进程持有，不争抢或切流；部署地点问题尚待用户回复，首位真实员工接入包未应用。整体目标ACTIVE。下一在明确部署位置并通过既有发布/资源门禁后使用本轮固定镜像接入真实员工；仍需实际登录、独立验收人、公司流程及跨团队/HR/结构换版等后续工作。G49后功能计数从1到2，开工/提交前刷新main。
