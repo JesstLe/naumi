@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import {guidelineSelection,type GuidelineSnapshot} from './guideline-contracts';
 import {formSelection,type FormSnapshot} from './form-contracts';
 import {catalogSelection,type CatalogSnapshot} from './catalog-contracts';
 
@@ -31,6 +32,7 @@ export const routingFieldsSchema=z.strictObject({brand:z.string().trim().max(80)
 export type RoutingFields=z.infer<typeof routingFieldsSchema>;
 export const actionSchema = z.discriminatedUnion('type', [
   z.strictObject({type:z.literal('set-demand-assets'),assetIds:z.array(id.transform(s=>s.toLowerCase())).max(20),reason:text}),
+  z.strictObject({type:z.literal('set-demand-guideline'),selection:guidelineSelection.nullable(),reason:text}),
   z.strictObject({type:z.literal('set-demand-form'),selection:formSelection.nullable(),reason:text}),
   z.strictObject({type:z.literal('set-demand-catalog'),selection:catalogSelection.nullable(),reason:text}),
   z.strictObject({ type: z.literal('create'), title: text, brief: text, acceptance: text,routingFields:routingFieldsSchema.optional() }),
@@ -82,6 +84,7 @@ export type Task = {
   submittedAt: string | null; acceptedAt: string | null; assetIds: string[]; quality: number | null;
 };
 export type WorkOrder = {
+    guideline?:GuidelineSnapshot|null;
   demandAssets?:{id:string;orderId:string;uploader:string;name:string;bytes:number;sha256:string;revision:number;createdAt:string}[];
   creationOrigin?:{batchId:string;orderId?:string;version?:number};
   form?:FormSnapshot|null;

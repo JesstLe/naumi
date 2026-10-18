@@ -1,3 +1,4 @@
+import {GuidelineStore} from './guideline-store';
 import {ProjectStore} from './project-store';
 import {AppealStore} from './appeal-store';
 import {CapacityStore} from './capacity-store';
@@ -50,12 +51,13 @@ export class WorkflowStore {
   readonly capacity:CapacityStore;
   readonly appeals:AppealStore;
   readonly projects:ProjectStore;
+  readonly guidelines:GuidelineStore;
   readonly demandBatches:DemandBatchStore;
   readonly forms:FormStore;
   readonly catalog:CatalogStore;
   readonly calendars:CalendarStore;
   readonly availability:AvailabilityStore;
-  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore,private notifications?:NotificationStore,private availabilityEnabled=true,catalogEnabled=true,formsEnabled=true,demandBatchEnabled=true,readonly demandAssets?:DemandAssetStore,worklogsEnabled=true,reviewsEnabled=true,reviewImage?:ReviewImage,slaEnabled=true,capacityEnabled=true,appealsEnabled=true,projectsEnabled=true) {this.projects=new ProjectStore(pool,resolveActor,projectsEnabled,now);this.appeals=new AppealStore(pool,resolveActor,appealsEnabled,now);this.capacity=new CapacityStore(pool,resolveActor,capacityEnabled);const n=notifications??new LocalNotifications(pool,resolveActor);this.sla=new SlaStore(pool,resolveActor,n,slaEnabled,now);n.reminderGuard=(tx,row)=>this.sla.deliveryCurrent(tx,row);this.reviews=new ReviewStore(pool,resolveActor,validateAssets,reviewsEnabled,now,reviewImage);this.worklogs=new WorklogStore(pool,resolveActor,worklogsEnabled,now);this.forms=new FormStore(pool,resolveActor,formsEnabled,!!demandAssets);this.catalog=new CatalogStore(pool,resolveActor,catalogEnabled);this.demandBatches=new DemandBatchStore(pool,resolveActor,this.forms,this.catalog,demandBatchEnabled);this.calendars=new CalendarStore(pool,resolveActor);this.availability=new AvailabilityStore(pool,resolveActor,availabilityEnabled);}
+  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore,private notifications?:NotificationStore,private availabilityEnabled=true,catalogEnabled=true,formsEnabled=true,demandBatchEnabled=true,readonly demandAssets?:DemandAssetStore,worklogsEnabled=true,reviewsEnabled=true,reviewImage?:ReviewImage,slaEnabled=true,capacityEnabled=true,appealsEnabled=true,projectsEnabled=true,guidelinesEnabled=true) {this.guidelines=new GuidelineStore(pool,resolveActor,guidelinesEnabled,now);this.projects=new ProjectStore(pool,resolveActor,projectsEnabled,now);this.appeals=new AppealStore(pool,resolveActor,appealsEnabled,now);this.capacity=new CapacityStore(pool,resolveActor,capacityEnabled);const n=notifications??new LocalNotifications(pool,resolveActor);this.sla=new SlaStore(pool,resolveActor,n,slaEnabled,now);n.reminderGuard=(tx,row)=>this.sla.deliveryCurrent(tx,row);this.reviews=new ReviewStore(pool,resolveActor,validateAssets,reviewsEnabled,now,reviewImage,this.guidelines);this.worklogs=new WorklogStore(pool,resolveActor,worklogsEnabled,now);this.forms=new FormStore(pool,resolveActor,formsEnabled,!!demandAssets);this.catalog=new CatalogStore(pool,resolveActor,catalogEnabled);this.demandBatches=new DemandBatchStore(pool,resolveActor,this.forms,this.catalog,demandBatchEnabled);this.calendars=new CalendarStore(pool,resolveActor);this.availability=new AvailabilityStore(pool,resolveActor,availabilityEnabled);}
   async ready() {
     const result = await this.pool.query('SELECT version FROM enterprise_workflow.schema_version WHERE version=1');
     if (result.rowCount !== 1) throw new WorkflowError(503, 'MIGRATION_REQUIRED');
@@ -305,7 +307,7 @@ export class WorkflowStore {
         const verified=await this.verifySource(proof,actor,command);
         if(!actor.permissions.includes('dispatch')&&verified.sourceSubject!==actor.sourceBinding.sourceSubject)throw new WorkflowError(403,'SOURCE_SELF_ONLY');
       }
-      if(['set-demand-catalog','set-demand-form','set-demand-assets'].includes(command.action.type)&&(!actor.permissions.includes('request')||!previous||actor.teamId!==previous.teamId||actor.subject!==previous.requester&&!actor.permissions.includes('manage')))throw new WorkflowError(403,'FORBIDDEN');
+      if(['set-demand-catalog','set-demand-form','set-demand-assets','set-demand-guideline'].includes(command.action.type)&&(!actor.permissions.includes('request')||!previous||actor.teamId!==previous.teamId||actor.subject!==previous.requester&&!actor.permissions.includes('manage')))throw new WorkflowError(403,'FORBIDDEN');
       if(command.action.type==='move-task-plan'&&(!actor.permissions.includes('dispatch')||!previous||actor.teamId!==previous.teamId))throw new WorkflowError(403,'FORBIDDEN');
       // Revoked permissions cannot recover historical command snapshots via idempotency replay.
       if (prior) {
@@ -332,10 +334,12 @@ export class WorkflowStore {
       await this.capacity.guard(tx,actor,previous??null,order);
       if(action.type==='set-demand-assets'){if(!this.demandAssets)throw new WorkflowError(503,'DEMAND_ASSETS_NOT_ENABLED');order.demandAssets=await this.demandAssets.selection(tx,actor,order,action.assetIds);event.data.demandAssets=order.demandAssets;}
       if(action.type==='submit-requirement'&&(order.demandAssets?.length||order.form?.definition.attachmentRules)){if(!this.demandAssets)throw new WorkflowError(503,'DEMAND_ASSETS_NOT_ENABLED');await this.demandAssets.validateSubmission(tx,actor,order);}
+      if(action.type==='set-demand-guideline'){await this.guidelines.available(tx);order.guideline=action.selection?await this.guidelines.selection(tx,actor,order,action.selection):null;event.data.guideline=order.guideline;}
       if(action.type==='set-demand-form'){await this.forms.available(tx);order.form=action.selection?await this.forms.selection(tx,actor,action.selection):null;event.data.form=order.form;}
       if(action.type==='submit-requirement'&&order.form)await this.forms.validateSubmission(tx,actor,order);
       if(action.type==='set-demand-catalog'){await this.catalog.available(tx);await this.catalog.lock(tx,actor.enterpriseId);order.catalog=action.selection?await this.catalog.select(tx,actor,action.selection.shopId,action.selection.skuId,action.selection.revisions):null;event.data.catalog=order.catalog;}
       if(action.type==='submit-requirement'&&order.catalog){await this.catalog.lock(tx,actor.enterpriseId);const s=order.catalog.selection;await this.catalog.select(tx,actor,s.shopId,s.skuId,s.revisions);}
+      if(['submit-requirement','approve-requirement','publish'].includes(action.type)&&order.guideline)await this.guidelines.validateOrder(tx,actor,order);
       if(moveImpact)event.data.planMove={previewHash:moveImpact.previewHash,calendarRevision:moveImpact.calendarRevision,availabilityRevision:moveImpact.availabilityRevision,conflictDays:moveImpact.impact.conflictDays,noWorkingDay:moveImpact.impact.noWorkingDay,afterDue:moveImpact.impact.afterDue,dependencies:moveImpact.impact.dependencies,capacityReservation:false};
       if(action.type==='submit-requirement'&&this.routing){await this.routing.submitted(tx,actor,order,event.occurredAt);event.teamId=order.teamId;if(order.routing)event.data.routing=order.routing;}
       if(action.type==='operations-signoff'||action.type==='operations-followup')for(const task of order.tasks)if(!await this.validateAssets(tx,actor,task.assetIds,{orderId:order.id,taskId:task.id}))throw new WorkflowError(403,'INVALID_ASSETS');
@@ -358,7 +362,7 @@ export class WorkflowStore {
           const valid=field.type==='number'?typeof value==='number':field.type==='date'?calendarDate.safeParse(value).success:field.type==='select'?typeof value==='string'&&field.options.includes(value):typeof value==='string';if(!valid)throw new WorkflowError(400,'INVALID_CUSTOM_VALUE');}
       }
       if (command.action.type === 'submit-delivery' && !await this.validateAssets(tx, actor, command.action.assetIds,{orderId:command.orderId,taskId:command.action.taskId})) throw new WorkflowError(403, 'INVALID_ASSETS');
-      if(command.action.type==='accept-delivery'){const action=command.action;const task=previous?.tasks.find(t=>t.id===action.taskId);if(!task||!await this.validateAssets(tx,actor,task.assetIds,{orderId:command.orderId,taskId:task.id}))throw new WorkflowError(403,'INVALID_ASSETS');await this.reviews.assertAcceptance(tx,actor,previous!,task);}
+      if(command.action.type==='accept-delivery'){const action=command.action;const task=previous?.tasks.find(t=>t.id===action.taskId);if(!task||!await this.validateAssets(tx,actor,task.assetIds,{orderId:command.orderId,taskId:task.id}))throw new WorkflowError(403,'INVALID_ASSETS');await this.guidelines.validateOrder(tx,actor,previous!);await this.reviews.assertAcceptance(tx,actor,previous!,task);}
       await tx.query(`INSERT INTO enterprise_workflow.orders(enterprise_id,id,version,document) VALUES($1,$2,$3,$4)
         ON CONFLICT(enterprise_id,id) DO UPDATE SET version=EXCLUDED.version,document=EXCLUDED.document,updated_at=now()`, [principal.enterpriseId, order.id, order.version, order]);
       await tx.query('INSERT INTO enterprise_workflow.events(enterprise_id,id,order_id,aggregate_version,event) VALUES($1,$2,$3,$4,$5)', [principal.enterpriseId, event.id, order.id, order.version, event]);
