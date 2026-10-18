@@ -24,7 +24,7 @@ async function requirementRequest(action,params={},body,scope=requirementScope()
  if(!scope.active){const r=await importRequest(action,params,body);if(!scopeCurrent(scope))throw Error('WORKSPACE_CHANGED');return r;}
  if(!workspaceTeam())throw Error('请先选择企业和团队');
  if(action==='session')return {csrf:''};
- if(!['plan-move-preview','dashboard','orders','order','command','intake','tasks','assignees','facts','schedule','personal','schedule-audit','schedule-command','week','batch-preview','batch-receipts','batch-plan','batch-run','batch-close','batch-list','batch-get','history','calendar','calendar-history','calendar-preview','calendar-save','availability-members','availability','availability-history','availability-preview','availability-save'].includes(action))throw Error('员工工作区暂未接通此操作');
+ if(!['change-preview','plan-move-preview','dashboard','orders','order','command','intake','tasks','assignees','facts','schedule','personal','schedule-audit','schedule-command','week','batch-preview','batch-receipts','batch-plan','batch-run','batch-close','batch-list','batch-get','history','calendar','calendar-history','calendar-preview','calendar-save','availability-members','availability','availability-history','availability-preview','availability-save'].includes(action))throw Error('员工工作区暂未接通此操作');
  return workspaceFetch(action,{...params,enterpriseId:scope.enterpriseId,teamId:scope.teamId},body,scope);
 }
 async function workspaceDiscover(){workspaceClear();workspace.active=true;intake.active=true;view='requirements';workspace.directory=null;workspace.enterpriseId='';workspace.error='';workspace.status=0;workspace.loading=true;const epoch=workspace.epoch;shell();

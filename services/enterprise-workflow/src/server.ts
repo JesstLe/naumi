@@ -189,6 +189,7 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       if(req.method==='POST'&&url.pathname==='/v1/batch-plan')return json(res,200,await store.planBatch(principal,await body(req)));
       if(req.method==='POST'&&url.pathname==='/v1/batch-run')return json(res,200,await store.runBatch(principal,await body(req)));
       if(req.method==='POST'&&url.pathname==='/v1/batch-close')return json(res,200,await store.closeBatch(principal,await body(req)));
+      if(req.method==='POST'&&url.pathname==='/v1/change-preview')return json(res,200,await store.previewChange(principal,await body(req)));
       if(req.method==='POST'&&url.pathname==='/v1/batch-preview')return json(res,200,await store.previewBatch(principal,await body(req)));
       const historyMatch=/^\/v1\/orders\/([^/]+)\/history$/.exec(url.pathname);
       if(req.method==='GET'&&historyMatch){const before=Number(url.searchParams.get('before'));if(!Number.isSafeInteger(before)||before<1)throw new WorkflowError(400,'INVALID_CURSOR');return json(res,200,await store.history(principal,id.parse(historyMatch[1]),before));}

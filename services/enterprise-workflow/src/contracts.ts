@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import {changeActions,type ChangeRequest,type Commitment} from './change-contracts';
 import {guidelineSelection,type GuidelineSnapshot} from './guideline-contracts';
 import {formSelection,type FormSnapshot} from './form-contracts';
 import {catalogSelection,type CatalogSnapshot} from './catalog-contracts';
@@ -31,6 +32,7 @@ export type SourceLink={ref:SourceRef;linkedBy:string;linkedAt:string;reason:str
 export const routingFieldsSchema=z.strictObject({brand:z.string().trim().max(80),shop:z.string().trim().max(80),businessUnit:z.string().trim().max(80),workKind:z.enum(['','design','artwork'])});
 export type RoutingFields=z.infer<typeof routingFieldsSchema>;
 export const actionSchema = z.discriminatedUnion('type', [
+  ...changeActions,
   z.strictObject({type:z.literal('set-demand-assets'),assetIds:z.array(id.transform(s=>s.toLowerCase())).max(20),reason:text}),
   z.strictObject({type:z.literal('set-demand-guideline'),selection:guidelineSelection.nullable(),reason:text}),
   z.strictObject({type:z.literal('set-demand-form'),selection:formSelection.nullable(),reason:text}),
@@ -75,6 +77,7 @@ export type Command = z.infer<typeof commandSchema>;
 export type Handover = {id:string;from:string;to:string;reason:string;requestedBy:string;requestedAt:string};
 export type HandoverRecord = Handover & {outcome:'accepted'|'declined'|'cancelled';resolvedBy:string;resolvedAt:string;resolutionReason:string};
 export type Task = {
+  commitmentBaseline?:Commitment;
   sourceLinks?:SourceLink[];
   pendingHandover?:Handover|null;handoverHistory?:HandoverRecord[];
   planStart?:string|null;planEnd?:string|null;estimatedHours?:number|null;scheduleTag?:string;customValues?:Record<string,string|number|null>;
@@ -84,6 +87,8 @@ export type Task = {
   submittedAt: string | null; acceptedAt: string | null; assetIds: string[]; quality: number | null;
 };
 export type WorkOrder = {
+  changes?:ChangeRequest[];
+  requirementBaseline?:{title:string;brief:string;acceptance:string;firstChangeId:string};
     guideline?:GuidelineSnapshot|null;
   demandAssets?:{id:string;orderId:string;uploader:string;name:string;bytes:number;sha256:string;revision:number;createdAt:string}[];
   creationOrigin?:{batchId:string;orderId?:string;version?:number};

@@ -1,4 +1,6 @@
 import {PublicationStore} from './publication-store';
+import {isChangeAction,changeCanApprove,changeControls,changeBusiness,changeExecution,changeImpact,changeBaseline} from './change-domain';
+import {changePreview} from './change-contracts';
 import {GuidelineStore} from './guideline-store';
 import {ProjectStore} from './project-store';
 import {AppealStore} from './appeal-store';
@@ -59,7 +61,7 @@ export class WorkflowStore {
   readonly catalog:CatalogStore;
   readonly calendars:CalendarStore;
   readonly availability:AvailabilityStore;
-  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore,private notifications?:NotificationStore,private availabilityEnabled=true,catalogEnabled=true,formsEnabled=true,demandBatchEnabled=true,readonly demandAssets?:DemandAssetStore,worklogsEnabled=true,reviewsEnabled=true,reviewImage?:ReviewImage,slaEnabled=true,capacityEnabled=true,appealsEnabled=true,projectsEnabled=true,guidelinesEnabled=true,publicationsEnabled=true) {this.guidelines=new GuidelineStore(pool,resolveActor,guidelinesEnabled,now);this.projects=new ProjectStore(pool,resolveActor,projectsEnabled,now);this.appeals=new AppealStore(pool,resolveActor,appealsEnabled,now);this.capacity=new CapacityStore(pool,resolveActor,capacityEnabled);const n=notifications??new LocalNotifications(pool,resolveActor);this.sla=new SlaStore(pool,resolveActor,n,slaEnabled,now);n.reminderGuard=(tx,row)=>this.sla.deliveryCurrent(tx,row);this.reviews=new ReviewStore(pool,resolveActor,validateAssets,reviewsEnabled,now,reviewImage,this.guidelines);this.worklogs=new WorklogStore(pool,resolveActor,worklogsEnabled,now);this.forms=new FormStore(pool,resolveActor,formsEnabled,!!demandAssets);this.catalog=new CatalogStore(pool,resolveActor,catalogEnabled);this.publications=new PublicationStore(pool,resolveActor,validateAssets,this.catalog,this.guidelines,publicationsEnabled,now);this.demandBatches=new DemandBatchStore(pool,resolveActor,this.forms,this.catalog,demandBatchEnabled);this.calendars=new CalendarStore(pool,resolveActor);this.availability=new AvailabilityStore(pool,resolveActor,availabilityEnabled);}
+  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore,private notifications?:NotificationStore,private availabilityEnabled=true,catalogEnabled=true,formsEnabled=true,demandBatchEnabled=true,readonly demandAssets?:DemandAssetStore,worklogsEnabled=true,reviewsEnabled=true,reviewImage?:ReviewImage,slaEnabled=true,capacityEnabled=true,appealsEnabled=true,projectsEnabled=true,guidelinesEnabled=true,publicationsEnabled=true,readonly changesEnabled=false) {this.guidelines=new GuidelineStore(pool,resolveActor,guidelinesEnabled,now);this.projects=new ProjectStore(pool,resolveActor,projectsEnabled,now);this.appeals=new AppealStore(pool,resolveActor,appealsEnabled,now);this.capacity=new CapacityStore(pool,resolveActor,capacityEnabled);const n=notifications??new LocalNotifications(pool,resolveActor);this.sla=new SlaStore(pool,resolveActor,n,slaEnabled,now);n.reminderGuard=(tx,row)=>this.sla.deliveryCurrent(tx,row);this.reviews=new ReviewStore(pool,resolveActor,validateAssets,reviewsEnabled,now,reviewImage,this.guidelines);this.worklogs=new WorklogStore(pool,resolveActor,worklogsEnabled,now);this.forms=new FormStore(pool,resolveActor,formsEnabled,!!demandAssets);this.catalog=new CatalogStore(pool,resolveActor,catalogEnabled);this.publications=new PublicationStore(pool,resolveActor,validateAssets,this.catalog,this.guidelines,publicationsEnabled,now);this.demandBatches=new DemandBatchStore(pool,resolveActor,this.forms,this.catalog,demandBatchEnabled);this.calendars=new CalendarStore(pool,resolveActor);this.availability=new AvailabilityStore(pool,resolveActor,availabilityEnabled);}
   async ready() {
     const result = await this.pool.query('SELECT version FROM enterprise_workflow.schema_version WHERE version=1');
     if (result.rowCount !== 1) throw new WorkflowError(503, 'MIGRATION_REQUIRED');
@@ -108,7 +110,7 @@ export class WorkflowStore {
       if(!order||!canRead(actor,order))throw new WorkflowError(404,'NOT_FOUND');
       const events=(await tx.query('SELECT event FROM enterprise_workflow.events WHERE enterprise_id=$1 AND order_id=$2 ORDER BY aggregate_version DESC LIMIT 100',[principal.enterpriseId,orderId])).rows.map(r=>r.event);
       const source=(await tx.query('SELECT source_hash AS "sourceHash",row_number AS row,source_version AS "sourceVersion",snapshot FROM enterprise_workflow.order_sources WHERE enterprise_id=$1 AND order_id=$2',[principal.enterpriseId,orderId])).rows[0]??null;
-      return {order,events,source};
+      return {order,events,source,changeControl:changeControls(actor,order,this.changesEnabled)};
     });
   }
   async tasks(principal:Principal,raw:unknown={}){
@@ -206,6 +208,14 @@ export class WorkflowStore {
   async execute(principal: Principal, raw: unknown,proof='') {
     return this.executeCommand(principal,raw,undefined,false,proof);
   }
+  private async changeReady(tx:PoolClient){
+    if(!this.changesEnabled)throw new WorkflowError(503,'CHANGES_NOT_ENABLED');
+    if(!(await tx.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=33')).rowCount)throw new WorkflowError(503,'CHANGES_MIGRATION_REQUIRED');
+    await tx.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('enterprise-runtime:migrate',0))");
+    const f=(await tx.query('SELECT changes_enabled,minimum_reader,minimum_writer FROM enterprise_workflow.runtime_installation WHERE singleton')).rows[0];
+    if(!f?.changes_enabled||f.minimum_reader<33||f.minimum_writer<33)throw new WorkflowError(503,'CHANGES_ACTIVATION_REQUIRED');
+  }
+  async previewChange(p:Principal,raw:unknown){const q=changePreview.parse(raw);return this.transaction(async tx=>{const a=await this.actor(tx,p);await this.changeReady(tx);const o=(await tx.query('SELECT document FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=$2 FOR SHARE',[a.enterpriseId,q.orderId])).rows[0]?.document as WorkOrder|undefined;if(!o||!canRead(a,o))throw new WorkflowError(404,'NOT_FOUND');if(o.version!==q.expectedVersion)throw new WorkflowError(409,'VERSION_CONFLICT');if(!changeBusiness(a,o)&&!changeExecution(a,o))throw new WorkflowError(403,'CHANGE_PROPOSE_FORBIDDEN');return {orderId:o.id,version:o.version,baselineHash:changeBaseline(o),impact:changeImpact(o,q.patch,this.now().toISOString())};});}
   private async batchActor(tx:PoolClient,p:Principal){
     const a=await this.actor(tx,p);
     if(!a.teamId||!a.permissions.includes('dispatch'))throw new WorkflowError(403,'DISPATCH_REQUIRED');
@@ -283,6 +293,7 @@ export class WorkflowStore {
     return this.transaction(async tx => {
       const actor = await this.actor(tx, principal);
       // Legacy command endpoint must not bypass a persisted plan's closure or frozen body.
+      if(isChangeAction(command.action.type))await this.changeReady(tx);
       if(!batchGuard&&command.action.type==='batch-tasks'&&(await tx.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=13')).rowCount){const saved=(await tx.query('SELECT plan_hash FROM enterprise_workflow.batch_plans WHERE enterprise_id=$1 AND id=$2',[principal.enterpriseId,command.action.batchId])).rows[0];if(saved)batchGuard={batchId:command.action.batchId,planHash:saved.plan_hash};}
       if(batchGuard){const row=await this.batchRow(tx,principal,batchGuard.batchId,'FOR SHARE');if(row.closed_at)throw new WorkflowError(409,'BATCH_CLOSED');if(row.plan_hash!==batchGuard.planHash)throw new WorkflowError(409,'BATCH_PLAN_CHANGED');const group=row.document.groups.find((g:{command:Command;ok:boolean})=>g.command.orderId===command.orderId);if(!group?.ok||sourceDigest(group.command)!==sourceDigest(command))throw new WorkflowError(409,'BATCH_COMMAND_CHANGED');}
       // Fixed lock order; tenant-scoped command dedupe also covers concurrent reuse across orders.
@@ -323,6 +334,17 @@ export class WorkflowStore {
       }
       if(source?.sourceAssetIds!==undefined){const ids=source.sourceAssetIds;if(new Set(ids).size!==ids.length)throw new WorkflowError(400,'DUPLICATE_SOURCE_ASSET');const rowAssets=new Set<string>((sourceRow!.document.attachments??[]).flatMap((x:{assets:string[]})=>x.assets));if(ids.some(x=>!rowAssets.has(x)))throw new WorkflowError(400,'SOURCE_ASSET_NOT_IN_ROW');const docs=(await tx.query('SELECT asset_id,document FROM enterprise_workflow.import_assets WHERE enterprise_id=$1 AND source_hash=$2 AND asset_id=ANY($3::text[]) FOR SHARE',[principal.enterpriseId,source.sourceHash,ids])).rows;const assets=new Map(docs.map(x=>[x.asset_id,x.document]));referenceAssets=ids.map(id=>{const parsed=sourceAssetSchema.safeParse(assets.get(id));if(!parsed.success||parsed.data.id!==id)throw new WorkflowError(409,'SOURCE_ASSET_UNAVAILABLE');return parsed.data;});}
       const action=command.action;
+      if(isChangeAction(action.type)){
+        if(action.type==='apply-change'){
+          if(!previous||!canRead(actor,previous))throw new WorkflowError(404,'NOT_FOUND');
+          const change=previous.changes?.find(c=>c.id===action.changeId);
+          if(!change)throw new WorkflowError(404,'CHANGE_NOT_FOUND');
+          for(const approval of change.approvals){
+            const current=await this.resolveActor(tx,{enterpriseId:actor.enterpriseId,subject:approval.subject,teamId:approval.teamId,...(approval.sourceBinding?{sourceBinding:approval.sourceBinding}:{})});
+            if(!current||current.subject!==approval.subject||current.teamId!==approval.teamId||!changeCanApprove(current,previous,change,approval.side))throw new WorkflowError(409,'CHANGE_APPROVER_UNAVAILABLE');
+          }
+        }
+      }
       const assignment=action.type==='assign'||action.type==='propose-handover'?{subject:action.assignee,ids:[action.taskId]}:action.type==='batch-tasks'&&action.operation.type==='assign'?{subject:action.operation.assignee,ids:action.taskIds}:null;
       if(assignment){
         if(!previous||!canRead(actor,previous)||!actor.permissions.includes('dispatch'))throw new WorkflowError(403,'FORBIDDEN');
@@ -333,6 +355,8 @@ export class WorkflowStore {
       let moveImpact;
       if(action.type==='move-task-plan'){moveImpact=await previewMove(tx,actor,{orderId:command.orderId,taskId:action.taskId,expectedVersion:command.expectedVersion,targetStart:action.targetStart,reason:action.reason},this.availabilityEnabled,this.capacity.enabled);if(moveImpact.previewHash!==action.previewHash)throw new WorkflowError(409,'PLAN_MOVE_PREVIEW_CHANGED');}
       const { order, event } = evolve(previous ?? null, actor, command, this.now().toISOString());
+      // Leave space for approvals/withdrawal on all bounded pending proposals.
+      if(isChangeAction(action.type)&&Buffer.byteLength(JSON.stringify(order),'utf8')>(action.type==='propose-change'?768:1024)*1024)throw new WorkflowError(409,'CHANGE_DOCUMENT_LIMIT');
       await this.capacity.guard(tx,actor,previous??null,order);
       if(action.type==='set-demand-assets'){if(!this.demandAssets)throw new WorkflowError(503,'DEMAND_ASSETS_NOT_ENABLED');order.demandAssets=await this.demandAssets.selection(tx,actor,order,action.assetIds);event.data.demandAssets=order.demandAssets;}
       if(action.type==='submit-requirement'&&(order.demandAssets?.length||order.form?.definition.attachmentRules)){if(!this.demandAssets)throw new WorkflowError(503,'DEMAND_ASSETS_NOT_ENABLED');await this.demandAssets.validateSubmission(tx,actor,order);}
@@ -341,7 +365,7 @@ export class WorkflowStore {
       if(action.type==='submit-requirement'&&order.form)await this.forms.validateSubmission(tx,actor,order);
       if(action.type==='set-demand-catalog'){await this.catalog.available(tx);await this.catalog.lock(tx,actor.enterpriseId);order.catalog=action.selection?await this.catalog.select(tx,actor,action.selection.shopId,action.selection.skuId,action.selection.revisions):null;event.data.catalog=order.catalog;}
       if(action.type==='submit-requirement'&&order.catalog){await this.catalog.lock(tx,actor.enterpriseId);const s=order.catalog.selection;await this.catalog.select(tx,actor,s.shopId,s.skuId,s.revisions);}
-      if(['submit-requirement','approve-requirement','publish'].includes(action.type)&&order.guideline)await this.guidelines.validateOrder(tx,actor,order);
+      if(['submit-requirement','approve-requirement','publish','apply-change'].includes(action.type)&&order.guideline)await this.guidelines.validateOrder(tx,actor,order);
       if(moveImpact)event.data.planMove={previewHash:moveImpact.previewHash,calendarRevision:moveImpact.calendarRevision,availabilityRevision:moveImpact.availabilityRevision,conflictDays:moveImpact.impact.conflictDays,noWorkingDay:moveImpact.impact.noWorkingDay,afterDue:moveImpact.impact.afterDue,dependencies:moveImpact.impact.dependencies,capacityReservation:false};
       if(action.type==='submit-requirement'&&this.routing){await this.routing.submitted(tx,actor,order,event.occurredAt);event.teamId=order.teamId;if(order.routing)event.data.routing=order.routing;}
       if(action.type==='operations-signoff'||action.type==='operations-followup')for(const task of order.tasks)if(!await this.validateAssets(tx,actor,task.assetIds,{orderId:order.id,taskId:task.id}))throw new WorkflowError(403,'INVALID_ASSETS');

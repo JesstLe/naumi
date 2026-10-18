@@ -1,4 +1,5 @@
 import {moveDates} from './calendar';
+import {evolveChange,isChangeAction} from './change-domain';
 import { createHash } from 'node:crypto';
 import { WorkflowError, type Actor, type Command, type WorkOrder, type WorkflowEvent, type Permission, type Task } from './contracts';
 
@@ -32,12 +33,13 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
   need(canRead(actor, previous), 'FORBIDDEN', 403);
   need(previous.version === command.expectedVersion, 'VERSION_CONFLICT');
   need(action.type !== 'create', 'ALREADY_EXISTS');
-  if(actor.teamId!==previous.teamId&&!['operations-signoff','operations-followup'].includes(action.type))throw new WorkflowError(403,'EXECUTION_TEAM_REQUIRED');
+  if(actor.teamId!==previous.teamId&&!['operations-signoff','operations-followup'].includes(action.type)&&!isChangeAction(action.type))throw new WorkflowError(403,'EXECUTION_TEAM_REQUIRED');
   const order = structuredClone(previous);
   const state = (...allowed: WorkOrder['status'][]) => need(allowed.includes(order.status), 'INVALID_ORDER_STATE');
   const owner = () => need(order.requester === actor.subject || has(actor, 'manage'), 'FORBIDDEN', 403);
   let eventData: Record<string, unknown> = {};
   switch (action.type) {
+    case 'propose-change':case 'approve-change':case 'reject-change':case 'withdraw-change':case 'apply-change':eventData=evolveChange(order,actor,action,at);break;
     case 'set-demand-assets':state('draft');permit('request');owner();eventData={before:order.demandAssets??[]};break;
     case 'set-demand-guideline':state('draft');permit('request');owner();eventData={before:order.guideline??null};break;
     case 'set-demand-form':state('draft');permit('request');owner();eventData={before:order.form??null};break;
@@ -53,6 +55,7 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
     }
     case 'plan-tasks': {
       state('approved'); permit('dispatch');
+      need(!order.changes?.some(c=>c.status==='applied'),'CHANGE_BASELINE_REPLAN_FROZEN');
       const ids = new Set(action.tasks.map(t => t.id));
       need(ids.size === action.tasks.length, 'DUPLICATE_TASK');
       const specs = new Map(action.tasks.map(t => [t.id, t]));
@@ -152,8 +155,9 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
           task.status = 'accepted'; task.percent = 100; task.acceptedAt = at; task.quality = action.quality;
           // Immutable measurement facts, NOT a final personnel score or payroll instruction.
           eventData = { taskId: task.id, taskTitle: task.title, orderTitle: order.title, contributor: task.assignee, contributionBps: (task.handoverHistory??[]).some(h=>h.outcome==='accepted')?null:10000, attributionStatus:(task.handoverHistory??[]).some(h=>h.outcome==='accepted')?'needs-review':'single-contributor', participants:participants(task), handoverHistory:task.handoverHistory??[], points: task.points,
-            quality: task.quality, dueAt: task.dueAt, submittedAt: task.submittedAt, acceptedAt: at,
-            reworkCount: task.reworkCount, assetIds: task.assetIds, measurementVersion: 2 };
+            quality: task.quality, dueAt: task.commitmentBaseline?.dueAt??task.dueAt, submittedAt: task.submittedAt, acceptedAt: at,
+            reworkCount: task.reworkCount, assetIds: task.assetIds, measurementVersion: task.commitmentBaseline?3:2,
+            ...(task.commitmentBaseline?{committedDueAt:task.dueAt,originalPoints:task.commitmentBaseline.points,changeIds:order.changes?.filter(c=>c.status==='applied'&&c.impact.taskIds.includes(task.id)).map(c=>c.id)??[]}:{} ) };
           if (order.tasks.every(t => t.status === 'accepted')) order.status = 'completed';
           break;
       }

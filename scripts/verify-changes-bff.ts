@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import {writeFile,mkdir} from 'node:fs/promises';
+import {join} from 'node:path';
+import type {Pool} from 'pg';
+import {checkChangesHttp} from '../services/enterprise-workflow/tests/changes-http';
+export async function verifyChangesBff(pool:Pool,source:{root:string;foreign:string;owner:string;ordinary:string},enterpriseId:string,teamId:string){
+ const api=await import('../src/app/api/enterprise/workflow/route'),native=await import('../src/lib/native-auth'),db=await import('../src/lib/db'),reviewer='change-reviewer@fixture.invalid';
+ await db.getOrCreateUser(reviewer,'合成变更需求方审核');await pool.query("INSERT INTO app_enterprise_members(enterprise_id,email,supervisor_email,role_id,employment)VALUES($1,$2,$3,NULL,'permanent')",[source.root,reviewer,source.owner]);await pool.query("INSERT INTO enterprise_workflow.accounts(enterprise_id,subject)VALUES($1,'change-reviewer')",[enterpriseId]);await pool.query("INSERT INTO enterprise_workflow.team_members(enterprise_id,team_id,subject,permissions,work_kinds)VALUES($1,$2,'change-reviewer','[\"manage\"]','[]')",[enterpriseId,teamId]);await pool.query("INSERT INTO enterprise_workflow.source_identities(source_instance,source_enterprise,enterprise_id,source_subject,subject)VALUES('fixture-source-a',$1,$2,$3,'change-reviewer')",[source.root,enterpriseId,reviewer]);
+ await pool.query("UPDATE enterprise_workflow.team_members SET permissions='[\"request\",\"execute\"]' WHERE enterprise_id=$1 AND subject='worker'",[enterpriseId]);
+ await pool.query("INSERT INTO enterprise_workflow.runtime_installation(singleton,installation_id,minimum_reader,minimum_writer,changes_enabled)VALUES(true,'bff-fixture',33,33,true) ON CONFLICT(singleton)DO UPDATE SET changes_enabled=true,minimum_reader=33,minimum_writer=33");
+ const req=(params:Record<string,string>,body?:unknown,email=source.owner)=>new Request('http://fixture.invalid/api/enterprise/workflow?'+new URLSearchParams({enterpriseId:source.root,teamId,...params}),{method:body?'POST':'GET',headers:{cookie:email?'nv_user='+native.signUserSession(email,Date.now()):'','content-type':'application/json','x-workflow-viewer':email,origin:'http://fixture.invalid'},...(body?{body:JSON.stringify(body)}:{})});
+ for(const [email,extra,status]of [['',{},401],[source.owner,{enterpriseId:source.foreign},404],[source.owner,{teamId:randomUUID()},403],[source.owner,{role:'manage'},400]]as const){const r=await api.POST(req({action:'change-preview',...extra} as Record<string,string>,{},email));assert.equal(r.status,status,await r.clone().text());}
+ const bad=req({action:'change-preview'},{});bad.headers.set('origin','https://foreign.invalid');assert.equal((await api.POST(bad)).status,403);
+ const result=await checkChangesHttp(async(path,body,status=200,who='manager')=>{const params=path==='/v1/change-preview'?{action:'change-preview'}:path==='/v1/commands'?{action:'command'}:{action:'order',id:path.split('/')[3]},email=who==='worker'?source.ordinary:who==='reviewer'?reviewer:source.owner,r=await(body?api.POST:api.GET)(req(params as Record<string,string>,body,email));assert.equal(r.status,status,await r.clone().text());const d=await r.json();return !body&&!path.endsWith('/detail')?d.order:d;});
+ const out=process.env.NAUMI_INTEGRATION_EVIDENCE_DIR;if(out){await mkdir(out,{recursive:true});await writeFile(join(out,'CHANGES_FIXTURE.json'),JSON.stringify({...result,teamId,enterpriseId,sourceId:source.root,fixture:true},null,2));}
+ console.log('CHANGES_BFF_PASS: native_session=1 anonymous401=1 foreign404=1 team403=1 forged400=1 origin403=1 original_route=1');
+}

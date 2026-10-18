@@ -9,6 +9,7 @@ export function notificationRecipients(order:WorkOrder,event:WorkflowEvent,membe
   if(a.subject===event.actor||!canRead(a,order))return false;
   const exec=a.teamId===order.teamId,requester=a.teamId===origin&&a.subject===order.requester,dispatch=exec&&a.permissions.some(p=>p==='manage'||p==='dispatch');
   switch(type){
+   case 'propose-change':case 'approve-change':case 'reject-change':case 'withdraw-change':case 'apply-change':return requester||dispatch||a.teamId===origin&&a.permissions.includes('manage')||exec&&order.tasks.some(t=>participants(t).includes(a.subject));
    case 'submit-requirement':case 'route-resolved':case 'claim':case 'block':case 'resume':return dispatch;
    case 'return-requirement':case 'approve-requirement':return requester;
    case 'publish':case 'release':return exec&&a.permissions.includes('execute')&&order.tasks.some(t=>t.status==='open'&&a.workKinds.includes(t.kind)&&(!action.taskId||t.id===action.taskId));
