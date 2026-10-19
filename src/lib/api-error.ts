@@ -6,7 +6,14 @@
 // 用法:catch (e) { return NextResponse.json({ error: safeError(e, "生成失败,请稍后重试") }, ...) }
 // ---------------------------------------------------------------------------
 
+import { IMAGE_SUPPLIER_FAILURE_MESSAGES } from "./model-config/supplier-failure";
+
 export function safeError(e: unknown, fallback = "服务繁忙,请稍后重试"): string {
+  // The SDK preserves our typed channel error; only known static messages pass.
+  // A supplier-provided message is never copied to the customer response.
+  const error = e && typeof e === "object" ? e as { code?: unknown; error?: { code?: unknown } } : undefined;
+  const code = error?.code || error?.error?.code;
+  if (typeof code === "string" && Object.hasOwn(IMAGE_SUPPLIER_FAILURE_MESSAGES, code)) return IMAGE_SUPPLIER_FAILURE_MESSAGES[code as keyof typeof IMAGE_SUPPLIER_FAILURE_MESSAGES];
   const raw =
     e instanceof Error ? e.message : typeof e === "string" ? e : "";
   const low = (raw || "").toLowerCase();

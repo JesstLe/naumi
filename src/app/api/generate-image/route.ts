@@ -1,7 +1,7 @@
 import { inheritedImageRatio, imageAspectInstruction } from "@/lib/imagegen/aspect";
 import { normalizeLegacyFrameRequest, LegacyFrameError } from "@/lib/imagegen/legacy-frame-request";
 import { preserveGeneratedFrame, sourceImageDimensions } from "@/lib/imagegen/output-shape";
-import { exactImageRequestSize, imageRatioMismatch } from "@/lib/imagegen/request-size";
+import { exactImageRequestSize, imageRatioMismatch, imageRatioValidationPolicy } from "@/lib/imagegen/request-size";
 import {currentImagegenStep,withImagegenStep} from "@/lib/imagegen/context";
 import {legacyImagegenIntent} from "@/lib/imagegen/legacy-intent";
 import {inspectImagegenPixels} from "@/lib/imagegen/postprocess";
@@ -830,6 +830,8 @@ async function runJob(
       } }));
     }
     const scope = currentModelExecution("image"), post = scope?.businessOption?.postprocess;
+    const ratioPolicy = scope ? imageRatioValidationPolicy(scope.supplierRouting ? scope.supplierRouting.targets.map(target => target.scope.connection) : [scope.connection]) : undefined;
+    let nativeRatioChecked = false;
     if(p.transparent){for(const image of images){const raw=dataUrlToBytes(image.url);const pixels=await inspectImagegenPixels(raw?Buffer.from(raw.bytes):(await readManagedObject(image.url,12*1024*1024)).bytes);if(!pixels.transparentPixels||!pixels.visiblePixels)imagegenOutputError="模型未返回有效透明主体；已生成原图保留，实际生成积分已结算，请调整透明能力配置";}}
     if(imagegenOutputError){await JOBS.patch(jobId,{imagegenOutputError});}
     else if (post?.enabled) {
@@ -842,12 +844,20 @@ async function runJob(
     } else {
     images = await enforceOutputShape(images, p);
     if (!scope?.imagePreset && !(p.targetWidth > 0 && p.targetHeight > 0)) {
+      // Validate the supplier's native grid before an existing, administrator-
+      // permitted local upscale. Its rounding cell must not be measured in 4K
+      // pixels, and no crop/reshape is introduced to satisfy this validation.
+      if (ratioPolicy && p.ratioContractVersion === 1 && p.origin === "canvas") {
+        images = await attachImageDimensions(images);
+        imagegenOutputError ||= images.map(image => imageRatioMismatch(p.ratio, image, ratioPolicy)).find(Boolean);
+        nativeRatioChecked = true;
+      }
       images = await upscaleImages(images, p.resolution);
     }
     }
     images = await attachImageDimensions(images);
-    if (p.ratioContractVersion === 1 && p.origin === "canvas" && !(p.targetWidth > 0 && p.targetHeight > 0)) {
-      imagegenOutputError ||= images.map(image => imageRatioMismatch(p.ratio, image)).find(Boolean);
+    if (!nativeRatioChecked && p.ratioContractVersion === 1 && p.origin === "canvas" && !(p.targetWidth > 0 && p.targetHeight > 0)) {
+      imagegenOutputError ||= images.map(image => imageRatioMismatch(p.ratio, image, ratioPolicy)).find(Boolean);
     }
     images = images.map((image, index) => ({ ...image, id: `art-${jobId}-${index}` }));
     images = await persistToStorage(images);

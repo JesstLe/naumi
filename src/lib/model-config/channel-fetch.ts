@@ -13,6 +13,7 @@ import {prepareChannelText} from "./channel-text-response";
 import { ImageOperationPending } from "../image-gateway";
 import { channelOperationKey } from "./channel-availability";
 import { retryAfterMs } from "./channel-health-policy";
+import { imageSupplierFailure, IMAGE_SUPPLIER_FAILURE_MESSAGES, type ImageSupplierFailure } from "./supplier-failure";
 
 export function channelRoutingFetch(scope: ModelExecutionScope, options: ValidationOptions): typeof fetch {
   return async (input, init) => {
@@ -23,6 +24,7 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
     if(text){const data=JSON.parse(new TextDecoder().decode(body));if(data.messages?.some((m:any)=>Array.isArray(m.content)&&m.content.some((p:any)=>["image_url","input_image"].includes(p.type))))for(const target of policy.targets)if(!target.scope.capabilities.vision)visited.add(target.upstreamId);}
     const operationKey = channelOperationKey(scope);
     let attempted = false;
+    let lastImageFailure: ImageSupplierFailure | undefined;
     for (let attempt = 1; attempt <= policy.targets.length; attempt++) {
       request.signal.throwIfAborted();
       let claim;
@@ -56,8 +58,9 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
         }
         const raw = await readBounded(response, 1024 * 1024).catch(() => "");
         let receipt: any; try { receipt = JSON.parse(raw); } catch { receipt = null; }
+        if (!text) lastImageFailure = imageSupplierFailure(status, receipt);
         const definite = receipt?.billing_status === "not_charged" || receipt?.error?.billing_status === "not_charged";
-        await finishExecutionStage(audit, definite ? "rejected-not-charged" : "failed-response", status); finished = true;
+        await finishExecutionStage(audit, definite ? "rejected-not-charged" : "failed-response", status, !text ? { upstreamFailure: lastImageFailure } : undefined); finished = true;
         // An asynchronous rejection after paid acceptance is terminal for this
         // attempt, not permission to submit the same operation to a second supplier.
         if (applicationAPIMartImages(active.connection.protocol,active.parameterMap) && !definite) return new Response(raw,{status:response.status,headers:{"content-type":"application/json"}});
@@ -76,6 +79,9 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
           } else if (request.signal.aborted) {
             await finishExecutionStage(audit,"unknown",status);
           } else {
+            // A later transport/invalid-output failure supersedes an earlier
+            // definite rejection; do not present stale input advice as its cause.
+            lastImageFailure = undefined;
             const effectiveStatus = status || (typeof errorStatus === "number" ? errorStatus : undefined);
             await finishExecutionStage(audit, status ? "failed-output" : "unknown", effectiveStatus);
             const cause = error as {name?:string;retryAfter?:string;cause?:{name?:string;code?:string}};
@@ -87,6 +93,7 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
       } finally { if(!streaming)await claim.release(); }
     }
     // Customer settlement is separate from supplier attempts whose cost remains unknown.
+    if (!text && lastImageFailure) return Response.json({ error: { message: IMAGE_SUPPLIER_FAILURE_MESSAGES[lastImageFailure.code], code: lastImageFailure.code, type: "naumi_channel_failure" } }, { status: lastImageFailure.status });
     return Response.json({ error: { message: text?"所有可用供应通道均未取得文字结果，请稍后重试":"所有可用供应通道均未取得图片，请稍后重试", code: "SUPPLIER_CHANNELS_EXHAUSTED", type: "naumi_channel_failure" } }, { status: 400 });
   };
 }
