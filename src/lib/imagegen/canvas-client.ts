@@ -6,6 +6,8 @@ import {canvasReceipts,saveCanvasReceipt,clearCanvasReceipt} from "./canvas-rece
 import type {ImagegenRequest} from "./types";
 /** Ordinary node prompts use the same read-only plan; specialized old recipes retain their adapter. */
 export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|undefined,onPlan:((message:string)=>void)|undefined,scope:{owner:string;project:string;isCurrent?:()=>boolean}){
+ let submitting=false;
+ try {
  const assertCurrent=()=>{if(scope.isCurrent&&!scope.isCurrent())throw new Error("画布账号或项目已切换，未提交新任务");};assertCurrent();
  const nodeId=String(form.get("imagegenNodeId")||form.get("parentId")||sourceNodeId||"workspace");
  const previous=canvasReceipts(sessionStorage,scope.owner,scope.project).find(r=>r.receipt.nodeId===nodeId);
@@ -19,6 +21,13 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
  if(plan.intent.background==="transparent")onPlan?.(`已识别：透明背景 · ${stages} · ${plan.totalCredits} 积分`);
  if(plan.confirmationRequired&&!window.confirm(`${stages}\n${plan.warnings.join("\n")}\n本次合计 ${plan.totalCredits} 积分，是否执行？`))throw new Error("已取消提交");
  assertCurrent();const key=saveCanvasReceipt(sessionStorage,scope.owner,scope.project,{id:request.operationId,nodeId,sourceNodeId:request.sourceNodeId,x:Number(form.get("imagegenNodeX")||0),y:Number(form.get("imagegenNodeY")||0)});
+ submitting=true;
  try{const result=await startImagegen(plan.request,{billingVersion:plan.billingVersion,modelVersion:plan.modelVersion,credits:plan.totalCredits,confirmed:true});return Response.json({jobId:"jobId" in result?result.jobId:`imagegen-${request.operationId}`});}
  catch(error){if(error instanceof ImagegenHttpError&&error.accepted===false){clearCanvasReceipt(sessionStorage,key,request.operationId);throw error;}onPlan?.("提交回执待核查，正在追踪原任务");return Response.json({jobId:`imagegen-${request.operationId}`});}
+ } catch(error) {
+  // Upload/plan/storage failures precede the only paid POST. Mark them as
+  // not accepted so the canvas can offer an explicit retry without ambiguity.
+  if(!submitting)throw new ImagegenHttpError(error instanceof Error?error.message:"生成准备失败",error instanceof ImagegenHttpError?error.status:0,false);
+  throw error;
+ }
 }

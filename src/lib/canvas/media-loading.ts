@@ -1,6 +1,8 @@
 export type CanvasMediaVariant = 'thumbnail'|'preview'|'original';
 export function canvasMediaVariant(screenWidth:number, pixelRatio=1):CanvasMediaVariant {
-  const pixels=screenWidth*Math.min(2,Math.max(1,pixelRatio));
+  // High-DPI screens need their real pixel density; capping at 2 leaves a
+  // 3x/4x display on a preview after it has already outgrown that preview.
+  const pixels=screenWidth*(Number.isFinite(pixelRatio)?Math.max(1,pixelRatio):1);
   return pixels<=512?'thumbnail':pixels<=1600?'preview':'original';
 }
 
