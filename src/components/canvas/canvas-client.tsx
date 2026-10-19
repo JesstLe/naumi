@@ -23,6 +23,7 @@ import { canvasFocusViewport } from "@/lib/canvas/upload-visibility";
 import { stableArtworkPositions, canvasNodePosition, readPlacementCache, type CanvasPoint } from "@/lib/canvas/stable-placement";
 import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
 import { smartLayout } from "@/lib/canvas/smart-layout";
+import { CanvasComposerShell, CanvasComposerFooter, CanvasComposerOptions } from "./composer-shell";
 import { CanvasParameterPopover } from "./parameter-popover";
 import {submitCanvasImagegen} from "@/lib/imagegen/canvas-client";
 import {canvasReceipts,clearCanvasReceipt,moveCanvasReceipt} from "@/lib/imagegen/canvas-receipts";
@@ -1964,7 +1965,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [expandRatio, setExpandRatio] = useState<string | null>(null);
   const [expandAnchor, setExpandAnchor] = useState("center");
   // 持久视频节点与公开能力目录；规范请求经独立节点设置面板提交。
-  const [videoEditId,setVideoEditId]=useState<string|null>(null);
   const [videoDockAdvancedId,setVideoDockAdvancedId]=useState<string|null>(null);
   const [videoHistoryId,setVideoHistoryId]=useState<string|null>(null);
   const videoResultAttempts=useRef(new Map<string,{operationId:string;operations:Record<string,unknown>[];from:string|null;to:string|null}>());
@@ -3929,7 +3929,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         ? 240
         : 218
       : 220;
-    const stackedSafeTop = overlaySafeArea.top + estimatedDockHeight + 70;
+    const stackedSafeTop = overlaySafeArea.top + estimatedDockHeight + 70 + (selectedVideo ? 38 : 0);
 
     let dx = 0;
     let dy = 0;
@@ -4957,11 +4957,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const inputs=videoModeRoles(choices.map(choice=>({id:`ref-${browserRandomUUID()}`,nodeId:choice.nodeId,kind:choice.kind,role:choice.kind==="text"?"context" as const:choice.kind==="video"?"source_video" as const:choice.kind==="audio"?"source_audio" as const:"reference" as const,value:choice.value})),config.mode);
       const ratio=config.aspectRatio?.match(/^([1-9]\d*):([1-9]\d*)$/),aspect=ratio?Number(ratio[1])/Number(ratio[2]):16/9;
       const created=await videoNodesStore.save(id,{projectKey:project,title:"视频",x:point.x,y:point.y,width:384,height:Math.max(160,Math.min(680,Math.round(384/aspect))),config,inputs});pushUndo({kind:"video-add",records:[created]});
-      setCreatingNew(false);setActiveKey(project);setBrowsing(false);setSelectedId(id);setSelectedTextId(null);setSelectedPendId(null);setMultiSel([]);setVideoEditId(id);
+      setCreatingNew(false);setActiveKey(project);setBrowsing(false);setSelectedId(id);setSelectedTextId(null);setSelectedPendId(null);setMultiSel([]);setVideoDockAdvancedId(null);
     }catch(error){flashTip(error instanceof Error?error.message:"新增视频节点失败");}
   }
   function openVideoEditor(id:string){
-    setSelectedId(id);setSelectedPendId(null);setSelectedTextId(null);setMultiSel([]);setPropertiesOpen(false);setVideoEditId(id);
+    setSelectedId(id);setSelectedPendId(null);setSelectedTextId(null);setMultiSel([]);setPropertiesOpen(false);setVideoDockAdvancedId(null);
   }
   async function patchVideoNode(id:string,patch:VideoPatchFields&{expectedRevision?:number}){
     await videoNodesStore.flush();const before=videoNodesStore.getNode(id);if(!before)throw new Error("视频节点不存在");
@@ -8249,8 +8249,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       ratioMenuOpen ||
       nodeTypeMenu ||
       expandOpen ||
-      !!videoEditId ||
-      !!videoHistoryId ||
+        !!videoHistoryId ||
       !!videoMedia ||
       spawnMenu ||
       ctxMenu ||
@@ -11097,13 +11096,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             )}
 
           {selectedVideo&&multiSel.length<=1&&!propertiesOpen&&canFeature("video")&&<VideoSettingsDialog
-            key={`${user?.email}:${targetEmail}:${activeKey}:${selectedVideo.id}`} node={selectedVideo} presentation={videoEditId===selectedVideo.id?"dialog":"dock"}
-            dockRef={panelRef} dockStyle={dockStyle??{left:12,bottom:12,maxHeight:"60%"}} advanced={videoDockAdvancedId===selectedVideo.id}
+            key={`${user?.email}:${targetEmail}:${activeKey}:${selectedVideo.id}`} node={selectedVideo} presentation="dock"
+            dockRef={panelRef} dockStyle={dockStyle??{left:12,bottom:12,maxHeight:"60%"}} draftScope={JSON.stringify([user?.email,targetEmail,activeKey])} advanced={videoDockAdvancedId===selectedVideo.id} onCloseAdvanced={()=>setVideoDockAdvancedId(null)}
             task={videoTaskStore.tasks.find(task=>task.id===selectedVideo.lastTaskId)}
             generationBlocked={!!selectedVideo.lastTaskId&&!videoTaskStore.tasks.some(task=>task.id===selectedVideo.lastTaskId)}
             onCancel={()=>{if(selectedVideo.lastTaskId)void videoTaskStore.cancel(selectedVideo.lastTaskId).catch(error=>flashTip(error.message));}}
             email={targetEmail||user?.email} models={videoCatalog} catalogLoading={videoModelCatalog.loading} catalogError={videoModelCatalog.error} onRetryCatalog={videoModelCatalog.refresh}
-            choices={videoInputChoices} light={lightCanvas} readOnly={readOnly||!nodeSettingsReady||isNodeLocked(selectedVideo.id)} onClose={()=>setVideoEditId(null)}
+            choices={videoInputChoices} light={lightCanvas} readOnly={readOnly||!nodeSettingsReady||isNodeLocked(selectedVideo.id)} onClose={()=>{setVideoDockAdvancedId(null);setSelectedId(null);}}
             onSave={draft=>saveVideoDraft(selectedVideo.id,draft)} onGenerate={(draft,quote,onPersisted)=>generateVideoDraft(selectedVideo.id,draft,quote,onPersisted)}
             onImport={async files=>{try{const choices=await videoAssetStore.upload(files,selectedVideo.projectKey);await mergeWorks(choices.map(choice=>choice.nodeId));return choices;}catch(cause){if(cause instanceof VideoAssetImportError&&cause.choices.length)await mergeWorks(cause.choices.map(choice=>choice.nodeId));throw cause;}}}
             onLoadMoreAssets={videoAssetStore.loadMore} canLoadMoreAssets={!!videoAssetStore.nextCursor}/>}
@@ -11113,66 +11112,16 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             readOnly={readOnly||!nodeSettingsReady||isNodeLocked(selected.id)} canGenerate={canFeature("video")}
             onProcess={action=>extractVideoToCanvas(selected.id,action)} onContinue={()=>void openVideoNodeFromSelection()}/>}
           {canFeature("generate") && selected && !selected.videoUrl && selectedBatchArts.length <= 1 && !propertiesOpen && (
-            <div
+            <CanvasComposerShell
               data-testid="image-node-dock"
               key={`dock-${selected.id}`}
               ref={panelRef}
               style={dockStyle ?? { left: 12, bottom: 12, maxHeight: "60%" }}
-              className="canvas-ui-surface canvas-dock-entry absolute z-10 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border"
-            >
+
+             kind="image" heading={selected.title || L("图片生成", "Image generation")} onDismiss={() => setSelectedId(null)} closeLabel={L("关闭创作栏", "Close composer")}>
               {/* dbody:风格/标记/聚焦 chips + 引用图 + 提示词(对齐原型 .cz-dock .dbody) */}
-              <div className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
+              <div data-composer-body="true" className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
                 <div className="mb-3 flex flex-wrap items-center gap-2">
-                  {!readOnly && (
-                    <>
-                      <DarkSelect
-                        dir="up"
-                        light={lightCanvas}
-                        value={genStyle}
-                        options={GENERATION_STYLES.map((s) => ({
-                          value: s,
-                          label: s,
-                        }))}
-                        onPick={(v) => setGenStyle(v)}
-                        triggerClass="canvas-ui-control flex cursor-pointer items-center gap-1.5 rounded-[10px] border px-2.5 py-2 text-[12.5px] transition-colors"
-                        trigger={
-                          <>
-                            <Box aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-                            <span className="max-w-[88px] truncate">
-                              {genStyle}
-                            </span>
-                          </>
-                        }
-                      />
-                      <button
-                        type="button"
-                        onClick={() => void toggleNodeMark()}
-                        aria-pressed={!!selected.marked}
-                        className={cn(
-                          "flex items-center gap-1.5 rounded-[10px] border px-2.5 py-2 text-[12.5px] transition-colors",
-                          selected.marked
-                            ? "border-amber-400/60 bg-amber-400/10 text-amber-200"
-                            : "canvas-ui-control"
-                        )}
-                      >
-                        <MapPin
-                          className={cn(
-                            "h-3.5 w-3.5",
-                            selected.marked && "fill-current"
-                          )}
-                        />
-                        {t(selected.marked ? "canvas.dockUnmark" : "canvas.dockMark")}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setFocusId(selected.id)}
-                        className="canvas-ui-control flex items-center gap-1.5 rounded-[10px] border px-2.5 py-2 text-[12.5px] transition-colors"
-                      >
-                        <Focus aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-                        {t("canvas.dockFocus")}
-                      </button>
-                    </>
-                  )}
                   {/* 引用图:上一级父节点的图(本节点由此生成);多输入则全部显示。
                       悬停右上角"×"可移除(改用自己上传的参考图) */}
                   {visibleDockRefs.map((ref) => (
@@ -11256,20 +11205,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       )}
                     </>
                   )}
-                  <span className="canvas-ui-muted ml-1 min-w-0 flex-1 truncate text-[12px]">
-                    {fmt(t("canvas.dockRef"), {
-                      n: visibleDockRefs.length + extraFiles.length,
-                      name: selected.title,
-                    })}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedId(null)}
-                    aria-label={t("canvas.close")}
-                    className="canvas-ui-action flex h-6 w-6 flex-none items-center justify-center rounded-full transition-colors"
-                  >
-                    <X className="h-4 w-4" />
-                </button>
+
+
                 </div>
 
                 {/* 提示词:短内容至少约 5 行，长内容自适应增长，超过上限后内部滚动。 */}
@@ -11291,11 +11228,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
               {/* dbar:模型 / 比例·清晰度 / 数量 + 积分 + 发送(对齐原型 .dbar) */}
               {!readOnly && (
-                <div className="canvas-ui-divider flex flex-none flex-wrap items-center gap-2 border-t bg-transparent px-3.5 py-2.5">
+                <CanvasComposerFooter controls={<>
                   {modelControl(false)}
                   <DarkSelect
                     dir="up"
-                    light={lightCanvas}
+                    light={true}
                     value={generationMode}
                     options={[
                       { value: "standard", label: t("canvas.modeStandard") },
@@ -11328,7 +11265,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     <ImageCountControl
                       value={genCount}
                       onChange={setGenCount}
-                      light={lightCanvas}
+                      light={true}
                     />
                   ) : (
                     <span className="canvas-ui-control inline-flex h-8 items-center gap-1.5 rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold">
@@ -11338,8 +11275,52 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         : t("canvas.viewSheetCount")}
                     </span>
                   )}
-                  <span className="flex-1" />
-                  <button
+                  <CanvasComposerOptions label={L("更多图片参数", "More image settings")}><DarkSelect
+                        dir="up"
+                        light={true}
+                        value={genStyle}
+                        options={GENERATION_STYLES.map((s) => ({
+                          value: s,
+                          label: s,
+                        }))}
+                        onPick={(v) => setGenStyle(v)}
+                        triggerClass="canvas-ui-control flex cursor-pointer items-center gap-1.5 rounded-[10px] border px-2.5 py-2 text-[12.5px] transition-colors"
+                        trigger={
+                          <>
+                            <Box aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                            <span className="max-w-[88px] truncate">
+                              {genStyle}
+                            </span>
+                          </>
+                        }
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void toggleNodeMark()}
+                        aria-pressed={!!selected.marked}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-[10px] border px-2.5 py-2 text-[12.5px] transition-colors",
+                          selected.marked
+                            ? "border-amber-400/60 bg-amber-400/10 text-amber-200"
+                            : "canvas-ui-control"
+                        )}
+                      >
+                        <MapPin
+                          className={cn(
+                            "h-3.5 w-3.5",
+                            selected.marked && "fill-current"
+                          )}
+                        />
+                        {t(selected.marked ? "canvas.dockUnmark" : "canvas.dockMark")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFocusId(selected.id)}
+                        className="canvas-ui-control flex items-center gap-1.5 rounded-[10px] border px-2.5 py-2 text-[12.5px] transition-colors"
+                      >
+                        <Focus aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                        {t("canvas.dockFocus")}
+                      </button><button
                     type="button"
                     onClick={() => void retrySelected()}
                     disabled={selectedGenerating}
@@ -11348,7 +11329,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
                     {t("canvas.retryImage")}
-                  </button>
+                  </button></CanvasComposerOptions> </>} actions={<>
+
                   <button
                     type="button"
                     onClick={generateChild}
@@ -11363,21 +11345,21 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       <ArrowUp aria-hidden="true" className="h-4 w-4" />
                     )}
                   </button>
-                </div>
+                 </>}/>
               )}
-            </div>
+            </CanvasComposerShell>
           )}
 
           {/* 空白节点生成 dock(文生图 / 合并多输入):选中空白节点时出现(图3 旁支节点) */}
           {canFeature("generate") && selectedPend && !readOnly && (
-            <div
+            <CanvasComposerShell
               data-testid="pending-node-dock"
               ref={panelRef}
               key={`pdock-${selectedPend.id}`}
               style={dockStyle ?? { left: 12, bottom: 12 }}
-              className="canvas-ui-surface canvas-dock-entry absolute z-10 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border"
-            >
-              <div className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
+
+             kind="image" heading={L("图片生成", "Image generation")} onDismiss={() => setSelectedPendId(null)} closeLabel={L("关闭创作栏", "Close composer")}>
+              <div data-composer-body="true" className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   {pendInputArts.length > 0 ? (
                     pendInputArts.map((a) => (
@@ -11396,30 +11378,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         />
                       </button>
                     ))
-                  ) : (
-                    <span className="canvas-ui-muted flex h-[46px] items-center gap-1.5 rounded-[9px] border border-dashed border-[var(--canvas-ui-border)] px-3 text-[12px]">
-                      <Type aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-                      {t("canvas.pendText2img")}
-                    </span>
-                  )}
-                  <span className="canvas-ui-muted ml-1 min-w-0 flex-1 truncate text-[12px]">
-                    {generationMode === "detail" && pendInputArts.length > 0
-                      ? fmt(t("canvas.pendDetail"), {
-                          refs: pendInputArts.length,
-                          count: genCount,
-                        })
-                      : pendInputArts.length > 0
-                        ? fmt(t("canvas.pendMerge"), { n: pendInputArts.length })
-                        : t("canvas.pendNewImage")}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPendId(null)}
-                    aria-label={t("canvas.close")}
-                    className="canvas-ui-action flex h-6 w-6 flex-none items-center justify-center rounded-full transition-colors"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
+                  ) : null}
+
+
                 </div>
                 <Textarea
                   ref={pendPromptRef}
@@ -11435,11 +11396,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   </p>
                 )}
               </div>
-              <div className="canvas-ui-divider flex flex-none flex-wrap items-center gap-2 border-t bg-transparent px-3.5 py-2.5">
+              <CanvasComposerFooter controls={<>
                 {modelControl(false)}
                 <DarkSelect
                   dir="up"
-                  light={lightCanvas}
+                  light={true}
                   value={generationMode === "detail" ? "detail" : "standard"}
                   options={[
                     { value: "standard", label: t("canvas.modeStandard") },
@@ -11465,9 +11426,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 <ImageCountControl
                   value={genCount}
                   onChange={setGenCount}
-                  light={lightCanvas}
+                  light={true}
                 />
-                <span className="flex-1" />
+                 </>} actions={<>
                 <button
                   type="button"
                   onClick={() => void generatePend()}
@@ -11482,13 +11443,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     <ArrowUp aria-hidden="true" className="h-4 w-4" />
                   )}
                 </button>
-              </div>
-            </div>
+               </>}/>
+            </CanvasComposerShell>
           )}
 
           {/* 文字生成节点：布局与图片节点一致，配色跟随画布黑/白主题。 */}
           {selectedText && selectedTextBatchNodes.length <= 1 && !readOnly && !propertiesOpen && !isNodeLocked(selectedText.id) && (
-            <div
+            <CanvasComposerShell
               ref={textComposerDockRef}
               key={`tdock-${selectedText.id}`}
               data-testid="text-node-dock"
@@ -11509,16 +11470,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       width: canvasSize.width ? Math.max(1, Math.min(820, canvasSize.width - 24)) : 820,
                     }
               }
-              className={cn(
-                "canvas-dock-entry absolute z-20 flex min-h-[218px] max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border shadow-2xl",
-                textComposerExpanded ? "resize-none" : "resize-y",
-                lightCanvas
-                  ? "border-[#dfe4ea] bg-white text-[#252933] shadow-[0_18px_45px_rgba(7,12,24,0.18)]"
-                  : "border-[#40444f] bg-[#191b21] text-[#e7e9ee]"
-              )}
-            >
+              className={textComposerExpanded ? "resize-none" : "resize-y"}
+             kind="text" heading={selectedText.title || L("文字生成", "Text generation")} onDismiss={() => setSelectedTextId(null)} expanded={textComposerExpanded} onToggleExpand={() => { if (textComposerDockRef.current) textComposerDockRef.current.style.height = ""; setTextComposerManuallySized(false); setTextComposerExpanded(value => !value); }} expandLabel={L("展开文字编辑窗口", "Expand text editor")} collapseLabel={L("收起文字编辑窗口", "Collapse text editor")} closeLabel={L("关闭创作栏", "Close composer")}>
               <div
-                ref={textComposerBodyRef}
+                ref={textComposerBodyRef} data-composer-body="true"
                 className="flex min-h-0 flex-1 items-stretch gap-2 overflow-hidden px-3.5 pb-2 pt-3"
               >
                 <button
@@ -11573,39 +11528,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       : "text-[#e7e9ee] placeholder:text-[#818895]"
                   )}
                 />
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (textComposerDockRef.current) {
-                      textComposerDockRef.current.style.height = "";
-                    }
-                    setTextComposerManuallySized(false);
-                    setTextComposerExpanded((expanded) => !expanded);
-                  }}
-                  aria-label={textComposerExpanded ? "收起文字编辑窗口" : "展开文字编辑窗口"}
-                  title={textComposerExpanded ? "收起编辑窗口" : "展开编辑窗口"}
-                  className={cn(
-                    "mt-0.5 flex h-7 w-7 flex-none items-center justify-center transition-colors",
-                    lightCanvas
-                      ? "text-[#8a93a0] hover:bg-[#f1f3f5] hover:text-[#303641]"
-                      : "text-[#9aa1ae] hover:bg-[#1f2229] hover:text-white"
-                  )}
-                >
-                  {textComposerExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedTextId(null)}
-                  aria-label={t("canvas.close")}
-                  className={cn(
-                    "flex h-7 w-7 flex-none items-center justify-center rounded-full transition-colors",
-                    lightCanvas
-                      ? "text-[#8a93a0] hover:bg-[#f1f3f5] hover:text-[#303641]"
-                      : "text-[#9aa1ae] hover:bg-[#1f2229] hover:text-white"
-                  )}
-                >
-                  <X className="h-4 w-4" />
-                </button>
+
+
               </div>
               {/* @提及选图:输入 @ 触发,点击=插入 @图片名 并绑引用(等同连线) */}
               {mentionState && selectedText && (() => {
@@ -11764,15 +11688,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               {textError && (
                 <p className="px-12 pb-2 text-xs font-medium text-red-400">{textError}</p>
               )}
-              <div
-                data-testid="text-node-dock-footer"
-                className={cn(
-                  "flex min-h-12 flex-wrap items-center gap-2 border-t px-3.5 py-2.5",
-                  lightCanvas ? "border-[#edf0f3]" : "border-[#2a2d36]"
-                )}
-              >
-                <TextModelSelect feature="canvas.text-generate" compact dark={!lightCanvas} direction="up" />
-                <span className="flex-1" />
+              <CanvasComposerFooter testId="text-node-dock-footer" controls={<>
+                <TextModelSelect feature="canvas.text-generate" compact dark={false} direction="up" />
+
                 <button
                   type="button"
                   disabled={assistBusy}
@@ -11806,19 +11724,19 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   <ImageIcon className="h-3.5 w-3.5" />
                   {t("canvas.genImages")}
                 </button></FeatureVisible>
-                <span
+                 </>} actions={<> <span
                   className={cn(
                     "text-[11px] font-semibold",
                     lightCanvas ? "text-[#547886]" : "text-[#6bd7ec]"
                   )}
                 >
-                  ◆ {selectedTextRefs.length}/5
+                  {selectedTextRefs.length}/5
                 </span>
                 <button
                   type="button"
                   onClick={() => void generateTextNode()}
                   disabled={!textPrompt.trim() || selectedText.status === "generating"}
-                  title={t("canvas.textGenerate")}
+                  title={t("canvas.textGenerate")} aria-label={t("canvas.textGenerate")}
                   className={cn(
                     "flex h-10 w-10 items-center justify-center rounded-[11px] transition-opacity hover:opacity-90 disabled:opacity-45",
                     lightCanvas ? "bg-[#20242c] text-white" : "bg-white text-[#111]"
@@ -11827,11 +11745,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   {selectedText.status === "generating" ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <span className="text-base font-semibold">↑</span>
+                    <ArrowUp aria-hidden="true" className="h-4 w-4" />
                   )}
                 </button>
-              </div>
-            </div>
+               </>}/>
+            </CanvasComposerShell>
           )}
           {!browsing && !readOnly && canFeature("agent") && user && <CanvasAgentOrb key={`${user.email}:${activeKey || "workspace"}`} email={user.email}
             busy={assistantBusy} outcome={assistantOutcome} steps={assistantSteps} responding={assistantResponding} open={assistantVisible} companion={orbCompanion} onCue={orbCue}

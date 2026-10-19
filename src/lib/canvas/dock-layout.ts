@@ -33,7 +33,7 @@ export function canvasAnchorCenter(nodeScreen:NodeScreen|undefined,canvasSize:Ca
     }
     return cx;
 }
-export function preferredCanvasDock(nodeScreen:NodeScreen|undefined,canvasSize:CanvasSize,dockWidth:number,overlaySafeArea:SafeArea,selectedTextId:string|null):DockPlacement|undefined {
+export function preferredCanvasDock(nodeScreen:NodeScreen|undefined,canvasSize:CanvasSize,dockWidth:number,overlaySafeArea:SafeArea,selectedTextId:string|null,nodeTitleHeight=0):DockPlacement|undefined {
  const anchorCenterX=canvasAnchorCenter(nodeScreen,canvasSize,dockWidth,overlaySafeArea);
  if(!nodeScreen||anchorCenterX==null)return undefined;
     const ch = canvasSize.height;
@@ -50,14 +50,14 @@ export function preferredCanvasDock(nodeScreen:NodeScreen|undefined,canvasSize:C
     // underneath it, so positioning the Dock from the node bottom alone lets
     // the two overlays overlap. Reserve the rendered toolbar plus an 8px gap.
     const topbarHeight = 50;
-    const topbarTop = Math.max(safeTop, nodeScreen.top - topbarHeight - 12);
+    const topbarTop = Math.max(safeTop, nodeScreen.top - topbarHeight - 12 - nodeTitleHeight);
     const belowTop = Math.max(
       nodeScreen.bottom + 14,
       topbarTop + topbarHeight + 8
     );
     const belowSpace = Math.max(0, safeBottom - belowTop);
     const nodeToolbarReserve = 70;
-    const aboveBottom = nodeScreen.top - nodeToolbarReserve;
+    const aboveBottom = nodeScreen.top - nodeToolbarReserve - nodeTitleHeight;
     const aboveSpace = Math.max(0, aboveBottom - safeTop);
     const preferredHeight = selectedTextId ? 360 : 310;
     const minimumComfort = selectedTextId
@@ -125,7 +125,7 @@ export function preferredCanvasToolbar(nodeScreen:NodeScreen|undefined,canvasSiz
 export function canvasDockLayout(input:{nodeScreen:NodeScreen|undefined;canvasSize:CanvasSize;dockMetrics:DockMetrics;selectedTextId:string|null;textComposerExpanded:boolean;readOnly:boolean;nodeTitleHeight?:number}) {
  const {nodeScreen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,readOnly}=input;
  const overlaySafeArea=canvasOverlaySafeArea(canvasSize),dockWidth=canvasDockWidth(canvasSize,overlaySafeArea);
- const dock=preferredCanvasDock(nodeScreen,canvasSize,dockWidth,overlaySafeArea,selectedTextId),toolbar=preferredCanvasToolbar(nodeScreen,canvasSize,overlaySafeArea,dockMetrics,input.nodeTitleHeight);
+ const dock=preferredCanvasDock(nodeScreen,canvasSize,dockWidth,overlaySafeArea,selectedTextId,input.nodeTitleHeight),toolbar=preferredCanvasToolbar(nodeScreen,canvasSize,overlaySafeArea,dockMetrics,input.nodeTitleHeight);
  if(!dock||!toolbar||!canvasSize.height||readOnly)return {dock,toolbar};
  return separateCanvasDocks({dock:textComposerExpanded&&selectedTextId?{...dock,top:overlaySafeArea.top,maxHeight:canvasSize.height-overlaySafeArea.bottom-overlaySafeArea.top}:dock,toolbar,
  dockHeight:textComposerExpanded&&selectedTextId?canvasSize.height-overlaySafeArea.bottom-overlaySafeArea.top:dockMetrics.dockHeight||(selectedTextId?360:310),toolbarHeight:dockMetrics.toolbarHeight,safeTop:overlaySafeArea.top,safeBottom:canvasSize.height-overlaySafeArea.bottom});
