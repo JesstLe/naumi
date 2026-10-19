@@ -1,6 +1,7 @@
 import { inheritedImageRatio, imageAspectInstruction } from "@/lib/imagegen/aspect";
 import { normalizeLegacyFrameRequest, LegacyFrameError } from "@/lib/imagegen/legacy-frame-request";
 import { preserveGeneratedFrame, sourceImageDimensions } from "@/lib/imagegen/output-shape";
+import { exactImageRequestSize, imageRatioMismatch } from "@/lib/imagegen/request-size";
 import {currentImagegenStep,withImagegenStep} from "@/lib/imagegen/context";
 import {legacyImagegenIntent} from "@/lib/imagegen/legacy-intent";
 import {inspectImagegenPixels} from "@/lib/imagegen/postprocess";
@@ -103,6 +104,9 @@ export type GeneratedImage = {
 
 type GenImage = { buf: Buffer; type: string };
 type GenParams = {
+
+  // Server-stamped at acceptance. Legacy frozen jobs retain their original wire contract.
+  ratioContractVersion?: 1;
 	compiledPrompt?: string;
   prompt: string;
   // 落库用的「用户原始提示词」:仅用户自己输入的内容(图裂变/融图客户端拼了系统词进 prompt,
@@ -153,7 +157,8 @@ const GRADIENTS = [
 ];
 
 // Concrete descriptors so the picked style visibly changes the result.
-function sizeFor(ratio: string, model: string): string {
+function sizeFor(ratio: string, model: string, exact = false): string {
+  if (exact) { const size = exactImageRequestSize(ratio, model); if (size) return size; }
   // OpenAI gpt-image-1 接受 size: "auto",让模型自选最合适的输出尺寸。
   // DALL·E 3 不支持 auto,退化成方图。
   if (ratio === "auto") return model === "dall-e-3" ? "1024x1024" : "auto";
@@ -239,7 +244,8 @@ async function openaiImages(
   const basePrompt = p.compiledPrompt || (p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide()));
   const effectiveRatio = inheritedImageRatio(p.ratio, targetDimensions);
   const prompt = `${basePrompt}\n\n${imageAspectInstruction(effectiveRatio, targetDimensions)}`;
-  const size = sizeFor(effectiveRatio, model);
+  const sizingModel = p.ratioContractVersion === 1 ? currentModelExecution("image")?.connection.wireModel || model : model;
+  const size = sizeFor(effectiveRatio, sizingModel, p.ratioContractVersion === 1);
   const canEdit = p.images.length > 0 && (currentModelExecution("image")?.capabilities.edit || isOpenAIImagesEditModel(model));
   // 出图质量:解析结果=实际执行档。通道未接入质量参数时在提交前回退为默认档
   // (env OPENAI_IMAGE_QUALITY,缺省 medium);内测仍按请求档测试价计费。
@@ -840,9 +846,14 @@ async function runJob(
     }
     }
     images = await attachImageDimensions(images);
+    if (p.ratioContractVersion === 1 && p.origin === "canvas" && !(p.targetWidth > 0 && p.targetHeight > 0)) {
+      imagegenOutputError ||= images.map(image => imageRatioMismatch(p.ratio, image)).find(Boolean);
+    }
     images = images.map((image, index) => ({ ...image, id: `art-${jobId}-${index}` }));
     images = await persistToStorage(images);
-    await JOBS.patch(jobId, { images });
+    // Save the receipt and contract error together: recovery cannot lose the mismatch
+    // or re-POST an already paid result. Settlement and original-byte retention stay intact.
+    await JOBS.patch(jobId, { images, imagegenOutputError });
     }
     // Persist the first uploaded source image so "再次生成" can restore it.
     let sourceUrl: string | null = saved?.sourceUrl || null;
@@ -1000,6 +1011,7 @@ async function handleObservedPost(request: Request) {
   if (!p) {
     return NextResponse.json({ error: "请求格式不正确" }, { status: 400 });
   }
+  p.ratioContractVersion = currentImagegenStep() ? currentImagegenStep()!.ratioContractVersion : 1;
   try { assertPlatformImageSelection(p.model, request.headers.get("x-naumi-feature-model")); }
   catch (error) { return billingErrorResponse(error); }
   // 改比例(ratiogen)用固定重构图指令,可以没有用户提示词;其余路径仍要求 prompt。
