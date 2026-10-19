@@ -1,3 +1,4 @@
+import { applicationAPIMartImages } from "./apimart-image-policy";
 import "server-only";
 import { guardChannelSubmission } from "./channel-availability";
 import { lookup } from "node:dns/promises";
@@ -32,7 +33,7 @@ export function modelEndpointFetch(baseUrl: string, options: ValidationOptions =
     if (request.signal.aborted) throw request.signal.reason;
     // Recheck after cost-ledger preparation too: its DB waits must not create
     // a window in which an administrator's completed disable is ignored.
-    if (request.method === "POST" && provider?.costScope?.channelGuard) await guardChannelSubmission(getPool(), provider.costScope);
+    if (request.method === "POST" && provider?.costScope?.channelGuard) await guardChannelSubmission(getPool(), provider.costScope, !applicationAPIMartImages(provider.costScope.connection.protocol,provider.costScope.parameterMap) || /\/images\/generations$/.test(url.pathname));
     request.signal.throwIfAborted();
     return new Promise<Response>((resolve, reject) => {
       const headers = Object.fromEntries(request.headers.entries());

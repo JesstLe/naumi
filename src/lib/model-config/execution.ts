@@ -1,3 +1,4 @@
+import { applicationAPIMartImages } from "./apimart-image-policy";
 import "server-only";
 import { frontendModelSelection } from "./frontend-selection";
 import {imagegenRequirementsSchema,missingImagegenCapabilities,publishedImagegenCapabilities} from "../imagegen/capabilities";
@@ -38,7 +39,7 @@ export function createModelExecutor(deps: Dependencies) {
     const upstream = frozen.target.type === "upstream" ? snapshot.config.upstreamModels.find(u => u.id === frozen.target.id)! : undefined;
     const provider = upstream ? snapshot.config.providers.find(p => p.id === upstream.providerId)! : undefined;
     const preset = selectedImagePreset(snapshot.config,frozen.feature,frozen.publicModelId,frozen.binding);
-    const routed = !preset && (frozen.target.type === "pool" || provider && ["apimart-images", "fal-images"].includes(provider.protocol));
+    const routed = !preset && (frozen.target.type === "pool" || provider && ["apimart-images", "fal-images"].includes(provider.protocol) && !applicationAPIMartImages(provider.protocol,upstream?.parameterMap));
     if (provider?.credentialRef !== frozen.credentialRef || routed !== !!frozen.routerDigest) throw new ModelConfigError("EXECUTION_MISMATCH", "任务凭据或路由版本不一致", 503);
     if (routed) {
       if (!deps.runtime.validateExecutionProjection) throw new ModelConfigError("CONFIG_UNAVAILABLE", "执行路由版本无法核对", 503);
@@ -108,7 +109,7 @@ export function createModelExecutor(deps: Dependencies) {
         }
         if (provider?.protocol === "openai-images" && input.facts.nativeResolution && input.facts.resolution !== "1K" && !(upstream!.parameterMap.resolutionPolicy ? upstream!.parameterMap.resolutionPolicy.mode==="map"&&upstream!.parameterMap.resolutionPolicy.field===(provider.options?.imageAdapter==="reverse-hub"?"resolution":"size")&&upstream!.parameterMap.resolutionPolicy.values[input.facts.resolution as "2K"|"4K"] : upstream!.parameterMap.resolution?.[input.facts.resolution as "2K"|"4K"])) throw new ModelConfigError("MODEL_INCOMPATIBLE", "该原生尺寸缺少已核验的接口参数映射", 400);
       }
-      const routed = !preset && (model.target.type === "pool" || provider && ["apimart-images", "fal-images"].includes(provider.protocol));
+      const routed = !preset && (model.target.type === "pool" || provider && ["apimart-images", "fal-images"].includes(provider.protocol) && !applicationAPIMartImages(provider.protocol,upstream?.parameterMap));
       if(routed&&input.facts?.imagegenRequirements){
         const ids=model.target.type==="pool"?config.pools.find(p=>p.id===model.target.id)!.candidates:[upstream!.id];
         if(config.upstreamModels.filter(u=>ids.includes(u.id)).some(u=>missingImagegenCapabilities(input.facts!.imagegenRequirements!,publishedImagegenCapabilities(u.capabilities)).length))throw new ModelConfigError("MODEL_INCOMPATIBLE","外部路由无法保证所有回退候选满足必要图像参数",400);

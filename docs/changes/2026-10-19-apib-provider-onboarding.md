@@ -154,3 +154,8 @@ node --conditions=react-server node_modules/tsx/dist/cli.mjs scripts/verify-apib
 证据：本地 `E:/Workspace/naumi/output/apib-hot-config47-20261019/`，远端 `/opt/naumi-staging/evidence/apib-hot-config47-20261019/`。四件套 MODIFIED_FILE.json / DIFF_FILE.patch / VERIFICATION.txt / ROLLBACK.sh 使用本次真实v118结果，不复用之前无凭据的离线候选。`verify-apib-candidate.ts --allow-credential-refs` 允许禁用provider携带合法凭据引用；默认离线核验仍要求无凭据引用。
 
 本次只完成配置/元数据登记模块（开发同步计数累计2），不计作应用蓝绿成功发布；费用测试暂停，应用适配和真实生成验收尚未完成。Git提交/推送与服务器运行镜像继续分别记录。
+
+
+## 应用内异步适配后续模块
+
+2026-10-19 在同一独立分支完成普通直连/家族异步适配实现；历史 Router/成本预设保持兼容。实现、验证、未发布边界见 [APIB 异步图片适配](2026-10-19-apib-async-images.md)。本模块不改变本页 v118 禁用登记结果，不恢复收费测试。

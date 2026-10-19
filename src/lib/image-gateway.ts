@@ -1,3 +1,4 @@
+import { queryableImageScope } from "./model-config/apimart-image-policy";
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { currentModelExecution } from "./model-config/context";
@@ -18,7 +19,7 @@ const operations = new AsyncLocalStorage<ImageOperation>();
 
 export function isImageGatewayModel(model: string) {
   const scope = currentModelExecution("image");
-  const hub = scope?.connection.options?.imageAdapter === "reverse-hub" || scope?.supplierRouting?.targets.every(t => t.scope.connection.options?.imageAdapter === "reverse-hub");
+  const hub = scope && !scope.supplierRouting && queryableImageScope(scope) || scope?.supplierRouting?.targets.every(t => queryableImageScope(t.scope));
   if ((scope?.connection.protocol === "router-images" || scope?.imagePreset || hub) && [scope!.frozen.publicModelId, scope!.connection.wireModel].includes(model)) return true;
   return /^naumi-image-(auto|economy|standard|premium)$/.test(model);
 }
