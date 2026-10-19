@@ -1,8 +1,9 @@
+import { applicationAPIMartImages } from "./apimart-image-policy";
 import {currentImagegenStep} from "../imagegen/context";
 import {mapImagegenParameters,imagegenWireRequest} from "../imagegen/parameters";
 import {publishedImagegenCapabilities,IMAGEGEN_FIELDS_BY_CAPABILITY} from "../imagegen/capabilities";
 import { stageRoutingFetch } from "./stage-routing";
-import { apimartPresetFetch } from "./apimart-preset";
+import { apimartImagesFetch } from "./apimart-preset";
 import "server-only";
 import {channelRoutingFetch} from "./channel-fetch";
 import OpenAI from "openai";
@@ -36,12 +37,12 @@ function executionTransport(scope: ModelExecutionScope, options: ValidationOptio
       }
     };
   }
-  if (scope.imagePreset && connection.protocol === "apimart-images") {
-    const adapter=apimartPresetFetch(scope,options);
+  if (connection.protocol === "apimart-images" && (scope.imagePreset || applicationAPIMartImages(connection.protocol,parameterMap))) {
+    const adapter=apimartImagesFetch(scope,options);
     return async(input,init)=>{try{return await adapter(input,init);}catch(error){
       // The SDK otherwise hides our definite parameter/output rejection inside
       // a connection error. Unknown paid acceptance remains Pending, not 4xx.
-      if(error instanceof ModelConfigError && ["INVALID_REQUEST","MODEL_INCOMPATIBLE","OPERATION_CONFLICT"].includes(error.code))return Response.json({error:{message:error.message,type:"naumi_preset_rejection",code:error.code}},{status:error.status});
+      if(error instanceof ModelConfigError && ["INVALID_REQUEST","MODEL_INCOMPATIBLE","OPERATION_CONFLICT","MODEL_PARAMETER_UNAVAILABLE","PROVIDER_BUSY","CHANNEL_DISABLED","CONFIG_UNAVAILABLE"].includes(error.code))return Response.json({error:{message:error.message,type:"naumi_async_image_rejection",code:error.code,...(error.code!=="OPERATION_CONFLICT"?{billing_status:"not_charged"}:{})}},{status:error.status});
       throw error;
     }};
   }

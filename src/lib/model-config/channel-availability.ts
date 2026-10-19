@@ -1,3 +1,4 @@
+import { applicationAPIMartImages, queryableImageScope } from "./apimart-image-policy";
 import "server-only";
 import { createHash } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
@@ -46,18 +47,19 @@ export function channelOperationKey(scope: ModelExecutionScope, operationId = cu
   return id ? createHash("sha256").update(JSON.stringify([scope.frozen.modelVersion, scope.frozen.publicModelId, id])).digest("hex") : undefined;
 }
 
-/** Upgrade compatibility: accepted Hub calls made by an older App have a
+/** Upgrade compatibility: accepted Hub calls or application APIMart markers made by an older App have a
  * durable supplier ledger but no new routing pin yet. Reconstruct only an
  * exact frozen identity; ambiguous/mismatched records must never fail over. */
 export async function readChannelOperationPin(sql: Pool | PoolClient, publicId: string, targets: ChannelTarget[], operationKey?: string, operationId = currentImageOperationId()) {
   if (!operationKey) return undefined;
   const existing = (await sql.query("SELECT upstream_id FROM app_model_channel_operations WHERE operation_key=$1", [operationKey])).rows[0];
   if (existing) return existing as {upstream_id:string};
-  const hubs = targets.filter(t => t.scope.connection.options?.imageAdapter === "reverse-hub");
+  const hubs = targets.filter(t => queryableImageScope(t.scope));
   if (!hubs.length || !operationId || !(await sql.query("SELECT to_regclass('app_supplier_calls') AS name")).rows[0].name) return undefined;
   const calls = (await sql.query(`SELECT DISTINCT provider_id,model FROM app_supplier_calls
     WHERE billing_unit_id=$1 AND public_model_id=$2 AND model_version=$3 AND provider_id=ANY($4::text[])
-      AND state NOT IN ('rejected','failed','cancelled')`, [operationId,publicId,hubs[0].scope.frozen.modelVersion,hubs.map(t=>t.scope.connection.providerId)])).rows;
+      AND ((provider_id=ANY($5::text[]) AND (task_id IS NOT NULL OR parameters IS NOT NULL) AND state <> 'pre-submission-failed')
+        OR (NOT(provider_id=ANY($5::text[])) AND state NOT IN ('rejected','failed','cancelled')))`, [operationId,publicId,hubs[0].scope.frozen.modelVersion,hubs.map(t=>t.scope.connection.providerId),hubs.filter(t=>applicationAPIMartImages(t.scope.connection.protocol,t.scope.parameterMap)).map(t=>t.scope.connection.providerId)])).rows;
   if (!calls.length) return undefined;
   const matched = hubs.filter(t => calls.some(c => c.provider_id===t.scope.connection.providerId && c.model===t.scope.connection.wireModel));
   if (calls.length!==1 || matched.length!==1) throw new ImageOperationPending(operationId,new Error("legacy-original-channel-identity-unconfirmed"));
@@ -65,14 +67,32 @@ export async function readChannelOperationPin(sql: Pool | PoolClient, publicId: 
     ON CONFLICT(operation_key) DO UPDATE SET operation_key=EXCLUDED.operation_key RETURNING upstream_id`, [operationKey,matched[0].upstreamId])).rows[0] as {upstream_id:string};
 }
 
-/** A mixed Hub/direct family is replayable ONLY AFTER its operation has a
- * durable pin to the queryable Hub, never merely because a Hub is a candidate. */
+/** A mixed asynchronous/direct family is replayable ONLY AFTER its operation
+ * has a durable pin to a queryable target, never merely because it is a candidate. */
 export async function recoverableChannelIdentity(pool: Pool, scope: ModelExecutionScope | null, operationId: string) {
   if (!scope?.supplierRouting) return undefined;
   const key=channelOperationKey(scope,operationId);
   const pin=await readChannelOperationPin(pool,scope.frozen.publicModelId,scope.supplierRouting.targets,key,operationId);
-  const target=scope.supplierRouting.targets.find(t=>t.upstreamId===pin?.upstream_id && t.scope.connection.options?.imageAdapter==="reverse-hub");
+  const target=scope.supplierRouting.targets.find(t=>t.upstreamId===pin?.upstream_id && queryableImageScope(t.scope));
   return target ? "channel:"+createHash("sha256").update(JSON.stringify([key,target.upstreamId,target.scope.connection.providerId,target.scope.connection.baseUrl,target.scope.connection.wireModel])).digest("hex") : undefined;
+}
+
+/** Canvas text edits have their own pre-submission checkpoint. Only an exact
+ * frozen APIMart marker/task may pass it again; an absent ledger is NOT a retry
+ * permit. Keep its quality-suffixed operation ID identical to editImage(). */
+export async function recoverableAPIMartImageOperation(pool: Pool, scope: ModelExecutionScope | null, operationId: string) {
+  if (!scope) return false;
+  if (scope.supplierRouting) {
+    const key=channelOperationKey(scope,operationId);
+    const pin=await readChannelOperationPin(pool,scope.frozen.publicModelId,scope.supplierRouting.targets,key,operationId);
+    return scope.supplierRouting.targets.some(t=>t.upstreamId===pin?.upstream_id && applicationAPIMartImages(t.scope.connection.protocol,t.scope.parameterMap));
+  }
+  if (!applicationAPIMartImages(scope.connection.protocol,scope.parameterMap)) return false;
+  const c=scope.connection;
+  const rows=(await pool.query(`SELECT id FROM app_supplier_calls WHERE billing_unit_id=$1 AND public_model_id=$2 AND model_version=$3
+    AND provider_id=$4 AND model=$5 AND parameters IS NOT NULL`,[operationId,scope.frozen.publicModelId,scope.frozen.modelVersion,c.providerId,c.wireModel])).rows;
+  if (rows.length>1) throw new ImageOperationPending(operationId,new Error("original-apimart-operation-ambiguous"));
+  return rows.length===1;
 }
 
 /** Final dispatch gate, after request/body preparation and immediately before
@@ -91,10 +111,10 @@ export async function guardChannelSubmission(pool: Pool, scope: ModelExecutionSc
     if (pinned) throw new ImageOperationPending(currentImageOperationId() || guard.operationKey!, new Error("original-channel-disabled-await-reconciliation"));
     throw new ModelConfigError("CHANNEL_DISABLED", "供应通道已关闭，本次尚未提交上游", 422);
   }
-  // Only the queryable/idempotent Hub adapter may keep a recovery pin. It is
+  // Only explicitly queryable/idempotent image adapters may keep a recovery pin. It is
   // persisted BEFORE submission so a lost response/process restart cannot route
   // the same paid operation to another supplier.
-  if (dispatch && guard.operationKey && scope.connection.options?.imageAdapter === "reverse-hub") {
+  if (dispatch && guard.operationKey && queryableImageScope(scope)) {
     const row = (await pool.query(`INSERT INTO app_model_channel_operations(operation_key,upstream_id) VALUES($1,$2)
       ON CONFLICT(operation_key) DO UPDATE SET operation_key=EXCLUDED.operation_key RETURNING upstream_id`, [guard.operationKey, guard.upstreamId])).rows[0];
     if (row.upstream_id !== guard.upstreamId) throw new ModelConfigError("EXECUTION_MISMATCH", "图片任务已绑定原供应通道，不会重复生成", 409);

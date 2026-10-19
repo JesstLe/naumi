@@ -1,3 +1,4 @@
+import { applicationAPIMartImages } from "./apimart-image-policy";
 import "server-only";
 import { getPool } from "../db";
 import type { ModelExecutionScope } from "./context";
@@ -57,13 +58,17 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
         let receipt: any; try { receipt = JSON.parse(raw); } catch { receipt = null; }
         const definite = receipt?.billing_status === "not_charged" || receipt?.error?.billing_status === "not_charged";
         await finishExecutionStage(audit, definite ? "rejected-not-charged" : "failed-response", status); finished = true;
-        if (operationKey) await pool.query("DELETE FROM app_model_channel_operations WHERE operation_key=$1 AND upstream_id=$2", [operationKey,target.upstreamId]);
+        // An asynchronous rejection after paid acceptance is terminal for this
+        // attempt, not permission to submit the same operation to a second supplier.
+        if (applicationAPIMartImages(active.connection.protocol,active.parameterMap) && !definite) return new Response(raw,{status:response.status,headers:{"content-type":"application/json"}});
+        if (operationKey && definite) await pool.query("DELETE FROM app_model_channel_operations WHERE operation_key=$1 AND upstream_id=$2", [operationKey,target.upstreamId]);
         if (!["INVALID_REQUEST", "MODEL_INCOMPATIBLE", "PROVIDER_BUSY", "CHANNEL_DISABLED", "CONFIG_UNAVAILABLE"].includes(receipt?.error?.code)) await recordChannelOutcome(pool, target, false, status, {retryAfterMs:retryAfterMs(response.headers.get("retry-after"))});
       } catch (error) {
         // An accepted durable task must finish/query its original supplier;
         // moving to another channel could create a second paid generation.
         if (error instanceof ImageOperationPending) { if (audit) await finishExecutionStage(audit, "unknown", status); throw error; }
         if (!audit || receivedImage) throw error;
+        if(applicationAPIMartImages(active.connection.protocol,active.parameterMap) && !(error instanceof ModelConfigError && ["CHANNEL_DISABLED","CONFIG_UNAVAILABLE"].includes(error.code))) throw new ImageOperationPending(operationKey || active.frozen.publicModelId,error);
         if (!finished) {
           const errorStatus = (error as {status?:number})?.status;
           if (error instanceof ModelConfigError && ["CHANNEL_DISABLED","CONFIG_UNAVAILABLE"].includes(error.code)) {

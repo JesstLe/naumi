@@ -38,6 +38,8 @@ import { editImage } from "@/lib/image-edit";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { safeError } from "@/lib/api-error";
 import { ImageOperationPending } from "@/lib/image-gateway";
+import { getPool } from "@/lib/db";
+import { recoverableAPIMartImageOperation } from "@/lib/model-config/channel-availability";
 
 type Box = { x: number; y: number; width: number; height: number };
 export type TextEditTaskInput = {
@@ -166,7 +168,11 @@ async function renderTextEdit(task: CanvasImageTaskRow): Promise<string> {
   if (typeof task.parameters.upstreamResult === "string") {
     editedRaw = (await readCanvasImage(task.parameters.upstreamResult, requestOrigin, task.email)).buffer;
   } else {
-    if (!await beginCanvasImageTaskSubmission(task.id) && !currentModelExecution("image")?.imagePreset) throw new ImageOperationPending(task.id, new Error("上游提交需要核查"));
+    if (!await beginCanvasImageTaskSubmission(task.id) && !currentModelExecution("image")?.imagePreset) {
+      const unit=task.parameters.qualityAudit ? `${task.id}:quality:${quality.executed}` : task.id;
+      if (!await recoverableAPIMartImageOperation(getPool(),currentModelExecution("image"),unit))
+        throw new ImageOperationPending(task.id, new Error("上游提交需要核查"));
+    }
     editedRaw = await withBiModelContext(task.email,"canvas-text-edit",task.id,()=>editImage({ operationId: task.id, legacyOperationId: !task.parameters.qualityAudit, images: [original], mask, prompt, size: editSize(width, height), quality }));
     const checkpoint = storageEnabled
       ? await uploadImage(new Uint8Array(editedRaw), "image/png", `canvas-text-edits/${task.id}-provider.png`, undefined, task.email)

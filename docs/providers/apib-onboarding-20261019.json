@@ -1,0 +1,616 @@
+{
+  "schemaVersion": 1,
+  "baseUrl": "https://api.apib.ai/v1",
+  "selectedBy": "user-approved-incremental-onboarding",
+  "relatedDocsFrom": "https://api.apib.ai/api/status",
+  "policy": {
+    "state": "offline-disabled",
+    "preserveExisting": true,
+    "newExistingFamilyChannels": "standby-after-acceptance",
+    "newSupplierPricing": "observations-only",
+    "healthProbes": "disabled-until-approved",
+    "paidTests": "separate-batch-approval-required"
+  },
+  "models": [
+    {
+      "id": "gpt-image-2.5-ext",
+      "family": "GPT-Image-2.5",
+      "modality": "image",
+      "destination": "existing",
+      "familyGroup": "GPT-Image-2.5",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.5-ext/generation"
+    },
+    {
+      "id": "gpt-image-2.5-flare",
+      "family": "GPT-Image-2.5",
+      "modality": "image",
+      "destination": "existing",
+      "familyGroup": "GPT-Image-2.5",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.5/generation"
+    },
+    {
+      "id": "gpt-image-2.5-sunburst",
+      "family": "GPT-Image-2.5",
+      "modality": "image",
+      "destination": "existing",
+      "familyGroup": "GPT-Image-2.5",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.5/generation"
+    },
+    {
+      "id": "gemini-3-pro-image-preview",
+      "family": "Nano Banana Pro",
+      "modality": "image",
+      "destination": "existing",
+      "familyGroup": "Nano Banana",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/gemini-3-pro/generation"
+    },
+    {
+      "id": "gemini-3-pro-image-preview-official",
+      "family": "Nano Banana Pro",
+      "modality": "image",
+      "destination": "existing",
+      "familyGroup": "Nano Banana",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/gemini-3-pro/generation"
+    },
+    {
+      "id": "gemini-3.1-flash-image-preview",
+      "family": "Nano Banana 2",
+      "modality": "image",
+      "destination": "existing",
+      "familyGroup": "Nano Banana",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/gemini-3.1-flash/generation"
+    },
+    {
+      "id": "gemini-3.1-flash-image-preview-official",
+      "family": "Nano Banana 2",
+      "modality": "image",
+      "destination": "existing",
+      "familyGroup": "Nano Banana",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/gemini-3.1-flash/generation"
+    },
+    {
+      "id": "gemini-nano-banana-2.1",
+      "family": "Nano Banana 2.1",
+      "modality": "image",
+      "destination": "new",
+      "familyGroup": "Nano Banana",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/gemini-nano-banana-2.1/generation"
+    },
+    {
+      "id": "gemini-nano-banana-2.1-ext",
+      "family": "Nano Banana 2.1",
+      "modality": "image",
+      "destination": "new",
+      "familyGroup": "Nano Banana",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/gemini-nano-banana-2.1/generation"
+    },
+    {
+      "id": "seedream-4-0",
+      "family": "seedream-4-0",
+      "modality": "image",
+      "destination": "new",
+      "familyGroup": "Seedream",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/seedream-4/generation"
+    },
+    {
+      "id": "seedream-4-5",
+      "family": "seedream-4-5",
+      "modality": "image",
+      "destination": "new",
+      "familyGroup": "Seedream",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/seedream-4.5/generation"
+    },
+    {
+      "id": "seedream-5-0-flash",
+      "family": "seedream-5-0-flash",
+      "modality": "image",
+      "destination": "new",
+      "familyGroup": "Seedream",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/seedream-5-0-flash/generation"
+    },
+    {
+      "id": "seedream-5-0-lite",
+      "family": "seedream-5-0-lite",
+      "modality": "image",
+      "destination": "new",
+      "familyGroup": "Seedream",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/seedream-5-lite/generation"
+    },
+    {
+      "id": "seedream-5-0-pro",
+      "family": "seedream-5-0-pro",
+      "modality": "image",
+      "destination": "new",
+      "familyGroup": "Seedream",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/seedream-5-0-pro/generation"
+    },
+    {
+      "id": "qwen-image-2.0",
+      "family": "Qwen Image 2.0",
+      "modality": "image",
+      "destination": "new",
+      "familyGroup": "Qwen Image",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/qwen-image/generation"
+    },
+    {
+      "id": "qwen-image-2.0-pro",
+      "family": "Qwen Image 2.0",
+      "modality": "image",
+      "destination": "new",
+      "familyGroup": "Qwen Image",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/qwen-image/generation"
+    },
+    {
+      "id": "qwen-image-3.0",
+      "family": "Qwen Image 3.0",
+      "modality": "image",
+      "destination": "new",
+      "familyGroup": "Qwen Image",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/qwen-image-3.0/generation"
+    },
+    {
+      "id": "qwen-image-3.0-pro",
+      "family": "Qwen Image 3.0",
+      "modality": "image",
+      "destination": "new",
+      "familyGroup": "Qwen Image",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/qwen-image-3.0/generation"
+    },
+    {
+      "id": "flux-2-flex",
+      "family": "FLUX.2",
+      "modality": "image",
+      "destination": "new",
+      "familyGroup": "FLUX",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/flux-2/generation"
+    },
+    {
+      "id": "flux-2-max",
+      "family": "FLUX.2",
+      "modality": "image",
+      "destination": "new",
+      "familyGroup": "FLUX",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/flux-2/generation"
+    },
+    {
+      "id": "flux-2-pro",
+      "family": "FLUX.2",
+      "modality": "image",
+      "destination": "new",
+      "familyGroup": "FLUX",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/flux-2/generation"
+    },
+    {
+      "id": "flux-3-image",
+      "family": "FLUX 3 Image",
+      "modality": "image",
+      "destination": "new",
+      "familyGroup": "FLUX",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/flux-3-image/generation"
+    },
+    {
+      "id": "flux-kontext-max",
+      "family": "FLUX Kontext",
+      "modality": "image",
+      "destination": "new",
+      "familyGroup": "FLUX",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/flux-kontext/generation"
+    },
+    {
+      "id": "flux-kontext-pro",
+      "family": "FLUX Kontext",
+      "modality": "image",
+      "destination": "new",
+      "familyGroup": "FLUX",
+      "documentation": "https://docs.apimart.ai/en/api-reference/images/flux-kontext/generation"
+    },
+    {
+      "id": "seedance-1-0-pro-fast",
+      "family": "Seedance",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Seedance",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/doubao/generation"
+    },
+    {
+      "id": "seedance-1-0-pro-quality",
+      "family": "Seedance",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Seedance",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/doubao/generation"
+    },
+    {
+      "id": "seedance-1-5-pro",
+      "family": "Seedance",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Seedance",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/seedance-1-5-pro/generation"
+    },
+    {
+      "id": "seedance-2.0",
+      "family": "Seedance",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Seedance",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation"
+    },
+    {
+      "id": "seedance-2.0-face",
+      "family": "Seedance",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Seedance",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation"
+    },
+    {
+      "id": "seedance-2.0-fast",
+      "family": "Seedance",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Seedance",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation"
+    },
+    {
+      "id": "seedance-2.0-fast-face",
+      "family": "Seedance",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Seedance",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation"
+    },
+    {
+      "id": "seedance-2.0-mini",
+      "family": "Seedance",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Seedance",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation"
+    },
+    {
+      "id": "seedance-2.5",
+      "family": "Seedance",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Seedance",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-5/generation"
+    },
+    {
+      "id": "veo3.1-fast",
+      "family": "Veo",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Veo",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/veo3/generation"
+    },
+    {
+      "id": "veo3.1-lite",
+      "family": "Veo",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Veo",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/veo3/generation"
+    },
+    {
+      "id": "veo3.1-quality",
+      "family": "Veo",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Veo",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/veo3/generation"
+    },
+    {
+      "id": "veo3.1-fast-official",
+      "family": "Veo",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Veo",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/veo3/generation-official"
+    },
+    {
+      "id": "veo3.1-quality-official",
+      "family": "Veo",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Veo",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/veo3/generation-official"
+    },
+    {
+      "id": "kling-3.0-turbo",
+      "family": "Kling",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Kling",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/kling-3.0-turbo/generation"
+    },
+    {
+      "id": "kling-v2-6",
+      "family": "Kling",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Kling",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/kling-v2-6/generation"
+    },
+    {
+      "id": "kling-v2-6-motion-control",
+      "family": "Kling",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Kling",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/kling-v2-6/kling-v2-6-motion-control-generation"
+    },
+    {
+      "id": "kling-v3-motion-control",
+      "family": "Kling",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Kling",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/kling-v2-6/kling-v2-6-motion-control-generation"
+    },
+    {
+      "id": "kling-v3",
+      "family": "Kling",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Kling",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/kling-v3/generation"
+    },
+    {
+      "id": "kling-v3-omni",
+      "family": "Kling",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Kling",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/kling-v3-omni/generation"
+    },
+    {
+      "id": "kling-video-o1",
+      "family": "Kling",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Kling",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/kling-video-o1/generation"
+    },
+    {
+      "id": "MiniMax-Hailuo-02",
+      "family": "MiniMax / Hailuo",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "MiniMax / Hailuo",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/minimax-hailuo/generation"
+    },
+    {
+      "id": "MiniMax-Hailuo-2.3",
+      "family": "MiniMax / Hailuo",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "MiniMax / Hailuo",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/minimax-hailuo-2.3/generation"
+    },
+    {
+      "id": "MiniMax-Hailuo-2.3-Fast",
+      "family": "MiniMax / Hailuo",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "MiniMax / Hailuo",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/minimax-hailuo-2.3/generation"
+    },
+    {
+      "id": "MiniMax-H3",
+      "family": "MiniMax / Hailuo",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "MiniMax / Hailuo",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/minimax-h3/generation"
+    },
+    {
+      "id": "MiniMax-H3-Max",
+      "family": "MiniMax / Hailuo",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "MiniMax / Hailuo",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/minimax-h3/max"
+    },
+    {
+      "id": "MiniMax-H3-Regeneration",
+      "family": "MiniMax / Hailuo",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "MiniMax / Hailuo",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/minimax-h3/regeneration"
+    },
+    {
+      "id": "wan2.5-preview",
+      "family": "Wan",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Wan",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/wan2.5/generation"
+    },
+    {
+      "id": "wan2.6",
+      "family": "Wan",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Wan",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/wan2.6/generation"
+    },
+    {
+      "id": "wan2.6-i2v",
+      "family": "Wan",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Wan",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/wan2.6/generation"
+    },
+    {
+      "id": "wan2.6-i2v-flash",
+      "family": "Wan",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Wan",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/wan2.6/i2v-flash-generation"
+    },
+    {
+      "id": "wan2.7",
+      "family": "Wan",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Wan",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/wan2.7/generation"
+    },
+    {
+      "id": "wan2.7-r2v",
+      "family": "Wan",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Wan",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/wan2.7-r2v/generation"
+    },
+    {
+      "id": "wan2.7-videoedit",
+      "family": "Wan",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Wan",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/wan2.7-videoedit/generation"
+    },
+    {
+      "id": "wan3.0-video",
+      "family": "Wan",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Wan",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation"
+    },
+    {
+      "id": "wan3.0-video-prime",
+      "family": "Wan",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Wan",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation"
+    },
+    {
+      "id": "grok-imagine-1.0-video-apimart",
+      "family": "Grok Video",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Grok Video",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/grok-imagine/generation"
+    },
+    {
+      "id": "grok-imagine-1.5-video-apimart",
+      "family": "Grok Video",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Grok Video",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/grok-imagine/generation"
+    },
+    {
+      "id": "grok-imagine-video",
+      "family": "Grok Video",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Grok Video",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/grok-imagine/official"
+    },
+    {
+      "id": "grok-imagine-video-1.5",
+      "family": "Grok Video",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Grok Video",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/grok-imagine/official"
+    },
+    {
+      "id": "viduq3",
+      "family": "Vidu",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Vidu",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/vidu-q3/generation"
+    },
+    {
+      "id": "viduq3-mix",
+      "family": "Vidu",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Vidu",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/vidu-q3/generation"
+    },
+    {
+      "id": "viduq3-pro",
+      "family": "Vidu",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Vidu",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/vidu-q3-pro/generation"
+    },
+    {
+      "id": "viduq3-turbo",
+      "family": "Vidu",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Vidu",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/vidu-q3-pro/generation"
+    },
+    {
+      "id": "viduq4-preview",
+      "family": "Vidu",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "Vidu",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/vidu-q4-preview/generation"
+    },
+    {
+      "id": "ltx-2.3-image-video",
+      "family": "LTX",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "LTX",
+      "documentation": null
+    },
+    {
+      "id": "ltx-2.3-text-video",
+      "family": "LTX",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "LTX",
+      "documentation": null
+    },
+    {
+      "id": "pixverse-v6",
+      "family": "PixVerse",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "PixVerse",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/pixverse-v6/generation"
+    },
+    {
+      "id": "happyhorse-1.0",
+      "family": "HappyHorse",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "HappyHorse",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/happyhorse-1.0/generation"
+    },
+    {
+      "id": "happyhorse-1.1",
+      "family": "HappyHorse",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "HappyHorse",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/happyhorse-1.1/generation"
+    },
+    {
+      "id": "flux-3-video",
+      "family": "FLUX Video",
+      "modality": "video",
+      "destination": "new",
+      "familyGroup": "FLUX Video",
+      "documentation": "https://docs.apimart.ai/en/api-reference/videos/flux-3-video/generation"
+    }
+  ]
+}
