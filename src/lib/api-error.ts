@@ -18,6 +18,12 @@ export function safeError(e: unknown, fallback = "服务繁忙,请稍后重试")
     e instanceof Error ? e.message : typeof e === "string" ? e : "";
   const low = (raw || "").toLowerCase();
 
+  // Preserve our fixed local admission messages, not an arbitrary supplier body.
+  if (raw.includes("当前图片通道暂时不可用，请稍后再试；本次未提交生成，未扣积分"))
+    return "当前图片服务暂时不可用，请稍后再试；本次未提交生成，未扣积分";
+  if (raw.includes("当前图片请求较多，请稍后再试；本次未提交生成，未扣积分"))
+    return "当前图片请求较多，请稍后再试；本次未提交生成，未扣积分";
+
   // 配额 / 账单 / 限流 / 过载
   if (
     /quota|billing|insufficient|exceeded|rate.?limit|\b429\b|too many|capacity|overload|hard limit|spend|credit balance/.test(

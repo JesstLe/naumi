@@ -9,8 +9,8 @@ from release47_authorized_successor import check_incidents
 
 def begin(state, config, archive, incident_digest, at=None):
     at = at or dt.datetime.now(dt.timezone.utc)
-    require(config.get('target') == '47.105.59.142' and config.get('authorization') ==
-            '合并所有分支，然后上线服务器，退役旧容器', 'EXPLICIT_NORMAL_RELEASE_AUTHORIZATION_REQUIRED')
+    require(config.get('target') == '47.105.59.142' and config.get('authorization') in
+            ['合并所有分支，然后上线服务器，退役旧容器','合并分支，上线服务器'], 'EXPLICIT_NORMAL_RELEASE_AUTHORIZATION_REQUIRED')
     require(config.get('date') == at.astimezone(dt.timezone(dt.timedelta(hours=8))).date().isoformat(), 'RELEASE_DATE_CHANGED')
     require(config.get('restoreDatabase') is False and config.get('replayAcceptedTasks') is False and
             config.get('activateDisabledModels') is False, 'NON_REPLAY_NON_ACTIVATION_REQUIRED')

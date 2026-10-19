@@ -30,6 +30,15 @@ export type ImageRatioValidationPolicy = { nativePixelGrid: 16 };
 export function imageRatioValidationPolicy(connections: readonly { protocol: string; wireModel: string }[]): ImageRatioValidationPolicy | undefined {
   if (connections.length && connections.every(c => ["openai-images", "new-api-flow"].includes(c.protocol) && /^(?:gemini-3(?:\.0)?-pro-image|gemini-3\.1-flash-image)-(?:preview|three-four|four-three|portrait|landscape|square)$/.test(c.wireModel))) return { nativePixelGrid: 16 };
 }
+/** A definite, local rejection. Never turn this into an unknown paid attempt. */
+export class ExactImageSizeError extends Error {
+  readonly code = "IMAGE_SIZE_UNSUPPORTED";
+  constructor(ratio: string) {
+    const shown = /^[1-9]\d{0,5}:[1-9]\d{0,5}$/.test(ratio) ? `（${ratio}）` : "";
+    super(`当前图片模型尚未配置该精确比例${shown}，请明确选择支持的比例；本次未提交生成，未扣积分`);
+    this.name = "ExactImageSizeError";
+  }
+}
 export function exactImageRequestSize(
   ratio: string,
   model: string,
@@ -39,7 +48,7 @@ export function exactImageRequestSize(
   const size = EXACT_SIZES[ratio];
   if (size) return size;
   // Reject an unsupported exact contract rather than silently reverting to direction-only.
-  throw new Error("当前图片模型尚未配置该精确比例，请选择标准比例");
+  throw new ExactImageSizeError(ratio);
 }
 export function imageRatioMismatch(
   requested: string,

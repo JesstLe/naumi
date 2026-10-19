@@ -4,6 +4,8 @@ import {imagegenRequestSchema} from "./schema";
 import {resolveImagegenIntent} from "./intent";
 import {readImagegenInputs} from "./inputs";
 import { automaticFrameRatio } from "./frame-ratio";
+import { imageRequestAdmission } from "./request-admission";
+import { ExactImageSizeError } from "./request-size";
 import {getModelAdministration} from "../model-config/server";
 import {simulateModel} from "../model-config/runtime";
 import {assertToolScope,featureDefaultModel} from "../model-config/tool-scope";
@@ -58,7 +60,17 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
  const simulate=(modelId:string,requirements:Intent)=>simulateModel(models,billing,modelId,requirements.operation==="cutout"?{...facts(requirements),needsEdit:true,references:1,quantity:1}:facts(requirements),{trustedOrigins:(process.env.MODEL_CONFIG_TRUSTED_ORIGINS||"").split(/[\s,]+/).filter(Boolean)});
  const steps:ImagegenPlan["steps"]=[],warnings:string[]=maskedTarget?["模型编辑后按蒙版合成，未选区保留原图；原生成版本也会保留。"]:[];
  const append=async(key:string,operation:Intent["operation"],modelId:string,requirements:Intent,featureId:"image.generate"|"canvas.image"|"tool.cutout")=>{
-  const candidates=simulate(modelId,requirements);if(!candidates.eligible.length)throw new Error("所选模型没有已核实支持本次参数的通道；请管理员维护能力，或选择其他模型");
+  const candidates=simulate(modelId,requirements);
+  const selected=models.config.publicModels.find(m=>m.id===modelId)!;
+  let exactRatioRejected=false;
+  candidates.eligible=candidates.eligible.filter(candidate=>{
+   const source=models.config.upstreamModels.find(u=>u.id===candidate.upstreamId)!;
+   const codes=imageRequestAdmission(request.parameters.ratio||"1:1",modelId,!!selected.supplierRouting,source);
+   if(codes.includes("EXACT_RATIO_UNSUPPORTED"))exactRatioRejected=true;
+   if(codes.length)candidates.excluded.push({upstreamId:candidate.upstreamId,codes});
+   return !codes.length;
+  });
+  if(!candidates.eligible.length){if(exactRatioRejected)throw new ExactImageSizeError(request.parameters.ratio||"1:1");throw new Error("所选模型没有已核实支持本次参数的通道；请管理员维护能力，或选择其他模型");}
   if(operation==="cutout"&&candidates.eligible.some(c=>publishedImagegenCapabilities(models.config.upstreamModels.find(u=>u.id===c.upstreamId)!.capabilities).transparent?.state!=="supported"))throw new Error("抠图通道尚未核实透明输出能力");
   const model=models.config.publicModels.find(m=>m.id===modelId)!;
   if(model.target.type==="pool"&&!model.supplierRouting&&(request.parameters.inputFidelity!==undefined||request.parameters.moderation!==undefined||request.parameters.width!==undefined||request.output.compressionMode==="native"&&request.output.compression!==undefined))throw new Error("外部Router尚未开放这些原生参数的发送，请选择已发布参数映射的直连供应通道");

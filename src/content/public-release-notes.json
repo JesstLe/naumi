@@ -1,5 +1,32 @@
 [
   {
+    "version": "1792406669",
+    "title": {
+      "zh": "图片创作体验更新",
+      "en": "Image creation improvements"
+    },
+    "improvements": [
+      {
+        "zh": "参考图片单次可选择最多16张。",
+        "en": "Select up to 16 reference images per request."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "优化参考图编辑的兼容性。",
+        "en": "Improved compatibility for reference-image editing."
+      },
+      {
+        "zh": "不支持的画幅会在开始生成前提示，减少无效等待。",
+        "en": "Unsupported aspect ratios are reported before submission to avoid unnecessary waiting."
+      },
+      {
+        "zh": "区分服务暂时不可用与并发繁忙提示。",
+        "en": "Distinguished temporary service unavailability from capacity limits."
+      }
+    ]
+  },
+  {
     "version": "1792383873",
     "title": {
       "zh": "画布创作体验更新",

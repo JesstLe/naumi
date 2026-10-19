@@ -13,6 +13,7 @@ import { parseReceiptJson } from "./money";
 import type { CostContext } from "./types";
 import { ModelConfigError } from "../model-config/types";
 import { imageSupplierFailure } from "../model-config/supplier-failure";
+import { supplierFailureEvidence } from "./failure-evidence";
 
 export async function supplierContext(scope?: ModelExecutionScope | null): Promise<CostContext> {
   const { currentBiContext } = await import("../bi/model-observer");
@@ -64,7 +65,7 @@ export function supplierCostFetch(fetcher: typeof fetch, connection: { providerI
         const receipt = genericReceipt(body, state, apimartSubmit?undefined:scope?.procurement);
         if(apimartSubmit){receipt.delivered=undefined;receipt.outputs=undefined;}
         receipt.requestId ||= response.headers.get("x-request-id") || undefined;
-        receipt.evidence = { ...receipt.evidence, responseSha256: hash.digest("hex"), httpStatus: response.status, metadataComplete: stream || capture.result() !== null };
+        receipt.evidence = { ...receipt.evidence, responseSha256: hash.digest("hex"), httpStatus: response.status, metadataComplete: stream || capture.result() !== null, ...supplierFailureEvidence(response.status,body) };
         if (!response.ok && !stream && (scope?.frozen.modality === "image" || connection.protocol === "openai-images")) receipt.evidence.upstreamFailure = imageSupplierFailure(response.status, body);
         if (!stream && ["apimart-images", "apimart"].includes(connection.protocol || "") && request.method === "POST") receipt.taskId = submittedAPIMartTask(body) || undefined;
         await ledger.apply(row.id, receipt);
@@ -88,7 +89,7 @@ export function supplierCostFetch(fetcher: typeof fetch, connection: { providerI
       if (error instanceof ModelConfigError && ["CHANNEL_DISABLED","CONFIG_UNAVAILABLE"].includes(error.code)) {
         const receipt=genericReceipt({billing_status:"not_charged"},"rejected",scope?.procurement);
         await ledger.apply(row.id,{...receipt,source:"local-channel-disabled",evidence:{billing_status:"not_charged",source:"local-channel-disabled"}});
-      } else await ledger.apply(row.id, { state: "unknown", status: "pending", source: "transport-unknown", evidence: { source: "transport-unknown" } });
+      } else await ledger.apply(row.id, { state: "unknown", status: "pending", source: "transport-unknown", evidence: { source: "transport-unknown", ...supplierFailureEvidence(0,undefined,error) } });
       throw error;
     }
   };
