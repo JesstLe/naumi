@@ -1,7 +1,7 @@
 import { inheritedImageRatio, imageAspectInstruction } from "@/lib/imagegen/aspect";
 import { normalizeLegacyFrameRequest, LegacyFrameError } from "@/lib/imagegen/legacy-frame-request";
 import { preserveGeneratedFrame, sourceImageDimensions } from "@/lib/imagegen/output-shape";
-import { exactImageRequestSize, imageRatioMismatch } from "@/lib/imagegen/request-size";
+import { exactImageRequestSize, imageRatioMismatch, ExactImageSizeError } from "@/lib/imagegen/request-size";
 import {currentImagegenStep,withImagegenStep} from "@/lib/imagegen/context";
 import {legacyImagegenIntent} from "@/lib/imagegen/legacy-intent";
 import {inspectImagegenPixels} from "@/lib/imagegen/postprocess";
@@ -1101,6 +1101,15 @@ async function handleObservedPost(request: Request) {
       { error: "所选模型不支持参考图生成，请切换图生图模型" },
       { status: 400 }
     );
+  }
+  // Reject a new local size-contract error BEFORE quote/reservation/job creation.
+  // The worker branch above resumes its original frozen contract unchanged.
+  if (p.ratioContractVersion === 1 && imageModel.provider !== "user-openai-images" && imageModel.provider !== "user-chat-completions") {
+    try { exactImageRequestSize(p.ratio, imageScope?.connection.wireModel || model); }
+    catch (error) {
+      if (error instanceof ExactImageSizeError) return NextResponse.json({error:error.message,code:error.code,accepted:false},{status:400});
+      throw error;
+    }
   }
   let userProvider: { baseUrl: string; apiKey: string; model: string } | null = null;
   let byokSnapshot: string | undefined;
