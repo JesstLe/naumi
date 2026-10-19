@@ -47,7 +47,7 @@ import type {PublicVideoTaskView} from "@/lib/video/service";
 import type {PublicQuote} from "@/lib/billing/client";
 import { CanvasPerformanceProbe, recordCanvasNativeMove } from "./canvas-performance-probe";
 import {CanvasImage} from './canvas-image';
-import { classifyGenerationFailure, generationFailureBlocks, assertGenerationResultsPresent, type GenerationFailure } from '@/lib/canvas/generation-failure';
+import { classifyGenerationFailure, generationFailureBlocks, generationFailureMessage, generationFailureTitle, assertGenerationResultsPresent, type GenerationFailure } from '@/lib/canvas/generation-failure';
 import { ImagegenHttpError } from '@/lib/imagegen/http';
 import { useImageNodeDraft } from './use-image-node-draft';
 import { imageDraftScope } from '@/lib/canvas/image-node-drafts';
@@ -3496,7 +3496,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           type: "art",
           position: pos,
           style: previewSize,
-          data: { id: task.id, pending: true, label: task.label, lightCanvas, ...previewSize,
+          data: { id: task.id, pending: true, label: task.failure ? generationFailureTitle(task.failure, locale === "en") : task.label, lightCanvas, ...previewSize,
             generationStage: task.stage, generationStartedAt: task.startedAt,
             generationCount: task.count, generationCompleted: task.completed, generationFailure: task.failure, onGenerationCheck: task.onCheck },
           selectable: false,
@@ -3745,6 +3745,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     nodes,
     edges,
     generationTasks,
+    locale,
     multiSel,
     selectedId,
     selectedPendId,
@@ -4299,7 +4300,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
 
   async function checkGenerationReceipt(context: {
-    jobId: string; taskId?: string; pendId?: string; operationKey: string;
+    jobId: string; taskId?: string; pendId?: string; sourceId?: string; operationKey: string;
     position: { x: number; y: number }; account: string; project: string | null;
   }) {
     const current = () => context.account === canvasAccountRef.current && context.project === (activeProjectRef.current?.key || null);
@@ -4307,6 +4308,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     generationChecksRef.current.add(context.jobId);
     const show = (failure: GenerationFailure) => {
       if (!current()) return;
+      if (context.pendId ? selectedPendIdRef.current === context.pendId : selectedIdRef.current === context.sourceId) setGenError(generationFailureMessage(failure));
       setGenerationTasks(tasks => tasks.map(task => task.id === context.taskId ? { ...task, failure } : task));
       setPendNodes(nodes => nodes.map(node => node.id === context.pendId ? { ...node, generationFailure: failure, generating: generationFailureBlocks(failure) } : node));
       if (!generationFailureBlocks(failure)) generationOperationRef.current.delete(context.operationKey);
@@ -4341,6 +4343,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           return;
         }
         completeCanvasReceipt(context.jobId);
+        if (context.pendId ? selectedPendIdRef.current === context.pendId : selectedIdRef.current === context.sourceId) setGenError(null);
         setGenerationTasks(tasks => tasks.filter(task => task.id !== context.taskId));
         setPendNodes(nodes => nodes.filter(node => node.id !== context.pendId));
         setSelectedPendId(id => id === context.pendId ? null : id);
@@ -4554,15 +4557,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       return generated;
     } catch (e) {
       if (opts?.isCurrent && !opts.isCurrent()) return [];
-      const message =
-        e instanceof Error && e.message ? e.message : t("canvas.genFail");
-      if (selectedIdRef.current === source.id) setGenError(message);
-      else flashTip(`${source.title}：${message}`);
       if (requestAccount !== canvasAccountRef.current || requestProject !== (activeProjectRef.current?.key || null)) return [];
       failure = classifyGenerationFailure(e, { attempted, jobId, terminal, hasResults: resultIds.length > 0 });
+      const message = generationFailureMessage(failure);
+      if (selectedIdRef.current === source.id) setGenError(message);
+      else flashTip(`${source.title}：${message}`);
       const retainedFailure = failure;
       setGenerationTasks(tasks => tasks.map(task => task.id === taskId ? { ...task, failure: retainedFailure,
-        onCheck: jobId ? () => checkGenerationReceipt({ jobId: jobId!, taskId, operationKey, position: taskPosition, account: requestAccount, project: requestProject }) : undefined } : task));
+        onCheck: jobId ? () => checkGenerationReceipt({ jobId: jobId!, taskId, sourceId: source.id, operationKey, position: taskPosition, account: requestAccount, project: requestProject }) : undefined } : task));
       return [];
     } finally {
       if (!generationFailureBlocks(failure)) generationOperationRef.current.delete(operationKey);
@@ -7966,11 +7968,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       return true;
     } catch (e) {
       if (opts?.isCurrent && !opts.isCurrent()) return false;
-      const message = e instanceof Error && e.message ? e.message : t("canvas.genFail");
-      if (selectedPendIdRef.current === pend.id) setGenError(message);
-      else flashTip(`${pend.label}：${message}`);
       if (requestAccount !== canvasAccountRef.current || requestProject !== (activeProjectRef.current?.key || null)) return false;
       failure = classifyGenerationFailure(e, { attempted, jobId, terminal, hasResults: resultIds.length > 0 });
+      const message = generationFailureMessage(failure);
+      if (selectedPendIdRef.current === pend.id) setGenError(message);
+      else flashTip(`${pend.label}：${message}`);
       const retainedFailure = failure;
       setPendNodes((prev) => prev.map((p) => p.id === pend.id ? { ...p, generating: generationFailureBlocks(retainedFailure), generationFailure: retainedFailure,
         onGenerationCheck: jobId ? () => checkGenerationReceipt({ jobId: jobId!, pendId: pend.id, operationKey, position: generationPosition, account: requestAccount, project: requestProject }) : undefined } : p));
