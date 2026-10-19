@@ -15,7 +15,8 @@
     "performance.css",
     "routing.css",
     "notifications.css",
-    "sheet-grid.css"
+    "sheet-grid.css",
+    "excel-preview.css"
   ],
   "core": [
     "schedule-model.js",
@@ -165,6 +166,23 @@
   ],
   "tail": [
     "sheet-grid-model.js",
-    "sheet-grid-ui.js"
+    "sheet-grid-ui.js",
+    "excel-preview-ui.js"
+  ],
+  "workers": [
+    {
+      "name": "EXCEL_PREVIEW_WORKER_SOURCE",
+      "entry": "excel-preview-worker.js",
+      "vendors": [
+        {
+          "file": "vendor/xlsx-0.20.3.min.js",
+          "sha256": "cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41"
+        },
+        {
+          "file": "vendor/jszip-3.10.1.min.js",
+          "sha256": "acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e"
+        }
+      ]
+    }
   ]
 }
