@@ -81,6 +81,6 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
   for(let i=0;i<request.variants;i++)await append(`cutout-${i}`,"cutout",cutout,{...intent,operation:"cutout"},"tool.cutout");
   warnings.push("所选模型先生成，再通过后台指定的抠图模型生成透明图；两步积分已合计，原图保留。");
  }else await append("generate",intent.operation,id,intent,feature);
- return {request,intent,fingerprint,modelVersion:models.version,billingVersion:billing.version,skillInstructions:skill?.instructions,steps,totalCredits:steps.reduce((n,s)=>n+s.credits,0),confirmationRequired:steps.length>1||steps.some(s=>s.credits>=100),warnings};
+ return {ratioContractVersion:1,request,intent,fingerprint,modelVersion:models.version,billingVersion:billing.version,skillInstructions:skill?.instructions,steps,totalCredits:steps.reduce((n,s)=>n+s.credits,0),confirmationRequired:steps.length>1||steps.some(s=>s.credits>=100),warnings};
 }
 

@@ -1,3 +1,4 @@
+import { applicationAPIMartImages } from "./apimart-image-policy";
 import "server-only";
 import { createHash } from "node:crypto";
 import type { ConfigSnapshot, CostRate } from "../billing/types";
@@ -36,9 +37,10 @@ export function compileRouterProjection(snapshot: ModelSnapshot, billing: Config
     // The first preset uses the application's durable APIMart adapter. Older
     // Router aliases remain immutable for already submitted operations.
     if (config.defaultImagePreset?.enabled && config.defaultImagePreset.aliases.some(a => a.id === model.id)) continue;
+    if (model.supplierRouting) continue;
     if (model.target.type === "upstream") {
       const upstream = upstreams.get(model.target.id)!;
-      if (!["apimart-images", "fal-images"].includes(providers.get(upstream.providerId)!.protocol)) continue;
+      if (applicationAPIMartImages(providers.get(upstream.providerId)!.protocol,upstream.parameterMap) || !["apimart-images", "fal-images"].includes(providers.get(upstream.providerId)!.protocol)) continue;
       if (upstream.enabled && providers.get(upstream.providerId)!.enabled) { selected.add(upstream.id); aliases.push({ id: model.id, candidates: [upstream.id], strategy: "priority" }); }
       continue;
     }
@@ -46,7 +48,7 @@ export function compileRouterProjection(snapshot: ModelSnapshot, billing: Config
     const candidates = pool.candidates.filter(id => { const u = upstreams.get(id)!; return u.enabled && providers.get(u.providerId)!.enabled; });
     for (const id of candidates) {
       const u = upstreams.get(id)!;
-      if (providers.get(u.providerId)!.options?.imageAdapter || !["openai-images", "apimart-images", "fal-images"].includes(providers.get(u.providerId)!.protocol)) throw new ModelConfigError("UNSUPPORTED_POOL_PROTOCOL", "该协议目前只支持直连，不能加入图片混合路由", 400, [`pools.${pool.id}`]);
+      if (applicationAPIMartImages(providers.get(u.providerId)!.protocol,u.parameterMap) || providers.get(u.providerId)!.options?.imageAdapter || !["openai-images", "apimart-images", "fal-images"].includes(providers.get(u.providerId)!.protocol)) throw new ModelConfigError("UNSUPPORTED_POOL_PROTOCOL", "该协议目前只支持直连，不能加入图片混合路由", 400, [`pools.${pool.id}`]);
       selected.add(id);
     }
     aliases.push({ id: model.id, candidates, strategy: pool.strategy, ...(pool.rules.length ? { rules: pool.rules.map(r => ({ id: r.id, priority: r.priority, when: r.when, require: Object.fromEntries(Object.entries(r.require).filter(([, v]) => v !== false && v !== undefined)) })) } : {}) });

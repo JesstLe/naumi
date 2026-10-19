@@ -13,5 +13,10 @@
 .step[data-active=true] { color:#6686d8; opacity:1; }
 .dot { display:block; width:4px; height:4px; flex-shrink:0; border-radius:50%; background:currentColor; }
 .check { width:11px; height:11px; }
+.failure { background:#fffaf3; color:#4b4035; gap:12px; }
+.failureIcon { width:26px; height:26px; color:#b7791f; flex-shrink:0; }
+.failureMessage { margin:0; max-width:100%; max-height:110px; overflow:auto; overflow-wrap:anywhere; font-size:13px; line-height:1.6; }
+.checkButton { border:1px solid #ddc9aa; border-radius:8px; background:#fff; color:#79551c; padding:7px 12px; font-size:12px; cursor:pointer; }
+.checkButton:disabled { opacity:.6; cursor:wait; }
 @keyframes canvas-progress-shimmer { 0%,20% {transform:translateX(-100%)} 85%,100% {transform:translateX(100%)} }
 @media (prefers-reduced-motion:reduce) { .shimmer {animation:none} .fill {transition:none} }

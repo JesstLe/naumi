@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS app_supplier_calls(
 );
 CREATE UNIQUE INDEX IF NOT EXISTS app_supplier_calls_task ON app_supplier_calls(account_id,task_id) WHERE task_id IS NOT NULL;
 ALTER TABLE app_supplier_calls ADD COLUMN IF NOT EXISTS parameters jsonb;
+ALTER TABLE app_supplier_calls ADD COLUMN IF NOT EXISTS bi_call_id text;
+CREATE INDEX IF NOT EXISTS app_supplier_calls_bi ON app_supplier_calls(bi_call_id,user_email) WHERE bi_call_id IS NOT NULL;
 ALTER TABLE app_supplier_calls ADD COLUMN IF NOT EXISTS billing_unit_id text;
 CREATE INDEX IF NOT EXISTS app_supplier_calls_operation ON app_supplier_calls(operation_id,started_at);
 CREATE INDEX IF NOT EXISTS app_supplier_calls_time ON app_supplier_calls(account_id,completed_at,model);

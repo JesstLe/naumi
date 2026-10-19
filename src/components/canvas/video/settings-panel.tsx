@@ -4,8 +4,9 @@ import {useVideoI18n} from "./i18n";
 import type { ResolvedVideoCapability } from "@/lib/video/capability-schema";
 import { catalogCapability, selectedVideoCatalogModel, VIDEO_MODE_LABELS, videoDurations, videoResolutions, reconcileVideoSettings, type VideoCatalogModel, type VideoNodeConfig } from "@/lib/video/client-settings";
 import { VideoField, videoFieldClass, VideoSection } from "./form-controls";
-export function VideoSettingsPanel({ config, models, onChange, onNotice, disabled = false }: {
+export function VideoSettingsPanel({ config, models, onChange, onNotice, disabled = false, advancedOnly = false }: {
     disabled?: boolean;
+    advancedOnly?: boolean;
     config: VideoNodeConfig;
     models: VideoCatalogModel[];
     onChange: (next: VideoNodeConfig) => void;
@@ -16,6 +17,7 @@ export function VideoSettingsPanel({ config, models, onChange, onNotice, disable
     function reconcile(next: VideoNodeConfig, definition: ResolvedVideoCapability) { const result = reconcileVideoSettings(next, definition); onChange(result.config); onNotice(result.changes.length ? `${V("已调整")}：${result.changes.map(V).join("、")}` : ""); }
     const field = (name: string, value: unknown) => <input aria-label={name} value={String(value ?? "")} className={videoFieldClass} readOnly/>;
     return <div className="space-y-3" data-testid="video-settings-panel">
+    {!advancedOnly&&<>
     <VideoField label={V("视频模型")}><CanvasModelSelect fullWidth disabled={disabled} label={V("视频模型")}
       value={model ? `${model.providerId}/${model.modelId}` : ""} placeholder={V("未选择模型")}
       options={models.map(item=>({value:`${item.providerId}/${item.modelId}`,modelId:item.modelId,label:item.label}))}
@@ -23,10 +25,13 @@ export function VideoSettingsPanel({ config, models, onChange, onNotice, disable
     <VideoField label={V("视频生成模式")}><select aria-label={V("视频生成模式")} value={config.mode || ""} className={videoFieldClass} onChange={event => onChange({ ...config, mode: event.target.value as VideoNodeConfig["mode"] })}>
       <option value="" disabled>{cap.modes?.length ? V("选择模式") : V("能力未配置")}</option>{(cap.modes || []).map(mode => <option key={mode} value={mode}>{V(VIDEO_MODE_LABELS[mode])}</option>)}
     </select></VideoField>
+    </>}
     <div className="grid grid-cols-2 gap-3">
+      {!advancedOnly&&<>
       <VideoField label={V("视频时长")}><select aria-label={V("视频时长")} className={videoFieldClass} value={config.durationSeconds ?? ""} onChange={event => reconcile({ ...config, durationSeconds: Number(event.target.value) }, cap)}><option value="" disabled>{V("\u672A\u914D\u7F6E")}</option>{videoDurations(cap).map(value => <option key={value} value={value}>{value === -1 ? V("自动") : V(`${value} 秒`)}</option>)}</select></VideoField>
       <VideoField label={V("视频分辨率")}><select aria-label={V("视频分辨率")} className={videoFieldClass} value={config.resolution || ""} onChange={event => onChange({ ...config, resolution: event.target.value })}><option value="" disabled>{V("\u672A\u914D\u7F6E")}</option>{videoResolutions(cap, config.durationSeconds).map(value => <option key={value}>{value}</option>)}</select></VideoField>
       <VideoField label={V("视频画幅")}><select aria-label={V("视频画幅")} className={videoFieldClass} value={config.aspectRatio || ""} onChange={event => onChange({ ...config, aspectRatio: event.target.value })}><option value="" disabled>{V("\u672A\u914D\u7F6E")}</option>{(cap.aspectRatios || []).map(value => <option key={value}>{value}</option>)}</select></VideoField>
+      </>}
       <VideoField label={V("生成声音")}>{cap.audio === "optional" ? <select aria-label={V("生成声音")} className={videoFieldClass} value={config.generateAudio === undefined ? "default" : String(config.generateAudio)} onChange={event => { const next = { ...config }; if (event.target.value === "default")
         delete next.generateAudio;
     else

@@ -198,7 +198,7 @@ class SnapshotTests(unittest.TestCase):
 @unittest.skipUnless(os.environ.get('NAUMI_VERIFY_ISOLATED_DB') == '1', 'explicit isolated local PostgreSQL fixture required')
 class PostgresFixture(unittest.TestCase):
     def test_real_sql_missing_table_terminal_tracking_and_no_write(self):
-        container = 'naumi-packaging-skills-pg-20261016'
+        container = os.environ.get('NAUMI_TASK_SNAPSHOT_TEST_CONTAINER','naumi-packaging-skills-pg-20261016')
         schema = 'task_snapshot_test_' + uuid.uuid4().hex
         def run(args, *, stdin=None, timeout=120):
             return subprocess.run(args, input=stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)

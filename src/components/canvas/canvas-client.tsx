@@ -23,6 +23,7 @@ import { canvasFocusViewport } from "@/lib/canvas/upload-visibility";
 import { stableArtworkPositions, canvasNodePosition, readPlacementCache, type CanvasPoint } from "@/lib/canvas/stable-placement";
 import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
 import { smartLayout } from "@/lib/canvas/smart-layout";
+import { CanvasComposerShell, CanvasComposerFooter, CanvasComposerOptions } from "./composer-shell";
 import { CanvasParameterPopover } from "./parameter-popover";
 import {submitCanvasImagegen} from "@/lib/imagegen/canvas-client";
 import {canvasReceipts,clearCanvasReceipt,moveCanvasReceipt} from "@/lib/imagegen/canvas-receipts";
@@ -47,6 +48,10 @@ import type {PublicVideoTaskView} from "@/lib/video/service";
 import type {PublicQuote} from "@/lib/billing/client";
 import { CanvasPerformanceProbe, recordCanvasNativeMove } from "./canvas-performance-probe";
 import {CanvasImage} from './canvas-image';
+import { classifyGenerationFailure, generationFailureBlocks, generationFailureMessage, generationFailureTitle, assertGenerationResultsPresent, type GenerationFailure } from '@/lib/canvas/generation-failure';
+import { ImagegenHttpError } from '@/lib/imagegen/http';
+import { useImageNodeDraft } from './use-image-node-draft';
+import { imageDraftScope } from '@/lib/canvas/image-node-drafts';
 import { CanvasRenderLayerGuard } from './canvas-render-layer-guard';
 import { CanvasEdgeHoverHint, type CanvasEdgeHoverHandle } from './canvas-edge-hover-hint';
 import { canvasZoomState } from '@/lib/canvas/viewport-state';
@@ -375,6 +380,8 @@ const DETAIL_MODULE_ORDER = [
 ] as const;
 
 type CanvasGenerationTask = {
+  failure?: GenerationFailure;
+  onCheck?: () => Promise<void>;
   stage?: GenerationStage;
   startedAt?: number;
   previewSize?: { width: number; height: number };
@@ -962,6 +969,8 @@ function PendNode({ data, selected }: NodeProps) {
     fileName?: string;
     fileInfo?: string;
     generating?: boolean;
+    generationFailure?: GenerationFailure;
+    onGenerationCheck?: () => Promise<void>;
     generationStage?: GenerationStage;
     generationStartedAt?: number;
     generationSize?: { width: number; height: number };
@@ -977,7 +986,7 @@ function PendNode({ data, selected }: NodeProps) {
   };
   const sel = selected || d.selected;
   return (
-    <div style={d.generating ? { width: d.generationSize?.width ?? 384 } : undefined} className={cn("group relative w-[320px]", d.lightCanvas ? "canvas-ui-light" : "canvas-ui-dark")}>
+    <div style={d.generating || d.generationFailure ? { width: d.generationSize?.width ?? 384 } : undefined} className={cn("group relative w-[320px]", d.lightCanvas ? "canvas-ui-light" : "canvas-ui-dark")}>
       {/* 标签(图片上方,对齐原型 .lb2) */}
       <div className="canvas-ui-text mb-1.5 flex h-[30px] items-center gap-1.5 truncate pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold">
         <ImageIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -985,7 +994,7 @@ function PendNode({ data, selected }: NodeProps) {
       </div>
       {/* 占位卡(原型 .nb2 + .ph2:单层卡片,选中=teal) */}
       <div
-        style={d.generating ? { height: d.generationSize?.height ?? 384 } : undefined}
+        style={d.generating || d.generationFailure ? { height: d.generationSize?.height ?? 384 } : undefined}
         className={cn(
           "canvas-ui-node-card relative flex h-[200px] flex-col items-center justify-center rounded-[12px] border px-5 text-center transition-all",
           sel
@@ -993,7 +1002,9 @@ function PendNode({ data, selected }: NodeProps) {
             : "border-dashed"
         )}
       >
-        {d.needsAttention ? (
+        {d.generationFailure ? (
+          <GenerationPlaceholder failure={d.generationFailure} onCheck={d.onGenerationCheck} />
+        ) : d.needsAttention ? (
           <div className="flex w-full flex-col items-center gap-2.5">
             <AlertTriangle className="h-6 w-6 text-[#b7791f]" />
             <div className="canvas-ui-text text-[13px] font-semibold">
@@ -1140,6 +1151,8 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
     prompt?: string;
     date?: string;
     pending?: boolean;
+    generationFailure?: GenerationFailure;
+    onGenerationCheck?: () => Promise<void>;
     generationStage?: GenerationStage;
     generationStartedAt?: number;
     generationCount?: number;
@@ -1153,6 +1166,7 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
     intrinsicWidth?: number | null;
     processingKind?: Artwork["processingKind"];
     intrinsicHeight?: number | null;
+    inspectOriginal?: boolean;
     lightCanvas?: boolean;
     onDimensions?: (id: string, width: number, height: number) => void;
     workflowPresentation?: { rotation: number; flipX: boolean; opacity: number };
@@ -1273,7 +1287,7 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
         )}
       >
         {d.pending ? (
-          <GenerationPlaceholder stage={d.generationStage} startedAt={d.generationStartedAt} count={d.generationCount} completed={d.generationCompleted} />
+          <GenerationPlaceholder stage={d.generationStage} startedAt={d.generationStartedAt} count={d.generationCount} completed={d.generationCompleted} failure={d.generationFailure} onCheck={d.onGenerationCheck} />
         ) : d.videoUrl && d.category==="media" ? (
           <div className="flex h-full items-center justify-center p-3"><a className="nodrag nowheel nokey rounded-lg bg-current/5 px-3 py-2 text-xs" href={mediaDownloadHref(d.videoUrl,d.label)} download>下载 {d.label}</a></div>
         ) : d.videoUrl ? (
@@ -1284,7 +1298,7 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
             <CanvasImage
               key={d.image as string}
               source={d.image as string}
-              forceOriginal={forceOriginal}
+              forceOriginal={forceOriginal || !!d.inspectOriginal}
               hasDimensions={!!d.intrinsicWidth && !!d.intrinsicHeight}
               decoding="async"
               onError={event => { if(event.currentTarget.dataset.mediaVariant!=='original')setForceOriginal(true);else onImgError(event,d.image as string); }}
@@ -1628,22 +1642,28 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     Record<string, { x: number; y: number }>
   >({});
   const generationOperationRef = useRef(new Set<string>());
+  const generationChecksRef = useRef(new Set<string>());
   const generationTaskSizeRef = useRef<Record<string, { width: number; height: number }>>({});
   // 仅"后台深链 ?node="进入时才自动平移聚焦;日常新建/上传/生成节点都不动画布
   const deepFocusRef = useRef(false);
   // 是否已做过"刷新恢复上次项目"的初始化(避免初始挂载误清本地保存)
   const restoredRef = useRef(false);
-  // 「基于上一级重做」:切到父节点时把本节点提示词带过去(避免被选中-清空逻辑抹掉)
-  const carryPromptRef = useRef<string | null>(null);
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedPendId, setSelectedPendId] = useState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [browserTab, setBrowserTab] = useState<"all" | "workflows">("all");
   const cancelEditRef = useRef(false); // Esc 取消时跳过失焦保存
-  const [editPrompt, setEditPrompt] = useState("");
+  const imageDraftNodeId = selectedPendId || selectedId;
+  const imageDraftArtwork = selectedPendId ? undefined : works?.find(art => art.id === selectedId);
+  const imageDraft = useImageNodeDraft(
+    imageDraftScope(user?.email, targetEmail, activeKey), imageDraftNodeId,
+    { prompt: imageDraftArtwork?.prompt || "", ratio: normalizeCanvasRatio(imageDraftArtwork?.ratio) }, readOnly
+  );
+  const { prompt: editPrompt, setPrompt: setEditPrompt, ratio: genRatio, setRatio: setGenRatio } = imageDraft;
   const [genModel, setGenModel] = useState("");
   const { quality: genQuality, imageCost, modelConfig } = useImageQuality("canvas.image", genModel);
   const expandQuality = useImageQuality("canvas.expand").quality;
@@ -1652,7 +1672,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const canvasToolQualities: Partial<Record<FeatureId,string>> = {"canvas.expand":expandQuality,"canvas.text-edit":textEditQuality,"canvas.annotate":annotateQuality};
   const { catalog: canvasImageCatalog, selected: canvasImageModel, setSelected: setCanvasImageModel, error: canvasImageCatalogError } = useFeatureModels("canvas.image");
   const [imageModels, setImageModels] = useState<ImageModelOption[]>([]);
-  const [genRatio, setGenRatio] = useState("auto"); // 默认自适应
   const [genResolution, setGenResolution] = useState("1K"); // 默认 1K
   const [ratioMenuOpen, setRatioMenuOpen] = useState(false); // 比例/分辨率弹出面板
   const ratioBtnRef = useRef<HTMLButtonElement>(null);
@@ -1822,7 +1841,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const parameters = canvasModelParameters(imageModels.find(m => m.id === genModel)?.generationParameters);
     setGenRatio(current => parameters.ratios.includes(normalizeCanvasRatio(current)) ? normalizeCanvasRatio(current) : "auto");
     setGenResolution(current => parameters.resolutions.includes(normalizeCanvasResolution(current)) ? normalizeCanvasResolution(current) : parameters.resolutions[0] || "1K");
-  }, [genModel, imageModels]);
+  }, [genModel, imageModels, imageDraft.key, genRatio]);
 
   function pickGenerationModel(model: string) {
     if (canvasImageCatalog?.managed) { setCanvasImageModel(model); return; }
@@ -1876,6 +1895,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     progress: number;
     fileInfo?: string;
     inputs: string[]; // 多输入:连进这个空白节点的源节点 id(生成时作参考图)
+    generationFailure?: GenerationFailure;
+    onGenerationCheck?: () => Promise<void>;
     generationStage?: GenerationStage;
     generationStartedAt?: number;
     generationSize?: { width: number; height: number };
@@ -1944,7 +1965,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [expandRatio, setExpandRatio] = useState<string | null>(null);
   const [expandAnchor, setExpandAnchor] = useState("center");
   // 持久视频节点与公开能力目录；规范请求经独立节点设置面板提交。
-  const [videoEditId,setVideoEditId]=useState<string|null>(null);
   const [videoDockAdvancedId,setVideoDockAdvancedId]=useState<string|null>(null);
   const [videoHistoryId,setVideoHistoryId]=useState<string|null>(null);
   const videoResultAttempts=useRef(new Map<string,{operationId:string;operations:Record<string,unknown>[];from:string|null;to:string|null}>());
@@ -2011,7 +2031,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const pendUploadRef = useRef<HTMLInputElement>(null);
   const pendUploadTargetRef = useRef<string | null>(null);
   // 选中的空白节点(显示文生图/合并 dock)
-  const [selectedPendId, setSelectedPendId] = useState<string | null>(null);
   const selectedPendIdRef = useRef(selectedPendId); selectedPendIdRef.current = selectedPendId;
   // 新建项目:进入空白画布(无任何节点),右键添加节点/上传第一张图后即成新项目并切过去
   const [creatingNew, setCreatingNew] = useState(false);
@@ -2751,19 +2770,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           });
           return;
         }
-        addPendAtScreen(center.x, center.y, null, false);
+        const pend = addPendAtScreen(center.x, center.y, null, false);
         setGenerationMode(
           key === "detail" ? "detail" : key === "views" ? "triptych" : "standard"
         );
-        setEditPrompt(
-          t(
-            key === "detail"
-              ? "canvas.workflowDetailPrompt"
-              : key === "views"
-                ? "canvas.workflowViewsPrompt"
-                : "canvas.workflowHeroPrompt"
-          )
-        );
+        imageDraft.seed(pend.id, { prompt: t(
+          key === "detail" ? "canvas.workflowDetailPrompt" : key === "views" ? "canvas.workflowViewsPrompt" : "canvas.workflowHeroPrompt"
+        ) }, imageDraftScope(user?.email, targetEmail, null));
         wantFocusPendPrompt.current = true;
       }, 0);
     });
@@ -3369,10 +3382,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   const selectedGenerating = !!selectedId &&
     generationTasks.some(
-      (task) =>
+      (task) => (!task.failure || generationFailureBlocks(task.failure)) && (
         task.sourceId === selectedId ||
         task.operationKey === `node:${selectedId}` ||
-        task.operationKey === `retry:${selectedId}`
+        task.operationKey === `retry:${selectedId}`)
     ) || (!!selectedId && pendNodes.some(node => node.generating && node.operationKey === `node:${selectedId}`));
   // dock 的默认引用图就是当前节点本身：节点链表达真实执行顺序，下一节点应基于当前结果继续。
   // 若要否定当前结果并从原输入重做，使用显式“重做此图”动作生成同级新版本。
@@ -3483,9 +3496,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           type: "art",
           position: pos,
           style: previewSize,
-          data: { id: task.id, pending: true, label: task.label, lightCanvas, ...previewSize,
+          data: { id: task.id, pending: true, label: task.failure ? generationFailureTitle(task.failure, locale === "en") : task.label, lightCanvas, ...previewSize,
             generationStage: task.stage, generationStartedAt: task.startedAt,
-            generationCount: task.count, generationCompleted: task.completed },
+            generationCount: task.count, generationCompleted: task.completed, generationFailure: task.failure, onGenerationCheck: task.onCheck },
           selectable: false,
           draggable: true,
         },
@@ -3513,6 +3526,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         data: {
           ...(n.data as Record<string, unknown>),
           inChain: hasSel && chain.has(n.id),
+          inspectOriginal: n.id === selectedId && multiSel.length <= 1,
           lightCanvas,
       },
       className:
@@ -3553,6 +3567,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           progress: p.progress,
           fileInfo: p.fileInfo,
           generating: p.generating,
+          generationFailure: p.generationFailure,
+          onGenerationCheck: p.onGenerationCheck,
           generationStage: p.generationStage,
           generationStartedAt: p.generationStartedAt,
           generationSize: p.generationSize,
@@ -3729,6 +3745,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     nodes,
     edges,
     generationTasks,
+    locale,
+    multiSel,
     selectedId,
     selectedPendId,
     selectedTextId,
@@ -3764,7 +3782,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const nodesSig = useMemo(() => displayNodes
     .map(
       (n) =>
-        `${JSON.stringify([n.data.image,n.data.videoUrl,n.data.missingAsset,n.data.workflowPresentation,n.data.title,n.data.prompt,n.data.content])}:${JSON.stringify([n.data.generationStage, n.data.generationStartedAt, n.data.generationCount, n.data.generationCompleted, n.data.generationSize, n.data.generationKind])}:${JSON.stringify((n.data as {settings?:CanvasNodeSettings}).settings)}:${n.draggable}:${n.zIndex}:${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${
+        `${JSON.stringify([n.data.inspectOriginal,n.data.image,n.data.videoUrl,n.data.missingAsset,n.data.workflowPresentation,n.data.title,n.data.prompt,n.data.content])}:${JSON.stringify([n.data.generationFailure,n.data.generationStage, n.data.generationStartedAt, n.data.generationCount, n.data.generationCompleted, n.data.generationSize, n.data.generationKind])}:${JSON.stringify((n.data as {settings?:CanvasNodeSettings}).settings)}:${n.draggable}:${n.zIndex}:${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${
           (n.data as { pending?: boolean }).pending ? 1 : 0
         }:${(n.data as { inChain?: boolean }).inChain ? 1 : 0}:${n.className ?? ""}:${
           Math.round((n.data as { progress?: number }).progress ?? -1)
@@ -3911,7 +3929,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         ? 240
         : 218
       : 220;
-    const stackedSafeTop = overlaySafeArea.top + estimatedDockHeight + 70;
+    const stackedSafeTop = overlaySafeArea.top + estimatedDockHeight + 70 + (selectedVideo ? 38 : 0);
 
     let dx = 0;
     let dy = 0;
@@ -4111,25 +4129,19 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
   }
 
-  // 选中节点变化时:Fuser 式——新提示词框留空(只读管理员视图才显示该图原提示词供查看);
-  // 比例/风格沿用该节点作默认。「基于上一级重做」会用 carryPromptRef 把上一版提示词带过来。
+  // Prompt/ratio are synchronously node-scoped drafts. Only ephemeral dock UI
+  // resets on selection; never overwrite unsent text with artwork metadata.
   useEffect(() => {
-    const carried = carryPromptRef.current;
-    carryPromptRef.current = null;
-    // 预填该节点自己的提示词(可编辑),便于"看着配方改一改再生成";有 carry 的优先用 carry
-    setEditPrompt(carried ?? selected?.prompt ?? "");
-    const nextRatio = normalizeCanvasRatio(selected?.ratio);
-    setGenRatio(nextRatio); // 默认自适应
-
     setGenStyle(selected?.style || GENERATION_STYLES[0]);
-    setGenerationMode("standard");
+    // Blank-node creation/workflows set their mode explicitly in the event.
+    if (selected?.id) setGenerationMode("standard");
     setRatioMenuOpen(false);
     setGenError(null);
     setExtraFiles([]);
     setExtraPreviews([]);
-    setHiddenRefIds([]); // 切换节点:恢复显示自动引用图
+    setHiddenRefIds([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected?.id]);
+  }, [imageDraft.key, selected?.id, selectedPendId, activeKey, readOnly]);
 
   useEffect(() => { setGenError(null); }, [selectedPendId]);
 
@@ -4287,6 +4299,65 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     try { moveCanvasReceipt(sessionStorage, user.email, active?.key || "workspace", operationKey || task?.operationKey || `pend:${id}`, position); } catch { /* best effort, no resubmission */ }
   }
 
+  async function checkGenerationReceipt(context: {
+    jobId: string; taskId?: string; pendId?: string; sourceId?: string; operationKey: string;
+    position: { x: number; y: number }; account: string; project: string | null;
+  }) {
+    const current = () => context.account === canvasAccountRef.current && context.project === (activeProjectRef.current?.key || null);
+    if (!current() || generationChecksRef.current.has(context.jobId)) return;
+    generationChecksRef.current.add(context.jobId);
+    const show = (failure: GenerationFailure) => {
+      if (!current()) return;
+      if (context.pendId ? selectedPendIdRef.current === context.pendId : selectedIdRef.current === context.sourceId) setGenError(generationFailureMessage(failure));
+      setGenerationTasks(tasks => tasks.map(task => task.id === context.taskId ? { ...task, failure } : task));
+      setPendNodes(nodes => nodes.map(node => node.id === context.pendId ? { ...node, generationFailure: failure, generating: generationFailureBlocks(failure) } : node));
+      if (!generationFailureBlocks(failure)) generationOperationRef.current.delete(context.operationKey);
+    };
+    try {
+      const response = await fetch(`/api/generate-image?job=${encodeURIComponent(context.jobId)}`, { cache: "no-store", headers: await authHeader() });
+      const result = await readJsonSafe(response);
+      if (!current()) return;
+      if (!response.ok) throw new Error(result.error || "任务状态暂未读取到，请稍后检查");
+      if (result.user) applyServerUser(result.user);
+      if (result.status === "done" || result.status === "error" && result.images?.some((image: {id?: string;url?: string}) => image.id && image.url)) {
+        const images = (result.images || []).filter((image: {id?: string;url?: string}) => image.id && image.url) as GeneratedResult[];
+        const live = context.taskId ? generationTaskPosRef.current[context.taskId] : context.pendId ? rfRef.current?.getNode(context.pendId)?.position : undefined;
+        const position = live || context.position;
+        let y = position.y;
+        for (const image of images) {
+          if (!current()) return;
+          const save = await privateFetchRaw("/api/artworks/position", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: image.id, x: Math.round(position.x), y: Math.round(y) }) });
+          await expectJsonOk(save, t("canvas.saveFailed")); y += (image.height || 110) + NODE_LABEL_H + 24;
+        }
+        if (!current()) return;
+        const ids = images.map(image => image.id), fresh = await mergeWorks(ids);
+        if (!current()) return;
+        assertGenerationResultsPresent(ids, fresh);
+        if (context.pendId && !context.project && selectedPendIdRef.current === context.pendId) pendingNodeRef.current = ids[0];
+        const newlyLoaded = ids.filter(id => !worksRef.current?.some(art => art.id === id));
+        if (newlyLoaded.length) pushAddUndoMany(newlyLoaded, fresh);
+        if (result.status === "error") {
+          const uncertain = result.reviewRequired || result.operationStatus === "needs_attention";
+          show({ kind: uncertain ? "uncertain" : "failed", message: result.error || "部分结果已保留，请检查本次任务", jobId: context.jobId });
+          if (!uncertain) completeCanvasReceipt(context.jobId);
+          return;
+        }
+        completeCanvasReceipt(context.jobId);
+        if (context.pendId ? selectedPendIdRef.current === context.pendId : selectedIdRef.current === context.sourceId) setGenError(null);
+        setGenerationTasks(tasks => tasks.filter(task => task.id !== context.taskId));
+        setPendNodes(nodes => nodes.filter(node => node.id !== context.pendId));
+        setSelectedPendId(id => id === context.pendId ? null : id);
+        generationOperationRef.current.delete(context.operationKey);
+        if (context.taskId) { delete generationTaskPosRef.current[context.taskId]; delete generationTaskSizeRef.current[context.taskId]; }
+      } else if (result.status === "error" && !result.reviewRequired && result.operationStatus !== "needs_attention") {
+        show({ kind: "failed", message: result.error || "本次生成未完成，提示词已保留", jobId: context.jobId });
+        completeCanvasReceipt(context.jobId);
+      } else show({ kind: "uncertain", message: result.error || "原任务仍在处理中，请稍后再次检查", jobId: context.jobId });
+    } catch (error) {
+      show({ kind: "uncertain", message: error instanceof Error ? error.message : "任务状态暂未读取到，请稍后检查", jobId: context.jobId });
+    } finally { generationChecksRef.current.delete(context.jobId); }
+  }
+
   async function runGen(
     source: Artwork,
     prompt: string,
@@ -4333,9 +4404,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             (opts?.taskOffset ?? siblingTaskCount) * (previewSize.height + NODE_LABEL_H + 24),
         }
       : { x: 0, y: 0 };
-    const taskPosition = reserveGenerationPosition(taskId, preferredPosition, previewSize);
+    const replacedFailures = generationTasks.filter(task => task.operationKey === operationKey && task.failure && !generationFailureBlocks(task.failure));
+    const lastFailure = replacedFailures[replacedFailures.length - 1];
+    const retryPosition = lastFailure ? generationTaskPosRef.current[lastFailure.id] || lastFailure.position : undefined;
+    for (const failed of replacedFailures) { delete generationTaskPosRef.current[failed.id]; delete generationTaskSizeRef.current[failed.id]; }
+    const taskPosition = reserveGenerationPosition(taskId, preferredPosition, previewSize, retryPosition);
     setGenerationTasks((current) => [
-      ...current,
+      ...current.filter(task => !(task.operationKey === operationKey && task.failure && !generationFailureBlocks(task.failure))),
       {
         id: taskId,
         operationKey,
@@ -4346,6 +4421,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       },
     ]);
     setGenError(null);
+    let attempted = false, terminal = false, jobId: string | undefined, resultIds: string[] = [];
+    let failure: GenerationFailure | undefined;
+    const requestAccount = canvasAccountRef.current, requestProject = activeProjectRef.current?.key || null;
     try {
       // 下载一张图为 File(底图/参考图统一走 /api/download 代理)
       const dlFile = async (url: string, name: string): Promise<File> => {
@@ -4394,14 +4472,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       refFiles.forEach((f) => fd.append("image", f));
       (opts?.extra ?? []).forEach((f) => fd.append("image", f));
       if (opts?.isCurrent && !opts.isCurrent()) return [];
+      attempted = true;
       const startRes = await privateFetch("/api/generate-image", {
         method: "POST",
         headers: await authHeader(),
         body: fd, isCurrent: opts?.isCurrent,
       });
       const start = await readJsonSafe(startRes);
-      if (!startRes.ok) throw new Error(start.error || t("canvas.genFail"));
-      const jobId: string | undefined = start.jobId;
+      if (!startRes.ok) throw new ImagegenHttpError(start.error || t("canvas.genFail"), startRes.status, start.accepted === false || [400,401,403,409,413,422,429].includes(startRes.status) ? false : undefined);
+      jobId = start.jobId;
       if (!jobId) throw new Error(t("canvas.genFail"));
       if (opts?.isCurrent && !opts.isCurrent()) return [];
       rememberGenerationDrag(taskId, generationTaskPosRef.current[taskId] ?? taskPosition, true, operationKey);
@@ -4429,12 +4508,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             )
             .map((image) => ({ id: image.id, url: image.url, width: image.width, height: image.height }));
           newIds = generated.map((image) => image.id);
+          resultIds = newIds;
           if (!newIds.length) throw new Error(t("canvas.genFail"));
           if (pj.user) applyServerUser(pj.user); // 即时回写余额积分
           break;
         }
         if (pj.status === "error") {
-          if(pj.operationStatus==="failed"||pj.operationStatus==="cancelled")completeCanvasReceipt(jobId);
+          terminal = !pj.reviewRequired && pj.operationStatus !== "needs_attention";
+          resultIds = (pj.images || []).filter((image: { id?: string; url?: string }) => image.id && image.url).map((image: { id: string }) => image.id);
+          if((pj.operationStatus==="failed"||pj.operationStatus==="cancelled")&&!resultIds.length)completeCanvasReceipt(jobId);
           throw new Error(pj.error || t("canvas.genFail"));
         }
       }
@@ -4465,6 +4547,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if (opts?.isCurrent && !opts.isCurrent()) return [];
       const fresh = await mergeWorks(newIds); // 补这次新生成的几张(已带上面保存的坐标),不整表重拉
       if (opts?.isCurrent && !opts.isCurrent()) return [];
+      assertGenerationResultsPresent(newIds, fresh);
       pushAddUndoMany(newIds, fresh); // 面板生成/三视图/改比例/重做/快捷动作可撤销
       completeCanvasReceipt(jobId);
       if (newIds.length > 0 && newIds.length < requestedCount) {
@@ -4474,18 +4557,23 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       return generated;
     } catch (e) {
       if (opts?.isCurrent && !opts.isCurrent()) return [];
-      const message =
-        e instanceof Error && e.message ? e.message : t("canvas.genFail");
+      if (requestAccount !== canvasAccountRef.current || requestProject !== (activeProjectRef.current?.key || null)) return [];
+      failure = classifyGenerationFailure(e, { attempted, jobId, terminal, hasResults: resultIds.length > 0 });
+      const message = generationFailureMessage(failure);
       if (selectedIdRef.current === source.id) setGenError(message);
       else flashTip(`${source.title}：${message}`);
+      const retainedFailure = failure;
+      setGenerationTasks(tasks => tasks.map(task => task.id === taskId ? { ...task, failure: retainedFailure,
+        onCheck: jobId ? () => checkGenerationReceipt({ jobId: jobId!, taskId, sourceId: source.id, operationKey, position: taskPosition, account: requestAccount, project: requestProject }) : undefined } : task));
       return [];
     } finally {
-      generationOperationRef.current.delete(operationKey);
-      delete generationTaskPosRef.current[taskId];
-      delete generationTaskSizeRef.current[taskId];
-      setGenerationTasks((current) =>
-        current.filter((task) => task.id !== taskId)
-      );
+      if (!generationFailureBlocks(failure)) generationOperationRef.current.delete(operationKey);
+      // A failure is a visible outcome, not permission to erase the node.
+      if (!failure) {
+        delete generationTaskPosRef.current[taskId];
+        delete generationTaskSizeRef.current[taskId];
+        setGenerationTasks((current) => current.filter((task) => task.id !== taskId));
+      }
     }
   }
 
@@ -4869,11 +4957,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const inputs=videoModeRoles(choices.map(choice=>({id:`ref-${browserRandomUUID()}`,nodeId:choice.nodeId,kind:choice.kind,role:choice.kind==="text"?"context" as const:choice.kind==="video"?"source_video" as const:choice.kind==="audio"?"source_audio" as const:"reference" as const,value:choice.value})),config.mode);
       const ratio=config.aspectRatio?.match(/^([1-9]\d*):([1-9]\d*)$/),aspect=ratio?Number(ratio[1])/Number(ratio[2]):16/9;
       const created=await videoNodesStore.save(id,{projectKey:project,title:"视频",x:point.x,y:point.y,width:384,height:Math.max(160,Math.min(680,Math.round(384/aspect))),config,inputs});pushUndo({kind:"video-add",records:[created]});
-      setCreatingNew(false);setActiveKey(project);setBrowsing(false);setSelectedId(id);setSelectedTextId(null);setSelectedPendId(null);setMultiSel([]);setVideoEditId(id);
+      setCreatingNew(false);setActiveKey(project);setBrowsing(false);setSelectedId(id);setSelectedTextId(null);setSelectedPendId(null);setMultiSel([]);setVideoDockAdvancedId(null);
     }catch(error){flashTip(error instanceof Error?error.message:"新增视频节点失败");}
   }
   function openVideoEditor(id:string){
-    setSelectedId(id);setSelectedPendId(null);setSelectedTextId(null);setMultiSel([]);setPropertiesOpen(false);setVideoEditId(id);
+    setSelectedId(id);setSelectedPendId(null);setSelectedTextId(null);setMultiSel([]);setPropertiesOpen(false);setVideoDockAdvancedId(null);
   }
   async function patchVideoNode(id:string,patch:VideoPatchFields&{expectedRevision?:number}){
     await videoNodesStore.flush();const before=videoNodesStore.getNode(id);if(!before)throw new Error("视频节点不存在");
@@ -6414,7 +6502,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     } else {
       // 「图片」:落点建好节点后,把光标落进提示词框,写"改什么"→点生成出衍生(img2img)
       const textSource = textNodes.find((node) => node.id === sourceId);
-      setEditPrompt(textSource?.content || textSource?.prompt || "");
+      imageDraft.seed(pend.id, { prompt: textSource?.content || textSource?.prompt || "" });
       wantFocusPendPrompt.current = true;
     }
   }
@@ -6949,6 +7037,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       inputs: linked && parentId ? [parentId] : [],
     };
     setPendNodes((prev) => [...prev, pend]);
+    setGenerationMode("standard");
     // 选中新空白节点 → 自动出生成 dock(图3:加节点即可直接写提示词生成)
     setSelectedId(null);
     setSelectedTextId(null);
@@ -6988,7 +7077,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     clearCanvasSelection(true);
     setSelectedId(null);
     setSelectedPendId(id);
-    setEditPrompt("");
+    imageDraft.seed(id, { prompt: "", ratio: "auto" });
     setGenerationMode("standard");
     setGenCount(1);
     wantFocusPendPrompt.current = true;
@@ -7692,7 +7781,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (readOnly || !user) return false;
     // 可传入指定的空白节点(拉线「生成衍生图」用,避免依赖尚未刷新的 state)
     const pend = opts?.pend ?? pendNodes.find((p) => p.id === selectedPendId);
-    if (!pend || pend.generating || pend.uploading || pend.needsAttention) return false;
+    if (!pend || pend.generating || pend.uploading || pend.needsAttention || generationFailureBlocks(pend.generationFailure)) return false;
     const text = (opts?.prompt ?? editPrompt).trim();
     const inputArts = pend.inputs
       .map((id) => active?.members.find((m) => m.id === id))
@@ -7738,9 +7827,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const livePend = rfRef.current?.getNode(pend.id)?.position ?? pendNodesRef.current.find(node => node.id === pend.id) ?? pend;
     const generationPosition = generationPositionForTask(livePend, livePend, generationSize, []);
     setPendNodes((prev) =>
-      prev.map((p) => (p.id === pend.id ? { ...p, generating: true, generationStage: "preparing", generationStartedAt: Date.now(),
+      prev.map((p) => (p.id === pend.id ? { ...p, generationFailure: undefined, onGenerationCheck: undefined, generating: true, generationStage: "preparing", generationStartedAt: Date.now(),
         ...generationPosition, generationSize, generationCount: normalizeCanvasCount(genCount) } : p))
     );
+    let attempted = false, terminal = false, jobId: string | undefined, resultIds: string[] = [];
+    let failure: GenerationFailure | undefined;
+    const requestAccount = canvasAccountRef.current, requestProject = activeProjectRef.current?.key || null;
     try {
       const fd = new FormData();
       fd.append("prompt", promptToUse);
@@ -7775,17 +7867,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             "image",
             new File([blob], "ref.png", { type: blob.type || "image/png" })
           );
-        } catch { /* Existing optional reference behavior is retained. */ }
+        } catch { throw new ImagegenHttpError("参考图片加载失败，请重新选择或上传后再试", 0, false); }
       }
       if (opts?.isCurrent && !opts.isCurrent()) return false;
+      attempted = true;
       const startRes = await privateFetch("/api/generate-image", {
         method: "POST",
         headers: await authHeader(),
         body: fd, isCurrent: opts?.isCurrent,
       });
       const start = await readJsonSafe(startRes);
-      if (!startRes.ok) throw new Error(start.error || t("canvas.genFail"));
-      const jobId: string | undefined = start.jobId;
+      if (!startRes.ok) throw new ImagegenHttpError(start.error || t("canvas.genFail"), startRes.status, start.accepted === false || [400,401,403,409,413,422,429].includes(startRes.status) ? false : undefined);
+      jobId = start.jobId;
       if (!jobId) throw new Error(t("canvas.genFail"));
       if (opts?.isCurrent && !opts.isCurrent()) return false;
       rememberGenerationDrag(pend.id, rfRef.current?.getNode(pend.id)?.position ?? generationPosition, true);
@@ -7810,12 +7903,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             .filter((image): image is { id: string; width?: number; height?: number } => !!image.id)
             .map((image) => ({ id: image.id, width: image.width, height: image.height }));
           newIds = generatedSizes.map((image) => image.id);
+          resultIds = newIds;
           if (!newIds.length) throw new Error(t("canvas.genFail"));
           if (pj.user) applyServerUser(pj.user); // 即时回写余额积分
           break;
         }
         if (pj.status === "error") {
-          if(pj.operationStatus==="failed"||pj.operationStatus==="cancelled")completeCanvasReceipt(jobId);
+          terminal = !pj.reviewRequired && pj.operationStatus !== "needs_attention";
+          resultIds = (pj.images || []).filter((image: { id?: string; url?: string }) => image.id && image.url).map((image: { id: string }) => image.id);
+          if((pj.operationStatus==="failed"||pj.operationStatus==="cancelled")&&!resultIds.length)completeCanvasReceipt(jobId);
           throw new Error(pj.error || t("canvas.genFail"));
         }
       }
@@ -7848,6 +7944,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if (opts?.isCurrent && !opts.isCurrent()) return false;
       const fresh = await mergeWorks(newIds);
       if (opts?.isCurrent && !opts.isCurrent()) return false;
+      assertGenerationResultsPresent(newIds, fresh);
       setPendNodes((prev) => prev.filter((p) => p.id !== pend.id));
       completeCanvasReceipt(jobId);
       setSelectedPendId((current) => (current === pend.id ? null : current));
@@ -7871,15 +7968,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       return true;
     } catch (e) {
       if (opts?.isCurrent && !opts.isCurrent()) return false;
-      const message = e instanceof Error && e.message ? e.message : t("canvas.genFail");
+      if (requestAccount !== canvasAccountRef.current || requestProject !== (activeProjectRef.current?.key || null)) return false;
+      failure = classifyGenerationFailure(e, { attempted, jobId, terminal, hasResults: resultIds.length > 0 });
+      const message = generationFailureMessage(failure);
       if (selectedPendIdRef.current === pend.id) setGenError(message);
       else flashTip(`${pend.label}：${message}`);
-      setPendNodes((prev) =>
-        prev.map((p) => (p.id === pend.id ? { ...p, generating: false } : p))
-      );
+      const retainedFailure = failure;
+      setPendNodes((prev) => prev.map((p) => p.id === pend.id ? { ...p, generating: generationFailureBlocks(retainedFailure), generationFailure: retainedFailure,
+        onGenerationCheck: jobId ? () => checkGenerationReceipt({ jobId: jobId!, pendId: pend.id, operationKey, position: generationPosition, account: requestAccount, project: requestProject }) : undefined } : p));
       return false;
     } finally {
-      generationOperationRef.current.delete(operationKey);
+      if (!generationFailureBlocks(failure)) generationOperationRef.current.delete(operationKey);
     }
   }
   // 占位节点里选了图片 → 带进度上传 → 完成后移除占位、刷新出真节点
@@ -8150,8 +8249,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       ratioMenuOpen ||
       nodeTypeMenu ||
       expandOpen ||
-      !!videoEditId ||
-      !!videoHistoryId ||
+        !!videoHistoryId ||
       !!videoMedia ||
       spawnMenu ||
       ctxMenu ||
@@ -10998,13 +11096,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             )}
 
           {selectedVideo&&multiSel.length<=1&&!propertiesOpen&&canFeature("video")&&<VideoSettingsDialog
-            key={`${user?.email}:${targetEmail}:${activeKey}:${selectedVideo.id}`} node={selectedVideo} presentation={videoEditId===selectedVideo.id?"dialog":"dock"}
-            dockRef={panelRef} dockStyle={dockStyle??{left:12,bottom:12,maxHeight:"60%"}} advanced={videoDockAdvancedId===selectedVideo.id}
+            key={`${user?.email}:${targetEmail}:${activeKey}:${selectedVideo.id}`} node={selectedVideo} presentation="dock"
+            dockRef={panelRef} dockStyle={dockStyle??{left:12,bottom:12,maxHeight:"60%"}} draftScope={JSON.stringify([user?.email,targetEmail,activeKey])} advanced={videoDockAdvancedId===selectedVideo.id} onCloseAdvanced={()=>setVideoDockAdvancedId(null)}
             task={videoTaskStore.tasks.find(task=>task.id===selectedVideo.lastTaskId)}
             generationBlocked={!!selectedVideo.lastTaskId&&!videoTaskStore.tasks.some(task=>task.id===selectedVideo.lastTaskId)}
             onCancel={()=>{if(selectedVideo.lastTaskId)void videoTaskStore.cancel(selectedVideo.lastTaskId).catch(error=>flashTip(error.message));}}
             email={targetEmail||user?.email} models={videoCatalog} catalogLoading={videoModelCatalog.loading} catalogError={videoModelCatalog.error} onRetryCatalog={videoModelCatalog.refresh}
-            choices={videoInputChoices} light={lightCanvas} readOnly={readOnly||!nodeSettingsReady||isNodeLocked(selectedVideo.id)} onClose={()=>setVideoEditId(null)}
+            choices={videoInputChoices} light={lightCanvas} readOnly={readOnly||!nodeSettingsReady||isNodeLocked(selectedVideo.id)} onClose={()=>{setVideoDockAdvancedId(null);setSelectedId(null);}}
             onSave={draft=>saveVideoDraft(selectedVideo.id,draft)} onGenerate={(draft,quote,onPersisted)=>generateVideoDraft(selectedVideo.id,draft,quote,onPersisted)}
             onImport={async files=>{try{const choices=await videoAssetStore.upload(files,selectedVideo.projectKey);await mergeWorks(choices.map(choice=>choice.nodeId));return choices;}catch(cause){if(cause instanceof VideoAssetImportError&&cause.choices.length)await mergeWorks(cause.choices.map(choice=>choice.nodeId));throw cause;}}}
             onLoadMoreAssets={videoAssetStore.loadMore} canLoadMoreAssets={!!videoAssetStore.nextCursor}/>}
@@ -11014,66 +11112,16 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             readOnly={readOnly||!nodeSettingsReady||isNodeLocked(selected.id)} canGenerate={canFeature("video")}
             onProcess={action=>extractVideoToCanvas(selected.id,action)} onContinue={()=>void openVideoNodeFromSelection()}/>}
           {canFeature("generate") && selected && !selected.videoUrl && selectedBatchArts.length <= 1 && !propertiesOpen && (
-            <div
+            <CanvasComposerShell
               data-testid="image-node-dock"
               key={`dock-${selected.id}`}
               ref={panelRef}
               style={dockStyle ?? { left: 12, bottom: 12, maxHeight: "60%" }}
-              className="canvas-ui-surface canvas-dock-entry absolute z-10 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border"
-            >
+
+             kind="image" heading={selected.title || L("图片生成", "Image generation")} onDismiss={() => setSelectedId(null)} closeLabel={L("关闭创作栏", "Close composer")}>
               {/* dbody:风格/标记/聚焦 chips + 引用图 + 提示词(对齐原型 .cz-dock .dbody) */}
-              <div className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
+              <div data-composer-body="true" className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
                 <div className="mb-3 flex flex-wrap items-center gap-2">
-                  {!readOnly && (
-                    <>
-                      <DarkSelect
-                        dir="up"
-                        light={lightCanvas}
-                        value={genStyle}
-                        options={GENERATION_STYLES.map((s) => ({
-                          value: s,
-                          label: s,
-                        }))}
-                        onPick={(v) => setGenStyle(v)}
-                        triggerClass="canvas-ui-control flex cursor-pointer items-center gap-1.5 rounded-[10px] border px-2.5 py-2 text-[12.5px] transition-colors"
-                        trigger={
-                          <>
-                            <Box aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-                            <span className="max-w-[88px] truncate">
-                              {genStyle}
-                            </span>
-                          </>
-                        }
-                      />
-                      <button
-                        type="button"
-                        onClick={() => void toggleNodeMark()}
-                        aria-pressed={!!selected.marked}
-                        className={cn(
-                          "flex items-center gap-1.5 rounded-[10px] border px-2.5 py-2 text-[12.5px] transition-colors",
-                          selected.marked
-                            ? "border-amber-400/60 bg-amber-400/10 text-amber-200"
-                            : "canvas-ui-control"
-                        )}
-                      >
-                        <MapPin
-                          className={cn(
-                            "h-3.5 w-3.5",
-                            selected.marked && "fill-current"
-                          )}
-                        />
-                        {t(selected.marked ? "canvas.dockUnmark" : "canvas.dockMark")}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setFocusId(selected.id)}
-                        className="canvas-ui-control flex items-center gap-1.5 rounded-[10px] border px-2.5 py-2 text-[12.5px] transition-colors"
-                      >
-                        <Focus aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-                        {t("canvas.dockFocus")}
-                      </button>
-                    </>
-                  )}
                   {/* 引用图:上一级父节点的图(本节点由此生成);多输入则全部显示。
                       悬停右上角"×"可移除(改用自己上传的参考图) */}
                   {visibleDockRefs.map((ref) => (
@@ -11157,20 +11205,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       )}
                     </>
                   )}
-                  <span className="canvas-ui-muted ml-1 min-w-0 flex-1 truncate text-[12px]">
-                    {fmt(t("canvas.dockRef"), {
-                      n: visibleDockRefs.length + extraFiles.length,
-                      name: selected.title,
-                    })}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedId(null)}
-                    aria-label={t("canvas.close")}
-                    className="canvas-ui-action flex h-6 w-6 flex-none items-center justify-center rounded-full transition-colors"
-                  >
-                    <X className="h-4 w-4" />
-                </button>
+
+
                 </div>
 
                 {/* 提示词:短内容至少约 5 行，长内容自适应增长，超过上限后内部滚动。 */}
@@ -11192,11 +11228,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
               {/* dbar:模型 / 比例·清晰度 / 数量 + 积分 + 发送(对齐原型 .dbar) */}
               {!readOnly && (
-                <div className="canvas-ui-divider flex flex-none flex-wrap items-center gap-2 border-t bg-transparent px-3.5 py-2.5">
+                <CanvasComposerFooter controls={<>
                   {modelControl(false)}
                   <DarkSelect
                     dir="up"
-                    light={lightCanvas}
+                    light={true}
                     value={generationMode}
                     options={[
                       { value: "standard", label: t("canvas.modeStandard") },
@@ -11229,7 +11265,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     <ImageCountControl
                       value={genCount}
                       onChange={setGenCount}
-                      light={lightCanvas}
+                      light={true}
                     />
                   ) : (
                     <span className="canvas-ui-control inline-flex h-8 items-center gap-1.5 rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold">
@@ -11239,8 +11275,52 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         : t("canvas.viewSheetCount")}
                     </span>
                   )}
-                  <span className="flex-1" />
-                  <button
+                  <CanvasComposerOptions label={L("更多图片参数", "More image settings")}><DarkSelect
+                        dir="up"
+                        light={true}
+                        value={genStyle}
+                        options={GENERATION_STYLES.map((s) => ({
+                          value: s,
+                          label: s,
+                        }))}
+                        onPick={(v) => setGenStyle(v)}
+                        triggerClass="canvas-ui-control flex cursor-pointer items-center gap-1.5 rounded-[10px] border px-2.5 py-2 text-[12.5px] transition-colors"
+                        trigger={
+                          <>
+                            <Box aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                            <span className="max-w-[88px] truncate">
+                              {genStyle}
+                            </span>
+                          </>
+                        }
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void toggleNodeMark()}
+                        aria-pressed={!!selected.marked}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-[10px] border px-2.5 py-2 text-[12.5px] transition-colors",
+                          selected.marked
+                            ? "border-amber-400/60 bg-amber-400/10 text-amber-200"
+                            : "canvas-ui-control"
+                        )}
+                      >
+                        <MapPin
+                          className={cn(
+                            "h-3.5 w-3.5",
+                            selected.marked && "fill-current"
+                          )}
+                        />
+                        {t(selected.marked ? "canvas.dockUnmark" : "canvas.dockMark")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFocusId(selected.id)}
+                        className="canvas-ui-control flex items-center gap-1.5 rounded-[10px] border px-2.5 py-2 text-[12.5px] transition-colors"
+                      >
+                        <Focus aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                        {t("canvas.dockFocus")}
+                      </button><button
                     type="button"
                     onClick={() => void retrySelected()}
                     disabled={selectedGenerating}
@@ -11249,7 +11329,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
                     {t("canvas.retryImage")}
-                  </button>
+                  </button></CanvasComposerOptions> </>} actions={<>
+
                   <button
                     type="button"
                     onClick={generateChild}
@@ -11264,21 +11345,21 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       <ArrowUp aria-hidden="true" className="h-4 w-4" />
                     )}
                   </button>
-                </div>
+                 </>}/>
               )}
-            </div>
+            </CanvasComposerShell>
           )}
 
           {/* 空白节点生成 dock(文生图 / 合并多输入):选中空白节点时出现(图3 旁支节点) */}
           {canFeature("generate") && selectedPend && !readOnly && (
-            <div
+            <CanvasComposerShell
               data-testid="pending-node-dock"
               ref={panelRef}
               key={`pdock-${selectedPend.id}`}
               style={dockStyle ?? { left: 12, bottom: 12 }}
-              className="canvas-ui-surface canvas-dock-entry absolute z-10 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border"
-            >
-              <div className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
+
+             kind="image" heading={L("图片生成", "Image generation")} onDismiss={() => setSelectedPendId(null)} closeLabel={L("关闭创作栏", "Close composer")}>
+              <div data-composer-body="true" className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   {pendInputArts.length > 0 ? (
                     pendInputArts.map((a) => (
@@ -11297,30 +11378,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         />
                       </button>
                     ))
-                  ) : (
-                    <span className="canvas-ui-muted flex h-[46px] items-center gap-1.5 rounded-[9px] border border-dashed border-[var(--canvas-ui-border)] px-3 text-[12px]">
-                      <Type aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-                      {t("canvas.pendText2img")}
-                    </span>
-                  )}
-                  <span className="canvas-ui-muted ml-1 min-w-0 flex-1 truncate text-[12px]">
-                    {generationMode === "detail" && pendInputArts.length > 0
-                      ? fmt(t("canvas.pendDetail"), {
-                          refs: pendInputArts.length,
-                          count: genCount,
-                        })
-                      : pendInputArts.length > 0
-                        ? fmt(t("canvas.pendMerge"), { n: pendInputArts.length })
-                        : t("canvas.pendNewImage")}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPendId(null)}
-                    aria-label={t("canvas.close")}
-                    className="canvas-ui-action flex h-6 w-6 flex-none items-center justify-center rounded-full transition-colors"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
+                  ) : null}
+
+
                 </div>
                 <Textarea
                   ref={pendPromptRef}
@@ -11336,11 +11396,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   </p>
                 )}
               </div>
-              <div className="canvas-ui-divider flex flex-none flex-wrap items-center gap-2 border-t bg-transparent px-3.5 py-2.5">
+              <CanvasComposerFooter controls={<>
                 {modelControl(false)}
                 <DarkSelect
                   dir="up"
-                  light={lightCanvas}
+                  light={true}
                   value={generationMode === "detail" ? "detail" : "standard"}
                   options={[
                     { value: "standard", label: t("canvas.modeStandard") },
@@ -11366,9 +11426,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 <ImageCountControl
                   value={genCount}
                   onChange={setGenCount}
-                  light={lightCanvas}
+                  light={true}
                 />
-                <span className="flex-1" />
+                 </>} actions={<>
                 <button
                   type="button"
                   onClick={() => void generatePend()}
@@ -11383,13 +11443,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     <ArrowUp aria-hidden="true" className="h-4 w-4" />
                   )}
                 </button>
-              </div>
-            </div>
+               </>}/>
+            </CanvasComposerShell>
           )}
 
           {/* 文字生成节点：布局与图片节点一致，配色跟随画布黑/白主题。 */}
           {selectedText && selectedTextBatchNodes.length <= 1 && !readOnly && !propertiesOpen && !isNodeLocked(selectedText.id) && (
-            <div
+            <CanvasComposerShell
               ref={textComposerDockRef}
               key={`tdock-${selectedText.id}`}
               data-testid="text-node-dock"
@@ -11410,16 +11470,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       width: canvasSize.width ? Math.max(1, Math.min(820, canvasSize.width - 24)) : 820,
                     }
               }
-              className={cn(
-                "canvas-dock-entry absolute z-20 flex min-h-[218px] max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border shadow-2xl",
-                textComposerExpanded ? "resize-none" : "resize-y",
-                lightCanvas
-                  ? "border-[#dfe4ea] bg-white text-[#252933] shadow-[0_18px_45px_rgba(7,12,24,0.18)]"
-                  : "border-[#40444f] bg-[#191b21] text-[#e7e9ee]"
-              )}
-            >
+              className={textComposerExpanded ? "resize-none" : "resize-y"}
+             kind="text" heading={selectedText.title || L("文字生成", "Text generation")} onDismiss={() => setSelectedTextId(null)} expanded={textComposerExpanded} onToggleExpand={() => { if (textComposerDockRef.current) textComposerDockRef.current.style.height = ""; setTextComposerManuallySized(false); setTextComposerExpanded(value => !value); }} expandLabel={L("展开文字编辑窗口", "Expand text editor")} collapseLabel={L("收起文字编辑窗口", "Collapse text editor")} closeLabel={L("关闭创作栏", "Close composer")}>
               <div
-                ref={textComposerBodyRef}
+                ref={textComposerBodyRef} data-composer-body="true"
                 className="flex min-h-0 flex-1 items-stretch gap-2 overflow-hidden px-3.5 pb-2 pt-3"
               >
                 <button
@@ -11474,39 +11528,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       : "text-[#e7e9ee] placeholder:text-[#818895]"
                   )}
                 />
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (textComposerDockRef.current) {
-                      textComposerDockRef.current.style.height = "";
-                    }
-                    setTextComposerManuallySized(false);
-                    setTextComposerExpanded((expanded) => !expanded);
-                  }}
-                  aria-label={textComposerExpanded ? "收起文字编辑窗口" : "展开文字编辑窗口"}
-                  title={textComposerExpanded ? "收起编辑窗口" : "展开编辑窗口"}
-                  className={cn(
-                    "mt-0.5 flex h-7 w-7 flex-none items-center justify-center transition-colors",
-                    lightCanvas
-                      ? "text-[#8a93a0] hover:bg-[#f1f3f5] hover:text-[#303641]"
-                      : "text-[#9aa1ae] hover:bg-[#1f2229] hover:text-white"
-                  )}
-                >
-                  {textComposerExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedTextId(null)}
-                  aria-label={t("canvas.close")}
-                  className={cn(
-                    "flex h-7 w-7 flex-none items-center justify-center rounded-full transition-colors",
-                    lightCanvas
-                      ? "text-[#8a93a0] hover:bg-[#f1f3f5] hover:text-[#303641]"
-                      : "text-[#9aa1ae] hover:bg-[#1f2229] hover:text-white"
-                  )}
-                >
-                  <X className="h-4 w-4" />
-                </button>
+
+
               </div>
               {/* @提及选图:输入 @ 触发,点击=插入 @图片名 并绑引用(等同连线) */}
               {mentionState && selectedText && (() => {
@@ -11665,15 +11688,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               {textError && (
                 <p className="px-12 pb-2 text-xs font-medium text-red-400">{textError}</p>
               )}
-              <div
-                data-testid="text-node-dock-footer"
-                className={cn(
-                  "flex min-h-12 flex-wrap items-center gap-2 border-t px-3.5 py-2.5",
-                  lightCanvas ? "border-[#edf0f3]" : "border-[#2a2d36]"
-                )}
-              >
-                <TextModelSelect feature="canvas.text-generate" compact dark={!lightCanvas} direction="up" />
-                <span className="flex-1" />
+              <CanvasComposerFooter testId="text-node-dock-footer" controls={<>
+                <TextModelSelect feature="canvas.text-generate" compact dark={false} direction="up" />
+
                 <button
                   type="button"
                   disabled={assistBusy}
@@ -11707,19 +11724,19 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   <ImageIcon className="h-3.5 w-3.5" />
                   {t("canvas.genImages")}
                 </button></FeatureVisible>
-                <span
+                 </>} actions={<> <span
                   className={cn(
                     "text-[11px] font-semibold",
                     lightCanvas ? "text-[#547886]" : "text-[#6bd7ec]"
                   )}
                 >
-                  ◆ {selectedTextRefs.length}/5
+                  {selectedTextRefs.length}/5
                 </span>
                 <button
                   type="button"
                   onClick={() => void generateTextNode()}
                   disabled={!textPrompt.trim() || selectedText.status === "generating"}
-                  title={t("canvas.textGenerate")}
+                  title={t("canvas.textGenerate")} aria-label={t("canvas.textGenerate")}
                   className={cn(
                     "flex h-10 w-10 items-center justify-center rounded-[11px] transition-opacity hover:opacity-90 disabled:opacity-45",
                     lightCanvas ? "bg-[#20242c] text-white" : "bg-white text-[#111]"
@@ -11728,11 +11745,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   {selectedText.status === "generating" ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <span className="text-base font-semibold">↑</span>
+                    <ArrowUp aria-hidden="true" className="h-4 w-4" />
                   )}
                 </button>
-              </div>
-            </div>
+               </>}/>
+            </CanvasComposerShell>
           )}
           {!browsing && !readOnly && canFeature("agent") && user && <CanvasAgentOrb key={`${user.email}:${activeKey || "workspace"}`} email={user.email}
             busy={assistantBusy} outcome={assistantOutcome} steps={assistantSteps} responding={assistantResponding} open={assistantVisible} companion={orbCompanion} onCue={orbCue}

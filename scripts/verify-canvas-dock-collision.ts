@@ -12,12 +12,13 @@ if (baseline) {
   assert.ok(dock.top + dock.height > toolbar.top);
   console.log("DOCK_BASELINE=PASS REPRODUCED=OVERLAP OVERLAP_PX=50");
 } else {
-  assert.ok(original.includes("separateCanvasDocks({"));
+  const layout = readFileSync("src/lib/canvas/dock-layout.ts", "utf8");
+  assert.ok(original.includes("separateCanvasDocks({") || layout.includes("separateCanvasDocks({"));
   assert.ok(original.includes("new ResizeObserver(measure)"));
   assert.ok(original.includes("[docksReady, canvasSize.width, canvasSize.height,"));
   assert.ok(original.includes("toolbarWidth: toolbar.offsetWidth"));
   assert.ok(original.includes("minHeight: Math.min(218, dockStyle?.maxHeight ?? 218)"));
-  assert.ok(original.includes("const maxHeight = Math.min(preferredHeight, aboveSpace)"));
+  assert.ok(original.includes("const maxHeight = Math.min(preferredHeight, aboveSpace)") || layout.includes("const maxHeight = Math.min(preferredHeight, aboveSpace)"));
   let cases = 0;
   for (const [safeTop,safeBottom] of [[64,356],[64,530],[64,684],[108,716],[64,916]]) {
     for (const top of [-200,64,140,300,438,600,1100]) {

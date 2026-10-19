@@ -1,4 +1,4 @@
-import {channelEditable} from "./channel-policy";
+import {channelEditable,channelProtocol} from "./channel-policy";
 import type { ModelConfig, ModelSnapshot, Modality } from "./types";
 import { ModelConfigError } from "./types";
 import { FEATURE_BINDINGS } from "./business";
@@ -35,7 +35,7 @@ export type ManagedModelRow = {
   scopeOptions: {id:string;label:string;selected:boolean;available:boolean;adminDefault:boolean;reason?:string}[];
   pricing?: {feature:string;label:string;unit:string;credits:number|null;estimated:boolean;override?:import("./credit-overrides").ManagedModelCreditPricing}[];
 };
-export type ManagedModelCandidate = { id: string; model: string; label: string; providerId: string; provider: string; modality: string; verified: boolean };
+export type ManagedModelCandidate = { id: string; model: string; label: string; providerId: string; provider: string; modality: string; verified: boolean; channelCompatible?: boolean };
 export type ManagedModelCreditGrid = {quality:string;resolution:string;credits:number|null;available:boolean;effectiveQuality:string;estimated:boolean}[];
 export type ModelManagementState = {
   version: number; managed: boolean; rows: ManagedModelRow[]; candidates: ManagedModelCandidate[];
@@ -45,7 +45,7 @@ export type ModelManagementState = {
 
 export function managedModelCandidates(config: ModelConfig): ManagedModelCandidate[] {
   return config.upstreamModels.filter(u => u.enabled && config.providers.some(p => p.id === u.providerId && p.enabled && p.credentialRef))
-    .map(u => ({ id: u.id, model: u.model, label: u.label, modality: u.modality, verified: u.capabilities.verified, providerId: u.providerId, provider: config.providers.find(p => p.id === u.providerId)!.name }));
+    .map(u => ({ id: u.id, model: u.model, label: u.label, modality: u.modality, verified: u.capabilities.verified, channelCompatible:channelProtocol(config.providers.find(p=>p.id===u.providerId)!.protocol,u.parameterMap), providerId: u.providerId, provider: config.providers.find(p => p.id === u.providerId)!.name }));
 }
 
 /** Receives the same public catalogs consumed by the frontend, after selection policy. */

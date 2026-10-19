@@ -1,0 +1,276 @@
+{
+  "schemaVersion": 1,
+  "providerId": "apib-image",
+  "protocol": "apimart-images",
+  "baseUrl": "https://api.apib.ai/v1",
+  "targetPublicId": "gpt-image-2",
+  "modelIds": [
+    "gpt-image-2.5-flare",
+    "gpt-image-2.5-sunburst"
+  ],
+  "source": {
+    "url": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.5/generation.md",
+    "checkedAt": "2026-10-19T02:45:41.315357+00:00",
+    "path": "docs/providers/evidence/apimart-gpt-image25-20261019.md",
+    "sha256": "be8e52e7a6e1409b1f6d5a0c84f85898f9ad07e7a0a832ecea798a5205e5231d",
+    "scope": "related APIMart documentation linked by APIB, not APIB paid runtime evidence"
+  },
+  "evidenceLines": {
+    "exactModels": [
+      157,
+      159
+    ],
+    "endpointAndAsync": [
+      20,
+      30,
+      340,
+      342
+    ],
+    "quality": [
+      181,
+      186
+    ],
+    "resolution": [
+      177,
+      179
+    ],
+    "ratiosAndPixels": [
+      165,
+      175,
+      259,
+      277
+    ],
+    "count": [
+      189,
+      191
+    ],
+    "format": [
+      193,
+      195
+    ]
+  },
+  "parameters": {
+    "qualityPolicy": {
+      "mode": "map",
+      "choices": [
+        {
+          "id": "low",
+          "label": "低",
+          "value": "low"
+        },
+        {
+          "id": "medium",
+          "label": "标准",
+          "value": "medium"
+        },
+        {
+          "id": "high",
+          "label": "高",
+          "value": "high"
+        },
+        {
+          "id": "xhigh",
+          "label": "超高",
+          "value": "xhigh"
+        },
+        {
+          "id": "max",
+          "label": "最高",
+          "value": "max"
+        }
+      ]
+    },
+    "resolutionPolicy": {
+      "mode": "map",
+      "field": "resolution",
+      "ratioField": "size",
+      "values": {
+        "1K": "1k"
+      }
+    },
+    "apimartImages": {
+      "schemaVersion": 1,
+      "maxOutputs": 1,
+      "supportsMask": false,
+      "ratios": [
+        "1:1",
+        "3:2",
+        "2:3",
+        "4:3",
+        "3:4",
+        "5:4",
+        "4:5",
+        "16:9",
+        "9:16",
+        "2:1",
+        "1:2",
+        "21:9"
+      ],
+      "outputDimensions": {
+        "1K:1:1": {
+          "width": 1024,
+          "height": 1024
+        },
+        "1K:3:2": {
+          "width": 1536,
+          "height": 1024
+        },
+        "1K:2:3": {
+          "width": 1024,
+          "height": 1536
+        },
+        "1K:4:3": {
+          "width": 1024,
+          "height": 768
+        },
+        "1K:3:4": {
+          "width": 768,
+          "height": 1024
+        },
+        "1K:5:4": {
+          "width": 1280,
+          "height": 1024
+        },
+        "1K:4:5": {
+          "width": 1024,
+          "height": 1280
+        },
+        "1K:16:9": {
+          "width": 1536,
+          "height": 864
+        },
+        "1K:9:16": {
+          "width": 864,
+          "height": 1536
+        },
+        "1K:2:1": {
+          "width": 2048,
+          "height": 1024
+        },
+        "1K:1:2": {
+          "width": 1024,
+          "height": 2048
+        },
+        "1K:21:9": {
+          "width": 2016,
+          "height": 864
+        }
+      }
+    }
+  },
+  "allowedOperation": "generate",
+  "qualityEvidence": "documented only; preserve verified=false",
+  "pausedPaidAcceptance": true,
+  "paidHealthProbes": false,
+  "notes": [
+    "Only 1K documented matrix is enabled initially; 2K/4K remain excluded despite published docs.",
+    "No edit/reference/mask/transparent/advanced native parameter enablement in this minimal batch.",
+    "No procurement prices are written. Account actual prices remain unknown. Existing customer pricing is preserved.",
+    "Existing routing mode/priorities/weights remain exact. New sources use max existing priority + 1 and weight 1.",
+    "Source observations retain all 15 ratios; execution allowlist is the 12-ratio intersection with current 5d generate-image pre-SDK guard. 9:21, 3:1, 1:3 remain documented-only HOLD."
+  ],
+  "sourceObservations": {
+    "scope": "Complete related-source 1K observations; not an execution allowlist or paid runtime proof",
+    "ratios": [
+      "1:1",
+      "3:2",
+      "2:3",
+      "4:3",
+      "3:4",
+      "5:4",
+      "4:5",
+      "16:9",
+      "9:16",
+      "2:1",
+      "1:2",
+      "21:9",
+      "9:21",
+      "3:1",
+      "1:3"
+    ],
+    "outputDimensions": {
+      "1K:1:1": {
+        "width": 1024,
+        "height": 1024
+      },
+      "1K:3:2": {
+        "width": 1536,
+        "height": 1024
+      },
+      "1K:2:3": {
+        "width": 1024,
+        "height": 1536
+      },
+      "1K:4:3": {
+        "width": 1024,
+        "height": 768
+      },
+      "1K:3:4": {
+        "width": 768,
+        "height": 1024
+      },
+      "1K:5:4": {
+        "width": 1280,
+        "height": 1024
+      },
+      "1K:4:5": {
+        "width": 1024,
+        "height": 1280
+      },
+      "1K:16:9": {
+        "width": 1536,
+        "height": 864
+      },
+      "1K:9:16": {
+        "width": 864,
+        "height": 1536
+      },
+      "1K:2:1": {
+        "width": 2048,
+        "height": 1024
+      },
+      "1K:1:2": {
+        "width": 1024,
+        "height": 2048
+      },
+      "1K:21:9": {
+        "width": 2016,
+        "height": 864
+      },
+      "1K:9:21": {
+        "width": 864,
+        "height": 2016
+      },
+      "1K:3:1": {
+        "width": 1536,
+        "height": 512
+      },
+      "1K:1:3": {
+        "width": 512,
+        "height": 1536
+      }
+    }
+  },
+  "routeConstraint": {
+    "sourceCommit": "5d7631a06cb3ca64b036641ba85eddf72fb5d3fa",
+    "sourceSha256": {
+      "src/app/api/generate-image/route.ts": "a2816dc934b1b593e393a994f0e0a48f638690f2cece5824045a6144fce4e4fd",
+      "src/lib/imagegen/request-size.ts": "a6f18fc6d04a2b2902244213ee596e5eb275ad9d7aa5722938f1bd2cc3e30aac",
+      "src/lib/imagegen/generation-core.ts": "b20d80328bc89e5e14f8eeaccb240b37fc26f2b2f797c0672db803d8bc858ab7",
+      "src/lib/imagegen/plan.ts": "e0f743420d50ade700256e7fd15f7020ca31e6b5d026156c79d4508665aa0ff2",
+      "src/lib/model-config/execution.ts": "0e428de369b5982d045e0fb9e18062ddb575314b219f80e3ad8df7bd431fcbfc",
+      "src/lib/imagegen/aspect.ts": "fb9055df36feaabab57da3389f859ae8b4c14a8c30fecbdd3f1195d696ce5a04",
+      "src/lib/model-config/runtime.ts": "4c29bc8ad865373368d172336072d82eaa7252a49d0db4eb9fafdcb0d60b9766",
+      "src/lib/model-config/apimart-image-parameters.ts": "af954c0dc203ab590191955d3ed214c6888a6a4104f037f1f4ef870d443e2018"
+    },
+    "hashEncoding": "Git source bytes with LF; local CRLF normalized to LF for comparison",
+    "excludedRatios": [
+      "9:21",
+      "3:1",
+      "1:3"
+    ],
+    "reason": "generate-image sizeFor invokes exactImageRequestSize before SDK/adapter; EXACT_SIZES has 12 ratios. Family wire gpt-image-2 and both exact child wire IDs match supportsExactImageSize.",
+    "normalNewRequestBypass": "NONE_FOUND; direct HTTP stamps 1; new imagegen plans stamp 1; only historical frozen jobs may retain undefined legacy version, not an activation path.",
+    "validationScope": "60 allowed frozen simulations; 15 excluded combinations retain raw ratio-blind eligible results but fail route/adapter admission; 36 request-size passes and 9 rejects; 120 adapter parameter passes and 30 rejects; extracted handler prelude. No full HTTP or paid runtime acceptance."
+  }
+}
