@@ -57,6 +57,17 @@ try{
  const pdf=await store.upload(p,source,{name:'brief.pdf',data:Buffer.from('%PDF-fixture').toString('base64')});await run({type:'set-cells',row:'new-row',cells:{files:[{kind:pdf.kind,id:pdf.id,name:pdf.name}]}});
  await assert.rejects(()=>run({type:'set-cells',row:'new-row',cells:{image:[{kind:pdf.kind,id:pdf.id,name:pdf.name}]}}),(e:any)=>e.code==='NOT_IMAGE');checks++;
  await assert.rejects(()=>run({type:'set-cells',row:'new-row',cells:{image:[{kind:'worksheet',id:'f'.repeat(64),name:'missing.png'}]}}),(e:any)=>e.code==='ASSET_NOT_FOUND');checks++;
+ const excel=await store.upload(p,source,{name:'book.xlsx',data:Buffer.from('PK-excel-source-fixture').toString('base64')});
+ const manifest={schema:1,kind:'excel-cell-revision',base:{kind:excel.kind,id:excel.id,name:excel.name},parentRevision:null,createdAt:new Date().toISOString(),patches:[{sheet:'Sheet1',cell:'A1',type:'text',value:'修改副本'}]};
+ const revision=await store.upload(p,source,{name:'revision.json',data:Buffer.from(JSON.stringify(manifest)).toString('base64')});
+ await run({type:'set-cells',row:'new-row',cells:{files:[{...manifest.base,excelRevision:revision.id}]}});ok((await store.read(p,source)).document.rows.find((r:any)=>r.id==='new-row')!.cells.files instanceof Array);ok((await store.read(p,source)).document.rows.find((r:any)=>r.id==='new-row')!.cells.files[0].excelRevision===revision.id);
+ await assert.rejects(()=>run({type:'set-cells',row:'new-row',cells:{files:[{...manifest.base,excelRevision:'e'.repeat(64)}]}}),(e:any)=>e.code==='EXCEL_REVISION_NOT_FOUND');checks++;
+ const bad=await store.upload(p,source,{name:'bad-revision.json',data:Buffer.from(JSON.stringify({...manifest,base:{...manifest.base,id:'c'.repeat(64)}})).toString('base64')});
+ await assert.rejects(()=>run({type:'set-cells',row:'new-row',cells:{files:[{...manifest.base,excelRevision:bad.id}]}}),(e:any)=>e.code==='EXCEL_REVISION_BASE_MISMATCH');checks++;
+ const invalid=await store.upload(p,source,{name:'invalid-revision.json',data:Buffer.from(JSON.stringify({...manifest,patches:[{sheet:'Sheet1',cell:'__proto__',type:'text',value:'bad'}]})).toString('base64')});
+ await assert.rejects(()=>run({type:'set-cells',row:'new-row',cells:{files:[{...manifest.base,excelRevision:invalid.id}]}}),(e:any)=>e.code==='EXCEL_REVISION_INVALID');checks++;
+ await assert.rejects(()=>run({type:'set-cells',row:'new-row',cells:{image:[{kind:image.kind,id:image.id,name:image.name,excelRevision:revision.id}]}}),(e:any)=>e.code==='EXCEL_REVISION_INVALID');checks++;
+ ok((await store.file(p,source,excel.id)).content.equals(Buffer.from('PK-excel-source-fixture')));
  const restarted=new FormalImportStore(pool,resolve);ok((await restarted.worksheet.read(p,source)).version===version);ok((await restarted.worksheet.history(p,source)).events[0].version===version);
  await pool.query('UPDATE enterprise_workflow.person_directory_admins SET enabled=false WHERE enterprise_id=$1',[enterpriseId]);await assert.rejects(()=>store.read(p,source),(e:any)=>e.code==='DIRECTORY_ADMIN_REQUIRED');checks++;await pool.query('UPDATE enterprise_workflow.person_directory_admins SET enabled=true WHERE enterprise_id=$1',[enterpriseId]);
  server=createWorkflowServer(new WorkflowStore(pool,resolve,async()=>false),async req=>req.headers.authorization==='Bearer fixture-manager'?p:null,undefined,undefined,undefined,undefined,undefined,undefined,undefined,formal);server.listen(0,'127.0.0.1');await once(server,'listening');const port=(server.address() as any).port,base=`http://127.0.0.1:${port}/v1/imports/`;

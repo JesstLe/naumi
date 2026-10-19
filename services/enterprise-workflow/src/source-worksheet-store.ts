@@ -2,11 +2,12 @@ import {createHash} from 'node:crypto';
 import type {Pool,PoolClient} from 'pg';
 import {z} from 'zod';
 import sharp from 'sharp';
+import {excelRevision} from './excel-revision';
 import {WorkflowError,type Principal} from './contracts';
 import {sourceDigest} from './source-files';
 
 const hash=z.string().regex(/^[a-f0-9]{64}$/),key=z.string().regex(/^[A-Za-z0-9_-]{1,80}$/).refine(v=>!['__proto__','constructor','prototype'].includes(v));
-const fileRef=z.strictObject({kind:z.enum(['source','worksheet']),id:hash,name:z.string().min(1).max(500)});
+const fileRef=z.strictObject({kind:z.enum(['source','worksheet']),id:hash,name:z.string().min(1).max(500),excelRevision:hash.optional()});
 const value=z.union([z.string().max(20000),z.array(fileRef).max(50)]);
 const column=z.strictObject({id:key,label:z.string().trim().min(1).max(80),type:z.enum(['text','date','number','image','files']),width:z.number().int().min(100).max(420),visible:z.boolean(),archived:z.boolean().default(false)});
 const cells=z.record(key,value).refine(v=>Object.keys(v).length<=64);
@@ -64,6 +65,7 @@ export class SourceWorksheetStore{
   const col=(id:string)=>{const x=d.columns.find(x=>x.id===id);need(x,'COLUMN_NOT_FOUND',404);return x;};
   const validate=async(entries:Record<string,string|Ref[]>)=>{for(const [k,v] of Object.entries(entries)){const f=col(k);need(!f.archived,'COLUMN_ARCHIVED');if(['image','files'].includes(f.type)){need(Array.isArray(v),'CELL_TYPE_INVALID',400);for(const ref of v){
     const table=ref.kind==='source'?'import_assets':'source_worksheet_files';const idColumn=ref.kind==='source'?'asset_id':'id';const found=(await c.query(`SELECT ${ref.kind==='source'?"document->>'name' AS name,document->>'extension' AS extension":"name,mime"} FROM enterprise_workflow.${table} WHERE enterprise_id=$1 AND source_hash=$2 AND ${idColumn}=$3`,[p.enterpriseId,source,ref.id])).rows[0];need(found&&found.name===ref.name,'ASSET_NOT_FOUND',404);if(f.type==='image')need(ref.kind==='source'?['.png','.jpg','.jpeg'].includes(found.extension):['image/png','image/jpeg'].includes(found.mime),'NOT_IMAGE',400);
+    if(ref.excelRevision){need(f.type==='files'&&/\.(xlsx|xls|xlsm)$/i.test(ref.name),'EXCEL_REVISION_INVALID',400);const revision=(await c.query('SELECT content FROM enterprise_workflow.source_worksheet_files WHERE enterprise_id=$1 AND source_hash=$2 AND id=$3',[p.enterpriseId,source,ref.excelRevision])).rows[0];need(revision&&revision.content.length<=2*1024*1024,'EXCEL_REVISION_NOT_FOUND',404);need(createHash('sha256').update(revision.content).digest('hex')===ref.excelRevision,'FILE_HASH_MISMATCH',503);let manifest;try{manifest=excelRevision.parse(JSON.parse(revision.content.toString('utf8')));}catch{throw new WorkflowError(400,'EXCEL_REVISION_INVALID');}need(manifest.base.kind===ref.kind&&manifest.base.id===ref.id&&manifest.base.name===ref.name,'EXCEL_REVISION_BASE_MISMATCH',400);}
    }}else{need(typeof v==='string','CELL_TYPE_INVALID',400);if(v&&f.type==='date')need(/^\d{4}-\d{2}-\d{2}$/.test(v)&&Number.isFinite(new Date(v+'T00:00:00Z').getTime())&&new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v,'DATE_INVALID',400);if(v&&f.type==='number')need(/^-?(?:\d+\.?\d*|\.\d+)$/.test(v)&&Number.isFinite(Number(v)),'NUMBER_INVALID',400);}}};
   const parent=(r:SheetRow,id:string|null)=>{if(id){const par=row(id);need(!par.archived&&par.id!==r.id,'PARENT_INVALID',400);let x:SheetRow|undefined=par;const seen=new Set([r.id]);while(x){need(!seen.has(x.id),'PARENT_CYCLE',400);seen.add(x.id);x=x.parentId?row(x.parentId):undefined;}}r.parentId=id;r.parentConfirmed=!!id;};
   switch(a.type){

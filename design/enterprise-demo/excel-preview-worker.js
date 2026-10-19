@@ -44,3 +44,39 @@ async function windowData(message){
  return {name,index,row,col,endRow,endCol,totalRows,totalCols,originalRows:range.e.r+1,data,rowHeights,colWidths,merges,images,imageOmitted,legacy:!archive};
 }
 self.onmessage=async event=>{const m=event.data;try{const data=m.type==='open'?await open(m.bytes):await windowData(m);const transfer=data.images?.map(i=>i.bytes.buffer)||[];self.postMessage({id:m.id,ok:true,data},transfer);}catch(e){const text=String(e.message||e);self.postMessage({id:m.id,ok:false,error:/password|encrypted/i.test(text)?'ENCRYPTED_WORKBOOK':['FILE_TOO_LARGE','WORKBOOK_EXPANSION_LIMIT','NO_VISIBLE_SHEET','INVALID_WORKBOOK','INVALID_SHEET'].includes(text)?text:'INVALID_WORKBOOK'});}};
+/* G62: sparse editable copy. Originals and all non-XML package objects remain intact. */
+let editPatches=new Map(),originalCells=new Map();
+const editKey=p=>p.sheet+'!'+p.cell;
+function setPatches(patches){
+ if(!Array.isArray(patches)||patches.length>5000)throw Error('EDIT_LIMIT');const next=new Map();
+ for(const p of patches){const index=book.SheetNames.indexOf(p.sheet);if(index<0||book.Workbook?.Sheets?.[index]?.Hidden||!['text','number','formula','blank'].includes(p.type)||typeof p.value!=='string'||p.value.length>20000||/[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(p.value)||!/^([A-Z]{1,3})([1-9]\d{0,4})$/.test(p.cell))throw Error('EDIT_INVALID');const at=XLSX.utils.decode_cell(p.cell);if(at.r>=MAX_ROWS||at.c>=16384||p.type==='number'&&(!p.value.trim()||!Number.isFinite(Number(p.value)))||p.type==='blank'&&p.value!==''||p.type==='formula'&&!p.value)throw Error('EDIT_INVALID');
+  const merge=(book.Sheets[p.sheet]['!merges']||[]).find(m=>at.r>=m.s.r&&at.r<=m.e.r&&at.c>=m.s.c&&at.c<=m.e.c);if(merge&&(merge.s.r!==at.r||merge.s.c!==at.c))throw Error('MERGED_CELL_COVERED');if(next.has(editKey(p)))throw Error('EDIT_INVALID');next.set(editKey(p),p);
+ }
+ for(const [key,cell]of originalCells){const at=key.lastIndexOf('!'),ws=book.Sheets[key.slice(0,at)],ref=key.slice(at+1);if(cell)ws[ref]=structuredClone(cell);else delete ws[ref];}
+ for(const [key,p]of next){const ws=book.Sheets[p.sheet];if(!originalCells.has(key))originalCells.set(key,ws[p.cell]?structuredClone(ws[p.cell]):null);const original=originalCells.get(key),cell={...(original||{})};delete cell.f;delete cell.w;delete cell.v;delete cell.h;delete cell.r;
+  if(p.type==='blank'){cell.t='z';}else if(p.type==='formula'){cell.t='n';cell.f=p.value.replace(/^=/,'');}else{cell.t=p.type==='number'?'n':'s';cell.v=p.type==='number'?Number(p.value):p.value;}
+  ws[p.cell]=cell;
+ }
+ editPatches=next;return {count:next.size};
+}
+const xmlEscape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
+function editXmlCell(p,old=''){let tag=/<c\b[^>]*>/.exec(old)?.[0]||`<c r="${p.cell}">`;tag=tag.replace(/\s+t=["'][^"']*["']/g,'').replace(/\/?>$/,'>');if(p.type==='blank')return tag+'</c>';if(p.type==='text')return tag.replace(/>$/,' t="inlineStr">')+`<is><t xml:space="preserve">${xmlEscape(p.value)}</t></is></c>`;if(p.type==='number')return tag+`<v>${Number(p.value)}</v></c>`;return tag+`<f>${xmlEscape(p.value.replace(/^=/,''))}</f></c>`;}
+function patchSheetXml(text,patches,ws){const byRow=new Map();for(const p of patches){const row=XLSX.utils.decode_cell(p.cell).r+1;if(!byRow.has(row))byRow.set(row,new Map());byRow.get(row).set(p.cell,p);}const cellRE=/<c\b[^>]*(?:\/>|>[\s\S]*?<\/c>)/g;
+ // Expand affected shared formulas from parsed originals before replacing a shared master.
+ const affectedShared=new Set();for(const block of text.matchAll(cellRE)){const ref=attr(block[0],'r'),f=/<f\b[^>]*>/.exec(block[0])?.[0]||'';if(patches.some(p=>p.cell===ref)&&attr(f,'t')==='shared')affectedShared.add(attr(f,'si'));}
+ if(affectedShared.size)text=text.replace(cellRE,block=>{const ref=attr(block,'r'),f=/<f\b[^>]*(?:\/>|>[^<]*<\/f>)/.exec(block)?.[0]||'';if(attr(f,'t')!=='shared'||!affectedShared.has(attr(f,'si')))return block;const formula=originalCells.get(book.SheetNames.find(n=>book.Sheets[n]===ws)+'!'+ref)?.f||ws[ref]?.f;if(!formula)throw Error('SHARED_FORMULA_EXPORT');return block.replace(f,`<f>${xmlEscape(formula)}</f>`);});
+ text=text.replace(/<row\b[^>]*(?:\/>|>[\s\S]*?<\/row>)/g,block=>{const n=Number(attr(block,'r')),edits=byRow.get(n);if(!edits)return block;byRow.delete(n);const originalStart=/<row\b[^>]*>/.exec(block)[0],start=originalStart.replace(/\/>$/,'>'),cells=[...block.matchAll(cellRE)].map(x=>x[0]),map=new Map(cells.map(c=>[attr(c,'r'),c]));for(const [ref,p]of edits)map.set(ref,editXmlCell(p,map.get(ref)));const rest=/\/>$/.test(originalStart)?'':block.slice(originalStart.length).replace(cellRE,'').replace(/<\/row>$/,'');return start+[...map].sort((a,b)=>XLSX.utils.decode_cell(a[0]).c-XLSX.utils.decode_cell(b[0]).c).map(x=>x[1]).join('')+rest+'</row>';});
+ if(byRow.size){const newRows=[...byRow].sort((a,b)=>a[0]-b[0]).map(([r,ps])=>`<row r="${r}">${[...ps.values()].sort((a,b)=>XLSX.utils.decode_cell(a.cell).c-XLSX.utils.decode_cell(b.cell).c).map(p=>editXmlCell(p)).join('')}</row>`).join('');text=text.replace(/<\/sheetData>/,newRows+'</sheetData>');if(!text.includes(newRows))throw Error('EDIT_EXPORT_FAILED');text=text.replace(/(<sheetData[^>]*>)([\s\S]*?)(<\/sheetData>)/,(all,start,body,end)=>start+[...body.matchAll(/<row\b[^>]*(?:\/>|>[\s\S]*?<\/row>)/g)].map(x=>x[0]).sort((a,b)=>Number(attr(a,'r'))-Number(attr(b,'r'))).join('')+end);}
+ if(editPatches.size)text=text.replace(cellRE,c=>/<f(?:\s|>)/.test(c)?c.replace(/<v(?:\s[^>]*)?>[\s\S]*?<\/v>/g,''):c);return text;
+}
+async function exportEdited(){if(!archive)throw Error('LEGACY_EXPORT_UNAVAILABLE');const output=new JSZip(),changed=new Map();for(const p of editPatches.values()){const i=book.SheetNames.indexOf(p.sheet),file=sheetPaths[i];if(!changed.has(file))changed.set(file,[]);changed.get(file).push(p);}for(const f of Object.values(archive.files)){if(f.dir||f.name==='xl/calcChain.xml')continue;
+  if(/^xl\/worksheets\/[^/]+\.xml$/.test(f.name)){const i=sheetPaths.indexOf(f.name),text=await xml(f.name);output.file(f.name,patchSheetXml(text,changed.get(f.name)||[],book.Sheets[book.SheetNames[i]]||{}));}
+  else if(f.name==='xl/workbook.xml'){let text=await xml(f.name);text=text.replace(/<calcPr\b[^>]*\/?\s*>/g,'');output.file(f.name,text.replace(/<\/workbook>/,'<calcPr calcMode="auto" fullCalcOnLoad="1" forceFullCalc="1"/></workbook>'));}
+  else if(f.name==='xl/_rels/workbook.xml.rels')output.file(f.name,(await xml(f.name)).replace(/<Relationship\b[^>]*Type=["'][^"']*\/calcChain["'][^>]*\/?\s*>/g,''));
+  else if(f.name==='[Content_Types].xml')output.file(f.name,(await xml(f.name)).replace(/<Override\b[^>]*PartName=["']\/xl\/calcChain.xml["'][^>]*\/?\s*>/g,''));
+  else output.file(f.name,await f.async('uint8array'));
+ }
+ const bytes=await output.generateAsync({type:'uint8array',compression:'DEFLATE',compressionOptions:{level:3}});if(bytes.byteLength>MAX_FILE)throw Error('FILE_TOO_LARGE');return {bytes};
+}
+const readWindowOriginal=windowData;windowData=async function(m){const d=await readWindowOriginal(m);for(const line of d.data)for(const cell of line){const v=book.Sheets[d.name][cell.ref];cell.raw=v?.f?'='+v.f:String(v?.v??'');if(editPatches.size&&v?.f)cell.text='待Excel重算';}d.hasEdits=editPatches.size>0;return d;};
+self.onmessage=async event=>{const m=event.data;try{const data=m.type==='open'?await open(m.bytes):m.type==='patches'?setPatches(m.patches):m.type==='export'?await exportEdited():await windowData(m);const transfer=data.images?.map(i=>i.bytes.buffer)||(data.bytes?[data.bytes.buffer]:[]);self.postMessage({id:m.id,ok:true,data},transfer);}catch(e){const text=String(e.message||e);self.postMessage({id:m.id,ok:false,error:/password|encrypted/i.test(text)?'ENCRYPTED_WORKBOOK':text});}};
