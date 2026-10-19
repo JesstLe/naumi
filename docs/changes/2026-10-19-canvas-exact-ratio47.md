@@ -12,7 +12,7 @@
 - 不增加裁切、拉伸、隐式补边；不改用户提示词、前端位置、配置版本与后台未提交UI。
 
 ## 状态
-独立worktree codex/canvas-exact-ratio47-20261019，基线main f4bf7935。集中测试、真实通道验收、三锁蓝绿发布和回滚待完成。历史MIGRATED_CLEANUP_PENDING事件保持，不能用新发布覆盖旧事件。
+独立worktree codex/canvas-exact-ratio47-20261019，基线main f4bf7935。单元62项、隔离PG+真实HTTP handler 14组合（7比例×文生图/图生图）、错误比例保留原图及已结算账务、Worker恢复零重放、旧父plan无版本恢复保持1024x1536、直接ratiogen1152x1536通过；共18次回环fixture响应，真实供应商0。原画布480组合/90原始请求拒绝/5路由、imagegen19工作流/意图测试通过，全量TypeScript通过。错误回执同正常回执过滤内部execution审计字段。完整Linux构建、回滚材料和发布状态另记最终VERIFICATION。历史MIGRATED_CLEANUP_PENDING事件保持，不能用新发布覆盖旧事件。
 
 ## 当前通道实测与发布前置
 2026-10-19 10:23 使用合成参考图，真实geeknow gpt-image-2 `/images/edits`，size1152x1536、low、n1，HTTP200；原图1152x1536/1067265字节，SHA256 `ea4975ba87f852d4e208ee1766f0aeb481f8e398f1ee4753c1738baf9a9b0da5`。未重放任何用户任务，未改在线模型配置。

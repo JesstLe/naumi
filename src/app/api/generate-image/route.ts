@@ -1199,7 +1199,7 @@ export async function GET(request: Request) {
       });
     }
     if (job.status === "done") {
-      if(job.imagegenOutputError)return NextResponse.json({status:"error",error:job.imagegenOutputError,images:job.images,creditsUsed:job.creditsUsed,user:job.user});
+      if(job.imagegenOutputError)return NextResponse.json({status:"error",error:job.imagegenOutputError,images:(job.images||[]).map(({execution,...image})=>image),creditsUsed:job.creditsUsed,user:job.user});
       return NextResponse.json({
         status: "done",
         ok: true,
