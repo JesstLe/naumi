@@ -4,8 +4,8 @@ const root=process.cwd(),sourceRoot=path.resolve(process.argv[2]||root);
 const file=path.join(root,'scripts/verify-canvas-generation-failure.cjs');
 const h={require:createRequire(file),process:{cwd:()=>root,argv:['node','test',sourceRoot],env:{}},console,Response,File,FormData,Blob,setTimeout};
 vm.createContext(h);vm.runInContext(fs.readFileSync(file,'utf8').split('(async()=>{const rows=[];')[0]+';globalThis.setup=setup;',h);
-const source=fs.readFileSync(sourceRoot+'/src/components/canvas/canvas-client.tsx','utf8'),ast=ts.createSourceFile('canvas.tsx',source,99,true,4);let detail;
-function walk(n){if(ts.isFunctionDeclaration(n)&&n.name?.text==='generateDetailSequence')detail=n.getText(ast);ts.forEachChild(n,walk)}walk(ast);assert.ok(detail);
+const source=fs.readFileSync(sourceRoot+'/src/components/canvas/canvas-client.tsx','utf8'),ast=ts.createSourceFile('canvas.tsx',source,99,true,4);let detail='';
+function walk(n){if(ts.isFunctionDeclaration(n)&&['generateDetailSequence','livePendingPosition'].includes(n.name?.text))detail+=n.getText(ast)+'\n';ts.forEachChild(n,walk)}walk(ast);assert.ok(detail);
 const code=ts.transpileModule(detail,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
 async function main(){let cases=0;
 for(const pending of [false,true])for(const scenario of ['reference-fails','rejected','submit-unknown','poll-unknown','terminal','review','partial','sync-missing','position-fails','done']){

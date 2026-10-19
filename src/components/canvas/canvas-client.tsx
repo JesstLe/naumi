@@ -2268,12 +2268,26 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       }
     // 标记/取消标记(逐 id 记录原值,批量操作共用)
     | { kind: "mark"; changes: Array<{ id: string; from: boolean; to: boolean }> };
-  const [undoStack, setUndoStack] = useState<UndoAct[]>([]);
-  const [redoStack, setRedoStack] = useState<UndoAct[]>([]);
+  const historyAccount = canvasAccountRef.current;
+  const historyScope = JSON.stringify([historyAccount, activeKey || "workspace"]);
+  const historyScopeRef = useRef(historyScope); historyScopeRef.current = historyScope;
+  const historyScopesRef = useRef(new WeakMap<UndoAct, string>());
+  const [historyUndo, setUndoStack] = useState<UndoAct[]>([]);
+  const [historyRedo, setRedoStack] = useState<UndoAct[]>([]);
+  const undoStack = historyUndo.filter(action => historyScopesRef.current.get(action) === historyScope);
+  const redoStack = historyRedo.filter(action => historyScopesRef.current.get(action) === historyScope);
   const pushUndo = useCallback((action: UndoAct) => {
-    setUndoStack((stack) => [...stack.slice(-50), action]);
-    setRedoStack([]);
-  }, []);
+    // The callback keeps its originating scope across async generation/project switches.
+    // A first-created node belongs to the newly created project, not a global history.
+    const newProject = action.kind === "mixed-add" ? action.projectKey
+      : action.kind === "video-add" || action.kind === "text-add" ? action.records[0]?.projectKey
+      : action.kind === "workflow-add" ? action.textNodes[0]?.projectKey || (action.artworks[0] ? `tree:${action.artworks[0].groupId || action.artworks[0].id}` : null)
+      : action.kind === "add" && action.records[0] ? `tree:${action.records[0].groupId || action.records[0].parentId || action.records[0].id}` : null;
+    const scope = activeKey ? historyScope : JSON.stringify([historyAccount, newProject || "workspace"]);
+    historyScopesRef.current.set(action, scope);
+    setUndoStack(stack => [...stack.filter(item => historyScopesRef.current.get(item) !== scope).slice(-450), ...stack.filter(item => historyScopesRef.current.get(item) === scope).slice(-49), action]);
+    setRedoStack(stack => stack.filter(item => historyScopesRef.current.get(item) !== scope));
+  }, [historyScope, activeKey, historyAccount]);
   const [workflowManifests, setWorkflowManifests] = useState<ImportedManifest[]>([]);
   const workflowCallbacksRef = useRef({ replace: requestReplace, select: selectWorkflowGroup });
   workflowCallbacksRef.current = { replace: requestReplace, select: selectWorkflowGroup };
@@ -4868,20 +4882,22 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     source: Artwork,
     run: () => Promise<Response>,
     label: string
-  ): Promise<void> {
-    if (readOnly || !user) return;
+  ): Promise<boolean> {
+    if (readOnly || !user) return false;
     const contextEpoch = canvasContextEpochRef.current;
     const contextProjectKey = activeProjectRef.current?.key || null;
     const operationKey = `node:${source.id}`;
-    if (generationOperationRef.current.has(operationKey)) return;
+    if (generationOperationRef.current.has(operationKey)) return false;
     generationOperationRef.current.add(operationKey);
+    const account = canvasAccountRef.current;
+    const current = () => account === canvasAccountRef.current && contextEpoch === canvasContextEpochRef.current && contextProjectKey === (activeProjectRef.current?.key || null);
     const sourceNode = rfRef.current?.getNode(source.id);
     const sourceSize = sourceNode ? flowNodeSize(sourceNode) : artworkNodeSize(source);
     const x = (sourceNode?.position.x ?? source.canvasX ?? 0) + sourceSize.width + X_GAP;
     const y = sourceNode?.position.y ?? source.canvasY ?? 0;
     const pendingId = `pend-edit-${browserRandomUUID()}`;
     setPendNodes((current) => [
-      ...current,
+      ...current.filter(node => !(node.operationKey === operationKey && node.generationFailure && !generationFailureBlocks(node.generationFailure))),
       {
         id: pendingId,
         operationKey,
@@ -4906,39 +4922,62 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         )
       );
     }, 900);
+    let resultId: string | undefined, operationId: string | undefined;
+    let failure: GenerationFailure | undefined;
+    const showFailure = (value: GenerationFailure) => {
+      failure = value;
+      if (!generationFailureBlocks(value)) generationOperationRef.current.delete(operationKey);
+      if (!current()) return;
+      setPendNodes(nodes => nodes.map(node => node.id === pendingId ? { ...node, generating: generationFailureBlocks(value), generationFailure: value,
+        onGenerationCheck: resultId ? checkResult : undefined } : node));
+      flashTip(generationFailureMessage(value));
+    };
+    const loadResult = async () => {
+      if (!resultId || !current()) return false;
+      const livePosition = livePendingPosition(pendingId, {x,y});
+      await privateFetchRaw("/api/artworks/position", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: resultId, x: Math.round(livePosition.x), y: Math.round(livePosition.y) }),
+      }).then(response => { if (!response.ok) throw new Error(`${label}结果定位失败`); });
+      if (!current()) return false;
+      const fresh = await mergeWorks([resultId]);
+      if (!current()) return false;
+      assertGenerationResultsPresent([resultId], fresh);
+      pushAddUndo(resultId, fresh);
+      setPendNodes(nodes => nodes.filter(node => node.id !== pendingId));
+      generationOperationRef.current.delete(operationKey);
+      flashTip(`${label}完成，结果已载入画布`);
+      return true;
+    };
+    const checkResult = async () => {
+      if (!current() || !resultId || generationChecksRef.current.has(pendingId)) return;
+      generationChecksRef.current.add(pendingId);
+      try { await loadResult(); }
+      catch (error) { showFailure(classifyGenerationFailure(error, {attempted:true,hasResults:true,jobId:`result:${resultId}`})); }
+      finally { generationChecksRef.current.delete(pendingId); }
+    };
     try {
       const response = await run();
       const data = await readJsonSafe(response);
-      if (!response.ok || !data?.id) throw new Error(data?.error || `${label}失败`);
-      const livePosition = livePendingPosition(pendingId, {x,y});
-      await privateFetchRaw("/api/artworks/position", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: data.id, x: Math.round(livePosition.x), y: Math.round(livePosition.y) }),
-      }).then((response) => {
-        if (!response.ok) throw new Error(`${label}结果定位失败`);
-      });
-      const fresh = await mergeWorks([String(data.id)]);
-      if (!fresh.some((item) => item.id === String(data.id))) throw new Error(`${label}结果加载失败`);
-      if (
-        contextEpoch !== canvasContextEpochRef.current ||
-        activeProjectRef.current?.key !== contextProjectKey
-      ) return;
-      pushAddUndo(String(data.id), fresh);
-      if (data.user) applyServerUser(data.user);
-      // 不抢占用户当前编辑中的节点。
-      flashTip(`${label}完成，结果已生成在原图右侧`);
-    } catch (error) {
-      if (
-        contextEpoch === canvasContextEpochRef.current &&
-        activeProjectRef.current?.key === contextProjectKey
-      ) {
-        flashTip(error instanceof Error ? error.message : `${label}失败`);
+      operationId = typeof data.operationId === "string" ? data.operationId : undefined;
+      resultId = typeof data.id === "string" ? data.id : undefined;
+      if (!response.ok || !resultId) {
+        const unknown = ["OPERATION_PENDING", "OPERATION_CONFLICT"].includes(data.code);
+        const notAccepted = !unknown && (data.accepted === false || [400,401,402,403,404,413,415,422,429].includes(response.status));
+        throw new ImagegenHttpError(data?.error || `${label}未完成，请检查原操作`, response.status, notAccepted ? false : undefined);
       }
+      if (current() && data.user) applyServerUser(data.user);
+      return await loadResult();
+    } catch (error) {
+      showFailure(classifyGenerationFailure(error, {attempted:true,hasResults:!!resultId,jobId:resultId ? `result:${resultId}` : operationId}));
+      return false;
     } finally {
       window.clearInterval(timer);
-      setPendNodes((items) => items.filter((item) => item.id !== pendingId));
-      generationOperationRef.current.delete(operationKey);
+      // Unknown acceptance keeps its lock and visible outcome; never auto-resubmit.
+      if (!failure) {
+        setPendNodes(nodes => nodes.filter(node => node.id !== pendingId));
+        generationOperationRef.current.delete(operationKey);
+      }
     }
   }
 
@@ -5120,12 +5159,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   async function submitAnnotations(formData: FormData) {
     const source = annotateArtwork;
     if (!source) return;
-    await landEditResult(
+    const completed = await landEditResult(
       source,
       () => privateFetch("/api/canvas/annotate", { method: "POST", body: formData }),
       "标注编辑"
     );
-    setAnnotateArtwork(null);
+    if (completed) setAnnotateArtwork(null);
   }
 
   function openAssistant(artwork: Artwork) {
@@ -5566,7 +5605,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const metadata = await expectJsonOk(metadataResponse, t("canvas.genFail"));
       let fresh = (metadata.artworks ?? []) as Artwork[];
       const freshById = new Map(fresh.map((art) => [art.id, art]));
-      const livePosition = generationTaskPosRef.current[taskId] ?? reservedPosition;
+      const livePosition = pend ? livePendingPosition(pend.id, reservedPosition) : generationTaskPosRef.current[taskId] ?? reservedPosition;
       let detailY = livePosition.y;
       await Promise.all(
         ids.map((id) => {
@@ -5833,6 +5872,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const historyAttemptsRef = useRef(new WeakMap<UndoAct, {operationId:string;operations:Array<Record<string,unknown>>}>());
   async function applyHistory(act: UndoAct, undo: boolean) {
     const account=canvasAccountRef.current;
+    const assertCurrentHistory = () => { if (historyScope !== historyScopeRef.current) throw new Error("项目已切换，请在当前项目重新操作"); };
+    assertCurrentHistory();
     if (act.kind === "pending-link") {
       const pending = pendNodesRef.current.find(node => node.id === act.id);
       if (!pending || pending.generating || pending.uploading) throw new Error(L("节点已开始生成或已移除", "Node is generating or no longer exists"));
@@ -5867,6 +5908,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     let attempt=historyAttemptsRef.current.get(act);
     if(!attempt){attempt={operationId:browserRandomUUID(),operations:structuredClone(operations)};historyAttemptsRef.current.set(act,attempt);}
     const operationId=attempt.operationId;operations=attempt.operations;
+    assertCurrentHistory();
     const response=await privateFetchRaw("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operationId,operations}),signal:AbortSignal.timeout(20_000)});
     await expectJsonOk(response,t("canvas.genFail"));if(account!==canvasAccountRef.current)throw new Error("画布账号已切换");
     // All operations below are local applications of an already committed transaction.
@@ -5913,6 +5955,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     for(const op of operations) {const id=(op.id || (op.node as CanvasTextNode|undefined)?.id) as string; unsavedTextRef.current.delete(id);}
     setUnsavedTextCount(unsavedTextRef.current.size);
     historyAttemptsRef.current.delete(act);
+    // Data belongs to the authenticated account and may finish in the background;
+    // only project-navigation/selection effects are suppressed after a switch.
+    if (historyScope !== historyScopeRef.current) return;
     if(act.kind==="mixed-add"){
       if(undo&&(active?.members.length||0)===act.artworks.length&&(active?.textNodes.length||0)===act.textNodes.length&&(active?.videoNodes?.length||0)===act.videoNodes.length)setCreatingNew(true);
       if(!undo){setCreatingNew(false);setActiveKey(act.projectKey);setBrowsing(false);}
@@ -5930,7 +5975,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
   }
   async function doUndo() {
-    if (!undoStack.length || historyBusyRef.current || readOnly) return;
+    if (historyScope !== historyScopeRef.current || !undoStack.length || historyBusyRef.current || readOnly) return;
     historyBusyRef.current=true;
     setHistorySaving(true);
     const act=undoStack[undoStack.length-1];
@@ -5942,7 +5987,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     finally { historyBusyRef.current=false; setHistorySaving(false); }
   }
   async function doRedo() {
-    if (!redoStack.length || historyBusyRef.current || readOnly) return;
+    if (historyScope !== historyScopeRef.current || !redoStack.length || historyBusyRef.current || readOnly) return;
     historyBusyRef.current=true;
     setHistorySaving(true);
     const act=redoStack[redoStack.length-1];
