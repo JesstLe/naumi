@@ -18,3 +18,8 @@
 2026-10-19 10:23 使用合成参考图，真实geeknow gpt-image-2 `/images/edits`，size1152x1536、low、n1，HTTP200；原图1152x1536/1067265字节，SHA256 `ea4975ba87f852d4e208ee1766f0aeb481f8e398f1ee4753c1738baf9a9b0da5`。未重放任何用户任务，未改在线模型配置。
 先前一条独立generate探针使用未接现有代理的fetch，报fetch failed、未取得供应商回执，按受理未知保留marker/receipt且不重试；不记为生成通过。edit探针按现有已批准代理配置发送；两次工具依赖初始化失败均在提交前，未增加调用。
 10:30只读发布基线：7运行容器、Web/Worker仍1852b21c，MemAvailable3825MiB、Swap0、磁盘80%/14GiB；current revision74/blueGreenSuccessor COMPLETE，根历史MIGRATED_CLEANUP_PENDING保持。协作线程确认无本线程窗口/候选，但无已验证的常规后继执行器；旧controller硬编码revision40/旧槽/上一轮目录和已消费successor，不能直接重跑或删状态绕过。未持三锁/未创建47候选/未切流/未重启Worker。
+
+## 构建与交付边界
+运行代码固定 `5240655fadcfc651cb9d781e3dc5d27c3b21bd15`，本机Linux完整镜像构建成功（90页面），镜像 `sha256:e1f45d25a6cee530ed6ce6304807652e6a9f375b1ad21f2470e86a4495d1625d`，版号1792377273。隔离本地容器 `/api/version` 返回同SHA/版号；未接生产库/供应商，health明确db未配置，不能冒充生产就绪。后续提交仅测试与文档，业务运行源码不再变化。
+发布状态为 `PENDING_VERIFIED_SUCCESSOR_OPERATOR`：修复代码与测试完成不等于47线上已修复。未上传候选镜像/创建线上容器/改网关；需要先完成后继发布执行器审查与验收，再刷新资源、任务、三锁及基线进入蓝绿。
+本模块功能同步计数1，提交前fetch main仍f4bf7935，无新增main业务提交；保留共享checkout的18项未提交改动。证据四件及副本回滚以 `output/canvas-exact-ratio47-20261019/VERIFICATION.txt` 为准。

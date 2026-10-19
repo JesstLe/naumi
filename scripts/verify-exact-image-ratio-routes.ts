@@ -305,6 +305,13 @@ async function main() {
     ).rows[0];
     assert.equal(child.payload.p.ratioContractVersion, 1);
     assert.match(child.snapshot.imagegenOutputError, /3:4/);
+    const childReceipt = await json("/api/generate-image?job=" + child.id);
+    assert.equal(childReceipt.status, "error");
+    assert.ok(childReceipt.images.length);
+    assert.ok(
+      childReceipt.images.every((image: any) => !("execution" in image)),
+      "error receipt must not expose internal execution metadata",
+    );
     const recoveryId = "job-" + randomUUID(),
       checkpoint = {
         ...child.snapshot,
