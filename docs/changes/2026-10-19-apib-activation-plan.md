@@ -128,3 +128,19 @@ spec 必须由负责人当时核对的真实值填写：
 - 本线程 SSH=0、生产锁=0、生产写入=0、生成/供应商调用=0；`scripts/ops/apib-activation47.py` 未修改。生产 APPLY/真实 HTTP plan 未执行。
 
 开发同步计数：本修订为 1 个运维候选模块；开工及提交前刷新 origin/main，基于 `97a282c5` 已整合，无新远端业务提交时保持当前父 e21。不是一次程序发布，不增加生产发布/空间清理计数。
+
+## 生产执行结果（统一窗口，2026-10-19 13:34 北京时间）
+
+生产接手人为统一窗口线程 `da1fb6c5-ffa9-4da4-97eb-d71dc858b418`。实际执行替代增量 `29f4be6f` 的12比例包；旧15比例包保留审计，不作执行输入。版本化 publication `4ccac68c-f764-4add-967b-1fafbbb40381` 的 phase 原值为 `applied`，模型配置 `118→119`，digest `85e2eb60ee9aa69c88d293315641e347d235c08e78365cec65c70d1ed3dbee52`。DB updated_at 为 `2026-10-19T05:30:29.239765Z`；最终独立验收为 `2026-10-19T05:34:41.994321Z`。
+
+- 真实授权公网 `POST /api/imagegen/plan`：`gpt-image-2 / generate / medium / 1K / 3:4 / PNG / n1 / 无输入`，HTTP200、modelVersion119、billingVersion8、报价6；eligible upstream 为原 `platform-images:9ba2827204791ed8`、`geeknow-gpt-image-2` 以及新增 `apib:gpt-image-2.5-flare`、`apib:gpt-image-2.5-sunburst`。未submit，0供应商生成。
+- 单张授权参考的edit、2K生成两个真实负向plan均HTTP200，均未纳入APIB。冻结本地模拟仍报告基线modelVersion118，明确不同于实时HTTP的119。
+- 相对118严格17增量；两条备用priority3/weight1、其余售价/旧通道权重与billing8保持。73项待核、51视频禁用、verified=false，收费验收及自动收费巡检PAUSED。
+- 运行程序仍 `5d7631a06cb3ca64b036641ba85eddf72fb5d3fa / build1792383873`；同镜像Web/Worker `sha256:9b43d564c51fd26a45d8d8129f1e1faac21459f2337272b7651ca015a588deb2`，容器完整ID/StartedAt/restartPolicy保持。本配置事务无程序候选、无重启/切流；canonical revision144原始字节SHA和Nginx全文SHA保持，原历史未结事件不改写。
+- 首次APPLY/VERIFY后，自有独立核对SQL错从publication表直接选digest（实际存于versions表），远端exit1。只读JOIN核对确认原UUID已applied119，随后重新持三锁，保留原REQUEST，仅VERIFY和真实HTTP计划，不重做APPLY、不换UUID。原REQUEST字节SHA `16bf17038acee7ee7d331ec50850296ce1244d3a9ab5789b99ea567a943c6cd6` 前后相等。恢复命令REMOTE_EXIT=0，最终三锁FREE；无生产回退。
+- 当前模拟/plan仍不能提前过滤9:21/3:1/1:3；真实route/adapter拒绝这些，不把eligible当作付费交付证明。
+- 12项host/CAS/外层三锁测试通过；从生产119导出的独立JSON副本实际执行选择性逆向，恢复v118 digest，正式配置与MODIFIED_FILE保留119；不回灌DB/媒体/任务。
+
+证据：`E:/Workspace/naumi-all-dev-release47-20261019/output/apib-activation47-production-20261019/VERIFICATION.txt`，私有远端 `/opt/naumi-staging/evidence/apib-activation47-20261019`。四件为 `MODIFIED_FILE.json`、`DIFF_FILE.json`、`VERIFICATION.txt`、可执行 `ROLLBACK.sh`；后者是本地独立副本验收，生产回退须持三锁host ROLLBACK新版本publication。已向原线程2bb97993-42d7-4714-8357-2f34a6339fd5回传最终UUID/phase/版本/真实plan及边界，注明无需回执或执行。
+
+最终只读健康db.ok=true；7运行容器（1Web+1Worker+5基础服务），原1852Web/Worker均stopped/restart=no。MemAvailable4286200kB、swap使用780KiB、磁盘空11036696576bytes；程序自动重启恢复仍未验收，restart=no并非自动恢复已具备。
