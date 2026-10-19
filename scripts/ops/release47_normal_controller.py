@@ -335,7 +335,11 @@ class Controller:
     require(domain['drained'] and app['observations']['trackedAcceptedWork']==0 and app['observations']['agentRuns']==0 and app['observations']['unknownLeases']==0,'ACTIVE_SUCCESSOR_PREVENTS_AUTOMATIC_CUTBACK')
     c.control_app(self.tx,self.newweb,'drain',str(uuid.uuid4()))
     if self.old_drained:c.control_app(self.tx,self.web,'resume',str(uuid.uuid4()))
-    c.switch_gateway_bundle(self.tx,self.rollback,self.candidate_closure,{n:self.before[n] for n in self.after},expected_dump_sha=sha(self.after_dump.encode()),logical_to_real=self.real)
+    prior_folder=self.tx.folder;cutback=ROOT/'failure-cutback';cutback.mkdir(mode=0o700,exist_ok=False)
+    try:
+     self.tx.folder=cutback
+     c.switch_gateway_bundle(self.tx,self.rollback,self.candidate_closure,{n:self.before[n] for n in self.after},expected_dump_sha=sha(self.after_dump.encode()),logical_to_real=self.real)
+    finally:self.tx.folder=prior_folder
     self.worker_control(self.worker,'resume',str(uuid.uuid4()))
     # No supervisor rebind occurred before the last validated drain boundary.
     if self.state['runtimeRecovery'].get('successorReleaseId')==RELEASE:
