@@ -1,7 +1,7 @@
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict'),ts=require('typescript'),{buildSync}=require('esbuild'),crypto=require('node:crypto');
 const mode=(process.argv[2]||'MODIFIED').toUpperCase(),root=path.resolve(process.argv[3]||'.');let checks=0;
 const check=(v,msg)=>{assert(v,msg);checks++};
-function pure(rel){const m={exports:{}};const js=ts.transpileModule(fs.readFileSync(path.join(root,rel),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;vm.runInNewContext(js,{module:m,exports:m.exports,require,console,Error});return m.exports;}
+function pure(rel){const m={exports:{}};const js=buildSync({entryPoints:[path.join(root,rel)],bundle:true,platform:'node',format:'cjs',write:false}).outputFiles[0].text;vm.runInNewContext(js,{module:m,exports:m.exports,require,console,Error});return m.exports;}
 async function bundledPlan(state){
  const {build}=require('esbuild');
  const fixtures={
