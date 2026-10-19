@@ -22,7 +22,7 @@ export type Shares=z.infer<typeof sharesSchema>;export type Rule=z.infer<typeof 
 export type Allocation={factId:string;version:number;status:'proposed'|'approved'|'rejected';shares:Shares;proposedBy:string;proposedAt:string;reason:string;reviewedBy?:string;reviewedAt?:string;reviewReason?:string};
 export type PublishedRule={version:number;rule:Rule;authoredBy:string;publishedBy:string;publishedAt:string;reason:string};
 export type RuleDraft={version:number;status:'draft'|'published';rule:Rule;authoredBy:string;updatedAt:string;publishedVersion?:number};
-export type AcceptedFact={id:string;orderId:string;taskId:string;taskTitle:string;orderTitle:string;actor:string;occurredAt:string;points:number;quality:number;dueAt:string;submittedAt:string;acceptedAt:string;reworkCount:number;contributor:string;contributionBps:number|null;participants:string[]};
+export type AcceptedFact={committedDueAt?:string;originalPoints?:number;changeIds?:string[];id:string;orderId:string;taskId:string;taskTitle:string;orderTitle:string;actor:string;occurredAt:string;points:number;quality:number;dueAt:string;submittedAt:string;acceptedAt:string;reworkCount:number;contributor:string;contributionBps:number|null;participants:string[]};
 export type ScorePart={subject:string;bps:number;baseMilli:number;scoreMilli:number};
 export type ScoreRow={fact:AcceptedFact;allocationVersion:number;allocationApprovedBy:string|null;shares:Shares;onTime:boolean;reworkBps:number;scoreMilli:number;baseMilli:number;parts:ScorePart[]};
 export type ScoreResult={subject:string;taskCount:number;onTimeCount:number;onTimeRateBps:number;reworkCount:number;baseMilli:number;scoreMilli:number};

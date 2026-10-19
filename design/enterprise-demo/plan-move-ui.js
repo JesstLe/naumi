@@ -3,7 +3,7 @@ let moveEpoch=0,moveDrag=null;
 const moveOverlay=overlay;overlay=function(...args){moveEpoch++;moveOverlay(...args);};
 const moveClose=closeOverlay;closeOverlay=function(){moveEpoch++;moveDrag=null;moveClose();};
 const moveClear=workspaceClear;workspaceClear=function(){moveEpoch++;moveDrag=null;moveClear();};
-function moveAllowed(r){return requirementCan('dispatch')&&r.order.teamId===workspace.teamId&&['approved','active'].includes(r.order.status)&&r.task.status!=='accepted'&&!r.task.pendingHandover&&r.task.planStart&&r.task.planEnd;}
+function moveAllowed(r){return requirementCan('dispatch')&&r.order.teamId===workspace.teamId&&['approved','active','paused'].includes(r.order.status)&&r.task.status!=='accepted'&&!r.task.pendingHandover&&r.task.planStart&&r.task.planEnd;}
 function moveError(e){return ({PLAN_REQUIRED:'请先在任务计划中填写日期与工时。',PLAN_MOVE_NO_CHANGE:'请选择不同的开始日期。',PLAN_MOVE_PREVIEW_CHANGED:'相邻计划或容量已变化，请重新读取后预览。',PLAN_MOVE_IMPACT_TOO_LARGE:'相关任务超过1000项，请先整理计划范围。',WORKFLOW_WRITE_UNCERTAIN:'保存结果待核对，请用原命令重试。'})[e.message]||ssError(e);}
 function moveOffset(date,days){const d=new Date(Date.parse(date+'T00:00:00Z')+days*86400000);return Number.isNaN(+d)?'':d.toISOString().slice(0,10);}
 function moveEdit(r,target=r.task.planStart,reason='',scope=requirementScope()){

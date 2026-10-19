@@ -1,3 +1,4 @@
+import {SourceWorksheetStore} from './source-worksheet-store';
 import {ReferenceStore} from './reference-store';
 import { createServer,type IncomingMessage } from 'node:http';
 import { createReadStream } from 'node:fs';
@@ -13,6 +14,7 @@ import { id } from './contracts';
 export function createImportServer(store:ImportStore,secret:string){
  if(secret.length<32)throw new Error('IMPORT_TOKEN_REQUIRED');
  const local={enterpriseId:store.enterpriseId,subject:'local-owner'};
+ const worksheet=new SourceWorksheetStore(store.pool,async(_tx,p)=>{if(p.enterpriseId!==local.enterpriseId||p.subject!==local.subject)throw new WorkflowError(403,'FORBIDDEN');});
  const people=new PeopleStore(store.pool,async(_tx,p)=>p.enterpriseId===local.enterpriseId&&p.subject===local.subject?{...p,permissions:['manage'],workKinds:[]}:null,local);
  const workflow=new WorkflowStore(store.pool,async(_tx,p)=>p.enterpriseId===local.enterpriseId&&p.subject===local.subject?{...p,permissions:['request','dispatch','manage'],workKinds:[]}:null,async()=>false,local);
  const references=new ReferenceStore(store.pool,async(_tx,p)=>p.enterpriseId===local.enterpriseId&&p.subject===local.subject?{...p,permissions:['request','manage'],workKinds:[]}:null,{[store.enterpriseId]:store.blobRoot});
@@ -22,6 +24,15 @@ export function createImportServer(store:ImportStore,secret:string){
   try{
    if(!authorized(req))return json(401,{error:'AUTH_REQUIRED'});
    const url=new URL(req.url||'/','http://local-import'),source=url.searchParams.get('source')||'';
+   if(url.pathname.startsWith('/v1/import/worksheet')){
+    if(req.method==='GET'&&url.pathname==='/v1/import/worksheet')return json(200,await worksheet.read(local,source));
+    if(req.method==='GET'&&url.pathname==='/v1/import/worksheet-audit')return json(200,await worksheet.history(local,source,Number(url.searchParams.get('before')||2147483647)));
+    if(req.method==='GET'&&url.pathname==='/v1/import/worksheet-file'){const f=await worksheet.file(local,source,url.searchParams.get('id')||'');const inline=url.searchParams.get('download')!=='1'&&['image/png','image/jpeg'].includes(f.mime);res.writeHead(200,{'content-type':inline?f.mime:'application/octet-stream','content-length':f.bytes,'content-disposition':(inline?'inline':'attachment')+"; filename*=UTF-8''"+encodeURIComponent(f.name).replaceAll("'",'%27'),'cache-control':'private, no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox",'x-content-sha256':f.id});res.end(f.content);return;}
+    if(req.method==='POST'&&['/v1/import/worksheet-command','/v1/import/worksheet-upload'].includes(url.pathname)){
+     if(!req.headers['content-type']?.startsWith('application/json'))throw new WorkflowError(415,'JSON_REQUIRED');const chunks:Buffer[]=[];let size=0;for await(const b of req){size+=b.length;if(size>(url.pathname.endsWith('upload')?6*1024*1024:128*1024))throw new WorkflowError(413,'BODY_TOO_LARGE');chunks.push(b);}let input;try{input=JSON.parse(Buffer.concat(chunks).toString());}catch{throw new WorkflowError(400,'INVALID_JSON');}return json(200,url.pathname.endsWith('upload')?await worksheet.upload(local,source,input):await worksheet.execute(local,source,input));
+    }
+    throw new WorkflowError(405,'METHOD_NOT_ALLOWED');
+   }
    if(req.method==='GET'&&url.pathname==='/v1/import/references')return json(200,await references.list(local,id.parse(url.searchParams.get('orderId'))));
    if(req.method==='GET'&&url.pathname==='/v1/import/reference-asset'){
     const {asset,stream,mime,inline}=await references.file(local,id.parse(url.searchParams.get('orderId')),url.searchParams.get('id')||'',url.searchParams.get('download')==='1');if(res.destroyed){stream.destroy();return;}res.writeHead(200,{'content-type':mime,'content-length':asset.bytes,'content-disposition':(inline?'inline':'attachment')+"; filename*=UTF-8''"+encodeURIComponent(asset.name).replaceAll("'",'%27'),'cache-control':'private, no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox",'x-content-sha256':asset.sha256});stream.on('error',()=>res.destroy());res.on('close',()=>stream.destroy());stream.pipe(res);return;

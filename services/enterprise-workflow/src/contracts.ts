@@ -1,9 +1,15 @@
 import { z } from 'zod';
+import {pauseActions,type PauseRequest} from './pause-contracts';
+import {cancellationActions,type CancellationRequest} from './cancellation-contracts';
+import {handoverPackageActions,type HandoverMaterials,type HandoverConfirmation} from './handover-materials';
+import {changeActions,type ChangeRequest,type Commitment} from './change-contracts';
 import {guidelineSelection,type GuidelineSnapshot} from './guideline-contracts';
 import {formSelection,type FormSnapshot} from './form-contracts';
 import {catalogSelection,type CatalogSnapshot} from './catalog-contracts';
 
 export const id = z.string().uuid();
+// Native Naumi username accounts may use Unicode local parts; require a canonical account key, not an email delivery address.
+export const sourceAccountSubject=z.string().trim().max(254).regex(/^[^\s@\u0000-\u001f\u007f]+@[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$/).transform(s=>s.toLowerCase());
 const text = z.string().trim().min(1).max(2000);
 const kind = z.enum(['design', 'artwork']);
 export const calendarDate=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(s=>{const d=new Date(s+'T00:00:00Z');return !isNaN(+d)&&d.toISOString().slice(0,10)===s;});
@@ -31,6 +37,10 @@ export type SourceLink={ref:SourceRef;linkedBy:string;linkedAt:string;reason:str
 export const routingFieldsSchema=z.strictObject({brand:z.string().trim().max(80),shop:z.string().trim().max(80),businessUnit:z.string().trim().max(80),workKind:z.enum(['','design','artwork'])});
 export type RoutingFields=z.infer<typeof routingFieldsSchema>;
 export const actionSchema = z.discriminatedUnion('type', [
+  ...pauseActions,
+  ...cancellationActions,
+  ...handoverPackageActions,
+  ...changeActions,
   z.strictObject({type:z.literal('set-demand-assets'),assetIds:z.array(id.transform(s=>s.toLowerCase())).max(20),reason:text}),
   z.strictObject({type:z.literal('set-demand-guideline'),selection:guidelineSelection.nullable(),reason:text}),
   z.strictObject({type:z.literal('set-demand-form'),selection:formSelection.nullable(),reason:text}),
@@ -72,9 +82,10 @@ export const commandSchema = z.strictObject({
 });
 export type Action = z.infer<typeof actionSchema>;
 export type Command = z.infer<typeof commandSchema>;
-export type Handover = {id:string;from:string;to:string;reason:string;requestedBy:string;requestedAt:string};
+export type Handover = {id:string;from:string;to:string;reason:string;requestedBy:string;requestedAt:string;materials?:HandoverMaterials;confirmation?:HandoverConfirmation};
 export type HandoverRecord = Handover & {outcome:'accepted'|'declined'|'cancelled';resolvedBy:string;resolvedAt:string;resolutionReason:string};
 export type Task = {
+  commitmentBaseline?:Commitment;
   sourceLinks?:SourceLink[];
   pendingHandover?:Handover|null;handoverHistory?:HandoverRecord[];
   planStart?:string|null;planEnd?:string|null;estimatedHours?:number|null;scheduleTag?:string;customValues?:Record<string,string|number|null>;
@@ -84,6 +95,11 @@ export type Task = {
   submittedAt: string | null; acceptedAt: string | null; assetIds: string[]; quality: number | null;
 };
 export type WorkOrder = {
+  pauses?:PauseRequest[];
+  pausePeriods?:{pauseId:string;startedAt:string;endedAt?:string;resumeId?:string;cancelled?:boolean}[];
+  cancellations?:CancellationRequest[];
+  changes?:ChangeRequest[];
+  requirementBaseline?:{title:string;brief:string;acceptance:string;firstChangeId:string};
     guideline?:GuidelineSnapshot|null;
   demandAssets?:{id:string;orderId:string;uploader:string;name:string;bytes:number;sha256:string;revision:number;createdAt:string}[];
   creationOrigin?:{batchId:string;orderId?:string;version?:number};
@@ -95,7 +111,7 @@ export type WorkOrder = {
   followsOrderId?:string;
   teamId?: string;
   id: string; enterpriseId: string; requester: string; title: string; brief: string; acceptance: string;
-  status: 'draft' | 'submitted' | 'approved' | 'active' | 'completed' | 'cancelled' | 'archived';
+  status: 'draft' | 'submitted' | 'approved' | 'active' | 'paused' | 'completed' | 'cancelled' | 'archived';
   version: number; createdAt: string; updatedAt: string; tasks: Task[];
 };
 export type WorkflowEvent = {

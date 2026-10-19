@@ -1,0 +1,14 @@
+import {readFile,readdir} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {once} from 'node:events';
+import pg from 'pg';
+import {ImportStore} from '../src/import-store';
+import {createImportServer} from '../src/import-server';
+const config=JSON.parse(await readFile(resolve(process.env.SHEET_FIXTURE_DIR!,'connection.json'),'utf8'));
+if(process.env.SHEET_FIXTURE_ISOLATED!=='1'||new URL(config.databaseUrl).hostname!=='127.0.0.1')throw Error('ISOLATED_FIXTURE_REQUIRED');
+const pool=new pg.Pool({connectionString:config.databaseUrl,max:4});
+for(const name of (await readdir(new URL('../migrations/',import.meta.url))).filter(f=>/^\d{3}-.*\.sql$/.test(f)).sort())await pool.query(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
+const store=new ImportStore(pool,config.enterpriseId,resolve('data/enterprise-local-import/blobs'));
+await store.ingest(JSON.parse(await readFile('data/enterprise-local-import/IMPORT_PAYLOAD.json','utf8')),'fixture-owner');
+const server=createImportServer(store,config.token);server.listen(config.port,'127.0.0.1');await once(server,'listening');console.log('SHEET_FIXTURE_READY: real_source_copy=1 original_writes=0 disposable_pg=1');
+let closing=false;const close=()=>{if(closing)return;closing=true;server.closeAllConnections();server.close(()=>void pool.end().then(()=>process.exit(0)));};process.once('SIGINT',close);process.once('SIGTERM',close);

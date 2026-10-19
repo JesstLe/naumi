@@ -31,7 +31,7 @@ try {
   const compose=JSON.parse(docker(['compose','--env-file',emptyEnv,'-f',join(serviceRoot,'deploy/linux/compose.example.yaml'),'config','--format','json'],{env:composeEnv}));
   for(const role of ['api','worker']){const s=compose.services[role];assert.equal(s.network_mode,'host');assert.equal(s.user,'1000:1000');assert.equal(s.read_only,true);assert.equal(s.image,release.imageId);assert.equal(s.restart,'no');assert.equal(s.environment.RUNTIME_ROLE,role);}
   const testContext=join(out,'acceptance-context');await mkdir(testContext,{recursive:true});
-  await build({entryPoints:[join(serviceRoot,'tests/runtime.acceptance.ts')],outfile:join(testContext,'acceptance.mjs'),bundle:true,platform:'node',target:'node24',format:'esm',external:['pg']});
+  await build({entryPoints:[join(serviceRoot,'tests/runtime.acceptance.ts')],outfile:join(testContext,'acceptance.mjs'),bundle:true,platform:'node',target:'node24',format:'esm',external:['pg','sharp']});
   await copyFile(join(serviceRoot,'deploy/linux/Dockerfile.acceptance'),join(testContext,'Dockerfile'));
   const testImage='naumi-enterprise-linux-test:'+suffix;
   const imageBuild=docker(['build','--platform','linux/amd64','--build-arg','POSTGRES_IMAGE='+POSTGRES_IMAGE,'--build-arg','RUNTIME_IMAGE='+release.image,'-t',testImage,testContext],{timeout:600000});
@@ -45,9 +45,9 @@ try {
   const test=prefix+'-acceptance';
   ownRun(test,[...hardening,'--network','container:'+prefix,'--mount',`type=volume,source=${volume},target=/scratch,volume-nocopy`,'-e','NAUMI_VERIFY_ISOLATED_DB=1','-e','RUNTIME_TEST_DATABASE_URL','-e','RUNTIME_TEST_CONTAINER='+prefix,'-e','RUNTIME_BUNDLE_DIR=/app/dist','-e','NAUMI_RUNTIME_EVIDENCE_DIR=/scratch/evidence','-e','RUNTIME_TEST_NATIVE_PG=1','-e','RUNTIME_TEST_KEEP_SMOKE=1',testImage],{RUNTIME_TEST_DATABASE_URL:`postgresql://postgres:${password}@127.0.0.1:5432/runtime_fixture`});
   const exit=docker(['wait',test],{timeout:300000}),testLog=dockerLogs(test);await writeFile(join(out,'LINUX_PROCESS.log'),redact(testLog));console.log(redact(testLog));assert.equal(exit,'0','LINUX_PROCESS_FAILED');
-  assert.equal(inspect(test).State.OOMKilled,false);assert(testLog.includes('checks=16'));
+  assert.equal(inspect(test).State.OOMKilled,false);assert(testLog.includes('PILOT_PROVISION_PASS:')&&testLog.includes('PAUSES_HTTP_PASS:')&&testLog.includes('CANCELLATION_HTTP_PASS:'));
   docker(['cp',test+':/scratch/evidence',join(out,'evidence')]);
-  const acceptance=JSON.parse(await readFile(join(out,'evidence/RUNTIME_ACCEPTANCE.json'),'utf8'));assert.equal(acceptance.releaseId,release.releaseId);assert.equal(acceptance.gitRevision,release.gitRevision);assert.equal(acceptance.passed,16);
+  const acceptance=JSON.parse(await readFile(join(out,'evidence/RUNTIME_ACCEPTANCE.json'),'utf8'));assert.equal(acceptance.releaseId,release.releaseId);assert.equal(acceptance.gitRevision,release.gitRevision);assert.equal(acceptance.passed,acceptance.checks.length);assert(acceptance.passed>=45,'CURRENT_RUNTIME_COVERAGE_REQUIRED');
   const smoke=await readFile(join(serviceRoot,'tests/linux-container-smoke.mjs'),'utf8');
   for(const role of ['api','worker']) {
     const name=prefix+'-'+role;
@@ -64,7 +64,7 @@ try {
   const image=docker(['image','inspect',release.imageId,'--format','{{json .Config}}']);assert(!image.includes(password));
   const report={release,linuxChecks:acceptance.passed,buildCwdReproducible:true,composeConfigValidated:true,healthRoleMismatchRejected:true,referenceLoad:acceptance.referenceLoad,containers:exits,networkInternal:JSON.parse(docker(['network','inspect',network]))[0].Internal,providerCalls:0,realCompanyBinding:false,realDatabaseTouched:false,productionReleased:false,capacityBoundary:'local Docker Linux containers, bounded fixture load; not target 4-core/8GiB combined Naumi capacity'};
   assert.equal(report.networkInternal,true);await writeFile(join(out,'LINUX_ACCEPTANCE.json'),JSON.stringify(report,null,2));
-  success=true;console.log('LINUX_VERIFY_PASS: checks=16 runtime_image_api=1 runtime_image_worker=1 uid1000=1 readonly=1 config0600=1 no_socket=1 internal_network=1 persisted_bytes=1 graceful_exit0=2 provider_calls0=1');
+  success=true;console.log('LINUX_VERIFY_PASS: checks='+acceptance.passed+' runtime_image_api=1 runtime_image_worker=1 uid1000=1 readonly=1 config0600=1 no_socket=1 internal_network=1 persisted_bytes=1 graceful_exit0=2 provider_calls0=1');
 } catch(e) {console.error(redact(e.message));process.exitCode=1;}
 finally {
   for(const name of owned.reverse()) {try{const s=inspect(name);assert(s.Config.Labels['naumi.fixture']==='enterprise-linux'&&name.startsWith(prefix));docker(['rm','-f','-v',name]);}catch(e){console.error('LINUX_FIXTURE_CLEANUP_FAILED '+redact(e.message));process.exitCode=1;}}

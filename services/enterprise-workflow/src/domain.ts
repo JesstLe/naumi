@@ -1,4 +1,10 @@
+import {evolvePause,isPause} from './pause-domain';
+import type {PauseImpact} from './pause-contracts';
 import {moveDates} from './calendar';
+import {evolveCancellation,isCancellation} from './cancellation-domain';
+import type {CancellationImpact} from './cancellation-contracts';
+import {sameIds} from './handover-materials';
+import {evolveChange,isChangeAction} from './change-domain';
 import { createHash } from 'node:crypto';
 import { WorkflowError, type Actor, type Command, type WorkOrder, type WorkflowEvent, type Permission, type Task } from './contracts';
 
@@ -16,7 +22,7 @@ export function canRead(actor: Actor, order: WorkOrder) {
     order.requester === actor.subject || order.tasks.some(t => participants(t).includes(actor.subject) || t.pendingHandover?.to===actor.subject) ||
     has(actor, 'execute') && order.status === 'active' && order.tasks.some(t => t.status === 'open' && actor.workKinds.includes(t.kind)));
 }
-export function evolve(previous: WorkOrder | null, actor: Actor, command: Command, at: string) {
+export function evolve(previous: WorkOrder | null, actor: Actor, command: Command, at: string,cancellationImpact?:CancellationImpact,pauseImpact?:PauseImpact) {
   const action = command.action;
   const permit = (p: Permission) => need(has(actor, p), 'FORBIDDEN', 403);
   if (!previous) {
@@ -32,12 +38,15 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
   need(canRead(actor, previous), 'FORBIDDEN', 403);
   need(previous.version === command.expectedVersion, 'VERSION_CONFLICT');
   need(action.type !== 'create', 'ALREADY_EXISTS');
-  if(actor.teamId!==previous.teamId&&!['operations-signoff','operations-followup'].includes(action.type))throw new WorkflowError(403,'EXECUTION_TEAM_REQUIRED');
+  if(actor.teamId!==previous.teamId&&!['operations-signoff','operations-followup'].includes(action.type)&&!isChangeAction(action.type)&&!isCancellation(action.type)&&!isPause(action.type))throw new WorkflowError(403,'EXECUTION_TEAM_REQUIRED');
   const order = structuredClone(previous);
   const state = (...allowed: WorkOrder['status'][]) => need(allowed.includes(order.status), 'INVALID_ORDER_STATE');
   const owner = () => need(order.requester === actor.subject || has(actor, 'manage'), 'FORBIDDEN', 403);
   let eventData: Record<string, unknown> = {};
   switch (action.type) {
+    case 'request-pause':case 'approve-pause':case 'reject-pause':case 'withdraw-pause':case 'apply-pause':eventData=evolvePause(order,actor,action,at,pauseImpact);break;
+    case 'request-cancellation':case 'approve-cancellation':case 'reject-cancellation':case 'withdraw-cancellation':case 'apply-cancellation':eventData=evolveCancellation(order,actor,action,at,cancellationImpact);break;
+    case 'propose-change':case 'approve-change':case 'reject-change':case 'withdraw-change':case 'apply-change':eventData=evolveChange(order,actor,action,at);break;
     case 'set-demand-assets':state('draft');permit('request');owner();eventData={before:order.demandAssets??[]};break;
     case 'set-demand-guideline':state('draft');permit('request');owner();eventData={before:order.guideline??null};break;
     case 'set-demand-form':state('draft');permit('request');owner();eventData={before:order.form??null};break;
@@ -53,6 +62,7 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
     }
     case 'plan-tasks': {
       state('approved'); permit('dispatch');
+      need(!order.tasks.some(t=>t.commitmentBaseline),'CHANGE_BASELINE_REPLAN_FROZEN');
       const ids = new Set(action.tasks.map(t => t.id));
       need(ids.size === action.tasks.length, 'DUPLICATE_TASK');
       const specs = new Map(action.tasks.map(t => [t.id, t]));
@@ -95,11 +105,11 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
       state('approved','active');permit('dispatch');const t=order.tasks.find(t=>t.id===action.taskId);need(t,'TASK_NOT_FOUND',404);need(t.status!=='accepted','ACCEPTED_PLAN_IMMUTABLE');eventData={before:{scheduleTag:t.scheduleTag??''}};t.scheduleTag=action.scheduleTag;break;
     }
     case 'move-task-plan': {
-      state('approved','active');permit('dispatch');const t=order.tasks.find(t=>t.id===action.taskId);need(t,'TASK_NOT_FOUND',404);need(t.status!=='accepted','ACCEPTED_PLAN_IMMUTABLE');need(!t.pendingHandover,'HANDOVER_PENDING');need(t.planStart&&t.planEnd&&t.estimatedHours,'PLAN_REQUIRED');need(t.planStart!==action.targetStart,'PLAN_MOVE_NO_CHANGE');
+      state('approved','active','paused');permit('dispatch');const t=order.tasks.find(t=>t.id===action.taskId);need(t,'TASK_NOT_FOUND',404);need(t.status!=='accepted','ACCEPTED_PLAN_IMMUTABLE');need(!t.pendingHandover,'HANDOVER_PENDING');need(t.planStart&&t.planEnd&&t.estimatedHours,'PLAN_REQUIRED');need(t.planStart!==action.targetStart,'PLAN_MOVE_NO_CHANGE');
       const proposed=moveDates(t.planStart,t.planEnd,action.targetStart);eventData={before:{planStart:t.planStart,planEnd:t.planEnd},after:proposed};Object.assign(t,proposed);break;
     }
     case 'set-task-plan': {
-      state('approved','active');permit('dispatch');const t=order.tasks.find(t=>t.id===action.taskId);need(t,'TASK_NOT_FOUND',404);need(t.status!=='accepted','ACCEPTED_PLAN_IMMUTABLE');
+      state('approved','active','paused');permit('dispatch');const t=order.tasks.find(t=>t.id===action.taskId);need(t,'TASK_NOT_FOUND',404);need(t.status!=='accepted','ACCEPTED_PLAN_IMMUTABLE');
       const empty=action.planStart===null&&action.planEnd===null&&action.estimatedHours===null;
       need(empty||action.planStart!==null&&action.planEnd!==null&&action.estimatedHours!==null&&action.planEnd>=action.planStart&&(Date.parse(action.planEnd)-Date.parse(action.planStart))/86400000<366,'INVALID_PLAN_RANGE');
       eventData={before:{planStart:t.planStart??null,planEnd:t.planEnd??null,estimatedHours:t.estimatedHours??null,scheduleTag:t.scheduleTag??'',customValues:t.customValues??{}}};
@@ -114,18 +124,21 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
       const taskState = (...s: typeof task.status[]) => need(s.includes(task.status), 'INVALID_TASK_STATE');
       const executor = () => { permit('execute'); need(task.assignee === actor.subject && actor.workKinds.includes(task.kind), 'FORBIDDEN', 403); };
       const dependencies = () => need(task.dependencyIds.every(d => order.tasks.find(t => t.id === d)?.status === 'accepted'), 'DEPENDENCY_NOT_ACCEPTED');
-      if(task.pendingHandover&&!['accept-handover','decline-handover','cancel-handover'].includes(action.type))throw new WorkflowError(409,'HANDOVER_PENDING');
+      if(task.pendingHandover&&!['accept-handover','accept-handover-package','decline-handover','cancel-handover'].includes(action.type))throw new WorkflowError(409,'HANDOVER_PENDING');
       switch (action.type) {
-        case 'propose-handover':
+        case 'propose-handover':case 'propose-handover-package':
           taskState('in_progress','blocked','rework');permit('dispatch');need(task.assignee&&task.assignee!==action.assignee,'INVALID_HANDOVER_TARGET');
           need(!(task.handoverHistory??[]).some(h=>h.id===action.handoverId),'HANDOVER_ID_REUSED');
           need((task.handoverHistory?.length??0)<100,'HANDOVER_HISTORY_LIMIT');
-          task.pendingHandover={id:action.handoverId,from:task.assignee,to:action.assignee,reason:action.reason,requestedBy:actor.subject,requestedAt:at};break;
-        case 'accept-handover': case 'decline-handover': case 'cancel-handover': {
+          task.pendingHandover={id:action.handoverId,from:task.assignee,to:action.assignee,reason:action.reason,requestedBy:actor.subject,requestedAt:at,...(action.type==='propose-handover-package'?{materials:{version:1 as const,progressNote:action.materials.progressNote,remainingWork:action.materials.remainingWork,risks:action.materials.risks,checklist:action.materials.checklist,emptyAssetReason:action.materials.emptyAssetReason,assets:[],captured:{status:task.status,percent:task.percent,assignee:task.assignee,orderVersion:previous.version}}}:{})};break;
+        case 'accept-handover':case 'accept-handover-package': case 'decline-handover': case 'cancel-handover': {
           const h=task.pendingHandover;need(h&&h.id===action.handoverId,'HANDOVER_CHANGED');
           if(action.type==='cancel-handover')permit('dispatch');else{permit('execute');need(h.to===actor.subject&&actor.workKinds.includes(task.kind),'FORBIDDEN',403);}
-          if(action.type==='accept-handover')task.assignee=h.to;
-          const record={...h,outcome:action.type==='accept-handover'?'accepted' as const:action.type==='decline-handover'?'declined' as const:'cancelled' as const,resolvedBy:actor.subject,resolvedAt:at,resolutionReason:action.type==='accept-handover'?'':action.reason};
+          if(action.type==='accept-handover')need(!h.materials,'HANDOVER_PACKAGE_CONFIRMATION_REQUIRED');
+          if(action.type==='accept-handover-package'){need(h.materials,'HANDOVER_PACKAGE_REQUIRED');need(sameIds(action.checkedIds,h.materials.checklist.map(c=>c.id))&&sameIds(action.confirmedAssetIds,h.materials.assets.map(f=>f.id)),'HANDOVER_CONFIRMATION_INCOMPLETE');h.confirmation={checkedIds:action.checkedIds,confirmedAssetIds:action.confirmedAssetIds,statement:action.statement,confirmedAt:at,confirmedBy:actor.subject};}
+          const accepted=action.type==='accept-handover'||action.type==='accept-handover-package';
+          if(accepted)task.assignee=h.to;
+          const record={...h,outcome:accepted?'accepted' as const:action.type==='decline-handover'?'declined' as const:'cancelled' as const,resolvedBy:actor.subject,resolvedAt:at,resolutionReason:action.type==='accept-handover-package'?action.statement:action.type==='accept-handover'?'':action.reason};
           task.handoverHistory=[...(task.handoverHistory??[]),record];task.pendingHandover=null;eventData={handover:record};break;
         }
         case 'assign': taskState('open'); permit('dispatch'); task.assignee = action.assignee; task.status = 'assigned'; break;
@@ -152,8 +165,9 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
           task.status = 'accepted'; task.percent = 100; task.acceptedAt = at; task.quality = action.quality;
           // Immutable measurement facts, NOT a final personnel score or payroll instruction.
           eventData = { taskId: task.id, taskTitle: task.title, orderTitle: order.title, contributor: task.assignee, contributionBps: (task.handoverHistory??[]).some(h=>h.outcome==='accepted')?null:10000, attributionStatus:(task.handoverHistory??[]).some(h=>h.outcome==='accepted')?'needs-review':'single-contributor', participants:participants(task), handoverHistory:task.handoverHistory??[], points: task.points,
-            quality: task.quality, dueAt: task.dueAt, submittedAt: task.submittedAt, acceptedAt: at,
-            reworkCount: task.reworkCount, assetIds: task.assetIds, measurementVersion: 2 };
+            quality: task.quality, dueAt: task.commitmentBaseline?.dueAt??task.dueAt, submittedAt: task.submittedAt, acceptedAt: at,
+            reworkCount: task.reworkCount, assetIds: task.assetIds, measurementVersion: task.commitmentBaseline?3:2,
+            ...(task.commitmentBaseline?{committedDueAt:task.dueAt,originalPoints:task.commitmentBaseline.points,changeIds:order.changes?.filter(c=>c.status==='applied'&&c.impact.taskIds.includes(task.id)).map(c=>c.id)??[]}:{} ) };
           if (order.tasks.every(t => t.status === 'accepted')) order.status = 'completed';
           break;
       }

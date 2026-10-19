@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import assert from 'node:assert/strict';
 const root=new URL('../../',import.meta.url);
-for(const f of ['design/enterprise-demo/verify.mjs','design/enterprise-demo/schedule-tests.mjs','design/enterprise-demo/workbook-tests.mjs','design/enterprise-demo/source-tests.mjs','design/enterprise-demo/import-view-tests.mjs','docs/enterprise/tools/build-scheduling-docs.mjs']){
+for(const f of ['design/enterprise-demo/verify.mjs','design/enterprise-demo/schedule-tests.mjs','design/enterprise-demo/workbook-tests.mjs','design/enterprise-demo/source-tests.mjs','design/enterprise-demo/import-view-tests.mjs','design/enterprise-demo/sheet-grid-tests.mjs','docs/enterprise/tools/build-scheduling-docs.mjs']){
  const r=spawnSync(process.execPath,[fileURLToPath(new URL(f,root))],{encoding:'utf8'});if(r.status!==0){process.stderr.write(r.stdout+r.stderr);process.exit(r.status||1);}
  if(f.endsWith('schedule-tests.mjs'))assert(r.stdout.includes('checks=36'));
 }

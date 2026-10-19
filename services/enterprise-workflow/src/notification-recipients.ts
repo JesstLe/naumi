@@ -9,6 +9,9 @@ export function notificationRecipients(order:WorkOrder,event:WorkflowEvent,membe
   if(a.subject===event.actor||!canRead(a,order))return false;
   const exec=a.teamId===order.teamId,requester=a.teamId===origin&&a.subject===order.requester,dispatch=exec&&a.permissions.some(p=>p==='manage'||p==='dispatch');
   switch(type){
+   case 'request-pause':case 'approve-pause':case 'reject-pause':case 'withdraw-pause':case 'apply-pause':
+   case 'request-cancellation':case 'approve-cancellation':case 'reject-cancellation':case 'withdraw-cancellation':case 'apply-cancellation':return requester||dispatch||a.teamId===origin&&a.permissions.includes('manage')||exec&&order.tasks.some(t=>participants(t).includes(a.subject)||((event.data.closedHandovers as {taskId:string;handover:{to:string}}[]|undefined)??[]).some(h=>h.taskId===t.id&&h.handover.to===a.subject));
+   case 'propose-change':case 'approve-change':case 'reject-change':case 'withdraw-change':case 'apply-change':return requester||dispatch||a.teamId===origin&&a.permissions.includes('manage')||exec&&order.tasks.some(t=>participants(t).includes(a.subject));
    case 'submit-requirement':case 'route-resolved':case 'claim':case 'block':case 'resume':return dispatch;
    case 'return-requirement':case 'approve-requirement':return requester;
    case 'publish':case 'release':return exec&&a.permissions.includes('execute')&&order.tasks.some(t=>t.status==='open'&&a.workKinds.includes(t.kind)&&(!action.taskId||t.id===action.taskId));
@@ -16,8 +19,8 @@ export function notificationRecipients(order:WorkOrder,event:WorkflowEvent,membe
    case 'batch-tasks':return exec&&order.tasks.some(t=>action.taskIds?.includes(t.id)&&t.assignee===a.subject);
    case 'submit-delivery':return exec&&!!task&&a.permissions.includes('review')&&!participants(task).includes(a.subject);
    case 'accept-delivery':return exec&&!!task&&participants(task).includes(a.subject)||requester&&order.status==='completed';
-   case 'propose-handover':return exec&&!!task?.pendingHandover&&[task.pendingHandover.from,task.pendingHandover.to].includes(a.subject);
-   case 'accept-handover':case 'decline-handover':case 'cancel-handover':{const h=event.data.handover as {from:string;to:string;requestedBy:string}|undefined;return exec&&!!h&&[h.from,h.to,h.requestedBy].includes(a.subject);}
+   case 'propose-handover':case 'propose-handover-package':return exec&&!!task?.pendingHandover&&[task.pendingHandover.from,task.pendingHandover.to].includes(a.subject);
+   case 'accept-handover':case 'accept-handover-package':case 'decline-handover':case 'cancel-handover':{const h=event.data.handover as {from:string;to:string;requestedBy:string}|undefined;return exec&&!!h&&[h.from,h.to,h.requestedBy].includes(a.subject);}
    case 'operations-signoff':case 'operations-followup':return requester||dispatch;
    case 'cancel':return requester||exec&&order.tasks.some(t=>participants(t).includes(a.subject));
    default:return false;
