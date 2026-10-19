@@ -1,3 +1,4 @@
+import {SourceWorksheetStore} from './source-worksheet-store';
 import {randomUUID} from 'node:crypto';
 import {openSourceFile} from './source-files';
 import type {Pool,PoolClient} from 'pg';
@@ -10,7 +11,8 @@ function ensure(v:unknown,code:string,status=409):asserts v{if(!v)throw new Work
 
 /** Formal employee access, deliberately separate from the local preparation adapter. */
 export class FormalImportStore{
- constructor(readonly pool:Pool,private resolveActor:ResolveActor,private roots:Record<string,string>={}){}
+ readonly worksheet:SourceWorksheetStore;
+ constructor(readonly pool:Pool,private resolveActor:ResolveActor,private roots:Record<string,string>={}){this.worksheet=new SourceWorksheetStore(pool,async(c,p)=>{const a=await resolveActor(c,p);ensure(a&&a.enterpriseId===p.enterpriseId&&a.subject===p.subject&&a.teamId===p.teamId&&a.permissions.includes('manage'),'FORBIDDEN',403);ensure((await c.query('SELECT 1 FROM enterprise_workflow.person_directory_admins WHERE enterprise_id=$1 AND subject=$2 AND enabled FOR SHARE',[p.enterpriseId,p.subject])).rowCount===1,'DIRECTORY_ADMIN_REQUIRED',403);});}
  private async tx<T>(p:Principal,fn:(c:PoolClient,a:Actor)=>Promise<T>){const c=await this.pool.connect();try{
   await c.query('BEGIN');await c.query("SET LOCAL lock_timeout='3s'; SET LOCAL statement_timeout='10s'");
   const a=await this.resolveActor(c,p);ensure(a&&a.enterpriseId===p.enterpriseId&&a.subject===p.subject&&a.teamId===p.teamId&&a.permissions.includes('manage'),'FORBIDDEN',403);

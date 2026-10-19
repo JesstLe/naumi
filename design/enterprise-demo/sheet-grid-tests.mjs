@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import './sheet-grid-model.js';
+const M=globalThis.SheetGridModel;let checks=0;const ok=(v)=>{assert(v);checks++;};
+const doc={columns:[{id:'title',type:'text'},{id:'score',type:'number'}],rows:[{id:'p',parentId:null,cells:{title:'任务10',score:'10'}},{id:'c',parentId:'p',cells:{title:'任务2',score:'2'}},{id:'blank',parentId:null,cells:{title:'',score:''}},{id:'deleted',archived:true,cells:{title:'已删除'}}]};
+const s={mode:'table',filters:{},query:'',sort:{column:'',direction:'asc'},collapsed:new Set()};
+ok(M.compare('任务2','任务10','text','asc')<0);ok(M.compare('2','10','number','desc')>0);ok(M.compare('','10','number','desc')>0);
+ok(M.project(doc,s).matching.length===3);ok(M.project(doc,s).entries[1].depth===1);ok(M.project(doc,{...s,query:'任务2'}).entries[0].context);ok(M.project(doc,{...s,query:'任务2'}).matching.length===1);
+ok(M.project(doc,{...s,filters:{title:{op:'empty'}}}).matching.length===1);ok(M.project(doc,{...s,filters:{title:{op:'filled'}}}).matching.length===2);ok(M.project(doc,{...s,filters:{title:{op:'eq',value:'任务10'}}}).matching.length===1);
+ok(M.project(doc,{...s,collapsed:new Set(['p'])}).entries.length===2);const archived=structuredClone(doc);archived.rows[0].archived=true;ok(M.project(archived,s).entries.some(e=>e.row.id==='c'&&e.depth===0));
+ok(M.project(doc,{...s,mode:'board',sort:{column:'score',direction:'asc'}}).entries.map(e=>e.row.id).join(',')==='c,p,blank');
+ok(M.text([{name:'brief.pdf'}])==='brief.pdf');ok(M.project(doc,{...s,query:'已删除'}).matching.length===0);
+console.log(`SHEET_GRID_MODEL_PASS: checks=${checks} filters=1 sorting=1 parent_context=1 deleted_parent_children_preserved=1`);

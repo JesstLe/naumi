@@ -9,7 +9,7 @@ import { createImportServer } from '../src/import-server';
 const mode=process.argv[2],dir=resolve(process.argv[3]||'data/enterprise-local-import'),configFile=join(dir,'connection.json');
 const docker=(args:string[])=>execFileSync('docker',args,{encoding:'utf8',timeout:60000,stdio:['ignore','pipe','pipe']}).trim();
 await mkdir(dir,{recursive:true});
-let config:{databaseUrl:string;enterpriseId:string;token:string;port:number;container:string;volume:string};
+let config:{databaseUrl:string;enterpriseId:string;token:string;port:number;container:string;volume:string;sourceBlobRoot?:string};
 try{config=JSON.parse(await readFile(configFile,'utf8'));}catch(e){
  if(mode!=='init'||(e as NodeJS.ErrnoException).code!=='ENOENT')throw e;
  const id=randomBytes(6).toString('hex'),password=randomBytes(32).toString('hex'),container='naumi-enterprise-import-'+id,volume=container+'-data';
@@ -21,7 +21,7 @@ try{config=JSON.parse(await readFile(configFile,'utf8'));}catch(e){
 }
 if(new URL(config.databaseUrl).hostname!=='127.0.0.1')throw Error('LOCAL_DATABASE_REQUIRED');
 const pool=new pg.Pool({connectionString:config.databaseUrl,max:4});
-const store=new ImportStore(pool,config.enterpriseId,join(dir,'blobs'));
+const store=new ImportStore(pool,config.enterpriseId,config.sourceBlobRoot||join(dir,'blobs'));
 if(mode==='serve'){
  const port=process.argv[4]?Number(process.argv[4]):config.port;if(!Number.isInteger(port)||port<1024||port>65535)throw Error('INVALID_LOCAL_PORT');
  await pool.query('SELECT 1');const server=createImportServer(store,config.token);server.listen(port,'127.0.0.1',()=>console.log(`LOCAL_IMPORT_READY: port=${port} persistent_postgres=1 data=real source_writes=0`));

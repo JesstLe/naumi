@@ -102,6 +102,15 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
         const {asset,stream,mime,inline}=await references.file(principal,id.parse(url.searchParams.get('orderId')),url.searchParams.get('id')||'',url.searchParams.get('download')==='1');
         if(res.destroyed){stream.destroy();return;}res.writeHead(200,{'Content-Type':mime,'Content-Length':asset.bytes,'Content-Disposition':(inline?'inline':'attachment')+"; filename*=UTF-8''"+encodeURIComponent(asset.name).replaceAll("'",'%27'),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox",'X-Content-SHA256':asset.sha256});stream.on('error',()=>res.destroy());res.on('close',()=>stream.destroy());stream.pipe(res);return;
       }
+      if(imports&&url.pathname.startsWith('/v1/imports/worksheet')){
+        const source=url.searchParams.get('source')||'',sheet=imports.worksheet;
+        if(req.method==='GET'&&url.pathname==='/v1/imports/worksheet')return json(res,200,await sheet.read(principal,source));
+        if(req.method==='GET'&&url.pathname==='/v1/imports/worksheet-audit')return json(res,200,await sheet.history(principal,source,Number(url.searchParams.get('before')||2147483647)));
+        if(req.method==='POST'&&url.pathname==='/v1/imports/worksheet-command')return json(res,200,await sheet.execute(principal,source,await body(req)));
+        if(req.method==='POST'&&url.pathname==='/v1/imports/worksheet-upload')return json(res,200,await sheet.upload(principal,source,await body(req,6*1024*1024)));
+        if(req.method==='GET'&&url.pathname==='/v1/imports/worksheet-file'){const f=await sheet.file(principal,source,url.searchParams.get('id')||'');const inline=url.searchParams.get('download')!=='1'&&['image/png','image/jpeg'].includes(f.mime);res.writeHead(200,{'Content-Type':inline?f.mime:'application/octet-stream','Content-Length':f.bytes,'Content-Disposition':(inline?'inline':'attachment')+"; filename*=UTF-8''"+encodeURIComponent(f.name).replaceAll("'",'%27'),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox",'X-Content-SHA256':f.id});res.end(f.content);return;}
+        throw new WorkflowError(405,'METHOD_NOT_ALLOWED');
+      }
       if(imports&&req.method==='GET'&&url.pathname==='/v1/imports/context')return json(res,200,await imports.context(principal));
       if(imports&&req.method==='GET'&&url.pathname==='/v1/imports/rows')return json(res,200,await imports.rows(principal,url.searchParams.get('source')||''));
       if(imports&&req.method==='POST'&&url.pathname==='/v1/imports/resolve')return json(res,200,await imports.confirm(principal,url.searchParams.get('source')||'',await body(req)));
