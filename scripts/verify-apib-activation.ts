@@ -30,7 +30,13 @@ async function main(){
     const plan=makeActivationPlan(baseline,billing,contract,source,manifest);
     assert.equal(plan.delta.length,17);assert.equal(plan.matrix.filter((x:any)=>x.decision==='HOLD').length,73);assert.equal(activationMatrix(manifest).length,75);
     assert.deepEqual(rollbackActivation(plan.config,plan),baseline.config);assert.equal(verifyActivation(plan.config,plan).enabledIds.length,2);
-    assert.equal(verifyLocalPlan(plan,baseline,billing,[f.origin]).combinations,75);
+    const local=verifyLocalPlan(plan,baseline,billing,[f.origin]);
+    assert.equal(local.combinations,60);assert.equal(local.excludedCombinations,15);
+    assert.equal(local.routeGuard.passes,36);assert.equal(local.routeGuard.rejects,9);
+    assert.equal(local.adapterParameterGuard.passes,120);assert.equal(local.adapterParameterGuard.rejects,30);
+    assert.equal(local.excludedSimulation.length,15);assert.ok(local.excludedSimulation.every(x=>x.rawSimulationEligibleIds.length===2&&!x.routeAdmissible&&!x.adapterAdmissible));
+    assert.equal(contract.sourceObservations.ratios.length,15);
+    assert.equal(Object.keys(contract.sourceObservations.outputDimensions).length,15);
     assert.equal(plan.config.upstreamModels.filter((u:any)=>u.id.startsWith('apib:')&&u.enabled).length,2);
     assert.equal(plan.config.upstreamModels.some((u:any)=>u.id.startsWith('apib:')&&(u.capabilities.verified||u.procurement)),false);
     const changed=structuredClone(plan.config);changed.publicModels[0].supplierRouting.channels[0].weight=9;changed.upstreamModels[0].label='Later administrator label';
@@ -39,6 +45,8 @@ async function main(){
     const dependent=structuredClone(plan.config);dependent.upstreamModels.find((u:any)=>u.id==='apib:gpt-image-2.5-ext').enabled=true;assert.throws(()=>rollbackActivation(dependent,plan),/ROLLBACK_PROVIDER_HAS_NEW_DEPENDENTS/);
     assert.throws(()=>makeActivationPlan(baseline,billing,contract,Buffer.from('changed'),manifest),/DOCUMENT_HASH_CHANGED/);
     const altered=structuredClone(contract);altered.parameters.resolutionPolicy.values['2K']='2k';assert.throws(()=>makeActivationPlan(baseline,billing,altered,source,manifest),/PARAMETER_CONTRACT_CHANGED/);
+    const widened=structuredClone(contract);widened.parameters.apimartImages.ratios.push('9:21');widened.parameters.apimartImages.outputDimensions['1K:9:21']=contract.sourceObservations.outputDimensions['1K:9:21'];assert.throws(()=>makeActivationPlan(baseline,billing,widened,source,manifest),/ROUTE_EXECUTABLE_SUBSET_CHANGED/);
+    const lostObservation=structuredClone(contract);delete lostObservation.sourceObservations.outputDimensions['1K:1:3'];assert.throws(()=>makeActivationPlan(baseline,billing,lostObservation,source,manifest),/DOCUMENTED_PIXEL_MATRIX_CHANGED/);
     const invalid=structuredClone(baseline);invalid.config.providers.at(-2)!.enabled=true;invalid.digest=digest(invalid.config);assert.throws(()=>makeActivationPlan(invalid,billing,contract,source,manifest),/PROVIDER_BASELINE_CHANGED/);
     save(root,'PLAN.json',plan);save(root,'ORIGINAL_MODEL.json',baseline);save(root,'ORIGINAL_BILLING.json',billing);
     await assert.rejects(()=>runActivation('APPLY',root,a,undefined,false));
@@ -57,7 +65,7 @@ async function main(){
     assert.equal(after.config.providers.find(p=>p.id==='apib-image')!.enabled,false);assert.equal(after.config.upstreamModels.filter(u=>u.id.startsWith('apib:')&&u.enabled).length,0);
     const pubCount=activations;await runActivation('ROLLBACK',root,a,undefined,true);assert.equal(activations,pubCount);
     assert.equal((await f.sql.query('SELECT count(*)::int n FROM app_supplier_calls')).rows[0].n,0);assert.equal(attempts,0);
-    console.log('APIB_ACTIVATION=PASS; ENABLED=2; HELD=73; DELTA=17; PLAN_COMBINATIONS=75; UNKNOWN_SAME_ID_RECOVERY=PASS; SAME_ID_APPLY=PASS; SELECTIVE_ROLLBACK=PASS; LATER_WEIGHTS_LABELS_BILLING=PRESERVED; SUPPLIER_CALLS=0');
+    console.log('APIB_ACTIVATION=PASS; ENABLED=2; HELD=73; DELTA=17; PLAN_COMBINATIONS=60; EXCLUDED_COMBINATIONS=15; ROUTE_GUARD_PASSES=36; ROUTE_GUARD_REJECTS=9; ADAPTER_PARAMETER_PASSES=120; ADAPTER_PARAMETER_REJECTS=30; RAW_SIMULATION_RATIO_BLIND=true; SOURCE_RATIOS=15; UNKNOWN_SAME_ID_RECOVERY=PASS; SAME_ID_APPLY=PASS; SELECTIVE_ROLLBACK=PASS; LATER_WEIGHTS_LABELS_BILLING=PRESERVED; SUPPLIER_CALLS=0');
   }finally{globalThis.fetch=originalFetch;await db.getPool().end();await f.cleanup();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

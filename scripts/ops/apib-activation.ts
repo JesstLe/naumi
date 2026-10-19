@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
-import { makeActivationPlan, verifyActivation, rollbackActivation, digest, canonical } from '../lib/apib-activation.mjs';
+import { makeActivationPlan, verifyActivation, rollbackActivation, digest, canonical, EXECUTABLE_RATIOS, EXCLUDED_RATIOS } from '../lib/apib-activation.mjs';
+import { exactImageRequestSize, supportsExactImageSize } from '../../src/lib/imagegen/request-size';
+import { apimartImageParameters } from '../../src/lib/model-config/apimart-image-parameters';
 import { validateModelConfig } from '../../src/lib/model-config/schema';
 import { compileRouterProjection } from '../../src/lib/model-config/projection';
 import { simulateModel } from '../../src/lib/model-config/runtime';
@@ -22,16 +24,39 @@ export function verifyLocalPlan(plan:any,baseline:any,billing:any,trustedOrigins
   assert.deepEqual(compileRouterProjection(baseline,billing,{trustedOrigins}).payload.config,compileRouterProjection({...baseline,config:plan.config},billing,{trustedOrigins}).payload.config,'Existing Router projection must remain exact');
   assert.equal(configuredHealthTargets(plan.config).filter(t=>t.provider.id==='apib-image').some(t=>t.supported),false,'New opt-in sources must not become automatic paid probes');
   const baseFacts={task:'product' as const,quality:'medium',resolution:'1K',ratio:'1:1',needsEdit:false,needsText:false,preserveIdentity:false,nativeResolution:true,references:0,quantity:1};
-  const plans=[];
+  const plans=[],excludedSimulation=[];let combinations=0,excludedCombinations=0,guardPasses=0,guardRejects=0,adapterPasses=0,adapterRejects=0;
+  const candidateIds=['apib:gpt-image-2.5-flare','apib:gpt-image-2.5-sunburst'];
+  const adapterScope=(id:string)=>{const u=plan.config.upstreamModels.find((u:any)=>u.id===id);return {parameterMap:u.parameterMap,capabilities:u.capabilities,frozen:{facts:baseFacts}} as any;};
+  // The actual pre-SDK helper, not simulateModel, decides route size admission.
+  // Family routing carries public gpt-image-2 before child adapter selection.
+  for(const model of ['gpt-image-2','gpt-image-2.5-flare','gpt-image-2.5-sunburst']){
+    assert.equal(supportsExactImageSize(model),true);
+    for(const ratio of EXECUTABLE_RATIOS){assert.match(exactImageRequestSize(ratio,model)!,/^\d+x\d+$/);guardPasses++;}
+    for(const ratio of EXCLUDED_RATIOS){assert.throws(()=>exactImageRequestSize(ratio,model),/当前图片模型尚未配置该精确比例/);guardRejects++;}
+  }
   for(const quality of ['low','medium','high','xhigh','max'])for(const ratio of plan.config.upstreamModels.find((u:any)=>u.id==='apib:gpt-image-2.5-flare').parameterMap.apimartImages.ratios){
+    combinations++;
     const facts={...baseFacts,quality,ratio},result=simulateModel({...baseline,config:plan.config},billing,'gpt-image-2',facts,{trustedOrigins});
-    for(const id of ['apib:gpt-image-2.5-flare','apib:gpt-image-2.5-sunburst'])assert.ok(result.eligible.some(x=>x.upstreamId===id));
+    for(const id of candidateIds){
+      assert.ok(result.eligible.some(x=>x.upstreamId===id));
+      const params=apimartImageParameters(adapterScope(id),{quality,resolution:'1K',ratio});
+      assert.deepEqual(params.expectedPixels,plan.config.upstreamModels.find((u:any)=>u.id===id).parameterMap.apimartImages.outputDimensions[`1K:${ratio}`]);
+      assert.equal(params.upstream.size,ratio);assert.equal(params.upstream.resolution,'1k');adapterPasses++;
+    }
     if(quality==='medium'&&ratio==='3:4')plans.push({input:facts,result,simulationOnly:true,providerCalls:0,jobCreated:false});
+  }
+  for(const quality of ['low','medium','high','xhigh','max'])for(const ratio of EXCLUDED_RATIOS){
+    const result=simulateModel({...baseline,config:plan.config},billing,'gpt-image-2',{...baseFacts,quality,ratio},{trustedOrigins});
+    // simulateModel does not currently consume apimartImages.ratios. Preserve
+    // its literal result; never relabel this coarse eligibility as admission.
+    for(const id of candidateIds){assert.ok(result.eligible.some(x=>x.upstreamId===id));assert.throws(()=>apimartImageParameters(adapterScope(id),{quality,resolution:'1K',ratio}),/异步图片通道未开放/);adapterRejects++;}
+    excludedSimulation.push({input:{quality,resolution:'1K',ratio},rawSimulationEligibleIds:result.eligible.filter(x=>x.upstreamId.startsWith('apib:')).map(x=>x.upstreamId),routeAdmissible:false,adapterAdmissible:false});excludedCombinations++;
   }
   for(const facts of [{...baseFacts,resolution:'2K'},{...baseFacts,needsEdit:true,references:1}]){
     const result=simulateModel({...baseline,config:plan.config},billing,'gpt-image-2',facts,{trustedOrigins});assert.equal(result.eligible.some(x=>x.upstreamId.startsWith('apib:')),false);
   }
-  return {simulation:plans,combinations:75,newPaidHealthTargets:0,providerCalls:0,jobCreated:false};
+  assert.equal(combinations,60);assert.equal(excludedCombinations,15);
+  return {simulation:plans,combinations,excludedCombinations,excludedSimulation,simulationLimitation:'simulateModel is ratio-blind for apimartImages; even excluded ratios can remain eligible. Route and adapter checks, not raw simulation, establish local admission.',routeGuard:{scope:'actual request-size helper; public family plus two exact wire IDs; not full HTTP execution',models:3,allowedRatios:12,excludedRatios:3,passes:guardPasses,rejects:guardRejects},adapterParameterGuard:{passes:adapterPasses,rejects:adapterRejects,networkCalls:0},validationScope:'frozen simulate/resolve plus exact-size and adapter parameter helpers; no HTTP route or paid output acceptance',newPaidHealthTargets:0,providerCalls:0,jobCreated:false};
 }
 
 /** Separate administrative publication; never calls an image/video execution
@@ -107,7 +132,7 @@ async function main(){
     const plan=makeActivationPlan(baseline,billing,contract,readFileSync(contract.source.path),parse('docs/providers/apib-onboarding-20261019.json'));
     const trusted=baseline.config.providers.map((p:any)=>new URL(p.baseUrl).origin),result=verifyLocalPlan(plan,baseline,billing,trusted);
     save(root,'PLAN.json',plan);save(root,'MODIFIED_FILE.json',plan.config);save(root,'MATRIX.json',plan.matrix);save(root,'DIFF_FILE.json',plan.delta);save(root,'LOCAL_PLAN.json',result);
-    console.log(`PREPARE=PASS; CANDIDATES=2; HELD=73; DELTA=${plan.delta.length}; COMBINATIONS=75; PROVIDER_CALLS=0`);return;
+    console.log(`PREPARE=PASS; CANDIDATES=2; HELD=73; DELTA=${plan.delta.length}; COMBINATIONS=${result.combinations}; EXCLUDED_COMBINATIONS=${result.excludedCombinations}; ROUTE_GUARD_PASSES=${result.routeGuard.passes}; ROUTE_GUARD_REJECTS=${result.routeGuard.rejects}; PROVIDER_CALLS=0`);return;
   }
   assert.ok(['PLAN','APPLY','VERIFY','ROLLBACK'].includes(mode),'Explicit operation mode required');
   const proof=parse(join(root,'LOCK_PROOF.json'));
