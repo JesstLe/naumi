@@ -3050,9 +3050,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if(generationOperationRef.current.has(item.receipt.nodeId))continue;
       const result=await pollImagegen(item.receipt.id);if(stopped)return;
       if(!["succeeded","failed","cancelled","needs_attention"].includes(result.status))continue;
+      if(result.status==="succeeded"&&!result.artifacts.length)throw new Error("结果暂未返回，请检查原任务");
       let y=item.receipt.y;const fresh=result.artifacts.filter(a=>!worksRef.current?.some(w=>w.id===a.artworkId&&w.canvasX!=null&&w.canvasY!=null));
       for(const a of fresh){const response=await privateFetchRaw("/api/artworks/position",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:a.artworkId,x:Math.round(item.receipt.x),y:Math.round(y)})});if(!response.ok)throw new Error("恢复结果位置保存失败");y+=a.height+NODE_LABEL_H+24;}
-      if(result.artifacts.length){const ids=result.artifacts.map(a=>a.artworkId),merged=await mergeWorks(ids);if(stopped)return;if(fresh.length)pushAddUndoMany(fresh.map(a=>a.artworkId),merged);}
+      if(result.artifacts.length){const ids=result.artifacts.map(a=>a.artworkId),merged=await mergeWorks(ids);if(stopped)return;assertGenerationResultsPresent(ids,merged);if(fresh.length)pushAddUndoMany(fresh.map(a=>a.artworkId),merged);}
       if(result.error)flashTip(result.error.message);
       if(result.status!=="needs_attention")clearCanvasReceipt(sessionStorage,item.key,item.receipt.id);
       pending.splice(pending.indexOf(item),1);
@@ -4301,7 +4302,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   async function checkGenerationReceipt(context: {
     jobId: string; taskId?: string; pendId?: string; sourceId?: string; operationKey: string;
-    position: { x: number; y: number }; account: string; project: string | null;
+    position: { x: number; y: number }; account: string; project: string | null; endpoint?: "aplus";
   }) {
     const current = () => context.account === canvasAccountRef.current && context.project === (activeProjectRef.current?.key || null);
     if (!current() || generationChecksRef.current.has(context.jobId)) return;
@@ -4314,14 +4315,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if (!generationFailureBlocks(failure)) generationOperationRef.current.delete(context.operationKey);
     };
     try {
-      const response = await fetch(`/api/generate-image?job=${encodeURIComponent(context.jobId)}`, { cache: "no-store", headers: await authHeader() });
+      const response = await fetch(`/api/${context.endpoint || "generate-image"}?job=${encodeURIComponent(context.jobId)}`, { cache: "no-store", headers: await authHeader() });
       const result = await readJsonSafe(response);
+      if (context.endpoint === "aplus") result.images = (result.shots || []).filter((shot: {status?: string;id?: string;url?: string}) => shot.status === "done" && shot.id && shot.url);
       if (!current()) return;
       if (!response.ok) throw new Error(result.error || "任务状态暂未读取到，请稍后检查");
       if (result.user) applyServerUser(result.user);
       if (result.status === "done" || result.status === "error" && result.images?.some((image: {id?: string;url?: string}) => image.id && image.url)) {
         const images = (result.images || []).filter((image: {id?: string;url?: string}) => image.id && image.url) as GeneratedResult[];
-        const live = context.taskId ? generationTaskPosRef.current[context.taskId] : context.pendId ? rfRef.current?.getNode(context.pendId)?.position : undefined;
+        const live = context.pendId ? rfRef.current?.getNode(context.pendId)?.position : context.taskId ? generationTaskPosRef.current[context.taskId] : undefined;
         const position = live || context.position;
         let y = position.y;
         for (const image of images) {
@@ -5448,9 +5450,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         ? { x: sourceNode.position.x + sourceSize.width + X_GAP, y: sourceNode.position.y }
         : { x: 0, y: 0 };
     const taskId = `task-detail-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const reservedPosition = reserveGenerationPosition(taskId, basePosition, generationPlaceholderSize(genRatio), pend ? basePosition : undefined);
+    const replacedFailures = generationTasks.filter(task => task.operationKey === operationKey && task.failure && !generationFailureBlocks(task.failure));
+    const previous = replacedFailures[replacedFailures.length - 1];
+    const retryPosition = previous ? generationTaskPosRef.current[previous.id] || previous.position : undefined;
+    for (const failed of replacedFailures) { delete generationTaskPosRef.current[failed.id]; delete generationTaskSizeRef.current[failed.id]; }
+    const reservedPosition = reserveGenerationPosition(taskId, basePosition, generationPlaceholderSize(genRatio), pend ? basePosition : retryPosition);
     setGenerationTasks((current) => [
-      ...current,
+      ...current.filter(task => !replacedFailures.some(failed => failed.id === task.id)),
       {
         id: taskId,
         operationKey,
@@ -5462,10 +5468,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     ]);
     if (pend) {
       setPendNodes((current) =>
-        current.map((node) => (node.id === pend.id ? { ...node, generating: true } : node))
+        current.map((node) => (node.id === pend.id ? { ...node, generating: true, generationFailure: undefined, onGenerationCheck: undefined } : node))
       );
     }
     setGenError(null);
+    let attempted = false, terminal = false, jobId: string | undefined;
+    let failure: GenerationFailure | undefined, resultIds: string[] = [], resultsLoaded = false;
+    let terminalMessage: string | undefined;
+    const requestAccount = canvasAccountRef.current, requestProject = activeProjectRef.current?.key || null;
+    const current = () => requestAccount === canvasAccountRef.current && requestProject === (activeProjectRef.current?.key || null);
     try {
       const form = new FormData();
       const maxArtworkRefs = Math.max(0, MAX_TOTAL_IMAGES - uploadedRefs.length);
@@ -5493,9 +5504,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       form.append("lang", "zh");
       form.append(
         "format",
-        ["1:1", "4:3", "16:9", "9:16"].includes(genRatio)
-          ? genRatio
-          : "aplus-web"
+        normalizeCanvasRatio(genRatio)
       );
       DETAIL_MODULE_ORDER.slice(0, count).forEach((module) => form.append("module", module));
       form.append("email", user.email);
@@ -5504,6 +5513,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       form.append("parentId", lineage[0].id);
       form.append("parentIds", JSON.stringify(lineage.slice(1).map((artwork) => artwork.id)));
 
+      if (!current()) return;
+      attempted = true;
       const startedResponse = await privateFetch("/api/aplus", {
         method: "POST",
         headers: await authHeader(),
@@ -5511,8 +5522,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       });
       const started = await readJsonSafe(startedResponse);
       if (!startedResponse.ok || !started.jobId) {
-        throw new Error(started.error || t("canvas.genFail"));
+        throw new ImagegenHttpError(started.error || t("canvas.genFail"), startedResponse.status, started.accepted === false || [400,401,403,409,413,422,429].includes(startedResponse.status) ? false : undefined);
       }
+      jobId = started.jobId;
       const deadline = Date.now() + 20 * 60 * 1000;
       let shots: Array<{ id: string; status: string; url?: string | null }> = [];
       for (;;) {
@@ -5536,8 +5548,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               : task
           )
         );
-        if (poll.status === "error") { if (poll.user) applyServerUser(poll.user); throw new Error(poll.error || t("canvas.genFail")); }
-        if (poll.status === "done") {
+        if (poll.status === "error" || poll.status === "done") {
+          terminal = !poll.reviewRequired && poll.operationStatus !== "needs_attention";
+          terminalMessage = poll.status === "error" ? poll.error || t("canvas.genFail") : undefined;
           shots = (poll.shots ?? []) as typeof shots;
           if (poll.user) applyServerUser(poll.user);
           break;
@@ -5546,7 +5559,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const ids = shots
         .filter((shot) => shot.status === "done" && shot.id && shot.url)
         .map((shot) => shot.id);
-      if (!ids.length) throw new Error(t("canvas.genFail"));
+      resultIds = ids;
+      if (!ids.length) throw new Error(terminalMessage || t("canvas.genFail"));
+      if (!current()) return;
       const metadataResponse = await privateFetchRaw(`/api/artworks/get?ids=${ids.map(encodeURIComponent).join(",")}`, { cache: "no-store" });
       const metadata = await expectJsonOk(metadataResponse, t("canvas.genFail"));
       let fresh = (metadata.artworks ?? []) as Artwork[];
@@ -5570,6 +5585,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         })
       );
       fresh = await mergeWorks(ids); // Load the saved live placeholder coordinates, not the pre-save fallback.
+      if (!current()) return;
+      assertGenerationResultsPresent(ids, fresh);
+      resultsLoaded = true;
+      if (terminalMessage) { pushAddUndoMany(ids, fresh); throw new Error(terminalMessage); }
       if (pend) {
         setPendNodes((current) => current.filter((node) => node.id !== pend.id));
         setSelectedPendId((current) => (current === pend.id ? null : current));
@@ -5577,19 +5596,22 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       pushAddUndoMany(ids, fresh);
       // 详情序列完成后保留用户当前选择。
     } catch (error) {
-      const message = error instanceof Error ? error.message : t("canvas.genFail");
+      failure = classifyGenerationFailure(error, { attempted, jobId, terminal, hasResults: resultIds.length > 0 && !resultsLoaded });
+      if (!current()) return;
+      const message = generationFailureMessage(failure);
       if (pend ? selectedPendIdRef.current === pend.id : selectedIdRef.current === source.id) setGenError(message);
       else flashTip(`${source.title}：${message}`);
-      if (pend) {
-        setPendNodes((current) =>
-          current.map((node) => (node.id === pend.id ? { ...node, generating: false } : node))
-        );
-      }
+      const onCheck = jobId ? () => checkGenerationReceipt({ jobId: jobId!, taskId, pendId: pend?.id, sourceId: source.id, operationKey, position: reservedPosition, account: requestAccount, project: requestProject, endpoint: "aplus" }) : undefined;
+      const retainedFailure = failure;
+      setGenerationTasks(tasks => pend ? tasks.filter(task => task.id !== taskId) : tasks.map(task => task.id === taskId ? { ...task, failure: retainedFailure, onCheck } : task));
+      if (pend) setPendNodes(nodes => nodes.map(node => node.id === pend.id ? { ...node, generating: generationFailureBlocks(retainedFailure), generationFailure: retainedFailure, onGenerationCheck: onCheck } : node));
     } finally {
-      generationOperationRef.current.delete(operationKey);
-      delete generationTaskPosRef.current[taskId];
-      delete generationTaskSizeRef.current[taskId];
-      setGenerationTasks((current) => current.filter((task) => task.id !== taskId));
+      if (!failure || !generationFailureBlocks(failure)) generationOperationRef.current.delete(operationKey);
+      if (!failure) {
+        delete generationTaskPosRef.current[taskId];
+        delete generationTaskSizeRef.current[taskId];
+        setGenerationTasks(tasks => tasks.filter(task => task.id !== taskId));
+      }
     }
   }
 
@@ -7523,7 +7545,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (!ids.length) return [];
     const selectedIds = new Set(ids);
     const positions = new Map((rfRef.current?.getNodes() ?? []).map(node => [node.id, node.position]));
-    const busyIds = new Set(generationTasks.map(task => task.sourceId));
+    const busyIds = new Set(generationTasks.filter(task => !task.failure || generationFailureBlocks(task.failure)).map(task => task.sourceId));
     const point = (id: string, x = 0, y = 0) => positions.get(id) || { x, y };
     const busy = (id: string) => busyIds.has(id) || generationOperationRef.current.has(`node:${id}`) || generationOperationRef.current.has(`retry:${id}`) || pendNodesRef.current.some(node => node.generating && node.operationKey === `node:${id}`);
     return selectionRunTargets(ids, [

@@ -1,3 +1,5 @@
+import { exactImageRequestSize, imageRatioMismatch } from "@/lib/imagegen/request-size";
+import { sourceImageDimensions } from "@/lib/imagegen/output-shape";
 import {withBillingIntent} from "@/lib/billing/intent";
 import { modelAwareOpenAI, managedImageEditFetch } from "@/lib/model-config/clients";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
@@ -53,6 +55,9 @@ type ShotSpec = {
   prompt: string;
 };
 type ShotResult = ShotSpec & {
+  width?: number;
+  height?: number;
+  frameError?: string;
   quality?: ResolvedImageQuality;
   id: string;
   status: "pending" | "done" | "error";
@@ -111,12 +116,22 @@ const PLATFORM_LABELS: Record<string, string> = {
   independent: "独立站(现代品牌感,英文)",
 };
 
-// 图片比例档(7 档,对齐竞品):三种 A+ 版式 + 显式比例。
-// gpt-image 仅支持 1024x1024 / 1536x1024 / 1024x1536,按最接近档位映射。
-function sizeFor(format: string): "1024x1024" | "1536x1024" | "1024x1536" {
-  if (format === "1:1") return "1024x1024";
-  if (format === "9:16" || format === "aplus-mobile") return "1024x1536";
-  return "1536x1024";
+const APLUS_FORMATS = ["aplus-web", "aplus-mobile", "aplus-basic", "auto", "1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "4:5", "5:4", "1:2", "2:1", "21:9"];
+function ratioFor(format: string): string {
+  return format === "aplus-mobile" ? "2:3" : format.startsWith("aplus-") ? "3:2" : format;
+}
+// Versioned at creation: historical paid jobs retain their original size contract.
+function sizeFor(format: string, model = "", exact = false): string {
+  if (!exact) {
+    if (format === "1:1") return "1024x1024";
+    if (format === "9:16" || format === "aplus-mobile") return "1024x1536";
+    return "1536x1024";
+  }
+  const ratio = ratioFor(format), native = exactImageRequestSize(ratio, model);
+  if (native) return native;
+  if (ratio === "auto") return "auto";
+  const [w, h] = ratio.split(":").map(Number);
+  return w === h ? "1024x1024" : w < h ? "1024x1536" : "1536x1024";
 }
 
 const RATIO_DESC: Record<string, string> = {
@@ -127,6 +142,9 @@ const RATIO_DESC: Record<string, string> = {
   "4:3": "横版 4:3",
   "16:9": "宽幅 16:9",
   "9:16": "竖版 9:16",
+  "3:4": "竖版 3:4", "2:3": "竖版 2:3", "3:2": "横版 3:2",
+  "4:5": "竖版 4:5", "5:4": "横版 5:4", "1:2": "竖版 1:2",
+  "2:1": "横版 2:1", "21:9": "宽幅 21:9", "auto": "沿用第一张商品参考图的画幅比例",
 };
 
 function fallbackShots(modules: string[], lang: string): ShotSpec[] {
@@ -219,7 +237,7 @@ async function editImagesMultipart(
   model: string,
   prompt: string,
   images: { buf: Buffer; type: string }[],
-  size: "1024x1024" | "1536x1024" | "1024x1536"
+  size: string
 ): Promise<Buffer> {
   const form = new FormData();
   const field = images.length === 1 ? "image" : "image[]";
@@ -272,7 +290,7 @@ async function editWithSelectedProvider(
   model: string,
   prompt: string,
   images: { buf: Buffer; type: string }[],
-  size: "1024x1024" | "1536x1024" | "1024x1536"
+  size: string
 ) {
   const descriptor = await resolveImageModel(model);
   if (descriptor?.provider === "new-api-flow") {
@@ -296,22 +314,25 @@ async function genOneShot(
   model: string,
   spec: ShotSpec,
   productImages: { buf: Buffer; type: string }[],
-  size: "1024x1024" | "1536x1024" | "1024x1536"
+  size: string,
+  exactFrame = false
 ): Promise<Buffer> {
   let images = productImages;
-  let prompt = spec.prompt;
+  let prompt = exactFrame ? `最终画幅比例：${spec.ratio === "auto" ? "沿用第一张商品参考图" : spec.ratio}。完整保留主体和四边内容，不裁切、不拉伸。${spec.prompt}` : spec.prompt;
   const descriptor = await resolveImageModel(model);
+  // 仅历史任务保留旧锚点契约；新版直接传精确 size，不额外占用参考图名额。
   // 兼容网关可能忽略 size、转而沿用第一张参考图纵横比。横版 A+ 先放一张无内容
   // 的横版画布锚点，商品白底图随后提交；提示词明确锚点不是商品，避免模型画出空卡片。
-  if (size === "1536x1024" && descriptor?.provider !== "new-api-flow") {
+  if (!exactFrame && size === "1536x1024" && descriptor?.provider !== "new-api-flow") {
+    const [width, height] = size.split("x").map(Number);
     const mod = (await import("sharp")) as unknown as {
       default?: typeof import("sharp");
     } & typeof import("sharp");
     const sharp = mod.default ?? mod;
     const anchor = await sharp({
       create: {
-        width: 1536,
-        height: 1024,
+        width,
+        height,
         channels: 3,
         background: { r: 248, g: 250, b: 252 },
       },
@@ -407,6 +428,8 @@ type Job = {
   platform: string;
   lang: string;
   format: string;
+  frameVersion?: 1;
+  frameError?: string;
   modules: string[];
   email: string;
   model: string;
@@ -546,7 +569,7 @@ async function runAplusGeneration(jobId: string) {
       buf: buf!,
       type: "image/png",
     }));
-    const size = sizeFor(job.format);
+    const size = sizeFor(job.format, job.model, job.frameVersion === 1);
     const specs = job.shots.length ? job.shots : await planShots(
       client,
       cleanImages[0],
@@ -559,6 +582,7 @@ async function runAplusGeneration(jobId: string) {
     );
     const shots: ShotResult[] = specs.map((s, i) => ({
       ...s,
+      ...(job.frameVersion === 1 && job.shots[i]?.status !== "done" ? { ratio: ratioFor(job.format) } : {}),
       id: job.shots[i]?.id || `aplus-${jobId}-${i}`,
       status: job.shots[i]?.status || "pending",
       url: job.shots[i]?.url,
@@ -587,10 +611,17 @@ async function runAplusGeneration(jobId: string) {
               job.model,
               shot,
               cleanImages,
-              size
+              size,
+              job.frameVersion === 1
             )), job.model);
+            // Preserve provider bytes. A mismatch is reported, never cropped or regenerated.
+            const dimensions = job.frameVersion === 1 ? await sourceImageDimensions(buf).catch(() => undefined) : undefined;
+            const frameError = job.frameVersion === 1 ? imageRatioMismatch(ratioFor(job.format), dimensions || {}) : undefined;
+            const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a;
+            const divisor = dimensions ? gcd(dimensions.width, dimensions.height) : 0;
+            const actualRatio = dimensions && divisor ? `${dimensions.width / divisor}:${dimensions.height / divisor}` : shot.ratio;
             const url = await persistOne(buf, shot.id);
-            shots[idx] = { ...shot, status: "done", url, quality };
+            shots[idx] = { ...shot, ...dimensions, ratio: actualRatio, frameError, status: "done", url, quality };
             ok = true;
           } catch (error) {
             if (error instanceof ImageOperationPending) { gatewayPending = error; break; }
@@ -635,7 +666,8 @@ async function runAplusGeneration(jobId: string) {
             image: s.url!,
             gradient: s.gradient,
             style: null,
-            ratio: job.format === "1:1" ? "1:1" : size === "1024x1536" ? "2:3" : "3:2",
+            ratio: job.frameVersion === 1 ? s.ratio : job.format === "1:1" ? "1:1" : size === "1024x1536" ? "2:3" : "3:2",
+            ...(job.frameVersion === 1 ? { width: s.width, height: s.height } : {}),
             resolution: "1K",
             source: "detail",
             parentId: job.parentId || null,
@@ -660,6 +692,7 @@ async function runAplusGeneration(jobId: string) {
       done: shots.length,
       user,
       creditsUsed: committedCharge,
+      frameError: job.frameVersion === 1 ? shots.find(shot => shot.frameError)?.frameError : undefined,
       reserved: false,
     });
   } catch (e) {
@@ -692,6 +725,8 @@ async function parseInput(request: Request) {
   }
   const rawModules = (f.getAll("module") as string[]).map((m) => m.trim());
   const modules = Array.from(new Set(rawModules)).filter((m) => APLUS_MODULES[m]);
+  const format = (f.get("format") ?? "aplus-web").toString().trim();
+  if (!APLUS_FORMATS.includes(format)) return null;
   return {
     requestedQuality: f.get("quality") ?? undefined,
     billingVersion:f.get("billingVersion")??undefined,billingCredits:f.get("billingCredits")??undefined,
@@ -699,12 +734,7 @@ async function parseInput(request: Request) {
     extra: (f.get("text") ?? "").toString().trim().slice(0, 600),
     platform: (f.get("platform") ?? "amazon").toString().trim().slice(0, 20),
     lang: (f.get("lang") ?? "auto").toString().trim().slice(0, 10),
-    format: (() => {
-      const v = (f.get("format") ?? "aplus-web").toString().trim();
-      return ["aplus-web", "aplus-mobile", "aplus-basic", "1:1", "4:3", "16:9", "9:16"].includes(v)
-        ? v
-        : "aplus-web";
-    })(),
+    format,
     modules: modules.length > 0 ? modules : ["hero", "selling", "scene", "angles"],
     email: (f.get("email") ?? "").toString().trim(),
     prepared,
@@ -869,7 +899,7 @@ async function handleObservedPost(request: Request) {
   }
   const useDb = dbEnabled && input.email.length > 0;
   const billing = await imageRequestBilling(request, input.requestedQuality);
-  const billingQuote=useDb?await quoteForRequest(request,{feature:"image.aplus",quantity:input.modules.length,quality:billing.quality.requested||"medium",resolution:"1K",modelId:model}):undefined;
+  const billingQuote=useDb?await quoteForRequest(request,{feature:"image.aplus",quantity:input.modules.length,quality:billing.quality.requested||"medium",resolution:"1K",ratio:ratioFor(input.format),modelId:model}):undefined;
   if(billingQuote)assertQuotedVersion(requestQuoteConfirmation(request,input),billingQuote);
   const cost = billingQuote?.requestedCredits??input.modules.length * billing.cost;
 
@@ -933,6 +963,7 @@ async function handleObservedPost(request: Request) {
     platform: input.platform,
     lang: input.lang,
     format: input.format,
+    frameVersion: 1,
     modules: input.modules,
     email: input.email,
     model,
@@ -982,8 +1013,9 @@ export async function GET(request: Request) {
   if (!job) {
     return NextResponse.json({
       status: "error",
-      error: "任务不存在或已过期，请重试",
-    });
+      operationStatus: "needs_attention", reviewRequired: true,
+      error: "任务记录暂未找到，请稍后检查原任务",
+    }, { status: 404 });
   }
   if (job.useDb) {
     const tokenEmail = await resolveUserEmail(request);
@@ -996,6 +1028,7 @@ export async function GET(request: Request) {
     role: s.role,
     label: s.label,
     ratio: s.ratio,
+    width: s.width, height: s.height,
     status: s.status,
     url: s.url ?? null,
     gradient: s.gradient,
@@ -1003,7 +1036,9 @@ export async function GET(request: Request) {
   }));
   return NextResponse.json({
     jobId,
-    status: imageJobPollState(job.status),
+    status: job.status === "done" && (job.frameError || job.shots.some(shot => shot.status === "error")) ? "error" : imageJobPollState(job.status),
+    operationStatus: job.status,
+    reviewRequired: String(job.status) === "needs_attention",
     stage: job.stage,
     parameters: { platform:job.platform, lang:job.lang, format:job.format, text:job.extra, modules:job.modules },
     sources: job.sources.map((source, index) => ({
@@ -1017,7 +1052,7 @@ export async function GET(request: Request) {
     creditsUsed: job.status === "done" ? job.creditsUsed : undefined,
     quality: job.quality,
     cost: job.cost,
-    error: job.error,
+    error: job.error || job.frameError || (job.status === "done" && job.shots.some(shot => shot.status === "error") ? "部分详情图未生成，已有结果已保留" : undefined),
   });
 }
 
