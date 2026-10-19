@@ -31,7 +31,7 @@
 - 运行SOURCE_COMMIT=5d7631a06cb3ca64b036641ba85eddf72fb5d3fa，BUILD_VERSION=1792383873；Web/Worker同image sha256:9b43d564c51fd26a45d8d8129f1e1faac21459f2337272b7651ca015a588deb2。后续提交仅修正运维工具及归档，不冒称重新构建业务程序。
 - 新Web4a06a3cd/13102、Workerbe57dedc直连新Web，首次真实服务端tick完成并有receipt hash；旧1852 Web d11e2580/Worker483d9bb9两次综合排空后停止、restart=no，保留旧镜像/容器/备份。
 - 切流UUID23010fb8-b103-4121-a145-32cb81500ea4；Nginx完整SHA8acd9eec…；运行7容器（统一Web/同镜像Worker/5基础服务），参考工作台保持。
-- 真实浏览器：既有登录、画布/3D WebGL、旧页document/编辑保存读回、16旧静态hash、390px、pageerror0；QA临时节点删除。线上图片Dock共用header/footer/无重复面板通过。
+- 真实浏览器：既有登录、画布/3D WebGL、旧页document/编辑保存读回、12旧静态hash、390px、pageerror0；QA临时节点删除。线上图片Dock共用header/footer/无重复面板通过。
 - 真实只读planImagegen：canvas/edit、1张有权参考、gemini-3.0-pro-image-three-four、medium/1K/3:4/PNG/n1，HTTP200，modelVersion118/billingVersion8/6积分，eligible=[geeknow-nano-banana-pro]；未提交生成。
 - 任务快照preservationVerified=true、noMissingJobs/noOriginalSupplierMutation=true、violations/unknownTables均空；配置v118/计费v8 hash不变。152次连续健康HTTP200/db.ok=true。
 - normal rollback check PASS，可读DB备份/旧槽/逆向网关hash核对通过；r2未执行生产切回，首轮真实切回另有回执。root历史MIGRATED_CLEANUP_PENDING/legacyDrainProven=false及两未结事件原样保留，付费任务未重放/退款/补扣。
