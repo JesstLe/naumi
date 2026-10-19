@@ -4,7 +4,7 @@
 The existing unique production owner invokes this AFTER its program transaction
 is COMPLETE. No SSH, restart, create/stop/rm container, Nginx change or generation.
 """
-import argparse, datetime, hashlib, json, os, pathlib, re, uuid
+import argparse, contextlib, datetime, hashlib, json, os, pathlib, re, uuid
 from release47_host import HostTransaction, require, public_identity, environment
 
 HOST_SHA='eb32806db06dfe9ec55f17a3be5c59476ca0a45fec8ce442e0437530212cb3df'
@@ -19,7 +19,7 @@ def check_canonical(raw,expected):
     require(state.get('activeNormalBlueGreenReleaseId')==expected['releaseId'] and release.get('phase')=='COMPLETE','PROGRAM_TRANSACTION_NOT_COMPLETE')
     return {'releaseId':expected['releaseId'],'phase':release['phase'],'revision':state['revision'],'canonicalSha256':sha(raw)}
 
-def run(args):
+def run(args, existing_tx=None):
     spec=load(args.spec);root=pathlib.Path(spec['bundleRoot']).resolve();evidence=pathlib.Path(spec['evidenceRoot'])
     require(root.is_absolute() and root.is_dir() and not root.is_symlink(),'BUNDLE_REQUIRED')
     plan=load(root/'PLAN.json');require(re.fullmatch(r'[0-9a-f-]{36}',plan['operationId']) is not None,'OPERATION_ID_INVALID')
@@ -29,7 +29,11 @@ def run(args):
     for name,expected in files.items():
         require(pathlib.PurePosixPath(name).name==name,'FLAT_BUNDLE_REQUIRED')
         p=(root/name).resolve();require(p.is_relative_to(root) and p.is_file() and sha(p.read_bytes())==expected,'BUNDLE_HASH_CHANGED')
-    with HostTransaction(spec['target'],HOST_SHA,evidence) as tx:
+    if existing_tx is not None:
+        require(existing_tx.target==spec['target'] and existing_tx.stack is not None and len(existing_tx.lock_fds)==3,'WHOLE_TRANSACTION_THREE_LOCKS_REQUIRED')
+        require(evidence.resolve().is_relative_to(existing_tx.folder.resolve()) and not evidence.is_symlink(),'PHASE_EVIDENCE_OUTSIDE_TRANSACTION')
+        evidence.mkdir(mode=0o700,parents=True,exist_ok=True)
+    with (contextlib.nullcontext(existing_tx) if existing_tx is not None else HostTransaction(spec['target'],HOST_SHA,evidence)) as tx:
         before=CANON.read_bytes();lifecycle=check_canonical(before,spec)
         web=public_identity(tx.inspect(spec['web']['id']));require(web==spec['web'] and web['running'],'WEB_IDENTITY_CHANGED')
         env=environment(tx.inspect(web['id']));require(env.get('SOURCE_COMMIT')==spec['sourceCommit'] and env.get('BUILD_VERSION')==str(spec['buildVersion']),'WEB_VERSION_CHANGED')
@@ -42,7 +46,13 @@ def run(args):
             require(spec['mode']=='PLAN','RUN_PLAN_FIRST')
             tx.run(['docker','exec',web['id'],'mkdir','-p',container_root])
             tx.run(['docker','exec',web['id'],'chmod','700',container_root])
-            for name in files:tx.run(['docker','cp',str(root/name),web['id']+':'+container_root+'/'+name])
+            for name in files:
+                destination=container_root+'/'+name
+                tx.run(['docker','cp',str(root/name),web['id']+':'+destination])
+                # docker cp defaults to root ownership; the fixed release runs
+                # as nextjs 1001. Only these exact private /tmp artifacts change.
+                tx.run(['docker','exec','--user','0',web['id'],'chown','1001:1001',destination])
+                tx.run(['docker','exec',web['id'],'chmod','600',destination])
         else:
             for name,expected in files.items():
                 raw=tx.run(['docker','exec',web['id'],'cat',container_root+'/'+name]);require(sha(raw)==expected,'EXISTING_IMMUTABLE_BUNDLE_CHANGED')
