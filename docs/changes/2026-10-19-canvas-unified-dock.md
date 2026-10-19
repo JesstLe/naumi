@@ -31,3 +31,10 @@
 - 预览的SSR属性hydration提示来自本机fixture启动时注入账号/主题；最终截图交互监测无运行时异常，不将其称为已完成全站hydration修复。
 - 完整构建、独立副本真回退、四产物hash与截图检查的最终结果见忽略目录 `output/canvas-unified-dock-20261019/VERIFICATION.txt`，不将旧日志或未完成步骤记作通过。
 - 后续提交只进任务分支，不合main、不发布。公开更新记录不写入未上线事项；同步 origin/main 后功能计数1/3。
+
+## 最终本机构建补充
+
+- 功能提交：7d7b9ba6d81cd6c8c1f4d8e95b357f4f4e5d9110；本机Linux镜像 `naumi:unified-dock-20261019-local`，BUILD_VERSION=1792382271，image inspect id `sha256:8d5bf63b046aec6d5a7df1a48917abe29b7bf0a0d37a773d599181038e84dc9d`。
+- 正式Dockerfile完整Linux构建、90/90页面、standalone镜像导出均exit0。本机构建产物不是47服务器候选，未上传、未运行生产容器。
+- Windows Next build虽exit0/90页面，但standalone跟踪复制node_modules junction出现EPERM；没有将该目录认定为可部署制品，改用上述Linux镜像验证。第一次Docker `--network=none` 因apt缓存未命中、无包索引失败（apt100/build1），恢复正常构建网络后同一功能SHA构建成功；不涉及供应商调用。
+- 本机14860/14861 fixture与本任务T3无痕页已关闭。与任务收尾/占位反馈分支7fa6da22属于同父94589b26的独立增量，本分支不夹带该未要求整合工作，也不改其生成函数。
