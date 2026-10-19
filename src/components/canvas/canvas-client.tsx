@@ -47,6 +47,8 @@ import type {PublicVideoTaskView} from "@/lib/video/service";
 import type {PublicQuote} from "@/lib/billing/client";
 import { CanvasPerformanceProbe, recordCanvasNativeMove } from "./canvas-performance-probe";
 import {CanvasImage} from './canvas-image';
+import { useImageNodeDraft } from './use-image-node-draft';
+import { imageDraftScope } from '@/lib/canvas/image-node-drafts';
 import { CanvasRenderLayerGuard } from './canvas-render-layer-guard';
 import { CanvasEdgeHoverHint, type CanvasEdgeHoverHandle } from './canvas-edge-hover-hint';
 import { canvasZoomState } from '@/lib/canvas/viewport-state';
@@ -1153,6 +1155,7 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
     intrinsicWidth?: number | null;
     processingKind?: Artwork["processingKind"];
     intrinsicHeight?: number | null;
+    inspectOriginal?: boolean;
     lightCanvas?: boolean;
     onDimensions?: (id: string, width: number, height: number) => void;
     workflowPresentation?: { rotation: number; flipX: boolean; opacity: number };
@@ -1284,7 +1287,7 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
             <CanvasImage
               key={d.image as string}
               source={d.image as string}
-              forceOriginal={forceOriginal}
+              forceOriginal={forceOriginal || !!d.inspectOriginal}
               hasDimensions={!!d.intrinsicWidth && !!d.intrinsicHeight}
               decoding="async"
               onError={event => { if(event.currentTarget.dataset.mediaVariant!=='original')setForceOriginal(true);else onImgError(event,d.image as string); }}
@@ -1633,17 +1636,22 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const deepFocusRef = useRef(false);
   // 是否已做过"刷新恢复上次项目"的初始化(避免初始挂载误清本地保存)
   const restoredRef = useRef(false);
-  // 「基于上一级重做」:切到父节点时把本节点提示词带过去(避免被选中-清空逻辑抹掉)
-  const carryPromptRef = useRef<string | null>(null);
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedPendId, setSelectedPendId] = useState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [browserTab, setBrowserTab] = useState<"all" | "workflows">("all");
   const cancelEditRef = useRef(false); // Esc 取消时跳过失焦保存
-  const [editPrompt, setEditPrompt] = useState("");
+  const imageDraftNodeId = selectedPendId || selectedId;
+  const imageDraftArtwork = selectedPendId ? undefined : works?.find(art => art.id === selectedId);
+  const imageDraft = useImageNodeDraft(
+    imageDraftScope(user?.email, targetEmail, activeKey), imageDraftNodeId,
+    { prompt: imageDraftArtwork?.prompt || "", ratio: normalizeCanvasRatio(imageDraftArtwork?.ratio) }, readOnly
+  );
+  const { prompt: editPrompt, setPrompt: setEditPrompt, ratio: genRatio, setRatio: setGenRatio } = imageDraft;
   const [genModel, setGenModel] = useState("");
   const { quality: genQuality, imageCost, modelConfig } = useImageQuality("canvas.image", genModel);
   const expandQuality = useImageQuality("canvas.expand").quality;
@@ -1652,7 +1660,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const canvasToolQualities: Partial<Record<FeatureId,string>> = {"canvas.expand":expandQuality,"canvas.text-edit":textEditQuality,"canvas.annotate":annotateQuality};
   const { catalog: canvasImageCatalog, selected: canvasImageModel, setSelected: setCanvasImageModel, error: canvasImageCatalogError } = useFeatureModels("canvas.image");
   const [imageModels, setImageModels] = useState<ImageModelOption[]>([]);
-  const [genRatio, setGenRatio] = useState("auto"); // 默认自适应
   const [genResolution, setGenResolution] = useState("1K"); // 默认 1K
   const [ratioMenuOpen, setRatioMenuOpen] = useState(false); // 比例/分辨率弹出面板
   const ratioBtnRef = useRef<HTMLButtonElement>(null);
@@ -1822,7 +1829,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const parameters = canvasModelParameters(imageModels.find(m => m.id === genModel)?.generationParameters);
     setGenRatio(current => parameters.ratios.includes(normalizeCanvasRatio(current)) ? normalizeCanvasRatio(current) : "auto");
     setGenResolution(current => parameters.resolutions.includes(normalizeCanvasResolution(current)) ? normalizeCanvasResolution(current) : parameters.resolutions[0] || "1K");
-  }, [genModel, imageModels]);
+  }, [genModel, imageModels, imageDraft.key, genRatio]);
 
   function pickGenerationModel(model: string) {
     if (canvasImageCatalog?.managed) { setCanvasImageModel(model); return; }
@@ -2011,7 +2018,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const pendUploadRef = useRef<HTMLInputElement>(null);
   const pendUploadTargetRef = useRef<string | null>(null);
   // 选中的空白节点(显示文生图/合并 dock)
-  const [selectedPendId, setSelectedPendId] = useState<string | null>(null);
   const selectedPendIdRef = useRef(selectedPendId); selectedPendIdRef.current = selectedPendId;
   // 新建项目:进入空白画布(无任何节点),右键添加节点/上传第一张图后即成新项目并切过去
   const [creatingNew, setCreatingNew] = useState(false);
@@ -2751,19 +2757,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           });
           return;
         }
-        addPendAtScreen(center.x, center.y, null, false);
+        const pend = addPendAtScreen(center.x, center.y, null, false);
         setGenerationMode(
           key === "detail" ? "detail" : key === "views" ? "triptych" : "standard"
         );
-        setEditPrompt(
-          t(
-            key === "detail"
-              ? "canvas.workflowDetailPrompt"
-              : key === "views"
-                ? "canvas.workflowViewsPrompt"
-                : "canvas.workflowHeroPrompt"
-          )
-        );
+        imageDraft.seed(pend.id, { prompt: t(
+          key === "detail" ? "canvas.workflowDetailPrompt" : key === "views" ? "canvas.workflowViewsPrompt" : "canvas.workflowHeroPrompt"
+        ) }, imageDraftScope(user?.email, targetEmail, null));
         wantFocusPendPrompt.current = true;
       }, 0);
     });
@@ -3513,6 +3513,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         data: {
           ...(n.data as Record<string, unknown>),
           inChain: hasSel && chain.has(n.id),
+          inspectOriginal: n.id === selectedId && multiSel.length <= 1,
           lightCanvas,
       },
       className:
@@ -3729,6 +3730,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     nodes,
     edges,
     generationTasks,
+    multiSel,
     selectedId,
     selectedPendId,
     selectedTextId,
@@ -3764,7 +3766,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const nodesSig = useMemo(() => displayNodes
     .map(
       (n) =>
-        `${JSON.stringify([n.data.image,n.data.videoUrl,n.data.missingAsset,n.data.workflowPresentation,n.data.title,n.data.prompt,n.data.content])}:${JSON.stringify([n.data.generationStage, n.data.generationStartedAt, n.data.generationCount, n.data.generationCompleted, n.data.generationSize, n.data.generationKind])}:${JSON.stringify((n.data as {settings?:CanvasNodeSettings}).settings)}:${n.draggable}:${n.zIndex}:${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${
+        `${JSON.stringify([n.data.inspectOriginal,n.data.image,n.data.videoUrl,n.data.missingAsset,n.data.workflowPresentation,n.data.title,n.data.prompt,n.data.content])}:${JSON.stringify([n.data.generationStage, n.data.generationStartedAt, n.data.generationCount, n.data.generationCompleted, n.data.generationSize, n.data.generationKind])}:${JSON.stringify((n.data as {settings?:CanvasNodeSettings}).settings)}:${n.draggable}:${n.zIndex}:${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${
           (n.data as { pending?: boolean }).pending ? 1 : 0
         }:${(n.data as { inChain?: boolean }).inChain ? 1 : 0}:${n.className ?? ""}:${
           Math.round((n.data as { progress?: number }).progress ?? -1)
@@ -4111,25 +4113,19 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
   }
 
-  // 选中节点变化时:Fuser 式——新提示词框留空(只读管理员视图才显示该图原提示词供查看);
-  // 比例/风格沿用该节点作默认。「基于上一级重做」会用 carryPromptRef 把上一版提示词带过来。
+  // Prompt/ratio are synchronously node-scoped drafts. Only ephemeral dock UI
+  // resets on selection; never overwrite unsent text with artwork metadata.
   useEffect(() => {
-    const carried = carryPromptRef.current;
-    carryPromptRef.current = null;
-    // 预填该节点自己的提示词(可编辑),便于"看着配方改一改再生成";有 carry 的优先用 carry
-    setEditPrompt(carried ?? selected?.prompt ?? "");
-    const nextRatio = normalizeCanvasRatio(selected?.ratio);
-    setGenRatio(nextRatio); // 默认自适应
-
     setGenStyle(selected?.style || GENERATION_STYLES[0]);
-    setGenerationMode("standard");
+    // Blank-node creation/workflows set their mode explicitly in the event.
+    if (selected?.id) setGenerationMode("standard");
     setRatioMenuOpen(false);
     setGenError(null);
     setExtraFiles([]);
     setExtraPreviews([]);
-    setHiddenRefIds([]); // 切换节点:恢复显示自动引用图
+    setHiddenRefIds([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected?.id]);
+  }, [imageDraft.key, selected?.id, selectedPendId, activeKey, readOnly]);
 
   useEffect(() => { setGenError(null); }, [selectedPendId]);
 
@@ -6414,7 +6410,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     } else {
       // 「图片」:落点建好节点后,把光标落进提示词框,写"改什么"→点生成出衍生(img2img)
       const textSource = textNodes.find((node) => node.id === sourceId);
-      setEditPrompt(textSource?.content || textSource?.prompt || "");
+      imageDraft.seed(pend.id, { prompt: textSource?.content || textSource?.prompt || "" });
       wantFocusPendPrompt.current = true;
     }
   }
@@ -6949,6 +6945,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       inputs: linked && parentId ? [parentId] : [],
     };
     setPendNodes((prev) => [...prev, pend]);
+    setGenerationMode("standard");
     // 选中新空白节点 → 自动出生成 dock(图3:加节点即可直接写提示词生成)
     setSelectedId(null);
     setSelectedTextId(null);
@@ -6988,7 +6985,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     clearCanvasSelection(true);
     setSelectedId(null);
     setSelectedPendId(id);
-    setEditPrompt("");
+    imageDraft.seed(id, { prompt: "", ratio: "auto" });
     setGenerationMode("standard");
     setGenCount(1);
     wantFocusPendPrompt.current = true;
