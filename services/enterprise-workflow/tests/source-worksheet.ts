@@ -5,6 +5,7 @@ import {once} from 'node:events';
 import {fileURLToPath} from 'node:url';
 import pg from 'pg';
 import sharp from 'sharp';
+import JSZip from 'jszip';
 import {SourceWorksheetStore} from '../src/source-worksheet-store';
 import {FormalImportStore} from '../src/formal-import-store';
 import {ImportStore} from '../src/import-store';
@@ -68,6 +69,18 @@ try{
  await assert.rejects(()=>run({type:'set-cells',row:'new-row',cells:{files:[{...manifest.base,excelRevision:invalid.id}]}}),(e:any)=>e.code==='EXCEL_REVISION_INVALID');checks++;
  await assert.rejects(()=>run({type:'set-cells',row:'new-row',cells:{image:[{kind:image.kind,id:image.id,name:image.name,excelRevision:revision.id}]}}),(e:any)=>e.code==='EXCEL_REVISION_INVALID');checks++;
  ok((await store.file(p,source,excel.id)).content.equals(Buffer.from('PK-excel-source-fixture')));
+ // G63: dedicated full-workbook saves stay atomic, CAS-bound and isolated from 4MiB generic uploads.
+ const officeZip=new JSZip();officeZip.file('[Content_Types].xml','<Types/>');officeZip.file('xl/workbook.xml','<workbook/>');officeZip.file('xl/media/large.bin',Buffer.alloc(4*1024*1024+1024,1));const officeBytes=await officeZip.generateAsync({type:'nodebuffer',compression:'STORE'});
+ const officeRefs=(await store.read(p,source)).document.rows.find((r:any)=>r.id==='new-row')!.cells.files as any[];
+ const officeInput={commandId:randomUUID(),expectedVersion:version,row:'new-row',column:'files',refs:officeRefs,ref:officeRefs[0],name:'Office工作副本.xlsx'};
+ await assert.rejects(()=>store.officeSave(foreign,source,officeInput,officeBytes));checks++;
+ await assert.rejects(()=>store.officeSave(p,source,officeInput,Buffer.from('bad zip')),(e:any)=>e.code==='INVALID_OFFICE_FILE');checks++;
+ await run({type:'set-cells',row:'e4',cells:{title:'其他任务并行修改'}});
+ const full=await store.officeSave(p,source,officeInput,officeBytes);version=full.version;ok((await store.read(p,source)).document.rows.find((r:any)=>r.id==='e4')!.cells.title==='其他任务并行修改');ok((await store.file(p,source,full.ref.id)).bytes>4*1024*1024);ok((await store.read(p,source)).document.rows.find((r:any)=>r.id==='new-row')!.cells.files[0].id===full.ref.id);
+ ok((await store.officeSave(p,source,officeInput,officeBytes)).replayed===true);
+ const quotaBefore=(await pool.query('SELECT count(*)::int AS n FROM enterprise_workflow.source_worksheet_files')).rows[0].n;officeZip.file('xl/another.xml','<changed/>');const different=await officeZip.generateAsync({type:'nodebuffer',compression:'STORE'});
+ await assert.rejects(()=>store.officeSave(p,source,{...officeInput,commandId:randomUUID()},different),(e:any)=>e.code==='VERSION_CONFLICT');checks++;ok((await pool.query('SELECT count(*)::int AS n FROM enterprise_workflow.source_worksheet_files')).rows[0].n===quotaBefore);
+ await assert.rejects(()=>store.upload(p,source,{name:'generic.xlsx',data:officeBytes.toString('base64')}));checks++;
  const restarted=new FormalImportStore(pool,resolve);ok((await restarted.worksheet.read(p,source)).version===version);ok((await restarted.worksheet.history(p,source)).events[0].version===version);
  await pool.query('UPDATE enterprise_workflow.person_directory_admins SET enabled=false WHERE enterprise_id=$1',[enterpriseId]);await assert.rejects(()=>store.read(p,source),(e:any)=>e.code==='DIRECTORY_ADMIN_REQUIRED');checks++;await pool.query('UPDATE enterprise_workflow.person_directory_admins SET enabled=true WHERE enterprise_id=$1',[enterpriseId]);
  server=createWorkflowServer(new WorkflowStore(pool,resolve,async()=>false),async req=>req.headers.authorization==='Bearer fixture-manager'?p:null,undefined,undefined,undefined,undefined,undefined,undefined,undefined,formal);server.listen(0,'127.0.0.1');await once(server,'listening');const port=(server.address() as any).port,base=`http://127.0.0.1:${port}/v1/imports/`;

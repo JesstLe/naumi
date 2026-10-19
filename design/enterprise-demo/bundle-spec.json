@@ -167,7 +167,8 @@
   "tail": [
     "sheet-grid-model.js",
     "sheet-grid-ui.js",
-    "excel-preview-ui.js"
+    "excel-preview-ui.js",
+    "excel-office-ui.js"
   ],
   "workers": [
     {
