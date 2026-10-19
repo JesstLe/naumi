@@ -1,0 +1,53 @@
+.shell {
+  --canvas-ui-panel: #fff;
+  --canvas-ui-panel-solid: #fff;
+  --canvas-ui-soft: #f4f6f9;
+  --canvas-ui-soft-hover: #eaf0f6;
+  --canvas-ui-border: #e0e6ee;
+  --canvas-ui-border-strong: #aab8cd;
+  --canvas-ui-text: #283448;
+  --canvas-ui-muted: #748095;
+  --canvas-ui-input: #fff;
+  position: absolute;
+  /* Keep the canvas companion below active prompt controls; portals remain above both. */
+  z-index: 36;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: calc(100% - 16px);
+  overflow: hidden;
+  border: 1px solid var(--canvas-ui-border);
+  border-radius: 16px;
+  color: var(--canvas-ui-text);
+  background: #fff;
+  box-shadow: 0 12px 36px rgb(32 48 73 / 12%);
+  container-type: inline-size;
+}
+.header { display: flex; min-height: 38px; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 12px 2px 16px; }
+.identity { display: flex; min-width: 0; align-items: center; gap: 7px; color: #69778c; font-size: 11px; font-weight: 600; }
+.identity > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.headerActions { display: flex; flex-shrink: 0; gap: 3px; }
+.headerActions button { display: flex; width: 28px; height: 28px; align-items: center; justify-content: center; border: 0; border-radius: 7px; color: #8994a5; background: transparent; cursor: pointer; }
+.headerActions button:hover { color: #34445c; background: #f0f3f8; }
+.shell button:focus-visible, .shell select:focus-visible, .shell textarea:focus-visible { outline: 2px solid #789bd6; outline-offset: 2px; }
+.shell [data-composer-body] { min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; padding: 4px 16px 12px; }
+.shell [data-composer-body] textarea { width: 100%; min-height: 112px; color: var(--canvas-ui-text); font-size: 14px; line-height: 1.65; }
+.shell [data-composer-body] textarea::placeholder { color: #939daf; }
+.shell[data-composer-expanded="true"] [data-composer-body] textarea { min-height: 220px; }
+.footer { display: flex; flex: 0 0 auto; align-items: flex-end; gap: 10px; min-height: 54px; padding: 10px 14px; border-top: 1px solid #e9edf3; background: #fcfdff; }
+.controls { display: flex; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; align-items: center; gap: 6px; }
+.controls > * { max-width: 100%; }
+.controls button:not([role="menuitem"]), .controls > label { min-height: 32px; border-radius: 9px; font-size: 12px; }
+.controls :global(.canvas-ui-control) { background: #f4f6f9 !important; border-color: #e0e6ee !important; }
+.controls > button, .controls :global([role="combobox"]) { border: 1px solid #e0e6ee; background: #f4f6f9; color: #62718a; }
+.actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+.actions > button:last-child, .actions > div > button:last-child { display: flex; width: 36px; height: 36px; flex-shrink: 0; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 10px; background: #263348 !important; color: #fff !important; }
+.actions button:disabled { cursor: not-allowed; opacity: .45; }
+.actions button:last-child svg { width: 17px; height: 17px; }
+@container (max-width: 480px) {
+  .footer { gap: 6px; padding: 9px 10px; }
+  .controls { gap: 5px; }
+  .controls button:not([role="menuitem"]), .controls > label { font-size: 11px; }
+  .actions { gap: 5px; }
+  .shell [data-composer-body] { padding-right: 12px; padding-left: 12px; }
+}
