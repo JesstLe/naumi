@@ -9,7 +9,7 @@ async function main(){let cases=0;
   const source={id:'source'},c={...helpers,ImagegenHttpError,Error,readOnly:false,user:{email:'fixture'},canvasAccountRef:{current:'fixture'},canvasContextEpochRef:{current:1},activeProjectRef:{current:{key:'A'}},generationOperationRef:{current:new Set()},generationChecksRef:{current:new Set()},rfRef:{current:{getNode:()=>({position:{x:10,y:20}})}},flowNodeSize:()=>({width:320}),artworkNodeSize:()=>({width:320}),X_GAP:40,browserRandomUUID:()=>String(calls),window:{setInterval:()=>1,clearInterval:()=>{}},setPendNodes:f=>{nodes=f(nodes)},readJsonSafe:r=>r.json(),livePendingPosition:()=>({x:777,y:888}),privateFetchRaw:async(url,init)=>{checks++;positions.push(JSON.parse(init.body));return Response.json({ok:true},{status:scenario==='position-fails'&&!ready?503:200})},mergeWorks:async()=>scenario==='missing-result'&&!ready?[]:[{id:'result',image:'/result.png'}],pushAddUndo:()=>undo++,applyServerUser:()=>{},flashTip:()=>{},annotateArtwork:source,setAnnotateArtwork:()=>closed++};
   const run=async()=>{calls++;if(ready||scenario==='done'||['position-fails','missing-result'].includes(scenario))return Response.json({id:'result'});if(scenario==='transport')throw Error('fixture offline');const status=Number(scenario.split('-')[0]);return Response.json({error:'fixture failure',code:scenario==='409-pending'?'OPERATION_PENDING':scenario==='409-conflict'?'OPERATION_CONFLICT':undefined,operationId:status===409?'tool-fixture':undefined},{status})};
   c.privateFetch=run;vm.createContext(c);vm.runInContext(code,c);
-  await c.submitAnnotations(new FormData());assert.equal(closed,scenario==='done'?1:0,'annotation input remains on failure');
+  await c.submitAnnotations(new FormData());assert.equal(closed,scenario==='done'?1:0,'parent handler does not close again on failure; child immediate-close is separate');
   if(scenario==='done'){assert.equal(nodes.length,0);assert.equal(undo,1)}else{
    assert.equal(nodes.length,1);const kind=['400','415'].includes(scenario)?'not-started':['position-fails','missing-result'].includes(scenario)?'sync':'uncertain';assert.equal(nodes[0].generationFailure.kind,kind);assert.equal(c.generationOperationRef.current.size,kind==='not-started'?0:1);
    if(kind==='sync'){
@@ -19,6 +19,6 @@ async function main(){let cases=0;
   }
   cases++;
  }
- console.log(`EDIT_FEEDBACK=PASS CASES=${cases} FAILURE_RETAINED=YES RECOVERY_GENERATION_POSTS=0 UNKNOWN_RESUBMIT=0 ANNOTATION_DRAFT_RETAINED=YES`);
+ console.log(`EDIT_FEEDBACK=PASS CASES=${cases} FAILURE_RETAINED=YES RECOVERY_GENERATION_POSTS=0 UNKNOWN_RESUBMIT=0 PARENT_NO_SECOND_CLOSE_ON_FAILURE=YES`);
 }
 main().catch(e=>{console.error(e);process.exitCode=1});
