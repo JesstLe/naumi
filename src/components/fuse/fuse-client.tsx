@@ -35,7 +35,7 @@ import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
 import { GenLoader } from "@/components/gen-loader";
 
 const MAX_UPLOAD = 12 * 1024 * 1024;
-const MAX_IMAGES = 6;
+const MAX_IMAGES = 16;
 const MIN_IMAGES = 2;
 const RESOLUTION = "1K"; // 融图固定 1K 基础尺寸(需要更大再去生图页放大),计费按 1K
 const ACCENT = "#2BB3A3";

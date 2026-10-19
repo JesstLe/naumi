@@ -64,7 +64,7 @@ async function main() {
     const {channelEditable}=await import("../src/lib/model-config/channel-policy");
     const c=f.config, u=c.upstreamModels[0];
     c.providers[0].protocol="apimart-images";c.providers[0].timeoutMs=1000;
-    u.model="wire-apimart-exact";u.capabilities.qualityRank=5;u.capabilities.qualities=["medium","high"];
+    u.capabilities.maxReferenceImages=16;u.model="wire-apimart-exact";u.capabilities.qualityRank=5;u.capabilities.qualities=["medium","high"];
     u.parameterMap={apimartImages:{schemaVersion:1,maxOutputs:2,supportsMask:true,ratios:["1:1"],outputDimensions:{"1K:1:1":{width:256,height:256},"2K:1:1":{width:256,height:256}}},
       qualityPolicy:{mode:"map",choices:[{id:"medium",label:"标准",value:"standard"},{id:"high",label:"高",value:"high"}]},
       resolutionPolicy:{mode:"map",field:"resolution",ratioField:"aspect_ratio",values:{"1K":"1MP","2K":"2K"}}};
@@ -146,6 +146,8 @@ async function main() {
     const workerPosts=posts.length;
     const worker=await runSupplierCostWorker(createSupplierLedger(f.sql),{batch:1,fetcher:async(input,init)=>{const req=new Request(input,init);assert.equal(req.method,"GET");assert.equal(new URL(req.url).origin,origin);return fetch(req);}});
     assert.equal(worker.processed,1);assert.equal(posts.length,workerPosts);assert.equal((await row("bad-pixels"))[0].parameters.acceptedOutputs,undefined,"cost Worker cannot authorize undelivered pixels");checks++;
+    const sixteen=new FormData();sixteen.set("prompt","success:sixteen");for(let i=0;i<16;i++)sixteen.append("image",new File([png],`ref-${i}.png`,{type:"image/png"}));const sixteenUploads=uploads;assert.equal((await edit("sixteen-references",sixteen)).status,200);assert.equal(uploads,sixteenUploads+16);assert.equal(posts.at(-1).image_urls.length,16);checks++;
+    console.log('APIB_REFERENCE_TRANSPORT=PASS INPUT_FILES=16 UPLOADS=16 WIRE_IMAGE_URLS=16 REAL_PAID_API_CALLS=0');
     console.log(`PASS APIMart async images: ${checks} checks; direct/family routing, legacy Router freeze, explicit parameters, task pin/CAS, concurrent suppliers, GET-only disabled recovery, marker-only hold, lost/ambiguous response, receipt identity/model/count/pixels/decode, uploads/mask, cost and acceptedOutputs gates`);
     console.log(`MOCK_ONLY posts=${posts.length} gets=${gets.length} uploads=${uploads} fallback=${direct.length}; REAL_PAID_API_CALLS=0`);
   } finally {await db.getPool().end();await f.cleanup();}

@@ -141,7 +141,7 @@ type GenParams = {
   targetHeight: number;
 };
 
-const MAX_IMAGES = 6;
+const MAX_IMAGES = 16;
 
 // gpt-image 出图质量默认值与回退逻辑收敛到 src/lib/image-quality.ts:
 // 不设=默认 auto≈最高=最慢(实测 1K 要 50~150 秒),默认 medium 快很多、
