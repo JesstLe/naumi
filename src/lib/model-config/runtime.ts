@@ -98,7 +98,8 @@ export function simulateModel(snapshot: ModelSnapshot, billing: ConfigSnapshot, 
     if (c.verified && c.qualityRank < rank) codes.push("QUALITY_RANK");
     if (!u.parameterMap.qualityPolicy && c.verified && c.qualities.length && !c.qualities.includes(facts.quality as any)) codes.push("QUALITY_UNSUPPORTED");
     if ((facts.needsEdit || rule?.require.edit) && !c.edit) codes.push("EDIT_UNSUPPORTED");
-    if (facts.needsMask && (preset ? !preset.supportsMask : p.protocol !== "openai-images" || !c.edit)) codes.push("MASK_UNSUPPORTED");
+    const supportsMask = preset ? preset.supportsMask : c.edit && (p.protocol === "openai-images" || p.protocol === "apimart-images" && u.parameterMap.apimartImages?.supportsMask === true);
+    if (facts.needsMask && !supportsMask) codes.push("MASK_UNSUPPORTED");
     if (c.verified && (facts.preserveIdentity || rule?.require.preserveIdentity) && !c.preserveIdentity) codes.push("IDENTITY_UNSUPPORTED");
     if (c.verified && (facts.needsText || rule?.require.textAccuracy) && !c.textAccuracy) codes.push("TEXT_UNSUPPORTED");
     if ((facts.nativeResolution || rule?.require.nativeResolution) && !c.nativeResolutions.includes(facts.resolution as any)) codes.push("NATIVE_RESOLUTION");
