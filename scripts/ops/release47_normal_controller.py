@@ -122,11 +122,13 @@ class Controller:
      for child in node.children:
       if child.name=='alias':roots.add(child.args[0])
   require(len(roots)==1,'ONE_EXISTING_STATIC_UNION_REQUIRED');oldroot=pathlib.Path(next(iter(roots)))
-  extracted=ROOT/'candidate-static';extracted.mkdir(mode=0o700)
+  extracted=ROOT/'candidate-static';extracted.mkdir(mode=0o700,exist_ok=True)
   self.tx.run(['docker','cp',self.newweb['id']+':/app/.next/static/.',str(extracted)],timeout=90)
   manifest=compat.collect_assets([('previous-union',oldroot),('candidate',extracted)],[(a['url'],a['path']) for a in aliases])
-  union=pathlib.Path('/var/www/naumi-assets-compat')/ROOT.name;compat.materialize_assets(manifest,union)
+  union=pathlib.Path('/var/www/naumi-assets-compat')/ROOT.name;compat.verify_assets(manifest,union) if union.exists() else compat.materialize_assets(manifest,union)
   union.chmod(0o755)
+  for directory in union.rglob('*'):
+   if directory.is_dir():require(not directory.is_symlink(),'STATIC_SYMLINK_FORBIDDEN');directory.chmod(0o755)
   self.tx.run(['runuser','-u','www-data','--','test','-r',str(union/manifest['assets'][0]['url'].lstrip('/'))])
   edits={};old='http://127.0.0.1:'+str(self.cfg['oldPort']);new='http://127.0.0.1:'+str(self.cfg['newPort'])
   for name,nodes in self.parsed.nodes.items():
@@ -185,7 +187,7 @@ class Controller:
    self.request(self.newweb,p);checks[p]=200
   # Do not invent route/adapter acceptance from HTML alone.
   self.new_adapter=recovery.Adapter(self.tx,{**self.cfg,'buildVersion':self.cfg['version']})
-  self.tx.save('candidate-http-acceptance.json',{'at':now(),'identity':s['identity'],'checks':checks,'health':h,'version':v,'suppliers':0})
+  self.tx.save('candidate-http-acceptance-'+str(self.state['revision'])+'.json',{'at':now(),'identity':s['identity'],'checks':checks,'health':h,'version':v,'suppliers':0})
   return {'identity':s['identity'],'checks':checks}
 
  def drain_proof(self):
@@ -194,35 +196,38 @@ class Controller:
   return normal.current_drained(app,domain,ws,self.owners(),rows,held,self.incident_digest)
 
  def run(self):
-  require(self.state['revision']==self.cfg['expectedRevision'] and sha(enc(self.state))==self.cfg['expectedCanonicalDigest'],'FRESH_PREDECESSOR_REVIEW_REQUIRED');recovery.recovery_binding(self.state,self.original_manifest)
-  require(sha(self.tx.run(['nginx','-T']))==self.cfg['expectedGatewayDigest'],'GATEWAY_CHANGED')
-  rows,held=self.incidents();self.incident_digest=policy.check_incidents(rows,held)
-  self.tx.save('preserved-incidents.json',{'rows':rows,'held':held,'sha256':self.incident_digest})
-  descriptor=self.tx.save('original-canonical.json',enc(self.state));self.tx.save('original-canonical-exact.json',self.original)
-  self.succ=normal.begin(self.state,self.cfg,descriptor,self.incident_digest)
-  self.succ.update(commit=self.cfg['commit'],buildVersion=self.cfg['version'],image=self.cfg['image'],previousRuntimeRecovery=copy.deepcopy(self.runtime))
-  running=self.tx.run(['docker','ps','-q','--no-trunc']).decode().splitlines()
-  require(set(running)=={self.web['id'],self.worker['id'],*[r['id'] for r in self.infra]},'UNREGISTERED_RUNNING_CANDIDATE')
-  require(not self.tx.run(['ss','-Hltn','sport = :'+str(self.cfg['newPort'])]).strip(),'CANDIDATE_PORT_IN_USE')
-  baseline_app=c.app_status(self.tx,self.web);require(baseline_app['observations']['unknownLeases']==0,'CURRENT_UNKNOWN_WORK_REQUIRES_RECONCILIATION')
-  self.state.setdefault('normalBlueGreenReleases',{})[RELEASE]=self.succ;self.persist()
-  self.tx.save('original-supervisor.service',pathlib.Path('/etc/systemd/system/naumi47-recovery.service').read_bytes())
-  self.tx.save('original-recovery-manifest.json',pathlib.Path(self.runtime['manifestPath']).read_bytes())
-  baseline_app=c.app_status(self.tx,self.web);require(baseline_app['observations']['unknownLeases']==0,'CURRENT_UNKNOWN_WORK_REQUIRES_RECONCILIATION')
-  self.config_before=self.configuration_facts();self.tx.save('configuration-before.json',self.config_before)
-  require(self.config_before==self.cfg['expectedConfigurationFacts'],'MODEL_OR_BILLING_BASELINE_CHANGED')
-  self.op('database-backup',lambda _:self.tx.backup_database(self.db))
-  self.maintenance_and_import()
-  self.pre=tasks.collect_task_snapshot(self.tx.run,self.db,self.tx.save,projection='proof',allow_absent_tables=tasks.ADDITIVE_TABLES)
-  require(self.pre.public.get('tables'),'TASK_BASELINE_MISSING');self.phase('BACKED_UP')
-  require(int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024>=3200,'DUAL_SLOT_MEMORY_INSUFFICIENT')
-  image=json.loads(self.tx.run(['docker','image','inspect',self.cfg['image']]))[0];require(image['Id']==self.cfg['image'],'FIXED_IMAGE_MISSING')
-  self.newweb=self.op('web-create',lambda _:self.tx.clone_web(self.web,name=WEB,port=self.cfg['newPort'],image=self.cfg['image'],commit=self.cfg['commit'],memory_mib=2048,cpu=1.5,release_secret=secrets.token_urlsafe(48),state_dir=STATE+'/web',build_version=self.cfg['version'],reviewed_prior_state_dir=self.cfg['oldWebStateDir']))
-  self.newweb=self.op('web-start',lambda _:self.tx.start_candidate(self.newweb,dict(webPeakMiB=2048,workerPeakMiB=128,hostReserveMiB=1024),int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024))
-  self.wait(lambda:self.request(self.newweb,'/api/health'),'WEB_START')
-  self.newworker=self.op('worker-create',lambda _:c.clone_worker(self.tx,self.newweb,name=WORKER,memory_mib=128,cpu=.25,state_dir=STATE+'/worker'))
-  self.newworker=self.op('worker-start',lambda _:c.start_worker(self.tx,self.newworker,int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024))
-  self.wait(lambda:self.worker_control(self.newworker,'status',str(uuid.uuid4())),'WORKER_START')
+  if self.cfg.get('resumeReview'):self.resume_review()
+  else:
+   require(self.state['revision']==self.cfg['expectedRevision'] and sha(enc(self.state))==self.cfg['expectedCanonicalDigest'],'FRESH_PREDECESSOR_REVIEW_REQUIRED');recovery.recovery_binding(self.state,self.original_manifest)
+   require(sha(self.tx.run(['nginx','-T']))==self.cfg['expectedGatewayDigest'],'GATEWAY_CHANGED')
+   rows,held=self.incidents();self.incident_digest=policy.check_incidents(rows,held)
+   self.tx.save('preserved-incidents.json',{'rows':rows,'held':held,'sha256':self.incident_digest})
+   descriptor=self.tx.save('original-canonical.json',enc(self.state));self.tx.save('original-canonical-exact.json',self.original)
+   self.succ=normal.begin(self.state,self.cfg,descriptor,self.incident_digest)
+   self.succ.update(commit=self.cfg['commit'],buildVersion=self.cfg['version'],image=self.cfg['image'],previousRuntimeRecovery=copy.deepcopy(self.runtime))
+   running=self.tx.run(['docker','ps','-q','--no-trunc']).decode().splitlines()
+   require(set(running)=={self.web['id'],self.worker['id'],*[r['id'] for r in self.infra]},'UNREGISTERED_RUNNING_CANDIDATE')
+   require(not self.tx.run(['ss','-Hltn','sport = :'+str(self.cfg['newPort'])]).strip(),'CANDIDATE_PORT_IN_USE')
+   baseline_app=c.app_status(self.tx,self.web);require(baseline_app['observations']['unknownLeases']==0,'CURRENT_UNKNOWN_WORK_REQUIRES_RECONCILIATION')
+   self.state.setdefault('normalBlueGreenReleases',{})[RELEASE]=self.succ;self.persist()
+   self.tx.save('original-supervisor.service',pathlib.Path('/etc/systemd/system/naumi47-recovery.service').read_bytes())
+   self.tx.save('original-recovery-manifest.json',pathlib.Path(self.runtime['manifestPath']).read_bytes())
+   baseline_app=c.app_status(self.tx,self.web);require(baseline_app['observations']['unknownLeases']==0,'CURRENT_UNKNOWN_WORK_REQUIRES_RECONCILIATION')
+   self.config_before=self.configuration_facts();self.tx.save('configuration-before.json',self.config_before)
+   require(self.config_before==self.cfg['expectedConfigurationFacts'],'MODEL_OR_BILLING_BASELINE_CHANGED')
+   self.op('database-backup',lambda _:self.tx.backup_database(self.db))
+   self.maintenance_and_import()
+  if not getattr(self,'candidate_reused',False):
+   self.pre=tasks.collect_task_snapshot(self.tx.run,self.db,self.tx.save,projection='proof',allow_absent_tables=tasks.ADDITIVE_TABLES,statement_timeout_ms=self.cfg.get('snapshotStatementTimeoutMs',5000))
+   require(self.pre.public.get('tables'),'TASK_BASELINE_MISSING');self.phase('BACKED_UP')
+   require(int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024>=3200,'DUAL_SLOT_MEMORY_INSUFFICIENT')
+   image=json.loads(self.tx.run(['docker','image','inspect',self.cfg['image']]))[0];require(image['Id']==self.cfg['image'],'FIXED_IMAGE_MISSING')
+   self.newweb=self.op('web-create',lambda _:self.tx.clone_web(self.web,name=WEB,port=self.cfg['newPort'],image=self.cfg['image'],commit=self.cfg['commit'],memory_mib=2048,cpu=1.5,release_secret=secrets.token_urlsafe(48),state_dir=STATE+'/web',build_version=self.cfg['version'],reviewed_prior_state_dir=self.cfg['oldWebStateDir']))
+   self.newweb=self.op('web-start',lambda _:self.tx.start_candidate(self.newweb,dict(webPeakMiB=2048,workerPeakMiB=128,hostReserveMiB=1024),int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024))
+   self.wait(lambda:self.request(self.newweb,'/api/health'),'WEB_START')
+   self.newworker=self.op('worker-create',lambda _:c.clone_worker(self.tx,self.newweb,name=WORKER,memory_mib=128,cpu=.25,state_dir=STATE+'/worker'))
+   self.newworker=self.op('worker-start',lambda _:c.start_worker(self.tx,self.newworker,int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024))
+   self.wait(lambda:self.worker_control(self.newworker,'status',str(uuid.uuid4())),'WORKER_START')
   self.phase('CANDIDATE',web=self.newweb,worker=self.newworker);self.ready();self.build_gateway()
   self.tx.save('candidate-server-actions.json',{'old':self.server_actions(self.web),'new':self.server_actions(self.newweb)})
   save(ROOT/'browser-private.json',{'releaseId':RELEASE,'cookie':self.cookie,'candidateOrigin':'http://127.0.0.1:'+str(self.cfg['newPort']),'commit':self.cfg['commit'],'version':self.cfg['version']})
@@ -237,9 +242,9 @@ class Controller:
   self.wait(lambda:self.drain_proof(),'OLD_WEB_CURRENT_EXECUTION_DRAIN',120)
   self.tx.save('current-execution-drain.json',self.drain_proof())
   self.op('new-worker-resume',lambda op:self.worker_control(self.newworker,'resume',op))
-  self.wait(lambda:(lambda s:s if s.get('lastTick',{}).get('phase')=='complete' and s['unresolvedTicks']==0 else None)(self.worker_control(self.newworker,'status',str(uuid.uuid4()))['state']),'NEW_WORKER_SERVER_RECEIPT',90)
+  self.wait(lambda:(lambda s:s if normal.worker_completed(s) else None)(self.worker_control(self.newworker,'status',str(uuid.uuid4()))['state']),'NEW_WORKER_SERVER_RECEIPT',90)
   self.phase('WORKER_ACTIVE')
-  self.post=tasks.collect_task_snapshot(self.tx.run,self.db,self.tx.save,previous=self.pre.private,projection='proof',allow_absent_tables=tasks.ADDITIVE_TABLES)
+  self.post=tasks.collect_task_snapshot(self.tx.run,self.db,self.tx.save,previous=self.pre.private,projection='proof',allow_absent_tables=tasks.ADDITIVE_TABLES,statement_timeout_ms=self.cfg.get('snapshotStatementTimeoutMs',5000))
   comparison=tasks.compare_task_snapshots(self.pre,self.post);self.tx.save('task-preservation-comparison.json',comparison)
   require(comparison['preservationVerified'],'TASK_PRESERVATION_NOT_VERIFIED')
   # Repeated current-execution proof, including exact immutable held incident.
@@ -261,6 +266,42 @@ class Controller:
   self.tx.run(['systemctl','start','naumi47-recovery.timer'])
   result={'phase':'COMPLETE','historicalReleasePhase':self.state['phase'],'historicalDrainProven':False,'carriedIncidents':2,'paidOutputRecovered':False,'version':self.cfg['version'],'commit':self.cfg['commit'],'image':self.cfg['image'],'web':self.newweb,'worker':self.newworker,'at':now(),'supplierGenerationReplays':0,'databaseRestored':False}
   self.tx.save('PUBLICATION_RECEIPT.json',result);print('PUBLICATION_RESULT='+json.dumps(result),flush=True)
+
+ def resume_review(self):
+  review=self.cfg['resumeReview'];require(self.state['revision']==review['revision'] and sha(enc(self.state))==review['canonicalSha256'],'RESUME_CANONICAL_CHANGED')
+  self.succ=self.state['normalBlueGreenReleases'][RELEASE]
+  self.candidate_reused=self.succ['phase']=='CANDIDATE'
+  expected={'database-backup','image-import'}|({'web-create','web-start','worker-create','worker-start'} if self.candidate_reused else set())
+  require(self.succ['phase'] in ['BASELINED','CANDIDATE'] and self.succ.get('lastError') in ['ValueError','HOST_COMMAND_FAILED'] and set(self.succ['operations'])==expected,'RESUME_ONLY_PRE_SWITCH_REVIEWED_FAILURE')
+  for name,op in self.succ['operations'].items():
+   require(op['phase']=='ACKNOWLEDGED' and op['operationId']==review['operations'][name],'RESUME_ORIGINAL_OPERATION_REQUIRED')
+  require(self.state.get('activeNormalBlueGreenReleaseId')==self.cfg.get('previousNormalReleaseId'),'RESUME_ACTIVE_RELEASE_CHANGED')
+  extra=set()
+  if self.candidate_reused:
+   self.newweb=self.succ['web'];self.newworker=self.succ['worker'];self.tx.pin(self.newweb);self.tx.pin(self.newworker);extra={self.newweb['id'],self.newworker['id']}
+   require(self.newweb['image']==self.cfg['image'] and self.newworker['image']==self.cfg['image'] and c.app_status(self.tx,self.newweb)['admission']['mode']=='draining','RESUME_CANDIDATE_BASELINE_CHANGED')
+   ws=self.worker_control(self.newworker,'status',str(uuid.uuid4()))['state'];require(ws['paused'] and ws['activeTicks']==0 and ws['unresolvedTicks']==0,'RESUME_CANDIDATE_WORKER_NOT_PAUSED')
+   snapshots=list(self.tx.folder.glob('task-snapshot-*.json'));require(len(snapshots)==1,'EXACT_PRE_CANDIDATE_SNAPSHOT_REQUIRED')
+   private=json.loads(snapshots[0].read_bytes());self.pre=tasks.Snapshot(public=tasks.summarize(private),private=private)
+  else:
+   require(not self.tx.run(['ss','-Hltn','sport = :'+str(self.cfg['newPort'])]).strip(),'RESUME_CANDIDATE_ALREADY_PRESENT')
+   names=self.tx.run(['docker','ps','-a','--format','{{.Names}}']).decode().splitlines();require(WEB not in names and WORKER not in names,'RESUME_CANDIDATE_ALREADY_EXISTS')
+  running=self.tx.run(['docker','ps','-q','--no-trunc']).decode().splitlines();require(set(running)=={self.web['id'],self.worker['id'],*[r['id'] for r in self.infra]}|extra,'RESUME_RUNNING_SLOTS_CHANGED')
+  recovery.recovery_binding(self.state,self.original_manifest)
+  require(sha(self.tx.run(['nginx','-T']))==self.cfg['expectedGatewayDigest'],'RESUME_GATEWAY_CHANGED')
+  saved=json.loads((self.tx.folder/'preserved-incidents.json').read_bytes());self.incident_digest=saved['sha256'];rows,held=self.incidents();policy.check_incidents(rows,held,self.incident_digest)
+  self.config_before=self.configuration_facts();require(self.config_before==self.cfg['expectedConfigurationFacts'],'RESUME_CONFIG_CHANGED')
+  require(c.app_status(self.tx,self.web)['observations']['unknownLeases']==0,'RESUME_UNKNOWN_EXECUTION')
+  backup=json.loads((self.tx.folder/'backup-readable.json').read_bytes());require(file_sha(backup['path'])==backup['sha256'],'RESUME_BACKUP_CHANGED')
+  imported=json.loads(self.tx.run(['docker','image','inspect',self.cfg['image']]))[0]
+  require(imported['Id']==self.cfg['image'],'RESUME_IMPORTED_IMAGE_CHANGED')
+  if self.succ['image']!=self.cfg['image']:
+   mapping=review['imageIdentity'];require(mapping['from']==self.succ['image'] and mapping['to']==self.cfg['image'] and imported['RootFS']==mapping['rootFS'],'RESUME_IMAGE_IDENTITY_MAPPING_CHANGED')
+   image_env=dict(v.split('=',1) for v in imported['Config'].get('Env',[]) if '=' in v)
+   require(image_env['SOURCE_COMMIT']==self.cfg['commit'] and image_env['BUILD_VERSION']==self.cfg['version'] and file_sha(self.cfg['imageArchive'])==self.cfg['imageArchiveSha256'],'IMPORTED_ARCHIVE_SOURCE_CHANGED')
+   self.succ['imageIdentityReconciliation']=mapping;self.succ['image']=self.cfg['image'];self.persist()
+  self.tx.save('resume-reviewed-'+str(self.state['revision'])+'.json',{'review':review,'sameOperationIds':True,'backupHashVerified':True,'candidateReused':self.candidate_reused,'gatewayUnchanged':True,'configUnchanged':True,'at':now()})
+  print('RESUME_REVIEW=PASS ORIGINAL_OPERATIONS_RETAINED=YES',flush=True)
 
  def configuration_facts(self):
   return self.sql("SELECT json_build_object('activeModelVersion',s.active_version,'digest',v.digest,'activeModelRowHash',encode(sha256(convert_to(to_jsonb(v)::text,'UTF8')),'hex')) FROM app_model_config_state s JOIN app_model_config_versions v ON v.version=s.active_version WHERE s.singleton=true; SELECT json_build_object('billingHash',encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.k),'[]'::jsonb)::text,'UTF8')),'hex')) FROM app_settings t WHERE t.k LIKE '%billing%'; SELECT json_build_object('billingVersion',v.version,'billingConfigHash',encode(sha256(convert_to(to_jsonb(v)::text,'UTF8')),'hex')) FROM app_settings s JOIN app_billing_config_versions v ON v.version::text=s.v WHERE s.k='billing_config_version';")
@@ -350,7 +391,7 @@ class Controller:
     print('LIVE_ENTRY_ROLLBACK=VERIFIED',flush=True)
    except BaseException as rollback_error:
     self.succ['rollbackStatus']='PENDING_RECONCILIATION';self.persist();print('ROLLBACK_PENDING='+type(rollback_error).__name__,flush=True)
-  self.tx.save('FAILED_CURRENT_STATUS.json',{'at':now(),'error':str(ex) if isinstance(ex,Hold) else type(ex).__name__,'switched':self.switched,'workerPaused':self.worker_paused,'oldDrained':self.old_drained,'unknownOperations':[k for k,v in getattr(self,'succ',{}).get('operations',{}).items() if v['phase']!='ACKNOWLEDGED']})
+  self.tx.save('FAILED_CURRENT_STATUS-'+str(self.state['revision'])+'.json',{'at':now(),'error':str(ex) if isinstance(ex,Hold) else type(ex).__name__,'switched':self.switched,'workerPaused':self.worker_paused,'oldDrained':self.old_drained,'unknownOperations':[k for k,v in getattr(self,'succ',{}).get('operations',{}).items() if v['phase']!='ACKNOWLEDGED']})
 
 def main():
  import argparse

@@ -62,3 +62,7 @@ def current_drained(app, domain, worker, owners, rows, held, digest):
     return {'kind':'normal-current-slot-drain', 'currentExecutableWorkDrained':True, 'historicalDrainProven':False,
             'historicalUnknownObservationsPreserved':2, 'currentUnknownObservations':0, 'paidOutputRecovered':False,
             'incidentSha256':digest, 'rawApp':app, 'rawDomain':domain, 'rawWorker':worker, 'rawOwners':owners}
+
+
+def worker_completed(status):
+    return (status.get('lastTick') or {}).get('phase') == 'complete' and status.get('unresolvedTicks') == 0

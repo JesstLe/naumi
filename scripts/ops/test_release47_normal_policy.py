@@ -73,4 +73,17 @@ class NormalPolicy(unittest.TestCase):
   s=pathlib.Path(rb.__file__).read_text();self.assertNotIn("s['blueGreenSuccessor'].update",s);self.assertIn("s['normalBlueGreenReleases'][config['releaseId']]",s)
  def test_no_old_port_or_consumed_controller(self):
   s=pathlib.Path(ctl.__file__).read_text();self.assertNotIn("'13101'",s);self.assertNotIn('release47_successor_controller',s);self.assertIn('unknownLeases\']==0',s)
+class WorkerReceipt(unittest.TestCase):
+ def test_missing_first_tick_waits(self):
+  self.assertFalse(m.worker_completed({'lastTick':None,'unresolvedTicks':0}))
+  self.assertFalse(m.worker_completed({'unresolvedTicks':0}))
+  self.assertFalse(m.worker_completed({'lastTick':{'phase':'unknown'},'unresolvedTicks':1}))
+  self.assertTrue(m.worker_completed({'lastTick':{'phase':'complete'},'unresolvedTicks':0}))
+class SnapshotBudget(unittest.TestCase):
+ def test_default_and_bounded_override(self):
+  import release47_task_snapshot as t
+  self.assertIn(b"statement_timeout='5000ms'",t.build_sql())
+  self.assertIn(b"statement_timeout='15000ms'",t.build_sql(statement_timeout_ms=15000))
+  for value in [0,15001,True,'15000']:
+   with self.assertRaises(ValueError):t.build_sql(statement_timeout_ms=value)
 if __name__=='__main__':unittest.main()

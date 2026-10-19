@@ -157,17 +157,19 @@ def selected_predicate(name, key, prior, roots=None):
     return selected
 
 
-def build_sql(*, previous=None, schema='public', row_limit=1000, projection='full'):
+def build_sql(*, previous=None, schema='public', row_limit=1000, projection='full', statement_timeout_ms=5000):
     if not re.fullmatch('[a-z_][a-z0-9_]{0,62}', schema) or type(row_limit) is not int or not 1 <= row_limit <= 5000:
         raise ValueError('BOUNDED_SQL_SCOPE_REQUIRED')
     if projection not in ['full', 'proof']:
         raise ValueError('UNKNOWN_TASK_PROJECTION')
+    if type(statement_timeout_ms) is not int or not 1000 <= statement_timeout_ms <= 15000:
+        raise ValueError('BOUNDED_STATEMENT_TIMEOUT_REQUIRED')
     root_limit = min(40000, row_limit * 8)
     prior = tracked_ids(previous)
     if any(len(values) > 5000 or any(len(v) > 512 for v in values) for values in prior.values()):
         raise ValueError('TRACKED_IDS_EXCEEDED')
     lines = [r'\set ON_ERROR_STOP on', 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;',
-             "SET LOCAL lock_timeout='1000ms'; SET LOCAL statement_timeout='5000ms'; SET LOCAL idle_in_transaction_session_timeout='5000ms';",
+             f"SET LOCAL lock_timeout='1000ms'; SET LOCAL statement_timeout='{statement_timeout_ms}ms'; SET LOCAL idle_in_transaction_session_timeout='5000ms';",
              "SELECT jsonb_build_object('kind','begin','database',current_database(),'observedAt',transaction_timestamp(),'readOnly',current_setting('transaction_read_only'),'isolation',current_setting('transaction_isolation'),'snapshot',txid_current_snapshot()::text);"]
     # Materialize only bounded IDs in psql memory. Every graph-table expansion
     # is an independent <=5s SELECT in the SAME read-only consistent snapshot.
@@ -271,7 +273,7 @@ def frozen(row):
     return result
 
 
-def collect_task_snapshot(command, db_identity, private_save=None, *, previous=None, schema='public', expected_database=None, row_limit=1000, projection='full', allow_absent_tables=()):
+def collect_task_snapshot(command, db_identity, private_save=None, *, previous=None, schema='public', expected_database=None, row_limit=1000, projection='full', allow_absent_tables=(), statement_timeout_ms=5000):
     if set(allow_absent_tables) - ADDITIVE_TABLES:
         raise ValueError('ONLY_SOURCE_AUDITED_NEW_RELEASE_TABLES_MAY_BE_ABSENT')
     if not isinstance(db_identity, dict) or not re.fullmatch('[a-f0-9]{64}', db_identity.get('id', '')):
@@ -288,9 +290,9 @@ def collect_task_snapshot(command, db_identity, private_save=None, *, previous=N
             raise ValueError()
     except (ValueError, KeyError, TypeError):
         raise ValueError('DATABASE_IDENTITY_UNVERIFIED') from None
-    sql = build_sql(previous=previous, schema=schema, row_limit=row_limit, projection=projection)
+    sql = build_sql(previous=previous, schema=schema, row_limit=row_limit, projection=projection, statement_timeout_ms=statement_timeout_ms)
     args = ['docker', 'exec', '-i', db_identity['id'], 'psql', '-X', '-qAt', '--no-password', '-v', 'ON_ERROR_STOP=1', '-U', user, '-d', database]
-    raw = run_bytes(command, args, stdin=sql, timeout=120)
+    raw = run_bytes(command, args, stdin=sql, timeout=120 if statement_timeout_ms==5000 else 300)
     try:
         lines = [json.loads(line) for line in raw.decode().splitlines() if line.strip()]
         first, last = lines[0], lines[-1]

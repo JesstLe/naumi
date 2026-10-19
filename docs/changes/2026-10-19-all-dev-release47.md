@@ -19,3 +19,10 @@
 
 ## 同步计数
 开工和合并后fetch origin/main=f4bf7935，无共享checkout更改。下次构建和切流前再次fetch复核；本轮集中同步后功能计数0。
+## 切流前中断核对（2026-10-19）
+首次事务已完成备份和导入，快照在app_image_jobs关系闭包扩展达到原5秒语句上限，未创建容器/控制Worker/切流。原releaseId及备份UUID7451dc3f、导入UUID4161dda7保持；新resume入口严格限定BASELINED+这两项ACK+无候选，重新核对canonical revision/digest、旧槽、配置、网关、历史事件、备份、镜像。
+快照默认仍5秒；此次按已观察的查询成本允许显式15秒上限、全查询300秒上限，保持只读repeatable-read、1秒锁等待、行数/根数/字节上限和不可缺行校验，不跳过任务保全。image inspect实核Docker containerd标识为manifest-list9b43d564，archive config blob为de7cf68b，归档/源/构建/RootFS逐一核对并保留两种标识映射，禁止猜测镜像已加载。
+这些是发布工具与只读验证修正，不修改已构建Web/Worker程序；运行候选仍固定源码5d7631a0/build1792383873。线上是否发布依最终验收回执。
+### 首次切流的真实切回
+2026-10-19首次切流后浏览器跨版保存/旧资源均通过，但新Worker尚无首次tick时lastTick=null，检查器触发AttributeError。发布器实际暂停并核实新槽无工作、恢复旧Web接收/旧Worker、逆向整closure CAS/nginx-t和平滑reload切回，journal=ROLLED_BACK，全部操作ACK；公网1852恢复，未回灌DB/重放任务。
+失败候选在三锁下两次排空证明后仅停止其两个明确ID，旧生产仍服务。空tick现改为等待，增加None/缺字段/未知/完成四分支测试。r2使用全新normal journal/旁路槽身份，重做全链路验收，不将首轮浏览器成功冒称最终上线。静态union目录对Nginx显式0755，私有证据保持0700；首次因umask导致的读权限门禁失败也在切流前停下并按原UUID复核。

@@ -87,7 +87,7 @@ def run(config,apply=False,existing_tx=None):
   olda.readiness(pm['web']);oldweb=public_identity(tx.inspect(pm['web']['id']));step('prior-web-open',lambda op:control_app(tx,oldweb,'resume',op))
   step('gateway-inverse',lambda _:switch_gateway_bundle(tx,inverse,before,after,expected_dump_sha=report['afterDumpSha256'],logical_to_real={n:str(pathlib.Path(n).resolve()) for n in before}))
   step('prior-worker-resume',lambda op:wc(pm['worker'],'resume',op))
-  wait(lambda:olda.status(pm['worker']).get('lastTick',{}).get('phase')=='complete','PRIOR_TICK_RECEIPT_PENDING')
+  wait(lambda:(olda.status(pm['worker']).get('lastTick') or {}).get('phase')=='complete','PRIOR_TICK_RECEIPT_PENDING')
   wait(drained,'SUCCESSOR_WORK_REAPPEARED')
   for role in ['worker','web']:
    step('stop-successor-'+role,lambda _,role=role:tx.run(['docker','stop','--time=-1',m[role]['id']],timeout=120).decode())
