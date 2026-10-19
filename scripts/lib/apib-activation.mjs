@@ -2,6 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 
 export const ACTIVATION_IDS=['gpt-image-2.5-flare','gpt-image-2.5-sunburst'];
 export const SOURCE_SHA='be8e52e7a6e1409b1f6d5a0c84f85898f9ad07e7a0a832ecea798a5205e5231d';
+export const EXECUTABLE_RATIOS=['1:1','3:2','2:3','4:3','3:4','5:4','4:5','16:9','9:16','2:1','1:2','21:9'];
+export const EXCLUDED_RATIOS=['9:21','3:1','1:3'];
 export const canonical=v=>Array.isArray(v)?`[${v.map(canonical).join(',')}]`:v&&typeof v==='object'?`{${Object.keys(v).filter(k=>v[k]!==undefined).sort().map(k=>`${JSON.stringify(k)}:${canonical(v[k])}`).join(',')}}`:JSON.stringify(v);
 export const digest=v=>createHash('sha256').update(canonical(v)).digest('hex');
 const same=(a,b)=>canonical(a)===canonical(b);
@@ -13,7 +15,7 @@ function valueAt(c,change){const {parent,key}=locate(c,change);return Object.has
 /** No discovery, network, DB, credentials, price inference or source refresh. */
 export function activationMatrix(manifest){return manifest.models.map(m=>({upstreamId:`apib:${m.id}`,model:m.id,modality:m.modality,family:m.family,
   decision:ACTIVATION_IDS.includes(m.id)?'DOCUMENTED_GENERATE_SUBSET':'HOLD',
-  reason:ACTIVATION_IDS.includes(m.id)?'Exact wire IDs, all adapter-emitted fields and 1K pixel matrix documented; runtime unpaid/unverified; standby only':
+  reason:ACTIVATION_IDS.includes(m.id)?'Exact wire IDs; 12 route-admissible ratios from 15 documented 1K observations; 3 excluded by pre-SDK exact-size guard; runtime unpaid/unverified; standby only':
     m.modality==='video'?'Video wire/profile, outputs and sale-price mapping not accepted for this minimal batch':
     m.destination==='new'?'No approved public ID/customer tariff for new family; no price invention':
     'Current shared adapter always emits output_format=png; this model document does not establish that field/output matrix contract',
@@ -30,7 +32,10 @@ export function makeActivationPlan(snapshot,billing,contract,sourceBytes,manifes
   requireThat(a.schemaVersion===1&&a.maxOutputs===1&&a.supportsMask===false&&r.mode==='map'&&r.field==='resolution'&&r.ratioField==='size'&&same(r.values,{'1K':'1k'})&&q.mode==='map'&&same(q.choices.map(x=>[x.id,x.value]),['low','medium','high','xhigh','max'].map(x=>[x,x])),'PARAMETER_CONTRACT_CHANGED');
   const table=text.split('\n').filter(line=>/^\| `\d+:\d+` \|/.test(line)).slice(0,15);
   const dimensions=Object.fromEntries(table.map(line=>{const cells=line.split('|').map(x=>x.trim()),nums=cells[2].match(/\d+/g);requireThat(nums?.length===2,'PIXEL_TABLE_INVALID');return [`1K:${cells[1].replaceAll('`','')}`,{width:Number(nums[0]),height:Number(nums[1])}];}));
-  requireThat(Object.keys(dimensions).length===15&&same(dimensions,a.outputDimensions)&&same(Object.keys(dimensions).map(k=>k.slice(3)),a.ratios),'DOCUMENTED_PIXEL_MATRIX_CHANGED');
+  const observed=contract.sourceObservations;
+  requireThat(Object.keys(dimensions).length===15&&same(dimensions,observed?.outputDimensions)&&same(Object.keys(dimensions).map(k=>k.slice(3)),observed?.ratios),'DOCUMENTED_PIXEL_MATRIX_CHANGED');
+  const allowedDimensions=Object.fromEntries(EXECUTABLE_RATIOS.map(ratio=>[`1K:${ratio}`,dimensions[`1K:${ratio}`]]));
+  requireThat(same(a.ratios,EXECUTABLE_RATIOS)&&same(a.outputDimensions,allowedDimensions)&&same(contract.routeConstraint?.excludedRatios,EXCLUDED_RATIOS),'ROUTE_EXECUTABLE_SUBSET_CHANGED');
   const config=structuredClone(snapshot.config),delta=[];
   const set=(group,id,path,value)=>{const change={kind:'field',group,id,path,before:null,after:{present:true,value:structuredClone(value)}};change.before=valueAt(config,change);requireThat(!same(change.before,change.after),'BASELINE_ALREADY_CHANGED');const {parent,key}=locate(config,change);parent[key]=structuredClone(value);delta.push(change);};
   const p=row(config,'providers','apib-image');
@@ -51,7 +56,7 @@ export function makeActivationPlan(snapshot,billing,contract,sourceBytes,manifes
     const channel={upstreamId:id,enabled:true,priority,weight:1};m.supplierRouting.channels.push(channel);
     delta.push({kind:'channel',publicId:m.id,upstreamId:id,after:channel});
   }
-  const result={schemaVersion:1,operationId,baseline:{version:snapshot.version,digest:snapshot.digest,billingVersion:billing.version,billingHash:digest(billing)},candidateDigest:digest(config),contractHash:digest(contract),sourceSha256:SOURCE_SHA,delta,config,matrix:activationMatrix(manifest),policy:{paidAcceptance:'PAUSED_BY_USER',paidHealthProbes:false,procurementWrites:0,verifiedPromotions:0,existingWeightsChanged:0,metadataWrites:0,expectedGenerationCalls:0}};
+  const result={schemaVersion:1,operationId,baseline:{version:snapshot.version,digest:snapshot.digest,billingVersion:billing.version,billingHash:digest(billing)},candidateDigest:digest(config),contractHash:digest(contract),sourceSha256:SOURCE_SHA,routeConstraint:structuredClone(contract.routeConstraint),sourceObservationRatios:observed.ratios,delta,config,matrix:activationMatrix(manifest),policy:{paidAcceptance:'PAUSED_BY_USER',paidHealthProbes:false,procurementWrites:0,verifiedPromotions:0,existingWeightsChanged:0,metadataWrites:0,expectedGenerationCalls:0}};
   requireThat(same(rollbackActivation(config,result),snapshot.config),'INVERSE_NOT_EXACT');return result;
 }
 
