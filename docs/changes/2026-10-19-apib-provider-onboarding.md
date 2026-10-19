@@ -1,6 +1,8 @@
 # APIB 增量接入（2026-10-19）
 
-## 状态：离线候选已准备，尚未发布/启用
+## 当前状态：线上已登记 v118，新增通道尚未启用
+
+2026-10-19 用户先批准首批 1 USD 费用，随后明确暂停收费验收；再明确要求模型直接热更新到线上。本次已完成**正式版本化登记发布**，不是新增模型已可选/可调用：v117→v118，publication `9ffe3353-63f0-4a1a-9f30-aef1c7f4b5e8`，phase 原值 `applied`，digest `826f5228a6e67f89618c89d6ae9cdef568175e936f99634c6cda66209cc187ae`。2 个 provider、75 个 upstream 均保持禁用，密钥已加密进入凭据库；收费测试继续 PAUSED。详见第7节；下文第1—5节同时保留离线准备阶段记录。
 
 用户批准 Image2.5 三型号、香蕉、新 Seedream/Qwen Image/FLUX 和视频型号的增量接入。保留全部已有供应商、启停、权重和客户售价；已有家族中新来源默认备用。收费验收须先提交批次、数量和费用资料再确认。
 
@@ -110,10 +112,45 @@ node --conditions=react-server node_modules/tsx/dist/cli.mjs scripts/verify-apib
 
 ## 6. 发布前剩余工作
 
-1. 用户确认收费批次与预算；当前只批准接入方案，收费测试尚未开始。
+1. 收费验收由用户明确暂停；先前 1 USD 批准不自动恢复，生成提交始终为0。
 2. 补齐图片异步家族适配并集中验证；确认 APIB wire 与文档实际一致。
 3. 逐项真实验收并保存有来源的能力/报价，保持人工优先、未知保持未知。
 4. 协调47三锁、刷新 live 版本/保护基线，以正式版本化发布和 CAS 激活配置；适配代码另走完整蓝绿。
 5. 只有已通过的精确模型/规格进入公开节点；既有家族新来源备用，新家族绑定与计费须显式配置。已受理任务冻结配置保留。
 
 本轮没有 metadata revision / publication UUID / applied phase / 实际视频输出；不把离线候选或 schema 通过称为已热生效。迭代同步计数：本轮完成离线接入准备模块1，生产成功发布计数不增加。证据目录 `E:/Workspace/naumi/output/apib-provider-20261019/`，含候选、差异、验证与仅针对独立副本的回滚脚本。
+
+> 上段为离线准备阶段的历史边界；随后发生的正式配置发布以第7节为准，不将两阶段混为一次已验收生成。
+
+## 7. 线上热登记结果（2026-10-19）
+
+### 发布与当前可用性
+
+- 目标47，固定现有 Web/Worker 镜像；未重启、未切流、未增加应用候选或安装供应商适配代码。
+- 全程按窗口持三把 deploy.lock；模型变更通过现有 `repo.draft → saveDraft → runtime.publish` 正式流程，未直接修改 active_version，也未重跑旧香蕉修复。
+- **v117→v118**，publication `9ffe3353-63f0-4a1a-9f30-aef1c7f4b5e8` / `applied`。本任务 actor 仅有1笔配置版本；后续只修元数据并验证，没有第二次发布。
+- 线上 provider 14→16、upstream 31→106；新增24图片＋51视频均 `enabled=false`，能力 generate/edit/verified=false；未增加公模、未将 APIB 挂入现有家族执行路由。
+- 元数据库按所选分组登记：图片 provider 保留完整317项目录，视频 provider 留51项所选目录（明确为子集）；75项独立公开报价观察，125份脱敏来源快照。报价未提升为账户已确认采购价，未覆盖客户售价；能力仍未知/待核，不凭目录名放开。
+- 两条 provider 凭据分别通过现有 AES-256-GCM 凭据库导入，仅存密文/UUID引用；无明文文件或日志。
+- **本次“热更新”是后台型号配置登记，不是可选可调用上线。** 公网实际 GET `/api/models?feature=image.generate` 与 `video.generate` 均 HTTP200，返回 version118；图片仍14个公模、视频仍1个公模，没有 APIB 新条目。图片异步家族适配、视频逐项定义和计价、路由激活仍待完成。
+
+### 保护与费用边界
+
+- 7个运行容器 ID/Image/StartedAt 保持；Nginx全文 SHA256 `f5caef1a4faf134c9683a5482082a680155089d0be0c62d637d9c1bda6b35219` 保持。
+- 线上应用仍源码 `1852b21c5db9ff40332e25d840d98086761209c5` / build `1792297790` / 同镜像 `d036e1d14f63…`；公网健康 HTTP200，db.ok=true。
+- 原模型、公模、权重、绑定、业务价格、其他管理员草稿和 billing v8 保持；新增健康巡检目标0。
+- 本操作将 fetch 限定到 Router 私有管理 origin，不允许供应商 HTTP；供应商调用/生成提交/本批生成费均0。其他用户仍有正常任务，**不把全站计数增加归为本操作，也不声称全站没有新任务**。
+- 遇到并发 `system-discovery` 刷新：旧元数据原始hash确有变化，未回灌或覆盖这些刷新。按 publication 时点历史逐项对比1614条，去除独立 vendor source 字段后人工字段/价格差异0；旧供应商元数据没有本任务actor写入。不能写“所有旧元数据原始hash不变”。
+
+### 执行过程与恢复材料
+
+- 首次临时工具文件权限和独立bundle缺包在 PLAN 前终止，无配置发布。修正工具私有目录所有权、打包纯JS依赖，并对运维子进程单独覆盖 NODE_OPTIONS，避免继承在线 HTTP observer 预加载；没有修改容器的持久环境或在线观察器。
+- 正式 APPLY 已 applied 后，元数据补录遇到供应商合法计价维度键 `token` 与元数据凭据字段白名单冲突。结合现有 `cleanSource` 脱敏后，仅按该 publication 继续元数据；不伪装或编码字段、不创建第二笔模型发布。初始合并执行器 exit1 不等于 publication 失败；最终 VERIFY、线上读回与宿主保护检查均 exit0。
+- 一次过严的旧元数据全量hash断言被其他供应商的来源刷新触发；保留真实差异，转为历史来源/人工字段分开审计，未回滚其他线程或用户数据。
+- 备份 `database-before-r2.dump`，218262581 bytes，`pg_restore --list` 可读；SHA256 `de1a9feb4edbd8c7f903575755c051ec04aed4c94b3ddaf6551ffcf233dfbc28`。备份保留在远端受保护证据目录，不回灌。
+- 独立 JSON 副本已实际回退为v117原配置，真实v118候选保留；这不是生产回滚实测。远端 `LIVE_RESTORE.sh --apply-rollback` 仅准备/语法核验，持三锁、绑定原应用ID和active version118/digest，使用正式 restore publication；不回灌DB/媒体、不重放任务、不删除元数据和凭据审计。后续有新发布则拒绝旧脚本覆盖。
+- 三锁释放后再次只读确认空闲；凭据库2项均密文；activeVersion118、本任务publication数量1。
+
+证据：本地 `E:/Workspace/naumi/output/apib-hot-config47-20261019/`，远端 `/opt/naumi-staging/evidence/apib-hot-config47-20261019/`。四件套 MODIFIED_FILE.json / DIFF_FILE.patch / VERIFICATION.txt / ROLLBACK.sh 使用本次真实v118结果，不复用之前无凭据的离线候选。`verify-apib-candidate.ts --allow-credential-refs` 允许禁用provider携带合法凭据引用；默认离线核验仍要求无凭据引用。
+
+本次只完成配置/元数据登记模块（开发同步计数累计2），不计作应用蓝绿成功发布；费用测试暂停，应用适配和真实生成验收尚未完成。Git提交/推送与服务器运行镜像继续分别记录。
