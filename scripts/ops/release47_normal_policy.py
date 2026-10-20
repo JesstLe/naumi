@@ -10,7 +10,8 @@ from release47_authorized_successor import check_incidents
 def begin(state, config, archive, incident_digest, at=None):
     at = at or dt.datetime.now(dt.timezone.utc)
     require(config.get('target') == '47.105.59.142' and config.get('authorization') in
-            ['合并所有分支，然后上线服务器，退役旧容器','合并分支，上线服务器','你先上线一次服务器，然后再进行接下来的修复和优化'], 'EXPLICIT_NORMAL_RELEASE_AUTHORIZATION_REQUIRED')
+            ['合并所有分支，然后上线服务器，退役旧容器','合并分支，上线服务器','你先上线一次服务器，然后再进行接下来的修复和优化',
+             '你做个监控，迁移完之后，上线，我要最终结果，上线，明白吧，中间遇到的问题自己解决，不要询问我，我去睡觉了'], 'EXPLICIT_NORMAL_RELEASE_AUTHORIZATION_REQUIRED')
     require(config.get('date') == at.astimezone(dt.timezone(dt.timedelta(hours=8))).date().isoformat(), 'RELEASE_DATE_CHANGED')
     require(config.get('restoreDatabase') is False and config.get('replayAcceptedTasks') is False and
             config.get('activateDisabledModels') is False, 'NON_REPLAY_NON_ACTIVATION_REQUIRED')
@@ -46,8 +47,13 @@ def worker_quiescent(worker, preserved_tick=None):
     if worker.get('unresolvedTicks') == 0:
         return worker.get('phase') == 'QUIESCENT' and (worker.get('lastTick') or {}).get('phase') not in ['unknown','dispatched']
     tick=worker.get('lastTick') or {}
-    return bool(preserved_tick and preserved_tick.get('authorization')=='保留并隔离旧任务，继续切换'
-        and preserved_tick.get('domainJobsQuarantined')==43 and worker.get('unresolvedTicks')==1
+    old_authorized=bool(preserved_tick and preserved_tick.get('authorization')=='保留并隔离旧任务，继续切换'
+                        and preserved_tick.get('domainJobsQuarantined')==43)
+    new_authorized=bool(preserved_tick and preserved_tick.get('authorization')=='赶紧的切换，磨磨唧唧的，遵循指令好吗'
+                        and preserved_tick.get('domainJobsQuarantined')==13
+                        and len(set(preserved_tick.get('quarantinedJobIds',[])))==13
+                        and re.fullmatch('[a-f0-9]{64}',preserved_tick.get('isolationReceiptSha256','')))
+    return bool(preserved_tick and (old_authorized or new_authorized) and worker.get('unresolvedTicks')==1
         and worker.get('phase')=='UNKNOWN' and tick.get('phase')=='unknown'
         and all(tick.get(k)==preserved_tick.get(k) for k in ['id','workerBootId','workerInstanceId','workerCommit','targetWebInstanceId'])
         and tick.get('id') and preserved_tick.get('paidReplayAllowed') is False)

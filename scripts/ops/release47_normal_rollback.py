@@ -32,6 +32,20 @@ def run(config,apply=False,existing_tx=None):
   for role in ['web','worker']:
    row=a.inspect(m[role]);require(row['State']['Running'],'CURRENT_SLOT_NOT_RUNNING')
   old=json.loads((ROOT/'transaction/original-canonical-exact.json').read_bytes());prior=old['runtimeRecovery'];pm=json.loads(pathlib.Path(prior['manifestPath']).read_bytes())
+  if config.get('nasRollbackManifestPath'):
+   # After media eviction the local-only old slot is not a usable fallback.
+   # Bind the separately tested, paused same-prior-image NAS-compatible slot.
+   path=pathlib.Path(config['nasRollbackManifestPath'])
+   require(path.parent==ROOT and file_sha(path)==config.get('nasRollbackManifestSha256'),'NAS_ROLLBACK_MANIFEST_CHANGED')
+   alternate=json.loads(path.read_bytes())
+   require(alternate['image']==pm['image'] and alternate['commit']==pm['commit'] and
+           alternate['worker']==pm['worker'],'NAS_ROLLBACK_PRIOR_VERSION_CHANGED')
+   r=tx.inspect(alternate['web']['id']);e=environment(r)
+   require(static_pin(r)==alternate['web']['staticSha256'] and e.get('STORAGE_DRIVER')=='s3'and
+           e.get('MEDIA_REMOTE_ACCESS')=='proxy'and e.get('S3_ENDPOINT')=='http://172.18.0.1:13947',
+           'NAS_ROLLBACK_STORAGE_CHANGED')
+   pm=alternate;prior=copy.deepcopy(prior)
+   prior.update(manifestPath=str(path),manifestSha256=sha(encoded(pm)),operationId=pm['operationId'])
   for role in ['web','worker']:
    row=tx.inspect(pm[role]['id']);require(not row['State']['Running'] and row['Image']==pm['image'] and row['HostConfig']['RestartPolicy']['Name']=='no','PRIOR_SLOT_BASELINE_CHANGED')
   backup=json.loads((ROOT/'transaction/backup-readable.json').read_bytes());require(file_sha(backup['path'])==backup['sha256'],'BACKUP_CHANGED')
@@ -108,6 +122,10 @@ def run(config,apply=False,existing_tx=None):
    else:s['worker']['running']=identity
   succ.update(phase='ROLLED_BACK',rollbackOperationId=log['operationId']);s['activeNormalBlueGreenReleaseId']=config.get('previousNormalReleaseId');s['revision']+=1;_atomic_private(CANON,s)
   unit=(ROOT/'transaction/original-supervisor.service').read_text()
+  if config.get('nasRollbackManifestPath'):
+   original_path=old['runtimeRecovery']['manifestPath']
+   unit=unit.replace(original_path,prior['manifestPath']).replace(
+      str(pathlib.Path(original_path).parent/'release47_recovery_supervisor.py'),str(ROOT/'tools/release47_recovery_supervisor.py'))
   if config.get('preservedWorkerTick'):
    pm['operationId']=str(uuid.uuid4());path=ROOT/'rollback-supervisor-manifest.json';_atomic_private(path,pm)
    s['runtimeRecovery'].update(operationId=pm['operationId'],manifestPath=str(path),manifestSha256=sha(encoded(pm)))

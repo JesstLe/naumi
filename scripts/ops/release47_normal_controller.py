@@ -67,6 +67,21 @@ class Controller:
 
  def owners(self):return self.sql("SELECT json_build_object('rows',COALESCE(json_agg(row_to_json(t)),'[]')) FROM (SELECT state,kind,instance_id,boot_id FROM app_release_session_owners WHERE instance_id='"+OLDWEB+"')t;")[0]['rows']
 
+ def check_running_slots(self,extra=()):
+  running=set(self.tx.run(['docker','ps','-q','--no-trunc']).decode().splitlines())
+  required={self.web['id'],self.worker['id'],*[r['id'] for r in self.infra]}|set(extra)
+  permitted=set()
+  for pin in self.cfg.get('reviewedNasSidecars',[]):
+   row=self.tx.inspect(pin['id'])
+   require(all(public_identity(row).get(k)==pin.get(k) for k in ['id','name','image','startedAt']), 'NAS_SIDECAR_IDENTITY_CHANGED')
+   require(row['Config']['Cmd']==pin['command'] and row['Config']['Cmd'][0]=='node' and
+           row['Config']['Cmd'][1] in ['/work/migrate-media47.cjs','/verify.cjs'] and
+           not any(row['HostConfig'].get('PortBindings',{}).values()),'NAS_SIDECAR_NOT_A_REVIEWED_DATA_RUNNER')
+   require(all(not m['RW'] for m in row['Mounts'] if m['Destination'] in ['/media','/creds.json','/lifecycle','/migration']),
+           'NAS_SIDECAR_SOURCE_NOT_READ_ONLY')
+   if row['State']['Running']:permitted.add(row['Id'])
+  require(required.issubset(running) and running.issubset(required|permitted),'UNREGISTERED_RUNNING_CANDIDATE')
+
  def persist(self):
   require(sha(CANON.read_bytes())==self.disk,'CANONICAL_CAS_CHANGED')
   require(self.state.get('blueGreenSuccessor')==self.historical_successor and self.state.get('legacyDrainProven') is False,'HISTORICAL_SUCCESSOR_MUST_REMAIN_UNCHANGED')
@@ -205,8 +220,7 @@ class Controller:
    descriptor=self.tx.save('original-canonical.json',enc(self.state));self.tx.save('original-canonical-exact.json',self.original)
    self.succ=normal.begin(self.state,self.cfg,descriptor,self.incident_digest)
    self.succ.update(commit=self.cfg['commit'],buildVersion=self.cfg['version'],image=self.cfg['image'],previousRuntimeRecovery=copy.deepcopy(self.runtime))
-   running=self.tx.run(['docker','ps','-q','--no-trunc']).decode().splitlines()
-   require(set(running)=={self.web['id'],self.worker['id'],*[r['id'] for r in self.infra]},'UNREGISTERED_RUNNING_CANDIDATE')
+   self.check_running_slots()
    require(not self.tx.run(['ss','-Hltn','sport = :'+str(self.cfg['newPort'])]).strip(),'CANDIDATE_PORT_IN_USE')
    baseline_app=c.app_status(self.tx,self.web);require(baseline_app['observations']['unknownLeases']==0,'CURRENT_UNKNOWN_WORK_REQUIRES_RECONCILIATION')
    self.state.setdefault('normalBlueGreenReleases',{})[RELEASE]=self.succ;self.persist()
@@ -222,7 +236,7 @@ class Controller:
    require(self.pre.public.get('tables'),'TASK_BASELINE_MISSING');self.phase('BACKED_UP')
    require(int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024>=3200,'DUAL_SLOT_MEMORY_INSUFFICIENT')
    image=json.loads(self.tx.run(['docker','image','inspect',self.cfg['image']]))[0];require(image['Id']==self.cfg['image'],'FIXED_IMAGE_MISSING')
-   self.newweb=self.op('web-create',lambda _:self.tx.clone_web(self.web,name=WEB,port=self.cfg['newPort'],image=self.cfg['image'],commit=self.cfg['commit'],memory_mib=2048,cpu=1.5,release_secret=secrets.token_urlsafe(48),state_dir=STATE+'/web',build_version=self.cfg['version'],reviewed_prior_state_dir=self.cfg['oldWebStateDir']))
+   self.newweb=self.op('web-create',lambda _:self.tx.clone_web(self.web,name=WEB,port=self.cfg['newPort'],image=self.cfg['image'],commit=self.cfg['commit'],memory_mib=2048,cpu=1.5,release_secret=secrets.token_urlsafe(48),state_dir=STATE+'/web',build_version=self.cfg['version'],reviewed_prior_state_dir=self.cfg['oldWebStateDir'],reviewed_nas_credentials_sha256=self.cfg.get('nasCredentialsSha256')))
    self.newweb=self.op('web-start',lambda _:self.tx.start_candidate(self.newweb,dict(webPeakMiB=2048,workerPeakMiB=128,hostReserveMiB=1024),int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024))
    self.wait(lambda:self.request(self.newweb,'/api/health'),'WEB_START')
    self.newworker=self.op('worker-create',lambda _:c.clone_worker(self.tx,self.newweb,name=WORKER,memory_mib=128,cpu=.25,state_dir=STATE+'/worker'))
@@ -293,7 +307,7 @@ class Controller:
   else:
    require(not self.tx.run(['ss','-Hltn','sport = :'+str(self.cfg['newPort'])]).strip(),'RESUME_CANDIDATE_ALREADY_PRESENT')
    names=self.tx.run(['docker','ps','-a','--format','{{.Names}}']).decode().splitlines();require(WEB not in names and WORKER not in names,'RESUME_CANDIDATE_ALREADY_EXISTS')
-  running=self.tx.run(['docker','ps','-q','--no-trunc']).decode().splitlines();require(set(running)=={self.web['id'],self.worker['id'],*[r['id'] for r in self.infra]}|extra,'RESUME_RUNNING_SLOTS_CHANGED')
+  self.check_running_slots(extra)
   recovery.recovery_binding(self.state,self.original_manifest)
   require(sha(self.tx.run(['nginx','-T']))==self.cfg['expectedGatewayDigest'],'RESUME_GATEWAY_CHANGED')
   saved=json.loads((self.tx.folder/'preserved-incidents.json').read_bytes());self.incident_digest=saved['sha256'];rows,held=self.incidents();policy.check_incidents(rows,held,self.incident_digest)
@@ -359,9 +373,15 @@ class Controller:
   self.state['runtimeRecovery']={**self.runtime,'operationId':manifest['operationId'],'manifestPath':str(p),'manifestSha256':sha(enc(manifest)),'phase':'ACKNOWLEDGED','effectiveWeb':self.newweb,'effectiveWorker':self.newworker,'successorReleaseId':RELEASE}
   self.state['webs']['main']['running']=self.newweb;self.state['worker']['running']=self.newworker
   self.persist();unit=pathlib.Path('/etc/systemd/system/naumi47-recovery.service')
-  old=unit.read_text();old_program=str(pathlib.Path(self.runtime['manifestPath']).parent/'release47_recovery_supervisor.py')
+  old=unit.read_text()
+  import shlex
+  starts=[shlex.split(line.split('=',1)[1])for line in old.splitlines()if line.startswith('ExecStart=')]
+  require(len(starts)==1 and len(starts[0])>=4 and pathlib.Path(starts[0][1]).name=='release47_recovery_supervisor.py'and
+          pathlib.Path(starts[0][1]).is_relative_to(pathlib.Path('/opt/naumi-staging')), 'SUPERVISOR_PROGRAM_NOT_REVIEWABLE')
+  old_program=starts[0][1]
   new=old.replace(old_program,str(ROOT/'tools/release47_recovery_supervisor.py')).replace(self.runtime['manifestPath'],str(p))
-  require(old!=new and str(p) in new,'SUPERVISOR_UNIT_NOT_BOUND');c._replace_config(unit,new.encode())
+  require(old!=new and str(p) in new and str(ROOT/'tools/release47_recovery_supervisor.py') in new,'SUPERVISOR_UNIT_NOT_BOUND');c._replace_config(unit,new.encode())
+  self.state['runtimeRecovery']['supervisorProgramSha256']=file_sha(ROOT/'tools/release47_recovery_supervisor.py');self.persist()
   self.tx.run(['systemd-analyze','verify',str(unit)]);self.tx.run(['systemctl','daemon-reload'])
   r=recovery.Supervisor(manifest,manifest['journalDir'],recovery.Adapter(self.tx,manifest)).once();self.tx.save('new-supervisor-acceptance.json',r)
 

@@ -166,7 +166,8 @@ class HostTransaction:
 
     def clone_web(self, identity, *, name, port, image, commit, memory_mib, cpu, release_secret,
                   state_dir, build_version, admission='draining', reviewed_omitted_mounts=None, media_binding=None,
-                  before_create=None, runtime_recovery=None, reviewed_prior_state_dir=None):
+                  before_create=None, runtime_recovery=None, reviewed_prior_state_dir=None,
+                  reviewed_nas_credentials_sha256=None):
         require(re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]{0,95}', name), 'INVALID_NEW_SLOT_NAME')
         require(type(port) is int and 1024 <= port <= 65535, 'INVALID_LOOPBACK_PORT')
         require(re.fullmatch('sha256:[a-f0-9]{64}', image) and re.fullmatch('[a-f0-9]{40}', commit), 'FIXED_IMAGE_REQUIRED')
@@ -182,6 +183,23 @@ class HostTransaction:
         networks = sorted(old['NetworkSettings']['Networks'])
         require(networks and len(networks) <= 4, 'REVIEW_NETWORKS_REQUIRED')
         env = environment(old)
+        if reviewed_nas_credentials_sha256 is not None:
+            require(self.target == TARGET and re.fullmatch('[a-f0-9]{64}', reviewed_nas_credentials_sha256),
+                    'EXACT_REVIEWED_NAS_BINDING_REQUIRED')
+            credentials = pathlib.Path('/root/.nas47-garage.json')
+            require(not credentials.is_symlink() and credentials.stat().st_uid == 0 and
+                    not credentials.stat().st_mode & 0o077 and file_sha(credentials) == reviewed_nas_credentials_sha256,
+                    'NAS_CREDENTIAL_FILE_CHANGED')
+            nas = json.loads(credentials.read_bytes())
+            require(nas.get('endpointContainersBridge') == 'http://172.18.0.1:13947' and
+                    nas.get('bucket') == 'naumi47-media-20261020' and nas.get('accessKeyId') and nas.get('secretAccessKey'),
+                    'REVIEWED_PRIVATE_NAS_ENDPOINT_REQUIRED')
+            env.update(STORAGE_DRIVER='s3', MEDIA_PRIVATE='1', MEDIA_REMOTE_ACCESS='proxy',
+                       S3_ENDPOINT=nas['endpointContainersBridge'], S3_BUCKET=nas['bucket'],
+                       S3_REGION=nas.get('region') or 'garage', S3_FORCE_PATH_STYLE='true',
+                       S3_ACCESS_KEY_ID=nas['accessKeyId'], S3_SECRET_ACCESS_KEY=nas['secretAccessKey'])
+            self.save('reviewed-nas-binding.json', {'endpoint':nas['endpointContainersBridge'], 'bucket':nas['bucket'],
+                      'credentialFileSha256':reviewed_nas_credentials_sha256, 'privateMedia':True, 'accessMode':'proxy'})
         env.update(SOURCE_COMMIT=commit, BUILD_VERSION=build_version, NAUMI_INSTANCE_ID=name, NAUMI_RELEASE_RUNTIME='1',
                    NAUMI_RELEASE_ADMISSION_START='draining', RELEASE_CONTROL_SECRET=release_secret,
                    INTERNAL_APP_ORIGIN='http://127.0.0.1:3000', NAUMI_VIDEO_WORKER='0',
