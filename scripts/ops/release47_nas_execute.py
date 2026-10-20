@@ -33,7 +33,7 @@ def finalize_media(tx,cfg):
  for source,(dest,ro)in mounts.items():args+=['--mount','type=bind,src='+source+',dst='+dest+(',readonly'if ro else'')]
  args += [cfg['oldWeb']['image'],'node','/finalize.cjs']
  raw=tx.run(args,timeout=1800);receipt=json.loads(raw);require(receipt['phase']=='ALL_BYTES_VERIFIED','FINAL_MEDIA_READBACK_FAILED')
- tx.save('FINAL_MEDIA_READBACK.json',receipt);return receipt
+ tx.save('FINAL_MEDIA_READBACK-'+str(uuid.uuid4())+'.json',receipt);return receipt
 
 def decode_rows(raw):
  dec=json.JSONDecoder();s=raw.decode();out=[]
@@ -79,6 +79,7 @@ class NasController(ctl.Controller):
   return result
 
  def sync_media_catalog(self):
+  self.catalog_pass=getattr(self,'catalog_pass',0)+1;tag='-'+str(self.catalog_pass)
   proof=ROOT/'final-media-proof'
   summary=json.loads((proof/'SUMMARY.json').read_bytes())
   require(summary.get('phase')=='ALL_BYTES_VERIFIED' and all(summary.get(k)==0 for k in ['errors','missing','mismatch','changed']), 'FULL_NAS_BYTES_NOT_VERIFIED')
@@ -88,7 +89,7 @@ class NasController(ctl.Controller):
    if item.get('op')=='verified':rows[item['key']]={'key':item['key'],'sha':item['sha256'],'bytes':item['size']}
   require(len(rows)==summary['files'],'VERIFIED_MEDIA_SET_INCOMPLETE')
   raw=self.tx.run(['docker','exec','-i',self.db['id'],'psql','-XqAt','-v','ON_ERROR_STOP=1','-U',self.de['POSTGRES_USER'],'-d',self.de['POSTGRES_DB']],stdin=b"BEGIN READ ONLY;SELECT coalesce(json_agg(to_jsonb(a)),'[]')FROM app_media_assets a;COMMIT;",timeout=60)
-  self.tx.save('media-catalog-before.private.json',json.loads(raw))
+  self.tx.save('media-catalog-before'+tag+'.private.json',json.loads(raw))
   payload=json.dumps(list(rows.values()),separators=(',',':'))
   require('$nasmedia$'not in payload,'MEDIA_INPUT_DELIMITER')
   sql="""BEGIN;SET LOCAL lock_timeout='3s';SET LOCAL statement_timeout='20s';
@@ -101,13 +102,18 @@ CASE lower(regexp_replace(key,'^.*[.]',''))WHEN 'png'THEN'image/png'WHEN'jpg'THE
 ON CONFLICT(key)DO UPDATE SET driver='s3',remote_ready=true;
 SELECT json_build_object('verifiedFiles',count(*),'catalogReady',count(*)FILTER(WHERE a.remote_ready AND a.driver='s3'AND a.sha256=v.sha AND a.bytes=v.bytes))FROM nas_verified v JOIN app_media_assets a USING(key);
 COMMIT;""" % payload
-  self.tx.save('media-catalog-REQUEST.private.sql',sql.encode())
+  self.tx.save('media-catalog-REQUEST'+tag+'.private.sql',sql.encode())
   raw=self.tx.run(['docker','exec','-i',self.db['id'],'psql','-XqAt','-v','ON_ERROR_STOP=1','-U',self.de['POSTGRES_USER'],'-d',self.de['POSTGRES_DB']],stdin=sql.encode(),timeout=90)
-  result=json.loads(raw);require(result['catalogReady']==len(rows),'CATALOG_NOT_ALL_READY');self.tx.save('media-catalog-RECEIPT.json',result)
+  result=json.loads(raw);require(result['catalogReady']==len(rows),'CATALOG_NOT_ALL_READY');self.tx.save('media-catalog-RECEIPT'+tag+'.json',result)
 
  def maintenance_and_import(self):
   super().maintenance_and_import()
   self.op('nas-media-catalog',lambda _:self.sync_media_catalog())
+
+ def resume_review(self):
+  super().resume_review()
+  if 'nas-media-catalog'not in self.succ['operations']:
+   self.op('nas-media-catalog',lambda _:self.sync_media_catalog())
 
  def finish_ready(self):
   # Old Web is still serving during candidate verification; close that final
@@ -154,27 +160,31 @@ def main():
  # expired historical release appointment.
  cfg['date']=dt.datetime.now(dt.timezone(dt.timedelta(hours=8))).date().isoformat()
  with ctl.transaction()as tx:
-  require(not (ROOT/'transaction/controller-STARTED.json').exists(),'EXISTING_NAS_RELEASE_RECONCILE_REQUIRED')
-  s=json.loads(CANON.read_bytes());require(s['revision']==cfg['expectedRevision'] and sha(ctl.enc(s))==cfg['expectedCanonicalDigest'],'FRESH_BASELINE_CHANGED')
+  resume=bool(cfg.get('resumeReview'))
+  require(resume or not (ROOT/'transaction/controller-STARTED.json').exists(),'EXISTING_NAS_RELEASE_RECONCILE_REQUIRED')
+  s=json.loads(CANON.read_bytes())
+  if not resume:require(s['revision']==cfg['expectedRevision'] and sha(ctl.enc(s))==cfg['expectedCanonicalDigest'],'FRESH_BASELINE_CHANGED')
   web=public_identity(tx.inspect(cfg['oldWeb']['id']));require(web==cfg['oldWeb'],'OLD_WEB_RESTARTED')
   app=controls.app_status(tx,web);require(app['identity']['bootId']==cfg['reviewedBoot'],'OLD_BOOT_CHANGED')
   require(app['observations']['trackedAcceptedWork']==0 and app['observations']['agentRuns']==0,'CURRENT_LIVE_WORK_DURING_ISOLATION')
-  finalize_media(tx,cfg)
-  saved=ROOT/'isolation';saved.mkdir(mode=0o700,exist_ok=False);prior=tx.folder
-  try:
-   tx.folder=saved;tx.backup_database(public_identity(tx.inspect('naumi-staging-db-1')))
-   db=tx.inspect('naumi-staging-db-1');e=environment(db)
-   q="SELECT json_build_object('jobs',json_agg(to_jsonb(j)))FROM app_image_jobs j WHERE id IN("+','.join("'"+i+"'"for i in cfg['reviewedPaidJobIds'])+");"
-   raw=tx.run(['docker','exec','-i',db['Id'],'psql','-XqAt','-v','ON_ERROR_STOP=1','-U',e['POSTGRES_USER'],'-d',e['POSTGRES_DB']],stdin=('BEGIN READ ONLY;'+q+'COMMIT;').encode())
-   jobs=json.loads(raw)['jobs'];require(len(jobs)==13,'EXACT_13_JOBS_CHANGED')
-   spec={'authorization':NAS_CONTINUATION,'releaseId':RID,'web':web,'oldBoot':'236cc455-8cf8-4e37-ace9-b840242ee5d4','newBoot':cfg['reviewedBoot'],'expectedJobs':13,'expectedActivities':16,'reviewedJobIds':cfg['reviewedPaidJobIds'],'reviewedJobHashes':{j['id']:hashlib.sha256(json.dumps(j,sort_keys=True,separators=(',',':')).encode()).hexdigest()for j in jobs}}
-   result=isolate(tx,spec,app)
-  finally:tx.folder=prior
-  ctl.save(ROOT/'isolation-result.json',result)
+  if not resume:
+   finalize_media(tx,cfg)
+   saved=ROOT/'isolation';saved.mkdir(mode=0o700,exist_ok=False);prior=tx.folder
+   try:
+    tx.folder=saved;tx.backup_database(public_identity(tx.inspect('naumi-staging-db-1')))
+    db=tx.inspect('naumi-staging-db-1');e=environment(db)
+    q="SELECT json_build_object('jobs',json_agg(to_jsonb(j)))FROM app_image_jobs j WHERE id IN("+','.join("'"+i+"'"for i in cfg['reviewedPaidJobIds'])+");"
+    raw=tx.run(['docker','exec','-i',db['Id'],'psql','-XqAt','-v','ON_ERROR_STOP=1','-U',e['POSTGRES_USER'],'-d',e['POSTGRES_DB']],stdin=('BEGIN READ ONLY;'+q+'COMMIT;').encode())
+    jobs=json.loads(raw)['jobs'];require(len(jobs)==13,'EXACT_13_JOBS_CHANGED')
+    spec={'authorization':NAS_CONTINUATION,'releaseId':RID,'web':web,'oldBoot':'236cc455-8cf8-4e37-ace9-b840242ee5d4','newBoot':cfg['reviewedBoot'],'expectedJobs':13,'expectedActivities':16,'reviewedJobIds':cfg['reviewedPaidJobIds'],'reviewedJobHashes':{j['id']:hashlib.sha256(json.dumps(j,sort_keys=True,separators=(',',':')).encode()).hexdigest()for j in jobs}}
+    result=isolate(tx,spec,app)
+   finally:tx.folder=prior
+   ctl.save(ROOT/'isolation-result.json',result)
   require(controls.app_status(tx,web)['observations']['unknownLeases']==0,'ISOLATION_NOT_OBSERVED')
   # Only the exact dead-boot observations were closed. Paid tasks remain fenced.
-  ctl.save(ROOT/'transaction/controller-STARTED.json',{'at':ctl.now(),'releaseId':RID})
+  if not resume:ctl.save(ROOT/'transaction/controller-STARTED.json',{'at':ctl.now(),'releaseId':RID})
   operator=NasController(tx,cfg)
+  if resume:operator.check_paid_incidents()
   # One readable baseline dump covers this one transaction. Do not create a
   # second400MB copy after the only intervening change (documented isolation).
   backup=json.loads((ROOT/'isolation/backup-readable.json').read_bytes())

@@ -319,7 +319,13 @@ class Controller:
   if self.succ['image']!=self.cfg['image']:
    mapping=review['imageIdentity'];require(mapping['from']==self.succ['image'] and mapping['to']==self.cfg['image'] and imported['RootFS']==mapping['rootFS'],'RESUME_IMAGE_IDENTITY_MAPPING_CHANGED')
    image_env=dict(v.split('=',1) for v in imported['Config'].get('Env',[]) if '=' in v)
-   require(image_env['SOURCE_COMMIT']==self.cfg['commit'] and image_env['BUILD_VERSION']==self.cfg['version'] and file_sha(self.cfg['imageArchive'])==self.cfg['imageArchiveSha256'],'IMPORTED_ARCHIVE_SOURCE_CHANGED')
+   archive=pathlib.Path(self.cfg['imageArchive']);archive_ok=archive.is_file()and file_sha(archive)==self.cfg['imageArchiveSha256']
+   if not archive_ok and self.cfg.get('verifiedImageArchiveOffload'):
+    off=self.cfg['verifiedImageArchiveOffload'];p=pathlib.Path(off['path'])
+    require(p.parent==ROOT and file_sha(p)==off['sha256'],'ARCHIVE_OFFLOAD_RECEIPT_CHANGED')
+    proof=json.loads(p.read_bytes());archive_ok=bool(proof['phase']=='ALL_BACKUPS_READBACK_VERIFIED'and len(proof['files'])==1 and
+      proof['files'][0]['readback']is True and proof['files'][0]['sha256']==self.cfg['imageArchiveSha256'])
+   require(image_env['SOURCE_COMMIT']==self.cfg['commit'] and image_env['BUILD_VERSION']==self.cfg['version'] and archive_ok,'IMPORTED_ARCHIVE_SOURCE_CHANGED')
    self.succ['imageIdentityReconciliation']=mapping;self.succ['image']=self.cfg['image'];self.persist()
   self.tx.save('resume-reviewed-'+str(self.state['revision'])+'.json',{'review':review,'sameOperationIds':True,'backupHashVerified':True,'candidateReused':self.candidate_reused,'gatewayUnchanged':True,'configUnchanged':True,'at':now()})
   print('RESUME_REVIEW=PASS ORIGINAL_OPERATIONS_RETAINED=YES',flush=True)
