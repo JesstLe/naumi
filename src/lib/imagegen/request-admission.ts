@@ -1,4 +1,5 @@
 import { exactImageRequestSize, ExactImageSizeError } from "./request-size";
+import { unsupportedReverseHubRatio } from "./ratio-support";
 
 type RouteSource = {
   model: string;
@@ -13,8 +14,10 @@ export function imageRequestAdmission(
   publicModelId: string,
   supplierRouting: boolean,
   source: RouteSource,
+  adapter?: string,
 ): string[] {
   const codes: string[] = [];
+  if(unsupportedReverseHubRatio(ratio,adapter))codes.push("REVERSE_HUB_RATIO_UNSUPPORTED");
   try {
     exactImageRequestSize(ratio, supplierRouting ? publicModelId : source.model, true);
   } catch (error) {

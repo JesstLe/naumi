@@ -36,7 +36,7 @@ function sampleKey(data:Buffer,width:number,height:number,mode:"corners"|"border
 }
 /** Apache-2.0 adaptation of remove_chroma_key.py; see vendor/imagegen/NOTICE.md. */
 export async function removeChroma(bytes:Buffer,raw:NonNullable<ImagegenRequest["chroma"]>):Promise<Buffer>{
-  const options=imagegenChromaSchema.parse(raw),{data,info}=await decodeImagegenPixels(bytes);
+  const options=imagegenChromaSchema.parse(raw),{data,info}=await decodeImagegenPixels(bytes,"output");
   const originalAlpha=Buffer.alloc(info.width*info.height);for(let i=0;i<originalAlpha.length;i++)originalAlpha[i]=data[i*4+3];
   const key:RGB=options.autoKey==="none"?[parseInt(options.keyColor.slice(1,3),16),parseInt(options.keyColor.slice(3,5),16),parseInt(options.keyColor.slice(5,7),16)]:sampleKey(data,info.width,info.height,options.autoKey);
   const max=Math.max(...key),spill=max<128?[]:[0,1,2].filter(c=>key[c]>=max-16&&key[c]>=128),other=[0,1,2].filter(c=>!spill.includes(c));

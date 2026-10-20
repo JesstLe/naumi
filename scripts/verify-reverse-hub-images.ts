@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import sharp from "sharp";
 import { randomUUID } from "node:crypto";
 import { reverseHubImageFetch, reverseHubImageRequest } from "../src/lib/model-config/reverse-hub-images";
-import { withImageOperation, ImageOperationPending, isImageGatewayModel } from "../src/lib/image-gateway";
+import { withImageOperation, ImageOperationPending, ImageOperationReview, isImageGatewayModel } from "../src/lib/image-gateway";
 import { runModelExecution, type ModelExecutionScope } from "../src/lib/model-config/context";
 import { reverseHubCatalogMetadata } from "../src/lib/supplier-models/discovery";
 const scope: ModelExecutionScope = {
@@ -65,7 +65,7 @@ async function main() {
     task.state = "reconciling";
     const pendingTransport: typeof fetch = async () => Response.json(task);
     const pending = reverseHubImageFetch(scope, {}, { transport: pendingTransport, ledger, context: {} as any });
-    await assert.rejects(withImageOperation(scope.frozen.publicModelId, { id: "mask-1" }, () => pending("http://hub.test/v1/images/edits", { method: "POST", body: form })), ImageOperationPending);
+    await assert.rejects(withImageOperation(scope.frozen.publicModelId, { id: "mask-1" }, () => pending("http://hub.test/v1/images/edits", { method: "POST", body: form })), ImageOperationReview);
     task.state = "failed";
     assert.equal((await withImageOperation(scope.frozen.publicModelId, { id: "mask-1" }, () => pending("http://hub.test/v1/images/edits", { method: "POST", body: form }))).status, 422);
   });

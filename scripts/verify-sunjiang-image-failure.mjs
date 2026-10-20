@@ -80,15 +80,18 @@ if (baseline) {
     [503, { message: rawSecret }, "IMAGE_UPSTREAM_UNAVAILABLE"],
   ];
   for (const [status, error, code] of codes) {
-    const result = await reject([{ status, body: { error } }]);
+    const result = await reject([{ status, body: { error, ...(status>=500?{billing_status:"not_charged"}:{}) } }]);
     assert.equal(result.body.error.code, code);
     assert.equal(result.status, status);
     assert.ok(!JSON.stringify({ result, events }).includes(rawSecret));
     assert.ok(safeError({ code }) !== "服务繁忙,请稍后重试");
   }
-  const fallback = await reject([{ status: 400, body: { error: { code: "invalid_image" } } }, { status: 503, body: { error: {} } }]);
+  const fallback = await reject([{ status: 400, body: { error: { code: "invalid_image" } } }, { status: 503, body: { error: {}, billing_status:"not_charged" } }]);
   assert.equal(fallback.body.error.code, "IMAGE_UPSTREAM_UNAVAILABLE");
   assert.equal(fixture.calls, 2, "no additional retry/fallback is introduced");
+  await assert.rejects(reject([{status:503,body:{error:{message:rawSecret}}},{status:200,body:{data:[]}}]), /./);
+  assert.equal(fixture.calls,1,"ambiguous paid rejection must not fail over");assert.equal(fixture.releases,1);
+  assert.equal(fixture.events.at(-1)[1],"unknown");assert.equal(fixture.events.at(-1)[3].upstreamFailure.code,"IMAGE_UPSTREAM_UNAVAILABLE");assert.ok(!JSON.stringify(fixture.events).includes(rawSecret));
   const source = readFileSync("src/app/api/generate-image/route.ts", "utf8");
   assert.ok(source.includes("imageRatioValidationPolicy"));
   assert.ok(source.includes("!(p.targetWidth > 0 && p.targetHeight > 0)"));

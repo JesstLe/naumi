@@ -31,7 +31,7 @@ async function main() {
     const before = await counters();
     for (const [name, input, raw, status, code] of [
       ["invalid JSON", "{", true, 400, "INVALID_REQUEST"],
-      ["exact unsupported ratio", body("249:374"), false, 400, "IMAGE_SIZE_UNSUPPORTED"],
+      ["exact unsupported ratio", body("381:31"), false, 400, "IMAGE_SIZE_UNSUPPORTED"],
       ["no eligible channel", body("1:1", "low"), false, 409, "IMAGEGEN_NO_CHANNEL"],
     ] as const) {
       const response = await call(input, "quote", raw), data = await response.json();
@@ -41,7 +41,7 @@ async function main() {
     }
     const form = new FormData();
     form.set("manifest", JSON.stringify([{ path: "Fixture/产品图/p.png" }, { path: "Fixture/主图/r.png" }]));
-    for (const [w,h] of [[800,800],[498,748]]) { const bytes = await sharp({create:{width:w,height:h,channels:3,background:"#aabbcc"}}).png().toBuffer(); form.append("files", new File([new Uint8Array(bytes)], "image.png", {type:"image/png"})); }
+    for (const [w,h] of [[800,800],[3810,310]]) { const bytes = await sharp({create:{width:w,height:h,channels:3,background:"#aabbcc"}}).png().toBuffer(); form.append("files", new File([new Uint8Array(bytes)], "image.png", {type:"image/png"})); }
     const uploaded = await POST(new Request("http://internal/api/reference-workbench/workbench/upload-folder",{method:"POST",headers:{cookie:headers.cookie},body:form}));
     assert.equal(uploaded.status,200);
     const root = (await uploaded.json()).product_dir;
@@ -50,7 +50,8 @@ async function main() {
     const reference = await call({action:"workbench/start",body:{request_id:randomUUID(),workbench_root:root,items:[{ref_path:items.items[0].ref_path,prompt:"preserve original composition"}],config:{quality:"high",resolution:"1k"}}});
     const referenceData = await reference.json(); assert.equal(reference.status,baseline?500:400);
     if(!baseline)assert.equal(referenceData.code,"IMAGE_SIZE_UNSUPPORTED");
-    results.push({name:"real workbench folder 498x748 exact reference",status:reference.status,data:referenceData});
+    results.push({name:"real workbench folder 3810x310 unsupported reference",status:reference.status,data:referenceData});
+    const custom = await call(body("249:374"));assert.equal(custom.status,200,"v2 native-grid accepts a valid automatic reference ratio");
     const successInput = body(), success = await call(successInput), quote = await success.json();
     if (success.status !== 200) { const { preview } = await import("../src/lib/reference-workbench/service"); await preview(owner, successInput.action, successInput.body); }
     assert.equal(success.status, 200); assert.equal(quote.state, "preview");

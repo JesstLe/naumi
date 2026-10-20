@@ -3,6 +3,9 @@ import { normalizeLegacyFrameRequest, LegacyFrameError } from "@/lib/imagegen/le
 import { preserveGeneratedFrame, sourceImageDimensions } from "@/lib/imagegen/output-shape";
 import { exactImageRequestSize, imageRatioValidationPolicy, ExactImageSizeError } from "@/lib/imagegen/request-size";
 import { imageRatioWarning, imageOutputNotice } from "@/lib/imagegen/output-advisory";
+import { storedImageReview, IMAGE_REVIEW_MESSAGE } from "@/lib/image-job-review";
+import { storedDeliveryCheckpoint } from "@/lib/imagegen/delivery-checkpoint";
+import { unsupportedReverseHubRatio, REVERSE_HUB_RATIO_MESSAGE } from "@/lib/imagegen/ratio-support";
 import {currentImagegenStep,withImagegenStep} from "@/lib/imagegen/context";
 import {legacyImagegenIntent} from "@/lib/imagegen/legacy-intent";
 import {inspectImagegenPixels} from "@/lib/imagegen/postprocess";
@@ -836,7 +839,7 @@ async function runJob(
     const scope = currentModelExecution("image"), post = scope?.businessOption?.postprocess;
     const ratioPolicy = scope ? imageRatioValidationPolicy(scope.supplierRouting ? scope.supplierRouting.targets.map(target => target.scope.connection) : [scope.connection]) : undefined;
     let nativeRatioChecked = false;
-    if(p.transparent){for(const image of images){const raw=dataUrlToBytes(image.url);const pixels=await inspectImagegenPixels(raw?Buffer.from(raw.bytes):(await readManagedObject(image.url,12*1024*1024)).bytes);if(!pixels.transparentPixels||!pixels.visiblePixels)imagegenOutputError="模型未返回有效透明主体；已生成原图保留，实际生成积分已结算，请调整透明能力配置";}}
+    if(p.transparent){for(const image of images){const raw=dataUrlToBytes(image.url);const pixels=await inspectImagegenPixels(raw?Buffer.from(raw.bytes):(await readManagedObject(image.url,64*1024*1024)).bytes);if(!pixels.transparentPixels||!pixels.visiblePixels)imagegenOutputError="模型未返回有效透明主体；已生成原图保留，实际生成积分已结算，请调整透明能力配置";}}
     if(imagegenOutputError){await JOBS.patch(jobId,{imagegenOutputError});}
     else if (post?.enabled) {
       images = await Promise.all(images.map(async (image,index) => {
@@ -969,7 +972,10 @@ async function runJob(
       await JOBS.patch(jobId, { status: exhausted ? "needs_attention" : "pending", error: e.message });
       return;
     }
-    if ((await JOBS.get(jobId, false))?.images?.length) throw e;
+    const retained = await JOBS.get(jobId, false);
+    if(retained&&storedDeliveryCheckpoint(retained)){
+      await JOBS.patch(jobId,{status:"needs_attention",error:"图片已生成，结果保存未完成；请检查原任务恢复，不会重新生成或重复扣费"});return;
+    }
     if (useDb && !billingSettled) await JOBS.settleResults(jobId, 0, "图片生成失败",{state:"failed",items:[]});
     // 原始上游 message 可能含 openai/gpt/quota 等字样,经 safeError 净化后再落库,
     // 避免随 GET 轮询回传给用户暴露所用模型。详细原因只打服务端日志。
@@ -1119,6 +1125,11 @@ async function handleObservedPost(request: Request) {
   }
   // Reject a new local size-contract error BEFORE quote/reservation/job creation.
   // The worker branch above resumes its original frozen contract unchanged.
+  if(imageScope){
+    const candidates=imageScope.supplierRouting?.targets.map(t=>t.scope)||[imageScope];
+    if(candidates.length&&candidates.every(candidate=>unsupportedReverseHubRatio(p.ratio,candidate.connection.options?.imageAdapter)))
+      return NextResponse.json({error:REVERSE_HUB_RATIO_MESSAGE,code:"IMAGEGEN_RATIO_UNSUPPORTED",accepted:false},{status:422});
+  }
   if (p.ratioContractVersion && imageModel.provider !== "user-openai-images" && imageModel.provider !== "user-chat-completions") {
     try { exactImageRequestSize(p.ratio, imageScope?.connection.wireModel || model, p.ratioContractVersion === 2); }
     catch (error) {
@@ -1209,7 +1220,7 @@ export async function GET(request: Request) {
   if(jobId?.startsWith("imagegen-")&&/^[a-f0-9-]{36}$/i.test(jobId.slice(9))){
     const owner=await resolveUserEmail(request);if(!owner)return NextResponse.json({error:"请先登录"},{status:401});
     const {getImagegenResult}=await import("@/lib/imagegen/dispatch"),result=await getImagegenResult(jobId.slice(9),owner);if(!result)return NextResponse.json({error:"任务不存在或无权访问"},{status:404});
-    return NextResponse.json({status:result.status==="succeeded"?"done":["failed","cancelled","needs_attention"].includes(result.status)?"error":"pending",operationStatus:result.status,stage:result.stage,images:result.artifacts.map(a=>({id:a.artworkId,url:a.url,width:a.width,height:a.height})),error:result.error?.message,warnings:result.warnings,creditsUsed:result.chargedCredits,user:await getUser(owner)},{headers:{"cache-control":"private, no-store"}});
+    return NextResponse.json({status:result.status==="succeeded"?"done":["failed","cancelled","needs_attention"].includes(result.status)?"error":"pending",operationStatus:result.status,stage:result.stage,images:result.artifacts.map(a=>({id:a.artworkId,url:a.url,width:a.width,height:a.height})),error:result.error?.message,warnings:result.warnings,recoveryAvailable:result.recoveryAvailable,billingStatus:result.billingStatus,creditsUsed:result.chargedCredits,user:await getUser(owner)},{headers:{"cache-control":"private, no-store"}});
   }
   if (jobId) {
     if (dbEnabled && (await resolveUserEmail(request))?.toLowerCase() !== await JOBS.owner(jobId)) {
@@ -1222,6 +1233,7 @@ export async function GET(request: Request) {
         error: "任务不存在或已过期，请重试",
       });
     }
+    if(job.status==="pending"&&dbEnabled){const owner=await JOBS.owner(jobId);if(owner&&await storedImageReview(jobId,owner))return NextResponse.json({status:"error",operationStatus:"needs_attention",reviewRequired:true,error:IMAGE_REVIEW_MESSAGE},{headers:{"cache-control":"private, no-store"}});}
     if (job.status === "done") {
       const notice = imageOutputNotice(job.imagegenOutputError, job.imagegenOutputWarning, !!job.images?.length);
       if(notice.error)return NextResponse.json({status:"error",error:notice.error,images:(job.images||[]).map(({execution,...image})=>image),creditsUsed:job.creditsUsed,user:job.user});
