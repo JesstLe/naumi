@@ -46,10 +46,30 @@ export class ImageOperationReview extends ImageOperationPending {
   }
 }
 
+/** SDK fetch failures wrap local adapter signals in APIConnectionError.cause.
+ * Recover only our typed signal for this exact paid operation (or its fan-out
+ * image); names, supplier JSON and unrelated task IDs are never trusted. */
+function originalImageOperationSignal(error: unknown, operationId: string) {
+  const seen = new Set<object>();
+  let value = error, pending: ImageOperationPending | undefined;
+  for (let depth = 0; depth < 8 && value instanceof Error && !seen.has(value); depth++) {
+    seen.add(value);
+    if (value instanceof ImageOperationPending && (value.operationId === operationId ||
+      value.operationId.startsWith(`${operationId}:image:`) && /^\d+$/.test(value.operationId.slice(operationId.length + 7)))) {
+      if (value instanceof ImageOperationReview) return value;
+      pending ||= value;
+    }
+    value = value.cause;
+  }
+  return pending;
+}
+
 export async function withImageOperation<T>(model: string, operation: ImageOperation, run: () => Promise<T>): Promise<T> {
   return operations.run(operation, async () => {
     try { return await run(); }
     catch (error) {
+      const signal = originalImageOperationSignal(error, operation.id);
+      if (signal) throw signal;
       if (error instanceof ImageOperationPending) throw error;
       const status = (error as { status?: number } | null)?.status;
       // 504 is Router's accepted/uncertain contract; transport failures and
