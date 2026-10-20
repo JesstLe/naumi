@@ -20,6 +20,7 @@ const commands=[
  ['--conditions=react-server','--import','tsx','scripts/verify-canvas-generation-parameters.ts'],
  ['scripts/verify-canvas-generation-concurrency.mjs'],
  ['scripts/verify-canvas-generation-locks.mjs'],
+ ['scripts/verify-canvas-edit-task-lifecycle.cjs'],
  ['node_modules/typescript/bin/tsc','--noEmit','--pretty','false'],
 ];
 const rows=[];

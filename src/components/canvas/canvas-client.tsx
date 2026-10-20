@@ -4874,15 +4874,20 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const current = () => account === canvasAccountRef.current && contextProjectKey === (activeProjectRef.current?.key || null);
     const sourceNode = rfRef.current?.getNode(source.id);
     const sourceSize = sourceNode ? flowNodeSize(sourceNode) : artworkNodeSize(source);
-    const x = (sourceNode?.position.x ?? source.canvasX ?? 0) + sourceSize.width + X_GAP;
-    const y = sourceNode?.position.y ?? source.canvasY ?? 0;
+    const preferred = { x: (sourceNode?.position.x ?? source.canvasX ?? 0) + sourceSize.width + X_GAP, y: sourceNode?.position.y ?? source.canvasY ?? 0 };
+    const previewSize = generationPlaceholderSize(source.ratio);
     const pendingId = `pend-edit-${browserRandomUUID()}`;
     for (const [id, task] of editTaskStateRef.current) {
       if (task.account === account && task.project === contextProjectKey && task.node.operationKey === operationKey && task.node.generationFailure && !generationFailureBlocks(task.node.generationFailure)) editTaskStateRef.current.delete(id);
     }
+    const occupied = (rfRef.current?.getNodes() ?? rfNodes).map(node => ({ ...node.position, ...flowNodeSize(node) }));
+    for (const saved of editTaskStateRef.current.values()) if (saved.account === account && saved.project === contextProjectKey) {
+      occupied.push({ x: saved.node.x, y: saved.node.y, ...(saved.node.generationSize ?? generationPlaceholderSize(source.ratio)) });
+    }
+    const { x, y } = placeGenerationPreview(preferred, previewSize, occupied);
     const node: Pend = { id: pendingId, operationKey, x, y, parentId: source.id, linked: true,
       label: `${label}结果`, uploading: false, progress: 8, inputs: [source.id], generating: true,
-      generationStage: "generating", generationStartedAt: Date.now() };
+      generationSize: previewSize, generationStage: "generating", generationStartedAt: Date.now() };
     editTaskStateRef.current.set(pendingId, { account, project: contextProjectKey, node });
     setPendNodes(nodes => [...nodes.filter(item => !(item.operationKey === operationKey && item.generationFailure && !generationFailureBlocks(item.generationFailure))), node]);
     const updateTask = (patch: Partial<Pend>) => {

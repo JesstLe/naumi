@@ -61,6 +61,9 @@ try {
  await node('placement-root').getByTestId('canvas-image-quick-cutout').click();
  await expect.poll(async()=>(await state()).cutouts.length).toBe(1);
  await expect(node('cutout-result-1')).toHaveCount(1);
+ const cutArt=(await state()).artworks.find(a=>a.id==='cutout-result-1');
+ const composition=(await state()).artworks.find(a=>a.id==='composition');
+ assert.ok(cutArt.canvasX>=composition.canvasX+315||cutArt.canvasX+384<=composition.canvasX||cutArt.canvasY>=composition.canvasY+420||cutArt.canvasY+384<=composition.canvasY,'cutout result must not cover existing composition');
  const cutout=(await state()).cutouts[0];assert.equal(cutout.sha256,createHash('sha256').update(product).digest('hex'));assert.equal(cutout.sourceUrl,null);
  pass('top-right cutout submits original File through existing tool and lands transparent fixture result');
  const fixture=path.join(out,'browser-upload.png');await sharp({create:{width:790,height:1600,channels:3,background:'#bbddff'}}).png().toFile(fixture);
