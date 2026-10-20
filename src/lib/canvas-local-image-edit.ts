@@ -4,7 +4,8 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { getPool, listArtworksByIds } from "@/lib/db";
 import { uploadImage } from "@/lib/storage";
-import { readCanvasImage } from "@/lib/canvas-image-input";
+import { readCanvasOutput } from "@/lib/canvas-image-input";
+import { IMAGEGEN_OUTPUT_MAX_BYTES } from "./imagegen/image-limits";
 import { ensureCanvasSettingsSchema } from "@/lib/canvas-node-settings-store";
 import { cropSchema, pixelCrop, type CanvasCrop } from "@/lib/canvas/node-settings";
 import { adaptiveCanvasImageSize } from "@/lib/mock-data";
@@ -16,8 +17,8 @@ export const localEditSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("replace"), id: z.string().min(1).max(200), operationId: z.string().uuid() }).strict(),
   z.object({mode:z.literal("process"),id:z.string().min(1).max(200),operationId:z.uuid(),output:imagegenOutputSchema,chroma:imagegenChromaSchema.optional()}).strict(),
 ]);
-export async function editCanvasPixels(bytes: Buffer, crop?: CanvasCrop) {
-  if (!bytes.length || bytes.length > 12 * 1024 * 1024) throw new Error("图片需要在12MB以内");
+export async function editCanvasPixels(bytes: Buffer, crop?: CanvasCrop, generatedOutput = false) {
+  if (!bytes.length || bytes.length > (generatedOutput ? IMAGEGEN_OUTPUT_MAX_BYTES : 12 * 1024 * 1024)) throw new Error("图片超出当前处理大小限制");
   const decoder = sharp(bytes, { limitInputPixels: 40_000_000 });
   const meta = await decoder.metadata();
   if (!["png", "jpeg", "webp"].includes(meta.format || "") || (meta.pages || 1) > 1) throw new Error("请选择静态PNG、JPEG或WebP图片");
@@ -29,7 +30,7 @@ export async function editCanvasPixels(bytes: Buffer, crop?: CanvasCrop) {
 }
 
 /** Local pixel edit creates an immutable, linked version. No model or credit calls. */
-export async function saveCanvasLocalEdit(email: string, value: z.infer<typeof localEditSchema>, requestUrl: string, replacement?: Buffer, provenance?: {entry:"agent"|"canvas"|"workbench"}) {
+export async function saveCanvasLocalEdit(email: string, value: z.infer<typeof localEditSchema>, requestUrl: string, replacement?: Buffer, provenance?: {entry:"agent"|"canvas"|"workbench";generatedOutput?:boolean}) {
   const input = localEditSchema.parse(value);
   const entry=provenance?.entry||"canvas",canvasEntry=entry==="canvas";
   await ensureCanvasSettingsSchema();
@@ -42,9 +43,10 @@ export async function saveCanvasLocalEdit(email: string, value: z.infer<typeof l
     if (prior.rows[0].fingerprint !== fingerprint) throw new Error("操作编号已使用");
     return { id: prior.rows[0].artwork_id as string };
   }
-  const bytes = input.mode === "replace" ? replacement! : (await readCanvasImage(source.image,requestUrl,email)).buffer;
-  const edited = input.mode==="process"?await processImagegenPixels(bytes,input):await editCanvasPixels(bytes,input.mode === "crop" ? input.crop : undefined);
-  if (edited.bytes.length > 12*1024*1024) throw new Error("编辑结果超过12MB，请缩小裁剪区域或上传更小图片");
+  const bytes = input.mode === "replace" ? replacement! : (await readCanvasOutput(source.image,requestUrl,email)).buffer;
+  const generatedOutput = input.mode !== "replace" || provenance?.generatedOutput === true;
+  const edited = input.mode==="process"?await processImagegenPixels(bytes,input):await editCanvasPixels(bytes,input.mode === "crop" ? input.crop : undefined,generatedOutput);
+  if (edited.bytes.length > IMAGEGEN_OUTPUT_MAX_BYTES) throw new Error("编辑结果超出64MiB处理限制");
   const id = `art-local-${input.operationId}`;
   const mime="mime" in edited&&typeof edited.mime==="string"?edited.mime:"image/png",extension=mime==="image/jpeg"?"jpg":mime==="image/webp"?"webp":"png";
   const transparentPixels="transparentPixels" in edited&&typeof edited.transparentPixels==="number"?edited.transparentPixels:undefined;

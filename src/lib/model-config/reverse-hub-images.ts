@@ -6,15 +6,16 @@ import type { ValidationOptions } from "./schema";
 import { ModelConfigError } from "./types";
 import { modelEndpointFetch } from "./transport";
 import { mapResolution } from "./resolution-policy";
-import { currentImageOperationId, currentImageOperationParameters, ImageOperationPending } from "../image-gateway";
+import { currentImageOperationId, currentImageOperationParameters, ImageOperationPending, ImageOperationReview } from "../image-gateway";
 import { currentSynchronousBilling } from "../billing/synchronous";
 import { supplierContext } from "../supplier-cost/collect";
 import { supplierLedger, accountIdentity } from "../supplier-cost/runtime";
 import { readBoundedBytes } from "../supplier-cost/io";
+import { REVERSE_HUB_IMAGE_RATIOS } from "../imagegen/ratio-support";
 import { preserveOutsideMask } from "../competitor-image";
 
 const hash = (bytes: string | Buffer) => createHash("sha256").update(bytes).digest("hex");
-const RATIOS = new Set(["21:9", "16:9", "3:2", "4:3", "1:1", "3:4", "2:3", "9:16"]);
+const RATIOS = new Set<string>(REVERSE_HUB_IMAGE_RATIOS);
 const reject = (message: string): never => { throw new ModelConfigError("INVALID_REQUEST", message, 422); };
 
 /** Hub accepts complete static images <=3MiB each. Normalize before submitting,
@@ -155,7 +156,7 @@ export function reverseHubImageFetch(scope: ModelExecutionScope, options: Valida
           await ledger.pool.query("UPDATE app_supplier_calls SET parameters=parameters || $2::jsonb WHERE id=$1", [row.id, JSON.stringify({ acceptedOutputs: data.length })]);
           return Response.json({ created: Math.floor(Date.now() / 1000), data });
         }
-        if (["waiting_login", "waiting_client", "reconciling"].includes(task.state)) throw new ImageOperationPending(prepared.operationId, Error(`reverse-hub-${task.state}`));
+        if (["waiting_login", "waiting_client", "reconciling"].includes(task.state)) throw new ImageOperationReview(prepared.operationId, task.state);
         await new Promise<void>((resolve, reject) => {
           const done = () => { request.signal.removeEventListener("abort", abort); resolve(); };
           const timer = setTimeout(done, overrides?.pollMs ?? 2000);

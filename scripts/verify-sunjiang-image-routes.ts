@@ -76,7 +76,7 @@ async function main() {
       { ratio: "53:79", edit: true, prompt: "WRONG_FRAME_FIXTURE", expected: "succeeded" },
       { ratio: "3:4", edit: true, prompt: "REJECT_INPUT_FIXTURE", expected: "failed" },
       { ratio: "3:4", edit: false, prompt: "EMPTY_OUTPUT_FIXTURE", expected: "failed" },
-      { ratio: "3:4", edit: false, prompt: "CORRUPT_OUTPUT_FIXTURE", expected: "failed" },
+      { ratio: "3:4", edit: false, prompt: "CORRUPT_OUTPUT_FIXTURE", expected: "needs_attention" },
     ]) {
       const request = { version: 1, operationId: randomUUID(), entry: "canvas", mode: test.edit ? "edit" : "generate", modelId: "image-a", prompt: test.prompt, inputs: test.edit ? [{ artworkId: id, role: "edit-target" }] : [], parameters: { quality: "medium", resolution: test.resolution || "1K", ratio: test.ratio }, variants: 1 };
       const plan = await json("/api/imagegen/plan", request), before = calls;
@@ -87,7 +87,7 @@ async function main() {
       assert.equal(result.status, test.expected, JSON.stringify(result));
       assert.equal(calls, before + 1);
       assert.equal(wires[before].size, test.ratio); assert.equal(wires[before].resolution, "1k"); assert.equal(wires[before].quality, undefined);
-      if (test.expected === "failed") {
+      if (test.expected !== "succeeded") {
         assert.equal(result.artifacts.length, 0); assert.equal(result.chargedCredits, 0);
         if(test.prompt === "REJECT_INPUT_FIXTURE")assert.match(result.error.message, /参考图片未被生成服务接受/);
         const receipts = (await db.getPool().query("SELECT evidence FROM app_supplier_calls WHERE operation_id IN(SELECT value->>'jobId' FROM app_image_jobs p,jsonb_each(p.snapshot->'children') WHERE p.id=$1)", [accepted.jobId])).rows;
@@ -122,7 +122,7 @@ async function main() {
       }
       await json("/api/imagegen", body); assert.equal(calls, before + 1, "duplicate submission must not replay paid generation");
     }
-    console.log("SUNJIANG_REAL_ROUTES=PASS PARENT_CHILD_CASES=7 VALID_OUTPUTS=DELIVERED RATIO_DIFFERENCE=WARNING HTTP400_EMPTY_CORRUPT=FAILED REJECT_CHARGED=0 ADMIN_4K_TO_1K=UNCHANGED RAW_1K_PIXEL_HASH=UNCHANGED HISTORICAL_RECEIPTS=READ_ONLY DUPLICATE_POSTS=0 LOOPBACK_SUPPLIER_POSTS=7 REAL_SUPPLIER_CALLS=0");
+    console.log("SUNJIANG_REAL_ROUTES=PASS PARENT_CHILD_CASES=7 VALID_OUTPUTS=DELIVERED RATIO_DIFFERENCE=WARNING HTTP400_EMPTY=FAILED CORRUPT=NEEDS_REVIEW REJECT_CHARGED=0 ADMIN_4K_TO_1K=UNCHANGED RAW_1K_PIXEL_HASH=UNCHANGED HISTORICAL_RECEIPTS=READ_ONLY DUPLICATE_POSTS=0 LOOPBACK_SUPPLIER_POSTS=7 REAL_SUPPLIER_CALLS=0");
   } finally { app.closeAllConnections(); await new Promise<void>(r => app.close(() => r())); await db.getPool().end(); await f.cleanup(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

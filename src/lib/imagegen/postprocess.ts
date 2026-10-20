@@ -5,12 +5,12 @@ import { decodeImagegenPixels } from "./pixels";
 import { removeChroma } from "./chroma";
 import type { ImagegenRequest } from "./types";
 export async function inspectImagegenPixels(bytes:Buffer){
-  const {data,info}=await decodeImagegenPixels(bytes);let transparentPixels=0,fullyTransparentPixels=0;
+  const {data,info}=await decodeImagegenPixels(bytes,"output");let transparentPixels=0,fullyTransparentPixels=0;
   for(let i=3;i<data.length;i+=4){if(data[i]<255)transparentPixels++;if(data[i]===0)fullyTransparentPixels++;}
   return {width:info.width,height:info.height,transparentPixels,fullyTransparentPixels,visiblePixels:info.width*info.height-fullyTransparentPixels,totalPixels:info.width*info.height};
 }
 export async function processImagegenPixels(bytes:Buffer,request:Pick<ImagegenRequest,"output"|"chroma">){
-  const output=imagegenOutputSchema.parse(request.output),decoded=await decodeImagegenPixels(bytes);
+  const output=imagegenOutputSchema.parse(request.output),decoded=await decodeImagegenPixels(bytes,"output");
   const base=request.chroma?await removeChroma(bytes,request.chroma):await sharp(decoded.data,{raw:{width:decoded.info.width,height:decoded.info.height,channels:4}}).png().toBuffer();
   const initial=await inspectImagegenPixels(base);
   if(!initial.visiblePixels)throw new Error("处理结果全部透明，请保留原图并调整参数");

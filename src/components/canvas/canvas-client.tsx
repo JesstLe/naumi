@@ -4365,10 +4365,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     };
     try {
       const response = await fetch(`/api/${context.endpoint || "generate-image"}?job=${encodeURIComponent(context.jobId)}`, { cache: "no-store", headers: await authHeader() });
-      const result = await readJsonSafe(response);
+      let result = await readJsonSafe(response);
       if (context.endpoint === "aplus") result.images = (result.shots || []).filter((shot: {status?: string;id?: string;url?: string}) => shot.status === "done" && shot.id && shot.url);
       if (!current()) return;
       if (!response.ok) throw new Error(result.error || "任务状态暂未读取到，请稍后检查");
+      if(result.recoveryAvailable&&context.jobId.startsWith("imagegen-")&&current()){
+        const restored=await privateFetchRaw("/api/imagegen/recover-delivery",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operationId:context.jobId.slice(9)})});
+        await expectJsonOk(restored,"原结果恢复未完成，请稍后检查");
+        if(!current())return;
+        const refreshed=await fetch(`/api/generate-image?job=${encodeURIComponent(context.jobId)}`,{cache:"no-store",headers:await authHeader()});
+        result=await readJsonSafe(refreshed);if(!refreshed.ok)throw new Error("原任务状态暂未读取到，请稍后检查");
+        if(!current())return;
+      }
       if (result.user) applyServerUser(result.user);
       if (result.status === "done" || result.status === "error" && result.images?.some((image: {id?: string;url?: string}) => image.id && image.url)) {
         const images = (result.images || []).filter((image: {id?: string;url?: string}) => image.id && image.url) as GeneratedResult[];

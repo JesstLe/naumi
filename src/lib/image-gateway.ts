@@ -38,6 +38,13 @@ export class ImageOperationPending extends Error {
     this.name = "ImageOperationPending";
   }
 }
+/** A supplier explicitly paused for review is not an actively generating task. */
+export class ImageOperationReview extends ImageOperationPending {
+  readonly reviewRequired=true;
+  constructor(operationId:string,readonly reviewCode:"reconciling"|"waiting_login"|"waiting_client"){
+    super(operationId,Error(`reverse-hub-${reviewCode}`));this.name="ImageOperationReview";
+  }
+}
 
 export async function withImageOperation<T>(model: string, operation: ImageOperation, run: () => Promise<T>): Promise<T> {
   return operations.run(operation, async () => {

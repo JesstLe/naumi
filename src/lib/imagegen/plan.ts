@@ -4,6 +4,7 @@ import {imagegenRequestSchema} from "./schema";
 import {resolveImagegenIntent} from "./intent";
 import {readImagegenInputs} from "./inputs";
 import { automaticFrameRatio } from "./frame-ratio";
+import { REVERSE_HUB_RATIO_MESSAGE } from "./ratio-support";
 import { imageRequestAdmission } from "./request-admission";
 import { ImagegenPlanError } from "./plan-error";
 import { ExactImageSizeError } from "./request-size";
@@ -64,14 +65,17 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
   const candidates=simulate(modelId,requirements);
   const selected=models.config.publicModels.find(m=>m.id===modelId)!;
   let exactRatioRejected=false;
+  let hubRatioRejected=false;
   candidates.eligible=candidates.eligible.filter(candidate=>{
    const source=models.config.upstreamModels.find(u=>u.id===candidate.upstreamId)!;
-   const codes=imageRequestAdmission(request.parameters.ratio||"1:1",modelId,!!selected.supplierRouting,source);
+   const provider=models.config.providers.find(p=>p.id===source.providerId);
+   const codes=imageRequestAdmission(request.parameters.ratio||"1:1",modelId,!!selected.supplierRouting,source,provider?.options?.imageAdapter);
+   if(codes.includes("REVERSE_HUB_RATIO_UNSUPPORTED"))hubRatioRejected=true;
    if(codes.includes("EXACT_RATIO_UNSUPPORTED"))exactRatioRejected=true;
    if(codes.length)candidates.excluded.push({upstreamId:candidate.upstreamId,codes});
    return !codes.length;
   });
-  if(!candidates.eligible.length){if(exactRatioRejected)throw new ExactImageSizeError(request.parameters.ratio||"1:1");throw new ImagegenPlanError("所选模型没有支持本次生成参数的可用通道，请调整参数或选择其他模型", "IMAGEGEN_NO_CHANNEL", 409);}
+  if(!candidates.eligible.length){if(exactRatioRejected)throw new ExactImageSizeError(request.parameters.ratio||"1:1");if(hubRatioRejected)throw new ImagegenPlanError(REVERSE_HUB_RATIO_MESSAGE, "IMAGEGEN_RATIO_UNSUPPORTED", 422);throw new ImagegenPlanError("所选模型没有支持本次生成参数的可用通道，请调整参数或选择其他模型", "IMAGEGEN_NO_CHANNEL", 409);}
   if(operation==="cutout"&&candidates.eligible.some(c=>publishedImagegenCapabilities(models.config.upstreamModels.find(u=>u.id===c.upstreamId)!.capabilities).transparent?.state!=="supported"))throw new ImagegenPlanError("抠图通道尚未核实透明输出能力");
   const model=models.config.publicModels.find(m=>m.id===modelId)!;
   if(model.target.type==="pool"&&!model.supplierRouting&&(request.parameters.inputFidelity!==undefined||request.parameters.moderation!==undefined||request.parameters.width!==undefined||request.output.compressionMode==="native"&&request.output.compression!==undefined))throw new ImagegenPlanError("外部Router尚未开放这些原生参数的发送，请选择已发布参数映射的直连供应通道");
