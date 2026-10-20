@@ -66,6 +66,17 @@ def run(config,apply=False,existing_tx=None):
   if not apply:
    if existing_tx:tx.save('normal-rollback-check.json',result)
    print('SERVER_ROLLBACK_CHECK='+json.dumps(result),flush=True);return result
+  if config.get('nasRollbackManifestPath'):
+   # New plans freeze an admitted supplier set. A prior executable does not
+   # understand that field, so never hand an unfinished new plan to its Worker.
+   db=tx.inspect('naumi-staging-db-1');e=environment(db)
+   query="""BEGIN READ ONLY;SET LOCAL statement_timeout='5s';
+SELECT json_build_object('jobs',(SELECT count(*) FROM app_image_jobs j WHERE
+ COALESCE(snapshot->>'status','')NOT IN('done','error')AND
+ (jsonb_path_exists(to_jsonb(j),'$.**.channelContractVersion ? (@ == 1)')OR jsonb_path_exists(to_jsonb(j),'$.**.imageUpstreamIds'))),
+ 'batches',(SELECT count(*)FROM app_imagegen_batches b WHERE state NOT IN('succeeded','partial','failed','cancelled')AND jsonb_path_exists(to_jsonb(b),'$.**.channelContractVersion ? (@ == 1)')));COMMIT;"""
+   pending=json.loads(tx.run(['docker','exec','-i',db['Id'],'psql','-XqAt','-v','ON_ERROR_STOP=1','-U',e['POSTGRES_USER'],'-d',e['POSTGRES_DB']],stdin=query.encode()))
+   require(pending=={'jobs':0,'batches':0},'NEW_SUPPLIER_CONTRACT_REQUIRES_COMPATIBLE_EXECUTOR_NOT_OLD_WORKER')
   # Persist one operation and use its exact UUID bodies on all uncertain IO.
   journal=ROOT/'rollback-operation.json';require(not journal.exists(),'EXISTING_ROLLBACK_RECONCILE_REQUIRED')
   log={'phase':'INTENT_RECORDED','operationId':str(uuid.uuid4()),'originalCanonicalSha256':sha(original),'steps':{}};_atomic_private(journal,log)
