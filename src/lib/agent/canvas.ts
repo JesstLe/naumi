@@ -133,19 +133,22 @@ async function runCanvasAgentLocal(request: Request) {
   let cancel = () => { session.agent.abort(); };
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      let cursor = cursorStart, output = "", closed = false, failed = false;
-      const send = (type: string, data: unknown) => { if (!closed) { try { controller.enqueue(encoder.encode(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`)); } catch { cancel(); } } };
+      let cursor = cursorStart, output = "", closed = false, failed = false,lastSent=Date.now();
+      const send = (type: string, data: unknown) => { if (!closed) { try { controller.enqueue(encoder.encode(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`));lastSent=Date.now(); } catch { cancel(); } } };
       const flush = () => {
         for (; cursor < session.events.length; cursor++) { const event = session.events[cursor]; if (event.type === "error") failed = true; send(event.type, { ...event.data, at: event.at }); }
+        if(!closed&&Date.now()-lastSent>=5000)send("heartbeat",{});
       };
       const timer = setInterval(flush, 300);
       const timeout = setTimeout(() => cancel(), 780000);
-      const cleanup = () => { clearInterval(timer); clearTimeout(timeout); request.signal.removeEventListener("abort", cancel); session.onDelta = undefined; session.onToolResult = undefined; session.running = false; };
+      const cleanup = () => { clearInterval(timer); clearTimeout(timeout); request.signal.removeEventListener("abort", cancel); session.onDelta = undefined; session.onModelActivity=undefined; session.onToolResult = undefined; session.running = false; };
       cancel = () => { if (closed) return; appendSessionEvent(session,"error",{code:"ABORTED",message:"任务已停止，已受理的图片保留，请勿重复提交"}); appendSessionEvent(session,"canvas_terminal",{status:"stopped",turnId:session.turnId}); session.agent.abort(); cleanup(); closed = true; void failSynchronousStream(); void persistAgentSession(session).catch(()=>undefined); try { controller.close(); } catch {} };
       request.signal.addEventListener("abort", cancel, { once: true });
       if (request.signal.aborted) { cancel(); return; }
       session.onDelta = text => { output += text; send("delta", { text }); };
+      session.onModelActivity=phase=>send("activity",{phase});
       send("open", { sessionId });
+      send("activity",{phase:"processing"});
       void (async () => {
         try {
           primeAgentSystemPrompt(session, message);

@@ -1,5 +1,6 @@
 
 import { agentRestrictionMessage } from "./public-status";
+import {createModelActivityTracker,type PublicModelPhase} from "./model-activity";
 import { publicToolDetails } from "./tool-presentation";
 import { FeatureAccessError, assertAgentToolAccess } from "@/lib/feature-access/server";
 import type { Agent } from "@earendil-works/pi-agent-core";
@@ -125,6 +126,7 @@ export type Session = {
    * (deltas 会冲垮 400 条事件上限并打乱轮询游标),由路由注册本回调直写 SSE。
    */
   onDelta?: (text: string) => void;
+  onModelActivity?: (phase:PublicModelPhase)=>void;
 };
 
 const SESSIONS = releaseProcessRegistry().sessions as Map<string, Session>;
@@ -366,7 +368,9 @@ async function createRuntimeSession(
 
   let modelStartedAt = 0;
   let publicOutput: PublicOutputBuffer | undefined;
+  const modelActivity=createModelActivityTracker(phase=>session.onModelActivity?.(phase));
   agent.subscribe(async (event) => {
+    modelActivity(event);
     if (event.type === "message_start" && event.message.role === "assistant") {
       modelStartedAt = Date.now();
       publicOutput = new PublicOutputBuffer(session.harness, text => session.onDelta?.(text));

@@ -80,6 +80,7 @@ import { useOrbCompanion } from "../naumi-orb/use-orb-companion";
 import { classifyAgentFailure } from "@/lib/agent/recovery";
 import { agentOrbState } from "@/lib/canvas/agent-orb";
 import { reduceAgentProgress } from "@/lib/canvas/agent-progress";
+import {receiveAssistantActivity,type AssistantLiveActivity} from "@/lib/canvas/assistant-live-state";
 import { useCanvasAssistantDisclosure } from "@/lib/canvas/assistant-disclosure";
 import { defaultNodeSettings, validNodeSettings, nodeTextStyle, type CanvasNodeSettings, type CanvasCrop } from "@/lib/canvas/node-settings";
 const DEFAULT_CANVAS_SETTINGS = defaultNodeSettings();
@@ -2006,6 +2007,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [assistantSkill, setAssistantSkill] = useState<ImageSkill | null>(null);
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantResponding, setAssistantResponding] = useState(false);
+  const [assistantActivity,setAssistantActivity]=useState<AssistantLiveActivity>({phase:"connecting"});
   const [assistantSteps, setAssistantSteps] = useState<AgentOrbStep[]>([]);
   const [assistantOutcome, setAssistantOutcome] = useState<AgentOrbOutcome>("idle");
   const orbCompanion = useOrbCompanion(`${user?.email || ""}:${activeKey || "workspace"}`);
@@ -5195,13 +5197,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   async function restoreAssistantConversation(_anchorId:string,id:string) {
     const controller=new AbortController();assistantController.current?.abort();assistantController.current=controller;
     assistantLiveSessionId.current=id;
-    assistantSessionId.current=id;setAssistantSteps([]);setAssistantOutcome("running");setAssistantBusy(true);setAssistantResponding(false);setAssistantInput("");setAssistantError(null);assistantRetry.current=null;
+    assistantSessionId.current=id;setAssistantSteps([]);setAssistantOutcome("running");setAssistantBusy(true);setAssistantResponding(false);setAssistantActivity({phase:"connecting"});setAssistantInput("");setAssistantError(null);assistantRetry.current=null;
     let recalled = false;
     try{
       for(;;){
         const response=await privateFetchRaw(`/api/canvas/assistant?projectKey=${encodeURIComponent(activeKey||"workspace")}&id=${encodeURIComponent(id)}`,{signal:controller.signal});
         const data=await expectJsonOk(response,"历史对话读取失败");
         if(controller.signal.aborted||assistantController.current!==controller)return;
+        setAssistantActivity({phase:"processing",lastEventAt:Date.now()});
         setAssistantArtworkId(data.session.anchorId||null);setSelectedId(data.session.anchorId||null);setSelectedTextId(null);
         setAssistantTurns(data.session.turns);
         let steps: AgentOrbStep[] = [];
@@ -5262,6 +5265,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setAssistantError(null);
     setAssistantBusy(true);
     setAssistantResponding(false);
+    setAssistantActivity({phase:"connecting"});
     setAssistantSteps([]); setAssistantOutcome("running");
     orbCue({ type: "submit" });
     const controller = new AbortController();
@@ -5273,6 +5277,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     let videoProjectResult:{key:string;nodeId:string}|undefined;
     const acceptedVideoProject=activeKey;
     let orbFailureCode: string | undefined;
+    // Show this turn immediately, including image/session preparation before SSE opens.
+    setAssistantTurns([...history,{id:`as-a-${Date.now()}`,role:"assistant",content:""}]);
+    setAssistantInput("");
     try {
       const response = await privateFetch("/api/canvas/assistant", {
         method: "POST",
@@ -5288,13 +5295,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         throw new Error(data?.error || "画布助手暂时不可用");
       }
       orbCue({ type: "connected" });
-      setAssistantTurns(history);
-      setAssistantInput("");
-      // SSE 流式:追加一条空助手消息,随 delta 逐段填充
-      setAssistantTurns((current) => [
-        ...current,
-        { id: `as-a-${Date.now()}`, role: "assistant", content: "" },
-      ]);
+      setAssistantActivity({phase:"processing",lastEventAt:Date.now()});
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buf = "";
@@ -5316,6 +5317,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           if (!evLine || !dataLine) continue;
           const type = evLine.slice(7).trim();
           const data = JSON.parse(dataLine.slice(6)) as Record<string, unknown>;
+          setAssistantActivity(current=>receiveAssistantActivity(current,type,data,Date.now()));
           if(type==="open"){serverSessionId=String(data.sessionId||acceptedSession);assistantLiveSessionId.current=serverSessionId;}
           if(type==="done" && data.ok===true)completed=true;
           if (type === "attention") {
@@ -11866,7 +11868,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           const anchor = active?.members.find(artwork => artwork.id === assistantArtworkId);
           return <CanvasAssistantPanel open={assistantVisible} focusInput={assistantFocusInput} contextReady={true} modelControl={<TextModelSelect feature="canvas.assistant" compact composer dark={!lightCanvas} />} key={`assistant:${activeKey || "empty"}`} historyScopeKey={activeKey||"workspace"} light={lightCanvas} anchorTitle={anchor?.title || (locale==="en"?"Text conversation":"文本对话")}
             contextImages={anchor ? assistantContext(active?.members ?? [], anchor.id).map(artwork => ({ id: artwork.id, title: artwork.title, image: cdnUrl(artwork.image) })) : []}
-            selectedSkill={assistantSkill} onSkillSelect={skill => { setAssistantSkill(skill); assistantRetry.current = null; }} skillAccountKey={user?.email || ""} skillSessionId={assistantSessionId.current} turns={assistantTurns} input={assistantInput} busy={assistantBusy} error={assistantError} steps={assistantSteps} english={locale === "en"} responding={assistantResponding} attention={orbCompanion.model.attention} onStop={() => void stopAssistantTask()}
+            selectedSkill={assistantSkill} onSkillSelect={skill => { setAssistantSkill(skill); assistantRetry.current = null; }} skillAccountKey={user?.email || ""} skillSessionId={assistantSessionId.current} turns={assistantTurns} input={assistantInput} busy={assistantBusy} error={assistantError} steps={assistantSteps} english={locale === "en"} responding={assistantResponding} activity={assistantActivity} attention={orbCompanion.model.attention} onStop={() => void stopAssistantTask()}
             labels={{title: t("canvas.assistant.title"),
               scrollToBottom: t("canvas.assistant.scrollToBottom"),
               newChat: t("canvas.assistant.newChat"),
