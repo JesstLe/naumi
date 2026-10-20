@@ -1,3 +1,4 @@
+import {resolveImageResolution} from "./resolution-fallback";
 import {currentImagegenStep} from "../imagegen/context";
 import {legacyImagegenIntent} from "../imagegen/legacy-intent";
 import {publicUpstreamIds} from "./channel-policy";
@@ -105,7 +106,7 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     const option = selectedBusinessOption(snapshot.config, mainFeature, requestedModelId);
     if (option?.parameters?.inputTypes && ((parsed.references > 0 && !option.parameters.inputTypes.includes("image")) || (parsed.body.needsMask && !option.parameters.inputTypes.includes("mask")))) throw new ModelConfigError("MODEL_INCOMPATIBLE", "本功能模型未开放该输入类型", 400);
     const model = snapshot.config.publicModels.find(m => m.id === (preset ? presetPublicId(preset,requestedModelId) : option?.modelId || requestedModelId || featureDefaultModel(snapshot.config,mainFeature,purpose.image)));
-    assertDisplayResolution(model,outputResolution);
+
     const ids=model?publicUpstreamIds(snapshot.config,model):[];
     const upstreams=snapshot.config.upstreamModels.filter(u=>ids.includes(u.id)&&u.enabled&&snapshot.config.providers.some(p=>p.id===u.providerId&&p.enabled));
     const presentation = qualityPresentation(upstreams);
@@ -114,11 +115,11 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     const requestedQuality = String(parsed.body.quality || request.headers.get("x-naumi-image-quality") || "medium");
     const presetParams = preset ? effectiveImageParameters(preset, { quality: requestedQuality, resolution: outputResolution, ratio }) : null;
     const canvasRequest = parsed.body.origin === "canvas" || new URL(request.url).pathname.startsWith("/api/canvas/");
-    if (canvasRequest && presetParams && parsed.body.resolution && (!presetParams.nativeResolution || !presetParams.nativeRatio)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未核验该尺寸与比例组合，请选择已开放参数", 400);
+
     const effectiveQuality = presetParams?.effective.quality || requestedQuality;
     if ((option || presentation) && (parsed.body.quality || request.headers.get("x-naumi-image-quality")) && qualities.length && !qualities.includes(requestedQuality as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选功能模型不支持该质量，不会静默退档", 400);
     const defaultQuality = qualities.some(q => q === (process.env.OPENAI_IMAGE_QUALITY || "medium")) ? process.env.OPENAI_IMAGE_QUALITY || "medium" : qualities[0] || process.env.OPENAI_IMAGE_QUALITY || "medium";
-    if (!model?.displayResolutions && option?.parameters?.resolutions?.length && !option.parameters.resolutions.includes(outputResolution as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该尺寸", 400);
+
     const native = presetParams ? presetParams.nativeResolution : !upstreams.some(u=>u.parameterMap.resolutionPolicy) && ["1K", "2K", "4K"].includes(outputResolution) && upstreams.some(u => u.capabilities.nativeResolutions.includes(outputResolution as "1K" | "2K" | "4K"));
     const needsEdit = purpose.image === "image.edit" || purpose.image === "image.cutout" || parsed.references > 0;
     const needsText = new URL(request.url).pathname.includes("/canvas/image-tasks");
@@ -129,7 +130,14 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     if(advanced||inferred?.background||inferred?.conflicts.length)facts.imagegenRequirements=advanced?.intent||inferred!;
     facts.needsMask = !!parsed.body.needsMask || new URL(request.url).pathname.includes("/canvas/image-tasks");
     if (presetParams) { facts.quality = requestedQuality; facts.resolution = outputResolution; }
-    bundle.image = await executor.resolve({ scopeSystem:parsed.body.origin==="canvas"?"canvas":undefined, feature: mainFeature, binding: purpose.image, requestedModelId, snapshot, billing, facts });
+    const allowResolutionFallback = !accepted && !(Number(parsed.body.targetWidth)>0 && Number(parsed.body.targetHeight)>0);
+    const choice=allowResolutionFallback ? resolveImageResolution(snapshot.config,model?.id,outputResolution,mainFeature,ratio,{snapshot,billing,facts,options:{trustedOrigins:(process.env.MODEL_CONFIG_TRUSTED_ORIGINS||"").split(/[\s,]+/).filter(Boolean)}}) : undefined;
+    const effectiveResolution=choice?.effective||outputResolution;
+    assertDisplayResolution(model,effectiveResolution);
+    if (!model?.displayResolutions && option?.parameters?.resolutions?.length && !option.parameters.resolutions.includes(effectiveResolution as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该尺寸", 400);
+    const effectivePreset=preset?effectiveImageParameters(preset,{quality:requestedQuality,resolution:effectiveResolution,ratio}):null;
+    if (canvasRequest && effectivePreset && parsed.body.resolution && (!effectivePreset.nativeResolution||!effectivePreset.nativeRatio))throw new ModelConfigError("MODEL_INCOMPATIBLE","所选模型未核验该尺寸与比例组合，请选择已开放参数",400);
+    bundle.image = await executor.resolve({ allowResolutionFallback, requestedParameters:advanced?.requestedParameters, scopeSystem:parsed.body.origin==="canvas"?"canvas":undefined, feature: mainFeature, binding: purpose.image, requestedModelId, snapshot, billing, facts });
   }
   const requestedTextModelId = requestedFeatureModel(mainFeature, purpose.primary === "text" || purpose.primary === "vision" ? request.headers.get("x-naumi-feature-model")?.trim() || request.headers.get("x-naumi-text-model")?.trim() || String(parsed.body.modelId || parsed.body.model || "").trim() || undefined : undefined);
   if (purpose.video) bundle.video = await executor.resolve({ feature, binding: purpose.video, requestedModelId: request.headers.get("x-naumi-feature-model")?.trim() || parsed.body.modelId || undefined, snapshot, billing });

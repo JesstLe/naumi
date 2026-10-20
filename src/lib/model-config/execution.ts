@@ -1,3 +1,4 @@
+import {resolveImageResolution, resolutionFacts, upstreamResolutionTiers} from "./resolution-fallback";
 import { applicationAPIMartImages } from "./apimart-image-policy";
 import "server-only";
 import { frontendModelSelection } from "./frontend-selection";
@@ -60,6 +61,10 @@ export function createModelExecutor(deps: Dependencies) {
     if(publicModel.supplierRouting){
       if(!deps.billingByVersion)throw new ModelConfigError("CONFIG_UNAVAILABLE","供应通道无法读取冻结计费版本",503);
       const eligible=frozen.modality==="image"&&frozen.facts?new Set(simulateModel(snapshot,await deps.billingByVersion(frozen.billingVersion),publicModel.id,frozen.facts,deps).eligible.map(u=>u.upstreamId)):new Set(publicModel.supplierRouting.channels.filter(c=>c.enabled&&snapshot.config.upstreamModels.some(u=>u.id===c.upstreamId&&u.enabled&&u.capabilities[purpose.capability]&&(!(frozen.feature==="canvas.assistant"&&frozen.facts?.references)||u.capabilities.vision)&&snapshot.config.providers.some(p=>p.id===u.providerId&&p.enabled))).map(c=>c.upstreamId));
+      if(frozen.modality==="image" && frozen.requestedParameters && frozen.facts) for(const id of eligible) {
+        const u=snapshot.config.upstreamModels.find(u=>u.id===id)!;
+        if(!upstreamResolutionTiers(u,frozen.facts.ratio).includes(frozen.facts.requestedResolution||frozen.facts.resolution))eligible.delete(id);
+      }
       const targets=await Promise.all(publicModel.supplierRouting.channels.filter(c=>c.enabled&&eligible.has(c.upstreamId)).map(async c=>{const u=snapshot.config.upstreamModels.find(u=>u.id===c.upstreamId)!;return {...c,scope:{frozen,frontendModel,channelGuard:{upstreamId:u.id},connection:await connectionFor(u.id),capabilities:u.capabilities,parameterMap:u.parameterMap,procurement:u.procurement,businessOption,audited:true}};}));
       if(!targets.length)throw new ModelConfigError("MODEL_INCOMPATIBLE","没有符合本次参数的供应通道",400);
       scope.supplierRouting={policy:publicModel.supplierRouting,targets};scope.connection={...scope.connection,protocol:"supplier-channels",wireModel:frozen.publicModelId};
@@ -76,15 +81,15 @@ export function createModelExecutor(deps: Dependencies) {
     return scope;
   };
   return {
-    async resolve(input: { scopeSystem?:"canvas"; feature?: string; binding: string; requestedModelId?: string; snapshot: ModelSnapshot; billing: ConfigSnapshot; facts?: ModelFacts }): Promise<ExecutionModel> {
+    async resolve(input: { allowResolutionFallback?:boolean; requestedParameters?:import("./image-preset").ImageParameters; scopeSystem?:"canvas"; feature?: string; binding: string; requestedModelId?: string; snapshot: ModelSnapshot; billing: ConfigSnapshot; facts?: ModelFacts }): Promise<ExecutionModel> {
       input = { ...input, requestedModelId: requestedFeatureModel(input.feature, input.requestedModelId) };
       const purpose = MODEL_BINDINGS[input.binding as ModelBinding];
       if (!purpose) throw new ModelConfigError("INVALID_REQUEST", "未知模型用途");
       const config = validateModelConfig(input.snapshot.config, deps);
       const preset = selectedImagePreset(config,input.feature,input.requestedModelId,input.binding);
-      const requestedParameters = preset && input.facts ? {quality:input.facts.quality,resolution:input.facts.resolution,ratio:input.facts.ratio||"1:1"} : undefined;
+      let requestedParameters = input.requestedParameters || (preset && input.facts ? {quality:input.facts.quality,resolution:input.facts.resolution,ratio:input.facts.ratio||"1:1"} : undefined);
       if (preset && input.facts) {
-        const parameters = effectiveImageParameters(preset,requestedParameters!);
+        const parameters = effectiveImageParameters(preset,{quality:input.facts.quality,resolution:input.facts.requestedResolution||input.facts.resolution,ratio:input.facts.ratio||"1:1"});
         input = {...input,facts:{...input.facts,...parameters.effective,nativeResolution:parameters.nativeResolution && input.facts.resolution !== "1K"}};
       }
       const option = selectedBusinessOption(config, input.feature, input.requestedModelId);
@@ -92,6 +97,15 @@ export function createModelExecutor(deps: Dependencies) {
       const model = config.publicModels.find(m => m.id === id && m.enabled && m.modality === purpose.modality && (!input.requestedModelId || m.visible));
       if (!model) throw new ModelConfigError("MODEL_UNAVAILABLE", "所选模型不可用，请刷新模型列表后重试", 409);
       assertToolScope(config,input.feature,model.id,input.scopeSystem);
+      if (purpose.modality === "image" && input.facts && input.allowResolutionFallback !== false) {
+        const requested = input.facts.requestedResolution || input.facts.resolution;
+        const choice = resolveImageResolution(config, model.id, requested, input.feature, input.facts.ratio,{snapshot:input.snapshot,billing:input.billing,facts:input.facts,options:deps});
+        if (choice.supported.length) {
+          requestedParameters ||= {quality:input.facts.quality,resolution:requested,ratio:input.facts.ratio||"1:1"};
+          if(choice.changed) input = {...input,facts:resolutionFacts(input.facts,choice.effective)};
+        }
+      }
+
       const plan = businessRoutePlan(config, option, input.facts);
       const target = plan ? { type: "upstream" as const, id: plan.initialId } : model.target;
       const upstream = target.type === "upstream" ? config.upstreamModels.find(u => u.id === target.id)! : undefined;

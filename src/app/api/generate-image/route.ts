@@ -1172,8 +1172,11 @@ async function handleObservedPost(request: Request) {
   // 按请求质量基础价叠加尺寸差价，提交时固定报价。
   // 选档→扣费→结算链路;请求档进任务审计,恢复/重放后结算口径不变。
   const qualityAudit = resolveConfiguredImageQuality(p.quality);
-  const billingQuote=useDb?await quoteForRequest(request,{feature:featureForRequest("/api/generate-image",p)!,quantity:p.count,quality:qualityAudit.requested||"medium",resolution:p.resolution,modelId:imageModel.id}):undefined;
+  const billingQuote=useDb?await quoteForRequest(request,{feature:featureForRequest("/api/generate-image",p)!,quantity:p.count,quality:qualityAudit.requested||"medium",resolution:p.resolution,ratio:p.ratio,modelId:imageModel.id},undefined,{allowResolutionFallback:!p.targetWidth&&!p.targetHeight}):undefined;
   if(billingQuote)assertQuotedVersion(requestQuoteConfirmation(request,p),billingQuote);
+  // A new accepted tier fallback is frozen before the job is persisted. Old
+  // job payloads/recovery are never reinterpreted or enlarged to fake 4K.
+  if (!p.targetWidth && !p.targetHeight) p.resolution=billingQuote?.effectiveParameters?.resolution || imageScope?.frozen.facts?.requestedResolution || p.resolution;
   const cost = billingQuote?.requestedCredits ?? (userProvider ? 0 : p.count * await imageQualityCost(qualityAudit, p.resolution));
 
   if (dbEnabled && (await isBanned(p.email, ip))) {

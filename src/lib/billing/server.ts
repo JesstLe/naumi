@@ -114,15 +114,15 @@ export async function quoteForRequest(request: Request, input: Partial<BillingFa
     feature: BillingFacts["feature"];
     quantity: number;
     ratio?: string;
-},frozenSnapshot?:ConfigSnapshot) {
+},frozenSnapshot?:ConfigSnapshot,options?:{allowResolutionFallback?:boolean}) {
     const snapshot = frozenSnapshot??currentModelBillingSnapshot()??await billingSnapshot();
-    return freezeBusinessQuote(request, snapshot, await resolveBillingFacts(request, input, snapshot), compatibleQuote);
+    return freezeBusinessQuote(request, snapshot, await resolveBillingFacts(request, input, snapshot), compatibleQuote, options);
 }
 /** Trusted domain services have already authenticated and owner-checked this actor. */
-export async function quoteForActor(email:string,input:Partial<BillingFacts>&{feature:BillingFacts["feature"];quantity:number}){
+export async function quoteForActor(email:string,input:Partial<BillingFacts>&{feature:BillingFacts["feature"];quantity:number},options?:{effectiveResolution?:string}){
     const snapshot=currentModelBillingSnapshot()??await(await getBillingRuntime()).config.current();
     const request = new Request("http://internal/api/billing/quote");
-    return freezeBusinessQuote(request,snapshot,await resolveBillingFacts(request,input,snapshot,email),compatibleQuote);
+    return freezeBusinessQuote(request,snapshot,await resolveBillingFacts(request,input,snapshot,email),compatibleQuote,options);
 }
 export async function updateBillingCompatibility(actor: string, reason: string, change: (config: BillingConfig) => void) {
     const config = (await getBillingRuntime()).config, current = await config.current();

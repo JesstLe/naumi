@@ -46,7 +46,7 @@ export async function reverseHubImageRequest(request: Request, scope: ModelExecu
   if (files.length > Math.min(10, scope.capabilities.maxReferenceImages) || files.some(bytes => bytes.length > 32 * 1024 * 1024)) reject("参考图超过即梦支持范围");
   if (mask && !files[0]) reject("局部编辑需要原图");
   const parameters = { prompt: body.prompt, n, response_format: "url" } as Record<string, any>;
-  const selected = currentSynchronousBilling()?.operation?.quote.requestedParameters;
+  const selected = currentSynchronousBilling()?.operation?.quote.effectiveParameters || currentSynchronousBilling()?.operation?.quote.requestedParameters;
   const operation = currentImageOperationParameters();
   const resolution = operation?.resolution || selected?.resolution || scope.frozen.facts?.requestedResolution || scope.frozen.facts?.resolution;
   const size = String(body.size || "1024x1024").split("x").map(Number);
