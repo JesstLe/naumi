@@ -173,7 +173,9 @@
     "sheet-attachment-model.js",
     "sheet-save-model.js",
     "sheet-save-ui.js",
-    "sheet-attachment-ui.js"
+    "sheet-attachment-ui.js",
+    "excel-save-model.js",
+    "excel-save-ui.js"
   ],
   "workers": [
     {

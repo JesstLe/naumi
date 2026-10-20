@@ -12,3 +12,5 @@
 .office-drawer .drawer-header{display:none}.office-drawer .drawer-footer{padding:6px 12px;gap:8px;min-height:44px}.office-drawer .drawer-footer .btn{padding:6px 10px}
 
 .ex-workbench-controls #exOfficeEdit[hidden]{display:none!important}
+
+.ex-recovery{max-height:180px;overflow:auto;background:#f5f8fc;border:1px solid #dce5f0;border-radius:7px;color:#3b506f}.ex-recovery p{margin:0 0 8px;line-height:1.6;white-space:normal;overflow-wrap:anywhere}.ex-recovery-actions{display:flex;gap:8px;flex-wrap:wrap}.ex-recovery-actions .btn{min-height:32px}.ex-workbook[data-recovery-locked=true] #exCellInput{background:#f0f3f7;color:#697b93}.ex-workbook[data-recovery-locked=true] .ex-grid-scroll{outline:1px solid #e0e6ef}@media(max-width:640px){.ex-recovery{max-height:190px}.ex-recovery-actions{gap:6px}.ex-recovery-actions .btn{font-size:11px}}
