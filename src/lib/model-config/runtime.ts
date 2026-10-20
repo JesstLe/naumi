@@ -1,4 +1,5 @@
 import { compatiblePublicModels, FEATURE_BINDINGS } from "./business";
+import { isSeedreamWire } from "./seedream-preflight";
 import { missingImagegenCapabilities,publishedImagegenCapabilities } from "../imagegen/capabilities";
 import { adminConfiguredFeature } from "./selection-policy";
 import { MODEL_BINDINGS } from "./bindings";
@@ -42,7 +43,10 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
     const ids = publicUpstreamIds(config,m);
     const upstreams = config.upstreamModels.filter(u => ids.includes(u.id) && u.enabled && config.providers.some(p => p.id === u.providerId && p.enabled));
     const option = f?.options.find(o => o.modelId === m.id);
-    const adapterRatios = upstreams.map(u => config.providers.find(p => p.id === u.providerId)?.options?.imageRatios).find(Boolean);
+    const adapterRatios = upstreams.map(u => config.providers.find(p => p.id === u.providerId)?.options?.imageRatios).find(Boolean)
+      || (!m.supplierRouting && !option?.parameters?.ratios
+        ? upstreams.find(u => isSeedreamWire(u.model) && config.providers.find(p => p.id === u.providerId)?.protocol === "apimart-images")?.parameterMap.apimartImages?.ratios
+        : undefined);
     if (preset?.aliases.some(a => a.id === m.id)) return { id:m.id,label:m.label,modality:m.modality,supportsEdit:true,supportsVision:false,qualities:[...DISPLAY_QUALITIES],nativeResolutions:preset.resolutions,generationParameters:{ratios:preset.ratios,resolutions:m.displayResolutions || preset.resolutions,combinations:Object.keys(preset.outputDimensions || {})},qualitySupported:true };
     return { id: m.id, label: m.label, modality: m.modality, supportsEdit: upstreams.some(u => u.capabilities.edit), supportsVision: upstreams.some(u => u.capabilities.vision), qualities: option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), ...qualityPresentation(upstreams), nativeResolutions: option?.parameters?.resolutions || Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))), generationParameters: m.displayResolutions || adapterRatios || option?.parameters ? {ratios:adapterRatios || option?.parameters?.ratios,resolutions:m.displayResolutions || option?.parameters?.resolutions} : undefined, qualitySupported: upstreams.some(u => u.capabilities.qualities.length > 0) };
   });
