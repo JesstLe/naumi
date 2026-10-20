@@ -228,7 +228,7 @@ async function downloadCurrentPageImages(){
   if(!paths.length){alert("当前页面没有可下载的图片");return;}
   if(window.WorkbenchHistory){try{const local=await WorkbenchHistory.archive(paths.map(path=>"/api/image?path="+encodeURIComponent(path)));WorkbenchHistory.saveBlob(local,"当前页面图片包.zip");status.textContent="图片包已从本机缓存下载";return;}catch(e){status.textContent="本机打包失败，改由服务器打包："+e.message;}}
   const response=await fetch("/api/images-zip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paths,filename:"当前页面图片包_"+new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")+".zip"})});
-  if(!response.ok){alert(await response.text()||"下载图片包失败");return;}
+  if(!response.ok){alert(await window.NaumiWorkbenchError(response,"下载图片包失败"));return;}
   const blob=await response.blob();
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");
@@ -606,7 +606,7 @@ async function downloadWorkbenchZip(kind){
     })
   });
   if(!response.ok){
-    const text=await response.text();
+    const text=await window.NaumiWorkbenchError(response,"下载失败");
     status.textContent="下载失败："+text;
     alert(text||"下载失败");
     return;
@@ -664,8 +664,11 @@ async function runInferTask(task){
     r=await fetch("/api/workbench/infer-prompts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items:task.selected,workbench_root:task.root,config:workbenchRequestConfig()})});
   }catch(e){return;}
   if(!r.ok){
-    const text=await r.text();
-    alert(text||"提示词推理启动失败");
+    const failure=await r.clone().json().catch(()=>({}));
+    const text=await window.NaumiWorkbenchError(r,"提示词推理启动失败");
+    status.textContent=text;
+    for(const selected of task.selected){const item=items.find(it=>it.ref_path===selected.ref_path);if((failure.stage==="quote"||failure.accepted===false)&&item?.status==="inferring")item.status="idle";}render();
+    alert(text);
     return;
   }
   alert("已提交 "+task.selected.length+" 条提示词推理任务");
@@ -731,20 +734,20 @@ async function submitWorkbenchJobs(selected){
   const requestId=crypto.randomUUID();
   try{
   await saveSettings();
-  const project=currentProjectSnapshot("运行中");
-  if(project) upsertProject(project);
+
   const r=await fetch("/api/workbench/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items:selected,workbench_root:currentRoot(),config:workbenchRequestConfig(),request_id:requestId})});
-  const t=await r.text();
-  if(!r.ok){alert(t);return;}
-  alert(t);
+  if(!r.ok){const message=await window.NaumiWorkbenchError(r,"报价或提交暂时失败，请查询任务状态");status.textContent=message;alert(message);return;}
+  const receipt=await r.json();
+  const project=currentProjectSnapshot("运行中");if(project)upsertProject(project);
+  alert("已受理 "+(receipt.accepted??selected.length)+" 项任务，可在当前项目查看进度");
   await refreshLoop();
+  }catch(error){status.textContent="操作未完成，请查询任务状态后再操作";alert(status.textContent);
   }finally{workbenchSubmitting=false;}
 }
 async function fetchJsonChecked(url){
   const response=await fetch(url,{cache:"no-store"});
   if(!response.ok){
-    const text=await response.text();
-    throw new Error(text||("HTTP "+response.status));
+    throw new Error(await window.NaumiWorkbenchError(response,"工作台状态读取失败"));
   }
   return response.json();
 }
@@ -943,8 +946,7 @@ async function submitEdit(){
   await saveSettings();
   const body={ref_path:editState.item.ref_path,result_path:editState.version.path,annotated_data_url:editCanvas.toDataURL("image/png"),prompt:editPrompt.value,workbench_root:currentRoot(),config:workbenchRequestConfig()};
   const r=await fetch("/api/workbench/edit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-  const text=await r.text();
-  if(!r.ok){editMsg.textContent=text;return;}
+  if(!r.ok){const failure=await r.clone().json().catch(()=>({}));editMsg.textContent=await window.NaumiWorkbenchError(r,"二次生成未完成，请查询任务状态");if(failure.stage==="quote"||failure.accepted===false){items[editState.index].status="idle";render();}return;}
   editMsg.textContent="二次生成已提交，等待返回结果";
   await refreshLoopOnce();
   refreshLoop();
