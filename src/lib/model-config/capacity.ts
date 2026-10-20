@@ -6,6 +6,7 @@ import { ensureModelSchema } from "./schema";
 import { ModelConfigError } from "./types";
 import { decryptAtRest } from "../settings";
 import { settingsSecret } from "../settings-secret";
+import {localImageCapacityQueue} from "../image-gateway";
 
 type Limit = { providerId: string; baseUrl: string; maxConcurrent: number; timeoutMs: number };
 /** Server-owned policy, not a caller parameter. Applies to retained/frozen tasks
@@ -42,6 +43,13 @@ export async function registerProviderCapacities(tx: PoolClient, config: ModelCo
     await tx.query("DELETE FROM app_model_provider_budgets WHERE identity=ANY($1) AND identity<>$2", [identities,identity]);
     for (const alias of aliases) await tx.query("INSERT INTO app_model_capacity_accounts(alias,identity) VALUES($1,$2) ON CONFLICT(alias) DO UPDATE SET identity=EXCLUDED.identity", [alias,identity]);
   }
+  // Publication owns the CURRENT account limit, including increases. Aggregate
+  // all enabled aliases after merges; an old task must not lower it again.
+  const active = config.providers.filter(p=>p.enabled);
+  if (active.length) await tx.query(`UPDATE app_model_provider_budgets b SET max_concurrent=x.cap
+    FROM (SELECT a.identity,min(v.cap)::int AS cap FROM unnest($1::text[],$2::int[]) v(alias,cap)
+      JOIN app_model_capacity_accounts a ON a.alias=v.alias GROUP BY a.identity) x WHERE b.identity=x.identity`,
+    [active.map(p=>capacityIdentity(p.id,p.baseUrl)),active.map(p=>p.maxConcurrent)]);
 }
 export function createProviderCapacity(pool: Pool) {
   return { async acquire(input: Limit,connection?:PoolClient) {
@@ -54,7 +62,7 @@ export function createProviderCapacity(pool: Pool) {
       await tx.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('naumi-model-capacity-accounts',0))");
       identity = (await tx.query("SELECT identity FROM app_model_capacity_accounts WHERE alias=$1", [logical])).rows[0]?.identity || logical;
       // The row lock serializes claims across app replicas and retained versions. Credential rotation keeps the same budget.
-      const budget = (await tx.query("INSERT INTO app_model_provider_budgets(identity,max_concurrent) VALUES($1,$2) ON CONFLICT(identity) DO UPDATE SET max_concurrent=LEAST(app_model_provider_budgets.max_concurrent,EXCLUDED.max_concurrent) RETURNING max_concurrent", [identity, input.maxConcurrent])).rows[0];
+      const budget = (await tx.query("INSERT INTO app_model_provider_budgets(identity,max_concurrent) VALUES($1,$2) ON CONFLICT(identity) DO UPDATE SET identity=EXCLUDED.identity RETURNING max_concurrent", [identity, input.maxConcurrent])).rows[0];
       await tx.query("DELETE FROM app_model_provider_leases WHERE identity=$1 AND expires_at<=now()", [identity]);
       const count = Number((await tx.query("SELECT count(*) AS n FROM app_model_provider_leases WHERE identity=$1", [identity])).rows[0].n);
       allowed = providerConcurrencyUnlimited(input.providerId) || count < budget.max_concurrent;
@@ -70,7 +78,11 @@ export function createProviderCapacity(pool: Pool) {
 export function capacityFetch(transport: typeof fetch, pool: Pool, input: Limit): typeof fetch {
   const capacity = createProviderCapacity(pool);
   return async (url, init) => {
-    const lease = await capacity.acquire(input);
+    let lease:Awaited<ReturnType<typeof capacity.acquire>>;
+    try{lease=await capacity.acquire(input);}catch(error){
+      if(error instanceof ModelConfigError&&error.code==="PROVIDER_BUSY"&&error.status===429){const queued=localImageCapacityQueue();if(queued)throw queued;}
+      throw error;
+    }
     const release = () => lease.release().catch(() => {});
     try {
       const request = new Request(url, init);

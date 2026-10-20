@@ -3,6 +3,11 @@ export class ImagegenHttpError extends Error {
   constructor(message: string, public status: number, public accepted?: boolean) { super(message); }
 }
 
+/** A dismissed preparation choice is not a failed or accepted generation. */
+export class ImagegenPreparationCancelled extends ImagegenHttpError {
+  constructor() { super("已取消生成准备", 0, false); }
+}
+
 export async function readImagegenResponse<T>(response: Response, fallback: string): Promise<T> {
   let data: any;
   try { data = JSON.parse(await response.text()); }

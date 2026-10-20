@@ -3,6 +3,7 @@ import { dbEnabled, getPool } from "../db";
 import type { ModelExecutionScope } from "../model-config/context";
 import type { ValidationOptions } from "../model-config/schema";
 import { completedChannelImage } from "../model-config/channel-image-response";
+import { ImageOperationQueued } from "../image-gateway";
 import { prepareChannelText } from "../model-config/channel-text-response";
 import { createHealthRepository } from "./repository";
 import { healthTargetKey } from "./targets";
@@ -43,7 +44,7 @@ export function healthObservedFetch(scope: ModelExecutionScope, fetcher: typeof 
       if (!valid.streaming) await observeBusinessHealth(scope,{success:true,reason:null,status,latencyMs:Date.now()-started});
       return valid.response;
     } catch (error) {
-      if (!request.signal.aborted) await observeBusinessHealth(scope,classifyHealthFailure(error,status,Date.now()-started));
+      if (!request.signal.aborted && !(error instanceof ImageOperationQueued)) await observeBusinessHealth(scope,classifyHealthFailure(error,status,Date.now()-started));
       throw error;
     }
   };

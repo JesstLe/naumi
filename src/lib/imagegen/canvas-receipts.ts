@@ -1,4 +1,4 @@
-export type CanvasReceipt={id:string;nodeId:string;sourceNodeId?:string;x:number;y:number};
+export type CanvasReceipt={id:string;nodeId:string;sourceNodeId?:string;modelId?:string;x:number;y:number};
 const prefix=(owner:string,project:string)=>`naumi:imagegen-node:${encodeURIComponent(owner.toLowerCase())}:${encodeURIComponent(project)}:`;
 export function canvasReceipts(storage:Storage,owner:string,project:string){const keyPrefix=prefix(owner,project),items:{key:string;receipt:CanvasReceipt}[]=[];for(let i=0;i<storage.length;i++){const key=storage.key(i);if(!key?.startsWith(keyPrefix))continue;try{const receipt=JSON.parse(storage.getItem(key)||"null");if(receipt&&/^[a-f0-9-]{36}$/i.test(receipt.id)&&typeof receipt.nodeId==="string")items.push({key,receipt});}catch{}}return items;}
 export function saveCanvasReceipt(storage:Storage,owner:string,project:string,receipt:CanvasReceipt){const key=prefix(owner,project)+encodeURIComponent(receipt.nodeId);storage.setItem(key,JSON.stringify(receipt));return key;}

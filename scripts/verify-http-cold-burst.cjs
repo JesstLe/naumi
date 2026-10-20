@@ -1,0 +1,11 @@
+const http=require('node:http'),assert=require('node:assert/strict');
+const total=1000;
+const server=http.createServer((req,res)=>{res.setHeader('content-type','application/json');res.end('{"ok":true}')});
+(async()=>{await new Promise(r=>server.listen({host:'127.0.0.1',port:0,backlog:2048},r));
+ const url='http://127.0.0.1:'+server.address().port,started=Date.now();
+ const results=await Promise.all(Array.from({length:total},async()=>{try{const r=await fetch(url);await r.text();return String(r.status)}catch(e){return e.cause?.code||e.message}}));
+ const counts=results.reduce((v,s)=>({...v,[s]:(v[s]||0)+1}),{});
+ server.closeAllConnections();await new Promise(r=>server.close(r));
+ console.log('COLD_BURST='+JSON.stringify({platform:process.platform,node:process.version,requests:total,prewarmed:0,retries:0,counts,elapsedMs:Date.now()-started}));
+ assert.equal(counts['200'],total,'all cold HTTP connections accepted');
+})().catch(e=>{console.error(e);process.exitCode=1});

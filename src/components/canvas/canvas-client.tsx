@@ -27,6 +27,7 @@ import { smartLayout } from "@/lib/canvas/smart-layout";
 import { CanvasComposerShell, CanvasComposerFooter, CanvasComposerOptions } from "./composer-shell";
 import { CanvasParameterPopover } from "./parameter-popover";
 import {submitCanvasImagegen} from "@/lib/imagegen/canvas-client";
+import {FrameRatioDialog,useCanvasFrameChoice} from "./frame-ratio-dialog";
 import {canvasReceipts,clearCanvasReceipt,moveCanvasReceipt} from "@/lib/imagegen/canvas-receipts";
 import {pollImagegen} from "@/lib/imagegen/client";
 import {imageOutputWarningText} from "@/lib/imagegen/output-advisory";
@@ -51,7 +52,7 @@ import type {PublicQuote} from "@/lib/billing/client";
 import { CanvasPerformanceProbe, recordCanvasNativeMove } from "./canvas-performance-probe";
 import {CanvasImage} from './canvas-image';
 import { classifyGenerationFailure, generationFailureBlocks, generationFailureMessage, generationFailureTitle, assertGenerationResultsPresent, type GenerationFailure } from '@/lib/canvas/generation-failure';
-import { ImagegenHttpError } from '@/lib/imagegen/http';
+import { ImagegenHttpError, ImagegenPreparationCancelled } from '@/lib/imagegen/http';
 import { useImageNodeDraft } from './use-image-node-draft';
 import { imageDraftScope } from '@/lib/canvas/image-node-drafts';
 import { CanvasRenderLayerGuard } from './canvas-render-layer-guard';
@@ -65,6 +66,7 @@ import { ContextMenuSurface, ContextMenuItem as Item } from "./context-menu-surf
 import { selectionRunTargets, runSelectionBatch } from "@/lib/canvas/selection-run";
 import { BatchSelectionToolbar } from "./batch-selection-toolbar";
 import { GenerationPlaceholder } from "./generation-placeholder";
+import { GenerationSubmitAction } from "./generation-submit-action";
 import { generationPlaceholderSize, generationPositionForTask, placeGenerationPreview, type GenerationStage } from "@/lib/canvas/generation-feedback";
 import type { ImageSkill } from "@/lib/image-skills/catalog";
 import { CanvasAssistantPanel } from "./canvas-assistant-panel";
@@ -79,6 +81,7 @@ import { useOrbCompanion } from "../naumi-orb/use-orb-companion";
 import { classifyAgentFailure } from "@/lib/agent/recovery";
 import { agentOrbState } from "@/lib/canvas/agent-orb";
 import { reduceAgentProgress } from "@/lib/canvas/agent-progress";
+import {receiveAssistantActivity,type AssistantLiveActivity} from "@/lib/canvas/assistant-live-state";
 import { useCanvasAssistantDisclosure } from "@/lib/canvas/assistant-disclosure";
 import { defaultNodeSettings, validNodeSettings, nodeTextStyle, type CanvasNodeSettings, type CanvasCrop } from "@/lib/canvas/node-settings";
 const DEFAULT_CANVAS_SETTINGS = defaultNodeSettings();
@@ -1181,6 +1184,7 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
     onVideoExtract?: (id: string, action: VideoPlayerAction) => void;
     onCutout?: (id: string) => void;
     cutoutBusy?: boolean;
+    cutoutBlocked?: boolean;
     settings?: CanvasNodeSettings;
     readOnly?: boolean;
   };
@@ -1337,7 +1341,7 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
                 disabled={d.settings?.locked} onClick={event=>{event.stopPropagation();d.onFill?.();}}>补充图片</button>}
             </div>}
             {selected && canNodeFeature("cutout") && !d.readOnly && !d.missingAsset && d.onCutout && <button type="button" data-testid="canvas-image-quick-cutout"
-              aria-label="去背景，保留主体" title="去背景，保留主体" disabled={d.cutoutBusy || d.settings?.locked}
+              aria-label="去背景，保留主体" title="去背景，保留主体" disabled={d.cutoutBusy || d.cutoutBlocked || d.settings?.locked}
               className="nodrag nopan absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white/95 px-2 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
               onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();d.onCutout?.(d.id);}}>
               {d.cutoutBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> : <Scissors className="h-3.5 w-3.5"/>}去背景</button>}
@@ -1569,7 +1573,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(init.method!=="POST"||!features[path])return privateFetchRaw(input,init);
     const form=init.body instanceof FormData?init.body:null;
     const body=form?Object.fromEntries(Array.from(form.entries()).filter((entry)=>typeof entry[1]==="string")):typeof init.body==="string"?JSON.parse(init.body):{};
-    if(path==="/api/generate-image"&&form&&user&&body.ratiogen!=="1"&&(!body.userPrompt||String(body.userPrompt).trim()===String(body.prompt).trim()))return submitCanvasImagegen(form,active?.members[0]?.id,message=>flashTip(message),{owner:user.email,project:active?.key||"workspace",isCurrent:init.isCurrent});
+    if(path==="/api/generate-image"&&form&&user&&body.ratiogen!=="1"&&(!body.userPrompt||String(body.userPrompt).trim()===String(body.prompt).trim())){
+      const account=canvasAccountRef.current,project=activeProjectRef.current?.key||null,epoch=canvasContextEpochRef.current;
+      return submitCanvasImagegen(form,active?.members[0]?.id,message=>flashTip(message),{owner:user.email,project:active?.key||"workspace",chooseFrame:frameChoice.chooseFrame,
+        isCurrent:()=>account===canvasAccountRef.current&&project===(activeProjectRef.current?.key||null)&&epoch===canvasContextEpochRef.current&&(init.isCurrent?.()??true)});
+    }
     if (path === "/api/generate-image") {
       body.ratio = normalizeCanvasRatio(body.ratio);
       body.resolution = normalizeCanvasResolution(body.resolution);
@@ -1659,6 +1667,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 是否已做过"刷新恢复上次项目"的初始化(避免初始挂载误清本地保存)
   const restoredRef = useRef(false);
   const [activeKey, setActiveKey] = useState<string | null>(null);
+  const frameChoice=useCanvasFrameChoice(imageDraftScope(user?.email,targetEmail,activeKey));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedPendId, setSelectedPendId] = useState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
@@ -2004,6 +2013,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [assistantSkill, setAssistantSkill] = useState<ImageSkill | null>(null);
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantResponding, setAssistantResponding] = useState(false);
+  const [assistantActivity,setAssistantActivity]=useState<AssistantLiveActivity>({phase:"connecting"});
   const [assistantSteps, setAssistantSteps] = useState<AgentOrbStep[]>([]);
   const [assistantOutcome, setAssistantOutcome] = useState<AgentOrbOutcome>("idle");
   const orbCompanion = useOrbCompanion(`${user?.email || ""}:${activeKey || "workspace"}`);
@@ -3435,7 +3445,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         task.sourceId === selectedId ||
         task.operationKey === `node:${selectedId}` ||
         task.operationKey === `retry:${selectedId}`)
-    ) || (!!selectedId && pendNodes.some(node => node.generating && node.operationKey === `node:${selectedId}`));
+    ) || (!!selectedId && pendNodes.some(node => (node.generating || generationFailureBlocks(node.generationFailure)) && node.operationKey === `node:${selectedId}`));
+  const selectedGenerationReview = generationTasks.find(task => generationFailureBlocks(task.failure) &&
+    (task.sourceId === selectedId || task.operationKey === `node:${selectedId}` || task.operationKey === `retry:${selectedId}`));
+  const selectedGenerationPendReview = pendNodes.find(node => generationFailureBlocks(node.generationFailure) && node.operationKey === `node:${selectedId}`);
+  const selectedGenerationFailure = selectedGenerationReview?.failure || selectedGenerationPendReview?.generationFailure;
+  const selectedGenerationCheck = selectedGenerationReview?.onCheck || selectedGenerationPendReview?.onGenerationCheck;
   // dock 的默认引用图就是当前节点本身：节点链表达真实执行顺序，下一节点应基于当前结果继续。
   // 若要否定当前结果并从原输入重做，使用显式“重做此图”动作生成同级新版本。
   const dockReferenceState = useMemo(() => {
@@ -3563,7 +3578,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           target: task.id,
           targetHandle: "in",
           type: "default",
-          animated: true,
+          animated: !task.failure,
           selectable: false,
         },
       ];
@@ -3778,7 +3793,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const nSeen = new Set<string>();
     const finalNodes = displayNodes.map(node => node.type === "art" && !node.data.videoUrl && !node.data.pending ? {
       ...node, data: { ...node.data, onCutout: (id: string) => { const art = worksRef.current?.find(item => item.id === id); if(art)void runCutout(art); },
-        cutoutBusy: !cutoutCatalog || !!cutoutCatalogError || cutoutCatalog.available === false || pendNodes.some(pend => pend.operationKey === `node:${node.id}` && pend.generating) || generationOperationRef.current.has(`node:${node.id}`) || generationTasks.some(task => task.sourceId === node.id && (!task.failure || generationFailureBlocks(task.failure))) }
+        cutoutBusy: pendNodes.some(pend => pend.operationKey === `node:${node.id}` && pend.generating && !pend.generationFailure) || generationTasks.some(task => task.sourceId === node.id && !task.failure),
+        cutoutBlocked: !cutoutCatalog || !!cutoutCatalogError || cutoutCatalog.available === false || generationOperationRef.current.has(`node:${node.id}`) || pendNodes.some(pend => pend.operationKey === `node:${node.id}` && generationFailureBlocks(pend.generationFailure)) || generationTasks.some(task => task.sourceId === node.id && generationFailureBlocks(task.failure)) }
     } : node).filter((n) =>
       nSeen.has(n.id) ? false : (nSeen.add(n.id), true)
     );
@@ -3837,7 +3853,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const nodesSig = useMemo(() => displayNodes
     .map(
       (n) =>
-        `${JSON.stringify([n.data.inspectOriginal,n.data.image,n.data.videoUrl,n.data.missingAsset,n.data.workflowPresentation,n.data.title,n.data.prompt,n.data.content,n.data.cutoutBusy])}:${JSON.stringify([n.data.generationFailure,n.data.generationStage, n.data.generationStartedAt, n.data.generationCount, n.data.generationCompleted, n.data.generationSize, n.data.generationKind])}:${JSON.stringify((n.data as {settings?:CanvasNodeSettings}).settings)}:${n.draggable}:${n.zIndex}:${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${
+        `${JSON.stringify([n.data.inspectOriginal,n.data.image,n.data.videoUrl,n.data.missingAsset,n.data.workflowPresentation,n.data.title,n.data.prompt,n.data.content,n.data.cutoutBusy,n.data.cutoutBlocked])}:${JSON.stringify([n.data.generationFailure,n.data.generationStage, n.data.generationStartedAt, n.data.generationCount, n.data.generationCompleted, n.data.generationSize, n.data.generationKind])}:${JSON.stringify((n.data as {settings?:CanvasNodeSettings}).settings)}:${n.draggable}:${n.zIndex}:${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${
           (n.data as { pending?: boolean }).pending ? 1 : 0
         }:${(n.data as { inChain?: boolean }).inChain ? 1 : 0}:${n.className ?? ""}:${
           Math.round((n.data as { progress?: number }).progress ?? -1)
@@ -4368,20 +4384,20 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if (!current()) return;
       if (context.pendId ? selectedPendIdRef.current === context.pendId : selectedIdRef.current === context.sourceId) setGenError(generationFailureMessage(failure));
       setGenerationTasks(tasks => tasks.map(task => task.id === context.taskId ? { ...task, failure } : task));
-      setPendNodes(nodes => nodes.map(node => node.id === context.pendId ? { ...node, generationFailure: failure, generating: generationFailureBlocks(failure) } : node));
+      setPendNodes(nodes => nodes.map(node => node.id === context.pendId ? { ...node, generationFailure: failure, generating: false } : node));
       if (!generationFailureBlocks(failure)) generationOperationRef.current.delete(context.operationKey);
     };
     try {
-      const response = await fetch(`/api/${context.endpoint || "generate-image"}?job=${encodeURIComponent(context.jobId)}`, { cache: "no-store", headers: await authHeader() });
+      const response = await fetch(`/api/${context.endpoint || "generate-image"}?job=${encodeURIComponent(context.jobId)}`, { cache: "no-store", headers: await authHeader(), signal: AbortSignal.timeout(20_000) });
       let result = await readJsonSafe(response);
       if (context.endpoint === "aplus") result.images = (result.shots || []).filter((shot: {status?: string;id?: string;url?: string}) => shot.status === "done" && shot.id && shot.url);
       if (!current()) return;
       if (!response.ok) throw new Error(result.error || "任务状态暂未读取到，请稍后检查");
       if(result.recoveryAvailable&&context.jobId.startsWith("imagegen-")&&current()){
-        const restored=await privateFetchRaw("/api/imagegen/recover-delivery",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operationId:context.jobId.slice(9)})});
+        const restored=await privateFetchRaw("/api/imagegen/recover-delivery",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operationId:context.jobId.slice(9)}),signal:AbortSignal.timeout(30_000)});
         await expectJsonOk(restored,"原结果恢复未完成，请稍后检查");
         if(!current())return;
-        const refreshed=await fetch(`/api/generate-image?job=${encodeURIComponent(context.jobId)}`,{cache:"no-store",headers:await authHeader()});
+        const refreshed=await fetch(`/api/generate-image?job=${encodeURIComponent(context.jobId)}`,{cache:"no-store",headers:await authHeader(),signal:AbortSignal.timeout(20_000)});
         result=await readJsonSafe(refreshed);if(!refreshed.ok)throw new Error("原任务状态暂未读取到，请稍后检查");
         if(!current())return;
       }
@@ -4422,7 +4438,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         completeCanvasReceipt(context.jobId);
       } else show({ kind: "uncertain", message: result.error || "原任务仍在处理中，请稍后再次检查", jobId: context.jobId });
     } catch (error) {
-      show({ kind: "uncertain", message: error instanceof Error ? error.message : "任务状态暂未读取到，请稍后检查", jobId: context.jobId });
+      show({ kind: "uncertain", message: error instanceof Error && ["TimeoutError","AbortError"].includes(error.name)
+        ? "检查超时，原任务已保留，可稍后再次检查" : error instanceof Error ? error.message : "任务状态暂未读取到，请稍后检查", jobId: context.jobId });
     } finally { generationChecksRef.current.delete(context.jobId); }
   }
 
@@ -4553,7 +4570,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if (opts?.isCurrent && !opts.isCurrent()) return [];
       rememberGenerationDrag(taskId, generationTaskPosRef.current[taskId] ?? taskPosition, true, operationKey);
       setGenerationTasks(current => current.map(task => task.id === taskId ? { ...task, stage: "generating" } : task));
-      const deadline = Date.now() + 6 * 60 * 1000;
+      let deadline = Date.now() + 6 * 60 * 1000;
       let newIds: string[] = [];
       let generated: GeneratedResult[] = [];
       for (;;) {
@@ -4567,6 +4584,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         if (opts?.isCurrent && !opts.isCurrent()) return [];
         if (pr.ok && pj.user) applyServerUser(pj.user);
         if (!pr.ok) throw new Error(pj.error || t("canvas.genFail"));
+        if(pj.status==="pending"){const queued=pj.operationStatus==="queued";if(queued)deadline=Date.now()+6*60*1000;setGenerationTasks(current=>current.map(task=>task.id===taskId?{...task,stage:queued?"queued":"generating"}:task));}
         if (pj.status === "done") {
           const warning=imageOutputWarningText(pj.warnings);if(warning)flashTip(warning);
           setGenerationTasks(current => current.map(task => task.id === taskId ? { ...task, stage: "saving" } : task));
@@ -4627,6 +4645,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     } catch (e) {
       if (opts?.isCurrent && !opts.isCurrent()) return [];
       if (requestAccount !== canvasAccountRef.current || requestProject !== (activeProjectRef.current?.key || null)) return [];
+      if (e instanceof ImagegenPreparationCancelled) return [];
       failure = classifyGenerationFailure(e, { attempted, jobId, terminal, hasResults: resultIds.length > 0 });
       const message = generationFailureMessage(failure);
       if (selectedIdRef.current === source.id) setGenError(message);
@@ -4923,7 +4942,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const showFailure = (value: GenerationFailure) => {
       failure = value;
       if (!generationFailureBlocks(value)) generationOperationRef.current.delete(operationKey);
-      updateTask({ generating: generationFailureBlocks(value), generationFailure: value, onGenerationCheck: resultId ? checkResult : undefined });
+      updateTask({ generating: false, generationFailure: value, onGenerationCheck: resultId ? checkResult : undefined });
       if (current()) flashTip(generationFailureMessage(value));
     };
     const loadResult = async () => {
@@ -5188,13 +5207,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     assistantUploadToken.current=null;setAssistantUploading(false);setAssistantUploadError(null);setAssistantAttachments([]);setAssistantExcludedReferences([]);
     const controller=new AbortController();assistantController.current?.abort();assistantController.current=controller;
     assistantLiveSessionId.current=id;
-    assistantSessionId.current=id;setAssistantSteps([]);setAssistantOutcome("running");setAssistantBusy(true);setAssistantResponding(false);setAssistantInput("");setAssistantError(null);assistantRetry.current=null;
+    assistantSessionId.current=id;setAssistantSteps([]);setAssistantOutcome("running");setAssistantBusy(true);setAssistantResponding(false);setAssistantActivity({phase:"connecting"});setAssistantInput("");setAssistantError(null);assistantRetry.current=null;
     let recalled = false;
     try{
       for(;;){
         const response=await privateFetchRaw(`/api/canvas/assistant?projectKey=${encodeURIComponent(activeKey||"workspace")}&id=${encodeURIComponent(id)}`,{signal:controller.signal});
         const data=await expectJsonOk(response,"历史对话读取失败");
         if(controller.signal.aborted||assistantController.current!==controller)return;
+        setAssistantActivity({phase:"processing",lastEventAt:Date.now()});
         setAssistantArtworkId(data.session.anchorId||null);setSelectedId(data.session.anchorId||null);setSelectedTextId(null);
         if(Array.isArray(data.session.referenceIds)){
           const restored=await mergeWorks(data.session.referenceIds);
@@ -5291,6 +5311,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setAssistantError(null);
     setAssistantBusy(true);
     setAssistantResponding(false);
+    setAssistantActivity({phase:"connecting"});
     setAssistantSteps([]); setAssistantOutcome("running");
     orbCue({ type: "submit" });
     const controller = new AbortController();
@@ -5302,6 +5323,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     let videoProjectResult:{key:string;nodeId:string}|undefined;
     const acceptedVideoProject=activeKey;
     let orbFailureCode: string | undefined;
+    // Show this turn immediately, including image/session preparation before SSE opens.
+    setAssistantTurns([...history,{id:`as-a-${Date.now()}`,role:"assistant",content:""}]);
+    setAssistantInput("");
     try {
       const response = await privateFetch("/api/canvas/assistant", {
         method: "POST",
@@ -5317,13 +5341,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         throw new Error(data?.error || "画布助手暂时不可用");
       }
       orbCue({ type: "connected" });
-      setAssistantTurns(history);
-      setAssistantInput("");
-      // SSE 流式:追加一条空助手消息,随 delta 逐段填充
-      setAssistantTurns((current) => [
-        ...current,
-        { id: `as-a-${Date.now()}`, role: "assistant", content: "" },
-      ]);
+      setAssistantActivity({phase:"processing",lastEventAt:Date.now()});
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buf = "";
@@ -5345,6 +5363,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           if (!evLine || !dataLine) continue;
           const type = evLine.slice(7).trim();
           const data = JSON.parse(dataLine.slice(6)) as Record<string, unknown>;
+          setAssistantActivity(current=>receiveAssistantActivity(current,type,data,Date.now()));
           if(type==="open"){serverSessionId=String(data.sessionId||acceptedSession);assistantLiveSessionId.current=serverSessionId;}
           if(type==="done" && data.ok===true)completed=true;
           if (type === "attention") {
@@ -5680,7 +5699,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const onCheck = jobId ? () => checkGenerationReceipt({ jobId: jobId!, taskId, pendId: pend?.id, sourceId: source.id, operationKey, position: reservedPosition, account: requestAccount, project: requestProject, endpoint: "aplus" }) : undefined;
       const retainedFailure = failure;
       setGenerationTasks(tasks => pend ? tasks.filter(task => task.id !== taskId) : tasks.map(task => task.id === taskId ? { ...task, failure: retainedFailure, onCheck } : task));
-      if (pend) setPendNodes(nodes => nodes.map(node => node.id === pend.id ? { ...node, generating: generationFailureBlocks(retainedFailure), generationFailure: retainedFailure, onGenerationCheck: onCheck } : node));
+      if (pend) setPendNodes(nodes => nodes.map(node => node.id === pend.id ? { ...node, generating: false, generationFailure: retainedFailure, onGenerationCheck: onCheck } : node));
     } finally {
       if (!failure || !generationFailureBlocks(failure)) generationOperationRef.current.delete(operationKey);
       if (!failure) {
@@ -8032,7 +8051,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if (opts?.isCurrent && !opts.isCurrent()) return false;
       rememberGenerationDrag(pend.id, rfRef.current?.getNode(pend.id)?.position ?? generationPosition, true);
       setPendNodes(current => current.map(p => p.id === pend.id ? { ...p, generationStage: "generating" } : p));
-      const deadline = Date.now() + 6 * 60 * 1000;
+      let deadline = Date.now() + 6 * 60 * 1000;
       let newIds: string[] = [];
       let generatedSizes: { id: string; width?: number; height?: number }[] = [];
       for (;;) {
@@ -8046,6 +8065,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         if (opts?.isCurrent && !opts.isCurrent()) return false;
         if (pr.ok && pj.user) applyServerUser(pj.user);
         if (!pr.ok) throw new Error(pj.error || t("canvas.genFail"));
+        if(pj.status==="pending"){const queued=pj.operationStatus==="queued";if(queued)deadline=Date.now()+6*60*1000;setPendNodes(current=>current.map(p=>p.id===pend.id?{...p,generationStage:queued?"queued":"generating"}:p));}
         if (pj.status === "done") {
           const warning=imageOutputWarningText(pj.warnings);if(warning)flashTip(warning);
           setPendNodes(current => current.map(p => p.id === pend.id ? { ...p, generationStage: "saving" } : p));
@@ -8119,12 +8139,16 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     } catch (e) {
       if (opts?.isCurrent && !opts.isCurrent()) return false;
       if (requestAccount !== canvasAccountRef.current || requestProject !== (activeProjectRef.current?.key || null)) return false;
+      if (e instanceof ImagegenPreparationCancelled) {
+        setPendNodes(nodes=>nodes.map(node=>node.id===pend.id?{...node,generating:false,generationFailure:undefined}:node));
+        return false;
+      }
       failure = classifyGenerationFailure(e, { attempted, jobId, terminal, hasResults: resultIds.length > 0 });
       const message = generationFailureMessage(failure);
       if (selectedPendIdRef.current === pend.id) setGenError(message);
       else flashTip(`${pend.label}：${message}`);
       const retainedFailure = failure;
-      setPendNodes((prev) => prev.map((p) => p.id === pend.id ? { ...p, generating: generationFailureBlocks(retainedFailure), generationFailure: retainedFailure,
+      setPendNodes((prev) => prev.map((p) => p.id === pend.id ? { ...p, generating: false, generationFailure: retainedFailure,
         onGenerationCheck: jobId ? () => checkGenerationReceipt({ jobId: jobId!, pendId: pend.id, operationKey, position: generationPosition, account: requestAccount, project: requestProject }) : undefined } : p));
       return false;
     } finally {
@@ -8765,6 +8789,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       </div>}
 
       {ratioMenu}
+      {frameChoice.pending&&<FrameRatioDialog key={frameChoice.pending.id} choices={frameChoice.pending.choices} english={locale==="en"} onChoose={id=>frameChoice.choose(frameChoice.pending!.id,id)}/>}
       {/* 占位节点上传用的隐藏 input */}
       <input
         ref={pendUploadRef}
@@ -11482,20 +11507,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     {t("canvas.retryImage")}
                   </button></CanvasComposerOptions> </>} actions={<>
 
-                  <button
-                    type="button"
-                    onClick={generateChild}
-                    disabled={selectedGenerating}
-                    title={t("canvas.generate")}
-                    aria-label="生成"
-                    className="canvas-ui-primary flex h-10 w-10 flex-none items-center justify-center rounded-[11px] text-[18px] font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
-                  >
-                    {selectedGenerating ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <ArrowUp aria-hidden="true" className="h-4 w-4" />
-                    )}
-                  </button>
+                  <GenerationSubmitAction generating={selectedGenerating} failure={selectedGenerationFailure}
+                    onGenerate={generateChild} onCheck={selectedGenerationCheck} english={locale === "en"} />
                  </>}/>
               )}
             </CanvasComposerShell>
@@ -11580,20 +11593,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   light={true}
                 />
                  </>} actions={<>
-                <button
-                  type="button"
-                  onClick={() => void generatePend()}
-                  disabled={selectedPendGenerating}
-                  title={t("canvas.generate")}
-                    aria-label="生成"
-                  className="canvas-ui-primary flex h-10 w-10 flex-none items-center justify-center rounded-[11px] text-[18px] font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
-                >
-                  {selectedPendGenerating ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ArrowUp aria-hidden="true" className="h-4 w-4" />
-                  )}
-                </button>
+                <GenerationSubmitAction generating={selectedPendGenerating} failure={selectedPend.generationFailure}
+                  onGenerate={() => void generatePend()} onCheck={selectedPend.onGenerationCheck} english={locale === "en"} />
                </>}/>
             </CanvasComposerShell>
           )}
@@ -11926,7 +11927,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             contextImages={currentAssistantReferences().map(artwork => ({ id: artwork.id, title: artwork.title, image: cdnUrl(artwork.image) }))}
             onUploadImages={files=>void uploadAssistantImages(files)} uploadingImages={assistantUploading} uploadError={assistantUploadError}
             onRemoveReference={id=>{if(assistantBusy||assistantUploadToken.current)return;setAssistantAttachments(current=>current.filter(art=>art.id!==id));setAssistantExcludedReferences(current=>[...current,id]);setAssistantUploadError(null);assistantRetry.current=null;}}
-            selectedSkill={assistantSkill} onSkillSelect={skill => { setAssistantSkill(skill); assistantRetry.current = null; }} skillAccountKey={user?.email || ""} skillSessionId={assistantSessionId.current} turns={assistantTurns} input={assistantInput} busy={assistantBusy} error={assistantError} steps={assistantSteps} english={locale === "en"} responding={assistantResponding} attention={orbCompanion.model.attention} onStop={() => void stopAssistantTask()}
+            selectedSkill={assistantSkill} onSkillSelect={skill => { setAssistantSkill(skill); assistantRetry.current = null; }} skillAccountKey={user?.email || ""} skillSessionId={assistantSessionId.current} turns={assistantTurns} input={assistantInput} busy={assistantBusy} error={assistantError} steps={assistantSteps} english={locale === "en"} responding={assistantResponding} activity={assistantActivity} attention={orbCompanion.model.attention} onStop={() => void stopAssistantTask()}
             labels={{title: t("canvas.assistant.title"),
               scrollToBottom: t("canvas.assistant.scrollToBottom"),
               newChat: t("canvas.assistant.newChat"),

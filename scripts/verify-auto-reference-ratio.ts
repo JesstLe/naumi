@@ -49,7 +49,8 @@ async function main(){
  check(defaultFrameSource([ref,target])===ref,"role not array order");
  check(defaultFrameSource([target,ref,{artworkId:"mask",role:"mask"}])===target,"mask retains target canvas");
  check(automaticFrameRatio(request("3:4"),[target,ref],"edit")===undefined,"explicit choice wins");
- assert.throws(()=>automaticFrameRatio(odd,[target,ref,{...ref,artworkId:"second-ref"}],"edit"),/多张参考图/);checks++;
+ check(automaticFrameRatio(odd,[target,ref,{...ref,artworkId:"second-ref",width:530,height:790}],"edit")==="53:79","same ratio references agree independently of dimensions");
+ assert.throws(()=>automaticFrameRatio(odd,[target,ref,{...ref,artworkId:"wide-ref",width:1580,height:1060}],"edit"),/参考图比例不同/);checks++;
  check(automaticFrameRatio({...odd,inputs:[]},[],"generate")===undefined,"text-only auto unchanged");
  for(const [w,h,ratio] of [[1060,1580,"53:79"],[1316,1755,"1316:1755"],[750,1000,"3:4"]] as const){const result=await legacy(w,h);check(result.form.get("ratio")===ratio,"legacy auto follows decoded pixels");}
  check((await legacy(1060,1580,"3:4")).form.get("ratio")==="3:4","legacy explicit choice wins");

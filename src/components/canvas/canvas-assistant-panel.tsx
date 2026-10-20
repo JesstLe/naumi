@@ -7,7 +7,9 @@ import { ArrowDown, ArrowRight, ArrowRightToLine, ArrowUp, Check, CircleHelp, Co
 import { SkillBook } from "@/components/image-skills/skill-book";
 import type { ImageSkill } from "@/lib/image-skills/catalog";
 import { cn } from "@/lib/utils";
-import { agentActivityLabel, agentElapsedLabel } from "@/lib/canvas/agent-activity";
+import { agentActivityLabel } from "@/lib/canvas/agent-activity";
+import type {AssistantLiveActivity} from "@/lib/canvas/assistant-live-state";
+import {AssistantLiveStatus} from "./assistant-live-status";
 import type { AgentOrbStep } from "@/lib/canvas/agent-orb";
 import type { OrbAttention } from "../naumi-orb/orb-companion";
 
@@ -25,7 +27,7 @@ export type SavedConversation = { id: string; title: string; turns: CanvasAssist
 /** Presentation-only sidebar: the parent owns SSE, context, model routing and billing. */
 export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns, input, busy, error,
   selectedSkill, onSkillSelect, skillAccountKey, skillSessionId, costLabel, labels, tasks, onInputChange, onSend, onNewChat, onRestoreChat, onClose, onPreview,
-  onCopy, onFeedback, feedbackLabels = { positive: "有帮助", negative: "需要改进" }, renderContent, modelControl, steps = [], onStop, onClearReference, onUploadImages, onRemoveReference, uploadingImages = false, uploadError, historyLoader, historyScopeKey = "", onRenameHistory, onDeleteHistory, open = true, focusInput = true, contextReady = true, english = false, responding = false, attention,
+  onCopy, onFeedback, feedbackLabels = { positive: "有帮助", negative: "需要改进" }, renderContent, modelControl, steps = [], onStop, onClearReference, onUploadImages, onRemoveReference, uploadingImages = false, uploadError, historyLoader, historyScopeKey = "", onRenameHistory, onDeleteHistory, open = true, focusInput = true, contextReady = true, english = false, responding = false, attention, activity,
 }: {
   selectedSkill?: ImageSkill | null;
   onSkillSelect?: (skill: ImageSkill | null) => void;
@@ -36,6 +38,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
   contextReady?: boolean;
   english?: boolean;
   responding?: boolean;
+  activity?:AssistantLiveActivity;
   attention?: OrbAttention;
   light: boolean;
   anchorTitle: string;
@@ -256,10 +259,10 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
           {tasks.length > 4 && <button type="button" className="canvas-ui-action mt-5 flex items-center gap-2 rounded-lg px-1 py-1.5 text-[12px]"
             onClick={() => setTaskPage(page => page + 1)}><RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />{labels.changeTasks}</button>}
         </section>}
-        {turns.map(turn => turn.role === "user" ? <div key={turn.id} className="flex justify-end">
+        {turns.map((turn,index) => turn.role === "user" ? <div key={turn.id} className="flex justify-end">
           <div className="canvas-ui-message max-w-[90%] whitespace-pre-wrap break-words rounded-[16px] rounded-br-[5px] px-3.5 py-2.5 text-[13px] leading-6">{turn.content}</div>
         </div> : <article key={turn.id} className="min-w-0 text-[13px] leading-6">
-          <div className="min-w-0 break-words canvas-ui-text">{renderContent(turn.content)}</div>
+          <div className="min-w-0 break-words canvas-ui-text" data-testid="canvas-assistant-answer">{renderContent(turn.content)}{busy&&responding&&!attention&&index===turns.length-1&&<span aria-hidden="true" className="ml-0.5 inline-block h-3 w-0.5 rounded-sm bg-current align-middle opacity-60 motion-safe:animate-pulse" data-testid="assistant-stream-caret"/>}</div>
           {!!turn.artifacts?.length && <div className="mt-3 grid grid-cols-2 gap-2" data-testid="canvas-assistant-results">{turn.artifacts.map(art => <button type="button" key={art.id} onClick={() => onPreview(art)} className="overflow-hidden rounded-xl border border-[var(--canvas-ui-border)] text-left">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <CachedImage src={art.image} alt={art.title} className="aspect-square w-full object-contain" /><span className="block truncate px-2 py-1 text-[11px]">{art.title}</span>
@@ -274,7 +277,8 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
           </button>)}</div>}
         </article>)}
         {!!steps.length && <div data-testid="canvas-assistant-progress" className="space-y-2">{steps.map(step => <CanvasAgentToolCard key={step.id} step={step} busy={busy} english={english} sources={contextImages} results={turns.flatMap(turn => turn.artifacts || [])} onPreview={onPreview} />)}</div>}
-        {busy && <div data-testid="canvas-assistant-activity" className="canvas-ui-muted flex flex-wrap items-center justify-between gap-2 text-[12px]"><span role="status" aria-live="polite" className="flex items-center gap-2">{attention ? <CircleHelp className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /> : <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden="true" />}{activityLabel}</span><span data-testid="canvas-assistant-elapsed" className="text-[11px] tabular-nums">{agentElapsedLabel(elapsed, english)}</span></div>}
+        {busy && <AssistantLiveStatus activity={activity} elapsed={elapsed} now={Date.now()} english={english} responding={responding}
+          attention={attention} label={attention||steps.some(step=>step.status==="running")?activityLabel:undefined}/>}
         {!busy && attention && <div role="status" data-testid="canvas-assistant-attention" className="canvas-ui-muted flex items-center gap-2 text-[12px]"><CircleHelp className="h-3.5 w-3.5" aria-hidden="true" />{activityLabel}</div>}
       </div>}
     </div>

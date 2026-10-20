@@ -15,6 +15,8 @@ async function bundle(entry,state,modules,source){
  const a=await image('product','edit-target',product),b=await image('layout','reference',layout);
  const state={inputs:[a,b],quotes:[],simulations:[],forms:[]};
  const modules={
+ '../model-config/resolution-fallback':`export function resolveImageResolution(){return undefined};export function resolutionFallbackMessage(){return ''};export function resolutionFacts(facts){return facts};export function upstreamAcceptsResolution(){return true}`,
+ '../model-config/image-preset':`export function selectedImagePreset(){return undefined}`,
  './inputs':'export async function readImagegenInputs(request){return request.inputs.map(i=>({...__fixture.inputs.find(x=>x.artworkId===i.artworkId),...i}))}',
  '../model-config/server':`const config={publicModels:[{id:'image-a',enabled:true,visible:true,modality:'image',target:{type:'upstream'}}],upstreamModels:[{id:'up',providerId:'provider',parameterMap:{imagegen:{pixelSize:'size'}},capabilities:{}}],providers:[{id:'provider',protocol:'openai-images'}]};export async function getModelAdministration(){return{repo:{current:async()=>({version:117,config})},billing:{current:async()=>({version:8})}}}`,
  '../model-config/runtime':`export function simulateModel(m,b,id,facts){__fixture.simulations.push(facts);return{eligible:__fixture.allowed&&!__fixture.allowed.includes(facts.ratio)?[]:[{upstreamId:'up'}],excluded:[]}}`,
@@ -52,7 +54,7 @@ async function bundle(entry,state,modules,source){
  const fixed=await planImagegen({...req,parameters:{...req.parameters,ratio:'9:16'}},'fixture@example.test');check(fixed.request.parameters.ratio==='9:16','explicit preserved');
  const style=await planImagegen({...req,useCase:'style-transfer'},'fixture@example.test');check(style.request.parameters.ratio==='1:1','style keeps edit target');
  state.inputs.push({...a,artworkId:'mask',role:'mask'});const masked=await planImagegen({...req,inputs:[...req.inputs,{artworkId:'mask',role:'mask'}]},'fixture@example.test');check(masked.request.parameters.ratio==='1:1','mask keeps target');
- state.inputs.push({...b,artworkId:'layout2'});const q=state.quotes.length;await assert.rejects(()=>planImagegen({...req,inputs:[...req.inputs,{artworkId:'layout2',role:'reference'}]},'fixture@example.test'),/多张参考图/);check(state.quotes.length===q,'ambiguity stops before quote');
+ state.inputs.push({...b,artworkId:'layout2',width:1500,height:2000});const multiRequest={...req,inputs:[...req.inputs,{artworkId:'layout2',role:'reference'}]};const same=await planImagegen(multiRequest,'fixture@example.test');check(same.request.parameters.ratio==='3:4'&&same.steps[0].parameters.ratio==='3:4'&&state.quotes.at(-1).ratio==='3:4','same-ratio references reach quote and frozen step');check(same.fingerprint===imagegenFingerprint(multiRequest),'same-ratio raw identity preserved');state.inputs.at(-1).width=2000;const q=state.quotes.length;await assert.rejects(()=>planImagegen(multiRequest,'fixture@example.test'),/参考图比例不同/);check(state.quotes.length===q,'genuine ambiguity stops before quote');
  const single=await planImagegen({...req,inputs:[{...req.inputs[1],role:'edit-target'}]},'fixture@example.test');check(single.request.parameters.ratio==='3:4','single retains original');
  const pixels=await planImagegen({...req,parameters:{...req.parameters,width:768,height:1024}},'fixture@example.test');check(pixels.request.parameters.width===768&&pixels.request.parameters.ratio==='auto','explicit pixel controls preserved');
  const text=await planImagegen({...req,mode:'generate',inputs:[]},'fixture@example.test');check(text.request.parameters.ratio==='auto','text only unchanged');
@@ -70,5 +72,5 @@ async function bundle(entry,state,modules,source){
  '../../app/api/generate-image/route':`export async function POST(req){const form=await req.formData();__fixture.forms.push(form);return Response.json({ratio:form.get('ratio'),count:form.getAll('image').length})}`
  });
  const response=await core.submitGenerationCore(plan,'generate','fixture@example.test'),body=await response.json();check(body.ratio==='3:4'&&body.count===2,'actual adapter FormData ratio and references');check(state.forms[0].get('userPrompt')===req.prompt,'original user prompt unchanged');check(req.inputs[0].role==='edit-target','input roles unchanged');
- console.log(`SERVER_FRAME=PASS CASES=${checks} INPUT=1500x1500+750x1000 AUTO=3:4 QUOTE=3:4 FROZEN_STEP=3:4 ACTUAL_FORM=3:4 FINGERPRINT=ORIGINAL AMBIGUITY=BLOCKED SUPPLIER_CALLS=0 EXIT=0`);
+ console.log(`SERVER_FRAME=PASS CASES=${checks} INPUT=1500x1500+750x1000 AUTO=3:4 QUOTE=3:4 FROZEN_STEP=3:4 ACTUAL_FORM=3:4 FINGERPRINT=ORIGINAL SAME_RATIO=CONSENSUS MIXED_RATIO=CHOICE_REQUIRED SUPPLIER_CALLS=0 EXIT=0`);
 })().catch(error=>{console.error(error);process.exitCode=1});

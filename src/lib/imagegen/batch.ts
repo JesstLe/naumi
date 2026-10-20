@@ -2,6 +2,7 @@ import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runti
 import "server-only";
 import {randomUUID} from "node:crypto";
 import {getPool} from "../db";
+import {imageCoordinationPool} from "./coordination-pool";
 import {imagegenRequestSchema} from "./schema";
 import {planImagegen,imagegenFingerprint} from "./plan";
 import {submitAcceptedImagegen,getImagegenResult} from "./dispatch";
@@ -39,7 +40,7 @@ export async function submitAcceptedImagegenBatch(plan:ImagegenPlan,owner:string
  const request=imagegenRequestSchema.parse(plan.request),fingerprint=imagegenFingerprint(request);if(request.mode!=="batch"||!request.batch||plan.children?.length!==request.batch.items.length)throw new Error("批次冻结计划缺少子项");
  await ensureImagegenBatches();const children=plan.children.map((c,i)=>{if(c.key!==request.batch!.items[i].key||c.plan.request.prompt!==request.batch!.items[i].prompt)throw new Error("批次冻结子项与原要求不一致");const child={...c.plan.request,operationId:imagegenStepId(request.operationId,`batch:${c.key}:1`)};return {key:c.key,request:child,plan:{...c.plan,request:child,fingerprint:imagegenFingerprint(child)}};});
  const frozen={...plan,request,fingerprint,children:children.map(c=>({key:c.key,plan:c.plan}))};
- const tx=await getPool().connect();
+ const tx=await imageCoordinationPool().connect();
  try{await tx.query("BEGIN");await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`imagegen-batch:${request.operationId}`]);
   const prior=(await tx.query("SELECT owner,fingerprint FROM app_imagegen_batches WHERE id=$1",[request.operationId])).rows[0];
   if(prior){if(prior.owner!==owner.toLowerCase()||prior.fingerprint!==fingerprint)throw new Error("批次编号冲突");}
@@ -53,7 +54,7 @@ export async function submitAcceptedImagegenBatch(plan:ImagegenPlan,owner:string
 }
 /** Parent row lock is held through durable child receipt creation: cancel and submit have one order. */
 async function submitNextLocal(id:string){
- const tx=await getPool().connect();
+ const tx=await imageCoordinationPool().connect();
  try{await tx.query("BEGIN");const batch=(await tx.query("SELECT * FROM app_imagegen_batches WHERE id=$1 FOR UPDATE SKIP LOCKED",[id])).rows[0];
   if(!batch||batch.state!=="running"){await tx.query("COMMIT");return false;}
   const limit=Math.min(batch.request.batch.concurrency,5,Math.max(1,Number(process.env.GEN_MAX_CONCURRENT)||4));
@@ -71,7 +72,7 @@ async function runImagegenBatchTickLocal(id:string){
  const batch=await imagegenBatchRow(id);if(!batch||!["running","cancelling"].includes(batch.state))return;
  for(const item of await imagegenBatchItems(id))if(item.state==="submitted"){
   const result=await getImagegenResult(item.child_operation_id,batch.owner);if(!result)continue;
-  const tx=await getPool().connect();
+  const tx=await imageCoordinationPool().connect();
   try{await tx.query("BEGIN");const current=(await tx.query("SELECT state FROM app_imagegen_batches WHERE id=$1 FOR UPDATE",[id])).rows[0];
    const locked=(await tx.query<ImagegenBatchItem>("SELECT * FROM app_imagegen_batch_items WHERE batch_id=$1 AND key=$2 FOR UPDATE",[id,item.key])).rows[0];
    if(!locked||locked.state!=="submitted"){await tx.query("COMMIT");continue;}
@@ -88,7 +89,7 @@ async function runImagegenBatchTickLocal(id:string){
   }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
  }
  for(let i=0;i<5;i++)if(!await submitNext(id))break;
- const tx=await getPool().connect();
+ const tx=await imageCoordinationPool().connect();
  try{await tx.query("BEGIN");const row=(await tx.query("SELECT state FROM app_imagegen_batches WHERE id=$1 FOR UPDATE",[id])).rows[0],items=await tx.query("SELECT state FROM app_imagegen_batch_items WHERE batch_id=$1",[id]);
   if(row&&items.rows.every(i=>terminals.has(i.state))){const states=items.rows.map(i=>i.state);const status=states.every(s=>s==="succeeded")?"succeeded":states.includes("needs_attention")?"needs_attention":states.includes("succeeded")?"partial":row.state==="cancelling"?"cancelled":"failed";await tx.query("UPDATE app_imagegen_batches SET state=$2,updated_at=now() WHERE id=$1",[id,status]);}
   await tx.query("COMMIT");
@@ -100,7 +101,7 @@ export async function readImagegenBatch(id:string,owner:string){
  return {id,status:batch.state,totalCredits:batch.plan.totalCredits,chargedCredits:rows.reduce((n,i)=>n+(i.result?.chargedCredits||0),0),items:rows.map(i=>({key:i.key,state:i.state,prompt:i.request.prompt,name:batch.request.batch!.items.find(r=>r.key===i.key)!.name,attempts:i.attempts,result:i.result||{operationId:i.child_operation_id,jobId:`imagegen-${i.child_operation_id}`,status:i.state==="cancelled"?"cancelled":"queued",stage:"planning",artifacts:[],chargedCredits:0} as ImagegenResult}))};
 }
 export async function cancelImagegenBatch(id:string,owner:string){
- await ensureImagegenBatches();const tx=await getPool().connect();
+ await ensureImagegenBatches();const tx=await imageCoordinationPool().connect();
  try{await tx.query("BEGIN");const row=(await tx.query("SELECT state FROM app_imagegen_batches WHERE id=$1 AND owner=$2 FOR UPDATE",[id,owner.toLowerCase()])).rows[0];if(!row)throw new Error("批次不存在或无权访问");
   if(row.state==="running"){
    // A crash may leave a child receipt committed while its association rolled back.
