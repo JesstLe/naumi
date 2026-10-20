@@ -1,3 +1,4 @@
+import {ZodError} from "zod";
 import {randomUUID,createHash} from "node:crypto";
 import {resolveUserEmail,requireAdmin} from "@/lib/admin-auth";
 import {dbEnabled,getPool,isBanned} from "@/lib/db";
@@ -11,17 +12,21 @@ import {defaults,settings,classify,LABELS,imageUrl,WorkbenchError,type Asset,typ
 import {ensureWorkbench,document,documents,putDocument,operations,operation,transaction} from "@/lib/reference-workbench/repository";
 import {ownedAsset,imageBytes,uploadFolder,projectItems,preview,accept,singleState,chatState,synchronize,publicModels} from "@/lib/reference-workbench/service";
 
+import {workbenchFailure,type WorkbenchStage} from "@/lib/reference-workbench/errors";
+
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 export const maxDuration=300;
 const json=(body:unknown,status=200)=>Response.json(body,{status,headers:PRIVATE_HEADERS});
 async function handler(request:Request){
+ let stage:WorkbenchStage="request",action="";
  try{
   if(request.method!=="GET"&&!sameSiteBillingMutation(request))return json({error:"请求来源无效"},403);
   const owner=(await resolveUserEmail(request))?.toLowerCase();if(!owner)return json({error:"请先登录"},401);if(!dbEnabled)return json({error:"原生工作台需要持久数据库"},503);
   if(await isBanned(owner,""))return json({error:"账号已被封禁"},403);
   if(!allows(await userFeaturePolicy(owner),"batchshot"))return json({error:"此页面尚未授权"},403);
-  const url=new URL(request.url),action=url.pathname.split("/api/reference-workbench/")[1]||"",get=request.method==="GET";
+  const url=new URL(request.url),get=request.method==="GET";action=url.pathname.split("/api/reference-workbench/")[1]||"";
+  stage=action==="quote"?"quote":["workbench/start","workbench/infer-prompts","workbench/edit","single/start","chat-image/send","chat-image/confirm"].includes(action)?"submit":"request";
   if(get&&action==="auth/status")return json({ok:true,id:"native-"+createHash("sha256").update(owner).digest("hex"),username:(await getPool().query("SELECT name FROM app_users WHERE email=$1",[owner])).rows[0]?.name||owner});
   if(get&&action==="heartbeat")return json({ok:true,id:"native-"+createHash("sha256").update(owner).digest("hex")});
   if(get&&action==="image"){
@@ -31,7 +36,7 @@ async function handler(request:Request){
   if(get&&action==="settings")return json({...defaults,...await document<Record<string,any>>(owner,"settings","default").catch(()=>({})),provider_templates:[],models:await publicModels(),settings_editable:(await getPool().query("SELECT role FROM app_users WHERE email=$1",[owner])).rows[0]?.role==="admin",auth_id:"native-"+createHash("sha256").update(owner).digest("hex"),auth_username:owner});
   if(get&&action==="workbench/items")return json(await projectItems(owner,url.searchParams.get("root")||"",settings(Object.fromEntries(url.searchParams))));
   if(get&&action==="single/status")return json(await singleState(owner,url.searchParams.get("id")||""));
-  if(get&&action==="receipt"){const op=await operation(owner,url.searchParams.get("id")||"");if(op.state==="preview")return json({error:"尚未接受，积分未扣"},409);return json(op.kind==="single/start"?await singleState(owner,op.id):op.kind.startsWith("chat-image")?await chatState(owner,op.plans[0].sessionId):{ok:true,id:op.id,accepted:op.plans.length});}
+  if(get&&action==="receipt"){const op=await operation(owner,url.searchParams.get("id")||"");if(op.state==="preview")return json({error:"尚未查到受理回执，请稍后查询原任务",state:"preview",operationId:op.id},409);return json(op.kind==="single/start"?await singleState(owner,op.id):op.kind.startsWith("chat-image")?await chatState(owner,op.plans[0].sessionId):{ok:true,id:op.id,accepted:op.plans.length});}
   if(get&&action==="single/tasks")return json({ok:true,tasks:await Promise.all((await operations(owner,"single/start")).map(o=>singleState(owner,o.id)))});
   if(get&&action==="chat-image/state")return json(await chatState(owner,url.searchParams.get("session_id")||""));
   if(get&&action==="status"){
@@ -42,8 +47,8 @@ async function handler(request:Request){
   if(get)return json({error:"接口不存在"},404);
   // Limit before JSON parsing; original native media limits are enforced again.
   if(Number(request.headers.get("content-length"))>90*1024*1024)return json({error:"请求内容过大"},413);
-  const body=await request.json();if(!body||typeof body!=="object"||Array.isArray(body))throw new WorkbenchError("请求格式无效");
-  if(action==="quote"){if(!rateLimit(`ref-quote:${owner}`,40,600000))return json({error:"请求过于频繁"},429);return json(await preview(owner,String(body.action||""),body.body||{}));}
+  let body:any;try{body=await request.json();}catch{const failure=workbenchFailure(new ZodError([]),stage,action);return json(failure.body,400);}if(!body||typeof body!=="object"||Array.isArray(body))throw new WorkbenchError("请求格式无效");
+  if(action==="quote"){if(typeof body.action!=="string"||!body.body||typeof body.body!=="object"||Array.isArray(body.body))throw new WorkbenchError("报价请求格式无效");if(!rateLimit(`ref-quote:${owner}`,40,600000))return json({error:"请求过于频繁"},429);return json(await preview(owner,String(body.action||""),body.body||{}));}
   if(["workbench/start","workbench/infer-prompts","workbench/edit","single/start","chat-image/send","chat-image/confirm"].includes(action))return json(await accept(owner,action,body));
   if(action==="settings"){const keys=["single_quality","single_resolution","single_ratio","single_count","chat_task_mode","chat_ratio_mode"];const old=await document<any>(owner,"settings","default").catch(()=>({}));for(const k of keys)if(Object.hasOwn(body,k))old[k]=body[k];settings({quality:old.single_quality||"high",resolution:old.single_resolution||"2k",ratio:old.single_ratio||"1:1",count:old.single_count||1,task_mode:old.chat_task_mode||"confirm",ratio_mode:old.chat_ratio_mode||"smart"});await putDocument(owner,"settings","default",old);return json({ok:true});}
   if(action==="chat-image/new"){const id=randomUUID();await putDocument(owner,"chat",id,{title:"新对话",messages:[]});return json(await chatState(owner,id));}
@@ -72,7 +77,7 @@ async function handler(request:Request){
    const iterator=streamImagegenZip(files());return new Response(new ReadableStream({async pull(controller){try{const next=await iterator.next();if(next.done)controller.close();else controller.enqueue(new Uint8Array(next.value));}catch(e){controller.error(e);}},async cancel(){await iterator.return(undefined);}}),{headers:{...PRIVATE_HEADERS,"Content-Type":"application/zip","Content-Disposition":'attachment; filename="workbench.zip"'}});
   }
   return json({error:"接口不存在"},404);
- }catch(error){return json({error:error instanceof WorkbenchError?error.message:"操作失败，请刷新后查询原任务",detail:error instanceof WorkbenchError?error.message:"操作失败"},error instanceof WorkbenchError?error.status:500);}
+ }catch(error){const failure=workbenchFailure(error,stage,action);return json(failure.body,failure.status);}
 }
 export const GET=handler;
 export const POST=handler;
