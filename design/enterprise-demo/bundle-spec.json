@@ -16,7 +16,8 @@
     "routing.css",
     "notifications.css",
     "sheet-grid.css",
-    "excel-preview.css"
+    "excel-preview.css",
+    "sheet-save.css"
   ],
   "core": [
     "schedule-model.js",
@@ -168,7 +169,9 @@
     "sheet-grid-model.js",
     "sheet-grid-ui.js",
     "excel-preview-ui.js",
-    "excel-office-ui.js"
+    "excel-office-ui.js",
+    "sheet-save-model.js",
+    "sheet-save-ui.js"
   ],
   "workers": [
     {

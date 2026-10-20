@@ -90,6 +90,15 @@
 .office-drawer .drawer-header{display:none}.office-drawer .drawer-footer{padding:6px 12px;gap:8px;min-height:44px}.office-drawer .drawer-footer .btn{padding:6px 10px}
 
 .ex-workbench-controls #exOfficeEdit[hidden]{display:none!important}
+
+.sg-save-recovery{margin-top:16px;padding:12px;background:#f5f8fc;border:1px solid #dbe4ef;border-radius:9px;color:#33445c;line-height:1.6}
+.sg-save-recovery[hidden]{display:none}.sg-save-recovery p{margin:0 0 10px;white-space:normal;overflow-wrap:anywhere}
+.sg-save-recovery p:last-child{margin-bottom:0}.sg-conflict-scroll{max-height:340px;overflow:auto;margin:8px 0 12px}
+.sg-conflict-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:12px;background:#fff}
+.sg-conflict-table th{position:sticky;top:0;background:#edf2f8;color:#354b69;text-align:left;font-weight:600}
+.sg-conflict-table th,.sg-conflict-table td{padding:8px;vertical-align:top;border-bottom:1px solid #e5ebf3;white-space:pre-wrap;overflow-wrap:anywhere}
+.sg-conflict-table th:first-child{width:64px}.sg-conflict-table th:last-child{width:112px}.sg-conflict-table select{width:100%;min-height:36px;background:#fff}
+@media(max-width:600px){.sg-conflict-table{min-width:560px}.sg-save-recovery{padding:10px}}
 </style></head><body><div id="app"></div><div id="toast" role="status" aria-live="polite"></div><div id="overlay"></div><script>/* Pure local prototype model. No business network adapter. */
 (function(root){
  'use strict';
@@ -532,7 +541,7 @@ function importThumbnail(r){const ids=r.attachments.flatMap(l=>l.assets),a=impor
 function importAssetUrl(id,download=false){if(workspace.active)return '/api/enterprise/workflow/imports?'+new URLSearchParams({enterpriseId:workspace.enterpriseId,teamId:workspace.teamId,viewer:workspace.directory?.viewer.email||'',source:imported.batch.sourceHash,id,download:download?'1':'0'});return '/api/enterprise/imports?'+new URLSearchParams({action:'asset',source:imported.batch.sourceHash,id,...(download?{download:'1'}:{thumb:'1'})});}
 function importTable(rows){let group;return `<div class="table-wrap import-table"><table><thead><tr><th>源行 / 产品需求名称</th><th>产品图</th><th>需求方</th><th>设计师</th><th>下发日期</th><th>沟通后开始</th><th>源设计完成日期</th><th>任务排期情况</th><th>源完成情况</th><th>数量原文</th><th>父记录 / 确认项</th></tr></thead><tbody>${(imported.mode==='designer'||imported.mode==='owner'?[...rows].sort((a,b)=>a.raw[imported.mode==='designer'?'设计师':'需求方'].localeCompare(b.raw[imported.mode==='designer'?'设计师':'需求方'])):rows).map(r=>{const k=imported.mode==='designer'?r.raw['设计师']:imported.mode==='owner'?r.raw['需求方']:null,g=k!==null&&k!==group?`<tr class="import-group"><td colspan="11">${esc(k||'未填写')}</td></tr>`:'';group=k;return g+`<tr><td><button class="sc-link" data-import-row="${r.excelRow}">${esc(r.title||'（原表名称空白）')}</button><small class="sc-sub">Excel 第 ${r.excelRow} 行${r.parentLabel?' · 子标签':' · 无父标签'}</small></td><td>${importThumbnail(r)}</td>${['需求方','设计师','下发日期','任务沟通后开始时间','设计完成日期','任务排期情况','任务完成情况','数量'].map(k=>`<td>${esc(r.raw[k]||'—')}</td>`).join('')}<td>${esc(r.parentLabel||'—')}<small class="sc-sub">${r.resolution?'已确认 → 第'+r.resolution.parentRow+'行':r.parentCandidates.length===1?'唯一名称候选 → 第'+r.parentCandidates[0]+'行':r.parentCandidates.length>1?'候选 '+r.parentCandidates.join(' / '):''}</small><button class="sc-link" data-import-row="${r.excelRow}">${r.issues.length?'查看 '+r.issues.length+' 项核对':'查看原始记录'}</button></td></tr>`;}).join('')||'<tr><td colspan="11">没有符合条件的记录</td></tr>'}</tbody></table></div>`;}
 function importBoard(rows){const groups=new Map();for(const r of rows){const k=r.raw['任务排期情况']||'未填写';if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r);}return `<div class="wb-board-wrap import-board"><div class="wb-board">${[...groups].map(([label,rs])=>`<section class="wb-lane"><header><b>${esc(label)}</b><small>${rs.length}</small></header><div class="wb-lane-body">${rs.map(r=>`<article class="wb-card"><button class="wb-card-title" data-import-row="${r.excelRow}">${esc(r.title||'（原表名称空白）')}</button><small>${esc(r.raw['设计师']||'设计师未填写')} · 第 ${r.excelRow} 行</small><small>源状态：${esc(r.raw['任务完成情况']||'未填写')}</small></article>`).join('')}</div></section>`).join('')}</div></div>`;}
-async function importRequest(action,params={},body){if(workspace.active){const scope=requirementScope();if(!workspaceTeam())throw Error('请先选择企业和团队');if(action==='session')return {csrf:''};const mapped={context:'imports-context',rows:'imports-rows',resolve:'imports-resolve',people:'people','people-profile':'people-profile','people-roster-preview':'people-roster-preview','people-roster-apply':'people-roster-apply','people-preview':'people-preview','people-apply':'people-apply','people-audit':'people-audit'}[action];if(!mapped)throw Error('此操作不属于正式来源管理');const q=action==='people'?{sourceHash:params.source}:params;return workspaceFetch(mapped,{...q,enterpriseId:scope.enterpriseId,teamId:scope.teamId},body,scope);}const r=await fetch('/api/enterprise/imports?'+new URLSearchParams({action,...params}),{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json',...(body?{'content-type':'application/json','x-csrf-token':imported.csrf}:{})},...(body?{body:JSON.stringify(body)}:{})});if(!r.headers.get('content-type')?.includes('application/json'))throw Error('真实数据服务尚未连接');const data=await r.json();if(!r.ok){const error=Error(data.error==='VERSION_CONFLICT'?'此行已被其他窗口更新，请刷新后重新确认':data.error||'真实数据读取失败');error.status=r.status;throw error;}return data;}
+async function importRequest(action,params={},body){if(workspace.active){const scope=requirementScope();if(!workspaceTeam())throw Error('请先选择企业和团队');if(action==='session')return {csrf:''};const mapped={context:'imports-context',rows:'imports-rows',resolve:'imports-resolve',people:'people','people-profile':'people-profile','people-roster-preview':'people-roster-preview','people-roster-apply':'people-roster-apply','people-preview':'people-preview','people-apply':'people-apply','people-audit':'people-audit'}[action];if(!mapped)throw Error('此操作不属于正式来源管理');const q=action==='people'?{sourceHash:params.source}:params;return workspaceFetch(mapped,{...q,enterpriseId:scope.enterpriseId,teamId:scope.teamId},body,scope);}const r=await fetch('/api/enterprise/imports?'+new URLSearchParams({action,...params}),{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(30000),headers:{Accept:'application/json',...(body?{'content-type':'application/json','x-csrf-token':imported.csrf}:{})},...(body?{body:JSON.stringify(body)}:{})});if(!r.headers.get('content-type')?.includes('application/json'))throw Error('真实数据服务尚未连接');const data=await r.json();if(!r.ok){const error=Error(data.error==='VERSION_CONFLICT'?'此行已被其他窗口更新，请刷新后重新确认':data.error||'真实数据读取失败');error.status=r.status;error.code=data.error;throw error;}return data;}
 async function importLoad(){const epoch=++imported.epoch;imported.loading=true;imported.error='';shell();try{const session=await importRequest('session');if(epoch!==imported.epoch)return;imported.csrf=session.csrf;const c=await importRequest('context');if(epoch!==imported.epoch)return;formalSources.batches=c.batches;const batch=c.batches.find(b=>b.sourceHash===formalSources.selected)||c.batches.find(b=>b.sourceHash===imported.batch?.sourceHash)||c.batches[0];formalSources.selected=batch?.sourceHash||'';let data={rows:[],assets:[]};if(batch)data=await importRequest('rows',{source:batch.sourceHash});if(epoch!==imported.epoch)return;imported.batch=batch||null;imported.rows=data.rows;imported.assets=data.assets;}catch(e){if(epoch!==imported.epoch)return;imported.rows=[];imported.assets=[];imported.batch=null;imported.error=e.message;}finally{if(epoch===imported.epoch){imported.loading=false;if(view==='schedule'||view==='imports')shell();}}}
 function importDetail(no){const r=imported.rows.find(r=>r.excelRow===no);if(!r)return;const ids=new Set(r.attachments.flatMap(l=>l.assets)),files=imported.assets.filter(a=>ids.has(a.id));overlay('真实源记录 · 第 '+no+' 行',`<h3>${esc(r.title||'原表名称空白')}</h3><div class="detail-grid">${Object.entries(r.raw).map(([k,v])=>`<label class="field"><small>${esc(k)}</small><div class="import-value">${esc(v||'（空白）')}</div></label>`).join('')}</div><h4>来源核对</h4>${r.issues.map(i=>`<p class="source-note">${esc(importLabels[i.code]||i.code)}：${esc(i.message)}</p>`).join('')||'<p>此行没有预检问题</p>'}<h4>包内附件 ${files.length}</h4>${files.map(a=>`<p><a href="${esc(importAssetUrl(a.id,true))}">${esc(a.name)}</a><small class="sc-sub">${(a.bytes/1024).toFixed(0)} KiB · ${a.sha256.slice(0,16)}</small></p>`).join('')||'<p>此行没有附件引用</p>'}${r.parentLabel?`<form id="importResolve"><h4>确认父记录</h4><label class="field">原名称：${esc(r.parentLabel)}<select name="parent"><option value="">保持 / 恢复待确认</option>${r.parentCandidates.map(n=>`<option value="${n}" ${r.resolution?.parentRow===n?'selected':''}>第 ${n} 行 · ${esc(imported.rows.find(x=>x.excelRow===n)?.title)}</option>`).join('')}</select></label><label class="field">确认原因<textarea name="reason" required maxlength="200"></textarea></label><p class="sc-form-error" id="importResolveError" hidden></p><button class="btn primary" type="submit">保存确认</button></form>`:''}<p class="source-note">批次 ${esc(imported.batch.sourceHash.slice(0,16))} · 行版本 ${r.version}。确认仅记录父关系，不修改源表状态。</p>`,`<button class="btn" data-close>关闭</button>`,true);if($('#importResolve'))$('#importResolve').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button');b.disabled=true;try{const f=new FormData(e.target);await importRequest('resolve',{source:imported.batch.sourceHash},{row:no,parentRow:f.get('parent')?Number(f.get('parent')):null,expectedVersion:r.version,reason:f.get('reason')});closeOverlay();await importLoad();toast('父记录确认已保存到数据库');}catch(err){$('#importResolveError').hidden=false;$('#importResolveError').textContent=err.message;b.disabled=false;}};}
 const importOriginalBind=bind;
@@ -1954,6 +1963,115 @@ const officeOverlayOriginal=overlay;overlay=function(...args){officeView=null;re
 const officeRenderOriginal=exRender;exRender=function(s,d){officeRenderOriginal(s,d);if(!exCurrent(s)||!officeLocalBase()||!s.attachment||!/\.(xlsx|xls)$/i.test(s.ref.name))return;const button=document.createElement('button');button.className='btn primary sm';button.id='exOfficeEdit';button.textContent='在线编辑';button.hidden=true;button.onclick=()=>void officeLaunch(s);$('.ex-workbench-controls').prepend(button);void officeRequest('session').then(ready=>{if(exCurrent(s)&&button.isConnected&&ready.available){officeRequest.csrf=ready.csrf;button.hidden=false;}}).catch(()=>{});};
 window.addEventListener('message',async e=>{const s=officeView;if(!s||e.origin!==officeLocalBase()?.origin||e.source!==$('#officeFrame')?.contentWindow||e.data?.ticket!==s.ticket)return;if(e.data.type==='office-dirty'){s.changeEpoch=(s.changeEpoch||0)+1;s.dirty=true;$('#officeOuterState').textContent='有未保存修改';}else if(e.data.type==='office-saved'){const epoch=s.changeEpoch||0;$('#officeOuterState').textContent='正在更新附件…';try{await sgReload(s.source,s.scope);if(officeView!==s)return;const r=sheetGrid.doc.rows.find(r=>r.id===s.original.options.attachment.row)?.cells[s.original.options.attachment.column];const next=Array.isArray(r)?r.find(x=>x.id===e.data.ref?.id&&x.kind==='worksheet'):null;if(next)s.original.ref=next;if((s.changeEpoch||0)===epoch){s.dirty=false;$('#officeOuterState').textContent='已保存到系统';}}catch{if(officeView===s)$('#officeOuterState').textContent='版本已保存，列表待刷新';}}else if(e.data.type==='office-save-error'){s.dirty=true;$('#officeOuterState').textContent='保存未完成，请保留文档';}else if(e.data.type==='office-close')closeOverlay();});
 window.addEventListener('beforeunload',e=>{if(officeView?.dirty){e.preventDefault();e.returnValue='';}});
+
+/* Save recovery is independent of identity, network and rendering. Server CAS remains authoritative. */
+(function(root){
+ 'use strict';
+ const key=v=>JSON.stringify(v&&typeof v==='object'?(Array.isArray(v)?v.map(x=>JSON.parse(key(x))):Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]]))):v);
+ const equal=(a,b)=>key(a)===key(b);
+ function plan(base,latest,action){
+  const blocked=reason=>({safe:false,blocked:reason,conflicts:[]});
+  if(action.type!=='set-cells')return blocked('结构操作请核对最新工作表后重新打开表单。');
+  const before=base.rows.find(r=>r.id===action.row),now=latest.rows.find(r=>r.id===action.row);
+  if(!before||!now||before.archived||now.archived)return blocked('该记录已删除或不可编辑，请保留输入后核对记录。');
+  const conflicts=[];
+  for(const [id,mine]of Object.entries(action.cells)){
+   const a=base.columns.find(c=>c.id===id),b=latest.columns.find(c=>c.id===id);
+   if(!a||!b||a.archived||b.archived||!equal(a,b))return blocked('字段设置已变化，请保留输入后重新打开编辑。');
+   if(['image','files'].includes(b.type)||typeof mine!=='string')return blocked('附件请在附件管理中核对后重新保存。');
+   const old=before.cells[id]??'',current=now.cells[id]??'';
+   if(!equal(old,current)&&!equal(current,mine))conflicts.push({id,label:b.label,before:old,latest:current,mine});
+  }
+  if(Object.hasOwn(action,'parentId')&&before.parentId!==now.parentId&&now.parentId!==action.parentId)
+   conflicts.push({id:'@parent',label:'父任务',before:before.parentId,latest:now.parentId,mine:action.parentId});
+  return {safe:conflicts.length===0,blocked:null,conflicts};
+ }
+ function resolve(action,plan,choices){
+  if(plan.blocked)throw Error('REOPEN_REQUIRED');
+  const result=structuredClone(action);
+  for(const c of plan.conflicts){
+   if(!['mine','latest'].includes(choices[c.id]))throw Error('RESOLUTION_REQUIRED');
+   if(c.id==='@parent')result.parentId=choices[c.id]==='mine'?c.mine:c.latest;
+   else result.cells[c.id]=choices[c.id]==='mine'?c.mine:c.latest;
+  }
+  return result;
+ }
+ function outcome(e){
+  const code=e.code||e.message;
+  if(code==='VERSION_CONFLICT')return 'conflict';
+  if(code==='IDEMPOTENCY_CONFLICT'||!e.status||e.status===408||e.status>=500)return 'unknown';
+  return 'rejected';
+ }
+ root.SheetSaveModel={key,plan,resolve,outcome};
+})(globalThis);
+
+/* Recoverable, in-memory edits. Never persist employee task inputs in browser storage. */
+let sgEditSession=null;
+function sgEditCurrent(s){return sgEditSession===s&&s.form.isConnected&&sgCurrent(s.scope)&&sheetGrid.source===s.source;}
+function sgEditValues(form){return JSON.stringify([...new FormData(form)]);}
+function sgEditChanged(s){return s&&(s.initial!==sgEditValues(s.form)||['unknown','saved'].includes(s.state));}
+function sgEditLock(s,locked){for(const [control,disabled]of s.controls)control.disabled=locked||disabled;s.button.disabled=locked;}
+function sgEditRelease(s){if(sgEditSession===s)sgEditSession=null;}
+function sgEditLeave(){
+ const s=sgEditSession;if(!s)return true;
+ if(!sgEditCurrent(s)){sgEditRelease(s);return true;}
+ if(s.state==='saving'||s.state==='loading'){toast('正在核对保存结果，请稍候');return false;}
+ if(sgEditChanged(s)&&!confirm(s.state==='unknown'?'上次保存结果尚未确认。建议先按原命令重试核对；现在离开会丢失本窗口的重试信息。确定离开？':s.state==='saved'?'内容已保存，列表尚未刷新。确定离开编辑？':'当前输入尚未保存，确定放弃并离开？'))return false;
+ sgEditRelease(s);return true;
+}
+const sgSaveCloseOriginal=closeOverlay;closeOverlay=function(){if(sgEditLeave())return sgSaveCloseOriginal();};
+const sgSaveOverlayOriginal=overlay;overlay=function(...args){if(sgEditLeave())return sgSaveOverlayOriginal(...args);};
+const sgSaveWorkspaceOriginal=workspaceClear;workspaceClear=function(){sgEditSession=null;return sgSaveWorkspaceOriginal();};
+window.addEventListener('beforeunload',e=>{if(sgEditSession&&sgEditCurrent(sgEditSession)&&(sgEditChanged(sgEditSession)||['saving','loading'].includes(sgEditSession.state))){e.preventDefault();e.returnValue='';}});
+function sgSaveMessage(s,text,buttonText,handler){
+ s.panel.replaceChildren();const message=document.createElement('p');message.textContent=text;s.panel.append(message);s.panel.hidden=false;
+ if(buttonText){const button=document.createElement('button');button.type='button';button.className='btn sm';button.dataset.sgSaveRetry='';button.textContent=buttonText;button.onclick=handler;s.panel.append(button);}
+}
+function sgSaveFinish(s){if(!sgEditCurrent(s))return;sgEditRelease(s);closeOverlay();shell();s.done?.();toast('已保存');}
+async function sgSaveRefresh(s){
+ if(!sgEditCurrent(s)||s.refreshing)return;s.refreshing=true;s.state='loading';sgEditLock(s,true);sgSaveMessage(s,'内容已保存，正在刷新列表…');
+ try{await sgReload(s.source,s.scope);if(sgEditCurrent(s))sgSaveFinish(s);}catch(e){if(sgEditCurrent(s)){s.state='saved';sgSaveMessage(s,'内容已保存，但列表刷新失败。无需再次提交修改。','刷新列表',()=>void sgSaveRefresh(s));}}
+ finally{s.refreshing=false;}
+}
+async function sgSaveCompare(s,action){
+ if(!sgEditCurrent(s)||s.comparing)return;s.comparing=true;s.state='loading';sgEditLock(s,true);sgSaveMessage(s,'正在读取最新版本，当前输入仍保留…');
+ try{
+  const latest=await sgRequest('worksheet',{source:s.source},undefined,s.scope);if(!sgEditCurrent(s))return;
+  const plan=SheetSaveModel.plan(s.base,latest.document,action);s.state='conflict';sgEditLock(s,false);s.button.disabled=true;s.panel.replaceChildren();s.panel.hidden=false;
+  const heading=document.createElement('p');heading.textContent=plan.blocked||(!plan.conflicts.length?'其他位置已更新，本次编辑字段未冲突。确认后可基于最新版本重试。':'以下字段同时被修改，请逐项选择保留的内容。');s.panel.append(heading);
+  if(plan.blocked)return;
+  const choices={};
+  if(plan.conflicts.length){
+   const table=document.createElement('table');table.className='sg-conflict-table';
+   const head=document.createElement('thead');head.innerHTML='<tr><th>字段</th><th>打开时</th><th>最新内容</th><th>我的输入</th><th>保留</th></tr>';table.append(head);const body=document.createElement('tbody');table.append(body);
+   const show=(value,c)=>c.id==='@parent'?(latest.document.rows.find(r=>r.id===value)?.cells.title||value||'顶层记录'):value||'（空白）';
+   for(const c of plan.conflicts){const tr=document.createElement('tr');for(const value of [c.label,show(c.before,c),show(c.latest,c),show(c.mine,c)]){const td=document.createElement('td');td.textContent=value;tr.append(td);}const td=document.createElement('td'),select=document.createElement('select');select.setAttribute('aria-label',c.label+'保留内容');select.dataset.sgConflict=c.id;for(const [value,text]of [['','请选择'],['latest','最新内容'],['mine','我的输入']]){const o=document.createElement('option');o.value=value;o.textContent=text;select.append(o);}select.onchange=()=>{choices[c.id]=select.value;retry.disabled=plan.conflicts.some(x=>!choices[x.id]);};td.append(select);tr.append(td);body.append(tr);}
+   const scroll=document.createElement('div');scroll.className='sg-conflict-scroll';scroll.append(table);s.panel.append(scroll);
+  }
+  const retry=document.createElement('button');retry.type='button';retry.className='btn primary sm';retry.id='sgMergeSave';retry.disabled=plan.conflicts.length>0;retry.textContent=plan.conflicts.length?'按选择合并保存':'基于最新版本重试';
+  retry.onclick=()=>{if(!sgEditCurrent(s)||s.state!=='conflict')return;const resolved=SheetSaveModel.resolve(action,plan,choices);for(const [id,value]of Object.entries(resolved.cells)){const input=s.form.elements.namedItem(id)||(s.form.id==='sgCellForm'?s.form.elements.namedItem('value'):null);if(input)input.value=value;}if(Object.hasOwn(resolved,'parentId')&&s.form.elements.namedItem('sgParent'))s.form.elements.namedItem('sgParent').value=resolved.parentId||'';s.base=structuredClone(latest.document);s.version=latest.version;s.attempt=null;void sgSaveSend(s,resolved);};s.panel.append(retry);
+ }catch(e){if(sgEditCurrent(s)){s.state='rejected';sgEditLock(s,false);sgSaveMessage(s,'最新版本读取失败，当前输入仍保留。','重新核对',()=>void sgSaveCompare(s,action));}}
+ finally{s.comparing=false;}
+}
+async function sgSaveSend(s,override){
+ if(!sgEditCurrent(s)||['saving','loading','saved'].includes(s.state))return;
+ if(!s.attempt){let action;try{action=override||s.build(new FormData(s.form));}catch(e){sgSaveMessage(s,sgError(e));return;}s.attempt={commandId:crypto.randomUUID(),expectedVersion:s.version,action:structuredClone(action)};}
+ s.state='saving';sgEditLock(s,true);sgSaveMessage(s,'正在保存…');
+ try{
+  await sgRequest('worksheet-command',{source:s.source},s.attempt,s.scope);if(!sgEditCurrent(s))return;s.state='saved';await sgSaveRefresh(s);
+ }catch(e){
+  if(!sgEditCurrent(s))return;const outcome=SheetSaveModel.outcome(e);
+  if(outcome==='unknown'){s.state='unknown';sgSaveMessage(s,'保存结果尚未确认，当前输入已锁定。请按原命令重试核对，避免重复提交。','按原命令重试',()=>void sgSaveSend(s));}
+  else {const action=s.attempt.action;s.attempt=null;s.state='rejected';sgEditLock(s,false);if(outcome==='conflict')await sgSaveCompare(s,action);else sgSaveMessage(s,sgError(e));}
+ }
+}
+sgSubmit=function(form,build,done){
+ if(!form||!document.querySelector(`[form="${form.id}"]`)||(sgEditSession?.form===form&&sgEditCurrent(sgEditSession)))return;
+ const s={form,build,done,source:sheetGrid.source,scope:sgScope(),version:sheetGrid.version,base:structuredClone(sheetGrid.doc),initial:sgEditValues(form),controls:[...form.elements].map(x=>[x,x.disabled]),button:document.querySelector(`[form="${form.id}"]`),state:'ready',attempt:null};
+ s.panel=document.createElement('div');s.panel.className='sg-save-recovery';s.panel.setAttribute('role','status');s.panel.setAttribute('aria-live','polite');s.panel.hidden=true;form.append(s.panel);sgEditSession=s;
+ form.addEventListener('input',e=>{if(e.target.closest('.sg-save-recovery'))return;if(['conflict','rejected'].includes(s.state)){s.panel.hidden=true;s.panel.replaceChildren();s.state='ready';s.attempt=null;s.button.disabled=false;}});
+ form.onsubmit=e=>{e.preventDefault();void sgSaveSend(s);};
+};
 
 shell();
 </script></body></html>
