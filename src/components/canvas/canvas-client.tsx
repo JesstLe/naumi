@@ -68,6 +68,7 @@ import { GenerationPlaceholder } from "./generation-placeholder";
 import { generationPlaceholderSize, generationPositionForTask, placeGenerationPreview, type GenerationStage } from "@/lib/canvas/generation-feedback";
 import type { ImageSkill } from "@/lib/image-skills/catalog";
 import { CanvasAssistantPanel } from "./canvas-assistant-panel";
+import { assistantReferences, assistantAttachmentCapacity, MAX_ASSISTANT_IMAGES } from "@/lib/canvas/assistant-references";
 import { useWorkflowPaste } from "./use-workflow-paste";
 import { WorkflowDecorationNode, WorkflowGroupNode } from "./workflow-import-nodes";
 import type { ImportedManifest } from "@/lib/canvas/workflow-clipboard";
@@ -248,7 +249,7 @@ const PORT_Y = NODE_LABEL_H + 100; // 默认空白节点连接点垂直居中
 const X_GAP = 90; // 层间横向间距
 const Y_GAP = 48; // 同层兄弟纵向间距
 const MAX_TOTAL_IMAGES = 16; // 节点图 + 追加参考图 合计上限
-const MAX_UPLOAD = 12 * 1024 * 1024;
+const MAX_UPLOAD = 64 * 1024 * 1024;
 const MAX_GENERATION_COUNT = CANVAS_MAX_COUNT;
 type CanvasPrimaryTool = "move" | "marquee" | "hand";
 // 扩图可选目标比例(ratioTilesC 同款,去掉 auto 与极端档 2:1/1:2)
@@ -1995,6 +1996,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [assistantArtworkId, setAssistantArtworkId] = useState<string | null>(null);
   const [assistantTurns, setAssistantTurns] = useState<AssistantTurn[]>([]);
   const [assistantInput, setAssistantInput] = useState("");
+  const [assistantAttachments, setAssistantAttachments] = useState<Artwork[]>([]);
+  const [assistantExcludedReferences, setAssistantExcludedReferences] = useState<string[]>([]);
+  const [assistantUploading, setAssistantUploading] = useState(false);
+  const [assistantUploadError, setAssistantUploadError] = useState<string | null>(null);
+  const assistantUploadToken = useRef<object | null>(null);
   const [assistantSkill, setAssistantSkill] = useState<ImageSkill | null>(null);
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantResponding, setAssistantResponding] = useState(false);
@@ -2006,7 +2012,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const assistantSessionId = useRef(browserRandomUUID());
   const assistantLiveSessionId = useRef("");
   const [assistantError, setAssistantError] = useState<string | null>(null);
-  const assistantRetry = useRef<{ input: string; anchorId: string; history: AssistantTurn[]; body: string } | null>(null);
+  const assistantRetry = useRef<{ input: string; anchorId: string; referencesKey: string; history: AssistantTurn[]; body: string } | null>(null);
   const assistantRequestEpoch = useRef(0);
   const { open: assistantOpen, focusInput: assistantFocusInput, disclose: discloseAssistant, suspend: suspendAssistant } = useCanvasAssistantDisclosure(user?.email);
   const assistantVisible = canFeature("agent") && assistantOpen && !propertiesOpen && !ocrArtworkId;
@@ -2021,11 +2027,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setAssistantArtworkId(null);
     setAssistantTurns([]);
     setAssistantInput("");
+    assistantUploadToken.current = null;
+    setAssistantAttachments([]); setAssistantExcludedReferences([]); setAssistantUploading(false); setAssistantUploadError(null);
     setAssistantError(null);
     setAssistantBusy(false);
     assistantRetry.current = null;
   }, [activeKey, user?.email]);
-  useEffect(() => () => { assistantRequestEpoch.current += 1; assistantController.current?.abort(); }, []);
+  useEffect(() => () => { assistantRequestEpoch.current += 1; assistantController.current?.abort(); assistantUploadToken.current=null; }, []);
   // 拉线「生成衍生图」:建好空白节点后,把光标自动落进提示词框,引导用户写"改什么"
   const pendPromptRef = useRef<HTMLTextAreaElement>(null);
   // 占位 dock 与已生成节点保持同一自适应视野。
@@ -5177,6 +5185,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
 
   async function restoreAssistantConversation(_anchorId:string,id:string) {
+    assistantUploadToken.current=null;setAssistantUploading(false);setAssistantUploadError(null);setAssistantAttachments([]);setAssistantExcludedReferences([]);
     const controller=new AbortController();assistantController.current?.abort();assistantController.current=controller;
     assistantLiveSessionId.current=id;
     assistantSessionId.current=id;setAssistantSteps([]);setAssistantOutcome("running");setAssistantBusy(true);setAssistantResponding(false);setAssistantInput("");setAssistantError(null);assistantRetry.current=null;
@@ -5187,6 +5196,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         const data=await expectJsonOk(response,"历史对话读取失败");
         if(controller.signal.aborted||assistantController.current!==controller)return;
         setAssistantArtworkId(data.session.anchorId||null);setSelectedId(data.session.anchorId||null);setSelectedTextId(null);
+        if(Array.isArray(data.session.referenceIds)){
+          const restored=await mergeWorks(data.session.referenceIds);
+          if(controller.signal.aborted||assistantController.current!==controller)return;
+          setAssistantAttachments(data.session.referenceIds.map((refId:string)=>restored.find(art=>art.id===refId)).filter((art:Artwork|undefined):art is Artwork=>!!art));
+          setAssistantExcludedReferences(assistantContext(restored,data.session.anchorId||"").filter(art=>!data.session.referenceIds.includes(art.id)).map(art=>art.id));
+        }
         setAssistantTurns(data.session.turns);
         let steps: AgentOrbStep[] = [];
         const historySteps=data.session.steps||[], currentTurn=historySteps.findLastIndex((step:{type:string})=>step.type==="canvas_turn");
@@ -5225,21 +5240,51 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }, [selectedId, assistantArtworkId, assistantOpen, assistantBusy]);
   // Project/unmount guards own cancellation; restoring history may change its anchor.
 
+  function currentAssistantReferences() {
+    const members=active?.members??[];
+    const inherited=assistantArtworkId?assistantContext(members,assistantArtworkId):[];
+    return assistantReferences(inherited,assistantAttachments,assistantExcludedReferences);
+  }
+
+  async function uploadAssistantImages(files:File[]) {
+    if(assistantBusy||assistantUploadToken.current||readOnly||!user||!files.length)return;
+    const token={},account=canvasAccountRef.current,project=activeKey,session=assistantSessionId.current;
+    const isCurrent=()=>assistantUploadToken.current===token&&account===canvasAccountRef.current&&project===(activeProjectRef.current?.key??null)&&session===assistantSessionId.current;
+    const capacity=assistantAttachmentCapacity(currentAssistantReferences().map(art=>art.id));
+    if(!capacity){setAssistantUploadError(locale==='en'?`Up to ${MAX_ASSISTANT_IMAGES} images. Remove one to add another.`:`最多添加 ${MAX_ASSISTANT_IMAGES} 张图片，请先移除一张再添加。`);return;}
+    assistantUploadToken.current=token;setAssistantUploading(true);setAssistantUploadError(null);assistantRetry.current=null;
+    try{
+      const ids=await uploadRoot(files.slice(0,capacity),{assistant:true,isCurrent});
+      if(!isCurrent())return;
+      const fresh=await mergeWorks(ids);
+      if(!isCurrent())return;
+      const added=ids.map(id=>fresh.find(art=>art.id===id)).filter((art):art is Artwork=>!!art);
+      setAssistantAttachments(current=>assistantReferences([], [...current,...added]));
+      const errors=[];
+      if(ids.length<Math.min(files.length,capacity))errors.push(locale==='en'?'Some images failed to upload. Your existing images are kept.':'部分图片添加失败，已有图片已保留，请查看上传结果后重试。');
+      if(added.length<ids.length)errors.push(locale==='en'?'Images saved; refresh the canvas to select them.':'图片已保存，列表读取未完成，请刷新画布后选择。');
+      if(files.length>capacity)errors.push(locale==='en'?`Up to ${MAX_ASSISTANT_IMAGES} images; extra files were not uploaded.`:`最多添加 ${MAX_ASSISTANT_IMAGES} 张图片，超出的文件未上传。`);
+      setAssistantUploadError(errors.join(' ')||null);
+    }catch(error){if(isCurrent())setAssistantUploadError(error instanceof Error?error.message:'图片添加失败，已有图片已保留');}
+    finally{if(assistantUploadToken.current===token){assistantUploadToken.current=null;setAssistantUploading(false);}}
+  }
 
   async function sendAssistantMessage() {
     const text = assistantInput.trim();
-    if (assistantBusy || !text) return;
-    const members = active?.members ?? [];
-    const source = members.find((artwork) => artwork.id === assistantArtworkId);
+    if (assistantBusy || assistantUploadToken.current || !text) return;
+    const references=currentAssistantReferences();
+    const source = references[0];
     const anchorId=source?.id||"";
+    const referencesKey=JSON.stringify(references.map(art=>art.id));
     const previousAttempt = assistantRetry.current;
-    const history = previousAttempt?.input === text && previousAttempt.anchorId === anchorId ? previousAttempt.history : [
+    const reuseAttempt=previousAttempt?.input===text&&previousAttempt.anchorId===anchorId&&previousAttempt.referencesKey===referencesKey;
+    const history = reuseAttempt ? previousAttempt.history : [
       ...assistantTurns,
       { id: `as-u-${Date.now()}`, role: "user" as const, content: text },
     ];
-    const attempt = previousAttempt?.input === text && previousAttempt.anchorId === anchorId ? previousAttempt : {
-      input: text, anchorId, history,
-      body: JSON.stringify({ mode: "agent", skill: assistantSkill ? { id: assistantSkill.id, revision: assistantSkill.revision } : null, sessionId: assistantSessionId.current, turnId: browserRandomUUID(), anchorId, videoNodeId:videoNodesStore.getNode(assistantArtworkId||selectedId||"")?.id,textNodeId:textNodes.find(node=>node.id===(assistantArtworkId||selectedId))?.id, projectKey: activeKey||"workspace", contextIds: source?assistantContext(members, source.id).map((artwork) => artwork.id):[], messages: history.map(({ role, content }) => ({ role, content })), imageModelId: chosenFeatureModel("canvas.image") || genModel, ratio: genRatio === "auto" ? source?.ratio || "1:1" : genRatio, resolution: genResolution, quality: genQuality }),
+    const attempt = reuseAttempt ? previousAttempt : {
+      input: text, anchorId, referencesKey, history,
+      body: JSON.stringify({ mode: "agent", skill: assistantSkill ? { id: assistantSkill.id, revision: assistantSkill.revision } : null, sessionId: assistantSessionId.current, turnId: browserRandomUUID(), anchorId, videoNodeId:videoNodesStore.getNode(assistantArtworkId||selectedId||"")?.id,textNodeId:textNodes.find(node=>node.id===(assistantArtworkId||selectedId))?.id, projectKey: activeKey||"workspace", contextIds: references.map(artwork=>artwork.id), messages: history.map(({ role, content }) => ({ role, content })), imageModelId: chosenFeatureModel("canvas.image") || genModel, ratio: genRatio === "auto" ? source?.ratio || "1:1" : genRatio, resolution: genResolution, quality: genQuality }),
     };
     assistantRetry.current = attempt;
     const epoch = ++assistantRequestEpoch.current;
@@ -6028,7 +6073,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   async function saveLocalImageEdit(artwork: Artwork, crop?: CanvasCrop, file?: File) {
     if(!user || readOnly || !nodeSettingsReady || isNodeLocked(artwork.id) || localEditBusyRef.current)return;
-    if(file && (file.size>MAX_UPLOAD || !["image/png","image/jpeg","image/webp"].includes(file.type))){flashTip(L("请选择12MB以内的PNG、JPEG或WebP","Choose a PNG, JPEG or WebP up to 12MB"));return;}
+    if(file && (file.size>12*1024*1024 || !["image/png","image/jpeg","image/webp"].includes(file.type))){flashTip(L("请选择12MB以内的PNG、JPEG或WebP","Choose a PNG, JPEG or WebP up to 12MB"));return;}
     localEditBusyRef.current=true;setLocalEditBusy(true);
     try{
       const fingerprint=JSON.stringify({id:artwork.id,crop,file:file?{name:file.name,size:file.size,lastModified:file.lastModified}:null});
@@ -6821,19 +6866,19 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   canvasPasteHandlerRef.current = handleCanvasPaste;
 
   // Multi-select and native file drops share one import path. Copy the live FileList first.
-  function uploadRoot(files: FileList | null) {
+  function uploadRoot(files: FileList | File[] | null, options?:{assistant:boolean;isCurrent:()=>boolean}):Promise<string[]> {
     const picked = Array.from(files ?? []);
     if (rootUploadRef.current) rootUploadRef.current.value = "";
-    if (readOnly || !user || browsing || !picked.length) return;
+    if (readOnly || !user || browsing || !picked.length) return Promise.resolve([]);
     const box = canvasAreaRef.current?.getBoundingClientRect();
     const center = rfRef.current?.screenToFlowPosition({
       x: (box?.left ?? 0) + (box?.width ?? 0) / 2,
       y: (box?.top ?? 0) + (box?.height ?? 0) / 2,
     }, { snapToGrid: false }) ?? { x: 0, y: 0 };
-    const ctx = uploadCtxRef.current ?? {
+    const ctx = (!options?.assistant ? uploadCtxRef.current : null) ?? {
       parentId: activeRootId(), x: center.x - NODE_W / 2, y: center.y - NODE_H / 2,
     };
-    uploadCtxRef.current = null;
+    if(!options?.assistant)uploadCtxRef.current = null;
     const scope = importScopeRef.current;
     if (ctx.parentId) scope.rootId = ctx.parentId;
     const id = ++importSeqRef.current;
@@ -6860,7 +6905,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       uploadBytes: valid.reduce((sum, file) => sum + file.size, 0), uploadedBytes: 0,
     }]);
     const run = async () => {
-      const prepared = await prepareImageUploads(entries.map(entry => entry.file), 3);
+      if(options&&!options.isCurrent()){
+        setImageImports(current=>current.map(batch=>batch.id===id?{...batch,finished:true,phase:"done"}:batch));
+        return [];
+      }
+      const prepared = await prepareImageUploads(entries.map(entry => entry.file), 1, {preserveOriginal:true});
       // 解码完成后按图片比例生成舒适的画布初始尺寸；原图像素仍单独保存。
       const preparedCanvasSizes = prepared.map((item) =>
         adaptiveCanvasImageSize(item.width, item.height)
@@ -6925,6 +6974,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         const selected = prepared[index];
         let error = "";
         try {
+          if(options&&!options.isCurrent())throw new Error(locale==='en'?'Conversation changed; upload cancelled.':'对话已切换，已取消尚未开始的上传。');
+          if(selected.error)throw new Error(selected.error);
           const fd = new FormData();
           fd.append("email", email);
           fd.append("image", selected.file);
@@ -6940,7 +6991,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               setImageImports(current => current.map(batch => batch.id === id ? {
                 ...batch, uploadedBytes: Math.round(loaded.reduce((sum, value) => sum + value, 0)),
               } : batch));
-            }
+            }, 120_000, options ? () => {if(!options.isCurrent())throw new Error("对话已切换，已取消尚未开始的上传。");} : undefined
           );
           if (!d?.id) throw new Error(d?.error || t("canvas.importFailed"));
           ids[index] = d.id;
@@ -6958,15 +7009,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       let next = 0;
       // The first successful image is the project root; a failed first image must not split the batch.
       while (!scope.rootId && next < entries.length) await upload(next++);
-      await Promise.all(Array.from({ length: Math.min(4, entries.length - next) }, async () => {
+      await Promise.all(Array.from({ length: Math.min(2, entries.length - next) }, async () => {
         while (next < entries.length) await upload(next++);
       }));
       const added = ids.filter((value): value is string => !!value);
       scope.rects = scope.rects.filter((rect) => rect.owner !== id || !!ids[rect.index]);
       setImageImports(current => current.map(batch => batch.id === id ? { ...batch, nodeIds: added, phase: "sync" } : batch));
-      if (added.length) {
+      if (added.length && (!options || options.isCurrent())) {
         // Background uploads must not drag the user back after they switch projects.
-        if (importScopeRef.current === scope) {
+        if (importScopeRef.current === scope && !options?.assistant) {
           openPendingNodeWithoutSelectionRef.current = true;
           pendingNodeRef.current = added[0];
         }
@@ -6976,15 +7027,19 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       setImageImports(current => current.map(batch => batch.id === id ? {
         ...batch, finished: true, phase: "done", uploadedBytes: batch.uploadBytes, nodeIds: added,
       } : batch));
+      return added;
     };
-    // Batches stay ordered; after root creation, each batch uses up to four uploads.
-    scope.queue = scope.queue.then(run, run).catch(() => {
+    // Batches stay ordered; after root creation, each batch uses up to two uploads.
+    const result = scope.queue.then(run, run).catch(() => {
       setImageImports(current => current.map(batch => batch.id === id ? {
         ...batch, finished: true,
         phase: batch.nodeIds?.length ? "sync" : batch.phase,
         errors: [...batch.errors, { name: t("canvas.importSync"), message: batch.nodeIds?.length ? "图片已保存，画布尚未同步；请点击同步图片，无需重新上传" : t("canvas.importSyncFailed") }],
       } : batch));
+      return [];
     });
+    scope.queue=result.then(()=>{});
+    return result;
   }
   async function retryImportSynchronization(batchId: number) {
     const batch = imageImports.find(item => item.id === batchId);
@@ -11868,7 +11923,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         {!browsing && !readOnly && canFeature("agent") && (() => {
           const anchor = active?.members.find(artwork => artwork.id === assistantArtworkId);
           return <CanvasAssistantPanel open={assistantVisible} focusInput={assistantFocusInput} contextReady={true} modelControl={<TextModelSelect feature="canvas.assistant" compact composer dark={!lightCanvas} />} key={`assistant:${activeKey || "empty"}`} historyScopeKey={activeKey||"workspace"} light={lightCanvas} anchorTitle={anchor?.title || (locale==="en"?"Text conversation":"文本对话")}
-            contextImages={anchor ? assistantContext(active?.members ?? [], anchor.id).map(artwork => ({ id: artwork.id, title: artwork.title, image: cdnUrl(artwork.image) })) : []}
+            contextImages={currentAssistantReferences().map(artwork => ({ id: artwork.id, title: artwork.title, image: cdnUrl(artwork.image) }))}
+            onUploadImages={files=>void uploadAssistantImages(files)} uploadingImages={assistantUploading} uploadError={assistantUploadError}
+            onRemoveReference={id=>{if(assistantBusy||assistantUploadToken.current)return;setAssistantAttachments(current=>current.filter(art=>art.id!==id));setAssistantExcludedReferences(current=>[...current,id]);setAssistantUploadError(null);assistantRetry.current=null;}}
             selectedSkill={assistantSkill} onSkillSelect={skill => { setAssistantSkill(skill); assistantRetry.current = null; }} skillAccountKey={user?.email || ""} skillSessionId={assistantSessionId.current} turns={assistantTurns} input={assistantInput} busy={assistantBusy} error={assistantError} steps={assistantSteps} english={locale === "en"} responding={assistantResponding} attention={orbCompanion.model.attention} onStop={() => void stopAssistantTask()}
             labels={{title: t("canvas.assistant.title"),
               scrollToBottom: t("canvas.assistant.scrollToBottom"),
@@ -11898,8 +11955,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             tasks={["main", "detail", "scene", "retouch", "background", "copyLayout", "review", "prompt"].map(id => ({ id, label: t(`canvas.assistant.${id}`), prompt: t(`canvas.assistant.${id}Prompt`) }))}
             costLabel={billing.catalog?.features["canvas.assistant"]?.prices.medium?.["1K"] === 0 ? "对话免费 · 生图另行计费" : billing.catalog?.features["canvas.assistant"]?.prices.medium?.["1K"] != null ? `${billing.catalog.features["canvas.assistant"].prices.medium["1K"]} 积分 / 轮 · 生图另行计费` : "对话报价加载中 · 生图另行计费"}
             onInputChange={value => { setAssistantInput(value); orbCue({ type: "draft", text: value }); }} onSend={() => void sendAssistantMessage()}
-            onClearReference={()=>{setAssistantArtworkId(null);setSelectedId(null);setSelectedTextId(null);assistantRetry.current=null;}}
-            onNewChat={() => { orbCue({ type: "reset" }); assistantSessionId.current = browserRandomUUID(); setAssistantSteps([]); setAssistantOutcome("idle"); setAssistantTurns([]); setAssistantInput(""); setAssistantError(null); assistantRetry.current = null; }}
+            onClearReference={()=>{if(assistantUploadToken.current)return;setAssistantAttachments([]);setAssistantExcludedReferences([]);setAssistantArtworkId(null);setSelectedId(null);setSelectedTextId(null);assistantRetry.current=null;}}
+            onNewChat={() => { if(assistantUploadToken.current)return;setAssistantAttachments([]);setAssistantExcludedReferences([]);setAssistantUploadError(null);orbCue({ type: "reset" }); assistantSessionId.current = browserRandomUUID(); setAssistantSteps([]); setAssistantOutcome("idle"); setAssistantTurns([]); setAssistantInput(""); setAssistantError(null); assistantRetry.current = null; }}
             historyLoader={async () => { const response=await privateFetchRaw(`/api/canvas/assistant?projectKey=${encodeURIComponent(activeKey||"workspace")}`);const data=await expectJsonOk(response,"历史记录读取失败");return (data.sessions||[]).map((session:{id:string;title:string;updatedAt:string;anchorId:string})=>({...session,turns:[]})); }}
             onRenameHistory={async(id,title)=>{await expectJsonOk(await privateFetchRaw(`/api/canvas/assistant?projectKey=${encodeURIComponent(activeKey || "workspace")}&id=${encodeURIComponent(id)}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({title})}),"会话改名失败");}}
             onDeleteHistory={async(id)=>{await expectJsonOk(await privateFetchRaw(`/api/canvas/assistant?projectKey=${encodeURIComponent(activeKey || "workspace")}&id=${encodeURIComponent(id)}`,{method:"DELETE"}),"删除会话失败");if(assistantSessionId.current===id){orbCue({ type: "reset" }); assistantSessionId.current=browserRandomUUID();setAssistantTurns([]);setAssistantSteps([]); setAssistantOutcome("idle");}}}

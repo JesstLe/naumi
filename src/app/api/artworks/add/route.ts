@@ -5,7 +5,9 @@ import { uploadImage, privateMedia, storageKeyFromManagedUrl } from "@/lib/stora
 import {canReadMedia} from '@/lib/media-assets';
 import { authenticatedEmail } from "@/lib/request-auth";
 import { adaptiveCanvasImageSize } from "@/lib/mock-data";
-import sharp from "sharp";
+import {ORIGINAL_IMAGE_MAX_BYTES} from "@/lib/image-upload-policy";
+import {originalImageMetadata,browserPreviewsFromForm,saveCanvasOriginal} from "@/lib/canvas-original-upload";
+import {readImagegenBody} from "@/lib/imagegen/body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,7 +41,8 @@ export async function POST(request: Request) {
   if (ctype.includes("multipart/form-data")) {
     let fd: FormData;
     try {
-      fd = await request.formData();
+      const bytes=await readImagegenBody(request,ORIGINAL_IMAGE_MAX_BYTES+9*1024*1024);
+      fd = await new Response(new Uint8Array(bytes),{headers:{"content-type":ctype}}).formData();
     } catch {
       return NextResponse.json({ error: "请求格式不正确" }, { status: 400 });
     }
@@ -55,29 +58,26 @@ export async function POST(request: Request) {
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "缺少参数" }, { status: 400 });
     }
-    if (file.size > 12 * 1024 * 1024) {
-      return NextResponse.json({ error: "图片过大(≤12MB)" }, { status: 400 });
+    if (file.size > ORIGINAL_IMAGE_MAX_BYTES) {
+      return NextResponse.json({ error: "原图过大（每张不超过64MiB）" }, { status: 413 });
     }
+    if(file.size>12*1024*1024&&(!fd.get("thumbnail")||!fd.get("preview")))return NextResponse.json({error:"大图请通过画布上传，浏览器会自动准备预览"},{status:422});
     const id = newId();
     const buf = new Uint8Array(await file.arrayBuffer());
     let width: number | null = null;
     let height: number | null = null;
+    let ext="png";
     try {
-      const meta = await sharp(Buffer.from(buf)).rotate().metadata();
+      const meta = await originalImageMetadata(Buffer.from(buf));
       width = meta.width ?? null;
       height = meta.height ?? null;
+      ext=meta.extension;
     } catch {
       return NextResponse.json({ error: "图片格式无效" }, { status: 400 });
     }
-    const type = file.type || "image/png";
-    const ext = type.includes("png")
-      ? "png"
-      : type.includes("webp")
-        ? "webp"
-        : "jpg";
     let url: string;
     try {
-      url = await uploadImage(buf, type, `canvas-uploads/${id}.${ext}`,undefined,email);
+      const saved=await saveCanvasOriginal(Buffer.from(buf),`canvas-uploads/${id}.${ext}`,email,await browserPreviewsFromForm(fd));url=saved.url;
     } catch {
       return NextResponse.json({ error: "上传失败" }, { status: 500 });
     }

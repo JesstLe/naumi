@@ -20,9 +20,15 @@ export async function ensureMediaSchema() {
     CREATE INDEX IF NOT EXISTS app_media_asset_pending_idx ON app_media_assets(retry_after) WHERE NOT remote_ready;
     CREATE TABLE IF NOT EXISTS app_media_uploads (
       id uuid PRIMARY KEY, owner text NOT NULL, staging_key text NOT NULL, content_type text NOT NULL,
-      bytes integer NOT NULL CHECK(bytes>0 AND bytes<=12582912), expires_at timestamptz NOT NULL,
+      bytes integer NOT NULL CHECK(bytes>0 AND bytes<=67108864), expires_at timestamptz NOT NULL,
       asset_key text, committed_id text, created_at timestamptz NOT NULL DEFAULT now()
     );
+    DO $upgrade$ BEGIN
+     IF EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='app_media_uploads'::regclass AND conname='app_media_uploads_bytes_check' AND pg_get_constraintdef(oid) LIKE '%12582912%') THEN
+      ALTER TABLE app_media_uploads DROP CONSTRAINT app_media_uploads_bytes_check;
+      ALTER TABLE app_media_uploads ADD CONSTRAINT app_media_uploads_bytes_check CHECK(bytes>0 AND bytes<=67108864);
+     END IF;
+    END $upgrade$;
   `)).then(()=>{}).catch(e=>{schema=null;throw e;});
   return schema;
 }
@@ -64,7 +70,7 @@ export async function importLegacyMedia(key:string, email?:string) {
   await registerMediaAsset(key,original.bytes,mime,false,email);
   return getMediaAsset(key);
 }
-export async function registerMediaAsset(key:string, raw:Uint8Array, contentType:string, remoteReady:boolean, owner?:string) {
+export async function registerMediaAsset(key:string, raw:Uint8Array, contentType:string, remoteReady:boolean, owner?:string,prepareVariants=true) {
   if(!dbEnabled) return;
   await ensureMediaSchema();
   const bytes=Buffer.from(raw), sha=createHash('sha256').update(bytes).digest('hex');
@@ -75,7 +81,7 @@ export async function registerMediaAsset(key:string, raw:Uint8Array, contentType
     preview_key=CASE WHEN app_media_assets.sha256=EXCLUDED.sha256 THEN app_media_assets.preview_key ELSE NULL END,
     sha256=EXCLUDED.sha256,bytes=EXCLUDED.bytes,content_type=EXCLUDED.content_type`,
     [key,owner?.toLowerCase()||currentBiContext()?.email||null,publicKey(key),storageDriver,remoteReady,contentType,sha,bytes.length]);
-  if(/^image\/(png|jpe?g|webp|gif|avif)$/.test(contentType)) await ensureMediaVariants(key,bytes).catch(()=>{});
+  if(prepareVariants&&/^image\/(png|jpe?g|webp|gif|avif)$/.test(contentType)) await ensureMediaVariants(key,bytes).catch(()=>{});
 }
 async function ensureMediaVariantsLocal(key:string, bytes?:Buffer) {
   const asset=await getMediaAsset(key); if(!asset || asset.thumbnail_key&&asset.preview_key) return asset;

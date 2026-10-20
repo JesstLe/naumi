@@ -11,7 +11,7 @@ import { rateLimit } from "../rate-limit";
 import { currentModelExecution } from "../model-config/context";
 import { getModelAdministration } from "../model-config/server";
 import { configuredToolCost, completeSynchronousStream, failSynchronousStream } from "../billing/synchronous";
-import { dataUrlToBytes, isManagedImageUrl, readManagedObject } from "../storage";
+import { dataUrlToBytes } from "../storage";
 import { toVisionDataUrl } from "../vision-image";
 import { completeAgentReleaseActivity, getOrCreateSession, primeAgentSystemPrompt, resolveVisionImages, persistAgentSession, appendSessionEvent, MODEL_ID, type Session } from "./runtime";
 import { canvasSessionPrefix, canvasProjectSessionPrefix, canvasAgentHistory } from "./canvas-history";
@@ -20,13 +20,14 @@ import {authorizeVideoProject} from "../canvas/video-node-service";
 import {getVideoNode} from "../canvas/video-node-repository";
 import type { CanvasAgentContext } from "./canvas-context";
 import { readHarnessBody } from "./harness";
+import { readCanvasVisionReference } from "./canvas-reference-preview";
 
 type Artifact = { id: string; image: string; title: string };
 const record = (value: unknown): Record<string, any> => value && typeof value === "object" ? value as Record<string, any> : {};
 
 async function vision(artwork: ArtworkRecord, origin: string, cookie: string) {
   const inline = dataUrlToBytes(artwork.image);
-  const object = inline ? { bytes: Buffer.from(inline.bytes), contentType: inline.contentType } : isManagedImageUrl(artwork.image) ? await readManagedObject(artwork.image, 12 * 1024 * 1024) : null;
+  const object = inline ? { bytes: Buffer.from(inline.bytes), contentType: inline.contentType } : await readCanvasVisionReference(artwork.image);
   if (object) {
     const url = await toVisionDataUrl(Buffer.from(object.bytes), object.contentType);
     const match = /^data:([^;]+);base64,(.+)$/.exec(url);
@@ -125,7 +126,7 @@ async function runCanvasAgentLocal(request: Request) {
   session.turnId = randomUUID();
   if (!session.agent.state.messages.length) session.title = message.slice(0,120);
   const messageIndex=session.agent.state.messages.filter(turn=> { if(turn.role!=="user"&&turn.role!=="assistant")return false; return typeof turn.content==="string" ? !!turn.content.trim() : turn.content.some(part=>part.type==="text"&&!!part.text.trim()); }).length;
-  appendSessionEvent(session,"canvas_turn",{turnId:session.turnId,anchorId,projectKey,message,messageIndex,skill:imageSkill ? {id:imageSkill.id,revision:imageSkill.revision,name:imageSkill.name} : null});
+  appendSessionEvent(session,"canvas_turn",{turnId:session.turnId,anchorId,contextIds:ids,projectKey,message,messageIndex,skill:imageSkill ? {id:imageSkill.id,revision:imageSkill.revision,name:imageSkill.name} : null});
   session.running = true; session.canvasExecuting = true;
   await persistAgentSession(session);
   const cursorStart = session.events.length;

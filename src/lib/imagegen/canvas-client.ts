@@ -4,6 +4,8 @@ import {imagegenRequestSchema} from "./schema";
 import {previewImagegen,startImagegen,uploadImagegenInput,ImagegenHttpError} from "./client";
 import {canvasReceipts,saveCanvasReceipt,clearCanvasReceipt} from "./canvas-receipts";
 import type {ImagegenRequest} from "./types";
+import {automaticFrameRatio,type FrameInput} from "./frame-ratio";
+import {resolveImagegenIntent} from "./intent";
 /** Ordinary node prompts use the same read-only plan; specialized old recipes retain their adapter. */
 export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|undefined,onPlan:((message:string)=>void)|undefined,scope:{owner:string;project:string;isCurrent?:()=>boolean}){
  let submitting=false;
@@ -13,10 +15,14 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
  const previous=canvasReceipts(sessionStorage,scope.owner,scope.project).find(r=>r.receipt.nodeId===nodeId);
  if(previous)return Response.json({jobId:`imagegen-${previous.receipt.id}`});
  const inputs:ImagegenRequest["inputs"]=[];
- for(const file of form.getAll("image")){if(!(file instanceof File))continue;assertCurrent();const asset=await uploadImagegenInput(file);assertCurrent();inputs.push({artworkId:asset.artworkId,role:inputs.length?"reference":"edit-target"});}
+ const frames:FrameInput[]=[],files=form.getAll("image").filter((file):file is File=>file instanceof File);
+ for(const file of files){assertCurrent();const asset=await uploadImagegenInput(file,files.length,assertCurrent);assertCurrent();const input={artworkId:asset.artworkId,role:inputs.length?"reference" as const:"edit-target" as const};inputs.push(input);frames.push({...input,width:asset.sourceWidth,height:asset.sourceHeight});}
  const value=(name:string)=>String(form.get(name)||"");
  const style=value("style"),raw=value("userPrompt")||value("prompt"),prompt=raw+(style&&!/默认|default/i.test(style)?`\n用户选择的视觉风格：${style}`:"");
  const request=imagegenRequestSchema.parse({version:1,operationId:browserRandomUUID(),entry:"canvas",mode:inputs.length?"edit":"generate",prompt,sourceNodeId:value("parentId")||sourceNodeId,inputs,modelId:value("model")||undefined,variants:Number(value("count")||1),parameters:{quality:value("quality")||"medium",resolution:value("resolution")||"1K",ratio:value("ratio")||"auto"},output:value("transparent")==="1"?{background:"transparent",backgroundOrigin:"current-ui"}:{format:"png"}});
+ // A rounded derivative is transport, not the original composition. Resolve the
+ // user's automatic frame before asking the server to inspect prepared pixels.
+ const intent=resolveImagegenIntent(request),ratio=automaticFrameRatio(request,frames,intent.operation,intent.useCase);if(ratio)request.parameters.ratio=ratio;
  assertCurrent();const plan=await previewImagegen(request);assertCurrent();const stages=plan.steps.map(s=>s.operation==="cutout"?"抠图":s.operation==="edit"?"编辑":"生成").join(" → ");
  if(plan.requestedParameters?.resolution)onPlan?.(plan.warnings.join("\n"));
  if(plan.intent.background==="transparent")onPlan?.(`已识别：透明背景 · ${stages} · ${plan.totalCredits} 积分`);
