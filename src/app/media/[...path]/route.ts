@@ -98,6 +98,11 @@ export async function GET(
         const value = upstream.headers.get(name);
         if (value) headers.set(name, value);
       }
+      // Migrated objects may predate object-store MIME metadata. Keep the
+      // authenticated catalog type so browser byte-cache/decoders can read them.
+      if (!headers.has("content-type") || /^application\/octet-stream(?:;|$)/i.test(headers.get("content-type") || "")) {
+        headers.set("content-type", registeredContentType || TYPES[(rel.split(".").pop() || "").toLowerCase()] || "application/octet-stream");
+      }
       if (!headers.has("cache-control")) {
         headers.set("cache-control", "public, max-age=31536000, immutable");
       }
