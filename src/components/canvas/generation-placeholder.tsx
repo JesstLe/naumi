@@ -54,6 +54,11 @@ export function GenerationPlaceholder({ stage = "generating", startedAt, count =
         void onCheck().finally(() => setChecking(false));
       }}>{checking ? english ? 'Checking…' : '正在检查…' : english ? 'Check original task' : '检查原任务'}</button>}
   </div>;
+  if(stage==="queued")return <div data-testid="generation-placeholder" data-stage="queued" className={styles.root} role="status" aria-live="polite" aria-busy="true">
+    <ImageIcon className={styles.icon} aria-hidden="true"/>
+    <strong className={styles.heading}>{english?"Waiting in queue":"已排队"}</strong>
+    <p className={styles.hint}>{generationProgressHint(stage,seconds,english)}</p>
+  </div>;
   return <div data-testid="generation-placeholder" data-stage={stage} aria-busy="true"
     data-progress={percent} className={styles.root}>
     <div className={styles.heading} role="status" aria-live="polite" aria-atomic="true">

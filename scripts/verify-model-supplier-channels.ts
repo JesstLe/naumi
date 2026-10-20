@@ -49,6 +49,7 @@ async function main() {
         }
         if (req.url === "/v1/chat/completions") {
             if(flowFailure&&body.model==="nano-banana-pro"){
+                if(flowFailure==="reject"){res.statusCode=400;return res.end(JSON.stringify({error:{billing_status:"not_charged",message:"explicitly not accepted"}}));}
                 if(flowFailure==="http"){res.statusCode=500;return res.end(JSON.stringify({error:{message:"Flow unavailable"}}));}
                 if(flowFailure==="disconnect")return req.socket.destroy();
                 if(flowFailure==="timeout"){await new Promise(r=>setTimeout(r,1500));return res.end(JSON.stringify({choices:[]}));}
@@ -158,8 +159,8 @@ async function main() {
         await db.getPool().query("UPDATE app_model_channel_health SET failures=0,open_until=NULL,probe_until=NULL");
         for (let i = 0; i < 2; i++) {
             const n = calls.length;
-            await priorityGen();
-            assert.deepEqual(calls.slice(n).map(c=>c.model),["wire-image-one","wire-image-two"]);
+            await assert.rejects(priorityGen(),(error:any)=>error.cause?.name==="ImageOperationPending");
+            assert.deepEqual(calls.slice(n).map(c=>c.model),["wire-image-one"],"Ambiguous paid 500 must not submit a second supplier");
         }
         await priorityGen();
         assert.equal(calls.at(-1).model, "wire-image-two", "circuit skips failed supplier for future tasks");
@@ -180,17 +181,17 @@ async function main() {
         const routed=(await import("../src/lib/model-config/clients")).executionOpenAI(routedScope,{trustedOrigins:[f.origin]});
         for(const mode of ["http","sse","empty","corrupt","disconnect","timeout"]){
             await db.getPool().query("DELETE FROM app_model_channel_health");flowFailure=mode;const start=calls.length;
-            await routed.images.generate({model:"image-a",prompt:"Flow fallback",n:1});
-            assert.deepEqual(calls.slice(start).map(c=>c.model),["nano-banana-pro","nano-banana-2"],mode);
+            await assert.rejects(routed.images.generate({model:"image-a",prompt:"Flow unknown",n:1}));
+            assert.deepEqual(calls.slice(start).map(c=>c.model),["nano-banana-pro"],mode+" unknown acceptance must not duplicate paid work");
             assert.equal((await db.getPool().query("SELECT count(*) FROM app_model_provider_leases")).rows[0].count,"0");
         }
-        await db.getPool().query("DELETE FROM app_model_channel_health");flowFailure="sse";const editStart=calls.length;
+        await db.getPool().query("DELETE FROM app_model_channel_health");flowFailure="reject";const editStart=calls.length;
         await routed.images.edit({model:"image-a",prompt:"Change reference color",image:new File([new Uint8Array(png)],"reference.png",{type:"image/png"}),n:1});
         assert.deepEqual(calls.slice(editStart).map(c=>c.model),["nano-banana-pro","nano-banana-2"]);assert.equal(calls[editStart].messages[0].content[1].image_url.url,calls[editStart+1].messages[0].content[1].image_url.url,"Fallback preserves reference bytes");
         await db.getPool().query("DELETE FROM app_model_channel_health");flowFailure="timeout";const cancelStart=calls.length,cancel=new AbortController();setTimeout(()=>cancel.abort(),300);
         await assert.rejects(routed.images.generate({model:"image-a",prompt:"cancelled",n:1},{signal:cancel.signal}));await new Promise(r=>setTimeout(r,400));assert.equal(calls.length,cancelStart+1,"Caller cancellation must not start the backup supplier");assert.equal((await db.getPool().query("SELECT count(*) FROM app_model_provider_leases")).rows[0].count,"0");
         // A real durable task stays pending until the second supplier finishes, then charges once.
-        flowFailure="sse";await db.getPool().query("DELETE FROM app_model_channel_health");
+        flowFailure="reject";await db.getPool().query("DELETE FROM app_model_channel_health");
         const fq=await(await quoteApi.POST(request("/api/billing/quote",{feature:"image.generate",modelId:"image-a",quality:"medium",resolution:"1K",ratio:"1:1",quantity:1}))).json();
         const submit=async()=>genApi.POST(request("/api/generate-image",{prompt:"Flow durable fallback",model:"image-a",quality:"medium",resolution:"1K",ratio:"1:1",count:1},{"x-naumi-model-version":String(fq.modelVersion),"x-naumi-billing-version":String(fq.version),"x-naumi-billing-credits":String(fq.credits),"x-naumi-billing-operation-id":randomUUID()}));
         const fallbackStart=calls.length, accepted=await submit();assert.equal(accepted.status,200);const fallbackJob=(await accepted.json()).jobId;
@@ -236,7 +237,7 @@ async function main() {
         }
         assert.equal(familyDefault, 28, "Ratio aliases must share weighted scheduling");
         const registration={action:"register",id:randomUUID(),expectedVersion:(await admin.repo.current()).version,providerId:"p3",model:"nano-banana-2",confirmed:true,capabilityVerified:false,qualityPolicy:{mode:"omit",choices:[{id:"medium",label:"标准"}]},edit:true,vision:false,qualityRank:3,qualities:[],resolutions:[],maxReferenceImages:1};const registrationResult=await handler(req(registration));assert.equal(registrationResult.status,200,await registrationResult.clone().text());const registered=(await admin.repo.current()).config.upstreamModels.find(u=>u.model==="nano-banana-2"&&u.providerId==="p3")!;assert.equal(registered.capabilities.verified,false);assert.equal(registered.parameterMap.qualityPolicy?.mode,"omit");
-        console.log("MULTI_SUPPLIER_CHANNELS=PASS WEIGHT_70_30=28_12 SHARED_CONCURRENCY=4 NO_DOUBLE_LEASE=1 PRIORITY_BUSY_OVERFLOW=PASS HTTP_SSE_EMPTY_CORRUPT_DISCONNECT_TIMEOUT_FALLBACK=PASS REFERENCE_EDIT_FALLBACK=PASS USER_CANCEL_NO_FALLBACK=PASS FALLBACK_JOB_SINGLE_SETTLEMENT=PASS ALL_FAILED_RELEASE_CREDITS=PASS CIRCUIT_RECOVERY=PASS NANO_INLINE_EDIT=PASS FAMILY_HIDDEN_RATIO_SHARED_WEIGHTS=PASS FROZEN_REPLAY_DRAFT_BILLING_AUDIT=PASS REGISTER_NANO_PROFILE_NO_CAPABILITY_INVENTION=PASS CROSS_PROCESS_WEIGHTED=PASS QUOTE_TASK_MEDIA_SETTLEMENT=PASS REAL_PAID_CALLS=0");
+        console.log("MULTI_SUPPLIER_CHANNELS=PASS WEIGHT_70_30=28_12 SHARED_CONCURRENCY=4 NO_DOUBLE_LEASE=1 PRIORITY_BUSY_OVERFLOW=PASS HTTP_SSE_EMPTY_CORRUPT_DISCONNECT_TIMEOUT_NO_DUPLICATE=PASS REFERENCE_EDIT_FALLBACK=PASS USER_CANCEL_NO_FALLBACK=PASS FALLBACK_JOB_SINGLE_SETTLEMENT=PASS ALL_FAILED_RELEASE_CREDITS=PASS CIRCUIT_RECOVERY=PASS NANO_INLINE_EDIT=PASS FAMILY_HIDDEN_RATIO_SHARED_WEIGHTS=PASS FROZEN_REPLAY_DRAFT_BILLING_AUDIT=PASS REGISTER_NANO_PROFILE_NO_CAPABILITY_INVENTION=PASS CROSS_PROCESS_WEIGHTED=PASS QUOTE_TASK_MEDIA_SETTLEMENT=PASS REAL_PAID_CALLS=0");
     }
     finally {
         await db.getPool().end();

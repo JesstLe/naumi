@@ -8,8 +8,9 @@ import { assertMutableStagingTask } from "./staging-history";
 import { uploadImage, readManagedObject } from "@/lib/storage";
 import { workerSecret } from "@/lib/settings-secret";
 import * as repository from "@/lib/image-job-repository";
-import { ImageOperationPending, ImageOperationReview, isImageGatewayModel, withImageOperation } from "@/lib/image-gateway";
+import { ImageOperationPending, ImageOperationReview, ImageOperationQueued, isImageGatewayModel, withImageOperation } from "@/lib/image-gateway";
 import { IMAGE_REVIEW_MESSAGE } from "./image-job-review";
+import {dispatchImageQueue} from "./image-job-queue";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { withBiModelContext } from "@/lib/bi/model-observer";
@@ -67,7 +68,7 @@ export class DurableImageJobs<T extends { status: string }> {
   async create(id: string, email: string, snapshot: T, payload: unknown, cost: number, reserve: boolean,billingQuote?:BillingQuote) {
     const models = currentExecutionBundle();
     if (models && payload && typeof payload === "object") payload = { ...payload, modelExecutions: structuredClone(models) };
-    snapshot = { ...snapshot, paidOperationVersion: 1 };
+    snapshot = { ...snapshot, paidOperationVersion: 1,...(this.kind==="generate"?{queueState:"execution"}:{}) };
     if (!dbEnabled) { this.memory.set(id, { snapshot, payload, email }); return; }
     await repository.createImageJob(id, email, this.kind, await encode(snapshot, id), await encode(payload, id), cost, reserve,billingQuote);
   }
@@ -108,6 +109,9 @@ export class DurableImageJobs<T extends { status: string }> {
   async handlePending(id: string, error: ImageOperationPending) {
     const saved = await this.get(id, false) as (T & Record<string, any>) | undefined;
     if (!saved || ["done", "error"].includes(saved.status)) return;
+    if(error instanceof ImageOperationQueued&&error.unsubmitted&&!Object.values(saved.paidOperations||{}).some((a:any)=>a.state==="started")){
+      await this.patch(id,{status:"pending",error:undefined,queueState:"capacity"} as unknown as Partial<T>);return;
+    }
     if(error instanceof ImageOperationReview){
       await this.patch(id,{status:"needs_attention",error:IMAGE_REVIEW_MESSAGE,reviewCode:error.reviewCode} as unknown as Partial<T>);return;
     }
@@ -124,7 +128,7 @@ export class DurableImageJobs<T extends { status: string }> {
   /** Persist intent before paid work. Only a durable Router operation may replay. */
   async paidOperation<R>(id: string, model: string, operation: Parameters<typeof withImageOperation>[1], run: () => Promise<R>): Promise<R> {
     if (dbEnabled) await assertMutableStagingTask(getPool(), "app_image_jobs", id);
-    type Attempt = { model: string; replayable: boolean; gatewayIdentity?: string; state: "started" | "done" | "rejected"; result?: R };
+    type Attempt = { model: string; replayable: boolean; gatewayIdentity?: string; state: "queued" | "started" | "done" | "rejected"; result?: R };
     type Snapshot = T & { paidOperations?: Record<string, Attempt> };
     const update = async (change: (current: Snapshot) => Snapshot) => {
       const work = async () => {
@@ -166,6 +170,13 @@ export class DurableImageJobs<T extends { status: string }> {
       await update((current) => ({ ...current, paidOperations: { ...current.paidOperations, [operation.id]: { ...attempt, state: "done", result } } }));
       return result;
     } catch (error) {
+      if(error instanceof ImageOperationQueued&&error.unsubmitted&&previous?.state!=="started"){
+        // No request reached a supplier in this root/fan-out. Keep the paid
+        // intent replayable without labelling it a supplier rejection.
+        await update(current=>({...current,queueState:"capacity",paidOperations:{...current.paidOperations,[operation.id]:{...attempt,state:"queued"}}}));
+        throw error;
+      }
+      if(error instanceof ImageOperationQueued)error=new ImageOperationPending(operation.id,error);
       if (error instanceof ImageOperationPending && dbEnabled) {
         const identity=await recoverableChannelIdentity(getPool(),currentModelExecution("image"),operation.id);
         if(identity)await update(current=>({...current,paidOperations:{...current.paidOperations,[operation.id]:{...attempt,replayable:true,gatewayIdentity:identity}}}));
@@ -205,6 +216,7 @@ export class DurableImageJobs<T extends { status: string }> {
           return;
         }
         const payload = await decode(row.payload) as Record<string, unknown>, snapshot = await decode(row.snapshot) as T;
+        if((snapshot as Record<string,unknown>).queueState){delete (snapshot as Record<string,unknown>).queueState;await this.set(id,snapshot);}
         const resume = () => withBiModelContext(row.email,this.kind,id,async()=>run(payload,snapshot));
         if (payload.modelExecutions) await withFrozenExecutionBundle(payload.modelExecutions as ExecutionBundle, resume);
         else if(this.kind==="imagegen") await resume();
@@ -242,14 +254,13 @@ async function recoverDurableImageJobsLocal(): Promise<number> {
   if (!dbEnabled) return 0;
   const jobs = await repository.dueImageJobs();
   const origin = process.env.INTERNAL_APP_ORIGIN || "http://127.0.0.1:3000";
-  let count = 0;
-  for (const job of jobs) {
+  const count = await dispatchImageQueue(jobs,async job=>{
     const route = job.kind === "generate" ? "generate-image" : job.kind;
     const result = await fetch(`${origin}/api/${route}`, { method: "POST", headers: {
       "content-type": "application/json", "x-video-worker-secret": process.env.VIDEO_WORKER_SECRET || "",
     }, body: JSON.stringify({ workerJobId: job.id }), signal: AbortSignal.timeout(10_000) });
-    if (result.ok) count++;
-  }
+    return result.ok;
+  },()=>console.error("[image-queue] worker dispatch failed; retained for next scan"));
   const {recoverImagegenBatches}=await import("./imagegen/batch");
   return count+await recoverImagegenBatches();
 }

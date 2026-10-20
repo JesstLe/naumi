@@ -78,7 +78,7 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
      if(attempts.length&&attempts.every(a=>a.state==="rejected"))throw new NotAccepted(row.snapshot.error||"供应商明确未受理");
      throw new Error(row.snapshot.error||"生成失败");
     }
-    if(row.snapshot.status!=="done"){await update({status:"pending"},{status:"pending"});return;}
+    if(row.snapshot.status!=="done"){await update({status:"pending"},{status:row.snapshot.queueState?"queued":"pending"});return;}
     child={...child,state:"done",ids:(row.snapshot.images||[]).map((i:{id:string})=>i.id)};
     await update({children:{...state.children,[step.key]:child}});
    }

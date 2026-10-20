@@ -12,6 +12,7 @@ import { ModelConfigError } from "./types";
 import { capacityFetch } from "./capacity";
 import { dbEnabled, getPool } from "../db";
 import { supplierCostFetch } from "../supplier-cost/collect";
+import {noteImageSupplierDispatch} from "../image-gateway";
 import type { ModelExecutionScope } from "./context";
 
 /** Pins validated DNS answers for the actual connection; redirects never carry supplier credentials. */
@@ -35,6 +36,7 @@ export function modelEndpointFetch(baseUrl: string, options: ValidationOptions =
     // a window in which an administrator's completed disable is ignored.
     if (request.method === "POST" && provider?.costScope?.channelGuard) await guardChannelSubmission(getPool(), provider.costScope, !applicationAPIMartImages(provider.costScope.connection.protocol,provider.costScope.parameterMap) || /\/images\/generations$/.test(url.pathname));
     request.signal.throwIfAborted();
+    if(request.method==="POST")noteImageSupplierDispatch();
     return new Promise<Response>((resolve, reject) => {
       const headers = Object.fromEntries(request.headers.entries());
       const transport = url.protocol === "https:" ? httpsRequest : httpRequest;

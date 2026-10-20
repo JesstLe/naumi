@@ -193,6 +193,7 @@ async function ensureSchema(): Promise<void> {
           created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
         );
         CREATE INDEX IF NOT EXISTS app_image_jobs_owner ON app_image_jobs(email, kind, created_at DESC);
+        CREATE INDEX IF NOT EXISTS app_image_jobs_queue_leases ON app_image_jobs(kind,lease_until) WHERE lease_token IS NOT NULL;
         CREATE INDEX IF NOT EXISTS app_image_jobs_active ON app_image_jobs(email, kind, created_at DESC)
           WHERE snapshot->>'status' NOT IN ('done','error');
         CREATE INDEX IF NOT EXISTS app_image_jobs_due ON app_image_jobs(updated_at)

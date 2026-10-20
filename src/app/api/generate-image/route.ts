@@ -1256,7 +1256,7 @@ export async function GET(request: Request) {
       const owner = dbEnabled ? await JOBS.owner(jobId) : undefined;
       return NextResponse.json({ status: "error", error: job.error, reviewRequired: job.status === "needs_attention", user: owner ? await getUser(owner) : undefined });
     }
-    return NextResponse.json({ status: "pending", error: job.error || "" });
+    return NextResponse.json({ status: "pending",...((job as {queueState?:string}).queueState?{operationStatus:"queued"}:{}), error: job.error || "" });
   }
 
   // 健康检查:绝不暴露模型名/上游供应商/密钥来源(铁律:绝不泄露所用模型)。

@@ -17,7 +17,12 @@ props={stage:'preparing',startedAt:now,count:1};render();check(percent()===4,'ne
 const el=document.querySelector('[data-progress]');check(el.scrollHeight<=el.clientHeight,'180px overflow');
 check(!/预估|预计|已等待/.test(document.getElementById('app').textContent),'labels');
 check(document.querySelector('[role=progressbar]').getAttribute('aria-valuenow')==='4','a11y');
-console.log('COMPONENT_DYNAMIC=PASS TIMER=PASS MONOTONIC=PASS RESET=PASS MULTI_IMAGE=PASS MIN_HEIGHT_180=PASS ACCESSIBILITY=PASS PAGEERROR=0');}
+props={...props,stage:'queued'};render();check(document.querySelector('[data-stage=queued]')&&!document.querySelector('[role=progressbar]'),'queue not fake generation percent');
+check(document.getElementById('app').textContent.includes('已排队'),'queue title');
+props={...props,stage:'generating'};render();check(!!document.querySelector('[role=progressbar]'),'queue resumes generation');
+props={...props,stage:'queued'};render();
+check(document.getElementById('app').scrollHeight<=document.getElementById('app').clientHeight,'queued minimum height');
+console.log('COMPONENT_DYNAMIC=PASS TIMER=PASS MONOTONIC=PASS RESET=PASS MULTI_IMAGE=PASS MIN_HEIGHT_180=PASS ACCESSIBILITY=PASS QUEUED=PASS RESUME=PASS PAGEERROR=0');}
 run().catch(e=>{console.error(e.stack);throw e});`;
 (async()=>{const result=await esbuild.build({stdin:{contents:entry,resolveDir:process.cwd(),loader:'tsx'},bundle:true,minify:true,platform:'browser',format:'iife',write:false,outdir:path.join(out,'dynamic'),loader:{'.module.css':'local-css'},jsx:'automatic',define:{'process.env':'{}','process.env.NODE_ENV':'"production"'},plugins:[{name:'router-fixture',setup(build){build.onResolve({filter:/^next\/navigation$/},()=>({path:'router-fixture',namespace:'fixture'}));build.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const useRouter=()=>({refresh(){}})'}));}}]});
 const js=result.outputFiles.find(f=>f.path.endsWith('.js')).text,css=result.outputFiles.find(f=>f.path.endsWith('.css')).text;

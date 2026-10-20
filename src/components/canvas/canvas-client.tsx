@@ -4562,7 +4562,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if (opts?.isCurrent && !opts.isCurrent()) return [];
       rememberGenerationDrag(taskId, generationTaskPosRef.current[taskId] ?? taskPosition, true, operationKey);
       setGenerationTasks(current => current.map(task => task.id === taskId ? { ...task, stage: "generating" } : task));
-      const deadline = Date.now() + 6 * 60 * 1000;
+      let deadline = Date.now() + 6 * 60 * 1000;
       let newIds: string[] = [];
       let generated: GeneratedResult[] = [];
       for (;;) {
@@ -4576,6 +4576,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         if (opts?.isCurrent && !opts.isCurrent()) return [];
         if (pr.ok && pj.user) applyServerUser(pj.user);
         if (!pr.ok) throw new Error(pj.error || t("canvas.genFail"));
+        if(pj.status==="pending"){const queued=pj.operationStatus==="queued";if(queued)deadline=Date.now()+6*60*1000;setGenerationTasks(current=>current.map(task=>task.id===taskId?{...task,stage:queued?"queued":"generating"}:task));}
         if (pj.status === "done") {
           const warning=imageOutputWarningText(pj.warnings);if(warning)flashTip(warning);
           setGenerationTasks(current => current.map(task => task.id === taskId ? { ...task, stage: "saving" } : task));
@@ -7995,7 +7996,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if (opts?.isCurrent && !opts.isCurrent()) return false;
       rememberGenerationDrag(pend.id, rfRef.current?.getNode(pend.id)?.position ?? generationPosition, true);
       setPendNodes(current => current.map(p => p.id === pend.id ? { ...p, generationStage: "generating" } : p));
-      const deadline = Date.now() + 6 * 60 * 1000;
+      let deadline = Date.now() + 6 * 60 * 1000;
       let newIds: string[] = [];
       let generatedSizes: { id: string; width?: number; height?: number }[] = [];
       for (;;) {
@@ -8009,6 +8010,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         if (opts?.isCurrent && !opts.isCurrent()) return false;
         if (pr.ok && pj.user) applyServerUser(pj.user);
         if (!pr.ok) throw new Error(pj.error || t("canvas.genFail"));
+        if(pj.status==="pending"){const queued=pj.operationStatus==="queued";if(queued)deadline=Date.now()+6*60*1000;setPendNodes(current=>current.map(p=>p.id===pend.id?{...p,generationStage:queued?"queued":"generating"}:p));}
         if (pj.status === "done") {
           const warning=imageOutputWarningText(pj.warnings);if(warning)flashTip(warning);
           setPendNodes(current => current.map(p => p.id === pend.id ? { ...p, generationStage: "saving" } : p));

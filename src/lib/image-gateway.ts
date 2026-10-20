@@ -7,6 +7,9 @@ type ImageOperation = {
   /** Caller trust boundary: arbitrary BYOK endpoints are never durable Router. */
   managedGateway?: boolean;
   durable?: boolean;
+  /** Shared across fan-out: one possible paid dispatch removes the permission
+   * to requeue the whole root operation as never submitted. */
+  dispatchState?: { attempted:boolean };
   quality?: string;
   id: string;
   resolution?: "1K" | "2K" | "4K";
@@ -45,6 +48,20 @@ export class ImageOperationReview extends ImageOperationPending {
     super(operationId,Error(`reverse-hub-${reviewCode}`));this.name="ImageOperationReview";
   }
 }
+/** Only emitted by a local capacity gate before any sibling supplier dispatch. */
+export class ImageOperationQueued extends ImageOperationPending {
+  constructor(operationId:string,private readonly dispatchState:{attempted:boolean}) {
+    super(operationId,Error("local-capacity-queue"));this.name="ImageOperationQueued";
+    this.message="任务已排队，等待可用生成通道";
+  }
+  get unsubmitted(){return !this.dispatchState.attempted;}
+}
+export function localImageCapacityQueue() {
+  const operation=operations.getStore();
+  return operation?.durable&&operation.dispatchState&&!operation.dispatchState.attempted
+    ?new ImageOperationQueued(operation.id,operation.dispatchState):undefined;
+}
+export function noteImageSupplierDispatch(){const operation=operations.getStore();if(operation?.dispatchState)operation.dispatchState.attempted=true;}
 
 /** SDK fetch failures wrap local adapter signals in APIConnectionError.cause.
  * Recover only our typed signal for this exact paid operation (or its fan-out
@@ -65,7 +82,7 @@ function originalImageOperationSignal(error: unknown, operationId: string) {
 }
 
 export async function withImageOperation<T>(model: string, operation: ImageOperation, run: () => Promise<T>): Promise<T> {
-  return operations.run(operation, async () => {
+  return operations.run({...operation,dispatchState:operation.dispatchState||{attempted:false}}, async () => {
     try { return await run(); }
     catch (error) {
       const signal = originalImageOperationSignal(error, operation.id);
