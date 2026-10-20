@@ -107,7 +107,7 @@ type GenImage = { buf: Buffer; type: string };
 type GenParams = {
 
   // Server-stamped at acceptance. Legacy frozen jobs retain their original wire contract.
-  ratioContractVersion?: 1;
+  ratioContractVersion?: 1 | 2;
 	compiledPrompt?: string;
   prompt: string;
   // 落库用的「用户原始提示词」:仅用户自己输入的内容(图裂变/融图客户端拼了系统词进 prompt,
@@ -158,8 +158,8 @@ const GRADIENTS = [
 ];
 
 // Concrete descriptors so the picked style visibly changes the result.
-function sizeFor(ratio: string, model: string, exact = false): string {
-  if (exact) { const size = exactImageRequestSize(ratio, model); if (size) return size; }
+function sizeFor(ratio: string, model: string, exact = false, customRatio = false): string {
+  if (exact) { const size = exactImageRequestSize(ratio, model, customRatio); if (size) return size; }
   // OpenAI gpt-image-1 接受 size: "auto",让模型自选最合适的输出尺寸。
   // DALL·E 3 不支持 auto,退化成方图。
   if (ratio === "auto") return model === "dall-e-3" ? "1024x1024" : "auto";
@@ -245,8 +245,8 @@ async function openaiImages(
   const basePrompt = p.compiledPrompt || (p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide()));
   const effectiveRatio = inheritedImageRatio(p.ratio, targetDimensions);
   const prompt = `${basePrompt}\n\n${imageAspectInstruction(effectiveRatio, targetDimensions)}`;
-  const sizingModel = p.ratioContractVersion === 1 ? currentModelExecution("image")?.connection.wireModel || model : model;
-  const size = sizeFor(effectiveRatio, sizingModel, p.ratioContractVersion === 1);
+  const sizingModel = p.ratioContractVersion ? currentModelExecution("image")?.connection.wireModel || model : model;
+  const size = sizeFor(effectiveRatio, sizingModel, !!p.ratioContractVersion, p.ratioContractVersion === 2);
   const canEdit = p.images.length > 0 && (currentModelExecution("image")?.capabilities.edit || isOpenAIImagesEditModel(model));
   // 出图质量:解析结果=实际执行档。通道未接入质量参数时在提交前回退为默认档
   // (env OPENAI_IMAGE_QUALITY,缺省 medium);内测仍按请求档测试价计费。
@@ -851,7 +851,7 @@ async function runJob(
       // Validate the supplier's native grid before an existing, administrator-
       // permitted local upscale. Its rounding cell must not be measured in 4K
       // pixels, and no crop/reshape is introduced to satisfy this validation.
-      if (ratioPolicy && p.ratioContractVersion === 1 && p.origin === "canvas") {
+      if (ratioPolicy && p.ratioContractVersion && p.origin === "canvas") {
         images = await attachImageDimensions(images);
         imagegenOutputWarning ||= images.map(image => imageRatioWarning(p.ratio, image, ratioPolicy)).find(Boolean);
         nativeRatioChecked = true;
@@ -860,7 +860,7 @@ async function runJob(
     }
     }
     images = await attachImageDimensions(images);
-    if (!nativeRatioChecked && p.ratioContractVersion === 1 && p.origin === "canvas" && !(p.targetWidth > 0 && p.targetHeight > 0)) {
+    if (!nativeRatioChecked && p.ratioContractVersion && p.origin === "canvas" && !(p.targetWidth > 0 && p.targetHeight > 0)) {
       imagegenOutputWarning ||= images.map(image => imageRatioWarning(p.ratio, image, ratioPolicy)).find(Boolean);
     }
     images = images.map((image, index) => ({ ...image, id: `art-${jobId}-${index}` }));
@@ -1026,7 +1026,7 @@ async function handleObservedPost(request: Request) {
   if (!p) {
     return NextResponse.json({ error: "请求格式不正确" }, { status: 400 });
   }
-  p.ratioContractVersion = currentImagegenStep() ? currentImagegenStep()!.ratioContractVersion : 1;
+  p.ratioContractVersion = currentImagegenStep() ? currentImagegenStep()!.ratioContractVersion : 2;
   try { assertPlatformImageSelection(p.model, request.headers.get("x-naumi-feature-model")); }
   catch (error) { return billingErrorResponse(error); }
   // 改比例(ratiogen)用固定重构图指令,可以没有用户提示词;其余路径仍要求 prompt。
@@ -1119,8 +1119,8 @@ async function handleObservedPost(request: Request) {
   }
   // Reject a new local size-contract error BEFORE quote/reservation/job creation.
   // The worker branch above resumes its original frozen contract unchanged.
-  if (p.ratioContractVersion === 1 && imageModel.provider !== "user-openai-images" && imageModel.provider !== "user-chat-completions") {
-    try { exactImageRequestSize(p.ratio, imageScope?.connection.wireModel || model); }
+  if (p.ratioContractVersion && imageModel.provider !== "user-openai-images" && imageModel.provider !== "user-chat-completions") {
+    try { exactImageRequestSize(p.ratio, imageScope?.connection.wireModel || model, p.ratioContractVersion === 2); }
     catch (error) {
       if (error instanceof ExactImageSizeError) return NextResponse.json({error:error.message,code:error.code,accepted:false},{status:400});
       throw error;

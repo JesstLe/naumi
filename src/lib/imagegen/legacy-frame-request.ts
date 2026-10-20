@@ -27,8 +27,9 @@ export async function normalizeLegacyFrameRequest(request: Request): Promise<Req
   try { dimensions = await sourceImageDimensions(Buffer.from(await files[index].arrayBuffer())); }
   catch { throw new LegacyFrameError("参考素材读取失败，请重新上传图片。"); }
   const ratio = frameRatio(dimensions);
-  if (!ratio || !/^[1-9]\d{0,2}:[1-9]\d{0,2}$/.test(ratio)) throw new LegacyFrameError("参考素材的原始画幅尚不支持直接生成，请明确选择比例；不会自动改成方图。");
-  if (form.get("origin") === "canvas" && !["1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9"].includes(ratio)) throw new LegacyFrameError("参考素材比例暂未开放，请在图片节点选择支持的比例；不会自动改成方图。");
+  if (!ratio || !/^[1-9]\d{0,5}:[1-9]\d{0,5}$/.test(ratio)) throw new LegacyFrameError("参考素材的画幅读取失败，请重新上传图片。");
+  // Resolve the actual reference frame here; the selected route's admission
+  // owns its supported dimensions/adapter allowlist, not a global seven-ratio UI list.
   form.set("ratio", ratio);
   const headers = new Headers(request.headers);
   headers.delete("content-type");

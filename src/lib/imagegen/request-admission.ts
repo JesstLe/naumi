@@ -16,7 +16,7 @@ export function imageRequestAdmission(
 ): string[] {
   const codes: string[] = [];
   try {
-    exactImageRequestSize(ratio, supplierRouting ? publicModelId : source.model);
+    exactImageRequestSize(ratio, supplierRouting ? publicModelId : source.model, true);
   } catch (error) {
     if (!(error instanceof ExactImageSizeError)) throw error;
     codes.push("EXACT_RATIO_UNSUPPORTED");

@@ -42,11 +42,32 @@ export class ExactImageSizeError extends Error {
 export function exactImageRequestSize(
   ratio: string,
   model: string,
+  customRatio = false,
 ): string | undefined {
   if (!supportsExactImageSize(model)) return;
   if (ratio === "auto") return "auto";
   const size = EXACT_SIZES[ratio];
   if (size) return size;
+  // Contract v2, new requests only. OpenAI's documented custom-size contract
+  // permits 16px-grid dimensions, aspect 1:3..3:1 and >=655,360 pixels.
+  // Keep the established standard table and a bounded native budget; never
+  // enlarge to enormous exact multiples or transform the returned image.
+  if (customRatio && /^[1-9]\d{0,5}:[1-9]\d{0,5}$/.test(ratio)) {
+    const [rw, rh] = ratio.split(":").map(Number);
+    if (rw / rh >= 1 / 3 && rw / rh <= 3) {
+      let best: { width: number; height: number; error: number } | undefined;
+      for (let height = 16; height <= 1536; height += 16) {
+        const target = height * rw / rh / 16;
+        for (const width of new Set([Math.floor(target) * 16, Math.ceil(target) * 16])) {
+          const pixels = width * height;
+          if (width < 16 || width > 1536 || pixels < 655360 || pixels > 1572864 || width > height * 3 || height > width * 3) continue;
+          const error = Math.abs(width * rh - height * rw) / (height * rw);
+          if (!best || error < best.error || error === best.error && pixels > best.width * best.height) best = { width, height, error };
+        }
+      }
+      if (best) return `${best.width}x${best.height}`;
+    }
+  }
   // Reject an unsupported exact contract rather than silently reverting to direction-only.
   throw new ExactImageSizeError(ratio);
 }
