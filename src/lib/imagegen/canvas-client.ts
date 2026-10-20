@@ -24,14 +24,14 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
  }
  const inputs:ImagegenRequest["inputs"]=[],assets:CanvasFrameChoice[]=[];
  const files=form.getAll("image").filter((file):file is File=>file instanceof File);
- for(const file of files){assertCurrent();const asset=await uploadImagegenInput(file,files.length,assertCurrent);assertCurrent();const input={artworkId:asset.artworkId,role:inputs.length?"reference" as const:"edit-target" as const};inputs.push(input);assets.push({...asset,label:`图片 ${inputs.length}`,ratio:frameRatio(asset)||""});}
+ for(const file of files){assertCurrent();const asset=await uploadImagegenInput(file,files.length,assertCurrent);assertCurrent();const input={artworkId:asset.artworkId,role:inputs.length?"reference" as const:"edit-target" as const};inputs.push(input);const original={...asset,width:asset.sourceWidth,height:asset.sourceHeight};assets.push({...original,label:`图片 ${inputs.length}`,ratio:frameRatio(original)||""});}
  const value=(name:string)=>String(form.get(name)||"");
  const style=value("style"),raw=value("userPrompt")||value("prompt"),prompt=raw+(style&&!/默认|default/i.test(style)?`\n用户选择的视觉风格：${style}`:"");
  const request=imagegenRequestSchema.parse({version:1,operationId:browserRandomUUID(),entry:"canvas",mode:inputs.length?"edit":"generate",prompt,sourceNodeId:value("parentId")||sourceNodeId,inputs,modelId:value("model")||undefined,variants:Number(value("count")||1),parameters:{quality:value("quality")||"medium",resolution:value("resolution")||"1K",ratio:value("ratio")||"auto"},output:value("transparent")==="1"?{background:"transparent",backgroundOrigin:"current-ui"}:{format:"png"}});
  // A rounded derivative is transport, not the original composition. Resolve the
  // user's automatic frame before asking the server to inspect prepared pixels;
  // genuinely ambiguous mixed ratios ask once instead of guessing.
- const frameInputs:FrameInput[]=inputs.map(input=>{const asset=assets.find(candidate=>candidate.artworkId===input.artworkId);return asset?{...input,width:asset.sourceWidth,height:asset.sourceHeight}:input;});
+ const frameInputs:FrameInput[]=inputs.map(input=>{const asset=assets.find(candidate=>candidate.artworkId===input.artworkId);return asset?{...input,width:asset.width,height:asset.height}:input;});
  const intent=resolveImagegenIntent(request);
  try {
   const ratio=automaticFrameRatio(request,frameInputs,intent.operation,intent.useCase);
