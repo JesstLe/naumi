@@ -27,7 +27,7 @@ export type SavedConversation = { id: string; title: string; turns: CanvasAssist
 /** Presentation-only sidebar: the parent owns SSE, context, model routing and billing. */
 export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns, input, busy, error,
   selectedSkill, onSkillSelect, skillAccountKey, skillSessionId, costLabel, labels, tasks, onInputChange, onSend, onNewChat, onRestoreChat, onClose, onPreview,
-  onCopy, onFeedback, feedbackLabels = { positive: "有帮助", negative: "需要改进" }, renderContent, modelControl, steps = [], onStop, onClearReference, historyLoader, historyScopeKey = "", onRenameHistory, onDeleteHistory, open = true, focusInput = true, contextReady = true, english = false, responding = false, attention, activity,
+  onCopy, onFeedback, feedbackLabels = { positive: "有帮助", negative: "需要改进" }, renderContent, modelControl, steps = [], onStop, onClearReference, onUploadImages, onRemoveReference, uploadingImages = false, uploadError, historyLoader, historyScopeKey = "", onRenameHistory, onDeleteHistory, open = true, focusInput = true, contextReady = true, english = false, responding = false, attention, activity,
 }: {
   selectedSkill?: ImageSkill | null;
   onSkillSelect?: (skill: ImageSkill | null) => void;
@@ -52,6 +52,10 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
   steps?: AgentOrbStep[];
   onStop?: () => void;
   onClearReference?: () => void;
+  onUploadImages?: (files: File[]) => void;
+  onRemoveReference?: (id: string) => void;
+  uploadingImages?: boolean;
+  uploadError?: string | null;
   historyLoader?: () => Promise<SavedConversation[]>;
   historyScopeKey?: string;
   onRenameHistory?: (id:string,title:string) => Promise<void>;
@@ -70,6 +74,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
   renderContent: (content: string) => ReactNode;
 }) {
   const composer = useRef<HTMLTextAreaElement>(null);
+  const uploadInput = useRef<HTMLInputElement>(null);
   const scrollArea = useRef<HTMLDivElement>(null);
   const keepAtBottom = useRef(true);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
@@ -77,6 +82,11 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
   const referenceTrigger = useRef<HTMLButtonElement>(null);
   const [taskPage, setTaskPage] = useState(0);
   const [referencesOpen, setReferencesOpen] = useState(false);
+  const previousReferenceCount = useRef(contextImages.length);
+  useEffect(() => {
+    if(onUploadImages && contextImages.length > previousReferenceCount.current)setReferencesOpen(true);
+    previousReferenceCount.current=contextImages.length;
+  }, [contextImages.length, onUploadImages]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [overlay, setOverlay] = useState(false);
   const [saved, setSaved] = useState<SavedConversation[]>([]);
@@ -166,7 +176,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
     ].slice(0, 20));
   }
   function newChat() {
-    if (busy) return;
+    if (busy || uploadingImages) return;
     rememberCurrent();
     onNewChat();
     keepAtBottom.current = true;
@@ -199,10 +209,10 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
     <header className="flex h-14 shrink-0 items-center justify-between px-4">
       <div className="flex min-w-0 items-center gap-2.5"><span className="canvas-ui-section flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border"><InfinityIcon className="h-4 w-4" aria-hidden="true" /></span><h2 className="text-[13px] font-semibold">{labels.title}</h2></div>
       <div className="flex items-center gap-1">
-        <button type="button" aria-label={labels.newChat} title={labels.newChat} disabled={busy || (!turns.length && !input.trim())} className={iconButton} onClick={newChat}>
+        <button type="button" aria-label={labels.newChat} title={labels.newChat} disabled={busy || uploadingImages || (!turns.length && !input.trim())} className={iconButton} onClick={newChat}>
           <MessageSquarePlus className="h-[18px] w-[18px]" aria-hidden="true" />
         </button>
-        <button type="button" aria-label={historyOpen ? labels.back : labels.history} title={historyOpen ? labels.back : labels.history} aria-pressed={historyOpen} disabled={busy}
+        <button type="button" aria-label={historyOpen ? labels.back : labels.history} title={historyOpen ? labels.back : labels.history} aria-pressed={historyOpen} disabled={busy || uploadingImages}
           className={iconButton} onClick={() => setHistoryOpen(open => !open)}>
           <History className="h-[18px] w-[18px]" aria-hidden="true" />
         </button>
@@ -277,10 +287,17 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
       onClick={() => { if (scrollArea.current) scrollArea.current.scrollTop = scrollArea.current.scrollHeight; keepAtBottom.current = true; setShowScrollToBottom(false); }}><ArrowDown className="h-4 w-4" aria-hidden="true" /></button>}
     </div>
 
-    <footer className="shrink-0 px-3 pb-3 pt-2">
+    <footer className="shrink-0 px-3 pb-3 pt-2"
+      onDragOver={event => { if (onUploadImages && event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.stopPropagation(); } }}
+      onDrop={event => { if (!onUploadImages || !event.dataTransfer.files.length) return; event.preventDefault(); event.stopPropagation(); if (!busy && !uploadingImages) onUploadImages(Array.from(event.dataTransfer.files)); }}
+      onPaste={event => { const files = Array.from(event.clipboardData.files); if (!onUploadImages || !files.length) return; event.preventDefault(); event.stopPropagation(); if (!busy && !uploadingImages) onUploadImages(files); }}>
+      {onUploadImages && <input ref={uploadInput} data-testid="canvas-assistant-upload-input" type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" disabled={busy || uploadingImages}
+        onChange={event => { const files = Array.from(event.target.files || []); event.target.value = ""; if (files.length && !busy && !uploadingImages) onUploadImages(files); }} />}
+      {uploadError && <div role="alert" className="mb-2 rounded-xl bg-[#fff5f3] px-3 py-2 text-[12px] text-[#b44f43]">{uploadError}</div>}
+      {uploadingImages && <div role="status" className="canvas-ui-muted mb-2 flex items-center gap-2 text-[12px]"><Loader2 className="h-3.5 w-3.5 animate-spin" />{english ? "Adding images…" : "正在添加图片…"}</div>}
       {error && <div role="alert" className="mb-2 rounded-xl border border-[#f0c8c3] bg-[#fff5f3] px-3 py-2 text-[12px] text-[#b44f43]">
         {error}
-        <button type="button" disabled={busy || !input.trim()} className="ml-2 font-semibold underline disabled:opacity-40" onClick={onSend}>{labels.retry}</button>
+        <button type="button" disabled={busy || uploadingImages || !input.trim()} className="ml-2 font-semibold underline disabled:opacity-40" onClick={onSend}>{labels.retry}</button>
       </div>}
       <div ref={referenceArea} data-testid="canvas-assistant-composer" className="relative rounded-[20px] border border-[var(--canvas-ui-border)] p-3 shadow-[0_2px_12px_rgba(15,23,42,0.02)] transition-[border-color,box-shadow] focus-within:border-[var(--canvas-ui-border-strong)] focus-within:shadow-[0_0_0_3px_var(--canvas-ui-soft)]">
         <div className="mb-2 flex min-w-0 items-center justify-between gap-2">
@@ -293,30 +310,30 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
           </button>}
         </div>
         {referencesOpen && <div data-testid="canvas-assistant-references" className="canvas-ui-surface canvas-ui-surface-solid absolute bottom-[calc(100%+8px)] left-0 right-0 rounded-[16px] border p-3 shadow-lg">
-          <div className="mb-2 flex items-center justify-between text-[12px] font-semibold"><span>{labels.references}</span>{onClearReference && <button type="button" disabled={busy} className={iconButton} onClick={()=>{onClearReference();setReferencesOpen(false);}} aria-label="移除图片参考" title="移除图片参考"><X className="h-3.5 w-3.5" /></button>}<button type="button" aria-label={labels.closeReferences} className={iconButton} onClick={() => setReferencesOpen(false)}><X className="h-3.5 w-3.5" /></button></div>
+          <div className="mb-2 flex items-center justify-between text-[12px] font-semibold"><span>{labels.references}</span>{onClearReference && <button type="button" disabled={busy || uploadingImages} className={iconButton} onClick={()=>{onClearReference();setReferencesOpen(false);}} aria-label="移除图片参考" title="移除图片参考"><X className="h-3.5 w-3.5" /></button>}<button type="button" aria-label={labels.closeReferences} className={iconButton} onClick={() => setReferencesOpen(false)}><X className="h-3.5 w-3.5" /></button></div>
           <div className="flex gap-2 overflow-x-auto">
-            {contextImages.map((image, index) => <button key={image.id} type="button" onClick={() => onPreview(image)} title={`${index === 0 ? labels.currentImage : labels.upstreamImage}: ${image.title}`}
+            {contextImages.map((image, index) => <div key={image.id} className="relative shrink-0"><button type="button" onClick={() => onPreview(image)} title={`${english ? "Image" : "图"} ${index + 1}: ${image.title}`}
               className={cn("h-12 w-12 shrink-0 overflow-hidden rounded-lg border", index === 0 ? "border-[#16849a]" : "border-[var(--canvas-ui-border)]")}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <CachedImage src={image.image} alt={image.title || (index === 0 ? labels.currentImage : labels.upstreamImage)} className="h-full w-full object-cover" />
-            </button>)}
+            </button><span className="canvas-ui-surface-solid absolute bottom-0 left-0 rounded px-1 text-[10px]">{index + 1}</span>{onRemoveReference && <button type="button" disabled={busy || uploadingImages} aria-label={`${english ? "Remove image" : "移除图片"} ${index + 1}`} className="canvas-ui-surface-solid absolute -right-1 -top-1 rounded-full border p-0.5" onClick={() => onRemoveReference(image.id)}><X className="h-3 w-3" /></button>}</div>)}
           </div>
         </div>}
         <textarea ref={composer} data-testid="canvas-assistant-input" aria-label={labels.placeholder} rows={2} value={input} disabled={busy}
           placeholder={labels.placeholder} onChange={event => onInputChange(event.target.value)}
           onKeyDown={event => {
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault(); event.stopPropagation(); if (!busy && input.trim()) onSend();
+              event.preventDefault(); event.stopPropagation(); if (!busy && !uploadingImages && input.trim()) onSend();
             }
           }}
           className="canvas-ui-text block min-h-[64px] max-h-36 w-full resize-none border-0 bg-transparent p-0 text-[13px] leading-6 outline-none placeholder:text-[var(--canvas-ui-muted)] disabled:opacity-60" />
         <div className="mt-2 flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             {onSkillSelect && <SkillBook compact selected={selectedSkill || null} onSelect={onSkillSelect} accountKey={skillAccountKey || ""} busy={busy} sessionId={skillSessionId} hasConversation={turns.some(turn => turn.role === "assistant" && !!turn.content.trim())} onUse={prompt => { if (!input.trim()) onInputChange(prompt); composer.current?.focus(); }} />}
-            <button ref={referenceTrigger} type="button" disabled={!contextImages.length} aria-label={labels.references} title={labels.references} aria-expanded={referencesOpen} className={cn(iconButton, "canvas-ui-control rounded-full")} onClick={() => setReferencesOpen(open => !open)}><Plus className="h-4 w-4" aria-hidden="true" /></button>
+            <button ref={referenceTrigger} type="button" disabled={onUploadImages ? busy || uploadingImages : !contextImages.length} aria-label={onUploadImages ? (english ? "Add images" : "添加图片") : labels.references} title={onUploadImages ? (english ? "Add images" : "添加图片") : labels.references} aria-expanded={onUploadImages ? undefined : referencesOpen} className={cn(iconButton, "canvas-ui-control rounded-full")} onClick={() => onUploadImages ? uploadInput.current?.click() : setReferencesOpen(open => !open)}><Plus className="h-4 w-4" aria-hidden="true" /></button>
             {modelControl ? <div className="min-w-0 flex-1" data-testid="canvas-assistant-model">{modelControl}</div> : <span className="canvas-ui-muted inline-flex items-center gap-1.5 text-[12px] font-semibold"><InfinityIcon className="h-4 w-4" aria-hidden="true" />{labels.agent}</span>}
           </div>
-          <button type="button" aria-label={busy && onStop ? "停止任务" : labels.send} title={busy && onStop ? "停止任务" : labels.send} disabled={busy ? !onStop : !input.trim()} onClick={busy && onStop ? onStop : onSend}
+          <button type="button" aria-label={busy && onStop ? "停止任务" : labels.send} title={busy && onStop ? "停止任务" : labels.send} disabled={busy ? !onStop : uploadingImages || !input.trim()} onClick={busy && onStop ? onStop : onSend}
             className="canvas-ui-primary flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-85 disabled:opacity-35">
             {busy ? <span className="h-3 w-3 rounded-sm bg-current" aria-hidden="true" /> : <ArrowUp className="h-[18px] w-[18px]" aria-hidden="true" />}
           </button>

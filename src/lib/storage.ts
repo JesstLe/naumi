@@ -4,6 +4,7 @@ import { readFile, stat } from "fs/promises";
 import path from "path";
 import { storageConfiguration } from "./object-storage/config";
 import { createObjectStorage, safeStorageKey } from "./object-storage/adapter";
+import {ORIGINAL_IMAGE_MAX_BYTES} from "./image-upload-policy";
 
 const config = storageConfiguration(process.env);
 export const storageDriver: "local" | "r2" | "s3" = config.driver;
@@ -76,7 +77,7 @@ export async function presignStoredObject(method: "GET" | "PUT", key: string, ex
   const headers = new Headers();
   if(contentType)headers.set('content-type',contentType);
   if(contentLength!==undefined) {
-    if(!Number.isSafeInteger(contentLength)||contentLength<1||contentLength>12*1024*1024)throw new Error('上传大小无效');
+    if(!Number.isSafeInteger(contentLength)||contentLength<1||contentLength>ORIGINAL_IMAGE_MAX_BYTES)throw new Error('上传大小无效');
     headers.set('content-length',String(contentLength));
   }
   return backend.presign(method,key,expires,headers,filename);

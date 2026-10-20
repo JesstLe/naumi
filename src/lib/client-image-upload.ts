@@ -1,6 +1,8 @@
 "use client";
 
 import { authHeader } from "@/lib/supabase";
+import {prepareOriginalImage,type ClientImagePreviews} from "./browser-reference-image";
+const originalPreviews=new WeakMap<File,ClientImagePreviews>();
 
 export type PreparedUpload = {
   file: File;
@@ -9,6 +11,7 @@ export type PreparedUpload = {
   optimized: boolean;
   width: number;
   height: number;
+  error?:string;
 };
 
 const MIN_OPTIMIZE_BYTES = 1.5 * 1024 * 1024;
@@ -68,13 +71,17 @@ export async function prepareImageUpload(
   }
 }
 
-export async function prepareImageUploads(files: File[], concurrency = 3) {
+export async function prepareImageUploads(files: File[], concurrency = 3,options:{preserveOriginal?:boolean}={}) {
   const results = new Array<PreparedUpload>(files.length);
   let next = 0;
-  await Promise.all(Array.from({ length: Math.min(concurrency, files.length) }, async () => {
+  await Promise.all(Array.from({ length: Math.min(options.preserveOriginal?1:concurrency, files.length) }, async () => {
     while (next < files.length) {
       const index = next++;
-      results[index] = await prepareImageUpload(files[index]);
+      if(options.preserveOriginal){
+        const file=files[index];
+        try{const preview=await prepareOriginalImage(file),original=file.type===preview.mime?file:new File([file],file.name,{type:preview.mime,lastModified:file.lastModified});originalPreviews.set(original,preview);results[index]={file:original,originalBytes:file.size,uploadBytes:file.size,optimized:false,width:preview.width,height:preview.height};}
+        catch(error){results[index]={file,originalBytes:file.size,uploadBytes:file.size,optimized:false,width:0,height:0,error:error instanceof Error?error.message:"图片读取失败"};}
+      }else results[index] = await prepareImageUpload(files[index]);
     }
   }));
   return results;
@@ -84,14 +91,19 @@ export async function uploadFormData<T>(
   url: string,
   form: FormData,
   onProgress?: (loaded: number, total: number) => void,
-  timeoutMs = 120_000
+  timeoutMs = 120_000,
+  assertCurrent?: () => void,
 ): Promise<T> {
   const headers = await authHeader();
+  assertCurrent?.();
   const file=form.get('image');
+  const previews=file instanceof File?originalPreviews.get(file):undefined;
+  if(previews){form.set('thumbnail',previews.thumbnail,'thumbnail.webp');form.set('preview',previews.preview,'preview.webp');}
   if(url==='/api/artworks/add' && file instanceof File) {
     const pendingResponse=await fetch('/api/media/uploads',{method:'POST',headers:{...headers,'content-type':'application/json'},
       body:JSON.stringify({action:'prepare',bytes:file.size,contentType:file.type||'image/png'})});
     const pending=await pendingResponse.json() as {enabled?:boolean;id?:string;putUrl?:string;contentType?:string;error?:string};
+    assertCurrent?.();
     if(!pendingResponse.ok)throw new Error(pending.error||'上传申请失败');
     if(pending.enabled&&pending.id&&pending.putUrl) {
       await new Promise<void>((resolve,reject)=>{
@@ -103,15 +115,19 @@ export async function uploadFormData<T>(
         xhr.ontimeout=()=>reject(new Error('素材上传超时，请重试'));
         xhr.send(file);
       });
+      assertCurrent?.();
       const x=form.get('x'),y=form.get('y');
-      const response=await fetch('/api/media/uploads',{method:'POST',headers:{...headers,'content-type':'application/json'},
-        body:JSON.stringify({action:'complete',id:pending.id,title:String(form.get('title')||file.name),
+      const complete={action:'complete',id:pending.id,title:String(form.get('title')||file.name),
           parentId:form.get('parentId')||null,canvasGroupId:form.get('canvasGroupId')||null,linked:form.get('linked')==='1',
-          ...(x!==null&&Number.isFinite(Number(x))?{x:Number(x)}:{}),...(y!==null&&Number.isFinite(Number(y))?{y:Number(y)}:{})})});
+          ...(x!==null&&Number.isFinite(Number(x))?{x:Number(x)}:{}),...(y!==null&&Number.isFinite(Number(y))?{y:Number(y)}:{})};
+      const finish=new FormData();finish.set('payload',JSON.stringify(complete));
+      if(previews){finish.set('thumbnail',previews.thumbnail,'thumbnail.webp');finish.set('preview',previews.preview,'preview.webp');}
+      const response=await fetch('/api/media/uploads',{method:'POST',headers:previews?headers:{...headers,'content-type':'application/json'},body:previews?finish:JSON.stringify(complete)});
       const data=await response.json();if(!response.ok)throw new Error(data.error||'素材保存失败');return data as T;
     }
   }
   return new Promise<T>((resolve, reject) => {
+    assertCurrent?.();
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url);
     xhr.timeout = timeoutMs;

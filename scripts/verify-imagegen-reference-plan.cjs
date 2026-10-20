@@ -59,8 +59,8 @@ async function bundle(entry,state,modules,source){
  const pixels=await planImagegen({...req,parameters:{...req.parameters,width:768,height:1024}},'fixture@example.test');check(pixels.request.parameters.width===768&&pixels.request.parameters.ratio==='auto','explicit pixel controls preserved');
  const text=await planImagegen({...req,mode:'generate',inputs:[]},'fixture@example.test');check(text.request.parameters.ratio==='auto','text only unchanged');
  const frozen=await planImagegen(plan.request,'fixture@example.test');check(frozen.request.parameters.ratio==='3:4','frozen resolved input stable');
- state.allowed=['1:1'];const beforeUnsupported=state.quotes.length;await assert.rejects(()=>planImagegen(req,'fixture@example.test'),/没有支持本次生成参数/);check(state.quotes.length===beforeUnsupported,'unsupported never falls back to square or quotes');delete state.allowed;
- state.inputs[1]={...b,width:751};const custom=await planImagegen(req,'fixture@example.test');check(custom.request.parameters.ratio==='751:1000','current native-grid contract retains actual custom ratio');state.inputs[1]=b;
+ state.allowed=['1:1'];const beforeUnsupported=state.quotes.length;await assert.rejects(()=>planImagegen(req,'fixture@example.test'),/没有已核实支持|没有支持本次生成参数的可用通道/);check(state.quotes.length===beforeUnsupported,'unsupported never falls back to square or quotes');delete state.allowed;
+ state.inputs[1]={...b,width:751};const customFrame=await planImagegen(req,'fixture@example.test');check(customFrame.request.parameters.ratio==='751:1000','v2 accepts actual coprime reference instead of forcing square');state.inputs[1]=b;
  const inferredStyle=await planImagegen({...req,prompt:'风格迁移，保持产品主体'},'fixture@example.test');check(inferredStyle.request.parameters.ratio==='1:1','intent workflow keeps target frame');
  const local=await planImagegen({...req,mode:'postprocess'},'fixture@example.test');check(local.request.parameters.ratio==='auto'&&local.totalCredits===0,'local processing untouched');
  const core=await bundle('src/lib/imagegen/generation-core.ts',state,{

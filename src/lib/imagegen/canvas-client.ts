@@ -23,13 +23,14 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
   return Response.json({jobId:`imagegen-${previous.receipt.id}`});
  }
  const inputs:ImagegenRequest["inputs"]=[],assets:CanvasFrameChoice[]=[];
- for(const file of form.getAll("image")){if(!(file instanceof File))continue;assertCurrent();const asset=await uploadImagegenInput(file);assertCurrent();inputs.push({artworkId:asset.artworkId,role:inputs.length?"reference":"edit-target"});assets.push({...asset,label:`图片 ${inputs.length}`,ratio:frameRatio(asset)||""});}
+ const files=form.getAll("image").filter((file):file is File=>file instanceof File);
+ for(const file of files){assertCurrent();const asset=await uploadImagegenInput(file,files.length,assertCurrent);assertCurrent();const source={...asset,width:asset.sourceWidth,height:asset.sourceHeight};inputs.push({artworkId:asset.artworkId,role:inputs.length?"reference":"edit-target"});assets.push({...source,label:`图片 ${inputs.length}`,ratio:frameRatio(source)||""});}
  const value=(name:string)=>String(form.get(name)||"");
  const style=value("style"),raw=value("userPrompt")||value("prompt"),prompt=raw+(style&&!/默认|default/i.test(style)?`\n用户选择的视觉风格：${style}`:"");
  const request=imagegenRequestSchema.parse({version:1,operationId:browserRandomUUID(),entry:"canvas",mode:inputs.length?"edit":"generate",prompt,sourceNodeId:value("parentId")||sourceNodeId,inputs,modelId:value("model")||undefined,variants:Number(value("count")||1),parameters:{quality:value("quality")||"medium",resolution:value("resolution")||"1K",ratio:value("ratio")||"auto"},output:value("transparent")==="1"?{background:"transparent",backgroundOrigin:"current-ui"}:{format:"png"}});
  const frameInputs:FrameInput[]=inputs.map(input=>({...input,...assets.find(asset=>asset.artworkId===input.artworkId)}));
  const intent=resolveImagegenIntent(request);
- try { automaticFrameRatio(request,frameInputs,intent.operation,intent.useCase); }
+ try { const ratio=automaticFrameRatio(request,frameInputs,intent.operation,intent.useCase);if(ratio)request.parameters.ratio=ratio; }
  catch(error){
   if(!(error instanceof FrameRatioChoiceRequired)||!scope.chooseFrame)throw error;
   const candidates=new Set(frameCandidates(frameInputs,intent.useCase).map(input=>input.artworkId));

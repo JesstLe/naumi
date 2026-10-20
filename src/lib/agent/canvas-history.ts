@@ -33,6 +33,9 @@ export async function canvasAgentHistory(request:Request){
   const steps=Array.isArray(saved.steps)?saved.steps:[];
   const latest=(steps as any[]).findLast(step=>step.type==="canvas_turn");
   if(latest&&"anchorId" in latest)anchorId=anchors.some(art=>art.id===latest.anchorId)?latest.anchorId:"";
+  // Older sessions have no contextIds and retain the original anchor fallback.
+  const latestIds=Array.isArray((latest as any)?.contextIds)?Array.from(new Set<string>((latest as any).contextIds.filter((value:unknown):value is string=>typeof value==='string'))).slice(0,5):undefined;
+  const referenceIds=latestIds?(await listArtworksByIds(email,latestIds)).map(art=>art.id).sort((a,b)=>latestIds.indexOf(a)-latestIds.indexOf(b)):undefined;
   const messages: {role:string;content:string}[]=Array.isArray(saved.messages)?saved.messages.filter((message:any)=>["user","assistant"].includes(message?.role)&&typeof message?.content==="string"):[];
   const artifactIds:string[]=Array.from(new Set<string>(steps.flatMap((step:any)=>step.type==="artifacts"?(step.artifacts||[]).map((art:any)=>String(art.id)):[])));
   const owned=await listArtworksByIds(email,artifactIds),byId=new Map(owned.map(art=>[art.id,art]));
@@ -52,7 +55,7 @@ export async function canvasAgentHistory(request:Request){
   const status=running?"running":terminal?.status||(error||interrupted?"failed":"completed");
   const attentionEvent=steps.slice(Math.max(0,currentTurn)).findLast((step:any)=>step.type==="attention") as any;
   const attention=["waiting","restricted"].includes(attentionEvent?.kind)?attentionEvent.kind:undefined;
-  return NextResponse.json({session:{id:saved.id,title:saved.title,anchorId,projectKey,turns,steps:saved.steps,running,status,attention,error:error?.message||(interrupted&&!terminal?"任务因服务中断而停止，请核对已有结果，避免重复生图":undefined)}});
+  return NextResponse.json({session:{id:saved.id,title:saved.title,anchorId,referenceIds,projectKey,turns,steps:saved.steps,running,status,attention,error:error?.message||(interrupted&&!terminal?"任务因服务中断而停止，请核对已有结果，避免重复生图":undefined)}});
  }
  if(!id)return NextResponse.json({error:"缺少会话编号"},{status:400});
  if(getSession(email,id)?.running || getSession(email,id)?.canvasExecuting)return NextResponse.json({error:"任务仍在执行，请先停止"},{status:409});
