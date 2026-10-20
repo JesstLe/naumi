@@ -136,7 +136,15 @@ export function reverseHubImageFetch(scope: ModelExecutionScope, options: Valida
         if (!task) { const result = await json(`/tasks/${encodeURIComponent(taskId!)}`); if (!result.response.ok) throw Error("reverse-hub-query-unconfirmed"); task = result.data; }
         if (task.id !== taskId || task.operation_id !== prepared.attemptId || task.model !== c.wireModel) throw Error("reverse-hub-task-identity-mismatch");
         await ledger.apply(row.id, { state: task.state, taskId, status: "pending", source: "reverse-hub-task-query", evidence: { state: task.state }, actualModel: task.model });
-        if (["failed", "cancelled"].includes(task.state)) return Response.json({ error: { message: "即梦生成任务失败，供应调用记录已保留", billing_status: "task_failed" } }, { status: 422 });
+        if (["failed", "cancelled"].includes(task.state)) {
+          // Exact new Hub proof only. Historical missing_artifact, a task with
+          // an accepted native ID, or failure without this admission fact must
+          // not become a permit to submit the paid operation elsewhere.
+          const notSubmitted = task.state === "failed" && task.submission_status === "not_submitted" &&
+            task.error?.code === "jimeng_quota_not_submitted" && task.upstream_task_id === null;
+          if (notSubmitted) await ledger.apply(row.id, { state: "rejected", status: "pending", source: "reverse-hub-not-submitted", evidence: { code: "jimeng_quota_not_submitted", billing_status: "not_charged" } });
+          return Response.json({ error: { message: notSubmitted ? "生成通道额度不足，本次未受理生成，请联系管理员处理" : "即梦生成任务失败，供应调用记录已保留", billing_status: notSubmitted ? "not_charged" : "task_failed" } }, { status: 422 });
+        }
         if (task.state === "succeeded") {
           if (!Array.isArray(task.result?.data) || !task.result.data.length || task.result.data.length > prepared.n) throw Error("reverse-hub-image-missing");
           const data = [];

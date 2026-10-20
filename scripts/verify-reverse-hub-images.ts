@@ -68,6 +68,17 @@ async function main() {
     await assert.rejects(withImageOperation(scope.frozen.publicModelId, { id: "mask-1" }, () => pending("http://hub.test/v1/images/edits", { method: "POST", body: form })), ImageOperationReview);
     task.state = "failed";
     assert.equal((await withImageOperation(scope.frozen.publicModelId, { id: "mask-1" }, () => pending("http://hub.test/v1/images/edits", { method: "POST", body: form }))).status, 422);
+    task.error = {code:"jimeng_quota_not_submitted",message:"DO_NOT_LEAK fixture secret"};
+    task.submission_status="not_submitted"; task.upstream_task_id=null;
+    const rejected=await withImageOperation(scope.frozen.publicModelId,{id:"mask-1"},()=>pending("http://hub.test/v1/images/edits",{method:"POST",body:form}));
+    const rejection=await rejected.json();assert.equal(rejected.status,422);assert.equal(rejection.error.billing_status,"not_charged","Exact Hub pre-submission proof must not trap the customer in review");assert.ok(!rejection.error.message.includes("DO_NOT_LEAK"));
+    task.upstream_task_id="accepted-native-history";
+    const ambiguous=await withImageOperation(scope.frozen.publicModelId,{id:"mask-1"},()=>pending("http://hub.test/v1/images/edits",{method:"POST",body:form}));
+    assert.equal((await ambiguous.json()).error.billing_status,"task_failed","Accepted native history never becomes a retry permit");
+    task.upstream_task_id=null;delete task.submission_status;
+    const legacy=await withImageOperation(scope.frozen.publicModelId,{id:"mask-1"},()=>pending("http://hub.test/v1/images/edits",{method:"POST",body:form}));
+    assert.equal((await legacy.json()).error.billing_status,"task_failed","Legacy code without explicit new proof stays unchanged");
+
   });
   const meta = reverseHubCatalogMetadata({ provider: "jimeng", evidence: "catalog", operations: ["image.generate", "image.edit"], image_capabilities: { source: "native_catalog", resolutions: ["1.5k", "2k", "4k"], ratios: ["1:1"], max_reference_images: 10 } }, "http://hub.test/v1/models", new Date().toISOString())!;
   assert.equal(meta.capabilityState, "documented"); assert.equal(meta.prices.length, 0); assert.equal(meta.capabilities.mask, null); assert.deepEqual(meta.capabilities.resolutions, ["1.5k", "2k", "4k"]);
