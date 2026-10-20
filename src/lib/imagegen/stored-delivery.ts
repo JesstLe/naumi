@@ -12,6 +12,7 @@ import { assertMutableStagingTask } from "../staging-history";
 import type { BillingResult } from "../billing/types";
 import type { ImagegenPlan } from "./types";
 import { selectedBusinessOption } from "../model-config/business";
+import { imageCoordinationPool } from "./coordination-pool";
 
 async function deliverySource(parentId:string,owner:string){
  const parent=(await getPool().query("SELECT * FROM app_image_jobs WHERE id=$1 AND email=$2 AND kind='imagegen'",[parentId,owner.toLowerCase()])).rows[0];
@@ -43,7 +44,7 @@ export async function storedDeliveryState(parentId:string,owner:string):Promise<
  * artifacts, and reuses the original settlement ID. No SDK, plan, supplier POST
  * or supplier query is imported or invoked. Historical settled bills stay intact. */
 export async function recoverStoredDelivery(parentId:string,owner:string){
- owner=owner.toLowerCase();const pool=getPool(),lock=await pool.connect();let key="",locked=false;
+ owner=owner.toLowerCase();const pool=getPool(),lock=await imageCoordinationPool().connect();let key="",locked=false;
  try{
   const initial=await deliverySource(parentId,owner);if(!initial)throw Error("任务没有可恢复的已保存结果");
   // Different parent receipts can refer to the same child. Serialize by child,
