@@ -59,16 +59,25 @@ export async function uploadImage(
   return publicBase ? `${publicBase}/${normalized}` : `${MEDIA_URL_PREFIX}/${normalized}`;
 }
 
-// Mirror first: an object-store outage must never discard an already paid result.
-// The stable URL and local bytes remain readable by the previous release too.
+// Remote first: with object storage configured the remote bucket is the
+// source of truth, so the app disk stops growing. An object-store outage
+// falls back to a local mirror — an already paid result is never discarded,
+// and the mirror remains readable by the previous release too.
 export async function writeStoredObject(bytes: Uint8Array, contentType: string, key: string) {
   const normalized = safeKey(key);
-  await local.put(normalized, bytes, contentType, "private, max-age=300");
-  if (storageDriver === "local") return { remoteReady: false };
+  if (storageDriver === "local") {
+    await local.put(normalized, bytes, contentType, "private, max-age=300");
+    return { remoteReady: false };
+  }
   try {
     await backend.put(normalized, bytes, contentType, "private, max-age=300");
     return { remoteReady: true };
-  } catch { return { remoteReady: false }; }
+  } catch {
+    await local.put(normalized, bytes, contentType, "private, max-age=300").catch(() => {
+      throw new Error("对象写入失败");
+    });
+    return { remoteReady: false };
+  }
 }
 
 export async function presignStoredObject(method: "GET" | "PUT", key: string, expires = 300, contentType?: string, filename?: string, contentLength?: number) {
@@ -93,28 +102,43 @@ export async function readManagedObject(
 ): Promise<{ bytes: Buffer; contentType: string; size: number }> {
   const key = storageKeyFromManagedUrl(url);
   if (!key) throw new Error("对象地址不属于当前存储");
-  if (storageDriver === "local" || privateMedia) {
-    const root = path.resolve(MEDIA_DIR);
-    const full = path.resolve(root, key.replaceAll("/", path.sep));
-    if (full === root || !full.startsWith(root + path.sep)) throw new Error("对象路径非法");
+  if (storageDriver !== "local") {
+    // Remote objects are authoritative; the local mirror covers a remote
+    // outage and keys written before (or during) the remote cutover.
+    let response: Response | null = null, remoteError: unknown = null;
+    try { response = await fetchStoredObject(key); } catch (error) { remoteError = error; }
+    if (response && response.ok) {
+      const declared = Number(response.headers.get("content-length") || 0);
+      if (declared > maxBytes) throw new Error("对象超过大小限制");
+      const reader = response.body?.getReader(), chunks: Uint8Array[] = []; let size = 0;
+      if (!reader) throw new Error("对象内容为空");
+      try { for (;;) { const next = await reader.read(); if (next.done) break; size += next.value.byteLength;
+        if (size > maxBytes) throw new Error("对象超过大小限制"); chunks.push(next.value); } }
+      finally { await reader.cancel().catch(() => {}); }
+      const bytes = Buffer.concat(chunks);
+      return { bytes, contentType: response.headers.get("content-type") || "application/octet-stream", size: bytes.byteLength };
+    }
     try {
-      const info = await stat(full);
-      if (!info.isFile()) throw new Error("对象不存在");
-      if (info.size > maxBytes) throw new Error("对象超过大小限制");
-      return { bytes: await readFile(full), contentType: "application/octet-stream", size: info.size };
-    } catch (error) { if (storageDriver === "local" || (error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+      return await readLocalMirror(key, maxBytes);
+    } catch (localError) {
+      const notFound = (localError as NodeJS.ErrnoException)?.code === "ENOENT" || (localError instanceof Error && localError.message === "对象不存在");
+      if (!notFound) throw localError;
+      if (remoteError) throw remoteError;
+      if (response) throw new Error(`读取对象失败 (${response.status})`);
+      throw localError;
+    }
   }
-  const response = await fetchStoredObject(key);
-  if (!response.ok) throw new Error(`读取对象失败 (${response.status})`);
-  const declared = Number(response.headers.get("content-length") || 0);
-  if (declared > maxBytes) throw new Error("对象超过大小限制");
-  const reader = response.body?.getReader(), chunks: Uint8Array[] = []; let size = 0;
-  if (!reader) throw new Error("对象内容为空");
-  try { for (;;) { const next = await reader.read(); if (next.done) break; size += next.value.byteLength;
-    if (size > maxBytes) throw new Error("对象超过大小限制"); chunks.push(next.value); } }
-  finally { await reader.cancel().catch(() => {}); }
-  const bytes = Buffer.concat(chunks);
-  return { bytes, contentType: response.headers.get("content-type") || "application/octet-stream", size: bytes.byteLength };
+  return readLocalMirror(key, maxBytes);
+}
+
+async function readLocalMirror(key: string, maxBytes: number): Promise<{ bytes: Buffer; contentType: string; size: number }> {
+  const root = path.resolve(MEDIA_DIR);
+  const full = path.resolve(root, key.replaceAll("/", path.sep));
+  if (full === root || !full.startsWith(root + path.sep)) throw new Error("对象路径非法");
+  const info = await stat(full);
+  if (!info.isFile()) throw new Error("对象不存在");
+  if (info.size > maxBytes) throw new Error("对象超过大小限制");
+  return { bytes: await readFile(full), contentType: "application/octet-stream", size: info.size };
 }
 
 export async function managedObjectExists(url: string): Promise<boolean> {
