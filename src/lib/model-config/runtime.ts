@@ -1,6 +1,7 @@
 import { compatiblePublicModels, FEATURE_BINDINGS } from "./business";
 import { missingImagegenCapabilities,publishedImagegenCapabilities } from "../imagegen/capabilities";
 import { adminConfiguredFeature } from "./selection-policy";
+import { MODEL_BINDINGS } from "./bindings";
 import {publicUpstreamIds} from "./channel-policy";
 import type { FeatureId } from "../billing/rules/registry";
 import "server-only";
@@ -29,6 +30,14 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
   const preset = selectedImagePreset(config,feature,undefined,feature ? undefined : "image.generate");
   let defaultModelId = preset ? preset.aliases[0].id : featureDefaultModel(config,feature,feature ? FEATURE_BINDINGS[feature] : undefined);
   const configuredIds = f?.enabled===false ? [] : preset ? [...preset.aliases.map(a => a.id),...(f?.options.filter(o => o.enabled && !preset.defaultModelIds.includes(o.modelId)).map(o => o.modelId) || [])] : f ? [...f.options].filter(o => o.enabled).sort((a,b) => a.sort-b.sort).map(o => o.modelId) : undefined;
+  const configuredProcessor = adminConfiguredFeature(feature) && f?.enabled !== false
+    ? config.publicModels.find(m => m.id === defaultModelId && m.enabled && m.modality === modality && modelAllowedForFeature(m, feature) && (!configuredIds || configuredIds.includes(m.id)))
+    : undefined;
+  const processorAvailable = !!configuredProcessor && publicUpstreamIds(config, configuredProcessor).some(id => {
+    const upstream = config.upstreamModels.find(u => u.id === id);
+    const binding = feature ? FEATURE_BINDINGS[feature] : undefined;
+    return upstream?.enabled && binding && upstream.capabilities[MODEL_BINDINGS[binding].capability] && config.providers.some(p => p.id === upstream.providerId && p.enabled && !!p.credentialRef);
+  });
   const models = config.publicModels.filter(m => m.enabled && m.visible && m.modality === modality && modelAllowedForFeature(m,feature) && (!compatible || compatible.includes(m.id)) && (!configuredIds || configuredIds.includes(m.id))).sort((a,b) => configuredIds ? configuredIds.indexOf(a.id)-configuredIds.indexOf(b.id) : 0).map(m => {
     const ids = publicUpstreamIds(config,m);
     const upstreams = config.upstreamModels.filter(u => ids.includes(u.id) && u.enabled && config.providers.some(p => p.id === u.providerId && p.enabled));
@@ -48,7 +57,7 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
     const defaultPreset = selectedImagePreset(config,undefined,id,binding);
     return [[binding,{ qualities: defaultPreset ? [...DISPLAY_QUALITIES] : qualityPresentation(upstreams)?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), nativeResolutions: defaultPreset?.resolutions || Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))) }]];
   }));
-  return { version: snapshot.version, feature, selectionMode: adminConfiguredFeature(feature) ? "admin" : "user", defaultModelId, models: publishedModels, bindingCapabilities, bindings: Object.fromEntries(Object.entries(config.bindings).map(([binding,id]) => [binding, selectedImagePreset(config,undefined,id,binding)?.aliases[0].id || id]).filter(([, id]) => visible.has(id))) };
+  return { version: snapshot.version, feature, selectionMode: adminConfiguredFeature(feature) ? "admin" : "user", available: adminConfiguredFeature(feature) ? processorAvailable : publishedModels.length > 0, defaultModelId, models: publishedModels, bindingCapabilities, bindings: Object.fromEntries(Object.entries(config.bindings).map(([binding,id]) => [binding, selectedImagePreset(config,undefined,id,binding)?.aliases[0].id || id]).filter(([, id]) => visible.has(id))) };
 }
 function rankFor(quality: string) { return ({ low: 1, medium: 2, high: 3, xhigh: 4, max: 5 } as Record<string,number>)[quality] || 1; }
 function matchesRule(when: ModelConfig["pools"][number]["rules"][number]["when"], f: ModelFacts) {

@@ -1913,6 +1913,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   };
   const [pendNodes, setPendNodes] = useState<Pend[]>([]);
   const pendNodesRef = useRef(pendNodes); pendNodesRef.current = pendNodes;
+  // Session-local task ownership survives project switches; unknown paid work is
+  // never discarded or restarted merely because its original view is hidden.
+  const editTaskStateRef = useRef(new Map<string, { account: string; project: string | null; node: Pend }>());
   const [canvasImageTaskRefreshKey, setCanvasImageTaskRefreshKey] = useState(0);
   const settledCanvasVideoTaskRef = useRef(new Set<string>());
   const failedCanvasVideoTaskRef = useRef(new Set<string>());
@@ -2268,12 +2271,26 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       }
     // 标记/取消标记(逐 id 记录原值,批量操作共用)
     | { kind: "mark"; changes: Array<{ id: string; from: boolean; to: boolean }> };
-  const [undoStack, setUndoStack] = useState<UndoAct[]>([]);
-  const [redoStack, setRedoStack] = useState<UndoAct[]>([]);
+  const historyAccount = canvasAccountRef.current;
+  const historyScope = JSON.stringify([historyAccount, activeKey || "workspace"]);
+  const historyScopeRef = useRef(historyScope); historyScopeRef.current = historyScope;
+  const historyScopesRef = useRef(new WeakMap<UndoAct, string>());
+  const [historyUndo, setUndoStack] = useState<UndoAct[]>([]);
+  const [historyRedo, setRedoStack] = useState<UndoAct[]>([]);
+  const undoStack = historyUndo.filter(action => historyScopesRef.current.get(action) === historyScope);
+  const redoStack = historyRedo.filter(action => historyScopesRef.current.get(action) === historyScope);
   const pushUndo = useCallback((action: UndoAct) => {
-    setUndoStack((stack) => [...stack.slice(-50), action]);
-    setRedoStack([]);
-  }, []);
+    // The callback keeps its originating scope across async generation/project switches.
+    // A first-created node belongs to the newly created project, not a global history.
+    const newProject = action.kind === "mixed-add" ? action.projectKey
+      : action.kind === "video-add" || action.kind === "text-add" ? action.records[0]?.projectKey
+      : action.kind === "workflow-add" ? action.textNodes[0]?.projectKey || (action.artworks[0] ? `tree:${action.artworks[0].groupId || action.artworks[0].id}` : null)
+      : action.kind === "add" && action.records[0] ? `tree:${action.records[0].groupId || action.records[0].parentId || action.records[0].id}` : null;
+    const scope = activeKey ? historyScope : JSON.stringify([historyAccount, newProject || "workspace"]);
+    historyScopesRef.current.set(action, scope);
+    setUndoStack(stack => [...stack.filter(item => historyScopesRef.current.get(item) !== scope).slice(-450), ...stack.filter(item => historyScopesRef.current.get(item) === scope).slice(-49), action]);
+    setRedoStack(stack => stack.filter(item => historyScopesRef.current.get(item) !== scope));
+  }, [historyScope, activeKey, historyAccount]);
   const [workflowManifests, setWorkflowManifests] = useState<ImportedManifest[]>([]);
   const workflowCallbacksRef = useRef({ replace: requestReplace, select: selectWorkflowGroup });
   workflowCallbacksRef.current = { replace: requestReplace, select: selectWorkflowGroup };
@@ -2784,6 +2801,16 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   useEffect(() => {
     if (active) setCreatingNew(false);
   }, [active]);
+  function restoreEditTasks() {
+    const account = canvasAccountRef.current, project = activeProjectRef.current?.key || null;
+    const restored = Array.from(editTaskStateRef.current.values())
+      .filter(task => !readOnly && task.account === account && task.project === project).map(task => task.node);
+    setPendNodes(nodes => [...nodes.filter(node => !editTaskStateRef.current.has(node.id)), ...restored]);
+  }
+  useEffect(() => {
+    if (!browsing) restoreEditTasks();
+  }, [activeKey, active?.key, user?.email, targetEmail, browsing, readOnly]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // 打开某个画布项目(从网格落地页点卡片)
   function openProject(key: string) {
     ocrRequestEpochRef.current += 1;
@@ -3050,9 +3077,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if(generationOperationRef.current.has(item.receipt.nodeId))continue;
       const result=await pollImagegen(item.receipt.id);if(stopped)return;
       if(!["succeeded","failed","cancelled","needs_attention"].includes(result.status))continue;
+      if(result.status==="succeeded"&&!result.artifacts.length)throw new Error("结果暂未返回，请检查原任务");
       let y=item.receipt.y;const fresh=result.artifacts.filter(a=>!worksRef.current?.some(w=>w.id===a.artworkId&&w.canvasX!=null&&w.canvasY!=null));
       for(const a of fresh){const response=await privateFetchRaw("/api/artworks/position",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:a.artworkId,x:Math.round(item.receipt.x),y:Math.round(y)})});if(!response.ok)throw new Error("恢复结果位置保存失败");y+=a.height+NODE_LABEL_H+24;}
-      if(result.artifacts.length){const ids=result.artifacts.map(a=>a.artworkId),merged=await mergeWorks(ids);if(stopped)return;if(fresh.length)pushAddUndoMany(fresh.map(a=>a.artworkId),merged);}
+      if(result.artifacts.length){const ids=result.artifacts.map(a=>a.artworkId),merged=await mergeWorks(ids);if(stopped)return;assertGenerationResultsPresent(ids,merged);if(fresh.length)pushAddUndoMany(fresh.map(a=>a.artworkId),merged);}
       if(result.error)flashTip(result.error.message);
       if(result.status!=="needs_attention")clearCanvasReceipt(sessionStorage,item.key,item.receipt.id);
       pending.splice(pending.indexOf(item),1);
@@ -4295,13 +4323,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const task = generationTasks.find(task => task.id === id);
     if (id.startsWith("task-")) generationTaskPosRef.current[id] = { ...position };
     else if (id.startsWith("pend-")) pendNodesRef.current = pendNodesRef.current.map(node => node.id === id ? { ...node, ...position } : node);
+    const retained = editTaskStateRef.current.get(id);
+    if (retained) editTaskStateRef.current.set(id, { ...retained, node: { ...retained.node, ...position } });
     if (!saveReceipt || !user) return;
     try { moveCanvasReceipt(sessionStorage, user.email, active?.key || "workspace", operationKey || task?.operationKey || `pend:${id}`, position); } catch { /* best effort, no resubmission */ }
   }
 
   async function checkGenerationReceipt(context: {
     jobId: string; taskId?: string; pendId?: string; sourceId?: string; operationKey: string;
-    position: { x: number; y: number }; account: string; project: string | null;
+    position: { x: number; y: number }; account: string; project: string | null; endpoint?: "aplus";
   }) {
     const current = () => context.account === canvasAccountRef.current && context.project === (activeProjectRef.current?.key || null);
     if (!current() || generationChecksRef.current.has(context.jobId)) return;
@@ -4314,14 +4344,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if (!generationFailureBlocks(failure)) generationOperationRef.current.delete(context.operationKey);
     };
     try {
-      const response = await fetch(`/api/generate-image?job=${encodeURIComponent(context.jobId)}`, { cache: "no-store", headers: await authHeader() });
+      const response = await fetch(`/api/${context.endpoint || "generate-image"}?job=${encodeURIComponent(context.jobId)}`, { cache: "no-store", headers: await authHeader() });
       const result = await readJsonSafe(response);
+      if (context.endpoint === "aplus") result.images = (result.shots || []).filter((shot: {status?: string;id?: string;url?: string}) => shot.status === "done" && shot.id && shot.url);
       if (!current()) return;
       if (!response.ok) throw new Error(result.error || "任务状态暂未读取到，请稍后检查");
       if (result.user) applyServerUser(result.user);
       if (result.status === "done" || result.status === "error" && result.images?.some((image: {id?: string;url?: string}) => image.id && image.url)) {
         const images = (result.images || []).filter((image: {id?: string;url?: string}) => image.id && image.url) as GeneratedResult[];
-        const live = context.taskId ? generationTaskPosRef.current[context.taskId] : context.pendId ? rfRef.current?.getNode(context.pendId)?.position : undefined;
+        const live = context.pendId ? rfRef.current?.getNode(context.pendId)?.position : context.taskId ? generationTaskPosRef.current[context.taskId] : undefined;
         const position = live || context.position;
         let y = position.y;
         for (const image of images) {
@@ -4866,77 +4897,98 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     source: Artwork,
     run: () => Promise<Response>,
     label: string
-  ): Promise<void> {
-    if (readOnly || !user) return;
-    const contextEpoch = canvasContextEpochRef.current;
+  ): Promise<boolean> {
+    if (readOnly || !user) return false;
     const contextProjectKey = activeProjectRef.current?.key || null;
     const operationKey = `node:${source.id}`;
-    if (generationOperationRef.current.has(operationKey)) return;
+    if (generationOperationRef.current.has(operationKey)) return false;
     generationOperationRef.current.add(operationKey);
+    const account = canvasAccountRef.current;
+    const current = () => account === canvasAccountRef.current && contextProjectKey === (activeProjectRef.current?.key || null);
     const sourceNode = rfRef.current?.getNode(source.id);
     const sourceSize = sourceNode ? flowNodeSize(sourceNode) : artworkNodeSize(source);
     const x = (sourceNode?.position.x ?? source.canvasX ?? 0) + sourceSize.width + X_GAP;
     const y = sourceNode?.position.y ?? source.canvasY ?? 0;
     const pendingId = `pend-edit-${browserRandomUUID()}`;
-    setPendNodes((current) => [
-      ...current,
-      {
-        id: pendingId,
-        operationKey,
-        x,
-        y,
-        parentId: source.id,
-        linked: true,
-        label: `${label}结果`,
-        uploading: false,
-        progress: 8,
-        inputs: [source.id],
-        generating: true,
-      },
-    ]);
-
+    for (const [id, task] of editTaskStateRef.current) {
+      if (task.account === account && task.project === contextProjectKey && task.node.operationKey === operationKey && task.node.generationFailure && !generationFailureBlocks(task.node.generationFailure)) editTaskStateRef.current.delete(id);
+    }
+    const node: Pend = { id: pendingId, operationKey, x, y, parentId: source.id, linked: true,
+      label: `${label}结果`, uploading: false, progress: 8, inputs: [source.id], generating: true,
+      generationStage: "generating", generationStartedAt: Date.now() };
+    editTaskStateRef.current.set(pendingId, { account, project: contextProjectKey, node });
+    setPendNodes(nodes => [...nodes.filter(item => !(item.operationKey === operationKey && item.generationFailure && !generationFailureBlocks(item.generationFailure))), node]);
+    const updateTask = (patch: Partial<Pend>) => {
+      const stored = editTaskStateRef.current.get(pendingId);
+      if (!stored) return;
+      const next = { ...stored.node, ...patch };
+      editTaskStateRef.current.set(pendingId, { ...stored, node: next });
+      if (current()) setPendNodes(nodes => nodes.some(item => item.id === pendingId)
+        ? nodes.map(item => item.id === pendingId ? next : item) : [...nodes, next]);
+    };
     const timer = window.setInterval(() => {
-      setPendNodes((items) =>
-        items.map((item) =>
-          item.id === pendingId
-            ? { ...item, progress: Math.min(92, item.progress + Math.max(1, Math.round((96 - item.progress) / 9))) }
-            : item
-        )
-      );
+      const progress = editTaskStateRef.current.get(pendingId)?.node.progress || 8;
+      updateTask({ progress: Math.min(92, progress + Math.max(1, Math.round((96 - progress) / 9))) });
     }, 900);
+    let resultId: string | undefined, operationId: string | undefined;
+    let failure: GenerationFailure | undefined;
+    const showFailure = (value: GenerationFailure) => {
+      failure = value;
+      if (!generationFailureBlocks(value)) generationOperationRef.current.delete(operationKey);
+      updateTask({ generating: generationFailureBlocks(value), generationFailure: value, onGenerationCheck: resultId ? checkResult : undefined });
+      if (current()) flashTip(generationFailureMessage(value));
+    };
+    const loadResult = async () => {
+      if (!resultId || !current()) return false;
+      const stored = editTaskStateRef.current.get(pendingId)?.node;
+      const livePosition = livePendingPosition(pendingId, stored ? {x:stored.x,y:stored.y} : {x,y});
+      await privateFetchRaw("/api/artworks/position", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: resultId, x: Math.round(livePosition.x), y: Math.round(livePosition.y) }),
+      }).then(response => { if (!response.ok) throw new Error(`${label}结果定位失败`); });
+      if (!current()) return false;
+      const fresh = await mergeWorks([resultId]);
+      if (!current()) return false;
+      assertGenerationResultsPresent([resultId], fresh);
+      pushAddUndo(resultId, fresh);
+      editTaskStateRef.current.delete(pendingId);
+      setPendNodes(nodes => nodes.filter(node => node.id !== pendingId));
+      generationOperationRef.current.delete(operationKey);
+      flashTip(`${label}完成，结果已载入画布`);
+      return true;
+    };
+    const checkResult = async () => {
+      if (!current() || !resultId || generationChecksRef.current.has(pendingId)) return;
+      generationChecksRef.current.add(pendingId);
+      try { await loadResult(); }
+      catch (error) { showFailure(classifyGenerationFailure(error, {attempted:true,hasResults:true,jobId:`result:${resultId}`})); }
+      finally { generationChecksRef.current.delete(pendingId); }
+    };
     try {
       const response = await run();
       const data = await readJsonSafe(response);
-      if (!response.ok || !data?.id) throw new Error(data?.error || `${label}失败`);
-      const livePosition = livePendingPosition(pendingId, {x,y});
-      await privateFetchRaw("/api/artworks/position", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: data.id, x: Math.round(livePosition.x), y: Math.round(livePosition.y) }),
-      }).then((response) => {
-        if (!response.ok) throw new Error(`${label}结果定位失败`);
-      });
-      const fresh = await mergeWorks([String(data.id)]);
-      if (!fresh.some((item) => item.id === String(data.id))) throw new Error(`${label}结果加载失败`);
-      if (
-        contextEpoch !== canvasContextEpochRef.current ||
-        activeProjectRef.current?.key !== contextProjectKey
-      ) return;
-      pushAddUndo(String(data.id), fresh);
-      if (data.user) applyServerUser(data.user);
-      // 不抢占用户当前编辑中的节点。
-      flashTip(`${label}完成，结果已生成在原图右侧`);
-    } catch (error) {
-      if (
-        contextEpoch === canvasContextEpochRef.current &&
-        activeProjectRef.current?.key === contextProjectKey
-      ) {
-        flashTip(error instanceof Error ? error.message : `${label}失败`);
+      operationId = typeof data.operationId === "string" ? data.operationId : undefined;
+      resultId = typeof data.id === "string" ? data.id : undefined;
+      if (!response.ok || !resultId) {
+        const unknown = ["OPERATION_PENDING", "OPERATION_CONFLICT"].includes(data.code);
+        const notAccepted = !unknown && (data.accepted === false || [400,401,402,403,404,413,415,422,429].includes(response.status));
+        throw new ImagegenHttpError(data?.error || `${label}未完成，请检查原操作`, response.status, notAccepted ? false : undefined);
       }
+      if (current() && data.user) applyServerUser(data.user);
+      const loaded = await loadResult();
+      if (!loaded) showFailure({ kind: "sync", jobId: `result:${resultId}`, message: "结果已生成，回到原项目后检查已有结果，请勿重复生成" });
+      return loaded;
+    } catch (error) {
+      showFailure(classifyGenerationFailure(error, {attempted:true,hasResults:!!resultId,jobId:resultId ? `result:${resultId}` : operationId}));
+      return false;
     } finally {
       window.clearInterval(timer);
-      setPendNodes((items) => items.filter((item) => item.id !== pendingId));
-      generationOperationRef.current.delete(operationKey);
+      // Unknown acceptance keeps its lock and visible outcome; never auto-resubmit.
+      if (!failure) {
+        editTaskStateRef.current.delete(pendingId);
+        setPendNodes(nodes => nodes.filter(node => node.id !== pendingId));
+        generationOperationRef.current.delete(operationKey);
+      }
     }
   }
 
@@ -5118,12 +5170,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   async function submitAnnotations(formData: FormData) {
     const source = annotateArtwork;
     if (!source) return;
+    // The child closes this submission's editor immediately. Completion must not
+    // close any editor the user has opened since, including the same artwork.
     await landEditResult(
       source,
       () => privateFetch("/api/canvas/annotate", { method: "POST", body: formData }),
       "标注编辑"
     );
-    setAnnotateArtwork(null);
   }
 
   function openAssistant(artwork: Artwork) {
@@ -5448,9 +5501,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         ? { x: sourceNode.position.x + sourceSize.width + X_GAP, y: sourceNode.position.y }
         : { x: 0, y: 0 };
     const taskId = `task-detail-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const reservedPosition = reserveGenerationPosition(taskId, basePosition, generationPlaceholderSize(genRatio), pend ? basePosition : undefined);
+    const replacedFailures = generationTasks.filter(task => task.operationKey === operationKey && task.failure && !generationFailureBlocks(task.failure));
+    const previous = replacedFailures[replacedFailures.length - 1];
+    const retryPosition = previous ? generationTaskPosRef.current[previous.id] || previous.position : undefined;
+    for (const failed of replacedFailures) { delete generationTaskPosRef.current[failed.id]; delete generationTaskSizeRef.current[failed.id]; }
+    const reservedPosition = reserveGenerationPosition(taskId, basePosition, generationPlaceholderSize(genRatio), pend ? basePosition : retryPosition);
     setGenerationTasks((current) => [
-      ...current,
+      ...current.filter(task => !replacedFailures.some(failed => failed.id === task.id)),
       {
         id: taskId,
         operationKey,
@@ -5462,10 +5519,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     ]);
     if (pend) {
       setPendNodes((current) =>
-        current.map((node) => (node.id === pend.id ? { ...node, generating: true } : node))
+        current.map((node) => (node.id === pend.id ? { ...node, generating: true, generationFailure: undefined, onGenerationCheck: undefined } : node))
       );
     }
     setGenError(null);
+    let attempted = false, terminal = false, jobId: string | undefined;
+    let failure: GenerationFailure | undefined, resultIds: string[] = [], resultsLoaded = false;
+    let terminalMessage: string | undefined;
+    const requestAccount = canvasAccountRef.current, requestProject = activeProjectRef.current?.key || null;
+    const current = () => requestAccount === canvasAccountRef.current && requestProject === (activeProjectRef.current?.key || null);
     try {
       const form = new FormData();
       const maxArtworkRefs = Math.max(0, MAX_TOTAL_IMAGES - uploadedRefs.length);
@@ -5493,9 +5555,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       form.append("lang", "zh");
       form.append(
         "format",
-        ["1:1", "4:3", "16:9", "9:16"].includes(genRatio)
-          ? genRatio
-          : "aplus-web"
+        normalizeCanvasRatio(genRatio)
       );
       DETAIL_MODULE_ORDER.slice(0, count).forEach((module) => form.append("module", module));
       form.append("email", user.email);
@@ -5504,6 +5564,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       form.append("parentId", lineage[0].id);
       form.append("parentIds", JSON.stringify(lineage.slice(1).map((artwork) => artwork.id)));
 
+      if (!current()) return;
+      attempted = true;
       const startedResponse = await privateFetch("/api/aplus", {
         method: "POST",
         headers: await authHeader(),
@@ -5511,8 +5573,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       });
       const started = await readJsonSafe(startedResponse);
       if (!startedResponse.ok || !started.jobId) {
-        throw new Error(started.error || t("canvas.genFail"));
+        throw new ImagegenHttpError(started.error || t("canvas.genFail"), startedResponse.status, started.accepted === false || [400,401,403,409,413,422,429].includes(startedResponse.status) ? false : undefined);
       }
+      jobId = started.jobId;
       const deadline = Date.now() + 20 * 60 * 1000;
       let shots: Array<{ id: string; status: string; url?: string | null }> = [];
       for (;;) {
@@ -5536,8 +5599,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               : task
           )
         );
-        if (poll.status === "error") { if (poll.user) applyServerUser(poll.user); throw new Error(poll.error || t("canvas.genFail")); }
-        if (poll.status === "done") {
+        if (poll.status === "error" || poll.status === "done") {
+          terminal = !poll.reviewRequired && poll.operationStatus !== "needs_attention";
+          terminalMessage = poll.status === "error" ? poll.error || t("canvas.genFail") : undefined;
           shots = (poll.shots ?? []) as typeof shots;
           if (poll.user) applyServerUser(poll.user);
           break;
@@ -5546,12 +5610,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const ids = shots
         .filter((shot) => shot.status === "done" && shot.id && shot.url)
         .map((shot) => shot.id);
-      if (!ids.length) throw new Error(t("canvas.genFail"));
+      resultIds = ids;
+      if (!ids.length) throw new Error(terminalMessage || t("canvas.genFail"));
+      if (!current()) return;
       const metadataResponse = await privateFetchRaw(`/api/artworks/get?ids=${ids.map(encodeURIComponent).join(",")}`, { cache: "no-store" });
       const metadata = await expectJsonOk(metadataResponse, t("canvas.genFail"));
       let fresh = (metadata.artworks ?? []) as Artwork[];
       const freshById = new Map(fresh.map((art) => [art.id, art]));
-      const livePosition = generationTaskPosRef.current[taskId] ?? reservedPosition;
+      const livePosition = pend ? livePendingPosition(pend.id, reservedPosition) : generationTaskPosRef.current[taskId] ?? reservedPosition;
       let detailY = livePosition.y;
       await Promise.all(
         ids.map((id) => {
@@ -5570,6 +5636,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         })
       );
       fresh = await mergeWorks(ids); // Load the saved live placeholder coordinates, not the pre-save fallback.
+      if (!current()) return;
+      assertGenerationResultsPresent(ids, fresh);
+      resultsLoaded = true;
+      if (terminalMessage) { pushAddUndoMany(ids, fresh); throw new Error(terminalMessage); }
       if (pend) {
         setPendNodes((current) => current.filter((node) => node.id !== pend.id));
         setSelectedPendId((current) => (current === pend.id ? null : current));
@@ -5577,19 +5647,22 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       pushAddUndoMany(ids, fresh);
       // 详情序列完成后保留用户当前选择。
     } catch (error) {
-      const message = error instanceof Error ? error.message : t("canvas.genFail");
+      failure = classifyGenerationFailure(error, { attempted, jobId, terminal, hasResults: resultIds.length > 0 && !resultsLoaded });
+      if (!current()) return;
+      const message = generationFailureMessage(failure);
       if (pend ? selectedPendIdRef.current === pend.id : selectedIdRef.current === source.id) setGenError(message);
       else flashTip(`${source.title}：${message}`);
-      if (pend) {
-        setPendNodes((current) =>
-          current.map((node) => (node.id === pend.id ? { ...node, generating: false } : node))
-        );
-      }
+      const onCheck = jobId ? () => checkGenerationReceipt({ jobId: jobId!, taskId, pendId: pend?.id, sourceId: source.id, operationKey, position: reservedPosition, account: requestAccount, project: requestProject, endpoint: "aplus" }) : undefined;
+      const retainedFailure = failure;
+      setGenerationTasks(tasks => pend ? tasks.filter(task => task.id !== taskId) : tasks.map(task => task.id === taskId ? { ...task, failure: retainedFailure, onCheck } : task));
+      if (pend) setPendNodes(nodes => nodes.map(node => node.id === pend.id ? { ...node, generating: generationFailureBlocks(retainedFailure), generationFailure: retainedFailure, onGenerationCheck: onCheck } : node));
     } finally {
-      generationOperationRef.current.delete(operationKey);
-      delete generationTaskPosRef.current[taskId];
-      delete generationTaskSizeRef.current[taskId];
-      setGenerationTasks((current) => current.filter((task) => task.id !== taskId));
+      if (!failure || !generationFailureBlocks(failure)) generationOperationRef.current.delete(operationKey);
+      if (!failure) {
+        delete generationTaskPosRef.current[taskId];
+        delete generationTaskSizeRef.current[taskId];
+        setGenerationTasks(tasks => tasks.filter(task => task.id !== taskId));
+      }
     }
   }
 
@@ -5811,6 +5884,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const historyAttemptsRef = useRef(new WeakMap<UndoAct, {operationId:string;operations:Array<Record<string,unknown>>}>());
   async function applyHistory(act: UndoAct, undo: boolean) {
     const account=canvasAccountRef.current;
+    const assertCurrentHistory = () => { if (historyScope !== historyScopeRef.current) throw new Error("项目已切换，请在当前项目重新操作"); };
+    assertCurrentHistory();
     if (act.kind === "pending-link") {
       const pending = pendNodesRef.current.find(node => node.id === act.id);
       if (!pending || pending.generating || pending.uploading) throw new Error(L("节点已开始生成或已移除", "Node is generating or no longer exists"));
@@ -5845,6 +5920,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     let attempt=historyAttemptsRef.current.get(act);
     if(!attempt){attempt={operationId:browserRandomUUID(),operations:structuredClone(operations)};historyAttemptsRef.current.set(act,attempt);}
     const operationId=attempt.operationId;operations=attempt.operations;
+    assertCurrentHistory();
     const response=await privateFetchRaw("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operationId,operations}),signal:AbortSignal.timeout(20_000)});
     await expectJsonOk(response,t("canvas.genFail"));if(account!==canvasAccountRef.current)throw new Error("画布账号已切换");
     // All operations below are local applications of an already committed transaction.
@@ -5891,6 +5967,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     for(const op of operations) {const id=(op.id || (op.node as CanvasTextNode|undefined)?.id) as string; unsavedTextRef.current.delete(id);}
     setUnsavedTextCount(unsavedTextRef.current.size);
     historyAttemptsRef.current.delete(act);
+    // Data belongs to the authenticated account and may finish in the background;
+    // only project-navigation/selection effects are suppressed after a switch.
+    if (historyScope !== historyScopeRef.current) return;
     if(act.kind==="mixed-add"){
       if(undo&&(active?.members.length||0)===act.artworks.length&&(active?.textNodes.length||0)===act.textNodes.length&&(active?.videoNodes?.length||0)===act.videoNodes.length)setCreatingNew(true);
       if(!undo){setCreatingNew(false);setActiveKey(act.projectKey);setBrowsing(false);}
@@ -5908,7 +5987,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
   }
   async function doUndo() {
-    if (!undoStack.length || historyBusyRef.current || readOnly) return;
+    if (historyScope !== historyScopeRef.current || !undoStack.length || historyBusyRef.current || readOnly) return;
     historyBusyRef.current=true;
     setHistorySaving(true);
     const act=undoStack[undoStack.length-1];
@@ -5920,7 +5999,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     finally { historyBusyRef.current=false; setHistorySaving(false); }
   }
   async function doRedo() {
-    if (!redoStack.length || historyBusyRef.current || readOnly) return;
+    if (historyScope !== historyScopeRef.current || !redoStack.length || historyBusyRef.current || readOnly) return;
     historyBusyRef.current=true;
     setHistorySaving(true);
     const act=redoStack[redoStack.length-1];
@@ -7523,7 +7602,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (!ids.length) return [];
     const selectedIds = new Set(ids);
     const positions = new Map((rfRef.current?.getNodes() ?? []).map(node => [node.id, node.position]));
-    const busyIds = new Set(generationTasks.map(task => task.sourceId));
+    const busyIds = new Set(generationTasks.filter(task => !task.failure || generationFailureBlocks(task.failure)).map(task => task.sourceId));
     const point = (id: string, x = 0, y = 0) => positions.get(id) || { x, y };
     const busy = (id: string) => busyIds.has(id) || generationOperationRef.current.has(`node:${id}`) || generationOperationRef.current.has(`retry:${id}`) || pendNodesRef.current.some(node => node.generating && node.operationKey === `node:${id}`);
     return selectionRunTargets(ids, [
@@ -7767,6 +7846,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     pendUploadRef.current?.click();
   }
   function onPendRemove(id: string) {
+    const retained = editTaskStateRef.current.get(id);
+    if (retained) {
+      if (retained.account !== canvasAccountRef.current || retained.project !== (activeProjectRef.current?.key || null)) return;
+      if (retained.node.generating || generationFailureBlocks(retained.node.generationFailure)) {
+        flashTip("原任务仍在处理或待核查，请保留任务状态，不要重复生成");
+        return;
+      }
+      editTaskStateRef.current.delete(id);
+    }
     setPendNodes((prev) => prev.filter((p) => p.id !== id));
     setSelectedPendId((cur) => (cur === id ? null : cur));
   }

@@ -6,6 +6,8 @@ import type { FeatureId } from "@/lib/billing/types";
 import {toolImageError, toolSourceUrl} from "@/lib/tool-ui";
 import { X } from "lucide-react";
 import { FeatureModelSelect } from "./feature-model-select";
+import { useFeatureModels } from "@/lib/model-config/feature-client";
+import { featureExecutionBlock, featureExecutionMessage } from "@/lib/model-config/feature-availability";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import {CATEGORY_FEATURES} from "@/lib/billing/feature-map";
 import { ImageQualityControl, QUALITY_TOOL_CATEGORIES } from "@/components/image-quality-control";
@@ -149,6 +151,8 @@ export function ToolWorkspace({
   const { user, ready, remaining, consumeCredits, applyServerUser } = useAuth();
   const { openAuth } = useAuthModal();
   const feature = requestedFeature || CATEGORY_FEATURES[category || ""] || "image.generate";
+  const { catalog: modelCatalog, error: modelError } = useFeatureModels(feature);
+  const executionBlock = featureExecutionBlock(modelCatalog, modelError);
   const qualityPriced = QUALITY_TOOL_CATEGORIES.has(category || "") || feature === "tool.garment3d";
   const billing=useFeatureBilling(feature,{resolution});
   const cost = baseCost;
@@ -271,6 +275,7 @@ export function ToolWorkspace({
       setError("请先上传图片");
       return;
     }
+    if(executionBlock){setError(featureExecutionMessage(executionBlock, locale));return;}
     if(!billing.quote){setError(billing.error||"报价加载中，请稍后重试");return;}
     if (remaining < cost) {
       setError(`积分不足:需 ${cost},剩余 ${remaining}`);
@@ -447,7 +452,7 @@ export function ToolWorkspace({
             <button
               type="button"
               onClick={run}
-              disabled={!ready || processing || (!!user && (!file || !billing.quote))}
+              disabled={!ready || processing || (!!user && (!file || !billing.quote || !!executionBlock))}
               className="flex w-full items-center justify-center gap-2 rounded-[11px] py-3 text-[14px] font-semibold text-white shadow-btn [background:var(--grad-acc)] transition-all hover:brightness-95 disabled:opacity-70"
             >
               {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}

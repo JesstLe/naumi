@@ -9,7 +9,9 @@ export function assertPlatformImageSelection(...ids: unknown[]) {
 /** All canvas modules select within their capability-filtered system pool.
  * Apply only to new request resolution. Frozen executions must retain their original model. */
 export const ADMIN_CONFIGURED_FEATURES: readonly FeatureId[] = [
-
+  // Background removal is a configured processor, not a user image-model tier.
+  // An enabled hidden binding may execute without becoming a public selection.
+  "tool.cutout",
 ];
 export function adminConfiguredFeature(feature?: string): boolean {
   return ADMIN_CONFIGURED_FEATURES.includes(feature as FeatureId);

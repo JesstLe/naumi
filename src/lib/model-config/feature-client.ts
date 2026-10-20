@@ -5,7 +5,7 @@ import type { FeatureId } from "../billing/rules/registry";
 import { compactImageModelOptions, imageModelDisplayId } from "../image-model-routing";
 import { authHeader } from "../supabase";
 import { adminConfiguredFeature } from "./selection-policy";
-export type FeatureCatalog = { managed: boolean; supported?: boolean; feature: FeatureId; version?: number; defaultModelId?: string; models: { id: string; label: string;creditHint?:string; modality: string; supportsEdit: boolean; qualities?: string[]; qualityLabels?: Record<string,string>; nativeResolutions?: string[]; generationParameters?: {ratios?:string[];resolutions?:string[];combinations?:string[]} }[] };
+export type FeatureCatalog = { managed: boolean; supported?: boolean; available?: boolean; feature: FeatureId; version?: number; defaultModelId?: string; models: { id: string; label: string;creditHint?:string; modality: string; supportsEdit: boolean; qualities?: string[]; qualityLabels?: Record<string,string>; nativeResolutions?: string[]; generationParameters?: {ratios?:string[];resolutions?:string[];combinations?:string[]} }[] };
 const catalogs = new Map<FeatureId, FeatureCatalog>(), selections = new Map<FeatureId, string>();
 export const FEATURE_MODEL_SELECTION = "naumi:feature-model-selected";
 const EVENT = FEATURE_MODEL_SELECTION;
@@ -61,7 +61,7 @@ export function useFeatureModels(feature: FeatureId) {
         if (adminConfiguredFeature(feature)) {
           selections.delete(feature);
           try { localStorage.removeItem(`naumi:model:${feature}`); } catch {}
-          setSelected(data.defaultModelId || "");
+          setSelected("");
           return;
         }
         const kind=canvasKind(feature);if(kind)try{const group=localStorage.getItem(`naumi:model:canvas:${kind}`);if(group)canvasSelections.set(kind,group);}catch{}
@@ -71,7 +71,7 @@ export function useFeatureModels(feature: FeatureId) {
         setSelected(id || "");
       } catch (e) { if (!cancelled) { setError(e instanceof Error ? e.message : "读取失败"); setCatalog(null); catalogs.delete(feature); } }
     };
-    const changed = () => setSelected((adminConfiguredFeature(feature) ? catalogs.get(feature)?.defaultModelId : chosenFeatureModel(feature)) || "");
+    const changed = () => setSelected((adminConfiguredFeature(feature) ? undefined : chosenFeatureModel(feature)) || "");
     const retry = (event: Event) => { if ((event as CustomEvent<FeatureId>).detail === feature) void load(); };
     const visible = () => { if (document.visibilityState === "visible") void load(); };
     void load(); window.addEventListener(MODEL_CATALOG_REFRESH, load); window.addEventListener(EVENT, changed); window.addEventListener(RELOAD, retry);
