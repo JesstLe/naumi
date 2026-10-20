@@ -184,6 +184,25 @@ class Release:
   inverse_patches={p:self.before[p].decode()+('\n' if compat.Dump(after).files[p]==afterfiles[p].decode()+'\n' else '')for p in self.before}
   compat.write_gateway_bundle(after,inverse_patches,self.nginx,{'configClosureValidated':True,'beforeDumpSha256':sha(after.encode()),'afterDumpSha256':sha(self.nginx.encode())},ROOT/'gateway-inverse',afterfiles)
   self.inverse=json.loads((ROOT/'gateway-inverse/report.json').read_bytes())
+  self.full_forward,self.full_after,self.full_dump,self.full_inverse=self.forward,self.after,self.afterdump,self.inverse
+  # During the short capacity transition, existing media-processing URLs
+  # continue to their old App. They are not sent to an unstarted sidecar.
+  fd=compat.Dump(after);server=next(n for n in fd.nodes[gateway.SITE]if n.name=='server');body=fd.files[gateway.SITE]
+  extra=[]
+  for prefix,upstream in [('', ''),('/desktop',''),('/enterprise','')]:
+   for mod,path in [('=','/api/video/media-jobs'),('^~','/api/video/media-jobs/'),('=','/api/video/extract')]:
+    extra.append('location '+mod+' '+prefix+path+' { proxy_pass http://127.0.0.1:13012'+upstream+path+'; proxy_set_header Host $host; proxy_set_header Connection ""; proxy_buffering off; proxy_read_timeout 900s; }')
+  stagedbody=body[:server.closing]+'\n# temporary capacity-stage media ownership\n'+'\n'.join(extra)+'\n'+body[server.closing:]
+  stageddump=fd.render({gateway.SITE:stagedbody})
+  compat.write_gateway_bundle(self.nginx,{**patches,gateway.SITE:stagedbody},stageddump,{'configClosureValidated':True,'beforeDumpSha256':sha(self.nginx.encode()),'afterDumpSha256':sha(stageddump.encode())},ROOT/'gateway-stage',self.before)
+  self.forward=json.loads((ROOT/'gateway-stage/report.json').read_bytes());self.after={p['path']:(ROOT/'gateway-stage'/p['after']).read_bytes()for p in self.forward['patches']};self.afterdump=stageddump
+  stagedfiles={p:self.after.get(p,self.before[p])for p in self.before}
+  back={p:self.before[p].decode()+('\n' if compat.Dump(stageddump).files[p]==stagedfiles[p].decode()+'\n'else'')for p in self.before}
+  compat.write_gateway_bundle(stageddump,back,self.nginx,{'configClosureValidated':True,'beforeDumpSha256':sha(stageddump.encode()),'afterDumpSha256':sha(self.nginx.encode())},ROOT/'gateway-stage-inverse',stagedfiles)
+  self.inverse=json.loads((ROOT/'gateway-stage-inverse/report.json').read_bytes())
+  fullpatches={p:compat.Dump(self.full_dump).files[p]for p in self.before}
+  compat.write_gateway_bundle(stageddump,fullpatches,self.full_dump,{'configClosureValidated':True,'beforeDumpSha256':sha(stageddump.encode()),'afterDumpSha256':sha(self.full_dump.encode())},ROOT/'gateway-stage-complete',stagedfiles)
+  self.final_forward=json.loads((ROOT/'gateway-stage-complete/report.json').read_bytes())
   # Real nginx syntax test in an isolated main config, never reloads the live entry.
   testroot=ROOT/'nginx-check';testroot.mkdir()
   site=testroot/'site.conf';site.write_bytes(self.after[gateway.SITE]);roottext=self.before['/etc/nginx/nginx.conf'].decode().replace('include /etc/nginx/sites-enabled/*;', 'include '+str(site)+';')
@@ -236,6 +255,12 @@ class Release:
 
  def finish(self):
   self.retire_ui();self.media_gate()
+  def final_gateway(_):
+   folder=self.tx.folder;self.tx.folder=ROOT/'final-gateway-transaction';self.tx.folder.mkdir(mode=0o700)
+   try:return controls.switch_gateway_bundle(self.tx,self.final_forward,{p:self.after.get(p,self.before[p])for p in self.before},self.full_after,expected_dump_sha=sha(self.afterdump.encode()),logical_to_real=self.real)
+   finally:self.tx.folder=folder
+  self.op('complete-media-gateway',final_gateway)
+  self.after,self.afterdump,self.inverse=self.full_after,self.full_dump,self.full_inverse
   # The old pre-control Worker has two historical uncertain operations. Keep
   # its app/caller together unless a real complete drain is observable. Never
   # resume a second scan loop on top of them.
