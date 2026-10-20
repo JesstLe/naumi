@@ -30,6 +30,9 @@ class NormalPolicy(unittest.TestCase):
  def test_normal_followup_allowed(self):
   rid='release47-alldev-20261019-previous';self.s['normalBlueGreenReleases']={rid:dict(releaseId=rid,phase='COMPLETE',operations={})};self.s['activeNormalBlueGreenReleaseId']=rid;self.s['runtimeRecovery']['successorReleaseId']=rid;self.cfg['predecessorReleaseId']=rid
   self.assertEqual(self.begin()['predecessorReleaseId'],rid)
+ def test_release_first_authorization(self):
+  self.cfg['authorization']='你先上线一次服务器，然后再进行接下来的修复和优化'
+  self.assertEqual(self.begin()['authorization'],self.cfg['authorization'])
  def test_duplicate_and_incomplete_release_block(self):
   for phase in ['READY','SWITCHED','UNKNOWN']:
    self.s['normalBlueGreenReleases']={'earlier':dict(phase=phase,operations={})}
@@ -77,12 +80,24 @@ class NormalPolicy(unittest.TestCase):
  def test_no_old_port_or_consumed_controller(self):
   s=pathlib.Path(ctl.__file__).read_text();self.assertNotIn("'13101'",s);self.assertNotIn('release47_successor_controller',s);self.assertIn('unknownLeases\']==0',s)
 class WorkerReceipt(unittest.TestCase):
+ def test_exact_authorized_scanner_unknown_is_retained_not_completed(self):
+  tick={'id':'original','workerBootId':'boot','workerInstanceId':'worker','workerCommit':'commit','targetWebInstanceId':'web','phase':'unknown'}
+  w={'paused':True,'activeTicks':0,'unresolvedTicks':1,'phase':'UNKNOWN','lastTick':tick}
+  pin={**tick,'authorization':'保留并隔离旧任务，继续切换','domainJobsQuarantined':43,'paidReplayAllowed':False}
+  self.assertFalse(m.worker_quiescent(w));self.assertTrue(m.worker_quiescent(w,pin));self.assertEqual(w['lastTick']['phase'],'unknown')
+  self.assertFalse(m.worker_quiescent({**w,'activeTicks':1},pin));self.assertFalse(m.worker_quiescent({**w,'lastTick':{**tick,'id':'other'}},pin))
+  self.assertFalse(m.worker_quiescent(w,{**pin,'paidReplayAllowed':True}));self.assertFalse(m.worker_quiescent(w,{**pin,'domainJobsQuarantined':42}))
  def test_missing_first_tick_waits(self):
   self.assertFalse(m.worker_completed({'lastTick':None,'unresolvedTicks':0}))
   self.assertFalse(m.worker_completed({'unresolvedTicks':0}))
   self.assertFalse(m.worker_completed({'lastTick':{'phase':'unknown'},'unresolvedTicks':1}))
   self.assertTrue(m.worker_completed({'lastTick':{'phase':'complete'},'unresolvedTicks':0}))
 class SnapshotBudget(unittest.TestCase):
+ def test_import_resume_keeps_operation_ids_and_reserve(self):
+  text=pathlib.Path(ctl.__file__).read_text()
+  self.assertIn("'POST_IMPORT_DISK_RESERVE_INSUFFICIENT'",text)
+  self.assertIn("shutil.disk_usage('/').free>=10*1024**3",text)
+  self.assertIn("RESUME_ORIGINAL_OPERATION_REQUIRED",text)
  def test_default_and_bounded_override(self):
   import release47_task_snapshot as t
   self.assertIn(b"statement_timeout='5000ms'",t.build_sql())

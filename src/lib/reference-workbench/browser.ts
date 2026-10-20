@@ -1,7 +1,9 @@
 import {authHeader} from "../supabase";
 import {workbenchModelOptions,workbenchModelSelection} from "./model-options";
+import {workbenchErrorText} from "./http";
 
-declare global {interface Window {NaumiWorkbenchStorage:Pick<Storage,"getItem"|"setItem"|"removeItem">;NaumiWorkbenchReady:Promise<void>;NaumiWorkbenchModels:(select:HTMLSelectElement)=>void;}}
+declare global {interface Window {NaumiWorkbenchStorage:Pick<Storage,"getItem"|"setItem"|"removeItem">;NaumiWorkbenchReady:Promise<void>;NaumiWorkbenchModels:(select:HTMLSelectElement)=>void;NaumiWorkbenchError:typeof workbenchErrorText;}}
+window.NaumiWorkbenchError=workbenchErrorText;
 const desktop=location.pathname.startsWith("/desktop/batchshot/native/"),canonicalBase="/api/reference-workbench/",base=(desktop?"/desktop":"")+canonicalBase,original=window.fetch.bind(window),blobUrls=new Map<string,string>(),blobLoading=new Map<string,Promise<string>>();
 function scopedUrl(input:RequestInfo|URL){const target=new URL(typeof input==="string"?input:input instanceof Request?input.url:input.toString(),location.href);if(desktop&&target.origin===location.origin&&target.pathname.startsWith("/api/"))target.pathname="/desktop"+target.pathname;return target;}
 let sessionIdentity="";
@@ -20,15 +22,34 @@ window.fetch=async(input,init)=>{
   const body=JSON.parse(String(init.body));body.request_id=body.request_id||crypto.randomUUID();
   const model=(document.getElementById("active_provider_template")||document.getElementById("template")) as HTMLSelectElement|null;
   if(model?.value){if(action.startsWith("workbench/"))body.config={...body.config,modelId:model.value};else if(action.startsWith("chat-image/"))body.settings={...body.settings,modelId:model.value};else body.modelId=model.value;}
-  const quoteResponse=await nativeFetch(base+"quote",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,body})});if(!quoteResponse.ok)return quoteResponse;
-  const q=await quoteResponse.json();
-  if(q.state==="preview"&&!confirm(`本次 ${q.items.length} 项，共 ${q.totalCredits} 积分；当前可用 ${q.availableCredits} 积分。${q.items.map((i:{credits:number;ratio?:string},n:number)=>`\n${n+1}. ${i.credits} 积分${i.ratio?` / ${i.ratio}`:""}`).join("")}${q.warnings.length?"\n"+q.warnings.join("\n"):""}\n确认提交？`))return Response.json({ok:false,error:"已取消提交"},{status:409});
+  let q:any;
+  try{
+   const quoteResponse=await nativeFetch(base+"quote",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,body})});if(!quoteResponse.ok){
+    let data:any;try{data=await quoteResponse.clone().json();}catch{}
+    return Response.json({ok:false,error:typeof data?.error==="string"?data.error:"报价暂时不可用，本次未发起新的生成提交。请稍后重新报价",stage:"quote",code:typeof data?.code==="string"?data.code:"QUOTE_UNAVAILABLE",traceId:data?.traceId},{status:quoteResponse.status});
+   }
+   q=await quoteResponse.json();
+   if(!q||typeof q.id!=="string"||!Array.isArray(q.items)||!Array.isArray(q.warnings)||!Number.isFinite(q.totalCredits))throw Error("invalid quote");
+  }catch{return Response.json({ok:false,error:"报价暂时不可用，本次未发起新的生成提交。请稍后重新报价",stage:"quote",code:"QUOTE_UNAVAILABLE"},{status:503});}
+  if(q.state==="preview"&&!confirm(`本次 ${q.items.length} 项，共 ${q.totalCredits} 积分；当前可用 ${q.availableCredits} 积分。${q.items.map((i:{credits:number;ratio?:string},n:number)=>`\n${n+1}. ${i.credits} 积分${i.ratio?` / ${i.ratio}`:""}`).join("")}${q.warnings.length?"\n"+q.warnings.join("\n"):""}\n确认提交？`))return Response.json({ok:false,error:"已取消提交",stage:"quote",code:"SUBMISSION_CANCELLED"},{status:409});
   body.native_quote={id:q.id,credits:q.totalCredits,confirmed:true};
-  try{return await nativeFetch(input,{...init,body:JSON.stringify(body)});}catch{
-   // Recover this exact receipt. Never create a new paid operation after a lost response.
+
+  try{
+   const submitted=await nativeFetch(input,{...init,body:JSON.stringify(body)});
+   if(submitted.status<500){
+    // A framework HTML 200 is not a durable acceptance receipt either.
+    if(!submitted.ok)return submitted;
+    const data=await submitted.clone().json();if(data&&data.ok!==false&&(typeof data.id==="string"||typeof data.task_id==="string"||typeof data.session_id==="string"))return submitted;
+   }
+  }catch{ /* Lost or malformed acceptance response: lookup, never resubmit. */ }
+  try{
    const receipt=await nativeFetch(base+"receipt?id="+encodeURIComponent(q.id));
-   return receipt.ok?receipt:Response.json({ok:false,error:"提交结果待核查，请保留原任务编号："+q.id},{status:409});
-  }
+   const data=await receipt.clone().json();
+   if(receipt.ok&&data&&data.ok!==false&&(typeof data.id==="string"||typeof data.task_id==="string"||typeof data.session_id==="string"))return receipt;
+   // A preview snapshot can race an in-flight accept transaction. It is not
+   // evidence of terminal rejection and must not authorize a fresh submission.
+  }catch{ /* A failed receipt lookup does not prove rejection. */ }
+  return Response.json({ok:false,error:"提交结果待核查，请查询原任务，勿重复提交。原任务编号："+q.id,stage:"submit",code:"SUBMISSION_UNKNOWN",operationId:q.id},{status:409});
  }
  const response=await nativeFetch(input,init);if(response.status===401){blobUrls.forEach(v=>URL.revokeObjectURL(v));blobUrls.clear();location.assign("/sign-in");}
  if(response.ok&&["heartbeat","auth/status"].includes(action)){const identity=(await response.clone().json()).id;if(sessionIdentity&&identity&&identity!==sessionIdentity){blobUrls.forEach(v=>URL.revokeObjectURL(v));blobUrls.clear();location.reload();}}

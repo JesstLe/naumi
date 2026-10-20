@@ -138,7 +138,7 @@ async function downloadCurrentPageImages(){
   const paths=visibleImagePaths();
   if(!paths.length){alert("当前页面没有可下载的图片");return;}
   const response=await fetch("/api/images-zip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paths,filename:"当前页面图片包_"+new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")+".zip"})});
-  if(!response.ok){alert(await response.text()||"下载图片包失败");return;}
+  if(!response.ok){alert(await window.NaumiWorkbenchError(response,"下载图片包失败"));return;}
   const blob=await response.blob();
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");
@@ -175,7 +175,7 @@ async function saveSingleSettings(){
   localStorage.setItem(singleSettingsKey,JSON.stringify(payload));
   if(!config.settings_editable)return;
   const response=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  if(!response.ok)throw new Error(await response.text()||'保存单图参数失败');
+  if(!response.ok)throw new Error(await window.NaumiWorkbenchError(response,'保存单图参数失败'));
 }
 async function loadSettings(){
   config=await(await fetch('/api/settings')).json();
@@ -264,9 +264,9 @@ async function generate(){
   try{
     await saveSingleSettings();
     const response=await fetch('/api/single/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:text,quality:ui.quality.value,resolution:ui.resolution.value,ratio:ui.ratio.value,count:total,request_id:crypto.randomUUID(),images:refList.map(x=>x.data_url)})});
-    const body=await response.text();
-    let data={}; try{data=JSON.parse(body)}catch(e){data={error:body}}
-    if(!response.ok||!data.task_id){throw new Error(data.error||body||'任务提交失败');}
+    if(!response.ok)throw new Error(await window.NaumiWorkbenchError(response,"报价或提交未完成，请查询任务状态"));
+    const data=await response.json();
+    if(!data.task_id)throw new Error("回执暂不可用，请查询原任务，勿重复提交");
     taskData[data.task_id]=data;
     addTaskId(data.task_id);
     renderTaskList();
@@ -274,7 +274,7 @@ async function generate(){
     await refreshTasks();
   }catch(error){
     ui.status.classList.add('error');
-    ui.status.textContent='任务提交失败：'+error;
+    ui.status.textContent=error.message||'操作未完成，请查询任务状态';
   }finally{ui.button.disabled=false;}
 }
 ui.images.addEventListener('change',onFiles);

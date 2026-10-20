@@ -14,8 +14,9 @@ export function CanvasImage({source,forceOriginal,hasDimensions,...props}:Omit<I
   const [loaded,setLoaded]=useState<{source:string;variant:CanvasMediaVariant}|null>(null);
   const pixelRatio=typeof window==='undefined'?1:window.devicePixelRatio;
   // Subscribe to a discrete quality band, not every continuous transform.
-  // Only the singly inspected node forces original; batch selection stays lazy.
-  const requested=useStore(s=>forceOriginal||!hasDimensions?'original':canvasMediaVariant(localWidth*s.transform[2],pixelRatio));
+  // Inspecting/zooming to 100% must show source pixels on *all visible* nodes,
+  // not only the selected one. Offscreen images remain lazy and queue-limited.
+  const requested=useStore(s=>forceOriginal||!hasDimensions||s.transform[2]>=1?'original':canvasMediaVariant(localWidth*s.transform[2],pixelRatio));
   const rank={thumbnail:0,preview:1,original:2};
   // Do not replace already-decoded sharper pixels with a lower-quality request
   // when zooming out or selecting another node. Source changes never reuse it.

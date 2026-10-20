@@ -8,7 +8,8 @@ import { assertMutableStagingTask } from "./staging-history";
 import { uploadImage, readManagedObject } from "@/lib/storage";
 import { workerSecret } from "@/lib/settings-secret";
 import * as repository from "@/lib/image-job-repository";
-import { ImageOperationPending, isImageGatewayModel, withImageOperation } from "@/lib/image-gateway";
+import { ImageOperationPending, ImageOperationReview, isImageGatewayModel, withImageOperation } from "@/lib/image-gateway";
+import { IMAGE_REVIEW_MESSAGE } from "./image-job-review";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { withBiModelContext } from "@/lib/bi/model-observer";
@@ -107,6 +108,9 @@ export class DurableImageJobs<T extends { status: string }> {
   async handlePending(id: string, error: ImageOperationPending) {
     const saved = await this.get(id, false) as (T & Record<string, any>) | undefined;
     if (!saved || ["done", "error"].includes(saved.status)) return;
+    if(error instanceof ImageOperationReview){
+      await this.patch(id,{status:"needs_attention",error:IMAGE_REVIEW_MESSAGE,reviewCode:error.reviewCode} as unknown as Partial<T>);return;
+    }
     if (!hasUnreplayableImageAttempt(saved)) {
       await this.patch(id, { status: "pending", error: error.message } as unknown as Partial<T>); return;
     }

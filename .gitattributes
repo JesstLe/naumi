@@ -5,3 +5,6 @@
 *.ico binary
 # Preserve the byte-pinned vendor evidence, including its original trailing space.
 docs/providers/evidence/apimart-gpt-image25-20261019.md -whitespace
+
+# Byte-pinned Seedream related-source evidence; preserve original whitespace.
+docs/providers/evidence/apib-seedream-20261020/*.md -whitespace

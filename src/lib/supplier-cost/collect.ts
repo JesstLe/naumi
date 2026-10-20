@@ -12,6 +12,7 @@ import { modelCostPhase } from "./phase";
 import { parseReceiptJson } from "./money";
 import type { CostContext } from "./types";
 import { ModelConfigError } from "../model-config/types";
+import { imageSupplierFailure } from "../model-config/supplier-failure";
 import { supplierFailureEvidence } from "./failure-evidence";
 
 export async function supplierContext(scope?: ModelExecutionScope | null): Promise<CostContext> {
@@ -65,6 +66,7 @@ export function supplierCostFetch(fetcher: typeof fetch, connection: { providerI
         if(apimartSubmit){receipt.delivered=undefined;receipt.outputs=undefined;}
         receipt.requestId ||= response.headers.get("x-request-id") || undefined;
         receipt.evidence = { ...receipt.evidence, responseSha256: hash.digest("hex"), httpStatus: response.status, metadataComplete: stream || capture.result() !== null, ...supplierFailureEvidence(response.status,body) };
+        if (!response.ok && !stream && (scope?.frozen.modality === "image" || connection.protocol === "openai-images")) receipt.evidence.upstreamFailure = imageSupplierFailure(response.status, body);
         if (!stream && ["apimart-images", "apimart"].includes(connection.protocol || "") && request.method === "POST") receipt.taskId = submittedAPIMartTask(body) || undefined;
         await ledger.apply(row.id, receipt);
         if (receipt.taskId && ["apimart-images", "apimart"].includes(connection.protocol || "")) await ledger.enqueue(`task:${row.id}`, "task", { callId: row.id }, accountId);

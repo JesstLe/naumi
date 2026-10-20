@@ -10,6 +10,7 @@ import {
   storageKeyFromManagedUrl,
 } from "@/lib/storage";
 import {canReadMedia} from '@/lib/media-assets';
+import { IMAGEGEN_OUTPUT_MAX_BYTES } from "./imagegen/image-limits";
 
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 
@@ -38,9 +39,18 @@ function allowedRemoteImage(url: URL, requestUrl: string) {
 }
 
 export async function readCanvasImage(source: string, requestUrl: string, owner?:string) {
+  return readOwnedCanvasImage(source, requestUrl, owner, MAX_IMAGE_BYTES);
+}
+
+/** Same ownership/source rules as inputs; only the bounded byte budget differs. */
+export async function readCanvasOutput(source: string, requestUrl: string, owner: string) {
+  return readOwnedCanvasImage(source, requestUrl, owner, IMAGEGEN_OUTPUT_MAX_BYTES);
+}
+
+async function readOwnedCanvasImage(source: string, requestUrl: string, owner: string | undefined, maxBytes: number) {
   const inline = dataUrlToBytes(source);
   if (inline) {
-    if (inline.bytes.byteLength > MAX_IMAGE_BYTES) throw new Error("图片超过 12MB");
+    if (inline.bytes.byteLength > maxBytes) throw new Error("图片超出当前读取大小限制");
     return {
       buffer: Buffer.from(inline.bytes),
       mimeType: inline.contentType || "image/png",
@@ -53,7 +63,7 @@ export async function readCanvasImage(source: string, requestUrl: string, owner?
   } catch { /* relative reference */ }
   if (isManagedImageUrl(source)) {
     if(privateMedia&&!await canReadMedia(storageKeyFromManagedUrl(source)!,owner||null))throw new Error('素材不存在或无权访问');
-    const object = await readManagedObject(source, MAX_IMAGE_BYTES);
+    const object = await readManagedObject(source, maxBytes);
     return {
       buffer: object.bytes,
       mimeType:
@@ -74,9 +84,13 @@ export async function readCanvasImage(source: string, requestUrl: string, owner?
   });
   if (!response.ok) throw new Error(`读取图片失败 (${response.status})`);
   const declared = Number(response.headers.get("content-length") || 0);
-  if (declared > MAX_IMAGE_BYTES) throw new Error("图片超过 12MB");
-  const buffer = Buffer.from(await response.arrayBuffer());
-  if (buffer.byteLength > MAX_IMAGE_BYTES) throw new Error("图片超过 12MB");
+  if (declared > maxBytes) { await response.body?.cancel(); throw new Error("图片超出当前读取大小限制"); }
+  const reader = response.body?.getReader(), chunks: Uint8Array[] = []; let length = 0;
+  if (reader) try {
+    for (;;) { const item = await reader.read(); if (item.done) break; length += item.value.byteLength;
+      if (length > maxBytes) { await reader.cancel(); throw new Error("图片超出当前读取大小限制"); } chunks.push(item.value); }
+  } finally { reader.releaseLock(); }
+  const buffer = Buffer.concat(chunks);
   return {
     buffer,
     mimeType: response.headers.get("content-type") || mimeFromPath(source),

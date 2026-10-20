@@ -150,7 +150,7 @@ async function downloadCurrentPageImages(){
   const paths=visibleImagePaths();
   if(!paths.length){alert("当前页面没有可下载的图片");return;}
   const response=await fetch("/api/images-zip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paths,filename:"当前页面图片包_"+new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")+".zip"})});
-  if(!response.ok){alert(await response.text()||"下载图片包失败");return;}
+  if(!response.ok){alert(await window.NaumiWorkbenchError(response,"下载图片包失败"));return;}
   const blob=await response.blob();
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");
@@ -186,7 +186,7 @@ async function saveSettings(){
   localStorage.setItem(chatSettingsKey,JSON.stringify(payload));
   if(!config.settings_editable)return;
   const response=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  if(!response.ok)throw new Error(await response.text()||'保存聊天生图参数失败');
+  if(!response.ok)throw new Error(await window.NaumiWorkbenchError(response,'保存聊天生图参数失败'));
 }
 async function loadSettings(){
   config=await(await fetch('/api/settings')).json();
@@ -225,7 +225,7 @@ async function downloadAnswerImages(encodedPaths){
   if(!paths.length){alert('这个回答里没有可下载的生成图片');return;}
   const filename='聊天回答图片包_'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.zip';
   const response=await fetch('/api/images-zip',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths,filename})});
-  if(!response.ok){alert(await response.text()||'下载本回答图片失败');return;}
+  if(!response.ok){alert(await window.NaumiWorkbenchError(response,'下载本回答图片失败'));return;}
   const blob=await response.blob();
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
@@ -300,7 +300,9 @@ async function confirmPlan(messageId){
   ui.status.textContent='已确认，正在提交生成...';
   const selectedTemplate=ui.template.value;
   const settings={quality:ui.quality.value,resolution:ui.resolution.value,ratio:ui.ratio.value,count:safeCount(),task_mode:ui.taskMode.value,ratio_mode:ui.ratioMode.value};
-  const data=await(await fetch('/api/chat-image/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:currentSessionId,message_id:messageId,active_provider_template:selectedTemplate,settings})})).json();
+  const response=await fetch('/api/chat-image/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:currentSessionId,message_id:messageId,active_provider_template:selectedTemplate,settings})});
+  if(!response.ok){ui.status.textContent=await window.NaumiWorkbenchError(response,'确认未完成，请查询原任务');return;}
+  const data=await response.json();
   renderState(data);
 }
 async function cancelPlan(messageId){const data=await(await fetch('/api/chat-image/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:currentSessionId,message_id:messageId})})).json(); renderState(data);}
@@ -313,8 +315,8 @@ async function sendMessage(){
   const selectedTemplate=ui.template.value;
   const settings={quality:ui.quality.value,resolution:ui.resolution.value,ratio:ui.ratio.value,count:safeCount(),task_mode:ui.taskMode.value,ratio_mode:ui.ratioMode.value};
   const response=await fetch('/api/chat-image/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:currentSessionId,request_id:crypto.randomUUID(),message:text,images:uploadImages.map(x=>x.data_url),active_provider_template:selectedTemplate,settings})});
-  const body=await response.text(); let data={}; try{data=JSON.parse(body)}catch(e){data={error:body}}
-  if(!response.ok){ui.status.textContent='发送失败：'+(data.error||body);return;}
+  if(!response.ok){ui.status.textContent=await window.NaumiWorkbenchError(response,'报价或提交未完成，请查询任务状态');return;}
+  const data=await response.json();
   ui.message.value=''; uploadImages=[]; renderPreview(); renderState(data);
   }catch(e){ui.status.textContent='发送失败：'+e.message;}finally{sendButton.disabled=false;}
 }

@@ -16,7 +16,7 @@ export async function imagegenInternalRequest(plan:ImagegenPlan,key:string,owner
 }
 export function imagegenStepIntent(plan:ImagegenPlan,key:string):Intent{
  const step=plan.steps.find(s=>s.key===key)!;
- return {...plan.intent,operation:step.operation,background:plan.steps.length>1&&key==="generate"?null:plan.intent.background,requirements:plan.steps.length>1&&key==="generate"?plan.intent.requirements.filter(r=>r.name!=="background"):plan.intent.requirements};
+ return {...plan.intent,operation:step.operation,background:plan.steps.length>1&&key==="generate"?null:plan.intent.background,requirements:(plan.steps.length>1&&key==="generate"?plan.intent.requirements.filter(r=>r.name!=="background"):plan.intent.requirements).map(r=>r.name==="resolution"&&step.parameters.resolution?{...r,value:String(step.parameters.resolution)}:r)};
 }
 export async function submitGenerationCore(plan:ImagegenPlan,key:string,owner:string){
  const step=plan.steps.find(s=>s.key===key)!;
@@ -24,12 +24,12 @@ export async function submitGenerationCore(plan:ImagegenPlan,key:string,owner:st
  const artworkIds=inputs.filter(i=>i.role!=="mask"&&!i.artworkId.startsWith("asset-")).map(i=>i.artworkId);
  const lineage=await listArtworksByIds(owner,Array.from(new Set([...artworkIds,...(plan.request.sourceNodeId?[plan.request.sourceNodeId]:[])])));
  const target=inputs.find(i=>i.role==="edit-target"&&!i.artworkId.startsWith("asset-")),source=lineage.find(w=>w.id===(target?.artworkId||plan.request.sourceNodeId));
- const request:ImagegenRequest={...plan.request,output:{...plan.request.output,background:intent.background||undefined}};
+ const request:ImagegenRequest={...plan.request,parameters:{...plan.request.parameters,...(step.parameters.resolution?{resolution:step.parameters.resolution as "1K"|"2K"|"4K"}:{})},output:{...plan.request.output,background:intent.background||undefined}};
  const form=new FormData();
  for(const [k,v] of Object.entries({prompt:compileImagegenPrompt(request,intent,plan.skillInstructions),userPrompt:request.prompt,model:step.modelId,origin:request.entry==="canvas"?"canvas":"",entry:"imagegen",quality:request.parameters.quality||"medium",resolution:request.parameters.resolution||"1K",ratio:request.parameters.ratio||"1:1",count:String(request.variants),transparent:intent.background==="transparent"?"1":"0",parentId:inputs.find(i=>i.role==="edit-target")?.artworkId||"",targetWidth:request.parameters.width?String(request.parameters.width):undefined,targetHeight:request.parameters.height?String(request.parameters.height):undefined}))if(v!==undefined)form.set(k,v);
  for(const i of inputs)form.append(i.role==="mask"?"mask":"image",new File([new Uint8Array(i.buffer)],`${i.artworkId}.png`,{type:i.mimeType}));
  form.set("parentId",target?.artworkId||(plan.request.mode==="edit"?source?.id:undefined)||"");form.set("parentIds",JSON.stringify(artworkIds.filter(id=>id!==target?.artworkId)));if(source?.groupId)form.set("projectGroupId",source.groupId);
  const internal=await imagegenInternalRequest(plan,key,owner,form,"generate-image");
  const {POST}=await import("../../app/api/generate-image/route");
- return withImagegenStep(request,intent,()=>POST(internal),plan.ratioContractVersion);
+ return withImagegenStep(request,intent,()=>POST(internal),plan.ratioContractVersion,plan.requestedParameters);
 }

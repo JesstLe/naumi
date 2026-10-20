@@ -109,6 +109,10 @@ async function main() {
     const raceStart=posts.length;const races=await Promise.allSettled(Array.from({length:6},()=>run(balanced,"balanced-race")));assert.ok(races.some(r=>r.status==="fulfilled"));assert.equal(posts.length,raceStart+1,"competing suppliers cannot double-submit");checks++;
     // Unknown/invalid outputs must retain task+cost evidence and never fall back.
     for(const mode of ["lost","missing","http","identity","model","count","pixels","corrupt"]) {
+      // These are independent fault scenarios in this test's private schema.
+      // A prior mode's real circuit cooldown must not suppress the next mode's
+      // initial POST and make the assertion depend on test-machine speed.
+      await f.sql.query("DELETE FROM app_model_channel_health");
       const start=posts.length;await pending(()=>run(family,`bad-${mode}`,mode));await pending(()=>run(family,`bad-${mode}`,mode));
       assert.equal(posts.length,start+1);assert.equal(direct.length,0);assert.equal((await row(`bad-${mode}`))[0].parameters.acceptedOutputs,undefined);checks++;
     }

@@ -1,3 +1,4 @@
+import {resolveImageResolution} from "./resolution-fallback";
 import {assertDisplayResolution} from "./resolution-options";
 import "server-only";
 import { currentExecutionBundle, currentModelExecution } from "./context";
@@ -65,20 +66,40 @@ function originalBusinessBillingSnapshot(snapshot: ConfigSnapshot, models: Model
 export function businessBillingSnapshot(snapshot:ConfigSnapshot,models:ModelSnapshot,facts:BillingFacts){
   return applyCreditOverride(snapshot,originalBusinessBillingSnapshot(snapshot,models,facts),facts);
 }
-export async function freezeBusinessQuote(request: Request, snapshot: ConfigSnapshot, facts: BillingFacts, create: (s: ConfigSnapshot, f: BillingFacts) => BillingQuote) {
+export async function freezeBusinessQuote(request: Request, snapshot: ConfigSnapshot, facts: BillingFacts, create: (s: ConfigSnapshot, f: BillingFacts) => BillingQuote, options:{allowResolutionFallback?:boolean;effectiveResolution?:string}={}) {
   if (facts.byok || !await modelConfigurationEnabled()) return create(snapshot, facts);
   const admin = await getModelAdministration();
   const version = currentExecutionBundle()?.modelVersion || currentModelExecution()?.frozen.modelVersion;
   const models = version ? await admin.repo.byVersion(version) : await admin.repo.current();
   const requested = request.headers.get("x-naumi-model-version");
   if (requested && Number(requested) !== models.version) throw new ModelConfigError("MODEL_CHANGED", "模型配置已更新，请重新确认报价", 409);
-  const presetQuote=freezeImagePresetQuote(snapshot,models,facts,create);
-  if (presetQuote) return presetQuote;
-  const q = create(businessBillingSnapshot(snapshot, models, facts), facts);
+  const scope = currentModelExecution("image");
+  const originalFacts = facts;
+  // Existing frozen scopes (including old Worker/Agent children) are authoritative.
+  // New scopes retain the user's selection separately, with actual tier in facts.
+  const choice = options.effectiveResolution ? {requested:facts.resolution,effective:options.effectiveResolution,changed:options.effectiveResolution!==facts.resolution} : scope && scope.frozen.publicModelId===facts.modelId && scope.frozen.requestedParameters && scope.frozen.facts
+    ? {requested:scope.frozen.requestedParameters?.resolution||facts.resolution,effective:scope.frozen.facts.requestedResolution||scope.frozen.facts.resolution,changed:false}
+    : scope || currentExecutionBundle() || options.allowResolutionFallback===false || request.headers.has("x-naumi-accepted-model-context")
+      ? {requested:facts.resolution,effective:facts.resolution,changed:false}
+      : resolveImageResolution(models.config,facts.modelId,facts.resolution,facts.feature,facts.ratio);
+  const originalResolution=(scope?.frozen.publicModelId===facts.modelId?scope?.frozen.requestedParameters?.resolution:undefined)||originalFacts.resolution;
+  const adjusted=originalResolution!==choice.effective;
+  // User pricing policy: keep the selected/front-end tier and its quote. Only
+  // delivery parameters fall back; do not silently reprice the accepted choice.
+  facts={...facts,resolution:originalResolution};
+  assertDisplayResolution(models.config.publicModels.find(m=>m.id===facts.modelId),choice.effective);
+  const pricedModels=adjusted?structuredClone(models):models;
+  if(adjusted){const m=pricedModels.config.publicModels.find(m=>m.id===facts.modelId);if(m)delete m.displayResolutions;}
+  const presetQuote=freezeImagePresetQuote(snapshot,pricedModels,facts,create);
+  if (presetQuote) {
+    if (adjusted) { presetQuote.requestedParameters = {...presetQuote.requestedParameters!,resolution:originalResolution}; presetQuote.effectiveParameters = {...presetQuote.effectiveParameters!,resolution:choice.effective}; presetQuote.legacyCompatible=false; }
+    return presetQuote;
+  }
+  const q = create(businessBillingSnapshot(snapshot, pricedModels, facts), facts);
   q.modelVersion = models.version;
   if(managedModelCreditRule(snapshot,facts)) q.legacyCompatible=false;
   if (models.config.business?.[facts.feature]) q.legacyCompatible = false;
-  const scope = currentModelExecution(), model = models.config.publicModels.find(m => m.id === facts.modelId);
+  const model = models.config.publicModels.find(m => m.id === facts.modelId);
   const upstream = models.config.upstreamModels.find(u => u.id === (scope?.frozen.target.type === "upstream" && scope.frozen.publicModelId === facts.modelId ? scope.frozen.target.id : model?.target.id));
   if (!model?.supplierRouting && upstream?.parameterMap.qualityPolicy) {
     const wire = policyQuality(upstream.parameterMap.qualityPolicy, facts.quality);
@@ -89,5 +110,10 @@ export async function freezeBusinessQuote(request: Request, snapshot: ConfigSnap
   // this operation's total; execution stages remain the authoritative estimate.
   if (!model?.supplierRouting && !q.procurement && !selectedBusinessOption(models.config,facts.feature,facts.modelId)?.routing?.enabled && upstream?.procurement) q.procurement = structuredClone(upstream.procurement);
   else if (models.config.business?.[facts.feature]) q.costRates = {};
+  if (adjusted) {
+    q.requestedParameters = {quality:originalFacts.quality,resolution:originalResolution,ratio:originalFacts.ratio||"1:1"};
+    q.effectiveParameters = {...(q.effectiveParameters||q.requestedParameters),resolution:choice.effective};
+    q.legacyCompatible = false;
+  }
   return q;
 }

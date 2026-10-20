@@ -3127,6 +3127,7 @@ export async function addArtworkParent(
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [email]);
     const { rows } = await client.query(
       `SELECT id, parent_id, parent_ids, group_id
          FROM app_artworks
@@ -3144,7 +3145,7 @@ export async function addArtworkParent(
 
     // 服务端再次做防环校验，不能只依赖可被绕过的前端判断。
     const graph = await client.query(
-      `SELECT id, parent_id, parent_ids
+      `SELECT id, parent_id, parent_ids, source_url AS source
          FROM app_artworks
         WHERE email = $1 AND group_id = $2 AND deleted_at IS NULL`,
       [email, target.group_id]
@@ -3159,19 +3160,19 @@ export async function addArtworkParent(
       seen.add(current);
       const node = byId.get(current);
       if (!node) continue;
-      if (node.parent_id) stack.push(node.parent_id as string);
+      if (node.parent_id && (node.source !== "canvas-add" || node.parent_ids?.includes(node.parent_id))) stack.push(node.parent_id as string);
       if (Array.isArray(node.parent_ids)) {
         stack.push(...(node.parent_ids as string[]).filter(Boolean));
       }
     }
 
-    const primary: string | null = target.parent_id ?? null;
     const cur: string[] = Array.isArray(target.parent_ids)
       ? (target.parent_ids as string[])
       : [];
     const set = new Set(cur);
-    if (parentId !== primary) set.add(parentId);
-    if (!primary) set.delete(parentId);
+    // parent_id also groups canvas-add uploads into a project. A deliberate
+    // connection must remain explicit even when it equals that grouping parent.
+    set.add(parentId);
     await client.query(
       `UPDATE app_artworks
           SET parent_id = COALESCE(parent_id, $3), parent_ids = $4::jsonb
@@ -3211,26 +3212,30 @@ export async function removeArtworkParent(
   await ensureSchema();
   if (!id || !parentId) return;
   const email = emailRaw.toLowerCase();
-  const { rows } = await getPool().query(
-    `SELECT parent_id, parent_ids FROM app_artworks WHERE email = $1 AND id = $2`,
-    [email, id]
-  );
-  if (!rows.length) return;
-  const primary: string | null = rows[0].parent_id ?? null;
-  const cur: string[] = Array.isArray(rows[0].parent_ids)
-    ? (rows[0].parent_ids as string[])
-    : [];
-  const next = cur.filter((p) => p && p !== parentId);
-  if (primary === parentId) {
-    await getPool().query(
-      `UPDATE app_artworks SET parent_id = NULL WHERE email = $1 AND id = $2`,
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [email]);
+    const { rows } = await client.query(
+      `SELECT parent_id, parent_ids, source_url AS source FROM app_artworks
+       WHERE email = $1 AND id = $2 AND deleted_at IS NULL FOR UPDATE`,
       [email, id]
     );
-  }
-  await getPool().query(
-    `UPDATE app_artworks SET parent_ids = $3::jsonb WHERE email = $1 AND id = $2`,
-    [email, id, JSON.stringify(next)]
-  );
+    if (rows.length) {
+      const row = rows[0];
+      const next = (Array.isArray(row.parent_ids) ? row.parent_ids : []).filter((p: string) => p && p !== parentId);
+      // canvas-add primary is the project membership, not the removable input.
+      const primary = row.source === "canvas-add" || row.parent_id !== parentId ? row.parent_id : null;
+      await client.query(
+        `UPDATE app_artworks SET parent_id = $3, parent_ids = $4::jsonb WHERE email = $1 AND id = $2`,
+        [email, id, primary, JSON.stringify(next)]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally { client.release(); }
 }
 
 // 画布用:软删除某用户名下指定的一批作品(标记 deleted_at,进回收站,不真删)。

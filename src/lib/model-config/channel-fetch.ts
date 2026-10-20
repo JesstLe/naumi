@@ -13,6 +13,8 @@ import {prepareChannelText} from "./channel-text-response";
 import { ImageOperationPending } from "../image-gateway";
 import { channelOperationKey } from "./channel-availability";
 import { retryAfterMs } from "./channel-health-policy";
+import { imageSupplierFailure, IMAGE_SUPPLIER_FAILURE_MESSAGES, type ImageSupplierFailure } from "./supplier-failure";
+import { waitForUnsubmittedChannel } from "./channel-wait";
 
 export function channelRoutingFetch(scope: ModelExecutionScope, options: ValidationOptions): typeof fetch {
   return async (input, init) => {
@@ -23,10 +25,12 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
     if(text){const data=JSON.parse(new TextDecoder().decode(body));if(data.messages?.some((m:any)=>Array.isArray(m.content)&&m.content.some((p:any)=>["image_url","input_image"].includes(p.type))))for(const target of policy.targets)if(!target.scope.capabilities.vision)visited.add(target.upstreamId);}
     const operationKey = channelOperationKey(scope);
     let attempted = false;
+    let lastImageFailure: ImageSupplierFailure | undefined;
     for (let attempt = 1; attempt <= policy.targets.length; attempt++) {
       request.signal.throwIfAborted();
       let claim;
-      try { claim = await claimChannel(pool, scope.frozen.publicModelId, policy.policy, policy.targets, visited, operationKey); }
+      try { const acquire=()=>claimChannel(pool, scope.frozen.publicModelId, policy.policy, policy.targets, visited, operationKey);
+        claim = !text&&!attempted ? await waitForUnsubmittedChannel(acquire,request.signal) : await acquire(); }
       catch (error) {
         if (!(error instanceof ModelConfigError) || !["PROVIDER_BUSY", "CHANNEL_DISABLED", "CONFIG_UNAVAILABLE"].includes(error.code)) throw error;
         if (attempted) break;
@@ -56,8 +60,11 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
         }
         const raw = await readBounded(response, 1024 * 1024).catch(() => "");
         let receipt: any; try { receipt = JSON.parse(raw); } catch { receipt = null; }
+        if (!text) lastImageFailure = imageSupplierFailure(status, receipt);
         const definite = receipt?.billing_status === "not_charged" || receipt?.error?.billing_status === "not_charged";
-        await finishExecutionStage(audit, definite ? "rejected-not-charged" : "failed-response", status); finished = true;
+        const ambiguous=!text&&!definite&&(status===408||status===409||status>=500);
+        await finishExecutionStage(audit, definite ? "rejected-not-charged" : ambiguous ? "unknown" : "failed-response", status, !text ? { upstreamFailure: lastImageFailure } : undefined); finished = true;
+        if(ambiguous){await recordChannelOutcome(pool,target,false,status);throw new ImageOperationPending(operationKey||active.frozen.publicModelId,Error("supplier-response-unconfirmed"));}
         // An asynchronous rejection after paid acceptance is terminal for this
         // attempt, not permission to submit the same operation to a second supplier.
         if (applicationAPIMartImages(active.connection.protocol,active.parameterMap) && !definite) return new Response(raw,{status:response.status,headers:{"content-type":"application/json"}});
@@ -66,7 +73,7 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
       } catch (error) {
         // An accepted durable task must finish/query its original supplier;
         // moving to another channel could create a second paid generation.
-        if (error instanceof ImageOperationPending) { if (audit) await finishExecutionStage(audit, "unknown", status); throw error; }
+        if (error instanceof ImageOperationPending) { if (audit&&!finished) await finishExecutionStage(audit, "unknown", status); throw error; }
         if (!audit || receivedImage) throw error;
         if(applicationAPIMartImages(active.connection.protocol,active.parameterMap) && !(error instanceof ModelConfigError && ["CHANNEL_DISABLED","CONFIG_UNAVAILABLE"].includes(error.code))) throw new ImageOperationPending(operationKey || active.frozen.publicModelId,error);
         if (!finished) {
@@ -76,17 +83,22 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
           } else if (request.signal.aborted) {
             await finishExecutionStage(audit,"unknown",status);
           } else {
+            // A later transport/invalid-output failure supersedes an earlier
+            // definite rejection; do not present stale input advice as its cause.
+            lastImageFailure = undefined;
             const effectiveStatus = status || (typeof errorStatus === "number" ? errorStatus : undefined);
             await finishExecutionStage(audit, status ? "failed-output" : "unknown", effectiveStatus);
             const cause = error as {name?:string;retryAfter?:string;cause?:{name?:string;code?:string}};
             const timedOut=attemptSignal?.aborted&&attemptSignal.reason?.name==="TimeoutError" || cause.name==="TimeoutError" || cause.cause?.name==="TimeoutError" || cause.cause?.code==="ETIMEDOUT";
             await recordChannelOutcome(pool, target, false, effectiveStatus, {retryAfterMs:retryAfterMs(cause.retryAfter || null),kind:timedOut?"timeout":status && status>=200 && status<300?"invalid-output":undefined});
+            if(!text)throw new ImageOperationPending(operationKey||active.frozen.publicModelId,error);
           }
         } else throw error;
         request.signal.throwIfAborted();
       } finally { if(!streaming)await claim.release(); }
     }
     // Customer settlement is separate from supplier attempts whose cost remains unknown.
+    if (!text && lastImageFailure) return Response.json({ error: { message: IMAGE_SUPPLIER_FAILURE_MESSAGES[lastImageFailure.code], code: lastImageFailure.code, type: "naumi_channel_failure" } }, { status: lastImageFailure.status });
     return Response.json({ error: { message: text?"所有可用供应通道均未取得文字结果，请稍后重试":"所有可用供应通道均未取得图片，请稍后重试", code: "SUPPLIER_CHANNELS_EXHAUSTED", type: "naumi_channel_failure" } }, { status: 400 });
   };
 }

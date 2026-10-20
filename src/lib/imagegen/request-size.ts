@@ -21,6 +21,15 @@ export function supportsExactImageSize(model: string) {
     model,
   );
 }
+export type ImageRatioValidationPolicy = { nativePixelGrid: 16 };
+
+/** Native Gemini image outputs use a 16px grid. This is a bounded validation
+ * allowance, never a resize/crop or permission to relax exact pixel contracts.
+ * Mixed fallback families retain strict checking because the winning model is
+ * not known here. UI labels and requested resolution do not select this policy. */
+export function imageRatioValidationPolicy(connections: readonly { protocol: string; wireModel: string }[]): ImageRatioValidationPolicy | undefined {
+  if (connections.length && connections.every(c => ["openai-images", "new-api-flow"].includes(c.protocol) && /^(?:gemini-3(?:\.0)?-pro-image|gemini-3\.1-flash-image)-(?:preview|three-four|four-three|portrait|landscape|square)$/.test(c.wireModel))) return { nativePixelGrid: 16 };
+}
 /** A definite, local rejection. Never turn this into an unknown paid attempt. */
 export class ExactImageSizeError extends Error {
   readonly code = "IMAGE_SIZE_UNSUPPORTED";
@@ -33,17 +42,39 @@ export class ExactImageSizeError extends Error {
 export function exactImageRequestSize(
   ratio: string,
   model: string,
+  customRatio = false,
 ): string | undefined {
   if (!supportsExactImageSize(model)) return;
   if (ratio === "auto") return "auto";
   const size = EXACT_SIZES[ratio];
   if (size) return size;
+  // Contract v2, new requests only. OpenAI's documented custom-size contract
+  // permits 16px-grid dimensions, aspect 1:3..3:1 and >=655,360 pixels.
+  // Keep the established standard table and a bounded native budget; never
+  // enlarge to enormous exact multiples or transform the returned image.
+  if (customRatio && /^[1-9]\d{0,5}:[1-9]\d{0,5}$/.test(ratio)) {
+    const [rw, rh] = ratio.split(":").map(Number);
+    if (rw / rh >= 1 / 3 && rw / rh <= 3) {
+      let best: { width: number; height: number; error: number } | undefined;
+      for (let height = 16; height <= 1536; height += 16) {
+        const target = height * rw / rh / 16;
+        for (const width of new Set([Math.floor(target) * 16, Math.ceil(target) * 16])) {
+          const pixels = width * height;
+          if (width < 16 || width > 1536 || pixels < 655360 || pixels > 1572864 || width > height * 3 || height > width * 3) continue;
+          const error = Math.abs(width * rh - height * rw) / (height * rw);
+          if (!best || error < best.error || error === best.error && pixels > best.width * best.height) best = { width, height, error };
+        }
+      }
+      if (best) return `${best.width}x${best.height}`;
+    }
+  }
   // Reject an unsupported exact contract rather than silently reverting to direction-only.
   throw new ExactImageSizeError(ratio);
 }
 export function imageRatioMismatch(
   requested: string,
   image: { width?: number; height?: number; ratio?: string },
+  policy?: ImageRatioValidationPolicy,
 ) {
   if (!requested || requested === "auto") return;
   const parts = requested.split(":").map(Number),
@@ -57,5 +88,11 @@ export function imageRatioMismatch(
   const delta =
     rw <= rh ? Math.abs(w - (h * rw) / rh) : Math.abs(h - (w * rh) / rw);
   if (delta <= 1.01) return;
+  // Only named standard ratios and actual aligned outputs qualify. At most
+  // half a grid cell AND 1% of the requested shorter edge are accepted. Source-
+  // inherited custom ratios, arbitrary models and exact GPT contracts stay strict.
+  const grid = policy?.nativePixelGrid;
+  const expectedShortEdge = rw <= rh ? (h * rw) / rh : (w * rh) / rw;
+  if (grid === 16 && EXACT_SIZES[requested] && Number.isInteger(w) && Number.isInteger(h) && w % grid === 0 && h % grid === 0 && delta <= grid / 2 && delta / expectedShortEdge <= 0.01) return;
   return `生成结果为 ${image.ratio || `${w}:${h}`}（${w}×${h}），与所选 ${requested} 不一致；原图已保留，实际生成积分已结算，任务未自动重试`;
 }

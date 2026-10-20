@@ -1,5 +1,28 @@
 [
   {
+    "version": "1792471620",
+    "title": {
+      "zh": "图片生成兼容性优化",
+      "en": "Image generation compatibility improvements"
+    },
+    "improvements": [
+      {
+        "zh": "自动选择可用的生成分辨率，原选档报价保持不变。",
+        "en": "Automatically select an available output resolution while keeping the original quoted price."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "修复部分图片生成因分辨率选项不匹配而被提前阻断的问题。",
+        "en": "Fix image generation being blocked by incompatible resolution options."
+      },
+      {
+        "zh": "保留原始选择与实际生成档位，减少重复生成。",
+        "en": "Keep the selected and actual resolution separate and avoid duplicate submissions."
+      }
+    ]
+  },
+  {
     "version": "1792406669",
     "title": {
       "zh": "图片创作体验更新",

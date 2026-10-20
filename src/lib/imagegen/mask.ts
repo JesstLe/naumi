@@ -4,7 +4,7 @@ import {decodeImagegenPixels} from "./pixels";
 
 /** Native edits may redraw the exterior. Retain it from the owned target, never from model output. */
 export async function preserveMaskedOutside(target:Buffer,mask:Buffer,generated:Buffer,replaceTransparency=false){
- const [original,selection,output]=await Promise.all([decodeImagegenPixels(target),decodeImagegenPixels(mask),decodeImagegenPixels(generated)]);
+ const [original,selection,output]=await Promise.all([decodeImagegenPixels(target),decodeImagegenPixels(mask),decodeImagegenPixels(generated,"output")]);
  if(original.info.width!==selection.info.width||original.info.height!==selection.info.height)throw new Error("蒙版尺寸必须与编辑目标一致");
  if(Math.abs(output.info.width/output.info.height-original.info.width/original.info.height)>0.01)throw new Error("模型改变了蒙版编辑的画面比例；原生成版本已保留，不能错位合成");
  const size={width:output.info.width,height:output.info.height};

@@ -19,7 +19,7 @@ async function main(){
     if(req.url==="/internal/config/activate"){digest=body.digest;return res.end(JSON.stringify({id:body.id,digest,phase:"applied"}));}
     if(req.url?.startsWith("/internal/config/publications/")){res.statusCode=404;return res.end("{}");}
     wire.push(body);
-    if(failFirst&&body.model==="wire-image-one"){res.statusCode=503;return res.end(JSON.stringify({error:{message:"fixture unavailable"}}));}
+    if(failFirst&&body.model==="wire-image-one"){res.statusCode=503;return res.end(JSON.stringify({error:{message:"fixture unavailable",billing_status:"not_charged"}}));}
     if(req.url==="/v1/chat/completions"){res.setHeader("content-type","text/event-stream");return res.end('data: '+JSON.stringify({choices:[{delta:{content:'![image](data:image/png;base64,'+png.toString("base64")+')'}}]})+'\n\ndata: [DONE]\n\n');}
     res.end(JSON.stringify({data:[{b64_json:png.toString("base64")}]}));
   });

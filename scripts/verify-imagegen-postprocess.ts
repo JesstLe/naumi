@@ -32,7 +32,7 @@ async function main(){
  const feathered=await processImagegenPixels(png,{output:{format:"png"},chroma:imagegenChromaSchema.parse({edgeFeather:1})});const featherPixels=await sharp(feathered.bytes).ensureAlpha().raw().toBuffer();assert.ok(featherPixels.some((v,i)=>i%4===3&&v>0&&v<255));
  const green=await sharp({create:{width:4,height:4,channels:4,background:"#00ff00"}}).png().toBuffer();await assert.rejects(()=>processImagegenPixels(green,{output:{format:"png"},chroma:imagegenChromaSchema.parse({})}),/全部透明/);
  await assert.rejects(()=>processImagegenPixels(Buffer.from("fake png"),{output:{format:"png"}}));
- await assert.rejects(()=>processImagegenPixels(Buffer.alloc(12*1024*1024+1),{output:{format:"png"}}),/大小/);
+ await assert.rejects(()=>processImagegenPixels(Buffer.alloc(64*1024*1024+1),{output:{format:"png"}}),/大小/);
  assert.equal(imagegenChromaSchema.safeParse({transparentThreshold:96,opaqueThreshold:12}).success,false);
  const softInput=await sharp(Buffer.from([80,200,80,128,255,0,0,255]),{raw:{width:2,height:1,channels:4}}).png().toBuffer();
  const soft=await processImagegenPixels(softInput,{output:{format:"png"},chroma:imagegenChromaSchema.parse({softMatte:true,spillCleanup:true})});

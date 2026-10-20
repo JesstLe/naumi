@@ -1,5 +1,6 @@
 import "server-only";
 import { apimartImageParameters } from "./apimart-image-parameters";
+import { seedreamPreflight } from "./seedream-preflight";
 import { guardChannelSubmission } from "./channel-availability";
 import { createHash } from "node:crypto";
 import sharp from "sharp";
@@ -15,6 +16,30 @@ import { apimartTask, submittedAPIMartTask, genericReceipt } from "../supplier-c
 import { parseReceiptJson } from "../supplier-cost/money";
 import { readBounded, readBoundedBytes } from "../supplier-cost/io";
 import { recordBillingUsage,currentSynchronousBilling } from "../billing/synchronous";
+
+/** Actual submission parameters, not the original UI audit request. Old preset
+ * and legacy tasks keep their previous precedence when no effective quote or
+ * explicit new non-preset frozen fallback exists. No resolution is guessed. */
+export function apimartExecutionParameters(scope: ModelExecutionScope, body:Record<string,any>, quote?:Pick<import("../billing/types").BillingQuote,"requestedParameters"|"effectiveParameters">, operation?:ReturnType<typeof currentImageOperationParameters>) {
+  const p=scope.imagePreset;
+  const requested={...(scope.frozen.requestedParameters || {quality:scope.frozen.facts?.quality||String(body.quality||"medium"),resolution:scope.frozen.facts?.requestedResolution||scope.frozen.facts?.resolution||"1K",ratio:scope.frozen.facts?.ratio||"1:1"}),...quote?.requestedParameters};
+  if(!p&&scope.frozen.requestedParameters&&scope.frozen.facts?.requestedResolution)requested.resolution=scope.frozen.facts.requestedResolution;
+  if(!p&&operation?.quality&&scope.capabilities.qualities.includes(operation.quality as never))requested.quality=operation.quality;
+  if(operation?.ratio)requested.ratio=operation.ratio;
+  if(operation?.resolution)requested.resolution=operation.resolution;
+  if(!p&&quote?.effectiveParameters){
+    requested.resolution=quote.effectiveParameters.resolution;
+    requested.ratio=quote.effectiveParameters.ratio;
+    // Billing may use a wire alias (hd) or auto to mean omitted quality.
+    // The adapter still needs a declared semantic choice for policyQuality().
+    if(scope.capabilities.qualities.includes(quote.effectiveParameters.quality as never))requested.quality=quote.effectiveParameters.quality;
+  }
+  // New preset delivery fallback is explicit; old prompt-only preset requests
+  // had no differing effective tier and retain their historical precedence.
+  if(p && quote?.effectiveParameters && quote.requestedParameters?.resolution!==quote.effectiveParameters.resolution) requested.resolution=quote.effectiveParameters.resolution;
+  else if(p && scope.frozen.requestedParameters && scope.frozen.facts && scope.frozen.requestedParameters.resolution!==scope.frozen.facts.resolution) requested.resolution=scope.frozen.facts.resolution;
+  return requested;
+}
 
 /** One durable submission. A timeout/unknown acceptance only queries the original task. */
 export function apimartImagesFetch(scope: ModelExecutionScope, options: ValidationOptions = {}, overrides?: { transport?: typeof fetch; media?: typeof fetch; pollMs?: number }): typeof fetch {
@@ -56,11 +81,7 @@ export function apimartImagesFetch(scope: ModelExecutionScope, options: Validati
       const m=await sharp(Buffer.from(await mask.arrayBuffer())).metadata(),i=await sharp(Buffer.from(await files[0].arrayBuffer())).metadata();
       if(!m.hasAlpha||m.width!==i.width||m.height!==i.height)throw new ModelConfigError("INVALID_REQUEST","蒙版透明通道和像素必须匹配首张参考图");
     }
-    const requested={...(scope.frozen.requestedParameters || {quality:scope.frozen.facts?.quality||String(body.quality||"medium"),resolution:scope.frozen.facts?.requestedResolution||scope.frozen.facts?.resolution||"1K",ratio:scope.frozen.facts?.ratio||"1:1"}),...currentSynchronousBilling()?.operation?.quote.requestedParameters};
-    const operationParams=currentImageOperationParameters();
-    if(!p&&operationParams?.quality)requested.quality=operationParams.quality;
-    if(operationParams?.ratio)requested.ratio=operationParams.ratio;
-    if(operationParams?.resolution)requested.resolution=operationParams.resolution;
+    const requested=apimartExecutionParameters(scope,body,currentSynchronousBilling()?.operation?.quote,currentImageOperationParameters());
     const params=p?effectiveImageParameters(p,requested):apimartImageParameters(scope,requested);
     const unit=currentImageOperationId();if(!unit)throw new ModelConfigError("INVALID_REQUEST","默认APIMart调用缺少稳定操作ID");
     const context=await supplierContext(scope), ledger=supplierLedger(),accountId=accountIdentity(c.baseUrl,c.apiKey);
@@ -75,6 +96,9 @@ export function apimartImagesFetch(scope: ModelExecutionScope, options: Validati
     // Pin the channel before uploads/marker, including competing family selections.
     // Restoring a marker or task bypasses this gate: no new POST is possible.
     const previous=(await ledger.pool.query("SELECT parameters,task_id FROM app_supplier_calls WHERE id=$1",[row.id])).rows[0];
+    // New model-specific checks apply only before any accepted/unknown marker.
+    // Never reinterpret a frozen task as unaccepted or authorize a new POST.
+    if(!p&&!previous.parameters&&!previous.task_id)await seedreamPreflight(c.wireModel,body.prompt,files,n);
     if(!previous.parameters&&!previous.task_id)await guardChannelSubmission(ledger.pool,scope);
     const claimed=await ledger.pool.query(`UPDATE app_supplier_calls SET parameters=$2::jsonb,billing_unit_id=$3 WHERE id=$1 AND parameters IS NULL RETURNING id`,[row.id,JSON.stringify({requested:params.requested,effective:params.effective,upstream:params.upstream,requestHash,modelVersion:scope.frozen.modelVersion,...(p?{factorBps:p.factorBps}:{adapter:"apimart-images-v1"})}),unit]);
     const original=(await ledger.pool.query("SELECT * FROM app_supplier_calls WHERE id=$1",[row.id])).rows[0];

@@ -1,4 +1,5 @@
 "use client";
+import { useToast } from "@/components/ui/toast";
 import { invalidateBrowserData } from "@/lib/browser-data-cache";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { authHeader } from "@/lib/supabase";
@@ -9,6 +10,8 @@ import { MODEL_CATALOG_REFRESH } from "../model-config/public-client";
 import { chosenFeatureModel, FEATURE_MODEL_SELECTION } from "../model-config/feature-client";
 import { browserRandomUUID } from "../browser-crypto";
 export type PublicQuote = {
+    requestedParameters?: {quality:string;resolution:string;ratio:string};
+    effectiveParameters?: {quality:string;resolution:string;ratio:string};
     modelVersion?: number;
     modelId?: string;
     mode?: string;
@@ -73,6 +76,7 @@ const Context = createContext<Client | null>(null);
 export function BillingProvider({ children }: {
     children: ReactNode;
 }) {
+    const {toast}=useToast();
     const { user, ready } = useAuth(), [catalog, setCatalog] = useState<PublicCatalog | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState<string | null>(null);
     const cache = useRef(new Map<string, Promise<PublicQuote>>()), epoch = useRef(0);
     const intents=useRef(new Map<string,string>());
@@ -131,6 +135,8 @@ export function BillingProvider({ children }: {
         id=id||headers.get("x-naumi-billing-operation-id")||browserRandomUUID();intents.current.set(key,id);try{localStorage.setItem(key,id);}catch{}
         headers.set("x-naumi-billing-operation-id",id);
         onIdentity?.(id);
+        if(displayed.requestedParameters?.resolution && displayed.effectiveParameters?.resolution && displayed.requestedParameters.resolution!==displayed.effectiveParameters.resolution)
+            toast(`${displayed.requestedParameters.resolution}已自动调整为${displayed.effectiveParameters.resolution}，实际生成档位已调整，报价保持不变`,"info");
         const response = await fetch(url, { ...frozenIntentBody(init,id), headers });
         if (response.ok && response.body && response.headers.get("content-type")?.includes("text/event-stream")) {
             const decoder = new TextDecoder(); let buffer = "";
@@ -150,7 +156,7 @@ export function BillingProvider({ children }: {
             await refresh();
         if (response.status === 409 && data.code === "MODEL_CHANGED") window.dispatchEvent(new Event(MODEL_CATALOG_REFRESH));
         return response;
-    }, [refresh,user?.email]);
+    }, [refresh,user?.email,toast]);
     const quoteAndSubmit = useCallback(async (url: string, init: RequestInit, input: QuoteInput) => {
         if (!catalog)
             throw new Error("报价加载中，请稍后重试");
@@ -185,6 +191,9 @@ export function useBillingEstimate(input: QuoteInput, enabled=true) {
     const current = result.key === key ? result.quote : null;
     return { quote: current, cost: current?.credits ?? 0, loading: enabled&&!!user && !current && !result.error, error: enabled?result.error:null, submit: (url: string, init: RequestInit) => billing.submit(url, init, current) };
 }
+export function resolutionQuoteLabel(quote:PublicQuote|null) {
+    return quote?.requestedParameters?.resolution && quote.effectiveParameters?.resolution && quote.requestedParameters.resolution!==quote.effectiveParameters.resolution ? ` · ${quote.requestedParameters.resolution}→${quote.effectiveParameters.resolution} · 报价不变` : "";
+}
 export function BillingEstimate({ input }: {
     input: QuoteInput;
-}) { const state = useBillingEstimate(input); return <span data-testid="billing-estimate" role="status">{state.error || (!state.quote ? "报价加载中…" : state.quote.mode==="api-cost-plus" ? `估算 ${state.cost} 积分 · 上限 ${state.quote.authorizedCredits ?? state.quote.reserveCredits}` : `${state.cost} 积分`)}</span>; }
+}) { const state = useBillingEstimate(input); return <span data-testid="billing-estimate" role="status">{state.error || (!state.quote ? "报价加载中…" : state.quote.mode==="api-cost-plus" ? `估算 ${state.cost} 积分 · 上限 ${state.quote.authorizedCredits ?? state.quote.reserveCredits}` : `${state.cost} 积分`)}{resolutionQuoteLabel(state.quote)}</span>; }
