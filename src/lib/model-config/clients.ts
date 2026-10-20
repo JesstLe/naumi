@@ -32,7 +32,9 @@ function executionTransport(scope: ModelExecutionScope, options: ValidationOptio
     return async (input, init) => {
       try { return await adapter(input, init); }
       catch (error) {
-        if (error instanceof ModelConfigError) return Response.json({ error: { message: error.message, code: error.code, billing_status: "not_charged" } }, { status: error.code === "CONFIG_UNAVAILABLE" ? 429 : error.status });
+        // Hash/identity conflicts can refer to an already paid Hub task. They
+        // must not be relabelled as proof that another supplier may be called.
+        if (error instanceof ModelConfigError && ["INVALID_REQUEST","MODEL_INCOMPATIBLE","PROVIDER_BUSY","CHANNEL_DISABLED","CONFIG_UNAVAILABLE"].includes(error.code)) return Response.json({ error: { message: error.message, code: error.code, billing_status: "not_charged" } }, { status: error.code === "CONFIG_UNAVAILABLE" ? 429 : error.status });
         throw error;
       }
     };

@@ -66,6 +66,12 @@ async function main() {
     assert.equal((await f.sql.query("SELECT count(*)::int n FROM app_model_channel_operations")).rows[0].n,1,"Legacy ledger restores pin");
     console.log("LEGACY_ACCEPTED_HUB_DISABLED_GET_ONLY=PASS; NATIVE_PAID_OPERATIONS=1; BACKUP_POSTS=0");
 
+    const beforeConflict={posts,paid,backups};
+    const directHub=(await import("../src/lib/model-config/clients")).executionFetch(scope.supplierRouting!.targets[0].scope,{trustedOrigins:[f.origin]});
+    await assert.rejects(withImageOperation("image-a",{id:"accepted-one",durable:true},()=>directHub(f.origin+"/v1/images/generations",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:"image-a",prompt:"changed existing paid request",n:1})})),ImageOperationPending);
+    assert.deepEqual({posts,paid,backups},beforeConflict,"A frozen Hub request-hash conflict cannot become a not_charged permit to fail over");
+    console.log("ACCEPTED_HUB_HASH_CONFLICT_NO_FALLBACK=PASS; NEW_SUPPLIER_POSTS=0");
+
     await publish(before.config);drop=true;complete=false;
     await assert.rejects(run("lost-receipt"),ImageOperationPending);assert.equal(posts,2);assert.equal(paid,2);
     await publish(off);

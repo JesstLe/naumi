@@ -14,5 +14,5 @@ export async function executeImagegenStep(plan:ImagegenPlan,key:string,owner:str
  for(const [k,v] of Object.entries({prompt:compileImagegenPrompt(effectiveRequest,imagegenStepIntent(plan,key),plan.skillInstructions),parentId:target.artworkId,quality:plan.request.parameters.quality||"medium",resolution:String(step.parameters.resolution||plan.request.parameters.resolution||"1K"),ratio:plan.request.parameters.ratio||"1:1"}))form.set(k,v);
  if(target.artworkId.startsWith("asset-"))form.delete("parentId");
  const request=await imagegenInternalRequest(plan,key,owner,form,"cutout"),{POST}=await import("../../app/api/cutout/route");
- return withImagegenStep(effectiveRequest,imagegenStepIntent(plan,key),()=>POST(request),plan.ratioContractVersion,plan.requestedParameters);
+ return withImagegenStep(effectiveRequest,imagegenStepIntent(plan,key),()=>POST(request),plan.ratioContractVersion,plan.requestedParameters,plan.channelContractVersion===1?step.eligibleUpstreamIds:undefined);
 }

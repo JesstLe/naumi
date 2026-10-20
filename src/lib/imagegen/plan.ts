@@ -90,7 +90,20 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
    if(codes.includes("REVERSE_HUB_RATIO_UNSUPPORTED"))hubRatioRejected=true;
    if(codes.includes("EXACT_RATIO_UNSUPPORTED"))exactRatioRejected=true;
    if(codes.length)candidates.excluded.push({upstreamId:candidate.upstreamId,codes});
-   return !codes.length;
+   if(codes.length)return false;
+   // A family may have different native wire contracts. A deficient candidate
+   // is excluded before freeze; it must not reject compatible suppliers too.
+   const required={inputFidelity:request.parameters.inputFidelity,moderation:request.parameters.moderation,pixelSize:request.parameters.width,outputCompression:request.output.compressionMode==="native"?request.output.compression:undefined};
+   const missing=Object.entries(required).some(([key,value])=>value!==undefined&&(!source.parameterMap.imagegen?.[key as keyof NonNullable<typeof source.parameterMap.imagegen>]||source.parameterMap.imagegen[key as keyof NonNullable<typeof source.parameterMap.imagegen>]==="omit"));
+   let unsupported=missing;
+   if(!missing){
+    try{
+     const extra=mapImagegenParameters(imagegenWireRequest({...request,output:{...request.output,background:requirements.background||undefined}}),publishedImagegenCapabilities(source.capabilities),source.parameterMap.imagegen||{});
+     unsupported=Object.keys(extra).length>0&&(!["openai-images","router-images"].includes(provider!.protocol)||provider?.options?.imageAdapter==="reverse-hub");
+    }catch(error){if(!(error instanceof Error)||!/^实际参数/.test(error.message))throw error;unsupported=true;}
+   }
+   if(unsupported)candidates.excluded.push({upstreamId:candidate.upstreamId,codes:["IMAGEGEN_PARAMETER_UNSUPPORTED"]});
+   return !unsupported;
   });
   if(!candidates.eligible.length){if(exactRatioRejected)throw new ExactImageSizeError(request.parameters.ratio||"1:1");if(hubRatioRejected)throw new ImagegenPlanError(REVERSE_HUB_RATIO_MESSAGE, "IMAGEGEN_RATIO_UNSUPPORTED", 422);throw new ImagegenPlanError("所选模型没有支持本次生成参数的可用通道，请调整参数或选择其他模型", "IMAGEGEN_NO_CHANNEL", 409);}
   if(operation==="cutout"&&candidates.eligible.some(c=>publishedImagegenCapabilities(models.config.upstreamModels.find(u=>u.id===c.upstreamId)!.capabilities).transparent?.state!=="supported"))throw new ImagegenPlanError("抠图通道尚未核实透明输出能力");
@@ -98,8 +111,6 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
   if(model.target.type==="pool"&&!model.supplierRouting&&(request.parameters.inputFidelity!==undefined||request.parameters.moderation!==undefined||request.parameters.width!==undefined||request.output.compressionMode==="native"&&request.output.compression!==undefined))throw new ImagegenPlanError("外部Router尚未开放这些原生参数的发送，请选择已发布参数映射的直连供应通道");
   assertToolScope(models.config,featureId,modelId);
   if(model.target.type!=="upstream"&&!model.supplierRouting&&candidates.excluded.length)throw new ImagegenPlanError("当前聚合通道尚不能限制高级参数候选，请管理员维护全部候选能力");
-  for(const c of candidates.eligible){const u=models.config.upstreamModels.find(u=>u.id===c.upstreamId)!;for(const [key,value] of Object.entries({inputFidelity:request.parameters.inputFidelity,moderation:request.parameters.moderation,pixelSize:request.parameters.width,outputCompression:request.output.compressionMode==="native"?request.output.compression:undefined})){if(value!==undefined&&(!u.parameterMap.imagegen?.[key as keyof NonNullable<typeof u.parameterMap.imagegen>]||u.parameterMap.imagegen[key as keyof NonNullable<typeof u.parameterMap.imagegen>]==="omit"))throw new ImagegenPlanError("本次指定的原生参数尚未开放发送，请管理员维护参数映射");}
-   const extra=mapImagegenParameters(imagegenWireRequest({...request,output:{...request.output,background:requirements.background||undefined}}),publishedImagegenCapabilities(u.capabilities),u.parameterMap.imagegen||{});const provider=models.config.providers.find(p=>p.id===u.providerId)!;if(Object.keys(extra).length&&(!["openai-images","router-images"].includes(provider.protocol)||provider.options?.imageAdapter==="reverse-hub"))throw new ImagegenPlanError("该供应协议尚未实现所选实际参数的发送，请选择已实现参数映射的通道");}
   const q=await runExecutionBundle({frozen:{modelVersion:models.version,billingVersion:billing.version},billing},()=>quoteForActor(owner,{feature:featureId,quantity:operation==="cutout"?1:request.variants,modelId,quality:request.parameters.quality||"medium",resolution:requestedResolution,ratio:request.parameters.ratio||"1:1"},{effectiveResolution:stageFacts.resolution}));
   if(stageResolution?.changed)warnings.push(resolutionFallbackMessage(stageResolution));
   steps.push({key,operation,modelId,eligibleUpstreamIds:candidates.eligible.map(c=>c.upstreamId),parameters:{quality:request.parameters.quality||"medium",resolution:stageFacts.resolution,ratio:request.parameters.ratio||"1:1"},credits:q.tariff.pricing.mode==="api-cost-plus"?q.authorizedCredits:q.requestedCredits});
@@ -116,6 +127,6 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
   for(let i=0;i<request.variants;i++)await append(`cutout-${i}`,"cutout",cutout,{...intent,operation:"cutout"},"tool.cutout");
   warnings.push("所选模型先生成，再通过后台指定的抠图模型生成透明图；两步积分已合计，原图保留。");
  }else await append("generate",intent.operation,id,intent,feature);
- return {...((resolutionChoice?.changed||steps.some(s=>s.parameters.resolution!==requestedResolution))?{requestedParameters:{quality:request.parameters.quality||"medium",resolution:requestedResolution,ratio:request.parameters.ratio||"1:1"}}:{}),ratioContractVersion:2,request,intent,fingerprint,modelVersion:models.version,billingVersion:billing.version,skillInstructions:skill?.instructions,steps,totalCredits:steps.reduce((n,s)=>n+s.credits,0),confirmationRequired:steps.length>1||steps.some(s=>s.credits>=100),warnings};
+ return {...((resolutionChoice?.changed||steps.some(s=>s.parameters.resolution!==requestedResolution))?{requestedParameters:{quality:request.parameters.quality||"medium",resolution:requestedResolution,ratio:request.parameters.ratio||"1:1"}}:{}),channelContractVersion:1,ratioContractVersion:2,request,intent,fingerprint,modelVersion:models.version,billingVersion:billing.version,skillInstructions:skill?.instructions,steps,totalCredits:steps.reduce((n,s)=>n+s.credits,0),confirmationRequired:steps.length>1||steps.some(s=>s.credits>=100),warnings};
 }
 

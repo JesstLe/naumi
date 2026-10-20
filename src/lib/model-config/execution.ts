@@ -20,11 +20,12 @@ import { assertToolScope, featureDefaultModel } from "./tool-scope";
 import {freezeManagedVideoCapability} from "../video/frozen-capability";
 import {frozenVideoSchema,type FrozenVideoCapability} from "../video/frozen-capability-schema";
 
-export type ExecutionModel = { video?: FrozenVideoCapability; requestedParameters?: import("./image-preset").ImageParameters; feature?: string; modelVersion: number; billingVersion: number; modelDigest: string; publicModelId: string; binding: string; modality: Modality; target: { type: "upstream" | "pool"; id: string }; credentialRef?: string; routerDigest?: string; facts?: ModelFacts };
+export type ExecutionModel = { imageUpstreamIds?: string[]; video?: FrozenVideoCapability; requestedParameters?: import("./image-preset").ImageParameters; feature?: string; modelVersion: number; billingVersion: number; modelDigest: string; publicModelId: string; binding: string; modality: Modality; target: { type: "upstream" | "pool"; id: string }; credentialRef?: string; routerDigest?: string; facts?: ModelFacts };
 export type ExecutionConnection = { providerId: string; protocol: string; baseUrl: string; apiKey: string; wireModel: string; timeoutMs: number; credentialRef?: string; maxConcurrent?: number; options?: ModelProvider["options"] };
 type Dependencies = ValidationOptions & { runtime: Pick<ModelRuntime, "byVersion" | "prepareExecution"> & Partial<Pick<ModelRuntime, "validateExecutionProjection">>; credentials: ReturnType<typeof createCredentialStore>; billingByVersion?:(version:number)=>Promise<ConfigSnapshot>; gateway: () => { baseUrl: string; apiKey: string } };
 const factsSchema = z.strictObject({ imagegenRequirements:imagegenRequirementsSchema.optional(), task: z.enum(["draft", "product", "detail", "layout"]), quality: z.string().max(10), resolution: z.enum(["1K", "2K", "4K"]), requestedResolution:z.enum(["1K","2K","4K"]).optional(), ratio: z.string().max(20).optional(), needsEdit: z.boolean(), needsMask: z.boolean().optional(), preserveIdentity: z.boolean(), needsText: z.boolean(), nativeResolution: z.boolean(), references: z.number().int().min(0).max(32), quantity: z.number().int().min(1).max(4).optional(), inputLength: z.number().int().min(0).max(1000000).optional() });
-const executionSchema = z.strictObject({ video: frozenVideoSchema.optional(), requestedParameters: z.strictObject({quality:z.string().max(20),resolution:z.string().max(20),ratio:z.string().max(20)}).optional(), feature: z.string().max(100).optional(), modelVersion: z.number().int().positive(), billingVersion: z.number().int().positive(), modelDigest: z.string().regex(/^[a-f0-9]{64}$/), publicModelId: z.string().max(100), binding: z.string().max(100), modality: z.enum(["image", "text", "video"]), target: z.strictObject({ type: z.enum(["upstream", "pool"]), id: z.string().max(100) }), credentialRef: z.uuid().optional(), routerDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(), facts: factsSchema.optional() });
+const imageUpstreamIdsSchema = z.array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/)).min(1).max(50).refine(ids => new Set(ids).size === ids.length);
+const executionSchema = z.strictObject({ imageUpstreamIds:imageUpstreamIdsSchema.optional(), video: frozenVideoSchema.optional(), requestedParameters: z.strictObject({quality:z.string().max(20),resolution:z.string().max(20),ratio:z.string().max(20)}).optional(), feature: z.string().max(100).optional(), modelVersion: z.number().int().positive(), billingVersion: z.number().int().positive(), modelDigest: z.string().regex(/^[a-f0-9]{64}$/), publicModelId: z.string().max(100), binding: z.string().max(100), modality: z.enum(["image", "text", "video"]), target: z.strictObject({ type: z.enum(["upstream", "pool"]), id: z.string().max(100) }), credentialRef: z.uuid().optional(), routerDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(), facts: factsSchema.optional() });
 export function createModelExecutor(deps: Dependencies) {
   const describe = async (raw: ExecutionModel): Promise<ModelExecutionScope> => {
     const parsed = executionSchema.safeParse(raw);
@@ -65,6 +66,10 @@ export function createModelExecutor(deps: Dependencies) {
         const u=snapshot.config.upstreamModels.find(u=>u.id===id)!;
         if(!upstreamAcceptsResolution(u,frozen.facts.requestedResolution||frozen.facts.resolution,frozen.facts.ratio))eligible.delete(id);
       }
+      // New plans freeze the admitted set, including adapter-only restrictions
+      // that the generic simulator cannot reconstruct. Never widen it on resume.
+      // The absent field preserves the interpretation of historical paid tasks.
+      if(frozen.imageUpstreamIds)for(const id of eligible)if(!frozen.imageUpstreamIds.includes(id))eligible.delete(id);
       const targets=await Promise.all(publicModel.supplierRouting.channels.filter(c=>c.enabled&&eligible.has(c.upstreamId)).map(async c=>{const u=snapshot.config.upstreamModels.find(u=>u.id===c.upstreamId)!;return {...c,scope:{frozen,frontendModel,channelGuard:{upstreamId:u.id},connection:await connectionFor(u.id),capabilities:u.capabilities,parameterMap:u.parameterMap,procurement:u.procurement,businessOption,audited:true}};}));
       if(!targets.length)throw new ModelConfigError("MODEL_INCOMPATIBLE","没有符合本次参数的供应通道",400);
       // Resolve only eligible targets. A disabled/incompatible first entry must
@@ -83,7 +88,7 @@ export function createModelExecutor(deps: Dependencies) {
     return scope;
   };
   return {
-    async resolve(input: { allowResolutionFallback?:boolean; requestedParameters?:import("./image-preset").ImageParameters; scopeSystem?:"canvas"; feature?: string; binding: string; requestedModelId?: string; snapshot: ModelSnapshot; billing: ConfigSnapshot; facts?: ModelFacts }): Promise<ExecutionModel> {
+    async resolve(input: { imageUpstreamIds?:string[]; allowResolutionFallback?:boolean; requestedParameters?:import("./image-preset").ImageParameters; scopeSystem?:"canvas"; feature?: string; binding: string; requestedModelId?: string; snapshot: ModelSnapshot; billing: ConfigSnapshot; facts?: ModelFacts }): Promise<ExecutionModel> {
       input = { ...input, requestedModelId: requestedFeatureModel(input.feature, input.requestedModelId) };
       const purpose = MODEL_BINDINGS[input.binding as ModelBinding];
       if (!purpose) throw new ModelConfigError("INVALID_REQUEST", "未知模型用途");
@@ -98,6 +103,8 @@ export function createModelExecutor(deps: Dependencies) {
       const id = preset ? presetPublicId(preset,input.requestedModelId) : option?.modelId || input.requestedModelId || featureDefaultModel(config,input.feature,input.binding as ModelBinding);
       const model = config.publicModels.find(m => m.id === id && m.enabled && m.modality === purpose.modality && (!input.requestedModelId || m.visible));
       if (!model) throw new ModelConfigError("MODEL_UNAVAILABLE", "所选模型不可用，请刷新模型列表后重试", 409);
+      let imageUpstreamIds = input.imageUpstreamIds === undefined ? undefined : imageUpstreamIdsSchema.parse(input.imageUpstreamIds);
+      if(imageUpstreamIds && (purpose.modality!=="image" || !model.supplierRouting && model.target.type==="upstream" && !imageUpstreamIds.includes(model.target.id)))throw new ModelConfigError("MODEL_INCOMPATIBLE","本次图片候选与模型配置不一致",400);
       assertToolScope(config,input.feature,model.id,input.scopeSystem);
       if (purpose.modality === "image" && input.facts && input.allowResolutionFallback !== false) {
         const requested = input.facts.requestedResolution || input.facts.resolution;
@@ -115,6 +122,18 @@ export function createModelExecutor(deps: Dependencies) {
       if (upstream && !model.supplierRouting && (!upstream.capabilities[purpose.capability] || input.feature==="canvas.assistant"&&!!input.facts?.references&&!upstream.capabilities.vision)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型不支持当前操作", 400);
       if (purpose.modality === "image" && input.facts) {
         const result = simulateModel(input.snapshot, input.billing, model.id, input.facts, deps);
+        const admitted=imageUpstreamIds;
+        if(admitted)result.eligible=result.eligible.filter(c=>admitted.includes(c.upstreamId));
+        if(model.supplierRouting && input.facts.nativeResolution && input.facts.resolution!=="1K"){
+          const tier=input.facts.resolution as "2K"|"4K";
+          result.eligible=result.eligible.filter(c=>{
+            const u=config.upstreamModels.find(u=>u.id===c.upstreamId)!,p=config.providers.find(p=>p.id===u.providerId)!;
+            if(p.protocol!=="openai-images")return true;
+            const map=u.parameterMap.resolutionPolicy;
+            return map ? map.mode==="map"&&!!map.values[tier]&&(p.options?.imageAdapter!=="reverse-hub"||map.field==="resolution") : !!u.parameterMap.resolution?.[tier];
+          });
+          imageUpstreamIds=result.eligible.map(c=>c.upstreamId);
+        }
         if (!result.eligible.length) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型不满足图片质量、尺寸或参考要求", 400);
         if (plan) for (const id of plan.targets) {
           const alternative = structuredClone(input.snapshot);
@@ -123,7 +142,7 @@ export function createModelExecutor(deps: Dependencies) {
           const u = config.upstreamModels.find(u => u.id === id)!, p = config.providers.find(p => p.id === u.providerId)!;
           if (p.protocol === "openai-images" && input.facts.nativeResolution && input.facts.resolution !== "1K" && !(u.parameterMap.resolutionPolicy ? u.parameterMap.resolutionPolicy.mode==="map"&&u.parameterMap.resolutionPolicy.field===(p.options?.imageAdapter==="reverse-hub"?"resolution":"size")&&u.parameterMap.resolutionPolicy.values[input.facts.resolution as "2K"|"4K"] : u.parameterMap.resolution?.[input.facts.resolution as "2K"|"4K"])) throw new ModelConfigError("MODEL_INCOMPATIBLE", "路由目标缺少原生尺寸参数映射", 400);
         }
-        if (provider?.protocol === "openai-images" && input.facts.nativeResolution && input.facts.resolution !== "1K" && !(upstream!.parameterMap.resolutionPolicy ? upstream!.parameterMap.resolutionPolicy.mode==="map"&&upstream!.parameterMap.resolutionPolicy.field===(provider.options?.imageAdapter==="reverse-hub"?"resolution":"size")&&upstream!.parameterMap.resolutionPolicy.values[input.facts.resolution as "2K"|"4K"] : upstream!.parameterMap.resolution?.[input.facts.resolution as "2K"|"4K"])) throw new ModelConfigError("MODEL_INCOMPATIBLE", "该原生尺寸缺少已核验的接口参数映射", 400);
+        if (!model.supplierRouting && provider?.protocol === "openai-images" && input.facts.nativeResolution && input.facts.resolution !== "1K" && !(upstream!.parameterMap.resolutionPolicy ? upstream!.parameterMap.resolutionPolicy.mode==="map"&&upstream!.parameterMap.resolutionPolicy.field===(provider.options?.imageAdapter==="reverse-hub"?"resolution":"size")&&upstream!.parameterMap.resolutionPolicy.values[input.facts.resolution as "2K"|"4K"] : upstream!.parameterMap.resolution?.[input.facts.resolution as "2K"|"4K"])) throw new ModelConfigError("MODEL_INCOMPATIBLE", "该原生尺寸缺少已核验的接口参数映射", 400);
       }
       const routed = !preset && (model.target.type === "pool" || provider && ["apimart-images", "fal-images"].includes(provider.protocol) && !applicationAPIMartImages(provider.protocol,upstream?.parameterMap));
       if(routed&&input.facts?.imagegenRequirements){
@@ -132,7 +151,7 @@ export function createModelExecutor(deps: Dependencies) {
       }
       const projection = routed ? await deps.runtime.prepareExecution({ snapshot: input.snapshot, billing: input.billing }) : undefined;
       const video = purpose.modality === "video" && upstream && provider ? await freezeManagedVideoCapability(input.snapshot,upstream,provider) : undefined;
-      return { ...(video ? {video} : {}), ...(requestedParameters ? {requestedParameters} : {}), ...(input.feature ? { feature: input.feature } : {}), modelVersion: input.snapshot.version, billingVersion: input.billing.version, modelDigest: input.snapshot.digest, publicModelId: model.id, binding: input.binding, modality: model.modality, target: structuredClone(target), ...(provider?.credentialRef ? { credentialRef: provider.credentialRef } : {}), ...(projection ? { routerDigest: projection.digest } : {}), ...(input.facts ? { facts: structuredClone(input.facts) } : {}) };
+      return { ...(imageUpstreamIds ? {imageUpstreamIds:[...imageUpstreamIds]} : {}), ...(video ? {video} : {}), ...(requestedParameters ? {requestedParameters} : {}), ...(input.feature ? { feature: input.feature } : {}), modelVersion: input.snapshot.version, billingVersion: input.billing.version, modelDigest: input.snapshot.digest, publicModelId: model.id, binding: input.binding, modality: model.modality, target: structuredClone(target), ...(provider?.credentialRef ? { credentialRef: provider.credentialRef } : {}), ...(projection ? { routerDigest: projection.digest } : {}), ...(input.facts ? { facts: structuredClone(input.facts) } : {}) };
     },
     describe,
     async clientFor(model: ExecutionModel) { const scope = await describe(model); return { client: executionOpenAI(scope, deps), wireModel: scope.connection.wireModel }; },
