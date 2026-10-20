@@ -64,7 +64,7 @@ def run(config,apply=False,existing_tx=None):
   result={'check':'PASS','fixedPriorImage':pm['image'],'currentImage':m['image'],'databaseBackupReadable':True,'inverseGatewayHashesVerified':True,'priorSlotsStopped':True,'historicalIncidentsPreserved':True,'productionCutbackExecuted':False,
           'isolatedUnknownScannerRetained':bool(config.get('preservedWorkerTick')),'priorWorkerRecovery':'fresh-same-prior-image-worker' if config.get('preservedWorkerTick') else 'resume-prior-worker'}
   if not apply:
-   if existing_tx:tx.save('normal-rollback-check.json',result)
+   if existing_tx:tx.save('nas-normal-rollback-check.json' if config.get('nasRollbackManifestPath') else 'normal-rollback-check.json',result)
    print('SERVER_ROLLBACK_CHECK='+json.dumps(result),flush=True);return result
   if config.get('nasRollbackManifestPath'):
    # New plans freeze an admitted supplier set. A prior executable does not

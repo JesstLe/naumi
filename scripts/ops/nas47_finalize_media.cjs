@@ -16,14 +16,14 @@ async function run(){
  const prior=new Map();for(const file of ['/initial/verified-files.jsonl',path.join(WORK,'verified-files.jsonl'),path.join(WORK,'verified-next.jsonl')])if(fs.existsSync(file))for(const line of fs.readFileSync(file,'utf8').split('\n'))if(line){const v=JSON.parse(line);if(v.op==='verified')prior.set(v.key,v);}
  const files=walk(SOURCE).sort((a,b)=>a.key.localeCompare(b.key)),result={phase:'VERIFYING',files:files.length,verified:0,bytes:0,inheritedVerified:0,newReadbacks:0,uploaded:0,errors:0,missing:0,mismatch:0,changed:0,deleted:0,at:new Date().toISOString()};atomic('MEDIA_MANIFEST.json',files);atomic('SUMMARY.json',result);
  const log=fs.openSync(path.join(WORK,'verified-next.jsonl'),'w',0o600);
- function append(v){fs.writeSync(log,JSON.stringify(v)+'\n');fs.fsyncSync(log);result.verified++;result.bytes+=v.size;}
+ function append(v){fs.writeSync(log,JSON.stringify(v)+'\n');result.verified++;result.bytes+=v.size;if(!v.inheritedReadback||result.verified%64===0)fs.fsyncSync(log);}
  let cursor=0;
  const progress=setInterval(()=>atomic('SUMMARY.json',{...result,at:new Date().toISOString()}),5000);
  try{const settled=await Promise.allSettled(Array.from({length:8},async()=>{while(cursor<files.length){const item=files[cursor++],p=safe(item.key),old=prior.get(item.key);if(old&&same(old,item)){append({...old,...item,op:'verified',inheritedReadback:true});result.inheritedVerified++;continue;}
   const hash=await digest(p);let r=await request('GET',item.key);if(r.status===404){await r.body?.cancel();r=await request('PUT',item.key,hash,item.size,p);if(!r.ok)throw Error('PUT_'+r.status);await r.body?.cancel();result.uploaded++;r=await request('GET',item.key);}
   if(!r.ok)throw Error('GET_'+r.status);const h=crypto.createHash('sha256');let bytes=0;for await(const b of r.body){h.update(b);bytes+=b.length;}if(bytes!==item.size||h.digest('hex')!==hash)throw Error('REMOTE_BYTES_CONFLICT');const after=fs.lstatSync(p);if(!same(item,{size:after.size,ino:after.ino,mtimeMs:after.mtimeMs}))throw Error('SOURCE_CHANGED');
   append({...item,op:'verified',sha256:hash,at:new Date().toISOString()});result.newReadbacks++;atomic('SUMMARY.json',result);
- }}));const failed=settled.find(v=>v.status==='rejected');if(failed)throw failed.reason;}finally{clearInterval(progress);fs.closeSync(log);}
+ }}));const failed=settled.find(v=>v.status==='rejected');if(failed)throw failed.reason;}finally{clearInterval(progress);fs.fsyncSync(log);fs.closeSync(log);}
  const after=walk(SOURCE).sort((a,b)=>a.key.localeCompare(b.key));if(JSON.stringify(files)!==JSON.stringify(after))throw Error('LIVE_SOURCE_CHANGED_RECONCILE');
  fs.renameSync(path.join(WORK,'verified-next.jsonl'),path.join(WORK,'verified-files.jsonl'));result.phase='ALL_BYTES_VERIFIED';result.at=new Date().toISOString();atomic('SUMMARY.json',result);console.log(JSON.stringify(result));
 }

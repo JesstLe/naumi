@@ -14,8 +14,11 @@ async function run(){const rows=fs.readFileSync('/proof/verified-files.jsonl','u
   for(const[k,v]of head.headers)if(k.startsWith('x-amz-meta-')||['cache-control','content-encoding','content-disposition','content-language','expires'].includes(k))headers[k]=v;
   const copy=await request('PUT',item.key,headers),xml=await copy.text();if(!copy.ok||/<Error>/.test(xml))throw Error('COPY_METADATA_'+copy.status);const after=await request('HEAD',item.key);if(!after.ok||after.headers.get('etag')!==etag||Number(after.headers.get('content-length'))!==item.size||after.headers.get('content-type')!==expected)throw Error('METADATA_OR_BYTES_CHANGED');
   if(proof&&await getHash(item.key)!==item.sha256)throw Error('AFTER_SHA');
-  fs.writeSync(log,JSON.stringify({key:item.key,size:item.size,sha256:item.sha256,etag,contentType:expected,serverCopySameETag:true,...(proof?{beforeAfterGetSha256:true}:{})})+'\n');fs.fsyncSync(log);result.repaired++;result.checked++;
+  fs.writeSync(log,JSON.stringify({key:item.key,size:item.size,sha256:item.sha256,etag,contentType:expected,serverCopySameETag:true,...(proof?{beforeAfterGetSha256:true}:{})})+'\n');result.repaired++;result.checked++;
+  // Metadata-only copies are idempotently re-HEADed after a crash. Batch this
+  // audit fsync instead of serializing every object on an HDD journal flush.
+  if(result.repaired%64===0)fs.fsyncSync(log);
  }
- try{await one(rows[index++],true);const timer=setInterval(atomic,5000);try{const all=await Promise.allSettled(Array.from({length:64},async()=>{while(index<rows.length)await one(rows[index++]);}));const bad=all.find(v=>v.status==='rejected');if(bad)throw bad.reason;}finally{clearInterval(timer);}result.phase='ALL_METADATA_TYPED_SAME_ETAG';atomic();console.log(JSON.stringify(result));}finally{fs.closeSync(log);}
+ try{await one(rows[index++],true);const timer=setInterval(atomic,5000);try{const all=await Promise.allSettled(Array.from({length:64},async()=>{while(index<rows.length)await one(rows[index++]);}));const bad=all.find(v=>v.status==='rejected');if(bad)throw bad.reason;}finally{clearInterval(timer);}fs.fsyncSync(log);result.phase='ALL_METADATA_TYPED_SAME_ETAG';atomic();console.log(JSON.stringify(result));}finally{fs.closeSync(log);}
 }
 run().catch(e=>{fs.writeFileSync('/work/FAILED.json',JSON.stringify({at:new Date().toISOString(),error:e.message,bytesReplaced:0}),{mode:0o600});process.exitCode=1;});

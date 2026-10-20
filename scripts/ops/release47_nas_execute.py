@@ -154,15 +154,47 @@ COMMIT;""" % payload
   from release47_normal_rollback import run
   run(self.cfg,apply=False,existing_tx=self.tx)
 
+def finish_completed(tx,cfg):
+ """Continue only a COMPLETE successor; never rerun release, isolation or cloning."""
+ receipt=json.loads((ROOT/'transaction/PUBLICATION_RECEIPT.json').read_bytes())
+ state=json.loads(CANON.read_bytes())
+ require(receipt['phase']=='COMPLETE'and receipt['commit']==cfg['commit']and receipt['image']==cfg['image'],'EXACT_COMPLETE_PUBLICATION_REQUIRED')
+ require(state['activeNormalBlueGreenReleaseId']==RID and state['normalBlueGreenReleases'][RID]['phase']=='COMPLETE','ACTIVE_COMPLETE_SUCCESSOR_REQUIRED')
+ require(not(ROOT/'FINAL_RESULT.json').exists(),'FINAL_RESULT_ALREADY_EXISTS')
+ operator=NasController.__new__(NasController);operator.tx=tx;operator.cfg=cfg
+ operator.newweb=receipt['web'];operator.newworker=receipt['worker'];operator.web=cfg['oldWeb'];operator.worker=cfg['oldWorker']
+ for identity in [operator.newweb,operator.newworker]:tx.pin(identity)
+ operator.db=public_identity(tx.inspect('naumi-staging-db-1'));operator.de=environment(tx.inspect(operator.db['id']));operator.cookie=pathlib.Path(cfg['cookiePath']).read_text().strip()
+ require(cfg.get('nasRollbackManifestPath')and(tx.folder/'nas-compatible-rollback-test.json').exists(),'TESTED_NAS_ROLLBACK_REQUIRED')
+ operator.check_paid_incidents()
+ from release47_normal_rollback import run as rollback_check
+ if not(tx.folder/'nas-normal-rollback-check.json').exists():rollback_check(cfg,apply=False,existing_tx=tx)
+ else:require(json.loads((tx.folder/'nas-normal-rollback-check.json').read_bytes())['check']=='PASS','NAS_ROLLBACK_CHECK_REQUIRED')
+ from nas47_evict_verified import execute as evict
+ deletion=evict(operator)
+ # Recheck the same authenticated historical media SHA proofs after local
+ # duplicate eviction; do not substitute a health200 for media acceptance.
+ browser=json.loads((ROOT/'browser-after.json').read_bytes())
+ require(len(browser.get('media',[]))>=3,'HISTORICAL_MEDIA_PROOF_REQUIRED')
+ js="""const fs=require('fs'),crypto=require('crypto');(async()=>{const input=JSON.parse(fs.readFileSync(0,'utf8'));for(const item of input.media){const r=await fetch('http://127.0.0.1:3000'+item.url,{headers:{cookie:input.cookie},signal:AbortSignal.timeout(90000)}),b=Buffer.from(await r.arrayBuffer());if(r.status!==200||crypto.createHash('sha256').update(b).digest('hex')!==item.sha256)throw Error('POST_EVICTION_SHA');}console.log(JSON.stringify({passed:true,historicalMedia:input.media.length,supplierCalls:0}));})().catch(e=>{console.error(e.message);process.exitCode=1;});"""
+ raw=tx.run(['docker','exec','-i','-e','NODE_OPTIONS=',operator.newweb['id'],'node','-e',js],stdin=json.dumps({'cookie':operator.cookie,'media':browser['media']}).encode(),timeout=300)
+ after=json.loads(raw);require(after.get('passed'),'POST_EVICTION_MEDIA_FAILED');tx.save('POST_EVICTION_MEDIA_ACCEPTANCE.json',after)
+ operator.check_paid_incidents()
+ receipt.update(publicAcceptance=True,storageDriver='s3',mediaLocalDeletion=deletion,paid13Preserved=True,nasCompatibleRollbackTested=True,
+                postEvictionMediaAcceptance=after,mediaVerification=json.loads((ROOT/'final-media-proof/SUMMARY.json').read_bytes()))
+ ctl.save(ROOT/'FINAL_RESULT.json',receipt)
+
 def main():
  global ROOT,RID
  import argparse
- parser=argparse.ArgumentParser();parser.add_argument('--config',type=pathlib.Path);args=parser.parse_args()
+ parser=argparse.ArgumentParser();parser.add_argument('--config',type=pathlib.Path);parser.add_argument('--finish-only',action='store_true');args=parser.parse_args()
  cfg=json.loads((args.config or ROOT/'release-config.json').read_bytes());ROOT=pathlib.Path(cfg['evidenceRoot']);RID=cfg['releaseId'];ctl.configure(cfg)
  # Timers can cross midnight, so authorize the actual execution date, not an
  # expired historical release appointment.
  cfg['date']=dt.datetime.now(dt.timezone(dt.timedelta(hours=8))).date().isoformat()
  with ctl.transaction()as tx:
+  if args.finish_only:
+   finish_completed(tx,cfg);print('NAS_RELEASE_COMPLETE',flush=True);return
   resume=bool(cfg.get('resumeReview'))
   require(resume or not (ROOT/'transaction/controller-STARTED.json').exists(),'EXISTING_NAS_RELEASE_RECONCILE_REQUIRED')
   s=json.loads(CANON.read_bytes())
@@ -218,18 +250,6 @@ def main():
   require((operator.request(operator.newweb,'/api/version')or{}).get('commit')==cfg['commit'],'FINAL_VERSION_CHANGED')
   operator.check_paid_incidents()
   operator.prepare_nas_rollback()
-  from nas47_evict_verified import execute as evict
-  deletion=evict(operator)
-  # Recheck the same authenticated historical media SHA proofs after local
-  # duplicate eviction; do not substitute a health200 for media acceptance.
-  browser=json.loads((ROOT/'browser-after.json').read_bytes())
-  require(len(browser.get('media',[]))>=3,'HISTORICAL_MEDIA_PROOF_REQUIRED')
-  js="""const fs=require('fs'),crypto=require('crypto');(async()=>{const input=JSON.parse(fs.readFileSync(0,'utf8'));for(const item of input.media){const r=await fetch('http://127.0.0.1:3000'+item.url,{headers:{cookie:input.cookie},signal:AbortSignal.timeout(90000)}),b=Buffer.from(await r.arrayBuffer());if(r.status!==200||crypto.createHash('sha256').update(b).digest('hex')!==item.sha256)throw Error('POST_EVICTION_SHA');}console.log(JSON.stringify({passed:true,historicalMedia:input.media.length,supplierCalls:0}));})().catch(e=>{console.error(e.message);process.exitCode=1;});"""
-  raw=tx.run(['docker','exec','-i','-e','NODE_OPTIONS=',operator.newweb['id'],'node','-e',js],stdin=json.dumps({'cookie':operator.cookie,'media':browser['media']}).encode(),timeout=300)
-  after=json.loads(raw);require(after.get('passed'),'POST_EVICTION_MEDIA_FAILED');tx.save('POST_EVICTION_MEDIA_ACCEPTANCE.json',after)
-  operator.check_paid_incidents()
-  receipt.update(publicAcceptance=True,storageDriver='s3',mediaLocalDeletion=deletion,paid13Preserved=True,nasCompatibleRollbackTested=True,
-                 postEvictionMediaAcceptance=after,mediaVerification=json.loads((ROOT/'final-media-proof/SUMMARY.json').read_bytes()))
-  ctl.save(ROOT/'FINAL_RESULT.json',receipt)
+  finish_completed(tx,cfg)
  print('NAS_RELEASE_COMPLETE',flush=True)
 if __name__=='__main__':main()
