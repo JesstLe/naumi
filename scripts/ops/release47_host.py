@@ -198,7 +198,7 @@ class HostTransaction:
                        S3_ENDPOINT=nas['endpointContainersBridge'], S3_BUCKET=nas['bucket'],
                        S3_REGION=nas.get('region') or 'garage', S3_FORCE_PATH_STYLE='true',
                        S3_ACCESS_KEY_ID=nas['accessKeyId'], S3_SECRET_ACCESS_KEY=nas['secretAccessKey'])
-            self.save('reviewed-nas-binding.json', {'endpoint':nas['endpointContainersBridge'], 'bucket':nas['bucket'],
+            self.save('reviewed-nas-binding-'+name+'.json', {'endpoint':nas['endpointContainersBridge'], 'bucket':nas['bucket'],
                       'credentialFileSha256':reviewed_nas_credentials_sha256, 'privateMedia':True, 'accessMode':'proxy'})
         env.update(SOURCE_COMMIT=commit, BUILD_VERSION=build_version, NAUMI_INSTANCE_ID=name, NAUMI_RELEASE_RUNTIME='1',
                    NAUMI_RELEASE_ADMISSION_START='draining', RELEASE_CONTROL_SECRET=release_secret,
