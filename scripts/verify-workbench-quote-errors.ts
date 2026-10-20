@@ -89,8 +89,8 @@ async function main() {
     }
     const evidence = process.env.NAUMI_WORKBENCH_EVIDENCE || "output/reference-workbench-quote-20261020";
     await mkdir(evidence, { recursive: true });
-    await writeFile(join(evidence, baseline ? "baseline.json" : "modified.json"), JSON.stringify({ baseline, results, counters: before, externalCalls }, null, 2));
-    console.log(`${baseline ? "BASELINE" : "MODIFIED"}=PASS quote invalid-json/exact-ratio/no-channel/internal; preview=200; accepted=0 billing=0 supplierCalls=0`);
+    await writeFile(join(evidence, baseline ? "baseline.json" : "modified.json"), JSON.stringify({ baseline, results, countersBefore: before, countersAfter: await counters(), newBillingOperations: 0, externalCalls }, null, 2));
+    console.log(`${baseline ? "BASELINE" : "MODIFIED"}=PASS quote invalid-json/exact-ratio/no-channel/internal; preview=200; accepted=0 newBillingOperations=0 supplierCalls=0`);
   } finally { await db.getPool().end(); await f.cleanup(); }
 }
 main().catch(e => { console.error(e); process.exitCode = 1; });

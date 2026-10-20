@@ -1,7 +1,7 @@
 # 参考工作台报价异常与错误反馈
 
 ## 状态
-独立 `codex/reference-workbench-quote-20261020`，基线 `42af1d2b`。本地模块验收通过，尚待固定镜像构建及副本回退，未上线。源码变更不是生产恢复证明。
+独立 `codex/reference-workbench-quote-20261020`，基线 `42af1d2b`。本地模块/固定Linux生产镜像构建/独立副本实际回退全部通过，未上线。源码变更不是生产恢复证明。
 
 ## 已确认与未确认
 - 只读日志确认 `/api/reference-workbench/quote` 连续500；旧route仅识别WorkbenchError，吞掉规划/配置校验错误。
@@ -24,3 +24,5 @@
 未绑定真实候选版号，公开更新目录不追加虚构已发布条目。拟公开文案：改进参考工作台报价与提交异常提示，避免显示代码格式的错误信息。
 
 最终只读47：2026-10-20T02:12:39Z，磁盘剩余4341399552字节（约4.04GiB，94%已用），MemAvailable3318MiB，7容器。Web/Worker仍5d7631a0/build1792383873、原ID/镜像/启动时间，DB健康；本次无线上变更。
+
+最终构建：业务提交60126c66ba10476da6da697c9f49db83efe170eb，build1792462442，Next15.5.27完整90/90，exit0。Docker本地manifest/Image ID d5621d817d82cb1452acaf0f74fe1db2e9e5d28c00d5664dc1168bcda6bb0a1d，config digest61b280f75cacfdaf2b6c2fca26b8b403fe9e2c144d2c8728cebd07a80f5623f3分别记录。副本原6文件逐字节SHA恢复、新7文件移除；回退后真实handler/PG重新复现旧500，正式工作区保持修复。基线账号初始化有既有账务行，验收核对前后相等，新增账务0，不把绝对行数伪称0。本次后续提交仅测试报告措辞/文档，不改变镜像运行源码。
