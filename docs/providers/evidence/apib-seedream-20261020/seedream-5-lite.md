@@ -1,0 +1,780 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.apimart.ai/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Seedream-5.0-Lite Image Generation
+
+>  - Asynchronous processing mode, returns task ID for subsequent queries
+- Supports multiple generation modes including text-to-image, image-to-image, and sequential image generation
+- Supports 2K / 3K resolution with PNG / JPEG output formats
+- Generated image links are valid for 72 hours, please save them promptly 
+
+<RequestExample>
+  ```bash cURL theme={null}
+  curl --request POST \
+    --url https://api.apimart.ai/v1/images/generations \
+    --header 'Authorization: Bearer <token>' \
+    --header 'Content-Type: application/json' \
+    --data '{
+      "model": "seedream-5-0-lite",
+      "prompt": "A golden retriever playing in a garden, sunny day, high-definition photography style",
+      "size": "16:9",
+      "resolution": "2K",
+      "n": 1
+    }'
+  ```
+
+  ```python Python theme={null}
+  import requests
+
+  url = "https://api.apimart.ai/v1/images/generations"
+
+  payload = {
+      "model": "seedream-5-0-lite",
+      "prompt": "A golden retriever playing in a garden, sunny day, high-definition photography style",
+      "size": "16:9",
+      "resolution": "2K",
+      "n": 1
+  }
+
+  headers = {
+      "Authorization": "Bearer <token>",
+      "Content-Type": "application/json"
+  }
+
+  response = requests.post(url, json=payload, headers=headers)
+
+  print(response.json())
+  ```
+
+  ```javascript JavaScript theme={null}
+  const url = "https://api.apimart.ai/v1/images/generations";
+
+  const payload = {
+    model: "seedream-5-0-lite",
+    prompt: "A golden retriever playing in a garden, sunny day, high-definition photography style",
+    size: "16:9",
+    resolution: "2K",
+    n: 1
+  };
+
+  const headers = {
+    "Authorization": "Bearer <token>",
+    "Content-Type": "application/json"
+  };
+
+  fetch(url, {
+    method: "POST",
+    headers: headers,
+    body: JSON.stringify(payload)
+  })
+    .then(response => response.json())
+    .then(data => console.log(data))
+    .catch(error => console.error('Error:', error));
+  ```
+
+  ```go Go theme={null}
+  package main
+
+  import (
+      "bytes"
+      "encoding/json"
+      "fmt"
+      "io/ioutil"
+      "net/http"
+  )
+
+  func main() {
+      url := "https://api.apimart.ai/v1/images/generations"
+
+      payload := map[string]interface{}{
+          "model":      "seedream-5-0-lite",
+          "prompt":     "A golden retriever playing in a garden, sunny day, high-definition photography style",
+          "size":       "16:9",
+          "resolution": "2K",
+          "n":          1,
+      }
+
+      jsonData, _ := json.Marshal(payload)
+
+      req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+      req.Header.Set("Authorization", "Bearer <token>")
+      req.Header.Set("Content-Type", "application/json")
+
+      client := &http.Client{}
+      resp, err := client.Do(req)
+      if err != nil {
+          panic(err)
+      }
+      defer resp.Body.Close()
+
+      body, _ := ioutil.ReadAll(resp.Body)
+      fmt.Println(string(body))
+  }
+  ```
+
+  ```java Java theme={null}
+  import java.net.http.HttpClient;
+  import java.net.http.HttpRequest;
+  import java.net.http.HttpResponse;
+  import java.net.URI;
+
+  public class Main {
+      public static void main(String[] args) throws Exception {
+          String url = "https://api.apimart.ai/v1/images/generations";
+
+          String payload = """
+          {
+            "model": "seedream-5-0-lite",
+            "prompt": "A golden retriever playing in a garden, sunny day, high-definition photography style",
+            "size": "16:9",
+            "resolution": "2K",
+            "n": 1
+          }
+          """;
+
+          HttpClient client = HttpClient.newHttpClient();
+          HttpRequest request = HttpRequest.newBuilder()
+              .uri(URI.create(url))
+              .header("Authorization", "Bearer <token>")
+              .header("Content-Type", "application/json")
+              .POST(HttpRequest.BodyPublishers.ofString(payload))
+              .build();
+
+          HttpResponse<String> response = client.send(request,
+              HttpResponse.BodyHandlers.ofString());
+
+          System.out.println(response.body());
+      }
+  }
+  ```
+
+  ```php PHP theme={null}
+  <?php
+
+  $url = "https://api.apimart.ai/v1/images/generations";
+
+  $payload = [
+      "model" => "seedream-5-0-lite",
+      "prompt" => "A golden retriever playing in a garden, sunny day, high-definition photography style",
+      "size" => "16:9",
+      "resolution" => "2K",
+      "n" => 1
+  ];
+
+  $ch = curl_init($url);
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+  curl_setopt($ch, CURLOPT_POST, true);
+  curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+  curl_setopt($ch, CURLOPT_HTTPHEADER, [
+      "Authorization: Bearer <token>",
+      "Content-Type: application/json"
+  ]);
+
+  $response = curl_exec($ch);
+  curl_close($ch);
+
+  echo $response;
+  ?>
+  ```
+
+  ```ruby Ruby theme={null}
+  require 'net/http'
+  require 'json'
+  require 'uri'
+
+  url = URI("https://api.apimart.ai/v1/images/generations")
+
+  payload = {
+    model: "seedream-5-0-lite",
+    prompt: "A golden retriever playing in a garden, sunny day, high-definition photography style",
+    size: "16:9",
+    resolution: "2K",
+    n: 1
+  }
+
+  http = Net::HTTP.new(url.host, url.port)
+  http.use_ssl = true
+
+  request = Net::HTTP::Post.new(url)
+  request["Authorization"] = "Bearer <token>"
+  request["Content-Type"] = "application/json"
+  request.body = payload.to_json
+
+  response = http.request(request)
+  puts response.body
+  ```
+
+  ```swift Swift theme={null}
+  import Foundation
+
+  let url = URL(string: "https://api.apimart.ai/v1/images/generations")!
+
+  let payload: [String: Any] = [
+      "model": "seedream-5-0-lite",
+      "prompt": "A golden retriever playing in a garden, sunny day, high-definition photography style",
+      "size": "16:9",
+      "resolution": "2K",
+      "n": 1
+  ]
+
+  var request = URLRequest(url: url)
+  request.httpMethod = "POST"
+  request.setValue("Bearer <token>", forHTTPHeaderField: "Authorization")
+  request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+  request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+
+  let task = URLSession.shared.dataTask(with: request) { data, response, error in
+      if let error = error {
+          print("Error: \(error)")
+          return
+      }
+
+      if let data = data, let responseString = String(data: data, encoding: .utf8) {
+          print(responseString)
+      }
+  }
+
+  task.resume()
+  ```
+
+  ```csharp C# theme={null}
+  using System;
+  using System.Net.Http;
+  using System.Text;
+  using System.Threading.Tasks;
+
+  class Program
+  {
+      static async Task Main(string[] args)
+      {
+          var url = "https://api.apimart.ai/v1/images/generations";
+
+          var payload = @"{
+              ""model"": ""seedream-5-0-lite"",
+              ""prompt"": ""A golden retriever playing in a garden, sunny day, high-definition photography style"",
+              ""size"": ""16:9"",
+              ""resolution"": ""2K"",
+              ""n"": 1
+          }";
+
+          using var client = new HttpClient();
+          client.DefaultRequestHeaders.Add("Authorization", "Bearer <token>");
+
+          var content = new StringContent(payload, Encoding.UTF8, "application/json");
+          var response = await client.PostAsync(url, content);
+          var result = await response.Content.ReadAsStringAsync();
+
+          Console.WriteLine(result);
+      }
+  }
+  ```
+
+  ```c C theme={null}
+  #include <stdio.h>
+  #include <curl/curl.h>
+
+  int main(void) {
+      CURL *curl;
+      CURLcode res;
+
+      curl_global_init(CURL_GLOBAL_DEFAULT);
+      curl = curl_easy_init();
+
+      if(curl) {
+          const char *url = "https://api.apimart.ai/v1/images/generations";
+          const char *payload = "{"
+              "\"model\":\"seedream-5-0-lite\","
+              "\"prompt\":\"A golden retriever playing in a garden\","
+              "\"size\":\"16:9\","
+              "\"resolution\":\"2K\","
+              "\"n\":1"
+          "}";
+
+          struct curl_slist *headers = NULL;
+          headers = curl_slist_append(headers, "Authorization: Bearer <token>");
+          headers = curl_slist_append(headers, "Content-Type: application/json");
+
+          curl_easy_setopt(curl, CURLOPT_URL, url);
+          curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload);
+          curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+          res = curl_easy_perform(curl);
+
+          if(res != CURLE_OK) {
+              fprintf(stderr, "curl_easy_perform() failed: %s\n",
+                      curl_easy_strerror(res));
+          }
+
+          curl_slist_free_all(headers);
+          curl_easy_cleanup(curl);
+      }
+
+      curl_global_cleanup();
+      return 0;
+  }
+  ```
+
+  ```objectivec Objective-C theme={null}
+  #import <Foundation/Foundation.h>
+
+  int main(int argc, const char * argv[]) {
+      @autoreleasepool {
+          NSURL *url = [NSURL URLWithString:@"https://api.apimart.ai/v1/images/generations"];
+
+          NSDictionary *payload = @{
+              @"model": @"seedream-5-0-lite",
+              @"prompt": @"A golden retriever playing in a garden",
+              @"size": @"16:9",
+              @"resolution": @"2K",
+              @"n": @1
+          };
+
+          NSError *error;
+          NSData *jsonData = [NSJSONSerialization dataWithJSONObject:payload
+                                                            options:0
+                                                              error:&error];
+
+          NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+          [request setHTTPMethod:@"POST"];
+          [request setValue:@"Bearer <token>" forHTTPHeaderField:@"Authorization"];
+          [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+          [request setHTTPBody:jsonData];
+
+          NSURLSessionDataTask *task = [[NSURLSession sharedSession]
+              dataTaskWithRequest:request
+              completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+                  if (error) {
+                      NSLog(@"Error: %@", error);
+                      return;
+                  }
+                  NSString *result = [[NSString alloc] initWithData:data
+                                                          encoding:NSUTF8StringEncoding];
+                  NSLog(@"%@", result);
+              }];
+
+          [task resume];
+          [[NSRunLoop mainRunLoop] run];
+      }
+      return 0;
+  }
+  ```
+
+  ```ocaml OCaml theme={null}
+  (* Requires cohttp and yojson libraries *)
+  open Lwt
+  open Cohttp
+  open Cohttp_lwt_unix
+
+  let url = "https://api.apimart.ai/v1/images/generations"
+
+  let payload = {|{
+    "model": "seedream-5-0-lite",
+    "prompt": "A golden retriever playing in a garden",
+    "size": "16:9",
+    "resolution": "2K",
+    "n": 1
+  }|}
+
+  let () =
+    let headers = Header.init ()
+      |> fun h -> Header.add h "Authorization" "Bearer <token>"
+      |> fun h -> Header.add h "Content-Type" "application/json"
+    in
+    let body = Cohttp_lwt.Body.of_string payload in
+
+    let response = Client.post ~headers ~body (Uri.of_string url) >>= fun (resp, body) ->
+      body |> Cohttp_lwt.Body.to_string >|= fun body_str ->
+      print_endline body_str
+    in
+    Lwt_main.run response
+  ```
+
+  ```dart Dart theme={null}
+  import 'dart:convert';
+  import 'package:http/http.dart' as http;
+
+  void main() async {
+    final url = Uri.parse('https://api.apimart.ai/v1/images/generations');
+
+    final payload = {
+      'model': 'seedream-5-0-lite',
+      'prompt': 'A golden retriever playing in a garden, sunny day, high-definition photography style',
+      'size': '16:9',
+      'resolution': '2K',
+      'n': 1
+    };
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Authorization': 'Bearer <token>',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(payload),
+    );
+
+    print(response.body);
+  }
+  ```
+
+  ```r R theme={null}
+  library(httr)
+  library(jsonlite)
+
+  url <- "https://api.apimart.ai/v1/images/generations"
+
+  payload <- list(
+    model = "seedream-5-0-lite",
+    prompt = "A golden retriever playing in a garden, sunny day, high-definition photography style",
+    size = "16:9",
+    resolution = "2K",
+    n = 1
+  )
+
+  response <- POST(
+    url,
+    add_headers(
+      Authorization = "Bearer <token>",
+      `Content-Type` = "application/json"
+    ),
+    body = toJSON(payload, auto_unbox = TRUE),
+    encode = "raw"
+  )
+
+  cat(content(response, "text"))
+  ```
+</RequestExample>
+
+<ResponseExample>
+  ```json 200 theme={null}
+  {
+    "code": 200,
+    "data": [
+      {
+        "status": "submitted",
+        "task_id": "task_01K8SGYNNNVBQTXNR4MM964S7K"
+      }
+    ]
+  }
+  ```
+
+  ```json 400 theme={null}
+  {
+    "error": {
+      "code": 400,
+      "message": "Invalid request parameters",
+      "type": "invalid_request_error"
+    }
+  }
+  ```
+
+  ```json 401 theme={null}
+  {
+    "error": {
+      "code": 401,
+      "message": "Invalid authentication credentials",
+      "type": "authentication_error"
+    }
+  }
+  ```
+
+  ```json 402 theme={null}
+  {
+    "error": {
+      "code": 402,
+      "message": "Insufficient balance. Please top up your account",
+      "type": "payment_required"
+    }
+  }
+  ```
+
+  ```json 403 theme={null}
+  {
+    "error": {
+      "code": 403,
+      "message": "Access forbidden. You don't have permission to access this resource",
+      "type": "permission_error"
+    }
+  }
+  ```
+
+  ```json 429 theme={null}
+  {
+    "error": {
+      "code": 429,
+      "message": "Rate limit exceeded. Please try again later",
+      "type": "rate_limit_error"
+    }
+  }
+  ```
+
+  ```json 500 theme={null}
+  {
+    "error": {
+      "code": 500,
+      "message": "Internal server error. Please try again later",
+      "type": "server_error"
+    }
+  }
+  ```
+
+  ```json 502 theme={null}
+  {
+    "error": {
+      "code": 502,
+      "message": "Bad gateway. The server is temporarily unavailable",
+      "type": "bad_gateway"
+    }
+  }
+  ```
+</ResponseExample>
+
+## Authorizations
+
+<ParamField header="Authorization" type="string" required>
+  All API endpoints require Bearer Token authentication
+
+  Get your API Key:
+
+  Visit the [API Key Management Page](https://apimart.ai/keys) to get your API Key
+
+  Add it to the request header:
+
+  ```
+  Authorization: Bearer YOUR_API_KEY
+  ```
+</ParamField>
+
+## Body
+
+<ParamField body="model" type="string" default="seedream-5-0-lite" required>
+  Image generation model name
+
+  Supported models: `seedream-5-0-lite`, `seedream-5.0-lite`, `Seedream-5.0-lite`
+
+  Example: `"seedream-5-0-lite"`
+</ParamField>
+
+<ParamField body="nsfw_check" type="boolean" default="false">
+  Whether to run content moderation before submitting the image task.
+
+  * `true`: use `omni-moderation-latest` to review prompts and input images
+  * `false` or omitted: do not send a moderation request, adding no moderation cost or latency (default)
+</ParamField>
+
+<ParamField body="prompt" type="string" required>
+  Text description for image generation
+</ParamField>
+
+<ParamField body="size" type="string" default="1:1">
+  Image aspect ratio
+
+  Supported aspect ratios:
+
+  * `1:1` - Square (default)
+  * `4:3` - Landscape 4:3
+  * `3:4` - Portrait 3:4
+  * `16:9` - Landscape widescreen
+  * `9:16` - Portrait vertical
+  * `3:2` - Landscape 3:2
+  * `2:3` - Portrait 2:3
+  * `2:1` - Extra-wide landscape
+  * `1:2` - Extra-tall portrait
+  * `21:9` - Ultra-wide
+  * `auto` - Auto-match reference image aspect ratio (requires image\_urls)
+
+  `2x1` is equivalent to `2:1`, and `1x2` is equivalent to `1:2`. The `x` must be lowercase and spaces are not allowed.
+
+  > **Note:** Seedream-5.0-Lite does not support `9:21` ratio
+</ParamField>
+
+<ParamField body="resolution" type="string" default="2K">
+  Image resolution
+
+  Supported resolutions:
+
+  * `2K` - Standard resolution (default)
+  * `3K` - High definition
+  * `4K` - Ultra high definition
+
+  > **Note:** Seedream-5.0-Lite supports 2K, 3K, and 4K resolutions, and does not support 1K
+
+  **Resolution reference sizes:**
+
+  | Resolution | 1:1 Size | 16:9 Size | 2:1 Size | 1:2 Size |
+  | - | - | - | - | - |
+  | 2K | 2048x2048 | 2848x1600 | 2880x1440 | 1440x2880 |
+  | 3K | 3072x3072 | 4096x2304 | 4320x2160 | 2160x4320 |
+  | 4K | 4096x4096 | 5504x3040 | 5760x2880 | 2880x5760 |
+
+  <Expandable title="Complete pixel mapping table">
+    **2K Resolution**
+
+    | Ratio | Pixels |
+    | - | - |
+    | 1:1 | 2048×2048 |
+    | 4:3 | 2304×1728 |
+    | 3:4 | 1728×2304 |
+    | 16:9 | 2848×1600 |
+    | 9:16 | 1600×2848 |
+    | 3:2 | 2496×1664 |
+    | 2:3 | 1664×2496 |
+    | 2:1 | 2880×1440 |
+    | 1:2 | 1440×2880 |
+    | 21:9 | 3136×1344 |
+
+    **3K Resolution**
+
+    | Ratio | Pixels |
+    | - | - |
+    | 1:1 | 3072×3072 |
+    | 4:3 | 3456×2592 |
+    | 3:4 | 2592×3456 |
+    | 16:9 | 4096×2304 |
+    | 9:16 | 2304×4096 |
+    | 3:2 | 3744×2496 |
+    | 2:3 | 2496×3744 |
+    | 2:1 | 4320×2160 |
+    | 1:2 | 2160×4320 |
+    | 21:9 | 4704×2016 |
+
+    **4K Resolution**
+
+    | Ratio | Pixels |
+    | - | - |
+    | 1:1 | 4096×4096 |
+    | 4:3 | 4704×3520 |
+    | 3:4 | 3520×4704 |
+    | 16:9 | 5504×3040 |
+    | 9:16 | 3040×5504 |
+    | 3:2 | 4992×3328 |
+    | 2:3 | 3328×4992 |
+    | 2:1 | 5760×2880 |
+    | 1:2 | 2880×5760 |
+    | 21:9 | 6240×2656 |
+  </Expandable>
+</ParamField>
+
+<ParamField body="n" type="integer">
+  Number of images to generate
+
+  Range: 1-15
+
+  Default: 1
+
+  **Note:**
+
+  * When `n > 1`, sequential image generation mode is automatically enabled
+  * **Must enter a plain number (e.g., `1`), do not use quotes or it will cause an error**
+
+  Charges will be pre-deducted based on the number
+</ParamField>
+
+<Note>
+  The number of reference images in `image_urls` + the final number of generated images specified by `n` must be ≤ 15.
+</Note>
+
+<ParamField body="image_urls" type="array">
+  Reference image URL list for image-to-image generation
+
+  Two formats are supported:
+
+  **1. Full image URL**
+
+  * Publicly accessible image URL (http\:// or https\://)
+  * Example: `https://example.com/image.jpg`
+
+  **2. Base64 encoded format**
+
+  * **Must use the full Data URI format**
+  * Format: `data:image/{format};base64,{base64data}`
+  * Supported image formats: jpeg, png
+  * Example: `data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABg...`
+  * ⚠️ Note: Must include the `data:image/jpeg;base64,` prefix
+
+  **Limitations:**
+
+  * Image formats: jpeg, png
+  * Aspect ratio (width/height) range: \[1/3, 3]
+  * Width and height (px) > 14
+  * Size: not exceeding 10MB per image
+  * Total pixels: not exceeding 6000×6000 px
+</ParamField>
+
+<Note>
+  The number of reference images in `image_urls` + the final number of generated images specified by `n` must be ≤ 15.
+</Note>
+
+<ParamField body="output_format" type="string" default="jpeg">
+  Output image format
+
+  * `jpeg`: JPEG format (default)
+  * `png`: PNG format, suitable for transparent backgrounds and similar use cases
+
+  > **Note:** The `output_format` parameter is exclusive to Seedream-5.0-Lite. Other image models will ignore this parameter.
+</ParamField>
+
+<ParamField body="sequential_image_generation" type="string" default="disabled">
+  Sequential image generation mode
+
+  Controls whether to generate multiple images:
+
+  * `disabled`: Disable sequential mode (default)
+  * `auto`: Enable sequential mode, can generate multiple images
+
+  **Usage Notes:**
+
+  * When `n > 1`, it will automatically be set to `auto`
+</ParamField>
+
+<ParamField body="sequential_image_generation_options" type="object">
+  Sequential image generation options
+
+  Available when `sequential_image_generation` is set to `auto`
+
+  **Properties:**
+
+  * `max_images` (integer): Specify the number of images to generate
+
+  **Example:**
+
+  ```json theme={null}
+  "sequential_image_generation": "auto",
+  "sequential_image_generation_options": {
+    "max_images": 4
+  }
+  ```
+</ParamField>
+
+<ParamField body="watermark" type="boolean" default="false">
+  Whether to add a watermark to the generated image
+
+  * `true`: Add watermark
+  * `false`: No watermark (default)
+</ParamField>
+
+## Response
+
+<ResponseField name="code" type="integer">
+  Response status code
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Response data array
+
+  <Expandable title="Properties">
+    <ResponseField name="status" type="string">
+      Task status
+
+      * `submitted` - Submitted
+    </ResponseField>
+
+    <ResponseField name="task_id" type="string">
+      Unique task identifier
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+
+This documentation is built and hosted on [Mintlify](https://mintlify.com), a developer documentation platform.
