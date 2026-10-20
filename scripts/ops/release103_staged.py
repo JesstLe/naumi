@@ -45,19 +45,31 @@ def remaining_peak_gate(available_mib,usages):
             'capsMiB':caps,'residentMiB':usages,'hostReserveMiB':1024,'swapIncluded':False}
 
 class Release:
- def __init__(self,tx):
+ def __init__(self,tx,resume=False):
   self.tx=tx;self.initial=CANON.read_bytes();self.canon=json.loads(self.initial);self.disk=sha(self.initial)
-  require(self.disk=='8471569f6039fd1c720c0dd2bde77b07d116cf90e5a6a9483a2f9590a68bbf0b','FRESH_103_CANONICAL_REQUIRED')
-  require(RID not in self.canon.get('staged103Releases',{}),'EXISTING_RELEASE_RECONCILE_ONLY')
-  self.original_rows=json.loads(tx.run(['docker','inspect',*tx.run(['docker','ps','-q','--no-trunc']).decode().split()]))
+  if not resume:
+   require(self.disk=='8471569f6039fd1c720c0dd2bde77b07d116cf90e5a6a9483a2f9590a68bbf0b','FRESH_103_CANONICAL_REQUIRED')
+   require(RID not in self.canon.get('staged103Releases',{}),'EXISTING_RELEASE_RECONCILE_ONLY')
+  self.original_rows=json.loads((tx.folder/'private-container-baseline.json').read_bytes()) if resume else json.loads(tx.run(['docker','inspect',*tx.run(['docker','ps','-q','--no-trunc']).decode().split()]))
   self.byname={r['Name'].lstrip('/'):r for r in self.original_rows};self.old=self.byname['naumi-staging-app-1'];self.db=self.byname['naumi-staging-db-1'];self.de=environment(self.db)
   self.olds=[r for r in self.original_rows if r['Config']['Cmd']==['node','server.js']and r['Name'].lstrip('/')!='naumi-fleet-portal-ef08d3db22b7']
   require(len(self.olds)==6 and len(self.original_rows)==13,'FRESH_EXPECTED_103_TOPOLOGY_REQUIRED')
   self.ui=[r for r in self.olds if r['Id']!=self.old['Id']]
   self.record={'releaseId':RID,'phase':'BASELINED','commit':COMMIT,'buildVersion':VERSION,'image':IMAGE,'at':now(),'operations':{},'retired':[],
      'legacyDrainProven':False,'historicalTasksResolved':False,'databaseRestored':False,'tasksReplayed':False}
-  self.canon.setdefault('staged103Releases',{})[RID]=self.record
+  if not resume:self.canon.setdefault('staged103Releases',{})[RID]=self.record
   self.switched=False;self.retired=[];self.newweb=None;self.newworker=None;self.media=None
+  if resume:
+   self.record=self.canon['staged103Releases'][RID]
+   require(self.record['phase'] in ['BACKED_UP','CANDIDATE_READY','ACCEPTED'],'BOUNDED_PRE_SWITCH_RESUME_ONLY')
+   require(all(op['phase']=='ACKNOWLEDGED'for op in self.record['operations'].values()),'UNKNOWN_OPERATION_RECONCILE_REQUIRED')
+   self.initial=(tx.folder/'canonical-before.json').read_bytes()
+   self.nginx=tx.run(['nginx','-T']).decode();require(sha(self.nginx.encode())==retirement.GATEWAY,'PRESWITCH_GATEWAY_CHANGED')
+   self.parsed=compat.Dump(self.nginx);self.before={p:pathlib.Path(p).read_bytes()for p in self.parsed.files};self.real={p:str(pathlib.Path(p).resolve())for p in self.before}
+   self.config=json.loads((tx.folder/'configuration-before.json').read_bytes());require(self.configuration()==self.config,'RESUME_CONFIG_CHANGED')
+   self.cookie=(tx.folder/'cookie.private').read_text();self.oldprojects=self.request(public_identity(self.old),'/api/projects')['json']
+   private=json.loads(next(tx.folder.glob('task-snapshot-*.json')).read_bytes());public=json.loads((tx.folder/'task-baseline.json').read_bytes());self.pre=tasks.Snapshot(public=public,private=private)
+   for row in self.original_rows:tx.pin(public_identity(row))
 
  def persist(self):
   require(sha(CANON.read_bytes())==self.disk,'CANONICAL_CAS_CHANGED')
@@ -67,7 +79,8 @@ class Release:
  def phase(self,p,**facts):self.record.update(phase=p,at=now(),**facts);self.persist();print('PHASE='+p,flush=True)
 
  def op(self,name,fn):
-  require(name not in self.record['operations'],'ORIGINAL_OPERATION_RECONCILE_REQUIRED')
+  if name in self.record['operations']:
+   op=self.record['operations'][name];require(op['phase']=='ACKNOWLEDGED','ORIGINAL_OPERATION_RECONCILE_REQUIRED');return op['receipt']
   op={'id':str(uuid.uuid4()),'phase':'INTENT_RECORDED','at':now()};self.record['operations'][name]=op;self.persist()
   try:r=fn(op['id'])
   except BaseException:op['phase']='UNKNOWN';self.persist();raise
@@ -131,6 +144,7 @@ class Release:
   self.plan={'target':TARGET,'releaseId':RID,'commit':COMMIT,'buildVersion':VERSION,'releaseSecret':secrets.token_urlsafe(48),
    'authorization':{'mode':'latest-103-20261020','target':TARGET,'scope':'latest-unified-release','goalThread':'da1fb6c5-ffa9-4da4-97eb-d71dc858b418','date':'2026-10-20','userAcknowledgement':'上线','restoreDatabase':False,'replayAcceptedTasks':False},
    'webs':[{'variant':'main','name':'naumi-103-web-resolution-20261020','image':IMAGE,'source':public_identity(self.old),'stateDir':str(STATE/'web')}],
+   'worker':{'name':'naumi-103-worker-resolution-20261020','stateDir':str(STATE/'worker')},
    'mediaWorker':{'name':'naumi-video-media-'+COMMIT[:12],'image':IMAGE,'memoryMiB':3072,'cpu':1.5}}
   self.media=video.MediaLifecycle(self.tx,self.plan)
   self.op('media-create-not-start',lambda _:self.media.prepare(start=False))
@@ -295,9 +309,11 @@ class Release:
 
 def main():
  with HostTransaction(TARGET,MACHINE,ROOT/'transaction')as tx:
-  release=Release(tx)
+  resume='--resume-pre-switch' in sys.argv
+  release=Release(tx,resume=resume)
   try:
-   release.prepare();release.candidate();release.acceptance();release.assets_gateway();release.switch();release.finish()
+   if not resume:release.prepare()
+   release.candidate();release.acceptance();release.assets_gateway();release.switch();release.finish()
   except BaseException as ex:
    release.record['errorType']=type(ex).__name__;release.record['error']=str(ex) if isinstance(ex,Hold)else 'INSPECT_PRIVATE_FAILURE'
    release.persist()
