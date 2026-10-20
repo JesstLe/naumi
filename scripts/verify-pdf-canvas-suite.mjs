@@ -21,6 +21,9 @@ const commands=[
  ['scripts/verify-canvas-generation-concurrency.mjs'],
  ['scripts/verify-canvas-generation-locks.mjs'],
  ['scripts/verify-canvas-edit-task-lifecycle.cjs'],
+ ['--conditions=react-server','--import','tsx','scripts/verify-image-delivery-recovery.ts'],
+ ['--conditions=react-server','--import','tsx','scripts/verify-image-delivery-preflight.ts'],
+ ['--conditions=react-server','--import','tsx','scripts/verify-image-delivery-routes.ts'],
  ['node_modules/typescript/bin/tsc','--noEmit','--pretty','false'],
 ];
 const rows=[];
