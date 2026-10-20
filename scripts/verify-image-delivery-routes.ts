@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import {randomUUID,randomBytes,createHash} from "node:crypto";
 import {createServer} from "node:http";
-import {mkdtemp,mkdir,writeFile} from "node:fs/promises";
+import {mkdtemp,mkdir,writeFile,readFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join,resolve} from "node:path";
 import sharp from "sharp";
@@ -11,7 +11,7 @@ import {createModelFixture} from "./model-config-fixture";
 async function main(){
  const baseline=process.argv.includes("--baseline");
  const out=resolve("output/image-delivery-recovery-20261020/routes");await mkdir(out,{recursive:true});let calls=0;
- const large=await sharp(randomBytes(2304*2048*3),{raw:{width:2304,height:2048,channels:3}}).png({compressionLevel:0}).toBuffer();
+ const large=process.env.DELIVERY_FIXTURE_PNG?await readFile(process.env.DELIVERY_FIXTURE_PNG):await sharp(randomBytes(2304*2048*3),{raw:{width:2304,height:2048,channels:3}}).png({compressionLevel:0}).toBuffer();
  const tiny=await sharp({create:{width:80,height:96,channels:3,background:"#63a871"}}).png().toBuffer();
  assert.ok(large.length>12*1024*1024);
  const f=await createModelFixture(async(req,res)=>{

@@ -7,7 +7,7 @@ import { resolve } from "node:path";
 import sharp from "sharp";
 async function main(){
  const out=resolve(process.env.DELIVERY_TEST_OUT||"output/image-delivery-recovery-20261020");mkdirSync(out,{recursive:true});
- const bytes=await sharp(randomBytes(2304*2048*3),{raw:{width:2304,height:2048,channels:3}}).png({compressionLevel:0}).toBuffer();
+ const bytes=process.env.DELIVERY_FIXTURE_PNG?readFileSync(process.env.DELIVERY_FIXTURE_PNG):await sharp(randomBytes(2304*2048*3),{raw:{width:2304,height:2048,channels:3}}).png({compressionLevel:0}).toBuffer();
  assert.ok(bytes.length>12*1024*1024&&bytes.length<64*1024*1024);
  const before=createHash("sha256").update(bytes).digest("hex"),url="data:image/png;base64,"+bytes.toString("base64");
  const pixels=await import(pathToFileURL(resolve("src/lib/imagegen/pixels.ts")).href),canvas=await import(pathToFileURL(resolve("src/lib/canvas-image-input.ts")).href);
