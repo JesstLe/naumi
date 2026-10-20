@@ -1,5 +1,32 @@
 [
   {
+    "version": "1792502829",
+    "title": {
+      "zh": "生成体验更新",
+      "en": "Generation experience update"
+    },
+    "improvements": [
+      {
+        "zh": "任务排队时显示真实状态，等待期间继续跟踪原任务。",
+        "en": "Queued tasks show their current state and continue tracking the original request."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "修复部分图片已生成但结果未完整显示的问题。",
+        "en": "Fixed cases where generated images were not fully displayed."
+      },
+      {
+        "zh": "修复同时恢复多个生成结果时可能卡住的问题。",
+        "en": "Fixed a stall when recovering multiple generated results at once."
+      },
+      {
+        "zh": "改善断线和重新打开页面后的结果恢复，避免再次生成。",
+        "en": "Improved recovery after disconnection or reopening the page without duplicate submissions."
+      }
+    ]
+  },
+  {
     "version": "1792471620",
     "title": {
       "zh": "图片生成兼容性优化",
