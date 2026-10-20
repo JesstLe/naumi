@@ -80,7 +80,7 @@ const RATIO_ASPECT: Record<string, string> = {
 };
 
 const MAX_UPLOAD = 12 * 1024 * 1024;
-const MAX_IMAGES = 6;
+const MAX_IMAGES = 16;
 type ImageModelOption = { id: string; label: string; supportsEdit: boolean; creditHint?: string };
 
 export function GenerateClient({

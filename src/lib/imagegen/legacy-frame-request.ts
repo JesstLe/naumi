@@ -14,7 +14,7 @@ export async function normalizeLegacyFrameRequest(request: Request): Promise<Req
   const requested = String(form.get("ratio") || "");
   if (requested && requested !== "auto") return request;
   if (Number(form.get("targetWidth"))>0 || Number(form.get("targetHeight"))>0 || form.get("ratiogen") === "1") return request;
-  const files = form.getAll("image").filter((value): value is File => value instanceof File && value.size > 0).slice(0, 6);
+  const files = form.getAll("image").filter((value): value is File => value instanceof File && value.size > 0).slice(0, 16);
   if (!files.length) return request;
   if (files.some(file => file.size > 12 * 1024 * 1024)) throw new LegacyFrameError("单张上传图片过大（请 < 12MB）");
   // Same transport contract as submitCanvasImagegen: target first, references after it.

@@ -1,0 +1,28 @@
+import {createHash} from 'node:crypto';
+import {digest,canonical} from './apib-activation.mjs';
+export {digest};
+export const EDIT_IDS=['apib:gpt-image-2.5-flare','apib:gpt-image-2.5-sunburst'];
+export const EDIT_SOURCE_SHA='be8e52e7a6e1409b1f6d5a0c84f85898f9ad07e7a0a832ecea798a5205e5231d';
+const eq=(a,b)=>canonical(a)===canonical(b),need=(v,c)=>{if(!v)throw Error(c)};
+const row=(c,id)=>{const a=c.upstreamModels.filter(u=>u.id===id);need(a.length===1,'EXACT_UPSTREAM_REQUIRED');return a[0]};
+function field(c,id,path){let v=row(c,id);for(const k of path.slice(0,-1)){if(!v[k])return{present:false};v=v[k]}return Object.hasOwn(v,path.at(-1))?{present:true,value:structuredClone(v[path.at(-1)])}:{present:false}}
+function write(c,id,path,value){let v=row(c,id);for(const k of path.slice(0,-1))v=v[k]??={};if(value.present)v[path.at(-1)]=structuredClone(value.value);else delete v[path.at(-1)]}
+export function makeEditPlan(snapshot,billing,sourceBytes,operationId){
+ need(snapshot.version>=119&&snapshot.digest===digest(snapshot.config),'MODEL_BASELINE_INVALID');need(/^[a-f0-9-]{36}$/.test(operationId),'OPERATION_ID_INVALID');need(createHash('sha256').update(sourceBytes).digest('hex')===EDIT_SOURCE_SHA,'SOURCE_CHANGED');
+ const text=Buffer.from(sourceBytes).toString('utf8');for(const s of ['gpt-image-2.5-flare','gpt-image-2.5-sunburst','<ParamField body="image_urls"','Up to `16` images','POST /v1/uploads/images','/v1/images/generations'])need(text.includes(s),'EDIT_SOURCE_ASSERTION');
+ const config=structuredClone(snapshot.config),delta=[];
+ const rows=text.split('\n').filter(line=>/^\| `\d+:\d+` \|/.test(line)).slice(0,15);
+ const dimensions={};for(const line of rows){const cells=line.split('|').map(v=>v.trim()),ratio=cells[1].replaceAll('`','');for(const [i,res] of ['1K','2K','4K'].entries()){const n=cells[i+2].match(/\d+/g);need(n?.length===2,'PIXEL_TABLE_INVALID');dimensions[res+':'+ratio]={width:Number(n[0]),height:Number(n[1])}}}
+ need(Object.keys(dimensions).length===45,'FULL_SOURCE_MATRIX_REQUIRED');const p=config.providers.find(p=>p.id==='apib-image');need(p?.enabled&&p.protocol==='apimart-images'&&p.baseUrl==='https://api.apib.ai/v1','PROVIDER_CHANGED');
+ const m=config.publicModels.find(m=>m.id==='gpt-image-2');need(m?.enabled&&m.supplierRouting,'FAMILY_CHANGED');
+ const imagegenWasAbsent={};
+ for(const id of EDIT_IDS){const u=row(config,id);need(u.enabled&&u.providerId===p.id&&u.capabilities.generate&&!u.capabilities.edit&&!u.capabilities.verified&&u.capabilities.maxReferenceImages===0,'EDIT_BASELINE_CHANGED');need(eq(u.capabilities.nativeResolutions,['1K'])&&u.parameterMap.apimartImages?.supportsMask===false&&u.parameterMap.apimartImages.ratios.length===12,'SCOPE_CHANGED');need(m.supplierRouting.channels.some(c=>c.upstreamId===id&&c.enabled),'ROUTE_NOT_ENABLED');imagegenWasAbsent[id]=!Object.hasOwn(u.capabilities,'imagegen');
+  const evidence={state:'supported',source:'用户要求APIB与既有图片通道能力对齐；APIB关联APIMart公开契约：参考图上传/image_urls/蒙版/透明/1K-4K；现有应用协议适配已实现，未付费实测',checkedAt:'2026-10-19'};
+  const apimartImages={...u.parameterMap.apimartImages,maxOutputs:4,supportsMask:true,outputDimensions:Object.fromEntries(['1K','2K','4K'].flatMap(res=>u.parameterMap.apimartImages.ratios.map(ratio=>[res+':'+ratio,dimensions[res+':'+ratio]])))};
+  for(const [path,value] of [[['capabilities','edit'],true],[['capabilities','transparent'],true],[['capabilities','maxReferenceImages'],6],[['capabilities','nativeResolutions'],['1K','2K','4K']],[['capabilities','imagegen','edit'],evidence],[['capabilities','imagegen','mask'],evidence],[['capabilities','imagegen','transparent'],{...evidence,values:['transparent','opaque']}],[['parameterMap','resolutionPolicy'],{...u.parameterMap.resolutionPolicy,values:{'1K':'1k','2K':'2k','4K':'4k'}}],[['parameterMap','apimartImages'],apimartImages]]){const d={id,path,before:field(config,id,path),after:{present:true,value}};need(!eq(d.before,d.after),'EDIT_ALREADY_APPLIED');write(config,id,path,d.after);delta.push(d)}
+ }
+ const plan={schemaVersion:1,kind:'apib-reference-edit-subset',operationId,baseline:{version:snapshot.version,digest:snapshot.digest,billingVersion:billing.version,billingHash:digest(billing)},candidateDigest:digest(config),sourceSha256:EDIT_SOURCE_SHA,delta,imagegenWasAbsent,config,policy:{paidAcceptance:'PAUSED_BY_USER',paidProbes:false,verifiedPromotions:0,procurementWrites:0,weightChanges:0,resolutions:['1K','2K','4K'],references:[1,6],supportsMask:true}};
+ verifyEditPlan(config,plan);return plan;
+}
+export function verifyEditPlan(config,plan){need(plan.kind==='apib-reference-edit-subset'&&plan.delta.length===18,'EIGHTEEN_ALIGNMENT_FIELDS_REQUIRED');need(digest(config)===plan.candidateDigest,'CANDIDATE_DIGEST_CHANGED');for(const d of plan.delta)need(eq(field(config,d.id,d.path),d.after),'OWN_EDIT_FIELD_CHANGED');for(const id of EDIT_IDS){const u=row(config,id);need(!u.capabilities.verified&&u.capabilities.transparent&&eq(u.capabilities.nativeResolutions,['1K','2K','4K'])&&u.parameterMap.apimartImages.supportsMask,'EDIT_SCOPE_EXPANDED')}return{enabledEditIds:EDIT_IDS,deltaCount:18,verifiedPromotions:0,procurementWrites:0,weightChanges:0,providerCalls:0}}
+export function rollbackEdit(current,plan){const c=structuredClone(current);for(const d of plan.delta){const got=field(c,d.id,d.path);need(eq(got,d.after)||eq(got,d.before),'OWN_EDIT_FIELD_CONFLICT')}for(const d of [...plan.delta].reverse())write(c,d.id,d.path,d.before);for(const id of EDIT_IDS){const u=row(c,id);if(plan.imagegenWasAbsent[id]&&u.capabilities.imagegen&&Object.keys(u.capabilities.imagegen).length===0)delete u.capabilities.imagegen}return c}

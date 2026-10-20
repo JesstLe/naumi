@@ -245,7 +245,7 @@ const IMAGE_NODE_MAX_H = 2400;
 const PORT_Y = NODE_LABEL_H + 100; // 默认空白节点连接点垂直居中
 const X_GAP = 90; // 层间横向间距
 const Y_GAP = 48; // 同层兄弟纵向间距
-const MAX_TOTAL_IMAGES = 6; // 节点图 + 追加参考图 合计上限
+const MAX_TOTAL_IMAGES = 16; // 节点图 + 追加参考图 合计上限
 const MAX_UPLOAD = 12 * 1024 * 1024;
 const MAX_GENERATION_COUNT = CANVAS_MAX_COUNT;
 type CanvasPrimaryTool = "move" | "marquee" | "hand";
@@ -7046,7 +7046,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     return pend;
   }
   // 将框选图片作为同一个新节点的多输入。新节点沿用现有生成 Dock，用户可继续
-  // 写提示词、选比例/数量后生成；Images API 单次最多接收 6 张参考图。
+  // 写提示词、选比例/数量后生成；本站单次最多提交 16 张参考图；执行通道按已发布能力筛选。
   function createMergeNodeFromSelection() {
     if (readOnly || selectedBatchArts.length < 2) return;
     const inputs = selectedBatchIds.slice(0, MAX_TOTAL_IMAGES);
