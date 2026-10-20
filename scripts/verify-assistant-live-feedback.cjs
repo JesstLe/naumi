@@ -20,7 +20,7 @@ const compile=s=>ts.transpileModule(s,{compilerOptions:{target:ts.ScriptTarget.E
 async function browserSubmit(){
  const response=deferred();let posted=0;
  const c={console,Date,Error,Set,Map,Promise,Response,TextDecoder,AbortController,AbortSignal,JSON,encodeURIComponent,DOMException,
- assistantInput:'先出初稿',assistantBusy:false,assistantArtworkId:null,selectedId:null,active:{members:[]},activeKey:'workspace',assistantRetry:{current:null},assistantTurns:[],assistantSkill:null,assistantRequestEpoch:{current:0},assistantSessionId:{current:'fixture-session'},assistantLiveSessionId:{current:''},assistantController:{current:null},
+ assistantInput:'先出初稿',assistantBusy:false,assistantUploadToken:{current:null},currentAssistantReferences:()=>[],assistantArtworkId:null,selectedId:null,active:{members:[]},activeKey:'workspace',assistantRetry:{current:null},assistantTurns:[],assistantSkill:null,assistantRequestEpoch:{current:0},assistantSessionId:{current:'fixture-session'},assistantLiveSessionId:{current:''},assistantController:{current:null},
  videoNodesStore:{getNode:()=>null,refresh:async()=>{}},textNodes:[],chosenFeatureModel:()=>undefined,genModel:'image-fixture',genRatio:'auto',genResolution:'1K',genQuality:'medium',browserRandomUUID:()=>crypto.randomUUID(),
  orbCue:()=>{},setAssistantError:v=>c.error=v,setAssistantBusy:v=>c.busy=v,setAssistantResponding:v=>c.responding=v,setAssistantSteps:()=>{},setAssistantOutcome:v=>c.outcome=v,setAssistantActivity:v=>c.activity=typeof v==='function'?v(c.activity):v,setAssistantTurns:v=>c.turns=typeof v==='function'?v(c.turns||[]):v,setAssistantInput:v=>c.input=v,
  privateFetch:async()=>{posted++;return response.promise;},readJsonSafe:r=>r.json(),classifyAgentFailure:()=>({code:'ABORTED'}),reduceAgentProgress:()=>[],mergeWorks:async()=>[],pushAddUndoMany:()=>{},locale:'zh',receiveAssistantActivity,
@@ -78,6 +78,7 @@ async function serverStream(){
   '../billing/synchronous':'export async function configuredToolCost(){};export async function completeSynchronousStream(){};export async function failSynchronousStream(){__fixture.failures++}',
   '../storage':'export function dataUrlToBytes(){return null};export function isManagedImageUrl(){return false};export async function readManagedObject(){throw Error("NO_MEDIA")}',
   '../vision-image':'export function toVisionDataUrl(){throw Error("NO_MEDIA")}',
+  './canvas-reference-preview':'export async function readCanvasVisionReference(){throw Error("NO_MEDIA")}',
   './runtime':'export async function getOrCreateSession(){return __fixture.session};export function primeAgentSystemPrompt(){};export async function resolveVisionImages(){return[]};export async function persistAgentSession(){__fixture.persisted++};export function appendSessionEvent(s,type,data){s.events.push({type,data,at:Date.now()})};export const MODEL_ID="fixture";export async function completeAgentReleaseActivity(){__fixture.released++}',
   './canvas-history':'export function canvasSessionPrefix(){return "cv-fixture-"};export function canvasProjectSessionPrefix(){return "cv-fixture-"};export async function canvasAgentHistory(){throw Error("NO_HISTORY")}',
   './recovery':'export function classifyAgentFailure(){return {code:"FIXTURE_ERROR",message:"fixture failure"}}',
