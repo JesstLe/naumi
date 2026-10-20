@@ -16,14 +16,14 @@ const contract=read('docs/providers/apib-seedream-20261020.json');
 const source=Object.fromEntries(contract.models.map((m:any)=>[m.id,readFileSync(m.source.path)]));
 const hash=(b:string|Buffer)=>createHash('sha256').update(b).digest('hex');
 async function main(){
- let checks=0,uploads=0,posts=0,gets=0,origin='',lose=true,routerActivations=0,state='';const tasks=new Map<string,string>(),pubs=new Map<string,any>();
+ let checks=0,uploads=0,posts=0,gets=0,origin='',lose=true,routerActivations=0,state='',lastPayload:any;const tasks=new Map<string,string>(),pubs=new Map<string,any>();
  const png=await sharp({create:{width:256,height:256,channels:3,background:'white'}}).png().toBuffer();
  const f=await createModelFixture(async(req,res)=>{
   const url=new URL(req.url!,origin);
   if(url.pathname==='/v1/uploads/images'){uploads++;for await(const _ of req){}res.end(JSON.stringify({url:'https://fixture.invalid/ref.png'}));return;}
   if(url.pathname.startsWith('/v1/tasks/')){gets++;const id=url.pathname.split('/').at(-1)!;res.end(JSON.stringify({data:{id,model:tasks.get(id),status:'completed',result:{images:[{url:[origin+'/media/output.png']}]}}}));return;}
   if(url.pathname==='/media/output.png'){res.end(png);return;}
-  posts++;const chunks=[];for await(const c of req)chunks.push(c);const payload=JSON.parse(Buffer.concat(chunks).toString());assert.equal(payload.output_format,'png');assert.equal(payload.quality,undefined);assert.equal(payload.n,1);assert.equal(payload.resolution,payload.model==='seedream-5-0-pro'?'2K':'1K');const id='task_'+posts;tasks.set(id,payload.model);res.end(JSON.stringify({data:[{task_id:id}]}));
+  posts++;const chunks=[];for await(const c of req)chunks.push(c);const payload=JSON.parse(Buffer.concat(chunks).toString());lastPayload=payload;assert.equal(payload.output_format,'png');assert.equal(payload.quality,undefined);assert.equal(payload.n,1);assert.equal(payload.resolution,payload.model==='seedream-5-0-pro'?'2K':'1K');const id='task_'+posts;tasks.set(id,payload.model);res.end(JSON.stringify({data:[{task_id:id}]}));
  });origin=f.origin;
  Object.assign(process.env,{PGOPTIONS:`-c search_path=${f.schemaName}`,MODEL_CONFIG_TRUSTED_ORIGINS:origin,NAUMI_ROUTER_MANAGEMENT_URL:origin,NAUMI_MULTI_USER:'1'});
  const db=await import('../src/lib/db');
@@ -88,8 +88,10 @@ async function main(){
   }));
   const effective=structuredClone(baseScope);effective.connection.wireModel='seedream-5-0-pro';effective.frozen.requestedParameters={quality:'medium',resolution:'4K',ratio:'1:1'};effective.frozen.facts.resolution='2K';effective.frozen.facts.requestedResolution='2K';effective.parameterMap.resolutionPolicy.values={'1K':'1K','2K':'2K'};effective.parameterMap.apimartImages.outputDimensions={'2K:1:1':{width:256,height:256}};
   const effectiveRequest=apimartExecutionParameters(effective,{}, {requestedParameters:{quality:'medium',resolution:'4K',ratio:'1:1'},effectiveParameters:{quality:'medium',resolution:'2K',ratio:'1:1'}} as any,{resolution:'4K',ratio:undefined,quality:undefined});
+  const frontendQuote=(await import('../src/lib/billing/quote')).quote(billing,{feature:'image.generate',quantity:1,quality:'medium',resolution:'4K',metered:true,byok:false,paidFen:0,userGroup:'user'} as any);const billed={...frontendQuote,requestedParameters:{quality:'medium',resolution:'4K',ratio:'1:1'},effectiveParameters:{quality:'medium',resolution:'2K',ratio:'1:1'}};const preserved=structuredClone(billed);assert.equal(apimartExecutionParameters(effective,{},billed).resolution,'2K');assert.deepEqual(billed,preserved);assert.equal(billed.facts.resolution,'4K');assert.equal(billed.requestedCredits,frontendQuote.requestedCredits);
   assert.equal(effectiveRequest.resolution,'2K');assert.equal(effective.frozen.requestedParameters.resolution,'4K');assert.equal((await import('../src/lib/model-config/apimart-image-parameters')).apimartImageParameters(effective,effectiveRequest).upstream.resolution,'2K');
   const historical=structuredClone(baseScope);historical.frozen.facts.resolution='2K';historical.frozen.facts.requestedResolution='4K';assert.equal(apimartExecutionParameters(historical,{}).resolution,'4K','Do not reinterpret historical audit-only facts without an explicit effective contract');checks++;
+  const restoreEffective=structuredClone(effective);restoreEffective.frozen.facts.resolution='4K';restoreEffective.frozen.facts.requestedResolution='2K';assert.equal(apimartExecutionParameters(restoreEffective,{}).resolution,'2K','Explicit frozen effective field, not quote facts billing tier, drives restored execution');
   for(const [prompt,files] of [['字'.repeat(1001),[]],['ok',[await file(46,15)]],['ok',[await file(14,15)]],['ok',[tooMany]],['ok',[new File([new Uint8Array(png)],'x.webp',{type:'image/webp'})]],['ok',[new File([new Uint8Array(Buffer.concat([png,Buffer.alloc(10_000_001-png.length)]))],'x.png',{type:'image/png'})]],['ok',Array.from({length:11},()=>image)]] as [string,File[]][]){const before=[uploads,posts,gets];await assert.rejects(()=>invoke(baseScope,'negative-'+checks,prompt,files));assert.deepEqual([uploads,posts,gets],before);checks++;}
   assert.equal((await invoke(effective,'effective-wire-2K','ok')).status,200);assert.equal(posts,1);assert.equal(uploads,0);checks++;
   assert.equal((await invoke(baseScope,'valid-seedream','ok',[image])).status,200);assert.equal(uploads,1);assert.equal(posts,2);checks++;
@@ -102,7 +104,12 @@ async function main(){
   const beforePosts=posts,beforeUploads=uploads,beforeGets=gets;assert.equal((await invoke(baseScope,unit,longPrompt,[image])).status,200);assert.equal(posts,beforePosts);assert.equal(uploads,beforeUploads);assert.ok(gets>beforeGets);checks++;
   // Unknown accepted marker with no task remains Pending, not a fresh retry.
   await f.sql.query('UPDATE app_supplier_calls SET task_id=NULL WHERE id=$1',[savedRow.id]);await assert.rejects(()=>invoke(baseScope,unit,longPrompt,[image]),ImageOperationPending);assert.equal(posts,beforePosts);assert.equal(uploads,beforeUploads);checks++;
-  console.log(`APIB_SEEDREAM=PASS; CHECKS=${checks}; SOURCES=5; PUBLIC_MODELS=4; STANDBY=1; COMBINATIONS=${result.combinations}; PIXEL_CONFLICTS=${result.conflicts.length}; DECIMAL_MB_AND_36MP=PASS; UNICODE_CODEPOINTS=PASS; CATALOG_PRIORITY=PASS; EFFECTIVE_2K_REQUESTED_4K=PASS; NEGATIVE_UPLOADS=0; NEGATIVE_SUBMITS=0; SAVED_RECEIPT_QUERY_ONLY=PASS; UNKNOWN_NO_REPOST=PASS; SELECTIVE_ROLLBACK=PASS; REAL_PROVIDER_CALLS=0`);
+  const refUploads=uploads,refPosts=posts;assert.equal((await invoke(baseScope,'ten-references','ok',Array.from({length:10},()=>image))).status,200);assert.equal(uploads-refUploads,10);assert.equal(posts-refPosts,1);assert.equal(lastPayload.image_urls.length,10);checks++;
+  const proScope=structuredClone(effective);for(const [s,n,mask] of [[proScope,2,false],[baseScope,1,true]] as const){const before:number[]=[uploads,posts];
+   if(mask){await assert.rejects(()=>runModelExecution(s,()=>withImageOperation(s.frozen.publicModelId,{id:'no-mask'},()=>{const form=new FormData();form.set('prompt','ok');form.append('image',image);form.append('mask',image);return apimartImagesFetch(s,{trustedOrigins:[origin]},{pollMs:1})(origin+'/v1/images/edits',{method:'POST',body:form});})));}
+   else await assert.rejects(()=>invoke(s,'no-n2','ok',[],n));assert.deepEqual([uploads,posts],before);checks++;
+  }
+  console.log(`APIB_SEEDREAM=PASS; CHECKS=${checks}; SOURCES=5; PUBLIC_MODELS=4; STANDBY=1; COMBINATIONS=${result.combinations}; PIXEL_CONFLICTS=${result.conflicts.length}; DECIMAL_MB_AND_36MP=PASS; UNICODE_CODEPOINTS=PASS; CATALOG_PRIORITY=PASS; EFFECTIVE_2K_REQUESTED_4K=PASS; FRONTEND_QUOTE_UNCHANGED=PASS; NEGATIVE_UPLOADS=0; NEGATIVE_SUBMITS=0; SAVED_RECEIPT_QUERY_ONLY=PASS; UNKNOWN_NO_REPOST=PASS; SELECTIVE_ROLLBACK=PASS; REAL_PROVIDER_CALLS=0`);
  }finally{await db.getPool().end();await f.cleanup();}
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

@@ -23,7 +23,7 @@ import { recordBillingUsage,currentSynchronousBilling } from "../billing/synchro
 export function apimartExecutionParameters(scope: ModelExecutionScope, body:Record<string,any>, quote?:Pick<import("../billing/types").BillingQuote,"requestedParameters"|"effectiveParameters">, operation?:ReturnType<typeof currentImageOperationParameters>) {
   const p=scope.imagePreset;
   const requested={...(scope.frozen.requestedParameters || {quality:scope.frozen.facts?.quality||String(body.quality||"medium"),resolution:scope.frozen.facts?.requestedResolution||scope.frozen.facts?.resolution||"1K",ratio:scope.frozen.facts?.ratio||"1:1"}),...quote?.requestedParameters};
-  if(!p&&scope.frozen.requestedParameters&&scope.frozen.facts?.requestedResolution===scope.frozen.facts?.resolution&&scope.frozen.facts?.resolution)requested.resolution=scope.frozen.facts.resolution;
+  if(!p&&scope.frozen.requestedParameters&&scope.frozen.facts?.requestedResolution)requested.resolution=scope.frozen.facts.requestedResolution;
   if(!p&&operation?.quality)requested.quality=operation.quality;
   if(operation?.ratio)requested.ratio=operation.ratio;
   if(!p&&operation?.resolution)requested.resolution=operation.resolution;

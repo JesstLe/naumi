@@ -28,7 +28,7 @@ Pro/Flash公开1K表16:9=1312×736、9:16=736×1312，短边偏差2px超过当�
 
 ### 分辨率回退合作契约
 
-用户另授权通用分辨率回退：requested4K无4K可用来源时，effective取最高已支持档，报价/冻结/实际生成同档，不先失败付费、不自动放大成假4K。该模块由统一线程 `codex/image-resolution-fallback-20261020` 负责。
+用户另授权通用分辨率回退：requested4K无4K可用来源时，effective取最高已支持档，实际执行档单独冻结，不先失败付费、不自动放大成假4K。按用户最新纠正，原选4K前台12积分仍报价/扣费12；effective2K不重新按8积分报价，客户报价保持前端一致。该模块由统一线程 `codex/image-resolution-fallback-20261020` 负责。
 
 本任务APIMart adapter只补构参优先级：新非preset先从明确冻结facts或operation取有效档，quote.effectiveParameters最高；quote.requestedParameters仅原选审计。旧preset/无新effective合同的历史任务保留旧优先级。不新增Worker必需schema字段。精确wire能力列表仍仅Pro/Flash1K/2K；外层负责4K→2K，adapter不直接把4K字面偷改2K。比例/参考/mask等门禁不受分辨率回退豁免。
 
@@ -50,7 +50,7 @@ catalog只对启用的精确5wire、apimart-images且独立公模使用自身rat
 
 ## 测试与状态
 
-`scripts/verify-apib-seedream.ts`：210参数组合，11像素冲突、catalog四独立/Pro混合/disabled/非型号/非协议/admin优先、MB/36MP/比例端点/Unicode、真实adapter零上传零提交负向、有效2K原选4K实际wire、已接受任务仅查询、unknown不重提、隔离PG publication/同ID恢复/重复/选择性回滚。异步57回归、contract回归、既有即梦endpoint回归集中运行。旧即梦endpoint测试scope缺parameterMap导致既有TypeError，本次仅fixture补空对象，不改产品NewAPI处理器。
+`scripts/verify-apib-seedream.ts`：210参数组合，11像素冲突、catalog四独立/Pro混合/disabled/非型号/非协议/admin优先、MB/36MP/比例端点/Unicode、真实adapter10参考上传10个wire引用及11参考/其他负向零上传零提交、有效2K原选4K实际wire及原前台报价保留、已接受任务仅查询、unknown不重提、隔离PG publication/同ID恢复/重复/选择性回滚。异步57回归、contract回归、既有即梦endpoint回归集中运行。旧即梦endpoint测试scope缺parameterMap导致既有TypeError，本次仅fixture补空对象，不改产品NewAPI处理器。
 
 运行支持前置：本preflight+catalog+effective构参及合作通用回退代码须真正蓝绿部署、真实鉴权只读plan验收，再独立配置publication。5d不先APPLY。运维bundle包含管理逻辑不等于App已部署。统一生产唯一执行人仍da1fb6c5-ffa9-4da4-97eb-d71dc858b418；本任务SSH0/锁0/生成0/生产写入0，收费验收与巡检PAUSED，生产publication未创建。
 
@@ -58,10 +58,12 @@ catalog只对启用的精确5wire、apimart-images且独立公模使用自身rat
 
 ### 本次集中实测回执
 
-2026-10-20本地集中验证：Seedream39项/210参数组合、11像素冲突、231真实quote对照通过；真实adapter requested4K/effective2K wire验证通过；输入负向0上传/0提交；历史receipt仅GET、unknown不重提。APIMart57项及16参考传输回归通过（仅证明GPT既有路径不受影响，不外推即梦16refs），旧即梦endpoint和contract通过；全量tsc无诊断exit0。
+2026-10-20本地集中验证：Seedream42项/210参数组合、11像素冲突、231真实quote对照通过；真实adapter requested4K/effective2K wire验证通过；输入负向0上传/0提交；历史receipt仅GET、unknown不重提。APIMart57项及16参考传输回归通过（仅证明GPT既有路径不受影响，不外推即梦16refs），旧即梦endpoint和contract通过；全量tsc无诊断exit0。
 
 source副本回滚已对3个既有文件原SHA恢复、13新增文件只在副本删除，原工作区保留改后状态；重新运行基线source断言及既有即梦回归通过。新增source事务测试中的baseline PASS表示确认旧源码未接入Seedream专用门禁/catalog，不是旧产品已支持这些新参数。
 
 运维交付采用仅delta recipe：bundle的PLAN不携带完整private/redacted配置，三锁内运行PLAN才从实时model/billing重建MATERIALIZED_PLAN与ORIGINAL快照；重建后的candidateDigest必须等于审核值，否则停止。禁止把脱敏全文写回数据库。证明包含已运行Web/Worker代码hash与App镜像仍由统一线程真正采集，bundle里打包新helper不冒充程序上线。
 
 独立原文原始SHA/配置digest/源码与Git增量SHA、完整命令输入输出exit以及四制品路径在VERIFICATION.txt/HANDOFF.json。生产APPLY/真实公网plan/程序蓝绿尚未在本线程执行，不将本地完成称为线上可用。
+
+用户最终价格纠正：requestedResolution仍用于原选档客户报价和审计，effectiveResolution只用于供应商执行。所有早期“按effective2K收费8”描述作废。adapter不计算或修改价格；quote.facts可能4K不能当actual，明确quote.effectiveParameters/operation实际2K才驱动wire。

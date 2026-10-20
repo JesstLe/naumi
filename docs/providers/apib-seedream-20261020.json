@@ -1457,8 +1457,8 @@
   },
   "productionReadiness": "REQUIRES_DEPLOYED_SEEDREAM_PREFLIGHT_AND_CATALOG; no configuration-first enablement on 5d",
   "resolutionSemantics": {
-    "requestedResolution": "Original user selection, audit only when fallback is active",
-    "effectiveResolution": "Actual frozen facts/operation/quote.effectiveParameters; drives supplier resolution and price in companion generic fallback module",
+    "requestedResolution": "Original frontend selection retained for audit AND unchanged customer quote/charge; requested4K keeps frontend4K tariff even when actual2K",
+    "effectiveResolution": "Actual frozen operation/quote.effectiveParameters drives supplier only, not a new lower customer price",
     "requested4KEffective2K": [
       "seedream-5-0-flash",
       "seedream-5-0-pro"
@@ -1473,6 +1473,7 @@
       "transparency",
       "prompt length",
       "input bytes/pixels"
-    ]
+    ],
+    "customerPricing": "User correction: preserve original frontend quote; requested4K=12credits remains12, effective2K is not repriced8"
   }
 }
