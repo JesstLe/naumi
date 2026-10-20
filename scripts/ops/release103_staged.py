@@ -61,15 +61,19 @@ class Release:
   self.switched=False;self.retired=[];self.newweb=None;self.newworker=None;self.media=None
   if resume:
    self.record=self.canon['staged103Releases'][RID]
-   require(self.record['phase'] in ['BACKED_UP','CANDIDATE_READY','ACCEPTED'],'BOUNDED_PRE_SWITCH_RESUME_ONLY')
+   require(self.record['phase'] in ['BACKED_UP','CANDIDATE_READY','ACCEPTED','SWITCHED','OLD_UI_RETIRED','MEDIA_READY','WEB_ACTIVE_WORKER_HANDOFF_REVIEW'],'BOUNDED_ORIGINAL_RELEASE_RESUME_ONLY')
    require(all(op['phase']=='ACKNOWLEDGED'for op in self.record['operations'].values()),'UNKNOWN_OPERATION_RECONCILE_REQUIRED')
    self.initial=(tx.folder/'canonical-before.json').read_bytes()
-   self.nginx=tx.run(['nginx','-T']).decode();require(sha(self.nginx.encode())==retirement.GATEWAY,'PRESWITCH_GATEWAY_CHANGED')
-   self.parsed=compat.Dump(self.nginx);self.before={p:pathlib.Path(p).read_bytes()for p in self.parsed.files};self.real={p:str(pathlib.Path(p).resolve())for p in self.before}
+   self.nginx=(ROOT/'gateway-stage/nginx.before.txt').read_text()if(ROOT/'gateway-stage/nginx.before.txt').exists()else tx.run(['nginx','-T']).decode()
+   require(sha(self.nginx.encode())==retirement.GATEWAY,'ORIGINAL_GATEWAY_CHANGED')
+   self.parsed=compat.Dump(self.nginx)
+   self.before={p:(ROOT/'gateway-stage/before'/p.lstrip('/')).read_bytes()if(ROOT/'gateway-stage/before'/p.lstrip('/')).exists()else pathlib.Path(p).read_bytes()for p in self.parsed.files}
+   self.real={p:str(pathlib.Path(p).resolve())for p in self.before}
    self.config=json.loads((tx.folder/'configuration-before.json').read_bytes());require(self.configuration()==self.config,'RESUME_CONFIG_CHANGED')
    self.cookie=(tx.folder/'cookie.private').read_text();self.oldprojects=self.request(public_identity(self.old),'/api/projects')['json']
    private=json.loads(next(tx.folder.glob('task-snapshot-*.json')).read_bytes());public=json.loads((tx.folder/'task-baseline.json').read_bytes());self.pre=tasks.Snapshot(public=public,private=private)
-   for row in self.original_rows:tx.pin(public_identity(row))
+   for row in self.original_rows:
+    if row['Id']not in self.record['retired']:tx.pin(public_identity(row))
 
  def persist(self):
   require(sha(CANON.read_bytes())==self.disk,'CANONICAL_CAS_CHANGED')
@@ -94,9 +98,9 @@ class Release:
   return self.sql("SELECT json_build_object('models',encode(sha256(convert_to(row_to_json(t)::text,'UTF8')),'hex'),'modelVersion',t.active_version) FROM app_model_config_state t;SELECT json_build_object('billing',encode(sha256(convert_to(row_to_json(t)::text,'UTF8')),'hex'),'billingVersion',t.version) FROM (SELECT * FROM app_billing_config_versions ORDER BY version DESC LIMIT 1)t;")
 
  def request(self,identity,path,body=None,auth=True,expected=200):
-  js="""const s=JSON.parse(process.argv[1]);const r=await fetch('http://127.0.0.1:3000'+s.path,{method:s.body===null?'GET':'POST',headers:{...(s.auth?{cookie:s.cookie}:{}),'content-type':'application/json'},...(s.body===null?{}:{body:JSON.stringify(s.body)}),signal:AbortSignal.timeout(20000)});const b=await r.text();console.log(JSON.stringify({status:r.status,body:b}));"""
+  js="""let raw='';for await(const chunk of process.stdin)raw+=chunk;const s=JSON.parse(raw);const r=await fetch('http://127.0.0.1:3000'+s.path,{method:s.body===null?'GET':'POST',headers:{...(s.auth?{cookie:s.cookie}:{}),'content-type':'application/json'},...(s.body===null?{}:{body:JSON.stringify(s.body)}),signal:AbortSignal.timeout(20000)});const b=await r.text();console.log(JSON.stringify({status:r.status,body:b}));"""
   spec={'path':path,'body':body,'auth':auth,'cookie':self.cookie if auth else ''}
-  raw=self.tx.run(['docker','exec','-e','NODE_OPTIONS=',identity['id'],'node','--input-type=module','-e',js,json.dumps(spec)],timeout=30)
+  raw=self.tx.run(['docker','exec','-i','-e','NODE_OPTIONS=',identity['id'],'node','--input-type=module','-e',js],stdin=json.dumps(spec).encode(),timeout=30)
   r=json.loads(raw);require(r['status']==expected,'HTTP_'+str(r['status'])+'_'+path)
   try:r['json']=json.loads(r['body'])
   except ValueError:pass
@@ -147,6 +151,7 @@ class Release:
    'worker':{'name':'naumi-103-worker-resolution-20261020','stateDir':str(STATE/'worker')},
    'mediaWorker':{'name':'naumi-video-media-'+COMMIT[:12],'image':IMAGE,'memoryMiB':3072,'cpu':1.5}}
   self.media=video.MediaLifecycle(self.tx,self.plan)
+  controls._atomic_private(ROOT/'PLAN.private.json',self.plan)
   self.op('media-create-not-start',lambda _:self.media.prepare(start=False))
   self.newweb=self.op('web-create',lambda _:self.tx.clone_web(public_identity(self.old),name=self.plan['webs'][0]['name'],port=PORT,image=IMAGE,commit=COMMIT,memory_mib=1536,cpu=1.5,release_secret=self.plan['releaseSecret'],state_dir=str(STATE/'web'),build_version=VERSION,media_binding=self.media.prepared_binding(),runtime_recovery=RID))
   self.newweb=self.op('web-start',lambda _:self.tx.start_candidate(self.newweb,dict(webPeakMiB=1536,workerPeakMiB=128,hostReserveMiB=1024),available()))
@@ -165,8 +170,10 @@ class Release:
   self.request(self.newweb,'/api/projects',auth=False,expected=401)
   self.request(self.newweb,'/api/internal/release/status',auth=False,expected=404)
   projects=self.request(self.newweb,'/api/projects')['json'];require(projects==self.oldprojects,'EXISTING_PROJECT_LIST_CHANGED')
-  self.tx.save('candidate-acceptance.json',{'checks':checks,'version':version,'sessionPreserved':True,'projectsIdentical':True,'supplierCalls':0})
-  self.phase('ACCEPTED')
+  label='public-acceptance.json'if self.switched else'candidate-acceptance.json'
+  if(self.tx.folder/label).exists():label='acceptance-'+str(self.canon['revision'])+'.json'
+  self.tx.save(label,{'checks':checks,'version':version,'sessionPreserved':True,'projectsIdentical':True,'supplierCalls':0})
+  if not self.switched:self.phase('ACCEPTED')
 
  def assets_gateway(self):
   oldroot=pathlib.Path(gateway.DISK_STATIC_ROOT);self.static=ROOT/'static';self.static.mkdir(mode=0o755)
@@ -227,15 +234,20 @@ class Release:
   # No new database or lease claims exist in these five non-worker UI processes.
   # Historical volatile state is not relabelled as an ordinary drain receipt.
   for old in self.ui:
-   retirement.no_references(self.tx,old)
+   re_retire=old['Id']in self.record['retired']
+   if re_retire and not self.tx.inspect(old['Id'])['State']['Running']:
+    self.retired.append(old);continue
+   retirement.no_references(self.tx,old,expected_gateway_sha=sha(self.afterdump.encode()))
    self.wait(lambda:retirement.serving_connections(self.tx.inspect(old['Id']))==0 and retirement.active_db(self.tx,old,self.db)==0,'OLD_UI_CONNECTIONS',90)
-   self.tx.save('old-ui-observation-'+old['Id'][:12]+'.json',{'identity':public_identity(old),'connections':0,'activeDb':0,'ordinaryDrainProven':False,'historicalVolatileStateAccepted':True,'at':now()})
+   self.tx.save('old-ui-observation-'+old['Id'][:12]+('-recovery'if re_retire else'')+'.json',{'identity':public_identity(old),'connections':0,'activeDb':0,'ordinaryDrainProven':False,'historicalVolatileStateAccepted':True,'at':now()})
    def stop(op,old=old):
     self.tx.run(['docker','update','--restart=no',old['Id']]);self.tx.run(['docker','kill','--signal=SIGTERM',old['Id']])
     row=self.wait(lambda:(lambda r:r if not r['State']['Running']else None)(self.tx.inspect(old['Id'])),'UI_GRACEFUL_EXIT',60)
     require(not row['State'].get('OOMKilled') and row['State']['ExitCode'] in (0,143),'UI_EXIT_NOT_GRACEFUL')
     return {'identity':public_identity(row),'exitCode':row['State']['ExitCode'],'forcedKill':False}
-   self.op('retire-ui-'+old['Id'][:12],stop);self.retired.append(old);self.record['retired'].append(old['Id']);self.persist()
+   self.op(('retire-ui-recovery-'if re_retire else'retire-ui-')+old['Id'][:12],stop);self.retired.append(old)
+   if not re_retire:self.record['retired'].append(old['Id'])
+   self.persist()
   self.phase('OLD_UI_RETIRED',availableMiB=available())
 
  def media_gate(self):
@@ -268,7 +280,11 @@ class Release:
   self.switched=True;self.phase('SWITCHED')
 
  def finish(self):
-  self.retire_ui();self.media_gate()
+  self.retire_ui()
+  if not self.media.owned()['State']['Running']:self.media_gate()
+  else:
+   gate=remaining_peak_gate(available(),self.resident_usages());require(gate['ok'],'FULL_REMAINING_PEAK_GATE');self.tx.save('recovery-capacity.json',gate)
+   self.media.verify_app(self.tx.inspect(self.newweb['id']));self.media.mode('resume')
   def final_gateway(_):
    folder=self.tx.folder;self.tx.folder=ROOT/'final-gateway-transaction';self.tx.folder.mkdir(mode=0o700)
    try:return controls.switch_gateway_bundle(self.tx,self.final_forward,{p:self.after.get(p,self.before[p])for p in self.before},self.full_after,expected_dump_sha=sha(self.afterdump.encode()),logical_to_real=self.real)
@@ -302,18 +318,44 @@ class Release:
   if self.switched:
    r=self.inverse;afterfiles={p['path']:self.before[p['path']]for p in r['patches']}
    b={p:self.after.get(p,self.before[p])for p in self.before}
-   controls.switch_gateway_bundle(self.tx,r,b,afterfiles,expected_dump_sha=sha(self.afterdump.encode()),logical_to_real=self.real)
+   folder=self.tx.folder;self.tx.folder=ROOT/('rollback-transaction-'+str(uuid.uuid4()));self.tx.folder.mkdir(mode=0o700)
+   try:controls.switch_gateway_bundle(self.tx,r,b,afterfiles,expected_dump_sha=sha(self.afterdump.encode()),logical_to_real=self.real)
+   finally:self.tx.folder=folder
   if self.newweb:controls.control_app(self.tx,self.newweb,'drain',str(uuid.uuid4()))
   if self.media and self.media.owned()['State']['Running']:self.media.mode('drain')
   self.phase('ROLLED_BACK_ENTRY',databaseRestored=False,tasksReplayed=False)
 
+ def restore_switched(self):
+  require(self.record['operations']['switch-gateway']['phase']=='ACKNOWLEDGED','SWITCH_RECEIPT_REQUIRED')
+  self.newweb=self.record['operations']['web-start']['receipt'];self.newworker=self.record['operations']['worker-start-paused']['receipt']
+  self.tx.pin(self.newweb);self.tx.pin(self.newworker)
+  if(ROOT/'PLAN.private.json').exists():self.plan=json.loads((ROOT/'PLAN.private.json').read_bytes())
+  else:
+   self.plan={'target':TARGET,'releaseId':RID,'commit':COMMIT,'buildVersion':VERSION,'releaseSecret':environment(self.tx.inspect(self.newweb['id']))['RELEASE_CONTROL_SECRET'],
+    'authorization':{'mode':'latest-103-20261020','target':TARGET,'scope':'latest-unified-release','goalThread':'da1fb6c5-ffa9-4da4-97eb-d71dc858b418','date':'2026-10-20','userAcknowledgement':'上线','restoreDatabase':False,'replayAcceptedTasks':False},
+    'webs':[{'variant':'main','name':self.newweb['name'],'image':IMAGE,'source':public_identity(self.old),'stateDir':str(STATE/'web')}],
+    'worker':{'name':self.newworker['name'],'stateDir':str(STATE/'worker')},'mediaWorker':{'name':'naumi-video-media-'+COMMIT[:12],'image':IMAGE,'memoryMiB':3072,'cpu':1.5}}
+   controls._atomic_private(ROOT/'PLAN.private.json',self.plan)
+  self.media=video.MediaLifecycle(self.tx,self.plan)
+  def bundle(name):
+   folder=ROOT/name;r=json.loads((folder/'report.json').read_bytes());after={p['path']:(folder/p['after']).read_bytes()for p in r['patches']};return r,after,(folder/'nginx.after.txt').read_text()
+  self.forward,self.after,self.afterdump=bundle('gateway-stage');self.inverse=bundle('gateway-stage-inverse')[0]
+  self.full_forward,self.full_after,self.full_dump=bundle('gateway-forward');self.full_inverse=bundle('gateway-inverse')[0]
+  self.final_forward=bundle('gateway-stage-complete')[0]
+  actual=sha(self.tx.run(['nginx','-T']))
+  if actual==sha(self.full_dump.encode()):self.after,self.afterdump,self.inverse=self.full_after,self.full_dump,self.full_inverse
+  else:require(actual==sha(self.afterdump.encode()),'SWITCHED_GATEWAY_CHANGED')
+  self.switched=True
+
 def main():
  with HostTransaction(TARGET,MACHINE,ROOT/'transaction')as tx:
-  resume='--resume-pre-switch' in sys.argv
+  switched='--resume-switched' in sys.argv;resume='--resume-pre-switch' in sys.argv or switched
   release=Release(tx,resume=resume)
   try:
-   if not resume:release.prepare()
-   release.candidate();release.acceptance();release.assets_gateway();release.switch();release.finish()
+   if switched:release.restore_switched();release.finish()
+   else:
+    if not resume:release.prepare()
+    release.candidate();release.acceptance();release.assets_gateway();release.switch();release.finish()
   except BaseException as ex:
    release.record['errorType']=type(ex).__name__;release.record['error']=str(ex) if isinstance(ex,Hold)else 'INSPECT_PRIVATE_FAILURE'
    release.persist()
