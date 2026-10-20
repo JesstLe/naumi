@@ -13,7 +13,7 @@ const text={id:'text-dock-fixture',projectKey:'tree:placement-root',title:'分�
 const definition={sources:{},limits:{images:2},supportsFirstFrame:true,modes:['text','single_image'],durationResolutionMap:[{durations:[4,8],resolutions:['720p','1080p']}],aspectRatios:['16:9','9:16','1:1'],audio:'optional',defaultDurationSeconds:4,defaultResolution:'720p',defaultAspectRatio:'16:9'};
 const videoModel={id:'video-a',providerId:'managed-video',modelId:'video-a',label:'视频模型 A',definition};
 const state={videoWrites:[],generations:[],videoTasks:[],submissions:[],positions:[],history:[],jobs:{},paidCalls:0,apiErrors:[],failNextPosition:false};
-const app=cp.spawn(process.execPath,['node_modules/next/dist/bin/next','dev','-p',String(nextPort)],{env:{...process.env,DATABASE_URL:'',NAUMI_MULTI_USER:'0',SETTINGS_SECRET:crypto.randomUUID(),VIDEO_WORKER_SECRET:crypto.randomUUID(),NAUMI_VIDEO_WORKER:'0',OPENAI_API_KEY:'fixture-not-a-key',OPENAI_BASE_URL:'http://127.0.0.1:1/v1',NEXT_PUBLIC_SUPABASE_URL:'',NEXT_PUBLIC_SUPABASE_ANON_KEY:'',NEXT_TELEMETRY_DISABLED:'1',NEXT_DIST_DIR:'.next-canvas-unified-fixture'},windowsHide:true,stdio:['ignore','pipe','pipe']});
+const app=cp.spawn(process.execPath,['node_modules/next/dist/bin/next','dev','-p',String(nextPort)],{env:{...process.env,DATABASE_URL:'',NAUMI_MULTI_USER:'0',SETTINGS_SECRET:crypto.randomUUID(),VIDEO_WORKER_SECRET:crypto.randomUUID(),NAUMI_VIDEO_WORKER:'0',OPENAI_API_KEY:'fixture-not-a-key',OPENAI_BASE_URL:'http://127.0.0.1:1/v1',NEXT_PUBLIC_SUPABASE_URL:'',NEXT_PUBLIC_SUPABASE_ANON_KEY:'',NEXT_TELEMETRY_DISABLED:'1',NEXT_DIST_DIR:process.env.NEXT_DIST_DIR||'.next-canvas-unified-fixture'},windowsHide:true,stdio:['ignore','pipe','pipe']});
 app.stdout.on('data',b=>process.stdout.write(b));app.stderr.on('data',b=>process.stderr.write(b));
 const json=(res,v,status=200)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(v))};
 const server=http.createServer(async(req,res)=>{
@@ -22,6 +22,9 @@ const server=http.createServer(async(req,res)=>{
  let raw='';if(req.method==='POST')for await(const b of req)raw+=b;
  if(req.method==='PATCH')for await(const b of req)raw+=b;const body=raw.startsWith('{')?JSON.parse(raw):{};
  if(p==='/__fixture/state')return json(res,{...state,artworks:arts,videos});
+ if(process.env.CANVAS_REVIEW_FIXTURE==='1'&&p==='/api/download'&&u.searchParams.get('u')?.includes('suppl-src.png')){
+  res.writeHead(200,{'content-type':'image/png'});return res.end(fs.readFileSync('public/demos/suite-demo/suppl-src.png'));
+ }
  if(p==='/media/fixture-result.mp4'||p==='/api/download'){
   const file=require('node:path').resolve('output/canvas-video-dock-fixture.mp4');
   if(!fs.existsSync(file))return json(res,{error:'fixture media absent'},404);
@@ -33,8 +36,8 @@ const server=http.createServer(async(req,res)=>{
  if(p==='/__fixture/bump'){videos[0].revision++;if(u.searchParams.get('config'))videos[0].config.prompt='external edit';return json(res,{ok:true});}
  if(p==='/__fixture/reset'){arts.splice(2);videos.splice(0,videos.length,...structuredClone(originalVideos));state.videoTasks=[];state.locked=false;state.videoWrites.length=0;state.generations.length=0;state.submissions.length=0;state.positions.length=0;state.history.length=0;state.jobs={};state.apiErrors.length=0;return json(res,{ok:true})}
  if(p.startsWith('/_next/static/chunks/')){
-  const file=require('node:path').resolve('.next-canvas-unified-fixture',p.replace('/_next/',''));
-  if(file.startsWith(require('node:path').resolve('.next-canvas-unified-fixture')+require('node:path').sep)&&fs.existsSync(file)){res.writeHead(200,{'content-type':'application/javascript'});return res.end(fs.readFileSync(file))}
+   const dist=process.env.NEXT_DIST_DIR||'.next-canvas-unified-fixture';const file=require('node:path').resolve(dist,p.replace('/_next/',''));
+   if(file.startsWith(require('node:path').resolve(dist)+require('node:path').sep)&&fs.existsSync(file)){res.writeHead(200,{'content-type':'application/javascript'});return res.end(fs.readFileSync(file))}
  }
  if(p==='/__fixture/complete'){
   const index=Number(u.searchParams.get('index')||state.submissions.length)-1,job=state.submissions[index];if(!job)return json(res,{error:'missing job'},404);
@@ -77,7 +80,9 @@ const server=http.createServer(async(req,res)=>{
    return json(res,state.jobs[u.searchParams.get('operationId')]||{status:'pending',artifacts:[]});
   }
   if(p==='/api/generate-image'&&req.method!=='POST'){
-   const job=state.jobs[(u.searchParams.get('job')||'').replace(/^imagegen-/,'')];return json(res,{status:job?.status==='succeeded'?'done':'pending',images:job?.artifacts.map(a=>({id:a.artworkId,url:a.url,width:a.width,height:a.height}))||[],user});
+   const job=state.jobs[(u.searchParams.get('job')||'').replace(/^imagegen-/,'')];
+   if(process.env.CANVAS_REVIEW_FIXTURE==='1'&&job&&job.status!=='succeeded'){state.receiptChecks=(state.receiptChecks||0)+1;return json(res,{status:'error',operationStatus:'needs_attention',reviewRequired:true,error:'原任务受理状态待确认，请检查原任务，不会重复生成。',images:[],user});}
+   return json(res,{status:job?.status==='succeeded'?'done':'pending',images:job?.artifacts.map(a=>({id:a.artworkId,url:a.url,width:a.width,height:a.height}))||[],user});
   }
   if(p==='/api/artworks/position'){
    if(state.failNextPosition){state.failNextPosition=false;return json(res,{error:'fixture position save failed'},500)}
