@@ -31,5 +31,5 @@ export async function submitGenerationCore(plan:ImagegenPlan,key:string,owner:st
  form.set("parentId",target?.artworkId||(plan.request.mode==="edit"?source?.id:undefined)||"");form.set("parentIds",JSON.stringify(artworkIds.filter(id=>id!==target?.artworkId)));if(source?.groupId)form.set("projectGroupId",source.groupId);
  const internal=await imagegenInternalRequest(plan,key,owner,form,"generate-image");
  const {POST}=await import("../../app/api/generate-image/route");
- return withImagegenStep(request,intent,()=>POST(internal),plan.ratioContractVersion,plan.requestedParameters);
+ return withImagegenStep(request,intent,()=>POST(internal),plan.ratioContractVersion,plan.requestedParameters,plan.channelContractVersion===1?step.eligibleUpstreamIds:undefined);
 }

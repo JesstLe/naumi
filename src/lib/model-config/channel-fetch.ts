@@ -68,9 +68,10 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
         const ambiguous=!text&&!definite&&(status===408||status===409||status>=500);
         await finishExecutionStage(audit, definite ? "rejected-not-charged" : ambiguous ? "unknown" : "failed-response", status, !text ? { upstreamFailure: lastImageFailure } : undefined); finished = true;
         if(ambiguous){await recordChannelOutcome(pool,target,false,status);throw new ImageOperationPending(operationKey||active.frozen.publicModelId,Error("supplier-response-unconfirmed"));}
-        // An asynchronous rejection after paid acceptance is terminal for this
-        // attempt, not permission to submit the same operation to a second supplier.
-        if (applicationAPIMartImages(active.connection.protocol,active.parameterMap) && !definite) return new Response(raw,{status:response.status,headers:{"content-type":"application/json"}});
+        // A 4xx alone is not proof of non-acceptance: Hub can return a failed
+        // accepted task with 422 too. Only a definite not_charged receipt allows
+        // another paid POST, regardless of this target's adapter/protocol.
+        if (!text && !definite) return new Response(raw,{status:response.status,headers:{"content-type":"application/json"}});
         if (operationKey && definite) await pool.query("DELETE FROM app_model_channel_operations WHERE operation_key=$1 AND upstream_id=$2", [operationKey,target.upstreamId]);
         if (!["INVALID_REQUEST", "MODEL_INCOMPATIBLE", "PROVIDER_BUSY", "CHANNEL_DISABLED", "CONFIG_UNAVAILABLE"].includes(receipt?.error?.code)) await recordChannelOutcome(pool, target, false, status, {retryAfterMs:retryAfterMs(response.headers.get("retry-after"))});
       } catch (error) {
