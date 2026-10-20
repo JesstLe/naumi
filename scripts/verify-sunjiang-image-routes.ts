@@ -27,6 +27,8 @@ async function main() {
       if (String(body.prompt).includes("REJECT_INPUT_FIXTURE")) {
         res.statusCode = 400; return res.end(JSON.stringify({ error: { code: "invalid_image", param: "image", message: "private-fixture-response-never-display" } }));
       }
+      if (String(body.prompt).includes("EMPTY_OUTPUT_FIXTURE")) return res.end(JSON.stringify({data:[]}));
+      if (String(body.prompt).includes("CORRUPT_OUTPUT_FIXTURE")) return res.end(JSON.stringify({data:[{b64_json:Buffer.from("not an image").toString("base64")}]}));
       const image = String(body.prompt).includes("WRONG_FRAME_FIXTURE") ? wrong : native;
       return res.end(JSON.stringify({ data: [{ b64_json: image.toString("base64") }] }));
     }
@@ -71,8 +73,10 @@ async function main() {
       { ratio: "2:3", edit: false, prompt: "NATIVE_GRID_FIXTURE", expected: "succeeded" },
       { ratio: "2:3", edit: true, prompt: "NATIVE_GRID_FIXTURE", expected: "succeeded" },
       { ratio: "2:3", edit: true, prompt: "NATIVE_GRID_UPSCALE_FIXTURE", expected: "succeeded", resolution: "4K" },
-      { ratio: "53:79", edit: true, prompt: "WRONG_FRAME_FIXTURE", expected: "failed" },
+      { ratio: "53:79", edit: true, prompt: "WRONG_FRAME_FIXTURE", expected: "succeeded" },
       { ratio: "3:4", edit: true, prompt: "REJECT_INPUT_FIXTURE", expected: "failed" },
+      { ratio: "3:4", edit: false, prompt: "EMPTY_OUTPUT_FIXTURE", expected: "failed" },
+      { ratio: "3:4", edit: false, prompt: "CORRUPT_OUTPUT_FIXTURE", expected: "failed" },
     ]) {
       const request = { version: 1, operationId: randomUUID(), entry: "canvas", mode: test.edit ? "edit" : "generate", modelId: "image-a", prompt: test.prompt, inputs: test.edit ? [{ artworkId: id, role: "edit-target" }] : [], parameters: { quality: "medium", resolution: test.resolution || "1K", ratio: test.ratio }, variants: 1 };
       const plan = await json("/api/imagegen/plan", request), before = calls;
@@ -83,14 +87,15 @@ async function main() {
       assert.equal(result.status, test.expected, JSON.stringify(result));
       assert.equal(calls, before + 1);
       assert.equal(wires[before].size, test.ratio); assert.equal(wires[before].resolution, "1k"); assert.equal(wires[before].quality, undefined);
-      if (test.prompt === "REJECT_INPUT_FIXTURE") {
+      if (test.expected === "failed") {
         assert.equal(result.artifacts.length, 0); assert.equal(result.chargedCredits, 0);
-        assert.match(result.error.message, /参考图片未被生成服务接受/);
+        if(test.prompt === "REJECT_INPUT_FIXTURE")assert.match(result.error.message, /参考图片未被生成服务接受/);
         const receipts = (await db.getPool().query("SELECT evidence FROM app_supplier_calls WHERE operation_id IN(SELECT value->>'jobId' FROM app_image_jobs p,jsonb_each(p.snapshot->'children') WHERE p.id=$1)", [accepted.jobId])).rows;
-        assert.equal(receipts.length, 1); assert.equal(receipts[0].evidence.upstreamFailure.code, "IMAGE_INPUT_REJECTED");
+        assert.equal(receipts.length, 1); if(test.prompt === "REJECT_INPUT_FIXTURE")assert.equal(receipts[0].evidence.upstreamFailure.code, "IMAGE_INPUT_REJECTED");
         assert.ok(!JSON.stringify(receipts).includes("private-fixture-response"));
       } else {
         assert.equal(result.artifacts.length, 1); assert.ok(result.chargedCredits > 0);
+        if(test.prompt==="WRONG_FRAME_FIXTURE"){assert.ok(result.warnings?.some((warning:string)=>warning.includes("928×1152")));assert.equal(result.error,undefined);}
         const expected = test.prompt === "WRONG_FRAME_FIXTURE" ? wrong : native;
         const { readManagedObject } = await import("../src/lib/storage");
         const saved = (await readManagedObject(result.artifacts[0].url, 12 * 1024 * 1024)).bytes;
@@ -98,10 +103,26 @@ async function main() {
           const meta = await sharp(saved).metadata(); assert.equal(meta.height, 4096);
           assert.ok(Math.abs(meta.width! / meta.height! - 848 / 1264) < 1 / 4096, "existing upscale preserves the native frame");
         } else assert.equal(createHash("sha256").update(saved).digest("hex"), createHash("sha256").update(expected).digest("hex"));
+        if(test.prompt==="WRONG_FRAME_FIXTURE"){
+          const raw=(await db.getPool().query("SELECT snapshot,payload FROM app_image_jobs WHERE id=$1",[accepted.jobId])).rows[0];
+          const oldError="生成结果为 29:36（928×1152），与所选 53:79 不一致；原图已保留，实际生成积分已结算，任务未自动重试";
+          const historical=structuredClone(raw.snapshot);historical.status="error";historical.result={...historical.result,status:"failed",error:{code:"EXECUTION_FAILED",message:oldError},warnings:undefined};
+          const priorCalls=calls;
+          for(const [format,expectedStatus] of [["png","succeeded"],["webp","failed"]]){
+            const legacyId=randomUUID(),legacyParent=`imagegen-${legacyId}`,payload=structuredClone(raw.payload),snap=structuredClone(historical);
+            payload.plan.request.operationId=legacyId;payload.plan.request.output.format=format;snap.result.operationId=legacyId;snap.result.jobId=legacyParent;
+            await db.getPool().query("INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,cost,metered) VALUES($1,$2,'imagegen',$3::jsonb,$4::jsonb,0,false)",[legacyParent,owner,JSON.stringify(snap),JSON.stringify(payload)]);
+            const before=(await db.getPool().query("SELECT snapshot FROM app_image_jobs WHERE id=$1",[legacyParent])).rows[0].snapshot;
+            const presented=await json("/api/imagegen?operationId="+legacyId);
+            assert.equal(presented.status,expectedStatus);assert.equal(presented.chargedCredits,snap.result.chargedCredits);assert.deepEqual(presented.artifacts,snap.result.artifacts);
+            const after=(await db.getPool().query("SELECT snapshot FROM app_image_jobs WHERE id=$1",[legacyParent])).rows[0].snapshot;assert.deepEqual(after,before,"legacy presentation must not rewrite task state");
+          }
+          assert.equal(calls,priorCalls,"legacy receipt reads must not replay supplier");
+        }
       }
       await json("/api/imagegen", body); assert.equal(calls, before + 1, "duplicate submission must not replay paid generation");
     }
-    console.log("SUNJIANG_REAL_ROUTES=PASS PARENT_CHILD_CASES=5 GRID_SUCCESS=3 GROSS_MISMATCH_RETAINED=1 HTTP400_DIAGNOSIS=RETAINED REJECT_CHARGED=0 ADMIN_4K_TO_1K=UNCHANGED RAW_1K_PIXEL_HASH=UNCHANGED UPSCALE_FRAME=PRESERVED DUPLICATE_POSTS=0 LOOPBACK_SUPPLIER_POSTS=5 REAL_SUPPLIER_CALLS=0");
+    console.log("SUNJIANG_REAL_ROUTES=PASS PARENT_CHILD_CASES=7 VALID_OUTPUTS=DELIVERED RATIO_DIFFERENCE=WARNING HTTP400_EMPTY_CORRUPT=FAILED REJECT_CHARGED=0 ADMIN_4K_TO_1K=UNCHANGED RAW_1K_PIXEL_HASH=UNCHANGED HISTORICAL_RECEIPTS=READ_ONLY DUPLICATE_POSTS=0 LOOPBACK_SUPPLIER_POSTS=7 REAL_SUPPLIER_CALLS=0");
   } finally { app.closeAllConnections(); await new Promise<void>(r => app.close(() => r())); await db.getPool().end(); await f.cleanup(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -92,7 +92,7 @@ if (baseline) {
   const source = readFileSync("src/app/api/generate-image/route.ts", "utf8");
   assert.ok(source.includes("imageRatioValidationPolicy"));
   assert.ok(source.includes("!(p.targetWidth > 0 && p.targetHeight > 0)"));
-  console.log("MODIFIED=PASS NATIVE_GRID=BOUNDED EXACT_GPT=UNCHANGED GROSS_MISMATCH=REJECTED FAILURE_CATEGORIES=7 AUDIT=SANITIZED STATUS=PRESERVED ATTEMPTS=UNCHANGED");
+  console.log("MODIFIED=PASS RATIO_DIAGNOSTIC=RETAINED TASK_DELIVERY=ADVISORY FAILURE_CATEGORIES=7 AUDIT=SANITIZED STATUS=PRESERVED ATTEMPTS=UNCHANGED");
 }
 assert.deepEqual(observed, { width: 848, height: 1264, ratio: "53:79" });
 console.log("PIXELS_AND_DIMENSIONS=UNCHANGED PRODUCTION_WRITES=0 REAL_SUPPLIER_CALLS=0");

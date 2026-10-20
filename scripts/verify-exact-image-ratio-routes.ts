@@ -257,7 +257,7 @@ async function main() {
       }
       assert.equal(
         result.status,
-        wrong ? "failed" : "succeeded",
+        "succeeded",
         JSON.stringify(result),
       );
       assert.equal(calls, before + 1);
@@ -270,11 +270,12 @@ async function main() {
         assert.equal(meta.width! * h, meta.height! * w);
       } else {
         assert.deepEqual([meta.width, meta.height], [1024, 1536]);
-        assert.match(result.error.message, /3:4/);
+        assert.ok(result.warnings?.some((warning:string)=>warning.includes("3:4")));
+        assert.equal(result.error,undefined);
         assert.ok(result.chargedCredits > 0);
       }
       const compat = await json("/api/generate-image?job=" + accepted.jobId);
-      assert.equal(compat.status, wrong ? "error" : "done");
+      assert.equal(compat.status, "done");
       if (ratio === "3:4")
         await json("/api/imagegen", { ...request, confirmation });
       assert.equal(calls, before + 1, "no paid replay on duplicate");
@@ -304,13 +305,14 @@ async function main() {
         )
     ).rows[0];
     assert.equal(child.payload.p.ratioContractVersion, 1);
-    assert.match(child.snapshot.imagegenOutputError, /3:4/);
+    assert.match(child.snapshot.imagegenOutputWarning, /3:4/);
+    assert.equal(child.snapshot.imagegenOutputError,undefined);
     const childReceipt = await json("/api/generate-image?job=" + child.id);
-    assert.equal(childReceipt.status, "error");
+    assert.equal(childReceipt.status, "done");
     assert.ok(childReceipt.images.length);
     assert.ok(
       childReceipt.images.every((image: any) => !("execution" in image)),
-      "error receipt must not expose internal execution metadata",
+        "receipt must not expose internal execution metadata",
     );
     const recoveryId = "job-" + randomUUID(),
       checkpoint = {
@@ -340,11 +342,11 @@ async function main() {
     let receipt: any;
     for (let i = 0; i < 200; i++) {
       receipt = await json("/api/generate-image?job=" + recoveryId);
-      if (receipt.status === "error") break;
+      if (receipt.status === "done") break;
       await new Promise((r) => setTimeout(r, 50));
     }
-    assert.equal(receipt.status, "error");
-    assert.match(receipt.error, /3:4/);
+    assert.equal(receipt.status, "done");
+    assert.ok(receipt.warnings?.some((warning:string)=>warning.includes("3:4")));
     assert.ok(receipt.images.length);
     assert.equal(calls, beforeRecovery);
     const p = await one("3:4", true);
@@ -458,7 +460,7 @@ async function main() {
       ),
     );
     console.log(
-      `ROUTES=PASS MATRIX=14 RATIO_MISMATCH=DETECTED_AND_RETAINED WORKER_REPLAY=0 DIRECT_RATIOGEN=1152x1536 LOCAL_SUPPLIER_CALLS=${calls} REAL_SUPPLIER_CALLS=0 EXIT=0`,
+      `ROUTES=PASS MATRIX=14 RATIO_MISMATCH=DELIVERED_WITH_WARNING WORKER_REPLAY=0 DIRECT_RATIOGEN=1152x1536 LOCAL_SUPPLIER_CALLS=${calls} REAL_SUPPLIER_CALLS=0 EXIT=0`,
     );
   } finally {
     await new Promise<void>((r) => app.close(() => r()));
