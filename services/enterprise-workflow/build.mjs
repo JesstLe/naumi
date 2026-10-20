@@ -64,6 +64,8 @@ await copyFile(new URL('../../design/enterprise-demo/preview.html',import.meta.u
 await copyFile(new URL('./package.json',import.meta.url),new URL('runtime-package.json',directory));await copyFile(new URL('./package-lock.json',import.meta.url),new URL('runtime-package-lock.json',directory));
 const files={};for(const file of ['service.mjs','runtime.mjs','notification-worker.mjs','product.html','runtime-package.json','runtime-package-lock.json',...migrationNames])files[file]=hash(await readFile(new URL(file,directory)));
 let gitRevision=null,sourceDirty=true;const project=fileURLToPath(new URL('../../',import.meta.url));try{const top=execFileSync('git',['rev-parse','--show-toplevel'],{cwd:project,encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();if(resolve(top).toLowerCase()===resolve(project).toLowerCase()){gitRevision=execFileSync('git',['rev-parse','HEAD'],{cwd:project,encoding:'utf8'}).trim();sourceDirty=!!execFileSync('git',['status','--porcelain'],{cwd:project,encoding:'utf8'}).trim();}}catch{}
-const data={format:1,schemaVersion:37,gitRevision,sourceDirty,productSha256:files['product.html'],files,migrations:migrationNames.map(file=>({version:Number(file.slice(0,3)),file,sha256:files[file]}))};
+const schemaVersion=migrationNames.length;
+if(migrationNames.some((f,i)=>Number(f.slice(0,3))!==i+1))throw Error('MIGRATION_SEQUENCE_INVALID');
+const data={format:1,schemaVersion,gitRevision,sourceDirty,productSha256:files['product.html'],files,migrations:migrationNames.map(file=>({version:Number(file.slice(0,3)),file,sha256:files[file]}))};
 await writeFile(new URL('manifest.json',directory),JSON.stringify({...data,releaseId:hash(canonical(data))},null,2)+'\n');
-console.log('RUNTIME_BUILD_PASS: files='+Object.keys(files).length+' schema=37 source_dirty='+Number(sourceDirty)+' release_id='+hash(canonical(data)));
+console.log('RUNTIME_BUILD_PASS: files='+Object.keys(files).length+' schema='+schemaVersion+' source_dirty='+Number(sourceDirty)+' release_id='+hash(canonical(data)));

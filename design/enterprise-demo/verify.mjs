@@ -10,8 +10,11 @@ new Script(inline);new Script(await readFile(new URL('browser-check.js',root),'u
 new Script(await readFile(new URL('schedule-browser-check.js',root),'utf8'));
 new Script(await readFile(new URL('workbook-browser-check.js',root),'utf8'));
 assert(!html.includes('/*INLINE_'));
-assert(!/<script[^>]+src=|<link[^>]+href=|@import|https?:\/\/(?!www\.w3\.org\/2000\/svg)/i.test(html));
-assert(!/XMLHttpRequest|WebSocket/.test(inline));
+const appHtml=html.replace(/\/\* EXCEL_PREVIEW_WORKER_BEGIN \*\/[\s\S]*?\/\* EXCEL_PREVIEW_WORKER_END \*\//g,'');
+assert(!/<script[^>]+src=|<link[^>]+href=|@import|https?:\/\/(?!www\.w3\.org\/2000\/svg)/i.test(appHtml));
+assert(!/XMLHttpRequest|WebSocket/.test(appHtml));
+assert(!/<script[^>]+src=|<link[^>]+href=/i.test(html));
+if(html.includes('EXCEL_PREVIEW_WORKER_SOURCE')){const worker=await readFile(new URL('excel-preview-worker.js',root),'utf8');assert(!/\bfetch\s*\(|XMLHttpRequest|WebSocket|importScripts/.test(worker));}
 assert(inline.includes('/api/enterprise/integration?'));
 assert(!inline.includes('/api/admin/')&&!inline.includes('/admin/enterprise-workbench'));
 for(const fn of ['newRequirement','reqDetail','planReq','taskDetail','routeTest','performancePage','assetDetail'])assert(inline.includes(`function ${fn}(`));
