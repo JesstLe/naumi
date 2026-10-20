@@ -1,6 +1,9 @@
 // Extend the real existing Agent handler/PG lifecycle fixture, without duplicating its runtime.
 const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),assert=require('node:assert/strict');
 const root=process.cwd(),out=path.resolve('output/agent-chat-attachments-20261020');fs.mkdirSync(out,{recursive:true});
+// Production uses private media. Set it before the generated runner imports
+// storage: otherwise browser previews are intentionally not registered.
+process.env.MEDIA_PRIVATE='1';
 let source=fs.readFileSync('scripts/verify-canvas-agent-execution.ts','utf8');
 source=source.replace('f=await createModelFixture','console.log("PG_STAGE=START");f=await createModelFixture').replace('db=await import','console.log("PG_STAGE=MODEL_FIXTURE_READY");db=await import').replace('await db.ensureSchema();','await db.ensureSchema();console.log("PG_STAGE=SCHEMA_READY");').replace('const id=randomUUID(),response=','console.log("PG_STAGE=HANDLER_START");const id=randomUUID(),response=').replace('const output=','console.log("PG_STAGE=HANDLER_DONE");const output=');
 source=source.replace('const calls:any[]=[]','let expectTwo=false; const calls:any[]=[]');
