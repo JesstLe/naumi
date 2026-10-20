@@ -193,7 +193,7 @@ class Controller:
  def drain_proof(self):
   app=c.app_status(self.tx,self.web);domain=self.request(self.web,'/api/video/worker/drain-status')
   ws=self.worker_control(self.worker,'status',str(uuid.uuid4()))['state'];rows,held=self.incidents()
-  return normal.current_drained(app,domain,ws,self.owners(),rows,held,self.incident_digest)
+  return normal.current_drained(app,domain,ws,self.owners(),rows,held,self.incident_digest,self.cfg.get('preservedWorkerTick'))
 
  def run(self):
   if self.cfg.get('resumeReview'):self.resume_review()
@@ -218,7 +218,7 @@ class Controller:
    self.op('database-backup',lambda _:self.tx.backup_database(self.db))
    self.maintenance_and_import()
   if not getattr(self,'candidate_reused',False):
-   self.pre=tasks.collect_task_snapshot(self.tx.run,self.db,self.tx.save,projection='proof',allow_absent_tables=tasks.ADDITIVE_TABLES,statement_timeout_ms=self.cfg.get('snapshotStatementTimeoutMs',5000))
+   self.pre=tasks.collect_task_snapshot(self.tx.run,self.db,self.tx.save,projection='proof',row_limit=self.cfg.get('snapshotRowLimit',5000),allow_absent_tables=tasks.ADDITIVE_TABLES,statement_timeout_ms=self.cfg.get('snapshotStatementTimeoutMs',5000))
    require(self.pre.public.get('tables'),'TASK_BASELINE_MISSING');self.phase('BACKED_UP')
    require(int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024>=3200,'DUAL_SLOT_MEMORY_INSUFFICIENT')
    image=json.loads(self.tx.run(['docker','image','inspect',self.cfg['image']]))[0];require(image['Id']==self.cfg['image'],'FIXED_IMAGE_MISSING')
@@ -232,8 +232,12 @@ class Controller:
   self.tx.save('candidate-server-actions.json',{'old':self.server_actions(self.web),'new':self.server_actions(self.newweb)})
   save(ROOT/'browser-private.json',{'releaseId':RELEASE,'cookie':self.cookie,'candidateOrigin':'http://127.0.0.1:'+str(self.cfg['newPort']),'commit':self.cfg['commit'],'version':self.cfg['version']})
   self.phase('READY');self.wait(lambda:self.marker('browser-before.json'),'BROWSER_BEFORE',600)
-  self.op('old-worker-drain',lambda op:self.worker_control(self.worker,'drain',op));self.worker_paused=True
-  self.wait(lambda:(lambda s:s if s['paused'] and s['activeTicks']==0 and s['unresolvedTicks']==0 else None)(self.worker_control(self.worker,'status',str(uuid.uuid4()))['state']),'OLD_WORKER_DRAIN',120)
+  self.finish_ready()
+
+ def finish_ready(self):
+  if 'old-worker-drain' not in self.succ['operations']:self.op('old-worker-drain',lambda op:self.worker_control(self.worker,'drain',op))
+  self.worker_paused=True
+  self.wait(lambda:(lambda s:s if normal.worker_quiescent(s,self.cfg.get('preservedWorkerTick')) else None)(self.worker_control(self.worker,'status',str(uuid.uuid4()))['state']),'OLD_WORKER_DRAIN',120)
   self.op('new-web-open',lambda op:c.control_app(self.tx,self.newweb,'resume',op))
   self.op('gateway-switch',lambda _:c.switch_gateway_bundle(self.tx,self.forward,self.before,self.after,expected_dump_sha=sha(self.dump.encode()),logical_to_real=self.real));self.switched=True
   self.phase('SWITCHED');save(ROOT/'cutover.json',{'releaseId':RELEASE,'version':self.cfg['version'],'at':now()})
@@ -244,7 +248,7 @@ class Controller:
   self.op('new-worker-resume',lambda op:self.worker_control(self.newworker,'resume',op))
   self.wait(lambda:(lambda s:s if normal.worker_completed(s) else None)(self.worker_control(self.newworker,'status',str(uuid.uuid4()))['state']),'NEW_WORKER_SERVER_RECEIPT',90)
   self.phase('WORKER_ACTIVE')
-  self.post=tasks.collect_task_snapshot(self.tx.run,self.db,self.tx.save,previous=self.pre.private,projection='proof',allow_absent_tables=tasks.ADDITIVE_TABLES,statement_timeout_ms=self.cfg.get('snapshotStatementTimeoutMs',5000))
+  self.post=tasks.collect_task_snapshot(self.tx.run,self.db,self.tx.save,previous=self.pre.private,projection='proof',row_limit=self.pre.private.get('rowLimit',1000),allow_absent_tables=tasks.ADDITIVE_TABLES,statement_timeout_ms=self.cfg.get('snapshotStatementTimeoutMs',5000))
   comparison=tasks.compare_task_snapshots(self.pre,self.post);self.tx.save('task-preservation-comparison.json',comparison)
   require(comparison['preservationVerified'],'TASK_PRESERVATION_NOT_VERIFIED')
   # Repeated current-execution proof, including exact immutable held incident.
@@ -272,7 +276,10 @@ class Controller:
   self.succ=self.state['normalBlueGreenReleases'][RELEASE]
   self.candidate_reused=self.succ['phase']=='CANDIDATE'
   expected={'database-backup','image-import'}|({'web-create','web-start','worker-create','worker-start'} if self.candidate_reused else set())
-  require(self.succ['phase'] in ['BASELINED','CANDIDATE'] and self.succ.get('lastError') in ['ValueError','HOST_COMMAND_FAILED'] and set(self.succ['operations'])==expected,'RESUME_ONLY_PRE_SWITCH_REVIEWED_FAILURE')
+  require(self.succ['phase'] in ['BASELINED','CANDIDATE'] and self.succ.get('lastError') in ['ValueError','HOST_COMMAND_FAILED','POST_IMPORT_DISK_RESERVE_INSUFFICIENT'] and set(self.succ['operations'])==expected,'RESUME_ONLY_PRE_SWITCH_REVIEWED_FAILURE')
+  if self.succ.get('lastError')=='POST_IMPORT_DISK_RESERVE_INSUFFICIENT':
+   import shutil
+   require(self.succ['phase']=='BASELINED' and shutil.disk_usage('/').free>=10*1024**3,'RECONCILED_IMPORT_DISK_RESERVE_INSUFFICIENT')
   for name,op in self.succ['operations'].items():
    require(op['phase']=='ACKNOWLEDGED' and op['operationId']==review['operations'][name],'RESUME_ORIGINAL_OPERATION_REQUIRED')
   require(self.state.get('activeNormalBlueGreenReleaseId')==self.cfg.get('previousNormalReleaseId'),'RESUME_ACTIVE_RELEASE_CHANGED')

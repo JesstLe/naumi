@@ -7,8 +7,8 @@ login and DB, then uses the full inverse config CAS and graceful retirement.
 import argparse,contextlib,copy,json,pathlib,sys,time,uuid
 from types import SimpleNamespace
 from release47_host import HostTransaction,require,public_identity,environment,sha,file_sha,Hold
-from release47_controls import control_app,app_status,switch_gateway_bundle,_replace_config,_atomic_private
-from release47_recovery_supervisor import Adapter,encoded,recovery_binding
+from release47_controls import control_app,app_status,switch_gateway_bundle,_replace_config,_atomic_private,clone_worker,start_worker
+from release47_recovery_supervisor import Adapter,encoded,recovery_binding,static_pin
 import worker_handoff
 
 ROOT=None
@@ -47,7 +47,8 @@ def run(config,apply=False,existing_tx=None):
   for patch in report['patches']:
    after[patch['path']]=(ROOT/'gateway-forward'/patch['before']).read_bytes()
    require(sha(after[patch['path']])==patch['beforeSha256'],'ROLLBACK_CONFIG_HASH_CHANGED')
-  result={'check':'PASS','fixedPriorImage':pm['image'],'currentImage':m['image'],'databaseBackupReadable':True,'inverseGatewayHashesVerified':True,'priorSlotsStopped':True,'historicalIncidentsPreserved':True,'productionCutbackExecuted':False}
+  result={'check':'PASS','fixedPriorImage':pm['image'],'currentImage':m['image'],'databaseBackupReadable':True,'inverseGatewayHashesVerified':True,'priorSlotsStopped':True,'historicalIncidentsPreserved':True,'productionCutbackExecuted':False,
+          'isolatedUnknownScannerRetained':bool(config.get('preservedWorkerTick')),'priorWorkerRecovery':'fresh-same-prior-image-worker' if config.get('preservedWorkerTick') else 'resume-prior-worker'}
   if not apply:
    if existing_tx:tx.save('normal-rollback-check.json',result)
    print('SERVER_ROLLBACK_CHECK='+json.dumps(result),flush=True);return result
@@ -81,9 +82,17 @@ def run(config,apply=False,existing_tx=None):
   available=int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024;require(available>=3200,'ROLLBACK_DUAL_SLOT_MEMORY_INSUFFICIENT')
   tx.run(['systemctl','stop','naumi47-recovery.timer'])
   olda=Adapter(tx,pm)
-  for role in ['web','worker']:
+  for role in (['web'] if config.get('preservedWorkerTick') else ['web','worker']):
    step('start-prior-'+role,lambda _,role=role:(tx.run(['docker','start',pm[role]['id']]).decode()))
    wait(lambda:olda.status(pm[role]),'PRIOR_READY')
+  if config.get('preservedWorkerTick'):
+   # Never resume an unresolved old scanner. A fresh paused Worker uses the
+   # exact prior image and respects the retained needs_attention job fences.
+   prior_web=public_identity(tx.inspect(pm['web']['id']))
+   fresh=step('create-fresh-prior-worker',lambda _:clone_worker(tx,prior_web,name=config['newWorkerName']+'-rollback',memory_mib=128,cpu=.25,state_dir=config['stateDir']+'/rollback-worker'))
+   fresh=step('start-fresh-prior-worker',lambda _:start_worker(tx,fresh,available))
+   pm['worker']={**fresh,'role':'worker','staticSha256':static_pin(tx.inspect(fresh['id'])),'memoryMiB':128,'runningAtEnrollment':True}
+   wait(lambda:olda.status(pm['worker']),'FRESH_PRIOR_WORKER_READY')
   olda.readiness(pm['web']);oldweb=public_identity(tx.inspect(pm['web']['id']));step('prior-web-open',lambda op:control_app(tx,oldweb,'resume',op))
   step('gateway-inverse',lambda _:switch_gateway_bundle(tx,inverse,before,after,expected_dump_sha=report['afterDumpSha256'],logical_to_real={n:str(pathlib.Path(n).resolve()) for n in before}))
   step('prior-worker-resume',lambda op:wc(pm['worker'],'resume',op))
@@ -98,7 +107,12 @@ def run(config,apply=False,existing_tx=None):
    if role=='web':s['webs']['main']['running']=identity
    else:s['worker']['running']=identity
   succ.update(phase='ROLLED_BACK',rollbackOperationId=log['operationId']);s['activeNormalBlueGreenReleaseId']=config.get('previousNormalReleaseId');s['revision']+=1;_atomic_private(CANON,s)
-  _replace_config(pathlib.Path('/etc/systemd/system/naumi47-recovery.service'),(ROOT/'transaction/original-supervisor.service').read_bytes());tx.run(['systemctl','daemon-reload']);tx.run(['systemctl','start','naumi47-recovery.timer'])
+  unit=(ROOT/'transaction/original-supervisor.service').read_text()
+  if config.get('preservedWorkerTick'):
+   pm['operationId']=str(uuid.uuid4());path=ROOT/'rollback-supervisor-manifest.json';_atomic_private(path,pm)
+   s['runtimeRecovery'].update(operationId=pm['operationId'],manifestPath=str(path),manifestSha256=sha(encoded(pm)))
+   unit=unit.replace(prior['manifestPath'],str(path));s['revision']+=1;_atomic_private(CANON,s)
+  _replace_config(pathlib.Path('/etc/systemd/system/naumi47-recovery.service'),unit.encode());tx.run(['systemctl','daemon-reload']);tx.run(['systemctl','start','naumi47-recovery.timer'])
   log.update(phase='ACKNOWLEDGED',databaseRestored=False,tasksReplayed=False);_atomic_private(journal,log);print('SERVER_ROLLBACK=PASS PROGRAM_AND_GATEWAY_ONLY DB_RESTORED=NO TASKS_REPLAYED=NO')
 
 if __name__=='__main__':

@@ -40,7 +40,19 @@ def begin(state, config, archive, incident_digest, at=None):
             'authorization': config['authorization'], 'operations': {}, 'retired': []}
 
 
-def current_drained(app, domain, worker, owners, rows, held, digest):
+def worker_quiescent(worker, preserved_tick=None):
+    if worker.get('paused') is not True or worker.get('activeTicks') != 0 or worker.get('controlFault'):
+        return False
+    if worker.get('unresolvedTicks') == 0:
+        return worker.get('phase') == 'QUIESCENT' and (worker.get('lastTick') or {}).get('phase') not in ['unknown','dispatched']
+    tick=worker.get('lastTick') or {}
+    return bool(preserved_tick and preserved_tick.get('authorization')=='保留并隔离旧任务，继续切换'
+        and preserved_tick.get('domainJobsQuarantined')==43 and worker.get('unresolvedTicks')==1
+        and worker.get('phase')=='UNKNOWN' and tick.get('phase')=='unknown'
+        and all(tick.get(k)==preserved_tick.get(k) for k in ['id','workerBootId','workerInstanceId','workerCommit','targetWebInstanceId'])
+        and tick.get('id') and preserved_tick.get('paidReplayAllowed') is False)
+
+def current_drained(app, domain, worker, owners, rows, held, digest, preserved_tick=None):
     check_incidents(rows, held, digest)
     transport = app.get('transport', {})
     t = transport.get('transport', {})
@@ -56,12 +68,11 @@ def current_drained(app, domain, worker, owners, rows, held, digest):
             all(type(v) is int and v == 0 for v in domain['counts'].values()) and
             all(type(domain.get(k)) is int and domain[k] == 0 for k in ['activeFences','activeTransactions','advisoryLocks']),
             'CURRENT_DOMAIN_NOT_DRAINED')
-    require(worker.get('paused') is True and worker.get('activeTicks') == 0 and worker.get('unresolvedTicks') == 0 and
-            worker.get('phase') == 'QUIESCENT' and (worker.get('lastTick') or {}).get('phase') not in ['unknown','dispatched'],
-            'CURRENT_WORKER_NOT_DRAINED')
+    require(worker_quiescent(worker,preserved_tick),'CURRENT_WORKER_NOT_DRAINED')
     return {'kind':'normal-current-slot-drain', 'currentExecutableWorkDrained':True, 'historicalDrainProven':False,
             'historicalUnknownObservationsPreserved':2, 'currentUnknownObservations':0, 'paidOutputRecovered':False,
-            'incidentSha256':digest, 'rawApp':app, 'rawDomain':domain, 'rawWorker':worker, 'rawOwners':owners}
+            'incidentSha256':digest, 'rawApp':app, 'rawDomain':domain, 'rawWorker':worker, 'rawOwners':owners,
+            'preservedUnresolvedScannerTick':copy.deepcopy(preserved_tick), 'scannerReceiptCompleted':worker.get('unresolvedTicks')==0}
 
 
 def worker_completed(status):
