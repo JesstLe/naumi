@@ -28,6 +28,7 @@ import { CanvasParameterPopover } from "./parameter-popover";
 import {submitCanvasImagegen} from "@/lib/imagegen/canvas-client";
 import {canvasReceipts,clearCanvasReceipt,moveCanvasReceipt} from "@/lib/imagegen/canvas-receipts";
 import {pollImagegen} from "@/lib/imagegen/client";
+import {imageOutputWarningText} from "@/lib/imagegen/output-advisory";
 import {VideoGenerationNode} from "./video/generation-node";
 import {VideoSettingsDialog,type VideoNodeDraft} from "./video/settings-dialog";
 import {VideoNodeToolbar} from "./video/node-toolbar";
@@ -3082,6 +3083,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       for(const a of fresh){const response=await privateFetchRaw("/api/artworks/position",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:a.artworkId,x:Math.round(item.receipt.x),y:Math.round(y)})});if(!response.ok)throw new Error("恢复结果位置保存失败");y+=a.height+NODE_LABEL_H+24;}
       if(result.artifacts.length){const ids=result.artifacts.map(a=>a.artworkId),merged=await mergeWorks(ids);if(stopped)return;assertGenerationResultsPresent(ids,merged);if(fresh.length)pushAddUndoMany(fresh.map(a=>a.artworkId),merged);}
       if(result.error)flashTip(result.error.message);
+      else {const warning=imageOutputWarningText(result.warnings);if(warning)flashTip(warning);}
       if(result.status!=="needs_attention")clearCanvasReceipt(sessionStorage,item.key,item.receipt.id);
       pending.splice(pending.indexOf(item),1);
     }catch{/* Retain the ID across transient read failures; no POST is issued by recovery. */}}
@@ -4374,6 +4376,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           return;
         }
         completeCanvasReceipt(context.jobId);
+        const warning=imageOutputWarningText(result.warnings);if(warning)flashTip(warning);
         if (context.pendId ? selectedPendIdRef.current === context.pendId : selectedIdRef.current === context.sourceId) setGenError(null);
         setGenerationTasks(tasks => tasks.filter(task => task.id !== context.taskId));
         setPendNodes(nodes => nodes.filter(node => node.id !== context.pendId));
@@ -4531,6 +4534,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         if (pr.ok && pj.user) applyServerUser(pj.user);
         if (!pr.ok) throw new Error(pj.error || t("canvas.genFail"));
         if (pj.status === "done") {
+          const warning=imageOutputWarningText(pj.warnings);if(warning)flashTip(warning);
           setGenerationTasks(current => current.map(task => task.id === taskId ? { ...task, stage: "saving" } : task));
           generated = ((pj.images ?? []) as { id?: string; url?: string; width?: number; height?: number }[])
             .filter(
@@ -7986,6 +7990,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         if (pr.ok && pj.user) applyServerUser(pj.user);
         if (!pr.ok) throw new Error(pj.error || t("canvas.genFail"));
         if (pj.status === "done") {
+          const warning=imageOutputWarningText(pj.warnings);if(warning)flashTip(warning);
           setPendNodes(current => current.map(p => p.id === pend.id ? { ...p, generationStage: "saving" } : p));
           generatedSizes = ((pj.images ?? []) as { id?: string; width?: number; height?: number }[])
             .filter((image): image is { id: string; width?: number; height?: number } => !!image.id)

@@ -23,7 +23,7 @@ export const imagegenRequestSchema=z.strictObject({
   skill:z.strictObject({id:z.string().regex(/^(official:[a-z-]+|personal:[a-f0-9-]{36})$/),revision:z.number().int().positive()}).optional(),
   augment:z.boolean().default(false),modelId:resourceId.optional(),sourceNodeId:resourceId.optional(),
   inputs:z.array(z.strictObject({artworkId:resourceId,role:z.enum(["edit-target","reference","insert","style","mask"])})).max(32).default([]),
-  parameters:z.strictObject({quality:resourceId.optional(),resolution:resourceId.optional(),ratio:z.union([z.literal("auto"),z.string().regex(/^[1-9]\d{0,2}:[1-9]\d{0,2}$/)]).optional(),
+  parameters:z.strictObject({quality:resourceId.optional(),resolution:resourceId.optional(),ratio:z.union([z.literal("auto"),z.string().regex(/^[1-9]\d{0,5}:[1-9]\d{0,5}$/)]).optional(),
     width:z.number().int().min(64).max(8192).optional(),height:z.number().int().min(64).max(8192).optional(),
     inputFidelity:resourceId.optional(),moderation:resourceId.optional()}).default({}),
   output:imagegenOutputSchema.default({format:"png"}),variants:z.number().int().min(1).max(4).default(1),

@@ -1,7 +1,8 @@
 import { inheritedImageRatio, imageAspectInstruction } from "@/lib/imagegen/aspect";
 import { normalizeLegacyFrameRequest, LegacyFrameError } from "@/lib/imagegen/legacy-frame-request";
 import { preserveGeneratedFrame, sourceImageDimensions } from "@/lib/imagegen/output-shape";
-import { exactImageRequestSize, imageRatioMismatch, ExactImageSizeError } from "@/lib/imagegen/request-size";
+import { exactImageRequestSize, imageRatioValidationPolicy, ExactImageSizeError } from "@/lib/imagegen/request-size";
+import { imageRatioWarning, imageOutputNotice } from "@/lib/imagegen/output-advisory";
 import {currentImagegenStep,withImagegenStep} from "@/lib/imagegen/context";
 import {legacyImagegenIntent} from "@/lib/imagegen/legacy-intent";
 import {inspectImagegenPixels} from "@/lib/imagegen/postprocess";
@@ -106,7 +107,7 @@ type GenImage = { buf: Buffer; type: string };
 type GenParams = {
 
   // Server-stamped at acceptance. Legacy frozen jobs retain their original wire contract.
-  ratioContractVersion?: 1;
+  ratioContractVersion?: 1 | 2;
 	compiledPrompt?: string;
   prompt: string;
   // 落库用的「用户原始提示词」:仅用户自己输入的内容(图裂变/融图客户端拼了系统词进 prompt,
@@ -157,8 +158,8 @@ const GRADIENTS = [
 ];
 
 // Concrete descriptors so the picked style visibly changes the result.
-function sizeFor(ratio: string, model: string, exact = false): string {
-  if (exact) { const size = exactImageRequestSize(ratio, model); if (size) return size; }
+function sizeFor(ratio: string, model: string, exact = false, customRatio = false): string {
+  if (exact) { const size = exactImageRequestSize(ratio, model, customRatio); if (size) return size; }
   // OpenAI gpt-image-1 接受 size: "auto",让模型自选最合适的输出尺寸。
   // DALL·E 3 不支持 auto,退化成方图。
   if (ratio === "auto") return model === "dall-e-3" ? "1024x1024" : "auto";
@@ -244,8 +245,8 @@ async function openaiImages(
   const basePrompt = p.compiledPrompt || (p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide()));
   const effectiveRatio = inheritedImageRatio(p.ratio, targetDimensions);
   const prompt = `${basePrompt}\n\n${imageAspectInstruction(effectiveRatio, targetDimensions)}`;
-  const sizingModel = p.ratioContractVersion === 1 ? currentModelExecution("image")?.connection.wireModel || model : model;
-  const size = sizeFor(effectiveRatio, sizingModel, p.ratioContractVersion === 1);
+  const sizingModel = p.ratioContractVersion ? currentModelExecution("image")?.connection.wireModel || model : model;
+  const size = sizeFor(effectiveRatio, sizingModel, !!p.ratioContractVersion, p.ratioContractVersion === 2);
   const canEdit = p.images.length > 0 && (currentModelExecution("image")?.capabilities.edit || isOpenAIImagesEditModel(model));
   // 出图质量:解析结果=实际执行档。通道未接入质量参数时在提交前回退为默认档
   // (env OPENAI_IMAGE_QUALITY,缺省 medium);内测仍按请求档测试价计费。
@@ -725,6 +726,7 @@ type Job = {
   persisted?: boolean;
   error?: string;
   imagegenOutputError?:string;
+  imagegenOutputWarning?:string;
   createdAt: number;
   sourceUrl?: string | null;
   /** 质量审计:请求档 vs 实际执行档与回退原因(通道不支持时回退默认档)。 */
@@ -773,7 +775,9 @@ async function runJob(
   let billingSettled = false;
   try {
     const saved = await JOBS.get(jobId);
-    let imagegenOutputError=saved?.imagegenOutputError;
+    const priorNotice = imageOutputNotice(saved?.imagegenOutputError, saved?.imagegenOutputWarning, !!saved?.images?.length);
+    let imagegenOutputError=priorNotice.error;
+    let imagegenOutputWarning=priorNotice.warning;
     let images: GeneratedImage[];
     if (saved?.images?.length) images = saved.images;
     else {
@@ -830,6 +834,8 @@ async function runJob(
       } }));
     }
     const scope = currentModelExecution("image"), post = scope?.businessOption?.postprocess;
+    const ratioPolicy = scope ? imageRatioValidationPolicy(scope.supplierRouting ? scope.supplierRouting.targets.map(target => target.scope.connection) : [scope.connection]) : undefined;
+    let nativeRatioChecked = false;
     if(p.transparent){for(const image of images){const raw=dataUrlToBytes(image.url);const pixels=await inspectImagegenPixels(raw?Buffer.from(raw.bytes):(await readManagedObject(image.url,12*1024*1024)).bytes);if(!pixels.transparentPixels||!pixels.visiblePixels)imagegenOutputError="模型未返回有效透明主体；已生成原图保留，实际生成积分已结算，请调整透明能力配置";}}
     if(imagegenOutputError){await JOBS.patch(jobId,{imagegenOutputError});}
     else if (post?.enabled) {
@@ -842,18 +848,26 @@ async function runJob(
     } else {
     images = await enforceOutputShape(images, p);
     if (!scope?.imagePreset && !(p.targetWidth > 0 && p.targetHeight > 0)) {
+      // Validate the supplier's native grid before an existing, administrator-
+      // permitted local upscale. Its rounding cell must not be measured in 4K
+      // pixels, and no crop/reshape is introduced to satisfy this validation.
+      if (ratioPolicy && p.ratioContractVersion && p.origin === "canvas") {
+        images = await attachImageDimensions(images);
+        imagegenOutputWarning ||= images.map(image => imageRatioWarning(p.ratio, image, ratioPolicy)).find(Boolean);
+        nativeRatioChecked = true;
+      }
       images = await upscaleImages(images, p.resolution);
     }
     }
     images = await attachImageDimensions(images);
-    if (p.ratioContractVersion === 1 && p.origin === "canvas" && !(p.targetWidth > 0 && p.targetHeight > 0)) {
-      imagegenOutputError ||= images.map(image => imageRatioMismatch(p.ratio, image)).find(Boolean);
+    if (!nativeRatioChecked && p.ratioContractVersion && p.origin === "canvas" && !(p.targetWidth > 0 && p.targetHeight > 0)) {
+      imagegenOutputWarning ||= images.map(image => imageRatioWarning(p.ratio, image, ratioPolicy)).find(Boolean);
     }
     images = images.map((image, index) => ({ ...image, id: `art-${jobId}-${index}` }));
     images = await persistToStorage(images);
-    // Save the receipt and contract error together: recovery cannot lose the mismatch
-    // or re-POST an already paid result. Settlement and original-byte retention stay intact.
-    await JOBS.patch(jobId, { images, imagegenOutputError });
+    // Keep quality notices with the original result without rejecting delivery.
+    // Recovery must not re-POST a paid image to chase a preferred ratio.
+    await JOBS.patch(jobId, { images, imagegenOutputError, imagegenOutputWarning });
     }
     // Persist the first uploaded source image so "再次生成" can restore it.
     let sourceUrl: string | null = saved?.sourceUrl || null;
@@ -946,6 +960,7 @@ async function runJob(
       createdAt: Date.now(),
       quality,
       imagegenOutputError,
+      imagegenOutputWarning,
     });
   } catch (e) {
     if (e instanceof ImageOperationPending) { await JOBS.handlePending(jobId, e); return; }
@@ -1011,7 +1026,7 @@ async function handleObservedPost(request: Request) {
   if (!p) {
     return NextResponse.json({ error: "请求格式不正确" }, { status: 400 });
   }
-  p.ratioContractVersion = currentImagegenStep() ? currentImagegenStep()!.ratioContractVersion : 1;
+  p.ratioContractVersion = currentImagegenStep() ? currentImagegenStep()!.ratioContractVersion : 2;
   try { assertPlatformImageSelection(p.model, request.headers.get("x-naumi-feature-model")); }
   catch (error) { return billingErrorResponse(error); }
   // 改比例(ratiogen)用固定重构图指令,可以没有用户提示词;其余路径仍要求 prompt。
@@ -1104,8 +1119,8 @@ async function handleObservedPost(request: Request) {
   }
   // Reject a new local size-contract error BEFORE quote/reservation/job creation.
   // The worker branch above resumes its original frozen contract unchanged.
-  if (p.ratioContractVersion === 1 && imageModel.provider !== "user-openai-images" && imageModel.provider !== "user-chat-completions") {
-    try { exactImageRequestSize(p.ratio, imageScope?.connection.wireModel || model); }
+  if (p.ratioContractVersion && imageModel.provider !== "user-openai-images" && imageModel.provider !== "user-chat-completions") {
+    try { exactImageRequestSize(p.ratio, imageScope?.connection.wireModel || model, p.ratioContractVersion === 2); }
     catch (error) {
       if (error instanceof ExactImageSizeError) return NextResponse.json({error:error.message,code:error.code,accepted:false},{status:400});
       throw error;
@@ -1194,7 +1209,7 @@ export async function GET(request: Request) {
   if(jobId?.startsWith("imagegen-")&&/^[a-f0-9-]{36}$/i.test(jobId.slice(9))){
     const owner=await resolveUserEmail(request);if(!owner)return NextResponse.json({error:"请先登录"},{status:401});
     const {getImagegenResult}=await import("@/lib/imagegen/dispatch"),result=await getImagegenResult(jobId.slice(9),owner);if(!result)return NextResponse.json({error:"任务不存在或无权访问"},{status:404});
-    return NextResponse.json({status:result.status==="succeeded"?"done":["failed","cancelled","needs_attention"].includes(result.status)?"error":"pending",operationStatus:result.status,stage:result.stage,images:result.artifacts.map(a=>({id:a.artworkId,url:a.url,width:a.width,height:a.height})),error:result.error?.message,creditsUsed:result.chargedCredits,user:await getUser(owner)},{headers:{"cache-control":"private, no-store"}});
+    return NextResponse.json({status:result.status==="succeeded"?"done":["failed","cancelled","needs_attention"].includes(result.status)?"error":"pending",operationStatus:result.status,stage:result.stage,images:result.artifacts.map(a=>({id:a.artworkId,url:a.url,width:a.width,height:a.height})),error:result.error?.message,warnings:result.warnings,creditsUsed:result.chargedCredits,user:await getUser(owner)},{headers:{"cache-control":"private, no-store"}});
   }
   if (jobId) {
     if (dbEnabled && (await resolveUserEmail(request))?.toLowerCase() !== await JOBS.owner(jobId)) {
@@ -1208,7 +1223,8 @@ export async function GET(request: Request) {
       });
     }
     if (job.status === "done") {
-      if(job.imagegenOutputError)return NextResponse.json({status:"error",error:job.imagegenOutputError,images:(job.images||[]).map(({execution,...image})=>image),creditsUsed:job.creditsUsed,user:job.user});
+      const notice = imageOutputNotice(job.imagegenOutputError, job.imagegenOutputWarning, !!job.images?.length);
+      if(notice.error)return NextResponse.json({status:"error",error:notice.error,images:(job.images||[]).map(({execution,...image})=>image),creditsUsed:job.creditsUsed,user:job.user});
       return NextResponse.json({
         status: "done",
         ok: true,
@@ -1218,6 +1234,7 @@ export async function GET(request: Request) {
         mock: job.mock,
         persisted: job.persisted,
         quality: job.quality,
+        warnings: notice.warning ? [notice.warning] : undefined,
       });
     }
     if (imageJobPollState(job.status) === "error") {
