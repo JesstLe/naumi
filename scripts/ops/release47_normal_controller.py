@@ -236,7 +236,8 @@ class Controller:
    require(self.pre.public.get('tables'),'TASK_BASELINE_MISSING');self.phase('BACKED_UP')
    require(int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024>=3200,'DUAL_SLOT_MEMORY_INSUFFICIENT')
    image=json.loads(self.tx.run(['docker','image','inspect',self.cfg['image']]))[0];require(image['Id']==self.cfg['image'],'FIXED_IMAGE_MISSING')
-   self.newweb=self.op('web-create',lambda _:self.tx.clone_web(self.web,name=WEB,port=self.cfg['newPort'],image=self.cfg['image'],commit=self.cfg['commit'],memory_mib=2048,cpu=1.5,release_secret=secrets.token_urlsafe(48),state_dir=STATE+'/web',build_version=self.cfg['version'],reviewed_prior_state_dir=self.cfg['oldWebStateDir'],reviewed_nas_credentials_sha256=self.cfg.get('nasCredentialsSha256')))
+   if getattr(self,'partial_nas_web',False):self.newweb=self.succ['operations']['web-create']['receipt'];self.tx.pin(self.newweb)
+   else:self.newweb=self.op('web-create',lambda _:self.tx.clone_web(self.web,name=WEB,port=self.cfg['newPort'],image=self.cfg['image'],commit=self.cfg['commit'],memory_mib=2048,cpu=1.5,release_secret=secrets.token_urlsafe(48),state_dir=STATE+'/web',build_version=self.cfg['version'],reviewed_prior_state_dir=self.cfg['oldWebStateDir'],reviewed_nas_credentials_sha256=self.cfg.get('nasCredentialsSha256')))
    self.newweb=self.op('web-start',lambda _:self.tx.start_candidate(self.newweb,dict(webPeakMiB=2048,workerPeakMiB=128,hostReserveMiB=1024),int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024))
    self.wait(lambda:self.request(self.newweb,'/api/health'),'WEB_START')
    self.newworker=self.op('worker-create',lambda _:c.clone_worker(self.tx,self.newweb,name=WORKER,memory_mib=128,cpu=.25,state_dir=STATE+'/worker'))
@@ -289,9 +290,12 @@ class Controller:
   review=self.cfg['resumeReview'];require(self.state['revision']==review['revision'] and sha(enc(self.state))==review['canonicalSha256'],'RESUME_CANONICAL_CHANGED')
   self.succ=self.state['normalBlueGreenReleases'][RELEASE]
   self.candidate_reused=self.succ['phase']=='CANDIDATE'
+  self.partial_nas_web=bool(self.cfg.get('nasCredentialsSha256')and self.succ['phase']=='BACKED_UP'and
+       self.succ.get('lastError')=='NAS_CREDENTIAL_FILE_CHANGED'and self.succ['operations'].get('web-create',{}).get('phase')=='ACKNOWLEDGED')
   expected={'database-backup','image-import'}|({'web-create','web-start','worker-create','worker-start'} if self.candidate_reused else set())
+  if self.partial_nas_web:expected.add('web-create')
   if self.cfg.get('nasCredentialsSha256')and 'nas-media-catalog'in self.succ['operations']:expected.add('nas-media-catalog')
-  require(self.succ['phase'] in ['BASELINED','CANDIDATE'] and self.succ.get('lastError') in ['ValueError','HOST_COMMAND_FAILED','POST_IMPORT_DISK_RESERVE_INSUFFICIENT'] and set(self.succ['operations'])==expected,'RESUME_ONLY_PRE_SWITCH_REVIEWED_FAILURE')
+  require((self.partial_nas_web or self.succ['phase'] in ['BASELINED','CANDIDATE'] and self.succ.get('lastError') in ['ValueError','HOST_COMMAND_FAILED','POST_IMPORT_DISK_RESERVE_INSUFFICIENT']) and set(self.succ['operations'])==expected,'RESUME_ONLY_PRE_SWITCH_REVIEWED_FAILURE')
   if self.succ.get('lastError')=='POST_IMPORT_DISK_RESERVE_INSUFFICIENT':
    import shutil
    require(self.succ['phase']=='BASELINED' and shutil.disk_usage('/').free>=10*1024**3,'RECONCILED_IMPORT_DISK_RESERVE_INSUFFICIENT')
@@ -307,7 +311,10 @@ class Controller:
    private=json.loads(snapshots[0].read_bytes());self.pre=tasks.Snapshot(public=tasks.summarize(private),private=private)
   else:
    require(not self.tx.run(['ss','-Hltn','sport = :'+str(self.cfg['newPort'])]).strip(),'RESUME_CANDIDATE_ALREADY_PRESENT')
-   names=self.tx.run(['docker','ps','-a','--format','{{.Names}}']).decode().splitlines();require(WEB not in names and WORKER not in names,'RESUME_CANDIDATE_ALREADY_EXISTS')
+   names=self.tx.run(['docker','ps','-a','--format','{{.Names}}']).decode().splitlines()
+   if self.partial_nas_web:
+    pending=self.succ['operations']['web-create']['receipt'];self.tx.pin(pending);require(not pending['running']and pending['image']==self.cfg['image']and pending['name']==WEB and WORKER not in names,'RESUME_PARTIAL_WEB_CHANGED')
+   else:require(WEB not in names and WORKER not in names,'RESUME_CANDIDATE_ALREADY_EXISTS')
   self.check_running_slots(extra)
   recovery.recovery_binding(self.state,self.original_manifest)
   require(sha(self.tx.run(['nginx','-T']))==self.cfg['expectedGatewayDigest'],'RESUME_GATEWAY_CHANGED')
