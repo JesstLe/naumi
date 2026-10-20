@@ -31,14 +31,14 @@ export async function imageQualityCost(quality: ResolvedImageQuality, resolution
   return metered ? imageBillCredits(seed as BillingConfig,quality.requested, resolution) : 0;
 }
 
-/** Retry only a confirmed unsupported-parameter rejection, never a timeout or unclear result. */
+/** Managed calls keep their published tier; legacy calls retain their compatibility fallback. */
 const executionModels = new WeakMap<ResolvedImageQuality,string>();
 export function recordImageExecutionModel(quality: ResolvedImageQuality, model: string) { executionModels.set(quality,model); }
 export async function withQualityFallback<T>(quality: ResolvedImageQuality, run: (executed: ExecutedQuality) => Promise<T>, executionModel?: string): Promise<T> {
   if (executionModel) executionModels.set(quality, executionModel);
   try { return await run(quality.executed); }
   catch (error) {
-    if(currentModelExecution("image")?.imagePreset) throw error;
+    if(currentModelExecution("image")) throw error;
     const fallback = resolveConfiguredImageQuality("").executed;
     if (quality.executed === fallback || !isQualityUnsupportedError(error)) throw error;
     quality.executed = fallback;

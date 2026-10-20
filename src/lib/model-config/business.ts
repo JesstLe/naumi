@@ -1,5 +1,5 @@
 import {publicUpstreamIds} from "./channel-policy";
-import type { ModelConfig, ModelFacts } from "./types";
+import type { ModelConfig, ModelFacts, UpstreamModel } from "./types";
 import { ModelConfigError } from "./types";
 import type { FeatureId } from "../billing/rules/registry";
 import type { BusinessOption, BusinessRouting, Procurement } from "./business-schema";
@@ -49,11 +49,16 @@ export function procurementCny(p?: Procurement): Procurement | undefined {
     if (p[key] !== undefined) out[key] = ((BigInt(p[key]!) * BigInt(p.cnyPerUnitMicros) + BigInt(999999)) / BigInt(1000000)).toString();
   return out;
 }
-export function compatiblePublicModels(config: ModelConfig, binding: ModelBinding) {
+export function upstreamSupportsFeature(capabilities: UpstreamModel["capabilities"], binding: ModelBinding, feature?: string) {
+  // Canvas admits both plain generation and reference editing. The concrete
+  // request still resolves its own binding and compatible supplier subset.
+  return feature === "canvas.image" ? capabilities.generate || capabilities.edit : capabilities[MODEL_BINDINGS[binding].capability];
+}
+export function compatiblePublicModels(config: ModelConfig, binding: ModelBinding, feature?: string) {
   const purpose = MODEL_BINDINGS[binding];
   return config.publicModels.filter(m => m.enabled && m.visible && m.modality === purpose.modality &&
     publicUpstreamIds(config,m).some(id => {
       const u = config.upstreamModels.find(u => u.id === id);
-      return u?.enabled && u.capabilities[purpose.capability] && config.providers.some(p => p.id === u.providerId && p.enabled);
+      return u?.enabled && upstreamSupportsFeature(u.capabilities, binding, feature) && config.providers.some(p => p.id === u.providerId && p.enabled);
     }));
 }

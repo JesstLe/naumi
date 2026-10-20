@@ -62,7 +62,11 @@ async function main(){
   const closedBody={...resolutionBody,id:randomUUID(),expectedVersion:opened.version,resolutions:["1K","2K"]};assert.equal((await handler(request(closedBody))).status,200);
   const closed=await admin.repo.current();
   const {withModelRequest}=await import("../src/lib/model-config/requests");
-  await assert.rejects(()=>withModelRequest(new Request(f.origin+"/api/generate-image",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:"image-a",resolution:"4K",quality:"max",ratio:"1:1"})}),async()=>null),/未开放此分辨率/);
+  await withModelRequest(new Request(f.origin+"/api/generate-image",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:"image-a",resolution:"4K",quality:"max",ratio:"1:1"})}),async()=>{
+    const scope=(await import("../src/lib/model-config/context")).currentModelExecution("image")!;
+    assert.equal(scope.frozen.requestedParameters!.resolution,"4K");
+    assert.equal(scope.frozen.facts!.resolution,"2K","new request selects the published fallback while preserving the requested price tier");
+  });
 
   const {assertDisplayResolution,applyDisplayResolutions}=await import("../src/lib/model-config/resolution-options");
   assert.throws(()=>assertDisplayResolution(closed.config.publicModels[0],"4K"));

@@ -1,6 +1,6 @@
 import type { ModelConfig } from "./types";
 import { ModelConfigError } from "./types";
-import { compatiblePublicModels, FEATURE_BINDINGS, procurementCny } from "./business";
+import { compatiblePublicModels, FEATURE_BINDINGS, procurementCny, upstreamSupportsFeature } from "./business";
 import { MODEL_BINDINGS } from "./bindings";
 import { cnyCredits } from "../billing/money";
 
@@ -17,7 +17,7 @@ export function validateBusinessConfig(config: ModelConfig) {
   for (const [feature, f] of Object.entries(config.business || {})) {
     const field = `business.${feature}`, binding = FEATURE_BINDINGS[feature as keyof typeof FEATURE_BINDINGS];
     if (!binding) fail("该功能使用独立处理器，尚未接入可选供应商模型", field);
-    const compatible = compatiblePublicModels(config, binding!);
+    const compatible = compatiblePublicModels(config, binding!, feature);
     if (new Set(f!.options.map(o => o.modelId)).size !== f!.options.length) fail("功能中的模型 ID 重复", field);
     if (!f!.options.some(o => o.enabled && o.modelId === f!.defaultModelId)) fail("默认模型必须是启用的选项", field);
     for (const o of f!.options) {
@@ -52,7 +52,7 @@ export function validateBusinessConfig(config: ModelConfig) {
         const base = config.upstreamModels.find(u => u.id === model!.target.id)!;
         for (const id of targets) {
           const u = config.upstreamModels.find(u => u.id === id), supplier = config.providers.find(s => s.id === u?.providerId);
-          if (!u?.enabled || !supplier?.enabled || !u.capabilities.verified || u.modality !== model!.modality || !u.capabilities[MODEL_BINDINGS[binding!].capability] || !["openai-images", "openai-chat", "new-api-flow"].includes(supplier.protocol)) fail("阶段路由目标能力未核验或协议尚未接通", field);
+          if (!u?.enabled || !supplier?.enabled || !u.capabilities.verified || u.modality !== model!.modality || !upstreamSupportsFeature(u.capabilities, binding!, feature) || !["openai-images", "openai-chat", "new-api-flow"].includes(supplier.protocol)) fail("阶段路由目标能力未核验或协议尚未接通", field);
           const caps = u!.capabilities, promised = base.capabilities;
           if (caps.qualityRank < promised.qualityRank || promised.edit && !caps.edit || promised.vision && !caps.vision || promised.transparent && !caps.transparent || promised.preserveIdentity && !caps.preserveIdentity || promised.textAccuracy && !caps.textAccuracy || caps.maxReferenceImages < promised.maxReferenceImages || promised.nativeResolutions.some(n => !caps.nativeResolutions.includes(n)) || promised.qualities.some(q => !caps.qualities.includes(q))) fail("路由目标低于公开模型承诺的能力或规格", field);
           if (!procurementCny(u!.procurement) || u!.procurement?.basis === "tokens") fail("阶段路由预算需要明确的按张/按次人民币采购成本（含 USD 折算）", field);

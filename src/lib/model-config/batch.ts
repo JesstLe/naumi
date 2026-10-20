@@ -2,7 +2,7 @@ import type { ModelConfig } from "./types";
 import type { BusinessOption } from "./business-schema";
 import { businessOptionSchema } from "./business-schema";
 import { FEATURE_IDS, type FeatureId } from "../billing/rules/registry";
-import { FEATURE_BINDINGS, compatiblePublicModels } from "./business";
+import { FEATURE_BINDINGS, compatiblePublicModels, upstreamSupportsFeature } from "./business";
 import { MODEL_BINDINGS } from "./bindings";
 import { cnyCredits } from "../billing/money";
 
@@ -20,7 +20,7 @@ export function batchFeatureAvailability(config: ModelConfig, upstreamId: string
     if (!binding) reason = "使用独立处理器";
     else if (!u?.enabled || !config.providers.some(p => p.id === u.providerId && p.enabled)) reason = "上游或供应商未启用";
     else if (!u.capabilities.verified) reason = "上游能力尚未核验";
-    else if (u.modality !== MODEL_BINDINGS[binding].modality || !u.capabilities[MODEL_BINDINGS[binding].capability]) reason = "模型能力不兼容";
+    else if (u.modality !== MODEL_BINDINGS[binding].modality || !upstreamSupportsFeature(u.capabilities, binding, feature)) reason = "模型能力不兼容";
     else if (config.business?.[feature]?.enabled === false) reason = "功能已停用，请先在单功能配置中启用";
     return { feature, compatible: !reason, reason };
   });
@@ -53,7 +53,7 @@ export function planModelBatch(config: ModelConfig, input: BatchInput) {
   const changes: { feature: FeatureId; beforeDefault: string; afterDefault: string; price: string; route: string }[] = [];
   next.business ||= {};
   for (const feature of targets) {
-    if (!compatiblePublicModels(next, FEATURE_BINDINGS[feature]!).some(m => m.id === input.modelId)) throw Error(`${feature}：模型能力不兼容`);
+    if (!compatiblePublicModels(next, FEATURE_BINDINGS[feature]!, feature).some(m => m.id === input.modelId)) throw Error(`${feature}：模型能力不兼容`);
     const old = config.business?.[feature];
     const f = next.business[feature] ||= { enabled: true, defaultModelId: input.modelId, options: [] };
     const option = f.options.find(o => o.modelId === input.modelId);

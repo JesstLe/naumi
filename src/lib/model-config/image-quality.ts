@@ -12,5 +12,8 @@ export function resolveConfiguredImageQuality(requested: unknown) {
   }
   const preset = currentModelExecution("image")?.imagePreset;
   if (preset) { const value = typeof requested === "string" ? requested.trim().toLowerCase() : "medium"; return {requested:value,executed:(value === "low" ? "low" : "medium") as "low" | "medium",fallbackReason:value === "low" || value === "medium" ? null : "preset-quality-cap" as const}; }
+  // Request admission already selected and validated this tier. Later helpers
+  // must not replace it with a body/header default or the first supplier's tier.
+  if (scope?.frozen.facts) return resolveImageQuality(scope.frozen.facts.quality, [scope.frozen.facts.quality]);
   return resolveImageQuality(requested, currentModelExecution("image")?.capabilities.qualities);
 }
