@@ -40,10 +40,12 @@ check(resolveImageResolution(config,'image-a','4K').changed,false,'unknown suppo
 check(resolveImageResolution(config,'image-a','8K').effective,'8K','unrecognized tiers stay with normal validation');
 check(resolveImageResolution(config,'missing','4K').changed,false,'no implicit model substitution');
 const {apimartExecutionParameters}=require('../src/lib/model-config/apimart-preset');
-const scope:any={frozen:{requestedParameters:{quality:'medium',resolution:'4K',ratio:'1:1'},facts:{quality:'medium',resolution:'2K',requestedResolution:'2K',ratio:'1:1'}}};
+const scope:any={capabilities:{qualities:['medium']},frozen:{requestedParameters:{quality:'medium',resolution:'4K',ratio:'1:1'},facts:{quality:'medium',resolution:'2K',requestedResolution:'2K',ratio:'1:1'}}};
 check(apimartExecutionParameters(scope,{}).resolution,'2K','APIB frozen actual tier wins audit 4K');
 const billed:any={facts:{resolution:'4K'},requestedCredits:12,requestedParameters:{quality:'medium',resolution:'4K',ratio:'1:1'},effectiveParameters:{quality:'medium',resolution:'2K',ratio:'1:1'}};
 check(apimartExecutionParameters(scope,{},billed).resolution,'2K','APIB execution follows explicit effective contract');
+check(apimartExecutionParameters(scope,{}, {...billed,effectiveParameters:{...billed.effectiveParameters,quality:'auto'}}).quality,'medium','omit wire marker cannot replace semantic quality');
+check(apimartExecutionParameters(scope,{},undefined,{quality:'auto'}).quality,'medium','operation wire omit marker cannot replace semantic quality');
 check(billed.requestedCredits,12,'APIB parameter mapping never reprices');
 const presetScope={...scope,imagePreset:{enabled:true}};
 check(apimartExecutionParameters(presetScope,{}).resolution,'2K','explicit new preset fallback follows frozen actual');

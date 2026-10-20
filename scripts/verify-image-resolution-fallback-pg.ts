@@ -13,7 +13,7 @@ import {imagegenRequestSchema} from '../src/lib/imagegen/schema';
 const baseline=process.argv.includes('--baseline');
 async function main(){
  const wires:any[]=[];process.env.MEDIA_DIR=await mkdtemp(join(tmpdir(),'naumi-resolution-'));process.env.STORAGE_DRIVER='local';const png=await sharp({create:{width:2048,height:2048,channels:3,background:'white'}}).png().toBuffer();
- const f=await createModelFixture(async(req,res)=>{const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));const bytes=Buffer.concat(chunks);let data:any={};if(bytes.length){const request=new Request(f.origin+req.url,{method:'POST',headers:{'content-type':req.headers['content-type']||''},body:bytes});data=request.headers.get('content-type')!.includes('multipart')?Object.fromEntries(await request.formData()):await request.json();}wires.push(data);res.setHeader('content-type','application/json');res.end(JSON.stringify({data:[{b64_json:png.toString('base64')}]}));});
+ const f=await createModelFixture(async(req,res)=>{if(req.url?.startsWith('/media/')){res.setHeader('content-type','image/png');res.end(png);return;}if(req.url?.startsWith('/v1/tasks/')){res.setHeader('content-type','application/json');res.end(JSON.stringify({data:{id:req.url.split('/').at(-1),model:'seedream-5-0-pro',status:'completed',cost:'0.01',result:{images:[{url:[f.origin+'/media/output.png']}]}}}));return;}const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));const bytes=Buffer.concat(chunks);let data:any={};if(bytes.length){const request=new Request(f.origin+req.url,{method:'POST',headers:{'content-type':req.headers['content-type']||''},body:bytes});data=request.headers.get('content-type')!.includes('multipart')?Object.fromEntries(await request.formData()):await request.json();}wires.push(data);res.setHeader('content-type','application/json');res.end(JSON.stringify(data.model==='seedream-5-0-pro'?{data:[{task_id:'apib-local-1'}]}:{data:[{b64_json:png.toString('base64')}]}));});
  process.env.PGOPTIONS=`-c search_path=${f.schemaName}`;
  Object.assign(process.env,{NAUMI_MULTI_USER:'1',NAUMI_ROUTER_MANAGEMENT_URL:f.origin,NAUMI_ROUTER_MANAGEMENT_TOKEN:'isolated-resolution-router-token-long',MODEL_CONFIG_ENVELOPE_SECRET:'isolated-resolution-envelope-secret-long',MODEL_CONFIG_TRUSTED_ORIGINS:f.origin,OPENAI_API_KEY:'fixture-only'});
  f.config.upstreamModels[0].parameterMap={resolutionPolicy:{mode:'map',field:'size',values:{'1K':'1024x1024','2K':'2048x2048'}}};
@@ -72,8 +72,24 @@ async function main(){
  let state:any;for(let i=0;i<500;i++){state=(await db.getPool().query('SELECT snapshot FROM app_image_jobs WHERE id=$1',[receipt.jobId])).rows[0]?.snapshot;if(['done','error','needs_attention'].includes(state?.status))break;await new Promise(r=>setTimeout(r,50));}
  assert.equal(state.status,'done',JSON.stringify(state));assert.equal(state.creditsUsed,12);assert.equal(wires.at(-1).size,'2048x2048');assert.equal(wires.length,4);
  const duplicate=await(await POST(new Request('http://internal/api/generate-image',legacyInit))).json();assert.equal(duplicate.jobId,receipt.jobId);assert.equal(wires.length,4);
+ // Complete the same quote/plan/child/adapter chain with the real application
+ // APIMart transport, while every network endpoint remains loopback.
+ const key=await f.credentials.importPlain({providerId:'apib-local',plain:'isolated-async-fixture-only',actor:'fixture'});
+ const current=await f.repo.current(),config=structuredClone(current.config);
+ config.providers.push({...config.providers[0],id:'apib-local',protocol:'apimart-images',credentialRef:key.id});
+ config.upstreamModels.push({...structuredClone(config.upstreamModels[0]),id:'apib-local-u',providerId:'apib-local',model:'seedream-5-0-pro',parameterMap:{qualityPolicy:{mode:'omit',choices:[{id:'medium',label:'标准'}]},resolutionPolicy:{mode:'map',field:'resolution',ratioField:'aspect_ratio',values:{'1K':'1K','2K':'2K'}},apimartImages:{schemaVersion:1,maxOutputs:1,supportsMask:false,ratios:['1:1'],outputDimensions:{'1K:1:1':{width:1024,height:1024},'2K:1:1':{width:2048,height:2048}}}}});
+ config.publicModels.push({id:'apib-local-model',label:'APIB本机验收',modality:'image',enabled:true,visible:true,target:{type:'upstream',id:'apib-local-u'},displayResolutions:['1K','2K']});
+ const draft=await f.repo.draft('fixture'),saved=await f.repo.saveDraft({id:draft.id,expectedRevision:draft.revision,config,actor:'fixture'});
+ const pub=await f.repo.stage({id:randomUUID(),draftId:saved.id,expectedRevision:saved.revision,expectedVersion:current.version,actor:'fixture',reason:'isolated application adapter chain'});await f.repo.markApplied(pub.id,pub.digest);
+ const asyncRequest=imagegenRequestSchema.parse({...request,operationId:randomUUID(),modelId:'apib-local-model'}),asyncPlan=await planImagegen(asyncRequest,owner);
+ assert.equal(asyncPlan.request.parameters.resolution,'2K');assert.equal(asyncPlan.totalCredits,12);assert.equal(asyncPlan.requestedParameters!.resolution,'4K');
+ let asyncResult=await submitImagegen(asyncRequest,owner,{billingVersion:asyncPlan.billingVersion,modelVersion:asyncPlan.modelVersion,credits:12,confirmed:true});
+ for(let i=0;i<500&&!['succeeded','failed','needs_attention'].includes(asyncResult.status);i++){await new Promise(r=>setTimeout(r,50));asyncResult=(await getImagegenResult(asyncRequest.operationId,owner))!;}
+ assert.equal(asyncResult.status,'succeeded',JSON.stringify(asyncResult));assert.equal(asyncResult.chargedCredits,12);assert.equal(asyncResult.artifacts[0].width,2048);assert.equal(wires.at(-1).resolution,'2K');assert.equal(wires.length,5);
+ await submitImagegen(asyncRequest,owner);await getImagegenResult(asyncRequest.operationId,owner);assert.equal(wires.length,5,'async recovery never creates another paid POST');
 
- console.log(`MODIFIED=PASS REQUEST=4K EFFECTIVE=2K QUOTE=${q.requestedCredits} REQUESTED_QUOTE=${quote(actualBilling,billingFacts({modelId:'image-a',resolution:'4K'})).requestedCredits} JSON_SIZE=2048x2048 MULTIPART_SIZE=2048x2048 FINGERPRINT=UNCHANGED HISTORY=UNCHANGED JOBS=3 PLAN_AND_LEGACY_SETTLED=12 IDEMPOTENT=PASS LOOPBACK_POSTS=4 EXTERNAL_CALLS=0`);
+
+ console.log(`MODIFIED=PASS REQUEST=4K EFFECTIVE=2K QUOTE=${q.requestedCredits} REQUESTED_QUOTE=${quote(actualBilling,billingFacts({modelId:'image-a',resolution:'4K'})).requestedCredits} JSON_SIZE=2048x2048 MULTIPART_SIZE=2048x2048 FINGERPRINT=UNCHANGED HISTORY=UNCHANGED JOBS=5 PLAN_LEGACY_APIB_SETTLED=12 APIB_WIRE=2K IDEMPOTENT=PASS LOOPBACK_POSTS=5 EXTERNAL_CALLS=0`);
  }finally{if(db)await db.getPool().end();await f.cleanup();}
 }
 main().catch(e=>{console.error(e);process.exitCode=1});

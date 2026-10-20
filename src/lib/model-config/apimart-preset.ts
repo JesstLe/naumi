@@ -24,10 +24,16 @@ export function apimartExecutionParameters(scope: ModelExecutionScope, body:Reco
   const p=scope.imagePreset;
   const requested={...(scope.frozen.requestedParameters || {quality:scope.frozen.facts?.quality||String(body.quality||"medium"),resolution:scope.frozen.facts?.requestedResolution||scope.frozen.facts?.resolution||"1K",ratio:scope.frozen.facts?.ratio||"1:1"}),...quote?.requestedParameters};
   if(!p&&scope.frozen.requestedParameters&&scope.frozen.facts?.requestedResolution)requested.resolution=scope.frozen.facts.requestedResolution;
-  if(!p&&operation?.quality)requested.quality=operation.quality;
+  if(!p&&operation?.quality&&scope.capabilities.qualities.includes(operation.quality as never))requested.quality=operation.quality;
   if(operation?.ratio)requested.ratio=operation.ratio;
   if(operation?.resolution)requested.resolution=operation.resolution;
-  if(!p&&quote?.effectiveParameters)Object.assign(requested,quote.effectiveParameters);
+  if(!p&&quote?.effectiveParameters){
+    requested.resolution=quote.effectiveParameters.resolution;
+    requested.ratio=quote.effectiveParameters.ratio;
+    // Billing may use a wire alias (hd) or auto to mean omitted quality.
+    // The adapter still needs a declared semantic choice for policyQuality().
+    if(scope.capabilities.qualities.includes(quote.effectiveParameters.quality as never))requested.quality=quote.effectiveParameters.quality;
+  }
   // New preset delivery fallback is explicit; old prompt-only preset requests
   // had no differing effective tier and retain their historical precedence.
   if(p && quote?.effectiveParameters && quote.requestedParameters?.resolution!==quote.effectiveParameters.resolution) requested.resolution=quote.effectiveParameters.resolution;

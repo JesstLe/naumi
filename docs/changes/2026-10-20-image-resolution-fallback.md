@@ -31,3 +31,12 @@
 ## 测试修正说明
 
 旧verify-resolution-parameters的503 fixture没有not_charged证据却断言自动换供应商，baseline与modified均得到supplier-response-unconfirmed。仅给fixture明确not_charged，保留生产未知任务不重提保护。原canvas静态guard改匹配effectivePreset，480组合/90拒绝仍实际跑。异步57项首次并发时计数波动，baseline与modified原样重跑通过，不隐藏原始输出。
+
+## 最终全链路补齐
+
+- 画布提交原raw request而非预览resolved request，保持原档计价和原始fingerprint；将回退提示交onPlan，结果保留plan warnings。
+- 新旧preset operation分辨率优先级回归保持；只有明确原选/实际档不同时采用actual。
+- 实际APIB完整plan→child→adapter发现quote/operation的quality=auto是omit wire标记，不是合法semantic quality。仅认可已声明quality选项，不把auto/hd映射别名二次当选择输入；policyQuality仍负责发包映射。
+- 最终独立PG：用户4K报价12，实际2K；plan/legacy/APIB三链成功结算12，2048²产物解码/保存；raw重试/异步恢复零新增POST，外部供应商0。通用策略46项、Seedream42项/210组合、异步57项、旧preset成本账务与恢复、480canvas组合/90拒绝通过。
+- 初始17命令原始失败与全部修正/重跑输出留证，不删除失败日志。91页Next生产构建通过固定5041e83c；最后adapter质量合法值修正另经实际全链/模块/全量tsc验证，不把旧build hash说成最终源码镜像。
+- 当前仍仅任务分支，未合main、未上线；正式发布候选需重新固定最终源SHA并构建，47三锁蓝绿及受影响功能验收保持。
