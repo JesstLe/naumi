@@ -19,6 +19,7 @@ import { CANVAS_RATIO_OPTIONS, CANVAS_RESOLUTIONS, CANVAS_MAX_COUNT, normalizeCa
 import { canvasDockLayout, canvasOverlaySafeArea, type NodeScreen } from "@/lib/canvas/dock-layout";
 import { createProjectRootResolver } from "@/lib/canvas/project-roots";
 import { knownCanvasNodeMeasurement } from "@/lib/canvas/node-measurement";
+import {canvasGenerationReferences,explicitCanvasParent,synchronizeCanvasArtworks,imageAspectDisplaySize} from "@/lib/canvas/input-references";
 import { canvasFocusViewport } from "@/lib/canvas/upload-visibility";
 import { stableArtworkPositions, canvasNodePosition, readPlacementCache, type CanvasPoint } from "@/lib/canvas/stable-placement";
 import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
@@ -522,10 +523,7 @@ function artworkImageSize(art: Pick<Artwork, "width" | "height">) {
     withCanvas.canvasHeight &&
     withCanvas.canvasHeight > 0
   ) {
-    return {
-      width: Math.round(withCanvas.canvasWidth),
-      height: Math.round(withCanvas.canvasHeight),
-    };
+    return imageAspectDisplaySize(Math.round(withCanvas.canvasWidth), Math.round(withCanvas.canvasHeight), art.width, art.height);
   }
   return adaptiveCanvasImageSize(art.width, art.height);
 }
@@ -1180,9 +1178,12 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
     onCanvasRatioRepair?: (id: string, width: number, height: number) => void;
     onRenameRequest?: (id: string, label: string) => void;
     onVideoExtract?: (id: string, action: VideoPlayerAction) => void;
+    onCutout?: (id: string) => void;
+    cutoutBusy?: boolean;
     settings?: CanvasNodeSettings;
     readOnly?: boolean;
   };
+  const { can: canNodeFeature } = useFeatureAccess();
   const imageWidth = d.width && d.width > 0 ? Math.round(d.width) : undefined;
   const imageHeight = d.height && d.height > 0 ? Math.round(d.height) : undefined;
   // 节点边界=图片区域(标题绝对定位悬在图上方,不占边界),端口对齐图片竖直中点
@@ -1334,6 +1335,11 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
               {!d.readOnly && <button type="button" className="nodrag nopan rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40"
                 disabled={d.settings?.locked} onClick={event=>{event.stopPropagation();d.onFill?.();}}>补充图片</button>}
             </div>}
+            {selected && canNodeFeature("cutout") && !d.readOnly && !d.missingAsset && d.onCutout && <button type="button" data-testid="canvas-image-quick-cutout"
+              aria-label="去背景，保留主体" title="去背景，保留主体" disabled={d.cutoutBusy || d.settings?.locked}
+              className="nodrag nopan absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white/95 px-2 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+              onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();d.onCutout?.(d.id);}}>
+              {d.cutoutBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> : <Scissors className="h-3.5 w-3.5"/>}去背景</button>}
             {selected && d.rootLabel && (
               <span className="absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">
                 {d.rootLabel}
@@ -1349,12 +1355,14 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
         id="in"
         type="target"
         position={Position.Left}
+        title="连接参考图输入" aria-label="连接参考图输入"
+        isConnectable={!d.readOnly && !d.settings?.locked}
         style={{ top: portY }}
         className={cn(
           "canvas-ui-port art-port !flex !h-12 !w-12 !-left-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !text-[26px] !font-medium !leading-none shadow-lg transition-all",
           selected
             ? "!opacity-100"
-            : "!pointer-events-none !opacity-0 group-hover:!pointer-events-auto group-hover:!opacity-100"
+            : "!opacity-0 group-hover:!opacity-100"
         )}
       >
         <span className="pointer-events-none leading-none">+</span>
@@ -1364,6 +1372,8 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
           id="out"
           type="source"
           position={Position.Right}
+          title="拖动连接到其他图片" aria-label="拖动连接到其他图片"
+          isConnectable={!d.readOnly && !d.settings?.locked}
           style={{ top: portY }}
           className={cn(
             "canvas-ui-port art-port !flex !h-12 !w-12 !-right-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !text-[26px] !font-medium !leading-none shadow-lg transition-all",
@@ -1387,14 +1397,13 @@ function lineageChain(
   const chain = new Set<string>();
   if (!selectedId) return chain;
   const byId = new Map(members.map((m) => [m.id, m]));
-  // 某节点的全部父(primary + 多输入);canvas-add 独立节点无血缘父
+  // 项目归属不是输入；显式连线仍参与血缘和助手上下文。
   const parentsOf = (m: Artwork): string[] => {
-    if (m.source === "canvas-add") return [];
-    const ps: string[] = [];
-    if (m.parentId && byId.has(m.parentId)) ps.push(m.parentId);
+    const ps = new Set<string>();
+    if (m.parentId && byId.has(m.parentId) && explicitCanvasParent(m, m.parentId)) ps.add(m.parentId);
     for (const pid of m.parentIds ?? [])
-      if (pid && byId.has(pid) && pid !== m.parentId) ps.push(pid);
-    return ps;
+      if (pid && byId.has(pid)) ps.add(pid);
+    return [...ps];
   };
   const childrenOf = new Map<string, string[]>();
   for (const m of members) {
@@ -1437,12 +1446,11 @@ function assistantContext(members: Artwork[], anchorId: string): Artwork[] {
   const anchor = byId.get(anchorId);
   if (!anchor) return [];
   const parentsOf = (m: Artwork): string[] => {
-    if (m.source === "canvas-add") return [];
-    const ps: string[] = [];
-    if (m.parentId && byId.has(m.parentId)) ps.push(m.parentId);
+    const ps = new Set<string>();
+    if (m.parentId && byId.has(m.parentId) && explicitCanvasParent(m, m.parentId)) ps.add(m.parentId);
     for (const pid of m.parentIds ?? [])
-      if (pid && byId.has(pid) && pid !== m.parentId) ps.push(pid);
-    return ps;
+      if (pid && byId.has(pid)) ps.add(pid);
+    return [...ps];
   };
   const out: Artwork[] = [anchor];
   const seen = new Set([anchorId]);
@@ -1524,7 +1532,7 @@ function layoutGraph(
   const edges: Edge[] = [];
   for (const a of sorted) {
     // primary 血缘边(canvas-add 独立节点不画)
-    if (a.parentId && byId.has(a.parentId) && a.source !== "canvas-add") {
+    if (a.parentId && byId.has(a.parentId) && explicitCanvasParent(a, a.parentId)) {
       edges.push({
         id: `e-${a.parentId}-${a.id}`,
         source: a.parentId as string,
@@ -1671,6 +1679,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const textEditQuality = useImageQuality("canvas.text-edit").quality;
   const annotateQuality = useImageQuality("canvas.annotate").quality;
   const canvasToolQualities: Partial<Record<FeatureId,string>> = {"canvas.expand":expandQuality,"canvas.text-edit":textEditQuality,"canvas.annotate":annotateQuality};
+  const { catalog: cutoutCatalog, error: cutoutCatalogError } = useFeatureModels("tool.cutout");
   const { catalog: canvasImageCatalog, selected: canvasImageModel, setSelected: setCanvasImageModel, error: canvasImageCatalogError } = useFeatureModels("canvas.image");
   const [imageModels, setImageModels] = useState<ImageModelOption[]>([]);
   const [genResolution, setGenResolution] = useState("1K"); // 默认 1K
@@ -1792,10 +1801,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       window.removeEventListener("paste", onPaste);
     };
   }, []);
+  const importResyncRef = useRef(new Set<number>());
   const [imageImports, setImageImports] = useState<{
     id: number; total: number; done: number; success: number; finished: boolean;
     errors: { name: string; message: string }[];
-    phase: "optimizing" | "uploading" | "done";
+    phase: "optimizing" | "uploading" | "sync" | "done";
+    owner?: string;
     originalBytes: number; uploadBytes: number; uploadedBytes: number;
     nodeIds?: string[];
   }[]>([]);
@@ -3419,9 +3430,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     ) || (!!selectedId && pendNodes.some(node => node.generating && node.operationKey === `node:${selectedId}`));
   // dock 的默认引用图就是当前节点本身：节点链表达真实执行顺序，下一节点应基于当前结果继续。
   // 若要否定当前结果并从原输入重做，使用显式“重做此图”动作生成同级新版本。
-  const dockRefs = useMemo<Artwork[]>(() => {
-    return selected ? [selected] : [];
-  }, [selected]);
+  const dockReferenceState = useMemo(() => {
+    try { return { references: canvasGenerationReferences(selected, active?.members ?? []), error: "" }; }
+    catch(error) { return { references: selected ? [selected] : [], error: error instanceof Error ? error.message : "参考图尚未同步" }; }
+  }, [selected, active?.members]);
+  const dockRefs = dockReferenceState.references;
   // 用户可在 dock 里"×"掉自动引用图(改用自己上传的);hiddenRefIds 随选中切换清空
   const [hiddenRefIds, setHiddenRefIds] = useState<string[]>([]);
   const visibleDockRefs = useMemo(
@@ -3755,7 +3768,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
     // (React Flow 遇到重复 key 或悬空边会抛出 client-side exception → 白屏)
     const nSeen = new Set<string>();
-    const finalNodes = displayNodes.filter((n) =>
+    const finalNodes = displayNodes.map(node => node.type === "art" && !node.data.videoUrl && !node.data.pending ? {
+      ...node, data: { ...node.data, onCutout: (id: string) => { const art = worksRef.current?.find(item => item.id === id); if(art)void runCutout(art); },
+        cutoutBusy: !cutoutCatalog || !!cutoutCatalogError || cutoutCatalog.available === false || pendNodes.some(pend => pend.operationKey === `node:${node.id}` && pend.generating) || generationOperationRef.current.has(`node:${node.id}`) || generationTasks.some(task => task.sourceId === node.id && (!task.failure || generationFailureBlocks(task.failure))) }
+    } : node).filter((n) =>
       nSeen.has(n.id) ? false : (nSeen.add(n.id), true)
     );
     const nIds = nSeen;
@@ -3789,6 +3805,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     nodeSettings,
     nodeSettingsReady,
     readOnly,
+    cutoutCatalog, cutoutCatalogError,
     workflowManifests,
     videoNodesStore.nodes,videoTaskStore.tasks,works,extractVideoToCanvas,
   ]);
@@ -3812,7 +3829,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const nodesSig = useMemo(() => displayNodes
     .map(
       (n) =>
-        `${JSON.stringify([n.data.inspectOriginal,n.data.image,n.data.videoUrl,n.data.missingAsset,n.data.workflowPresentation,n.data.title,n.data.prompt,n.data.content])}:${JSON.stringify([n.data.generationFailure,n.data.generationStage, n.data.generationStartedAt, n.data.generationCount, n.data.generationCompleted, n.data.generationSize, n.data.generationKind])}:${JSON.stringify((n.data as {settings?:CanvasNodeSettings}).settings)}:${n.draggable}:${n.zIndex}:${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${
+        `${JSON.stringify([n.data.inspectOriginal,n.data.image,n.data.videoUrl,n.data.missingAsset,n.data.workflowPresentation,n.data.title,n.data.prompt,n.data.content,n.data.cutoutBusy])}:${JSON.stringify([n.data.generationFailure,n.data.generationStage, n.data.generationStartedAt, n.data.generationCount, n.data.generationCompleted, n.data.generationSize, n.data.generationKind])}:${JSON.stringify((n.data as {settings?:CanvasNodeSettings}).settings)}:${n.draggable}:${n.zIndex}:${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${
           (n.data as { pending?: boolean }).pending ? 1 : 0
         }:${(n.data as { inChain?: boolean }).inChain ? 1 : 0}:${n.className ?? ""}:${
           Math.round((n.data as { progress?: number }).progress ?? -1)
@@ -4194,9 +4211,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (!em) return works ?? [];
     try {
       const r = await fetch(`/api/account?email=${encodeURIComponent(em)}`, {
-        headers: await authHeader(),
+        headers: await authHeader(), cache: "no-store",
       });
-      const d = await r.json();
+      const d = await expectJsonOk(r, t("canvas.importSyncFailed"));
       if(account!==canvasAccountRef.current)return [];
       const arr = (d?.artworks ?? []) as Artwork[];
       setWorks(arr);
@@ -4224,15 +4241,16 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const d = await expectJsonOk(r, t("canvas.genFail"));
       if(account!==canvasAccountRef.current)return [];
       const fetched = (d?.artworks ?? []) as Artwork[];
-      if (fetched.length === 0) return works ?? [];
-      let merged = fetched;
+      if (fetched.length === 0) return refetchWorks();
+      const snapshot = new Map((worksRef.current ?? []).map(art => [art.id, art]));
+      for (const art of fetched) snapshot.set(art.id, art);
+      const merged = Array.from(snapshot.values()).sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""));
       setWorks((current) => {
         const map = new Map((current ?? []).map((w) => [w.id, w]));
         for (const a of fetched) map.set(a.id, a);
-        merged = Array.from(map.values()).sort((a, b) =>
+        return Array.from(map.values()).sort((a, b) =>
           (b.createdAt || "").localeCompare(a.createdAt || "")
         );
-        return merged;
       });
       return merged;
     } catch {
@@ -4615,85 +4633,29 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 抠图:不走生成(不重绘主体),调自托管 rembg 服务把主体原样抠出、背景置透明。
   // 同步返回,新节点落在生成占位处,挂在源节点下。
   async function runCutout(source: Artwork, quality: "fast" | "fine" = "fine") {
-    if (readOnly || !user) return;
-    const operationKey = `node:${source.id}`;
-    if (generationOperationRef.current.has(operationKey)) return;
-    generationOperationRef.current.add(operationKey);
-    const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const sourceNode = rfRef.current?.getNode(source.id) ?? rfNodes.find((node) => node.id === source.id);
-    const sourceSize = flowNodeSize(sourceNode);
-    const preferredPosition = sourceNode
-      ? { x: sourceNode.position.x + sourceSize.width + X_GAP, y: sourceNode.position.y }
-      : { x: 0, y: 0 };
-    const taskPosition = reserveGenerationPosition(taskId, preferredPosition, generationPlaceholderSize(source.ratio));
-    setGenerationTasks((current) => [
-      ...current,
-      {
-        id: taskId,
-        operationKey,
-        sourceId: source.id,
-        label: "主体提取中…",
-        stage: "generating", startedAt: Date.now(), previewSize: generationPlaceholderSize(source.ratio),
-        position: taskPosition,
-      },
-    ]);
-    setGenError(null);
-    try {
+    if (readOnly || !user || !canFeature("cutout") || isNodeLocked(source.id)) return;
+    if (!cutoutCatalog || cutoutCatalogError || cutoutCatalog.available === false || cutoutCatalog.supported === false) { setGenError(cutoutCatalogError || "抠图执行配置尚未就绪，请稍后再试"); return; }
+    const response = await landEditResult(source, async () => {
+      let blob: Blob;
+      try { blob = await readBrowserImage(source.image); }
+      catch { throw new ImagegenHttpError("原图读取失败，本次未提交抠图", 400, false); }
       const fd = new FormData();
-      fd.append("sourceUrl", source.image);
-      fd.append("email", user.email);
-      fd.append("parentId", source.id);
+      fd.append("image", new File([blob], "cutout-original.png", { type: blob.type || "image/png" }));
+      fd.append("email", user.email); fd.append("parentId", source.id);
       fd.append("title", `${source.title || "作品"} · 抠图`);
       fd.append("category", source.category || "main");
-      fd.append("ratio", source.ratio || "1:1");
-      fd.append("resolution", source.resolution || "1K");
-      // 抠图统一发丝级(Replicate),扣 1 积分/张,与抠图页一致
-      fd.append("quality", quality);
-      const res = await privateFetch("/api/cutout", {
-        method: "POST",
-        headers: await authHeader(),
-        body: fd,
-      });
-      const j = await readJsonSafe(res);
-      if (!res.ok || !j.ok) throw new Error(j.error || t("canvas.genFail"));
-      const newId: string | undefined = j.id;
-      if (!newId) throw new Error(t("canvas.genFail"));
-      if (j.user) applyServerUser(j.user); // 即时回写余额积分(扣 1 分)
-      // 落到生成占位处(源节点右侧或用户拖动后的位置),与生成流一致
-      const basePos = generationTaskPosRef.current[taskId] ?? taskPosition;
-      if (basePos) {
-        await privateFetchRaw("/api/artworks/position", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            email: user.email,
-            id: newId,
-            x: Math.round(basePos.x),
-            y: Math.round(basePos.y),
-          }),
-        }).then(response => expectJsonOk(response, t("canvas.saveFailed")));
-      }
-      const freshCut = await mergeWorks([newId]);
-      pushAddUndo(newId, freshCut); // 抠图结果可撤销
-      // 后台完成不改变用户当前选中节点。
-    } catch (e) {
-      const message =
-        e instanceof Error && e.message ? e.message : t("canvas.genFail");
-      if (selectedIdRef.current === source.id) setGenError(message);
-      else flashTip(`${source.title}：${message}`);
-    } finally {
-      generationOperationRef.current.delete(operationKey);
-      delete generationTaskPosRef.current[taskId];
-      delete generationTaskSizeRef.current[taskId];
-      setGenerationTasks((current) =>
-        current.filter((task) => task.id !== taskId)
-      );
-    }
+      fd.append("ratio", source.ratio || "auto");
+      fd.append("resolution", source.resolution || "1K"); fd.append("quality", quality);
+      return privateFetch("/api/cutout", { method: "POST", headers: await authHeader(), body: fd });
+    }, "抠图");
+    return response;
   }
 
   // 面板「生成」:用编辑框提示词 + 参数 + 追加参考图(留空=按这张图再生成一张)
   async function generateChild() {
     if (!selected) return;
+    if (dockReferenceState.error) { setGenError(dockReferenceState.error); return; }
+    if (visibleDockRefs.length + extraFiles.length > MAX_TOTAL_IMAGES) { setGenError(`一次最多使用 ${MAX_TOTAL_IMAGES} 张图片，请移除多余引用`); return; }
     if (generationMode === "detail") {
       const references = visibleDockRefs.length ? visibleDockRefs : [selected];
       await generateDetailSequence(selected, references, editPrompt.trim(), extraFiles);
@@ -4736,6 +4698,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       count: genCount,
       resolution: genResolution,
       parentId: selected.id,
+      parentIds: visibleDockRefs.filter(ref => ref.id !== selected.id).map(ref => ref.id),
       baseFile: useUploadAsBase ? extraFiles[0] : undefined,
       extra: useUploadAsBase ? extraFiles.slice(1) : extraFiles,
       refUrls: useUploadAsBase ? [] : visibleDockRefs.map((r) => r.image),
@@ -6435,17 +6398,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       return;
     }
     // 连到已有真实节点 → 多输入,写库(带防环)
-    void addParentToNode(target, source);
+    await addParentToNode(target, source);
   }
   // 多输入:给目标节点追加父节点(防环:源不能是目标的后代)
   async function addParentToNode(targetId: string, sourceId: string) {
-    if (readOnly || !user || !active) return;
+    if (readOnly || !user || !active || isNodeLocked(targetId) || isNodeLocked(sourceId)) return;
+    const account = canvasAccountRef.current;
     const byId = new Map(active.members.map((m) => [m.id, m]));
     const parents = (id: string): string[] => {
       const m = byId.get(id);
-      if (!m || m.source === "canvas-add") return [];
+      if (!m) return [];
       const ps: string[] = [];
-      if (m.parentId && byId.has(m.parentId)) ps.push(m.parentId);
+      if (m.parentId && byId.has(m.parentId) && explicitCanvasParent(m, m.parentId)) ps.push(m.parentId);
       for (const pid of m.parentIds ?? [])
         if (pid && byId.has(pid)) ps.push(pid);
       return ps;
@@ -6481,7 +6445,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         parentId: sourceId,
         added: true,
       }); // 连线可撤销(undo=剪断)
-      await mergeWorks([targetId]); // 只补受影响的目标节点这一行
+      await synchronizeCanvasArtworks([targetId], async () => {
+        const fresh = await mergeWorks([targetId]);
+        if (!fresh.find(art => art.id === targetId)?.parentIds?.includes(sourceId)) throw new Error("连线已保存，参考图尚未同步，请稍后刷新");
+        return fresh;
+      }, () => canvasAccountRef.current === account);
+      flashTip(locale === "en" ? "Reference connected" : "已连接参考图");
     } catch (e) {
       flashTip(e instanceof Error ? e.message : t("canvas.genFail"));
     }
@@ -6854,6 +6823,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (ctx.parentId) scope.rootId = ctx.parentId;
     const id = ++importSeqRef.current;
     const email = user.email;
+    const uploadAccount = canvasAccountRef.current;
     const failures: { name: string; message: string }[] = [];
     const valid = picked.filter(file => {
       const supported = /^(image\/png|image\/jpeg|image\/webp)$/.test(file.type) ||
@@ -6870,7 +6840,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const columns = Math.min(4, Math.ceil(Math.sqrt(valid.length)));
     const entries = valid.map(file => ({ file, pos: { x: ctx.x, y: ctx.y } }));
     setImageImports(current => [...current.filter(batch => !batch.finished || batch.errors.length > 0), {
-      id, total: picked.length, done: failures.length, success: 0, errors: failures, finished: false,
+      id, owner: email.toLowerCase(), total: picked.length, done: failures.length, success: 0, errors: failures, finished: false,
       phase: "optimizing", originalBytes: valid.reduce((sum, file) => sum + file.size, 0),
       uploadBytes: valid.reduce((sum, file) => sum + file.size, 0), uploadedBytes: 0,
     }]);
@@ -6978,13 +6948,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       }));
       const added = ids.filter((value): value is string => !!value);
       scope.rects = scope.rects.filter((rect) => rect.owner !== id || !!ids[rect.index]);
+      setImageImports(current => current.map(batch => batch.id === id ? { ...batch, nodeIds: added, phase: "sync" } : batch));
       if (added.length) {
         // Background uploads must not drag the user back after they switch projects.
         if (importScopeRef.current === scope) {
           openPendingNodeWithoutSelectionRef.current = true;
           pendingNodeRef.current = added[0];
         }
-        const fresh = await mergeWorks(added);
+        const fresh = await synchronizeCanvasArtworks(added, () => mergeWorks(added), () => canvasAccountRef.current === uploadAccount);
         if (importScopeRef.current === scope) pushAddUndoMany(added, fresh);
       }
       setImageImports(current => current.map(batch => batch.id === id ? {
@@ -6995,10 +6966,26 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     scope.queue = scope.queue.then(run, run).catch(() => {
       setImageImports(current => current.map(batch => batch.id === id ? {
         ...batch, finished: true,
-        errors: [...batch.errors, { name: t("canvas.importSync"), message: t("canvas.importSyncFailed") }],
+        phase: batch.nodeIds?.length ? "sync" : batch.phase,
+        errors: [...batch.errors, { name: t("canvas.importSync"), message: batch.nodeIds?.length ? "图片已保存，画布尚未同步；请点击同步图片，无需重新上传" : t("canvas.importSyncFailed") }],
       } : batch));
     });
   }
+  async function retryImportSynchronization(batchId: number) {
+    const batch = imageImports.find(item => item.id === batchId);
+    if (!batch?.nodeIds?.length || batch.owner !== user?.email.toLowerCase() || readOnly || importResyncRef.current.has(batchId)) return;
+    importResyncRef.current.add(batchId);
+    const account = canvasAccountRef.current;
+    setImageImports(current => current.map(item => item.id === batchId ? { ...item, finished: false } : item));
+    try {
+      const fresh = await synchronizeCanvasArtworks(batch.nodeIds, () => mergeWorks(batch.nodeIds!), () => canvasAccountRef.current === account);
+      pushAddUndoMany(batch.nodeIds, fresh);
+      setImageImports(current => current.map(item => item.id === batchId ? { ...item, finished: true, phase: "done", errors: item.errors.filter(error => error.name !== t("canvas.importSync")) } : item));
+    } catch {
+      setImageImports(current => current.map(item => item.id === batchId ? { ...item, finished: true, phase: "sync" } : item));
+    } finally { importResyncRef.current.delete(batchId); }
+  }
+
   // 在画布某屏幕点(相对画布区)上传图片:落在当前项目、该点的画布坐标
   function triggerUpload(screenX: number, screenY: number) {
     const viewport = rfRef.current?.getViewport() ?? viewportRef.current;
@@ -10001,13 +9988,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               </div>
             </div>
           )}
-          {imageImports.length > 0 && (
+          {imageImports.some(batch => batch.owner === user?.email.toLowerCase()) && (
             <div className="absolute right-3 top-[108px] z-40 max-h-[40%] w-80 max-w-[calc(100%-24px)] overflow-y-auto rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm md:top-16" data-testid="canvas-import-status" aria-live="polite">
-              {imageImports.map(batch => (
+              {imageImports.filter(batch => batch.owner === user?.email.toLowerCase()).map(batch => (
                 <div key={batch.id} className="border-b border-slate-100 p-3 last:border-0">
                   <div className="flex items-center gap-2 text-xs font-medium">
                     {!batch.finished && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    <span className="flex-1">{batch.finished ? t("canvas.importDone") : t("canvas.importBusy")} {batch.done} / {batch.total} · {t("canvas.importSuccess")} {batch.success}{batch.errors.length ? ` · ${t("canvas.importErrors")} ${batch.errors.length}` : ""}</span>
+                    <span className="flex-1">{batch.phase === "sync" ? (locale === "en" ? "Syncing canvas" : "等待画布同步") : batch.finished ? t("canvas.importDone") : t("canvas.importBusy")} {batch.done} / {batch.total} · {t("canvas.importSuccess")} {batch.success}{batch.errors.length ? ` · ${t("canvas.importErrors")} ${batch.errors.length}` : ""}</span>
                     {batch.finished && <button type="button" aria-label={t("canvas.importDismiss")} className="p-1 hover:bg-slate-100" onClick={() => setImageImports(current => current.filter(item => item.id !== batch.id))}><X className="h-3.5 w-3.5" /></button>}
                   </div>
                   {!batch.finished && (
@@ -10021,6 +10008,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       </div>
                     </div>
                   )}
+                  {batch.finished && batch.phase === "sync" && batch.owner === user?.email.toLowerCase() && <button type="button" data-testid="canvas-import-resync" className="mt-2 rounded-md px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50" onClick={() => void retryImportSynchronization(batch.id)}>{locale === "en" ? "Sync saved images" : "同步图片"}</button>}
                   {batch.finished && batch.nodeIds?.some(id => active?.members.some(member => member.id === id)) && (
                     <button type="button" data-testid="canvas-import-locate" className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50"
                       onClick={() => {

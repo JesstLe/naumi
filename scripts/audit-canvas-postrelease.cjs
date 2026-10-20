@@ -80,7 +80,7 @@ async function main() {
     let cleared=0,positions=0,scheduled=0;
     const results=loaded?[{id:'result',image:'/media/result.png'}]:[];
     const receipt={key:'fixture-receipt',receipt:{id:'fixture-job',nodeId:'node:source',x:400,y:200}};
-    const c={...require(root+'/src/lib/canvas/generation-failure.ts'),user:{email:'fixture@example.test'},readOnly:false,works:[],active:{key:'project'},sessionStorage:{},canvasReceipts:()=>[receipt],generationOperationRef:{current:new Set()},worksRef:{current:[]},NODE_LABEL_H:24,
+    const c={...require(root+'/src/lib/canvas/generation-failure.ts'),imageOutputWarningText:require(root+'/src/lib/imagegen/output-advisory.ts').imageOutputWarningText,user:{email:'fixture@example.test'},readOnly:false,works:[],active:{key:'project'},sessionStorage:{},canvasReceipts:()=>[receipt],generationOperationRef:{current:new Set()},worksRef:{current:[]},NODE_LABEL_H:24,
       pollImagegen:async()=>({status:'succeeded',artifacts:[{artworkId:'result',height:512}]}),privateFetchRaw:async(url)=>{if(url==='/api/artworks/position'){positions++;return {ok:true}}return {ok:true,json:async()=>({artworks:results})}},pushAddUndoMany:()=>{},flashTip:()=>{},clearCanvasReceipt:()=>{cleared++},setTimeout:()=>{scheduled++;return 1},clearTimeout:()=>{},console,
       canvasAccountRef:{current:'fixture'},targetEmail:null,invalidateBrowserData:()=>{},expectJsonOk:async r=>r.json(),t:k=>k,setWorks:updater=>{c.works=typeof updater==='function'?updater(c.works):updater},authHeader:async()=>({}),fetch:async()=>{throw Error('fixture account read fails')}};
     vm.createContext(c);
