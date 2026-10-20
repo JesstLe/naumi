@@ -31,6 +31,15 @@ export function resolutionFacts(facts: ModelFacts, tier: string): ModelFacts {
     ...(facts.imagegenRequirements ? {imagegenRequirements:{...facts.imagegenRequirements,requirements:facts.imagegenRequirements.requirements.map(r=>r.name==="resolution"?{...r,value:tier}:r)}} : {})};
 }
 
+/** Missing legacy tier metadata is not an explicit refusal or a native-resolution
+ * promise. Keep its existing execution path; declared contracts remain strict. */
+export function upstreamAcceptsResolution(upstream: UpstreamModel, tier: string, ratio?: string): boolean {
+  const map = upstream.parameterMap;
+  const declared = map.resolutionPolicy?.mode === "map" || upstream.capabilities.nativeResolutions.length > 0
+    || Object.keys(map.resolution || {}).length > 0 || !!map.apimartImages;
+  return !declared || upstreamResolutionTiers(upstream, ratio).includes(tier);
+}
+
 /** Delivery decision BEFORE reservation/freeze; billing retains the selected tier.
  * Exact pixels and accepted task
  * recovery opt out at their entry points. No supplier call or paid retry. */
@@ -49,7 +58,8 @@ export function resolveImageResolution(config: ModelConfig, modelId: string | un
     const simulated = context ? new Set(simulateModel(context.snapshot,context.billing,model.id,facts!,context.options).eligible.map(u=>u.upstreamId)) : undefined;
     const supportedIds = candidates.filter(id => {
       const u=config.upstreamModels.find(u=>u.id===id), provider=config.providers.find(p=>p.id===u?.providerId);
-      if (!u?.enabled || !provider?.enabled || !preset && !upstreamResolutionTiers(u,ratio).includes(tier)) return false;
+      if (!u?.enabled || !provider?.enabled || !preset && !(upstreamResolutionTiers(u,ratio).includes(tier)
+        || tier === requested && upstreamAcceptsResolution(u,tier,ratio))) return false;
       if (ratio && imageRequestAdmission(ratio,model.id,!!model.supplierRouting,u,provider.options?.imageAdapter).length) return false;
       if (stage && context) {
         const alternative=structuredClone(context.snapshot);

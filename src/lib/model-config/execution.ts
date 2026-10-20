@@ -1,4 +1,4 @@
-import {resolveImageResolution, resolutionFacts, upstreamResolutionTiers} from "./resolution-fallback";
+import {resolveImageResolution, resolutionFacts, upstreamAcceptsResolution} from "./resolution-fallback";
 import { applicationAPIMartImages } from "./apimart-image-policy";
 import "server-only";
 import { frontendModelSelection } from "./frontend-selection";
@@ -63,7 +63,7 @@ export function createModelExecutor(deps: Dependencies) {
       const eligible=frozen.modality==="image"&&frozen.facts?new Set(simulateModel(snapshot,await deps.billingByVersion(frozen.billingVersion),publicModel.id,frozen.facts,deps).eligible.map(u=>u.upstreamId)):new Set(publicModel.supplierRouting.channels.filter(c=>c.enabled&&snapshot.config.upstreamModels.some(u=>u.id===c.upstreamId&&u.enabled&&u.capabilities[purpose.capability]&&(!(frozen.feature==="canvas.assistant"&&frozen.facts?.references)||u.capabilities.vision)&&snapshot.config.providers.some(p=>p.id===u.providerId&&p.enabled))).map(c=>c.upstreamId));
       if(frozen.modality==="image" && frozen.requestedParameters && frozen.facts) for(const id of eligible) {
         const u=snapshot.config.upstreamModels.find(u=>u.id===id)!;
-        if(!upstreamResolutionTiers(u,frozen.facts.ratio).includes(frozen.facts.requestedResolution||frozen.facts.resolution))eligible.delete(id);
+        if(!upstreamAcceptsResolution(u,frozen.facts.requestedResolution||frozen.facts.resolution,frozen.facts.ratio))eligible.delete(id);
       }
       const targets=await Promise.all(publicModel.supplierRouting.channels.filter(c=>c.enabled&&eligible.has(c.upstreamId)).map(async c=>{const u=snapshot.config.upstreamModels.find(u=>u.id===c.upstreamId)!;return {...c,scope:{frozen,frontendModel,channelGuard:{upstreamId:u.id},connection:await connectionFor(u.id),capabilities:u.capabilities,parameterMap:u.parameterMap,procurement:u.procurement,businessOption,audited:true}};}));
       if(!targets.length)throw new ModelConfigError("MODEL_INCOMPATIBLE","没有符合本次参数的供应通道",400);

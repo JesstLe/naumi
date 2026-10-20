@@ -1,4 +1,4 @@
-import {resolveImageResolution,resolutionFallbackMessage,resolutionFacts,upstreamResolutionTiers} from "../model-config/resolution-fallback";
+import {resolveImageResolution,resolutionFallbackMessage,resolutionFacts,upstreamAcceptsResolution} from "../model-config/resolution-fallback";
 import "server-only";
 import {createHash} from "node:crypto";
 import {imagegenRequestSchema} from "./schema";
@@ -85,7 +85,7 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
   candidates.eligible=candidates.eligible.filter(candidate=>{
    const source=models.config.upstreamModels.find(u=>u.id===candidate.upstreamId)!;
    const provider=models.config.providers.find(p=>p.id===source.providerId);
-   if(!versions && !selectedImagePresetForPlan(modelId) && !request.parameters.width && !upstreamResolutionTiers(source,stageFacts.ratio).includes(stageFacts.resolution)) {candidates.excluded.push({upstreamId:candidate.upstreamId,codes:["RESOLUTION_UNSUPPORTED"]});return false;}
+   if(!versions && !selectedImagePresetForPlan(modelId) && !request.parameters.width && !upstreamAcceptsResolution(source,stageFacts.resolution,stageFacts.ratio)) {candidates.excluded.push({upstreamId:candidate.upstreamId,codes:["RESOLUTION_UNSUPPORTED"]});return false;}
    const codes=imageRequestAdmission(request.parameters.ratio||"1:1",modelId,!!selected.supplierRouting,source,provider?.options?.imageAdapter);
    if(codes.includes("REVERSE_HUB_RATIO_UNSUPPORTED"))hubRatioRejected=true;
    if(codes.includes("EXACT_RATIO_UNSUPPORTED"))exactRatioRejected=true;
