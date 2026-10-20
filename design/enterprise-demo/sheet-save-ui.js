@@ -1,21 +1,21 @@
 /* Recoverable, in-memory edits. Never persist employee task inputs in browser storage. */
 let sgEditSession=null;
 function sgEditCurrent(s){return sgEditSession===s&&s.form.isConnected&&sgCurrent(s.scope)&&sheetGrid.source===s.source;}
-function sgEditValues(form){return JSON.stringify([...new FormData(form)]);}
+function sgEditValues(form){return form.sgValues?form.sgValues():JSON.stringify([...new FormData(form)]);}
 function sgEditChanged(s){return s&&(s.initial!==sgEditValues(s.form)||['unknown','saved'].includes(s.state));}
-function sgEditLock(s,locked){for(const [control,disabled]of s.controls)control.disabled=locked||disabled;s.button.disabled=locked;}
+function sgEditLock(s,locked){for(const control of s.form.elements){if(!s.controls.has(control))s.controls.set(control,control.disabled);control.disabled=locked||s.controls.get(control);}s.button.disabled=locked;}
 function sgEditRelease(s){if(sgEditSession===s)sgEditSession=null;}
 function sgEditLeave(){
  const s=sgEditSession;if(!s)return true;
  if(!sgEditCurrent(s)){sgEditRelease(s);return true;}
- if(s.state==='saving'||s.state==='loading'){toast('正在核对保存结果，请稍候');return false;}
+ if(s.form.sgBusy||s.state==='saving'||s.state==='loading'){toast(s.form.sgBusy?'正在上传附件，请稍候':'正在核对保存结果，请稍候');return false;}
  if(sgEditChanged(s)&&!confirm(s.state==='unknown'?'上次保存结果尚未确认。建议先按原命令重试核对；现在离开会丢失本窗口的重试信息。确定离开？':s.state==='saved'?'内容已保存，列表尚未刷新。确定离开编辑？':'当前输入尚未保存，确定放弃并离开？'))return false;
  sgEditRelease(s);return true;
 }
 const sgSaveCloseOriginal=closeOverlay;closeOverlay=function(){if(sgEditLeave())return sgSaveCloseOriginal();};
 const sgSaveOverlayOriginal=overlay;overlay=function(...args){if(sgEditLeave())return sgSaveOverlayOriginal(...args);};
 const sgSaveWorkspaceOriginal=workspaceClear;workspaceClear=function(){sgEditSession=null;return sgSaveWorkspaceOriginal();};
-window.addEventListener('beforeunload',e=>{if(sgEditSession&&sgEditCurrent(sgEditSession)&&(sgEditChanged(sgEditSession)||['saving','loading'].includes(sgEditSession.state))){e.preventDefault();e.returnValue='';}});
+window.addEventListener('beforeunload',e=>{if(sgEditSession&&sgEditCurrent(sgEditSession)&&(sgEditSession.form.sgBusy||sgEditChanged(sgEditSession)||['saving','loading'].includes(sgEditSession.state))){e.preventDefault();e.returnValue='';}});
 function sgSaveMessage(s,text,buttonText,handler){
  s.panel.replaceChildren();const message=document.createElement('p');message.textContent=text;s.panel.append(message);s.panel.hidden=false;
  if(buttonText){const button=document.createElement('button');button.type='button';button.className='btn sm';button.dataset.sgSaveRetry='';button.textContent=buttonText;button.onclick=handler;s.panel.append(button);}
@@ -42,12 +42,12 @@ async function sgSaveCompare(s,action){
    const scroll=document.createElement('div');scroll.className='sg-conflict-scroll';scroll.append(table);s.panel.append(scroll);
   }
   const retry=document.createElement('button');retry.type='button';retry.className='btn primary sm';retry.id='sgMergeSave';retry.disabled=plan.conflicts.length>0;retry.textContent=plan.conflicts.length?'按选择合并保存':'基于最新版本重试';
-  retry.onclick=()=>{if(!sgEditCurrent(s)||s.state!=='conflict')return;const resolved=SheetSaveModel.resolve(action,plan,choices);for(const [id,value]of Object.entries(resolved.cells)){const input=s.form.elements.namedItem(id)||(s.form.id==='sgCellForm'?s.form.elements.namedItem('value'):null);if(input)input.value=value;}if(Object.hasOwn(resolved,'parentId')&&s.form.elements.namedItem('sgParent'))s.form.elements.namedItem('sgParent').value=resolved.parentId||'';s.base=structuredClone(latest.document);s.version=latest.version;s.attempt=null;void sgSaveSend(s,resolved);};s.panel.append(retry);
+  retry.onclick=()=>{if(!sgEditCurrent(s)||s.state!=='conflict')return;try{const resolved=SheetSaveModel.resolve(action,plan,choices);for(const [id,value]of Object.entries(resolved.cells)){const input=s.form.elements.namedItem(id)||(s.form.id==='sgCellForm'?s.form.elements.namedItem('value'):null);if(input)input.value=value;}if(Object.hasOwn(resolved,'parentId')&&s.form.elements.namedItem('sgParent'))s.form.elements.namedItem('sgParent').value=resolved.parentId||'';s.form.sgOnResolved?.(resolved);s.base=structuredClone(latest.document);s.version=latest.version;s.attempt=null;void sgSaveSend(s,resolved);}catch(e){let error=s.panel.querySelector('.sg-merge-error');if(!error){error=document.createElement('p');error.className='sg-merge-error';error.setAttribute('role','alert');s.panel.append(error);}error.textContent=e.message;}};s.panel.append(retry);
  }catch(e){if(sgEditCurrent(s)){s.state='rejected';sgEditLock(s,false);sgSaveMessage(s,'最新版本读取失败，当前输入仍保留。','重新核对',()=>void sgSaveCompare(s,action));}}
  finally{s.comparing=false;}
 }
 async function sgSaveSend(s,override){
- if(!sgEditCurrent(s)||['saving','loading','saved'].includes(s.state))return;
+ if(!sgEditCurrent(s)||s.form.sgBusy||['saving','loading','saved'].includes(s.state))return;
  if(!s.attempt){let action;try{action=override||s.build(new FormData(s.form));}catch(e){sgSaveMessage(s,sgError(e));return;}s.attempt={commandId:crypto.randomUUID(),expectedVersion:s.version,action:structuredClone(action)};}
  s.state='saving';sgEditLock(s,true);sgSaveMessage(s,'正在保存…');
  try{
@@ -60,7 +60,7 @@ async function sgSaveSend(s,override){
 }
 sgSubmit=function(form,build,done){
  if(!form||!document.querySelector(`[form="${form.id}"]`)||(sgEditSession?.form===form&&sgEditCurrent(sgEditSession)))return;
- const s={form,build,done,source:sheetGrid.source,scope:sgScope(),version:sheetGrid.version,base:structuredClone(sheetGrid.doc),initial:sgEditValues(form),controls:[...form.elements].map(x=>[x,x.disabled]),button:document.querySelector(`[form="${form.id}"]`),state:'ready',attempt:null};
+ const s={form,build,done,source:sheetGrid.source,scope:sgScope(),version:sheetGrid.version,base:structuredClone(sheetGrid.doc),initial:sgEditValues(form),controls:new Map([...form.elements].map(x=>[x,x.disabled])),button:document.querySelector(`[form="${form.id}"]`),state:'ready',attempt:null};
  s.panel=document.createElement('div');s.panel.className='sg-save-recovery';s.panel.setAttribute('role','status');s.panel.setAttribute('aria-live','polite');s.panel.hidden=true;form.append(s.panel);sgEditSession=s;
  form.addEventListener('input',e=>{if(e.target.closest('.sg-save-recovery'))return;if(['conflict','rejected'].includes(s.state)){s.panel.hidden=true;s.panel.replaceChildren();s.state='ready';s.attempt=null;s.button.disabled=false;}});
  form.onsubmit=e=>{e.preventDefault();void sgSaveSend(s);};

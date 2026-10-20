@@ -17,8 +17,11 @@ try{
  // Merely open an existing editor, without changing any value or submitting it.
  await page.locator('[data-sg-edit][data-sg-col="status"]').first().click();assert.equal(await page.locator('#sgCellForm').count(),1);
  await page.locator('#overlay [data-close]').first().click();
+ assert(await page.evaluate(()=>typeof SheetAttachmentModel==='object'));
+ await page.evaluate(()=>{const r=sheetGrid.doc.rows.find(r=>!r.archived&&Array.isArray(r.cells.files)&&r.cells.files.length);sgAttachments(r,sgCols().find(c=>c.id==='files'));});
+ await page.locator('#sgChooseSource').click();assert.equal(await page.locator('#sgSourcePicker:visible').count(),1);await page.locator('#overlay [data-close]').first().click();
  const after=await page.evaluate(()=>sgRequest('worksheet',{source:sheetGrid.source}));
  assert.deepEqual(before.document,after);assert.equal(before.sourceRows,364);assert.equal(before.assets,292);assert.equal(errors.length,0);assert.equal(writes.length,0);
- const report={url:page.url(),rows:after.document.rows.length,version:after.version,sourceRows:before.sourceRows,assets:before.assets,profiles:before.people.profiles.length,boundOccurrences:before.people.occurrences.filter(o=>o.personId).length,documentSha256:createHash('sha256').update(JSON.stringify(after.document)).digest('hex'),moduleReady:true,businessWrites:writes.length,pageErrors:errors.length};
- await writeFile(resolve(out,'LIVE_READONLY.json'),JSON.stringify(report,null,2));console.log(`LOCAL_QUALITY_READY: port=18482 rows=${report.rows} source_rows=364 assets=292 save_recovery=1 source_writes=0 people_bindings=${report.boundOccurrences} page_errors=0`);
+ const report={url:page.url(),rows:after.document.rows.length,version:after.version,sourceRows:before.sourceRows,assets:before.assets,profiles:before.people.profiles.length,boundOccurrences:before.people.occurrences.filter(o=>o.personId).length,documentSha256:createHash('sha256').update(JSON.stringify(after.document)).digest('hex'),moduleReady:true,attachmentRecovery:true,businessWrites:writes.length,pageErrors:errors.length};
+ await writeFile(resolve(out,'LIVE_READONLY.json'),JSON.stringify(report,null,2));console.log(`LOCAL_QUALITY_READY: port=18482 rows=${report.rows} source_rows=364 assets=292 save_recovery=1 attachment_recovery=1 source_writes=0 people_bindings=${report.boundOccurrences} page_errors=0`);
 }finally{await browser.close();}

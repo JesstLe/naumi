@@ -99,6 +99,9 @@
 .sg-conflict-table th,.sg-conflict-table td{padding:8px;vertical-align:top;border-bottom:1px solid #e5ebf3;white-space:pre-wrap;overflow-wrap:anywhere}
 .sg-conflict-table th:first-child{width:64px}.sg-conflict-table th:last-child{width:112px}.sg-conflict-table select{width:100%;min-height:36px;background:#fff}
 @media(max-width:600px){.sg-conflict-table{min-width:560px}.sg-save-recovery{padding:10px}}
+
+.sg-source-picker{margin-top:12px;padding:10px;background:#f7f9fc;border:1px solid #e2e8f0;border-radius:8px}.sg-source-picker[hidden]{display:none}.sg-source-picker>input{width:100%;min-height:38px;margin-bottom:8px}.sg-source-picker label[hidden]{display:none}.sg-merge-error{color:#a12b2b;margin-top:8px!important}.sg-attachment-list>div>span{min-width:0;overflow-wrap:anywhere}.sg-attachment-list button,.sg-attachment-list a{flex-shrink:0}@media(max-width:600px){.sg-attachment-list>div{flex-wrap:wrap}.sg-attachment-list>div>span{flex:1 1 160px}.sg-source-picker .sg-source-list{max-height:260px}}
+.sg-attachments-dialog{width:min(780px,calc(100vw - 32px))!important}.sg-attachments-dialog .sg-conflict-table th:first-child{width:120px}.sg-source-picker>input{border:1px solid #dbe3ef;border-radius:6px;padding:8px 10px;color:#33445c;font:inherit}@media(max-width:600px){.sg-attachments-dialog{width:calc(100vw - 24px)!important}}
 </style></head><body><div id="app"></div><div id="toast" role="status" aria-live="polite"></div><div id="overlay"></div><script>/* Pure local prototype model. No business network adapter. */
 (function(root){
  'use strict';
@@ -1859,12 +1862,7 @@ function sgEditor(rowId,colId){const row=sheetGrid.doc.rows.find(r=>r.id===rowId
 function sgRowForm(row=null,parentId=null){const cols=sgCols().filter(c=>!['image','files'].includes(c.type)),id=row?.id||crypto.randomUUID();dialog(row?'编辑记录':'新增记录',`<form id="sgRowForm"><div class="form-grid">${cols.map(c=>`<label class="field ${c.id==='title'?'full':''}">${esc(c.label)}<input name="${c.id}" ${c.id==='title'?'required':''} type="${c.type==='date'&&(!row||!row.cells[c.id]||/^\d{4}-\d{2}-\d{2}$/.test(sgText(row.cells[c.id])))?'date':c.type==='number'?'number':'text'}" ${c.type==='number'?'step="any"':''} maxlength="20000" value="${esc(row?sgText(row.cells[c.id]):'')}"></label>`).join('')}</div><label class="field">父任务<select name="sgParent"><option value="">顶层记录</option>${sgRows().filter(r=>r.id!==id).map(r=>`<option value="${r.id}" ${r.id===(row?.parentId||parentId)?'selected':''}>${esc(sgText(r.cells.title)||'未命名记录')}</option>`).join('')}</select></label><p class="sc-form-error" hidden></p></form>`,`<button class="btn" data-close>取消</button><button class="btn primary" form="sgRowForm">保存记录</button>`);sgSubmit($('#sgRowForm'),f=>{const values=Object.fromEntries(cols.filter(c=>!row||f.get(c.id)!==sgText(row.cells[c.id])).map(c=>[c.id,f.get(c.id)]));return row?{type:'set-cells',row:id,cells:values,...((f.get('sgParent')||null)!==row.parentId?{parentId:f.get('sgParent')||null}:{})}:{type:'add-row',id,cells:values,parentId:f.get('sgParent')||null};});}
 function sgRowMenu(id){const r=sheetGrid.doc.rows.find(r=>r.id===id);overlay(sgText(r.cells.title)||'未命名记录',`<div class="sg-record-actions"><button class="btn primary" id="sgEditRow">编辑记录</button><button class="btn" id="sgAddChild">新增子项</button>${r.originRow?'<button class="btn" id="sgOriginal">查看原始来源</button>':''}<button class="btn sg-danger" id="sgDeleteRow">删除记录</button></div><div class="detail-grid">${sgCols().map(c=>`<label class="field"><small>${esc(c.label)}</small><div class="import-value">${sgCell(r,c)}</div></label>`).join('')}</div>`,`<button class="btn" data-close>关闭</button>`,true);$('#sgEditRow').onclick=()=>sgRowForm(r);$('#sgAddChild').onclick=()=>sgRowForm(null,id);if($('#sgOriginal'))$('#sgOriginal').onclick=()=>importDetail(r.originRow);$('#sgDeleteRow').onclick=()=>{dialog('删除记录',`<form id="sgDeleteForm"><p>删除“${esc(sgText(r.cells.title)||'未命名记录')}”？可在回收站恢复。子项保留，父记录删除期间单独显示。</p><p class="sc-form-error" hidden></p></form>`,`<button class="btn" data-close>取消</button><button class="btn sg-danger" form="sgDeleteForm">确认删除</button>`);sgSubmit($('#sgDeleteForm'),()=>({type:'delete-row',row:id}));};sgBindCells($('#overlay'));}
 function sgPreview(rowId,colId,index=0){const r=sheetGrid.doc.rows.find(r=>r.id===rowId),refs=(r.cells[colId]||[]).filter(sgImage);if(!refs.length)return sgAttachments(r,sgCols().find(c=>c.id===colId));const ref=refs[Math.max(0,Math.min(index,refs.length-1))];overlay(ref.name,`<div class="sg-image-stage"><img src="${esc(sgFileUrl(ref))}" alt="${esc(ref.name)}"></div><div class="sg-image-strip">${refs.map((x,i)=>`<button data-sg-image-index="${i}" class="${x.id===ref.id?'selected':''}" aria-label="查看第${i+1}张图片"><img src="${esc(sgFileUrl(x))}" alt="${esc(x.name)}"></button>`).join('')}</div>`,`<a class="btn" href="${esc(sgFileUrl(ref,true))}">下载原图</a><button class="btn" id="sgManageImages">管理图片</button><button class="btn" data-close>关闭</button>`,true);$$('[data-sg-image-index]').forEach(b=>b.onclick=()=>sgPreview(rowId,colId,Number(b.dataset.sgImageIndex)));$('#sgManageImages').onclick=()=>sgAttachments(r,sgCols().find(c=>c.id===colId));}
-function sgAttachments(row,col){let refs=structuredClone(Array.isArray(row.cells[col.id])?row.cells[col.id]:[]),source=sheetGrid.source,version=sheetGrid.version,scope=sgScope(),commandId=crypto.randomUUID(),uploading=false;const render=()=>{dialog('管理'+col.label,`<form id="sgAttachmentsForm"><div class="sg-attachment-list">${refs.map((ref,i)=>`<div>${sgImage(ref)?`<img src="${esc(sgFileUrl(ref))}" alt="${esc(ref.name)}">`:icon('file')}<span>${esc(ref.name)}</span>${sgExcel(ref)?`<button type="button" class="ex-attachment-preview" data-ex-attachment="${i}">预览</button>`:''}<a class="ex-attachment-download" href="${esc(sgFileUrl(ref,true))}">${ref.excelRevision?'原文件':'下载'}</a><button type="button" data-sg-unlink="${i}" aria-label="移除${esc(ref.name)}">移除</button></div>`).join('')||'<div class="sg-attachment-empty">暂无附件</div>'}</div><label class="sg-upload">＋ 上传${col.type==='image'?'图片':'文件'}<input id="sgUpload" type="file" ${col.type==='image'?'accept="image/png,image/jpeg"':''} multiple ${uploading?'disabled':''}></label><button class="btn" type="button" id="sgChooseSource">从来源附件选择</button><small class="sc-sub">PNG / JPG 可预览；单文件最大 4 MiB。移除只解除工作表关联。</small><p class="sc-form-error" id="sgFileError" hidden></p></form>`,`<button class="btn" data-close>取消</button><button class="btn primary" form="sgAttachmentsForm" ${uploading?'disabled':''}>保存附件</button>`);
- $$('[data-ex-attachment]').forEach(b=>b.onclick=()=>void sgExcelPreview(refs[Number(b.dataset.exAttachment)],{refs:refs.filter(sgExcel),attachment:{row:row.id,column:col.id},onSaved:next=>{refs=refs.map(x=>x.id===next.id&&x.kind===next.kind?next:x);version=sheetGrid.version;},returnTo:render}));
- $$('[data-sg-unlink]').forEach(b=>b.onclick=()=>{refs.splice(Number(b.dataset.sgUnlink),1);render();});$('#sgChooseSource').onclick=()=>{const files=imported.assets.filter(a=>col.type!=='image'||/\.(png|jpe?g)$/i.test(a.name));dialog('选择来源附件',`<form id="sgSourceFiles"><input id="sgSourceSearch" placeholder="搜索文件名" aria-label="搜索来源附件"><div class="sg-source-list">${files.map(a=>`<label data-sg-file-name="${esc(a.name.toLowerCase())}"><input type="checkbox" value="${a.id}" ${refs.some(r=>r.kind==='source'&&r.id===a.id)?'checked':''}>${esc(a.name)}</label>`).join('')}</div></form>`,`<button class="btn" id="sgSourceCancel">返回</button><button class="btn primary" form="sgSourceFiles">选用附件</button>`);$('#sgSourceCancel').onclick=render;$('#sgSourceSearch').oninput=e=>$$('[data-sg-file-name]').forEach(x=>x.hidden=!x.dataset.sgFileName.includes(e.target.value.toLowerCase()));$('#sgSourceFiles').onsubmit=e=>{e.preventDefault();refs=[...refs.filter(r=>r.kind!=='source'),...$$('#sgSourceFiles input:checked').map(x=>{const a=files.find(a=>a.id===x.value);return refs.find(r=>r.kind==='source'&&r.id===a.id)||{kind:'source',id:a.id,name:a.name};})];render();};};
- $('#sgUpload').onchange=async e=>{const files=[...e.target.files];uploading=true;render();try{for(const file of files){if(file.size>4*1024*1024)throw Error('单文件最大 4 MiB');if(refs.length>=50)throw Error('每个单元格最多 50 个文件');const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(Error('读取文件失败'));reader.readAsDataURL(file);});const uploaded=await sgRequest('worksheet-upload',{source},{name:file.name,data},scope);if(sheetGrid.source!==source)throw Error('WORKSPACE_CHANGED');const ref={kind:uploaded.kind,id:uploaded.id,name:uploaded.name};if(!refs.some(x=>x.id===ref.id&&x.kind===ref.kind))refs.push(ref);}}catch(e){sheetGrid.error=sgError(e);}finally{uploading=false;if(sheetGrid.source===source){render();if(sheetGrid.error){$('#sgFileError').hidden=false;$('#sgFileError').textContent=sheetGrid.error;sheetGrid.error='';}}}};
- $('#sgAttachmentsForm').onsubmit=async e=>{e.preventDefault();if(uploading)return;const button=document.querySelector('[form="sgAttachmentsForm"]');button.disabled=true;try{await sgCommand({type:'set-cells',row:row.id,cells:{[col.id]:refs}},commandId,version,source,scope);closeOverlay();shell();toast('附件已保存');}catch(e){$('#sgFileError').hidden=false;$('#sgFileError').textContent=sgError(e);button.disabled=false;}};
- };render();}
+function sgAttachments(row,col){return SheetAttachmentUI.open(row,col);}
 function sgFieldForm(col=null){dialog(col?'字段设置':'新增字段',`<form id="sgFieldForm"><label class="field">名称<input name="label" maxlength="80" required value="${esc(col?.label||'')}"></label><label class="field">类型<select name="type" ${col?'disabled':''}>${schedOptions([['text','文本'],['date','日期'],['number','数字'],['image','产品图'],['files','附件']],col?.type||'text')}</select></label><label class="field">宽度<input name="width" type="number" min="100" max="420" value="${col?.width||160}" required></label><label class="sc-checkbox"><input name="visible" type="checkbox" ${!col||col.visible?'checked':''} ${col?.id==='title'?'disabled':''}>在表格中显示</label><p class="sc-form-error" hidden></p></form>`,`<button class="btn" data-close>取消</button>${col&&col.id!=='title'?'<button class="btn sg-danger" id="sgDeleteColumn">删除字段</button>':''}<button class="btn primary" form="sgFieldForm">保存字段</button>`);const id=col?.id||'custom_'+crypto.randomUUID();sgSubmit($('#sgFieldForm'),f=>({type:col?'update-column':'add-column',column:{id,label:f.get('label'),type:col?.type||f.get('type'),width:Number(f.get('width')),visible:col?.id==='title'?true:f.has('visible'),archived:false}}));if($('#sgDeleteColumn'))$('#sgDeleteColumn').onclick=()=>{dialog('删除字段',`<form id="sgDeleteField"><p>删除“${esc(col.label)}”？单元格数据保留，可在回收站恢复。</p><p class="sc-form-error" hidden></p></form>`,`<button class="btn" data-close>取消</button><button class="btn sg-danger" form="sgDeleteField">确认删除</button>`);sgSubmit($('#sgDeleteField'),()=>({type:'delete-column',column:col.id}));};}
 function sgFields(){overlay('工作表字段',`<div class="sg-fields-list">${sgCols().map(c=>`<div><span><b>${esc(c.label)}</b><small>${({text:'文本',date:'日期',number:'数字',image:'图片',files:'附件'})[c.type]} · ${c.visible?'已显示':'已隐藏'}</small></span><button class="btn sm" data-sg-config="${c.id}">设置</button></div>`).join('')}</div>`,`<button class="btn primary" id="sgAddField">＋ 新增字段</button><button class="btn" data-close>关闭</button>`);$$('[data-sg-config]').forEach(b=>b.onclick=()=>sgFieldForm(sgCols().find(c=>c.id===b.dataset.sgConfig)));$('#sgAddField').onclick=()=>sgFieldForm();}
 function sgTrash(){const rows=sheetGrid.doc.rows.filter(r=>r.archived),cols=sheetGrid.doc.columns.filter(c=>c.archived);overlay('回收站',`<div class="sg-fields-list">${[...rows.map(r=>({type:'row',id:r.id,name:sgText(r.cells.title)||'未命名记录'})),...cols.map(c=>({type:'column',id:c.id,name:c.label}))].map(x=>`<div><span>${x.type==='row'?'记录':'字段'} · ${esc(x.name)}</span><button class="btn sm" data-sg-restore="${x.id}" data-sg-kind="${x.type}">恢复</button></div>`).join('')||'<div class="empty">回收站为空</div>'}</div>`,`<button class="btn" data-close>关闭</button>`);$$('[data-sg-restore]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await sgCommand(b.dataset.sgKind==='row'?{type:'restore-row',row:b.dataset.sgRestore}:{type:'restore-column',column:b.dataset.sgRestore});shell();sgTrash();toast('已恢复');}catch(e){toast(sgError(e));b.disabled=false;}});}
@@ -1964,6 +1962,33 @@ const officeRenderOriginal=exRender;exRender=function(s,d){officeRenderOriginal(
 window.addEventListener('message',async e=>{const s=officeView;if(!s||e.origin!==officeLocalBase()?.origin||e.source!==$('#officeFrame')?.contentWindow||e.data?.ticket!==s.ticket)return;if(e.data.type==='office-dirty'){s.changeEpoch=(s.changeEpoch||0)+1;s.dirty=true;$('#officeOuterState').textContent='有未保存修改';}else if(e.data.type==='office-saved'){const epoch=s.changeEpoch||0;$('#officeOuterState').textContent='正在更新附件…';try{await sgReload(s.source,s.scope);if(officeView!==s)return;const r=sheetGrid.doc.rows.find(r=>r.id===s.original.options.attachment.row)?.cells[s.original.options.attachment.column];const next=Array.isArray(r)?r.find(x=>x.id===e.data.ref?.id&&x.kind==='worksheet'):null;if(next)s.original.ref=next;if((s.changeEpoch||0)===epoch){s.dirty=false;$('#officeOuterState').textContent='已保存到系统';}}catch{if(officeView===s)$('#officeOuterState').textContent='版本已保存，列表待刷新';}}else if(e.data.type==='office-save-error'){s.dirty=true;$('#officeOuterState').textContent='保存未完成，请保留文档';}else if(e.data.type==='office-close')closeOverlay();});
 window.addEventListener('beforeunload',e=>{if(officeView?.dirty){e.preventDefault();e.returnValue='';}});
 
+/* A file is identified by kind+content ID, not its mutable display name. */
+(function(root){
+ 'use strict';
+ const id=r=>r.kind+':'+r.id;
+ const signature=r=>r?JSON.stringify([r.kind,r.id,r.name,r.excelRevision||null]):'null';
+ const same=(a,b)=>signature(a)===signature(b);
+ const label=r=>r?r.name+(r.excelRevision?'（副本 '+r.excelRevision.slice(0,10)+'）':'（原始附件）'):'（未关联）';
+ function map(refs){
+  if(!Array.isArray(refs)||refs.length>50)throw Error('附件列表无效或超过50个');
+  const result=new Map();for(const r of refs){if(!r||!['source','worksheet'].includes(r.kind)||typeof r.id!=='string'||typeof r.name!=='string'||result.has(id(r)))throw Error('附件列表包含无效或重复引用');result.set(id(r),structuredClone(r));}return result;
+ }
+ function plan(base,latest,mine){
+  const a=map(base),b=map(latest),c=map(mine),keys=[...new Set([...b.keys(),...c.keys(),...a.keys()])],conflicts=[],entries=[];
+  for(const key of keys){const before=a.get(key)||null,current=b.get(key)||null,desired=c.get(key)||null;
+   if(same(before,desired))entries.push({key,value:current});
+   else if(same(before,current)||same(current,desired))entries.push({key,value:desired});
+   else {conflicts.push({key,before,current,mine:desired});entries.push({key,conflict:true});}
+  }
+  return {entries,conflicts};
+ }
+ function resolve(plan,choices={}){
+  const refs=[];for(const e of plan.entries){let value=e.value;if(e.conflict){const c=plan.conflicts.find(c=>c.key===e.key);if(!['mine','latest'].includes(choices[e.key]))throw Error('请先选择每个冲突附件保留的版本');value=choices[e.key]==='mine'?c.mine:c.current;}if(value)refs.push(structuredClone(value));}
+  if(refs.length>50)throw Error('合并后超过50个附件，请减少关联数量后重试');return refs;
+ }
+ root.SheetAttachmentModel={id,signature,label,plan,resolve};
+})(globalThis);
+
 /* Save recovery is independent of identity, network and rendering. Server CAS remains authoritative. */
 (function(root){
  'use strict';
@@ -1974,26 +1999,32 @@ window.addEventListener('beforeunload',e=>{if(officeView?.dirty){e.preventDefaul
   if(action.type!=='set-cells')return blocked('结构操作请核对最新工作表后重新打开表单。');
   const before=base.rows.find(r=>r.id===action.row),now=latest.rows.find(r=>r.id===action.row);
   if(!before||!now||before.archived||now.archived)return blocked('该记录已删除或不可编辑，请保留输入后核对记录。');
-  const conflicts=[];
+  const conflicts=[],filePlans={};
   for(const [id,mine]of Object.entries(action.cells)){
    const a=base.columns.find(c=>c.id===id),b=latest.columns.find(c=>c.id===id);
    if(!a||!b||a.archived||b.archived||!equal(a,b))return blocked('字段设置已变化，请保留输入后重新打开编辑。');
-   if(['image','files'].includes(b.type)||typeof mine!=='string')return blocked('附件请在附件管理中核对后重新保存。');
+   if(['image','files'].includes(b.type)){
+    if(!root.SheetAttachmentModel)return blocked('附件请在附件管理中核对后重新保存。');
+    try{const p=root.SheetAttachmentModel.plan(before.cells[id]||[],now.cells[id]||[],mine);filePlans[id]=p;for(const c of p.conflicts)conflicts.push({id:'@file:'+id+':'+c.key,kind:'attachment',label:(c.mine||c.current||c.before).name,before:root.SheetAttachmentModel.label(c.before),latest:root.SheetAttachmentModel.label(c.current),mine:root.SheetAttachmentModel.label(c.mine)});if(!p.conflicts.length)root.SheetAttachmentModel.resolve(p);}catch(e){return blocked(e.message);}continue;
+   }
+   if(typeof mine!=='string')return blocked('单元格类型已变化，请重新核对。');
    const old=before.cells[id]??'',current=now.cells[id]??'';
    if(!equal(old,current)&&!equal(current,mine))conflicts.push({id,label:b.label,before:old,latest:current,mine});
   }
   if(Object.hasOwn(action,'parentId')&&before.parentId!==now.parentId&&now.parentId!==action.parentId)
    conflicts.push({id:'@parent',label:'父任务',before:before.parentId,latest:now.parentId,mine:action.parentId});
-  return {safe:conflicts.length===0,blocked:null,conflicts};
+  return {safe:conflicts.length===0,blocked:null,conflicts,filePlans};
  }
  function resolve(action,plan,choices){
   if(plan.blocked)throw Error('REOPEN_REQUIRED');
   const result=structuredClone(action);
   for(const c of plan.conflicts){
+   if(c.kind==='attachment')continue;
    if(!['mine','latest'].includes(choices[c.id]))throw Error('RESOLUTION_REQUIRED');
    if(c.id==='@parent')result.parentId=choices[c.id]==='mine'?c.mine:c.latest;
    else result.cells[c.id]=choices[c.id]==='mine'?c.mine:c.latest;
   }
+  for(const [column,p]of Object.entries(plan.filePlans||{}))result.cells[column]=root.SheetAttachmentModel.resolve(p,Object.fromEntries(p.conflicts.map(c=>[c.key,choices['@file:'+column+':'+c.key]])));
   return result;
  }
  function outcome(e){
@@ -2008,21 +2039,21 @@ window.addEventListener('beforeunload',e=>{if(officeView?.dirty){e.preventDefaul
 /* Recoverable, in-memory edits. Never persist employee task inputs in browser storage. */
 let sgEditSession=null;
 function sgEditCurrent(s){return sgEditSession===s&&s.form.isConnected&&sgCurrent(s.scope)&&sheetGrid.source===s.source;}
-function sgEditValues(form){return JSON.stringify([...new FormData(form)]);}
+function sgEditValues(form){return form.sgValues?form.sgValues():JSON.stringify([...new FormData(form)]);}
 function sgEditChanged(s){return s&&(s.initial!==sgEditValues(s.form)||['unknown','saved'].includes(s.state));}
-function sgEditLock(s,locked){for(const [control,disabled]of s.controls)control.disabled=locked||disabled;s.button.disabled=locked;}
+function sgEditLock(s,locked){for(const control of s.form.elements){if(!s.controls.has(control))s.controls.set(control,control.disabled);control.disabled=locked||s.controls.get(control);}s.button.disabled=locked;}
 function sgEditRelease(s){if(sgEditSession===s)sgEditSession=null;}
 function sgEditLeave(){
  const s=sgEditSession;if(!s)return true;
  if(!sgEditCurrent(s)){sgEditRelease(s);return true;}
- if(s.state==='saving'||s.state==='loading'){toast('正在核对保存结果，请稍候');return false;}
+ if(s.form.sgBusy||s.state==='saving'||s.state==='loading'){toast(s.form.sgBusy?'正在上传附件，请稍候':'正在核对保存结果，请稍候');return false;}
  if(sgEditChanged(s)&&!confirm(s.state==='unknown'?'上次保存结果尚未确认。建议先按原命令重试核对；现在离开会丢失本窗口的重试信息。确定离开？':s.state==='saved'?'内容已保存，列表尚未刷新。确定离开编辑？':'当前输入尚未保存，确定放弃并离开？'))return false;
  sgEditRelease(s);return true;
 }
 const sgSaveCloseOriginal=closeOverlay;closeOverlay=function(){if(sgEditLeave())return sgSaveCloseOriginal();};
 const sgSaveOverlayOriginal=overlay;overlay=function(...args){if(sgEditLeave())return sgSaveOverlayOriginal(...args);};
 const sgSaveWorkspaceOriginal=workspaceClear;workspaceClear=function(){sgEditSession=null;return sgSaveWorkspaceOriginal();};
-window.addEventListener('beforeunload',e=>{if(sgEditSession&&sgEditCurrent(sgEditSession)&&(sgEditChanged(sgEditSession)||['saving','loading'].includes(sgEditSession.state))){e.preventDefault();e.returnValue='';}});
+window.addEventListener('beforeunload',e=>{if(sgEditSession&&sgEditCurrent(sgEditSession)&&(sgEditSession.form.sgBusy||sgEditChanged(sgEditSession)||['saving','loading'].includes(sgEditSession.state))){e.preventDefault();e.returnValue='';}});
 function sgSaveMessage(s,text,buttonText,handler){
  s.panel.replaceChildren();const message=document.createElement('p');message.textContent=text;s.panel.append(message);s.panel.hidden=false;
  if(buttonText){const button=document.createElement('button');button.type='button';button.className='btn sm';button.dataset.sgSaveRetry='';button.textContent=buttonText;button.onclick=handler;s.panel.append(button);}
@@ -2049,12 +2080,12 @@ async function sgSaveCompare(s,action){
    const scroll=document.createElement('div');scroll.className='sg-conflict-scroll';scroll.append(table);s.panel.append(scroll);
   }
   const retry=document.createElement('button');retry.type='button';retry.className='btn primary sm';retry.id='sgMergeSave';retry.disabled=plan.conflicts.length>0;retry.textContent=plan.conflicts.length?'按选择合并保存':'基于最新版本重试';
-  retry.onclick=()=>{if(!sgEditCurrent(s)||s.state!=='conflict')return;const resolved=SheetSaveModel.resolve(action,plan,choices);for(const [id,value]of Object.entries(resolved.cells)){const input=s.form.elements.namedItem(id)||(s.form.id==='sgCellForm'?s.form.elements.namedItem('value'):null);if(input)input.value=value;}if(Object.hasOwn(resolved,'parentId')&&s.form.elements.namedItem('sgParent'))s.form.elements.namedItem('sgParent').value=resolved.parentId||'';s.base=structuredClone(latest.document);s.version=latest.version;s.attempt=null;void sgSaveSend(s,resolved);};s.panel.append(retry);
+  retry.onclick=()=>{if(!sgEditCurrent(s)||s.state!=='conflict')return;try{const resolved=SheetSaveModel.resolve(action,plan,choices);for(const [id,value]of Object.entries(resolved.cells)){const input=s.form.elements.namedItem(id)||(s.form.id==='sgCellForm'?s.form.elements.namedItem('value'):null);if(input)input.value=value;}if(Object.hasOwn(resolved,'parentId')&&s.form.elements.namedItem('sgParent'))s.form.elements.namedItem('sgParent').value=resolved.parentId||'';s.form.sgOnResolved?.(resolved);s.base=structuredClone(latest.document);s.version=latest.version;s.attempt=null;void sgSaveSend(s,resolved);}catch(e){let error=s.panel.querySelector('.sg-merge-error');if(!error){error=document.createElement('p');error.className='sg-merge-error';error.setAttribute('role','alert');s.panel.append(error);}error.textContent=e.message;}};s.panel.append(retry);
  }catch(e){if(sgEditCurrent(s)){s.state='rejected';sgEditLock(s,false);sgSaveMessage(s,'最新版本读取失败，当前输入仍保留。','重新核对',()=>void sgSaveCompare(s,action));}}
  finally{s.comparing=false;}
 }
 async function sgSaveSend(s,override){
- if(!sgEditCurrent(s)||['saving','loading','saved'].includes(s.state))return;
+ if(!sgEditCurrent(s)||s.form.sgBusy||['saving','loading','saved'].includes(s.state))return;
  if(!s.attempt){let action;try{action=override||s.build(new FormData(s.form));}catch(e){sgSaveMessage(s,sgError(e));return;}s.attempt={commandId:crypto.randomUUID(),expectedVersion:s.version,action:structuredClone(action)};}
  s.state='saving';sgEditLock(s,true);sgSaveMessage(s,'正在保存…');
  try{
@@ -2067,11 +2098,49 @@ async function sgSaveSend(s,override){
 }
 sgSubmit=function(form,build,done){
  if(!form||!document.querySelector(`[form="${form.id}"]`)||(sgEditSession?.form===form&&sgEditCurrent(sgEditSession)))return;
- const s={form,build,done,source:sheetGrid.source,scope:sgScope(),version:sheetGrid.version,base:structuredClone(sheetGrid.doc),initial:sgEditValues(form),controls:[...form.elements].map(x=>[x,x.disabled]),button:document.querySelector(`[form="${form.id}"]`),state:'ready',attempt:null};
+ const s={form,build,done,source:sheetGrid.source,scope:sgScope(),version:sheetGrid.version,base:structuredClone(sheetGrid.doc),initial:sgEditValues(form),controls:new Map([...form.elements].map(x=>[x,x.disabled])),button:document.querySelector(`[form="${form.id}"]`),state:'ready',attempt:null};
  s.panel=document.createElement('div');s.panel.className='sg-save-recovery';s.panel.setAttribute('role','status');s.panel.setAttribute('aria-live','polite');s.panel.hidden=true;form.append(s.panel);sgEditSession=s;
  form.addEventListener('input',e=>{if(e.target.closest('.sg-save-recovery'))return;if(['conflict','rejected'].includes(s.state)){s.panel.hidden=true;s.panel.replaceChildren();s.state='ready';s.attempt=null;s.button.disabled=false;}});
  form.onsubmit=e=>{e.preventDefault();void sgSaveSend(s);};
 };
+
+/* Preserve attachment drafts without recreating the dialog after every upload/removal. */
+const SheetAttachmentUI={open(row,col){
+ if(!row||!col)return;
+ let refs=structuredClone(Array.isArray(row.cells[col.id])?row.cells[col.id]:[]);
+ const source=sheetGrid.source,scope=sgScope();
+ dialog('管理'+col.label,`<form id="sgAttachmentsForm"><div class="sg-attachment-list"></div><label class="sg-upload">＋ 上传${col.type==='image'?'图片':'文件'}<input id="sgUpload" type="file" ${col.type==='image'?'accept="image/png,image/jpeg"':''} multiple></label><button class="btn" type="button" id="sgChooseSource" aria-expanded="false" aria-controls="sgSourcePicker">从来源附件选择</button><div id="sgSourcePicker" class="sg-source-picker" hidden><input id="sgSourceSearch" placeholder="搜索文件名" aria-label="搜索来源附件"><div class="sg-source-list"></div></div><small class="sc-sub">单文件最大4 MiB，每格最多50个附件。保存后生效，移除仅解除关联。</small><p class="sc-form-error" id="sgFileError" hidden></p></form>`,`<button class="btn" data-close>取消</button><button class="btn primary" form="sgAttachmentsForm">保存附件</button>`);
+ const form=$('#sgAttachmentsForm');if(!form)return;form.closest('[role="dialog"]').classList.add('sg-attachments-dialog');
+ form.sgValues=()=>JSON.stringify(refs.map(SheetAttachmentModel.signature));
+ const current=()=>form.isConnected&&sgCurrent(scope)&&sheetGrid.source===source;
+ const editable=()=>current()&&!form.sgBusy&&!['saving','loading','unknown','saved'].includes(sgEditSession?.state);
+ const error=message=>{if(current()){$('#sgFileError').hidden=false;$('#sgFileError').textContent=message;}};
+ const changed=()=>{form.dispatchEvent(new Event('input',{bubbles:true}));$('#sgFileError').hidden=true;};
+ const render=()=>{
+  if(!current())return;
+  form.querySelector('.sg-attachment-list').innerHTML=refs.map((ref,i)=>`<div>${sgImage(ref)?`<img src="${esc(sgFileUrl(ref))}" alt="${esc(ref.name)}">`:icon('file')}<span>${esc(ref.name)}${ref.excelRevision?'<small class="sc-sub">已保存编辑副本</small>':''}</span>${sgExcel(ref)?`<button type="button" class="ex-attachment-preview" data-ex-attachment="${i}">预览</button>`:''}<a class="ex-attachment-download" href="${esc(sgFileUrl(ref,true))}">${ref.excelRevision?'原文件':'下载'}</a><button type="button" data-sg-unlink="${i}" data-sg-unlink-key="${esc(SheetAttachmentModel.id(ref))}" aria-label="移除${esc(ref.name)}">移除</button></div>`).join('')||'<div class="sg-attachment-empty">暂无附件</div>';
+  form.querySelectorAll('[data-sg-unlink]').forEach(b=>b.onclick=()=>{if(!editable())return;refs.splice(Number(b.dataset.sgUnlink),1);changed();render();});
+  form.querySelectorAll('[data-ex-attachment]').forEach(b=>b.onclick=()=>{if(!editable())return;if(sgEditChanged(sgEditSession))return error('请先保存附件变更，再打开Excel预览或编辑。');void sgExcelPreview(refs[Number(b.dataset.exAttachment)],{refs:refs.filter(sgExcel),attachment:{row:row.id,column:col.id},returnTo:()=>{const latest=sheetGrid.doc?.rows.find(r=>r.id===row.id&&!r.archived),field=sgCols().find(c=>c.id===col.id);if(latest&&field)sgAttachments(latest,field);}});});
+  for(const input of form.querySelectorAll('[data-sg-source-id]'))input.checked=refs.some(r=>r.kind==='source'&&r.id===input.dataset.sgSourceId);
+ };
+ render();form.sgOnResolved=action=>{refs=structuredClone(action.cells[col.id]);render();};
+ sgSubmit(form,()=>({type:'set-cells',row:row.id,cells:{[col.id]:structuredClone(refs)}}));
+ $('#sgChooseSource').onclick=()=>{
+  if(!editable())return;const picker=$('#sgSourcePicker');picker.hidden=!picker.hidden;$('#sgChooseSource').setAttribute('aria-expanded',String(!picker.hidden));
+  if(!picker.dataset.loaded){picker.dataset.loaded='true';const files=imported.assets.filter(a=>col.type!=='image'||/\.(png|jpe?g)$/i.test(a.name));picker.querySelector('.sg-source-list').innerHTML=files.map(a=>`<label data-sg-file-name="${esc(a.name.toLowerCase())}"><input type="checkbox" data-sg-source-id="${a.id}" ${refs.some(r=>r.kind==='source'&&r.id===a.id)?'checked':''}>${esc(a.name)}</label>`).join('');
+   picker.querySelectorAll('[data-sg-source-id]').forEach(input=>input.onchange=()=>{if(!editable())return;if(input.checked){if(refs.length>=50){input.checked=false;return error('每个单元格最多50个附件');}const a=files.find(a=>a.id===input.dataset.sgSourceId);if(!refs.some(r=>r.kind==='source'&&r.id===a.id))refs.push({kind:'source',id:a.id,name:a.name});}else refs=refs.filter(r=>r.kind!=='source'||r.id!==input.dataset.sgSourceId);changed();render();});
+  }
+  if(!picker.hidden)requestAnimationFrame(()=>{if(current()&&!picker.hidden){picker.scrollIntoView({block:'nearest'});$('#sgSourceSearch').focus({preventScroll:true});}});
+ };
+ $('#sgSourceSearch').oninput=e=>form.querySelectorAll('[data-sg-file-name]').forEach(label=>label.hidden=!label.dataset.sgFileName.includes(e.target.value.toLowerCase()));
+ $('#sgUpload').onchange=async e=>{
+  if(!editable())return;const files=[...e.target.files];if(!files.length)return;
+  form.sgBusy=true;sgEditLock(sgEditSession,true);$('#sgFileError').hidden=true;
+  try{for(const file of files){if(!current())return;if(file.size>4*1024*1024)throw Error('单文件最大4 MiB');if(refs.length>=50)throw Error('每个单元格最多50个附件');const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(Error('读取文件失败'));reader.readAsDataURL(file);});const uploaded=await sgRequest('worksheet-upload',{source},{name:file.name,data},scope);if(!current())return;const ref={kind:uploaded.kind,id:uploaded.id,name:uploaded.name};if(!refs.some(r=>SheetAttachmentModel.id(r)===SheetAttachmentModel.id(ref)))refs.push(ref);changed();render();}}
+  catch(e){if(current())error(!e.status&&['TypeError','TimeoutError','AbortError'].includes(e.name)?'上传结果待确认，可重新选择同一文件，系统按内容去重；附件关联尚未保存。':sgError(e));}
+  finally{form.sgBusy=false;if(current()){e.target.value='';sgEditLock(sgEditSession,false);}}
+ };
+}};
 
 shell();
 </script></body></html>

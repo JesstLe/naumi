@@ -170,8 +170,10 @@
     "sheet-grid-ui.js",
     "excel-preview-ui.js",
     "excel-office-ui.js",
+    "sheet-attachment-model.js",
     "sheet-save-model.js",
-    "sheet-save-ui.js"
+    "sheet-save-ui.js",
+    "sheet-attachment-ui.js"
   ],
   "workers": [
     {

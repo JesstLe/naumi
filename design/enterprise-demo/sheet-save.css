@@ -6,3 +6,6 @@
 .sg-conflict-table th,.sg-conflict-table td{padding:8px;vertical-align:top;border-bottom:1px solid #e5ebf3;white-space:pre-wrap;overflow-wrap:anywhere}
 .sg-conflict-table th:first-child{width:64px}.sg-conflict-table th:last-child{width:112px}.sg-conflict-table select{width:100%;min-height:36px;background:#fff}
 @media(max-width:600px){.sg-conflict-table{min-width:560px}.sg-save-recovery{padding:10px}}
+
+.sg-source-picker{margin-top:12px;padding:10px;background:#f7f9fc;border:1px solid #e2e8f0;border-radius:8px}.sg-source-picker[hidden]{display:none}.sg-source-picker>input{width:100%;min-height:38px;margin-bottom:8px}.sg-source-picker label[hidden]{display:none}.sg-merge-error{color:#a12b2b;margin-top:8px!important}.sg-attachment-list>div>span{min-width:0;overflow-wrap:anywhere}.sg-attachment-list button,.sg-attachment-list a{flex-shrink:0}@media(max-width:600px){.sg-attachment-list>div{flex-wrap:wrap}.sg-attachment-list>div>span{flex:1 1 160px}.sg-source-picker .sg-source-list{max-height:260px}}
+.sg-attachments-dialog{width:min(780px,calc(100vw - 32px))!important}.sg-attachments-dialog .sg-conflict-table th:first-child{width:120px}.sg-source-picker>input{border:1px solid #dbe3ef;border-radius:6px;padding:8px 10px;color:#33445c;font:inherit}@media(max-width:600px){.sg-attachments-dialog{width:calc(100vw - 24px)!important}}
