@@ -91,9 +91,11 @@ export async function uploadFormData<T>(
   url: string,
   form: FormData,
   onProgress?: (loaded: number, total: number) => void,
-  timeoutMs = 120_000
+  timeoutMs = 120_000,
+  assertCurrent?: () => void,
 ): Promise<T> {
   const headers = await authHeader();
+  assertCurrent?.();
   const file=form.get('image');
   const previews=file instanceof File?originalPreviews.get(file):undefined;
   if(previews){form.set('thumbnail',previews.thumbnail,'thumbnail.webp');form.set('preview',previews.preview,'preview.webp');}
@@ -101,6 +103,7 @@ export async function uploadFormData<T>(
     const pendingResponse=await fetch('/api/media/uploads',{method:'POST',headers:{...headers,'content-type':'application/json'},
       body:JSON.stringify({action:'prepare',bytes:file.size,contentType:file.type||'image/png'})});
     const pending=await pendingResponse.json() as {enabled?:boolean;id?:string;putUrl?:string;contentType?:string;error?:string};
+    assertCurrent?.();
     if(!pendingResponse.ok)throw new Error(pending.error||'上传申请失败');
     if(pending.enabled&&pending.id&&pending.putUrl) {
       await new Promise<void>((resolve,reject)=>{
@@ -112,6 +115,7 @@ export async function uploadFormData<T>(
         xhr.ontimeout=()=>reject(new Error('素材上传超时，请重试'));
         xhr.send(file);
       });
+      assertCurrent?.();
       const x=form.get('x'),y=form.get('y');
       const complete={action:'complete',id:pending.id,title:String(form.get('title')||file.name),
           parentId:form.get('parentId')||null,canvasGroupId:form.get('canvasGroupId')||null,linked:form.get('linked')==='1',
@@ -123,6 +127,7 @@ export async function uploadFormData<T>(
     }
   }
   return new Promise<T>((resolve, reject) => {
+    assertCurrent?.();
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url);
     xhr.timeout = timeoutMs;
