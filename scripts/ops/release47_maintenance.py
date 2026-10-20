@@ -26,7 +26,7 @@ LATEST_103_NOT_BEFORE = '2026-10-17T04:33:53Z'
 def canvas_video_hk(spec):
     # Both modes require the full isolated-media/runtime/rollback workflow.
     # A new user's authorization must not be represented as an old goal's ACK.
-    return spec.get('mode') in ('canvas-video-fusion-103', 'latest-103-20261017')
+    return spec.get('mode') in ('canvas-video-fusion-103', 'latest-103-20261017', 'latest-103-20261020')
 
 
 def independent_hk(spec):
@@ -38,6 +38,15 @@ def immediate_hk(spec):
 
 
 def authorize(spec, now=None):
+    if spec.get('mode') == 'latest-103-20261020':
+        now = now or dt.datetime.now(dt.timezone.utc)
+        require(spec.get('target') == '103.30.76.93' and spec.get('scope') == 'latest-unified-release' and
+                spec.get('goalThread') == LATEST_103_THREAD and spec.get('userAcknowledgement') == '上线' and
+                spec.get('date') == '2026-10-20' and spec.get('restoreDatabase') is False and
+                spec.get('replayAcceptedTasks') is False, 'EXPLICIT_OCT20_103_AUTHORIZATION_REQUIRED')
+        require(now.astimezone(dt.timezone(dt.timedelta(hours=8))).date().isoformat() == '2026-10-20',
+                'OUTSIDE_AUTHORIZED_OCT20_103_DATE')
+        return
     if spec.get('mode') == 'latest-103-20261017':
         now = now or dt.datetime.now(dt.timezone.utc)
         require(spec.get('target') == '103.30.76.93' and spec.get('scope') == 'latest-unified-release' and
