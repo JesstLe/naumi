@@ -1,10 +1,18 @@
-import json,pathlib,tempfile,unittest,hashlib,os
+import json,pathlib,tempfile,unittest,hashlib,os,stat
 from types import SimpleNamespace
 from unittest.mock import patch
 import nas47_evict_verified as m
 from release47_host import Hold
 
 class Eviction(unittest.TestCase):
+ def test_node_float_mtime_rounding_still_requires_identity_size_and_submicrosecond_match(self):
+  st=SimpleNamespace(st_mode=stat.S_IFREG,st_size=7,st_ino=42,st_mtime_ns=1790738273513999900)
+  item=dict(size=7,ino=42,mtimeMs=1790738273514)
+  self.assertTrue(m.source_matches(st,item))
+  self.assertFalse(m.source_matches(st,{**item,'mtimeMs':item['mtimeMs']+1}))
+  self.assertFalse(m.source_matches(st,{**item,'ino':41}))
+  self.assertFalse(m.source_matches(st,{**item,'size':8}))
+
  def test_exact_verified_only_changed_and_unknown_retained_rollback_copy(self):
   with tempfile.TemporaryDirectory()as tmp:
    root=pathlib.Path(tmp);media=root/'media';media.mkdir();proof=root/'final-media-proof';proof.mkdir()

@@ -8,6 +8,13 @@ from release47_host import require,file_sha,environment
 MEDIA_ROOT=pathlib.Path('/opt/naumi-staging/data/media')
 CANONICAL=pathlib.Path('/opt/naumi-staging/releases/release-lifecycle/current.json')
 
+def source_matches(st,item):
+ # Node serializes mtimeMs as an IEEE754 number (roughly0.00025ms ULP at
+ # current epochs); flooring Python nanoseconds can disagree by1ms. This
+ # comparison is only admission to the mandatory SHA256 and final exact-ns
+ # recheck, never permission to unlink changed bytes.
+ return stat.S_ISREG(st.st_mode)and st.st_size==item['size']and st.st_ino==item['ino']and abs(st.st_mtime_ns/1e6-float(item['mtimeMs']))<=0.001
+
 def execute(operator):
  tx=operator.tx;root=pathlib.Path(operator.cfg['evidenceRoot']);source=pathlib.Path(operator.cfg['mediaSource'])
  require(source.resolve()==MEDIA_ROOT and not source.is_symlink(),'EXACT_MEDIA_ROOT_REQUIRED')
@@ -38,7 +45,7 @@ def execute(operator):
    require(p.resolve().is_relative_to(source.resolve())and not any(parent.is_symlink()for parent in p.parents if parent!=source and parent.is_relative_to(source)), 'MEDIA_RESOLVED_ESCAPE')
    try:s=p.lstat()
    except FileNotFoundError:receipt['retainedMissing']+=1;continue
-   if not stat.S_ISREG(s.st_mode)or s.st_size!=item['size']or s.st_ino!=item['ino']or s.st_mtime_ns//1000000!=int(item['mtimeMs']):receipt['retainedChanged']+=1;continue
+   if not source_matches(s,item):receipt['retainedChanged']+=1;continue
    if file_sha(p)!=item['sha256']:receipt['retainedChanged']+=1;continue
    # Open an exact descriptor and recheck immediately before unlinking. Another
    # writer changing this key invalidates eviction; it is never overwritten.
