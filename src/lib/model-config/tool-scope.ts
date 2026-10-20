@@ -23,7 +23,7 @@ export function validateToolScopes(config: ModelConfig) {
       throw new ModelConfigError("INVALID_CONFIG", "工具范围不能包含重复选项");
     for (const feature of scope.features) {
       const binding = FEATURE_BINDINGS[feature];
-      if (!binding || model.modality !== MODEL_BINDINGS[binding].modality || model.enabled && model.visible && !compatiblePublicModels(config, binding).some(m => m.id === model.id))
+      if (!binding || model.modality !== MODEL_BINDINGS[binding].modality || model.enabled && model.visible && !compatiblePublicModels(config, binding, feature).some(m => m.id === model.id))
         throw new ModelConfigError("INVALID_CONFIG", "模型能力不满足所选工具范围");
     }
     for (const feature of scope.defaultFor) {

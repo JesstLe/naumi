@@ -16,9 +16,10 @@ import { ModelConfigError, type ModelFacts } from "./types";
 import type { ModelBinding } from "./bindings";
 import { resolutionForLongSide } from "../mock-data";
 import { acceptedModelVersions } from "./accepted-context";
-import { effectiveImageParameters, selectedImagePreset, presetPublicId } from "./image-preset";
+import { DISPLAY_QUALITIES, effectiveImageParameters, selectedImagePreset, presetPublicId } from "./image-preset";
 import { routeImageModel } from "../image-model-routing";
 import { featureDefaultModel } from "./tool-scope";
+import { IMAGE_QUALITY_IDS } from "../image-quality";
 
 export async function modelConfigurationEnabled() {
   if (!dbEnabled || legacyModelExecutionActive()) return false;
@@ -37,10 +38,11 @@ async function requestFacts(request: Request) {
       for (const [key, value] of Array.from(form.entries())) {
         if (/mask/i.test(key) && typeof value !== "string") body.needsMask = true;
         if (typeof value === "string") body[key] = value;
-        else if (/image|reference|original|product|file/i.test(key) && !/mask/i.test(key)) references++;
+        else if (!/mask/i.test(key) && (value.type.startsWith("image/") || /image|reference|original|product|file|^(ref|top|bottom)$/i.test(key))) references++;
       }
     } else if (request.headers.get("content-type")?.includes("json")) {
-      body = await copy.json();
+      const parsed = await copy.json();
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) body = parsed;
       references = Array.isArray(body.images) ? body.images.length : Array.isArray(body.sourceIds) ? body.sourceIds.length : Array.isArray(body.contextIds) ? body.contextIds.length : body.anchorId ? 1 : body.image || body.imageUrl || body.originalUrl || body.artworkId ? 1 : 0;
     }
   } catch { /* The route owns detailed payload validation; no generation is performed here. */ }
@@ -70,6 +72,17 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
   const [managed, parsed] = await Promise.all([modelConfigurationEnabled(), requestFacts(request)]);
   assertPlatformImageSelection(parsed.body.model, parsed.body.modelId, request.headers.get("x-naumi-feature-model"));
   if (!managed) return run();
+  if (domainPath === "/api/canvas/expand" && typeof parsed.body.artworkId === "string") {
+    // Expand inherits the owned artwork's resolution in its handler. Freeze
+    // that same selection before channel admission and price confirmation.
+    const {resolveUserEmail} = await import("../admin-auth");
+    const email = await resolveUserEmail(request);
+    if (email) {
+      const {listArtworksByIds} = await import("../db");
+      const artwork = (await listArtworksByIds(email, [parsed.body.artworkId]))[0];
+      if (artwork) parsed.body.resolution = artwork.resolution || "1K";
+    }
+  }
   const admin = await getModelAdministration();
   const accepted = await acceptedModelVersions(request);
   if (new URL(request.url).pathname === "/api/aplus" && parsed.body.jobId && ["approve_source", "redo_source", "generate"].includes(parsed.body.action)) return run();
@@ -78,7 +91,11 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
   if (quotedVersion !== undefined && quotedVersion !== null && quotedVersion !== "" && (!/^[1-9][0-9]{0,15}$/.test(String(quotedVersion)) || Number(quotedVersion) !== snapshot.version)) throw new ModelConfigError("MODEL_CHANGED", "模型配置已更新，请刷新模型列表后重新提交；原输入已保留", 409);
   const feature = featureForRequest(new URL(request.url).pathname, parsed.body);
   const purpose = purposeFor(new URL(request.url).pathname), executor = await getModelExecutor();
-  if (feature === "canvas.image") purpose.image = currentImagegenStep()?.request.inputs.length===0 ? "image.generate" : "image.edit";
+  if (feature === "canvas.image") {
+    const step = currentImagegenStep();
+    const hasReferences = step ? step.request.inputs.some(input => input.role !== "mask") : parsed.references > 0;
+    purpose.image = hasReferences ? "image.edit" : "image.generate";
+  }
   if (feature === "competitor.action" && parsed.body.action !== "analyze") Object.assign(purpose, { image:"image.edit", text:"text.competitor", vision:"vision.reference", primary:"image" });
   const mainFeature = feature === "competitor.action" && parsed.body.action === "analyze" ? undefined : feature;
   const bundle: ExecutionBundle = { modelVersion: snapshot.version, billingVersion: billing.version, primary: purpose.primary };
@@ -110,21 +127,24 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     const ids=model?publicUpstreamIds(snapshot.config,model):[];
     const upstreams=snapshot.config.upstreamModels.filter(u=>ids.includes(u.id)&&u.enabled&&snapshot.config.providers.some(p=>p.id===u.providerId&&p.enabled));
     const presentation = qualityPresentation(upstreams);
-    const qualities = presentation?.qualities || option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities)));
+    const qualities = preset ? [...DISPLAY_QUALITIES] : presentation?.qualities || option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities)));
     if (option?.parameters?.ratios?.length && !option.parameters.ratios.includes(ratio)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该比例", 400);
-    const requestedQuality = String(parsed.body.quality || request.headers.get("x-naumi-image-quality") || "medium");
+    const explicitQuality = String(parsed.body.quality || request.headers.get("x-naumi-image-quality") || "").trim().toLowerCase();
+    if (explicitQuality && ![...IMAGE_QUALITY_IDS, "auto"].includes(explicitQuality as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "质量参数无效，请选择已开放的质量档位", 400);
+    const environmentQuality = String(process.env.OPENAI_IMAGE_QUALITY || "medium").trim().toLowerCase();
+    const defaultQuality = qualities.includes(environmentQuality as any) ? environmentQuality : qualities[0] || "medium";
+    const requestedQuality = explicitQuality || defaultQuality;
     const presetParams = preset ? effectiveImageParameters(preset, { quality: requestedQuality, resolution: outputResolution, ratio }) : null;
     const canvasRequest = parsed.body.origin === "canvas" || new URL(request.url).pathname.startsWith("/api/canvas/");
 
     const effectiveQuality = presetParams?.effective.quality || requestedQuality;
-    if ((option || presentation) && (parsed.body.quality || request.headers.get("x-naumi-image-quality")) && qualities.length && !qualities.includes(requestedQuality as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选功能模型不支持该质量，不会静默退档", 400);
-    const defaultQuality = qualities.some(q => q === (process.env.OPENAI_IMAGE_QUALITY || "medium")) ? process.env.OPENAI_IMAGE_QUALITY || "medium" : qualities[0] || process.env.OPENAI_IMAGE_QUALITY || "medium";
+    if (explicitQuality && qualities.length && !qualities.includes(requestedQuality as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选功能模型不支持该质量，不会静默退档", 400);
 
     const native = presetParams ? presetParams.nativeResolution : !upstreams.some(u=>u.parameterMap.resolutionPolicy) && ["1K", "2K", "4K"].includes(outputResolution) && upstreams.some(u => u.capabilities.nativeResolutions.includes(outputResolution as "1K" | "2K" | "4K"));
     const needsEdit = purpose.image === "image.edit" || purpose.image === "image.cutout" || parsed.references > 0;
     const needsText = new URL(request.url).pathname.includes("/canvas/image-tasks");
     const task = String(parsed.body.taskType || parsed.body.task || "");
-    const facts: ModelFacts = { task: ["draft", "product", "detail", "layout"].includes(task) ? task as ModelFacts["task"] : needsText ? "layout" : "product", quality: qualities.includes(effectiveQuality as any) ? effectiveQuality : defaultQuality, resolution: native ? outputResolution : "1K", requestedResolution:outputResolution, ratio, needsEdit, preserveIdentity: needsEdit, needsText, nativeResolution: native && outputResolution !== "1K", references: parsed.references, quantity: 1, inputLength: String(parsed.body.prompt || parsed.body.text || "").length };
+    const facts: ModelFacts = { task: ["draft", "product", "detail", "layout"].includes(task) ? task as ModelFacts["task"] : needsText ? "layout" : "product", quality: effectiveQuality, resolution: native ? outputResolution : "1K", requestedResolution:outputResolution, ratio, needsEdit, preserveIdentity: needsEdit, needsText, nativeResolution: native && outputResolution !== "1K", references: parsed.references, quantity: 1, inputLength: String(parsed.body.prompt || parsed.body.text || "").length };
     const advanced=currentImagegenStep();
     const inferred=advanced?.intent||legacyImagegenIntent(parsed.body,parsed.references);
     if(advanced||inferred?.background||inferred?.conflicts.length)facts.imagegenRequirements=advanced?.intent||inferred!;

@@ -47,6 +47,7 @@ async function main() {
   const quality = await import("../src/lib/image-quality-request");
   const canvasTasks = await import("../src/lib/canvas-image-tasks");
   const sql = db.getPool();
+  const {quoteForRequest}=await import("../src/lib/billing/server");
   await db.ensureSchema(); await db.setSetting("multi_user_enabled", "1"); await db.setSetting("credits_metering", "1");
   const routes = {
     retouch: await import("../src/app/api/retouch/route"), recolor: await import("../src/app/api/recolor/route"),
@@ -66,8 +67,13 @@ async function main() {
   function form() {
     const body = new FormData();
     for (const key of ["image", "mask", "ref", "top"]) body.append(key, new File([image], `${key}.png`, {type:"image/png"}));
-    for (const [key,value] of Object.entries({prompt:"fixture product",style:"watercolor",color:"#336699",resolution:"4K",ratio:"1:1",option:"gloss"})) body.append(key,value);
+    for (const [key,value] of Object.entries({prompt:"fixture product",style:"watercolor",color:"#336699",resolution:"1K",ratio:"1:1",option:"gloss"})) body.append(key,value);
     return body;
+  }
+  async function quotedHeaders(actor:Awaited<ReturnType<typeof user>>,feature:import("../src/lib/billing/types").FeatureId,resolution="1K",tier="xhigh") {
+    const request=new Request("http://fixture.test/api/billing/quote",{headers:actor.headers});
+    const q=await quoteForRequest(request,{feature,quantity:1,quality:tier,resolution,ratio:"1:1"});
+    return {...actor.headers,"x-naumi-image-quality":tier,"x-naumi-billing-operation-id":randomUUID(),"x-naumi-billing-version":String(q.configVersion),"x-naumi-billing-credits":String(q.tariff.pricing.mode==="api-cost-plus"?q.authorizedCredits:q.requestedCredits),...(q.modelVersion?{"x-naumi-model-version":String(q.modelVersion)}:{})};
   }
   async function assertCharge(email:string, before:number, expected:number) {
     const after = (await db.getUser(email))!;
@@ -83,7 +89,7 @@ async function main() {
     for (const [name,route] of Object.entries(routes)) {
       scenario="success"; wire.length=0;
       const actor=await user();
-      const result=await route.POST(new Request(`http://fixture.test/api/${name}`,{method:"POST",headers:actor.headers,body:form()}));
+      const result=await route.POST(new Request(`http://fixture.test/api/${name}`,{method:"POST",headers:await quotedHeaders(actor,`tool.${name}` as import("../src/lib/billing/types").FeatureId),body:form()}));
       assert.equal(result.status,200,`${name}: ${await result.clone().text()}`);
       let data=await result.json();
       if(asyncRoutes.has(name)) {
@@ -97,7 +103,7 @@ async function main() {
         }
         assert.equal(data.status,"done",`${name}: ${JSON.stringify(data)}`);
       }
-      const expected=["inpaint","extract","garment3d","packaging3d"].includes(name)?20:14;
+      const expected=14;
       const audits=await assertCharge(actor.email,actor.before.creditsTotal,expected);
       assert.deepEqual(wire,["xhigh"],name); assert.equal(audits.length,1); assert.equal(audits[0].requested_quality,"xhigh");
       if (managedMode) assert.equal(wireModels.at(-1), "registered-tools-wire", `${name} must submit the configured supplier model, not the legacy environment model`);
@@ -105,26 +111,27 @@ async function main() {
     }
     for(const name of ["retouch","packaging3d"] as const) {
       const actor=await user();scenario="downgrade";wire.length=0;
-      const body=form();const result=await routes[name].POST(new Request(`http://fixture.test/api/${name}`,{method:"POST",headers:actor.headers,body}));
-      assert.equal(result.status,200,await result.clone().text()); let data=await result.json();
+      const body=form();const result=await routes[name].POST(new Request(`http://fixture.test/api/${name}`,{method:"POST",headers:await quotedHeaders(actor,`tool.${name}`),body}));
+      assert.equal(result.status,managedMode&&name==="retouch"?502:200,await result.clone().text()); let data=await result.json();
       if(data.jobId) {
         const id=data.jobId;
         while(true) {data=await(await routes.packaging3d.GET(new Request(`http://fixture.test/api/packaging3d?job=${id}`,{headers:actor.headers}))).json();if(data.status!=="pending")break;await new Promise(resolve=>setTimeout(resolve,30));}
-        assert.equal(data.status,"done");
+        assert.equal(data.status,managedMode?"error":"done");
       }
-      const audits=await assertCharge(actor.email,actor.before.creditsTotal,name==="retouch"?14:20);
-      assert.deepEqual(wire,["xhigh","medium"]);assert.equal(audits[0].executed_quality,"medium");
-      console.log(`PASS ${name}: confirmed rejection falls back once, original quote retained`);
+      const audits=await assertCharge(actor.email,actor.before.creditsTotal,managedMode?0:14);
+      assert.deepEqual(wire,managedMode?["xhigh"]:["xhigh","medium"]);
+      if(!managedMode)assert.equal(audits[0].executed_quality,"medium");
+      console.log(`PASS ${name}: ${managedMode?"managed tier retained, no second POST or user charge":"legacy fallback once, original quote retained"}`);
     }
     scenario="failure";const failed=await user();
-    const result=await routes.retouch.POST(new Request("http://fixture.test/api/retouch",{method:"POST",headers:failed.headers,body:form()}));
+    const result=await routes.retouch.POST(new Request("http://fixture.test/api/retouch",{method:"POST",headers:await quotedHeaders(failed,"tool.retouch"),body:form()}));
     assert.equal(result.status,502);await assertCharge(failed.email,failed.before.creditsTotal,0);
     scenario="success";
     const source=await user();const artId=`quality-source-${randomUUID()}`;
     await db.addArtworks(source.email,[{id:artId,title:"Fixture",category:"main",prompt:"",status:"completed",image:`data:image/png;base64,${image.toString("base64")}`,gradient:"",resolution:"4K",width:1024,height:1024}],`fixture-${randomUUID()}`);
     const expand=await import("../src/app/api/canvas/expand/route");
     wire.length=0;
-    const expanded=await expand.POST(new Request("http://fixture.test/api/canvas/expand",{method:"POST",headers:{...source.headers,"content-type":"application/json"},body:JSON.stringify({artworkId:artId,ratio:"4:3"})}));
+    const expanded=await expand.POST(new Request("http://fixture.test/api/canvas/expand",{method:"POST",headers:{...await quotedHeaders(source,"canvas.expand","4K"),"content-type":"application/json"},body:JSON.stringify({artworkId:artId,ratio:"4:3"})}));
     assert.equal(expanded.status,200,await expanded.clone().text());assert.equal((await expanded.json()).cost,20);await assertCharge(source.email,source.before.creditsTotal,20);
     const queued=await canvasTasks.enqueueTextEditTask(source.email,{artworkId:artId,oldText:"Old",newText:"New",box:{x:1,y:1,width:100,height:100},quality:"max"});
     assert.equal(queued.cost,24);process.env.OPENAI_IMAGE_QUALITY="low";
@@ -135,7 +142,7 @@ async function main() {
     let attempts=0;
     await assert.rejects(()=>quality.withQualityFallback({requested:"xhigh",executed:"xhigh",fallbackReason:null},async()=>{attempts++;throw Object.assign(new Error("quality upstream timeout"),{status:504});}));assert.equal(attempts,1);
     process.env.NAUMI_MULTI_USER="0";await db.setSetting("multi_user_enabled","0");await db.setSetting("credits_metering","0");
-    const free=await user();const freeResult=await routes.retouch.POST(new Request("http://fixture.test/api/retouch",{method:"POST",headers:free.headers,body:form()}));
+    const free=await user();const freeResult=await routes.retouch.POST(new Request("http://fixture.test/api/retouch",{method:"POST",headers:await quotedHeaders(free,"tool.retouch"),body:form()}));
     assert.equal(freeResult.status,200);assert.equal((await freeResult.json()).cost,0);await assertCharge(free.email,free.before.creditsTotal,0);
     console.log("PASS canvas: inherited dimensions, frozen queued quote and quality; timeout never retries; metering-off is free");
     console.log("GLOBAL_IMAGE_QUALITY_RESULT=PASS");

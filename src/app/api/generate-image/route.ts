@@ -380,7 +380,7 @@ async function openaiImages(
       try {
         r = await editOnce(p.transparent, q);
       } catch (e) {
-        if (!p.imagegen && !p.transparent && q !== qDefault && isQualityUnsupportedError(e)) {
+        if (!currentModelExecution("image") && !p.imagegen && !p.transparent && q !== qDefault && isQualityUnsupportedError(e)) {
           // 上游不识别 quality 参数:同通道退回默认档重试,出图不受影响
           console.error(`[gen-quality-fallback] 同通道退默认档 model=${model} req=${q}`);
           r = await editOnce(p.transparent, qDefault);
@@ -412,7 +412,7 @@ async function openaiImages(
       try {
         r = await generateOnce(p.transparent, q);
       } catch (e) {
-        if (!p.imagegen && !p.transparent && q !== qDefault && isQualityUnsupportedError(e)) {
+        if (!currentModelExecution("image") && !p.imagegen && !p.transparent && q !== qDefault && isQualityUnsupportedError(e)) {
           // 上游不识别 quality 参数:同通道退回默认档重试,出图不受影响
           console.error(`[gen-quality-fallback] 同通道退默认档 model=${model} req=${q}`);
           r = await generateOnce(p.transparent, qDefault);

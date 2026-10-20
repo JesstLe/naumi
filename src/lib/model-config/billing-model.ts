@@ -1,4 +1,4 @@
-import { FEATURE_BINDINGS, selectedBusinessOption } from "./business";
+import { FEATURE_BINDINGS, selectedBusinessOption, upstreamSupportsFeature } from "./business";
 import "server-only";
 import { requestedFeatureModel } from "./selection-policy";
 import type { FeatureId } from "../billing/rules/registry";
@@ -18,7 +18,7 @@ export async function managedBillingModel(request: Request, feature: FeatureId, 
   if (!binding || !await modelConfigurationEnabled()) return null;
   const role = binding.startsWith("vision.") ? "vision" : MODEL_BINDINGS[binding].modality;
   const scope = currentModelExecution(role);
-  if (scope?.frozen.binding === binding && (!scope.frozen.feature || scope.frozen.feature === feature)) return { modelId: scope.frozen.publicModelId, providerId: scope.connection.providerId };
+  if (scope && (scope.frozen.binding === binding || feature === "canvas.image" && scope.frozen.binding === "image.generate") && (!scope.frozen.feature || scope.frozen.feature === feature)) return { modelId: scope.frozen.publicModelId, providerId: scope.connection.providerId };
   const admin = await getModelAdministration();
   const accepted = currentExecutionBundle()?.modelVersion || currentModelExecution()?.frozen.modelVersion;
   const snapshot = accepted ? await admin.repo.byVersion(accepted) : await admin.repo.current();
@@ -36,7 +36,7 @@ export async function managedBillingModel(request: Request, feature: FeatureId, 
   if (model.target.type === "pool") return { modelId: model.id, providerId: "managed-router" };
   const upstream = snapshot.config.upstreamModels.find(u => u.id === model.target.id);
   const provider = snapshot.config.providers.find(p => p.id === upstream?.providerId);
-  if (!upstream?.enabled || !provider?.enabled || !upstream.capabilities[MODEL_BINDINGS[binding].capability])
+  if (!upstream?.enabled || !provider?.enabled || !upstreamSupportsFeature(upstream.capabilities, binding, feature))
     throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型不支持当前操作", 400);
   return { modelId: model.id, providerId: ["apimart-images", "fal-images"].includes(provider.protocol) ? "managed-router" : provider.id };
 }
