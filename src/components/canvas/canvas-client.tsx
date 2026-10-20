@@ -6405,6 +6405,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (readOnly || !user || !active || isNodeLocked(targetId) || isNodeLocked(sourceId)) return;
     const account = canvasAccountRef.current;
     const byId = new Map(active.members.map((m) => [m.id, m]));
+    const target = byId.get(targetId);
+    if (target && explicitCanvasParent(target, sourceId)) return; // Existing link: no duplicate undo entry.
     const parents = (id: string): string[] => {
       const m = byId.get(id);
       if (!m) return [];
