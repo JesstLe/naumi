@@ -266,6 +266,11 @@ class Controller:
   self.post=tasks.collect_task_snapshot(self.tx.run,self.db,self.tx.save,previous=self.pre.private,projection='proof',row_limit=self.pre.private.get('rowLimit',1000),allow_absent_tables=tasks.ADDITIVE_TABLES,statement_timeout_ms=self.cfg.get('snapshotStatementTimeoutMs',5000))
   comparison=tasks.compare_task_snapshots(self.pre,self.post);self.tx.save('task-preservation-comparison.json',comparison)
   require(comparison['preservationVerified'],'TASK_PRESERVATION_NOT_VERIFIED')
+  # The domain reader is shared-DB, not old-slot-specific. Pause the new scan
+  # at the final retirement barrier so its own read transaction cannot be
+  # mistaken for undrained old work. Keep the completed tick receipt intact.
+  self.op('new-worker-retirement-barrier',lambda op:self.worker_control(self.newworker,'drain',op))
+  self.wait(lambda:(lambda s:s if normal.worker_quiescent(s) else None)(self.worker_control(self.newworker,'status',str(uuid.uuid4()))['state']),'NEW_WORKER_RETIREMENT_BARRIER',120)
   # Repeated current-execution proof, including exact immutable held incident.
   self.wait(lambda:self.drain_proof(),'REPEATED_CURRENT_DRAIN',60);time.sleep(2);self.wait(lambda:self.drain_proof(),'FINAL_CURRENT_DRAIN',60)
   require(('http://127.0.0.1:'+str(self.cfg['oldPort'])) not in self.tx.run(['nginx','-T']).decode(),'OLD_ROUTE_STILL_REFERENCED')
@@ -275,6 +280,8 @@ class Controller:
    self.drain_proof() if identity is self.worker else None
    self.op('retire-'+identity['id'][:12],lambda _,identity=identity:self.stop_exact(identity))
    self.succ['retired'].append(identity['id']);self.persist()
+  self.op('new-worker-after-retirement',lambda op:self.worker_control(self.newworker,'resume',op))
+  self.wait(lambda:(lambda s:s if normal.worker_completed(s) else None)(self.worker_control(self.newworker,'status',str(uuid.uuid4()))['state']),'NEW_WORKER_FINAL_COMPLETION',90)
   from release47_normal_rollback import run as rollback_check
   rollback_check(self.cfg,apply=False,existing_tx=self.tx)
   self.state['activeNormalBlueGreenReleaseId']=RELEASE

@@ -54,7 +54,7 @@ class NasController(ctl.Controller):
   require(len(jobs)==13,'NAS_PAID_JOB_SET_CHANGED')
   for j in jobs:
    original=old[j['id']]
-   require(j['snapshot']['status']=='needs_attention' and j['snapshot']['releaseQuarantine']['releaseId']==RID,'NAS_PAID_QUARANTINE_CHANGED')
+   require(j['snapshot']['status']=='needs_attention' and j['snapshot']['releaseQuarantine']['releaseId']==self.cfg.get('preservedPaidReleaseId',RID),'NAS_PAID_QUARANTINE_CHANGED')
    require(j['snapshot']['paidOperations']==original['snapshot']['paidOperations'],'NAS_PAID_RECEIPT_CHANGED')
    for k in ['payload','lease_token','lease_until','cost','reserved_cost','billing_settled']:
     require(j[k]==original[k],'NAS_PAID_FROZEN_FIELD_CHANGED')
@@ -155,7 +155,10 @@ COMMIT;""" % payload
   run(self.cfg,apply=False,existing_tx=self.tx)
 
 def main():
- cfg=json.loads((ROOT/'release-config.json').read_bytes());ctl.configure(cfg)
+ global ROOT,RID
+ import argparse
+ parser=argparse.ArgumentParser();parser.add_argument('--config',type=pathlib.Path);args=parser.parse_args()
+ cfg=json.loads((args.config or ROOT/'release-config.json').read_bytes());ROOT=pathlib.Path(cfg['evidenceRoot']);RID=cfg['releaseId'];ctl.configure(cfg)
  # Timers can cross midnight, so authorize the actual execution date, not an
  # expired historical release appointment.
  cfg['date']=dt.datetime.now(dt.timezone(dt.timedelta(hours=8))).date().isoformat()
@@ -167,7 +170,7 @@ def main():
   web=public_identity(tx.inspect(cfg['oldWeb']['id']));require(web==cfg['oldWeb'],'OLD_WEB_RESTARTED')
   app=controls.app_status(tx,web);require(app['identity']['bootId']==cfg['reviewedBoot'],'OLD_BOOT_CHANGED')
   require(app['observations']['trackedAcceptedWork']==0 and app['observations']['agentRuns']==0,'CURRENT_LIVE_WORK_DURING_ISOLATION')
-  if not resume:
+  if not resume and not cfg.get('priorIsolationEvidence'):
    finalize_media(tx,cfg)
    saved=ROOT/'isolation';saved.mkdir(mode=0o700,exist_ok=False);prior=tx.folder
    try:
@@ -180,6 +183,16 @@ def main():
     result=isolate(tx,spec,app)
    finally:tx.folder=prior
    ctl.save(ROOT/'isolation-result.json',result)
+  elif not resume:
+   prior=pathlib.Path(cfg['priorIsolationEvidence']);require(prior==pathlib.Path('/opt/naumi-staging/evidence/nas47-finish-20261020'),'EXACT_PRIOR_ISOLATION_REQUIRED')
+   require(json.loads((prior/'isolation-result.json').read_bytes())==json.loads((ROOT/'isolation-result.json').read_bytes()),'PRIOR_ISOLATION_RECEIPT_CHANGED')
+   require(cfg.get('preservedPaidReleaseId')=='release47-nas-s3first-20261020','PRIOR_PAID_QUARANTINE_ID_CHANGED')
+   import shutil
+   saved=ROOT/'isolation';saved.mkdir(mode=0o700,exist_ok=False)
+   shutil.copyfile(prior/'isolation/quarantine-original.private.json',saved/'quarantine-original.private.json');(saved/'quarantine-original.private.json').chmod(0o600)
+   previous=tx.folder
+   try:tx.folder=saved;tx.backup_database(public_identity(tx.inspect('naumi-staging-db-1')))
+   finally:tx.folder=previous
   require(controls.app_status(tx,web)['observations']['unknownLeases']==0,'ISOLATION_NOT_OBSERVED')
   # Only the exact dead-boot observations were closed. Paid tasks remain fenced.
   if not resume:ctl.save(ROOT/'transaction/controller-STARTED.json',{'at':ctl.now(),'releaseId':RID})
