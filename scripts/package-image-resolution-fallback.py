@@ -7,7 +7,7 @@ OUT = ROOT / "output/image-resolution-fallback-20261020"
 BASE = "d54dcdc01312a47be747f83f720194db8b6147e5"
 OUT.mkdir(parents=True, exist_ok=True)
 def git(*args):
-    return subprocess.check_output(["git", *args], cwd=ROOT)
+    return subprocess.check_output(["git", *args], cwd=ROOT, stderr=subprocess.DEVNULL)
 def digest(data):
     return hashlib.sha256(data).hexdigest()
 names = set(git("diff", "--name-only", BASE).decode().splitlines())
@@ -51,7 +51,7 @@ from pathlib import Path
 import hashlib,json,sys,zipfile
 home=Path(sys.argv[1]).resolve();target=Path(sys.argv[2]).resolve()
 manifest=json.loads((home/'ARTIFACT_HASHES.json').read_text(encoding='utf-8'))
-if str(target).lower()==str(Path(manifest['protectedOriginalWorktree']).resolve()).lower() or not target.is_dir() or target==target.anchor:
+if str(target).lower()==str(Path(manifest['protectedOriginalWorktree']).resolve()).lower() or not target.is_dir() or target==Path(target.anchor):
  raise SystemExit('ROLLBACK_HOLD: target must be an existing independent copy')
 def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None
 for name,row in manifest['files'].items():
