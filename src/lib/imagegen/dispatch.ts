@@ -176,7 +176,7 @@ export async function submitImagegen(raw:ImagegenRequest,owner:string,confirmati
 export async function submitAcceptedImagegen(plan:ImagegenPlan,owner:string,fingerprint=plan.fingerprint):Promise<ImagegenResult>{
  const request=plan.request,id=parentId(request.operationId),prior=await jobs.get(id,false);
  if(prior){if(await jobs.owner(id)!==owner.toLowerCase()||prior.fingerprint!==fingerprint)throw new Error("提交编号与已有请求冲突");await resumeImagegen(id);return prior.result;}
- const result:ImagegenResult={operationId:request.operationId,jobId:id,status:"queued",stage:"planning",artifacts:[],chargedCredits:0};
+ const result:ImagegenResult={operationId:request.operationId,jobId:id,status:"queued",stage:"planning",artifacts:[],chargedCredits:0,...(plan.warnings.length?{warnings:[...plan.warnings]}:{})};
  try{await jobs.create(id,owner,{status:"pending",result,fingerprint,children:{}},{plan},0,false);}catch(error){const race=await jobs.get(id,false);if(!race||await jobs.owner(id)!==owner.toLowerCase()||race.fingerprint!==fingerprint)throw error;return race.result;}
  await resumeImagegen(id);return result;
 }

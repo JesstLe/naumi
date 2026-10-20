@@ -61,7 +61,7 @@ async function main(){
  const submission=await submitImagegen(request,owner,{billingVersion:plan.billingVersion,modelVersion:plan.modelVersion,credits:plan.totalCredits,confirmed:true});
  let result=submission;
  for(let i=0;i<500&&!['succeeded','failed','needs_attention'].includes(result.status);i++){await new Promise(r=>setTimeout(r,50));result=(await getImagegenResult(request.operationId,owner))!;}
- assert.equal(result.status,'succeeded',JSON.stringify(result));assert.equal(result.chargedCredits,12);assert.equal(result.artifacts[0].width,2048);assert.equal(result.artifacts[0].height,2048);assert.equal(wires.length,3);
+ assert.equal(result.status,'succeeded',JSON.stringify(result));assert.match(result.warnings!.join(' '),/4K.*2K/);assert.equal(result.chargedCredits,12);assert.equal(result.artifacts[0].width,2048);assert.equal(result.artifacts[0].height,2048);assert.equal(wires.length,3);
  const before=wires.length;await submitImagegen(request,owner);assert.equal(wires.length,before,'same raw request never replays');
  const child=(await db.getPool().query("SELECT payload FROM app_image_jobs WHERE kind='generate' AND email=$1",[owner])).rows[0].payload;
  assert.equal(child.p.resolution,'2K');assert.equal(child.billingQuote.facts.resolution,'4K');assert.equal(child.billingQuote.requestedCredits,12);

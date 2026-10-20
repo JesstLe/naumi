@@ -26,8 +26,12 @@ export function apimartExecutionParameters(scope: ModelExecutionScope, body:Reco
   if(!p&&scope.frozen.requestedParameters&&scope.frozen.facts?.requestedResolution)requested.resolution=scope.frozen.facts.requestedResolution;
   if(!p&&operation?.quality)requested.quality=operation.quality;
   if(operation?.ratio)requested.ratio=operation.ratio;
-  if(!p&&operation?.resolution)requested.resolution=operation.resolution;
+  if(operation?.resolution)requested.resolution=operation.resolution;
   if(!p&&quote?.effectiveParameters)Object.assign(requested,quote.effectiveParameters);
+  // New preset delivery fallback is explicit; old prompt-only preset requests
+  // had no differing effective tier and retain their historical precedence.
+  if(p && quote?.effectiveParameters && quote.requestedParameters?.resolution!==quote.effectiveParameters.resolution) requested.resolution=quote.effectiveParameters.resolution;
+  else if(p && scope.frozen.requestedParameters && scope.frozen.facts && scope.frozen.requestedParameters.resolution!==scope.frozen.facts.resolution) requested.resolution=scope.frozen.facts.resolution;
   return requested;
 }
 

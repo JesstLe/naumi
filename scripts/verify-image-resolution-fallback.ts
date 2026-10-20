@@ -39,4 +39,15 @@ config.upstreamModels[0].parameterMap={};config.upstreamModels[0].capabilities.n
 check(resolveImageResolution(config,'image-a','4K').changed,false,'unknown support is not guessed');
 check(resolveImageResolution(config,'image-a','8K').effective,'8K','unrecognized tiers stay with normal validation');
 check(resolveImageResolution(config,'missing','4K').changed,false,'no implicit model substitution');
+const {apimartExecutionParameters}=require('../src/lib/model-config/apimart-preset');
+const scope:any={frozen:{requestedParameters:{quality:'medium',resolution:'4K',ratio:'1:1'},facts:{quality:'medium',resolution:'2K',requestedResolution:'2K',ratio:'1:1'}}};
+check(apimartExecutionParameters(scope,{}).resolution,'2K','APIB frozen actual tier wins audit 4K');
+const billed:any={facts:{resolution:'4K'},requestedCredits:12,requestedParameters:{quality:'medium',resolution:'4K',ratio:'1:1'},effectiveParameters:{quality:'medium',resolution:'2K',ratio:'1:1'}};
+check(apimartExecutionParameters(scope,{},billed).resolution,'2K','APIB execution follows explicit effective contract');
+check(billed.requestedCredits,12,'APIB parameter mapping never reprices');
+const presetScope={...scope,imagePreset:{enabled:true}};
+check(apimartExecutionParameters(presetScope,{}).resolution,'2K','explicit new preset fallback follows frozen actual');
+check(apimartExecutionParameters(presetScope,{},billed).resolution,'2K','explicit new preset fallback follows quote actual');
+const legacyPreset={...presetScope,frozen:{requestedParameters:{quality:'high',resolution:'4K',ratio:'1:1'},facts:{quality:'medium',resolution:'4K',ratio:'1:1'}}};
+check(apimartExecutionParameters(legacyPreset,{},undefined,{resolution:'2K'}).resolution,'2K','old preset operation precedence is unchanged');
 console.log(`RESOLUTION_POLICY=PASS CHECKS=${checks} SUPPLIER_CALLS=0`);

@@ -21,9 +21,13 @@
 
 - 自定义精确像素不降档；已冻结Execution/版本固定旧plan不重解释、不自动重提。
 - 47/103均无本次SSH/锁/配置publication/候选/切流；收费验收和自动巡检继续PAUSED。
-- APIB适配器effective优先接线由既有负责人独占实现，待提交后集中合并；本模块不覆盖其runtime catalog/preflight未提交。
+- APIB适配器已普通合负责人交接c10298ad，保持其runtime catalog/preflight；本模块补显式新preset回退的effective优先分支，旧preset保持历史优先级。
 - 供应商真实生成质量未验收；本机HTTP/PG替身不构成供应商已verified证据。
 
 ## 进度
 
-基线d54dcdc01312a47be747f83f720194db8b6147e5；独立codex/image-resolution-fallback-20261020。模块已实现，集中回归/四件证据/提交推送进行中；未合main、未上线。功能迭代计数本轮1，开工已fetch并合origin/main（无新增），收尾重新fetch核对。
+基线d54dcdc01312a47be747f83f720194db8b6147e5；独立codex/image-resolution-fallback-20261020。功能ae0ab965，普通合Seedream交接至da205fe5；原main038b840b已是祖先。集中回归/四件证据/提交推送收尾；未合main、未上线。功能迭代计数本轮1，开工已fetch并合origin/main（无新增），收尾重新fetch核对。
+
+## 测试修正说明
+
+旧verify-resolution-parameters的503 fixture没有not_charged证据却断言自动换供应商，baseline与modified均得到supplier-response-unconfirmed。仅给fixture明确not_charged，保留生产未知任务不重提保护。原canvas静态guard改匹配effectivePreset，480组合/90拒绝仍实际跑。异步57项首次并发时计数波动，baseline与modified原样重跑通过，不隐藏原始输出。
