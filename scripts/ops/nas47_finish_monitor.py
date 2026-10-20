@@ -48,11 +48,16 @@ def main():
   if final and final.get('phase')=='COMPLETE' and final.get('publicAcceptance') is True:
    status['phase']='COMPLETE';atomic(ROOT/'MONITOR.json',status)
    subprocess.run(['systemctl','disable','--now','naumi47-nas-finish.timer'],check=True);return
+  heartbeat=load(ROOT/'BROWSER_AGENT_ALIVE.json')
+  try:browser_alive=bool(heartbeat and (dt.datetime.now(dt.timezone.utc)-dt.datetime.fromisoformat(heartbeat['at'])).total_seconds()<90)
+  except(ValueError,KeyError,TypeError):browser_alive=False
+  status['browserAgentAlive']=browser_alive
   command=ROOT/'reviewed-execute.json'
-  if status['migrationReady'] and health.returncode==0 and command.exists():
+  if status['migrationReady'] and health.returncode==0 and browser_alive and command.exists():
    spec=load(command);script=pathlib.Path(spec['script']);import hashlib
    assert script.parent==ROOT and not script.is_symlink() and hashlib.sha256(script.read_bytes()).hexdigest()==spec['sha256']
    assert spec['target']=='47.105.59.142' and spec['replayPaidTasks'] is False
+   assert spec.get('toolHashes') and all((ROOT/'tools'/name).parent==ROOT/'tools' and not(ROOT/'tools'/name).is_symlink()and hashlib.sha256((ROOT/'tools'/name).read_bytes()).hexdigest()==digest for name,digest in spec['toolHashes'].items())
    intent=ROOT/'EXECUTION_INTENT.json'
    if intent.exists():status['phase']='EXISTING_OPERATION_RECONCILE_REQUIRED'
    else:
