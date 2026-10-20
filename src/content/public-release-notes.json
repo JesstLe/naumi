@@ -27,6 +27,33 @@
     ]
   },
   {
+    "version": "1792501860",
+    "title": {
+      "zh": "画布创作体验优化",
+      "en": "Canvas creation improvements"
+    },
+    "improvements": [
+      {
+        "zh": "对话中支持连续添加、粘贴和拖入参考图片。",
+        "en": "Append, paste or drop reference images during a conversation."
+      },
+      {
+        "zh": "多张参考图画幅一致时自动沿用，不一致时可选择画幅。",
+        "en": "Keep a shared reference frame automatically or choose one when frames differ."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "原图查看与下载保留上传文件，参考图适配不改变原始画幅。",
+        "en": "Keep the uploaded original for viewing and downloading without changing its composition."
+      },
+      {
+        "zh": "排队与待核查状态分开显示，减少误判失败和重复操作。",
+        "en": "Distinguish queued requests from tasks awaiting review and avoid duplicate submissions."
+      }
+    ]
+  },
+  {
     "version": "1792471620",
     "title": {
       "zh": "图片生成兼容性优化",

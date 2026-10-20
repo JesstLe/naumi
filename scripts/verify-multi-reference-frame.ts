@@ -39,7 +39,7 @@ async function main(){
     return new File([new Uint8Array(bytes)],"fixture.png",{type:orientation?"image/jpeg":"image/png"});
   };
   const files=[await image(100,100),await image(75,100),await image(150,200)];
-  const form=(ratio="auto")=>{const f=new FormData();f.set("prompt","多图合成");f.set("origin","canvas");f.set("ratio",ratio);f.set("model","gpt-image-2");f.set("imagegenNodeId","node-fixture");files.forEach(file=>f.append("image",file));return f;};
+  const form=(ratio="auto",inputs=files)=>{const f=new FormData();f.set("prompt","多图合成");f.set("origin","canvas");f.set("ratio",ratio);f.set("model","gpt-image-2");f.set("imagegenNodeId","node-fixture");inputs.forEach(file=>f.append("image",file));return f;};
   const legacy=await normalizeLegacyFrameRequest(new Request("http://fixture/api/generate-image",{method:"POST",body:form()}));
   const normalized=await legacy.formData();check(normalized.get("ratio")==="3:4"&&normalized.getAll("image").length===3,"legacy same ratio retains all reference files");
   const rotated=form();rotated.delete("image");for(const file of [files[0],files[1],await image(100,75,6)])rotated.append("image",file);
@@ -62,18 +62,16 @@ async function main(){
       }};
       globalThis.fetch=async(input,init)=>{
         const path=String(input);
-        // Prepared transport dimensions are not the original frame authority.
+        // Deliberately report square transport metadata: composition and the
+        // choice UI must still use dimensions decoded from the original File.
         if(path.endsWith("/inputs")){uploads++;return Response.json({artworkId:`asset-${uploads}`,url:`/media/asset-${uploads}.png`,width:100,height:100});}
         const raw=JSON.parse(String(init?.body));payloads.push(raw);
         if(path.endsWith("/plan")){plans++;return Response.json({request:raw,steps:[{operation:"edit"}],intent:{background:null},totalCredits:6,billingVersion:8,modelVersion:125,warnings:[],confirmationRequired:false});}
         posts++;return Response.json({id:raw.operationId});
       };
       if(scenario==="resume")saveCanvasReceipt(storage,scope.owner,scope.project,{id:crypto.randomUUID(),nodeId:"node-fixture",modelId:"gpt-image-2",x:1,y:2});
-      const submitted=form(scenario==="explicit"?"9:16":"auto");
-      if(scenario!=="same"&&scenario!=="resume"){
-        submitted.delete("image");for(const file of [files[0],files[1],await image(100,75)])submitted.append("image",file);
-      }
-      const run=submitCanvasImagegen(submitted,"node-fixture",undefined,scope);
+      const scenarioFiles=scenario==="same"?files:[files[0],files[1],await image(100,75)];
+      const run=submitCanvasImagegen(form(scenario==="explicit"?"9:16":"auto",scenarioFiles),"node-fixture",undefined,scope);
       if(["cancel","scope-change","invalid-choice"].includes(scenario)){
         await assert.rejects(run,error=>scenario!=="cancel"||error instanceof ImagegenPreparationCancelled);cases++;
         check(posts===0&&plans===0&&canvasReceipts(storage,scope.owner,scope.project).length===0,"dismissal/stale/invalid selection creates no task or receipt");
@@ -82,7 +80,7 @@ async function main(){
         if(scenario==="resume")check(uploads===0&&posts===0&&plans===0&&choices===0,"existing receipt bypasses all preparation and submission");
         else{
           check(posts===1&&plans===1&&uploads===3,"one plan and one submit, no repeated uploads");
-          check(payloads[0].parameters.ratio===(scenario==="same"?"3:4":scenario==="explicit"?"9:16":"4:3"),"original frame consensus or explicit user choice preserved despite transport dimensions");
+          check(payloads[0].parameters.ratio===(scenario==="same"?"3:4":scenario==="explicit"?"9:16":"4:3"),"original source consensus or explicit user choice preserved before plan");
           check(payloads[1].parameters.ratio===payloads[0].parameters.ratio&&payloads[1].operationId===payloads[0].operationId,"same user request identity submitted once");
           check(choices===(scenario==="mixed"?1:0),"no interruption for same or explicit ratio");
         }
