@@ -247,7 +247,7 @@ const PORT_Y = NODE_LABEL_H + 100; // 默认空白节点连接点垂直居中
 const X_GAP = 90; // 层间横向间距
 const Y_GAP = 48; // 同层兄弟纵向间距
 const MAX_TOTAL_IMAGES = 16; // 节点图 + 追加参考图 合计上限
-const MAX_UPLOAD = 12 * 1024 * 1024;
+const MAX_UPLOAD = 64 * 1024 * 1024;
 const MAX_GENERATION_COUNT = CANVAS_MAX_COUNT;
 type CanvasPrimaryTool = "move" | "marquee" | "hand";
 // 扩图可选目标比例(ratioTilesC 同款,去掉 auto 与极端档 2:1/1:2)
@@ -6060,7 +6060,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   async function saveLocalImageEdit(artwork: Artwork, crop?: CanvasCrop, file?: File) {
     if(!user || readOnly || !nodeSettingsReady || isNodeLocked(artwork.id) || localEditBusyRef.current)return;
-    if(file && (file.size>MAX_UPLOAD || !["image/png","image/jpeg","image/webp"].includes(file.type))){flashTip(L("请选择12MB以内的PNG、JPEG或WebP","Choose a PNG, JPEG or WebP up to 12MB"));return;}
+    if(file && (file.size>12*1024*1024 || !["image/png","image/jpeg","image/webp"].includes(file.type))){flashTip(L("请选择12MB以内的PNG、JPEG或WebP","Choose a PNG, JPEG or WebP up to 12MB"));return;}
     localEditBusyRef.current=true;setLocalEditBusy(true);
     try{
       const fingerprint=JSON.stringify({id:artwork.id,crop,file:file?{name:file.name,size:file.size,lastModified:file.lastModified}:null});
@@ -6883,7 +6883,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       uploadBytes: valid.reduce((sum, file) => sum + file.size, 0), uploadedBytes: 0,
     }]);
     const run = async () => {
-      const prepared = await prepareImageUploads(entries.map(entry => entry.file), 3);
+      const prepared = await prepareImageUploads(entries.map(entry => entry.file), 1, {preserveOriginal:true});
       // 解码完成后按图片比例生成舒适的画布初始尺寸；原图像素仍单独保存。
       const preparedCanvasSizes = prepared.map((item) =>
         adaptiveCanvasImageSize(item.width, item.height)
@@ -6948,6 +6948,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         const selected = prepared[index];
         let error = "";
         try {
+          if(selected.error)throw new Error(selected.error);
           const fd = new FormData();
           fd.append("email", email);
           fd.append("image", selected.file);
@@ -6981,7 +6982,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       let next = 0;
       // The first successful image is the project root; a failed first image must not split the batch.
       while (!scope.rootId && next < entries.length) await upload(next++);
-      await Promise.all(Array.from({ length: Math.min(4, entries.length - next) }, async () => {
+      await Promise.all(Array.from({ length: Math.min(2, entries.length - next) }, async () => {
         while (next < entries.length) await upload(next++);
       }));
       const added = ids.filter((value): value is string => !!value);

@@ -7,10 +7,13 @@ import {ensureMediaSchema,getMediaAsset} from '@/lib/media-assets';
 import {getPool,addArtworks,listArtworksByIds,setArtworkPosition} from '@/lib/db';
 import {privateMedia,storageDriver,remoteMediaAccess,presignStoredObject,readManagedObject,uploadImage} from '@/lib/storage';
 import {adaptiveCanvasImageSize} from '@/lib/mock-data';
+import {ORIGINAL_IMAGE_MAX_BYTES} from '@/lib/image-upload-policy';
+import {browserPreviewsFromForm,saveCanvasOriginal,type BrowserPreviews} from '@/lib/canvas-original-upload';
+import {readImagegenBody} from '@/lib/imagegen/body';
 
 export const runtime='nodejs',dynamic='force-dynamic',maxDuration=120;
 const headers={'cache-control':'no-store'};
-const prepare=z.object({action:z.literal('prepare'),bytes:z.number().int().min(1).max(12*1024*1024),
+const prepare=z.object({action:z.literal('prepare'),bytes:z.number().int().min(1).max(ORIGINAL_IMAGE_MAX_BYTES),
  contentType:z.enum(['image/png','image/jpeg','image/webp','image/gif','image/avif'])});
 const complete=z.object({action:z.literal('complete'),id:z.string().uuid(),title:z.string().max(240).optional(),
  parentId:z.string().max(200).nullable().optional(),canvasGroupId:z.string().max(120).nullable().optional(),
@@ -19,13 +22,19 @@ export async function POST(request:Request) {
  const email=await authenticatedEmail(request);
  if(!email)return NextResponse.json({error:'请先登录'},{status:401,headers});
  if(!privateMedia||storageDriver==='local'||remoteMediaAccess==='proxy')return NextResponse.json({enabled:false},{headers});
- let raw:unknown;try{raw=await request.json();}catch{return NextResponse.json({error:'请求格式无效'},{status:400,headers});}
+ let raw:unknown,previews:BrowserPreviews|undefined;
+ try{
+  if(request.headers.get('content-type')?.includes('multipart/form-data')){
+   const bytes=await readImagegenBody(request,9*1024*1024),form=await new Response(new Uint8Array(bytes),{headers:{'content-type':request.headers.get('content-type')!}}).formData();
+   raw=JSON.parse(String(form.get('payload')));previews=await browserPreviewsFromForm(form);
+  }else raw=await request.json();
+ }catch{return NextResponse.json({error:'请求格式或预览图无效'},{status:400,headers});}
  try {
   await ensureMediaSchema();
   const pending=prepare.safeParse(raw);
   if(pending.success){
-    const quota=await getPool().query(`SELECT count(*)::int n FROM app_media_uploads WHERE owner=$1 AND expires_at>now() AND committed_id IS NULL`,[email]);
-    if(quota.rows[0].n>=20)return NextResponse.json({error:'请等待已有上传完成'},{status:429,headers});
+    const quota=await getPool().query(`SELECT count(*)::int n,COALESCE(sum(bytes),0)::int bytes FROM app_media_uploads WHERE owner=$1 AND expires_at>now() AND committed_id IS NULL`,[email]);
+    if(quota.rows[0].n>=20||quota.rows[0].bytes+pending.data.bytes>256*1024*1024)return NextResponse.json({error:'请等待已有上传完成'},{status:429,headers});
     const id=randomUUID(),key=`pending-uploads/${id}`;
     await getPool().query(`INSERT INTO app_media_uploads(id,owner,staging_key,content_type,bytes,expires_at)
       VALUES($1,$2,$3,$4,$5,now()+interval '10 minutes')`,[id,email,key,pending.data.contentType,pending.data.bytes]);
@@ -42,14 +51,17 @@ export async function POST(request:Request) {
     return NextResponse.json({error:'父节点不存在'},{status:404,headers});
   let key=row.asset_key as string|null,asset=key?await getMediaAsset(key):null;
   if(!asset){
-    const data=await readManagedObject(`/media/${row.staging_key}`,12*1024*1024);
+    const data=await readManagedObject(`/media/${row.staging_key}`,ORIGINAL_IMAGE_MAX_BYTES);
     if(data.size!==row.bytes)return NextResponse.json({error:'实际文件大小与申请不一致'},{status:422,headers});
     const actual=await sharp(data.bytes,{limitInputPixels:64_000_000,failOn:'error'}).metadata();
     const mime=({png:'image/png',jpeg:'image/jpeg',webp:'image/webp',gif:'image/gif',avif:'image/avif',heif:'image/avif'} as Record<string,string>)[actual.format||''];
     if(mime!==row.content_type || !actual.width || !actual.height) return NextResponse.json({error:'实际图片格式无效'},{status:422,headers});
-    await sharp(data.bytes,{limitInputPixels:64_000_000,failOn:'error'}).raw().toBuffer();
+    if(!previews){
+     if(data.bytes.length>12*1024*1024)return NextResponse.json({error:'大图请通过画布上传，浏览器会自动准备预览'},{status:422,headers});
+     await sharp(data.bytes,{limitInputPixels:64_000_000,failOn:'error'}).raw().toBuffer();
+    }
     key=`canvas-uploads/${row.id}-${createHash('sha256').update(data.bytes).digest('hex').slice(0,24)}.${actual.format}`;
-    await uploadImage(data.bytes,mime,key,undefined,email);
+    if(previews)await saveCanvasOriginal(data.bytes,key,email,previews);else await uploadImage(data.bytes,mime,key,undefined,email);
     asset=await getMediaAsset(key);
     if(!asset)throw new Error('asset registration unavailable');
     // Only an immutable formal key is published; still-valid PUT targets staging only.
