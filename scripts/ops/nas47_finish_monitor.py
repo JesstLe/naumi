@@ -12,7 +12,8 @@ BACKUPS=[pathlib.Path('/opt/naumi-staging/evidence')/p for p in [
  'nas47-data-backup-20261020/database-r2-proof/STATUS.json',
  'nas47-data-backup-20261020/new-api-proof/STATUS.json',
  'nas47-data-backup-20261020/archive-proof/STATUS.json',
- 'nas47-extra-data-20261020/proof/STATUS.json']]
+ 'nas47-extra-data-20261020/proof/STATUS.json',
+ 'nas47-aux-db-20261020/proof/STATUS.json']]
 def load(p):
  try:return json.loads(p.read_bytes())
  except(FileNotFoundError,ValueError):return None
@@ -30,7 +31,7 @@ def ready(copy,verify):
 
 def all_gates(copy,verify,tail,backups):
  return bool(ready(copy,verify) and tail and all(tail.get(k)==0 for k in ['errors','mismatch','tooLarge'])
-             and len(backups)==4 and all(v and v.get('phase')=='ALL_BACKUPS_READBACK_VERIFIED' for v in backups))
+             and len(backups)==5 and all(v and v.get('phase')=='ALL_BACKUPS_READBACK_VERIFIED' for v in backups))
 def main():
  import fcntl
  ROOT.mkdir(mode=0o700,parents=True,exist_ok=True)

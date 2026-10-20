@@ -10,7 +10,7 @@ class Monitor(unittest.TestCase):
   self.assertFalse(ready(c,{**v,'verified':2}));self.assertFalse(ready(c,{**v,'phase':'VERIFYING'}))
  def test_tail_and_all_backup_scopes_required(self):
   c={'errors':0,'mismatch':0,'tooLarge':0};v={'phase':'ALL_BYTES_VERIFIED','verified':3,'files':3,'errors':0,'missing':0,'mismatch':0,'changed':0}
-  b=[{'phase':'ALL_BACKUPS_READBACK_VERIFIED'}for _ in range(4)]
+  b=[{'phase':'ALL_BACKUPS_READBACK_VERIFIED'}for _ in range(5)]
   self.assertTrue(all_gates(c,v,c,b));self.assertFalse(all_gates(c,v,None,b));self.assertFalse(all_gates(c,v,c,b[:-1]))
   self.assertFalse(all_gates(c,v,c,[None]+b[1:]))
  def test_exact_missing_tail_can_only_enter_final_reconciliation(self):
