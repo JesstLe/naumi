@@ -133,7 +133,8 @@ class MediaLifecycle:
             require(value['running'] == value['queued'] == value['terminal'] == 0, 'MEDIA_JOBS_NOT_DRAINED')
         return value
 
-    def prepare(self):
+    def prepare(self, *, start=True):
+        require(type(start) is bool, 'EXPLICIT_MEDIA_START_MODE_REQUIRED')
         if self.intent.exists():
             row = self.owned()
             value = self.load()
@@ -143,7 +144,7 @@ class MediaLifecycle:
             # ambiguous operation: its job ownership needs a separate audit.
             if not row['State']['Running']:
                 require(row['State']['Status'] == 'created', 'MEDIA_START_NOT_PROVEN_UNEXECUTED')
-                self.tx.run(['docker', 'start', row['Id']])
+                if start: self.tx.run(['docker', 'start', row['Id']])
         else:
             existing = self.tx.run(['docker', 'ps', '-aq', '--filter', 'name=^/' + self.spec['name'] + '$']).decode().strip()
             require(not existing and not self.env_file.exists() and not self.scratch.exists(), 'MEDIA_NAME_OR_PATH_ALREADY_EXISTS')
@@ -173,7 +174,12 @@ class MediaLifecycle:
                      '--env-file', str(self.env_file), '--entrypoint', 'node', self.spec['image'], 'scripts/video-media-worker.mjs']
             identifier = self.tx.run(args).decode().strip(); require(re.fullmatch('[a-f0-9]{64}', identifier), 'MEDIA_CREATE_UNKNOWN')
             value['id'] = identifier; _atomic_private(self.intent, value)
-            self.owned(); self.tx.run(['docker', 'start', identifier])
+            self.owned()
+            if start: self.tx.run(['docker', 'start', identifier])
+        if not start:
+            row = self.owned()
+            require(row['State']['Status'] == 'created' and not row['State']['Running'], 'STAGED_MEDIA_MUST_BE_UNSTARTED')
+            return public_identity(row)
         deadline = time.monotonic() + 30
         while True:
             try:
@@ -187,6 +193,13 @@ class MediaLifecycle:
     def binding(self):
         self.health()
         env = environment(self.owned())
+        return {'name': self.spec['name'], 'commit': self.plan['commit'],
+                'secret': env['MEDIA_WORKER_SECRET'], 'scratch': str(self.scratch)}
+
+    def prepared_binding(self):
+        row = self.owned()
+        require(row['State']['Status'] == 'created' and not row['State']['Running'], 'PREPARED_MEDIA_ONLY')
+        env = environment(row)
         return {'name': self.spec['name'], 'commit': self.plan['commit'],
                 'secret': env['MEDIA_WORKER_SECRET'], 'scratch': str(self.scratch)}
 

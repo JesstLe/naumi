@@ -70,9 +70,9 @@ def available(tx):
     return int(rows['MemAvailable'].split()[0]) / 1024
 
 
-def gateway(tx):
+def gateway(tx, expected_sha=None):
     raw = tx.run(['nginx', '-T'])
-    require(sha(raw) == GATEWAY, 'GATEWAY_CHANGED')
+    require(sha(raw) == (expected_sha or GATEWAY), 'GATEWAY_CHANGED')
     return raw
 
 
@@ -130,8 +130,8 @@ def references(text, row, *, aliases=()):
     return False
 
 
-def no_references(tx, row):
-    text = gateway(tx).decode()
+def no_references(tx, row, *, expected_gateway_sha=None):
+    text = gateway(tx, expected_gateway_sha).decode()
     port = int(row['HostConfig']['PortBindings']['3000/tcp'][0]['HostPort'])
     require(not re.search(r'(?<![0-9])' + str(port) + r'(?![0-9])', text), 'GATEWAY_REFERENCES_TARGET')
     all_aliases = [a for n in row['NetworkSettings']['Networks'].values() for a in (n.get('Aliases') or []) + (n.get('DNSNames') or [])]
