@@ -79,7 +79,7 @@ class NasController(ctl.Controller):
   return result
 
  def sync_media_catalog(self):
-  self.catalog_pass=getattr(self,'catalog_pass',0)+1;tag='-'+str(self.catalog_pass)
+  tag='-'+str(uuid.uuid4())
   proof=ROOT/'final-media-proof'
   summary=json.loads((proof/'SUMMARY.json').read_bytes())
   require(summary.get('phase')=='ALL_BYTES_VERIFIED' and all(summary.get(k)==0 for k in ['errors','missing','mismatch','changed']), 'FULL_NAS_BYTES_NOT_VERIFIED')

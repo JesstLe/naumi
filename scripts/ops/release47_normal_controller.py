@@ -290,6 +290,7 @@ class Controller:
   self.succ=self.state['normalBlueGreenReleases'][RELEASE]
   self.candidate_reused=self.succ['phase']=='CANDIDATE'
   expected={'database-backup','image-import'}|({'web-create','web-start','worker-create','worker-start'} if self.candidate_reused else set())
+  if self.cfg.get('nasCredentialsSha256')and 'nas-media-catalog'in self.succ['operations']:expected.add('nas-media-catalog')
   require(self.succ['phase'] in ['BASELINED','CANDIDATE'] and self.succ.get('lastError') in ['ValueError','HOST_COMMAND_FAILED','POST_IMPORT_DISK_RESERVE_INSUFFICIENT'] and set(self.succ['operations'])==expected,'RESUME_ONLY_PRE_SWITCH_REVIEWED_FAILURE')
   if self.succ.get('lastError')=='POST_IMPORT_DISK_RESERVE_INSUFFICIENT':
    import shutil
