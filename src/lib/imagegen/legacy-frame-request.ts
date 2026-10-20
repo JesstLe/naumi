@@ -1,5 +1,5 @@
 import "server-only";
-import { defaultFrameSource, frameRatio, type FrameInput } from "./frame-ratio";
+import { defaultFrameSource, frameCandidates, frameRatio, type FrameInput } from "./frame-ratio";
 import { legacyImagegenIntent } from "./legacy-intent";
 import { sourceImageDimensions } from "./output-shape";
 
@@ -20,13 +20,17 @@ export async function normalizeLegacyFrameRequest(request: Request): Promise<Req
   // Same transport contract as submitCanvasImagegen: target first, references after it.
   const inputs: FrameInput[] = files.map((_, index) => ({ artworkId: `legacy-${index}`, role: index ? "reference" : "edit-target" }));
   const intent = legacyImagegenIntent({ prompt: String(form.get("userPrompt") || form.get("prompt") || ""), origin: String(form.get("origin") || "") }, files.length);
+  // Decode only competing frame inputs, sequentially, without additional uploads.
+  // This lets several identical ratios agree while excluding product/style images.
+  for (const candidate of frameCandidates(inputs, intent?.useCase)) {
+    try { Object.assign(candidate, await sourceImageDimensions(Buffer.from(await files[inputs.indexOf(candidate)].arrayBuffer()))); }
+    catch { throw new LegacyFrameError("参考素材读取失败，请重新上传图片。"); }
+    if (!frameRatio(candidate as {width:number;height:number})) throw new LegacyFrameError("参考素材的画幅读取失败，请重新上传图片。");
+  }
   const source = defaultFrameSource(inputs, intent?.useCase);
-  if (!source) throw new LegacyFrameError("有多张参考图，请在图片节点明确本次生成比例后再提交。");
+  if (!source) throw new LegacyFrameError("参考图比例不同，请在图片节点选择本次生成比例。");
   const index = inputs.indexOf(source);
-  let dimensions;
-  try { dimensions = await sourceImageDimensions(Buffer.from(await files[index].arrayBuffer())); }
-  catch { throw new LegacyFrameError("参考素材读取失败，请重新上传图片。"); }
-  const ratio = frameRatio(dimensions);
+  const ratio = frameRatio(inputs[index] as {width:number;height:number});
   if (!ratio || !/^[1-9]\d{0,5}:[1-9]\d{0,5}$/.test(ratio)) throw new LegacyFrameError("参考素材的画幅读取失败，请重新上传图片。");
   // Resolve the actual reference frame here; the selected route's admission
   // owns its supported dimensions/adapter allowlist, not a global seven-ratio UI list.

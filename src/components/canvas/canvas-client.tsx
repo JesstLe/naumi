@@ -27,6 +27,7 @@ import { smartLayout } from "@/lib/canvas/smart-layout";
 import { CanvasComposerShell, CanvasComposerFooter, CanvasComposerOptions } from "./composer-shell";
 import { CanvasParameterPopover } from "./parameter-popover";
 import {submitCanvasImagegen} from "@/lib/imagegen/canvas-client";
+import {FrameRatioDialog,useCanvasFrameChoice} from "./frame-ratio-dialog";
 import {canvasReceipts,clearCanvasReceipt,moveCanvasReceipt} from "@/lib/imagegen/canvas-receipts";
 import {pollImagegen} from "@/lib/imagegen/client";
 import {imageOutputWarningText} from "@/lib/imagegen/output-advisory";
@@ -51,7 +52,7 @@ import type {PublicQuote} from "@/lib/billing/client";
 import { CanvasPerformanceProbe, recordCanvasNativeMove } from "./canvas-performance-probe";
 import {CanvasImage} from './canvas-image';
 import { classifyGenerationFailure, generationFailureBlocks, generationFailureMessage, generationFailureTitle, assertGenerationResultsPresent, type GenerationFailure } from '@/lib/canvas/generation-failure';
-import { ImagegenHttpError } from '@/lib/imagegen/http';
+import { ImagegenHttpError, ImagegenPreparationCancelled } from '@/lib/imagegen/http';
 import { useImageNodeDraft } from './use-image-node-draft';
 import { imageDraftScope } from '@/lib/canvas/image-node-drafts';
 import { CanvasRenderLayerGuard } from './canvas-render-layer-guard';
@@ -1570,7 +1571,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(init.method!=="POST"||!features[path])return privateFetchRaw(input,init);
     const form=init.body instanceof FormData?init.body:null;
     const body=form?Object.fromEntries(Array.from(form.entries()).filter((entry)=>typeof entry[1]==="string")):typeof init.body==="string"?JSON.parse(init.body):{};
-    if(path==="/api/generate-image"&&form&&user&&body.ratiogen!=="1"&&(!body.userPrompt||String(body.userPrompt).trim()===String(body.prompt).trim()))return submitCanvasImagegen(form,active?.members[0]?.id,message=>flashTip(message),{owner:user.email,project:active?.key||"workspace",isCurrent:init.isCurrent});
+    if(path==="/api/generate-image"&&form&&user&&body.ratiogen!=="1"&&(!body.userPrompt||String(body.userPrompt).trim()===String(body.prompt).trim())){
+      const account=canvasAccountRef.current,project=activeProjectRef.current?.key||null,epoch=canvasContextEpochRef.current;
+      return submitCanvasImagegen(form,active?.members[0]?.id,message=>flashTip(message),{owner:user.email,project:active?.key||"workspace",chooseFrame:frameChoice.chooseFrame,
+        isCurrent:()=>account===canvasAccountRef.current&&project===(activeProjectRef.current?.key||null)&&epoch===canvasContextEpochRef.current&&(init.isCurrent?.()??true)});
+    }
     if (path === "/api/generate-image") {
       body.ratio = normalizeCanvasRatio(body.ratio);
       body.resolution = normalizeCanvasResolution(body.resolution);
@@ -1660,6 +1665,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 是否已做过"刷新恢复上次项目"的初始化(避免初始挂载误清本地保存)
   const restoredRef = useRef(false);
   const [activeKey, setActiveKey] = useState<string | null>(null);
+  const frameChoice=useCanvasFrameChoice(imageDraftScope(user?.email,targetEmail,activeKey));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedPendId, setSelectedPendId] = useState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
@@ -4628,6 +4634,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     } catch (e) {
       if (opts?.isCurrent && !opts.isCurrent()) return [];
       if (requestAccount !== canvasAccountRef.current || requestProject !== (activeProjectRef.current?.key || null)) return [];
+      if (e instanceof ImagegenPreparationCancelled) return [];
       failure = classifyGenerationFailure(e, { attempted, jobId, terminal, hasResults: resultIds.length > 0 });
       const message = generationFailureMessage(failure);
       if (selectedIdRef.current === source.id) setGenError(message);
@@ -8073,6 +8080,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     } catch (e) {
       if (opts?.isCurrent && !opts.isCurrent()) return false;
       if (requestAccount !== canvasAccountRef.current || requestProject !== (activeProjectRef.current?.key || null)) return false;
+      if (e instanceof ImagegenPreparationCancelled) {
+        setPendNodes(nodes=>nodes.map(node=>node.id===pend.id?{...node,generating:false,generationFailure:undefined}:node));
+        return false;
+      }
       failure = classifyGenerationFailure(e, { attempted, jobId, terminal, hasResults: resultIds.length > 0 });
       const message = generationFailureMessage(failure);
       if (selectedPendIdRef.current === pend.id) setGenError(message);
@@ -8719,6 +8730,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       </div>}
 
       {ratioMenu}
+      {frameChoice.pending&&<FrameRatioDialog key={frameChoice.pending.id} choices={frameChoice.pending.choices} english={locale==="en"} onChoose={id=>frameChoice.choose(frameChoice.pending!.id,id)}/>}
       {/* 占位节点上传用的隐藏 input */}
       <input
         ref={pendUploadRef}
