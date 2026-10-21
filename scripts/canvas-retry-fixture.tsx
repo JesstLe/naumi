@@ -1,0 +1,7 @@
+import React,{useState} from 'react';
+import {createRoot} from 'react-dom/client';
+import {GenerationSubmitAction} from '../src/components/canvas/generation-submit-action';
+import {GenerationPlaceholder} from '../src/components/canvas/generation-placeholder';
+import {CanvasImage} from '../src/components/canvas/canvas-image';
+const state={checks:0,generations:0};(window as any).fixture=state;
+function App(){const[,refresh]=useState(0);const failure={kind:'uncertain' as const,message:'暂未取得结果，可重新加载；原图仍可继续使用。',jobId:'fixture-original'};const check=async()=>{state.checks++;refresh(n=>n+1)};return <main><h1>图片创作</h1><div className="dock"><div>改成红色</div><div className="actions"><span>原图仍可引用和编辑</span><GenerationSubmitAction generating={false} failure={failure} allowIndependent onCheck={check} onGenerate={async()=>{state.generations++;refresh(n=>n+1)}}/></div></div><section><div className="card"><h2>原图</h2><div className="image"><CanvasImage source="fixture-image" forceOriginal hasDimensions style={{width:280,height:340,objectFit:'contain'}} alt="本地验收原图"/></div><button id="reference" onClick={()=>{document.getElementById('reference-state')!.textContent='已引用原图'}}>引用原图</button><span id="reference-state"/></div><div className="card"><h2>原任务</h2><div style={{width:420,height:300}}><GenerationPlaceholder failure={failure} onCheck={check}/></div></div></section><output>重新加载 {state.checks} 次 · 独立生成 {state.generations} 次</output></main>};createRoot(document.getElementById('root')!).render(<App/>);

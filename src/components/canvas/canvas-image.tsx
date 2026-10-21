@@ -4,12 +4,17 @@ import {useEffect,useRef,useState,type ImgHTMLAttributes} from 'react';
 import {useStore} from '@xyflow/react';
 import {cdnUrl,cdnThumb} from '@/lib/cdn';
 import {canvasMediaVariant,type CanvasMediaVariant} from '@/lib/canvas/media-loading';
+import {useI18n} from '@/lib/i18n/locale-context';
 import {observeCanvasImageSize,observeCanvasImageVisibility} from '@/lib/canvas/image-observers';
 
 export function CanvasImage({source,forceOriginal,hasDimensions,...props}:Omit<ImgHTMLAttributes<HTMLImageElement>,'src'> & {
   source:string;forceOriginal:boolean;hasDimensions:boolean;
 }) {
+  const {locale}=useI18n();
   const ref=useRef<HTMLImageElement>(null);
+  const [settled,setSettled]=useState('');
+  const [failed,setFailed]=useState(false),[retry,setRetry]=useState(0);
+  useEffect(()=>{setFailed(false);setRetry(0);},[source]);
   const [visible,setVisible]=useState(false),[localWidth,setLocalWidth]=useState(0);
   const [loaded,setLoaded]=useState<{source:string;variant:CanvasMediaVariant}|null>(null);
   const pixelRatio=typeof window==='undefined'?1:window.devicePixelRatio;
@@ -24,17 +29,30 @@ export function CanvasImage({source,forceOriginal,hasDimensions,...props}:Omit<I
   useEffect(()=>{
     const element=ref.current;if(!element)return;
     return observeCanvasImageVisibility(element,setVisible);
-  },[]);
+  },[retry,source]);
   useEffect(()=>{
     const element=ref.current;if(!element)return;
     return observeCanvasImageSize(element,(width,height)=>setLocalWidth(Math.max(width,height)));
-  },[]);
+  },[retry,source]);
   const url=variant==='original'?cdnUrl(source):cdnThumb(source,variant==='thumbnail'?512:1600);
   const canLoad=visible&&!!source&&localWidth>0;
+  useEffect(()=>{setFailed(false);},[url]);
+  const loadKey=`${url}:${retry}`;
+  useEffect(()=>{
+    if(!canLoad||settled===loadKey)return;
+    const timer=window.setTimeout(()=>setFailed(true),20000);
+    return()=>window.clearTimeout(timer);
+  },[canLoad,loadKey,settled]);
   // All visible nodes authorize in bounded metadata batches; only cache misses
   // enter the six-slot byte queue. Cached pixels need no network slot.
-  return <CachedImage networkQueue="canvas" crossOrigin="anonymous" {...props} ref={ref} src={canLoad?url:undefined} decoding="async"
+  return <><CachedImage key={`${source}:${retry}`} networkQueue="canvas" crossOrigin="anonymous" {...props} ref={ref} src={canLoad?url:undefined} decoding="async"
     data-media-variant={variant} data-media-visible={visible?'true':'false'}
-    onLoad={event=>{setLoaded(current=>current?.source===source&&current.variant===variant?current:{source,variant});props.onLoad?.(event);}}
-    onError={props.onError} />;
+    onLoad={event=>{setSettled(loadKey);setFailed(false);setLoaded(current=>current?.source===source&&current.variant===variant?current:{source,variant});props.onLoad?.(event);}}
+    onError={event=>{setFailed(true);props.onError?.(event);}} />
+    {failed && <div className="nodrag nopan absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white/95 text-slate-600" role="status">
+      <span className="text-xs">{locale==='en'?'Image not loaded':'图片暂未加载'}</span>
+      <button type="button" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 shadow-sm"
+        onClick={event=>{event.stopPropagation();setFailed(false);setRetry(n=>n+1);}}>{locale==='en'?'Reload image':'重新加载'}</button>
+    </div>}
+  </>;
 }

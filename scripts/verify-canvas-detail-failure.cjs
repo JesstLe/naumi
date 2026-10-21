@@ -2,7 +2,7 @@ require('tsx/cjs');
 const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path'),assert=require('node:assert/strict'),ts=require('typescript'),{createRequire}=require('node:module');
 const root=process.cwd(),sourceRoot=path.resolve(process.argv[2]||root);
 const file=path.join(root,'scripts/verify-canvas-generation-failure.cjs');
-const h={require:createRequire(file),process:{cwd:()=>root,argv:['node','test',sourceRoot],env:{}},console,Response,File,FormData,Blob,setTimeout};
+const h={require:createRequire(file),process:{cwd:()=>root,argv:['node','test',sourceRoot],env:{}},console,AbortSignal,Response,File,FormData,Blob,setTimeout};
 vm.createContext(h);vm.runInContext(fs.readFileSync(file,'utf8').split('(async()=>{const rows=[];')[0]+';globalThis.setup=setup;',h);
 const source=fs.readFileSync(sourceRoot+'/src/components/canvas/canvas-client.tsx','utf8'),ast=ts.createSourceFile('canvas.tsx',source,99,true,4);let detail='';
 function walk(n){if(ts.isFunctionDeclaration(n)&&['generateDetailSequence','livePendingPosition'].includes(n.name?.text))detail+=n.getText(ast)+'\n';ts.forEachChild(n,walk)}walk(ast);assert.ok(detail);
@@ -33,10 +33,10 @@ for(const pending of [false,true])for(const scenario of ['reference-fails','reje
      assert.equal(c.generationOperationRef.current.size,0);assert.equal(c.generationTasks.length,0);if(pending)assert.equal(c.pendNodes.length,0);
    }
    if(scenario==='reference-fails'&&!pending){await c.generateDetailSequence(c.source,[c.source],'fixture');assert.equal(c.generationTasks.length,1,'retry replaces prior definite failure card')}
-   if(scenario==='submit-unknown'){await c.generateDetailSequence(c.source,[c.source],'fixture',[],pending?c.pend:undefined);assert.equal(posts,1,'unknown POST blocks resubmit')}
+   if(scenario==='submit-unknown'){await c.generateDetailSequence(c.source,[c.source],'fixture',[],pending?c.pend:undefined);assert.equal(posts,pending?1:2,'pending receipt stays protected; explicit source action is independent')}
  }
  cases++;
 }
-console.log(`DETAIL_FAILURE=PASS CASES=${cases} RECHECK_POSTS=0 UNKNOWN_RESUBMIT=0 SUPPLIER_CALLS=0`);
+console.log(`DETAIL_FAILURE=PASS CASES=${cases} RECHECK_POSTS=0 UNKNOWN_REPLAY=0 SOURCE_REUSABLE=1 SUPPLIER_CALLS=0`);
 }
 main().catch(e=>{console.error(e);process.exitCode=1});

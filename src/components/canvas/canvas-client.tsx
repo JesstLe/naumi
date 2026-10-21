@@ -51,7 +51,7 @@ import type {PublicVideoTaskView} from "@/lib/video/service";
 import type {PublicQuote} from "@/lib/billing/client";
 import { CanvasPerformanceProbe, recordCanvasNativeMove } from "./canvas-performance-probe";
 import {CanvasImage} from './canvas-image';
-import { classifyGenerationFailure, generationFailureBlocks, generationFailureMessage, generationFailureTitle, assertGenerationResultsPresent, type GenerationFailure } from '@/lib/canvas/generation-failure';
+import { classifyGenerationFailure, independentGenerationKey, generationFailureBlocks, generationFailureMessage, generationFailureTitle, assertGenerationResultsPresent, type GenerationFailure } from '@/lib/canvas/generation-failure';
 import { ImagegenHttpError, ImagegenPreparationCancelled } from '@/lib/imagegen/http';
 import { useImageNodeDraft } from './use-image-node-draft';
 import { imageDraftScope } from '@/lib/canvas/image-node-drafts';
@@ -189,7 +189,7 @@ import { useAuthModal } from "@/lib/auth-modal-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { cdnUrl, cdnThumb, onImgError } from "@/lib/cdn";
+import { cdnUrl, cdnThumb } from "@/lib/cdn";
 import { ImageLightbox } from "@/components/image-lightbox";
 import type { ComfyRunPayload, ComfyRunResult } from "@/components/canvas/canvas-comfy-dialog";
 import { BRAND, BRAND_CANVAS_LOGO } from "@/lib/brand";
@@ -1308,7 +1308,7 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
               forceOriginal={forceOriginal || !!d.inspectOriginal}
               hasDimensions={!!d.intrinsicWidth && !!d.intrinsicHeight}
               decoding="async"
-              onError={event => { if(event.currentTarget.dataset.mediaVariant!=='original')setForceOriginal(true);else onImgError(event,d.image as string); }}
+              onError={event => { if(event.currentTarget.dataset.mediaVariant!=='original')setForceOriginal(true); }}
               alt={d.label}
               draggable={false}
               width={imageWidth}
@@ -3441,14 +3441,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   const selectedGenerating = !!selectedId &&
     generationTasks.some(
-      (task) => (!task.failure || generationFailureBlocks(task.failure)) && (
+      (task) => !task.failure && (
         task.sourceId === selectedId ||
         task.operationKey === `node:${selectedId}` ||
         task.operationKey === `retry:${selectedId}`)
-    ) || (!!selectedId && pendNodes.some(node => (node.generating || generationFailureBlocks(node.generationFailure)) && node.operationKey === `node:${selectedId}`));
+    ) || (!!selectedId && pendNodes.some(node => node.generating && !node.generationFailure && node.parentId === selectedId));
   const selectedGenerationReview = generationTasks.find(task => generationFailureBlocks(task.failure) &&
     (task.sourceId === selectedId || task.operationKey === `node:${selectedId}` || task.operationKey === `retry:${selectedId}`));
-  const selectedGenerationPendReview = pendNodes.find(node => generationFailureBlocks(node.generationFailure) && node.operationKey === `node:${selectedId}`);
+  const selectedGenerationPendReview = pendNodes.find(node => generationFailureBlocks(node.generationFailure) && node.parentId === selectedId);
   const selectedGenerationFailure = selectedGenerationReview?.failure || selectedGenerationPendReview?.generationFailure;
   const selectedGenerationCheck = selectedGenerationReview?.onCheck || selectedGenerationPendReview?.onGenerationCheck;
   // dock 的默认引用图就是当前节点本身：节点链表达真实执行顺序，下一节点应基于当前结果继续。
@@ -3794,7 +3794,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const finalNodes = displayNodes.map(node => node.type === "art" && !node.data.videoUrl && !node.data.pending ? {
       ...node, data: { ...node.data, onCutout: (id: string) => { const art = worksRef.current?.find(item => item.id === id); if(art)void runCutout(art); },
         cutoutBusy: pendNodes.some(pend => pend.operationKey === `node:${node.id}` && pend.generating && !pend.generationFailure) || generationTasks.some(task => task.sourceId === node.id && !task.failure),
-        cutoutBlocked: !cutoutCatalog || !!cutoutCatalogError || cutoutCatalog.available === false || generationOperationRef.current.has(`node:${node.id}`) || pendNodes.some(pend => pend.operationKey === `node:${node.id}` && generationFailureBlocks(pend.generationFailure)) || generationTasks.some(task => task.sourceId === node.id && generationFailureBlocks(task.failure)) }
+        cutoutBlocked: !cutoutCatalog || !!cutoutCatalogError || cutoutCatalog.available === false || generationOperationRef.current.has(independentGenerationKey(`node:${node.id}`,node.id,generationTasks,pendNodes)) }
     } : node).filter((n) =>
       nSeen.has(n.id) ? false : (nSeen.add(n.id), true)
     );
@@ -4471,7 +4471,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const text = prompt.trim();
     if (!text && !opts?.ratiogen) return []; // 改比例可无提示词(服务端用固定重构图指令)
     const requestedCount = opts?.ratiogen ? 1 : Math.max(1, opts?.count ?? 1);
-    const operationKey = opts?.operationKey ?? `node:${source.id}`;
+    const operationKey = independentGenerationKey(opts?.operationKey ?? `node:${source.id}`, source.id, generationTasks, pendNodes);
     if (generationOperationRef.current.has(operationKey)) return [];
     generationOperationRef.current.add(operationKey);
     const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -4902,7 +4902,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   ): Promise<boolean> {
     if (readOnly || !user) return false;
     const contextProjectKey = activeProjectRef.current?.key || null;
-    const operationKey = `node:${source.id}`;
+    const operationKey = independentGenerationKey(`node:${source.id}`, source.id, generationTasks, pendNodes);
     if (generationOperationRef.current.has(operationKey)) return false;
     generationOperationRef.current.add(operationKey);
     const account = canvasAccountRef.current;
@@ -5086,7 +5086,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     payload: ComfyRunPayload
   ): Promise<ComfyRunResult> {
     if (readOnly || !user) throw new Error("只读画布不能执行工作流");
-    const operationKey = `node:${source.id}`;
+    const operationKey = independentGenerationKey(`node:${source.id}`, source.id, generationTasks, pendNodes);
     if (generationOperationRef.current.has(operationKey)) throw new Error("当前节点已有任务在进行");
     generationOperationRef.current.add(operationKey);
     const sourceNode = rfRef.current?.getNode(source.id);
@@ -5533,7 +5533,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     pend?: Pend
   ) {
     if (!user || readOnly) return;
-    const operationKey = pend ? `pend:${pend.id}` : `node:${source.id}`;
+    const operationKey = pend ? `pend:${pend.id}` : independentGenerationKey(`node:${source.id}`, source.id, generationTasks, pendNodes);
     if (generationOperationRef.current.has(operationKey)) return;
     generationOperationRef.current.add(operationKey);
     const count = Math.max(1, Math.min(MAX_GENERATION_COUNT, genCount || 1));
@@ -7682,9 +7682,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (!ids.length) return [];
     const selectedIds = new Set(ids);
     const positions = new Map((rfRef.current?.getNodes() ?? []).map(node => [node.id, node.position]));
-    const busyIds = new Set(generationTasks.filter(task => !task.failure || generationFailureBlocks(task.failure)).map(task => task.sourceId));
+    const busyIds = new Set(generationTasks.filter(task => !task.failure).map(task => task.sourceId));
     const point = (id: string, x = 0, y = 0) => positions.get(id) || { x, y };
-    const busy = (id: string) => busyIds.has(id) || generationOperationRef.current.has(`node:${id}`) || generationOperationRef.current.has(`retry:${id}`) || pendNodesRef.current.some(node => node.generating && node.operationKey === `node:${id}`);
+    const busy = (id: string) => busyIds.has(id) || generationOperationRef.current.has(independentGenerationKey(`node:${id}`,id,generationTasks,pendNodes)) || generationOperationRef.current.has(independentGenerationKey(`retry:${id}`,id,generationTasks,pendNodes)) || pendNodesRef.current.some(node => node.generating && node.operationKey === `node:${id}`);
     return selectionRunTargets(ids, [
       ...(activeProjectRef.current?.members || []).filter(art => selectedIds.has(art.id)).map(art => ({ id: art.id, kind: "image" as const, ...point(art.id, art.canvasX ?? 0, art.canvasY ?? 0), locked: isNodeLocked(art.id), busy: busy(art.id), runnable: canFeature("generate") && art.status === "completed" && !art.videoUrl && art.category !== "audio" && art.category !== "media" && !["workflow-decoration", "workflow-placeholder"].includes(art.source || "") && hasRenderableImage(art.image) })),
       ...textNodesRef.current.filter(node => selectedIds.has(node.id) && node.projectKey === activeKey).map(node => ({ id: node.id, kind: "text" as const, ...point(node.id, node.canvasX, node.canvasY), locked: isNodeLocked(node.id), busy: node.status === "generating" || generationOperationRef.current.has(`text:${node.id}`), runnable: !!(node.content || node.prompt).trim() })),
@@ -7937,6 +7937,21 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
     setPendNodes((prev) => prev.filter((p) => p.id !== id));
     setSelectedPendId((cur) => (cur === id ? null : cur));
+  }
+  async function retryPendingGeneration(pend: Pend) {
+    if (readOnly || !user || !generationFailureBlocks(pend.generationFailure)) return;
+    const retryKey=`fork:${pend.id}`;
+    if(generationOperationRef.current.has(retryKey))return;
+    generationOperationRef.current.add(retryKey);
+    try {
+    const size = pend.generationSize || generationPlaceholderSize(genRatio);
+    const position = placeGenerationPreview({x:pend.x+size.width+X_GAP,y:pend.y},size,
+      (rfRef.current?.getNodes() || []).map(node=>({...node.position,...flowNodeSize(node)})));
+    const next: Pend = {id:`pend-${browserRandomUUID()}`,x:position.x,y:position.y,parentId:pend.parentId,
+      inputs:[...pend.inputs],linked:pend.linked,label:pend.label,uploading:false,progress:0,generationSize:size};
+    setPendNodes(nodes=>[...nodes,next]);
+    await generatePend({pend:next,prompt:editPrompt});
+    } finally {generationOperationRef.current.delete(retryKey);}
   }
   // 空白节点生成(文生图 / 合并多输入):用 dock 的提示词 + 输入图(若有)生成,填充本节点
   async function generatePend(opts?: {
@@ -11508,7 +11523,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   </button></CanvasComposerOptions> </>} actions={<>
 
                   <GenerationSubmitAction generating={selectedGenerating} failure={selectedGenerationFailure}
-                    onGenerate={generateChild} onCheck={selectedGenerationCheck} english={locale === "en"} />
+                    onGenerate={generateChild} allowIndependent onCheck={selectedGenerationCheck} english={locale === "en"} />
                  </>}/>
               )}
             </CanvasComposerShell>
@@ -11593,8 +11608,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   light={true}
                 />
                  </>} actions={<>
-                <GenerationSubmitAction generating={selectedPendGenerating} failure={selectedPend.generationFailure}
-                  onGenerate={() => void generatePend()} onCheck={selectedPend.onGenerationCheck} english={locale === "en"} />
+                <GenerationSubmitAction generating={selectedPendGenerating} failure={selectedPend.generationFailure} allowIndependent
+                  onGenerate={() => generationFailureBlocks(selectedPend.generationFailure) ? retryPendingGeneration(selectedPend) : generatePend()} onCheck={selectedPend.onGenerationCheck} english={locale === "en"} />
                </>}/>
             </CanvasComposerShell>
           )}

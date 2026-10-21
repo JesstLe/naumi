@@ -4,25 +4,27 @@ import { useRef, useState } from "react";
 import { ArrowUp, CircleHelp, Loader2 } from "lucide-react";
 import { generationFailureBlocks, type GenerationFailure } from "@/lib/canvas/generation-failure";
 
-/** A duplicate-submission hold is not a running animation. Only the original
- * receipt may be checked; this button never turns a review into a new POST. */
-export function GenerationSubmitAction({ generating, failure, onGenerate, onCheck, english = false }: {
+/** Reload checks the original receipt. A separately confirmed action starts
+ * a new task without replacing or replaying that original receipt. */
+export function GenerationSubmitAction({ generating, failure, onGenerate, onCheck, english = false, allowIndependent = false }: {
   generating: boolean;
   failure?: GenerationFailure;
   onGenerate: () => unknown;
   onCheck?: () => Promise<void>;
   english?: boolean;
+  allowIndependent?: boolean;
 }) {
   const [checking, setChecking] = useState(false);
   const checkingRef = useRef(false);
+  const launchingRef = useRef(false);
   const retained = generationFailureBlocks(failure);
-  const running = generating && !failure;
+  const running = generating && (!failure || allowIndependent);
   const label = retained
     ? checking ? english ? "Checking…" : "正在检查…"
-      : onCheck ? english ? "Check original task" : "检查原任务"
+      : onCheck ? english ? "Reload result" : "重新加载"
         : english ? "Status unconfirmed" : "任务待确认"
     : english ? "Generate" : "生成";
-  return <button type="button" data-testid="generation-submit-action"
+  const checkButton = <button type="button" data-testid="generation-submit-action"
     data-state={retained ? "review" : running ? "generating" : "ready"}
     aria-label={label} title={label} aria-busy={running || checking}
     disabled={running || checking || retained && !onCheck}
@@ -41,4 +43,16 @@ export function GenerationSubmitAction({ generating, failure, onGenerate, onChec
       : running ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
         : <ArrowUp className="h-4 w-4" aria-hidden="true" />}
   </button>;
+  if (!retained || !allowIndependent) return checkButton;
+  return <div className="flex items-center gap-2" data-testid="generation-independent-actions">
+    {checkButton}
+    <button type="button" disabled={running || checking} aria-label={english ? "Generate new image" : "重新生成"}
+      className="canvas-ui-primary flex h-10 items-center gap-1.5 rounded-[11px] px-3 text-[12px] font-semibold disabled:opacity-50"
+      onClick={() => {
+        if (running || checkingRef.current || launchingRef.current) return;
+        if (!window.confirm(english ? "Start a separate generation? The original task stays available and may still complete. The new task is charged separately." : "重新生成会创建独立任务并单独计费；原任务仍会保留，完成后也可取回。继续吗？")) return;
+        launchingRef.current=true;
+        void Promise.resolve().then(onGenerate).catch(()=>{}).finally(()=>{launchingRef.current=false;});
+      }}><ArrowUp className="h-4 w-4" aria-hidden="true" />{english ? "Generate new image" : "重新生成"}</button>
+  </div>;
 }

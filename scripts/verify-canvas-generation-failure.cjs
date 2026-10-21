@@ -23,6 +23,14 @@ function setup(scenario){const src={id:'source',image:'/media/source.png',prompt
  if(scenario==='partial-error'){const before=state.post;await (kind==='runGen'?item.onCheck:item.onGenerationCheck)();assert.equal(state.post,before);assert.equal((kind==='runGen'?c.generationTasks[0].failure:c.pendNodes[0].generationFailure).kind,'failed');assert.equal(c.generationOperationRef.current.size,0);}
  if(['poll-transient','sync-missing'].includes(scenario)){const before=state.post;state.recover=true;const check=kind==='runGen'?item.onCheck:item.onGenerationCheck;assert.equal(typeof check,'function');c.canvasAccountRef.current='other';await check();assert.equal(state.post,before);c.canvasAccountRef.current='fixture-account';await check();assert.equal(state.post,before,'recheck must never submit');assert.equal(kind==='runGen'?c.generationTasks.length:c.pendNodes.length,0);assert.equal(c.generationOperationRef.current.size,0);}
  }}else{if(kind==='runGen')assert.equal(c.generationTasks.length,0);assert.equal(failure,undefined);}
+ if(kind==='runGen'&&scenario==='needs-review'){
+  const old=c.generationTasks[0],oldKey=old.operationKey,before=state.post;
+  await c.runGen(c.source,'new explicit edit',{ratio:'3:4'});
+  assert.equal(state.post,before+1);assert.equal(c.generationTasks.length,2);
+  assert.notEqual(c.generationTasks[1].operationKey,oldKey);
+  const after=state.post;await old.onCheck();assert.equal(state.post,after);
+  assert.ok(c.generationOperationRef.current.has(c.generationTasks[1].operationKey));
+ }
  rows.push({kind,scenario,failure:failure?.kind||null,submissionCalls:state.post,queryCalls:state.reads,cleared:state.clears});
  }
  fs.mkdirSync(out,{recursive:true});fs.writeFileSync(out+'/function-matrix.json',JSON.stringify(rows,null,2));console.log((baseline?'BASELINE':'MODIFIED')+'=PASS ACTUAL_FUNCTION_CASES='+rows.length+' FAILURE_NODE='+(baseline?'DISAPPEARS':'RETAINED')+' RATIO_WARNING=DELIVERED STORED_RECOVERY=OWNER_CHECKED UNKNOWN_REPLAY=0 SUPPLIER_CALLS=0');

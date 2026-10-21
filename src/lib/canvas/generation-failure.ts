@@ -35,3 +35,18 @@ export function generationFailureTitle(failure: GenerationFailure, english = fal
     : { 'not-started': '生成未开始', failed: '生成未完成', uncertain: '任务状态待确认', sync: '结果尚未载入画布' };
   return titles[failure.kind];
 }
+
+/** An unresolved result owns its receipt, not its reusable input artwork.
+ * New explicit actions get a separate lock/receipt key; old checks cannot
+ * release the new action's lock or replace its receipt. */
+export function independentGenerationKey(base: string, sourceId: string,
+  tasks: readonly {id:string;sourceId?:string;operationKey?:string;failure?:GenerationFailure}[] = [],
+  nodes: readonly {id:string;parentId?:string|null;operationKey?:string;generationFailure?:GenerationFailure}[] = []) {
+  const active = tasks.find(t => !t.failure && t.sourceId === sourceId);
+  if (active?.operationKey) return active.operationKey;
+  const activeNode = nodes.find(n => 'generating' in n && n.generating && !n.generationFailure && n.parentId === sourceId);
+  if (activeNode?.operationKey) return activeNode.operationKey;
+  const retained = [...tasks.filter(t => generationFailureBlocks(t.failure) && (t.sourceId === sourceId || t.operationKey === base)),
+    ...nodes.filter(n => generationFailureBlocks(n.generationFailure) && n.parentId === sourceId)];
+  return retained.length ? `${base}:after:${retained.map(t=>t.id).sort().join('|')}` : base;
+}

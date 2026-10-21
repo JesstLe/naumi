@@ -46,13 +46,13 @@ export function GenerationPlaceholder({ stage = "generating", startedAt, count =
     <strong className={styles.heading}>{generationFailureTitle(failure, english)}</strong>
     <p className={styles.failureMessage}>{generationFailureMessage(failure)}</p>
     <p className={styles.hint}>{generationFailureBlocks(failure)
-      ? failure.jobId ? english ? 'Original task retained. Do not submit again.' : '原任务已保留，请勿重复生成。' : english ? 'Submission is unconfirmed. Do not submit again.' : '提交结果尚未确认，请勿重复生成。'
+      ? failure.jobId ? english ? 'Original task kept. Your source image is still usable.' : '原任务已保留，原图仍可继续使用。' : english ? 'Status unconfirmed. Your source image is still usable.' : '结果尚未确认，原图仍可继续使用。'
       : english ? 'Your prompt is kept. Adjust it and submit when ready.' : '提示词与参数已保留，可调整后再次点击生成。'}</p>
     {generationFailureBlocks(failure) && failure.jobId && onCheck && <button type="button" disabled={checking}
       className={`nodrag nopan ${styles.checkButton}`} onClick={event => {
         event.stopPropagation(); setChecking(true);
-        void onCheck().finally(() => setChecking(false));
-      }}>{checking ? english ? 'Checking…' : '正在检查…' : english ? 'Check original task' : '检查原任务'}</button>}
+        void Promise.resolve().then(onCheck).catch(() => {}).finally(() => setChecking(false));
+      }}>{checking ? english ? 'Checking…' : '正在检查…' : english ? 'Reload result' : '重新加载'}</button>}
   </div>;
   if(stage==="queued")return <div data-testid="generation-placeholder" data-stage="queued" className={styles.root} role="status" aria-live="polite" aria-busy="true">
     <ImageIcon className={styles.icon} aria-hidden="true"/>
