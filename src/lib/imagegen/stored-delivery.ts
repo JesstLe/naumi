@@ -129,20 +129,23 @@ export async function recoverStoredDelivery(parentId:string,owner:string){
 export async function recoverStoredDeliveries(){
  if(!dbEnabled)return 0;
  const pool=getPool();
- const rows=(await pool.query(`SELECT id,email FROM app_image_jobs WHERE kind='imagegen'
-  AND snapshot->>'status' IN ('error','needs_attention') AND lease_token IS NULL
-  AND created_at>now()-interval '7 days' AND updated_at<now()-interval '20 seconds'
-  AND COALESCE((snapshot->>'deliveryRecoveryAttempts')::int,0)<5
-  AND EXISTS(SELECT 1 FROM jsonb_each(COALESCE(snapshot->'children','{}'::jsonb)) edge
-   JOIN app_image_jobs child ON child.id=edge.value->>'jobId' AND child.email=app_image_jobs.email
-   WHERE child.kind='generate' AND child.lease_token IS NULL
-    AND COALESCE((child.snapshot->>'deliveryAttempts')::int,0)>=3
-    AND child.snapshot->>'status' IN ('error','needs_attention','done')
-    AND (child.snapshot->'paidOperations' @? '$.* ? (@.state == "done")' OR jsonb_typeof(child.snapshot->'images')='array'))
-  ${excludeImportedHistory("app_image_jobs")}
-  ORDER BY updated_at,id LIMIT 8`)).rows;
+ // Materialize a small parent page before inspecting any large child checkpoint.
+ // A correlated JSONB join made PostgreSQL repeatedly scan/toast multi-MB images.
+ const scan=await pool.connect();let rows:{id:string;email:string;children:Record<string,{jobId?:string}>}[];
+ try{await scan.query("BEGIN;SET LOCAL statement_timeout='1500ms'");
+  rows=(await scan.query(`SELECT id,email,snapshot->'children' children FROM app_image_jobs WHERE kind='imagegen'
+   AND snapshot->>'status' IN ('error','needs_attention') AND lease_token IS NULL
+   AND created_at>now()-interval '7 days' AND updated_at<now()-interval '20 seconds'
+   AND COALESCE((snapshot->>'deliveryRecoveryAttempts')::int,0)<5
+   ${excludeImportedHistory("app_image_jobs")}
+   ORDER BY updated_at DESC,id LIMIT 16`)).rows;
+  await scan.query("COMMIT");
+ }catch{await scan.query("ROLLBACK");return 0;}finally{scan.release();}
  let completed=0;
  for(const row of rows){
+  const children=Object.values(row.children||{});if(children.length!==1||!children[0].jobId)continue;
+  const retry=(await pool.query("SELECT (snapshot->>'deliveryAttempts')::int n FROM app_image_jobs WHERE id=$1 AND email=$2 AND kind='generate' AND lease_token IS NULL",[children[0].jobId,row.email])).rows[0];
+  if(!(retry?.n>=3))continue;
   const state=await storedDeliveryState(row.id,row.email);if(!state?.available&&!state?.ids)continue;
   try{await recoverStoredDelivery(row.id,row.email);completed++;}
   catch{await pool.query(`UPDATE app_image_jobs SET snapshot=jsonb_set(snapshot,'{deliveryRecoveryAttempts}',to_jsonb(COALESCE((snapshot->>'deliveryRecoveryAttempts')::int,0)+1)),updated_at=now() WHERE id=$1 AND lease_token IS NULL AND snapshot->>'status' IN ('error','needs_attention')`,[row.id]);}
