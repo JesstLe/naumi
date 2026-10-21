@@ -66,6 +66,10 @@ function useArray(initial: string[] = []) {
   return [items, (value: string) => setItems(old => old.includes(value) ? old.filter(v => v !== value) : [...old, value])] as const;
 }
 
+function CreateFrontendModelLink({ locked }: { locked: boolean }) {
+  return <Link href="/admin/bi/models?tab=batch" className={`${styles.primary} inline-flex items-center justify-center gap-2 no-underline`} aria-disabled={locked} onClick={event => { if (locked) event.preventDefault(); }}><Plus size={17} />新增前端模型</Link>;
+}
+
 export function ModelManagement() {
   const [state, setState] = useState<State | null>(null), [error, setError] = useState(""), [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [pending, setPending] = useState<Operation | null>(null);
@@ -160,7 +164,7 @@ export function ModelManagement() {
   const locked = busy || !!pending;
   return <main className={`${styles.page} ${clarity.page}`}>
     <div className={styles.topline}><span className={styles.miniBrand}><span className={styles.brandMark}>N</span>Naumi <span>模型工作台</span></span><div className={styles.libraryLinks}><Link href="/admin/model-management/library">元数据与成本库 <Database size={14}/></Link><Link href="/admin/bi/models">完整配置中心 <ChevronRight size={14} /></Link></div></div>
-    <header className={`${styles.hero} ${clarity.header}`}><h1>模型管理</h1><button className={styles.primary} onClick={() => { setTab("sources"); setConnect(true); }} disabled={!state || locked}><Plus size={17} />接入上游</button></header>
+    <header className={`${styles.hero} ${clarity.header}`}><h1>模型管理</h1><div className="flex flex-wrap items-center gap-2"><CreateFrontendModelLink locked={locked} /><button className={styles.secondary} onClick={() => { setTab("sources"); setConnect(true); }} disabled={!state || locked}><Plus size={17} />接入上游</button></div></header>
     <div className={styles.tabs}><div role="tablist" aria-label="模型管理"><button role="tab" id="models-tab" aria-selected={tab === "models"} aria-controls="models-panel" onClick={() => setTab("models")}>模型映射 <span>{state?.rows.length ?? "—"}</span></button><button role="tab" id="sources-tab" aria-selected={tab === "sources"} aria-controls="sources-panel" onClick={() => setTab("sources")}>上游来源 <span>{state?.providers.length ?? "—"}</span></button></div><span className={styles.version}>{state ? `模型配置 v${state.version}` : "正在读取生效配置"}<button aria-label="刷新生效配置" disabled={loading || locked} onClick={() => { setError(""); void load(true); }}><RefreshCw size={15} className={loading ? styles.spin : ""} /></button></span></div>
     {error && <div role="alert" className={styles.error}>{error}</div>}
     {notice && <div role="status" className={styles.notice}>{notice}</div>}
@@ -184,7 +188,7 @@ export function ModelManagement() {
         return <ModelMappingCard key={r.id} row={r} actions={actions} scopeDisabled={locked || !state.managed} onScope={() => setScope(r)} />;
       })}</div>
       <p className={clarity.listFooter}>显示 {rows.length} / {state.rows.length} 个前端模型</p>
-      {!rows.length && <div className={styles.empty}><Search /><h2>{state.rows.length ? "没有匹配的模型" : "前端暂无可见模型"}</h2><p>{state.rows.length ? "尝试其他名称、功能或类型。" : "这里只显示前端当前已启用、可展示的模型。"}</p></div>}
+      {!rows.length && <div className={styles.empty}><Search /><h2>{state.rows.length ? "没有匹配的模型" : "前端暂无可见模型"}</h2><p>{state.rows.length ? "尝试其他名称、功能或类型。" : "这里只显示前端当前已启用、可展示的模型。"}</p>{!state.rows.length && <CreateFrontendModelLink locked={locked} />}</div>}
 
     </section> : <section id="sources-panel" role="tabpanel" aria-labelledby="sources-tab"><div className={styles.sourceIntro}><div><h2>上游来源</h2><p>接入上游 URL 和凭据，自动读取模型目录。再将已确认能力的模型加入可切换列表。</p></div><button className={styles.secondary} disabled={locked} onClick={() => setConnect(true)}><Plus size={16} />新增来源</button></div><div className={styles.sources}>{state.providers.map(p => {
       const catalog = state.catalogs.find(c => c.providerId === p.id), refreshingNow = refreshing.includes(p.id);

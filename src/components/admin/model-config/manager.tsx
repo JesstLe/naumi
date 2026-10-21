@@ -198,10 +198,10 @@ function Diff({ changes }: { changes: ConfigurationChange[] }) {
   );
 }
 
-export function ModelConfigurationManager({ billingMode = false }: { billingMode?: boolean } = {}) {
+export function ModelConfigurationManager({ billingMode = false, initialTab }: { billingMode?: boolean; initialTab?: "batch" } = {}) {
   const [state, setState] = useState<AdminState | null>(null),
     [config, setConfig] = useState<ModelConfig | null>(null),
-    [tab, setTab] = useState<Tab>(billingMode ? "batch" : "providers"),
+    [tab, setTab] = useState<Tab>(initialTab || (billingMode ? "batch" : "providers")),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [fields, setFields] = useState<string[]>([]),
@@ -639,6 +639,9 @@ export function ModelConfigurationManager({ billingMode = false }: { billingMode
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
+          <Link className={buttonClass} href="/admin/model-management">
+            返回模型列表
+          </Link>
           <Link className={buttonClass} href="/admin/bi">
             管理中心
           </Link>
