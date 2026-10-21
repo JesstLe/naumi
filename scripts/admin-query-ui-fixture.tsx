@@ -18,5 +18,5 @@ window.fetch=(async(input:any,init:any)=>{
 }) as typeof fetch;
 const click=HTMLAnchorElement.prototype.click;
 HTMLAnchorElement.prototype.click=function(){if(this.download){state.exported={name:this.download,url:this.href};return;}click.call(this);};
-const originalCreate=URL.createObjectURL.bind(URL);URL.createObjectURL=blob=>{state.lastBlob=blob;return originalCreate(blob);};
+const originalCreate=URL.createObjectURL.bind(URL);URL.createObjectURL=blob=>{if(blob instanceof Blob)state.lastBlob=blob;return originalCreate(blob);};
 createRoot(document.getElementById("root")!).render(new URLSearchParams(location.search).has("library")?<SupplierModelLibrary/>:<BiDashboard/>);
