@@ -8,8 +8,7 @@ import { assertMutableStagingTask } from "./staging-history";
 import { uploadImage, readManagedObject } from "@/lib/storage";
 import { workerSecret } from "@/lib/settings-secret";
 import * as repository from "@/lib/image-job-repository";
-import { ImageOperationPending, ImageOperationReview, ImageOperationQueued, isImageGatewayModel, withImageOperation } from "@/lib/image-gateway";
-import { IMAGE_REVIEW_MESSAGE } from "./image-job-review";
+import { ImageOperationPending, isImageGatewayModel, withImageOperation } from "@/lib/image-gateway";
 import {dispatchImageQueue} from "./image-job-queue";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
@@ -18,7 +17,7 @@ import type {BillingQuote,BillingResult} from "@/lib/billing/types";
 import { currentExecutionBundle, currentModelExecution, runLegacyModelExecution, type ExecutionBundle } from "@/lib/model-config/context";
 import { withFrozenExecutionBundle } from "@/lib/model-config/execution";
 import { recoverableChannelIdentity } from "@/lib/model-config/channel-availability";
-import { hasUnreplayableImageAttempt, imageJobHasResults, IMAGE_JOB_RELEASED_MESSAGE, IMAGE_JOB_REVIEW_MESSAGE } from "./image-job-failure";
+import { IMAGE_JOB_RELEASED_MESSAGE } from "./image-job-failure";
 
 type Execution = { id: string; token: string; queue: Promise<unknown> };
 const execution = new AsyncLocalStorage<Execution>();
@@ -104,26 +103,12 @@ export class DurableImageJobs<T extends { status: string }> {
     const row=await repository.getImageJob(id,this.kind);
     await this.settle(id,row?.payload.billingQuote?result:legacyCost,reason);
   }
-  /** Keep only genuinely replayable supplier tasks running; direct calls have
-   * no query/replay contract and must not trap customers in an endless hold. */
+  /** A failed request ends. Retrying is a fresh explicit user action, never an automatic paid POST. */
   async handlePending(id: string, error: ImageOperationPending) {
     const saved = await this.get(id, false) as (T & Record<string, any>) | undefined;
     if (!saved || ["done", "error"].includes(saved.status)) return;
-    if(error instanceof ImageOperationQueued&&error.unsubmitted&&!Object.values(saved.paidOperations||{}).some((a:any)=>a.state==="started")){
-      await this.patch(id,{status:"pending",error:undefined,queueState:"capacity"} as unknown as Partial<T>);return;
-    }
-    if(error instanceof ImageOperationReview){
-      await this.patch(id,{status:"needs_attention",error:IMAGE_REVIEW_MESSAGE,reviewCode:error.reviewCode} as unknown as Partial<T>);return;
-    }
-    if (!hasUnreplayableImageAttempt(saved)) {
-      await this.patch(id, { status: "pending", error: error.message } as unknown as Partial<T>); return;
-    }
-    if (dbEnabled) {
-      if (await repository.failUndeliveredImageJob(id, execution.getStore()?.token || null, "unrecoverable-upstream-result")) return;
-    } else if (!imageJobHasResults(saved)) {
-      await this.patch(id, { status: "error", error: IMAGE_JOB_RELEASED_MESSAGE, customerBilling: "released", supplierCostStatus: "pending" } as unknown as Partial<T>); return;
-    }
-    await this.patch(id, { status: "needs_attention", error: IMAGE_JOB_REVIEW_MESSAGE } as unknown as Partial<T>);
+    if (dbEnabled && await repository.failUndeliveredImageJob(id, execution.getStore()?.token || null, "image-result-unavailable")) return;
+    await this.patch(id, {status:"error",error:"本次未取得完整图片，请重试"} as unknown as Partial<T>);
   }
   /** Persist intent before paid work. Only a durable Router operation may replay. */
   async paidOperation<R>(id: string, model: string, operation: Parameters<typeof withImageOperation>[1], run: () => Promise<R>): Promise<R> {
@@ -170,13 +155,6 @@ export class DurableImageJobs<T extends { status: string }> {
       await update((current) => ({ ...current, paidOperations: { ...current.paidOperations, [operation.id]: { ...attempt, state: "done", result } } }));
       return result;
     } catch (error) {
-      if(error instanceof ImageOperationQueued&&error.unsubmitted&&previous?.state!=="started"){
-        // No request reached a supplier in this root/fan-out. Keep the paid
-        // intent replayable without labelling it a supplier rejection.
-        await update(current=>({...current,queueState:"capacity",paidOperations:{...current.paidOperations,[operation.id]:{...attempt,state:"queued"}}}));
-        throw error;
-      }
-      if(error instanceof ImageOperationQueued)error=new ImageOperationPending(operation.id,error);
       if (error instanceof ImageOperationPending && dbEnabled) {
         const identity=await recoverableChannelIdentity(getPool(),currentModelExecution("image"),operation.id);
         if(identity)await update(current=>({...current,paidOperations:{...current.paidOperations,[operation.id]:{...attempt,replayable:true,gatewayIdentity:identity}}}));
@@ -212,7 +190,7 @@ export class DurableImageJobs<T extends { status: string }> {
         // Pre-upgrade jobs have no evidence that a paid request was never sent.
         if (row.snapshot.paidOperationVersion !== 1) {
           if (!(await repository.failUndeliveredImageJob(id, token, "legacy-unknown-submission")))
-            await this.patch(id, { status: "needs_attention", error: IMAGE_JOB_REVIEW_MESSAGE } as unknown as Partial<T>);
+            await this.patch(id, { status: "error", error: "本次未取得图片，请重试" } as unknown as Partial<T>);
           return;
         }
         const payload = await decode(row.payload) as Record<string, unknown>, snapshot = await decode(row.snapshot) as T;
@@ -227,7 +205,7 @@ export class DurableImageJobs<T extends { status: string }> {
         try {
           if (error instanceof ImageOperationPending) await this.handlePending(id, error);
           else if (!(await repository.failUndeliveredImageJob(id, token, "image-worker-failed")))
-            await this.patch(id, { status: "needs_attention", error: IMAGE_JOB_REVIEW_MESSAGE } as unknown as Partial<T>);
+            await this.patch(id, { status: "error", error: "本次未取得图片，请重试" } as unknown as Partial<T>);
         } catch (failure) { console.error(`[image-job] ${id}: unable to stop task`, failure instanceof Error ? failure.message : "unknown"); }
       }
       finally {

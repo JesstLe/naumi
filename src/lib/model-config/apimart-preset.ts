@@ -9,7 +9,7 @@ import type { ValidationOptions } from "./schema";
 import { modelEndpointFetch } from "./transport";
 import { effectiveImageParameters } from "./image-preset";
 import { ModelConfigError } from "./types";
-import { currentImageOperationId, currentImageOperationParameters, ImageOperationPending, ImageOperationQueued } from "../image-gateway";
+import { currentImageOperationId, currentImageOperationParameters, ImageOperationPending } from "../image-gateway";
 import { supplierContext } from "../supplier-cost/collect";
 import { supplierLedger, accountIdentity } from "../supplier-cost/runtime";
 import { apimartTask, submittedAPIMartTask, genericReceipt } from "../supplier-cost/adapters";
@@ -161,14 +161,13 @@ export function apimartImagesFetch(scope: ModelExecutionScope, options: Validati
       throw new ImageOperationPending(unit,new Error("APIMart任务仍在处理中"));
     }catch(error){
       const explicitNotCharged=(error as {notCharged?:boolean})?.notCharged===true;
-      if(!taskId&&(!generationPosted || explicitNotCharged || error instanceof ImageOperationQueued && error.unsubmitted || error instanceof ModelConfigError && error.code==="PROVIDER_BUSY")){
+      if(!taskId&&(!generationPosted || explicitNotCharged || error instanceof ModelConfigError && error.code==="PROVIDER_BUSY")){
         if(explicitNotCharged)await ledger.apply(row.id,{state:"rejected",status:"reported",amountMicros:"0",currency:procurement?.currency||"USD",source:"explicit-not-charged",evidence:{source:"explicit-not-charged"}});
         if(scope.channelGuard?.operationKey)await ledger.pool.query("DELETE FROM app_model_channel_operations WHERE operation_key=$1 AND upstream_id=$2",[scope.channelGuard.operationKey,scope.channelGuard.upstreamId]);
         await ledger.pool.query("UPDATE app_supplier_calls SET parameters=NULL,state='pre-submission-failed' WHERE id=$1 AND task_id IS NULL",[row.id]);
-        if(error instanceof ImageOperationQueued&&error.unsubmitted)throw error;
         const busy=error instanceof ModelConfigError&&error.code==="PROVIDER_BUSY";
         const message=busy?"APIMart通道繁忙，未提交生图":explicitNotCharged?"APIMart明确拒绝受理，未产生生成费用":"APIMart参考图上传或参数校验失败，未提交生图";
-        return Response.json({error:{message,billing_status:"not_charged"}},{status:busy?429:422});
+        return Response.json({error:{message,billing_status:"not_charged"}},{status:busy?429:422,...(busy?{headers:{"x-naumi-local-capacity":"1"}}:{})});
       }
       // Every post-submission error, including invalid output/model, retains the original task and fee evidence.
       throw new ImageOperationPending(unit,error);

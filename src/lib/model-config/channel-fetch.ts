@@ -10,11 +10,10 @@ import { ModelConfigError } from "./types";
 import { readBounded } from "../supplier-cost/io";
 import { completedChannelImage } from "./channel-image-response";
 import {prepareChannelText} from "./channel-text-response";
-import { ImageOperationPending,localImageCapacityQueue } from "../image-gateway";
+import { ImageOperationPending } from "../image-gateway";
 import { channelOperationKey } from "./channel-availability";
 import { retryAfterMs } from "./channel-health-policy";
 import { imageSupplierFailure, IMAGE_SUPPLIER_FAILURE_MESSAGES, type ImageSupplierFailure } from "./supplier-failure";
-import { waitForUnsubmittedChannel } from "./channel-wait";
 
 export function channelRoutingFetch(scope: ModelExecutionScope, options: ValidationOptions): typeof fetch {
   return async (input, init) => {
@@ -30,13 +29,10 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
       request.signal.throwIfAborted();
       let claim;
       try { const acquire=()=>claimChannel(pool, scope.frozen.publicModelId, policy.policy, policy.targets, visited, operationKey);
-        claim = !text&&!attempted&&!localImageCapacityQueue() ? await waitForUnsubmittedChannel(acquire,request.signal) : await acquire(); }
+        claim = await acquire(); }
       catch (error) {
         if (!(error instanceof ModelConfigError) || !["PROVIDER_BUSY", "CHANNEL_DISABLED", "CONFIG_UNAVAILABLE"].includes(error.code)) throw error;
         if (attempted) break;
-        // The durable job stays in PostgreSQL, releases its execution lease and
-        // is scanned again. Do not convert local backpressure into paid failure.
-        if(!text&&error.code==="PROVIDER_BUSY"&&error.status===429){const queued=localImageCapacityQueue();if(queued)throw queued;}
         return Response.json({ error: { message: error.message, code: error.code, billing_status: "not_charged" } }, { status: error.code==="CONFIG_UNAVAILABLE" ? 429 : error.status });
       }
       const target = claim.target, active = { ...target.scope, channelGuard: {upstreamId:target.upstreamId,operationKey}, capacityReserved: true, audited: true, supplierRouting: undefined }, conn = active.connection;

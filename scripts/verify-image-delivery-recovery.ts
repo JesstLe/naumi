@@ -21,7 +21,6 @@ async function main(){
  const {plainGeneratedOutput}=await import("../src/lib/imagegen/receipt-policy");
  const {storedDeliveryCheckpoint}=await import("../src/lib/imagegen/delivery-checkpoint");
  const {imageRequestAdmission}=await import("../src/lib/imagegen/request-admission");
- const {waitForUnsubmittedChannel}=await import("../src/lib/model-config/channel-wait");
  const {ModelConfigError}=await import("../src/lib/model-config/types");
  let checks=0;const check=(x:unknown)=>{assert.ok(x);checks++;};
  await assert.rejects(pixels.decodeImagegenPixels(bytes),/12MiB/);checks++;
@@ -44,11 +43,6 @@ async function main(){
  check(imageRequestAdmission("79:140","jimeng",false,source,"reverse-hub").includes("REVERSE_HUB_RATIO_UNSUPPORTED"));
  check(imageRequestAdmission("3:4","jimeng",false,source,"reverse-hub").length===0);
  check(imageRequestAdmission("79:140","unknown-model",false,{...source,model:"unknown"}).length===0);
- let attempts=0;const wait=await waitForUnsubmittedChannel(async()=>{if(++attempts<2)throw new ModelConfigError("PROVIDER_BUSY","local busy",429);return "lease";},new AbortController().signal,1200);check(wait==="lease"&&attempts===2);
- attempts=0;await assert.rejects(waitForUnsubmittedChannel(async()=>{attempts++;throw new ModelConfigError("CHANNEL_DISABLED","disabled",409);},new AbortController().signal,5000));check(attempts===1);
- attempts=0;await assert.rejects(waitForUnsubmittedChannel(async()=>{attempts++;throw new ModelConfigError("PROVIDER_BUSY","busy",429);},new AbortController().signal,0));check(attempts===1);
- attempts=0;await assert.rejects(waitForUnsubmittedChannel(async()=>{attempts++;throw new ModelConfigError("PROVIDER_BUSY","cooldown",503);},new AbortController().signal,5000));check(attempts===1);
- const abort=new AbortController();const running=waitForUnsubmittedChannel(async()=>{throw new ModelConfigError("PROVIDER_BUSY","busy",429);},abort.signal);setTimeout(()=>abort.abort(Error("cancelled")),10);await assert.rejects(running,/cancelled/);checks++;
  const dispatch=readFileSync("src/lib/imagegen/dispatch.ts","utf8");check(dispatch.indexOf('charged=await childCharges(owner,state.children,plan);chargeKnown=true')<dispatch.indexOf('for(const id of new Set(baseIds.length?baseIds:ids))'));check(dispatch.includes('billingStatus:chargeKnown?"confirmed":"unavailable"'));
  writeFileSync(out+"/PURE.json",JSON.stringify({checks,bytes:bytes.length,width:2304,height:2048,originalHash:before,realSupplierCalls:0},null,2));
  console.log(`MODIFIED=PASS CHECKS=${checks} LARGE_OUTPUT=DELIVERED INPUT12MIB=UNCHANGED OUTPUT64MIB=BOUNDED HASH=UNCHANGED BILLING_QUERY=INDEPENDENT STORED_RECOVERY=NO_SUPPLIER WAIT=LOCAL_ONLY HUB_RATIO=PREQUOTE PROVIDER_CALLS=0`);

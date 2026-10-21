@@ -37,7 +37,7 @@ export function currentImageOperationParameters() { const p=operations.getStore(
 
 export class ImageOperationPending extends Error {
   constructor(readonly operationId: string, readonly cause: unknown) {
-    super("图片任务正在核查或恢复中，请保留当前任务等待结果");
+    super("本次未取得图片，请重试");
     this.name = "ImageOperationPending";
   }
 }
@@ -47,19 +47,6 @@ export class ImageOperationReview extends ImageOperationPending {
   constructor(operationId:string,readonly reviewCode:"reconciling"|"waiting_login"|"waiting_client"){
     super(operationId,Error(`reverse-hub-${reviewCode}`));this.name="ImageOperationReview";
   }
-}
-/** Only emitted by a local capacity gate before any sibling supplier dispatch. */
-export class ImageOperationQueued extends ImageOperationPending {
-  constructor(operationId:string,private readonly dispatchState:{attempted:boolean}) {
-    super(operationId,Error("local-capacity-queue"));this.name="ImageOperationQueued";
-    this.message="任务已排队，等待可用生成通道";
-  }
-  get unsubmitted(){return !this.dispatchState.attempted;}
-}
-export function localImageCapacityQueue() {
-  const operation=operations.getStore();
-  return operation?.durable&&operation.dispatchState&&!operation.dispatchState.attempted
-    ?new ImageOperationQueued(operation.id,operation.dispatchState):undefined;
 }
 export function noteImageSupplierDispatch(){const operation=operations.getStore();if(operation?.dispatchState)operation.dispatchState.attempted=true;}
 

@@ -3,7 +3,7 @@ import { dbEnabled, getPool } from "../db";
 import type { ModelExecutionScope } from "../model-config/context";
 import type { ValidationOptions } from "../model-config/schema";
 import { completedChannelImage } from "../model-config/channel-image-response";
-import { ImageOperationQueued } from "../image-gateway";
+import {ModelConfigError} from "../model-config/types";
 import { prepareChannelText } from "../model-config/channel-text-response";
 import { createHealthRepository } from "./repository";
 import { healthTargetKey } from "./targets";
@@ -30,7 +30,7 @@ export function healthObservedFetch(scope: ModelExecutionScope, fetcher: typeof 
       const response = await fetcher(request); status = response.status;
       if (!response.ok) {
         // User-specific parameter rejection and local capacity do not condemn the supplier.
-        if ([401,402,403,429].includes(status) || status >= 500) await observeBusinessHealth(scope,classifyHealthFailure(null,status,Date.now()-started));
+        if (response.headers.get("x-naumi-local-capacity") !== "1" && ([401,402,403,429].includes(status) || status >= 500)) await observeBusinessHealth(scope,classifyHealthFailure(null,status,Date.now()-started));
         return response;
       }
       if (image) {
@@ -44,7 +44,7 @@ export function healthObservedFetch(scope: ModelExecutionScope, fetcher: typeof 
       if (!valid.streaming) await observeBusinessHealth(scope,{success:true,reason:null,status,latencyMs:Date.now()-started});
       return valid.response;
     } catch (error) {
-      if (!request.signal.aborted && !(error instanceof ImageOperationQueued)) await observeBusinessHealth(scope,classifyHealthFailure(error,status,Date.now()-started));
+      if (!request.signal.aborted && !(error instanceof ModelConfigError && error.code === "PROVIDER_BUSY")) await observeBusinessHealth(scope,classifyHealthFailure(error,status,Date.now()-started));
       throw error;
     }
   };

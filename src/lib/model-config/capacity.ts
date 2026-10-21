@@ -6,7 +6,6 @@ import { ensureModelSchema } from "./schema";
 import { ModelConfigError } from "./types";
 import { decryptAtRest } from "../settings";
 import { settingsSecret } from "../settings-secret";
-import {localImageCapacityQueue} from "../image-gateway";
 
 type Limit = { providerId: string; baseUrl: string; maxConcurrent: number; timeoutMs: number };
 /** Server-owned policy, not a caller parameter. Applies to retained/frozen tasks
@@ -78,11 +77,7 @@ export function createProviderCapacity(pool: Pool) {
 export function capacityFetch(transport: typeof fetch, pool: Pool, input: Limit): typeof fetch {
   const capacity = createProviderCapacity(pool);
   return async (url, init) => {
-    let lease:Awaited<ReturnType<typeof capacity.acquire>>;
-    try{lease=await capacity.acquire(input);}catch(error){
-      if(error instanceof ModelConfigError&&error.code==="PROVIDER_BUSY"&&error.status===429){const queued=localImageCapacityQueue();if(queued)throw queued;}
-      throw error;
-    }
+    const lease=await capacity.acquire(input);
     const release = () => lease.release().catch(() => {});
     try {
       const request = new Request(url, init);
