@@ -97,7 +97,7 @@ PROOF_FIELDS = ['id', 'tick_id', 'call_id', 'output_index', 'run_id', 'node_id',
 
 def sql_frozen():
     fields = ','.join(literal(v) for v in FROZEN_FIELDS)
-    expression = f"COALESCE((SELECT jsonb_object_agg(k,v) FROM jsonb_each(j) e(k,v) WHERE k IN ({fields})),'{{}}'::jsonb)"
+    expression = f"COALESCE((SELECT jsonb_object_agg(k,j->k) FROM unnest(ARRAY[{fields}]::text[]) e(k) WHERE j ? k),'{{}}'::jsonb)"
     for field, excluded in [('payload', PAYLOAD_PROGRESS_FIELDS), ('parameters', PARAMETER_PROGRESS_FIELDS)]:
         drop = 'ARRAY[' + ','.join(literal(v) for v in excluded) + ']::text[]'
         value = f"CASE WHEN jsonb_typeof(j->{literal(field)})='object' THEN (j->{literal(field)}) - {drop} ELSE j->{literal(field)} END"
@@ -157,6 +157,36 @@ def selected_predicate(name, key, prior, roots=None):
     return selected
 
 
+# Discover the graph using narrow IDs/state, not base64 payloads or full receipts.
+# Catalog projection tolerates additive/older schemas; selected rows are still
+# read in full for their original immutable-field hashes in the same snapshot.
+GRAPH_FIELDS = ['id','key','tick_id','call_id','output_index','node_id','job_id','session_id','kind',
+    'account_key','state','status','phase','operation_id','upstream_id','task_id','run_id',
+    'ledger_id','batch_id','child_operation_id','account_id','parent_call_id','snapshot','payload']
+
+
+def graph_projection_sql(reg):
+    fields=','.join(literal(v) for v in GRAPH_FIELDS)
+    snapshot="jsonb_build_object('status',snapshot->'status','paidOperations',CASE WHEN jsonb_typeof(snapshot->'paidOperations')='object' THEN (SELECT COALESCE(jsonb_object_agg(k,null),'{}'::jsonb) FROM jsonb_object_keys(snapshot->'paidOperations') k) ELSE '{}'::jsonb END) AS snapshot"
+    payload="jsonb_build_object('callId',payload->'callId','operation',payload->'operation','context',jsonb_build_object('operationId',payload#>'{context,operationId}')) AS payload"
+    return f"SELECT string_agg(CASE WHEN attname='snapshot' THEN {literal(snapshot)} WHEN attname='payload' THEN {literal(payload)} ELSE quote_ident(attname) END,',' ORDER BY attnum) AS projection FROM pg_attribute WHERE attrelid=to_regclass({literal(reg)}) AND attnum>0 AND NOT attisdropped AND attname IN ({fields})"
+
+
+def direct_key(key):
+    if key.startswith('composite:'):
+        return 'jsonb_build_array(' + ','.join('t.'+field+'::text' for field in key[10:].split(',')) + ')::text'
+    return 't.'+key+'::text'
+
+
+def proof_projection_sql(reg):
+    fields=','.join(literal(v) for v in set(PROOF_FIELDS+FROZEN_FIELDS+['parameters','plans','snapshot']))
+    # The existing proof never retained output images or raw supplier receipts.
+    # Project its exact paid binding fields before row JSON construction so those
+    # large values are not copied into every proof-field lookup.
+    snapshot="jsonb_build_object('status',snapshot->'status','paidOperations',COALESCE((SELECT jsonb_object_agg(k,jsonb_build_object('model',v->'model','replayable',v->'replayable','gatewayIdentity',v->'gatewayIdentity')) FROM jsonb_each(CASE WHEN jsonb_typeof(snapshot->'paidOperations')='object' THEN snapshot->'paidOperations' ELSE '{}'::jsonb END)e(k,v)),'{}'::jsonb)) AS snapshot"
+    return f"SELECT string_agg(CASE WHEN attname='snapshot' THEN {literal(snapshot)} ELSE quote_ident(attname) END,',' ORDER BY attnum) AS proof_projection FROM pg_attribute WHERE attrelid=to_regclass({literal(reg)}) AND attnum>0 AND NOT attisdropped AND attname IN ({fields})"
+
+
 def build_sql(*, previous=None, schema='public', row_limit=1000, projection='full', statement_timeout_ms=5000):
     if not re.fullmatch('[a-z_][a-z0-9_]{0,62}', schema) or type(row_limit) is not int or not 1 <= row_limit <= 5000:
         raise ValueError('BOUNDED_SQL_SCOPE_REQUIRED')
@@ -177,6 +207,9 @@ def build_sql(*, previous=None, schema='public', row_limit=1000, projection='ful
     lines += ["\\set materialized_roots_values '[]'", "\\set materialized_roots_within_limit true"]
     for index, name in enumerate(KEYS):
         lines += [f"SELECT (to_regclass({literal(schema + '.' + name)}) IS NOT NULL) AS exists \\gset table_{index}_"]
+        lines += [f'\\if :table_{index}_exists', graph_projection_sql(schema+'.'+name)+f' \\gset table_{index}_', '\\endif']
+        if projection == 'proof' and name != 'app_ledger':
+            lines += [f'\\if :table_{index}_exists', proof_projection_sql(schema+'.'+name)+f' \\gset table_{index}_', '\\endif']
     for depth in range(4):
         for index, (name, (key, _)) in enumerate(SPECS.items()):
             selected = selected_predicate(name, key, prior, 'SELECT value FROM roots')
@@ -184,7 +217,7 @@ def build_sql(*, previous=None, schema='public', row_limit=1000, projection='ful
             paid_ids = "COALESCE((SELECT jsonb_agg(k) FROM jsonb_object_keys(CASE WHEN jsonb_typeof(j#>'{snapshot,paidOperations}')='object' THEN j#>'{snapshot,paidOperations}' ELSE '{}'::jsonb END) k),'[]'::jsonb)"
             expansion = f"SELECT value FROM source CROSS JOIN LATERAL jsonb_array_elements_text(jsonb_build_array({ids}) || {paid_ids}) q(value) WHERE ({selected}) AND value IS NOT NULL AND value<>''"
             lines += [f'\\if :table_{index}_exists', '\\if :materialized_roots_within_limit',
-                      f"WITH roots AS MATERIALIZED (SELECT jsonb_array_elements_text(:'materialized_roots_values'::jsonb) AS value), source AS MATERIALIZED (SELECT to_jsonb(t) AS j FROM {schema}.{name} t), expanded AS MATERIALIZED ({expansion}), bounded_roots AS (SELECT value FROM roots UNION SELECT value FROM expanded LIMIT {root_limit + 1}) SELECT COALESCE(jsonb_agg(value ORDER BY value),'[]'::jsonb)::text AS values, count(*)<={root_limit} AS within_limit FROM bounded_roots \\gset materialized_roots_",
+                      f"WITH roots AS MATERIALIZED (SELECT jsonb_array_elements_text(:'materialized_roots_values'::jsonb) AS value), source AS MATERIALIZED (SELECT to_jsonb(t) AS j FROM (SELECT :table_{index}_projection FROM {schema}.{name}) t), expanded AS MATERIALIZED ({expansion}), bounded_roots AS (SELECT value FROM roots UNION SELECT value FROM expanded LIMIT {root_limit + 1}) SELECT COALESCE(jsonb_agg(value ORDER BY value),'[]'::jsonb)::text AS values, count(*)<={root_limit} AS within_limit FROM bounded_roots \\gset materialized_roots_",
                       '\\endif', '\\endif']
     for index, (name, key) in enumerate(KEYS.items()):
         reg = schema + '.' + name
@@ -194,16 +227,17 @@ def build_sql(*, previous=None, schema='public', row_limit=1000, projection='ful
         leaf = "encode(sha256(convert_to(to_jsonb(t)::text,'UTF8')),'hex')"
         summary = "(SELECT jsonb_build_object('count',count(*),'sumA',COALESCE(sum(('x'||substr(" + leaf + ",1,16))::bit(64)::bigint::numeric),0)::text,'sumB',COALESCE(sum(('x'||substr(" + leaf + ",17,16))::bit(64)::bigint::numeric),0)::text,'algorithm','sha256-leaf-two-64bit-sums') FROM " + reg + " t)" if name in ['app_ledger', 'app_billing_operations'] else 'null::jsonb'
         output_row = 'j'
+        selected_table = f'(SELECT :table_{index}_proof_projection FROM {reg})' if projection == 'proof' and name != 'app_ledger' else reg
         if projection == 'proof':
             # Full immutable originals stay in the readable database backup.
             # This is bounded comparison evidence, not a restore/recovery payload.
             fields = ','.join(literal(v) for v in PROOF_FIELDS)
             frozen_part = sql_frozen()
-            output_row = f"COALESCE((SELECT jsonb_object_agg(k,v) FROM jsonb_each(j) e(k,v) WHERE k IN ({fields})),'{{}}'::jsonb) || jsonb_build_object('_preservationProof',true,'_frozenDigest',encode(sha256(convert_to(({frozen_part})::text,'UTF8')),'hex'),'snapshot',jsonb_build_object('status',j#>'{{snapshot,status}}','paidOperations',COALESCE((SELECT jsonb_object_agg(k,jsonb_build_object('model',v->'model','replayable',v->'replayable','gatewayIdentity',v->'gatewayIdentity')) FROM jsonb_each(CASE WHEN jsonb_typeof(j#>'{{snapshot,paidOperations}}')='object' THEN j#>'{{snapshot,paidOperations}}' ELSE '{{}}'::jsonb END) e(k,v)),'{{}}'::jsonb)))"
+            output_row = f"COALESCE((SELECT jsonb_object_agg(k,j->k) FROM unnest(ARRAY[{fields}]::text[]) e(k) WHERE j ? k),'{{}}'::jsonb) || jsonb_build_object('_preservationProof',true,'_frozenDigest',encode(sha256(convert_to(({frozen_part})::text,'UTF8')),'hex'),'snapshot',jsonb_build_object('status',j#>'{{snapshot,status}}','paidOperations',COALESCE((SELECT jsonb_object_agg(k,jsonb_build_object('model',v->'model','replayable',v->'replayable','gatewayIdentity',v->'gatewayIdentity')) FROM jsonb_each(CASE WHEN jsonb_typeof(j#>'{{snapshot,paidOperations}}')='object' THEN j#>'{{snapshot,paidOperations}}' ELSE '{{}}'::jsonb END) e(k,v)),'{{}}'::jsonb)))"
             if name == 'app_ledger':
                 output_row += " || jsonb_build_object('_ledgerRowSha256',encode(sha256(convert_to(j::text,'UTF8')),'hex'))"
         within = 'COALESCE((SELECT sum(octet_length(j::text)) FROM bounded),0)<=' + str(8*1024*1024 if projection == 'proof' else 524288)
-        lines += [f"WITH roots AS MATERIALIZED (SELECT jsonb_array_elements_text(:'materialized_roots_values'::jsonb) AS value), source AS MATERIALIZED (SELECT to_jsonb(t) AS j FROM {reg} t), selected AS MATERIALIZED (SELECT {output_row} AS j FROM source WHERE {selected}), bounded AS (SELECT j FROM selected ORDER BY {sql_key(key)} LIMIT {row_limit + 1}) SELECT jsonb_build_object('kind','table','table',{literal(name)},'status',CASE WHEN NOT :'materialized_roots_within_limit'::boolean THEN 'unknown-root-limit' WHEN {within} THEN 'observed' ELSE 'unknown-byte-limit' END,'selectedCount',(SELECT count(*) FROM selected),'activeCount',(SELECT count(*) FROM source WHERE {active}),'rows',CASE WHEN {within} THEN COALESCE((SELECT jsonb_agg(j) FROM bounded),'[]'::jsonb) ELSE '[]'::jsonb END,'allSummary',{summary});",
+        lines += [f"WITH roots AS MATERIALIZED (SELECT jsonb_array_elements_text(:'materialized_roots_values'::jsonb) AS value), source AS MATERIALIZED (SELECT to_jsonb(t) AS j FROM (SELECT :table_{index}_projection FROM {reg}) t), selected_keys AS MATERIALIZED (SELECT {sql_key(key)} AS key FROM source WHERE {selected}), selected_full AS MATERIALIZED (SELECT to_jsonb(t) AS j FROM {selected_table} t WHERE {direct_key(key)} IN (SELECT key FROM selected_keys)), selected AS MATERIALIZED (SELECT {output_row} AS j FROM selected_full), bounded AS (SELECT j FROM selected ORDER BY {sql_key(key)} LIMIT {row_limit + 1}) SELECT jsonb_build_object('kind','table','table',{literal(name)},'status',CASE WHEN NOT :'materialized_roots_within_limit'::boolean THEN 'unknown-root-limit' WHEN {within} THEN 'observed' ELSE 'unknown-byte-limit' END,'selectedCount',(SELECT count(*) FROM selected),'activeCount',(SELECT count(*) FROM source WHERE {active}),'rows',CASE WHEN {within} THEN COALESCE((SELECT jsonb_agg(j) FROM bounded),'[]'::jsonb) ELSE '[]'::jsonb END,'allSummary',{summary});",
                   '\\else', f"SELECT jsonb_build_object('kind','table','table',{literal(name)},'status','unknown-table-missing','rows','[]'::jsonb);", '\\endif']
     lines += ["SELECT jsonb_build_object('kind','end','database',current_database(),'readOnly',current_setting('transaction_read_only'),'snapshot',txid_current_snapshot()::text);", 'COMMIT;']
     return ('\n'.join(lines) + '\n').encode()
