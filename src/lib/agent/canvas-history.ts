@@ -4,6 +4,7 @@ import {NextResponse} from "next/server";
 import {authenticatedEmail} from "../request-auth";
 import {getPool,listArtworks,listArtworksByIds,listAgentSessions,getAgentSession,renameAgentSession,deleteAgentSession} from "../db";
 import {getSession,removeRuntimeSession,renameRuntimeSession} from "./runtime";
+import {continuationTurn} from "./stream-recovery";
 import {AgentHarness} from "./harness";
 
 export const canvasProjectSessionPrefix=(projectKey:string)=>canvasSessionPrefix("project:"+projectKey);
@@ -55,7 +56,8 @@ export async function canvasAgentHistory(request:Request){
   const status=running?"running":terminal?.status||(error||interrupted?"failed":"completed");
   const attentionEvent=steps.slice(Math.max(0,currentTurn)).findLast((step:any)=>step.type==="attention") as any;
   const attention=["waiting","restricted"].includes(attentionEvent?.kind)?attentionEvent.kind:undefined;
-  return NextResponse.json({session:{id:saved.id,title:saved.title,anchorId,referenceIds,projectKey,turns,steps:saved.steps,running,status,attention,error:error?.message||(interrupted&&!terminal?"任务因服务中断而停止，请核对已有结果，避免重复生图":undefined)}});
+  const continueFromTurnId=running?undefined:continuationTurn(steps as any[],messages);
+  return NextResponse.json({session:{id:saved.id,title:saved.title,anchorId,referenceIds,projectKey,turns,steps:saved.steps,running,status,attention,continueFromTurnId,error:error?.message||(interrupted&&!terminal?"任务因服务中断而停止，请核对已有结果，避免重复生图":undefined)}});
  }
  if(!id)return NextResponse.json({error:"缺少会话编号"},{status:400});
  if(getSession(email,id)?.running || getSession(email,id)?.canvasExecuting)return NextResponse.json({error:"任务仍在执行，请先停止"},{status:409});
