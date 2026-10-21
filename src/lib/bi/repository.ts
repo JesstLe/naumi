@@ -235,7 +235,7 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
         sum(delta) FILTER(WHERE kind='refund' AND delta>0) AS refunded,count(*) AS events
         FROM app_ledger l JOIN filtered_users f ON f.email=l.email WHERE ${inRange("l")} GROUP BY l.email),
         selected AS MATERIALIZED (SELECT f.email FROM filtered_users f LEFT JOIN user_usage l ON l.email=f.email
-          ORDER BY COALESCE(l.consumed,0) DESC,f.email ASC LIMIT $7 OFFSET $8)`;
+          ORDER BY COALESCE(l.consumed,0)::float8 DESC,f.email ASC LIMIT $7 OFFSET $8)`;
       break;
     case "ledger":
       source = `SELECT l.id,l.email,l.delta,l.kind,l.reason,l.expires_at,l.created_at,COALESCE(m.reason,'') AS management_reason,m.actor AS management_actor FROM app_ledger l LEFT JOIN app_bi_management_log m ON m.ledger_id=l.id WHERE ${accountFilter("l.email")} AND ${inRange("l")} AND ($6::text='' OR l.kind=$6)`;

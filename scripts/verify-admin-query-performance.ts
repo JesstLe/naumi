@@ -110,6 +110,12 @@ async function main() {
       await assert.rejects(modified.queryBi(parseBiQuery(new URLSearchParams({section:"users"})),{client,allowedEmails:[]}));
       await client.query("ROLLBACK");
     }finally{client.release();}
+    // Partial indexes must follow live state transitions, including clearing review.
+    for(const state of [{status:"error",stage:"",error:""},{status:"done",stage:"reviewing",error:"核查"},{status:"done",stage:"",error:""}]){
+      await pool.query("UPDATE app_image_jobs SET snapshot=snapshot||$1::jsonb WHERE id='perf-1'",[JSON.stringify(state)]);
+      const q=parseBiQuery(new URLSearchParams({section:"overview",from:"2026-10-20",to:"2026-10-20"}));
+      assert.deepEqual(clean(await modified.queryBi(q)),clean(await baseline.queryBi(q)));results.push({section:"live-state-transition",state,equivalent:true});
+    }
     const oldDb=execFileSync("git",["show",`${base}:src/lib/db.ts`],{encoding:"utf8"});
     const listSql=oldDb.slice(oldDb.indexOf("export async function listAllUsers"));
     const oldRows=(await pool.query(listSql.slice(listSql.indexOf("`SELECT")+1,listSql.indexOf("`\n  );")))).rows;
