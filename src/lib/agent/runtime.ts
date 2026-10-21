@@ -482,7 +482,7 @@ async function createRuntimeSession(
       session.userConfirmedQuote = explicitQuoteConsent(input) && !!session.lastPendingQuoteKey && !!session.pendingQuotes?.has(session.lastPendingQuoteKey);
       if (!session.turnId || session.turnId === lastPromptTurn) session.turnId = crypto.randomUUID();
       lastPromptTurn = session.turnId;
-      session.harness.begin(input, originalAbort, session.userConfirmedQuote ? [session.lastPendingQuoteKey!] : []);
+      session.harness.begin(input, originalAbort);
       session.harness.modelStep();
       agent.prepareNextTurn=()=>{session.harness.modelStep();return undefined;};
       const identity=releaseIdentity(),activity=session.releaseActivity;

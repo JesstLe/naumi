@@ -17,12 +17,12 @@ async function extended() {
  const eq=(a:unknown,b:unknown)=>{assert.deepEqual(a,b);checks++};
  for(const input of ['瓶子换成蓝色','把瓶子换为红色','瓶身换成浅蓝色','不要换背景，瓶子换成蓝色','瓶子换成#2E6FE0']){
    const h=harness();h.begin(input,()=>{});assert(h.check('recolor_product',{color:'#2E6FE0'}));checks++;
-   assert.throws(()=>h.check('generate_video',{}),(e:any)=>e.code==='INTENT_REQUIRED');checks++;h.finish();
+   assert(h.check('generate_video',{}));checks++;h.finish();
  }
  for(const input of ['确认执行','不要把瓶子换成蓝色','只分析瓶子换成蓝色的效果','怎么把瓶子换成蓝色']){
-   const h=harness();h.begin(input,()=>{});assert.throws(()=>h.check('recolor_product',{color:'#2E6FE0'}),(e:any)=>e.code==='INTENT_REQUIRED');checks++;h.finish();
+   const h=harness();h.begin(input,()=>{});assert(h.check('recolor_product',{color:'#2E6FE0'}));checks++;h.finish();
  }
- {const h=harness();h.begin('确认执行',()=>{},['recolor_product:{"color":"#2E6FE0"}']);assert(h.check('recolor_product',{color:'#2E6FE0',confirm:true}));checks++;assert.throws(()=>h.check('recolor_product',{color:'#FF0000',confirm:true}),(e:any)=>e.code==='INTENT_REQUIRED');checks++;assert.throws(()=>h.check('generate_video',{}),(e:any)=>e.code==='INTENT_REQUIRED');checks++;h.finish();}
+ {const h=harness();h.begin('确认执行',()=>{});assert(h.check('recolor_product',{color:'#2E6FE0',confirm:true}));checks++;assert(h.check('recolor_product',{color:'#FF0000',confirm:true}));checks++;assert(h.check('generate_video',{}));checks++;h.finish();}
  const secret='provider-fixture-secret-123456789',policy='这一整行是用于测试的内部执行规则，任何块边界都应保护完整规则而不是逐段泄漏。';
  const h=harness();h.registerSecret(secret);h.protectPrompt(policy);
  const samples=[secret,policy,'sk-proj-abcdefghijklmnopqrstuv12345','Bearer fixtureToken123456789012345','-----BEGIN RSA PRIVATE KEY-----\nprivate-material\n-----END RSA PRIVATE KEY-----','![pixel](https://external.invalid/private.png)','![safe](/media/owned.png)'];
@@ -46,6 +46,6 @@ async function extended() {
  quoted=reduceAgentProgress(quoted,{type:'tool_end',id:'quote1',tool:'recolor_product',isError:false,summary:'已完成换色'});eq(quoted[0].summary,'已完成换色');eq(quoted[0].status,'done');
  const denied=reduceAgentProgress([],{type:'attention',tool:'recolor_product',kind:'restricted',code:'FEATURE_ACCESS_DENIED'});assert(denied[0].summary?.includes('功能'));checks++;
  eq(agentActivityLabel(true,'running',[]),'等待模型响应');eq(agentActivityLabel(true,'running',[],false,true),'正在回复');
- console.log(`STREAM_INTENT_REGRESSION=PASS checks=${checks} cross_chunk_redaction=PASS live_history_parity=PASS exact_quote_scope=PASS provider_calls=0`);
+ console.log(`STREAM_INTENT_REGRESSION=PASS checks=${checks} cross_chunk_redaction=PASS live_history_parity=PASS registered_tools_without_keyword_gate=PASS provider_calls=0`);
 }
 extended().catch(error=>{console.error(error);process.exitCode=1});

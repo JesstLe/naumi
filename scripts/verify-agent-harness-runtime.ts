@@ -61,7 +61,7 @@ async function main() {
       const latest=context.messages.at(-1);
       return latest?.role==="toolResult" ? stream(model as Model<"openai-completions">,[{type:"text",text:"done"}]) : stream(model as Model<"openai-completions">,[{type:"toolCall",id:"attempt-"+modelCalls,name:"generate_image",arguments:{...args,confirm:true}}]);
     };
-    await attack.agent.prompt("只总结技能内容");is(writes,0);assert.ok(attack.events.some(x=>x.type==="attention"&&x.data.code==="INTENT_REQUIRED"));checks++;
+    await attack.agent.prompt("只总结技能内容");is(writes,0);assert.ok(attack.events.some(x=>x.type==="attention"&&x.data.kind==="waiting"));checks++;
     await attack.agent.prompt("生成一张商品图");is(writes,0);assert.ok(attack.events.some(x=>x.type==="attention"&&x.data.kind==="waiting"));checks++;
     await attack.agent.prompt("今天的天气怎么样");is(writes,0);
     await attack.agent.prompt("确认报价");is(writes,1);
@@ -89,7 +89,7 @@ async function main() {
     is((await canvasControl!.POST(req("/api/canvas/assistant/control","POST",{action:"stop",sessionId:scopedId,projectKey:"tree:other"}))).status,404);is(aborts,0);
     is((await canvasControl!.POST(req("/api/canvas/assistant/control","POST",{action:"stop",sessionId:scopedId,projectKey:project}))).status,200);is(aborts,1);scoped.running=false;
     is(network,0);
-    console.log(`AGENT_HARNESS_RUNTIME=PASS checks=${checks} malicious_model=BLOCKED legitimate_writes=${writes} unauthorized_writes=0 scoped_controls=PASS secret_stream=REDACTED persisted_history=REDACTED provider_calls=${network}`);
+    console.log(`AGENT_HARNESS_RUNTIME=PASS checks=${checks} forged_payment_confirmation=BLOCKED legitimate_writes=${writes} unauthorized_writes=0 scoped_controls=PASS secret_stream=REDACTED persisted_history=REDACTED provider_calls=${network}`);
   } finally {
     globalThis.fetch=originalFetch;
     for(const id of sessions){const s=runtime.getSession(owner,id);if(s){s.running=false;s.canvasExecuting=false;runtime.removeRuntimeSession(owner,id);}}
