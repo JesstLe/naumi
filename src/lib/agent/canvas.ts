@@ -72,7 +72,7 @@ async function runCanvasAgentLocal(request: Request) {
   const canvas: CanvasAgentContext = {
     video,anchorId:anchor?.id||"", imageUrls: imageArtworks.map(art => new URL(art.image, origin).toString()),
     imageModelId: typeof body.imageModelId === "string" ? body.imageModelId : undefined,
-    ratio: /^\d+:\d+$/.test(String(body.ratio)) ? body.ratio : anchor?.ratio || "1:1",
+    ratio: /^[1-9]\d{0,5}:[1-9]\d{0,5}$/.test(String(body.ratio)) ? body.ratio : "auto",
     resolution: ["1K", "2K", "4K"].includes(body.resolution) ? body.resolution : "1K",
     quality: ["low", "medium", "high", "xhigh", "max"].includes(body.quality) ? body.quality : "medium",
   };

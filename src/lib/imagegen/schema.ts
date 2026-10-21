@@ -23,6 +23,8 @@ export const imagegenRequestSchema=z.strictObject({
   skill:z.strictObject({id:z.string().regex(/^(official:[a-z-]+|personal:[a-f0-9-]{36})$/),revision:z.number().int().positive()}).optional(),
   augment:z.boolean().default(false),modelId:resourceId.optional(),sourceNodeId:resourceId.optional(),
   inputs:z.array(z.strictObject({artworkId:resourceId,role:z.enum(["edit-target","reference","insert","style","mask"])})).max(32).default([]),
+  frameSourceId:resourceId.optional(),
+  framePolicy:z.literal("all-inputs").optional(),
   parameters:z.strictObject({quality:resourceId.optional(),resolution:resourceId.optional(),ratio:z.union([z.literal("auto"),z.string().regex(/^[1-9]\d{0,5}:[1-9]\d{0,5}$/)]).optional(),
     width:z.number().int().min(64).max(8192).optional(),height:z.number().int().min(64).max(8192).optional(),
     inputFidelity:resourceId.optional(),moderation:resourceId.optional()}).default({}),
@@ -33,6 +35,7 @@ export const imagegenRequestSchema=z.strictObject({
 }).superRefine((v,ctx)=>{
   const issue=(message:string,path:string[])=>ctx.addIssue({code:"custom",message,path});
   const targets=v.inputs.filter(i=>i.role==="edit-target"),masks=v.inputs.filter(i=>i.role==="mask");
+  if(v.frameSourceId&&!v.inputs.some(i=>i.artworkId===v.frameSourceId&&i.role!=="mask"))issue("画幅来源必须是本次引用的图片",["frameSourceId"]);
   if(["edit","postprocess"].includes(v.mode)&&!targets.length)issue("请选择编辑目标",["inputs"]);
   if(masks.length>1||masks.length&&!targets.length)issue("蒙版必须对应一个明确编辑目标",["inputs"]);
   if(v.mode==="batch"&&!v.batch)issue("批次缺少子项",["batch"]);

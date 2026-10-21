@@ -27,7 +27,7 @@ import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
 import { smartLayout } from "@/lib/canvas/smart-layout";
 import { CanvasComposerShell, CanvasComposerFooter, CanvasComposerOptions } from "./composer-shell";
 import { CanvasParameterPopover } from "./parameter-popover";
-import {submitCanvasImagegen} from "@/lib/imagegen/canvas-client";
+import {submitCanvasImagegen,resolveCanvasDetailFrame} from "@/lib/imagegen/canvas-client";
 import {FrameRatioDialog,useCanvasFrameChoice} from "./frame-ratio-dialog";
 import {imageOutputWarningText} from "@/lib/imagegen/output-advisory";
 import {VideoGenerationNode} from "./video/generation-node";
@@ -254,7 +254,7 @@ const MAX_TOTAL_IMAGES = 16; // 节点图 + 追加参考图 合计上限
 const MAX_UPLOAD = 64 * 1024 * 1024;
 const MAX_GENERATION_COUNT = CANVAS_MAX_COUNT;
 type CanvasPrimaryTool = "move" | "marquee" | "hand";
-// 扩图可选目标比例(ratioTilesC 同款,去掉 auto 与极端档 2:1/1:2)
+// 扩图使用同一组比例选项，不包含自适应（必须指定外扩目标）。
 const EXPAND_RATIOS = CANVAS_RATIO_OPTIONS.filter(r => r.id !== "auto").map(r => r.id);
 // 扩图锚点九宫格(原图贴哪一侧,新内容补其余方向) + 提示文案
 const ANCHOR_GRID = ["nw", "n", "ne", "w", "center", "e", "sw", "s", "se"] as const;
@@ -1571,6 +1571,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const features:Record<string,FeatureId>={"/api/generate-image":"canvas.image","/api/aplus":"image.aplus","/api/suite":"image.suite","/api/cutout":"tool.cutout","/api/canvas/image-tasks":"canvas.image","/api/canvas/expand":"canvas.expand","/api/canvas/text-edit":"canvas.text-edit","/api/canvas/annotate":"canvas.annotate","/api/canvas/text-generate":"canvas.text-generate","/api/canvas/assistant":"canvas.assistant","/api/canvas/ocr":"canvas.ocr","/api/video/generate":"video.generate"};
     if(init.method!=="POST"||!features[path])return privateFetchRaw(input,init);
     const form=init.body instanceof FormData?init.body:null;
+    if(path==="/api/aplus"&&form){
+      const account=canvasAccountRef.current,project=activeProjectRef.current?.key||null,epoch=canvasContextEpochRef.current;
+      await resolveCanvasDetailFrame(form,frameChoice.chooseFrame,()=>account===canvasAccountRef.current&&project===(activeProjectRef.current?.key||null)&&epoch===canvasContextEpochRef.current&&(init.isCurrent?.()??true));
+    }
     const body=form?Object.fromEntries(Array.from(form.entries()).filter((entry)=>typeof entry[1]==="string")):typeof init.body==="string"?JSON.parse(init.body):{};
     if(path==="/api/generate-image"&&form&&user&&body.ratiogen!=="1"&&(!body.userPrompt||String(body.userPrompt).trim()===String(body.prompt).trim())){
       const account=canvasAccountRef.current,project=activeProjectRef.current?.key||null,epoch=canvasContextEpochRef.current;
@@ -1678,7 +1682,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const imageDraftArtwork = selectedPendId ? undefined : works?.find(art => art.id === selectedId);
   const imageDraft = useImageNodeDraft(
     imageDraftScope(user?.email, targetEmail, activeKey), imageDraftNodeId,
-    { prompt: imageDraftArtwork?.prompt || "", ratio: normalizeCanvasRatio(imageDraftArtwork?.ratio) }, readOnly
+    { prompt: imageDraftArtwork?.prompt || "", ratio: "auto" }, readOnly
   );
   const { prompt: editPrompt, setPrompt: setEditPrompt, ratio: genRatio, setRatio: setGenRatio } = imageDraft;
   const [genModel, setGenModel] = useState("");
@@ -4435,7 +4439,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       fd.set("imagegenNodeId",operationKey);fd.set("imagegenNodeX",String(taskPosition.x));fd.set("imagegenNodeY",String(taskPosition.y));
       if (opts?.userPrompt?.trim()) fd.append("userPrompt", opts.userPrompt.trim());
       fd.append("category", source.category || "main");
-      const requestedRatio = normalizeCanvasRatio(opts?.ratio || source.ratio);
+      const requestedRatio = normalizeCanvasRatio(opts?.ratio || "auto");
       fd.append("ratio", requestedRatio);
 
       fd.append("resolution", normalizeCanvasResolution(opts?.resolution || source.resolution));
@@ -5205,7 +5209,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     ];
     const attempt = reuseAttempt ? previousAttempt : {
       input: text, anchorId, referencesKey, history,
-      body: JSON.stringify({ mode: "agent", continueText, continueFromTurnId, skill: assistantSkill ? { id: assistantSkill.id, revision: assistantSkill.revision } : null, sessionId: assistantSessionId.current, turnId: browserRandomUUID(), anchorId, videoNodeId:videoNodesStore.getNode(assistantArtworkId||selectedId||"")?.id,textNodeId:textNodes.find(node=>node.id===(assistantArtworkId||selectedId))?.id, projectKey: activeKey||"workspace", contextIds: references.map(artwork=>artwork.id), messages: continueText ? [] : history.slice(-12).map(({ role, content }) => ({ role, content: content.slice(0, 4000) })), imageModelId: chosenFeatureModel("canvas.image") || genModel, ratio: genRatio === "auto" ? source?.ratio || "1:1" : genRatio, resolution: genResolution, quality: genQuality }),
+      body: JSON.stringify({ mode: "agent", continueText, continueFromTurnId, skill: assistantSkill ? { id: assistantSkill.id, revision: assistantSkill.revision } : null, sessionId: assistantSessionId.current, turnId: browserRandomUUID(), anchorId, videoNodeId:videoNodesStore.getNode(assistantArtworkId||selectedId||"")?.id,textNodeId:textNodes.find(node=>node.id===(assistantArtworkId||selectedId))?.id, projectKey: activeKey||"workspace", contextIds: references.map(artwork=>artwork.id), messages: continueText ? [] : history.slice(-12).map(({ role, content }) => ({ role, content: content.slice(0, 4000) })), imageModelId: chosenFeatureModel("canvas.image") || genModel, ratio: genRatio, resolution: genResolution, quality: genQuality }),
     };
     assistantRetry.current = attempt;
     const epoch = ++assistantRequestEpoch.current;
@@ -5631,7 +5635,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       ? active?.members.find((item) => item.id === selected.parentId) ?? selected
       : selected;
     const retried = await runGen(parent, prompt, {
-      ratio: selected.ratio || genRatio,
+      ratio: genRatio,
       style: selected.style || genStyle,
       count: 1,
       resolution: selected.resolution || genResolution,
@@ -8651,7 +8655,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 {t("canvas.ratio")}
               </p>
               <div className="grid grid-cols-4 gap-2">
-                {CANVAS_RATIOS.filter(r => generationParameters.ratios.includes(r.id)).map((r) => (
+                {generationParameters.ratios.map(id => CANVAS_RATIOS.find(r => r.id === id) || { id, w: Number(id.split(":")[0]), h: Number(id.split(":")[1]) }).map((r) => (
                   <button
                     key={r.id}
                     type="button"

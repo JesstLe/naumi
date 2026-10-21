@@ -1,3 +1,5 @@
+import { normalizeAplusFrameRequest } from "@/lib/imagegen/aplus-frame-request";
+import { validCanvasRatio } from "@/lib/canvas/generation-parameters";
 import { exactImageRequestSize, imageRatioMismatch } from "@/lib/imagegen/request-size";
 import { sourceImageDimensions } from "@/lib/imagegen/output-shape";
 import {withBillingIntent} from "@/lib/billing/intent";
@@ -121,13 +123,13 @@ function ratioFor(format: string): string {
   return format === "aplus-mobile" ? "2:3" : format.startsWith("aplus-") ? "3:2" : format;
 }
 // Versioned at creation: historical paid jobs retain their original size contract.
-function sizeFor(format: string, model = "", exact = false): string {
+function sizeFor(format: string, model = "", exact = false, customRatio = false): string {
   if (!exact) {
     if (format === "1:1") return "1024x1024";
     if (format === "9:16" || format === "aplus-mobile") return "1024x1536";
     return "1536x1024";
   }
-  const ratio = ratioFor(format), native = exactImageRequestSize(ratio, model);
+  const ratio = ratioFor(format), native = exactImageRequestSize(ratio, model, customRatio);
   if (native) return native;
   if (ratio === "auto") return "auto";
   const [w, h] = ratio.split(":").map(Number);
@@ -428,7 +430,7 @@ type Job = {
   platform: string;
   lang: string;
   format: string;
-  frameVersion?: 1;
+  frameVersion?: 1 | 2;
   frameError?: string;
   modules: string[];
   email: string;
@@ -569,7 +571,7 @@ async function runAplusGeneration(jobId: string) {
       buf: buf!,
       type: "image/png",
     }));
-    const size = sizeFor(job.format, job.model, job.frameVersion === 1);
+    const size = sizeFor(job.format, job.model, !!job.frameVersion, job.frameVersion === 2);
     const specs = job.shots.length ? job.shots : await planShots(
       client,
       cleanImages[0],
@@ -582,7 +584,7 @@ async function runAplusGeneration(jobId: string) {
     );
     const shots: ShotResult[] = specs.map((s, i) => ({
       ...s,
-      ...(job.frameVersion === 1 && job.shots[i]?.status !== "done" ? { ratio: ratioFor(job.format) } : {}),
+      ...(!!job.frameVersion && job.shots[i]?.status !== "done" ? { ratio: ratioFor(job.format) } : {}),
       id: job.shots[i]?.id || `aplus-${jobId}-${i}`,
       status: job.shots[i]?.status || "pending",
       url: job.shots[i]?.url,
@@ -612,11 +614,11 @@ async function runAplusGeneration(jobId: string) {
               shot,
               cleanImages,
               size,
-              job.frameVersion === 1
+              !!job.frameVersion
             )), job.model);
             // Preserve provider bytes. A mismatch is reported, never cropped or regenerated.
-            const dimensions = job.frameVersion === 1 ? await sourceImageDimensions(buf).catch(() => undefined) : undefined;
-            const frameError = job.frameVersion === 1 ? imageRatioMismatch(ratioFor(job.format), dimensions || {}) : undefined;
+            const dimensions = !!job.frameVersion ? await sourceImageDimensions(buf).catch(() => undefined) : undefined;
+            const frameError = !!job.frameVersion ? imageRatioMismatch(ratioFor(job.format), dimensions || {}) : undefined;
             const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a;
             const divisor = dimensions ? gcd(dimensions.width, dimensions.height) : 0;
             const actualRatio = dimensions && divisor ? `${dimensions.width / divisor}:${dimensions.height / divisor}` : shot.ratio;
@@ -666,8 +668,8 @@ async function runAplusGeneration(jobId: string) {
             image: s.url!,
             gradient: s.gradient,
             style: null,
-            ratio: job.frameVersion === 1 ? s.ratio : job.format === "1:1" ? "1:1" : size === "1024x1536" ? "2:3" : "3:2",
-            ...(job.frameVersion === 1 ? { width: s.width, height: s.height } : {}),
+            ratio: !!job.frameVersion ? s.ratio : job.format === "1:1" ? "1:1" : size === "1024x1536" ? "2:3" : "3:2",
+            ...(!!job.frameVersion ? { width: s.width, height: s.height } : {}),
             resolution: "1K",
             source: "detail",
             parentId: job.parentId || null,
@@ -692,7 +694,7 @@ async function runAplusGeneration(jobId: string) {
       done: shots.length,
       user,
       creditsUsed: committedCharge,
-      frameError: job.frameVersion === 1 ? shots.find(shot => shot.frameError)?.frameError : undefined,
+      frameError: !!job.frameVersion ? shots.find(shot => shot.frameError)?.frameError : undefined,
       reserved: false,
     });
   } catch (e) {
@@ -726,7 +728,7 @@ async function parseInput(request: Request) {
   const rawModules = (f.getAll("module") as string[]).map((m) => m.trim());
   const modules = Array.from(new Set(rawModules)).filter((m) => APLUS_MODULES[m]);
   const format = (f.get("format") ?? "aplus-web").toString().trim();
-  if (!APLUS_FORMATS.includes(format)) return null;
+  if (!APLUS_FORMATS.includes(format) && !validCanvasRatio(format)) return null;
   return {
     requestedQuality: f.get("quality") ?? undefined,
     billingVersion:f.get("billingVersion")??undefined,billingCredits:f.get("billingCredits")??undefined,
@@ -885,6 +887,10 @@ async function handleObservedPost(request: Request) {
       { status: 400 }
     );
   }
+  // Reject unsupported native size before creating a new paid job. Historical
+  // JSON actions bypass new-submission parsing and keep their frozen contract.
+  try { sizeFor(input.format, model, true, true); }
+  catch (error) { return NextResponse.json({ error: safeError(error, "所选模型不支持该画幅"), code: "APLUS_FRAME_UNSUPPORTED" }, { status: 400 }); }
   const ip = clientIp(request);
   if (!rateLimit(`aplus:${ip}`, 8, 600_000)) {
     return NextResponse.json({ error: "请求过于频繁，请稍后再试" }, { status: 429 });
@@ -963,7 +969,7 @@ async function handleObservedPost(request: Request) {
     platform: input.platform,
     lang: input.lang,
     format: input.format,
-    frameVersion: 1,
+    frameVersion: 2,
     modules: input.modules,
     email: input.email,
     model,
@@ -1057,7 +1063,12 @@ export async function GET(request: Request) {
 }
 
 async function createSubmission(request: Request) {
-  try{return await withBiRequest(request, () => handleObservedPost(request));}catch(e){return billingErrorResponse(e)}
+  try {
+    let normalized: Request;
+    try { normalized = await normalizeAplusFrameRequest(request); }
+    catch (error) { return NextResponse.json({ error: safeError(error, "参考素材的画幅读取失败"), code: "APLUS_FRAME_INVALID" }, { status: 400 }); }
+    return await withBiRequest(normalized, () => handleObservedPost(normalized));
+  } catch(e) { return billingErrorResponse(e); }
 }
 
 export async function POST(request:Request){return withBillingIntent(request,()=>createSubmission(request));}

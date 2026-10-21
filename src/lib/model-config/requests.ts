@@ -47,10 +47,8 @@ async function requestFacts(request: Request) {
       references = Array.isArray(body.images) ? body.images.length : Array.isArray(body.sourceIds) ? body.sourceIds.length : Array.isArray(body.contextIds) ? body.contextIds.length : body.anchorId ? 1 : body.image || body.imageUrl || body.originalUrl || body.artworkId ? 1 : 0;
     }
   } catch { /* The route owns detailed payload validation; no generation is performed here. */ }
-  // Outpainting always supplies a generated keep-mask internally, even though
-  // its public JSON contains only artworkId/ratio. Bind a mask-capable channel
-  // before quoting, rather than failing inside the expensive edit transport.
-  if (new URL(request.url).pathname === "/api/canvas/expand") body.needsMask = true;
+  // Expand can edit the padded reference without a mask: the handler restores
+  // original pixels locally. User-supplied masks in other routes stay required.
   return { body, references: Math.min(32, references) };
 }
 function imageRatio(width:number,height:number) { const gcd=(a:number,b:number):number=>b?gcd(b,a%b):a; const g=gcd(Math.round(width),Math.round(height)); return `${Math.round(width)/g}:${Math.round(height)/g}`; }
