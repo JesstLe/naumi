@@ -38,3 +38,15 @@
 release47-image-delivery-20261021-r3 COMPLETE/canonical501，三锁释放。运行source48d1445e/build1792562346，Web5ec7df2c/13109、Workeraf028da8，同image67ca4a100fa9。旧BI Web/Worker排空停止restart=no；保留失败第一候选及回滚证据。回滚check PASS，没有对最终候选执行生产切回。
 原始保全比较4项告警来自2笔旧槽任务正常完成：旧runJob最终snapshot替换paidOperations为空、正常结算移除reservation。逐笔原冻结digest一致、供应商/报价不变、真实作品原图解码、单账单8/6积分、reservation0核实后，独立reviewed comparison保留原告警并认可正常完成，不修改业务任务或删除原证据。普通缺失任务、账本变化、未知归属继续阻断。
 公网与候选实际上传均HTTP200，1536x2048、3047099字节、SHA32432de5...；画布实际节点1/图解码通过，引用文本保存200，测试作品2和文本2已清理。尚在固定104笔原图交付恢复及最终真实生图验收，完成后补证据。
+
+## 最终交付与剩余项（2026-10-21 14:45 CST 核实）
+- r3 最终版真实 GPT 双参考 2K：operation91a83630-28b1-4b69-9803-b3b5ea331359，51.426秒，1536x2048/2977647字节，confirmed/8积分；SHA d5ff8ef78e5da775b9e3cc4ae0248638f04c643b6a45d25d62a28ea4ad039df6。公网画布节点解码、原图下载、引用文字节点保存与再次编辑plan200通过，后者没有额外submit。
+- 最终版香蕉2K：operation358842f8-1790-4e9d-a447-9966a05dea24，40.108秒，1529x2048/2385455字节，confirmed/8积分。
+- 即梦真实验收未通过：operationc05529ce-6961-4af7-8fef-e7a46402b524，6.522秒结束，0积分。绑定Hub cf815841-89a2-47f3-b5e2-05db0dee7ebc；14:36:32原生返回1006“积分不足或没有相关权益”，降至最低画质仍不足。加密bridge同ID/image.generate/failed/有账号/无accepted；现运行旧Hub错误分类missing_artifact/reconciling。未重发供应商、未改余额或路由，Hub独立7ed42bb仍未在本轮发布。此项是剩余上游额度与Hub回执分类问题，不能声称即梦已修复或全通道通过。
+- 固定104笔已有图片恢复已结束：96 succeeded，8未交付；逐笔核对8笔均为原作品deleted_at非空（用户删除保留），没有复活删除内容。原始脚本如实exit2，不将这8笔改成通过。96张均实际下载/Sharp解码；paidOperations hash不变；原供应商调用198→198，新增生成POST0。恢复controller退出并释放三锁。发布receipt中的paidOutputRecovered=false是恢复前快照，恢复结果另见fixed-recovery.log，不回写历史receipt。
+- 浏览器旧页连续697样本：health/version全200、db.ok=true，5个旧JS资源200、pageerror0、原草稿保持；跨版本保存已验证。上传25+19+121模块与候选DOM fallback/公网真实文件输入上传已通过。空项目上传后未自动跳入新项目的体验未计通过，未扩大本轮改动。
+- 最终host读：canonical501/COMPLETE；3锁空闲，MemAvailable3850264kB，Swap实际使用780kB；Web1017MiB/1.75GiB，Worker30.84MiB/128MiB。这是单次资源观测，不是1000人并发压测结果。
+- 本轮5张真实验收作品通过正常API软删除、账务历史保留；两张上传作品/测试文字已清理。实际验收原图保留本地证据。用户原作品未批量删除。
+- 后台性能56285537在独立线程，未纳本次App，索引未由本线程生产执行；本线程仅本地证据归档，不占下一发布窗口。
+
+最终证据：C:/Users/13357/.t3/scratch/image-delivery-complete47-20261021-r3；生产发布回执 /opt/naumi-staging/evidence/image-delivery-complete47-20261021-r3/transaction/PUBLICATION_RECEIPT.json。运行source48d1445e与后续ops/docs提交分开。恢复与最终检查不增加发布计数；空间未执行广泛清理。
