@@ -18,7 +18,19 @@ def reviewed_completion(before,after,proof):
    prior=[x for x in a['tables'][table]['rows'] if x.get('operation_id')==identifier or x.get('id')==identifier]
    current={tasks.row_key(x,tasks.KEYS[table]):x for x in b['tables'][table]['rows']}
    for x in prior:
-    y=current.get(tasks.row_key(x,tasks.KEYS[table]));require(y and tasks.frozen(x)==tasks.frozen(y) and all(tasks.supplier_bindings(y).get(k)==v for k,v in tasks.supplier_bindings(x).items()),'SUPPLIER_OR_QUOTE_CHANGED')
+    y=current.get(tasks.row_key(x,tasks.KEYS[table]));require(y and all(tasks.supplier_bindings(y).get(k)==v for k,v in tasks.supplier_bindings(x).items()),'SUPPLIER_OR_QUOTE_CHANGED')
+    if tasks.frozen(x)!=tasks.frozen(y):
+     # apimart-preset.ts records decoded actualDimensions/deliveryNotices only
+     # after delivery. Older proof hashes included these output-only fields.
+     # Recompute the complete frozen hash with ONLY those two keys removed;
+     # requestHash, effective parameters, quote, account and versions stay exact.
+     evidence=next((e for e in p.get('supplierOutputProgress',[]) if e.get('id')==x.get('id')),None)
+     require(table=='app_supplier_calls' and x.get('_preservationProof')is True and y.get('_preservationProof')is True and
+       x.get('state')=='pending' and y.get('state')=='completed' and evidence and
+       evidence.get('removedKeys')==['actualDimensions','deliveryNotices'] and evidence.get('decodedDimensionsMatch')is True and
+       evidence.get('beforeFrozenDigest')==x['_frozenDigest'] and evidence.get('afterFrozenDigest')==y['_frozenDigest'] and
+       evidence.get('withoutOutputProgressDigest')==x['_frozenDigest'],'SUPPLIER_OR_QUOTE_CHANGED')
+     accepted.add((table,tasks.sha([table,tasks.row_key(x,tasks.KEYS[table])]),'FROZEN_CONTEXT_CHANGED'))
   accepted.add(('app_image_jobs',tasks.sha(['app_image_jobs',identifier]),'ORIGINAL_SUPPLIER_BINDING_CHANGED'))
   accepted.add(('app_gen_reservations',tasks.sha(['app_gen_reservations',identifier]),'PRESERVED_ROW_MISSING'));records.append({'id':identifier,'reason':'old-slot-generated-image-settled-once','proof':p})
  violations=[v for v in result['violations'] if (v.get('table'),v.get('identitySha256'),v.get('reason'))not in accepted]

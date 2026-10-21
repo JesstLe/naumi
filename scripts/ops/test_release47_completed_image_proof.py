@@ -17,4 +17,16 @@ class Proof(unittest.TestCase):
  def test_unrelated_loss_still_blocks(self):
   self.result['violations'].append({'table':'app_image_jobs','identitySha256':'other','reason':'PRESERVED_ROW_MISSING'})
   with patch.object(m.tasks,'compare_task_snapshots',lambda *_:self.result):self.assertFalse(m.reviewed_completion(self.a,self.b,[self.p])['preservationVerified'])
+ def test_output_only_hash_reconstruction(self):
+  old={'id':'call-one','operation_id':self.id,'task_id':'task-original','state':'pending','_preservationProof':True,'_frozenDigest':'before'}
+  new={**old,'state':'completed','_frozenDigest':'after'}
+  self.a['tables']['app_supplier_calls']['rows']=[old];self.b['tables']['app_supplier_calls']['rows']=[new]
+  self.result['violations'].append({'table':'app_supplier_calls','identitySha256':m.tasks.sha(['app_supplier_calls','call-one']),'reason':'FROZEN_CONTEXT_CHANGED'})
+  proof={'id':'call-one','removedKeys':['actualDimensions','deliveryNotices'],'decodedDimensionsMatch':True,'beforeFrozenDigest':'before','afterFrozenDigest':'after','withoutOutputProgressDigest':'before'}
+  with patch.object(m.tasks,'compare_task_snapshots',lambda *_:self.result):
+   self.assertTrue(m.reviewed_completion(self.a,self.b,[{**self.p,'supplierOutputProgress':[proof]}])['preservationVerified'])
+   for field,value in [('withoutOutputProgressDigest','requestHash-changed'),('decodedDimensionsMatch',False),('removedKeys',['actualDimensions','deliveryNotices','requested']),('afterFrozenDigest','stale')]:
+    with self.subTest(field=field),self.assertRaises(Exception):m.reviewed_completion(self.a,self.b,[{**self.p,'supplierOutputProgress':[{**proof,field:value}]}])
+   self.b['tables']['app_supplier_calls']['rows'][0]['task_id']='different'
+   with self.assertRaises(Exception):m.reviewed_completion(self.a,self.b,[{**self.p,'supplierOutputProgress':[proof]}])
 if __name__=='__main__':unittest.main()
