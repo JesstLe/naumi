@@ -1,3 +1,4 @@
+import {cutoutImageQuality} from "./cutout-quality";
 import {resolveImageResolution} from "./resolution-fallback";
 import {currentImagegenStep} from "../imagegen/context";
 import {legacyImagegenIntent} from "../imagegen/legacy-intent";
@@ -129,7 +130,8 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     const presentation = qualityPresentation(upstreams);
     const qualities = preset ? [...DISPLAY_QUALITIES] : presentation?.qualities || option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities)));
     if (option?.parameters?.ratios?.length && !option.parameters.ratios.includes(ratio)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该比例", 400);
-    const explicitQuality = String(parsed.body.quality || request.headers.get("x-naumi-image-quality") || "").trim().toLowerCase();
+    const rawQuality = String(parsed.body.quality || request.headers.get("x-naumi-image-quality") || "").trim().toLowerCase();
+    const explicitQuality = purpose.image === "image.cutout" ? cutoutImageQuality(rawQuality) || "" : rawQuality;
     if (explicitQuality && ![...IMAGE_QUALITY_IDS, "auto"].includes(explicitQuality as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "质量参数无效，请选择已开放的质量档位", 400);
     const environmentQuality = String(process.env.OPENAI_IMAGE_QUALITY || "medium").trim().toLowerCase();
     const defaultQuality = qualities.includes(environmentQuality as any) ? environmentQuality : qualities[0] || "medium";

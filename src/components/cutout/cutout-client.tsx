@@ -11,7 +11,7 @@ import { authHeader } from "@/lib/supabase";
 const ACCENT = "#2E7CF6"; // 图像处理(蓝)
 
 export function CutoutClient() {
-  const billing=useFeatureBilling("tool.cutout",{});
+  const billing=useFeatureBilling("tool.cutout",{ quality: "medium" });
   const { user } = useAuth();
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
@@ -31,8 +31,8 @@ export function CutoutClient() {
       onProcess={async (file) => {
         const fd = new FormData();
         fd.append("image", file);
-        // 抠图后端只发丝级一档,统一发 quality=fine;归入「抠图」分类。
-        fd.append("quality", "fine");
+        // quality 是图片模型档位，不再混用已退役的分割器 fine/fast 标签。
+        fd.append("quality", "medium");
         fd.append("title", file.name.replace(/\.[^.]+$/, "") || "抠图");
         fd.append("category", "cutout");
         if (user) fd.append("email", user.email);
