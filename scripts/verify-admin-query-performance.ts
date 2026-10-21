@@ -85,7 +85,7 @@ async function main() {
       const cases=[...filters];
       const statuses:Record<string,string[]>={users:["active","banned"],artworks:["deleted","all","invalid"],models:["fallback"],operations:["review","error"],orders:["paid","pending"],conversations:["agent","genchat"],ledger:["consume","refund"]};
       for(const status of statuses[section]||[])cases.push({status});
-      if(section==="artworks")cases.push({recordId:"art-2",from:"2026-10-21",to:"2026-10-21"},{recordId:"art-2",email:"user-4@example.test"});
+      if(section==="artworks")cases.push({id:"art-2",from:"2026-10-21",to:"2026-10-21"},{id:"art-2",email:"user-4@example.test"});
       for(const f of cases){
         const q=parseBiQuery(new URLSearchParams({section,from:"2026-10-20",to:"2026-10-20",size:"30",...f}));
         const times:number[]=[];const bodies:any[]=[];
@@ -95,6 +95,7 @@ async function main() {
           if(capture)captured.push(...capture);capture=null;
         }
         assert.deepEqual(clean(bodies[1]),clean(bodies[0]),`${section} ${JSON.stringify(f)}`);
+        if(f.id==="art-2")assert.equal(bodies[1].total,f.email?0:1,"Exact record bypasses date, never account authorization");
         results.push({section,filters:f,total:bodies[1].total,rows:bodies[1].rows.length,baselineMs:Math.round(times[0]),modifiedMs:Math.round(times[1])});
       }
     }
@@ -102,7 +103,7 @@ async function main() {
     const client=await pool.connect();
     try{await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       for(const allowedEmails of [[],["user-2@example.test"],["user-2@example.test","user-3@example.test"]]){
-        for(const f of [{},{status:"all"},{recordId:"art-2"},{recordId:"art-3"},{page:"10000"}] as Record<string,string>[]){
+        for(const f of [{},{status:"all"},{id:"art-2"},{id:"art-3"},{page:"10000"}] as Record<string,string>[]){
           const q=parseBiQuery(new URLSearchParams({section:"artworks",from:"2026-10-20",to:"2026-10-20",...f}));
           assert.deepEqual(clean(await modified.queryBi(q,{client,allowedEmails})),clean(await baseline.queryBi(q,{client,allowedEmails}))); results.push({section:"scoped-artworks",allowedEmails,filters:f});
         }
