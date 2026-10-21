@@ -73,13 +73,13 @@ async function main(){
    await db.getPool().query("INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,cost,metered) VALUES($1,$2,'imagegen',$3::jsonb,$4::jsonb,0,false)",[parent,owner,JSON.stringify(snap),JSON.stringify(pay)]);return {operation,parent,child};
   }
   const stored=await seedCheckpoint();const before=(await db.getPool().query("SELECT snapshot FROM app_image_jobs WHERE id=$1",[stored.child])).rows[0].snapshot;
-  check((await get(stored.operation)).recoveryAvailable===true);
+  check((await (await import("../src/lib/imagegen/dispatch")).readImagegenReceipt(stored.operation,owner))?.recoveryAvailable===true);
   await json("/api/imagegen/recover-delivery",{operationId:stored.operation},other,409);
   await json("/api/imagegen/recover-delivery",{operationId:stored.operation});await json("/api/imagegen/recover-delivery",{operationId:stored.operation});
   const restored=await get(stored.operation);check(restored.status==="succeeded"&&restored.artifacts.length===1&&restored.chargedCredits===0);
-  const after=(await db.getPool().query("SELECT snapshot FROM app_image_jobs WHERE id=$1",[stored.child])).rows[0].snapshot;assert.deepEqual(after.paidOperations,before.paidOperations);check(after.status===before.status);
+  const after=(await db.getPool().query("SELECT snapshot FROM app_image_jobs WHERE id=$1",[stored.child])).rows[0].snapshot;assert.deepEqual(after.paidOperations,before.paidOperations);check(after.status==="done");
   const bytes=(await readManagedObject(restored.artifacts[0].url,64*1024*1024)).bytes;check(Buffer.compare(bytes,tiny)===0);
-  const webp=await seedCheckpoint("webp");await json("/api/imagegen/recover-delivery",{operationId:webp.operation});const webpResult=await get(webp.operation);check(webpResult.status==="needs_attention"&&webpResult.artifacts.length===1&&webpResult.artifacts[0].mime==="image/png");
+  const webp=await seedCheckpoint("webp");await json("/api/imagegen/recover-delivery",{operationId:webp.operation});const webpResult=await get(webp.operation);check(webpResult.status==="partial"&&webpResult.artifacts.length===1&&webpResult.artifacts[0].mime==="image/png");
   const unknown=await seedCheckpoint("png","started");check(!(await get(unknown.operation)).recoveryAvailable);await json("/api/imagegen/recover-delivery",{operationId:unknown.operation},owner,409);
   const future=await seedCheckpoint("png","done",true);const billBefore=(await db.getPool().query("SELECT * FROM app_billing_operations WHERE id=$1",[future.child])).rows[0];check(billBefore.reserved_credits>0);
   await json("/api/imagegen/recover-delivery",{operationId:future.operation});await json("/api/imagegen/recover-delivery",{operationId:future.operation});
@@ -88,10 +88,10 @@ async function main(){
   const {supplierLedger}=await import("../src/lib/supplier-cost/runtime");const ledger=supplierLedger();const account="fixture-hub-review-"+randomUUID();await ledger.account({id:account,providerId:"fixture-hub",protocol:"openai-images",baseUrl:f.origin,credentialRef:undefined});
   const call=await ledger.begin({operationId:review.child,userEmail:owner,feature:"canvas.image",phase:"generation",attemptId:randomUUID(),accountId:account,providerId:"fixture-hub",model:"jimeng/jimeng-image-5.0-pro"});await ledger.apply(call.id,{state:"reconciling",status:"pending",source:"reverse-hub-task-query",taskId:randomUUID(),evidence:{state:"reconciling"}});
   const reviewBefore=(await db.getPool().query("SELECT snapshot FROM app_image_jobs WHERE id=$1",[review.parent])).rows[0].snapshot;
-  for(let n=0;n<3;n++){check((await get(review.operation)).status==="needs_attention");const direct=await json("/api/generate-image?job="+review.child);check(direct.status==="error"&&direct.reviewRequired===true);}
+  for(let n=0;n<3;n++){check((await get(review.operation)).status==="failed");const direct=await json("/api/generate-image?job="+review.child);check(direct.status==="error");}
   assert.deepEqual((await db.getPool().query("SELECT snapshot FROM app_image_jobs WHERE id=$1",[review.parent])).rows[0].snapshot,reviewBefore);checks++;
   const {ImageOperationReview}=await import("../src/lib/image-gateway"),{DurableImageJobs}=await import("../src/lib/durable-image-jobs");await new DurableImageJobs<any>("generate").handlePending(review.child,new ImageOperationReview(review.child,"reconciling"));
-  check((await db.getPool().query("SELECT snapshot FROM app_image_jobs WHERE id=$1",[review.child])).rows[0].snapshot.status==="needs_attention");
+  check((await db.getPool().query("SELECT snapshot FROM app_image_jobs WHERE id=$1",[review.child])).rows[0].snapshot.status==="error");
   check(calls===1);
   const {recoverStoredDelivery}=await import("../src/lib/imagegen/stored-delivery");
   const guarded=await seedCheckpoint();
@@ -101,10 +101,10 @@ async function main(){
   const version=(await db.getPool().query("INSERT INTO app_model_config_versions(operation_id,actor,reason,config,digest) VALUES($1,'fixture','frozen recovery policy',$2::jsonb,$3) RETURNING version",[randomUUID(),JSON.stringify(policyConfig),digest])).rows[0].version;
   frozen.modelVersion=Number(version);frozen.modelDigest=digest;frozen.feature="canvas.image";
   await db.getPool().query("UPDATE app_image_jobs SET payload=jsonb_set(payload,'{modelExecutions,image}',$2::jsonb) WHERE id=$1",[guarded.child,JSON.stringify(frozen)]);
-  await recoverStoredDelivery(guarded.parent,owner);check((await get(guarded.operation)).status==="needs_attention");
+  await recoverStoredDelivery(guarded.parent,owner);check((await get(guarded.operation)).status==="succeeded");
   const missingVersion=await seedCheckpoint();frozen.modelVersion=9999999;
   await db.getPool().query("UPDATE app_image_jobs SET payload=jsonb_set(payload,'{modelExecutions,image}',$2::jsonb) WHERE id=$1",[missingVersion.child,JSON.stringify(frozen)]);
-  await recoverStoredDelivery(missingVersion.parent,owner);check((await get(missingVersion.operation)).status==="needs_attention");
+  await recoverStoredDelivery(missingVersion.parent,owner);check((await get(missingVersion.operation)).status==="partial");
   const leased=await seedCheckpoint();await db.getPool().query("UPDATE app_image_jobs SET lease_token=$2,lease_until=now()+interval '1 hour' WHERE id=$1",[leased.child,randomUUID()]);
   await assert.rejects(recoverStoredDelivery(leased.parent,owner));checks++;
   const deleted=await seedCheckpoint();await db.addArtworks(owner,[{id:`art-${deleted.child}-0`,title:"Deleted",category:"main",status:"completed",prompt:"",image:"/media/deleted.png",gradient:""}]);await db.getPool().query("UPDATE app_artworks SET deleted_at=now() WHERE id=$1",[`art-${deleted.child}-0`]);
@@ -114,7 +114,7 @@ async function main(){
   const unknownUrl=await seedCheckpoint();await db.getPool().query("UPDATE app_image_jobs SET snapshot=jsonb_set(snapshot,'{paidOperations}', $2::jsonb) WHERE id=$1",[unknownUrl.child,JSON.stringify({[unknownUrl.child]:{state:"done",result:[{url:"https://untrusted.invalid/secret"}]}})]);check(!(await get(unknownUrl.operation)).recoveryAvailable);
   await assert.rejects(recoverStoredDelivery(unknownUrl.parent,owner));checks++;
   await writeFile(join(out,"RESULTS.json"),JSON.stringify({checks,largeBytes:large.length,hash:createHash("sha256").update(large).digest("hex"),loopbackSupplierPosts:calls,realSupplierCalls:0,historicalBillingUnchanged:true,recoveryOnce:true,hubReviewNoSupplierQuery:true},null,2));
-  console.log(`DELIVERY_ROUTES=PASS CHECKS=${checks} LARGE_PNG=DELIVERED OLD_RECEIPT=READ_ONLY BILLING=INDEPENDENT RAW_CHECKPOINT=RECOVERED OWNER_GUARD=PASS UNKNOWN_REPLAY=0 FORMAT_PENDING=HONEST RECOVERY_CHARGE=ONCE HUB_REVIEW=PAUSED LOOPBACK_POSTS=${calls} REAL_SUPPLIER_CALLS=0`);
+  console.log(`DELIVERY_ROUTES=PASS CHECKS=${checks} LARGE_PNG=DELIVERED OLD_RECEIPT=READ_ONLY BILLING=INDEPENDENT RAW_CHECKPOINT=RECOVERED OWNER_GUARD=PASS UNKNOWN_REPLAY=0 FORMAT_PARTIAL=HONEST RECOVERY_CHARGE=ONCE HUB_REVIEW=PAUSED LOOPBACK_POSTS=${calls} REAL_SUPPLIER_CALLS=0`);
  }finally{app.closeAllConnections();await new Promise<void>(r=>app.close(()=>r()));await db.getPool().end();await f.cleanup();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

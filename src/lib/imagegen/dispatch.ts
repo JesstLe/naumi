@@ -16,7 +16,7 @@ import type {ImagegenPlan,ImagegenRequest,ImagegenResult} from "./types";
 import { imageOutputNotice, presentImagegenOutput, legacyRatioWarning } from "./output-advisory";
 import { plainGeneratedOutput } from "./receipt-policy";
 import { storedImageReview, IMAGE_REVIEW_MESSAGE } from "../image-job-review";
-import { storedDeliveryState } from "./stored-delivery";
+import { storedDeliveryState, recoverStoredDelivery } from "./stored-delivery";
 type Parent={status:string;result:ImagegenResult;fingerprint:string;children:Record<string,{state:"starting"|"submitted"|"done";jobId?:string;ids?:string[]}>};
 const jobs=new DurableImageJobs<Parent>("imagegen");
 class NotAccepted extends Error{}
@@ -158,6 +158,12 @@ export async function readImagegenReceipt(operationId:string,owner:string):Promi
 export async function getImagegenResult(operationId:string,owner:string):Promise<ImagegenResult|null>{
  const id=parentId(operationId);if((await jobs.owner(id))!==owner.toLowerCase())return null;
  const saved=await jobs.get(id,false);if(!saved)return null;
+ // Active result polls finish proven stored bytes, never a new supplier request.
+ // readImagegenReceipt above remains strictly read-only.
+ if(["error","needs_attention"].includes(saved.status)){
+  const recovery=await storedDeliveryState(id,owner);
+  if(recovery?.available||recovery?.ids&&!recovery.complete)try{await recoverStoredDelivery(id,owner);}catch{/* Preserve the original checkpoint on a leased/failing delivery. */}
+ }
  const review=await presentPendingReview(id,owner,saved);if(review)return review;
  if(!["done","error","needs_attention"].includes(saved.status))await resumeImagegen(id);
  const current=(await jobs.get(id,false))!;

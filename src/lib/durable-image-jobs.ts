@@ -92,7 +92,9 @@ export class DurableImageJobs<T extends { status: string }> {
     };
     if (!context) return update();
     const next = context.queue.then(update);
-    context.queue = next;
+    // Return this failure to its caller, but do not poison subsequent checkpoint
+    // writes (including the delivery retry and its final receipt).
+    context.queue = next.catch(() => {});
     await next;
   }
   async settle(id: string, cost: number|BillingResult, reason: string) {
@@ -103,10 +105,18 @@ export class DurableImageJobs<T extends { status: string }> {
     const row=await repository.getImageJob(id,this.kind);
     await this.settle(id,row?.payload.billingQuote?result:legacyCost,reason);
   }
-  /** A failed request ends. Retrying is a fresh explicit user action, never an automatic paid POST. */
+  /** A confirmed asynchronous task is queried by its frozen ID, not resubmitted.
+   * Unknown acceptance is never converted into permission for another paid POST. */
   async handlePending(id: string, error: ImageOperationPending) {
     const saved = await this.get(id, false) as (T & Record<string, any>) | undefined;
     if (!saved || ["done", "error"].includes(saved.status)) return;
+    if(dbEnabled&&currentModelExecution("image")&&(await getPool().query("SELECT to_regclass('app_supplier_calls') AS name")).rows[0]?.name&&Number(saved.supplierQueryResumes||0)<3&&Date.now()-Number(saved.createdAt||0)<600_000){
+      const known=await getPool().query(`SELECT 1 FROM app_supplier_calls WHERE operation_id=$1
+        AND task_id IS NOT NULL AND state IN ('submitted','processing','running','completed','success','succeeded') LIMIT 1`,[id]);
+      if(known.rowCount&&await recoverableChannelIdentity(getPool(),currentModelExecution("image"),error.operationId)){
+        await this.patch(id,{status:"pending",error:undefined,supplierQueryResumes:Number(saved.supplierQueryResumes||0)+1} as unknown as Partial<T>);return;
+      }
+    }
     if (dbEnabled && await repository.failUndeliveredImageJob(id, execution.getStore()?.token || null, "image-result-unavailable")) return;
     await this.patch(id, {status:"error",error:"本次未取得完整图片，请重试"} as unknown as Partial<T>);
   }
@@ -240,7 +250,8 @@ async function recoverDurableImageJobsLocal(): Promise<number> {
     return result.ok;
   },()=>console.error("[image-queue] worker dispatch failed; retained for next scan"));
   const {recoverImagegenBatches}=await import("./imagegen/batch");
-  return count+await recoverImagegenBatches();
+  const {recoverStoredDeliveries}=await import("./imagegen/stored-delivery");
+  return count+await recoverImagegenBatches()+await recoverStoredDeliveries();
 }
 
 export async function recoverDurableImageJobs():Promise<number> {

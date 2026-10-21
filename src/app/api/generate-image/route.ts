@@ -730,6 +730,8 @@ type Job = {
   error?: string;
   imagegenOutputError?:string;
   imagegenOutputWarning?:string;
+  deliveryAttempts?:number;
+  deliveryFailure?:{stage:string;name:string;code:string};
   createdAt: number;
   sourceUrl?: string | null;
   /** 质量审计:请求档 vs 实际执行档与回退原因(通道不支持时回退默认档)。 */
@@ -773,9 +775,11 @@ async function runJob(
   defaultModel: string,
   userProvider: { baseUrl: string; apiKey: string; model: string } | null,
   useDb: boolean,
-  cost: number
+  cost: number,
+  deliveryAttempt = 0
 ) {
   let billingSettled = false;
+  let deliveryStage = "supplier-result";
   try {
     const saved = await JOBS.get(jobId);
     const priorNotice = imageOutputNotice(saved?.imagegenOutputError, saved?.imagegenOutputWarning, !!saved?.images?.length);
@@ -784,7 +788,11 @@ async function runJob(
     let images: GeneratedImage[];
     if (saved?.images?.length) images = saved.images;
     else {
-    if (imageModel.provider === "user-chat-completions" && userProvider) {
+    if(deliveryAttempt>0){
+      const checkpoint=saved&&storedDeliveryCheckpoint(saved);
+      if(!checkpoint?.allDone)throw Error("原结果交付检查点缺失");
+      images=checkpoint.images as GeneratedImage[];
+    } else if (imageModel.provider === "user-chat-completions" && userProvider) {
       images = await JOBS.paidOperation(jobId, "flow:" + userProvider.model, { id: jobId }, () => newApiFlowImages(p, userProvider.model, {
         baseUrl: userProvider.baseUrl,
         apiKey: userProvider.apiKey,
@@ -836,6 +844,7 @@ async function runJob(
         platformFunded: !userProvider,
       } }));
     }
+    deliveryStage = "output-processing";
     const scope = currentModelExecution("image"), post = scope?.businessOption?.postprocess;
     const ratioPolicy = scope ? imageRatioValidationPolicy(scope.supplierRouting ? scope.supplierRouting.targets.map(target => target.scope.connection) : [scope.connection]) : undefined;
     let nativeRatioChecked = false;
@@ -867,9 +876,11 @@ async function runJob(
       imagegenOutputWarning ||= images.map(image => imageRatioWarning(p.ratio, image, ratioPolicy)).find(Boolean);
     }
     images = images.map((image, index) => ({ ...image, id: `art-${jobId}-${index}` }));
+    deliveryStage = "storage";
     images = await persistToStorage(images);
     // Keep quality notices with the original result without rejecting delivery.
     // Recovery must not re-POST a paid image to chase a preferred ratio.
+    deliveryStage = "image-checkpoint";
     await JOBS.patch(jobId, { images, imagegenOutputError, imagegenOutputWarning });
     }
     // Persist the first uploaded source image so "再次生成" can restore it.
@@ -905,6 +916,7 @@ async function runJob(
           title: p.templatePrompt || p.prompt,
         }).catch(() => null);
       }
+        deliveryStage = "artworks";
         await addArtworks(
           p.email,
           images.map((im) => ({
@@ -934,6 +946,7 @@ async function runJob(
         );
       // 按提交时的单张报价结算；部分成功和后续配置变化不会重算价目。
       const actualCost = userProvider ? 0 : images.length * (cost / p.count);
+      deliveryStage = "settlement";
       await JOBS.settleResults(jobId, actualCost, `生成 ${images.length} 张图`,{state:"succeeded",items:images.map(image=>({id:image.id,state:"succeeded",executedQuality:image.execution?.quality||p.quality||"medium",platformFunded:image.execution?.platformFunded}))});
       billingSettled = true;
       user = await getUser(p.email).catch(() => null);
@@ -949,6 +962,7 @@ async function runJob(
     const executedQualities = images.map(image => image.execution?.quality || p.quality || p.qualityDefault || "medium");
     const quality = saved?.quality ? { ...saved.quality, executed: new Set(executedQualities).size > 1 ? "mixed" : executedQualities[0], executedQualities,
       fallbackReason: images.some(image => image.execution?.reason === "provider-fallback") ? "provider-fallback" : images.some(image => image.execution?.reason === "quality-downgrade") ? "upstream-unsupported" : saved.quality.fallbackReason } : undefined;
+    deliveryStage = "final-receipt";
     await JOBS.set(jobId, {
       status: "done",
       images,
@@ -973,8 +987,18 @@ async function runJob(
       return;
     }
     const retained = await JOBS.get(jobId, false);
-    if(retained&&storedDeliveryCheckpoint(retained)){
-      await JOBS.patch(jobId,{status:"error",error:"图片保存未完成，请重试"});return;
+    const checkpoint=retained&&storedDeliveryCheckpoint(retained);
+    if(checkpoint){
+      // Do not log raw messages: they may contain prompts, URLs or credentials.
+      const failure={stage:deliveryStage,name:e instanceof Error?e.name:"Error",code:String((e as {code?:unknown})?.code||"DELIVERY_FAILED").replace(/[^A-Za-z0-9_-]/g,"").slice(0,64)};
+      console.error("[generate-image] delivery failed",JSON.stringify({jobId,...failure,attempt:deliveryAttempt+1}));
+      await JOBS.patch(jobId,{deliveryAttempts:deliveryAttempt+1,deliveryFailure:failure});
+      if(deliveryAttempt<2&&checkpoint.allDone){
+        await new Promise(resolve=>setTimeout(resolve,250*(deliveryAttempt+1)));
+        // The retry branch reads only stored bytes, bypassing every supplier call.
+        return runJob(jobId,p,apiKey,imageModel,cutoutModel,defaultModel,userProvider,useDb,cost,deliveryAttempt+1);
+      }
+      await JOBS.patch(jobId,{status:"error",error:"图片已生成，正在恢复交付"});return;
     }
     if (useDb && !billingSettled) await JOBS.settleResults(jobId, 0, "图片生成失败",{state:"failed",items:[]});
     // 原始上游 message 可能含 openai/gpt/quota 等字样,经 safeError 净化后再落库,

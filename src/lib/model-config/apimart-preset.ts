@@ -128,31 +128,41 @@ export function apimartImagesFetch(scope: ModelExecutionScope, options: Validati
           if(estimate.amountMicros!=null)Object.assign(receipt,{amountMicros:estimate.amountMicros,currency:estimate.currency,status:"estimated",source:"usage-price-snapshot"});
         }
         await ledger.apply(row.id,receipt);
-        if(receipt.actualModel && receipt.actualModel!==c.wireModel) throw new ModelConfigError("MODEL_INCOMPATIBLE","供应商实际返回模型与已冻结模型不符，费用记录保留待核查",422);
+        const deliveryNotices:string[]=[];
+        if(receipt.actualModel && receipt.actualModel!==c.wireModel)deliveryNotices.push("actual-model-differs");
         if(["failed","cancelled","canceled"].includes(receipt.state))return Response.json({error:{message:"APIMart任务失败，费用记录已保留",type:"supplier_failure",billing_status:"task_failed"}},{status:422});
         if(["completed","success","succeeded"].includes(receipt.state)) {
           const urls=raw.data?.result?.images?.flatMap((g:any)=>Array.isArray(g.url)?g.url:[])||[];
-          if(urls.length!==n)throw new Error("APIMart output count mismatch");
-          const data=[];
-          for(const url of urls) {
+          if(!urls.length)throw new Error("APIMart returned no images");
+          if(urls.length!==n)deliveryNotices.push("output-count-differs");
+          const data=[],actualDimensions:{width?:number;height?:number}[]=[];
+          for(const url of urls.slice(0,n)) {
+           try{
             const parsed=new URL(url);
             if(parsed.protocol!=="https:"&&!options.trustedOrigins?.includes(parsed.origin))throw new Error("untrusted image protocol");
             const fetchMedia=overrides?.media||modelEndpointFetch(parsed.origin,options);
-            const response=await fetchMedia(url,{signal:AbortSignal.any([request.signal,AbortSignal.timeout(60000)]),redirect:"error"});
-            if(!response.ok)throw new Error("APIMart image download failed");
-            const bytes=await readBoundedBytes(response,32*1024*1024);
+            let bytes:Buffer|undefined;
+            for(let attempt=0;attempt<2;attempt++)try{
+              const response=await fetchMedia(url,{signal:AbortSignal.any([request.signal,AbortSignal.timeout(30000)]),redirect:"error"});
+              if(!response.ok)throw new Error("APIMart image download failed");
+              bytes=Buffer.from(await readBoundedBytes(response,32*1024*1024));break;
+            }catch(error){if(attempt===1||request.signal.aborted)throw error;}
+            if(!bytes)throw new Error("APIMart image download empty");
             await sharp(bytes,{failOn:"error",limitInputPixels:100_000_000}).resize(1,1).raw().toBuffer();
             const meta=await sharp(bytes).metadata();
             const expected=p?(params.nativeRatio&&params.nativeResolution?p.outputDimensions?.[`${requested.resolution}:${requested.ratio}`]:undefined)
               : "expectedPixels" in params ? params.expectedPixels : undefined;
             if(expected&&(meta.width!==expected.width||meta.height!==expected.height))
-              throw new ModelConfigError("MODEL_INCOMPATIBLE","实际输出像素不符合已核验原生规格，结果需核查",422);
+              deliveryNotices.push("actual-pixels-differ");
+            actualDimensions.push({width:meta.width,height:meta.height});
             data.push({b64_json:bytes.toString("base64")});
+           }catch(error){if(request.signal.aborted)throw error;deliveryNotices.push("output-download-incomplete");}
           }
+          if(!data.length)throw new Error("APIMart no decodable output downloaded");
           // Supplier completion is not yet customer delivery. A polling worker
           // may update the receipt, but only this pixel/download acceptance can
           // authorize billing for the output. No image URLs or prompt persist.
-          await ledger.pool.query("UPDATE app_supplier_calls SET parameters=parameters || $2::jsonb WHERE id=$1",[row.id,JSON.stringify({acceptedOutputs:data.length,preparation:scope.frozen.feature==="image.aplus"&&unit.includes(":source:")})]);
+          await ledger.pool.query("UPDATE app_supplier_calls SET parameters=parameters || $2::jsonb WHERE id=$1",[row.id,JSON.stringify({acceptedOutputs:data.length,actualDimensions,deliveryNotices:[...new Set(deliveryNotices)],preparation:scope.frozen.feature==="image.aplus"&&unit.includes(":source:")})]);
           recordBillingUsage(receipt.usage,files.length>0);
           return Response.json({created:Math.floor(Date.now()/1000),data,usage:receipt.usage});
         }

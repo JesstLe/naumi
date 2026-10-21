@@ -9,13 +9,14 @@ async function main() {
   const wrongPixels = await sharp({create:{width:128,height:256,channels:4,background:"white"}}).png().toBuffer();
   const tasks = new Map<string, {model:string; mode:string; n:number}>();
   const posts: any[] = [], gets: string[] = [], direct: any[] = [];
-  let uploads=0, checks=0, origin="";
+  let uploads=0, checks=0, origin="", transientDownloads=0;
   const f = await createModelFixture(async(req,res)=>{
     try {
       const url=new URL(req.url!,origin);
       if(url.pathname.startsWith("/media/")) {
         assert.equal(req.headers.authorization,undefined,"media must never receive supplier credentials");
         const mode=url.pathname.split("/")[2];
+        if(mode==="transient"&&transientDownloads++===0){res.statusCode=503;return res.end("try download again");}
         return res.end(mode==="corrupt"?Buffer.from("not an image"):mode==="pixels"?wrongPixels:png);
       }
       assert.match(String(req.headers.authorization),/^Bearer fixture-/);
@@ -108,13 +109,20 @@ async function main() {
     const key=channelOperationKey(family,"family-success")!;await f.sql.query("DELETE FROM app_model_channel_operations WHERE operation_key=$1",[key]);assert.ok(await recoverableChannelIdentity(f.sql,family,"family-success"));checks++;
     const raceStart=posts.length;const races=await Promise.allSettled(Array.from({length:6},()=>run(balanced,"balanced-race")));assert.ok(races.some(r=>r.status==="fulfilled"));assert.equal(posts.length,raceStart+1,"competing suppliers cannot double-submit");checks++;
     // Unknown/invalid outputs must retain task+cost evidence and never fall back.
-    for(const mode of ["lost","missing","http","identity","model","count","pixels","corrupt"]) {
+    for(const mode of ["lost","missing","http","identity","corrupt"]) {
       // These are independent fault scenarios in this test's private schema.
       // A prior mode's real circuit cooldown must not suppress the next mode's
       // initial POST and make the assertion depend on test-machine speed.
       await f.sql.query("DELETE FROM app_model_channel_health");
       const start=posts.length;await pending(()=>run(family,`bad-${mode}`,mode));await pending(()=>run(family,`bad-${mode}`,mode));
       assert.equal(posts.length,start+1);assert.equal(direct.length,0);assert.equal((await row(`bad-${mode}`))[0].parameters.acceptedOutputs,undefined);checks++;
+    }
+    for(const mode of ["model","count","pixels","transient"]){
+      await f.sql.query("DELETE FROM app_model_channel_health");
+      const start=posts.length,response=await run(family,`bad-${mode}`,mode);assert.equal(response.status,200);
+      const body=await response.json();assert.equal(body.data.length,1);await sharp(Buffer.from(body.data[0].b64_json,"base64")).metadata();
+      await run(family,`bad-${mode}`,mode);assert.equal(posts.length,start+1);assert.equal(direct.length,0);
+      const kept=(await row(`bad-${mode}`))[0];assert.equal(kept.parameters.acceptedOutputs,1);if(mode!=="transient")assert.ok(kept.parameters.deliveryNotices.length);else assert.equal(transientDownloads,3);checks++;
     }
     const failed=await run(family,"terminal-failed","failed");assert.equal(failed.status,422);assert.equal(direct.length,0);assert.ok(await recoverableChannelIdentity(f.sql,family,"terminal-failed"));checks++;
     const lossKey=channelOperationKey(family,"bad-lost")!;await f.sql.query("DELETE FROM app_model_channel_operations WHERE operation_key=$1",[lossKey]);assert.ok(await recoverableChannelIdentity(f.sql,family,"bad-lost"));await pending(()=>run(family,"bad-lost","lost"));checks++;
@@ -139,6 +147,19 @@ async function main() {
     assert.equal(await recoverableAPIMartImageOperation(f.sql,family,"family-success"),true);
     assert.equal(await recoverableAPIMartImageOperation(f.sql,family,"no-marker"),false);
     assert.equal(await recoverableAPIMartImageOperation(f.sql,family,"not-charged"),false,"synchronous fallback is not async recovery");checks++;
+    // A durable task with a confirmed task ID continues querying; marker-only
+    // and expired tasks never acquire permission for a second paid submission.
+    const {DurableImageJobs}=await import("../src/lib/durable-image-jobs");
+    const durable=new DurableImageJobs<any>("generate");
+    await db.getOrCreateUser("async-delivery@fixture.test");
+    await durable.create("async-receipt-fixture","async-delivery@fixture.test",{status:"pending",createdAt:Date.now(),paidOperations:{"family-success":{state:"started",replayable:true}}},{},0,false);
+    await f.sql.query("UPDATE app_supplier_calls SET operation_id='async-receipt-fixture',state='processing' WHERE billing_unit_id='family-success'");
+    const postCount=posts.length;
+    await runModelExecution(family,()=>durable.handlePending("async-receipt-fixture",new ImageOperationPending("family-success",Error("query deadline"))));
+    assert.equal((await durable.get("async-receipt-fixture"))?.status,"pending");
+    await durable.patch("async-receipt-fixture",{supplierQueryResumes:3});
+    await runModelExecution(family,()=>durable.handlePending("async-receipt-fixture",new ImageOperationPending("family-success",Error("query deadline"))));
+    assert.equal((await durable.get("async-receipt-fixture"))?.status,"error");assert.equal(posts.length,postCount);checks++;
     const good=(await row("direct-success"))[0];assert.equal(good.parameters.acceptedOutputs,1);assert.equal(good.amount_micros,"10000");assert.equal(good.cost_status,"reported");assert.equal(Number(good.model_version),snapshot.version);checks++;
     assert.ok((await f.sql.query("SELECT count(*)::int n FROM app_supplier_cost_jobs WHERE kind='task'")).rows[0].n>0);checks++;
     const {createSupplierLedger}=await import("../src/lib/supplier-cost/repository");
@@ -149,7 +170,7 @@ async function main() {
     await f.sql.query("UPDATE app_supplier_cost_jobs SET due_at=now()-interval '1 second' WHERE key=$1",[`task:${badPixels.id}`]);
     const workerPosts=posts.length;
     const worker=await runSupplierCostWorker(createSupplierLedger(f.sql),{batch:1,fetcher:async(input,init)=>{const req=new Request(input,init);assert.equal(req.method,"GET");assert.equal(new URL(req.url).origin,origin);return fetch(req);}});
-    assert.equal(worker.processed,1);assert.equal(posts.length,workerPosts);assert.equal((await row("bad-pixels"))[0].parameters.acceptedOutputs,undefined,"cost Worker cannot authorize undelivered pixels");checks++;
+    assert.equal(worker.processed,1);assert.equal(posts.length,workerPosts);assert.equal((await row("bad-pixels"))[0].parameters.acceptedOutputs,1,"cost Worker preserves decoded delivered pixels");checks++;
     const sixteen=new FormData();sixteen.set("prompt","success:sixteen");for(let i=0;i<16;i++)sixteen.append("image",new File([png],`ref-${i}.png`,{type:"image/png"}));const sixteenUploads=uploads;assert.equal((await edit("sixteen-references",sixteen)).status,200);assert.equal(uploads,sixteenUploads+16);assert.equal(posts.at(-1).image_urls.length,16);checks++;
     console.log('APIB_REFERENCE_TRANSPORT=PASS INPUT_FILES=16 UPLOADS=16 WIRE_IMAGE_URLS=16 REAL_PAID_API_CALLS=0');
     console.log(`PASS APIMart async images: ${checks} checks; direct/family routing, legacy Router freeze, explicit parameters, task pin/CAS, concurrent suppliers, GET-only disabled recovery, marker-only hold, lost/ambiguous response, receipt identity/model/count/pixels/decode, uploads/mask, cost and acceptedOutputs gates`);
