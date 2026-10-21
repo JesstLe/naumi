@@ -15,6 +15,28 @@ def settled_media_observation(row, instance, boot):
 
 
 class BiController(ctl.Controller):
+    def __init__(self, tx, config):
+        super().__init__(tx, config)
+        # Retain private stderr for failed read-only preservation queries rather
+        # than repeatedly retrying an opaque HOST_COMMAND_FAILED wrapper.
+        original = tx.run
+        def observed(args, *, stdin=None, timeout=120):
+            if 'psql' not in args or not stdin or b'materialized_roots_values' not in stdin:
+                return original(args, stdin=stdin, timeout=timeout)
+            import subprocess,uuid
+            started=time.monotonic()
+            try:
+                result=subprocess.run(args,input=stdin,capture_output=True,timeout=timeout)
+            except subprocess.TimeoutExpired:
+                tx.save('snapshot-timeout-'+uuid.uuid4().hex+'.json',{'timeout':timeout,'seconds':time.monotonic()-started})
+                raise
+            tx.save('snapshot-command-'+uuid.uuid4().hex+'.json',{'exit':result.returncode,'seconds':time.monotonic()-started,'bytes':len(result.stdout)})
+            if result.returncode:
+                tx.save('snapshot-failure-'+uuid.uuid4().hex+'.private.txt',result.stderr)
+                raise RuntimeError('PRESERVATION_QUERY_FAILED_PRIVATE_EVIDENCE_SAVED')
+            return result.stdout
+        tx.run=observed
+
     def sql(self, query):
         raw = self.tx.run(['docker','exec','-i',self.db['id'],'psql','-XqAt','-v','ON_ERROR_STOP=1','-U',self.de['POSTGRES_USER'],'-d',self.de['POSTGRES_DB']],
             stdin=("BEGIN READ ONLY;SET LOCAL statement_timeout='15s';"+query+'COMMIT;').encode(),timeout=60)
