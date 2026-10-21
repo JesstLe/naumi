@@ -18,12 +18,22 @@ export function modelChainPresentation(calls: ModelCallEvidence[]) {
 }
 
 /** Projection excludes URLs, credentials, request bodies and supplier receipt payloads. */
-export const MODEL_CALL_EVIDENCE_SQL = `SELECT wanted.id AS root_id,c.id,c.email,c.operation_id,c.frontend_model_id,c.frontend_model_label,c.wire_model,c.response_model,
+export const MODEL_CALL_EVIDENCE_SQL = `WITH wanted AS MATERIALIZED (
+    SELECT * FROM unnest($1::text[],$2::text[]) AS w(id,email)
+  ), operation_ids AS MATERIALIZED (
+    SELECT id AS root_id,email,id AS operation_id FROM wanted WHERE NOT $3::boolean
+    UNION
+    SELECT w.id,w.email,k.operation_id FROM wanted w
+    JOIN app_image_jobs j ON j.id=w.id AND j.email=w.email
+    CROSS JOIN LATERAL jsonb_object_keys(CASE WHEN jsonb_typeof(j.snapshot->'paidOperations')='object' THEN j.snapshot->'paidOperations' ELSE '{}'::jsonb END) k(operation_id)
+    WHERE NOT $3::boolean
+  ), matched AS MATERIALIZED (
+    SELECT w.id AS root_id,c.* FROM wanted w JOIN app_bi_model_calls c ON c.id=w.id AND c.email=w.email WHERE $3::boolean
+    UNION ALL
+    SELECT o.root_id,c.* FROM operation_ids o JOIN app_bi_model_calls c ON c.email=o.email AND c.operation_id=o.operation_id WHERE NOT $3::boolean
+  ) SELECT c.root_id,c.id,c.email,c.operation_id,c.frontend_model_id,c.frontend_model_label,c.wire_model,c.response_model,
   COALESCE((SELECT jsonb_agg(jsonb_build_object('requestModel',s.model,'responseModel',COALESCE(s.actual_model,''),
     'state',s.state,'provider',s.provider_id,'phase',s.phase,'source',COALESCE(s.evidence->>'source','')) ORDER BY s.started_at,s.id)
     FROM (SELECT model,actual_model,state,provider_id,phase,evidence,started_at,id FROM app_supplier_calls
       WHERE bi_call_id=c.id AND user_email=c.email ORDER BY started_at,id LIMIT 100) s),'[]'::jsonb) AS model_attempts
-  FROM app_bi_model_calls c JOIN unnest($1::text[],$2::text[]) AS wanted(id,email)
-    ON c.email=wanted.email AND (($3::boolean AND c.id=wanted.id) OR (NOT $3::boolean AND (c.operation_id=wanted.id OR EXISTS (
-      SELECT 1 FROM app_image_jobs j WHERE j.email=wanted.email AND j.id=wanted.id
-        AND jsonb_typeof(j.snapshot->'paidOperations')='object' AND (j.snapshot->'paidOperations') ? c.operation_id))))`;
+  FROM matched c`;
