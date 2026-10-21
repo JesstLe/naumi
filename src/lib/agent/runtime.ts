@@ -1,4 +1,5 @@
 
+import { streamDiagnostic } from "./stream-recovery";
 import { agentRestrictionMessage } from "./public-status";
 import {createModelActivityTracker,type PublicModelPhase} from "./model-activity";
 import { publicToolDetails } from "./tool-presentation";
@@ -115,6 +116,7 @@ export type Session = {
   }[];
   running: boolean;
   canvasExecuting?: boolean;
+  textOnlyContinuation?: boolean;
   pendingQuotes?: Map<string,Pick<BillingQuote,"configVersion"|"requestedCredits">>;
   preparedBilling?: {billingVersion:number;billingCredits:number;billingOperationId:string};
   preparedImagegen?:import("../imagegen/types").ImagegenPlan;
@@ -311,6 +313,7 @@ async function createRuntimeSession(
     options?.canvas, session.harness,
   );
   session.harness.configure(describeNaumiTools(tools));
+  let modelRequestedAt = 0;
   const agent = new Agent({
     initialState: {
       systemPrompt: buildAgentSystemPrompt(AGENT_SYSTEM_PROMPT, "", latestUserText({ messages: savedHistory })),
@@ -318,7 +321,7 @@ async function createRuntimeSession(
       tools,
       messages: conversationMessages(savedHistory,managed?.wireModel||modelId),
     },
-    streamFn: (model, context, options) => { session.harness.requireActive(); return models.streamSimple(model, context, { ...options, fetch: managed?.fetch || supplierCostFetch(fetch,{providerId:'legacy-agent',baseUrl:model.baseUrl,protocol:'openai-chat',wireModel:model.id,actor:{userEmail:email,feature:'agent.text'}}), maxRetries: 0 }); },
+    streamFn: (model, context, options) => { session.harness.requireActive(); modelRequestedAt = Date.now(); return models.streamSimple(model, context, { ...options, fetch: managed?.fetch || supplierCostFetch(fetch,{providerId:'legacy-agent',baseUrl:model.baseUrl,protocol:'openai-chat',wireModel:model.id,actor:{userEmail:email,feature:'agent.text'}}), maxRetries: 0 }); },
     toolExecution: "sequential",
     transformContext: async messages => {
       // Personal workflows and artwork metadata stay outside the system role.
@@ -327,6 +330,7 @@ async function createRuntimeSession(
     },
     // 积分预检:工具执行前查余额,不足直接拦截(硬门禁,不靠提示词自觉)
     beforeToolCall: async ({ toolCall, args, context }) => {
+      if (session.textOnlyContinuation) return { block: true, terminate: true, reason: "本次仅继续输出文字，不执行工具" };
       try { await assertAgentToolAccess(email, toolCall.name, options ? "canvas" : "workbench", new Request("http://internal", { headers: { cookie: session.cred.cookie, authorization: session.cred.authorization } })); session.harness.check(toolCall.name, args); }
       catch (error) {
         const failure = error instanceof HarnessError ? error : new HarnessError("ARGUMENT_INVALID");
@@ -434,7 +438,7 @@ async function createRuntimeSession(
         if (message.model && message.provider !== "naumi-local") void recordBiModelCompletion({
           email, operation: "agent", operationId: sessionId,
           model: message.model, responseModel: message.responseModel,
-          state: message.stopReason === "error" ? "agent-error" : message.stopReason === "aborted" ? "agent-aborted" : message.stopReason === "deferred" ? "agent-deferred" : "agent-completed",
+          state: message.stopReason === "error" ? "agent-error" : message.stopReason === "aborted" ? "agent-aborted" : message.stopReason === "deferred" ? "agent-deferred" : message.stopReason === "length" ? "agent-incomplete" : "agent-completed",
           durationMs: modelStartedAt ? Date.now() - modelStartedAt : 0,
           inputTokens: message.usage?.input, outputTokens: message.usage?.output,
           execution: modelExecutionTelemetry(scope),
@@ -449,6 +453,7 @@ async function createRuntimeSession(
           })
           .join("")
           .trim();
+        push("model_stream_end", { ...streamDiagnostic(event.message as any, text.length), elapsedMs: modelRequestedAt ? Math.max(0, Date.now() - modelRequestedAt) : 0, turnId: session.turnId });
         if (text) push("assistant", { text, turnId: session.turnId });
         void persistAgentSession(session).catch(()=>undefined);
       }
@@ -572,7 +577,7 @@ export async function persistAgentSession(session: Session): Promise<void> {
     return content ? [{ role: message.role, content: session.harness.publicText(content, message.role === "assistant") }] : [];
   });
   const steps = session.events
-    .filter((event) => ["harness","plan","tool_start","tool_end","attention","canvas_turn","image_skill","artifacts","video_nodes","text_nodes","agent_start","agent_end","canvas_terminal","assistant","canvas_reply","error"].includes(event.type))
+    .filter((event) => ["harness","plan","tool_start","tool_end","attention","canvas_turn","image_skill","artifacts","video_nodes","text_nodes","agent_start","agent_end","canvas_terminal","assistant","canvas_reply","model_stream_end","error"].includes(event.type))
     .map((event) => ({ ...event.data, type: event.type, at: event.at }));
   await saveAgentSession(
     session.email,

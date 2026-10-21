@@ -51,6 +51,7 @@ export async function readHarnessBody(request: Request): Promise<Record<string, 
   boundedJson(body, HARNESS_LIMITS.requestBytes, "INPUT_INVALID");
   for (const key of ["message", "sessionId", "anchorId", "projectKey", "turnId", "imageModelId", "id", "title", "action", "mode", "ratio", "resolution", "quality", "videoNodeId", "textNodeId"]) if (body[key] !== undefined && typeof body[key] !== "string") throw new HarnessError("INPUT_INVALID");
   if (typeof body.message === "string" && body.message.length > HARNESS_LIMITS.messageChars) throw new HarnessError("INPUT_INVALID");
+  if (body.continueText !== undefined && typeof body.continueText !== "boolean") throw new HarnessError("INPUT_INVALID");
   for (const key of ["history", "messages"]) if (body[key] !== undefined) validateHarnessHistory(body[key]);
   for (const key of ["images", "contextIds"]) if (body[key] !== undefined && (!Array.isArray(body[key]) || body[key].length > 6 || !(body[key] as unknown[]).every(x => typeof x === "string" && x.length < 2048))) throw new HarnessError("INPUT_INVALID");
   return body;
