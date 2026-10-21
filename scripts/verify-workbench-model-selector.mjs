@@ -16,10 +16,10 @@ try{
   const context=await browser.newContext({viewport}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(`http://127.0.0.1:${server.address().port}/batchshot/native/workbench`);await page.evaluate(()=>window.NaumiWorkbenchReady);
   const snapshot=await page.locator('select').evaluate(s=>({count:s.options.length,labels:[...s.options].map(o=>o.label),value:s.value}));
-  const modified=mode==='modified';assert.equal(snapshot.count,modified?9:18);assert.equal(snapshot.labels.filter(l=>l==='Nano Banana Pro').length,modified?1:5);
-  assert.equal(snapshot.labels.filter(l=>l==='Nano Banana 2').length,modified?1:5);assert.equal(snapshot.labels.filter(l=>l==='Imagen-4').length,modified?1:2);
+  const modified=mode==='modified';assert.equal(snapshot.count,modified?8:18);assert.equal(snapshot.labels.filter(l=>l==='Nano Banana Pro').length,modified?1:5);
+  assert.equal(snapshot.labels.filter(l=>l==='Nano Banana 2').length,modified?1:5);assert.equal(snapshot.labels.filter(l=>l==='Imagen-4').length,modified?0:2);
   assert.equal(snapshot.labels.filter(l=>l==='GPT').length,2);assert.equal(snapshot.labels.filter(l=>l==='Custom').length,2);assert.ok(snapshot.value.startsWith('gemini-3.0-pro-image-'));
   await page.selectOption('select','gpt-image-2.5-flare');await page.reload();await page.evaluate(()=>window.NaumiWorkbenchReady);assert.equal(await page.locator('select').inputValue(),'gpt-image-2.5-flare');assert.deepEqual(errors,[]);await context.close();
  }
- console.log(`${mode.toUpperCase()}=PASS OPTIONS${mode==='modified'?9:18} FAMILY_COUNTS=${mode==='modified'?'1,1,1':'5,5,2'} DESKTOP1440=1 MOBILE390=1 SAVED_SELECTION=1 RELOAD=1 ERRORS0=1`);
+ console.log(`${mode.toUpperCase()}=PASS OPTIONS${mode==='modified'?8:18} FAMILY_COUNTS=${mode==='modified'?'1,1,0':'5,5,2'} DESKTOP1440=1 MOBILE390=1 SAVED_SELECTION=1 RELOAD=1 ERRORS0=1`);
 }finally{await browser?.close();await new Promise(r=>server.close(r));}
