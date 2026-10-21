@@ -1,4 +1,4 @@
-# 2026-10-21 管理后台查询性能（实施中）
+# 2026-10-21 管理后台查询性能（已蓝绿发布并完成筛选验收）
 
 ## 基线与边界
 - 独立 codex/admin-query-performance-20261021，基线48d1445e；共享checkout/他人未提交保持。
@@ -29,3 +29,16 @@
 - 真实React生产bundle/T3浏览器：BI旧慢响应晚到不覆盖新页；模型库摘要首读/完整编辑/完整导出/原revision保留、0写入通过。
 - 线上docker exec node只读探测曾exit143，未据此声称应用OOM/重启；只读核实容器running/OOMKilled=false/RestartCount0，改用DB psql限时读事务完成SQL测量。
 - 既有图片交付窗口已COMPLETE rev501，owner继续持短事务恢复既有图片。本模块尚未部署，不并行切流。
+
+
+## 2026-10-21 实际发布
+- release47-admin-query-20261021 COMPLETE / canonical544；程序4ec60ef5aace48f4e41e4f4da3c5faae8a3d6f38 / build1792565197；Web/Worker同80f3885d6526…；旧r3双槽已排空停止，逆向网关/固定旧镜像/可读DB备份回滚检查PASS，未实际切回、未回灌DB。
+- 模型132/billing8与冻结配置哈希保持；历史2未结事件保持，不把本次后台提速当生图供应商故障修复。
+- 第一轮公网23主要读取HTTP200/24–367ms；最终同源HTTP样本18–317ms，总览164ms、用户77ms、作品128ms、模型管理269ms、旧用户63ms。指标为当次样本，不承诺所有负载/所有任意查询恒定延时。
+- 31组公网分页/空搜索/空页/完整模型配置读取通过，最慢空搜索调用记录818ms。模型库98971→38593bytes，摘要不截断总数；编辑/导出完整详情仍保留。
+- 尾部精确保护先HOLD：2笔旧任务pending→done/预占释放，2笔APIB供应记录补actualDimensions/deliveryNotices。逐笔下载解码、作品关联/单笔12和6积分结算证实；仅去掉2输出键后SQL完整frozenDigest分别匹配原值，请求/报价/原通道/任务ID/模型计费版本保持。按原release/原operation UUID继续尾部，未重提任何任务；运维补丁e297b12c不改程序。
+- 完整145组独立PG等价/状态变更、实际副本回滚与145组回退行为通过；完整91页Linux生产build/tsc0。Git已普通合main并推送，发布程序与后继运维文档SHA分别报告。
+- 补充筛选发现operations review/error仍9.492/2.916s，追加精确表达式/partial索引的独立短三锁事务；仍不改程序/入口/任务。不把首页快冒称所有筛选都快。最后结果见output/admin-query-performance-20261021/FINAL_EVIDENCE/filter-index-transaction/VERIFICATION.json。
+
+- 补充索引已COMPLETE：review9492→443ms、error2916→70ms、done110ms、needs_attention291ms、pending113ms，均HTTP200。独立备份/并发索引/完整容器和网关canonical原字节保持证据已回读，三锁释放。查询本身仍原程序，未做第二次程序发布。
+- final-status-closure追加单独核验记录：原失败与rollback-pending原值完整保留到reconciledFailure和私有旧journal证据；在原publication/operation均ACK、实际preservationReview通过、旧槽停止和回滚check通过后，明确闭合旧错误标记，不创建新程序publication。

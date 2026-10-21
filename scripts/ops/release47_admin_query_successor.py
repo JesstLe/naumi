@@ -20,10 +20,10 @@ class AdminQueryController(ImageDeliveryController):
  def maintenance_and_import(self):
   # Parent run() has already saved a readable pg_dump under these same locks.
   require(self.succ['operations'].get('database-backup',{}).get('phase')=='ACKNOWLEDGED','READABLE_BACKUP_BEFORE_INDEXES')
-  script=pathlib.Path(__file__).parent/'migrations'/'20261021-admin-query-indexes.sql'
-  require(script.is_file(),'REVIEWED_INDEX_SCRIPT_REQUIRED')
+  scripts=[pathlib.Path(__file__).parent/'migrations'/name for name in ['20261021-admin-query-indexes.sql','20261021-admin-query-filter-indexes.sql']]
+  require(all(script.is_file() for script in scripts),'REVIEWED_INDEX_SCRIPT_REQUIRED')
   result=self.tx.run(['docker','exec','-i',self.db['id'],'psql','-XqAt','-v','ON_ERROR_STOP=1',
-   '-U',self.de['POSTGRES_USER'],'-d',self.de['POSTGRES_DB']],stdin=script.read_bytes(),timeout=270)
+   '-U',self.de['POSTGRES_USER'],'-d',self.de['POSTGRES_DB']],stdin=b'\n'.join(script.read_bytes() for script in scripts),timeout=510)
   self.tx.save('ADMIN_INDEX_INSTALL.txt',result)
   super().maintenance_and_import()
 
