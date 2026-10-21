@@ -1,6 +1,8 @@
 "use client";
 import { updateAssistantTimeline, restoreAssistantTimeline, type AssistantTimelineTurn } from "@/lib/canvas/assistant-timeline";
 import { CachedImage } from "@/components/cached-image";
+import { ImageReferenceThumbnail } from "./image-reference-thumbnail";
+import { insertImageMention, remapImageMentions } from "@/lib/canvas/image-mentions";
 import { browserImageArchive } from '@/lib/browser-image-archive';
 import { cachedImageBlob, imageCacheSource, ImageCacheDenied, readBrowserImage } from '@/lib/browser-image-cache';
 import { useFeatureAccess, FeatureVisible } from "@/lib/feature-access/client";
@@ -2398,9 +2400,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     onConfirm: () => void;
   } | null>(null);
 
+  const extraPreviewUrlsRef = useRef(new Set<string>());
   useEffect(() => {
-    return () => extraPreviews.forEach((u) => URL.revokeObjectURL(u));
+    const next = new Set(extraPreviews);
+    extraPreviewUrlsRef.current.forEach(url => { if (!next.has(url)) URL.revokeObjectURL(url); });
+    extraPreviewUrlsRef.current = next;
   }, [extraPreviews]);
+  useEffect(() => () => extraPreviewUrlsRef.current.forEach(url => URL.revokeObjectURL(url)), []);
 
   function pickExtra(list: FileList | null) {
     if (!list) return;
@@ -3519,6 +3525,36 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     [selectedPend, active]
   );
 
+  // Number the exact visible/submitted order, including appended uploads.
+  const referenceDraftScope = useRef(imageDraft.key);
+  const referenceOrder = JSON.stringify(selectedPend
+    ? pendInputArts.map(art => `art:${art.id}`)
+    : referenceDraftScope.current === imageDraft.key
+      ? [...visibleDockRefs.map(art => `art:${art.id}`), ...extraPreviews.map(src => `upload:${src}`)]
+      : dockRefs.map(art => `art:${art.id}`));
+  const previousMentionOrder = useRef(new Map<string, string[]>());
+  useEffect(() => {
+    const keys = JSON.parse(referenceOrder) as string[];
+    if (!imageDraft.key) return;
+    const previous = previousMentionOrder.current.get(imageDraft.key);
+    previousMentionOrder.current.set(imageDraft.key, keys);
+    if (previous) setEditPrompt(value => remapImageMentions(value, previous, keys));
+    // Draft setters are scoped to the current node; only reference identity/order triggers remapping.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [referenceOrder, imageDraft.key]);
+
+  function insertReferenceMention(number: number) {
+    if (readOnly) return;
+    const area = selectedPend ? pendPromptRef.current : promptAreaRef.current;
+    if (!area) return;
+    const inserted = insertImageMention(area.value, area.selectionStart, area.selectionEnd, number, locale === "en");
+    setEditPrompt(inserted.value);
+    requestAnimationFrame(() => {
+      if (area !== (selectedPend ? pendPromptRef.current : promptAreaRef.current)) return;
+      area.focus(); area.setSelectionRange(inserted.caret, inserted.caret);
+    });
+  }
+
   // 生成中:在选中节点下方临时插入"生成中"占位节点;
   // 选中时:整条血缘链路点亮(蓝色流光),其余节点/连线变暗。
   const { displayNodes, displayEdges } = useMemo<{
@@ -4185,6 +4221,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (selected?.id) setGenerationMode("standard");
     setRatioMenuOpen(false);
     setGenError(null);
+    referenceDraftScope.current = imageDraft.key;
     setExtraFiles([]);
     setExtraPreviews([]);
     setHiddenRefIds([]);
@@ -11213,66 +11250,20 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               {/* dbody:风格/标记/聚焦 chips + 引用图 + 提示词(对齐原型 .cz-dock .dbody) */}
               <div data-composer-body="true" className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
                 <div className="mb-3 flex flex-wrap items-center gap-2">
-                  {/* 引用图:上一级父节点的图(本节点由此生成);多输入则全部显示。
-                      悬停右上角"×"可移除(改用自己上传的参考图) */}
-                  {visibleDockRefs.map((ref) => (
-                    <div
-                      key={ref.id}
-                      className="group relative h-[46px] w-[46px] flex-none overflow-hidden rounded-[9px] border border-[var(--canvas-ui-border)]"
-                    >
-                      <button
-                        type="button"
-                        title={ref.title}
-                        onClick={() =>
-                          setLightbox({ src: ref.image, alt: ref.title })
-                        }
-                        className="block h-full w-full"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <CachedImage
-                          src={cdnUrl(ref.image)}
-                          alt={ref.title}
-                          className="h-full w-full object-cover"
-                        />
-                      </button>
-                      {!readOnly && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setHiddenRefIds((prev) =>
-                              prev.includes(ref.id) ? prev : [...prev, ref.id]
-                            )
-                          }
-                          aria-label={t("canvas.removeImage")}
-                          className="absolute right-0 top-0 flex h-4 w-4 items-center justify-center rounded-bl-md bg-black/65 text-white opacity-0 transition-opacity group-hover:opacity-100"
-                        >
-                          <X className="h-2.5 w-2.5" />
-                        </button>
-                      )}
-                    </div>
+                  {visibleDockRefs.map((ref, index) => (
+                    <ImageReferenceThumbnail key={ref.id} src={cdnUrl(ref.image)} title={ref.title}
+                      number={index + 1} english={locale === "en"}
+                      onInsert={readOnly ? undefined : () => insertReferenceMention(index + 1)}
+                      onPreview={() => setLightbox({ src: ref.image, alt: ref.title })}
+                      onRemove={readOnly ? undefined : () => setHiddenRefIds(previous => [...previous, ref.id])} />
                   ))}
-                  {!readOnly &&
-                    extraPreviews.map((src, i) => (
-                      <div
-                        key={i}
-                        className="relative h-[46px] w-[46px] flex-none overflow-hidden rounded-[9px] border border-[var(--canvas-ui-border)]"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <CachedImage
-                          src={src}
-                          alt={`ref ${i + 1}`}
-                          className="h-full w-full object-cover"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeExtra(i)}
-                          aria-label={t("canvas.removeImage")}
-                          className="absolute right-0 top-0 flex h-4 w-4 items-center justify-center rounded-bl-md bg-black/65 text-white"
-                        >
-                          <X className="h-2.5 w-2.5" />
-                        </button>
-                      </div>
-                    ))}
+                  {!readOnly && extraPreviews.map((src, index) => (
+                    <ImageReferenceThumbnail key={src} src={src} title={extraFiles[index]?.name || ""}
+                      number={visibleDockRefs.length + index + 1} english={locale === "en"}
+                      onInsert={() => insertReferenceMention(visibleDockRefs.length + index + 1)}
+                      onPreview={() => setLightbox({ src, alt: extraFiles[index]?.name || "" })}
+                      onRemove={() => removeExtra(index)} />
+                  ))}
                   {!readOnly && (
                     <>
                       <input
@@ -11440,24 +11431,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
              kind="image" heading={L("图片生成", "Image generation")} onDismiss={() => setSelectedPendId(null)} closeLabel={L("关闭创作栏", "Close composer")}>
               <div data-composer-body="true" className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
                 <div className="mb-3 flex flex-wrap items-center gap-2">
-                  {pendInputArts.length > 0 ? (
-                    pendInputArts.map((a) => (
-                      <button
-                        key={a.id}
-                        type="button"
-                        title={a.title}
-                        onClick={() => setLightbox({ src: a.image, alt: a.title })}
-                        className="h-[46px] w-[46px] flex-none overflow-hidden rounded-[9px] border border-[var(--canvas-ui-border)]"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <CachedImage
-                          src={cdnUrl(a.image)}
-                          alt={a.title}
-                          className="h-full w-full object-cover"
-                        />
-                      </button>
-                    ))
-                  ) : null}
+                  {pendInputArts.map((art, index) => (
+                    <ImageReferenceThumbnail key={art.id} src={cdnUrl(art.image)} title={art.title}
+                      number={index + 1} english={locale === "en"}
+                      onInsert={() => insertReferenceMention(index + 1)}
+                      onPreview={() => setLightbox({ src: art.image, alt: art.title })} />
+                  ))}
 
 
                 </div>
