@@ -54,6 +54,9 @@ async function main() {
     assert(broken.some(e=>e.type==="delta"&&e.data.text.includes("配方徽章与")));
     assert(!broken.some(e=>e.type==="done"));
     const history=await saved(id);assert(history.turns.at(-1).content.endsWith("配方徽章与"));
+    const {reduceAssistantTimeline,restoreAssistantTimeline}=await import("../src/lib/canvas/assistant-timeline");
+    const livePartial=broken.reduce((items,event)=>reduceAssistantTimeline(items,{...event.data,type:event.type}),[] as import("../src/lib/canvas/assistant-timeline").AssistantTimelineItem[]);
+    assert.deepEqual(restoreAssistantTimeline(history.turns,history.steps).at(-1)?.timeline,livePartial,"Interrupted public timeline must survive cold history");
     assert.equal(history.status,"failed");
     if (baseline) {
       assert.equal(error.data.code,"PROVIDER");assert.equal(history.continueFromTurnId,undefined);
@@ -67,7 +70,12 @@ async function main() {
     assert.equal((await saved(id)).continueFromTurnId,error.data.continueFromTurnId);
     mode="continue";const resume={sessionId:id,continueText:true,continueFromTurnId:error.data.continueFromTurnId,messages:[]};
     const continued=await send(resume);assert(continued.some(e=>e.type==="done"));assert.match(continued.find(e=>e.type==="final")!.data.reply,/补全后续/);
-    const restored=await saved(id);assert.equal(restored.status,"completed");assert.equal(restored.continueFromTurnId,undefined);assert(restored.turns.some((t:any)=>t.content.endsWith("配方徽章与")));assert.equal(restored.turns.at(-2).content,"继续输出");
+    const restored=await saved(id);
+    const restoredTimeline=restoreAssistantTimeline(restored.turns,restored.steps);
+    assert.equal(restoredTimeline.length,4);assert(restoredTimeline[1].timeline?.some(item=>item.type==="text"&&item.text.includes("配方徽章与")));
+    assert(restoredTimeline[3].timeline?.some(item=>item.type==="text"&&item.text.includes("补全后续")));assert(!restoredTimeline[3].timeline?.some(item=>item.type==="tool"));
+    console.log("RECOVERY_TIMELINE=PASS PARTIAL_HISTORY=EXACT CONTINUED_TEXT=ORDERED OLD_BODY=RETAINED NEW_TOOLS=0");
+    assert.equal(restored.status,"completed");assert.equal(restored.continueFromTurnId,undefined);assert(restored.turns.some((t:any)=>t.content.endsWith("配方徽章与")));assert.equal(restored.turns.at(-2).content,"继续输出");
     const count=modelCalls;assert.equal((await api.POST(request(resume))).status,409);assert.equal(modelCalls,count);
     mode="length";const length=await send(), le=length.findLast(e=>e.type==="error")!;assert.equal(le.data.code,"OUTPUT_LENGTH");assert.equal(le.data.canContinue,true);assert(!length.some(e=>e.type==="done"));
     const lengthId=length.find(e=>e.type==="open")!.data.sessionId;
