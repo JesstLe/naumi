@@ -33,3 +33,8 @@
 - 后继切流后发现老总控 shared-DB drain 会把新槽用户生图计作旧槽未排空，且成功等待后又立刻二次读存在竞态。运维修正仅剔除有新 instance/boot/commit、精确 lease_token/work_key、35秒内心跳的当前新槽 image claims；未知归属、其他任务、事务和 advisory 锁仍保留门禁。保存首次成功的实际排空证据；按已确认操作续执行，不重做切流。
 - upload 候选模拟 createImageBitmap 拒绝，实际DOM fallback上传HTTP200，1536x2048/3047099字节/SHA32432de5...与原始图片完全一致。公网实际上传同字节通过，作品卡片可读取；测试图为本轮生成素材，不是用户私有原图。
 - 运维修正不改变已固定 App 镜像，后续 Git SHA 与运行 source48d1445e分开报告。
+
+## 后继完成（2026-10-21 14:29:37 CST）
+release47-image-delivery-20261021-r3 COMPLETE/canonical501，三锁释放。运行source48d1445e/build1792562346，Web5ec7df2c/13109、Workeraf028da8，同image67ca4a100fa9。旧BI Web/Worker排空停止restart=no；保留失败第一候选及回滚证据。回滚check PASS，没有对最终候选执行生产切回。
+原始保全比较4项告警来自2笔旧槽任务正常完成：旧runJob最终snapshot替换paidOperations为空、正常结算移除reservation。逐笔原冻结digest一致、供应商/报价不变、真实作品原图解码、单账单8/6积分、reservation0核实后，独立reviewed comparison保留原告警并认可正常完成，不修改业务任务或删除原证据。普通缺失任务、账本变化、未知归属继续阻断。
+公网与候选实际上传均HTTP200，1536x2048、3047099字节、SHA32432de5...；画布实际节点1/图解码通过，引用文本保存200，测试作品2和文本2已清理。尚在固定104笔原图交付恢复及最终真实生图验收，完成后补证据。
