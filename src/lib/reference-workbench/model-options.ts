@@ -1,10 +1,12 @@
 import {compactImageModelOptions,imageModelDisplayId,imageModelFamily} from "../image-model-routing";
+import {frontendImageModels} from "../frontend-image-models";
 
 export type WorkbenchModelOption={id:string;label:string;aliases?:string[]};
 const familyKey=(id:string)=>imageModelFamily(id)?imageModelDisplayId(id):id;
 
 /** Presentation only: retain a real public ID; execution still routes by ratio. */
 export function workbenchModelOptions(options:WorkbenchModelOption[]):WorkbenchModelOption[]{
+ options=frontendImageModels(options);
  const seen=new Set<string>();
  return options.flatMap(option=>{
   const key=familyKey(option.id);if(seen.has(key))return [];seen.add(key);

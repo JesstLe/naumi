@@ -14,6 +14,7 @@ import { authenticatedEmail } from "@/lib/request-auth";
 import { betaPreviewEnabled } from "@/lib/commerce";
 import { modelConfigurationEnabled } from "@/lib/model-config/requests";
 import { getModelRuntime } from "@/lib/model-config/server";
+import { frontendImageCatalog } from "@/lib/frontend-image-models";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +30,12 @@ export async function GET(request: Request) {
   const featureCatalog = managed ? await (await getModelRuntime()).publicCatalog("image", "image.generate") : null;
   const defaultModel = featureCatalog?.defaultModelId || managed?.bindings["image.generate"] || managed?.models[0]?.id || imageSettings.model;
   const userDefaultModel = await getUserDefaultImageModel(email);
+  const presentation = frontendImageCatalog({
+    defaultModelId: userDefaultModel || defaultModel,
+    models: managed ? imageModels.filter(m => featureCatalog!.models.some(v => v.id === m.id)).map(m => ({ ...m, ...featureCatalog!.models.find(v => v.id === m.id), provider: "managed" })) : imageModels,
+    bindings: managed?.bindings,
+    bindingCapabilities: managed?.bindingCapabilities,
+  });
   return NextResponse.json({
     db: dbEnabled,
     creditsMetered: dbEnabled ? await creditMeteringEnabled() : true,
@@ -39,14 +46,14 @@ export async function GET(request: Request) {
     // 注册是否需要邮箱验证码(= 多用户 且 站长已配 SMTP);前端据此显示验证码栏。
     emailCode: multiUser && (await smtpConfigured()),
     openai: managed ? !!managed.models.length : (process.env.OPENAI_API_KEY ?? "").length > 0,
-    defaultImageModel: userDefaultModel || defaultModel,
+    defaultImageModel: presentation.defaultModelId || "",
     modelVersion: managed?.version,
-    imageModelBindings: managed?.bindings,
-    imageBindingCapabilities: managed?.bindingCapabilities,
-    imageModels: managed ? imageModels.filter(m => featureCatalog!.models.some(v => v.id === m.id)).map(m => ({ ...m, ...featureCatalog!.models.find(v => v.id === m.id), provider: "managed" })) : imageModels,
+    imageModelBindings: presentation.bindings,
+    imageBindingCapabilities: presentation.bindingCapabilities,
+    imageModels: presentation.models,
     // 出图质量通道能力:上游真实处理 quality 字段时为 true,前端才放开
     // 高档选择;false 时统一按默认档执行(提交前回退,见 src/lib/image-quality.ts)。
-    imageQualityCapable: managed ? !!managed.models.find(m => m.id === defaultModel)?.qualitySupported : imageQualityCapable(),
+    imageQualityCapable: managed ? !!managed.models.find(m => m.id === presentation.defaultModelId)?.qualitySupported : imageQualityCapable(),
     imageQualityExperimental: betaPreviewEnabled,
   });
 }

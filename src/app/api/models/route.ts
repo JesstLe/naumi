@@ -5,6 +5,7 @@ import { getModelRuntime } from "@/lib/model-config/server";
 import { FEATURE_BINDINGS } from "@/lib/model-config/business";
 import { MODEL_BINDINGS } from "@/lib/model-config/bindings";
 import { ModelConfigError } from "@/lib/model-config/types";
+import { frontendImageCatalog } from "@/lib/frontend-image-models";
 export const runtime = "nodejs", dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const feature = new URL(request.url).searchParams.get("feature");
@@ -13,7 +14,9 @@ export async function GET(request: Request) {
     if (!await modelConfigurationEnabled()) return NextResponse.json({ managed: false, feature, models: [] }, { headers: { "cache-control": "no-store" } });
     const binding = FEATURE_BINDINGS[feature];
     if (!binding) return NextResponse.json({ managed: true, feature, supported: false, error: "该操作使用独立处理器，未接入模型选择", models: [] }, { headers: { "cache-control": "no-store" } });
-    const catalog = await (await getModelRuntime()).publicCatalog(MODEL_BINDINGS[binding].modality, feature);
+    const modality = MODEL_BINDINGS[binding].modality;
+    const rawCatalog = await (await getModelRuntime()).publicCatalog(modality, feature);
+    const catalog = modality === "image" ? frontendImageCatalog(rawCatalog) : rawCatalog;
     // Preserve the existing standalone segmentation path when no managed binding
     // owns cutout. Never publish its token or an internal/hidden model name.
     if (feature === "tool.cutout" && !catalog.available) {
