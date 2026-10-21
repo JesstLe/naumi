@@ -40,7 +40,11 @@ export async function browserImageHeader(file:File):Promise<ImageHeader>{
 
 async function decodedImage(file:File){
  if(typeof createImageBitmap==="function"){
-  const bitmap=await createImageBitmap(file,{imageOrientation:"from-image"});return {source:bitmap,width:bitmap.width,height:bitmap.height,close:()=>bitmap.close()};
+  try{
+   // The default already respects EXIF. Older browsers reject the explicit
+   // "from-image" enum; some expose createImageBitmap but cannot decode it.
+   const bitmap=await createImageBitmap(file);return {source:bitmap,width:bitmap.width,height:bitmap.height,close:()=>bitmap.close()};
+  }catch{/* Use the browser's image decoder before reporting an upload failure. */}
  }
  const url=URL.createObjectURL(file),image=new Image();image.src=url;
  try{await image.decode();return {source:image,width:image.naturalWidth,height:image.naturalHeight,close:()=>{image.src="";URL.revokeObjectURL(url);}};}
