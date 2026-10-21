@@ -6,7 +6,8 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 export const dynamic = "force-dynamic";
-export default async function ModelsPage() {
+export default async function ModelsPage({ searchParams }: { searchParams: Promise<{ tab?: string | string[] }> }) {
   await requireAdminPage("/admin/bi/models");
-  return <AdminCenterShell active="model-config"><ModelConfigurationManager /></AdminCenterShell>;
+  const query = await searchParams;
+  return <AdminCenterShell active="model-config"><ModelConfigurationManager initialTab={query.tab === "batch" ? "batch" : undefined} /></AdminCenterShell>;
 }
