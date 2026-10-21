@@ -146,7 +146,7 @@ async function runCanvasAgentLocal(request: Request) {
       cancel = () => { if (closed) return; appendSessionEvent(session,"error",{code:"ABORTED",message:"任务已停止，已受理的图片保留，请勿重复提交"}); appendSessionEvent(session,"canvas_terminal",{status:"stopped",turnId:session.turnId}); session.agent.abort(); cleanup(); closed = true; void failSynchronousStream(); void persistAgentSession(session).catch(()=>undefined); try { controller.close(); } catch {} };
       request.signal.addEventListener("abort", cancel, { once: true });
       if (request.signal.aborted) { cancel(); return; }
-      session.onDelta = text => { output += text; send("delta", { text }); };
+      session.onDelta = text => { flush(); output += text; send("delta", { text }); };
       session.onModelActivity=phase=>send("activity",{phase});
       send("open", { sessionId });
       send("activity",{phase:"processing"});
@@ -180,9 +180,10 @@ async function runCanvasAgentLocal(request: Request) {
           }
           const frames = [...(attention ? [{ type: "attention", data: attention.data }] : []), { type: "final", data: { reply, sessionId } }, ...(artifacts.length ? [{ type: "artifacts", data: { artifacts, anchorId } }] : [])];
           await completeSynchronousStream({ text: reply, model: modelId, agentFrames: frames });
+          appendSessionEvent(session,"canvas_reply",{reply,authoritative:!!pendingAttention,turnId:session.turnId});
           appendSessionEvent(session,"canvas_terminal",{status:pendingAttention?String(attention?.data.kind):"completed",turnId:session.turnId});
           await persistAgentSession(session);
-          send("final", { reply, sessionId }); send("done", { ok: true });
+          send("final", { reply, sessionId, authoritative:!!pendingAttention }); send("done", { ok: true });
         } catch (error) { if (!closed) { const failure=classifyAgentFailure(error); appendSessionEvent(session,"error",failure); appendSessionEvent(session,"canvas_terminal",{status:failure.code==="ABORTED"?"stopped":"failed",turnId:session.turnId}); flush(); send("error", failure); } await failSynchronousStream(); }
         finally { cleanup(); await persistAgentSession(session).catch(()=>undefined); session.canvasExecuting = false; await completeAgentReleaseActivity(session).catch(()=>undefined); if (!closed) { closed = true; controller.close(); } }
       })();

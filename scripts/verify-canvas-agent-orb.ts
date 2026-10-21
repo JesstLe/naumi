@@ -49,7 +49,7 @@ check(canvas.includes('if(type==="done" && data.ok===true)completed=true;'));
 check(canvas.includes('const aborted = controller.signal.aborted || failureCode === "ABORTED"'));
 check(canvas.includes('setAssistantOutcome(aborted ? "stopped" : "error")'));
 check(canvas.includes('setAssistantOutcome(restoredOrbOutcome(data.session))'));
-check(canvas.includes('tool:String(data.tool || "")'));
+check(canvas.includes('setAssistantSteps(current => reduceAgentProgress(current, { ...data, type }, locale === "en"));'));
 const floating = readFileSync("src/components/canvas/canvas-agent-orb.tsx", "utf8");
 for (const token of ['Math.hypot(dx, dy) < 6', 'setPointerCapture', 'onPointerCancel', 'onLostPointerCapture', 'ResizeObserver', 'orbPositionKey(email)', 'data-canvas-hotkeys-blocked="true"', 'event.detail !== 0', 'ArrowLeft', 'controls="canvas-agent-panel"']) check(floating.includes(token));
 check(!floating.includes('requestAnimationFrame') && !floating.includes('fetch('));

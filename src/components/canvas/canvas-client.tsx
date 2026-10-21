@@ -1,4 +1,5 @@
 "use client";
+import { updateAssistantTimeline, restoreAssistantTimeline, type AssistantTimelineTurn } from "@/lib/canvas/assistant-timeline";
 import { CachedImage } from "@/components/cached-image";
 import { browserImageArchive } from '@/lib/browser-image-archive';
 import { cachedImageBlob, imageCacheSource, ImageCacheDenied, readBrowserImage } from '@/lib/browser-image-cache';
@@ -1441,7 +1442,7 @@ function lineageChain(
 }
 
 // 画布助手的一轮对话(user/assistant 纯文本;assistant 内容可含 [[GEN]]…[[/GEN]] 生图块)
-type AssistantTurn = { id: string; role: "user" | "assistant"; content: string; artifacts?: {id:string;image:string;title:string}[] };
+type AssistantTurn = AssistantTimelineTurn;
 
 // 画布助手上下文:锚定节点 + 上游祖先(BFS 近者优先),最多 5 张(与后端 MAX_CONTEXT_IMAGES 对齐)
 function assistantContext(members: Artwork[], anchorId: string): Artwork[] {
@@ -5116,7 +5117,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           setAssistantAttachments(data.session.referenceIds.map((refId:string)=>restored.find(art=>art.id===refId)).filter((art:Artwork|undefined):art is Artwork=>!!art));
           setAssistantExcludedReferences(assistantContext(restored,data.session.anchorId||"").filter(art=>!data.session.referenceIds.includes(art.id)).map(art=>art.id));
         }
-        setAssistantTurns(data.session.turns);
+        setAssistantTurns(restoreAssistantTimeline(data.session.turns, data.session.steps || [], locale === "en"));
         let steps: AgentOrbStep[] = [];
         const historySteps=data.session.steps||[], currentTurn=historySteps.findLastIndex((step:{type:string})=>step.type==="canvas_turn");
         for (const step of historySteps.slice(Math.max(0,currentTurn))) steps = reduceAgentProgress(steps, step, locale === "en", !!data.session.running);
@@ -5259,6 +5260,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           const type = evLine.slice(7).trim();
           const data = JSON.parse(dataLine.slice(6)) as Record<string, unknown>;
           setAssistantActivity(current=>receiveAssistantActivity(current,type,data,Date.now()));
+          if (["delta", "assistant", "tool_start", "tool_end", "attention", "artifacts", "final"].includes(type)) setAssistantTurns(current => updateAssistantTimeline(current, { ...data, type }, locale === "en"));
           if(type==="open"){serverSessionId=String(data.sessionId||acceptedSession);assistantLiveSessionId.current=serverSessionId;}
           if(type==="done" && data.ok===true)completed=true;
           if (type === "attention") {
