@@ -106,31 +106,7 @@ async function main(){
   check((await repository.dueImageJobs()).some(j=>j.id==='parent-lane'),'parent lane not starved by full child lane');
   await finish(full as ImageJobRow[]);
   const parent=await repository.claimImageJob('parent-lane','imagegen');check(!!parent,'separate parent lane claims');await finish([parent!]);
-  const {DurableImageJobs}=await import('../src/lib/durable-image-jobs'),gateway=await import('../src/lib/image-gateway');
-  const tasks=new DurableImageJobs<any>('generate');await tasks.create('capacity-queued','queue@local.test',{status:'pending'},{},0,false);
-  let queued:unknown;
-  try{await tasks.paidOperation('capacity-queued','direct-model',{id:'capacity-queued',managedGateway:false},async()=>{throw gateway.localImageCapacityQueue()})}catch(e){queued=e}
-  check(queued instanceof gateway.ImageOperationQueued&&queued.unsubmitted,'actual durable paid operation retains typed zero-dispatch queue');
-  await tasks.handlePending('capacity-queued',queued as any);
-  const saved=await tasks.get('capacity-queued',false);check(saved.status==='pending'&&saved.queueState==='capacity'&&saved.paidOperations['capacity-queued'].state==='queued','capacity wait not failed/charged/unknown');
-  const result=await tasks.paidOperation('capacity-queued','direct-model',{id:'capacity-queued',managedGateway:false},async()=> 'local-result');check(result==='local-result','same operation resumes after capacity becomes available');
-  const heldProvider=await Promise.all(Array.from({length:8},()=>cap.acquire(old)));
-  try{
-   const client=new OpenAI({apiKey:'local-only',baseURL:f.origin+'/v1',maxRetries:0,fetch:capacityFetch(async()=>{posted++;return Response.json({data:[]})},f.sql,old)});
-   await assert.rejects(gateway.withImageOperation('direct',{id:'sdk-capacity',durable:true},()=>client.images.generate({model:'direct',prompt:'local fixture'})),(e:any)=>e instanceof gateway.ImageOperationQueued&&e.unsubmitted);checks++;
-   const {channelRoutingFetch}=await import('../src/lib/model-config/channel-fetch');
-   const original=await f.repo.current(),u=original.config.upstreamModels[0],p=original.config.providers[0];
-   const target:any={upstreamId:'u1',enabled:true,priority:1,weight:1,scope:{frozen:{...frozen,modelVersion:original.version,modelDigest:original.digest,facts:{...frozen.facts,references:0,needsEdit:false}},connection:{...old,apiKey:'local-only',protocol:'openai-images',wireModel:u.model},capabilities:u.capabilities,parameterMap:u.parameterMap}};
-   const scope:any={...target.scope,connection:{...target.scope.connection,protocol:'supplier-channels'},supplierRouting:{policy:{mode:'priority',channels:[{upstreamId:'u1',enabled:true,priority:1,weight:1}]},targets:[target]}};
-   const routedClient=new OpenAI({apiKey:'local-only',baseURL:f.origin+'/v1',maxRetries:0,fetch:channelRoutingFetch(scope,{trustedOrigins:[f.origin]})});
-   await assert.rejects(gateway.withImageOperation('image-a',{id:'sdk-routing-capacity',durable:true},()=>routedClient.images.generate({model:'image-a',prompt:'local fixture'})),(e:any)=>e instanceof gateway.ImageOperationQueued&&e.unsubmitted);checks++;
-   check(Number((await f.sql.query('SELECT count(*) n FROM app_model_channel_operations')).rows[0].n)===0,'local queue never pins or accepts a supplier operation');
-  }finally{await Promise.all(heldProvider.map(l=>l.release()))}
-  await gateway.withImageOperation('model',{id:'siblings',durable:true},async()=>{
-   const q=await gateway.withImageIndex('model',0,async()=>gateway.localImageCapacityQueue());
-   await gateway.withImageIndex('model',1,async()=>gateway.noteImageSupplierDispatch());
-   check(q instanceof gateway.ImageOperationQueued&&!q.unsubmitted&&!gateway.localImageCapacityQueue(),'one sibling dispatch prevents whole root from being resubmitted');
-  });
+  // Capacity rejection and explicit retry are verified by verify-image-capacity-queue-route.ts.
   check(posted===0,'no accidental model HTTP call');
   latencies.sort((a,b)=>a-b);loop.disable();
   console.log('IMAGE_ROUTING_RELIABILITY=PASS CHECKS='+checks+' USERS=1000 HTTP_ACCEPTED=1000 DRAINED=1000 DUPLICATE_COMPLETIONS=0 ACTIVE_LEASE_PEAK=8 STALE_TOKEN_REJECTED=1 SUPPLIER_CALLS=0');

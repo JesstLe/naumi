@@ -12,7 +12,7 @@ export function generationDisplayProgress(stage: GenerationStage, seconds: numbe
 }
 
 export function generationProgressHint(stage: GenerationStage, seconds: number, english = false) {
-  if(stage==="queued")return english?"Your task is saved and will start when capacity is available":"任务已保存，有空闲通道后自动开始，请勿重复提交";
+  if(stage==="queued")return english?"Preparing request":"正在准备请求";
   if (stage === "preparing") return english ? "Preparing your images and prompt" : "正在准备素材与提示词";
   if (stage === "saving") return english ? "Adding the result to your canvas" : "正在将结果放入画布";
   if (seconds >= 180) return english ? "Still generating · your task is active" : "仍在生成中，完成后自动呈现";

@@ -1,7 +1,7 @@
 require('tsx/cjs');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict'),ts=require('typescript');
 const root=process.cwd(),sourceRoot=path.resolve(process.argv[2]||root),baseline=process.argv.includes('--baseline'),out=path.resolve(process.env.FEEDBACK_TEST_OUT||'output/canvas-generation-feedback47-20261019');
-const {ImagegenHttpError,ImagegenPreparationCancelled}=require(root+'/src/lib/imagegen/http.ts');const helpers=require(root+'/src/lib/canvas/generation-failure.ts');
+const {ImagegenHttpError,ImagegenPreparationCancelled}=require(root+'/src/lib/imagegen/http.ts');const helpers=require(sourceRoot+'/src/lib/canvas/generation-failure.ts');
 const {imageOutputWarningText}=require(root+'/src/lib/imagegen/output-advisory.ts');
 const source=fs.readFileSync(sourceRoot+'/src/components/canvas/canvas-client.tsx','utf8'),ast=ts.createSourceFile('canvas.tsx',source,99,true,4),functions={};
 function visit(n){if(ts.isFunctionDeclaration(n)&&['runGen','generatePend','checkGenerationReceipt'].includes(n.name?.text))functions[n.name.text]=n.getText(ast);ts.forEachChild(n,visit)}visit(ast);
@@ -15,23 +15,12 @@ function setup(scenario){const src={id:'source',image:'/media/source.png',prompt
  c.fetch=async()=>{state.reads++;if(scenario==='stored-recovery'&&!state.restored)return Response.json({status:'error',operationStatus:'needs_attention',recoveryAvailable:true,error:'原结果待恢复'});if(scenario==='poll-transient'&&!state.recover)throw Error('network');if(scenario==='partial-error')return Response.json({status:'error',operationStatus:'failed',error:'部分结果已保留',images:[{id:'result',url:'/media/result.png'}]});if(scenario==='needs-review')return Response.json({status:'error',operationStatus:'needs_attention',reviewRequired:true,error:'任务待核查'});if(scenario==='malformed-query')return new Response('<html>502</html>',{status:502});if(scenario==='terminal-failed'&&!state.recover)return Response.json({status:'error',operationStatus:'failed',error:'本次生成失败'});return Response.json({status:'done',warnings:scenario==='ratio-warning'?['图片已生成，实际尺寸 640×640，比例与所选 3:4 有差异；已保留完整画面']:undefined,images:[{id:'result',url:'/media/result.png',width:640,height:640}]})};
  c.privateFetchRaw=async(url,options)=>{if(url==='/api/imagegen/recover-delivery'){state.recoveryPosts++;assert.equal(JSON.parse(options.body).operationId,'00000000-0000-4000-8000-000000000001');state.restored=true;return Response.json({ok:true})}state.positions++;return Response.json({ok:true})};c.expectJsonOk=async r=>{assert.ok(r.ok);return r.json()};c.mergeWorks=async()=>scenario==='sync-missing'&&!state.recover?[src]:state.artifacts;
  vm.createContext(c);vm.runInContext(code,c);return{c,state};}
-(async()=>{const rows=[];for(const kind of ['runGen','generatePend'])for(const scenario of ['reference-fails','prepare-rejected','submit-unknown','poll-transient','terminal-failed','sync-missing','partial-error','needs-review','malformed-query','done','ratio-warning','stored-recovery']){
+(async()=>{let cases=0;for(const kind of ['runGen','generatePend'])for(const scenario of ['reference-fails','prepare-rejected','submit-unknown','poll-transient','terminal-failed','sync-missing','partial-error','needs-review','malformed-query','done','ratio-warning','stored-recovery']){
  const {c,state}=setup(scenario);if(kind==='runGen')await c.runGen(c.source,'fixture',{ratio:'3:4'});else await c.generatePend();
+ assert.equal(c.generationOperationRef.current.size,0,kind+' '+scenario+' releases action lock');
  const item=kind==='runGen'?c.generationTasks[0]:c.pendNodes[0],failure=kind==='runGen'?item?.failure:item?.generationFailure;
- if(!baseline){if(['done','ratio-warning'].includes(scenario)){assert.equal(kind==='runGen'?c.generationTasks.length:c.pendNodes.length,0);assert.equal(state.clears,1);if(scenario==='ratio-warning'){assert.ok(state.notices.some(n=>n.includes('640×640')));assert.ok(state.error==null);assert.equal(state.post,1)}}else{assert.ok(failure,kind+' '+scenario+' must retain outcome');const expected=['reference-fails','prepare-rejected'].includes(scenario)?'not-started':scenario==='terminal-failed'?'failed':['sync-missing','partial-error'].includes(scenario)?'sync':'uncertain';assert.equal(failure.kind,expected);assert.equal(c.generationOperationRef.current.size,helpers.generationFailureBlocks(failure)?1:0);if(scenario==='reference-fails')assert.equal(state.post,0);
- if(scenario==='stored-recovery'){assert.equal(failure.kind,'uncertain');assert.equal(state.recoveryPosts,0);const check=kind==='runGen'?item.onCheck:item.onGenerationCheck;c.canvasAccountRef.current='other';await check();assert.equal(state.recoveryPosts,0);c.canvasAccountRef.current='fixture-account';await check();assert.equal(state.recoveryPosts,1);assert.equal(state.post,1);assert.equal(kind==='runGen'?c.generationTasks.length:c.pendNodes.length,0);await check();assert.equal(state.post,1)}
- if(scenario==='partial-error'){const before=state.post;await (kind==='runGen'?item.onCheck:item.onGenerationCheck)();assert.equal(state.post,before);assert.equal((kind==='runGen'?c.generationTasks[0].failure:c.pendNodes[0].generationFailure).kind,'failed');assert.equal(c.generationOperationRef.current.size,0);}
- if(['poll-transient','sync-missing'].includes(scenario)){const before=state.post;state.recover=true;const check=kind==='runGen'?item.onCheck:item.onGenerationCheck;assert.equal(typeof check,'function');c.canvasAccountRef.current='other';await check();assert.equal(state.post,before);c.canvasAccountRef.current='fixture-account';await check();assert.equal(state.post,before,'recheck must never submit');assert.equal(kind==='runGen'?c.generationTasks.length:c.pendNodes.length,0);assert.equal(c.generationOperationRef.current.size,0);}
- }}else{if(kind==='runGen')assert.equal(c.generationTasks.length,0);assert.equal(failure,undefined);}
- if(kind==='runGen'&&scenario==='needs-review'){
-  const old=c.generationTasks[0],oldKey=old.operationKey,before=state.post;
-  await c.runGen(c.source,'new explicit edit',{ratio:'3:4'});
-  assert.equal(state.post,before+1);assert.equal(c.generationTasks.length,2);
-  assert.notEqual(c.generationTasks[1].operationKey,oldKey);
-  const after=state.post;await old.onCheck();assert.equal(state.post,after);
-  assert.ok(c.generationOperationRef.current.has(c.generationTasks[1].operationKey));
- }
- rows.push({kind,scenario,failure:failure?.kind||null,submissionCalls:state.post,queryCalls:state.reads,cleared:state.clears});
- }
- fs.mkdirSync(out,{recursive:true});fs.writeFileSync(out+'/function-matrix.json',JSON.stringify(rows,null,2));console.log((baseline?'BASELINE':'MODIFIED')+'=PASS ACTUAL_FUNCTION_CASES='+rows.length+' FAILURE_NODE='+(baseline?'DISAPPEARS':'RETAINED')+' RATIO_WARNING=DELIVERED STORED_RECOVERY=OWNER_CHECKED UNKNOWN_REPLAY=0 SUPPLIER_CALLS=0');
-})().catch(e=>{console.error(e);process.exitCode=1});
+ if(['done','ratio-warning'].includes(scenario)){assert.equal(kind==='runGen'?c.generationTasks.length:c.pendNodes.length,0);assert.equal(failure,undefined)}
+ else{assert.equal(failure.kind,['reference-fails','prepare-rejected'].includes(scenario)?'not-started':['sync-missing','partial-error'].includes(scenario)?'sync':'failed');assert.equal(typeof(kind==='runGen'?item.onRetry:item.onGenerationRetry),'function');assert.equal(item.onCheck,undefined);assert.equal(item.onGenerationCheck,undefined)}
+ if(['needs-review','submit-unknown'].includes(scenario)){const before=state.post;await(kind==='runGen'?item.onRetry:item.onGenerationRetry)();assert.equal(state.post,before+1);assert.equal(kind==='runGen'?c.generationTasks.length:c.pendNodes.length,1,'retry replaces failure instead of keeping another card');}
+ cases++;
+}console.log('CANVAS_FAILURE=PASS CASES='+cases+' LOCKS_AFTER_FAILURE=0 OLD_CHECKS=0 RETRY_REPLACES_FAILURE=1 SUPPLIER_CALLS=0');})().catch(e=>{console.error(e);process.exitCode=1});

@@ -1,0 +1,6 @@
+require('tsx/cjs');
+const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict'),{createRequire}=require('node:module');
+const root=process.cwd(),sourceRoot=path.resolve(process.argv[2]||root),file=path.join(root,'scripts/verify-canvas-generation-failure.cjs');
+const h={require:createRequire(file),process:{cwd:()=>root,argv:['node','test',sourceRoot],env:{}},console,AbortSignal,Response,File,FormData,Blob,setTimeout};
+vm.createContext(h);vm.runInContext(fs.readFileSync(file,'utf8').split('(async()=>{let cases=0;')[0]+';globalThis.setup=setup;',h);
+(async()=>{const {c,state}=h.setup('needs-review');await c.runGen(c.source,'fixture');const item=c.generationTasks[0];console.log(`FAILURE_LOCKS=${c.generationOperationRef.current.size} OLD_CHECK=${typeof item.onCheck} RETRY=${typeof item.onRetry}`);assert.equal(c.generationOperationRef.current.size,0,'failed action must release its lock');assert.equal(item.onCheck,undefined);assert.equal(typeof item.onRetry,'function');await item.onRetry();assert.equal(state.post,2);assert.equal(c.generationTasks.length,1);assert.equal(c.generationOperationRef.current.size,0);console.log('REMOVAL=PASS LOCKS=0 OLD_CHECKS=0 FAILURE_REPLACED=1 EXPLICIT_POSTS=2 SUPPLIER_CALLS=0')})().catch(e=>{console.error(e);process.exitCode=1});

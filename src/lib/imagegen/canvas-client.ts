@@ -2,7 +2,6 @@
 import {browserRandomUUID} from "../browser-crypto";
 import {imagegenRequestSchema} from "./schema";
 import {previewImagegen,startImagegen,uploadImagegenInput,ImagegenHttpError} from "./client";
-import {canvasReceipts,saveCanvasReceipt,clearCanvasReceipt} from "./canvas-receipts";
 import type {ImagegenRequest} from "./types";
 import {automaticFrameRatio,frameCandidates,frameRatio,FrameRatioChoiceRequired,type FrameInput} from "./frame-ratio";
 import {resolveImagegenIntent} from "./intent";
@@ -13,15 +12,6 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
  let submitting=false;
  try {
  const assertCurrent=()=>{if(scope.isCurrent&&!scope.isCurrent())throw new Error("画布账号或项目已切换，未提交新任务");};assertCurrent();
- const nodeId=String(form.get("imagegenNodeId")||form.get("parentId")||sourceNodeId||"workspace");
- const previous=canvasReceipts(sessionStorage,scope.owner,scope.project).find(r=>r.receipt.nodeId===nodeId);
- if(previous){
-  const selected=String(form.get("model")||"");
-  onPlan?.(previous.receipt.modelId&&previous.receipt.modelId===selected
-   ?"正在检查该节点的原任务，没有再次生成"
-   :"该节点已有未完成的原任务，正在检查原任务；本次未按新选择重新生成");
-  return Response.json({jobId:`imagegen-${previous.receipt.id}`});
- }
  const inputs:ImagegenRequest["inputs"]=[],assets:CanvasFrameChoice[]=[];
  const files=form.getAll("image").filter((file):file is File=>file instanceof File);
  for(const file of files){assertCurrent();const asset=await uploadImagegenInput(file,files.length,assertCurrent);assertCurrent();const input={artworkId:asset.artworkId,role:inputs.length?"reference" as const:"edit-target" as const};inputs.push(input);const original={...asset,width:asset.sourceWidth,height:asset.sourceHeight};assets.push({...original,label:`图片 ${inputs.length}`,ratio:frameRatio(original)||""});}
@@ -51,10 +41,9 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
  if(plan.requestedParameters?.resolution)onPlan?.(plan.warnings.join("\n"));
  if(plan.intent.background==="transparent")onPlan?.(`已识别：透明背景 · ${stages} · ${plan.totalCredits} 积分`);
  if(plan.confirmationRequired&&!window.confirm(`${stages}\n${plan.warnings.join("\n")}\n本次合计 ${plan.totalCredits} 积分，是否执行？`))throw new Error("已取消提交");
- assertCurrent();const key=saveCanvasReceipt(sessionStorage,scope.owner,scope.project,{id:request.operationId,nodeId,sourceNodeId:request.sourceNodeId,modelId:request.modelId,x:Number(form.get("imagegenNodeX")||0),y:Number(form.get("imagegenNodeY")||0)});
- submitting=true;
- try{const result=await startImagegen(request,{billingVersion:plan.billingVersion,modelVersion:plan.modelVersion,credits:plan.totalCredits,confirmed:true});return Response.json({jobId:"jobId" in result?result.jobId:`imagegen-${request.operationId}`});}
- catch(error){if(error instanceof ImagegenHttpError&&error.accepted===false){clearCanvasReceipt(sessionStorage,key,request.operationId);throw error;}onPlan?.("提交回执待核查，正在追踪原任务");return Response.json({jobId:`imagegen-${request.operationId}`});}
+ assertCurrent();submitting=true;
+ const result=await startImagegen(request,{billingVersion:plan.billingVersion,modelVersion:plan.modelVersion,credits:plan.totalCredits,confirmed:true});
+ return Response.json({jobId:"jobId" in result?result.jobId:`imagegen-${request.operationId}`});
  } catch(error) {
   if(error instanceof ImagegenPreparationCancelled)throw error;
   // Upload/plan/storage failures precede the only paid POST. Mark them as

@@ -969,12 +969,12 @@ async function runJob(
     if (e instanceof ImageOperationPending) { await JOBS.handlePending(jobId, e); return; }
     if (e instanceof PostprocessPending) {
       const exhausted = e instanceof PostprocessPending && (await getPool().query("SELECT 1 FROM app_media_postprocess WHERE operation_id=$1 AND attempts>=3",[e.operationId])).rowCount;
-      await JOBS.patch(jobId, { status: exhausted ? "needs_attention" : "pending", error: e.message });
+      await JOBS.patch(jobId, { status: exhausted ? "error" : "pending", error: e.message });
       return;
     }
     const retained = await JOBS.get(jobId, false);
     if(retained&&storedDeliveryCheckpoint(retained)){
-      await JOBS.patch(jobId,{status:"needs_attention",error:"图片已生成，结果保存未完成；请检查原任务恢复，不会重新生成或重复扣费"});return;
+      await JOBS.patch(jobId,{status:"error",error:"图片保存未完成，请重试"});return;
     }
     if (useDb && !billingSettled) await JOBS.settleResults(jobId, 0, "图片生成失败",{state:"failed",items:[]});
     // 原始上游 message 可能含 openai/gpt/quota 等字样,经 safeError 净化后再落库,

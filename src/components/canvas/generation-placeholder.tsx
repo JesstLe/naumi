@@ -2,20 +2,20 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, Image as ImageIcon } from "lucide-react";
-import { generationFailureBlocks, generationFailureMessage, generationFailureTitle, type GenerationFailure } from '@/lib/canvas/generation-failure';
+import { generationFailureMessage, generationFailureTitle, type GenerationFailure } from '@/lib/canvas/generation-failure';
 import { useI18n } from "@/lib/i18n/locale-context";
 import type { GenerationStage } from "@/lib/canvas/generation-feedback";
 import { generationDisplayProgress, generationProgressHint } from "@/lib/canvas/generation-progress";
 import styles from "./generation-placeholder.module.css";
 
-export function GenerationPlaceholder({ stage = "generating", startedAt, count = 1, completed, kind = "image", failure, onCheck }: {
+export function GenerationPlaceholder({ stage = "generating", startedAt, count = 1, completed, kind = "image", failure, onRetry }: {
   stage?: GenerationStage;
   startedAt?: number;
   count?: number;
   completed?: number;
   kind?: "image" | "video";
   failure?: GenerationFailure;
-  onCheck?: () => Promise<void>;
+  onRetry?: () => unknown;
 }) {
   const { locale } = useI18n();
   const english = locale === "en";
@@ -23,6 +23,7 @@ export function GenerationPlaceholder({ stage = "generating", startedAt, count =
   const start = startedAt ?? mountedAt;
   const [now, setNow] = useState(() => Date.now());
   const [checking, setChecking] = useState(false);
+  const retrying=useRef(false);
   useEffect(() => {
     if (failure) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -35,7 +36,7 @@ export function GenerationPlaceholder({ stage = "generating", startedAt, count =
   else displayed.current.percent = Math.max(displayed.current.percent, candidate);
   const percent = displayed.current.percent;
   const labels = english ? ["Prepare", "Generate", "Save"] : ["准备", "生成", "保存"];
-  const current = ["preparing", "generating", "saving"].indexOf(stage);
+  const current = stage === "queued" ? 0 : ["preparing", "generating", "saving"].indexOf(stage);
   const title = kind === "video"
     ? english ? ["Preparing video", "Generating video", "Saving video"] : ["准备生成", "视频生成中", "正在保存"]
     : english ? ["Preparing image", "Generating image", "Saving image"] : ["准备生成", "图片生成中", "正在保存"];
@@ -45,19 +46,10 @@ export function GenerationPlaceholder({ stage = "generating", startedAt, count =
     <AlertTriangle className={styles.failureIcon} aria-hidden="true" />
     <strong className={styles.heading}>{generationFailureTitle(failure, english)}</strong>
     <p className={styles.failureMessage}>{generationFailureMessage(failure)}</p>
-    <p className={styles.hint}>{generationFailureBlocks(failure)
-      ? failure.jobId ? english ? 'Original task kept. Your source image is still usable.' : '原任务已保留，原图仍可继续使用。' : english ? 'Status unconfirmed. Your source image is still usable.' : '结果尚未确认，原图仍可继续使用。'
-      : english ? 'Your prompt is kept. Adjust it and submit when ready.' : '提示词与参数已保留，可调整后再次点击生成。'}</p>
-    {generationFailureBlocks(failure) && failure.jobId && onCheck && <button type="button" disabled={checking}
-      className={`nodrag nopan ${styles.checkButton}`} onClick={event => {
-        event.stopPropagation(); setChecking(true);
-        void Promise.resolve().then(onCheck).catch(() => {}).finally(() => setChecking(false));
-      }}>{checking ? english ? 'Checking…' : '正在检查…' : english ? 'Reload result' : '重新加载'}</button>}
-  </div>;
-  if(stage==="queued")return <div data-testid="generation-placeholder" data-stage="queued" className={styles.root} role="status" aria-live="polite" aria-busy="true">
-    <ImageIcon className={styles.icon} aria-hidden="true"/>
-    <strong className={styles.heading}>{english?"Waiting in queue":"已排队"}</strong>
-    <p className={styles.hint}>{generationProgressHint(stage,seconds,english)}</p>
+    {onRetry && <button type="button" disabled={checking} className={`nodrag nopan ${styles.checkButton}`}
+      onClick={event=>{event.stopPropagation();if(retrying.current)return;retrying.current=true;setChecking(true);void Promise.resolve().then(onRetry).catch(()=>{}).finally(()=>{retrying.current=false;setChecking(false);});}}>
+      {checking?(english?'Retrying…':'正在重试…'):(english?'Retry':'重试')}
+    </button>}
   </div>;
   return <div data-testid="generation-placeholder" data-stage={stage} aria-busy="true"
     data-progress={percent} className={styles.root}>

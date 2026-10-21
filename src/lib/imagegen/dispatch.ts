@@ -63,7 +63,7 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
     return executeImagegenStep(effective,step.key,owner);
     },wasStarting),body=await response.json();
     if(!response.ok){
-     if(body.code==="OPERATION_PENDING"||response.status>=500){await update({status:"needs_attention"},{status:"needs_attention",error:{code:"SUBMISSION_UNKNOWN",message:"上游提交结果待核查，任务保留，不会重复生成"}});return;}
+     if(body.code==="OPERATION_PENDING"||response.status>=500){await update({status:"error"},{status:"failed",error:{code:"SUBMISSION_UNKNOWN",message:"本次生成未完成，请重试"}});return;}
      throw new NotAccepted(body.error||"执行步骤被拒绝");
     }
     child=body.jobId?{state:"submitted",jobId:body.jobId}:{state:"done",ids:body.id?[body.id]:body.images?.map((i:{id:string})=>i.id)||[]};
@@ -71,8 +71,8 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
    }
    if(child!.state==="submitted"){
     const row=(await getPool().query("SELECT email,snapshot FROM app_image_jobs WHERE id=$1 AND kind='generate'",[child!.jobId])).rows[0];
-    if(!row||row.email!==owner){await update({status:"needs_attention"},{status:"needs_attention",error:{code:"CHILD_MISSING",message:"生成任务待核查，不会重复提交"}});return;}
-    if(row.snapshot.status==="needs_attention"){await update({status:"needs_attention"},{status:"needs_attention",error:{code:"CHILD_PENDING",message:row.snapshot.error||"上游结果待核查"}});return;}
+    if(!row||row.email!==owner){await update({status:"error"},{status:"failed",error:{code:"CHILD_MISSING",message:"生成任务读取失败，请重试"}});return;}
+    if(row.snapshot.status==="needs_attention"){await update({status:"error"},{status:"failed",error:{code:"CHILD_PENDING",message:row.snapshot.error||"本次未取得图片，请重试"}});return;}
     if(row.snapshot.status==="error"){
      const attempts=Object.values(row.snapshot.paidOperations||{}) as {state:string}[];
      if(attempts.length&&attempts.every(a=>a.state==="rejected"))throw new NotAccepted(row.snapshot.error||"供应商明确未受理");
@@ -121,7 +121,7 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
 export async function resumeImagegen(id:string){await jobs.kick(id,(payload,snapshot)=>runParent(id,payload,snapshot));}
 async function presentPendingReview(id:string,owner:string,snapshot:Parent):Promise<ImagegenResult|null>{
  if(!["pending","running"].includes(snapshot.status))return null;
- for(const child of Object.values(snapshot.children||{}))if(child.jobId&&await storedImageReview(child.jobId,owner))return {...snapshot.result,status:"needs_attention",error:{code:"SUPPLIER_REVIEW_REQUIRED",message:IMAGE_REVIEW_MESSAGE}};
+ for(const child of Object.values(snapshot.children||{}))if(child.jobId&&await storedImageReview(child.jobId,owner))return {...snapshot.result,status:"failed",error:{code:"EXECUTION_FAILED",message:"本次未取得图片，请重试"}};
  return null;
 }
 /** Receipt lookup cannot claim work or depend on successful scheduling. */
@@ -161,7 +161,7 @@ export async function getImagegenResult(operationId:string,owner:string):Promise
  const review=await presentPendingReview(id,owner,saved);if(review)return review;
  if(!["done","error","needs_attention"].includes(saved.status))await resumeImagegen(id);
  const current=(await jobs.get(id,false))!;
- if(current.status==="error"&&current.result.status!=="failed")return {...current.result,status:"needs_attention",error:{code:"RECOVERY_REQUIRED",message:"任务恢复异常，请联系管理员核查；不会重复提交"}};
+ if(current.status==="error"&&current.result.status!=="failed")return {...current.result,status:"failed",error:{code:"EXECUTION_FAILED",message:"图片加载失败，请重试"}};
  return presentParentOutput(id,owner,current.result);
 }
 export async function submitImagegen(raw:ImagegenRequest,owner:string,confirmation?:{billingVersion:number;credits:number;confirmed:boolean;modelVersion?:number}):Promise<ImagegenResult>{

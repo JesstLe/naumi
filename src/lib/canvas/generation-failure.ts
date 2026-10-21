@@ -5,48 +5,26 @@ export type GenerationFailure = {
   message: string;
   jobId?: string;
 };
-export function generationFailureBlocks(failure?: GenerationFailure) {
-  return failure?.kind === 'uncertain' || failure?.kind === 'sync';
-}
 export function generationFailureMessage(failure: GenerationFailure) {
-  // A generic transport error may suggest resubmission. Once acceptance is
-  // unknown, the UI must only direct the user to the original task instead.
-  return generationFailureBlocks(failure)
-    ? failure.message.replace(/请刷新页面后重试|请稍后重试|请稍后再试/g, '请稍后检查原任务')
-    : failure.message;
+  return /核查|核对|待确认|检查原任务|保留.*任务|不要重复|请勿重复/.test(failure.message)
+    ? '本次未取得图片，请重试' : failure.message;
 }
 export function classifyGenerationFailure(error: unknown, context: {
   attempted: boolean; jobId?: string; terminal?: boolean; hasResults?: boolean;
 }): GenerationFailure {
   const message = error instanceof Error && error.message ? error.message : '生成未完成，请稍后检查';
-  const kind = context.hasResults ? 'sync' : context.terminal ? 'failed'
-    : !context.attempted || error instanceof ImagegenHttpError && error.accepted === false ? 'not-started' : 'uncertain';
+  const kind = context.hasResults ? 'sync' : !context.attempted || error instanceof ImagegenHttpError && error.accepted === false ? 'not-started' : 'failed';
   return { kind, message, jobId: context.jobId };
 }
 /** Never treat a swallowed fetch error / stale artwork list as a displayed result. */
 export function assertGenerationResultsPresent(ids: string[], artworks: { id: string; image?: string }[]) {
   if (!ids.length || ids.some(id => !artworks.some(art => art.id === id && !!art.image))) {
-    throw new Error('结果尚未加载到画布，请检查原任务，不要重复生成');
+    throw new Error('图片加载失败，请重试');
   }
 }
 export function generationFailureTitle(failure: GenerationFailure, english = false) {
   const titles = english
-    ? { 'not-started': 'Generation did not start', failed: 'Generation failed', uncertain: 'Checking task status', sync: 'Result not yet on canvas' }
-    : { 'not-started': '生成未开始', failed: '生成未完成', uncertain: '任务状态待确认', sync: '结果尚未载入画布' };
+    ? { 'not-started': 'Generation did not start', failed: 'Generation failed', uncertain: 'Generation failed', sync: 'Image loading failed' }
+    : { 'not-started': '生成未开始', failed: '生成未完成', uncertain: '生成未完成', sync: '图片加载失败' };
   return titles[failure.kind];
-}
-
-/** An unresolved result owns its receipt, not its reusable input artwork.
- * New explicit actions get a separate lock/receipt key; old checks cannot
- * release the new action's lock or replace its receipt. */
-export function independentGenerationKey(base: string, sourceId: string,
-  tasks: readonly {id:string;sourceId?:string;operationKey?:string;failure?:GenerationFailure}[] = [],
-  nodes: readonly {id:string;parentId?:string|null;operationKey?:string;generationFailure?:GenerationFailure}[] = []) {
-  const active = tasks.find(t => !t.failure && t.sourceId === sourceId);
-  if (active?.operationKey) return active.operationKey;
-  const activeNode = nodes.find(n => 'generating' in n && n.generating && !n.generationFailure && n.parentId === sourceId);
-  if (activeNode?.operationKey) return activeNode.operationKey;
-  const retained = [...tasks.filter(t => generationFailureBlocks(t.failure) && (t.sourceId === sourceId || t.operationKey === base)),
-    ...nodes.filter(n => generationFailureBlocks(n.generationFailure) && n.parentId === sourceId)];
-  return retained.length ? `${base}:after:${retained.map(t=>t.id).sort().join('|')}` : base;
 }

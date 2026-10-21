@@ -6,7 +6,6 @@ import {imagegenRequestSchema} from "../src/lib/imagegen/schema";
 import {normalizeLegacyFrameRequest} from "../src/lib/imagegen/legacy-frame-request";
 import {submitCanvasImagegen} from "../src/lib/imagegen/canvas-client";
 import {ImagegenPreparationCancelled} from "../src/lib/imagegen/http";
-import {canvasReceipts,saveCanvasReceipt} from "../src/lib/imagegen/canvas-receipts";
 
 class MemoryStorage implements Storage {
   values=new Map<string,string>();get length(){return this.values.size;}
@@ -51,11 +50,11 @@ async function main(){
 
   const oldFetch=globalThis.fetch;
   try{
-    for(const scenario of ["same","mixed","explicit","cancel","scope-change","invalid-choice","resume"]){
+    for(const scenario of ["same","mixed","explicit","cancel","scope-change","invalid-choice"]){
       const storage=new MemoryStorage();Object.assign(globalThis,{sessionStorage:storage,window:{localStorage:new MemoryStorage(),confirm:()=>true}});
       let uploads=0,plans=0,posts=0,choices=0,current=true;const payloads:any[]=[];
       const scope={owner:"fixture@example.test",project:"tree:fixture",isCurrent:()=>current,chooseFrame:async(items:{artworkId:string;ratio:string}[])=>{
-        choices++;check(plans===0&&posts===0&&canvasReceipts(storage,scope.owner,scope.project).length===0,"choice precedes plan, paid submit and receipt");
+        choices++;check(plans===0&&posts===0&&storage.length===0,"choice precedes plan, paid submit and receipt");
         check(items.length===2&&items.map(i=>i.ratio).join(",")==="3:4,4:3","choice uses actual layout candidates");
         if(scenario==="cancel")return null;if(scenario==="scope-change")current=false;
         return scenario==="invalid-choice"?"foreign":items[1].artworkId;
@@ -69,16 +68,14 @@ async function main(){
         if(path.endsWith("/plan")){plans++;return Response.json({request:raw,steps:[{operation:"edit"}],intent:{background:null},totalCredits:6,billingVersion:8,modelVersion:125,warnings:[],confirmationRequired:false});}
         posts++;return Response.json({id:raw.operationId});
       };
-      if(scenario==="resume")saveCanvasReceipt(storage,scope.owner,scope.project,{id:crypto.randomUUID(),nodeId:"node-fixture",modelId:"gpt-image-2",x:1,y:2});
       const scenarioFiles=scenario==="same"?files:[files[0],files[1],await image(100,75)];
       const run=submitCanvasImagegen(form(scenario==="explicit"?"9:16":"auto",scenarioFiles),"node-fixture",undefined,scope);
       if(["cancel","scope-change","invalid-choice"].includes(scenario)){
         await assert.rejects(run,error=>scenario!=="cancel"||error instanceof ImagegenPreparationCancelled);cases++;
-        check(posts===0&&plans===0&&canvasReceipts(storage,scope.owner,scope.project).length===0,"dismissal/stale/invalid selection creates no task or receipt");
+        check(posts===0&&plans===0&&storage.length===0,"dismissal/stale/invalid selection creates no task or receipt");
       }else{
         await run;
-        if(scenario==="resume")check(uploads===0&&posts===0&&plans===0&&choices===0,"existing receipt bypasses all preparation and submission");
-        else{
+        {
           check(posts===1&&plans===1&&uploads===3,"one plan and one submit, no repeated uploads");
           check(payloads[0].parameters.ratio===(scenario==="same"?"3:4":scenario==="explicit"?"9:16":"4:3"),"original source consensus or explicit user choice preserved before plan");
           check(payloads[1].parameters.ratio===payloads[0].parameters.ratio&&payloads[1].operationId===payloads[0].operationId,"same user request identity submitted once");
@@ -87,6 +84,6 @@ async function main(){
       }
     }
   }finally{globalThis.fetch=oldFetch;}
-  console.log(`MULTI_REFERENCE_FRAME=PASS CASES=${cases} SAME_RATIO=CONSENSUS MIXED_RATIO=USER_CHOICE LEGACY=DECODED CANCEL_POSTS=0 RESUME_POSTS=0 SUPPLIER_CALLS=0`);
+  console.log(`MULTI_REFERENCE_FRAME=PASS CASES=${cases} SAME_RATIO=CONSENSUS MIXED_RATIO=USER_CHOICE LEGACY=DECODED CANCEL_POSTS=0 AUTOMATIC_RESUME=REMOVED SUPPLIER_CALLS=0`);
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
