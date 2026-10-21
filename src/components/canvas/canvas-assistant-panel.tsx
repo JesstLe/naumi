@@ -169,6 +169,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
       if (keepAtBottom.current && scrollArea.current) scrollArea.current.scrollTop = scrollArea.current.scrollHeight;
     });
     observer.observe(content);
+    if (scrollArea.current) observer.observe(scrollArea.current);
     return () => observer.disconnect();
   }, [open, historyOpen]);
   useEffect(() => {
@@ -237,7 +238,8 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
     <div ref={scrollArea} data-testid="canvas-assistant-scroll" className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:thin] [scrollbar-color:var(--canvas-ui-border)_transparent]"
       onWheel={event => { if (event.deltaY < 0) { keepAtBottom.current = false; setShowScrollToBottom(true); } }}
       onTouchMove={() => { keepAtBottom.current = false; }}
-      onScroll={event => { const el = event.currentTarget; keepAtBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; setShowScrollToBottom(!keepAtBottom.current); }}>
+      onPointerDown={event => { const el = event.currentTarget; if (event.target === el && event.clientX >= el.getBoundingClientRect().right - 16) keepAtBottom.current = false; }}
+      onScroll={event => { const el = event.currentTarget, distance = el.scrollHeight - el.scrollTop - el.clientHeight; keepAtBottom.current = distance <= 4 || (keepAtBottom.current && distance < 80); setShowScrollToBottom(!keepAtBottom.current); }}>
       {historyOpen ? <section className="space-y-2 p-4" aria-label={labels.history}>
         {historyLoading && <p role="status" className="text-[12px]">正在读取历史对话…</p>}
         {historyError && <p role="alert" className="text-[12px]">{historyError}</p>}

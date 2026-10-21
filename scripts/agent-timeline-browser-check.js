@@ -29,6 +29,7 @@
   record('new-tool-auto-follows',scroll().scrollHeight-scroll().scrollTop-scroll().clientHeight<4);
   f.event({type:'delta',text:'工具后面的正文\n'.repeat(25)});await wait();
   record('post-tool-delta-auto-follows',scroll().scrollHeight-scroll().scrollTop-scroll().clientHeight<4);
+  scroll().dispatchEvent(new WheelEvent('wheel',{deltaY:-20,bubbles:true}));scroll().scrollTop-=20;scroll().dispatchEvent(new Event('scroll'));await wait();const slight=scroll().scrollTop;f.event({type:'delta',text:'只上翻一点也不抢位置\n'});await wait();record('small-manual-scroll-up-not-yanked',Math.abs(scroll().scrollTop-slight)<3);
   scroll().dispatchEvent(new WheelEvent('wheel',{deltaY:-300,bubbles:true}));scroll().scrollTop=100;scroll().dispatchEvent(new Event('scroll'));await wait();const before=scroll().scrollTop;
   f.event({type:'delta',text:'仍在输出，但不抢用户阅读位置\n'.repeat(12)});await wait();
   record('manual-scroll-up-not-yanked',Math.abs(scroll().scrollTop-before)<3);
@@ -41,7 +42,7 @@
   record('resize-observer-follows-late-height',scroll().scrollHeight-scroll().scrollTop-scroll().clientHeight<4);
   f.reset();await wait();f.event({type:'delta',text:'等待中'});await wait();
   const input=document.querySelector('[data-testid=canvas-assistant-upload-input]');record('reply-period-add-image-remains-enabled',!input.disabled&&!document.querySelector('button[aria-label="添加图片"]').disabled);
-  const d=new DataTransfer();d.items.add(new File(['fixture'],'next.png',{type:'image/png'}));input.files=d.files;input.dispatchEvent(new Event('change',{bubbles:true}));await wait();record('reply-period-upload-callback-not-dropped',f.uploads===1);
+  const uploadsBefore=f.uploads;const d=new DataTransfer();d.items.add(new File(['fixture'],'next.png',{type:'image/png'}));input.files=d.files;input.dispatchEvent(new Event('change',{bubbles:true}));await wait();record('reply-period-upload-callback-not-dropped',f.uploads===uploadsBefore+1);
   const raw=[{id:'u',role:'user',content:'历史问题'},{id:'a0',role:'assistant',content:'先检查。'},{id:'a1',role:'assistant',content:'历史结论。'}];
   const events=[{type:'canvas_turn',messageIndex:0,message:'历史问题'},{type:'assistant',text:'先检查。'},{type:'tool_start',id:'history',tool:'list_video_nodes',at:1000},{type:'tool_end',id:'history',tool:'list_video_nodes',at:1400},{type:'assistant',text:'历史结论。'},{type:'canvas_reply',reply:'历史结论。'}];
   f.restore(raw,events);await wait();record('cold-history-order',order().join(',')==='text,tool,text');

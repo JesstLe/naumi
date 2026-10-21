@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { reduceAssistantTimeline as reduce, restoreAssistantTimeline, updateAssistantTimeline, type AssistantTimelineItem, type AssistantTimelineEvent, type AssistantTimelineTurn } from "../src/lib/canvas/assistant-timeline";
 const baseline = process.argv.includes("--baseline");
-const panel = readFileSync("src/components/canvas/canvas-assistant-panel.tsx", "utf8");
+const panel = readFileSync((process.env.TIMELINE_BASELINE_ROOT ? process.env.TIMELINE_BASELINE_ROOT + "/" : "") + "src/components/canvas/canvas-assistant-panel.tsx", "utf8");
 if (baseline) {
   assert(panel.indexOf("{turns.map") < panel.indexOf("{!!steps.length"));
   assert(panel.includes("turn.content") && panel.includes("steps.map(step => <CanvasAgentToolCard"));
