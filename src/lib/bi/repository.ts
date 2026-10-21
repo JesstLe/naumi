@@ -117,6 +117,24 @@ function operationKeys() {
 }
 const operationPageSource = operationSql(true);
 
+const artworkFilter = (scoped: boolean) => `${accountFilter("a.email", scoped)} AND (${inRange("a")} OR $7::text<>'') AND ($7::text='' OR a.id=$7) AND (($6::text='' AND a.deleted_at IS NULL) OR ($6='deleted' AND a.deleted_at IS NOT NULL) OR $6='all')`;
+const userFilter = () => `${accountFilter("u.email")} AND ($6::text='' OR CASE WHEN u.banned THEN 'banned' ELSE 'active' END=$6)`;
+const modelFilter = () => `${accountFilter("c.email")} AND ${inRange("c")} AND ($6::text='' OR ($6='fallback' AND (c.requested_quality<>'' AND c.executed_quality<>'' AND c.requested_quality<>c.executed_quality OR c.reason IN ('provider-fallback','quality-downgrade','upstream-unsupported'))))`;
+// Counts use small state-predicate indexes; no historical snapshot/paid-operation
+// JSON is fetched on the read path. See scripts/ops/admin-query-indexes.ts.
+const failedImage = `snapshot->>'status' IN ('error','failed')`;
+const reviewImage = `snapshot->>'status'='needs_attention' OR snapshot->>'stage' IN ('checking','reviewing') OR snapshot->>'error' LIKE '%核查%'`;
+const operationSummary = `SELECT count(*)::int AS tasks,
+  (SELECT count(*) FROM app_image_jobs j WHERE ${accountFilter("j.email")} AND ${inRange("j")} AND (${failedImage}))::int AS failed,
+  (SELECT count(*) FROM app_image_jobs j WHERE ${accountFilter("j.email")} AND ${inRange("j")} AND (${reviewImage}))::int AS review
+ FROM app_image_jobs j WHERE ${accountFilter("j.email")} AND ${inRange("j")}
+ UNION ALL SELECT count(*)::int,count(*) FILTER(WHERE c.status IN ('error','failed'))::int,
+ count(*) FILTER(WHERE c.status='needs_attention' OR c.error LIKE '%核查%')::int
+ FROM app_canvas_image_tasks c WHERE ${accountFilter("c.email")} AND ${inRange("c")}
+ UNION ALL SELECT count(*)::int,count(*) FILTER(WHERE v.status IN ('error','failed'))::int,
+ count(*) FILTER(WHERE v.status='needs_attention' OR v.error LIKE '%核查%')::int
+ FROM app_video_tasks v WHERE ${accountFilter("v.email")} AND ${inRange("v")}`;
+
 /** Narrow enterprise port: reuses operation SQL but does NOT widen the artworks-only scoped BI API. */
 export async function queryEnterpriseOperations(q:BiQuery,access:{client:PoolClient;allowedEmails:readonly string[]},exact?:{kind:'image-job'|'canvas-task'|'video-task';id:string}):Promise<BiResponse>{
   if(q.section!=='operations')throw new Error('Enterprise operation query required');
@@ -189,6 +207,8 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
   const scopedSql = scope;
   const binds = [...filterBinds, q.size, (q.page - 1) * q.size];
   let source = "";
+  let countSource = "";
+  let pagePrefix = "";
   switch (q.section) {
     case "management":
       source = `SELECT m.id,m.actor,m.email,m.action,m.reason,m.changes::text AS changes,m.ledger_id,m.created_at FROM app_bi_management_log m WHERE ${accountFilter("m.email")} AND ${inRange("m")} AND ($6::text='' OR m.action=$6)`;
@@ -203,12 +223,19 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
       COALESCE(l.refunded,0)::float8 AS refunded,COALESCE(l.events,0)::int AS ledger_events,
       COALESCE(a.artworks,0)::int AS artworks,COALESCE(o.received,0)::float8 AS received_cents,
       COALESCE(o.purchased_credits,0)::float8 AS purchased_credits
-      FROM app_users u LEFT JOIN app_bi_account_profiles p ON p.email=u.email
+      FROM app_users u JOIN selected k ON k.email=u.email LEFT JOIN app_bi_account_profiles p ON p.email=u.email
       LEFT JOIN LATERAL (SELECT sum(remaining) AS principal,sum(remaining) FILTER(WHERE expires_at<now()+interval '30 days') AS expiring FROM app_credit_batches WHERE email=u.email AND expires_at>now() AND remaining>0) b ON true
-      LEFT JOIN LATERAL (SELECT sum(-delta) FILTER(WHERE kind='consume' AND delta<0 AND reason<>'管理员调整积分') AS consumed,sum(delta) FILTER(WHERE kind='refund' AND delta>0) AS refunded,count(*) AS events FROM app_ledger l WHERE l.email=u.email AND ${inRange("l")}) l ON true
+      LEFT JOIN user_usage l ON l.email=u.email
       LEFT JOIN LATERAL (SELECT count(*) AS artworks FROM app_artworks a WHERE a.email=u.email AND a.deleted_at IS NULL AND ${inRange("a")}) a ON true
       LEFT JOIN LATERAL (SELECT sum(amount) AS received,sum(credits) AS purchased_credits FROM app_orders o WHERE o.email=u.email AND o.status='paid' AND o.provider IN ('wechat','alipay') AND o.paid_at >= $1::timestamptz AND o.paid_at < $2::timestamptz) o ON true
-      WHERE ${accountFilter("u.email")} AND ($6::text='' OR CASE WHEN u.banned THEN 'banned' ELSE 'active' END=$6)`;
+      WHERE ${userFilter()}`;
+      countSource = `SELECT u.email FROM app_users u WHERE ${userFilter()}`;
+      pagePrefix = `, filtered_users AS MATERIALIZED (${countSource}), user_usage AS MATERIALIZED (
+        SELECT l.email,sum(-delta) FILTER(WHERE kind='consume' AND delta<0 AND reason<>'管理员调整积分') AS consumed,
+        sum(delta) FILTER(WHERE kind='refund' AND delta>0) AS refunded,count(*) AS events
+        FROM app_ledger l JOIN filtered_users f ON f.email=l.email WHERE ${inRange("l")} GROUP BY l.email),
+        selected AS MATERIALIZED (SELECT f.email FROM filtered_users f LEFT JOIN user_usage l ON l.email=f.email
+          ORDER BY COALESCE(l.consumed,0) DESC,f.email ASC LIMIT $7 OFFSET $8)`;
       break;
     case "ledger":
       source = `SELECT l.id,l.email,l.delta,l.kind,l.reason,l.expires_at,l.created_at,COALESCE(m.reason,'') AS management_reason,m.actor AS management_actor FROM app_ledger l LEFT JOIN app_bi_management_log m ON m.ledger_id=l.id WHERE ${accountFilter("l.email")} AND ${inRange("l")} AND ($6::text='' OR l.kind=$6)`;
@@ -220,9 +247,12 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
       COALESCE(j.payload->'p'->>'entry',j.payload->>'entry') AS job_entry,
       c.id AS canvas_task_id,c.kind AS canvas_task_kind,v.id AS video_task_id,v.source AS video_task_source,
       (a.image_url<>'') AS has_image,(COALESCE(a.video_url,'')<>'') AS has_video
-      FROM app_artworks a ${ARTWORK_INPUT_JOINS}
+      FROM selected a ${ARTWORK_INPUT_JOINS}
       LEFT JOIN LATERAL (SELECT id,source FROM app_video_tasks WHERE email=a.email AND artwork_id=a.id ORDER BY created_at,id LIMIT 1) v ON true
-      WHERE ${accountFilter("a.email", !!access)} AND (${inRange("a")} OR $7::text<>'') AND ($7::text='' OR a.id=$7) AND (($6::text='' AND a.deleted_at IS NULL) OR ($6='deleted' AND a.deleted_at IS NOT NULL) OR $6='all')`;
+      WHERE ${artworkFilter(!!access)}`;
+      countSource = `SELECT a.id FROM app_artworks a WHERE ${artworkFilter(!!access)}`;
+      pagePrefix = `, selected AS MATERIALIZED (SELECT a.* FROM app_artworks a WHERE ${artworkFilter(!!access)}
+        ORDER BY a.created_at DESC,a.id DESC LIMIT $${filterBinds.length + 1} OFFSET $${filterBinds.length + 2})`;
       break;
     case "operations":
       source = `SELECT t.* FROM (${operationSource}) t WHERE ${accountFilter("t.email")} AND ${inRange("t")} AND ($6::text='' OR t.status=$6 OR ($6='review' AND (t.status='needs_attention' OR t.stage='checking' OR t.stage='reviewing' OR t.error LIKE '%核查%')))`;
@@ -232,9 +262,12 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
       COALESCE(j.payload->'p'->>'model',j.payload->>'model',j.snapshot->>'model','') AS requested_model,
       COALESCE(j.payload->'p'->>'resolution',a.resolution,'') AS resolution,
       COALESCE(a.title,'') AS title,CASE WHEN a.id IS NOT NULL THEN a.id ELSE '' END AS artwork_id
-      FROM app_image_cost_audit c LEFT JOIN app_image_jobs j ON j.id=c.job_id AND j.email=c.email
+      FROM selected c LEFT JOIN app_image_jobs j ON j.id=c.job_id AND j.email=c.email
       LEFT JOIN app_artworks a ON a.id=substring(c.id from length('cst-'||c.job_id||'-')+1) AND a.email=c.email
-      WHERE ${accountFilter("c.email")} AND ${inRange("c")} AND ($6::text='' OR ($6='fallback' AND (c.requested_quality<>'' AND c.executed_quality<>'' AND c.requested_quality<>c.executed_quality OR c.reason IN ('provider-fallback','quality-downgrade','upstream-unsupported'))))`;
+      WHERE ${modelFilter()}`;
+      countSource = `SELECT c.id FROM app_image_cost_audit c WHERE ${modelFilter()}`;
+      pagePrefix = `, selected AS MATERIALIZED (SELECT c.* FROM app_image_cost_audit c WHERE ${modelFilter()}
+        ORDER BY c.created_at DESC,c.id DESC LIMIT $7 OFFSET $8)`;
       break;
     case "orders":
       source = `SELECT o.id,o.email,o.kind,o.title,o.item_id,o.credits,o.amount AS amount_cents,o.status,o.provider,o.created_at,o.paid_at,
@@ -261,10 +294,11 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
   // Parameter indices remain valid in both statements; use a LIMIT/OFFSET-free
   // one-row count result so empty pages still report the real total.
   const keys = q.section === "operations" ? operationKeys() : "";
-  const countSql = `${scopedSql} SELECT count(*)::int AS total FROM (${keys || source}) result`;
+  const countSql = `${scopedSql} SELECT count(*)::int AS total FROM (${keys || countSource || source}) result`;
   const pageSql = keys
     ? `${scopedSql}, selected AS MATERIALIZED (SELECT * FROM (${keys}) k ORDER BY created_at DESC,id DESC,source_table LIMIT $7 OFFSET $8)
        SELECT * FROM (${operationPageSource}) result ORDER BY created_at DESC,id DESC,source_table`
+    : pagePrefix ? `${scopedSql}${pagePrefix} SELECT * FROM (${source}) result ORDER BY ${order}`
     : `${scopedSql} SELECT * FROM (${source}) result ORDER BY ${order} LIMIT $${filterBinds.length + 1} OFFSET $${filterBinds.length + 2}`;
   const readPage = async (client: PoolClient) => [
     await client.query(countSql, filterBinds),
@@ -307,8 +341,8 @@ async function overview(q: BiQuery, pool: PoolClient): Promise<BiOverview> {
       params,
     ),
     await pool.query(
-      `${scope} SELECT COALESCE(sum(GREATEST(0,b.principal-u.credits_used)),0)::float8 AS available FROM app_users u
-      JOIN LATERAL (SELECT COALESCE(sum(remaining),0) AS principal FROM app_credit_batches WHERE email=u.email AND expires_at>now() AND remaining>0) b ON true WHERE ${accountFilter("u.email")}`,
+      `${scope} SELECT COALESCE(sum(GREATEST(0,COALESCE(b.principal,0)-u.credits_used)),0)::float8 AS available FROM app_users u
+      LEFT JOIN (SELECT email,sum(remaining) AS principal FROM app_credit_batches WHERE expires_at>now() AND remaining>0 GROUP BY email) b ON b.email=u.email WHERE ${accountFilter("u.email")}`,
       params,
     ),
     await pool.query(
@@ -316,7 +350,7 @@ async function overview(q: BiQuery, pool: PoolClient): Promise<BiOverview> {
       params,
     ),
     await pool.query(
-      `${scope} SELECT count(*)::int AS tasks,count(*) FILTER(WHERE status IN ('error','failed'))::int AS failed,count(*) FILTER(WHERE status='needs_attention' OR stage IN ('checking','reviewing') OR error LIKE '%核查%')::int AS review FROM (${operationSource}) t WHERE ${accountFilter("t.email")} AND ${inRange("t")}`,
+      `${scope} SELECT sum(tasks)::int AS tasks,sum(failed)::int AS failed,sum(review)::int AS review FROM (${operationSummary}) t`,
       params,
     ),
     await pool.query(

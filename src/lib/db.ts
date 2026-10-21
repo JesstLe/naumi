@@ -1299,14 +1299,13 @@ export async function listAllUsers(): Promise<AdminUserRow[]> {
   const { rows } = await getPool().query(
     `SELECT u.email, u.name, u.plan, u.role,
             u.credits_total, u.credits_used, u.banned, u.last_ip, u.note,
-            (SELECT count(*) FROM app_artworks a WHERE a.email = u.email)
-              AS artworks,
-            (SELECT count(*) FROM app_artworks a
-               WHERE a.email = u.email
-                 AND a.created_at > now() - interval '7 days')
-              AS artworks7d,
-            (SELECT COALESCE(-sum(delta),0) FROM app_ledger l WHERE l.email=u.email AND l.kind='consume' AND l.delta<0 AND l.reason<>'管理员调整积分' AND l.created_at>now()-interval '7 days') AS consumed7d
+            COALESCE(a.artworks,0) AS artworks,COALESCE(a.artworks7d,0) AS artworks7d,
+            COALESCE(l.consumed7d,0) AS consumed7d
        FROM app_users u
+       LEFT JOIN (SELECT email,count(*) AS artworks,count(*) FILTER(WHERE created_at>now()-interval '7 days') AS artworks7d
+         FROM app_artworks GROUP BY email) a ON a.email=u.email
+       LEFT JOIN (SELECT email,-sum(delta) AS consumed7d FROM app_ledger
+         WHERE kind='consume' AND delta<0 AND reason<>'管理员调整积分' AND created_at>now()-interval '7 days' GROUP BY email) l ON l.email=u.email
       ORDER BY artworks7d DESC, u.joined_at ASC`
   );
   return rows.map((r) => ({

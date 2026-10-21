@@ -28,15 +28,18 @@ export async function costsSummary(ledger: ReturnType<typeof createSupplierLedge
   const ids = groups.map(g=>g.operation_id);
   const operations = ids.length ? (await ledger.pool.query("SELECT id,charged_credits,quote,state,settlement_result FROM app_billing_operations WHERE id=ANY($1::text[])",[ids])).rows : [];
   const extra = ids.length ? (await ledger.pool.query("SELECT operation_id,amount_cny_micros FROM app_supplier_variable_costs WHERE operation_id=ANY($1::text[])",[ids])).rows : [];
+  const operationsById=new Map(operations.map(op=>[op.id,op]));
+  const extraByOperation=new Map<string,bigint>();
+  for(const item of extra)extraByOperation.set(item.operation_id,(extraByOperation.get(item.operation_id)??BigInt(0))+BigInt(item.amount_cny_micros));
   let revenue = BigInt(0), charged = BigInt(0), unknownRevenue = 0, variable = BigInt(0),delivered=0;
   for (const g of groups) {
-    const op = operations.find(o=>o.id===g.operation_id), rate = op?.quote?.tariff?.pricing?.creditsPerCnyMicros;
+    const op = operationsById.get(g.operation_id), rate = op?.quote?.tariff?.pricing?.creditsPerCnyMicros;
     const credits = BigInt(op?.charged_credits || 0); charged += credits;
     if(op?.quote?.tariff?.unit==='image'&&Array.isArray(op?.settlement_result?.items))delivered+=op.settlement_result.items.filter((i:any)=>i.state==='succeeded').length;
     const known = op?.state === "settled" && typeof rate === "string" && /^\d+$/.test(rate) && BigInt(rate)>BigInt(0);
     g.chargedCredits = credits.toString(); g.revenueCnyMicros = known ? ((credits*MICRO*MICRO+BigInt(rate)/BigInt(2))/BigInt(rate)).toString() : null;
     if (known) revenue += BigInt(g.revenueCnyMicros); else unknownRevenue++;
-    g.variableCnyMicros = extra.filter(x=>x.operation_id===g.operation_id).reduce((s,x)=>s+BigInt(x.amount_cny_micros),BigInt(0)).toString(); variable+=BigInt(g.variableCnyMicros);
+    g.variableCnyMicros = (extraByOperation.get(g.operation_id)??BigInt(0)).toString(); variable+=BigInt(g.variableCnyMicros);
     g.marginStatus = g.incomplete || !known ? "暂估／数据未齐" : "已确认";
     g.apiSpreadCnyMicros = known&&g.cny_micros!=null ? (BigInt(g.revenueCnyMicros)-BigInt(g.cny_micros)).toString() : null;
     g.contributionCnyMicros = g.apiSpreadCnyMicros!=null ? (BigInt(g.apiSpreadCnyMicros)-BigInt(g.variableCnyMicros)).toString() : null;

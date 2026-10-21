@@ -441,9 +441,9 @@ export function BiDashboard({ initialSection = "overview" }: { initialSection?: 
         if (!response.ok) throw new Error(body.error || "读取失败");
         return body as BiResponse;
       })
-      .then(setData)
+      .then(value => { if (!controller.signal.aborted) setData(value); })
       .catch((e) => {
-        if (e.name !== "AbortError") setError(e.message);
+        if (!controller.signal.aborted && e.name !== "AbortError") setError(e.message);
       })
       .finally(() => {
         if (!controller.signal.aborted) setBusy(false);

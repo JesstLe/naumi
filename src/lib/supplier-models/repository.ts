@@ -112,12 +112,17 @@ export async function importConfiguredSupplierModels(pool:Pool,config:ModelConfi
   await tx.query("COMMIT");return added;
  }catch(e){await tx.query("ROLLBACK");throw e;}finally{tx.release();}
 }
-export async function listSupplierModels(pool:Pool,filter:{query:string;provider:string;family:string;brand:string;basis:string;state:string;page:number}){
+export async function listSupplierModels(pool:Pool,filter:{query:string;provider:string;family:string;brand:string;basis:string;state:string;page:number},summary=false){
  await ensureSupplierModels(pool);
  const values=[filter.query,filter.provider,filter.family,filter.brand,filter.basis,filter.state];
  const where=`WHERE ($1='' OR m.model_id ILIKE '%'||$1||'%' OR m.label ILIKE '%'||$1||'%' OR m.family ILIKE '%'||$1||'%' OR m.brand ILIKE '%'||$1||'%') AND ($2='' OR m.provider_id=$2) AND ($3='' OR m.family=$3) AND ($4='' OR m.brand=$4) AND ($5='' OR EXISTS(SELECT 1 FROM app_supplier_model_price_points p WHERE p.model_id=m.id AND p.basis=$5)) AND ($6='' OR m.capability_state=$6)`;
- const [rows,count,facets]=await Promise.all([pool.query("SELECT m.* FROM app_supplier_model_metadata m "+where+" ORDER BY m.updated_at DESC,m.id LIMIT 50 OFFSET $7",[...values,(filter.page-1)*50]),pool.query("SELECT count(*) FROM app_supplier_model_metadata m "+where,values),pool.query("SELECT provider_id,provider_name,family,brand FROM app_supplier_model_metadata ORDER BY provider_name")]);
- return {models:rows.rows.map(record),total:Number(count.rows[0].count),page:filter.page,pageSize:50,facets:{providers:[...new Map(facets.rows.map(r=>[r.provider_id,{id:r.provider_id,name:r.provider_name}])).values()],families:[...new Set(facets.rows.map(r=>r.family).filter(Boolean))].sort(),brands:[...new Set(facets.rows.map(r=>r.brand).filter(Boolean))].sort()}};
+ const columns=summary ? `m.id,m.provider_id,m.provider_name,m.model_id,m.label,m.catalog_owner,m.revision,m.last_seen_at,m.updated_at,
+   jsonb_build_object('family',m.metadata->'family','brand',m.metadata->'brand','modality',m.metadata->'modality',
+   'capabilityState',m.metadata->'capabilityState','capabilitySource',m.metadata->'capabilitySource','checkedAt',m.metadata->'checkedAt',
+   'capabilities',jsonb_build_object('resolutions',m.metadata#>'{capabilities,resolutions}'),'prices',m.metadata->'prices') AS metadata` : "m.*";
+ const [rows,count,facets]=await Promise.all([pool.query("SELECT "+columns+" FROM app_supplier_model_metadata m "+where+" ORDER BY m.updated_at DESC,m.id LIMIT 50 OFFSET $7",[...values,(filter.page-1)*50]),pool.query("SELECT count(*) FROM app_supplier_model_metadata m "+where,values),pool.query("SELECT provider_id,provider_name,family,brand FROM app_supplier_model_metadata ORDER BY provider_name")]);
+ const models=rows.rows.map(r=>summary?{...r.metadata,id:r.id,providerId:r.provider_id,providerName:r.provider_name,modelId:r.model_id,label:r.label,catalogOwner:r.catalog_owner,revision:Number(r.revision),lastSeenAt:new Date(r.last_seen_at).toISOString(),updatedAt:new Date(r.updated_at).toISOString()}:record(r));
+ return {models,total:Number(count.rows[0].count),page:filter.page,pageSize:50,facets:{providers:[...new Map(facets.rows.map(r=>[r.provider_id,{id:r.provider_id,name:r.provider_name}])).values()],families:[...new Set(facets.rows.map(r=>r.family).filter(Boolean))].sort(),brands:[...new Set(facets.rows.map(r=>r.brand).filter(Boolean))].sort()}};
 }
 export async function readSupplierModel(pool:Pool,id:string){
  await ensureSupplierModels(pool);const row=(await pool.query("SELECT * FROM app_supplier_model_metadata WHERE id=$1",[id])).rows[0];if(!row)throw new SupplierMetadataError("NOT_FOUND","模型元数据不存在",404);return record(row);

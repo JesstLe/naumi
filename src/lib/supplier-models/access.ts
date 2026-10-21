@@ -21,7 +21,7 @@ export function createSupplierModelsHandler(deps:{authorize:typeof biAuthorize;a
     if(p.has("id"))return biJson({schemaVersion:1,model:await readSupplierModel(admin.pool,z.uuid().parse(p.get("id")))});
     if(p.has("history"))return biJson({schemaVersion:1,versions:await supplierModelHistory(admin.pool,z.uuid().parse(p.get("history")))});
     const filter={query:z.string().max(160).parse(p.get("q") || ""),provider:z.string().max(100).parse(p.get("provider") || ""),family:z.string().max(120).parse(p.get("family") || ""),brand:z.string().max(120).parse(p.get("brand") || ""),basis:z.union([z.literal(""),z.enum(PRICE_BASES)]).parse(p.get("basis") || ""),state:z.union([z.literal(""),z.enum(CAPABILITY_STATES)]).parse(p.get("state") || ""),page:z.coerce.number().int().min(1).max(200).parse(p.get("page") || 1)};
-    const result=await listSupplierModels(admin.pool,filter);
+    const result=await listSupplierModels(admin.pool,filter,p.get("view")==="summary");
     return biJson({schemaVersion:1,...result,modelVersion:snapshot.version,providers:snapshot.config.providers.map(p=>({id:p.id,name:p.name,enabled:p.enabled}))});
    }
    const body=input.parse(JSON.parse(await readBounded(new Response(request.body),750000)));

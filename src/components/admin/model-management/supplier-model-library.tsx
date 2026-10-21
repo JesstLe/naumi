@@ -10,13 +10,13 @@ import {ChevronLeft,Database,Download,Plus,RefreshCw,X} from "lucide-react";
 import {authHeader} from "@/lib/supabase";
 import {browserRandomUUID} from "@/lib/browser-crypto";
 import {decimalMicros,fixed} from "@/lib/supplier-cost/money";
-import {unknownSupplierMetadata,type SupplierMetadata,type SupplierModelRecord,type SupplierPrice} from "@/lib/supplier-models/types";
+import {unknownSupplierMetadata,type SupplierMetadata,type SupplierModelRecord,type SupplierModelSummary,type SupplierPrice} from "@/lib/supplier-models/types";
 import styles from "./supplier-model-library.module.css";
 const endpoint="/api/admin/model-management/library";
 const states:Record<string,string>={unknown:"未知",configured:"来自配置",documented:"文档声明",verified:"已验证"};
 const bases:Record<string,string>={request:"按次",image:"按张",token:"按token量",second:"按秒",frame:"按帧"};
 const modalities:Record<string,string>={unknown:"未分类",image:"图片",text:"文字",video:"视频",audio:"音频",embedding:"向量",other:"其他"};
-type Listing={models:SupplierModelRecord[];total:number;page:number;pageSize:number;facets:{providers:{id:string;name:string}[];families:string[];brands:string[]};providers:{id:string;name:string;enabled:boolean}[]};
+type Listing={models:SupplierModelSummary[];total:number;page:number;pageSize:number;facets:{providers:{id:string;name:string}[];families:string[];brands:string[]};providers:{id:string;name:string;enabled:boolean}[]};
 type Filter={q:string;provider:string;family:string;brand:string;basis:string;state:string;page:number};
 const moneyFields=["amountMicros","inputMicrosPerMillion","outputMicrosPerMillion","cachedInputMicrosPerMillion","imageInputMicrosPerMillion"] as const;
 const moneyNames:Record<string,string>={amountMicros:"单价",inputMicrosPerMillion:"输入 / 百万token",outputMicrosPerMillion:"输出 / 百万token",cachedInputMicrosPerMillion:"缓存输入 / 百万token",imageInputMicrosPerMillion:"图片输入 / 百万token"};
@@ -25,13 +25,23 @@ function download(name:string,data:unknown){const url=URL.createObjectURL(new Bl
 export function SupplierModelLibrary(){
  const [filter,setFilter]=useState<Filter>({q:"",provider:"",family:"",brand:"",basis:"",state:"",page:1}),[search,setSearch]=useState("");
  const [listing,setListing]=useState<Listing|null>(null),[loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState(""),[edit,setEdit]=useState<SupplierModelRecord|null>(null);
- const generation=useRef(0);
+ const generation=useRef(0),detailGeneration=useRef(0);
+ const [opening,setOpening]=useState<string|null>(null),[exporting,setExporting]=useState(false);
  const load=useCallback(async()=>{
   const epoch=++generation.current;setLoading(true);
-  try{const params=new URLSearchParams(Object.entries(filter).map(([k,v])=>[k,String(v)]));const res=await fetch(endpoint+"?"+params,{cache:"no-store",headers:await authHeader()}),data=await res.json();if(!res.ok)throw Error(data.error || "读取失败");if(epoch===generation.current){setListing(data);setError("");}}
+  try{const params=new URLSearchParams(Object.entries(filter).map(([k,v])=>[k,String(v)]));params.set("view","summary");const res=await fetch(endpoint+"?"+params,{cache:"no-store",headers:await authHeader()}),data=await res.json();if(!res.ok)throw Error(data.error || "读取失败");if(epoch===generation.current){setListing(data);setError("");}}
   catch(e){if(epoch===generation.current)setError(e instanceof Error?e.message:"读取失败");}finally{if(epoch===generation.current)setLoading(false);}
  },[filter]);
- useEffect(()=>{void load();},[load]);
+ useEffect(()=>{setOpening(null);void load();return()=>{generation.current++;detailGeneration.current++;};},[load]);
+ const openModel=async(id:string)=>{
+  const epoch=++detailGeneration.current;setOpening(id);setError("");
+  try{const res=await fetch(endpoint+"?id="+encodeURIComponent(id),{cache:"no-store",headers:await authHeader()}),data=await res.json();if(!res.ok)throw Error(data.error||"读取失败");if(epoch===detailGeneration.current)setEdit(data.model);}
+  catch(e){if(epoch===detailGeneration.current)setError(e instanceof Error?e.message:"读取失败");}finally{if(epoch===detailGeneration.current)setOpening(null);}
+ };
+ const exportPage=async()=>{
+  setExporting(true);try{const params=new URLSearchParams(Object.entries(filter).map(([k,v])=>[k,String(v)])),res=await fetch(endpoint+"?"+params,{cache:"no-store",headers:await authHeader()}),data=await res.json();if(!res.ok)throw Error(data.error||"导出失败");download("supplier-model-metadata.json",{schemaVersion:1,exportedAt:new Date().toISOString(),filter,models:data.models});}
+  catch(e){setError(e instanceof Error?e.message:"导出失败");}finally{setExporting(false);}
+ };
  const change=(key:keyof Filter,value:string)=>setFilter(old=>({...old,[key]:value,page:1}));
  const sync=async(discover:boolean)=>{setBusy(true);setError("");setNotice("");try{
   const res=await fetch(endpoint,{method:"POST",headers:{"content-type":"application/json",...await authHeader()},body:JSON.stringify({action:"sync",discover})}),data=await res.json();if(!res.ok)throw Error(data.error || "同步失败");
@@ -51,8 +61,8 @@ export function SupplierModelLibrary(){
    <form onSubmit={e=>{e.preventDefault();change("q",search);}}><input aria-label="搜索供应商模型" placeholder="模型 ID、名称、家族或品牌" value={search} onChange={e=>setSearch(e.target.value)}/><button type="submit">搜索</button></form>
    {([["provider","供应商",listing?[...new Map([...listing.providers,...listing.facets.providers].map(p=>[p.id,p])).values()].map(p=>[p.id,p.name]):[]],["family","模型家族",listing?.facets.families.map(f=>[f,f]) || []],["brand","品牌",listing?.facets.brands.map(b=>[b,b]) || []],["basis","计费方式",Object.entries(bases)],["state","能力信息状态",Object.entries(states)]] as [keyof Filter,string,string[][]][]).map(([key,label,options])=><label key={key}>{label}<select aria-label={label} value={filter[key]} onChange={e=>change(key,e.target.value)}><option value="">全部</option>{options.map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label>)}
   </section>
-  <div className={styles.resultBar}><span>{loading?"正在读取…":`${listing?.total ?? 0} 条模型元数据`}</span><div><button disabled={!listing} onClick={()=>download("supplier-model-metadata.json",{schemaVersion:1,exportedAt:new Date().toISOString(),filter,models:listing!.models})}><Download size={14}/>导出当前页</button><button aria-label="刷新元数据库" disabled={loading} onClick={()=>void load()}><RefreshCw size={14}/></button></div></div>
-  <div className={styles.tableScroll}><table className={styles.table}><thead><tr><th>模型 / 家族</th><th>供应商 / 品牌</th><th>能力依据</th><th>采购报价参考</th><th>操作</th></tr></thead><tbody>{listing?.models.map(m=><tr key={m.id}><td><b>{m.label}</b><code>{m.modelId}</code><small>{m.family || "家族待归类"} · {modalities[m.modality]}</small></td><td><b>{m.providerName}</b><small>{m.brand || "品牌待维护"}</small>{m.catalogOwner && <small>目录 owner：{m.catalogOwner}</small>}</td><td><span className={styles.badge} data-state={m.capabilityState}>{states[m.capabilityState]}</span><small>{m.capabilities.resolutions?.join(" / ") || "分辨率未声明"}</small><small>{m.capabilitySource || "尚无规格依据"}</small><small>{m.checkedAt?`核对 ${m.checkedAt}`:"能力日期待核对"}</small></td><td><b className={styles.cost}>{costSummary(m.prices[0])}</b><small>{m.prices.length?`${m.prices.length} 个报价规格 · ${m.prices[0].status==="unknown"?"来源待核实":m.prices[0].status==="estimate"?"估算":m.prices[0].status==="documented"?"文档报价":"已验证"}`:"未知不视为免费"}</small>{m.prices[0] && <small>{m.prices[0].checkedAt?`报价核对 ${m.prices[0].checkedAt}`:"报价日期待核对"}</small>}</td><td><button onClick={()=>setEdit(m)} data-testid={"metadata-edit-"+m.modelId}>维护元数据</button><small>v{m.revision}</small></td></tr>)}</tbody></table></div>
+  <div className={styles.resultBar}><span>{loading?"正在读取…":`${listing?.total ?? 0} 条模型元数据`}</span><div><button disabled={!listing||exporting} onClick={()=>void exportPage()}><Download size={14}/>导出当前页</button><button aria-label="刷新元数据库" disabled={loading} onClick={()=>void load()}><RefreshCw size={14}/></button></div></div>
+  <div className={styles.tableScroll}><table className={styles.table}><thead><tr><th>模型 / 家族</th><th>供应商 / 品牌</th><th>能力依据</th><th>采购报价参考</th><th>操作</th></tr></thead><tbody>{listing?.models.map(m=><tr key={m.id}><td><b>{m.label}</b><code>{m.modelId}</code><small>{m.family || "家族待归类"} · {modalities[m.modality]}</small></td><td><b>{m.providerName}</b><small>{m.brand || "品牌待维护"}</small>{m.catalogOwner && <small>目录 owner：{m.catalogOwner}</small>}</td><td><span className={styles.badge} data-state={m.capabilityState}>{states[m.capabilityState]}</span><small>{m.capabilities.resolutions?.join(" / ") || "分辨率未声明"}</small><small>{m.capabilitySource || "尚无规格依据"}</small><small>{m.checkedAt?`核对 ${m.checkedAt}`:"能力日期待核对"}</small></td><td><b className={styles.cost}>{costSummary(m.prices[0])}</b><small>{m.prices.length?`${m.prices.length} 个报价规格 · ${m.prices[0].status==="unknown"?"来源待核实":m.prices[0].status==="estimate"?"估算":m.prices[0].status==="documented"?"文档报价":"已验证"}`:"未知不视为免费"}</small>{m.prices[0] && <small>{m.prices[0].checkedAt?`报价核对 ${m.prices[0].checkedAt}`:"报价日期待核对"}</small>}</td><td><button disabled={opening!==null} onClick={()=>void openModel(m.id)} data-testid={"metadata-edit-"+m.modelId}>{opening===m.id?"读取中…":"维护元数据"}</button><small>v{m.revision}</small></td></tr>)}</tbody></table></div>
   {!loading && !listing?.models.length && <div className={styles.empty}><Database/><h2>没有匹配的模型元数据</h2><p>先导入现有配置，或发现上游目录；也可以调整筛选条件。</p></div>}
   {listing && <footer className={styles.pagination}><button disabled={listing.page<=1 || loading} onClick={()=>setFilter(old=>({...old,page:old.page-1}))}>上一页</button><span>{listing.page} / {Math.max(1,Math.ceil(listing.total/listing.pageSize))}</span><button disabled={listing.page*listing.pageSize>=listing.total || loading} onClick={()=>setFilter(old=>({...old,page:old.page+1}))}>下一页</button></footer>}
   {edit && <MetadataDialog model={edit} onClose={()=>setEdit(null)} onSave={(metadata,id)=>save(edit,metadata,id)}/>}

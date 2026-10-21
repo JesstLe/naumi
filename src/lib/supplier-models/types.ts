@@ -52,4 +52,6 @@ export const supplierMetadataSchema=z.strictObject({
 export type SupplierMetadata=z.infer<typeof supplierMetadataSchema>;
 export type SupplierPrice=z.infer<typeof supplierPriceSchema>;
 export type SupplierModelRecord=SupplierMetadata & {id:string;providerId:string;providerName:string;modelId:string;label:string;catalogOwner:string;revision:number;lastSeenAt:string;updatedAt:string};
+/** Lightweight list contract. Full editable metadata remains on the authorized id endpoint. */
+export type SupplierModelSummary=Pick<SupplierModelRecord,"id"|"providerId"|"providerName"|"modelId"|"label"|"catalogOwner"|"revision"|"lastSeenAt"|"updatedAt"|"family"|"brand"|"modality"|"capabilityState"|"capabilitySource"|"checkedAt"|"prices"> & {capabilities:Pick<SupplierMetadata["capabilities"],"resolutions">};
 export function unknownSupplierMetadata():SupplierMetadata{return {family:"",brand:"",modality:"unknown",notes:"",capabilityState:"unknown",parameterMetadata:{},capabilities:{generate:null,edit:null,mask:null,vision:null,streaming:null,qualities:null,resolutions:null,ratios:null,maxReferences:null,contextTokens:null},capabilitySource:"",capabilityUrl:"",checkedAt:"",prices:[]};}
