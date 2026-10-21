@@ -33,7 +33,8 @@ window.runUploadAcceptance=async function(){
  await f.submitCanvasImagegen(gen,undefined,undefined,{owner:'browser-upload@example.test',project:'browser-fixture'});
  const latest=await(await fetch('/results')).json(),plan=latest.filter(e=>e.kind==='plan').at(-1);
  check(plan.request.parameters.ratio==='4001:2501','plan uses original not derivative ratio');
- check(latest.filter(e=>e.kind==='generation-fixture').length===before+1,'same receipt no second generation POST');
+ const submissions=latest.filter(e=>e.kind==='generation-fixture').slice(before);
+ check(submissions.length===2&&new Set(submissions.map(e=>e.operationId)).size===2,'two explicit submits use distinct operation IDs');
  const multi=new FormData();multi.set('image',exif);multi.append('image',wide);multi.set('prompt','用产品替换参考图主体');multi.set('ratio','auto');multi.set('imagegenNodeId','multi-'+Date.now());
  await f.submitCanvasImagegen(multi,undefined,undefined,{owner:'browser-upload@example.test',project:'browser-fixture'});
  const multiPlan=(await(await fetch('/results')).json()).filter(e=>e.kind==='plan').at(-1);
