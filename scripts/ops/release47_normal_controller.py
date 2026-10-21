@@ -260,8 +260,8 @@ class Controller:
   self.phase('SWITCHED');save(ROOT/'cutover.json',{'releaseId':RELEASE,'version':self.cfg['version'],'at':now()})
   self.wait(lambda:self.marker('browser-after.json'),'BROWSER_AFTER',600)
   self.op('old-web-drain',lambda op:c.control_app(self.tx,self.web,'drain',op));self.old_drained=True
-  self.wait(lambda:self.drain_proof(),'OLD_WEB_CURRENT_EXECUTION_DRAIN',120)
-  self.tx.save('current-execution-drain.json',self.drain_proof())
+  drained=self.wait(lambda:self.drain_proof(),'OLD_WEB_CURRENT_EXECUTION_DRAIN',120)
+  self.tx.save('current-execution-drain.json',drained)
   self.op('new-worker-resume',lambda op:self.worker_control(self.newworker,'resume',op))
   self.wait(lambda:(lambda s:s if normal.worker_completed(s) else None)(self.worker_control(self.newworker,'status',str(uuid.uuid4()))['state']),'NEW_WORKER_SERVER_RECEIPT',90)
   self.phase('WORKER_ACTIVE')
@@ -279,7 +279,7 @@ class Controller:
   self.reference_proof()
   self.install_supervisor()
   for identity in [self.worker,self.web]:
-   self.drain_proof() if identity is self.worker else None
+   self.wait(lambda:self.drain_proof(),'RETIREMENT_CURRENT_DRAIN',120) if identity is self.worker else None
    self.op('retire-'+identity['id'][:12],lambda _,identity=identity:self.stop_exact(identity))
    self.succ['retired'].append(identity['id']);self.persist()
   self.op('new-worker-after-retirement',lambda op:self.worker_control(self.newworker,'resume',op))

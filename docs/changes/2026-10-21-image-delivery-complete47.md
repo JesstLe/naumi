@@ -25,3 +25,16 @@
 
 ## 生产验收发现与后继修复
 第一候选 882194df 切流验收期间，新增恢复扫描的相关 JSONB JOIN 在生产数据量下运行约 60 秒；仅取消该精确扫描 SELECT，用户生成未取消。替换为 16 条小型父记录页 + 主键读取子记录，扫描事务 statement_timeout=1500ms。后继固定镜像重新蓝绿，不以在线热改替代发布。此问题由本轮引入，不能归咎供应商。
+
+## 后继发布现场记录
+- 已普通合入上传兼容 6bf829bd + 42978b66，候选 source48d1445e/build1792562346/image67ca4a100fa9。
+- 第一候选扫描查询取消使自身 tick unknown；归档精确原记录，证实该 scan 无子活动、无 claim、SELECT 已结束后仅收尾观测记录；result.ok=false，未伪称扫描成功。Worker 标准 reconcile 拒绝 failed receipt，保留失败 Worker 原状态并在排空后退役。原入口已真实切回，静态 union 保留。失败 candidate 两槽停止。
+- 后继首次就绪因回退 manifest operationId 未绑定而未创建候选；已持锁核对 SHA/网关并修正绑定，新事务继续。
+- 后继切流后发现老总控 shared-DB drain 会把新槽用户生图计作旧槽未排空，且成功等待后又立刻二次读存在竞态。运维修正仅剔除有新 instance/boot/commit、精确 lease_token/work_key、35秒内心跳的当前新槽 image claims；未知归属、其他任务、事务和 advisory 锁仍保留门禁。保存首次成功的实际排空证据；按已确认操作续执行，不重做切流。
+- upload 候选模拟 createImageBitmap 拒绝，实际DOM fallback上传HTTP200，1536x2048/3047099字节/SHA32432de5...与原始图片完全一致。公网实际上传同字节通过，作品卡片可读取；测试图为本轮生成素材，不是用户私有原图。
+- 运维修正不改变已固定 App 镜像，后续 Git SHA 与运行 source48d1445e分开报告。
+
+## 后继完成（2026-10-21 14:29:37 CST）
+release47-image-delivery-20261021-r3 COMPLETE/canonical501，三锁释放。运行source48d1445e/build1792562346，Web5ec7df2c/13109、Workeraf028da8，同image67ca4a100fa9。旧BI Web/Worker排空停止restart=no；保留失败第一候选及回滚证据。回滚check PASS，没有对最终候选执行生产切回。
+原始保全比较4项告警来自2笔旧槽任务正常完成：旧runJob最终snapshot替换paidOperations为空、正常结算移除reservation。逐笔原冻结digest一致、供应商/报价不变、真实作品原图解码、单账单8/6积分、reservation0核实后，独立reviewed comparison保留原告警并认可正常完成，不修改业务任务或删除原证据。普通缺失任务、账本变化、未知归属继续阻断。
+公网与候选实际上传均HTTP200，1536x2048、3047099字节、SHA32432de5...；画布实际节点1/图解码通过，引用文本保存200，测试作品2和文本2已清理。尚在固定104笔原图交付恢复及最终真实生图验收，完成后补证据。
