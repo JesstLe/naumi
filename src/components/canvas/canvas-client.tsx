@@ -5161,7 +5161,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
 
   async function uploadAssistantImages(files:File[]) {
-    if(assistantBusy||assistantUploadToken.current||readOnly||!user||!files.length)return;
+    // Attachments belong to the next turn; the in-flight request body is already frozen.
+    if(assistantUploadToken.current||readOnly||!user||!files.length)return;
     const token={},account=canvasAccountRef.current,project=activeKey,session=assistantSessionId.current;
     const isCurrent=()=>assistantUploadToken.current===token&&account===canvasAccountRef.current&&project===(activeProjectRef.current?.key??null)&&session===assistantSessionId.current;
     const capacity=assistantAttachmentCapacity(currentAssistantReferences().map(art=>art.id));
