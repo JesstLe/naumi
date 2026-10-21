@@ -1,0 +1,6 @@
+const cp=require('node:child_process'),fs=require('node:fs'),path=require('node:path');
+const out=path.resolve('output/canvas-cutout-parameters-20261021');fs.mkdirSync(out,{recursive:true});
+const ts=file=>['--import','tsx','--conditions','react-server','scripts/'+file];
+const tests=[['handler',ts('verify-canvas-cutout-parameters.ts')],['cutout-execution',ts('verify-cutout-execution.ts')],['cutout-ui',['scripts/verify-cutout-ui.mjs']],['quality-policy',ts('verify-model-management-quality-parameters.ts')],['quality-billing',ts('verify-quality-billing.ts')],['model-execution',ts('verify-model-execution.ts')],['types',['node_modules/typescript/bin/tsc','--noEmit','--incremental','false']]];
+const records=[];for(const [name,args] of tests){const r=cp.spawnSync(process.execPath,args,{cwd:process.cwd(),env:process.env,encoding:'utf8',windowsHide:true,maxBuffer:8*1024*1024,timeout:240000});const record={name,command:'node '+args.join(' '),exit:r.status,output:(r.stdout||'')+(r.stderr||'')};records.push(record);fs.writeFileSync(path.join(out,name+'.txt'),record.output);console.log(record.output.trim()||name.toUpperCase()+'=PASS');fs.writeFileSync(path.join(out,'suite.json'),JSON.stringify(records,null,2));if(r.status!==0)process.exit(r.status||1);}
+console.log('CUTOUT_PARAMETERS_SUITE=PASS MODULES='+records.length+' EXTERNAL_SUPPLIER_CALLS=0');

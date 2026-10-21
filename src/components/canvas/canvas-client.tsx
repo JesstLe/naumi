@@ -4569,9 +4569,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
   }
 
-  // 抠图:不走生成(不重绘主体),调自托管 rembg 服务把主体原样抠出、背景置透明。
+  // 抠图使用管理员配置的处理器；旧 fast/fine 不是图片模型的质量档位。
   // 同步返回,新节点落在生成占位处,挂在源节点下。
-  async function runCutout(source: Artwork, quality: "fast" | "fine" = "fine") {
+  async function runCutout(source: Artwork, _quality: "fast" | "fine" = "fine") {
     if (readOnly || !user || !canFeature("cutout") || isNodeLocked(source.id)) return;
     if (!cutoutCatalog || cutoutCatalogError || cutoutCatalog.available === false || cutoutCatalog.supported === false) { setGenError(cutoutCatalogError || "抠图执行配置尚未就绪，请稍后再试"); return; }
     const response = await landEditResult(source, async () => {
@@ -4584,7 +4584,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       fd.append("title", `${source.title || "作品"} · 抠图`);
       fd.append("category", source.category || "main");
       fd.append("ratio", source.ratio || "auto");
-      fd.append("resolution", source.resolution || "1K"); fd.append("quality", quality);
+      fd.append("resolution", source.resolution || "1K"); fd.append("quality", "medium");
       return privateFetch("/api/cutout", { method: "POST", headers: await authHeader(), body: fd });
     }, "抠图");
     return response;
