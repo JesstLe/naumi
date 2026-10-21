@@ -1,5 +1,6 @@
 /** Public, deterministic explanations. Never derive charging claims from model prose. */
 const messages: Record<string, [string, string]> = {
+  // Legacy persisted events only; current execution no longer emits this keyword gate.
   INTENT_REQUIRED: ["本轮未识别到该操作的明确指令，请直接说明需要修改的图片和目标效果。", "Describe the image and intended change explicitly before running this tool."],
   ARGUMENT_INVALID: ["工具参数不完整或格式不正确，请调整参数后再执行。", "Tool arguments are incomplete or invalid. Adjust them before continuing."],
   FEATURE_ACCESS_DENIED: ["当前账号尚未获得该功能的使用权限，请检查功能授权。", "This account does not have access to this feature."],
