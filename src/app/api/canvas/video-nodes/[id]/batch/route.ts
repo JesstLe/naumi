@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import {TeamError} from "@/lib/teams/server";
 import { z } from "zod";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { sameSiteBiMutation } from "@/lib/bi/access";
@@ -13,6 +14,7 @@ import { readCanvasVideoBatch, submitCanvasVideoBatch } from "@/lib/video/canvas
 export const runtime = "nodejs", dynamic = "force-dynamic", maxDuration = 300;
 type Context = { params: Promise<{ id: string }> };
 function failure(error: unknown) {
+  if(error instanceof TeamError)return NextResponse.json({error:error.message},{status:error.status});
   if (error instanceof SyntaxError) return NextResponse.json({ error: "请求格式无效" }, { status: 400 });
   if (error instanceof BillingError || error instanceof ModelConfigError) return billingErrorResponse(error);
   if (error instanceof z.ZodError || error instanceof VideoContractError) return NextResponse.json({ error: "视频批次参数无效" }, { status: 422 });

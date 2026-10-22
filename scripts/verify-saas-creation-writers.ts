@@ -64,9 +64,9 @@ async function main(){
  await context.withFrozenCreation({...base(),creationId:root},()=>sdk.images.edit({image:new File([png],'fixture.png',{type:'image/png'}),model:'fixture-no-network'}));
  assert.equal(sdkCalls,2);assert((await pool.query("SELECT 1 FROM app_creation_events WHERE creation_id=$1 AND event_key='evidence:processed-pending'",[root])).rowCount);
  await pool.query('DROP TRIGGER fixture_asset_fault ON app_creation_assets; DROP FUNCTION fixture_reject_asset()');
- await context.withFrozenCreation({...base(),parentContext:'fixed-project'},()=>writer.startCreation('project-fixture','p1',actor));
- await assert.rejects(context.bindCreationParent({actorEmail:actor,scopeKind:'personal',tenantId:null},'fixed-project'),/已固定/);
- await context.withCreationRequest(new Request('http://fixture/api/generate-image',{method:'POST',headers:{'content-type':'application/json'},body:'{"projectKey":"fixed-project"}'}),actor,async()=>{assert.equal(context.currentCreationContext()?.tenantId,tenant.tenantId);return Response.json({ok:true});});
+ await context.withFrozenCreation({...base(),parentContext:'tree:output-1'},()=>writer.startCreation('project-fixture','p1',actor));
+ await assert.rejects(context.bindCreationParent({actorEmail:actor,scopeKind:'personal',tenantId:null},'tree:output-1'),/已固定/);
+ await context.withCreationRequest(new Request('http://fixture/api/generate-image',{method:'POST',headers:{'content-type':'application/json'},body:'{"projectKey":"tree:output-1"}'}),actor,async()=>{assert.equal(context.currentCreationContext()?.tenantId,tenant.tenantId);return Response.json({ok:true});});
  const jobId='fixture-image-job';
  await context.withFrozenCreation(base(),()=>images.createImageJob(jobId,actor,'generate',{status:'pending',images:[]},{p:{prompt:'job original',images:[]}},0,false));
  const job=await images.getImageJob(jobId,'generate');assert.equal((job!.payload.creationScope as any).tenantId,tenant.tenantId);

@@ -1,4 +1,5 @@
 import "server-only";
+import {assertWorkflowCreationScope,bindWorkflowCreationProject,validateWorkflowCreationInputs} from "./workflow-creation";
 import {z} from "zod";
 import {videoNodeIdSchema,videoProjectKeySchema} from "../canvas/video-node-schema";
 import {getVideoNode} from "../canvas/video-node-repository";
@@ -28,11 +29,11 @@ export async function buildCanvasVideoWorkflow(actor:string,raw:unknown):Promise
 export async function scheduleCanvasVideoWorkflow(actor:string,raw:unknown,prepared?:PreparedCanvasVideoWorkflow,signal?:AbortSignal){const input=canvasWorkflowSchema.parse(raw);
   // Stable node-list operation survives later revisions; the persisted run owns the frozen plan.
   await ensureVideoWorkflowSchema();const {getPool}=await import("../db");
-  {const row=(await getPool().query("SELECT email,canvas_intent_digest FROM app_video_workflow_runs WHERE id=$1",[input.id])).rows[0];if(row){const {canonicalConfig}=await import("../model-config/repository"),{createHash}=await import("node:crypto"),digest=createHash("sha256").update(canonicalConfig(input)).digest("hex");if(row.email!==actor||row.canvas_intent_digest!==digest)throw new ModelConfigError("WORKFLOW_OPERATION_CONFLICT","制作链编号已用于另一请求",409);const {resumeVideoWorkflow}=await import("./workflow"),run=await resumeVideoWorkflow(input.id,actor);return {runId:input.id,taskIds:run.nodes.map(node=>node.taskId).filter((id):id is string=>!!id)};}}
+  {const row=(await getPool().query("SELECT email,canvas_intent_digest,creation_scope FROM app_video_workflow_runs WHERE id=$1",[input.id])).rows[0];if(row){assertWorkflowCreationScope(row.creation_scope,actor);const {canonicalConfig}=await import("../model-config/repository"),{createHash}=await import("node:crypto"),digest=createHash("sha256").update(canonicalConfig(input)).digest("hex");if(row.email!==actor||row.canvas_intent_digest!==digest)throw new ModelConfigError("WORKFLOW_OPERATION_CONFLICT","制作链编号已用于另一请求",409);const {resumeVideoWorkflow}=await import("./workflow"),run=await resumeVideoWorkflow(input.id,actor);return {runId:input.id,taskIds:run.nodes.map(node=>node.taskId).filter((id):id is string=>!!id)};}}
   if(prepared&&canonicalIntent(prepared.intent)!==canonicalIntent(input))throw new ModelConfigError("WORKFLOW_OPERATION_CONFLICT","预检制作链与提交不同",409);
-  const plan=prepared?.plan||await buildCanvasVideoWorkflow(actor,input);return scheduleVideoWorkflow(actor,plan,input,prepared?.frozen,signal);
+  await bindWorkflowCreationProject(actor,input.projectKey);const plan=prepared?.plan||await buildCanvasVideoWorkflow(actor,input);return scheduleVideoWorkflow(actor,plan,input,prepared?.frozen,signal);
 }
 
 function canonicalIntent(input:unknown){return canonicalConfig(input);}
 export type PreparedCanvasVideoWorkflow={intent:z.infer<typeof canvasWorkflowSchema>;plan:VideoWorkflowPlan;frozen:Record<string,FrozenWorkflowStage>};
-export async function prepareCanvasVideoWorkflow(actor:string,raw:unknown):Promise<PreparedCanvasVideoWorkflow>{const intent=canvasWorkflowSchema.parse(raw),plan=validateVideoWorkflow(await buildCanvasVideoWorkflow(actor,intent));await authorizeWorkflowInputs(actor,plan);const frozen=await freezeVideoWorkflow(actor,plan);for(const node of plan.nodes){const value=frozen[node.id].quote;node.request.billingConfirmation={version:value.version,credits:value.authorization?value.authorizedCredits:value.credits};}return {intent,plan,frozen};}
+export async function prepareCanvasVideoWorkflow(actor:string,raw:unknown):Promise<PreparedCanvasVideoWorkflow>{const intent=canvasWorkflowSchema.parse(raw);await bindWorkflowCreationProject(actor,intent.projectKey);const plan=validateVideoWorkflow(await buildCanvasVideoWorkflow(actor,intent));await validateWorkflowCreationInputs(actor,plan);await authorizeWorkflowInputs(actor,plan);const frozen=await freezeVideoWorkflow(actor,plan);for(const node of plan.nodes){const value=frozen[node.id].quote;node.request.billingConfirmation={version:value.version,credits:value.authorization?value.authorizedCredits:value.credits};}return {intent,plan,frozen};}

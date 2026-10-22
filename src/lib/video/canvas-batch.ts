@@ -1,4 +1,7 @@
 import "server-only";
+import {assertWorkflowCreationScope,runWorkflowCreation,bindWorkflowCreationProject,acceptWorkflowCreationTx,validateWorkflowCreationInputs} from "./workflow-creation";
+import type {CreationContext} from "../saas/creation-context";
+import {creationLinkTx} from "../saas/creation-writer";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getPool } from "../db";
@@ -25,7 +28,7 @@ async function ensureBatchSchema() {
     CREATE TABLE IF NOT EXISTS app_canvas_video_batches (
       id uuid PRIMARY KEY, email text NOT NULL, node_id text NOT NULL, input_digest text NOT NULL,
       prepared_enc text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
-    )
+    ); ALTER TABLE app_canvas_video_batches ADD COLUMN IF NOT EXISTS creation_scope jsonb
   `)).then(() => undefined).catch(error => { ready = undefined; throw error; });
   await ready;
 }
@@ -48,8 +51,9 @@ export async function submitCanvasVideoBatch(actorRaw: string, raw: unknown) {
     if (!acquired) throw new ModelConfigError("OPERATION_PENDING", "视频批次正在提交，请稍后核查原批次", 409);
     const digest = createHash("sha256").update(canonicalConfig(input)).digest("hex");
     const old = (await client.query("SELECT * FROM app_canvas_video_batches WHERE id=$1", [input.idempotencyKey])).rows[0];
-    let prepared: PreparedBatch;
+    let prepared: PreparedBatch,creationScope:CreationContext|undefined;
     if (old) {
+      creationScope=assertWorkflowCreationScope(old.creation_scope,actor);
       if (old.email !== actor || old.node_id !== input.nodeId || old.input_digest !== digest) throw new ModelConfigError("OPERATION_CONFLICT", "批次编号已用于另一请求", 409);
       const decoded = decryptAtRest(old.prepared_enc);
       if (!decoded) throw new ModelConfigError("WORKFLOW_SNAPSHOT_UNAVAILABLE", "批次冻结记录不可用，未重新提交", 503);
@@ -57,8 +61,9 @@ export async function submitCanvasVideoBatch(actorRaw: string, raw: unknown) {
     } else {
       const source = await getVideoNode(actor, input.nodeId);
       if (!source) throw new ModelConfigError("VIDEO_NODE_UNAVAILABLE", "视频节点不存在", 404);
+      await bindWorkflowCreationProject(actor,source.projectKey);
       const plan = await buildCanvasVideoWorkflow(actor, { id: input.idempotencyKey, projectKey: source.projectKey, nodes: [{ id: source.id, revision: input.expectedRevision }] });
-      await authorizeWorkflowInputs(actor, plan);
+      await validateWorkflowCreationInputs(actor,plan);await authorizeWorkflowInputs(actor, plan);
       const original = plan.nodes[0], copies: CanvasVideoNode[] = [];
       for (let index = 1; index < input.count; index++) {
         const id = `video-${input.idempotencyKey}-${index}`;
@@ -81,12 +86,14 @@ export async function submitCanvasVideoBatch(actorRaw: string, raw: unknown) {
         await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`video-node-graph:${actor}`]);
         const current = (await client.query("SELECT revision,deleted_at FROM app_canvas_video_nodes WHERE email=$1 AND id=$2 FOR UPDATE", [actor, source.id])).rows[0];
         if (!current || current.deleted_at || Number(current.revision) !== input.expectedRevision) throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT", "视频节点已更新，批次未提交", 409);
+        creationScope=await acceptWorkflowCreationTx(client,actor,plan);
+        if(creationScope?.creationId){await creationLinkTx(client,creationScope.creationId,actor,'video-batch',input.idempotencyKey);await creationLinkTx(client,creationScope.creationId,actor,'video-node',source.id,'input');}
         for (const copy of copies) await saveVideoNodeTx(client, actor, { id: copy.id, projectKey: copy.projectKey, expectedRevision: 0, operationId: randomUUID(), title: copy.title, x: copy.x, y: copy.y, width: copy.width, height: copy.height, config: copy.config, inputs: copy.inputs }, copy.projectKey);
-        await client.query("INSERT INTO app_canvas_video_batches(id,email,node_id,input_digest,prepared_enc) VALUES($1,$2,$3,$4,$5)", [input.idempotencyKey, actor, source.id, digest, encryptAtRest(JSON.stringify(prepared))]);
+        await client.query("INSERT INTO app_canvas_video_batches(id,email,node_id,input_digest,prepared_enc,creation_scope) VALUES($1,$2,$3,$4,$5,$6::jsonb)", [input.idempotencyKey, actor, source.id, digest, encryptAtRest(JSON.stringify(prepared)),creationScope?JSON.stringify(creationScope):null]);
         await client.query("COMMIT");
       } catch (error) { await client.query("ROLLBACK"); throw error; }
     }
-    const result = await scheduleVideoWorkflow(actor, prepared.plan, undefined, prepared.frozen);
+    const result = await runWorkflowCreation(creationScope,()=>scheduleVideoWorkflow(actor, prepared.plan, undefined, prepared.frozen));
     return { ...result, nodeIds: prepared.nodeIds, run: await getVideoWorkflow(actor, result.runId) };
   } finally {
     if (acquired) await client.query("SELECT pg_advisory_unlock(hashtextextended($1,0))", [lock]).catch(() => {});

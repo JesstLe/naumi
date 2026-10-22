@@ -2,6 +2,7 @@ import 'server-only';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {randomUUID,createHmac,timingSafeEqual} from 'node:crypto';
 import {z} from 'zod';
+import type {PoolClient} from 'pg';
 import {getPool,dbEnabled} from '@/lib/db';
 import {enterpriseCreationRead} from '@/lib/enterprise/server';
 import {TeamError} from '@/lib/teams/server';
@@ -10,10 +11,12 @@ import {settingsSecret} from '@/lib/settings-secret';
 import {requestRequirement,TOOL_ACCESS,allows,type AccessPolicy} from '@/lib/feature-access/catalog';
 import {userFeaturePolicy} from '@/lib/feature-access/server';
 
-export type CreationContext={actorEmail:string;scopeKind:'personal'|'tenant';tenantId:string|null;creationId?:string;requestText?:string;parameters?:Record<string,unknown>;sourcePath?:string;parentContext?:string;evidencePending?:boolean;originalInputs?:{storageRef:string;mime:string;role:string;position:number}[]};
+export type CreationContext={actorEmail:string;scopeKind:'personal'|'tenant';tenantId:string|null;creationId?:string;requestText?:string;parameters?:Record<string,unknown>;sourcePath?:string;parentContext?:string;workspaceExplicit?:boolean;evidencePending?:boolean;originalInputs?:{storageRef:string;mime:string;role:string;position:number}[]};
 const storage=new AsyncLocalStorage<CreationContext>();
 export const currentCreationContext=()=>storage.getStore();
 export function withFrozenCreation<T>(value:CreationContext|undefined,run:()=>Promise<T>){return value?storage.run(value,run):run();}
+/** Legacy sources must not inherit a tenant from the request resuming them. */
+export function withoutCreationContext<T>(run:()=>Promise<T>){return storage.exit(run);}
 export function frozenCreationScope(value:unknown,email?:string):CreationContext|undefined {
  const parsed=z.object({actorEmail:z.string().min(1).max(254),scopeKind:z.enum(['personal','tenant']),tenantId:z.string().uuid().nullable(),creationId:z.string().max(200).optional(),requestText:z.string().max(50000).optional(),parameters:z.record(z.string(),z.unknown()).optional(),sourcePath:z.string().optional(),parentContext:z.string().max(240).optional()}).safeParse(value);
  if(!parsed.success)return undefined;const c=parsed.data;if(email&&c.actorEmail!==email.toLowerCase()||(c.scopeKind==='tenant')!==(c.tenantId!==null))throw new TeamError('冻结创作归属无效',409);return c;
@@ -31,6 +34,55 @@ export async function bindCreationParent(context:CreationContext,id:string) {
  const old=(await getPool().query("SELECT scope_kind,tenant_id FROM app_creation_contexts WHERE actor_email=$1 AND context_kind='project' AND context_id=$2",[context.actorEmail,id])).rows[0];
  if(old&&(old.scope_kind!==context.scopeKind||old.tenant_id!==context.tenantId))throw new TeamError('当前项目的工作空间已固定，请新建项目',409);
  context.parentContext=id;return context;
+}
+/** Bind only a server-authorized actual project. A new root is attested by its
+ * owning transaction; old projects require immutable output evidence. */
+export async function bindActualCreationProject(email:string,id:string,options:{tx?:PoolClient;newRoot?:boolean}={}) {
+ const context=currentCreationContext();if(!dbEnabled||!context)return context;
+ if(context.actorEmail!==email.toLowerCase()||id.length>240||!/^[a-zA-Z0-9_:.\-]+$/.test(id))throw new TeamError('项目上下文无效',400);
+ if(options.newRoot&&!options.tx)throw new TeamError('首次项目绑定必须与创建事务一致',409);
+ await ensureCreationSchema();const tx=options.tx||getPool();
+ if(!options.newRoot){
+  let physical=false;
+  for(const table of ['app_canvas_video_projects','app_canvas_video_nodes','app_canvas_text_nodes']){
+   if(!(await tx.query('SELECT to_regclass($1) AS name',[table])).rows[0].name)continue;
+   if((await tx.query(`SELECT 1 FROM ${table} WHERE email=$1 AND project_key=$2 LIMIT 1`,[email.toLowerCase(),id])).rowCount){physical=true;break;}
+  }
+  const at=id.indexOf(':'),kind=id.slice(0,at),root=id.slice(at+1);
+  if(!physical)physical=!!(await tx.query("SELECT 1 FROM app_artworks WHERE email=$1 AND deleted_at IS NULL AND (($2='tree' AND (id=$3 OR group_id=$3)) OR ($2='batch' AND batch_id=$3)) LIMIT 1",[email.toLowerCase(),kind,root])).rowCount;
+  if(!physical)throw new TeamError('画布项目不存在或无权访问',404);
+ }
+ const old=(await tx.query("SELECT scope_kind,tenant_id FROM app_creation_contexts WHERE actor_email=$1 AND context_kind='project' AND context_id=$2",[email.toLowerCase(),id])).rows[0];
+ let proof=old;
+ if(!proof){const at=id.indexOf(':'),kind=id.slice(0,at),root=id.slice(at+1);
+  const rows=(await tx.query(`SELECT DISTINCT c.scope_kind,c.tenant_id FROM app_artworks a
+   JOIN app_creation_links l ON l.target_type='artwork' AND l.target_id=a.id AND l.relation='output'
+   JOIN app_creation_records c ON c.id=l.creation_id AND c.actor_email=a.email
+   WHERE a.email=$1 AND a.deleted_at IS NULL AND c.scope_kind IN('personal','tenant')
+   AND (($2='tree' AND (a.id=$3 OR a.group_id=$3)) OR ($2='batch' AND a.batch_id=$3))`,[email.toLowerCase(),kind,root])).rows;
+  if(rows.length>1)throw new TeamError('项目归属存在冲突，请新建项目',409);proof=rows[0];
+ }
+ if(proof){
+  if(context.scopeKind!==proof.scope_kind||context.tenantId!==proof.tenant_id){
+   if(context.workspaceExplicit||context.creationId)throw new TeamError('当前项目的工作空间已固定，请新建项目',409);
+   context.scopeKind=proof.scope_kind;context.tenantId=proof.tenant_id;
+   if(context.tenantId){const policy=await userFeaturePolicy(email);await enterpriseCreationRead(email,context.tenantId,async(_tx,s)=>assertCreationFeature(s.entitlement.featurePolicy,context.sourcePath||'/api/video/generate','POST',undefined,policy));}
+  }
+ }else if(!options.newRoot){
+  if(context.tenantId)throw new TeamError('现有项目归属未记录，请在企业空间新建项目',409);
+  // Personal execution may continue, without relabelling an old project's past.
+  delete context.parentContext;return context;
+ }
+ await tx.query("INSERT INTO app_creation_contexts(actor_email,context_kind,context_id,scope_kind,tenant_id) VALUES($1,'project',$2,$3,$4) ON CONFLICT DO NOTHING",[email.toLowerCase(),id,context.scopeKind,context.tenantId]);
+ const saved=(await tx.query("SELECT scope_kind,tenant_id FROM app_creation_contexts WHERE actor_email=$1 AND context_kind='project' AND context_id=$2",[email.toLowerCase(),id])).rows[0];
+ if(saved.scope_kind!==context.scopeKind||saved.tenant_id!==context.tenantId)throw new TeamError('当前项目的工作空间已固定，请新建项目',409);
+ context.parentContext=id;return context;
+}
+/** Validate referenced text/video projects without changing the destination. */
+export async function assertCreationProjectInput(email:string,id:string){
+ const context=currentCreationContext();if(!dbEnabled||!context)return;
+ await ensureCreationSchema();const row=(await getPool().query("SELECT scope_kind,tenant_id FROM app_creation_contexts WHERE actor_email=$1 AND context_kind='project' AND context_id=$2",[email.toLowerCase(),id])).rows[0];
+ if(row?.scope_kind==='tenant'&&row.tenant_id!==context.tenantId)throw new TeamError('不能直接引用其他企业的素材',403);
 }
 export async function bindCreationMedia(email:string,reference:string) {
  const scope=currentCreationContext();if(!dbEnabled||!scope)return;
@@ -76,10 +128,10 @@ export async function withCreationRequest<T extends Response>(request:Request,em
    return s.team.id;
   });
  }
- const context:CreationContext={actorEmail:email.toLowerCase(),scopeKind:tenantId?'tenant':'personal',tenantId,sourcePath:new URL(request.url).pathname};
+ const context:CreationContext={actorEmail:email.toLowerCase(),scopeKind:tenantId?'tenant':'personal',tenantId,sourcePath:new URL(request.url).pathname,workspaceExplicit:request.headers.has('x-naumi-workspace')};
  if(parent){if(parent.length>240||!/^[a-zA-Z0-9_:.\-]+$/.test(parent))throw new TeamError('项目上下文无效',400);
   if(old&&(old.scope_kind!==context.scopeKind||old.tenant_id!==tenantId))throw new TeamError('当前项目的工作空间已固定，请新建项目',409);
-  if(!old){const existing=(await getPool().query(`SELECT 1 FROM app_agent_sessions WHERE id=$1 AND email=$2 UNION ALL SELECT 1 FROM app_project_names WHERE key=$1 AND email=$2 LIMIT 1`,[parent,context.actorEmail])).rows[0];if(existing&&tenantId)throw new TeamError('现有项目归属未记录，请在企业空间新建项目',409);}
+  if(!old&&!request.headers.has('x-naumi-project-context')&&!body?.projectKey){const existing=(await getPool().query(`SELECT 1 FROM app_agent_sessions WHERE id=$1 AND email=$2 UNION ALL SELECT 1 FROM app_project_names WHERE key=$1 AND email=$2 LIMIT 1`,[parent,context.actorEmail])).rows[0];if(existing&&tenantId)throw new TeamError('现有项目归属未记录，请在企业空间新建项目',409);}
   context.parentContext=parent;
  }
  if(body){
@@ -88,7 +140,15 @@ export async function withCreationRequest<T extends Response>(request:Request,em
    context.parameters=Object.fromEntries(['parameters','ratio','resolution','quality','count','size','seconds','mode','output','intent'].filter(k=>Object.hasOwn(body!,k)).map(k=>[k,body![k]]));
   }
  }
- return storage.run(context,run);
+ return storage.run(context,async()=>{
+  if(request.headers.has('x-naumi-project-context'))await bindActualCreationProject(email,parent);
+  else if(body?.projectKey){
+   // The owning video-node transaction alone can attest its genuinely new root.
+   const creatingRoot=new URL(request.url).pathname==='/api/canvas/video-nodes'&&body.expectedRevision===0&&body.projectKey===`tree:${body.id}`;
+   if(!creatingRoot)await bindActualCreationProject(email,body.projectKey);
+  }
+  return run();
+ });
 }
 export function creationId(){return `cr-${randomUUID()}`;}
 /** Non-model local/import routes share scope validation without selecting models. */
