@@ -9,7 +9,8 @@ from unittest.mock import Mock, patch
 import release47_normal_controller as ctl
 import release47_normal_rollback as old_rollback
 from release47_host import Hold
-from release47_saas_successor import AUTHORIZATION, SaasController, validate_config
+from release47_saas_successor import AUTHORIZATION, SaasController, validate_config, predecessor_proof, MIB
+from release47_video_family_successor import VideoFamilyController
 
 
 class SaasRecovery(unittest.TestCase):
@@ -22,17 +23,87 @@ class SaasRecovery(unittest.TestCase):
     def config(self):
         return {'target': '47.105.59.142', 'authorization': AUTHORIZATION, 'releaseId': 'release47-saas-20261023',
                 'recoveryMode': 'saas-controlled-maintenance', 'restoreDatabase': False,
-                'replayAcceptedTasks': False, 'activateDisabledModels': False, 'webFinalMemoryMiB': 3072}
+                'replayAcceptedTasks': False, 'activateDisabledModels': False, 'webFinalMemoryMiB': 2048,
+                'webMemoryMiB':1536, 'workerMemoryMiB':1024, 'reviewedCombinedMedia':True,
+                'previousNormalReleaseId':'release47-video-family-prior',
+                'predecessorReleaseId':'release47-video-family-prior',
+                'newWorkerName':'naumi47-worker-video-family-saas-20261023',
+                'combinedMedia':{'workerName':'naumi47-worker-video-family-saas-20261023',
+                                 'secret':'synthetic-fixture-media-secret-'*3,
+                                 'scratchSource':'/opt/naumi-staging/data/video-media-jobs'},
+                'videoReferencePublicOrigin':'https://47.105.59.142',
+                'evidenceRoot':'/opt/naumi-staging/evidence/saas-fixture',
+                'storageAcceptanceScript':'/opt/naumi-staging/evidence/saas-fixture/tools/storage.cjs',
+                'storageAcceptanceSha256':'a'*64,
+                'mediaProbePath':'/data/isolated-provider-probes/provider-video-probe-20261023/fixture.mp4',
+                'mediaProbeSha256':'b'*64, 'commit':'b'*40, 'image':'sha256:'+'a'*64,
+                'version':'1792699999', 'imageArchiveSha256':'c'*64,
+                'imageAcceptanceOperations':['11111111-1111-4111-8111-111111111111']}
 
     def test_exact_scope_and_no_data_or_configuration_rewind(self):
         cfg = self.config()
         validate_config(cfg)
         for key, value in [('target', '103.30.76.93'), ('authorization', '继续'),
                            ('recoveryMode', 'old-program'), ('restoreDatabase', True),
-                           ('replayAcceptedTasks', True), ('activateDisabledModels', True), ('webFinalMemoryMiB', 4096)]:
+                           ('replayAcceptedTasks', True), ('activateDisabledModels', True), ('webFinalMemoryMiB', 3072),
+                           ('workerMemoryMiB',128), ('webMemoryMiB',2048), ('reviewedCombinedMedia',False),
+                           ('previousNormalReleaseId','different')]:
             bad = {**cfg, key: value}
             with self.subTest(key=key), self.assertRaises(Hold):
                 validate_config(bad)
+
+    def test_runtime_dependencies_are_rejected_before_host_access(self):
+        cfg = self.config()
+        invalid = [('newWorkerName','naumi47-worker-saas-20261023'),
+                   ('combinedMedia',{**cfg['combinedMedia'],'workerName':'naumi47-worker-video-family-other'}),
+                   ('combinedMedia',{**cfg['combinedMedia'],'scratchSource':'/unreviewed'}),
+                   ('combinedMedia',{**cfg['combinedMedia'],'extra':True}),
+                   ('videoReferencePublicOrigin','http://127.0.0.1'),
+                   ('storageAcceptanceScript','/opt/naumi-staging/evidence/other/tools/storage.cjs'),
+                   ('storageAcceptanceSha256','changed'), ('mediaProbePath','/data/unknown.mp4'),
+                   ('mediaProbeSha256',''), ('imageAcceptanceOperations',[]),
+                   ('preservedWorkerTick',{'id':'legacy'}), ('commit','branch-name')]
+        for key,value in invalid:
+            with self.subTest(key=key), self.assertRaises(Hold):
+                validate_config({**cfg,key:value})
+
+    def test_current_media_readiness_and_memory_gates_are_inherited(self):
+        self.assertIs(SaasController.after_retirement, VideoFamilyController.after_retirement)
+        self.assertIs(SaasController.reference_proof, VideoFamilyController.reference_proof)
+        self.assertIs(SaasController.retirement_memory_proof, VideoFamilyController.retirement_memory_proof)
+        self.assertIs(SaasController.media_worker, VideoFamilyController.media_worker)
+        # SaaS's extra tenant check must run the real media/storage ready gates.
+        operator = SaasController.__new__(SaasController)
+        operator.newweb = {'id':'candidate'}
+        operator.request = Mock(return_value={'items':[]})
+        operator.tx = Mock()
+        with patch.object(VideoFamilyController, 'ready', return_value={'combinedMediaChecked':True}) as ready:
+            self.assertTrue(operator.ready()['combinedMediaChecked'])
+            ready.assert_called_once()
+
+    def test_exact_two_gib_current_predecessor_and_retirement_are_required(self):
+        cfg = {**self.config(), 'oldWeb':{'id':'web','name':'old-web','image':'same'},
+               'oldWorker':{'id':'worker','name':'old-worker','image':'same'}}
+        prior = {'phase':'COMPLETE','retired':['older-web','older-worker'],
+                 'web':cfg['oldWeb'],'worker':cfg['oldWorker']}
+        state = {'activeNormalBlueGreenReleaseId':cfg['predecessorReleaseId'],
+                 'normalBlueGreenReleases':{cfg['predecessorReleaseId']:prior},
+                 'runtimeRecovery':{'phase':'ACKNOWLEDGED','successorReleaseId':cfg['predecessorReleaseId']}}
+        tx = Mock()
+        tx.inspect.return_value = {'State':{'Running':False},'HostConfig':{'RestartPolicy':{'Name':'no'}}}
+        rows = {key:{'State':{'Running':True},'HostConfig':{'Memory':memory*MIB}}
+                for key,memory in [('web',2048),('worker',1024)]}
+        tx.pin.side_effect = lambda identity: rows[identity['id']]
+        self.assertEqual(predecessor_proof(tx,state,cfg)['priorWebMemoryMiB'],2048)
+        for key, memory in [('web',3072),('worker',128)]:
+            before = rows[key]['HostConfig']['Memory']
+            rows[key]['HostConfig']['Memory'] = memory*MIB
+            with self.subTest(key=key), self.assertRaisesRegex(Hold,'PREDECESSOR_MEMORY_CHANGED'):
+                predecessor_proof(tx,state,cfg)
+            rows[key]['HostConfig']['Memory'] = before
+        tx.inspect.return_value['State']['Running'] = True
+        with self.assertRaisesRegex(Hold,'PRIOR_SLOT_NOT_RETIRED'):
+            predecessor_proof(tx,state,cfg)
 
     def test_previous_program_entry_refuses_before_any_host_access(self):
         with self.assertRaisesRegex(Hold, 'SAAS_REQUIRES_CONTROLLED_RECOVERY'):

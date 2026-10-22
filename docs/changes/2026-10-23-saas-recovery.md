@@ -44,3 +44,15 @@ SaaS适配在切流前固定本地验收/真实公网入口盘点的hash，生�
 独立审查发现并修复共享切流helper的P1：原helper在reload超时后会自动恢复preimage，而第一次reload可能已经生效并接受新SaaS请求。现为SaaS forward和维护切换显式使用 `failure_policy=preserve-written`；原有发布默认恢复preimage流程保持。切换回复未知时保留可能已写入的配置、原UUID/UNKNOWN和实际字节，按真实候选闭包CAS进入维护；混合或未知闭包拒绝自动覆盖。维护使用独立事务子目录，避免覆盖forward的intent与preimage。恢复状态为 `RECOVERY_REQUIRED`，继续阻断后续发布，不冒称COMPLETE/ROLLED_BACK。
 
 本机集中回归：Controls14、SaaS8、正常发布policy34、lifecycle58、NAS后继5组通过。使用真实helper与真实原子文件写入，模拟“首次reload已应用但返回超时→维护reload”，观察到的配置依次仅为candidate、maintenance，没有旧program；原gateway-switch UNKNOWN与两份intent均保留。第二原子写失败的混合状态保持未知，不发reload。新增内部执行图和权限proof的拒绝断言；日志 `output/saas-admin-20261022/verification/ops-controls-final.log` 与 `ops-saas-final.log`。Nginx路由/HTTP的52项真实Linux验收见前述独立证据；本组HostTransaction命令为明确fixture，不能替代现场切换验收。
+
+## 合入视频Worker后的资源与就绪门槛
+
+供应商后继`5d568c7b85ad99dc3db317c66aceedca237f6bdd`复核47实际RAM约7270MiB，combined Worker真实运行峰值约655MiB；原Web3GiB+Worker1GiB+主机1GiB预算不合格。本轮SaaS改为直接继承当前VideoFamilyController的真实媒体/私有参考图就绪与三段RAM门槛，候选Web1536MiB、最终Web2048MiB、Worker1024MiB、主机保留1024MiB；完全移除NAS历史3GiB after_retirement alias。只在旧槽已退役后无重启调高Web上限并更新supervisor固定指纹。
+
+ready和停止旧槽前以MemAvailable加旧两槽anon的向下取整值保守预测，不计旧file cache或Swap；退役后以真实MemAvailable再次核验，无旧槽释放额度。SaaS前置还核对当前已完成前序发布、两个旧槽退役、当前Web2GiB/Worker1GiB精确身份，防止继续使用NAS阶段的3GiB前提。47真实SaaS候选峰值仍需最后固定镜像和现场证明，本机资源fixture不能替代。
+
+只读审查另外发现P2：正常configure可接受SaaS命名，但clone_web只允许明确video-family Worker前缀，可能备份/import后才失败。SaaS现于任何HostTransaction之前校验combinedMedia的精确字段、同一newWorkerName及现有允许前缀、固定scratch、参考素材公网origin、属于本次证据目录的固定验收脚本/hash、真实media probe路径/hash、固定程序与原有图片验收操作，禁用NAS恢复例外。候选Worker命名为`naumi47-worker-video-family-saas-*`，没有放宽host隔离或复用旧secret。
+
+最新集中回归在本机Linux+官方Node24二进制执行193组，全部通过且无skip；日志`output/saas-admin-20261022/verification/ops-merged-linux-final.log`。覆盖Controls/Host/SaaS11/normal policy/lifecycle/video-family/Worker handoff/维护renderer，包含真实POSIX原子文件与实际docker-exec JavaScript协议fixture。前两次工具环境缺Node导致3组skip，不能当作那三组通过；最后明确补齐Node后收口。没有连接47或宣称线上恢复已通过。
+
+紧急维护会阻断公网短期供应商参考素材URL。保留accepted任务和内部执行状态，不重投，但不能承诺尚未拉取输入的上游在维护期间必定完成；这也是受控维护属于降级恢复、不能冒称连续可用成功的原因。

@@ -5,12 +5,12 @@ gates. Never cuts back to a program that ignores the new permission semantics.
 """
 import json
 import pathlib
+import re
 
 import release47_normal_controller as ctl
 import release_client_compat as compat
 from release47_host import Hold, environment, file_sha, require
-from release47_image_delivery_successor import ImageDeliveryController
-from release47_nas_successor import NasController
+from release47_video_family_successor import VideoFamilyController, MIB
 from saas_recovery_gateway import render, server_inventory
 
 AUTHORIZATION = '后台你觉得验收通过之后 合并所有分支然后上线47服务器做真实验收'
@@ -22,7 +22,73 @@ def validate_config(cfg):
             and cfg.get('recoveryMode') == 'saas-controlled-maintenance', 'EXACT_SAAS_RELEASE_REQUIRED')
     require(cfg.get('restoreDatabase') is False and cfg.get('replayAcceptedTasks') is False
             and cfg.get('activateDisabledModels') is False, 'SAAS_DATA_CONFIG_AND_TASK_PRESERVATION_REQUIRED')
-    require(cfg.get('webFinalMemoryMiB') == 3072, 'SAAS_REVIEWED_FINAL_RAM_REQUIRED')
+    require(type(cfg.get('webMemoryMiB')) is int and cfg['webMemoryMiB'] == 1536
+            and type(cfg.get('workerMemoryMiB')) is int and cfg['workerMemoryMiB'] == 1024
+            and cfg.get('webFinalMemoryMiB') == 2048 and cfg.get('reviewedCombinedMedia') is True,
+            'SAAS_REVIEWED_FINAL_RAM_REQUIRED')
+    require(cfg.get('previousNormalReleaseId') == cfg.get('predecessorReleaseId')
+            and bool(cfg.get('predecessorReleaseId')), 'SAAS_EXACT_PREDECESSOR_REQUIRED')
+    media = cfg.get('combinedMedia', {})
+    require(isinstance(media, dict) and set(media) == {'workerName', 'secret', 'scratchSource'}
+            and media['workerName'] == cfg.get('newWorkerName')
+            and isinstance(media['workerName'], str)
+            and re.fullmatch(r'naumi47-worker-video-family-[a-z0-9-]+', media['workerName'])
+            and isinstance(media['secret'], str) and 48 <= len(media['secret']) <= 128
+            and media['scratchSource'] == '/opt/naumi-staging/data/video-media-jobs',
+            'SAAS_EXACT_COMBINED_MEDIA_BINDING_REQUIRED')
+    require(cfg.get('videoReferencePublicOrigin') == 'https://47.105.59.142',
+            'SAAS_EXACT_REFERENCE_ORIGIN_REQUIRED')
+    root = pathlib.PurePosixPath(cfg.get('evidenceRoot', ''))
+    script = pathlib.PurePosixPath(cfg.get('storageAcceptanceScript', ''))
+    require(root.parent == pathlib.PurePosixPath('/opt/naumi-staging/evidence')
+            and script.parent == root / 'tools'
+            and re.fullmatch(r'[A-Za-z0-9_.-]+\.cjs', script.name)
+            and re.fullmatch('[a-f0-9]{64}', cfg.get('storageAcceptanceSha256', '')),
+            'SAAS_PINNED_STORAGE_ACCEPTANCE_REQUIRED')
+    require(isinstance(cfg.get('mediaProbePath'), str)
+            and re.fullmatch(r'/data/isolated-provider-probes/provider-video-probe-20261023/[A-Za-z0-9_.-]+\.mp4', cfg['mediaProbePath'])
+            and re.fullmatch('[a-f0-9]{64}', cfg.get('mediaProbeSha256', '')),
+            'SAAS_PINNED_REAL_MEDIA_PROBE_REQUIRED')
+    require(re.fullmatch('[a-f0-9]{40}', cfg.get('commit', ''))
+            and re.fullmatch('sha256:[a-f0-9]{64}', cfg.get('image', ''))
+            and re.fullmatch('[0-9]{10,13}', cfg.get('version', ''))
+            and re.fullmatch('[a-f0-9]{64}', cfg.get('imageArchiveSha256', '')),
+            'SAAS_FIXED_PROGRAM_REQUIRED')
+    operations = cfg.get('imageAcceptanceOperations')
+    require(isinstance(operations, list) and operations
+            and all(isinstance(v, str) and re.fullmatch('[a-fA-F0-9-]{36}', v) for v in operations)
+            and len(set(operations)) == len(operations), 'SAAS_EXISTING_REAL_IMAGE_REQUIRED')
+    require(not any(cfg.get(key) for key in ['resumeReady', 'resumeCutback', 'finishPromoted',
+            'preservedWorkerTick', 'nasRollbackManifestPath']), 'SAAS_NO_NAS_RELEASE_EXCEPTION')
+
+
+def predecessor_proof(tx, state, cfg):
+    active = state.get('activeNormalBlueGreenReleaseId')
+    prior = state.get('normalBlueGreenReleases', {}).get(active, {})
+    require(active == cfg['predecessorReleaseId'] and prior.get('phase') == 'COMPLETE',
+            'LATEST_PUBLICATION_NOT_COMPLETE')
+    require(len(prior.get('retired', [])) == 2 and len(set(prior['retired'])) == 2,
+            'LATEST_RETIREMENT_INCOMPLETE')
+    for identifier in prior['retired']:
+        row = tx.inspect(identifier)
+        require(not row['State']['Running'] and row['HostConfig']['RestartPolicy']['Name'] == 'no',
+                'PRIOR_SLOT_NOT_RETIRED')
+    recovery = state.get('runtimeRecovery', {})
+    require(recovery.get('phase') == 'ACKNOWLEDGED' and recovery.get('successorReleaseId') == active,
+            'SAAS_PREDECESSOR_RECOVERY_NOT_ACKNOWLEDGED')
+    for role, key, memory in [('web', 'oldWeb', 2048), ('worker', 'oldWorker', 1024)]:
+        identity = cfg[key]
+        require(all(prior.get(role, {}).get(field) == identity.get(field) for field in ['id', 'name', 'image']),
+                'SAAS_PREDECESSOR_SLOT_CHANGED')
+        row = tx.pin(identity)
+        require(row['State']['Running'] is True and row['HostConfig']['Memory'] == memory * MIB,
+                'SAAS_PREDECESSOR_MEMORY_CHANGED')
+    proof = {'releaseId': active, 'phase': 'COMPLETE', 'priorWebMemoryMiB': 2048,
+             'priorWorkerMemoryMiB': 1024, 'retiredIds': prior['retired'],
+             'candidateWebMemoryMiB': 1536, 'finalWebMemoryMiB': 2048,
+             'workerMemoryMiB': 1024, 'hostReserveMiB': 1024}
+    tx.save('SAAS_PREDECESSOR_PUBLICATION.json', proof)
+    return proof
 
 
 def syntax_check(tx, bodies, root):
@@ -51,11 +117,10 @@ def syntax_check(tx, bodies, root):
     tx.run(['nginx', '-t', '-c', str(root / 'etc/nginx/nginx.conf')])
 
 
-class SaasController(ImageDeliveryController):
+class SaasController(VideoFamilyController):
     saas_controlled_recovery = True
-    # Reuse only the published in-place memory-limit increase AFTER retirement;
-    # no NAS migration/eviction, task settlement or old-program rollback methods.
-    after_retirement = NasController.after_retirement
+    # Keep the current combined Worker/media readiness and conservative 2 GiB
+    # final-RAM gates. No NAS migration, settlement or old rollback exception.
 
     def __init__(self, tx, cfg):
         validate_config(cfg)
@@ -196,15 +261,7 @@ def main(config_path):
     with ctl.transaction() as tx:
         print('THREE_LOCKS=ACQUIRED', flush=True)
         state = json.loads(ctl.CANON.read_bytes())
-        active = state.get('activeNormalBlueGreenReleaseId')
-        prior = state.get('normalBlueGreenReleases', {}).get(active, {})
-        require(active == cfg.get('predecessorReleaseId') and prior.get('phase') == 'COMPLETE',
-                'LATEST_PUBLICATION_NOT_COMPLETE')
-        require(len(prior.get('retired', [])) == 2, 'LATEST_RETIREMENT_INCOMPLETE')
-        for identifier in prior['retired']:
-            row = tx.inspect(identifier)
-            require(not row['State']['Running'] and row['HostConfig']['RestartPolicy']['Name'] == 'no',
-                    'PRIOR_SLOT_NOT_RETIRED')
+        predecessor_proof(tx, state, cfg)
         operator = SaasController(tx, cfg)
         try:
             operator.run()
