@@ -6,6 +6,8 @@ const art={id:'attachment-root',title:'原始场景',category:'main',prompt:'场
 const arts=[art,{...art,id:'other-project',groupId:'other-project',title:'另一项目',canvasX:0,canvasY:0}];
 const model={id:'image-fixture',label:'图片模型',modality:'image',supportsEdit:true,qualities:['medium'],nativeResolutions:['1K'],generationParameters:{ratios:['auto','1:1','3:4'],resolutions:['1K']}};
 const state={uploads:[],turns:[],positions:[],history:[],failUpload:false,prepareDelay:0,paidCalls:0};
+let holdStream=false;const heldReplies=[];
+function finishReply(res,body){res.end(`event: delta\ndata: ${JSON.stringify({text:'本地验收已收到 '+body.contextIds.length+' 张图片。'})}\n\nevent: done\ndata: {"ok":true}\n\n`);}
 const dist=process.env.FIXTURE_DIST||'.next-agent-chat-attachments';
 const app=cp.spawn(process.execPath,[path.resolve('node_modules/next/dist/bin/next'),'dev','-p',String(nextPort)],{cwd:root,env:{...process.env,DATABASE_URL:'',VIDEO_WORKER_DISABLED:'1',NAUMI_VIDEO_WORKER:'0',OPENAI_API_KEY:'fixture-not-a-key',OPENAI_BASE_URL:'http://127.0.0.1:1/v1',NEXT_PUBLIC_SUPABASE_URL:'',NEXT_PUBLIC_SUPABASE_ANON_KEY:'',NEXT_TELEMETRY_DISABLED:'1',NEXT_DIST_DIR:dist},windowsHide:true,stdio:['ignore','pipe','pipe']});
 app.stdout.on('data',b=>process.stdout.write(b));app.stderr.on('data',b=>process.stderr.write(b));
@@ -13,7 +15,7 @@ const json=(r,v,s=200)=>{r.writeHead(s,{'content-type':'application/json','cache
 const server=http.createServer(async(req,res)=>{try{
  const u=new URL(req.url,'http://127.0.0.1'),p=u.pathname;const chunks=[];for await(const b of req)chunks.push(b);const raw=Buffer.concat(chunks);const body=req.headers['content-type']?.includes('application/json')&&raw.length?JSON.parse(raw):{};
  if(p==='/__fixture/state')return json(res,{...state,artworks:arts});
- if(p==='/__fixture/control'){if(u.searchParams.has('fail'))state.failUpload=u.searchParams.get('fail')==='1';if(u.searchParams.has('delay'))state.prepareDelay=Number(u.searchParams.get('delay'));return json(res,{ok:true});}
+ if(p==='/__fixture/control'){if(u.searchParams.has('fail'))state.failUpload=u.searchParams.get('fail')==='1';if(u.searchParams.has('delay'))state.prepareDelay=Number(u.searchParams.get('delay'));if(u.searchParams.has('hold'))holdStream=u.searchParams.get('hold')==='1';if(u.searchParams.has('release'))for(const [reply,turn] of heldReplies.splice(0))finishReply(reply,turn);return json(res,{ok:true});}
  if(p==='/api/media/uploads'){if(state.prepareDelay)await new Promise(r=>setTimeout(r,state.prepareDelay));return json(res,{enabled:false});}
  if(p==='/api/artworks/add'){
   if(state.failUpload){state.failUpload=false;return json(res,{error:'本地验收：此张上传失败'},500);}
@@ -22,7 +24,7 @@ const server=http.createServer(async(req,res)=>{try{
   state.uploads.push(entry);arts.push({...art,id,title:entry.title,parentId:entry.parentId,canvasX:entry.x,canvasY:entry.y,createdAt:new Date().toISOString()});return json(res,{ok:true,id,image:art.image,width:320,height:260});
  }
  if(p==='/api/canvas/assistant'){
-  if(req.method==='POST'){state.turns.push(body);res.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-store'});res.end(`event: open\ndata: ${JSON.stringify({sessionId:body.sessionId})}\n\nevent: delta\ndata: ${JSON.stringify({text:'本地验收已收到 '+body.contextIds.length+' 张图片。'})}\n\nevent: done\ndata: {"ok":true}\n\n`);return;}
+  if(req.method==='POST'){state.turns.push(body);res.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-store'});res.write(`event: open\ndata: ${JSON.stringify({sessionId:body.sessionId})}\n\n`);if(holdStream)heldReplies.push([res,body]);else finishReply(res,body);return;}
   const last=state.turns.at(-1);if(u.searchParams.has('id'))return json(res,{session:{id:u.searchParams.get('id'),anchorId:last?.anchorId||'attachment-root',referenceIds:last?.contextIds||[],turns:[],steps:[],running:false,status:'completed'}});
   return json(res,{sessions:last?[{id:last.sessionId,title:'多图会话',anchorId:last.anchorId,updatedAt:now}]:[]});
  }

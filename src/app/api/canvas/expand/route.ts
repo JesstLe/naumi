@@ -20,6 +20,8 @@ import { ImageOperationPending } from "@/lib/image-gateway";
 import { BillingError } from "@/lib/billing/types";
 import { billingErrorResponse } from "@/lib/billing/request";
 import { expansionGeometry, composeExpandedImage, ExpandInputError } from "@/lib/canvas/expand-image";
+import { expansionUsesMask } from "@/lib/canvas/expand-capabilities";
+import { currentModelExecution } from "@/lib/model-config/context";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
@@ -146,7 +148,7 @@ async function handleObservedPost(request: Request) {
     const editedRaw = await editImage({
       operationId:currentSynchronousBilling()?.id,
       images: [padded],
-      mask,
+      ...(expansionUsesMask(currentModelExecution("image")) ? { mask } : {}),
       prompt,
       size: editSize(targetW, targetH),
       quality,

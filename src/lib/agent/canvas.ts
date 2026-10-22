@@ -15,6 +15,7 @@ import { dataUrlToBytes } from "../storage";
 import { toVisionDataUrl } from "../vision-image";
 import { completeAgentReleaseActivity, getOrCreateSession, primeAgentSystemPrompt, resolveVisionImages, persistAgentSession, appendSessionEvent, MODEL_ID, type Session } from "./runtime";
 import { canvasSessionPrefix, canvasProjectSessionPrefix, canvasAgentHistory } from "./canvas-history";
+import { AgentStreamInterruption, continuationTurn, streamInterruption, withTextOnlyContinuation, TEXT_CONTINUATION_PROMPT } from "./stream-recovery";
 import { classifyAgentFailure } from "./recovery";
 import {authorizeVideoProject} from "../canvas/video-node-service";
 import {getVideoNode} from "../canvas/video-node-repository";
@@ -45,9 +46,11 @@ async function runCanvasAgentLocal(request: Request) {
   if (!dbEnabled || !email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   if (!rateLimit(`canvas-agent:${email}`, 40, 600000)) return NextResponse.json({ error: "请求过于频繁，请稍后重试" }, { status: 429 });
   const body = record(await readHarnessBody(request));
+  const continueText = body.continueText === true;
+  if (continueText && typeof body.continueFromTurnId !== "string") return NextResponse.json({ error: "请从中断回复继续" }, { status: 400 });
   const anchorId = String(body.anchorId || "").trim();
   const history = (Array.isArray(body.messages) ? body.messages : []).map(record).filter(turn => ["user", "assistant"].includes(turn.role) && typeof turn.content === "string").slice(-12).map(turn => ({role:String(turn.role),content:String(turn.content).slice(0,4000)}));
-  const message = String(history.at(-1)?.role === "user" ? history.at(-1)?.content : "").trim().slice(0, 4000);
+  const message = continueText ? TEXT_CONTINUATION_PROMPT : String(history.at(-1)?.role === "user" ? history.at(-1)?.content : "").trim().slice(0, 4000);
   const projectKey=String(body.projectKey||"").trim().slice(0,200);
   if ((!anchorId&&!projectKey) || !message || !/^[\w-]{8,80}$/.test(String(body.sessionId || ""))) return NextResponse.json({ error: "请输入对话内容与画布项目" }, { status: 400 });
   let imageSkill;
@@ -62,14 +65,14 @@ async function runCanvasAgentLocal(request: Request) {
     try{await authorizeVideoProject(email,projectKey);const videoId=typeof body.videoNodeId==="string"?body.videoNodeId:"",node=videoId?await getVideoNode(email,videoId):null;if(videoId&&(!node||node.projectKey!==projectKey))return NextResponse.json({error:"视频节点不存在或不属于当前项目"},{status:404});const textId=typeof body.textNodeId==="string"?body.textNodeId:"";if(textId&&!(await getPool().query("SELECT 1 FROM app_canvas_text_nodes WHERE email=$1 AND id=$2 AND project_key=$3",[email,textId,projectKey])).rowCount)return NextResponse.json({error:"文字节点不存在或不属于当前项目"},{status:404});video={projectKey,...(textId?{textNodeId:textId}:{}),...(node?{nodeId:node.id,revision:node.revision}:{})};}catch{return NextResponse.json({error:"画布项目不存在或无权访问"},{status:404});}
   }
   const scope = currentModelExecution("text");
-  if (imageArtworks.length && scope && !scope.capabilities.vision) return NextResponse.json({ error: "当前模型不支持图片理解，请选择兼容模型" }, { status: 400 });
+  if (!continueText && imageArtworks.length && scope && !scope.capabilities.vision) return NextResponse.json({ error: "当前模型不支持图片理解，请选择兼容模型" }, { status: 400 });
   const origin = (process.env.INTERNAL_APP_ORIGIN || new URL(request.url).origin).replace(/\/$/, "") + "/";
   const cookie = request.headers.get("cookie") || "";
-  const images = await Promise.all(imageArtworks.map(art => vision(art, origin, cookie)));
+  const images = continueText ? [] : await Promise.all(imageArtworks.map(art => vision(art, origin, cookie)));
   const canvas: CanvasAgentContext = {
     video,anchorId:anchor?.id||"", imageUrls: imageArtworks.map(art => new URL(art.image, origin).toString()),
     imageModelId: typeof body.imageModelId === "string" ? body.imageModelId : undefined,
-    ratio: /^\d+:\d+$/.test(String(body.ratio)) ? body.ratio : anchor?.ratio || "1:1",
+    ratio: /^[1-9]\d{0,5}:[1-9]\d{0,5}$/.test(String(body.ratio)) ? body.ratio : "auto",
     resolution: ["1K", "2K", "4K"].includes(body.resolution) ? body.resolution : "1K",
     quality: ["low", "medium", "high", "xhigh", "max"].includes(body.quality) ? body.quality : "medium",
   };
@@ -122,6 +125,8 @@ async function runCanvasAgentLocal(request: Request) {
     systemPrompt: `你正在画布侧边栏执行任务，当前显示模型为「${label}」。\n当前图：${canvas.imageUrls[0]||"未选择图片，可直接文本对话；图片处理先向用户索取参考图，不猜测图片"}\n上游参考图：${canvas.imageUrls.slice(1).join("\n")}\n当前图片节点身份：${canvas.anchorId||"无"}\n当前图标题：${anchor?.title||"无"}\n当前图提示词：${anchor?.prompt || "无"}\n当前视频项目/节点：${JSON.stringify(canvas.video||null)}。视频节点通过工具查询和修改，持久任务由Worker恢复，不通过图片URL挂载。\n默认生图参数：${canvas.ratio}、${canvas.resolution}、${canvas.quality}。\n用户要求换色、精修或生图时实际调用工具，不只改写提示词；站内成品动画和仅分析、讨论或编写提示词时不调用收费工具。生图工具自动引用当前图与上游参考。文字模型只负责理解和编排，图片工具使用独立的后台画布生图模型。禁止将文字模型ID作为生图模型。`,
   }, imageSkill);
   if (session.running || session.canvasExecuting) return NextResponse.json({ error: "当前任务仍在执行，请勿重复提交" }, { status: 409 });
+  const continueFromTurnId = continuationTurn(session.events.map(event => ({ ...event.data, type: event.type })), session.agent.state.messages);
+  if (continueText && (!continueFromTurnId || continueFromTurnId !== body.continueFromTurnId)) return NextResponse.json({ error: "该回复已完成或已继续，请刷新会话" }, { status: 409 });
   liveSession=session;session.toolResultsPending=undefined;
   session.turnId = randomUUID();
   if (!session.agent.state.messages.length) session.title = message.slice(0,120);
@@ -146,21 +151,31 @@ async function runCanvasAgentLocal(request: Request) {
       cancel = () => { if (closed) return; appendSessionEvent(session,"error",{code:"ABORTED",message:"任务已停止，已受理的图片保留，请勿重复提交"}); appendSessionEvent(session,"canvas_terminal",{status:"stopped",turnId:session.turnId}); session.agent.abort(); cleanup(); closed = true; void failSynchronousStream(); void persistAgentSession(session).catch(()=>undefined); try { controller.close(); } catch {} };
       request.signal.addEventListener("abort", cancel, { once: true });
       if (request.signal.aborted) { cancel(); return; }
-      session.onDelta = text => { output += text; send("delta", { text }); };
+      session.onDelta = text => { flush(); output += text; send("delta", { text }); };
       session.onModelActivity=phase=>send("activity",{phase});
       send("open", { sessionId });
       send("activity",{phase:"processing"});
       void (async () => {
         try {
           primeAgentSystemPrompt(session, message);
-          await session.agent.prompt(message, images.length?images:undefined);
+          const continuationMessageCount = session.agent.state.messages.length;
+          if (continueText) await withTextOnlyContinuation(session, () => session.agent.prompt(message));
+          else await session.agent.prompt(message, images.length?images:undefined);
           // Async tool subscribers may still be attaching persisted results.
           await session.toolResultsPending;
           flush();
           if(closed)throw new Error("任务已停止，请从历史核对已有结果");
           const last = [...session.agent.state.messages].reverse().find(turn => turn.role === "assistant");
           if(last&&"stopReason" in last&&last.stopReason==="aborted")throw new DOMException("任务已停止","AbortError");
-          if (last && "stopReason" in last && last.stopReason==="error") throw new Error("模型未完成任务，已产出的图片保留；请勿重复提交");
+          const interruption = streamInterruption(last as any, output);
+          if (interruption) {
+            if (continueText && !interruption.partial) {
+              // A failed text-only continuation must not strand the original partial.
+              session.agent.state.messages = session.agent.state.messages.slice(0, continuationMessageCount);
+              throw new AgentStreamInterruption(interruption.diagnostic, true);
+            }
+            throw interruption;
+          }
           const attention = session.events.slice(cursorStart).findLast(event => event.type === "attention");
           const pendingAttention = attention?.data.kind === "waiting" || attention?.data.kind === "restricted";
           const modelReply = Array.isArray(last?.content) ? last.content.filter(part => part.type === "text").map(part => part.type === "text" ? part.text : "").join("").trim() : output.trim();
@@ -180,10 +195,11 @@ async function runCanvasAgentLocal(request: Request) {
           }
           const frames = [...(attention ? [{ type: "attention", data: attention.data }] : []), { type: "final", data: { reply, sessionId } }, ...(artifacts.length ? [{ type: "artifacts", data: { artifacts, anchorId } }] : [])];
           await completeSynchronousStream({ text: reply, model: modelId, agentFrames: frames });
+          appendSessionEvent(session,"canvas_reply",{reply,authoritative:!!pendingAttention,turnId:session.turnId});
           appendSessionEvent(session,"canvas_terminal",{status:pendingAttention?String(attention?.data.kind):"completed",turnId:session.turnId});
           await persistAgentSession(session);
-          send("final", { reply, sessionId }); send("done", { ok: true });
-        } catch (error) { if (!closed) { const failure=classifyAgentFailure(error); appendSessionEvent(session,"error",failure); appendSessionEvent(session,"canvas_terminal",{status:failure.code==="ABORTED"?"stopped":"failed",turnId:session.turnId}); flush(); send("error", failure); } await failSynchronousStream(); }
+          send("final", { reply, sessionId, authoritative:!!pendingAttention }); send("done", { ok: true });
+        } catch (error) { if (!closed) { const failure=classifyAgentFailure(error); appendSessionEvent(session,"error",failure); appendSessionEvent(session,"canvas_terminal",{status:failure.code==="ABORTED"?"stopped":"failed",turnId:session.turnId,canContinue:failure.canContinue===true}); flush(); send("error", {...failure,continueFromTurnId:failure.canContinue?session.turnId:undefined}); } await failSynchronousStream(); }
         finally { cleanup(); await persistAgentSession(session).catch(()=>undefined); session.canvasExecuting = false; await completeAgentReleaseActivity(session).catch(()=>undefined); if (!closed) { closed = true; controller.close(); } }
       })();
     }, cancel() { cancel(); },

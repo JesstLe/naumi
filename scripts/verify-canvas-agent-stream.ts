@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createModelFixture } from "./model-config-fixture";
 
 async function main() {
-  let mode: "stream" | "denied" | "quote" | "confirmed" = "stream", modelFinished = false, modelCalls = 0, imagePosts = 0;
+  let mode: "stream" | "denied" | "quote" | "confirmed" | "natural" = "stream", modelFinished = false, modelCalls = 0, imagePosts = 0;
   let release: () => void = () => undefined;
   const gate = new Promise<void>(resolve => { release = resolve; });
   const png = await readFile("public/demos/suite-demo/suppl-src.png");
@@ -22,11 +22,11 @@ async function main() {
     if (mode === "stream") {
       res.write(frame({ content: "首段文字已实时显示。" })); await gate;
       res.write(frame({ content: "后段随后到达，不依赖换行。" })); res.write(frame({}, "stop"));
-    } else if (mode === "confirmed" && body.messages.at(-1)?.role === "tool") {
+    } else if ((mode === "confirmed" || mode === "natural") && body.messages.at(-1)?.role === "tool") {
       res.write(frame({ content: "换色结果已交付。" })); res.write(frame({}, "stop"));
     } else {
       res.write(frame({ content: "马上执行换色。" }));
-      res.write(frame({ tool_calls: [{ index: 0, id: "call-recolor", type: "function", function: { name: "recolor_product", arguments: JSON.stringify({ image_url: f.origin + "/media/anchor.png", color: "#2E6FE0", strength: 100, confirm: true }) } }] }));
+      res.write(frame({ tool_calls: [{ index: 0, id: "call-recolor", type: "function", function: { name: mode === "natural" ? "generate_image" : "recolor_product", arguments: JSON.stringify(mode === "denied" ? {image_url:f.origin+"/media/anchor.png",color:"#2E6FE0",strength:100,confirm:true,email:"other@fixture.test"} : mode === "natural" ? {prompt:String(body.messages.findLast((m:any)=>m.role==="user")?.content||"edit"),count:1,ratio:"1:1",resolution:"1K"} : { image_url: f.origin + "/media/anchor.png", color: "#2E6FE0", strength: 100, confirm: true }) } }] }));
       res.write(frame({}, "tool_calls"));
     }
     modelFinished = true; res.end("data: [DONE]\n\n");
@@ -62,14 +62,14 @@ async function main() {
     console.log("CANVAS_REAL_SSE=PASS FIRST_DELTA_BEFORE_MODEL_END=1 NO_NEWLINE=1 PROXY_BUFFERING=OFF");
     const parse = (stream: string) => stream.split("\n\n").filter(x => x.startsWith("event:")).map(x => ({ type: x.split("\n")[0].slice(7), data: JSON.parse(x.split("\ndata: ")[1]) }));
     mode = "denied";
-    const denied = parse(await (await send("只分析图片，不要换色", "anchor")).text());
-    const blocked = denied.find(e => e.type === "attention"); assert.equal(blocked?.data.code, "INTENT_REQUIRED"); assert(blocked?.data.id);
+    const denied = parse(await (await send("编辑图片", "anchor")).text());
+    const blocked = denied.find(e => e.type === "attention"); assert.equal(blocked?.data.code, "ARGUMENT_INVALID"); assert(blocked?.data.id);
     const final = denied.find(e => e.type === "final")!; assert.equal(final.data.reply, blocked?.data.message); assert(!final.data.reply.includes("马上执行"));
     const saved = await db.getAgentSession(email, final.data.sessionId); assert.equal((saved!.messages as { content: string }[]).at(-1)!.content, blocked?.data.message); assert(!JSON.stringify(saved!.messages).includes("马上执行"));
     assert.equal(imagePosts, 0);
-    console.log("CANVAS_RESTRICTION=PASS REAL_CODE=INTENT_REQUIRED FINAL_AND_HISTORY=AUTHORITATIVE IMAGE_SUBMISSIONS=0");
+    console.log("CANVAS_RESTRICTION=PASS REAL_CODE=ARGUMENT_INVALID FINAL_AND_HISTORY=AUTHORITATIVE IMAGE_SUBMISSIONS=0");
     mode = "quote";
-    const quoted = parse(await (await send("瓶子换成蓝色", "anchor")).text());
+    const quoted = parse(await (await send("去掉其中的杂质，使画面干净通透，分子少一点", "anchor")).text());
     assert(!quoted.some(e => e.type === "attention" && e.data.kind === "restricted"), JSON.stringify(quoted));
     const waiting = quoted.find(e => e.type === "attention" && e.data.kind === "waiting"); assert(waiting, JSON.stringify(quoted));
     assert.match(waiting.data.message, /积分/); assert.equal(imagePosts, 0); assert.equal(modelCalls, 3);
@@ -104,6 +104,18 @@ async function main() {
     assert(replayed.some(e => e.type === "artifacts"), JSON.stringify(replayed)); assert.equal(imagePosts, 1); assert.equal(modelCalls, 5);
     console.log("CANVAS_REPLAY=PASS SAME_OPERATION=REUSED IMAGE_FIXTURE_POSTS=1 MODEL_CALLS_UNCHANGED=1");
     console.log("CANVAS_CONFIRMED=PASS AUTHENTIC_USER_CONFIRMATION=1 IMAGE_FIXTURE_POSTS=1 ARTIFACTS=DELIVERED CHARGE_COUNT=1 REAL_SUPPLIER_CALLS=0");
+    mode="natural";
+    const latest=await billing.config.current(),naturalConfig=structuredClone(latest.config);naturalConfig.thresholds.agentConfirmCredits=1000;
+    const naturalPrice=await billing.config.publish({id:randomUUID(),expectedVersion:latest.version,config:naturalConfig,actor:"fixture",reason:"No keyword tool selection"});
+    // The assistant's own conversation quote remains zero; refresh the active version header.
+    const naturalSend=async(message:string)=>api.POST(new Request(f.origin+"/api/canvas/assistant",{method:"POST",headers:{cookie,"content-type":"application/json","x-naumi-feature-model":"text-family","x-naumi-billing-operation-id":randomUUID(),"x-naumi-billing-version":String(naturalPrice.version),"x-naumi-billing-credits":"0"},body:JSON.stringify({mode:"agent",sessionId:randomUUID(),turnId:randomUUID(),projectKey:"workspace",anchorId:"anchor",contextIds:["anchor"],messages:[{role:"user",content:message}],imageModelId:"image-a",ratio:"1:1",resolution:"1K",quality:"medium"})}));
+    for(const message of ["去掉其中的杂质，使画面干净通透，分子少一点","在产品的底部和周围加入牛奶的元素"]){
+      const start:number=imagePosts;const response=await naturalSend(message);assert.equal(response.status,200);const events=parse(await response.text());
+      assert(!events.some(e=>e.type==="attention"&&e.data.code==="INTENT_REQUIRED"),JSON.stringify(events));
+      assert(events.some(e=>e.type==="artifacts"&&e.data.artifacts.length>0),JSON.stringify(events));assert.equal(imagePosts,start+1);
+    }
+    const allDebits=(await db.getPool().query("SELECT count(*)::int AS n FROM app_ledger WHERE email=$1 AND delta<0",[email])).rows[0];assert.equal(allDebits.n,3);
+    console.log("CANVAS_NO_KEYWORD_GATE=PASS ORIGINAL_PHRASES=2 TOOL=generate_image DELIVERED=2 ORIGINAL_QUOTE_CONFIRM=PASS REPLAY=ONCE TOTAL_IMAGE_POSTS=3 LEDGER_DEBITS=3 REAL_SUPPLIER_CALLS=0");
     console.log("CANVAS_INTENT_QUOTE=PASS ORIGINAL_USER_PHRASE=ACCEPTED FORGED_CONFIRM_TRUE=BLOCKED WAITING_QUOTE=VISIBLE IMAGE_SUBMISSIONS=0 REAL_SUPPLIER_CALLS=0");
   } finally { release(); await db.getPool().end(); await f.cleanup(); }
 }

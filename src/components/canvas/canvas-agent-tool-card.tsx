@@ -17,9 +17,9 @@ const fields: Record<string, [string, string]> = {
 const values: Record<string, string> = { low: "低", medium: "标准", high: "高", xhigh: "超高", max: "最高", transparent: "透明", opaque: "不透明" };
 
 /** One invocation, not a retry action. Result buttons only preview already delivered media. */
-export function CanvasAgentToolCard({ step, busy, english = false, sources, results, onPreview }: {
+export function CanvasAgentToolCard({ step, busy, english = false, sources, results, onPreview, compact = false, onInspect }: {
   step: AgentOrbStep; busy: boolean; english?: boolean; sources: Image[]; results: Image[];
-  onPreview: (image: Image) => void;
+  onPreview: (image: Image) => void; compact?: boolean; onInspect?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const card = useRef<HTMLElement>(null);
@@ -41,18 +41,19 @@ export function CanvasAgentToolCard({ step, busy, english = false, sources, resu
   const source = sources.find(image => image.id === step.details?.targetId);
   const output = results.filter(image => step.resultIds?.includes(image.id));
   return <section ref={card} data-tool-status={step.attention || (unconfirmed ? "unconfirmed" : step.status)} data-testid="canvas-agent-tool-card" className="overflow-hidden rounded-xl border border-[var(--canvas-ui-border)] text-[12px]">
-    <button type="button" aria-expanded={open} aria-controls={open ? detailsId : undefined} onClick={() => setOpen(value => !value)} className="canvas-ui-action flex w-full items-center gap-2 px-3 py-2.5 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px]">
+    <button type="button" aria-expanded={open} aria-controls={open ? detailsId : undefined} onClick={() => { if (!open) onInspect?.(); setOpen(value => !value); }} className="canvas-ui-action flex w-full items-center gap-2 px-3 py-2.5 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px]">
       <Icon aria-hidden="true" className={cn("h-3.5 w-3.5 shrink-0", busy && step.status === "running" && !step.attention && "motion-safe:animate-spin", step.status === "done" && !step.attention && "text-emerald-600")} />
       <span className="min-w-0 flex-1 break-words font-medium">{step.label}</span>
+      {compact && elapsed && <span className="canvas-ui-muted shrink-0 text-[10px] tabular-nums" data-testid="tool-duration">{elapsed}</span>}
       <span className="canvas-ui-muted shrink-0 text-[10px]">{status}</span>
       <ChevronRight aria-hidden="true" className={cn("h-3.5 w-3.5 shrink-0 transition-transform", open && "rotate-90")} />
     </button>
-    {step.summary && <p className="canvas-ui-muted break-words px-3 pb-2 text-[11px] leading-5" role={step.attention ? "status" : undefined}>{step.summary}</p>}
-    <div className="canvas-ui-muted flex flex-wrap items-center gap-x-3 gap-y-1 px-3 pb-2 text-[10px] tabular-nums">
+    {step.summary && (!compact || open || step.status !== "done" || step.attention) && <p className="canvas-ui-muted break-words px-3 pb-2 text-[11px] leading-5" role={step.attention ? "status" : undefined}>{step.summary}</p>}
+    {(!compact || open) && <div className="canvas-ui-muted flex flex-wrap items-center gap-x-3 gap-y-1 px-3 pb-2 text-[10px] tabular-nums">
       {elapsed && <span className="inline-flex items-center gap-1" data-testid="tool-duration" title={english ? "Call duration, including checks and result attachment" : "本次调用用时，含校验与结果挂载"}><Clock3 className="h-3 w-3" aria-hidden="true" />{elapsed}</span>}
       {!!step.resultIds?.length && <span>{english ? `${step.resultIds.length} result(s)` : `${step.resultIds.length} 个结果`}</span>}
       {!!step.details?.inputCount && <span>{english ? `${step.details.inputCount} input image(s)` : `${step.details.inputCount} 张输入图`}</span>}
-    </div>
+    </div>}
     {open && <div id={detailsId} className="canvas-ui-section space-y-3 border-t px-3 py-3" data-testid="tool-details">
       <div className="canvas-ui-muted flex min-w-0 items-start gap-1.5 text-[10px]"><Wrench className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" /><span className="break-all">{step.tool || (english ? "Tool" : "工具")}</span></div>
       {step.startedAt && <div className="canvas-ui-muted text-[10px]">{english ? "Started " : "开始于 "}<time dateTime={new Date(step.startedAt).toISOString()}>{new Date(step.startedAt).toLocaleTimeString(english ? "en-GB" : "zh-CN", { hour12: false })}</time></div>}

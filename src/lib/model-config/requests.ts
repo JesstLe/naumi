@@ -1,3 +1,4 @@
+import {cutoutImageQuality} from "./cutout-quality";
 import {resolveImageResolution} from "./resolution-fallback";
 import {currentImagegenStep} from "../imagegen/context";
 import {legacyImagegenIntent} from "../imagegen/legacy-intent";
@@ -46,10 +47,8 @@ async function requestFacts(request: Request) {
       references = Array.isArray(body.images) ? body.images.length : Array.isArray(body.sourceIds) ? body.sourceIds.length : Array.isArray(body.contextIds) ? body.contextIds.length : body.anchorId ? 1 : body.image || body.imageUrl || body.originalUrl || body.artworkId ? 1 : 0;
     }
   } catch { /* The route owns detailed payload validation; no generation is performed here. */ }
-  // Outpainting always supplies a generated keep-mask internally, even though
-  // its public JSON contains only artworkId/ratio. Bind a mask-capable channel
-  // before quoting, rather than failing inside the expensive edit transport.
-  if (new URL(request.url).pathname === "/api/canvas/expand") body.needsMask = true;
+  // Expand can edit the padded reference without a mask: the handler restores
+  // original pixels locally. User-supplied masks in other routes stay required.
   return { body, references: Math.min(32, references) };
 }
 function imageRatio(width:number,height:number) { const gcd=(a:number,b:number):number=>b?gcd(b,a%b):a; const g=gcd(Math.round(width),Math.round(height)); return `${Math.round(width)/g}:${Math.round(height)/g}`; }
@@ -129,7 +128,8 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     const presentation = qualityPresentation(upstreams);
     const qualities = preset ? [...DISPLAY_QUALITIES] : presentation?.qualities || option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities)));
     if (option?.parameters?.ratios?.length && !option.parameters.ratios.includes(ratio)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该比例", 400);
-    const explicitQuality = String(parsed.body.quality || request.headers.get("x-naumi-image-quality") || "").trim().toLowerCase();
+    const rawQuality = String(parsed.body.quality || request.headers.get("x-naumi-image-quality") || "").trim().toLowerCase();
+    const explicitQuality = purpose.image === "image.cutout" ? cutoutImageQuality(rawQuality) || "" : rawQuality;
     if (explicitQuality && ![...IMAGE_QUALITY_IDS, "auto"].includes(explicitQuality as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "质量参数无效，请选择已开放的质量档位", 400);
     const environmentQuality = String(process.env.OPENAI_IMAGE_QUALITY || "medium").trim().toLowerCase();
     const defaultQuality = qualities.includes(environmentQuality as any) ? environmentQuality : qualities[0] || "medium";

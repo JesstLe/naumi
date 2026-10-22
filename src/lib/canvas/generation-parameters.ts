@@ -14,7 +14,11 @@ export const CANVAS_QUALITIES = ["low", "medium", "high", "xhigh", "max"] as con
 export const CANVAS_MAX_COUNT = 4;
 
 export function normalizeCanvasRatio(value: unknown): string {
-  return CANVAS_RATIO_OPTIONS.some(r => r.id === value) ? String(value) : "auto";
+  return value === "auto" || validCanvasRatio(value) ? String(value) : "auto";
+}
+/** Syntax only. The published model/adapter owns actual ratio admission. */
+export function validCanvasRatio(value: unknown): value is string {
+  return typeof value === "string" && /^[1-9]\d{0,5}:[1-9]\d{0,5}$/.test(value);
 }
 export function normalizeCanvasResolution(value: unknown): string {
   return value === "5K" ? "4K" : (CANVAS_RESOLUTIONS as readonly unknown[]).includes(value) ? String(value) : "1K";
@@ -29,18 +33,20 @@ export function normalizeCanvasQuality(value: unknown): typeof CANVAS_QUALITIES[
 export type CanvasModelParameters = { ratios?: string[]; resolutions?: string[]; combinations?: string[] };
 export function canvasModelParameters(declared?: CanvasModelParameters) {
   return {
-    ratios: (CANVAS_RATIO_OPTIONS.map(r => r.id) as string[]).filter(r => r === "auto" || !declared?.ratios || declared.ratios.includes(r)),
+    ratios: ["auto", ...new Set(declared?.ratios?.filter(validCanvasRatio) ?? CANVAS_RATIO_OPTIONS.filter(r => r.id !== "auto").map(r => r.id))],
     resolutions: (Array.from(CANVAS_RESOLUTIONS) as string[]).filter(r => !declared?.resolutions || declared.resolutions.includes(r)),
     combinations: declared?.combinations,
   };
 }
 export function canvasCombinationSupported(parameters: CanvasModelParameters | undefined, ratio: string, resolution: string) {
-  return !parameters?.combinations || parameters.combinations.includes(`${resolution}:${ratio === "auto" ? "1:1" : ratio}`);
+  return !parameters?.combinations || (ratio === "auto"
+    ? parameters.combinations.some(value => value.startsWith(`${resolution}:`))
+    : parameters.combinations.includes(`${resolution}:${ratio}`));
 }
 
 export function validateCanvasParameters(body: Record<string, unknown>, headerQuality?: string | null): string | null {
   if (body.targetWidth !== undefined || body.targetHeight !== undefined) return "画布不支持自定义像素尺寸，请选择标准比例和分辨率";
-  if (body.ratio !== undefined && !CANVAS_RATIO_OPTIONS.some(r => r.id === body.ratio)) return "画布比例不受支持，请重新选择标准比例";
+  if (body.ratio !== undefined && body.ratio !== "auto" && !validCanvasRatio(body.ratio)) return "画布比例无效，请重新选择比例";
   if (body.resolution !== undefined && !(CANVAS_RESOLUTIONS as readonly unknown[]).includes(body.resolution)) return "画布仅支持 1K、2K、4K";
   if (body.count !== undefined && (!Number.isInteger(Number(body.count)) || Number(body.count) < 1 || Number(body.count) > CANVAS_MAX_COUNT)) return "画布单次生成张数为 1–4 张";
   const quality = body.quality ?? headerQuality;

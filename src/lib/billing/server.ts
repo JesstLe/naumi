@@ -1,4 +1,5 @@
 import "server-only";
+import {cutoutImageQuality} from "../model-config/cutout-quality";
 import { requestedFeatureModel, assertPlatformImageSelection } from "../model-config/selection-policy";
 import { randomUUID } from "node:crypto";
 import { dbEnabled, getPool, ensureSchema, getSetting, totalPaidCents } from "@/lib/db";
@@ -73,6 +74,7 @@ export async function resolveBillingFacts(request: Request, input: Partial<Billi
     quantity: number;
     ratio?: string;
 }, snapshot?: ConfigSnapshot,trustedActor?:string): Promise<BillingFacts> {
+    if (input.feature === "tool.cutout") input = { ...input, quality: cutoutImageQuality(input.quality ?? request.headers.get("x-naumi-image-quality")) };
     if (!isFeatureId(input.feature))
         throw new BillingError("INVALID_CONFIG", "未知计费功能", 400);
     assertPlatformImageSelection(input.modelId, request.headers.get("x-naumi-feature-model"));
