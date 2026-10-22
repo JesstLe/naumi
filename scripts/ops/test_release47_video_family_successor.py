@@ -4,7 +4,7 @@ import json
 import pathlib
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import release47_normal_controller as ctl
 import release47_video_family_successor as mod
@@ -101,6 +101,92 @@ class VideoFamilyRelease(unittest.TestCase):
         with self.assertRaisesRegex(Hold, 'VIDEO_PREDECESSOR_SLOT_CHANGED'):
             mod.predecessor_proof(self.tx, self.state, self.config)
 
+    def test_explicit_two_gib_predecessor_preserves_completed_and_retired_gates(self):
+        self.config['predecessorWebMemoryMiB'] = 2048
+        self.tx.memory = 2048
+        before = copy.deepcopy((self.state, self.config))
+        mod.validate_config(self.config)
+        proof = mod.predecessor_proof(self.tx, self.state, self.config)
+        self.assertEqual(proof['priorWebMemoryMiB'], 2048)
+        self.assertEqual(proof['dualSlotRequiredMiB'], 3584)
+        self.assertEqual(proof['finalWebMemoryMiB'], 2048)
+        self.assertEqual((self.state, self.config), before)
+        prior = self.state['normalBlueGreenReleases'][self.config['predecessorReleaseId']]
+        prior['phase'] = 'READY'
+        with self.assertRaisesRegex(Hold, 'PUBLICATION_NOT_COMPLETE'):
+            mod.predecessor_proof(self.tx, self.state, self.config)
+        prior['phase'] = 'COMPLETE'; prior['operations']['unresolved'] = {'phase': 'UNKNOWN'}
+        with self.assertRaisesRegex(Hold, 'OPERATION_NOT_RECONCILED'):
+            mod.predecessor_proof(self.tx, self.state, self.config)
+
+    def test_reviewed_predecessor_cap_is_strict_and_must_match_actual(self):
+        for value in [None, True, 1024, 2048.0, '2048', 4096]:
+            with self.subTest(value=value), self.assertRaisesRegex(Hold, 'PRIOR_2G_OR_3G'):
+                mod.validate_config({**self.config, 'predecessorWebMemoryMiB': value})
+        self.config['predecessorWebMemoryMiB'] = 2048
+        self.tx.memory = 3072
+        with self.assertRaisesRegex(Hold, 'REVIEWED_PRIOR_2G_WEB_CHANGED'):
+            mod.predecessor_proof(self.tx, self.state, self.config)
+        self.config['predecessorWebMemoryMiB'] = 3072
+        self.assertEqual(mod.predecessor_proof(self.tx, self.state, self.config)['priorWebMemoryMiB'], 3072)
+
+    def test_combined_web_successor_keeps_scratch_and_uses_new_control_and_media_identity(self):
+        from release47_host import HostTransaction
+        from types import SimpleNamespace
+        real_path = pathlib.Path
+        state_name = '/opt/naumi-staging/releases/video-family-r3/web'
+        old_state = '/opt/naumi-staging/releases/video-family-r2/web'
+        scratch_name = '/opt/naumi-staging/data/video-media-jobs'
+        old = {'Id': 'a' * 64, 'Name': '/naumi47-web-video-family-r2', 'Image': 'sha256:' + 'a' * 64,
+               'State': {'Running': True, 'StartedAt': 'original-combined-web-boot'},
+               'Config': {'Cmd': ['node', 'server.js'], 'Env': ['NAUMI_MEDIA_WORKER=1',
+                   'MEDIA_WORKER_ORIGIN=http://naumi47-worker-video-family-r2:3002',
+                   'MEDIA_WORKER_SECRET=' + 'old-media-secret-' * 4, 'VIDEO_WORKER_SECRET=' + 'scanner-secret-' * 4]},
+               'HostConfig': {'RestartPolicy': {'Name': 'no'}},
+               'NetworkSettings': {'Networks': {'fixture-network': {}}},
+               'Mounts': [{'Type': 'bind', 'Source': scratch_name, 'Destination': '/scratch', 'RW': True},
+                          {'Type': 'bind', 'Source': old_state, 'Destination': '/release-state', 'RW': True}]}
+        original = copy.deepcopy(old); captured = {}; calls = []
+        state_path = Mock(); state_path.is_absolute.return_value = True; state_path.is_symlink.return_value = False
+        state_path.resolve.return_value.is_relative_to.return_value = True
+        state_path.stat.return_value.st_mode = 0o40700
+        state_path.__str__ = Mock(return_value=state_name)
+        scratch = Mock(); scratch.is_symlink.return_value = False; scratch.exists.return_value = True
+        scratch.is_dir.return_value = True; scratch.stat.return_value = SimpleNamespace(st_uid=1001, st_mode=0o40700)
+        scratch.__str__ = Mock(return_value=scratch_name)
+        def path(value):
+            if str(value) == state_name: return state_path
+            if str(value) == scratch_name: return scratch
+            return real_path(value)
+        def command(args, **_kwargs):
+            calls.append(args)
+            env_path = real_path(args[args.index('--env-file') + 1])
+            captured.update(line.split('=', 1) for line in env_path.read_text().splitlines())
+            return ('b' * 64).encode()
+        with tempfile.TemporaryDirectory() as folder:
+            tx = HostTransaction('47.105.59.142', 'a' * 64, folder, command=command)
+            tx.stack = True; tx.pin = lambda _identity: old; tx.save = Mock()
+            tx.inspect = lambda _identifier: {'Id': 'b' * 64, 'Name': '/naumi47-web-video-family-r3',
+                'Image': self.config['image'], 'State': {'Running': False, 'StartedAt': ''},
+                'HostConfig': {'RestartPolicy': {'Name': 'no'}},
+                'Config': {'Env': [key + '=' + value for key, value in captured.items()]}}
+            with patch('release47_host.pathlib.Path', side_effect=path), patch('release47_host.os.chown', create=True):
+                tx.clone_web(mod.public_identity(old), name='naumi47-web-video-family-r3', port=13133,
+                    image=self.config['image'], commit=self.config['commit'], memory_mib=1536, cpu=1.5,
+                    release_secret='r' * 48, state_dir=state_name, build_version=self.config['version'],
+                    reviewed_prior_state_dir=old_state, reviewed_combined_media={
+                        'workerName': 'naumi47-worker-video-family-r3', 'secret': 'new-media-secret-' * 4,
+                        'scratchSource': scratch_name})
+        self.assertEqual(old, original)
+        self.assertEqual(captured['NAUMI_MEDIA_WORKER'], '1')
+        self.assertEqual(captured['MEDIA_WORKER_ORIGIN'], 'http://naumi47-worker-video-family-r3:3002')
+        self.assertEqual(captured['MEDIA_WORKER_SECRET'], 'new-media-secret-' * 4)
+        self.assertEqual(captured['SOURCE_COMMIT'], self.config['commit'])
+        self.assertEqual(captured['NAUMI_INSTANCE_ID'], 'naumi47-web-video-family-r3')
+        self.assertIn('type=bind,src=' + scratch_name + ',dst=/scratch', calls[0])
+        self.assertIn('type=bind,src=' + state_name + ',dst=/release-state', calls[0])
+        self.assertFalse(any('src=' + old_state + ',' in value for value in calls[0]))
+        self.assertEqual(sum('dst=/scratch' in value for value in calls[0]), 1)
     def test_no_nas_memory_or_exception_is_reused(self):
         cls = mod.VideoFamilyController
         self.assertNotIn(NasController, cls.__mro__)

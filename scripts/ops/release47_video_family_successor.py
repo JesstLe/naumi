@@ -44,6 +44,12 @@ def retirement_ram_budget(available_bytes, new_web_current_bytes, old_anonymous_
             'fileCacheCredited': False, 'swapIncluded': False}
 
 
+def reviewed_predecessor_web_memory(config):
+    memory = config.get('predecessorWebMemoryMiB', 3072)
+    require(type(memory) is int and memory in [2048, 3072], 'EXPLICIT_REVIEWED_PRIOR_2G_OR_3G_WEB_REQUIRED')
+    return memory
+
+
 def validate_config(config):
     require(config.get('authorization') == AUTHORIZATION, 'EXACT_VIDEO_FAMILY_AUTHORIZATION_REQUIRED')
     require(config.get('releaseId', '').startswith('release47-video-family-'), 'VIDEO_FAMILY_RELEASE_ID_REQUIRED')
@@ -51,6 +57,7 @@ def validate_config(config):
             config.get('activateDisabledModels') is False, 'PROGRAM_ONLY_NON_ACTIVATION_REQUIRED')
     require(config.get('previousNormalReleaseId') == config.get('predecessorReleaseId') and
             bool(config.get('predecessorReleaseId')), 'EXACT_VIDEO_FAMILY_PREDECESSOR_REQUIRED')
+    reviewed_predecessor_web_memory(config)
     require(type(config.get('webMemoryMiB')) is int and config['webMemoryMiB'] == 1536 and
             type(config.get('workerMemoryMiB')) is int and config['workerMemoryMiB'] == 1024 and
             config.get('reviewedCombinedMedia') is True and
@@ -108,10 +115,12 @@ def predecessor_proof(tx, state, config):
         require(not row['running'] and row['restartPolicy'] == 'no', 'PREVIOUS_VIDEO_SLOT_STILL_RUNNING')
         retired.append(row)
     current = tx.inspect(config['oldWeb']['id'])
-    require(current['HostConfig']['Memory'] == 3072 * 1048576, 'REVIEWED_PRIOR_3G_WEB_CHANGED')
+    prior_memory = reviewed_predecessor_web_memory(config)
+    require(current['HostConfig']['Memory'] == prior_memory * MIB,
+            'REVIEWED_PRIOR_3G_WEB_CHANGED' if prior_memory == 3072 else 'REVIEWED_PRIOR_2G_WEB_CHANGED')
     return {'releaseId': active, 'phase': prior['phase'], 'retired': retired,
             'historicalDrainReclassified': False, 'historicalUnknownsCleared': False,
-            'priorWebMemoryMiB': 3072, 'candidateWebMemoryMiB': 1536, 'workerMemoryMiB': 1024,
+            'priorWebMemoryMiB': prior_memory, 'candidateWebMemoryMiB': 1536, 'workerMemoryMiB': 1024,
             'hostReserveMiB': 1024, 'dualSlotRequiredMiB': 3584, 'finalWebMemoryMiB': 2048}
 
 
