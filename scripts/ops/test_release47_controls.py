@@ -5,7 +5,7 @@ import os
 import pathlib
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import release47_controls as m
 from release47_host import HostTransaction, public_identity, Hold, sha
@@ -170,6 +170,87 @@ class Controls(unittest.TestCase):
                 m.switch_gateway_bundle(self.tx, report, before, after, expected_dump_sha=sha(b'before'),
                     logical_to_real={n:str(pathlib.Path(n).resolve()) for n in before})
         self.assertFalse(any(c == ['systemctl', 'reload', 'nginx'] for c in self.calls))
+
+    def test_preserve_written_failed_reload_never_reloads_previous_program(self):
+        root, before, after, report = self.gateway()
+        self.tx._command = self.gateway_command(before, after, True)
+        with patch.object(m, 'NGINX_ROOT', root):
+            with self.assertRaisesRegex(Hold, 'RELOAD_FAILED'):
+                m.switch_gateway_bundle(self.tx, report, before, after, expected_dump_sha=sha(b'before'),
+                    logical_to_real={n: str(pathlib.Path(n).resolve()) for n in before}, failure_policy='preserve-written')
+        self.assertTrue(all(pathlib.Path(n).read_bytes() == after[n] for n in before))
+        self.assertEqual(self.calls.count(['systemctl', 'reload', 'nginx']), 1)
+        receipt = json.loads((self.folder/'gateway-uncertain-preserved.json').read_bytes())
+        self.assertFalse(receipt['preimageRestored'])
+        self.assertEqual(receipt['reloadOutcome'], 'UNKNOWN')
+
+    def test_preserve_written_partial_atomic_write_stays_unknown(self):
+        root, before, after, report = self.gateway()
+        self.tx._command = self.gateway_command(before, after)
+        replace = m._replace_config
+        writes = []
+        def fail_second(path, raw):
+            writes.append(str(path))
+            if len(writes) == 2:
+                raise OSError('synthetic atomic-write failure')
+            replace(path, raw)
+        with patch.object(m, 'NGINX_ROOT', root), patch.object(m, '_replace_config', fail_second):
+            with self.assertRaises(OSError):
+                m.switch_gateway_bundle(self.tx, report, before, after, expected_dump_sha=sha(b'before'),
+                    logical_to_real={n: str(pathlib.Path(n).resolve()) for n in before}, failure_policy='preserve-written')
+        self.assertEqual(pathlib.Path(writes[0]).read_bytes(), after[writes[0]])
+        self.assertEqual(pathlib.Path(writes[1]).read_bytes(), before[writes[1]])
+        self.assertFalse(any(c == ['systemctl', 'reload', 'nginx'] for c in self.calls))
+        receipt = json.loads((self.folder/'gateway-uncertain-preserved.json').read_bytes())
+        self.assertTrue(receipt['reconciliationRequired'])
+        self.assertEqual(len(receipt['possibleWritePaths']), 2)
+
+    def test_actual_saas_forward_timeout_then_maintenance_preserves_both_intents(self):
+        from release47_saas_successor import SaasController
+        root, before, after, report = self.gateway()
+        maintenance = {name: b'maintenance ' + raw for name, raw in after.items()}
+        reload_snapshots = []
+        def command(args, **kw):
+            self.calls.append(args)
+            current = {name: pathlib.Path(name).read_bytes() for name in before}
+            if args == ['nginx', '-T']:
+                return b'before' if current == before else b'after' if current == after else b'maintenance' if current == maintenance else b'mixed'
+            if args == ['systemctl', 'reload', 'nginx']:
+                # Model the important ambiguous case: reload was accepted, but
+                # its command reply was lost. The disk preimage is NOT safe.
+                reload_snapshots.append(current)
+                if len(reload_snapshots) == 1:
+                    raise Hold('RELOAD_TIMEOUT_AFTER_APPLY')
+            return b''
+        self.tx._command = command
+        operator = SaasController.__new__(SaasController)
+        operator.tx = self.tx
+        operator.cfg = {'expectedGatewayDigest': sha(b'before')}
+        operator.dump = 'before'
+        operator.forward, operator.before, operator.after = report, before, after
+        operator.candidate_closure = after
+        operator.real = {name: str(pathlib.Path(name).resolve()) for name in before}
+        operator.emergency_after = maintenance
+        operator.emergency = {'configClosureValidated': True, 'baselineFileCasVerified': True,
+            'beforeDumpSha256': sha(b'after'), 'afterDumpSha256': sha(b'maintenance'),
+            'patches': [{'path': name, 'beforeSha256': sha(raw), 'afterSha256': sha(maintenance[name])}
+                        for name, raw in after.items()]}
+        operator.succ = {'phase': 'READY', 'operations': {}}
+        operator.persist = Mock()
+        operator.verify_internal_authority = Mock()  # This case tests only real gateway IO; live auth is separate.
+        operator.switched = False
+        with patch.object(m, 'NGINX_ROOT', root):
+            with self.assertRaisesRegex(Hold, 'RELOAD_TIMEOUT_AFTER_APPLY'):
+                operator.op('gateway-switch', lambda _: operator.switch_forward_gateway())
+            self.assertEqual(operator.succ['operations']['gateway-switch']['phase'], 'UNKNOWN')
+            operator.recover_failure(Hold('RELOAD_TIMEOUT_AFTER_APPLY'))
+        self.assertEqual(reload_snapshots, [after, maintenance])
+        self.assertEqual(operator.succ['phase'], 'RECOVERY_REQUIRED')
+        self.assertEqual(operator.succ['operations']['gateway-switch']['phase'], 'UNKNOWN')
+        self.assertEqual(json.loads((self.folder/'gateway-transaction-intent.json').read_bytes())['beforeDumpSha256'], sha(b'before'))
+        emergency_intent = self.folder/'saas-controlled-maintenance/gateway-transaction-intent.json'
+        self.assertEqual(json.loads(emergency_intent.read_bytes())['beforeDumpSha256'], sha(b'after'))
+        self.assertTrue(all(pathlib.Path(name).read_bytes() == maintenance[name] for name in before))
 
     def test_worker_clone_rejects_legacy_before_creating(self):
         self.row['Config']['Env'] = []

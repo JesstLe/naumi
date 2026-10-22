@@ -17,6 +17,9 @@ HOST='eb32806db06dfe9ec55f17a3be5c59476ca0a45fec8ce442e0437530212cb3df'
 
 def run(config,apply=False,existing_tx=None):
  global ROOT
+ require(not config.get('releaseId','').startswith('release47-saas-') and
+         config.get('recoveryMode')!='saas-controlled-maintenance',
+         'SAAS_REQUIRES_CONTROLLED_RECOVERY_NOT_PRIOR_PROGRAM')
  ROOT=pathlib.Path(config['evidenceRoot'])
  require(ROOT.parent==pathlib.Path('/opt/naumi-staging/evidence'),'FIXED_ROLLBACK_EVIDENCE_REQUIRED')
  with contextlib.ExitStack() as stack:

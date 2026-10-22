@@ -34,3 +34,13 @@
 维护撤销只允许恢复已验证理解新权限的完整程序入口；重新取得真实就绪与受影响授权/素材/任务证据后，按精确配置CAS、nginx校验和平滑reload恢复。恢复后继续完成真实任务排空和canonical状态记录。不得通过回灌旧数据库、重放未知收费请求、切旧无权限镜像或删journal结束事故。
 
 **当前状态：本机降级恢复验证通过；47实际闭包与固定候选内部Worker证据待发布准备阶段核验；未执行线上维护或发布。**
+
+## 专用发布适配与失败路径复核
+
+新增统一入口 `bash scripts/deploy-release.sh --lifecycle publish47-saas --config ...`，仍沿用原HostTransaction三锁、完整正常发布控制器、原canonical journal/revision CAS、固定镜像、备份、任务比较、真实就绪、整站切流与旧槽排空。精确本次用户授权只允许 `release47-saas-*` 与 `recoveryMode=saas-controlled-maintenance`；旧通用Controller及旧program rollback入口在主机动作前拒绝此类计划，不能因缺兼容旧程序静默走回切。
+
+SaaS适配在切流前固定本地验收/真实公网入口盘点的hash，生成候选闭包对应维护bundle，并以现场真实Nginx在隔离配置树执行 `nginx -t`；原server哈希、监听与server_name均须吻合。候选开放私网后、切公网前，实查同Image/commit的Web与Worker、内部调用地址及未授权Worker状态拒绝/授权只读状态200。这里只GET状态，不调用tick或供应商。
+
+独立审查发现并修复共享切流helper的P1：原helper在reload超时后会自动恢复preimage，而第一次reload可能已经生效并接受新SaaS请求。现为SaaS forward和维护切换显式使用 `failure_policy=preserve-written`；原有发布默认恢复preimage流程保持。切换回复未知时保留可能已写入的配置、原UUID/UNKNOWN和实际字节，按真实候选闭包CAS进入维护；混合或未知闭包拒绝自动覆盖。维护使用独立事务子目录，避免覆盖forward的intent与preimage。恢复状态为 `RECOVERY_REQUIRED`，继续阻断后续发布，不冒称COMPLETE/ROLLED_BACK。
+
+本机集中回归：Controls14、SaaS8、正常发布policy34、lifecycle58、NAS后继5组通过。使用真实helper与真实原子文件写入，模拟“首次reload已应用但返回超时→维护reload”，观察到的配置依次仅为candidate、maintenance，没有旧program；原gateway-switch UNKNOWN与两份intent均保留。第二原子写失败的混合状态保持未知，不发reload。新增内部执行图和权限proof的拒绝断言；日志 `output/saas-admin-20261022/verification/ops-controls-final.log` 与 `ops-saas-final.log`。Nginx路由/HTTP的52项真实Linux验收见前述独立证据；本组HostTransaction命令为明确fixture，不能替代现场切换验收。

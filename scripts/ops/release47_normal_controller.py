@@ -46,7 +46,11 @@ def transaction():
  finally:tx.__exit__(None,None,None)
 
 class Controller:
+ saas_controlled_recovery=False
  def __init__(self,tx,config):
+  require(not (config.get('releaseId','').startswith('release47-saas-') or
+          config.get('recoveryMode')=='saas-controlled-maintenance') or self.saas_controlled_recovery,
+          'SAAS_RECOVERY_CONTROLLER_REQUIRED')
   self.tx=tx;self.cfg=config;self.original=CANON.read_bytes();self.state=json.loads(self.original)
   self.disk=sha(self.original);self.web=public_identity(tx.inspect(OLDWEB));self.worker=public_identity(tx.inspect(OLDWORKER));self.db=public_identity(tx.inspect('naumi-staging-db-1'))
   self.de=environment(tx.inspect(self.db['id']));self.backup=ROOT/'transaction';self.runtime=dict(self.state['runtimeRecovery'])
@@ -256,7 +260,7 @@ class Controller:
   self.worker_paused=True
   self.wait(lambda:(lambda s:s if normal.worker_quiescent(s,self.cfg.get('preservedWorkerTick')) else None)(self.worker_control(self.worker,'status',str(uuid.uuid4()))['state']),'OLD_WORKER_DRAIN',120)
   self.op('new-web-open',lambda op:c.control_app(self.tx,self.newweb,'resume',op))
-  self.op('gateway-switch',lambda _:c.switch_gateway_bundle(self.tx,self.forward,self.before,self.after,expected_dump_sha=sha(self.dump.encode()),logical_to_real=self.real));self.switched=True
+  self.op('gateway-switch',lambda _:self.switch_forward_gateway());self.switched=True
   self.phase('SWITCHED');save(ROOT/'cutover.json',{'releaseId':RELEASE,'version':self.cfg['version'],'at':now()})
   self.wait(lambda:self.marker('browser-after.json'),'BROWSER_AFTER',600)
   self.op('old-web-drain',lambda op:c.control_app(self.tx,self.web,'drain',op));self.old_drained=True
@@ -288,8 +292,7 @@ class Controller:
   self.after_retirement()
   self.op('new-worker-after-retirement',lambda op:self.worker_control(self.newworker,'resume',op))
   self.wait(lambda:(lambda s:s if normal.worker_completed(s) else None)(self.worker_control(self.newworker,'status',str(uuid.uuid4()))['state']),'NEW_WORKER_FINAL_COMPLETION',90)
-  from release47_normal_rollback import run as rollback_check
-  rollback_check(self.cfg,apply=False,existing_tx=self.tx)
+  self.verify_recovery_materials()
   self.state['activeNormalBlueGreenReleaseId']=RELEASE
   require(self.configuration_facts()==self.config_before,'MODEL_OR_BILLING_CONFIGURATION_CHANGED')
   self.phase('COMPLETE',completedAt=now(),paidOutputRecovered=False,historicalDrainReclassified=False)
@@ -301,6 +304,16 @@ class Controller:
 
  def after_retirement(self):
   pass
+
+ def switch_forward_gateway(self):
+  return c.switch_gateway_bundle(self.tx,self.forward,self.before,self.after,
+          expected_dump_sha=sha(self.dump.encode()),logical_to_real=self.real)
+
+ def verify_recovery_materials(self):
+  require(not self.cfg.get('releaseId','').startswith('release47-saas-') and
+          self.cfg.get('recoveryMode')!='saas-controlled-maintenance','SAAS_RECOVERY_CONTROLLER_REQUIRED')
+  from release47_normal_rollback import run as rollback_check
+  rollback_check(self.cfg,apply=False,existing_tx=self.tx)
 
  def resume_review(self):
   review=self.cfg['resumeReview'];require(self.state['revision']==review['revision'] and sha(enc(self.state))==review['canonicalSha256'],'RESUME_CANONICAL_CHANGED')
@@ -418,6 +431,8 @@ class Controller:
   r=recovery.Supervisor(manifest,manifest['journalDir'],recovery.Adapter(self.tx,manifest)).once();self.tx.save('new-supervisor-acceptance.json',r)
 
  def recover_failure(self,ex):
+  require(not self.cfg.get('releaseId','').startswith('release47-saas-') and
+          self.cfg.get('recoveryMode')!='saas-controlled-maintenance','SAAS_RECOVERY_CONTROLLER_REQUIRED')
   # Never assume a timed-out mutation was not applied. Preserve original UUIDs.
   print('PUBLICATION_HOLD='+ (str(ex) if isinstance(ex,Hold) else type(ex).__name__),flush=True)
   if hasattr(self,'succ'):

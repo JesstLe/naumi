@@ -33,6 +33,13 @@ class NormalPolicy(unittest.TestCase):
  def test_nas_repair_followup_authorization(self):
   self.cfg['authorization']='那你把上一轮发布未收尾的问题处理好，然后把这次修复上线，别影响正在使用的用户。'
   self.assertEqual(self.begin()['authorization'],self.cfg['authorization'])
+ def test_saas_followup_requires_its_recovery_boundary(self):
+  self.cfg['authorization']='后台你觉得验收通过之后 合并所有分支然后上线47服务器做真实验收'
+  with self.assertRaisesRegex(Hold,'SAAS_RECOVERY_MODE'):self.begin()
+  self.cfg.update(releaseId='release47-saas-20261023',recoveryMode='saas-controlled-maintenance')
+  self.assertEqual(self.begin()['authorization'],self.cfg['authorization'])
+  self.s['normalBlueGreenReleases']={'unfinished':dict(phase='RECOVERY_REQUIRED',operations={})}
+  with self.assertRaises(Hold):self.begin()
  def test_normal_followup_allowed(self):
   rid='release47-alldev-20261019-previous';self.s['normalBlueGreenReleases']={rid:dict(releaseId=rid,phase='COMPLETE',operations={})};self.s['activeNormalBlueGreenReleaseId']=rid;self.s['runtimeRecovery']['successorReleaseId']=rid;self.cfg['predecessorReleaseId']=rid
   self.assertEqual(self.begin()['predecessorReleaseId'],rid)
