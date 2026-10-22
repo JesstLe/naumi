@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, HeartPulse, Loader2, RefreshCw, Save, Zap } from "lucide-react";
 import type { HealthOverview, HealthState } from "@/lib/model-health/contracts";
 import styles from "./model-health.module.css";
+import { ProviderOps } from "./provider-ops";
 
 type ProviderView = HealthOverview["providers"][number];
 type ModelView = ProviderView["models"][number];
@@ -479,6 +480,8 @@ export function ModelHealthPanel() {
               {overview.recent.length > 20 && <p className={styles.kpiHint}>仅显示最近 20 条，共 {overview.recent.length} 条</p>}
             </div>}
         </section>
+
+        <ProviderOps />
       </div>
     </>}
   </div>;
