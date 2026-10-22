@@ -433,7 +433,7 @@ def record_failed_observation(folder, action, p, revision, reason):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['check', 'begin', *STAGES, 'status', 'publish47-nas', 'publish47-saas', 'publish47-video-family', 'abort47-video-family'])
+    parser.add_argument('action', choices=['check', 'begin', *STAGES, 'status', 'publish47-nas', 'publish47-saas', 'publish47-video-family', 'abort47-video-family', 'bind47-capacity'])
     parser.add_argument('--config', type=pathlib.Path)
     parser.add_argument('--review', type=pathlib.Path)
     parser.add_argument('--apply', action='store_true')
@@ -458,6 +458,11 @@ def main(argv=None):
             require(os.name == 'posix' and a.config is not None, 'LIVE_SAAS_CONFIG_REQUIRED')
             from release47_saas_successor import main as publish_saas
             publish_saas(a.config)
+            return 0
+        if a.action == 'bind47-capacity':
+            require(os.name == 'posix' and a.config is not None, 'LIVE_CAPACITY_BINDING_CONFIG_REQUIRED')
+            from release47_capacity_binding import main as bind_capacity
+            bind_capacity(a.config)
             return 0
         if a.action == 'publish47-video-family':
             require(os.name == 'posix' and a.config is not None, 'LIVE_VIDEO_FAMILY_CONFIG_REQUIRED')
