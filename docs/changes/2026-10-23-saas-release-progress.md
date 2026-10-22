@@ -54,3 +54,11 @@
 供应商`6983282c7b5bfc415fccf35e526d87ec4f03f2fa`已合入`1306065f914e4c89485c93543976b552775d3b2a`，只公开更新说明冲突，保留双方条目；本轮未发布条目改为`1792702991`，高于对方R3拟定`1792702873`。4fd媒体两文件完全相同，自动合并没有重复修改。Sol只读复核四类新建入口/重试/防重复/历史模型及batch冻结上下文，当前实际函数抽取277检查、原client settings/视频batch、正式全项目类型通过；实际浏览器须后继固定程序验证。Linux官方Node24下发布门禁219组全部通过，日志`ops-r3-integrated-linux.log`，未发现本轮合并新增可定位P0/P1/P2。
 
 供应商随后在真实第5组发现GeekKling参考图片URL需要图片后缀，extensionless签名地址被校验拒绝，故698同样不作为发布候选。其HEAD负责人拥有`reference-media.ts`最小MIME后缀/严格绑定/旧extensionless兼容修复；根任务未并行修改该文件、未开始后继镜像构建。原第5组UUID为creation_unknown且无upstream ID，保留持久证据，等待明确受理/费用事实，不重投或清状态冒充排空。前4组真实节点通过，后续两组未提交；本轮没有调用供应商。新最终source及真实47收尾回执到齐后再固定后继镜像，不使用066旧审核材料放行。
+
+`979cdca9ca403e2afbc7eb6afed306441e7d8b9f`的MIME绑定修复已完整合入`4dbecb1e2c5cda4ee9bd1998b62f09632aa49b15`，本轮待发布条目调整`1792703533`，保留供应商最新`1792703343`并移除双方被替代的未发布版号。根复跑689断言/21次实际loopback HTTP通过；独立只读安全审查未发现新P0/P1/P2，核对严格canonical MIME、旧裸URL兼容、owner/SHA/TTL/HEAD/Range及SaaS2GiB/1GiB门禁保持。证据`r4-reference-mime.log`。新Linux harness已准备实际Web的新`.webp`、旧裸地址及错/双后缀GET/HEAD验证，尚未执行，不把旧066的裸URL检查当新后缀通过。
+
+本机真实CUA复核空目录重试：菜单“重试视频模型”可点击，刷新后仍为空画布，日志视频节点POST前后均0；截图/JSON为`output/saas-design-qa/cold-catalog-empty-retry-r3.*`，开发服务/fixture身份，非固定Linux或生产验收。正常32模型默认仍由277函数fixture证明，待真实目录GUI验证。
+
+供应商线程转述同一用户已选择“跳过”原05费用核查，UNKNOWN/pending/原UUID继续保留，不重投/退款。06/07为原定纯文、无references，已由其按独立continuation做首次提交。根只查公开资料：Geek官方billing仅有聚合信息；New API[日志文档](https://docs.newapi.pro/zh/docs/guide/feature-guide/user/log)与[当前认证源码](https://github.com/QuantumNous/new-api/blob/main/middleware/auth.go)支持Authorization头的只读`GET /api/log/token`，但不能据此证明Geek同版，也不能从缺日志推断未扣费。已给负责人来源，本任务未调用47或供应商。
+
+程序排空与费用事实分开核对：未知费用不能改成0；只有现有真实请求/accepted activity/Agent/lease/newAdmissions零与任务hash保护都通过，才能按原门禁推进。根提出若对方R3尚未登记/创建，可由一次整合SaaS候选接续R2完整发布，采用原批准的无旧业务回退/受控维护恢复；这仍待对方交接，尚未获得47发布所有权、没有连接/拿锁/推main。
