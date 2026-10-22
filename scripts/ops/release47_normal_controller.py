@@ -268,6 +268,9 @@ class Controller:
   self.post=tasks.collect_task_snapshot(self.tx.run,self.db,self.tx.save,previous=self.pre.private,projection='proof',row_limit=self.pre.private.get('rowLimit',1000),allow_absent_tables=tasks.ADDITIVE_TABLES,statement_timeout_ms=self.cfg.get('snapshotStatementTimeoutMs',5000))
   comparison=tasks.compare_task_snapshots(self.pre,self.post);self.tx.save('task-preservation-comparison.json',comparison)
   require(comparison['preservationVerified'],'TASK_PRESERVATION_NOT_VERIFIED')
+  self.retire_ready()
+
+ def retire_ready(self):
   # The domain reader is shared-DB, not old-slot-specific. Pause the new scan
   # at the final retirement barrier so its own read transaction cannot be
   # mistaken for undrained old work. Keep the completed tick receipt intact.

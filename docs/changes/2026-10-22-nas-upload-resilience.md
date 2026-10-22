@@ -57,3 +57,19 @@ NAS内部存储引擎/磁盘延迟与链路利用率根因仍待故障期间管�
 原控制器尝试恢复旧Worker时在发送前因UNKNOWN状态被拒绝。保留原operation UUID、原UNKNOWN记录与源文件SHA；核实对应handoff意图文件不存在和原明确前置异常后，登记NOT_DISPATCHED_PRECONDITION_REJECTED，不冒称resume执行成功。随后从原READY恢复，沿用原镜像、备份、网关预映像、任务快照及已启动候选，未重复执行create/import/backup或重放付费任务。
 
 真实浏览器工具中原会话被外部重置，未声称持续保留原浏览器会话。补验采用现役旧槽真实HTML，在同一公网源下加载真实旧JS资源（只拦截测试浏览器首文档），其9个旧script与新后端项目/文字节点/节点设置/登录查询均200；另开公网新版真实页面，26个script均200、390px无横向溢出、无pageerror。该证据是旧bundle兼容检查，不是长时间活跃编辑/收费生成不中断的压力验收。
+
+## 最终实际交付（2026-10-22 22:06后，北京时间）
+
+47 的 release47-nas-upload-20261022 已COMPLETE，实际应用仍固定0a572167 / v2026.10.22-211511 / image600320c4d08b…。Web和独立Worker同镜像、Worker直连新版Web，旧admin-query Web/Worker均已排空停止且restart=no。最终回滚只读检查PASS、原模型/账务配置保持、未回灌数据库，原操作UUID全部ACK，三锁已释放。根历史MIGRATED_CLEANUP_PENDING及旧两笔事故仍明确保留，不称为历史全部恢复。
+
+新Web最终限额3072MiB（3GiB）、Worker128MiB；提高新Web额度时StartedAt保持不变。最终采样Web当前566MiB、峰值712MiB、oom/oom_kill均0；Worker30MiB/峰值47MiB；整机MemAvailable4209MiB。以上为本轮真实验收窗口，未做高并发容量承诺，3GiB不是“永不OOM”的保证。监督器已绑定新的限额与配置指纹并active。
+
+正常Worker还恢复了4笔既有stored-delivery任务：error→done、原冻结digest及供应商绑定不变。任务保护最初因其预占记录释放而HOLD，入口安全切回旧站；随后逐笔以作品所属账号在进程内短时鉴权，读回真实图片并sharp解码，确认各一条账单（6/12/12/12积分）、无剩余预占、无重复结算，保留初次差异证据，只接受这4笔已证明完成的预占释放，不放宽其他缺失/未知/供应商变更。管理员验收账号读取他人私有素材404属于权限保护，未将其误判为图片丢失。
+
+重用原事务/候选继续发布时，旧gateway意图文件的排他写入曾阻断重复切流；保留原UNKNOWN及原UUID，核对现场完整网关仍为旧预映像后，在该UUID专属证据子目录完成同一操作并ACK，没有删除/改名canonical状态目录冒充空闲。已核对的切回与差异闭合记入reconciledFailure，最新publication不再残留未闭合lastError/PENDING_RECONCILIATION。
+
+最终又对真实公网HTTPS入口执行一组完整上传、NAS直读SHA、缩略、HTTP读回、Range206、附件下载与匿名401验收，全部通过，测试对象精确清理，供应商生成调用0；此前故障隔离11笔未知提交继续保留待核查，不重放、不声称其都已出图。
+
+证据：/opt/naumi-staging/evidence/nas-upload-release47-20261022/transaction/PUBLICATION_RECEIPT.json、FINAL_PUBLIC_STORAGE_ACCEPTANCE.json、normal-rollback-check.json、FINAL_CAPACITY_AND_LOCKS.json及scanner/settlement审查文件。固定程序与后续ops/docs提交区分；未操作103/120/179/101。源码后继运维仅恢复本次精确事务，不代表支持任意失败自动蓝绿恢复。
+
+空间维护：本轮成功程序发布+1，并已执行本机/47空间盘点；47最终可用34.2GiB，没有确认可删且不被回滚引用的生产缓存，因此释放0字节，保护当前与最近两版镜像/配置/静态资源和最近7天备份；本次盘点后维护计数0。未对生产媒体/volume/用户数据执行清理。功能模块1，结束再次fetch整合远端，迭代同步计数归零。
