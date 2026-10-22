@@ -6,6 +6,7 @@ import {ModelConfigError} from "../model-config/types";
 import {getVideoProvider} from "./providers/adapter";
 import type {VideoTaskSnapshot} from "./types";
 import {UnsupportedVideoCancellationError} from "./types";
+import {creationEvidenceTx,recordSourceOutcomeTx} from '../saas/creation-writer';
 
 async function cancelLocked(client:PoolClient,actor:string,id:string,task:Record<string,any>,reason:string){
   if(["completed","failed","cancelled"].includes(task.status))return;
@@ -14,6 +15,7 @@ async function cancelLocked(client:PoolClient,actor:string,id:string,task:Record
   await client.query(`UPDATE app_video_tasks SET status='cancelled',error=$3,error_code='cancelled',credits_refunded=true,
     next_poll_at=NULL,poll_lock_until=NULL,completed_at=now(),updated_at=now() WHERE email=$1 AND id=$2`,[actor,id,reason]);
   await client.query("DELETE FROM app_gen_reservations WHERE job_id=$1",[id]);
+  if(task.parameters?.creationScope)await creationEvidenceTx(client,()=>recordSourceOutcomeTx(client,'video',id,actor,'cancelled',{summary:reason}));
 }
 export async function requestVideoCancellation(actorRaw:string,id:string){
   const actor=actorRaw.toLowerCase();await ensureSchema();const client=await getPool().connect();
@@ -22,6 +24,7 @@ export async function requestVideoCancellation(actorRaw:string,id:string){
     if(!task)throw new ModelConfigError("VIDEO_TASK_UNAVAILABLE","视频任务不存在",404);
     if(!["completed","failed","cancelled"].includes(task.status)){
       await client.query("UPDATE app_video_tasks SET cancellation_requested_at=COALESCE(cancellation_requested_at,now()),updated_at=now() WHERE email=$1 AND id=$2",[actor,id]);
+      if(task.parameters?.creationScope)await creationEvidenceTx(client,()=>recordSourceOutcomeTx(client,'video',id,actor,'cancel_requested',{eventKey:'cancel-requested',summary:'已申请取消，等待上游确认'}));
       // This durable marker is set immediately before the supplier request, under this same row lock.
       if(task.status==="queued"&&!task.upstream_id&&task.parameters?.version===2&&task.parameters.submissionState==="prepared")
         await cancelLocked(client,actor,id,task,"已取消未提交的视频任务");

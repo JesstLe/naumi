@@ -4,6 +4,8 @@ import { dbEnabled } from "@/lib/db";
 import { importCanvasWorkflow, listWorkflowManifests, workflowImportRequest } from "@/lib/canvas-workflow-import";
 import { readWorkflowClipboard, WORKFLOW_CLIPBOARD_LIMIT } from "@/lib/canvas/workflow-clipboard";
 import { rateLimit } from "@/lib/rate-limit";
+import {withCreationRoute} from '@/lib/saas/creation-context';
+import {withCreationOperation} from '@/lib/saas/creation-writer';
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -13,7 +15,7 @@ export async function GET(request: Request) {
   if (!dbEnabled) return NextResponse.json({ manifests: [] });
   return NextResponse.json({ manifests: await listWorkflowManifests(email) });
 }
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   const email = await authenticatedEmail(request);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   if (!dbEnabled) return NextResponse.json({ error: "未启用持久化存储" }, { status: 503 });
@@ -39,9 +41,9 @@ export async function POST(request: Request) {
     async start(controller) {
       const emit = (event: unknown) => { if (!cancelled) try { controller.enqueue(encoder.encode(JSON.stringify(event) + "\n")); } catch { cancelled = true; } };
       try {
-        const result = await importCanvasWorkflow(email, input.data, {
+        const result = await withCreationOperation('workflow-import',input.data.operationId,email,{parameters:{mode:'import'}},()=>importCanvasWorkflow(email, input.data, {
           progress: (done, total) => emit({ type: "progress", done, total }), cancelled: () => cancelled || request.signal.aborted,
-        });
+        }),result=>({artworkIds:result.artworks.map(a=>a.id),text:result.textNodes.map(n=>n.content).join('\n')}));
         emit({ type: "complete", result });
       } catch (error) {
         const message = error instanceof Error && /工作流|导入|画布|素材|SVG|矢量|图片/.test(error.message) ? error.message : "工作流导入失败，请重试";
@@ -51,3 +53,4 @@ export async function POST(request: Request) {
   });
   return new Response(stream, { headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store", "x-accel-buffering": "no" } });
 }
+export function POST(request:Request){return withCreationRoute(request,()=>handlePost(request));}

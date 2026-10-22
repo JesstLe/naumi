@@ -9,6 +9,7 @@ import {currentPrivateVideoContext} from "./providers/private-context";
 import {decryptAtRest} from "../settings";
 import {videoWorkflowManifestSchema} from "./workflow-schema";
 import "server-only";
+import {withFrozenCreation,frozenCreationScope} from '../saas/creation-context';
 import { BillingError } from "@/lib/billing/types";
 import { currentModelExecution, runLegacyModelExecution } from "@/lib/model-config/context";
 import type { ExecutionBundle } from "@/lib/model-config/context";
@@ -442,9 +443,11 @@ async function pollAndSettleLocal(
   const task = await getVideoTask(email, id);
   if (!task) return null;
   if (await isImportedHistory(getPool(), "app_video_tasks", id)) return task;
-  if(task.parameters.byocSnapshot){const {withByocVideoTask}=await import("./byoc");return withByocVideoTask(email,task,()=>pollAndSettleTask(email,id,task));}
-  if (task.parameters?.modelExecutions) return withFrozenExecutionBundle(task.parameters.modelExecutions as import("@/lib/model-config/context").ExecutionBundle, () => pollAndSettleTask(email, id, task));
-  return runLegacyModelExecution(() => pollAndSettleTask(email, id, task));
+  return withFrozenCreation(frozenCreationScope(task.parameters.creationScope,email),async()=>{
+   if(task.parameters.byocSnapshot){const {withByocVideoTask}=await import("./byoc");return withByocVideoTask(email,task,()=>pollAndSettleTask(email,id,task));}
+   if (task.parameters?.modelExecutions) return withFrozenExecutionBundle(task.parameters.modelExecutions as import("@/lib/model-config/context").ExecutionBundle, () => pollAndSettleTask(email, id, task));
+   return runLegacyModelExecution(() => pollAndSettleTask(email, id, task));
+  });
 }
 async function pollAndSettleTask(email: string, id: string, task: VideoTaskRow): Promise<VideoTaskRow | null> {
   if (task.status !== "queued" && task.status !== "processing") return task;

@@ -17,6 +17,9 @@ import { fingerprint } from "./fingerprint";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { currentModelExecution } from "@/lib/model-config/context";
 import { excludeImportedHistory } from "../staging-history";
+import {currentCreationContext,withCreationRequest,withFrozenCreation,type CreationContext} from '../saas/creation-context';
+import {startCreation,finishCreation,prepareOriginalCreationInput} from '../saas/creation-writer';
+import {TeamError} from '../teams/server';
 type Context = {
     usageIncomplete?: boolean;
     usage?: import("./types").BillingResult["usage"];
@@ -35,6 +38,7 @@ type Context = {
     charge?: number;
     error?: BillingError;
     upstream: "unobserved" | "started" | "succeeded" | "rejected" | "unknown";
+    creationId?:string;
 };
 const storage = new AsyncLocalStorage<Context>(), service = createBillingService();
 export function currentSynchronousBilling() { return storage.getStore(); }
@@ -63,10 +67,17 @@ export async function billingRequestIdentity(request: Request) {
     let body: Record<string, unknown> = {};
     if ((request.headers.get("content-type") || "").includes("multipart/form-data")) {
         const form = await copy.formData();
+        const creation=currentCreationContext();if(creation){
+            const text=form.get('userPrompt')||form.get('prompt')||form.get('instruction')||form.get('requirements');if(typeof text==='string')creation.requestText=text.slice(0,50000);
+            creation.parameters={...creation.parameters,...Object.fromEntries(['ratio','resolution','quality','count','size','mode'].filter(k=>form.has(k)).map(k=>[k,form.get(k)]))};
+        }
+        let filePosition=0;
         for (const [key, value] of Array.from(form.entries()).sort(([a], [b]) => a.localeCompare(b))) {
             if (key === "billingVersion" || key === "billingCredits")
                 continue;
-            entries.push([key, typeof value === "string" ? value : { name: value.name, type: value.type, size: value.size, sha256: createHash("sha256").update(Buffer.from(await value.arrayBuffer())).digest("hex") }]);
+            if(typeof value==='string')entries.push([key,value]);else {const bytes=Buffer.from(await value.arrayBuffer());entries.push([key,{name:value.name,type:value.type,size:value.size,sha256:createHash('sha256').update(bytes).digest('hex')}]);
+                await prepareOriginalCreationInput(bytes,value.type||'application/octet-stream',key==='mask'?'mask':'reference',key==='mask'?0:filePosition++);
+            }
         }
         body = { billingVersion: form.get("billingVersion") ?? undefined, billingCredits: form.get("billingCredits") ?? undefined };
     }
@@ -85,12 +96,18 @@ export async function withBillingRequest(request: Request, feature: FeatureId, a
         const email = await resolveUserEmail(request);
         if (!email)
             return billingJson({ error: "请先登录" }, 401);
+        if(!currentCreationContext())return await withCreationRequest(request,email,()=>withBillingRequest(request,feature,action));
         if (await isBanned(email, request.headers.get("x-real-ip") || ""))
             return billingJson({ error: "账号已被封禁" }, 403);
         await ensureSchema();
         const id = `tool-${operationIdFor(request)}`, identity = await billingRequestIdentity(request);
         const previous = (await getPool().query("SELECT email,feature,quote,state,result_response,request_fingerprint FROM app_billing_operations WHERE id=$1", [id])).rows[0];
         if (previous) {
+            const creation=currentCreationContext();
+            if(creation){const old=(await getPool().query(`SELECT DISTINCT c.scope_kind,c.tenant_id FROM app_creation_records c LEFT JOIN app_creation_links l ON l.creation_id=c.id
+              WHERE c.actor_email=$2 AND ((c.source_kind=$3 AND c.source_id=$1) OR (l.target_type='billing' AND l.target_id=$1 AND l.actor_email=$2))`,[id,email.toLowerCase(),feature])).rows;
+              if(old.some(r=>r.scope_kind!==creation.scopeKind||r.tenant_id!==creation.tenantId))throw new TeamError('原操作的工作空间已固定，不能跨空间重用',409);
+            }
             const expected = fingerprint({ email: email.toLowerCase(), quote: previous.quote, ledgerId: `led-${id}`, fingerprint: identity.hash });
             if (previous.email !== email.toLowerCase() || previous.feature !== feature || previous.request_fingerprint !== expected)
                 throw new BillingError("OPERATION_CONFLICT", "该操作编号已用于不同请求", 409);
@@ -108,7 +125,8 @@ export async function withBillingRequest(request: Request, feature: FeatureId, a
             return billingJson({ error: previous.state === "settled" ? "扣费已完成，结果需要恢复，请联系管理员" : "任务已提交，请等待结果或联系管理员核查", code: "OPERATION_PENDING", operationId: id, ...(previous.result_response ? { result: previous.result_response } : {}) }, 409);
         }
         const context: Context = { request, feature, email, id, ...identity,snapshot:await (async()=>{const accepted=await acceptedModelVersions(request);return accepted?(await getModelAdministration()).billing.byVersion(accepted.billingVersion):(await getBillingRuntime()).config.current();})(), upstream: "unobserved" };
-        return await storage.run(context, async () => {
+        const scope=currentCreationContext();context.creationId=(await startCreation(feature,id,email))||undefined;
+        return await storage.run(context, async () => withFrozenCreation(scope?{...scope,creationId:context.creationId}:undefined,async()=>{
             let response: Response;
             try {
                 response = await withArtworkCreation({ path: new URL(request.url).pathname, operationId: id, entry: provenanceEntry(request.headers.get("x-naumi-client-entry"), new URL(request.url).pathname.startsWith("/api/canvas/") ? "canvas" : "toolbox") }, action);
@@ -144,10 +162,15 @@ export async function withBillingRequest(request: Request, feature: FeatureId, a
                     return billingJson({code:"OPERATION_PENDING",error:"结果已保留，账务需要核查；请勿重复创建任务",operationId:id},409);
                 }
             }
+            await finishCreation(context.creationId,email,response.ok?(payload?.jobId?'queued':'succeeded'):context.upstream==='unknown'?'needs_review':'failed',{
+                text:typeof payload?.text==='string'?payload.text:typeof payload?.reply==='string'?payload.reply:typeof payload?.title==='string'?payload.title:undefined,
+                artworkIds:[...(Array.isArray(payload?.images)?payload.images.map((a:any)=>a.id||a.artworkId):[]),...(Array.isArray(payload?.artworks)?payload.artworks.map((a:any)=>a.id):[]),payload?.artworkId,payload?.id].filter((v):v is string=>typeof v==='string'),
+            });
             return response;
-        });
+        }));
     }
     catch (error) {
+        if(error instanceof TeamError)return billingJson({error:error.message},error.status);
         return billingErrorResponse(error);
     }
 }
@@ -211,6 +234,7 @@ export async function completeSynchronousStream(payload: { text: string; model: 
     try {
         await getPool().query("UPDATE app_billing_operations SET result_response=$2::jsonb WHERE id=$1", [context.id, JSON.stringify(payload)]);
         await settleSynchronous("画布助手回复完成");
+        await finishCreation(context.creationId,context.email,'succeeded',{text:payload.text});
     } catch {
         await getPool().query("UPDATE app_billing_operations SET state='manual',updated_at=now() WHERE id=$1 AND state IN ('reserved','hold','manual')", [context.id]);
         throw new BillingError("INVALID_RESULT", "回复已保留，账务需要核查；请勿重复提交", 409);
@@ -222,4 +246,5 @@ export async function failSynchronousStream() {
     // A supplier stream that breaks after opening has an uncertain outcome.
     // Keep authorization instead of retrying or charging for an incomplete reply.
     await withBillingTransaction(getPool(), tx => service.settleTx(tx, context.operation!, { state: "unknown", items: [] }));
+    await finishCreation(context.creationId,context.email,'needs_review',{summary:'流式执行中断，已接受请求不会重新提交'});
 }

@@ -76,6 +76,7 @@ export async function heartbeatImageJob(id: string, token: string) {
 }
 
 export async function saveImageJob(id: string, snapshot: unknown, token: string | null) {
+  if(currentCreationContext()?.evidencePending)snapshot={...(snapshot as Record<string,unknown>),creationEvidencePending:true};
   await assertMutableStagingTask(getPool(), "app_image_jobs", id);
   const tx=await getPool().connect();
   try {await tx.query("BEGIN");

@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { dbEnabled } from "@/lib/db";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { localEditSchema, saveCanvasLocalEdit } from "@/lib/canvas-local-image-edit";
+import {withCreationRoute} from '@/lib/saas/creation-context';
+import {withCreationOperation} from '@/lib/saas/creation-writer';
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   const email = await authenticatedEmail(request);
   if (!email) return NextResponse.json({error:"请先登录"},{status:401});
   if (!dbEnabled) return NextResponse.json({error:"未启用存储"},{status:400});
@@ -19,8 +21,10 @@ export async function POST(request: Request) {
     } else body=await request.json();
     const input=localEditSchema.safeParse(body);
     if (!input.success) return NextResponse.json({error:"编辑参数不正确"},{status:400});
-    return NextResponse.json({ok:true,...await saveCanvasLocalEdit(email,input.data,request.url,replacement)});
+    const result=await withCreationOperation('canvas-local-edit',input.data.operationId,email,{sourceArtworkId:input.data.id,parameters:input.data},()=>saveCanvasLocalEdit(email,input.data,request.url,replacement),result=>({artworkIds:[result.id]}));
+    return NextResponse.json({ok:true,...result});
   } catch (error) {
     return NextResponse.json({error:error instanceof Error ? error.message : "图片编辑失败"},{status:409});
   }
 }
+export function POST(request:Request){return withCreationRoute(request,()=>handlePost(request));}

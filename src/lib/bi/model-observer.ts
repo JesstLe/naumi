@@ -191,7 +191,10 @@ export function observeOpenAI<T extends OpenAI>(client: T): T {
       const scope = isManagedModelClient(client) ? currentModelExecution(key === "create" ? vision ? "vision" : "text" : "image") : null;
       return observeModelCall(
         scope?.connection.wireModel || (typeof body?.model === "string" ? body.model : "unrecorded"),
-        () => original(...args),
+        async () => {
+          if(key==='edit'){const {captureProcessedCreationInputs}=await import('@/lib/saas/creation-writer');await captureProcessedCreationInputs(body);}
+          return original(...args);
+        },
         modelExecutionTelemetry(scope) || null,
         key === "create" ? { imageInput: !!vision } : undefined,
       );
