@@ -142,12 +142,15 @@ export async function enterpriseList(actor:TeamActor):Promise<EnterpriseIdentity
 async function memberRows(tx:PoolClient,s:Scope):Promise<EnterpriseMember[]> {
   const rows=(await tx.query(`SELECT m.email,u.name,m.supervisor_email,m.role_id,m.employment,m.version,m.membership_status,m.membership_expires_at,m.joined_at,m.left_at,u.management_version,u.banned,u.account_expires_at,
     COALESCE(r.name,'员工') AS role_name,COALESCE(r.level,999)::int AS level,
-    GREATEST(0,COALESCE(b.principal,0)-u.credits_used)::int AS available,COALESCE(l.consumed,0)::int AS consumed,COALESCE(a.n,0)::int AS artworks
+    CASE WHEN m.email=ANY($3::text[]) THEN GREATEST(0,COALESCE(b.principal,0)-u.credits_used)::int ELSE NULL END AS available,
+    CASE WHEN m.email=ANY($3::text[]) THEN COALESCE(l.consumed,0)::int ELSE NULL END AS consumed,
+    CASE WHEN m.email=ANY($3::text[]) THEN COALESCE(a.n,0)::int ELSE NULL END AS artworks,
+    CASE WHEN m.email=ANY($3::text[]) THEN 'recorded' ELSE 'restricted' END AS legacy_metrics_state
     FROM app_enterprise_members m JOIN app_users u ON u.email=m.email LEFT JOIN app_enterprise_roles r ON r.enterprise_id=m.enterprise_id AND r.id=m.role_id
     LEFT JOIN LATERAL(SELECT sum(remaining) AS principal FROM app_credit_batches WHERE email=u.email AND expires_at>now() AND remaining>0)b ON true
     LEFT JOIN LATERAL(SELECT -sum(delta) AS consumed FROM app_ledger WHERE email=u.email AND kind='consume' AND delta<0)l ON true
     LEFT JOIN LATERAL(SELECT count(*) AS n FROM app_artworks WHERE email=u.email AND deleted_at IS NULL)a ON true
-    WHERE m.enterprise_id=$1 AND m.email=ANY($2::text[]) ORDER BY COALESCE(r.level,999),u.name,u.email`,[s.team.id,s.manageMembers?[...s.manageable]:[...s.visible]])).rows;
+    WHERE m.enterprise_id=$1 AND m.email=ANY($2::text[]) ORDER BY COALESCE(r.level,999),u.name,u.email`,[s.team.id,s.manageMembers?[...s.manageable]:[...s.visible],s.viewRecords?[...s.visible]:[]])).rows;
   return rows.map(m=>({...m,canManage:s.manageMembers&&m.email!==s.team.owner_email&&m.email!==undefined&&m.level>s.level}));
 }
 export async function enterpriseSnapshot(actor:TeamActor,id:string):Promise<EnterpriseSnapshot> {

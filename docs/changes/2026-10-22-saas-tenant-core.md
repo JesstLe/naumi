@@ -11,6 +11,7 @@
 - 企业成员增加 `membership_status`、`membership_expires_at`、`joined_at`、`left_at`；企业 status/expiry/organization 不再更新 `app_users`。全站密码重置在企业服务端明确拒绝。
 - 每次读取重新校验企业、全局账号、成员身份与期限。数据 `visible` 集合仅有效下级；组织管理 `manageable` 集合独立，暂停成员可恢复。所有者组织列表可见暂停身份；旧按成员 email 读取的历史内容不因离职扩大。确认企业资产的所有者读取由主实施的 creation 服务以 tenant ID 判断。
 - 企业快照返回真实 entitlement 与当前范围标签；账号状态和身份状态独立。
+- 暂停/到期/全局无效成员仍可出现在组织管理列表，但其私人钱包/消费/作品统计在 API 中为 null + restricted；无 viewRecords 能力的管理者也不收到这些侧载统计，避免撤权后通过组织列表继续泄露。
 
 ## 路由与契约
 

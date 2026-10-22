@@ -57,6 +57,7 @@ async function main() {
   await assert.rejects(enterprise.enterpriseSnapshot({email:member,admin:false},a.tenantId),/企业身份/);
   await assert.rejects(enterprise.enterpriseContent(ownerActor,a.tenantId,member,'tasks',1),/归属未确认/);
   const inactive=await enterprise.enterpriseSnapshot(ownerActor,a.tenantId);m=inactive.members.find(m=>m.email===member)!;assert.equal(m.membership_status,'suspended');assert.equal(m.banned,false);
+  assert.equal(m.available,null);assert.equal(m.consumed,null);assert.equal(m.artworks,null);assert.equal(m.legacy_metrics_state,'restricted');
   await enterprise.mutateEnterprise(ownerActor,{...cmd(),action:'status',banned:false});
   m=(await enterprise.enterpriseSnapshot(ownerActor,a.tenantId)).members.find(m=>m.email===member)!;
   const expiry=new Date(Date.now()+86400000).toISOString();
