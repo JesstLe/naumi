@@ -3,7 +3,7 @@ import datetime
 import pathlib
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import os
 import stat
 
@@ -142,6 +142,75 @@ class Gates(unittest.TestCase):
                          memory_mib=2048, cpu=0.5, release_secret='s'*40,
                          state_dir='/opt/naumi-staging/releases/prior/web', build_version='1792146767',
                          reviewed_prior_state_dir='/opt/naumi-staging/releases/prior/web')
+
+    def test_reviewed_video_reference_origin_is_only_in_candidate_env_file(self):
+        # Docker and the Linux-only slot directory are simulated; the private
+        # env file is genuinely written/read so this verifies the clone payload.
+        real_path = pathlib.Path
+        image = 'sha256:'+'a'*64
+        source = {'Id': '1'*64, 'Name': '/naumi47-existing-web', 'Image': image,
+                  'Config': {'Cmd': ['node', 'server.js'], 'Env': ['EXISTING_SETTING=preserved']},
+                  'NetworkSettings': {'Networks': {'synthetic-network': {}}}, 'Mounts': [],
+                  'State': {'Running': True, 'StartedAt': 'existing-boot'},
+                  'HostConfig': {'RestartPolicy': {'Name': 'unless-stopped'}}}
+        before = copy.deepcopy(source)
+        state_name = '/opt/naumi-staging/releases/synthetic-video-origin/web'
+        state_path = Mock()
+        state_path.is_absolute.return_value = True
+        state_path.is_symlink.return_value = False
+        state_path.resolve.return_value.is_relative_to.return_value = True
+        state_path.stat.return_value.st_mode = 0o40700
+        state_path.__str__ = Mock(return_value=state_name)
+        def path(value):
+            return state_path if str(value) == state_name else real_path(value)
+        calls, candidate_env = [], {}
+        def command(args, **_):
+            calls.append(args)
+            self.assertEqual(args[:2], ['docker', 'create'])
+            env_file = args[args.index('--env-file')+1]
+            candidate_env.update(line.split('=', 1) for line in real_path(env_file).read_text().splitlines())
+            self.assertNotIn('VIDEO_REFERENCE_PUBLIC_BASE_URL=', ' '.join(args))
+            return ('2'*64).encode()
+        with tempfile.TemporaryDirectory() as folder:
+            tx = m.HostTransaction(m.TARGET, 'a'*64, folder, command=command)
+            tx.stack = True  # simulated lock scope; this test touches no host.
+            tx.pin = lambda _: source
+            tx.save = Mock()
+            tx.inspect = lambda _: {'Id': '2'*64, 'Name': '/naumi47-new-video-origin', 'Image': image,
+                                   'Config': {'Env': [key+'='+value for key, value in candidate_env.items()]},
+                                   'State': {'Running': False, 'StartedAt': ''},
+                                   'HostConfig': {'RestartPolicy': {'Name': 'no'}}}
+            with patch.object(m.pathlib, 'Path', side_effect=path), patch.object(m.os, 'chown', create=True):
+                result = tx.clone_web(m.public_identity(source), name='naumi47-new-video-origin', port=13122,
+                                      image=image, commit='b'*40, memory_mib=2048, cpu=0.5,
+                                      release_secret='s'*40, state_dir=state_name, build_version='1792674911',
+                                      reviewed_video_reference_origin='https://47.105.59.142')
+            self.assertFalse(result['running'])
+            self.assertEqual(candidate_env['VIDEO_REFERENCE_PUBLIC_BASE_URL'], 'https://47.105.59.142')
+            self.assertEqual(candidate_env['EXISTING_SETTING'], 'preserved')
+            self.assertEqual(source, before, 'Existing slot configuration must remain untouched')
+            self.assertEqual(len(calls), 1, 'Only candidate create is requested; no restart or update')
+            tx.save.assert_any_call('reviewed-video-reference-origin-naumi47-new-video-origin.json',
+                                    {'origin': 'https://47.105.59.142', 'existingSlotChanged': False})
+
+    def test_reviewed_video_reference_origin_rejects_every_other_origin_before_mutation(self):
+        source = {'Config': {'Cmd': ['node', 'server.js'], 'Env': []},
+                  'NetworkSettings': {'Networks': {'synthetic-network': {}}}, 'Mounts': []}
+        for target, origin in [(m.TARGET, 'http://47.105.59.142'), (m.TARGET, 'https://other.example.test'),
+                               (m.TARGET, 'https://47.105.59.142/'), (m.TARGET, 'https://47.105.59.142/path'),
+                               ('103.30.76.93', 'https://47.105.59.142')]:
+            with self.subTest(target=target, origin=origin):
+                tx = m.HostTransaction(target, 'a'*64, '/tmp/unused')
+                tx.pin = lambda _: source
+                tx.run = Mock()
+                tx.save = Mock()
+                with self.assertRaisesRegex(m.Hold, 'EXACT_REVIEWED_VIDEO_REFERENCE_ORIGIN_REQUIRED'):
+                    tx.clone_web({}, name='naumi47-rejected-origin', port=13122, image='sha256:'+'a'*64,
+                                 commit='b'*40, memory_mib=2048, cpu=0.5, release_secret='s'*40,
+                                 state_dir='/opt/naumi-staging/releases/synthetic/web', build_version='1792674911',
+                                 reviewed_video_reference_origin=origin)
+                tx.run.assert_not_called()
+                tx.save.assert_not_called()
 
 
 if __name__ == '__main__':

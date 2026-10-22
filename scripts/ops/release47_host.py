@@ -167,7 +167,8 @@ class HostTransaction:
     def clone_web(self, identity, *, name, port, image, commit, memory_mib, cpu, release_secret,
                   state_dir, build_version, admission='draining', reviewed_omitted_mounts=None, media_binding=None,
                   before_create=None, runtime_recovery=None, reviewed_prior_state_dir=None,
-                  reviewed_nas_credentials_sha256=None):
+                  reviewed_nas_credentials_sha256=None, reviewed_video_reference_origin=None,
+                  reviewed_combined_media=None):
         require(re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]{0,95}', name), 'INVALID_NEW_SLOT_NAME')
         require(type(port) is int and 1024 <= port <= 65535, 'INVALID_LOOPBACK_PORT')
         require(re.fullmatch('sha256:[a-f0-9]{64}', image) and re.fullmatch('[a-f0-9]{40}', commit), 'FIXED_IMAGE_REQUIRED')
@@ -200,6 +201,35 @@ class HostTransaction:
                        S3_ACCESS_KEY_ID=nas['accessKeyId'], S3_SECRET_ACCESS_KEY=nas['secretAccessKey'])
             self.save('reviewed-nas-binding-'+name+'.json', {'endpoint':nas['endpointContainersBridge'], 'bucket':nas['bucket'],
                       'credentialFileSha256':reviewed_nas_credentials_sha256, 'privateMedia':True, 'accessMode':'proxy'})
+        if reviewed_video_reference_origin is not None:
+            require(self.target == TARGET and reviewed_video_reference_origin == 'https://47.105.59.142',
+                    'EXACT_REVIEWED_VIDEO_REFERENCE_ORIGIN_REQUIRED')
+            env['VIDEO_REFERENCE_PUBLIC_BASE_URL'] = reviewed_video_reference_origin
+            self.save('reviewed-video-reference-origin-'+name+'.json',
+                      {'origin': reviewed_video_reference_origin, 'existingSlotChanged': False})
+        scratch = None
+        if reviewed_combined_media is not None:
+            require(self.target == TARGET and set(reviewed_combined_media) == {'workerName','secret','scratchSource'},
+                    'EXACT_COMBINED_MEDIA_REVIEW_REQUIRED')
+            media = reviewed_combined_media
+            require(re.fullmatch(r'naumi47-worker-video-family-[a-z0-9-]+', media['workerName']) and
+                    isinstance(media['secret'], str) and 48 <= len(media['secret']) <= 128 and
+                    media['secret'] not in [env.get('SETTINGS_SECRET'), env.get('VIDEO_WORKER_SECRET')],
+                    'INDEPENDENT_COMBINED_MEDIA_SECRET_REQUIRED')
+            scratch = pathlib.Path(media['scratchSource'])
+            require(str(scratch) == '/opt/naumi-staging/data/video-media-jobs' and not scratch.is_symlink(),
+                    'EXACT_COMBINED_MEDIA_SCRATCH_REQUIRED')
+            if not scratch.exists():
+                scratch.mkdir(mode=0o700)
+                os.chown(scratch,1001,1001)
+            require(scratch.is_dir() and scratch.stat().st_uid == 1001 and not scratch.stat().st_mode & 0o077,
+                    'PRIVATE_COMBINED_MEDIA_SCRATCH_REQUIRED')
+            env.update(NAUMI_MEDIA_WORKER='1',MEDIA_WORKER_ORIGIN='http://'+media['workerName']+':3002',
+                       MEDIA_WORKER_SECRET=media['secret'],MEDIA_JOB_DIR='/scratch',
+                       MEDIA_WORKER_START_PAUSED='1',MEDIA_WORKER_CONCURRENCY='1')
+            self.save('reviewed-combined-media-'+name+'.json',{'workerName':media['workerName'],
+                      'scratchSource':str(scratch),'secretSha256':sha(media['secret'].encode()),
+                      'separateSecret':True,'existingSlotChanged':False})
         env.update(SOURCE_COMMIT=commit, BUILD_VERSION=build_version, NAUMI_INSTANCE_ID=name, NAUMI_RELEASE_RUNTIME='1',
                    NAUMI_RELEASE_ADMISSION_START='draining', RELEASE_CONTROL_SECRET=release_secret,
                    INTERNAL_APP_ORIGIN='http://127.0.0.1:3000', NAUMI_VIDEO_WORKER='0',
@@ -230,9 +260,14 @@ class HostTransaction:
                 continue
             require(mount['Destination'] == '/data' or mount['Destination'].startswith('/data/') or
                     mount['Destination'] == '/scratch', 'LEGACY_PROGRAM_OVERLAY_REQUIRES_REVIEW')
+            if scratch is not None and mount['Destination'] == '/scratch':
+                require(mount['Type'] == 'bind' and mount['Source'] == str(scratch) and mount['RW'],
+                        'COMBINED_MEDIA_SCRATCH_CHANGED')
             source = mount['Source'] if mount['Type'] == 'bind' else mount['Name']
             flag = 'type=' + mount['Type'] + ',src=' + source + ',dst=' + mount['Destination']
             args += ['--mount', flag + (',readonly' if not mount['RW'] else '')]
+        if scratch is not None and not any(m['Destination'] == '/scratch' for m in old['Mounts']):
+            args += ['--mount','type=bind,src='+str(scratch)+',dst=/scratch']
         state = pathlib.Path(state_dir)
         require(state.is_absolute() and not state.is_symlink() and state.resolve().is_relative_to(pathlib.Path('/opt/naumi-staging/releases')),
                 'PRIVATE_SLOT_STATE_REQUIRED')

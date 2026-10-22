@@ -58,7 +58,7 @@ export function sanitizeWirePayload(value:unknown,depth=0):unknown{
   if(Array.isArray(value))return value.slice(0,256).map(item=>sanitizeWirePayload(item,depth+1));
   if(value&&typeof value==="object")return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,/api.?key|authorization|token|secret|password|credential|signature/i.test(key)?"[redacted]":sanitizeWirePayload(item,depth+1)]));
   if(typeof value==="string"){
-    if(/^https?:\/\//.test(value)){try{const url=new URL(value);url.username="";url.password="";url.search="";url.hash="";return url.href;}catch{return "[invalid-url]";}}
+    if(/^https?:\/\//.test(value)){try{const url=new URL(value);url.username="";url.password="";url.search="";url.hash="";if(url.pathname.startsWith("/video-reference-media/"))url.pathname="/video-reference-media/[redacted]";return url.href;}catch{return "[invalid-url]";}}
     if(/^[\[{]/.test(value.trim())){try{return sanitizeWirePayload(JSON.parse(value),depth+1);}catch{}}
     return value.length>4000?value.slice(0,4000)+"[truncated]":value;
   }return value;

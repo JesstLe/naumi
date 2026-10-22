@@ -1,0 +1,2205 @@
+{
+  "schemaVersion": 1,
+  "evidenceDate": "2026-10-23",
+  "defaultPublicModelId": "video-apib-seedance-2-0-fast",
+  "items": [
+    {
+      "family": "seedance",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "seedance-1-0-pro-fast",
+      "publicId": "video-apib-seedance-1-0-pro-fast",
+      "label": "Seedance 1.0 Fast",
+      "profile": "apimart-apib-seedance",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              2
+            ],
+            "resolutions": [
+              "480p"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 2,
+        "defaultResolution": "480p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "9faa64d691b7552620bff965a0a0c1079091f1ec0e8ec8d85592f9608cd55a76",
+        "width": 864,
+        "height": 480,
+        "durationSeconds": 2.042,
+        "audio": false,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/doubao/generation.md",
+          "https://api.apib.ai/api/pricing/model?model=seedance-1-0-pro-fast",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "seedance",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "seedance-1-0-pro-quality",
+      "publicId": "video-apib-seedance-1-0-pro-quality",
+      "label": "Seedance 1.0 Quality",
+      "profile": "apimart-apib-seedance",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              2
+            ],
+            "resolutions": [
+              "480p"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 2,
+        "defaultResolution": "480p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "5d5be16218ac104e4686ac8237343067c9879e3c9ab12cb4a636acae98d60609",
+        "width": 864,
+        "height": 480,
+        "durationSeconds": 2.042,
+        "audio": false,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/doubao/generation.md",
+          "https://api.apib.ai/api/pricing/model?model=seedance-1-0-pro-quality",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "seedance",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "seedance-1-5-pro",
+      "publicId": "video-apib-seedance-1-5-pro",
+      "label": "Seedance 1.5 Pro",
+      "profile": "apimart-apib-seedance",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              4
+            ],
+            "resolutions": [
+              "480p"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": "disabled",
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 4,
+        "defaultResolution": "480p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "aa8283a1b8c4d812efa11e547c3aafaac9c4346705850f459bfbda2193342deb",
+        "width": 864,
+        "height": 496,
+        "durationSeconds": 4.042,
+        "audio": false,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/seedance-1-5-pro/generation.md",
+          "https://api.apib.ai/api/pricing/model?model=seedance-1-5-pro",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "seedance",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "seedance-2.0",
+      "publicId": "video-apib-seedance-2-0",
+      "label": "Seedance 2.0",
+      "profile": "apimart-apib-seedance",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              4
+            ],
+            "resolutions": [
+              "480p"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 4,
+        "defaultResolution": "480p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "45ddaf3f494ecd28083573568ac5fd3b19427d45cdbd0252368951c2e8e09457",
+        "width": 864,
+        "height": 496,
+        "durationSeconds": 4.096,
+        "audio": true,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md",
+          "https://api.apib.ai/api/pricing/model?model=seedance-2.0",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "seedance",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "seedance-2.0-fast",
+      "publicId": "video-apib-seedance-2-0-fast",
+      "label": "Seedance 2.0 Fast",
+      "profile": "apimart-apib-seedance",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              4
+            ],
+            "resolutions": [
+              "480p"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 4,
+        "defaultResolution": "480p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "81f97ad349de5202b0f5a329dcc65a2f64af257951caa6eddd8d1849feeaf810",
+        "width": 864,
+        "height": 496,
+        "durationSeconds": 4.096,
+        "audio": true,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md",
+          "https://api.apib.ai/api/pricing/model?model=seedance-2.0-fast",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "seedance",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "seedance-2.0-mini",
+      "publicId": "video-apib-seedance-2-0-mini",
+      "label": "Seedance 2.0 Mini",
+      "profile": "apimart-apib-seedance",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              4
+            ],
+            "resolutions": [
+              "480p"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 4,
+        "defaultResolution": "480p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "6051dac66ae89118920e01a4e8a69728fbee4b5d0ffa7f30ae6ad4caaa33dede",
+        "width": 864,
+        "height": 496,
+        "durationSeconds": 4.096,
+        "audio": true,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md",
+          "https://api.apib.ai/api/pricing/model?model=seedance-2.0-mini",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "seedance",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "seedance-2.5",
+      "publicId": "video-apib-seedance-2-5",
+      "label": "Seedance 2.5",
+      "profile": "apimart-apib-seedance",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              4
+            ],
+            "resolutions": [
+              "480p"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 4,
+        "defaultResolution": "480p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "93f3a81da990fe8c8d6888c0e119f852fd5ce018bb7b9a10d5dd2ef0863d93a1",
+        "width": 854,
+        "height": 480,
+        "durationSeconds": 4.064,
+        "audio": true,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/seedance-2-5/generation.md",
+          "https://api.apib.ai/api/pricing/model?model=seedance-2.5",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "kling",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "kling-3.0-turbo",
+      "publicId": "video-apib-kling-3-0-turbo",
+      "label": "Kling 3.0 Turbo",
+      "profile": "apimart-apib-kling",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              3
+            ],
+            "resolutions": [
+              "720p"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 3,
+        "defaultResolution": "720p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "2327b55a7f65ec0e2886ee6a811884eef74c6c2f5acc785243508538811f638d",
+        "width": 1280,
+        "height": 720,
+        "durationSeconds": 3.042,
+        "audio": true,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/kling-3.0-turbo/generation.md",
+          "https://api.apib.ai/api/pricing/model?model=kling-3.0-turbo",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "kling",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "kling-v2-6",
+      "publicId": "video-apib-kling-v2-6",
+      "label": "Kling 2.6 标准",
+      "profile": "apimart-apib-kling",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              5
+            ],
+            "resolutions": [
+              "720p"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": "disabled",
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 5,
+        "defaultResolution": "720p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "2abbd6e566d2d9a096f94e04a7f8192b316dde78badd8dae9d5d558a71c4393a",
+        "width": 1280,
+        "height": 720,
+        "durationSeconds": 5.042,
+        "audio": false,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/kling-v2-6/generation.md",
+          "https://api.apib.ai/api/pricing/model?model=kling-v2-6",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "kling",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "kling-v3",
+      "publicId": "video-apib-kling-v3",
+      "label": "Kling 3.0 标准",
+      "profile": "apimart-apib-kling",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              3
+            ],
+            "resolutions": [
+              "720p"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": "disabled",
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 3,
+        "defaultResolution": "720p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "061afa91b3da016f4fd6a243ddd21ad357759eb79eb579b4b7b5a9ded9b391ae",
+        "width": 1280,
+        "height": 720,
+        "durationSeconds": 3.042,
+        "audio": false,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/kling-v3/generation.md",
+          "https://api.apib.ai/api/pricing/model?model=kling-v3",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "kling",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "kling-v3-omni",
+      "publicId": "video-apib-kling-v3-omni",
+      "label": "Kling 3.0 Omni 标准",
+      "profile": "apimart-apib-kling",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              3
+            ],
+            "resolutions": [
+              "720p"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": "disabled",
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 3,
+        "defaultResolution": "720p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "a693837e3bf024b32eaf693ce82a4d6e4129e3cbe907b9b2aac17f4e1507fbe3",
+        "width": 1280,
+        "height": 720,
+        "durationSeconds": 3.042,
+        "audio": false,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/kling-v3-omni/generation.md",
+          "https://api.apib.ai/api/pricing/model?model=kling-v3-omni",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "kling",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "kling-v4",
+      "publicId": "video-apib-kling-v4",
+      "label": "Kling 4.0",
+      "profile": "apimart-apib-kling",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              3
+            ],
+            "resolutions": [
+              "720p"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 3,
+        "defaultResolution": "720p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "376b8b3ea698e9dc57490b0c17b67d687add1bcac56be99afbae61ea7e247d71",
+        "width": 1280,
+        "height": 720,
+        "durationSeconds": 3.042,
+        "audio": true,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/kling-v4/generation.md",
+          "https://api.apib.ai/api/pricing/model?model=kling-v4",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "kling",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "kling-video-o1",
+      "publicId": "video-apib-kling-video-o1",
+      "label": "Kling O1 标准",
+      "profile": "apimart-apib-kling",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              5
+            ],
+            "resolutions": [
+              "720p"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 5,
+        "defaultResolution": "720p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "253b9b1e8e4680539bfbed8f02ffd7c7f5a1cd95de3d9ce4263ee23bf140f85b",
+        "width": 1280,
+        "height": 720,
+        "durationSeconds": 5.042,
+        "audio": false,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/kling-video-o1/generation.md",
+          "https://api.apib.ai/api/pricing/model?model=kling-video-o1",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "kling",
+      "sourceProviderId": "geeknow-images",
+      "providerId": "geeknow-video",
+      "model": "kling-1.6-720p",
+      "publicId": "video-geek-kling-1-6-720p",
+      "label": "Kling 1.6 720P",
+      "profile": "geek-kling",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              5
+            ],
+            "resolutions": [
+              "720P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": "disabled",
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 5,
+        "defaultResolution": "720P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "9660cc3e80dd3693c58581509a40523af6ec6ab5f6d4bea03f0831dd75fa6934",
+        "width": 1280,
+        "height": 720,
+        "durationSeconds": 5.042,
+        "audio": false,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.geeknow.ai/api-reference/videos/aigc/overview",
+          "https://docs.geeknow.ai/api-reference/videos/aigc/generation"
+        ]
+      }
+    },
+    {
+      "family": "kling",
+      "sourceProviderId": "geeknow-images",
+      "providerId": "geeknow-video",
+      "model": "kling-2.0-720p",
+      "publicId": "video-geek-kling-2-0-720p",
+      "label": "Kling 2.0 720P",
+      "profile": "geek-kling",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              5
+            ],
+            "resolutions": [
+              "720P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": "disabled",
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 5,
+        "defaultResolution": "720P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "6533ea6fd19cdd6ab6e0f9b6b6358bc6312e7d4a35e4de2f54f8ba46f2324268",
+        "width": 1280,
+        "height": 720,
+        "durationSeconds": 5.042,
+        "audio": false,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.geeknow.ai/api-reference/videos/aigc/overview",
+          "https://docs.geeknow.ai/api-reference/videos/aigc/generation"
+        ]
+      }
+    },
+    {
+      "family": "kling",
+      "sourceProviderId": "geeknow-images",
+      "providerId": "geeknow-video",
+      "model": "kling-2.1-720p",
+      "publicId": "video-geek-kling-2-1-720p",
+      "label": "Kling 2.1 720P",
+      "profile": "geek-kling",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              5
+            ],
+            "resolutions": [
+              "720P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": "disabled",
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 5,
+        "defaultResolution": "720P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "85ed752ba0365f0f6ccc850533b1fd5377182906f8a51beb5794954d3329e4c6",
+        "width": 1280,
+        "height": 720,
+        "durationSeconds": 5.042,
+        "audio": false,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.geeknow.ai/api-reference/videos/aigc/overview",
+          "https://docs.geeknow.ai/api-reference/videos/aigc/generation"
+        ]
+      }
+    },
+    {
+      "family": "kling",
+      "sourceProviderId": "geeknow-images",
+      "providerId": "geeknow-video",
+      "model": "kling-2.5-720p",
+      "publicId": "video-geek-kling-2-5-720p",
+      "label": "Kling 2.5 720P",
+      "profile": "geek-kling",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              5
+            ],
+            "resolutions": [
+              "720P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": "disabled",
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 5,
+        "defaultResolution": "720P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "8aad3a65a2b149350c9d05f40838783ce531ae2c75a48f2960eb7176b4533f1c",
+        "width": 1280,
+        "height": 720,
+        "durationSeconds": 5.042,
+        "audio": false,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.geeknow.ai/api-reference/videos/aigc/overview",
+          "https://docs.geeknow.ai/api-reference/videos/aigc/generation"
+        ]
+      }
+    },
+    {
+      "family": "kling",
+      "sourceProviderId": "geeknow-images",
+      "providerId": "geeknow-video",
+      "model": "kling-2.6-mute-720p",
+      "publicId": "video-geek-kling-2-6-mute-720p",
+      "label": "Kling 2.6 静音 720P",
+      "profile": "geek-kling",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              5
+            ],
+            "resolutions": [
+              "720P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": "disabled",
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 5,
+        "defaultResolution": "720P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "dce339e071b5b06b2bcd8ed9ef5cf3ffe3cad1789803e499932bbdcae93ce858",
+        "width": 1280,
+        "height": 720,
+        "durationSeconds": 5.042,
+        "audio": false,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.geeknow.ai/api-reference/videos/aigc/overview",
+          "https://docs.geeknow.ai/api-reference/videos/aigc/generation"
+        ]
+      }
+    },
+    {
+      "family": "kling",
+      "sourceProviderId": "geeknow-images",
+      "providerId": "geeknow-video",
+      "model": "kling-3.0-720p-mute",
+      "publicId": "video-geek-kling-3-0-720p-mute",
+      "label": "Kling 3.0 720P 静音",
+      "profile": "geek-kling",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              5
+            ],
+            "resolutions": [
+              "720P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": "disabled",
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 5,
+        "defaultResolution": "720P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "7b99d15ff076a0c8bc629e62a8a8d3f0bab3ef1aa8837554546a7f17bd1099dc",
+        "width": 1280,
+        "height": 720,
+        "durationSeconds": 5.042,
+        "audio": false,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.geeknow.ai/api-reference/videos/aigc/overview",
+          "https://docs.geeknow.ai/api-reference/videos/aigc/generation"
+        ]
+      }
+    },
+    {
+      "family": "kling",
+      "sourceProviderId": "geeknow-images",
+      "providerId": "geeknow-video",
+      "model": "kling-3.0-omni-720p-noref-mute",
+      "publicId": "video-geek-kling-3-0-omni-720p-noref-mute",
+      "label": "Kling 3.0 Omni 720P 文生 静音",
+      "profile": "geek-kling",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              5
+            ],
+            "resolutions": [
+              "720P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": "disabled",
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 5,
+        "defaultResolution": "720P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "7b5c432024c05853b4834b0e47f083308bc068663f4fa3a0477abea51e0c3463",
+        "width": 1280,
+        "height": 720,
+        "durationSeconds": 5.042,
+        "audio": false,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.geeknow.ai/api-reference/videos/aigc/overview",
+          "https://docs.geeknow.ai/api-reference/videos/aigc/generation"
+        ]
+      }
+    },
+    {
+      "family": "kling",
+      "sourceProviderId": "geeknow-images",
+      "providerId": "geeknow-video",
+      "model": "kling-3.0-omni-720p-ref-mute",
+      "publicId": "video-geek-kling-3-0-omni-720p-ref-mute",
+      "label": "Kling 3.0 Omni 720P 参考图 静音",
+      "profile": "geek-kling",
+      "definition": {
+        "modes": [
+          "reference"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              5
+            ],
+            "resolutions": [
+              "720P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": "disabled",
+        "limits": {
+          "images": 1,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 5,
+        "defaultResolution": "720P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "b6fbeaa9e25dcd66bcb78f40bf005ab835eb826fe575b1f47816cc92e82d2edb",
+        "width": 1280,
+        "height": 720,
+        "durationSeconds": 5.042,
+        "audio": false,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.geeknow.ai/api-reference/videos/aigc/overview",
+          "https://docs.geeknow.ai/api-reference/videos/aigc/generation"
+        ]
+      }
+    },
+    {
+      "family": "kling",
+      "sourceProviderId": "geeknow-images",
+      "providerId": "geeknow-video",
+      "model": "kling-o1-720p",
+      "publicId": "video-geek-kling-o1-720p",
+      "label": "Kling o1 720P",
+      "profile": "geek-kling",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              5
+            ],
+            "resolutions": [
+              "720P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": "disabled",
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 5,
+        "defaultResolution": "720P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "7115fc2bc95b9ed3216172a096d10adcbf66a389af3e2613f2213760df017c75",
+        "width": 1280,
+        "height": 720,
+        "durationSeconds": 5.042,
+        "audio": false,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.geeknow.ai/api-reference/videos/aigc/overview",
+          "https://docs.geeknow.ai/api-reference/videos/aigc/generation"
+        ]
+      }
+    },
+    {
+      "family": "wan",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "wan2.5-preview",
+      "publicId": "video-apib-wan2-5-preview",
+      "label": "Wan 2.5 Preview",
+      "profile": "apimart-apib-wan",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              5
+            ],
+            "resolutions": [
+              "480p"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": "required",
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 5,
+        "defaultResolution": "480p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "7284e8ec5a81e2449bc34b045548b7dda0a245e7a3a776bb974c26a7e6da471e",
+        "width": 832,
+        "height": 480,
+        "durationSeconds": 5.042,
+        "audio": true,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/wan2.5/generation.md",
+          "https://api.apib.ai/api/pricing/model?model=wan2.5-preview",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "wan",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "wan2.6",
+      "publicId": "video-apib-wan2-6",
+      "label": "Wan 2.6",
+      "profile": "apimart-apib-wan",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              5
+            ],
+            "resolutions": [
+              "720p"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 5,
+        "defaultResolution": "720p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "5f3d32c3a630fa7875695d34b8d1d7fc87f489bf39911bc4af9972396730a070",
+        "width": 1280,
+        "height": 720,
+        "durationSeconds": 5.008,
+        "audio": true,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/wan2.6/generation.md",
+          "https://api.apib.ai/api/pricing/model?model=wan2.6",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "wan",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "wan2.6-i2v-flash",
+      "publicId": "video-apib-wan2-6-i2v-flash",
+      "label": "Wan 2.6 Flash 图生",
+      "profile": "apimart-apib-wan",
+      "definition": {
+        "modes": [
+          "single_image"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              2
+            ],
+            "resolutions": [
+              "720p"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "adaptive"
+        ],
+        "audio": "disabled",
+        "limits": {
+          "images": 1,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 2,
+        "defaultResolution": "720p",
+        "defaultAspectRatio": "adaptive",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": true,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "04e787914d95dfea0df87e4ee5c10a320605283f201b5a5fd77588293196ac14",
+        "width": 1176,
+        "height": 784,
+        "durationSeconds": 2,
+        "audio": false,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/wan2.6/i2v-flash-generation.md",
+          "https://api.apib.ai/api/pricing/model?model=wan2.6-i2v-flash",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "wan",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "wan2.7-r2v",
+      "publicId": "video-apib-wan2-7-r2v",
+      "label": "Wan 2.7 参考图",
+      "profile": "apimart-apib-wan",
+      "definition": {
+        "modes": [
+          "reference"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              2
+            ],
+            "resolutions": [
+              "720P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 1,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 2,
+        "defaultResolution": "720P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "a936df78a33becd279ebcc5d42c914532882eb13b4bbf22ae77c3747d65f0968",
+        "width": 1280,
+        "height": 720,
+        "durationSeconds": 2.02,
+        "audio": true,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/wan2.7-r2v/generation.md",
+          "https://api.apib.ai/api/pricing/model?model=wan2.7-r2v",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "wan",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "wan2.7-videoedit",
+      "publicId": "video-apib-wan2-7-videoedit",
+      "label": "Wan 2.7 视频编辑",
+      "profile": "apimart-apib-wan",
+      "definition": {
+        "modes": [
+          "video_edit"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              2
+            ],
+            "resolutions": [
+              "720P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "adaptive"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 0,
+          "videos": 1,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 2,
+        "defaultResolution": "720P",
+        "defaultAspectRatio": "adaptive",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "91cf596c4105d88c48c499130d0db2024f9ebfd887bae2fa9a4baf0fbb5408ab",
+        "width": 1264,
+        "height": 728,
+        "durationSeconds": 2,
+        "audio": true,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/wan2.7-videoedit/generation.md",
+          "https://api.apib.ai/api/pricing/model?model=wan2.7-videoedit",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "wan",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "wan3.0-video",
+      "publicId": "video-apib-wan3-0-video",
+      "label": "Wan 3.0",
+      "profile": "apimart-apib-wan",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              2
+            ],
+            "resolutions": [
+              "480P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 2,
+        "defaultResolution": "480P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "c527fdfc2edf449b2d7d4da403794f671dc21f973ef62ad25a6c55ce12776dde",
+        "width": 854,
+        "height": 480,
+        "durationSeconds": 2.02,
+        "audio": true,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation.md",
+          "https://api.apib.ai/api/pricing/model?model=wan3.0-video",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "wan",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "wan3.0-video-prime",
+      "publicId": "video-apib-wan3-0-video-prime",
+      "label": "Wan 3.0 Prime",
+      "profile": "apimart-apib-wan",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              2
+            ],
+            "resolutions": [
+              "480P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 2,
+        "defaultResolution": "480P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "a7c17647388a252a7e2df5c043b4b07bc85215f2a12908e439e8b77b2c559c20",
+        "width": 854,
+        "height": 480,
+        "durationSeconds": 2.02,
+        "audio": true,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation.md",
+          "https://api.apib.ai/api/pricing/model?model=wan3.0-video-prime",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "wan",
+      "sourceProviderId": "geeknow-images",
+      "providerId": "geeknow-video",
+      "model": "wan3.0-video",
+      "publicId": "video-geek-wan3-0-video",
+      "label": "Wan 3.0 备用",
+      "profile": "geek-wan3",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              2
+            ],
+            "resolutions": [
+              "480P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 2,
+        "defaultResolution": "480P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "beec509ba58f6890a46b8d5a15117870984a606bfec29a77312b13f6a4036733",
+        "width": 854,
+        "height": 480,
+        "durationSeconds": 2.02,
+        "audio": true,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.geeknow.ai/api-reference/videos/wan3/generation"
+        ]
+      }
+    },
+    {
+      "family": "h3",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "MiniMax-H3",
+      "publicId": "video-apib-minimax-h3",
+      "label": "H3 768P 4秒",
+      "profile": "apimart-apib-h3",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              4
+            ],
+            "resolutions": [
+              "768P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 4,
+        "defaultResolution": "768P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "6e4692ccf93ba30f46cb9300d64b41fbe281e4402e0748a0502172566ac30f63",
+        "width": 1344,
+        "height": 768,
+        "durationSeconds": 4.459,
+        "audio": true,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/minimax-h3/generation.md",
+          "https://api.apib.ai/api/pricing/model?model=MiniMax-H3",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "h3",
+      "sourceProviderId": "apib-video",
+      "providerId": "apib-video",
+      "model": "MiniMax-H3-Max",
+      "publicId": "video-apib-minimax-h3-max",
+      "label": "H3 Max",
+      "profile": "apimart-apib-h3",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              5
+            ],
+            "resolutions": [
+              "480P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 5,
+        "defaultResolution": "480P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "c2499707b104b5e6c0067fa5fd5a7ddd5fc9e65d5da82d1ecdd8af37c6cd82b4",
+        "width": 832,
+        "height": 480,
+        "durationSeconds": 5.184,
+        "audio": true,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/minimax-h3/max.md",
+          "https://api.apib.ai/api/pricing/model?model=MiniMax-H3-Max",
+          "https://api.apib.ai/api/status"
+        ]
+      }
+    },
+    {
+      "family": "h3",
+      "sourceProviderId": "geeknow-images",
+      "providerId": "geeknow-video-h3",
+      "model": "MiniMax-H3",
+      "publicId": "video-geek-minimax-h3",
+      "label": "H3 768P 1秒",
+      "profile": "minimax",
+      "definition": {
+        "modes": [
+          "text"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              1
+            ],
+            "resolutions": [
+              "768P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 1,
+        "defaultResolution": "768P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": false,
+        "supportsLastFrame": false,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "evidence": {
+        "sha256": "c7aeff6368218ceab3df47347aabd98e22e35729b4b8ae2952aa758341bdbbc6",
+        "width": 1344,
+        "height": 768,
+        "durationSeconds": 1.625,
+        "audio": true,
+        "decoded": true,
+        "sourceURLs": [
+          "https://docs.geeknow.ai/api-reference/videos/minimax-h3/generation"
+        ]
+      }
+    }
+  ]
+}

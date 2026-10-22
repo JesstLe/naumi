@@ -38,11 +38,13 @@ export type ResolvedVideoCapability=VideoModelDefinition&{sources:Record<string,
 export const VIDEO_WIRE_PROFILES=["openai-videos","grok2api","cogvideox3","agnes","agnes-v25","ark","kie-generic","kie-kling","kie-kling-v26","kie-kling-omni-text","kie-kling-omni-image","kie-kling-omni-reference","kie-kling-omni-transform","kie-motion-control",
   "apimart-generic","apimart-kling","apimart-kling-v26","apimart-kling-omni","apimart-motion-control","gemini","minimax","metaso","autodl","runninghub","comfyui",
   "tokendance-seedance","tokendance-kling-text","tokendance-kling-image","tokendance-kling-motion","tokendance-kling-omni","tokendance-wan3","tokendance-happyhorse","tokendance-minimax",
-  "tfrouter-generic","tfrouter-kling","tfrouter-kling-omni","tfrouter-grok","compshare-h3","compshare-hailuo","compshare-vidu","compshare-vidu-extend","compshare-vidu-lip-sync","compshare-wan","compshare-seedance"] as const;
+  "tfrouter-generic","tfrouter-kling","tfrouter-kling-omni","tfrouter-grok","compshare-h3","compshare-hailuo","compshare-vidu","compshare-vidu-extend","compshare-vidu-lip-sync","compshare-wan","compshare-seedance",
+  "apimart-apib-seedance","apimart-apib-kling","apimart-apib-wan","apimart-apib-h3","geek-kling","geek-wan3"] as const;
 export const videoWireProfileSchema=z.enum(VIDEO_WIRE_PROFILES);
 export type VideoWireProfile=typeof VIDEO_WIRE_PROFILES[number];
 export const VIDEO_PROTOCOLS=["openai-videos","ark","kie","apimart","gemini","minimax","metaso","tokendance","tfrouter","compshare","comfyui","autodl","runninghub"] as const;
 export function videoProfileProtocol(profile:VideoWireProfile):typeof VIDEO_PROTOCOLS[number]{
+  if(profile.startsWith("geek-"))return "openai-videos";
   if(profile.startsWith("kie-"))return "kie";if(profile.startsWith("apimart-"))return "apimart";
   if(profile.startsWith("tokendance-"))return "tokendance";if(profile.startsWith("tfrouter-"))return "tfrouter";
   if(profile.startsWith("compshare-"))return "compshare";

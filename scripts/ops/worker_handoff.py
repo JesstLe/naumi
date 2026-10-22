@@ -23,11 +23,23 @@ const action=JSON.parse(process.argv[1]);
 const port=Number(process.env.NAUMI_WORKER_CONTROL_PORT||3001);
 if(!Number.isInteger(port)||port<1||port>65535)throw Error('INVALID_CONTROL_PORT');
 if(process.env.NAUMI_WORKER_RELEASE_CONTROL!=='1')throw Error('WORKER_CONTROL_NOT_ENABLED');
+const media=process.env.NAUMI_MEDIA_WORKER==='1';
+const integer=value=>Number.isSafeInteger(value)&&value>=0;
 const response=await fetch(`http://127.0.0.1:${port}/${action?'control':'status'}`,{
  method:action?'POST':'GET',headers:{'x-video-worker-secret':process.env.VIDEO_WORKER_SECRET||''},
- ...(action?{body:JSON.stringify(action)}:{}),signal:AbortSignal.timeout(10000)});
+ ...(action?{body:JSON.stringify(action)}:{}),signal:AbortSignal.timeout(media?25000:10000)});
 const result=await response.json();
-if(!response.ok){console.error('CONTROL_HTTP_'+response.status+':'+String(result.error));process.exit(2);}
+if(!response.ok){console.error('CONTROL_HTTP_'+response.status);process.exit(2);}
+if(media){
+ const state=action?result?.state:result;
+ if(!state||typeof state!=='object'||Array.isArray(state))throw Error('WORKER_STATE_MISSING');
+ // The parent proxy owns scanner + media sequencing under this same body/UUID.
+ // Observe its real health; never issue a second media control from this client.
+ const value=state.mediaWorker;
+ if(!/^[a-f0-9]{40}$/.test(process.env.SOURCE_COMMIT||'')||value?.ok!==true||value.version!==process.env.SOURCE_COMMIT||value.sandbox!==true||
+   typeof value.draining!=='boolean'||!['running','queued','terminal','maxActive'].every(key=>integer(value[key]))||value.maxActive<1||value.concurrency!==1)throw Error('MEDIA_WORKER_HEALTH_INVALID');
+ if(action&&value.draining!==(action.action!=='resume'))throw Error('MEDIA_WORKER_MODE_CHANGED');
+}
 console.log(JSON.stringify(result));
 """
 
@@ -52,6 +64,8 @@ def inspect_identity(args, command):
             env.get('NAUMI_APP_ORIGIN', '').rstrip('/') == args.expected_origin.rstrip('/') and
             env.get('NAUMI_WORKER_RELEASE_CONTROL') == '1', 'WORKER_ORIGIN_OR_COMMIT_DRIFT')
     require(bool(env.get('NAUMI_INSTANCE_ID')), 'WORKER_INSTANCE_ID_REQUIRED')
+    require(not getattr(args, 'require_media_worker', False) or env.get('NAUMI_MEDIA_WORKER') == '1',
+            'REQUIRED_MEDIA_WORKER_NOT_CONFIGURED')
     return row, env
 
 
@@ -61,7 +75,18 @@ def remote(command, container, request=None):
     return json.loads(raw)
 
 
-def verify_status(status, args, instance_id):
+def verify_media_status(media, commit):
+    require(isinstance(commit, str) and re.fullmatch(r'[a-f0-9]{40}', commit) and
+            isinstance(media, dict) and media.get('ok') is True and media.get('version') == commit and
+            media.get('sandbox') is True and type(media.get('draining')) is bool and
+            all(type(media.get(key)) is int and 0 <= media[key] <= 9007199254740991
+                for key in ('running', 'queued', 'terminal', 'maxActive')) and media['maxActive'] > 0 and
+            type(media.get('concurrency')) is int and media['concurrency'] == 1,
+            'MEDIA_WORKER_STATUS_INCOMPLETE_OR_DRIFT')
+    return media
+
+
+def verify_status(status, args, instance_id, media_required=False):
     require(isinstance(status, dict) and status.get('schemaVersion') == 1 and
             status.get('instanceId') == instance_id and status.get('commit') == args.expected_commit and
             status.get('origin') == args.expected_origin.rstrip('/'), 'WORKER_CONTROL_STATUS_DRIFT')
@@ -73,6 +98,8 @@ def verify_status(status, args, instance_id):
     require(type(status.get('activeTicks')) is int and status['activeTicks'] in [0, 1] and
             type(status.get('unresolvedTicks')) is int and status['unresolvedTicks'] in [0, 1],
             'WORKER_TICK_COUNTS_UNKNOWN')
+    if media_required or 'mediaWorker' in status:
+        verify_media_status(status.get('mediaWorker'), args.expected_commit)
     return status
 
 
@@ -99,7 +126,8 @@ def authorize_release(args, state, plan):
 
 def execute(args, folder, command):
     row, env = inspect_identity(args, command)
-    status = verify_status(remote(command, args.container), args, env['NAUMI_INSTANCE_ID'])
+    media_required = env.get('NAUMI_MEDIA_WORKER') == '1'
+    status = verify_status(remote(command, args.container), args, env['NAUMI_INSTANCE_ID'], media_required)
     if args.action == 'status':
         return {'result': 'OBSERVED', 'state': status, 'containerId': row['Id']}
     require(re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', args.operation_id or ''),
@@ -111,6 +139,8 @@ def execute(args, folder, command):
         require(pending == operation or saved['phase'] == 'ACKNOWLEDGED', 'UNRESOLVED_HANDOFF_BLOCKS_NEXT')
     binding = {'containerId': row['Id'], 'image': args.expected_image,
                'commit': args.expected_commit, 'origin': args.expected_origin, 'action': args.action}
+    if media_required:
+        binding['mediaWorker'] = True
     if args.action == 'reconcile':
         tick_id = getattr(args, 'tick_id', None)
         require(re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', tick_id or ''),
@@ -149,11 +179,13 @@ def execute(args, folder, command):
     try:
         result = remote(command, args.container, request)
         require(result.get('receipt', {}).get('action') == args.action, 'WORKER_RECEIPT_ACTION_MISMATCH')
-        fresh = verify_status(remote(command, args.container), args, env['NAUMI_INSTANCE_ID'])
+        fresh = verify_status(remote(command, args.container), args, env['NAUMI_INSTANCE_ID'], media_required)
         require(fresh['bootId'] == result['state']['bootId'], 'WORKER_BOOT_CHANGED_AFTER_CONTROL')
         require(type(result['receipt'].get('revision')) is int and
                 fresh['revision'] >= result['receipt']['revision'], 'WORKER_RECEIPT_REVISION_MISMATCH')
         require(fresh.get('paused') is (args.action != 'resume'), 'WORKER_CONTROL_NOT_OBSERVED')
+        if media_required:
+            require(fresh['mediaWorker']['draining'] is (args.action != 'resume'), 'MEDIA_WORKER_CONTROL_NOT_OBSERVED')
         if args.action == 'reconcile':
             receipt = result['receipt']
             server_receipt = receipt.get('serverReceipt', {})
@@ -182,6 +214,7 @@ def main():
         parser.add_argument('--' + name, required=True)
     parser.add_argument('--operation-id')
     parser.add_argument('--tick-id', help='Original UNKNOWN tick UUID; reconciliation is GET-only')
+    parser.add_argument('--require-media-worker', action='store_true', help='New combined Worker requires real media health/control')
     parser.add_argument('--plan', type=pathlib.Path, help='Required for mutation: current live lifecycle plan')
     args = parser.parse_args()
     try:
@@ -200,7 +233,7 @@ def main():
 
         def command(cmd):
             # Do not echo docker env, authentication headers or provider output.
-            result = subprocess.run(cmd, capture_output=True, timeout=20, check=True)
+            result = subprocess.run(cmd, capture_output=True, timeout=35, check=True)
             return result.stdout.decode('utf-8')
 
         with lifecycle.live_locks():
