@@ -10,7 +10,7 @@ from release47_authorized_successor import check_incidents
 def begin(state, config, archive, incident_digest, at=None):
     at = at or dt.datetime.now(dt.timezone.utc)
     require(config.get('target') == '47.105.59.142' and config.get('authorization') in
-            ['解决管理后台其他地方查询慢的问题，全部解决','这种问题解决了没有，如果没解决，就解决并上线','优化一下管理后台查询用户操作记录加载过慢的问题，优化好之后，合并所有分支进行一次上线','合并所有分支，然后上线服务器，退役旧容器','合并分支，上线服务器','你先上线一次服务器，然后再进行接下来的修复和优化',
+            ['那你把上一轮发布未收尾的问题处理好，然后把这次修复上线，别影响正在使用的用户。','解决管理后台其他地方查询慢的问题，全部解决','这种问题解决了没有，如果没解决，就解决并上线','优化一下管理后台查询用户操作记录加载过慢的问题，优化好之后，合并所有分支进行一次上线','合并所有分支，然后上线服务器，退役旧容器','合并分支，上线服务器','你先上线一次服务器，然后再进行接下来的修复和优化',
              '你做个监控，迁移完之后，上线，我要最终结果，上线，明白吧，中间遇到的问题自己解决，不要询问我，我去睡觉了'], 'EXPLICIT_NORMAL_RELEASE_AUTHORIZATION_REQUIRED')
     require(config.get('date') == at.astimezone(dt.timezone(dt.timedelta(hours=8))).date().isoformat(), 'RELEASE_DATE_CHANGED')
     require(config.get('restoreDatabase') is False and config.get('replayAcceptedTasks') is False and

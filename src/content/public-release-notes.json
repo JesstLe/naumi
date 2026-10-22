@@ -1,5 +1,19 @@
 [
   {
+    "version": "1792674911",
+    "title": {
+      "zh": "图片上传体验修复",
+      "en": "Image upload reliability"
+    },
+    "improvements": [],
+    "fixes": [
+      {
+        "zh": "修复网络波动时图片上传长时间等待的问题。",
+        "en": "Reduced long waits when uploading images during temporary connectivity issues."
+      }
+    ]
+  },
+  {
     "version": "1792501860",
     "title": {
       "zh": "画布创作体验优化",

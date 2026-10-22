@@ -30,6 +30,9 @@ class NormalPolicy(unittest.TestCase):
  def test_admin_query_followup_authorization(self):
   self.cfg['authorization']='解决管理后台其他地方查询慢的问题，全部解决'
   self.assertEqual(self.begin()['authorization'],self.cfg['authorization'])
+ def test_nas_repair_followup_authorization(self):
+  self.cfg['authorization']='那你把上一轮发布未收尾的问题处理好，然后把这次修复上线，别影响正在使用的用户。'
+  self.assertEqual(self.begin()['authorization'],self.cfg['authorization'])
  def test_normal_followup_allowed(self):
   rid='release47-alldev-20261019-previous';self.s['normalBlueGreenReleases']={rid:dict(releaseId=rid,phase='COMPLETE',operations={})};self.s['activeNormalBlueGreenReleaseId']=rid;self.s['runtimeRecovery']['successorReleaseId']=rid;self.cfg['predecessorReleaseId']=rid
   self.assertEqual(self.begin()['predecessorReleaseId'],rid)

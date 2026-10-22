@@ -433,7 +433,8 @@ def record_failed_observation(folder, action, p, revision, reason):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['check', 'begin', *STAGES, 'status'])
+    parser.add_argument('action', choices=['check', 'begin', *STAGES, 'status', 'publish47-nas'])
+    parser.add_argument('--config', type=pathlib.Path)
     parser.add_argument('--plan', type=pathlib.Path)
     parser.add_argument('--snapshot', type=pathlib.Path)
     parser.add_argument('--state-dir', type=pathlib.Path)
@@ -443,6 +444,13 @@ def main(argv=None):
     p = None
     state_verified = False
     try:
+        if a.action == 'publish47-nas':
+            require(os.name == 'posix' and a.config is not None,'LIVE_NAS_CONFIG_REQUIRED')
+            # The established controller owns all three locks and the ORIGINAL
+            # CAS journal, preserving the explicitly carried historical events.
+            from release47_nas_successor import main as publish_nas
+            publish_nas(a.config)
+            return 0
         if a.action == 'status':
             require(a.state_dir is not None, 'STATE_DIR_REQUIRED')
             print((a.state_dir / 'current.json').read_text('utf-8').strip())
