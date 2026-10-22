@@ -1,3 +1,4 @@
+import {withBiRequest} from "@/lib/bi/model-observer";
 import {resolveUserEmail} from "@/lib/admin-auth";
 import {sameSiteBillingMutation} from "@/lib/billing/access";
 import {imageWorkerAuthorized} from "@/lib/durable-image-jobs";
@@ -8,7 +9,7 @@ import {rateLimit} from "@/lib/rate-limit";
 import {readImagegenJson} from "@/lib/imagegen/body";
 export const runtime="nodejs";
 export const maxDuration=300;
-export async function POST(request:Request){
+async function handlePost(request:Request){
  if(!sameSiteBillingMutation(request)&&!imageWorkerAuthorized(request))return Response.json({error:"请求来源无效"},{status:403});
  const body=await readImagegenJson(request).catch(()=>null);
  if(body?.workerJobId){if(!imageWorkerAuthorized(request))return Response.json({error:"无权执行"},{status:403});await resumeImagegen(String(body.workerJobId));return Response.json({ok:true});}
@@ -23,3 +24,5 @@ export async function GET(request:Request){
  const id=new URL(request.url).searchParams.get("operationId")||"";if(!/^[a-f0-9-]{36}$/i.test(id))return Response.json({error:"操作编号无效"},{status:400});
  const result=await getImagegenResult(id,owner);return result?Response.json(result):Response.json({error:"任务不存在或无权访问"},{status:404});
 }
+
+export async function POST(request:Request){return withBiRequest(request,()=>handlePost(request));}

@@ -24,8 +24,8 @@ export function resolveImagegenCapabilities(manual:CapabilitySet|undefined,suppl
 }
 export function missingImagegenCapabilities(intent:Intent,capabilities:CapabilitySet):CapabilityKey[] {
   const required=new Set<CapabilityKey>();
-  if(intent.operation==="edit")required.add("edit");
-  if(intent.background==="transparent"&&intent.operation!=="cutout"&&intent.operation!=="postprocess")required.add("transparent");
+  if(intent.operation==="edit"||intent.operation==="cutout")required.add("edit");
+  if(intent.operation==="cutout"||intent.background==="transparent"&&intent.operation!=="postprocess")required.add("transparent");
   for(const requirement of intent.requirements){
     if(requirement.name==="mask")required.add("mask");
     if(requirement.name==="inputFidelity")required.add("inputFidelity");

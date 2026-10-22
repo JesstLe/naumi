@@ -1,3 +1,5 @@
+import {Suspense} from "react";
+import {PlatformConsole} from "@/components/saas/platform-console";
 import { requireAdminPage } from "@/lib/admin-page";
 import { BI_SECTIONS, type BiSection } from "@/lib/bi/contracts";
 import { BiDashboard } from "@/components/admin/bi/dashboard";
@@ -9,5 +11,5 @@ export default async function AdminCenterPage({ searchParams }: { searchParams: 
   const query = await searchParams;
   const section = BI_SECTIONS.includes(query.section as BiSection) ? query.section as BiSection : "overview";
   await requireAdminPage(`/admin/center?section=${section}`);
-  return <BiDashboard initialSection={section} />;
+  return section === "overview" ? <Suspense><PlatformConsole /></Suspense> : <BiDashboard initialSection={section} />;
 }

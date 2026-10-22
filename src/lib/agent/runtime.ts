@@ -1,4 +1,5 @@
 
+import { streamDiagnostic } from "./stream-recovery";
 import { agentRestrictionMessage } from "./public-status";
 import {createModelActivityTracker,type PublicModelPhase} from "./model-activity";
 import { publicToolDetails } from "./tool-presentation";
@@ -36,6 +37,9 @@ import { releaseProcessRegistry } from "@/lib/release-runtime/identity";
 import { startAgentActivity, endAgentActivity, type AgentActivity } from "@/lib/release-runtime/agent-activity";
 import { withAcceptedExecution } from "@/lib/release-runtime/accepted-context";
 import { accountKey, releaseIdentity } from "@/lib/release-runtime/identity";
+import {currentCreationContext,withFrozenCreation,bindCreationParent,assertCreationFeature,type CreationContext} from '@/lib/saas/creation-context';
+import {startCreation,finishCreation} from '@/lib/saas/creation-writer';
+import {enterpriseCreationRead} from '@/lib/enterprise/server';
 
 // ---------------------------------------------------------------------------
 // Naumi Agent 运行时:常驻 Agent 会话管理器。
@@ -86,6 +90,7 @@ export function markVisionUnsupported(
 
 // 各工具的预估单价(积分),与站内 API 实际扣费保持一致(粗粒度预检用)。
 export type Session = {
+  creationScope?:CreationContext;
   releaseActivity?: AgentActivity;
   harness: AgentHarness;
   userConfirmedQuote?: boolean;
@@ -115,6 +120,7 @@ export type Session = {
   }[];
   running: boolean;
   canvasExecuting?: boolean;
+  textOnlyContinuation?: boolean;
   pendingQuotes?: Map<string,Pick<BillingQuote,"configVersion"|"requestedCredits">>;
   preparedBilling?: {billingVersion:number;billingCredits:number;billingOperationId:string};
   preparedImagegen?:import("../imagegen/types").ImagegenPlan;
@@ -280,6 +286,7 @@ async function createRuntimeSession(
     : null;
   const savedHistory = Array.isArray(persisted?.messages) ? persisted.messages.filter((turn:any)=>["user","assistant"].includes(turn?.role)&&typeof turn?.content==="string").map((turn:any)=>({role:String(turn.role),content:String(turn.content)})) : history;
   const session: Session = {
+    creationScope:currentCreationContext()?{...currentCreationContext()!}:undefined,
     harness: new AgentHarness(email, sessionId, event => appendSessionEvent(session, "harness", event)),
     id: sessionId,
     modelId,
@@ -311,6 +318,7 @@ async function createRuntimeSession(
     options?.canvas, session.harness,
   );
   session.harness.configure(describeNaumiTools(tools));
+  let modelRequestedAt = 0;
   const agent = new Agent({
     initialState: {
       systemPrompt: buildAgentSystemPrompt(AGENT_SYSTEM_PROMPT, "", latestUserText({ messages: savedHistory })),
@@ -318,7 +326,7 @@ async function createRuntimeSession(
       tools,
       messages: conversationMessages(savedHistory,managed?.wireModel||modelId),
     },
-    streamFn: (model, context, options) => { session.harness.requireActive(); return models.streamSimple(model, context, { ...options, fetch: managed?.fetch || supplierCostFetch(fetch,{providerId:'legacy-agent',baseUrl:model.baseUrl,protocol:'openai-chat',wireModel:model.id,actor:{userEmail:email,feature:'agent.text'}}), maxRetries: 0 }); },
+    streamFn: (model, context, options) => { session.harness.requireActive(); modelRequestedAt = Date.now(); return models.streamSimple(model, context, { ...options, fetch: managed?.fetch || supplierCostFetch(fetch,{providerId:'legacy-agent',baseUrl:model.baseUrl,protocol:'openai-chat',wireModel:model.id,actor:{userEmail:email,feature:'agent.text'}}), maxRetries: 0 }); },
     toolExecution: "sequential",
     transformContext: async messages => {
       // Personal workflows and artwork metadata stay outside the system role.
@@ -327,7 +335,10 @@ async function createRuntimeSession(
     },
     // 积分预检:工具执行前查余额,不足直接拦截(硬门禁,不靠提示词自觉)
     beforeToolCall: async ({ toolCall, args, context }) => {
-      try { await assertAgentToolAccess(email, toolCall.name, options ? "canvas" : "workbench", new Request("http://internal", { headers: { cookie: session.cred.cookie, authorization: session.cred.authorization } })); session.harness.check(toolCall.name, args); }
+      if (session.textOnlyContinuation) return { block: true, terminate: true, reason: "本次仅继续输出文字，不执行工具" };
+      try { await assertAgentToolAccess(email, toolCall.name, options ? "canvas" : "workbench", new Request("http://internal", { headers: { cookie: session.cred.cookie, authorization: session.cred.authorization } }));
+        const creation=currentCreationContext();if(creation?.tenantId)await enterpriseCreationRead(email,creation.tenantId,async(_tx,s)=>assertCreationFeature(s.entitlement.featurePolicy,'/api/agent','POST',toolCall.name));
+        session.harness.check(toolCall.name, args); }
       catch (error) {
         const failure = error instanceof HarnessError ? error : new HarnessError("ARGUMENT_INVALID");
         const code = error instanceof FeatureAccessError ? "FEATURE_ACCESS_DENIED" : failure.code;
@@ -434,7 +445,7 @@ async function createRuntimeSession(
         if (message.model && message.provider !== "naumi-local") void recordBiModelCompletion({
           email, operation: "agent", operationId: sessionId,
           model: message.model, responseModel: message.responseModel,
-          state: message.stopReason === "error" ? "agent-error" : message.stopReason === "aborted" ? "agent-aborted" : message.stopReason === "deferred" ? "agent-deferred" : "agent-completed",
+          state: message.stopReason === "error" ? "agent-error" : message.stopReason === "aborted" ? "agent-aborted" : message.stopReason === "deferred" ? "agent-deferred" : message.stopReason === "length" ? "agent-incomplete" : "agent-completed",
           durationMs: modelStartedAt ? Date.now() - modelStartedAt : 0,
           inputTokens: message.usage?.input, outputTokens: message.usage?.output,
           execution: modelExecutionTelemetry(scope),
@@ -449,7 +460,8 @@ async function createRuntimeSession(
           })
           .join("")
           .trim();
-        if (text) push("assistant", { text });
+        push("model_stream_end", { ...streamDiagnostic(event.message as any, text.length), elapsedMs: modelRequestedAt ? Math.max(0, Date.now() - modelRequestedAt) : 0, turnId: session.turnId });
+        if (text) push("assistant", { text, turnId: session.turnId });
         void persistAgentSession(session).catch(()=>undefined);
       }
     } else if (event.type === "agent_start") {
@@ -482,11 +494,27 @@ async function createRuntimeSession(
       session.userConfirmedQuote = explicitQuoteConsent(input) && !!session.lastPendingQuoteKey && !!session.pendingQuotes?.has(session.lastPendingQuoteKey);
       if (!session.turnId || session.turnId === lastPromptTurn) session.turnId = crypto.randomUUID();
       lastPromptTurn = session.turnId;
-      session.harness.begin(input, originalAbort, session.userConfirmedQuote ? [session.lastPendingQuoteKey!] : []);
+      session.harness.begin(input, originalAbort);
       session.harness.modelStep();
       agent.prepareNextTurn=()=>{session.harness.modelStep();return undefined;};
       const identity=releaseIdentity(),activity=session.releaseActivity;
-      return await withAcceptedExecution(activity?{id:activity.id,account:accountKey(email),instanceId:identity.instanceId,bootId:identity.bootId}:undefined,()=>originalPrompt(session.harness.publicText(input,false), images));
+      const context=currentCreationContext()||session.creationScope;
+      const creation=context?await bindCreationParent({...context,requestText:input},sessionId):undefined;
+      const messageStart=agent.state.messages.length,eventStart=session.events.length;
+      return await withFrozenCreation(creation,async()=>{
+        const id=await startCreation('agent-turn',`${sessionId}:${session.turnId}`,email,{prompt:input});
+        session.creationScope=creation?{...creation,creationId:undefined,requestText:undefined}:undefined;
+        try{
+          const result=await withAcceptedExecution(activity?{id:activity.id,account:accountKey(email),instanceId:identity.instanceId,bootId:identity.bootId}:undefined,()=>originalPrompt(session.harness.publicText(input,false), images));
+          const replies=agent.state.messages.slice(messageStart).filter(m=>m.role==='assistant');
+          const last=replies.at(-1) as {content?:unknown;stopReason?:string}|undefined;
+          const text=replies.flatMap(m=>Array.isArray(m.content)?m.content.filter((p:any)=>p.type==='text').map((p:any)=>String(p.text||'')):[]).join('\n');
+          const errors=session.events.slice(eventStart).some(e=>e.type==='tool_end'&&e.data.isError===true);
+          const status=last?.stopReason==='aborted'?'cancelled':last?.stopReason==='error'?'failed':['deferred','length'].includes(last?.stopReason||'')?'needs_review':errors?'partial':'succeeded';
+          await finishCreation(id||undefined,email,status,{text,eventKey:`turn:${session.turnId}:finished`});
+          return result;
+        }catch(error){await finishCreation(id||undefined,email,'needs_review',{eventKey:`turn:${session.turnId}:interrupted`,summary:'本轮执行中断，已接受的工具任务按其固定任务状态恢复'});throw error;}
+      });
     }
     finally {
       session.userConfirmedQuote = false; session.harness.finish();
@@ -572,7 +600,7 @@ export async function persistAgentSession(session: Session): Promise<void> {
     return content ? [{ role: message.role, content: session.harness.publicText(content, message.role === "assistant") }] : [];
   });
   const steps = session.events
-    .filter((event) => ["harness","plan","tool_start","tool_end","attention","canvas_turn","image_skill","artifacts","video_nodes","text_nodes","agent_start","agent_end","canvas_terminal","error"].includes(event.type))
+    .filter((event) => ["harness","plan","tool_start","tool_end","attention","canvas_turn","image_skill","artifacts","video_nodes","text_nodes","agent_start","agent_end","canvas_terminal","assistant","canvas_reply","model_stream_end","error"].includes(event.type))
     .map((event) => ({ ...event.data, type: event.type, at: event.at }));
   await saveAgentSession(
     session.email,

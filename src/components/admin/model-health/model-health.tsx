@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, HeartPulse, Loader2, RefreshCw, Save, Zap } from "lucide-react";
 import type { HealthOverview, HealthState } from "@/lib/model-health/contracts";
 import styles from "./model-health.module.css";
+import { ProviderOps } from "./provider-ops";
 
 type ProviderView = HealthOverview["providers"][number];
 type ModelView = ProviderView["models"][number];
@@ -327,25 +328,6 @@ export function ModelHealthPanel() {
 
   const totalModels = useMemo(() => overview?.providers.reduce((total, provider) => total + provider.models.length, 0) ?? 0, [overview]);
 
-  if (loading && !overview) return <div className={styles.panel}>
-    <header className={styles.header}>
-      <div className={styles.titleBox}>
-        <span className={styles.iconBadge}><HeartPulse size={22} /></span>
-        <div>
-          <h1>模型健康巡检</h1>
-          <p className={styles.subtitle}>定期生成图片验证配置模型可用性</p>
-        </div>
-      </div>
-    </header>
-    <div className={styles.grid} aria-busy="true">
-      {[0, 1, 2, 3].map(index => <div key={index} className={`${styles.kpiCard} ${styles.skeleton}`} />)}
-    </div>
-    <div className={styles.stack} aria-hidden="true">
-      <div className={`${styles.card} ${styles.skeleton} ${styles.skeletonTall}`} />
-      <div className={`${styles.card} ${styles.skeleton} ${styles.skeletonTall}`} />
-    </div>
-  </div>;
-
   const budgetRatio = overview && overview.budget.limit > 0 ? overview.budget.used / overview.budget.limit : 0;
   const budgetTone = budgetRatio >= 1 ? styles.progressFull : budgetRatio >= 0.8 ? styles.progressWarn : "";
 
@@ -479,7 +461,10 @@ export function ModelHealthPanel() {
               {overview.recent.length > 20 && <p className={styles.kpiHint}>仅显示最近 20 条，共 {overview.recent.length} 条</p>}
             </div>}
         </section>
+
       </div>
     </>}
+    {loading&&!overview&&<div className={styles.grid} aria-busy="true" aria-label="读取模型巡检">{[0,1,2,3].map(index=><div key={index} className={`${styles.kpiCard} ${styles.skeleton}`}/>)}</div>}
+    <ProviderOps />
   </div>;
 }

@@ -1,3 +1,5 @@
+import {currentCreationContext} from "./saas/creation-context";
+import {acceptCreationTx,recordImageStateTx,creationLinkTx} from "./saas/creation-writer";
 import "server-only";
 import { randomUUID } from "node:crypto";
 import {IMAGE_JOB_KINDS,imageJobConcurrency} from "./image-job-queue";
@@ -21,6 +23,8 @@ export async function createImageJob(id: string, email: string, kind: ImageJobKi
   try {
     await client.query("BEGIN");
     const frozenPayload={...(payload as object),...(billingQuote?{billingQuote}:{})};
+    const context=currentCreationContext();
+    if(context){const creation=await acceptCreationTx(client,`image:${kind}`,id,email,frozenPayload);Object.assign(frozenPayload,{creationScope:{...context,creationId:creation}});if(billingQuote&&creation)await creationLinkTx(client,creation,email.toLowerCase(),"billing",id);}
     await client.query(`INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,cost,metered) VALUES($1,$2,$3,$4::jsonb,$5::jsonb,$6,$7)`, [id, email.toLowerCase(), kind, JSON.stringify(snapshot), JSON.stringify(frozenPayload), cost, metered]);
     if (billingQuote && reserve) {
       await billingService.reserveTx(client,billingOperation({id,email,payload:{billingQuote}},"图片任务预占"));
@@ -72,11 +76,22 @@ export async function heartbeatImageJob(id: string, token: string) {
 }
 
 export async function saveImageJob(id: string, snapshot: unknown, token: string | null) {
+  if(currentCreationContext()?.evidencePending)snapshot={...(snapshot as Record<string,unknown>),creationEvidencePending:true};
   await assertMutableStagingTask(getPool(), "app_image_jobs", id);
-  const result = await getPool().query(`UPDATE app_image_jobs SET snapshot=$2::jsonb,updated_at=now()
+  const tx=await getPool().connect();
+  try {await tx.query("BEGIN");
+  const result = await tx.query(`UPDATE app_image_jobs SET snapshot=$2::jsonb,updated_at=now()
     WHERE id=$1 AND (($3::text IS NOT NULL AND lease_token=$3 AND lease_until>now()) OR
       ($3::text IS NULL AND (lease_until IS NULL OR lease_until<now())))`, [id, JSON.stringify(snapshot), token]);
   if (!result.rowCount) throw new Error("任务正在处理，请稍后重试");
+  await tx.query("COMMIT");}catch(e){await tx.query("ROLLBACK");throw e;}finally{tx.release();}
+  // Supplier acceptance and the execution checkpoint survive an evidence outage.
+  // Recovery reads this same source snapshot; this flag never schedules paid work.
+  if(currentCreationContext()){
+    const evidence=await getPool().connect();try{await evidence.query("BEGIN");await recordImageStateTx(evidence,id,snapshot);await evidence.query("COMMIT");}
+    catch{await evidence.query("ROLLBACK");await getPool().query("UPDATE app_image_jobs SET snapshot=snapshot||'{\"creationEvidencePending\":true}'::jsonb WHERE id=$1",[id]);}
+    finally{evidence.release();}
+  }
 }
 
 /** Exact charge and full reservation release occur once in the same transaction. */

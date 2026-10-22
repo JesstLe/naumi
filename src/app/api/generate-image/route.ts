@@ -22,6 +22,7 @@ import {auditSettledImage} from "@/lib/image-quality-request";
 import { resolveConfiguredImageQuality } from "@/lib/model-config/image-quality";
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
+import {TeamError} from '@/lib/teams/server';
 import { imageQualityCost } from "@/lib/image-quality-request";
 import {quoteForRequest} from "@/lib/billing/server";
 import {assertQuotedVersion,requestQuoteConfirmation,billingErrorResponse} from "@/lib/billing/request";
@@ -1221,6 +1222,7 @@ async function handleObservedPost(request: Request) {
   try {
   await JOBS.create(jobId, p.email, { status: "pending", createdAt: Date.now(), quality: qualityAudit }, { p, cost, byok: !!userProvider, byokSnapshot }, cost, true,billingQuote);
   } catch(error) {
+    if(error instanceof TeamError)return NextResponse.json({error:error.message},{status:error.status});
     const message=error instanceof Error ? error.message : "";
     return NextResponse.json({error:safeError(error,"任务保存失败，请稍后重试")},{status:message.includes("积分不足") ? 402 : 503});
   }

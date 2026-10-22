@@ -1,3 +1,5 @@
+import { AgentStreamInterruption } from "./stream-recovery";
+
 export type AgentFailure = {
   code:
     | "ABORTED"
@@ -7,20 +9,24 @@ export type AgentFailure = {
     | "TIMEOUT"
     | "VALIDATION"
     | "PROVIDER"
-    | "UNKNOWN";
+    | "UNKNOWN"
+    | "OUTPUT_LENGTH"
+    | "STREAM_INTERRUPTED";
   message: string;
   recoverable: boolean;
   action: string;
+  canContinue?: boolean;
 };
 
 export function classifyAgentFailure(error: unknown): AgentFailure {
+  if (error instanceof AgentStreamInterruption) return { code: error.code, message: error.message, recoverable: true, action: error.partial ? "继续输出" : "重试", canContinue: error.partial };
   const raw = error instanceof Error ? error.message : String(error || "执行失败");
   const message = raw.slice(0, 500);
   const lower = message.toLowerCase();
   if (/abort|中止|取消|已停止/.test(lower)) {
     return { code: "ABORTED", message: "任务已停止", recoverable: true, action: "可调整要求后重新执行" };
   }
-  if (/401|403|登录|鉴权|authorization|cookie|token/.test(lower)) {
+  if (/401|403|登录|鉴权|authorization|cookie|invalid[ _-]token|expired[ _-]token|api[ _-]key/.test(lower)) {
     return { code: "AUTH", message: "登录状态已失效", recoverable: true, action: "请重新登录后继续当前会话" };
   }
   if (/余额|积分|credit|quota/.test(lower)) {

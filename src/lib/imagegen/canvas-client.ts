@@ -6,18 +6,45 @@ import type {ImagegenRequest} from "./types";
 import {automaticFrameRatio,frameCandidates,frameRatio,FrameRatioChoiceRequired,type FrameInput} from "./frame-ratio";
 import {resolveImagegenIntent} from "./intent";
 import {ImagegenPreparationCancelled} from "./http";
+import {browserImageHeader} from "../browser-reference-image";
+import {canvasReferenceManifestSchema,referenceManifestError} from "./reference-labels";
+import {currentWorkspace} from '../saas/workspace-client';
 export type CanvasFrameChoice={artworkId:string;url:string;label:string;width:number;height:number;ratio:string};
+/** Specialized long-detail submissions share the same choice UI, before quote.
+ * Only temporary local object URLs are used; no duplicate media upload/storage. */
+export async function resolveCanvasDetailFrame(form:FormData,chooseFrame:(choices:CanvasFrameChoice[])=>Promise<string|null>,isCurrent:()=>boolean){
+ const format=String(form.get("format")||"");if(format!=="auto")return;
+ const files=form.getAll("image").filter((file):file is File=>file instanceof File&&file.size>0).slice(0,form.get("prepared")==="1"?6:3);
+ const choices:CanvasFrameChoice[]=[];
+ try{
+  for(const [index,file] of files.entries()){
+   const size=await browserImageHeader(file);if(!isCurrent())throw new ImagegenPreparationCancelled();
+   choices.push({artworkId:String(index),url:URL.createObjectURL(file),label:`图片 ${index+1}`,...size,ratio:frameRatio(size)!});
+  }
+  if(!choices.length)return;
+  const selected=choices.every(item=>item.ratio===choices[0].ratio)?choices[0].artworkId:await chooseFrame(choices);
+  if(!isCurrent()||selected===null)throw new ImagegenPreparationCancelled();
+  const choice=choices.find(item=>item.artworkId===selected);if(!choice)throw new Error("所选画幅已失效，请重新选择");
+  form.set("frameSourceIndex",choice.artworkId);form.set("format",choice.ratio);form.set("ratio",choice.ratio);
+ }finally{choices.forEach(choice=>URL.revokeObjectURL(choice.url));}
+}
 /** Ordinary node prompts use the same read-only plan; specialized old recipes retain their adapter. */
 export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|undefined,onPlan:((message:string)=>void)|undefined,scope:{owner:string;project:string;isCurrent?:()=>boolean;chooseFrame?:(choices:CanvasFrameChoice[])=>Promise<string|null>}){
  let submitting=false;
  try {
- const assertCurrent=()=>{if(scope.isCurrent&&!scope.isCurrent())throw new Error("画布账号或项目已切换，未提交新任务");};assertCurrent();
+ const workspace=currentWorkspace(),context={workspace,...scope.project!=='workspace'?{projectContext:scope.project}:{}};
+ const assertCurrent=()=>{if(currentWorkspace()!==workspace||scope.isCurrent&&!scope.isCurrent())throw new Error("画布账号、项目或工作空间已切换，未提交新任务");};assertCurrent();
  const inputs:ImagegenRequest["inputs"]=[],assets:CanvasFrameChoice[]=[];
  const files=form.getAll("image").filter((file):file is File=>file instanceof File);
- for(const file of files){assertCurrent();const asset=await uploadImagegenInput(file,files.length,assertCurrent);assertCurrent();const input={artworkId:asset.artworkId,role:inputs.length?"reference" as const:"edit-target" as const};inputs.push(input);const original={...asset,width:asset.sourceWidth,height:asset.sourceHeight};assets.push({...original,label:`图片 ${inputs.length}`,ratio:frameRatio(original)||""});}
+ const manifest=form.has("canvasReferences")?canvasReferenceManifestSchema.parse(JSON.parse(String(form.get("canvasReferences")))):null;
+ if(manifest){
+   if(manifest.length!==files.length)throw new Error("参考图与实际上传图片不一致，请重新选择");
+   const error=referenceManifestError(String(form.get("userPrompt")||form.get("prompt")||""),manifest);if(error)throw new Error(error);
+ }
+ for(const file of files){assertCurrent();const label=manifest?.[inputs.length];const asset=await uploadImagegenInput(file,files.length,assertCurrent,context,label?.sourceNodeId);assertCurrent();const input={artworkId:asset.artworkId,originalArtworkId:asset.originalArtworkId,inputVariant:asset.inputVariant,role:label?.role||(inputs.length?"reference" as const:"edit-target" as const),...(label?{reference:{number:label.number,title:label.title,...(label.sourceNodeId?{sourceNodeId:label.sourceNodeId}:{})}}:{})};inputs.push(input);const original={...asset,width:asset.sourceWidth,height:asset.sourceHeight};assets.push({...original,label:label?`图${label.number} · ${label.title}`:`图片 ${inputs.length}`,ratio:frameRatio(original)||""});}
  const value=(name:string)=>String(form.get(name)||"");
  const style=value("style"),raw=value("userPrompt")||value("prompt"),prompt=raw+(style&&!/默认|default/i.test(style)?`\n用户选择的视觉风格：${style}`:"");
- const request=imagegenRequestSchema.parse({version:1,operationId:browserRandomUUID(),entry:"canvas",mode:inputs.length?"edit":"generate",prompt,sourceNodeId:value("parentId")||sourceNodeId,inputs,modelId:value("model")||undefined,variants:Number(value("count")||1),parameters:{quality:value("quality")||"medium",resolution:value("resolution")||"1K",ratio:value("ratio")||"auto"},output:value("transparent")==="1"?{background:"transparent",backgroundOrigin:"current-ui"}:{format:"png"}});
+ const request=imagegenRequestSchema.parse({version:1,operationId:browserRandomUUID(),entry:"canvas",mode:inputs.length?"edit":"generate",prompt,sourceNodeId:value("parentId")||sourceNodeId,inputs,framePolicy:"all-inputs",modelId:value("model")||undefined,variants:Number(value("count")||1),parameters:{quality:value("quality")||"medium",resolution:value("resolution")||"1K",ratio:value("ratio")||"auto"},output:value("transparent")==="1"?{background:"transparent",backgroundOrigin:"current-ui"}:{format:"png"}});
  // A rounded derivative is transport, not the original composition. Resolve the
  // user's automatic frame before asking the server to inspect prepared pixels;
  // genuinely ambiguous mixed ratios ask once instead of guessing.
@@ -29,20 +56,21 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
  }
  catch(error){
   if(!(error instanceof FrameRatioChoiceRequired)||!scope.chooseFrame)throw error;
-  const candidates=new Set(frameCandidates(frameInputs,intent.useCase).map(input=>input.artworkId));
+  const candidates=new Set(frameCandidates(frameInputs,intent.useCase,request.frameSourceId,request.framePolicy).map(input=>input.artworkId));
   const choices=assets.filter(asset=>candidates.has(asset.artworkId)&&asset.ratio);
   if(!choices.length)throw error;
   const selected=await scope.chooseFrame(choices);assertCurrent();
   if(selected===null)throw new ImagegenPreparationCancelled();
   const choice=choices.find(asset=>asset.artworkId===selected);if(!choice)throw new Error("所选画幅已失效，请重新选择");
+  request.frameSourceId=choice.artworkId;
   request.parameters.ratio=choice.ratio;
  }
- assertCurrent();const plan=await previewImagegen(request);assertCurrent();const stages=plan.steps.map(s=>s.operation==="cutout"?"抠图":s.operation==="edit"?"编辑":"生成").join(" → ");
+ assertCurrent();const plan=await previewImagegen(request,context);assertCurrent();const stages=plan.steps.map(s=>s.operation==="cutout"?"抠图":s.operation==="edit"?"编辑":"生成").join(" → ");
  if(plan.requestedParameters?.resolution)onPlan?.(plan.warnings.join("\n"));
  if(plan.intent.background==="transparent")onPlan?.(`已识别：透明背景 · ${stages} · ${plan.totalCredits} 积分`);
  if(plan.confirmationRequired&&!window.confirm(`${stages}\n${plan.warnings.join("\n")}\n本次合计 ${plan.totalCredits} 积分，是否执行？`))throw new Error("已取消提交");
  assertCurrent();submitting=true;
- const result=await startImagegen(request,{billingVersion:plan.billingVersion,modelVersion:plan.modelVersion,credits:plan.totalCredits,confirmed:true});
+ const result=await startImagegen(request,{billingVersion:plan.billingVersion,modelVersion:plan.modelVersion,credits:plan.totalCredits,confirmed:true},context);
  return Response.json({jobId:"jobId" in result?result.jobId:`imagegen-${request.operationId}`});
  } catch(error) {
   if(error instanceof ImagegenPreparationCancelled)throw error;

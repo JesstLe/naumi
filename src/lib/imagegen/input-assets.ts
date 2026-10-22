@@ -5,6 +5,7 @@ import {getPool} from "../db";
 import {ensureMediaSchema,registerMediaAsset} from "../media-assets";
 import {writeStoredObject,readManagedObject} from "../storage";
 import {decodeImagegenPixels} from "./pixels";
+import {bindCreationMedia} from '../saas/creation-context';
 /** Private original references, including masks; not gallery artworks or arbitrary URLs. */
 export async function saveImagegenInput(bytes:Buffer,owner:string){
  const decoded=await decodeImagegenPixels(bytes),id=randomUUID(),meta=await sharp(bytes).metadata();
@@ -13,6 +14,7 @@ export async function saveImagegenInput(bytes:Buffer,owner:string){
  const stored=await writeStoredObject(bytes,mime,key);
  // Prepared references are private transport assets, never gallery thumbnails.
  await registerMediaAsset(key,bytes,mime,stored.remoteReady,owner,false);
+ await bindCreationMedia(owner,`asset-${id}`);
  return {artworkId:`asset-${id}`,url:`/media/${key}`,width:decoded.info.width,height:decoded.info.height};
 }
 export async function readImagegenInputAsset(id:string,owner:string){

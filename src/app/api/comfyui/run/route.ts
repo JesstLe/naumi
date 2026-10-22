@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import {withCreationRoute,currentCreationContext} from '@/lib/saas/creation-context';
+import {claimCreation,finishCreation} from '@/lib/saas/creation-writer';
 
 import {
   addArtworks,
@@ -42,7 +44,7 @@ export const maxDuration = 300;
 
 const MAX_IMAGES_PER_RUN = 8;
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   const email = await authenticatedEmail(request);
   if (dbEnabled && !email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   if(!sameSiteBiMutation(request))return NextResponse.json({error:"不允许跨站执行"},{status:403});
@@ -76,6 +78,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "请选择工作流" }, { status: 400 });
   }
 
+  let creationRecord:string|undefined;
   try {
     const endpoint = await getActiveComfyEndpoint(email);
     if (!endpoint) {
@@ -95,6 +98,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "图片不存在或无权访问" }, { status: 404 });
     }
     const sourceImage = source?.image || imageUrl;
+    const receipt=await claimCreation('comfyui',body?.idempotencyKey||request.headers.get('x-naumi-billing-operation-id')||crypto.randomUUID(),email,{prompt:body?.prompt,inputs:source?[{artworkId:source.id,role:'reference'}]:[],parameters:body?.numericDefaults});
+    creationRecord=receipt.id||undefined;
+    if(!receipt.created)return NextResponse.json({error:'该工作流请求已提交，请查看原创作记录，不会重复执行',creationId:creationRecord},{status:409});
+    const context=currentCreationContext();if(context&&creationRecord)context.creationId=creationRecord;
 
     // 缺件预检(运行前必检,导入时的预检可能已过期)
     const available = await fetchObjectInfo(endpoint);
@@ -160,6 +167,7 @@ export async function POST(request: Request) {
     const promptId = await queuePrompt(endpoint, api, crypto.randomUUID());
     const outputs = await pollHistory(endpoint, promptId, { timeoutMs: 240_000 });
     if (!outputs.length) {
+      await finishCreation(creationRecord,email,'failed',{summary:'工作流结束但未返回产物'});
       return NextResponse.json({ error: "工作流执行完成但没有产物，请检查 SaveImage/视频输出节点" }, { status: 502 });
     }
 
@@ -233,10 +241,13 @@ export async function POST(request: Request) {
     }
 
     if (!images.length && !videos.length) {
+      await finishCreation(creationRecord,email,'needs_review',{summary:'工作流产物未能交付，请核对原任务'});
       return NextResponse.json({ error: "产物类型不受支持(仅图片/视频)" }, { status: 502 });
     }
+    await finishCreation(creationRecord,email,'succeeded',{artworkIds:[...images.map(a=>a.id),...(videoArtworkId?[videoArtworkId]:[])]});
     return NextResponse.json({ ok: true, images, videos, videoArtworkId, promptId });
   } catch (error) {
+    await finishCreation(creationRecord,email!,'needs_review',{summary:'工作流执行中断，按原任务核查，不重复提交'});
     if(error instanceof ModelConfigError)return NextResponse.json({error:error.message,code:error.code},{status:error.status});
     return NextResponse.json(
       { error: safeError(error, "工作流执行失败") },
@@ -244,3 +255,4 @@ export async function POST(request: Request) {
     );
   }
 }
+export function POST(request:Request){return withCreationRoute(request,()=>handlePost(request));}

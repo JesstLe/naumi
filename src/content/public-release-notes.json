@@ -1,11 +1,24 @@
 [
   {
-    "version": "1792703343",
+    "version": "1792705393",
     "title": {
-      "zh": "视频创作修复",
-      "en": "Video creation fixes"
+      "zh": "创作与画布体验更新",
+      "en": "Creation and canvas improvements"
     },
-    "improvements": [],
+    "improvements": [
+      {
+        "zh": "参考图支持按序号引用，移除图片后会提示缺失引用。",
+        "en": "Reference images by number and see missing references after removing an image."
+      },
+      {
+        "zh": "视频节点支持更多参数控制与批量生成。",
+        "en": "Use additional video node controls and batch generation."
+      },
+      {
+        "zh": "对话处理中可继续添加图片，刷新后可恢复处理进度。",
+        "en": "Add images while a conversation is processing and restore its progress after a refresh."
+      }
+    ],
     "fixes": [
       {
         "zh": "修复页面刚打开或刷新后，新建视频节点偶尔未选中默认选项的问题；加载失败时支持重试。",

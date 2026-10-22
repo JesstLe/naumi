@@ -55,9 +55,9 @@ async function main(){
       let uploads=0,plans=0,posts=0,choices=0,current=true;const payloads:any[]=[];
       const scope={owner:"fixture@example.test",project:"tree:fixture",isCurrent:()=>current,chooseFrame:async(items:{artworkId:string;ratio:string}[])=>{
         choices++;check(plans===0&&posts===0&&storage.length===0,"choice precedes plan, paid submit and receipt");
-        check(items.length===2&&items.map(i=>i.ratio).join(",")==="3:4,4:3","choice uses actual layout candidates");
+        check(items.length===3&&items.map(i=>i.ratio).join(",")==="1:1,3:4,4:3","choice uses actual layout candidates");
         if(scenario==="cancel")return null;if(scenario==="scope-change")current=false;
-        return scenario==="invalid-choice"?"foreign":items[1].artworkId;
+        return scenario==="invalid-choice"?"foreign":items[2].artworkId;
       }};
       globalThis.fetch=async(input,init)=>{
         const path=String(input);
@@ -68,7 +68,7 @@ async function main(){
         if(path.endsWith("/plan")){plans++;return Response.json({request:raw,steps:[{operation:"edit"}],intent:{background:null},totalCredits:6,billingVersion:8,modelVersion:125,warnings:[],confirmationRequired:false});}
         posts++;return Response.json({id:raw.operationId});
       };
-      const scenarioFiles=scenario==="same"?files:[files[0],files[1],await image(100,75)];
+      const scenarioFiles=scenario==="same"?[files[1],files[1],files[2]]:[files[0],files[1],await image(100,75)];
       const run=submitCanvasImagegen(form(scenario==="explicit"?"9:16":"auto",scenarioFiles),"node-fixture",undefined,scope);
       if(["cancel","scope-change","invalid-choice"].includes(scenario)){
         await assert.rejects(run,error=>scenario!=="cancel"||error instanceof ImagegenPreparationCancelled);cases++;

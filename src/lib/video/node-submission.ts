@@ -1,4 +1,6 @@
 import "server-only";
+import {bindActualCreationProject,currentCreationContext,frozenCreationScope} from "../saas/creation-context";
+import {authorizeNodeInputs} from "../canvas/video-node-service";
 import {getVideoTask,getVideoTaskByIdempotencyKey,listArtworksByIds} from "../db";
 import {getVideoNode} from "../canvas/video-node-repository";
 import {ModelConfigError} from "../model-config/types";
@@ -11,13 +13,17 @@ import type {OrderedInput} from "./references";
 export async function submitCanvasVideo(actorRaw:string,input:{nodeId:string;expectedRevision:number;idempotencyKey:string;billingConfirmation?:{version?:number;credits?:number}}){
   const actor=actorRaw.toLowerCase(),existing=await getVideoTaskByIdempotencyKey(actor,input.idempotencyKey);
   if(existing){
+    const saved=frozenCreationScope(existing.parameters.creationScope,actor),context=currentCreationContext();
+    if(context?.workspaceExplicit&&(!saved||saved.scopeKind!==context.scopeKind||saved.tenantId!==context.tenantId))throw new ModelConfigError("CREATION_SCOPE_CONFLICT","此任务的工作空间已固定",409);
     if(existing.parameters.nodeId!==input.nodeId||existing.parameters.nodeRevision!==input.expectedRevision)throw new BillingError("OPERATION_CONFLICT","操作编号已用于另一视频任务",409);
     return {taskId:existing.id,cost:existing.cost};
   }
   const node=await getVideoNode(actor,input.nodeId);
   if(!node)throw new ModelConfigError("VIDEO_NODE_UNAVAILABLE","视频节点不存在",404);
   if(node.revision!==input.expectedRevision)throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT","视频节点已更新，请重新读取后生成",409);
-  const {comfyWorkflowId,comfyInputs,comfyOverrides,workflowTaskId,camera,...config}=node.config;
+  await bindActualCreationProject(actor,node.projectKey);
+  await authorizeNodeInputs(actor,{id:node.id,expectedRevision:node.revision,operationId:input.idempotencyKey,config:node.config,inputs:node.inputs});
+  const {comfyWorkflowId,comfyInputs,comfyOverrides,workflowTaskId,camera,batchCount:_batchCount,...config}=node.config;
   let workflowManifest=config.workflowManifest;
   if(workflowTaskId&&!workflowManifest){const old=await readOwnedVideoWorkflow(actor,workflowTaskId);
     if(old.publicModelId!==config.modelId)throw new ModelConfigError("VIDEO_WORKFLOW_MODEL_CONFLICT","历史工作流与当前模型不一致，请重新选择模型",409);workflowManifest=old.manifest;

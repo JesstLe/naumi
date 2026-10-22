@@ -1,5 +1,8 @@
 import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import "server-only";
+import {currentCreationContext,withFrozenCreation,frozenCreationScope,type CreationContext} from '../saas/creation-context';
+import {acceptCreationTx,creationEventTx,recordSourceOutcomeTx,creationEvidenceTx} from '../saas/creation-writer';
+import {ensureCreationSchema} from '../saas/creation-schema';
 import {randomUUID} from "node:crypto";
 import {getPool} from "../db";
 import {imageCoordinationPool} from "./coordination-pool";
@@ -38,13 +41,14 @@ export async function submitImagegenBatch(raw:ImagegenRequest,owner:string,confi
 /** Only server-owned frozen plans; HTTP accepts requests and confirmation, never this structure. */
 export async function submitAcceptedImagegenBatch(plan:ImagegenPlan,owner:string){
  const request=imagegenRequestSchema.parse(plan.request),fingerprint=imagegenFingerprint(request);if(request.mode!=="batch"||!request.batch||plan.children?.length!==request.batch.items.length)throw new Error("批次冻结计划缺少子项");
- await ensureImagegenBatches();const children=plan.children.map((c,i)=>{if(c.key!==request.batch!.items[i].key||c.plan.request.prompt!==request.batch!.items[i].prompt)throw new Error("批次冻结子项与原要求不一致");const child={...c.plan.request,operationId:imagegenStepId(request.operationId,`batch:${c.key}:1`)};return {key:c.key,request:child,plan:{...c.plan,request:child,fingerprint:imagegenFingerprint(child)}};});
+ await ensureImagegenBatches();if(currentCreationContext())await ensureCreationSchema();const children=plan.children.map((c,i)=>{if(c.key!==request.batch!.items[i].key||c.plan.request.prompt!==request.batch!.items[i].prompt)throw new Error("批次冻结子项与原要求不一致");const child={...c.plan.request,operationId:imagegenStepId(request.operationId,`batch:${c.key}:1`)};return {key:c.key,request:child,plan:{...c.plan,request:child,fingerprint:imagegenFingerprint(child)}};});
  const frozen={...plan,request,fingerprint,children:children.map(c=>({key:c.key,plan:c.plan}))};
  const tx=await imageCoordinationPool().connect();
  try{await tx.query("BEGIN");await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`imagegen-batch:${request.operationId}`]);
   const prior=(await tx.query("SELECT owner,fingerprint FROM app_imagegen_batches WHERE id=$1",[request.operationId])).rows[0];
   if(prior){if(prior.owner!==owner.toLowerCase()||prior.fingerprint!==fingerprint)throw new Error("批次编号冲突");}
   else{
+   const scope=currentCreationContext();if(scope){const id=await acceptCreationTx(tx,'imagegen-batch',request.operationId,owner,{plan});Object.assign(frozen,{creationScope:{...scope,creationId:id}});}
    await tx.query("INSERT INTO app_imagegen_batches(id,owner,fingerprint,request,plan) VALUES($1,$2,$3,$4::jsonb,$5::jsonb)",[request.operationId,owner.toLowerCase(),fingerprint,JSON.stringify(request),JSON.stringify(frozen)]);
    for(const [ordinal,c] of children.entries())await tx.query("INSERT INTO app_imagegen_batch_items(batch_id,key,ordinal,child_operation_id,request,plan) VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb)",[request.operationId,c.key,ordinal,c.request.operationId,JSON.stringify(c.request),JSON.stringify(c.plan)]);
   }
@@ -63,7 +67,7 @@ async function submitNextLocal(id:string){
   const item=(await tx.query<ImagegenBatchItem>("SELECT * FROM app_imagegen_batch_items WHERE batch_id=$1 AND state='queued' ORDER BY ordinal FOR UPDATE SKIP LOCKED LIMIT 1",[id])).rows[0];
   if(!item){await tx.query("COMMIT");return false;}
   await bindBackgroundClaim(`${id}:${item.key}`, String(item.lease_token || item.child_operation_id));
-  const result=await submitAcceptedImagegen(item.plan,batch.owner,item.plan.fingerprint);
+  const result=await withFrozenCreation(frozenCreationScope((batch.plan as ImagegenPlan&{creationScope?:CreationContext}).creationScope,batch.owner),()=>submitAcceptedImagegen(item.plan,batch.owner,item.plan.fingerprint));
   await tx.query("UPDATE app_imagegen_batch_items SET state='submitted',result=$3::jsonb,lease_token=$4,lease_until=now()+interval '120 seconds',updated_at=now() WHERE batch_id=$1 AND key=$2",[id,item.key,JSON.stringify(result),randomUUID()]);
   await tx.query("COMMIT");return true;
  }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
@@ -91,7 +95,9 @@ async function runImagegenBatchTickLocal(id:string){
  for(let i=0;i<5;i++)if(!await submitNext(id))break;
  const tx=await imageCoordinationPool().connect();
  try{await tx.query("BEGIN");const row=(await tx.query("SELECT state FROM app_imagegen_batches WHERE id=$1 FOR UPDATE",[id])).rows[0],items=await tx.query("SELECT state FROM app_imagegen_batch_items WHERE batch_id=$1",[id]);
-  if(row&&items.rows.every(i=>terminals.has(i.state))){const states=items.rows.map(i=>i.state);const status=states.every(s=>s==="succeeded")?"succeeded":states.includes("needs_attention")?"needs_attention":states.includes("succeeded")?"partial":row.state==="cancelling"?"cancelled":"failed";await tx.query("UPDATE app_imagegen_batches SET state=$2,updated_at=now() WHERE id=$1",[id,status]);}
+  if(row&&items.rows.every(i=>terminals.has(i.state))){const states=items.rows.map(i=>i.state);const status=states.every(s=>s==="succeeded")?"succeeded":states.includes("needs_attention")?"needs_attention":states.includes("succeeded")?"partial":row.state==="cancelling"?"cancelled":"failed";await tx.query("UPDATE app_imagegen_batches SET state=$2,updated_at=now() WHERE id=$1",[id,status]);
+   if((batch.plan as ImagegenPlan&{creationScope?:CreationContext}).creationScope)await creationEvidenceTx(tx,()=>recordSourceOutcomeTx(tx,'imagegen-batch',id,batch.owner,status==='needs_attention'?'needs_review':status),()=>tx.query("UPDATE app_imagegen_batches SET plan=plan||'{\"creationEvidencePending\":true}'::jsonb WHERE id=$1",[id]));
+  }
   await tx.query("COMMIT");
  }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
 }
@@ -107,6 +113,7 @@ export async function cancelImagegenBatch(id:string,owner:string){
    // A crash may leave a child receipt committed while its association rolled back.
    await tx.query("UPDATE app_imagegen_batch_items SET state='submitted' WHERE batch_id=$1 AND state='queued' AND EXISTS(SELECT 1 FROM app_image_jobs j WHERE j.id='imagegen-'||child_operation_id::text)",[id]);
    await tx.query("UPDATE app_imagegen_batches SET state='cancelling',updated_at=now() WHERE id=$1",[id]);await tx.query("UPDATE app_imagegen_batch_items SET state='cancelled',updated_at=now() WHERE batch_id=$1 AND state='queued'",[id]);
+   if((await tx.query("SELECT to_regclass('app_creation_records') name")).rows[0].name)await creationEvidenceTx(tx,()=>recordSourceOutcomeTx(tx,'imagegen-batch',id,owner,'cancel_requested',{eventKey:'cancel-requested',summary:'已申请取消批次，已接受子任务继续按原规则收尾'}));
   }await tx.query("COMMIT");
  }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
 }

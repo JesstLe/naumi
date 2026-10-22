@@ -13,6 +13,9 @@ import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/ip";
 import { safeError } from "@/lib/api-error";
 import { requestedTextModel } from "@/lib/text-models";
+import {currentCreationContext} from '@/lib/saas/creation-context';
+import {startCreation,finishCreation,prepareOriginalCreationInput} from '@/lib/saas/creation-writer';
+import {operationIdFor} from '@/lib/billing/request';
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -95,6 +98,8 @@ async function handleObservedPost(req: Request) {
     });
   }
 
+  const scope=currentCreationContext();if(scope){scope.requestText=idea;scope.parameters={platform,style,lang,count};if(imageBuf)await prepareOriginalCreationInput(imageBuf,imageType,'reference',0);}
+  const creation=(await startCreation('title-gen',operationIdFor(req),email,{prompt:idea,parameters:{count}}))||undefined;
   try {
     const client = observeOpenAI(modelAwareOpenAI({
       apiKey,
@@ -141,6 +146,7 @@ async function handleObservedPost(req: Request) {
           .slice(0, 8)
       : [];
     if (titles.length === 0) {
+      await finishCreation(creation,email,'failed',{summary:'模型未返回可用标题'});
       return NextResponse.json({ error: "没生成出来,请重试" }, { status: 502 });
     }
     // 落库为「本工具记录」(仅有原图时):存原图 + 第一条标题。免费,不扣分,失败不影响返回。
@@ -175,8 +181,10 @@ async function handleObservedPost(req: Request) {
         /* 落库失败不影响返回标题 */
       }
     }
+    await finishCreation(creation,email,'succeeded',{text:JSON.stringify({titles,sellingPoints})});
     return NextResponse.json({ titles, sellingPoints });
   } catch (e) {
+    await finishCreation(creation,email,'needs_review',{summary:'标题生成执行中断，需核对原始来源'});
     return NextResponse.json(
       { error: safeError(e, "标题生成失败,请稍后重试") },
       { status: 502 }

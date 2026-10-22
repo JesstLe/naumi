@@ -279,12 +279,16 @@ def start_worker(tx, identity, available_mib, *, reserve_mib=1024, reviewed_comb
     return public_identity(result)
 
 
-def switch_gateway_bundle(tx, report, before_files, after_files, *, expected_dump_sha, logical_to_real):
-    """Exact multi-file CAS + syntax + full closure SHA + reload + automatic config rollback.
+def switch_gateway_bundle(tx, report, before_files, after_files, *, expected_dump_sha, logical_to_real,
+                          failure_policy='restore-preimage'):
+    """Exact multi-file CAS + syntax + full closure SHA + reload.
 
     before_files contains EVERY file in nginx -T, not merely edited files.
     logical_to_real is freshly inspected by the caller; this method re-resolves it.
+    SaaS callers preserve written configuration on uncertain IO: restoring its
+    preimage could expose a program that ignores new permission semantics.
     """
+    require(failure_policy in ('restore-preimage', 'preserve-written'), 'UNKNOWN_GATEWAY_FAILURE_POLICY')
     require(report.get('configClosureValidated') is True and report.get('baselineFileCasVerified') is True,
             'REVIEWED_COMPLETE_GATEWAY_BUNDLE_REQUIRED')
     require(report.get('beforeDumpSha256') == expected_dump_sha and
@@ -306,7 +310,8 @@ def switch_gateway_bundle(tx, report, before_files, after_files, *, expected_dum
         require(logical in paths and sha(before_files[logical]) == patch['beforeSha256'] and
                 sha(after_files[logical]) == patch['afterSha256'], 'GATEWAY_PATCH_HASH_MISMATCH')
     tx.save('gateway-transaction-intent.json', {'beforeDumpSha256': expected_dump_sha,
-            'afterDumpSha256': report['afterDumpSha256'], 'patches': patches, 'logicalToReal': logical_to_real})
+            'afterDumpSha256': report['afterDumpSha256'], 'patches': patches, 'logicalToReal': logical_to_real,
+            'failurePolicy': failure_policy})
     for index, patch in enumerate(patches):
         tx.save('gateway-before-' + str(index) + '.conf', before_files[patch['path']])
     changed = []
@@ -319,6 +324,13 @@ def switch_gateway_bundle(tx, report, before_files, after_files, *, expected_dum
         require(sha(tx.run(['nginx', '-T'])) == report['afterDumpSha256'], 'GENERATED_GATEWAY_CLOSURE_MISMATCH')
         tx.run(['systemctl', 'reload', 'nginx'])
     except BaseException:
+        if failure_policy == 'preserve-written':
+            tx.save('gateway-uncertain-preserved.json', {'failurePolicy': failure_policy,
+                    'acknowledgedWritePaths': changed, 'possibleWritePaths': [patch['path'] for patch in patches],
+                    'originalDumpSha256': expected_dump_sha,
+                    'intendedDumpSha256': report['afterDumpSha256'], 'reloadOutcome': 'UNKNOWN',
+                    'preimageRestored': False, 'reconciliationRequired': True})
+            raise
         try:
             for logical in reversed(changed):
                 require(paths[logical].read_bytes() == after_files[logical], 'GATEWAY_ROLLBACK_EXTERNAL_CHANGE')

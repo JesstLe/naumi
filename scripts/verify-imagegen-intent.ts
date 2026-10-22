@@ -19,6 +19,22 @@ assert.ok(resolveImagegenIntent(parse("透明底，同时白底")).conflicts.len
 assert.ok(resolveImagegenIntent(parse("透明底",{output:{format:"png",background:"opaque",backgroundOrigin:"current-ui"}})).conflicts.length);
 assert.equal(resolveImagegenIntent(parse("不要透明，改白底",{output:{format:"png",background:"transparent",backgroundOrigin:"inherited"}})).background,"opaque");
 const target=[{artworkId:"owned-image",role:"edit-target"}];
+for(const prompt of [
+  "去掉白底，输出透明背景", "去掉白色背景，保留不透明主体", "移除原图中的白色背景，主体不透明", "背景透明，商品不透明",
+  "背景透明，瓶身保持不透明", "保持背景透明，不要把主体变透明", "不要白底或棋盘格，输出透明PNG",
+  "白底图中的产品，输出透明背景", "原图是白底，输出透明背景", "把白底改成透明底",
+  "Remove the white background, keep the subject opaque", "Transparent background, opaque bottle", "change white background to transparent background",
+]) {
+  const result=resolveImagegenIntent(parse(prompt,{mode:"edit",inputs:target}));
+  assert.equal(result.background,"transparent",prompt);assert.deepEqual(result.conflicts,[],prompt);
+}
+for(const prompt of ["不要白底", "主体不透明", "保留不透明瓶身", "画一个不透明的瓶子", "keep the subject opaque"])
+  assert.equal(resolveImagegenIntent(parse(prompt)).background,null,prompt);
+for(const prompt of ["透明背景，同时保留白底", "白底且透明背景", "transparent background and white background"])
+  assert.ok(resolveImagegenIntent(parse(prompt)).conflicts.length,prompt);
+for(const prompt of ["不要移除白色背景", "don't remove the white background", "不要没有背景的图"])
+  assert.equal(resolveImagegenIntent(parse(prompt,{inputs:target})).background,"opaque",prompt);
+assert.equal(resolveImagegenIntent(parse("去掉白底，主体不透明",{mode:"edit",inputs:target})).operation,"cutout");
 assert.equal(resolveImagegenIntent(parse("去掉这张图的背景",{inputs:target})).operation,"cutout");
 assert.ok(resolveImagegenIntent(parse("去掉这张图的背景")).conflicts.length);
 assert.equal(resolveImagegenIntent(parse("不要去掉背景",{inputs:target})).operation,"generate");

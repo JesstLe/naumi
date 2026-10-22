@@ -11,7 +11,7 @@ export const HARNESS_LIMITS = Object.freeze({
   toolArgumentBytes: 64 * 1024, resultBytes: 512 * 1024, outputChars: 192 * 1024,
   modelTurns: 24, toolCalls: 32, writeCalls: 8, runMs: 780_000, toolMs: 600_000,
 });
-export type HarnessCode = "INPUT_INVALID" | "TOOL_DENIED" | "ARGUMENT_INVALID" | "BUDGET_EXCEEDED" | "RUN_INACTIVE" | "REPLAY_BLOCKED" | "INTENT_REQUIRED" | "OUTPUT_BLOCKED" | "BACKEND_DISABLED";
+export type HarnessCode = "INPUT_INVALID" | "TOOL_DENIED" | "ARGUMENT_INVALID" | "BUDGET_EXCEEDED" | "RUN_INACTIVE" | "REPLAY_BLOCKED" | "OUTPUT_BLOCKED" | "BACKEND_DISABLED";
 export class HarnessError extends Error {
   constructor(readonly code: HarnessCode, readonly status = 400) { super(`Agent 请求被执行边界拦截（${code}）`); this.name = "HarnessError"; }
 }
@@ -51,6 +51,7 @@ export async function readHarnessBody(request: Request): Promise<Record<string, 
   boundedJson(body, HARNESS_LIMITS.requestBytes, "INPUT_INVALID");
   for (const key of ["message", "sessionId", "anchorId", "projectKey", "turnId", "imageModelId", "id", "title", "action", "mode", "ratio", "resolution", "quality", "videoNodeId", "textNodeId"]) if (body[key] !== undefined && typeof body[key] !== "string") throw new HarnessError("INPUT_INVALID");
   if (typeof body.message === "string" && body.message.length > HARNESS_LIMITS.messageChars) throw new HarnessError("INPUT_INVALID");
+  if (body.continueText !== undefined && typeof body.continueText !== "boolean") throw new HarnessError("INPUT_INVALID");
   for (const key of ["history", "messages"]) if (body[key] !== undefined) validateHarnessHistory(body[key]);
   for (const key of ["images", "contextIds"]) if (body[key] !== undefined && (!Array.isArray(body[key]) || body[key].length > 6 || !(body[key] as unknown[]).every(x => typeof x === "string" && x.length < 2048))) throw new HarnessError("INPUT_INVALID");
   return body;
@@ -65,64 +66,8 @@ export function explicitQuoteConsent(message: string) {
   // Only the new authenticated user turn, never history/steering/Skill/model text.
   return /^(?:确认(?:报价|生成|执行|继续)?|同意(?:报价|生成|执行|继续)?|按(?:这个|该|此)报价(?:生成|执行|继续)|yes|confirm|approved|proceed)[。.!！\s]*$/i.test(message.trim());
 }
-export function creativeIntent(message: string) {
-  if (/(?:不要|不需要|别|不必)[^,，;；。！？\n]{0,20}(?:换色|换成|换为)/.test(message)) return false;
-  if (/只(?:分析|总结|解释|讨论)|^(?:请|帮我)?(?:分析|总结|解释|讨论)|(?:不要|不需要|别|不必)(?:再)?(?:生成|生图|调用|执行)|如何|怎么|how (?:to|does)/i.test(message)) return false;
-  return /转换(?:图片|图像)?格式|压缩图片|缩小图片|去底色|chroma.?key|resize.*image|convert.*(?:png|webp|jpeg)|生成|生图|出图|画(?:图|一|个|张)|做(?:一|个|张|套)|来(?:一|个|张|套)|绘制|创作|精修|换色|替换|修改|调整|换(?:成|为)(?:.{0,8}(?:色|配色)|\s*#[a-f\d]{6}\b)|换.{0,4}视角|改(?:图|色|成|为)|变成|抠图|清晰|去水印|去皱|复刻|裂变|融图|试穿|服装上身|详情页|包装|印刷|导入|风格(?:转换|迁移)|(?:写|拟|起|优化|想).{0,12}(?:标题|卖点)|执行工作流|运行工作流|generate|create|draw|render|retouch|recolor|upscale|inpaint|remove.*(?:background|watermark)|try.?on|replicate|import|run.*workflow/i.test(message);
-}
 export function untrustedAgentData(source: string, value: unknown) {
   return `\n[UNTRUSTED_DATA ${source}]\n${JSON.stringify(value)}\n[/UNTRUSTED_DATA]\n`;
-}
-/** Coarse capability confinement, not an injection detector. Unknown capabilities fail closed. */
-function requestedWriteCapabilities(message: string): Set<string> {
-  const allowed = new Set<string>();
-  const grant = (pattern: RegExp, names: string[]) => { if (pattern.test(message)) names.forEach(name => allowed.add(name)); };
-  if (creativeIntent(message)) {
-    allowed.add("generate_image");
-    grant(/精修|修复|retouch/i,["retouch_product"]);
-    grant(/换色|颜色|替换|换(?:成|为)\s*#[a-f\d]{6}\b|[红蓝绿黑白黄紫橙粉灰]色|recolor|colou?r/i,["recolor_product"]);
-    grant(/复刻|replicate/i,["replicate_hot","replicate_competitor"]);
-    grant(/套图|一套|整套|suite/i,["generate_suite"]);
-    grant(/a\+|详情页|aplus/i,["generate_aplus","continue_aplus_generation"]);
-    grant(/重做.*母图|母图.*重做|redo.*source/i,["review_aplus_source"]);
-    grant(/包装|刀版|模切|packaging/i,["generate_packaging_3d"]);
-    grant(/(?:执行|运行|run).*(?:comfy|工作流|workflow)/i,["run_comfy_workflow"]);
-    grant(/视频|video/i,["generate_video","create_video_node","set_video_config","set_video_prompt","set_video_references","plan_video_shot","plan_video_storyboard","plan_video_script","run_video_workflow","resume_video_workflow","confirm_video_workflow_stage"]);
-    grant(/视频.*(?:续|延长)|(?:续|延长).*视频|extend.*video/i,["extend_video"]);
-    grant(/(?:改|编辑|修改).*视频|视频.*(?:改|编辑|修改)|edit.*video/i,["edit_video"]);
-    grant(/抠图|去背景|remove.*background|cutout/i,["cutout_image"]);
-    grant(/头像|avatar/i,["cutout_avatar"]);
-    grant(/清晰|放大|upscale/i,["upscale_image"]);
-    grant(/局部|选区|inpaint/i,["inpaint_image","edit_competitor"]);
-    grant(/风格|style/i,["transfer_style"]);
-    grant(/水印|watermark/i,["remove_watermark"]);
-    grant(/试穿|上身|try.?on/i,["try_on_clothing"]);
-    grant(/服装.*提取|提取.*服装|extract.*garment/i,["extract_garment"]);
-    grant(/3d.*服装|服装.*3d|garment.*3d/i,["generate_garment_3d"]);
-    grant(/去皱|dewrinkle/i,["dewrinkle_clothing"]);
-    grant(/印花|print.*extract/i,["extract_print"]);
-    grant(/印刷|print.*file/i,["prepare_print_file"]);
-    grant(/裂变|变体|variation/i,["generate_variations"]);
-    grant(/融图|融合|fuse/i,["fuse_images"]);
-    grant(/标题|卖点|title/i,["generate_titles"]);
-    grant(/导入|import/i,["import_competitor_image"]);
-  }
-  grant(/(?:通过|确认).*(?:母图|白底)|母图.*通过|approve.*source/i,["review_aplus_source"]);
-  grant(/侵权|版权.*(?:检测|检查)|copyright.*check/i,["check_image_ip"]);
-  grant(/(?:分析|反推).*竞品|竞品.*(?:分析|反推)|analy[sz]e.*competitor/i,["analyze_competitor"]);
-  if(/视频|video/i.test(message)&&!/只(?:分析|总结|解释|讨论)|(?:不要|不需要|别|不必).*(?:生成|执行|修改)|how (?:to|does)/i.test(message)){
-    grant(/(?:生成|制作|拍摄|produce|make).*(?:视频|影片|短片|video)|(?:视频|影片|短片|video).*(?:生成|制作)/i,["generate_video","create_video_node","set_video_config","set_video_prompt","set_video_references","plan_video_shot","plan_video_storyboard","plan_video_script","run_video_workflow","resume_video_workflow"]);
-    grant(/(?:规划|策划|编写|编辑|修改|设置|保存|分镜|镜头|plan|storyboard|configure|save)/i,["create_video_node","set_video_config","set_video_prompt","set_video_references","plan_video_shot","plan_video_storyboard","plan_video_script"]);
-    grant(/(?:停止|取消|stop|cancel)/i,["cancel_video_task","cancel_video_workflow","cancel_video_media_task"]);
-    grant(/(?:抽帧|音轨|分离|裁剪|剪辑|拼接|合成|处理|ffmpeg|ffprobe|extract|trim|concat|process)/i,["process_video"]);
-  }
-  if(/^(?:请)?(?:停止|取消)(?:当前)?(?:任务|生成|处理)[。.!！\s]*$/.test(message.trim()))["cancel_video_task","cancel_video_media_task","cancel_video_workflow"].forEach(name=>allowed.add(name));
-  // Saving a plan remains a separate capability when the user forbids generation.
-  if(/视频|video/i.test(message)&&!/只(?:分析|总结|解释|讨论)|(?:不要|不需要|别|不必).*(?:保存|规划|策划|编写|修改|save|plan)|how (?:to|does)/i.test(message))
-    grant(/规划|策划|编写|设置|保存|分镜|plan|storyboard|configure|save/i,["create_video_node","set_video_config","set_video_prompt","set_video_references","plan_video_shot","plan_video_storyboard","plan_video_script"]);
-  if(/抽帧|提取音轨|分离音视频|ffmpeg|ffprobe/i.test(message)&&!/只(?:分析|解释|讨论)|(?:不要|不需要|别|不必).*(?:调用|执行|生成|处理)|如何|怎么|how (?:to|does)/i.test(message))allowed.add("process_video");
-  if(/(?:保存|存为|创建|save|persist).*(?:剧本|script)|(?:剧本|script).*(?:保存|save|persist)/i.test(message)&&!/只(?:分析|总结|解释|讨论)|(?:不要|不需要|别|不必).*(?:保存|创建|save|persist)/i.test(message))allowed.add("plan_video_script");
-  return allowed;
 }
 function schemaArrayLimit(schema:Record<string,any>):number{let limit=200;const visit=(value:unknown)=>{if(!value||typeof value!=="object")return;const node=value as Record<string,any>;if(Number.isInteger(node.maxItems))limit=Math.max(limit,Math.min(1024,node.maxItems));for(const item of Object.values(node))if(item&&typeof item==="object")if(Array.isArray(item))item.forEach(visit);else visit(item);};visit(schema);return limit;}
 function strictSchema(schema: Record<string, any>): TSchema {
@@ -144,8 +89,6 @@ export class AgentHarness {
   private toolCalls = 0;
   private writeCalls = 0;
   private modelTurns = 0;
-  private writeCapabilities = new Set<string>();
-  private consentTargets = new Set<string>();
   private controller = new AbortController();
   private usedCalls = new Set<string>();
   private usedWrites = new Set<string>();
@@ -174,12 +117,11 @@ export class AgentHarness {
     if (this.active) throw new HarnessError("RUN_INACTIVE", 409);
     this.tools = new Map(tools.map(t => [t.name, { ...t, parameters: strictSchema(t.parameters) }]));
   }
-  begin(message: string, abortRun: () => void, consentTargets: readonly string[] = []) {
+  begin(message: string, abortRun: () => void) {
     if (this.active) throw new HarnessError("RUN_INACTIVE", 409);
     if (!message.trim() || message.length > HARNESS_LIMITS.messageChars) throw new HarnessError("INPUT_INVALID");
     this.runId = randomUUID(); this.startedAt = Date.now(); this.toolCalls = this.writeCalls = this.modelTurns = 0;
-    this.usedCalls.clear(); this.usedWrites.clear(); this.permits.clear(); this.controller = new AbortController(); this.writeCapabilities = requestedWriteCapabilities(message);
-    this.consentTargets = new Set(consentTargets);
+    this.usedCalls.clear(); this.usedWrites.clear(); this.permits.clear(); this.controller = new AbortController();
     this.active = true; this.abortRun = abortRun;
     this.timer = setTimeout(() => this.stop("BUDGET_EXCEEDED"), HARNESS_LIMITS.runMs); this.timer.unref?.();
     this.log("RUN_STARTED"); return this.runId;
@@ -197,8 +139,6 @@ export class AgentHarness {
     if (!record(args) || !Check(tool.parameters as TSchema, args)) throw new HarnessError("ARGUMENT_INVALID");
     if (this.publicText(JSON.stringify(args), false) !== JSON.stringify(args)) throw new HarnessError("ARGUMENT_INVALID");
     for (const [key, value] of Object.entries(args)) if (["job_id", "task_id", "workflow_id", "item_id", "provider_id", "model_id", "model", "modelId", "product_id"].includes(key) && (typeof value !== "string" || !/^[\w.:-]{1,160}$/.test(value))) throw new HarnessError("ARGUMENT_INVALID");
-    const pricingArgs = Object.fromEntries(Object.entries(args).filter(([key]) => key !== "confirm"));
-    if (tool.write && !this.writeCapabilities.has(name) && !this.consentTargets.has(name + ":" + canonical(pricingArgs))) throw new HarnessError("INTENT_REQUIRED", 403);
     if (this.toolCalls >= HARNESS_LIMITS.toolCalls || (tool.write && this.writeCalls >= HARNESS_LIMITS.writeCalls)) throw new HarnessError("BUDGET_EXCEEDED", 429);
     return tool;
   }

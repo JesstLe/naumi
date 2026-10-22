@@ -62,9 +62,10 @@ export async function createVideoSupplier({ assetsRoot, manifest, token = random
       const protocol = url.pathname.match(/^\/protocol\/([^/]+)/)?.[1] || "openai-videos";
       const pathname = url.pathname.replace(/^\/protocol\/[^/]+/, "");
       if(protocol==="agent"&&req.method==="POST"&&pathname==="/v1/chat/completions"){
-        if(!agentReply||body.stream!==true)return respond(res,{error:"Scripted streaming fixture required"},422);
+        if(!agentReply)return respond(res,{error:"Scripted fixture required"},422);
         calls.push({phase:"agent-chat",model:body.model,toolCount:body.tools?.length||0});
         const reply=await agentReply(body),id=`chatcmpl-fixture-${randomUUID()}`,created=Math.floor(Date.now()/1000);
+        if(body.stream!==true)return respond(res,{id,object:"chat.completion",created,model:body.model,choices:[{index:0,message:{role:"assistant",content:reply.text||""},finish_reason:reply.finishReason||"stop"}],usage:{prompt_tokens:100,completion_tokens:10,total_tokens:110}});
         res.writeHead(200,{"content-type":"text/event-stream","cache-control":"no-store"});
         const emit=(delta,finish_reason=null)=>res.write(`data: ${JSON.stringify({id,object:"chat.completion.chunk",created,model:body.model,choices:[{index:0,delta,finish_reason}]})}\n\n`);
         emit({role:"assistant"});

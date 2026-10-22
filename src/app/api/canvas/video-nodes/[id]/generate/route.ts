@@ -1,4 +1,5 @@
 import {NextResponse} from "next/server";
+import {TeamError} from "@/lib/teams/server";
 import {z} from "zod";
 import {sameSiteBiMutation} from "@/lib/bi/access";
 import {withBiRequest} from "@/lib/bi/model-observer";
@@ -18,7 +19,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     if(!parsed.success)return NextResponse.json({error:"生成字段无效"},{status:422});
     const result=await submitCanvasVideo(email,{nodeId:(await context.params).id,expectedRevision:parsed.data.expectedRevision,idempotencyKey:parsed.data.idempotencyKey,billingConfirmation:requestQuoteConfirmation(request,parsed.data)});
     return NextResponse.json({ok:true,...result},{status:202});
-  }catch(error){if(error instanceof BillingError||error instanceof ModelConfigError)return billingErrorResponse(error);
+  }catch(error){if(error instanceof TeamError)return NextResponse.json({error:error.message},{status:error.status});if(error instanceof BillingError||error instanceof ModelConfigError)return billingErrorResponse(error);
     if(error instanceof VideoContractError)return NextResponse.json({error:error.message,code:error.code,fields:error.fields},{status:422});
     return NextResponse.json({error:"视频生成提交失败"},{status:503});}
 });}
