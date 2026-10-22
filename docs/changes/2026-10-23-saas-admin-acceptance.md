@@ -63,6 +63,6 @@
 | R03 | 隔离通过 | imagegen-execution/billing及V/J配置、报价、幂等、未知恢复冻结 |
 | R04 | 最终5b固定镜像通过 | 原Dockerfile完整Linux构建/类型、18/18真实Web/PG/同镜像combined Worker、tick/重启/排空/UNKNOWN、native完整解码及Linux7进程38断言通过；正式镜像db8004f1、版号1792705393。066/25c已SUPERSEDED，不用旧回执放行 |
 | R05 | 47发布COMPLETE；真实验收有明确边界 | 三锁/旁路/整站切流/新Worker完成tick/原槽排空停止restart=no全部完成，canonical728。真实平台/租户/历史创作5份媒体、公网参考素材及冷加载/设置通过；只读HTTP10PASS/4unavailable，生产企业owner正向与密码登录未执行，不算PASS |
-| R06 | 受控维护替代通过本机及现场准备门禁 | 无理解新权限的旧程序回切。实际Nginx/TLS52组合+同prover68项本机通过，47完整闭包、固定同版Worker及supervisor已绑定；生产未触发维护，不冒称真实紧急恢复或无感回滚演练通过。追加Router私有兼容绑定另记 |
+| R06 | 受控维护替代通过本机及现场准备门禁 | 无理解新权限的旧程序回切。实际Nginx/TLS52组合+同prover68项本机通过，47完整闭包、固定同版Worker及supervisor已绑定；Router私有兼容绑定三锁COMPLETE、canonical743，新维护闭包及manifest已同步。生产未触发维护，不冒称真实紧急恢复或无感回滚演练通过 |
 
 最新供应商视频整合专项本机12组通过，见[视频整合验收](2026-10-23-saas-video-merge-acceptance.md)。最终5b程序及生产回执见[47实际验收](2026-10-23-saas47-production-acceptance.md)，早期候选过程见[交付进度](2026-10-23-saas-release-progress.md)。A11/A12浏览器证据已补齐；真实故障注入/重启仅本机隔离镜像，未对生产正在使用的槽故意制造崩溃或重放收费请求。

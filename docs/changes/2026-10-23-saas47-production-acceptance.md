@@ -51,4 +51,12 @@
 
 ## 收尾发现的独立遗留问题
 
-实际执行图复核发现Router进程的容量回调仍为loopback13052，端口无监听，安全GET实测连接拒绝；历史旧Web退休后未保留兼容入口。此项不以视频直连成功替代验证。当前正在追加三锁私有回调兼容绑定，仅将精确内部路径接到同一新Web，保留Router与应用进程、固定镜像、历史任务和配置；实际结果将在对应模块记录及本文追加，不提前宣称修复通过。
+实际执行图复核发现Router进程的容量回调仍为loopback13052，端口无监听，安全GET实测连接拒绝；历史旧Web退休后未保留兼容入口。此项不以视频直连成功替代验证。
+
+追加运维源码`b7019032368cb52a5f81dc62f7d75a4a5ba232b2`已通过12组本机检查和独立只读审查，再经统一 `bind47-capacity` 入口完成三锁私网旁路→精确入口平滑接通→旁路优雅退出→维护材料与同路径manifest更新→最终保护检查。2026-10-23 06:41:56 CST完成；canonical revision743，原始SHA `0267e22be07d3bd75075fc926c719621c1dcb1b9af261ecb472309c8f10761bd`，active程序仍是原SaaS R1。Router、Web、Worker启动身份与环境保持，应用镜像/源码/公开版号不变，新增Web为0。
+
+两处实际13952/13052探测均为GET exact405、无鉴权POST空对象404、有原token的POST空对象400、其他路径/尾斜线404。空对象在租约和DB操作前拒绝；本轮供应商调用0、generation POST0、lease acquire/release0。该结果证明回调路径与鉴权接通，不冒称真实租约受理或收费生成验收。
+
+原05从建立至最终六个保护点全部MATCH，原R1整个journal、旧两槽停机策略和历史债务未变。实际完整Nginx闭包与受管manifest匹配，唯一新增入口仅loopback；新的受控维护report SHA `64b9e2080cc5b90f1c15cf2943431322d4d3e5e4d6f0cfd086c375a9e486a769`已在runtimeRecovery绑定，并明确supersedes原R1材料，原文件保留。最终纯只读比对确认canonical仅增加该运维journal/revision及批准的恢复指针，manifest仅修改gateway digest。
+
+运维总UUID `d1d3fc84-2f86-455e-b11b-e9e7e03b6488`，五项原步骤UUID全部ACK；回执SHA `525cc3a25036af389a807e86fba29ea84164c6b9caeb08d69bbb3eae209d7870`。三锁释放、13952旁路监听消失，公网严格TLS `/api/health`及`/api/version`均200且DB健康、固定版号一致。详见[回调模块记录](2026-10-23-router-capacity-binding.md)。后续main新增的交付文档与本次纯运维提交不意味着又构建或发布了一套应用镜像。
