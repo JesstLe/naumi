@@ -43,7 +43,7 @@ import {videoHistoryDraft} from "@/lib/video/client-history";
 import {useVideoAssets,VideoAssetImportError} from "./video/use-video-assets";
 import {VideoHistoryPicker} from "./video/history-picker";
 import type {CanvasVideoNode} from "@/lib/canvas/video-node-schema";
-import {catalogCapability,reconcileVideoSettings,videoModeRoles,type VideoCatalogModel,type VideoInputChoice} from "@/lib/video/client-settings";
+import {catalogCapability,videoNodeCreationDefaults,videoModeRoles,type VideoCatalogModel,type VideoInputChoice} from "@/lib/video/client-settings";
 import {readVideoReceipt,prepareVideoReceipt,saveVideoReceipt,clearVideoReceipt} from "@/lib/video/canvas-receipts";
 import type {PublicVideoTaskView} from "@/lib/video/service";
 import type {PublicQuote} from "@/lib/billing/client";
@@ -1997,6 +1997,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const videoModelCatalog=useVideoCatalog({email:user?.email,ready,request:privateFetchRaw});
   const videoCatalog=videoModelCatalog.models;
+  const videoCreationCatalogRef=useRef(videoModelCatalog);videoCreationCatalogRef.current=videoModelCatalog;
+  const videoNodeCreatePending=useRef(false),[videoNodeCreateBusy,setVideoNodeCreateBusy]=useState(false);
+  const videoNodeCreationReady=!!videoNodeCreationDefaults(videoModelCatalog);
+  const videoNodeCreateDisabled=videoModelCatalog.loading||videoNodeCreateBusy;
+  const videoNodeCreateLabel=videoModelCatalog.loading?L("视频模型加载中…","Loading video models…"):videoNodeCreationReady?L("新增视频节点","Add video node"):L("重试视频模型","Retry video models");
   const [annotateArtwork, setAnnotateArtwork] = useState<Artwork | null>(null);
   // 画布助手:围绕选中节点+上游链的多轮对话,[[GEN]] 提示词可一键生图回画布
   const [assistantArtworkId, setAssistantArtworkId] = useState<string | null>(null);
@@ -4894,16 +4899,22 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
 
   async function openVideoNodeFromSelection(blank=false, at?: { x: number; y: number }){
-    if(!user||readOnly||!canFeature("video"))return;
+    if(!user||readOnly||!canFeature("video")||videoNodeCreatePending.current)return;
+    videoNodeCreatePending.current=true;setVideoNodeCreateBusy(true);
     try{
       const id=`vnode-${browserRandomUUID()}`,project=active?.key||`tree:${id}`,center=at??centerScreen();
       const box=canvasAreaRef.current?.getBoundingClientRect();
       const point=rfRef.current?.screenToFlowPosition({x:center.x+(box?.left??0),y:center.y+(box?.top??0)})||{x:0,y:0};
-      const model=videoCatalog.find(item=>item.isDefault)||videoCatalog[0];
       const selectedIds=blank?new Set<string>():new Set([...multiSel,...(selectedId?[selectedId]:[]),...(selectedTextId?[selectedTextId]:[])]);
       const choices=videoInputChoices.filter(choice=>selectedIds.has(choice.nodeId));
-      const raw={modelId:model?.modelId,providerId:model?.providerId,prompt:blank?"":selected?.prompt||""};
-      const config=reconcileVideoSettings(raw,catalogCapability(model)).config;
+      // Recheck the current catalog at the write boundary; retrying a catalog never queues creation.
+      const catalog=videoCreationCatalogRef.current,creation=videoNodeCreationDefaults(catalog);
+      if(!creation){
+        if(catalog.loading)flashTip(L("视频模型加载中…","Loading video models…"));
+        else await catalog.refresh();
+        return;
+      }
+      const {model}=creation,config={...creation.config,prompt:blank?"":selected?.prompt||""};
       const images=choices.filter(choice=>choice.kind==="image").length;
       const proposed=choices.length===0?"text":choices.length===1&&images===1?"single_image":"reference";
       if(catalogCapability(model).modes?.includes(proposed))config.mode=proposed;
@@ -4912,6 +4923,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const created=await videoNodesStore.save(id,{projectKey:project,title:"视频",x:point.x,y:point.y,width:384,height:Math.max(160,Math.min(680,Math.round(384/aspect))),config,inputs});pushUndo({kind:"video-add",records:[created]});
       setCreatingNew(false);setActiveKey(project);setBrowsing(false);setSelectedId(id);setSelectedTextId(null);setSelectedPendId(null);setMultiSel([]);setVideoDockAdvancedId(null);
     }catch(error){flashTip(error instanceof Error?error.message:"新增视频节点失败");}
+    finally{videoNodeCreatePending.current=false;setVideoNodeCreateBusy(false);}
   }
   function openVideoEditor(id:string){
     setSelectedId(id);setSelectedPendId(null);setSelectedTextId(null);setMultiSel([]);setPropertiesOpen(false);setVideoDockAdvancedId(null);
@@ -9771,7 +9783,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     items={[
                       { id: "text", icon: Type, label: t("canvas.toolbar.addText"), onSelect: () => createCanvasNode("text") },
                       { id: "image-node", icon: ImagePlus, label: t("canvas.toolbar.addImageNode"), onSelect: () => createCanvasNode("image") },
-                      { id: "video-node", icon: Video, label: L("新增视频节点", "Add video node"), disabled: !canFeature("video"), onSelect: () => createCanvasNode("video") },
+                      { id: "video-node", icon: Video, label: videoNodeCreateLabel, disabled: !canFeature("video")||videoNodeCreateDisabled, onSelect: () => createCanvasNode("video") },
                     ]}
                   />
                   <button type="button" data-tool="text" aria-label={t("canvas.toolbar.addText")} title={t("canvas.toolbar.addText")}
@@ -10254,7 +10266,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             <ContextMenuSurface x={nodeTypeMenu.cx} y={nodeTypeMenu.cy} light={true} onClose={() => setNodeTypeMenu(null)}>
               <Item label={t("canvas.toolbar.addText")} disabled={readOnly} onClick={() => createCanvasNode("text", nodeTypeMenu)} />
               <Item label={t("canvas.toolbar.addImageNode")} disabled={readOnly} onClick={() => createCanvasNode("image", nodeTypeMenu)} />
-              <Item label={L("新增视频节点", "Add video node")} disabled={readOnly || !canFeature("video")} onClick={() => createCanvasNode("video", nodeTypeMenu)} />
+              <Item label={videoNodeCreateLabel} disabled={readOnly || !canFeature("video") || videoNodeCreateDisabled} onClick={() => createCanvasNode("video", nodeTypeMenu)} />
             </ContextMenuSurface>
           </div>}
 
@@ -10774,8 +10786,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   })),
                   { id: "workflow", icon: Workflow, label: t("canvas.toolbar.workflow"), hint: t("canvas.toolbar.workflowHint"),
                     disabled: !selected || readOnly, onSelect: () => setComfyOpen(true) },
-                  { id: "video", icon: Video, label: t("canvas.toolbar.video"), hint: t("canvas.toolbar.videoHint"),
-                    disabled: readOnly, onSelect: () => { void openVideoNodeFromSelection(); } },
+                  { id: "video", icon: Video, label: videoNodeCreationReady?t("canvas.toolbar.video"):videoNodeCreateLabel, hint: t("canvas.toolbar.videoHint"),
+                    disabled: readOnly||videoNodeCreateDisabled, onSelect: () => { void openVideoNodeFromSelection(); } },
                   ...(selected ? [
                     {id:"copy-node",icon:Copy,label:t("canvas.copyNode"),onSelect:()=>copyNodeToClip(selected,true)},
                     {id:"copy-image",icon:ImageIcon,label:t("canvas.copyImage"),onSelect:()=>void copyImageToClipboard(selected.image)},

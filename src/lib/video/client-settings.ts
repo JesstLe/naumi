@@ -32,6 +32,17 @@ export function selectedVideoCatalogModel(models:VideoCatalogModel[],config:Vide
 export function catalogCapability(model?:VideoCatalogModel):ResolvedVideoCapability{return model?.definition||{sources:{}};}
 export function videoDurations(cap:ResolvedVideoCapability){return Array.from(new Set((cap.durationResolutionMap||[]).flatMap(map=>map.durations)));}
 export function videoResolutions(cap:ResolvedVideoCapability,duration?:number){return Array.from(new Set((cap.durationResolutionMap||[]).filter(map=>duration!==undefined&&map.durations.includes(duration)).flatMap(map=>map.resolutions)));}
+/** Defaults apply only to an explicit new node; an existing selection is never replaced. */
+export function videoNodeCreationDefaults(catalog:{models:readonly VideoCatalogModel[];loading:boolean;error:string}){
+  if(catalog.loading||catalog.error)return undefined;
+  const model=catalog.models.find(item=>item.isDefault)||catalog.models[0];
+  if(!model?.modelId?.trim()||!model.providerId?.trim())return undefined;
+  const cap=catalogCapability(model),config=reconcileVideoSettings({modelId:model.modelId,providerId:model.providerId,prompt:""},cap).config;
+  const duration=config.durationSeconds;
+  if(!config.mode||!config.resolution||!config.aspectRatio||duration===undefined||
+    (duration===-1?cap.supportsAutoDuration!==true:!Number.isInteger(duration)||duration<=0||duration>3600))return undefined;
+  return {model,config};
+}
 export function videoModeRoles(inputs:readonly OrderedInput[],mode?:VideoMode):OrderedInput[]{
   const count=inputs.filter(input=>input.kind==="image").length;let image=0;
   return inputs.map(input=>{
