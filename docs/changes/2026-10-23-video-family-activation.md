@@ -41,3 +41,13 @@ canonical revision608、当前正常发布 `release47-nas-upload-20261022` phase
 新combined Worker保留容器私有PID命名空间；CAP_KILL只用于监督和取消本容器内降uid子进程。常规退役仍必须先控制drain并取得扫描与媒体队列为零的证据，stop与SIGKILL不替代排空。
 
 最终RAM复核：47实际MemTotal约7270MiB，MemAvailable约3985MiB，旧Web/Worker cgroup current约975/47MiB。3GiB最终Web加新增1GiB Worker和1GiB主机余量，在最乐观释放旧槽全部current时仍不足，故本轮明确最终Web为2048MiB，候选1536MiB；JS heap仍受1152MiB限制。Ready与退役前仅计旧槽anon可释放量做保守预测，退役后再次实测，不把旧filecache或Swap记作新RAM。完整镜像需按此最终提交重新固定。
+
+## 首个旁路候选实测与修复
+
+固定5d568c7b / image a9653626743d1e0c2faaca14e97ea2bef5099c19764acbbbeb3237a9be1ee993的完整Linux构建及真实combined smoke通过；暖态峰值396.80MiB，仍保留此前655.06MiB冷态证据与1GiB预算。47三锁备份可读、镜像导入、原任务快照及唯一候选Web/Worker启动成功；程序停在CANDIDATE，canonical revision626，尚未切流/暂停旧槽/启用模型。
+
+真实合成图上传、私有存储、隔离10.125秒视频全解码和精确清理均成功；签名素材检查在LOCAL_SIGNED_HTTP满60秒失败，失败验证数据已全部清理。随后只读现有归属106B PNG定位：GET 200及SHA一致、Range 206及字节正确，HEAD 15秒无响应头超时；Next fetch的流取消等待阻塞了HEAD返回。原7个操作均ACK并保留UUID，旧站继续服务，未生成付费请求。
+
+修复HEAD为始终只向源请求bytes=0-0，最多两次读取验证1字节及EOF，5秒读取上界；错误源发起释放但不等待悬挂cancel，再验证镜像或503。响应保留客户原始Range元数据且无body。同时整合后台已完成的local存储默认读取冻结SHA校验，防止同长度文件替换绕过校验。集中309断言、6次真实loopback HTTP与独立local驱动子进程回归通过，TS导入图零诊断；不是47新镜像验收。
+
+当前待完成：严格排空/退役失败候选并以实际证据登记ROLLED_BACK，保留canonical原事故和全部操作；再以r2唯一候选和新固定镜像重做真实Next HEAD、完整蓝绿及32项配置CAS/节点验收。不直接替换候选/app或复用旧ACK，不以此文件声称已启用。后台后继SaaS已协调等待本修复，不并行抢47锁。
