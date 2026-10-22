@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+
+async function main() {
+  assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB, '1');
+  const connection = new URL(process.env.DATABASE_URL || 'http://invalid');
+  assert.equal(connection.hostname, '127.0.0.1'); assert.match(connection.pathname, /fixture/);
+  process.env.SETTINGS_SECRET = 'enterprise-fixture-isolated-012345678901234567890123456';
+  process.env.NAUMI_MULTI_USER = '1'; delete process.env.FLEET_PORTAL_ONLY;
+  const db = await import('../src/lib/db');
+  const tenants = await import('../src/lib/saas/tenants');
+  const native = await import('../src/lib/native-auth');
+  const route = await import('../src/app/api/enterprise/saas-overview/route');
+  const enterprise = await import('../src/lib/enterprise/server');
+  await tenants.ensureTenantSchema(); const pool = db.getPool();
+  const suffix = randomUUID().slice(0, 8);
+  const owner = `owner-${suffix}@enterprise.fixture`, other = `owner-b-${suffix}@enterprise.fixture`, manager = `manager-${suffix}@enterprise.fixture`, employee = `employee-${suffix}@enterprise.fixture`, departed = `departed-${suffix}@enterprise.fixture`;
+  for (const email of [owner, other, manager, employee, departed]) {
+    await db.getOrCreateUser(email, email.split('@')[0]);
+    await pool.query(`INSERT INTO app_feature_access(email,mode,allowed) VALUES($1,'custom','["team"]') ON CONFLICT(email) DO UPDATE SET mode='custom',allowed=excluded.allowed`, [email]);
+  }
+  const admin = { email: 'fixture-platform', admin: true, consoleAdmin: true };
+  const create = (email: string) => tenants.createTenant(admin, { commandId: randomUUID(), name: `Fixture ${email}`, ownerEmail: email, validUntil: null, seatLimit: 8, entitlementName: 'Fixture 权益', featurePolicy: { video: false } });
+  const a = await create(owner), b = await create(other), roleId = randomUUID();
+  await pool.query(`INSERT INTO app_enterprise_roles(enterprise_id,id,name,level,manage_members,view_records) VALUES($1,$2,'Fixture 主管',10,true,true)`, [a.tenantId, roleId]);
+  await pool.query(`INSERT INTO app_enterprise_members(enterprise_id,email,supervisor_email,role_id,employment) VALUES($1,$2,$3,$4,'permanent'),($1,$5,$2,NULL,'intern'),($1,$6,$3,NULL,'permanent')`, [a.tenantId, manager, owner, roleId, employee, departed]);
+  await pool.query(`UPDATE app_enterprise_members SET membership_status='suspended' WHERE enterprise_id=$1 AND email=$2`, [a.tenantId, departed]);
+  await pool.query(`UPDATE app_enterprise_members SET membership_expires_at=now()+interval '2 days' WHERE enterprise_id=$1 AND email=$2`, [a.tenantId, employee]);
+  const request = (email: string | null, tenantId = a.tenantId, method = 'GET', body?: unknown, origin = 'http://fixture.test') => new Request(`http://fixture.test/api/enterprise/saas-overview?tenantId=${tenantId}`, { method, headers: { cookie: email ? `nv_user=${native.signUserSession(email, Date.now())}` : '', origin, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+  assert.equal((await route.GET(request(null))).status, 401);
+  assert.equal((await route.GET(request(owner, b.tenantId))).status, 403);
+  const response = await route.GET(request(owner)), meta = await response.json();
+  assert.equal(response.status, 200); assert.match(response.headers.get('cache-control') || '', /private.*no-store/);
+  assert.equal(meta.scope, 'tenant'); assert.equal(meta.members.effective, 3); assert.equal(meta.members.expiring, 1);
+  const managed = await (await route.GET(request(manager))).json(); assert.equal(managed.scope, 'current_subordinates'); assert.equal(managed.members.effective, 2);
+  assert.equal((await route.GET(request(departed))).status, 403);
+  const command = { tenantId: a.tenantId, commandId: randomUUID(), expectedVersion: meta.version, name: 'Fixture 新企业名称' };
+  assert.equal((await route.PATCH(request(owner, a.tenantId, 'PATCH', command, 'https://foreign.fixture'))).status, 403);
+  assert.equal((await route.PATCH(request(manager, a.tenantId, 'PATCH', command))).status, 403);
+  const accountBefore = (await pool.query('SELECT banned,account_expires_at,management_version,password_hash FROM app_users WHERE email=$1', [owner])).rows[0];
+  const ledgerBefore = (await pool.query('SELECT count(*) AS n FROM app_ledger')).rows[0].n;
+  const saved = await route.PATCH(request(owner, a.tenantId, 'PATCH', command)); assert.equal(saved.status, 200);
+  const result = await saved.json(); assert.equal(result.name, command.name); assert.equal(result.version, meta.version + 1);
+  assert.deepEqual(await (await route.PATCH(request(owner, a.tenantId, 'PATCH', command))).json(), result);
+  assert.equal((await route.PATCH(request(owner, a.tenantId, 'PATCH', { ...command, name: 'different' }))).status, 409);
+  assert.equal((await route.PATCH(request(owner, a.tenantId, 'PATCH', { ...command, commandId: randomUUID() }))).status, 409);
+  const after = await (await route.GET(request(owner))).json(); assert.equal(after.name, command.name); assert.equal(after.activities[0].action, '更新企业名称');
+  assert.equal(after.activities.filter((activity: { action: string }) => activity.action === '更新企业名称').length, 1);
+  assert.equal(Object.hasOwn(after.activities[0], 'changes'), false); assert.equal(Object.hasOwn(after.activities[0], 'result'), false);
+  assert.deepEqual((await pool.query('SELECT banned,account_expires_at,management_version,password_hash FROM app_users WHERE email=$1', [owner])).rows[0], accountBefore);
+  assert.equal((await pool.query('SELECT count(*) AS n FROM app_ledger')).rows[0].n, ledgerBefore);
+  await pool.query(`INSERT INTO app_enterprise_audit(id,enterprise_id,actor,action,target,fingerprint,result,changes) VALUES($1,$2,$3,'reset-password',$4,'fixture','{"password":"PRIVATE_SENTINEL"}','{"supplier":"PRIVATE_SENTINEL"}')`, [randomUUID(), a.tenantId, owner, employee]);
+  const safe = await (await route.GET(request(manager))).text(); assert.doesNotMatch(safe, /PRIVATE_SENTINEL|reset-password|password|supplier/);
+  await pool.query(`UPDATE app_enterprise_members SET membership_status='suspended' WHERE enterprise_id=$1 AND email=$2`, [a.tenantId, manager]);
+  assert.equal((await route.GET(request(manager))).status, 403);
+  assert.equal((await enterprise.enterpriseSnapshot({ email: owner, admin: false }, a.tenantId)).enterprise.name, command.name);
+  console.log('SAAS_ENTERPRISE_META_PASS auth=1 private_cache=1 owner_scope=1 subordinate_scope=1 membership_count=1 expiry_count=1 revoked=1 cross_tenant=1 origin=1 owner_only_write=1 cas=1 command_replay=1 safe_audit_projection=1 global_account_unchanged=1 ledger_unchanged=1 supplier_calls=0');
+  await pool.end();
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });
