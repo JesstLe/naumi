@@ -16,8 +16,8 @@
 | A08 | 隔离通过 | T/E停membership，全局banned/password/expiry及个人会话不改 |
 | A09 | 隔离通过 | T/E所有者移除/暂停拒绝 |
 | A10 | 隔离+GUI通过 | C签名逐Range重新鉴权、撤权拒绝；GUI预览关闭锁焦/还焦；下载字节不可召回 |
-| A11 | 部分验证 | source中AbortController+scope实例key隔离已核对；GUI切换/筛选已通过，专门强制乱序慢响应GUI未执行 |
-| A12 | 部分验证 | GUI平台退出/原生退出后重新登录深链通过；source身份key与object URL cleanup已核对，跨两个账号未完成全部草稿/媒体专门故障矩阵 |
+| A11 | 本机GUI通过 | CDP响应阶段暂停真实租户A GET200，经实际列表导航切B；A请求在卸载时Abort，释放时报Invalid InterceptionId，B未混入A字段。tenant-slow-response-fixture.json/png；验证取消分支，不冒称迟到body已交付 |
+| A12 | 本机GUI通过 | owner正常退出后，另一标签原3张blob图片、要求与名称草稿清空；正常登录departed/manager没有旧资料，manager设置重载仅当前有效下级且无名称编辑控件。enterprise-account-switch-fixture.png、enterprise-draft-account-switch-fixture.json/png；平台退出、深链登录另已通过 |
 | D01 | 隔离+GUI通过 | T相同commandId重试仅一个tenant、冲突拒绝；GUI创建/刷新持久化 |
 | D02 | 隔离通过 | T版本409不覆盖；GUI409保留草稿 |
 | D03 | 隔离+GUI通过 | T缩席位409；GUI3有效人数改2拒绝、原3/50保持 |
@@ -65,4 +65,4 @@
 | R05 | 未执行 | 根任务协调最新47真实基线/视频profile、三锁蓝绿/排空/最终固定镜像；本任务未操作生产 |
 | R06 | 无兼容业务回滚；受控维护替代本机通过 | 470adbc9受控维护renderer/真实Nginx TLS52组合通过，applied=false；现场公网入口闭包/同版Worker/lifecycle接入由根任务收尾。旧0a不得公网回退，未声称业务回滚通过 |
 
-待根任务补齐：A11/A12专门浏览器乱序/跨账号清理验证，R04最终固定Linux构建，R05生产发布，R06现场维护恢复门禁。无真实Supplier调用、线上数据写入、真实Worker重启或生产发布完成声明。
+待根任务补齐：最新供应商视频整合专项回归、R04最终固定Linux构建、R05生产发布、R06现场维护恢复门禁。A11/A12根任务专门浏览器证据已补齐。无真实Supplier调用、线上数据写入、真实Worker重启或生产发布完成声明。
