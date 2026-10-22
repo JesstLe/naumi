@@ -1,0 +1,11 @@
+[Unit]
+Description=Probe private NAS storage every twenty seconds
+
+[Timer]
+OnBootSec=40s
+OnUnitInactiveSec=20s
+AccuracySec=2s
+Unit=naumi-nas47-watchdog.service
+
+[Install]
+WantedBy=timers.target
