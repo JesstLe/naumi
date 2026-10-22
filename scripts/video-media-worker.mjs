@@ -1,6 +1,7 @@
 import http from 'node:http';
 import {createHash,timingSafeEqual,randomUUID} from 'node:crypto';
-import {mkdir,writeFile,readFile,lstat,readdir,rm,rename} from 'node:fs/promises';
+import {mkdir,writeFile,readFile,lstat,readdir,rm,rename,open} from 'node:fs/promises';
+import {constants as fsConstants} from 'node:fs';
 import path from 'node:path';
 import {MediaEngine,MEDIA_LIMITS,mediaJobDirectory} from './video-fusion/media-engine.mjs';
 
@@ -17,7 +18,21 @@ const terminal=status=>['completed','failed','cancelled'].includes(status);
 await mkdir(root,{recursive:true,mode:0o700});
 const retiredRoot=path.join(root,'.retired');await mkdir(retiredRoot,{recursive:true,mode:0o700});
 async function atomicJson(file,value){const temporary=`${file}.${randomUUID()}.tmp`;try{await writeFile(temporary,JSON.stringify(value),{mode:0o600});await rename(temporary,file);}finally{await rm(temporary,{force:true});}}
-async function retiredState(id){mediaJobDirectory(root,id);return readFile(path.join(retiredRoot,`${id}.json`),'utf8').then(JSON.parse).catch(()=>null);}
+async function retiredState(id){
+  mediaJobDirectory(root,id);let handle;
+  try{
+    const directory=await lstat(retiredRoot);if(!directory.isDirectory()||directory.isSymbolicLink())return null;
+    const file=path.join(retiredRoot,`${id}.json`),before=await lstat(file);
+    if(!before.isFile()||before.isSymbolicLink()||before.size<1||before.size>1024)return null;
+    handle=await open(file,fsConstants.O_RDONLY|(fsConstants.O_NOFOLLOW||0));
+    const after=await handle.stat();if(!after.isFile()||before.dev!==after.dev||before.ino!==after.ino||after.size!==before.size)return null;
+    const buffer=Buffer.alloc(1025),{bytesRead}=await handle.read(buffer,0,buffer.length,0);if(bytesRead!==after.size)return null;
+    const receipt=JSON.parse(buffer.subarray(0,bytesRead).toString('utf8'));
+    if(!receipt||receipt.id!==id||!terminal(receipt.status)||typeof receipt.retiredAt!=='string')return null;
+    const at=Date.parse(receipt.retiredAt);if(!Number.isFinite(at)||new Date(at).toISOString()!==receipt.retiredAt||at>Date.now())return null;
+    return receipt;
+  }catch{return null;}finally{await handle?.close().catch(()=>{});}
+}
 async function retire(id,status){await atomicJson(path.join(retiredRoot,`${id}.json`),{id,status,retiredAt:new Date().toISOString()});}
 if(!fixture){
   const id=randomUUID(),directory=mediaJobDirectory(root,id);await mkdir(path.join(directory,'inputs'),{recursive:true,mode:0o700});
@@ -40,13 +55,24 @@ async function withJobLock(id,run){
   locks.set(id,current);await previous;
   try{return await run();}finally{release();if(locks.get(id)===current)locks.delete(id);}
 }
+// A peer sharing scratch may acknowledge a terminal job after this process
+// restored it. Retirement proves acknowledgment; a missing directory does not.
+async function reconcileRetiredJobs(){
+  for(const id of jobs.keys())await withJobLock(id,async()=>{
+    const job=jobs.get(id);if(!job||!terminal(job.view.status)||engine.active.has(id))return;
+    if(await retiredState(id)){
+      // Only evict local state. A peer owns any shared output/file cleanup.
+      if(jobs.get(id)===job&&terminal(job.view.status)&&!engine.active.has(id))jobs.delete(id);
+    }
+  });
+}
 function capacity(){const values=[...jobs.values()];return {running,queued:values.filter(j=>j.view.status==='queued').length,terminal:values.filter(j=>terminal(j.view.status)).length};}
 // Completed but unacknowledged output files survive a worker restart and still
 // count against capacity. Pending snapshots are resumed only by the owning App.
 for(const entry of await readdir(root,{withFileTypes:true})){
   if(!entry.isDirectory()||!/^[0-9a-f-]{36}$/.test(entry.name))continue;
   const view=await savedState(entry.name);
-  if(view?.owner==='naumi-media-worker'&&terminal(view.status))jobs.set(entry.name,{id:entry.name,digest:view.digest,controller:new AbortController(),view});
+  if(view?.owner==='naumi-media-worker'&&terminal(view.status)&&!await retiredState(entry.name))jobs.set(entry.name,{id:entry.name,digest:view.digest,controller:new AbortController(),view});
 }
 async function dispatch(){
   if(stopping||running>=concurrency)return;
@@ -63,6 +89,7 @@ const server=http.createServer(async(request,response)=>{
   if(!authorized(request)){send(response,401,{error:'UNAUTHORIZED'});return;}
   try{
     const url=new URL(request.url,'http://media-worker');
+    await reconcileRetiredJobs();
     if(request.method==='GET'&&url.pathname==='/health'){send(response,200,{ok:true,version:process.env.SOURCE_COMMIT||'fixture',sandbox:!fixture,draining,...capacity(),maxActive:MEDIA_LIMITS.queue,concurrency});return;}
     if(request.method==='POST'&&['/drain','/resume'].includes(url.pathname)){if(stopping){send(response,503,{error:'MEDIA_WORKER_STOPPING'});return;}draining=url.pathname==='/drain';send(response,200,{ok:true,draining,...capacity()});return;}
     const match=url.pathname.match(/^\/jobs\/([0-9a-f-]{36})$/);if(!match){send(response,404,{error:'NOT_FOUND'});return;}
@@ -70,6 +97,7 @@ const server=http.createServer(async(request,response)=>{
     // A cancellation/acknowledgment marker lives outside the cleaned job folder:
     // a slow POST body cannot recreate a job after DELETE followed by PATCH.
     const requestBody=request.method==='POST'?await bodyOf(request):null;
+    if(request.method==='POST')await reconcileRetiredJobs();
     await withJobLock(id,async()=>{
       let job=jobs.get(id);
       if(request.method==='POST'){
@@ -87,7 +115,9 @@ const server=http.createServer(async(request,response)=>{
         jobs.set(id,job);await persist(job);send(response,202,job.view);void dispatch();return;
       }
       const saved=job?job.view:await savedState(id);
-      if(request.method==='GET'){const available=job||saved&&terminal(saved.status);send(response,available?200:404,available?saved:{error:'NOT_FOUND'});return;}
+      if(request.method==='GET'){
+        if((!job||terminal(job.view.status)&&!engine.active.has(id))&&await retiredState(id)){send(response,410,{error:'MEDIA_JOB_RETIRED'});return;}
+        const available=job||saved&&terminal(saved.status);send(response,available?200:404,available?saved:{error:'NOT_FOUND'});return;}
       if(request.method==='DELETE'){
         if(!terminal(job?.view.status||saved?.status))await retire(id,'cancelled');
         if(!job&&!saved){
@@ -113,6 +143,7 @@ const server=http.createServer(async(request,response)=>{
 // Unpublished ordinary outputs are retained until App acknowledgment. Only
 // expired inspectors (no output files or billing task) can be reclaimed here.
 async function collectInspectors(){
+  await reconcileRetiredJobs();
   for(const entry of await readdir(root,{withFileTypes:true})){
     if(!entry.isDirectory()||!/^[0-9a-f-]{36}$/.test(entry.name)||engine.active.has(entry.name))continue;
     const saved=await savedState(entry.name);

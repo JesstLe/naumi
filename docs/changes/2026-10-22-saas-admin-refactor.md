@@ -70,3 +70,7 @@ C02：只展示确实保存的原始输入与处理后输入；画布已有源ar
 ## 真实 Worker 建表后的详情修复（2026-10-23）
 
 Linux 联合验收发现 UUID batch.id 与 text link.target_id 直接 JOIN 导致全部创作详情503。已改来源 ID 转text，回归先初始化真实imagegen schema再读普通与批次创作，平台/企业详情200，真实PG完整读取回归及309断言HEAD素材回归通过，正式tsc退出0。未改供应商媒体业务文件；修后固定镜像联合复验及47发布仍待根任务。同步计数0。细节见[UUID来源读取修复](2026-10-23-saas-uuid-source-reader.md)。
+
+## combined→combined 共享scratch收尾（2026-10-23）
+
+真实双Node媒体Worker已复现旧PATCH后新Map保留8终态导致429。现按严格退休回执同步本地终态Map；不删共享文件、不凭缺目录释放、不清queued/processing。7个真实Node进程/38断言及真实60秒collector、symlink等负例通过，原combined生命周期91断言通过；测试fixture engine不证明native。最终含本修复Linux固定构建/联合验收与47仍待根任务。同步计数0。详见[媒体退休缓存记录](2026-10-23-media-shared-retirement.md)。
