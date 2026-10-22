@@ -22,13 +22,27 @@ def predecessor_check(state, config):
  require(active==config.get('predecessorReleaseId'),'ACTIVE_PUBLICATION_CHANGED')
  journal=state.get('normalBlueGreenReleases',{})
  require(journal.get(active,{}).get('phase')=='COMPLETE','PRIOR_PUBLICATION_NOT_COMPLETE')
- require(all(v.get('phase') in ['COMPLETE','ROLLED_BACK'] and
-   all(o.get('phase')=='ACKNOWLEDGED'for o in v.get('operations',{}).values())for v in journal.values()),
+ require(all((v.get('phase') in ['COMPLETE','ROLLED_BACK'] or
+   config.get('resumeReview') and k==config.get('releaseId') and v.get('phase')=='CANDIDATE' and
+   v.get('lastError')=='RECOVERY_HTTP_CHECK_FAILED') and
+   all(o.get('phase')=='ACKNOWLEDGED'for o in v.get('operations',{}).values())for k,v in journal.items()),
    'PRIOR_OPERATION_NOT_RECONCILED')
  require(state.get('legacyDrainProven') is False and state.get('phase')=='MIGRATED_CLEANUP_PENDING',
    'HISTORICAL_INCIDENTS_MUST_REMAIN_EXPLICIT')
 
 class NasController(ImageDeliveryController):
+ def resume_review(self):
+  proof_path=ctl.ROOT/'readiness-auth-review.json'
+  require(file_sha(proof_path)==self.cfg['resumeReview']['readinessAuthSha256'],'READINESS_AUTH_REVIEW_CHANGED')
+  proof=json.loads(proof_path.read_bytes())
+  require(proof.get('kind')=='standby-admin-auth-reconciled' and proof.get('passed') is True and
+   proof.get('previousAdminHttp')==404 and proof.get('dbMutated') is False and proof.get('passwordChanged') is False and
+   proof.get('cookieSha256')==file_sha(ctl.COOKIE) and
+   [r.get('section') for r in proof.get('results',[])]==['operations','users','artworks'] and
+   all(r.get('status')==200 for r in proof['results']),'READINESS_AUTH_NOT_RECONCILED')
+  self.reviewed_readiness_resume=True
+  return super().resume_review()
+
  def after_retirement(self):
   for old in [self.web,self.worker]:
    row=self.tx.inspect(old['id']);require(not row['State']['Running']and row['HostConfig']['RestartPolicy']['Name']=='no','OLD_SLOT_NOT_RETIRED')
@@ -73,8 +87,12 @@ def main(config_path):
    row=public_identity(tx.inspect(identifier));require(not row['running']and row['restartPolicy']=='no','PREVIOUS_SLOT_STILL_RUNNING')
    retired.append(row)
   require(len(retired)==2,'PREVIOUS_RETIREMENT_INCOMPLETE')
-  tx.save('PREDECESSOR_PUBLICATION_RECONCILED.json',{'releaseId':prior['releaseId'],'phase':prior['phase'],
-    'retired':retired,'historicalDrainReclassified':False,'historicalUnknownsCleared':False})
+  predecessor_proof={'releaseId':prior['releaseId'],'phase':prior['phase'],
+    'retired':retired,'historicalDrainReclassified':False,'historicalUnknownsCleared':False}
+  proof_path=tx.folder/'PREDECESSOR_PUBLICATION_RECONCILED.json'
+  if cfg.get('resumeReview'):
+   require(json.loads(proof_path.read_bytes())==predecessor_proof,'PREDECESSOR_PROOF_CHANGED')
+  else:tx.save(proof_path.name,predecessor_proof)
   op=NasController(tx,cfg)
   try:op.run()
   except BaseException as error:op.recover_failure(error);raise

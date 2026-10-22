@@ -20,5 +20,14 @@ class NasPredecessor(unittest.TestCase):
   state={'activeNormalBlueGreenReleaseId':'prior','normalBlueGreenReleases':{'prior':{'phase':'COMPLETE','operations':{'x':{'phase':'UNKNOWN'}}}},
     'phase':'MIGRATED_CLEANUP_PENDING','legacyDrainProven':False}
   with self.assertRaises(Hold):predecessor_check(state,{'authorization':AUTHORIZATION,'predecessorReleaseId':'prior'})
+ def test_standby_auth_resume_keeps_unknown_operation_gate(self):
+  state={'activeNormalBlueGreenReleaseId':'prior','normalBlueGreenReleases':{
+   'prior':{'phase':'COMPLETE','operations':{}},
+   'current':{'phase':'CANDIDATE','lastError':'RECOVERY_HTTP_CHECK_FAILED','operations':{'create':{'phase':'ACKNOWLEDGED'}}}},
+   'phase':'MIGRATED_CLEANUP_PENDING','legacyDrainProven':False}
+  cfg={'authorization':AUTHORIZATION,'predecessorReleaseId':'prior','releaseId':'current','resumeReview':{'revision':9}}
+  predecessor_check(state,cfg)
+  state['normalBlueGreenReleases']['current']['operations']['create']['phase']='UNKNOWN'
+  with self.assertRaises(Hold):predecessor_check(state,cfg)
 
 if __name__=='__main__':unittest.main()

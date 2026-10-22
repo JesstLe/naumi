@@ -309,7 +309,8 @@ class Controller:
   if self.partial_nas_web:expected.add('web-create')
   if self.cfg.get('nasCredentialsSha256')and 'nas-media-catalog'in self.succ['operations']:expected.add('nas-media-catalog')
   memory_precreate=self.succ['phase']=='BACKED_UP' and self.succ.get('lastError')=='DUAL_SLOT_MEMORY_INSUFFICIENT' and set(self.succ['operations'])=={'database-backup','image-import'}
-  require((self.partial_nas_web or memory_precreate or self.succ['phase'] in ['BASELINED','CANDIDATE'] and self.succ.get('lastError') in ['ValueError','HOST_COMMAND_FAILED','POST_IMPORT_DISK_RESERVE_INSUFFICIENT']) and set(self.succ['operations'])==expected,'RESUME_ONLY_PRE_SWITCH_REVIEWED_FAILURE')
+  readiness_auth=bool(getattr(self,'reviewed_readiness_resume',False) and self.succ['phase']=='CANDIDATE' and self.succ.get('lastError')=='RECOVERY_HTTP_CHECK_FAILED')
+  require((self.partial_nas_web or memory_precreate or readiness_auth or self.succ['phase'] in ['BASELINED','CANDIDATE'] and self.succ.get('lastError') in ['ValueError','HOST_COMMAND_FAILED','POST_IMPORT_DISK_RESERVE_INSUFFICIENT']) and set(self.succ['operations'])==expected,'RESUME_ONLY_PRE_SWITCH_REVIEWED_FAILURE')
   if self.succ.get('lastError')=='POST_IMPORT_DISK_RESERVE_INSUFFICIENT':
    import shutil
    require(self.succ['phase']=='BASELINED' and shutil.disk_usage('/').free>=10*1024**3,'RECONCILED_IMPORT_DISK_RESERVE_INSUFFICIENT')
