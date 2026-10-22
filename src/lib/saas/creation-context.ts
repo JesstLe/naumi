@@ -14,7 +14,7 @@ import {userFeaturePolicy} from '@/lib/feature-access/server';
 export type CreationContext={actorEmail:string;scopeKind:'personal'|'tenant';tenantId:string|null;creationId?:string;requestText?:string;parameters?:Record<string,unknown>;sourcePath?:string;parentContext?:string;workspaceExplicit?:boolean;evidencePending?:boolean;originalInputs?:{storageRef:string;mime:string;role:string;position:number}[]};
 const storage=new AsyncLocalStorage<CreationContext>();
 export const currentCreationContext=()=>storage.getStore();
-export function withFrozenCreation<T>(value:CreationContext|undefined,run:()=>Promise<T>){return value?storage.run(value,run):run();}
+export function withFrozenCreation<T>(value:CreationContext|undefined,run:()=>Promise<T>){return value?storage.run(value,run):storage.exit(run);}
 /** Legacy sources must not inherit a tenant from the request resuming them. */
 export function withoutCreationContext<T>(run:()=>Promise<T>){return storage.exit(run);}
 export function frozenCreationScope(value:unknown,email?:string):CreationContext|undefined {

@@ -186,6 +186,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
+import {currentWorkspace} from '@/lib/saas/workspace-client';
 import { useAuth } from "@/lib/auth-context";
 import { useCanvasCredits } from "./use-canvas-credits";
 import { useAuthModal } from "@/lib/auth-modal-context";
@@ -238,8 +239,10 @@ import { useTextModel } from "@/lib/text-model-context";
 /** Supabase 模式补 Authorization；原生账号模式依靠同源 HttpOnly cookie。 */
 async function privateFetchRaw(input: RequestInfo | URL, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
+  const workspace=headers.get('x-naumi-workspace');
   const auth = await authHeader();
   for (const [key, value] of Object.entries(auth)) headers.set(key, value);
+  if(workspace)headers.set('x-naumi-workspace',workspace);
   return fetch(input, { ...init, headers });
 }
 // 横向链路布局(对齐原型 node-canvas-preview):深度→x 向右展开,同层兄弟→y 竖排。
@@ -1571,7 +1574,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const { can: canFeature } = useFeatureAccess();
   const billing=useBilling();
   async function privateFetch(input:RequestInfo|URL,init:RequestInit & { isCurrent?: () => boolean }={}){
-    const assertCurrent=()=>{if(init.isCurrent&&!init.isCurrent())throw new ImagegenPreparationCancelled();};
+    const workspace=currentWorkspace(),projectContext=activeProjectRef.current?.key;
+    const capturedHeaders=new Headers(init.headers);capturedHeaders.set('x-naumi-workspace',workspace);if(projectContext&&projectContext!=='workspace')capturedHeaders.set('x-naumi-project-context',projectContext);init={...init,headers:capturedHeaders};
+    const assertCurrent=()=>{if(currentWorkspace()!==workspace||init.isCurrent&&!init.isCurrent())throw new ImagegenPreparationCancelled();};
     assertCurrent();
     const path=String(input).split('?')[0];
     const features:Record<string,FeatureId>={"/api/generate-image":"canvas.image","/api/aplus":"image.aplus","/api/suite":"image.suite","/api/cutout":"tool.cutout","/api/canvas/image-tasks":"canvas.image","/api/canvas/expand":"canvas.expand","/api/canvas/text-edit":"canvas.text-edit","/api/canvas/annotate":"canvas.annotate","/api/canvas/text-generate":"canvas.text-generate","/api/canvas/assistant":"canvas.assistant","/api/canvas/ocr":"canvas.ocr","/api/video/generate":"video.generate"};
@@ -1612,6 +1617,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const source=active?.members.find(art=>art.id===body.artworkId);
     const quantity=path==="/api/aplus"?Math.max(1,form?.getAll("module").length||body.modules?.length||1):path==="/api/suite"?(body.structure==="custom"?JSON.parse(String(body.shots||"[]")).length:13):Number(body.count||1);
     const headers=new Headers(init.headers);for(const [key,value] of Object.entries(await authHeader()))headers.set(key,value);
+    headers.set('x-naumi-workspace',workspace);
     if (body.quality) headers.set("x-naumi-image-quality", String(body.quality));
     headers.set("x-naumi-canvas","1");
     const feature=features[path],modelId=["/api/aplus","/api/suite"].includes(path)?body.modelId||body.model||genModel:adminConfiguredFeature(feature) ? undefined : featureModelManaged(feature) && !["image.generate","video.generate"].includes(feature) ? chosenFeatureModel(feature) : body.modelId||body.model||undefined;

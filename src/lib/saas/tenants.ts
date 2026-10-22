@@ -7,6 +7,7 @@ import { dbEnabled, getPool } from '@/lib/db';
 import { ensureEnterpriseSchema, validateHierarchy } from '@/lib/enterprise/server';
 import { TeamError } from '@/lib/teams/server';
 import { teamJson } from '@/lib/teams/access';
+import {ALL_FEATURE_IDS} from '@/lib/feature-access/catalog';
 import type { TeamActor } from '@/lib/teams/grants';
 import { createTenantSchema, updateTenantSchema, tenantMemberSchema, type TenantFilters, type TenantList, type TenantSummary } from './tenant-contracts';
 
@@ -100,7 +101,7 @@ export async function tenantDetail(id:string) {
     const roles=(await tx.query('SELECT id,name,level,manage_members,view_records,version FROM app_enterprise_roles WHERE enterprise_id=$1 ORDER BY level,id',[id])).rows;
     const audit=(await tx.query(`SELECT command_id AS id,actor,action,changes,created_at FROM app_tenant_commands WHERE tenant_id=$1
       UNION ALL SELECT id,actor,action,changes,created_at FROM app_enterprise_audit WHERE enterprise_id=$1
-      ORDER BY created_at DESC,id DESC LIMIT 100`,[id])).rows;
+      ORDER BY created_at DESC,id DESC LIMIT 100`,[id])).rows.map(row=>({...row,reason:row.changes?.reason??row.changes?.after?.reason??null}));
     const tenant=summary(row);await attachTenantActivity(tx,[tenant],{q:'',page:1,size:20,sort:'createdAt'});
     let consumedCredits:number|null=null;
     if(await creationTable(tx)&&(await tx.query("SELECT to_regclass('app_creation_links') IS NOT NULL AS present")).rows[0].present){
@@ -163,6 +164,10 @@ export async function updateTenant(actor:TeamActor,id:string,command:z.infer<typ
     await tx.query('SELECT id FROM app_account_teams WHERE id=$1 FOR UPDATE',[id]);
     const before=(await tx.query(`${projection} WHERE t.id=$1`,[id])).rows[0];if(!before)throw new TeamError('租户不存在',404);
     if(before.version!==command.expectedVersion)throw new TeamError('租户资料已更新，请刷新后重试',409);
+    // Existing extension keys are opaque migration facts: keep their exact
+    // values, while only the canonical catalog can introduce/change features.
+    const knownKeys=new Set(ALL_FEATURE_IDS),previousPolicy=before.feature_policy||{};
+    for(const key of new Set([...Object.keys(previousPolicy),...Object.keys(command.featurePolicy)]))if(!knownKeys.has(key)&&(!Object.hasOwn(previousPolicy,key)||!Object.hasOwn(command.featurePolicy,key)||command.featurePolicy[key]!==previousPolicy[key]))throw new TeamError('既有扩展权益不可新增、修改或删除',400);
     if(command.seatLimit!==null&&command.seatLimit<before.active_members)throw new TeamError(`席位不能少于当前有效人数 ${before.active_members}`,409);
     if(command.status==='active'&&command.validUntil&&Date.parse(command.validUntil)<=Date.now())throw new TeamError('恢复前须更新授权期限',409);
     await tx.query('UPDATE app_account_teams SET name=$2,authorized_until=$3,enabled=$4,version=version+1,updated_at=clock_timestamp() WHERE id=$1',[id,command.name,command.validUntil,command.status==='active']);

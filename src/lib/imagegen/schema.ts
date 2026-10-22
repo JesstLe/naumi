@@ -23,7 +23,7 @@ export const imagegenRequestSchema=z.strictObject({
   useCase:z.enum(IMAGEGEN_USE_CASES.map(x=>x.id) as [typeof IMAGEGEN_USE_CASES[number]["id"],...typeof IMAGEGEN_USE_CASES[number]["id"][]]).optional(),
   skill:z.strictObject({id:z.string().regex(/^(official:[a-z-]+|personal:[a-f0-9-]{36})$/),revision:z.number().int().positive()}).optional(),
   augment:z.boolean().default(false),modelId:resourceId.optional(),sourceNodeId:resourceId.optional(),
-  inputs:z.array(z.strictObject({artworkId:resourceId,role:z.enum(["edit-target","reference","insert","style","mask"]),reference:referenceLabelSchema.optional()})).max(32).default([]),
+  inputs:z.array(z.strictObject({artworkId:resourceId,role:z.enum(["edit-target","reference","insert","style","mask"]),reference:referenceLabelSchema.optional(),originalArtworkId:resourceId.optional(),inputVariant:z.enum(['original','processed']).optional()})).max(32).default([]),
   frameSourceId:resourceId.optional(),
   framePolicy:z.literal("all-inputs").optional(),
   parameters:z.strictObject({quality:resourceId.optional(),resolution:resourceId.optional(),ratio:z.union([z.literal("auto"),z.string().regex(/^[1-9]\d{0,5}:[1-9]\d{0,5}$/)]).optional(),

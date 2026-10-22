@@ -8,11 +8,11 @@
 | --- | --- | --- | --- |
 | M00 | 代码完成 | 两份 PRD、三张原图（1487×1058）、契约与证据语义；208px海军蓝侧栏；2租户/7用户/8创作的显式fixture | 最终设计QA由根任务完成 |
 | M01 | 隔离验收通过 | 租户/权益/命令/CAS/席位/membership；`verify-saas-tenants.ts`真实隔离PG/API通过；新增负责人旧子账号排他、续期/转正式席位校验 | 生产只读及上线验收未执行 |
-| M02 | 代码完成 | 平台总览真实指标/日期/折线面积趋势、租户六标签、资料权益/已有成员操作、三态功能开关；`6538ccf0` | 根任务复拍与表单真实浏览器验收收尾 |
+| M02 | 代码完成 | 平台总览真实指标/日期/折线面积趋势、租户六标签、资料权益/已有成员操作、三态功能开关；`6538ccf0` | 根任务真实表单创建/修改/刷新、旧权益保留与409席位保护、岗位创建及跨企业附加拒绝已通过；最终QA状态见design-qa.md |
 | M03 | 隔离验收通过，视觉复核中 | 企业概览/成员/岗位/设置、经营范围、确认资产与私人历史分区；`4a32a66b`/`fd632cbc`；双session不提升企业身份 | 最终设计QA与完整浏览器矩阵 |
-| M04 | 代码完成，隔离集中验收通过 | `de5d010b`；逐入口与故障恢复详见 `2026-10-22-saas-creation-writers.md`；实际本地PG、SDK fixture transport恰好一次、冻结video/canvas/batch恢复通过 | 尚未整合的其他业务分支新video-batch/Agent recovery入口须再次对照；没有真实供应商/线上Worker执行证据 |
-| M05 | 代码完成，隔离集中验收通过 | 主从/移动详情、素材/事件/子任务真分页、107产物历史分页、精确账务null/0/不适用、source故障只读恢复、双scope私有媒体；`verify-saas-creations.ts` | 根任务最终同尺寸复拍；企业音视频签名播放补验进行中 |
-| M06 | 代码完成，浏览器复核中 | 唯一主导航与模块导航、稳定旧BI来源跳转、旧设置分区兼容、钱包真实products映射、登录回跳/退出修复 | 钱包入口恢复后的复拍、旧路径完整回归；新增供应商额度模块独立实施 |
+| M04 | 代码完成，隔离集中验收通过 | `de5d010b`/`01f4d069`及本批收尾：workflow/batch/node持久scope、画布header、协作JWT membership、旧null ALS清理、lineage/body group校验均补齐；独立进程恢复、真实Agent双工具、故障与读写隔离脚本通过 | 供应商执行仅明确fixture transport；没有线上Worker/真实供应商生成验收，不据此放行生产 |
+| M05 | 代码完成，隔离集中验收通过 | 主从/移动详情、素材/事件/子任务真分页、107产物历史分页、精确账务null/0/不适用、source故障只读恢复、双scope私有媒体；`verify-saas-creations.ts` | 根任务同尺寸复拍通过；私有音视频Range/签名/撤权隔离脚本通过；云端Supabase实际登录未实测 |
+| M06 | 代码完成，补充验收中 | 唯一导航、旧入口、钱包充值/普通登录完整深链/平台退出经根任务浏览器通过；`9187528e`余额+`14280591`受理统计按当前发布凭据和已验证来源读取 | 供应商余额/受理统计已以实际service显式fixture浏览器通过；真实供应商余额证据由独立源会话提供，未在本任务重打 |
 | M07 | 实施中 | 8组隔离集中回归全部通过；正式整仓类型预检通过；根任务浏览器/设计报告进行中 | 最终类型/生产构建、全部设计QA及合并其他业务后的复验 |
 | M08 | 实施中 | 根任务已刷新/盘点321refs；origin/main仍 `7b1e970c`；保持独立预览18499 | 完成业务分支整合、固定镜像/回滚及47三锁蓝绿由根任务负责；未发布 |
 
@@ -24,7 +24,11 @@
 
 2026-10-23集中回归通过：`verify-saas-tenants.ts`、`verify-saas-enterprise.ts`、`verify-saas-creations.ts`、`verify-saas-creation-writers.ts`、`verify-billing-async-tasks.ts`、`verify-billing-tools.ts`、`verify-billing-agent.ts`、`verify-imagegen-execution.ts`。每个脚本使用单独新建本地fixture数据库，保留原预览库；日志位于 `output/saas-admin-20261022/verification/`。供应商SDK/HTTP使用脚本内明确fixture transport，不能当作真实模型输出验收。
 
-根任务浏览器已通过：390px成员列固定/紧凑行，1024/390创作详情无全局横溢及返回，图片预览Tab锁焦/Escape还焦，状态筛选清除旧详情。三张核心页面真实截图及同尺寸比对位于 `output/saas-design-qa/`；`design-qa.md`由根任务独占维护，其最终状态优先于这里的阶段记录。
+根任务浏览器已通过：三张核心屏完整1440×1024同尺寸比对、钱包唯一入口/首屏套餐、双session不提权、平台退出清私有页面、普通登录后恢复企业完整创作深链；390px成员列固定/紧凑行，1024/390创作详情无全局横溢及返回，图片预览Tab锁焦/Escape还焦，状态筛选清除旧详情。截图及同尺寸比对位于 `output/saas-design-qa/`；`design-qa.md`由根任务独占维护，其最终状态优先于这里的阶段记录。
+
+2026-10-23业务整合由根任务完成固定 `5a521e971eae81227a224a0d85237ffa289dcc01`，main仍 `7b1e970c`；新stable reference语义、frame/Agent recovery/video controls/模型新增入口/供应商统计/前端型号可见性均保留。后续视频供应商profile授权与配置由独立源会话负责，最终候选须刷新该新提交与线上活动配置，不还原旧配置版本134。
+
+新增模块集中回归：`verify-saas-client-context.ts`实际客户端fake transport证明project header贯穿预览/提交且切空间后不发paid POST；`verify-saas-enterprise.ts`证明协作identity拒绝暂停/过期/企业权益关闭与平台cookie冒充。`verify-admin-access.ts`、`verify-feature-access.ts`、`verify-model-management.ts`、`verify-enterprise-artworks.ts`、`verify-enterprise-analytics.ts`通过；旧hierarchy全局账号重写/密码重置断言按新独立身份合同更新后通过；企业integration完整BFF链已通过（包含既有61秒限流窗口，测试总超时单独设15分钟，未放宽应用限流）；Windows fixture短路径以canonical temp修正，未放宽应用存储安全检查。
 
 ## 读取/媒体与财务收尾
 
@@ -37,4 +41,24 @@
 
 ## 兼容与发布
 
-新增结构只扩展，不重写历史归属或账务；当前成员email聚合不作为企业资产，不产生企业钱包或所有者代扣。旧任务没有冻结归属时不推断当前企业。新增会员状态需要兼容回滚代码；尚未准备合格回滚镜像和发布验收材料，不能发布或称完成。
+新增结构只扩展，不重写历史归属或账务；当前成员email聚合不作为企业资产，不产生企业钱包或所有者代扣。旧任务没有冻结归属时不推断当前企业。新增会员状态需要兼容回滚代码；本轮不提供兼容业务回滚镜像，选择已批准PRD12的受控维护恢复替代。根任务470adbc9工具已在本机真实Nginx/TLS验证52组合503，现场公网闭包/同版Worker/维护bundle与lifecycle接入仍须发布前验收；不能把旧0a镜像切公网，也不能把本机结果称为线上完成。
+
+## 最终增量与逐入口覆盖（2026-10-23）
+
+| 接受/恢复入口 | 固定归属与证据 | 实际集中验证 |
+| --- | --- | --- |
+| imagegen 单次/批次/旧 generate | image job payload、批次plan冻结context，子步骤继承root；SDK实际输入按callId+input顺序保留；旧无scope清空ALS | writer、client-context、imagegen-execution、worker-restart |
+| 套图/A+ | 真实shots成功产物关联；终态部分成功不冒称全成功；失败项不伪造artwork；原话和原始输入来自接受payload | writer的suite/aplus各一成一败checkpoint；实际供应商0 |
+| canvas image tasks/同步工具 | 创建事务保存scope；终态回写或source pending只读恢复；明确零与失败分别保留 | writer、billing-tools、billing-async-tasks |
+| Agent turn/子工具 | runtime先建turn root，再由真实naumi-tools签名continuation/直接import继承；文字轮次有根，length/deferred待核查 | agent-evidence真实Agent路由+runtime+双套图工具，只有供应商transport为fixture |
+| 视频/节点/workflow/batch | task parameters、node/run/batch receipt持久scope；真实项目/素材先校验；旧run不推断新企业；已接受恢复不重取当前权益 | video-workflow-evidence、worker-restart及billing-async-tasks |
+| ComfyUI/复制/导入/本地处理 | creation route/operation、source/output稳定链接和明确免扣；不伪造生成步骤 | writer免扣claim去重、workflow copy跨scope；完整外部ComfyUI执行未调用 |
+| 管理详情/媒体 | 同actor+tenant父子分页、source pending只读投影、逐Range撤权验证；企业白名单投影无供应商字段 | creations真实PG/API、107历史产物分页、已删除/恶意SVG/HTML/路径拒绝、读无财务写/供应商0 |
+
+C02：只展示确实保存的原始输入与处理后输入；画布已有源artwork保留精确引用，浏览器单独上传若先压缩且没有原bytes则原始素材明确“未记录”，不额外双上传或扩大上限。每个SDK调用有独立executionRef与inputPosition，避免多步骤覆盖。历史缺失不回填猜测。
+
+安全收尾：新租户负责人不得是旧团队子账号；过期身份续期/转正式统一席位保护；企业原生身份不被平台cookie提权；协作JWT检查当前membership/有效期/企业权益。未知历史扩展权益update只能原值保留，新增/改变/删除均拒绝，create继续canonical白名单；审计reason正常投影，create/update中文。平台/企业编辑草稿关闭确认，busy不丢弃，平台uncertain先核对原命令，身份清理不保留跨账号草稿。
+
+本批功能同步：M04/M05/M06收尾后再次`git fetch origin main`，main仍`7b1e970c84006c2fb76f8c1748e96da128e12982`，已是当前候选祖先，无新main待整合，同步计数归零。正式Linux构建、最新视频profile整合及47发布由根任务串行处理。
+
+集中结果与未覆盖边界见[58项验收矩阵](2026-10-23-saas-admin-acceptance.md)。最终源码与新增Agent/Worker验收脚本正式`npx tsc --noEmit --pretty false`退出0；不把dev自动写入的预览dist include提交。

@@ -43,6 +43,16 @@ async function main(){
  const playbackContract=await import('../src/lib/saas/creation-playback');const expired=playbackContract.creationPlaybackToken(member,a.tenantId,root,mediaIds[0],Date.now()-11*60_000);
  assert.equal((await mediaRoute.GET(request(`/api/enterprise/creations/${root}/assets/${mediaIds[0]}?tenantId=${a.tenantId}&mediaToken=${expired}`),mediaCtx)).status,401);
  assert.equal((await mediaRoute.GET(request(`/api/enterprise/creations/${root}/assets/${badAsset}?tenantId=${a.tenantId}`,ownerA),{params:Promise.resolve({id:root,assetId:badAsset})})).status,422);
+ const badMediaCtx={params:Promise.resolve({id:root,assetId:badAsset})},badMediaRequest=()=>request(`/api/enterprise/creations/${root}/assets/${badAsset}?tenantId=${a.tenantId}`,ownerA);
+ await pool.query("INSERT INTO app_artworks(id,email,title,category,prompt,image_url,gradient,deleted_at) VALUES('deleted-evidence-input',$1,'fixture','fixture','','/media/missing.png','',now())",[member]);
+ await pool.query("UPDATE app_creation_assets SET storage_ref='artwork:deleted-evidence-input' WHERE id=$1",[badAsset]);assert.equal((await mediaRoute.GET(badMediaRequest(),badMediaCtx)).status,404);
+ await storage.writeStoredObject(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><script>alert(1)</script><rect width="8" height="8" fill="red"/></svg>'),'image/svg+xml','creation-fixture/unsafe.svg');
+ await pool.query("UPDATE app_creation_assets SET storage_ref='/media/creation-fixture/unsafe.svg' WHERE id=$1",[badAsset]);const safeSvg=await mediaRoute.GET(badMediaRequest(),badMediaCtx);assert.equal(safeSvg.status,200);assert.equal(safeSvg.headers.get('content-type'),'image/webp');assert.doesNotMatch(Buffer.from(await safeSvg.arrayBuffer()).toString('utf8'),/<script|alert\(/);
+ await storage.writeStoredObject(Buffer.from('<html><script>alert(1)</script></html>'),'text/html','creation-fixture/unsafe.html');
+ for(const path of ['/media/creation-fixture/unsafe.html','/media/../../private']){await pool.query('UPDATE app_creation_assets SET storage_ref=$2 WHERE id=$1',[badAsset,path]);assert.equal((await mediaRoute.GET(badMediaRequest(),badMediaCtx)).status,422);}
+ const ledgerBefore=(await pool.query('SELECT count(*) n FROM app_ledger')).rows[0].n,recordsBefore=(await pool.query('SELECT count(*) n FROM app_creation_records')).rows[0].n,originalFetch=globalThis.fetch;let unexpectedFetches=0;
+ try{globalThis.fetch=async()=>{unexpectedFetches++;throw new Error('Read-only evidence must not call a supplier');};for(let i=0;i<2;i++)assert.equal((await enterpriseDetail.GET(request(`/api/enterprise/creations/${root}?tenantId=${a.tenantId}`,ownerA),detailCtx(root))).status,200);assert.equal(unexpectedFetches,0);}finally{globalThis.fetch=originalFetch;}
+ assert.equal((await pool.query('SELECT count(*) n FROM app_ledger')).rows[0].n,ledgerBefore);assert.equal((await pool.query('SELECT count(*) n FROM app_creation_records')).rows[0].n,recordsBefore);assert.equal((await pool.query('SELECT status FROM app_creation_records WHERE id=$1',[root])).rows[0].status,'succeeded');
  await pool.query("UPDATE app_enterprise_members SET membership_status='suspended' WHERE email=ANY($1::text[])",[[member,departed]]);
  assert.equal((await mediaRoute.GET(request(playback.url,undefined,{range:'bytes=0-6'}),mediaCtx)).status,404);
  assert.equal((await enterpriseDetail.GET(request(`/api/enterprise/creations/${root}?tenantId=${a.tenantId}`,member),detailCtx(root))).status,403);
@@ -72,6 +82,16 @@ async function main(){
  const adminPlayback=await adminPlaybackResponse.json();const adminRange=await platformMedia.GET(request(adminPlayback.url,undefined,{range:'bytes=0-6'}),mediaCtx);assert.equal(adminRange.status,206);assert.equal(await adminRange.text(),'fixture');
  assert.equal((await mediaRoute.GET(request(adminPlayback.url),mediaCtx)).status,403);
  await pool.query("UPDATE app_users SET role='user' WHERE email=$1",[admin]);assert.equal((await platformMedia.GET(request(adminPlayback.url),mediaCtx)).status,403);await pool.query("UPDATE app_users SET role='admin' WHERE email=$1",[admin]);
+ const workflow=await import('../src/lib/video/workflow');await workflow.ensureVideoWorkflowSchema();const workflowId=randomUUID(),workflowRecord=`cr-${randomUUID()}`;
+ await record(workflowRecord,departed,a.tenantId,null,'queued');await pool.query("UPDATE app_creation_records SET source_kind='video-workflow',source_id=$2 WHERE id=$1",[workflowRecord,workflowId]);
+ await pool.query("INSERT INTO app_video_workflow_runs(id,email,project_key,plan,plan_digest,creation_evidence_pending) VALUES($1,$2,'tree:fixture','{}','fixture',true)",[workflowId,departed]);
+ await pool.query("INSERT INTO app_video_workflow_run_nodes(run_id,node_id,status,result_assets) VALUES($1,'one','completed',$2::jsonb),($1,'two','blocked','[]')",[workflowId,JSON.stringify([{artworkId:pendingWork,kind:'video'}])]);
+ await pool.query("INSERT INTO app_creation_links(creation_id,target_type,target_id,actor_email) VALUES($1,'video-workflow',$2,$3)",[workflowRecord,workflowId,departed]);
+ const workflowRequest=()=>request(`/api/enterprise/creations/${workflowRecord}?tenantId=${a.tenantId}`,ownerA);
+ const partialWorkflow=await(await enterpriseDetail.GET(workflowRequest(),detailCtx(workflowRecord))).json();assert.equal(partialWorkflow.status,'partial');assert.equal(partialWorkflow.evidencePending,true);assert.equal(partialWorkflow.assets.length,1);assert.equal(partialWorkflow.assets[0].mediaType,'video');
+ const partialList=await(await adminRoutes.GET(request('/api/admin/creations?status=partial',admin))).json();assert(partialList.items.some((r:any)=>r.id===workflowRecord));
+ await pool.query("UPDATE app_video_workflow_run_nodes SET status='completed' WHERE run_id=$1",[workflowId]);
+ assert.equal((await(await enterpriseDetail.GET(workflowRequest(),detailCtx(workflowRecord))).json()).status,'succeeded');
  const previous=process.env.FLEET_PORTAL_ONLY;process.env.FLEET_PORTAL_ONLY='1';assert.equal((await adminRoutes.GET(request('/api/admin/creations',admin))).status,403);process.env.FLEET_PORTAL_ONLY=previous;
  console.log('SAAS_CREATION_READER_PASS real_pg=1 real_auth=1 cross_tenant=1 media_parent_scope=1 revoked_media=1 archived_owner=1 current_subordinates=1 private_cache=1 safe_projection=1 explicit_false_zero=1 exact_billing_dedup=1 unknown_null=1 child_assets=1 bounded_pages=1 video_range=1 ssrf_reject=1 fleet_restriction=1 supplier_calls=0');
  await pool.end();

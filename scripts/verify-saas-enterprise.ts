@@ -73,6 +73,18 @@ async function main() {
   await pool.query(`UPDATE app_enterprise_members SET membership_status='suspended' WHERE enterprise_id=$1 AND email=$2`, [a.tenantId, manager]);
   assert.equal((await route.GET(request(manager))).status, 403);
   assert.equal((await enterprise.enterpriseSnapshot({ email: owner, admin: false }, a.tenantId)).enterprise.name, command.name);
+  process.env.NAUMI_ENTERPRISE_SOURCE_INSTANCE_ID='fixture-saas-local';
+  const workflowIdentity=await import('../src/lib/enterprise/workflow-identity');
+  assert.equal((await workflowIdentity.workflowSourceIdentity(request(owner),a.tenantId)).sourceSubject,owner);
+  assert.equal((await workflowIdentity.workflowDiscovery(request(owner))).enterprises.length,1);
+  await assert.rejects(workflowIdentity.workflowSourceIdentity(request(departed),a.tenantId),/不属于/);
+  await assert.rejects(workflowIdentity.workflowSourceIdentity(request(manager),a.tenantId),/不属于/);
+  await pool.query("UPDATE app_enterprise_members SET membership_expires_at=now()-interval '1 minute' WHERE email=$1",[employee]);
+  await assert.rejects(workflowIdentity.workflowSourceIdentity(request(employee),a.tenantId),/不属于/);
+  assert.equal((await workflowIdentity.workflowDiscovery(request(employee))).enterprises.length,0);
+  await pool.query('UPDATE app_tenant_entitlements SET feature_policy=$2::jsonb WHERE tenant_id=$1',[a.tenantId,JSON.stringify({team:false})]);
+  await assert.rejects(workflowIdentity.workflowSourceIdentity(request(owner),a.tenantId),/停用/);
+  await assert.rejects(workflowIdentity.workflowSourceIdentity(new Request('http://fixture.test',{headers:{cookie:adminCookie}}),a.tenantId),/请先登录/);
   console.log('SAAS_ENTERPRISE_META_PASS auth=1 dual_session_no_elevation=1 private_cache=1 owner_scope=1 subordinate_scope=1 membership_count=1 expiry_count=1 revoked=1 cross_tenant=1 origin=1 owner_only_write=1 cas=1 command_replay=1 safe_audit_projection=1 global_account_unchanged=1 ledger_unchanged=1 supplier_calls=0');
   await pool.end();
 }

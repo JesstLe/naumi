@@ -9,10 +9,11 @@ import { clientIp } from '@/lib/ip';
 import { teamJson } from '@/lib/teams/access';
 import { userFeaturePolicy } from '@/lib/feature-access/server';
 import { allows } from '@/lib/feature-access/catalog';
+export async function enterpriseUserEmail(request:Request){return await emailFromToken(bearer(request))||(!supabaseEnabled?await activeNativeUserEmail(request):null);}
 export async function enterpriseAuthorize(request:Request) {
   // This is the customer workspace. A coexisting platform cookie must never
   // widen its identity, tenant picker, mutations, or analytics permissions.
-  const email=await emailFromToken(bearer(request))||(!supabaseEnabled?await activeNativeUserEmail(request):null);
+  const email=await enterpriseUserEmail(request);
   if(!email)return teamJson({error:'请先登录企业账号'},401);
   if(!dbEnabled)return teamJson({error:'数据库未配置'},503);
   if(!allows(await userFeaturePolicy(email),'team'))return teamJson({error:'企业管理功能尚未授权'},403);

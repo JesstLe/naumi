@@ -61,8 +61,8 @@ async function main(){
   const scoped=new NaumiEnterpriseAdapter({email:manager,admin:false},shared);
   assert.equal((await scoped.records({...q,kind:'artworks'})).rows.length,1);
   await assert.rejects(scoped.records({...q,kind:'generations',email:staff}),/没有该成员内容/);
-  await assert.rejects(new NaumiEnterpriseAdapter({email:ordinary,admin:false},shared).members(root),/当前岗位/);
-  await assert.rejects(new NaumiEnterpriseAdapter({email:outsider,admin:false},shared).records({...q,kind:'artworks'}),/当前岗位/);
+  await assert.rejects(new NaumiEnterpriseAdapter({email:ordinary,admin:false},shared).members(root),error=>error instanceof Error&&'status' in error&&error.status===403);
+  await assert.rejects(new NaumiEnterpriseAdapter({email:outsider,admin:false},shared).records({...q,kind:'artworks'}),error=>error instanceof Error&&'status' in error&&error.status===403);
   const {GET}=await import('../src/app/api/admin/enterprise-workbench/route'),native=await import('../src/lib/native-auth');
   Object.assign(process.env,{NAUMI_ENTERPRISE_SOURCE_INSTANCE_ID:'fixture-source-a',NAUMI_ENTERPRISE_DEPLOYMENT_MODE:'shared',NAUMI_ENTERPRISE_ALLOWED_IDS:''});
   const req=(actor:string,params:Record<string,string>)=>new Request('http://fixture.invalid/api/admin/enterprise-workbench?'+new URLSearchParams(params),{headers:{cookie:actor?'nv_user='+native.signUserSession(actor,Date.now()):''}});

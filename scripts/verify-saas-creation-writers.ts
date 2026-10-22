@@ -21,8 +21,15 @@ async function main(){
  const role=randomUUID();await pool.query("INSERT INTO app_enterprise_roles(enterprise_id,id,name,level,view_records) VALUES($1,$2,'fixture',100,true)",[tenant.tenantId,role]);
  await pool.query("INSERT INTO app_enterprise_members(enterprise_id,email,supervisor_email,role_id,employment) VALUES($1,$2,$3,$4,'permanent')",[tenant.tenantId,actor,owner,role]);
  const base=()=>({actorEmail:actor,scopeKind:'tenant' as const,tenantId:tenant.tenantId});
+ await context.withFrozenCreation(base(),()=>context.withFrozenCreation(undefined,async()=>{assert.equal(context.currentCreationContext(),undefined);assert.equal(await writer.startCreation('legacy-no-scope','not-upgraded',actor),null);}));
  const raw=(id:string)=>({id,title:id,category:'main',prompt:'fixture',status:'completed',image:'/media/fixture.png',gradient:''});
- await db.addArtworks(actor,[raw('source'),raw('output-1'),raw('output-2')]);
+ await db.addArtworks(actor,[raw('source'),raw('prepared'),raw('output-1'),raw('output-2')]);
+ const originalPair=await context.withFrozenCreation(base(),()=>writer.startCreation('original-pair','source-and-prepared',actor,{request:{inputs:[{artworkId:'prepared',originalArtworkId:'source',inputVariant:'processed',role:'reference'}]}}));
+ const paired=(await pool.query('SELECT variant,storage_ref,availability FROM app_creation_assets WHERE creation_id=$1 ORDER BY variant',[originalPair])).rows;
+ assert.deepEqual(paired.map(a=>[a.variant,a.storage_ref,a.availability]),[['original','artwork:source','recorded'],['processed','artwork:prepared','recorded']]);
+ const missingOriginal=await context.withFrozenCreation(base(),()=>writer.startCreation('original-pair','only-prepared',actor,{request:{inputs:[{artworkId:'prepared',inputVariant:'processed',role:'reference'}]},p:{images:[{buf:{$imageJobBuffer:'/media/prepared.png'}}]}}));
+ const missing=(await pool.query('SELECT variant,storage_ref,availability FROM app_creation_assets WHERE creation_id=$1 ORDER BY variant',[missingOriginal])).rows;
+ assert.deepEqual(missing.map(a=>[a.variant,a.storage_ref,a.availability]),[['original','','not_recorded'],['processed','artwork:prepared','recorded']]);
  await assert.rejects(context.withCreationRequest(new Request('http://fixture/api/video/generate',{method:'POST',headers:{'x-naumi-workspace':tenant.tenantId,'content-type':'application/json'},body:'{"prompt":"fixture"}'}),actor,async()=>Response.json({ok:true})),/权益已关闭/);
  assert.throws(()=>context.assertCreationFeature({video:false},'/api/video/generate'),/权益已关闭/);
  assert.throws(()=>context.assertCreationFeature({generate:false},'/api/imagegen','POST',undefined,{mode:'custom',allowed:['generate'],version:0}),/权益已关闭/);
@@ -38,6 +45,7 @@ async function main(){
  assert.equal(record.request_snapshot.text,'原始用户要求');assert.equal(record.payer_account_id,actor);assert.equal(record.parameters_snapshot.values.count,0);assert.equal(record.parameters_snapshot.values.moderation,false);
  assert.equal(Number((await pool.query("SELECT count(*) n FROM app_creation_assets WHERE creation_id=$1 AND direction='output' AND role='result'",[root])).rows[0].n),2);
  assert.equal(Number((await pool.query("SELECT count(*) n FROM app_creation_events WHERE creation_id=$1 AND event_key='state:succeeded'",[root])).rows[0].n),1);
+ for(const kind of ['suite','aplus'] as const){const job=`fixture-partial-${kind}`;await context.withFrozenCreation(base(),()=>images.createImageJob(job,actor,kind,{status:'pending',shots:[]},{p:{prompt:'partial fixture'}},0,false));await context.withFrozenCreation(base(),()=>images.saveImageJob(job,{status:'done',shots:[{id:'output-1',status:'done',url:'/media/fixture.png'},{id:'failed-not-an-artwork',status:'error'}]},null));const evidence=(await pool.query('SELECT id,status FROM app_creation_records WHERE source_kind=$1 AND source_id=$2',[`image:${kind}`,job])).rows[0];assert.equal(evidence.status,'partial');assert.equal(Number((await pool.query("SELECT count(*) n FROM app_creation_assets WHERE creation_id=$1 AND direction='output'",[evidence.id])).rows[0].n),1);}
  const claimed=await context.withFrozenCreation(base(),()=>writer.claimCreation('comfyui','no-replay-fixture',actor));
  const repeated=await context.withFrozenCreation(base(),()=>writer.claimCreation('comfyui','no-replay-fixture',actor));assert.equal(claimed.created,true);assert.equal(repeated.created,false);assert.equal(claimed.id,repeated.id);
  assert.equal((await pool.query("SELECT 1 FROM app_creation_links WHERE creation_id=$1 AND target_type='no-charge' AND relation='explicit-no-charge'",[claimed.id])).rowCount,1);
@@ -57,12 +65,16 @@ async function main(){
  const {observeOpenAI}=await import('../src/lib/bi/model-observer');let sdkCalls=0;
  const sdk=observeOpenAI({images:{generate:async()=>({data:[]}),edit:async()=>{sdkCalls++;return {data:[]};}},chat:{completions:{create:async()=>({choices:[]})}}} as any);
  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==','base64');
- await context.withFrozenCreation({...base(),creationId:root},()=>sdk.images.edit({image:[new File([png],'fixture.png',{type:'image/png'})],mask:new File([png],'mask.png',{type:'image/png'}),model:'fixture-no-network'}));
- assert.equal(sdkCalls,1);assert.equal(Number((await pool.query("SELECT count(*) n FROM app_creation_assets WHERE creation_id=$1 AND variant='processed'",[root])).rows[0].n),2);
+ await context.withFrozenCreation({...base(),creationId:root},()=>sdk.images.edit({image:[new File([png],'fixture.png',{type:'image/png'}),new File([png],'reference-2.png',{type:'image/png'})],mask:new File([png],'mask.png',{type:'image/png'}),model:'fixture-no-network'}));
+ assert.equal(sdkCalls,1);assert.equal(Number((await pool.query("SELECT count(*) n FROM app_creation_assets WHERE creation_id=$1 AND variant='processed'",[root])).rows[0].n),3);
+ await context.withFrozenCreation({...base(),creationId:root},()=>sdk.images.edit({image:new File([png],'next-step.png',{type:'image/png'}),model:'fixture-no-network'}));
+ const captured=(await pool.query("SELECT execution_ref,input_position,role FROM app_creation_assets WHERE creation_id=$1 AND variant='processed' ORDER BY position",[root])).rows;
+ assert.equal(captured.length,4);assert.equal(new Set(captured.map(a=>a.execution_ref)).size,2);assert.deepEqual(captured.map(a=>a.input_position),[0,1,0,0]);assert(captured.every(a=>a.execution_ref));
+ assert.equal((await pool.query("SELECT 1 FROM app_creation_links WHERE creation_id=$1 AND target_type='model-call'",[root])).rowCount,2);
  await pool.query(`CREATE FUNCTION fixture_reject_asset() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture asset evidence unavailable'; END $$;
   CREATE TRIGGER fixture_asset_fault BEFORE INSERT ON app_creation_assets FOR EACH ROW EXECUTE FUNCTION fixture_reject_asset();`);
  await context.withFrozenCreation({...base(),creationId:root},()=>sdk.images.edit({image:new File([png],'fixture.png',{type:'image/png'}),model:'fixture-no-network'}));
- assert.equal(sdkCalls,2);assert((await pool.query("SELECT 1 FROM app_creation_events WHERE creation_id=$1 AND event_key='evidence:processed-pending'",[root])).rowCount);
+ assert.equal(sdkCalls,3);assert((await pool.query("SELECT 1 FROM app_creation_events WHERE creation_id=$1 AND event_key='evidence:processed-pending'",[root])).rowCount);
  await pool.query('DROP TRIGGER fixture_asset_fault ON app_creation_assets; DROP FUNCTION fixture_reject_asset()');
  await context.withFrozenCreation({...base(),parentContext:'tree:output-1'},()=>writer.startCreation('project-fixture','p1',actor));
  await assert.rejects(context.bindCreationParent({actorEmail:actor,scopeKind:'personal',tenantId:null},'tree:output-1'),/已固定/);
@@ -81,6 +93,12 @@ async function main(){
  assert.equal((await pool.query('SELECT status FROM app_creation_records WHERE source_kind=$1 AND source_id=$2',['image:generate',jobId])).rows[0].status,'succeeded');
  await context.withFrozenCreation(base(),()=>writer.creationTransaction(async tx=>{const id=await writer.acceptCreationTx(tx,'fixture-output','foreign-source',actor);await writer.creationLinkTx(tx,id!,actor,'artwork','source','output');}));
  await assert.rejects(context.withFrozenCreation({...base(),tenantId:b.tenantId},()=>writer.creationTransaction(tx=>writer.acceptCreationTx(tx,'foreign-input','reject-cross-tenant',actor,{sourceArtworkId:'source'}))),/其他企业/);
+ await assert.rejects(context.withFrozenCreation({...base(),tenantId:b.tenantId},()=>writer.startCreation('foreign-original','reject-hidden-original',actor,{request:{inputs:[{artworkId:'prepared',originalArtworkId:'source',inputVariant:'processed'}]}})),/其他企业/);
+ for(const payload of [{request:{sourceNodeId:'source',inputs:[{artworkId:'prepared'}]}},{request:{inputs:[{artworkId:'prepared',reference:{sourceNodeId:'source'}}]}}])await assert.rejects(context.withFrozenCreation({...base(),tenantId:b.tenantId},()=>writer.startCreation('foreign-lineage',randomUUID(),actor,payload)),/其他企业/);
+ await context.withFrozenCreation(base(),()=>context.bindActualCreationProject(actor,'tree:source'));
+ await assert.rejects(context.withFrozenCreation({...base(),tenantId:b.tenantId,workspaceExplicit:true},()=>writer.startCreation('foreign-group',randomUUID(),actor,{p:{projectGroupId:'source'}})),/工作空间已固定/);
+ await assert.rejects(context.withFrozenCreation({...base(),parentContext:'tree:output-1'},()=>writer.startCreation('wrong-body-group',randomUUID(),actor,{p:{projectGroupId:'source'}})),/请求项目与当前画布不一致/);
+ await assert.rejects(context.withFrozenCreation(base(),()=>writer.startCreation('phantom-group',randomUUID(),actor,{p:{projectGroupId:'phantom-group'}})),/项目不存在/);
  const inputAssetId=`asset-${randomUUID()}`;await pool.query("INSERT INTO app_media_assets(key,owner,driver,content_type,sha256,bytes) VALUES($1,$2,'local','image/png',$3,42)",[`imagegen-inputs/${inputAssetId.slice(6)}.png`,actor,'a'.repeat(64)]);
  await context.withFrozenCreation(base(),()=>context.bindCreationMedia(actor,inputAssetId));
  await context.withFrozenCreation(base(),()=>writer.startCreation('uploaded-input','asset-ok',actor,{request:{inputs:[{artworkId:inputAssetId,role:'mask'}]}}));

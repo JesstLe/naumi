@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import {mkdir,writeFile} from 'node:fs/promises';
 
 async function main() {
   assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB, '1'); const address = new URL(process.env.DATABASE_URL!); assert.equal(address.hostname, '127.0.0.1'); assert.match(address.pathname, /fixture/);
@@ -34,6 +35,7 @@ async function main() {
   assert.equal(two.circuit.recoveringChannels, 1); assert.equal(two.circuit.unobservedChannels, 1); assert.equal(empty.circuit.configuredChannels, 0);
   assert.equal((await pool.query('SELECT count(*)::int n FROM app_model_execution_stages')).rows[0].n, before);
   assert.doesNotMatch(JSON.stringify(recorded), /SENSITIVE-WIRE-MODEL|old-private|baseUrl|credentialRef|https:/);
+  const uiFixture='output/saas-admin-20261022/provider-ui-fixture';await mkdir(uiFixture,{recursive:true});await writeFile(`${uiFixture}/activity-recorded.json`,JSON.stringify(recorded,null,2));
   await pool.query('ALTER TABLE app_model_channel_health RENAME TO fixture_saved_health');
   const missingHealth = await read(); assert(missingHealth.providers.every(provider => provider.circuit.errorCode === 'HEALTH_NOT_RECORDED' && provider.circuit.openChannels === null)); assert.equal(missingHealth.providers[0].stats.h24!.total, 9);
   await pool.query('ALTER TABLE fixture_saved_health RENAME TO app_model_channel_health');

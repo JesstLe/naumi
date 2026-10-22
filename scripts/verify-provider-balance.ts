@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import {mkdir,writeFile} from 'node:fs/promises';
 
 async function main() {
   assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB, '1');
@@ -63,6 +64,9 @@ async function main() {
   time += 16_000; mode = 'network'; const failed = await read(true); assert.equal(calls, 10);
   assert(failed.accounts.filter(account => account.credentialAvailable && account.source).every(account => account.errorCode === 'NETWORK_ERROR' && account.measurement === null && account.lastKnown !== null));
   assert.doesNotMatch(JSON.stringify(failed), /sk-SENSITIVE|internal-secret|DO_NOT_LEAK|https:\/\/internal/);
+  const uiFixture='output/saas-admin-20261022/provider-ui-fixture';await mkdir(uiFixture,{recursive:true});
+  await writeFile(`${uiFixture}/balance-success.json`,JSON.stringify(first,null,2));await writeFile(`${uiFixture}/balance-failed-cached.json`,JSON.stringify(failed,null,2));
+  await writeFile(`${uiFixture}/README.txt`,'Explicit local UI fixture exported by verify-provider-balance.ts using fake transport and isolated PostgreSQL. No real credentials, provider balances, or supplier calls. HTTP authorization evidence is a separate API test.\n');
   time += 31_000; mode = 'malformed'; assert((await read()).accounts.filter(account => account.source && account.credentialAvailable).every(account => account.errorCode === 'MALFORMED_RESPONSE'));
   time += 31_000; mode = 'unauthorized'; assert((await read()).accounts.filter(account => account.source && account.credentialAvailable).every(account => account.errorCode === 'AUTH_FAILED'));
   time += 31_000; mode = 'timeout'; assert((await read()).accounts.filter(account => account.source && account.credentialAvailable).every(account => account.errorCode === 'TIMEOUT'));

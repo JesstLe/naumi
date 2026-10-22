@@ -1,13 +1,15 @@
 import 'server-only';
 import {createHash,randomUUID} from 'node:crypto';
 import type {PoolClient} from 'pg';
-import {currentCreationContext,withFrozenCreation,creationId,type CreationContext} from './creation-context';
+import {currentCreationContext,withFrozenCreation,bindActualCreationProject,creationId,type CreationContext} from './creation-context';
 import {creationStatus} from './creation-contracts';
 import {currentModelExecution,currentExecutionBundle} from '@/lib/model-config/context';
 import {getPool,dbEnabled} from '@/lib/db';
 import {ensureCreationSchema} from './creation-schema';
 import type {CreationStatus} from './creation-contracts';
 import {uploadImage} from '@/lib/storage';
+import {currentObservedCallId} from '@/lib/bi/call-scope';
+import {TeamError} from '@/lib/teams/server';
 const obj=(v:unknown):Record<string,any>=>v&&typeof v==='object'&&!Array.isArray(v)?v as Record<string,any>:{};
 const key=(...values:string[])=>createHash('sha256').update(values.join('\0')).digest('hex');
 export async function creationEventTx(tx:PoolClient,id:string,eventKey:string,type:string,status:string,summary:string){
@@ -20,6 +22,12 @@ export async function acceptCreationTx(tx:PoolClient,kind:string,sourceId:string
  const context=frozen||currentCreationContext();
  if(!context)return null; // Legacy recovery never derives a tenant from today's membership.
  if(context.actorEmail!==email.toLowerCase())throw new Error('创作操作者不一致');
+ const p=obj(payload),plan=obj(p.plan),request=obj(plan.request||obj(p.p).imagegen?.request||p.request);
+ const group=p.projectGroupId||obj(p.p).projectGroupId;
+ if(typeof group==='string'&&group){const project=`tree:${group}`;
+  if(context.parentContext?.startsWith('tree:')&&context.parentContext!==project)throw new TeamError('请求项目与当前画布不一致',409);
+  await withFrozenCreation({...context,workspaceExplicit:true},()=>bindActualCreationProject(email,project,{tx}));
+ }
  if(context.parentContext){
   await tx.query(`INSERT INTO app_creation_contexts(actor_email,context_kind,context_id,scope_kind,tenant_id) VALUES($1,'project',$2,$3,$4) ON CONFLICT DO NOTHING`,[email.toLowerCase(),context.parentContext,context.scopeKind,context.tenantId]);
   const frozen=(await tx.query("SELECT scope_kind,tenant_id FROM app_creation_contexts WHERE actor_email=$1 AND context_kind='project' AND context_id=$2 FOR SHARE",[email.toLowerCase(),context.parentContext])).rows[0];
@@ -27,7 +35,6 @@ export async function acceptCreationTx(tx:PoolClient,kind:string,sourceId:string
  }
  const existing=(await tx.query('SELECT id,tenant_id,scope_kind FROM app_creation_records WHERE source_kind=$1 AND source_id=$2 AND actor_email=$3',[kind,sourceId,email.toLowerCase()])).rows[0];
  if(existing){if(existing.tenant_id!==context.tenantId||existing.scope_kind!==context.scopeKind)throw new Error('创作归属不一致');return existing.id as string;}
- const p=obj(payload),plan=obj(p.plan),request=obj(plan.request||obj(p.p).imagegen?.request||p.request);
  const publicParams=publicCreationParameters({...obj(request.parameters),...obj(request.output),...obj(p.parameters),...context.parameters});
  const prompt=context.requestText??request.prompt??obj(p.p).prompt??p.prompt;
  const id=creationId(),parent=context.creationId||null;
@@ -41,15 +48,22 @@ export async function acceptCreationTx(tx:PoolClient,kind:string,sourceId:string
  // Each accepted request has one top-level record; child tools inherit its immutable ID.
  if(!parent)context.creationId=id;
  const refs=[...(Array.isArray(request.inputs)?request.inputs:[]),...(Array.isArray(p.inputs)?p.inputs:[]),...(typeof p.sourceArtworkId==='string'?[{artworkId:p.sourceArtworkId,role:'edit-target'}]:[])];
- await assertCreationInputsTx(tx,email,refs.map(ref=>ref.artworkId).filter((v):v is string=>typeof v==='string'),context);
+ await assertCreationInputsTx(tx,email,refs.flatMap(ref=>[ref.artworkId,ref.originalArtworkId]).filter((v):v is string=>typeof v==='string'),context);
+ // Lineage affects the output's parent/group even when its pixels arrive in
+ // another upload. Validate the actual owned artworks the generation core uses.
+ const lineage=[request.sourceNodeId,...refs.map(ref=>obj(ref.reference).sourceNodeId),p.parentId,...(Array.isArray(p.parentIds)?p.parentIds:[]),obj(p.p).parentId,...(Array.isArray(obj(p.p).parentIds)?obj(p.p).parentIds:[])].filter((v):v is string=>typeof v==='string');
+ if(lineage.length){const ids=(await tx.query('SELECT id FROM app_artworks WHERE email=$1 AND id=ANY($2::text[]) AND deleted_at IS NULL',[email.toLowerCase(),lineage])).rows.map(row=>row.id);await assertCreationInputsTx(tx,email,ids,context);for(const source of ids)await creationLinkTx(tx,id,email.toLowerCase(),'artwork',source,'lineage-input');}
  for(const [i,ref] of refs.entries())if(typeof ref.artworkId==='string'){
   const foreign=(await tx.query(`SELECT 1 FROM app_creation_links l JOIN app_creation_records c ON c.id=l.creation_id WHERE l.target_type='artwork' AND l.relation='output' AND l.target_id=$1 AND (c.actor_email<>$2 OR c.tenant_id IS NOT NULL AND c.tenant_id IS DISTINCT FROM $3::uuid) LIMIT 1`,[ref.artworkId,email.toLowerCase(),context.tenantId])).rows[0];
   if(foreign)throw new Error('不能直接引用其他企业的素材');
-  await addCreationAssetTx(tx,id,email.toLowerCase(),{id:`ca-${key(id,'input',String(i))}`,direction:'input',role:String(ref.role||'reference'),position:i,variant:'original',storageRef:`artwork:${ref.artworkId}`});
+  const original=typeof ref.originalArtworkId==='string'?ref.originalArtworkId:ref.inputVariant==='processed'?null:ref.artworkId;
+  if(!original)await addCreationAssetTx(tx,id,email.toLowerCase(),{id:`ca-${key(id,'missing-original',String(i))}`,direction:'input',role:String(ref.role||'reference'),position:i,variant:'original',storageRef:'',availability:'not_recorded'});
+  if(original&&original!==ref.artworkId){await addCreationAssetTx(tx,id,email.toLowerCase(),{id:`ca-${key(id,'original-input',String(i))}`,direction:'input',role:String(ref.role||'reference'),position:i,variant:'original',storageRef:`artwork:${original}`});await creationLinkTx(tx,id,email.toLowerCase(),'artwork',original,'original-input');}
+  await addCreationAssetTx(tx,id,email.toLowerCase(),{id:`ca-${key(id,'input',String(i))}`,direction:'input',role:String(ref.role||'reference'),position:i,variant:ref.inputVariant==='processed'||original!==ref.artworkId?'processed':'original',storageRef:`artwork:${ref.artworkId}`});
   await creationLinkTx(tx,id,email.toLowerCase(),'artwork',ref.artworkId,'input');
  }
  const buffers=Array.isArray(obj(p.p).images)?obj(p.p).images:Array.isArray(p.images)?p.images:[];
- for(const [i,input] of buffers.entries()){const url=obj(obj(input).buf).$imageJobBuffer;if(typeof url==='string')await addCreationAssetTx(tx,id,email.toLowerCase(),{id:`ca-${key(id,'original',String(i))}`,direction:'input',role:String(obj(input).role||refs[i]?.role||'reference'),position:i,variant:'original',storageRef:url,mime:obj(input).mime||obj(input).type});}
+ for(const [i,input] of buffers.entries()){const url=obj(obj(input).buf).$imageJobBuffer;if(typeof url==='string'&&!refs[i])await addCreationAssetTx(tx,id,email.toLowerCase(),{id:`ca-${key(id,'original',String(i))}`,direction:'input',role:String(obj(input).role||'reference'),position:i,variant:'original',storageRef:url,mime:obj(input).mime||obj(input).type});}
  const mask=obj(obj(p.p).mask?.buf||obj(p.p).mask||p.mask);if(typeof mask.$imageJobBuffer==='string')await addCreationAssetTx(tx,id,email.toLowerCase(),{id:`ca-${key(id,'original-mask')}`,direction:'input',role:'mask',position:0,variant:'original',storageRef:mask.$imageJobBuffer,mime:'image/png'});
  return id;
 }
@@ -156,6 +170,7 @@ export async function prepareOriginalCreationInput(bytes:Buffer,mime:string,role
  * originals. Evidence outages never turn a paid execution into a retry. */
 export async function captureProcessedCreationInputs(body:unknown) {
  const scope=currentCreationContext();if(!dbEnabled||!scope?.creationId)return;
+ const captureId=currentObservedCallId()||randomUUID();
  try{
   const p=obj(body),images=Array.isArray(p.image)?p.image:p.image?[p.image]:[],files=[...images.map((file:unknown,i:number)=>({file,role:'reference',position:i})),...(p.mask?[{file:p.mask,role:'mask',position:0}]:[])];
   const assets:{storageRef:string;mime:string;role:string;position:number}[]=[];let total=0;
@@ -165,14 +180,19 @@ export async function captureProcessedCreationInputs(body:unknown) {
    const mime=file.type||'application/octet-stream',hash=createHash('sha256').update(bytes).digest('hex');
    const storageRef=await uploadImage(bytes,mime,`creation-inputs/${scope.creationId}/processed-${hash}.bin`,undefined,scope.actorEmail);assets.push({...entry,storageRef,mime});
   }
-  await creationTransaction(async tx=>{for(const asset of assets)await addCreationAssetTx(tx,scope.creationId!,scope.actorEmail,{direction:'input',variant:'processed',...asset});});
+  await creationTransaction(async tx=>{for(const asset of assets)await addCreationAssetTx(tx,scope.creationId!,scope.actorEmail,{direction:'input',variant:'processed',...asset,captureRef:captureId,sourcePosition:asset.position});if(assets.length){await creationLinkTx(tx,scope.creationId!,scope.actorEmail,'model-call',captureId);await creationEventTx(tx,scope.creationId!,`inputs:${captureId}`,'input-prepared','running','已记录本次模型实际输入');}});
  }catch{
   scope.evidencePending=true;
   await creationTransaction(tx=>creationEventTx(tx,scope.creationId!,'evidence:processed-pending','evidence','needs_review','实际模型输入证据保存失败，原业务任务继续按固定状态收尾')).catch(()=>{});
  }
 }
-export async function addCreationAssetTx(tx:PoolClient,id:string,email:string,a:{id?:string;direction:'input'|'output';role:string;position:number;variant?:string;storageRef:string;mime?:string;mediaType?:string;text?:string;availability?:string}){
+export async function addCreationAssetTx(tx:PoolClient,id:string,email:string,a:{id?:string;direction:'input'|'output';role:string;position:number;variant?:string;storageRef:string;mime?:string;mediaType?:string;text?:string;availability?:string;captureRef?:string;sourcePosition?:number}){
  let position=a.position;
+ if(a.direction==='input'&&a.captureRef){
+  await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`creation-assets:${id}`]);
+  if((await tx.query("SELECT 1 FROM app_creation_assets WHERE creation_id=$1 AND execution_ref=$2 AND role=$3 AND input_position=$4 AND storage_ref=$5",[id,a.captureRef,a.role,a.sourcePosition??a.position,a.storageRef])).rowCount)return;
+  position=Number((await tx.query("SELECT COALESCE(max(position),-1)+1 AS next FROM app_creation_assets WHERE creation_id=$1 AND direction='input'",[id])).rows[0].next);
+ }
  if(a.direction==='output'&&a.storageRef){
   await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`creation-assets:${id}`]);
   if((await tx.query('SELECT 1 FROM app_creation_assets WHERE creation_id=$1 AND direction=$2 AND storage_ref=$3',[id,a.direction,a.storageRef])).rowCount)return;
@@ -186,7 +206,7 @@ export async function addCreationAssetTx(tx:PoolClient,id:string,email:string,a:
    if(ref.startsWith('/media/'))metadata=(await tx.query('SELECT sha256,bytes,content_type FROM app_media_assets WHERE key=$1',[ref.slice(7)])).rows[0];}
  }
  const mime=a.mime||metadata?.content_type||null,mediaType=a.mediaType||(mime?.startsWith('video/')?'video':mime?.startsWith('audio/')?'audio':mime&&!mime.startsWith('image/')?'file':'image');
- await tx.query(`INSERT INTO app_creation_assets(id,creation_id,actor_email,direction,role,position,variant,storage_ref,mime,media_type,text_content,hash,byte_size,availability) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT(creation_id,direction,role,position,variant) DO NOTHING`,[a.id||`ca-${randomUUID()}`,id,email,a.direction,a.role,position,a.variant||'original',a.storageRef,mime,mediaType,a.text??null,metadata?.sha256||null,metadata?.bytes??null,a.availability||'recorded']);
+ await tx.query(`INSERT INTO app_creation_assets(id,creation_id,actor_email,direction,role,position,variant,storage_ref,mime,media_type,text_content,hash,byte_size,availability,input_position,execution_ref) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) ON CONFLICT(creation_id,direction,role,position,variant) DO NOTHING`,[a.id||`ca-${randomUUID()}`,id,email,a.direction,a.role,position,a.variant||'original',a.storageRef,mime,mediaType,a.text??null,metadata?.sha256||null,metadata?.bytes??null,a.availability||'recorded',a.sourcePosition??null,a.captureRef??null]);
 }
 export function publicCreationParameters(value:unknown):Record<string,unknown>{
  const p=obj(value),allowed=['ratio','resolution','quality','count','quantity','size','seconds','durationSeconds','aspectRatio','generateAudio','watermark','mode','width','height','x','y','platform','style','lang','seed','variants','inputFidelity','moderation','format','compression','background','compressionMode','flattenColor','downscaleMaxDim'];
@@ -202,12 +222,15 @@ export async function attachBillingCreationTx(tx:PoolClient,id:string,email:stri
 }
 export async function recordImageStateTx(tx:PoolClient,jobId:string,snapshot:unknown){
  const rows=(await tx.query("SELECT c.id,c.actor_email FROM app_creation_records c JOIN app_creation_links l ON l.creation_id=c.id WHERE l.target_id=$1 AND l.target_type LIKE 'image:%'",[jobId])).rows;
- const s=obj(snapshot),result=obj(s.result),status=creationStatus(result.status||s.status);
+ const s=obj(snapshot),result=obj(s.result),shots=Array.isArray(s.shots)?s.shots:[];
+ const terminalShots=shots.length&&['done','error','completed','failed'].includes(String(s.status));
+ const shotSuccess=shots.filter(shot=>shot.status==='done'&&shot.url).length;
+ const status=terminalShots?shotSuccess===shots.length?'succeeded':shotSuccess?'partial':'failed':creationStatus(result.status||s.status);
  for(const row of rows){
   await tx.query('UPDATE app_creation_records SET status=$2,updated_at=now() WHERE id=$1',[row.id,status]);
   await creationEventTx(tx,row.id,`state:${status}:${String(result.stage||s.stage||'')}`,'execution',status,status==='needs_review'?'执行结果需要核查':`任务状态：${status}`);
   const works=Array.isArray(result.artifacts)?result.artifacts:Array.isArray(s.images)?s.images:Array.isArray(s.shots)?s.shots:[];
-  for(const [i,work] of works.entries()){const target=work.artworkId||work.id;if(typeof target==='string'){
+  for(const [i,work] of works.entries()){const target=work.artworkId||work.id;if(typeof target==='string'&&(!work.status||['done','succeeded','completed'].includes(work.status))&&(await tx.query('SELECT 1 FROM app_artworks WHERE id=$1 AND email=$2 AND deleted_at IS NULL',[target,row.actor_email])).rowCount){
    await creationLinkTx(tx,row.id,row.actor_email,'artwork',target,'output');
    await addCreationAssetTx(tx,row.id,row.actor_email,{id:`ca-${key(row.id,'output',target)}`,direction:'output',role:'result',position:i,storageRef:`artwork:${target}`});
   }}

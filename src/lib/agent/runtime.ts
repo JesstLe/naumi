@@ -510,7 +510,7 @@ async function createRuntimeSession(
           const last=replies.at(-1) as {content?:unknown;stopReason?:string}|undefined;
           const text=replies.flatMap(m=>Array.isArray(m.content)?m.content.filter((p:any)=>p.type==='text').map((p:any)=>String(p.text||'')):[]).join('\n');
           const errors=session.events.slice(eventStart).some(e=>e.type==='tool_end'&&e.data.isError===true);
-          const status=last?.stopReason==='aborted'?'cancelled':last?.stopReason==='error'?'failed':last?.stopReason==='deferred'?'needs_review':errors?'partial':'succeeded';
+          const status=last?.stopReason==='aborted'?'cancelled':last?.stopReason==='error'?'failed':['deferred','length'].includes(last?.stopReason||'')?'needs_review':errors?'partial':'succeeded';
           await finishCreation(id||undefined,email,status,{text,eventKey:`turn:${session.turnId}:finished`});
           return result;
         }catch(error){await finishCreation(id||undefined,email,'needs_review',{eventKey:`turn:${session.turnId}:interrupted`,summary:'本轮执行中断，已接受的工具任务按其固定任务状态恢复'});throw error;}

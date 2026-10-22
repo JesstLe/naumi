@@ -20,6 +20,7 @@ async function main() {
   const adminCookie='nv_admin='+auth.signSession(Date.now());
   const req=(path:string,method='GET',body?:unknown,cookie=adminCookie,origin='http://fixture.test')=>new Request('http://fixture.test'+path,{method,headers:{cookie,'content-type':'application/json',origin},body:body===undefined?undefined:JSON.stringify(body)});
   const command={commandId:randomUUID(),name:'Fixture 企业 A',ownerEmail:owner,validUntil:null,seatLimit:3,entitlementName:null,featurePolicy:{generate:true,video:false}};
+  assert.equal((await tenants.POST(req('/api/admin/tenants','POST',{...command,featurePolicy:{creation:true}}))).status,400);
   assert.equal((await tenants.GET(req('/api/admin/tenants','GET',undefined,''))).status,403);
   assert.equal((await tenants.POST(req('/api/admin/tenants','POST',command,adminCookie,'https://evil.test'))).status,403);
   const created=await tenants.POST(req('/api/admin/tenants','POST',command));assert.equal(created.status,200);const a=await created.json();
@@ -41,10 +42,13 @@ async function main() {
   assert.equal((await memberApi.POST(req('/api/admin/tenants/'+a.tenantId+'/members','POST',{commandId:randomUUID(),action:'remove',email:owner,expectedVersion:0,reason:'invalid owner remove'}),ctx)).status,409);
   assert.equal((await memberApi.POST(req('/api/admin/tenants/'+a.tenantId+'/members','POST',{commandId:randomUUID(),action:'remove',email:outsider,expectedVersion:0,reason:'fixture departure'}),ctx)).status,200);
   const tenant=await(await detail.GET(req('/api/admin/tenants/'+a.tenantId),ctx)).json();assert.equal(tenant.tenant.activeMembers,2);assert.equal(tenant.tenant.featurePolicy.video,false);assert.equal(tenant.tenant.validUntil,null);
-  const update={...command,commandId:randomUUID(),expectedVersion:tenant.tenant.version,status:'active',reason:'fixture test'};
+  await pool.query("UPDATE app_tenant_entitlements SET feature_policy=feature_policy||'{\"creation\":true}'::jsonb WHERE tenant_id=$1",[a.tenantId]);
+  const update={...command,featurePolicy:{...command.featurePolicy,creation:true},commandId:randomUUID(),expectedVersion:tenant.tenant.version,status:'active',reason:'fixture test'};
   const {ownerEmail:_,...patch}=update;
+  for(const featurePolicy of [{...patch.featurePolicy,unknown_new:true},{...patch.featurePolicy,creation:false},{generate:true,video:false}])assert.equal((await detail.PATCH(req('/api/admin/tenants/'+a.tenantId,'PATCH',{...patch,featurePolicy}),ctx)).status,400);
   assert.equal((await detail.PATCH(req('/api/admin/tenants/'+a.tenantId,'PATCH',{...patch,seatLimit:1}),ctx)).status,409);
   const success=await detail.PATCH(req('/api/admin/tenants/'+a.tenantId,'PATCH',patch),ctx);assert.equal(success.status,200);
+  const savedDetail=await(await detail.GET(req('/api/admin/tenants/'+a.tenantId),ctx)).json();assert.equal(savedDetail.tenant.featurePolicy.creation,true);assert.equal(savedDetail.audit.find((row:any)=>row.action==='update').reason,'fixture test');
   assert.equal((await detail.PATCH(req('/api/admin/tenants/'+a.tenantId,'PATCH',{...patch,commandId:randomUUID()}),ctx)).status,409);
   const before=(await pool.query('SELECT banned,account_expires_at,management_version,auth_revoked_before,password_hash FROM app_users WHERE email=$1',[member])).rows[0];
   const ownerActor={email:owner,admin:false};

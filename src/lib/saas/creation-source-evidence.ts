@@ -5,6 +5,7 @@ const family=`WITH RECURSIVE family AS(SELECT id,actor_email,tenant_id FROM app_
  UNION ALL SELECT c.id,c.actor_email,c.tenant_id FROM app_creation_records c JOIN family p ON c.parent_id=p.id
  AND c.actor_email=p.actor_email AND c.tenant_id IS NOT DISTINCT FROM p.tenant_id), links AS(
  SELECT l.* FROM app_creation_links l JOIN family f ON f.id=l.creation_id)`;
+export async function videoWorkflowEvidenceAvailable(tx:PoolClient){return !!(await tx.query("SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('app_video_workflow_runs') AND attname='creation_evidence_pending' AND NOT attisdropped")).rowCount;}
 /** Read-only recovery from exact frozen source IDs. Never schedules or repairs paid work. */
 export async function creationSourceEvidence(tx:PoolClient,rootId:string){
  const rows=(await tx.query(`${family}
@@ -36,6 +37,14 @@ export async function creationSourceEvidence(tx:PoolClient,rootId:string){
    WHERE l.target_type='imagegen-batch' AND b.plan->>'creationEvidencePending'='true' ORDER BY i.ordinal`,[rootId])).rows;
   if(batches.length)pending=true;
   for(const row of batches)for(const[i,output]of (Array.isArray(row.outputs)?row.outputs:[]).entries())add(row,output.artworkId||output.id,i);
+ }
+ if(await videoWorkflowEvidenceAvailable(tx)){
+  const workflows=(await tx.query(`${family} SELECT l.*,n.result_assets AS outputs FROM links l
+   JOIN app_video_workflow_runs r ON r.id::text=l.target_id AND r.email=l.actor_email
+   LEFT JOIN app_video_workflow_run_nodes n ON n.run_id=r.id
+   WHERE l.target_type='video-workflow' AND r.creation_evidence_pending ORDER BY n.node_id`,[rootId])).rows;
+  if(workflows.length)pending=true;
+  for(const row of workflows)for(const[i,output]of (Array.isArray(row.outputs)?row.outputs:[]).entries())add(row,output.artworkId,i,['image','video','audio'].includes(output.kind)?output.kind:'video');
  }
  if(!pending)pending=!!(await tx.query(`${family} SELECT 1 FROM app_billing_operations b JOIN links l ON l.target_type='billing' AND l.target_id=b.id AND l.actor_email=b.email WHERE b.result_response->>'creationEvidencePending'='true' LIMIT 1`,[rootId])).rowCount;
  if(!pending)pending=!!(await tx.query(`${family} SELECT 1 FROM app_creation_events e JOIN family f ON f.id=e.creation_id

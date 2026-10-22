@@ -2,7 +2,8 @@ import { z } from 'zod';
 import {ALL_FEATURE_IDS} from '@/lib/feature-access/catalog';
 
 export const tenantStatus = z.enum(['active', 'suspended', 'expired']);
-export const tenantPolicy = z.record(z.string().min(1).max(80), z.boolean()).refine(value=>Object.keys(value).every(key=>ALL_FEATURE_IDS.includes(key)),{message:'功能权益包含未知功能'});
+const tenantPolicyShape = z.record(z.string().min(1).max(80), z.boolean());
+export const tenantPolicy = tenantPolicyShape.refine(value=>Object.keys(value).every(key=>ALL_FEATURE_IDS.includes(key)),{message:'功能权益包含未知功能'});
 export const tenantConfiguration = {
   name: z.string().trim().min(2).max(80),
   validUntil: z.string().datetime({ offset: true }).nullable(),
@@ -17,7 +18,7 @@ export const createTenantSchema = z.object({
 }).strict();
 export const updateTenantSchema = z.object({
   commandId: z.string().uuid(), expectedVersion: z.number().int().nonnegative(),
-  ...tenantConfiguration, status: z.enum(['active', 'suspended']),
+  ...tenantConfiguration, featurePolicy:tenantPolicyShape, status: z.enum(['active', 'suspended']),
   reason: z.string().trim().min(1).max(500),
 }).strict();
 const memberBase={commandId:z.string().uuid(),email:z.string().trim().email().max(254).transform(v=>v.toLowerCase()),reason:z.string().trim().min(1).max(500)};
