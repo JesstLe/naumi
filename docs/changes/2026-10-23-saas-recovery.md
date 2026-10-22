@@ -56,3 +56,15 @@ ready和停止旧槽前以MemAvailable加旧两槽anon的向下取整值保守�
 最新集中回归在本机Linux+官方Node24二进制执行193组，全部通过且无skip；日志`output/saas-admin-20261022/verification/ops-merged-linux-final.log`。覆盖Controls/Host/SaaS11/normal policy/lifecycle/video-family/Worker handoff/维护renderer，包含真实POSIX原子文件与实际docker-exec JavaScript协议fixture。前两次工具环境缺Node导致3组skip，不能当作那三组通过；最后明确补齐Node后收口。没有连接47或宣称线上恢复已通过。
 
 紧急维护会阻断公网短期供应商参考素材URL。保留accepted任务和内部执行状态，不重投，但不能承诺尚未拉取输入的上游在维护期间必定完成；这也是受控维护属于降级恢复、不能冒称连续可用成功的原因。
+
+## 合并发布前的三项门禁补齐
+
+普通task snapshot的`projection=proof`仍保留用于全站任务比较，但不能替代原05未知费用任务的逐列保护。SaaS配置固定原R2 `CASE05-BASELINE.private.json`和SHA256 `51224568…`，不接受重采基线或外部指定补充文件。专用Guard在候选前原8表完全匹配后，一次性封存关联补充表；候选就绪、切流前、每个旧槽停止前、最终完成前、失败恢复前后再次核对。原列、空行集、NULL、进度、账务以及原PG文本SHA均属保护对象；新增列默认拒绝。补充表/原文件/补充文件未知或变化均HOLD，不退款、不回灌、不重投。一次HOLD保持pending；故障路径仍允许精确candidate物理CAS匹配时执行权限安全503封口。
+
+`saas_maintenance_probe.py`要求每个审计server/listen/明确server_name均有固定HTTP端点，至少含目标公网IP实连，禁止未展开通配域名、额外地址或协议/端口变更。真实GET/HEAD覆盖17条入口，包括参考素材、旧工作台、静态资源和公网内部接口；必须503、严格no-store、Retry-After=60、专用响应标记及预期body，TLS证书/主机名验证开启，不跟随跳转、不发业务POST。`nginx -t/-T/reload`单独成功不再设置`maintenanceApplied=true`；缺失或失败HTTP证据记录`RECOVERY_REQUIRED`，原UNKNOWN不改。
+
+若旧Worker已drain或新Web已open而切流前失败，基线公网配置仍在只证明入口字节保持，不能证明完整旧服务可用。故障回执记录这些原控制UUID、phase、owner、原receipt和旧Worker只读观察，明确`degradedPending`与`fullBaselineServicePreserved=false`，不偷偷resume扫描器，不虚构控制ACK。
+
+本机真实Nginx/TLS第二轮证据`output/saas-recovery-nginx-20261023-d/`：原52组GET/POST/HEAD/OPTIONS通过，同时使用生产同一HTTP prover实跑HTTP+TLS共68项GET/HEAD，证书仅信任本次隔离自签证书并验证47 IP SAN；合成上游接受计数仍0。该结果是fixture，未连接47、未实施线上维护。控制器集中回归与独立复核、最终Linux构建、47现场证据仍待收口。
+
+独立审查另发现已切候选后的canonical ACK持久化失败会使继承`op()`的前置persist再次拦住503封口。已用独立O_EXCL维护intent/UUID及ACK/UNKNOWN保存真实配置操作，精确匹配candidate物理CAS后可执行安全封口；不覆盖变动的canonical、不清原UNKNOWN，canonical持久化失败继续标reconciliation。真实原子文件测试同时注入forward reload已生效但回复丢失、随后canonical持续CAS失败；必须仍仅观察candidate→maintenance并保留两套intent，HTTP proof仍单独必需。端点校验同时绑定具体listen IP及IPv4/IPv6族，禁止用IPv4重复测试冒充IPv6入口通过。

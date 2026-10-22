@@ -18,13 +18,15 @@ GATE = '''
   error_page 503 =503 @naumi_saas_recovery_503;
   add_header Cache-Control "no-store" always;
   add_header Retry-After "60" always;
+  add_header X-Naumi-Recovery "saas-controlled-maintenance" always;
   return 503;
   location @naumi_saas_recovery_503 {
     internal;
     default_type text/plain;
     add_header Cache-Control "no-store" always;
     add_header Retry-After "60" always;
-    return 503 "Service temporarily unavailable.\\n";
+    add_header X-Naumi-Recovery "saas-controlled-maintenance" always;
+    return 503 "Service temporarily unavailable.";
   }
 '''
 

@@ -6,17 +6,27 @@ gates. Never cuts back to a program that ignores the new permission semantics.
 import json
 import pathlib
 import re
+import uuid
 
 import release47_normal_controller as ctl
 import release_client_compat as compat
 from release47_host import Hold, environment, file_sha, require
 from release47_video_family_successor import VideoFamilyController, MIB
 from saas_recovery_gateway import render, server_inventory
+from saas_maintenance_probe import validate_ingress, probe_maintenance
+from release47_preserved_unknown import Guard
 
 AUTHORIZATION = '后台你觉得验收通过之后 合并所有分支然后上线47服务器做真实验收'
+CASE05_BASELINE = '/opt/naumi-staging/evidence/video-family-release47-20261023-r2/unified-handoff/CASE05-BASELINE.private.json'
+CASE05_SHA256 = '512245689fb9884732d6f9f9c7d479ca1481bfe2570b4fa4356fd947b572b041'
 
 
 def validate_config(cfg):
+    preserved = cfg.get('preservedUnknown', {})
+    require(isinstance(preserved, dict) and set(preserved) ==
+            {'baselinePath', 'baselineSha256', 'allowedAdditiveColumns'}
+            and preserved['baselinePath'] == CASE05_BASELINE and preserved['baselineSha256'] == CASE05_SHA256
+            and preserved['allowedAdditiveColumns'] == {}, 'EXACT_ORIGINAL_CASE05_BASELINE_REQUIRED')
     require(cfg.get('target') == '47.105.59.142' and cfg.get('authorization') == AUTHORIZATION
             and cfg.get('releaseId', '').startswith('release47-saas-')
             and cfg.get('recoveryMode') == 'saas-controlled-maintenance', 'EXACT_SAAS_RELEASE_REQUIRED')
@@ -140,8 +150,18 @@ class SaasController(VideoFamilyController):
                 and self.ingress.get('dumpSha256') == cfg['expectedGatewayDigest']
                 and self.ingress.get('unaccountedNaumiPublicEndpoints') == []
                 and bool(self.ingress.get('servers')), 'REAL_PUBLIC_INGRESS_AUDIT_REQUIRED')
+        validate_ingress(self.ingress)
+        self.preserved_unknown = Guard({**cfg['preservedUnknown'],
+            'supplementalPath': str(self.tx.folder / 'CASE05_SUPPLEMENT.private.json')}, self.sql, self.tx.save)
+
+    def run(self):
+        # The original immutable eight tables must match BEFORE any candidate
+        # or schema initialization; extra related tables are frozen only once.
+        self.preserved_unknown.establish()
+        return super().run()
 
     def ready(self):
+        self.preserved_unknown.check('candidate-ready')
         result = super().ready()
         tenants = self.request(self.newweb, '/api/admin/tenants?page=1&size=5')
         require(isinstance(tenants.get('items'), list), 'SAAS_TENANT_HTTP_NOT_READY')
@@ -174,6 +194,7 @@ class SaasController(VideoFamilyController):
             'sourceCommit': self.cfg['commit'], 'image': self.cfg['image']})
 
     def verify_recovery_materials(self):
+        self.preserved_unknown.check('final-before-complete')
         path = ctl.ROOT / 'saas-emergency-gateway/report.json'
         proof = json.loads((self.tx.folder / 'SAAS_RECOVERY_PREPARED.json').read_bytes())
         require(proof.get('actualNginxSyntaxPassed') is True and proof.get('compatibleBusinessRollback') is False
@@ -183,10 +204,58 @@ class SaasController(VideoFamilyController):
                 'SAAS_CURRENT_INGRESS_CHANGED')
 
     def switch_forward_gateway(self):
+        self.preserved_unknown.check('before-switch')
         self.verify_internal_authority()
         return ctl.c.switch_gateway_bundle(self.tx, self.forward, self.before, self.after,
                     expected_dump_sha=compat.sha(self.dump.encode()), logical_to_real=self.real,
                     failure_policy='preserve-written')
+
+    def stop_exact(self, identity):
+        require(identity == self.worker or identity == self.web, 'SAAS_UNKNOWN_RETIRE_TARGET')
+        self.preserved_unknown.check('before-retire-' + ('worker' if identity == self.worker else 'web'))
+        return super().stop_exact(identity)
+
+    def maintenance_http_proof(self):
+        require(compat.sha(self.tx.run(['nginx', '-T'])) == self.emergency['afterDumpSha256'],
+                'SAAS_MAINTENANCE_PHYSICAL_CAS_CHANGED')
+        proof = probe_maintenance(self.ingress)
+        self.tx.save('SAAS_MAINTENANCE_HTTP.json', proof)
+        require(proof['passed'] is True, 'SAAS_MAINTENANCE_HTTP_NOT_PROVEN')
+        return proof
+
+    def record_failure_controls(self, outcome):
+        operations = getattr(self, 'succ', {}).get('operations', {})
+        controls = {}
+        for name, identity in [('old-worker-drain', getattr(self, 'worker', None)),
+                               ('new-web-open', getattr(self, 'newweb', None)),
+                               ('old-web-drain', getattr(self, 'web', None)),
+                               ('new-worker-resume', getattr(self, 'newworker', None)),
+                               ('new-worker-retirement-barrier', getattr(self, 'newworker', None))]:
+            if name in operations:
+                op = operations[name]
+                controls[name] = {'operationId': op.get('operationId'), 'phase': op.get('phase'),
+                                  'identity': identity, 'ownership': self.cfg['releaseId'],
+                                  'originalReceipt': op.get('receipt')}
+        outcome['existingControls'] = controls
+        outcome['degradedPending'] = bool(controls)
+        outcome['fullBaselineServicePreserved'] = False
+        # A status observation has no control mutation and never resumes a
+        # paused scanner using an invented control operation or receipt.
+        if getattr(self, 'worker', None):
+            try:
+                outcome['oldWorkerObserved'] = self.worker_control(self.worker, 'status', str(uuid.uuid4()))
+            except BaseException as error:
+                outcome['oldWorkerObserved'] = {'result': 'UNKNOWN', 'error': type(error).__name__}
+                outcome['reconciliationRequired'] = True
+
+    def failure_preservation_check(self, outcome, stage):
+        try:
+            self.preserved_unknown.check(stage)
+        except BaseException as error:
+            outcome['preservationHold'] = True
+            outcome.setdefault('preservationErrors', []).append({
+                'stage': stage, 'error': str(error) if isinstance(error, Hold) else type(error).__name__})
+            outcome['reconciliationRequired'] = True
 
     def verify_internal_authority(self):
         web, worker = [self.tx.inspect(identity['id']) for identity in (self.newweb, self.newworker)]
@@ -228,28 +297,82 @@ console.log(JSON.stringify({unauthorizedHttp:denied.status,authorizedHttp:allowe
         finally:
             self.tx.folder = prior
 
+    def seal_candidate_ingress(self, current):
+        # Canonical ACK persistence may itself be the failed forward step.
+        # A new canonical intent cannot then be a prerequisite for closing
+        # this exact physical candidate. Keep an independent durable intent,
+        # original operation UUID and private ACK/UNKNOWN, never overwrite CAS.
+        name = 'saas-failure-public-maintenance'
+        operations = getattr(self, 'succ', {}).get('operations', {})
+        require(name not in operations, 'SAAS_EXISTING_MAINTENANCE_OPERATION_RECONCILE_REQUIRED')
+        record = {'operationId':str(uuid.uuid4()), 'phase':'INTENT_RECORDED', 'at':ctl.now(),
+                  'releaseId':self.cfg['releaseId'], 'beforeDumpSha256':current,
+                  'afterDumpSha256':self.emergency['afterDumpSha256'],
+                  'canonicalPersistenceRequiredForSafetySealing':False}
+        self.tx.save('SAAS_MAINTENANCE_INTENT.json', record)
+        if hasattr(self, 'succ'):
+            self.succ['operations'][name] = record
+        try:
+            result = self.switch_emergency_gateway(current)
+            record.update(phase='ACKNOWLEDGED', receipt=result)
+            self.tx.save('SAAS_MAINTENANCE_ACK.json', record)
+        except BaseException:
+            record['phase'] = 'UNKNOWN'
+            self.tx.save('SAAS_MAINTENANCE_UNKNOWN.json', record)
+            raise
+        # This only acknowledges the exact config operation. Real HTTP proof
+        # remains separately mandatory before maintenanceApplied can be true.
+        if hasattr(self, 'succ'):
+            try:
+                self.persist()
+            except BaseException:
+                pass  # Original canonical evidence/CAS must remain unchanged.
+        return result
+
     def recover_failure(self, error):
         # Physical CAS is checked even if the forward switch timed out before
         # self.switched was assigned. Unknown UUID receipts stay unknown.
         outcome = {'at': ctl.now(), 'error': str(error) if isinstance(error, Hold) else type(error).__name__,
                    'priorProgramResumed': False, 'databaseRestored': False, 'tasksReplayed': False,
                    'workerStateChanged': False, 'maintenanceApplied': False}
+        self.failure_preservation_check(outcome, 'failure-before')
+        self.record_failure_controls(outcome)
         if hasattr(self, 'succ'):
             self.succ.update(lastError=outcome['error'], failedAt=outcome['at'])
-            self.persist()
+            try:
+                self.persist()
+            except BaseException as persist_error:
+                outcome['canonicalPersistenceError'] = type(persist_error).__name__
+                outcome['reconciliationRequired'] = True
         try:
             current = compat.sha(self.tx.run(['nginx', '-T']))
             if hasattr(self, 'emergency') and current == self.emergency['beforeDumpSha256']:
-                self.op('saas-failure-public-maintenance', lambda _: self.switch_emergency_gateway(current))
+                self.seal_candidate_ingress(current)
+                self.maintenance_http_proof()
                 outcome['maintenanceApplied'] = True
             else:
                 require(current == self.cfg['expectedGatewayDigest'], 'UNKNOWN_INGRESS_REQUIRES_RECONCILIATION')
                 outcome['baselinePublicEntryPreserved'] = True
             if hasattr(self, 'succ'):
-                self.phase('RECOVERY_REQUIRED', recoveryMode='saas-controlled-maintenance')
+                self.phase('RECOVERY_REQUIRED', recoveryMode='saas-controlled-maintenance',
+                           degradedPending=outcome['degradedPending'],
+                           preservationHold=outcome.get('preservationHold', False),
+                           maintenanceHttpProven=outcome['maintenanceApplied'])
         except BaseException as recovery_error:
             outcome['recoveryError'] = str(recovery_error) if isinstance(recovery_error, Hold) else type(recovery_error).__name__
             outcome['reconciliationRequired'] = True
+        self.failure_preservation_check(outcome, 'failure-after')
+        # Recovery/HTTP failure must also leave a durable explicit pending
+        # phase; it cannot leave SWITCHED looking like successful publication.
+        if hasattr(self, 'succ'):
+            try:
+                self.phase('RECOVERY_REQUIRED', recoveryMode='saas-controlled-maintenance',
+                           degradedPending=outcome['degradedPending'],
+                           preservationHold=outcome.get('preservationHold', False),
+                           maintenanceHttpProven=outcome['maintenanceApplied'])
+            except BaseException as persist_error:
+                outcome['canonicalPersistenceError'] = type(persist_error).__name__
+                outcome['reconciliationRequired'] = True
         self.tx.save('SAAS_FAILURE_RECOVERY.json', outcome)
         print('SAAS_RECOVERY_REQUIRED=' + json.dumps(outcome), flush=True)
 

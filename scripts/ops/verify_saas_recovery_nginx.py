@@ -15,6 +15,7 @@ import uuid
 
 import release_client_compat as compat
 from saas_recovery_gateway import render, server_inventory
+from saas_maintenance_probe import read_endpoint, probe_maintenance
 
 BACKEND = r'''
 const http=require('node:http');let accepts=0;
@@ -44,7 +45,8 @@ def main():
     created = []
     try:
         run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
-             '-subj', '/CN=isolated-saas-fixture', '-keyout', str(root / 'key.pem'), '-out', str(root / 'cert.pem')])
+             '-subj', '/CN=isolated-saas-fixture', '-addext', 'subjectAltName=IP:47.105.59.142',
+             '-keyout', str(root / 'key.pem'), '-out', str(root / 'cert.pem')])
         (root / 'backend.cjs').write_text(BACKEND)
         (root / 'nginx.conf').write_text('''worker_processes 1; pid /tmp/saas-recovery.pid;
 error_log stderr; events { worker_connections 64; }
@@ -116,6 +118,25 @@ location / { error_page 503 =302 https://untrusted.invalid/;
         run(['docker', 'exec', nginx, 'nginx', '-t', '-c', '/fixture/nginx.conf'])
         run(['docker', 'exec', nginx, 'nginx', '-s', 'reload', '-c', '/fixture/nginx.conf'])
         wait(503)
+        # Exercise the exact production HTTP prover against actual HTTP+TLS
+        # Nginx sockets. Trust only this disposable cert, with SNI/hostname
+        # verification enabled; map audited ports to loopback Docker forwards.
+        inventory = {'target':'47.105.59.142','servers':spec['servers'], 'httpEndpoints':[]}
+        for server in spec['servers']:
+            for listen in server['listen']:
+                port = int(listen[0])
+                inventory['httpEndpoints'].append({key:server[key] for key in ('path','serverOrdinal')})
+                inventory['httpEndpoints'][-1].update(listen=listen, connectAddress='47.105.59.142',
+                    origin=('https' if 'ssl' in listen else 'http')+'://47.105.59.142')
+        tls_context = ssl.create_default_context(cafile=str(root / 'cert.pem'))
+        def local_reader(endpoint, path, method):
+            port = int(endpoint['listen'][0])
+            actual_port = int(origins[port].rsplit(':',1)[1])
+            return read_endpoint({**endpoint,'connectAddress':'127.0.0.1'},path,method,
+                                 context=tls_context,port_override=actual_port)
+        http_proof = probe_maintenance(inventory,reader=local_reader)
+        (root / 'maintenance-http-proof.json').write_text(json.dumps(http_proof,indent=2))
+        assert http_proof['passed'], 'ACTUAL_MAINTENANCE_HTTP_PROVER_FAILED'
         cases = []
         for path in ('/', '/admin/', '/enterprise', '/api/admin/tenants', '/api/enterprise/records',
                      '/api/imagegen', '/api/generate-image', '/api/video/worker/tick', '/api/auth/login',
@@ -141,6 +162,9 @@ location / { error_page 503 =302 https://untrusted.invalid/;
         assert (root / 'site.conf').read_bytes() == baseline.encode()
         result = {'result': 'PASS', 'evidenceMode': 'fixture', 'actualLinuxNginx': True,
                   'publicCases': cases, 'httpEntrance503': True, 'errorPageCannotProxy': True,
+                  'exactProductionHttpProverPassed':True,
+                  'maintenanceHttpCaseCount':len(http_proof['rows']),
+                  'maintenanceTlsCertificateAndHostnameVerified':True,
                   'internalWorker': 'authenticated-synthetic-route-only', 'upstreamPaidAccepts': 0,
                   'unrelatedServerUnchanged': True, 'syntheticRestoreExact': True,
                   'compatibleBusinessRollback': False, 'productionAcceptance': False,

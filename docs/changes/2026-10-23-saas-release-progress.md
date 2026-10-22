@@ -62,3 +62,13 @@
 供应商线程转述同一用户已选择“跳过”原05费用核查，UNKNOWN/pending/原UUID继续保留，不重投/退款。06/07为原定纯文、无references，已由其按独立continuation做首次提交。根只查公开资料：Geek官方billing仅有聚合信息；New API[日志文档](https://docs.newapi.pro/zh/docs/guide/feature-guide/user/log)与[当前认证源码](https://github.com/QuantumNous/new-api/blob/main/middleware/auth.go)支持Authorization头的只读`GET /api/log/token`，但不能据此证明Geek同版，也不能从缺日志推断未扣费。已给负责人来源，本任务未调用47或供应商。
 
 程序排空与费用事实分开核对：未知费用不能改成0；只有现有真实请求/accepted activity/Agent/lease/newAdmissions零与任务hash保护都通过，才能按原门禁推进。根提出若对方R3尚未登记/创建，可由一次整合SaaS候选接续R2完整发布，采用原批准的无旧业务回退/受控维护恢复；这仍待对方交接，尚未获得47发布所有权、没有连接/拿锁/推main。
+
+## 单次整合发布的控制门禁
+
+供应商R3确认只有私有制品，未创建候选/journal/锁；双方拟由根一次整合SaaS+冷启动+MIME接续已COMPLETE的R2，正式交接待最终控制器审查。原7协议真实结果为6 PASS、05 UNKNOWN；用户选择跳过05费用核查后保持原UUID/账务pending，不再调查供应商，不重投。根仅以严格SSH只读复制现有原05不可变基线到忽略目录并核验SHA `51224568…`，未改变47程序、服务、配置或数据，未持锁/推main。
+
+本轮补齐三项门禁：原05专用Guard原8表逐列和原PG文本SHA保护，匹配后一次性封存关联补充表并在候选/切流/每次退役/最终/失败前后检查；维护必须实际HTTP503/no-store/Retry-After/marker/body、严格TLS及精确listen地址/族覆盖；切流前drain/open控制失败保留原UUID和degraded pending，绝不擅自resume。canonical ACK持久化失败不再阻断candidate物理CAS吻合的权限安全封口，独立保存维护intent/ACK/UNKNOWN，不覆盖canonical。详见`2026-10-23-saas-recovery.md`。
+
+最终控制集中回归已收口：通用ops本机Linux+官方Node24 230项PASS；该bulk对未指定本地DSN的Guard PG class明示skip，不将其当通过。Guard另以真实隔离Postgres16同一轮15项全部PASS无skip（14真PG+1精度），日志`preserved-unknown-tests.log`；真实Nginx/TLS-e原52组及同生产HTTP prover68项PASS。安全复核关闭canonical持久化阻断维护的P1后未发现新P1/P2，审查仅只读源码，实际测试由root/实施人执行。未连接47执行这些验证。
+
+后继待发布版号固定为`1792705393`，保留供应商`1792703343`兼容性条目；最终完整Linux构建/同镜像Web-PG-Worker验收、正式发布所有权交接和47真实验收仍待执行，不使用066或旧LOCAL_ACCEPTANCE放行。

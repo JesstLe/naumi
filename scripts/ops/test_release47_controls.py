@@ -205,7 +205,7 @@ class Controls(unittest.TestCase):
         self.assertTrue(receipt['reconciliationRequired'])
         self.assertEqual(len(receipt['possibleWritePaths']), 2)
 
-    def test_actual_saas_forward_timeout_then_maintenance_preserves_both_intents(self):
+    def test_actual_saas_forward_timeout_and_canonical_failure_still_seals_and_preserves_intents(self):
         from release47_saas_successor import SaasController
         root, before, after, report = self.gateway()
         maintenance = {name: b'maintenance ' + raw for name, raw in after.items()}
@@ -225,7 +225,7 @@ class Controls(unittest.TestCase):
         self.tx._command = command
         operator = SaasController.__new__(SaasController)
         operator.tx = self.tx
-        operator.cfg = {'expectedGatewayDigest': sha(b'before')}
+        operator.cfg = {'expectedGatewayDigest': sha(b'before'),'releaseId':'release47-saas-fixture'}
         operator.dump = 'before'
         operator.forward, operator.before, operator.after = report, before, after
         operator.candidate_closure = after
@@ -236,11 +236,16 @@ class Controls(unittest.TestCase):
             'patches': [{'path': name, 'beforeSha256': sha(raw), 'afterSha256': sha(maintenance[name])}
                         for name, raw in after.items()]}
         operator.succ = {'phase': 'READY', 'operations': {}}
-        operator.persist = Mock()
+        def persist():
+            if reload_snapshots:
+                raise Hold('CANONICAL_CAS_CHANGED')
+        operator.persist = Mock(side_effect=persist)
+        operator.preserved_unknown = Mock()  # Exact PG rowsets are a separate real-PG fixture.
+        operator.maintenance_http_proof = Mock(return_value={'passed':True})  # Real HTTP/TLS is tested by verify_saas_recovery_nginx.py.
         operator.verify_internal_authority = Mock()  # This case tests only real gateway IO; live auth is separate.
         operator.switched = False
         with patch.object(m, 'NGINX_ROOT', root):
-            with self.assertRaisesRegex(Hold, 'RELOAD_TIMEOUT_AFTER_APPLY'):
+            with self.assertRaisesRegex(Hold, 'CANONICAL_CAS_CHANGED'):
                 operator.op('gateway-switch', lambda _: operator.switch_forward_gateway())
             self.assertEqual(operator.succ['operations']['gateway-switch']['phase'], 'UNKNOWN')
             operator.recover_failure(Hold('RELOAD_TIMEOUT_AFTER_APPLY'))
@@ -251,6 +256,14 @@ class Controls(unittest.TestCase):
         emergency_intent = self.folder/'saas-controlled-maintenance/gateway-transaction-intent.json'
         self.assertEqual(json.loads(emergency_intent.read_bytes())['beforeDumpSha256'], sha(b'after'))
         self.assertTrue(all(pathlib.Path(name).read_bytes() == maintenance[name] for name in before))
+        intent = json.loads((self.folder/'SAAS_MAINTENANCE_INTENT.json').read_bytes())
+        ack = json.loads((self.folder/'SAAS_MAINTENANCE_ACK.json').read_bytes())
+        self.assertEqual(intent['phase'],'INTENT_RECORDED')
+        self.assertEqual(ack['phase'],'ACKNOWLEDGED')
+        self.assertEqual(intent['operationId'],ack['operationId'])
+        failure = json.loads((self.folder/'SAAS_FAILURE_RECOVERY.json').read_bytes())
+        self.assertTrue(failure['maintenanceApplied'])
+        self.assertTrue(failure['reconciliationRequired'])
 
     def test_worker_clone_rejects_legacy_before_creating(self):
         self.row['Config']['Env'] = []

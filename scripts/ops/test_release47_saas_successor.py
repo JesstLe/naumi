@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 import release47_normal_controller as ctl
 import release47_normal_rollback as old_rollback
 from release47_host import Hold
-from release47_saas_successor import AUTHORIZATION, SaasController, validate_config, predecessor_proof, MIB
+from release47_saas_successor import AUTHORIZATION, CASE05_BASELINE, CASE05_SHA256, SaasController, validate_config, predecessor_proof, MIB
 from release47_video_family_successor import VideoFamilyController
 
 
@@ -38,6 +38,8 @@ class SaasRecovery(unittest.TestCase):
                 'mediaProbePath':'/data/isolated-provider-probes/provider-video-probe-20261023/fixture.mp4',
                 'mediaProbeSha256':'b'*64, 'commit':'b'*40, 'image':'sha256:'+'a'*64,
                 'version':'1792699999', 'imageArchiveSha256':'c'*64,
+                'preservedUnknown':{'baselinePath':CASE05_BASELINE, 'baselineSha256':CASE05_SHA256,
+                                    'allowedAdditiveColumns':{}},
                 'imageAcceptanceOperations':['11111111-1111-4111-8111-111111111111']}
 
     def test_exact_scope_and_no_data_or_configuration_rewind(self):
@@ -77,6 +79,7 @@ class SaasRecovery(unittest.TestCase):
         operator.newweb = {'id':'candidate'}
         operator.request = Mock(return_value={'items':[]})
         operator.tx = Mock()
+        operator.preserved_unknown = Mock()
         with patch.object(VideoFamilyController, 'ready', return_value={'combinedMediaChecked':True}) as ready:
             self.assertTrue(operator.ready()['combinedMediaChecked'])
             ready.assert_called_once()
@@ -123,10 +126,12 @@ class SaasRecovery(unittest.TestCase):
         operator.tx = Mock()
         operator.tx.folder = self.root
         operator.tx.run.return_value = current_dump
+        operator.preserved_unknown = Mock()
+        operator.maintenance_http_proof = Mock(return_value={'passed': True})
         operator.succ = {'phase': 'SWITCHED', 'operations': {'gateway-switch': {'phase': 'UNKNOWN'}}}
         operator.persist = Mock()
         operator.phase = Mock(side_effect=lambda phase, **fields: operator.succ.update(phase=phase, **fields))
-        operator.emergency = {'beforeDumpSha256': ctl.sha(b'candidate')}
+        operator.emergency = {'beforeDumpSha256': ctl.sha(b'candidate'), 'afterDumpSha256':ctl.sha(b'maintenance')}
         operator.emergency_after = {'fixture.conf': b'maintenance'}
         operator.candidate_closure = {'fixture.conf': b'candidate'}
         operator.real = {'fixture.conf': 'fixture.conf'}
@@ -179,6 +184,100 @@ class SaasRecovery(unittest.TestCase):
         self.assertFalse(receipt['maintenanceApplied'])
         self.assertTrue(receipt['reconciliationRequired'])
         self.assertEqual(operator.succ['operations']['gateway-switch']['phase'], 'UNKNOWN')
+
+    def test_reload_ack_without_http_sealing_never_claims_maintenance(self):
+        operator = self.operator(b'candidate')
+        operator.maintenance_http_proof.side_effect = Hold('SAAS_MAINTENANCE_HTTP_NOT_PROVEN')
+        with patch.object(ctl.c, 'switch_gateway_bundle', return_value={'applied':True}):
+            operator.recover_failure(RuntimeError())
+        receipt = operator.tx.save.call_args.args[1]
+        self.assertFalse(receipt['maintenanceApplied'])
+        self.assertTrue(receipt['reconciliationRequired'])
+        self.assertEqual(operator.succ['phase'], 'RECOVERY_REQUIRED')
+
+    def test_preservation_hold_still_permits_cas_bound_permission_sealing(self):
+        operator = self.operator(b'candidate')
+        operator.preserved_unknown.check.side_effect = Hold('ORIGINAL_TABLE_CHANGED')
+        with patch.object(ctl.c, 'switch_gateway_bundle', return_value={'applied':True}) as switch:
+            operator.recover_failure(Hold('ORIGINAL_TABLE_CHANGED'))
+        switch.assert_called_once()
+        receipt = operator.tx.save.call_args.args[1]
+        self.assertTrue(receipt['preservationHold'])
+        self.assertTrue(receipt['maintenanceApplied'])
+        self.assertTrue(receipt['reconciliationRequired'])
+        self.assertTrue(operator.succ['preservationHold'])
+        self.assertEqual(operator.preserved_unknown.check.call_args_list,
+                         [unittest.mock.call('failure-before'), unittest.mock.call('failure-after')])
+
+    def test_canonical_ack_failure_cannot_block_exact_physical_candidate_sealing(self):
+        operator = self.operator(b'candidate')
+        operator.persist.side_effect = Hold('CANONICAL_CAS_CHANGED')
+        operator.phase.side_effect = Hold('CANONICAL_CAS_CHANGED')
+        original = copy.deepcopy(operator.succ['operations']['gateway-switch'])
+        with patch.object(ctl.c,'switch_gateway_bundle',return_value={'applied':True}) as switch:
+            operator.recover_failure(Hold('CANONICAL_CAS_CHANGED'))
+        switch.assert_called_once()
+        operator.maintenance_http_proof.assert_called_once()
+        receipt = operator.tx.save.call_args.args[1]
+        self.assertTrue(receipt['maintenanceApplied'])
+        self.assertTrue(receipt['reconciliationRequired'])
+        self.assertEqual(operator.succ['operations']['gateway-switch'],original)
+        saved={call.args[0]:call.args[1] for call in operator.tx.save.call_args_list}
+        self.assertIn('SAAS_MAINTENANCE_INTENT.json',saved)
+        self.assertIn('SAAS_MAINTENANCE_ACK.json',saved)
+        self.assertEqual(saved['SAAS_MAINTENANCE_INTENT.json']['operationId'],
+                         saved['SAAS_MAINTENANCE_ACK.json']['operationId'])
+
+    def test_pre_switch_drain_is_explicitly_degraded_and_original_controls_are_retained(self):
+        operator = self.operator(b'baseline')
+        operator.worker, operator.newweb = {'id':'old-worker'}, {'id':'new-web'}
+        operations = {'old-worker-drain':{'operationId':'original-drain', 'phase':'ACKNOWLEDGED',
+                                        'receipt':{'state':{'phase':'QUIESCENT'}}},
+                      'new-web-open':{'operationId':'original-open', 'phase':'UNKNOWN'}}
+        operator.succ['operations'] = copy.deepcopy(operations)
+        operator.worker_control = Mock(return_value={'result':'OBSERVED','state':{'phase':'QUIESCENT'}})
+        operator.recover_failure(Hold('BEFORE_SWITCH_VERIFICATION_FAILED'))
+        receipt = operator.tx.save.call_args.args[1]
+        self.assertTrue(receipt['baselinePublicEntryPreserved'])
+        self.assertTrue(receipt['degradedPending'])
+        self.assertFalse(receipt['fullBaselineServicePreserved'])
+        self.assertEqual(receipt['existingControls']['old-worker-drain']['operationId'], 'original-drain')
+        self.assertEqual(receipt['existingControls']['new-web-open']['phase'], 'UNKNOWN')
+        self.assertEqual(operator.succ['operations'], operations)
+        self.assertEqual(operator.worker_control.call_args.args[1], 'status')
+        self.assertEqual(receipt['oldWorkerObserved']['state']['phase'], 'QUIESCENT')
+
+    def test_pinned_original_baseline_cannot_be_reselected_or_extended_by_config(self):
+        cfg = self.config()
+        for field, value in [('baselinePath','/new-baseline.json'), ('baselineSha256','a'*64),
+                             ('allowedAdditiveColumns', {'app_video_tasks':['tenant_id']}),
+                             ('supplementalPath','/chosen-supplement.json')]:
+            bad = {**cfg, 'preservedUnknown':{**cfg['preservedUnknown'],field:value}}
+            with self.subTest(field=field), self.assertRaisesRegex(Hold, 'ORIGINAL_CASE05'):
+                validate_config(bad)
+
+    def test_guard_precedes_candidate_switch_retirement_and_final_completion(self):
+        operator = self.operator(b'candidate')
+        events = []
+        operator.preserved_unknown.establish.side_effect = lambda: events.append('establish')
+        with patch.object(VideoFamilyController,'run',side_effect=lambda:events.append('candidate')):
+            operator.run()
+        self.assertEqual(events, ['establish','candidate'])
+        operator.preserved_unknown.check.side_effect = lambda stage: events.append(stage)
+        operator.verify_internal_authority = Mock()
+        operator.forward, operator.before, operator.after, operator.dump = {}, {}, {}, 'baseline'
+        with patch.object(ctl.c,'switch_gateway_bundle',return_value={}) as switch:
+            operator.switch_forward_gateway()
+            switch.assert_called_once()
+        operator.worker, operator.web = {'id':'old-worker'}, {'id':'old-web'}
+        with patch.object(VideoFamilyController,'stop_exact',return_value={}):
+            operator.stop_exact(operator.worker)
+            operator.stop_exact(operator.web)
+        self.assertEqual(events[-3:], ['before-switch','before-retire-worker','before-retire-web'])
+        with self.assertRaises(FileNotFoundError):
+            with patch.object(ctl,'ROOT',self.root):
+                operator.verify_recovery_materials()
+        self.assertEqual(events[-1], 'final-before-complete')
 
     def authority_operator(self):
         operator = self.operator(b'candidate')
