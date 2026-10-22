@@ -32,7 +32,8 @@ export async function creationSourceEvidence(tx:PoolClient,rootId:string){
  const batchTable=(await tx.query("SELECT to_regclass('app_imagegen_batches') AS name")).rows[0]?.name;
  if(batchTable){
   const batches=(await tx.query(`${family} SELECT l.*,i.result->'artifacts' AS outputs FROM links l
-   JOIN app_imagegen_batches b ON b.id=l.target_id AND b.owner=l.actor_email
+   -- Link targets are heterogeneous text; cast the UUID source, never the link.
+   JOIN app_imagegen_batches b ON b.id::text=l.target_id AND b.owner=l.actor_email
    LEFT JOIN app_imagegen_batch_items i ON i.batch_id=b.id
    WHERE l.target_type='imagegen-batch' AND b.plan->>'creationEvidencePending'='true' ORDER BY i.ordinal`,[rootId])).rows;
   if(batches.length)pending=true;

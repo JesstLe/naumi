@@ -8,6 +8,9 @@ async function main(){
  const db=await import('../src/lib/db'),tenants=await import('../src/lib/saas/tenants'),schema=await import('../src/lib/saas/creation-schema'),native=await import('../src/lib/native-auth');
  const adminRoutes=await import('../src/app/api/admin/creations/route'),adminDetail=await import('../src/app/api/admin/creations/[id]/route'),enterpriseRoutes=await import('../src/app/api/enterprise/creations/route'),enterpriseDetail=await import('../src/app/api/enterprise/creations/[id]/route'),mediaRoute=await import('../src/app/api/enterprise/creations/[id]/assets/[assetId]/route'),contracts=await import('../src/lib/saas/creation-contracts'),storage=await import('../src/lib/storage');
  await tenants.ensureTenantSchema();await schema.ensureCreationSchema();const pool=db.getPool();
+ // Initialize the actual Worker-owned UUID schema before reading any creation.
+ const batches=await import('../src/lib/imagegen/batch-repository');await batches.ensureImagegenBatches();
+ const batchIdType=(await pool.query("SELECT format_type(a.atttypid,a.atttypmod) AS type FROM pg_attribute a WHERE a.attrelid='app_imagegen_batches'::regclass AND a.attname='id' AND NOT a.attisdropped")).rows[0].type;assert.equal(batchIdType,'uuid');
  const emails=['admin','ownerA','ownerB','manager','member','departed'].map(s=>`${s.toLowerCase()}@creation.fixture`),[admin,ownerA,ownerB,manager,member,departed]=emails;
  for(const email of emails)await db.getOrCreateUser(email,email);await pool.query("UPDATE app_users SET role='admin' WHERE email=$1",[admin]);
  const actor={email:admin,admin:true,consoleAdmin:true};const create=(ownerEmail:string)=>tenants.createTenant(actor,{commandId:randomUUID(),name:`Fixture ${ownerEmail}`,ownerEmail,validUntil:null,seatLimit:10,entitlementName:null,featurePolicy:{video:false}});
@@ -92,8 +95,16 @@ async function main(){
  const partialList=await(await adminRoutes.GET(request('/api/admin/creations?status=partial',admin))).json();assert(partialList.items.some((r:any)=>r.id===workflowRecord));
  await pool.query("UPDATE app_video_workflow_run_nodes SET status='completed' WHERE run_id=$1",[workflowId]);
  assert.equal((await(await enterpriseDetail.GET(workflowRequest(),detailCtx(workflowRecord))).json()).status,'succeeded');
+ const batchId=randomUUID(),batchRecord=`cr-${randomUUID()}`;
+ await record(batchRecord,departed,a.tenantId);
+ await pool.query("INSERT INTO app_imagegen_batches(id,owner,fingerprint,request,plan) VALUES($1,$2,'fixture','{}',$3::jsonb)",[batchId,departed,JSON.stringify({creationEvidencePending:true})]);
+ await pool.query("INSERT INTO app_imagegen_batch_items(batch_id,key,ordinal,child_operation_id,request,plan,result) VALUES($1,'first',0,$2,'{}','{}',$3::jsonb)",[batchId,randomUUID(),JSON.stringify({artifacts:[{artworkId:pendingWork}]})]);
+ await pool.query("INSERT INTO app_creation_links(creation_id,target_type,target_id,actor_email) VALUES($1,'imagegen-batch',$2,$3),($1,'imagegen-batch','legacy-non-uuid-source',$3)",[batchRecord,batchId,departed]);
+ const batchOwnerResponse=await enterpriseDetail.GET(request(`/api/enterprise/creations/${batchRecord}?tenantId=${a.tenantId}`,ownerA),detailCtx(batchRecord));assert.equal(batchOwnerResponse.status,200);
+ const batchEvidence=await batchOwnerResponse.json();assert.equal(batchEvidence.evidencePending,true);assert.equal(batchEvidence.assets.length,1);
+ const batchAdminResponse=await adminDetail.GET(request(`/api/admin/creations/${batchRecord}`,admin),detailCtx(batchRecord));assert.equal(batchAdminResponse.status,200);assert.equal((await batchAdminResponse.json()).assets.length,1);
  const previous=process.env.FLEET_PORTAL_ONLY;process.env.FLEET_PORTAL_ONLY='1';assert.equal((await adminRoutes.GET(request('/api/admin/creations',admin))).status,403);process.env.FLEET_PORTAL_ONLY=previous;
- console.log('SAAS_CREATION_READER_PASS real_pg=1 real_auth=1 cross_tenant=1 media_parent_scope=1 revoked_media=1 archived_owner=1 current_subordinates=1 private_cache=1 safe_projection=1 explicit_false_zero=1 exact_billing_dedup=1 unknown_null=1 child_assets=1 bounded_pages=1 video_range=1 ssrf_reject=1 fleet_restriction=1 supplier_calls=0');
+ console.log('SAAS_CREATION_READER_PASS real_pg=1 real_imagegen_uuid_schema=1 uuid_batch_recovery=1 heterogeneous_link_ids=1 real_auth=1 cross_tenant=1 media_parent_scope=1 revoked_media=1 archived_owner=1 current_subordinates=1 private_cache=1 safe_projection=1 explicit_false_zero=1 exact_billing_dedup=1 unknown_null=1 child_assets=1 bounded_pages=1 video_range=1 ssrf_reject=1 fleet_restriction=1 supplier_calls=0');
  await pool.end();
 }
 main().catch(e=>{console.error(e);process.exitCode=1;setTimeout(()=>process.exit(1),100).unref();});

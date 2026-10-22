@@ -66,3 +66,7 @@ C02：只展示确实保存的原始输入与处理后输入；画布已有源ar
 ## 视频家族合并专项（2026-10-23）
 
 根任务已合并ea7e4ab9及5d568c7b预算补丁。本次新增六profile真实应用/PG接受→换配置/凭据→企业暂停→poll/媒体结果/账务收尾集中验收；APIB与Geek接受未知均不重投。新匿名供应商素材入口local驱动已补冻结SHA路径，真实route+PG+文件验证同长度变字节503、owner变更404。共12组受影响脚本通过、正式tsc退出0；只有原始静态图片是真native解码，视频与media服务是明确fixture，combined Worker脚本为pure生命周期fixture。证据和正式Linux/生产剩余门槛见[视频整合验收](2026-10-23-saas-video-merge-acceptance.md)。没有新的线上消费或发布。
+
+## 真实 Worker 建表后的详情修复（2026-10-23）
+
+Linux 联合验收发现 UUID batch.id 与 text link.target_id 直接 JOIN 导致全部创作详情503。已改来源 ID 转text，回归先初始化真实imagegen schema再读普通与批次创作，平台/企业详情200，真实PG完整读取回归及309断言HEAD素材回归通过，正式tsc退出0。未改供应商媒体业务文件；修后固定镜像联合复验及47发布仍待根任务。同步计数0。细节见[UUID来源读取修复](2026-10-23-saas-uuid-source-reader.md)。
