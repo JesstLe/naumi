@@ -28,6 +28,17 @@
 
 ## 当前阻断与下一步
 
+## 最终本地验收通过
+
+固定源码`06665b7ec21db89bba7ae75ed5c2068effad39fa`，版号`1792699394`，同版Web/Worker镜像`sha256:1bad930983b941059c28698ca2acd6b2daab9c27c777d2e91064ef22a954c643`，归档SHA256`528fe7ee0e098ae5e6f76a4c5ffcea3b82febef06284c2e621e3281fb1892f1e`。原Dockerfile完整正式构建与公开更新说明检查通过，依赖锁未改变。独立审查未发现退休修复引入的可定位P0/P1/P2。
+
+- 实际Web＋新建PG＋同版combined Worker：`ee737eae-8c4b-4ba5-a7d9-e8563facaa25`通过18/18 HTTP组，包含真实密码登录/跨租户与成员权限/双cookie不提权/UUID详情/3份图片/内部Worker鉴权。实际PG保留2个完成且同commit的tick回执，真实进程重启、双队列排空和正常退出通过。
+- 签名参考素材GET200、HEAD200、Range206、RangeHEAD206及原字节SHA通过；实际同长度篡改GET/HEAD503、改owner GET404，原文件与owner已恢复。UNKNOWN为明确本地持久状态故障注入，真实进程重启后保持暂停/媒体排空/未解决项，resume409、退出2；没有模拟真实上游已接受结果。
+- 实际native/combined：`eacc47ca-4016-47d2-9d37-ebddf40704d5`通过完整视频解码与隔离、原UUID幂等、重启/排空/正常退出/零OOM。既有真实视频243465字节，SHA`c7aeff63…`；扫描Web是明确mock，不能代替上一组真实数据库证据。单样例峰值399.77MiB，不降低1GiB预算。
+- Linux固定镜像原Worker代码＋只读挂载的同源码测试入口：7个真实Node进程、38断言、实际60秒collector、symlink及坏回执负例通过；仅本组engine为fixture，不能冒称native。
+
+完整本机证据与固定hash审核材料在`output/saas-linux-release-20261023/LOCAL_ACCEPTANCE.json`及同目录日志/结果。所有本地验证供应商调用0、47连接0，隔离容器/网络已清理；没有把fixture库同步线上。**本地通过，47发布与真实生产验收尚待执行。**
+
 供应商线程先执行其已授权47视频发布，本任务未连接47、未持锁、未启动47候选、尚未push main。其首次候选在切流前发现实际签名素材HEAD悬挂（GET和Range正常），负责线程接管`reference-media.ts`，整合最小HEAD与local-SHA补丁，先安全收尾唯一失败候选，再新候选发布。旧站未因该旁路失败切流。
 
 因此上述B3是首次本地候选证据，**不是最终可上线SaaS候选**。收到HEAD修复后先整合并固定新commit/Image，补实际HEAD验证，再做最终联合验收；不得明知缺陷仍发布B3，不复用原失败操作ACK，不overlay在线程序，不重投付费任务。
