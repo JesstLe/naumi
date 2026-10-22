@@ -1,0 +1,58 @@
+import 'server-only';
+import {AsyncLocalStorage} from 'node:async_hooks';
+import {randomUUID,createHmac,timingSafeEqual} from 'node:crypto';
+import {z} from 'zod';
+import {getPool,dbEnabled} from '@/lib/db';
+import {enterpriseCreationRead} from '@/lib/enterprise/server';
+import {TeamError} from '@/lib/teams/server';
+import {ensureCreationSchema} from './creation-schema';
+import {settingsSecret} from '@/lib/settings-secret';
+
+export type CreationContext={actorEmail:string;scopeKind:'personal'|'tenant';tenantId:string|null;creationId?:string;requestText?:string;parameters?:Record<string,unknown>;sourcePath?:string};
+const storage=new AsyncLocalStorage<CreationContext>();
+export const currentCreationContext=()=>storage.getStore();
+export function withFrozenCreation<T>(value:CreationContext|undefined,run:()=>Promise<T>){return value?storage.run(value,run):run();}
+export function creationContinuationHeader(){const c=currentCreationContext();if(!c?.creationId)return {};const value=Buffer.from(JSON.stringify({actor:c.actorEmail,id:c.creationId})).toString('base64url');return {'x-naumi-creation-context':`${value}.${createHmac('sha256',settingsSecret()).update(value).digest('hex')}`};}
+export async function withCreationRequest<T extends Response>(request:Request,email:string,run:()=>Promise<T>):Promise<T>{
+ if(!dbEnabled||request.method==='GET')return run();
+ if(storage.getStore())return run();
+ await ensureCreationSchema();
+ const continuation=request.headers.get('x-naumi-creation-context');
+ if(continuation){
+  const [value,mac]=continuation.split('.'),expected=createHmac('sha256',settingsSecret()).update(value||'').digest('hex');
+  if(!value||!/^[a-f0-9]{64}$/.test(mac||'')||!timingSafeEqual(Buffer.from(mac),Buffer.from(expected)))throw new TeamError('创作上下文无效',403);
+  const parsed=JSON.parse(Buffer.from(value,'base64url').toString());
+  const row=(await getPool().query('SELECT id,actor_email,scope_kind,tenant_id FROM app_creation_records WHERE id=$1 AND actor_email=$2',[parsed.id,email.toLowerCase()])).rows[0];
+  if(!row||parsed.actor!==email.toLowerCase())throw new TeamError('创作上下文无效',403);
+  return storage.run({actorEmail:row.actor_email,scopeKind:row.scope_kind,tenantId:row.tenant_id,creationId:row.id},run);
+ }
+ const selected=request.headers.get('x-naumi-workspace')||'personal';
+ let tenantId:string|null=null;
+ if(selected!=='personal'){
+  const parsed=z.string().uuid().safeParse(selected);if(!parsed.success)throw new TeamError('工作空间参数无效',400);
+  tenantId=parsed.data;await enterpriseCreationRead(email,tenantId,async(tx,s)=>{
+   // Membership/grant and tenant status are checked in the existing authoritative scope.
+   const policy=(s as typeof s&{entitlement?:{featurePolicy:Record<string,boolean>}}).entitlement?.featurePolicy;
+   const feature=new URL(request.url).pathname.split('/').filter(Boolean).slice(1).join('.');
+   if(policy?.creation===false||policy?.[feature]===false)throw new TeamError('企业创作权益已关闭',403);
+   return s.team.id;
+  });
+ }
+ const context:CreationContext={actorEmail:email.toLowerCase(),scopeKind:tenantId?'tenant':'personal',tenantId,sourcePath:new URL(request.url).pathname};
+ let body:Record<string,any>|null=null;
+ if(request.headers.get('content-type')?.includes('application/json'))body=await request.clone().json().catch(()=>null);
+ const parent=request.headers.get('x-naumi-project-context')||body?.projectKey||body?.sessionId;
+ if(parent){if(parent.length>240||!/^[a-zA-Z0-9_:.\-]+$/.test(parent))throw new TeamError('项目上下文无效',400);
+  await getPool().query(`INSERT INTO app_creation_contexts(actor_email,context_kind,context_id,scope_kind,tenant_id) VALUES($1,'project',$2,$3,$4) ON CONFLICT DO NOTHING`,[context.actorEmail,parent,context.scopeKind,tenantId]);
+  const old=(await getPool().query("SELECT scope_kind,tenant_id FROM app_creation_contexts WHERE actor_email=$1 AND context_kind='project' AND context_id=$2",[context.actorEmail,parent])).rows[0];
+  if(old.scope_kind!==context.scopeKind||old.tenant_id!==tenantId)throw new TeamError('当前项目的工作空间已固定，请新建项目',409);
+ }
+ if(body){
+  if(body&&typeof body==='object'){
+   for(const key of ['prompt','instruction','message','text','requirements'])if(typeof body[key]==='string'){context.requestText=body[key].slice(0,50000);break;}
+   context.parameters=Object.fromEntries(['parameters','ratio','resolution','quality','count','size','seconds','mode','output','intent'].filter(k=>Object.hasOwn(body!,k)).map(k=>[k,body![k]]));
+  }
+ }
+ return storage.run(context,run);
+}
+export function creationId(){return `cr-${randomUUID()}`;}

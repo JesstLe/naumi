@@ -1,3 +1,4 @@
+import {creationContinuationHeader} from "@/lib/saas/creation-context";
 
 import { assertAgentToolAccess } from "@/lib/feature-access/server";
 import { Type, type TSchema } from "typebox";
@@ -165,7 +166,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
           ...init,
           signal,
           redirect: "error",
-          headers: { ...(init?.headers ?? {}), ...authHeaders(), "x-naumi-client-entry": "agent", ...(continuation?{[CONTINUATION_HEADER]:continuation}:{}) },
+          headers: { ...(init?.headers ?? {}), ...authHeaders(), ...creationContinuationHeader(), "x-naumi-client-entry": "agent", ...(continuation?{[CONTINUATION_HEADER]:continuation}:{}) },
         });
         const bytes = await readBoundedBytes(res, 2 * 1024 * 1024);
         const data = JSON.parse(bytes.toString("utf8") || "{}");

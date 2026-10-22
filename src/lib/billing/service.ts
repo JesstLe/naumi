@@ -1,3 +1,4 @@
+import {attachBillingCreationTx} from "../saas/creation-writer";
 import "server-only";
 import type { Pool } from "pg";
 import { BillingError, type BillingService, type OperationInput, type GrantInput, type Tx, type BillingQuote } from "./types";
@@ -98,6 +99,7 @@ export function createBillingService(): BillingService {
             if (wallet.principal - wallet.reserved < input.quote.reserveCredits)
                 throw new BillingError("INSUFFICIENT_CREDITS", "可用积分不足", 402);
             await repository.reserveTx(tx, row.email, row.id, input.quote.reserveCredits);
+            await attachBillingCreationTx(tx,row.id,row.email,input.quote.facts.feature);
             return { replayed: false };
         },
         async settleTx(tx, input, result) {
