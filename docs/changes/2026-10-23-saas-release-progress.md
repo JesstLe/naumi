@@ -1,0 +1,27 @@
+# SaaS 后台整合与47交付进度
+
+本轮用户授权：“后台你觉得验收通过之后 合并所有分支然后上线47服务器做真实验收”。顺序为本地验收、整合完成的业务分支、47三锁蓝绿与真实验收。没有把47业务库复制回本机；原本机预览与新建Linux验收库均为明确fixture。
+
+## 已完成
+
+- 平台、租户详情、企业后台按批准三张图实现。本机设计与交互passed；A11慢请求在卸载时Abort、A12实际账号切换清图片/要求/未保存草稿均有浏览器证据，见`design-qa.md`与58项矩阵。
+- 原GPT-6.1 Sol high负责人完成所有入口创作证据、冻结上下文/账务/恢复及权限修订，源码冻结`467ad6ce`；根任务已整合画布参考、视频批量、Agent恢复、模型新增、供应商运营及视频协议分支。独立销售站和历史回滚分支按盘点理由排除，不覆盖共享checkout或他人WIP。
+- 最新六profile整合专项及受影响模块12组、类型通过；`607fffde`修复local匿名素材读取绕过冻结SHA。应用/PG测试的上游与媒体HTTP明确是fixture，没有冒称可播放影片或真实供应商。
+- SaaS发布适配沿用同一三锁/canonical/CAS/备份/统一整站切流与排空；修复旧helper不安全回切，并保留UNKNOWN。按已审核PRD12采用受控维护降级，没有提供兼容旧业务程序回滚。最新Linux+实际Node门禁193组无skip通过；真实Nginx TLS52项本机降级验证通过，均不能替代47现场证据。
+- 合入视频最终预算`5d568c7b`：候选Web1536MiB、最终2048MiB、combined Worker1024MiB、主机余量1024MiB，三阶段MemAvailable/旧anon预算。SaaS不再复用NAS历史3GiB方法，前序必须是真实2GiB/1GiB完成发布。
+
+## 首次固定Linux候选
+
+完整源码`b3a71c087bb58077960988001be3f63c9e92bc4f`，BUILD_VERSION`1792699394`；按原Dockerfile完整Linux构建成功，同镜像Web/Worker制品`sha256:a2b848a74b1f5ecba596fdd87fb3cf289c56c826a970ea9d7fe3eb8ff77e446b`，archive SHA256`72f463903c304c661df5b745b6bd1c9a747a39dd06f39608926435a930a90180`。依赖锁`f769ef08…`，Dockerfile`131340ed…`。证据在忽略目录`output/saas-linux-build-20261023/`。
+
+真实combined/native验收`56b40e33-a910-4512-97cd-b740bebb0def`通过：PID1 root、扫描uid1001、媒体supervisor与无能力隔离native子进程、只读根/noexec tmp、无对外端口、内部网络、实际视频完整解码、原UUID幂等、重启对齐、双队列排空、正常停止和零OOM。已存在的真实上游视频仅用于本机解码，本轮供应商调用0。扫描接收器在该组为明确mock，不能作为真实App/数据库执行证明。峰值约396.21MiB仅代表这一个样例，不据此削减1GiB Worker预算。
+
+正在另跑同固定镜像的真实Web＋全新PG＋真实combined Worker：使用真实密码登录、平台/企业/受限成员HTTP、媒体鉴权、实际数据库tick回执、重启与UNKNOWN持久状态故障注入；不接生产数据库、不接NAS、不配置供应商。早期seed harness因standalone裁剪zod、react-server及next/server入口失败，改为将纯JS依赖/真实NextResponse实现一起bundle；随后本地Docker PG缺显式sslmode=disable导致Web未就绪，已修正fixture连接串。失败轮按UUID清理全部本机容器/网络，保留失败结果，不记为产品通过；没有改固定产品源码或镜像来迁就harness。最后结果收齐后更新本段。
+
+## 当前阻断与下一步
+
+供应商线程先执行其已授权47视频发布，本任务未连接47、未持锁、未启动47候选、尚未push main。其首次候选在切流前发现实际签名素材HEAD悬挂（GET和Range正常），负责线程接管`reference-media.ts`，整合最小HEAD与local-SHA补丁，先安全收尾唯一失败候选，再新候选发布。旧站未因该旁路失败切流。
+
+因此上述B3是首次本地候选证据，**不是最终可上线SaaS候选**。收到HEAD修复后先整合并固定新commit/Image，补实际HEAD验证，再做最终联合验收；不得明知缺陷仍发布B3，不复用原失败操作ACK，不overlay在线程序，不重投付费任务。
+
+最终47发布须在前序program/config/节点真实验收COMPLETE、旧槽退役且三锁释放后，重新读最新main/所有业务分支、线上固定镜像/当前模型配置与凭据/原journal和公网入口闭包。保留供应商新profile及后续任务，不能恢复旧配置134。生成本地验收与真实入口盘点的固定hash材料后，用`bash scripts/deploy-release.sh --lifecycle publish47-saas --config ...`走旁路、整站切流、实际排空停止和真实验收。当前R04后继构建、R05线上、R06现场恢复门禁尚未完成，未声称发布成功。
