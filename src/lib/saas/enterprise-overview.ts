@@ -44,7 +44,7 @@ export async function updateEnterpriseProfile(actor: TeamActor, command: z.infer
     if (!row) throw new TeamError('企业资料已变化，请刷新后重新编辑', 409);
     const result = { name: row.name, version: row.version };
     await tx.query(`INSERT INTO app_enterprise_audit(id,enterprise_id,actor,action,target,fingerprint,result,changes)
-      VALUES($1,$2,$3,'profile',$2::text,$4,$5::jsonb,$6::jsonb)`, [command.commandId, command.tenantId, actor.email, fingerprint, JSON.stringify(result), JSON.stringify({ before, after: result })]);
+      VALUES($1,$2,$3,'profile',$7,$4,$5::jsonb,$6::jsonb)`, [command.commandId, command.tenantId, actor.email, fingerprint, JSON.stringify(result), JSON.stringify({ before, after: result }), command.tenantId]);
     return result;
   }).catch(error => {
     if (error && typeof error === 'object' && 'code' in error && ['40001', '40P01', '23505'].includes(String(error.code))) throw new TeamError('企业资料已变化，请刷新后核对原操作结果', 409);
