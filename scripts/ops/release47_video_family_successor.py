@@ -2,21 +2,46 @@
 
 The model configuration stays unchanged throughout this transaction. Activation
 is a separate versioned config CAS after the program publication is COMPLETE.
-Only the NAS controller's post-retirement RAM growth method is reused; none of
-its migration, unknown-scanner, settlement, or resume exceptions are inherited.
+Final Web RAM is explicitly 2 GiB. No NAS migration, RAM growth, unknown-scanner,
+settlement, or resume exception is inherited.
 """
 import json
 import pathlib
 import re
 import uuid
+import time
 
 import release47_normal_controller as ctl
+import release47_recovery_supervisor as recovery
 from release47_host import environment, file_sha, public_identity, require
 from release47_image_delivery_successor import ImageDeliveryController
-from release47_nas_successor import NasController
 
 
 AUTHORIZATION = '将seedance kling wan h3家族群为视频节点配置并启用'
+MIB = 1024 ** 2
+CGROUP_ROOT = pathlib.Path('/sys/fs/cgroup/system.slice')
+MEMINFO = pathlib.Path('/proc/meminfo')
+
+
+def retirement_ram_budget(available_bytes, new_web_current_bytes, old_anonymous_bytes):
+    """Credit only old anonymous RAM; file cache and Swap earn no retirement credit."""
+    require(type(available_bytes) is int and available_bytes >= 0 and
+            type(new_web_current_bytes) is int and new_web_current_bytes >= 0 and
+            isinstance(old_anonymous_bytes, list) and len(old_anonymous_bytes) <= 2 and
+            all(type(value) is int and value >= 0 for value in old_anonymous_bytes),
+            'UNKNOWN_VIDEO_RETIREMENT_RAM')
+    available = available_bytes // MIB
+    # Round every credit downward. A partial MiB never reduces the hard reserve.
+    current = new_web_current_bytes // MIB
+    old_anon = sum(value // MIB for value in old_anonymous_bytes)
+    required = max(0, 2048 - current) + 1024 + 1024
+    predicted = available + old_anon
+    return {'passed': predicted >= required, 'availableMiB': available,
+            'newWebCurrentMiB': current, 'oldAnonymousCreditMiB': old_anon,
+            'predictedAfterRetirementAvailableMiB': predicted, 'requiredAvailableMiB': required,
+            'marginMiB': predicted - required, 'finalWebMiB': 2048,
+            'hostReserveMiB': 1024, 'workerReserveMiB': 1024,
+            'fileCacheCredited': False, 'swapIncluded': False}
 
 
 def validate_config(config):
@@ -29,8 +54,8 @@ def validate_config(config):
     require(type(config.get('webMemoryMiB')) is int and config['webMemoryMiB'] == 1536 and
             type(config.get('workerMemoryMiB')) is int and config['workerMemoryMiB'] == 1024 and
             config.get('reviewedCombinedMedia') is True and
-            type(config.get('webFinalMemoryMiB')) is int and config['webFinalMemoryMiB'] == 3072,
-            'VIDEO_FAMILY_REQUIRES_REVIEWED_1536M_WEB_1G_WORKER_3G_FINAL')
+            type(config.get('webFinalMemoryMiB')) is int and config['webFinalMemoryMiB'] == 2048,
+            'VIDEO_FAMILY_REQUIRES_REVIEWED_1536M_WEB_1G_WORKER_2G_FINAL')
     require(config.get('videoReferencePublicOrigin') == 'https://47.105.59.142',
             'EXACT_VIDEO_REFERENCE_PUBLIC_ORIGIN_REQUIRED')
     require(isinstance(config.get('storageAcceptanceScript'), str) and
@@ -87,12 +112,80 @@ def predecessor_proof(tx, state, config):
     return {'releaseId': active, 'phase': prior['phase'], 'retired': retired,
             'historicalDrainReclassified': False, 'historicalUnknownsCleared': False,
             'priorWebMemoryMiB': 3072, 'candidateWebMemoryMiB': 1536, 'workerMemoryMiB': 1024,
-            'hostReserveMiB': 1024, 'dualSlotRequiredMiB': 3584, 'finalWebMemoryMiB': 3072}
+            'hostReserveMiB': 1024, 'dualSlotRequiredMiB': 3584, 'finalWebMemoryMiB': 2048}
 
 
 class VideoFamilyController(ImageDeliveryController):
-    # Deliberately reuse this one method, not NasController's run/ready/recovery.
-    after_retirement = NasController.after_retirement
+    def retirement_memory_proof(self, stage, include_old=True):
+        require(stage in ['ready', 'retire', 'after-retirement'] and
+                include_old is (stage != 'after-retirement'), 'INVALID_VIDEO_MEMORY_PROOF_STAGE')
+        started = time.monotonic()
+        current = self.tx.pin(self.newweb)
+        require(current['State']['Running'] is True and current['Image'] == self.cfg['image'] and
+                current['HostConfig']['Memory'] == 1536 * MIB,
+                'CANDIDATE_VIDEO_MEMORY_BASELINE_CHANGED')
+        def cgroup(row):
+            require(re.fullmatch('[a-f0-9]{64}', row['Id']), 'EXACT_VIDEO_CGROUP_ID_REQUIRED')
+            return CGROUP_ROOT / ('docker-' + row['Id'] + '.scope')
+        raw_current = (cgroup(current) / 'memory.current').read_text().strip()
+        require(raw_current.isdecimal(), 'VIDEO_WEB_MEMORY_CURRENT_UNKNOWN')
+        available = [line.split() for line in MEMINFO.read_text().splitlines() if line.startswith('MemAvailable:')]
+        require(len(available) == 1 and len(available[0]) == 3 and available[0][1].isdecimal() and
+                available[0][2] == 'kB', 'VIDEO_HOST_MEM_AVAILABLE_UNKNOWN')
+        old_rows = []
+        for identity in [self.web, self.worker]:
+            row = self.tx.inspect(identity['id'])
+            require(all(public_identity(row).get(key) == identity.get(key) for key in ['id', 'name', 'image']),
+                    'VIDEO_RETIREMENT_RAM_OLD_SLOT_CHANGED')
+            if include_old:
+                require(row['State']['Running'] is True, 'VIDEO_RETIREMENT_RAM_OLD_SLOT_NOT_RUNNING')
+                fields = [line.split() for line in (cgroup(row) / 'memory.stat').read_text().splitlines()]
+                anon = [line[1] for line in fields if len(line) == 2 and line[0] == 'anon']
+                require(len(anon) == 1 and anon[0].isdecimal(), 'VIDEO_OLD_ANONYMOUS_RAM_UNKNOWN')
+                old_rows.append({'identity': public_identity(row), 'anonymousBytes': int(anon[0])})
+            else:
+                require(not row['State']['Running'] and row['HostConfig']['RestartPolicy']['Name'] == 'no',
+                        'OLD_SLOT_NOT_RETIRED')
+        require(time.monotonic() - started <= 5, 'VIDEO_RETIREMENT_RAM_OBSERVATION_TOO_SLOW')
+        proof = retirement_ram_budget(int(available[0][1]) * 1024, int(raw_current),
+                                      [row['anonymousBytes'] for row in old_rows])
+        proof.update(stage=stage, observedAt=ctl.now(), oldSlots=old_rows,
+                     newWeb=public_identity(current), kind='video-family-final-ram-budget')
+        self.tx.save('VIDEO_FINAL_RAM_' + stage.upper().replace('-', '_') + '.json', proof)
+        require(proof['passed'], 'FINAL_RAM_RESERVE_INSUFFICIENT')
+        return proof
+
+    def reference_proof(self):
+        result = super().reference_proof()
+        self.retirement_memory_proof('retire')
+        return result
+
+    def after_retirement(self):
+        proof = self.retirement_memory_proof('after-retirement', include_old=False)
+        row = self.tx.pin(self.newweb)
+        before = row['State']['StartedAt']
+        path = pathlib.Path(self.state['runtimeRecovery']['manifestPath'])
+        manifest = json.loads(path.read_bytes())
+        require(manifest['web']['id'] == self.newweb['id'] and manifest['web']['image'] == self.cfg['image'] and
+                manifest['web']['memoryMiB'] == 1536 and manifest['web']['staticSha256'] == recovery.static_pin(row) and
+                manifest['worker']['id'] == self.newworker['id'] and manifest['worker']['memoryMiB'] == 1024,
+                'VIDEO_MEMORY_SUPERVISOR_PIN_CHANGED')
+        self.tx.save('SUPERVISOR_BEFORE_MEMORY.json', manifest)
+        def grow(_operation):
+            self.tx.run(['docker', 'update', '--memory=2048m', '--memory-swap=2048m', row['Id']])
+            changed = self.tx.inspect(row['Id'])
+            require(changed['HostConfig']['Memory'] == 2048 * MIB and
+                    changed['HostConfig']['MemorySwap'] == 2048 * MIB and
+                    changed['State']['Running'] is True and changed['State']['StartedAt'] == before,
+                    'MEMORY_UPDATE_OR_PROCESS_CHANGED')
+            manifest['web'].update(staticSha256=recovery.static_pin(changed), memoryMiB=2048)
+            ctl.save(path, manifest)
+            require(json.loads(path.read_bytes()) == manifest, 'VIDEO_MEMORY_SUPERVISOR_READBACK_FAILED')
+            self.state['runtimeRecovery'].update(manifestSha256=recovery.sha(recovery.encoded(manifest)), memoryMiB=2048)
+            self.persist()
+            return {**proof, 'running': True, 'sameProcessStartedAt': before,
+                    'restartExecuted': False, 'manifestUpdated': True}
+        self.op('new-web-memory-grow', grow)
 
     def media_worker(self, action=None, operation=None):
         require(action in [None, 'resume'], 'VIDEO_READINESS_MEDIA_ACTION_INVALID')
@@ -155,6 +248,9 @@ const r=await fetch(base+'/health',{headers,redirect:'error',signal:AbortSignal.
                 proof['mediaProbe'].get('sourceSha256') == self.cfg['mediaProbeSha256'] and
                 proof.get('sourceCommit') == self.cfg['commit'] and proof.get('buildVersion') == self.cfg['version'],
                 'REAL_VIDEO_FAMILY_STORAGE_ACCEPTANCE_FAILED')
+        # Observe after actual image upload and native decode have charged RAM,
+        # before READY/browser/cutover can accept a known insufficient final slot.
+        self.retirement_memory_proof('ready')
         self.tx.save('PRIVATE_VIDEO_REFERENCE_ACCEPTANCE.json', proof)
         return {**result, 'videoReference': proof, 'videoReferencePublicOrigin': self.cfg['videoReferencePublicOrigin']}
 

@@ -14,7 +14,7 @@
 
 47在线 Web / Worker 同Image `600320c4d08b5093e3d27efa91e31bc4cc81596ce0d788e0d01c85bd198a0652`，源码 `0a572167448a91a5a9e2cfc4c73a3b557eb6406c`、BUILD_VERSION `1792674911`。模型配置134，APIB视频provider禁用，当前视频默认为旧Grok；没有`business.video.generate`专用定价，沿用现有视频统一计费规则。
 
-canonical revision608、当前正常发布 `release47-nas-upload-20261022` phase=COMPLETE；根CLEANUP_PENDING属于保留的历史事件，后续只可走已存在的严格正常发布继承门禁，不得清根状态或改状态目录。三锁开工检查均空闲，MemAvailable约3975MiB。候选按下文Web/Worker独立峰值旁路预算，旧槽真实退役后恢复已在线验证的3GiB上限，不把Swap当RAM。
+canonical revision608、当前正常发布 `release47-nas-upload-20261022` phase=COMPLETE；根CLEANUP_PENDING属于保留的历史事件，后续只可走已存在的严格正常发布继承门禁，不得清根状态或改状态目录。三锁开工检查均空闲，MemAvailable约3975MiB。候选按下文Web/Worker独立峰值旁路预算，旧槽真实退役后采用下文复核的2GiB上限，不把Swap当RAM。
 
 ## 模块进度
 
@@ -34,8 +34,10 @@ canonical revision608、当前正常发布 `release47-nas-upload-20261022` phase
 
 真实代码复核确认所有视频产物在result-assets中都要经过隔离probeMedia并全解码后才保存/结算；47当前没有MEDIA_WORKER_ORIGIN，不能只加供应商配置后宣称可用。因此候选将采用同固定镜像的一个Worker容器，父进程监督扫描子进程与隔离媒体子进程，Web不执行FFmpeg。公开Worker控制3001统一代理扫描内部3003及媒体3002，原控制UUID、UNKNOWN与排空门禁保留，崩溃监督器也经同一入口恢复。
 
-候选预算调整为Web 1536MiB、Worker 1024MiB、主机余量1024MiB（合计3584MiB MemAvailable门槛）；旧槽真正退役后Web恢复3072MiB并同步监督器静态指纹，Worker保持1024MiB/单媒体并发。239MiB运行时复制、原生解码和输入临时副本都计入Worker峰值，不把tmpfs或Swap当免费RAM。Worker只读根、独立媒体秘密、精确共享scratch、私有控制，无DB/NAS供应商凭据；仅容器PID命名空间所需cap，KILL用于取消降uid子进程，native仍chroot/dropuid/seccomp。未扩大bucket权限。
+候选预算调整为Web 1536MiB、Worker 1024MiB、主机余量1024MiB（合计3584MiB MemAvailable门槛）；旧槽真正退役后Web采用2048MiB并同步监督器静态指纹，Worker保持1024MiB/单媒体并发。239MiB运行时复制、原生解码和输入临时副本都计入Worker峰值，不把tmpfs或Swap当免费RAM。Worker只读根、独立媒体秘密、精确共享scratch、私有控制，无DB/NAS供应商凭据；仅容器PID命名空间所需cap，KILL用于取消降uid子进程，native仍chroot/dropuid/seccomp。未扩大bucket权限。
 
 这部分仍待固定Linux真实sandbox、候选健康/样片解码与原任务排空验收；没有启动47候选或修改当前服务。
 
 新combined Worker保留容器私有PID命名空间；CAP_KILL只用于监督和取消本容器内降uid子进程。常规退役仍必须先控制drain并取得扫描与媒体队列为零的证据，stop与SIGKILL不替代排空。
+
+最终RAM复核：47实际MemTotal约7270MiB，MemAvailable约3985MiB，旧Web/Worker cgroup current约975/47MiB。3GiB最终Web加新增1GiB Worker和1GiB主机余量，在最乐观释放旧槽全部current时仍不足，故本轮明确最终Web为2048MiB，候选1536MiB；JS heap仍受1152MiB限制。Ready与退役前仅计旧槽anon可释放量做保守预测，退役后再次实测，不把旧filecache或Swap记作新RAM。完整镜像需按此最终提交重新固定。
