@@ -165,3 +165,7 @@ APIB各任务当前回执 `cost` 合计 **11.037970**、`credits_cost` 合计 **
 - [APIB状态/文档关联](https://api.apib.ai/api/status)、[APIMart视频与任务契约](https://docs.apimart.ai/en/api-reference/tasks/status.md)、[素材上传](https://docs.apimart.ai/en/api-reference/uploads/images.md)。
 - [账户级余额及单位](https://docs.apimart.ai/en/api-reference/account/user-balance.md)。
 - [Geek视频矩阵](https://docs.geeknow.ai/api-reference/videos/model-matrix)、[国产视频统一协议](https://docs.geeknow.ai/api-reference/videos/aigc/generation)、[账户接口](https://docs.geeknow.ai/api-reference/account/billing)。
+
+## 连接材料清理状态
+
+本次仅使用受限ACL临时SSH私钥副本，原始私钥与连接元数据未改动。删除临时副本及空目录的命令被自动审批策略拒绝，返回仅为 `blocked by policy`；未换方式重试或绕过，状态为 `CLEANUP_BLOCKED_BY_POLICY`。副本仍保留在受限目录，准确路径及只读核验记录见本地忽略目录 `local-access.json`、`connection-cleanup.json`，不得误报清理完成。
