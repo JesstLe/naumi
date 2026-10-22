@@ -28,7 +28,7 @@
 
 ## 当前阻断与下一步
 
-## 最终本地验收通过
+## 066候选本地验收通过（后续真实冷启动缺口待整合）
 
 固定源码`06665b7ec21db89bba7ae75ed5c2068effad39fa`，版号`1792699394`，同版Web/Worker镜像`sha256:1bad930983b941059c28698ca2acd6b2daab9c27c777d2e91064ef22a954c643`，归档SHA256`528fe7ee0e098ae5e6f76a4c5ffcea3b82febef06284c2e621e3281fb1892f1e`。原Dockerfile完整正式构建与公开更新说明检查通过，依赖锁未改变。独立审查未发现退休修复引入的可定位P0/P1/P2。
 
@@ -37,7 +37,11 @@
 - 实际native/combined：`eacc47ca-4016-47d2-9d37-ebddf40704d5`通过完整视频解码与隔离、原UUID幂等、重启/排空/正常退出/零OOM。既有真实视频243465字节，SHA`c7aeff63…`；扫描Web是明确mock，不能代替上一组真实数据库证据。单样例峰值399.77MiB，不降低1GiB预算。
 - Linux固定镜像原Worker代码＋只读挂载的同源码测试入口：7个真实Node进程、38断言、实际60秒collector、symlink及坏回执负例通过；仅本组engine为fixture，不能冒称native。
 
-完整本机证据与固定hash审核材料在`output/saas-linux-release-20261023/LOCAL_ACCEPTANCE.json`及同目录日志/结果。所有本地验证供应商调用0、47连接0，隔离容器/网络已清理；没有把fixture库同步线上。**本地通过，47发布与真实生产验收尚待执行。**
+完整本机证据与固定hash审核材料在`output/saas-linux-release-20261023/LOCAL_ACCEPTANCE.json`及同目录日志/结果。所有本地验证供应商调用0、47连接0，隔离容器/网络已清理；没有把fixture库同步线上。该记录仅证明已列检查在066镜像通过，不是47生产通过。
+
+### 真实页面发现的新阻断
+
+47前序R2程序已COMPLETE并启用模型配置135后，负责人在真实GUI发现视频目录冷加载时创建节点未受ready gate约束，实际只保存空prompt/providerOptions，默认模型缺失；原UUID/JSON证据保留，未用harness补选模型掩盖。供应商Sol子任务拥有canvas-client.tsx修复，本任务不并行修改该文件。R3会同时整合本轮共享媒体退休最小补丁（仅worker/test两文件，patch SHA`186f34af…`），并补combined→combined前序2GiB/1GiB严格证明。**066因此不发布**，旧本地结果保留并标记SUPERSEDED；收到冷启动及发布控制修复后重新整合、分配高于真实已发布版本的版号、固定完整Linux镜像并集中复验。直到前序最终真实节点验收、旧槽退役和三锁释放，不连接47、不push main、不叠候选。
 
 供应商线程先执行其已授权47视频发布，本任务未连接47、未持锁、未启动47候选、尚未push main。其首次候选在切流前发现实际签名素材HEAD悬挂（GET和Range正常），负责线程接管`reference-media.ts`，整合最小HEAD与local-SHA补丁，先安全收尾唯一失败候选，再新候选发布。旧站未因该旁路失败切流。
 
