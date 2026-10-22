@@ -19,7 +19,7 @@ type View = 'overview' | 'members' | 'roles' | 'records' | 'usage' | 'settings';
 type LegacySection = 'confirmed' | 'artworks' | 'tasks';
 type Member = EnterpriseMember & { membership_status?: 'active' | 'suspended'; membership_expires_at?: string | null };
 type Editor = { kind: 'organization' | 'expiry'; member: Member } | { kind: 'role'; role: EnterpriseRole | null } | null;
-type InitialQuery = { tenantId?: string; enterpriseId?: string; view?: string; from?: string; to?: string; email?: string };
+type InitialQuery = { tenantId?: string; enterpriseId?: string; view?: string; from?: string; to?: string; email?: string; user?: string };
 const identity = (email: string) => email.endsWith(`@${USERNAME_DOMAIN}`) ? email.slice(0, email.lastIndexOf('@')) : email;
 const datetime = (value: string | null | undefined) => value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '永久';
 const inputDate = (value: string | null | undefined) => { if (!value) return ''; const date = new Date(value); return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16); };
@@ -46,6 +46,8 @@ export function EnterpriseConsole({ initialQuery = {} }: { initialQuery?: Initia
   }, [email, ready]);
   if (!entry || entry.email !== email) return <main className={styles.page}><div className={styles.empty} role='status'>加载企业身份…</div></main>;
   if (!entry.enterprises.length) return <main className={styles.page}><section className={styles.empty}><Building2 size={28} /><p>{error || '当前账号没有企业管理权限'}</p><a href='/dashboard'>返回创作工作台</a></section></main>;
+  const requested = initialQuery.tenantId || initialQuery.enterpriseId;
+  if (requested && !entry.enterprises.some(enterprise => enterprise.id === requested)) return <main className={styles.page}><section className={styles.empty}><Building2 size={28} /><p>当前企业不可访问</p><a href='/enterprise'>返回可访问企业</a></section></main>;
   return <Workspace key={email} enterprises={entry.enterprises} initialQuery={initialQuery} email={email} />;
 }
 
@@ -54,7 +56,7 @@ function Workspace({ enterprises, initialQuery, email }: { enterprises: Enterpri
   const [enterpriseId, setEnterpriseId] = useState(enterprises.some(t => t.id === requestedId) ? requestedId! : enterprises[0].id);
   const [data, setData] = useState<SaasSnapshot | null>(null), [view, setView] = useState<View>(validView(initialQuery.view));
   const [loading, setLoading] = useState(true), [pending, setPending] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [mobileOpen, setMobileOpen] = useState(false);
-  const [selected, setSelected] = useState(initialQuery.email || ''), [section, setSection] = useState<LegacySection>('confirmed'), [page, setPage] = useState(1);
+  const [selected, setSelected] = useState(initialQuery.user || initialQuery.email || ''), [section, setSection] = useState<LegacySection>('confirmed'), [page, setPage] = useState(1);
   const dates = presetDates('last7');
   const [range, setRange] = useState({ from: validDate(initialQuery.from) ? initialQuery.from! : dates.from, to: validDate(initialQuery.to) ? initialQuery.to! : dates.to });
   const [dateOpen, setDateOpen] = useState(false), [draftRange, setDraftRange] = useState(range);
