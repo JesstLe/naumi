@@ -2,7 +2,8 @@ import "server-only";
 import {createHash} from "node:crypto";
 import {listArtworksByIds} from "../db";
 import {canReadMedia,getMediaAsset,importLegacyMedia} from "../media-assets";
-import {storageKeyFromManagedUrl,readManagedObject,writeStoredObject,presignStoredObject,privateMedia} from "../storage";
+import {storageKeyFromManagedUrl,readManagedObject,writeStoredObject,presignStoredObject,privateMedia,remoteMediaAccess} from "../storage";
+import {createVideoReferenceMediaUrl} from "./reference-media-token";
 import {VideoContractError} from "./contract";
 import {videoReferenceSchema} from "./references";
 import type {VideoGenerationRequest,VideoReference} from "./types";
@@ -57,7 +58,11 @@ export async function materializeVideoReferences(actor:string,request:VideoGener
     if(options.multipart)return {...ref};
     let url=urls.get(key);
     if(!url){
-      if(privateMedia){
+      if(privateMedia&&remoteMediaAccess==="proxy"){
+        const asset=await getMediaAsset(key);
+        if(!asset||asset.sha256!==ref.sha256||Number(asset.bytes)!==ref.bytes||asset.content_type!==ref.mimeType)invalid("素材版本无法核对，未生成外部访问签名");
+        url=createVideoReferenceMediaUrl({key,sha256:asset.sha256,bytes:Number(asset.bytes),contentType:asset.content_type,owner:asset.owner,public:asset.public});
+      }else if(privateMedia){
         const asset=await getMediaAsset(key);
         if(!asset?.remote_ready||asset.sha256!==ref.sha256){
           const object=await readManagedObject(`/media/${key}`,250*1024*1024);

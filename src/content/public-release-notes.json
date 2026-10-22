@@ -1,5 +1,24 @@
 [
   {
+    "version": "1792696653",
+    "title": {
+      "zh": "视频创作选项更新",
+      "en": "Video creation options"
+    },
+    "improvements": [
+      {
+        "zh": "视频节点新增多种生成选项，按所选模式显示可用参数。",
+        "en": "Added video generation choices with settings matched to the selected mode."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "修复私有参考素材无法用于部分视频生成的问题。",
+        "en": "Fixed private reference media being unavailable for some video generation options."
+      }
+    ]
+  },
+  {
     "version": "1792674911",
     "title": {
       "zh": "图片上传体验修复",

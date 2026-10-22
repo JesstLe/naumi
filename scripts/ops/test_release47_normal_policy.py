@@ -86,6 +86,25 @@ class NormalPolicy(unittest.TestCase):
  def test_no_old_port_or_consumed_controller(self):
   s=pathlib.Path(ctl.__file__).read_text();self.assertNotIn("'13101'",s);self.assertNotIn('release47_successor_controller',s);self.assertIn('unknownLeases\']==0',s)
 class WorkerReceipt(unittest.TestCase):
+ def combined(self):
+  return {'commit':'b'*40,'paused':True,'activeTicks':0,'unresolvedTicks':0,'phase':'QUIESCENT','lastTick':{'phase':'complete'},
+    'mediaWorker':{'ok':True,'version':'b'*40,'sandbox':True,'draining':True,'running':0,'queued':0,'terminal':3,'maxActive':8,'concurrency':1}}
+ def test_combined_worker_drain_preserves_terminal_output_but_waits_for_active_media(self):
+  worker=self.combined();self.assertTrue(m.worker_quiescent(worker));self.assertTrue(m.worker_completed(worker))
+  for key,value in [('running',1),('queued',1),('draining',False)]:
+   changed=copy.deepcopy(worker);changed['mediaWorker'][key]=value
+   self.assertFalse(m.worker_quiescent(changed));self.assertTrue(m.worker_completed(changed))
+ def test_combined_worker_health_unknown_drift_and_unsafe_counts_fail_closed(self):
+  for key,value in [('ok',False),('version','c'*40),('sandbox',False),('running',None),('queued',False),('terminal',-1),('maxActive',0),('concurrency',2),('concurrency',True)]:
+   worker=self.combined();worker['mediaWorker'][key]=value
+   with self.subTest(key=key,value=value):self.assertFalse(m.worker_quiescent(worker));self.assertFalse(m.worker_completed(worker))
+  worker=self.combined();worker['mediaWorker']=None
+  self.assertFalse(m.worker_quiescent(worker));self.assertFalse(m.worker_completed(worker))
+ def test_combined_worker_cannot_infer_media_version_from_missing_scanner_identity(self):
+  worker=self.combined();del worker['commit']
+  self.assertFalse(m.worker_quiescent(worker));self.assertFalse(m.worker_completed(worker))
+  for unknown in [None,[],False]:
+   self.assertFalse(m.worker_quiescent(unknown));self.assertFalse(m.worker_completed(unknown))
  def test_nas_scanner_preservation_is_exact_and_never_completion(self):
   tick={'id':'original','workerBootId':'boot','workerInstanceId':'worker','workerCommit':'commit','targetWebInstanceId':'web','phase':'unknown'}
   w={'paused':True,'activeTicks':0,'unresolvedTicks':1,'phase':'UNKNOWN','lastTick':tick}

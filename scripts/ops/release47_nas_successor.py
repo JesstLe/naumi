@@ -11,10 +11,11 @@ from release47_host import require,file_sha,public_identity
 
 AUTHORIZATION='那你把上一轮发布未收尾的问题处理好，然后把这次修复上线，别影响正在使用的用户。'
 
-def memory_growth_budget(available_mib,current_mib,final_mib):
+def memory_growth_budget(available_mib,current_mib,final_mib,worker_mib=128):
  require(type(final_mib)is int and final_mib==3072,'EXACT_FINAL_MEMORY_REQUIRED')
- require(available_mib>=max(0,final_mib-current_mib)+1024+128,'FINAL_RAM_RESERVE_INSUFFICIENT')
- return {'availableMiB':available_mib,'currentUsageMiB':current_mib,'finalMiB':final_mib,'hostReserveMiB':1024,'workerReserveMiB':128}
+ require(type(worker_mib)is int and worker_mib in [128,1024],'REVIEWED_FINAL_WORKER_MEMORY_REQUIRED')
+ require(available_mib>=max(0,final_mib-current_mib)+1024+worker_mib,'FINAL_RAM_RESERVE_INSUFFICIENT')
+ return {'availableMiB':available_mib,'currentUsageMiB':current_mib,'finalMiB':final_mib,'hostReserveMiB':1024,'workerReserveMiB':worker_mib}
 
 def reviewed_reservations(before,after,proof):
  import release47_task_snapshot as tasks
@@ -137,7 +138,7 @@ class NasController(ImageDeliveryController):
   memory=pathlib.Path('/sys/fs/cgroup/system.slice/docker-'+row['Id']+'.scope/memory.current')
   current=(int(memory.read_text())+1048575)//1048576
   available=int(next(l.split()[1]for l in pathlib.Path('/proc/meminfo').read_text().splitlines()if l.startswith('MemAvailable:')))//1024
-  proof=memory_growth_budget(available,current,self.cfg['webFinalMemoryMiB'])
+  proof=memory_growth_budget(available,current,self.cfg['webFinalMemoryMiB'],self.cfg.get('workerMemoryMiB',128))
   self.tx.save('MEMORY_GROWTH_PREFLIGHT.json',proof)
   def grow(_):
    self.tx.run(['docker','update','--memory=3072m','--memory-swap=3072m',row['Id']])

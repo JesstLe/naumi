@@ -433,7 +433,7 @@ def record_failed_observation(folder, action, p, revision, reason):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['check', 'begin', *STAGES, 'status', 'publish47-nas'])
+    parser.add_argument('action', choices=['check', 'begin', *STAGES, 'status', 'publish47-nas', 'publish47-video-family'])
     parser.add_argument('--config', type=pathlib.Path)
     parser.add_argument('--plan', type=pathlib.Path)
     parser.add_argument('--snapshot', type=pathlib.Path)
@@ -444,6 +444,11 @@ def main(argv=None):
     p = None
     state_verified = False
     try:
+        if a.action == 'publish47-video-family':
+            require(os.name == 'posix' and a.config is not None, 'LIVE_VIDEO_FAMILY_CONFIG_REQUIRED')
+            from release47_video_family_successor import main as publish_video_family
+            publish_video_family(a.config)
+            return 0
         if a.action == 'publish47-nas':
             require(os.name == 'posix' and a.config is not None,'LIVE_NAS_CONFIG_REQUIRED')
             # The established controller owns all three locks and the ORIGINAL

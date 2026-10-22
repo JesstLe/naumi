@@ -11,6 +11,8 @@ import {COMPSHARE_PROFILES,compshareCodec} from "./compshare";
 import {autoDLCodec} from "./autodl";
 import {runningHubCodec} from "./runninghub";
 import {comfyUICodec} from "./comfyui";
+import {APIB_VERIFIED_PROFILES,apibVerifiedCodec} from "./apib-verified";
+import {GEEK_VERIFIED_PROFILES,geekVerifiedCodec} from "./geek-verified";
 let installed=false;
 export function installVideoWireCodecs(){
   if(installed)return;installed=true;
@@ -23,4 +25,6 @@ export function installVideoWireCodecs(){
   for(const profile of TF_ROUTER_PROFILES)registerVideoWireProfile(profile,tfRouterCodec);
   for(const profile of COMPSHARE_PROFILES)registerVideoWireProfile(profile,compshareCodec(profile));
   registerVideoWireProfile("autodl",autoDLCodec);registerVideoWireProfile("runninghub",runningHubCodec);registerVideoWireProfile("comfyui",comfyUICodec);
+  for(const profile of APIB_VERIFIED_PROFILES)registerVideoWireProfile(profile,apibVerifiedCodec);
+  for(const profile of GEEK_VERIFIED_PROFILES)registerVideoWireProfile(profile,geekVerifiedCodec(profile));
 }

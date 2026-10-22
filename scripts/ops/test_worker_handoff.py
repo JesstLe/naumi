@@ -2,6 +2,9 @@ import copy
 import datetime
 import json
 import pathlib
+import os
+import shutil
+import subprocess
 import tempfile
 import types
 import unittest
@@ -224,6 +227,181 @@ class WorkerHandoff(unittest.TestCase):
             m.execute(self.args, self.folder, bad)
         saved = json.loads((self.folder / (self.args.operation_id + '.json')).read_text())
         self.assertEqual(saved['phase'], 'UNKNOWN')
+
+
+class CombinedWorkerHandoff(unittest.TestCase):
+    """The proxy's partial failure must retain the scanner's original request."""
+    def setUp(self):
+        self.legacy = WorkerHandoff()
+        self.legacy.setUp()
+        self.args, self.folder = self.legacy.args, self.legacy.folder
+        self.media = {'ok': True, 'version': self.args.expected_commit, 'sandbox': True,
+                      'draining': False, 'running': 0, 'queued': 0, 'terminal': 3, 'maxActive': 8, 'concurrency': 1}
+        self.legacy.status['mediaWorker'] = self.media
+        self.receipts, self.requests = {}, []
+        self.main_writes = self.media_attempts = 0
+        self.media_timeout = self.missing_media = self.wrong_mode = False
+        self.media_enabled = True
+
+    def tearDown(self):
+        self.legacy.tearDown()
+
+    def command(self, cmd):
+        if cmd[:2] == ['docker', 'inspect']:
+            rows = json.loads(self.legacy.command(cmd))
+            if cmd[2] == 'worker':
+                rows[0]['Config']['Env'].append('NAUMI_WORKER_TARGET_INSTANCE_ID=web-instance')
+                if self.media_enabled:
+                    rows[0]['Config']['Env'].append('NAUMI_MEDIA_WORKER=1')
+            return json.dumps(rows)
+        request = json.loads(cmd[-1])
+        if request is None:
+            value = copy.deepcopy(self.legacy.status)
+            if self.missing_media:
+                value.pop('mediaWorker', None)
+            return json.dumps(value)
+        self.requests.append(copy.deepcopy(request))
+        op = request['operationId']
+        if op not in self.receipts:
+            self.main_writes += 1
+            if request['action'] == 'reconcile':
+                self.legacy.status.update(paused=True, phase='QUIESCENT', revision=self.legacy.status['revision']+1,
+                                          unresolvedTicks=0)
+                result = {'state': self.legacy.status, 'receipt': {'action': 'reconcile', 'revision': self.legacy.status['revision'],
+                          'serverReceipt': {'tickId': request['tickId'], 'phase': 'completed',
+                                            'web': {'instanceId': 'web-instance', 'commit': self.args.expected_commit}}}}
+            else:
+                result = json.loads(self.legacy.command(cmd))
+            self.receipts[op] = copy.deepcopy(result['receipt'])
+        self.media_attempts += 1
+        if self.media_timeout:
+            raise OSError('Synthetic media timeout after scanner ACK')
+        if not self.wrong_mode:
+            self.media['draining'] = request['action'] != 'resume'
+        return json.dumps({'state': self.legacy.status, 'receipt': self.receipts[op]})
+
+    def test_real_media_health_is_required_only_for_combined_worker(self):
+        self.args.action = 'status'
+        result = m.execute(self.args, self.folder, self.command)
+        self.assertEqual(result['state']['mediaWorker']['terminal'], 3)
+        self.assertEqual(list(self.folder.glob('*.json')), [])
+        self.missing_media = True
+        with self.assertRaisesRegex(m.lifecycle.Blocked, 'MEDIA_WORKER_STATUS'):
+            m.execute(self.args, self.folder, self.command)
+
+    def test_wrong_or_unknown_media_health_blocks_before_control(self):
+        for field, value in [('ok', False), ('version', 'c'*40), ('sandbox', False), ('draining', None),
+                             ('running', None), ('queued', -1), ('terminal', False), ('maxActive', 0),
+                             ('concurrency', True), ('concurrency', 2)]:
+            with self.subTest(field=field, value=value):
+                prior = self.media[field]
+                self.media[field] = value
+                with self.assertRaisesRegex(m.lifecycle.Blocked, 'MEDIA_WORKER_STATUS'):
+                    m.execute(self.args, self.folder, self.command)
+                self.media[field] = prior
+        self.assertEqual(self.main_writes, 0)
+        self.assertEqual(list(self.folder.glob('*.json')), [])
+
+    def test_main_ack_then_media_timeout_reuses_original_uuid_and_body(self):
+        self.media_timeout = True
+        with self.assertRaises(OSError):
+            m.execute(self.args, self.folder, self.command)
+        file = self.folder / (self.args.operation_id+'.json')
+        unknown = json.loads(file.read_text())
+        self.assertEqual(unknown['phase'], 'UNKNOWN')
+        self.assertTrue(unknown['binding']['mediaWorker'])
+        self.assertTrue(self.legacy.status['paused'], 'The scanner really acknowledged before the simulated media timeout')
+        self.media_timeout = False
+        result = m.execute(self.args, self.folder, self.command)
+        self.assertEqual(result['result'], 'ACKNOWLEDGED')
+        self.assertTrue(result['state']['mediaWorker']['draining'])
+        self.assertEqual(self.requests[0], self.requests[1])
+        self.assertEqual(json.loads(file.read_text())['request'], unknown['request'])
+        self.assertEqual(self.main_writes, 1, 'Proxy duplicate scanner ACK must not advance its revision twice')
+        self.assertEqual(self.media_attempts, 2)
+
+    def test_partial_media_failure_blocks_another_operation(self):
+        self.media_timeout = True
+        with self.assertRaises(OSError):
+            m.execute(self.args, self.folder, self.command)
+        self.args.operation_id = '55555555-5555-4555-8555-555555555555'
+        with self.assertRaisesRegex(m.lifecycle.Blocked, 'UNRESOLVED_HANDOFF_BLOCKS_NEXT'):
+            m.execute(self.args, self.folder, self.command)
+        self.assertEqual(self.main_writes, 1)
+        self.assertEqual(self.media_attempts, 1)
+
+    def test_missing_future_worker_flag_is_never_treated_as_legacy(self):
+        self.args.require_media_worker = True
+        self.media_enabled = False
+        with self.assertRaisesRegex(m.lifecycle.Blocked, 'REQUIRED_MEDIA_WORKER_NOT_CONFIGURED'):
+            m.execute(self.args, self.folder, self.command)
+        self.assertEqual(self.main_writes, 0)
+
+    def test_removing_media_flag_cannot_complete_an_unknown_combined_operation(self):
+        self.media_timeout = True
+        with self.assertRaises(OSError):
+            m.execute(self.args, self.folder, self.command)
+        self.media_timeout = False
+        self.media_enabled = False
+        with self.assertRaisesRegex(m.lifecycle.Blocked, 'OPERATION_BINDING_CONFLICT'):
+            m.execute(self.args, self.folder, self.command)
+
+    def test_media_mode_is_observed_before_acknowledging_the_host_operation(self):
+        self.wrong_mode = True
+        with self.assertRaisesRegex(m.lifecycle.Blocked, 'MEDIA_WORKER_CONTROL_NOT_OBSERVED'):
+            m.execute(self.args, self.folder, self.command)
+        saved = json.loads((self.folder/(self.args.operation_id+'.json')).read_text())
+        self.assertEqual(saved['phase'], 'UNKNOWN')
+
+    def test_reconcile_keeps_both_services_draining_without_a_new_resume(self):
+        self.args.action = 'reconcile'
+        self.args.tick_id = '66666666-6666-4666-8666-666666666666'
+        self.legacy.status.update(phase='UNKNOWN', paused=True, unresolvedTicks=1, lastTick={'id': self.args.tick_id})
+        result = m.execute(self.args, self.folder, self.command)
+        self.assertTrue(result['state']['paused'])
+        self.assertTrue(result['state']['mediaWorker']['draining'])
+        self.assertEqual([r['action'] for r in self.requests], ['reconcile'])
+        self.assertEqual(self.requests[0]['tickId'], self.args.tick_id)
+
+
+@unittest.skipUnless(shutil.which('node'), 'Node.js validates the actual docker-exec JavaScript')
+class CombinedRemoteProtocol(unittest.TestCase):
+    def run_remote(self, action=None, change=None, http_status=200):
+        media = {'ok': True, 'version': 'b'*40, 'sandbox': True, 'draining': not action or action['action'] != 'resume',
+                 'running': 0, 'queued': 0, 'terminal': 2, 'maxActive': 8, 'concurrency': 1}
+        media.update(change or {})
+        state = {'mediaWorker': media}
+        payload = {'state': state, 'receipt': {'action': action['action'], 'revision': 1}} if action else state
+        if http_status != 200:
+            payload = {'error': 'synthetic-private-upstream-error-never-print'}
+        setup = "const calls=[];globalThis.fetch=async(url,init)=>{calls.push({url,init});return new Response("+json.dumps(json.dumps(payload))+",{status:"+str(http_status)+",headers:{'content-type':'application/json'}})};\n"
+        audit = "\nif(calls.length!==1||!calls[0].url.startsWith('http://127.0.0.1:3001/'))throw Error('CLIENT_MUST_ONLY_USE_PARENT_PROXY');if(action&&JSON.stringify(JSON.parse(calls[0].init.body))!==JSON.stringify(action))throw Error('ORIGINAL_CONTROL_BODY_CHANGED');"
+        env = {**os.environ, 'SOURCE_COMMIT': 'b'*40, 'NAUMI_WORKER_RELEASE_CONTROL': '1', 'NAUMI_MEDIA_WORKER': '1',
+               'VIDEO_WORKER_SECRET': 'synthetic-only-secret-at-least-32-characters', 'NAUMI_WORKER_CONTROL_PORT': '3001'}
+        return subprocess.run(['node', '--input-type=module', '-e', setup+m.REMOTE+audit, m.canonical(action)],
+                              capture_output=True, text=True, timeout=10, env=env)
+
+    def test_actual_remote_uses_only_parent_proxy_for_every_control(self):
+        for action in [None, {'action': 'drain', 'operationId': 'original'}, {'action': 'resume', 'operationId': 'original'},
+                       {'action': 'reconcile', 'operationId': 'original'}]:
+            with self.subTest(action=action):
+                result = self.run_remote(action)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('mediaWorker', result.stdout)
+
+    def test_actual_remote_refuses_unsafe_media_health(self):
+        for change in [{'version': 'c'*40}, {'sandbox': False}, {'running': None}, {'queued': True},
+                       {'terminal': -1}, {'concurrency': 2}]:
+            with self.subTest(change=change):
+                result = self.run_remote(change=change)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('MEDIA_WORKER_HEALTH_INVALID', result.stderr)
+
+    def test_parent_partial_failure_is_fail_closed_without_private_error_output(self):
+        result = self.run_remote({'action': 'drain', 'operationId': 'original'}, http_status=503)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('CONTROL_HTTP_503', result.stderr)
+        self.assertNotIn('synthetic-private-upstream-error', result.stderr)
 
 
 if __name__ == '__main__':

@@ -10,7 +10,9 @@ const expected=createHash('sha256').update(`Bearer ${secret}`).digest();
 const root=path.resolve(process.env.MEDIA_JOB_DIR||'/scratch');
 const fixture=process.env.MEDIA_WORKER_FIXTURE_OWNER==='canvas-video-fusion-20261013';
 const engine=new MediaEngine({sharedRoot:root,fixture});
-const jobs=new Map(),locks=new Map();let running=0,draining=false;
+const concurrency=Number(process.env.MEDIA_WORKER_CONCURRENCY||MEDIA_LIMITS.concurrency);
+if(!Number.isInteger(concurrency)||concurrency<1||concurrency>MEDIA_LIMITS.concurrency)throw new Error('INVALID_MEDIA_WORKER_CONCURRENCY');
+const jobs=new Map(),locks=new Map();let running=0,draining=process.env.MEDIA_WORKER_START_PAUSED==='1',stopping=false;
 const terminal=status=>['completed','failed','cancelled'].includes(status);
 await mkdir(root,{recursive:true,mode:0o700});
 const retiredRoot=path.join(root,'.retired');await mkdir(retiredRoot,{recursive:true,mode:0o700});
@@ -47,22 +49,22 @@ for(const entry of await readdir(root,{withFileTypes:true})){
   if(view?.owner==='naumi-media-worker'&&terminal(view.status))jobs.set(entry.name,{id:entry.name,digest:view.digest,controller:new AbortController(),view});
 }
 async function dispatch(){
-  if(running>=MEDIA_LIMITS.concurrency)return;
+  if(stopping||running>=concurrency)return;
   const job=[...jobs.values()].find(item=>item.view.status==='queued');if(!job)return;
   running++;job.view.status='processing';
   try{await persist(job);}catch{running--;job.view.status='failed';job.view.error='MEDIA_STATE_WRITE_FAILED';job.view.finishedAt=new Date().toISOString();void dispatch();return;}
   void engine.run(job.id,job.request,seconds=>{job.view.processedSeconds=seconds;},job.controller.signal)
     .then(result=>{job.view={...job.view,status:job.controller.signal.aborted?'cancelled':'completed',...(job.controller.signal.aborted?{}:{result}),finishedAt:new Date().toISOString()};})
     .catch(error=>{job.view={...job.view,status:job.controller.signal.aborted?'cancelled':'failed',error:String(error?.message||'MEDIA_PROCESS_FAILED').slice(0,2200),finishedAt:new Date().toISOString()};})
-    .finally(async()=>{running--;await persist(job).catch(()=>{});void dispatch();});
+    .finally(async()=>{await persist(job).catch(()=>{});running--;void dispatch();});
   void dispatch();
 }
 const server=http.createServer(async(request,response)=>{
   if(!authorized(request)){send(response,401,{error:'UNAUTHORIZED'});return;}
   try{
     const url=new URL(request.url,'http://media-worker');
-    if(request.method==='GET'&&url.pathname==='/health'){send(response,200,{ok:true,version:process.env.SOURCE_COMMIT||'fixture',sandbox:!fixture,draining,...capacity(),maxActive:MEDIA_LIMITS.queue});return;}
-    if(request.method==='POST'&&['/drain','/resume'].includes(url.pathname)){draining=url.pathname==='/drain';send(response,200,{ok:true,draining,...capacity()});return;}
+    if(request.method==='GET'&&url.pathname==='/health'){send(response,200,{ok:true,version:process.env.SOURCE_COMMIT||'fixture',sandbox:!fixture,draining,...capacity(),maxActive:MEDIA_LIMITS.queue,concurrency});return;}
+    if(request.method==='POST'&&['/drain','/resume'].includes(url.pathname)){if(stopping){send(response,503,{error:'MEDIA_WORKER_STOPPING'});return;}draining=url.pathname==='/drain';send(response,200,{ok:true,draining,...capacity()});return;}
     const match=url.pathname.match(/^\/jobs\/([0-9a-f-]{36})$/);if(!match){send(response,404,{error:'NOT_FOUND'});return;}
     const id=match[1],directory=mediaJobDirectory(root,id);
     // A cancellation/acknowledgment marker lives outside the cleaned job folder:
@@ -130,5 +132,17 @@ async function collectInspectors(){
 const collector=setInterval(()=>void collectInspectors().catch(()=>{}),60000);collector.unref();
 server.requestTimeout=60000;server.headersTimeout=15000;
 server.listen(Number(process.env.MEDIA_WORKER_PORT||3001),process.env.MEDIA_WORKER_HOST||'0.0.0.0',()=>console.log(JSON.stringify({event:'media-worker-ready',sandbox:!fixture})));
-async function stop(){clearInterval(collector);for(const job of jobs.values())job.controller.abort();server.close();setTimeout(()=>process.exit(0),3000).unref();}
+async function stop(){
+  if(stopping)return;stopping=true;draining=true;clearInterval(collector);
+  for(const job of jobs.values()){
+    if(job.view.status==='queued'){job.view.status='cancelled';job.view.finishedAt=new Date().toISOString();await persist(job).catch(()=>{});}
+    job.controller.abort();
+  }
+  const closed=new Promise(resolve=>server.close(resolve));server.closeIdleConnections?.();
+  const deadline=Date.now()+10000;
+  while((running||engine.active.size)&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,25));
+  if(running||engine.active.size){console.error('MEDIA_NATIVE_DRAIN_UNKNOWN');process.exit(2);}
+  await Promise.race([closed,new Promise(resolve=>setTimeout(resolve,1000))]);
+  console.log('MEDIA_NATIVE_DRAIN=COMPLETE');process.exit(0);
+}
 process.on('SIGTERM',stop);process.on('SIGINT',stop);
