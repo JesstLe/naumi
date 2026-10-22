@@ -25,7 +25,7 @@ class VideoFamilyRelease(unittest.TestCase):
             'previousNormalReleaseId': 'release47-nas-upload-20261022',
             'restoreDatabase': False, 'replayAcceptedTasks': False, 'activateDisabledModels': False,
             'webMemoryMiB': 1536, 'workerMemoryMiB': 1024, 'reviewedCombinedMedia': True,
-            'webFinalMemoryMiB': 3072, 'commit': 'b' * 40,
+            'webFinalMemoryMiB': 2048, 'commit': 'b' * 40,
             'videoReferencePublicOrigin': 'https://47.105.59.142',
             'storageAcceptanceScript': '/opt/naumi-staging/evidence/video-family/tools/storage.cjs',
             'storageAcceptanceSha256': 'e' * 64,
@@ -55,7 +55,7 @@ class VideoFamilyRelease(unittest.TestCase):
         self.assertEqual(self.config, before)
         for key, value in [('activateDisabledModels', True), ('authorization', '继续'),
                            ('webMemoryMiB', 2048), ('workerMemoryMiB', 512), ('reviewedCombinedMedia', False),
-                           ('webFinalMemoryMiB', 2048), ('mediaProbePath', '/data/unreviewed.mp4'),
+                           ('webFinalMemoryMiB', 3072), ('mediaProbePath', '/data/unreviewed.mp4'),
                            ('videoReferencePublicOrigin', 'http://172.18.0.1:13947'),
                            ('imageAcceptanceOperations', []), ('preservedWorkerTick', {'old': 'unknown'})]:
             sample = {**self.config, key: value}
@@ -101,14 +101,109 @@ class VideoFamilyRelease(unittest.TestCase):
         with self.assertRaisesRegex(Hold, 'VIDEO_PREDECESSOR_SLOT_CHANGED'):
             mod.predecessor_proof(self.tx, self.state, self.config)
 
-    def test_only_memory_method_is_reused_from_nas(self):
+    def test_no_nas_memory_or_exception_is_reused(self):
         cls = mod.VideoFamilyController
         self.assertNotIn(NasController, cls.__mro__)
-        self.assertIs(cls.after_retirement, NasController.after_retirement)
+        self.assertIsNot(cls.after_retirement, NasController.after_retirement)
         self.assertIsNot(cls.ready, NasController.ready)
         self.assertIs(cls.drain_proof, ImageDeliveryController.drain_proof)
         for name in ['run', 'finish_ready', 'retire_ready', 'build_gateway', 'install_supervisor', 'recover_failure']:
             self.assertIs(getattr(cls, name), getattr(ctl.Controller, name))
+
+    def test_final_ram_uses_only_old_anon_and_full_two_gib_reserves(self):
+        proof = mod.retirement_ram_budget(3000 * mod.MIB, 300 * mod.MIB, [700 * mod.MIB, 96 * mod.MIB])
+        self.assertTrue(proof['passed'])
+        self.assertEqual(proof['requiredAvailableMiB'], 3796)
+        self.assertEqual(proof['marginMiB'], 0)
+        self.assertFalse(proof['fileCacheCredited'])
+        self.assertFalse(proof['swapIncluded'])
+        self.assertFalse(mod.retirement_ram_budget(3000 * mod.MIB - 1, 300 * mod.MIB, [700 * mod.MIB, 96 * mod.MIB])['passed'])
+        # Partial MiB in current usage cannot lower growth by a full MiB.
+        self.assertFalse(mod.retirement_ram_budget(3000 * mod.MIB, 300 * mod.MIB + 1, [700 * mod.MIB, 95 * mod.MIB])['passed'])
+        for value in [True, -1, None]:
+            with self.subTest(value=value), self.assertRaises(Hold):
+                mod.retirement_ram_budget(value, 0, [])
+
+    def test_actual_memory_observation_never_credits_old_file_cache(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder); cgroups = root / 'cgroup'; cgroups.mkdir()
+            meminfo = root / 'meminfo'; meminfo.write_text('MemAvailable: 3072000 kB\nSwapFree: 999999999 kB\n')
+            rows = {}
+            for name, identifier in [('old-web', 'a' * 64), ('old-worker', 'b' * 64), ('new-web', 'c' * 64)]:
+                rows[identifier] = {'Id': identifier, 'Name': '/' + name, 'Image': self.config['image'],
+                    'State': {'Running': True, 'StartedAt': 'unchanged-start'},
+                    'HostConfig': {'Memory': 1536 * mod.MIB, 'RestartPolicy': {'Name': 'no'}}}
+                group = cgroups / ('docker-' + identifier + '.scope'); group.mkdir()
+                (group / 'memory.current').write_text(str(300 * mod.MIB))
+                (group / 'memory.stat').write_text('anon 0\nfile ' + str(10000 * mod.MIB) + '\n')
+            op = mod.VideoFamilyController.__new__(mod.VideoFamilyController)
+            op.cfg = self.config; op.newweb = mod.public_identity(rows['c' * 64])
+            op.web = mod.public_identity(rows['a' * 64]); op.worker = mod.public_identity(rows['b' * 64])
+            saved = []
+            class Fixture:
+                def pin(self, identity): return copy.deepcopy(rows[identity['id']])
+                def inspect(self, identifier): return copy.deepcopy(rows[identifier])
+                def save(self, name, value): saved.append((name, value))
+            op.tx = Fixture()
+            with patch.object(mod, 'CGROUP_ROOT', cgroups), patch.object(mod, 'MEMINFO', meminfo):
+                with self.assertRaisesRegex(Hold, 'FINAL_RAM_RESERVE_INSUFFICIENT'):
+                    op.retirement_memory_proof('ready')
+                self.assertEqual(saved[-1][1]['oldAnonymousCreditMiB'], 0)
+                for identifier, anon in [('a' * 64, 700), ('b' * 64, 96)]:
+                    (cgroups / ('docker-' + identifier + '.scope') / 'memory.stat').write_text('anon ' + str(anon * mod.MIB) + '\n')
+                self.assertTrue(op.retirement_memory_proof('retire')['passed'])
+                for identifier in ['a' * 64, 'b' * 64]: rows[identifier]['State']['Running'] = False
+                with self.assertRaisesRegex(Hold, 'FINAL_RAM_RESERVE_INSUFFICIENT'):
+                    op.retirement_memory_proof('after-retirement', include_old=False)
+                meminfo.write_text('MemAvailable: ' + str(3796 * 1024) + ' kB\n')
+                actual = op.retirement_memory_proof('after-retirement', include_old=False)
+                self.assertEqual(actual['oldAnonymousCreditMiB'], 0)
+                self.assertTrue(actual['passed'])
+
+    def test_retirement_reference_rechecks_ram_before_any_stop(self):
+        op = mod.VideoFamilyController.__new__(mod.VideoFamilyController)
+        stages = []; op.retirement_memory_proof = lambda stage: stages.append(stage)
+        with patch.object(ctl.Controller, 'reference_proof', return_value='references-verified') as original:
+            self.assertEqual(op.reference_proof(), 'references-verified')
+            original.assert_called_once()
+        self.assertEqual(stages, ['retire'])
+
+    def test_final_two_gib_updates_supervisor_without_process_restart(self):
+        with tempfile.TemporaryDirectory() as folder:
+            manifest_path = pathlib.Path(folder) / 'supervisor.json'
+            row = {'Id': 'c' * 64, 'Name': '/new-web', 'Image': self.config['image'],
+                'State': {'Running': True, 'StartedAt': 'same-process'},
+                'HostConfig': {'Memory': 1536 * mod.MIB, 'MemorySwap': 1536 * mod.MIB, 'RestartPolicy': {'Name': 'no'}}}
+            op = mod.VideoFamilyController.__new__(mod.VideoFamilyController)
+            op.cfg = self.config; op.newweb = mod.public_identity(row); op.newworker = {'id': 'd' * 64}
+            op.state = {'runtimeRecovery': {'manifestPath': str(manifest_path)}}
+            manifest = {'web': {**op.newweb, 'memoryMiB': 1536, 'staticSha256': '1536'},
+                        'worker': {'id': op.newworker['id'], 'memoryMiB': 1024}}
+            manifest_path.write_text(json.dumps(manifest))
+            stages = []; commands = []; operations = []; saved = []; persisted = []
+            op.retirement_memory_proof = lambda stage, include_old: stages.append((stage, include_old)) or {'passed': True}
+            op.persist = lambda: persisted.append(True)
+            def operation(name, execute): operations.append(name); return execute('fixture-operation')
+            op.op = operation
+            class Fixture:
+                def pin(self, _identity): return copy.deepcopy(row)
+                def inspect(self, _identifier): return copy.deepcopy(row)
+                def save(self, name, value): saved.append((name, value))
+                def run(self, command):
+                    commands.append(command)
+                    row['HostConfig'].update(Memory=2048 * mod.MIB, MemorySwap=2048 * mod.MIB)
+            op.tx = Fixture()
+            with patch.object(mod.recovery, 'static_pin', lambda value: str(value['HostConfig']['Memory'] // mod.MIB)):
+                op.after_retirement()
+            changed = json.loads(manifest_path.read_bytes())
+            self.assertEqual(changed['web']['memoryMiB'], 2048)
+            self.assertEqual(changed['web']['staticSha256'], '2048')
+            self.assertEqual(op.state['runtimeRecovery']['memoryMiB'], 2048)
+            self.assertEqual(operations, ['new-web-memory-grow'])
+            self.assertEqual(stages, [('after-retirement', False)])
+            self.assertEqual(commands, [['docker', 'update', '--memory=2048m', '--memory-swap=2048m', row['Id']]])
+            self.assertEqual(row['State']['StartedAt'], 'same-process')
+            self.assertEqual(len(persisted), 1)
 
     def test_real_media_health_rejects_sandbox_version_or_capacity_drift(self):
         op = mod.VideoFamilyController.__new__(mod.VideoFamilyController)
@@ -136,6 +231,7 @@ class VideoFamilyRelease(unittest.TestCase):
             op = mod.VideoFamilyController.__new__(mod.VideoFamilyController)
             op.newweb = {'id': 'new-web'}
             op.newworker = {'id': 'new-worker'}
+            op.retirement_memory_proof = lambda stage: {'passed': True, 'stage': stage}
             op.succ = {'operations': {}}
             op.cookie = 'fixture-cookie-not-a-live-session'
             op.cfg = {**self.config, 'storageAcceptanceScript': str(script),
