@@ -1,0 +1,46 @@
+# SaaS 后台发布前分支盘点
+
+用户最新顺序：后台本地验收通过 → 整合各分支 → 发布47 → 真实账号、数据和全链路验收。本记录仅为盘点，尚未合并或发布。
+
+## 当前快照
+
+2026-10-23 已执行 `git fetch origin`。`origin/main` 仍为 `7b1e970c84006c2fb76f8c1748e96da128e12982`。遍历全部321个本地/远端引用、288个不同tip；284个引用已为main祖先，1个引用的非merge补丁等价。其余按祖先与补丁ID筛查后逐项核对，不能仅按分支名称认定完成。
+
+完整只读清单在忽略目录 `output/saas-preview-environment/branch-inventory.json`，生成器为同目录 `inventory-branches.cjs`。清单含每个ref、完整SHA、时间、独有非merge补丁及历史回滚标记。此清单不是合并成功或验收通过证明；正式候选构建及切流前需再次fetch比较。
+
+## 未进入main的业务工作
+
+| 范围 | 当前tip / 包含关系 | 当前处理 |
+| --- | --- | --- |
+| 本轮SaaS四个实施分支、PRD | 主实施 `6538ccf0`；企业 `5b7886dc`、平台 `934a0dc7`已选择性整合，租户 `c3984eca`仍有M04 WIP | 先完成本地验收，提交现有WIP，再归并历史；不得覆盖子任务未提交修改 |
+| 背景意图/抠图路由 | `origin/codex/image-background-intent-20261022` `7ebfd88a`；本地 `codex/canvas-image-references-20261022` `aec92574`多一份企业可用性调研文档 | 候选需核对 `0dc69082`代码和已发布配置事实，不能因代码合并重放供应商验收或覆盖线上配置 |
+| 视频节点控件与批量 | `origin/codex/video-node-controls-20261022` `24e6a8f3` | 新增video batch提交入口；整合后必须进入本轮创作证据覆盖及恢复审查 |
+| 自适应参考画框 | `origin/codex/canvas-key-frame-long-image-20261021` `6ea9b13d` | 含11项独有非merge提交，同时涵盖下述抠图与Agent依赖，按真实图谱整合避免重复cherry-pick |
+| 抠图参数标签 | `origin/codex/canvas-cutout-parameters-20261021` `f45b90aa` | 已被上述自适应画框分支包含 |
+| Agent统一时间线 | `origin/codex/agent-stream-timeline-20261021` `7fb9e7cc` | 包含回复恢复、取消关键词门槛、响应中上传；已被自适应画框分支包含 |
+| Agent回复恢复 | `origin/codex/agent-stream-recovery-20261021` `044ab052` | 同上，恢复路径须保留本轮冻结上下文，不能只检查UI |
+| Agent取消关键词门槛 | `origin/codex/agent-remove-keyword-gate-20261021` `4c165966` | 同上 |
+| 响应中添加图片 | `origin/codex/agent-chat-attachments-20261020` `6ffa8bbc` | 同上 |
+| 图片序号引用 | `origin/codex/canvas-image-mentions-20261021` `24e0e793` | 与当前图片参考WIP重叠，不能覆盖同事未提交的canvas-client改动 |
+| 前端模型新增入口 | `origin/codex/add-frontend-model-entry-20261021` `fcd9f7c8` | 属于新后台保留的模型管理能力，整合后验证真实入口 |
+| 供应商余额/成功率 | `origin/codex/provider-health-20261021` `d06ec139` | 属于平台内部投影，整合后验证企业接口不泄露供应商资料 |
+| Imagen-4下架 | `origin/codex/imagen4-unlist-20261021` `8977645f`，独有补丁 `c4bf83f4` | 保留已授权前端可见性规则，不删除历史快照 |
+| 运维保留五轮 | `origin/codex/ops-retention-5rounds-20261021` `c523a0b2` | 仅AGENTS规则；合并后以最新保护范围执行，不能因该提交停容器或清数据 |
+
+## 其他引用与未提交现场
+
+- `codex/supplier-parameter-review-20261020` 的三项补丁为供应商参数与多轮讨论文档，作为资料审查，不把提案当成已实现供应商改造。
+- `codex/admin-model-mvp` / `codex/local-sync-20261020` 有两项历史文档/验收素材补丁；`3bb3c6ff`含表格、大量调研输出和浏览器日志，需先检查内容及必要性，不因整合业务功能把全部内部资料发布到用户更新目录。
+- `codex/apimart-sales-reference` 是独立API销售站（25项独有补丁），原任务明确独立品牌与站点，不能把独立站部署/域名/ICP操作当作Naumi47后台发布动作。后续记录代码归档或不合入理由，不隐去该分支。
+- 所有 `rollback-compat` / `bi-model-before-*` 引用保留为历史回滚材料，不把降级UI和旧功能开关合进当前业务候选；本轮SaaS回滚仍须单独满足新membership/媒体边界。
+- `r2-canvas-103-20261013/naumi` 的 `codex/canvas-image-references-20261022` 在盘点时含7个已修改源文件及新增参考选择组件、契约、验证脚本/文档，尚未提交。只记录，不重置、不自动stash、不替同事提交或取走半成品。候选冻结前重新核对提交状态。
+- 共享 `E:/workspace/naumi` 保持原分支；本轮没有切分支、提交共享checkout或操作他人未提交文件。
+
+## 整合与发布待办
+
+1. 本轮SaaS源码冻结，M01–M07验收证据齐全，设计QA关闭P0/P1/P2。
+2. 再次刷新各ref，按完整提交/依赖审查上述业务分支，解决重叠改动，生成实际合并SHA清单。
+3. 将新增视频/Agent等入口加入创作证据覆盖；集中完成类型、构建和受影响业务回归。
+4. 47只读刷新真实基线、未完成发布状态、所有实例、任务/会话及资源；合格候选固定commit/Image ID，准备可读备份和理解新权限的回滚版本。
+5. 按三锁蓝绿完成旁路、整站切流、排空停止及真实验收，不能只切管理后台路径或保留多版本长期运行。
+6. 发布状态和本地代码完成分别记录；本记录当前没有完成任何服务器发布。
