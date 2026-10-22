@@ -1,22 +1,25 @@
 "use client";
 import {useRef,useState,type ReactNode} from "react";
-import {Plus,X,ChevronDown,AtSign,Upload,Film,Music2,Type,SlidersHorizontal} from "lucide-react";
+import {Plus,X,ChevronDown,AtSign,Upload,Film,Music2,Type,SlidersHorizontal,Volume2,VolumeX,RectangleHorizontal} from "lucide-react";
 import {CachedImage} from "@/components/cached-image";
 import {CanvasComposerFooter} from "../composer-shell";
 import {SelectMenu} from "@/components/ui/select-menu";
 import {CanvasModelSelect} from "../model-select";
 import {CanvasActionPanel} from "../canvas-action-menu";
 import {browserRandomUUID} from "@/lib/browser-crypto";
-import {catalogCapability,selectedVideoCatalogModel,reconcileVideoSettings,videoModeRoles,videoDurations,videoResolutions,VIDEO_MODE_LABELS,type VideoNodeConfig,type VideoCatalogModel,type VideoInputChoice} from "@/lib/video/client-settings";
+import {catalogCapability,selectedVideoCatalogModel,reconcileVideoSettings,videoModeRoles,VIDEO_MODE_LABELS,type VideoNodeConfig,type VideoCatalogModel,type VideoInputChoice} from "@/lib/video/client-settings";
 import {numberVideoInputs,type OrderedInput} from "@/lib/video/references";
 import {VideoAssetImportError} from "./use-video-assets";
 import {useVideoI18n} from "./i18n";
-import {videoButtonClass,videoFieldClass,VideoField} from "./form-controls";
+import {VideoParameterPanel} from "./parameter-panel";
+import {VideoPromptOptimizer} from "./prompt-optimizer";
+import {videoButtonClass} from "./form-controls";
 
-/** Reference-first composer; no new API, model defaults or implicit generation. */
-export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,blocked,onConfig,onInputs,onImport,onImportBusyChange,onAdvanced,actions,feedback,advancedOpen=false,onCloseAdvanced,advancedContent}:{
+/** Reference-first composer; capabilities remain backed by the published catalog. */
+export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,blocked,onConfig,onInputs,onImport,onImportBusyChange,onAdvanced,actions,feedback,advancedOpen=false,onCloseAdvanced,advancedContent,count,onCount,onOptimize}:{
  config:VideoNodeConfig;inputs:OrderedInput[];models:VideoCatalogModel[];choices:VideoInputChoice[];nodeId:string;light:boolean;blocked:boolean;
  onConfig:(value:VideoNodeConfig)=>void;onInputs:(value:OrderedInput[])=>void;onImport?:(files:File[])=>Promise<VideoInputChoice[]>;onImportBusyChange:(value:boolean)=>void;onAdvanced:()=>void;
+ count:number;onCount:(value:number)=>void;onOptimize:(prompt:string,signal:AbortSignal)=>Promise<string>;
  actions:ReactNode;feedback:ReactNode;advancedOpen?:boolean;onCloseAdvanced?:()=>void;advancedContent?:ReactNode;
 }){
  const V=useVideoI18n(),[picker,setPicker]=useState<'add'|'mention'|null>(null),[parameters,setParameters]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
@@ -59,9 +62,9 @@ export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,
     placeholder={config.comfyWorkflowId?V('自备视频工作流'):V('未选择模型')} disabled={blocked||!!config.comfyWorkflowId}
     options={models.map(m=>({value:`${m.providerId}/${m.modelId}`,modelId:m.modelId,label:m.label}))}
     onChange={value=>{const chosen=models.find(m=>`${m.providerId}/${m.modelId}`===value);if(chosen)reconcile({...config,workflowTaskId:undefined,providerId:chosen.providerId,modelId:chosen.modelId});}} />
-   <button ref={parameterRef} type="button" className={chip} aria-label={V('画幅与清晰度')} disabled={blocked||!!config.comfyWorkflowId} onClick={()=>setParameters(true)}>{config.aspectRatio||'—'} · {config.resolution||'—'}<ChevronDown size={12}/></button>
-   <SelectMenu label={V('视频生成模式')} size="sm" className={chip} popoverClassName="canvas-ui-light" disabled={blocked||!!config.comfyWorkflowId} value={config.mode||''} onChange={value=>{const mode=value as VideoNodeConfig['mode'];onInputs(videoModeRoles(inputs,mode));onConfig({...config,mode,references:[]});}} options={(cap.modes||[]).map(mode=>({value:mode,label:V(VIDEO_MODE_LABELS[mode])}))}/>
-   <SelectMenu label={V('视频时长')} size="sm" className={chip} popoverClassName="canvas-ui-light" disabled={blocked||!!config.comfyWorkflowId} value={String(config.durationSeconds??'')} onChange={value=>reconcile({...config,durationSeconds:Number(value)})} options={videoDurations(cap).map(value=>({value:String(value),label:value===-1?V('自动'):String(value)+'s'}))}/>
+   <SelectMenu label={V('视频生成模式')} size="sm" className={chip} popoverClassName="canvas-ui-light" disabled={blocked||!!config.comfyWorkflowId} value={config.mode||''} onChange={value=>{const mode=value as VideoNodeConfig['mode'];onInputs(videoModeRoles(inputs,mode));onConfig({...config,mode,references:[]});}} options={(cap.modes||[]).map(mode=>({value:mode,label:V(mode==='reference'?(cap.limits?.videos||cap.limits?.audios?'全能参考':'图片参考'):mode==='single_image'?'图生视频':mode==='frames_required'?'首尾帧':VIDEO_MODE_LABELS[mode])}))}/>
+   <button ref={parameterRef} type="button" className={chip} aria-label={V('视频生成参数')} aria-expanded={parameters} disabled={blocked} onClick={()=>setParameters(true)}><RectangleHorizontal size={13}/><span className="truncate">{[config.aspectRatio==='adaptive'?V('自动'):config.aspectRatio,config.resolution?.toUpperCase(),config.durationSeconds===-1?V('自动'):config.durationSeconds?`${config.durationSeconds}s`:undefined,`${count} ${V('个视频')}`].filter(Boolean).join(' · ')}</span>{cap.audio&&<span title={V(config.generateAudio===undefined&&cap.audio==='optional'?'声音跟随模型':config.generateAudio===true||cap.audio==='required'?'开启':'关闭声音')}>{config.generateAudio===false||cap.audio==='disabled'?<VolumeX size={13}/>:<Volume2 size={13}/>}</span>}<ChevronDown size={12}/></button>
+   <VideoPromptOptimizer prompt={config.prompt||''} disabled={blocked} light={light} onOptimize={onOptimize} onApply={prompt=>onConfig({...config,prompt})}/>
    <button ref={mentionRef} type="button" className={chip} aria-label={V('引用素材')} title={V('引用素材')} disabled={blocked} onClick={()=>setPicker('mention')}><AtSign size={15}/></button>
    <button ref={advancedRef} type="button" className={chip} aria-expanded={advancedOpen} aria-label={V('更多视频参数')} title={V('更多视频参数')} onClick={onAdvanced}><SlidersHorizontal size={15}/></button>
   </>} actions={actions}/>
@@ -73,9 +76,8 @@ export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,
       {choice.thumbnail?<CachedImage src={choice.thumbnail} alt="" className="h-8 w-8 shrink-0 rounded-md object-cover"/>:<Film size={16} className="shrink-0"/>}<span className="truncate">{choice.title}</span></button>)}</div>
   </CanvasActionPanel>}
   {advancedOpen&&<CanvasActionPanel anchorRef={advancedRef} label={V('更多视频参数')} light width={640} onClose={()=>onCloseAdvanced?.()}><div className="mb-3 flex items-center justify-between text-xs font-semibold"><span>{V('更多视频参数')}</span><button type="button" aria-label={V('关闭设置')} className="canvas-ui-action rounded-md p-1" onClick={onCloseAdvanced}><X size={14}/></button></div>{advancedContent}</CanvasActionPanel>}
-  {parameters&&<CanvasActionPanel anchorRef={parameterRef} label={V('画幅与清晰度')} light={light} width={300} onClose={()=>setParameters(false)}><div className="mb-2 flex items-center justify-between text-xs font-semibold"><span>{V("画幅与清晰度")}</span><button type="button" aria-label={V("关闭")} className="canvas-ui-action rounded-md p-1" onClick={()=>setParameters(false)}><X size={14}/></button></div><fieldset disabled={blocked} className="grid grid-cols-2 gap-3">
-    <VideoField label={V('视频画幅')}><select aria-label={V('视频画幅')} className={videoFieldClass} value={config.aspectRatio||''} onChange={event=>onConfig({...config,aspectRatio:event.target.value})}><option value="" disabled>—</option>{(cap.aspectRatios||[]).map(value=><option key={value}>{value}</option>)}</select></VideoField>
-    <VideoField label={V('视频分辨率')}><select aria-label={V('视频分辨率')} className={videoFieldClass} value={config.resolution||''} onChange={event=>onConfig({...config,resolution:event.target.value})}><option value="" disabled>—</option>{videoResolutions(cap,config.durationSeconds).map(value=><option key={value}>{value}</option>)}</select></VideoField>
-  </fieldset></CanvasActionPanel>}
+  {parameters&&<CanvasActionPanel anchorRef={parameterRef} label={V('视频生成参数')} light={light} width={348} onClose={()=>setParameters(false)}><div className="mb-3 flex items-center justify-between text-xs font-semibold"><span>{V('视频生成参数')}</span><button type="button" aria-label={V('关闭')} className="canvas-ui-action rounded-md p-1" onClick={()=>setParameters(false)}><X size={14}/></button></div>
+    <VideoParameterPanel config={config} capability={config.comfyWorkflowId?{sources:{}}:cap} count={count} onConfig={reconcile} onCount={onCount} disabled={blocked}/>
+  </CanvasActionPanel>}
  </div>;
 }

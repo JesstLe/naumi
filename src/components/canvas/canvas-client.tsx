@@ -31,6 +31,7 @@ import {submitCanvasImagegen,resolveCanvasDetailFrame} from "@/lib/imagegen/canv
 import {FrameRatioDialog,useCanvasFrameChoice} from "./frame-ratio-dialog";
 import {imageOutputWarningText} from "@/lib/imagegen/output-advisory";
 import {VideoGenerationNode} from "./video/generation-node";
+import {generateCanvasVideoBatch,hasCanvasVideoBatch} from "@/lib/video/canvas-batch-client";
 import {VideoSettingsDialog,type VideoNodeDraft} from "./video/settings-dialog";
 import {VideoNodeToolbar} from "./video/node-toolbar";
 import {VideoResultDock} from "./video/result-dock";
@@ -4930,7 +4931,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(JSON.stringify(from)!==JSON.stringify(fields))pushUndo({kind:"video-patch",id,from,to:fields});return result;
   }
   async function saveVideoDraft(id:string,draft:VideoNodeDraft){return patchVideoNode(id,{title:draft.title,config:draft.config,inputs:draft.inputs,expectedRevision:draft.expectedRevision});}
-  async function generateVideoDraft(id:string,draft:VideoNodeDraft,quote:PublicQuote|null,onPersisted?:(revision:number)=>void){
+  async function generateVideoDraft(id:string,draft:VideoNodeDraft,quote:PublicQuote|null,onPersisted?: (revision:number)=>void,count=1){
     if(!user||readOnly)throw new Error("无法修改此画布");
     let previous=readVideoReceipt(localStorage,user.email,id);
     if(previous){const response=await privateFetchRaw(previous.taskId?`/api/video/tasks?id=${encodeURIComponent(previous.taskId)}`:`/api/video/tasks?idempotencyKey=${encodeURIComponent(previous.idempotencyKey)}`),data=await response.json();
@@ -4938,6 +4939,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       else if(response.status!==404)throw new Error(data.error||"上次视频提交尚未核实");
       else if(previous.expectedRevision!==draft.expectedRevision)throw new Error("上次提交尚未核实，节点已更新，请先查看任务历史");
       else {const current=videoNodesStore.nodes.find(node=>node.id===id);if(!current||JSON.stringify({title:current.title,config:current.config,inputs:current.inputs})!==JSON.stringify({title:draft.title,config:draft.config,inputs:draft.inputs}))throw new Error("上次提交尚未核实，请先恢复原设置或查看任务历史");}
+    }
+    if(count>1||hasCanvasVideoBatch(localStorage,user.email,id)){
+      if(previous)throw new Error("上次单个视频提交尚未核实，请先查看任务历史");
+      const account=canvasAccountRef.current,project=activeProjectRef.current?.key;
+      try{
+        const run=await generateCanvasVideoBatch({email:user.email,nodeId:id,draft,count,quote,storage:localStorage,request:privateFetchRaw,submit:billing.submit,
+          save:()=>saveVideoDraft(id,draft),onPersisted:revision=>onPersisted?.(revision),assertCurrent:()=>{if(account!==canvasAccountRef.current||project!==activeProjectRef.current?.key)throw new Error("账号或项目已切换，返回原画布查看批次");}});
+        const failures=run.nodes.filter(node=>['blocked','needs_confirmation','needs_attention','cancelled'].includes(node.status));
+        if(failures.length)throw new Error(`批次已保留，${failures.length}/${run.nodes.length} 个任务需要处理：${failures[0].error||"请查看视频历史"}`);
+      }finally{if(account===canvasAccountRef.current){await Promise.allSettled([videoNodesStore.refresh(),videoTaskStore.refresh(),refreshCredits()]);}}
+      return;
     }
     const saved=previous&&previous.expectedRevision===draft.expectedRevision?videoNodesStore.nodes.find(node=>node.id===id):await saveVideoDraft(id,draft);
     if(!saved)throw new Error("视频节点不存在");
@@ -11194,7 +11206,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             onCancel={()=>{if(selectedVideo.lastTaskId)void videoTaskStore.cancel(selectedVideo.lastTaskId).catch(error=>flashTip(error.message));}}
             email={targetEmail||user?.email} models={videoCatalog} catalogLoading={videoModelCatalog.loading} catalogError={videoModelCatalog.error} onRetryCatalog={videoModelCatalog.refresh}
             choices={videoInputChoices} light={lightCanvas} readOnly={readOnly||!nodeSettingsReady||isNodeLocked(selectedVideo.id)} onClose={()=>{setVideoDockAdvancedId(null);setSelectedId(null);}}
-            onSave={draft=>saveVideoDraft(selectedVideo.id,draft)} onGenerate={(draft,quote,onPersisted)=>generateVideoDraft(selectedVideo.id,draft,quote,onPersisted)}
+            onSave={draft=>saveVideoDraft(selectedVideo.id,draft)} onGenerate={(draft,quote,onPersisted,count)=>generateVideoDraft(selectedVideo.id,draft,quote,onPersisted,count)}
+            onOptimize={async(prompt,signal)=>{const response=await privateFetchRaw('/api/prompt-assist',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({idea:prompt,mode:'optimize',tool:'canvas-video'}),signal});const data=await readJsonSafe(response);if(!response.ok||typeof data?.prompt!=='string')throw new Error(data?.error||'提示词优化失败，原文已保留');return data.prompt;}}
             onImport={async files=>{try{const choices=await videoAssetStore.upload(files,selectedVideo.projectKey);await mergeWorks(choices.map(choice=>choice.nodeId));return choices;}catch(cause){if(cause instanceof VideoAssetImportError&&cause.choices.length)await mergeWorks(cause.choices.map(choice=>choice.nodeId));throw cause;}}}
             onLoadMoreAssets={videoAssetStore.loadMore} canLoadMoreAssets={!!videoAssetStore.nextCursor}/>}
           {/* 底部生成器(配方):选中节点正下方居中,横向 dock(原型 dock) */}

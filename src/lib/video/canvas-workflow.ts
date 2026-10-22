@@ -19,7 +19,8 @@ export async function buildCanvasVideoWorkflow(actor:string,raw:unknown):Promise
       const previous=await getVideoNode(actor,id);let artworkId=id;if(previous){const task=previous.lastTaskId?await getVideoTask(actor,previous.lastTaskId):null;if(!previous.displayResultId&&task&&task.status!=="completed"||!previous.displayResultId&&!previous.lastResultId)throw new ModelConfigError("VIDEO_DEPENDENCY_PENDING","未加入制作链的前序素材尚未完成",409);artworkId=previous.displayResultId||previous.lastResultId!;}
       const art=(await listArtworksByIds(actor,[artworkId]))[0];if(!art||art.status!=="completed")throw new ModelConfigError("VIDEO_INPUT_UNAVAILABLE","制作链素材不存在或未完成",404);const url=source.kind==="image"?art.image:art.videoUrl||art.image;references.push({id:source.id,kind:source.kind,role:source.role as VideoReference["role"],artworkId,url});source.value=url;source.nodeId=artworkId;
     }
-    const request=workflowVideoRequestSchema.parse({...current.config,prompt:current.config.prompt||"",references:current.inputs.length?references:current.config.references,orderedInputs:ordered.length?ordered:undefined,billingConfirmation:requested.billingConfirmation});
+    const {batchCount:_batchCount,...generationConfig}=current.config;
+    const request=workflowVideoRequestSchema.parse({...generationConfig,prompt:current.config.prompt||"",references:current.inputs.length?references:current.config.references,orderedInputs:ordered.length?ordered:undefined,billingConfirmation:requested.billingConfirmation});
     nodes.push({id:current.id,canvasNodeId:current.id,canvasNodeRevision:current.revision,request,dependsOn:[...dependsOn],mediaBindings:bindings});
   }
   return {id:input.id,projectKey:input.projectKey,nodes};

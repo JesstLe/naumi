@@ -16,6 +16,8 @@ import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/ip";
 import { safeError } from "@/lib/api-error";
 import { requestedTextModel } from "@/lib/text-models";
+import { modelConfigurationEnabled } from "@/lib/model-config/requests";
+import { VIDEO_PROMPT_OPTIMIZE_SYSTEM, validateVideoOptimizedPrompt } from "@/lib/video/prompt-assist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,7 +47,7 @@ async function handleObservedPost(req: Request) {
   try {
     if (ct.includes("multipart/form-data")) {
       const f = await req.formData();
-      idea = (f.get("idea") ?? "").toString().slice(0, 600).trim();
+      idea = (f.get("idea") ?? "").toString().trim();
       category = (f.get("category") ?? "").toString().slice(0, 40);
       mode = (f.get("mode") ?? "write").toString();
       tool = (f.get("tool") ?? "").toString().slice(0, 40);
@@ -61,7 +63,7 @@ async function handleObservedPost(req: Request) {
         mode?: string;
         tool?: string;
       };
-      idea = (body.idea ?? "").toString().slice(0, 600).trim();
+      idea = (body.idea ?? "").toString().trim();
       category = (body.category ?? "").toString().slice(0, 40);
       mode = (body.mode ?? "write").toString();
       tool = (body.tool ?? "").toString().slice(0, 40);
@@ -70,6 +72,9 @@ async function handleObservedPost(req: Request) {
     return NextResponse.json({ error: "请求格式不正确" }, { status: 400 });
   }
   const optimize = mode === "optimize";
+  const video = tool === "canvas-video";
+  if (video && idea.length > 16384) return NextResponse.json({ error: "视频提示词不能超过16384字" }, { status: 422 });
+  if (!video) idea = idea.slice(0, 600);
   if (optimize && !idea) {
     return NextResponse.json({ error: "请先写点提示词再优化" }, { status: 400 });
   }
@@ -77,7 +82,9 @@ async function handleObservedPost(req: Request) {
 
   // 帮写用 gpt-4o-mini(看图写,需视觉能力),复用主 OpenAI Key。
   const { apiKey } = await getOpenAISettings();
-  if (!apiKey) {
+  const managedVideoAssist = video && await modelConfigurationEnabled();
+  if (!apiKey && video && !managedVideoAssist) return NextResponse.json({ error: "提示词优化暂不可用，原文已保留" }, { status: 503 });
+  if (!apiKey && !managedVideoAssist) {
     const base = idea || "高级电商主图";
     return NextResponse.json({
       prompt: `${base}，纯净背景，柔和均匀打光，居中构图，高级质感，商业产品摄影，可直接上架`,
@@ -86,7 +93,7 @@ async function handleObservedPost(req: Request) {
 
   try {
     const client = observeOpenAI(modelAwareOpenAI({
-      apiKey,
+      apiKey: apiKey || "managed-video-prompt-assist",
       baseURL: (await getOpenAIBaseUrl()) || undefined,
     }));
     // 分功能页写法指令(prompt-config.ts 可审计)。
@@ -95,7 +102,9 @@ async function handleObservedPost(req: Request) {
     // 直接以功能页要求为唯一系统。优化(optimize)只是润色,不冲突,追加即可。
     const hint = ASSIST_TOOL_HINTS[tool];
     let sys: string;
-    if (optimize) {
+    if (video) {
+      sys = VIDEO_PROMPT_OPTIMIZE_SYSTEM;
+    } else if (optimize) {
       const optBase = await getOptimizeSystem();
       sys = hint
         ? `${optBase}\n【当前功能页专用,优先级最高;与上文冲突时以本条为准】${hint}`
@@ -119,7 +128,7 @@ async function handleObservedPost(req: Request) {
     const emptyHint = hint
       ? "(空,请看图按功能页要求给内容)"
       : "(空,按产品/分类给通用电商主图提示词)";
-    const text = `${ctx.join(";")}\n${label}:${idea || emptyHint}`;
+    const text = video ? `待优化的视频提示词：\n${idea}` : `${ctx.join(";")}\n${label}:${idea || emptyHint}`;
     const resp = await client.chat.completions.create({
       model: requestedTextModel(req, process.env.OPENAI_TEXT_MODEL || "gpt-5.6-luna"),
       messages: [
@@ -135,11 +144,15 @@ async function handleObservedPost(req: Request) {
         },
       ],
       temperature: 0.8,
-      max_tokens: 500,
-    });
+      max_tokens: video ? 12000 : 500,
+    }, video ? { signal: req.signal, timeout: 90000, maxRetries: 0 } : undefined);
     const prompt = (resp.choices[0]?.message?.content ?? "").trim();
     if (!prompt) {
       return NextResponse.json({ error: "没生成出来,请重试" }, { status: 502 });
+    }
+    if (video) {
+      try { validateVideoOptimizedPrompt(idea, prompt, resp.choices[0]?.finish_reason); }
+      catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "优化结果不可用，原文已保留" }, { status: 502 }); }
     }
     return NextResponse.json({ prompt });
   } catch (e) {
