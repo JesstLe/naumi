@@ -1,6 +1,6 @@
 # SaaS 后台集中验收矩阵
 
-此表对应实施清单58项。范围为本机独立Next18499、隔离PostgreSQL55439及每脚本独立fixture数据库；生产未发布。本任务真实供应商调用0。脚本中的SDK/供应商HTTP均明确fixture，不能作为真实成片或真实供应商扣费证据。根任务浏览器材料与最终差异以根目录`design-qa.md`为准。
+此表对应实施清单58项。A/D/C/U主体证据来自本机独立Next18499、隔离PostgreSQL55439及每脚本独立fixture数据库；脚本中的SDK/供应商HTTP均明确fixture。最新47程序已发布COMPLETE，生产实测范围与未验证项另见[47实际验收](2026-10-23-saas47-production-acceptance.md)，不能将本机所有者等正向检查冒称线上通过。根任务视觉差异以`design-qa.md`为准。
 
 脚本证据在忽略目录`output/saas-admin-20261022/verification/<脚本名>.log`，UI截图在`output/saas-design-qa/`。本文简称：T=`verify-saas-tenants`，E=`verify-saas-enterprise`，W=`verify-saas-creation-writers`，C=`verify-saas-creations`，V=`verify-saas-video-workflow-evidence`，J=`verify-saas-worker-restart`，G=`verify-saas-agent-evidence`，X=`verify-saas-client-context`；均为`.ts`脚本。GUI=根任务真实浏览器+明确本机fixture。
 
@@ -61,8 +61,8 @@
 | R01 | 受影响模块通过 | admin-access/feature-access/model-management及billing-tools/agent/async/imagegen-execution集中通过；旧Agent harness-runtime脚本在当前合并基线缺Router fixture准备，原脚本未改、未标通过，新G验证本次Agent证据链 |
 | R02 | 隔离通过 | enterprise-artworks/analytics/hierarchy/console及完整enterprise-integration BFF；旧fixture全局身份断言更新为新membership合同，WindowsTEMP canonical只修fixture |
 | R03 | 隔离通过 | imagegen-execution/billing及V/J配置、报价、幂等、未知恢复冻结 |
-| R04 | 066构建及联合验收通过；后继重建待执行 | 固定06665b7e/Image1bad9309；18/18实际Web/PG/Worker HTTP、真实PG tick/重启/排空、UNKNOWN拒绝恢复、native完整解码与Linux7进程38断言通过。47真实GUI随后发现视频目录冷加载创建缺口，066已SUPERSEDED，待修复整合与后继固定构建；各fixture/native边界见saas-release-progress |
-| R05 | 未执行 | 根任务协调最新47真实基线/视频profile、三锁蓝绿/排空/最终固定镜像；本任务未操作生产 |
-| R06 | 无兼容业务回滚；受控维护替代本机通过 | 470adbc9受控维护renderer/真实Nginx TLS52组合通过，applied=false；现场公网入口闭包/同版Worker/lifecycle接入由根任务收尾。旧0a不得公网回退，未声称业务回滚通过 |
+| R04 | 最终5b固定镜像通过 | 原Dockerfile完整Linux构建/类型、18/18真实Web/PG/同镜像combined Worker、tick/重启/排空/UNKNOWN、native完整解码及Linux7进程38断言通过；正式镜像db8004f1、版号1792705393。066/25c已SUPERSEDED，不用旧回执放行 |
+| R05 | 47发布COMPLETE；真实验收有明确边界 | 三锁/旁路/整站切流/新Worker完成tick/原槽排空停止restart=no全部完成，canonical728。真实平台/租户/历史创作5份媒体、公网参考素材及冷加载/设置通过；只读HTTP10PASS/4unavailable，生产企业owner正向与密码登录未执行，不算PASS |
+| R06 | 受控维护替代通过本机及现场准备门禁 | 无理解新权限的旧程序回切。实际Nginx/TLS52组合+同prover68项本机通过，47完整闭包、固定同版Worker及supervisor已绑定；生产未触发维护，不冒称真实紧急恢复或无感回滚演练通过。追加Router私有兼容绑定另记 |
 
-最新供应商视频整合专项本机12组通过，见[视频整合验收](2026-10-23-saas-video-merge-acceptance.md)。066本机Linux证据及后续阻断见[联合验收与交付进度](2026-10-23-saas-release-progress.md)。待根任务补齐：R04冷启动修复整合后的后继固定镜像、R05生产发布、R06现场维护恢复门禁。A11/A12专门浏览器证据已补齐。真实Worker重启仅本机隔离镜像，无真实Supplier调用、线上数据写入或生产发布完成声明。
+最新供应商视频整合专项本机12组通过，见[视频整合验收](2026-10-23-saas-video-merge-acceptance.md)。最终5b程序及生产回执见[47实际验收](2026-10-23-saas47-production-acceptance.md)，早期候选过程见[交付进度](2026-10-23-saas-release-progress.md)。A11/A12浏览器证据已补齐；真实故障注入/重启仅本机隔离镜像，未对生产正在使用的槽故意制造崩溃或重放收费请求。
