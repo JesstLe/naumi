@@ -5,7 +5,7 @@ import path from "node:path";
 import {Readable} from "node:stream";
 import {getMediaAsset} from "../media-assets";
 import {fetchStoredObject,MEDIA_DIR,storageDriver} from "../storage";
-import {matchesVideoReferenceMediaAsset,verifyVideoReferenceToken,type VideoReferenceMediaAsset,type VideoReferenceMediaClaims} from "./reference-media-token";
+import {matchesVideoReferenceMediaAsset,verifyVideoReferenceMediaPathSegment,type VideoReferenceMediaAsset,type VideoReferenceMediaClaims} from "./reference-media-token";
 
 type ByteRange={start:number;end:number;length:number;partial:boolean;wire:string};
 export type VideoReferenceMediaDependencies={
@@ -80,7 +80,7 @@ export async function readVerifiedVideoReferenceLocal(claims:VideoReferenceMedia
 export function createVideoReferenceMediaHandler(deps:VideoReferenceMediaDependencies={}){
   return async(request:Request,token:string):Promise<Response>=>{
     if(!["GET","HEAD"].includes(request.method))return errorResponse(405,{allow:"GET, HEAD"});
-    const claims=(deps.verifyToken??(value=>verifyVideoReferenceToken(value,{secret:deps.secret,now:deps.now?.()})))(token);
+    const claims=verifyVideoReferenceMediaPathSegment(token,{secret:deps.secret,now:deps.now?.(),verifyToken:deps.verifyToken});
     if(!claims)return errorResponse(404);
     let asset:VideoReferenceMediaAsset|null;
     try{asset=await (deps.getAsset??getMediaAsset)(claims.key);if(!asset||!matchesVideoReferenceMediaAsset(claims,asset,{secret:deps.secret}))return errorResponse(404);}

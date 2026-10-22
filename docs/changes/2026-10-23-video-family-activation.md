@@ -71,3 +71,11 @@ R2真实GUI通过加号创建私有空白节点vnode-3dfedefb-da7e-4036-be9b-588
 R3是combined到combined继承，显式登记predecessorWebMemoryMiB=2048并核验实际前驱cap，保留原缺省3GiB门禁及全部任务/事件/退役核验。153项集中检查及另补3项实际Node协议通过。合入后台已完成的4fdaf698仅媒体worker与验证脚本补丁，补丁SHA256 186f34afbde3594251b9e52ac3b8eb81492a944700b2ea39242e5ee7da4c583f；worker内容SHA与已验收源一致。该补丁只按有效共享retirement回执清理本进程终态缓存，保留active/queued工作，避免后继进程永久占满8个终态槽。复用同内容Linux真实7进程/HTTP/共享scratch/60秒collector的38断言证据；不是原生解码验收，后者仍由固定镜像smoke及旁路实测完成。
 
 R3拟固定新公开版号1792702873，公开条目只说明新建节点默认选项和加载重试修复。当前R3未构建/未发布，模型135继续在线，R2原UUID真实生成仍在推进；不重放历史或本轮已受理请求。
+
+### R2业务节点实测与后缀补充修复
+
+R2原run 095d5940-e5ab-47dd-9158-8e4a9ce2e0b2的APIB四组（Seedance2Fast、Klingv3、Wan2.6I2Vflash、H3Max）已实际完成，视频全解码、结果SHA与单次积分结算均通过。第五组GeekKling带参考图原task vid-fbb995e5-438a-452c-b2cb-009b33b8ee36返回HTTP500、没有上游任务ID，错误为FileInfos[0].Url应为图片类型或asset地址。现限时代理地址缺少文件后缀，APIB能识别但该接口拒绝；根因由真实业务路径发现，不能把原直连成功当应用路径验收。
+
+新增URL使用已冻结真实MIME对应的规范后缀，路由在元数据/存储访问前严格核验签名与后缀匹配；原无后缀短期URL继续有效。原SHA/owner/900秒上限、私有桶、HEAD有界读取均保留，不改媒体字节。689项集中断言与21次本地真实HTTP通过，acceptance CLI亦绑定单一.png并保留篡改签名拒绝。6983282c及1792702873仅本机构建，标为SUPERSEDED、没有上传或发布；最终R3改为1792703343，公开目录移除未发布候选的条目，只保留实际拟发布版本。
+
+第五组原请求当前仍needs_attention/creation_unknown，唯一供应商call 7e4a56d2-c2bf-4eb8-a52f-c3b423bfb39c的费用pending/金额未知；响应SHA c6045d85c9c46bdb529283d9395412f2ac178a2796fcf47f022547eef77be75d。没有not_charged回执，不能推断未受理、退款或重发。正只读核对供应商原日志；剩余第六/七组尚未提交，若继续只允许原run内首次提交这两项。R3完整发布必须保留此原未知边界，不能删除、换UUID或绕排空/回退兼容门禁。

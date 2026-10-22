@@ -5,7 +5,7 @@ import {mkdtemp,mkdir,realpath,rm,unlink,writeFile} from "node:fs/promises";
 import {createServer,type Server} from "node:http";
 import {tmpdir} from "node:os";
 import path from "node:path";
-import {createVideoReferenceMediaUrl,issueVideoReferenceToken,verifyVideoReferenceToken,VIDEO_REFERENCE_MEDIA_PATH,type VideoReferenceMediaAsset} from "../src/lib/video/reference-media-token";
+import {createVideoReferenceMediaUrl,issueVideoReferenceToken,verifyVideoReferenceToken,verifyVideoReferenceMediaPathSegment,VIDEO_REFERENCE_MEDIA_PATH,type VideoReferenceMediaAsset} from "../src/lib/video/reference-media-token";
 import {createVideoReferenceMediaHandler,readVerifiedVideoReferenceLocal} from "../src/lib/video/reference-media";
 import {MEDIA_DIR,storageDriver} from "../src/lib/storage";
 
@@ -50,11 +50,37 @@ for(const baseUrl of ["https://47.105.59.142","http://media.example.test"]){
   equal(url.origin,new URL(baseUrl).origin,"Reference URL uses only its explicit public origin");
   assert(url.pathname.startsWith(VIDEO_REFERENCE_MEDIA_PATH));assertions++;
   equal(url.search+url.hash,"","Public reference URL carries no query credentials or fragment");
-  equal(verifyVideoReferenceToken(url.pathname.slice(VIDEO_REFERENCE_MEDIA_PATH.length),{secret,now})?.key,source.key,"URL carries a verifiable opaque token");
+  assert(url.pathname.endsWith(".png"),"A real PNG receives its canonical filename suffix");assertions++;
+  equal(verifyVideoReferenceMediaPathSegment(url.pathname.slice(VIDEO_REFERENCE_MEDIA_PATH.length),{secret,now})?.key,source.key,"URL carries a verifiable opaque token and MIME-bound suffix");
 }
 for(const baseUrl of ["https://user:secret@media.example.test","https://media.example.test/path","https://media.example.test?token=secret","https://media.example.test#secret","http://127.0.0.1","http://169.254.169.254","http://10.0.0.1","http://localhost","file:///tmp"]){
   assert.throws(()=>createVideoReferenceMediaUrl(source,{baseUrl,secret,now}),"URL minting rejects credentials, paths and private literal origins");assertions++;
 }
+const mimeSuffixes=[
+  ["image/png","png"],["image/jpeg","jpg"],["image/webp","webp"],["image/avif","avif"],["image/gif","gif"],["image/bmp","bmp"],["image/tiff","tiff"],["image/apng","apng"],
+  ["video/mp4","mp4"],["video/webm","webm"],["video/quicktime","mov"],["video/mp2t","ts"],["video/x-matroska","mkv"],["video/x-msvideo","avi"],["video/x-flv","flv"],["video/ogg","ogv"],["video/mpeg","mpg"],["video/x-ms-asf","asf"],
+  ["audio/wav","wav"],["audio/x-wav","wav"],["audio/mpeg","mp3"],["audio/mp4","m4a"],["audio/ogg","ogg"],["audio/flac","flac"],["audio/webm","webm"],["audio/aac","aac"],["audio/x-matroska","mka"],["audio/aiff","aiff"],["audio/x-ms-wma","wma"],
+] as const;
+const mintedSegments=mimeSuffixes.map(([contentType,suffix])=>{
+  const url=new URL(createVideoReferenceMediaUrl({...source,key:"artworks/misleading-extension.mp4",contentType},{baseUrl:"https://media.example.test",secret,now}));
+  const segment=url.pathname.slice(VIDEO_REFERENCE_MEDIA_PATH.length);
+  equal(segment.split(".").length,5,"The filename segment contains one suffix after its four-part opaque token");
+  assert(segment.endsWith("."+suffix),`${contentType} uses its canonical suffix independently of its storage key`);assertions++;
+  equal(verifyVideoReferenceMediaPathSegment(segment,{secret,now})?.contentType,contentType,"Filename suffix is bound to the signed real media MIME");
+  equal(verifyVideoReferenceToken(segment,{secret,now}),null,"Pure token verification does not silently accept a filename suffix");
+  return {contentType,suffix,segment};
+});
+equal(verifyVideoReferenceMediaPathSegment(token,{secret,now}),claims,"Previously issued bare-token paths remain compatible");
+equal(verifyVideoReferenceMediaPathSegment(token+".png",{secret,now}),claims,"A canonical suffix preserves the original signed identity");
+for(const contentType of ["image/heic","image/heif","image/jpg"]){assert.throws(()=>createVideoReferenceMediaUrl({...source,contentType},{baseUrl:"https://media.example.test",secret,now}),"URL suffixing does not invent unsupported media capabilities or aliases");assertions++;}
+for(const segment of [null,"",token+".jpeg",token+".jpg",token+".mp4",token+".PNG",token+".bin",token+".png.exe",token+".png.png",token+".png/../other",token+"\\image.png",token+"%2epng",token+".png%00","../"+token+".png"]){
+  equal(verifyVideoReferenceMediaPathSegment(segment as string,{secret,now}),null,"Wrong, alias, extra, encoded or traversing suffixes are rejected");
+}
+let malformedTokenVerifications=0;
+for(const segment of [token+".png.png",token+"%2epng",token+"/image.png",token+"\\image.png"]){
+  equal(verifyVideoReferenceMediaPathSegment(segment,{verifyToken:()=>{malformedTokenVerifications++;return claims;}}),null,"Malformed path shape is rejected before the token verifier");
+}
+equal(malformedTokenVerifications,0,"Path traversal/encoding and double suffixes never reach token verification");
 
 const rangeHeader=(range:string):{status:number;headers:Record<string,string>}=>{
   if(!range)return {status:200,headers:{"content-type":source.contentType,"content-length":String(bytes.length)}};
@@ -76,6 +102,23 @@ const deps={secret,now:()=>now,getAsset:async(key:string)=>{reads++;equal(key,so
 function safeResponse(response:Response,message:string){
   for(const header of ["set-cookie","authorization","x-api-key","location"])equal(response.headers.has(header),false,`${message}: upstream ${header} is not forwarded`);
   equal([...response.headers.values()].some(value=>value.includes(source.owner)||value.includes(source.key)||value.includes(secret)),false,`${message}: no private asset identity in headers`);
+}
+async function suffixHandlerRegression(){
+  for(const {contentType,segment} of mintedSegments){
+    const handler=createVideoReferenceMediaHandler({secret,now:()=>now,getAsset:async()=>({...asset,key:"artworks/misleading-extension.mp4",content_type:contentType}),fetchObject:async(_key,range)=>mediaResponse(range,{"content-type":contentType}),readLocal:async()=>null});
+    const response=await handler(new Request("https://media.example.test"+VIDEO_REFERENCE_MEDIA_PATH+segment),segment);
+    equal(response.status,200,"Supported MIME-bound filenames retain the authenticated media access path");
+    equal(response.headers.get("content-type"),contentType,"The signed real MIME is returned independently of filename aliases");
+    equal(new Uint8Array(await response.arrayBuffer()),bytes,"Suffix handling does not change the original bytes");
+  }
+  let metadataReads=0,sourceReads=0;
+  const handler=createVideoReferenceMediaHandler({secret,now:()=>now,getAsset:async()=>{metadataReads++;return asset;},fetchObject:async(_key,range)=>{sourceReads++;return mediaResponse(range);}});
+  for(const segment of [token+".jpg",token+".jpeg",token+".mp4",token+".PNG",token+".unknown",token+".png.exe",token+".png.png",token+"%2epng",token+".png%00",token+"/../image.png",token+"\\image.png"]){
+    const response=await handler(request(),segment);equal(response.status,404,"Invalid filename segments and MIME mismatches are concealed as missing");safeResponse(response,"Invalid filename segment");
+  }
+  equal(metadataReads,0,"All invalid suffixes and MIME mismatches are rejected before metadata access");equal(sourceReads,0,"Invalid suffixes never reach object storage");
+  const prior=await handler(request(),token);equal(prior.status,200,"Legacy bare-token GET remains supported");equal(new Uint8Array(await prior.arrayBuffer()),bytes,"Legacy bare-token GET keeps the original bytes");
+  const current=await handler(request("HEAD","bytes=4-7"),token+".png");equal(current.status,206,"New canonical-suffix HEAD preserves range behavior");equal(current.headers.get("content-range"),"bytes 4-7/16","New canonical-suffix HEAD uses client range metadata");equal(await current.text(),"","New canonical-suffix HEAD returns no body");
 }
 async function bounded<T>(work:Promise<T>,message:string,milliseconds=1500):Promise<T>{
   let timer:ReturnType<typeof setTimeout>|undefined;
@@ -157,19 +200,28 @@ async function realHTTPHeadRegression(){
   const handler=createVideoReferenceMediaHandler({...deps,fetchObject:async(_key,range)=>fetch(originURL+"/synthetic-object",{headers:{range},redirect:"manual"}),readLocal:async()=>null});
   const bridge=createServer((incoming,outgoing)=>{
     loopbackCalls++;
-    void handler(new Request("http://127.0.0.1/reference",{method:incoming.method,headers:incoming.headers.range?{range:incoming.headers.range}:{}}),token).then(async response=>{
+    const url=new URL(incoming.url||"/","http://127.0.0.1"),segment=url.pathname.slice(VIDEO_REFERENCE_MEDIA_PATH.length);
+    void handler(new Request(url,{method:incoming.method,headers:incoming.headers.range?{range:incoming.headers.range}:{}}),segment).then(async response=>{
       outgoing.writeHead(response.status,Object.fromEntries(response.headers));outgoing.end(Buffer.from(await response.arrayBuffer()));
     }).catch(error=>{outgoing.destroy(error instanceof Error?error:new Error("Synthetic bridge failed"));});
   });
   try{
     const bridgeURL=await listen(bridge);
-    for(const [range,status,length,contentRange] of [[undefined,200,16,null],["bytes=4-7",206,4,"bytes 4-7/16"],["bytes=-4",206,4,"bytes 12-15/16"]] as const){
-      const response=await fetch(bridgeURL+"/reference",{method:"HEAD",headers:range?{range}:{},signal:AbortSignal.timeout(2000)});
+    for(const segment of [token,token+".png"])for(const [range,status,length,contentRange] of [[undefined,200,16,null],["bytes=4-7",206,4,"bytes 4-7/16"],["bytes=-4",206,4,"bytes 12-15/16"]] as const){
+      const response=await fetch(bridgeURL+VIDEO_REFERENCE_MEDIA_PATH+segment,{method:"HEAD",headers:range?{range}:{},signal:AbortSignal.timeout(2000)});
       equal(response.status,status,"Real HTTP HEAD exposes the requested full/range status");equal(response.headers.get("content-length"),String(length),"Real HTTP HEAD exposes the requested media length");
       equal(response.headers.get("content-range"),contentRange,"Real HTTP HEAD exposes exact client range metadata");equal(response.headers.get("content-type"),source.contentType,"Real HTTP HEAD exposes MIME");
       equal(response.headers.get("etag"),`"${sha256}"`,"Real HTTP HEAD exposes the frozen digest");equal((await response.arrayBuffer()).byteLength,0,"Actual HTTP HEAD transmits no media body");safeResponse(response,"Loopback HEAD");
     }
-    equal(sourceRequests,Array.from({length:3},()=>({method:"GET",range:"bytes=0-0",bytes:1})),"Real storage source only receives bounded one-byte GETs for every HEAD variant");
+    equal(sourceRequests,Array.from({length:6},()=>({method:"GET",range:"bytes=0-0",bytes:1})),"Real storage source only receives bounded one-byte GETs for legacy and suffixed HEAD variants");
+    const mintedPath=new URL(createVideoReferenceMediaUrl(source,{baseUrl:"https://media.example.test",secret,now})).pathname;
+    const get=await fetch(bridgeURL+mintedPath,{signal:AbortSignal.timeout(2000)});equal(get.status,200,"A newly minted filename works through a real HTTP path");equal(new Uint8Array(await get.arrayBuffer()),bytes,"Real HTTP suffixed GET preserves original bytes");
+    const range=await fetch(bridgeURL+mintedPath,{headers:{range:"bytes=4-7"},signal:AbortSignal.timeout(2000)});equal(range.status,206,"Real HTTP suffixed GET supports ranges");equal(new Uint8Array(await range.arrayBuffer()),bytes.slice(4,8),"Real HTTP suffixed range preserves selected bytes");
+    const before={reads,sourceRequests:sourceRequests.length};
+    for(const suffix of [".mp4",".jpeg",".png.exe",".png.png","%2epng"]){
+      const denied=await fetch(bridgeURL+VIDEO_REFERENCE_MEDIA_PATH+token+suffix,{signal:AbortSignal.timeout(2000)});equal(denied.status,404,"Real HTTP suffix mismatches fail before storage");equal(await denied.text(),"","Rejected HTTP filenames expose no bytes");safeResponse(denied,"Rejected HTTP filename");
+    }
+    equal({reads,sourceRequests:sourceRequests.length},before,"Real HTTP filename rejection does not touch metadata or object storage");
   }finally{await close(bridge);await close(origin);}
 }
 async function localDriverRegression(root:string){
@@ -232,7 +284,7 @@ async function main(){
   equal(redirect.status,503,"Storage redirect is not followed or exposed");safeResponse(redirect,"Redirect failure");assert(redirect.headers.get("cache-control")?.includes("no-store"),"Failures are not cached");assertions++;
   const incorrectLength=createVideoReferenceMediaHandler({...deps,fetchObject:async()=>new Response(bytes,{status:200,headers:{"content-type":"image/png","content-length":"1000"}}),readLocal:async()=>null});
   equal((await incorrectLength(request(),token)).status,503,"Incorrect object length cannot be published as the signed asset");
-  await headReleaseRegression();await realHTTPHeadRegression();
+  await suffixHandlerRegression();await headReleaseRegression();await realHTTPHeadRegression();
   const temporaryParent=await realpath(tmpdir()),localRoot=await mkdtemp(path.join(temporaryParent,"naumi-video-reference-fixture-"));
   try{
     const file=path.join(localRoot,source.key);await mkdir(path.dirname(file),{recursive:true});await writeFile(file,bytes);
