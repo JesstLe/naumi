@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw, Wallet } from 'lucide-react';
 import { authHeader } from '@/lib/supabase';
 import { balanceErrorMessages, type BalanceErrorCode, type BalanceMeasurement, type ProviderBalanceOverview } from '@/lib/model-config/provider-balance-contracts';
+import { activityErrorMessages, type AcceptanceWindow, type ProviderActivityOverview } from '@/lib/model-config/provider-activity-contracts';
 import styles from './provider-ops.module.css';
 
 const amount = (value: number | null) => value === null ? '未记录' : value.toLocaleString('zh-CN', { maximumSignificantDigits: 15 });
@@ -13,6 +14,16 @@ function Measurement({ value }: { value: BalanceMeasurement }) {
 }
 function MeasurementColumns({ value }: { value: BalanceMeasurement | null }) {
   return <div className={styles.balanceColumns}><section><h3>供应商余额</h3>{value?.kind === 'account_balance' ? <Measurement value={value} /> : <p className={styles.balanceUnknown}>账户资金余额未知</p>}</section><section><h3>API Key额度</h3>{value?.kind === 'api_key_quota' ? <Measurement value={value} /> : <p className={styles.balanceUnknown}>额度未记录</p>}</section></div>;
+}
+function AcceptanceStats({ title, value }: { title: string; value: AcceptanceWindow }) {
+  return <section className={styles.acceptanceWindow}><h4>{title}<span>共 {amount(value.total)} 次</span></h4><dl>{([['已受理', value.accepted], ['拒绝', value.rejected], ['失败', value.failed], ['未知', value.unknown], ['处理中', value.processing]] as const).map(([label, count]) => <div key={label}><dt>{label}</dt><dd>{amount(count)}</dd></div>)}</dl></section>;
+}
+function ProviderActivityPanel({ value }: { value: ProviderActivityOverview }) {
+  return <section className={styles.activity} aria-label='调用受理结果'><header className={styles.header}><h2 className={styles.title}>调用受理结果</h2><span className={styles.meta}>统计截至 {clock(value.until)}</span></header><p className={styles.method}>按供应商及单次调用尝试统计。已受理表示收到响应或流结束，不代表成片成功；余额查询不计入。</p><div className={styles.grid}>{value.providers.map(provider => <article className={styles.providerCard} key={provider.id}>
+    <header className={styles.providerHead}><strong className={styles.providerName}>{provider.name}{provider.enabled ? '' : '（停用）'}</strong><span className={styles.providerMeta}>发布并发 {provider.maxConcurrent} · 超时 {provider.timeoutMs / 1000} 秒 · {provider.routingModes === null ? '通道策略未记录' : provider.routingModes.length ? provider.routingModes.map(mode => mode === 'priority' ? '优先' : '均衡').join(' / ') + '调度' : '未配置统一通道策略'}</span></header>
+    {provider.stats.errorCode ? <p className={styles.balanceUnknown}>{activityErrorMessages[provider.stats.errorCode]}</p> : <div className={styles.acceptanceWindows}><AcceptanceStats title='近 1 小时' value={provider.stats.h1!} /><AcceptanceStats title='近 24 小时' value={provider.stats.h24!} /></div>}
+    <section className={styles.circuit}><h4>当前通道熔断</h4>{provider.circuit.errorCode ? <p>{activityErrorMessages[provider.circuit.errorCode]}</p> : provider.circuit.configuredChannels === 0 ? <p>当前发布配置无通道</p> : <dl><div><dt>配置通道</dt><dd>{amount(provider.circuit.configuredChannels)}</dd></div><div><dt>已记录熔断</dt><dd>{amount(provider.circuit.openChannels)}</dd></div><div><dt>恢复探测中</dt><dd>{amount(provider.circuit.recoveringChannels)}</dd></div><div><dt>状态未记录</dt><dd>{amount(provider.circuit.unobservedChannels)}</dd></div></dl>}</section>
+  </article>)}</div></section>;
 }
 export function ProviderOps() {
   const [data, setData] = useState<ProviderBalanceOverview | null>(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
@@ -44,5 +55,6 @@ export function ProviderOps() {
       {account.source && (account.source.documentationUrl ? <a className={styles.source} href={account.source.documentationUrl} target='_blank' rel='noreferrer'>{account.source.label} · 接口来源</a> : <span className={styles.probeTime}>{account.source.label} · 只读接口核验 {account.source.revision}</span>)}
     </article>)}</div>}
     {data && !data.accounts.length && <p className={styles.empty}>当前发布版本没有供应商</p>}
+    {data?.activity && <ProviderActivityPanel value={data.activity} />}
   </section>;
 }

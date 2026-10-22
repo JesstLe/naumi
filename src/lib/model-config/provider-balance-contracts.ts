@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { ProviderActivityOverview } from './provider-activity-contracts';
 
 export const balanceErrorMessages = {
   UNSUPPORTED: '暂未确认只读查询接口', CREDENTIAL_UNAVAILABLE: '当前发布凭据不可用',
@@ -27,4 +28,4 @@ export type ProviderAccountBalance = ProviderBalanceProbe & {
   cache: { state: 'hit' | 'fresh' | 'none'; expiresAt: string | null; persisted: boolean; refreshLimited: boolean };
   lastKnown: { measurement: BalanceMeasurement; checkedAt: string } | null;
 };
-export type ProviderBalanceOverview = { accounts: ProviderAccountBalance[]; configVersion: number; generatedAt: string; cacheTtlSeconds: number };
+export type ProviderBalanceOverview = { accounts: ProviderAccountBalance[]; configVersion: number; generatedAt: string; cacheTtlSeconds: number; activity?: ProviderActivityOverview };

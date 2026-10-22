@@ -4,7 +4,7 @@
 
 - 独立分支 `codex/saas-provider-balance-20261023`，基线 `de5d010b8d2543f171b1da66f4f020ca3dd342b9`。保留企业界面及平台 polish 的原工作树。
 - 精确复用 `origin/codex/provider-health-20261021` 的独立提交 `d06ec139`（本分支 `0ca5200f`），仅其 6 个余额面板相关文件；没有合入整个旧分支。主实施整合需同时应用复用提交及本修订。
-- 复用既有 `/admin/model-health` 下方 `ProviderOps`，不另建面板。旧提交中的余额猜测和成功率聚合已由本轮精确契约替代；原模型健康模块继续负责其自身统计。
+- 复用既有 `/admin/model-health` 下方 `ProviderOps`，不另建面板。旧提交中的余额猜测与成功率命名由本轮精确契约及独立“调用受理结果”区块替代；原模型健康模块继续负责其自身统计。
 - 文件负责人为余额 server/contracts/access、`provider-ops` API/组件/CSS、隔离验证脚本及本记录；`model-health.tsx` 仅复用提交的一处组件挂载。未修改共享 shell、企业 API、后台三屏、模型配置写入器或数据库 schema。
 
 ## 已实现
@@ -43,4 +43,21 @@
 - 本子任务未启动额外 Web、未操作根浏览器标签、未做桌面/390 截图与 Next 完整构建；交由主实施整合后集中验证，不能据类型通过写成构建或浏览器通过。
 - APIB/Geek 的正式货币单位、同一钱包多密钥真实账户 ID 尚无依据，持续显示未知/凭据账户；其他 origin 保持 unsupported。未自动告警、充值、停用通道或修改路由。
 - 未 push main、未发布、未占服务器锁；120 及其他服务器均未连接。
-- 本子模块功能迭代计数 **1**，文档及复用提交不另计；父任务负责累计三模块后的远端 main 同步与统一整合，本分支未用远端内容覆盖其固定实施基线。
+- 本子模块功能迭代计数 **2**（余额修订、调用受理/熔断恢复），文档及复用提交不另计；父任务负责累计三模块后的远端 main 同步与统一整合，本分支未用远端内容覆盖其固定实施基线。
+
+## 追加：恢复供应商调用受理与熔断（根审阅后）
+
+初次余额安全修订删除了旧提交已有统计区块；根审阅要求恢复，现已在相同独立分支补回。新增 `provider-activity.ts` 与客户端安全 contracts，组件中单独按 provider 展示，不把 credential 账户组当成调用归属，也不丢弃旧分支的管理能力。
+
+- 标题为“调用受理结果”，不叫成片成功率。`app_model_execution_stages` 一行是一个 attempt，finish 更新同一行；`response-received/stream-completed` 归已受理，`rejected-not-charged` 归拒绝，`failed-response/failed-output` 归失败，`submitted` 归处理中，其余状态（含 unknown 和未来未知枚举）归未知。每个 attempt 只计一次，不按更新次数、输出件数或余额请求次数计数。
+- 时间按 `created_at`，一次捕获固定 `until`，查询 `[until-24h, until]`，1h 使用同一快照的闭区间。排除未来记录、窗口外记录及当前发布配置以外的 provider；各 provider 单列 1h/24h 六项计数，不向当前密钥分摊历史调用。
+- 每次最多读取 50,000+1 行，仅选 `provider_id/state/created_at`。发现额外一行时全部窗口统计返回 `ROW_LIMIT`/未知，避免把截断值冒充完整统计。只读可重复读事务设置 5 秒 statement timeout，不创建审计表或索引、不改审计/余额/计费/健康记录；现有空表是已知零，缺表是 `NOT_RECORDED`，失败是固定 `ACTIVITY_UNAVAILABLE`。
+- 当前通道状态复用执行器 `supplierChannelKey(providerId,baseUrl,wireModel)`，从当前发布 upstream 身份去重（模型别名不会多计），只查对应真实 `app_model_channel_health`，不把历史 endpoint 的熔断混进当前配置。单列配置通道、已记录熔断、恢复探测和未记录通道；无状态行不会推断健康，缺表/读取失败保持未知。配置中没有通道时显示无通道。
+- 同区块显示发布 `maxConcurrent/timeoutMs` 及当前启用 public model 实际 `supplierRouting.mode`（优先/均衡）。发布通道配置缺失时策略/状态未知，不虚构可配置熔断阈值。接口只返回汇总、固定错误码和时间，不返回 URL、wire model、key、raw SQL 或上游错误。
+- 余额和 activity 两个结果共用既有管理员鉴权与最终 active-version 复核；activity 的缺表或安全错误不会抹掉已知余额，健康状态失败也不会抹掉已知调用结果。
+
+### 追加集中证据
+
+全新 `provider_activity_fixture_v1` 真实隔离 PostgreSQL：`scripts/verify-provider-activity.ts` 输出 `PROVIDER_ACTIVITY_FIXTURE_PASS`。覆盖缺表未知、现有空表零、全部状态分类、1h/24h 精确边界、排除未来/窗外记录、finish 更新单 attempt、provider 分组、通道身份/别名去重、恢复探测与未观测、配置策略、50,001 行上限未知、固定异常/无内部字段、读取前后审计计数不变。transport 无外部调用，真实供应商调用 0。
+
+同时在全新 `provider_balance_fixture_v4` 重新执行完整余额/真实鉴权 fixture，通过；证明新增统计读取没有改变旧 key 隔离、缓存、权限、错误安全或执行/账务/健康写入边界。依赖感知 Compiler API 再次 0 诊断；`git diff --check` 通过。正式整站构建和浏览器仍交主实施集中验证，未连接生产或发布。

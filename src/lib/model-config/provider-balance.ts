@@ -8,6 +8,7 @@ import { settingsSecret } from '@/lib/settings-secret';
 import { readBounded } from '@/lib/supplier-cost/io';
 import { modelEndpointFetch } from './transport';
 import { modelConfigSchema, type ValidationOptions } from './schema';
+import { readProviderActivity } from './provider-activity';
 import { balanceMeasurementSchema, type BalanceErrorCode, type BalanceMeasurement, type ProviderBalanceOverview, type ProviderBalanceProbe, type ProviderAccountBalance } from './provider-balance-contracts';
 
 const CACHE_TTL_MS = 5 * 60_000, ERROR_TTL_MS = 30_000, MIN_REFRESH_MS = 15_000, PROBE_TIMEOUT_MS = 12_000;
@@ -136,9 +137,10 @@ export function createPublishedProviderBalanceReader(pool: Pool, service: Return
     if (!row) throw new Error('CONFIG_UNAVAILABLE');
     const providers = modelConfigSchema.shape.providers.parse(row.config.providers);
     const result = await service.overview(providers, Number(row.version), refresh);
+    const activity = await readProviderActivity(pool, row.config, providers);
     const current = (await pool.query('SELECT active_version FROM app_model_config_state WHERE singleton=true')).rows[0]?.active_version;
     if (Number(current) !== Number(row.version)) throw new ProviderBalanceFailure('CONFIG_CHANGED');
-    return result;
+    return { ...result, activity };
   };
 }
 let defaultService: ReturnType<typeof createProviderBalanceService> | undefined;
