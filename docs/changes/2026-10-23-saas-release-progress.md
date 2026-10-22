@@ -16,7 +16,15 @@
 
 真实combined/native验收`56b40e33-a910-4512-97cd-b740bebb0def`通过：PID1 root、扫描uid1001、媒体supervisor与无能力隔离native子进程、只读根/noexec tmp、无对外端口、内部网络、实际视频完整解码、原UUID幂等、重启对齐、双队列排空、正常停止和零OOM。已存在的真实上游视频仅用于本机解码，本轮供应商调用0。扫描接收器在该组为明确mock，不能作为真实App/数据库执行证明。峰值约396.21MiB仅代表这一个样例，不据此削减1GiB Worker预算。
 
-正在另跑同固定镜像的真实Web＋全新PG＋真实combined Worker：使用真实密码登录、平台/企业/受限成员HTTP、媒体鉴权、实际数据库tick回执、重启与UNKNOWN持久状态故障注入；不接生产数据库、不接NAS、不配置供应商。早期seed harness因standalone裁剪zod、react-server及next/server入口失败，改为将纯JS依赖/真实NextResponse实现一起bundle；随后本地Docker PG缺显式sslmode=disable导致Web未就绪，已修正fixture连接串。失败轮按UUID清理全部本机容器/网络，保留失败结果，不记为产品通过；没有改固定产品源码或镜像来迁就harness。最后结果收齐后更新本段。
+随后同镜像真实Web＋全新PG＋真实combined Worker验收发现UUID批次表与TEXT证据链接直接JOIN导致详情503，已用真实DDL回归并在`149654bc`修复；首次镜像不能发布。seed harness早期依赖裁剪/本地PG SSL失败记录保留，未作为产品通过。
+
+## 第二次候选与最终修订
+
+`a48e201f58ef4f7e086f5f187f2ff8f49fef868d`完整Linux构建通过，Image `sha256:d4c6795db948638bd5660a24ef47d12b79cefa383a6a5ed85e92a884dd136607`，证据`output/saas-linux-final-20261023/`。实际Web/PG/Worker验证已覆盖真实密码登录、平台/企业权限、UUID详情、双cookie、原图GET/HEAD/Range、真实Web扫描tick、重启和排空。18个HTTP组通过17个，唯一失败为harness错误预期provider-ops权限拒绝403；实际既有`biAuthorize`合同返回404，已修正harness，未把该轮记为全部通过。签名参考素材实际GET200/HEAD200/Range206/RangeHEAD206，HEAD空body且冻结SHA一致。后续变更/owner守卫、SQL回执与UNKNOWN步骤等待最终轮完整执行。
+
+进一步真实双Worker共享目录复现：旧Worker确认退休并删除终态目录后，新Worker仍持有8项终态缓存，导致新POST永久429假满。`4fdaf698`仅在严格核验共享退休回执后清理本进程terminal Map；不删除共享业务目录，不清queued/processing/unknown。Windows实际7个Node进程、38断言、60秒collector及symlink/坏回执等负例通过，原combined91断言与正式类型通过，供应商/数据库调用0；fixture engine不能冒称native解码。最终固定镜像将补Linux真实进程与完整联合验收，因此a48也不是最终候选。
+
+最新Linux+官方Node发布门禁216组无skip通过，见`ops-final-abort-linux.log`。供应商HEAD修复及严格失败候选退役工具已整合至`859d1ef9`；最终构建前已重新fetch，origin/main仍`7b1e970c`且是当前祖先。
 
 ## 当前阻断与下一步
 
