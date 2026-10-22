@@ -1,0 +1,23 @@
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { updateTenantSchema } from '@/lib/saas/tenant-contracts';
+import { tenantAuthorize, tenantDetail, tenantFailure, updateTenant } from '@/lib/saas/tenants';
+import { teamJson, teamMutationOrigin } from '@/lib/teams/access';
+export const dynamic='force-dynamic';
+export const runtime='nodejs';
+type Context={params:Promise<{id:string}>};
+export async function GET(request:Request,context:Context) {
+  const actor=await tenantAuthorize(request);if(actor instanceof NextResponse)return actor;
+  const {id}=await context.params;
+  if(!z.string().uuid().safeParse(id).success)return teamJson({error:'租户不存在'},404);
+  try{return teamJson(await tenantDetail(id));}catch(e){return tenantFailure(e);}
+}
+export async function PATCH(request:Request,context:Context) {
+  const actor=await tenantAuthorize(request);if(actor instanceof NextResponse)return actor;
+  if(!teamMutationOrigin(request))return teamJson({error:'请求来源无效'},403);
+  const {id}=await context.params;
+  if(!z.string().uuid().safeParse(id).success)return teamJson({error:'租户不存在'},404);
+  const parsed=updateTenantSchema.safeParse(await request.json().catch(()=>null));
+  if(!parsed.success)return teamJson({error:'租户资料无效',code:'INVALID_COMMAND'},400);
+  try{return teamJson(await updateTenant(actor,id,parsed.data));}catch(e){return tenantFailure(e);}
+}

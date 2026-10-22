@@ -6,7 +6,6 @@ import { ensureTeamSchema, TeamError } from '@/lib/teams/server';
 import { requireTeamGrant, type TeamActor } from '@/lib/teams/grants';
 import { getPool } from '@/lib/db';
 import { settingsSecret } from '@/lib/settings-secret';
-import { hashPassword } from '@/lib/pw';
 import type { ContentPage } from '@/lib/teams/contracts';
 import type { EnterpriseIdentity, EnterpriseMember, EnterpriseRole, EnterpriseSnapshot } from './contracts';
 import { pinnedEnterpriseIds,IntegrationError } from './integration/policy';
@@ -30,6 +29,14 @@ export async function ensureEnterpriseSchema() {
       PRIMARY KEY(enterprise_id,email), UNIQUE(email), CHECK(email<>supervisor_email),
       FOREIGN KEY(enterprise_id,role_id) REFERENCES app_enterprise_roles(enterprise_id,id));
     CREATE INDEX IF NOT EXISTS app_enterprise_members_supervisor ON app_enterprise_members(enterprise_id,supervisor_email);
+    ALTER TABLE app_enterprise_members ADD COLUMN IF NOT EXISTS membership_status text NOT NULL DEFAULT 'active' CHECK(membership_status IN ('active','suspended'));
+    ALTER TABLE app_enterprise_members ADD COLUMN IF NOT EXISTS membership_expires_at timestamptz;
+    ALTER TABLE app_enterprise_members ADD COLUMN IF NOT EXISTS joined_at timestamptz NOT NULL DEFAULT now();
+    ALTER TABLE app_enterprise_members ADD COLUMN IF NOT EXISTS left_at timestamptz;
+    CREATE TABLE IF NOT EXISTS app_tenant_entitlements(
+      tenant_id uuid PRIMARY KEY REFERENCES app_account_teams(id),entitlement_name text,
+      seat_limit integer CHECK(seat_limit IS NULL OR seat_limit>0),feature_policy jsonb NOT NULL DEFAULT '{}',
+      updated_by text NOT NULL,updated_at timestamptz NOT NULL DEFAULT now());
     CREATE TABLE IF NOT EXISTS app_enterprise_audit(
       id uuid PRIMARY KEY, enterprise_id uuid NOT NULL REFERENCES app_enterprise_settings(team_id), actor text NOT NULL,
       action text NOT NULL, target text NOT NULL DEFAULT '', fingerprint text NOT NULL, result jsonb NOT NULL, changes jsonb NOT NULL DEFAULT '{}',
@@ -49,8 +56,9 @@ async function transaction<T>(run: (tx: PoolClient)=>Promise<T>) {
   try {await tx.query('BEGIN');const result=await run(tx);await tx.query('COMMIT');return result}
   catch(e){await tx.query('ROLLBACK');throw e}finally{tx.release()}
 }
-type Node = { email: string; supervisor_email: string; role_id: string|null; employment: 'permanent'|'intern'; version:number };
-type Scope = { team: EnterpriseIdentity; owner:boolean; level:number; manageMembers:boolean; viewRecords:boolean; roles:EnterpriseRole[]; nodes:Node[]; visible:Set<string> };
+type Node = { email: string; supervisor_email: string; role_id: string|null; employment: 'permanent'|'intern'; version:number; membership_status?:'active'|'suspended';membership_expires_at?:string|null; global_active?:boolean };
+type Scope = { team: EnterpriseIdentity; owner:boolean; level:number; manageMembers:boolean; viewRecords:boolean; roles:EnterpriseRole[]; nodes:Node[]; visible:Set<string>; manageable:Set<string>; entitlement:{name:string|null;seatLimit:number|null;featurePolicy:Record<string,boolean>} };
+const activeMembership=(node:Node)=>node.global_active!==false&&node.membership_status!=='suspended'&&(!node.membership_expires_at||new Date(node.membership_expires_at).getTime()>Date.now());
 export function validateHierarchy(owner:string,nodes:Node[],roles:EnterpriseRole[]) {
   const map=new Map(nodes.map(n=>[n.email,n])),r=new Map(roles.map(x=>[x.id,x]));
   if(map.has(owner))throw new TeamError('老板不能同时作为企业成员',409);
@@ -79,20 +87,30 @@ async function scope(tx:PoolClient,actor:TeamActor,id:string,allowSelf=false):Pr
     if(!team.enabled||!team.enterprise_enabled)throw new TeamError('企业授权已关闭或到期');
     // Every descendant uses the live sponsoring owner's entry grant, not a copied/evergreen capability.
     const grant=await requireTeamGrant(tx,{email:team.owner_email,admin:false});
+    if(team.authorized_until&&new Date(team.authorized_until).getTime()<=Date.now())throw new TeamError('企业授权已到期');
     accessExpiry=grant!.expires_at;
   }else{
     const grant=(await tx.query('SELECT expires_at FROM app_team_access_grants WHERE email=$1 FOR SHARE',[team.owner_email])).rows[0];
     if(grant)accessExpiry=grant.expires_at;
   }
   const roles=(await tx.query('SELECT id,name,level,manage_members,view_records,version FROM app_enterprise_roles WHERE enterprise_id=$1 FOR SHARE',[id])).rows as EnterpriseRole[];
-  const nodes=(await tx.query('SELECT email,supervisor_email,role_id,employment,version FROM app_enterprise_members WHERE enterprise_id=$1 FOR SHARE',[id])).rows as Node[];
+  const nodes=(await tx.query(`SELECT m.email,m.supervisor_email,m.role_id,m.employment,m.version,m.membership_status,m.membership_expires_at,
+    (NOT u.banned AND (u.account_expires_at IS NULL OR u.account_expires_at>now())) AS global_active
+    FROM app_enterprise_members m JOIN app_users u ON u.email=m.email WHERE m.enterprise_id=$1 FOR SHARE OF m,u`,[id])).rows as Node[];
   validateHierarchy(team.owner_email,nodes,roles);
   const owner=actor.admin||team.owner_email===actor.email;
   const node=nodes.find(m=>m.email===actor.email),role=roles.find(r=>r.id===node?.role_id);
-  if(!owner&&(!node||!allowSelf&&(!role||!role.manage_members&&!role.view_records)))throw new TeamError('当前岗位没有企业管理权限');
-  const visible=new Set<string>();if(owner)for(const m of nodes)visible.add(m.email);
-  else {visible.add(actor.email);let changed=!allowSelf||!!role?.view_records;while(changed){changed=false;for(const m of nodes)if(visible.has(m.supervisor_email)&&!visible.has(m.email)){visible.add(m.email);changed=true}}}
-  return {team:{id:team.id,name:team.name,owner_email:team.owner_email,authorized_until:accessExpiry,owner},owner,level:owner?0:role?.level??999,manageMembers:owner||!!role?.manage_members,viewRecords:owner||!!role?.view_records,roles,nodes,visible};
+  if(!owner&&(!node||!activeMembership(node)||!allowSelf&&(!role||!role.manage_members&&!role.view_records)))throw new TeamError('当前企业身份已停用、到期或岗位没有管理权限');
+  const entitlementRow=(await tx.query('SELECT entitlement_name,seat_limit,feature_policy FROM app_tenant_entitlements WHERE tenant_id=$1 FOR SHARE',[id])).rows[0];
+  const entitlement={name:entitlementRow?.entitlement_name??null,seatLimit:entitlementRow?.seat_limit??null,featurePolicy:entitlementRow?.feature_policy??{}};
+  if(!actor.admin&&entitlement.featurePolicy.team===false)throw new TeamError('企业管理功能已停用');
+  const visible=new Set<string>();if(owner)for(const m of nodes)if(activeMembership(m))visible.add(m.email);
+  else {visible.add(actor.email);let changed=!allowSelf||!!role?.view_records;while(changed){changed=false;for(const m of nodes)if(activeMembership(m)&&visible.has(m.supervisor_email)&&!visible.has(m.email)){visible.add(m.email);changed=true}}}
+  // Membership management needs paused descendants so they can be restored;
+  // content readers retain the separate effective-membership set above.
+  const manageable=new Set<string>(owner?nodes.map(n=>n.email):[actor.email]);
+  if(!owner&&role?.manage_members){let changed=true;while(changed){changed=false;for(const m of nodes)if(manageable.has(m.supervisor_email)&&!manageable.has(m.email)){manageable.add(m.email);changed=true;}}}
+  return {team:{id:team.id,name:team.name,owner_email:team.owner_email,authorized_until:accessExpiry,owner},owner,level:owner?0:role?.level??999,manageMembers:owner||!!role?.manage_members,viewRecords:owner||!!role?.view_records,roles,nodes,visible,manageable,entitlement};
 }
 /** Workflow creation picker: ordinary employees get self only; never elevates existing analytics routes. */
 export async function enterpriseCreationRead<T>(email:string,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>){
@@ -122,20 +140,20 @@ export async function enterpriseList(actor:TeamActor):Promise<EnterpriseIdentity
   });
 }
 async function memberRows(tx:PoolClient,s:Scope):Promise<EnterpriseMember[]> {
-  const rows=(await tx.query(`SELECT m.email,u.name,m.supervisor_email,m.role_id,m.employment,m.version,u.management_version,u.banned,u.account_expires_at,
+  const rows=(await tx.query(`SELECT m.email,u.name,m.supervisor_email,m.role_id,m.employment,m.version,m.membership_status,m.membership_expires_at,m.joined_at,m.left_at,u.management_version,u.banned,u.account_expires_at,
     COALESCE(r.name,'员工') AS role_name,COALESCE(r.level,999)::int AS level,
     GREATEST(0,COALESCE(b.principal,0)-u.credits_used)::int AS available,COALESCE(l.consumed,0)::int AS consumed,COALESCE(a.n,0)::int AS artworks
     FROM app_enterprise_members m JOIN app_users u ON u.email=m.email LEFT JOIN app_enterprise_roles r ON r.enterprise_id=m.enterprise_id AND r.id=m.role_id
     LEFT JOIN LATERAL(SELECT sum(remaining) AS principal FROM app_credit_batches WHERE email=u.email AND expires_at>now() AND remaining>0)b ON true
     LEFT JOIN LATERAL(SELECT -sum(delta) AS consumed FROM app_ledger WHERE email=u.email AND kind='consume' AND delta<0)l ON true
     LEFT JOIN LATERAL(SELECT count(*) AS n FROM app_artworks WHERE email=u.email AND deleted_at IS NULL)a ON true
-    WHERE m.enterprise_id=$1 AND m.email=ANY($2::text[]) ORDER BY COALESCE(r.level,999),u.name,u.email`,[s.team.id,[...s.visible]])).rows;
+    WHERE m.enterprise_id=$1 AND m.email=ANY($2::text[]) ORDER BY COALESCE(r.level,999),u.name,u.email`,[s.team.id,s.manageMembers?[...s.manageable]:[...s.visible]])).rows;
   return rows.map(m=>({...m,canManage:s.manageMembers&&m.email!==s.team.owner_email&&m.email!==undefined&&m.level>s.level}));
 }
 export async function enterpriseSnapshot(actor:TeamActor,id:string):Promise<EnterpriseSnapshot> {
   return transaction(async tx=>{const s=await scope(tx,actor,id);const members=await memberRows(tx,s);
     const ownerAvailable=s.owner?Number((await tx.query(`SELECT GREATEST(0,COALESCE((SELECT sum(remaining) FROM app_credit_batches WHERE email=u.email AND expires_at>now() AND remaining>0),0)-u.credits_used)::int AS n FROM app_users u WHERE email=$1`,[s.team.owner_email])).rows[0]?.n||0):null;
-    return {enterprise:s.team,members,roles:s.owner?s.roles:[],actor:{owner:s.owner,manageMembers:s.manageMembers,viewRecords:s.viewRecords,level:s.level},ownerAvailable};
+    return {enterprise:s.team,members,roles:s.owner?s.roles:[],actor:{owner:s.owner,manageMembers:s.manageMembers,viewRecords:s.viewRecords,level:s.level,scopeLabel:s.owner?'本企业':'当前下级'},ownerAvailable,entitlement:s.entitlement};
   });
 }
 const common={id:z.string().uuid(),enterpriseId:z.string().uuid()};
@@ -150,7 +168,7 @@ export const enterpriseCommandSchema=z.discriminatedUnion('action',[
 ]);
 export async function mutateEnterprise(actor:TeamActor,command:z.infer<typeof enterpriseCommandSchema>) {
   const fingerprint=createHmac('sha256',settingsSecret()).update(JSON.stringify(command)).digest('hex');
-  const passwordHash=command.action==='reset-password'?hashPassword(command.password):null;
+  if(command.action==='reset-password')throw new TeamError('企业管理不允许修改全站登录密码，请使用账号安全流程',403);
   return transaction(async tx=>{
     await tx.query("SELECT pg_advisory_xact_lock(hashtext('naumi-team-management'))");
     const s=await scope(tx,actor,command.enterpriseId);
@@ -158,7 +176,7 @@ export async function mutateEnterprise(actor:TeamActor,command:z.infer<typeof en
     if((command.action==='role'||command.action==='organization')&&!s.owner)throw new TeamError('岗位与组织关系由企业老板设置');
     if(command.action!=='role'){
       const m=s.nodes.find(n=>n.email===command.email),role=s.roles.find(r=>r.id===m?.role_id),level=role?.level??999;
-      if(!m||!s.visible.has(m.email)||m.email===actor.email||level<=s.level)throw new TeamError('仅可管理本企业范围内的下级');
+      if(!m||!s.manageable.has(m.email)||m.email===actor.email||level<=s.level)throw new TeamError('仅可管理本企业范围内的下级');
     }
     const previous=(await tx.query('SELECT actor,fingerprint,result FROM app_enterprise_audit WHERE id=$1',[command.id])).rows[0];
     if(previous){if(previous.actor!==actor.email||previous.fingerprint!==fingerprint)throw new TeamError('操作编号已用于其他请求',409);return {...previous.result,replayed:true}}
@@ -178,25 +196,25 @@ export async function mutateEnterprise(actor:TeamActor,command:z.infer<typeof en
       if(m.version!==command.expectedVersion||u.management_version!==command.expectedUserVersion)throw new TeamError('成员已更新，请刷新后重试',409);
       if(command.action==='organization'||command.action==='expiry'){
         const employment=command.action==='organization'?command.employment:m.employment;
-        if(employment==='permanent'&&command.expiresAt!==null)throw new TeamError('正式员工不设置账号到期时间',400);
+        if(employment==='permanent'&&command.expiresAt!==null)throw new TeamError('正式员工不设置企业身份到期时间',400);
         if(employment==='intern'&&(!command.expiresAt||s.team.authorized_until!==null&&new Date(command.expiresAt).getTime()>new Date(s.team.authorized_until).getTime()))throw new TeamError('实习生须设置企业授权范围内的有效期',400);
         if(command.action==='organization'){
           const updated={...m,supervisor_email:command.supervisorEmail,role_id:command.roleId,employment};
           validateHierarchy(s.team.owner_email,s.nodes.map(n=>n.email===m.email?updated:n),s.roles);
-          changes={before:{...m,expiresAt:u.account_expires_at},after:{...updated,expiresAt:command.expiresAt}};
+          changes={before:{...m,expiresAt:m.membership_expires_at},after:{...updated,expiresAt:command.expiresAt}};
           await tx.query('UPDATE app_enterprise_members SET supervisor_email=$3,role_id=$4,employment=$5 WHERE enterprise_id=$1 AND email=$2',[command.enterpriseId,m.email,command.supervisorEmail,command.roleId,employment]);
         }
-        if(command.action==='expiry')changes={before:u.account_expires_at,after:command.expiresAt};
-        await tx.query('UPDATE app_users SET account_expires_at=$2 WHERE email=$1',[m.email,command.expiresAt]);
+        if(command.action==='expiry')changes={before:m.membership_expires_at,after:command.expiresAt};
+        await tx.query('UPDATE app_enterprise_members SET membership_expires_at=$3 WHERE enterprise_id=$1 AND email=$2',[command.enterpriseId,m.email,command.expiresAt]);
       }else if(command.action==='status'){
-        if(!command.banned&&u.account_expires_at&&new Date(u.account_expires_at).getTime()<=Date.now())throw new TeamError('先设置未来有效期再启用实习生',409);
-        await tx.query('UPDATE app_users SET banned=$2,auth_revoked_before=clock_timestamp() WHERE email=$1',[m.email,command.banned]);
-        changes={before:u.banned,after:command.banned};
-      }else if(command.action==='reset-password'){
-        await tx.query('UPDATE app_users SET password_hash=$2,auth_revoked_before=clock_timestamp() WHERE email=$1',[m.email,passwordHash]);
-        changes={passwordReset:true,oldSessionsRevoked:true};
+        if(!command.banned&&m.membership_expires_at&&new Date(m.membership_expires_at).getTime()<=Date.now())throw new TeamError('先设置未来有效期再启用企业身份',409);
+        if(!command.banned&&s.entitlement.seatLimit!==null){
+          const count=Number((await tx.query(`SELECT 1+(SELECT count(*) FROM app_enterprise_members em JOIN app_users eu ON eu.email=em.email WHERE em.enterprise_id=$1 AND em.email<>$2 AND em.membership_status='active' AND (em.membership_expires_at IS NULL OR em.membership_expires_at>now()) AND NOT eu.banned AND (eu.account_expires_at IS NULL OR eu.account_expires_at>now())) AS n`,[command.enterpriseId,m.email])).rows[0].n);
+          if(count+1>s.entitlement.seatLimit)throw new TeamError('企业有效成员已达席位上限',409);
+        }
+        await tx.query("UPDATE app_enterprise_members SET membership_status=$3,left_at=CASE WHEN $3='suspended' THEN clock_timestamp() ELSE NULL END WHERE enterprise_id=$1 AND email=$2",[command.enterpriseId,m.email,command.banned?'suspended':'active']);
+        changes={before:m.membership_status,after:command.banned?'suspended':'active',scope:'membership'};
       }
-      await tx.query('UPDATE app_users SET management_version=management_version+1 WHERE email=$1',[m.email]);
       await tx.query('UPDATE app_enterprise_members SET version=version+1 WHERE enterprise_id=$1 AND email=$2',[command.enterpriseId,m.email]);
     }
     const result={ok:true,replayed:false};
@@ -206,6 +224,8 @@ export async function mutateEnterprise(actor:TeamActor,command:z.infer<typeof en
 }
 async function contentScope(tx:PoolClient,actor:TeamActor,id:string,email:string) {
   const s=await scope(tx,actor,id);
+  const node=s.nodes.find(n=>n.email===email);
+  if(node&&!activeMembership(node))throw new TeamError('该成员的历史企业归属未确认，企业身份失效后不再允许读取',404);
   if(!s.viewRecords||!(s.visible.has(email)||s.owner&&email===s.team.owner_email))throw new TeamError('没有该成员内容的查看权限');
   return s;
 }
@@ -254,9 +274,8 @@ export async function activateEnterprise(actor:TeamActor,teamId:string,directorE
     for(const r of roles)await tx.query('INSERT INTO app_enterprise_roles(enterprise_id,id,name,level,manage_members,view_records) VALUES($1,$2,$3,$4,$5,$6)',[teamId,r.id,r.name,r.level,r.manage_members,r.view_records]);
     for(const m of permanent){
       await tx.query(`INSERT INTO app_enterprise_members(enterprise_id,email,supervisor_email,role_id,employment) VALUES($1,$2,$3,$4,'permanent')`,[teamId,m.email,m.email===directorEmail?root.owner_email:directorEmail,m.email===directorEmail?director:leaders.has(m.email)?leader:employee]);
-      await tx.query('UPDATE app_users SET account_expires_at=NULL,management_version=management_version+1 WHERE email=$1',[m.email]);
     }
-    for(const m of interns)await tx.query(`INSERT INTO app_enterprise_members(enterprise_id,email,supervisor_email,employment) VALUES($1,$2,$3,'intern')`,[teamId,m.email,m.supervisor_email]);
+    for(const m of interns)await tx.query(`INSERT INTO app_enterprise_members(enterprise_id,email,supervisor_email,employment,membership_expires_at) SELECT $1,$2,$3,'intern',account_expires_at FROM app_users WHERE email=$2`,[teamId,m.email,m.supervisor_email]);
     const result={ok:true,replayed:false,permanent:permanent.length,interns:interns.length};
     await tx.query(`INSERT INTO app_enterprise_audit(id,enterprise_id,actor,action,fingerprint,result) VALUES($1,$2,$3,'activate','',$4::jsonb)`,[randomUUID(),teamId,actor.email,JSON.stringify(result)]);
     return result;
