@@ -5,7 +5,7 @@ unknown submissions; confirmed stored results re-enter their original paid-done
 continuation, whose supplier callback is not executed.
 """
 import base64,copy,datetime as dt,json,pathlib,re,sys,time
-from release47_host import HostTransaction,require,public_identity,environment,sha
+from release47_host import HostTransaction,require,public_identity,environment,sha,file_sha
 import release47_controls as controls
 
 TARGET='47.105.59.142'
@@ -57,14 +57,22 @@ def plan(data,identity,started,now):
 
 def main():
  data=json.loads((ROOT/'CURRENT_DEBT_FULL.private.json').read_bytes())
- with HostTransaction(TARGET,MACHINE,ROOT/'reconcile')as tx:
+ previous=ROOT/'reconcile';resume=previous.exists()
+ if resume:
+  require((previous/'backup-readable.json').is_file()and not (previous/'CAS_REQUEST.private.sql').exists(),
+   'PRIOR_MUTATION_MUST_BE_RECONCILED_NOT_REPEATED')
+ with HostTransaction(TARGET,MACHINE,ROOT/('reconcile-r2'if resume else 'reconcile'))as tx:
   row=tx.inspect('naumi47-web-admin-query-20261021');web=public_identity(row);db=public_identity(tx.inspect('naumi-staging-db-1'))
   status=controls.app_status(tx,web);identity=status['identity']
   require(status['observations']['trackedAcceptedWork']==0 and status['observations']['agentRuns']==0,'CURRENT_WORK_ACTIVE')
   p=plan(data,identity,timestamp(row['State']['StartedAt']),dt.datetime.now(dt.timezone.utc))
-  tx.save('RECONCILIATION_PLAN.private.json',p);tx.backup_database(db)
+  tx.save('RECONCILIATION_PLAN.private.json',p)
+  if resume:
+   old=json.loads((previous/'backup-readable.json').read_bytes());require(file_sha(old['path'])==old['sha256'],'BACKUP_CHANGED')
+   tx.save('BACKUP_REUSED.json',{'backup':old,'priorFailureBeforeMutation':True})
+  else:tx.backup_database(db)
   # Verify actual image decoding BEFORE permitting any original continuation.
-  js="""let raw='';for await(const b of process.stdin)raw+=b;const rows=JSON.parse(raw);const sharp=require('sharp'),c=require('crypto');const out=[];for(const j of rows){const image=j.snapshot.paidOperations[j.id].result[0],b=Buffer.from(image.url.split(',')[1],'base64');const m=await sharp(b).metadata();await sharp(b).resize(1,1).raw().toBuffer();out.push({id:j.id,bytes:b.length,width:m.width,height:m.height,sha256:c.createHash('sha256').update(b).digest('hex')});}console.log(JSON.stringify(out));"""
+  js="""import{createRequire}from'node:module';const require=createRequire(import.meta.url);let raw='';for await(const b of process.stdin)raw+=b;const rows=JSON.parse(raw);const sharp=require('sharp'),c=require('crypto');const out=[];for(const j of rows){const image=j.snapshot.paidOperations[j.id].result[0],b=Buffer.from(image.url.split(',')[1],'base64');const m=await sharp(b).metadata();await sharp(b).resize(1,1).raw().toBuffer();out.push({id:j.id,bytes:b.length,width:m.width,height:m.height,sha256:c.createHash('sha256').update(b).digest('hex')});}console.log(JSON.stringify(out));"""
   proof=json.loads(tx.run(['docker','exec','-i','-e','NODE_OPTIONS=',web['id'],'node','--input-type=module','-e',js],stdin=json.dumps(p['stored']).encode(),timeout=40))
   require(len(proof)==3 and all(v['width']>0 and v['height']>0 for v in proof),'DECODED_STORED_PROOF_REQUIRED')
   tx.save('STORED_IMAGE_DECODE.json',proof)

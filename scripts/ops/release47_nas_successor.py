@@ -4,11 +4,17 @@ The original root journal remains historical evidence. Its current publication
 must already be COMPLETE; fresh unknown work still blocks creating a candidate.
 """
 import json,pathlib
+import release47_recovery_supervisor as recovery
 import release47_normal_controller as ctl
 from release47_image_delivery_successor import ImageDeliveryController
 from release47_host import require,file_sha,public_identity
 
 AUTHORIZATION='那你把上一轮发布未收尾的问题处理好，然后把这次修复上线，别影响正在使用的用户。'
+
+def memory_growth_budget(available_mib,current_mib,final_mib):
+ require(type(final_mib)is int and final_mib==3072,'EXACT_FINAL_MEMORY_REQUIRED')
+ require(available_mib>=max(0,final_mib-current_mib)+1024+128,'FINAL_RAM_RESERVE_INSUFFICIENT')
+ return {'availableMiB':available_mib,'currentUsageMiB':current_mib,'finalMiB':final_mib,'hostReserveMiB':1024,'workerReserveMiB':128}
 
 def predecessor_check(state, config):
  require(config.get('authorization')==AUTHORIZATION,'EXACT_NAS_RELEASE_AUTHORIZATION_REQUIRED')
@@ -23,6 +29,25 @@ def predecessor_check(state, config):
    'HISTORICAL_INCIDENTS_MUST_REMAIN_EXPLICIT')
 
 class NasController(ImageDeliveryController):
+ def after_retirement(self):
+  for old in [self.web,self.worker]:
+   row=self.tx.inspect(old['id']);require(not row['State']['Running']and row['HostConfig']['RestartPolicy']['Name']=='no','OLD_SLOT_NOT_RETIRED')
+  row=self.tx.inspect(self.newweb['id']);before=row['State']['StartedAt']
+  memory=pathlib.Path('/sys/fs/cgroup/system.slice/docker-'+row['Id']+'.scope/memory.current')
+  current=(int(memory.read_text())+1048575)//1048576
+  available=int(next(l.split()[1]for l in pathlib.Path('/proc/meminfo').read_text().splitlines()if l.startswith('MemAvailable:')))//1024
+  proof=memory_growth_budget(available,current,self.cfg['webFinalMemoryMiB'])
+  self.tx.save('MEMORY_GROWTH_PREFLIGHT.json',proof)
+  def grow(_):
+   self.tx.run(['docker','update','--memory=3072m','--memory-swap=3072m',row['Id']])
+   changed=self.tx.inspect(row['Id']);require(changed['HostConfig']['Memory']==3072*1048576 and changed['HostConfig']['MemorySwap']==3072*1048576 and changed['State']['StartedAt']==before,'MEMORY_UPDATE_OR_PROCESS_CHANGED')
+   path=pathlib.Path(self.state['runtimeRecovery']['manifestPath']);manifest=json.loads(path.read_bytes())
+   self.tx.save('SUPERVISOR_BEFORE_MEMORY.json',manifest)
+   manifest['web']['staticSha256']=recovery.static_pin(changed);manifest['web']['memoryMiB']=3072
+   ctl.save(path,manifest);self.state['runtimeRecovery'].update(manifestSha256=recovery.sha(recovery.encoded(manifest)),memoryMiB=3072);self.persist()
+   return {**proof,'running':True,'sameProcessStartedAt':before,'restartExecuted':False,'manifestUpdated':True}
+  self.op('new-web-memory-grow',grow)
+
  def ready(self):
   result=super().ready()
   script=pathlib.Path(self.cfg['storageAcceptanceScript'])

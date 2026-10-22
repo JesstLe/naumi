@@ -282,6 +282,7 @@ class Controller:
    self.wait(lambda:self.drain_proof(),'RETIREMENT_CURRENT_DRAIN',120) if identity is self.worker else None
    self.op('retire-'+identity['id'][:12],lambda _,identity=identity:self.stop_exact(identity))
    self.succ['retired'].append(identity['id']);self.persist()
+  self.after_retirement()
   self.op('new-worker-after-retirement',lambda op:self.worker_control(self.newworker,'resume',op))
   self.wait(lambda:(lambda s:s if normal.worker_completed(s) else None)(self.worker_control(self.newworker,'status',str(uuid.uuid4()))['state']),'NEW_WORKER_FINAL_COMPLETION',90)
   from release47_normal_rollback import run as rollback_check
@@ -294,6 +295,9 @@ class Controller:
   self.tx.run(['systemctl','start','naumi47-recovery.timer'])
   result={'phase':'COMPLETE','historicalReleasePhase':self.state['phase'],'historicalDrainProven':False,'carriedIncidents':2,'paidOutputRecovered':False,'version':self.cfg['version'],'commit':self.cfg['commit'],'image':self.cfg['image'],'web':self.newweb,'worker':self.newworker,'at':now(),'supplierGenerationReplays':0,'databaseRestored':False}
   self.tx.save('PUBLICATION_RECEIPT.json',result);print('PUBLICATION_RESULT='+json.dumps(result),flush=True)
+
+ def after_retirement(self):
+  pass
 
  def resume_review(self):
   review=self.cfg['resumeReview'];require(self.state['revision']==review['revision'] and sha(enc(self.state))==review['canonicalSha256'],'RESUME_CANONICAL_CHANGED')
