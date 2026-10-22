@@ -53,7 +53,12 @@ def worker_quiescent(worker, preserved_tick=None):
                         and preserved_tick.get('domainJobsQuarantined')==13
                         and len(set(preserved_tick.get('quarantinedJobIds',[])))==13
                         and re.fullmatch('[a-f0-9]{64}',preserved_tick.get('isolationReceiptSha256','')))
-    return bool(preserved_tick and (old_authorized or new_authorized) and worker.get('unresolvedTicks')==1
+    nas_authorized=bool(preserved_tick and preserved_tick.get('authorization')=='那你把上一轮发布未收尾的问题处理好，然后把这次修复上线，别影响正在使用的用户。'
+                       and preserved_tick.get('disposition')=='preserve-unknown-scanner-no-replay'
+                       and preserved_tick.get('serverReceiptAbsent') is True
+                       and re.fullmatch('[a-f0-9]{64}',preserved_tick.get('isolationReceiptSha256',''))
+                       and preserved_tick.get('reviewedDomainJobs')==14)
+    return bool(preserved_tick and (old_authorized or new_authorized or nas_authorized) and worker.get('unresolvedTicks')==1
         and worker.get('phase')=='UNKNOWN' and tick.get('phase')=='unknown'
         and all(tick.get(k)==preserved_tick.get(k) for k in ['id','workerBootId','workerInstanceId','workerCommit','targetWebInstanceId'])
         and tick.get('id') and preserved_tick.get('paidReplayAllowed') is False)

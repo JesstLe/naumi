@@ -3,7 +3,7 @@
 The original root journal remains historical evidence. Its current publication
 must already be COMPLETE; fresh unknown work still blocks creating a candidate.
 """
-import json,pathlib
+import json,pathlib,uuid
 import release47_recovery_supervisor as recovery
 import release47_normal_controller as ctl
 from release47_image_delivery_successor import ImageDeliveryController
@@ -23,14 +23,50 @@ def predecessor_check(state, config):
  journal=state.get('normalBlueGreenReleases',{})
  require(journal.get(active,{}).get('phase')=='COMPLETE','PRIOR_PUBLICATION_NOT_COMPLETE')
  require(all((v.get('phase') in ['COMPLETE','ROLLED_BACK'] or
-   config.get('resumeReview') and k==config.get('releaseId') and v.get('phase')=='CANDIDATE' and
-   v.get('lastError')=='RECOVERY_HTTP_CHECK_FAILED') and
+   k==config.get('releaseId') and (config.get('resumeReview') and v.get('phase')=='CANDIDATE' and
+   v.get('lastError')=='RECOVERY_HTTP_CHECK_FAILED' or config.get('resumeReady') and v.get('phase')=='READY' and
+   v.get('lastError')=='WAIT_OLD_WORKER_DRAIN_NOT_READY')) and
    all(o.get('phase')=='ACKNOWLEDGED'for o in v.get('operations',{}).values())for k,v in journal.items()),
    'PRIOR_OPERATION_NOT_RECONCILED')
  require(state.get('legacyDrainProven') is False and state.get('phase')=='MIGRATED_CLEANUP_PENDING',
    'HISTORICAL_INCIDENTS_MUST_REMAIN_EXPLICIT')
 
 class NasController(ImageDeliveryController):
+ def run(self):
+  if not self.cfg.get('resumeReady'):return super().run()
+  import release47_task_snapshot as tasks
+  review=self.cfg['resumeReady']
+  require(self.state['revision']==review['revision'] and ctl.sha(ctl.enc(self.state))==review['canonicalSha256'],'READY_RESUME_CANONICAL_CHANGED')
+  self.succ=self.state['normalBlueGreenReleases'][self.cfg['releaseId']]
+  require(self.succ['phase']=='READY' and all(v['phase']=='ACKNOWLEDGED'for v in self.succ['operations'].values()),'READY_OPERATIONS_NOT_RECONCILED')
+  proof=ctl.ROOT/'scanner-preservation.json'
+  require(file_sha(proof)==self.cfg['preservedWorkerTick']['isolationReceiptSha256'],'SCANNER_PRESERVATION_CHANGED')
+  self.newweb=self.succ['web'];self.newworker=self.succ['worker']
+  for v in [self.newweb,self.newworker]:self.tx.pin(v)
+  self.check_running_slots({self.newweb['id'],self.newworker['id']})
+  recovery.recovery_binding(self.state,self.original_manifest)
+  require(ctl.sha(self.tx.run(['nginx','-T']))==self.cfg['expectedGatewayDigest'],'READY_GATEWAY_CHANGED')
+  self.config_before=self.configuration_facts();require(self.config_before==self.cfg['expectedConfigurationFacts'],'READY_CONFIGURATION_CHANGED')
+  self.incident_digest=json.loads((self.tx.folder/'preserved-incidents.json').read_bytes())['sha256']
+  rows,held=self.incidents();ctl.policy.check_incidents(rows,held,self.incident_digest)
+  backup=json.loads((self.tx.folder/'backup-readable.json').read_bytes());require(file_sha(backup['path'])==backup['sha256'],'READY_BACKUP_CHANGED')
+  snapshots=list(self.tx.folder.glob('task-snapshot-*.json'));require(len(snapshots)==1,'READY_TASK_BASELINE_CHANGED')
+  private=json.loads(snapshots[0].read_bytes());self.pre=tasks.Snapshot(public=tasks.summarize(private),private=private)
+  report=json.loads((ctl.ROOT/'gateway-forward/report.json').read_bytes())
+  self.dump=(ctl.ROOT/'gateway-forward/nginx.before.txt').read_text();self.after_dump=(ctl.ROOT/'gateway-forward/nginx.after.txt').read_text()
+  require(ctl.sha(self.dump.encode())==report['beforeDumpSha256'],'READY_GATEWAY_PROOF_CHANGED')
+  self.before={n:pathlib.Path(n).read_bytes()for n in ctl.compat.Dump(self.dump).files}
+  for p in report['patches']:require(ctl.sha(self.before[p['path']])==p['beforeSha256'],'READY_CONFIG_BYTES_CHANGED')
+  self.after={p['path']:(ctl.ROOT/'gateway-forward'/p['after']).read_bytes()for p in report['patches']}
+  self.forward=report;self.candidate_closure={**self.before,**self.after};self.real={n:str(pathlib.Path(n).resolve())for n in self.before}
+  self.rollback=json.loads((self.tx.folder/'gateway-rollback.json').read_bytes())
+  require(self.request(self.newweb,'/api/version')=={'version':self.cfg['version'],'commit':self.cfg['commit']},'READY_VERSION_CHANGED')
+  require(ctl.c.app_status(self.tx,self.newweb)['admission']['mode']=='draining','READY_CANDIDATE_OPENED')
+  require(ctl.normal.worker_quiescent(self.worker_control(self.newworker,'status',str(uuid.uuid4()))['state']),'READY_NEW_WORKER_NOT_PAUSED')
+  require(self.marker('browser-before.json'),'READY_BROWSER_PROOF_MISSING')
+  self.tx.save('READY_RESUMPTION.json',{'originalOperationsRetained':True,'originalScannerUnknownPreserved':True,'at':ctl.now()})
+  self.finish_ready()
+
  def resume_review(self):
   proof_path=ctl.ROOT/'readiness-auth-review.json'
   require(file_sha(proof_path)==self.cfg['resumeReview']['readinessAuthSha256'],'READINESS_AUTH_REVIEW_CHANGED')
@@ -90,7 +126,7 @@ def main(config_path):
   predecessor_proof={'releaseId':prior['releaseId'],'phase':prior['phase'],
     'retired':retired,'historicalDrainReclassified':False,'historicalUnknownsCleared':False}
   proof_path=tx.folder/'PREDECESSOR_PUBLICATION_RECONCILED.json'
-  if cfg.get('resumeReview'):
+  if cfg.get('resumeReview') or cfg.get('resumeReady'):
    require(json.loads(proof_path.read_bytes())==predecessor_proof,'PREDECESSOR_PROOF_CHANGED')
   else:tx.save(proof_path.name,predecessor_proof)
   op=NasController(tx,cfg)

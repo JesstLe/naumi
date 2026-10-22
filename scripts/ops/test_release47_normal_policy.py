@@ -86,6 +86,14 @@ class NormalPolicy(unittest.TestCase):
  def test_no_old_port_or_consumed_controller(self):
   s=pathlib.Path(ctl.__file__).read_text();self.assertNotIn("'13101'",s);self.assertNotIn('release47_successor_controller',s);self.assertIn('unknownLeases\']==0',s)
 class WorkerReceipt(unittest.TestCase):
+ def test_nas_scanner_preservation_is_exact_and_never_completion(self):
+  tick={'id':'original','workerBootId':'boot','workerInstanceId':'worker','workerCommit':'commit','targetWebInstanceId':'web','phase':'unknown'}
+  w={'paused':True,'activeTicks':0,'unresolvedTicks':1,'phase':'UNKNOWN','lastTick':tick}
+  pin={**tick,'authorization':'那你把上一轮发布未收尾的问题处理好，然后把这次修复上线，别影响正在使用的用户。','disposition':'preserve-unknown-scanner-no-replay','serverReceiptAbsent':True,'reviewedDomainJobs':14,'isolationReceiptSha256':'a'*64,'paidReplayAllowed':False}
+  self.assertTrue(m.worker_quiescent(w,pin));self.assertFalse(m.worker_completed(w))
+  for k,v in [('serverReceiptAbsent',False),('reviewedDomainJobs',13),('isolationReceiptSha256',''),('paidReplayAllowed',True),('id','different')]:
+   self.assertFalse(m.worker_quiescent(w,{**pin,k:v}))
+  self.assertFalse(m.worker_quiescent({**w,'activeTicks':1},pin))
  def test_exact_authorized_scanner_unknown_is_retained_not_completed(self):
   tick={'id':'original','workerBootId':'boot','workerInstanceId':'worker','workerCommit':'commit','targetWebInstanceId':'web','phase':'unknown'}
   w={'paused':True,'activeTicks':0,'unresolvedTicks':1,'phase':'UNKNOWN','lastTick':tick}
