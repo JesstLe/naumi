@@ -4,7 +4,7 @@ import {open,realpath} from "node:fs/promises";
 import path from "node:path";
 import {Readable} from "node:stream";
 import {getMediaAsset} from "../media-assets";
-import {fetchStoredObject,MEDIA_DIR} from "../storage";
+import {fetchStoredObject,MEDIA_DIR,storageDriver} from "../storage";
 import {matchesVideoReferenceMediaAsset,verifyVideoReferenceToken,type VideoReferenceMediaAsset,type VideoReferenceMediaClaims} from "./reference-media-token";
 
 type ByteRange={start:number;end:number;length:number;partial:boolean;wire:string};
@@ -35,6 +35,30 @@ function validObjectResponse(response:Response,claims:VideoReferenceMediaClaims,
   return response.status===(range.partial?206:200)&&Number(response.headers.get("content-length"))===range.length&&!!response.body&&
     (!range.partial||response.headers.get("content-range")===`bytes ${range.start}-${range.end}/${claims.bytes}`);
 }
+/** Next's cached fetch can leave cancel() pending while its other stream branch
+ * is retained. Initiate release on rejected sources without waiting on that
+ * branch; only a completely consumed one-byte probe may authorize HEAD. */
+function discardObjectResponse(response:Response){
+  try{void response.body?.cancel().catch(()=>{});}catch{/* A failed release cannot publish a rejected response. */}
+}
+async function consumeHeadProbe(response:Response):Promise<boolean>{
+  let reader:ReadableStreamDefaultReader<Uint8Array>;
+  try{if(!response.body)return false;reader=response.body.getReader();}catch{discardObjectResponse(response);return false;}
+  let timer:ReturnType<typeof setTimeout>|undefined,complete=false;
+  try{
+    const consume=(async()=>{
+      const first=await reader.read();
+      if(first.done||!(first.value instanceof Uint8Array)||first.value.byteLength!==1)return false;
+      const last=await reader.read();complete=last.done===true;return complete;
+    })();
+    return await Promise.race([consume,new Promise<false>(resolve=>{timer=setTimeout(()=>resolve(false),5000);})]);
+  }catch{return false;}
+  finally{
+    clearTimeout(timer);
+    if(!complete)try{void reader.cancel().catch(()=>{});}catch{/* Release is best effort, never a response wait. */}
+    try{reader.releaseLock();}catch{/* A source with an unresolved read is already being cancelled. */}
+  }
+}
 /** A mirror may be stale after an interrupted NAS upload. Check its frozen hash
  * through one file descriptor before exposing any bytes or handling a Range. */
 export async function readVerifiedVideoReferenceLocal(claims:VideoReferenceMediaClaims,rawRange:string,mediaDir=MEDIA_DIR):Promise<Response|null>{
@@ -63,18 +87,22 @@ export function createVideoReferenceMediaHandler(deps:VideoReferenceMediaDepende
     catch{return errorResponse(503);}
     const range=byteRange(request.headers.get("range")||"",claims.bytes);
     if(!range)return errorResponse(416,{"content-range":`bytes */${claims.bytes}`,"accept-ranges":"bytes"});
-    const probeRange=request.method==="HEAD"&&!range.partial?byteRange("bytes=0-0",claims.bytes)!:range;
+    const probeRange=request.method==="HEAD"?byteRange("bytes=0-0",claims.bytes)!:range;
     let response:Response|null=null;
-    try{
+    // A local backend's get() is an ordinary file read. It is not a remote
+    // authoritative object and must use the frozen-SHA verifier below.
+    if(deps.fetchObject||storageDriver!=="local")try{
       response=await (deps.fetchObject??fetchStoredObject)(claims.key,probeRange.wire);
-      if(!validObjectResponse(response,claims,probeRange)){await response.body?.cancel().catch(()=>{});response=null;}
+      if(!validObjectResponse(response,claims,probeRange)){discardObjectResponse(response);response=null;}
+      else if(request.method==="HEAD"&&!await consumeHeadProbe(response))response=null;
     }catch{response=null;}
     if(!response){
       response=await (deps.readLocal??readVerifiedVideoReferenceLocal)(claims,probeRange.wire).catch(()=>null);
-      if(response&&!validObjectResponse(response,claims,probeRange)){await response.body?.cancel().catch(()=>{});response=null;}
+      if(response&&!validObjectResponse(response,claims,probeRange)){discardObjectResponse(response);response=null;}
+      else if(response&&request.method==="HEAD"&&!await consumeHeadProbe(response))response=null;
     }
     if(!response)return errorResponse(503);
-    if(request.method==="HEAD"){await response.body?.cancel().catch(()=>{});return new Response(null,{status:range.partial?206:200,headers:headers(claims,range)});}
+    if(request.method==="HEAD")return new Response(null,{status:range.partial?206:200,headers:headers(claims,range)});
     return new Response(response.body,{status:range.partial?206:200,headers:headers(claims,range)});
   };
 }
