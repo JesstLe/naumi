@@ -6,6 +6,7 @@ import { isHostedImageUrl } from "@/lib/media-url";
 import { cdnUrl } from "@/lib/cdn";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Loader2,
   ShieldCheck,
@@ -315,6 +316,18 @@ const SECTIONS = [
   { id: "deploy", label: "部署与更新", icon: Server },
   { id: "cardkeys", label: "兑换码", icon: Ticket },
 ] as const;
+type SettingsSection = (typeof SECTIONS)[number]['id'];
+const SETTINGS_ALIASES: Record<string, SettingsSection> = {
+  login: 'auth', payment: 'auth', payments: 'auth', pay: 'auth', wechat: 'auth', smtp: 'auth',
+  branding: 'brand', site: 'brand', page: 'pages', template: 'templates', prompt: 'prompts', cardkey: 'cardkeys', redeem: 'cardkeys',
+  'account-credits': 'credits', 'legacy-deploy': 'deploy',
+};
+const SETTINGS_MOVED: Record<string, { path: string; section?: string; tab?: string }> = {
+  users: { path: '/admin/center', section: 'users' }, artworks: { path: '/admin/center', section: 'artworks' },
+  ledger: { path: '/admin/center', section: 'ledger' }, credits: { path: '/admin/billing', section: 'wallet', tab: 'credits' },
+  wallet: { path: '/admin/billing', section: 'wallet', tab: 'products' }, recharge: { path: '/admin/billing', section: 'wallet', tab: 'products' },
+  deploy: { path: '/admin/deployments' }, models: { path: '/admin/model-management' }, 'model-config': { path: '/admin/bi/models' },
+};
 
 // 配置块状态徽标:已生效(绿)/ 未生效(琥珀)。登录与支付各卡片头部统一用它。
 function ReadyBadge({
@@ -345,6 +358,10 @@ function ReadyBadge({
 // Self-gating: renders only when the signed-in user is the configured admin
 // (the API returns 403 otherwise). Drop it anywhere inside an authed page.
 export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) {
+  const settingsQuery = useSearchParams(), settingsRouter = useRouter(), settingsPath = usePathname();
+  const requestedSection = settingsQuery.get('tab') || settingsQuery.get('section') || 'api';
+  const canonicalSection = Object.hasOwn(SETTINGS_ALIASES, requestedSection) ? SETTINGS_ALIASES[requestedSection] : requestedSection;
+  const [migrationMessage, setMigrationMessage] = useState('');
 
   // 配置自己实例要用的分栏(接口与模型/提示词/模板),隐藏运营/变现/多用户向的分栏。
 
@@ -407,7 +424,9 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [usersData, setUsersData] = useState<UsersData | null>(null);
   const [usageData, setUsageData] = useState<UsageData | null>(null);
-  const [usageDays, setUsageDays] = useState(30);
+  const [usageDays, setActiveUsageDays] = useState(30);
+  useEffect(() => { const days = Number(settingsQuery.get('days')); setActiveUsageDays([7, 30, 90, 365].includes(days) ? days : 30); }, [settingsQuery]);
+  function setUsageDays(days: number) { setActiveUsageDays(days); const params = new URLSearchParams(settingsQuery.toString()); params.set('days', String(days)); settingsRouter.replace(`${settingsPath}?${params}`, { scroll: false }); }
   const [usageLoading, setUsageLoading] = useState(false);
   // 创建用户表单
   const [newUserEmail, setNewUserEmail] = useState("");
@@ -426,7 +445,7 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
   const [userPage, setUserPage] = useState(0);
   const [ledgerPage, setLedgerPage] = useState(0);
   // 左侧分栏:当前板块(方案 A,大厂式后台)
-  const [section, setSection] = useState<
+  const [section, setActiveSection] = useState<
     | "users"
     | "usage"
     | "artworks"
@@ -442,6 +461,25 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
     | "deploy"
     | "cardkeys"
   >("api");
+  function setSection(next: SettingsSection, email?: string) {
+    const params = new URLSearchParams(settingsQuery.toString()); params.set('view', 'settings'); params.set('tab', next); params.delete('section');
+    if (email) params.set('email', email);
+    settingsRouter.replace(`${settingsPath}?${params}`, { scroll: false });
+  }
+  useEffect(() => {
+    const compatibility = requestedSection === 'account-credits' || requestedSection === 'legacy-deploy';
+    const moved = !compatibility && Object.hasOwn(SETTINGS_MOVED, canonicalSection) ? SETTINGS_MOVED[canonicalSection] : undefined;
+    if (moved) {
+      const params = new URLSearchParams(settingsQuery.toString()); params.delete('view'); params.delete('tab'); params.delete('section');
+      if (moved.section) params.set('section', moved.section); if (moved.tab) params.set('tab', moved.tab);
+      setMigrationMessage('正在打开此功能的新位置…');
+      settingsRouter.replace(`${moved.path}${params.size ? `?${params}` : ''}`, { scroll: false }); return;
+    }
+    const available = SECTIONS.some(item => item.id === canonicalSection);
+    setActiveSection(available ? canonicalSection as SettingsSection : 'api');
+    setMigrationMessage(available ? '' : `旧标签“${requestedSection.slice(0, 80)}”没有对应设置，请选择下方分区。`);
+  }, [canonicalSection, requestedSection, settingsQuery, settingsRouter]);
+  useEffect(() => { if (requestedSection === 'account-credits' && settingsQuery.get('email')) setGrantEmail(settingsQuery.get('email')!); }, [requestedSection, settingsQuery]);
   const [editCredit, setEditCredit] = useState<{
     email: string;
     value: string;
@@ -1069,17 +1107,19 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
 
   return (
     <div className="mt-6">
+      {migrationMessage && <p role="status" className="mb-4 rounded-lg border border-border bg-secondary/40 px-4 py-3 text-sm">{migrationMessage}</p>}
       {/* 统一大卡:左导航 + 右内容同框,竖线分隔,两列边框天然对齐 */}
       <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
         {/* 左侧分栏导航(方案 A) */}
         <nav className="flex flex-row gap-1 overflow-x-auto border-b border-border bg-card p-2">
-          {SECTIONS.filter(s=>!["users","usage","artworks","ledger","credits","deploy"].includes(s.id)).map((s) => {
+          {SECTIONS.filter(s=>!["users","artworks","ledger","credits","deploy"].includes(s.id)).map((s) => {
             const Icon = s.icon;
             return (
               <button
                 key={s.id}
                 type="button"
                 onClick={() => setSection(s.id)}
+                aria-current={section === s.id ? 'page' : undefined}
                 className={`flex flex-none items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-2 text-left text-sm font-medium transition-colors ${
                   section === s.id
                     ? "bg-primary/10 text-primary"
@@ -1091,6 +1131,8 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
               </button>
             );
           })}
+          <Link href={`/admin?${(() => { const params = new URLSearchParams(settingsQuery.toString()); params.set('view', 'settings'); params.set('tab', 'account-credits'); params.delete('section'); return params; })()}`} aria-current={requestedSection === 'account-credits' ? 'page' : undefined} className="flex flex-none items-center whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium hover:bg-secondary">账号积分调整</Link>
+          <Link href={`/admin?${(() => { const params = new URLSearchParams(settingsQuery.toString()); params.set('view', 'settings'); params.set('tab', 'legacy-deploy'); params.delete('section'); return params; })()}`} aria-current={requestedSection === 'legacy-deploy' ? 'page' : undefined} className="flex flex-none items-center whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium hover:bg-secondary">旧部署与中转密钥</Link>
         </nav>
 
         {/* 内容区:一次只显示一个板块(浅灰底,白卡片落其上更清爽) */}
