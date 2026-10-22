@@ -5,6 +5,7 @@ import {mkdir,stat,writeFile,unlink} from 'node:fs/promises';
 import {Readable} from 'node:stream';
 import path from 'node:path';
 import type {StorageConfiguration} from './config';
+import {WriteAvailability,nasWriteTimeout} from './write-availability';
 export interface ObjectStorage {
   put(key:string,bytes:Uint8Array,type:string,cache:string):Promise<void>;
   get(key:string,range?:string):Promise<Response>;
@@ -42,12 +43,33 @@ export function createObjectStorage(config:StorageConfiguration):ObjectStorage {
   };
   let client:AwsClient|undefined;
   const signer=()=>client ||= new AwsClient({accessKeyId:config.accessKeyId,secretAccessKey:config.secretAccessKey,region:config.region,service:'s3',retries:0});
+  const nasWrites = config.driver==='s3' && config.privateMedia && config.accessMode==='proxy' ? new WriteAvailability() : null;
   function endpoint(key:string){if(!config.enabled)throw new Error('对象存储配置不完整');const url=new URL(config.endpoint);const encoded=safeStorageKey(key).split('/').map(encodeURIComponent).join('/');
     if(!config.pathStyle)url.hostname=`${config.bucket}.${url.hostname}`;
     url.pathname=`${url.pathname.replace(/\/$/,'')}/${config.pathStyle?encodeURIComponent(config.bucket)+'/':''}${encoded}`;return url;}
-  async function request(key:string,init:RequestInit & {method:string}){const url=endpoint(key);return signer().fetch(url,{...init,signal:init.signal||AbortSignal.timeout(120000)});}
+  async function request(key:string,init:RequestInit & {method:string}){
+    const signal=init.signal||AbortSignal.timeout(120000);
+    const signed=await signer().sign(endpoint(key),{...init,signal});
+    // Keep the original cancellation signal on fetch itself, rather than
+    // relying only on the signal cloned into the temporary signed Request.
+    return fetch(signed,{signal});
+  }
   return {
-    async put(key,bytes,type,cache){const response=await request(key,{method:'PUT',body:Buffer.from(bytes),headers:{'content-type':type,'content-length':String(bytes.byteLength),'cache-control':cache}});if(!response.ok)throw new StorageRequestError(response.status,'PUT');},
+    async put(key,bytes,type,cache){
+      if(nasWrites && !await nasWrites.available(async()=>{
+        const response=await request(key,{method:'HEAD',signal:AbortSignal.timeout(3000)});
+        await response.body?.cancel();
+        // The new immutable destination normally does not exist yet.
+        if(!response.ok && response.status!==404)throw new StorageRequestError(response.status,'HEAD');
+      }))throw new Error('远程存储暂不可用');
+      try {
+        const response=await request(key,{method:'PUT',body:Buffer.from(bytes),
+          ...(nasWrites?{signal:AbortSignal.timeout(nasWriteTimeout(bytes.byteLength))}:{}),
+          headers:{'content-type':type,'content-length':String(bytes.byteLength),'cache-control':cache}});
+        await response.body?.cancel();
+        if(!response.ok)throw new StorageRequestError(response.status,'PUT');
+      } catch(error) {nasWrites?.failed();throw error;}
+    },
     get(key,range=''){return request(key,{method:'GET',headers:range?{range}:{}});},
     async exists(key){const response=await request(key,{method:'HEAD',signal:AbortSignal.timeout(30000)});if(response.status===404)return false;if(!response.ok)throw new StorageRequestError(response.status,'HEAD');return true;},
     async delete(key){const response=await request(key,{method:'DELETE',signal:AbortSignal.timeout(30000)});if(!response.ok&&response.status!==404)throw new StorageRequestError(response.status,'DELETE');},

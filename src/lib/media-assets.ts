@@ -3,7 +3,7 @@ import 'server-only';
 import {createHash} from 'node:crypto';
 import {dbEnabled, getPool, ensureSchema} from './db';
 import {currentBiContext} from './bi/model-observer';
-import {readManagedObject, writeStoredObject, privateMedia, storageDriver} from './storage';
+import {readManagedObject, readPendingStoredObject, writeStoredObject, privateMedia, storageDriver} from './storage';
 import {makeMediaVariants} from './media-variants';
 
 export type MediaAsset = {key:string; owner:string|null; public:boolean; remote_ready:boolean; content_type:string;
@@ -113,13 +113,25 @@ async function recoverMediaMirrorsLocal(limit=2) {
   const tx=await getPool().connect();
   try {
     await tx.query('BEGIN');
-    const pending=(await tx.query(`SELECT key,content_type FROM app_media_assets WHERE NOT remote_ready
+    const pending=(await tx.query(`SELECT key,content_type,sha256,bytes FROM app_media_assets WHERE NOT remote_ready
       AND retry_after<=now() ORDER BY retry_after LIMIT $1 FOR UPDATE SKIP LOCKED`,[limit])).rows;
     for(const row of pending) {
       await bindBackgroundClaim(row.key);
-      const saved=await readManagedObject(`/media/${row.key}`,250*1024*1024);
-      const result=await writeStoredObject(saved.bytes,row.content_type,row.key);
-      await tx.query(`UPDATE app_media_assets SET remote_ready=$2,retry_after=now()+interval '5 minutes' WHERE key=$1`,[row.key,result.remoteReady]);
+      let ready=false;
+      try {
+        let saved;
+        try {saved=await readPendingStoredObject(row.key,250*1024*1024);}
+        catch(error) {
+          if((error as NodeJS.ErrnoException)?.code!=='ENOENT')throw error;
+          // Legacy catalog imports can reference an existing remote original.
+          saved=await readManagedObject(`/media/${row.key}`,250*1024*1024);
+        }
+        if(saved.size!==Number(row.bytes)||createHash('sha256').update(saved.bytes).digest('hex')!==row.sha256)
+          throw new Error('待补传素材校验失败');
+        ready=(await writeStoredObject(saved.bytes,row.content_type,row.key)).remoteReady;
+      } catch {console.warn('MEDIA_MIRROR_RETRY_DEFERRED');}
+      // One missing/corrupt object must not continuously starve the queue.
+      await tx.query(`UPDATE app_media_assets SET remote_ready=$2,retry_after=now()+interval '5 minutes' WHERE key=$1`,[row.key,ready]);
     }
     await tx.query('COMMIT');return pending.length;
   }catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}

@@ -2,6 +2,7 @@ import "server-only";
 
 import { readFile, stat } from "fs/promises";
 import path from "path";
+import {createHash} from "node:crypto";
 import { storageConfiguration } from "./object-storage/config";
 import { createObjectStorage, safeStorageKey } from "./object-storage/adapter";
 import {ORIGINAL_IMAGE_MAX_BYTES} from "./image-upload-policy";
@@ -103,6 +104,21 @@ export async function readManagedObject(
   const key = storageKeyFromManagedUrl(url);
   if (!key) throw new Error("对象地址不属于当前存储");
   if (storageDriver !== "local") {
+    if (privateMedia) {
+      const {getMediaAsset}=await import('./media-assets');
+      const asset=await getMediaAsset(key);
+      // A pending upload has not been acknowledged by the remote store. Its
+      // durable mirror must be usable immediately, including as a model input.
+      if(asset && !asset.remote_ready) {
+        try {
+          const saved=await readLocalMirror(key,maxBytes);
+          if(saved.size!==Number(asset.bytes)||createHash('sha256').update(saved.bytes).digest('hex')!==asset.sha256)
+            throw new Error('本地素材校验失败');
+          return {...saved,contentType:asset.content_type||saved.contentType};
+        }
+        catch(error) {if((error as NodeJS.ErrnoException)?.code!=='ENOENT')throw error;}
+      }
+    }
     // Remote objects are authoritative; the local mirror covers a remote
     // outage and keys written before (or during) the remote cutover.
     let response: Response | null = null, remoteError: unknown = null;
@@ -139,6 +155,13 @@ async function readLocalMirror(key: string, maxBytes: number): Promise<{ bytes: 
   if (!info.isFile()) throw new Error("对象不存在");
   if (info.size > maxBytes) throw new Error("对象超过大小限制");
   return { bytes: await readFile(full), contentType: "application/octet-stream", size: info.size };
+}
+
+/** Recovery already owns a pending catalog row; do not wait for the failed
+ * remote path before reading the bytes which need to be uploaded to it.
+ */
+export async function readPendingStoredObject(key: string, maxBytes: number) {
+  return readLocalMirror(safeKey(key),maxBytes);
 }
 
 export async function managedObjectExists(url: string): Promise<boolean> {
