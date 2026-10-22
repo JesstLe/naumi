@@ -433,8 +433,10 @@ def record_failed_observation(folder, action, p, revision, reason):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['check', 'begin', *STAGES, 'status', 'publish47-nas', 'publish47-video-family'])
+    parser.add_argument('action', choices=['check', 'begin', *STAGES, 'status', 'publish47-nas', 'publish47-video-family', 'abort47-video-family'])
     parser.add_argument('--config', type=pathlib.Path)
+    parser.add_argument('--review', type=pathlib.Path)
+    parser.add_argument('--apply', action='store_true')
     parser.add_argument('--plan', type=pathlib.Path)
     parser.add_argument('--snapshot', type=pathlib.Path)
     parser.add_argument('--state-dir', type=pathlib.Path)
@@ -444,6 +446,14 @@ def main(argv=None):
     p = None
     state_verified = False
     try:
+        require(a.action == 'abort47-video-family' or a.review is None and a.apply is False,
+                'ABORT_REVIEW_AND_APPLY_ONLY_FOR_ABORT_ACTION')
+        if a.action == 'abort47-video-family':
+            require(os.name == 'posix' and a.config is not None and a.review is not None,
+                    'LIVE_VIDEO_FAMILY_ABORT_CONFIG_AND_REVIEW_REQUIRED')
+            from release47_video_family_abort import main as abort_video_family
+            abort_video_family(a.config, a.review, a.apply)
+            return 0
         if a.action == 'publish47-video-family':
             require(os.name == 'posix' and a.config is not None, 'LIVE_VIDEO_FAMILY_CONFIG_REQUIRED')
             from release47_video_family_successor import main as publish_video_family
