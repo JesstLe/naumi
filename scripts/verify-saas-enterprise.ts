@@ -32,6 +32,25 @@ async function main() {
   const response = await route.GET(request(owner)), meta = await response.json();
   assert.equal(response.status, 200); assert.match(response.headers.get('cache-control') || '', /private.*no-store/);
   assert.equal(meta.scope, 'tenant'); assert.equal(meta.members.effective, 3); assert.equal(meta.members.expiring, 1);
+  const platformAuth=await import('../src/lib/admin-auth'),enterpriseRoute=await import('../src/app/api/enterprise/route');
+  await platformAuth.setAdminPassword('isolated-enterprise-fixture-password');
+  const passwordHash=(await db.getSetting(platformAuth.ADMIN_PW_HASH_SETTING))!;
+  const adminCookie=`nv_admin=${platformAuth.signSession(Date.now(),passwordHash)}`;
+  const dual=(path:string)=>new Request(`http://fixture.test${path}`,{headers:{cookie:`nv_user=${native.signUserSession(owner,Date.now())}; ${adminCookie}`}});
+  assert.equal((await enterpriseRoute.GET(new Request('http://fixture.test/api/enterprise',{headers:{cookie:adminCookie}}))).status,401);
+  const dualList=await (await enterpriseRoute.GET(dual('/api/enterprise'))).json();
+  assert.deepEqual(dualList.enterprises.map((x:{id:string})=>x.id),[a.tenantId]);
+  assert.equal((await enterpriseRoute.GET(dual(`/api/enterprise?enterpriseId=${b.tenantId}`))).status,403);
+  assert.equal((await route.GET(dual(`/api/enterprise/saas-overview?tenantId=${b.tenantId}`))).status,403);
+  assert.equal((await route.GET(dual(`/api/enterprise/saas-overview?tenantId=${a.tenantId}`))).status,200);
+  const platformOrganization=await import('../src/app/api/admin/tenants/[id]/organization/route');
+  const roleCommand={id:randomUUID(),enterpriseId:a.tenantId,action:'role',roleId:randomUUID(),expectedVersion:null,name:'Fixture 新岗位',level:20,manageMembers:false,viewRecords:true};
+  const organizationRequest=(cookie:string,body=roleCommand)=>new Request(`http://fixture.test/api/admin/tenants/${a.tenantId}/organization`,{method:'POST',headers:{cookie,origin:'http://fixture.test','content-type':'application/json'},body:JSON.stringify(body)});
+  const organizationContext={params:Promise.resolve({id:a.tenantId})};
+  assert.equal((await platformOrganization.POST(organizationRequest(`nv_user=${native.signUserSession(owner,Date.now())}`),organizationContext)).status,403);
+  assert.equal((await platformOrganization.POST(organizationRequest(adminCookie,{...roleCommand,enterpriseId:b.tenantId}),organizationContext)).status,400);
+  assert.equal((await platformOrganization.POST(organizationRequest(adminCookie),organizationContext)).status,200);
+  assert.equal((await platformOrganization.POST(organizationRequest(adminCookie),organizationContext)).status,200);
   const managed = await (await route.GET(request(manager))).json(); assert.equal(managed.scope, 'current_subordinates'); assert.equal(managed.members.effective, 2);
   assert.equal((await route.GET(request(departed))).status, 403);
   const command = { tenantId: a.tenantId, commandId: randomUUID(), expectedVersion: meta.version, name: 'Fixture 新企业名称' };
@@ -54,7 +73,7 @@ async function main() {
   await pool.query(`UPDATE app_enterprise_members SET membership_status='suspended' WHERE enterprise_id=$1 AND email=$2`, [a.tenantId, manager]);
   assert.equal((await route.GET(request(manager))).status, 403);
   assert.equal((await enterprise.enterpriseSnapshot({ email: owner, admin: false }, a.tenantId)).enterprise.name, command.name);
-  console.log('SAAS_ENTERPRISE_META_PASS auth=1 private_cache=1 owner_scope=1 subordinate_scope=1 membership_count=1 expiry_count=1 revoked=1 cross_tenant=1 origin=1 owner_only_write=1 cas=1 command_replay=1 safe_audit_projection=1 global_account_unchanged=1 ledger_unchanged=1 supplier_calls=0');
+  console.log('SAAS_ENTERPRISE_META_PASS auth=1 dual_session_no_elevation=1 private_cache=1 owner_scope=1 subordinate_scope=1 membership_count=1 expiry_count=1 revoked=1 cross_tenant=1 origin=1 owner_only_write=1 cas=1 command_replay=1 safe_audit_projection=1 global_account_unchanged=1 ledger_unchanged=1 supplier_calls=0');
   await pool.end();
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

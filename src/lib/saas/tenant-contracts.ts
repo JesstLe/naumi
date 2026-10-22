@@ -1,7 +1,8 @@
 import { z } from 'zod';
+import {ALL_FEATURE_IDS} from '@/lib/feature-access/catalog';
 
 export const tenantStatus = z.enum(['active', 'suspended', 'expired']);
-export const tenantPolicy = z.record(z.string().min(1).max(80), z.boolean());
+export const tenantPolicy = z.record(z.string().min(1).max(80), z.boolean()).refine(value=>Object.keys(value).every(key=>ALL_FEATURE_IDS.includes(key)),{message:'功能权益包含未知功能'});
 export const tenantConfiguration = {
   name: z.string().trim().min(2).max(80),
   validUntil: z.string().datetime({ offset: true }).nullable(),
@@ -27,7 +28,7 @@ export const tenantMemberSchema=z.discriminatedUnion('action',[
   z.object({...memberBase,action:z.literal('remove'),expectedVersion:z.number().int().nonnegative()}).strict(),
 ]);
 export const tenantQuerySchema = z.object({
-  q: z.string().trim().max(100).default(''), status: tenantStatus.optional(),
+  q: z.string().trim().max(100).default(''), status: z.enum(['active','suspended','expired','expiring']).optional(),
   page: z.coerce.number().int().min(1).max(100000).default(1),
   size: z.coerce.number().int().min(1).max(100).default(20),
   sort: z.enum(['name', 'createdAt']).default('createdAt'),

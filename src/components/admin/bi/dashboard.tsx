@@ -722,7 +722,7 @@ export function BiDashboard({ initialSection = "overview" }: { initialSection?: 
                             data-bi-tip={`${c.label}：${display(row[c.key], c.format)}`}
                             aria-label={`${c.label}：${display(row[c.key], c.format)}`}
                             className={
-                              c.key === "prompt" ||
+                              c.key === "title" || c.key === "name" || c.key === "prompt" ||
                               c.key === "prompt_display" ||
                               c.key === "content" ||
                               c.key === "reason" ||
@@ -846,6 +846,7 @@ export function BiDashboard({ initialSection = "overview" }: { initialSection?: 
               <div className={styles.drill}>
                 <p>{String(selected.row.email)}</p>
                 <div>
+                  {["operations","artworks","calls"].includes(selected.section)&&selected.row.id&&<a href={`/admin/creations/resolve?${new URLSearchParams({type:selected.section==="artworks"?"artwork":selected.section==="calls"?"model-call":({app_image_jobs:"image-job",app_canvas_image_tasks:"canvas-task",app_video_tasks:"video-task"} as Record<string,string>)[String(selected.row.source_table)]||"image-job",id:String(selected.row.id),email:String(selected.row.email)})}`}>创作全链路</a>}
                   <button
                     onClick={() => account(String(selected.row.email), "users")}
                   >

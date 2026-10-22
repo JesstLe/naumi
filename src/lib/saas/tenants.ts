@@ -78,7 +78,7 @@ export async function listTenants(filters:TenantFilters):Promise<TenantList> {
   return transaction(async tx=>{
     tenantDates(filters);
     const q=`%${filters.q.replace(/[\\%_]/g,'\\$&')}%`;
-    const source=`WITH tenants AS (${projection}) SELECT * FROM tenants WHERE (name ILIKE $1 OR owner_email ILIKE $1 OR owner_name ILIKE $1) AND ($2::text IS NULL OR status=$2)`;
+    const source=`WITH tenants AS (${projection}) SELECT * FROM tenants WHERE (name ILIKE $1 OR owner_email ILIKE $1 OR owner_name ILIKE $1) AND ($2::text IS NULL OR status=$2 OR ($2='expiring' AND status='active' AND authorized_until>now() AND authorized_until<=now()+interval '7 days'))`;
     const params=[q,filters.status||null];
     const total=Number((await tx.query(`SELECT count(*)::int n FROM (${source}) filtered`,params)).rows[0].n);
     const order=filters.sort==='name'?'lower(name),id':'created_at DESC,id';

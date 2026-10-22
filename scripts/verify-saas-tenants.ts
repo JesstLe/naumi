@@ -19,7 +19,7 @@ async function main() {
   for(const email of [owner,other,member])await pool.query("INSERT INTO app_feature_access(email,mode,allowed) VALUES($1,'custom','[\"team\"]') ON CONFLICT(email) DO UPDATE SET mode='custom',allowed=excluded.allowed",[email]);
   const adminCookie='nv_admin='+auth.signSession(Date.now());
   const req=(path:string,method='GET',body?:unknown,cookie=adminCookie,origin='http://fixture.test')=>new Request('http://fixture.test'+path,{method,headers:{cookie,'content-type':'application/json',origin},body:body===undefined?undefined:JSON.stringify(body)});
-  const command={commandId:randomUUID(),name:'Fixture 企业 A',ownerEmail:owner,validUntil:null,seatLimit:3,entitlementName:null,featurePolicy:{image:true,video:false}};
+  const command={commandId:randomUUID(),name:'Fixture 企业 A',ownerEmail:owner,validUntil:null,seatLimit:3,entitlementName:null,featurePolicy:{generate:true,video:false}};
   assert.equal((await tenants.GET(req('/api/admin/tenants','GET',undefined,''))).status,403);
   assert.equal((await tenants.POST(req('/api/admin/tenants','POST',command,adminCookie,'https://evil.test'))).status,403);
   const created=await tenants.POST(req('/api/admin/tenants','POST',command));assert.equal(created.status,200);const a=await created.json();
