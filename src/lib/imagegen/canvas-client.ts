@@ -7,6 +7,7 @@ import {automaticFrameRatio,frameCandidates,frameRatio,FrameRatioChoiceRequired,
 import {resolveImagegenIntent} from "./intent";
 import {ImagegenPreparationCancelled} from "./http";
 import {browserImageHeader} from "../browser-reference-image";
+import {canvasReferenceManifestSchema,referenceManifestError} from "./reference-labels";
 export type CanvasFrameChoice={artworkId:string;url:string;label:string;width:number;height:number;ratio:string};
 /** Specialized long-detail submissions share the same choice UI, before quote.
  * Only temporary local object URLs are used; no duplicate media upload/storage. */
@@ -33,7 +34,12 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
  const assertCurrent=()=>{if(scope.isCurrent&&!scope.isCurrent())throw new Error("画布账号或项目已切换，未提交新任务");};assertCurrent();
  const inputs:ImagegenRequest["inputs"]=[],assets:CanvasFrameChoice[]=[];
  const files=form.getAll("image").filter((file):file is File=>file instanceof File);
- for(const file of files){assertCurrent();const asset=await uploadImagegenInput(file,files.length,assertCurrent);assertCurrent();const input={artworkId:asset.artworkId,role:inputs.length?"reference" as const:"edit-target" as const};inputs.push(input);const original={...asset,width:asset.sourceWidth,height:asset.sourceHeight};assets.push({...original,label:`图片 ${inputs.length}`,ratio:frameRatio(original)||""});}
+ const manifest=form.has("canvasReferences")?canvasReferenceManifestSchema.parse(JSON.parse(String(form.get("canvasReferences")))):null;
+ if(manifest){
+   if(manifest.length!==files.length)throw new Error("参考图与实际上传图片不一致，请重新选择");
+   const error=referenceManifestError(String(form.get("userPrompt")||form.get("prompt")||""),manifest);if(error)throw new Error(error);
+ }
+ for(const file of files){assertCurrent();const label=manifest?.[inputs.length];const asset=await uploadImagegenInput(file,files.length,assertCurrent);assertCurrent();const input={artworkId:asset.artworkId,role:label?.role||(inputs.length?"reference" as const:"edit-target" as const),...(label?{reference:{number:label.number,title:label.title,...(label.sourceNodeId?{sourceNodeId:label.sourceNodeId}:{})}}:{})};inputs.push(input);const original={...asset,width:asset.sourceWidth,height:asset.sourceHeight};assets.push({...original,label:label?`图${label.number} · ${label.title}`:`图片 ${inputs.length}`,ratio:frameRatio(original)||""});}
  const value=(name:string)=>String(form.get(name)||"");
  const style=value("style"),raw=value("userPrompt")||value("prompt"),prompt=raw+(style&&!/默认|default/i.test(style)?`\n用户选择的视觉风格：${style}`:"");
  const request=imagegenRequestSchema.parse({version:1,operationId:browserRandomUUID(),entry:"canvas",mode:inputs.length?"edit":"generate",prompt,sourceNodeId:value("parentId")||sourceNodeId,inputs,framePolicy:"all-inputs",modelId:value("model")||undefined,variants:Number(value("count")||1),parameters:{quality:value("quality")||"medium",resolution:value("resolution")||"1K",ratio:value("ratio")||"auto"},output:value("transparent")==="1"?{background:"transparent",backgroundOrigin:"current-ui"}:{format:"png"}});

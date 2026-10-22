@@ -1,0 +1,38 @@
+{
+  "operationId": "541688bf-3c3c-4d77-ba4b-3a2f3f630db7",
+  "modelVersion": 134,
+  "billingVersion": 8,
+  "steps": [
+    {
+      "key": "cutout",
+      "operation": "cutout",
+      "modelId": "image-cutout-verified",
+      "eligibleUpstreamIds": [
+        "geeknow-cutout-gpt-image-2"
+      ],
+      "parameters": {
+        "quality": "medium",
+        "resolution": "1K",
+        "ratio": "1:1"
+      },
+      "credits": 1
+    }
+  ],
+  "status": "succeeded",
+  "chargedCredits": 1,
+  "pixels": [
+    {
+      "sha256": "2e433fa5fa1a0bc1c6f31537280c22a7c68a31adcfedc0f3975821ff706da19f",
+      "bytes": 450541,
+      "width": 1254,
+      "height": 1254,
+      "format": "png",
+      "hasAlpha": true,
+      "transparent": 1140401,
+      "visible": 432115,
+      "nearOpaque": 420838,
+      "total": 1572516
+    }
+  ],
+  "completedAt": "2026-10-22T15:23:01.792Z"
+}

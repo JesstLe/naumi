@@ -15,6 +15,10 @@ assert.equal(resolveImagegenCapabilities({transparent:unsupported},{transparent:
 const resolved=resolveImagegenCapabilities(undefined,{transparent:supported});supported.source="changed";assert.equal(resolved.transparent?.source,"供应商文档");
 const transparent:Intent={background:"transparent",operation:"generate",conflicts:[],requirements:[]};
 assert.deepEqual(eligibleImagegenChannels(transparent,[{id:"A",capabilities:{transparent:unsupported}},{id:"B",capabilities:resolved},{id:"unknown",capabilities:{}}]),["B"]);
+const cutout:Intent={...transparent,operation:"cutout"};
+assert.deepEqual(eligibleImagegenChannels(cutout,[{id:"opaque",capabilities:{edit:supported,transparent:unsupported}},{id:"ready",capabilities:{edit:supported,...resolved}},{id:"unknown",capabilities:{edit:supported}}]),["ready"],"An unverified sibling must not reject a verified cutout channel");
+assert.deepEqual(eligibleImagegenChannels({...cutout,background:null},[{id:"opaque",capabilities:{edit:supported,transparent:unsupported}}]),[],"Cutout always requires transparent output, even for historical intents");
+assert.deepEqual(eligibleImagegenChannels(cutout,[{id:"no-edit",capabilities:resolved}]),[],"Native generation transparency alone is not enough for cutout");
 const mask:Intent={...transparent,background:null,operation:"edit",requirements:[{name:"mask",value:"required",source:"ui"}]};
 assert.deepEqual(eligibleImagegenChannels(mask,[{id:"A",capabilities:{edit:supported}},{id:"B",capabilities:{edit:supported,mask:supported}}]),["B"]);
 assert.equal(imagegenCapabilitySetSchema.safeParse({transparent:{state:"supported",source:"",checkedAt:""}}).success,false);

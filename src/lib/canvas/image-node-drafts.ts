@@ -1,6 +1,7 @@
 import { normalizeCanvasRatio } from './generation-parameters';
+import { readImageReferenceBindings, type ImageReferenceBinding } from './image-references';
 
-export type ImageNodeDraft = { prompt: string; ratio: string };
+export type ImageNodeDraft = { prompt: string; ratio: string; referenceBindings?: ImageReferenceBinding[] };
 export type ImageNodeDraftPatch = Partial<ImageNodeDraft>;
 type DraftStorage = Pick<Storage, 'getItem' | 'setItem'>;
 
@@ -30,6 +31,7 @@ export class ImageNodeDraftStore {
         const value = raw as Record<string, unknown>;
         if (typeof value.prompt === 'string') draft.prompt = value.prompt;
         if (typeof value.ratio === 'string' && normalizeCanvasRatio(value.ratio) === value.ratio) draft.ratio = value.ratio;
+        if (Array.isArray(value.referenceBindings)) draft.referenceBindings = readImageReferenceBindings(value.referenceBindings);
       }
     } catch { /* Malformed or unavailable browser storage does not block editing. */ }
     this.drafts.set(key, draft);
