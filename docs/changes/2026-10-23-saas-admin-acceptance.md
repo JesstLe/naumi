@@ -61,8 +61,8 @@
 | R01 | 受影响模块通过 | admin-access/feature-access/model-management及billing-tools/agent/async/imagegen-execution集中通过；旧Agent harness-runtime脚本在当前合并基线缺Router fixture准备，原脚本未改、未标通过，新G验证本次Agent证据链 |
 | R02 | 隔离通过 | enterprise-artworks/analytics/hierarchy/console及完整enterprise-integration BFF；旧fixture全局身份断言更新为新membership合同，WindowsTEMP canonical只修fixture |
 | R03 | 隔离通过 | imagegen-execution/billing及V/J配置、报价、幂等、未知恢复冻结 |
-| R04 | 最终正式Linux构建与联合验收通过 | 固定06665b7e/Image1bad9309；18/18实际Web/PG/Worker HTTP、真实PG tick/重启/排空、UNKNOWN拒绝恢复、native完整解码与Linux7进程38断言通过。各fixture/native边界见saas-release-progress，不以Next dev代替 |
+| R04 | 066构建及联合验收通过；后继重建待执行 | 固定06665b7e/Image1bad9309；18/18实际Web/PG/Worker HTTP、真实PG tick/重启/排空、UNKNOWN拒绝恢复、native完整解码与Linux7进程38断言通过。47真实GUI随后发现视频目录冷加载创建缺口，066已SUPERSEDED，待修复整合与后继固定构建；各fixture/native边界见saas-release-progress |
 | R05 | 未执行 | 根任务协调最新47真实基线/视频profile、三锁蓝绿/排空/最终固定镜像；本任务未操作生产 |
 | R06 | 无兼容业务回滚；受控维护替代本机通过 | 470adbc9受控维护renderer/真实Nginx TLS52组合通过，applied=false；现场公网入口闭包/同版Worker/lifecycle接入由根任务收尾。旧0a不得公网回退，未声称业务回滚通过 |
 
-最新供应商视频整合专项本机12组通过，见[视频整合验收](2026-10-23-saas-video-merge-acceptance.md)。R04最终Linux证据已补齐，见[最终联合验收](2026-10-23-saas-release-progress.md)。待根任务补齐：R05生产发布、R06现场维护恢复门禁。A11/A12专门浏览器证据已补齐。真实Worker重启仅本机隔离镜像，无真实Supplier调用、线上数据写入或生产发布完成声明。
+最新供应商视频整合专项本机12组通过，见[视频整合验收](2026-10-23-saas-video-merge-acceptance.md)。066本机Linux证据及后续阻断见[联合验收与交付进度](2026-10-23-saas-release-progress.md)。待根任务补齐：R04冷启动修复整合后的后继固定镜像、R05生产发布、R06现场维护恢复门禁。A11/A12专门浏览器证据已补齐。真实Worker重启仅本机隔离镜像，无真实Supplier调用、线上数据写入或生产发布完成声明。
