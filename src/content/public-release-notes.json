@@ -19,15 +19,6 @@
         "en": "Add images while a conversation is processing and restore its progress after a refresh."
       }
     ],
-    "fixes": []
-  },
-  {
-    "version": "1792703343",
-    "title": {
-      "zh": "视频创作修复",
-      "en": "Video creation fixes"
-    },
-    "improvements": [],
     "fixes": [
       {
         "zh": "修复页面刚打开或刷新后，新建视频节点偶尔未选中默认选项的问题；加载失败时支持重试。",
