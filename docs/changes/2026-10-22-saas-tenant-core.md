@@ -33,7 +33,7 @@
 
 创作统计测试使用显式最小契约 fixture 表；并非完整创作引擎或供应商证据。完整 creation-schema、Worker、媒体和浏览器验证须在主实施整合后集中执行。
 
-`git diff --check` 通过。正式整仓类型/构建、浏览器、同尺寸视觉、生产只读与发布均未由本模块执行，不能称已上线。共享工作区初始 node_modules 为空；主实施安装依赖后本模块通过 NODE_PATH 复用其 tsx。删除本模块空 junction 的动作被自动审批拦截，未绕过，保留现状。
+`git diff --check` 通过。对本模块 8 个入口及其传递依赖执行 TypeScript 5.5 Compiler API 检查，`TARGETED_DIAGNOSTICS=0`；为适配本模块空依赖 junction，解析器仅在本模块路径无模块时回退主实施 node_modules，结果不等同于正式整仓检查。正式整仓类型/构建、浏览器、同尺寸视觉、生产只读与发布均未由本模块执行，不能称已上线。共享工作区初始 node_modules 为空；主实施安装依赖后本模块通过 NODE_PATH 复用其 tsx。删除本模块空 junction 的动作被自动审批拦截，未绕过，保留现状。
 
 ## 兼容与剩余
 
