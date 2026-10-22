@@ -23,7 +23,7 @@ LIB = pathlib.Path('/usr/local/lib/naumi-nas47-watchdog')
 UNIT = pathlib.Path('/etc/systemd/system')
 NAMES = ['naumi-nas47-watchdog.service', 'naumi-nas47-watchdog.timer']
 BEGIN = '# BEGIN NAUMI NAS47 LIVENESS 20261022'
-BLOCK = '\n' + BEGIN + '\nMatch User naumi-nas47\n    ClientAliveInterval 30\n    ClientAliveCountMax 3\n    TCPKeepAlive yes\n# END NAUMI NAS47 LIVENESS 20261022\n'
+BLOCK = '\n' + BEGIN + '\nMatch User naumi-nas47\n    ClientAliveInterval 30\n    ClientAliveCountMax 3\n# END NAUMI NAS47 LIVENESS 20261022\n'
 
 
 def run(args, timeout=15):

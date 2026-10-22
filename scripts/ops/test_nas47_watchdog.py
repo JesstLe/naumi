@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 import nas47_watchdog as m
+import install_nas47_watchdog as install
 
 
 class Probe:
@@ -215,6 +216,11 @@ class WireTests(unittest.TestCase):
 
 
 class ProcessTests(unittest.TestCase):
+    def test_only_match_allowed_liveness_directives_and_no_root_policy_change(self):
+        directives = [l.strip().split()[0] for l in install.BLOCK.splitlines() if l.strip() and not l.strip().startswith('#')]
+        self.assertEqual(directives, ['Match', 'ClientAliveInterval', 'ClientAliveCountMax'])
+        self.assertEqual(install.changed_keys('clientaliveinterval 0\npermitlisten any\n', 'clientaliveinterval 30\npermitlisten any\n'), {'clientaliveinterval'})
+
     def test_only_unambiguous_pinned_ssh_listener_and_transport(self):
         listener = 'LISTEN 0 128 127.0.0.1:13947 0.0.0.0:* users:(("sshd",pid=12345,fd=7))\n'
         transport = '0 0 127.0.0.1:22 127.0.0.2:50000 users:(("sshd",pid=12345,fd=4))\n\t cubic lastrcv:200001 lastack:100\n'
