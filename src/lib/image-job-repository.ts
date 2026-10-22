@@ -83,8 +83,14 @@ export async function saveImageJob(id: string, snapshot: unknown, token: string 
     WHERE id=$1 AND (($3::text IS NOT NULL AND lease_token=$3 AND lease_until>now()) OR
       ($3::text IS NULL AND (lease_until IS NULL OR lease_until<now())))`, [id, JSON.stringify(snapshot), token]);
   if (!result.rowCount) throw new Error("任务正在处理，请稍后重试");
-  if(currentCreationContext())await recordImageStateTx(tx,id,snapshot);
   await tx.query("COMMIT");}catch(e){await tx.query("ROLLBACK");throw e;}finally{tx.release();}
+  // Supplier acceptance and the execution checkpoint survive an evidence outage.
+  // Recovery reads this same source snapshot; this flag never schedules paid work.
+  if(currentCreationContext()){
+    const evidence=await getPool().connect();try{await evidence.query("BEGIN");await recordImageStateTx(evidence,id,snapshot);await evidence.query("COMMIT");}
+    catch{await evidence.query("ROLLBACK");await getPool().query("UPDATE app_image_jobs SET snapshot=snapshot||'{\"creationEvidencePending\":true}'::jsonb WHERE id=$1",[id]);}
+    finally{evidence.release();}
+  }
 }
 
 /** Exact charge and full reservation release occur once in the same transaction. */

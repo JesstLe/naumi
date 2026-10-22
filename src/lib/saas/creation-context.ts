@@ -8,11 +8,17 @@ import {TeamError} from '@/lib/teams/server';
 import {ensureCreationSchema} from './creation-schema';
 import {settingsSecret} from '@/lib/settings-secret';
 
-export type CreationContext={actorEmail:string;scopeKind:'personal'|'tenant';tenantId:string|null;creationId?:string;requestText?:string;parameters?:Record<string,unknown>;sourcePath?:string};
+export type CreationContext={actorEmail:string;scopeKind:'personal'|'tenant';tenantId:string|null;creationId?:string;requestText?:string;parameters?:Record<string,unknown>;sourcePath?:string;parentContext?:string};
 const storage=new AsyncLocalStorage<CreationContext>();
 export const currentCreationContext=()=>storage.getStore();
 export function withFrozenCreation<T>(value:CreationContext|undefined,run:()=>Promise<T>){return value?storage.run(value,run):run();}
-export function creationContinuationHeader(){const c=currentCreationContext();if(!c?.creationId)return {};const value=Buffer.from(JSON.stringify({actor:c.actorEmail,id:c.creationId})).toString('base64url');return {'x-naumi-creation-context':`${value}.${createHmac('sha256',settingsSecret()).update(value).digest('hex')}`};}
+export function creationContinuationHeader():Record<string,string>{const c=currentCreationContext();if(!c?.creationId)return {};const value=Buffer.from(JSON.stringify({actor:c.actorEmail,id:c.creationId})).toString('base64url');return {'x-naumi-creation-context':`${value}.${createHmac('sha256',settingsSecret()).update(value).digest('hex')}`};}
+/** Never buffer unbounded media JSON before the owning route enforces its limit. */
+async function boundedSummary(request:Request):Promise<Record<string,any>|null>{
+ if(Number(request.headers.get('content-length')||0)>65536)return null;
+ const reader=request.clone().body?.getReader();if(!reader)return null;const parts:Uint8Array[]=[];let bytes=0;
+ try{for(;;){const chunk=await reader.read();if(chunk.done)break;bytes+=chunk.value.byteLength;if(bytes>65536)return null;parts.push(chunk.value);}return JSON.parse(Buffer.concat(parts).toString('utf8'));}catch{return null;}finally{void reader.cancel().catch(()=>{});}
+}
 export async function withCreationRequest<T extends Response>(request:Request,email:string,run:()=>Promise<T>):Promise<T>{
  if(!dbEnabled||request.method==='GET')return run();
  if(storage.getStore())return run();
@@ -40,12 +46,13 @@ export async function withCreationRequest<T extends Response>(request:Request,em
  }
  const context:CreationContext={actorEmail:email.toLowerCase(),scopeKind:tenantId?'tenant':'personal',tenantId,sourcePath:new URL(request.url).pathname};
  let body:Record<string,any>|null=null;
- if(request.headers.get('content-type')?.includes('application/json'))body=await request.clone().json().catch(()=>null);
+ if(request.headers.get('content-type')?.includes('application/json'))body=await boundedSummary(request);
  const parent=request.headers.get('x-naumi-project-context')||body?.projectKey||body?.sessionId;
  if(parent){if(parent.length>240||!/^[a-zA-Z0-9_:.\-]+$/.test(parent))throw new TeamError('项目上下文无效',400);
-  await getPool().query(`INSERT INTO app_creation_contexts(actor_email,context_kind,context_id,scope_kind,tenant_id) VALUES($1,'project',$2,$3,$4) ON CONFLICT DO NOTHING`,[context.actorEmail,parent,context.scopeKind,tenantId]);
   const old=(await getPool().query("SELECT scope_kind,tenant_id FROM app_creation_contexts WHERE actor_email=$1 AND context_kind='project' AND context_id=$2",[context.actorEmail,parent])).rows[0];
-  if(old.scope_kind!==context.scopeKind||old.tenant_id!==tenantId)throw new TeamError('当前项目的工作空间已固定，请新建项目',409);
+  if(old&&(old.scope_kind!==context.scopeKind||old.tenant_id!==tenantId))throw new TeamError('当前项目的工作空间已固定，请新建项目',409);
+  if(!old){const existing=(await getPool().query(`SELECT 1 FROM app_agent_sessions WHERE id=$1 AND email=$2 UNION ALL SELECT 1 FROM app_project_names WHERE key=$1 AND email=$2 LIMIT 1`,[parent,context.actorEmail])).rows[0];if(existing&&tenantId)throw new TeamError('现有项目归属未记录，请在企业空间新建项目',409);}
+  context.parentContext=parent;
  }
  if(body){
   if(body&&typeof body==='object'){

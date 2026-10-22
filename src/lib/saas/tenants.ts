@@ -52,7 +52,7 @@ const projection=`SELECT t.id,t.name,t.owner_email,u.name AS owner_name,t.author
       WHERE m.enterprise_id=t.id AND m.membership_status='active' AND (m.membership_expires_at IS NULL OR m.membership_expires_at>now())
         AND NOT mu.banned AND (mu.account_expires_at IS NULL OR mu.account_expires_at>now())))::int AS active_members
   FROM app_account_teams t JOIN app_users u ON u.email=t.owner_email
-  LEFT JOIN app_enterprise_settings s ON s.team_id=t.id LEFT JOIN app_tenant_entitlements e ON e.tenant_id=t.id`;
+  JOIN app_enterprise_settings s ON s.team_id=t.id LEFT JOIN app_tenant_entitlements e ON e.tenant_id=t.id`;
 const iso=(value:Date|string|null):string|null=>value===null?null:new Date(value).toISOString();
 function summary(r:Record<string,any>):TenantSummary {
   return {tenantId:r.id,name:r.name,owner:{email:r.owner_email,name:r.owner_name},status:r.status,
@@ -133,6 +133,7 @@ export async function createTenant(actor:TeamActor,command:z.infer<typeof create
     if(command.validUntil&&Date.parse(command.validUntil)<=Date.now())throw new TeamError('新授权期限须晚于当前时间',400);
     const owner=(await tx.query('SELECT email,banned,account_expires_at FROM app_users WHERE email=$1 FOR SHARE',[command.ownerEmail])).rows[0];
     if(!owner||owner.banned||owner.account_expires_at&&new Date(owner.account_expires_at).getTime()<=Date.now())throw new TeamError('负责人须为有效的已有账号',400);
+    if((await tx.query('SELECT 1 FROM app_account_team_members WHERE email=$1',[command.ownerEmail])).rowCount)throw new TeamError('负责人已有旧团队子账号身份，请先解除原归属',409);
     if((await tx.query('SELECT 1 FROM app_enterprise_members WHERE email=$1',[command.ownerEmail])).rowCount)throw new TeamError('负责人已有企业成员身份，请先明确解除原归属',409);
     const existing=(await tx.query('SELECT id,name FROM app_account_teams WHERE owner_email=$1 FOR UPDATE',[command.ownerEmail])).rows[0];
     if(existing&&command.reuseTeamId!==existing.id)throw new TeamError(`负责人已有团队，请明确选择复用：${existing.id}`,409);

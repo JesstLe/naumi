@@ -441,7 +441,7 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
     | "ledger"
     | "deploy"
     | "cardkeys"
-  >("users");
+  >("api");
   const [editCredit, setEditCredit] = useState<{
     email: string;
     value: string;
@@ -1070,10 +1070,10 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
   return (
     <div className="mt-6">
       {/* 统一大卡:左导航 + 右内容同框,竖线分隔,两列边框天然对齐 */}
-      <div className="flex flex-col overflow-hidden rounded-2xl border border-border bg-card card-shadow lg:flex-row">
+      <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
         {/* 左侧分栏导航(方案 A) */}
-        <nav className="flex flex-row gap-1 overflow-x-auto border-b border-border bg-card p-2 lg:w-52 lg:flex-none lg:flex-col lg:border-b-0 lg:border-r">
-          {SECTIONS.map((s) => {
+        <nav className="flex flex-row gap-1 overflow-x-auto border-b border-border bg-card p-2">
+          {SECTIONS.filter(s=>!["users","usage","artworks","ledger","credits","deploy"].includes(s.id)).map((s) => {
             const Icon = s.icon;
             return (
               <button

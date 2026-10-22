@@ -1,3 +1,4 @@
+import {currentWorkspace} from "@/lib/saas/workspace-client";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { currentImageQuality } from "@/lib/image-quality-preference";
 import { currentModelCatalogVersion } from "@/lib/model-config/public-client";
@@ -32,6 +33,7 @@ export function browserSupabase(): SupabaseClient {
 export async function authHeader(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {};
   if (typeof window !== "undefined") {
+    headers["x-naumi-workspace"]=currentWorkspace();
     const textModel = window.localStorage.getItem("naumi:text-model")?.trim();
     if (textModel) headers["x-naumi-text-model"] = textModel;
     const quality = currentImageQuality();

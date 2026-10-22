@@ -31,6 +31,8 @@ export async function ensureCreationSchema(){
   creation_id text NOT NULL REFERENCES app_creation_records(id),target_type text NOT NULL,target_id text NOT NULL,
   actor_email text NOT NULL,relation text NOT NULL DEFAULT 'execution',PRIMARY KEY(creation_id,target_type,target_id));
  CREATE INDEX IF NOT EXISTS app_creation_link_target ON app_creation_links(target_type,target_id,actor_email);
+ ALTER TABLE app_creation_links ADD COLUMN IF NOT EXISTS reserved_credits integer;
+ ALTER TABLE app_creation_links ADD COLUMN IF NOT EXISTS released_credits integer;
  CREATE TABLE IF NOT EXISTS app_creation_contexts(
   actor_email text NOT NULL,context_kind text NOT NULL,context_id text NOT NULL,scope_kind text NOT NULL,tenant_id uuid,
   created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(actor_email,context_kind,context_id));

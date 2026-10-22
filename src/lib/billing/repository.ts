@@ -79,6 +79,8 @@ export async function finishTx(tx: Tx, row: OperationRow, charge: number, state:
     }>("DELETE FROM app_gen_reservations WHERE job_id=$1 AND email=$2 RETURNING cost", [row.id, row.email])).rows[0];
     if (reservation)
         await tx.query("UPDATE app_users SET credits_used=GREATEST(credits_used-$2,0) WHERE email=$1", [row.email, Number(reservation.cost)]);
+    if((await tx.query("SELECT to_regclass('app_creation_links') AS name")).rows[0]?.name)
+        await tx.query("UPDATE app_creation_links SET released_credits=$3 WHERE target_type='billing' AND target_id=$1 AND actor_email=$2",[row.id,row.email,reservation?Number(reservation.cost):null]);
     await tx.query("UPDATE app_billing_operations SET state=$2,charged_credits=$3,reserved_credits=0,updated_at=now() WHERE id=$1", [row.id, state, charge]);
     await syncBalanceTx(tx, row.email);
 }

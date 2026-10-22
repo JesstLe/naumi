@@ -9,7 +9,7 @@ export async function GET(request:Request) {
   const actor=await enterpriseAuthorize(request);if(actor instanceof NextResponse)return actor;
   const id=new URL(request.url).searchParams.get('enterpriseId');
   if(id&&!z.string().uuid().safeParse(id).success)return teamJson({error:'企业参数无效'},400);
-  try{return teamJson(id?await enterpriseSnapshot(actor,id):{enterprises:await enterpriseList(actor)})}catch(e){return teamFailure(e)}
+  try{return teamJson(id?await enterpriseSnapshot(actor,id):{enterprises:await enterpriseList(actor,new URL(request.url).searchParams.get("creation")==="1")})}catch(e){return teamFailure(e)}
 }
 export async function POST(request:Request) {
   const actor=await enterpriseAuthorize(request);if(actor instanceof NextResponse)return actor;

@@ -104,7 +104,7 @@ async function scope(tx:PoolClient,actor:TeamActor,id:string,allowSelf=false):Pr
   const entitlementRow=(await tx.query('SELECT entitlement_name,seat_limit,feature_policy FROM app_tenant_entitlements WHERE tenant_id=$1 FOR SHARE',[id])).rows[0];
   const entitlement={name:entitlementRow?.entitlement_name??null,seatLimit:entitlementRow?.seat_limit??null,featurePolicy:entitlementRow?.feature_policy??{}};
   if(!actor.admin&&entitlement.featurePolicy.team===false)throw new TeamError('企业管理功能已停用');
-  const visible=new Set<string>();if(owner)for(const m of nodes)if(activeMembership(m))visible.add(m.email);
+  const visible=new Set<string>();if(owner){for(const m of nodes)if(activeMembership(m))visible.add(m.email);}
   else {visible.add(actor.email);let changed=!allowSelf||!!role?.view_records;while(changed){changed=false;for(const m of nodes)if(activeMembership(m)&&visible.has(m.supervisor_email)&&!visible.has(m.email)){visible.add(m.email);changed=true}}}
   // Membership management needs paused descendants so they can be restored;
   // content readers retain the separate effective-membership set above.
@@ -129,13 +129,13 @@ export async function enterpriseRead<T>(actor:TeamActor,id:string,run:(tx:PoolCl
     const result=await run(tx,s);await tx.query('COMMIT');return result;
   }catch(e){await tx.query('ROLLBACK');throw e}finally{tx.release()}
 }
-export async function enterpriseList(actor:TeamActor):Promise<EnterpriseIdentity[]> {
+export async function enterpriseList(actor:TeamActor,allowSelf=false):Promise<EnterpriseIdentity[]> {
   return transaction(async tx=>{
     let pinned:string[];try{pinned=pinnedEnterpriseIds()}catch{throw new TeamError('企业部署范围尚未配置',503)}
     const rows=(await tx.query(`SELECT t.id,t.name,t.owner_email,t.authorized_until FROM app_enterprise_settings s JOIN app_account_teams t ON t.id=s.team_id
       WHERE $2 OR t.owner_email=$1 OR EXISTS(SELECT 1 FROM app_enterprise_members m WHERE m.enterprise_id=s.team_id AND m.email=$1) ORDER BY t.name`,[actor.email,actor.admin])).rows;
     const result:EnterpriseIdentity[]=[];
-    for(const t of rows){if(pinned.length&&!pinned.includes(t.id))continue;try{result.push((await scope(tx,actor,t.id)).team)}catch(e){if(!(e instanceof TeamError)||actor.admin)throw e}}
+    for(const t of rows){if(pinned.length&&!pinned.includes(t.id))continue;try{result.push((await scope(tx,actor,t.id,allowSelf)).team)}catch(e){if(!(e instanceof TeamError)||actor.admin)throw e}}
     return result;
   });
 }
@@ -198,6 +198,9 @@ export async function mutateEnterprise(actor:TeamActor,command:z.infer<typeof en
       if(!u||u.role!=='user')throw new TeamError('目标必须为普通企业账号',409);
       if(m.version!==command.expectedVersion||u.management_version!==command.expectedUserVersion)throw new TeamError('成员已更新，请刷新后重试',409);
       if(command.action==='organization'||command.action==='expiry'){
+        const becomingActive=m.membership_status==='active'&&!activeMembership(m)&&(command.expiresAt===null||Date.parse(command.expiresAt)>Date.now());
+        if(becomingActive&&s.entitlement.seatLimit!==null){const active=s.nodes.filter(activeMembership).length+1;if(active>=s.entitlement.seatLimit)throw new TeamError('企业有效成员已达席位上限',409);}
+
         const employment=command.action==='organization'?command.employment:m.employment;
         if(employment==='permanent'&&command.expiresAt!==null)throw new TeamError('正式员工不设置企业身份到期时间',400);
         if(employment==='intern'&&(!command.expiresAt||s.team.authorized_until!==null&&new Date(command.expiresAt).getTime()>new Date(s.team.authorized_until).getTime()))throw new TeamError('实习生须设置企业授权范围内的有效期',400);

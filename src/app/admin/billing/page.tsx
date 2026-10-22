@@ -9,5 +9,5 @@ export default async function BillingPage({ searchParams }: { searchParams?: Pro
   await requireAdminPage("/admin/billing");
   const query = await searchParams;
   const legacy = query?.section === "wallet";
-  return <AdminCenterShell active="billing"><BillingNavigation active={legacy ? "wallet" : "config"} />{legacy ? <BillingManager /> : <ModelConfigurationManager billingMode />}</AdminCenterShell>;
+  return <AdminCenterShell active="billing"><BillingNavigation active={legacy ? "wallet" : "config"} />{legacy ? <BillingManager initialTab="products" /> : <ModelConfigurationManager billingMode />}</AdminCenterShell>;
 }

@@ -1,4 +1,5 @@
 "use client";
+import {WorkspaceSelector} from "@/components/saas/workspace-selector";
 import { CachedImage } from "@/components/cached-image";
 import { useFeatureAccess } from "@/lib/feature-access/client";
 
@@ -269,7 +270,7 @@ export function AppRail() {
           ))}
         </nav>
 
-        <div className="flex-1" />
+        <div className="flex-1" /><WorkspaceSelector />
 
         {/* 右侧:主题 / 积分 / 头像 */}
         <button
