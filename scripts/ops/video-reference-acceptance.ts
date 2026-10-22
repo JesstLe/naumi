@@ -10,7 +10,7 @@ import path from "node:path";
 import {dbEnabled,getPool} from "../../src/lib/db";
 import {deleteImageByUrl,managedObjectExists,privateMedia,remoteMediaAccess,storageDriver,storageKeyFromManagedUrl} from "../../src/lib/storage";
 import {materializeVideoReferences} from "../../src/lib/video/reference-materialization";
-import {matchesVideoReferenceMediaAsset,verifyVideoReferenceToken,VIDEO_REFERENCE_MEDIA_PATH} from "../../src/lib/video/reference-media-token";
+import {matchesVideoReferenceMediaAsset,verifyVideoReferenceMediaPathSegment,VIDEO_REFERENCE_MEDIA_PATH} from "../../src/lib/video/reference-media-token";
 import type {VideoGenerationRequest} from "../../src/lib/video/types";
 import {MEDIA_JOB_DIR,mediaWorkerHealth,probeVideo} from "../../src/lib/video/media";
 
@@ -80,7 +80,7 @@ async function proveReference(origin:string,signed:URL,image:string,body:Buffer)
   check(Number(head.headers.get("content-length"))===body.length&&head.headers.get("accept-ranges")==="bytes"&&(await bytes(head)).length===0,"REFERENCE_HEAD_INVALID");
   const range=await request(target,{headers:{range:"bytes=5-104"}});check(range.status===206,"REFERENCE_RANGE_STATUS");checkedHeaders(range);
   check(range.headers.get("content-range")===`bytes 5-104/${body.length}`&&(await bytes(range)).equals(body.subarray(5,105)),"REFERENCE_RANGE_BYTES_CHANGED");
-  const parts=signed.pathname.slice(VIDEO_REFERENCE_MEDIA_PATH.length).split(".");check(parts.length===4,"REFERENCE_TOKEN_SHAPE");
+  const parts=signed.pathname.slice(VIDEO_REFERENCE_MEDIA_PATH.length).split(".");check(parts.length===5&&parts[4]==="png","REFERENCE_TOKEN_SHAPE");
   parts[3]=(parts[3][0]==="A"?"B":"A")+parts[3].slice(1);
   const invalid=await request(new URL(VIDEO_REFERENCE_MEDIA_PATH+parts.join("."),origin).href);
   check(invalid.status===404,"INVALID_REFERENCE_TOKEN_NOT_DENIED");await invalid.body?.cancel();
@@ -133,7 +133,9 @@ async function verify(input:Input){
     check(materialized.references.length===1&&materialized.references[0].storageKey===key&&materialized.references[0].sha256===originalSha,"MATERIALIZED_REFERENCE_IDENTITY_CHANGED");
     const signed=new URL(materialized.references[0].url||"");
     check(signed.origin===PUBLIC_ORIGIN&&signed.pathname.startsWith(VIDEO_REFERENCE_MEDIA_PATH)&&!signed.search&&!signed.hash&&!signed.username&&!signed.password,"MATERIALIZED_REFERENCE_NOT_PUBLIC_PROXY");
-    const claims=verifyVideoReferenceToken(signed.pathname.slice(VIDEO_REFERENCE_MEDIA_PATH.length));
+    const pathSegment=signed.pathname.slice(VIDEO_REFERENCE_MEDIA_PATH.length);
+    check(/^vr1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.png$/.test(pathSegment),"MATERIALIZED_REFERENCE_SUFFIX_NOT_PNG");
+    const claims=verifyVideoReferenceMediaPathSegment(pathSegment);
     check(claims&&claims.key===key&&claims.sha256===originalSha&&claims.bytes===body.length&&claims.expiresAt-claims.issuedAt<=900&&matchesVideoReferenceMediaAsset(claims,asset),"MATERIALIZED_SIGNATURE_NOT_EXACT");
     record("SIGNED_REFERENCE",{verificationId,artworkId:receipt.id,signedReferenceURL:signed.href,expiresAt:claims.expiresAt});
     if(input.mediaProbePath){

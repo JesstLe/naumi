@@ -1,6 +1,6 @@
 [
   {
-    "version": "1792702991",
+    "version": "1792703533",
     "title": {
       "zh": "创作与画布体验更新",
       "en": "Creation and canvas improvements"
@@ -22,16 +22,20 @@
     "fixes": []
   },
   {
-    "version": "1792702873",
+    "version": "1792703343",
     "title": {
-      "zh": "视频节点创建优化",
-      "en": "Video node creation reliability"
+      "zh": "视频创作修复",
+      "en": "Video creation fixes"
     },
     "improvements": [],
     "fixes": [
       {
         "zh": "修复页面刚打开或刷新后，新建视频节点偶尔未选中默认选项的问题；加载失败时支持重试。",
         "en": "Fixed missing defaults when creating video nodes immediately after opening or refreshing a page, and added a retry action when loading fails."
+      },
+      {
+        "zh": "修复部分视频生成无法识别参考图片的问题。",
+        "en": "Fixed reference images not being recognized by some video generation options."
       }
     ]
   },

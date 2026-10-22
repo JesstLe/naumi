@@ -2,6 +2,7 @@ import "server-only";
 import {createCipheriv,createDecipheriv,createHash,createHmac,randomBytes,timingSafeEqual} from "node:crypto";
 import {BlockList,isIP} from "node:net";
 import {settingsSecret} from "../settings-secret";
+import {mediaExtension} from "./media-formats";
 
 const PURPOSE="naumi:video-reference-media:v1";
 export const VIDEO_REFERENCE_MEDIA_PATH="/video-reference-media/";
@@ -52,6 +53,18 @@ export function verifyVideoReferenceToken(token:string,options:Pick<TokenOptions
     return claims;
   }catch{return null;}
 }
+/** A public filename may expose only the canonical extension of its signed MIME.
+ * Bare tokens remain valid for already issued references. */
+export function verifyVideoReferenceMediaPathSegment(segment:string,options:Pick<TokenOptions,"secret"|"now">&{verifyToken?:(token:string)=>VideoReferenceMediaClaims|null}={}):VideoReferenceMediaClaims|null{
+  try{
+    if(typeof segment!=="string"||segment.length>4112)return null;
+    const match=/^(vr1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)(?:\.([a-z0-9]{1,10}))?$/.exec(segment);
+    if(!match)return null;
+    const claims=options.verifyToken?options.verifyToken(match[1]):verifyVideoReferenceToken(match[1],options);
+    if(!claims||match[2]!==undefined&&match[2]!==mediaExtension(claims.contentType))return null;
+    return claims;
+  }catch{return null;}
+}
 export function matchesVideoReferenceMediaAsset(claims:VideoReferenceMediaClaims,asset:VideoReferenceMediaAsset,options:Pick<TokenOptions,"secret">={}){
   if(asset.key!==claims.key||asset.sha256!==claims.sha256||Number(asset.bytes)!==claims.bytes||asset.content_type!==claims.contentType||typeof asset.public!=="boolean")return false;
   const expected=Buffer.from(ownerHash(asset.owner,asset.public,encryptionKey(options.secret)),"hex"),actual=Buffer.from(claims.ownerHash,"hex");
@@ -66,5 +79,6 @@ export function createVideoReferenceMediaUrl(asset:TokenSource,options:TokenOpti
   const hostname=base.hostname.replace(/^\[|\]$/g,"").toLowerCase(),family=isIP(hostname);
   if(!["http:","https:"].includes(base.protocol)||base.username||base.password||base.search||base.hash||base.pathname!=="/"||hostname==="localhost"||hostname.startsWith("::ffff:")||/\.(?:localhost|local|internal)$/.test(hostname)||family&&privateAddresses.check(hostname,family===4?"ipv4":"ipv6"))
     throw new Error("VIDEO_REFERENCE_PUBLIC_BASE_URL 必须是无认证信息的公网源站");
-  return new URL(VIDEO_REFERENCE_MEDIA_PATH+issueVideoReferenceToken(asset,options),base.origin).href;
+  const filename=issueVideoReferenceToken(asset,options)+"."+mediaExtension(asset.contentType);
+  return new URL(VIDEO_REFERENCE_MEDIA_PATH+filename,base.origin).href;
 }
