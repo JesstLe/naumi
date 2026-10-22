@@ -4,7 +4,7 @@ import {open,realpath} from "node:fs/promises";
 import path from "node:path";
 import {Readable} from "node:stream";
 import {getMediaAsset} from "../media-assets";
-import {fetchStoredObject,MEDIA_DIR} from "../storage";
+import {fetchStoredObject,MEDIA_DIR,storageDriver} from "../storage";
 import {matchesVideoReferenceMediaAsset,verifyVideoReferenceToken,type VideoReferenceMediaAsset,type VideoReferenceMediaClaims} from "./reference-media-token";
 
 type ByteRange={start:number;end:number;length:number;partial:boolean;wire:string};
@@ -65,7 +65,9 @@ export function createVideoReferenceMediaHandler(deps:VideoReferenceMediaDepende
     if(!range)return errorResponse(416,{"content-range":`bytes */${claims.bytes}`,"accept-ranges":"bytes"});
     const probeRange=request.method==="HEAD"&&!range.partial?byteRange("bytes=0-0",claims.bytes)!:range;
     let response:Response|null=null;
-    try{
+    // A local backend's get() is an ordinary file read. It is not a remote
+    // authoritative object and must use the frozen-SHA verifier below.
+    if(deps.fetchObject||storageDriver!=="local")try{
       response=await (deps.fetchObject??fetchStoredObject)(claims.key,probeRange.wire);
       if(!validObjectResponse(response,claims,probeRange)){await response.body?.cancel().catch(()=>{});response=null;}
     }catch{response=null;}

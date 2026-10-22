@@ -62,3 +62,7 @@ C02：只展示确实保存的原始输入与处理后输入；画布已有源ar
 本批功能同步：M04/M05/M06收尾后再次`git fetch origin main`，main仍`7b1e970c84006c2fb76f8c1748e96da128e12982`，已是当前候选祖先，无新main待整合，同步计数归零。正式Linux构建、最新视频profile整合及47发布由根任务串行处理。
 
 集中结果与未覆盖边界见[58项验收矩阵](2026-10-23-saas-admin-acceptance.md)。最终源码与新增Agent/Worker验收脚本正式`npx tsc --noEmit --pretty false`退出0；不把dev自动写入的预览dist include提交。
+
+## 视频家族合并专项（2026-10-23）
+
+根任务已合并ea7e4ab9及5d568c7b预算补丁。本次新增六profile真实应用/PG接受→换配置/凭据→企业暂停→poll/媒体结果/账务收尾集中验收；APIB与Geek接受未知均不重投。新匿名供应商素材入口local驱动已补冻结SHA路径，真实route+PG+文件验证同长度变字节503、owner变更404。共12组受影响脚本通过、正式tsc退出0；只有原始静态图片是真native解码，视频与media服务是明确fixture，combined Worker脚本为pure生命周期fixture。证据和正式Linux/生产剩余门槛见[视频整合验收](2026-10-23-saas-video-merge-acceptance.md)。没有新的线上消费或发布。
