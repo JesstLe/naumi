@@ -17,7 +17,7 @@ export async function submitCanvasVideo(actorRaw:string,input:{nodeId:string;exp
   const node=await getVideoNode(actor,input.nodeId);
   if(!node)throw new ModelConfigError("VIDEO_NODE_UNAVAILABLE","视频节点不存在",404);
   if(node.revision!==input.expectedRevision)throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT","视频节点已更新，请重新读取后生成",409);
-  const {comfyWorkflowId,comfyInputs,comfyOverrides,workflowTaskId,camera,...config}=node.config;
+  const {comfyWorkflowId,comfyInputs,comfyOverrides,workflowTaskId,camera,batchCount:_batchCount,...config}=node.config;
   let workflowManifest=config.workflowManifest;
   if(workflowTaskId&&!workflowManifest){const old=await readOwnedVideoWorkflow(actor,workflowTaskId);
     if(old.publicModelId!==config.modelId)throw new ModelConfigError("VIDEO_WORKFLOW_MODEL_CONFLICT","历史工作流与当前模型不一致，请重新选择模型",409);workflowManifest=old.manifest;

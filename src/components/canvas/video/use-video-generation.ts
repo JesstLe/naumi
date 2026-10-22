@@ -15,7 +15,7 @@ export function useVideoGeneration({email,request}:{email?:string;request:VideoP
     if(!email||busy.current)throw new Error("无法提交视频任务");if(!Number.isInteger(count)||count<1||count>8)throw new Error("批量任务数需为1至8");
     if(!config.comfyWorkflowId&&!quote)throw new Error("请先确认视频报价");
     const expected=actor.current.revision,current=()=>actor.current.revision===expected&&actor.current.email===email;
-    const {comfyWorkflowId:_workflow,comfyInputs:_inputs,...settings}=config;
+    const {comfyWorkflowId:_workflow,comfyInputs:_inputs,batchCount:_batchCount,...settings}=config;
     const references=inputs.length?inputs.flatMap(input=>{const ref=inputReference(input);return ref?[ref]:[];}):config.references;
     const body=config.comfyWorkflowId?{mediaType:"video",workflowId:config.comfyWorkflowId,source:"workbench",prompt:config.prompt||"",negativePrompt:config.negativePrompt,resolution:config.resolution,aspectRatio:config.aspectRatio,generateAudio:config.generateAudio,watermark:config.watermark,durationSeconds:config.durationSeconds&&config.durationSeconds>0?config.durationSeconds:undefined,references,orderedInputs:inputs.length?inputs:undefined,inputMappings:config.comfyInputs,...config.comfyOverrides}:{...settings,source:"workbench",orderedInputs:inputs.length?inputs:undefined,references};
     busy.current=true;
