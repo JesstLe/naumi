@@ -50,4 +50,6 @@ canonical revision608、当前正常发布 `release47-nas-upload-20261022` phase
 
 修复HEAD为始终只向源请求bytes=0-0，最多两次读取验证1字节及EOF，5秒读取上界；错误源发起释放但不等待悬挂cancel，再验证镜像或503。响应保留客户原始Range元数据且无body。同时整合后台已完成的local存储默认读取冻结SHA校验，防止同长度文件替换绕过校验。集中309断言、6次真实loopback HTTP与独立local驱动子进程回归通过，TS导入图零诊断；不是47新镜像验收。
 
-当前待完成：严格排空/退役失败候选并以实际证据登记ROLLED_BACK，保留canonical原事故和全部操作；再以r2唯一候选和新固定镜像重做真实Next HEAD、完整蓝绿及32项配置CAS/节点验收。不直接替换候选/app或复用旧ACK，不以此文件声称已启用。后台后继SaaS已协调等待本修复，不并行抢47锁。
+失败候选已按原UUID与三锁严格排空并停止，Web/Worker均restart=no；原发布登记ROLLED_BACK，preSwitchAbort=COMPLETE，canonical revision636，原7项及新增4项操作均ACK。仅停止本候选，在线NAS Web/Worker、入口、模型134、备份、监督器及历史事故均未改变，没有回灌数据库或重放收费请求。证据为原transaction/VIDEO_PRE_SWITCH_ABORT_RECEIPT.json。
+
+修复后的首次完整Next构建仅发现回归脚本缺少Next要求的NODE_ENV类型字段，现已补test；完整tsc及309断言/真实HTTP回归重新通过。当前待完成r2唯一候选的新固定镜像、真实Next HEAD、完整蓝绿及32项配置CAS/节点验收，不以本文件声称已启用。后台后继SaaS已协调等待本发布，不并行抢47锁；后继combined到combined共享scratch终态缓存清理归后台单独负责，本轮不混入未完成工作。
