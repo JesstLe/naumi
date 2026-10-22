@@ -52,6 +52,9 @@ import {CanvasImage} from './canvas-image';
 import { classifyGenerationFailure, generationFailureMessage, generationFailureTitle, assertGenerationResultsPresent, type GenerationFailure } from '@/lib/canvas/generation-failure';
 import { ImagegenHttpError, ImagegenPreparationCancelled } from '@/lib/imagegen/http';
 import { useImageNodeDraft } from './use-image-node-draft';
+import { ImageReferenceComposer } from './image-reference-composer';
+import { resolveCanvasImageReferences, changeImageReferenceRole, imageReferenceManifest, inheritableImagePrompt, type CanvasImageReference, type ImageReferenceCandidate } from '@/lib/canvas/image-references';
+import { canvasReferenceManifestSchema, compileReferenceInstructions, referenceManifestError } from '@/lib/imagegen/reference-labels';
 import { imageDraftScope } from '@/lib/canvas/image-node-drafts';
 import { CanvasRenderLayerGuard } from './canvas-render-layer-guard';
 import { CanvasEdgeHoverHint, type CanvasEdgeHoverHandle } from './canvas-edge-hover-hint';
@@ -1566,6 +1569,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const { can: canFeature } = useFeatureAccess();
   const billing=useBilling();
   async function privateFetch(input:RequestInfo|URL,init:RequestInit & { isCurrent?: () => boolean }={}){
+    const assertCurrent=()=>{if(init.isCurrent&&!init.isCurrent())throw new ImagegenPreparationCancelled();};
+    assertCurrent();
     const path=String(input).split('?')[0];
     const features:Record<string,FeatureId>={"/api/generate-image":"canvas.image","/api/aplus":"image.aplus","/api/suite":"image.suite","/api/cutout":"tool.cutout","/api/canvas/image-tasks":"canvas.image","/api/canvas/expand":"canvas.expand","/api/canvas/text-edit":"canvas.text-edit","/api/canvas/annotate":"canvas.annotate","/api/canvas/text-generate":"canvas.text-generate","/api/canvas/assistant":"canvas.assistant","/api/canvas/ocr":"canvas.ocr","/api/video/generate":"video.generate"};
     if(init.method!=="POST"||!features[path])return privateFetchRaw(input,init);
@@ -1577,6 +1582,16 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         isCurrent:()=>account===canvasAccountRef.current&&project===(activeProjectRef.current?.key||null)&&epoch===canvasContextEpochRef.current&&(init.isCurrent?.()??true)});
     }
     if (path === "/api/generate-image") {
+      if(form?.has("canvasReferences")) {
+        try {
+          const manifest=canvasReferenceManifestSchema.parse(JSON.parse(String(form.get("canvasReferences"))));
+          if(manifest.length!==form.getAll("image").length)throw new Error("参考图片顺序不一致，请重新选择");
+          body.prompt=compileReferenceInstructions(String(body.prompt||""),manifest);
+          form.set("prompt",body.prompt as string);form.delete("canvasReferences");delete body.canvasReferences;
+        } catch(error) {
+          throw new ImagegenHttpError(error instanceof Error?error.message:"参考图片信息无效",400,false);
+        }
+      }
       body.ratio = normalizeCanvasRatio(body.ratio);
       body.resolution = normalizeCanvasResolution(body.resolution);
       body.count = String(normalizeCanvasCount(body.count));
@@ -1594,7 +1609,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (body.quality) headers.set("x-naumi-image-quality", String(body.quality));
     headers.set("x-naumi-canvas","1");
     const feature=features[path],modelId=["/api/aplus","/api/suite"].includes(path)?body.modelId||body.model||genModel:adminConfiguredFeature(feature) ? undefined : featureModelManaged(feature) && !["image.generate","video.generate"].includes(feature) ? chosenFeatureModel(feature) : body.modelId||body.model||undefined;
-    return billing.quoteAndSubmit(path,{...init,headers},{canvas:true,feature,quantity,quality:String(body.quality||genQuality),resolution:String(body.resolution||source?.resolution||"1K"),modelId,providerId:body.providerId,ratio:body.ratio});
+    return billing.quoteAndSubmit(path,{...init,headers},{canvas:true,feature,quantity,quality:String(body.quality||genQuality),resolution:String(body.resolution||source?.resolution||"1K"),modelId,providerId:body.providerId,ratio:body.ratio},assertCurrent);
   }
   const { model: textModel, setModel: setTextModel } = useTextModel();
   const { user, ready, remaining, persistMode, applyServerUser, signOut } = useAuth();
@@ -1677,7 +1692,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const imageDraftArtwork = selectedPendId ? undefined : works?.find(art => art.id === selectedId);
   const imageDraft = useImageNodeDraft(
     imageDraftScope(user?.email, targetEmail, activeKey), imageDraftNodeId,
-    { prompt: imageDraftArtwork?.prompt || "", ratio: normalizeCanvasRatio(imageDraftArtwork?.ratio) }, readOnly
+    { prompt: inheritableImagePrompt(imageDraftArtwork?.prompt), ratio: normalizeCanvasRatio(imageDraftArtwork?.ratio) }, readOnly
   );
   const { prompt: editPrompt, setPrompt: setEditPrompt, ratio: genRatio, setRatio: setGenRatio } = imageDraft;
   const [genModel, setGenModel] = useState("");
@@ -1756,7 +1771,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }, [editPrompt]);
   // 追加参考图(与节点图一起参与图生图)
   const [extraFiles, setExtraFiles] = useState<File[]>([]);
+  const extraReferenceKeys = useRef(new WeakMap<File,string>());
+  const extraReferenceOwner = useRef<string | null>(null);
   const [extraPreviews, setExtraPreviews] = useState<string[]>([]);
+  const extraPreviewUrls = useRef(extraPreviews); extraPreviewUrls.current = extraPreviews;
   const extraInputRef = useRef<HTMLInputElement>(null);
   // 节点剪贴板(复制/粘贴节点)+ 上传作根节点的文件 input
   const nodeClipRef = useRef<Artwork | null>(null);
@@ -2392,12 +2410,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   } | null>(null);
 
   useEffect(() => {
-    return () => extraPreviews.forEach((u) => URL.revokeObjectURL(u));
-  }, [extraPreviews]);
+    return () => extraPreviewUrls.current.forEach((u) => URL.revokeObjectURL(u));
+  }, []);
 
   function pickExtra(list: FileList | null) {
     if (!list) return;
-    const room = MAX_TOTAL_IMAGES - 1 - extraFiles.length; // 减去节点图本身占 1
+    const room = MAX_TOTAL_IMAGES - visibleDockRefs.length - extraFiles.length;
     if (room <= 0) return;
     const nf: File[] = [];
     const np: string[] = [];
@@ -2406,9 +2424,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if (!/^image\/(png|jpe?g|webp)$/.test(f.type)) continue;
       if (f.size > MAX_UPLOAD) continue;
       nf.push(f);
+      extraReferenceKeys.current.set(f, `upload:${browserRandomUUID()}`);
       np.push(URL.createObjectURL(f));
     }
     if (nf.length === 0) return;
+    extraReferenceOwner.current = imageDraft.key;
     setExtraFiles((prev) => [...prev, ...nf]);
     setExtraPreviews((prev) => [...prev, ...np]);
     if (extraInputRef.current) extraInputRef.current.value = "";
@@ -3421,8 +3441,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     ) || (!!selectedId && pendNodes.some(node => node.generating && !node.generationFailure && node.parentId === selectedId));
   const selectedGenerationFailure = generationTasks.find(task => task.failure && task.sourceId === selectedId)?.failure
     || pendNodes.find(node => node.generationFailure && node.parentId === selectedId)?.generationFailure;
-  // dock 的默认引用图就是当前节点本身：节点链表达真实执行顺序，下一节点应基于当前结果继续。
-  // 若要否定当前结果并从原输入重做，使用显式“重做此图”动作生成同级新版本。
+  // dock 显示显式连线输入和当前节点；隐藏的项目父节点不自动成为参考图。
+  // “重做”生成同级新版本，但仍只使用创作栏中当前可见的图片，不暗加历史输入。
   const dockReferenceState = useMemo(() => {
     try { return { references: canvasGenerationReferences(selected, active?.members ?? []), error: "" }; }
     catch(error) { return { references: selected ? [selected] : [], error: error instanceof Error ? error.message : "参考图尚未同步" }; }
@@ -3430,9 +3450,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const dockRefs = dockReferenceState.references;
   // 用户可在 dock 里"×"掉自动引用图(改用自己上传的);hiddenRefIds 随选中切换清空
   const [hiddenRefIds, setHiddenRefIds] = useState<string[]>([]);
+  const hiddenReferenceOwner = useRef<string | null>(null);
   const visibleDockRefs = useMemo(
-    () => dockRefs.filter((r) => !hiddenRefIds.includes(r.id)),
-    [dockRefs, hiddenRefIds]
+    () => dockRefs.filter((r) => hiddenReferenceOwner.current !== imageDraft.key || !hiddenRefIds.includes(r.id)),
+    [dockRefs, hiddenRefIds, imageDraft.key]
   );
   const selectedPend = useMemo(
     () => pendNodes.find((p) => p.id === selectedPendId) ?? null,
@@ -3511,6 +3532,39 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         .filter(Boolean) as Artwork[],
     [selectedPend, active]
   );
+
+  const imageReferenceState = useMemo(() => {
+    const arts = selectedPend ? pendInputArts : visibleDockRefs;
+    const candidates: ImageReferenceCandidate[] = arts.map(art => ({ key: `node:${art.id}`, sourceNodeId: art.id, title: art.title || L("图片节点", "Image node"), url: art.image }));
+    if (!selectedPend && extraReferenceOwner.current === imageDraft.key) extraFiles.forEach((file, index) => {
+      const key = extraReferenceKeys.current.get(file);
+      if (key) candidates.push({ key, title: file.name, url: extraPreviews[index] || "", file });
+    });
+    return resolveCanvasImageReferences(candidates, imageDraft.referenceBindings);
+  }, [selectedPend, pendInputArts, visibleDockRefs, extraFiles, extraPreviews, imageDraft.referenceBindings, imageDraft.key]);
+  const composerReferences = imageReferenceState.references;
+  useEffect(() => {
+    if (JSON.stringify(imageReferenceState.bindings) !== JSON.stringify(imageDraft.referenceBindings || [])) imageDraft.setReferenceBindings(imageReferenceState.bindings);
+  }, [imageDraft.key, imageReferenceState.bindings, imageDraft.referenceBindings]);
+  const referenceError = referenceManifestError(editPrompt, imageReferenceManifest(composerReferences));
+  function removeComposerReference(ref: CanvasImageReference) {
+    if (selectedPend) setPendNodes(nodes => nodes.map(node => node.id === selectedPend.id ? { ...node, inputs: node.inputs.filter(id => id !== ref.sourceNodeId) } : node));
+    else if (ref.file) removeExtra(extraFiles.indexOf(ref.file));
+    else if (ref.sourceNodeId) { hiddenReferenceOwner.current=imageDraft.key; setHiddenRefIds(ids => [...ids, ref.sourceNodeId!]); }
+  }
+  function locateComposerReference(id: string) {
+    void rfRef.current?.fitView({ nodes: [{ id }], padding: 0.8, duration: 240, maxZoom: 1 });
+  }
+  async function appendComposerReferences(form: FormData, refs: CanvasImageReference[]) {
+    for (const ref of refs) {
+      if (ref.file) form.append("image", ref.file);
+      else {
+        const blob = await readBrowserImage(ref.url);
+        form.append("image", new File([blob], `ref-${ref.number}.png`, { type: blob.type || "image/png" }));
+      }
+    }
+    form.set("canvasReferences", JSON.stringify(imageReferenceManifest(refs)));
+  }
 
   // 生成中:在选中节点下方临时插入"生成中"占位节点;
   // 选中时:整条血缘链路点亮(蓝色流光),其余节点/连线变暗。
@@ -4179,7 +4233,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setRatioMenuOpen(false);
     setGenError(null);
     setExtraFiles([]);
-    setExtraPreviews([]);
+    setExtraPreviews(urls => { urls.forEach(url => URL.revokeObjectURL(url)); return []; });
     setHiddenRefIds([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageDraft.key, selected?.id, selectedPendId, activeKey, readOnly]);
@@ -4355,6 +4409,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       baseFile?: File; // 指定底图(用户在 dock 删掉自动引用图、改用自己上传的)
       // dock 里的全部引用图 URL(多图合成时一起送;第一张=主底图,其余=附加参考图)。
       refUrls?: string[];
+      referenceInputs?: CanvasImageReference[];
       // 血缘父覆盖:默认挂在 source 下;多图引用时把它设成"选中节点",新图落在选中节点下方。
       parentId?: string;
       parentIds?: string[];
@@ -4407,6 +4462,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     let attempted = false, terminal = false, jobId: string | undefined, resultIds: string[] = [];
     let failure: GenerationFailure | undefined;
     const requestAccount = canvasAccountRef.current, requestProject = activeProjectRef.current?.key || null;
+    const requestEpoch = canvasContextEpochRef.current;
+    const current = () => requestAccount === canvasAccountRef.current && requestProject === (activeProjectRef.current?.key || null) && requestEpoch === canvasContextEpochRef.current && (opts?.isCurrent?.() ?? true);
     try {
       // 下载一张图为 File(底图/参考图统一走 /api/download 代理)
       const dlFile = async (url: string, name: string): Promise<File> => {
@@ -4418,7 +4475,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       // 这样从"多图合成节点"再生成时,两张原始输入都会被引用,不会丢图。
       const refUrls = (opts?.refUrls ?? []).filter(Boolean);
       const refFiles: File[] = [];
-      if (opts?.baseFile) {
+      if (opts?.referenceInputs) {
+        // Explicit references are appended below in their displayed order.
+      } else if (opts?.baseFile) {
         refFiles.push(opts.baseFile);
       } else if (refUrls.length) {
         for (let i = 0; i < refUrls.length; i++) {
@@ -4452,20 +4511,23 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       fd.append("parentIds", JSON.stringify(opts?.parentIds ?? []));
       fd.append("origin", "canvas"); // 画布里产出 → 永远留画布(见 projects 过滤)
       // 第一张=主底图,其后是其余引用图 + 用户追加的参考图
-      refFiles.forEach((f) => fd.append("image", f));
-      (opts?.extra ?? []).forEach((f) => fd.append("image", f));
-      if (opts?.isCurrent && !opts.isCurrent()) return [];
+      if (opts?.referenceInputs) await appendComposerReferences(fd, opts.referenceInputs);
+      else {
+        refFiles.forEach((f) => fd.append("image", f));
+        (opts?.extra ?? []).forEach((f) => fd.append("image", f));
+      }
+      if (!current()) return [];
       attempted = true;
       const startRes = await privateFetch("/api/generate-image", {
         method: "POST",
         headers: await authHeader(),
-        body: fd, isCurrent: opts?.isCurrent,
+        body: fd, isCurrent: current,
       });
       const start = await readJsonSafe(startRes);
       if (!startRes.ok) throw new ImagegenHttpError(start.error || t("canvas.genFail"), startRes.status, start.accepted === false || [400,401,403,409,413,422,429].includes(startRes.status) ? false : undefined);
       jobId = start.jobId;
       if (!jobId) throw new Error(t("canvas.genFail"));
-      if (opts?.isCurrent && !opts.isCurrent()) return [];
+      if (!current()) return [];
       rememberGenerationDrag(taskId, generationTaskPosRef.current[taskId] ?? taskPosition, true, operationKey);
       setGenerationTasks(current => current.map(task => task.id === taskId ? { ...task, stage: "generating" } : task));
       const deadline = Date.now() + 6 * 60 * 1000;
@@ -4479,7 +4541,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           { cache: "no-store", headers: await authHeader() }
         );
         const pj = await readJsonSafe(pr);
-        if (opts?.isCurrent && !opts.isCurrent()) return [];
+        if (!current()) return [];
         if (pr.ok && pj.user) applyServerUser(pj.user);
         if (!pr.ok) throw new Error(pj.error || t("canvas.genFail"));
         if(pj.status==="pending")setGenerationTasks(current=>current.map(task=>task.id===taskId?{...task,stage:"generating"}:task));
@@ -4507,7 +4569,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       // 引用和提示词属于当前草稿，后台任务完成不清理它们。
       // 把新节点落到"生成中占位"所在的位置(源节点右侧,或用户拖动后的位置),
       // 这样生成完成后不会跳到自动布局的位置 —— 与图1的占位位置一致。
-      if (opts?.isCurrent && !opts.isCurrent()) return [];
+      if (!current()) return [];
       const basePos = generationTaskPosRef.current[taskId] ?? taskPosition;
       if (basePos && newIds.length) {
         let resultY = basePos.y;
@@ -4528,9 +4590,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           })
         );
       }
-      if (opts?.isCurrent && !opts.isCurrent()) return [];
+      if (!current()) return [];
       const fresh = await mergeWorks(newIds); // 补这次新生成的几张(已带上面保存的坐标),不整表重拉
-      if (opts?.isCurrent && !opts.isCurrent()) return [];
+      if (!current()) return [];
       assertGenerationResultsPresent(newIds, fresh);
       pushAddUndoMany(newIds, fresh); // 面板生成/三视图/改比例/重做/快捷动作可撤销
 
@@ -4540,7 +4602,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       // 新结果保留在任务占位位置，用户主动点击才切换选中节点。
       return generated;
     } catch (e) {
-      if (opts?.isCurrent && !opts.isCurrent()) return [];
+      if (!current()) return [];
       if (requestAccount !== canvasAccountRef.current || requestProject !== (activeProjectRef.current?.key || null)) return [];
       if (e instanceof ImagegenPreparationCancelled) return [];
       failure = classifyGenerationFailure(e, { attempted, jobId, terminal, hasResults: resultIds.length > 0 });
@@ -4591,10 +4653,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   async function generateChild() {
     if (!selected) return;
     if (dockReferenceState.error) { setGenError(dockReferenceState.error); return; }
+    if (referenceError) { setGenError(referenceError); return; }
     if (visibleDockRefs.length + extraFiles.length > MAX_TOTAL_IMAGES) { setGenError(`一次最多使用 ${MAX_TOTAL_IMAGES} 张图片，请移除多余引用`); return; }
     if (generationMode === "detail") {
       const references = visibleDockRefs.length ? visibleDockRefs : [selected];
-      await generateDetailSequence(selected, references, editPrompt.trim(), extraFiles);
+      await generateDetailSequence(selected, references, editPrompt.trim(), extraFiles, undefined, composerReferences);
       return;
     }
     if (generationMode === "triptych") {
@@ -4611,6 +4674,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           resolution: genResolution,
           parentId: selected.id,
           refUrls: [selected.image],
+          referenceInputs: composerReferences,
           taskLabel: "三视图合成中…",
           userPrompt: feedback || "生成正侧背三视图",
         }
@@ -4619,11 +4683,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       return;
     }
     if (generationMode === "split") {
-      await generateSplitViews(selected, editPrompt.trim());
+      if(!composerReferences.length){setGenError("请先选择一张编辑目标，再生成三视图");return;}
+      if(composerReferences.length>=MAX_TOTAL_IMAGES){setGenError("分图需要为生成的正面锚点预留一张参考图位置");return;}
+      await generateSplitViews(selected, editPrompt.trim(), composerReferences);
       return;
     }
     const text =
-      editPrompt.trim() || selected.prompt || FAITHFUL_REGEN_PROMPT;
+      editPrompt.trim() || inheritableImagePrompt(selected.prompt) || FAITHFUL_REGEN_PROMPT;
     // 新图 = 选中节点的子节点(落在它下方,血缘父=选中节点)。
     // 参考图 = dock 里可见的全部引用图(用户所见即所用,多图全送、不丢图)。
     // 若用户在 dock 删掉了自动引用图、改上传了自己的图:用上传图作参考。
@@ -4639,6 +4705,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       extra: useUploadAsBase ? extraFiles.slice(1) : extraFiles,
       refUrls: useUploadAsBase ? [] : visibleDockRefs.map((r) => r.image),
       userPrompt: editPrompt.trim(),
+      referenceInputs: composerReferences,
     });
   }
 
@@ -5366,7 +5433,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     return <AssistantRichText content={content} light={lightCanvas} english={locale === "en"} onCopy={copyAssistantText} onGenerate={genFromAssistant} />;
   }
 
-  async function generateSplitViews(source: Artwork, feedback: string) {
+  async function generateSplitViews(source: Artwork, feedback: string, referenceInputs?: CanvasImageReference[]) {
     const viewSet = `views:${source.id}:${Date.now()}`;
     const front = await runGen(source, viewPrompt("正面", feedback), {
       ratio: genRatio,
@@ -5376,6 +5443,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       parentId: source.id,
       refUrls: [source.image],
       operationKey: `${viewSet}:front`,
+      referenceInputs,
       taskLabel: "生成正面锚点…",
       userPrompt: feedback ? `正面视图：${feedback}` : "生成正面视图",
       taskOffset: 0,
@@ -5384,8 +5452,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (!anchor) return;
     await renameGeneratedArtwork(anchor.id, "正面视图");
     const shared = [source.image, anchor.url];
+    const anchoredReferences = referenceInputs ? [...referenceInputs, { key: `node:${anchor.id}`, sourceNodeId: anchor.id, title: "正面锚点", url: anchor.url, number: Math.max(0,...referenceInputs.map(ref=>ref.number))+1, role: "reference" as const }] : undefined;
     const [side, back] = await Promise.all([
-      runGen(source, viewPrompt("侧面", feedback, true), {
+      runGen(source, viewPrompt("侧面", feedback, true).replace("第二张参考图", "最后一张参考图"), {
         ratio: genRatio,
         style: genStyle,
         count: 1,
@@ -5394,11 +5463,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         parentIds: [anchor.id],
         refUrls: shared,
         operationKey: `${viewSet}:side`,
+        referenceInputs: anchoredReferences,
         taskLabel: "生成侧面视图…",
         userPrompt: feedback ? `侧面视图：${feedback}` : "生成侧面视图",
         taskOffset: 1,
       }),
-      runGen(source, viewPrompt("背面", feedback, true), {
+      runGen(source, viewPrompt("背面", feedback, true).replace("第二张参考图", "最后一张参考图"), {
         ratio: genRatio,
         style: genStyle,
         count: 1,
@@ -5407,6 +5477,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         parentIds: [anchor.id],
         refUrls: shared,
         operationKey: `${viewSet}:back`,
+        referenceInputs: anchoredReferences,
         taskLabel: "生成背面视图…",
         userPrompt: feedback ? `背面视图：${feedback}` : "生成背面视图",
         taskOffset: 2,
@@ -5424,7 +5495,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     referenceArts: Artwork[],
     feedback: string,
     uploadedRefs: File[] = [],
-    pend?: Pend
+    pend?: Pend,
+    referenceInputs?: CanvasImageReference[]
   ) {
     if (!user || readOnly) return;
     const operationKey = pend ? `pend:${pend.id}` : `node:${source.id}`;
@@ -5465,12 +5537,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     let failure: GenerationFailure | undefined, resultIds: string[] = [], resultsLoaded = false;
     let terminalMessage: string | undefined;
     const requestAccount = canvasAccountRef.current, requestProject = activeProjectRef.current?.key || null;
-    const current = () => requestAccount === canvasAccountRef.current && requestProject === (activeProjectRef.current?.key || null);
+    const requestEpoch = canvasContextEpochRef.current;
+    const current = () => requestAccount === canvasAccountRef.current && requestProject === (activeProjectRef.current?.key || null) && requestEpoch === canvasContextEpochRef.current;
     try {
       const form = new FormData();
       const maxArtworkRefs = Math.max(0, MAX_TOTAL_IMAGES - uploadedRefs.length);
       const arts = referenceArts.slice(0, maxArtworkRefs);
-      for (let index = 0; index < arts.length; index++) {
+      for (let index = 0; !referenceInputs && index < arts.length; index++) {
         const artwork = arts[index];
         const blob = await readBrowserImage(artwork.image);
         form.append(
@@ -5480,15 +5553,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           })
         );
       }
-      uploadedRefs.slice(0, MAX_TOTAL_IMAGES - arts.length).forEach((file) =>
+      if(!referenceInputs) uploadedRefs.slice(0, MAX_TOTAL_IMAGES - arts.length).forEach((file) =>
         form.append("image", file)
       );
+      if(referenceInputs)await appendComposerReferences(form,referenceInputs);
       if (form.getAll("image").length === 0) {
         throw new Error(t("canvas.detailNeedRefs"));
       }
       form.append("prepared", "1");
       if (genModel) form.append("model", genModel);
-      form.append("text", feedback);
+      form.append("text", referenceInputs ? compileReferenceInstructions(feedback,imageReferenceManifest(referenceInputs)) : feedback);
+      form.delete("canvasReferences");
       form.append("platform", "taobao");
       form.append("lang", "zh");
       form.append(
@@ -5507,7 +5582,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const startedResponse = await privateFetch("/api/aplus", {
         method: "POST",
         headers: await authHeader(),
-        body: form,
+        body: form, isCurrent: current,
       });
       const started = await readJsonSafe(startedResponse);
       if (!startedResponse.ok || !started.jobId) {
@@ -5590,7 +5665,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const message = generationFailureMessage(failure);
       if (pend ? selectedPendIdRef.current === pend.id : selectedIdRef.current === source.id) setGenError(message);
       else flashTip(`${source.title}：${message}`);
-      const onRetry = () => generateDetailSequence(source,referenceArts,feedback,uploadedRefs,pend ? {...pend,generating:false,generationFailure:undefined} : undefined);
+      const onRetry = () => generateDetailSequence(source,referenceArts,feedback,uploadedRefs,pend ? {...pend,generating:false,generationFailure:undefined} : undefined,referenceInputs);
       const retainedFailure = failure;
       setGenerationTasks(tasks => pend ? tasks.filter(task => task.id !== taskId) : tasks.map(task => task.id === taskId ? { ...task, failure: retainedFailure, onRetry } : task));
       if (pend) setPendNodes(nodes => nodes.map(node => node.id === pend.id ? { ...node, generating: false, generationFailure: retainedFailure, onGenerationRetry: onRetry } : node));
@@ -5606,8 +5681,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   async function retrySelected() {
     if (!selected) return;
+    if (dockReferenceState.error || referenceError) { setGenError(dockReferenceState.error || referenceError); return; }
     const feedback = editPrompt.trim();
-    const originalPrompt = selected.prompt || FAITHFUL_REGEN_PROMPT;
+    const originalPrompt = inheritableImagePrompt(selected.prompt) || FAITHFUL_REGEN_PROMPT;
     const prompt = `${originalPrompt}${
       feedback && feedback !== originalPrompt
         ? `\n本次重做要求：${feedback}`
@@ -5624,9 +5700,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       parentId: selected.parentId || selected.id,
       parentIds: selected.parentIds ?? [],
       refUrls: [selected.image, ...(parent.id === selected.id ? [] : [parent.image])],
+      referenceInputs: composerReferences,
       operationKey: `retry:${selected.id}`,
       taskLabel: "按要求重做中…",
-      userPrompt: feedback || selected.prompt || "重做当前图片",
+      userPrompt: feedback || inheritableImagePrompt(selected.prompt) || "重做当前图片",
     });
     if (retried[0]) {
       await renameGeneratedArtwork(retried[0].id, `${selected.title} · 重做`);
@@ -5717,7 +5794,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 新图作为当前节点的子节点;只引用当前节点自己的图。
   function onRatioGen(ratio: string) {
     if (readOnly || !selected || selectedGenerating) return;
-    void runGen(selected, selected.prompt || "", {
+    void runGen(selected, inheritableImagePrompt(selected.prompt), {
       ratio,
       count: 1,
       resolution: selected.resolution || "1K",
@@ -7615,7 +7692,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           if (!art) return false;
           // Artwork persists prompt/ratio/resolution/style, not an individual
           // model/quality/count recipe. Those retain the current canvas defaults.
-          const results = await runGen(art, art.prompt?.trim() || FAITHFUL_REGEN_PROMPT, {
+          const results = await runGen(art, inheritableImagePrompt(art.prompt) || FAITHFUL_REGEN_PROMPT, {
             ratio: art.ratio || "1:1", resolution: art.resolution || genResolution,
             style: art.style || "", count: 1, parentId: art.id, refUrls: [art.image],
             isCurrent, operationKey: `node:${art.id}`, taskLabel: L("批量运行中…", "Running selection…"),
@@ -7838,6 +7915,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     prompt?: string;
     ratio?: string;
     forceStandard?: boolean;
+    referenceInputs?: CanvasImageReference[];
     isCurrent?: () => boolean;
   }): Promise<boolean> {
     if (readOnly || !user) return false;
@@ -7848,6 +7926,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const inputArts = pend.inputs
       .map((id) => active?.members.find((m) => m.id === id))
       .filter(Boolean) as Artwork[];
+    const referenceInputs = opts?.referenceInputs || (!opts?.forceStandard && pend.id === selectedPendId ? composerReferences : undefined);
+    if(referenceInputs){
+      const issue=referenceManifestError(text,imageReferenceManifest(referenceInputs));
+      if(issue){setGenError(issue);return false;}
+      if(pend.inputs.some(id=>!id.startsWith("text-")&&!inputArts.some(art=>art.id===id&&art.image&&!art.videoUrl))){setGenError("已连接的参考图片尚未载入，请同步图片后重试");return false;}
+    }
     const inputTextNodeIds = Array.from(
       new Set(
         [pend.parentId, ...pend.inputs].filter(
@@ -7863,7 +7947,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         flashTip(t("canvas.detailNeedRefs"));
         return false;
       }
-      await generateDetailSequence(inputArts[0], inputArts, text, [], pend);
+      await generateDetailSequence(inputArts[0], inputArts, text, [], pend, referenceInputs);
       return false;
     }
     if (!text && !pend.inputs.length) {
@@ -7882,7 +7966,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         .map((node) => node.content.trim() || node.prompt.trim())
         .filter(Boolean)
         .join("\n\n") ||
-      inputArts[0]?.prompt?.trim() ||
+      inheritableImagePrompt(inputArts[0]?.prompt) ||
       FAITHFUL_REGEN_PROMPT;
     setGenError(null);
     const generationSize = generationPlaceholderSize(opts?.ratio || genRatio);
@@ -7895,6 +7979,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     let attempted = false, terminal = false, jobId: string | undefined, resultIds: string[] = [];
     let failure: GenerationFailure | undefined;
     const requestAccount = canvasAccountRef.current, requestProject = activeProjectRef.current?.key || null;
+    const requestEpoch = canvasContextEpochRef.current;
+    const current = () => requestAccount === canvasAccountRef.current && requestProject === (activeProjectRef.current?.key || null) && requestEpoch === canvasContextEpochRef.current && (opts?.isCurrent?.() ?? true);
     try {
       const fd = new FormData();
       fd.append("prompt", promptToUse);
@@ -7922,7 +8008,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         );
       }
       // 把每个输入图下载后作为参考图一起送(图生图/合并);无输入=纯文生图
-      for (const a of inputArts) {
+      for (const a of referenceInputs ? [] : inputArts) {
         try {
           const blob = await readBrowserImage(a.image);
           fd.append(
@@ -7931,18 +8017,19 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           );
         } catch { throw new ImagegenHttpError("参考图片加载失败，请重新选择或上传后再试", 0, false); }
       }
-      if (opts?.isCurrent && !opts.isCurrent()) return false;
+      if(referenceInputs)await appendComposerReferences(fd,referenceInputs);
+      if (!current()) return false;
       attempted = true;
       const startRes = await privateFetch("/api/generate-image", {
         method: "POST",
         headers: await authHeader(),
-        body: fd, isCurrent: opts?.isCurrent,
+        body: fd, isCurrent: current,
       });
       const start = await readJsonSafe(startRes);
       if (!startRes.ok) throw new ImagegenHttpError(start.error || t("canvas.genFail"), startRes.status, start.accepted === false || [400,401,403,409,413,422,429].includes(startRes.status) ? false : undefined);
       jobId = start.jobId;
       if (!jobId) throw new Error(t("canvas.genFail"));
-      if (opts?.isCurrent && !opts.isCurrent()) return false;
+      if (!current()) return false;
       rememberGenerationDrag(pend.id, rfRef.current?.getNode(pend.id)?.position ?? generationPosition, true);
       setPendNodes(current => current.map(p => p.id === pend.id ? { ...p, generationStage: "generating" } : p));
       const deadline = Date.now() + 6 * 60 * 1000;
@@ -7956,7 +8043,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           { cache: "no-store", headers: await authHeader() }
         );
         const pj = await readJsonSafe(pr);
-        if (opts?.isCurrent && !opts.isCurrent()) return false;
+        if (!current()) return false;
         if (pr.ok && pj.user) applyServerUser(pj.user);
         if (!pr.ok) throw new Error(pj.error || t("canvas.genFail"));
         if(pj.status==="pending")setPendNodes(current=>current.map(p=>p.id===pend.id?{...p,generationStage:"generating"}:p));
@@ -7978,7 +8065,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           throw new Error(pj.error || t("canvas.genFail"));
         }
       }
-      if (opts?.isCurrent && !opts.isCurrent()) return false;
+      if (!current()) return false;
       // 把生成结果落到空白节点的位置
       if (newIds.length) {
         const livePosition = rfRef.current?.getNode(pend.id)?.position ?? pendNodesRef.current.find(node => node.id === pend.id) ?? generationPosition;
@@ -8004,9 +8091,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           if (!activeKey) pendingNodeRef.current = newIds[0];
         }
       }
-      if (opts?.isCurrent && !opts.isCurrent()) return false;
+      if (!current()) return false;
       const fresh = await mergeWorks(newIds);
-      if (opts?.isCurrent && !opts.isCurrent()) return false;
+      if (!current()) return false;
       assertGenerationResultsPresent(newIds, fresh);
       setPendNodes((prev) => prev.filter((p) => p.id !== pend.id));
 
@@ -8030,7 +8117,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       }
       return true;
     } catch (e) {
-      if (opts?.isCurrent && !opts.isCurrent()) return false;
+      if (!current()) return false;
       if (requestAccount !== canvasAccountRef.current || requestProject !== (activeProjectRef.current?.key || null)) return false;
       if (e instanceof ImagegenPreparationCancelled) {
         setPendNodes(nodes=>nodes.map(node=>node.id===pend.id?{...node,generating:false,generationFailure:undefined}:node));
@@ -8046,7 +8133,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           if(requestAccount!==canvasAccountRef.current || requestProject!==(activeProjectRef.current?.key||null))return;
           const fresh=await mergeWorks(resultIds);assertGenerationResultsPresent(resultIds,fresh);
           setPendNodes(nodes=>nodes.filter(node=>node.id!==pend.id));setSelectedPendId(id=>id===pend.id?null:id);setGenError(null);
-        } : () => generatePend({pend:{...pend,generating:false,generationFailure:undefined},prompt:text}) } : p));
+        } : () => generatePend({pend:{...pend,generating:false,generationFailure:undefined},prompt:text,referenceInputs}) } : p));
       return false;
     } finally {
       generationOperationRef.current.delete(operationKey);
@@ -11194,104 +11281,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
              kind="image" heading={selected.title || L("图片生成", "Image generation")} onDismiss={() => setSelectedId(null)} closeLabel={L("关闭创作栏", "Close composer")}>
               {/* dbody:风格/标记/聚焦 chips + 引用图 + 提示词(对齐原型 .cz-dock .dbody) */}
               <div data-composer-body="true" className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
-                <div className="mb-3 flex flex-wrap items-center gap-2">
-                  {/* 引用图:上一级父节点的图(本节点由此生成);多输入则全部显示。
-                      悬停右上角"×"可移除(改用自己上传的参考图) */}
-                  {visibleDockRefs.map((ref) => (
-                    <div
-                      key={ref.id}
-                      className="group relative h-[46px] w-[46px] flex-none overflow-hidden rounded-[9px] border border-[var(--canvas-ui-border)]"
-                    >
-                      <button
-                        type="button"
-                        title={ref.title}
-                        onClick={() =>
-                          setLightbox({ src: ref.image, alt: ref.title })
-                        }
-                        className="block h-full w-full"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <CachedImage
-                          src={cdnUrl(ref.image)}
-                          alt={ref.title}
-                          className="h-full w-full object-cover"
-                        />
-                      </button>
-                      {!readOnly && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setHiddenRefIds((prev) =>
-                              prev.includes(ref.id) ? prev : [...prev, ref.id]
-                            )
-                          }
-                          aria-label={t("canvas.removeImage")}
-                          className="absolute right-0 top-0 flex h-4 w-4 items-center justify-center rounded-bl-md bg-black/65 text-white opacity-0 transition-opacity group-hover:opacity-100"
-                        >
-                          <X className="h-2.5 w-2.5" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                  {!readOnly &&
-                    extraPreviews.map((src, i) => (
-                      <div
-                        key={i}
-                        className="relative h-[46px] w-[46px] flex-none overflow-hidden rounded-[9px] border border-[var(--canvas-ui-border)]"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <CachedImage
-                          src={src}
-                          alt={`ref ${i + 1}`}
-                          className="h-full w-full object-cover"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeExtra(i)}
-                          aria-label={t("canvas.removeImage")}
-                          className="absolute right-0 top-0 flex h-4 w-4 items-center justify-center rounded-bl-md bg-black/65 text-white"
-                        >
-                          <X className="h-2.5 w-2.5" />
-                        </button>
-                      </div>
-                    ))}
-                  {!readOnly && (
-                    <>
-                      <input
-                        ref={extraInputRef}
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp"
-                        multiple
-                        className="hidden"
-                        onChange={(e) => pickExtra(e.target.files)}
-                      />
-                      {extraFiles.length < MAX_TOTAL_IMAGES - 1 && (
-                        <button
-                          type="button"
-                          onClick={() => extraInputRef.current?.click()}
-                          title={t("canvas.toolbar.addReference")}
-                          aria-label={t("canvas.toolbar.addReference")}
-                          className="canvas-ui-action flex h-[46px] w-[46px] flex-none items-center justify-center rounded-[9px] border border-dashed border-[var(--canvas-ui-border)] transition-colors hover:!border-[#6366f1]/60"
-                        >
-                          <Upload className="h-4 w-4" />
-                        </button>
-                      )}
-                    </>
-                  )}
-
-
-                </div>
-
-                {/* 提示词:短内容至少约 5 行，长内容自适应增长，超过上限后内部滚动。 */}
-                <Textarea
-                  ref={promptAreaRef}
-                  aria-label="节点提示词"
-                  value={editPrompt}
-                  readOnly={readOnly}
-                  placeholder={readOnly ? "" : t("canvas.promptPlaceholder")}
-                  onChange={(e) => setEditPrompt(e.target.value)}
-                  className="canvas-ui-text min-h-[112px] max-h-[220px] resize-none overflow-y-hidden border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed shadow-none placeholder:text-[var(--canvas-ui-muted)] focus-visible:ring-0"
-                />
+                <ImageReferenceComposer key={imageDraft.key || imageDraftNodeId} references={composerReferences} prompt={editPrompt} onPrompt={setEditPrompt}
+                  onRole={(key,role)=>imageDraft.setReferenceBindings(changeImageReferenceRole(imageReferenceState.bindings,key,role))}
+                  onRemove={removeComposerReference} onPreview={ref=>setLightbox({src:ref.url,alt:ref.title})}
+                  onLocate={locateComposerReference} english={locale === "en"} error={referenceError}
+                  textareaRef={promptAreaRef} readOnly={readOnly} placeholder={t("canvas.promptPlaceholder")}>
+                  {!readOnly && <>
+                    <input ref={extraInputRef} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={event=>pickExtra(event.target.files)} />
+                    {composerReferences.length < MAX_TOTAL_IMAGES && <button type="button" onClick={()=>extraInputRef.current?.click()}
+                      title={t("canvas.toolbar.addReference")} aria-label={t("canvas.toolbar.addReference")}
+                      className="canvas-ui-action flex h-[68px] w-12 flex-none items-center justify-center rounded-[10px] border border-dashed border-[var(--canvas-ui-border)] hover:!border-[#6366f1]/60"><Upload className="h-4 w-4" /></button>}
+                  </>}
+                </ImageReferenceComposer>
                 {genError && (
                   <p className="pb-1 text-xs font-medium text-red-400">
                     {genError}
@@ -11421,36 +11422,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
              kind="image" heading={L("图片生成", "Image generation")} onDismiss={() => setSelectedPendId(null)} closeLabel={L("关闭创作栏", "Close composer")}>
               <div data-composer-body="true" className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
-                <div className="mb-3 flex flex-wrap items-center gap-2">
-                  {pendInputArts.length > 0 ? (
-                    pendInputArts.map((a) => (
-                      <button
-                        key={a.id}
-                        type="button"
-                        title={a.title}
-                        onClick={() => setLightbox({ src: a.image, alt: a.title })}
-                        className="h-[46px] w-[46px] flex-none overflow-hidden rounded-[9px] border border-[var(--canvas-ui-border)]"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <CachedImage
-                          src={cdnUrl(a.image)}
-                          alt={a.title}
-                          className="h-full w-full object-cover"
-                        />
-                      </button>
-                    ))
-                  ) : null}
-
-
-                </div>
-                <Textarea
-                  ref={pendPromptRef}
-                  aria-label="节点提示词"
-                  value={editPrompt}
-                  placeholder={t("canvas.pendPromptPlaceholder")}
-                  onChange={(e) => setEditPrompt(e.target.value)}
-                  className="canvas-ui-text min-h-[112px] max-h-[220px] resize-none overflow-y-hidden border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed shadow-none placeholder:text-[var(--canvas-ui-muted)] focus-visible:ring-0"
-                />
+                <ImageReferenceComposer key={imageDraft.key || imageDraftNodeId} references={composerReferences} prompt={editPrompt} onPrompt={setEditPrompt}
+                  onRole={(key,role)=>imageDraft.setReferenceBindings(changeImageReferenceRole(imageReferenceState.bindings,key,role))}
+                  onRemove={removeComposerReference} onPreview={ref=>setLightbox({src:ref.url,alt:ref.title})}
+                  onLocate={locateComposerReference} english={locale === "en"} error={referenceError}
+                  textareaRef={pendPromptRef} placeholder={t("canvas.pendPromptPlaceholder")} />
                 {genError && (
                   <p className="pb-1 text-xs font-medium text-red-400">
                     {genError}

@@ -13,6 +13,9 @@ export async function runDirectGenerationFixture() {
   let responseStatus = 200, responseCode = "", lastError = "", confirmAllowed = false;
   const calls: { url: string; id: string; version: string; credits: string }[] = [];
   const stored = new Map<string, string | null>();
+  const deferred = () => { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; };
+  let heldQuote: { entered: ReturnType<typeof deferred>; release: ReturnType<typeof deferred> } | null = null;
+  let releaseDigest: (() => void) | undefined, restoreDigest: (() => void) | undefined;
   const q = { version: 1, credits: 6, reserveCredits: 6, feature: "image.generate", quantity: 1 } as const;
   const requests = ["canvas", "toolbox", "genchat"].map(name => ({ name, url: `/api/fixture-${name}`, init: { method: "POST", body: JSON.stringify({ prompt: `direct ${name}`, operationId: "draft" }) } }));
   const Probe = () => { client = useBilling(); return null; };
@@ -31,7 +34,11 @@ export async function runDirectGenerationFixture() {
   window.fetch = async (input, init) => {
     const path = String(input);
     if (path === "/api/billing/catalog") return Response.json({ version: 1 });
-    if (path === "/api/billing/quote") return Response.json({ ...q, version: quotedVersion });
+    if (path === "/api/billing/quote") {
+      const hold = heldQuote;
+      if (hold) { heldQuote = null; hold.entered.resolve(); await hold.release.promise; }
+      return Response.json({ ...q, version: quotedVersion });
+    }
     if (requests.some(req => req.url === path)) {
       const h = new Headers(init?.headers);
       calls.push({ url: path, id: h.get("x-naumi-billing-operation-id")!, version: h.get("x-naumi-billing-version")!, credits: h.get("x-naumi-billing-credits")! });
@@ -73,10 +80,43 @@ export async function runDirectGenerationFixture() {
     confirmAllowed=true;responseStatus=200;responseCode="";
     assert((await client!.submit(requests[0].url,requests[0].init,costPlus)).status===200,"accepted cost-plus request was not submitted");
     assert(calls.length===before+1&&calls.at(-1)?.credits==="36"&&calls.at(-1)?.version==="1"&&confirmCount===2,"accepted cost-plus request lost the frozen authorization cap");
-    return { result: "DIRECT_GENERATION_BROWSER=PASS", canvas: "ONE_CLICK", toolbox: "ONE_CLICK", genchat: "ONE_CLICK", feeConfirmations: fixedFeeConfirmations, apiCostPlusAuthorizations:confirmCount, apiCostPlusDeclined:"NO_POST",apiCostPlusAccepted:"FROZEN_CAP_36",retryID: "PRESERVED", balance402: "RETAINED", price409: "RETAINED", changedQuote: "BLOCKED_WITHOUT_GENERATION", quoteHeaders: "RETAINED", supplierCalls: 0, isSecureContext };
+
+    // These guards become invalid only after the real provider starts its
+    // asynchronous quote/hash work. An entry-only guard would fail both cases.
+    quotedVersion = 1;
+    for (const stage of ["quote", "hash"] as const) {
+      const init = { method: "POST", body: JSON.stringify({ prompt: `delayed ${stage} context`, operationId: "draft" }) };
+      const key = await clientIntentKey(email, requests[0].url, init);
+      stored.set(key, localStorage.getItem(key)); localStorage.removeItem(key);
+      const entered = deferred(), release = deferred();
+      let current = true, guardCalls = 0;
+      const guard = () => { guardCalls++; if (!current) throw new Error("fixture canvas context changed"); };
+      const beforeGuarded = calls.length;
+      if (stage === "quote") heldQuote = { entered, release };
+      else {
+        const subtle = globalThis.crypto?.subtle;
+        assert(subtle, "real browser SubtleCrypto is required for delayed intent hashing");
+        const originalDigest = subtle.digest, descriptor = Object.getOwnPropertyDescriptor(subtle, "digest");
+        Object.defineProperty(subtle, "digest", { configurable: true, value: async (algorithm: AlgorithmIdentifier, data: BufferSource) => {
+          entered.resolve(); await release.promise; return originalDigest.call(subtle, algorithm, data);
+        } });
+        releaseDigest = release.resolve;
+        restoreDigest = () => { if (descriptor) Object.defineProperty(subtle, "digest", descriptor); else Reflect.deleteProperty(subtle, "digest"); };
+      }
+      const pending = client!.quoteAndSubmit(requests[0].url, init, { feature: "canvas.image", quantity: stage === "quote" ? 2 : 3 }, guard)
+        .then(() => "SUBMITTED", error => (error as Error).message);
+      await Promise.race([entered.promise, new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`delayed ${stage} stage was never reached`)), 3000))]);
+      assert(guardCalls >= 1 && calls.length === beforeGuarded, `${stage} guard did not begin before asynchronous work`);
+      current = false; release.resolve();
+      const message = await pending;
+      restoreDigest?.(); restoreDigest = undefined; releaseDigest = undefined;
+      assert(message === "fixture canvas context changed" && guardCalls >= 2 && calls.length === beforeGuarded, `${stage} context change submitted a generation POST: ${message}`);
+    }
+    return { result: "DIRECT_GENERATION_BROWSER=PASS", canvas: "ONE_CLICK", toolbox: "ONE_CLICK", genchat: "ONE_CLICK", feeConfirmations: fixedFeeConfirmations, apiCostPlusAuthorizations:confirmCount, apiCostPlusDeclined:"NO_POST",apiCostPlusAccepted:"FROZEN_CAP_36",retryID: "PRESERVED", balance402: "RETAINED", price409: "RETAINED", changedQuote: "BLOCKED_WITHOUT_GENERATION", quoteHeaders: "RETAINED", contextChangedDuringQuote: "NO_POST", contextChangedDuringIntentHash: "NO_POST", unguardedCompatibility: "RETAINED", supplierCalls: 0, isSecureContext };
   } catch (error) {
     return { result: "DIRECT_GENERATION_BROWSER=FAIL", error: (error as Error).message, feeConfirmations: confirmCount, mockedGenerationCalls: calls.length, supplierCalls: 0 };
   } finally {
+    heldQuote?.release.resolve(); releaseDigest?.(); restoreDigest?.();
     root.unmount(); node.remove(); window.fetch = originalFetch; window.confirm = originalConfirm;
     Array.from(stored.entries()).forEach(([key, value]) => { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); });
   }

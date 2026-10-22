@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { IMAGEGEN_USE_CASES } from "./catalog";
+import { referenceLabelSchema, referenceManifestError, type CanvasReferenceManifest } from "./reference-labels";
 const text=z.string().trim().min(1).max(6000).refine(v=>!/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(v),"文字包含无效控制字符");
 const resourceId=z.string().min(1).max(160).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
 const hex=z.string().regex(/^#[0-9a-fA-F]{6}$/);
@@ -22,7 +23,7 @@ export const imagegenRequestSchema=z.strictObject({
   useCase:z.enum(IMAGEGEN_USE_CASES.map(x=>x.id) as [typeof IMAGEGEN_USE_CASES[number]["id"],...typeof IMAGEGEN_USE_CASES[number]["id"][]]).optional(),
   skill:z.strictObject({id:z.string().regex(/^(official:[a-z-]+|personal:[a-f0-9-]{36})$/),revision:z.number().int().positive()}).optional(),
   augment:z.boolean().default(false),modelId:resourceId.optional(),sourceNodeId:resourceId.optional(),
-  inputs:z.array(z.strictObject({artworkId:resourceId,role:z.enum(["edit-target","reference","insert","style","mask"])})).max(32).default([]),
+  inputs:z.array(z.strictObject({artworkId:resourceId,role:z.enum(["edit-target","reference","insert","style","mask"]),reference:referenceLabelSchema.optional()})).max(32).default([]),
   parameters:z.strictObject({quality:resourceId.optional(),resolution:resourceId.optional(),ratio:z.union([z.literal("auto"),z.string().regex(/^[1-9]\d{0,5}:[1-9]\d{0,5}$/)]).optional(),
     width:z.number().int().min(64).max(8192).optional(),height:z.number().int().min(64).max(8192).optional(),
     inputFidelity:resourceId.optional(),moderation:resourceId.optional()}).default({}),
@@ -33,6 +34,15 @@ export const imagegenRequestSchema=z.strictObject({
 }).superRefine((v,ctx)=>{
   const issue=(message:string,path:string[])=>ctx.addIssue({code:"custom",message,path});
   const targets=v.inputs.filter(i=>i.role==="edit-target"),masks=v.inputs.filter(i=>i.role==="mask");
+  if(v.inputs.some(i=>i.reference)){
+    const refs=v.inputs.filter(i=>i.role!=="mask");
+    if(refs.some(i=>!i.reference))issue("参考图片编号信息不完整",["inputs"]);
+    else {
+      const error=referenceManifestError(v.prompt,refs.map(i=>({...i.reference!,role:i.role})) as CanvasReferenceManifest);
+      if(error)issue(error,["inputs"]);
+      for(const item of v.batch?.items||[]){const error=referenceManifestError(item.prompt,refs.map(i=>({...i.reference!,role:i.role})) as CanvasReferenceManifest);if(error)issue(error,["batch"]);}
+    }
+  }
   if(["edit","postprocess"].includes(v.mode)&&!targets.length)issue("请选择编辑目标",["inputs"]);
   if(masks.length>1||masks.length&&!targets.length)issue("蒙版必须对应一个明确编辑目标",["inputs"]);
   if(v.mode==="batch"&&!v.batch)issue("批次缺少子项",["batch"]);
