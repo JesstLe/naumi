@@ -6,6 +6,7 @@ import json
 import os
 import pathlib
 import socket
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -216,6 +217,21 @@ class WireTests(unittest.TestCase):
 
 
 class ProcessTests(unittest.TestCase):
+    def test_actual_pidfd_terminates_only_a_disposable_fixture_child(self):
+        child = subprocess.Popen(['sleep', '30'])
+        try:
+            start = pathlib.Path('/proc', str(child.pid), 'stat').read_text().rsplit(')', 1)[1].split()[19]
+            fixture = m.Session(child.pid, start, 200000)
+            # Only process discovery is a fixture. pidfd_open/send/close are
+            # actual kernel calls against this test's own disposable child.
+            with patch.object(m, 'read_session', return_value=fixture):
+                m.terminate_session({}, fixture)
+            self.assertEqual(child.wait(timeout=2), -m.signal.SIGTERM)
+        finally:
+            if child.poll() is None:
+                child.terminate()
+                child.wait(timeout=2)
+
     def test_only_match_allowed_liveness_directives_and_no_root_policy_change(self):
         directives = [l.strip().split()[0] for l in install.BLOCK.splitlines() if l.strip() and not l.strip().startswith('#')]
         self.assertEqual(directives, ['Match', 'ClientAliveInterval', 'ClientAliveCountMax'])
@@ -225,7 +241,7 @@ class ProcessTests(unittest.TestCase):
         listener = 'LISTEN 0 128 127.0.0.1:13947 0.0.0.0:* users:(("sshd",pid=12345,fd=7))\n'
         transport = '0 0 127.0.0.1:22 127.0.0.2:50000 users:(("sshd",pid=12345,fd=4))\n\t cubic lastrcv:200001 lastack:100\n'
         with patch.object(m, 'command', side_effect=[listener, transport]), patch.object(m, 'process_identity', return_value='start'):
-            self.assertEqual(m.read_session({'user': 'naumi-nas47', 'uid': 1001}), m.Session(12345, 'start', 200001))
+            self.assertEqual(m.read_session({'user': 'naumi-nas47', 'uid': 1001}), m.Session(12345, 'start', 100), 'Recent ACK protects an active large upload even without response data')
         with patch.object(m, 'command', return_value=listener + listener):
             self.assertIsNone(m.read_session({'user': 'naumi-nas47', 'uid': 1001}))
         with patch.object(m, 'command', return_value=listener), patch.object(m, 'process_identity', side_effect=ValueError('wrong UID or executable')):

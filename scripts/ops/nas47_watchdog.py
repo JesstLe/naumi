@@ -175,7 +175,10 @@ def read_session(c):
         if len(stats) != 1:
             return None
         last = re.search(r'lastrcv:(\d+)', stats[0])
-        return Session(pid, start, int(last.group(1))) if last else None
+        ack = re.search(r'lastack:(\d+)', stats[0])
+        # A large upload can receive ACKs without response data for a while.
+        # Either data OR ACK progress protects it from stale-session recovery.
+        return Session(pid, start, min(int(last.group(1)), int(ack.group(1)))) if last and ack else None
     except (OSError, ValueError, subprocess.SubprocessError):
         return None
 

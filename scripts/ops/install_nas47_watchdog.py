@@ -174,6 +174,11 @@ def activate():
 def rollback_check():
     record = w.private_json(ROOT / 'PREPARED.json')
     active = w.private_json(ROOT / 'ACTIVATED.json')
+    if (ROOT / 'PROGRAM_UPDATED.json').exists():
+        update = w.private_json(ROOT / 'PROGRAM_UPDATED.json')
+        path = str(LIB / 'nas47_watchdog.py')
+        assert update['previousSha256'] == active['installedHashes'][path], 'UPDATE_PREDECESSOR_MISMATCH'
+        active['installedHashes'][path] = update['sha256']
     assert sha(SSH.read_bytes()) == record['sshCandidate'], 'SSH_MODIFIED_SINCE_INSTALL'
     assert sha((ROOT / 'sshd.before').read_bytes()) == record['sshBefore'], 'BACKUP_CHANGED'
     for name, digest in active['installedHashes'].items():
@@ -182,6 +187,43 @@ def rollback_check():
     assert effective(ROOT / 'sshd.before', 'root') == record['rootEffective'], 'BASELINE_ROOT_CHANGED'
     assert effective(ROOT / 'sshd.before', 'naumi-nas47') == record['nasEffectiveBefore'], 'BASELINE_NAS_CHANGED'
     return record, active
+
+
+def upgrade_program():
+    record, active = rollback_check()
+    assert not (ROOT / 'PROGRAM_UPDATE_INTENT.json').exists(), 'PREVIOUS_UPDATE_REVIEW_REQUIRED'
+    source = pathlib.Path(__file__).with_name('nas47_watchdog.py')
+    commit = pathlib.Path(__file__).with_name('SOURCE_COMMIT').read_text().strip()
+    assert re.fullmatch(r'[a-f0-9]{40}', commit), 'FIXED_UPGRADE_SOURCE_REQUIRED'
+    before = runtime()
+    gateway = sha(run(['nginx', '-T']).encode())
+    config = w.load_config()
+    session = w.read_session(config)
+    assert session, 'NAS_SESSION_NOT_IDENTIFIED'
+    target = LIB / 'nas47_watchdog.py'
+    previous = target.read_bytes()
+    intent = {'at': time.time(), 'sourceCommit': commit, 'previousSha256': sha(previous), 'sha256': sha(source.read_bytes())}
+    w.atomic(ROOT / 'PROGRAM_UPDATE_INTENT.json', intent)
+    file(ROOT / 'watchdog.before-update.py', previous, 0o600)
+    run(['systemctl', 'stop', 'naumi-nas47-watchdog.timer'])
+    run(['systemctl', 'stop', 'naumi-nas47-watchdog.service'])
+    try:
+        assert sha(target.read_bytes()) == intent['previousSha256'], 'WATCHDOG_PROGRAM_CHANGED'
+        file(target, source.read_bytes(), 0o700)
+        run(['systemctl', 'start', 'naumi-nas47-watchdog.service'], timeout=30)
+        state = w.private_json(w.STATE / 'status.json')
+        assert state['outcome'] == 'healthy' and not state['attempts'], 'UPDATE_HEALTH_FAILED'
+        assert w.read_session(config).identity == session.identity, 'LIVE_NAS_SESSION_CHANGED'
+        assert runtime() == before and sha(run(['nginx', '-T']).encode()) == gateway, 'BUSINESS_CHANGED'
+        w.atomic(ROOT / 'PROGRAM_UPDATED.json', dict(intent, stateBudgetsRetained=True, healthyTunnelUnchanged=True))
+    except BaseException:
+        if sha(target.read_bytes()) == intent['sha256']:
+            file(target, previous, 0o700)
+        w.atomic(ROOT / 'PROGRAM_UPDATE_FAILED.json', dict(intent, reverted=sha(target.read_bytes()) == intent['previousSha256']))
+        raise
+    finally:
+        run(['systemctl', 'start', 'naumi-nas47-watchdog.timer'])
+    print(json.dumps({'watchdogProgramUpdated': True, 'businessUnchanged': True, 'healthyTunnelUnchanged': True, 'stateBudgetsRetained': True}))
 
 
 def rollback():
@@ -208,13 +250,13 @@ def rollback():
 
 def main():
     assert os.geteuid() == 0
-    assert len(sys.argv) == 2 and sys.argv[1] in ['prepare', 'activate', 'check-rollback', 'rollback']
+    assert len(sys.argv) == 2 and sys.argv[1] in ['prepare', 'activate', 'check-rollback', 'rollback', 'upgrade-program']
     with w.release_locks():
         if sys.argv[1] == 'check-rollback':
             rollback_check()
             print('ROLLBACK_READY_SYNTAX_AND_HASH_CHECK_ONLY')
         else:
-            {'prepare': prepare, 'activate': activate, 'rollback': rollback}[sys.argv[1]]()
+            {'prepare': prepare, 'activate': activate, 'rollback': rollback, 'upgrade-program': upgrade_program}[sys.argv[1]]()
     print('THREE_LOCKS_RELEASED')
 
 
