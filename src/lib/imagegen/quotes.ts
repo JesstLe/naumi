@@ -8,11 +8,10 @@ import {allows} from "../feature-access/catalog";
 import {imagegenFingerprint} from "./plan";
 import {imagegenRequestSchema} from "./schema";
 import {readImagegenInputs} from "./inputs";
-import {ImagegenConfirmationChanged} from "./confirmation";
 import type {ImagegenPlan,ImagegenRequest} from "./types";
 
 export const IMAGEGEN_QUOTE_TTL_MS=15*60*1000;
-export type ImagegenSubmissionConfirmation={quoteId?:string;confirmed:boolean;billingVersion?:number;modelVersion?:number;credits?:number};
+export type ImagegenSubmissionConfirmation={quoteId?:string;confirmed?:boolean;billingVersion?:number;modelVersion?:number;credits?:number};
 type QuoteRow={id:string;owner:string;operation_id:string;fingerprint:string;context_key:string;request:ImagegenRequest;plan:ImagegenPlan;expires_at:Date|string;expired?:boolean};
 const memory=new Map<string,QuoteRow>();
 let ready:Promise<void>|undefined;
@@ -46,12 +45,16 @@ export async function issueImagegenQuote(raw:ImagegenRequest,owner:string,plan:I
  const request=imagegenRequestSchema.parse(raw),fingerprint=imagegenFingerprint(request);
  if(plan.fingerprint!==fingerprint)throw new ImagegenQuoteError();
  await ensureImagegenQuotes();
+ // Re-previewing the same operation is still the original intent, not consent
+ // to current prices. TTL is maintenance metadata, not permission to reprice.
+ const existing=await latestImagegenQuote(request,owner);
+ if(existing){const saved=await readImagegenQuote(existing,owner,request.operationId);return {...publicImagegenPlan(saved.plan),quote:{id:saved.id,expiresAt:new Date(saved.expires_at).toISOString()}};}
  const row:QuoteRow={id:randomUUID(),owner:owner.toLowerCase(),operation_id:request.operationId,fingerprint,context_key:imagegenCreationScopeKey(owner),request,plan,expires_at:new Date(Date.now()+IMAGEGEN_QUOTE_TTL_MS)};
  if(dbEnabled){const saved=(await getPool().query("INSERT INTO app_imagegen_quotes(id,owner,operation_id,fingerprint,context_key,request,plan,expires_at) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,now()+interval '15 minutes') RETURNING expires_at",[row.id,row.owner,row.operation_id,row.fingerprint,row.context_key,JSON.stringify(request),JSON.stringify(plan)])).rows[0];row.expires_at=saved.expires_at;}
- else {for(const [id,old] of memory)if(new Date(old.expires_at).getTime()<Date.now())memory.delete(id);memory.set(row.id,structuredClone(row));}
+ else memory.set(row.id,structuredClone(row));
  return {...publicImagegenPlan(plan),quote:{id:row.id,expiresAt:new Date(row.expires_at).toISOString()}};
 }
-/** Expiry is checked only after the existing accepted-operation fast path. */
+/** The original intent keeps its saved price/plan beyond maintenance TTL. */
 export async function readImagegenQuote(id:string,owner:string,operationId:string){
  assertImagegenQuoteReference(id,operationId);
  await ensureImagegenQuotes();
@@ -70,8 +73,7 @@ export async function latestImagegenQuote(request:ImagegenRequest,owner:string){
 export async function frozenImagegenQuote(request:ImagegenRequest,owner:string,confirmation:ImagegenSubmissionConfirmation){
  const row=await readImagegenQuote(confirmation.quoteId!,owner,request.operationId);
  if(row.fingerprint!==imagegenFingerprint(request))throw new ImagegenQuoteError();
- if(row.expired??new Date(row.expires_at).getTime()<=Date.now())throw new ImagegenConfirmationChanged();
- if(row.plan.totalCredits>0&&confirmation.confirmed!==true)throw new ImagegenConfirmationChanged();
+ if(confirmation.confirmed===false)throw new Error("已取消提交");
  await assertCurrentCreationFeature("/api/imagegen");
  // Only current authorization and owned input access are rechecked. No current
  // model/billing lookup, repricing or second plan is allowed on this branch.

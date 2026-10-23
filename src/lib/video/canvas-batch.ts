@@ -8,7 +8,6 @@ import { getPool } from "../db";
 import { encryptAtRest, decryptAtRest } from "../settings";
 import { canonicalConfig } from "../model-config/repository";
 import { ModelConfigError } from "../model-config/types";
-import { BillingError } from "../billing/types";
 import { getVideoNode, ensureVideoNodeSchema, saveVideoNodeTx } from "../canvas/video-node-repository";
 import { videoNodeIdSchema, type CanvasVideoNode } from "../canvas/video-node-schema";
 import { buildCanvasVideoWorkflow } from "./canvas-workflow";
@@ -49,12 +48,14 @@ export async function submitCanvasVideoBatch(actorRaw: string, raw: unknown) {
   try {
     acquired = (await client.query("SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS acquired", [lock])).rows[0].acquired;
     if (!acquired) throw new ModelConfigError("OPERATION_PENDING", "视频批次正在提交，请稍后核查原批次", 409);
-    const digest = createHash("sha256").update(canonicalConfig(input)).digest("hex");
+    const {billingVersion:_version,billingCredits:_credits,...intent}=input;
+    const digest = createHash("sha256").update(canonicalConfig(intent)).digest("hex");
+    const legacyDigest = createHash("sha256").update(canonicalConfig(input)).digest("hex");
     const old = (await client.query("SELECT * FROM app_canvas_video_batches WHERE id=$1", [input.idempotencyKey])).rows[0];
     let prepared: PreparedBatch,creationScope:CreationContext|undefined;
     if (old) {
       creationScope=assertWorkflowCreationScope(old.creation_scope,actor);
-      if (old.email !== actor || old.node_id !== input.nodeId || old.input_digest !== digest) throw new ModelConfigError("OPERATION_CONFLICT", "批次编号已用于另一请求", 409);
+      if (old.email !== actor || old.node_id !== input.nodeId || ![digest,legacyDigest].includes(old.input_digest)) throw new ModelConfigError("OPERATION_CONFLICT", "批次编号已用于另一请求", 409);
       const decoded = decryptAtRest(old.prepared_enc);
       if (!decoded) throw new ModelConfigError("WORKFLOW_SNAPSHOT_UNAVAILABLE", "批次冻结记录不可用，未重新提交", 503);
       prepared = JSON.parse(decoded);
@@ -72,9 +73,6 @@ export async function submitCanvasVideoBatch(actorRaw: string, raw: unknown) {
         plan.nodes.push({ ...structuredClone(original), id, canvasNodeId: id, canvasNodeRevision: 1, canvasLastTaskId: null });
       }
       const frozen = await freezeVideoWorkflow(actor, plan);
-      const quotes = Object.values(frozen).map(stage => stage.quote);
-      const credits = quotes.reduce((sum, quote) => sum + (quote.authorization ? quote.authorizedCredits : quote.credits), 0);
-      if (!source.config.comfyWorkflowId && (quotes.some(quote => quote.version !== input.billingVersion) || credits !== input.billingCredits)) throw new BillingError("PRICE_CHANGED", "批量价格已更新，请确认最新总价后重试", 409);
       for (const node of plan.nodes) {
         const quote = frozen[node.id].quote;
         node.request.billingConfirmation = { version: quote.version, credits: quote.authorization ? quote.authorizedCredits : quote.credits };

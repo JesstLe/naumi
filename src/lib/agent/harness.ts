@@ -63,7 +63,7 @@ export function assertHarnessSessionId(value: string, entry: "workbench" | "canv
   if (!/^[\w-]{1,64}$/.test(value) || (entry === "workbench" && value.startsWith("cv-")) || (entry === "canvas" && !value.startsWith("cv-"))) throw new HarnessError("INPUT_INVALID");
 }
 export function explicitQuoteConsent(message: string) {
-  // Only the new authenticated user turn, never history/steering/Skill/model text.
+  // Legacy verification export only. Runtime no longer uses wording to authorize a quote.
   return /^(?:确认(?:报价|生成|执行|继续)?|同意(?:报价|生成|执行|继续)?|按(?:这个|该|此)报价(?:生成|执行|继续)|yes|confirm|approved|proceed)[。.!！\s]*$/i.test(message.trim());
 }
 export function untrustedAgentData(source: string, value: unknown) {

@@ -90,7 +90,6 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
  assertCurrent();const plan=await previewImagegen(request,context);assertCurrent();const stages=plan.steps.map(s=>s.operation==="cutout"?"抠图":s.operation==="edit"?"编辑":"生成").join(" → ");
  if(plan.requestedParameters?.resolution)onPlan?.(plan.warnings.join("\n"));
  if(plan.intent.background==="transparent")onPlan?.(`已识别：透明背景 · ${stages} · ${plan.totalCredits} 积分`);
- if((plan.confirmationRequired||pending&&plan.totalCredits>pending.authorizedCredits)&&!window.confirm(`${pending?'报价已更新\n':''}${stages}\n${plan.warnings.join("\n")}\n本次合计 ${plan.totalCredits} 积分，是否执行？`))throw new ImagegenPreparationCancelled();
  const submit=async(latest:typeof plan)=>{
   assertCurrent();
   pending={version:1,owner:scope.owner.toLowerCase(),workspace,project:scope.project,actionKey,operationId:request.operationId,quoteId:latest.quote?.id,request,authorizedCredits:latest.totalCredits,confirmationRequired:latest.confirmationRequired,accepted:'unknown',context:{workspace,...capturedHeaders?{headers:capturedHeaders}:{},...scope.project!=='workspace'?{projectContext:scope.project}:{}}};
@@ -108,10 +107,6 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
   submitting=false;
   assertCurrent();const latest=await previewImagegen(request,context);assertCurrent();
   if(latest.requestedParameters?.resolution)onPlan?.(latest.warnings.join("\n"));
-  if(latest.totalCredits>plan.totalCredits||latest.confirmationRequired&&!plan.confirmationRequired){
-   const steps=latest.steps.map(s=>s.operation==="cutout"?"抠图":s.operation==="edit"?"编辑":"生成").join(" → ");
-   if(!window.confirm(`报价已更新\n${steps}\n${latest.warnings.join("\n")}\n本次合计 ${latest.totalCredits} 积分，是否执行？`))throw new ImagegenPreparationCancelled();
-  }
   assertCurrent();result=await submit(latest);
  }
  assertCurrent();

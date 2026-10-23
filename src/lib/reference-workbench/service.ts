@@ -45,7 +45,7 @@ export async function uploadFolder(owner:string,request:Request){
  const assets:Asset[]=[];for(let i=0;i<files.length;i++)assets.push(await saveAsset(owner,Buffer.from(await(files[i] as File).arrayBuffer()),paths[i]));
  const name=manifest[0].path.replace(/\\/g,"/").split("/")[0],id=randomUUID()+"/"+name;await putDocument(owner,"project",id,{name,assets} satisfies Project);return {ok:true,product_dir:id,saved:assets.length,skipped:0};
 }
-type TaskPlan={key:string;ref:string;root?:string;kind:string;prompt:string;settings:Settings;inputs:Asset[];geometry?:{width:number;height:number};plan?:ImagegenPlan;quote?:any;state?:string;startedAt?:number;text?:string;error?:string;source?:string;annotated?:string;messageId?:string;sessionId?:string;taskName?:string;promptIndex?:number;variantIndex?:number;autoAuthorization?:{credits:number;modelVersion:number;billingVersion:number}};
+type TaskPlan={key:string;ref:string;root?:string;kind:string;prompt:string;settings:Settings;inputs:Asset[];geometry?:{width:number;height:number};plan?:ImagegenPlan;quote?:any;state?:string;startedAt?:number;text?:string;error?:string;source?:string;annotated?:string;messageId?:string;sessionId?:string;taskName?:string;promptIndex?:number;variantIndex?:number;autoAuthorization?:{modelVersion:number;billingVersion:number}};
 export async function projectItems(owner:string,root:string,cfg:Settings,refresh=true){
  if(!root)return {items:[],products:[] as Asset[]};const p=await document<Project>(owner,"project",root),products=p.assets.filter(x=>classify(x.relative,cfg.sku_refs_dir_name)==="product");
  if(!products.length)throw new WorkbenchError("根目录或产品图文件夹中需要至少一张产品图");const ops=await operations(owner,undefined,root);
@@ -71,14 +71,15 @@ async function textRequest(owner:string,t:TaskPlan,id:string,quoted=false){
  if(quoted&&t.quote){headers.set("x-naumi-billing-version",String(t.quote.configVersion));headers.set("x-naumi-billing-credits",String(t.quote.tariff.pricing.mode==="api-cost-plus"?t.quote.authorizedCredits:t.quote.requestedCredits));if(t.quote.modelVersion)headers.set("x-naumi-accepted-model-context",await signAcceptedModelContext(owner,{modelVersion:t.quote.modelVersion,billingVersion:t.quote.configVersion}));}
  return new Request("http://internal/api/canvas/text-generate",{method:"POST",headers,body:JSON.stringify({prompt:t.prompt,images:t.inputs.map(a=>a.url),referenceTask:t.kind})});
 }
-const creditOf=(t:TaskPlan)=>(t.plan?.totalCredits??(t.quote?.tariff.pricing.mode==="api-cost-plus"?t.quote.authorizedCredits:t.quote?.requestedCredits)??0)+(t.autoAuthorization?.credits||0);
+const creditOf=(t:TaskPlan)=>t.plan?.totalCredits??(t.quote?.tariff.pricing.mode==="api-cost-plus"?t.quote.authorizedCredits:t.quote?.requestedCredits)??0;
 export async function publicModels(){const snapshot=await(await getModelAdministration()).repo.current();return workbenchModelOptions(snapshot.config.publicModels.filter(m=>m.enabled&&m.visible&&m.modality==="image"&&modelAllowedForFeature(m,"image.generate")).map(m=>({id:m.id,label:m.label})));}
 export async function preview(owner:string,path:string,raw:Record<string,any>){
  await ensureWorkbench();if(await isBanned(owner,""))throw new WorkbenchError("账号已被封禁",403);
  const body={...raw};delete body.native_quote;const rid=requestId(body.request_id||randomUUID()),fingerprint=digest({path,body:{...body,request_id:rid}});
  const previous=(await getPool().query<Operation>("SELECT * FROM app_reference_operations WHERE owner=$1 AND kind=$2 AND request_id=$3",[owner,path,rid])).rows[0];
- if(previous){if(previous.fingerprint!==fingerprint)throw new WorkbenchError("请求编号已经用于其他内容",409);if(previous.state!=="preview"||new Date(previous.expires_at).getTime()>Date.now())return quoteData(owner,previous);}
- const id=previous?.id||randomUUID(),tasks:TaskPlan[]=[],cfg=settings(body.config||body.settings||body,path.startsWith("chat")?8:20);
+ // An operation owns its original quote. expires_at is maintenance metadata, not consent to reprice.
+ if(previous){if(previous.fingerprint!==fingerprint)throw new WorkbenchError("请求编号已经用于其他内容",409);return quoteData(owner,previous);}
+ const id=randomUUID(),tasks:TaskPlan[]=[],cfg=settings(body.config||body.settings||body,path.startsWith("chat")?8:20);
  if(path.startsWith("workbench/")){
   const {items,products}=await projectItems(owner,body.workbench_root,cfg),selected=path==="workbench/edit"?[body]:body.items;
   if(!Array.isArray(selected)||!selected.length||selected.length>500)throw new WorkbenchError("请先选择参考图");
@@ -106,25 +107,23 @@ export async function preview(owner:string,path:string,raw:Record<string,any>){
    for(let n=1;n<=frozen.count;n++)tasks.push({key:`${index+1}-${n}`,ref:"",kind:"generate",prompt:t.prompt,settings:{...frozen,ratio:frozen.ratio_mode==="smart"?t.ratio:frozen.ratio},inputs:selected,messageId:m.id,sessionId:body.session_id,taskName:t.name,promptIndex:index+1,variantIndex:n});}
  }else throw new WorkbenchError("未知操作",404);
  let versions:{modelVersion:number;billingVersion:number}|undefined;
- for(const t of tasks){if(t.kind==="infer"||t.kind==="chat-plan"){t.quote=await quoteForRequest(await textRequest(owner,t,id),{feature:"canvas.text-generate",quantity:1});if(t.kind==="chat-plan"&&t.settings.task_mode==="auto"){const image=await imagePlan(owner,{...t,kind:"generate",geometry:undefined},id);t.autoAuthorization={credits:image.totalCredits*8*t.settings.count,modelVersion:image.modelVersion,billingVersion:image.billingVersion};}}else{t.plan=await imagePlan(owner,t,id,versions);versions={modelVersion:t.plan.modelVersion,billingVersion:t.plan.billingVersion};}}
- await getPool().query(`INSERT INTO app_reference_operations(id,owner,kind,request_id,fingerprint,body,plans) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb) ON CONFLICT(owner,kind,request_id) DO UPDATE SET plans=excluded.plans,body=excluded.body,expires_at=now()+interval '15 minutes' WHERE app_reference_operations.state='preview'`,[id,owner,path,rid,fingerprint,JSON.stringify({...body,request_id:rid}),JSON.stringify(tasks)]);
+ for(const t of tasks){if(t.kind==="infer"||t.kind==="chat-plan"){t.quote=await quoteForRequest(await textRequest(owner,t,id),{feature:"canvas.text-generate",quantity:1});if(t.kind==="chat-plan"&&t.settings.task_mode==="auto"){const image=await imagePlan(owner,{...t,kind:"generate",geometry:undefined},id);t.autoAuthorization={modelVersion:image.modelVersion,billingVersion:image.billingVersion};}}else{t.plan=await imagePlan(owner,t,id,versions);versions={modelVersion:t.plan.modelVersion,billingVersion:t.plan.billingVersion};}}
+ await getPool().query(`INSERT INTO app_reference_operations(id,owner,kind,request_id,fingerprint,body,plans) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb) ON CONFLICT(owner,kind,request_id) DO NOTHING`,[id,owner,path,rid,fingerprint,JSON.stringify({...body,request_id:rid}),JSON.stringify(tasks)]);
  const saved=(await getPool().query<Operation>("SELECT * FROM app_reference_operations WHERE owner=$1 AND kind=$2 AND request_id=$3",[owner,path,rid])).rows[0];if(saved.fingerprint!==fingerprint)throw new WorkbenchError("请求编号已经用于其他内容",409);return quoteData(owner,saved);
 }
 async function quoteData(owner:string,op:Operation){const row=(await getPool().query("SELECT GREATEST(0,(SELECT COALESCE(sum(remaining),0) FROM app_credit_batches WHERE email=$1 AND NOT expired AND expires_at>now())-credits_used)::int AS available FROM app_users WHERE email=$1",[owner])).rows[0];return {...publicQuote(op),availableCredits:row?.available||0};}
-function publicQuote(op:Operation){const plans=op.plans as TaskPlan[],total=plans.reduce((n,t)=>n+creditOf(t),0);return {ok:true,id:op.id,request_id:op.request_id,state:op.state,totalCredits:total,items:plans.map(t=>({key:t.key,credits:creditOf(t),ratio:t.plan?.request.parameters.ratio,modelId:t.plan?.request.modelId||t.quote?.facts?.modelId})),warnings:Array.from(new Set(plans.flatMap(t=>[...t.plan?.warnings||[],...(t.autoAuthorization?[`自动执行授权最多8组×${t.settings.count}张，上限${t.autoAuthorization.credits}积分；仅实际生成扣费，超出授权改为待确认。`]:[])])))};}
+function publicQuote(op:Operation){const plans=op.plans as TaskPlan[],total=plans.reduce((n,t)=>n+creditOf(t),0);return {ok:true,id:op.id,request_id:op.request_id,state:op.state,totalCredits:total,items:plans.map(t=>({key:t.key,credits:creditOf(t),ratio:t.plan?.request.parameters.ratio,modelId:t.plan?.request.modelId||t.quote?.facts?.modelId})),warnings:Array.from(new Set(plans.flatMap(t=>t.plan?.warnings||[])))};}
 export async function accept(owner:string,path:string,body:Record<string,any>){
- const q=body.native_quote;if(!q?.id||q.confirmed!==true)throw new WorkbenchError("请确认积分报价",409);
+ const q=body.native_quote;if(!q?.id)throw new WorkbenchError("缺少原始任务报价",409);
  const op=await operation(owner,String(q.id));const actual:Record<string,any>={...body,request_id:op.request_id};delete actual.native_quote;
  // Chat new-session/context are server-generated and not supplied by the browser.
  const original={...op.body};delete original.context;if(path==="chat-image/send"&&!actual.session_id)original.session_id=actual.session_id;
  if(op.kind!==path||digest({path,body:actual})!==digest({path,body:original}))throw new WorkbenchError("报价与提交内容不一致",409);
- if(q.credits!==publicQuote(op).totalCredits)throw new WorkbenchError("积分报价不一致",409);
  await transaction(`reference-owner:${owner}`,async tx=>{
   const current=await operation(owner,op.id,tx);if(current.state!=="preview")return;
-  if(new Date(current.expires_at).getTime()<Date.now())throw new WorkbenchError("报价已过期，请重新确认",409);
+  if(q.confirmed===false)throw new WorkbenchError("已取消提交",400);
   if(await isBanned(owner,""))throw new WorkbenchError("账号已被封禁",403);
-  const admin=await getModelAdministration(),models=await admin.repo.current(),billing=await admin.billing.current();
-  if((current.plans as TaskPlan[]).some(t=>t.plan&&(t.plan.modelVersion!==models.version||t.plan.billingVersion!==billing.version)||t.autoAuthorization&&(t.autoAuthorization.modelVersion!==models.version||t.autoAuthorization.billingVersion!==billing.version)||t.quote&&(t.quote.configVersion!==billing.version||t.quote.modelVersion&&t.quote.modelVersion!==models.version)))throw new WorkbenchError("模型或价格已更新，请重新预览",409);
+  if(!current.plans.length||(current.plans as TaskPlan[]).some(t=>t.kind==="infer"||t.kind==="chat-plan"?!t.quote:!t.plan))throw new WorkbenchError("任务缺少原始执行报价",409);
   if(path.startsWith("workbench/")){
    const competing=(await tx.query<Operation>("SELECT * FROM app_reference_operations WHERE owner=$1 AND state='accepted' AND id<>$2",[owner,op.id])).rows;
    if(competing.some(o=>o.plans.some(t=>(current.plans as TaskPlan[]).some(c=>c.ref===t.ref))))throw new WorkbenchError("这张参考图仍有进行中任务",409);
@@ -189,13 +188,13 @@ async function executeText(op:Operation,index:number){
  }catch(e){Object.assign(t,textFailureState(stage,e));}
  await transaction(`reference-text-result:${op.id}`,async tx=>{const current=await operation(op.owner,op.id,tx);current.plans[index]={...current.plans[index],...t};await tx.query("UPDATE app_reference_operations SET plans=$2::jsonb,state=$3,updated_at=now() WHERE id=$1",[op.id,JSON.stringify(current.plans),current.plans.every(p=>["done","failed","maybe_submitted"].includes(p.state))?"done":"accepted"]);});
  if(t.kind==="chat-plan")await transaction(`reference-chat:${t.sessionId}`,async tx=>{const chat=await document<any>(op.owner,"chat",t.sessionId!,tx),m=chat.messages.find((m:any)=>m.id===t.messageId);if(!m||m.status==="cancelled")return;const plan=t.state==="done"?JSON.parse(t.text!):null;Object.assign(m,{text:plan?.reply||t.error,plan,status:plan?.action==="generate"?"plan_pending":t.state==="done"?"done":"failed",chargedCredits:result?.chargedCredits,updated_at:Date.now()/1000});await putDocument(op.owner,"chat",t.sessionId!,chat,tx);});
- if(t.kind==="chat-plan"&&t.state==="done"&&t.autoAuthorization&&JSON.parse(t.text!).action==="generate")await executeAutoPlan(op,t).catch(async e=>{await transaction(`reference-chat:${t.sessionId}`,async tx=>{const chat=await document<any>(op.owner,"chat",t.sessionId!,tx),m=chat.messages.find((m:any)=>m.id===t.messageId);if(m?.status==="plan_pending"){m.text+="\n自动执行尚未提交，请确认当前生图报价："+(e instanceof WorkbenchError?e.message:"模型执行计划需重新确认");await putDocument(op.owner,"chat",t.sessionId!,chat,tx);}});});
+ if(t.kind==="chat-plan"&&t.state==="done"&&t.autoAuthorization&&JSON.parse(t.text!).action==="generate")await executeAutoPlan(op,t).catch(async e=>{await transaction(`reference-chat:${t.sessionId}`,async tx=>{const chat=await document<any>(op.owner,"chat",t.sessionId!,tx),m=chat.messages.find((m:any)=>m.id===t.messageId);if(m?.status==="plan_pending"){m.text+="\n自动执行尚未提交："+(e instanceof WorkbenchError?e.message:"执行准备失败，请查询当前计划");await putDocument(op.owner,"chat",t.sessionId!,chat,tx);}});});
 }
 async function executeAutoPlan(op:Operation,t:TaskPlan){
  const generated=JSON.parse(t.text!),id=stableId(op.id,"auto-images"),plans:TaskPlan[]=[];
  for(const [i,task] of generated.tasks.entries()){const inputs=task.image_indices.length?task.image_indices.map((n:number)=>t.inputs[n]):t.inputs;
   for(let n=1;n<=t.settings.count;n++){const child:TaskPlan={key:`${i+1}-${n}`,ref:"",kind:"generate",prompt:task.prompt,inputs,settings:{...t.settings,ratio:t.settings.ratio_mode==="smart"?task.ratio:t.settings.ratio},messageId:t.messageId,sessionId:t.sessionId,taskName:task.name,promptIndex:i+1,variantIndex:n};child.plan=await imagePlan(op.owner,child,id,t.autoAuthorization);plans.push(child);}}
- if(plans.reduce((sum,t)=>sum+t.plan!.totalCredits,0)>t.autoAuthorization!.credits)return;
+ // Actual frozen child quotes go through native wallet reservation; no synthetic credit cap.
  await transaction(`reference-chat:${t.sessionId}`,async tx=>{const chat=await document<any>(op.owner,"chat",t.sessionId!,tx),m=chat.messages.find((m:any)=>m.id===t.messageId);if(!m||m.status!=="plan_pending")return;
   await tx.query("INSERT INTO app_reference_operations(id,owner,kind,request_id,fingerprint,body,plans,state) VALUES($1,$2,'chat-image/auto',$3,$4,$5::jsonb,$6::jsonb,'accepted') ON CONFLICT(id) DO NOTHING",[id,op.owner,id,digest(plans),JSON.stringify({session_id:t.sessionId,message_id:t.messageId}),JSON.stringify(plans)]);m.status="queued";m.operationId=id;await putDocument(op.owner,"chat",t.sessionId!,chat,tx);
  });await synchronize(await operation(op.owner,id));
