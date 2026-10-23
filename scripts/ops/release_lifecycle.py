@@ -433,7 +433,7 @@ def record_failed_observation(folder, action, p, revision, reason):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['check', 'begin', *STAGES, 'status', 'publish47-nas', 'publish47-saas', 'publish47-video-family', 'abort47-video-family', 'bind47-capacity', 'publish47-imagegen-simplify'])
+    parser.add_argument('action', choices=['check', 'begin', *STAGES, 'status', 'publish47-nas', 'publish47-saas', 'publish47-video-family', 'abort47-video-family', 'bind47-capacity', 'publish47-imagegen-simplify', 'publish47-no-user'])
     parser.add_argument('--config', type=pathlib.Path)
     parser.add_argument('--review', type=pathlib.Path)
     parser.add_argument('--apply', action='store_true')
@@ -453,6 +453,11 @@ def main(argv=None):
                     'LIVE_VIDEO_FAMILY_ABORT_CONFIG_AND_REVIEW_REQUIRED')
             from release47_video_family_abort import main as abort_video_family
             abort_video_family(a.config, a.review, a.apply)
+            return 0
+        if a.action == 'publish47-no-user':
+            require(os.name == 'posix' and a.config is not None, 'LIVE_NO_USER_SUCCESSOR_CONFIG_REQUIRED')
+            from release47_no_user_successor import main as publish_no_user
+            publish_no_user(a.config)
             return 0
         if a.action == 'publish47-imagegen-simplify':
             require(os.name == 'posix' and a.config is not None, 'LIVE_IMAGEGEN_SUCCESSOR_CONFIG_REQUIRED')

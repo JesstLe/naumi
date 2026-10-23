@@ -168,7 +168,7 @@ class HostTransaction:
                   state_dir, build_version, admission='draining', reviewed_omitted_mounts=None, media_binding=None,
                   before_create=None, runtime_recovery=None, reviewed_prior_state_dir=None,
                   reviewed_nas_credentials_sha256=None, reviewed_video_reference_origin=None,
-                  reviewed_combined_media=None):
+                  reviewed_combined_media=None, reviewed_memory_environment=None):
         require(re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]{0,95}', name), 'INVALID_NEW_SLOT_NAME')
         require(type(port) is int and 1024 <= port <= 65535, 'INVALID_LOOPBACK_PORT')
         require(re.fullmatch('sha256:[a-f0-9]{64}', image) and re.fullmatch('[a-f0-9]{40}', commit), 'FIXED_IMAGE_REQUIRED')
@@ -235,6 +235,41 @@ class HostTransaction:
                    INTERNAL_APP_ORIGIN='http://127.0.0.1:3000', NAUMI_VIDEO_WORKER='0',
                    HOSTNAME='0.0.0.0', NAUMI_RELEASE_PEERS='{}',
                    NODE_OPTIONS='--max-old-space-size=' + str(max(256, memory_mib - 384)) + ' --require=/app/scripts/release-http-observer.cjs')
+        if reviewed_memory_environment is not None:
+            # Opt-in, new-slot-only budget. Old callers retain their exact default.
+            review = reviewed_memory_environment
+            require(isinstance(review, dict) and set(review) == {'memoryReview', 'environment'},
+                    'EXPLICIT_REVIEWED_MEMORY_ENVIRONMENT_REQUIRED')
+            budget, overrides = review['memoryReview'], review['environment']
+            allowed = {'NODE_OPTIONS', 'MALLOC_ARENA_MAX', 'VIPS_CONCURRENCY',
+                       'NAUMI_NATIVE_MEMORY_PROFILE', 'UV_THREADPOOL_SIZE',
+                       'NAUMI_IMAGE_JOB_CONCURRENCY_GENERATE', 'NAUMI_IMAGE_JOB_CONCURRENCY_IMAGEGEN',
+                       'NAUMI_IMAGE_JOB_CONCURRENCY_SUITE', 'NAUMI_IMAGE_JOB_CONCURRENCY_APLUS'}
+            require(self.target == TARGET and isinstance(budget, dict) and budget.get('reviewed') is True
+                    and type(budget.get('webHeapMiB')) is int and budget['webHeapMiB'] >= 256
+                    and type(budget.get('nativeReserveMiB')) is int and budget['nativeReserveMiB'] >= 768
+                    and budget['webHeapMiB'] + budget['nativeReserveMiB'] <= memory_mib
+                    and budget.get('webMinMiB', 0) > 2048
+                    and budget['webMinMiB'] <= memory_mib <= budget.get('webMaxMiB', 0)
+                    and budget.get('hostReserveMiB', 0) >= 1024,
+                    'REVIEWED_HEAP_AND_NATIVE_MEMORY_BUDGET_REQUIRED')
+            require(isinstance(overrides, dict) and 'NODE_OPTIONS' in overrides
+                    and set(overrides).issubset(allowed)
+                    and {'NAUMI_IMAGE_JOB_CONCURRENCY_GENERATE', 'NAUMI_IMAGE_JOB_CONCURRENCY_IMAGEGEN',
+                         'NAUMI_IMAGE_JOB_CONCURRENCY_SUITE', 'NAUMI_IMAGE_JOB_CONCURRENCY_APLUS'}.issubset(overrides)
+                    and overrides == budget.get('environment')
+                    and all(isinstance(v, str) and v and '\n' not in v and '\r' not in v for v in overrides.values())
+                    and overrides['NODE_OPTIONS'] == '--max-old-space-size=' + str(budget['webHeapMiB'])
+                        + ' --require=/app/scripts/runtime-memory.cjs --require=/app/scripts/release-http-observer.cjs'
+                    and overrides.get('NAUMI_NATIVE_MEMORY_PROFILE') == 'bounded'
+                    and overrides.get('MALLOC_ARENA_MAX') == '2' and overrides.get('UV_THREADPOOL_SIZE') == '2'
+                    and overrides.get('VIPS_CONCURRENCY') == '1'
+                    and all(k in ('NODE_OPTIONS', 'NAUMI_NATIVE_MEMORY_PROFILE') or re.fullmatch(r'[1-9][0-9]{0,2}', v)
+                            for k, v in overrides.items())
+                    and all(1 <= int(v) <= 256 for k, v in overrides.items()
+                            if k.startswith('NAUMI_IMAGE_JOB_CONCURRENCY_')),
+                    'MEMORY_ENVIRONMENT_NOT_BOUND_OR_ALLOWED')
+            env.update(overrides)
         for key in ['NAUMI_RELEASE_BOOT_ID', 'NAUMI_RELEASE_BOOT_SOURCE', 'NAUMI_RELEASE_INSTANCE_ID', 'NAUMI_RELEASE_COMMIT']:
             env.pop(key, None)
         require(all('\n' not in k + v and '\r' not in k + v for k, v in env.items()), 'MULTILINE_ENV_NOT_SUPPORTED')
