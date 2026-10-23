@@ -5,7 +5,7 @@ import { ImageNodeDraftStore, imageDraftKey, imageDraftScope } from "../src/lib/
 import { imagegenRequestSchema } from "../src/lib/imagegen/schema";
 import { compileImagegenPrompt } from "../src/lib/imagegen/prompt";
 import { resolveImagegenIntent } from "../src/lib/imagegen/intent";
-import { frameCandidates } from "../src/lib/imagegen/frame-ratio";
+import { frameCandidates, automaticFrameRatio } from "../src/lib/imagegen/frame-ratio";
 
 const node = (id: string, title = id) => ({ key: `node:${id}`, sourceNodeId: id, title, url: `/media/${id}.png` });
 const a = node("product", "产品原图"), b = node("scene", "场景图"), c = node("style", "风格图");
@@ -29,7 +29,7 @@ assert.match(compiled, /第3张输入图 = 图3；用途：风格参考/);
 assert.match(compiled, /用户明确指定某张图的使用方式时，以本次要求为准/);
 assert.match(referenceManifestError("继续编辑", Array.from({length:17},(_,index)=>({number:index+1,title:"图片",role:index?"reference":"edit-target"})))!, /最多可引用16张/);
 assert.match(referenceManifestError(original, imageReferenceManifest(resolveCanvasImageReferences([a,c], roles).references))!, /图2/);
-assert.match(referenceManifestError("继续编辑", imageReferenceManifest(resolveCanvasImageReferences([a,c], roles).references))!, /编辑目标/);
+assert.equal(referenceManifestError("参考图生成", imageReferenceManifest(resolveCanvasImageReferences([a,c], roles).references)), null);
 assert.deepEqual(insertImageReference("使用@场景做背景", 2, 5), { prompt: "使用【图2】做背景", caret: 6 });
 assert.equal(inheritableImagePrompt("保留【图1】，参考【图2】"), "", "new-node and empty pending prompts must not reuse another task's labels");
 assert.equal(inheritableImagePrompt(" 保留产品文字 "), "保留产品文字");
@@ -58,4 +58,23 @@ assert.equal(imagegenRequestSchema.safeParse({...base,prompt:"参考【图9】"}
 const legacy=imagegenRequestSchema.parse({...base,prompt:"保留产品文字",inputs:[{artworkId:"old-target",role:"edit-target"},{artworkId:"old-ref",role:"reference"}]});
 assert.match(compileImagegenPrompt(legacy,resolveImagegenIntent(legacy)),/用户本次原始要求/);
 assert.equal(imagegenRequestSchema.safeParse({...base,mode:"generate",inputs:[],prompt:"一只鹈鹕"}).success,true);
+const single = resolveCanvasImageReferences([a]);
+for (const role of ["reference", "insert", "style"] as const) {
+  const only = resolveCanvasImageReferences([a], changeImageReferenceRole(single.bindings, a.key, role));
+  assert.equal(only.references[0].role, role);
+  const refs = imageReferenceManifest(only.references);
+  assert.equal(referenceManifestError("参考【图1】生成全身图", refs), null);
+  const request = imagegenRequestSchema.parse({...base,mode:"generate",prompt:"参考【图1】生成全身图",inputs:refs.map(({role,...reference})=>({artworkId:"asset-single",role,reference}))});
+  assert.equal(resolveImagegenIntent(request).operation,"generate");
+  assert.match(compileImagegenPrompt(request,resolveImagegenIntent(request)),/均为参考素材/);
+  assert.equal(imagegenRequestSchema.safeParse({...request,mode:"edit"}).success,false);
+  assert.ok(resolveImagegenIntent({...request,prompt:"抠图"}).conflicts.length);
+}
+const allReferences = [
+  {artworkId:"subject",role:"insert" as const,width:800,height:1200},
+  {artworkId:"style",role:"style" as const,width:800,height:1200},
+];
+assert.equal(frameCandidates(allReferences,"",undefined,"all-inputs").length,2);
+const referenceRequest = imagegenRequestSchema.parse({...base,mode:"generate",prompt:"参考图片生成全身图",inputs:allReferences.map(({width,height,...input})=>input),parameters:{ratio:"auto"},framePolicy:"all-inputs"});
+assert.equal(automaticFrameRatio(referenceRequest,allReferences,"generate"),"2:3");
 console.log("PASS canvas image references: stable identity, target order, roles, deleted references, scoped drafts, frozen prompt, server validation, legacy compatibility; supplier calls=0");

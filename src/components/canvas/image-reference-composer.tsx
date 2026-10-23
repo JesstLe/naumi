@@ -48,9 +48,9 @@ export function ImageReferenceComposer(props: Props) {
             <span className="truncate" title={ref.title}>{ref.title}</span>
             {ref.sourceNodeId && <button type="button" className="shrink-0" onClick={() => props.onLocate(ref.sourceNodeId!)} aria-label={`${english ? "Locate source of image " : "定位图"}${ref.number}${english ? "" : "来源节点"}`}><LocateFixed size={12} /></button>}
           </div>
-          <select aria-label={`${english ? "Role of image " : "图"}${ref.number}${english ? "" : "用途"}`} value={ref.role} disabled={readOnly}
+          <select aria-label={`${english ? "Role of image " : "图"}${ref.number}${english ? "" : "用途"}`} value={ref.role} disabled={readOnly} title={ref.role === "edit-target" ? (english ? "Modify this original image" : "直接修改这张原图") : referenceRoleLabels[ref.role][english ? "en" : "zh"]}
             onChange={event => props.onRole(ref.key, event.target.value as ReferenceRole)} className="canvas-ui-control mt-1 w-full rounded border px-0.5 py-0.5 text-[10px]">
-            {(Object.keys(referenceRoleLabels) as ReferenceRole[]).map(role => <option key={role} value={role} disabled={ref.role === "edit-target" && role !== "edit-target"}>{referenceRoleLabels[role][english ? "en" : "zh"]}</option>)}
+            {(Object.keys(referenceRoleLabels) as ReferenceRole[]).map(role => <option key={role} value={role}>{referenceRoleLabels[role][english ? "en" : "zh"]}</option>)}
           </select>
         </div>
         {!readOnly && <button type="button" onClick={() => props.onRemove(ref)} className="absolute right-0.5 top-0.5 rounded p-0.5 text-[var(--canvas-ui-muted)] hover:bg-black/10" aria-label={`${english ? "Remove image " : "移除图"}${ref.number}`}><X size={12} /></button>}

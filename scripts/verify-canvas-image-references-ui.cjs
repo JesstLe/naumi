@@ -4,7 +4,7 @@ const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),
 const {createHash}=require('node:crypto');
 const esbuild=require('esbuild'),sharp=require('sharp'),postcss=require('postcss'),tailwind=require('tailwindcss');
 const {chromium,expect}=require('@playwright/test');
-const root=process.cwd(),out=path.resolve('output/canvas-image-references-20261023');fs.mkdirSync(out,{recursive:true});
+const root=process.cwd(),out=path.resolve(process.env.CANVAS_REFERENCE_EVIDENCE||'output/canvas-image-references-20261023');fs.mkdirSync(out,{recursive:true});
 const entry=`import React,{useState,useRef,useEffect}from'react';import{createRoot}from'react-dom/client';
 import{ImageReferenceComposer}from'@/components/canvas/image-reference-composer';import{useImageNodeDraft}from'@/components/canvas/use-image-node-draft';
 import{resolveCanvasImageReferences,changeImageReferenceRole,imageReferenceManifest}from'@/lib/canvas/image-references';
@@ -46,17 +46,32 @@ async function main(){
   if(route==='/api/imagegen/plan'||route==='/api/imagegen'){
     const {confirmation,...body}=JSON.parse(bytes);const request=contracts.imagegenRequestSchema.parse(body),intent=contracts.resolveImagegenIntent(request),prompt=contracts.compileImagegenPrompt(request,intent);
     requests.push({route,request,compiledPrompt:prompt});if(route==='/api/imagegen/plan'){lastPlan=JSON.stringify(request);return res.end(JSON.stringify({steps:[{operation:'edit'}],warnings:[],totalCredits:0,modelVersion:1,billingVersion:1,confirmationRequired:false,intent}))}
-    assert.equal(JSON.stringify(request),lastPlan,'preview and submission must freeze identical references');return res.end(JSON.stringify({jobId:'fixture-job'}));
+    assert.equal(JSON.stringify(request),lastPlan,'preview and submission must freeze identical references');return res.end(JSON.stringify({jobId:'imagegen-'+request.operationId}));
   }
   res.statusCode=404;res.end('{}');
  }catch(error){errors.push(error.stack);res.statusCode=400;res.end(JSON.stringify({error:error.message}))}});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const base='http://127.0.0.1:'+server.address().port;
+ if(process.env.CANVAS_REFERENCE_PREVIEW==='1'){console.log('FIXTURE_URL='+base);return}
  let browser;
  try{
   const executable=['C:/Program Files/Google/Chrome/Application/chrome.exe','C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(file=>fs.existsSync(file));
   browser=await chromium.launch({headless:true,...(executable?{executablePath:executable}:{})});const context=await browser.newContext({viewport:{width:1440,height:900}});
   await context.route('**/*',route=>new URL(route.request().url()).origin===base?route.continue():route.abort());const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));await page.goto(base);
   const prompt=page.getByRole('textbox',{name:'节点提示词'});
+  // The original's role must be selectable too, including with only one image.
+  for(const role of ['reference','insert','style']) {
+    await page.getByLabel('图1用途').selectOption(role);await expect(page.getByLabel('图1用途')).toHaveValue(role);
+    assert.equal(await page.getByLabel('图1用途').locator('option:disabled').count(),0);
+    await expect(page.getByRole('alert')).toHaveCount(0);
+  }
+  await page.getByRole('button',{name:'节点 B',exact:true}).click();
+  await page.getByLabel('图1用途').selectOption('insert');
+  await prompt.fill('参考【图1】生成全身图');await page.getByRole('button',{name:'生成',exact:true}).click();await expect(page.getByLabel('提交结果')).toContainText('imagegen-');
+  const referenceOnly=requests.find(r=>r.route==='/api/imagegen');assert.equal(referenceOnly.request.mode,'generate');assert.equal(referenceOnly.request.inputs[0].role,'insert');assert.match(referenceOnly.compiledPrompt,/均为参考素材/);
+  fs.writeFileSync(path.join(out,'reference-only-request.json'),JSON.stringify(referenceOnly,null,2));
+  await page.screenshot({path:path.join(out,'reference-only-desktop.png'),fullPage:true});
+  await page.getByLabel('图1用途').selectOption('edit-target');await page.getByLabel('图1用途').selectOption('reference');await expect(page.getByLabel('图1用途')).toHaveValue('reference');await prompt.fill('');
+  await page.getByRole('button',{name:'节点 A',exact:true}).click();await page.getByLabel('图1用途').selectOption('edit-target');requests.length=0;
   await prompt.fill('按钮引用');await page.getByRole('button',{name:'引用图片',exact:true}).click();await page.getByRole('listbox').getByRole('option').nth(1).click();await expect(prompt).toHaveValue('按钮引用【图2】');
   await prompt.fill('@');await prompt.press('Escape');await expect(page.getByRole('listbox')).toHaveCount(0);
   await prompt.fill('@风');await prompt.dispatchEvent('compositionstart');await expect(page.getByRole('listbox')).toHaveCount(0);await prompt.dispatchEvent('keydown',{key:'Enter',isComposing:true});await expect(prompt).toHaveValue('@风');await prompt.dispatchEvent('compositionend');await expect(page.getByRole('listbox').getByRole('option')).toHaveCount(1);
@@ -64,7 +79,8 @@ async function main(){
   await page.getByLabel('图2用途').selectOption('edit-target');await page.getByLabel('图1用途').selectOption('insert');await page.getByLabel('图3用途').selectOption('style');
   assert.deepEqual(await page.locator('[data-reference-number]').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('data-reference-number'))),['2','1','3']);
   await prompt.fill('把【图1】的产品放到【图2】，采用【图3】的光线');await page.getByRole('button',{name:'定位图2来源节点'}).click();assert.equal(await page.evaluate(()=>qa.state().located),'source-1');
-  await page.getByRole('button',{name:'生成',exact:true}).click();await expect(page.getByLabel('提交结果')).toContainText('fixture-job');
+  await page.getByRole('button',{name:'生成',exact:true}).click();await expect(page.getByLabel('提交结果')).toContainText('imagegen-');
+  await expect.poll(()=>requests.filter(r=>r.route==='/api/imagegen').length).toBe(1);
   const submitted=requests.find(r=>r.route==='/api/imagegen').request;assert.deepEqual(submitted.inputs.map(i=>[i.reference.number,i.role]),[[2,'edit-target'],[1,'insert'],[3,'style']]);
   assert.deepEqual(requests.filter(r=>r.route==='/api/imagegen/inputs').map(r=>r.pixel),[[104,159,144],[228,130,106],[147,146,200]]);
   assert.match(requests.find(r=>r.route==='/api/imagegen').compiledPrompt,/把第2张输入图（图1）的产品放到第1张输入图（图2）/);
@@ -77,9 +93,9 @@ async function main(){
   await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:path.join(out,'mobile.png'),fullPage:true});
   await prompt.fill('@');await prompt.press('ArrowDown');await prompt.press('Enter');await expect(prompt).toHaveValue('【图1】');
   const beforeInvalid=requests.length;assert.equal(await page.evaluate(async()=>{const form=new FormData();form.set('canvasReferences','not-json');try{await qa.submitForm(form,'A',undefined,{owner:'fixture@example.test',project:'fixture'});return null}catch(error){return error.accepted}}),false);assert.equal(requests.length,beforeInvalid);
-  await page.reload();await expect(prompt).toHaveValue('【图1】');await expect(page.getByRole('alert')).toContainText('编辑目标');
+  await page.reload();await expect(prompt).toHaveValue('【图1】');await expect(page.getByRole('alert')).toHaveCount(0);
   await page.evaluate(()=>qa.readOnly(true));await expect(page.getByLabel('图1用途')).toBeDisabled();await expect(page.getByRole('button',{name:'移除图1',exact:true})).toHaveCount(0);
-  assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'receipt.json'),JSON.stringify({fixture:true,supplierCalls:0,checks:['mention picker','reference button','IME and escape','target reorder','source locate','roles and actual image bytes','preview/submit identity','dangling reference blocks submit','removed numbers not reused','uploaded reference target','node drafts','keyboard','mobile width','preflight not accepted','refresh missing upload target','read-only'],requests,errors},null,2));
+  assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'receipt.json'),JSON.stringify({fixture:true,supplierCalls:0,checks:['default original role unlocked','single reference-only submit','original can be reselected and demoted','mention picker','reference button','IME and escape','target reorder','source locate','roles and actual image bytes','preview/submit identity','dangling reference blocks submit','removed numbers not reused','uploaded reference target','node drafts','keyboard','mobile width','preflight not accepted','refresh missing upload target','read-only'],requests,errors},null,2));
   console.log('PASS canvas reference UI and transport fixture; supplier calls=0; evidence='+out);
  }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}
 }
