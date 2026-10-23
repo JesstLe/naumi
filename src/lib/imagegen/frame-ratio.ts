@@ -24,7 +24,10 @@ export function frameCandidates(inputs: FrameInput[], useCase = "", frameSourceI
   if (inputs.some(input => input.role === "mask") || retainEditingCanvas) return targets;
   // Generic uploads do not convey semantic roles. Do not pretend that the
   // second uploaded image is necessarily the layout reference.
-  if (framePolicy === "all-inputs") return sources.filter(input => input.role !== "style" && input.role !== "insert");
+  if (framePolicy === "all-inputs") {
+    const layout = sources.filter(input => input.role !== "style" && input.role !== "insert");
+    return layout.length ? layout : sources;
+  }
   const references = sources.filter(input => input.role === "reference");
   return references.length ? references : targets.length ? targets : sources;
 }

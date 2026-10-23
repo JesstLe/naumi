@@ -10,7 +10,7 @@ export const referenceLabelSchema = z.strictObject({
 export const canvasReferenceManifestSchema = z.array(referenceLabelSchema.extend({ role: referenceRoleSchema })).max(16);
 export type CanvasReferenceManifest = z.infer<typeof canvasReferenceManifestSchema>;
 export const referenceRoleLabels: Record<ReferenceRole, { zh: string; en: string }> = {
-  "edit-target": { zh: "编辑目标", en: "Edit target" },
+  "edit-target": { zh: "要修改的原图", en: "Original to edit" },
   reference: { zh: "构图参考", en: "Composition" },
   insert: { zh: "主体参考", en: "Subject" },
   style: { zh: "风格参考", en: "Style" },
@@ -26,7 +26,8 @@ export function referenceManifestError(prompt: string, refs: CanvasReferenceMani
   if (numbers.size !== refs.length) return "参考图编号重复，请重新选择图片";
   const missing = mentionedReferenceNumbers(prompt).filter(number => !numbers.has(number));
   if (missing.length) return `图${missing.join("、图")}已移除或未载入，请重新连接图片或删除提示词中的对应引用`;
-  if (refs.length && (refs.filter(ref => ref.role === "edit-target").length !== 1 || refs[0].role !== "edit-target")) return "请选择一张编辑目标";
+  const targets = refs.filter(ref => ref.role === "edit-target");
+  if (targets.length > 1 || targets.length === 1 && refs[0].role !== "edit-target") return "要修改的原图只能选择一张，并放在输入首位";
   return null;
 }
 
@@ -40,7 +41,11 @@ export function compileReferenceInstructions(prompt: string, refs: CanvasReferen
     return `第${index + 1}张输入图（图${number}）`;
   });
   if (!refs.length) return resolved;
+  const hasTarget = refs.some(ref => ref.role === "edit-target");
+  const usage = hasTarget
+    ? "以要修改的原图为基础；未明确要求的其他主体或文字，不自动替换进原图。"
+    : "本次图片均为参考素材，按用户要求生成新图，不将任意参考图默认作为要保留的原图。";
   return `${resolved}\n\n输入图片对应关系（按实际发送顺序）：\n${refs.map((ref, index) =>
     `第${index + 1}张输入图 = 图${ref.number}；用途：${referenceRoleLabels[ref.role].zh}；来源名称：${JSON.stringify(ref.title)}`
-  ).join("\n")}\n以编辑目标为修改基础；主体、风格和构图是各参考图的默认用途，用户明确指定某张图的使用方式时，以本次要求为准。未明确要求的其他主体或文字，不自动替换进编辑目标。`;
+  ).join("\n")}\n${usage}主体、风格和构图是各参考图的默认用途，用户明确指定某张图的使用方式时，以本次要求为准。`;
 }
