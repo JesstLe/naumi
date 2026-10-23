@@ -8,6 +8,7 @@ import {getPool} from "../db";
 import {imageCoordinationPool} from "./coordination-pool";
 import {imagegenRequestSchema} from "./schema";
 import {planImagegen,imagegenFingerprint} from "./plan";
+import {ImagegenConfirmationChanged} from "./confirmation";
 import {submitAcceptedImagegen,getImagegenResult} from "./dispatch";
 import {imagegenStepId} from "./generation-core";
 import {ensureImagegenBatches,imagegenBatchRow,imagegenBatchItems,type ImagegenBatchItem} from "./batch-repository";
@@ -35,7 +36,7 @@ export async function submitImagegenBatch(raw:ImagegenRequest,owner:string,confi
  await ensureImagegenBatches();const previous=await imagegenBatchRow(request.operationId);
  if(previous){if(previous.owner!==owner.toLowerCase()||previous.fingerprint!==fingerprint)throw new Error("批次编号已用于不同请求");return {id:previous.id,children:(await imagegenBatchItems(previous.id)).map(i=>i.child_operation_id)};}
  const prepared=await prepare(request,owner),plan=prepared.plan;
- if(plan.totalCredits>0&&(!confirmation||confirmation.confirmed!==true||confirmation.credits!==plan.totalCredits||confirmation.billingVersion!==plan.billingVersion||(confirmation.modelVersion!==undefined&&confirmation.modelVersion!==plan.modelVersion)))throw new Error("请确认批次最新报价后提交");
+ if(plan.totalCredits>0&&(!confirmation||confirmation.confirmed!==true||confirmation.credits!==plan.totalCredits||confirmation.billingVersion!==plan.billingVersion||(confirmation.modelVersion!==undefined&&confirmation.modelVersion!==plan.modelVersion)))throw new ImagegenConfirmationChanged();
  return submitAcceptedImagegenBatch(plan,owner);
 }
 /** Only server-owned frozen plans; HTTP accepts requests and confirmation, never this structure. */

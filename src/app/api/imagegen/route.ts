@@ -7,6 +7,7 @@ import {submitImagegen,getImagegenResult,resumeImagegen,readImagegenReceipt} fro
 import {submitImagegenBatch,readImagegenBatch} from "@/lib/imagegen/batch";
 import {rateLimit} from "@/lib/rate-limit";
 import {readImagegenJson} from "@/lib/imagegen/body";
+import {ImagegenConfirmationChanged} from "@/lib/imagegen/confirmation";
 export const runtime="nodejs";
 export const maxDuration=300;
 async function handlePost(request:Request){
@@ -17,7 +18,7 @@ async function handlePost(request:Request){
  const {confirmation,...value}=body||{},parsed=imagegenRequestSchema.safeParse(value);
  if(!parsed.success)return Response.json({error:"图像请求格式无效",accepted:false},{status:400});
  try{if(!rateLimit(`imagegen:${owner}`,30,600000))throw new Error("提交过于频繁，请稍后重试");return Response.json(parsed.data.mode==="batch"?await submitImagegenBatch(parsed.data,owner,confirmation):await submitImagegen(parsed.data,owner,confirmation));}
- catch(error){let accepted:boolean|undefined;try{accepted=!!(parsed.data.mode==="batch"?await readImagegenBatch(parsed.data.operationId,owner):await readImagegenReceipt(parsed.data.operationId,owner));}catch{/* Cannot prove absence while the database is unavailable. */}return Response.json({error:error instanceof Error?error.message:"无法提交图像任务",accepted},{status:400});}
+ catch(error){let accepted:boolean|undefined;try{accepted=!!(parsed.data.mode==="batch"?await readImagegenBatch(parsed.data.operationId,owner):await readImagegenReceipt(parsed.data.operationId,owner));}catch{/* Cannot prove absence while the database is unavailable. */}return Response.json({error:error instanceof Error?error.message:"无法提交图像任务",accepted,...(error instanceof ImagegenConfirmationChanged?{code:error.code}:{})},{status:error instanceof ImagegenConfirmationChanged?error.status:400});}
 }
 export async function GET(request:Request){
  const owner=await resolveUserEmail(request);if(!owner)return Response.json({error:"请先登录"},{status:401});

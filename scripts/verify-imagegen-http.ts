@@ -21,18 +21,20 @@ await error(Response.json({error:"状态未知"},{status:503}),503);
 const bundle=await build({entryPoints:[path.resolve("src/lib/imagegen/client.ts")],bundle:true,platform:"node",format:"cjs",write:false,plugins:[{name:"fixture-auth",setup(b){b.onResolve({filter:/^\.\.\/supabase$/},()=>({path:"auth",namespace:"fixture"}));b.onLoad({filter:/.*/,namespace:"fixture"},()=>({contents:"export async function authHeader(){return {}}",loader:"js"}));}}]});
 async function attempt(accepted:boolean|undefined,receiptExists:boolean){
  const calls:string[]=[],module={exports:{} as any};
- const context={module,exports:module.exports,Response,console,fetch:async(url:string,init?:RequestInit)=>{
+ const context={module,exports:module.exports,Response,AbortSignal,console,fetch:async(url:string,init?:RequestInit)=>{
   calls.push(`${init?.method||"GET"} ${url}`);
   if(init?.method==="POST")return accepted===undefined?new Response("<!DOCTYPE html>bad gateway",{status:502}):Response.json({error:"拒绝",accepted},{status:400});
   return receiptExists?Response.json({id:"operation-one",status:"running"}):Response.json({error:"不存在"},{status:404});
  }};
  vm.runInNewContext(bundle.outputFiles[0].text,context);
  const run=module.exports.startImagegen({operationId:"operation-one",mode:"edit"});
- if(accepted!==false&&receiptExists)assert.equal((await run).id,"operation-one");else await assert.rejects(run);
+ await assert.rejects(run);
+ assert.deepEqual(calls,["POST /api/imagegen"],"submission client never silently resubmits or polls");
+ if(accepted!==false){const receipt=module.exports.pollImagegen("operation-one");if(receiptExists)assert.equal((await receipt).id,"operation-one");else await assert.rejects(receipt);}
  assert.equal(calls.filter(c=>c.startsWith("POST")).length,1);
  assert.deepEqual(calls,accepted===false?["POST /api/imagegen"]:["POST /api/imagegen","GET /api/imagegen?operationId=operation-one"]);
 }
 await attempt(undefined,true);await attempt(undefined,false);await attempt(false,false);await attempt(true,true);
-console.log("IMAGEGEN_HTTP=PASS (JSON/HTML/empty/acceptance/one submission/recover same receipt)");
+console.log("IMAGEGEN_HTTP=PASS (JSON/HTML/empty/acceptance/one submission/explicit query of same receipt)");
 }
 void main().catch(error=>{console.error(error);process.exitCode=1;});

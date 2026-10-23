@@ -1,6 +1,6 @@
 /** Do not surface HTML gateway/framework pages or raw JSON parser errors. */
 export class ImagegenHttpError extends Error {
-  constructor(message: string, public status: number, public accepted?: boolean) { super(message); }
+  constructor(message: string, public status: number, public accepted?: boolean, public code?: string) { super(message); }
 }
 
 /** A dismissed preparation choice is not a failed or accepted generation. */
@@ -23,6 +23,7 @@ export async function readImagegenResponse<T>(response: Response, fallback: stri
     typeof data.error === "string" && data.error ? data.error : fallback,
     response.status,
     typeof data.accepted === "boolean" ? data.accepted : undefined,
+    typeof data.code === "string" ? data.code : undefined,
   );
   return data as T;
 }

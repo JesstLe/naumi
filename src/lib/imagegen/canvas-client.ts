@@ -70,7 +70,22 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
  if(plan.intent.background==="transparent")onPlan?.(`已识别：透明背景 · ${stages} · ${plan.totalCredits} 积分`);
  if(plan.confirmationRequired&&!window.confirm(`${stages}\n${plan.warnings.join("\n")}\n本次合计 ${plan.totalCredits} 积分，是否执行？`))throw new Error("已取消提交");
  assertCurrent();submitting=true;
- const result=await startImagegen(request,{billingVersion:plan.billingVersion,modelVersion:plan.modelVersion,credits:plan.totalCredits,confirmed:true},context);
+ const submit=(latest:typeof plan)=>startImagegen(request,{billingVersion:latest.billingVersion,modelVersion:latest.modelVersion,credits:latest.totalCredits,confirmed:true},context);
+ let result:Awaited<ReturnType<typeof startImagegen>>;
+ try{result=await submit(plan);}
+ catch(error){
+  // Refresh only when the server proved this operation was not accepted.
+  // Network/unknown/accepted results retain their receipt; no paid retry here.
+  if(!(error instanceof ImagegenHttpError&&error.status===409&&error.code==="IMAGEGEN_PLAN_CHANGED"&&error.accepted===false))throw error;
+  submitting=false;
+  assertCurrent();const latest=await previewImagegen(request,context);assertCurrent();
+  if(latest.requestedParameters?.resolution)onPlan?.(latest.warnings.join("\n"));
+  if(latest.totalCredits!==plan.totalCredits||latest.confirmationRequired&&!plan.confirmationRequired){
+   const steps=latest.steps.map(s=>s.operation==="cutout"?"抠图":s.operation==="edit"?"编辑":"生成").join(" → ");
+   if(!window.confirm(`报价已更新\n${steps}\n${latest.warnings.join("\n")}\n本次合计 ${latest.totalCredits} 积分，是否执行？`))throw new ImagegenPreparationCancelled();
+  }
+  assertCurrent();submitting=true;result=await submit(latest);
+ }
  return Response.json({jobId:"jobId" in result?result.jobId:`imagegen-${request.operationId}`});
  } catch(error) {
   if(error instanceof ImagegenPreparationCancelled)throw error;
