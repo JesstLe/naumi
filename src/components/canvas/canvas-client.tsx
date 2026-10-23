@@ -5983,6 +5983,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
     await Promise.all(Array.from(textSaveQueuesRef.current.values()));
     await videoNodesStore.flush();
+    // Fresh video moves (including Undo) require current revisions. Unknown
+    // submissions keep their original id/payload for an idempotent replay.
+    if (act.kind === "move-many" && !historyAttemptsRef.current.has(act) && act.moves.some(move => videoNodesStore.getNode(move.id))) {
+      await videoNodesStore.refresh();
+      assertCurrentHistory();
+    }
     const side = undo ? "from" : "to";
     let operations: Array<Record<string, unknown>> = [];
     const videoPatch=(id:string,fields:VideoPatchFields)=>{const current=videoNodesStore.getNode(id);if(!current)throw new Error("视频节点不存在，请刷新画布");operations.push({type:"video-patch",id,expectedRevision:current.revision,fields});};
@@ -6767,7 +6773,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       await Promise.all(Array.from(textSaveQueuesRef.current.values()));
       if (!current()) return;
       if (unsavedTextRef.current.size) throw new Error(L("请先保存未保存的文字节点", "Save pending text changes first"));
-      const moves = arrangeCanvasSelection(selected.map(node => ({ id: node.id, ...node.position, ...flowNodeSize(node) })), action);
+      const moves = arrangeCanvasSelection(selected.map(node => ({ id: node.id, ...node.position,
+        width: node.measured?.width || node.width || Number(node.style?.width) || Number(node.data.width) || NODE_W,
+        height: node.measured?.height || node.height || Number(node.style?.height) || Number(node.data.height) || NODE_H,
+      })), action);
       if (!moves.length) return;
       const act: UndoAct = { kind: "move-many", moves };
       await applyHistory(act, false, current);
@@ -9417,7 +9426,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               connectionRadius={32}
               nodes={rfNodes}
               elevateNodesOnSelect={false}
-              edges={linksVisible ? rfEdges : []}
+              edges={linksVisible ? rfEdges : rfEdges.map(edge => ({ ...edge, hidden: true }))}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               nodeTypes={nodeTypes}
