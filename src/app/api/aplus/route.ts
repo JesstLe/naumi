@@ -760,8 +760,16 @@ async function kickAplus(id: string) {
     if (!job.imageQuality) { await patchJob(id, { imageQuality: process.env.OPENAI_IMAGE_QUALITY || "medium" }); }
     if (job.stage === "preparing") await runSourcePreparation(id);
     else if (job.stage === "generating") await runAplusGeneration(id);
-    else for (let index=0; index<job.sources.length; index++) {
-      if (job.sources[index].status === "redoing") await runSourceRedo(id, index, job.sources[index].feedback || "");
+    else {
+      for (let index=0; index<job.sources.length; index++) {
+        if (job.sources[index].status === "redoing") await runSourceRedo(id, index, job.sources[index].feedback || "");
+      }
+      // A local defer changes awaiting_review to pending. Read the completed
+      // checkpoints, not kickoff's stale sources/status, before pausing again.
+      const latest = await JOBS.get(id, false);
+      if (latest?.status === "pending" && latest.stage === "reviewing" && !latest.sources.some(source => source.status === "redoing")) {
+        await patchJob(id, { status: "awaiting_review" });
+      }
     }
   });
 }

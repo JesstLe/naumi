@@ -52,11 +52,13 @@ export class ImageOperationDeferred extends ImageOperationPending {
     this.name = "ImageOperationDeferred";
   }
 }
-export function imageCapacityBusy(): ModelConfigError | ImageOperationDeferred {
+export function imageCapacityBusy(acceptedOperationId?: string): ModelConfigError | ImageOperationPending {
   const operation = operations.getStore();
-  return operation?.durable
-    ? new ImageOperationDeferred(operation.id)
-    : new ModelConfigError("PROVIDER_BUSY", "当前模型通道繁忙，本次未提交上游", 429);
+  if (operation?.durable) return new ImageOperationDeferred(operation.id);
+  // Legacy canvas edits do not own a durable root, but an existing channel pin
+  // is still possible supplier acceptance. Capacity cannot prove rejection.
+  if (acceptedOperationId) return new ImageOperationPending(operation?.id || acceptedOperationId, new Error("original-channel-capacity-busy"));
+  return new ModelConfigError("PROVIDER_BUSY", "当前模型通道繁忙，本次未提交上游", 429);
 }
 /** A supplier explicitly paused for review is not an actively generating task. */
 export class ImageOperationReview extends ImageOperationPending {
