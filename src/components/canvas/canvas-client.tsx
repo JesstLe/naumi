@@ -25,6 +25,12 @@ import { canvasFocusViewport } from "@/lib/canvas/upload-visibility";
 import { stableArtworkPositions, canvasNodePosition, readPlacementCache, type CanvasPoint } from "@/lib/canvas/stable-placement";
 import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
 import { smartLayout } from "@/lib/canvas/smart-layout";
+import { canvasOutlineEntries } from "@/lib/canvas/navigator";
+import { CanvasNavigator } from "./canvas-navigator";
+import { arrangeCanvasSelection, type SelectionLayoutAction } from "@/lib/canvas/selection-layout";
+import { SelectionLayoutControls } from "./selection-layout-controls";
+import { CreativePresets } from "./creative-presets";
+import { appendCreativePreset } from "@/lib/canvas/creative-presets";
 import { CanvasComposerShell, CanvasComposerFooter, CanvasComposerOptions } from "./composer-shell";
 import { CanvasParameterPopover } from "./parameter-popover";
 import {submitCanvasImagegen,resolveCanvasDetailFrame,completeCanvasImagegen} from "@/lib/imagegen/canvas-client";
@@ -183,11 +189,12 @@ import {
   Box,
   Ruler,
   Focus,
+  Search,
   ArrowUp,
   type LucideIcon,
 } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
-import {currentWorkspace} from '@/lib/saas/workspace-client';
+import {currentWorkspace,currentWorkspaceRevision} from '@/lib/saas/workspace-client';
 import { useAuth } from "@/lib/auth-context";
 import { useCanvasCredits } from "./use-canvas-credits";
 import { useAuthModal } from "@/lib/auth-modal-context";
@@ -238,10 +245,12 @@ import { TextModelSelect } from "@/components/ui/text-model-select";
 import { useTextModel } from "@/lib/text-model-context";
 
 /** Supabase 模式补 Authorization；原生账号模式依靠同源 HttpOnly cookie。 */
-async function privateFetchRaw(input: RequestInfo | URL, init: RequestInit = {}) {
+async function privateFetchRaw(input: RequestInfo | URL, init: RequestInit = {}, isCurrent: () => boolean = () => true) {
+  if (!isCurrent()) throw new Error("画布上下文已切换");
   const headers = new Headers(init.headers);
   const workspace=headers.get('x-naumi-workspace');
   const auth = await authHeader();
+  if (!isCurrent()) throw new Error("画布上下文已切换");
   for (const [key, value] of Object.entries(auth)) headers.set(key, value);
   if(workspace)headers.set('x-naumi-workspace',workspace);
   return fetch(input, { ...init, headers });
@@ -1699,6 +1708,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [navigatorOpen, setNavigatorOpen] = useState(false);
+  const [linksVisible, setLinksVisible] = useState(true);
   const [browserTab, setBrowserTab] = useState<"all" | "workflows">("all");
   const cancelEditRef = useRef(false); // Esc 取消时跳过失焦保存
   const imageDraftNodeId = selectedPendId || selectedId;
@@ -2811,12 +2822,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const activeProjectRef = useRef(active);
   activeProjectRef.current = active;
   const canvasContextEpochRef = useRef(0);
-  const previousCanvasContextRef = useRef({ key: activeKey, email: user?.email || "" });
+  const canvasWorkspace = currentWorkspace();
+  const previousCanvasContextRef = useRef({ key: activeKey, email: user?.email || "", target: targetEmail, workspace: canvasWorkspace });
   useEffect(() => {
     activeProjectRef.current = active;
-    const next = { key: activeKey, email: user?.email || "" };
+    const next = { key: activeKey, email: user?.email || "", target: targetEmail, workspace: canvasWorkspace };
     const previous = previousCanvasContextRef.current;
-    if (previous.key !== next.key || previous.email !== next.email) {
+    if (previous.key !== next.key || previous.email !== next.email || previous.target !== next.target || previous.workspace !== next.workspace) {
       previousCanvasContextRef.current = next;
       canvasContextEpochRef.current += 1;
       ocrRequestEpochRef.current += 1;
@@ -2824,7 +2836,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       setOcrSegments([]);
       setOcrStatus("idle");
     }
-  }, [active, activeKey, user?.email]);
+  }, [active, activeKey, user?.email, targetEmail, canvasWorkspace]);
 
   // 进入空白画布 = 新建项目;选中/拿到真实项目后自动退出该模式
   function startNewProject() {
@@ -3881,6 +3893,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 受控节点状态(支持拖拽);仅当底层数据/位置真正变化时重新灌入,拖拽过程中不重置。
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const outlineEntries = useMemo(() => canvasOutlineEntries(rfNodes), [rfNodes]);
+  useEffect(() => { setNavigatorOpen(false); }, [activeKey, user?.email, targetEmail]);
   useEffect(()=>{
     const pending=pendingNodeSelectionRef.current;if(!pending)return;
     if(pending.owner!==user?.email.toLowerCase()){pendingNodeSelectionRef.current=null;return;}
@@ -5957,9 +5971,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const historyBusyRef = useRef(false);
   const [historySaving,setHistorySaving] = useState(false);
   const historyAttemptsRef = useRef(new WeakMap<UndoAct, {operationId:string;operations:Array<Record<string,unknown>>}>());
-  async function applyHistory(act: UndoAct, undo: boolean) {
+  async function applyHistory(act: UndoAct, undo: boolean, isCurrent: () => boolean = () => true) {
     const account=canvasAccountRef.current;
-    const assertCurrentHistory = () => { if (historyScope !== historyScopeRef.current) throw new Error("项目已切换，请在当前项目重新操作"); };
+    const assertCurrentHistory = () => { if (historyScope !== historyScopeRef.current || !isCurrent()) throw new Error("项目已切换，请在当前项目重新操作"); };
     assertCurrentHistory();
     if (act.kind === "pending-link") {
       const pending = pendNodesRef.current.find(node => node.id === act.id);
@@ -5996,8 +6010,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(!attempt){attempt={operationId:browserRandomUUID(),operations:structuredClone(operations)};historyAttemptsRef.current.set(act,attempt);}
     const operationId=attempt.operationId;operations=attempt.operations;
     assertCurrentHistory();
-    const response=await privateFetchRaw("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operationId,operations}),signal:AbortSignal.timeout(20_000)});
-    await expectJsonOk(response,t("canvas.genFail"));if(account!==canvasAccountRef.current)throw new Error("画布账号已切换");
+    const response=await privateFetchRaw("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operationId,operations}),signal:AbortSignal.timeout(20_000)},isCurrent);
+    await expectJsonOk(response,t("canvas.genFail"));if(account!==canvasAccountRef.current)throw new Error("画布账号已切换");if(!isCurrent())throw new Error("项目已切换，请在当前项目重新操作");
     // All operations below are local applications of an already committed transaction.
     for (const op of operations) {
       const id=op.id as string;
@@ -6038,7 +6052,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         return node;
       }) ?? current);
     }
-    if(operations.some(op=>op.type==="video-patch"||op.type==="video-visibility"||op.type==="video-result"))await videoNodesStore.refresh();
+    if(operations.some(op=>op.type==="video-patch"||op.type==="video-visibility"||op.type==="video-result")) {
+      try { await videoNodesStore.refresh(); }
+      catch (error) {
+        // A successful position transaction must retain its single undo step,
+        // even when the follow-up read fails. The normal node poll resyncs it.
+        if (act.kind !== "move-many") throw error;
+        if (historyScope === historyScopeRef.current && isCurrent()) flashTip(L("布局已保存，视频节点显示稍后同步", "Layout saved; video display will sync shortly"));
+      }
+    }
     for(const op of operations) {const id=(op.id || (op.node as CanvasTextNode|undefined)?.id) as string; unsavedTextRef.current.delete(id);}
     setUnsavedTextCount(unsavedTextRef.current.size);
     historyAttemptsRef.current.delete(act);
@@ -6711,6 +6733,47 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setSpawnMenu(null);
     const p = relPoint(e);
     setCtxMenu({ x: p.x, y: p.y, cx: e.clientX, cy: e.clientY });
+  }
+  function fitCanvasSelection(ids = multiSel.length ? multiSel : [selectedId, selectedTextId, selectedPendId].filter(Boolean) as string[]) {
+    const nodes = (rfRef.current?.getNodes() ?? []).filter(node => ids.includes(node.id));
+    if (nodes.length) void rfRef.current?.fitView({ nodes, duration: 300, padding: 0.4, maxZoom: 1 });
+  }
+  function locateOutlineNode(id: string) {
+    const node = rfRef.current?.getNode(id);
+    if (!node) return;
+    if (node.type === "workflowGroup") {
+      const group = workflowManifests.filter(manifest => manifest.projectKey === activeKey).flatMap(manifest => manifest.groups).find(group => group.id === id);
+      if (group) selectWorkflowGroup(group.members);
+    } else if (node.type === "pend") {
+      clearCanvasSelection(); setSelectedId(null); setSelectedTextId(null); setSelectedPendId(id);
+    } else if (id.startsWith("task-")) {
+      clearCanvasSelection(); setSelectedId(null); setSelectedTextId(null); setSelectedPendId(null);
+    } else applyArtworkSelection([id]);
+    fitCanvasSelection([id]);
+    if (canvasSize.width < 768) setNavigatorOpen(false);
+  }
+  async function arrangeSelection(action: SelectionLayoutAction) {
+    if (!active || readOnly || !user || !nodeSettingsReady || !textNodesReady || historyBusyRef.current) return;
+    const ids = new Set(multiSel), scope = historyScopeRef.current, epoch = canvasContextEpochRef.current, workspace = currentWorkspace(), workspaceRevision = currentWorkspaceRevision();
+    const current = () => scope === historyScopeRef.current && epoch === canvasContextEpochRef.current && workspace === currentWorkspace() && workspaceRevision === currentWorkspaceRevision();
+    const mobileIds = new Set([...active.members.map(node => node.id), ...active.textNodes.map(node => node.id), ...(active.videoNodes || []).map(node => node.id)]);
+    const selected = (rfRef.current?.getNodes() ?? rfNodes).filter(node => ids.has(node.id));
+    if (selected.length !== ids.size || selected.some(node => !mobileIds.has(node.id) || isNodeLocked(node.id) || node.type === "workflowGroup" || node.type === "workflowDecoration" || node.data.generating === true || node.data.pending === true || node.data.uploading === true)) {
+      flashTip(L("请选择未锁定的图片、文本或视频节点", "Select unlocked image, text or video nodes")); return;
+    }
+    if (selected.length > 400) { flashTip(L("一次最多整理400个节点", "Arrange up to 400 nodes at a time")); return; }
+    historyBusyRef.current = true; setHistorySaving(true);
+    try {
+      await Promise.all(Array.from(textSaveQueuesRef.current.values()));
+      if (!current()) return;
+      if (unsavedTextRef.current.size) throw new Error(L("请先保存未保存的文字节点", "Save pending text changes first"));
+      const moves = arrangeCanvasSelection(selected.map(node => ({ id: node.id, ...node.position, ...flowNodeSize(node) })), action);
+      if (!moves.length) return;
+      const act: UndoAct = { kind: "move-many", moves };
+      await applyHistory(act, false, current);
+      if (current()) pushUndo(act);
+    } catch (error) { if (current()) flashTip(error instanceof Error ? error.message : L("布局保存失败", "Layout could not be saved")); }
+    finally { historyBusyRef.current = false; setHistorySaving(false); }
   }
   // 全部图文参与布局；锁定/运行节点作为障碍。一个事务、一个撤销步骤。
   async function tidyLayout() {
@@ -8481,6 +8544,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       addMenuOpen ||
       moreToolsOpen ||
       zoomMenuOpen ||
+      navigatorOpen ||
       sidebarOpen ||
       projMenuKey ||
       textComposerExpanded ||
@@ -8518,6 +8582,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         // Let unrelated browser shortcuts and viewport actions pass through.
         if ((mod && (key === "z" || key === "y")) || key === "delete" || key === "backspace") { e.preventDefault(); return; }
       }
+      if (mod && !e.altKey && key === "k" && !browsing) { e.preventDefault(); setNavigatorOpen(true); return; }
       if (!mod && !e.altKey && !e.shiftKey && !readOnly && !browsing) {
         if (key === "v") {
           e.preventDefault();
@@ -9077,6 +9142,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           }}
         >
           {!browsing && workflowPaste.status}
+          {!browsing && !loading && navigatorOpen && <CanvasNavigator key={`${canvasAccountRef.current}:${activeKey}`} entries={outlineEntries}
+            selectedIds={Array.from(new Set([...multiSel, ...[selectedId, selectedTextId, selectedPendId].filter(Boolean) as string[]]))}
+            english={locale === "en"} onClose={() => setNavigatorOpen(false)} onLocate={locateOutlineNode}
+            onSelect={ids => { applyArtworkSelection(ids); fitCanvasSelection(ids); }}
+            onFit={() => void rfRef.current?.fitView({ duration: 300, padding: 0.2, maxZoom: 1 })} onFitSelection={() => fitCanvasSelection()}/>}
           {loading ? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               {t("canvas.loading")}
@@ -9347,7 +9417,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               connectionRadius={32}
               nodes={rfNodes}
               elevateNodesOnSelect={false}
-              edges={rfEdges}
+              edges={linksVisible ? rfEdges : []}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               nodeTypes={nodeTypes}
@@ -9794,6 +9864,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
               {/* 右上:分享(下载)/ 模板库 / 会员特惠+积分 / 头像 */}
               <div data-testid="canvas-top-actions" style={{ top: canvasSize.width > 0 && canvasSize.width < 768 ? 60 : 12 }} className="absolute right-3 z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-1.5 overflow-visible">
+                <button type="button" data-testid="canvas-outline-toggle" aria-label={L("搜索画布节点", "Search canvas nodes")} title={`${L("搜索与大纲", "Search and outline")} (${shortcut("K")})`}
+                  aria-expanded={navigatorOpen} onClick={() => { setSidebarOpen(false); setNavigatorOpen(open => !open); }}
+                  className="canvas-ui-surface canvas-ui-action flex h-9 items-center justify-center gap-1.5 rounded-xl border px-2.5 backdrop-blur">
+                  <Search className="h-4 w-4"/><span className="hidden text-[11px] sm:inline">{L("大纲", "Outline")}</span><span className="hidden text-[10px] opacity-50 sm:inline">{outlineEntries.length}</span>
+                </button>
                 {!readOnly && canFeature("agent") && <CanvasAgentToggle open={assistantVisible} label={t("canvas.assistant.entry")} onClick={toggleAssistant} />}
                 {active && (
                   <button
@@ -9983,6 +10058,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               )}
 
               {mixedNativeSelection&&!readOnly&&<BatchSelectionToolbar label={L("节点操作","Node actions")} selectionLabel={L(`已选择 ${multiSel.length} 个节点`,`${multiSel.length} nodes selected`)} clearLabel={t("canvas.batchClear")} testId="mixed-node-batch-bar" onClear={()=>clearCanvasSelection(true)} primaryAction={batchRunButton(L(`批量运行 (${selectionRunCount})`, `Run selection (${selectionRunCount})`))}>
+                <SelectionLayoutControls count={multiSel.length} disabled={!nodeSettingsReady || multiSel.some(isNodeLocked)} busy={historySaving} onArrange={arrangeSelection}/>
                 <button type="button" className="canvas-ui-action rounded-lg px-3 py-2 text-xs" onClick={()=>copyCanvasSelection(multiSel)}>{t("canvas.copyNode")}</button>
                 <button type="button" className="canvas-ui-action rounded-lg px-3 py-2 text-xs" disabled={historySaving||multiSel.some(isNodeLocked)} onClick={()=>void duplicateCanvasNodes(multiSel)}>{t("canvas.duplicate")}</button>
                 <button type="button" className="canvas-ui-action rounded-lg px-3 py-2 text-xs" disabled={historySaving||multiSel.some(isNodeLocked)} onClick={()=>batchDelete(multiSel)}>{t("canvas.delete")}</button>
@@ -9996,6 +10072,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   clearLabel={t("canvas.batchClear")}
                   onClear={() => clearCanvasSelection(true)}
                 >
+                  <SelectionLayoutControls count={multiSel.length} disabled={!nodeSettingsReady || multiSel.some(id => isNodeLocked(id) || id.startsWith("pend-") || id.startsWith("task-"))} busy={historySaving} onArrange={arrangeSelection}/>
                   <button
                     type="button"
                     disabled={selectedBatchArts.length < 2}
@@ -10105,6 +10182,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   clearLabel={t("canvas.batchClear")}
                   onClear={() => clearCanvasSelection(true)}
                 >
+                  <SelectionLayoutControls count={selectedTextBatchNodes.length} disabled={!nodeSettingsReady || selectedTextBatchNodes.some(node => isNodeLocked(node.id))} busy={historySaving} onArrange={arrangeSelection}/>
                   <button
                     type="button"
                     disabled={assistBusy}
@@ -10219,6 +10297,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   <LayoutGrid className="h-4 w-4" />
                 </button>
               )}
+              <button type="button" data-testid="canvas-links-toggle" aria-label={L("显示连线", "Show connections")} title={L("显示连线", "Show connections")}
+                aria-pressed={linksVisible} onClick={() => setLinksVisible(value => !value)}
+                className={cn("canvas-ui-action flex h-8 w-8 items-center justify-center rounded-lg transition-colors", linksVisible ? "text-primary" : "text-muted-foreground")}>
+                <Link2 className="h-4 w-4"/>
+              </button>
               <button
                 type="button"
                 title={t("canvas.minimap")}
@@ -10324,6 +10407,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         },
                         { sep: true },
                         {
+                          label: L("适配画布", "Fit canvas"),
+                          fn: () => rfRef.current?.fitView({ duration: 300, padding: 0.2, maxZoom: 1 }),
+                        },
+                        {
+                          label: L("适配选中项", "Fit selection"),
+                          fn: () => fitCanvasSelection(),
+                        },
+                        {
                           label: "缩放至50%",
                           fn: () => rfRef.current?.zoomTo(0.5, { duration: 200 }),
                         },
@@ -10332,8 +10423,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                           fn: () => rfRef.current?.zoomTo(1, { duration: 200 }),
                         },
                         {
-                          label: "缩放至800%",
-                          fn: () => rfRef.current?.zoomTo(8, { duration: 200 }),
+                          label: "缩放至200%",
+                          fn: () => rfRef.current?.zoomTo(2, { duration: 200 }),
                         },
                       ].map((it, i) =>
                         it.sep ? (
@@ -10349,7 +10440,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                               it.fn?.();
                               setZoomMenuOpen(false);
                             }}
-                            className="flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors hover:bg-[#2a2e38]"
+                            className="canvas-ui-action flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors"
                           >
                             <span>{it.label}</span>
                             {it.hk && (
@@ -11383,6 +11474,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               {/* dbar:模型 / 比例·清晰度 / 数量 + 积分 + 发送(对齐原型 .dbar) */}
               {!readOnly && (
                 <CanvasComposerFooter controls={<>
+                  <CreativePresets key={`${canvasAccountRef.current}:${activeKey}:${selected.id}`} disabled={!nodeSettingsReady || selectedGenerating || isNodeLocked(selected.id)} onApply={preset => setEditPrompt(appendCreativePreset(editPrompt, preset))}/>
                   {modelControl(false)}
                   <DarkSelect
                     dir="up"
@@ -11514,6 +11606,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 )}
               </div>
               <CanvasComposerFooter controls={<>
+                <CreativePresets key={`${canvasAccountRef.current}:${activeKey}:${selectedPend.id}`} disabled={!!selectedPend.generating || !!selectedPend.uploading} onApply={preset => setEditPrompt(appendCreativePreset(editPrompt, preset))}/>
                 {modelControl(false)}
                 <DarkSelect
                   dir="up"
