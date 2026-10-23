@@ -120,6 +120,12 @@ const operationPageSource = operationSql(true);
 const artworkFilter = (scoped: boolean) => `${accountFilter("a.email", scoped)} AND (${inRange("a")} OR $7::text<>'') AND ($7::text='' OR a.id=$7) AND (($6::text='' AND a.deleted_at IS NULL) OR ($6='deleted' AND a.deleted_at IS NOT NULL) OR $6='all')`;
 const userFilter = () => `${accountFilter("u.email")} AND ($6::text='' OR CASE WHEN u.banned THEN 'banned' ELSE 'active' END=$6)`;
 const modelFilter = () => `${accountFilter("c.email")} AND ${inRange("c")} AND ($6::text='' OR ($6='fallback' AND (c.requested_quality<>'' AND c.executed_quality<>'' AND c.requested_quality<>c.executed_quality OR c.reason IN ('provider-fallback','quality-downgrade','upstream-unsupported'))))`;
+// Keep session JSON out of the count/sort input: only the selected page needs
+// entry counts. Agent IDs are email-scoped and may also overlap genchat IDs.
+const conversationKeys = () => `SELECT s.id,s.email,'agent'::text AS source,s.updated_at
+  FROM app_agent_sessions s WHERE ${accountFilter("s.email")} AND s.updated_at >= $1::timestamptz AND s.updated_at < $2::timestamptz AND ($6::text='' OR $6='agent')
+  UNION ALL SELECT s.id,s.email,'genchat',s.updated_at
+  FROM app_genchat_sessions s WHERE ${accountFilter("s.email")} AND s.updated_at >= $1::timestamptz AND s.updated_at < $2::timestamptz AND ($6::text='' OR $6='genchat')`;
 // Counts use small state-predicate indexes; no historical snapshot/paid-operation
 // JSON is fetched on the read path. See scripts/ops/admin-query-indexes.ts.
 const failedImage = `snapshot->>'status' IN ('error','failed')`;
@@ -278,8 +284,14 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
       source = `SELECT c.id,c.email,c.operation,c.operation_id,c.public_model_id,c.frontend_model_id,c.frontend_model_label,c.provider_id,c.model_version,c.billing_version,c.config_digest,c.wire_model,c.response_model,c.state,c.duration_ms,c.input_tokens,c.output_tokens,c.created_at FROM app_bi_model_calls c WHERE ${accountFilter("c.email")} AND ${inRange("c")} AND ($6::text='' OR c.state=$6)`;
       break;
     case "conversations":
-      source = `SELECT s.id,s.email,s.title,'agent' AS source,s.created_at,s.updated_at,jsonb_array_length(CASE WHEN jsonb_typeof(s.messages)='array' THEN s.messages ELSE '[]'::jsonb END) AS entries FROM app_agent_sessions s WHERE ${accountFilter("s.email")} AND s.updated_at >= $1::timestamptz AND s.updated_at < $2::timestamptz AND ($6::text='' OR $6='agent')
-      UNION ALL SELECT s.id,s.email,s.title,'genchat',s.created_at,s.updated_at,jsonb_array_length(CASE WHEN jsonb_typeof(s.turns)='array' THEN s.turns ELSE '[]'::jsonb END) FROM app_genchat_sessions s WHERE ${accountFilter("s.email")} AND s.updated_at >= $1::timestamptz AND s.updated_at < $2::timestamptz AND ($6::text='' OR $6='genchat')`;
+      countSource = conversationKeys();
+      pagePrefix = `, selected AS MATERIALIZED (SELECT * FROM (${countSource}) k ORDER BY updated_at DESC,id DESC LIMIT $7 OFFSET $8)`;
+      source = `SELECT s.id,s.email,s.title,k.source,s.created_at,s.updated_at,
+        jsonb_array_length(CASE WHEN jsonb_typeof(s.messages)='array' THEN s.messages ELSE '[]'::jsonb END) AS entries
+        FROM selected k JOIN app_agent_sessions s ON k.source='agent' AND s.id=k.id AND s.email=k.email
+        UNION ALL SELECT s.id,s.email,s.title,k.source,s.created_at,s.updated_at,
+        jsonb_array_length(CASE WHEN jsonb_typeof(s.turns)='array' THEN s.turns ELSE '[]'::jsonb END)
+        FROM selected k JOIN app_genchat_sessions s ON k.source='genchat' AND s.id=k.id AND s.email=k.email`;
       break;
     case "access":
       source = `SELECT a.id,a.actor,a.action,a.target_email,a.section,a.created_at FROM app_bi_access_log a WHERE ${inRange("a")} AND ($3::text='' OR a.target_email=$3) AND ($4::text='' OR position(lower($4) in lower(a.actor||' '||a.target_email))>0) AND ($6::text='' OR a.action=$6)`;
@@ -473,22 +485,32 @@ export async function biConversation(
   await ensureBiSchema();
   const source =
     kind === "agent"
-      ? `SELECT m.ordinality AS ordinal,m.value->>'role' AS role,
-    CASE WHEN jsonb_typeof(m.value->'content')='string' THEN m.value->>'content'
-    WHEN jsonb_typeof(m.value->'content')='array' THEN (SELECT string_agg(p.value->>'text','' ORDER BY p.ordinality) FROM jsonb_array_elements(m.value->'content') WITH ORDINALITY p WHERE p.value->>'type'='text') ELSE '' END AS text
+      ? `SELECT m.ordinality AS ordinal,m.value->>'role' AS role,m.value->'content' AS content
     FROM app_agent_sessions s CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(s.messages)='array' THEN s.messages ELSE '[]'::jsonb END) WITH ORDINALITY m
-    WHERE s.email=$1 AND s.id=$2 AND m.value->>'role' IN ('user','assistant')`
-      : `SELECT m.ordinality*2 AS ordinal,'user' AS role,m.value->>'you' AS text FROM app_genchat_sessions s CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(s.turns)='array' THEN s.turns ELSE '[]'::jsonb END) WITH ORDINALITY m WHERE s.email=$1 AND s.id=$2
-    UNION ALL SELECT m.ordinality*2+1,'assistant',m.value->>'line' FROM app_genchat_sessions s CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(s.turns)='array' THEN s.turns ELSE '[]'::jsonb END) WITH ORDINALITY m WHERE s.email=$1 AND s.id=$2`;
+    WHERE s.email=$1 AND s.id=$2 AND m.value->>'role' IN ('user','assistant')
+    AND CASE WHEN jsonb_typeof(m.value->'content')='string' THEN m.value->>'content'<>''
+      WHEN jsonb_typeof(m.value->'content')='array' THEN EXISTS (
+        SELECT 1 FROM jsonb_array_elements(m.value->'content') p(value)
+        WHERE p.value->>'type'='text' AND COALESCE(p.value->>'text','')<>'') ELSE false END`
+      : `SELECT t.ordinal,t.role,to_jsonb(t.text) AS content
+    FROM app_genchat_sessions s CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(s.turns)='array' THEN s.turns ELSE '[]'::jsonb END) WITH ORDINALITY m
+    CROSS JOIN LATERAL (VALUES (m.ordinality*2,'user',m.value->>'you'),(m.ordinality*2+1,'assistant',m.value->>'line')) t(ordinal,role,text)
+    WHERE s.email=$1 AND s.id=$2 AND COALESCE(t.text,'')<>''`;
   return snapshot(async (client) => {
-    const count = await client.query(
-      `SELECT count(*)::int AS total FROM (${source}) m WHERE COALESCE(text,'')<>''`,
-      [email, id],
-    );
-    const rows = await client.query(
-      `SELECT role,left(text,20000) AS text,(length(text)>20000) AS truncated FROM (${source}) m WHERE COALESCE(text,'')<>'' ORDER BY ordinal LIMIT 20 OFFSET $3`,
+    // Extract the owned session once. Nonempty text blocks are enough for the
+    // count; concatenate/measure full text only for the selected 20 messages.
+    const result = await client.query(
+      `WITH extracted AS MATERIALIZED (${source}),
+      selected AS MATERIALIZED (SELECT * FROM extracted ORDER BY ordinal LIMIT 20 OFFSET $3),
+      rendered AS MATERIALIZED (SELECT ordinal,role,
+        CASE WHEN jsonb_typeof(content)='string' THEN content#>>'{}'
+        ELSE (SELECT string_agg(p.value->>'text','' ORDER BY p.ordinality)
+          FROM jsonb_array_elements(content) WITH ORDINALITY p WHERE p.value->>'type'='text') END AS text FROM selected)
+      SELECT (SELECT count(*)::int FROM extracted) AS total,
+      COALESCE((SELECT jsonb_agg(jsonb_build_object('role',role,'text',left(text,20000),'truncated',length(text)>20000) ORDER BY ordinal)
+        FROM rendered),'[]'::jsonb) AS messages`,
       [email, id, (page - 1) * 20],
     );
-    return { total: count.rows[0].total, messages: rows.rows, page, size: 20 };
+    return { total: result.rows[0].total, messages: result.rows[0].messages, page, size: 20 };
   });
 }
