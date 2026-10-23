@@ -16,18 +16,18 @@ async function scoped<T>(reader:CreationReader,run:(tx:PoolClient,visible:string
  const tx=await getPool().connect();try{await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');await tx.query("SET LOCAL statement_timeout='20s'");const result=await run(tx,null);await tx.query('COMMIT');return result;}catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}
 }
 const fromDate=(s:string)=>`${s}T00:00:00+08:00`;
-const baseRecordSelect=`SELECT c.*,COALESCE(u.name,c.actor_email) AS actor_name,
- (SELECT a.id FROM app_creation_assets a WHERE a.creation_id=c.id AND a.direction='output' AND a.media_type='image' ORDER BY position,id LIMIT 1) thumbnail_asset_id,
- b.charged,b.state AS billing_state,
- COALESCE(j.snapshot->'result'->>'status',j.snapshot->>'status',v.status,c.status) AS live_status
+const recordProjection=`SELECT c.*,COALESCE(u.name,c.actor_email) AS actor_name,
+ (SELECT a.id FROM app_creation_assets a WHERE a.creation_id=c.id AND a.direction='output' AND a.media_type='image' ORDER BY position,id LIMIT 1) thumbnail_asset_id,`;
+const recordLiveSelect=`COALESCE(j.snapshot->'result'->>'status',j.snapshot->>'status',v.status,c.status) AS live_status
  FROM app_creation_records c LEFT JOIN app_users u ON u.email=c.actor_email
  LEFT JOIN LATERAL(SELECT x.snapshot FROM app_creation_links l JOIN app_image_jobs x ON x.id=l.target_id AND x.email=l.actor_email WHERE l.creation_id=c.id AND l.target_type LIKE 'image:%' LIMIT 1)j ON true
- LEFT JOIN LATERAL(SELECT x.status FROM app_creation_links l JOIN app_video_tasks x ON x.id=l.target_id AND x.email=l.actor_email WHERE l.creation_id=c.id AND l.target_type='video' LIMIT 1)v ON true
- LEFT JOIN LATERAL(WITH RECURSIVE family AS(SELECT c.id,c.actor_email,c.tenant_id UNION ALL SELECT child.id,child.actor_email,child.tenant_id FROM app_creation_records child JOIN family p ON child.parent_id=p.id AND child.actor_email=p.actor_email AND child.tenant_id IS NOT DISTINCT FROM p.tenant_id), operations AS(
+ LEFT JOIN LATERAL(SELECT x.status FROM app_creation_links l JOIN app_video_tasks x ON x.id=l.target_id AND x.email=l.actor_email WHERE l.creation_id=c.id AND l.target_type='video' LIMIT 1)v ON true`;
+const recordBillingJoin=` LEFT JOIN LATERAL(WITH RECURSIVE family AS(SELECT c.id,c.actor_email,c.tenant_id UNION ALL SELECT child.id,child.actor_email,child.tenant_id FROM app_creation_records child JOIN family p ON child.parent_id=p.id AND child.actor_email=p.actor_email AND child.tenant_id IS NOT DISTINCT FROM p.tenant_id), operations AS(
  SELECT DISTINCT o.id,o.state,o.charged_credits FROM family f JOIN app_creation_links l ON l.creation_id=f.id AND l.target_type='billing' JOIN app_billing_operations o ON o.id=l.target_id AND o.email=l.actor_email)
  SELECT CASE WHEN count(*)>0 AND bool_and(state IN ('settled','released')) THEN sum(charged_credits)::int WHEN count(*)=0 AND EXISTS(SELECT 1 FROM app_creation_links n WHERE n.creation_id=c.id AND n.target_type='no-charge' AND n.relation='explicit-no-charge') THEN 0 ELSE NULL END AS charged,
  CASE WHEN count(*)=0 THEN 'not_recorded' WHEN bool_and(state IN ('settled','released')) THEN 'settled' ELSE 'pending' END AS state FROM operations)b ON true`;
-async function recordSelect(tx:PoolClient){
+async function recordSelect(tx:PoolClient,includeBilling=true){
+ const baseRecordSelect=recordProjection+(includeBilling?' b.charged,b.state AS billing_state,':'')+recordLiveSelect+(includeBilling?recordBillingJoin:'');
  if(!await videoWorkflowEvidenceAvailable(tx))return baseRecordSelect;
  // Optional workflow schemas are initialized by their owning module. Its exact
  // durable node states remain authoritative if secondary evidence writing fails.
@@ -50,16 +50,40 @@ function where(reader:CreationReader,f:CreationFilters,visible:string[]|null){
  return {sql:conditions.join(' AND '),values};
 }
 export async function listCreations(reader:CreationReader,f:CreationFilters):Promise<CreationPage>{return scoped(reader,async(tx,visible)=>{
- const filter=where(reader,f,visible);let values=[...filter.values],sql=`SELECT * FROM (${await recordSelect(tx)} WHERE ${filter.sql}) records`;
+ const filter=where(reader,f,visible);let values=[...filter.values],sql=`SELECT id,actor_email,tenant_id,accepted_at,live_status FROM (${await recordSelect(tx,false)} WHERE ${filter.sql}) records`;
  if(f.status){values.push(f.status);sql+=` WHERE CASE WHEN live_status IN ('done','completed','success') THEN 'succeeded' WHEN live_status IN ('error','rejected') THEN 'failed' WHEN live_status IN ('pending','reviewing') THEN 'queued' WHEN live_status IN ('processing','generating') THEN 'running' WHEN live_status IN ('queued','running','succeeded','partial','failed','cancel_requested','cancelled','needs_review') THEN live_status ELSE 'needs_review' END=$${values.length}`;}
- const total=Number((await tx.query(`SELECT count(*)::int AS n FROM (${sql}) count_records`,values)).rows[0].n);
- const rows=(await tx.query(`${sql} ORDER BY accepted_at DESC,id DESC LIMIT $${values.length+1} OFFSET $${values.length+2}`,[...values,f.size,(f.page-1)*f.size])).rows;
- const aggregate=(await tx.query(`SELECT count(DISTINCT actor_email)::int AS active_members,
+ // The exact status and recursive billing facts are needed for whole-result
+ // totals/ranking, but must not be recomputed by four independent queries.
+ // Keep snapshots and thumbnail lookup out of this materialized row set.
+ const result=(await tx.query(`WITH RECURSIVE status_records AS MATERIALIZED (${sql}),
+ families AS (SELECT id AS root_id,id,actor_email,tenant_id FROM status_records
+ UNION ALL SELECT f.root_id,c.id,c.actor_email,c.tenant_id FROM app_creation_records c JOIN families f
+ ON c.parent_id=f.id AND c.actor_email=f.actor_email AND c.tenant_id IS NOT DISTINCT FROM f.tenant_id),
+ operations AS MATERIALIZED (SELECT DISTINCT f.root_id,o.id,o.state,o.charged_credits FROM families f
+ JOIN app_creation_links l ON l.creation_id=f.id AND l.target_type='billing'
+ JOIN app_billing_operations o ON o.id=l.target_id AND o.email=l.actor_email),
+ billing AS (SELECT root_id,bool_and(state IN ('settled','released')) AS settled,sum(charged_credits) AS charged FROM operations GROUP BY root_id),
+ creation_facts AS MATERIALIZED (SELECT r.id,r.actor_email,r.accepted_at,r.live_status,
+ CASE WHEN b.settled THEN b.charged::int WHEN b.root_id IS NULL AND EXISTS(
+ SELECT 1 FROM app_creation_links n WHERE n.creation_id=r.id AND n.target_type='no-charge' AND n.relation='explicit-no-charge') THEN 0 ELSE NULL END AS charged
+ FROM status_records r LEFT JOIN billing b ON b.root_id=r.id),
+ selected AS MATERIALIZED (SELECT * FROM creation_facts ORDER BY accepted_at DESC,id DESC LIMIT $${values.length+1} OFFSET $${values.length+2}),
+ page_rows AS (SELECT c.id,c.actor_email,c.scope_kind,c.tenant_id,c.source_kind,c.status,c.request_snapshot,c.accepted_at,
+ COALESCE(u.name,c.actor_email) AS actor_name,k.charged,k.live_status,
+ (SELECT a.id FROM app_creation_assets a WHERE a.creation_id=c.id AND a.direction='output' AND a.media_type='image' ORDER BY position,id LIMIT 1) AS thumbnail_asset_id
+ FROM selected k JOIN app_creation_records c ON c.id=k.id LEFT JOIN app_users u ON u.email=c.actor_email),
+ aggregate AS (SELECT count(*)::int AS total,count(DISTINCT actor_email)::int AS active_members,
  sum(charged)::int AS charged,
  count(*) FILTER(WHERE live_status IN ('queued','running','pending','processing'))::int AS pending,
  count(*) FILTER(WHERE live_status IN ('failed','error'))::int AS failed,
- count(*) FILTER(WHERE live_status IN ('needs_review','needs_attention'))::int AS review FROM (${sql}) grouped`,values)).rows[0];
- const memberUsage=(await tx.query(`SELECT actor_email email,max(actor_name) name,sum(charged)::int AS "settledCredits" FROM (${sql}) usages WHERE charged IS NOT NULL GROUP BY actor_email ORDER BY sum(charged) DESC,actor_email LIMIT 10`,values)).rows;
+ count(*) FILTER(WHERE live_status IN ('needs_review','needs_attention'))::int AS review FROM creation_facts),
+ member_usage AS (SELECT f.actor_email AS email,COALESCE(max(u.name),f.actor_email) AS name,sum(f.charged)::int AS "settledCredits"
+ FROM creation_facts f LEFT JOIN app_users u ON u.email=f.actor_email WHERE f.charged IS NOT NULL
+ GROUP BY f.actor_email ORDER BY sum(f.charged) DESC,f.actor_email LIMIT 10)
+ SELECT aggregate.*,
+ COALESCE((SELECT jsonb_agg(p ORDER BY accepted_at DESC,id DESC) FROM page_rows p),'[]'::jsonb) AS items,
+ COALESCE((SELECT jsonb_agg(m ORDER BY "settledCredits" DESC,email) FROM member_usage m),'[]'::jsonb) AS member_usage FROM aggregate`,[...values,f.size,(f.page-1)*f.size])).rows[0];
+ const {items:rows,member_usage:memberUsage,...aggregate}=result;const total=Number(aggregate.total);
  return {items:rows.map(summary),pagination:{total,page:f.page,size:f.size},appliedFilters:f,generatedAt:new Date().toISOString(),scope:reader.platform?'platform':visible?'member':'tenant',availability:'available',summary:{total,activeMembers:aggregate.active_members,settledCredits:aggregate.charged??null,pending:aggregate.pending,failed:aggregate.failed,needsReview:aggregate.review},memberUsage};
 });}
 async function authorizedRecord(tx:PoolClient,reader:CreationReader,id:string,visible:string[]|null){
