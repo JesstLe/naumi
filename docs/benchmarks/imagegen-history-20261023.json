@@ -1,0 +1,203 @@
+{
+  "version": 1,
+  "frozenProductCommit": "d7461ee734f886bbaa2649c92e4a4fa1f0de1992",
+  "employeeExactRequestsReplayed": 0,
+  "countingPolicy": "Count distinct root operations inside each original window; do not add overlapping cohorts, child rows, supplier calls, inputs, assertions or correlated access sequences.",
+  "sources": [
+    {
+      "id": "H20",
+      "kind": "retained-audit",
+      "relativeEvidence": "user-failure-audit47-20261020/summary.json",
+      "windowStart": "2026-10-19T10:05:52+08:00",
+      "cutoff": "2026-10-20T10:05:52+08:00",
+      "rootOperations": 756,
+      "done": 519,
+      "failed": 222,
+      "pending": 15,
+      "sha256": "bc2423e903425274617270c673a58bf6204fa040f84289d07907ef5e1018fa69"
+    },
+    {
+      "id": "H23",
+      "kind": "retained-audit",
+      "relativeEvidence": "recent-admin-failures47-20261023/REPORT.md",
+      "windowStart": "2026-10-23T09:10:12+08:00",
+      "cutoff": "2026-10-23T09:40:12+08:00",
+      "failedRootOperations": 24,
+      "denominator": null,
+      "supplierQuota403": 22,
+      "supplierDeliveredButNoFinalImage": 2,
+      "sha256": "74bedfd0c74e0bc7a794539f254e4b734262de4140b55c4f6aca96b74adbc7ae"
+    },
+    {
+      "id": "Q23",
+      "kind": "correlated-access-not-exact-request",
+      "relativeEvidence": "yanyun-image-diagnosis-20261023/REPORT.md",
+      "windowStart": "2026-10-23T00:00:00+08:00",
+      "cutoff": "2026-10-23T11:47:22+08:00",
+      "acceptedJobs": 0,
+      "supplierCalls": 0,
+      "newBillingOperations": 0,
+      "inputAssetRecords": 64,
+      "employeeFailedClickCount": null,
+      "sha256": "8f992c2bd943f4092ee42bd8c455e2b09a47d1a081776209386f9c75299a9ad2"
+    },
+    {
+      "id": "R23",
+      "kind": "review-derived-counterexample",
+      "relativeEvidence": "docs/changes/2026-10-23-image-scheduler-recovery.md",
+      "employeeIncidentCount": null
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "HF01",
+      "origin": "Q23",
+      "behavior": "上传成功、4K预览成功、提交前报价上下文漂移而400",
+      "historicalCount": null,
+      "replayFidelity": "same-mechanism-not-original-request",
+      "suite": "preview-submit",
+      "historyClosure": "NOT_PROVEN",
+      "limitation": "网关缺原POST响应正文和operation身份，64输入记录不是64次失败；本地以冻结4K机制旧400/新交付对照，不替代原员工端到端验收。"
+    },
+    {
+      "id": "HF02",
+      "origin": "H20",
+      "behavior": "供应商容量已满，本地零POST被直接判失败",
+      "historicalCount": 49,
+      "replayFidelity": "same-state-and-action-mechanism",
+      "suite": "busy",
+      "historyClosure": "NOT_PROVEN",
+      "limitation": "历史49笔local_channel_busy用于问题分布；本地同根任务延期恢复1POST/1账本，不等于逐笔导入49原任务。"
+    },
+    {
+      "id": "HF03",
+      "origin": "H20",
+      "behavior": "生成结果大于12MiB，父回执失败但子图已生成或扣费",
+      "historicalCount": 12,
+      "replayFidelity": "synthetic-real-png-and-real-handlers",
+      "suite": "delivery",
+      "historyClosure": "NOT_PROVEN",
+      "limitation": "真实大PNG解码/存储/回执/结算回归；非12张员工原图，且该修复早于本轮，应视为保留能力而非本轮新增修复。"
+    },
+    {
+      "id": "HF04",
+      "origin": "H20",
+      "behavior": "paid checkpoint已有结果，2K/4K原任务本地续交付失败",
+      "historicalCount": 33,
+      "replayFidelity": "same-checkpoint-state-with-fixture-pixels",
+      "suite": "delivery",
+      "historyClosure": "NOT_PROVEN",
+      "limitation": "续交付必须零新增供应商POST、单次结算、父子完成；历史原异常和原冻结配置未逐笔导入。"
+    },
+    {
+      "id": "HF05",
+      "origin": "H20",
+      "behavior": "非标准宽高比在本地执行路径被拒",
+      "historicalCount": 80,
+      "replayFidelity": "80-retained-original-ratio-parameters-not-original-pixels",
+      "suite": "original-ratios",
+      "historyClosure": "NOT_PROVEN",
+      "limitation": "80笔原始比例值/参考数/历史版本已去身份固化，现有v2新请求75可映射、5超出3:1仍拒绝；仅真实参数函数回归，不是80份原图原quote完整生成。旧冻结v1不静默升级。"
+    },
+    {
+      "id": "HF06",
+      "origin": "H20",
+      "behavior": "特定工具adapter本地比例拒绝",
+      "historicalCount": 8,
+      "replayFidelity": "not-replayed",
+      "suite": null,
+      "historyClosure": "NOT_PROVEN",
+      "limitation": "未逐条取回原adapter参数与历史发布配置；不以通用4K成功代替这一类验收。"
+    },
+    {
+      "id": "HF07",
+      "origin": "H20",
+      "behavior": "实际出图比例存在差异，warning被当失败",
+      "historicalCount": 4,
+      "replayFidelity": "same-known-dimensions-with-fixture-pixels",
+      "suite": "ratio-output",
+      "historyClosure": "NOT_PROVEN",
+      "limitation": "实际尺寸/原字节保持，差异提示可交付的代表用例；原供应商原图未逐笔导入。"
+    },
+    {
+      "id": "HF08",
+      "origin": "H20",
+      "behavior": "供应商异常或结果不完整/未交付",
+      "historicalCount": 36,
+      "replayFidelity": "not-replayed-as-one-cause",
+      "suite": null,
+      "historyClosure": "OPEN",
+      "limitation": "原分类24笔supplier_error_or_incomplete_result加12笔upstream_no_delivered_result，均在同一互斥222分类内；不可假设同一根因或自动重发unknown。"
+    },
+    {
+      "id": "HF09",
+      "origin": "H23",
+      "behavior": "上游403预扣额度不足、无not_charged证明，备用通道未接管",
+      "historicalCount": 22,
+      "replayFidelity": "retained-status-message-local-http-reproduction",
+      "suite": "supplier-quota",
+      "historyClosure": "OPEN",
+      "limitation": "新报价/并发调整不会补充上游额度；测试如仍403且备用POST0必须保留OPEN，不装作历史全绿。"
+    },
+    {
+      "id": "HF10",
+      "origin": "H23",
+      "behavior": "供应商completed/delivered但最终子任务无结果",
+      "historicalCount": 2,
+      "replayFidelity": "not-replayed-exactly",
+      "suite": "delivery",
+      "historyClosure": "NOT_PROVEN",
+      "limitation": "旧交付机制回归不证明今日两笔有可用checkpoint或根因一致；缺原结果时不强行记通过。"
+    },
+    {
+      "id": "RG01",
+      "origin": "review-derived",
+      "behavior": "刷新后原空白节点消失，原pending仍应从根入口仅GET恢复",
+      "historicalCount": null,
+      "replayFidelity": "real-client-component-vm-not-browser",
+      "suite": "reload",
+      "historyClosure": "NOT_PROVEN",
+      "limitation": "当前真实组件/GET/merge清理与scope guards的VM回归；无员工原页面录制或浏览器端精确重放。"
+    },
+    {
+      "id": "RG02",
+      "origin": "review-derived",
+      "behavior": "预览后current价格/版本变化，提交仍用服务端已确认合同",
+      "historicalCount": null,
+      "replayFidelity": "same-timing-and-contract-fixture",
+      "suite": "frozen-quote",
+      "historyClosure": "NOT_PROVEN",
+      "limitation": "改价12→14、客户端0/伪版本、receipt-first和显式参数绑定的定向对照，不记为历史员工笔数。"
+    },
+    {
+      "id": "RG03",
+      "origin": "R23",
+      "behavior": "非durable原pin恢复busy、耗尽候选、A+重做后审核状态",
+      "historicalCount": null,
+      "replayFidelity": "real-handlers-and-pg-review-counterexamples",
+      "suite": "recovery-boundaries",
+      "historyClosure": "NOT_PROVEN",
+      "limitation": "审阅反例旧/新对照，原任务不重放；不是已确认员工线上三次故障。"
+    },
+    {
+      "id": "RG04",
+      "origin": "review-derived",
+      "behavior": "连续正常创作超过原固定次数阈值",
+      "historicalCount": null,
+      "replayFidelity": "transpiled-route-and-ast-guard-projection",
+      "suite": "rate",
+      "historyClosure": "NOT_PROVEN",
+      "limitation": "29路由3192个fixture请求不等于3192名员工、任务或真实出图；安全/幂等保护另验。"
+    },
+    {
+      "id": "RS01",
+      "origin": "Q23",
+      "behavior": "Web容器2GiB限制发生OOM",
+      "historicalCount": null,
+      "replayFidelity": "not-replayed-on-final-image",
+      "suite": null,
+      "historyClosure": "OPEN",
+      "limitation": "独立运行事件不是报价400根因；最终镜像长期/多图/媒体混合负载与47双槽资源未获证明，继续暂缓发布。"
+    }
+  ]
+}
