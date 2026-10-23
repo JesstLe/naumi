@@ -1,5 +1,28 @@
 [
   {
+    "version": "1792753247",
+    "title": {
+      "zh": "创作交互与处理稳定性更新",
+      "en": "Creation workflow and processing stability update"
+    },
+    "improvements": [
+      {
+        "zh": "画布文字可直接发起图片创作",
+        "en": "Start image creation directly from canvas text"
+      },
+      {
+        "zh": "多图参考用途可自由切换",
+        "en": "Switch the purpose of each reference image"
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "改善多任务排队时的处理稳定性",
+        "en": "Improve processing stability when multiple tasks are queued"
+      }
+    ]
+  },
+  {
     "version": "1792731828",
     "title": {
       "zh": "图片创作稳定性更新",

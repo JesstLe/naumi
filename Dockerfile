@@ -80,6 +80,7 @@ COPY --from=build --chown=nextjs:nodejs /app/scripts/video-worker-legacy.mjs ./s
 COPY --from=build --chown=nextjs:nodejs /app/scripts/model-health-worker.mjs ./scripts/model-health-worker.mjs
 COPY --from=build --chown=nextjs:nodejs /app/scripts/worker-runtime.mjs ./scripts/worker-runtime.mjs
 COPY --from=build --chown=nextjs:nodejs /app/scripts/release-http-observer.cjs ./scripts/release-http-observer.cjs
+COPY --from=build --chown=nextjs:nodejs /app/scripts/runtime-memory.cjs ./scripts/runtime-memory.cjs
 COPY --from=build --chown=nextjs:nodejs /app/scripts/video-media-worker.mjs ./scripts/video-media-worker.mjs
 COPY --from=build --chown=nextjs:nodejs /app/scripts/video-fusion/media-engine.mjs ./scripts/video-fusion/media-engine.mjs
 COPY --from=build --chown=nextjs:nodejs /app/scripts/video-fusion/media-bundle.mjs ./scripts/video-fusion/media-bundle.mjs

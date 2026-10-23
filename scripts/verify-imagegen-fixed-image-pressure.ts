@@ -19,12 +19,26 @@ const SECRET='fixed-image-pressure-local-fixture-secret-20261023';
 const WORKER_SECRET='fixed-image-pressure-worker-secret-local-20261023';
 const out=resolve(args.find(x=>x.startsWith('--output='))?.slice(9)||'output/imagegen-fixed-image-pressure-20261023');
 const selected=(args.find(x=>x.startsWith('--cases='))?.slice(8)||'6,16,4,8,worker').split(',');
+function positiveInteger(key:string,fallback:number){const raw=option(key,String(fallback));assert.match(raw,/^[1-9]\d*$/,`--${key} must be a positive integer`);const value=Number(raw);assert.ok(Number.isSafeInteger(value),`--${key} must be a safe integer`);return value;}
+const webMemoryMiB=positiveInteger('web-memory-mib',3072),heapMiB=positiveInteger('heap-mib',2688);
+const workerMemoryMiB=positiveInteger('worker-memory-mib',1024),workerHeapMiB=positiveInteger('worker-heap-mib',64);
+const laneOverride=option('lane','')?positiveInteger('lane',4):undefined;
+const suiteLane=positiveInteger('suite-lane',2),aplusLane=positiveInteger('aplus-lane',2);
+const nativeMemoryProfile=option('native-memory-profile','off');
+assert.ok(['off','bounded'].includes(nativeMemoryProfile),'--native-memory-profile must be off or bounded');
+assert.ok(heapMiB<webMemoryMiB,'Web heap must leave room for native allocations');
+assert.ok(workerHeapMiB<workerMemoryMiB,'Worker heap must leave room for native allocations');
+assert.ok(selected.length>0&&selected.every(label=>['6','16','4','8','worker'].includes(label)),'--cases must contain only 6,16,4,8,worker');
+assert.equal(new Set(selected).size,selected.length,'--cases must not repeat cases');
+const runtimeProfile={webMemoryMiB,heapMiB,workerMemoryMiB,workerHeapMiB,lane:laneOverride??'per-case',suiteLane,aplusLane,nativeMemoryProfile};
+const nodeOptions=(heap:number)=>`--max-old-space-size=${heap} ${nativeMemoryProfile==='bounded'?'--require=/app/scripts/runtime-memory.cjs ':''}--require=/app/scripts/release-http-observer.cjs`;
+const nativeEnv:Record<string,string>=nativeMemoryProfile==='bounded'?{NAUMI_NATIVE_MEMORY_PROFILE:'bounded',MALLOC_ARENA_MAX:'2',UV_THREADPOOL_SIZE:'2'}:{};
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms));
 const sha=(b:Buffer|string)=>createHash('sha256').update(b).digest('hex');
 function docker(...a:string[]){return execFileSync('docker',a,{encoding:'utf8',maxBuffer:20*1024*1024}).trim();}
 async function save(name:string,value:unknown){await writeFile(join(out,name),typeof value==='string'?value:JSON.stringify(value,null,2));}
 function parseSample(line:string){const [at,current,peak,max,swap,events]=line.split('|');return {at:Number(at),current:Number(current),peak:Number(peak),max,swap,events:Object.fromEntries((events||'').split(';').filter(Boolean).map(x=>{const [k,v]=x.split('=');return [k,Number(v)];}))};}
-async function selfTest(){assert.equal(parseSample('10|20|30|40|0|oom=0;oom_kill=1;').events.oom_kill,1);assert.equal(parseSample('10|20|30|40|0|oom=0;').peak,30);assert.equal(IMAGE.length,71);console.log('PASS fixed-image pressure harness self-test (sample parser, immutable image identity)');}
+async function selfTest(){assert.equal(parseSample('10|20|30|40|0|oom=0;oom_kill=1;').events.oom_kill,1);assert.equal(parseSample('10|20|30|40|0|oom=0;').peak,30);assert.match(IMAGE,/^sha256:[a-f0-9]{64}$/);assert.ok(nodeOptions(heapMiB).includes('--require=/app/scripts/release-http-observer.cjs'));if(nativeMemoryProfile==='bounded'){assert.ok(nodeOptions(heapMiB).includes('--require=/app/scripts/runtime-memory.cjs'));assert.equal(nativeEnv.UV_THREADPOOL_SIZE,'2');assert.equal(nativeEnv.MALLOC_ARENA_MAX,'2');}console.log('PASS fixed-image pressure harness self-test (sample parser, immutable image identity, explicit runtime profile)');console.log(JSON.stringify(runtimeProfile));}
 
 async function main(){
  if(args.includes('--self-test'))return selfTest();
@@ -34,8 +48,8 @@ async function main(){
  assert.equal(docker('image','inspect',IMAGE,'--format','{{range .Config.Env}}{{println .}}{{end}}').includes('SOURCE_COMMIT='+SOURCE),true);
  await mkdir(out,{recursive:true});
  const memory=docker('info','--format','{{.MemTotal}}');
- assert.ok(Number(memory)>6*1024**3,'Local VM needs room for 3GiB Web + 1GiB Worker and existing processes');
- await save('preflight.json',{image:IMAGE,source:SOURCE,build:BUILD,dockerMemory:Number(memory),running:docker('ps','--format','{{.Names}} {{.Image}}'),selected,localOnly:true});
+ assert.ok(Number(memory)>(webMemoryMiB+workerMemoryMiB+2048)*1024**2,'Local VM needs room for configured Web + Worker caps and 2GiB for existing processes');
+ await save('preflight.json',{image:IMAGE,source:SOURCE,build:BUILD,dockerMemory:Number(memory),running:docker('ps','--format','{{.Names}} {{.Image}}'),selected,runtimeProfile,localOnly:true});
  const admin=new Pool({connectionString:DB,ssl:false,max:2});
  const schemas:string[]=[],ownedContainers=new Set<string>();
  const allOwnedNames:string[]=[];
@@ -81,7 +95,7 @@ async function main(){
  await save('fixture.json',{listen:'0.0.0.0',supplierPort,dockerOrigin:origin,png:{width:4096,height:4096,bytes:png.length,sha256:sha(png)},externalCalls:0});
  try{
   for(const label of selected){
-   const lane=label==='16'?16:6, jobs=label==='6'?6:label==='16'?16:1, count=label==='8'?8:label==='4'?4:1;
+   const lane=laneOverride??(label==='16'?16:6), jobs=label==='6'?6:label==='16'?16:1, count=label==='8'?8:label==='4'?4:1;
    const schema='pressure_'+randomUUID().replaceAll('-','');schemas.push(schema);await admin.query(`CREATE SCHEMA ${schema}`);
    const media=join(out,schema,'media');await mkdir(media,{recursive:true});
    const sql=new Pool({connectionString:DB,ssl:false,options:`-c search_path=${schema}`,max:3});
@@ -96,13 +110,14 @@ async function main(){
    const cookie=`nv_user=${eb}.${exp}.${createHmac('sha256',SECRET).update(`user:${eb}.${exp}`).digest('hex')}`;
    const suffix=schema.slice(-10),web='naumi-pressure-web-'+suffix,worker='naumi-pressure-worker-'+suffix;
    const samples:{[name:string]:ReturnType<typeof parseSample>[]}={web:[],worker:[]};const samplers:any[]=[];const dbSamples:any[]=[];let dbTimer:ReturnType<typeof setInterval>|undefined;
-   const result:any={label,lane,jobs,count,refs:3,resolution:'4K',actualPixels:[4096,4096],schema,web,worker,image:IMAGE,attemptedAt:new Date().toISOString(),status:'NOT_PROVEN'};results.push(result);
+   const result:any={label,lane,jobs,count,refs:3,resolution:'4K',actualPixels:[4096,4096],schema,web,worker,image:IMAGE,runtimeProfile,attemptedAt:new Date().toISOString(),status:'NOT_PROVEN'};results.push(result);
    let webPort=0,api='';const startPost=posts.length;maxActive=0;
    try{
     const env:Record<string,string>={DATABASE_URL:DB.replace('127.0.0.1','host.docker.internal'),PGOPTIONS:`-c search_path=${schema}`,SETTINGS_SECRET:SECRET,VIDEO_WORKER_SECRET:WORKER_SECRET,NAUMI_MULTI_USER:'1',NAUMI_ROUTER_MANAGEMENT_URL:origin,NAUMI_ROUTER_MANAGEMENT_TOKEN:'local-router-fixture-token-independent-123456789',MODEL_CONFIG_ENVELOPE_SECRET:'local-envelope-fixture-secret-independent-987654321',MODEL_CONFIG_TRUSTED_ORIGINS:origin,OPENAI_API_KEY:'fixture-only',OPENAI_BASE_URL:origin+'/v1',STORAGE_DRIVER:'local',MEDIA_PRIVATE:'1',MEDIA_DIR:'/data/media',NAUMI_IMAGE_JOB_CONCURRENCY_GENERATE:String(lane),NAUMI_IMAGE_JOB_CONCURRENCY_IMAGEGEN:String(lane),INTERNAL_APP_ORIGIN:'http://127.0.0.1:3000',NODE_OPTIONS:'--max-old-space-size=2688 --require=/app/scripts/release-http-observer.cjs',NAUMI_RELEASE_RUNTIME:'1',NAUMI_INSTANCE_ID:web,RELEASE_CONTROL_SECRET:'local-release-observer-secret-independent-20261023',HTTP_PROXY:'',HTTPS_PROXY:'',ALL_PROXY:'',NO_PROXY:'*'};
+    Object.assign(env,nativeEnv,{NODE_OPTIONS:nodeOptions(heapMiB),NAUMI_IMAGE_JOB_CONCURRENCY_SUITE:String(suiteLane),NAUMI_IMAGE_JOB_CONCURRENCY_APLUS:String(aplusLane)});
     env.NAUMI_RELEASE_ADMISSION_START='open';
     const envArgs=Object.entries(env).flatMap(([k,v])=>['-e',k+'='+v]);
-    const cmd=['run','-d','--pull','never','--name',web,'--label','naumi.pressure.owner='+schema,'--memory','3g','--memory-swap','3g','--restart','no','-p','127.0.0.1::3000','--mount',`type=bind,source=${media},target=/data/media`,...envArgs,IMAGE];
+    const cmd=['run','-d','--pull','never','--name',web,'--label','naumi.pressure.owner='+schema,'--memory',webMemoryMiB+'m','--memory-swap',webMemoryMiB+'m','--restart','no','-p','127.0.0.1::3000','--mount',`type=bind,source=${media},target=/data/media`,...envArgs,IMAGE];
     result.webCommand=['docker',...cmd];docker(...cmd);ownedContainers.add(web);allOwnedNames.push(web);
     webPort=Number(docker('port',web,'3000/tcp').split(':').at(-1));api='http://127.0.0.1:'+webPort;
     async function request(path:string,body?:unknown){const response=await fetch(api+path,{method:body===undefined?'GET':'POST',headers:{cookie,...(body===undefined?{}:{'content-type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(120000)});const text=await response.text();let data:any;try{data=JSON.parse(text);}catch{data={raw:text.slice(0,3000)};}return {httpStatus:response.status,data};}
@@ -111,7 +126,8 @@ async function main(){
     for(let i=0;i<30;i++){result.featureAccessWarmup=await request('/api/feature-access');if(result.featureAccessWarmup.httpStatus===200)break;await sleep(500);}
     assert.equal(result.featureAccessWarmup.httpStatus,200,'Real auth/feature route readiness');
     const workerEnv={NAUMI_APP_ORIGIN:`http://host.docker.internal:${webPort}`,VIDEO_WORKER_SECRET:WORKER_SECRET,VIDEO_WORKER_INTERVAL_MS:'5000',NAUMI_MEDIA_WORKER:'1',NAUMI_WORKER_RELEASE_CONTROL:'1',MEDIA_WORKER_SECRET:'local-native-media-worker-secret-independent-20261023',NAUMI_WORKER_STATE_FILE:'/data/pressure-worker.json',NAUMI_INSTANCE_ID:worker,NAUMI_WORKER_TARGET_INSTANCE_ID:web,NAUMI_WORKER_START_PAUSED:'0',MEDIA_WORKER_START_PAUSED:'0',MEDIA_WORKER_CONCURRENCY:'1',MEDIA_JOB_DIR:'/scratch'};
-    const wc=['run','-d','--pull','never','--name',worker,'--label','naumi.pressure.owner='+schema,'--memory','1g','--memory-swap','1g','--restart','no','--user','0:0',...Object.entries(workerEnv).flatMap(([k,v])=>['-e',k+'='+v]),IMAGE,'node','scripts/video-worker-with-media.mjs'];
+    Object.assign(workerEnv,nativeEnv,{NODE_OPTIONS:nodeOptions(workerHeapMiB)});
+    const wc=['run','-d','--pull','never','--name',worker,'--label','naumi.pressure.owner='+schema,'--memory',workerMemoryMiB+'m','--memory-swap',workerMemoryMiB+'m','--restart','no','--user','0:0',...Object.entries(workerEnv).flatMap(([k,v])=>['-e',k+'='+v]),IMAGE,'node','scripts/video-worker-with-media.mjs'];
     result.workerCommand=['docker',...wc];docker(...wc);ownedContainers.add(worker);allOwnedNames.push(worker);
     for(const [role,name] of [['web',web],['worker',worker]]){
      const script='while :; do printf "%s|" "$(date +%s%3N)"; for f in memory.current memory.peak memory.max memory.swap.max; do printf "%s|" "$(cat /sys/fs/cgroup/$f)"; done; tr " \\n" "=;" < /sys/fs/cgroup/memory.events; printf "\\n"; sleep 0.2; done';
@@ -122,7 +138,7 @@ async function main(){
     assert.ok(result.workerInitialStatus?.mediaWorker?.sandbox===true,'Native combined worker readiness required');
     let querying=false;dbTimer=setInterval(async()=>{if(querying)return;querying=true;try{const rows=(await sql.query("SELECT kind,count(*) FILTER(WHERE lease_token IS NOT NULL AND lease_until>now())::int leased,count(*) FILTER(WHERE snapshot->>'status' NOT IN ('done','error','needs_attention'))::int unfinished FROM app_image_jobs GROUP BY kind")).rows;dbSamples.push({at:Date.now(),rows});}catch{}finally{querying=false;}},200);
     result.dbProviderBudgets=(await sql.query('SELECT identity,max_concurrent FROM app_model_provider_budgets')).rows;
-    gateTarget=jobs;gateStart=Date.now();gateReleased=false;
+    gateTarget=Math.min(jobs,lane);gateStart=Date.now();gateReleased=false;
     if(label==='8'){
      const form=new FormData();for(const [k,v] of Object.entries({prompt:'PRESSURE_8 eight native outputs',model:'image-a',resolution:'4K',quality:'medium',ratio:'1:1',count:'8',origin:'generate'}))form.set(k,v);for(const ref of refIds)form.append('image',new File([new Uint8Array(png)],ref+'.png',{type:'image/png'}));
      const response=await fetch(api+'/api/generate-image',{method:'POST',headers:{cookie,'x-video-worker-secret':WORKER_SECRET},body:form,signal:AbortSignal.timeout(120000)});const raw=await response.text();let data:any;try{data=JSON.parse(raw);}catch{data={unparsedResponse:raw.slice(0,3000)};}result.submit=[{httpStatus:response.status,headers:Object.fromEntries(response.headers),responseBytes:Buffer.byteLength(raw),data}];
