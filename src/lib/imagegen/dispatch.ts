@@ -195,7 +195,7 @@ export async function submitImagegen(raw:ImagegenRequest,owner:string,confirmati
   if(confirmation?.quoteId!==undefined)return await submitAcceptedImagegen(await frozenImagegenQuote(request,owner,confirmation),owner,fingerprint);
   if(confirmation?.confirmed===false)throw new Error("已取消提交");
   const quoteId=await latestImagegenQuote(request,owner);
-  const plan=quoteId?await frozenImagegenQuote(request,owner,{quoteId,confirmed:confirmation?.confirmed!==false}):await planImagegen(request,owner);
+  const plan=quoteId?await frozenImagegenQuote(request,owner,{quoteId,confirmed:true}):await planImagegen(request,owner);
   return await submitAcceptedImagegen(plan,owner,fingerprint);
  }catch(error){
   const winner=await jobs.get(id,false);

@@ -41,7 +41,7 @@ export async function submitImagegenBatch(raw:ImagegenRequest,owner:string,confi
   if(confirmation?.quoteId!==undefined)return await submitAcceptedImagegenBatch(await frozenImagegenQuote(request,owner,confirmation),owner,fingerprint);
   if(confirmation?.confirmed===false)throw new Error("已取消提交");
   const quoteId=await latestImagegenQuote(request,owner);
-  const plan=quoteId?await frozenImagegenQuote(request,owner,{quoteId,confirmed:confirmation?.confirmed!==false}):(await prepare(request,owner)).plan;
+  const plan=quoteId?await frozenImagegenQuote(request,owner,{quoteId,confirmed:true}):(await prepare(request,owner)).plan;
   return await submitAcceptedImagegenBatch(plan,owner,fingerprint);
  }catch(error){
   // Another identical request may commit while this candidate's quote/current
