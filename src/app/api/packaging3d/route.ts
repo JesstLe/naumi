@@ -16,7 +16,6 @@ import {
   sweepStaleReservations,
 } from "@/lib/db";
 import { clientIp } from "@/lib/ip";
-import { rateLimit } from "@/lib/rate-limit";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { getOpenAISettings } from "@/lib/settings";
@@ -304,9 +303,6 @@ async function handleObservedPost(request: Request) {
     );
   }
   const ip = clientIp(request);
-  if (!rateLimit(`packaging3d:${ip}`, 20, 600_000)) {
-    return NextResponse.json({ error: "请求过于频繁，请稍后再试" }, { status: 429 });
-  }
   if (dbEnabled) {
     const email = await resolveUserEmail(request);
     if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });

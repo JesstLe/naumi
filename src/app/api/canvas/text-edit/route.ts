@@ -17,8 +17,6 @@ import {
 import { readCanvasImage } from "@/lib/canvas-image-input";
 import { editImage } from "@/lib/image-edit";
 import { storageEnabled, uploadImage } from "@/lib/storage";
-import { clientIp } from "@/lib/ip";
-import { rateLimit } from "@/lib/rate-limit";
 import { safeError } from "@/lib/api-error";
 
 export const runtime = "nodejs";
@@ -44,9 +42,6 @@ function editSize(width: number, height: number) {
 async function handleObservedPost(request: Request) {
   const email = await authenticatedEmail(request);
   if (dbEnabled && !email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
-  if (!rateLimit(`canvas-text-edit:${clientIp(request) || "0.0.0.0"}`, 20, 10 * 60 * 1000)) {
-    return NextResponse.json({ error: "改字操作过于频繁，请稍后再试" }, { status: 429 });
-  }
 
   let requestedQuality: unknown;
   let input: { artworkId: string; oldText: string; newText: string; box: Box };

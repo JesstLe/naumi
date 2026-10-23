@@ -22,7 +22,6 @@ import {
   sweepStaleReservations,
 } from "@/lib/db";
 import { clientIp } from "@/lib/ip";
-import { rateLimit } from "@/lib/rate-limit";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { getOpenAISettings } from "@/lib/settings";
@@ -678,13 +677,6 @@ async function handleObservedPost(request: Request) {
   const { apiKey, model } = await getOpenAISettings();
   const ip = clientIp(request);
 
-  // 按 IP 限流:套图一次 13 张更重,8 次/10 分钟。
-  if (!rateLimit(`suite:${ip}`, 8, 600_000)) {
-    return NextResponse.json(
-      { error: "请求过于频繁，请稍后再试" },
-      { status: 429 }
-    );
-  }
 
   // 生产环境必须凭有效登录态:用 token 里的 email 作准,不信任请求体 email。
   if (dbEnabled) {

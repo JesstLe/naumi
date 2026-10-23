@@ -25,7 +25,7 @@ async function handleObservedPost(req: Request, { params }: { params: Promise<{ 
     const parsed = actionSchema.safeParse(await req.json());
     if (!parsed.success) throw new WorkspaceError("操作、提示词或选区格式不正确");
     const body = parsed.data;
-    if (!rateLimit(`competitor:${body.action}:${email}`, body.action === "analyze" ? 120 : 40, 600000)) throw new WorkspaceError("操作过于频繁，请稍后重试", 429);
+    if (body.action === "analyze" && !rateLimit(`competitor:${body.action}:${email}`, body.action === "analyze" ? 120 : 40, 600000)) throw new WorkspaceError("操作过于频繁，请稍后重试", 429);
     const original = await ownedCompetitor(email, (await params).id);
     checkVersion(original, body.activeVersion);
     if (body.action !== "analyze" && original.versions.length >= 100) throw new WorkspaceError("该图已达到 100 个历史版本，请导入新副本继续");
