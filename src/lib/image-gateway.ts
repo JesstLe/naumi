@@ -2,6 +2,8 @@ import { queryableImageScope } from "./model-config/apimart-image-policy";
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { currentModelExecution } from "./model-config/context";
+import { ModelConfigError } from "./model-config/types";
+import { setTimeout as sleep } from "node:timers/promises";
 
 type ImageOperation = {
   /** Caller trust boundary: arbitrary BYOK endpoints are never durable Router. */
@@ -41,6 +43,21 @@ export class ImageOperationPending extends Error {
     this.name = "ImageOperationPending";
   }
 }
+/** A local capacity claim failed BEFORE this transport dispatched. This is not
+ * supplier acceptance evidence. The shared root dispatch flag still decides
+ * whether the whole paid operation may return to the existing DB queue. */
+export class ImageOperationDeferred extends ImageOperationPending {
+  constructor(readonly operationId: string) {
+    super(operationId, new Error("local-capacity-not-dispatched"));
+    this.name = "ImageOperationDeferred";
+  }
+}
+export function imageCapacityBusy(): ModelConfigError | ImageOperationDeferred {
+  const operation = operations.getStore();
+  return operation?.durable
+    ? new ImageOperationDeferred(operation.id)
+    : new ModelConfigError("PROVIDER_BUSY", "当前模型通道繁忙，本次未提交上游", 429);
+}
 /** A supplier explicitly paused for review is not an actively generating task. */
 export class ImageOperationReview extends ImageOperationPending {
   readonly reviewRequired=true;
@@ -49,18 +66,21 @@ export class ImageOperationReview extends ImageOperationPending {
   }
 }
 export function noteImageSupplierDispatch(){const operation=operations.getStore();if(operation?.dispatchState)operation.dispatchState.attempted=true;}
+export function imageSupplierWasDispatched(){return operations.getStore()?.dispatchState?.attempted === true;}
+/** Only leased, already-started work waits in process. Never retries a POST. */
+export async function waitForImageCapacity(signal:AbortSignal){await sleep(250,undefined,{signal});}
 
 /** SDK fetch failures wrap local adapter signals in APIConnectionError.cause.
  * Recover only our typed signal for this exact paid operation (or its fan-out
  * image); names, supplier JSON and unrelated task IDs are never trusted. */
 function originalImageOperationSignal(error: unknown, operationId: string) {
   const seen = new Set<object>();
-  let value = error, pending: ImageOperationPending | undefined;
+  let value = error, pending: ImageOperationPending | ImageOperationDeferred | undefined;
   for (let depth = 0; depth < 8 && value instanceof Error && !seen.has(value); depth++) {
     seen.add(value);
-    if (value instanceof ImageOperationPending && (value.operationId === operationId ||
+    if ((value instanceof ImageOperationPending || value instanceof ImageOperationDeferred) && (value.operationId === operationId ||
       value.operationId.startsWith(`${operationId}:image:`) && /^\d+$/.test(value.operationId.slice(operationId.length + 7)))) {
-      if (value instanceof ImageOperationReview) return value;
+      if (value instanceof ImageOperationReview || value instanceof ImageOperationDeferred) return value;
       pending ||= value;
     }
     value = value.cause;
@@ -69,11 +89,14 @@ function originalImageOperationSignal(error: unknown, operationId: string) {
 }
 
 export async function withImageOperation<T>(model: string, operation: ImageOperation, run: () => Promise<T>): Promise<T> {
-  return operations.run({...operation,dispatchState:operation.dispatchState||{attempted:false}}, async () => {
+  const dispatchState = operation.dispatchState || operations.getStore()?.dispatchState || {attempted:false};
+  return operations.run({...operation,dispatchState}, async () => {
     try { return await run(); }
     catch (error) {
       const signal = originalImageOperationSignal(error, operation.id);
+      if (signal instanceof ImageOperationDeferred && dispatchState.attempted) throw new ImageOperationPending(operation.id, signal);
       if (signal) throw signal;
+      if (error instanceof ImageOperationDeferred) throw new ImageOperationPending(operation.id,error);
       if (error instanceof ImageOperationPending) throw error;
       const status = (error as { status?: number } | null)?.status;
       // 504 is Router's accepted/uncertain contract; transport failures and

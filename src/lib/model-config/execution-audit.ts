@@ -37,7 +37,7 @@ export async function beginExecutionStage(scope: ModelExecutionScope, attempt: n
     await tx.query("BEGIN");
     await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`naumi-stage-budget:${operation}`]);
     if (scope.routing) {
-      const previous = (await tx.query("SELECT COALESCE(sum(estimated_cost_cny_micros),0)::text AS total,count(*)::int AS attempts FROM app_model_execution_stages WHERE operation_id=$1", [operation])).rows[0];
+      const previous = (await tx.query("SELECT COALESCE(sum(estimated_cost_cny_micros),0)::text AS total,count(*)::int AS attempts FROM app_model_execution_stages WHERE operation_id=$1 AND state<>'not-submitted'", [operation])).rows[0];
       if (previous.attempts >= scope.routing.policy.maxAttempts) throw new ModelConfigError("ROUTE_EXHAUSTED", "本任务调用次数达到上限", 409);
       const sum = previous.total;
       if (!cost?.amountMicros || BigInt(sum) + BigInt(cost.amountMicros) > BigInt(scope.routing.policy.costCapCnyMicros)) throw new ModelConfigError("ROUTE_BUDGET", "本任务供应商成本达到上限，已停止后续调用", 409);

@@ -86,7 +86,8 @@ async function submitNextLocal(id:string){
  const tx=await imageCoordinationPool().connect();
  try{await tx.query("BEGIN");const batch=(await tx.query("SELECT * FROM app_imagegen_batches WHERE id=$1 FOR UPDATE SKIP LOCKED",[id])).rows[0];
   if(!batch||batch.state!=="running"){await tx.query("COMMIT");return false;}
-  const limit=Math.min(batch.request.batch.concurrency,5,Math.max(1,Number(process.env.GEN_MAX_CONCURRENT)||4));
+  // Per-batch user scheduling only; active execution belongs to claimImageJob.
+  const limit=batch.request.batch.concurrency;
   const active=(await tx.query("SELECT count(*)::int AS n FROM app_imagegen_batch_items WHERE batch_id=$1 AND state='submitted'",[id])).rows[0].n;
   if(active>=limit){await tx.query("COMMIT");return false;}
   const item=(await tx.query<ImagegenBatchItem>("SELECT * FROM app_imagegen_batch_items WHERE batch_id=$1 AND state='queued' ORDER BY ordinal FOR UPDATE SKIP LOCKED LIMIT 1",[id])).rows[0];

@@ -3,13 +3,13 @@ import { withBackgroundActivity, detachBackgroundActivity, bindBackgroundClaim }
 import { releaseRuntimeEnabled } from "@/lib/release-runtime/identity";
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual, randomUUID } from "node:crypto";
 import { dbEnabled, getPool } from "@/lib/db";
 import { assertMutableStagingTask } from "./staging-history";
 import { uploadImage, readManagedObject } from "@/lib/storage";
 import { workerSecret } from "@/lib/settings-secret";
 import * as repository from "@/lib/image-job-repository";
-import { ImageOperationPending, isImageGatewayModel, withImageOperation } from "@/lib/image-gateway";
+import { ImageOperationPending, ImageOperationDeferred, isImageGatewayModel, withImageOperation } from "@/lib/image-gateway";
 import {dispatchImageQueue} from "./image-job-queue";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
@@ -111,6 +111,12 @@ export class DurableImageJobs<T extends { status: string }> {
   async handlePending(id: string, error: ImageOperationPending) {
     const saved = await this.get(id, false) as (T & Record<string, any>) | undefined;
     if (!saved || ["done", "error"].includes(saved.status)) return;
+    if (error instanceof ImageOperationDeferred) {
+      // paidOperation already atomically restored this NEW, unsent attempt
+      // under the job lease. Keep its reservation and use the existing 10s scan.
+      const attempt = saved.paidOperations?.[error.operationId];
+      if (attempt?.state === "queued" && attempt.attemptToken && saved.queueState === "execution") return;
+    }
     if(dbEnabled&&currentModelExecution("image")&&(await getPool().query("SELECT to_regclass('app_supplier_calls') AS name")).rows[0]?.name&&Number(saved.supplierQueryResumes||0)<3&&Date.now()-Number(saved.createdAt||0)<600_000){
       const known=await getPool().query(`SELECT 1 FROM app_supplier_calls WHERE operation_id=$1
         AND task_id IS NOT NULL AND state IN ('submitted','processing','running','completed','success','succeeded') LIMIT 1`,[id]);
@@ -124,7 +130,7 @@ export class DurableImageJobs<T extends { status: string }> {
   /** Persist intent before paid work. Only a durable Router operation may replay. */
   async paidOperation<R>(id: string, model: string, operation: Parameters<typeof withImageOperation>[1], run: () => Promise<R>): Promise<R> {
     if (dbEnabled) await assertMutableStagingTask(getPool(), "app_image_jobs", id);
-    type Attempt = { model: string; replayable: boolean; gatewayIdentity?: string; state: "queued" | "started" | "done" | "rejected"; result?: R };
+    type Attempt = { model: string; replayable: boolean; gatewayIdentity?: string; attemptToken?: string; state: "queued" | "started" | "done" | "rejected"; result?: R };
     type Snapshot = T & { paidOperations?: Record<string, Attempt> };
     const update = async (change: (current: Snapshot) => Snapshot) => {
       const work = async () => {
@@ -153,7 +159,10 @@ export class DurableImageJobs<T extends { status: string }> {
       await repository.holdImageJobBilling(id);
       throw new ImageOperationPending(operation.id, new Error("上游提交需要人工核查"));
     }
-    const attempt: Attempt = { model, replayable: !!pinnedRecovery || replayable, gatewayIdentity: pinnedRecovery || gatewayIdentity, state: "started" };
+    const attempt: Attempt = { model, replayable: !!pinnedRecovery || replayable, gatewayIdentity: pinnedRecovery || gatewayIdentity, attemptToken: randomUUID(), state: "started" };
+    // A prior started checkpoint is already possible dispatch evidence, even if
+    // this recovery has not POSTed yet. Never erase it because capacity is busy.
+    const dispatchState = { attempted: Object.values(saved.paidOperations || {}).some(active => active.state === "started") };
     await update((current) => {
       const active = current.paidOperations?.[operation.id];
       if (active?.state === "done" || (active?.state === "started" && (!pinnedRecovery || active.model !== model) && (!active.replayable || active.model !== model || active.gatewayIdentity !== gatewayIdentity))) {
@@ -162,10 +171,19 @@ export class DurableImageJobs<T extends { status: string }> {
       return { ...current, paidOperations: { ...current.paidOperations, [operation.id]: attempt } };
     });
     try {
-      const result = await withImageOperation(model, { ...operation, durable: true }, run);
+      const result = await withImageOperation(model, { ...operation, durable: true, dispatchState }, run);
       await update((current) => ({ ...current, paidOperations: { ...current.paidOperations, [operation.id]: { ...attempt, state: "done", result } } }));
       return result;
     } catch (error) {
+      if (error instanceof ImageOperationDeferred && !dispatchState.attempted && previous?.state !== "started") {
+        if (dbEnabled && execution.getStore()?.id !== id) throw new ImageOperationPending(operation.id,error);
+        await update(current => {
+          const active = current.paidOperations?.[operation.id];
+          if (active?.state !== "started" || active.attemptToken !== attempt.attemptToken) throw new ImageOperationPending(operation.id,error);
+          return {...current,status:"pending",queueState:"execution",paidOperations:{...current.paidOperations,[operation.id]:{...attempt,state:"queued"}}};
+        });
+        throw new ImageOperationDeferred(operation.id);
+      }
       if (error instanceof ImageOperationPending && dbEnabled) {
         const identity=await recoverableChannelIdentity(getPool(),currentModelExecution("image"),operation.id);
         if(identity)await update(current=>({...current,paidOperations:{...current.paidOperations,[operation.id]:{...attempt,replayable:true,gatewayIdentity:identity}}}));

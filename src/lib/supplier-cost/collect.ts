@@ -4,7 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { dbEnabled } from "../db";
 import { currentModelExecution, type ModelExecutionScope } from "../model-config/context";
 import { currentSynchronousBilling } from "../billing/synchronous";
-import { currentImageOperationId } from "../image-gateway";
+import { currentImageOperationId, noteImageSupplierDispatch } from "../image-gateway";
 import { accountIdentity, supplierLedger } from "./runtime";
 import { genericReceipt, safeUsage, submittedAPIMartTask } from "./adapters";
 import { ReceiptBuffer } from "./receipt-buffer";
@@ -23,10 +23,17 @@ export async function supplierContext(scope?: ModelExecutionScope | null): Promi
 
 /** Instrument the actual HTTP boundary, not SDK+observer+gateway layers simultaneously. */
 export function supplierCostFetch(fetcher: typeof fetch, connection: { providerId: string; apiKey?: string; baseUrl: string; wireModel?: string; protocol?: string; credentialRef?: string; costScope?: ModelExecutionScope; phase?: string; observeTaskGets?: boolean; actor?: { userEmail: string; feature: string } }): typeof fetch {
+  const dispatch: typeof fetch = async (input, init) => {
+    const request = new Request(input, init); request.signal.throwIfAborted();
+    // Managed transports mark AFTER their capacity/live gates. Legacy/BYOK
+    // fetchers have no lower transport hook, but share the same root anti-replay flag.
+    if (request.method === "POST" && !connection.costScope) noteImageSupplierDispatch();
+    return fetcher(request);
+  };
   return async (input, init) => {
-    if (!dbEnabled) return fetcher(input, init);
+    if (!dbEnabled) return dispatch(input, init);
     const request = new Request(input, init);
-    if (request.method !== "POST" && !(connection.observeTaskGets && request.method==='GET')) return fetcher(input, init);
+    if (request.method !== "POST" && !(connection.observeTaskGets && request.method==='GET')) return dispatch(input, init);
     const scope = connection.costScope || currentModelExecution(), ledger = supplierLedger(), context = await supplierContext(scope);
     context.userEmail ||= connection.actor?.userEmail;
     if(context.feature==='unattributed-call'&&connection.actor)context.feature=connection.actor.feature;
@@ -38,7 +45,7 @@ export function supplierCostFetch(fetcher: typeof fetch, connection: { providerI
       if (!id) throw new Error("Router cost collection requires stable operation ID");
       // Reliable outbox BEFORE gateway submission; worker imports every durable Router attempt even on timeout.
       await ledger.enqueue(`router:${id}`, "router", { operation: id, context, frozen: scope?.frozen, requestStartedAt: new Date().toISOString() });
-      return fetcher(request);
+      return dispatch(request);
     }
     const accountId = accountIdentity(connection.baseUrl, connection.apiKey || request.headers.get("authorization")?.replace(/^Bearer\s+/i,'') || "no-key");
     await ledger.account({ id: accountId, providerId: connection.providerId, protocol: connection.protocol || "unknown", baseUrl: connection.baseUrl, credentialRef: connection.credentialRef });
@@ -46,10 +53,10 @@ export function supplierCostFetch(fetcher: typeof fetch, connection: { providerI
     if(request.method==='GET'){
       const task=decodeURIComponent(new URL(request.url).pathname.split('/').at(-1)||'');
       row=(await ledger.pool.query("SELECT * FROM app_supplier_calls WHERE account_id=$1 AND request_id=$2 ORDER BY started_at LIMIT 1",[accountId,task])).rows[0];
-      if(!row)return fetcher(request);
+      if(!row)return dispatch(request);
     }else row = await ledger.begin({ ...context, phase:connection.phase||context.phase,attemptId: request.headers.get('idempotency-key')||randomUUID(), accountId, providerId: connection.providerId, model: model || "unknown", procurement: scope?.procurement });
     try {
-      const response = await fetcher(request);
+      const response = await dispatch(request);
       if (!response.body) { await ledger.apply(row.id, genericReceipt({}, response.ok ? "response-received" : "unknown", scope?.procurement)); return response; }
       const stream = response.headers.get("content-type")?.includes("text/event-stream");
       // Consume receipt bytes alongside the caller, without cloning/ buffering entire b64 image outputs.

@@ -10,7 +10,7 @@ import { ModelConfigError } from "./types";
 import { readBounded } from "../supplier-cost/io";
 import { completedChannelImage } from "./channel-image-response";
 import {prepareChannelText} from "./channel-text-response";
-import { ImageOperationPending } from "../image-gateway";
+import { ImageOperationPending, ImageOperationDeferred, imageSupplierWasDispatched, waitForImageCapacity } from "../image-gateway";
 import { channelOperationKey } from "./channel-availability";
 import { retryAfterMs } from "./channel-health-policy";
 import { imageSupplierFailure, IMAGE_SUPPLIER_FAILURE_MESSAGES, type ImageSupplierFailure } from "./supplier-failure";
@@ -28,9 +28,16 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
     for (let attempt = 1; attempt <= policy.targets.length; attempt++) {
       request.signal.throwIfAborted();
       let claim;
-      try { const acquire=()=>claimChannel(pool, scope.frozen.publicModelId, policy.policy, policy.targets, visited, operationKey);
-        claim = await acquire(); }
+      try {
+        const signal=AbortSignal.any([request.signal,AbortSignal.timeout(Math.max(...policy.targets.map(t=>t.scope.connection.timeoutMs)))]);
+        for (;;) {
+          signal.throwIfAborted();
+          try { claim=await claimChannel(pool,scope.frozen.publicModelId,policy.policy,policy.targets,visited,operationKey);break; }
+          catch(error){if(!(error instanceof ImageOperationDeferred)||!imageSupplierWasDispatched())throw error;await waitForImageCapacity(signal);}
+        }
+      }
       catch (error) {
+        if (error instanceof ImageOperationDeferred) throw error;
         if (!(error instanceof ModelConfigError) || !["PROVIDER_BUSY", "CHANNEL_DISABLED", "CONFIG_UNAVAILABLE"].includes(error.code)) throw error;
         if (attempted) break;
         return Response.json({ error: { message: error.message, code: error.code, billing_status: "not_charged" } }, { status: error.code==="CONFIG_UNAVAILABLE" ? 429 : error.status });
