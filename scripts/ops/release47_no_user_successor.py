@@ -166,6 +166,7 @@ def validate_config(cfg):
                     for k, v in env.items())
             and all(1 <= int(v) <= 256 for k, v in env.items() if k.startswith('NAUMI_IMAGE_JOB_CONCURRENCY_')),
             'EXPLICIT_BOUND_MEMORY_ENVIRONMENT_REQUIRED')
+    validate_dead_boot_config(cfg)
 
 
 def check_window(cfg, at=None):
@@ -174,6 +175,66 @@ def check_window(cfg, at=None):
     start, end = [dt.datetime.fromisoformat(window[k].replace('Z', '+00:00'))
                   for k in ('confirmedAt', 'expiresAt')]
     require(at.tzinfo is not None and start <= at <= end, 'NO_USER_WINDOW_EXPIRED_OR_NOT_STARTED')
+
+
+def validate_dead_boot_config(cfg):
+    """Optional, exact NoUser manifest; never broadens the global tick policy."""
+    pin = cfg.get('deadBootPreservation')
+    if not pin:
+        return
+    import release47_dead_boot_preservation as deadboot
+    require(isinstance(pin, dict) and set(pin) == {'oldWeb', 'currentBoot', 'physicalStartedAt',
+            'environment', 'expectedReviewSha256', 'expectedActivities', 'expectedJobs',
+            'jobIds', 'extraRows', 'workerTick'}, 'NO_USER_DEAD_BOOT_FULL_BINDING_REQUIRED')
+    require(pin['oldWeb'] == cfg['oldWeb'] and pin['physicalStartedAt'] == cfg['oldWeb']['startedAt']
+            and matches('[0-9a-f-]{36}', pin['currentBoot']), 'NO_USER_DEAD_BOOT_IDENTITY_REQUIRED')
+    # Guard validates its staging environment and external review hash too.
+    deadboot.Guard(pin, None, None)
+    for key, count in (('expectedActivities', 24), ('expectedJobs', 21)):
+        pins = pin[key]
+        require(isinstance(pins, dict) and len(pins) == count
+                and all(isinstance(k, str) and deadboot.IDENT.fullmatch(k)
+                        and isinstance(v, str) and deadboot.SHA.fullmatch(v) for k,v in pins.items()),
+                'NO_USER_DEAD_BOOT_EXACT_ROW_PINS_REQUIRED')
+    deadboot.ids(pin['jobIds'])
+    jobs, batches, refs, _ = deadboot._parts(pin['oldWeb'],
+        {'identity': {'instanceId': pin['oldWeb']['name'], 'bootId': pin['currentBoot']}},
+        pin['jobIds'], pin['extraRows'])
+    require(set(jobs) == set(pin['expectedJobs']) and len(batches) == 2 and len(refs) == 2
+            and len(jobs) + len(batches) + len(refs) == 25, 'NO_USER_DEAD_BOOT_EXACT_FENCE_MANIFEST_REQUIRED')
+    for row in pin['extraRows']:
+        require(set(row).issubset({'table', 'keyColumn', 'rowKey', 'sha256', 'linkProofSha256'})
+                and matches('[a-f0-9]{64}', row.get('sha256'))
+                and (row['table'] != 'app_image_jobs' or
+                     row['sha256'] == pin['expectedJobs'][row['rowKey']]
+                     and matches('[a-f0-9]{64}', row.get('linkProofSha256'))),
+                'NO_USER_DEAD_BOOT_EXTRA_ROW_PIN_REQUIRED')
+    tick = pin['workerTick']
+    require(isinstance(tick, dict) and set(tick) == {'worker', 'physicalStartedAt', 'identity', 'lastTick'}
+            and tick['worker'] == cfg['oldWorker']
+            and tick['physicalStartedAt'] == cfg['oldWorker']['startedAt'], 'NO_USER_WORKER_PHYSICAL_PIN_REQUIRED')
+    identity, last = tick['identity'], tick['lastTick']
+    require(isinstance(identity, dict) and set(identity) == {'instanceId', 'bootId', 'commit', 'origin', 'targetInstanceId'}
+            and identity['instanceId'] == cfg['oldWorker']['name']
+            and matches('[0-9a-f-]{36}', identity['bootId']) and matches('[a-f0-9]{40}', identity['commit'])
+            and identity['origin'] == 'http://' + cfg['oldWeb']['name'] + ':3000'
+            and identity['targetInstanceId'] == cfg['oldWeb']['name']
+            and isinstance(last, dict) and last.get('phase') == 'unknown'
+            and matches('[0-9a-f-]{36}', last.get('id'))
+            and matches('[0-9a-f-]{36}', last.get('workerBootId'))
+            and last['workerBootId'] == identity['bootId']
+            and last.get('workerInstanceId') == identity['instanceId']
+            and last.get('workerCommit') == identity['commit']
+            and last.get('targetWebInstanceId') == identity['targetInstanceId'],
+            'NO_USER_COMPLETE_HISTORICAL_WORKER_TICK_REQUIRED')
+    try:
+        start, finish = deadboot.timestamp(last['startedAt']), deadboot.timestamp(last['finishedAt'])
+        require(deadboot.timestamp(tick['physicalStartedAt']) <= start <= finish
+                < deadboot.timestamp(pin['physicalStartedAt'])
+                and (dt.datetime.now(dt.timezone.utc)-finish).total_seconds() > 600,
+                'NO_USER_WORKER_TICK_NOT_HISTORICAL')
+    except (KeyError, ValueError, TypeError, AttributeError):
+        raise Hold('NO_USER_WORKER_TICK_NOT_HISTORICAL') from None
 
 
 def begin(state, cfg, archive, incident_digest, at=None):
@@ -354,6 +415,116 @@ class NoUserController(ImagegenSimplifyController):
         self.old_retired = False
         self.entry_maintenance_proven = False
         self.retirement_drain = None
+        self.dead_boot = None
+        if cfg.get('deadBootPreservation'):
+            import release47_dead_boot_preservation as deadboot
+            self.dead_boot = deadboot.Guard(cfg['deadBootPreservation'], self.dead_boot_sql,
+                tx.save, write_sql=self.dead_boot_write_sql)
+
+    def dead_boot_sql(self, statement):
+        # Helper owns its read transaction. self.sql would nest BEGIN READ ONLY
+        # and prevent the separately authorized fence transaction from writing.
+        env = environment(self.tx.pin(self.db))
+        require(all(env.get(k) == self.de[k] for k in ('POSTGRES_USER', 'POSTGRES_DB')),
+                'DEAD_BOOT_DATABASE_CREDENTIALS_CHANGED')
+        raw = self.tx.run(['docker', 'exec', '-i', self.db['id'], 'psql', '-XqAt',
+            '-v', 'ON_ERROR_STOP=1', '-U', self.de['POSTGRES_USER'], '-d', self.de['POSTGRES_DB']],
+            stdin=statement.encode(), timeout=60)
+        decoder, text, rows = json.JSONDecoder(), raw.decode(), []
+        while text.strip():
+            value, end = decoder.raw_decode(text.lstrip())
+            rows.append(value)
+            text = text.lstrip()[end:]
+        return rows
+
+    def dead_boot_write_sql(self, statement):
+        require(self.succ.get('operations', {}).get('database-backup', {}).get('phase') == 'ACKNOWLEDGED',
+                'FULL_DATABASE_BACKUP_BEFORE_DEAD_BOOT_FENCE_REQUIRED')
+        return self.dead_boot_sql(statement)
+
+    def dead_boot_app(self):
+        guard = self.dead_boot
+        env = environment(self.tx.pin(self.web))
+        require(all(env.get(k) == v for k,v in guard.cfg['environment'].items()),
+                'DEAD_BOOT_PHYSICAL_ENVIRONMENT_CHANGED')
+        if self.web['running']:
+            return ctl.c.app_status(self.tx, self.web)
+        require(self.retirement_drain and self.retirement_drain.get('rawApp'),
+                'DEAD_BOOT_ORIGINAL_APP_RECEIPT_REQUIRED')
+        # Original HTTP identity only; exact DB rows are freshly checked below.
+        return copy.deepcopy(self.retirement_drain['rawApp'])
+
+    def check_dead_boot_unknown(self, app):
+        require(type(app.get('observations', {}).get('unknownLeases')) is int
+                and app['observations']['unknownLeases'] == len(self.dead_boot.review['app_release_activities']),
+                'NO_USER_CURRENT_OR_EXTRA_UNKNOWN_WORK')
+
+    def establish_dead_boot(self):
+        if not self.cfg.get('deadBootPreservation'):
+            return
+        def exact_review():
+            app = self.dead_boot_app()
+            require(type(app.get('observations', {}).get('unknownLeases')) is int
+                    and app['observations']['unknownLeases'] == 24, 'NO_USER_CURRENT_OR_EXTRA_UNKNOWN_WORK')
+            # Failed exact validation saves nothing; successful establish runs once.
+            return self.dead_boot.establish(self.cfg['oldWeb'], app)
+        self.wait(exact_review, 'EXACT_DEAD_BOOT_PREFLIGHT', 120)
+        self.wait(lambda: self.check_dead_boot('preflight'), 'EXACT_DEAD_BOOT_PREFLIGHT_CHECK', 120)
+
+    def check_dead_boot(self, stage, app=None):
+        if not self.cfg.get('deadBootPreservation'):
+            return
+        app = self.dead_boot_app() if app is None else app
+        result = self.dead_boot.check(self.cfg['oldWeb'], app)
+        self.check_dead_boot_unknown(app)
+        if self.worker['running']:
+            status = self.worker_control(self.worker, 'status', str(uuid.uuid4()))['state']
+        else:
+            require(self.retirement_drain is not None, 'DEAD_BOOT_ORIGINAL_WORKER_RECEIPT_REQUIRED')
+            status = self.retirement_drain['rawWorker']
+        require(self.old_worker_quiescent(status), 'NO_USER_HISTORICAL_WORKER_NOT_QUIESCENT')
+        self.tx.save('NO_USER_DEAD_BOOT_CHECK-'+uuid.uuid4().hex+'.json', {
+            'stage': stage, **result, 'freshOldHttpObservationClaimed': self.web['running']})
+        return result
+
+    def apply_dead_boot_fence(self, _operation):
+        require(self.entry_maintenance_proven is True and self.old_drained is True
+                and self.worker_paused is True, 'MAINTENANCE_AND_DRAIN_BEFORE_DEAD_BOOT_FENCE_REQUIRED')
+        self.check_dead_boot('before-fence')
+        receipt = self.dead_boot.apply(self.cfg['oldWeb'], self.dead_boot_app())
+        require(receipt['fencedRows'] == 25 and receipt['carriedOldBootObservations'] == 24,
+                'NO_USER_DEAD_BOOT_EXACT_FENCE_RECEIPT_REQUIRED')
+        return receipt
+
+    def old_worker_quiescent(self, status):
+        if not self.cfg.get('deadBootPreservation'):
+            return ctl.normal.worker_quiescent(status)
+        pin = self.cfg['deadBootPreservation']['workerTick']
+        observed = public_identity(self.tx.pin(self.worker))
+        original = pin['worker']
+        # stopped identities retain the physical start/image/name; no stopped
+        # process receives a new HTTP query or synthetic status.
+        require(all(observed[k] == original[k] for k in ('id', 'name', 'image', 'startedAt'))
+                and observed['startedAt'] == pin['physicalStartedAt'], 'NO_USER_WORKER_PHYSICAL_IDENTITY_CHANGED')
+        return bool(isinstance(status, dict)
+            and all(status.get(k) == v for k,v in pin['identity'].items())
+            and exact_json(status.get('lastTick')) == exact_json(pin['lastTick'])
+            and status.get('phase') == 'UNKNOWN' and status.get('paused') is True
+            and type(status.get('activeTicks')) is int and status['activeTicks'] == 0
+            and type(status.get('unresolvedTicks')) is int and status['unresolvedTicks'] == 1
+            and (status.get('controlFault') is None or status.get('controlFault') is False) and 'controlFault' in status
+            and ctl.normal.worker_media_healthy(status) and isinstance(status.get('mediaWorker'), dict)
+            and status['mediaWorker'].get('draining') is True
+            and status['mediaWorker'].get('running') == 0 and status['mediaWorker'].get('queued') == 0)
+
+    def failure_preservation_check(self, outcome, stage):
+        super().failure_preservation_check(outcome, stage)
+        try:
+            self.check_dead_boot(stage)
+        except BaseException as error:
+            outcome.update(preservationHold=True, reconciliationRequired=True)
+            outcome.setdefault('preservationErrors', []).append({
+                'stage': stage, 'error': str(error) if isinstance(error, Hold) else type(error).__name__})
 
     def build_gateway(self):
         # Called while the CREATED candidate is stopped, before old slots stop.
@@ -435,6 +606,17 @@ class NoUserController(ImagegenSimplifyController):
             require(self.retirement_drain is not None, 'ORIGINAL_WORKER_DRAIN_REQUIRED')
             ws = self.retirement_drain['rawWorker']
         rows, held = self.incidents()
+        if self.cfg.get('deadBootPreservation'):
+            import release47_dead_boot_preservation as deadboot
+            ctl.policy.check_incidents(rows, held, self.incident_digest)
+            self.check_dead_boot('pre-retirement-drain', app)
+            require(self.dead_boot.receipt is not None, 'DEAD_BOOT_FENCE_BEFORE_RETIREMENT_REQUIRED')
+            require(self.old_worker_quiescent(ws), 'NO_USER_HISTORICAL_WORKER_NOT_QUIESCENT')
+            proof = deadboot.current_drained(app, domain, ws, self.owners(), self.dead_boot.review,
+                self.dead_boot.receipt, worker_preserved=True)
+            return {**proof, 'incidentSha256': self.incident_digest,
+                    'scannerReceiptCompleted': False,
+                    'preservedUnresolvedScannerTick': copy.deepcopy(self.cfg['deadBootPreservation']['workerTick'])}
         return ctl.normal.current_drained(app, domain, ws, self.owners(), rows, held,
                                            self.incident_digest, self.cfg.get('preservedWorkerTick'))
 
@@ -443,12 +625,16 @@ class NoUserController(ImagegenSimplifyController):
         require(self.entry_maintenance_proven is True, 'HTTP_MAINTENANCE_BEFORE_OLD_RETIREMENT_REQUIRED')
         require(sha(self.tx.run(['nginx', '-T'])) == self.entry_report['afterDumpSha256'],
                 'MAINTENANCE_CHANGED_BEFORE_RETIREMENT')
+        if self.cfg.get('deadBootPreservation'):
+            self.wait(lambda: self.check_dead_boot('before-old-drain'), 'EXACT_DEAD_BOOT_BEFORE_DRAIN', 120)
         self.op('old-worker-drain', lambda op: self.worker_control(self.worker, 'drain', op))
         self.worker_paused = True
-        self.wait(lambda: (lambda s: s if ctl.normal.worker_quiescent(s) else None)(
+        self.wait(lambda: (lambda s: s if self.old_worker_quiescent(s) else None)(
             self.worker_control(self.worker, 'status', str(uuid.uuid4()))['state']), 'OLD_WORKER_DRAIN', 120)
         self.op('old-web-drain', lambda op: ctl.c.control_app(self.tx, self.web, 'drain', op))
         self.old_drained = True
+        if self.cfg.get('deadBootPreservation'):
+            self.op('dead-boot-exact-fence', self.apply_dead_boot_fence)
         self.retirement_drain = self.wait(self.pre_retirement_drain, 'OLD_CURRENT_EXECUTION_DRAIN', 120)
         self.tx.save('current-execution-drain.json', self.retirement_drain)
         self.wait(self.pre_retirement_drain, 'REPEATED_OLD_CURRENT_EXECUTION_DRAIN', 60)
@@ -593,6 +779,7 @@ console.log(JSON.stringify({status:r.status,commit:process.env.SOURCE_COMMIT,...
     def switch_forward_gateway(self):
         self.check_quotes('BEFORE_SWITCH')
         self.preserved_unknown.check('before-switch')
+        self.check_dead_boot('before-switch')
         self.memory_proof('retire')
         self.verify_internal_authority()
         return ctl.c.switch_gateway_bundle(self.tx, self.open_report, self.entry_closure, self.open_after,
@@ -610,6 +797,7 @@ console.log(JSON.stringify({status:r.status,commit:process.env.SOURCE_COMMIT,...
         require(self.retirement_drain and self.retirement_drain.get('currentExecutableWorkDrained') is True
                 and set(self.succ['retired']) == {self.web['id'], self.worker['id']}, 'GENUINE_EARLY_RETIREMENT_PROOF_REQUIRED')
         self.preserved_unknown.check(stage)
+        self.check_dead_boot(stage)
         self.check_quotes(stage.upper().replace('-', '_'))
         rows, held = self.incidents()
         ctl.policy.check_incidents(rows, held, self.incident_digest)
@@ -657,11 +845,15 @@ console.log(JSON.stringify({status:r.status,commit:process.env.SOURCE_COMMIT,...
                 'UNKNOWN_OPERATION_PREVENTS_COMPLETE')
         self.state['activeNormalBlueGreenReleaseId'] = ctl.RELEASE
         require(self.configuration_facts() == self.config_before, 'MODEL_OR_BILLING_CONFIGURATION_CHANGED')
-        self.phase('COMPLETE', completedAt=ctl.now(), paidOutputRecovered=False, historicalDrainReclassified=False)
+        if not self.cfg.get('deadBootPreservation'):
+            self.phase('COMPLETE', completedAt=ctl.now(), paidOutputRecovered=False, historicalDrainReclassified=False)
         for identity in self.infra: self.tx.pin(identity)
         rows, held = self.incidents()
         ctl.policy.check_incidents(rows, held, self.incident_digest)
         self.check_running_slots(extra=(self.newweb['id'], self.newworker['id']))
+        self.check_dead_boot('final-publication')
+        if self.cfg.get('deadBootPreservation'):
+            self.phase('COMPLETE', completedAt=ctl.now(), paidOutputRecovered=False, historicalDrainReclassified=False)
         self.tx.run(['systemctl', 'start', 'naumi47-recovery.timer'])
         result = {'phase': 'COMPLETE', 'historicalReleasePhase': self.state['phase'], 'historicalDrainProven': False,
             'paidOutputRecovered': False, 'version': self.cfg['version'], 'commit': self.cfg['commit'],
@@ -735,6 +927,7 @@ console.log(JSON.stringify({status:r.status,commit:process.env.SOURCE_COMMIT,...
     def run(self):
         check_window(self.cfg)
         self.preserved_unknown.establish()
+        self.establish_dead_boot()
         self.quote_before = self.quote_snapshot()
         self.tx.save('QUOTE_BASELINE.private.json', self.quote_before)
         require(self.state['revision'] == self.cfg['expectedRevision']
@@ -751,8 +944,11 @@ console.log(JSON.stringify({status:r.status,commit:process.env.SOURCE_COMMIT,...
                          previousRuntimeRecovery=copy.deepcopy(self.runtime))
         self.check_running_slots()
         require(not self.tx.run(['ss', '-Hltn', 'sport = :'+str(self.cfg['newPort'])]).strip(), 'CANDIDATE_PORT_IN_USE')
-        require(ctl.c.app_status(self.tx, self.web)['observations']['unknownLeases'] == 0,
-                'CURRENT_UNKNOWN_WORK_REQUIRES_RECONCILIATION')
+        if self.cfg.get('deadBootPreservation'):
+            self.wait(lambda: self.check_dead_boot('before-backup'), 'EXACT_DEAD_BOOT_BEFORE_BACKUP', 120)
+        else:
+            require(ctl.c.app_status(self.tx, self.web)['observations']['unknownLeases'] == 0,
+                    'CURRENT_UNKNOWN_WORK_REQUIRES_RECONCILIATION')
         self.state.setdefault('normalBlueGreenReleases', {})[ctl.RELEASE] = self.succ
         self.persist()
         self.tx.save('original-supervisor.service', pathlib.Path('/etc/systemd/system/naumi47-recovery.service').read_bytes())
@@ -794,10 +990,12 @@ console.log(JSON.stringify({status:r.status,commit:process.env.SOURCE_COMMIT,...
             {k: ram[k] for k in ('webPeakMiB','workerPeakMiB','hostReserveMiB')}, mem_available()//MIB))
         self.wait(lambda: self.request(self.newweb, '/api/health'), 'WEB_START')
         self.newworker = self.op('worker-create', lambda _: ctl.c.clone_worker(self.tx, self.newweb,
-            name=ctl.WORKER, memory_mib=1024, cpu=1, state_dir=ctl.STATE+'/worker', reviewed_combined_media=True))
+            name=ctl.WORKER, memory_mib=1024, cpu=1, state_dir=ctl.STATE+'/worker', reviewed_combined_media=True,
+            reviewed_runtime_memory=True))
         self.memory_proof('before-worker-start')
         self.newworker = self.op('worker-start', lambda _: ctl.c.start_worker(self.tx, self.newworker,
-            mem_available()//MIB, reserve_mib=ram['hostReserveMiB'], reviewed_combined_media=True))
+            mem_available()//MIB, reserve_mib=ram['hostReserveMiB'], reviewed_combined_media=True,
+            reviewed_runtime_memory=True))
         self.wait(lambda: self.worker_control(self.newworker, 'status', str(uuid.uuid4())), 'WORKER_START')
         self.phase('CANDIDATE', web=self.newweb, worker=self.newworker)
         self.ready()

@@ -26,7 +26,10 @@ WORKER_SETTINGS = {'NAUMI_APP_ORIGIN', 'VIDEO_WORKER_SECRET', 'SOURCE_COMMIT', '
     'NAUMI_VIDEO_WORKER', 'NODE_OPTIONS'}
 COMBINED_WORKER_SETTINGS = {'NAUMI_MEDIA_WORKER', 'MEDIA_WORKER_ORIGIN', 'MEDIA_WORKER_SECRET',
     'MEDIA_JOB_DIR', 'MEDIA_WORKER_HOST', 'MEDIA_WORKER_PORT', 'MEDIA_WORKER_START_PAUSED',
-    'MEDIA_WORKER_CONCURRENCY', 'NODE_ENV'}
+    'MEDIA_WORKER_CONCURRENCY', 'NODE_ENV', 'NAUMI_NATIVE_MEMORY_PROFILE', 'MALLOC_ARENA_MAX', 'UV_THREADPOOL_SIZE'}
+BOUNDED_WORKER_RUNTIME = {
+    'NODE_OPTIONS': '--max-old-space-size=64 --require=/app/scripts/runtime-memory.cjs --require=/app/scripts/release-http-observer.cjs',
+    'NAUMI_NATIVE_MEMORY_PROFILE': 'bounded', 'MALLOC_ARENA_MAX': '2', 'UV_THREADPOOL_SIZE': '2'}
 IMAGE_ENVIRONMENT = {'PATH', 'NODE_VERSION', 'YARN_VERSION', 'NODE_ENV', 'NEXT_TELEMETRY_DISABLED',
     'PORT', 'HOSTNAME', 'MEDIA_DIR'}
 
@@ -141,7 +144,9 @@ def _combined_media_binding(web_row, name):
     return scratch[0]
 
 
-def _validate_combined_worker(row, web_row):
+def _validate_combined_worker(row, web_row, *, reviewed_runtime_memory=None):
+    require(reviewed_runtime_memory is None or type(reviewed_runtime_memory) is bool,
+            'EXPLICIT_WORKER_RUNTIME_MEMORY_REVIEW_REQUIRED')
     env, web_env, host = environment(row), environment(web_row), row['HostConfig']
     name = row['Name'].lstrip('/')
     scratch = _combined_media_binding(web_row, name)
@@ -167,6 +172,14 @@ def _validate_combined_worker(row, web_row):
         'NAUMI_WORKER_CONTROL_PORT': '3001', 'NAUMI_WORKER_STATE_FILE': '/release-state/worker.json',
         'NAUMI_VIDEO_WORKER': '0', 'NODE_OPTIONS': '--max-old-space-size=64', 'NODE_ENV': 'production',
         'MEDIA_WORKER_ORIGIN': web_env['MEDIA_WORKER_ORIGIN'], 'MEDIA_WORKER_SECRET': web_env['MEDIA_WORKER_SECRET']}
+    bounded = env.get('NODE_OPTIONS') == BOUNDED_WORKER_RUNTIME['NODE_OPTIONS']
+    require(reviewed_runtime_memory is None or bounded is reviewed_runtime_memory,
+            'COMBINED_WORKER_RUNTIME_MEMORY_LAYOUT_CHANGED')
+    if bounded:
+        expected.update(BOUNDED_WORKER_RUNTIME)
+    else:
+        require(not (set(BOUNDED_WORKER_RUNTIME) - {'NODE_OPTIONS'}) & set(env),
+                'COMBINED_WORKER_ENVIRONMENT_NOT_REVIEWED')
     require(all(env.get(key) == value for key, value in expected.items()) and
             set(env).issubset(WORKER_SETTINGS | COMBINED_WORKER_SETTINGS | IMAGE_ENVIRONMENT),
             'COMBINED_WORKER_ENVIRONMENT_NOT_REVIEWED')
@@ -192,7 +205,8 @@ def _validate_combined_worker(row, web_row):
             'COMBINED_WORKER_MOUNTS_CHANGED')
 
 
-def clone_worker(tx, web, *, name, memory_mib, cpu, state_dir, reviewed_combined_media=False):
+def clone_worker(tx, web, *, name, memory_mib, cpu, state_dir, reviewed_combined_media=False,
+                 reviewed_runtime_memory=False):
     row = tx.pin(web)
     env = environment(row)
     require(row['State']['Running'] and row['Config']['Cmd'] == ['node', 'server.js'], 'RUNNING_CANDIDATE_WEB_REQUIRED')
@@ -200,6 +214,8 @@ def clone_worker(tx, web, *, name, memory_mib, cpu, state_dir, reviewed_combined
             re.fullmatch('[a-f0-9]{40}', env.get('SOURCE_COMMIT', '')), 'CONTROLLED_DIRECT_WEB_REQUIRED')
     require(re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]{0,95}', name) and name != web['name'], 'INVALID_WORKER_NAME')
     require(type(reviewed_combined_media) is bool, 'EXPLICIT_COMBINED_MEDIA_REVIEW_REQUIRED')
+    require(type(reviewed_runtime_memory) is bool and (not reviewed_runtime_memory or reviewed_combined_media),
+            'EXPLICIT_COMBINED_WORKER_RUNTIME_MEMORY_REVIEW_REQUIRED')
     require(reviewed_combined_media or env.get('NAUMI_MEDIA_WORKER') != '1',
             'COMBINED_MEDIA_EXPLICIT_REVIEW_REQUIRED')
     require(type(memory_mib) is int and type(cpu) in [int, float] and
@@ -227,6 +243,8 @@ def clone_worker(tx, web, *, name, memory_mib, cpu, state_dir, reviewed_combined
             MEDIA_WORKER_SECRET=env['MEDIA_WORKER_SECRET'], MEDIA_JOB_DIR='/scratch',
             MEDIA_WORKER_HOST='0.0.0.0', MEDIA_WORKER_PORT='3002', MEDIA_WORKER_START_PAUSED='1',
             MEDIA_WORKER_CONCURRENCY='1', NODE_OPTIONS='--max-old-space-size=64', NODE_ENV='production')
+    if reviewed_runtime_memory:
+        settings.update(BOUNDED_WORKER_RUNTIME)
     require(all('\n' not in k + v and '\r' not in k + v for k, v in settings.items()), 'INVALID_WORKER_ENV')
     fd, filename = tempfile.mkstemp(prefix='.worker-env-', dir=tx.folder)
     try:
@@ -248,18 +266,23 @@ def clone_worker(tx, web, *, name, memory_mib, cpu, state_dir, reviewed_combined
         result = tx.inspect(created)
         require(result['Image'] == web['image'] and not result['State']['Running'] and
                 environment(result).get('NAUMI_WORKER_START_PAUSED') == '1', 'WORKER_CREATE_MISMATCH')
-        if reviewed_combined_media: _validate_combined_worker(result, row)
+        if reviewed_combined_media:
+            _validate_combined_worker(result, row, reviewed_runtime_memory=reviewed_runtime_memory)
         tx.save('worker-created-' + created[:12] + '.json', public_identity(result))
         return public_identity(result)
     finally:
         pathlib.Path(filename).unlink(missing_ok=True)
 
 
-def start_worker(tx, identity, available_mib, *, reserve_mib=1024, reviewed_combined_media=False):
+def start_worker(tx, identity, available_mib, *, reserve_mib=1024, reviewed_combined_media=False,
+                 reviewed_runtime_memory=None):
     row = tx.pin(identity)
     env = environment(row)
     cap = row['HostConfig'].get('Memory', 0)
     require(type(reviewed_combined_media) is bool, 'EXPLICIT_COMBINED_MEDIA_REVIEW_REQUIRED')
+    require((reviewed_runtime_memory is None or type(reviewed_runtime_memory) is bool)
+            and (not reviewed_runtime_memory or reviewed_combined_media),
+            'EXPLICIT_COMBINED_WORKER_RUNTIME_MEMORY_REVIEW_REQUIRED')
     command = COMBINED_WORKER_COMMAND if reviewed_combined_media else ['node', 'scripts/video-worker.mjs']
     require(not row['State']['Running'] and row['Config']['Cmd'] == command and
             env.get('NAUMI_WORKER_RELEASE_CONTROL') == '1' and env.get('NAUMI_WORKER_START_PAUSED') == '1',
@@ -267,7 +290,8 @@ def start_worker(tx, identity, available_mib, *, reserve_mib=1024, reviewed_comb
     if reviewed_combined_media:
         origin = re.fullmatch(r'http://([A-Za-z0-9][A-Za-z0-9_.-]{0,95}):3000', env.get('NAUMI_APP_ORIGIN', ''))
         require(origin, 'COMBINED_WORKER_WEB_ORIGIN_CHANGED')
-        _validate_combined_worker(row, tx.inspect(origin.group(1)))
+        web_row = tx.inspect(origin.group(1))
+        _validate_combined_worker(row, web_row, reviewed_runtime_memory=reviewed_runtime_memory)
     require(type(available_mib) is int and type(reserve_mib) is int and reserve_mib >= 1024 and
             (cap == 1024 * 1024**2 if reviewed_combined_media else 96 * 1024**2 <= cap <= 512 * 1024**2) and
             available_mib >= cap // 1024**2 + reserve_mib,
@@ -276,6 +300,8 @@ def start_worker(tx, identity, available_mib, *, reserve_mib=1024, reviewed_comb
     tx.run(['docker', 'start', identity['id']])
     result = tx.inspect(identity['id'])
     require(result['State']['Running'] is True and result['Image'] == identity['image'], 'WORKER_START_UNKNOWN')
+    if reviewed_combined_media:
+        _validate_combined_worker(result, web_row, reviewed_runtime_memory=reviewed_runtime_memory)
     return public_identity(result)
 
 

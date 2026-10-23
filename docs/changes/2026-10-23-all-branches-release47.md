@@ -29,3 +29,23 @@
 ## 验收与交付状态
 
 已完成分支合并及参考图用途基线/修改对照。内存配置、集中回归、固定Linux构建、压力与真实发布由本任务继续执行；未完成步骤不凭本文档标为已发布。最终命令、输出、退出码、固定源码/镜像/版本、资源、退役身份和四产物见本任务 VERIFICATION.txt 与最终发布回执。
+
+
+## 最终镜像与本地集中验收（19:40—20:15）
+
+业务镜像固定 source `30b2c47c95d96af136dfb0f85e7041ce694abfe2`、build `1792753247`、image `sha256:217b5bbcb8bff0f90e0893de5106ac9f0e6e163c591d29000c83790c99a0f2e1`，Linux/amd64 完整产品构建91页 exit0。新加的批次与参考工作台历史 guard 已包含在镜像，不以旧 a2abb/754b 镜像代替最终验收。
+
+- 最终镜像16任务/本机4路：16输出、16模拟供应商POST，Web peak 2050379776 bytes，Worker peak359645184；4图与Worker恢复夹具也通过，memory.events max/oom/oom_kill均0。
+- 最终镜像真实combined/native典型50MiB WAV→104857590B输出：fresh cold715.06MiB，warm716.91MiB，512MiB tmpfs采样峰388.82MiB；SHA与ffprobe通过，无OOM/Swap。旧大档200→400MiB ENOSPC原失败保留，不扩写成全档通过。
+- 最终类型检查4096MiB exit0；1536MiB那次exit134堆OOM记录保留。history fence67 assertions及Canvas101/403、frozenCanvas138/1208、frozen/simplify PG、reference-workbench18组通过。
+- 原creation-writers取消步骤409在main53a6711e独立基线上同错复现；原fail不改PASS。其他fixture环境闭合映射保留在manifest-closed。
+
+## 精确历史保全模块
+
+现场当前Web boot与24条旧boot记录分离。24条activity、18个直接jobs、3个关联父job、2batch、2reference及其15billing/15reservation/11suppliercalls/2queuedcostjob保持原行字节；只向origin_rows插入主25+related43元数据围栏，不改paid/status/lease、不重放、不结算、不退款。3个post-death TTL现已过期的旧lease按真实旧boot、原claim匹配及now过期验证，不把TTL延伸误当进程还活着。
+
+旧Worker仍在原physical boot，1个01:57已结束为unknown的scanner receipt逐字段固定；不清为complete。NoUser专属分支要求paused、activeTicks0、media draining且running/queued0、controlFault明确null/false；新Worker仍必须unknown0且真实complete。原全局policy不放宽。新helper与NoUser接线65离线测试通过，独立源码副本回滚恢复原26项行为；实际PG CAS/触发器验证另列证据。
+
+发布顺序为完整备份→准备停止态候选和三套入口→维护503→旧Worker/Web真实drain→同事务逐行CAS插入68个围栏→原始domain真实0且rawUnknown24精确集合不变→逐一退役旧槽→fresh MemAvailable≥4608MiB→启动候选。任一新activity、hash漂移、item fence或未排空事务仍HOLD，不以计数减法放行。
+
+此阶段尚未切入口或退役旧槽。真实执行结果将在后续模块记录，保留原两次preflight HOLD与canonical revision744的现场记录。

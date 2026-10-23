@@ -380,5 +380,89 @@ class CombinedMediaControls(unittest.TestCase):
         with self.assertRaisesRegex(Hold, 'MOUNTS_CHANGED'):
             m._validate_combined_worker(self.worker, self.web)
 
+    def bounded(self):
+        env=m.environment(self.worker);env.update(m.BOUNDED_WORKER_RUNTIME)
+        self.worker['Config']['Env']=[k+'='+v for k,v in env.items()]
+
+    def test_exact_bounded_layout_and_default_recovery_validation_accept_both(self):
+        m._validate_combined_worker(self.worker,self.web,reviewed_runtime_memory=False)
+        with self.assertRaisesRegex(Hold,'LAYOUT_CHANGED'):
+            m._validate_combined_worker(self.worker,self.web,reviewed_runtime_memory=True)
+        self.bounded()
+        m._validate_combined_worker(self.worker,self.web)
+        m._validate_combined_worker(self.worker,self.web,reviewed_runtime_memory=True)
+        self.assertNotIn('NAUMI_RELEASE_RUNTIME',m.environment(self.worker))
+        with self.assertRaisesRegex(Hold,'LAYOUT_CHANGED'):
+            m._validate_combined_worker(self.worker,self.web,reviewed_runtime_memory=False)
+
+    def test_bounded_start_exact_profile_and_default_existing_caller_compatibility(self):
+        self.bounded()
+        self.assertTrue(m.start_worker(self.tx,public_identity(self.worker),2048,
+            reviewed_combined_media=True,reviewed_runtime_memory=True)['running'])
+        self.worker['State']['Running']=False
+        self.assertTrue(m.start_worker(self.tx,public_identity(self.worker),2048,
+            reviewed_combined_media=True)['running'])
+
+    def test_bounded_heap_profile_preloads_and_extra_env_drift_rejected_before_start(self):
+        self.bounded();original=copy.deepcopy(self.worker)
+        for key,value in [('NODE_OPTIONS','--max-old-space-size=65 --require=/app/scripts/runtime-memory.cjs --require=/app/scripts/release-http-observer.cjs'),
+            ('NODE_OPTIONS','--max-old-space-size=64 --require=/app/scripts/runtime-memory.cjs'),
+            ('NODE_OPTIONS','--max-old-space-size=64 --require=/app/scripts/release-http-observer.cjs'),
+            ('NAUMI_NATIVE_MEMORY_PROFILE','unbounded'),('MALLOC_ARENA_MAX','3'),('UV_THREADPOOL_SIZE','4'),
+            ('NAUMI_RELEASE_RUNTIME','1'),('NAUMI_RELEASE_RUNTIME',''),('DATABASE_URL','not-a-real-secret')]:
+            self.worker=copy.deepcopy(original);env=m.environment(self.worker);env[key]=value
+            self.worker['Config']['Env']=[k+'='+v for k,v in env.items()]
+            with self.subTest(key=key,value=value),self.assertRaises(Hold):
+                m.start_worker(self.tx,public_identity(self.worker),4096,
+                    reviewed_combined_media=True,reviewed_runtime_memory=True)
+        self.assertFalse(any(c[:2]==['docker','start'] for c in self.calls))
+
+    def test_legacy_layout_rejects_partial_bounded_and_invalid_review_flags(self):
+        self.worker['Config']['Env'].append('NAUMI_NATIVE_MEMORY_PROFILE=bounded')
+        with self.assertRaisesRegex(Hold,'ENVIRONMENT_NOT_REVIEWED'):m._validate_combined_worker(self.worker,self.web)
+        for value in ('yes',1,{}):
+            with self.subTest(value=value),self.assertRaisesRegex(Hold,'REVIEW_REQUIRED'):
+                m.start_worker(self.tx,public_identity(self.worker),4096,
+                    reviewed_combined_media=True,reviewed_runtime_memory=value)
+
+    def test_clone_explicit_runtime_memory_exact_env_and_no_arbitrary_web_copy(self):
+        from types import SimpleNamespace
+        for bounded in (False,True):
+            with self.subTest(bounded=bounded),tempfile.TemporaryDirectory() as tmp:
+                self.worker['State']['Running']=False
+                captured=[];tx=Mock();tx.folder=pathlib.Path(tmp);tx.pin.return_value=self.web
+                def run(args):
+                    captured.append(args)
+                    if args[:2]==['docker','create']:
+                        env=dict(line.split('=',1) for line in pathlib.Path(args[args.index('--env-file')+1]).read_text().splitlines())
+                        self.worker['Config']['Env']=[k+'='+v for k,v in env.items()]
+                        return (self.worker['Id']+'\n').encode()
+                    return b''
+                tx.run.side_effect=run;tx.inspect.side_effect=lambda _:self.worker
+                real_path=pathlib.Path
+                fake=Mock();fake.is_absolute.return_value=True;fake.is_symlink.return_value=False
+                fake.resolve.return_value.is_relative_to.return_value=True
+                state='/opt/naumi-staging/releases/fixture/bounded-worker'
+                with patch.object(m.pathlib,'Path',side_effect=lambda value:fake if str(value)==state else real_path(value)),\
+                        patch.object(m.os,'chown',create=True):
+                    m.clone_worker(tx,public_identity(self.web),name=self.worker_name,memory_mib=1024,cpu=1,
+                        state_dir=state,reviewed_combined_media=True,reviewed_runtime_memory=bounded)
+                env=m.environment(self.worker)
+                if bounded:
+                    self.assertTrue(all(env.get(k)==v for k,v in m.BOUNDED_WORKER_RUNTIME.items()))
+                else:
+                    self.assertEqual(env['NODE_OPTIONS'],'--max-old-space-size=64')
+                    self.assertTrue((set(m.BOUNDED_WORKER_RUNTIME)-{'NODE_OPTIONS'}).isdisjoint(env))
+                self.assertTrue({'NAUMI_RELEASE_RUNTIME','DATABASE_URL','RELEASE_CONTROL_SECRET'}.isdisjoint(env))
+                self.assertFalse(any(c[:2] in (['docker','update'],['docker','restart']) for c in captured))
+
+    def test_dual_preload_observer_remains_disabled_without_runtime_switch(self):
+        import subprocess
+        root=pathlib.Path(__file__).resolve().parents[2]
+        script="const http=require('node:http');const before=http.Server.prototype.emit;require('./scripts/release-http-observer.cjs');if(http.Server.prototype.emit!==before||globalThis[Symbol.for('naumi.release.http-observer.v1')])process.exit(2);console.log('WORKER_RELEASE_OBSERVER=DISABLED')"
+        env=dict(os.environ);env.pop('NAUMI_RELEASE_RUNTIME',None)
+        result=subprocess.run(['node','-e',script],cwd=root,env=env,capture_output=True,text=True,check=True)
+        self.assertEqual(result.stdout.strip(),'WORKER_RELEASE_OBSERVER=DISABLED')
+
 
 if __name__ == '__main__': unittest.main()

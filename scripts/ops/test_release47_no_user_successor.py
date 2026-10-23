@@ -439,5 +439,276 @@ class FrozenVersionPreservation(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'POST_DECLARATION_INVALID'):guard._invariants()
 
 
+class DeadBootWiring(unittest.TestCase):
+    def test_new_worker_explicitly_creates_and_starts_bounded_runtime_layout(self):
+        source=inspect.getsource(m.NoUserController.run)
+        for start,end in [('ctl.c.clone_worker(',"self.memory_proof('before-worker-start')"),
+                ('ctl.c.start_worker(',"self.wait(lambda: self.worker_control(self.newworker")]:
+            section=source[source.index(start):source.index(end)]
+            self.assertIn('reviewed_runtime_memory=True',section)
+            self.assertIn('reviewed_combined_media=True',section)
+
+    def fixture(self):
+        import release47_dead_boot_preservation as d
+        op = operator()
+        op.cfg['oldWorker']['startedAt'] = '2026-10-22T22:02:26Z'
+        op.worker = copy.deepcopy(op.cfg['oldWorker'])
+        identity = {'instanceId': op.web['name'], 'bootId': '44444444-4444-4444-8444-444444444444', 'commit': 'a'*40}
+        app = {'identity': identity, 'admission': {'mode': 'draining'},
+            'observations': dict(activeRequests=0, trackedRequests=0, trackedAcceptedWork=0, agentRuns=0, unknownLeases=24),
+            'transport': {'verified': True, 'transport': dict(completeFromProcessStart=True,
+                accountingFault=False, activeRequests=0, startedRequests=9, finishedRequests=9)}}
+        def pack(value):
+            raw = json.dumps(value, sort_keys=True)
+            return {'id': value['id'], 'raw': raw, 'sha256': sha(raw.encode())}
+        jobs = [pack(dict(id='job-'+str(i), kind='generate', lease_token='original',
+            lease_until='2026-10-22T08:05:00Z')) for i in range(21)]
+        activities = [pack(dict(id='activity-'+str(i), instance_id=op.web['name'], boot_id='old-dead-boot',
+            state='unknown', activity_kind='accepted-work', work_scope='durable-image' if i < 21 else 'reference-sync',
+            work_key='generate:job-'+str(i) if i < 21 else 'reference:'+str(i), claim_token='original',
+            started_at='2026-10-22T08:00:00Z', heartbeat_at='2026-10-22T08:01:00Z')) for i in range(24)]
+        review = dict(web=copy.deepcopy(op.web), identity=identity, app_release_activities=activities,
+            app_image_jobs=jobs, app_imagegen_batches=[pack({'id':'batch-'+str(i)}) for i in range(2)],
+            app_reference_operations=[pack({'id':'reference-'+str(i)}) for i in range(2)],
+            relatedRaw='{"raw":12345678901234567890.123456789}', relatedSha256='f'*64)
+        review['relatedFences']=[dict(table=table,keyColumn=key,rowKey=prefix+str(i),sha256=sha((prefix+str(i)).encode()))
+            for table,key,prefix,count in [('app_billing_operations','id','billing-',15),
+                ('app_gen_reservations','job_id','reservation-',15),('app_supplier_calls','id','call-',11),
+                ('app_supplier_cost_jobs','key','task:cost-',2)] for i in range(count)]
+        last = dict(id='55555555-5555-4555-8555-555555555555', phase='unknown',
+            workerBootId='66666666-6666-4666-8666-666666666666', workerInstanceId=op.worker['name'],
+            workerCommit='a'*40, targetWebInstanceId=op.web['name'],
+            startedAt='2026-10-23T01:57:44.490Z', finishedAt='2026-10-23T01:57:44.500Z', error='original-unknown')
+        wid = dict(instanceId=op.worker['name'], bootId=last['workerBootId'], commit='a'*40,
+            origin='http://'+op.web['name']+':3000', targetInstanceId=op.web['name'])
+        status = {**wid, 'paused':True, 'activeTicks':0, 'unresolvedTicks':1, 'phase':'UNKNOWN',
+            'controlFault':None, 'lastTick':copy.deepcopy(last),
+            'mediaWorker':dict(ok=True, version='a'*40, sandbox=True, draining=True,
+                running=0, queued=0, terminal=4, maxActive=1, concurrency=1)}
+        extra = [dict(table=t, rowKey=r['id'], sha256=r['sha256'])
+            for t in ('app_imagegen_batches','app_reference_operations') for r in review[t]]
+        pin = dict(oldWeb=copy.deepcopy(op.web), currentBoot=identity['bootId'], physicalStartedAt=op.web['startedAt'],
+            environment={'NAUMI_ENVIRONMENT':'staging', 'NAUMI_STAGING_HISTORY_GUARD':'1'},
+            expectedReviewSha256=d.review_sha(review), expectedActivities={r['id']:r['sha256'] for r in activities},
+            expectedJobs={r['id']:r['sha256'] for r in jobs}, jobIds=[r['id'] for r in jobs], extraRows=extra,
+            workerTick=dict(worker=copy.deepcopy(op.worker), physicalStartedAt=op.worker['startedAt'], identity=wid, lastTick=last))
+        op.cfg['deadBootPreservation'] = pin
+        receipt = dict(fencedRows=25, relatedFencedRows=43, carriedOldBootObservations=24, currentUnknown=0,
+            businessRowMutations=0, paidReplays=0, reviewSha256=pin['expectedReviewSha256'])
+        queries, writes = [], []
+        def sql(query):
+            queries.append(query)
+            if "json_build_object('match'" in query: return [{'match':True}]
+            return [{k:copy.deepcopy(v) for k,v in review.items() if k not in ('web','identity')}]
+        def write(query):
+            writes.append(query)
+            return [copy.deepcopy(receipt)]
+        op.dead_boot = d.Guard(pin, sql, op.tx.save, write_sql=write)
+        op.dead_boot_app = Mock(return_value=app)
+        op.worker_control = Mock(return_value={'state':status})
+        op.request = Mock(return_value=dict(drained=True, absentTables=[], activeFences=0,
+            activeTransactions=0, advisoryLocks=0,
+            counts=dict(imageJobs=0,canvasImages=0,videoPolls=0,supplierCosts=0,imagegenItems=0)))
+        op.incidents = Mock(return_value=([],{})); op.owners = Mock(return_value=[{'state':'idle'}])
+        op.db = {'id':'d'*64}; op.de = {'POSTGRES_USER':'fixture-user','POSTGRES_DB':'fixture-db'}
+        return op, app, review, status, queries, writes
+
+    def establish(self):
+        values = self.fixture(); values[0].establish_dead_boot()
+        return values
+
+    def test_exact_config_24_21_25_and_complete_worker_pin(self):
+        op, *_ = self.fixture(); before = copy.deepcopy(op.cfg)
+        m.validate_config(op.cfg); self.assertEqual(op.cfg, before)
+        for change in ('activity', 'job', 'extra', 'hash', 'worker-boot', 'worker-start', 'tick-current-web', 'tick-missing-time'):
+            cfg = copy.deepcopy(before); pin = cfg['deadBootPreservation']
+            if change=='activity': pin['expectedActivities'].pop('activity-0')
+            if change=='job': pin['expectedJobs'].pop('job-0')
+            if change=='extra': pin['extraRows'].pop()
+            if change=='hash': pin['expectedReviewSha256']='unsigned'
+            if change=='worker-boot': pin['workerTick']['identity']['bootId']='77777777-7777-4777-8777-777777777777'
+            if change=='worker-start': pin['workerTick']['physicalStartedAt']='2026-10-22T23:00:00Z'
+            if change=='tick-current-web': pin['workerTick']['lastTick']['finishedAt']=pin['physicalStartedAt']
+            if change=='tick-missing-time': pin['workerTick']['lastTick'].pop('finishedAt')
+            with self.subTest(change=change), self.assertRaises(Hold): m.validate_config(cfg)
+
+    def test_no_option_preserves_original_unknown_and_worker_policy(self):
+        for value in (None, {}):
+            op = operator(); op.cfg['deadBootPreservation'] = value
+            m.validate_config(op.cfg)
+            self.assertIsNone(op.establish_dead_boot()); self.assertIsNone(op.check_dead_boot('absent'))
+            self.assertFalse(op.old_worker_quiescent(dict(paused=True,activeTicks=0,unresolvedTicks=1,phase='UNKNOWN')))
+        src=inspect.getsource(m.NoUserController.run)
+        self.assertIn("['observations']['unknownLeases'] == 0",src)
+        self.assertIs(m.FrozenConfigurationGuard.check, Guard.check)
+
+    def test_unknown_difference_never_subtracted_or_raw_modified(self):
+        op, app, review, status, *_ = self.establish()
+        original = copy.deepcopy(app)
+        for unknown in (0,23,25,True):
+            app['observations']['unknownLeases']=unknown
+            with self.subTest(unknown=unknown), self.assertRaises(Hold): op.check_dead_boot('unknown')
+        app['observations']['unknownLeases']=24
+        op.check_dead_boot('exact'); self.assertEqual(app,original)
+
+    def test_exact_row_hash_full_set_related_and_current_boot_changes_deny(self):
+        for change in ('activity-hash','job-hash','related','extra-unknown','current-boot','identity'):
+            op, app, review, *_ = self.establish()
+            if change=='activity-hash': review['app_release_activities'][0]['sha256']='b'*64
+            if change=='job-hash': review['app_image_jobs'][0]['sha256']='b'*64
+            if change=='related': review['relatedSha256']='b'*64
+            if change=='extra-unknown': review['app_release_activities'].append(copy.deepcopy(review['app_release_activities'][0]))
+            if change=='current-boot':
+                raw=json.loads(review['app_release_activities'][0]['raw']);raw['boot_id']=app['identity']['bootId']
+                review['app_release_activities'][0]['raw']=json.dumps(raw)
+            if change=='identity': app['identity']['bootId']='77777777-7777-4777-8777-777777777777'
+            with self.subTest(change=change), self.assertRaises(Hold): op.check_dead_boot('drift')
+
+    def test_current_web_boot_activity_denied_even_with_resigned_full_review(self):
+        import release47_dead_boot_preservation as d
+        op, app, review, *_ = self.fixture()
+        row=review['app_release_activities'][0];value=json.loads(row['raw']);value['boot_id']=app['identity']['bootId']
+        row['raw']=json.dumps(value,sort_keys=True);row['sha256']=sha(row['raw'].encode())
+        pin=op.dead_boot.cfg;pin['expectedActivities'][row['id']]=row['sha256'];pin['expectedReviewSha256']=d.review_sha(review)
+        with self.assertRaisesRegex(Hold,'UNREVIEWED_ACTIVITY'):op.dead_boot.establish(op.web,app)
+
+    def test_worker_exact_last_tick_current_identity_and_physical_start(self):
+        op, app, review, status, *_ = self.establish()
+        self.assertTrue(op.old_worker_quiescent(status))
+        for field in status['lastTick']:
+            changed=copy.deepcopy(status); changed['lastTick'][field]='drift'
+            with self.subTest(tick=field): self.assertFalse(op.old_worker_quiescent(changed))
+        for field in op.cfg['deadBootPreservation']['workerTick']['identity']:
+            changed=copy.deepcopy(status); changed[field]='drift'
+            with self.subTest(identity=field): self.assertFalse(op.old_worker_quiescent(changed))
+        op.tx.pin.side_effect=lambda identity: row({**identity, 'startedAt':'2026-10-23T08:00:00Z'})
+        with self.assertRaisesRegex(Hold,'PHYSICAL_IDENTITY'): op.old_worker_quiescent(status)
+
+    def test_worker_unresolved_media_active_fault_matrix(self):
+        op, app, review, status, *_ = self.establish()
+        for key,value in [('activeTicks',1),('activeTicks',False),('unresolvedTicks',0),('unresolvedTicks',2),
+                ('unresolvedTicks',True),('paused',False),('controlFault','fault'),('controlFault',0),('phase','QUIESCENT')]:
+            changed=copy.deepcopy(status);changed[key]=value
+            with self.subTest(key=key,value=value): self.assertFalse(op.old_worker_quiescent(changed))
+        changed=copy.deepcopy(status);changed.pop('controlFault');self.assertFalse(op.old_worker_quiescent(changed))
+        for key,value in [('draining',False),('running',1),('queued',1),('ok',False),('version','b'*40)]:
+            changed=copy.deepcopy(status);changed['mediaWorker'][key]=value
+            with self.subTest(media=key): self.assertFalse(op.old_worker_quiescent(changed))
+        changed=copy.deepcopy(status);changed.pop('mediaWorker');self.assertFalse(op.old_worker_quiescent(changed))
+        status['controlFault']=False;self.assertTrue(op.old_worker_quiescent(status))
+
+    def test_read_write_raw_sql_exact_credentials_no_transaction_wrapper(self):
+        op, *_ = self.fixture()
+        dbrow=row(op.web);dbrow['Config']['Env']=['POSTGRES_USER=fixture-user','POSTGRES_DB=fixture-db']
+        op.tx.pin.return_value=dbrow;op.tx.pin.side_effect=None;op.tx.run.return_value=b'{"one":1}\n{"two":2}\n'
+        query='BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;SELECT 1;COMMIT;'
+        self.assertEqual(op.dead_boot_sql(query),[{'one':1},{'two':2}])
+        call=op.tx.run.call_args
+        self.assertEqual(call.kwargs['stdin'],query.encode())
+        self.assertEqual(call.args[0],['docker','exec','-i','d'*64,'psql','-XqAt','-v','ON_ERROR_STOP=1',
+            '-U','fixture-user','-d','fixture-db'])
+        with self.assertRaisesRegex(Hold,'BACKUP_BEFORE'):op.dead_boot_write_sql('BEGIN;COMMIT;')
+        op.succ['operations']['database-backup']={'phase':'ACKNOWLEDGED'}
+        op.dead_boot_write_sql('BEGIN ISOLATION LEVEL SERIALIZABLE;COMMIT;')
+        self.assertEqual(op.tx.run.call_args.kwargs['stdin'],b'BEGIN ISOLATION LEVEL SERIALIZABLE;COMMIT;')
+
+    def test_apply_after_backup_maintenance_drain_fences_25_not_activities(self):
+        op, app, review, status, queries, writes = self.establish()
+        op.old_drained=False;op.worker_paused=True
+        with self.assertRaisesRegex(Hold,'MAINTENANCE_AND_DRAIN'):op.apply_dead_boot_fence('fixture')
+        self.assertEqual(writes,[])
+        op.old_drained=True;before=copy.deepcopy(review)
+        receipt=op.apply_dead_boot_fence('fixture')
+        self.assertEqual(receipt['fencedRows'],25);self.assertEqual(receipt['carriedOldBootObservations'],24)
+        self.assertEqual(receipt['relatedFencedRows'],43)
+        self.assertEqual(writes[0].count('INSERT INTO naumi_staging_guard.origin_rows'),68)
+        self.assertNotIn("VALUES('app_release_activities'",writes[0]);self.assertEqual(review,before)
+        run=inspect.getsource(m.NoUserController.run);retire=inspect.getsource(m.NoUserController.retire_old_slots)
+        self.assertLess(run.index("self.op('database-backup'"),run.index('self.retire_old_slots()'))
+        self.assertLess(retire.index("self.op('old-web-drain'"),retire.index("self.op('dead-boot-exact-fence'"))
+        self.assertLess(retire.index("self.op('dead-boot-exact-fence'"),retire.index('self.wait(self.pre_retirement_drain'))
+
+    def test_raw_domain_items_and_jobs_must_really_zero_incidents_checked(self):
+        op, app, review, status, *_ = self.establish()
+        op.dead_boot.apply(op.cfg['oldWeb'],app)
+        domain=op.request.return_value;before=copy.deepcopy((app,domain,status))
+        with patch.object(ctl.c,'app_status',return_value=app),patch.object(ctl.policy,'check_incidents') as incidents:
+            proof=op.pre_retirement_drain();incidents.assert_called()
+        self.assertEqual((app,domain,status),before);self.assertEqual(proof['rawApp']['observations']['unknownLeases'],24)
+        self.assertFalse(proof['scannerReceiptCompleted']);self.assertFalse(proof['historicalDrainProven'])
+        for key,value in [('imageJobs',16),('imagegenItems',1)]:
+            domain['counts'][key]=value
+            with patch.object(ctl.c,'app_status',return_value=app),patch.object(ctl.policy,'check_incidents'),\
+                    self.subTest(key=key),self.assertRaisesRegex(Hold,'DOMAIN_NOT_DRAINED'): op.pre_retirement_drain()
+            domain['counts'][key]=0
+
+    def test_final_preservation_uses_carried_http_fresh_db_and_no_stopped_exec(self):
+        op, app, review, status, queries, writes = self.establish()
+        op.dead_boot.apply(op.cfg['oldWeb'],app)
+        op.retirement_drain={'rawApp':copy.deepcopy(app),'rawWorker':copy.deepcopy(status)}
+        op.web.update(running=False,restartPolicy='no');op.worker.update(running=False,restartPolicy='no')
+        del op.dead_boot_app
+        original_pin=op.tx.pin.side_effect
+        def pin(identity):
+            value=original_pin(identity)
+            value['Config']['Env']=['NAUMI_ENVIRONMENT=staging','NAUMI_STAGING_HISTORY_GUARD=1']
+            return value
+        op.tx.pin.side_effect=pin;op.worker_control.reset_mock()
+        before=len(queries);op.check_dead_boot('final');self.assertGreater(len(queries),before)
+        op.worker_control.assert_not_called()
+        review['app_image_jobs'][0]['sha256']='b'*64
+        with self.assertRaises(Hold):op.check_dead_boot('final-drift')
+        source=inspect.getsource(m.NoUserController.retire_ready)
+        self.assertLess(source.index("self.check_dead_boot('final-publication')"),source.rindex("self.phase('COMPLETE'"))
+
+    def test_final_gate_failure_prevents_complete_and_new_worker_keeps_normal_predicates(self):
+        op, *_ = self.establish()
+        op.newweb={'id':'7'*64};op.newworker={'id':'8'*64}
+        op.worker_control=Mock(return_value={'state':{'paused':True,'activeTicks':0,'unresolvedTicks':0,
+            'phase':'QUIESCENT','lastTick':{'phase':'complete'}}})
+        op.verify_retired_preservation=Mock();op.reference_proof=Mock();op.install_supervisor=Mock()
+        op.after_retirement=Mock();op.verify_recovery_materials=Mock();op.check_running_slots=Mock()
+        op.config_before=[];op.configuration_facts=Mock(return_value=[]);op.tx.run.return_value=b'new-entry'
+        op.check_dead_boot=Mock(side_effect=Hold('FINAL_DEAD_BOOT_DRIFT'))
+        with patch.object(ctl.policy,'check_incidents'), self.assertRaisesRegex(Hold,'FINAL_DEAD_BOOT_DRIFT'):
+            op.retire_ready()
+        self.assertFalse(any(c.args[0]=='COMPLETE' for c in op.phase.call_args_list))
+        self.assertFalse(any(c.args[0]=='PUBLICATION_RECEIPT.json' for c in op.tx.save.call_args_list))
+
+    def test_failure_both_checks_keep_original_guard_and_report_dead_boot_drift(self):
+        op, *_ = self.establish();op.check_dead_boot=Mock(side_effect=Hold('EXACT_ROW_DRIFT'))
+        outcome={};op.failure_preservation_check(outcome,'failure-before');op.failure_preservation_check(outcome,'failure-after')
+        op.preserved_unknown.check.assert_any_call('failure-before');op.preserved_unknown.check.assert_any_call('failure-after')
+        self.assertTrue(outcome['preservationHold']);self.assertTrue(outcome['reconciliationRequired'])
+        self.assertEqual([e['stage'] for e in outcome['preservationErrors']],['failure-before','failure-after'])
+
+    def test_preflight_retries_exact_collection_and_saves_establish_only_once(self):
+        op, app, review, *_ = self.fixture();real=op.dead_boot.establish;attempts=[]
+        def establish(web, current):
+            attempts.append(True)
+            if len(attempts)==1: raise Hold('DEAD_BOOT_REVIEW_HASH_CHANGED')
+            return real(web,current)
+        op.dead_boot.establish=Mock(side_effect=establish)
+        def wait(fn,label,seconds=60):
+            for _ in range(2):
+                try:return fn()
+                except Hold:pass
+            raise Hold('WAIT_'+label)
+        op.wait.side_effect=wait;op.establish_dead_boot()
+        self.assertEqual(len(attempts),2)
+        self.assertEqual(sum(c.args[0]=='DEAD_BOOT_REVIEW.private.json' for c in op.tx.save.call_args_list),1)
+
+    def test_new_worker_unknown_is_never_completion_or_retirement(self):
+        op, app, review, status, *_ = self.establish()
+        self.assertTrue(op.old_worker_quiescent(status))
+        self.assertFalse(ctl.normal.worker_quiescent(status));self.assertFalse(ctl.normal.worker_completed(status))
+        current=copy.deepcopy(status);current['unresolvedTicks']=0
+        self.assertFalse(ctl.normal.worker_completed(current))
+        current['lastTick']['phase']='complete';self.assertTrue(ctl.normal.worker_completed(current))
+        for method in ('finish_ready','retire_ready'):
+            source=inspect.getsource(getattr(m.NoUserController,method))
+            self.assertIn('ctl.normal.worker_completed(s)',source);self.assertNotIn('self.old_worker_quiescent(s)',source)
+
+
 if __name__ == '__main__':unittest.main()
 
