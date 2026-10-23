@@ -27,7 +27,8 @@ import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
 import { smartLayout } from "@/lib/canvas/smart-layout";
 import { CanvasComposerShell, CanvasComposerFooter, CanvasComposerOptions } from "./composer-shell";
 import { CanvasParameterPopover } from "./parameter-popover";
-import {submitCanvasImagegen,resolveCanvasDetailFrame} from "@/lib/imagegen/canvas-client";
+import {submitCanvasImagegen,resolveCanvasDetailFrame,completeCanvasImagegen} from "@/lib/imagegen/canvas-client";
+import {ImagegenPendingRecovery} from "./imagegen-pending-recovery";
 import {FrameRatioDialog,useCanvasFrameChoice} from "./frame-ratio-dialog";
 import {imageOutputWarningText} from "@/lib/imagegen/output-advisory";
 import {VideoGenerationNode} from "./video/generation-node";
@@ -4272,8 +4273,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }, [selectedText?.id]);
 
   // 整表重拉(仅初次加载 / 兜底用)。日常增删改用下面的局部更新,省 egress。
-  async function refetchWorks(): Promise<Artwork[]> {
+  async function refetchWorks(isCurrent:()=>boolean=()=>true): Promise<Artwork[]> {
     const account=canvasAccountRef.current;
+    const current=()=>account===canvasAccountRef.current&&isCurrent();
+    if(!current())return [];
     const em = targetEmail || user?.email;
     if (!em) return works ?? [];
     try {
@@ -4281,19 +4284,21 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         headers: await authHeader(), cache: "no-store",
       });
       const d = await expectJsonOk(r, t("canvas.importSyncFailed"));
-      if(account!==canvasAccountRef.current)return [];
+      if(!current())return [];
       const arr = (d?.artworks ?? []) as Artwork[];
-      setWorks(arr);
-      return arr;
+      setWorks(previous=>current()?arr:previous);
+      return current()?arr:[];
     } catch {
-      return works ?? [];
+      return current()?works??[]:[];
     }
   }
 
   // 只补指定 id 的几行(创建/连线后):取代整表重拉。返回更新后的 works(供调用方用)。
   // 失败时兜底走整表重拉,保证数据最终一致。
-  async function mergeWorks(ids: string[]): Promise<Artwork[]> {
+  async function mergeWorks(ids: string[],isCurrent:()=>boolean=()=>true): Promise<Artwork[]> {
     const account=canvasAccountRef.current;
+    const currentScope=()=>account===canvasAccountRef.current&&isCurrent();
+    if(!currentScope())return [];
     const em = targetEmail || user?.email;
     const valid = ids.filter(Boolean);
     if (!em || valid.length === 0) return works ?? [];
@@ -4306,24 +4311,25 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         { cache: "no-store" }
       );
       const d = await expectJsonOk(r, t("canvas.genFail"));
-      if(account!==canvasAccountRef.current)return [];
+      if(!currentScope())return [];
       const fetched = (d?.artworks ?? []) as Artwork[];
-      if (fetched.length === 0) return refetchWorks();
+      if (fetched.length === 0) return refetchWorks(currentScope);
       const snapshot = new Map((worksRef.current ?? []).map(art => [art.id, art]));
       for (const art of fetched) snapshot.set(art.id, art);
       const merged = Array.from(snapshot.values()).sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""));
       setWorks((current) => {
+        if(!currentScope())return current;
         const map = new Map((current ?? []).map((w) => [w.id, w]));
         for (const a of fetched) map.set(a.id, a);
         return Array.from(map.values()).sort((a, b) =>
           (b.createdAt || "").localeCompare(a.createdAt || "")
         );
       });
-      return merged;
+      return currentScope()?merged:[];
     } catch {
       // 单行补取失败 → 兜底整表重拉,确保不漏数据
-      if(account!==canvasAccountRef.current)return [];
-      return refetchWorks();
+      if(!currentScope())return [];
+      return refetchWorks(currentScope);
     }
   }
 
@@ -4481,8 +4487,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     let attempted = false, terminal = false, jobId: string | undefined, resultIds: string[] = [];
     let failure: GenerationFailure | undefined;
     const requestAccount = canvasAccountRef.current, requestProject = activeProjectRef.current?.key || null;
+    const requestWorkspace = currentWorkspace(), requestOwner = user.email.toLowerCase();
     const requestEpoch = canvasContextEpochRef.current;
-    const current = () => requestAccount === canvasAccountRef.current && requestProject === (activeProjectRef.current?.key || null) && requestEpoch === canvasContextEpochRef.current && (opts?.isCurrent?.() ?? true);
+    const current = () => requestAccount === canvasAccountRef.current && requestProject === (activeProjectRef.current?.key || null) && requestEpoch === canvasContextEpochRef.current && currentWorkspace() === requestWorkspace && (opts?.isCurrent?.() ?? true);
     try {
       // 下载一张图为 File(底图/参考图统一走 /api/download 代理)
       const dlFile = async (url: string, name: string): Promise<File> => {
@@ -4555,9 +4562,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       for (;;) {
         await new Promise((r) => setTimeout(r, 2500));
         if (Date.now() > deadline) throw new Error(t("canvas.genFail"));
+        const pollHeaders = new Headers(await authHeader());pollHeaders.set('x-naumi-workspace',requestWorkspace);
+        if(requestProject&&requestProject!=="workspace")pollHeaders.set('x-naumi-project-context',requestProject);else pollHeaders.delete('x-naumi-project-context');
+        if (!current()) return [];
         const pr = await fetch(
           `/api/generate-image?job=${encodeURIComponent(jobId)}`,
-          { cache: "no-store", headers: await authHeader() }
+          { cache: "no-store", headers: pollHeaders }
         );
         const pj = await readJsonSafe(pr);
         if (!current()) return [];
@@ -4610,9 +4620,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         );
       }
       if (!current()) return [];
-      const fresh = await mergeWorks(newIds); // 补这次新生成的几张(已带上面保存的坐标),不整表重拉
+      const fresh = await mergeWorks(newIds,current); // 补这次新生成的几张(已带上面保存的坐标),不整表重拉
       if (!current()) return [];
       assertGenerationResultsPresent(newIds, fresh);
+      if(jobId&&newIds.every(id=>worksRef.current?.some(art=>art.id===id&&!!art.image)))completeCanvasImagegen(jobId,{owner:requestOwner,project:requestProject||"workspace",workspace:requestWorkspace});
       pushAddUndoMany(newIds, fresh); // 面板生成/三视图/改比例/重做/快捷动作可撤销
 
       if (newIds.length > 0 && newIds.length < requestedCount) {
@@ -4631,8 +4642,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const retainedFailure = failure;
       setGenerationTasks(tasks => tasks.map(task => task.id === taskId ? { ...task, failure: retainedFailure,
         onRetry: resultIds.length ? async () => {
-          if(requestAccount!==canvasAccountRef.current || requestProject!==(activeProjectRef.current?.key||null))return;
-          const fresh=await mergeWorks(resultIds);assertGenerationResultsPresent(resultIds,fresh);
+          if(!current())return;
+          const fresh=await mergeWorks(resultIds,current);if(!current())return;assertGenerationResultsPresent(resultIds,fresh);
+          if(jobId&&resultIds.every(id=>worksRef.current?.some(art=>art.id===id&&!!art.image)))completeCanvasImagegen(jobId,{owner:requestOwner,project:requestProject||"workspace",workspace:requestWorkspace});
           setGenerationTasks(tasks=>tasks.filter(task=>task.id!==taskId));setGenError(null);
         } : () => runGen(source,prompt,opts) } : task));
       return [];
@@ -8027,8 +8039,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     let attempted = false, terminal = false, jobId: string | undefined, resultIds: string[] = [];
     let failure: GenerationFailure | undefined;
     const requestAccount = canvasAccountRef.current, requestProject = activeProjectRef.current?.key || null;
+    const requestWorkspace = currentWorkspace(), requestOwner = user.email.toLowerCase();
     const requestEpoch = canvasContextEpochRef.current;
-    const current = () => requestAccount === canvasAccountRef.current && requestProject === (activeProjectRef.current?.key || null) && requestEpoch === canvasContextEpochRef.current && (opts?.isCurrent?.() ?? true);
+    const current = () => requestAccount === canvasAccountRef.current && requestProject === (activeProjectRef.current?.key || null) && requestEpoch === canvasContextEpochRef.current && currentWorkspace() === requestWorkspace && (opts?.isCurrent?.() ?? true);
     try {
       const fd = new FormData();
       fd.append("prompt", promptToUse);
@@ -8086,9 +8099,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       for (;;) {
         await new Promise((r) => setTimeout(r, 2500));
         if (Date.now() > deadline) throw new Error(t("canvas.genFail"));
+        const pollHeaders = new Headers(await authHeader());pollHeaders.set('x-naumi-workspace',requestWorkspace);
+        if(requestProject&&requestProject!=="workspace")pollHeaders.set('x-naumi-project-context',requestProject);else pollHeaders.delete('x-naumi-project-context');
+        if (!current()) return false;
         const pr = await fetch(
           `/api/generate-image?job=${encodeURIComponent(jobId)}`,
-          { cache: "no-store", headers: await authHeader() }
+          { cache: "no-store", headers: pollHeaders }
         );
         const pj = await readJsonSafe(pr);
         if (!current()) return false;
@@ -8135,14 +8151,16 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           })
         );
         // 已有项目不跳转；新画布仅在用户仍选中本占位时打开首个结果项目。
+        if (!current()) return false;
         if (selectedPendIdRef.current === pend.id) {
           if (!activeKey) pendingNodeRef.current = newIds[0];
         }
       }
       if (!current()) return false;
-      const fresh = await mergeWorks(newIds);
+      const fresh = await mergeWorks(newIds,current);
       if (!current()) return false;
       assertGenerationResultsPresent(newIds, fresh);
+      if(jobId&&newIds.every(id=>worksRef.current?.some(art=>art.id===id&&!!art.image)))completeCanvasImagegen(jobId,{owner:requestOwner,project:requestProject||"workspace",workspace:requestWorkspace});
       setPendNodes((prev) => prev.filter((p) => p.id !== pend.id));
 
       setSelectedPendId((current) => (current === pend.id ? null : current));
@@ -8178,8 +8196,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const retainedFailure = failure;
       setPendNodes((prev) => prev.map((p) => p.id === pend.id ? { ...p, generating: false, generationFailure: retainedFailure,
         onGenerationRetry: resultIds.length ? async () => {
-          if(requestAccount!==canvasAccountRef.current || requestProject!==(activeProjectRef.current?.key||null))return;
-          const fresh=await mergeWorks(resultIds);assertGenerationResultsPresent(resultIds,fresh);
+          if(!current())return;
+          const fresh=await mergeWorks(resultIds,current);if(!current())return;assertGenerationResultsPresent(resultIds,fresh);
+          if(jobId&&resultIds.every(id=>worksRef.current?.some(art=>art.id===id&&!!art.image)))completeCanvasImagegen(jobId,{owner:requestOwner,project:requestProject||"workspace",workspace:requestWorkspace});
           setPendNodes(nodes=>nodes.filter(node=>node.id!==pend.id));setSelectedPendId(id=>id===pend.id?null:id);setGenError(null);
         } : () => generatePend({pend:{...pend,generating:false,generationFailure:undefined},prompt:text,referenceInputs}) } : p));
       return false;
@@ -8796,6 +8815,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           </CanvasParameterPopover>
       : null;
 
+  const recoveryScope={owner:user.email.toLowerCase(),workspace:currentWorkspace(),project:activeKey||"workspace"};
+  const recoveryAccount=canvasAccountRef.current,recoveryEpoch=canvasContextEpochRef.current;
+  const recoveryCurrent=()=>recoveryAccount===canvasAccountRef.current&&recoveryEpoch===canvasContextEpochRef.current&&recoveryScope.workspace===currentWorkspace()&&recoveryScope.project===(activeProjectRef.current?.key||"workspace");
   return (
     <PendContext.Provider value={{ onUpload: onPendUpload, onRemove: onPendRemove }}>
     <TextNodeContext.Provider
@@ -8812,6 +8834,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       "flex h-dvh min-h-[100svh] flex-col overflow-hidden bg-background text-foreground",
       lightCanvas ? "canvas-ui-light" : "dark canvas-ui-dark"
     )}>
+      {!readOnly&&<ImagegenPendingRecovery {...recoveryScope} isCurrent={recoveryCurrent} onAttach={async(ids,isMounted)=>{
+        const current=()=>recoveryCurrent()&&isMounted();if(!current())return false;
+        const fresh=await mergeWorks(ids,current);if(!current())return false;
+        assertGenerationResultsPresent(ids,fresh);
+        // A queued React updater is not delivery. Observe the committed canvas
+        // after one frame; a suspended/stale render retains its original receipt.
+        await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+        return current()&&ids.every(id=>worksRef.current?.some(art=>art.id===id&&!!art.image));
+      }}/>}
       {unsavedTextCount>0 && <div role="alert" className="fixed bottom-6 left-1/2 z-[200] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-amber-500 bg-background px-4 py-3 text-sm shadow-lg">
         <span>{t("canvas.unsavedChanges")} ({unsavedTextCount})</span>
         <button className="font-semibold underline" onClick={()=>void Promise.all(Array.from(unsavedTextRef.current.values()).map(node=>persistTextNode(node)))}>{t("canvas.retrySave")}</button>

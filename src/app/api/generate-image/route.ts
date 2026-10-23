@@ -1239,7 +1239,7 @@ async function handleObservedPost(request: Request) {
   }
 }
 
-export async function GET(request: Request) {
+async function handleGet(request: Request) {
   if (new URL(request.url).searchParams.has("active")) {
     const email = await resolveUserEmail(request);
     if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -1293,6 +1293,14 @@ export async function GET(request: Request) {
     db: dbEnabled,
     storage: storageEnabled,
   });
+}
+
+export async function GET(request:Request){
+  if(new URL(request.url).searchParams.get("job")?.startsWith("imagegen-")){
+    const {withCreationReceiptRoute}=await import("@/lib/saas/creation-context");
+    return withCreationReceiptRoute(request,()=>handleGet(request));
+  }
+  return handleGet(request);
 }
 
 async function createSubmission(request: Request) {

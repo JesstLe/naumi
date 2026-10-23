@@ -24,8 +24,10 @@ import type {ImagegenRequest,ImagegenPlan,Intent} from "./types";
 import type {ModelFacts} from "../model-config/types";
 import {userFeaturePolicy,FeatureAccessError} from "../feature-access/server";
 import {allows} from "../feature-access/catalog";
+import {assertCurrentCreationFeature} from "../saas/creation-context";
 export function imagegenFingerprint(request:ImagegenRequest){return createHash("sha256").update(JSON.stringify(imagegenRequestSchema.parse(request))).digest("hex");}
 export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{modelVersion:number;billingVersion:number}):Promise<ImagegenPlan>{
+ await assertCurrentCreationFeature("/api/imagegen");
  const request=imagegenRequestSchema.parse(raw),skill=await resolveImageSkill(owner,request.skill),intent=resolveImagegenIntent({...request,useCase:request.useCase||skill?.useCase});
  if(intent.conflicts.length)throw new ImagegenPlanError(intent.conflicts.join("；"));
  const access=await userFeaturePolicy(owner),imageAllowed=["generate","batchshot","variations","fuse"].some(id=>allows(access,id));
@@ -116,7 +118,7 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
   // ordinary large-task threshold. Agent must obtain authentic confirmation.
   if(q.tariff.pricing.mode==="api-cost-plus")authorizationRequired=true;
   if(stageResolution?.changed)warnings.push(resolutionFallbackMessage(stageResolution));
-  steps.push({key,operation,modelId,eligibleUpstreamIds:candidates.eligible.map(c=>c.upstreamId),parameters:{quality:request.parameters.quality||"medium",resolution:stageFacts.resolution,ratio:request.parameters.ratio||"1:1"},credits:q.tariff.pricing.mode==="api-cost-plus"?q.authorizedCredits:q.requestedCredits});
+  steps.push({key,operation,modelId,eligibleUpstreamIds:candidates.eligible.map(c=>c.upstreamId),parameters:{quality:request.parameters.quality||"medium",resolution:stageFacts.resolution,ratio:request.parameters.ratio||"1:1"},credits:q.tariff.pricing.mode==="api-cost-plus"?q.authorizedCredits:q.requestedCredits,billingQuote:q});
  };
  if(intent.operation==="cutout"){
   if(request.variants!==1)throw new ImagegenPlanError("抠图对单个目标输出一个透明版本，多个目标请使用批次");

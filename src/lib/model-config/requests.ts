@@ -66,6 +66,11 @@ function purposeFor(path: string): { image?: ModelBinding; text?: ModelBinding; 
 }
 export async function withModelRequest<T>(request: Request, run: () => Promise<T>): Promise<T> {
   const domainPath=new URL(request.url).pathname;
+  // Imagegen owns nested parameters, input authorization, planning and frozen
+  // execution. A generic image scope here reads top-level defaults (1K/1:1)
+  // and can change its quote or reject a valid plan before the domain runs.
+  // BI/creation/continuation authorization still wraps the owning HTTP route.
+  if(domainPath === "/api/imagegen") return run();
   // The owned node or previous task supplies its model after domain authorization.
   if(/^\/api\/canvas\/video-nodes\/[^/]+\/(?:generate|batch)$/.test(domainPath)||/^\/api\/video\/tasks\/[^/]+\/retry$/.test(domainPath))return run();
   const [managed, parsed] = await Promise.all([modelConfigurationEnabled(), requestFacts(request)]);

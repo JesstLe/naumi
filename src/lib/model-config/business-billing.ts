@@ -82,7 +82,10 @@ export async function freezeBusinessQuote(request: Request, snapshot: ConfigSnap
     : scope || currentExecutionBundle() || options.allowResolutionFallback===false || request.headers.has("x-naumi-accepted-model-context")
       ? {requested:facts.resolution,effective:facts.resolution,changed:false}
       : resolveImageResolution(models.config,facts.modelId,facts.resolution,facts.feature,facts.ratio);
-  const originalResolution=(scope?.frozen.publicModelId===facts.modelId?scope?.frozen.requestedParameters?.resolution:undefined)||originalFacts.resolution;
+  // A planner supplies both its original facts and explicit effective tier.
+  // An unrelated enclosing image scope must not rewrite that selected price.
+  // Legacy/frozen callers without this explicit contract retain old precedence.
+  const originalResolution=options.effectiveResolution ? originalFacts.resolution : (scope?.frozen.publicModelId===facts.modelId?scope?.frozen.requestedParameters?.resolution:undefined)||originalFacts.resolution;
   const adjusted=originalResolution!==choice.effective;
   // User pricing policy: keep the selected/front-end tier and its quote. Only
   // delivery parameters fall back; do not silently reprice the accepted choice.

@@ -1,6 +1,6 @@
 import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import "server-only";
-import {currentCreationContext,withFrozenCreation,frozenCreationScope,type CreationContext} from '../saas/creation-context';
+import {currentCreationContext,withFrozenCreation,type CreationContext} from '../saas/creation-context';
 import {acceptCreationTx,creationEventTx,recordSourceOutcomeTx,creationEvidenceTx} from '../saas/creation-writer';
 import {ensureCreationSchema} from '../saas/creation-schema';
 import {randomUUID} from "node:crypto";
@@ -8,14 +8,17 @@ import {getPool} from "../db";
 import {imageCoordinationPool} from "./coordination-pool";
 import {imagegenRequestSchema} from "./schema";
 import {planImagegen,imagegenFingerprint} from "./plan";
+import {ImagegenConfirmationChanged} from "./confirmation";
+import {assertImagegenQuoteReference,frozenImagegenQuote,type ImagegenSubmissionConfirmation} from "./quotes";
 import {submitAcceptedImagegen,getImagegenResult} from "./dispatch";
 import {imagegenStepId} from "./generation-core";
 import {ensureImagegenBatches,imagegenBatchRow,imagegenBatchItems,type ImagegenBatchItem} from "./batch-repository";
 import type {ImagegenRequest,ImagegenPlan,ImagegenResult} from "./types";
 import {userFeaturePolicy,FeatureAccessError} from "../feature-access/server";
 import {allows} from "../feature-access/catalog";
+import {assertImagegenCreationScope,imagegenFrozenCreationScope,imagegenCreationScopeKey,ImagegenScopeError} from "./creation-scope";
 const terminals=new Set(["succeeded","failed","cancelled","needs_attention"]);
-type Confirmation={billingVersion:number;credits:number;confirmed:boolean;modelVersion?:number};
+type Confirmation=ImagegenSubmissionConfirmation;
 function childRequest(request:ImagegenRequest,key:string,prompt:string,attempt=1):ImagegenRequest{
  const {batch,...base}=request;return {...base,operationId:imagegenStepId(request.operationId,`batch:${key}:${attempt}`),prompt,mode:request.chroma?"postprocess":request.inputs.some(i=>i.role==="edit-target")?"edit":"generate"};
 }
@@ -32,21 +35,43 @@ async function prepare(raw:ImagegenRequest,owner:string,initialVersions?:{modelV
 export async function planImagegenBatch(request:ImagegenRequest,owner:string,versions?:{modelVersion:number;billingVersion:number}){return (await prepare(request,owner,versions)).plan;}
 export async function submitImagegenBatch(raw:ImagegenRequest,owner:string,confirmation?:Confirmation){
  const request=imagegenRequestSchema.parse(raw),fingerprint=imagegenFingerprint(request);
+ if(confirmation?.quoteId!==undefined)assertImagegenQuoteReference(confirmation.quoteId,request.operationId);
  await ensureImagegenBatches();const previous=await imagegenBatchRow(request.operationId);
- if(previous){if(previous.owner!==owner.toLowerCase()||previous.fingerprint!==fingerprint)throw new Error("批次编号已用于不同请求");return {id:previous.id,children:(await imagegenBatchItems(previous.id)).map(i=>i.child_operation_id)};}
- const prepared=await prepare(request,owner),plan=prepared.plan;
- if(plan.totalCredits>0&&(!confirmation||confirmation.confirmed!==true||confirmation.credits!==plan.totalCredits||confirmation.billingVersion!==plan.billingVersion||(confirmation.modelVersion!==undefined&&confirmation.modelVersion!==plan.modelVersion)))throw new Error("请确认批次最新报价后提交");
- return submitAcceptedImagegenBatch(plan,owner);
+ if(previous){if(previous.owner!==owner.toLowerCase()||previous.fingerprint!==fingerprint)throw new Error("批次编号已用于不同请求");assertImagegenCreationScope((previous.plan as ImagegenPlan&{creationScope?:unknown}).creationScope,owner);return {id:previous.id,children:(await imagegenBatchItems(previous.id)).map(i=>i.child_operation_id)};}
+ try{
+  if(confirmation?.quoteId!==undefined)return await submitAcceptedImagegenBatch(await frozenImagegenQuote(request,owner,confirmation),owner,fingerprint);
+  const prepared=await prepare(request,owner),plan=prepared.plan;
+  if(plan.totalCredits>0&&(!confirmation||confirmation.confirmed!==true||confirmation.credits!==plan.totalCredits||confirmation.billingVersion!==plan.billingVersion||(confirmation.modelVersion!==undefined&&confirmation.modelVersion!==plan.modelVersion)))throw new ImagegenConfirmationChanged();
+  return await submitAcceptedImagegenBatch(plan,owner,fingerprint);
+ }catch(error){
+  // Another identical request may commit while this candidate's quote/current
+  // permission check fails. Recover only the persisted owner/fingerprint/scope.
+  const winner=await imagegenBatchRow(request.operationId);
+  if(!winner||winner.owner!==owner.toLowerCase()||winner.fingerprint!==fingerprint)throw error;
+  assertImagegenCreationScope((winner.plan as ImagegenPlan&{creationScope?:unknown}).creationScope,owner);
+  return {id:winner.id,children:(await imagegenBatchItems(winner.id)).map(item=>item.child_operation_id)};
+ }
 }
 /** Only server-owned frozen plans; HTTP accepts requests and confirmation, never this structure. */
-export async function submitAcceptedImagegenBatch(plan:ImagegenPlan,owner:string){
- const request=imagegenRequestSchema.parse(plan.request),fingerprint=imagegenFingerprint(request);if(request.mode!=="batch"||!request.batch||plan.children?.length!==request.batch.items.length)throw new Error("批次冻结计划缺少子项");
- await ensureImagegenBatches();if(currentCreationContext())await ensureCreationSchema();const children=plan.children.map((c,i)=>{if(c.key!==request.batch!.items[i].key||c.plan.request.prompt!==request.batch!.items[i].prompt)throw new Error("批次冻结子项与原要求不一致");const child={...c.plan.request,operationId:imagegenStepId(request.operationId,`batch:${c.key}:1`)};return {key:c.key,request:child,plan:{...c.plan,request:child,fingerprint:imagegenFingerprint(child)}};});
+export async function submitAcceptedImagegenBatch(plan:ImagegenPlan,owner:string,fingerprint=plan.fingerprint){
+ const request=imagegenRequestSchema.parse(plan.request);if(request.mode!=="batch"||!request.batch||plan.children?.length!==request.batch.items.length)throw new Error("批次冻结计划缺少子项");
+ imagegenCreationScopeKey(owner);
+ await ensureImagegenBatches();if(currentCreationContext())await ensureCreationSchema();const children=plan.children.map((c,i)=>{
+  if(c.key!==request.batch!.items[i].key||c.plan.request.prompt!==request.batch!.items[i].prompt)throw new Error("批次冻结子项与原要求不一致");
+  const operationId=imagegenStepId(request.operationId,`batch:${c.key}:1`);
+  // HTTP quotes already bind the root operation; preserve those children byte
+  // for byte. Trusted Agent plans assign their final root only after consent.
+  // Rebind that identity alone, without rehashing an effective request or
+  // rebuilding its saved quote, parameters, candidates or customer price.
+  const child=c.plan.request.operationId===operationId?c.plan:{...c.plan,request:{...c.plan.request,operationId}};
+  return {key:c.key,request:child.request,plan:child};
+ });
  const frozen={...plan,request,fingerprint,children:children.map(c=>({key:c.key,plan:c.plan}))};
  const tx=await imageCoordinationPool().connect();
+ let childIds=children.map(child=>child.request.operationId);
  try{await tx.query("BEGIN");await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`imagegen-batch:${request.operationId}`]);
-  const prior=(await tx.query("SELECT owner,fingerprint FROM app_imagegen_batches WHERE id=$1",[request.operationId])).rows[0];
-  if(prior){if(prior.owner!==owner.toLowerCase()||prior.fingerprint!==fingerprint)throw new Error("批次编号冲突");}
+   const prior=(await tx.query("SELECT owner,fingerprint,plan FROM app_imagegen_batches WHERE id=$1",[request.operationId])).rows[0];
+   if(prior){if(prior.owner!==owner.toLowerCase()||prior.fingerprint!==fingerprint)throw new Error("批次编号冲突");assertImagegenCreationScope(prior.plan?.creationScope,owner);childIds=(await tx.query("SELECT child_operation_id FROM app_imagegen_batch_items WHERE batch_id=$1 ORDER BY ordinal",[request.operationId])).rows.map(item=>item.child_operation_id);}
   else{
    const scope=currentCreationContext();if(scope){const id=await acceptCreationTx(tx,'imagegen-batch',request.operationId,owner,{plan});Object.assign(frozen,{creationScope:{...scope,creationId:id}});}
    await tx.query("INSERT INTO app_imagegen_batches(id,owner,fingerprint,request,plan) VALUES($1,$2,$3,$4::jsonb,$5::jsonb)",[request.operationId,owner.toLowerCase(),fingerprint,JSON.stringify(request),JSON.stringify(frozen)]);
@@ -54,7 +79,7 @@ export async function submitAcceptedImagegenBatch(plan:ImagegenPlan,owner:string
   }
   await tx.query("COMMIT");
  }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
- return {id:request.operationId,children:children.map(c=>c.request.operationId)};
+ return {id:request.operationId,children:childIds};
 }
 /** Parent row lock is held through durable child receipt creation: cancel and submit have one order. */
 async function submitNextLocal(id:string){
@@ -67,7 +92,7 @@ async function submitNextLocal(id:string){
   const item=(await tx.query<ImagegenBatchItem>("SELECT * FROM app_imagegen_batch_items WHERE batch_id=$1 AND state='queued' ORDER BY ordinal FOR UPDATE SKIP LOCKED LIMIT 1",[id])).rows[0];
   if(!item){await tx.query("COMMIT");return false;}
   await bindBackgroundClaim(`${id}:${item.key}`, String(item.lease_token || item.child_operation_id));
-  const result=await withFrozenCreation(frozenCreationScope((batch.plan as ImagegenPlan&{creationScope?:CreationContext}).creationScope,batch.owner),()=>submitAcceptedImagegen(item.plan,batch.owner,item.plan.fingerprint));
+  const result=await withFrozenCreation(imagegenFrozenCreationScope((batch.plan as ImagegenPlan&{creationScope?:CreationContext}).creationScope,batch.owner),()=>submitAcceptedImagegen(item.plan,batch.owner,item.plan.fingerprint));
   await tx.query("UPDATE app_imagegen_batch_items SET state='submitted',result=$3::jsonb,lease_token=$4,lease_until=now()+interval '120 seconds',updated_at=now() WHERE batch_id=$1 AND key=$2",[id,item.key,JSON.stringify(result),randomUUID()]);
   await tx.query("COMMIT");return true;
  }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
@@ -75,7 +100,7 @@ async function submitNextLocal(id:string){
 async function runImagegenBatchTickLocal(id:string){
  const batch=await imagegenBatchRow(id);if(!batch||!["running","cancelling"].includes(batch.state))return;
  for(const item of await imagegenBatchItems(id))if(item.state==="submitted"){
-  const result=await getImagegenResult(item.child_operation_id,batch.owner);if(!result)continue;
+  const result=await withFrozenCreation(imagegenFrozenCreationScope((batch.plan as ImagegenPlan&{creationScope?:CreationContext}).creationScope,batch.owner),()=>getImagegenResult(item.child_operation_id,batch.owner));if(!result)continue;
   const tx=await imageCoordinationPool().connect();
   try{await tx.query("BEGIN");const current=(await tx.query("SELECT state FROM app_imagegen_batches WHERE id=$1 FOR UPDATE",[id])).rows[0];
    const locked=(await tx.query<ImagegenBatchItem>("SELECT * FROM app_imagegen_batch_items WHERE batch_id=$1 AND key=$2 FOR UPDATE",[id,item.key])).rows[0];
@@ -103,12 +128,19 @@ async function runImagegenBatchTickLocal(id:string){
 }
 export async function readImagegenBatch(id:string,owner:string){
  const batch=await imagegenBatchRow(id,owner);if(!batch)return null;
+ try{assertImagegenCreationScope((batch.plan as ImagegenPlan&{creationScope?:unknown}).creationScope,owner);}catch(error){if(error instanceof ImagegenScopeError)return null;throw error;}
  const rows=await imagegenBatchItems(id);
  return {id,status:batch.state,totalCredits:batch.plan.totalCredits,chargedCredits:rows.reduce((n,i)=>n+(i.result?.chargedCredits||0),0),items:rows.map(i=>({key:i.key,state:i.state,prompt:i.request.prompt,name:batch.request.batch!.items.find(r=>r.key===i.key)!.name,attempts:i.attempts,result:i.result||{operationId:i.child_operation_id,jobId:`imagegen-${i.child_operation_id}`,status:i.state==="cancelled"?"cancelled":"queued",stage:"planning",artifacts:[],chargedCredits:0} as ImagegenResult}))};
 }
+/** Submission receipt only: no tick, lease, recovery or supplier execution. */
+export async function readImagegenBatchReceipt(id:string,owner:string){
+ const batch=await imagegenBatchRow(id,owner);if(!batch)return null;
+ try{assertImagegenCreationScope((batch.plan as ImagegenPlan&{creationScope?:unknown}).creationScope,owner);}catch(error){if(error instanceof ImagegenScopeError)return null;throw error;}
+ return {id:batch.id,children:(await imagegenBatchItems(batch.id)).map(item=>item.child_operation_id)};
+}
 export async function cancelImagegenBatch(id:string,owner:string){
  await ensureImagegenBatches();const tx=await imageCoordinationPool().connect();
- try{await tx.query("BEGIN");const row=(await tx.query("SELECT state FROM app_imagegen_batches WHERE id=$1 AND owner=$2 FOR UPDATE",[id,owner.toLowerCase()])).rows[0];if(!row)throw new Error("批次不存在或无权访问");
+ try{await tx.query("BEGIN");const row=(await tx.query("SELECT state,plan FROM app_imagegen_batches WHERE id=$1 AND owner=$2 FOR UPDATE",[id,owner.toLowerCase()])).rows[0];if(!row)throw new Error("批次不存在或无权访问");assertImagegenCreationScope(row.plan?.creationScope,owner);
   if(row.state==="running"){
    // A crash may leave a child receipt committed while its association rolled back.
    await tx.query("UPDATE app_imagegen_batch_items SET state='submitted' WHERE batch_id=$1 AND state='queued' AND EXISTS(SELECT 1 FROM app_image_jobs j WHERE j.id='imagegen-'||child_operation_id::text)",[id]);

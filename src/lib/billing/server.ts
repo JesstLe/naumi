@@ -22,6 +22,7 @@ import { CANVAS_FREE_DEFAULTS } from "./canvas-defaults";
 import { currentModelBillingSnapshot } from "../model-config/context";
 import { managedBillingModel } from "../model-config/billing-model";
 import { freezeBusinessQuote } from "../model-config/business-billing";
+import {currentImagegenStep} from "../imagegen/context";
 let runtime: ReturnType<typeof assemble> | undefined;
 function assemble() {
     return { service: createBillingService(), config: createConfigRuntime({ pool: getPool(), ensureSchema, initialize: async (tx) => {
@@ -117,6 +118,16 @@ export async function quoteForRequest(request: Request, input: Partial<BillingFa
     quantity: number;
     ratio?: string;
 },frozenSnapshot?:ConfigSnapshot,options?:{allowResolutionFallback?:boolean}) {
+    // Only an in-process, server-owned imagegen step can supply this quote.
+    // Keep the complete tariff/facts used at preview, not just its version or
+    // credits: metering and recharge changes must not reprice an accepted plan.
+    const saved=currentImagegenStep()?.billing;
+    if(saved){
+        const q=saved.quote,actor=await resolveUserEmail(request);
+        if(actor?.toLowerCase()!==saved.owner||request.headers.get("x-naumi-billing-operation-id")!==saved.operationId||input.feature!==q.facts.feature||input.quantity!==q.facts.quantity||(input.modelId!==undefined&&input.modelId!==q.facts.modelId)||Number(request.headers.get("x-naumi-billing-version"))!==q.configVersion)
+            throw new BillingError("OPERATION_CONFLICT","冻结执行步骤与原报价不符",409);
+        return structuredClone(q);
+    }
     const snapshot = frozenSnapshot??currentModelBillingSnapshot()??await billingSnapshot();
     return freezeBusinessQuote(request, snapshot, await resolveBillingFacts(request, input, snapshot), compatibleQuote, options);
 }
