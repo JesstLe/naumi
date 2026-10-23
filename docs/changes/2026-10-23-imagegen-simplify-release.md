@@ -1,13 +1,13 @@
-# 生图判断简化与47统一发布
+# 生图判断简化：已整合候选，47暂缓发布
 
-用户批准清单1/2/3、19/20及21拆分方案并要求合并上线47。工作分支codex/imagegen-simplify-release47-20261023。
+用户批准清单1/2/3、19/20及21拆分方案。随后明确选择“维持配置，合并后暂缓发布”，该最新决定覆盖原上线授权。本次继续完成本地整合、验证及推送main，不扩容47、不创建候选、不切流、不重启线上Web/Worker。工作分支codex/imagegen-simplify-release47-20261023。
 
 ## 固定范围
 
 - 删除重复current报价重算、模型/计费版本变化引起的业务拒绝，采用服务器保存的计划及完整报价；不相信浏览器金额。
 - 删除正常图像创作owner/IP固定调用次数；登录、来源、封禁、归属、请求大小、幂等、结算保留。
 - 删除重复GEN_MAX_CONCURRENT进程槽及batch环境变量限额；保留DB租约/本机统一执行控制、后台明确供应商预算，忙碌不误归为未知上游。
-- 只47统一三锁蓝绿，不推广其他站点；不重放旧付费任务，不回灌业务数据库。
+- 47当前保持配置与在线版本；未来另行启动发布时仍走统一三锁蓝绿，不推广其他站点，不重放旧付费任务，不回灌业务数据库。
 
 ## 整合
 
@@ -16,9 +16,9 @@
 - 对方交接：工作区clean，无47锁/候选/在途运维；本次统一发布由本线程执行。
 - 限流、并发、后继运维wrapper在隔离子任务实现；按提交整合，不覆盖共享checkout的18个无关修改。
 
-## 进行中
+## 当前交付阶段
 
-集中回归、独立副本真回退、固定Linux构建、持锁生产基线/备份/候选/切流/排空/公网验收尚未完成。此文档不作为已上线证明。
+集中回归、独立副本真回退和固定Linux镜像为本地交付验收；实际结果由本任务output中的VERIFICATION.txt及最终SHA记录。生产候选/切流/排空/公网受影响功能验收按用户最新决定暂缓；本文件不作为已上线证明。
 
 ## 报价模块实现
 
@@ -43,3 +43,17 @@
 - 新增真实PG反例：旧raw normal/batch过期0新POST、generic requested4K/effective2K实际2048 PNG但仍原14、既有过期generic receipt原job优先、改数量/外owner拒绝；合计3本机POST/3账本/38测试积分。不是外部供应商或生产验收。
 - 并发审阅另列非durable pinned恢复、耗尽候选、A+redo审核状态3反例，由独立增量修复后集中复验。
 - 12:54新只读47仍revision743/原source/build/7容器，三锁无holder。当前MemAvailable约3239MiB，旧Web1.364GiB/2GiB；发布器额外peak>=hardlimit合同需区分实际实测峰值，不按更低任意预算放行。最终镜像真实压力/Worker冷态媒体峰值和双槽主机余量尚待闭合；无本任务生产写入、候选、切流。
+
+
+## 最终审阅闭环与暂缓决定
+
+- 已普通合入73252fe8客户端修复：最终合同变化确认、已有operation receipt-first、仅严格accepted:false过期合同同op重试一次、所有付费POST紧前scope guard；37场景179断言通过。父使用完整依赖的全仓tsc已通过，不修改子worktree缺失依赖导致的无关诊断。
+- 已普通合入ebab027e：非durable已受理pin恢复保持Pending及预占、候选耗尽保留明确422分类、A+ redo以最新快照恢复awaiting_review且不覆盖终态/新redo。父最终集中复跑三反例与原并发harness均exit0。
+- 报价最小ratio补绑定已完成真实PG接线：请求quote为3:2，原数据库quote的facts.ratio仍未定义，显式ratio冲突仍拒绝，requested4K/effective2K与原14积分合同保留；不改adapter，不自动重新定价。
+- 13:31:40（北京时间）47三锁只读预检：MemAvailable 3403MiB，按候选Web3072+Worker1024+hostReserve1024需5120MiB，结果HOLD；CANDIDATES=0、DB_WRITES=0、CANONICAL_UNCHANGED=1、THREE_LOCKS_RELEASED=1。用户据此选择维持配置、合并后暂缓发布。该观察为历史快照，不把它写成完成时再次读取的生产状态。
+- 初始9f049b07固定镜像的本机真实压力：6 job×1图Web峰1957.34MiB；16 job×1图Web峰3050.52MiB且HTTP/DB真实重叠16；1 job×4图Web峰1345.13MiB。三有效组无max/oom事件。素材为真实4K高纹理约7.8MB PNG，不是最坏48MB输出。
+- 上述压力不证明最终修正镜像、16 job×多图、combined Worker完整native冷峰、所有存储驱动容量。Canvas count8为非法输入预检，run3额外Worker组遇权限服务503，不计容量通过；后续run5真实combined Worker独立恢复组通过（1成功/1POST/1账本12积分，重放新增POST0），不代表mixed native媒体冷峰通过。历史Worker约654MiB冷峰仍保留，未用约340MiB空闲采样批准512MiB预算。
+- 47最后只读身份为canonical revision743、source5b8489d9ec989ea803eb37280c65e2f18529babb/build1792705393；本轮没有创建发布事务或候选，没有写业务DB/配置、切流或重启。未来上线需重新读取资源与版本、补足对应镜像容量及真实租户/受影响功能验收，不能直接重跑旧发布配置。
+- GitHub main push触发CI/镜像候选构建，与生产发布分离；本次main推送不授权自动上线47。共享根18个无关修改保持原状。
+
+- 已普通合入压力测试e5f4a761，仅测试/doc；初始镜像真实Worker恢复组有效，8图、重复暖态长期稳态、mixed媒体及最终候选压力仍未证明。子任务自有容器/schema剩余0，未停止父隔离PG。
