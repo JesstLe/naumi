@@ -14,7 +14,7 @@ try{
  await run('SERVICE',['--import','tsx','services/enterprise-workflow/tests/source-worksheet.ts'],{...process.env,WORKSHEET_TEST_DATABASE_URL:databaseUrl});
  docker(['exec',name,'psql','-U','postgres','-d','office_service','-c','CREATE DATABASE office_ui']);const config={databaseUrl:databaseUrl.replace('/office_service','/office_ui'),enterpriseId:randomUUID(),token:randomBytes(32).toString('hex'),port:18551,container:name};await writeFile(resolve(out,'connection.json'),JSON.stringify(config),{mode:0o600});
  api=child(['--import','tsx','services/enterprise-workflow/tools/preview-sheet-fixture.ts'],{...process.env,SHEET_FIXTURE_DIR:out,SHEET_FIXTURE_ISOLATED:'1'});await ready('http://127.0.0.1:18551/v1/import/context',{authorization:'Bearer '+config.token});
- web=child(['scripts/serve-enterprise-product.mjs','18550','18491',resolve(out,'connection.json')]);await ready('http://127.0.0.1:18550/preview.html?v=4');
+ web=child(['scripts/serve-enterprise-product.mjs','18550','18491',resolve(out,'connection.json')],{...process.env,ENTERPRISE_PRODUCT_DATA_MODE:'fixture'});await ready('http://127.0.0.1:18550/preview.html?v=4');
  bridge=child(['--import','tsx','scripts/verify-office-bridge-fixture.mjs',out]);await ready('http://127.0.0.1:18552/office/session');
  console.log('OFFICE_FIXTURE_READY: web=18550 bridge=18552 engine=18549 disposable_pg=1 production_connections=0');
  if(hold){const until=Date.now()+600000;while(Date.now()<until){try{await access(resolve(out,'RUN_BROWSER'));break;}catch{await new Promise(r=>setTimeout(r,500));}}}

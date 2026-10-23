@@ -8,6 +8,8 @@ const port=Number(process.argv[2]||18482),sourcePort=Number(process.argv[3]||184
 if(![port,sourcePort].every(p=>Number.isInteger(p)&&p>=1024&&p<=65535)||port===sourcePort)throw Error('INVALID_PORTS');
 const html=resolve('design/enterprise-demo/preview.html');
 const importConfig=resolve(process.argv[4]||'data/enterprise-local-import/connection.json');
+const productDataMode=process.env.ENTERPRISE_PRODUCT_DATA_MODE||'real';
+if(!['real','fixture'].includes(productDataMode))throw Error('INVALID_PRODUCT_DATA_MODE');
 const localSession=randomBytes(32).toString('hex'),csrf=randomBytes(32).toString('hex');
 const same=(a,b)=>{const x=Buffer.from(a||''),y=Buffer.from(b);return x.length===y.length&&timingSafeEqual(x,y);};
 const server=createServer(async(req,res)=>{
@@ -37,7 +39,7 @@ const server=createServer(async(req,res)=>{
       if(response.body){const stream=Readable.fromWeb(response.body);stream.on('error',()=>res.destroy());res.on('close',()=>stream.destroy());stream.pipe(res);}else res.end();return;
     }
     if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405);return res.end();}
-    if(u.pathname==='/'||u.pathname==='/preview.html'){res.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store','content-security-policy':"frame-ancestors 'none'",'x-frame-options':'DENY'});return res.end(await readFile(html));}
+    if(u.pathname==='/'||u.pathname==='/preview.html'){res.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store','content-security-policy':"frame-ancestors 'none'",'x-frame-options':'DENY'});const content=await readFile(html,'utf8');return res.end(productDataMode==='real'?content.replace('<html ', '<html data-workspace-mode="real" '):content);}
     if(u.pathname==='/favicon.ico'){res.writeHead(204);return res.end();}
     if(!['/api/enterprise/integration','/api/enterprise/media','/readyz'].includes(u.pathname)){res.writeHead(404);return res.end('not found');}
     const response=await fetch(`http://127.0.0.1:${sourcePort}${u.pathname}${u.search}`,{headers:{Accept:req.headers.accept||'*/*'},signal:AbortSignal.timeout(20000),redirect:'error'});
