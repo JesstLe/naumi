@@ -13,6 +13,7 @@ import release47_no_user_successor as m
 import release47_host as host
 import release47_normal_controller as ctl
 from release47_host import Hold, public_identity, sha
+from release47_preserved_unknown import Guard
 from release47_saas_successor import SaasController
 from test_release47_imagegen_simplify_successor import config as old_config, state
 
@@ -400,4 +401,43 @@ class RetirementAndFailure(unittest.TestCase):
             self.assertIs(getattr(m.NoUserController,method),getattr(m.ImagegenSimplifyController,method))
 
 
+class FrozenVersionPreservation(unittest.TestCase):
+    def guard(self, match=True, current=None):
+        calls=[]
+        def sql(q):
+            calls.append(q)
+            return [{'match':match}]
+        guard=m.FrozenConfigurationGuard({'baselineSha256':'a'*64,'supplementalPath':'/fixture/not-written'},
+            sql,Mock(),current_facts=lambda:current or [{'activeModelVersion':139}],
+            expected_facts=[{'activeModelVersion':139}])
+        guard.original={'generationPosts':0,'taskId':'task-fixture','model':{'version':'135','digest':'frozen-digest','config_md5':'immutable'},
+            'billing':{'version':'8','config_md5':'immutable-billing'},'leases':{'pollLockPresent':False,'pollLockFuture':False,'nextPollPresent':True},'activity':[]}
+        guard._predicates=Mock(return_value={'app_release_activities':"work_key='task-fixture'"})
+        return guard,calls
+
+    def test_original_immutable_versions_and_current_reviewed_config_both_bound(self):
+        guard,calls=self.guard();guard._invariants()
+        self.assertIn("v.version::text='135'",calls[0])
+        self.assertIn("v.version::text='8'",calls[0])
+        self.assertNotIn('s.active_version',calls[0])
+        self.assertIn('poll_lock_until>now()',calls[0])
+        self.assertIn("work_key='task-fixture'",calls[0])
+        self.assertIs(m.FrozenConfigurationGuard._compare,Guard._compare)
+        self.assertIs(m.FrozenConfigurationGuard.establish,Guard.establish)
+        self.assertIs(m.FrozenConfigurationGuard.check,Guard.check)
+
+    def test_deleted_or_changed_frozen_version_lease_or_activity_denies(self):
+        guard,_=self.guard(match=False)
+        with self.assertRaisesRegex(ValueError,'ORIGINAL_FROZEN_CONFIGURATION_OR_INVARIANT_CHANGED'):guard._invariants()
+
+    def test_current_active_pointer_or_config_fact_change_denies(self):
+        guard,_=self.guard(current=[{'activeModelVersion':140}])
+        with self.assertRaisesRegex(ValueError,'CURRENT_REVIEWED_CONFIGURATION_CHANGED'):guard._invariants()
+
+    def test_generation_declaration_not_reclassified(self):
+        guard,_=self.guard();guard.original['generationPosts']=1
+        with self.assertRaisesRegex(Hold,'POST_DECLARATION_INVALID'):guard._invariants()
+
+
 if __name__ == '__main__':unittest.main()
+

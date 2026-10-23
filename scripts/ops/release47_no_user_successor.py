@@ -31,7 +31,7 @@ from release47_saas_successor import SaasController, CASE05_BASELINE, CASE05_SHA
 from release47_video_family_successor import VideoFamilyController, MIB
 from saas_recovery_gateway import render
 from saas_maintenance_probe import validate_ingress, probe_maintenance
-from release47_preserved_unknown import Guard
+from release47_preserved_unknown import Guard, exact_json, literal
 
 AUTHORIZATION = '合并所有分支然后上线发布新服务器，明确要求旧容器可以直接退役，当前无用户使用，同时给新版加内存预算，防止被系统杀死'
 SCOPE = ['47-only', 'all-completed-branches', 'authorized-no-user-maintenance', 'post-oom-memory-budget']
@@ -281,6 +281,45 @@ def ram_budget(available_bytes, web_current_bytes, worker_current_bytes, cfg):
             'budget': copy.deepcopy(ram)}
 
 
+class FrozenConfigurationGuard(Guard):
+    """Keep the skipped task's immutable versions, not an obsolete active pointer.
+
+    The original baseline, eight core rowsets, leases and activities stay exact.
+    Separately bind the current site config to the fresh reviewed release facts.
+    Never change the old Guard or relabel any original task/operation.
+    """
+    def __init__(self, *args, current_facts, expected_facts, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.current_facts, self.expected_facts = current_facts, copy.deepcopy(expected_facts)
+
+    def _invariants(self):
+        d = self.original
+        require(d.get('generationPosts') == 0, 'PRESERVED_UNKNOWN_POST_DECLARATION_INVALID')
+        task = literal(d['taskId'])
+        predicates = self._predicates()
+        expected = {k: d[k] for k in ('model', 'billing', 'leases', 'activity')}
+        query = """SELECT jsonb_build_object(
+          'model',(SELECT jsonb_build_object('version',v.version::text,'digest',v.digest,'config_md5',md5(v.config::text))
+                   FROM app_model_config_versions v WHERE v.version::text=MODEL_VERSION),
+          'billing',(SELECT jsonb_build_object('version',v.version::text,'config_md5',md5(v.config::text))
+                     FROM app_billing_config_versions v WHERE v.version::text=BILLING_VERSION),
+          'leases',(SELECT jsonb_build_object('pollLockPresent',poll_lock_until IS NOT NULL,
+                     'pollLockFuture',COALESCE(poll_lock_until>now(),false),'nextPollPresent',next_poll_at IS NOT NULL)
+                     FROM app_video_tasks WHERE id=TASK_ID),
+          'activity',(SELECT COALESCE(jsonb_agg(to_jsonb(t)),'[]'::jsonb)
+                      FROM app_release_activities t WHERE state<>'finished' AND ACTIVITY_PREDICATE))
+           = EXPECTED_VALUE::jsonb AS match"""
+        query = (query.replace('MODEL_VERSION', literal(d['model']['version']))
+                 .replace('BILLING_VERSION', literal(d['billing']['version']))
+                 .replace('TASK_ID', task).replace('ACTIVITY_PREDICATE', predicates['app_release_activities'])
+                 .replace('EXPECTED_VALUE', literal(exact_json(expected))))
+        result = self._one("SELECT json_build_object('match',q.match) FROM (" + query + ') q;')
+        if result.get('match') is not True:
+            raise ValueError('ORIGINAL_FROZEN_CONFIGURATION_OR_INVARIANT_CHANGED')
+        if self.current_facts() != self.expected_facts:
+            raise ValueError('CURRENT_REVIEWED_CONFIGURATION_CHANGED')
+
+
 class NoUserController(ImagegenSimplifyController):
     def __init__(self, tx, cfg):
         validate_config(cfg)
@@ -307,8 +346,9 @@ class NoUserController(ImagegenSimplifyController):
                 and self.ingress.get('unaccountedNaumiPublicEndpoints') == [] and self.ingress.get('servers'),
                 'CURRENT_PUBLIC_INGRESS_AUDIT_REQUIRED')
         validate_ingress(self.ingress)
-        self.preserved_unknown = Guard({**cfg['preservedUnknown'],
-            'supplementalPath': str(tx.folder / 'CASE05_SUPPLEMENT.private.json')}, self.sql, tx.save)
+        self.preserved_unknown = FrozenConfigurationGuard({**cfg['preservedUnknown'],
+            'supplementalPath': str(tx.folder / 'CASE05_SUPPLEMENT.private.json')}, self.sql, tx.save,
+            current_facts=self.configuration_facts, expected_facts=cfg['expectedConfigurationFacts'])
         self.quote_before = None
         self.old_retired = False
         self.entry_maintenance_proven = False
