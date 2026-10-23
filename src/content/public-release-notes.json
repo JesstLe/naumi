@@ -1,5 +1,32 @@
 [
   {
+    "version": "1792731828",
+    "title": {
+      "zh": "图片创作稳定性更新",
+      "en": "Image creation reliability"
+    },
+    "improvements": [
+      {
+        "zh": "图片创作使用已确认的报价，减少重复确认。",
+        "en": "Image creation keeps the confirmed quote and reduces repeated confirmations."
+      },
+      {
+        "zh": "刷新页面后可找回尚未完成的图片任务。",
+        "en": "Recover unfinished image tasks after refreshing the page."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "修复连续创作时部分请求被误拦截的问题。",
+        "en": "Fixed incorrect blocking during consecutive image creation."
+      },
+      {
+        "zh": "修复临时忙碌导致图片任务提前失败的问题。",
+        "en": "Fixed image tasks failing prematurely during temporary load."
+      }
+    ]
+  },
+  {
     "version": "1792705393",
     "title": {
       "zh": "创作与画布体验更新",
