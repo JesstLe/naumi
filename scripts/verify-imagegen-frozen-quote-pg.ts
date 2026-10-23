@@ -15,6 +15,7 @@ import type {ImagegenPlan,ImagegenRequest,ImagegenResult} from "../src/lib/image
 import type {BillingConfig} from "../src/lib/billing/types";
 
 const baseline=process.argv.includes("--baseline");
+const simplify=process.argv.includes("--simplify");
 type Receipt={response:Response;body:Record<string,any>};
 type QuotedPlan=ImagegenPlan&{quote?:{id:string;expiresAt:string}};
 type Wire={path:string;body:Record<string,any>;width:number;height:number;inputs:number};
@@ -171,7 +172,7 @@ async function main(){
     const r4=imagegenRequestSchema.parse({...request(),inputs:[{artworkId:ownedId,role:"reference"}]}),p4=await preview(r4);
     assert.equal(p4.totalCredits,12);await assertUntouched();
 
-    if(baseline){
+    if(baseline&&!simplify){
       assert.equal(p4.quote,undefined,"f9 preview has no persisted quote credential");
       const billing=await publishPrice(14),model=await publishModel();
       const rejected=await expectReject({...r4,confirmation:confirmation(p4)},409,"IMAGEGEN_PLAN_CHANGED");assert.equal(rejected.body.accepted,false);await assertUntouched();
@@ -188,7 +189,42 @@ async function main(){
     assert.equal(pBatch.totalCredits,24);assert.equal(pBatch.children?.length,2);
     assert.ok(pBatch.children!.every(child=>child.plan.steps.every(step=>(step as unknown as Record<string,unknown>).billingQuote===undefined)),"batch HTTP children also strip server-only billing quotes");await assertUntouched();
     record("quote_preview_no_accept_no_reserve",{credits:12,batchCredits:24,ttlSeconds:stored4.ttl,counts:await counts(),supplierPosts:wires.length});
+    let genericPreview:Record<string,any>|undefined;
+    if(simplify){
+      const quoteApi=await import("../src/app/api/billing/quote/route");
+      const response=await quoteApi.POST(new Request(f.origin+"/api/billing/quote",{method:"POST",headers:headers(),body:JSON.stringify({feature:"canvas.image",quantity:1,quality:"medium",resolution:"4K",ratio:"1:1",modelId:"image-a"})}));
+      genericPreview=await response.json();assert.equal(response.status,200,JSON.stringify(genericPreview));assert.equal(genericPreview!.credits,12);
+    }
     const billing14=await publishPrice(14),model2=await publishModel();
+    if(simplify){
+      const raw={...r4,confirmation:{confirmed:true,billingVersion:999999,modelVersion:999999,credits:0}};
+      const accepted=await post("submit",raw);
+      if(baseline){assert.equal(accepted.response.status,409,JSON.stringify(accepted.body));assert.equal(accepted.body.code,"IMAGEGEN_PLAN_CHANGED");await assertUntouched();console.log("SIMPLIFY_BASELINE=REPRODUCED RAW_STALE_HEADERS_409=1 PARENTS=0 SUPPLIER_POSTS=0 CHARGES=0");return;}
+      const result=await waitResult(r4,accepted);await inspectGenerated(r4,p4,result);
+      const replayCalls=wires.length;assert.equal((await post("submit",raw)).body.jobId,result.jobId);assert.equal(wires.length,replayCalls);
+      const batchAccepted=await post("submit",{...rBatch,confirmation:{confirmed:true,billingVersion:999999,modelVersion:999999,credits:0}});
+      assert.equal(batchAccepted.response.status,200,JSON.stringify(batchAccepted.body));
+      const batchSaved=(await pool.query("SELECT plan FROM app_imagegen_batches WHERE id=$1",[rBatch.operationId])).rows[0];assert.equal(batchSaved.plan.totalCredits,24);
+      assert.ok(genericPreview!.quote?.id);assert.equal(genericPreview!.selection.resolution,"4K");
+      assert.equal(JSON.stringify(genericPreview).includes('costRates'),false);
+      const oldQuoteHeaders=headers();oldQuoteHeaders.set("x-naumi-image-quote",genericPreview!.quote.id);oldQuoteHeaders.set("x-naumi-model-version","999999");oldQuoteHeaders.set("x-naumi-billing-version","999999");oldQuoteHeaders.set("x-naumi-billing-credits","0");oldQuoteHeaders.set("x-naumi-billing-operation-id",randomUUID());
+      const legacyApi=await import("../src/app/api/generate-image/route");
+      const legacyBody={origin:"canvas",prompt:"Draw an opaque blue ceramic bottle",model:"image-a",quality:"medium",resolution:"4K",ratio:"1:1",count:1};
+      const legacyStart=await legacyApi.POST(new Request(f.origin+"/api/generate-image",{method:"POST",headers:oldQuoteHeaders,body:JSON.stringify(legacyBody)}));
+      const started=await legacyStart.json();assert.equal(legacyStart.status,200,JSON.stringify(started));assert.match(started.jobId,/^job-/);
+      let delivery:Record<string,any>={};for(let i=0;i<600;i++){await wait(80);const response=await legacyApi.GET(new Request(f.origin+"/api/generate-image?job="+started.jobId,{headers:headers()}));delivery=await response.json();if(["done","error","needs_attention"].includes(delivery.status))break;}
+      assert.equal(delivery.status,"done",JSON.stringify(delivery));assert.equal(delivery.images.length,1);assert.equal(delivery.creditsUsed,12);
+      const saved=(await pool.query("SELECT quote,charged_credits,state FROM app_billing_operations WHERE id=$1",[started.jobId])).rows[0];
+      assert.equal(saved.state,"settled");assert.equal(Number(saved.charged_credits),12);assert.equal(saved.quote.configVersion,genericPreview!.version);
+      const h=headers(other);h.set("x-naumi-image-quote",genericPreview!.quote.id);
+      const foreign=await legacyApi.POST(new Request(f.origin+"/api/generate-image",{method:"POST",headers:h,body:JSON.stringify(legacyBody)}));assert.equal(foreign.status,400);
+      const mismatch=await legacyApi.POST(new Request(f.origin+"/api/generate-image",{method:"POST",headers:oldQuoteHeaders,body:JSON.stringify({...legacyBody,count:2})}));assert.notEqual(mismatch.status,200);
+      const {assertQuotedVersion}=await import("../src/lib/billing/request");assert.doesNotThrow(()=>assertQuotedVersion({version:999999,credits:0},saved.quote));
+      assert.throws(()=>assertQuotedVersion({version:999999,credits:0},{...saved.quote,facts:{...saved.quote.facts,feature:"video.generate"}}));
+      assert.equal(wires.length,2);assert.equal(Number((await pool.query("SELECT count(*) n FROM app_ledger WHERE kind='consume'")).rows[0].n),2);
+      console.log("SIMPLIFY_MODIFIED=PASS RAW_OLD_CLIENT_SAVED_PLAN=12 GENERIC_QUOTE_FROZEN=12 STALE_MODEL_BILLING_VERSIONS_IGNORED=1 CLIENT_ZERO_NOT_TRUSTED=1 FOREIGN_DENIED=1 COUNT_TAMPER_DENIED=1 TEXT_VIDEO_GUARDS_RETAINED=1 SUPPLIER_POSTS=2 LEDGERS=2 CHARGED=24 EXTERNAL_CALLS=0");return;
+    }
+
     const oldModels=await admin.repo.byVersion(p4.modelVersion),oldBilling=await admin.billing.byVersion(p4.billingVersion);
     assert.equal(oldModels.config.publicModels[0].supplierRouting!.channels[0].weight,1);assert.notEqual(oldModels.config.publicModels[0].label,model2.config.publicModels[0].label);
     const oldPricing=oldBilling.config.features["canvas.image"].pricing;assert.equal(oldPricing.mode,"quality-resolution");if(oldPricing.mode==="quality-resolution")assert.equal(oldPricing.resolutionExtra["4K"],6);

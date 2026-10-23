@@ -2,10 +2,14 @@ import { randomUUID } from "node:crypto";
 import { BillingError, type BillingQuote } from "./types";
 import { billingJson } from "./access";
 import { ModelConfigError } from "../model-config/types";
+import { imageBillingFeature } from "./image-quote-policy";
 export function assertQuotedVersion(client: {
     version?: number;
     credits?: number;
 }, current: BillingQuote) {
+    // Image execution uses the complete server-owned quote. Browser amounts
+    // and version headers neither price the operation nor block that contract.
+    if(imageBillingFeature(current.facts.feature))return;
     if (client.version === undefined && client.credits === undefined && (current.legacyCompatible === true || current.authorizedCredits === 0))
         return; // Compatibility is permitted only for verified unchanged terms.
     if (client.version !== current.configVersion || client.credits !== (current.tariff.pricing.mode==="api-cost-plus"?current.authorizedCredits:current.requestedCredits))

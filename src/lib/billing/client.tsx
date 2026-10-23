@@ -9,7 +9,11 @@ import {clientIntentKey,frozenIntentBody} from "./client-intent";
 import { MODEL_CATALOG_REFRESH } from "../model-config/public-client";
 import { chosenFeatureModel, FEATURE_MODEL_SELECTION } from "../model-config/feature-client";
 import { browserRandomUUID } from "../browser-crypto";
+import {imageBillingFeature} from "./image-quote-policy";
+import {currentWorkspace} from "../saas/workspace-client";
 export type PublicQuote = {
+    quote?:{id:string;expiresAt:string};
+    selection?:QuoteInput;
     requestedParameters?: {quality:string;resolution:string;ratio:string};
     effectiveParameters?: {quality:string;resolution:string;ratio:string};
     modelVersion?: number;
@@ -109,22 +113,23 @@ export function BillingProvider({ children }: {
     useEffect(()=>{const changed=()=>{cache.current.clear();};const modelsChanged=()=>{void refresh();};window.addEventListener(FEATURE_MODEL_SELECTION,changed);window.addEventListener(MODEL_CATALOG_REFRESH,modelsChanged);return()=>{window.removeEventListener(FEATURE_MODEL_SELECTION,changed);window.removeEventListener(MODEL_CATALOG_REFRESH,modelsChanged);};},[refresh]);
     const getQuote = useCallback((rawInput: QuoteInput) => {
         const input = { ...rawInput, modelId: rawInput.modelId || chosenFeatureModel(rawInput.feature) };
-        const key = JSON.stringify([catalog?.version, input]);
+        const key = JSON.stringify([user?.email,currentWorkspace(),catalog?.version, input]);
         let promise = cache.current.get(key);
         if (promise)
             return promise;
         promise = (async () => { const {canvas,...facts}=input; const res = await fetch("/api/billing/quote", { method: "POST", headers: { "content-type": "application/json", ...await authHeader(),...(canvas?{"x-naumi-canvas":"1"}:{}) }, body: JSON.stringify(facts) }), data = await res.json(); if (!res.ok)
-            throw new Error(data.error || "报价暂不可用"); return data as PublicQuote; })();
+            throw new Error(data.error || "报价暂不可用"); return {...data,selection:input} as PublicQuote; })();
         if (cache.current.size >= 200)
             cache.current.clear();
         cache.current.set(key, promise);
         promise.catch(() => cache.current.delete(key));
         return promise;
-    }, [catalog]);
+    }, [catalog,user?.email]);
     const submit = useCallback(async (url: string, init: RequestInit, displayed: PublicQuote | null, onIdentity?: (id: string) => void) => {
         if (!displayed)
             throw new Error("报价正在加载或暂不可用，请稍后重试");
         const headers = new Headers(init.headers);
+        if(displayed.quote)headers.set("x-naumi-image-quote",displayed.quote.id);
         if(displayed.mode==="api-cost-plus" && !window.confirm(`本次估算 ${displayed.credits} 积分，最多授权 ${displayed.authorizedCredits ?? displayed.reserveCredits} 积分。按实际完整 API 成本与已锁定倍率结算；费用未知时待核账。是否提交？`)) throw new Error("已取消提交");
         if (displayed?.modelVersion) headers.set("x-naumi-model-version", String(displayed.modelVersion));
         if (displayed?.modelId) headers.set("x-naumi-feature-model", displayed.modelId);
@@ -137,6 +142,20 @@ export function BillingProvider({ children }: {
         onIdentity?.(id);
         if(displayed.requestedParameters?.resolution && displayed.effectiveParameters?.resolution && displayed.requestedParameters.resolution!==displayed.effectiveParameters.resolution)
             toast(`${displayed.requestedParameters.resolution}已自动调整为${displayed.effectiveParameters.resolution}，实际生成档位已调整，报价保持不变`,"info");
+        if(displayed.quote && Date.parse(displayed.quote.expiresAt)<=Date.now()+1000 && displayed.selection){
+            const {canvas,...selection}=displayed.selection;
+            const refreshHeaders=new Headers(await authHeader());refreshHeaders.set("content-type","application/json");
+            for(const name of ["x-naumi-workspace","x-naumi-project-context"])if(headers.has(name))refreshHeaders.set(name,headers.get(name)!);
+            if(canvas)refreshHeaders.set("x-naumi-canvas","1");
+            const response=await fetch("/api/billing/quote",{method:"POST",headers:refreshHeaders,body:JSON.stringify(selection)});
+            const next=await response.json();if(!response.ok)throw new Error(next.error||"报价暂不可用");
+            if(next.credits>displayed.credits&&!window.confirm(`本次报价更新为 ${next.credits} 积分，是否执行？`))throw new Error("已取消提交");
+            displayed={...next,selection:displayed.selection} as PublicQuote;
+            headers.set("x-naumi-image-quote",displayed.quote!.id);
+            headers.set("x-naumi-billing-version",String(displayed.version));
+            headers.set("x-naumi-billing-credits",String(displayed.mode==="api-cost-plus"?displayed.authorizedCredits??displayed.reserveCredits:displayed.credits));
+            if(displayed.modelVersion)headers.set("x-naumi-model-version",String(displayed.modelVersion));
+        }
         const response = await fetch(url, { ...frozenIntentBody(init,id), headers });
         if (response.ok && response.body && response.headers.get("content-type")?.includes("text/event-stream")) {
             const decoder = new TextDecoder(); let buffer = "";
@@ -163,10 +182,9 @@ export function BillingProvider({ children }: {
             throw new Error("报价加载中，请稍后重试");
         const q = await getQuote(input);
         beforeSubmit?.();
-        if (q.version !== catalog.version) {
-            await refresh();
-            throw new Error("价格已更新，请确认最新报价后重新提交");
-        }
+        // The freshly obtained server quote is authoritative, not a separate
+        // catalogue version that may have changed during the same click.
+        if(!imageBillingFeature(q.feature)&&q.version!==catalog.version){await refresh();throw new Error("价格已更新，请确认最新报价后重新提交");}
         // submit invokes this after hashing the frozen body and before its paid POST.
         return submit(url, init, q, beforeSubmit);
     }, [catalog, getQuote, refresh, submit]);

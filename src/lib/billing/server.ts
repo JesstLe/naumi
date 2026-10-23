@@ -1,4 +1,5 @@
 import "server-only";
+import {imageBillingQuoteForRequest,assertImageBillingSelection} from "./image-quotes";
 import {cutoutImageQuality} from "../model-config/cutout-quality";
 import { requestedFeatureModel, assertPlatformImageSelection } from "../model-config/selection-policy";
 import { randomUUID } from "node:crypto";
@@ -128,6 +129,8 @@ export async function quoteForRequest(request: Request, input: Partial<BillingFa
             throw new BillingError("OPERATION_CONFLICT","冻结执行步骤与原报价不符",409);
         return structuredClone(q);
     }
+    const browserQuote=await imageBillingQuoteForRequest(request);
+    if(browserQuote){assertImageBillingSelection(browserQuote,input);return browserQuote;}
     const snapshot = frozenSnapshot??currentModelBillingSnapshot()??await billingSnapshot();
     return freezeBusinessQuote(request, snapshot, await resolveBillingFacts(request, input, snapshot), compatibleQuote, options);
 }

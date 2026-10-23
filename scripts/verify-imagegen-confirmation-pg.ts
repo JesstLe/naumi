@@ -148,20 +148,13 @@ async function main(){
     const owned={...request("1K"),inputs:[{artworkId:ownedId,role:"reference" as const}]};
     assert.equal((await preview(owned)).totalCredits,6,"owned input is actually readable by the planner");
     for(const path of ["plan","submit"] as const){const noAccess=await post(path,{...request("1K"),inputs:[{artworkId:foreignId,role:"reference"}]});assert.equal(noAccess.response.status,400);assert.match(noAccess.body.error,/素材不存在或无权访问/);if(path==="submit")assert.equal(noAccess.body.accepted,false);}
-    async function expectChanged(r:ImagegenRequest,c:Record<string,unknown>|undefined){const before=await counts(),calls=wires.length;const result=await post("submit",{...r,...(c?{confirmation:c}:{})});assert.equal(result.response.status,409,JSON.stringify(result.body));assert.equal(result.body.code,"IMAGEGEN_PLAN_CHANGED");assert.equal(result.body.accepted,false);assert.deepEqual(await counts(),before,"confirmation conflict creates no parent or billing operation");assert.equal(wires.length,calls);}
-    await expectChanged(request(),undefined);
-    await expectChanged(request(),{...confirmation(p4),confirmed:false});
-    await expectChanged(request(),{...confirmation(p4),credits:p1.totalCredits});
-    await expectChanged(request(),{...confirmation(p4),modelVersion:p4.modelVersion+100});
-    await expectChanged(request(),{...confirmation(p4),billingVersion:p4.billingVersion+100});
-    const batchRequest=imagegenRequestSchema.parse({...request(),mode:"batch",batch:{items:[{key:"front",name:"正面",prompt:"Draw a front view bottle"},{key:"back",name:"背面",prompt:"Draw a back view bottle"}],concurrency:1,maxAttempts:1,failFast:false}});
-    const batchPlan=await preview(batchRequest);assert.equal(batchPlan.totalCredits,24);
-    await expectChanged(batchRequest,{...confirmation(batchPlan),credits:0});
-    assert.equal(Number((await pool.query("SELECT count(*)::int n FROM app_imagegen_batches WHERE id=$1",[batchRequest.operationId])).rows[0].n),0,"batch confirmation conflict creates no batch row");
+    // Stale browser versions/amounts are no longer a rejection contract.
+    // The dedicated --simplify HTTP/PG matrix proves old preview execution,
+    // tamper isolation and single settlement across real publications.
     await assertUntouched();
 
     async function finish(r:ImagegenRequest,p:ImagegenPlan,dimension:number){
-      const startCalls=wires.length,before=await counts(),accepted=await post("submit",{...r,confirmation:confirmation(p)});
+      const startCalls=wires.length,before=await counts(),accepted=await post("submit",{...r,confirmation:{...confirmation(p),billingVersion:999999,modelVersion:999999,credits:0}});
       assert.equal(accepted.response.status,200,JSON.stringify(accepted.body));assert.equal(accepted.body.operationId,r.operationId);
       const replay=await post("submit",r);assert.equal(replay.response.status,200,JSON.stringify(replay.body));assert.equal(replay.body.jobId,accepted.body.jobId,"same operation while pending returns the same parent");
       let result=accepted.body as ImagegenResult;
@@ -203,22 +196,22 @@ async function main(){
     const publication=await f.repo.stage({id:randomUUID(),draftId:saved.id,expectedRevision:saved.revision,expectedVersion:current.version,actor:"fixture",reason:"controlled 4K to 2K delivery fallback"});await f.repo.markApplied(publication.id,publication.digest);
     const oldCounts=await counts(),oldCalls=wires.length;
     const oldReceipt=await post("submit",{...r4,confirmation:confirmation(p4)});assert.equal(oldReceipt.response.status,200,JSON.stringify(oldReceipt.body));assert.equal(oldReceipt.body.jobId,`imagegen-${r4.operationId}`);assert.equal(wires.length,oldCalls);assert.deepEqual(await counts(),oldCounts,"historical accepted 4K receipt survives changed model configuration without new paid POST");
-    await expectChanged(request(),confirmation(p4));
     const fallbackRequest=request("4K"),fallback=await preview(fallbackRequest);
     assert.equal(fallback.totalCredits,p4.totalCredits,"requested 4K price is unchanged when actual delivery falls back to 2K");assert.equal(fallback.requestedParameters?.resolution,"4K");assert.equal(fallback.request.parameters.resolution,"2K");assert.equal(fallback.steps[0].parameters.resolution,"2K");assert.match(fallback.warnings.join(" "),/4K.*2K/);
     const delivered=await finish(fallbackRequest,fallback,2048);assert.equal(delivered.child.payload.billingQuote.requestedParameters.resolution,"4K");assert.equal(delivered.child.payload.billingQuote.effectiveParameters.resolution,"2K");assert.match(delivered.result.warnings!.join(" "),/4K.*2K/);
 
-    // A genuine billing publication invalidates only NEW submissions, not receipts.
+    // New previews see the publication; saved server quotes and receipts keep
+    // their original terms, independently of stale browser headers.
     const now=await admin.billing.current(),repriced=structuredClone(now.config);
     for(const feature of ["canvas.image","image.generate"] as const){const pricing=repriced.features[feature].pricing;assert.equal(pricing.mode,"quality-resolution");if(pricing.mode==="quality-resolution")pricing.resolutionExtra["4K"]=8;}
     await admin.billing.publish({id:randomUUID(),actor:"fixture",reason:"stale billing preview regression",expectedVersion:now.version,config:repriced});
     const unchanged=await counts(),paid=wires.length;
     const historical=await post("submit",{...fallbackRequest,confirmation:confirmation(fallback)});assert.equal(historical.response.status,200);assert.equal(historical.body.chargedCredits,12);assert.equal(wires.length,paid);assert.deepEqual(await counts(),unchanged);
-    const repricedRequest=request("4K");await expectChanged(repricedRequest,confirmation(fallback));assert.equal((await preview(repricedRequest)).totalCredits,14,"fresh preview returns the new selected-tier quote");
+    const repricedRequest=request("4K");assert.equal((await preview(repricedRequest)).totalCredits,14,"fresh preview returns the new selected-tier quote");
     const changedContent=await post("submit",{...r4,prompt:"Changed content must not reuse a paid operation"});assert.equal(changedContent.response.status,400);assert.equal(changedContent.body.accepted,true);assert.match(changedContent.body.error,/冲突/);assert.equal(wires.length,paid);assert.deepEqual(await counts(),unchanged);
     const finalCounts=await counts(),totals=(await pool.query("SELECT count(*)::int n,COALESCE(-sum(delta),0)::int charged FROM app_ledger WHERE email=$1 AND kind='consume'",[owner])).rows[0];
     assert.deepEqual(finalCounts,{parents:5,children:5,ledgers:5,reservations:0,billed:5});assert.deepEqual(totals,{n:5,charged:62});assert.equal(wires.length,6);assert.deepEqual(blockedUrls,[]);
-    console.log("MODIFIED=PASS HTTP_HANDLERS=ORIGINAL NATIVE_SESSION=PASS AUTH_SOURCE_INPUT_OWNERSHIP=PASS TIERS=6,8,12 VARIANTS2_CREDITS=24 VARIANTS2_OUTPUTS=2 VARIANTS2_AGGREGATE_LEDGERS=1 HOSTILE_OUTER_1K_PLAN_4K=12 REQUESTED_4K_EFFECTIVE_2K=12 CONFIRMATION_409_IMAGEGEN_PLAN_CHANGED_ACCEPTED_FALSE=PASS ACTUAL_PNG_PIXELS=1024,2048,4096 SINGLE_OUTPUT_SINGLE_LEDGER=PASS PARENTS=5 CHILDREN=5 ARTIFACTS=6 BILLED_OPERATIONS=5 CONSUMPTION_LEDGERS=5 CHARGED_CREDITS=62 RESERVATIONS=0 LOOPBACK_SUPPLIER_POSTS=6 OLD_RECEIPT_NO_REPOST=PASS EXTERNAL_CALLS=0");
+    console.log("MODIFIED=PASS HTTP_HANDLERS=ORIGINAL NATIVE_SESSION=PASS AUTH_SOURCE_INPUT_OWNERSHIP=PASS TIERS=6,8,12 VARIANTS2_CREDITS=24 VARIANTS2_OUTPUTS=2 VARIANTS2_AGGREGATE_LEDGERS=1 HOSTILE_OUTER_1K_PLAN_4K=12 REQUESTED_4K_EFFECTIVE_2K=12 STALE_BROWSER_HEADERS_IGNORED_SERVER_QUOTE=PASS ACTUAL_PNG_PIXELS=1024,2048,4096 SINGLE_OUTPUT_SINGLE_LEDGER=PASS PARENTS=5 CHILDREN=5 ARTIFACTS=6 BILLED_OPERATIONS=5 CONSUMPTION_LEDGERS=5 CHARGED_CREDITS=62 RESERVATIONS=0 LOOPBACK_SUPPLIER_POSTS=6 OLD_RECEIPT_NO_REPOST=PASS EXTERNAL_CALLS=0");
     console.log("BOUNDARY=local isolated PostgreSQL + original Request/Response handlers + loopback sharp PNG supplier; not production, external supplier, browser or nginx acceptance");
   }finally{
     if(db){const {closeImageCoordinationPool}=await import("../src/lib/imagegen/coordination-pool");await closeImageCoordinationPool();await db.getPool().end();}

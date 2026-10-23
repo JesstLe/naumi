@@ -5,8 +5,7 @@ import {readCanvasOutput} from "../canvas-image-input";
 import {inspectImagegenPixels} from "./postprocess";
 import {saveCanvasLocalEdit} from "../canvas-local-image-edit";
 import {planImagegen,imagegenFingerprint} from "./plan";
-import {ImagegenConfirmationChanged} from "./confirmation";
-import {assertImagegenQuoteReference,frozenImagegenQuote,type ImagegenSubmissionConfirmation} from "./quotes";
+import {assertImagegenQuoteReference,frozenImagegenQuote,latestImagegenQuote,type ImagegenSubmissionConfirmation} from "./quotes";
 import {executeImagegenStep} from "./adapters";
 import {imagegenStepId} from "./generation-core";
 import {imagegenRequestSchema} from "./schema";
@@ -194,8 +193,9 @@ export async function submitImagegen(raw:ImagegenRequest,owner:string,confirmati
  if(previous){if(await jobs.owner(id)!==owner.toLowerCase()||previous.fingerprint!==fingerprint)throw new Error("提交编号与已有请求冲突");await assertParentScope(id,owner);await resumeImagegen(id);return previous.result;}
  try{
   if(confirmation?.quoteId!==undefined)return await submitAcceptedImagegen(await frozenImagegenQuote(request,owner,confirmation),owner,fingerprint);
-  const plan=await planImagegen(request,owner);
-  if(plan.totalCredits>0&&(!confirmation||confirmation.billingVersion!==plan.billingVersion||(confirmation.modelVersion!==undefined&&confirmation.modelVersion!==plan.modelVersion)||confirmation.credits!==plan.totalCredits||confirmation.confirmed!==true))throw new ImagegenConfirmationChanged();
+  if(confirmation?.confirmed===false)throw new Error("已取消提交");
+  const quoteId=await latestImagegenQuote(request,owner);
+  const plan=quoteId?await frozenImagegenQuote(request,owner,{quoteId,confirmed:confirmation?.confirmed!==false}):await planImagegen(request,owner);
   return await submitAcceptedImagegen(plan,owner,fingerprint);
  }catch(error){
   const winner=await jobs.get(id,false);

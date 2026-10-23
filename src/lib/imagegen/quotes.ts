@@ -59,6 +59,14 @@ export async function readImagegenQuote(id:string,owner:string,operationId:strin
  if(!row||row.owner!==owner.toLowerCase()||row.operation_id!==operationId||row.context_key!==imagegenCreationScopeKey(owner)||row.fingerprint!==imagegenFingerprint(row.request)||row.plan.fingerprint!==row.fingerprint)throw new ImagegenQuoteError();
  return structuredClone(row);
 }
+/** Old pages ignore quote.id, but their preview still created a server quote.
+ * Resolve that original request directly; never compare its browser versions
+ * or claimed amount to current configuration. */
+export async function latestImagegenQuote(request:ImagegenRequest,owner:string){
+ await ensureImagegenQuotes();const fingerprint=imagegenFingerprint(request),context=imagegenCreationScopeKey(owner);
+ const row:QuoteRow|undefined=dbEnabled?(await getPool().query("SELECT * FROM app_imagegen_quotes WHERE owner=$1 AND operation_id=$2 AND fingerprint=$3 AND context_key=$4 AND expires_at>now() ORDER BY created_at DESC,id DESC LIMIT 1",[owner.toLowerCase(),request.operationId,fingerprint,context])).rows[0]:[...memory.values()].reverse().find(q=>q.owner===owner.toLowerCase()&&q.operation_id===request.operationId&&q.fingerprint===fingerprint&&q.context_key===context&&new Date(q.expires_at).getTime()>Date.now());
+ return row?.id;
+}
 export async function frozenImagegenQuote(request:ImagegenRequest,owner:string,confirmation:ImagegenSubmissionConfirmation){
  const row=await readImagegenQuote(confirmation.quoteId!,owner,request.operationId);
  if(row.fingerprint!==imagegenFingerprint(request))throw new ImagegenQuoteError();

@@ -5,6 +5,7 @@ import {legacyImagegenIntent} from "../imagegen/legacy-intent";
 import {publicUpstreamIds} from "./channel-policy";
 import {assertDisplayResolution} from "./resolution-options";
 import { featureForRequest } from "./feature-path";
+import {imageBillingQuoteForRequest} from "../billing/image-quotes";
 import { requestedFeatureModel, assertPlatformImageSelection } from "./selection-policy";
 import {qualityPresentation} from "./quality-policy";
 import { selectedBusinessOption, FEATURE_BINDINGS } from "./business";
@@ -88,11 +89,11 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     }
   }
   const admin = await getModelAdministration();
-  const accepted = await acceptedModelVersions(request);
+  const quotedImage=await imageBillingQuoteForRequest(request);
+  const accepted = await acceptedModelVersions(request) || (quotedImage?.modelVersion?{modelVersion:quotedImage.modelVersion,billingVersion:quotedImage.configVersion}:null);
   if (new URL(request.url).pathname === "/api/aplus" && parsed.body.jobId && ["approve_source", "redo_source", "generate"].includes(parsed.body.action)) return run();
   const [snapshot, billing] = await Promise.all([accepted ? admin.repo.byVersion(accepted.modelVersion) : admin.repo.current(), accepted ? admin.billing.byVersion(accepted.billingVersion) : admin.billing.current()]);
   const quotedVersion = request.headers.get("x-naumi-model-version") || parsed.body.modelVersion;
-  if (quotedVersion !== undefined && quotedVersion !== null && quotedVersion !== "" && (!/^[1-9][0-9]{0,15}$/.test(String(quotedVersion)) || Number(quotedVersion) !== snapshot.version)) throw new ModelConfigError("MODEL_CHANGED", "模型配置已更新，请刷新模型列表后重新提交；原输入已保留", 409);
   const feature = featureForRequest(new URL(request.url).pathname, parsed.body);
   const purpose = purposeFor(new URL(request.url).pathname), executor = await getModelExecutor();
   if (feature === "canvas.image") {
@@ -101,6 +102,7 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     purpose.image = hasReferences ? "image.edit" : "image.generate";
   }
   if (feature === "competitor.action" && parsed.body.action !== "analyze") Object.assign(purpose, { image:"image.edit", text:"text.competitor", vision:"vision.reference", primary:"image" });
+  if (purpose.primary!=="image" && quotedVersion !== undefined && quotedVersion !== null && quotedVersion !== "" && (!/^[1-9][0-9]{0,15}$/.test(String(quotedVersion)) || Number(quotedVersion) !== snapshot.version)) throw new ModelConfigError("MODEL_CHANGED", "模型配置已更新，请刷新模型列表后重新提交；原输入已保留", 409);
   const mainFeature = feature === "competitor.action" && parsed.body.action === "analyze" ? undefined : feature;
   const bundle: ExecutionBundle = { modelVersion: snapshot.version, billingVersion: billing.version, primary: purpose.primary };
   let standaloneSegmentation = false;
@@ -114,9 +116,9 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     const explicit = request.headers.get("x-naumi-feature-model") || selected || "";
     const explicitModelId = requestedFeatureModel(mainFeature, explicit.startsWith("byok:") ? undefined : explicit || undefined);
     const featureDefault = featureDefaultModel(snapshot.config,mainFeature,purpose.image);
-    const configuredModelId = explicitModelId || featureDefault || snapshot.config.bindings[purpose.image];
-    const outputResolution = Number(parsed.body.targetWidth) > 0 && Number(parsed.body.targetHeight) > 0 ? resolutionForLongSide(Math.max(Number(parsed.body.targetWidth), Number(parsed.body.targetHeight))) : String(parsed.body.resolution || "1K");
-    const ratio = /^\d+:\d+$/.test(String(parsed.body.ratio||parsed.body.size||"")) ? String(parsed.body.ratio||parsed.body.size) : Number(parsed.body.targetWidth)>0&&Number(parsed.body.targetHeight)>0 ? imageRatio(Number(parsed.body.targetWidth),Number(parsed.body.targetHeight)) : "1:1";
+    const configuredModelId = quotedImage?.facts.modelId || explicitModelId || featureDefault || snapshot.config.bindings[purpose.image];
+    const outputResolution = quotedImage?.requestedParameters?.resolution || quotedImage?.facts.resolution || (Number(parsed.body.targetWidth) > 0 && Number(parsed.body.targetHeight) > 0 ? resolutionForLongSide(Math.max(Number(parsed.body.targetWidth), Number(parsed.body.targetHeight))) : String(parsed.body.resolution || "1K"));
+    const ratio = quotedImage?.requestedParameters?.ratio || quotedImage?.facts.ratio || (/^\d+:\d+$/.test(String(parsed.body.ratio||parsed.body.size||"")) ? String(parsed.body.ratio||parsed.body.size) : Number(parsed.body.targetWidth)>0&&Number(parsed.body.targetHeight)>0 ? imageRatio(Number(parsed.body.targetWidth),Number(parsed.body.targetHeight)) : "1:1");
     const routedModelId = routeImageModel(
       configuredModelId,
       ratio,
@@ -133,7 +135,7 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     const presentation = qualityPresentation(upstreams);
     const qualities = preset ? [...DISPLAY_QUALITIES] : presentation?.qualities || option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities)));
     if (option?.parameters?.ratios?.length && !option.parameters.ratios.includes(ratio)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该比例", 400);
-    const rawQuality = String(parsed.body.quality || request.headers.get("x-naumi-image-quality") || "").trim().toLowerCase();
+    const rawQuality = String(quotedImage?.requestedParameters?.quality || quotedImage?.facts.quality || parsed.body.quality || request.headers.get("x-naumi-image-quality") || "").trim().toLowerCase();
     const explicitQuality = purpose.image === "image.cutout" ? cutoutImageQuality(rawQuality) || "" : rawQuality;
     if (explicitQuality && ![...IMAGE_QUALITY_IDS, "auto"].includes(explicitQuality as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "质量参数无效，请选择已开放的质量档位", 400);
     const environmentQuality = String(process.env.OPENAI_IMAGE_QUALITY || "medium").trim().toLowerCase();

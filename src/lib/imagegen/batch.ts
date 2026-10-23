@@ -8,8 +8,7 @@ import {getPool} from "../db";
 import {imageCoordinationPool} from "./coordination-pool";
 import {imagegenRequestSchema} from "./schema";
 import {planImagegen,imagegenFingerprint} from "./plan";
-import {ImagegenConfirmationChanged} from "./confirmation";
-import {assertImagegenQuoteReference,frozenImagegenQuote,type ImagegenSubmissionConfirmation} from "./quotes";
+import {assertImagegenQuoteReference,frozenImagegenQuote,latestImagegenQuote,type ImagegenSubmissionConfirmation} from "./quotes";
 import {submitAcceptedImagegen,getImagegenResult} from "./dispatch";
 import {imagegenStepId} from "./generation-core";
 import {ensureImagegenBatches,imagegenBatchRow,imagegenBatchItems,type ImagegenBatchItem} from "./batch-repository";
@@ -40,8 +39,9 @@ export async function submitImagegenBatch(raw:ImagegenRequest,owner:string,confi
  if(previous){if(previous.owner!==owner.toLowerCase()||previous.fingerprint!==fingerprint)throw new Error("批次编号已用于不同请求");assertImagegenCreationScope((previous.plan as ImagegenPlan&{creationScope?:unknown}).creationScope,owner);return {id:previous.id,children:(await imagegenBatchItems(previous.id)).map(i=>i.child_operation_id)};}
  try{
   if(confirmation?.quoteId!==undefined)return await submitAcceptedImagegenBatch(await frozenImagegenQuote(request,owner,confirmation),owner,fingerprint);
-  const prepared=await prepare(request,owner),plan=prepared.plan;
-  if(plan.totalCredits>0&&(!confirmation||confirmation.confirmed!==true||confirmation.credits!==plan.totalCredits||confirmation.billingVersion!==plan.billingVersion||(confirmation.modelVersion!==undefined&&confirmation.modelVersion!==plan.modelVersion)))throw new ImagegenConfirmationChanged();
+  if(confirmation?.confirmed===false)throw new Error("已取消提交");
+  const quoteId=await latestImagegenQuote(request,owner);
+  const plan=quoteId?await frozenImagegenQuote(request,owner,{quoteId,confirmed:confirmation?.confirmed!==false}):(await prepare(request,owner)).plan;
   return await submitAcceptedImagegenBatch(plan,owner,fingerprint);
  }catch(error){
   // Another identical request may commit while this candidate's quote/current
