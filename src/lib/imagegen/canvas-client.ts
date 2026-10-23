@@ -1,7 +1,7 @@
 "use client";
 import {browserRandomUUID} from "../browser-crypto";
 import {imagegenRequestSchema} from "./schema";
-import {previewImagegen,startImagegen,uploadImagegenInput,ImagegenHttpError} from "./client";
+import {previewImagegen,startImagegen,pollImagegen,uploadImagegenInput,imagegenScopeHeaders,ImagegenHttpError} from "./client";
 import type {ImagegenRequest} from "./types";
 import {automaticFrameRatio,frameCandidates,frameRatio,FrameRatioChoiceRequired,type FrameInput} from "./frame-ratio";
 import {resolveImagegenIntent} from "./intent";
@@ -9,6 +9,8 @@ import {ImagegenPreparationCancelled} from "./http";
 import {browserImageHeader} from "../browser-reference-image";
 import {canvasReferenceManifestSchema,referenceManifestError} from "./reference-labels";
 import {currentWorkspace} from '../saas/workspace-client';
+import {canvasImagegenActionKey,pendingAttemptKey,readPendingAttempt,savePendingAttempt,withPendingAttempt,type ImagegenPendingAttempt} from './client-recovery';
+export {completeCanvasImagegen} from './client-recovery';
 export type CanvasFrameChoice={artworkId:string;url:string;label:string;width:number;height:number;ratio:string};
 /** Specialized long-detail submissions share the same choice UI, before quote.
  * Only temporary local object URLs are used; no duplicate media upload/storage. */
@@ -29,11 +31,30 @@ export async function resolveCanvasDetailFrame(form:FormData,chooseFrame:(choice
  }finally{choices.forEach(choice=>URL.revokeObjectURL(choice.url));}
 }
 /** Ordinary node prompts use the same read-only plan; specialized old recipes retain their adapter. */
-export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|undefined,onPlan:((message:string)=>void)|undefined,scope:{owner:string;project:string;isCurrent?:()=>boolean;chooseFrame?:(choices:CanvasFrameChoice[])=>Promise<string|null>}){
- let submitting=false;
- try {
- const workspace=currentWorkspace(),context={workspace,...scope.project!=='workspace'?{projectContext:scope.project}:{}};
+export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|undefined,onPlan:((message:string)=>void)|undefined,scope:{owner:string;project:string;headers?:Record<string,string>;isCurrent?:()=>boolean;chooseFrame?:(choices:CanvasFrameChoice[])=>Promise<string|null>}){
+ const workspace=currentWorkspace(),capturedHeaders=scope.headers?imagegenScopeHeaders(scope.headers):undefined,context={workspace,...capturedHeaders?{headers:capturedHeaders}:{},...scope.project!=='workspace'?{projectContext:scope.project}:{},isCurrent:()=>currentWorkspace()===workspace&&(!scope.isCurrent||scope.isCurrent())};
  const assertCurrent=()=>{if(currentWorkspace()!==workspace||scope.isCurrent&&!scope.isCurrent())throw new Error("画布账号、项目或工作空间已切换，未提交新任务");};assertCurrent();
+ const actionKey=await canvasImagegenActionKey(form,sourceNodeId);assertCurrent();
+ const key=pendingAttemptKey(scope.owner,workspace,scope.project,actionKey);
+ const response=await withPendingAttempt(key,async()=>{
+ let pending:ImagegenPendingAttempt|null=null,submitting=false;
+ try {
+ assertCurrent();submitting=true;pending=readPendingAttempt(key);submitting=!!pending&&pending.accepted!=='unaccepted';
+ if(pending&&pending.accepted!=='unaccepted'){
+  // A 404 can race acceptance or hide a scope mismatch. It never authorizes
+  // another paid POST; retain this receipt until the original is recovered.
+  submitting=true;
+  let result:Awaited<ReturnType<typeof pollImagegen>>;
+  try{result=await pollImagegen(pending.operationId,{...pending.context,isCurrent:context.isCurrent});}
+  catch(error){if(error instanceof ImagegenHttpError)throw new ImagegenHttpError(error.message,error.status,undefined,error.code);throw error;}
+  assertCurrent();
+  if(result.jobId!==`imagegen-${pending.operationId}`||result.operationId&&result.operationId!==pending.operationId)throw new ImagegenHttpError('原任务回执尚未核实，请稍后重试',0);
+  pending={...pending,accepted:'accepted',jobId:result.jobId};savePendingAttempt(key,pending);
+  return Response.json({jobId:result.jobId});
+ }
+ let request:ImagegenRequest;
+ if(pending)request=pending.request;
+ else {
  const inputs:ImagegenRequest["inputs"]=[],assets:CanvasFrameChoice[]=[];
  const files=form.getAll("image").filter((file):file is File=>file instanceof File);
  const manifest=form.has("canvasReferences")?canvasReferenceManifestSchema.parse(JSON.parse(String(form.get("canvasReferences")))):null;
@@ -44,7 +65,7 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
  for(const file of files){assertCurrent();const label=manifest?.[inputs.length];const asset=await uploadImagegenInput(file,files.length,assertCurrent,context,label?.sourceNodeId);assertCurrent();const input={artworkId:asset.artworkId,originalArtworkId:asset.originalArtworkId,inputVariant:asset.inputVariant,role:label?.role||(inputs.length?"reference" as const:"edit-target" as const),...(label?{reference:{number:label.number,title:label.title,...(label.sourceNodeId?{sourceNodeId:label.sourceNodeId}:{})}}:{})};inputs.push(input);const original={...asset,width:asset.sourceWidth,height:asset.sourceHeight};assets.push({...original,label:label?`图${label.number} · ${label.title}`:`图片 ${inputs.length}`,ratio:frameRatio(original)||""});}
  const value=(name:string)=>String(form.get(name)||"");
  const style=value("style"),raw=value("userPrompt")||value("prompt"),prompt=raw+(style&&!/默认|default/i.test(style)?`\n用户选择的视觉风格：${style}`:"");
- const request=imagegenRequestSchema.parse({version:1,operationId:browserRandomUUID(),entry:"canvas",mode:inputs.length?"edit":"generate",prompt,sourceNodeId:value("parentId")||sourceNodeId,inputs,framePolicy:"all-inputs",modelId:value("model")||undefined,variants:Number(value("count")||1),parameters:{quality:value("quality")||"medium",resolution:value("resolution")||"1K",ratio:value("ratio")||"auto"},output:value("transparent")==="1"?{background:"transparent",backgroundOrigin:"current-ui"}:{format:"png"}});
+ request=imagegenRequestSchema.parse({version:1,operationId:browserRandomUUID(),entry:"canvas",mode:inputs.length?"edit":"generate",prompt,sourceNodeId:value("parentId")||sourceNodeId,inputs,framePolicy:"all-inputs",modelId:value("model")||undefined,variants:Number(value("count")||1),parameters:{quality:value("quality")||"medium",resolution:value("resolution")||"1K",ratio:value("ratio")||"auto"},output:value("transparent")==="1"?{background:"transparent",backgroundOrigin:"current-ui"}:{format:"png"}});
  // A rounded derivative is transport, not the original composition. Resolve the
  // user's automatic frame before asking the server to inspect prepared pixels;
  // genuinely ambiguous mixed ratios ask once instead of guessing.
@@ -65,12 +86,19 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
   request.frameSourceId=choice.artworkId;
   request.parameters.ratio=choice.ratio;
  }
+ }
  assertCurrent();const plan=await previewImagegen(request,context);assertCurrent();const stages=plan.steps.map(s=>s.operation==="cutout"?"抠图":s.operation==="edit"?"编辑":"生成").join(" → ");
  if(plan.requestedParameters?.resolution)onPlan?.(plan.warnings.join("\n"));
  if(plan.intent.background==="transparent")onPlan?.(`已识别：透明背景 · ${stages} · ${plan.totalCredits} 积分`);
- if(plan.confirmationRequired&&!window.confirm(`${stages}\n${plan.warnings.join("\n")}\n本次合计 ${plan.totalCredits} 积分，是否执行？`))throw new Error("已取消提交");
- assertCurrent();submitting=true;
- const submit=(latest:typeof plan)=>startImagegen(request,{billingVersion:latest.billingVersion,modelVersion:latest.modelVersion,credits:latest.totalCredits,confirmed:true},context);
+ if((plan.confirmationRequired||pending&&plan.totalCredits>pending.authorizedCredits)&&!window.confirm(`${pending?'报价已更新\n':''}${stages}\n${plan.warnings.join("\n")}\n本次合计 ${plan.totalCredits} 积分，是否执行？`))throw new ImagegenPreparationCancelled();
+ const submit=async(latest:typeof plan)=>{
+  assertCurrent();
+  pending={version:1,owner:scope.owner.toLowerCase(),workspace,project:scope.project,actionKey,operationId:request.operationId,quoteId:latest.quote?.id,request,authorizedCredits:latest.totalCredits,confirmationRequired:latest.confirmationRequired,accepted:'unknown',context:{workspace,...capturedHeaders?{headers:capturedHeaders}:{},...scope.project!=='workspace'?{projectContext:scope.project}:{}}};
+  // Durable, scoped identity exists before authentication and the paid POST.
+  savePendingAttempt(key,pending);submitting=true;
+  try{return await startImagegen(request,{billingVersion:latest.billingVersion,modelVersion:latest.modelVersion,credits:latest.totalCredits,confirmed:true,quoteId:latest.quote?.id},context);}
+  catch(error){if(error instanceof ImagegenHttpError&&error.accepted===false){pending={...pending,accepted:'unaccepted'};savePendingAttempt(key,pending);}throw error;}
+ };
  let result:Awaited<ReturnType<typeof startImagegen>>;
  try{result=await submit(plan);}
  catch(error){
@@ -80,13 +108,16 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
   submitting=false;
   assertCurrent();const latest=await previewImagegen(request,context);assertCurrent();
   if(latest.requestedParameters?.resolution)onPlan?.(latest.warnings.join("\n"));
-  if(latest.totalCredits!==plan.totalCredits||latest.confirmationRequired&&!plan.confirmationRequired){
+  if(latest.totalCredits>plan.totalCredits||latest.confirmationRequired&&!plan.confirmationRequired){
    const steps=latest.steps.map(s=>s.operation==="cutout"?"抠图":s.operation==="edit"?"编辑":"生成").join(" → ");
    if(!window.confirm(`报价已更新\n${steps}\n${latest.warnings.join("\n")}\n本次合计 ${latest.totalCredits} 积分，是否执行？`))throw new ImagegenPreparationCancelled();
   }
-  assertCurrent();submitting=true;result=await submit(latest);
+  assertCurrent();result=await submit(latest);
  }
- return Response.json({jobId:"jobId" in result?result.jobId:`imagegen-${request.operationId}`});
+ assertCurrent();
+ if(!('jobId' in result)||result.jobId!==`imagegen-${request.operationId}`||'operationId' in result&&result.operationId!==request.operationId)throw new ImagegenHttpError('任务提交回执尚未核实，请稍后重试',0);
+ pending={...pending!,accepted:'accepted',jobId:result.jobId};savePendingAttempt(key,pending);
+ return Response.json({jobId:result.jobId});
  } catch(error) {
   if(error instanceof ImagegenPreparationCancelled)throw error;
   // Upload/plan/storage failures precede the only paid POST. Mark them as
@@ -94,4 +125,6 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
   if(!submitting)throw new ImagegenHttpError(error instanceof Error?error.message:"生成准备失败",error instanceof ImagegenHttpError?error.status:0,false);
   throw error;
  }
+ });
+ assertCurrent();return response;
 }

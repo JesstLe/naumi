@@ -4,9 +4,10 @@ import {readImagegenBatch} from "@/lib/imagegen/batch";
 import {listArtworksByIds} from "@/lib/db";
 import {readCanvasImage} from "@/lib/canvas-image-input";
 import {imagegenFilename,streamImagegenZip} from "@/lib/imagegen/zip";
+import {withCreationReceiptRoute} from "@/lib/saas/creation-context";
 export const runtime="nodejs";
 export const maxDuration=300;
-export async function GET(request:Request,context:{params:Promise<{id:string}>}){
+async function handleGet(request:Request,context:{params:Promise<{id:string}>}){
  const owner=await resolveUserEmail(request);if(!owner)return Response.json({error:"请先登录"},{status:401});
  const parsed=z.uuid().safeParse((await context.params).id);if(!parsed.success)return Response.json({error:"批次编号无效"},{status:400});
  const batch=await readImagegenBatch(parsed.data,owner);if(!batch)return Response.json({error:"批次不存在或无权访问"},{status:404});
@@ -24,3 +25,4 @@ export async function GET(request:Request,context:{params:Promise<{id:string}>})
  const iterator=streamImagegenZip(files()),stream=new ReadableStream<Uint8Array>({async pull(controller){try{const next=await iterator.next();if(next.done)controller.close();else controller.enqueue(new Uint8Array(next.value));}catch(error){controller.error(error);}},async cancel(){await iterator.return(undefined);}});
  return new Response(stream,{headers:{"content-type":"application/zip","content-disposition":`attachment; filename="imagegen-${batch.id}.zip"`,"cache-control":"private, no-store"}});
 }
+export async function GET(request:Request,context:{params:Promise<{id:string}>}){return withCreationReceiptRoute(request,()=>handleGet(request,context));}

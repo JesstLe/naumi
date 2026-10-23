@@ -6,6 +6,7 @@ import {inspectImagegenPixels} from "./postprocess";
 import {saveCanvasLocalEdit} from "../canvas-local-image-edit";
 import {planImagegen,imagegenFingerprint} from "./plan";
 import {ImagegenConfirmationChanged} from "./confirmation";
+import {assertImagegenQuoteReference,frozenImagegenQuote,type ImagegenSubmissionConfirmation} from "./quotes";
 import {executeImagegenStep} from "./adapters";
 import {imagegenStepId} from "./generation-core";
 import {imagegenRequestSchema} from "./schema";
@@ -18,8 +19,17 @@ import { imageOutputNotice, presentImagegenOutput, legacyRatioWarning } from "./
 import { plainGeneratedOutput } from "./receipt-policy";
 import { storedImageReview, IMAGE_REVIEW_MESSAGE } from "../image-job-review";
 import { storedDeliveryState, recoverStoredDelivery } from "./stored-delivery";
+import {currentCreationContext} from "../saas/creation-context";
+import {assertImagegenCreationScope,imagegenCreationScopeKey,ImagegenScopeError} from "./creation-scope";
 type Parent={status:string;result:ImagegenResult;fingerprint:string;children:Record<string,{state:"starting"|"submitted"|"done";jobId?:string;ids?:string[]}>};
 const jobs=new DurableImageJobs<Parent>("imagegen");
+const memoryScopes=new Map<string,unknown>();
+async function assertParentScope(id:string,owner:string){
+ if(!dbEnabled){assertImagegenCreationScope(memoryScopes.get(id),owner);return;}
+ const row=(await getPool().query("SELECT payload->'creationScope' AS scope FROM app_image_jobs WHERE id=$1 AND email=$2 AND kind='imagegen'",[id,owner.toLowerCase()])).rows[0];
+ if(!row)throw new ImagegenScopeError();
+ assertImagegenCreationScope(row.scope,owner);
+}
 class NotAccepted extends Error{}
 const parentId=(id:string)=>`imagegen-${id}`;
 async function artifacts(ids:string[],owner:string){
@@ -155,10 +165,16 @@ async function presentParentOutput(id:string,owner:string,result:ImagegenResult)
   return {...result,status:"succeeded",stage:"done",artifacts:restored,chargedCredits:charge,billingStatus:"confirmed",error:undefined,warnings:[...new Set([...(result.warnings||[]),"已恢复原生成图片，积分以实际结算记录为准"])]};
  }catch{return {...result,billingStatus:"unavailable"};}
 }
-export async function readImagegenReceipt(operationId:string,owner:string):Promise<ImagegenResult|null>{const id=parentId(operationId);if(await jobs.owner(id)!==owner.toLowerCase())return null;const saved=await jobs.get(id,false);return saved?await presentPendingReview(id,owner,saved)||presentParentOutput(id,owner,saved.result):null;}
+export async function readImagegenReceipt(operationId:string,owner:string):Promise<ImagegenResult|null>{
+ const id=parentId(operationId);if(await jobs.owner(id)!==owner.toLowerCase())return null;
+ const saved=await jobs.get(id,false);if(!saved)return null;
+ try{await assertParentScope(id,owner);}catch(error){if(error instanceof ImagegenScopeError)return null;throw error;}
+ return await presentPendingReview(id,owner,saved)||presentParentOutput(id,owner,saved.result);
+}
 export async function getImagegenResult(operationId:string,owner:string):Promise<ImagegenResult|null>{
  const id=parentId(operationId);if((await jobs.owner(id))!==owner.toLowerCase())return null;
  const saved=await jobs.get(id,false);if(!saved)return null;
+ try{await assertParentScope(id,owner);}catch(error){if(error instanceof ImagegenScopeError)return null;throw error;}
  // Active result polls finish proven stored bytes, never a new supplier request.
  // readImagegenReceipt above remains strictly read-only.
  if(["error","needs_attention"].includes(saved.status)){
@@ -171,19 +187,28 @@ export async function getImagegenResult(operationId:string,owner:string):Promise
  if(current.status==="error"&&current.result.status!=="failed")return {...current.result,status:"failed",error:{code:"EXECUTION_FAILED",message:"图片加载失败，请重试"}};
  return presentParentOutput(id,owner,current.result);
 }
-export async function submitImagegen(raw:ImagegenRequest,owner:string,confirmation?:{billingVersion:number;credits:number;confirmed:boolean;modelVersion?:number}):Promise<ImagegenResult>{
+export async function submitImagegen(raw:ImagegenRequest,owner:string,confirmation?:ImagegenSubmissionConfirmation):Promise<ImagegenResult>{
  const request=imagegenRequestSchema.parse(raw),id=parentId(request.operationId),fingerprint=imagegenFingerprint(request);
+ if(confirmation?.quoteId!==undefined)assertImagegenQuoteReference(confirmation.quoteId,request.operationId);
  const previous=await jobs.get(id,false);
- if(previous){if(await jobs.owner(id)!==owner.toLowerCase()||previous.fingerprint!==fingerprint)throw new Error("提交编号与已有请求冲突");await resumeImagegen(id);return previous.result;}
- const plan=await planImagegen(request,owner);
- if(plan.totalCredits>0&&(!confirmation||confirmation.billingVersion!==plan.billingVersion||(confirmation.modelVersion!==undefined&&confirmation.modelVersion!==plan.modelVersion)||confirmation.credits!==plan.totalCredits||confirmation.confirmed!==true))throw new ImagegenConfirmationChanged();
- return submitAcceptedImagegen(plan,owner,fingerprint);
+ if(previous){if(await jobs.owner(id)!==owner.toLowerCase()||previous.fingerprint!==fingerprint)throw new Error("提交编号与已有请求冲突");await assertParentScope(id,owner);await resumeImagegen(id);return previous.result;}
+ try{
+  if(confirmation?.quoteId!==undefined)return await submitAcceptedImagegen(await frozenImagegenQuote(request,owner,confirmation),owner,fingerprint);
+  const plan=await planImagegen(request,owner);
+  if(plan.totalCredits>0&&(!confirmation||confirmation.billingVersion!==plan.billingVersion||(confirmation.modelVersion!==undefined&&confirmation.modelVersion!==plan.modelVersion)||confirmation.credits!==plan.totalCredits||confirmation.confirmed!==true))throw new ImagegenConfirmationChanged();
+  return await submitAcceptedImagegen(plan,owner,fingerprint);
+ }catch(error){
+  const winner=await jobs.get(id,false);
+  if(!winner||await jobs.owner(id)!==owner.toLowerCase()||winner.fingerprint!==fingerprint)throw error;
+  await assertParentScope(id,owner);return winner.result;
+ }
 }
 /** Server-owned frozen batch/Agent plans only; no HTTP endpoint accepts a client-supplied plan. */
 export async function submitAcceptedImagegen(plan:ImagegenPlan,owner:string,fingerprint=plan.fingerprint):Promise<ImagegenResult>{
  const request=plan.request,id=parentId(request.operationId),prior=await jobs.get(id,false);
- if(prior){if(await jobs.owner(id)!==owner.toLowerCase()||prior.fingerprint!==fingerprint)throw new Error("提交编号与已有请求冲突");await resumeImagegen(id);return prior.result;}
+ if(prior){if(await jobs.owner(id)!==owner.toLowerCase()||prior.fingerprint!==fingerprint)throw new Error("提交编号与已有请求冲突");await assertParentScope(id,owner);await resumeImagegen(id);return prior.result;}
+ imagegenCreationScopeKey(owner);
  const result:ImagegenResult={operationId:request.operationId,jobId:id,status:"queued",stage:"planning",artifacts:[],chargedCredits:0,...(plan.warnings.length?{warnings:[...plan.warnings]}:{})};
- try{await jobs.create(id,owner,{status:"pending",result,fingerprint,children:{}},{plan},0,false);}catch(error){const race=await jobs.get(id,false);if(!race||await jobs.owner(id)!==owner.toLowerCase()||race.fingerprint!==fingerprint)throw error;return race.result;}
+ try{await jobs.create(id,owner,{status:"pending",result,fingerprint,children:{}},{plan},0,false);if(!dbEnabled)memoryScopes.set(id,structuredClone(currentCreationContext()));}catch(error){const race=await jobs.get(id,false);if(!race||await jobs.owner(id)!==owner.toLowerCase()||race.fingerprint!==fingerprint)throw error;await assertParentScope(id,owner);return race.result;}
  await resumeImagegen(id);return result;
 }

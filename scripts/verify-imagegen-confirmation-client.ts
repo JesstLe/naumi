@@ -13,7 +13,7 @@ async function main(){
  let plans=0,posts:any[]=[],confirms:string[]=[],confirm=true,failPlan=false,staleCount=1,status=409,accepted:boolean|undefined=false,code:string|undefined='IMAGEGEN_PLAN_CHANGED',newCredits=6,newConfirm=false,unknown=false,switchOnReplan=false,active=true;
  const storage=new MemoryStorage();
  Object.assign(globalThis,{sessionStorage:storage,window:{localStorage:new MemoryStorage(),confirm:(message:string)=>{confirms.push(message);return confirm}}});
- const reset=()=>{plans=0;posts=[];confirms=[];confirm=true;failPlan=false;staleCount=1;status=409;accepted=false;code='IMAGEGEN_PLAN_CHANGED';newCredits=6;newConfirm=false;unknown=false;switchOnReplan=false;active=true;};
+ const reset=()=>{storage.clear();plans=0;posts=[];confirms=[];confirm=true;failPlan=false;staleCount=1;status=409;accepted=false;code='IMAGEGEN_PLAN_CHANGED';newCredits=6;newConfirm=false;unknown=false;switchOnReplan=false;active=true;};
  const run=()=>{const f=new FormData();f.set('prompt','draw a bottle');f.set('ratio','1:1');f.set('resolution','4K');f.set('model','image-a');return submitCanvasImagegen(f,'source',undefined,{owner:'fixture@example.test',project:'workspace',isCurrent:()=>active})};
  try{
   globalThis.fetch=async(input,init)=>{
