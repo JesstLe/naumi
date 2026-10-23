@@ -5,6 +5,7 @@ import {makeVideoFamilyPlan,rollbackVideoFamilyPlan,VERIFIED_VIDEO_FAMILIES,vide
 import {publicModelCatalog} from "../src/lib/model-config/runtime";
 import {ModelConfigError,type ModelConfig,type UpstreamModel} from "../src/lib/model-config/types";
 import {normalizeVideoInput,resolveVideoCapability,VideoContractError} from "../src/lib/video/contract";
+import {documentedVideoFamily} from "../src/lib/model-config/video-family-capabilities";
 import {reconcileVideoSettings,type VideoNodeConfig} from "../src/lib/video/client-settings";
 import {buildVideoCreate,type VideoWireContext} from "../src/lib/video/providers/wire";
 import type {VideoGenerationRequest,VideoReference} from "../src/lib/video/types";
@@ -116,7 +117,8 @@ for(const item of VERIFIED_VIDEO_FAMILIES.items){
   equal({enabled:publicModel.enabled,visible:publicModel.visible},{enabled,visible:enabled},`${id}: catalog availability follows activation`);
   equal(publicModel.toolScope,{features:enabled?["video.generate"]:[],defaultFor:enabled&&item.publicId===plan.defaultPublicModelId?["video.generate"]:[]},`${id}: only active models enter video tool scope`);
   equal(item.definition.durationResolutionMap,[{durations:[spec.duration],resolutions:[spec.resolution]}],`${id}: capability only advertises the tested duration/spec`);
-  equal(item.definition.modes,[spec.mode],`${id}: capability only advertises the tested mode`);
+  equal(item.definition.modes,[spec.mode],`${id}: original smoke table is retained separately`);
+  const supported=documentedVideoFamily(item);if(enabled){assert(supported);assertions++;equal(target.capabilities.video,supported.definition,`${id}: installation uses documented full capability, not smoke`);}
   assert.match(item.evidence.sha256,/^[a-f0-9]{64}$/);assertions++;
   equal(item.evidence.decoded,true,`${id}: media decode receipt exists`);
   assert(item.evidence.width>0&&item.evidence.height>0&&item.evidence.durationSeconds>0);assertions++;
@@ -143,9 +145,9 @@ for(const item of VERIFIED_VIDEO_FAMILIES.items){
   const ctx:VideoWireContext={profile,provider:{id:provider.id,label:provider.name,protocol:provider.protocol as VideoWireContext["provider"]["protocol"],baseUrl:provider.baseUrl,apiKey:"synthetic-unused-key",models:[target.model],defaultModel:target.model,...provider.options,idempotencyStrategy:provider.options?.idempotencyStrategy||"none"},request};
   const wire=buildVideoCreate(ctx);
   equal(wire.method,"POST",`${id}: reconciled UI configuration compiles`);compiled++;
-  invalidInput({...reconciled,durationSeconds:spec.duration+1},cap,`${id}: untested duration rejected by capability gate`);
+  invalidInput({...reconciled,durationSeconds:3601},cap,`${id}: out of range duration rejected`);
   invalidInput({...reconciled,resolution:"2160p"},cap,`${id}: untested resolution rejected by capability gate`);
-  invalidInput({...reconciled,mode:spec.mode==="text"?"reference":"text"},cap,`${id}: untested mode rejected by capability gate`);
+  invalidInput({...reconciled,mode:"motion_control"},cap,`${id}: unmapped mode rejected`);
   if(reconciled.aspectRatio==="adaptive"){
     equal(spec.mode==="single_image"||spec.mode==="video_edit",true,`${id}: adaptive belongs to frame-conditioned mode`);
     equal("aspect_ratio" in (wire.body as object),false,`${id}: adaptive inherits actual reference dimensions`);adaptiveBranches++;

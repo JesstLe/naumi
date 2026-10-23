@@ -39,9 +39,10 @@ export async function createValidatedVideo(email:string,input:CreateVideoInput,h
   const providerConfig=getVideoProviderConfig(providerId);
   if(!providerConfig)throw new ModelConfigError("VIDEO_PROVIDER_UNAVAILABLE","视频供应商尚未配置",422);
   const modelId=execution?.connection.wireModel||input.modelId||providerConfig.defaultModel;
-  const definition=execution?.frozen.video?.definition||adapterDefinition(providerConfig.protocol,modelId);
+  const frozen=execution?.frozen.video;
+  const definition=frozen?.definition||adapterDefinition(providerConfig.protocol,modelId);
   if(!definition)throw new VideoContractError("UNKNOWN_VIDEO_CAPABILITY","视频模型能力尚未配置");
-  const capability=resolveVideoCapability({manual:definition});
+  const capability=frozen?{...frozen.definition,sources:frozen.sources}:resolveVideoCapability({manual:definition});
   if(input.camera&&Object.values(input.camera).some(value=>!!value)&&capability.supportsCamera!==true)throw new VideoContractError("CAMERA_UNSUPPORTED","当前模型未声明摄影设置能力",["camera"]);
   const parsedReferences=z.array(videoReferenceSchema).max(128).safeParse(input.references??[]);
   if(!parsedReferences.success)throw new VideoContractError("INVALID_VIDEO_REFERENCES","视频素材字段无效",["references"]);

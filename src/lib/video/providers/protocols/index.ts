@@ -13,6 +13,9 @@ import {runningHubCodec} from "./runninghub";
 import {comfyUICodec} from "./comfyui";
 import {APIB_VERIFIED_PROFILES,apibVerifiedCodec} from "./apib-verified";
 import {GEEK_VERIFIED_PROFILES,geekVerifiedCodec} from "./geek-verified";
+import {apibDocumentedCodec} from "./apib-documented";
+import {geekDocumentedCodec} from "./geek-documented";
+import {geekH3DocumentedCodec} from "./geek-h3-documented";
 let installed=false;
 export function installVideoWireCodecs(){
   if(installed)return;installed=true;
@@ -27,4 +30,7 @@ export function installVideoWireCodecs(){
   registerVideoWireProfile("autodl",autoDLCodec);registerVideoWireProfile("runninghub",runningHubCodec);registerVideoWireProfile("comfyui",comfyUICodec);
   for(const profile of APIB_VERIFIED_PROFILES)registerVideoWireProfile(profile,apibVerifiedCodec);
   for(const profile of GEEK_VERIFIED_PROFILES)registerVideoWireProfile(profile,geekVerifiedCodec(profile));
+  registerVideoWireProfile("apib-video-v2",apibDocumentedCodec);
+  registerVideoWireProfile("geek-video-v2",geekDocumentedCodec);
+  registerVideoWireProfile("geek-h3-v2",geekH3DocumentedCodec);
 }

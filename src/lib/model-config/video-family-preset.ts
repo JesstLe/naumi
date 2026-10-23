@@ -2,9 +2,11 @@ import presets from "./video-family-presets.json";
 import type {ModelConfig,ModelProvider,UpstreamModel} from "./types";
 import type {VideoModelDefinition,VideoWireProfile} from "../video/capability-schema";
 import {ModelConfigError} from "./types";
+import {documentedVideoFamily} from "./video-family-capabilities";
 
 export const VERIFIED_VIDEO_FAMILIES=presets;
 export const VERIFIED_VIDEO_PROFILES=["apimart-apib-seedance","apimart-apib-kling","apimart-apib-wan","apimart-apib-h3","geek-kling","geek-wan3"] as const;
+export const DOCUMENTED_VIDEO_PROFILES=["apib-video-v2","geek-video-v2","geek-h3-v2"] as const;
 // Supplier evidence remains valid, but this host cannot yet validate video
 // reference inputs in an independent media worker. Preserve the declaration
 // without making that special-purpose editing path available for submission.
@@ -40,13 +42,14 @@ export function makeVideoFamilyPlan(source:ModelConfig,credentialRefs:Credential
     let u=config.upstreamModels.find(u=>u.providerId===item.providerId&&u.model===item.model);
     const id=u?.id||`verified:${item.providerId}:${item.model}`;
     if(config.upstreamModels.some(other=>other.id===id&&other!==u))fail("视频上游编号冲突");
-    const definition=structuredClone(item.definition) as VideoModelDefinition;
+    const supported=documentedVideoFamily(item);
+    const definition=structuredClone(supported?.definition||item.definition) as VideoModelDefinition;
     if(!u){u={id,providerId:item.providerId,model:item.model,label:item.label,modality:"video",enabled:true,parameterMap:{},capabilities:{verified:true,generate:true,edit:false,vision:false,transparent:false,preserveIdentity:false,textAccuracy:false,qualityRank:1,qualities:[],nativeResolutions:[],maxReferenceImages:0,expectedLatencyMs:0}};config.upstreamModels.push(u);}
     if(u.modality!=="video")fail("视频上游模态冲突");
     u.enabled=enabled;u.capabilities.verified=true;u.capabilities.generate=enabled;
     if(!enabled)u.capabilities.edit=false;
     u.capabilities.maxReferenceImages=definition.limits?.images||0;u.capabilities.video=definition;
-    u.parameterMap.videoProfile=item.profile as VideoWireProfile;
+    u.parameterMap.videoProfile=(supported?.profile||item.profile) as VideoWireProfile;
     if(enabled)upstreamIds.push(id);
     else excludedModels.push({publicModelId:item.publicId,upstreamId:id,model:item.model,reason:VIDEO_FAMILY_ACTIVATION_EXCLUSIONS.find(excluded=>excluded.providerId===item.providerId&&excluded.model===item.model)!.reason});
     const model=config.publicModels.find(m=>m.id===item.publicId);
@@ -69,7 +72,7 @@ export function makeVideoFamilyPlan(source:ModelConfig,credentialRefs:Credential
     if(canonical(old)!==canonical(row))patches.push({entity,id:row.id,before:old,after:structuredClone(row)});
   }
   return {config,patches,defaultPublicModelId:presets.defaultPublicModelId,publicModelIds:ACTIVE_VIDEO_FAMILY_ITEMS.map(i=>i.publicId),upstreamIds,excludedModels,
-    wireModels:[...new Set(ACTIVE_VIDEO_FAMILY_ITEMS.map(i=>i.model))],profiles:[...VERIFIED_VIDEO_PROFILES],
+    wireModels:[...new Set(ACTIVE_VIDEO_FAMILY_ITEMS.map(i=>i.model))],profiles:[...DOCUMENTED_VIDEO_PROFILES],
     bindingBefore:before.bindings["video.generate"],businessBefore:before.business?.["video.generate"]??null,businessAfter:feature??null};
 }
 export type VideoFamilyPlan=ReturnType<typeof makeVideoFamilyPlan>;

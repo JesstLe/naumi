@@ -47,8 +47,9 @@ export async function freezeVideoWorkflow(actor:string,plan:VideoWorkflowPlan){
     if(executor&&snapshot){const video=await executor.resolve({feature:"video.generate",binding:"video.generate",requestedModelId:request.modelId,snapshot,billing});stage={bundle:{modelVersion:snapshot.version,billingVersion:billing.version,primary:"video",video},billingVersion:billing.version,texts:values,quote:{version:billing.version,credits:0,authorizedCredits:0,modelVersion:snapshot.version}};}
     else{const provider=getVideoProviderConfig(request.providerId||configuredVideoProviders()[0]?.id||"openai-videos");if(!provider)throw new ModelConfigError("VIDEO_PROVIDER_UNAVAILABLE","视频供应商尚未配置",422);stage={legacy:structuredClone(provider),billingVersion:billing.version,texts:values,quote:{version:billing.version,credits:0,authorizedCredits:0}};request.modelId=request.modelId||provider.defaultModel;request.providerId=provider.id;}
     await withFrozenWorkflowStage(actor,stage,async()=>{
-      const definition=stage.bundle?stage.bundle.video?.video?.definition:adapterDefinition(stage.legacy!.protocol,request.modelId!);if(!definition)throw new ModelConfigError("VIDEO_CAPABILITY_UNAVAILABLE","制作链模型能力尚未配置",422);
-      const capability=resolveVideoCapability({manual:definition}),references=candidateReferences,ordered=candidateOrdered;
+      const frozen=stage.bundle?.video?.video;
+      const definition=frozen?.definition||(!stage.bundle?adapterDefinition(stage.legacy!.protocol,request.modelId!):undefined);if(!definition)throw new ModelConfigError("VIDEO_CAPABILITY_UNAVAILABLE","制作链模型能力尚未配置",422);
+      const capability=frozen?{...frozen.definition,sources:frozen.sources}:resolveVideoCapability({manual:definition}),references=candidateReferences,ordered=candidateOrdered;
       if(request.camera&&capability.supportsCamera!==true)throw new ModelConfigError("CAMERA_UNSUPPORTED","制作链模型没有摄影能力",422);
       const normalized=normalizeVideoInput({...request,prompt:compileVideoPrompt(request.prompt,ordered||[],compileVideoCamera(request.camera)).prompt,references,orderedInputs:ordered},capability);
       const {prompt:_compiled,references:_references,orderedInputs:_ordered,omittedProviderOptions:_omitted,...settings}=normalized;node.request={...request,...settings};

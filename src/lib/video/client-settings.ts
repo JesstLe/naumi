@@ -8,6 +8,7 @@ import {compileVideoPrompt} from "./prompt";
 import {videoByocOverridesSchema} from "./byoc-settings";
 import {videoWorkflowManifestSchema} from "./workflow-schema";
 import {compileVideoCamera} from "./camera";
+import {videoParameterScope} from "./parameter-options";
 
 export type VideoNodeConfig=CanvasVideoNode["config"];
 export type VideoCatalogModel=VideoModelCapability&{isDefault?:boolean};
@@ -30,8 +31,9 @@ export function selectedVideoCatalogModel(models:VideoCatalogModel[],config:Vide
   return managed.length===1?managed[0]:undefined;
 }
 export function catalogCapability(model?:VideoCatalogModel):ResolvedVideoCapability{return model?.definition||{sources:{}};}
-export function videoDurations(cap:ResolvedVideoCapability){return Array.from(new Set((cap.durationResolutionMap||[]).flatMap(map=>map.durations)));}
-export function videoResolutions(cap:ResolvedVideoCapability,duration?:number){return Array.from(new Set((cap.durationResolutionMap||[]).filter(map=>duration!==undefined&&map.durations.includes(duration)).flatMap(map=>map.resolutions)));}
+export function videoDurations(cap:ResolvedVideoCapability,mode?:VideoMode){return Array.from(new Set((videoParameterScope(cap,mode).durationResolutionMap||[]).flatMap(map=>map.durations)));}
+export function videoResolutions(cap:ResolvedVideoCapability,duration?:number,mode?:VideoMode){return Array.from(new Set((videoParameterScope(cap,mode).durationResolutionMap||[]).filter(map=>duration!==undefined&&map.durations.includes(duration)).flatMap(map=>map.resolutions)));}
+export function videoAspectRatios(cap:ResolvedVideoCapability,mode?:VideoMode,resolution?:string){return videoParameterScope(cap,mode,resolution).aspectRatios||[];}
 /** Defaults apply only to an explicit new node; an existing selection is never replaced. */
 export function videoNodeCreationDefaults(catalog:{models:readonly VideoCatalogModel[];loading:boolean;error:string}){
   if(catalog.loading||catalog.error)return undefined;
@@ -56,18 +58,19 @@ export function videoModeRoles(inputs:readonly OrderedInput[],mode?:VideoMode):O
 /** Called only after an explicit model/duration change; the returned notices are shown before submission. */
 export function reconcileVideoSettings(config:VideoNodeConfig,cap:ResolvedVideoCapability):{config:VideoNodeConfig;changes:string[]}{
   const next={...config,providerOptions:{...config.providerOptions}},changes:string[]=[];
-  const modes=cap.modes||[],durations=videoDurations(cap);
+  const modes=cap.modes||[];
   if(next.mode&&!modes.includes(next.mode)||!next.mode){const value=modes[0];if(next.mode!==value)changes.push("生成模式");next.mode=value;}
+  const durations=videoDurations(cap,next.mode);
   if(next.durationSeconds===undefined||!durations.includes(next.durationSeconds)){
     const value=cap.defaultDurationSeconds!=null&&durations.includes(cap.defaultDurationSeconds)?cap.defaultDurationSeconds:durations[0];
     if(next.durationSeconds!==value)changes.push("时长");next.durationSeconds=value;
   }
-  const resolutions=videoResolutions(cap,next.durationSeconds);
+  const resolutions=videoResolutions(cap,next.durationSeconds,next.mode);
   if(!next.resolution||!resolutions.includes(next.resolution)){
     const value=cap.defaultResolution&&resolutions.includes(cap.defaultResolution)?cap.defaultResolution:resolutions[0];
     if(next.resolution!==value)changes.push("分辨率");next.resolution=value;
   }
-  const ratios=cap.aspectRatios||[];
+  const ratios=videoAspectRatios(cap,next.mode,next.resolution);
   if(next.aspectRatio&&!ratios.includes(next.aspectRatio)||!next.aspectRatio){const value=cap.defaultAspectRatio&&ratios.includes(cap.defaultAspectRatio)?cap.defaultAspectRatio:ratios[0];if(next.aspectRatio!==value)changes.push("画幅");next.aspectRatio=value;}
   for(const [field,allowed] of [["negativePrompt",cap.supportsNegativePrompt===true],["watermark",cap.supportsWatermark===true],["shots",cap.supportsMultiShot===true],["elements",cap.supportsElements===true],["camera",cap.supportsCamera===true],["width",cap.supportsExactSize===true],["height",cap.supportsExactSize===true]] as const){
     if(!allowed&&next[field]!==undefined){delete next[field];changes.push({negativePrompt:"负面提示词",watermark:"水印",shots:"分镜",elements:"元素",camera:"摄影设置",width:"宽度",height:"高度"}[field]);}

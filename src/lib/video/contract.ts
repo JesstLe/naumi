@@ -2,6 +2,7 @@ import { z } from "zod";
 import { VIDEO_MODES, videoDefinitionSchema, videoLimitsSchema, type VideoModelDefinition, type ResolvedVideoCapability, type CapabilitySource, type VideoMode } from "./capability-schema";
 import { videoReferenceSchema, orderedInputSchema, orderedMediaReferences } from "./references";
 import type { VideoReference } from "./types";
+import {videoParameterScope} from "./parameter-options";
 export { numberVideoInputs } from "./references";
 export type { VideoMode,VideoModelDefinition,ResolvedVideoCapability } from "./capability-schema";
 
@@ -53,20 +54,31 @@ function inferredMode(refs:readonly VideoReference[]):VideoMode {
   return "reference";
 }
 export function normalizeVideoInput(raw:Record<string,unknown>,cap:ResolvedVideoCapability|VideoModelDefinition):NormalizedVideoInput {
+  const parsedRefs=videoReferenceSchema.array().safeParse(raw.references??[]);
+  const modeHint=typeof raw.mode==="string"?(aliases[raw.mode]||raw.mode) as VideoMode:parsedRefs.success?inferredMode(parsedRefs.data):undefined;
+  cap=videoParameterScope(cap,modeHint);
   const maps=cap.durationResolutionMap||[];
   const duration=raw.durationSeconds??raw.seconds??cap.defaultDurationSeconds??maps[0]?.durations[0];
   const durationSeconds=typeof duration==="string"&&duration.trim()?Number(duration):duration;
   const available=maps.filter(map=>map.durations.includes(durationSeconds as number));
   const size=typeof raw.size==="string"?raw.size:undefined;
+  const defaultResolution=cap.modeParameters?.[modeHint!]?.durationResolutionMap
+    ?available.some(map=>map.resolutions.includes(cap.defaultResolution||""))?cap.defaultResolution:available[0]?.resolutions[0]
+    :cap.defaultResolution??available[0]?.resolutions[0];
+  const resolution=raw.resolution??(size&&!size.includes(":")?size:defaultResolution);
+  const ratios=videoParameterScope(cap,modeHint,typeof resolution==="string"?resolution:undefined).aspectRatios;
+  const conditionalRatio=cap.modeParameters?.[modeHint!]?.aspectRatios!==undefined||!!cap.resolutionAspectRatios;
+  const defaultRatio=conditionalRatio?(ratios?.includes(cap.defaultAspectRatio||"")?cap.defaultAspectRatio:ratios?.[0]):cap.defaultAspectRatio??ratios?.[0];
   const parsed=inputSchema.safeParse({prompt:raw.prompt??"",mode:typeof raw.mode==="string"?(aliases[raw.mode]||raw.mode):raw.mode,
-    negativePrompt:raw.negativePrompt,durationSeconds,aspectRatio:raw.aspectRatio??(size?.includes(":")?size:cap.defaultAspectRatio??cap.aspectRatios?.[0]),
-    resolution:raw.resolution??(size&&!size.includes(":")?size:cap.defaultResolution??available[0]?.resolutions[0]),
+    negativePrompt:raw.negativePrompt,durationSeconds,aspectRatio:raw.aspectRatio??(size?.includes(":")?size:defaultRatio),
+    resolution,
     width:raw.width,height:raw.height,generateAudio:raw.generateAudio,watermark:raw.watermark,references:raw.references??[],
     providerOptions:raw.providerOptions,orderedInputs:raw.orderedInputs,shots:raw.shots,elements:raw.elements});
   if(!parsed.success){const issue=parsed.error.issues[0];reject("INVALID_VIDEO_INPUT",issue?.message||"视频输入无效",issue?.path.join("."));}
   const input=parsed.data;
   const mode=input.mode||inferredMode(input.references);
   if(!cap.modes?.includes(mode))reject("UNKNOWN_VIDEO_CAPABILITY","当前模型的此视频模式能力未配置或不支持","mode");
+  cap=videoParameterScope(cap,mode,input.resolution);
   if((cap.requiresPrompt!==false)&&!input.prompt)reject("VIDEO_PROMPT_REQUIRED","请填写完整视频描述","prompt");
   if(input.prompt.length>(cap.maxPromptChars??16384))reject("VIDEO_PROMPT_TOO_LONG","视频描述超过模型限制，未截断或提交","prompt");
   if(input.negativePrompt!==undefined&&cap.supportsNegativePrompt!==true)reject("NEGATIVE_PROMPT_UNSUPPORTED","当前模型不支持负面提示词","negativePrompt");

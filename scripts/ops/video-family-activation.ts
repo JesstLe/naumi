@@ -39,7 +39,7 @@ function compileAll(config:ModelConfig){
     const cap=resolveVideoCapability({manual:u.capabilities.video});
     const input={prompt:"A red wooden cube rotates on a white table. Static camera, no text.",providerId:p.id,modelId:m.id,mode:cap.modes![0],durationSeconds:cap.defaultDurationSeconds!,resolution:cap.defaultResolution!,aspectRatio:cap.defaultAspectRatio!,references:[],generateAudio:false};
     const initial=reconcileVideoSettings(input as never,cap).config;
-    const refs=cap.limits?.images?[{id:"synthetic-ref",kind:"image" as const,role:cap.modes?.includes("single_image")?"first_frame" as const:"reference" as const,url:"https://media.example.test/synthetic.png"}]:cap.limits?.videos?[{id:"synthetic-video",kind:"video" as const,role:"source_video" as const,url:"https://media.example.test/synthetic.mp4"}]:[];
+    const refs=initial.mode==="text"?[]:cap.limits?.images?[{id:"synthetic-ref",kind:"image" as const,role:cap.modes?.includes("single_image")?"first_frame" as const:"reference" as const,url:"https://media.example.test/synthetic.png"}]:cap.limits?.videos?[{id:"synthetic-video",kind:"video" as const,role:"source_video" as const,url:"https://media.example.test/synthetic.mp4"}]:[];
     const normalized=normalizeVideoInput({...initial,references:refs},cap);
     const request={...normalized,providerId:p.id,modelId:u.model,idempotencyKey:randomUUID(),source:"workbench" as const};
     const provider={id:p.id,label:p.name,protocol:p.protocol,baseUrl:p.baseUrl,apiKey:"fixture-not-used",models:[u.model],defaultModel:u.model,idempotencyStrategy:"none",...p.options} as any;

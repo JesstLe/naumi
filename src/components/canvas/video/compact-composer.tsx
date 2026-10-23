@@ -1,13 +1,13 @@
 "use client";
 import {useRef,useState,type ReactNode} from "react";
-import {Plus,X,ChevronDown,AtSign,Upload,Film,Music2,Type,SlidersHorizontal,Volume2,VolumeX,RectangleHorizontal} from "lucide-react";
+import {Plus,X,ChevronDown,AtSign,Upload,Film,Music2,Type,SlidersHorizontal,Volume2,VolumeX,RectangleHorizontal,Clock3} from "lucide-react";
 import {CachedImage} from "@/components/cached-image";
 import {CanvasComposerFooter} from "../composer-shell";
 import {SelectMenu} from "@/components/ui/select-menu";
 import {CanvasModelSelect} from "../model-select";
 import {CanvasActionPanel} from "../canvas-action-menu";
 import {browserRandomUUID} from "@/lib/browser-crypto";
-import {catalogCapability,selectedVideoCatalogModel,reconcileVideoSettings,videoModeRoles,VIDEO_MODE_LABELS,type VideoNodeConfig,type VideoCatalogModel,type VideoInputChoice} from "@/lib/video/client-settings";
+import {catalogCapability,selectedVideoCatalogModel,reconcileVideoSettings,videoModeRoles,videoDurations,VIDEO_MODE_LABELS,type VideoNodeConfig,type VideoCatalogModel,type VideoInputChoice} from "@/lib/video/client-settings";
 import {numberVideoInputs,type OrderedInput} from "@/lib/video/references";
 import {VideoAssetImportError} from "./use-video-assets";
 import {useVideoI18n} from "./i18n";
@@ -46,7 +46,7 @@ export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,
     {numbered.map(input=>{const choice=choices.find(c=>c.nodeId===input.nodeId),thumbnail=choice?.thumbnail||(input.kind==='image'?input.value:undefined);return <div key={input.id} data-testid="video-compact-reference" className="group relative h-12 w-12 shrink-0 overflow-hidden rounded-[10px] border border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-soft)]" title={`${choice?.title||input.nodeId} · ref ${input.index}`}>
       {thumbnail?<CachedImage src={thumbnail} alt={choice?.title||V('图片')} className="h-full w-full object-cover"/>:<div className="flex h-full items-center justify-center canvas-ui-muted">{input.kind==='video'?<Film size={20}/>:input.kind==='audio'?<Music2 size={20}/>:<Type size={20}/>}</div>}
       <span className="pointer-events-none absolute bottom-0 left-0 rounded-tr bg-black/55 px-1 text-[9px] text-white">{input.index}</span>
-      {!blocked&&<button type="button" aria-label={V(`移除引用${input.index}`)} onClick={()=>onInputs(inputs.filter(item=>item.id!==input.id))} className="absolute right-0 top-0 flex h-5 w-5 items-center justify-center rounded-bl-lg bg-black/65 text-white opacity-0 focus:opacity-100 group-hover:opacity-100"><X size={12}/></button>}
+      {!blocked&&<button type="button" aria-label={V(`移除引用${input.index}`)} onClick={()=>onInputs(videoModeRoles(inputs.filter(item=>item.id!==input.id),config.mode))} className="absolute right-0 top-0 flex h-5 w-5 items-center justify-center rounded-bl-lg bg-black/65 text-white opacity-0 focus:opacity-100 group-hover:opacity-100"><X size={12}/></button>}
     </div>;})}
 
    </div>
@@ -62,7 +62,8 @@ export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,
     placeholder={config.comfyWorkflowId?V('自备视频工作流'):V('未选择模型')} disabled={blocked||!!config.comfyWorkflowId}
     options={models.map(m=>({value:`${m.providerId}/${m.modelId}`,modelId:m.modelId,label:m.label}))}
     onChange={value=>{const chosen=models.find(m=>`${m.providerId}/${m.modelId}`===value);if(chosen)reconcile({...config,workflowTaskId:undefined,providerId:chosen.providerId,modelId:chosen.modelId});}} />
-   <SelectMenu label={V('视频生成模式')} size="sm" className={chip} popoverClassName="canvas-ui-light" disabled={blocked||!!config.comfyWorkflowId} value={config.mode||''} onChange={value=>{const mode=value as VideoNodeConfig['mode'];onInputs(videoModeRoles(inputs,mode));onConfig({...config,mode,references:[]});}} options={(cap.modes||[]).map(mode=>({value:mode,label:V(mode==='reference'?(cap.limits?.videos||cap.limits?.audios?'全能参考':'图片参考'):mode==='single_image'?'图生视频':mode==='frames_required'?'首尾帧':VIDEO_MODE_LABELS[mode])}))}/>
+   <SelectMenu label={V('视频生成模式')} size="sm" className={chip} popoverClassName="canvas-ui-light" disabled={blocked||!!config.comfyWorkflowId} value={config.mode||''} onChange={value=>{const mode=value as VideoNodeConfig['mode'];onInputs(videoModeRoles(inputs,mode));reconcile({...config,mode,references:[]});}} options={(cap.modes||[]).map(mode=>({value:mode,label:V(mode==='reference'?(cap.limits?.videos||cap.limits?.audios?'全能参考':'图片参考'):mode==='single_image'?'图生视频':mode==='frames_required'?'首尾帧':VIDEO_MODE_LABELS[mode])}))}/>
+   <SelectMenu label={V('视频时长')} size="sm" className={chip} popoverClassName="canvas-ui-light" disabled={blocked||!!config.comfyWorkflowId} value={String(config.durationSeconds??'')} onChange={value=>reconcile({...config,durationSeconds:Number(value)})} options={videoDurations(cap, config.mode).map(value=>({value:String(value),label:<span className="flex items-center gap-1.5"><Clock3 size={13}/>{value===-1?V('自动'):V(`${value} 秒`)}</span>}))}/>
    <button ref={parameterRef} type="button" className={chip} aria-label={V('视频生成参数')} aria-expanded={parameters} disabled={blocked} onClick={()=>setParameters(true)}><RectangleHorizontal size={13}/><span className="truncate">{[config.aspectRatio==='adaptive'?V('自动'):config.aspectRatio,config.resolution?.toUpperCase(),config.durationSeconds===-1?V('自动'):config.durationSeconds?`${config.durationSeconds}s`:undefined,`${count} ${V('个视频')}`].filter(Boolean).join(' · ')}</span>{cap.audio&&<span title={V(config.generateAudio===undefined&&cap.audio==='optional'?'声音跟随模型':config.generateAudio===true||cap.audio==='required'?'开启':'关闭声音')}>{config.generateAudio===false||cap.audio==='disabled'?<VolumeX size={13}/>:<Volume2 size={13}/>}</span>}<ChevronDown size={12}/></button>
    <VideoPromptOptimizer prompt={config.prompt||''} disabled={blocked} light={light} onOptimize={onOptimize} onApply={prompt=>onConfig({...config,prompt})}/>
    <button ref={mentionRef} type="button" className={chip} aria-label={V('引用素材')} title={V('引用素材')} disabled={blocked} onClick={()=>setPicker('mention')}><AtSign size={15}/></button>
