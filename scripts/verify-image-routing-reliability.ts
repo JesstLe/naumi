@@ -106,7 +106,7 @@ async function main(){
   check((await repository.dueImageJobs()).some(j=>j.id==='parent-lane'),'parent lane not starved by full child lane');
   await finish(full as ImageJobRow[]);
   const parent=await repository.claimImageJob('parent-lane','imagegen');check(!!parent,'separate parent lane claims');await finish([parent!]);
-  // Capacity rejection and explicit retry are verified by verify-image-capacity-queue-route.ts.
+  // Capacity deferral and same-operation recovery are verified by verify-image-capacity-queue-route.ts.
   check(posted===0,'no accidental model HTTP call');
   latencies.sort((a,b)=>a-b);loop.disable();
   console.log('IMAGE_ROUTING_RELIABILITY=PASS CHECKS='+checks+' USERS=1000 HTTP_ACCEPTED=1000 DRAINED=1000 DUPLICATE_COMPLETIONS=0 ACTIVE_LEASE_PEAK=8 STALE_TOKEN_REJECTED=1 SUPPLIER_CALLS=0');

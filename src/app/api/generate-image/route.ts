@@ -269,28 +269,13 @@ async function openaiImages(
   async function fanOut(
     worker: (index: number) => Promise<UpstreamImage>
   ): Promise<UpstreamImage[]> {
-    const settled: PromiseSettledResult<UpstreamImage>[] = new Array(p.count);
-    let cursor = 0;
-    // 每个 job 最多只向全局闸门提交 4 个活动 worker，避免一个 8 图任务
-    // 预先占满等待队列，让稍后提交的其他节点长期排在它后面。
-    const workerCount = Math.min(p.count, GEN_MAX_CONCURRENT);
-    await Promise.all(
-      Array.from({ length: workerCount }, async () => {
-        while (cursor < p.count) {
-          const index = cursor++;
-          try {
-            settled[index] = {
-              status: "fulfilled",
-              value: await (async () => {
-                return withImageIndex(model, index, () => withGenSlot(() => worker(index)));
-              })(),
-            };
-          } catch (reason) {
-            settled[index] = { status: "rejected", reason };
-          }
-        }
-      })
-    );
+    const settled: PromiseSettledResult<UpstreamImage>[] = [];
+    // A leased job is one execution unit. Images run in index order; different
+    // jobs run concurrently under the DB lane and explicit provider budgets.
+    for (let index = 0; index < p.count; index++) {
+      try { settled.push({status:"fulfilled",value:await withImageIndex(model,index,()=>worker(index))}); }
+      catch(reason) { settled.push({status:"rejected",reason}); if(reason instanceof ImageOperationPending)break; }
+    }
     const succeeded: UpstreamImage[] = [];
     const failed: unknown[] = [];
     for (const result of settled) {
@@ -321,8 +306,7 @@ async function openaiImages(
   // 不需要用户额外提示词(ratioPrompt 已带固定重构图指令),只生成 1 张。
   if (p.ratiogen && p.images[0] && isOpenAIImagesEditModel(model)) {
     const ref = await normalizeForEdit(Buffer.from(p.images[0].buf));
-    const r = await withGenSlot(async () =>
-      client.images.edit({
+    const r = await client.images.edit({
         ...imageGatewayFields(model, true),
         model,
         image: await toFile(Buffer.from(ref), "ref.png", {
@@ -331,8 +315,7 @@ async function openaiImages(
         prompt,
         n: 1,
         size: size as "1024x1024" | "1536x1024" | "1024x1536",
-      })
-    );
+      });
     const b64 = r.data?.[0]?.b64_json;
     if (!b64) throw new Error("OpenAI 未返回图片");
     const original = Buffer.from(b64, "base64");
@@ -456,8 +439,9 @@ async function newApiFlowImages(
     buffer: Buffer.from(image.buf),
     mimeType: image.type || "image/png",
   }));
-  const settled = await Promise.allSettled(
-    Array.from({ length: p.count }, (_, index) => withImageIndex(model, index, () => withGenSlot(async () => {
+  const settled: PromiseSettledResult<GeneratedImage>[] = [];
+  for (let index = 0; index < p.count; index++) {
+    try { settled.push({status:"fulfilled",value:await withImageIndex(model, index, async () => {
       const result = await generateNewApiImage({ model, prompt, images: references, settings });
       return {
         id: `gen-${Date.now()}-${Math.floor(Math.random() * 1e6)}-${index}`,
@@ -465,8 +449,8 @@ async function newApiFlowImages(
         gradient: GRADIENTS[index % GRADIENTS.length], prompt: p.prompt, ratio: p.ratio,
         createdAt: new Date().toISOString(),
       } satisfies GeneratedImage;
-    })))
-  );
+    })}); } catch(reason) { settled.push({status:"rejected",reason}); if(reason instanceof ImageOperationPending)break; }
+  }
   const images: GeneratedImage[] = [];
   const failures: unknown[] = [];
   for (const result of settled) {
@@ -738,33 +722,6 @@ type Job = {
   quality?: { requested: string; executed: string; fallbackReason: string | null; executedQualities?: string[] };
 };
 const JOBS = new DurableImageJobs<Job>("generate");
-
-// 生成并发闸:同时最多 GEN_MAX_CONCURRENT 个真实图片请求打上游,超出的排队。
-// 闸门按“单张请求”而不是按 job 计数，因此多个节点并发或单 job 生成 8 张时，
-// 全站总并发仍不会超过该值。单 fork 实例,模块级状态即可。
-const GEN_MAX_CONCURRENT = Math.max(1, Number(process.env.GEN_MAX_CONCURRENT) || 4);
-let genActive = 0;
-const genWaiters: Array<() => void> = [];
-function acquireGenSlot(): Promise<void> {
-  if (genActive < GEN_MAX_CONCURRENT) {
-    genActive++;
-    return Promise.resolve();
-  }
-  return new Promise((resolve) => genWaiters.push(resolve));
-}
-function releaseGenSlot(): void {
-  const next = genWaiters.shift();
-  if (next) next(); // 槽位直接转交给下一个排队者(genActive 不变)
-  else genActive = Math.max(0, genActive - 1);
-}
-async function withGenSlot<T>(work: () => Promise<T>): Promise<T> {
-  await acquireGenSlot();
-  try {
-    return await work();
-  } finally {
-    releaseGenSlot();
-  }
-}
 
 async function runJob(
   jobId: string,

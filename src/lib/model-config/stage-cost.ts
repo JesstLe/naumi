@@ -4,7 +4,7 @@ import { usageAmount } from "../billing/money";
 
 /** Prices are frozen estimates, not a supplier invoice. Missing dimensions remain unknown. */
 export function stageCost(procurement: Procurement | undefined, state: string, raw?: unknown) {
-  if (state === "rejected-not-charged") return { amount: "0", status: "confirmed-not-charged" };
+  if (state === "rejected-not-charged" || state === "not-submitted") return { amount: "0", status: "confirmed-not-charged" };
   const p = procurementCny(procurement);
   if (!p || !["response-received", "stream-completed"].includes(state)) return { amount: null, status: "unknown" };
   if (p.basis !== "tokens") return { amount: p.amountMicros ?? null, status: p.amountMicros === undefined ? "unknown" : "price-estimate" };

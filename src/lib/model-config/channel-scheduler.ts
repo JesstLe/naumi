@@ -9,7 +9,7 @@ import { ModelConfigError } from "./types";
 import { imageModelDisplayId } from "../image-model-routing";
 import { readLiveChannels, channelStillEnabled, readChannelOperationPin } from "./channel-availability";
 import { channelFailurePolicy, type ChannelFailure } from "./channel-health-policy";
-import { ImageOperationPending } from "../image-gateway";
+import { imageCapacityBusy } from "../image-gateway";
 export type ChannelTarget = ChannelPolicy["channels"][number] & {
     scope: ModelExecutionScope;
 };
@@ -40,11 +40,9 @@ export async function claimChannel(pool: Pool, publicId: string, policy: Channel
         if (!allowed.length) throw new ModelConfigError("CHANNEL_DISABLED", "本任务原有供应通道已关闭，本次尚未提交上游", 422);
         const counts = new Map((await tx.query("SELECT channel_key,served::text FROM app_model_channel_balances WHERE schedule_key=$1", [key])).rows.map(r => [r.channel_key, BigInt(r.served)]));
         const sorted = allowed.map((c, index) => ({ ...c, index, served: counts.get(channelHealthKey(c)) || BigInt(0) })).filter(c => !visited.has(c.upstreamId)).sort((a, b) => compareChannels(a, b, policy.mode));
-        let coolingChannels = 0;
         for (const c of sorted) {
             const healthKey = channelHealthKey(c), health = pinned ? undefined : (await tx.query("SELECT failures,open_until IS NOT NULL needs_probe,open_until>now() opened,probe_until>now() probing FROM app_model_channel_health WHERE key=$1", [healthKey])).rows[0];
             if (!pinned && (health?.opened || health?.probing)) {
-                coolingChannels++;
                 continue;
             }
             let probeToken: string | undefined;
@@ -72,12 +70,10 @@ export async function claimChannel(pool: Pool, publicId: string, policy: Channel
                     throw error;
             }
         }
-        if (pinned) throw new ImageOperationPending(operationKey!, new Error("original-channel-capacity-busy"));
-        if (targets[0]?.scope.frozen.modality !== "image")
-            throw new ModelConfigError("PROVIDER_BUSY", "所有兼容供应通道繁忙或暂时停用，本次尚未提交上游", 429);
-        if (sorted.length > 0 && coolingChannels === sorted.length)
-            throw new ModelConfigError("PROVIDER_BUSY", "当前图片通道暂时不可用，请稍后再试；本次未提交生成，未扣积分", 503);
-        throw new ModelConfigError("PROVIDER_BUSY", "当前图片请求较多，请稍后再试；本次未提交生成，未扣积分", 429);
+        // Local capacity is not an unknown supplier outcome. The durable root
+        // alone may defer a NEW attempt; an old started operation stays pinned.
+        if (targets[0]?.scope.frozen.modality === "image") throw imageCapacityBusy();
+        throw new ModelConfigError("PROVIDER_BUSY", "所有兼容供应通道繁忙或暂时停用，本次尚未提交上游", 429);
     }
     finally {
         await tx.query("SELECT pg_advisory_unlock(hashtextextended($1,0))", ["naumi-channel-select:" + key]);

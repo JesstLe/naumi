@@ -9,7 +9,7 @@ import type { ValidationOptions } from "./schema";
 import { modelEndpointFetch } from "./transport";
 import { effectiveImageParameters } from "./image-preset";
 import { ModelConfigError } from "./types";
-import { currentImageOperationId, currentImageOperationParameters, ImageOperationPending } from "../image-gateway";
+import { currentImageOperationId, currentImageOperationParameters, ImageOperationPending, ImageOperationDeferred } from "../image-gateway";
 import { supplierContext } from "../supplier-cost/collect";
 import { supplierLedger, accountIdentity } from "../supplier-cost/runtime";
 import { apimartTask, submittedAPIMartTask, genericReceipt } from "../supplier-cost/adapters";
@@ -170,6 +170,10 @@ export function apimartImagesFetch(scope: ModelExecutionScope, options: Validati
       }
       throw new ImageOperationPending(unit,new Error("APIMart任务仍在处理中"));
     }catch(error){
+      if(error instanceof ImageOperationDeferred && !taskId && claimed.rowCount){
+        await ledger.pool.query("UPDATE app_supplier_calls SET parameters=NULL,state='pre-submission-failed' WHERE id=$1 AND task_id IS NULL AND parameters->>'requestHash'=$2",[row.id,requestHash]);
+        throw error;
+      }
       const explicitNotCharged=(error as {notCharged?:boolean})?.notCharged===true;
       if(!taskId&&(!generationPosted || explicitNotCharged || error instanceof ModelConfigError && error.code==="PROVIDER_BUSY")){
         if(explicitNotCharged)await ledger.apply(row.id,{state:"rejected",status:"reported",amountMicros:"0",currency:procurement?.currency||"USD",source:"explicit-not-charged",evidence:{source:"explicit-not-charged"}});

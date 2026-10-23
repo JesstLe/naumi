@@ -6,6 +6,7 @@ import { procurementCny } from "./business";
 import { ModelConfigError } from "./types";
 import { beginExecutionStage, finishExecutionStage } from "./execution-audit";
 import { modelCostPhase } from "../supplier-cost/phase";
+import { ImageOperationDeferred } from "../image-gateway";
 
 function auditStream(response: Response, id: string) {
   const reader=response.body!.getReader(),decoder=new TextDecoder();
@@ -60,7 +61,7 @@ export function stageRoutingFetch(scope: ModelExecutionScope, options: Validatio
         const rule = [...policy.rules].sort((a,b) => b.priority-a.priority).find(r => r.stage === "failure" && (r.when.status as number[]).includes(res.status) && !visited.has(scope.routing!.targets[r.targetUpstreamId].connection.providerId + ":" + scope.routing!.targets[r.targetUpstreamId].connection.wireModel));
         if (!rule) return res;
         await res.body?.cancel(); active = { ...scope, ...scope.routing!.targets[rule.targetUpstreamId] }; ruleId = rule.id;
-      } catch (e) { await finishExecutionStage(id, "unknown"); throw e; }
+      } catch (e) { await finishExecutionStage(id, e instanceof ImageOperationDeferred ? "not-submitted" : "unknown"); throw e; }
     }
     throw new ModelConfigError("ROUTE_EXHAUSTED", "路由尝试结束", 503);
   };
