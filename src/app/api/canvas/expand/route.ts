@@ -23,8 +23,6 @@ import { expansionGeometry, composeExpandedImage, ExpandInputError } from "@/lib
 import { expansionUsesMask } from "@/lib/canvas/expand-capabilities";
 import { currentModelExecution } from "@/lib/model-config/context";
 import { storageEnabled, uploadImage } from "@/lib/storage";
-import { clientIp } from "@/lib/ip";
-import { rateLimit } from "@/lib/rate-limit";
 import { safeError } from "@/lib/api-error";
 
 // ---------------------------------------------------------------------------
@@ -57,9 +55,6 @@ function editSize(width: number, height: number) {
 async function handleObservedPost(request: Request) {
   const email = await authenticatedEmail(request);
   if (dbEnabled && !email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
-  if (!rateLimit(`canvas-expand:${clientIp(request) || "0.0.0.0"}`, 20, 10 * 60 * 1000)) {
-    return NextResponse.json({ error: "扩图操作过于频繁，请稍后再试" }, { status: 429 });
-  }
 
   let requestedQuality: unknown;
   let input: { artworkId: string; ratio: string; anchor: string };

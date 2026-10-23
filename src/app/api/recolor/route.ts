@@ -16,7 +16,6 @@ import {
   isBanned,
 } from "@/lib/db";
 import { clientIp } from "@/lib/ip";
-import { rateLimit } from "@/lib/rate-limit";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { getOpenAISettings } from "@/lib/settings";
@@ -105,9 +104,6 @@ async function handleObservedPost(request: Request) {
 
   const { apiKey, model } = await getOpenAISettings();
   const ip = clientIp(request);
-  if (!rateLimit(`recolor:${ip}`, 12, 600_000)) {
-    return NextResponse.json({ error: "请求过于频繁，请稍后再试" }, { status: 429 });
-  }
 
   if (dbEnabled) {
     const tokenEmail = await resolveUserEmail(request);

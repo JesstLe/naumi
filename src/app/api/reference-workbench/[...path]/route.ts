@@ -32,7 +32,7 @@ async function handler(request:Request){
   if(get&&action==="image"){
    const id=url.searchParams.get("path")||"",data=await imageBytes(owner,id);return new Response(new Uint8Array(data.buffer),{headers:{...PRIVATE_HEADERS,"Content-Type":data.mimeType,...(url.searchParams.get("download")==="1"?{"Content-Disposition":'attachment; filename="original.png"'}:{})}});
   }
-  if(action==="workbench/upload-folder"&&!get){if(!rateLimit(`ref-upload:${owner}`,10,600000))return json({error:"上传过于频繁"},429);return json(await uploadFolder(owner,request));}
+  if(action==="workbench/upload-folder"&&!get){return json(await uploadFolder(owner,request));}
   if(get&&action==="settings")return json({...defaults,...await document<Record<string,any>>(owner,"settings","default").catch(()=>({})),provider_templates:[],models:await publicModels(),settings_editable:(await getPool().query("SELECT role FROM app_users WHERE email=$1",[owner])).rows[0]?.role==="admin",auth_id:"native-"+createHash("sha256").update(owner).digest("hex"),auth_username:owner});
   if(get&&action==="workbench/items")return json(await projectItems(owner,url.searchParams.get("root")||"",settings(Object.fromEntries(url.searchParams))));
   if(get&&action==="single/status")return json(await singleState(owner,url.searchParams.get("id")||""));
@@ -48,7 +48,7 @@ async function handler(request:Request){
   // Limit before JSON parsing; original native media limits are enforced again.
   if(Number(request.headers.get("content-length"))>90*1024*1024)return json({error:"请求内容过大"},413);
   let body:any;try{body=await request.json();}catch{const failure=workbenchFailure(new ZodError([]),stage,action);return json(failure.body,400);}if(!body||typeof body!=="object"||Array.isArray(body))throw new WorkbenchError("请求格式无效");
-  if(action==="quote"){if(typeof body.action!=="string"||!body.body||typeof body.body!=="object"||Array.isArray(body.body))throw new WorkbenchError("报价请求格式无效");if(!rateLimit(`ref-quote:${owner}`,40,600000))return json({error:"请求过于频繁"},429);return json(await preview(owner,String(body.action||""),body.body||{}));}
+  if(action==="quote"){if(typeof body.action!=="string"||!body.body||typeof body.body!=="object"||Array.isArray(body.body))throw new WorkbenchError("报价请求格式无效");if(["workbench/infer-prompts","chat-image/send"].includes(body.action)&&!rateLimit(`ref-quote:${owner}`,40,600000))return json({error:"请求过于频繁"},429);return json(await preview(owner,String(body.action||""),body.body||{}));}
   if(["workbench/start","workbench/infer-prompts","workbench/edit","single/start","chat-image/send","chat-image/confirm"].includes(action))return json(await accept(owner,action,body));
   if(action==="settings"){const keys=["single_quality","single_resolution","single_ratio","single_count","chat_task_mode","chat_ratio_mode"];const old=await document<any>(owner,"settings","default").catch(()=>({}));for(const k of keys)if(Object.hasOwn(body,k))old[k]=body[k];settings({quality:old.single_quality||"high",resolution:old.single_resolution||"2k",ratio:old.single_ratio||"1:1",count:old.single_count||1,task_mode:old.chat_task_mode||"confirm",ratio_mode:old.chat_ratio_mode||"smart"});await putDocument(owner,"settings","default",old);return json({ok:true});}
   if(action==="chat-image/new"){const id=randomUUID();await putDocument(owner,"chat",id,{title:"新对话",messages:[]});return json(await chatState(owner,id));}

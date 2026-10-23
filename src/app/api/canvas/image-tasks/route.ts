@@ -5,8 +5,6 @@ import { NextResponse } from "next/server";
 
 import { authenticatedEmail } from "@/lib/request-auth";
 import { enqueueTextEditTask, listCanvasImageTasks, publicCanvasImageTask } from "@/lib/canvas-image-tasks";
-import { clientIp } from "@/lib/ip";
-import { rateLimit } from "@/lib/rate-limit";
 import { safeError } from "@/lib/api-error";
 import {billingErrorResponse} from "@/lib/billing/request";
 import {BillingError} from "@/lib/billing/types";
@@ -17,9 +15,6 @@ export const dynamic = "force-dynamic";
 async function createSubmission(request: Request) {
   const email = await authenticatedEmail(request);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
-  if (!rateLimit(`canvas-image-task:${clientIp(request) || "0.0.0.0"}`, 20, 10 * 60 * 1000)) {
-    return NextResponse.json({ error: "图片编辑操作过于频繁，请稍后再试" }, { status: 429 });
-  }
   try {
     const body = await request.json();
     if (String(body?.kind || "text-edit") !== "text-edit") {

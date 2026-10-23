@@ -11,7 +11,6 @@ import {
   addLedgerEntry,
 } from "@/lib/db";
 import { clientIp } from "@/lib/ip";
-import { rateLimit } from "@/lib/rate-limit";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { safeError } from "@/lib/api-error";
@@ -95,12 +94,6 @@ async function billingRoutePost(request: Request) {
 
   try {
     const ip = clientIp(request);
-    if (!rateLimit(`printfile:${ip}`, 60, 600_000)) {
-      return NextResponse.json(
-        { error: "请求过于频繁,请稍后再试" },
-        { status: 429 }
-      );
-    }
 
     if (dbEnabled) {
       const tokenEmail = await resolveUserEmail(request);

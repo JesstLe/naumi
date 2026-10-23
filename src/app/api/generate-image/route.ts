@@ -47,7 +47,6 @@ import {
   sweepStaleReservations,
 } from "@/lib/db";
 import { clientIp } from "@/lib/ip";
-import { rateLimit } from "@/lib/rate-limit";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { safeError } from "@/lib/api-error";
 import {
@@ -1094,13 +1093,6 @@ async function handleObservedPost(request: Request) {
   const { apiKey, model: defaultModel, cutoutModel } = await getOpenAISettings();
   const ip = clientIp(request);
 
-  // 按 IP 限流:防脚本化刷接口烧 token。生图较重,30 次/10 分钟足够真实用户。
-  if (!currentImagegenStep() && !rateLimit(`gen:${ip}`, 30, 600_000)) {
-    return NextResponse.json(
-      { error: "请求过于频繁，请稍后再试" },
-      { status: 429 }
-    );
-  }
 
   // 先解析真实登录账号，再生成该账号专属模型目录；不能让客户端用 email 指向他人配置。
   let actorEmail: string | null = null;

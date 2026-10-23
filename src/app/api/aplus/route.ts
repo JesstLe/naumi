@@ -29,7 +29,6 @@ import {
   listArtworksByIds,
 } from "@/lib/db";
 import { clientIp } from "@/lib/ip";
-import { rateLimit } from "@/lib/rate-limit";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { getOpenAISettings } from "@/lib/settings";
@@ -819,10 +818,6 @@ async function handleObservedPost(request: Request) {
       if (!feedback) {
         return NextResponse.json({ error: "请填写本张图片的重做要求" }, { status: 400 });
       }
-      const ip = clientIp(request);
-      if (!rateLimit(`aplus-redo:${jobId}:${ip}`, 12, 600_000)) {
-        return NextResponse.json({ error: "重做过于频繁，请稍后再试" }, { status: 429 });
-      }
       try {
         if(job.useDb) await JOBS.reviewSource(jobId,index,true,feedback);
         else {
@@ -892,9 +887,6 @@ async function handleObservedPost(request: Request) {
   try { sizeFor(input.format, model, true, true); }
   catch (error) { return NextResponse.json({ error: safeError(error, "所选模型不支持该画幅"), code: "APLUS_FRAME_UNSUPPORTED" }, { status: 400 }); }
   const ip = clientIp(request);
-  if (!rateLimit(`aplus:${ip}`, 8, 600_000)) {
-    return NextResponse.json({ error: "请求过于频繁，请稍后再试" }, { status: 429 });
-  }
 
   if (dbEnabled) {
     const tokenEmail = await resolveUserEmail(request);
