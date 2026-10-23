@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {randomUUID} from 'node:crypto';
-import {inspectRecords} from './lib/enterprise-records-snapshot.mjs';
+import {inspectRecords,inspectMedia} from './lib/enterprise-records-snapshot.mjs';
 const {Pool}=createRequire(new URL('../services/enterprise-workflow/package.json',import.meta.url))('pg');
 const url=new URL(process.env.SOURCE_RECORDS_TEST_URL);assert.equal(url.hostname,'127.0.0.1');assert.match(url.pathname,/^\/source_records_g71_[a-f0-9]+$/);
 const pool=new Pool({connectionString:url.href}),enterpriseId=randomUUID(),foreignId=randomUUID(),email='member@fixture.invalid',other='other@fixture.invalid';
@@ -21,7 +21,8 @@ try{
  CREATE TABLE app_ledger(id text PRIMARY KEY,email text,created_at timestamptz DEFAULT now(),kind text,delta integer,reason text);
  CREATE TABLE app_billing_operations(id text PRIMARY KEY,email text,created_at timestamptz DEFAULT now(),feature text,ledger_id text,quote jsonb,state text,reserved_credits integer);
  CREATE TABLE app_billing_api_cost_reviews(id text PRIMARY KEY,operation_id text,status text,refund_credits integer);
- CREATE TABLE app_credit_batches(id text PRIMARY KEY,email text,source text);`);
+ CREATE TABLE app_credit_batches(id text PRIMARY KEY,email text,source text);
+ CREATE TABLE app_media_assets(key text PRIMARY KEY,owner text,public boolean,driver text,remote_ready boolean,content_type text,sha256 text,bytes bigint,thumbnail_key text,preview_key text);`);
  await pool.query("INSERT INTO app_account_teams VALUES($1,'Fixture Enterprise',$2,true,NULL);",[enterpriseId,'owner@fixture.invalid']);
  await pool.query('INSERT INTO app_enterprise_settings VALUES($1,true)',[enterpriseId]);
  await pool.query("INSERT INTO app_users VALUES($1,'Member',false,NULL),($2,'Other',false,NULL)",[email,other]);
@@ -60,7 +61,21 @@ try{
  ok(r.rows.artworks.find(x=>x.ref.id==='legacy').ownership==='legacy-unconfirmed');
  ok(r.rows.generations.find(x=>x.ref.id==='video').taskRefs.videoTaskId==='video');
  const small=await inspectRecords(pool,registry,{...options,limit:1});ok(small.rows.artworks.length===1&&small.limits.artworks.total===3&&small.limits.artworks.truncated);
+ await pool.query("INSERT INTO app_media_assets VALUES('private.webp',$1,false,'s3',true,'image/webp',$2,100,'thumb.webp','preview.webp'),('thumb.webp',$1,false,'s3',true,'image/webp',$2,50,NULL,NULL),('preview.webp',$3,false,'s3',true,'image/webp',$2,80,NULL,NULL)",[email,'a'.repeat(64),other]);
+ const mediaOptions={...options,pairs:['legacy','personal','foreign','tenant','unrelated'].map(id=>({id,email})),driver:'s3',publicBase:''};
+ const media=await inspectMedia(pool,registry,mediaOptions);ok(media.sourceReadOnly&&media.sourceWrites===0);
+ assert.deepEqual(media.items.map(x=>x.id).sort(),['legacy','tenant']);checks++;
+ ok(media.items.every(x=>x.variants.length===1&&x.variants[0].key==='thumb.webp'&&x.asset.owner===email));
+ ok((await inspectMedia(pool,registry,{...mediaOptions,pairs:[{id:'legacy',email:other}]})).items.length===0);
+ await pool.query("UPDATE app_artworks SET deleted_at=now() WHERE id='legacy'");ok((await inspectMedia(pool,registry,{...mediaOptions,pairs:[{id:'legacy',email}]})).items.length===0);
+ await pool.query("UPDATE app_media_assets SET remote_ready=false WHERE key='private.webp'");
+ const partial=await inspectMedia(pool,registry,mediaOptions);ok(partial.items.length===1&&partial.items[0].asset.remoteReady===false&&partial.items[0].variants[0].key==='thumb.webp');
+ await pool.query("UPDATE app_media_assets SET remote_ready=false WHERE key='thumb.webp'");ok((await inspectMedia(pool,registry,mediaOptions)).items.length===0);
+ await pool.query("UPDATE app_media_assets SET remote_ready=true WHERE key='thumb.webp'");
+ await pool.query("UPDATE app_media_assets SET remote_ready=true,owner=$1 WHERE key='private.webp'",[other]);ok((await inspectMedia(pool,registry,mediaOptions)).items.length===0);
+ await pool.query("UPDATE app_media_assets SET owner=$1 WHERE key='private.webp'",[email]);
  await pool.query("UPDATE app_enterprise_members SET membership_status='suspended'");const revoked=await inspectRecords(pool,registry,options);ok(revoked.members.length===0&&Object.values(revoked.rows).every(rows=>rows.length===0));
+ ok((await inspectMedia(pool,registry,mediaOptions)).items.length===0);
  ok((await pool.query('SELECT count(*)::int n FROM app_image_jobs')).rows[0].n===6);
- console.log(`SOURCE_RECORDS_PG_PASS: checks=${checks} real_sql=1 exact_scope=1 personal_excluded=1 direct_receipt=1 asset_receipt=1 input_link_ignored=1 ledger_charge=6 refund=2 missing_charge=null truncated=1 source_writes=0`);
+ console.log(`SOURCE_RECORDS_PG_PASS: checks=${checks} real_sql=1 exact_scope=1 personal_excluded=1 direct_receipt=1 asset_receipt=1 input_link_ignored=1 ledger_charge=6 refund=2 missing_charge=null truncated=1 media_exact_pairs=1 media_owner=1 media_revoked=1 source_writes=0`);
 }finally{await pool.end();}

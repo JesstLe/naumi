@@ -208,13 +208,7 @@ function record(config, kind, row, names) {
   };
 }
 
-/**
- * @param {{connect: Function}} pool standard pg Pool (no global DB/config lookup)
- * @param {{version:1,instance:string,origin:string,enterpriseId:string,enterpriseName:string}} registry
- * @param {{subjects:string[],from:string,to:string,limit?:number}} options
- */
-export async function inspectRecords(pool, registry, options) {
-  const config = inputs(registry, options);
+async function readSourceSnapshot(pool, config, collect) {
   let tx, transaction = false, discard = false;
   try {
     tx = await pool.connect();
@@ -243,6 +237,30 @@ export async function inspectRecords(pool, registry, options) {
         OR EXISTS(SELECT 1 FROM public.app_account_teams t WHERE t.id=$1::uuid AND t.owner_email=u.email))
       ORDER BY u.email COLLATE "C" LIMIT 101`, [config.enterpriseId, config.subjects])).rows;
     requireValue(members.length <= 100 && members.every(m => config.subjects.includes(m.email)), 'RECORDS_MEMBER_SCOPE_INVALID');
+    const result = await collect(tx, observedAt, members);
+    await tx.query('ROLLBACK'); transaction = false;
+    return result;
+  } catch (error) {
+    if (tx && !transaction) discard = true; // A failed BEGIN must not return an uncertain session to the pool.
+    if (tx && transaction) {
+      try { await tx.query('ROLLBACK'); transaction = false; } catch { discard = true; }
+    }
+    // SQL/driver errors can contain connection details, SQL, or payload fragments.
+    throw error instanceof RecordsSnapshotError ? error : new RecordsSnapshotError('RECORDS_SOURCE_READ_FAILED');
+  } finally {
+    if (tx) try { tx.release(discard ? true : undefined); }
+    catch { throw new RecordsSnapshotError('RECORDS_SOURCE_RELEASE_FAILED'); }
+  }
+}
+
+/**
+ * @param {{connect: Function}} pool standard pg Pool (no global DB/config lookup)
+ * @param {{version:1,instance:string,origin:string,enterpriseId:string,enterpriseName:string}} registry
+ * @param {{subjects:string[],from:string,to:string,limit?:number}} options
+ */
+export async function inspectRecords(pool, registry, options) {
+  const config = inputs(registry, options);
+  return readSourceSnapshot(pool, config, async (tx, observedAt, members) => {
     const names = new Map(members.map(m => [m.email, string(m.name)]));
     const result = { version: 1, type: 'enterprise-source-snapshot-v1', instanceId: config.instanceId,
       enterpriseId: config.enterpriseId, enterpriseName: config.enterpriseName, origin: config.origin, observedAt,
@@ -268,17 +286,156 @@ export async function inspectRecords(pool, registry, options) {
           Object.defineProperty(result.mediaUrls, String(row.id), { value: row.image_url, enumerable: true, configurable: true, writable: true });
       }
     }
-    await tx.query('ROLLBACK'); transaction = false;
     return result;
-  } catch (error) {
-    if (tx && !transaction) discard = true; // A failed BEGIN must not return an uncertain session to the pool.
-    if (tx && transaction) {
-      try { await tx.query('ROLLBACK'); transaction = false; } catch { discard = true; }
+  });
+}
+
+// This parser deliberately does not import storage.ts: that module reads global
+// configuration and creates storage clients. publicBase is the caller's trusted,
+// registered storage base, never an origin learned from an artwork URL.
+function mediaKey(value) {
+  if (typeof value !== 'string' || !value.length || value.length > 1024
+    || /[\u0000-\u0020\u007f-\u009f\\%?#:]/.test(value)
+    || value.split('/').some(part => !part || part === '.' || part === '..')) return null;
+  return value;
+}
+function mediaBase(value) {
+  if (value === undefined || value === '') return null;
+  requireValue(typeof value === 'string' && value.length <= 4096
+    && !/[\u0000-\u0020\u007f-\u009f\\%?#]/.test(value), 'RECORDS_MEDIA_BASE_INVALID');
+  let url; try { url = new URL(value); } catch { throw new RecordsSnapshotError('RECORDS_MEDIA_BASE_INVALID'); }
+  const base = value.endsWith('/') ? value.slice(0, -1) : value;
+  requireValue(url.protocol === 'https:' && !url.username && !url.password
+    && !url.search && !url.hash && url.href.replace(/\/$/, '') === base
+    && (url.pathname === '/' || mediaKey(url.pathname.slice(1).replace(/\/$/, '')) !== null), 'RECORDS_MEDIA_BASE_INVALID');
+  return base;
+}
+function managedMediaKey(value, publicBase) {
+  if (typeof value !== 'string' || !value.length || value.length > 16384
+    || /[\u0000-\u0020\u007f-\u009f\\?#]/.test(value)) return null;
+  const prefix = value.startsWith('/media/') ? '/media/' : publicBase && value.startsWith(publicBase + '/') ? publicBase + '/' : null;
+  if (!prefix) return null;
+  const encoded = value.slice(prefix.length);
+  // Reject encoded separators and double encodings rather than allowing a URL
+  // implementation or downstream proxy to normalize a different object path.
+  if (/%(?:2f|5c)/i.test(encoded)) return null;
+  try { return mediaKey(decodeURIComponent(encoded)); } catch { return null; }
+}
+const mediaPair = (id, email) => JSON.stringify([id, email]);
+function mediaInputs(registry, options) {
+  const config = inputs(registry, options);
+  requireValue(Array.from(options.subjects).every(subject => typeof subject === 'string')
+    && config.subjects.length === options.subjects.length, 'RECORDS_MEDIA_SUBJECTS_NOT_UNIQUE');
+  requireValue(Array.isArray(options.pairs) && options.pairs.length <= 25, 'RECORDS_MEDIA_PAIR_LIMIT');
+  const unique = new Set();
+  const pairs = Array.from(options.pairs, pair => {
+    requireValue(pair && typeof pair === 'object' && !Array.isArray(pair) && Object.keys(pair).length === 2
+      && Object.hasOwn(pair, 'id') && Object.hasOwn(pair, 'email')
+      && typeof pair.id === 'string' && pair.id.length > 0 && pair.id.length <= 240 && pair.id.trim() === pair.id
+      && !/[\u0000-\u001f\u007f]/.test(pair.id)
+      && typeof pair.email === 'string' && config.subjects.includes(pair.email), 'RECORDS_MEDIA_PAIR_INVALID');
+    const key = mediaPair(pair.id, pair.email);
+    requireValue(!unique.has(key), 'RECORDS_MEDIA_PAIRS_NOT_UNIQUE');
+    unique.add(key);
+    return { id: pair.id, email: pair.email };
+  });
+  requireValue(options.driver === 's3' || options.driver === 'r2', 'RECORDS_MEDIA_DRIVER_INVALID');
+  return { ...config, pairs, driver: options.driver, publicBase: mediaBase(options.publicBase) };
+}
+function mediaMetadata(row, driver) {
+  if (!row || mediaKey(row.key) === null || typeof row.owner !== 'string' || row.driver !== driver
+    || typeof row.remote_ready !== 'boolean' || typeof row.content_type !== 'string' || !row.content_type.length
+    || row.content_type.length > 255 || /[\u0000-\u001f\u007f]/.test(row.content_type)
+    || typeof row.sha256 !== 'string' || !/^[a-fA-F0-9]{64}$/.test(row.sha256)
+    || !((typeof row.bytes === 'string' && /^(0|[1-9][0-9]*)$/.test(row.bytes)) || typeof row.bytes === 'number')
+    || !Number.isSafeInteger(Number(row.bytes)) || Number(row.bytes) < 0) return null;
+  return row;
+}
+function mediaAsset(row, metadata) {
+  const reference = key => mediaKey(key) !== null && metadata.get(mediaPair(key, row.owner))?.remote_ready === true ? key : null;
+  return { key: row.key, owner: row.owner, remoteReady: row.remote_ready, contentType: row.content_type,
+    sha256: row.sha256, bytes: Number(row.bytes), thumbnailKey: reference(row.thumbnail_key), previewKey: reference(row.preview_key) };
+}
+
+/**
+ * Exact artwork/media authorization in one repeatable-read, read-only snapshot.
+ * No records pagination, schema initialization, object reads, or network calls.
+ * Unauthorized/missing originals are omitted; invalid variants and their pointers
+ * are omitted/null. Output order follows pairs, not the records page or limit.
+ * The caller passes driver/publicBase from its registered storage configuration.
+ * @param {{connect: Function}} pool caller-owned standard pg Pool
+ * @param {{version:1,instance:string,origin:string,enterpriseId:string,enterpriseName:string}} registry
+ * @param {{subjects:string[],from:string,to:string,pairs:{id:string,email:string}[],limit?:number,driver:'s3'|'r2',publicBase?:string}} options
+ * @returns {Promise<{observedAt:string,sourceReadOnly:true,sourceWrites:0,items:Array<{
+ *   id:string,email:string,imageUrl:string,ownership:'frozen-tenant'|'legacy-unconfirmed',
+ *   asset: {key:string,owner:string,remoteReady:true,contentType:string,sha256:string,bytes:number,thumbnailKey:string|null,previewKey:string|null},
+ *   variants: Array<{key:string,owner:string,remoteReady:true,contentType:string,sha256:string,bytes:number,thumbnailKey:string|null,previewKey:string|null}>
+ * }>}>}
+ */
+export async function inspectMedia(pool, registry, options) {
+  const config = mediaInputs(registry, options);
+  return readSourceSnapshot(pool, config, async (tx, observedAt, members) => {
+    const requested = new Set(config.pairs.map(pair => mediaPair(pair.id, pair.email)));
+    const emails = new Set(members.map(member => member.email));
+    const result = { observedAt, sourceReadOnly: true, sourceWrites: 0, items: [] };
+    if (!config.pairs.length || !emails.size) return result;
+    // Reuse the exact scopes + artwork predicate, including deletion, date and
+    // output-only receipt semantics. Two arrays are zipped, never two ANY lists.
+    const rows = (await tx.query(`${scopes} SELECT authorized.id,authorized.email,authorized.image_url,authorized.ownership
+      FROM (${artworks}) authorized
+      JOIN unnest($5::text[],$6::text[]) AS requested(id,email)
+        ON requested.id=authorized.id AND requested.email=authorized.email`,
+    [[...emails], `${config.from}T00:00:00+08:00`,
+      new Date(Date.parse(`${config.to}T00:00:00+08:00`) + DAY).toISOString(), config.enterpriseId,
+      config.pairs.map(pair => pair.id), config.pairs.map(pair => pair.email)])).rows;
+    const authorized = new Map(), seen = new Set();
+    requireValue(rows.length <= config.pairs.length, 'RECORDS_MEDIA_ROW_SCOPE_INVALID');
+    for (const row of rows) {
+      const pair = mediaPair(row.id, row.email);
+      requireValue(requested.has(pair) && emails.has(row.email) && !seen.has(pair)
+        && ['legacy-unconfirmed', 'frozen-tenant'].includes(row.ownership), 'RECORDS_MEDIA_ROW_SCOPE_INVALID');
+      seen.add(pair);
+      const key = managedMediaKey(row.image_url, config.publicBase);
+      // An old URL is not metadata or an ownership grant.
+      if (key !== null) authorized.set(pair, { ...row, key });
     }
-    // SQL/driver errors can contain connection details, SQL, or payload fragments.
-    throw error instanceof RecordsSnapshotError ? error : new RecordsSnapshotError('RECORDS_SOURCE_READ_FAILED');
-  } finally {
-    if (tx) try { tx.release(discard ? true : undefined); }
-    catch { throw new RecordsSnapshotError('RECORDS_SOURCE_RELEASE_FAILED'); }
-  }
+    if (!authorized.size) return result;
+    const sources = [...authorized.values()];
+    // The real media DDL uses owner/driver/remote_ready/content_type and bigint
+    // bytes. Every derivative needs its OWN exact metadata authorization.
+    const assets = (await tx.query(`WITH source_assets AS (
+      SELECT a.key,a.owner,a.thumbnail_key,a.preview_key FROM public.app_media_assets a
+      JOIN unnest($1::text[],$2::text[]) AS requested(key,owner) ON requested.key=a.key AND requested.owner=a.owner
+      WHERE a.driver=$3::text
+    ), authorized_keys AS (
+      SELECT key,owner FROM source_assets
+      UNION SELECT thumbnail_key,owner FROM source_assets WHERE thumbnail_key IS NOT NULL
+      UNION SELECT preview_key,owner FROM source_assets WHERE preview_key IS NOT NULL
+    ) SELECT a.key,a.owner,a.driver,a.remote_ready,a.content_type,a.sha256,a.bytes,a.thumbnail_key,a.preview_key
+      FROM public.app_media_assets a JOIN authorized_keys k ON k.key=a.key AND k.owner=a.owner
+      WHERE a.driver=$3::text AND (a.remote_ready OR EXISTS(
+        SELECT 1 FROM source_assets original WHERE original.key=a.key AND original.owner=a.owner))`,
+    [sources.map(row => row.key), sources.map(row => row.email), config.driver])).rows;
+    const metadata = new Map();
+    for (const row of assets) {
+      if (!mediaMetadata(row, config.driver)) continue;
+      const key = mediaPair(row.key, row.owner);
+      requireValue(!metadata.has(key), 'RECORDS_MEDIA_METADATA_INVALID');
+      metadata.set(key, row);
+    }
+    for (const pair of config.pairs) {
+      const row = authorized.get(mediaPair(pair.id, pair.email));
+      if (!row) continue;
+      const original = metadata.get(mediaPair(row.key, row.email));
+      if (!original) continue;
+      const asset = mediaAsset(original, metadata);
+      const variants = [...new Set([asset.thumbnailKey, asset.previewKey])]
+        .filter(key => key !== null && key !== asset.key)
+        .map(key => mediaAsset(metadata.get(mediaPair(key, row.email)), metadata));
+      // An owned local-only original may prove which independently authorized
+      // remote variants belong to this artwork. It is never itself downloaded.
+      if (asset.remoteReady || variants.length) result.items.push({ id: row.id, email: row.email, imageUrl: row.image_url, ownership: row.ownership, asset, variants });
+    }
+    return result;
+  });
 }
