@@ -70,13 +70,17 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
         const definite = receipt?.billing_status === "not_charged" || receipt?.error?.billing_status === "not_charged";
         const ambiguous=!text&&!definite&&(status===408||status===409||status>=500);
         await finishExecutionStage(audit, definite ? "rejected-not-charged" : ambiguous ? "unknown" : "failed-response", status, !text ? { upstreamFailure: lastImageFailure } : undefined); finished = true;
-        if(ambiguous){await recordChannelOutcome(pool,target,false,status);throw new ImageOperationPending(operationKey||active.frozen.publicModelId,Error("supplier-response-unconfirmed"));}
+        // Health concerns the observed channel response, not permission to repeat
+        // this paid operation. Record once even when billing remains uncertain.
+        if (!["INVALID_REQUEST", "MODEL_INCOMPATIBLE", "PROVIDER_BUSY", "CHANNEL_DISABLED", "CONFIG_UNAVAILABLE"].includes(receipt?.error?.code)) await recordChannelOutcome(pool, target, false, status, {retryAfterMs:retryAfterMs(response.headers.get("retry-after"))});
+        if(ambiguous)throw new ImageOperationPending(operationKey||active.frozen.publicModelId,Error("supplier-response-unconfirmed"));
         // A 4xx alone is not proof of non-acceptance: Hub can return a failed
         // accepted task with 422 too. Only a definite not_charged receipt allows
         // another paid POST, regardless of this target's adapter/protocol.
-        if (!text && !definite) return new Response(raw,{status:response.status,headers:{"content-type":"application/json"}});
+        // Preserve the bounded diagnosis through the SDK without exposing raw
+        // supplier data or manufacturing a not_charged/fallback permission.
+        if (!text && !definite) return Response.json({error:{message:IMAGE_SUPPLIER_FAILURE_MESSAGES[lastImageFailure!.code],code:lastImageFailure!.code,type:"naumi_channel_failure"}},{status});
         if (operationKey && definite) await pool.query("DELETE FROM app_model_channel_operations WHERE operation_key=$1 AND upstream_id=$2", [operationKey,target.upstreamId]);
-        if (!["INVALID_REQUEST", "MODEL_INCOMPATIBLE", "PROVIDER_BUSY", "CHANNEL_DISABLED", "CONFIG_UNAVAILABLE"].includes(receipt?.error?.code)) await recordChannelOutcome(pool, target, false, status, {retryAfterMs:retryAfterMs(response.headers.get("retry-after"))});
       } catch (error) {
         // An accepted durable task must finish/query its original supplier;
         // moving to another channel could create a second paid generation.

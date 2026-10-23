@@ -137,17 +137,17 @@
       "replayFidelity": "retained-status-message-local-http-reproduction",
       "suite": "supplier-quota",
       "historyClosure": "OPEN",
-      "limitation": "新报价/并发调整不会补充上游额度；测试如仍403且备用POST0必须保留OPEN，不装作历史全绿。"
+      "limitation": "原403无not_charged时仍A1B0、原pin保留，供应成本未知；修复只把漏记的auth健康记一次并让后续全新operation跳过冷却A走B。历史22笔没有完整原body/免单合同，不代表外部额度已补足或旧任务可重提。"
     },
     {
       "id": "HF10",
       "origin": "H23",
       "behavior": "供应商completed/delivered但最终子任务无结果",
       "historicalCount": 2,
-      "replayFidelity": "not-replayed-exactly",
+      "replayFidelity": "exact-original-output-local-continuation-after-explicit-evidence-import",
       "suite": "delivery",
       "historyClosure": "NOT_PROVEN",
-      "limitation": "旧交付机制回归不证明今日两笔有可用checkpoint或根因一致；缺原结果时不强行记通过。"
+      "limitation": "精确两笔原task GET与原图GET均200，URLhash对上原供应商记录；原PNG完整解码为1536x2048及2048x2048。原started无result仍拒绝；仅在隔离库显式证据导入后，原冻结135/8合同真实续交succeeded、各结算12一次、原/最终字节hash相同。线上两笔未写/未恢复，完整原始提交/输入素材重放仍0，最初checkpoint丢失根因尚未闭合。"
     },
     {
       "id": "RG01",
