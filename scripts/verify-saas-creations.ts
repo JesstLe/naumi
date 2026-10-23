@@ -65,6 +65,27 @@ async function main(){
  assert.equal(contracts.creationFiltersSchema.safeParse({from:'2026-02-30'}).success,false);assert.equal(contracts.creationFiltersSchema.safeParse({page:0}).success,false);
  const legacyJob=`legacy-job-${randomUUID()}`;await pool.query("INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,metered,billing_settled) VALUES($1,$2,'generate','{\"status\":\"done\"}',$3::jsonb,false,true)",[legacyJob,departed,JSON.stringify({p:{prompt:'旧图片原话 fixture'}})]);
  const legacyList=await(await adminRoutes.GET(request('/api/admin/creations?source=legacy',admin))).json();const legacy=legacyList.items.find((x:any)=>x.actorEmail===departed);assert.ok(legacy);assert.equal(legacy.scopeKind,'legacy_unconfirmed');assert.equal(legacy.tenantId,null);
+ // Exercise historical visibility through the real authorized route, not a
+ // fixture-only query. Original code is also runnable as a rollback baseline.
+ const historyVisible=process.env.NAUMI_VERIFY_HISTORY_ENTRY_EXPECTED!=='hidden';
+ const ancient=`ancient-${randomUUID()}`;await pool.query("INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,metered,billing_settled,created_at) VALUES($1,$2,'generate','{\"status\":\"done\"}','{}',false,true,'2001-01-01')",[ancient,departed]);
+ const historyRequest=`/api/admin/creations?source=legacy&user=${encodeURIComponent(departed)}`;
+ const historyDefault=await(await adminRoutes.GET(request(historyRequest,admin))).json();
+ const historyHasOld=historyDefault.items.some((x:any)=>x.acceptedAt.startsWith('2001-01-01'));
+ assert.equal(historyHasOld,historyVisible,'default history must not silently hide old generations');
+ if(historyVisible){
+  assert.equal(historyDefault.appliedFilters.period,'all');
+  const all=await(await adminRoutes.GET(request(historyRequest+'&period=all',admin))).json();assert.equal(all.pagination.total,historyDefault.pagination.total);
+  const dated=await(await adminRoutes.GET(request(historyRequest+'&from=2001-01-01&to=2001-01-01',admin))).json();assert.equal(dated.pagination.total,1);
+  const recent=await(await adminRoutes.GET(request(historyRequest+'&from=2026-10-01&to=2026-10-31',admin))).json();assert.ok(recent.items.every((x:any)=>!x.acceptedAt.startsWith('2001-')));
+  assert.equal((await adminRoutes.GET(request(historyRequest+'&period=all&from=2001-01-01',admin))).status,400);
+  assert.equal((await adminRoutes.GET(request(historyRequest+'&period=invalid',admin))).status,400);
+  const ordinary=await(await adminRoutes.GET(request('/api/admin/creations',admin))).json();assert.ok(ordinary.appliedFilters.from);assert.equal(ordinary.appliedFilters.period,undefined);
+ }
+ assert.equal((await adminRoutes.GET(request(historyRequest+`&tenantId=${a.tenantId}`,admin))).status,400);
+ assert.equal((await enterpriseRoutes.GET(request(`/api/enterprise/creations?tenantId=${a.tenantId}&source=legacy&period=all`,ownerA))).status,400);
+ assert.ok([401,403].includes((await adminRoutes.GET(request(historyRequest+'&period=all'))).status));
+ console.log(`HISTORY_ENTRY_STATE=${historyVisible?'VISIBLE':'HIDDEN'} oldJobVisible=${historyHasOld} real_route=1 scope_preserved=1`);
  const legacyFull=await(await adminDetail.GET(request(`/api/admin/creations/${legacy.id}`,admin),detailCtx(legacy.id))).json();assert.equal(legacyFull.request.text,'旧图片原话 fixture');assert.equal(legacyFull.model.state,'not_recorded');assert.equal(legacyFull.billing.charged,0);assert.equal(legacyFull.events.length,0);
  assert.equal((await enterpriseDetail.GET(request(`/api/enterprise/creations/${legacy.id}?tenantId=${a.tenantId}`,ownerA),detailCtx(legacy.id))).status,404);
  await pool.query(`INSERT INTO app_artworks(id,email,title,category,prompt,image_url,gradient,batch_id)

@@ -13,7 +13,8 @@ function parseId(id:string){try{if(id.length>1600||!id.startsWith('legacy-'))thr
 const item=(r:Record<string,any>):CreationSummary=>({id:legacyCreationId({table:r.source_table,id:r.id,email:r.email}),title:r.content?.slice(0,120)||r.kind||'历史创作',actorEmail:r.email,actorName:r.email,tenantId:null,scopeKind:'legacy_unconfirmed',sourceKind:r.kind,status:creationStatus(r.status),acceptedAt:new Date(r.created_at).toISOString(),settledCredits:r.has_ledger_charge?Number(r.billed_credits):null,thumbnailAssetId:null,completeness:'not_recorded'});
 export async function listLegacyCreations(f:CreationFilters):Promise<CreationPage>{
  const p=new URLSearchParams({section:'operations',page:String(f.page),size:String(f.size),email:f.user,q:f.q});if(f.from)p.set('from',f.from);if(f.to)p.set('to',f.to);if(f.status)p.set('status',({succeeded:'done',failed:'error',needs_review:'review'} as Record<string,string>)[f.status]||f.status);
- const rows=await queryBi(parseBiQuery(p));return {items:rows.rows.map(item),pagination:{total:rows.total,page:rows.page,size:rows.size},appliedFilters:f,generatedAt:rows.generatedAt,scope:'platform',availability:'available',summary:{total:rows.total,activeMembers:0,settledCredits:null,pending:0,failed:0,needsReview:0},memberUsage:[]};
+ const query=parseBiQuery(p);if(f.period==='all'){query.start='-infinity';query.end='infinity';}
+ const rows=await queryBi(query);return {items:rows.rows.map(item),pagination:{total:rows.total,page:rows.page,size:rows.size},appliedFilters:f,generatedAt:rows.generatedAt,scope:'platform',availability:'available',summary:{total:rows.total,activeMembers:0,settledCredits:null,pending:0,failed:0,needsReview:0},memberUsage:[]};
 }
 type LegacyMedia={asset:CreationAsset;storageRef:string;actorEmail:string};
 export async function legacyCreationDetail(id:string,pages:{assetPage?:number}={}){
