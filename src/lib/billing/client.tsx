@@ -130,33 +130,66 @@ export function BillingProvider({ children }: {
             throw new Error("报价正在加载或暂不可用，请稍后重试");
         const headers = new Headers(init.headers);
         if(displayed.quote)headers.set("x-naumi-image-quote",displayed.quote.id);
-        if(displayed.mode==="api-cost-plus" && !window.confirm(`本次估算 ${displayed.credits} 积分，最多授权 ${displayed.authorizedCredits ?? displayed.reserveCredits} 积分。按实际完整 API 成本与已锁定倍率结算；费用未知时待核账。是否提交？`)) throw new Error("已取消提交");
         if (displayed?.modelVersion) headers.set("x-naumi-model-version", String(displayed.modelVersion));
         if (displayed?.modelId) headers.set("x-naumi-feature-model", displayed.modelId);
         headers.set("x-naumi-billing-version", String(displayed.version));
         headers.set("x-naumi-billing-credits", String(displayed.mode==="api-cost-plus" ? displayed.authorizedCredits ?? displayed.reserveCredits : displayed.credits));
         const key=await clientIntentKey(user?.email||"",url,{...init,headers});
         let id=intents.current.get(key);try{id=id||localStorage.getItem(key)||undefined;}catch{}
-        id=id||headers.get("x-naumi-billing-operation-id")||browserRandomUUID();intents.current.set(key,id);try{localStorage.setItem(key,id);}catch{}
+        id=id||headers.get("x-naumi-billing-operation-id")||undefined;
+        const retry=!!id;
+        id=id||browserRandomUUID();intents.current.set(key,id);try{localStorage.setItem(key,id);}catch{}
         headers.set("x-naumi-billing-operation-id",id);
+        const clearIntent=()=>{if(intents.current.get(key)===id)intents.current.delete(key);try{if(localStorage.getItem(key)===id)localStorage.removeItem(key);}catch{}};
         onIdentity?.(id);
         if(displayed.requestedParameters?.resolution && displayed.effectiveParameters?.resolution && displayed.requestedParameters.resolution!==displayed.effectiveParameters.resolution)
             toast(`${displayed.requestedParameters.resolution}已自动调整为${displayed.effectiveParameters.resolution}，实际生成档位已调整，报价保持不变`,"info");
-        if(displayed.quote && Date.parse(displayed.quote.expiresAt)<=Date.now()+1000 && displayed.selection){
-            const {canvas,...selection}=displayed.selection;
+        const confirmQuote=(next:PublicQuote,previous?:PublicQuote)=>{
+            // Compare server-issued consent terms only; never calculate a tariff here.
+            const changed=previous&&(next.mode!==previous.mode||next.authorization!==previous.authorization||next.credits>previous.credits||next.reserveCredits>previous.reserveCredits||(next.authorizedCredits??next.reserveCredits)>(previous.authorizedCredits??previous.reserveCredits));
+            if((previous?!changed:next.mode!=="api-cost-plus"))return;
+            const message=next.mode==="api-cost-plus"
+                ?`本次估算 ${next.credits} 积分，预留 ${next.reserveCredits} 积分，最多授权 ${next.authorizedCredits ?? next.reserveCredits} 积分。按实际完整 API 成本与已锁定倍率结算；费用未知时待核账。是否提交？`
+                :`本次报价更新为 ${next.credits} 积分，预留 ${next.reserveCredits} 积分，最多授权 ${next.authorizedCredits ?? next.reserveCredits} 积分，计费模式 ${next.mode??"fixed"}，是否执行？`;
+            if(!window.confirm(message))throw new Error("已取消提交");
+        };
+        const refreshQuote=async()=>{
+            const previous=displayed!;
+            const {canvas,...selection}=previous.selection!;
             const refreshHeaders=new Headers(await authHeader());refreshHeaders.set("content-type","application/json");
             for(const name of ["x-naumi-workspace","x-naumi-project-context"])if(headers.has(name))refreshHeaders.set(name,headers.get(name)!);
-            if(canvas)refreshHeaders.set("x-naumi-canvas","1");
+            if(canvas||headers.get("x-naumi-canvas")==="1")refreshHeaders.set("x-naumi-canvas","1");
             const response=await fetch("/api/billing/quote",{method:"POST",headers:refreshHeaders,body:JSON.stringify(selection)});
             const next=await response.json();if(!response.ok)throw new Error(next.error||"报价暂不可用");
-            if(next.credits>displayed.credits&&!window.confirm(`本次报价更新为 ${next.credits} 积分，是否执行？`))throw new Error("已取消提交");
-            displayed={...next,selection:displayed.selection} as PublicQuote;
+            displayed={...next,selection:previous.selection} as PublicQuote;
             headers.set("x-naumi-image-quote",displayed.quote!.id);
             headers.set("x-naumi-billing-version",String(displayed.version));
             headers.set("x-naumi-billing-credits",String(displayed.mode==="api-cost-plus"?displayed.authorizedCredits??displayed.reserveCredits:displayed.credits));
             if(displayed.modelVersion)headers.set("x-naumi-model-version",String(displayed.modelVersion));
+            return previous;
+        };
+        let previous:PublicQuote|undefined;
+        // Existing operations must reach the server's receipt-first path even if
+        // their quote expired or the selected model has since been unlisted.
+        if(!retry&&displayed.quote&&Date.parse(displayed.quote.expiresAt)<=Date.now()+1000&&displayed.selection)
+            previous=await refreshQuote();
+        if(displayed.mode==="api-cost-plus")confirmQuote(displayed);
+        else if(previous)confirmQuote(displayed,previous);
+        const post=()=>{
+            // Scope can change during hashing, quote refresh, or response JSON.
+            // Keep this synchronous guard immediately adjacent to every paid POST.
+            onIdentity?.(id);
+            return fetch(url, { ...frozenIntentBody(init,id), headers });
+        };
+        let response=await post();
+        if(response.status===409&&displayed.quote&&displayed.selection){
+            const rejection=await response.clone().json().catch(()=>({}));
+            if(rejection?.code==="IMAGE_QUOTE_EXPIRED"&&rejection.accepted===false){
+                previous=await refreshQuote();
+                confirmQuote(displayed,previous);
+                response=await post(); // Same operation, at most one proven-unaccepted retry.
+            }
         }
-        const response = await fetch(url, { ...frozenIntentBody(init,id), headers });
         if (response.ok && response.body && response.headers.get("content-type")?.includes("text/event-stream")) {
             const decoder = new TextDecoder(); let buffer = "";
             const body = response.body.pipeThrough(new TransformStream<Uint8Array,Uint8Array>({ transform(chunk, controller) {
@@ -164,16 +197,16 @@ export function BillingProvider({ children }: {
                 const events=buffer.split("\n\n"); buffer=events.pop()||"";
                 for(const event of events) if(event.split("\n").includes("event: done")) {
                     const data=event.split("\n").find(line=>line.startsWith("data: "));
-                    try { if(data&&JSON.parse(data.slice(6)).ok===true){ invalidateBrowserData(user?.email); intents.current.delete(key); try{localStorage.removeItem(key);}catch{} } } catch {}
+                    try { if(data&&JSON.parse(data.slice(6)).ok===true){ invalidateBrowserData(user?.email); clearIntent(); } } catch {}
                 }
             } }));
             return new Response(body,{status:response.status,headers:response.headers});
         }
-        const data=await response.clone().json().catch(()=>({}));
-        if(response.ok||response.status<500&&data.code!=="OPERATION_PENDING"&&data.code!=="OPERATION_CONFLICT"){intents.current.delete(key);try{localStorage.removeItem(key);}catch{}}
-        if (response.status === 409 && data.code === "PRICE_CHANGED")
+        const data=await response.clone().json().catch(()=>null);
+        if(data&&data.code!=="OPERATION_PENDING"&&data.code!=="OPERATION_CONFLICT"&&(response.ok||response.status<500&&(!displayed.quote||data.accepted===false)))clearIntent();
+        if (response.status === 409 && data?.code === "PRICE_CHANGED")
             await refresh();
-        if (response.status === 409 && data.code === "MODEL_CHANGED") window.dispatchEvent(new Event(MODEL_CATALOG_REFRESH));
+        if (response.status === 409 && data?.code === "MODEL_CHANGED") window.dispatchEvent(new Event(MODEL_CATALOG_REFRESH));
         return response;
     }, [refresh,user?.email,toast]);
     const quoteAndSubmit = useCallback(async (url: string, init: RequestInit, input: QuoteInput, beforeSubmit?: () => void) => {

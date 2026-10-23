@@ -1,0 +1,112 @@
+Naumi image billing client: local module completion, 2026-10-23
+
+Branch: t3/image-billing-client-fix
+Base: 9f049b07b4219b46ef8a5cb51bc49a4a0ad33e26
+Workspace: C:/Users/13357/.t3/worktrees/naumi/t3-80fe3532
+Status: LOCAL_COMMITTED_CANDIDATE; parent integrates server contract and performs full-dependency tsc.
+No push, SSH, deployment, or supplier calls were performed.
+
+Changed branches/fields
+1. submit/confirmQuote compares server quote mode, authorization, credits (estimate), reserveCredits,
+   and authorizedCredits (falling back to reserveCredits). New expired operations confirm the FINAL
+   contract, not the superseded contract. An unchanged fixed contract gets no extra popup.
+   Existing API-cost-plus consent is preserved, including after a cancelled attempt; an operation
+   ID by itself is not treated as evidence of user consent. No client tariff calculation or duplicate
+   current-version/amount validation was introduced.
+2. submit/retry records whether an operation ID already existed in memory, storage, or headers.
+   Existing IDs submit the supplied original quote and same operation first, without fetching a
+   replacement quote. Only HTTP 409 + code IMAGE_QUOTE_EXPIRED + accepted strictly false permits
+   one refresh and one further POST with the SAME operation ID. Missing/true/string accepted,
+   pending/conflict, 5xx, network failure, malformed JSON, and a second expiration never auto-retry.
+3. submit/post invokes onIdentity(id) synchronously immediately before every business POST, after
+   hashing, quote authentication/fetch/JSON, or rejected-response JSON waits.
+4. Refresh retains original workspace/project/canvas headers and canvas selection. Recovery keeps
+   the original key on uncertain/pending responses, including 202 OPERATION_PENDING and malformed
+   success JSON. clearIntent deletes only the matching operation. client-intent.ts is unchanged.
+5. Server requests/image-quotes/plan/dispatch, server pricing, owner checks, ledger and settlement
+   remain outside this commit. Parent supplies receipt-first IMAGE_QUOTE_EXPIRED accepted:false.
+
+Artifacts (all reopened after generation)
+MODIFIED_FILE=C:/Users/13357/.t3/worktrees/naumi/t3-80fe3532/output/image-billing-client-fix-20261023/MODIFIED_FILE.tsx
+DIFF_FILE=C:/Users/13357/.t3/worktrees/naumi/t3-80fe3532/docs/changes/image-billing-client-20261023/DIFF_FILE.patch
+VERIFICATION=C:/Users/13357/.t3/worktrees/naumi/t3-80fe3532/docs/changes/image-billing-client-20261023/VERIFICATION.txt
+ROLLBACK=C:/Users/13357/.t3/worktrees/naumi/t3-80fe3532/docs/changes/image-billing-client-20261023/ROLLBACK.sh
+Working source=C:/Users/13357/.t3/worktrees/naumi/t3-80fe3532/src/lib/billing/client.tsx
+Baseline SHA256=cad02f4661245560e8e1ac532de59b15c4ab08969ba7c147a53d322e3f1c1bd5
+Modified source/artifact SHA256=920add1b55e5f6e59c197531a4698076c30156736dbbee3914771189a432692d
+
+Execution commands below use PowerShell from the workspace root. Inputs are local React SSR + VM
+fixtures executing the actual BillingProvider and client-intent/browser-crypto code; only auth and
+API responses are fixtures. No browser/supplier/production acceptance is claimed.
+
+BASELINE
+Command:
+$env:BILLING_CLIENT_SOURCE='output/image-billing-client-fix-20261023/BASELINE_FILE.tsx'; node --import tsx scripts/verify-image-billing-client.ts
+Input: byte-preserved base client; 37 scenarios including original 19 checks, final consent,
+receipt-first model-unlisted, strict rejection acceptance, scope changes, and unknown outcomes.
+Literal final output:
+IMAGE_BILLING_CLIENT=FAIL TESTS=37 PASSED=5 FAILED=32 CHECKS=39 ACTUAL_PROVIDER=1 SUPPLIER_CALLS=0
+Exit: 1 (expected regression reproduction).
+Full output: output/image-billing-client-fix-20261023/baseline.log
+
+MODIFIED
+Command:
+Remove-Item Env:BILLING_CLIENT_SOURCE; node --import tsx scripts/verify-image-billing-client.ts
+Input: modified src/lib/billing/client.tsx; same 37 scenarios, original 19 checks retained.
+Literal final output:
+IMAGE_BILLING_CLIENT=PASS TESTS=37 PASSED=37 FAILED=0 CHECKS=179 ACTUAL_PROVIDER=1 SUPPLIER_CALLS=0
+Exit: 0.
+Full output: output/image-billing-client-fix-20261023/modified.log
+
+ROLLBACK (separate copy only; working source stays modified)
+Command:
+Copy-Item src/lib/billing/client.tsx output/image-billing-client-fix-20261023/ROLLBACK_COPY.tsx
+& 'D:/DEV/Git/bin/bash.exe' docs/changes/image-billing-client-20261023/ROLLBACK.sh output/image-billing-client-fix-20261023/ROLLBACK_COPY.tsx
+Input: another copy of the modified source. Script reads the fixed base commit, verifies its hash,
+then replaces only its explicit target. Executable bit is registered as 100755.
+Literal output:
+ROLLBACK=PASS SHA256=cad02f4661245560e8e1ac532de59b15c4ab08969ba7c147a53d322e3f1c1bd5
+Exit: 0.
+
+Restored legacy behavior command:
+$env:BILLING_CLIENT_SOURCE='output/image-billing-client-fix-20261023/ROLLBACK_COPY.tsx'; node --import tsx scripts/verify-image-billing-client.ts --legacy-only
+Literal output:
+PASS legacy-19
+IMAGE_BILLING_CLIENT=PASS TESTS=1 PASSED=1 FAILED=0 CHECKS=19 ACTUAL_PROVIDER=1 SUPPLIER_CALLS=0
+Exit: 0.
+
+Restored regression behavior command (same restored input):
+node --import tsx scripts/verify-image-billing-client.ts
+Literal final output:
+IMAGE_BILLING_CLIENT=FAIL TESTS=37 PASSED=5 FAILED=32 CHECKS=39 ACTUAL_PROVIDER=1 SUPPLIER_CALLS=0
+Exit: 1 (exact baseline behavior restored).
+Logs: output/image-billing-client-fix-20261023/rollback.log, rollback-legacy.log, rollback-regression.log
+Working source and MODIFIED_FILE remain at modified SHA256 above.
+
+TypeScript
+Command: node node_modules/typescript/bin/tsc --noEmit --pretty false
+Exit: 2. This worktree uses E:/Workspace/naumi/node_modules; 25 existing missing-three/React-ref
+diagnostics were preserved, not patched. No diagnostic points to client.tsx or the added test.
+Output: output/image-billing-client-fix-20261023/tsc.log
+Command: node output/image-billing-client-fix-20261023/compare-types.cjs
+Input: same parsed tsconfig/compiler options/dependencies; CompilerHost substitutes only original
+client bytes for the baseline pass, then compares every normalized diagnostic with modified source.
+Literal output:
+TYPECHECK_BASELINE=25 MODIFIED=25 NEW_DIAGNOSTICS=0 RESULT=PASS
+Exit: 0.
+Output: output/image-billing-client-fix-20261023/typecheck-comparison.log and typecheck-comparison.json
+Parent will run integrated full tsc with its complete existing dependency junction.
+
+Recovery-key compatibility
+Command: node --import tsx scripts/verify-browser-billing-crypto.ts
+Literal output:
+HTTP_INTENT=PASS SHA256=PASS UUID_V4=PASS RETRY_IDENTITY=PASS FILE_FINGERPRINT=PASS
+HTTPS_PARITY=PASS EXISTING_INTENT_KEYS=UNCHANGED
+NO_CSPRNG=CONTROLLED_ERROR NO_WEAK_RANDOM_FALLBACK=PASS
+Exit: 0. Output: output/image-billing-client-fix-20261023/crypto.log
+
+Remaining / handoff
+- Parent integrates this commit with its server accepted:false contract and performs full tsc.
+- No changes to recovery-key derivation or existing cached-versus-explicit-op precedence; those are
+  separate pre-existing review boundaries, not silently changed here.
+- This module is local implementation/fixture validation only; no server or business acceptance.
