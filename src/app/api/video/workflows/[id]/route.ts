@@ -1,3 +1,5 @@
+import {withWorkflowContinuation} from "@/lib/video/workflow-creation";
+import {ensureVideoWorkflowSchema} from "@/lib/video/workflow";
 import {NextResponse} from "next/server";
 import {authenticatedEmail} from "@/lib/request-auth";
 import {sameSiteBiMutation} from "@/lib/bi/access";
@@ -16,5 +18,5 @@ export async function POST(request:Request,context:Context){const email=await au
   try{const parsed=z.discriminatedUnion("action",[z.strictObject({action:z.literal("resume")}),z.strictObject({action:z.literal("cancel")}),
       z.strictObject({action:z.literal("confirm"),nodeId:z.string().min(1).max(100),billingVersion:z.number().int().positive(),billingCredits:z.number().finite().nonnegative()})]).safeParse(JSON.parse(await readBounded(new Response(request.body),16384)));
     if(!parsed.success)return NextResponse.json({error:"工作流操作无效"},{status:422});const body=parsed.data,id=(await context.params).id;
-    const run=body.action==="cancel"?await cancelVideoWorkflow(email,id):body.action==="confirm"?await confirmVideoWorkflowNode(email,id,body.nodeId,{version:body.billingVersion,credits:body.billingCredits}):await resumeVideoWorkflow(id,email);
+    await ensureVideoWorkflowSchema();const run=await withWorkflowContinuation(request,email,id,async()=>body.action==="cancel"?await cancelVideoWorkflow(email,id):body.action==="confirm"?await confirmVideoWorkflowNode(email,id,body.nodeId,{version:body.billingVersion,credits:body.billingCredits}):await resumeVideoWorkflow(id,email));
     return NextResponse.json({ok:true,run});}catch(error){return failure(error);}}

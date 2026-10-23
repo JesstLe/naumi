@@ -1,9 +1,10 @@
 import { imagegenUseCase, type ImagegenUseCase } from "./catalog";
 import type { ImagegenRequest, Intent } from "./types";
+import { resolveBackgroundInstructions } from "./background-intent";
 
 // Only the user's current request is parsed. Quoted artwork text is not an instruction.
 function instructions(prompt:string) {
-  return prompt.replace(/```[\s\S]*?```/g," ").replace(/`[^`]*`|“[^”]*”|‘[^’]*’|「[^」]*」|『[^』]*』|"[^"\n]*"|'[^'\n]*'/g," ")
+  return prompt.replace(/```[\s\S]*?```/g," ").replace(/`[^`]*`|“[^”]*”|‘[^’]*’|「[^」]*」|『[^』]*』|"[^"\n]*"|(?<!\w)'[^'\n]*'(?!\w)/g," ")
     .split(/[，,。.;；!！?？\n]+/).map(s=>s.trim()).filter(Boolean)
     .filter(s=>!/(是什么意思|是什么|区别|如何理解|解释一下|能不能|能否|是否支持|(?:支持|可以).{0,30}(?:吗|么)$|what\s+(?:does|is)|difference\s+between|explain\b|(?:can|do|does)\s+(?:you|it|this|the\s+model)\s+(?:support|produce|output))/i.test(s));
 }
@@ -29,16 +30,8 @@ const aliases:readonly [ImagegenUseCase,RegExp][]=[
   ["sketch-to-render",/草图转渲染|渲染草图|sketch.to.render/i],
 ];
 const negative=/不要|无需|别|不需要|禁止|\b(?:don't|do not|no need|without)\b/i;
-function clauseBackground(clause:string):Intent["background"] {
-  if(/不要不透明|非不透明/i.test(clause))return "transparent";
-  if(/(?:不要|别|无需|不需要|禁止).{0,8}(?:透明|无背景|没有背景|抠图|(?:去掉|移除|去除).{0,8}背景)/i.test(clause))return "opaque";
-  if(/不要不透明|非不透明|无背景|没有背景|\bno background\b/i.test(clause))return "transparent";
-  if(/(?:不要|别|无需|不需要).{0,8}(?:透明|抠图|(?:去掉|移除|去除).{0,8}背景)|非透明|不透明|保留背景|白底|(?:纯)?白色背景|opaque|white background|(?:don't|do not).{0,12}(?:remove|transparent)/i.test(clause))return "opaque";
-  if(/透明(?:底|背景)|背景(?:为|是|要)?透明|transparent\s+(?:background|png)|抠图|(?:移除|去掉|去除|删除).{0,10}背景|remove.{0,10}background/i.test(clause))return "transparent";
-  return null;
-}
 export function resolveImagegenIntent(request:ImagegenRequest):Intent {
-  const clauses=instructions(request.prompt), backgrounds=new Set(clauses.map(clauseBackground).filter((v):v is "transparent"|"opaque"=>v!==null));
+  const clauses=instructions(request.prompt), { backgrounds, cutout }=resolveBackgroundInstructions(clauses);
   const conflicts:string[]=[];
   if(backgrounds.size>1)conflicts.push("提示词同时要求透明和不透明背景，请明确保留哪一种");
   const promptBackground=backgrounds.size===1?[...backgrounds][0]:null;
@@ -51,7 +44,6 @@ export function resolveImagegenIntent(request:ImagegenRequest):Intent {
   const useCase=request.useCase??candidates[0]?.[0];
   const target=request.inputs.some(i=>i.role==="edit-target");
   let operation:Intent["operation"]=request.mode==="batch"?"generate":request.mode;
-  const cutout=positiveClauses.some(s=>/抠图|(?:移除|去掉|去除|删除).{0,10}背景|remove.{0,10}background/i.test(s));
   if(cutout&&request.mode!=="postprocess")operation="cutout";
   else if(imagegenUseCase(useCase)?.mode==="edit"&&target&&request.mode!=="postprocess")operation="edit";
   if((operation==="cutout"||imagegenUseCase(useCase)?.mode==="edit")&&!target)conflicts.push("该编辑要求需要一个编辑目标，请选择要修改的图片");

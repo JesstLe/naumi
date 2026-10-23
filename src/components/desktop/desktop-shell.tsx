@@ -11,6 +11,7 @@ import { authHeader } from "@/lib/supabase";
 import { DesktopTransport } from "./desktop-transport";
 import { useFeatureAccess } from "@/lib/feature-access/client";
 import { desktopHref } from "@/lib/desktop/routes";
+import {WorkspaceSelector} from '@/components/saas/workspace-selector';
 const NAV = [ {href:"/desktop", label:"工作台", Icon:LayoutGrid}, {href:"/desktop/canvas",label:"无限画布",Icon:Network}, {href:"/desktop/suite",label:"一键套图",Icon:Layers}, {href:"/desktop/works",label:"我的素材",Icon:Folder} ];
 export function DesktopShell({children}: {children:React.ReactNode}) {
   const path = usePathname() || "/desktop";
@@ -73,7 +74,7 @@ export function DesktopShell({children}: {children:React.ReactNode}) {
         <button className="dt-user" onClick={()=>user?setAccountOpen(!accountOpen):openAuth("sign-in")} aria-expanded={accountOpen}><span className="dt-avatar">{(user?.name || "N").slice(0,1).toUpperCase()}</span><span><b>{user?.name || brand.name}</b><small>{user ? `${remaining.toLocaleString()} 积分` : "登录账户"}</small></span></button>
       </div>
     </aside>
-    <div className="dt-main"><header className="dt-topbar"><div className="dt-breadcrumb"><button className="dt-mobile-menu" onClick={()=>setMobile(true)} aria-label="打开导航"><Menu size={18}/></button><Link href="/desktop">工作空间</Link><span>/</span><b>{current}</b></div>{can("agent") && <Link className="dt-top-create" href="/desktop/create"><Plus size={15}/><span>新建创作</span></Link>}</header>
+    <div className="dt-main"><header className="dt-topbar"><div className="dt-breadcrumb"><button className="dt-mobile-menu" onClick={()=>setMobile(true)} aria-label="打开导航"><Menu size={18}/></button><Link href="/desktop">工作空间</Link><span>/</span><b>{current}</b></div><WorkspaceSelector/>{can("agent") && <Link className="dt-top-create" href="/desktop/create"><Plus size={15}/><span>新建创作</span></Link>}</header>
       {(!ready || verifiedEmail===undefined) ? <div className="dt-gate" role="status">加载工作空间…</div> : !authenticated ? <div className="dt-gate"><LayoutGrid size={28}/><h1>登录工作空间</h1><button className="dt-button" onClick={()=>openAuth("sign-in")}>登录</button></div> : !accessReady ? <div className="dt-gate" role="status">加载权限…</div> : !canPage(path) ? <div className="dt-gate"><h1>此页面尚未授权</h1><Link className="dt-button" href="/desktop/account">返回账户</Link></div> : <div className={`dt-content ${path==="/desktop/canvas" ? "dt-canvas" : ""}`} key={user!.email}>{children}</div>}
     </div>
   </div>;

@@ -21,7 +21,8 @@ async function main(){
   const before=(await pool.query('SELECT email,role,password_hash,credits_total,credits_used,account_expires_at,management_version FROM app_users ORDER BY email')).rows;
   const oldCookie=new Request('http://fixture.test',{headers:{cookie:cookie(intern,Date.now()-10_000)}});
   const activation=await server.activateEnterprise(admin,root,director,[sub]);assert.deepEqual(activation,{ok:true,replayed:false,permanent:3,interns:1});assert.equal((await server.activateEnterprise(admin,root,director,[sub])).replayed,true);
-  const snapshot=await server.enterpriseSnapshot({email:owner,admin:false},root);assert.equal(snapshot.members.length,4);assert.equal(snapshot.members.filter(m=>m.employment==='permanent').every(m=>m.account_expires_at===null),true);assert.equal(snapshot.members.find(m=>m.email===intern)!.employment,'intern');
+  const snapshot=await server.enterpriseSnapshot({email:owner,admin:false},root);assert.equal(snapshot.members.length,4);assert.equal(snapshot.members.filter(m=>m.employment==='permanent').every(m=>m.membership_expires_at===null),true);assert.equal(snapshot.members.find(m=>m.email===intern)!.employment,'intern');
+  assert.deepEqual((await pool.query('SELECT email,role,password_hash,credits_total,credits_used,account_expires_at,management_version FROM app_users ORDER BY email')).rows,before);
   assert.equal((await read('')).status,401);assert.equal((await read(other)).status,403);assert.equal((await read(employee)).status,403);
   const d=await(await read(director)).json(),l=await(await read(lead)).json();assert.equal(d.members.length,4);assert.equal(l.members.length,2);assert(!JSON.stringify(l).includes(employee));
   console.log('HIERARCHY=PASS OWNER=4 DIRECTOR=4 LEAD_SELF_AND_INTERNS=2 CROSS_ENTERPRISE=403 EMPLOYEE_ENTRY=403 PERMANENT_NULL=3 INTERN_EXPIRY=PRESERVED');
@@ -49,8 +50,8 @@ async function main(){
   assert.equal((await api.POST(request(lead,'/api/enterprise',internCmd))).status,200);
   console.log('MUTATIONS=PASS UPWARD_SELF_OUT_OF_SCOPE=403 CSRF=403 ROLE_OWNER_ONLY=403 CYCLE=409 PERMANENT_EXPIRY=400 INTERN_NULL=400 CAP=400 CONFLICT=409 REPLAY=200');
   const current=await server.enterpriseSnapshot({email:owner,admin:false},root),m=current.members.find(x=>x.email===intern)!;
-  await server.mutateEnterprise({email:lead,admin:false},{id:randomUUID(),enterpriseId:root,email:intern,expectedVersion:m.version,expectedUserVersion:m.management_version,action:'reset-password',password:'fixture-reset-password'});
-  assert.equal(await native.activeNativeUserEmail(oldCookie),null);
+  await assert.rejects(server.mutateEnterprise({email:lead,admin:false},{id:randomUUID(),enterpriseId:root,email:intern,expectedVersion:m.version,expectedUserVersion:m.management_version,action:'reset-password',password:'fixture-reset-password'}),/不允许修改全站登录密码/);
+  assert.equal(await native.activeNativeUserEmail(oldCookie),intern);
   const logs=JSON.stringify((await pool.query('SELECT * FROM app_enterprise_audit')).rows);assert(!logs.includes('fixture-reset-password'));assert(!logs.includes('scrypt$'));
   for(const section of ['conversations','ledger','audit']){assert.equal((await content.GET(request(owner,`/api/enterprise/content?enterpriseId=${root}&email=${intern}&section=${section}`))).status,400);assert.equal((await legacy.GET(request(lead,`/api/team/users?teamId=${sub}&email=${intern}&section=${section}`))).status,403)}
   assert.equal((await media.GET(request(lead,`/api/enterprise/media?enterpriseId=${root}&email=${employee}&id=guess`))).status,403);
@@ -59,7 +60,7 @@ async function main(){
   assert.equal((await read(lead)).status,409);
   await pool.query("UPDATE app_enterprise_roles SET manage_members=true,view_records=true WHERE enterprise_id=$1 AND id=$2",[root,role.id]);
   await pool.query('UPDATE app_team_access_grants SET enabled=false WHERE email=$1',[owner]);assert.equal((await read(director)).status,403);await pool.query('UPDATE app_team_access_grants SET enabled=true WHERE email=$1',[owner]);
-  console.log('CONTENT=PASS ONLY_ARTWORKS_TASKS=ENFORCED LEGACY_BYPASS=403 MEDIA_SCOPE=403 PASSWORD_SESSION_REVOKED=PASS AUDIT_REDACTED=PASS ROOT_GRANT_PAUSE=403');
+  console.log('CONTENT=PASS ONLY_ARTWORKS_TASKS=ENFORCED LEGACY_BYPASS=403 MEDIA_SCOPE=403 GLOBAL_PASSWORD_DENIED=PASS PERSONAL_SESSION_PRESERVED=PASS AUDIT_REDACTED=PASS ROOT_GRANT_PAUSE=403');
   // Exact rollback of this fixture only: code/schema deactivation does not touch media or money.
   await pool.query('DELETE FROM app_enterprise_audit WHERE enterprise_id=$1',[root]);await pool.query('DELETE FROM app_enterprise_members WHERE enterprise_id=$1',[root]);await pool.query('DELETE FROM app_enterprise_roles WHERE enterprise_id=$1',[root]);await pool.query('DELETE FROM app_enterprise_settings WHERE team_id=$1',[root]);
   for(const u of before)await pool.query('UPDATE app_users SET account_expires_at=$2,management_version=$3,password_hash=$4 WHERE email=$1',[u.email,u.account_expires_at,u.management_version,u.password_hash]);

@@ -7,6 +7,7 @@ import {canReadMedia,getMediaAsset} from "../media-assets";
 import {readManagedObject} from "../storage";
 import {ModelConfigError} from "../model-config/types";
 import {probeMedia} from "./media";
+import {probeStaticImage} from "./static-image-probe";
 import type {MediaProbe} from "./media-job-schema";
 
 export type FrozenMediaInput={key:string;artworkId:string|null;sha256:string;bytes:number;mimeType:string;extension:string;probe:MediaProbe;groupId:string|null};
@@ -26,7 +27,13 @@ export async function verifiedOwnedMedia(actor:string,key:string,artworkId:strin
   if(!/^(?:video|audio|image)\//.test(declaredMime))throw new ModelConfigError("INVALID_MEDIA_STREAM","素材真实类型无法确认",422);
   const extension=mediaExtension(declaredMime);await ensureMediaInspectionSchema();
   let probe=(await getPool().query("SELECT probe FROM app_video_media_probes WHERE storage_key=$1 AND sha256=$2 AND decoder_version=1",[key,sha256])).rows[0]?.probe as MediaProbe|undefined;
-  if(!probe){probe=await probeMedia(object.bytes,extension);await recordMediaProbe(key,sha256,probe);}
+  if(!probe){
+    // decoder_version=1 means the complete stream/pixels were actually decoded.
+    // Static sharp results satisfy that contract; old metadata-only rows stay 0.
+    probe=declaredMime.startsWith("image/")?await probeStaticImage(object.bytes,declaredMime)??undefined:undefined;
+    probe??=await probeMedia(object.bytes,extension);
+    await recordMediaProbe(key,sha256,probe);
+  }
   const declaredKind=declaredMime.split("/",1)[0] as "video"|"audio"|"image";
   const mimeType=inspectedMediaMime(probe,declaredKind==="video"&&!probe.videoCodec&&probe.audioCodecs.length?"audio":declaredKind,declaredMime);
   const art=artworkId?(await listArtworksByIds(actor,[artworkId]))[0]:undefined;

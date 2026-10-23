@@ -1,4 +1,6 @@
 import "server-only";
+import {bindActualCreationProject,assertCreationProjectInput,currentCreationContext} from "../saas/creation-context";
+import {assertCreationObjectRefs,acceptCreationTx,creationLinkTx,completeCreationTx} from "../saas/creation-writer";
 import {createHash} from "node:crypto";
 import {getPool,listArtworksByIds,getVideoTask,type ArtworkRecord} from "../db";
 import {canonicalConfig} from "../model-config/repository";
@@ -34,6 +36,9 @@ async function mayCreateOwnRoot(actor:string,input:VideoNodeWrite,key:string){
 }
 export async function authorizeNodeInputs(actor:string,input:VideoNodeWrite){
   const config=input.config;
+  const refs=[...(config?.references||[]),...(config?.elements||[]).flatMap(e=>e.references)];
+  await assertCreationObjectRefs(actor,refs.map(r=>r.artworkId).filter((id):id is string=>!!id));
+  for(const shot of config?.shots||[])if(shot.textNodeId){const row=(await getPool().query("SELECT project_key FROM app_canvas_text_nodes WHERE email=$1 AND id=$2",[actor,shot.textNodeId.replace(/^text:/,"")])).rows[0];if(row)await assertCreationProjectInput(actor,row.project_key);}
   if(config?.workflowTaskId&&!await ownedVideoWorkflowSource(actor,config.workflowTaskId))throw new ModelConfigError("VIDEO_WORKFLOW_UNAVAILABLE","历史工作流不存在或无权访问",404);
   if(config?.references?.length||config?.elements?.length){await authorizeVideoReferences(actor,{source:"canvas",providerId:config.providerId||"managed-video",modelId:config.modelId||"",prompt:config.prompt||"",durationSeconds:config.durationSeconds??4,
     references:config.references||[],elements:config.elements,idempotencyKey:input.operationId});}
@@ -41,10 +46,15 @@ export async function authorizeNodeInputs(actor:string,input:VideoNodeWrite){
     if(ref.kind==="text"){
       if(ref.nodeId.startsWith("inline:"))continue;
       const id=ref.nodeId.replace(/^text:/,"");
-      if(!(await getPool().query("SELECT 1 FROM app_canvas_text_nodes WHERE email=$1 AND id=$2",[actor,id])).rowCount)throw new ModelConfigError("VIDEO_INPUT_UNAVAILABLE","引用文字节点不存在或无权访问",404);
+      const text=(await getPool().query("SELECT project_key FROM app_canvas_text_nodes WHERE email=$1 AND id=$2",[actor,id])).rows[0];
+      if(!text)throw new ModelConfigError("VIDEO_INPUT_UNAVAILABLE","引用文字节点不存在或无权访问",404);
+      await assertCreationProjectInput(actor,text.project_key);
     }else{
       const nodeId=ref.nodeId.replace(/^(?:image|video|audio):/,""),art=(await listArtworksByIds(actor,[nodeId]))[0];
-      if(!art&&!await getVideoNode(actor,nodeId))throw new ModelConfigError("VIDEO_INPUT_UNAVAILABLE","引用媒体节点不存在或无权访问",404);
+      const video=art?null:await getVideoNode(actor,nodeId);
+      if(video)await assertCreationProjectInput(actor,video.projectKey);
+      await assertCreationObjectRefs(actor,[nodeId]);
+      if(!art&&!video)throw new ModelConfigError("VIDEO_INPUT_UNAVAILABLE","引用媒体节点不存在或无权访问",404);
     }
   }
 }
@@ -53,15 +63,23 @@ export async function saveVideoNode(actorRaw:string,raw:unknown):Promise<CanvasV
   if(!parsed.success)throw new ModelConfigError("INVALID_VIDEO_NODE","视频节点字段无效",422,parsed.error.issues.map(issue=>issue.path.join(".")));
   const input=parsed.data;await ensureVideoNodeSchema();const existing=await getVideoNode(actor,input.id,true),key=input.projectKey||existing?.projectKey||`tree:${input.id}`;
   try{await authorizeVideoProject(actor,key);}catch(error){if(!(error instanceof ModelConfigError)||!await mayCreateOwnRoot(actor,input,key))throw error;}
-  await authorizeNodeInputs(actor,input);
   const client=await getPool().connect();
-  try{await client.query("BEGIN");const node=await saveVideoNodeTx(client,actor,input,key);await client.query("COMMIT");return node;}
+  try{await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${actor}`]);
+    const physical=(await client.query(`SELECT 1 FROM app_canvas_video_projects WHERE email=$1 AND project_key=$2
+      UNION ALL SELECT 1 FROM app_canvas_video_nodes WHERE email=$1 AND project_key=$2
+      UNION ALL SELECT 1 FROM app_canvas_text_nodes WHERE email=$1 AND project_key=$2
+      UNION ALL SELECT 1 FROM app_artworks WHERE email=$1 AND (($3='tree' AND (id=$4 OR group_id=$4)) OR ($3='batch' AND batch_id=$4)) LIMIT 1`,[actor,key,key.split(":")[0],key.slice(key.indexOf(":")+1)])).rowCount;
+    await bindActualCreationProject(actor,key,{tx:client,newRoot:!physical&&!existing&&input.expectedRevision===0&&key===`tree:${input.id}`});
+    await authorizeNodeInputs(actor,input);
+    const node=await saveVideoNodeTx(client,actor,input,key);await client.query("COMMIT");return node;}
   catch(error){await client.query("ROLLBACK");throw error;}finally{client.release();}
 }
 export async function copyVideoNodes(actor:string,ids:string[],targetProject:string,operationId:string){
   actor=actor.toLowerCase();
   await authorizeVideoProject(actor,targetProject);if(!ids.length||ids.length>100||new Set(ids).size!==ids.length)throw new ModelConfigError("INVALID_VIDEO_NODE_COPY","请选择不重复的视频节点",422);
-  const originals:CanvasVideoNode[]=[];for(const id of ids){const node=await getVideoNode(actor,id);if(!node)throw new ModelConfigError("VIDEO_NODE_UNAVAILABLE","视频节点不存在",404);originals.push(node);}
+  await bindActualCreationProject(actor,targetProject);
+  const originals:CanvasVideoNode[]=[];for(const id of ids){const node=await getVideoNode(actor,id);if(!node)throw new ModelConfigError("VIDEO_NODE_UNAVAILABLE","视频节点不存在",404);await assertCreationProjectInput(actor,node.projectKey);await assertCreationObjectRefs(actor,[node.id]);originals.push(node);}
   for(const node of originals)await authorizeNodeInputs(actor,{id:node.id,expectedRevision:node.revision,operationId,config:node.config,inputs:node.inputs});
   const mapping=new Map(originals.map(node=>[node.id,`vnode-copy-${createHash("sha256").update(`${operationId}:${node.id}`).digest("hex").slice(0,40)}`]));
   const digest=createHash("sha256").update(canonicalConfig({ids,targetProject})).digest("hex"),client=await getPool().connect();
@@ -69,6 +87,8 @@ export async function copyVideoNodes(actor:string,ids:string[],targetProject:str
     await client.query("BEGIN");await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-copy:${actor}:${operationId}`]);
     const previous=(await client.query("SELECT input_digest,result FROM app_canvas_video_node_copies WHERE email=$1 AND operation_id=$2",[actor,operationId])).rows[0];
     if(previous){if(previous.input_digest!==digest)throw new ModelConfigError("NODE_OPERATION_CONFLICT","复制操作编号已用于另一请求",409);await client.query("COMMIT");return previous.result as {nodes:CanvasVideoNode[];idMap:Record<string,string>};}
+    const scope=currentCreationContext(),record=await acceptCreationTx(client,'canvas-video-copy',operationId,actor,{prompt:scope?.requestText});
+    for(const node of originals)if(record)await creationLinkTx(client,record,actor,'video-node',node.id,'input');
     const nodes:CanvasVideoNode[]=[];
     for(const node of originals){
       const bytes=createHash("sha256").update(`${operationId}:node:${node.id}`).digest().subarray(0,16);bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;
@@ -78,6 +98,7 @@ export async function copyVideoNodes(actor:string,ids:string[],targetProject:str
         inputs:node.inputs.map(input=>{const prefix=input.nodeId.match(/^(?:video|image|audio):/)?.[0]||"",id=input.nodeId.slice(prefix.length);return {...input,nodeId:mapping.has(id)?`${prefix}${mapping.get(id)}`:input.nodeId};})});
       nodes.push(await saveVideoNodeTx(client,actor,copied,targetProject));
     }
+    if(record){for(const node of nodes)await creationLinkTx(client,record,actor,'video-node',node.id,'output');await creationLinkTx(client,record,actor,'no-charge',operationId,'explicit-no-charge');await completeCreationTx(client,record,actor,'succeeded',{summary:'视频节点复制已完成'});}
     const result={nodes,idMap:Object.fromEntries(mapping)};
     await client.query("INSERT INTO app_canvas_video_node_copies(email,operation_id,input_digest,result) VALUES($1,$2,$3,$4::jsonb)",[actor,operationId,digest,JSON.stringify(result)]);
     await client.query("COMMIT");return result;

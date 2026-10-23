@@ -2,6 +2,8 @@ import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runti
 import { runPostprocess } from "./media-postprocess";
 import { resolveConfiguredImageQuality } from "@/lib/model-config/image-quality";
 import "server-only";
+import {withFrozenCreation,frozenCreationScope,currentCreationContext} from './saas/creation-context';
+import {creationTransaction,addCreationAssetTx} from './saas/creation-writer';
 import { currentModelExecution, currentExecutionBundle, runLegacyModelExecution, type ExecutionBundle } from "@/lib/model-config/context";
 import { withFrozenExecutionBundle } from "@/lib/model-config/execution";
 import { withModelRequest, modelConfigurationEnabled } from "@/lib/model-config/requests";
@@ -153,6 +155,19 @@ async function renderTextEdit(task: CanvasImageTaskRow): Promise<string> {
   const mask = await sharp({
     create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } },
   }).composite([{ input: clear, left: box.x, top: box.y, blend: "dest-out" }]).png().toBuffer();
+  const evidence=currentCreationContext();
+  if(evidence?.creationId&&typeof task.parameters.upstreamResult!=='string'){
+    // Persist the exact normalized input and generated selection mask before
+    // supplier submission. Recovery keeps these immutable storage references.
+    const [originalRef,maskRef]=await Promise.all([
+      uploadImage(new Uint8Array(original),'image/png',`creation-inputs/${task.id}-processed.png`,undefined,task.email),
+      uploadImage(new Uint8Array(mask),'image/png',`creation-inputs/${task.id}-mask.png`,undefined,task.email),
+    ]);
+    await creationTransaction(async tx=>{
+      await addCreationAssetTx(tx,evidence.creationId!,task.email,{direction:'input',role:'edit-target',position:0,variant:'processed',storageRef:originalRef,mime:'image/png'});
+      await addCreationAssetTx(tx,evidence.creationId!,task.email,{direction:'input',role:'mask',position:0,variant:'processed',storageRef:maskRef,mime:'image/png'});
+    });
+  }
   await updateCanvasImageTaskProgress(task.id, 20);
   const location = `原图 ${width}×${height} 像素中的矩形区域：x=${box.x}, y=${box.y}, width=${box.width}, height=${box.height}`;
   const prompt = [
@@ -216,8 +231,10 @@ async function renderTextEdit(task: CanvasImageTaskRow): Promise<string> {
 export async function processCanvasImageTask(task: CanvasImageTaskRow): Promise<void> {
   try {
     const bundle = task.parameters.modelExecutions as ExecutionBundle | undefined;
-    if (bundle) await withFrozenExecutionBundle(bundle, () => renderTextEdit(task));
-    else await runLegacyModelExecution(() => renderTextEdit(task));
+    await withFrozenCreation(frozenCreationScope(task.parameters.creationScope,task.email),async()=>{
+      if (bundle) await withFrozenExecutionBundle(bundle, () => renderTextEdit(task));
+      else await runLegacyModelExecution(() => renderTextEdit(task));
+    });
     console.info(`[canvas-image-task] completed id=${task.id} attempt=${task.attempts}`);
   } catch (error) {
     const current = await getCanvasImageTask(task.email, task.id);

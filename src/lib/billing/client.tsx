@@ -70,7 +70,7 @@ type Client = {
     refresh: () => Promise<void>;
     quote: (input: QuoteInput) => Promise<PublicQuote>;
     submit: (url: string, init: RequestInit, displayed: PublicQuote | null, onIdentity?: (id: string) => void) => Promise<Response>;
-    quoteAndSubmit: (url: string, init: RequestInit, input: QuoteInput) => Promise<Response>;
+    quoteAndSubmit: (url: string, init: RequestInit, input: QuoteInput, beforeSubmit?: () => void) => Promise<Response>;
 };
 const Context = createContext<Client | null>(null);
 export function BillingProvider({ children }: {
@@ -157,15 +157,18 @@ export function BillingProvider({ children }: {
         if (response.status === 409 && data.code === "MODEL_CHANGED") window.dispatchEvent(new Event(MODEL_CATALOG_REFRESH));
         return response;
     }, [refresh,user?.email,toast]);
-    const quoteAndSubmit = useCallback(async (url: string, init: RequestInit, input: QuoteInput) => {
+    const quoteAndSubmit = useCallback(async (url: string, init: RequestInit, input: QuoteInput, beforeSubmit?: () => void) => {
+        beforeSubmit?.();
         if (!catalog)
             throw new Error("报价加载中，请稍后重试");
         const q = await getQuote(input);
+        beforeSubmit?.();
         if (q.version !== catalog.version) {
             await refresh();
             throw new Error("价格已更新，请确认最新报价后重新提交");
         }
-        return submit(url, init, q);
+        // submit invokes this after hashing the frozen body and before its paid POST.
+        return submit(url, init, q, beforeSubmit);
     }, [catalog, getQuote, refresh, submit]);
     return <Context.Provider value={{ catalog, loading, error, refresh, quote: getQuote, submit, quoteAndSubmit }}>{children}</Context.Provider>;
 }

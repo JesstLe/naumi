@@ -1,0 +1,139 @@
+# 47 视频节点家族配置与启用
+
+## 用户授权与边界
+
+用户明确要求“将seedance kling wan h3家族群为视频节点配置并启用”。本任务负责将已取得真实出片证据的四家族型号配置为可选视频节点，并完成47上线验收。
+
+- 上一轮证据：`2026-10-23-provider-video-probe.md`。已实测证据保留33个供应商SKU；本轮启用普通生成32项：Seedance 7、Kling 15、Wan 7、H3 3。Wan视频编辑另1项配置但禁用，不进入节点菜单。
+- 不启用未确认的Geek Seedance、未测运动控制、仍待终态的APIB Wan2.7文生，或需要前置task_id的H3 Regeneration。
+- 仅开放本轮已测模式、时长、分辨率和引用数量；音轨存在不等于音频开关已经验证。后台以后扩展能力时，由声明与校验控制参数，协议适配不把本轮样例数值固化为常量。
+- 旧profile与历史冻结任务语义保留，不重投任何受理不明的收费请求。
+- 后台线程负责余额/SaaS其他模块，目前无生产候选或锁；已协调由本任务独立准备完整候选，代码与配置版本分别交接。
+
+## 开工实际基线
+
+47在线 Web / Worker 同Image `600320c4d08b5093e3d27efa91e31bc4cc81596ce0d788e0d01c85bd198a0652`，源码 `0a572167448a91a5a9e2cfc4c73a3b557eb6406c`、BUILD_VERSION `1792674911`。模型配置134，APIB视频provider禁用，当前视频默认为旧Grok；没有`business.video.generate`专用定价，沿用现有视频统一计费规则。
+
+canonical revision608、当前正常发布 `release47-nas-upload-20261022` phase=COMPLETE；根CLEANUP_PENDING属于保留的历史事件，后续只可走已存在的严格正常发布继承门禁，不得清根状态或改状态目录。三锁开工检查均空闲，MemAvailable约3975MiB。候选按下文Web/Worker独立峰值旁路预算，旧槽真实退役后采用下文复核的2GiB上限，不把Swap当RAM。
+
+## 模块进度
+
+1. 已核对33项的协议差异，新增独立APIB/Geek profiles，避免改变旧冻结执行。
+2. 集中协议回归33项/802断言、配置链路32启用/1禁用、822断言通过；均为无收费fixture，不冒称本轮线上节点验收。
+3. 47真实PG已执行回滚屏障的只读SQL，五类表可读，扫描当时新profile绑定/非终态视频任务/工作流均为0。历史事故未修改。
+4. 发现当前私有NAS地址为内网，不能把NAS presign送供应商。新增仅private+proxy使用的限时不透明媒体地址，绑定具体key/SHA/字节数/MIME/权限指纹，最长900秒；GET/HEAD/单Range、撤销/篡改/过期拒绝与真实本地镜像回退201断言通过。仅候选新增已核定公网origin环境变量，旧槽不改动；bucket不开放公网。
+5. 配置工具分PLAN/APPLY/VERIFY/ROLLBACK，三锁、固定完整程序和canonical CAS、审阅计划SHA、自己所属的加密凭据、冻结32项能力、显式记录编辑排除项、原UUID恢复及选择性回退；客户积分规则不变。程序发布仍不自动启用模型，待COMPLETE后单独发布不可变配置。
+6. 核验47未配置隔离媒体处理服务，现已补齐下文完整产物处理链路；特殊视频编辑模式需要单独的编辑节点验收，本轮保持禁用。静态图片采用原始字节的Sharp真实完整解码探测；动画/视频/音频仍要求原隔离服务，不在Web执行FFmpeg，不伪造探测缓存。
+7. Linux固定完整构建、三锁蓝绿、旧槽排空、不可变配置CAS发布、真实节点选择/报价/生成恢复验收尚未完成。公开条目绑定本轮真实BUILD_VERSION 1792696653，未公开供应商、模型、架构或内部资料。
+
+当前不是已启用交付，不据本文件或Git提交声称线上配置已经变更。运行材料位于本任务忽略目录 `output/provider-video-enable-20261023/`，不含可公开凭据。
+
+集中Linux发布门禁回归210项通过（2项按平台条件跳过），真实PG只读扫描通过；完整类型检查通过。尚不等于候选或线上验收。
+
+## 完整结果链路前置的收口
+
+真实代码复核确认所有视频产物在result-assets中都要经过隔离probeMedia并全解码后才保存/结算；47当前没有MEDIA_WORKER_ORIGIN，不能只加供应商配置后宣称可用。因此候选将采用同固定镜像的一个Worker容器，父进程监督扫描子进程与隔离媒体子进程，Web不执行FFmpeg。公开Worker控制3001统一代理扫描内部3003及媒体3002，原控制UUID、UNKNOWN与排空门禁保留，崩溃监督器也经同一入口恢复。
+
+候选预算调整为Web 1536MiB、Worker 1024MiB、主机余量1024MiB（合计3584MiB MemAvailable门槛）；旧槽真正退役后Web采用2048MiB并同步监督器静态指纹，Worker保持1024MiB/单媒体并发。239MiB运行时复制、原生解码和输入临时副本都计入Worker峰值，不把tmpfs或Swap当免费RAM。Worker只读根、独立媒体秘密、精确共享scratch、私有控制，无DB/NAS供应商凭据；仅容器PID命名空间所需cap，KILL用于取消降uid子进程，native仍chroot/dropuid/seccomp。未扩大bucket权限。
+
+这部分仍待固定Linux真实sandbox、候选健康/样片解码与原任务排空验收；没有启动47候选或修改当前服务。
+
+新combined Worker保留容器私有PID命名空间；CAP_KILL只用于监督和取消本容器内降uid子进程。常规退役仍必须先控制drain并取得扫描与媒体队列为零的证据，stop与SIGKILL不替代排空。
+
+最终RAM复核：47实际MemTotal约7270MiB，MemAvailable约3985MiB，旧Web/Worker cgroup current约975/47MiB。3GiB最终Web加新增1GiB Worker和1GiB主机余量，在最乐观释放旧槽全部current时仍不足，故本轮明确最终Web为2048MiB，候选1536MiB；JS heap仍受1152MiB限制。Ready与退役前仅计旧槽anon可释放量做保守预测，退役后再次实测，不把旧filecache或Swap记作新RAM。完整镜像需按此最终提交重新固定。
+
+## 首个旁路候选实测与修复
+
+固定5d568c7b / image a9653626743d1e0c2faaca14e97ea2bef5099c19764acbbbeb3237a9be1ee993的完整Linux构建及真实combined smoke通过；暖态峰值396.80MiB，仍保留此前655.06MiB冷态证据与1GiB预算。47三锁备份可读、镜像导入、原任务快照及唯一候选Web/Worker启动成功；程序停在CANDIDATE，canonical revision626，尚未切流/暂停旧槽/启用模型。
+
+真实合成图上传、私有存储、隔离10.125秒视频全解码和精确清理均成功；签名素材检查在LOCAL_SIGNED_HTTP满60秒失败，失败验证数据已全部清理。随后只读现有归属106B PNG定位：GET 200及SHA一致、Range 206及字节正确，HEAD 15秒无响应头超时；Next fetch的流取消等待阻塞了HEAD返回。原7个操作均ACK并保留UUID，旧站继续服务，未生成付费请求。
+
+修复HEAD为始终只向源请求bytes=0-0，最多两次读取验证1字节及EOF，5秒读取上界；错误源发起释放但不等待悬挂cancel，再验证镜像或503。响应保留客户原始Range元数据且无body。同时整合后台已完成的local存储默认读取冻结SHA校验，防止同长度文件替换绕过校验。集中309断言、6次真实loopback HTTP与独立local驱动子进程回归通过，TS导入图零诊断；不是47新镜像验收。
+
+失败候选已按原UUID与三锁严格排空并停止，Web/Worker均restart=no；原发布登记ROLLED_BACK，preSwitchAbort=COMPLETE，canonical revision636，原7项及新增4项操作均ACK。仅停止本候选，在线NAS Web/Worker、入口、模型134、备份、监督器及历史事故均未改变，没有回灌数据库或重放收费请求。证据为原transaction/VIDEO_PRE_SWITCH_ABORT_RECEIPT.json。
+
+修复后的首次完整Next构建仅发现回归脚本缺少Next要求的NODE_ENV类型字段，现已补test；完整tsc及309断言/真实HTTP回归重新通过。当前待完成r2唯一候选的新固定镜像、真实Next HEAD、完整蓝绿及32项配置CAS/节点验收，不以本文件声称已启用。后台后继SaaS已协调等待本发布，不并行抢47锁；后继combined到combined共享scratch终态缓存清理归后台单独负责，本轮不混入未完成工作。
+
+## R2程序发布与配置启用实际结果
+
+固定完整源859d1ef961c90b578896adf5482ea58d2b0d243a、BUILD_VERSION1792696653、同Web/Worker镜像7a2e5b7622db4a377c8002f9356e0077f165b93e59c0f41403cf6865640e70e3，归档SHA256为6cf50eff0f65864463363343d89ead77f66fa394b72d45bb17082f564ae452af。生产Next构建通过，最终真实combined smoke通过，峰值396.61MiB，未降低1GiB Worker预算。构建前及切流前刷新origin/main均为7b1e970c84006c2fb76f8c1748e96da128e12982。
+
+R2在三锁中完成可读备份、旁路真实上传、GET/HEAD/Range与原生10.125秒视频全解码、真实桌面与390px页面、整站切流、旧槽排空退役、任务保全、2GiB最终Web内存及监督器指纹同步和回退材料检查。2026-10-23 04:48:58 CST登记COMPLETE，canonical revision682，Web 7e7b9cbe141b711326ee0e719eeb2f12ad38297fd3c478ab1b5e73be8763f433、Worker 72059234a5021548bf4de6e5275c11fcdfe84e77554a800df83034631e858576；旧NAS Web/Worker均停止且restart=no，历史两项事件原样保留。根MIGRATED_CLEANUP_PENDING没有被改写为历史事故已完成。浏览器首次本地Paramiko通道断线导致验收超时；恢复自有OpenSSH通道后全部页面重新通过，未因此改变线上实例。
+
+独立不可变模型发布沿原operation c2956135-6eeb-48cf-bd55-62a7f14c7600完成PLAN审阅、APPLY与VERIFY，134→135；32项全部编译与能力冻结校验通过，默认video-apib-seedance-2-0-fast，积分配置版本8保持不变，编辑项仍禁用。配置过程无供应商生成请求。公网签名素材与原生解码再次通过，verification d4bfaea9-b4fe-4d6d-acac-29d2d63467e1，验证数据精确清理。
+
+真实七组视频节点生成、Worker恢复与结算、32项菜单及设置保存/重载/移动端验收仍在进行；不能把上述配置校验或原70项供应商直连成功当成本轮业务节点已全通过。运行证据根为/opt/naumi-staging/evidence/video-family-release47-20261023-r2，配置与程序分别保留receipt。后继后台线程继续等待本轮节点验收和最终交接，不抢锁发布。
+
+## R3收口：真实GUI发现的冷目录创建竞态
+
+R2真实GUI通过加号创建私有空白节点vnode-3dfedefb-da7e-4036-be9b-588b4367c955，目录尚未完成时只保存prompt/providerOptions，缺少modelId/providerId。原JSON和截图已保留，创作栏实际显示“未选择模型”和空时长；没有在验收脚本中手动选默认冒称成功。修复仅为显式新建节点解析默认：目录加载时禁止新建，失败/空目录提供重试动作，核心函数读取最新目录并防并发重复创建，刷新完成不自动创建。旧/未知模型及历史配置不静默回退。277项集中断言、原客户端回归和完整CanvasClient导入图TS零诊断通过，仍须新固定程序真实GUI复验。
+
+R3是combined到combined继承，显式登记predecessorWebMemoryMiB=2048并核验实际前驱cap，保留原缺省3GiB门禁及全部任务/事件/退役核验。153项集中检查及另补3项实际Node协议通过。合入后台已完成的4fdaf698仅媒体worker与验证脚本补丁，补丁SHA256 186f34afbde3594251b9e52ac3b8eb81492a944700b2ea39242e5ee7da4c583f；worker内容SHA与已验收源一致。该补丁只按有效共享retirement回执清理本进程终态缓存，保留active/queued工作，避免后继进程永久占满8个终态槽。复用同内容Linux真实7进程/HTTP/共享scratch/60秒collector的38断言证据；不是原生解码验收，后者仍由固定镜像smoke及旁路实测完成。
+
+R3拟固定新公开版号1792702873，公开条目只说明新建节点默认选项和加载重试修复。当前R3未构建/未发布，模型135继续在线，R2原UUID真实生成仍在推进；不重放历史或本轮已受理请求。
+
+### R2业务节点实测与后缀补充修复
+
+R2原run 095d5940-e5ab-47dd-9158-8e4a9ce2e0b2的APIB四组（Seedance2Fast、Klingv3、Wan2.6I2Vflash、H3Max）已实际完成，视频全解码、结果SHA与单次积分结算均通过。第五组GeekKling带参考图原task vid-fbb995e5-438a-452c-b2cb-009b33b8ee36返回HTTP500、没有上游任务ID，错误为FileInfos[0].Url应为图片类型或asset地址。现限时代理地址缺少文件后缀，APIB能识别但该接口拒绝；根因由真实业务路径发现，不能把原直连成功当应用路径验收。
+
+新增URL使用已冻结真实MIME对应的规范后缀，路由在元数据/存储访问前严格核验签名与后缀匹配；原无后缀短期URL继续有效。原SHA/owner/900秒上限、私有桶、HEAD有界读取均保留，不改媒体字节。689项集中断言与21次本地真实HTTP通过，acceptance CLI亦绑定单一.png并保留篡改签名拒绝。6983282c及1792702873仅本机构建，标为SUPERSEDED、没有上传或发布；最终R3改为1792703343，公开目录移除未发布候选的条目，只保留实际拟发布版本。
+
+第五组原请求当前仍needs_attention/creation_unknown，唯一供应商call 7e4a56d2-c2bf-4eb8-a52f-c3b423bfb39c的费用pending/金额未知；响应SHA c6045d85c9c46bdb529283d9395412f2ac178a2796fcf47f022547eef77be75d。没有not_charged回执，不能推断未受理、退款或重发。正只读核对供应商原日志；剩余第六/七组尚未提交，若继续只允许原run内首次提交这两项。R3完整发布必须保留此原未知边界，不能删除、换UUID或绕排空/回退兼容门禁。
+
+### 原七组验收收口与统一发布交接准备
+
+以下是最新事实，覆盖上文进行中状态。原run内第六组Geek Wan3和第七组Geek H3均已首次提交并完成，分别为vid-88a7aa31-c094-4346-8548-60b7833cbe83、vid-dcf7d470-8d5a-4d43-9d84-f991470da351。固定remaining helper仅提交这两组，原01–05、RUN和HOLD文件保持字节一致；receipt为e2e-host-remaining/e79bc0d9-c624-49ee-976f-7c0070385f0d。结果为6项PASS、1项UNKNOWN，不能声称七组全部成功。六项均有真实产物SHA、原生完整解码、HTTP Range、冻结配置135与单次积分结算证据。
+
+另一次仅只读PG核验将原六项完成的video-poll活动与app-worker-scan父活动、固定Worker身份/boot以及completed tick时间区间相连，六项均通过；原第五组没有完成活动。证据ROOT2/e2e-worker-proof.json SHA256 d1789b7e551fb8d89f9a3a3b9b05bc77ee6040e0815c662fb5de13440fb3ef12，整体consistent=false如实保留。本轮没有为付费任务制造Worker重启，不声称真实崩溃恢复验收。
+
+第五组只读Geek原日志可匹配原request 202610222059511947180498268d9d6sXuTzqm9的type=5错误及图片URL错误，但错误日志quota=0不能证明未收费，没有明确未扣费/退款凭证。用户对进一步供应商核查明确回复“跳过”，因此停止核查，原needs_attention/creation_unknown、成本pending和积分预留保持，不退款、不重投、不清状态。该答复不解除发布兼容及排空门禁。
+
+最终视频修复源979cdca9ca403e2afbc7eb6afed306441e7d8b9f、BUILD_VERSION1792703343的完整Linux构建通过，同镜像80f3f6ecfee68df4be67404f07ecf8326f9455b3e85b3aefb3370a028076b13f真实combined smoke通过；run6bbcfe7d-418b-4ca9-b9de-5844c1b6dbaf峰值653.62MiB、原生降权/隔离/实际视频解码及控制恢复均通过，Worker预算仍1GiB。归档SHA256 e9d0204e03fb5f74ad6b0b3bb6cfa7abfb948ad397b430538333e1163e379822，源码归档3b7cb307a1439ea79c3a047d5d7d0ed316fb7c596365f7ce11f317617455da3a。R3服务器目录只有私有准备材料、源码和镜像文件；未执行release-config准备、未导入镜像、未登记canonical、未创建候选或stateDir。此镜像不是已发布版本。
+
+两名独立审查均确认普通R3仍BLOCKED：不能仅因R2已有相同profile就证明完整回退兼容，尤其R2不能处理R3新签发带后缀的URL。未修改普通guard或增加任务白名单。后台线程有人类原授权“后台你觉得验收通过之后 合并所有分支然后上线47服务器做真实验收”，提出整合979全部修复和后台的一次受控维护后继发布；该路径必须独立核验，不能借此绕普通guard、UNKNOWN或旧槽排空。
+
+2026-10-23 05:23:28 CST采集只读交接快照：canonical revision682/SHA256 cec95785c70c08d5b03705dd2a24e2403226bb3792f2df6b5b47ef037a046f37，R2仍COMPLETE，Web2GiB/Worker1GiB身份和版本未变，模型135与billing8未变。三锁当时空闲，R3登记/配置/实例/stateDir均不存在。原第五组全行、billing、预留、supplier call、客户ledger、variable cost、reconciliation、cost review八表以及原列名保存在ROOT2/unified-handoff/CASE05-BASELINE.private.json，SHA256 512245689fb9884732d6f9f9c7d479ca1481bfe2570b4fa4356fd947b572b041；只对外记录哈希，不公开行内容。原任务pollLock/nextPoll均无，原ID没有release activity行；不据此声称整实例排空。
+
+MANIFEST.json SHA256 4990a80952944313a04ef1b8ad8b2778576211461844edc0c8d8cf89522ab2bf。独立审查指出通用task preservation的proof投影允许部分状态变化，不足以证明第五组原样保留；已要求后继控制器按此原baseline和原列投影在candidate前、切流前、退役前、最终及fallback严格比较八表，新增SaaS列另证安全，任意未知或变化HOLD，不重新设baseline。当前仍待该控制器复核及正式所有权交接，后台尚不得启动候选。本任务不再另起普通R3候选，32项继续由R2/配置135在线提供；最终新版真实冷目录默认/错误重试、设置保存重载和390px GUI验收待统一发布后完成。
+
+### 发布所有权正式交接
+
+后继控制器a071c688与独立guard cdb310fa已收口：原八表按原列/主键的PG UTF8原文SHA及逐值比较，Decimal保留精度；关联补充闭包只封存一次，任意变化/未知/HOLD锁存；candidate前、ready、切流前、两次旧槽停止前、final及failure前后接线完整。维护路径验证精确listen地址/族、TLS、Host、GET/HEAD和503/body/header；canonical写失败仍只对物理候选完整闭包做CAS封口，以独立O_EXCL/fsync intent保留原UUID和ACK/UNKNOWN，未获HTTP证明不声称maintenanceApplied，故障不声称COMPLETE。切流前旧Worker已drain时明确登记degradedPending，不擅自resume。
+
+独立只读终核通过；证据为通用230 PASS及1项专用PG类skip（不是231全通过）、单独15项PASS无skip（14真实PG＋1纯精度契约）、本机真实Nginx fixture的52＋68项HTTP/TLS。仍不是47候选/维护入口验收。原普通R3 guard未改变。
+
+后继完整源5b8489d9ec989ea803eb37280c65e2f18529babb，拟BUILD_VERSION1792705393。相对已审25c仅公开JSON9行删除：未发布1792703343的两条fix并入本次1792705393，历史真实R2 1792696653保留。旧25c构建在COPY阶段由负责人停止，未生成可发布镜像，标SUPERSEDED；不能复用旧artifact验收。
+
+根已正式把47唯一发布所有权移交后台线程01a124b1-a3c1-7ce2-aee6-b79f7d9eeffd（Naumi · 管理后台与积分定价）。ROOT2/unified-handoff/OWNERSHIP.json SHA256 e4f0b3ef5acb052283a40362ee4281172cbd92ff4a13fdcb7bc6d429961231d0，root600独占落盘，canonical与槽位均未改变；登记时仍精确revision682/原SHA。本任务不执行普通R3、不抢锁、不另建候选；后继仍须取得最终固定镜像、本地联合/native、47真实旁路、内部执行图、整站切流、旧Web/Worker排空停止等全部证据。
+
+根保留最终视频GUI验收责任。已准备参数化最终source/build的独立工具browser-video-settings-final.cjs（SHA256 4360acd4e19e378904aa80dea41ce758959e4299f6494436007c90beea2fea6c），离线检查通过但未运行浏览器：预期只新增一个私有空白节点及八次设置保存；先实际拦截冷目录加载→503→显式重试→真实成功，证明此前零创建，再对原POST/201/GET/UI证明默认值且不手选补救，检查32启用ID子集和动态完整菜单、七profile桌面保存/重载、390px保存/重载及关闭未保存。付费生成、处理、自动轮询入口拦截；原R2失败证据前后SHA保持。根自有旧Web隧道已精确关闭，当前没有运行浏览器或生成进程，待新程序固定并获owner通知后只向最终新端口验收。
+
+后继owner已ACK接手，拟release47-saas-20261023-r1/newPort13114（真实只读检查无监听），没有与本任务并行候选。最终原Dockerfile完整Linux镜像已构建为sha256:db8004f1ba69c702ec2adb3f2045fb402e4f38b62ef9df63126b043fe2ea4166，源5b8489/1792705393。实际同镜像Web-PG-Worker 18组、native视频完整解码和共享retirement检查通过；根已核新路径output/saas-linux-integrated-final-20261023/BUILD_META.json、LOCAL_ACCEPTANCE.json及local-combined-smoke-e0190951-50f9-4532-a7ae-6a577a05210f.result.json。它们明确productionAcceptance=false/供应商调用0。旧output/saas-linux-release-20261023中的06665/1bad元数据属于SUPERSEDED，不能用于本次放行。
+
+owner将于切流后、browser-after门禁前，用最终源码生成且钉SHA的素材bundle执行实际公网.png签名URL、GET/HEAD/Range/SHA、私有鉴权、native和精确清理。根停止重复开发单独公网wrapper，待核其真实receipt，不重复上传/探测。最终GUI仍等owner明确新Web允许原会话写一个owned blank及八次settings保存；staged/drain阶段不提前运行，原六项收费验收不重播，也不冒称已在新程序再验。
+
+## 最终线上结果
+
+统一发布release47-saas-20261023-r1于2026-10-23 06:15:17 CST完成，canonical revision728，raw SHA256 0e7092c9d0e19f5f251890a352e760b603f6b63e82fd75a7c622bd80741e9846。固定源5b8489d9ec989ea803eb37280c65e2f18529babb/1792705393/Web＋Worker同db8004f1ba69c702ec2adb3f2045fb402e4f38b62ef9df63126b043fe2ea4166。PUBLICATION_RECEIPT.json SHA256 feb24b910a3a5081e05c0284b19b5b5ecc0786619bfab0d470264eea544ef938；无数据库回灌、无供应商生成重放。旧R2两槽已真实排空停止且restart=no，三锁释放；历史MIGRATED_CLEANUP_PENDING及两项事故不改。
+
+根在GUI前后只读Docker＋canonical复核：新Web 08c7751d0be8ad09638b16e23eb39177bcca9487dbc05819dd04ae54f83e958e、新Worker 4bb56aa5f53b69a43d90652d316d4f7fcf91c6674512fdc9b3c263169952e07a，ID/startedAt/镜像/源码始终一致。Web由候选1536MiB在旧槽退役后无重启升2048MiB，Worker1024MiB；无/app源码挂载。06:19:33 CST再读为COMPLETE728，不以R2旧COMPLETE冒认后继。实际Worker名为naumi47-worker-video-family-saas-20261023-r1；根最初诊断误用简写Worker名导致只读pin失败，读取实际配置纠正后再开始GUI，未改实例。
+
+### 最终公网素材与原生媒体
+
+owner切流后用最终源生成bundle c6e0040f318b8a2ad62056e40fc8b6c1c80332f2beda15e72999ceeb55221d12完成真实验收，verification 9b8dac40-3496-46b1-ac30-8f33b34f87d0。根已下载JSON证据并核身份、原始SHA、真实上传、HEAD200、Range206、未授权普通媒体401、篡改token404；source d4d0e272477d1a578e1b92cd81842371f948316920bbf848e5685cffeb187a72的10.125秒1366×768/H264视频原生完整解码通过，原样片保留，probe与验证数据均精确清理，供应商调用0。证据/opt/naumi-staging/evidence/release47-saas-20261023-r1/PUBLIC_REFERENCE_ACCEPTANCE.json，SHA256 95b8bd4b6d3feadd6b44ff9bec49d6c772505ba0e5da7a5172d6f59cb62dabcf。根没有重复上传或用R2/979预编bundle替代。
+
+### 最终GUI两阶段原证据
+
+owner在SWITCHED707、新Web已open后明确允许根写一个owned blank及八次设置。第一阶段gui-final-saas-20261023-01实际完成冷目录loading禁创建→503→显式retry→真实成功且不自动创建。随后唯一POST operation 9ab96be7-b96d-43c5-bf5f-4abbd9b146d6创建vnode-8db2fa8f-903d-4813-a4f8-3c031e4dc74b；原201/GET已经保存managed-video/Seedance2Fast/4s/480p/16:9，没有手动选默认。其后旧验收工具寻找已被新版compact界面替换的“时长combobox”而HOLD，pageErrors/blocked均0，未发生任何settings保存或生成。这份HOLD及全部13文件保持原字节，不能改成整轮PASS。
+
+独立续验工具browser-video-settings-saas-continuation.cjs SHA256 06285feb63c6e74f67a1450db5ee75a23345d4d535224a3de83735734ad88ae5钉住原13文件、201、UUID、原工具及spec；先GET确认原revision1/config/inputs/task状态未变，在任何手选前读取真实compact模型/模式chip与参数popover的比例/清晰度按钮、时长native select/range、音频与数量，完成默认UI证明。随后7profile各保存＋服务端GET＋整页刷新、未保存关闭不写入、390×844第8次保存/GET/刷新、菜单及参数弹层边界均通过。实际完整目录为33项，包含本次启用32项及保留旧模型；32启用ID全部存在、视频编辑项不出现、默认唯一，菜单数量/顺序/标签与真实完整目录一致，不把“启用32”误作“全目录32”。
+
+续验2026-10-23 06:18:48–06:19:17 CST，零新增节点、八次显式settings PATCH、零供应商生成/处理请求/意图、零供应商poll/worker触发、浏览器错误0。根已查看真实桌面默认与390参数截图。receipt本机忽略目录private/gui-final-saas-continuation-20261023-01/RECEIPT.json，SHA256 2974d7c1eb7f17b5034277705fc361474a36a8e7a80e6ec563e4489274465c46；与第一阶段冷流程/201组合为完整验收，不重跑冷创建、不覆盖失败、不以新UUID绕过原结果。自有13114 SSH隧道已精确关闭，浏览器上下文已关闭。这里只证明GUI设置，不冒称新SaaS重新执行原七组付费验收或真实崩溃恢复。
+
+### 最终配置、账务与范围
+
+GUI后根只读PG再次按原列和原PK计算原八表PG文本SHA，全部与原51224568基线一致；当前model135及digest/md5、billing pointer8/md5均保持，原05仍needs_attention/creation_unknown且无上游ID。新证据ROOT2/unified-handoff/FINAL_VIDEO_FACTS.json SHA256 9696a1cf2463da89b0ddd8bf4e9d80f83bdb6d6917fad8bfc93e44aaaa81c705，HTTP调用0，无状态/账务写入。后继controller候选前/ready/切流前/两次retire/final的原八表及补充闭包亦全MATCH。
+
+本任务视频配置启用、默认与设置GUI、公网参考素材和新媒体处理链路已完成；原R2业务生成仍为6 PASS＋1按用户要求跳过且保留UNKNOWN，证据对应859源，不改写成新SaaS的付费生成结果。普通R3没有启动或发布，R3准备制品不计成功版本。
+
+后继owner额外发现Router systemd环境仍指向历史13052，且规划无该监听。本地10月15日记录该旧Web回调依赖、10月17日已退休，未找到迁移凭证；Router本地clean b3fc8dd6的capacity实现91860be0是loopback TCP、配置摘要图片提交/恢复所需。根只读查证并交给唯一后台owner继续核查，未改Router/网关/服务，不凭PID或旧环境宣布回调已通过。本轮direct视频wire-adapter→modelEndpointFetch→capacityFetch使用App原生PG lease，不能替Router容量回调验收。此既有独立问题不计为本轮视频新增供应商测试成功或已修复。

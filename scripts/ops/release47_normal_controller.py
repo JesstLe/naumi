@@ -29,6 +29,8 @@ def configure(cfg):
  require(13000<=cfg['oldPort']<=13999 and 13000<=cfg['newPort']<=13999 and cfg['oldPort']!=cfg['newPort'],'DISTINCT_LOOPBACK_PORTS_REQUIRED')
  require(pathlib.Path(STATE).parent==pathlib.Path('/opt/naumi-staging/releases') and COOKIE.is_absolute(),'REVIEWED_STATE_AND_AUTH_PATHS_REQUIRED')
  require(type(cfg.get('webMemoryMiB',2048)) is int and 1536<=cfg.get('webMemoryMiB',2048)<=2048,'REVIEWED_WEB_MEMORY_REQUIRED')
+ require(cfg.get('workerMemoryMiB',128)==(1024 if cfg.get('reviewedCombinedMedia') is True else 128),'REVIEWED_WORKER_MEMORY_REQUIRED')
+ require(bool(cfg.get('combinedMedia'))==(cfg.get('reviewedCombinedMedia') is True),'REVIEWED_COMBINED_MEDIA_REQUIRED')
 
 def now():return dt.datetime.now(dt.timezone.utc).isoformat()
 def enc(v):return recovery.encoded(v)
@@ -46,7 +48,11 @@ def transaction():
  finally:tx.__exit__(None,None,None)
 
 class Controller:
+ saas_controlled_recovery=False
  def __init__(self,tx,config):
+  require(not (config.get('releaseId','').startswith('release47-saas-') or
+          config.get('recoveryMode')=='saas-controlled-maintenance') or self.saas_controlled_recovery,
+          'SAAS_RECOVERY_CONTROLLER_REQUIRED')
   self.tx=tx;self.cfg=config;self.original=CANON.read_bytes();self.state=json.loads(self.original)
   self.disk=sha(self.original);self.web=public_identity(tx.inspect(OLDWEB));self.worker=public_identity(tx.inspect(OLDWORKER));self.db=public_identity(tx.inspect('naumi-staging-db-1'))
   self.de=environment(tx.inspect(self.db['id']));self.backup=ROOT/'transaction';self.runtime=dict(self.state['runtimeRecovery'])
@@ -108,7 +114,7 @@ class Controller:
 
  def worker_control(self,identity,action,operation):
   env=environment(self.tx.inspect(identity['id']));folder=self.tx.folder/('worker-controls-'+identity['id'][:12]);folder.mkdir(mode=0o700,exist_ok=True)
-  a=SimpleNamespace(container=identity['id'],expected_id=identity['id'],expected_image=identity['image'],expected_commit=env['SOURCE_COMMIT'],expected_origin=env['NAUMI_APP_ORIGIN'],action=action,operation_id=operation,tick_id=None)
+  a=SimpleNamespace(container=identity['id'],expected_id=identity['id'],expected_image=identity['image'],expected_commit=env['SOURCE_COMMIT'],expected_origin=env['NAUMI_APP_ORIGIN'],action=action,operation_id=operation,tick_id=None,require_media_worker=env.get('NAUMI_MEDIA_WORKER')=='1' or self.cfg.get('reviewedCombinedMedia') is True and identity['name']==WORKER)
   return worker_handoff.execute(a,folder,lambda argv:self.tx.run(argv).decode())
 
  def wait(self,fn,label,seconds=60):
@@ -235,15 +241,15 @@ class Controller:
   if not getattr(self,'candidate_reused',False):
    self.pre=tasks.collect_task_snapshot(self.tx.run,self.db,self.tx.save,projection='proof',row_limit=self.cfg.get('snapshotRowLimit',5000),allow_absent_tables=tasks.ADDITIVE_TABLES,statement_timeout_ms=self.cfg.get('snapshotStatementTimeoutMs',5000))
    require(self.pre.public.get('tables'),'TASK_BASELINE_MISSING');self.phase('BACKED_UP')
-   web_memory=self.cfg.get('webMemoryMiB',2048)
-   require(int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024>=web_memory+128+1024,'DUAL_SLOT_MEMORY_INSUFFICIENT')
+   web_memory=self.cfg.get('webMemoryMiB',2048);worker_memory=self.cfg.get('workerMemoryMiB',128)
+   require(int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024>=web_memory+worker_memory+1024,'DUAL_SLOT_MEMORY_INSUFFICIENT')
    image=json.loads(self.tx.run(['docker','image','inspect',self.cfg['image']]))[0];require(image['Id']==self.cfg['image'],'FIXED_IMAGE_MISSING')
    if getattr(self,'partial_nas_web',False):self.newweb=self.succ['operations']['web-create']['receipt'];self.tx.pin(self.newweb)
-   else:self.newweb=self.op('web-create',lambda _:self.tx.clone_web(self.web,name=WEB,port=self.cfg['newPort'],image=self.cfg['image'],commit=self.cfg['commit'],memory_mib=web_memory,cpu=1.5,release_secret=secrets.token_urlsafe(48),state_dir=STATE+'/web',build_version=self.cfg['version'],reviewed_prior_state_dir=self.cfg['oldWebStateDir'],reviewed_nas_credentials_sha256=self.cfg.get('nasCredentialsSha256')))
-   self.newweb=self.op('web-start',lambda _:self.tx.start_candidate(self.newweb,dict(webPeakMiB=web_memory,workerPeakMiB=128,hostReserveMiB=1024),int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024))
+   else:self.newweb=self.op('web-create',lambda _:self.tx.clone_web(self.web,name=WEB,port=self.cfg['newPort'],image=self.cfg['image'],commit=self.cfg['commit'],memory_mib=web_memory,cpu=1.5,release_secret=secrets.token_urlsafe(48),state_dir=STATE+'/web',build_version=self.cfg['version'],reviewed_prior_state_dir=self.cfg['oldWebStateDir'],reviewed_nas_credentials_sha256=self.cfg.get('nasCredentialsSha256'),reviewed_video_reference_origin=self.cfg.get('videoReferencePublicOrigin'),reviewed_combined_media=self.cfg.get('combinedMedia')))
+   self.newweb=self.op('web-start',lambda _:self.tx.start_candidate(self.newweb,dict(webPeakMiB=web_memory,workerPeakMiB=worker_memory,hostReserveMiB=1024),int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024))
    self.wait(lambda:self.request(self.newweb,'/api/health'),'WEB_START')
-   self.newworker=self.op('worker-create',lambda _:c.clone_worker(self.tx,self.newweb,name=WORKER,memory_mib=128,cpu=.25,state_dir=STATE+'/worker'))
-   self.newworker=self.op('worker-start',lambda _:c.start_worker(self.tx,self.newworker,int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024))
+   self.newworker=self.op('worker-create',lambda _:c.clone_worker(self.tx,self.newweb,name=WORKER,memory_mib=worker_memory,cpu=1 if self.cfg.get('reviewedCombinedMedia') else .25,state_dir=STATE+'/worker',reviewed_combined_media=self.cfg.get('reviewedCombinedMedia') is True))
+   self.newworker=self.op('worker-start',lambda _:c.start_worker(self.tx,self.newworker,int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024,reviewed_combined_media=self.cfg.get('reviewedCombinedMedia') is True))
    self.wait(lambda:self.worker_control(self.newworker,'status',str(uuid.uuid4())),'WORKER_START')
   self.phase('CANDIDATE',web=self.newweb,worker=self.newworker);self.ready();self.build_gateway()
   self.tx.save('candidate-server-actions.json',{'old':self.server_actions(self.web),'new':self.server_actions(self.newweb)})
@@ -256,7 +262,7 @@ class Controller:
   self.worker_paused=True
   self.wait(lambda:(lambda s:s if normal.worker_quiescent(s,self.cfg.get('preservedWorkerTick')) else None)(self.worker_control(self.worker,'status',str(uuid.uuid4()))['state']),'OLD_WORKER_DRAIN',120)
   self.op('new-web-open',lambda op:c.control_app(self.tx,self.newweb,'resume',op))
-  self.op('gateway-switch',lambda _:c.switch_gateway_bundle(self.tx,self.forward,self.before,self.after,expected_dump_sha=sha(self.dump.encode()),logical_to_real=self.real));self.switched=True
+  self.op('gateway-switch',lambda _:self.switch_forward_gateway());self.switched=True
   self.phase('SWITCHED');save(ROOT/'cutover.json',{'releaseId':RELEASE,'version':self.cfg['version'],'at':now()})
   self.wait(lambda:self.marker('browser-after.json'),'BROWSER_AFTER',600)
   self.op('old-web-drain',lambda op:c.control_app(self.tx,self.web,'drain',op));self.old_drained=True
@@ -268,6 +274,9 @@ class Controller:
   self.post=tasks.collect_task_snapshot(self.tx.run,self.db,self.tx.save,previous=self.pre.private,projection='proof',row_limit=self.pre.private.get('rowLimit',1000),allow_absent_tables=tasks.ADDITIVE_TABLES,statement_timeout_ms=self.cfg.get('snapshotStatementTimeoutMs',5000))
   comparison=tasks.compare_task_snapshots(self.pre,self.post);self.tx.save('task-preservation-comparison.json',comparison)
   require(comparison['preservationVerified'],'TASK_PRESERVATION_NOT_VERIFIED')
+  self.retire_ready()
+
+ def retire_ready(self):
   # The domain reader is shared-DB, not old-slot-specific. Pause the new scan
   # at the final retirement barrier so its own read transaction cannot be
   # mistaken for undrained old work. Keep the completed tick receipt intact.
@@ -282,10 +291,10 @@ class Controller:
    self.wait(lambda:self.drain_proof(),'RETIREMENT_CURRENT_DRAIN',120) if identity is self.worker else None
    self.op('retire-'+identity['id'][:12],lambda _,identity=identity:self.stop_exact(identity))
    self.succ['retired'].append(identity['id']);self.persist()
+  self.after_retirement()
   self.op('new-worker-after-retirement',lambda op:self.worker_control(self.newworker,'resume',op))
   self.wait(lambda:(lambda s:s if normal.worker_completed(s) else None)(self.worker_control(self.newworker,'status',str(uuid.uuid4()))['state']),'NEW_WORKER_FINAL_COMPLETION',90)
-  from release47_normal_rollback import run as rollback_check
-  rollback_check(self.cfg,apply=False,existing_tx=self.tx)
+  self.verify_recovery_materials()
   self.state['activeNormalBlueGreenReleaseId']=RELEASE
   require(self.configuration_facts()==self.config_before,'MODEL_OR_BILLING_CONFIGURATION_CHANGED')
   self.phase('COMPLETE',completedAt=now(),paidOutputRecovered=False,historicalDrainReclassified=False)
@@ -294,6 +303,19 @@ class Controller:
   self.tx.run(['systemctl','start','naumi47-recovery.timer'])
   result={'phase':'COMPLETE','historicalReleasePhase':self.state['phase'],'historicalDrainProven':False,'carriedIncidents':2,'paidOutputRecovered':False,'version':self.cfg['version'],'commit':self.cfg['commit'],'image':self.cfg['image'],'web':self.newweb,'worker':self.newworker,'at':now(),'supplierGenerationReplays':0,'databaseRestored':False}
   self.tx.save('PUBLICATION_RECEIPT.json',result);print('PUBLICATION_RESULT='+json.dumps(result),flush=True)
+
+ def after_retirement(self):
+  pass
+
+ def switch_forward_gateway(self):
+  return c.switch_gateway_bundle(self.tx,self.forward,self.before,self.after,
+          expected_dump_sha=sha(self.dump.encode()),logical_to_real=self.real)
+
+ def verify_recovery_materials(self):
+  require(not self.cfg.get('releaseId','').startswith('release47-saas-') and
+          self.cfg.get('recoveryMode')!='saas-controlled-maintenance','SAAS_RECOVERY_CONTROLLER_REQUIRED')
+  from release47_normal_rollback import run as rollback_check
+  rollback_check(self.cfg,apply=False,existing_tx=self.tx)
 
  def resume_review(self):
   review=self.cfg['resumeReview'];require(self.state['revision']==review['revision'] and sha(enc(self.state))==review['canonicalSha256'],'RESUME_CANONICAL_CHANGED')
@@ -305,7 +327,8 @@ class Controller:
   if self.partial_nas_web:expected.add('web-create')
   if self.cfg.get('nasCredentialsSha256')and 'nas-media-catalog'in self.succ['operations']:expected.add('nas-media-catalog')
   memory_precreate=self.succ['phase']=='BACKED_UP' and self.succ.get('lastError')=='DUAL_SLOT_MEMORY_INSUFFICIENT' and set(self.succ['operations'])=={'database-backup','image-import'}
-  require((self.partial_nas_web or memory_precreate or self.succ['phase'] in ['BASELINED','CANDIDATE'] and self.succ.get('lastError') in ['ValueError','HOST_COMMAND_FAILED','POST_IMPORT_DISK_RESERVE_INSUFFICIENT']) and set(self.succ['operations'])==expected,'RESUME_ONLY_PRE_SWITCH_REVIEWED_FAILURE')
+  readiness_auth=bool(getattr(self,'reviewed_readiness_resume',False) and self.succ['phase']=='CANDIDATE' and self.succ.get('lastError')=='RECOVERY_HTTP_CHECK_FAILED')
+  require((self.partial_nas_web or memory_precreate or readiness_auth or self.succ['phase'] in ['BASELINED','CANDIDATE'] and self.succ.get('lastError') in ['ValueError','HOST_COMMAND_FAILED','POST_IMPORT_DISK_RESERVE_INSUFFICIENT']) and set(self.succ['operations'])==expected,'RESUME_ONLY_PRE_SWITCH_REVIEWED_FAILURE')
   if self.succ.get('lastError')=='POST_IMPORT_DISK_RESERVE_INSUFFICIENT':
    import shutil
    require(self.succ['phase']=='BASELINED' and shutil.disk_usage('/').free>=10*1024**3,'RECONCILED_IMPORT_DISK_RESERVE_INSUFFICIENT')
@@ -392,7 +415,7 @@ class Controller:
   self.tx.run(['systemctl','stop','naumi47-recovery.timer'])
   manifest={**self.original_manifest,'commit':self.cfg['commit'],'buildVersion':self.cfg['version'],'image':self.cfg['image'],'gatewayDumpSha256':sha(self.after_dump.encode()),'operationId':str(uuid.uuid4()),'evidenceDir':str(self.tx.folder),'journalDir':str(ROOT/'supervisor-journal'),'successorReleaseId':RELEASE}
   for role,identity in [('web',self.newweb),('worker',self.newworker)]:
-   row=self.tx.inspect(identity['id']);manifest[role]={**identity,'role':role,'staticSha256':recovery.static_pin(row),'memoryMiB':2048 if role=='web' else 128,'runningAtEnrollment':True}
+   row=self.tx.inspect(identity['id']);manifest[role]={**identity,'role':role,'staticSha256':recovery.static_pin(row),'memoryMiB':self.cfg.get('webMemoryMiB',2048) if role=='web' else self.cfg.get('workerMemoryMiB',128),'runningAtEnrollment':True}
   p=ROOT/'supervisor-manifest.json';save(p,manifest)
   self.state['runtimeRecovery']={**self.runtime,'operationId':manifest['operationId'],'manifestPath':str(p),'manifestSha256':sha(enc(manifest)),'phase':'ACKNOWLEDGED','effectiveWeb':self.newweb,'effectiveWorker':self.newworker,'successorReleaseId':RELEASE}
   self.state['webs']['main']['running']=self.newweb;self.state['worker']['running']=self.newworker
@@ -410,6 +433,8 @@ class Controller:
   r=recovery.Supervisor(manifest,manifest['journalDir'],recovery.Adapter(self.tx,manifest)).once();self.tx.save('new-supervisor-acceptance.json',r)
 
  def recover_failure(self,ex):
+  require(not self.cfg.get('releaseId','').startswith('release47-saas-') and
+          self.cfg.get('recoveryMode')!='saas-controlled-maintenance','SAAS_RECOVERY_CONTROLLER_REQUIRED')
   # Never assume a timed-out mutation was not applied. Preserve original UUIDs.
   print('PUBLICATION_HOLD='+ (str(ex) if isinstance(ex,Hold) else type(ex).__name__),flush=True)
   if hasattr(self,'succ'):

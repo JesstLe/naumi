@@ -1,0 +1,60 @@
+{
+  "operationId": "541688bf-3c3c-4d77-ba4b-3a2f3f630db7",
+  "publicOrigin": "https://47.105.59.142",
+  "status": "succeeded",
+  "checks": {
+    "publicReceipt": 200,
+    "publicDownload": 200,
+    "publicDownloadSha256": "2e433fa5fa1a0bc1c6f31537280c22a7c68a31adcfedc0f3975821ff706da19f",
+    "anonymousDownload": 401
+  },
+  "supplierCalls": [
+    {
+      "id": "d9d31280-eea4-46b9-9f75-95dfdd376547",
+      "operation_id": "tool-8fc5d0cf-1ac0-549e-a8f5-b8cc947a91d0",
+      "provider_id": "geeknow-images",
+      "model": "gpt-image-2",
+      "state": "response-received",
+      "delivered": 1,
+      "cost_status": "pending",
+      "amount_micros": null,
+      "model_version": 134,
+      "billing_version": 8
+    }
+  ],
+  "billing": [
+    {
+      "id": "tool-8fc5d0cf-1ac0-549e-a8f5-b8cc947a91d0",
+      "feature": "tool.cutout",
+      "state": "settled",
+      "reserved_credits": 0,
+      "charged_credits": 1,
+      "ledger_id": "led-tool-8fc5d0cf-1ac0-549e-a8f5-b8cc947a91d0"
+    }
+  ],
+  "versions": [
+    {
+      "version": 133,
+      "digest": "d7a62bf4b952750b85a86ada3d7e2488176474d333ad6f27f7f405104091ace0"
+    },
+    {
+      "version": 134,
+      "digest": "284f3b918581b080f8719a8dcca74ad60c9cf429aeb9746253a5fd43a0198b3a"
+    }
+  ],
+  "containers": [
+    {
+      "name": "/naumi47-web-nas-upload-20261022",
+      "image": "sha256:600320c4d08b5093e3d27efa91e31bc4cc81596ce0d788e0d01c85bd198a0652",
+      "startedAt": "2026-10-22T13:38:39.247248027Z",
+      "running": true
+    },
+    {
+      "name": "/naumi47-worker-nas-upload-20261022",
+      "image": "sha256:600320c4d08b5093e3d27efa91e31bc4cc81596ce0d788e0d01c85bd198a0652",
+      "startedAt": "2026-10-22T13:38:46.073411521Z",
+      "running": true
+    }
+  ],
+  "deployLocksHeld": false
+}

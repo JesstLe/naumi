@@ -1,3 +1,4 @@
+import {withFrozenCreation,type CreationContext} from "./saas/creation-context";
 import { withBackgroundActivity, detachBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import { releaseRuntimeEnabled } from "@/lib/release-runtime/identity";
 import "server-only";
@@ -205,7 +206,7 @@ export class DurableImageJobs<T extends { status: string }> {
         }
         const payload = await decode(row.payload) as Record<string, unknown>, snapshot = await decode(row.snapshot) as T;
         if((snapshot as Record<string,unknown>).queueState){delete (snapshot as Record<string,unknown>).queueState;await this.set(id,snapshot);}
-        const resume = () => withBiModelContext(row.email,this.kind,id,async()=>run(payload,snapshot));
+        const resume = () => withFrozenCreation(payload.creationScope as CreationContext|undefined,()=>withBiModelContext(row.email,this.kind,id,async()=>run(payload,snapshot)));
         if (payload.modelExecutions) await withFrozenExecutionBundle(payload.modelExecutions as ExecutionBundle, resume);
         else if(this.kind==="imagegen") await resume();
         else await runLegacyModelExecution(resume);

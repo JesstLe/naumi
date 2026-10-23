@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import { generateKeyPairSync,randomUUID,createHash } from 'node:crypto';
-import { readFile,mkdtemp,writeFile } from 'node:fs/promises';
+import { readFile,mkdtemp,writeFile,realpath } from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import { once } from 'node:events';
 import type { Pool } from 'pg';
 export async function verifyWorkflowIdentity(pool:Pool,source:{root:string;foreign:string;ordinary:string;owner:string}){
+ // Windows can expose TEMP through an 8.3 alias. Canonicalize fixture roots
+ // rather than weakening production symlink/path-equality validation.
+ const fixtureTemp=await realpath(tmpdir());process.env.TEMP=fixtureTemp;process.env.TMP=fixtureTemp;
  const {SourceIdentityStore,createMappedAuthenticator,createSourceVerifier}=await import('../services/enterprise-workflow/src/source-identity');
  const {DemandAssetStore,ReferenceStore,FormalImportStore,createWorkflowServer,WorkflowStore,resolveDatabaseActor,createWorkflowPool,PeopleStore,DeliveryStore,MultipartStore,SchedulingStore,PerformanceStore,RoutingStore,NotificationStore,createSourceEvidenceVerifier}=await import('../services/enterprise-workflow/src/server');
  const native=await import('../src/lib/native-auth'),{GET,POST}=await import('../src/app/api/enterprise/workflow/route');
@@ -19,7 +22,7 @@ export async function verifyWorkflowIdentity(pool:Pool,source:{root:string;forei
  const bindings=new SourceIdentityStore(workflowPool),admin={enterpriseId,teamId,subject:'provisioner'},common={sourceInstance:'fixture-source-a',sourceEnterprise:source.root,expectedVersion:0,enabled:true,reason:'isolated source binding'};
  await bindings.configure(admin,{...common,type:'enterprise'});await bindings.configure(admin,{...common,type:'identity',sourceSubject:source.ordinary,subject:'worker'});
  const keys=generateKeyPairSync('ed25519'),verifier=createSourceVerifier({issuer:'naumi-workflow-bff',audience:'enterprise-workflow-source',publicKeys:{fixture:keys.publicKey}});
- const scanFixture={mode:'clean' as 'clean'|'infected'|'error'};const delivery=new DeliveryStore(workflowPool,resolveDatabaseActor,await mkdtemp(join(tmpdir(),'naumi-delivery-fixture-')),32*1024*1024,2*1024*1024*1024,{mode:'required',key:'d'.repeat(64),label:'synthetic-browser-scan',maxAgeMs:3600000,maxBytes:512*1024*1024,scan:async input=>{for await(const _chunk of input){}return {status:scanFixture.mode,engine:'synthetic-browser-scanner',signature:scanFixture.mode==='infected'?'Fixture.Marker':null,reason:scanFixture.mode==='error'?'SCAN_UNAVAILABLE':null};}});
+ const scanFixture={mode:'clean' as 'clean'|'infected'|'error'};const delivery=new DeliveryStore(workflowPool,resolveDatabaseActor,await realpath(await mkdtemp(join(tmpdir(),'naumi-delivery-fixture-'))),32*1024*1024,2*1024*1024*1024,{mode:'required',key:'d'.repeat(64),label:'synthetic-browser-scan',maxAgeMs:3600000,maxBytes:512*1024*1024,scan:async input=>{for await(const _chunk of input){}return {status:scanFixture.mode,engine:'synthetic-browser-scanner',signature:scanFixture.mode==='infected'?'Fixture.Marker':null,reason:scanFixture.mode==='error'?'SCAN_UNAVAILABLE':null};}});
  const notificationFixture={mode:'accepted' as 'accepted'|'unknown'|'retry',sends:0,polls:0};
  const notifications=new NotificationStore(workflowPool,resolveDatabaseActor,id=>id===enterpriseId?[{id:'fixture-dingtalk',revision:'fixture-v1',label:'钉钉协议模拟 · 不外发',adapter:{send:async()=>{notificationFixture.sends++;return notificationFixture.mode==='accepted'?{state:'accepted' as const,receipt:String(100000+notificationFixture.sends)}:{state:notificationFixture.mode,code:'FIXTURE_'+notificationFixture.mode.toUpperCase()};},poll:async()=>{notificationFixture.polls++;return {state:'delivered' as const,read:false};}}}]:[]);
  const routing=new RoutingStore(workflowPool,resolveDatabaseActor,notifications);

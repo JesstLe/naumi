@@ -1,0 +1,29 @@
+[Unit]
+Description=Naumi47 authenticated NAS health and guarded stale-session recovery
+After=network-online.target naumi-nas-bridge.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/naumi-nas47-watchdog/nas47_watchdog.py
+TimeoutStartSec=90
+User=root
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+CapabilityBoundingSet=CAP_KILL CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
+ReadWritePaths=/var/lib/naumi-nas47-watchdog /opt/naumi-staging/releases /opt/naumi-reverse-hub/releases /opt/reference-workbench
+MemoryMax=64M
+CPUQuota=10%
+TasksMax=12
+StandardOutput=journal
+StandardError=journal
+SyslogLevelPrefix=yes

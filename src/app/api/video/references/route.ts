@@ -6,6 +6,7 @@ import {uploadVideoReference} from "@/lib/video/reference-upload";
 import {ModelConfigError} from "@/lib/model-config/types";
 import {sameSiteBiMutation} from "@/lib/bi/access";
 import {z} from "zod";
+import {withCreationRoute} from '@/lib/saas/creation-context';
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ const EXTENSIONS: Record<string, string> = {
   "audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav", "audio/mp4": "m4a", "audio/webm": "webm",
 };
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   const email = await authenticatedEmail(request);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   if(!sameSiteBiMutation(request))return NextResponse.json({error:"不允许跨站上传素材"},{status:403});
@@ -36,3 +37,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, reference: { id, kind, role: kind === "image" ? "reference" : kind === "video" ? "source_video" : "source_audio", url, mimeType: file.type, storageKey } },{headers:{"cache-control":"private, no-store"}});
   }catch(error){return error instanceof ModelConfigError?NextResponse.json({error:error.message,code:error.code},{status:error.status}):NextResponse.json({error:"素材上传暂不可用，操作编号已保留"},{status:503});}
 }
+export function POST(request:Request){return withCreationRoute(request,()=>handlePost(request));}

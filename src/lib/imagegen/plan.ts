@@ -106,8 +106,7 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
    if(unsupported)candidates.excluded.push({upstreamId:candidate.upstreamId,codes:["IMAGEGEN_PARAMETER_UNSUPPORTED"]});
    return !unsupported;
   });
-  if(!candidates.eligible.length){if(exactRatioRejected)throw new ExactImageSizeError(request.parameters.ratio||"1:1");if(hubRatioRejected)throw new ImagegenPlanError(REVERSE_HUB_RATIO_MESSAGE, "IMAGEGEN_RATIO_UNSUPPORTED", 422);throw new ImagegenPlanError("所选模型没有支持本次生成参数的可用通道，请调整参数或选择其他模型", "IMAGEGEN_NO_CHANNEL", 409);}
-  if(operation==="cutout"&&candidates.eligible.some(c=>publishedImagegenCapabilities(models.config.upstreamModels.find(u=>u.id===c.upstreamId)!.capabilities).transparent?.state!=="supported"))throw new ImagegenPlanError("抠图通道尚未核实透明输出能力");
+  if(!candidates.eligible.length){if(exactRatioRejected)throw new ExactImageSizeError(request.parameters.ratio||"1:1");if(hubRatioRejected)throw new ImagegenPlanError(REVERSE_HUB_RATIO_MESSAGE, "IMAGEGEN_RATIO_UNSUPPORTED", 422);if(operation==="cutout"&&candidates.excluded.length&&candidates.excluded.every(c=>c.codes.includes("IMAGEGEN_TRANSPARENT_UNSUPPORTED")))throw new ImagegenPlanError("当前抠图模型没有支持透明输出的可用通道，请联系管理员检查模型配置", "IMAGEGEN_CUTOUT_UNAVAILABLE", 409);throw new ImagegenPlanError("所选模型没有支持本次生成参数的可用通道，请调整参数或选择其他模型", "IMAGEGEN_NO_CHANNEL", 409);}
   const model=models.config.publicModels.find(m=>m.id===modelId)!;
   if(model.target.type==="pool"&&!model.supplierRouting&&(request.parameters.inputFidelity!==undefined||request.parameters.moderation!==undefined||request.parameters.width!==undefined||request.output.compressionMode==="native"&&request.output.compression!==undefined))throw new ImagegenPlanError("外部Router尚未开放这些原生参数的发送，请选择已发布参数映射的直连供应通道");
   assertToolScope(models.config,featureId,modelId);
@@ -121,11 +120,11 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
  };
  if(intent.operation==="cutout"){
   if(request.variants!==1)throw new ImagegenPlanError("抠图对单个目标输出一个透明版本，多个目标请使用批次");
-  const cutout=models.config.bindings["image.cutout"];if(!cutout)throw new ImagegenPlanError("透明抠图模型尚未配置，请管理员维护");
+  const cutout=featureDefaultModel(models.config,"tool.cutout","image.cutout");if(!cutout)throw new ImagegenPlanError("透明抠图模型尚未配置，请管理员维护");
   await append("cutout","cutout",cutout,intent,"tool.cutout");
  }else if(intent.background==="transparent"&&!simulate(id,intent).eligible.length){
   if(!allows(access,"cutout"))throw new FeatureAccessError("所选模型需使用抠图步骤，但抠图功能尚未授权");
-  const cutout=models.config.bindings["image.cutout"];if(!cutout)throw new ImagegenPlanError("所选模型不支持原生透明，且未配置已核实的AI抠图路径；不会静默更换模型");
+  const cutout=featureDefaultModel(models.config,"tool.cutout","image.cutout");if(!cutout)throw new ImagegenPlanError("所选模型不支持原生透明，且未配置已核实的AI抠图路径；不会静默更换模型");
   const first={...intent,background:null,requirements:intent.requirements.filter(r=>r.name!=="background")};
   await append("generate",intent.operation,id,first,feature);
   for(let i=0;i<request.variants;i++)await append(`cutout-${i}`,"cutout",cutout,{...intent,operation:"cutout"},"tool.cutout");

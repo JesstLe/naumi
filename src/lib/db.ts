@@ -1,6 +1,9 @@
 import {randomUUID,createHash} from "node:crypto";
 import { creationProvenance, type ArtworkProvenance } from "@/lib/artwork-provenance";
 import { currentArtworkCreation } from "@/lib/artwork-provenance-context";
+import {currentCreationContext,frozenCreationScope,withFrozenCreation} from '@/lib/saas/creation-context';
+import {acceptCreationTx,assertCreationInputsTx,captureCreationMediaTx,creationLinkTx,addCreationAssetTx,creationEvidenceTx,recordSourceOutcomeTx,creationTransaction} from '@/lib/saas/creation-writer';
+import {ensureCreationSchema} from '@/lib/saas/creation-schema';
 import type {ProductReceipt} from "@/lib/payments";
 import {signupGrantTx,administrativeGrantInput} from "@/lib/billing/entitlements";
 import {withBillingTransaction} from "@/lib/billing/service";
@@ -2476,6 +2479,12 @@ export async function upsertCanvasTextNode(
     ]
   );
   if (!rows[0]) throw new Error("文字节点不存在或无权修改");
+  const creation=currentCreationContext();if(creation?.creationId&&creation.actorEmail===emailRaw.toLowerCase()){
+    await creationTransaction(tx=>creationEvidenceTx(tx,async()=>{
+      await creationLinkTx(tx,creation.creationId!,creation.actorEmail,'text-node',node.id,'output');
+      if(status==='completed')await addCreationAssetTx(tx,creation.creationId!,creation.actorEmail,{direction:'output',role:`text:${node.id}`,position:0,storageRef:'',mime:'text/plain',mediaType:'file',text:node.content.slice(0,20000)});
+    })).catch(()=>{});
+  }
   return mapCanvasTextNode(rows[0]);
 }
 
@@ -2624,6 +2633,11 @@ export async function addArtworksTx(
           JSON.stringify(creationProvenance({ id: a.id, batchId: batchId ?? a.batchId, templateId: a.templateId, explicit: a.creationProvenance, ...currentArtworkCreation() })),
         ]
       );
+      const creation=currentCreationContext();
+      if(creation?.creationId&&creation.actorEmail===email)await creationEvidenceTx(client,async()=>{
+        await creationLinkTx(client,creation.creationId!,email,'artwork',a.id,'output');
+        await addCreationAssetTx(client,creation.creationId!,email,{direction:'output',role:'result',position:items.indexOf(a),storageRef:`artwork:${a.id}`,mediaType:a.videoUrl||a.category==='video'?'video':'image'});
+      });
     }
 }
 
@@ -4876,6 +4890,7 @@ export async function createVideoTaskWithReservation(input: {
   leaseSeconds?: number;
 }): Promise<{ task: VideoTaskRow; created: boolean }> {
   await ensureSchema();
+  if(currentCreationContext())await ensureCreationSchema();
   const email = input.email.toLowerCase();
   const requestHash=videoRequestFingerprint(input);
   const idempotencyKey = input.idempotencyKey.slice(0, 100);
@@ -4897,6 +4912,17 @@ export async function createVideoTaskWithReservation(input: {
       if(input.billingQuote&&existing.rows[0].billing_request_fingerprint&&existing.rows[0].billing_request_fingerprint!==requestHash)throw new BillingError("OPERATION_CONFLICT","操作编号已用于不同任务",409);
       await client.query("COMMIT");
       return { task: mapVideoTask(existing.rows[0] as Record<string, unknown>), created: false };
+    }
+    const scope=currentCreationContext();let creation:string|null=null;
+    const parameters={...(input.parameters as Record<string,unknown>||{})};
+    if(scope){
+      const references=Array.isArray(input.videoReferences)?input.videoReferences as {artworkId?:string;id?:string;role?:string}[]:[];
+      const inputs=references.filter(r=>typeof r.artworkId==='string').map(r=>({artworkId:r.artworkId!,role:r.role||'reference'}));
+      creation=await acceptCreationTx(client,'video',input.id,email,{prompt:input.prompt,parameters:{...parameters,seconds:input.seconds,size:input.size},inputs});
+      if(creation)await captureCreationMediaTx(client,creation,email,references);
+      Object.assign(parameters,{creationScope:{...scope,creationId:creation}});
+      if(creation&&input.billingQuote)await creationLinkTx(client,creation,email,'billing',input.id);
+      if(creation&&!input.billingQuote&&input.cost===0)await creationLinkTx(client,creation,email,'no-charge',input.id,'explicit-no-charge');
     }
     if(input.billingQuote){await reserveTaskBillingTx(client,input.id,email,input.billingQuote,`led-video-${input.id}`);}else if (meterOn && input.cost > 0) {
       const reserved = await client.query(
@@ -4936,7 +4962,7 @@ export async function createVideoTaskWithReservation(input: {
         input.providerId ?? "openai-videos",
         input.source ?? "canvas",
         input.sourceId ?? "",
-        JSON.stringify(input.parameters ?? {}),
+        JSON.stringify(parameters),
         JSON.stringify(input.videoReferences ?? []),
         JSON.stringify(input.capabilitySnapshot ?? {}),
         idempotencyKey,
@@ -4975,6 +5001,7 @@ export async function markVideoTaskCreated(input: {
       WHERE email = $1 AND id = $2 AND status IN ('queued','processing')`,
     [input.email.toLowerCase(), input.id, input.upstreamId, (input.responseBody ?? "").slice(0, 8000)]
   );
+  await creationTransaction(tx=>durableCreationOutcomeTx(tx,'video',input.id,input.email,'running')).catch(()=>{});
 }
 
 /** Provider cannot safely deduplicate a repeated create after an ambiguous failure. */
@@ -4991,11 +5018,13 @@ export async function markVideoTaskCreationUnknown(input: {
       WHERE email = $1 AND id = $2 AND status = 'queued'`,
     [input.email.toLowerCase(), input.id, input.error.slice(0, 500)]
   );
+  await creationTransaction(tx=>durableCreationOutcomeTx(tx,'video',input.id,input.email,'needs_review')).catch(()=>{});
 }
 
 export async function markVideoTaskAttention(email:string,id:string,code:string,message:string){
   await ensureSchema();await getPool().query(`UPDATE app_video_tasks SET status='needs_attention',error_code=$3,error=$4,
     next_poll_at=NULL,poll_lock_until=NULL,updated_at=now() WHERE email=$1 AND id=$2 AND status IN ('queued','processing')`,[email.toLowerCase(),id,code,message.slice(0,500)]);
+  await creationTransaction(tx=>durableCreationOutcomeTx(tx,'video',id,email,'needs_review')).catch(()=>{});
 }
 export async function resumeVideoTaskPolling(email:string,id:string){
   await ensureSchema();const result=await getPool().query(`UPDATE app_video_tasks SET status='processing',error_code='',error='',poll_attempts=0,next_poll_at=now(),updated_at=now()
@@ -5092,6 +5121,11 @@ async function creditMeteringEnabled(): Promise<boolean> {
 }
 
 /** 成功完成视频任务并在同一事务里只结算一次积分。 */
+async function durableCreationOutcomeTx(client:PoolClient,kind:'video'|'canvas-image',id:string,email:string,status:import('@/lib/saas/creation-contracts').CreationStatus,artworkIds:string[]=[]){
+  if(!(await client.query("SELECT to_regclass('app_creation_records') AS name")).rows[0].name)return;
+  const table=kind==='video'?'app_video_tasks':'app_canvas_image_tasks';
+  await creationEvidenceTx(client,()=>recordSourceOutcomeTx(client,kind,id,email,status,{artworkIds}),()=>client.query(`UPDATE ${table} SET parameters=parameters||'{"creationEvidencePending":true}'::jsonb WHERE id=$1 AND email=$2`,[id,email]));
+}
 export async function completeVideoTask(input: {
   email: string;
   id: string;
@@ -5205,6 +5239,7 @@ export async function completeVideoTask(input: {
       const { completeVideoNodeTx } = await import("@/lib/canvas/video-node-repository");
       await completeVideoNodeTx(client, email, task.parameters.nodeId, input.id, input.artworkId);
     }
+    await durableCreationOutcomeTx(client,'video',input.id,email,'succeeded',input.artworks?.map(a=>a.id)||[input.artworkId]);
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -5253,6 +5288,7 @@ export async function failVideoTask(input: {
       );
     }
     await client.query(`DELETE FROM app_gen_reservations WHERE job_id = $1`, [input.id]);
+    await durableCreationOutcomeTx(client,'video',input.id,email,'failed');
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -5290,6 +5326,7 @@ export async function updateVideoTask(
       patch.videoUrl ?? null,
     ]
   );
+  if(patch.status)await creationTransaction(async tx=>{await recordSourceOutcomeTx(tx,'video',id,email,({completed:'succeeded',processing:'running',queued:'queued',failed:'failed',cancelled:'cancelled',needs_attention:'needs_review'} as const)[patch.status as 'completed']||'needs_review',{artworkIds:patch.artworkId?[patch.artworkId]:[]});}).catch(()=>{});
 }
 
 /** 任务列表(工作台/恢复用):按创建时间倒序。 */
@@ -5590,6 +5627,7 @@ export async function createCanvasImageTaskWithReservation(input: {
   metered: boolean;
 }): Promise<{ task: CanvasImageTaskRow; created: boolean }> {
   await ensureSchema();
+  if(currentCreationContext())await ensureCreationSchema();
   const email = input.email.toLowerCase();
   const requestHash=canvasRequestFingerprint(input);
   if (!input.billingQuote && input.metered && input.cost > 0) await expireDueBatches(email);
@@ -5606,6 +5644,8 @@ export async function createCanvasImageTaskWithReservation(input: {
       await client.query("COMMIT");
       return { task: mapCanvasImageTask(existing.rows[0] as Record<string, unknown>), created: false };
     }
+    const scope=currentCreationContext(),parameters={...(input.parameters as Record<string,unknown>||{})};
+    if(scope){const creation=await acceptCreationTx(client,'canvas-image',input.id,email,{sourceArtworkId:input.sourceArtworkId,prompt:String(parameters.newText||''),parameters});Object.assign(parameters,{creationScope:{...scope,creationId:creation}});if(creation&&input.billingQuote)await creationLinkTx(client,creation,email,'billing',input.id);if(creation&&!input.billingQuote&&input.cost===0)await creationLinkTx(client,creation,email,'no-charge',input.id,'explicit-no-charge');}
     if(input.billingQuote){await reserveTaskBillingTx(client,input.id,email,input.billingQuote,`led-canvas-image-${input.id}`);}else if (input.metered && input.cost > 0) {
       const reserved = await client.query(
         `UPDATE app_users u
@@ -5627,7 +5667,7 @@ export async function createCanvasImageTaskWithReservation(input: {
          (id, email, kind, source_artwork_id, parameters, cost,billing_quote,billing_request_fingerprint)
        VALUES ($1,$2,'text-edit',$3,$4::jsonb,$5,$6::jsonb,$7)
        RETURNING *`,
-      [input.id, email, input.sourceArtworkId, JSON.stringify(input.parameters ?? {}), input.cost,input.billingQuote?JSON.stringify(input.billingQuote):null,requestHash]
+      [input.id, email, input.sourceArtworkId, JSON.stringify(parameters), input.cost,input.billingQuote?JSON.stringify(input.billingQuote):null,requestHash]
     );
     await client.query("COMMIT");
     return { task: mapCanvasImageTask(created.rows[0] as Record<string, unknown>), created: true };
@@ -5779,6 +5819,7 @@ export async function completeCanvasImageTask(input: {
       [email, input.id, input.resultArtworkId]
     );
     if(!billingPending) await client.query(`DELETE FROM app_gen_reservations WHERE job_id = $1`, [input.id]);
+    await durableCreationOutcomeTx(client,'canvas-image',input.id,email,'succeeded',[input.resultArtworkId]);
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -5819,6 +5860,7 @@ export async function failCanvasImageTask(input: { id: string; email: string; er
       );
     }
     await client.query(`DELETE FROM app_gen_reservations WHERE job_id = $1`, [input.id]);
+    await durableCreationOutcomeTx(client,'canvas-image',input.id,email,'failed');
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");

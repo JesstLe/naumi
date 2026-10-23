@@ -30,6 +30,16 @@ class NormalPolicy(unittest.TestCase):
  def test_admin_query_followup_authorization(self):
   self.cfg['authorization']='解决管理后台其他地方查询慢的问题，全部解决'
   self.assertEqual(self.begin()['authorization'],self.cfg['authorization'])
+ def test_nas_repair_followup_authorization(self):
+  self.cfg['authorization']='那你把上一轮发布未收尾的问题处理好，然后把这次修复上线，别影响正在使用的用户。'
+  self.assertEqual(self.begin()['authorization'],self.cfg['authorization'])
+ def test_saas_followup_requires_its_recovery_boundary(self):
+  self.cfg['authorization']='后台你觉得验收通过之后 合并所有分支然后上线47服务器做真实验收'
+  with self.assertRaisesRegex(Hold,'SAAS_RECOVERY_MODE'):self.begin()
+  self.cfg.update(releaseId='release47-saas-20261023',recoveryMode='saas-controlled-maintenance')
+  self.assertEqual(self.begin()['authorization'],self.cfg['authorization'])
+  self.s['normalBlueGreenReleases']={'unfinished':dict(phase='RECOVERY_REQUIRED',operations={})}
+  with self.assertRaises(Hold):self.begin()
  def test_normal_followup_allowed(self):
   rid='release47-alldev-20261019-previous';self.s['normalBlueGreenReleases']={rid:dict(releaseId=rid,phase='COMPLETE',operations={})};self.s['activeNormalBlueGreenReleaseId']=rid;self.s['runtimeRecovery']['successorReleaseId']=rid;self.cfg['predecessorReleaseId']=rid
   self.assertEqual(self.begin()['predecessorReleaseId'],rid)
@@ -83,6 +93,33 @@ class NormalPolicy(unittest.TestCase):
  def test_no_old_port_or_consumed_controller(self):
   s=pathlib.Path(ctl.__file__).read_text();self.assertNotIn("'13101'",s);self.assertNotIn('release47_successor_controller',s);self.assertIn('unknownLeases\']==0',s)
 class WorkerReceipt(unittest.TestCase):
+ def combined(self):
+  return {'commit':'b'*40,'paused':True,'activeTicks':0,'unresolvedTicks':0,'phase':'QUIESCENT','lastTick':{'phase':'complete'},
+    'mediaWorker':{'ok':True,'version':'b'*40,'sandbox':True,'draining':True,'running':0,'queued':0,'terminal':3,'maxActive':8,'concurrency':1}}
+ def test_combined_worker_drain_preserves_terminal_output_but_waits_for_active_media(self):
+  worker=self.combined();self.assertTrue(m.worker_quiescent(worker));self.assertTrue(m.worker_completed(worker))
+  for key,value in [('running',1),('queued',1),('draining',False)]:
+   changed=copy.deepcopy(worker);changed['mediaWorker'][key]=value
+   self.assertFalse(m.worker_quiescent(changed));self.assertTrue(m.worker_completed(changed))
+ def test_combined_worker_health_unknown_drift_and_unsafe_counts_fail_closed(self):
+  for key,value in [('ok',False),('version','c'*40),('sandbox',False),('running',None),('queued',False),('terminal',-1),('maxActive',0),('concurrency',2),('concurrency',True)]:
+   worker=self.combined();worker['mediaWorker'][key]=value
+   with self.subTest(key=key,value=value):self.assertFalse(m.worker_quiescent(worker));self.assertFalse(m.worker_completed(worker))
+  worker=self.combined();worker['mediaWorker']=None
+  self.assertFalse(m.worker_quiescent(worker));self.assertFalse(m.worker_completed(worker))
+ def test_combined_worker_cannot_infer_media_version_from_missing_scanner_identity(self):
+  worker=self.combined();del worker['commit']
+  self.assertFalse(m.worker_quiescent(worker));self.assertFalse(m.worker_completed(worker))
+  for unknown in [None,[],False]:
+   self.assertFalse(m.worker_quiescent(unknown));self.assertFalse(m.worker_completed(unknown))
+ def test_nas_scanner_preservation_is_exact_and_never_completion(self):
+  tick={'id':'original','workerBootId':'boot','workerInstanceId':'worker','workerCommit':'commit','targetWebInstanceId':'web','phase':'unknown'}
+  w={'paused':True,'activeTicks':0,'unresolvedTicks':1,'phase':'UNKNOWN','lastTick':tick}
+  pin={**tick,'authorization':'那你把上一轮发布未收尾的问题处理好，然后把这次修复上线，别影响正在使用的用户。','disposition':'preserve-unknown-scanner-no-replay','serverReceiptAbsent':True,'reviewedDomainJobs':14,'isolationReceiptSha256':'a'*64,'paidReplayAllowed':False}
+  self.assertTrue(m.worker_quiescent(w,pin));self.assertFalse(m.worker_completed(w))
+  for k,v in [('serverReceiptAbsent',False),('reviewedDomainJobs',13),('isolationReceiptSha256',''),('paidReplayAllowed',True),('id','different')]:
+   self.assertFalse(m.worker_quiescent(w,{**pin,k:v}))
+  self.assertFalse(m.worker_quiescent({**w,'activeTicks':1},pin))
  def test_exact_authorized_scanner_unknown_is_retained_not_completed(self):
   tick={'id':'original','workerBootId':'boot','workerInstanceId':'worker','workerCommit':'commit','targetWebInstanceId':'web','phase':'unknown'}
   w={'paused':True,'activeTicks':0,'unresolvedTicks':1,'phase':'UNKNOWN','lastTick':tick}
