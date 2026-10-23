@@ -5,6 +5,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const PEOPLE={ops:{name:'林可',role:'运营',color:'orange',initial:'可'},lead:{name:'陈序',role:'设计主管',color:'',initial:'序'},designer:{name:'许知',role:'设计师',color:'purple',initial:'知'},artist:{name:'周然',role:'美工',color:'green',initial:'然'},reviewer:{name:'沈悦',role:'验收人',color:'pink',initial:'悦'}};
 const STATUS={open:['待认领','orange'],assigned:['待确认','purple'],claimed:['已认领','blue'],in_progress:['进行中','blue'],blocked:['已阻塞','red'],review:['待验收','purple'],rework:['待修改','orange'],accepted:['已完成','green'],submitted:['待受理','orange'],approved:['已批准','blue'],active:['执行中','blue'],completed:['已完成','green'],unrouted:['待分配','red']};
 const KEY='naumi-enterprise-demo-v1';
+const REAL_PRODUCT=typeof document!=='undefined'&&document.documentElement?.dataset?.workspaceMode==='real';
 const initial=()=>({schema:1,nextId:28,requirements:[
 {id:'REQ-1027',title:'双11全店视觉升级',brand:'植研',shop:'植研天猫旗舰店',type:'活动视觉',team:'品牌视觉组',owner:'ops',due:'2026-10-22',priority:'较急',status:'active',brief:'升级双11活动主视觉与首页承接页，延续自然、纯净的品牌视觉。',spec:'首页活动图 1920×700，主视觉源文件',timeline:['林可提交需求','陈序批准需求并拆分任务']},
 {id:'REQ-1026',title:'氨基酸洁面 · 新品详情页',brand:'植研',shop:'植研天猫旗舰店',type:'详情页设计',team:'商品设计组',owner:'ops',due:'2026-10-20',priority:'正常',status:'active',brief:'突出温和清洁、自然成分。保留商品原有包装比例，不改产品标识。',spec:'750px宽详情长图、JPG及源文件',timeline:['林可提交需求','陈序批准需求并拆分任务']},
@@ -20,14 +21,14 @@ const initial=()=>({schema:1,nextId:28,requirements:[
 {id:'TK-305',planStart:'2026-10-16',planEnd:'2026-10-16',estimatedHours:4,quantity:3,unit:'张',req:'REQ-1023',title:'新品旅行套组 · 渠道适配',kind:'artwork',team:'商品制作组',status:'accepted',assignee:'artist',percent:100,points:3,due:'2026-10-18',reworks:0,quality:4,logs:['周然提交交付稿','沈悦验收通过，质量4/5']},
 {id:'TK-306',scheduleTag:'urgent',owner:'artist',planStart:'2026-10-21',planEnd:'2026-10-22',estimatedHours:8,quantity:3,unit:'张',req:'REQ-1027',title:'双11首页 · 促销氛围图适配',kind:'artwork',team:'商品制作组',status:'blocked',assignee:'artist',percent:30,points:5,due:'2026-10-22',reworks:0,logs:['周然标记阻塞：等待活动价格确认']}
 ],activity:[{who:'reviewer',text:'验收通过了「新品旅行套组 · 渠道适配」',time:'10分钟前'},{who:'designer',text:'提交了「氨基酸洁面 · 新品详情页」',time:'28分钟前'},{who:'ops',text:'提交了「植研身体乳 · 卖点长图」',time:'42分钟前'}],facts:[{task:'TK-305',contributor:'artist',points:3,quality:4,reworks:0}],filters:{}});
-let state;try{state=JSON.parse(localStorage.getItem(KEY));if(state?.schema!==1||!Array.isArray(state.tasks)||!Array.isArray(state.requirements)||!Array.isArray(state.facts)||!Array.isArray(state.activity))state=initial();}catch{state=initial();}
+let state;try{state=REAL_PRODUCT?{schema:1,nextId:1,requirements:[],tasks:[],activity:[],facts:[],filters:{}}:JSON.parse(localStorage.getItem(KEY));if(state?.schema!==1||!Array.isArray(state.tasks)||!Array.isArray(state.requirements)||!Array.isArray(state.facts)||!Array.isArray(state.activity))state=initial();}catch{state=initial();}
 let view=location.hash==='#schedule'?'schedule':'dashboard',role='lead',taskTab='all',listFilter='all',search='',boardMode=false,drawerData=null,modalFocus=null;
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const person=(id,small=false)=>id?`<span class="person"><span class="avatar ${PEOPLE[id]?.color||''}">${PEOPLE[id]?.initial||'?'}</span>${small?'':esc(PEOPLE[id]?.name||id)}</span>`:'<span class="subline">未指派</span>';
 const tag=(s)=>{const x=STATUS[s]||[s,''];return `<span class="tag ${x[1]}">${x[0]}</span>`;};
 const reqFor=t=>state.requirements.find(r=>r.id===t.req);
 const route=(shop,type)=>shop==='其他店铺'?'待分配':type==='活动视觉'?'品牌视觉组':type==='详情页设计'?'商品设计组':'商品制作组';
-function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch{toast('浏览器未允许保存，当前操作仅在本次预览有效');}}
+function save(){if(REAL_PRODUCT)return;try{localStorage.setItem(KEY,JSON.stringify(state));}catch{toast('浏览器未允许保存，当前操作仅在本次预览有效');}}
 function toast(t){$('#toast').textContent=t;$('#toast').classList.add('show');clearTimeout(window.toastTimer);window.toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),3000);}
 function activity(text){state.activity.unshift({who:role,text,time:'刚刚'});state.activity=state.activity.slice(0,14);save();}
 const navs=[['dashboard','grid','工作台',''],['requirements','file','需求中心','6'],['tasks','task','任务中心','6'],['schedule','calendar','团队排期',''],['assets','image','素材与交付',''],['performance','chart','贡献与绩效','']];

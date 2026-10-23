@@ -8,6 +8,8 @@ const port=Number(process.argv[2]||18482),sourcePort=Number(process.argv[3]||184
 if(![port,sourcePort].every(p=>Number.isInteger(p)&&p>=1024&&p<=65535)||port===sourcePort)throw Error('INVALID_PORTS');
 const html=resolve('design/enterprise-demo/preview.html');
 const importConfig=resolve(process.argv[4]||'data/enterprise-local-import/connection.json');
+const productDataMode=process.env.ENTERPRISE_PRODUCT_DATA_MODE||'real';
+if(!['real','fixture'].includes(productDataMode))throw Error('INVALID_PRODUCT_DATA_MODE');
 const localSession=randomBytes(32).toString('hex'),csrf=randomBytes(32).toString('hex');
 const same=(a,b)=>{const x=Buffer.from(a||''),y=Buffer.from(b);return x.length===y.length&&timingSafeEqual(x,y);};
 const server=createServer(async(req,res)=>{
@@ -26,17 +28,18 @@ const server=createServer(async(req,res)=>{
       }
       const cookie=String(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('enterprise_import_session='))?.slice('enterprise_import_session='.length);
       if(!same(cookie,localSession))return fail(401,'LOCAL_SESSION_REQUIRED');
-      if(!['worksheet','worksheet-audit','worksheet-command','worksheet-upload','worksheet-file','context','rows','references','reference-asset','asset','resolve','people','people-audit','people-profile','people-roster-preview','people-roster-apply','people-preview','people-apply','orders','order','intake','command'].includes(action))return fail(400,'INVALID_ACTION');
+      if(!['source-snapshot','worksheet','worksheet-audit','worksheet-command','worksheet-upload','worksheet-file','context','rows','references','reference-asset','asset','resolve','people','people-audit','people-profile','people-roster-preview','people-roster-apply','people-preview','people-apply','orders','order','intake','command'].includes(action))return fail(400,'INVALID_ACTION');
       const write=['worksheet-command','worksheet-upload','resolve','people-profile','people-roster-preview','people-roster-apply','people-preview','people-apply','intake','command'].includes(action);if(req.method!==(write?'POST':'GET'))return fail(405,'METHOD_NOT_ALLOWED');
       if(write&&(!same(req.headers['x-csrf-token'],csrf)||req.headers.origin!==u.origin))return fail(403,'CSRF_REQUIRED');
-      const args=new URLSearchParams();for(const key of ['source','id','orderId','download','thumb','query','status','page','before'])if(u.searchParams.has(key))args.set(key,u.searchParams.get(key));
+      const keys=action==='source-snapshot'?['op','enterpriseId','kind','email','from','to','page','id']:['source','id','orderId','download','thumb','query','status','page','before'];
+      const args=new URLSearchParams();for(const key of keys)if(u.searchParams.has(key))args.set(key,u.searchParams.get(key));
       const chunks=[];let size=0;if(write){for await(const chunk of req){size+=chunk.length;if(size>(action==='worksheet-upload'?6*1024*1024:action==='resolve'?8192:256*1024))return fail(413,'BODY_TOO_LARGE');chunks.push(chunk);}}
       const response=await fetch(`http://127.0.0.1:${config.port}/v1/import/${action}?${args}`,{method:req.method,headers:{authorization:'Bearer '+config.token,'content-type':'application/json'},...(write?{body:Buffer.concat(chunks)}:{}),signal:AbortSignal.timeout(30000),redirect:'error'});
       res.writeHead(response.status,{...Object.fromEntries(response.headers),'cache-control':'private, no-store'});
       if(response.body){const stream=Readable.fromWeb(response.body);stream.on('error',()=>res.destroy());res.on('close',()=>stream.destroy());stream.pipe(res);}else res.end();return;
     }
     if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405);return res.end();}
-    if(u.pathname==='/'||u.pathname==='/preview.html'){res.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store','content-security-policy':"frame-ancestors 'none'",'x-frame-options':'DENY'});return res.end(await readFile(html));}
+    if(u.pathname==='/'||u.pathname==='/preview.html'){res.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store','content-security-policy':"frame-ancestors 'none'",'x-frame-options':'DENY'});const content=await readFile(html,'utf8');return res.end(productDataMode==='real'?content.replace('<html ', '<html data-workspace-mode="real" '):content);}
     if(u.pathname==='/favicon.ico'){res.writeHead(204);return res.end();}
     if(!['/api/enterprise/integration','/api/enterprise/media','/readyz'].includes(u.pathname)){res.writeHead(404);return res.end('not found');}
     const response=await fetch(`http://127.0.0.1:${sourcePort}${u.pathname}${u.search}`,{headers:{Accept:req.headers.accept||'*/*'},signal:AbortSignal.timeout(20000),redirect:'error'});

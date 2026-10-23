@@ -17,7 +17,8 @@
     "notifications.css",
     "sheet-grid.css",
     "excel-preview.css",
-    "sheet-save.css"
+    "sheet-save.css",
+    "real-product.css"
   ],
   "core": [
     "schedule-model.js",
@@ -175,7 +176,9 @@
     "sheet-save-ui.js",
     "sheet-attachment-ui.js",
     "excel-save-model.js",
-    "excel-save-ui.js"
+    "excel-save-ui.js",
+    "real-product-model.js",
+    "real-product-ui.js"
   ],
   "workers": [
     {

@@ -31,7 +31,7 @@ test('multi-person source membership, legacy preservation and atomic commands',{
   const importer=new ImportStore(pool,enterpriseId,dir),row=(n:number)=>({excelRow:n,title:'合成任务'+n,parentLabel:'',raw:{'设计师':n===2?'合成甲,合成乙':'合成甲','需求方':'合成运营'},rawCells:{['A'+n]:'合成任务'+n},parentCandidates:[],attachments:[],issues:[]});
   await importer.ingest({schema:'enterprise-source-import-v1',sourceHash,workbookHash:'7'.repeat(64),sheet:'多人合成验收',headers:{A:'需求'},rows:[row(2),row(3),row(4)],issues:[],summary:{rows:3,children:0},assets:[],links:[]},'fixture');
   const a=randomUUID(),b=randomUUID(),profile=(id:string,realName:string)=>({commandId:randomUUID(),personId:id,expectedVersion:0,realName,nickname:'花名'+realName,source:null,enabled:true,reason:'合成资料'});
-  const pa=profile(a,'合成甲'),pb=profile(b,'合成乙');await store.profile(p,pa);await store.profile(p,pb);
+  const pa=profile(a,'合成甲'),pb={...profile(b,'合成乙'),source:{instance:'fixture-original',enterpriseId:randomUUID(),subject:'original@fixture.invalid'}};await store.profile(p,pa);await store.profile(p,pb);
   const legacy=(r:number,v:number,id:string|null=a,pv:number|null=1)=>({sourceHash,reason:'旧单人合同',entries:[{row:r,field:'设计师',sourceName:r===2?'合成甲,合成乙':'合成甲',expectedVersion:v,personId:id,personVersion:id?pv:null}]});
   const multi=(v:number,members:{personId:string;personVersion:number}[]=[{personId:a,personVersion:1},{personId:b,personVersion:1}])=>({sourceHash,reason:'明确完整名单',entries:[{row:2,field:'设计师',sourceName:'合成甲,合成乙',expectedVersion:v,members}]});
   const save=async(input:unknown)=>{const pv=await store.preview(p,input);return store.apply(p,{...(input as object),commandId:randomUUID(),previewHash:pv.previewHash});};
