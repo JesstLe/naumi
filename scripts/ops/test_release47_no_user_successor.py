@@ -498,6 +498,7 @@ class DeadBootWiring(unittest.TestCase):
         queries, writes = [], []
         def sql(query):
             queries.append(query)
+            if "json_build_object('triggerMatch'" in query: return [{'triggerMatch':True}]
             if "json_build_object('match'" in query: return [{'match':True}]
             return [{k:copy.deepcopy(v) for k,v in review.items() if k not in ('web','identity')}]
         def write(query):

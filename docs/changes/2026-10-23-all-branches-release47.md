@@ -49,3 +49,11 @@
 发布顺序为完整备份→准备停止态候选和三套入口→维护503→旧Worker/Web真实drain→同事务逐行CAS插入68个围栏→原始domain真实0且rawUnknown24精确集合不变→逐一退役旧槽→fresh MemAvailable≥4608MiB→启动候选。任一新activity、hash漂移、item fence或未排空事务仍HOLD，不以计数减法放行。
 
 此阶段尚未切入口或退役旧槽。真实执行结果将在后续模块记录，保留原两次preflight HOLD与canonical revision744的现场记录。
+
+
+## 发布前独立复核收口
+
+- 远端main新增c94d9347，仅产品级10万活跃目标文档及AGENTS约定，无业务代码差异；已普通合入。root发现其47暂缓发布声明后向用户核对，用户本轮明确再次选择“按本线程要求，继续发布47”；不把该明确授权扩展到其他站点或规模达标。
+- 独立review指出cancelBatch未查fence，故元数据本身不是DB保存屏障。本次不改固定业务镜像，在原serializable/CAS围栏事务内仅补batch/ref现有freeze_imported_row('id')触发器；其他5表精确enabled/function/key/tgtype必须匹配。原函数及business行不替换。
+- 新Worker创建时精确传PID1 heap64双preload、bounded/MALLOC2/UV2。原scanner64/media96及fresh allowlist子环境不改；不会称所有子进程都load sharp。压测及native测试实际也是该combined编排，不推断不存在的子进程配置。
+- 最终ops集中97项：Windows83执行通过/14既有POSIX skip；Linux96执行通过/1 host缺Node skip（实际Node observerdisabled已在Windows跑过）。首个Linux失败是NoUser fixture尚缺新增triggerMatch callback，追加fixture响应后重跑通过；只改测试，原失败保留。线上canonical/容器未由这些离线测试改变。
