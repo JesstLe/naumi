@@ -2151,6 +2151,21 @@ export async function getSetting(k: string): Promise<string | null> {
   return rows[0] ? (rows[0].v as string) : null;
 }
 
+/** Read a settings snapshot in one query; absent keys are null and no values are cached. */
+export async function getSettings(keys: readonly string[]): Promise<Record<string, string | null>> {
+  const values: Record<string, string | null> = Object.create(null);
+  const uniqueKeys = Array.from(new Set(keys));
+  if (!uniqueKeys.length) return values;
+  for (const key of uniqueKeys) values[key] = null;
+  await ensureSchema();
+  const { rows } = await getPool().query<{ k: string; v: string }>(
+    `SELECT k, v FROM app_settings WHERE k = ANY($1::text[])`,
+    [uniqueKeys]
+  );
+  for (const row of rows) values[row.k] = row.v;
+  return values;
+}
+
 export async function setSetting(k: string, v: string): Promise<void> {
   await ensureSchema();
   await getPool().query(

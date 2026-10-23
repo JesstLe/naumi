@@ -1,6 +1,6 @@
 import "server-only";
 import crypto from "crypto";
-import { dbEnabled, getSetting, setSetting, getSignupBonus } from "@/lib/db";
+import { dbEnabled, getSetting, getSettings, setSetting, getSignupBonus } from "@/lib/db";
 import { settingsSecret } from "@/lib/settings-secret";
 import { stagingHistoryGuardEnabled } from "./staging-history";
 
@@ -195,10 +195,11 @@ export async function getLegacyOpenAISettings(): Promise<OpenAISettings> {
   // 抠图/透明底:实测 gpt-image-2 不支持 background:transparent,只能 v1。
   const envCutout = process.env.OPENAI_CUTOUT_MODEL || "gpt-image-1";
   if (dbEnabled) {
-    const enc = await getSetting(OAI_KEY_ENC);
-    const m = await getSetting(OAI_MODEL);
-    const ms = await getSetting(OAI_MODELS);
-    const cm = await getSetting(OAI_CUTOUT_MODEL);
+    const settings = await getSettings([OAI_KEY_ENC, OAI_MODEL, OAI_MODELS, OAI_CUTOUT_MODEL]);
+    const enc = settings[OAI_KEY_ENC];
+    const m = settings[OAI_MODEL];
+    const ms = settings[OAI_MODELS];
+    const cm = settings[OAI_CUTOUT_MODEL];
     const dbKey = enc ? decryptAtRest(enc) : null;
     if (dbKey || m || ms || cm) {
       const model = m || envModel;
@@ -451,12 +452,13 @@ export async function getSmtpConfig(): Promise<SmtpConfig | null> {
   let from = process.env.SMTP_FROM || "";
   let port = Number(process.env.SMTP_PORT || 465);
   if (dbEnabled) {
-    host = (await getSetting(SMTP_HOST))?.trim() || host;
-    user = (await getSetting(SMTP_USER))?.trim() || user;
-    const enc = await getSetting(SMTP_PASS_ENC);
+    const settings = await getSettings([SMTP_HOST, SMTP_USER, SMTP_PASS_ENC, SMTP_FROM, SMTP_PORT]);
+    host = settings[SMTP_HOST]?.trim() || host;
+    user = settings[SMTP_USER]?.trim() || user;
+    const enc = settings[SMTP_PASS_ENC];
     if (enc) pass = decryptAtRest(enc) || pass;
-    from = (await getSetting(SMTP_FROM))?.trim() || from;
-    const p = (await getSetting(SMTP_PORT))?.trim();
+    from = settings[SMTP_FROM]?.trim() || from;
+    const p = settings[SMTP_PORT]?.trim();
     if (p) port = Number(p);
   }
   if (!host || !user || !pass) return null;

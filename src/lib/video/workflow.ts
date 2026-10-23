@@ -6,6 +6,7 @@ import {encryptAtRest,decryptAtRest} from "../settings";
 import {freezeVideoWorkflow,withFrozenWorkflowStage,workflowBindingId,type FrozenWorkflowStage} from "./workflow-freeze";
 import {createHash} from "node:crypto";
 import {getPool,getVideoTask,getVideoTaskByIdempotencyKey,listArtworksByIds} from "../db";
+import {acquireVideoCoordinationLock} from "./coordination-pool";
 import {ModelConfigError} from "../model-config/types";
 import {BillingError} from "../billing/types";
 import {createVideoGeneration,type CreateVideoInput} from "./service";
@@ -110,12 +111,11 @@ async function dependencyReference(actor:string,runId:string,binding:NonNullable
     kind:binding.kind,role:binding.role,artworkId:artwork.id,url:binding.kind==="image"?artwork.image:artwork.videoUrl||artwork.image};
 }
 async function resumeVideoWorkflowLocal(runId:string,actor?:string){
-  await ensureWorkflowSchema();const pool=getPool(),lock=await pool.connect();let acquired=false;
+  await ensureWorkflowSchema();const pool=getPool(),lock=await acquireVideoCoordinationLock(`video-workflow:${runId}`);
   try{
-    acquired=(await lock.query("SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS acquired",[`video-workflow:${runId}`])).rows[0].acquired;
     const run=(await pool.query("SELECT * FROM app_video_workflow_runs WHERE id=$1",[runId])).rows[0];
     if(!run||actor&&run.email!==actor)throw new ModelConfigError("WORKFLOW_UNAVAILABLE","工作流不存在",404);
-    if(!acquired)return getVideoWorkflow(run.email,runId);
+    if(!lock.acquired)return getVideoWorkflow(run.email,runId);
     await bindBackgroundClaim(runId);
     const decrypted=run.frozen_nodes_enc?decryptAtRest(run.frozen_nodes_enc):null;
     if(run.frozen_nodes_enc&&!decrypted)throw new ModelConfigError("WORKFLOW_SNAPSHOT_UNAVAILABLE","制作链冻结记录不可用，未继续提交",503);
@@ -162,7 +162,7 @@ async function resumeVideoWorkflowLocal(runId:string,actor?:string){
     };
     if(!run.cancellation_requested_at)for(let offset=0;offset<readyNodes.length;offset+=3)await Promise.allSettled(readyNodes.slice(offset,offset+3).map(submitNode));
     await pool.query("UPDATE app_video_workflow_runs SET updated_at=now() WHERE id=$1",[runId]);await creationTransaction(tx=>updateWorkflowCreationTx(tx,run.email,runId)).catch(()=>{});return getVideoWorkflow(run.email,runId);
-  }finally{if(acquired)await lock.query("SELECT pg_advisory_unlock(hashtextextended($1,0))",[`video-workflow:${runId}`]).catch(()=>{});lock.release();}
+  }finally{await lock.release();}
 }
 export async function recoverVideoWorkflows(limit=2){
   await ensureWorkflowSchema();const runs=(await getPool().query(`SELECT r.id FROM app_video_workflow_runs r WHERE EXISTS (
