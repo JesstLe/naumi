@@ -37,3 +37,7 @@
 |2|2048×2048|69161dd9522c04d65ea1efa25fc1319666c20d98e8db49479be9c250562f0d33|本地结算12，一笔−12，预占0|
 
 子模块集中baseline/continue均exit0；未复制员工原图、prompt、signedURL或原配置进Git。原图私有保留，不作为公开效果图发布。
+
+## 封版取证绑定修正
+
+第二轮benchmark运行期间父更新了catalog的两图取证说明。旧runner保存时重新读取live文件hash，但scenarios仍为启动时快照，造成报告hash/内容错绑；原REPORT和10项真实结果保持，不覆盖。`FINAL_BENCHMARK_BINDING.json`逐字节校验scenarios与启动commit c9f0f17的catalog一致并单列正确SHA；不改测试结论。runner现只在启动读取一次manifest bytes及SHA，后续save复用，避免并行文档更新再次错绑。增量以纯内存真实runner保存路径验证，不再重复执行整套PG矩阵。

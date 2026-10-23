@@ -27,8 +27,10 @@ options.root = fs.realpathSync(path.resolve(options.root));
 options.output = path.resolve(options.output);
 assert(['baseline', 'modified', 'compare'].includes(options.phase));
 const manifestPath = path.join(repo, 'docs/benchmarks/imagegen-history-20261023.json');
-const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+const manifestBytes = fs.readFileSync(manifestPath);
+const manifest = JSON.parse(manifestBytes.toString('utf8'));
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
+const manifestSha256 = digest(manifestBytes);
 // Optional offline evidence packages are verified and indexed, never executed.
 // A captured case does not turn a mechanism suite into an employee exact replay.
 const capturedCases = options.cases.map(caseDir => {
@@ -112,7 +114,7 @@ function probe(id, phase, root, script, args, expected, expectedExit = 0) {
 function save() {
   const outcome = finished ? verdict(results, options.phase) : {status: 'RUNNING', exit: null};
   const report = {schema: 1, kind: 'historical-mechanism-benchmark', createdAt: new Date().toISOString(),
-    sourceCommit, sourceDirty, manifestSha256: digest(fs.readFileSync(manifestPath)), phase: options.phase,
+    sourceCommit, sourceDirty, manifestSha256, phase: options.phase,
     employeeExactRequestsReplayed: 0, historicalIncidentsResolvedByThisRun: 0,
     historyCounting: 'Never sum overlapping cohorts or parent/child/provider rows. Test assertions are not employee incidents.',
     productSourceChanged: false, productionMutations: 0, externalSupplierCalls: 0,
