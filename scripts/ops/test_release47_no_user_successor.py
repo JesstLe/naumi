@@ -388,7 +388,7 @@ class RetirementAndFailure(unittest.TestCase):
         self.assertTrue(op.tx.save.call_args.args[1]['enterpriseIdentityNotElevated'])
 
     def test_orchestration_has_no_future_ram_gate_or_stopped_old_exec_in_finalizers(self):
-        source=inspect.getsource(m.NoUserController.run)
+        source=inspect.getsource(m.NoUserController.run)+inspect.getsource(m.NoUserController.continue_after_import)
         self.assertLess(source.index('self.build_gateway()'),source.index('self.retire_old_slots()'))
         self.assertLess(source.index('self.retire_old_slots()'),source.index("self.memory_proof('before-candidate-start')"))
         self.assertLess(source.index("self.memory_proof('before-candidate-start')"),source.index("self.op('web-start'"))
@@ -441,7 +441,7 @@ class FrozenVersionPreservation(unittest.TestCase):
 
 class DeadBootWiring(unittest.TestCase):
     def test_new_worker_explicitly_creates_and_starts_bounded_runtime_layout(self):
-        source=inspect.getsource(m.NoUserController.run)
+        source=inspect.getsource(m.NoUserController.continue_after_import)
         for start,end in [('ctl.c.clone_worker(',"self.memory_proof('before-worker-start')"),
                 ('ctl.c.start_worker(',"self.wait(lambda: self.worker_control(self.newworker")]:
             section=source[source.index(start):source.index(end)]
@@ -625,7 +625,7 @@ class DeadBootWiring(unittest.TestCase):
         self.assertEqual(writes[0].count('INSERT INTO naumi_staging_guard.origin_rows'),68)
         self.assertNotIn("VALUES('app_release_activities'",writes[0]);self.assertEqual(review,before)
         run=inspect.getsource(m.NoUserController.run);retire=inspect.getsource(m.NoUserController.retire_old_slots)
-        self.assertLess(run.index("self.op('database-backup'"),run.index('self.retire_old_slots()'))
+        self.assertLess(run.index("self.op('database-backup'"),run.index('self.continue_after_import()'))
         self.assertLess(retire.index("self.op('old-web-drain'"),retire.index("self.op('dead-boot-exact-fence'"))
         self.assertLess(retire.index("self.op('dead-boot-exact-fence'"),retire.index('self.wait(self.pre_retirement_drain'))
 
@@ -709,6 +709,72 @@ class DeadBootWiring(unittest.TestCase):
         for method in ('finish_ready','retire_ready'):
             source=inspect.getsource(getattr(m.NoUserController,method))
             self.assertIn('ctl.normal.worker_completed(s)',source);self.assertNotIn('self.old_worker_quiescent(s)',source)
+
+
+class SnapshotFailureContinuation(unittest.TestCase):
+    def original_operations(self):
+        return {name: {'operationId': str(i)*8+'-'+str(i)*4+'-4'+str(i)*3+'-8'+str(i)*3+'-'+str(i)*12,
+            'phase':'ACKNOWLEDGED', 'receipt':{'original':name}}
+            for i,name in enumerate(('database-backup','quote-additive-schema','image-import'),1)}
+
+    def test_run_calls_original_continuation_only_after_completed_import(self):
+        source=inspect.getsource(m.NoUserController.run)
+        self.assertLess(source.index("self.op('database-backup'"),source.index('self.maintenance_and_import()'))
+        self.assertLess(source.index('self.maintenance_and_import()'),source.index('return self.continue_after_import()'))
+        self.assertNotIn('tasks.collect_task_snapshot',source)
+        continuation=inspect.getsource(m.NoUserController.continue_after_import)
+        for text in ('self.maintenance_and_import(', 'self.preserved_unknown.establish(',
+                'self.establish_dead_boot(', "self.op('database-backup'", "self.op('quote-additive-schema'", "self.op('image-import'"):
+            self.assertNotIn(text,continuation)
+
+    def test_failed_snapshot_keeps_recovery_phase_three_ack_uuids_and_receipts(self):
+        op=operator();op.db={'id':'d'*64}
+        op.succ={'phase':'RECOVERY_REQUIRED','operations':self.original_operations(),'retired':[]}
+        before=copy.deepcopy((op.state,op.succ));op.maintenance_and_import=Mock()
+        with patch.object(m.tasks,'collect_task_snapshot',side_effect=Hold('SNAPSHOT_TIMEOUT')) as collect,\
+                self.assertRaisesRegex(Hold,'SNAPSHOT_TIMEOUT'):
+            op.continue_after_import()
+        self.assertEqual((op.state,op.succ),before)
+        op.op.assert_not_called();op.phase.assert_not_called();op.persist.assert_not_called()
+        op.preserved_unknown.establish.assert_not_called();op.maintenance_and_import.assert_not_called()
+        self.assertEqual(collect.call_args.kwargs['projection'],'proof')
+        self.assertEqual(collect.call_args.kwargs['row_limit'],op.cfg.get('snapshotRowLimit',5000))
+        self.assertEqual(collect.call_args.kwargs['statement_timeout_ms'],op.cfg.get('snapshotStatementTimeoutMs',5000))
+
+    def test_empty_snapshot_still_blocks_before_candidate_or_phase_mutation(self):
+        op=operator();op.db={'id':'d'*64};op.succ['operations']=self.original_operations()
+        before=copy.deepcopy(op.succ)
+        with patch.object(m.tasks,'collect_task_snapshot',return_value=SimpleNamespace(public={'tables':[]})),\
+                self.assertRaisesRegex(Hold,'TASK_BASELINE_MISSING'):
+            op.continue_after_import()
+        op.phase.assert_not_called();op.op.assert_not_called();op.tx.run.assert_not_called()
+        self.assertEqual(op.succ,before)
+
+    def test_unknown_row_or_byte_baseline_never_reaches_phase_or_container(self):
+        for public in ({'tables':{'app_image_jobs':{}},'preservationComplete':False,'unknown':['row-limit']},
+                {'tables':{'app_image_jobs':{}},'preservationComplete':False,'unknown':['byte-limit']},
+                {'tables':{'app_image_jobs':{}}},
+                {'tables':{'app_image_jobs':{}},'preservationComplete':1}):
+            op=operator();op.db={'id':'d'*64}
+            op.succ={'phase':'RECOVERY_REQUIRED','operations':self.original_operations(),'retired':[]}
+            before=copy.deepcopy((op.state,op.succ))
+            with self.subTest(public=public),patch.object(m.tasks,'collect_task_snapshot',return_value=SimpleNamespace(public=public)),\
+                    self.assertRaisesRegex(Hold,'TASK_BASELINE_INCOMPLETE'):
+                op.continue_after_import()
+            self.assertEqual((op.state,op.succ),before)
+            op.phase.assert_not_called();op.op.assert_not_called();op.persist.assert_not_called();op.tx.run.assert_not_called()
+
+    def test_successful_snapshot_reenters_original_backed_up_then_web_create(self):
+        op=operator();op.db={'id':'d'*64};op.succ['operations']=self.original_operations()
+        op.tx.run.return_value=json.dumps([{'Id':op.cfg['image']}]).encode()
+        op.op=Mock(side_effect=Hold('STOP_AT_ORIGINAL_WEB_CREATE'))
+        snapshot=SimpleNamespace(public={'tables':{'app_image_jobs':{}},'preservationComplete':True})
+        with patch.object(m.tasks,'collect_task_snapshot',return_value=snapshot),\
+                self.assertRaisesRegex(Hold,'STOP_AT_ORIGINAL_WEB_CREATE'):
+            op.continue_after_import()
+        self.assertIs(op.pre,snapshot);op.phase.assert_called_once_with('BACKED_UP')
+        self.assertEqual(op.op.call_args.args[0],'web-create')
+        self.assertEqual(set(op.succ['operations']),{'database-backup','quote-additive-schema','image-import'})
 
 
 if __name__ == '__main__':unittest.main()

@@ -57,3 +57,17 @@
 - 独立review指出cancelBatch未查fence，故元数据本身不是DB保存屏障。本次不改固定业务镜像，在原serializable/CAS围栏事务内仅补batch/ref现有freeze_imported_row('id')触发器；其他5表精确enabled/function/key/tgtype必须匹配。原函数及business行不替换。
 - 新Worker创建时精确传PID1 heap64双preload、bounded/MALLOC2/UV2。原scanner64/media96及fresh allowlist子环境不改；不会称所有子进程都load sharp。压测及native测试实际也是该combined编排，不推断不存在的子进程配置。
 - 最终ops集中97项：Windows83执行通过/14既有POSIX skip；Linux96执行通过/1 host缺Node skip（实际Node observerdisabled已在Windows跑过）。首个Linux失败是NoUser fixture尚缺新增triggerMatch callback，追加fixture响应后重跑通过；只改测试，原失败保留。线上canonical/容器未由这些离线测试改变。
+
+## 历史生成入口补合与最终镜像（覆盖前述中间镜像）
+
+刷新远端后补合 `2f000869bb623b0fcf929fb028083558a736499c` 的历史生成入口；最终业务 source 为 `0175cecfad8d7e112e39f8012b054a09fd69db9c`、build `1792757830`、image `sha256:8a6023c93a66de94f6a0b50f9cb2a9a894c4fbafada3983e929ddf8de23f8432`。Linux完整构建91页通过；最终镜像压力16/4/worker与典型native复测通过，16任务Web峰1982.95MiB，cold713.49/warm718.38MiB，无cgroup OOM事件。历史入口原PG/实际组件UI通过，供应商调用0；其两个自有fixture DB已精确清理，共享库保持。浏览器清单绑定该镜像462个资产；prepared不记作live验收。
+
+## Snapshot前置失败与精确接续（20:20—21:05）
+
+完整数据库备份1043584318字节、可读校验及quote additive schema、最终镜像导入已ACK；canonical revision752，原journal为RECOVERY_REQUIRED，原3操作UUID与receipt保留。失败在只读任务snapshot首张image jobs proof SQL的15秒statement timeout；旧Web仍运行并公开服务，新候选未创建、维护及切流未执行。原Worker paused，历史UNKNOWN1未改写。
+
+优化仅限 `app_image_jobs` 的proof投影：原生列先冻结摘要再构造窄proof，避开宽JSON重复复制；冻结payload/paid bindings、missing/NULL、graph closure、原5000行和15秒上限保持。本地独立PG旧新完整private.tables相等。相同最终SHA671983e6首次现场probe仍超时，失败证据保留；后续独立只读probe在原上限下exit0，总77.375秒，23表全部observed、6,529,130输出字节，解析确认preservationComplete=True。不将单次通过扩写为性能上限保证。
+
+NoUser仅抽取continue_after_import，snapshot后要求tables非空且preservationComplete is True，才允许BACKED_UP/create。Windows集中102项通过（原POSIX14跳过）；47主机首次因缺Node可执行程序有1项测试前置失败，未删失败记录。随后只为该Node测试采用无网络/128MiB自有最终镜像fixture，Linux102项全部通过exit0（2.491秒），fixture自行移除，无正式槽位动作。
+
+精确接续wrapper绑定原cfg字节/语义、revision752/canonical/journal/3ACK完整hash、原Guard全部proof与supplement、原quote/config/incident、完整备份、旧槽及gateway5文件闭包、最终161个Python模块、最终image配置和未加围栏的metadata。恢复内存Guard而不establish/begin，不改cfg expectedRevision744，不重跑3ACK。case05 succ引用原state journal对象，失败材料使用唯一nonce文件名保留原O_EXCL证据。发布仍待原continuation的全部实际门禁与前后浏览器验收，不因wrapper完成标COMPLETE。

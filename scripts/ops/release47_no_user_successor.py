@@ -958,10 +958,19 @@ console.log(JSON.stringify({status:r.status,commit:process.env.SOURCE_COMMIT,...
         require(self.config_before == self.cfg['expectedConfigurationFacts'], 'MODEL_OR_BILLING_BASELINE_CHANGED')
         self.op('database-backup', lambda _: self.tx.backup_database(self.db))
         self.maintenance_and_import()
+        return self.continue_after_import()
+
+    def continue_after_import(self):
+        """Original post-import flow; a resume wrapper must restore/check pins first.
+
+        This entry point never establishes a new preservation baseline and never
+        replays database-backup, quote-additive-schema or image-import operations.
+        """
         self.pre = tasks.collect_task_snapshot(self.tx.run, self.db, self.tx.save, projection='proof',
             row_limit=self.cfg.get('snapshotRowLimit', 5000), allow_absent_tables=tasks.ADDITIVE_TABLES,
             statement_timeout_ms=self.cfg.get('snapshotStatementTimeoutMs', 5000))
         require(self.pre.public.get('tables'), 'TASK_BASELINE_MISSING')
+        require(self.pre.public.get('preservationComplete') is True, 'TASK_BASELINE_INCOMPLETE')
         self.phase('BACKED_UP')
         require(json.loads(self.tx.run(['docker', 'image', 'inspect', self.cfg['image']]))[0]['Id'] == self.cfg['image'],
                 'FIXED_IMAGE_MISSING')

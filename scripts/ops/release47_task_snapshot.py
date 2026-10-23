@@ -178,7 +178,38 @@ def direct_key(key):
     return 't.'+key+'::text'
 
 
+def image_job_native_proof_projection_sql(reg):
+    """Hash native frozen columns before constructing the small proof row.
+
+    A wide materialized row JSON makes every j->field copy/detoast its payload.
+    Catalog-selected native expressions preserve missing versus SQL-null fields
+    and exactly the sql_frozen normalization, without carrying payload into j.
+    """
+    frozen_fields = ','.join(literal(v) for v in set(FROZEN_FIELDS + ['parameters', 'plans']))
+    proof_fields = ','.join(literal(v) for v in PROOF_FIELDS)
+    cases = []
+    for name, excluded in [('payload', PAYLOAD_PROGRESS_FIELDS), ('parameters', PARAMETER_PROGRESS_FIELDS)]:
+        drop = 'ARRAY[' + ','.join(literal(v) for v in excluded) + ']::text[]'
+        value = f'COALESCE(to_jsonb("{name}"),\'null\'::jsonb)'
+        normalized = f"CASE WHEN jsonb_typeof({value})='object' THEN {value} - {drop} ELSE {value} END"
+        cases.append(f"WHEN attname={literal(name)} THEN {literal(normalized)}")
+    drop = 'ARRAY[' + ','.join(literal(v) for v in PLAN_PROGRESS_FIELDS) + ']::text[]'
+    value = 'COALESCE(to_jsonb("plans"),\'null\'::jsonb)'
+    plans = f"CASE WHEN jsonb_typeof({value})='array' THEN COALESCE((SELECT jsonb_agg(CASE WHEN jsonb_typeof(v)='object' THEN v - {drop} ELSE v END ORDER BY ordinal) FROM jsonb_array_elements({value}) WITH ORDINALITY e(v,ordinal)),'[]'::jsonb) ELSE {value} END"
+    cases.append(f"WHEN attname='plans' THEN {literal(plans)}")
+    snapshot = "jsonb_build_object('status',snapshot->'status','paidOperations',COALESCE((SELECT jsonb_object_agg(k,jsonb_build_object('model',v->'model','replayable',v->'replayable','gatewayIdentity',v->'gatewayIdentity')) FROM jsonb_each(CASE WHEN jsonb_typeof(snapshot->'paidOperations')='object' THEN snapshot->'paidOperations' ELSE '{}'::jsonb END)e(k,v)),'{}'::jsonb)) AS snapshot"
+    missing_snapshot = "jsonb_build_object('status',null,'paidOperations','{}'::jsonb) AS snapshot"
+    prefix = 'true AS "_preservationProof",encode(sha256(convert_to(jsonb_build_object('
+    suffix = ')::text,\'UTF8\')),\'hex\') AS "_frozenDigest",'
+    return (f"WITH cols AS (SELECT attname,attnum FROM pg_attribute WHERE attrelid=to_regclass({literal(reg)}) AND attnum>0 AND NOT attisdropped) "
+            f"SELECT COALESCE(string_agg(quote_ident(attname),',' ORDER BY attnum) FILTER (WHERE attname IN ({proof_fields})) || ',','') || {literal(prefix)} || "
+            f"COALESCE(string_agg(quote_literal(attname)||','||(CASE {' '.join(cases)} ELSE 'to_jsonb('||quote_ident(attname)||')' END),',' ORDER BY attnum) FILTER (WHERE attname IN ({frozen_fields})), '') || {literal(suffix)} || "
+            f"COALESCE(max(CASE WHEN attname='snapshot' THEN {literal(snapshot)} END),{literal(missing_snapshot)}) AS proof_projection FROM cols")
+
+
 def proof_projection_sql(reg):
+    if reg.rsplit('.', 1)[-1] == 'app_image_jobs':
+        return image_job_native_proof_projection_sql(reg)
     fields=','.join(literal(v) for v in set(PROOF_FIELDS+FROZEN_FIELDS+['parameters','plans','snapshot']))
     # The existing proof never retained output images or raw supplier receipts.
     # Project its exact paid binding fields before row JSON construction so those
@@ -228,7 +259,7 @@ def build_sql(*, previous=None, schema='public', row_limit=1000, projection='ful
         summary = "(SELECT jsonb_build_object('count',count(*),'sumA',COALESCE(sum(('x'||substr(" + leaf + ",1,16))::bit(64)::bigint::numeric),0)::text,'sumB',COALESCE(sum(('x'||substr(" + leaf + ",17,16))::bit(64)::bigint::numeric),0)::text,'algorithm','sha256-leaf-two-64bit-sums') FROM " + reg + " t)" if name in ['app_ledger', 'app_billing_operations'] else 'null::jsonb'
         output_row = 'j'
         selected_table = f'(SELECT :table_{index}_proof_projection FROM {reg})' if projection == 'proof' and name != 'app_ledger' else reg
-        if projection == 'proof':
+        if projection == 'proof' and name != 'app_image_jobs':
             # Full immutable originals stay in the readable database backup.
             # This is bounded comparison evidence, not a restore/recovery payload.
             fields = ','.join(literal(v) for v in PROOF_FIELDS)
