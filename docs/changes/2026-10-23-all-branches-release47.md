@@ -71,3 +71,35 @@
 NoUser仅抽取continue_after_import，snapshot后要求tables非空且preservationComplete is True，才允许BACKED_UP/create。Windows集中102项通过（原POSIX14跳过）；47主机首次因缺Node可执行程序有1项测试前置失败，未删失败记录。随后只为该Node测试采用无网络/128MiB自有最终镜像fixture，Linux102项全部通过exit0（2.491秒），fixture自行移除，无正式槽位动作。
 
 精确接续wrapper绑定原cfg字节/语义、revision752/canonical/journal/3ACK完整hash、原Guard全部proof与supplement、原quote/config/incident、完整备份、旧槽及gateway5文件闭包、最终161个Python模块、最终image配置和未加围栏的metadata。恢复内存Guard而不establish/begin，不改cfg expectedRevision744，不重跑3ACK。case05 succ引用原state journal对象，失败材料使用唯一nonce文件名保留原O_EXCL证据。发布仍待原continuation的全部实际门禁与前后浏览器验收，不因wrapper完成标COMPLETE。
+
+## 切换前新增业务提交与候选替换（21:07起）
+
+原精确接续通过snapshot完整性后，已ACK创建停止态0175候选、暂停旧supervisor、维护入口、旧Worker/Web drain及deadboot围栏。切换前发现远端新增 `e1ee8442443f4593c3220d4d7c9ae6729f0cb6dd`（计费确认减法），root发送SIGINT停止继续推进；中断发生在只读drain观察中。最新canonical revision766、RECOVERY_REQUIRED，原3项加新增6项全部ACK，零UNKNOWN操作，retired=[]。0175候选从未启动，两个旧槽仍running/draining；公网为真实维护503，不再描述为旧公网正常服务。原三项UUID、receipt及全部保全行未重写。
+
+新业务已无冲突普通合并为 `e609c115164a68c5b3f88f353603237eed351d1d`，并普通推送origin/main及任务分支。替换镜像固定build `1792760965`、image `sha256:1bb8dbfd2f310f566922863fe0868ed9e9b28b6cc6f889360f645018732bcb6c`，完整Linux构建exit0。四组新pricing-friction原脚本全部PASS；16任务/4图/Worker恢复实际固定镜像压力通过、replayAddedSupplierPosts=0，16任务Web峰1931.82MiB，cgroup max/oom/oom_kill=0。新镜像典型native cold713.09/warm717.73MiB、tmpfs388.82MiB，SHA/probe通过、无Swap。
+
+旧集中回归保留10PASS/4FAIL：三项仍断言旧报价二次确认/旧current版本拒绝行为，与新明确减法语义不同；另一scope fixture缺staging-history mock。原失败不改PASS，新增4组以及独立scope输出适配证据分别记录，不把聚合回归报告写成全绿。替换配置单独保存，不覆盖原cfg；追加有独立UUID的候选supersession操作，原9个ACK不重放、不覆盖。当前保全、备份、原preSnapshot及业务原始行持续作为最终比较基线。
+
+## 最终 post 快照超时与保全核对（21:55—22:30）
+
+pricing 精确接续已实际退役旧 Web/Worker（stopped/restart=no），启动最终 e609/1792760965 镜像并完成入口切换及前后 GET 浏览器检查。最终 post-task snapshot 首表仍遇15秒 statement timeout，控制器封回公网维护503；canonical revision802、RECOVERY_REQUIRED，23项操作均ACK、无UNKNOWN操作、preservationHold=false。该状态不是发布COMPLETE，旧历史UNKNOWN及原完整备份不变。
+
+定向SQL计时证明选键9.805秒可完成，继续在同语句生成全部proof则超过15秒。snapshot仅优化proof/app_image_jobs：保留四轮graph closure，选键/计数后以256键一条SQL计算proof，全部留在同一READ ONLY REPEATABLE READ事务；原5000行、8MiB proof和每语句15000ms门槛不提高。冻结bd09e0c5，本地隔离PG旧/新/回滚等价均通过；实际完整post probe于22:10完成，76.531秒、23表observed、6,528,000字节、stderr0、exit0。该时间是全部SQL总耗时，不是单语句时间。
+
+解析后preservationComplete=true，但原ec0578 pre→post原比较仍FAIL：恰好3条app_gen_reservations PRESERVED_ROW_MISSING；unknownTables=[]，原supplier binding未变。精确PK补查确认不是筛选漏行：对应三笔billing reserved→settled、charged6/reserved0，image billing_settled false→true且随后done；每笔原确定性ledger各有一条consume -6、reason为“原生成结果交付恢复”。源码stored-delivery→settleImageJob→billing finishTx会原子结算并删除reservation，done在后续事务写入。未据此清除supplier response-received或历史UNKNOWN。
+
+root从原1043584318字节dump只读提取三笔reservation及billing原值，未执行DB恢复；真实PG按jsonb::text/sql_frozen语义复算六个原frozen digest全部匹配原pre。为保留原比较的真实性，采用单独exact3 lifecycle receipt核对原owner/价格/ledger/供应商身份闭环，不改原pre/post/comparator，不泛化允许reservation消失。最终接续器仍须fresh账务闭环、真实quiescent、fresh浏览器、完整原23ACK不变及原retire_ready全部门槛后才可COMPLETE；本节截至22:30仍为维护HOLD。
+
+## 实际发布完成与最终公网验收（22:40—22:45）
+
+最终接续器冻结 `feaaa18e5ea593183159e628c74363b091af4f6d307cada408d29c9e45df6367`，21项集中离线测试通过、独立最终只读review确定P1为0。root先实际只读预检原121文件＋完整dump流式hash、2789外部文件、5网关文件、161模块及fresh exact3账务SQL全PASS，再持三锁执行。严格接续从revision802到816，只追加5项新操作；原23条完整ACK记录逐字节语义编码比较不变，最终28项全部ACK、无UNKNOWN操作。
+
+22:40:33+08:00对应UTC14:40:33签发 `PUBLICATION_RECEIPT.json`：phase COMPLETE，source e609c115、build1792760965，Web43975ba5dbf4和Workerb1b8861a991d同固定image1bb8dbfd。原quote FINAL、schema FINAL、CASE05、七表围栏和基础设施身份门禁全部通过。补证账务采用独立adjudication/accountedPreservationVerified=true、exact3、remainingViolations=[]；原comparison仍保留三条reservation missing，不伪造raw比较全绿。三个原结果交付恢复按各原价6结算，不产生新供应商提交；旧历史UNKNOWN未改为完成。
+
+新Worker最终真实lastTick complete、active0、unresolved0后恢复常态扫描，supervisor timer active。新controlledMaintenanceReport精确指向pricing新emergency/report.json，hash与新gateway digest匹配，supersedes保留原pointer。旧Web/Worker停止且restart=no，未删除其恢复证据；新槽无原地改内存、无重启。额外只读三锁获取与释放核验PASS。
+
+实际容器硬预算：Web2560MiB/heap1152/native余量1408，Worker1024MiB/PID1heap64双preload；generate/imagegen本机4路、suite/A+2路、MALLOC2/UV2/VIPS1。scanner64/media96原allowlist不变。实际检查新Web/Worker memory.events max/oom/oom_kill均0，MemAvailable约4065MiB，不计Swap；在线当前用量不替代前述固定镜像1931.82MiB压力峰验证。
+
+最终独立公网HTTPS GET浏览器after检查全部通过，前后各10张桌面1440/移动390真实截图已逐张打开并检查contact sheet；marker已封存。历史生成同范围baseline非空、12328总数/20首屏和DOM一致。严格GET模式阻断模型管理页自动POST引起“Failed to fetch”红条，39行GET模型仍渲染；此红条原样留在截图，不将只读验收扩称完整写工作流或全部视觉无缺陷。未使用CDP或用户普通浏览器。
+
+本轮最终为明确无人维护窗口发布，不宣称全过程无维护或无感蓝绿。未恢复DB、未重放已接受/UNKNOWN付费供应商任务；完整备份、原快照、旧源码及受控维护回退材料保留。后续提交仅保存运维snapshot分块优化及本记录，业务镜像仍固定e609，无需因纯运维/文档提交重建产品镜像。origin/main已刷新，无新业务提交；共享根18项无关改动未动。

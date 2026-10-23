@@ -169,7 +169,10 @@ def graph_projection_sql(reg):
     fields=','.join(literal(v) for v in GRAPH_FIELDS)
     snapshot="jsonb_build_object('status',snapshot->'status','paidOperations',CASE WHEN jsonb_typeof(snapshot->'paidOperations')='object' THEN (SELECT COALESCE(jsonb_object_agg(k,null),'{}'::jsonb) FROM jsonb_object_keys(snapshot->'paidOperations') k) ELSE '{}'::jsonb END) AS snapshot"
     payload="jsonb_build_object('callId',payload->'callId','operation',payload->'operation','context',jsonb_build_object('operationId',payload#>'{context,operationId}')) AS payload"
-    return f"SELECT string_agg(CASE WHEN attname='snapshot' THEN {literal(snapshot)} WHEN attname='payload' THEN {literal(payload)} ELSE quote_ident(attname) END,',' ORDER BY attnum) AS projection FROM pg_attribute WHERE attrelid=to_regclass({literal(reg)}) AND attnum>0 AND NOT attisdropped AND attname IN ({fields})"
+    # Final selection only reads status and direct links. Paid-operation keys and
+    # payload links are needed by graph expansion, never by its final predicate.
+    selection_snapshot="jsonb_build_object('status',snapshot->'status') AS snapshot"
+    return f"SELECT string_agg(CASE WHEN attname='snapshot' THEN {literal(snapshot)} WHEN attname='payload' THEN {literal(payload)} ELSE quote_ident(attname) END,',' ORDER BY attnum) AS projection, string_agg(CASE WHEN attname='snapshot' THEN {literal(selection_snapshot)} WHEN attname='payload' THEN NULL ELSE quote_ident(attname) END,',' ORDER BY attnum) AS selection_projection FROM pg_attribute WHERE attrelid=to_regclass({literal(reg)}) AND attnum>0 AND NOT attisdropped AND attname IN ({fields})"
 
 
 def direct_key(key):
@@ -218,6 +221,25 @@ def proof_projection_sql(reg):
     return f"SELECT string_agg(CASE WHEN attname='snapshot' THEN {literal(snapshot)} ELSE quote_ident(attname) END,',' ORDER BY attnum) AS proof_projection FROM pg_attribute WHERE attrelid=to_regclass({literal(reg)}) AND attnum>0 AND NOT attisdropped AND attname IN ({fields})"
 
 
+def image_job_chunked_proof_sql(index, reg, key, selected, active, row_limit):
+    """Bound hashing work per statement, not the total preservation coverage.
+
+    psql holds only bounded keys and small proof rows; every SELECT still uses
+    the caller's one read-only REPEATABLE READ transaction and timeout.
+    """
+    cap = 8 * 1024 * 1024
+    lines = [
+        f"WITH roots AS MATERIALIZED (SELECT jsonb_array_elements_text(:'materialized_roots_values'::jsonb) AS value), source AS MATERIALIZED (SELECT to_jsonb(t) AS j FROM (SELECT :table_{index}_selection_projection FROM {reg}) t), selected_keys AS MATERIALIZED (SELECT {sql_key(key)} AS key FROM source WHERE {selected}), matched_keys AS MATERIALIZED (SELECT {direct_key(key)} AS key FROM {reg} t WHERE {direct_key(key)} IN (SELECT key FROM selected_keys)), bounded_keys AS (SELECT DISTINCT key FROM matched_keys ORDER BY key LIMIT {row_limit + 1}) SELECT COALESCE((SELECT jsonb_agg(key ORDER BY key) FROM bounded_keys),'[]'::jsonb)::text AS keys, (SELECT count(*) FROM matched_keys) AS selected_count, (SELECT count(*) FROM source WHERE {active}) AS active_count \\gset image_proof_",
+        "\\set image_proof_rows '[]'", "\\set image_proof_bytes 0", "\\set image_proof_within_limit true",
+    ]
+    for offset in range(0, row_limit + 1, 256):
+        lines += ["\\if :image_proof_within_limit",
+            f"WITH chunk_keys AS MATERIALIZED (SELECT value FROM jsonb_array_elements_text(:'image_proof_keys'::jsonb) WITH ORDINALITY e(value,ordinal) WHERE ordinal>{offset} AND ordinal<={offset + 256}), chunk AS MATERIALIZED (SELECT to_jsonb(t) AS j FROM (SELECT :table_{index}_proof_projection FROM {reg}) t WHERE {direct_key(key)} IN (SELECT value FROM chunk_keys)), combined AS MATERIALIZED (SELECT j FROM jsonb_array_elements(:'image_proof_rows'::jsonb) e(j) UNION ALL SELECT j FROM chunk), bounded AS MATERIALIZED (SELECT j FROM combined ORDER BY {sql_key(key)} LIMIT {row_limit + 1}), measured AS (SELECT COALESCE(sum(octet_length(j::text)),0) AS bytes FROM bounded) SELECT CASE WHEN bytes<={cap} THEN COALESCE((SELECT jsonb_agg(j ORDER BY {sql_key(key)}) FROM bounded),'[]'::jsonb)::text ELSE '[]' END AS rows, bytes AS bytes, bytes<={cap} AS within_limit FROM measured \\gset image_proof_",
+            '\\endif']
+    lines.append(f"SELECT jsonb_build_object('kind','table','table','app_image_jobs','status',CASE WHEN NOT :'materialized_roots_within_limit'::boolean THEN 'unknown-root-limit' WHEN :'image_proof_within_limit'::boolean THEN 'observed' ELSE 'unknown-byte-limit' END,'selectedCount',:'image_proof_selected_count'::bigint,'activeCount',:'image_proof_active_count'::bigint,'rows',:'image_proof_rows'::jsonb,'allSummary',null::jsonb);")
+    return lines
+
+
 def build_sql(*, previous=None, schema='public', row_limit=1000, projection='full', statement_timeout_ms=5000):
     if not re.fullmatch('[a-z_][a-z0-9_]{0,62}', schema) or type(row_limit) is not int or not 1 <= row_limit <= 5000:
         raise ValueError('BOUNDED_SQL_SCOPE_REQUIRED')
@@ -255,6 +277,10 @@ def build_sql(*, previous=None, schema='public', row_limit=1000, projection='ful
         lines += [f"SELECT (to_regclass({literal(reg)}) IS NOT NULL) AS exists \\gset table_{index}_", f'\\if :table_{index}_exists']
         active = SPECS[name][1] if name in SPECS else 'false'
         selected = selected_predicate(name, key, prior, 'SELECT value FROM roots')
+        if projection == 'proof' and name == 'app_image_jobs':
+            lines += image_job_chunked_proof_sql(index, reg, key, selected, active, row_limit)
+            lines += ['\\else', "SELECT jsonb_build_object('kind','table','table','app_image_jobs','status','unknown-table-missing','rows','[]'::jsonb);", '\\endif']
+            continue
         leaf = "encode(sha256(convert_to(to_jsonb(t)::text,'UTF8')),'hex')"
         summary = "(SELECT jsonb_build_object('count',count(*),'sumA',COALESCE(sum(('x'||substr(" + leaf + ",1,16))::bit(64)::bigint::numeric),0)::text,'sumB',COALESCE(sum(('x'||substr(" + leaf + ",17,16))::bit(64)::bigint::numeric),0)::text,'algorithm','sha256-leaf-two-64bit-sums') FROM " + reg + " t)" if name in ['app_ledger', 'app_billing_operations'] else 'null::jsonb'
         output_row = 'j'
@@ -268,7 +294,7 @@ def build_sql(*, previous=None, schema='public', row_limit=1000, projection='ful
             if name == 'app_ledger':
                 output_row += " || jsonb_build_object('_ledgerRowSha256',encode(sha256(convert_to(j::text,'UTF8')),'hex'))"
         within = 'COALESCE((SELECT sum(octet_length(j::text)) FROM bounded),0)<=' + str(8*1024*1024 if projection == 'proof' else 524288)
-        lines += [f"WITH roots AS MATERIALIZED (SELECT jsonb_array_elements_text(:'materialized_roots_values'::jsonb) AS value), source AS MATERIALIZED (SELECT to_jsonb(t) AS j FROM (SELECT :table_{index}_projection FROM {reg}) t), selected_keys AS MATERIALIZED (SELECT {sql_key(key)} AS key FROM source WHERE {selected}), selected_full AS MATERIALIZED (SELECT to_jsonb(t) AS j FROM {selected_table} t WHERE {direct_key(key)} IN (SELECT key FROM selected_keys)), selected AS MATERIALIZED (SELECT {output_row} AS j FROM selected_full), bounded AS (SELECT j FROM selected ORDER BY {sql_key(key)} LIMIT {row_limit + 1}) SELECT jsonb_build_object('kind','table','table',{literal(name)},'status',CASE WHEN NOT :'materialized_roots_within_limit'::boolean THEN 'unknown-root-limit' WHEN {within} THEN 'observed' ELSE 'unknown-byte-limit' END,'selectedCount',(SELECT count(*) FROM selected),'activeCount',(SELECT count(*) FROM source WHERE {active}),'rows',CASE WHEN {within} THEN COALESCE((SELECT jsonb_agg(j) FROM bounded),'[]'::jsonb) ELSE '[]'::jsonb END,'allSummary',{summary});",
+        lines += [f"WITH roots AS MATERIALIZED (SELECT jsonb_array_elements_text(:'materialized_roots_values'::jsonb) AS value), source AS MATERIALIZED (SELECT to_jsonb(t) AS j FROM (SELECT :table_{index}_selection_projection FROM {reg}) t), selected_keys AS MATERIALIZED (SELECT {sql_key(key)} AS key FROM source WHERE {selected}), selected_full AS MATERIALIZED (SELECT to_jsonb(t) AS j FROM {selected_table} t WHERE {direct_key(key)} IN (SELECT key FROM selected_keys)), selected AS MATERIALIZED (SELECT {output_row} AS j FROM selected_full), bounded AS (SELECT j FROM selected ORDER BY {sql_key(key)} LIMIT {row_limit + 1}) SELECT jsonb_build_object('kind','table','table',{literal(name)},'status',CASE WHEN NOT :'materialized_roots_within_limit'::boolean THEN 'unknown-root-limit' WHEN {within} THEN 'observed' ELSE 'unknown-byte-limit' END,'selectedCount',(SELECT count(*) FROM selected),'activeCount',(SELECT count(*) FROM source WHERE {active}),'rows',CASE WHEN {within} THEN COALESCE((SELECT jsonb_agg(j) FROM bounded),'[]'::jsonb) ELSE '[]'::jsonb END,'allSummary',{summary});",
                   '\\else', f"SELECT jsonb_build_object('kind','table','table',{literal(name)},'status','unknown-table-missing','rows','[]'::jsonb);", '\\endif']
     lines += ["SELECT jsonb_build_object('kind','end','database',current_database(),'readOnly',current_setting('transaction_read_only'),'snapshot',txid_current_snapshot()::text);", 'COMMIT;']
     return ('\n'.join(lines) + '\n').encode()
