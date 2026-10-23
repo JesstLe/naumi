@@ -9,7 +9,6 @@ import {clientIntentKey,frozenIntentBody} from "./client-intent";
 import { MODEL_CATALOG_REFRESH } from "../model-config/public-client";
 import { chosenFeatureModel, FEATURE_MODEL_SELECTION } from "../model-config/feature-client";
 import { browserRandomUUID } from "../browser-crypto";
-import {imageBillingFeature} from "./image-quote-policy";
 import {currentWorkspace} from "../saas/workspace-client";
 export type PublicQuote = {
     quote?:{id:string;expiresAt:string};
@@ -137,59 +136,21 @@ export function BillingProvider({ children }: {
         const key=await clientIntentKey(user?.email||"",url,{...init,headers});
         let id=intents.current.get(key);try{id=id||localStorage.getItem(key)||undefined;}catch{}
         id=id||headers.get("x-naumi-billing-operation-id")||undefined;
-        const retry=!!id;
         id=id||browserRandomUUID();intents.current.set(key,id);try{localStorage.setItem(key,id);}catch{}
         headers.set("x-naumi-billing-operation-id",id);
         const clearIntent=()=>{if(intents.current.get(key)===id)intents.current.delete(key);try{if(localStorage.getItem(key)===id)localStorage.removeItem(key);}catch{}};
         onIdentity?.(id);
         if(displayed.requestedParameters?.resolution && displayed.effectiveParameters?.resolution && displayed.requestedParameters.resolution!==displayed.effectiveParameters.resolution)
             toast(`${displayed.requestedParameters.resolution}已自动调整为${displayed.effectiveParameters.resolution}，实际生成档位已调整，报价保持不变`,"info");
-        const confirmQuote=(next:PublicQuote,previous?:PublicQuote)=>{
-            // Compare server-issued consent terms only; never calculate a tariff here.
-            const changed=previous&&(next.mode!==previous.mode||next.authorization!==previous.authorization||next.credits>previous.credits||next.reserveCredits>previous.reserveCredits||(next.authorizedCredits??next.reserveCredits)>(previous.authorizedCredits??previous.reserveCredits));
-            if((previous?!changed:next.mode!=="api-cost-plus"))return;
-            const message=next.mode==="api-cost-plus"
-                ?`本次估算 ${next.credits} 积分，预留 ${next.reserveCredits} 积分，最多授权 ${next.authorizedCredits ?? next.reserveCredits} 积分。按实际完整 API 成本与已锁定倍率结算；费用未知时待核账。是否提交？`
-                :`本次报价更新为 ${next.credits} 积分，预留 ${next.reserveCredits} 积分，最多授权 ${next.authorizedCredits ?? next.reserveCredits} 积分，计费模式 ${next.mode??"fixed"}，是否执行？`;
-            if(!window.confirm(message))throw new Error("已取消提交");
-        };
-        const refreshQuote=async()=>{
-            const previous=displayed!;
-            const {canvas,...selection}=previous.selection!;
-            const refreshHeaders=new Headers(await authHeader());refreshHeaders.set("content-type","application/json");
-            for(const name of ["x-naumi-workspace","x-naumi-project-context"])if(headers.has(name))refreshHeaders.set(name,headers.get(name)!);
-            if(canvas||headers.get("x-naumi-canvas")==="1")refreshHeaders.set("x-naumi-canvas","1");
-            const response=await fetch("/api/billing/quote",{method:"POST",headers:refreshHeaders,body:JSON.stringify(selection)});
-            const next=await response.json();if(!response.ok)throw new Error(next.error||"报价暂不可用");
-            displayed={...next,selection:previous.selection} as PublicQuote;
-            headers.set("x-naumi-image-quote",displayed.quote!.id);
-            headers.set("x-naumi-billing-version",String(displayed.version));
-            headers.set("x-naumi-billing-credits",String(displayed.mode==="api-cost-plus"?displayed.authorizedCredits??displayed.reserveCredits:displayed.credits));
-            if(displayed.modelVersion)headers.set("x-naumi-model-version",String(displayed.modelVersion));
-            return previous;
-        };
-        let previous:PublicQuote|undefined;
-        // Existing operations must reach the server's receipt-first path even if
-        // their quote expired or the selected model has since been unlisted.
-        if(!retry&&displayed.quote&&Date.parse(displayed.quote.expiresAt)<=Date.now()+1000&&displayed.selection)
-            previous=await refreshQuote();
-        if(displayed.mode==="api-cost-plus")confirmQuote(displayed);
-        else if(previous)confirmQuote(displayed,previous);
+        // Maintenance TTL never replaces this intent's server-owned price.
+        // Send the original quote and operation to the receipt-first path.
         const post=()=>{
-            // Scope can change during hashing, quote refresh, or response JSON.
+            // Scope can change during hashing or response JSON.
             // Keep this synchronous guard immediately adjacent to every paid POST.
             onIdentity?.(id);
             return fetch(url, { ...frozenIntentBody(init,id), headers });
         };
-        let response=await post();
-        if(response.status===409&&displayed.quote&&displayed.selection){
-            const rejection=await response.clone().json().catch(()=>({}));
-            if(rejection?.code==="IMAGE_QUOTE_EXPIRED"&&rejection.accepted===false){
-                previous=await refreshQuote();
-                confirmQuote(displayed,previous);
-                response=await post(); // Same operation, at most one proven-unaccepted retry.
-            }
-        }
+        const response=await post();
         if (response.ok && response.body && response.headers.get("content-type")?.includes("text/event-stream")) {
             const decoder = new TextDecoder(); let buffer = "";
             const body = response.body.pipeThrough(new TransformStream<Uint8Array,Uint8Array>({ transform(chunk, controller) {
@@ -203,7 +164,7 @@ export function BillingProvider({ children }: {
             return new Response(body,{status:response.status,headers:response.headers});
         }
         const data=await response.clone().json().catch(()=>null);
-        if(data&&data.code!=="OPERATION_PENDING"&&data.code!=="OPERATION_CONFLICT"&&(response.ok||response.status<500&&(!displayed.quote||data.accepted===false)))clearIntent();
+        if(data&&data.code!=="OPERATION_PENDING"&&data.code!=="OPERATION_CONFLICT"&&(response.ok||response.status<500&&!displayed.quote))clearIntent();
         if (response.status === 409 && data?.code === "PRICE_CHANGED")
             await refresh();
         if (response.status === 409 && data?.code === "MODEL_CHANGED") window.dispatchEvent(new Event(MODEL_CATALOG_REFRESH));
@@ -217,10 +178,9 @@ export function BillingProvider({ children }: {
         beforeSubmit?.();
         // The freshly obtained server quote is authoritative, not a separate
         // catalogue version that may have changed during the same click.
-        if(!imageBillingFeature(q.feature)&&q.version!==catalog.version){await refresh();throw new Error("价格已更新，请确认最新报价后重新提交");}
         // submit invokes this after hashing the frozen body and before its paid POST.
         return submit(url, init, q, beforeSubmit);
-    }, [catalog, getQuote, refresh, submit]);
+    }, [catalog, getQuote, submit]);
     return <Context.Provider value={{ catalog, loading, error, refresh, quote: getQuote, submit, quoteAndSubmit }}>{children}</Context.Provider>;
 }
 export function useBilling() { const value = useContext(Context); if (!value)

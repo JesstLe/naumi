@@ -12,7 +12,6 @@ import { procurementCost, apiCostCredits } from "../billing/api-cost";
 import { rounded } from "../billing/money";
 import {managedModelCreditRule,applyCreditOverride} from "./credit-overrides";
 import {policyQuality} from "./quality-policy";
-import {imageBillingFeature} from "../billing/image-quote-policy";
 
 export function freezeImagePresetQuote(snapshot: ConfigSnapshot, models: ModelSnapshot, facts: BillingFacts, create: (s:ConfigSnapshot,f:BillingFacts)=>BillingQuote): BillingQuote | null {
   assertDisplayResolution(models.config.publicModels.find(m=>m.id===facts.modelId),facts.resolution);
@@ -72,8 +71,6 @@ export async function freezeBusinessQuote(request: Request, snapshot: ConfigSnap
   const admin = await getModelAdministration();
   const version = currentExecutionBundle()?.modelVersion || currentModelExecution()?.frozen.modelVersion;
   const models = version ? await admin.repo.byVersion(version) : await admin.repo.current();
-  const requested = request.headers.get("x-naumi-model-version");
-  if (!imageBillingFeature(facts.feature) && requested && Number(requested) !== models.version) throw new ModelConfigError("MODEL_CHANGED", "模型配置已更新，请重新确认报价", 409);
   const scope = currentModelExecution("image");
   const originalFacts = facts;
   // Existing frozen scopes (including old Worker/Agent children) are authoritative.

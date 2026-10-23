@@ -73,7 +73,6 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
  }
  const simulate=(modelId:string,requirements:Intent)=>simulateModel(models,billing,modelId,requirements.operation==="cutout"?{...facts(requirements),needsEdit:true,references:1,quantity:1}:facts(requirements),options);
  const steps:ImagegenPlan["steps"]=[],warnings:string[]=maskedTarget?["模型编辑后按蒙版合成，未选区保留原图；原生成版本也会保留。"]:[];
- let authorizationRequired=false;
  if(resolutionChoice?.changed)warnings.push(resolutionFallbackMessage(resolutionChoice));
  const selectedImagePresetForPlan=(modelId:string)=>selectedImagePreset(models.config,feature,modelId);
  const append=async(key:string,operation:Intent["operation"],modelId:string,requirements:Intent,featureId:"image.generate"|"canvas.image"|"tool.cutout")=>{
@@ -114,9 +113,6 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
   assertToolScope(models.config,featureId,modelId);
   if(model.target.type!=="upstream"&&!model.supplierRouting&&candidates.excluded.length)throw new ImagegenPlanError("当前聚合通道尚不能限制高级参数候选，请管理员维护全部候选能力");
   const q=await runExecutionBundle({frozen:{modelVersion:models.version,billingVersion:billing.version},billing},()=>quoteForActor(owner,{feature:featureId,quantity:operation==="cutout"?1:request.variants,modelId,quality:request.parameters.quality||"medium",resolution:requestedResolution,ratio:request.parameters.ratio||"1:1"},{effectiveResolution:stageFacts.resolution}));
-  // Cost-plus quotes authorize a cap even when the estimate is below the
-  // ordinary large-task threshold. Agent must obtain authentic confirmation.
-  if(q.tariff.pricing.mode==="api-cost-plus")authorizationRequired=true;
   if(stageResolution?.changed)warnings.push(resolutionFallbackMessage(stageResolution));
   steps.push({key,operation,modelId,eligibleUpstreamIds:candidates.eligible.map(c=>c.upstreamId),parameters:{quality:request.parameters.quality||"medium",resolution:stageFacts.resolution,ratio:request.parameters.ratio||"1:1"},credits:q.tariff.pricing.mode==="api-cost-plus"?q.authorizedCredits:q.requestedCredits,billingQuote:q});
  };
@@ -132,6 +128,6 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
   for(let i=0;i<request.variants;i++)await append(`cutout-${i}`,"cutout",cutout,{...intent,operation:"cutout"},"tool.cutout");
   warnings.push("所选模型先生成，再通过后台指定的抠图模型生成透明图；两步积分已合计，原图保留。");
  }else await append("generate",intent.operation,id,intent,feature);
- return {...((resolutionChoice?.changed||steps.some(s=>s.parameters.resolution!==requestedResolution))?{requestedParameters:{quality:request.parameters.quality||"medium",resolution:requestedResolution,ratio:request.parameters.ratio||"1:1"}}:{}),channelContractVersion:1,ratioContractVersion:2,request,intent,fingerprint,modelVersion:models.version,billingVersion:billing.version,skillInstructions:skill?.instructions,steps,totalCredits:steps.reduce((n,s)=>n+s.credits,0),confirmationRequired:authorizationRequired||steps.length>1||steps.some(s=>s.credits>=100),warnings};
+ return {...((resolutionChoice?.changed||steps.some(s=>s.parameters.resolution!==requestedResolution))?{requestedParameters:{quality:request.parameters.quality||"medium",resolution:requestedResolution,ratio:request.parameters.ratio||"1:1"}}:{}),channelContractVersion:1,ratioContractVersion:2,request,intent,fingerprint,modelVersion:models.version,billingVersion:billing.version,skillInstructions:skill?.instructions,steps,totalCredits:steps.reduce((n,s)=>n+s.credits,0),confirmationRequired:false,warnings};
 }
 

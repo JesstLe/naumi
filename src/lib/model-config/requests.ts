@@ -93,7 +93,6 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
   const accepted = await acceptedModelVersions(request) || (quotedImage?.modelVersion?{modelVersion:quotedImage.modelVersion,billingVersion:quotedImage.configVersion}:null);
   if (new URL(request.url).pathname === "/api/aplus" && parsed.body.jobId && ["approve_source", "redo_source", "generate"].includes(parsed.body.action)) return run();
   const [snapshot, billing] = await Promise.all([accepted ? admin.repo.byVersion(accepted.modelVersion) : admin.repo.current(), accepted ? admin.billing.byVersion(accepted.billingVersion) : admin.billing.current()]);
-  const quotedVersion = request.headers.get("x-naumi-model-version") || parsed.body.modelVersion;
   const feature = featureForRequest(new URL(request.url).pathname, parsed.body);
   const purpose = purposeFor(new URL(request.url).pathname), executor = await getModelExecutor();
   if (feature === "canvas.image") {
@@ -102,7 +101,6 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     purpose.image = hasReferences ? "image.edit" : "image.generate";
   }
   if (feature === "competitor.action" && parsed.body.action !== "analyze") Object.assign(purpose, { image:"image.edit", text:"text.competitor", vision:"vision.reference", primary:"image" });
-  if (purpose.primary!=="image" && quotedVersion !== undefined && quotedVersion !== null && quotedVersion !== "" && (!/^[1-9][0-9]{0,15}$/.test(String(quotedVersion)) || Number(quotedVersion) !== snapshot.version)) throw new ModelConfigError("MODEL_CHANGED", "模型配置已更新，请刷新模型列表后重新提交；原输入已保留", 409);
   const mainFeature = feature === "competitor.action" && parsed.body.action === "analyze" ? undefined : feature;
   const bundle: ExecutionBundle = { modelVersion: snapshot.version, billingVersion: billing.version, primary: purpose.primary };
   let standaloneSegmentation = false;

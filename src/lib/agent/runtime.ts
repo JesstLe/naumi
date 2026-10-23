@@ -24,13 +24,12 @@ import { AGENT_SYSTEM_PROMPT, createNaumiTools } from "@/lib/agent/naumi-tools";
 import { getImageJob } from "@/lib/image-job-repository";
 import { recordBiModelCompletion, modelExecutionTelemetry } from "@/lib/bi/model-observer";
 import {agentBillingPrecheck} from "@/lib/billing/agent";
-import type {BillingQuote} from "@/lib/billing/types";
 import {fingerprint} from "@/lib/billing/fingerprint";
 import type { CanvasAgentContext } from "./canvas-context";
 import { buildAgentSystemPrompt, latestUserText, pelicanPromptSection } from "./response-policy";
 import { imageSkillPrompt, type ImageSkill } from "@/lib/image-skills/catalog";
 import { readPelicanArtifact } from "./pelican-artifact";
-import { AgentHarness, HarnessError, PublicOutputBuffer, explicitQuoteConsent, untrustedAgentData, validateHarnessHistory } from "./harness";
+import { AgentHarness, HarnessError, PublicOutputBuffer, untrustedAgentData, validateHarnessHistory } from "./harness";
 import { assertMediaUrl, publicImageBytes, readBoundedBytes } from "./harness-network";
 import { describeNaumiTools } from "./naumi-tools";
 import { releaseProcessRegistry } from "@/lib/release-runtime/identity";
@@ -54,8 +53,6 @@ import {enterpriseCreationRead} from '@/lib/enterprise/server';
 const MODEL_ID = process.env.AGENT_MODEL || "qwen3.8-flash";
 const MAX_TURNS = 24;
 const SESSION_TTL = 60 * 60 * 1000; // 空闲会话 1 小时后回收
-// 大额计费确认闸:单次工具调用预计 ≥ 此积分时,第一次调用被拦截,
-// 模型须先向用户报价,用户同意后带 confirm=true 重调(见 beforeToolCall)。
 
 
 /** 视觉输入能力判定(默认自动):
@@ -93,9 +90,6 @@ export type Session = {
   creationScope?:CreationContext;
   releaseActivity?: AgentActivity;
   harness: AgentHarness;
-  userConfirmedQuote?: boolean;
-  lastPendingQuoteKey?: string;
-  pendingQuoteExpires?: Map<string,number>;
   modelExecutionStamp?: string;
   agent: Agent;
   modelId: string;
@@ -109,7 +103,6 @@ export type Session = {
   toolResultsPending?: Promise<void>;
   persistPending?: Promise<void>;
   turnId?: string;
-  pendingQuoteTurns?: Map<string,string>;
   createdAt: number;
   lastUsedAt: number;
   /** 运行状态快照,给前端轮询/SSE 用 */
@@ -121,7 +114,6 @@ export type Session = {
   running: boolean;
   canvasExecuting?: boolean;
   textOnlyContinuation?: boolean;
-  pendingQuotes?: Map<string,Pick<BillingQuote,"configVersion"|"requestedCredits">>;
   preparedBilling?: {billingVersion:number;billingCredits:number;billingOperationId:string};
   preparedImagegen?:import("../imagegen/types").ImagegenPlan;
   preparedVideoWorkflow?:import("../video/canvas-workflow").PreparedCanvasVideoWorkflow;
@@ -491,7 +483,6 @@ async function createRuntimeSession(
     session.releaseActivity = await startAgentActivity(email, sessionId, !!options);
     if (pendingGeneration !== promptGeneration) { await completeAgentReleaseActivity(session); throw new HarnessError("RUN_INACTIVE", 409); }
     try {
-      session.userConfirmedQuote = explicitQuoteConsent(input) && !!session.lastPendingQuoteKey && !!session.pendingQuotes?.has(session.lastPendingQuoteKey);
       if (!session.turnId || session.turnId === lastPromptTurn) session.turnId = crypto.randomUUID();
       lastPromptTurn = session.turnId;
       session.harness.begin(input, originalAbort);
@@ -517,7 +508,7 @@ async function createRuntimeSession(
       });
     }
     finally {
-      session.userConfirmedQuote = false; session.harness.finish();
+      session.harness.finish();
       // Canvas holds accepted-work ownership through result attachment/billing,
       // not merely until the model's final token or the client disconnect.
       if (!session.canvasExecuting) await completeAgentReleaseActivity(session);

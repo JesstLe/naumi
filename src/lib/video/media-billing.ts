@@ -15,6 +15,8 @@ export class MediaPriceChangedError extends BillingError{
   readonly quote:{version:number;credits:number};
   constructor(value:BillingQuote){super("PRICE_CHANGED","请确认本次媒体处理积分",409);this.quote={version:value.configVersion,credits:value.authorizedCredits};}
 }
-export function confirmMediaQuote(value:BillingQuote,confirmation?:MediaJobRequest["billingConfirmation"]){
-  if(confirmation&&(confirmation.version!==value.configVersion||confirmation.credits!==value.authorizedCredits)||value.authorizedCredits>0&&!confirmation)throw new MediaPriceChangedError(value);
+/** Old clients can still send confirmation fields; pricing always comes from
+ * mediaBillingQuote and the transactional reservation, never those echoes. */
+export function confirmMediaQuote(value:BillingQuote,_confirmation?:MediaJobRequest["billingConfirmation"]){
+  return value;
 }

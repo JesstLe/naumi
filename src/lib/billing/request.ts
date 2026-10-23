@@ -2,18 +2,13 @@ import { randomUUID } from "node:crypto";
 import { BillingError, type BillingQuote } from "./types";
 import { billingJson } from "./access";
 import { ModelConfigError } from "../model-config/types";
-import { imageBillingFeature } from "./image-quote-policy";
-export function assertQuotedVersion(client: {
+/** Compatibility entry point. The server quote, not browser echoes, prices a
+ * creation. Wallet reservation and operation identity are checked separately. */
+export function assertQuotedVersion(_client: {
     version?: number;
     credits?: number;
 }, current: BillingQuote) {
-    // Image execution uses the complete server-owned quote. Browser amounts
-    // and version headers neither price the operation nor block that contract.
-    if(imageBillingFeature(current.facts.feature))return;
-    if (client.version === undefined && client.credits === undefined && (current.legacyCompatible === true || current.authorizedCredits === 0))
-        return; // Compatibility is permitted only for verified unchanged terms.
-    if (client.version !== current.configVersion || client.credits !== (current.tariff.pricing.mode==="api-cost-plus"?current.authorizedCredits:current.requestedCredits))
-        throw new BillingError("PRICE_CHANGED", "价格已更新，请确认最新报价后重试", 409);
+    return current;
 }
 export function requestQuoteConfirmation(request: Request, body?: {
     billingVersion?: unknown;

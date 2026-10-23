@@ -8,7 +8,7 @@ import { CREATIVE_TOOL_FEATURES } from "../agent/creative-tool-catalog";
 import { getBillingRuntime, quoteForRequest } from "./server";
 import type { BillingQuote, FeatureId } from "./types";
 import { dbEnabled, getUser,getVideoTaskByIdempotencyKey } from "@/lib/db";
-import { fingerprint, stableJson } from "./fingerprint";
+import { fingerprint } from "./fingerprint";
 import { getImageJob } from "@/lib/image-job-repository";
 import { currentModelBillingSnapshot } from "../model-config/context";
 import { CANVAS_IMAGE_TOOLS, type CanvasAgentContext } from "../agent/canvas-context";
@@ -29,7 +29,7 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
     canvas?: CanvasAgentContext;
     imageSkill?:import("../imagegen/types").ImagegenRequest["skill"];
 }): Promise<{
-    quote: Pick<BillingQuote, "configVersion" | "requestedCredits"> & Partial<Pick<BillingQuote,"modelVersion" | "authorizedCredits" | "imagePreset">>;
+    quote: Pick<BillingQuote, "configVersion" | "requestedCredits"> & Partial<Pick<BillingQuote,"modelVersion" | "authorizedCredits" | "imagePreset" | "tariff">>;
     label: string;
     threshold: number;
     imagegenPlan?:ImagegenPlan;
@@ -74,13 +74,9 @@ export type AgentBillingSession = {
         canvas?: CanvasAgentContext;
     };
     id: string;
-    pendingQuotes?: Map<string, Pick<BillingQuote, "configVersion" | "requestedCredits"> & Partial<Pick<BillingQuote,"modelVersion" | "authorizedCredits" | "imagePreset">>>;
     turnId?: string;
-    pendingQuoteTurns?: Map<string,string>;
-    pendingQuoteExpires?: Map<string,number>;
-    /** Set only at the server's authenticated prompt ingress, never from tool args/history. */
+    /** @deprecated Compatibility for historical verification scripts; never authorizes execution. */
     userConfirmedQuote?: boolean;
-    lastPendingQuoteKey?: string;
     preparedBilling?: {
         billingVersion: number;
         billingCredits: number;
@@ -107,36 +103,9 @@ export async function agentBillingPrecheck(session: AgentBillingSession, name: s
     }
     if (!quoted)
         return undefined;
-    const costPlus=!!quoted.quote.imagePreset||quoted.authorizationRequired===true, cap=quoted.quote.authorizedCredits??quoted.quote.requestedCredits;
+    const costPlus=quoted.quote.tariff?.pricing.mode==="api-cost-plus"||quoted.authorizationRequired===true, cap=quoted.quote.authorizedCredits??quoted.quote.requestedCredits;
     const meta = { cost: name === "generate_aplus" ? 0 : quoted.quote.requestedCredits, label: quoted.label };
-    const pricingArgs = { ...args as Record<string, unknown> };
-    delete pricingArgs.confirm;
-    const quoteKey = name + ":" + stableJson(pricingArgs), previous = session.pendingQuotes?.get(quoteKey);
-    session.pendingQuotes ??= new Map();
-    if (session.pendingQuotes.size >= 32 && !session.pendingQuotes.has(quoteKey)) return { block:true, terminate:true, reason:"待确认报价过多，请缩小任务范围" };
-    session.pendingQuotes.set(quoteKey, quoted.quote);
-    if(meta.cost>=quoted.threshold || costPlus) {
-        session.pendingQuoteTurns ??= new Map();
-        session.pendingQuoteExpires ??= new Map();
-        const promptedTurn=session.pendingQuoteTurns.get(quoteKey);
-        if(args.confirm!==true || !previous || !session.userConfirmedQuote || !session.turnId || promptedTurn===session.turnId || (session.pendingQuoteExpires.get(quoteKey)||0)<Date.now()){
-            session.pendingQuoteTurns.set(quoteKey,session.turnId||"untrusted");
-            session.pendingQuoteExpires.set(quoteKey,Date.now()+10*60_000);
-            session.lastPendingQuoteKey=quoteKey;
-            return {block:true,terminate:true,attention:"waiting" as const,reason:`本次「${meta.label}」预计 ${meta.cost} 积分，最高授权 ${cap} 积分。请向用户展示报价并等待下一条消息明确同意后再执行；本轮不能自行确认。`};
-        }
-    }
-    if(costPlus && args.confirm===true && !previous)return {block:true,attention:"waiting" as const,reason:`请先向用户展示估算 ${meta.cost} 积分与最高授权 ${cap} 积分，等待明确同意后再提交。`};
-    if ((args as {
-        confirm?: unknown;
-    }).confirm === true && previous && (previous.configVersion !== quoted.quote.configVersion || previous.requestedCredits !== quoted.quote.requestedCredits || previous.authorizedCredits !== quoted.quote.authorizedCredits || previous.modelVersion !== quoted.quote.modelVersion))
-        {
-            session.userConfirmedQuote=false;
-            session.pendingQuoteTurns?.set(quoteKey,session.turnId||"untrusted");
-            session.pendingQuoteExpires?.set(quoteKey,Date.now()+10*60_000);
-            session.lastPendingQuoteKey=quoteKey;
-            return { block: true, terminate:true, attention: "waiting" as const, reason: `价格已更新，本次需要 ${meta.cost} 积分。请重新向用户报价并等待明确同意。` };
-        }
+    // Prepare the server quote once for this tool call; pricing is not a second user-confirmation flow.
     session.preparedBilling = { billingVersion: quoted.quote.configVersion, billingCredits: costPlus?cap:quoted.quote.requestedCredits, billingOperationId: fingerprint({ session: session.id, turn: session.turnId, call: callId }) };
     if(quoted.videoWorkflow)session.preparedVideoWorkflow=quoted.videoWorkflow;
     if(quoted.imagegenPlan){const request={...quoted.imagegenPlan.request,operationId:imagegenStepId(session.preparedBilling.billingOperationId,"agent")};session.preparedImagegen={...quoted.imagegenPlan,request,fingerprint:imagegenFingerprint(request)};}
@@ -151,24 +120,6 @@ export async function agentBillingPrecheck(session: AgentBillingSession, name: s
             reason: `余额不足:「${meta.label}」需要约 ${meta.cost} 积分,当前余额 ${balance}。请先充值或减少任务规模。`,
             terminate: true,
         };
-    }
-    // 大额确认闸:报价 → 用户同意 → confirm=true 放行。
-    // 拦截发生在余额检查之后,报价文案可以带上真实余额。
-    if ((meta.cost >= quoted.threshold || costPlus) &&
-        (args as {
-            confirm?: unknown;
-        }).confirm !== true) {
-        return {
-            block: true,
-            attention: "waiting" as const,
-            reason: `本次「${meta.label}」预计消耗约 ${meta.cost} 积分${costPlus?`，按实际API成本结算，最多授权 ${cap} 积分`:""}(当前余额 ${balance})。请先用一句话向用户报出这笔花费并等待明确同意;用户同意后,携带参数 confirm=true 重新调用本工具;用户拒绝或未回复就不要执行,可给出更小规模的替代方案。不要在未获得用户同意的情况下自行携带 confirm=true。`,
-        };
-    }
-    if (meta.cost >= quoted.threshold || costPlus) {
-        // One server quote, one authentic confirmation, one submission. Never reusable by the model.
-        session.userConfirmedQuote = false;
-        session.pendingQuotes.delete(quoteKey); session.pendingQuoteTurns?.delete(quoteKey); session.pendingQuoteExpires?.delete(quoteKey);
-        if(session.lastPendingQuoteKey===quoteKey)session.lastPendingQuoteKey=undefined;
     }
     return undefined;
 }

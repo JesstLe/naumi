@@ -22,9 +22,6 @@ export async function managedBillingModel(request: Request, feature: FeatureId, 
   const admin = await getModelAdministration();
   const accepted = currentExecutionBundle()?.modelVersion || currentModelExecution()?.frozen.modelVersion;
   const snapshot = accepted ? await admin.repo.byVersion(accepted) : await admin.repo.current();
-  const quoted = request.headers.get("x-naumi-model-version");
-  if (role !== "image" && quoted && (!/^[1-9][0-9]{0,15}$/.test(quoted) || Number(quoted) !== snapshot.version))
-    throw new ModelConfigError("MODEL_CHANGED", "模型配置已更新，请刷新模型列表后重新提交；原输入已保留", 409);
   const requested = requestedFeatureModel(feature, selected || (role === "text" ? request.headers.get("x-naumi-text-model")?.trim() : undefined));
   const preset = selectedImagePreset(snapshot.config,feature,requested,binding);
   if (preset) {const id=presetPublicId(preset,requested);assertToolScope(snapshot.config,feature,id,request.headers.get("x-naumi-canvas")==="1"?"canvas":undefined);return { modelId:id, providerId: snapshot.config.upstreamModels.find(u => u.id === preset.upstreamId)!.providerId };}

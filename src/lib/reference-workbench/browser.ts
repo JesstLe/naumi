@@ -31,8 +31,7 @@ window.fetch=async(input,init)=>{
    q=await quoteResponse.json();
    if(!q||typeof q.id!=="string"||!Array.isArray(q.items)||!Array.isArray(q.warnings)||!Number.isFinite(q.totalCredits))throw Error("invalid quote");
   }catch{return Response.json({ok:false,error:"报价暂时不可用，本次未发起新的生成提交。请稍后重新报价",stage:"quote",code:"QUOTE_UNAVAILABLE"},{status:503});}
-  if(q.state==="preview"&&!confirm(`本次 ${q.items.length} 项，共 ${q.totalCredits} 积分；当前可用 ${q.availableCredits} 积分。${q.items.map((i:{credits:number;ratio?:string},n:number)=>`\n${n+1}. ${i.credits} 积分${i.ratio?` / ${i.ratio}`:""}`).join("")}${q.warnings.length?"\n"+q.warnings.join("\n"):""}\n确认提交？`))return Response.json({ok:false,error:"已取消提交",stage:"quote",code:"SUBMISSION_CANCELLED"},{status:409});
-  body.native_quote={id:q.id,credits:q.totalCredits,confirmed:true};
+  body.native_quote={id:q.id};
 
   try{
    const submitted=await nativeFetch(input,{...init,body:JSON.stringify(body)});

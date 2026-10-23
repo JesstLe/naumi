@@ -35,7 +35,8 @@ export async function imageBillingQuoteForRequest(request:Request):Promise<Billi
   const owner=await resolveUserEmail(request);if(!owner)throw invalid();await ensureImageBillingQuotes();
   const row:Row|undefined=dbEnabled?(await getPool().query("SELECT *,expires_at<=now() expired FROM app_image_billing_quotes WHERE id=$1 AND owner=$2",[id,owner.toLowerCase()])).rows[0]:undefined;
   if(!row||row.owner!==owner.toLowerCase()||row.scope_key!==scopeKey()||!imageBillingFeature(row.quote.facts.feature))throw invalid();
-  if(row.expired??new Date(row.expires_at).getTime()<=Date.now())throw new ModelConfigError("IMAGE_QUOTE_EXPIRED","本次报价已到期，请刷新报价",409);
+  // This opaque, owner-bound record freezes a price for the same input. Its
+  // maintenance TTL must not turn a legitimate submit into a new purchase.
   return structuredClone(row.quote);
 }
 /** Input identity is checked, never the browser's claimed price or current versions. */

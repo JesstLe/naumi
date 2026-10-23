@@ -29,7 +29,7 @@ async function prepare(raw:ImagegenRequest,owner:string,initialVersions?:{modelV
  let versions=initialVersions;
  for(const item of request.batch.items){const child=childRequest(request,item.key,item.prompt),plan=await planImagegen(child,owner,versions);if(plan.modelVersion)versions={modelVersion:plan.modelVersion,billingVersion:plan.billingVersion};children.push({key:item.key,request:child,plan});}
  const first=children[0].plan;
- const plan:ImagegenPlan={...first,request,fingerprint:imagegenFingerprint(request),steps:children.flatMap(c=>c.plan.steps.map(s=>({...s,key:`${c.key}:${s.key}`}))),totalCredits:children.reduce((n,c)=>n+c.plan.totalCredits,0),confirmationRequired:children.some(c=>c.plan.confirmationRequired)||children.reduce((n,c)=>n+c.plan.totalCredits,0)>=100,warnings:Array.from(new Set(children.flatMap(c=>c.plan.warnings))),children:children.map(c=>({key:c.key,plan:c.plan}))};
+ const plan:ImagegenPlan={...first,request,fingerprint:imagegenFingerprint(request),steps:children.flatMap(c=>c.plan.steps.map(s=>({...s,key:`${c.key}:${s.key}`}))),totalCredits:children.reduce((n,c)=>n+c.plan.totalCredits,0),confirmationRequired:false,warnings:Array.from(new Set(children.flatMap(c=>c.plan.warnings))),children:children.map(c=>({key:c.key,plan:c.plan}))};
  return {request,plan,children};
 }
 export async function planImagegenBatch(request:ImagegenRequest,owner:string,versions?:{modelVersion:number;billingVersion:number}){return (await prepare(request,owner,versions)).plan;}

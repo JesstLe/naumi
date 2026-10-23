@@ -15,7 +15,9 @@ async function main() {
     const { assertQuotedVersion } = await import("../src/lib/billing/request");
     const config = fixtureConfig();
     config.features["image.generate"].pricing = {mode:"fixed",credits:8};
-    assert.throws(() => assertQuotedVersion({}, quote({version:2,config},facts())), (e:any)=>e.code==="PRICE_CHANGED");
+    const frozen=quote({version:2,config},facts());
+    assert.doesNotThrow(() => assertQuotedVersion({}, frozen));
+    assert.equal(frozen.requestedCredits,8,"missing browser confirmation does not change server pricing");
   } else if (test === "quality") {
     for (const unit of ["image", "task"] as const) {
       const config=fixtureConfig(), tariff=config.features["image.generate"];

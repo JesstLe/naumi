@@ -10,8 +10,9 @@ async function main() {
     const { quote } = await import("../src/lib/billing/quote");
     const { fixtureConfig, facts } = await import("./billing-unit-fixture");
     const q = quote({ version: 2, config: fixtureConfig() }, facts());
-    assert.throws(() => assertQuotedVersion({ version: 1, credits: 6 }, q), (e: any) => e.code === "PRICE_CHANGED");
-    assert.throws(() => assertQuotedVersion({ version: 2, credits: 5 }, q));
+    assert.doesNotThrow(() => assertQuotedVersion({ version: 1, credits: 6 }, q));
+    assert.doesNotThrow(() => assertQuotedVersion({ version: 2, credits: 5 }, q));
+    assert.equal(q.requestedCredits,6,"browser echoes never set the server price");
     assertQuotedVersion({ version: 2, credits: 6 }, q);
     if (process.env.NAUMI_VERIFY_ISOLATED_DB === "1" && new URL(process.env.DATABASE_URL || "http://invalid").hostname === "127.0.0.1") {
         const db = await import("../src/lib/db");
@@ -47,6 +48,6 @@ async function main() {
             await db.getPool().end();
         }
     }
-    console.log("PASS admin authorization and stale quote rejection");
+    console.log("PASS admin authorization and server-owned quote pricing");
 }
 main().catch(e => { console.error(e); process.exitCode = 1; });

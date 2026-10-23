@@ -21,7 +21,7 @@ async function handlePost(request:Request){
  let {confirmation,...value}=body||{};
  if(body?.quoteId!==undefined){
   try{
-   if(Object.keys(body).some(key=>!["operationId","quoteId","confirmed"].includes(key))||typeof body.confirmed!=="boolean")throw new ImagegenQuoteError();
+   if(Object.keys(body).some(key=>!["operationId","quoteId","confirmed"].includes(key))||body.confirmed!==undefined&&typeof body.confirmed!=="boolean")throw new ImagegenQuoteError();
    assertImagegenQuoteReference(body.quoteId,body.operationId);
   }catch(error){return Response.json({error:error instanceof Error?error.message:"报价凭据无效",code:"IMAGEGEN_QUOTE_INVALID"},{status:400});}
   try{
@@ -29,7 +29,7 @@ async function handlePost(request:Request){
    // read-only and never reads (or recreates) a missing/expired quote.
    const accepted=await acceptedReceipt(body.operationId,owner);
    if(accepted)return Response.json(accepted,{headers:{"cache-control":"private, no-store"}});
-   const saved=await readImagegenQuote(body.quoteId,owner,body.operationId);value=saved.request;confirmation={quoteId:body.quoteId,confirmed:body.confirmed===true};
+   const saved=await readImagegenQuote(body.quoteId,owner,body.operationId);value=saved.request;confirmation={quoteId:body.quoteId,confirmed:body.confirmed!==false};
   }catch(error){
    // The winner can commit between the first probe and quote lookup.
    try{const accepted=await acceptedReceipt(body.operationId,owner);if(accepted)return Response.json(accepted,{headers:{"cache-control":"private, no-store"}});}catch{/* An unavailable probe proves neither acceptance nor absence. */}
