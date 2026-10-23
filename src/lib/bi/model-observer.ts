@@ -48,7 +48,7 @@ export async function withBiRequest<T extends Response>(
   }
   const path = new URL(request.url).pathname.slice(0, 100);
   try { return await context.run({ email, operation: path }, () => withArtworkCreation({ path, operationId: currentSynchronousBilling()?.id, entry: provenanceEntry(request.headers.get("x-naumi-client-entry"), path.startsWith("/api/canvas/") ? "canvas" : "toolbox") }, () => withCreationRequest(request,email,() => withAcceptedContinuationRequest(request,email,() => withModelRequest(request, run))))); }
-  catch (error) { if(error instanceof TeamError)return Response.json({error:error.message},{status:error.status}) as T; if(error instanceof ReleaseRuntimeError)return releaseError(error) as T; if (error instanceof ModelConfigError) return new Response(JSON.stringify({ error: error.message, code: error.code }), { status: error.status, headers: { "content-type": "application/json", "cache-control": "no-store" } }) as T; throw error; }
+  catch (error) { if(error instanceof TeamError)return Response.json({error:error.message},{status:error.status}) as T; if(error instanceof ReleaseRuntimeError)return releaseError(error) as T; if (error instanceof ModelConfigError) return new Response(JSON.stringify({ error: error.message, code: error.code,...(error.code==="IMAGE_QUOTE_EXPIRED"?{accepted:false}:{}) }), { status: error.status, headers: { "content-type": "application/json", "cache-control": "no-store" } }) as T; throw error; }
 }
 
 type ObservedResponse = {

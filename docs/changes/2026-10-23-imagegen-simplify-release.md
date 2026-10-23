@@ -33,3 +33,13 @@
 - 修改：相同旧raw预览与generic quote均按原12生成真实4096 PNG，各一POST/一账本，共24测试积分；客户端0积分和999999版本不定价；外账号/改count拒绝，文字/视频价格检查保留。新增batch旧raw的冻结24提交也在集中复验。
 - 已整合冻结报价14组回归通过（7父/6子/6消费、78测试积分、0残余预占、6本机POST、0外部调用），原样保护作用域与旧回执。
 - 本轮12:30只读47仍revision743/source5b8489d9/build1792705393、7容器；11:41的2GiB memcg OOM与报价误拦分开。12:30见监督器短持三锁，12:36已退出；尚无本任务线上写入。
+
+## 统一整合与独立审阅
+
+- 已普通合入限流8258317d、并发a016518f、后继运维880a8f42，保留d0供应商余额/租户和2bbf冻结报价/原operation恢复；未复制他人未提交。
+- 集中验证：29入口3192请求、客户端151、Canvas138/1208断言、merge20/242、receipt作用域22、reload32/458、HTTP合同与19工作流、实际PG并发/账本均通过；供应商余额与租户真实PG回归通过。旧租户测试首次复用含管理员密码fixture的schema返回403，换独立全新schema后原脚本通过；不修改权限以适配测试。
+- 首次固定Linux候选9f049b07/1792731828已完整91页构建通过，image1680624b…；后续独立审阅发现边界反例，故该镜像只作初始压力测量，不当作最终发布镜像。
+- 报价审阅修正：旧raw查询保留已过期报价，拒绝静默current涨价；generic执行使用保存effective档位且保留requested原价；老工具未报比例时不凭空制造1:1参数限制，显式报价比例仍绑定；仅在服务端receipt-first后明确未受理的IMAGE_QUOTE_EXPIRED响应加入accepted:false。客户端到期授权/恢复/scope审阅修正由独立增量整合。
+- 新增真实PG反例：旧raw normal/batch过期0新POST、generic requested4K/effective2K实际2048 PNG但仍原14、既有过期generic receipt原job优先、改数量/外owner拒绝；合计3本机POST/3账本/38测试积分。不是外部供应商或生产验收。
+- 并发审阅另列非durable pinned恢复、耗尽候选、A+redo审核状态3反例，由独立增量修复后集中复验。
+- 12:54新只读47仍revision743/原source/build/7容器，三锁无holder。当前MemAvailable约3239MiB，旧Web1.364GiB/2GiB；发布器额外peak>=hardlimit合同需区分实际实测峰值，不按更低任意预算放行。最终镜像真实压力/Worker冷态媒体峰值和双槽主机余量尚待闭合；无本任务生产写入、候选、切流。

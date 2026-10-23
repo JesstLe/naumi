@@ -117,8 +117,8 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     const explicitModelId = requestedFeatureModel(mainFeature, explicit.startsWith("byok:") ? undefined : explicit || undefined);
     const featureDefault = featureDefaultModel(snapshot.config,mainFeature,purpose.image);
     const configuredModelId = quotedImage?.facts.modelId || explicitModelId || featureDefault || snapshot.config.bindings[purpose.image];
-    const outputResolution = quotedImage?.requestedParameters?.resolution || quotedImage?.facts.resolution || (Number(parsed.body.targetWidth) > 0 && Number(parsed.body.targetHeight) > 0 ? resolutionForLongSide(Math.max(Number(parsed.body.targetWidth), Number(parsed.body.targetHeight))) : String(parsed.body.resolution || "1K"));
-    const ratio = quotedImage?.requestedParameters?.ratio || quotedImage?.facts.ratio || (/^\d+:\d+$/.test(String(parsed.body.ratio||parsed.body.size||"")) ? String(parsed.body.ratio||parsed.body.size) : Number(parsed.body.targetWidth)>0&&Number(parsed.body.targetHeight)>0 ? imageRatio(Number(parsed.body.targetWidth),Number(parsed.body.targetHeight)) : "1:1");
+    const outputResolution = quotedImage?.effectiveParameters?.resolution || quotedImage?.requestedParameters?.resolution || quotedImage?.facts.resolution || (Number(parsed.body.targetWidth) > 0 && Number(parsed.body.targetHeight) > 0 ? resolutionForLongSide(Math.max(Number(parsed.body.targetWidth), Number(parsed.body.targetHeight))) : String(parsed.body.resolution || "1K"));
+    const ratio = quotedImage?.facts.ratio || (/^\d+:\d+$/.test(String(parsed.body.ratio||parsed.body.size||"")) ? String(parsed.body.ratio||parsed.body.size) : Number(parsed.body.targetWidth)>0&&Number(parsed.body.targetHeight)>0 ? imageRatio(Number(parsed.body.targetWidth),Number(parsed.body.targetHeight)) : "1:1");
     const routedModelId = routeImageModel(
       configuredModelId,
       ratio,
@@ -164,7 +164,7 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     if (!model?.displayResolutions && option?.parameters?.resolutions?.length && !option.parameters.resolutions.includes(effectiveResolution as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该尺寸", 400);
     const effectivePreset=preset?effectiveImageParameters(preset,{quality:requestedQuality,resolution:effectiveResolution,ratio}):null;
     if (canvasRequest && effectivePreset && parsed.body.resolution && (!effectivePreset.nativeResolution||!effectivePreset.nativeRatio))throw new ModelConfigError("MODEL_INCOMPATIBLE","所选模型未核验该尺寸与比例组合，请选择已开放参数",400);
-    bundle.image = await executor.resolve({ allowResolutionFallback, imageUpstreamIds:advanced?.eligibleUpstreamIds, requestedParameters:advanced?.requestedParameters, scopeSystem:parsed.body.origin==="canvas"?"canvas":undefined, feature: mainFeature, binding: purpose.image, requestedModelId, snapshot, billing, facts });
+    bundle.image = await executor.resolve({ allowResolutionFallback, imageUpstreamIds:advanced?.eligibleUpstreamIds, requestedParameters:advanced?.requestedParameters || (quotedImage?.requestedParameters?{...quotedImage.requestedParameters,ratio}:undefined), scopeSystem:parsed.body.origin==="canvas"?"canvas":undefined, feature: mainFeature, binding: purpose.image, requestedModelId, snapshot, billing, facts });
   }
   const requestedTextModelId = requestedFeatureModel(mainFeature, purpose.primary === "text" || purpose.primary === "vision" ? request.headers.get("x-naumi-feature-model")?.trim() || request.headers.get("x-naumi-text-model")?.trim() || String(parsed.body.modelId || parsed.body.model || "").trim() || undefined : undefined);
   if (purpose.video) bundle.video = await executor.resolve({ feature, binding: purpose.video, requestedModelId: request.headers.get("x-naumi-feature-model")?.trim() || parsed.body.modelId || undefined, snapshot, billing });

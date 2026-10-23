@@ -64,7 +64,7 @@ export async function readImagegenQuote(id:string,owner:string,operationId:strin
  * or claimed amount to current configuration. */
 export async function latestImagegenQuote(request:ImagegenRequest,owner:string){
  await ensureImagegenQuotes();const fingerprint=imagegenFingerprint(request),context=imagegenCreationScopeKey(owner);
- const row:QuoteRow|undefined=dbEnabled?(await getPool().query("SELECT * FROM app_imagegen_quotes WHERE owner=$1 AND operation_id=$2 AND fingerprint=$3 AND context_key=$4 AND expires_at>now() ORDER BY created_at DESC,id DESC LIMIT 1",[owner.toLowerCase(),request.operationId,fingerprint,context])).rows[0]:[...memory.values()].reverse().find(q=>q.owner===owner.toLowerCase()&&q.operation_id===request.operationId&&q.fingerprint===fingerprint&&q.context_key===context&&new Date(q.expires_at).getTime()>Date.now());
+ const row:QuoteRow|undefined=dbEnabled?(await getPool().query("SELECT * FROM app_imagegen_quotes WHERE owner=$1 AND operation_id=$2 AND fingerprint=$3 AND context_key=$4 ORDER BY created_at DESC,id DESC LIMIT 1",[owner.toLowerCase(),request.operationId,fingerprint,context])).rows[0]:[...memory.values()].reverse().find(q=>q.owner===owner.toLowerCase()&&q.operation_id===request.operationId&&q.fingerprint===fingerprint&&q.context_key===context);
  return row?.id;
 }
 export async function frozenImagegenQuote(request:ImagegenRequest,owner:string,confirmation:ImagegenSubmissionConfirmation){

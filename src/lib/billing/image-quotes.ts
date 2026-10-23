@@ -40,7 +40,10 @@ export async function imageBillingQuoteForRequest(request:Request):Promise<Billi
 }
 /** Input identity is checked, never the browser's claimed price or current versions. */
 export function assertImageBillingSelection(q:BillingQuote,input:{feature:string;quantity:number;modelId?:string;quality?:string;resolution?:string;ratio?:string}){
-  const allowed=(name:"quality"|"resolution"|"ratio",value:string|undefined)=>value===undefined||[q.facts[name],q.requestedParameters?.[name],q.effectiveParameters?.[name]].includes(value);
+  // Older tool estimates omit ratio altogether; it was not an identity or price
+  // input in that quote. The authenticated handler resolves its frame against
+  // the quoted historical model. Explicitly quoted ratios remain immutable.
+  const allowed=(name:"quality"|"resolution"|"ratio",value:string|undefined)=>value===undefined||name==="ratio"&&q.facts.ratio===undefined||[q.facts[name],q.requestedParameters?.[name],q.effectiveParameters?.[name]].includes(value);
   if(input.feature!==q.facts.feature||input.quantity!==q.facts.quantity||(input.modelId!==undefined&&input.modelId!==q.facts.modelId)||!allowed("quality",input.quality)||!allowed("resolution",input.resolution)||!allowed("ratio",input.ratio))
     throw new BillingError("OPERATION_CONFLICT","本次输入与原报价不符",409);
 }
