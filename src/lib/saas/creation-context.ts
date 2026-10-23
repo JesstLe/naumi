@@ -70,8 +70,12 @@ export async function bindActualCreationProject(email:string,id:string,options:{
   }
  }else if(!options.newRoot){
   if(context.tenantId)throw new TeamError('现有项目归属未记录，请在企业空间新建项目',409);
-  // Personal execution may continue, without relabelling an old project's past.
-  delete context.parentContext;return context;
+  // An owned text-only personal canvas has no artwork output proof yet.
+  // Fix its destination before quoting/acceptance so completion cannot change
+  // a frozen null parent into a different receipt scope. Legacy receipt reads
+  // remain non-binding, and an unproven tenant project is still rejected above.
+  const textProject=!options.receipt&&(await tx.query("SELECT 1 FROM app_canvas_text_nodes WHERE email=$1 AND project_key=$2 LIMIT 1",[email.toLowerCase(),id])).rowCount;
+  if(!textProject){delete context.parentContext;return context;}
  }
  if(!options.receipt)await tx.query("INSERT INTO app_creation_contexts(actor_email,context_kind,context_id,scope_kind,tenant_id) VALUES($1,'project',$2,$3,$4) ON CONFLICT DO NOTHING",[email.toLowerCase(),id,context.scopeKind,context.tenantId]);
  const saved=options.receipt?proof:(await tx.query("SELECT scope_kind,tenant_id FROM app_creation_contexts WHERE actor_email=$1 AND context_kind='project' AND context_id=$2",[email.toLowerCase(),id])).rows[0];
@@ -145,7 +149,7 @@ export async function withCreationRequest<T extends Response>(request:Request,em
   else if(body?.projectKey){
    // The owning video-node transaction alone can attest its genuinely new root.
    const creatingRoot=new URL(request.url).pathname==='/api/canvas/video-nodes'&&body.expectedRevision===0&&body.projectKey===`tree:${body.id}`;
-   if(!creatingRoot)await bindActualCreationProject(email,body.projectKey);
+   if(!creatingRoot)await bindActualCreationProject(email,body.projectKey,{receipt:options.receipt});
   }
   return run();
  });
