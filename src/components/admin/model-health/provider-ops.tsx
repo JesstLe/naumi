@@ -25,20 +25,23 @@ function ProviderActivityPanel({ value }: { value: ProviderActivityOverview }) {
     <section className={styles.circuit}><h4>当前通道熔断</h4>{provider.circuit.errorCode ? <p>{activityErrorMessages[provider.circuit.errorCode]}</p> : provider.circuit.configuredChannels === 0 ? <p>当前发布配置无通道</p> : <dl><div><dt>配置通道</dt><dd>{amount(provider.circuit.configuredChannels)}</dd></div><div><dt>已记录熔断</dt><dd>{amount(provider.circuit.openChannels)}</dd></div><div><dt>恢复探测中</dt><dd>{amount(provider.circuit.recoveringChannels)}</dd></div><div><dt>状态未记录</dt><dd>{amount(provider.circuit.unobservedChannels)}</dd></div></dl>}</section>
   </article>)}</div></section>;
 }
-export function ProviderOps() {
+export function ProviderOps({ showActivity = true }: { showActivity?: boolean } = {}) {
   const [data, setData] = useState<ProviderBalanceOverview | null>(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const request = useRef<AbortController | null>(null), sequence = useRef(0);
   const load = useCallback(async (refresh = false) => {
     const id = ++sequence.current; request.current?.abort(); const controller = new AbortController(); request.current = controller; setBusy(true); setError('');
     try {
-      const response = await fetch(`/api/admin/bi/provider-ops${refresh ? '?refresh=1' : ''}`, { cache: 'no-store', headers: await authHeader(), signal: controller.signal });
+      const query = new URLSearchParams();
+      if (refresh) query.set('refresh', '1');
+      if (!showActivity) query.set('view', 'balances');
+      const response = await fetch(`/api/admin/bi/provider-ops${query.size ? `?${query}` : ''}`, { cache: 'no-store', headers: await authHeader(), signal: controller.signal });
       const payload = await response.json();
       if (controller.signal.aborted || sequence.current !== id) return;
       if (!response.ok) { setData(null); setError(Object.hasOwn(balanceErrorMessages, payload.code) ? balanceErrorMessages[payload.code as BalanceErrorCode] : balanceErrorMessages.PROVIDER_OPS_UNAVAILABLE); return; }
       setData(payload);
     } catch { if (!controller.signal.aborted && sequence.current === id) { setData(null); setError(balanceErrorMessages.PROVIDER_OPS_UNAVAILABLE); } }
     finally { if (!controller.signal.aborted && sequence.current === id) setBusy(false); }
-  }, []);
+  }, [showActivity]);
   useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 60_000); const focus = () => void load(); window.addEventListener('focus', focus); return () => { sequence.current++; request.current?.abort(); window.clearInterval(timer); window.removeEventListener('focus', focus); }; }, [load]);
   return <section className={styles.card} aria-label='供应商账户余额与额度' aria-busy={busy}>
     <header className={styles.header}><h2 className={styles.title}><Wallet size={17} aria-hidden />供应商账户余额与额度</h2><div className={styles.headerMeta}>{data && <span className={styles.meta}>发布版本 {data.configVersion} · 读取于 {clock(data.generatedAt)}</span>}<button className={styles.refresh} type='button' disabled={busy} onClick={() => void load(true)}><RefreshCw size={14} aria-hidden />{busy ? '刷新中…' : '刷新余额'}</button></div></header>
@@ -55,6 +58,6 @@ export function ProviderOps() {
       {account.source && (account.source.documentationUrl ? <a className={styles.source} href={account.source.documentationUrl} target='_blank' rel='noreferrer'>{account.source.label} · 接口来源</a> : <span className={styles.probeTime}>{account.source.label} · 只读接口核验 {account.source.revision}</span>)}
     </article>)}</div>}
     {data && !data.accounts.length && <p className={styles.empty}>当前发布版本没有供应商</p>}
-    {data?.activity && <ProviderActivityPanel value={data.activity} />}
+    {showActivity && data?.activity && <ProviderActivityPanel value={data.activity} />}
   </section>;
 }

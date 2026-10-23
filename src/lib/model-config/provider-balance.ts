@@ -87,8 +87,14 @@ export function createProviderBalanceService(deps: Dependencies) {
       const fetcher = deps.transport(target.baseUrl, deps.validation || {});
       const response = await fetcher(target.endpoint, { method: 'GET', headers: { authorization: `Bearer ${target.apiKey}`, accept: 'application/json' }, signal: AbortSignal.timeout(PROBE_TIMEOUT_MS), redirect: 'error' });
       if (!response.ok) { await response.body?.cancel().catch(() => {}); return { status: 'error', measurement: null, checkedAt: null, attemptedAt, errorCode: response.status === 401 || response.status === 403 ? 'AUTH_FAILED' : response.status === 429 ? 'RATE_LIMITED' : 'UPSTREAM_UNAVAILABLE' }; }
+      let body: string;
+      try { body = await readBounded(response, 32 * 1024); }
+      catch (error) {
+        if (!(error instanceof Error) || !['receipt too large', 'empty receipt'].includes(error.message)) throw error;
+        return { status: 'error', measurement: null, checkedAt: null, attemptedAt, errorCode: 'MALFORMED_RESPONSE' };
+      }
       let measurement: BalanceMeasurement;
-      try { measurement = balanceMeasurementSchema.parse(target.adapter.parse(JSON.parse(await readBounded(response, 32 * 1024)))); }
+      try { measurement = balanceMeasurementSchema.parse(target.adapter.parse(JSON.parse(body))); }
       catch { return { status: 'error', measurement: null, checkedAt: null, attemptedAt, errorCode: 'MALFORMED_RESPONSE' }; }
       return { status: 'ok', measurement, checkedAt: new Date(now()).toISOString(), attemptedAt, errorCode: null };
     } catch (error) {
@@ -132,19 +138,19 @@ export async function readProviderBalanceCredential(pool: Pool, ref: string, pro
   return stored ? decryptAtRest(stored.key_enc) : null;
 }
 export function createPublishedProviderBalanceReader(pool: Pool, service: ReturnType<typeof createProviderBalanceService>) {
-  return async (refresh = false) => {
+  return async (refresh = false, includeActivity = true) => {
     const row = (await pool.query(`SELECT v.version,v.config FROM app_model_config_state s JOIN app_model_config_versions v ON v.version=s.active_version WHERE s.singleton=true`)).rows[0];
     if (!row) throw new Error('CONFIG_UNAVAILABLE');
     const providers = modelConfigSchema.shape.providers.parse(row.config.providers);
     const result = await service.overview(providers, Number(row.version), refresh);
-    const activity = await readProviderActivity(pool, row.config, providers);
+    const activity = includeActivity ? await readProviderActivity(pool, row.config, providers) : undefined;
     const current = (await pool.query('SELECT active_version FROM app_model_config_state WHERE singleton=true')).rows[0]?.active_version;
     if (Number(current) !== Number(row.version)) throw new ProviderBalanceFailure('CONFIG_CHANGED');
     return { ...result, activity };
   };
 }
 let defaultService: ReturnType<typeof createProviderBalanceService> | undefined;
-export async function providerBalanceOverview(refresh = false): Promise<ProviderBalanceOverview> {
+export async function providerBalanceOverview(refresh = false, includeActivity = true): Promise<ProviderBalanceOverview> {
   const pool = getPool();
   // No bootstrap, runtime execution, supplier-cost collection, or health writes.
   if (!defaultService) defaultService = createProviderBalanceService({
@@ -154,5 +160,5 @@ export async function providerBalanceOverview(refresh = false): Promise<Provider
     validation: { trustedOrigins: (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || '').split(/[\s,]+/).filter(Boolean) },
     transport: (baseUrl, validation) => modelEndpointFetch(baseUrl, validation, { providerId: 'balance-read-only', timeoutMs: PROBE_TIMEOUT_MS, costDisabled: true }),
   });
-  return createPublishedProviderBalanceReader(pool, defaultService)(refresh);
+  return createPublishedProviderBalanceReader(pool, defaultService)(refresh, includeActivity);
 }

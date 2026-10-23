@@ -39,12 +39,12 @@ export function EnterpriseEntitlement({ snapshot, onView }: { snapshot: SaasSnap
   const effective = effectiveMemberCount(snapshot);
   return <article className={styles.overviewCard}>
     <header><h2>企业授权</h2>{onView && <button className={styles.textButton} onClick={onView}>查看权益<ArrowRight size={14} /></button>}</header>
-    <div className={styles.entitlementRow}><span className={`${styles.metricIcon} ${styles.iconOrange}`}><Crown size={23} /></span><strong>{entitlement?.name || '未配置'}</strong><div><small>{snapshot.actor.owner ? '有效成员席位' : '当前范围成员'}</small><span>{effective} / {entitlement?.seatLimit == null ? '未配置' : entitlement.seatLimit}</span></div><div><small>有效期至</small><span>{date(snapshot.enterprise.authorized_until)}</span></div></div>
+    <div className={styles.entitlementRow}><span className={`${styles.metricIcon} ${styles.iconOrange}`}><Crown size={23} /></span><strong>{entitlement?.name || '未配置'}</strong><div><small>{snapshot.actor.owner ? '有效成员席位' : '当前范围成员'}</small><span>{effective} / {entitlement?.seatLimit == null ? '未限制' : entitlement.seatLimit}</span></div><div><small>有效期至</small><span>{date(snapshot.enterprise.authorized_until)}</span></div></div>
   </article>;
 }
 
-export function EnterpriseSaasOverview({ snapshot, from, to, meta, metaError, onRetryMeta, onView, onCreation }: {
-  snapshot: SaasSnapshot; from: string; to: string; meta: EnterpriseOverviewMeta | null; metaError: string; onRetryMeta: () => void;
+export function EnterpriseSaasOverview({ snapshot, from, to, meta, metaError, onRetryMeta, onView, onCreation, refreshRevision = 0 }: {
+  refreshRevision?: number; snapshot: SaasSnapshot; from: string; to: string; meta: EnterpriseOverviewMeta | null; metaError: string; onRetryMeta: () => void;
   onView: (view: 'members' | 'roles' | 'records' | 'usage' | 'settings', filter?: { status?: string; email?: string }) => void;
   onCreation: (id: string) => void;
 }) {
@@ -64,7 +64,7 @@ export function EnterpriseSaasOverview({ snapshot, from, to, meta, metaError, on
       finally { if (!controller.signal.aborted) setLoading(false); }
     })();
     return () => controller.abort();
-  }, [tenantId, from, to, email, reload]);
+  }, [tenantId, from, to, email, reload, refreshRevision]);
   useEffect(() => {
     setFilteredRows(null); setTabError(''); setTabLoading(false); if (!tab) return;
     const controller = new AbortController(); setTabLoading(true);
@@ -78,7 +78,7 @@ export function EnterpriseSaasOverview({ snapshot, from, to, meta, metaError, on
     })).then(groups => { if (!controller.signal.aborted) setFilteredRows(groups.flat().sort((a, b) => b.acceptedAt.localeCompare(a.acceptedAt) || b.id.localeCompare(a.id)).slice(0, 5)); })
       .catch(reason => { if (!controller.signal.aborted) setTabError(reason.message); }).finally(() => { if (!controller.signal.aborted) setTabLoading(false); });
     return () => controller.abort();
-  }, [tenantId, from, to, email, tab, reload]);
+  }, [tenantId, from, to, email, tab, reload, refreshRevision]);
   const rows = (tab ? filteredRows : data?.items)?.slice(0, 5) || [];
   const summary = data?.summary;
   const effective = meta?.members.effective ?? effectiveMemberCount(snapshot);
