@@ -35,14 +35,14 @@
 
 ## 验证进度
 
-集中验证首轮暴露“提交后视频refresh失败丢失undo”及测试环境问题，原始失败保存在`INTEGRATION_FIRST_FAILURE.json`，未用后续成功覆盖。第二轮87/87通过后，独立只读复审发现三项P2，已窄修并进入最终补验：
+集中验证首轮暴露“提交后视频refresh失败丢失undo”及测试环境问题，原始失败保存在`INTEGRATION_FIRST_FAILURE.json`，未用后续成功覆盖。第二轮87/87通过后，独立只读复审发现三项P2，已窄修，最终集成105/105（保留87项＋新增18项）、baseline7/7均exit0：
 
 - 含视频的新move-many操作（包括撤销）在组装revision前刷新；缓存的未知提交保留原operationId和载荷，禁止重新绑定。
 - 连线关闭使用hidden呈现，保留React Flow逻辑边，避免影响全图整理拓扑。
 - 新对齐调用取真实measured/style/data节点边界，不复用旧布局helper的媒体标签避让留白。
 - 实际浏览发现全量预设卡片高度被压缩，补grid-auto-rows:max-content，桌面名称与色条恢复可见；390px面板374px宽，镜头卡双列、名称可见。
 
-纯helper已完成选区23组（64组seeded选区）、大纲22检查、创意预设26项。类型检查、原scope history11项、生图Canvas138/1208回归通过。最终追加回归与副本rollback以`output/jimeng-canvas-20261023/VERIFICATION.txt`为准。
+纯helper已完成选区23组（64组seeded选区）、大纲22检查、创意预设26项。类型检查、原scope history11项、生图Canvas138/1208回归通过。最终追加回归与副本rollback精确命令以`output/jimeng-canvas-20261023/VERIFICATION.txt`为准。
 
 真实React组件fixture已在本机Chrome extension实际操作：暖沙搜索2项、文本类型1项并定位、Shift多选、锁定禁用、顶部对齐/水平分布/撤销、配色搜索蓝色2项ArrowUp双向绕回、零结果空态、风格与镜头切换、预设追加不覆盖提示词；生成按钮禁用，connect-src none。此为真实新增组件＋ReactFlow＋本地代码合成场景，不冒充完整登录Canvas/生产验收。截图已保存并打开检查。
 

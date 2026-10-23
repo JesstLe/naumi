@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* Local integration harness. No production imports are executed as a component.
  * Run only after SOURCE STABLE. No HTTP requests, Git, builds or server startup.
- * node scripts/verify-canvas-jimeng-integration.cjs [--baseline|--preview-only]
+ * node scripts/verify-canvas-jimeng-integration.cjs [--baseline [--source-root <absolute>]|--preview-only]
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -15,7 +15,18 @@ const PREVIEW = path.join(OUT, 'ui-preview');
 const REL = 'src/components/canvas/canvas-client.tsx';
 const BASELINE = process.argv.includes('--baseline');
 const PREVIEW_ONLY = process.argv.includes('--preview-only');
-const sourcePath = path.join(BASELINE ? path.join(OUT, 'baseline') : ROOT, REL);
+const sourceRootIndex = process.argv.indexOf('--source-root');
+assert(!(BASELINE && PREVIEW_ONLY), '--baseline and --preview-only are mutually exclusive');
+let baselineRoot = path.join(OUT, 'baseline');
+if (sourceRootIndex !== -1) {
+  assert(BASELINE, '--source-root is only supported with --baseline');
+  assert.equal(process.argv.filter(arg => arg === '--source-root').length, 1, 'Only one --source-root is accepted');
+  const value = process.argv[sourceRootIndex + 1];
+  assert(value && path.isAbsolute(value), '--source-root requires an absolute directory');
+  assert(fs.statSync(value).isDirectory(), '--source-root must be a directory');
+  baselineRoot = path.resolve(value);
+}
+const sourcePath = path.join(BASELINE ? baselineRoot : ROOT, REL);
 const source = fs.readFileSync(sourcePath, 'utf8');
 const sourceHash = hash(sourcePath);
 const sf = ts.createSourceFile(sourcePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -124,12 +135,15 @@ function makeEnv(options = {}) {
   };
   env.videoNodesStore = { nodes: [], getNode: id => env.videos.find(v => v.id === id), flush: async () => { env.events.push('video:flush'); if (env.flushGate) await env.flushGate.promise; }, refresh: async () => { env.events.push('video:refresh'); if (env.refreshError) throw new Error('local video refresh failed'); } };
   env.rfRef = { current: { getNodes: () => env.nodes, getNode: id => env.nodes.find(node => node.id === id), fitView: options => { env.fits.push(options); return Promise.resolve(true); } } };
+  // The real Undo/Redo functions read current React state; getters keep their
+  // AST-extracted bodies attached to the fixture's current stack identities.
+  Object.defineProperties(env, { undoStack: { get: () => env.undo }, redoStack: { get: () => env.redo } });
   env.active.members = env.nodes.filter(n => !['text', 'pend', 'workflowGroup', 'workflowDecoration', 'videoGeneration'].includes(n.type) && !n.id.startsWith('task-')).map(n => ({ id: n.id, canvasX: n.position.x, canvasY: n.position.y }));
   env.active.textNodes = env.nodes.filter(n => n.type === 'text').map(n => ({ id: n.id, projectKey: env.activeKey, canvasX: n.position.x, canvasY: n.position.y }));
   env.active.videoNodes = env.nodes.filter(n => n.type === 'videoGeneration').map(n => ({ id: n.id, projectKey: env.activeKey, revision: 3, canvasX: n.position.x, canvasY: n.position.y }));
   env.works = plain(env.active.members); env.textNodes = plain(env.active.textNodes); env.textNodesRef.current = env.textNodes; env.videos = plain(env.active.videoNodes); env.videoNodesStore.nodes = env.videos;
   Object.assign(env, options.env || {});
-  Object.assign(env, compile(env, declarations, ['privateFetchRaw', 'fitCanvasSelection', 'locateOutlineNode', 'arrangeSelection', 'applyHistory', 'pushUndo', 'applyArtworkSelection', 'clearCanvasSelection', 'selectWorkflowGroup', 'flowNodeSize']));
+  Object.assign(env, compile(env, declarations, ['privateFetchRaw', 'fitCanvasSelection', 'locateOutlineNode', 'arrangeSelection', 'applyHistory', 'doUndo', 'doRedo', 'pushUndo', 'applyArtworkSelection', 'clearCanvasSelection', 'selectWorkflowGroup', 'flowNodeSize']));
   return env;
 }
 function assertNoCommit(env) { assert.equal(env.requests.length, 0); assert.equal(env.undo.length, 0); assert.equal(env.events.some(e => e.startsWith('local:')), false); }
@@ -229,7 +243,7 @@ async function presetKeyboardTests() {
 async function runtimeTests() {
   for (const action of ['left', 'centerX', 'right', 'top', 'centerY', 'bottom', 'distributeX', 'distributeY']) await test(`AST runtime: ${action}, one atomic history and unselected node unchanged`, async () => {
     const e = makeEnv(), before = plain(e.works), selectedBefore = e.nodes.filter(n => e.multiSel.includes(n.id));
-    const expected = helpers.arrangeCanvasSelection(selectedBefore.map(n => ({ id: n.id, ...n.position, ...e.flowNodeSize(n) })), action);
+    const expected = helpers.arrangeCanvasSelection(selectedBefore.map(n => ({ id: n.id, ...n.position, ...n.measured })), action);
     await e.arrangeSelection(action); assert.equal(e.requests.length, expected.length ? 1 : 0); assert.equal(e.undo.length, expected.length ? 1 : 0);
     if (expected.length) { assert.equal(e.undo[0].kind, 'move-many'); assert.deepEqual(e.undo[0].moves, expected); assert.deepEqual(e.requests[0].operations.map(n => n.id), expected.map(n => n.id)); assert(e.events.indexOf('persist:ack') < e.events.indexOf('undo')); assert(e.events.indexOf('persist:ack') < e.events.indexOf('local:works')); }
     assert.deepEqual(e.works.find(n => n.id === 'image-unselected'), before.find(n => n.id === 'image-unselected'));
@@ -285,8 +299,13 @@ async function runtimeTests() {
   });
   await test('AST runtime: committed mixed layout remains undoable if postcommit video refresh fails', async () => {
     const e = makeEnv({ nodes: [makeNode('image-a', 50, 20), makeNode('text-a', 200, 80, 'text'), makeNode('video-a', 400, 150, 'videoGeneration')] });
-    e.multiSel = ['image-a', 'text-a', 'video-a']; e.refreshError = true; await e.arrangeSelection('left');
+    // The first refresh is now preflight. Fail only the postcommit read, not
+    // the preflight; otherwise this no longer exercises the original bug.
+    const refresh = e.videoNodesStore.refresh; let refreshCalls = 0;
+    e.videoNodesStore.refresh = async () => { refreshCalls++; if (refreshCalls === 2) { e.events.push('video:refresh'); throw new Error('local video refresh failed'); } await refresh(); };
+    e.multiSel = ['image-a', 'text-a', 'video-a']; await e.arrangeSelection('left');
     assert.equal(e.requests.length, 1); assert(e.events.includes('persist:ack')); assert.equal(e.undo.length, 1, 'Server-committed layout must not lose undo due to a later local refresh error');
+    assert.equal(refreshCalls, 2, 'Preflight succeeds before the failed postcommit read');
     assert(e.tips.some(tip => tip === '布局已保存，视频节点显示稍后同步'));
   });
   await test('AST runtime: non-move-many postcommit refresh failures retain original throw behavior', async () => {
@@ -313,12 +332,217 @@ async function runtimeTests() {
     const preset = creative.CREATIVE_PRESETS[0], prompt = '  保留原提示词及格式。\n'; const next = creative.appendCreativePreset(prompt, preset); assert(next.startsWith(prompt)); assert(next.includes(preset.promptFragment)); assert.equal(creative.appendCreativePreset(next, preset), next); assert(creative.filterCreativePresets('camera', '俯拍').length > 0);
   });
 }
+function realBoundsNode(id, x, y, type = 'image') {
+  const node = makeNode(id, x, y, type, 200, 200);
+  // Unlike makeNode's legacy placement fixture, these are the actual rendered
+  // outer bounds, equal across media/text/video, without a synthetic label pad.
+  node.measured = { width: 200, height: 200 };
+  return node;
+}
+function localPositions(e) { return plain({ nodes: e.nodes, works: e.works, textNodes: e.textNodes, videos: e.videos }); }
+function freshVideoMove(e) {
+  const video = e.videos[0];
+  return { kind: 'move-many', moves: [{ id: video.id, from: { x: video.canvasX, y: video.canvasY }, to: { x: 50, y: video.canvasY } }] };
+}
+function revisionScenario(options = {}) {
+  const e = makeEnv({ nodes: [realBoundsNode('image-anchor', 50, 20), realBoundsNode('image-a', 150, 60), realBoundsNode('text-a', 200, 80, 'text'), realBoundsNode('video-a', 400, 150, 'videoGeneration')] });
+  e.multiSel = e.nodes.map(node => node.id);
+  const state = { initialRevision: options.revision ?? 10, video: plain(e.videos[0]), works: plain(e.works), textNodes: plain(e.textNodes), ledger: new Map(), rawRequests: [], refreshes: [], timeline: [], commits: 0 };
+  state.video.revision = state.initialRevision;
+  e.videos[0].revision = state.initialRevision - 1; // Prove preflight replaces stale local revisions.
+  e.videoNodesStore.refresh = async () => {
+    const call = state.refreshes.length + 1, fails = (options.failRefreshCalls || []).includes(call);
+    e.events.push('video:refresh'); state.timeline.push(`refresh:${call}:${state.video.revision}:${fails ? 'FAIL' : 'OK'}`);
+    state.refreshes.push({ call, revision: state.video.revision, status: fails ? 'FAIL' : 'OK' });
+    if (fails) throw new Error('local video refresh failed');
+    e.videos = [plain(state.video)]; e.videoNodesStore.nodes = e.videos;
+  };
+  e.fetch = async (url, init) => {
+    assert.equal(url, '/api/canvas/history'); assert.equal(init.method, 'POST');
+    const body = JSON.parse(init.body); e.requestHeaders = Object.fromEntries(init.headers.entries());
+    e.requests.push(body); state.rawRequests.push(init.body); e.events.push('persist:request');
+    state.timeline.push(`post:${body.operationId}:${body.operations.find(op => op.type === 'video-patch')?.expectedRevision}`);
+    const previous = state.ledger.get(body.operationId);
+    if (previous) assert.equal(init.body, previous, 'An idempotent replay must preserve the literal original body');
+    else {
+      // Validate every operation before any write, as an atomic local server
+      // fixture. A stale revision fails the test rather than returning a fake OK.
+      for (const op of body.operations) {
+        if (op.type === 'video-patch') { assert.equal(op.id, state.video.id); assert.equal(op.expectedRevision, state.video.revision, 'Video POST must carry the current server revision'); }
+        else { assert.equal(op.type, 'position'); assert((op.text ? state.textNodes : state.works).some(row => row.id === op.id)); }
+      }
+      for (const op of body.operations) {
+        if (op.type === 'video-patch') { Object.assign(state.video, { canvasX: op.fields.x, canvasY: op.fields.y, revision: state.video.revision + 1 }); }
+        else { const row = (op.text ? state.textNodes : state.works).find(row => row.id === op.id); Object.assign(row, { canvasX: op.x, canvasY: op.y }); }
+      }
+      state.ledger.set(body.operationId, init.body); state.commits++;
+      state.timeline.push(`commit:${state.video.revision}`);
+    }
+    if (options.unknownFirst && state.rawRequests.length === 1) throw new Error('local unknown outcome after server commit');
+    return { ok: true };
+  };
+  return { e, state };
+}
+async function p2RegressionTests() {
+  for (const action of ['bottom', 'centerY']) await test(`P2 AST geometry: equal measured 200px image/text/video ${action} is a true no-op`, async () => {
+    const nodes = [realBoundsNode('image-a', 0, 75), realBoundsNode('text-a', 300, 75, 'text'), realBoundsNode('video-a', 600, 75, 'videoGeneration')];
+    // Contradictory content heights catch using placement/content geometry even
+    // if all three nodes happen to share the same measured outer bounds.
+    nodes.forEach((node, index) => node.data.height = [164, 200, 140][index]);
+    const e = makeEnv({ nodes }); e.multiSel = nodes.map(node => node.id); const before = localPositions(e);
+    await e.arrangeSelection(action);
+    assertNoCommit(e); assert.deepEqual(localPositions(e), before); assert.equal(e.operationCounter, 0); assert.deepEqual(e.tips, []);
+    assert.equal(e.historyBusyRef.current, false); assert.equal(e.historySaving, false);
+    return { measuredHeights: [200, 200, 200], y: 75, http: 0, undo: 0 };
+  });
+  await test('P2 AST geometry: mixed 200px nodes at y=0/300/600 already have equal vertical gaps', async () => {
+    const nodes = [realBoundsNode('image-a', 10, 0), realBoundsNode('text-a', 400, 300, 'text'), realBoundsNode('video-a', 750, 600, 'videoGeneration')];
+    const e = makeEnv({ nodes }); e.multiSel = nodes.map(node => node.id); const before = localPositions(e);
+    await e.arrangeSelection('distributeY'); assertNoCommit(e); assert.deepEqual(localPositions(e), before); assert.equal(e.operationCounter, 0); assert.deepEqual(e.tips, []);
+    assert.equal(e.historyBusyRef.current, false); assert.equal(e.historySaving, false);
+    return { y: [0, 300, 600], heights: [200, 200, 200], gaps: [100, 100], http: 0 };
+  });
+  const boundsCases = [
+    ['measured before node/style/data', { measured: { width: 211, height: 212 }, width: 311, height: 312, style: { width: '411', height: 412 }, data: { width: 511, height: 512 } }, { width: 211, height: 212 }],
+    ['node before style/data', { width: 311, height: 312, style: { width: '411', height: 412 }, data: { width: 511, height: 512 } }, { width: 311, height: 312 }],
+    ['numeric style before data', { style: { width: '411', height: 412 }, data: { width: 511, height: 512 } }, { width: 411, height: 412 }],
+    ['data before constants', { style: { width: 'auto', height: '100%' }, data: { width: 511, height: 512 } }, { width: 511, height: 512 }],
+    ['NODE_W/H defaults', { style: { width: 'auto', height: '100%' } }, { width: 320, height: 236 }],
+    ['width/height independent precedence', { measured: { width: 211 }, height: 312, style: { width: 411, height: 412 }, data: { width: 511, height: 512 } }, { width: 211, height: 312 }],
+  ];
+  for (const [label, fields, dimensions] of boundsCases) await test(`P2 AST geometry: ${label}`, async () => {
+    const nodes = ['image', 'text', 'videoGeneration'].map((type, index) => {
+      const node = realBoundsNode(['image-a', 'text-a', 'video-a'][index], index * 700, index * 300, type);
+      delete node.measured; delete node.data.width; delete node.data.height;
+      const { data, ...outer } = fields; Object.assign(node, plain(outer)); Object.assign(node.data, data || {}); return node;
+    });
+    const e = makeEnv({ nodes }); e.multiSel = nodes.map(node => node.id); let captured;
+    e.arrangeCanvasSelection = (selection, action) => { captured = plain(selection); return helpers.arrangeCanvasSelection(selection, action); };
+    await e.arrangeSelection('bottom');
+    assert.deepEqual(captured, nodes.map(node => ({ id: node.id, ...node.position, ...dimensions })));
+    assert.equal(e.requests.length, 1); assert.equal(e.undo.length, 1); assert.deepEqual(e.tips, []);
+    assert.deepEqual(e.undo[0].moves, nodes.slice(0, 2).map(node => ({ id: node.id, from: node.position, to: { x: node.position.x, y: 600 } })));
+    return { capturedDimensions: captured.map(({ width, height }) => ({ width, height })), http: 1, undo: 1 };
+  });
+  await test('P2 AST geometry: legacy flowNodeSize source and media +36 placement behavior remain unchanged', () => {
+    assert.equal(walk(functionNode('arrangeSelection'), n => ts.isCallExpression(n) && n.expression.getText(sf) === 'flowNodeSize').length, 0);
+    // Frozen raw-baseline AST hash keeps normal modified verification reusable
+    // from a fresh checkout without depending on ignored backup artifacts.
+    assert.equal(crypto.createHash('sha256').update(functionNode('flowNodeSize').getText(sf)).digest('hex'), '64f254316e39e98e26542490d37188f9f30fd38cd07a809fe6a026203313c8e3', 'Legacy placement helper must not be changed to fix alignment');
+    const e = makeEnv();
+    for (const type of ['image', 'text', 'videoGeneration']) {
+      const node = makeNode(`legacy-${type}`, 0, 0, type, 180, 120); node.measured = { width: 200, height: 200 };
+      assert.deepEqual(e.flowNodeSize(node), { width: 180, height: type === 'text' ? 120 : 156 });
+    }
+    assert.deepEqual(e.flowNodeSize(undefined), { width: 320, height: 236 });
+    return { sourceUnchanged: true, nonTextHeight: 156, textHeight: 120, labelPadding: 36 };
+  });
+  await test('P2 AST edges: hidden ReactFlow prop preserves getEdges topology and original objects', () => {
+    const flow = jsxAll('ReactFlow'); assert.equal(flow.length, 1); const node = expression(flow[0], 'edges'); assert(node);
+    const originals = [
+      { id: 'a-b', source: 'image-a', target: 'text-a', sourceHandle: 'out', targetHandle: 'in', type: 'lineage', selected: true, hidden: false, data: { kind: 'reference' } },
+      { id: 'b-c', source: 'text-a', target: 'video-a', sourceHandle: 'text-out', targetHandle: 'prompt-in', type: 'workflow', hidden: true, data: { weight: 2 } },
+      { id: 'c-a', source: 'video-a', target: 'image-a', type: 'default', data: { cycle: true } },
+    ];
+    const before = plain(originals); originals.forEach(edge => { Object.freeze(edge.data); Object.freeze(edge); }); Object.freeze(originals);
+    const env = { rfEdges: originals, linksVisible: false };
+    const evaluate = () => compile(env, `const actualEdges = ${node.getText(sf)};`, ['actualEdges']).actualEdges;
+    const hidden = evaluate(), getEdges = () => hidden; // getEdges fixture reads the exact evaluated ReactFlow prop.
+    assert.equal(getEdges().length, originals.length);
+    getEdges().forEach((edge, index) => { assert.notEqual(edge, originals[index]); assert.deepEqual(edge, { ...originals[index], hidden: true }); assert.equal(edge.data, originals[index].data); });
+    const topology = edges => edges.map(({ id, source, target, sourceHandle, targetHandle, type }) => ({ id, source, target, sourceHandle, targetHandle, type }));
+    assert.deepEqual(topology(getEdges()), topology(originals)); assert.deepEqual(originals, before);
+    env.linksVisible = true; assert.equal(evaluate(), originals); assert.deepEqual(originals, before);
+    extracted.ReactFlowEdges = { line: line(node), expression: node.getText(sf) };
+    return { sourceLine: line(node), edgeCountVisible: originals.length, edgeCountHidden: getEdges().length, originalsUnchanged: true, boundary: 'AST-extracted ReactFlow edges prop; getEdges fixture, not mounted ReactFlow' };
+  });
+  await test('P2 AST video: second refresh fails after commit, immediate real Undo refreshes N+1 and succeeds', async () => {
+    const { e, state } = revisionScenario({ failRefreshCalls: [2] }); const before = { works: plain(e.works), textNodes: plain(e.textNodes), video: plain(state.video) };
+    await e.arrangeSelection('left');
+    assert.equal(e.requests.length, 1); assert.equal(state.commits, 1); assert.equal(e.undo.length, 1); assert.equal(e.redo.length, 0);
+    const act = e.undo[0], first = e.requests[0], firstVideo = first.operations.find(op => op.type === 'video-patch');
+    assert.equal(firstVideo.expectedRevision, state.initialRevision); assert.equal(state.video.revision, state.initialRevision + 1); assert.equal(e.videos[0].revision, state.initialRevision);
+    assert.equal(e.historyAttemptsRef.current.has(act), false, 'Acknowledged commit clears its attempt even after the display refresh fails');
+    assert.equal(e.works.find(row => row.id === 'image-a').canvasX, 50); assert.equal(e.textNodes[0].canvasX, 50); assert.equal(state.video.canvasX, 50);
+    assert.deepEqual(e.tips, ['布局已保存，视频节点显示稍后同步']); assert.equal(e.historyBusyRef.current, false); assert.equal(e.historySaving, false);
+    assert.deepEqual(state.refreshes.map(({ status }) => status), ['OK', 'FAIL']);
+    await e.doUndo();
+    assert.equal(e.requests.length, 2); assert.equal(state.commits, 2); const undo = e.requests[1], undoVideo = undo.operations.find(op => op.type === 'video-patch');
+    assert.equal(undoVideo.expectedRevision, state.initialRevision + 1); assert.deepEqual(undoVideo.fields, { x: before.video.canvasX, y: before.video.canvasY });
+    assert.notEqual(undo.operationId, first.operationId); assert.equal(state.video.revision, state.initialRevision + 2); assert.equal(e.videos[0].revision, state.initialRevision + 2);
+    assert.deepEqual(e.works, before.works); assert.deepEqual(e.textNodes, before.textNodes); assert.deepEqual(state.works, before.works); assert.deepEqual(state.textNodes, before.textNodes);
+    assert.equal(state.video.canvasX, before.video.canvasX); assert.equal(state.video.canvasY, before.video.canvasY);
+    assert.equal(e.undo.length, 0); assert.equal(e.redo.length, 1); assert.equal(e.redo[0], act); assert.equal(e.historyAttemptsRef.current.has(act), false);
+    assert.equal(e.historyBusyRef.current, false); assert.equal(e.historySaving, false); assert.deepEqual(e.tips, ['布局已保存，视频节点显示稍后同步']);
+    assert.deepEqual(state.refreshes.map(({ revision, status }) => ({ revision, status })), [{ revision: 10, status: 'OK' }, { revision: 11, status: 'FAIL' }, { revision: 11, status: 'OK' }, { revision: 12, status: 'OK' }]);
+    assert(state.timeline.indexOf('refresh:3:11:OK') < state.timeline.indexOf(`post:${undo.operationId}:11`));
+    assert(e.events.indexOf('video:flush') < e.events.indexOf('video:refresh'));
+    return { revisionsPosted: [firstVideo.expectedRevision, undoVideo.expectedRevision], serverRevision: state.video.revision, refreshes: state.refreshes, timeline: state.timeline, undo: e.undo.length, redo: e.redo.length };
+  });
+  await test('P2 AST video: failed preflight sends zero HTTP and allocates no cached attempt', async () => {
+    const { e, state } = revisionScenario({ failRefreshCalls: [1] }), act = freshVideoMove(e), before = localPositions(e);
+    await assert.rejects(e.applyHistory(act, false), /local video refresh failed/);
+    assertNoCommit(e); assert.deepEqual(localPositions(e), before); assert.equal(e.operationCounter, 0); assert.equal(e.historyAttemptsRef.current.has(act), false); assert.equal(state.commits, 0);
+    assert.equal(e.events.includes('auth:start'), false); assert.deepEqual(state.refreshes.map(item => item.status), ['FAIL']);
+    return { http: 0, cachedAttempt: false, operationIdsAllocated: 0, serverRevision: state.video.revision };
+  });
+  await test('P2 AST video: layout wrapper reports preflight failure without persistence or undo and releases busy', async () => {
+    const { e, state } = revisionScenario({ failRefreshCalls: [1] }), before = localPositions(e);
+    await e.arrangeSelection('left'); assertNoCommit(e); assert.deepEqual(localPositions(e), before); assert.equal(e.operationCounter, 0); assert.equal(state.commits, 0);
+    assert.deepEqual(e.tips, ['local video refresh failed']); assert.equal(e.historyBusyRef.current, false); assert.equal(e.historySaving, false);
+  });
+  for (const change of ['scope', 'predicate']) await test(`P2 AST video: assertCurrentHistory blocks ${change} switch after preflight await before caching/HTTP`, async () => {
+    const { e } = revisionScenario(), gate = deferred(), act = freshVideoMove(e), before = localPositions(e); let current = true;
+    e.videoNodesStore.refresh = async () => { e.events.push('preflight:start'); await gate.promise; };
+    const pending = e.applyHistory(act, false, () => current); await spinUntil(() => e.events.includes('preflight:start'));
+    if (change === 'scope') e.historyScopeRef.current = 'other-scope'; else current = false;
+    gate.resolve(); await assert.rejects(pending, /项目已切换/); assertNoCommit(e); assert.deepEqual(localPositions(e), before);
+    assert.equal(e.operationCounter, 0); assert.equal(e.historyAttemptsRef.current.has(act), false);
+  });
+  await test('P2 AST video: cached unknown replay preserves exact operationId/body without a new preflight refresh', async () => {
+    const { e, state } = revisionScenario({ unknownFirst: true }), act = freshVideoMove(e), before = localPositions(e);
+    await assert.rejects(e.applyHistory(act, false), /local unknown outcome after server commit/);
+    assert.equal(e.requests.length, 1); assert.equal(state.commits, 1); assert.equal(e.undo.length, 0); assert.equal(e.redo.length, 0);
+    assert.deepEqual(e.works, before.works); assert.deepEqual(e.textNodes, before.textNodes); assert.equal(e.videos[0].canvasX, before.videos[0].canvasX);
+    const cached = e.historyAttemptsRef.current.get(act), cachedBefore = plain(cached), originalBody = state.rawRequests[0]; assert(cached); assert.equal(state.refreshes.length, 1);
+    assert.equal(cached.operations[0].expectedRevision, state.initialRevision); assert.equal(state.video.revision, state.initialRevision + 1);
+    // Change both a local revision and the action's proposed target. Neither
+    // may rewrite the already-accepted unknown operation on an idempotent retry.
+    e.videos[0].revision = state.initialRevision + 20; act.moves[0].to.x = 9999;
+    const fetch = e.fetch;
+    e.fetch = async (...args) => { assert.equal(state.refreshes.length, 1, 'Cached retry must POST before another refresh'); assert.equal(e.historyAttemptsRef.current.get(act), cached); assert.deepEqual(cached, cachedBefore); return fetch(...args); };
+    await e.applyHistory(act, false);
+    assert.equal(e.requests.length, 2); assert.equal(state.commits, 1); assert.equal(state.rawRequests[1], originalBody); assert.deepEqual(e.requests[1], e.requests[0]);
+    assert.equal(e.operationCounter, 1); assert.deepEqual(cached, cachedBefore); assert.equal(e.historyAttemptsRef.current.has(act), false);
+    assert.equal(state.refreshes.length, 2, 'The only later refresh is after the replay acknowledgment'); assert.equal(e.videos[0].revision, state.initialRevision + 1); assert.equal(e.videos[0].canvasX, 50);
+    assert.equal(state.video.canvasX, 50); assert.deepEqual(e.tips, []);
+    return { sameActionObject: true, byteIdenticalBody: true, originalExpectedRevision: cachedBefore.operations[0].expectedRevision, localRevisionBeforeRetry: state.initialRevision + 20, serverCommits: state.commits, refreshes: state.refreshes, operationId: cachedBefore.operationId };
+  });
+  await test('P2 AST video: preflight after flush reads the latest revision before constructing payload', async () => {
+    const { e, state } = revisionScenario();
+    e.videoNodesStore.flush = async () => { e.events.push('video:flush'); state.video.revision += 3; };
+    const act = freshVideoMove(e); await e.applyHistory(act, false);
+    assert.equal(e.requests.length, 1); assert.equal(e.requests[0].operations[0].expectedRevision, state.initialRevision + 3); assert.equal(state.video.revision, state.initialRevision + 4);
+    assert(e.events.indexOf('video:flush') < e.events.indexOf('video:refresh')); assert(e.events.indexOf('video:refresh') < e.events.indexOf('auth:start'));
+    assert.equal(e.historyAttemptsRef.current.has(act), false);
+    return { initialServerRevision: state.initialRevision, afterFlush: state.initialRevision + 3, expectedRevision: e.requests[0].operations[0].expectedRevision };
+  });
+}
 function svgScene(variant) {
   const palettes = [['#d8e6d9','#8ba992','#456d5a'],['#f1e4cd','#d2b283','#927356'],['#dbe7ed','#a2bac8','#597b91']]; const [bg, mid, dark] = palettes[variant % 3];
   return `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="560" viewBox="0 0 800 560"><defs><linearGradient id="wall" x2="1" y2="1"><stop stop-color="#fffefa"/><stop offset="1" stop-color="${bg}"/></linearGradient><linearGradient id="cup"><stop stop-color="#fffdf8"/><stop offset=".7" stop-color="${bg}"/><stop offset="1" stop-color="${mid}"/></linearGradient><filter id="blur"><feGaussianBlur stdDeviation="13"/></filter></defs><path fill="url(#wall)" d="M0 0h800v560H0z"/><path fill="${mid}" opacity=".16" d="M560 0h240v560H350z"/><path fill="#fff" opacity=".5" d="M0 0h280L0 440z"/><ellipse cx="400" cy="443" rx="195" ry="29" fill="${dark}" opacity=".14" filter="url(#blur)"/><ellipse cx="391" cy="435" rx="186" ry="17" fill="#fffef9"/><ellipse cx="390" cy="432" rx="160" ry="12" fill="${mid}" opacity=".2"/><path d="M286 235h230l-23 153q-7 37-91 39-83-2-92-39z" fill="url(#cup)"/><path d="M510 259c100-13 108 125-9 115" fill="none" stroke="${mid}" stroke-width="23"/><path d="M512 259c89-8 88 113-7 111" fill="none" stroke="#f9fbf4" stroke-width="14"/><ellipse cx="400" cy="235" rx="115" ry="25" fill="#faf8ef"/><ellipse cx="400" cy="234" rx="102" ry="16" fill="#8b6b4e"/><ellipse cx="402" cy="233" rx="84" ry="11" fill="#b7966b"/><path d="M366 231q34-24 69 0-34 15-69 0" fill="#f0ddbe"/><path d="M388 224q13-16 28-4" fill="none" stroke="#f7ead3" stroke-width="4"/><path d="M143 420q60-70 39-174 63 91 11 183" fill="${dark}" opacity=".7"/><path d="M193 412q-38-85-102-83 29 66 102 83" fill="${mid}"/><path d="M180 332q51-81 91-56-41 61-91 56" fill="${mid}"/><path d="M191 429q-9-128 20-212" fill="none" stroke="${dark}" stroke-width="3"/><text x="37" y="522" font-family="Arial,sans-serif" font-size="13" letter-spacing="3" fill="${dark}" opacity=".58">LOCAL SYNTHETIC SCENE ${variant + 1}</text></svg>`;
 }
 async function preview() {
   fs.mkdirSync(PREVIEW, { recursive: true });
+  // Recreate ignored output from tracked fixtures on a fresh checkout. The
+  // fixture sources are parent-owned; this harness only reads and copies them.
+  const fixtureRoot = path.join(ROOT, 'scripts/fixtures/canvas-jimeng');
+  const fixtureSources = ['preview-entry.tsx', 'preview.css'].map(file => {
+    const source = path.join(fixtureRoot, file), target = path.join(PREVIEW, file);
+    fs.copyFileSync(source, target);
+    assert.equal(hash(target), hash(source), `Preview fixture copied exactly: ${file}`);
+    return { path: source, sha256: hash(source) };
+  });
   for (let i = 0; i < 3; i++) fs.writeFileSync(path.join(PREVIEW, `scene-${i + 1}.svg`), svgScene(i), 'utf8');
   const entry = path.join(PREVIEW, 'preview-entry.tsx'); assert(fs.existsSync(entry), 'Local preview entry must exist');
   const built = await esbuild.build({ absWorkingDir: ROOT, entryPoints: [entry], outdir: PREVIEW, entryNames: 'app', bundle: true, platform: 'browser', format: 'iife', target: ['es2022'], jsx: 'automatic', minify: false, sourcemap: false, metafile: true, define: { 'process.env.NODE_ENV': '"development"' }, alias: { '@': path.join(ROOT, 'src') }, logLevel: 'silent' });
@@ -326,9 +550,9 @@ async function preview() {
   for (const module of ['canvas-navigator.tsx', 'selection-layout-controls.tsx', 'creative-presets.tsx', 'selection-layout.ts', 'navigator.ts']) assert(inputs.some(input => input.replaceAll('\\', '/').endsWith(module)), `Actual module bundled: ${module}`);
   const html = `<!doctype html>\n<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; font-src 'self' data:"><title>Naumi · local UI fixture</title><link rel="stylesheet" href="./app.css"></head><body><div id="root"></div><script src="./app.js"></script></body></html>\n`;
   fs.writeFileSync(path.join(PREVIEW, 'index.html'), html, 'utf8');
-  const manifest = { fixture: 'local UI fixture', realUserMedia: false, supplierCalls: 0, externalUploads: 0, networkGeneration: false, builtAt: new Date().toISOString(), actualModules: inputs.filter(input => /(?:components\/canvas\/(?:canvas-navigator|selection-layout-controls|creative-presets)|lib\/canvas\/(?:selection-layout|navigator|creative-presets))\.(?:tsx?|css)$/.test(input.replaceAll('\\', '/'))).map(input => ({ path: input, sha256: hash(path.resolve(ROOT, input)) })), artifacts: ['index.html', 'app.js', 'app.css', 'scene-1.svg', 'scene-2.svg', 'scene-3.svg'].map(file => ({ path: path.join(PREVIEW, file), sha256: hash(path.join(PREVIEW, file)), bytes: fs.statSync(path.join(PREVIEW, file)).size })), browserAcceptance: 'PENDING_PARENT_BROWSER_CHECK' };
+  const manifest = { fixture: 'local UI fixture', realUserMedia: false, supplierCalls: 0, externalUploads: 0, networkGeneration: false, builtAt: new Date().toISOString(), fixtureSources, actualModules: inputs.filter(input => /(?:components\/canvas\/(?:canvas-navigator|selection-layout-controls|creative-presets)|lib\/canvas\/(?:selection-layout|navigator|creative-presets))\.(?:tsx?|css)$/.test(input.replaceAll('\\', '/'))).map(input => ({ path: input, sha256: hash(path.resolve(ROOT, input)) })), artifacts: ['index.html', 'app.js', 'app.css', 'scene-1.svg', 'scene-2.svg', 'scene-3.svg'].map(file => ({ path: path.join(PREVIEW, file), sha256: hash(path.join(PREVIEW, file)), bytes: fs.statSync(path.join(PREVIEW, file)).size })), browserAcceptance: 'PENDING_PARENT_BROWSER_CHECK' };
   json(path.join(PREVIEW, 'manifest.json'), manifest); artifacts.push(...manifest.artifacts.map(a => a.path), path.join(PREVIEW, 'manifest.json'));
-  return { actualModules: manifest.actualModules, localFiles: manifest.artifacts.length };
+  return { fixtureSources, actualModules: manifest.actualModules, localFiles: manifest.artifacts.length };
 }
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
@@ -338,14 +562,14 @@ async function main() {
     for (const tag of ['CanvasNavigator', 'SelectionLayoutControls', 'CreativePresets']) await test(`Baseline reproduces missing component wiring: ${tag}`, () => assert.equal(jsxAll(tag).length, 0));
   } else {
     helpers = loadPure('src/lib/canvas/selection-layout.ts');
-    declarations = ['privateFetchRaw', 'flowNodeSize', 'fitCanvasSelection', 'locateOutlineNode', 'arrangeSelection', 'applyHistory', 'applyArtworkSelection', 'clearCanvasSelection', 'selectWorkflowGroup'].map(functionText).join('\n') + '\n' + variableCallback('pushUndo');
-    if (!PREVIEW_ONLY) { await sourceTests(); await runtimeTests(); await contextTests(); await presetKeyboardTests(); }
+    declarations = ['privateFetchRaw', 'flowNodeSize', 'fitCanvasSelection', 'locateOutlineNode', 'arrangeSelection', 'applyHistory', 'doUndo', 'doRedo', 'applyArtworkSelection', 'clearCanvasSelection', 'selectWorkflowGroup'].map(functionText).join('\n') + '\n' + variableCallback('pushUndo');
+    if (!PREVIEW_ONLY) { await sourceTests(); await runtimeTests(); await contextTests(); await presetKeyboardTests(); await p2RegressionTests(); }
     await test('Bundle actual React components and local synthetic preview (no server)', preview);
   }
   assert.equal(hash(sourcePath), sourceHash, 'Source was not modified during this run');
   const counts = { total: results.length, pass: results.filter(r => r.status === 'PASS').length, fail: results.filter(r => r.status === 'FAIL').length };
   const file = path.join(OUT, BASELINE ? 'INTEGRATION_BASELINE.json' : PREVIEW_ONLY ? 'INTEGRATION_PREVIEW.json' : 'INTEGRATION.json');
-  const report = { mode: BASELINE ? 'BASELINE_MISSING_FEATURE_REPRODUCTION' : PREVIEW_ONLY ? 'LOCAL_REACT_PREVIEW' : 'MODIFIED_SOURCE_AST_RUNTIME_AND_LOCAL_PREVIEW', fixture: true, command: `node scripts/verify-canvas-jimeng-integration.cjs${BASELINE ? ' --baseline' : PREVIEW_ONLY ? ' --preview-only' : ''}`, source: { path: sourcePath, sha256: sourceHash }, extracted, counts, results, artifacts, limits: ['Local AST runtime and real-component fixture; not live application acceptance', 'No supplier generation, HTTP request, server startup or production build', 'Parent must open browser, inspect and capture actual UI', 'Baseline raw was read only; source files were not edited'], exitStatus: counts.fail ? 1 : 0 };
+  const report = { mode: BASELINE ? 'BASELINE_MISSING_FEATURE_REPRODUCTION' : PREVIEW_ONLY ? 'LOCAL_REACT_PREVIEW' : 'MODIFIED_SOURCE_AST_RUNTIME_AND_LOCAL_PREVIEW', fixture: true, command: `node scripts/verify-canvas-jimeng-integration.cjs${BASELINE ? ' --baseline' : PREVIEW_ONLY ? ' --preview-only' : ''}${sourceRootIndex !== -1 ? ` --source-root ${JSON.stringify(baselineRoot)}` : ''}`, source: { path: sourcePath, sha256: sourceHash }, extracted, counts, results, artifacts, limits: ['Local AST runtime and real-component fixture; not live application acceptance', 'No supplier generation, HTTP request, server startup or production build', 'Parent must open browser, inspect and capture actual UI', 'Baseline raw was read only; source files were not edited'], exitStatus: counts.fail ? 1 : 0 };
   json(file, report); assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).counts.total, counts.total); artifacts.forEach(file => assert(fs.readFileSync(file).length > 0));
   console.log(`${BASELINE ? 'BASELINE' : 'MODIFIED'} total=${counts.total} pass=${counts.pass} fail=${counts.fail}`);
   for (const result of results.filter(r => r.status === 'FAIL')) console.error(`FAIL ${result.label}\n${result.error}`);
