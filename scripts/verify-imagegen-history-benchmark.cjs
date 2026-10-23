@@ -25,11 +25,12 @@ assert(['baseline', 'modified', 'compare'].includes(options.phase));
 const manifestPath = path.join(repo, 'docs/benchmarks/imagegen-history-20261023.json');
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
-function verdict(rows, mode) {
+function verdict(rows, mode, scenarios = manifest.scenarios) {
   if (rows.some(r => !r.valid)) return {status: 'ERROR', exit: 1};
   if (mode === 'baseline') return {status: 'BASELINE_REPRODUCED', exit: 0};
   // Deliberately do not turn unresolved historical classes into a green run.
-  return {status: 'PARTIAL', exit: 2};
+  return scenarios.some(s => ['OPEN', 'NOT_PROVEN'].includes(s.historyClosure))
+    ? {status: 'PARTIAL', exit: 2} : {status: 'PASS', exit: 0};
 }
 if (options.selfTest) {
   assert.equal(manifest.version, 1);
@@ -40,6 +41,7 @@ if (options.selfTest) {
   assert.deepEqual(verdict([{valid: true}], 'compare'), {status: 'PARTIAL', exit: 2});
   assert.deepEqual(verdict([{valid: false}], 'compare'), {status: 'ERROR', exit: 1});
   assert.deepEqual(verdict([{valid: true}], 'baseline'), {status: 'BASELINE_REPRODUCED', exit: 0});
+  assert.deepEqual(verdict([{valid: true}], 'compare', []), {status: 'PASS', exit: 0});
   console.log(`BENCHMARK_SELF_TEST=PASS SCENARIOS=${manifest.scenarios.length} OPEN_NOT_GREEN=1 EXACT_REPLAY_NOT_INVENTED=1`);
   process.exit(0);
 }
