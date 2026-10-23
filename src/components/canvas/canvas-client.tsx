@@ -69,6 +69,8 @@ import { CanvasHelpDialog } from "./canvas-help-dialog";
 import { ContextMenuSurface, ContextMenuItem as Item } from "./context-menu-surface";
 import { selectionRunTargets, runSelectionBatch } from "@/lib/canvas/selection-run";
 import { BatchSelectionToolbar } from "./batch-selection-toolbar";
+import { TextImageGenerationDialog } from "./text-image-generation-dialog";
+import { buildTextImageRequests, type TextImageMode } from "@/lib/canvas/text-image-inputs";
 import { GenerationPlaceholder } from "./generation-placeholder";
 import { GenerationSubmitAction } from "./generation-submit-action";
 import { generationPlaceholderSize, generationPositionForTask, placeGenerationPreview, type GenerationStage } from "@/lib/canvas/generation-feedback";
@@ -2420,7 +2422,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [batchRunProgress, setBatchRunProgress] = useState({ completed: 0, total: 0 });
   const [assistBusy, setAssistBusy] = useState(false);
   const [productPicker, setProductPicker] = useState<{ textNodeIds: string[] } | null>(null);
-  const [genImageMenu, setGenImageMenu] = useState<{ textNodeIds: string[] } | null>(null);
+  const [genImageMenu, setGenImageMenu] = useState<{
+    textNodeIds: string[]; imageIds: string[]; drafts: Record<string, string>;
+    account: string; project: string; workspace: string; epoch: number; revision: number;
+  } | null>(null);
+  const textImageContextKey = JSON.stringify([canvasAccountRef.current, activeKey, currentWorkspace()]);
+  const textImageContextRef = useRef({key: textImageContextKey, revision: 0});
+  if (textImageContextRef.current.key !== textImageContextKey) {
+    textImageContextRef.current = {key: textImageContextKey, revision: textImageContextRef.current.revision + 1};
+  }
+  const textImageSubmittingRef = useRef(false);
+  const [textImageSubmitting, setTextImageSubmitting] = useState(false);
   // 居中确认弹框(替代浏览器原生 confirm,贴合站点配色)
   const [confirmModal, setConfirmModal] = useState<{
     title: string;
@@ -7884,67 +7896,88 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
   }
 
-  // 由帮写节点生成自己产品的图:纯产品(仅产品图作参考) / 复刻(附带竞品图+防抄袭约束)
-  async function generateImagesFromTextNodes(
-    textNodeIds: string[],
-    mode: "pure" | "replicate"
-  ) {
-    setGenImageMenu(null);
-    if (readOnly || !user || !active) return;
-    const byId = new Map(textNodes.map((node) => [node.id, node]));
-    const targets = textNodeIds
-      .map((id) => byId.get(id))
-      .filter((node): node is CanvasTextNode => !!node && node.projectKey === activeKey);
-    if (!targets.length) return;
-    const rfNow = rfRef.current?.getNodes() ?? [];
-    await Promise.all(
-      targets.map(async (node) => {
-        const productId = (node.productIds ?? [])[0];
-        const product = active.members.find((member) => member.id === productId);
-        const body = stripMentionLines(node.content || "");
-        if (!product) {
-          flashTip(`${node.title}：${t("canvas.textNoProduct")}`);
-          return;
-        }
-        if (!body) {
-          flashTip(`${node.title}：${t("canvas.textNoContent")}`);
-          return;
-        }
-        const competitors =
-          mode === "replicate"
-            ? (node.sourceIds ?? [])
-                .filter(
-                  (id) =>
-                    id !== productId &&
-                    active.members.some((member) => member.id === id)
-                )
-                .slice(0, MAX_TOTAL_IMAGES - 2)
-            : [];
-        // 输入顺序:产品图第一(=edit 主底图/血缘主父) → 复刻模式的竞品图 → 本文字节点
-        const inputs = [productId, ...competitors, node.id];
+  // Text is a universal image prompt; product recipes remain explicit optional modes.
+  function textImageScopeCurrent(menu: NonNullable<typeof genImageMenu>) {
+    return batchRunMountedRef.current && !readOnly && !!user &&
+      menu.account === canvasAccountRef.current && menu.project === activeProjectRef.current?.key &&
+      menu.workspace === currentWorkspace() && menu.epoch === canvasContextEpochRef.current && menu.revision === textImageContextRef.current.revision;
+  }
+  function openTextImageMenu(textNodeIds: string[], imageIds: string[] = []) {
+    const project = activeProjectRef.current;
+    if (!user || readOnly || !project || !canFeature("generate") || !nodeSettingsReady || textImageSubmittingRef.current) return;
+    const ids = Array.from(new Set(textNodeIds)).filter(id => textNodesRef.current.some(node => node.id === id && node.projectKey === project.key));
+    if (!ids.length || ids.some(id => isNodeLocked(id) || textNodesRef.current.find(node => node.id === id)?.status === "generating")) return;
+    setGenImageMenu({textNodeIds: ids, imageIds: Array.from(new Set(imageIds)),
+      drafts: selectedTextId && ids.includes(selectedTextId) ? {[selectedTextId]: textPrompt} : {},
+      account: canvasAccountRef.current, project: project.key, workspace: currentWorkspace(), epoch: canvasContextEpochRef.current, revision: textImageContextRef.current.revision});
+  }
+  function textImageRequests(menu: NonNullable<typeof genImageMenu>, mode: TextImageMode, options: {combine: boolean; useReferences: boolean}) {
+    const project = activeProjectRef.current;
+    if (!project || !textImageScopeCurrent(menu)) return [];
+    return buildTextImageRequests({projectKey: project.key, nodes: textNodesRef.current, textNodeIds: menu.textNodeIds,
+      imageIds: project.members.filter(art => !art.videoUrl && !["workflow-decoration", "workflow-placeholder"].includes(art.source || "") && hasRenderableImage(art.image)).map(art => art.id),
+      selectedImageIds: menu.imageIds, drafts: menu.drafts, mode, combine: options.combine, useReferences: options.useReferences, maxImages: MAX_TOTAL_IMAGES});
+  }
+  function textImageReferenceCount(menu: NonNullable<typeof genImageMenu>) {
+    const project = activeProjectRef.current;
+    if (!project || !textImageScopeCurrent(menu)) return 0;
+    const byId = new Map(textNodesRef.current.filter(node => node.projectKey === menu.project).map(node => [node.id, node]));
+    const images = new Set(menu.imageIds), visited = new Set<string>(), queue = [...menu.textNodeIds];
+    for (let index = 0; index < queue.length; index++) {
+      const id = queue[index]; if (visited.has(id)) continue; visited.add(id);
+      const node = byId.get(id); if (!node) continue;
+      for (const source of node.sourceIds || []) {
+        if (byId.has(source)) queue.push(source);
+        else if (!source.startsWith("text-")) images.add(source);
+      }
+      for (const product of node.productIds || []) images.add(product);
+    }
+    return images.size;
+  }
+  async function generateImagesFromTextNodes(mode: TextImageMode, options: {combine: boolean; useReferences: boolean}) {
+    const menu = genImageMenu;
+    if (!menu || !textImageScopeCurrent(menu) || !canFeature("generate") || !nodeSettingsReady || textImageSubmittingRef.current) return;
+    const current = () => textImageScopeCurrent(menu);
+    textImageSubmittingRef.current = true; setTextImageSubmitting(true);
+    try {
+      const requests = textImageRequests(menu, mode, options);
+      if (!requests.length) return;
+      if (requests.some(request => request.textNodeIds.some(isNodeLocked))) {setGenImageMenu(null);flashTip(L("引用的文字节点已锁定", "A referenced text node is locked"));return;}
+      // Validate every input before adding any placeholders or starting a billable request.
+      setGenImageMenu(null);
+      const graph = rfRef.current?.getNodes() || [];
+      for (const request of requests) {
+        if (!current()) return;
+        const node = textNodesRef.current.find(item => item.id === request.anchorTextId && item.projectKey === menu.project);
+        if (!node) return;
+        const position = graph.find(item => item.id === node.id)?.position || {x: node.canvasX, y: node.canvasY};
         const seq = pendSeqRef.current++;
-        const rf = rfNow.find((n) => n.id === node.id);
-        const x =
-          (rf ? rf.position.x : node.canvasX) +
-          (node.width || TEXT_NODE_DEFAULT_W) +
-          X_GAP;
-        const y = rf ? rf.position.y : node.canvasY;
-        const pend: Pend = {
-          id: `pend-${Date.now()}-${seq}`,
-          x: Math.round(x),
-          y: Math.round(y),
-          parentId: productId,
-          linked: true,
-          label: `${t("canvas.imageNode")} ${seq}`,
-          uploading: false,
-          progress: 0,
-          inputs,
-        };
-        setPendNodes((current) => [...current, pend]);
-        const prompt = mode === "replicate" ? `${body}${REPLICATE_GUARD}` : body;
-        await generatePend({ pend, prompt, forceStandard: true });
-      })
-    );
+        const pend: Pend = {id: `pend-${Date.now()}-${seq}`, x: Math.round(position.x + (node.width || TEXT_NODE_DEFAULT_W) + X_GAP),
+          y: Math.round(position.y), parentId: request.imageIds[0] || node.id, linked: true,
+          label: `${t("canvas.imageNode")} ${seq}`, uploading: false, progress: 0,
+          inputs: [...request.imageIds, ...request.textNodeIds]};
+        setPendNodes(previous => current() ? [...previous, pend] : previous);
+        const succeeded = await generatePend({pend, prompt: request.prompt, forceStandard: true, isCurrent: current});
+        // A cancellation, pending/unknown receipt or failure never starts the next purchase.
+        if (!succeeded || !current()) return;
+      }
+    } catch (error) {
+      if (!current()) return;
+      setGenImageMenu(null);
+      const code = (error as {code?: string})?.code;
+      const messages: Record<string, string> = {
+        EMPTY_TEXT: L("先输入提示词或填写文字节点内容", "Enter a prompt or add text content first"),
+        TEXT_BUSY: L("引用的文字仍在生成，请完成后再试", "Referenced text is still generating"),
+        MISSING_PRODUCT: t("canvas.textNoProduct"),
+        MISSING_REFERENCE: L("引用图片已失效，请重新选择或移除连线", "A reference is unavailable; select it again or remove its link"),
+        TOO_MANY_IMAGES: L(`一次最多使用 ${MAX_TOTAL_IMAGES} 张参考图片，请减少引用`, `Use at most ${MAX_TOTAL_IMAGES} reference images`),
+        PROMPT_TOO_LONG: L("组合提示词超过 6000 字，请精简或选择逐条创作", "Combined prompt exceeds 6,000 characters; shorten it or create separately"),
+      };
+      flashTip(messages[code || ""] || (error instanceof Error ? error.message : t("canvas.genFail")));
+    } finally {
+      textImageSubmittingRef.current = false;
+      if (batchRunMountedRef.current) setTextImageSubmitting(false);
+    }
   }
   // 底部工具条:从生成历史选择(画布中心)
   function toolHistory() {
@@ -8068,6 +8101,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           JSON.stringify(inputArts.slice(1).map((a) => a.id))
         );
       }
+      // A text-only creation anchors its original text project, never an unrelated image.
+      if (!inputArts.length && pend.parentId?.startsWith("text-") && inputTextNodes.some(node => node.id === pend.parentId)) fd.set("parentId", pend.parentId);
       // 把每个输入图下载后作为参考图一起送(图生图/合并);无输入=纯文生图
       for (const a of referenceInputs ? [] : inputArts) {
         try {
@@ -9983,6 +10018,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               )}
 
               {mixedNativeSelection&&!readOnly&&<BatchSelectionToolbar label={L("节点操作","Node actions")} selectionLabel={L(`已选择 ${multiSel.length} 个节点`,`${multiSel.length} nodes selected`)} clearLabel={t("canvas.batchClear")} testId="mixed-node-batch-bar" onClear={()=>clearCanvasSelection(true)} primaryAction={batchRunButton(L(`批量运行 (${selectionRunCount})`, `Run selection (${selectionRunCount})`))}>
+                {selectedTextBatchNodes.length > 0 && selectedBatchArts.length > 0 && <FeatureVisible feature="generate"><button type="button" className="canvas-ui-action rounded-lg px-3 py-2 text-xs" disabled={!nodeSettingsReady || textImageSubmitting || selectedTextBatchNodes.some(node => isNodeLocked(node.id) || node.status === "generating")} onClick={() => openTextImageMenu(selectedTextBatchNodes.map(node => node.id), selectedBatchIds)}><ImageIcon className="mr-1.5 inline h-4 w-4" />{t("canvas.genImages")}</button></FeatureVisible>}
                 <button type="button" className="canvas-ui-action rounded-lg px-3 py-2 text-xs" onClick={()=>copyCanvasSelection(multiSel)}>{t("canvas.copyNode")}</button>
                 <button type="button" className="canvas-ui-action rounded-lg px-3 py-2 text-xs" disabled={historySaving||multiSel.some(isNodeLocked)} onClick={()=>void duplicateCanvasNodes(multiSel)}>{t("canvas.duplicate")}</button>
                 <button type="button" className="canvas-ui-action rounded-lg px-3 py-2 text-xs" disabled={historySaving||multiSel.some(isNodeLocked)} onClick={()=>batchDelete(multiSel)}>{t("canvas.delete")}</button>
@@ -10124,10 +10160,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   </button>
                   <button
                     type="button"
+                    disabled={!canFeature("generate") || !nodeSettingsReady || textImageSubmitting || selectedTextBatchNodes.some(node => isNodeLocked(node.id) || node.status === "generating")}
                     onClick={() =>
-                      setGenImageMenu({
-                        textNodeIds: selectedTextBatchNodes.map((node) => node.id),
-                      })
+                      openTextImageMenu(selectedTextBatchNodes.map((node) => node.id))
                     }
                     className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold canvas-ui-action transition-colors"
                   >
@@ -10543,7 +10578,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       <>
                         <Item label={t("canvas.editName")} disabled={mutationDisabled} onClick={() => { setNodeRenameValue(textNode.title); setRenamingNodeId(textNode.id); }} />
                         <Item label={t("canvas.toolbar.productCopy")} disabled={mutationDisabled || assistBusy} onClick={() => setProductPicker({ textNodeIds: [textNode.id] })} />
-                        <FeatureVisible feature="generate"><Item label={t("canvas.toolbar.textToImages")} disabled={mutationDisabled || textNode.status === "generating"} onClick={() => setGenImageMenu({ textNodeIds: [textNode.id] })} /></FeatureVisible>
+                        <FeatureVisible feature="generate"><Item label={t("canvas.toolbar.textToImages")} disabled={mutationDisabled || textNode.status === "generating"} onClick={() => openTextImageMenu([textNode.id])} /></FeatureVisible>
                         <Sep />
                         <Item label={t("canvas.copyNode")} onClick={()=>copyCanvasSelection(multiSel.includes(textNode.id)?multiSel:[textNode.id])}/>
                         <Item label={t("canvas.duplicate")} disabled={mutationDisabled} onClick={()=>void duplicateCanvasNodes(multiSel.includes(textNode.id)?multiSel:[textNode.id])}/>
@@ -11030,7 +11065,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               </button>
               <FeatureVisible feature="generate"><button
                 type="button"
-                onClick={() => setGenImageMenu({ textNodeIds: [selectedText.id] })}
+                disabled={!nodeSettingsReady || textImageSubmitting || isNodeLocked(selectedText.id) || selectedText.status === "generating"}
+                onClick={() => openTextImageMenu([selectedText.id])}
                 aria-label={t("canvas.toolbar.textToImages")}
                 title={t("canvas.genImagesHint")}
                 className="canvas-ui-action flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors"
@@ -11817,7 +11853,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 </button>
                 <FeatureVisible feature="generate"><button
                   type="button"
-                  onClick={() => setGenImageMenu({ textNodeIds: [selectedText.id] })}
+                  disabled={!nodeSettingsReady || textImageSubmitting || isNodeLocked(selectedText.id) || selectedText.status === "generating"}
+                  onClick={() => openTextImageMenu([selectedText.id])}
                   title={t("canvas.genImagesHint")}
                   className={cn(
                     "flex h-9 items-center gap-1.5 rounded-[9px] border px-3 text-[11px] font-semibold transition-colors",
@@ -11975,55 +12012,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           </div>
         </div>
       )}
-      {/* 生成图片:纯产品 / 复刻竞品构图 两种模式 */}
-      {canFeature("generate") && genImageMenu && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-          onClick={() => setGenImageMenu(null)}
-        >
-          <div
-            data-testid="gen-image-menu"
-            className="flex w-full max-w-md flex-col gap-2 rounded-2xl border border-border bg-card p-4 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="mb-1 text-sm font-semibold">{t("canvas.genModeTitle")}</h3>
-            <button
-              type="button"
-              onClick={() => void generateImagesFromTextNodes(genImageMenu.textNodeIds, "pure")}
-              className="flex items-start gap-3 rounded-xl border border-border bg-background p-3 text-left transition-colors hover:border-primary/60"
-            >
-              <ImageIcon className="mt-0.5 h-4 w-4 text-primary" />
-              <span>
-                <span className="block text-sm font-semibold">{t("canvas.genModePure")}</span>
-                <span className="block text-xs text-muted-foreground">
-                  {t("canvas.genModePureDesc")}
-                </span>
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                void generateImagesFromTextNodes(genImageMenu.textNodeIds, "replicate")
-              }
-              className="flex items-start gap-3 rounded-xl border border-border bg-background p-3 text-left transition-colors hover:border-primary/60"
-            >
-              <ScanSearch className="mt-0.5 h-4 w-4 text-primary" />
-              <span>
-                <span className="block text-sm font-semibold">{t("canvas.genModeReplicate")}</span>
-                <span className="block text-xs text-muted-foreground">
-                  {t("canvas.genModeReplicateDesc")}
-                </span>
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setGenImageMenu(null)}
-              className="mt-1 self-end rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
-            >
-              {t("canvas.close")}
-            </button>
-          </div>
-        </div>
+      {/* Universal text-to-image; specialized product modes are optional. */}
+      {canFeature("generate") && genImageMenu && textImageScopeCurrent(genImageMenu) && (
+        <TextImageGenerationDialog textCount={genImageMenu.textNodeIds.length} referenceCount={textImageReferenceCount(genImageMenu)}
+          locale={locale === "en" ? "en" : "zh"} busy={textImageSubmitting}
+          onClose={() => setGenImageMenu(null)} onGenerate={(mode, options) => void generateImagesFromTextNodes(mode, options)} />
       )}
       {/* 回收站:已删除作品(保留 180 天,可恢复 / 彻底删除) */}
       {trashOpen && (
