@@ -192,7 +192,8 @@ async function main(){
     let genericPreview:Record<string,any>|undefined;
     if(simplify){
       const quoteApi=await import("../src/app/api/billing/quote/route");
-      const response=await quoteApi.POST(new Request(f.origin+"/api/billing/quote",{method:"POST",headers:headers(),body:JSON.stringify({feature:"canvas.image",quantity:1,quality:"medium",resolution:"4K",ratio:"1:1",modelId:"image-a"})}));
+      const stalePreview=headers();stalePreview.set("x-naumi-model-version","999999");
+      const response=await quoteApi.POST(new Request(f.origin+"/api/billing/quote",{method:"POST",headers:baseline?headers():stalePreview,body:JSON.stringify({feature:"canvas.image",quantity:1,quality:"medium",resolution:"4K",ratio:"1:1",modelId:"image-a"})}));
       genericPreview=await response.json();assert.equal(response.status,200,JSON.stringify(genericPreview));assert.equal(genericPreview!.credits,12);
     }
     const billing14=await publishPrice(14),model2=await publishModel();
@@ -219,10 +220,14 @@ async function main(){
       const h=headers(other);h.set("x-naumi-image-quote",genericPreview!.quote.id);
       const foreign=await legacyApi.POST(new Request(f.origin+"/api/generate-image",{method:"POST",headers:h,body:JSON.stringify(legacyBody)}));assert.equal(foreign.status,400);
       const mismatch=await legacyApi.POST(new Request(f.origin+"/api/generate-image",{method:"POST",headers:oldQuoteHeaders,body:JSON.stringify({...legacyBody,count:2})}));assert.notEqual(mismatch.status,200);
+      await pool.query("UPDATE app_image_billing_quotes SET expires_at=now()-interval '1 second' WHERE id=$1",[genericPreview!.quote.id]);
+      const oldReceipt=await legacyApi.POST(new Request(f.origin+"/api/generate-image",{method:"POST",headers:oldQuoteHeaders,body:JSON.stringify(legacyBody)}));assert.equal(oldReceipt.status,200);assert.equal((await oldReceipt.json()).jobId,started.jobId,"accepted intent is returned before expired quote validation");
+      const expiredHeaders=new Headers(oldQuoteHeaders);expiredHeaders.set("x-naumi-billing-operation-id",randomUUID());
+      const expiredNew=await legacyApi.POST(new Request(f.origin+"/api/generate-image",{method:"POST",headers:expiredHeaders,body:JSON.stringify(legacyBody)}));assert.equal(expiredNew.status,409);assert.equal((await expiredNew.json()).code,"IMAGE_QUOTE_EXPIRED");
       const {assertQuotedVersion}=await import("../src/lib/billing/request");assert.doesNotThrow(()=>assertQuotedVersion({version:999999,credits:0},saved.quote));
       assert.throws(()=>assertQuotedVersion({version:999999,credits:0},{...saved.quote,facts:{...saved.quote.facts,feature:"video.generate"}}));
       assert.equal(wires.length,2);assert.equal(Number((await pool.query("SELECT count(*) n FROM app_ledger WHERE kind='consume'")).rows[0].n),2);
-      console.log("SIMPLIFY_MODIFIED=PASS RAW_OLD_CLIENT_SAVED_PLAN=12 GENERIC_QUOTE_FROZEN=12 STALE_MODEL_BILLING_VERSIONS_IGNORED=1 CLIENT_ZERO_NOT_TRUSTED=1 FOREIGN_DENIED=1 COUNT_TAMPER_DENIED=1 TEXT_VIDEO_GUARDS_RETAINED=1 SUPPLIER_POSTS=2 LEDGERS=2 CHARGED=24 EXTERNAL_CALLS=0");return;
+      console.log("SIMPLIFY_MODIFIED=PASS RAW_OLD_CLIENT_SAVED_PLAN=12 GENERIC_QUOTE_FROZEN=12 STALE_MODEL_BILLING_VERSIONS_IGNORED=1 CLIENT_ZERO_NOT_TRUSTED=1 FOREIGN_DENIED=1 COUNT_TAMPER_DENIED=1 GENERIC_EXPIRED_RECEIPT_FIRST=1 GENERIC_EXPIRED_NEW_NOT_ACCEPTED=1 TEXT_VIDEO_GUARDS_RETAINED=1 SUPPLIER_POSTS=2 LEDGERS=2 CHARGED=24 EXTERNAL_CALLS=0");return;
     }
 
     const oldModels=await admin.repo.byVersion(p4.modelVersion),oldBilling=await admin.billing.byVersion(p4.billingVersion);
