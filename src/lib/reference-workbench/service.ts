@@ -1,6 +1,7 @@
 import { withBackgroundActivity, detachBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import { releaseRuntimeEnabled } from "@/lib/release-runtime/identity";
 import "server-only";
+import {excludeImportedHistory,isImportedHistory} from '../staging-history';
 import {randomUUID} from "node:crypto";
 import {getPool,listArtworksByIds,isBanned} from "../db";
 import {saveImagegenInput,readImagegenInputAsset} from "../imagegen/input-assets";
@@ -145,6 +146,7 @@ async function submitImages(op:Operation,tasks:TaskPlan[],batchId:string){
 }
 const active=new Set<string>();
 async function synchronizeLocal(op:Operation){
+ if(await isImportedHistory(getPool(),'app_reference_operations',op.id))return;
  if(op.state==="preview"||op.state==="done"||active.has(op.id))return;active.add(op.id);
  try{
   const tasks=op.plans as TaskPlan[];
@@ -209,7 +211,7 @@ export async function chatState(owner:string,sid:string){
  for(const m of chat.messages)if(m.operationId){const op=await operation(owner,m.operationId);await synchronize(op);}chat=await document<any>(owner,"chat",sid);
  return {ok:true,session_id:sid,sessions:sessions.map(s=>({id:s.id,title:s.payload.title,active:s.id===sid,running:s.payload.messages.filter((m:any)=>["thinking","queued","generating","plan_pending"].includes(m.status)).length,updated_at:new Date(s.updated_at).getTime()/1000})),messages:chat.messages.map((m:any)=>({...m,images:m.role==="user"?(m.inputs||[]).map(imageUrl):[]})),running:chat.messages.some((m:any)=>["thinking","generating","queued"].includes(m.status))};
 }
-async function recoverReferenceWorkbenchLocal(){await ensureWorkbench();const ops=(await getPool().query<Operation>("SELECT * FROM app_reference_operations WHERE state='accepted' ORDER BY created_at LIMIT 10")).rows;for(const op of ops)await synchronize(op);}
+async function recoverReferenceWorkbenchLocal(){await ensureWorkbench();const ops=(await getPool().query<Operation>(`SELECT * FROM app_reference_operations WHERE state='accepted' ${excludeImportedHistory('app_reference_operations')} ORDER BY created_at LIMIT 10`)).rows;for(const op of ops)await synchronize(op);}
 
 export async function synchronize(op:Operation) {
   return withBackgroundActivity("reference-sync", op.id, "continuation", () => synchronizeLocal(op), () => undefined);

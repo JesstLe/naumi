@@ -1,11 +1,12 @@
 import "server-only";
 
 type Queryable = { query(text: string, values?: unknown[]): Promise<{ rowCount: number | null }> };
-type HistoryTable = "app_image_jobs" | "app_canvas_image_tasks" | "app_video_tasks" | "app_billing_operations" | "app_supplier_calls" | "app_supplier_cost_jobs" | "app_gen_reservations" | "app_media_postprocess";
+type HistoryTable = "app_image_jobs" | "app_canvas_image_tasks" | "app_video_tasks" | "app_billing_operations" | "app_supplier_calls" | "app_supplier_cost_jobs" | "app_gen_reservations" | "app_media_postprocess" | "app_imagegen_batches" | "app_reference_operations";
 const KEY: Record<HistoryTable, string> = {
   app_image_jobs: "id", app_canvas_image_tasks: "id", app_video_tasks: "id",
   app_billing_operations: "id", app_supplier_calls: "id", app_supplier_cost_jobs: "key",
   app_gen_reservations: "job_id", app_media_postprocess: "operation_id",
+  app_imagegen_batches: "id", app_reference_operations: "id",
 };
 
 export function stagingHistoryGuardEnabled(): boolean {

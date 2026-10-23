@@ -1,5 +1,6 @@
 import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import "server-only";
+import {excludeImportedHistory,isImportedHistory} from '../staging-history';
 import {currentCreationContext,withFrozenCreation,type CreationContext} from '../saas/creation-context';
 import {acceptCreationTx,creationEventTx,recordSourceOutcomeTx,creationEvidenceTx} from '../saas/creation-writer';
 import {ensureCreationSchema} from '../saas/creation-schema';
@@ -83,6 +84,7 @@ export async function submitAcceptedImagegenBatch(plan:ImagegenPlan,owner:string
 }
 /** Parent row lock is held through durable child receipt creation: cancel and submit have one order. */
 async function submitNextLocal(id:string){
+ if(await isImportedHistory(getPool(),'app_imagegen_batches',id))return false;
  const tx=await imageCoordinationPool().connect();
  try{await tx.query("BEGIN");const batch=(await tx.query("SELECT * FROM app_imagegen_batches WHERE id=$1 FOR UPDATE SKIP LOCKED",[id])).rows[0];
   if(!batch||batch.state!=="running"){await tx.query("COMMIT");return false;}
@@ -99,6 +101,7 @@ async function submitNextLocal(id:string){
  }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
 }
 async function runImagegenBatchTickLocal(id:string){
+ if(await isImportedHistory(getPool(),'app_imagegen_batches',id))return;
  const batch=await imagegenBatchRow(id);if(!batch||!["running","cancelling"].includes(batch.state))return;
  for(const item of await imagegenBatchItems(id))if(item.state==="submitted"){
   const result=await withFrozenCreation(imagegenFrozenCreationScope((batch.plan as ImagegenPlan&{creationScope?:CreationContext}).creationScope,batch.owner),()=>getImagegenResult(item.child_operation_id,batch.owner));if(!result)continue;
@@ -151,7 +154,7 @@ export async function cancelImagegenBatch(id:string,owner:string){
  }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
 }
 export async function recoverImagegenBatches(){
- await ensureImagegenBatches();const ids=(await getPool().query("SELECT id FROM app_imagegen_batches WHERE state IN ('running','cancelling') ORDER BY updated_at LIMIT 20")).rows;
+ await ensureImagegenBatches();const ids=(await getPool().query(`SELECT id FROM app_imagegen_batches WHERE state IN ('running','cancelling') ${excludeImportedHistory('app_imagegen_batches')} ORDER BY updated_at LIMIT 20`)).rows;
  const origin=process.env.INTERNAL_APP_ORIGIN||"http://127.0.0.1:3000";let count=0;
  for(const row of ids){const response=await fetch(`${origin}/api/imagegen/batches/${row.id}`,{method:"POST",headers:{"content-type":"application/json","x-video-worker-secret":process.env.VIDEO_WORKER_SECRET||""},body:JSON.stringify({action:"tick"}),signal:AbortSignal.timeout(10000)});if(response.ok)count++;}return count;
 }
@@ -160,5 +163,6 @@ async function submitNext(id:string) {
   return withBackgroundActivity("imagegen-child", id, "claim", () => submitNextLocal(id), () => false);
 }
 export async function runImagegenBatchTick(id:string) {
+ if(await isImportedHistory(getPool(),'app_imagegen_batches',id))return;
   return withBackgroundActivity("imagegen-batch", id, "continuation", () => runImagegenBatchTickLocal(id), () => undefined);
 }
