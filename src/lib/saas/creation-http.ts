@@ -23,7 +23,8 @@ export async function creationReader(request:Request,enterprise:boolean):Promise
 export async function creationListRoute(request:Request,enterprise=false){
  try{const reader=await creationReader(request,enterprise);if(reader instanceof NextResponse)return reader;
  const query=Object.fromEntries(new URL(request.url).searchParams);if(query.email&&!query.user)query.user=query.email;
- const today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);if(!query.from&&!query.to){query.to=today;query.from=new Date(Date.parse(today)-6*86400000).toISOString().slice(0,10);}
+ if(query.source==='legacy'&&!query.from&&!query.to&&!query.period)query.period='all';
+ const today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);if(!query.from&&!query.to&&query.period!=='all'){query.to=today;query.from=new Date(Date.parse(today)-6*86400000).toISOString().slice(0,10);}
  const parsed=creationFiltersSchema.safeParse(query);if(!parsed.success)return teamJson({error:'创作筛选参数无效'},400);
  if(parsed.data.source==='legacy'){if(!reader.platform||parsed.data.tenantId)return teamJson({error:'历史归属未确认，请使用受授权的成员历史入口'},400);return teamJson(await listLegacyCreations(parsed.data));}
  return teamJson(await listCreations(reader,parsed.data));}catch(e){return creationFailure(e);}
