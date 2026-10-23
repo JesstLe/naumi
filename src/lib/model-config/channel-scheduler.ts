@@ -70,9 +70,11 @@ export async function claimChannel(pool: Pool, publicId: string, policy: Channel
                     throw error;
             }
         }
-        // Local capacity is not an unknown supplier outcome. The durable root
-        // alone may defer a NEW attempt; an old started operation stays pinned.
-        if (targets[0]?.scope.frozen.modality === "image") throw imageCapacityBusy();
+        // Defer only when an unvisited candidate remains. Exhaustion must let
+        // the caller return its last definite supplier failure, not wait forever.
+        // Durable dispatched roots keep Deferred for the low-level capacity wait;
+        // non-durable accepted pins retain Pending rather than a false rejection.
+        if (sorted.length > 0 && targets[0]?.scope.frozen.modality === "image") throw imageCapacityBusy(pinned ? operationKey : undefined);
         throw new ModelConfigError("PROVIDER_BUSY", "所有兼容供应通道繁忙或暂时停用，本次尚未提交上游", 429);
     }
     finally {
