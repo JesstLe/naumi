@@ -84,3 +84,7 @@ CommonJS 可直接 `const {verifyCase} = require('./capture-imagegen-benchmark-c
 - 集中覆盖合法包、三种精度、秘密/PII及错误输出不回显、逐字节hash、私有原件不复制、缺字段/错hash、路径穿越/链接逃逸/覆盖、伪造exact与replay/closure、额外文件与产物篡改。
 - 本地三组实跑与四产物见 `output/imagegen-case-capture-20261023/VERIFICATION.txt`；其中 baseline/rollback 的预期行为是该基线不存在新 CLI，modified 才生成合法包。它们验证新增取证工具的可逆性，不是历史产品缺陷修复验收。
 - 待父整合：主runner的选择性读取接线、实际原证据审查及真实replay。未连接/发布47，无新增供应商调用。
+
+## 父整合接线
+
+历史 runner 支持重复 `--case <caseDir>`，调用 `verifyCase` 后仅记录脱敏 caseId、manifest SHA、精度与完整性，不读取/执行原请求，也不改变 suite、exact 计数或历史闭合状态。重复caseId/篡改包立即拒绝。两笔本地原参数包仍标 captured/not-run/NOT_PROVEN；输出原图不是输入参考图，不能拿输出填满原输入素材数量。

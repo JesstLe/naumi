@@ -10,10 +10,14 @@ const cp = require('node:child_process');
 const crypto = require('node:crypto');
 const assert = require('node:assert/strict');
 const repo = path.resolve(__dirname, '..');
-const options = {root: repo, output: 'output/imagegen-history-benchmark-20261023/run', phase: 'compare'};
+const options = {root: repo, output: 'output/imagegen-history-benchmark-20261023/run', phase: 'compare', cases: []};
 for (let i = 2; i < process.argv.length; i++) {
   const flag = process.argv[i];
   if (flag === '--self-test') options.selfTest = true;
+  else if (flag === '--case') {
+    assert(process.argv[i + 1] && !process.argv[i + 1].startsWith('--'), 'Missing --case');
+    options.cases.push(path.resolve(process.argv[++i]));
+  }
   else if (['--root', '--output', '--phase'].includes(flag)) {
     assert(process.argv[i + 1] && !process.argv[i + 1].startsWith('--'), `Missing ${flag}`);
     options[flag.slice(2)] = process.argv[++i];
@@ -25,6 +29,15 @@ assert(['baseline', 'modified', 'compare'].includes(options.phase));
 const manifestPath = path.join(repo, 'docs/benchmarks/imagegen-history-20261023.json');
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
+// Optional offline evidence packages are verified and indexed, never executed.
+// A captured case does not turn a mechanism suite into an employee exact replay.
+const capturedCases = options.cases.map(caseDir => {
+  const m = require('./capture-imagegen-benchmark-case.cjs').verifyCase(caseDir);
+  return {caseId: m.caseId, manifestSha256: digest(fs.readFileSync(path.join(caseDir, 'manifest.json'))),
+    source: m.source, fidelity: m.fidelity, evidenceCompleteness: m.evidenceCompleteness,
+    status: 'captured', replayStatus: 'not-run', exactReplayVerified: false, employeeExactRequestsReplayed: 0};
+});
+assert.equal(new Set(capturedCases.map(c => c.caseId)).size, capturedCases.length, 'Duplicate case ID');
 function verdict(rows, mode, scenarios = manifest.scenarios) {
   if (rows.some(r => !r.valid)) return {status: 'ERROR', exit: 1};
   if (mode === 'baseline') return {status: 'BASELINE_REPRODUCED', exit: 0};
@@ -104,7 +117,7 @@ function save() {
     historyCounting: 'Never sum overlapping cohorts or parent/child/provider rows. Test assertions are not employee incidents.',
     productSourceChanged: false, productionMutations: 0, externalSupplierCalls: 0,
     completedChecks: results.length, expectedChecks: options.phase === 'baseline' ? 5 : options.phase === 'modified' ? 10 : 15,
-    ...outcome, scenarios: manifest.scenarios, results};
+    ...outcome, scenarios: manifest.scenarios, capturedCases, results};
   fs.writeFileSync(path.join(options.output, 'REPORT.json'), JSON.stringify(report, null, 2) + '\n');
   const md = ['# 历史失败行为 benchmark', '', `版本：\`${sourceCommit}\`；结论：**${outcome.status}**；退出码：${outcome.exit}。`,
     '员工原始完整请求精确重放：0；以下为保留故障机制/操作次序的隔离复现。不是生产任务重提，也不是历史任务已修复计数。', '',

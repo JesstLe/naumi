@@ -137,17 +137,17 @@
       "replayFidelity": "retained-status-message-local-http-reproduction",
       "suite": "supplier-quota",
       "historyClosure": "OPEN",
-      "limitation": "新报价/并发调整不会补充上游额度；测试如仍403且备用POST0必须保留OPEN，不装作历史全绿。"
+      "limitation": "原403无not_charged时仍A1B0、原pin保留，供应成本未知；修复只把漏记的auth健康记一次并让后续全新operation跳过冷却A走B。历史22笔没有完整原body/免单合同，不代表外部额度已补足或旧任务可重提。"
     },
     {
       "id": "HF10",
       "origin": "H23",
       "behavior": "供应商completed/delivered但最终子任务无结果",
       "historicalCount": 2,
-      "replayFidelity": "not-replayed-exactly",
+      "replayFidelity": "exact-original-result-retrieved-local-continuation-pending",
       "suite": "delivery",
       "historyClosure": "NOT_PROVEN",
-      "limitation": "旧交付机制回归不证明今日两笔有可用checkpoint或根因一致；缺原结果时不强行记通过。"
+      "limitation": "2026-10-23精确两child只读SQL证实started无result、各12预占且charged0；原任务GET2次与原图GET2次均200，原taskId及URLhash与历史记录一致。原字节已私有取回，解码及本地续交验证另记；生产任务未修改，完整员工提交重放仍0。"
     },
     {
       "id": "RG01",
