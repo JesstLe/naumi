@@ -11,9 +11,11 @@ import { WorkflowError } from './contracts';
 import { PeopleStore } from './people-store';
 import { WorkflowStore } from './store';
 import { id } from './contracts';
-export function createImportServer(store:ImportStore,secret:string){
+import {LocalSourceSnapshot} from './local-source-snapshot';
+export function createImportServer(store:ImportStore,secret:string,options:{sourceSnapshotFile?:string;sourceSnapshotRegistry?:{instance:string;enterpriseId:string;enterpriseName:string;origin:string}}={}){
  if(secret.length<32)throw new Error('IMPORT_TOKEN_REQUIRED');
  const local={enterpriseId:store.enterpriseId,subject:'local-owner'};
+ const sourceSnapshot=new LocalSourceSnapshot(store.pool,store.enterpriseId,options.sourceSnapshotFile,options.sourceSnapshotRegistry);
  const worksheet=new SourceWorksheetStore(store.pool,async(_tx,p)=>{if(p.enterpriseId!==local.enterpriseId||p.subject!==local.subject)throw new WorkflowError(403,'FORBIDDEN');});
  const people=new PeopleStore(store.pool,async(_tx,p)=>p.enterpriseId===local.enterpriseId&&p.subject===local.subject?{...p,permissions:['manage'],workKinds:[]}:null,local);
  const workflow=new WorkflowStore(store.pool,async(_tx,p)=>p.enterpriseId===local.enterpriseId&&p.subject===local.subject?{...p,permissions:['request','dispatch','manage'],workKinds:[]}:null,async()=>false,local);
@@ -24,6 +26,12 @@ export function createImportServer(store:ImportStore,secret:string){
   try{
    if(!authorized(req))return json(401,{error:'AUTH_REQUIRED'});
    const url=new URL(req.url||'/','http://local-import'),source=url.searchParams.get('source')||'';
+   if(url.pathname==='/v1/import/source-snapshot'){
+    if(req.method!=='GET')throw new WorkflowError(405,'METHOD_NOT_ALLOWED');
+    const result=await sourceSnapshot.read(Object.fromEntries(url.searchParams));
+    if(result.bytes){res.writeHead(200,{'content-type':result.mime!,'content-length':result.bytes.length,'cache-control':'private, no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox"});return res.end(result.bytes);}
+    return json(200,result.json);
+   }
    if(url.pathname.startsWith('/v1/import/worksheet')){
     if(req.method==='GET'&&url.pathname==='/v1/import/worksheet')return json(200,await worksheet.read(local,source));
     if(req.method==='GET'&&url.pathname==='/v1/import/worksheet-audit')return json(200,await worksheet.history(local,source,Number(url.searchParams.get('before')||2147483647)));

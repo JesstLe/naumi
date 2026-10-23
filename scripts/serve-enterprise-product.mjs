@@ -26,10 +26,11 @@ const server=createServer(async(req,res)=>{
       }
       const cookie=String(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('enterprise_import_session='))?.slice('enterprise_import_session='.length);
       if(!same(cookie,localSession))return fail(401,'LOCAL_SESSION_REQUIRED');
-      if(!['worksheet','worksheet-audit','worksheet-command','worksheet-upload','worksheet-file','context','rows','references','reference-asset','asset','resolve','people','people-audit','people-profile','people-roster-preview','people-roster-apply','people-preview','people-apply','orders','order','intake','command'].includes(action))return fail(400,'INVALID_ACTION');
+      if(!['source-snapshot','worksheet','worksheet-audit','worksheet-command','worksheet-upload','worksheet-file','context','rows','references','reference-asset','asset','resolve','people','people-audit','people-profile','people-roster-preview','people-roster-apply','people-preview','people-apply','orders','order','intake','command'].includes(action))return fail(400,'INVALID_ACTION');
       const write=['worksheet-command','worksheet-upload','resolve','people-profile','people-roster-preview','people-roster-apply','people-preview','people-apply','intake','command'].includes(action);if(req.method!==(write?'POST':'GET'))return fail(405,'METHOD_NOT_ALLOWED');
       if(write&&(!same(req.headers['x-csrf-token'],csrf)||req.headers.origin!==u.origin))return fail(403,'CSRF_REQUIRED');
-      const args=new URLSearchParams();for(const key of ['source','id','orderId','download','thumb','query','status','page','before'])if(u.searchParams.has(key))args.set(key,u.searchParams.get(key));
+      const keys=action==='source-snapshot'?['op','enterpriseId','kind','email','from','to','page','id']:['source','id','orderId','download','thumb','query','status','page','before'];
+      const args=new URLSearchParams();for(const key of keys)if(u.searchParams.has(key))args.set(key,u.searchParams.get(key));
       const chunks=[];let size=0;if(write){for await(const chunk of req){size+=chunk.length;if(size>(action==='worksheet-upload'?6*1024*1024:action==='resolve'?8192:256*1024))return fail(413,'BODY_TOO_LARGE');chunks.push(chunk);}}
       const response=await fetch(`http://127.0.0.1:${config.port}/v1/import/${action}?${args}`,{method:req.method,headers:{authorization:'Bearer '+config.token,'content-type':'application/json'},...(write?{body:Buffer.concat(chunks)}:{}),signal:AbortSignal.timeout(30000),redirect:'error'});
       res.writeHead(response.status,{...Object.fromEntries(response.headers),'cache-control':'private, no-store'});

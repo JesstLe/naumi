@@ -1,0 +1,65 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {randomUUID,randomBytes,createHash} from 'node:crypto';
+import {mkdtemp,readFile,readdir,writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join,resolve} from 'node:path';
+import {spawn} from 'node:child_process';
+import {once} from 'node:events';
+import {createServer} from 'node:net';
+import pg from 'pg';
+import sharp from 'sharp';
+import {ImportStore} from '../src/import-store';
+import {createImportServer} from '../src/import-server';
+
+const url=process.env.WORKFLOW_SOURCE_SNAPSHOT_TEST_URL;
+test('local snapshot uses original product session, exact people and read-only source scopes',{skip:!url},async()=>{
+ assert.equal(new URL(url!).hostname,'127.0.0.1');assert.match(new URL(url!).pathname,/^\/source_snapshot_g71_[a-f0-9]+$/);
+ const pool=new pg.Pool({connectionString:url}),enterpriseId=randomUUID(),sourceEnterprise=randomUUID(),instance='source-fixture',email='employee@fixture.invalid',personId=randomUUID();
+ const dir=await mkdtemp(join(tmpdir(),'enterprise-snapshot-')),file=join(dir,'source.json'),config=join(dir,'config.json'),token=randomBytes(32).toString('hex');
+ let checks=0;const ok=(v:unknown)=>{assert(v);checks++;};
+ let api:ReturnType<typeof createImportServer>|undefined,proxy:ReturnType<typeof spawn>|undefined;
+ try{
+  for(const f of (await readdir(new URL('../migrations/',import.meta.url))).filter(f=>/^\d{3}-.*\.sql$/.test(f)).sort())await pool.query(await readFile(new URL('../migrations/'+f,import.meta.url),'utf8'));
+  await pool.query('INSERT INTO enterprise_workflow.person_profiles(enterprise_id,person_id,real_name,nickname,source_instance,source_enterprise,source_subject)VALUES($1,$2,$3,$4,$5,$6,$7)',[enterpriseId,personId,'合成真名','合成花名',instance,sourceEnterprise,email]);
+  const row=(kind:string,id:string)=>({ref:{instanceId:instance,enterpriseId:sourceEnterprise,kind,id},account:{sourceKey:JSON.stringify([instance,email]),email,name:'合成花名'},createdAt:'2026-10-23T01:00:00.000Z',title:'synthetic record',prompt:'synthetic prompt',status:'done',operation:'生成',sourceLabel:'只读来源',provenance:null,taskRefs:{imageJobId:null,canvasTaskId:null,videoTaskId:null,billingOperationId:null},credits:{quoted:null,charged:null,reserved:null,delta:null,refunded:null,settled:null,evidence:'unrecorded'},ledgerKind:null,ownership:'legacy-unconfirmed',attribution:{visibility:'current-enterprise-scope',businessOwnership:'unconfirmed',workflowTaskId:null},media:{available:false,href:null}});
+  const bytes=await sharp({create:{width:32,height:32,channels:3,background:'#c8d9ed'}}).webp().toBuffer();
+  const data:any={version:1,type:'enterprise-source-snapshot-v1',instanceId:instance,enterpriseId:sourceEnterprise,enterpriseName:'合成企业',origin:'https://fixture.invalid',observedAt:'2026-10-23T02:00:00.000Z',from:'2026-10-01',to:'2026-10-23',members:[{email,name:'合成花名'}],rows:{artworks:[row('artwork','a')],generations:[row('image-job','g')],ledger:[{...row('ledger','l'),ledgerKind:'refund',credits:{quoted:null,charged:null,reserved:null,delta:2,refunded:null,settled:null,evidence:'ledger-entry'}}]},limits:{artworks:{total:1,truncated:false},generations:{total:1,truncated:false},ledger:{total:1,truncated:false}},sourceReadOnly:true,sourceWrites:0,media:[{id:'a',email,mime:'image/webp',sha256:createHash('sha256').update(bytes).digest('hex'),base64:bytes.toString('base64')}]};
+  const save=async()=>writeFile(file,JSON.stringify({sha256:createHash('sha256').update(JSON.stringify(data)).digest('hex'),data}));await save();
+  api=createImportServer(new ImportStore(pool,enterpriseId,dir),token,{sourceSnapshotFile:file,sourceSnapshotRegistry:{instance,enterpriseId:sourceEnterprise,enterpriseName:'合成企业',origin:'https://fixture.invalid'}});await new Promise<void>(r=>api!.listen(0,'127.0.0.1',r));const apiPort=(api.address() as {port:number}).port;
+  await writeFile(config,JSON.stringify({port:apiPort,token}));
+  const socket=createServer();await new Promise<void>(r=>socket.listen(0,'127.0.0.1',r));const port=(socket.address() as {port:number}).port;await new Promise<void>(r=>socket.close(()=>r()));
+  const root=resolve('../..'),proxyFile=process.env.SNAPSHOT_PROXY_FILE||resolve(root,'scripts/serve-enterprise-product.mjs');
+  proxy=spawn(process.execPath,[proxyFile,String(port),'18491',config],{cwd:root,stdio:['ignore','pipe','pipe']});let stdout='';proxy.stdout!.on('data',b=>stdout+=b);
+  for(let i=0;i<100&&!stdout.includes('PRODUCT_ENTRY_READY');i++)await new Promise(r=>setTimeout(r,30));ok(stdout.includes('PRODUCT_ENTRY_READY'));
+  const base='http://127.0.0.1:'+port,endpoint=base+'/api/enterprise/imports?action=source-snapshot';
+  const session=await fetch(base+'/api/enterprise/imports?action=session'),cookie=session.headers.get('set-cookie')!.split(';')[0],headers={cookie};
+  const call=(op:string,args:Record<string,string>={})=>fetch(endpoint+'&'+new URLSearchParams({op,...args}),{headers});
+  if(process.env.SNAPSHOT_EXPECT==='baseline'){ok((await call('context')).status===400);console.log(`SOURCE_SNAPSHOT_BASELINE_PASS: checks=${checks} endpoint=INVALID_ACTION snapshot_display=0`);return;}
+  ok((await fetch(endpoint+'&op=context')).status===401);
+  ok((await fetch(endpoint+'&op=context',{headers:{...headers,origin:'https://foreign.invalid'}})).status===403);
+  ok((await fetch(endpoint+'&op=context',{headers:{...headers,'sec-fetch-site':'cross-site'}})).status===403);
+  ok((await fetch(endpoint+'&op=context',{method:'POST',headers})).status===405);
+  const c=await(await call('context')).json() as any;ok(c.preview.transport==='local-snapshot'&&c.viewer.name==='本机项目管理员');
+  ok((await call('records',{enterpriseId:randomUUID(),kind:'artworks'})).status===404);
+  ok((await call('records',{enterpriseId:sourceEnterprise,kind:'artworks',email:'other@fixture.invalid'})).status===404);
+  const members=await(await call('members',{enterpriseId:sourceEnterprise})).json() as any;ok(members.members[0].person.id===personId&&members.members[0].person.realName==='合成真名');
+  const page=await(await call('records',{enterpriseId:sourceEnterprise,kind:'artworks',email:''})).json() as any;ok(page.total===1&&page.rows[0].account.person.id===personId&&page.rows[0].media.available);
+  ok(page.rows[0].ownership==='legacy-unconfirmed'&&page.rows[0].credits.charged===null);
+  const image=await fetch(base+page.rows[0].media.href,{headers});ok(image.status===200&&image.headers.get('content-type')==='image/webp'&&Buffer.from(await image.arrayBuffer()).equals(bytes));
+  ok((await call('media',{enterpriseId:sourceEnterprise,email,id:'foreign'})).status===404);
+  ok((await call('records',{enterpriseId:sourceEnterprise,kind:'ledger',from:'2026-09-01'})).status===400);
+  const ledger=await(await call('records',{enterpriseId:sourceEnterprise,kind:'ledger'})).json() as any;ok(ledger.rows[0].credits.delta===2&&ledger.rows[0].ledgerKind==='refund');
+  ok((await call('records',{enterpriseId:sourceEnterprise,kind:'artworks',page:'2'})).status===200);
+  data.rows.artworks[0].prompt='tampered';await writeFile(file,JSON.stringify({sha256:'a'.repeat(64),data}));ok((await call('context')).status===409);await save();
+  data.rows.artworks.push({...data.rows.artworks[0],ref:{...data.rows.artworks[0].ref,kind:'image-job'}});await save();ok((await call('context')).status===409);data.rows.artworks.pop();
+  data.limits.artworks.total=0;await save();ok((await call('context')).status===409);data.limits.artworks.total=1;
+  data.from='2026-08-01';await save();ok((await call('context')).status===409);data.from='2026-10-01';
+  data.origin='https://other.invalid';await save();ok((await call('context')).status===409);data.origin='https://fixture.invalid';await save();
+  await pool.query('UPDATE enterprise_workflow.person_profiles SET enabled=false WHERE enterprise_id=$1',[enterpriseId]);
+  const revoked=await(await call('records',{enterpriseId:sourceEnterprise,kind:'artworks'})).json() as any;ok(revoked.total===0&&revoked.rows.length===0);
+  ok((await call('media',{enterpriseId:sourceEnterprise,email,id:'a'})).status===404);
+  ok((await pool.query('SELECT count(*)::int n FROM enterprise_workflow.accounts')).rows[0].n===0);
+  console.log(`SOURCE_SNAPSHOT_HTTP_PASS: checks=${checks} session=1 cross_origin=1 tenant_scope=1 exact_person=1 null_charge=1 refund=1 private_media=1 digest=1 revocation=1 permissions_written=0`);
+ }finally{proxy?.kill();if(proxy?.exitCode===null)await once(proxy,'exit');if(api){api.closeAllConnections();await new Promise<void>(r=>api!.close(()=>r()));}await pool.end();}
+});
