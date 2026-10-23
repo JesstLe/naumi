@@ -20,7 +20,7 @@ import {routeImageModel} from "@/lib/image-model-routing";
 import {configuredVideoProviders,getVideoProviderConfig} from "@/lib/video/providers/config";
 import { requestedTextModel } from "@/lib/text-models";
 import { CANVAS_FREE_DEFAULTS } from "./canvas-defaults";
-import { currentModelBillingSnapshot } from "../model-config/context";
+import { currentModelBillingSnapshot,currentModelExecution } from "../model-config/context";
 import { managedBillingModel } from "../model-config/billing-model";
 import { freezeBusinessQuote } from "../model-config/business-billing";
 import {currentImagegenStep} from "../imagegen/context";
@@ -130,7 +130,19 @@ export async function quoteForRequest(request: Request, input: Partial<BillingFa
         return structuredClone(q);
     }
     const browserQuote=await imageBillingQuoteForRequest(request);
-    if(browserQuote){assertImageBillingSelection(browserQuote,input);return browserQuote;}
+    if(browserQuote){
+        assertImageBillingSelection(browserQuote,input);
+        // Old estimates did not select a frame. Resolve that missing input from
+        // the authenticated handler, never a fabricated preset default of 1:1.
+        // Only the ratio is bound here; tariff, authorization and versions stay frozen.
+        const ratio=input.ratio||currentModelExecution("image")?.frozen.facts?.ratio;
+        if(browserQuote.facts.ratio===undefined&&ratio){
+            browserQuote.facts.ratio=ratio;
+            if(browserQuote.requestedParameters)browserQuote.requestedParameters.ratio=ratio;
+            if(browserQuote.effectiveParameters)browserQuote.effectiveParameters.ratio=ratio;
+        }
+        return browserQuote;
+    }
     const snapshot = frozenSnapshot??currentModelBillingSnapshot()??await billingSnapshot();
     return freezeBusinessQuote(request, snapshot, await resolveBillingFacts(request, input, snapshot), compatibleQuote, options);
 }
