@@ -23,8 +23,17 @@
 
 本轮原供应商task GET各1次均200/completed、ID匹配；原输出URL的SHA与原supplier output hash相同。原图GET各1次均200，4018782字节及3989857字节，已私有落盘。下载不携带供应商Authorization、不跟重定向、TLS与公网DNS pinning校验。原account凭据纯内存解密并验证accountIdentity相符，未调用应用ensureSchema/ledger/恢复GET。
 
-这只是取回原字节；不表示现有产品能自动把started转换为done，也不表示原员工已经拿图。原图解码、冻结处理合同、存储/作品/父回执与结算的本地continuation由独立verifier继续补证。完整员工原始请求exact replay仍0，22笔外部额度仍OPEN。
+这只是取回原字节；不表示现有产品能自动把started转换为done，也不表示原员工已经拿图。独立verifier已完整解码两原图，并以原135/8冻结合同完成真实本地存储/作品/父子回执/结算。原started无result仍拒绝且各12预占保持；仅在隔离库显式证据导入done+原图后各succeeded/结算12一次，重复两次同artwork零新账本，wrongowner/lease/混合unknown均拒绝。原/最终SHA相同。完整员工原始请求exact replay仍0，22笔外部额度仍OPEN。
 
 ## 待封版
 
-等待原结果本地续交模块；本轮固定Linux构建进行中。随后统一四件材料、副本真实回退/恢复行为、commit/push与现场清理。历史两笔生产状态不写，47发布HOLD。
+原结果续交测试模块已整合`810214ce`。新固定Linux image `sha256:73698597e358e6972aed0c18f3d9c8f43effd84aa7f70c51a62ae6a2ba86d03a`绑定产品源`d86c9509`/build`1792744593`，91/91构建与离线Web/Worker bundle核对exit0；后续增量只测试/文档，`git diff --exit-code d86c9509 -- src`为空/exit0。最终镜像容量未测，不替代47双槽准入。四件材料、副本真实回退、最终集中结果与Git远端证明统一见本轮VERIFICATION。历史两笔生产状态不写，47发布HOLD。
+
+## 原图本地续交实证
+
+|样本|真实尺寸|原/最终SHA256|账务|
+|---|---|---|---|
+|1|1536×2048|790a2ae28ddba485fab56fd850d6b95b352cd68a2d33de54e550df4b418b2939|本地结算12，一笔−12，预占0|
+|2|2048×2048|69161dd9522c04d65ea1efa25fc1319666c20d98e8db49479be9c250562f0d33|本地结算12，一笔−12，预占0|
+
+子模块集中baseline/continue均exit0；未复制员工原图、prompt、signedURL或原配置进Git。原图私有保留，不作为公开效果图发布。
