@@ -436,7 +436,7 @@ class FrozenVersionPreservation(unittest.TestCase):
 
     def test_generation_declaration_not_reclassified(self):
         guard,_=self.guard();guard.original['generationPosts']=1
-        with self.assertRaisesRegex(Hold,'POST_DECLARATION_INVALID'):guard._invariants()
+        with self.assertRaisesRegex(ValueError,'POST_DECLARATION_INVALID'):guard._invariants()
 
 
 if __name__ == '__main__':unittest.main()

@@ -294,7 +294,8 @@ class FrozenConfigurationGuard(Guard):
 
     def _invariants(self):
         d = self.original
-        require(d.get('generationPosts') == 0, 'PRESERVED_UNKNOWN_POST_DECLARATION_INVALID')
+        if d.get('generationPosts') != 0:
+            raise ValueError('POST_DECLARATION_INVALID')
         task = literal(d['taskId'])
         predicates = self._predicates()
         expected = {k: d[k] for k in ('model', 'billing', 'leases', 'activity')}
