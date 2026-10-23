@@ -1,0 +1,569 @@
+{
+  "version": 1,
+  "origin": "H20 local_nonstandard_ratio",
+  "sourceSha256": "f5a848a986e55455ddaf5ac898c5677f9661ab2798114818927da310810f0221",
+  "sourceArray": "audit_failed",
+  "replayLevel": "retained-original-parameters-only-not-image-bytes-or-frozen-quote",
+  "cases": [
+    {
+      "case": "op-2eb26b84e0051fa3",
+      "ratio": "60:37",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-aec7186a2eee57fe",
+      "ratio": "158:271",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-130e7269b564c7ad",
+      "ratio": "302:573",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-2f88290899168582",
+      "ratio": "302:573",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-057188c82b0db4a8",
+      "ratio": "403:410",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-61f352da89eaad23",
+      "ratio": "403:410",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-d36792d902b9ab14",
+      "ratio": "403:410",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-c2919f5e91d20845",
+      "ratio": "403:410",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-dcbebe0b40502b32",
+      "ratio": "375:548",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-c9747d5354395e96",
+      "ratio": "375:548",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-616090c2bc3d24df",
+      "ratio": "394:703",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-78c1f3c5db3d9466",
+      "ratio": "394:703",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-d9cb751c176dc992",
+      "ratio": "394:703",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-8fa0f3bc0b5ce389",
+      "ratio": "394:703",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-a1de5e4d25f5aecd",
+      "ratio": "500:833",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-c266c5ca51c87979",
+      "ratio": "500:833",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-f301d6370798cbc8",
+      "ratio": "500:833",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-cd9f20ff45c2e209",
+      "ratio": "500:833",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-f2bd0cc7f9ccfb69",
+      "ratio": "707:697",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-6fd0fc75877506c5",
+      "ratio": "707:697",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-d674ba09039bd55f",
+      "ratio": "158:283",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "123"
+    },
+    {
+      "case": "op-31225e30566c969c",
+      "ratio": "79:95",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "122"
+    },
+    {
+      "case": "op-6aea879ae03f9bc9",
+      "ratio": "79:95",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "122"
+    },
+    {
+      "case": "op-d679b6582f2a5078",
+      "ratio": "388:527",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "122"
+    },
+    {
+      "case": "op-a91afc4db3c137a6",
+      "ratio": "388:527",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "122"
+    },
+    {
+      "case": "op-a1bfe5eae0c8410f",
+      "ratio": "388:527",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "122"
+    },
+    {
+      "case": "op-4f2a4d673bd3c273",
+      "ratio": "79:95",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "122"
+    },
+    {
+      "case": "op-21ce80c9fa77fcbb",
+      "ratio": "658:877",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "122"
+    },
+    {
+      "case": "op-3fedc998ca0bdb97",
+      "ratio": "388:527",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "122"
+    },
+    {
+      "case": "op-6dc976ffb8641f6a",
+      "ratio": "503:748",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "122"
+    },
+    {
+      "case": "op-dacc7f67b4579e90",
+      "ratio": "504:745",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "122"
+    },
+    {
+      "case": "op-f6fce71e89021061",
+      "ratio": "249:374",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "122"
+    },
+    {
+      "case": "op-911b7062b8925307",
+      "ratio": "658:877",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "122"
+    },
+    {
+      "case": "op-5e93a61c4b2ce2ea",
+      "ratio": "658:877",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "122"
+    },
+    {
+      "case": "op-c2c3e5c009dcbb3f",
+      "ratio": "658:877",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "122"
+    },
+    {
+      "case": "op-f5a7e017be84d79b",
+      "ratio": "658:877",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "122"
+    },
+    {
+      "case": "op-4f7bbbed38362e8f",
+      "ratio": "658:877",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "121"
+    },
+    {
+      "case": "op-612f976f1558e585",
+      "ratio": "658:877",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "121"
+    },
+    {
+      "case": "op-dfb0601c757c46bb",
+      "ratio": "28:39",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "121"
+    },
+    {
+      "case": "op-c226f32b6b3ffc23",
+      "ratio": "79:95",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "121"
+    },
+    {
+      "case": "op-51898a667a31face",
+      "ratio": "28:39",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "121"
+    },
+    {
+      "case": "op-b2c0c6a5480389f5",
+      "ratio": "28:39",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "121"
+    },
+    {
+      "case": "op-f5b877377ba0f090",
+      "ratio": "658:877",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "121"
+    },
+    {
+      "case": "op-ef490fa71dc5b523",
+      "ratio": "79:95",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "121"
+    },
+    {
+      "case": "op-936ab7f22e0214f2",
+      "ratio": "658:877",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "121"
+    },
+    {
+      "case": "op-836bdf3f2301b974",
+      "ratio": "658:877",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "121"
+    },
+    {
+      "case": "op-1ab65e069df23ed3",
+      "ratio": "658:877",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "121"
+    },
+    {
+      "case": "op-1da3802c41b65fc6",
+      "ratio": "658:877",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "121"
+    },
+    {
+      "case": "op-93f8cc92bab47855",
+      "ratio": "329:531",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "121"
+    },
+    {
+      "case": "op-ed010c0ba277931d",
+      "ratio": "79:95",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-abe99aeee17696f6",
+      "ratio": "79:95",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-db13a744f3d43fa1",
+      "ratio": "79:95",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-d16c982a2ca0df5f",
+      "ratio": "28:39",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-d1a263145f4d7134",
+      "ratio": "28:39",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-386339ed3eb30d62",
+      "ratio": "28:39",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-aff14d5f3e50f308",
+      "ratio": "28:39",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-9942674adb0b9dfe",
+      "ratio": "28:39",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-4319c3a4a7ada73c",
+      "ratio": "395:579",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-0544f0e2425cb343",
+      "ratio": "395:579",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-4718f2efcea950de",
+      "ratio": "110:147",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-a7727ce6bf230c57",
+      "ratio": "293:768",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-59a20a6cc95a2a0d",
+      "ratio": "249:374",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-6c784841aa3ecae2",
+      "ratio": "381:31",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-2f4e0309cca7332e",
+      "ratio": "381:31",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-550c4dbf4c1ddd63",
+      "ratio": "381:31",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-61b6ad08522b6e03",
+      "ratio": "249:374",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-ff049b554238edeb",
+      "ratio": "110:147",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-3d61a723fed753e1",
+      "ratio": "110:147",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-054da46290d004af",
+      "ratio": "28:39",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-f53cdc8a845bcefb",
+      "ratio": "235:418",
+      "references": 1,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-f3d392f699e25270",
+      "ratio": "28:39",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-d17f4074495c7d9b",
+      "ratio": "381:31",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-e2b1f730a0c03d47",
+      "ratio": "28:39",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-f3064c9b99f60578",
+      "ratio": "381:31",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-4a3d4f04420bcb3d",
+      "ratio": "200:303",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-64ce59db93aaaea3",
+      "ratio": "200:303",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-300474c394717489",
+      "ratio": "200:303",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-edc7ef3afc3b3d01",
+      "ratio": "503:748",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-3d67d7d703ab520f",
+      "ratio": "504:745",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    },
+    {
+      "case": "op-fa4c61ee3ea62e18",
+      "ratio": "249:374",
+      "references": 2,
+      "historicalContract": "1",
+      "historicalModelVersion": "120"
+    }
+  ]
+}
