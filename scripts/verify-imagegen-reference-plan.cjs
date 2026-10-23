@@ -30,6 +30,7 @@ async function bundle(entry,state,modules,source){
  './capabilities':`export function publishedImagegenCapabilities(){return{}}`,
  '../feature-access/server':`export async function userFeaturePolicy(){return{}};export class FeatureAccessError extends Error{}`,
  '../feature-access/catalog':`export function allows(){return true}`,
+ '../saas/creation-context':`export async function assertCurrentCreationFeature(){}`,
  };
  const source=mode==='baseline'?(process.argv[3]||'output/imagegen-frame-choice-20261017/BASELINE-plan.ts'):undefined;
  if(source&&!fs.existsSync(source)){fs.mkdirSync(path.dirname(source),{recursive:true});fs.writeFileSync(source,require('node:child_process').execFileSync('git',['show','e4c4e356942b2ea1aefd6b0ad210dfdc2072d6bb:src/lib/imagegen/plan.ts']));}
