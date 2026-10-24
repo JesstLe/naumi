@@ -135,15 +135,23 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     if (option?.parameters?.ratios?.length && !option.parameters.ratios.includes(ratio)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该比例", 400);
     const rawQuality = String(quotedImage?.requestedParameters?.quality || quotedImage?.facts.quality || parsed.body.quality || request.headers.get("x-naumi-image-quality") || "").trim().toLowerCase();
     const explicitQuality = purpose.image === "image.cutout" ? cutoutImageQuality(rawQuality) || "" : rawQuality;
-    if (explicitQuality && ![...IMAGE_QUALITY_IDS, "auto"].includes(explicitQuality as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "质量参数无效，请选择已开放的质量档位", 400);
+    // An unrecognized quality value (e.g. a client sending a display label like
+    // "standard") falls back to the model default with an audit note; it never
+    // blocks a paid creation the user explicitly requested.
+    const qualityMalformed = !!explicitQuality && ![...IMAGE_QUALITY_IDS, "auto"].includes(explicitQuality as any);
+    if (qualityMalformed) console.warn("[image-quality-fallback] unknown quality value, falling back:", explicitQuality);
     const environmentQuality = String(process.env.OPENAI_IMAGE_QUALITY || "medium").trim().toLowerCase();
     const defaultQuality = qualities.includes(environmentQuality as any) ? environmentQuality : qualities[0] || "medium";
-    const requestedQuality = explicitQuality || defaultQuality;
+    // Malformed values and tiers the model does not offer both execute at the
+    // model default; the original request value is kept for audit only.
+    const qualityUnsupported = !!explicitQuality && !qualityMalformed && !!qualities.length && !qualities.includes(explicitQuality as any);
+    const requestedQuality = !explicitQuality || qualityMalformed || qualityUnsupported ? defaultQuality : explicitQuality;
+    const qualityFallbackReason = !explicitQuality ? null : qualityMalformed ? "malformed-quality-value" : qualityUnsupported ? "channel-unsupported" : null;
+    if (qualityFallbackReason) console.warn("[image-quality-fallback]", qualityFallbackReason, explicitQuality, "->", requestedQuality);
     const presetParams = preset ? effectiveImageParameters(preset, { quality: requestedQuality, resolution: outputResolution, ratio }) : null;
     const canvasRequest = parsed.body.origin === "canvas" || new URL(request.url).pathname.startsWith("/api/canvas/");
 
     const effectiveQuality = presetParams?.effective.quality || requestedQuality;
-    if (explicitQuality && qualities.length && !qualities.includes(requestedQuality as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选功能模型不支持该质量，不会静默退档", 400);
 
     const native = presetParams ? presetParams.nativeResolution : !upstreams.some(u=>u.parameterMap.resolutionPolicy) && ["1K", "2K", "4K"].includes(outputResolution) && upstreams.some(u => u.capabilities.nativeResolutions.includes(outputResolution as "1K" | "2K" | "4K"));
     const needsEdit = purpose.image === "image.edit" || purpose.image === "image.cutout" || parsed.references > 0;

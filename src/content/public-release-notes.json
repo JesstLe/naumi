@@ -1,5 +1,28 @@
 [
   {
+    "version": "1792808190",
+    "title": {
+      "zh": "画布创作体验修复",
+      "en": "Canvas creation fixes"
+    },
+    "improvements": [
+      {
+        "zh": "按当前选项展示图片所需积分及多张合计。",
+        "en": "Show image credits and multi-image totals for your current selection."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "修复部分图片创作被错误提示阻断的问题。",
+        "en": "Fixed an issue where some image creations were incorrectly blocked."
+      },
+      {
+        "zh": "修复积分显示为空的问题，并支持重新读取。",
+        "en": "Fixed missing credit displays and added a retry action."
+      }
+    ]
+  },
+  {
     "version": "1792753247",
     "title": {
       "zh": "创作交互与处理稳定性更新",

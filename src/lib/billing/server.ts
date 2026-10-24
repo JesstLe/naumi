@@ -71,6 +71,13 @@ export async function meteringFor(snapshot: ConfigSnapshot) {
     const manual = (await getSetting("credits_metering"))?.trim();
     return supabaseEnabled || await multiUserEnabled() || manual === "1" || manual === "true";
 }
+/** The generic price directory needs the actor, not an executable default model. */
+export async function billingCatalogFacts(request: Request, snapshot: ConfigSnapshot): Promise<BillingFacts> {
+    if (!dbEnabled) return {feature:"image.generate",quantity:1,quality:"medium",resolution:"1K",byok:false,metered:false,paidFen:0,userGroup:"demo"};
+    const email = await resolveUserEmail(request);
+    if (!email) throw new BillingError("INVALID_RESULT", "请先登录", 401);
+    return {feature:"image.generate",quantity:1,quality:"medium",resolution:"1K",byok:false,metered:await meteringFor(snapshot),paidFen:await totalPaidCents(email),userGroup:"default"};
+}
 export async function resolveBillingFacts(request: Request, input: Partial<BillingFacts> & {
     feature: BillingFacts["feature"];
     quantity: number;

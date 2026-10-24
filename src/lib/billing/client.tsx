@@ -9,7 +9,7 @@ import {clientIntentKey,frozenIntentBody} from "./client-intent";
 import { MODEL_CATALOG_REFRESH } from "../model-config/public-client";
 import { chosenFeatureModel, FEATURE_MODEL_SELECTION } from "../model-config/feature-client";
 import { browserRandomUUID } from "../browser-crypto";
-import {currentWorkspace} from "../saas/workspace-client";
+import {currentWorkspace,currentWorkspaceRevision,WORKSPACE_SELECTION} from "../saas/workspace-client";
 export type PublicQuote = {
     quote?:{id:string;expiresAt:string};
     selection?:QuoteInput;
@@ -82,48 +82,62 @@ export function BillingProvider({ children }: {
     const {toast}=useToast();
     const { user, ready } = useAuth(), [catalog, setCatalog] = useState<PublicCatalog | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState<string | null>(null);
     const cache = useRef(new Map<string, Promise<PublicQuote>>()), epoch = useRef(0);
+    const actor = useRef({email:user?.email,revision:0});
+    if(actor.current.email!==user?.email)actor.current={email:user?.email,revision:actor.current.revision+1};
+    const [quoteRevision,setQuoteRevision]=useState(0);
     const intents=useRef(new Map<string,string>());
     const refresh = useCallback(async () => {
         const generation = ++epoch.current;
+        const actorRevision=actor.current.revision,workspaceRevision=currentWorkspaceRevision();
+        const isCurrent=()=>generation===epoch.current&&actorRevision===actor.current.revision&&workspaceRevision===currentWorkspaceRevision();
         setLoading(true);
         cache.current.clear();
         try {
-            const res = await fetch("/api/billing/catalog", { cache: "no-store", headers: await authHeader() }), data = await res.json();
+            const headers=await authHeader();
+            if(!isCurrent())return;
+            const res = await fetch("/api/billing/catalog", { cache: "no-store", headers }), data = await res.json();
             if (!res.ok)
                 throw new Error(data.error || "报价暂不可用");
-            if (generation === epoch.current) {
+            if (isCurrent()) {
                 setCatalog(data);
                 setError(null);
             }
         }
         catch (e) {
-            if (generation === epoch.current) {
+            if (isCurrent()) {
                 setCatalog(null);
                 setError(e instanceof Error ? e.message : "报价暂不可用");
             }
         }
         finally {
-            if (generation === epoch.current)
+            if (isCurrent())
                 setLoading(false);
         }
     }, []);
     useEffect(() => { if (ready)
         void refresh(); }, [ready, user?.email, refresh]);
-    useEffect(()=>{const changed=()=>{cache.current.clear();};const modelsChanged=()=>{void refresh();};window.addEventListener(FEATURE_MODEL_SELECTION,changed);window.addEventListener(MODEL_CATALOG_REFRESH,modelsChanged);return()=>{window.removeEventListener(FEATURE_MODEL_SELECTION,changed);window.removeEventListener(MODEL_CATALOG_REFRESH,modelsChanged);};},[refresh]);
+    useEffect(()=>{const changed=()=>{cache.current.clear();setQuoteRevision(value=>value+1);};const modelsChanged=()=>{changed();void refresh();};window.addEventListener(FEATURE_MODEL_SELECTION,changed);window.addEventListener(MODEL_CATALOG_REFRESH,modelsChanged);window.addEventListener(WORKSPACE_SELECTION,modelsChanged);return()=>{window.removeEventListener(FEATURE_MODEL_SELECTION,changed);window.removeEventListener(MODEL_CATALOG_REFRESH,modelsChanged);window.removeEventListener(WORKSPACE_SELECTION,modelsChanged);};},[refresh]);
     const getQuote = useCallback((rawInput: QuoteInput) => {
         const input = { ...rawInput, modelId: rawInput.modelId || chosenFeatureModel(rawInput.feature) };
-        const key = JSON.stringify([user?.email,currentWorkspace(),catalog?.version, input]);
+        const owner=user?.email,actorRevision=actor.current.revision,workspaceRevision=currentWorkspaceRevision();
+        const isCurrent=()=>owner===actor.current.email&&actorRevision===actor.current.revision&&workspaceRevision===currentWorkspaceRevision();
+        const key = JSON.stringify([owner,actorRevision,workspaceRevision,catalog?.version,quoteRevision,input]);
         let promise = cache.current.get(key);
         if (promise)
             return promise;
-        promise = (async () => { const {canvas,...facts}=input; const res = await fetch("/api/billing/quote", { method: "POST", headers: { "content-type": "application/json", ...await authHeader(),...(canvas?{"x-naumi-canvas":"1"}:{}) }, body: JSON.stringify(facts) }), data = await res.json(); if (!res.ok)
-            throw new Error(data.error || "报价暂不可用"); return {...data,selection:input} as PublicQuote; })();
+        promise = (async () => { const {canvas,...facts}=input,headers=await authHeader();
+            if(!isCurrent())throw new Error("创作空间已切换");
+            const res = await fetch("/api/billing/quote", { method: "POST", headers: { "content-type": "application/json", ...headers,...(canvas?{"x-naumi-canvas":"1"}:{}) }, body: JSON.stringify(facts) }), data = await res.json();
+            if(!isCurrent())throw new Error("创作空间已切换");
+            if (!res.ok) throw new Error(data.error || "报价暂不可用");
+            if(!Number.isSafeInteger(data.credits)||data.credits<0)throw new Error("报价金额无效");
+            return {...data,selection:input} as PublicQuote; })();
         if (cache.current.size >= 200)
             cache.current.clear();
         cache.current.set(key, promise);
-        promise.catch(() => cache.current.delete(key));
+        promise.catch(() => {if(cache.current.get(key)===promise)cache.current.delete(key);});
         return promise;
-    }, [catalog,user?.email]);
+    }, [catalog,user?.email,quoteRevision]);
     const submit = useCallback(async (url: string, init: RequestInit, displayed: PublicQuote | null, onIdentity?: (id: string) => void) => {
         if (!displayed)
             throw new Error("报价正在加载或暂不可用，请稍后重试");
@@ -172,15 +186,13 @@ export function BillingProvider({ children }: {
     }, [refresh,user?.email,toast]);
     const quoteAndSubmit = useCallback(async (url: string, init: RequestInit, input: QuoteInput, beforeSubmit?: () => void) => {
         beforeSubmit?.();
-        if (!catalog)
-            throw new Error("报价加载中，请稍后重试");
         const q = await getQuote(input);
         beforeSubmit?.();
         // The freshly obtained server quote is authoritative, not a separate
         // catalogue version that may have changed during the same click.
         // submit invokes this after hashing the frozen body and before its paid POST.
         return submit(url, init, q, beforeSubmit);
-    }, [catalog, getQuote, submit]);
+    }, [getQuote, submit]);
     return <Context.Provider value={{ catalog, loading, error, refresh, quote: getQuote, submit, quoteAndSubmit }}>{children}</Context.Provider>;
 }
 export function useBilling() { const value = useContext(Context); if (!value)
