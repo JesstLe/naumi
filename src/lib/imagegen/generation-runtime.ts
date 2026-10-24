@@ -10,7 +10,6 @@ import {runPostprocess, PostprocessPending} from "@/lib/media-postprocess";
 import {currentModelExecution} from "@/lib/model-config/context";
 import {auditSettledImage} from "@/lib/image-quality-request";
 import {resolveConfiguredImageQuality} from "@/lib/model-config/image-quality";
-import {DurableImageJobs} from "@/lib/durable-image-jobs";
 import {provenanceEntry} from "@/lib/artwork-provenance";
 import {dbEnabled, addArtworks, ensureTemplateRoot, getUser, getImageJobChargedCredits} from "@/lib/db";
 import {safeError} from "@/lib/api-error";
@@ -24,26 +23,8 @@ import type {GenParams,GeneratedImage} from "./generation-types";
 import {buildPrompt,ratioPrompt} from "./generation-prompt";
 import {openaiImages,newApiFlowImages,mockImages} from "./generation-provider";
 import {enforceOutputShape,attachImageDimensions,upscaleImages,persistToStorage} from "./generation-output";
-type Job = {
-  status: "pending" | "done" | "error" | "needs_attention";
-  images?: GeneratedImage[];
-  user?: Awaited<ReturnType<typeof getUser>>;
-  creditsUsed?: number;
-  mock?: boolean;
-  mode?: string;
-  persisted?: boolean;
-  error?: string;
-  imagegenOutputError?:string;
-  imagegenOutputWarning?:string;
-  deliveryAttempts?:number;
-  deliveryFailure?:{stage:string;name:string;code:string};
-  createdAt: number;
-  sourceUrl?: string | null;
-  /** 质量审计:请求档 vs 实际执行档与回退原因(通道不支持时回退默认档)。 */
-  quality?: { requested: string; executed: string; fallbackReason: string | null; executedQualities?: string[] };
-};
-
-export const JOBS = new DurableImageJobs<Job>("generate");
+import {JOBS} from "./generation-jobs";
+export {JOBS} from "./generation-jobs";
 
 export async function runJob(
   jobId: string,

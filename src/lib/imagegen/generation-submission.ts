@@ -22,7 +22,8 @@ import type {GenParams,GenerationBody,GenerationResult} from "./generation-types
 import type {BillingFacts,BillingQuote} from "../billing/types";
 import {billingFailure} from "../billing/request";
 import {buildPrompt,ratioPrompt} from "./generation-prompt";
-import {JOBS,kickGeneration} from "./generation-runtime";
+import {JOBS} from "./generation-jobs";
+import {kickGeneration} from "./generation-runtime";
 export type GenerationContext={actor:()=>Promise<string|null>;ip:string|null;featureModel?:string|null;quote:(facts:Partial<BillingFacts>&{feature:BillingFacts["feature"];quantity:number;ratio?:string},options:{allowResolutionFallback:boolean})=>Promise<BillingQuote|undefined>};
 export function generationResult(body:GenerationBody,options?:{status:number}):GenerationResult{return {body,status:options?.status??200};}
 export function generationBillingError(error:unknown):GenerationResult {const {status,...body}=billingFailure(error);return {status,body};}

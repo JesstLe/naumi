@@ -251,7 +251,7 @@ export type ConfigRuntime = {
         reason: string;
     }): Promise<ConfigSnapshot>;
 };
-export type BillingErrorCode = "INVALID_CONFIG" | "CONFIG_CONFLICT" | "CONFIG_UNAVAILABLE" | "PRICE_CHANGED" | "INSUFFICIENT_CREDITS" | "OPERATION_CONFLICT" | "INVALID_RESULT" | "AUTHORIZATION_EXCEEDED";
+export type BillingErrorCode = "INVALID_CONFIG" | "CONFIG_CONFLICT" | "CONFIG_UNAVAILABLE" | "PRICE_CHANGED" | "INSUFFICIENT_CREDITS" | "OPERATION_CONFLICT" | "OPERATION_PENDING" | "INVALID_RESULT" | "AUTHORIZATION_EXCEEDED";
 export class BillingError extends Error {
     constructor(public code: BillingErrorCode, message: string, public status = 409) { super(message); this.name = "BillingError"; }
 }

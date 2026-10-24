@@ -1,6 +1,4 @@
 import {normalizeLegacyFrameRequest, LegacyFrameError} from "@/lib/imagegen/legacy-frame-request";
-import {imageOutputNotice} from "@/lib/imagegen/output-advisory";
-import {storedImageReview, IMAGE_REVIEW_MESSAGE} from "@/lib/image-job-review";
 import {currentImagegenStep} from "@/lib/imagegen/context";
 import {canvasParameterError} from "@/lib/canvas/generation-parameters";
 import {withBillingIntent} from "@/lib/billing/intent";
@@ -9,16 +7,15 @@ import {quoteForRequest} from "@/lib/billing/server";
 import {imageWorkerAuthorized} from "@/lib/durable-image-jobs";
 import {NextResponse} from "next/server";
 import {provenanceEntry} from "@/lib/artwork-provenance";
-import {dbEnabled, getUser} from "@/lib/db";
+import {dbEnabled} from "@/lib/db";
 import {clientIp} from "@/lib/ip";
 import {resolveUserEmail} from "@/lib/admin-auth";
-import {storageEnabled} from "@/lib/storage";
-import {getOpenAISettings} from "@/lib/settings";
-import {imageJobPollState} from "@/lib/image-job-failure";
 import type {GenParams,GenImage} from "@/lib/imagegen/generation-types";
 export type {GeneratedImage} from "@/lib/imagegen/generation-types";
 import {submitGeneration} from "@/lib/imagegen/generation-submission";
-import {JOBS,kickGeneration} from "@/lib/imagegen/generation-runtime";
+import {kickGeneration} from "@/lib/imagegen/generation-runtime";
+
+import {readGeneration} from "@/lib/imagegen/generation-query";
 
 export const runtime="nodejs";
 
@@ -138,60 +135,10 @@ async function handleObservedPost(request: Request) {
   return NextResponse.json(result.body,{status:result.status});
 }
 
-async function handleGet(request: Request) {
-  if (new URL(request.url).searchParams.has("active")) {
-    const email = await resolveUserEmail(request);
-    if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
-    return NextResponse.json({ jobs: await JOBS.active(email) });
-  }
-  const jobId = new URL(request.url).searchParams.get("job");
-  if(jobId?.startsWith("imagegen-")&&/^[a-f0-9-]{36}$/i.test(jobId.slice(9))){
-    const owner=await resolveUserEmail(request);if(!owner)return NextResponse.json({error:"请先登录"},{status:401});
-    const {getImagegenResult}=await import("@/lib/imagegen/dispatch"),result=await getImagegenResult(jobId.slice(9),owner);if(!result)return NextResponse.json({error:"任务不存在或无权访问"},{status:404});
-    return NextResponse.json({status:result.status==="succeeded"?"done":["failed","cancelled","needs_attention"].includes(result.status)?"error":"pending",operationStatus:result.status,stage:result.stage,images:result.artifacts.map(a=>({id:a.artworkId,url:a.url,width:a.width,height:a.height})),error:result.error?.message,warnings:result.warnings,recoveryAvailable:result.recoveryAvailable,billingStatus:result.billingStatus,creditsUsed:result.chargedCredits,user:await getUser(owner)},{headers:{"cache-control":"private, no-store"}});
-  }
-  if (jobId) {
-    if (dbEnabled && (await resolveUserEmail(request))?.toLowerCase() !== await JOBS.owner(jobId)) {
-      return NextResponse.json({ error: "无权查看此任务" }, { status: 403 });
-    }
-    const job = await JOBS.get(jobId, false);
-    if (!job) {
-      return NextResponse.json({
-        status: "error",
-        error: "任务不存在或已过期，请重试",
-      });
-    }
-    if(job.status==="pending"&&dbEnabled){const owner=await JOBS.owner(jobId);if(owner&&await storedImageReview(jobId,owner))return NextResponse.json({status:"error",operationStatus:"needs_attention",reviewRequired:true,error:IMAGE_REVIEW_MESSAGE},{headers:{"cache-control":"private, no-store"}});}
-    if (job.status === "done") {
-      const notice = imageOutputNotice(job.imagegenOutputError, job.imagegenOutputWarning, !!job.images?.length);
-      if(notice.error)return NextResponse.json({status:"error",error:notice.error,images:(job.images||[]).map(({execution,...image})=>image),creditsUsed:job.creditsUsed,user:job.user});
-      return NextResponse.json({
-        status: "done",
-        ok: true,
-        images: (job.images || []).map(({ execution, ...image }) => image),
-        user: job.user,
-        creditsUsed: job.creditsUsed,
-        mock: job.mock,
-        persisted: job.persisted,
-        quality: job.quality,
-        warnings: notice.warning ? [notice.warning] : undefined,
-      });
-    }
-    if (imageJobPollState(job.status) === "error") {
-      const owner = dbEnabled ? await JOBS.owner(jobId) : undefined;
-      return NextResponse.json({ status: "error", error: job.error, reviewRequired: job.status === "needs_attention", user: owner ? await getUser(owner) : undefined });
-    }
-    return NextResponse.json({ status: "pending",...((job as {queueState?:string}).queueState?{operationStatus:"queued"}:{}), error: job.error || "" });
-  }
-
-  // 健康检查:绝不暴露模型名/上游供应商/密钥来源(铁律:绝不泄露所用模型)。
-  const { apiKey } = await getOpenAISettings();
-  return NextResponse.json({
-    status: "ok",
-    ready: !!apiKey,
-    db: dbEnabled,
-    storage: storageEnabled,
-  });
+async function handleGet(request:Request){
+  const params=new URL(request.url).searchParams;
+  const result=await readGeneration({active:params.has("active"),jobId:params.get("job"),actor:()=>resolveUserEmail(request)});
+  return NextResponse.json(result.body,{status:result.status,headers:result.headers});
 }
 
 export async function GET(request:Request){

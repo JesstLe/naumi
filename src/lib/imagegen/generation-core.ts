@@ -6,12 +6,10 @@ import {readImagegenInputs} from "./inputs";
 import {compileImagegenPrompt} from "./prompt";
 import {listArtworksByIds,getPool,dbEnabled} from "../db";
 import {currentCreationContext,assertCreationProjectInput} from "../saas/creation-context";
-import type {ImagegenPlan,ImagegenRequest,Intent} from "./types";
+import type {ImagegenPlan,ImagegenRequest} from "./types";
 export {imagegenStepId} from "./operation-id";
-export function imagegenStepIntent(plan:ImagegenPlan,key:string):Intent{
- const step=plan.steps.find(s=>s.key===key)!;
- return {...plan.intent,operation:step.operation,background:plan.steps.length>1&&key==="generate"?null:plan.intent.background,requirements:(plan.steps.length>1&&key==="generate"?plan.intent.requirements.filter(r=>r.name!=="background"):plan.intent.requirements).map(r=>r.name==="resolution"&&step.parameters.resolution?{...r,value:String(step.parameters.resolution)}:r)};
-}
+import {imagegenStepIntent} from "./step-intent";
+export {imagegenStepIntent} from "./step-intent";
 /** Resolve only an owned text anchor; project placement is metadata, not a new execution plan. */
 export async function canvasTextImageProjectPlacement(owner:string,sourceNodeId?:string):Promise<{groupId?:string;parentId?:string}|undefined>{
  if(!dbEnabled||!sourceNodeId?.startsWith("text-"))return undefined;
