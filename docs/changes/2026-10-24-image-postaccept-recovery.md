@@ -27,10 +27,15 @@
 
 ## 真实历史任务与发布边界
 
-- 两条历史失败分别为预占 8 / 12、实扣 0，原图存在而作品为 0。预占存在不等于已退款，供应 completed 不等于已交付。
-- 本轮不重新生成这两单。原图交付与原账务收尾须沿既有所有者、冻结版本、确定性作品 ID、原结算 ID 完成；只有实际回执后才记录已恢复。
+- 修复前，两条历史失败分别为预占 8 / 12、实扣 0，原图存在而作品为 0。该值是补交前的故障快照，不是当前余额状态。
+- 2026-10-24 12:41（Asia/Shanghai）已真实执行两单原结果补交：持三锁备份，按原 task/account/attempt/pin、冻结版本、原图 SHA 和 root token 校验，短事务补齐既有 root `done.result`；释放 child 锁后调用真实 `recoverStoredDelivery`，再分别回填父子 `recordImageStateTx`。未将 error 改回 pending，未进入生成入口。
+- 实际补交回执：`ORIGINAL_REPAIR={"mode":"APPLIED","taskGets":2,"imageGets":2,"generationPosts":0,"taskStateReset":0}`，exit 0。两单均 `ok:true / complete:true`。
+- 人物图原 child `job-2d385ad7-e9a1-468b-aceb-2c5359629ae0` 与主图原 child `job-05eeaf12-6e65-4166-b28a-13557511ccae` 各恢复一张 1536×2048 原图；确定性作品均 `completed` 且未删除。两父任务 `done / succeeded`，两子任务 `done / billing_settled=true / deliveryRecovery.complete=true`；四条父子 creation 均 `succeeded` 且各有一个输出证据。
+- 两单沿原结算 ID 分别结算 8 / 12 积分，每单仅一条原 consume ledger，实际 `reserved_credits=0`、`RESERVATIONS=[]`。这是原任务首次完成结算，不是重复扣款。job 的历史 `reserved_cost` 8 / 12 未重写，不将其误读为当前仍有预占。
+- 一次性补交脚本已处理 root 已 done、交付中断和 creation 回填中断的续跑分支。两单均证实单图、无必需后处理，原冻结 frame/resolution 与最终 1536×2048 尺寸匹配；没有用恢复函数单独的 `complete` 代替这些核对。该补交不修正其他任务或通用后处理失败边界。
+- 原始 BI `unknown-result` 与 execution stage 历史状态保留，不伪造为本次重新生成成功。完整 apply、最终账务和可见记录位于忽略目录 `output/canvas-model-pricing-fix-20261024/IMAGE_POSTACCEPT_ORIGINAL_{APPLY,FINAL_READ,VISIBLE_READ}.json`。
 - 服务器实时顶层仍有历史 `MIGRATED_CLEANUP_PENDING` / revision 818；当前 normal 子发布为 `COMPLETE`，所有 operation 已 ACK，runtimeRecovery 指向实际 af22c6e 进程。历史顶层状态不能直接推成新故障阻断，也不能删除重建；新发布仍需核对当前程序与原子状态绑定，不拿旧直接替换脚本当蓝绿入口。
-- 本文随源码、集中验证、Git 与真实发布结果更新，未完成项不写成已经上线。
+- 最新 AGENTS 明确保留 47“维持配置、合并后暂缓发布”；本轮程序发布为 **HOLD**，不创建线上候选、切流或重启。原图补交成功与程序发布是两件事；本轮只读终检再次核实线上 Web/Worker 仍是 `af22c6e5f149215cfd5bf862f781e95e67c88987` / `1792808190`，没有把本地修复写成线上生效。
 
 ## 当前实测记录
 
@@ -39,9 +44,16 @@
 - 真实隔离 PostgreSQL：`IMAGE_POSTACCEPT_POSTGRES=PASS CHECKS=18 REAL_POSTGRES=1 HTTP_CALLS=0 SUPPLIER_CALLS=0`，exit 0；包含上述两项边界的新增检查。
 - 原 APIMart 真实隔离 PG + loopback suite：53 checks PASS，`REAL_PAID_API_CALLS=0`，exit 0；参考图传输另核 16 个文件。
 - 内部异常留证：`IMAGE_POSTACCEPT_DIAGNOSTICS=PASS CHECKS=23 REAL_MODULE=1 SHARP=REAL HTTP_CALLS=0 DB_CALLS=0`，exit 0；包括实际适配器响应构造的原 48MiB 上限。
-- `node node_modules/typescript/bin/tsc --noEmit --incremental false`：exit 0，stdout/stderr 均为空。
+- 最终两项 P2 修正后，`node node_modules/typescript/bin/tsc --noEmit --incremental false` 再次 exit 0，stdout/stderr 均为空；`TSC_FINAL_P2.json` 记录 12:45–12:46 的真实执行，旧 `TSC.json` 保留为早期记录。
 - 早期恢复 fixture 用 Hub Review `reconciling` 导致两项失败，改为普通 accepted `running` 后重跑通过；没有放宽产品 accepted 白名单。一次 PowerShell 包装引号错误导致隔离环境未注入，真实 suite 重跑通过，原失败记录保留。
 - 第一版固定提交 `a1aed2dcbefd14afb716d2471743a93ed740f55d` 已推送，Linux 完整镜像构建 exit 0，91/91 静态页；仅候选，不是已上线。最终窄审的两项修正形成后续固定提交及新构建，不使用旧镜像冒充最终版。
-- 第一版副本实际回滚已通过：7 原文件恢复、4 新文件删除；副本恢复旧故障五项，与 baseline 同失败。第二版新增 transport 后需重新封存，旧制品保留为 v1，不提升为最终版。
-- 历史两单补交：限定原两组任务、原图哈希、同根 token，已完成只读预检；apply 与最终作品/账务/父子台账结果以独立真实回执为准。
-- 最终构建、副本回滚、Git 推送及上线结果：待本轮后续回执补充。
+- 第一版副本实际回滚已通过：7 原文件恢复、4 新文件删除；旧制品保留为 v1。最终第二版新增 transport，已另行封存并验收，不用 v1 替代 v2。
+- 最终窄复审第二轮：指定 `channel-availability.ts`、`transport.ts` 与 PG 回归脚本只读审阅，原两项 P2 源码层关闭，新增确定性 P1=0 / P2=0。独立运行测试已覆盖公开无 channelGuard transport 入口；并未将其扩大为完整 A→422→B 运行覆盖或内层断言的单独运行证明。
+- 产品修复已选择性提交并推送：`a1aed2dcbefd14afb716d2471743a93ed740f55d`、`147b9f4ec895da6571241377c6b7f9d32880c5f7`。最终产品源码固定后一提交；后续文档提交不改变该镜像源码身份。
+- 最终 Linux/amd64 完整构建：固定产品提交 `147b9f4ec895da6571241377c6b7f9d32880c5f7`，候选版号 `1792815643`，镜像 `sha256:963523977e3f28fb6e6cb8e2676f85c326709e5056287c99aab0fc0d6e9f99df`；exit 0，91/91 静态页，公开更新说明校验通过。完整命令、12 个源文件 hash、镜像 inspect 和日志 hash 见 `LINUX_BUILD_V2.json`。这是本地镜像，不是已导入或已发布。
+- 构建预检的首次字节断言因 PG 回归脚本 checkout CRLF / commit LF 不同而 exit 1，发生于 Docker 构建前。原记录 `LINUX_BUILD_V2_PRECHECK_FAILURE.json` 保留；最终构建逐文件核对精确 Git blob，明确记录该唯一换行差异，不修改产品或脚本来掩盖失败。旧 v1 构建上下文清理命令在执行前被拒绝，未重试删除，旧上下文/镜像/日志保留。
+- 2026-10-24 12:50 后只读终检回执 `output/canvas-model-pricing-fix-20261024/IMAGE_POSTACCEPT_FINAL_OBSERVATION_R4.json` 再次确认原两单作品/回执/creation/结算闭环；线上 Web/Worker 的 ID、Image ID 和 `startedAt` 均未改变，公开版号仍 `1792808190`。本轮未部署或重启。
+- 最终 v2 四制品位于 `output/image-postaccept-recovery-fix-20261024/artifacts-v2/`：`MODIFIED_FILE.zip`、`DIFF_FILE.patch`、`VERIFICATION.txt`、`ROLLBACK.sh`，均重开核对。范围 8 原文件＋4 新文件；ZIP CRC 与 12 entry hash 通过，第三份基线副本真实 patch 重放 exit 0，12 文件逐字节等于冻结修复字节。`ROLLBACK.sh` 的 chmod/test-x/bash-n 均 exit 0，真实工作区与无 marker 副本在写入前被拒绝。
+- v2 专用副本真实回滚：`ROLLBACK=PASS RESTORED=8 DELETED=4`，exit 0；还原副本由同 hash relocated runner 运行 `--source-root` 得到 `MODIFIED=FAIL CASES=11 CHECKS=78 FAILURES=5 REAL_SUPPLIER_NETWORK=0 EVIDENCE=MOCK_AST EXIT=1`，fixtureError=0，恰好恢复旧五项错误。没有传 `--baseline`，所以跳过十条 baseline-only 断言，不把 78 与原 88 的差值误称测试丢失。
+- 工作区及 `artifacts-v2/copies/modified` 保持修复态，父级 tests 与 v1 的 166 份受保护文件字节未变；回滚只作用于专用副本，没有回滚两条真实补交任务或生产账务。四制品完整 SHA-256、所有精确命令/输入/stdout/stderr/exit、原 hash 与复核结果见 `artifacts-v2/VERIFICATION.txt` 和 `artifacts-v2/evidence/FINAL_REOPEN.json`。
+- 本轮收口状态：代码修复、定向验证、最终类型/构建、独占副本回滚及原两图补交均已有相应证据；47 程序发布保持 **HOLD／未部署**，未把这些结果扩大为全站稳定性或容量验收通过。
