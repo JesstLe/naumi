@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { billingAuthorize, billingJson } from "@/lib/billing/access";
 import { billingErrorResponse } from "@/lib/billing/request";
-import { getBillingRuntime } from "@/lib/billing/server";
+import {getBillingRuntime} from "@/lib/billing/runtime";
 import { getPool } from "@/platform/db/pool";
 import {withTransaction as withBillingTransaction} from "@/platform/db/transaction";
 import { resultSchema } from "@/lib/billing/validation";

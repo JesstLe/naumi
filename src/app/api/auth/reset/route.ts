@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { multiUserEnabled, verifyResetToken } from "@/lib/native-auth";
-import { userExists, setUserPassword } from "@/lib/db";
+import {userExists, setUserPassword} from "@/lib/accounts/repository";
 import { hashPassword } from "@/lib/pw";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/ip";

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { billingAuthorize, billingJson } from "@/lib/billing/access";
-import { getBillingRuntime } from "@/lib/billing/server";
+import {getBillingRuntime} from "@/lib/billing/runtime";
 import { billingErrorResponse } from "@/lib/billing/request";
 export const runtime = "nodejs", dynamic = "force-dynamic";
 export async function GET(request: Request) { const auth = await billingAuthorize(request); if (auth instanceof Response)

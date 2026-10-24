@@ -176,6 +176,6 @@ export async function getModelExecutor() {
 }
 export async function withExecutionModel<T>(model: ExecutionModel, run: () => Promise<T>) { return (await getModelExecutor()).run(model, run); }
 export async function withFrozenExecutionBundle<T>(bundle: ExecutionBundle, run: () => Promise<T>) {
-  const { getBillingRuntime } = await import("../billing/server");
+  const {getBillingRuntime} = await import("@/lib/billing/runtime");
   return (await getModelExecutor()).runBundle(bundle, await (await getBillingRuntime()).config.byVersion(bundle.billingVersion), run);
 }

@@ -1,3 +1,11 @@
+// Transitional same-function exports; callers migrate to the data owner.
+export {setUserPassword,getUserPasswordHash,userExists,setUserRole,getUserRole,getOwnerEmail,getLocalOperatorEmail,setUserBanned,setUserNote,bannedEmailsAmong,recordLoginIp,type BannedIpRow,banIp,unbanIp,listBannedIps,isBanned} from "@/lib/accounts/repository";
+export {getOrCreateUser,getUser,changeUserPlan} from "@/lib/accounts/session";
+export {getCreditOverview,expireDueBatches,refreshBalance} from "@/lib/billing/wallet-balance";
+export {totalPaidCents} from "@/lib/payments/history";
+export {type UserImageProviderRecord,listUserImageProviderRecords,getUserImageProviderRecord,getUserImageProviderRecordById,countUserImageProviderRecords,upsertUserImageProviderRecord,activateUserImageProviderRecord,deleteUserImageProviderRecord} from "@/lib/user-image-provider/repository";
+import {oneMonthFromNowISO} from "@/lib/accounts/session";
+import {refreshBalance,expireDueBatches} from "@/lib/billing/wallet-balance";
 import { canvasParentCycle, changeCanvasParent } from "./canvas/parent-link";
 import {randomUUID,createHash} from "node:crypto";
 import { creationProvenance, type ArtworkProvenance } from "@/lib/artwork-provenance";
@@ -19,14 +27,11 @@ export {getSetting,setSetting} from "./settings/repository";
 export {getSignupBonus,setSignupBonus} from "./billing/signup";
 import { excludeImportedHistory, isImportedHistory } from "./staging-history";
 import {
-  type PlanKey,
   type PromptTemplate,
   type QualityCostAudit,
 } from "@/lib/mock-data";
-import type { SessionUser, Invoice } from "@/lib/auth-context";
 import { remoteTemplateImageSource } from "@/lib/template-image-cache";
 import type { CompetitorItem } from "@/lib/competitor-types";
-import { OPERATOR_EMAIL } from "@/lib/operator";
 import { RETIRED_BUSINESS_PROJECTS, isRetiredBusinessProject } from "./retired-business-projects";
 
 // ---------------------------------------------------------------------------
@@ -37,7 +42,7 @@ import { RETIRED_BUSINESS_PROJECTS, isRetiredBusinessProject } from "./retired-b
 // ---------------------------------------------------------------------------
 
 // Shared transactional infrastructure for durable generation jobs.
-export { dbEnabled, getPool, ensureSchema, deductPrincipalFIFO, refreshBalance, creditMeteringEnabled, expireDueBatches };
+export { dbEnabled, getPool, ensureSchema, deductPrincipalFIFO, creditMeteringEnabled };
 
 
 /** Lightweight connectivity probe used by /api/health. */
@@ -52,14 +57,6 @@ export async function pingDb(): Promise<{ ok: boolean; error?: string }> {
       error: e instanceof Error ? e.message : "数据库连接失败",
     };
   }
-}
-
-// 从现在起算满一个月（滚动月，保留日期）。用于注册占位、管理员授予会员等。
-// 付款续费/购买走 fulfillOrder 内的 SQL（支持到期日累加）。
-function oneMonthFromNowISO(): string {
-  const d = new Date();
-  d.setMonth(d.getMonth() + 1);
-  return d.toISOString();
 }
 
 // ===========================================================================
@@ -79,52 +76,6 @@ function twoYearsFromNow(): Date {
   const d = new Date();
   d.setFullYear(d.getFullYear() + 2);
   return d;
-}
-
-/** 过期处理:已过期(expires_at<=now)且未记过期流水的批次,记一条「积分过期」
- *  流水(delta=-remaining)并标记 expired。单条 SQL 原子完成,可重复调用(expired
- *  守护 + led-exp-<id> 主键防重)。remaining 不清零(留作记录),余额靠 expires_at 过滤。 */
-async function expireDueBatches(emailRaw: string): Promise<void> {
-  await getPool().query(
-    `WITH upd AS (
-       UPDATE app_credit_batches
-          SET expired = true
-        WHERE email = $1 AND expires_at <= now() AND remaining > 0 AND expired = false
-        RETURNING id, remaining
-     )
-     INSERT INTO app_ledger (id, email, delta, reason, kind, created_at)
-     SELECT 'led-exp-' || id, $1, -remaining, '积分过期', 'expire', now()
-       FROM upd
-     ON CONFLICT (id) DO NOTHING`,
-    [emailRaw.toLowerCase()]
-  );
-}
-
-/** 当前可用余额 = 未到期且 remaining>0 的批次之和。 */
-async function liveBatchBalance(emailRaw: string): Promise<number> {
-  const { rows } = await getPool().query(
-    `SELECT COALESCE(SUM(remaining),0)::int AS s
-       FROM app_credit_batches
-      WHERE email = $1 AND expires_at > now() AND remaining > 0`,
-    [emailRaw.toLowerCase()]
-  );
-  return rows[0]?.s ?? 0;
-}
-
-/** 跑过期 → 算余额 → 把 credits_total 同步成该余额(后台列表直读)。返回余额。 */
-async function refreshBalance(emailRaw: string): Promise<number> {
-  const email = emailRaw.toLowerCase();
-  await expireDueBatches(email);
-  return withBillingTransaction(getPool(),async tx=>{
-    // Read principal after the wallet lock has been acquired. A value read before
-    // waiting can otherwise overwrite a settlement that committed while waiting.
-    await tx.query("SELECT email FROM app_users WHERE email=$1 FOR UPDATE",[email]);
-    const {rows}=await tx.query(`UPDATE app_users SET credits_total=(
-      SELECT COALESCE(SUM(remaining),0) FROM app_credit_batches
-      WHERE email=$1 AND expires_at>now() AND remaining>0
-    ) WHERE email=$1 RETURNING credits_total`,[email]);
-    return Number(rows[0]?.credits_total??0);
-  });
 }
 
 /** 事务内按 FIFO(先到期先扣)从活批次扣 n 本金。返回实际扣到的数(正常 = n)。 */
@@ -162,7 +113,7 @@ async function deductPrincipalFIFO(
 /** 新建积分批次(充值/赠送/迁移/后台)+ 写 +流水 + 同步余额。 */
 export async function addCreditBatch(emailRaw:string,amount:number,opts:{source:"purchase"|"grant"|"migrate"|"admin";reason:string;expiresAt?:Date;orderId?:string|null;ledgerKind?:"purchase"|"grant";id?:string;actor?:string}):Promise<void>{
   await ensureSchema(); if(amount<=0)return;
-  const {getBillingRuntime}=await import("@/lib/billing/server"), runtime=await getBillingRuntime(),snapshot=await runtime.config.current();
+  const {getBillingRuntime}=await import("@/lib/billing/runtime"), runtime=await getBillingRuntime(),snapshot=await runtime.config.current();
   await withBillingTransaction(getPool(),async tx=>{
     const input=await administrativeGrantInput(tx,{email:emailRaw.toLowerCase(),amount,reason:opts.reason,source:opts.source,actor:opts.actor??"system",id:opts.id,expiresAt:opts.expiresAt?.toISOString(),orderId:opts.orderId??undefined},snapshot);
     await runtime.service.grantTx(tx,input);
@@ -212,7 +163,7 @@ export async function generateCardKeys(opts: {
       ? new Date(Date.now() + opts.expiryDays * 86400000).toISOString()
       : null;
   if(!Number.isSafeInteger(opts.credits)||opts.credits<=0||opts.credits>2147483647||!Number.isSafeInteger(opts.count)||opts.count<1||opts.count>500||opts.expiryDays!==null&&(!Number.isSafeInteger(opts.expiryDays)||opts.expiryDays<1||opts.expiryDays>36500))throw new BillingError("INVALID_RESULT","兑换码参数无效",400);
-  const {getBillingRuntime}=await import("@/lib/billing/server"), snapshot=await(await getBillingRuntime()).config.current();
+  const {getBillingRuntime}=await import("@/lib/billing/runtime"), snapshot=await(await getBillingRuntime()).config.current();
   const receipt={configVersion:snapshot.version,expiry:snapshot.config.credits.redeem,actor:opts.actor??"local-admin"};
   const out: CardKeyRow[] = [];
   for (let i = 0; i < opts.count; i++) {
@@ -259,7 +210,7 @@ export async function setCardKeyStatus(
 /** 兑换:原子领取(unused→used)后用 grant 批次加积分。失败抛中文原因。 */
 export async function redeemCardKey(codeRaw:string,emailRaw:string):Promise<{credits:number}>{
   await ensureSchema(); const code=codeRaw.trim().toUpperCase(),email=emailRaw.toLowerCase();
-  const {getBillingRuntime}=await import("@/lib/billing/server"),runtime=await getBillingRuntime();
+  const {getBillingRuntime}=await import("@/lib/billing/runtime"),runtime=await getBillingRuntime();
   return withBillingTransaction(getPool(),async tx=>{
     const card=(await tx.query<CardKeyRow>("SELECT * FROM app_card_keys WHERE code=$1 FOR UPDATE",[code])).rows[0];
     if(!card)throw new Error("兑换码不存在");
@@ -546,132 +497,6 @@ export async function licenseActivations(
   }));
 }
 
-type UserRow = {
-  email: string;
-  name: string;
-  plan: string;
-  credits_total: number;
-  credits_used: number;
-  joined_at: Date;
-  renews_at: Date;
-};
-
-async function invoicesFor(email: string): Promise<Invoice[]> {
-  const { rows } = await getPool().query(
-    `SELECT id, created_at, plan, amount, status
-       FROM app_invoices WHERE email = $1 ORDER BY created_at DESC`,
-    [email]
-  );
-  return rows.map((r) => ({
-    id: r.id,
-    date: new Date(r.created_at).toISOString(),
-    plan: r.plan,
-    amount: r.amount,
-    status: "paid" as const,
-  }));
-}
-
-// 累计充值(分):已支付订单金额之和。用于「高阶」出图模式解锁(≥999元=99900分)。
-
-export async function totalPaidCents(emailRaw: string): Promise<number> {
-  const { rows } = await getPool().query<{ s: string }>(
-    `SELECT COALESCE(SUM(amount),0)::bigint AS s
-       FROM app_orders WHERE email = $1 AND status = 'paid'`,
-    [emailRaw.toLowerCase()]
-  );
-  return Number(rows[0]?.s ?? 0);
-}
-
-async function toSessionUser(row: UserRow): Promise<SessionUser> {
-  // creditsTotal = 活批次余额(顺带跑过期 + 同步镜像);creditsUsed = 在途占位。
-  // remaining = creditsTotal - creditsUsed 对所有现有读取点继续成立。
-  // Login-only sidecars read the live wallet without unrelated business DDL/expiry writes.
-  const creditsTotal = process.env.NAUMI_AUTH_LOGIN_ONLY==='1'
-    ? Number((await getPool().query('SELECT COALESCE(SUM(remaining),0)::int AS total FROM app_credit_batches WHERE email=$1 AND expires_at>now() AND remaining>0',[row.email])).rows[0].total)
-    : await refreshBalance(row.email);
-  return {
-    name: row.name,
-    email: row.email,
-    plan: row.plan as PlanKey,
-    creditsTotal,
-    creditsUsed: row.credits_used,
-    joinedAt: new Date(row.joined_at).toISOString(),
-    renewsAt: new Date(row.renews_at).toISOString(),
-    invoices: await invoicesFor(row.email),
-  };
-}
-
-export async function getOrCreateUser(emailRaw:string,name?:string):Promise<SessionUser>{
-  await ensureSchema(); const email=emailRaw.toLowerCase();
-  const {getBillingRuntime}=await import("@/lib/billing/server"),snapshot=await(await getBillingRuntime()).config.current();
-  const row=await withBillingTransaction(getPool(),async tx=>{
-    const inserted=(await tx.query<UserRow&{is_new:boolean}>(`INSERT INTO app_users(email,name,plan,credits_total,credits_used,renews_at)
-      VALUES($1,$2,'starter',0,0,$3) ON CONFLICT(email) DO UPDATE SET name=CASE WHEN $2<>'' THEN $2 ELSE app_users.name END RETURNING *, (xmax=0) AS is_new`,[email,name??"",oneMonthFromNowISO()])).rows[0];
-    if(inserted.is_new)await signupGrantTx(tx,email,snapshot);
-    return (await tx.query<UserRow>("SELECT * FROM app_users WHERE email=$1",[email])).rows[0];
-  });
-  return toSessionUser(row);
-}
-
-// --- 原生多用户:密码存取(Pro 多用户模式,不依赖 Supabase) ---
-export async function setUserPassword(
-  emailRaw: string,
-  hash: string
-): Promise<void> {
-  await ensureSchema();
-  await getPool().query(`UPDATE app_users SET password_hash = $2 WHERE email = $1`, [
-    emailRaw.toLowerCase(),
-    hash,
-  ]);
-}
-
-export async function getUserPasswordHash(
-  emailRaw: string
-): Promise<string | null> {
-  await ensureSchema();
-  const { rows } = await getPool().query<{ password_hash: string | null }>(
-    `SELECT password_hash FROM app_users WHERE email = $1`,
-    [emailRaw.toLowerCase()]
-  );
-  return rows[0]?.password_hash ?? null;
-}
-
-export async function userExists(emailRaw: string): Promise<boolean> {
-  await ensureSchema();
-  const { rows } = await getPool().query(
-    `SELECT 1 FROM app_users WHERE email = $1`,
-    [emailRaw.toLowerCase()]
-  );
-  return rows.length > 0;
-}
-
-export async function getUser(
-  emailRaw: string
-): Promise<SessionUser | null> {
-  await ensureSchema();
-  const { rows } = await getPool().query<UserRow>(
-    `SELECT * FROM app_users WHERE email = $1`,
-    [emailRaw.toLowerCase()]
-  );
-  return rows[0] ? toSessionUser(rows[0]) : null;
-}
-
-// 月度会员已下线:本函数只改 plan 标签(后台仍可设),不再动积分/到期/开账单。
-// 积分一律走批次(addCreditBatch / fulfillOrder)。
-export async function changeUserPlan(
-  emailRaw: string,
-  planKey: PlanKey
-): Promise<{ user: SessionUser; invoice: Invoice | null }> {
-  await ensureSchema();
-  const email = emailRaw.toLowerCase();
-  const { rows } = await getPool().query<UserRow>(
-    `UPDATE app_users SET plan = $2 WHERE email = $1 RETURNING *`,
-    [email, planKey]
-  );
-  if (!rows[0]) throw new Error("用户不存在");
-  return { user: await toSessionUser(rows[0]), invoice: null };
-}
-
 // --- Admin: user & membership management ---------------------------------
 
 export type AdminUserRow = {
@@ -816,51 +641,6 @@ export async function adminUsageSummary(daysRaw = 30): Promise<AdminUsageSummary
   };
 }
 
-export async function setUserRole(
-  emailRaw: string,
-  role: string
-): Promise<void> {
-  await ensureSchema();
-  const r = role === "admin" ? "admin" : "user";
-  await getPool().query(
-    `UPDATE app_users SET role = $2 WHERE email = $1`,
-    [emailRaw.toLowerCase(), r]
-  );
-}
-
-export async function getUserRole(emailRaw: string): Promise<string | null> {
-  await ensureSchema();
-  const { rows } = await getPool().query(
-    `SELECT role FROM app_users WHERE email = $1`,
-    [emailRaw.toLowerCase()]
-  );
-  return (rows[0]?.role as string | undefined) ?? null;
-}
-
-/** 当前站长邮箱账号(role=admin 且非内部 operator 合成邮箱);未设置返回 null。 */
-export async function getOwnerEmail(): Promise<string | null> {
-  await ensureSchema();
-  const { rows } = await getPool().query(
-    `SELECT email FROM app_users
-      WHERE role = 'admin' AND email NOT LIKE 'operator@%.local'
-      ORDER BY joined_at ASC LIMIT 1`
-  );
-  return (rows[0]?.email as string | undefined) ?? null;
-}
-
-/** 兼容旧安装的内部操作者邮箱；新安装统一使用 OPERATOR_EMAIL。 */
-export async function getLocalOperatorEmail(): Promise<string> {
-  await ensureSchema();
-  const { rows } = await getPool().query(
-    `SELECT email FROM app_users
-      WHERE email = $1 OR email LIKE 'operator@%.local'
-      ORDER BY CASE WHEN email = $1 THEN 0 ELSE 1 END, joined_at ASC
-      LIMIT 1`,
-    [OPERATOR_EMAIL]
-  );
-  return (rows[0]?.email as string | undefined) ?? OPERATOR_EMAIL;
-}
-
 /**
  * 设置「站长邮箱账号」:把内部 operator 账号名下的
  * **全部数据整体迁移**到 newEmail(积分/作品/流水/订单等,凡带 email 列的 app_ 表
@@ -926,7 +706,7 @@ export async function setOwnerAccount(
 export async function adjustUserCredits(emailRaw:string,delta:number,reason:string,opts:{months?:number;id?:string;actor?:string}={}):Promise<void>{
   await ensureSchema(); if(delta===0)return;
   if(opts.months!==undefined&&(!Number.isSafeInteger(opts.months)||opts.months>1200))throw new BillingError("INVALID_RESULT","积分有效期无效",400);
-  const {getBillingRuntime}=await import("@/lib/billing/server"),runtime=await getBillingRuntime(),snapshot=await runtime.config.current();
+  const {getBillingRuntime}=await import("@/lib/billing/runtime"),runtime=await getBillingRuntime(),snapshot=await runtime.config.current();
   await withBillingTransaction(getPool(),async tx=>{
     const input=await administrativeGrantInput(tx,{email:emailRaw.toLowerCase(),amount:delta,reason,actor:opts.actor??"local-admin",id:opts.id,
       expiry:opts.months===undefined?undefined:opts.months<=0?{unit:"years",value:100}:{unit:"months",value:opts.months}},snapshot);
@@ -1059,25 +839,6 @@ export async function listUserLedgerFiltered(
   return rows.map(mapLedger);
 }
 
-/** 用户端积分概览:余额 + 最近一笔将到期的批次(给账户页头部用)。 */
-export async function getCreditOverview(
-  emailRaw: string
-): Promise<{ balance: number; nextExpiry: { amount: number; at: string } | null }> {
-  await ensureSchema();
-  const email = emailRaw.toLowerCase();
-  const balance = await refreshBalance(email);
-  const { rows } = await getPool().query(
-    `SELECT remaining, expires_at FROM app_credit_batches
-      WHERE email = $1 AND expires_at > now() AND remaining > 0
-      ORDER BY expires_at ASC LIMIT 1`,
-    [email]
-  );
-  const next = rows[0]
-    ? { amount: rows[0].remaining as number, at: new Date(rows[0].expires_at).toISOString() }
-    : null;
-  return { balance, nextExpiry: next };
-}
-
 // --- Admin: ban / delete / login-IP --------------------------------------
 
 export async function deleteUser(emailRaw: string): Promise<void> {
@@ -1097,41 +858,6 @@ export async function deleteUser(emailRaw: string): Promise<void> {
   } finally {
     client.release();
   }
-}
-
-export async function setUserBanned(
-  emailRaw: string,
-  banned: boolean
-): Promise<void> {
-  await ensureSchema();
-  await getPool().query(
-    `UPDATE app_users SET banned = $2 WHERE email = $1`,
-    [emailRaw.toLowerCase(), banned]
-  );
-}
-
-// 管理员备注:仅后台可见,纯文本(上限 1000 字防滥用)。
-export async function setUserNote(
-  emailRaw: string,
-  note: string
-): Promise<void> {
-  await ensureSchema();
-  await getPool().query(
-    `UPDATE app_users SET note = $2 WHERE email = $1`,
-    [emailRaw.toLowerCase(), note.slice(0, 1000)]
-  );
-}
-
-/** Given a set of emails, returns the subset currently banned. */
-export async function bannedEmailsAmong(emails: string[]): Promise<string[]> {
-  await ensureSchema();
-  if (emails.length === 0) return [];
-  const lowered = Array.from(new Set(emails.map((e) => e.toLowerCase())));
-  const { rows } = await getPool().query(
-    `SELECT email FROM app_users WHERE banned = true AND email = ANY($1)`,
-    [lowered]
-  );
-  return rows.map((r) => r.email as string);
 }
 
 // --- Orders / payments ----------------------------------------------------
@@ -1224,7 +950,7 @@ export async function fulfillOrder(
   amountFen?:number
 ): Promise<{ ok: boolean; alreadyPaid: boolean; order?: OrderRow; error?: string }> {
   await ensureSchema();
-  const {getBillingRuntime}=await import("@/lib/billing/server"),runtime=await getBillingRuntime(),snapshot=await runtime.config.current();
+  const {getBillingRuntime}=await import("@/lib/billing/runtime"),runtime=await getBillingRuntime(),snapshot=await runtime.config.current();
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -1299,82 +1025,6 @@ export async function ensureProLicenseForOrder(
     [lic.key, email]
   );
   return lic.key;
-}
-
-/** Best-effort: records the user's most recent login IP. Never throws. */
-export async function recordLoginIp(
-  emailRaw: string,
-  ip: string | null
-): Promise<void> {
-  if (!ip) return;
-  try {
-    await ensureSchema();
-    await getPool().query(
-      `UPDATE app_users SET last_ip = $2, last_login_at = now() WHERE email = $1`,
-      [emailRaw.toLowerCase(), ip]
-    );
-  } catch {
-    /* IP tracking is non-critical — never block login on it */
-  }
-}
-
-export type BannedIpRow = {
-  ip: string;
-  reason: string;
-  createdAt: string;
-};
-
-export async function banIp(ip: string, reason = ""): Promise<void> {
-  await ensureSchema();
-  await getPool().query(
-    `INSERT INTO app_banned_ips (ip, reason) VALUES ($1, $2)
-     ON CONFLICT (ip) DO UPDATE SET reason = EXCLUDED.reason`,
-    [ip.trim(), reason]
-  );
-}
-
-export async function unbanIp(ip: string): Promise<void> {
-  await ensureSchema();
-  await getPool().query(`DELETE FROM app_banned_ips WHERE ip = $1`, [
-    ip.trim(),
-  ]);
-}
-
-export async function listBannedIps(): Promise<BannedIpRow[]> {
-  await ensureSchema();
-  const { rows } = await getPool().query(
-    `SELECT ip, reason, created_at FROM app_banned_ips
-      ORDER BY created_at DESC`
-  );
-  return rows.map((r) => ({
-    ip: r.ip,
-    reason: r.reason ?? "",
-    createdAt: new Date(r.created_at).toISOString(),
-  }));
-}
-
-/** True when the account is banned OR the request IP is on the blocklist. */
-export async function isBanned(
-  emailRaw: string,
-  ip: string | null
-): Promise<boolean> {
-  await ensureSchema();
-  const email = emailRaw.trim().toLowerCase();
-  if (email) {
-    const u = await getPool().query(
-      `SELECT 1 FROM app_users WHERE email = $1 AND banned = true`,
-      [email]
-    );
-    if ((u.rowCount ?? 0) > 0) return true;
-  }
-  if (ip) {
-    const b = await getPool().query(
-      `SELECT 1 FROM app_banned_ips WHERE ip = $1`,
-      [ip.trim()]
-    );
-    if ((b.rowCount ?? 0) > 0) return true;
-  }
-  return false;
 }
 
 /** 原子预扣占位:credits_used += n,门槛 = 活批次余额 - 已占位 >= n。
@@ -1479,7 +1129,7 @@ export async function sweepStaleReservations(
 ): Promise<number> {
   await ensureSchema();
   if(olderThanMin===undefined){const {currentSynchronousBilling}=await import("@/lib/billing/synchronous");olderThanMin=currentSynchronousBilling()?.snapshot?.config.credits.staleReservationMinutes;}
-  if(olderThanMin===undefined){const {getBillingRuntime}=await import("@/lib/billing/server");olderThanMin=(await(await getBillingRuntime()).config.current()).config.credits.staleReservationMinutes;}
+  if(olderThanMin===undefined){const {getBillingRuntime} = await import("@/lib/billing/runtime");olderThanMin=(await(await getBillingRuntime()).config.current()).config.credits.staleReservationMinutes;}
   const client = await getPool().connect();
   let rows: Array<{ email: string; cost: number }> = [];
   try {
@@ -1565,184 +1215,6 @@ export type ArtworkRecord = {
   marked?: boolean;
   videoUrl?: string | null; // 视频产物地址(有值=该作品是视频节点;image 存海报帧可空)
 };
-
-export type UserImageProviderRecord = {
-  id: string;
-  email: string;
-  name: string;
-  isActive: boolean;
-  enabled: boolean;
-  protocol: "openai-images" | "chat-completions";
-  baseUrlEnc: string;
-  apiKeyEnc: string;
-  models: string[];
-  defaultModel: string;
-  updatedAt: string;
-};
-
-function providerRowToRecord(row: Record<string, unknown>): UserImageProviderRecord {
-  return {
-    id: String(row.id),
-    email: String(row.email),
-    name: String(row.name || "未命名供应商"),
-    isActive: !!row.is_active,
-    enabled: !!row.enabled,
-    protocol:
-      row.protocol === "chat-completions" ? "chat-completions" : "openai-images",
-    baseUrlEnc: String(row.base_url_enc || ""),
-    apiKeyEnc: String(row.api_key_enc || ""),
-    models: Array.isArray(row.models) ? row.models.map(String) : [],
-    defaultModel: String(row.default_model || ""),
-    updatedAt: new Date(String(row.updated_at)).toISOString(),
-  };
-}
-
-const PROVIDER_COLUMNS = `id, email, name, is_active, enabled, protocol, base_url_enc,
-                          api_key_enc, models, default_model, updated_at`;
-
-export async function listUserImageProviderRecords(
-  emailRaw: string
-): Promise<UserImageProviderRecord[]> {
-  await ensureSchema();
-  const { rows } = await getPool().query(
-    `SELECT ${PROVIDER_COLUMNS}
-       FROM app_user_image_providers
-      WHERE email = $1
-      ORDER BY is_active DESC, updated_at DESC`,
-    [emailRaw.toLowerCase()]
-  );
-  return rows.map((row) => providerRowToRecord(row as Record<string, unknown>));
-}
-
-export async function getUserImageProviderRecord(
-  emailRaw: string
-): Promise<UserImageProviderRecord | null> {
-  await ensureSchema();
-  const { rows } = await getPool().query(
-    `SELECT ${PROVIDER_COLUMNS}
-       FROM app_user_image_providers
-      WHERE email = $1 AND is_active
-      ORDER BY updated_at DESC
-      LIMIT 1`,
-    [emailRaw.toLowerCase()]
-  );
-  const row = rows[0];
-  return row ? providerRowToRecord(row as Record<string, unknown>) : null;
-}
-
-export async function getUserImageProviderRecordById(
-  emailRaw: string,
-  id: string
-): Promise<UserImageProviderRecord | null> {
-  await ensureSchema();
-  const { rows } = await getPool().query(
-    `SELECT ${PROVIDER_COLUMNS}
-       FROM app_user_image_providers
-      WHERE email = $1 AND id = $2`,
-    [emailRaw.toLowerCase(), id]
-  );
-  const row = rows[0];
-  return row ? providerRowToRecord(row as Record<string, unknown>) : null;
-}
-
-export async function countUserImageProviderRecords(emailRaw: string): Promise<number> {
-  await ensureSchema();
-  const { rows } = await getPool().query(
-    `SELECT count(*)::int AS n FROM app_user_image_providers WHERE email = $1`,
-    [emailRaw.toLowerCase()]
-  );
-  return Number(rows[0]?.n ?? 0);
-}
-
-export async function upsertUserImageProviderRecord(
-  record: Omit<UserImageProviderRecord, "email" | "updatedAt"> & { email: string }
-): Promise<UserImageProviderRecord> {
-  await ensureSchema();
-  const id = record.id || `prov-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const { rows } = await getPool().query(
-    `INSERT INTO app_user_image_providers
-       (id, email, name, is_active, enabled, protocol, base_url_enc, api_key_enc,
-        models, default_model, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,now())
-     ON CONFLICT (id) DO UPDATE SET
-       name = EXCLUDED.name,
-       is_active = EXCLUDED.is_active,
-       enabled = EXCLUDED.enabled,
-       protocol = EXCLUDED.protocol,
-       base_url_enc = EXCLUDED.base_url_enc,
-       api_key_enc = EXCLUDED.api_key_enc,
-       models = EXCLUDED.models,
-       default_model = EXCLUDED.default_model,
-       updated_at = now()
-     RETURNING ${PROVIDER_COLUMNS}`,
-    [
-      id,
-      record.email.toLowerCase(),
-      record.name,
-      record.isActive,
-      record.enabled,
-      record.protocol,
-      record.baseUrlEnc,
-      record.apiKeyEnc,
-      JSON.stringify(record.models),
-      record.defaultModel,
-    ]
-  );
-  return providerRowToRecord(rows[0] as Record<string, unknown>);
-}
-
-/** 激活一个供应商(事务内取消同用户其他激活;同用户仅一个生效,目录只合并激活方)。 */
-export async function activateUserImageProviderRecord(
-  emailRaw: string,
-  id: string
-): Promise<boolean> {
-  await ensureSchema();
-  const client = await getPool().connect();
-  try {
-    await client.query("BEGIN");
-    const { rows } = await client.query(
-      `UPDATE app_user_image_providers SET is_active = true, enabled = true, updated_at = now()
-        WHERE email = $1 AND id = $2 RETURNING id`,
-      [emailRaw.toLowerCase(), id]
-    );
-    if (!rows.length) {
-      await client.query("ROLLBACK");
-      return false;
-    }
-    await client.query(
-      `UPDATE app_user_image_providers SET is_active = false, enabled = false, updated_at = now()
-        WHERE email = $1 AND id <> $2`,
-      [emailRaw.toLowerCase(), id]
-    );
-    await client.query("COMMIT");
-    return true;
-  } catch (e) {
-    await client.query("ROLLBACK").catch(() => {});
-    throw e;
-  } finally {
-    client.release();
-  }
-}
-
-export async function deleteUserImageProviderRecord(
-  emailRaw: string,
-  id?: string
-): Promise<boolean> {
-  await ensureSchema();
-  const email = emailRaw.toLowerCase();
-  if (id) {
-    const result = await getPool().query(
-      `DELETE FROM app_user_image_providers WHERE email = $1 AND id = $2`,
-      [email, id]
-    );
-    return (result.rowCount ?? 0) > 0;
-  }
-  const result = await getPool().query(
-    `DELETE FROM app_user_image_providers WHERE email = $1`,
-    [email]
-  );
-  return (result.rowCount ?? 0) > 0;
-}
 
 export type CanvasTextNodeRecord = {
   id: string;
@@ -4459,7 +3931,7 @@ export async function releaseVideoTaskPoll(email: string, id: string): Promise<v
 
 async function creditMeteringEnabled(): Promise<boolean> {
   if (!dbEnabled) return false;
-  const {getBillingRuntime, meteringFor} = await import("@/lib/billing/server");
+  const {getBillingRuntime, meteringFor} = await import("@/lib/billing/runtime");
   return meteringFor(await (await getBillingRuntime()).config.current());
 }
 

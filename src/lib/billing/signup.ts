@@ -9,7 +9,7 @@ const SIGNUP_BONUS_DEFAULT = 30;
 /** 读「新用户注册赠送积分数」(后台设置优先,默认 30)。 */
 export async function getSignupBonus(): Promise<number> {
   if (dbEnabled) {
-    const {getBillingRuntime} = await import("@/lib/billing/server");
+    const {getBillingRuntime} = await import("@/lib/billing/runtime");
     return (await (await getBillingRuntime()).config.current()).config.credits.signup.amount;
   }
   try {
@@ -27,6 +27,6 @@ export async function getSignupBonus(): Promise<number> {
 /** 后台保存「新用户注册赠送积分数」(夹取 0..100000)。 */
 export async function setSignupBonus(n: number, actor = "local-admin"): Promise<void> {
   const safe = Math.min(Math.max(0, Math.trunc(n)), 100000);
-  const {updateBillingCompatibility} = await import("@/lib/billing/server");
+  const {updateBillingCompatibility} = await import("@/lib/billing/runtime");
   await updateBillingCompatibility(actor, "更新注册赠送积分", config => {config.credits.signup.amount = safe;});
 }

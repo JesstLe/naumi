@@ -2,15 +2,9 @@
 import { requestFeaturePolicy } from "@/lib/feature-access/server";
 import { allows } from "@/lib/feature-access/catalog";
 import { NextResponse } from "next/server";
-import {
-  dbEnabled,
-  getOrCreateUser,
-  getUser,
-  changeUserPlan,
-  listArtworks,
-  getWorkbenchArtworks,
-  recordLoginIp,
-} from "@/lib/db";
+import {dbEnabled, listArtworks, getWorkbenchArtworks} from "@/lib/db";
+import {getOrCreateUser, getUser, changeUserPlan} from "@/lib/accounts/session";
+import {recordLoginIp} from "@/lib/accounts/repository";
 import { clientIp } from "@/lib/ip";
 import type { PlanKey } from "@/lib/mock-data";
 import { authenticatedEmail, authorizedTargetEmail } from "@/lib/request-auth";

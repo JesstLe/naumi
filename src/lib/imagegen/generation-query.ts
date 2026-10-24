@@ -1,7 +1,8 @@
 import "server-only";
 import {imageOutputNotice} from "./output-advisory";
 import {storedImageReview,IMAGE_REVIEW_MESSAGE} from "../image-job-review";
-import {dbEnabled,getUser} from "../db";
+import {dbEnabled} from "../db";
+import {getUser} from "@/lib/accounts/session";
 import {storageEnabled} from "../storage";
 import {getOpenAISettings} from "../settings";
 import {imageJobPollState} from "../image-job-failure";

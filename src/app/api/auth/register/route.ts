@@ -5,7 +5,8 @@ import {
   USER_COOKIE,
   USER_TTL_MS,
 } from "@/lib/native-auth";
-import { userExists, getOrCreateUser, setUserPassword } from "@/lib/db";
+import {userExists, setUserPassword} from "@/lib/accounts/repository";
+import {getOrCreateUser} from "@/lib/accounts/session";
 import { hashPassword } from "@/lib/pw";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/ip";

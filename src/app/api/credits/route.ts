@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
-import {
-  dbEnabled,
-  getCreditOverview,
-  listUserLedgerFiltered,
-} from "@/lib/db";
+import {dbEnabled, listUserLedgerFiltered} from "@/lib/db";
+import {getCreditOverview} from "@/lib/billing/wallet-balance";
 import { resolveUserEmail } from "@/lib/admin-auth";
 
 export const runtime = "nodejs";

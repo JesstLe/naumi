@@ -5,14 +5,9 @@ import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQua
 import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import OpenAI, { toFile } from "openai";
-import {
-  dbEnabled,
-  reserveCredits,
-  refundCredits,
-  addArtworks,
-  getUser,
-  isBanned,
-} from "@/lib/db";
+import {dbEnabled, reserveCredits, refundCredits, addArtworks} from "@/lib/db";
+import {getUser} from "@/lib/accounts/session";
+import {isBanned} from "@/lib/accounts/repository";
 import { clientIp } from "@/lib/ip";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";

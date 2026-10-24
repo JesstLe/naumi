@@ -32,6 +32,8 @@
 
 ## 开发约定
 
+2026-10-24 R4A3：账户访问事实、SessionUser/注册、钱包余额、支付历史和历史provider记录已迁入五个owner；实际71文件126绑定迁移，计费runtime直连真实owner。db5321→4793行，静态消费者144→130且db退出静态环；报价/执行环24→19，视频20仍在，动态最大66→67（session随原runtime链进入）未掩盖。函数对照各28/88、完整源码PG88→146、195实际登录handler及wallet/entitlements/creation/platform29/tsc/lint通过。见 [R4A3](changes/2026-10-24-account-owners-r4a3.md)。同步后第2模块；继续完整候选及R4B组装/DDL，不合main、不部署。
+
 2026-10-24 R4A2：schema兼容初始化、settings raw repository和signup账务策略已有真实owner，43调用文件/102绑定切换；旧门面同函数兼容。db5928→5321行，静态消费者178→144、最大静态SCC56→24，动态最大环70→66仍未关闭。原29/89→新29/90、真实PG6类61→78、35表380列及既有入口通过；原schema第二连接自等待已复现并改同事务。见 [R4A2](changes/2026-10-24-persistence-owners-r4a2.md)。同步后第1模块；继续身份/钱包/资产owner及R4B运行DDL，不合main、不部署。
 
 2026-10-24 R4A1：纯 `src/platform/db/pool`/`transaction` 已接真实消费者，旧入口同实例/函数兼容；79处纯基础import及3混合字段迁出。旧db静态消费者251→178，最大SCC60→56，基础层业务import/环为0，535个非目标函数正文未变。基线27/157→新版28/166、真实PG25→29、wallet/creation A/B及画布PG32/32通过，tsc/lint通过。见 [R4A1](changes/2026-10-24-platform-db-r4a1.md)。本轮第3模块，收尾普通整合main并归零，精确结果见本轮SYNC；R4A2数据owner与DDL/组装环继续，不合main、不部署。

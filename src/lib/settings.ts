@@ -432,7 +432,7 @@ export async function saveMultiUser(on: boolean): Promise<void> {
 
 /** 保存「积分计费」开关(开启后生图按积分扣,单用户也扣;站长后台自行加积分)。 */
 export async function saveCreditsMetering(on: boolean, actor = "local-admin"): Promise<void> {
-  const {updateBillingCompatibility} = await import("@/lib/billing/server");
+  const {updateBillingCompatibility} = await import("@/lib/billing/runtime");
   await updateBillingCompatibility(actor, "更新积分计费开关", config => {config.switches.metering = on ? "on" : "off";});
 }
 
@@ -537,7 +537,7 @@ export async function getPaymentSettings(): Promise<PaymentSettings> {
   let wxpayCertSerial = (process.env.WXPAY_CERT_SERIAL ?? "").trim();
   let wxpayAppid = (process.env.WXPAY_APPID ?? "").trim();
   if (dbEnabled) {
-    const {getBillingRuntime} = await import("@/lib/billing/server");
+    const {getBillingRuntime} = await import("@/lib/billing/runtime");
     payEnabled = (await (await getBillingRuntime()).config.current()).config.switches.recharge;
     const aAppid = await getSetting(ALIPAY_APPID);
     const aPrivEnc = await getSetting(ALIPAY_PRIVATE_KEY_ENC);
@@ -575,7 +575,7 @@ export async function getPaymentSettings(): Promise<PaymentSettings> {
 
 /** 保存收款开关。 */
 export async function savePayEnabled(enabled: boolean, actor = "local-admin"): Promise<void> {
-  const {updateBillingCompatibility} = await import("@/lib/billing/server");
+  const {updateBillingCompatibility} = await import("@/lib/billing/runtime");
   await updateBillingCompatibility(actor, "更新充值开关", config => {config.switches.recharge = enabled;});
 }
 

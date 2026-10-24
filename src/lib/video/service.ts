@@ -17,7 +17,7 @@ import { getModelExecutor, withFrozenExecutionBundle } from "@/lib/model-config/
 import { modelConfigurationEnabled } from "@/lib/model-config/availability";
 import { getModelAdministration } from "@/lib/model-config/server";
 import { ModelConfigError } from "@/lib/model-config/types";
-import {getBillingRuntime,meteringFor} from "@/lib/billing/server";
+import {getBillingRuntime, meteringFor} from "@/lib/billing/runtime";
 import {quote} from "@/lib/billing/quote";
 
 import {

@@ -6,14 +6,9 @@ import { insufficientCreditsMessage } from "@/lib/commerce";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import OpenAI from "openai";
 import { requestedTextModel } from "@/lib/text-models";
-import {
-  dbEnabled,
-  reserveCredits,
-  refundCredits,
-  getUser,
-  isBanned,
-  addLedgerEntry,
-} from "@/lib/db";
+import {dbEnabled, reserveCredits, refundCredits, addLedgerEntry} from "@/lib/db";
+import {getUser} from "@/lib/accounts/session";
+import {isBanned} from "@/lib/accounts/repository";
 import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
 import { resolveUserEmail } from "@/lib/admin-auth";

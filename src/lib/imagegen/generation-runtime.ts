@@ -7,7 +7,7 @@ import {PostprocessPending} from "@/lib/media-postprocess";
 import {currentModelExecution} from "@/lib/model-config/context";
 import {auditSettledImage} from "@/lib/image-quality-request";
 import {resolveConfiguredImageQuality} from "@/lib/model-config/image-quality";
-import {getUser} from "@/lib/db";
+import {getUser} from "@/lib/accounts/session";
 import {safeError} from "@/lib/api-error";
 import {getOpenAISettings} from "@/lib/settings";
 import {getImageModelCatalog, type ImageModelDescriptor} from "@/lib/image-model-catalog";

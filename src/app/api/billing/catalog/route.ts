@@ -1,4 +1,5 @@
-import { billingSnapshot, billingSwitches, billingCatalogFacts } from "@/lib/billing/server";
+import {billingCatalogFacts} from "@/lib/billing/server";
+import {billingSnapshot, billingSwitches} from "@/lib/billing/runtime";
 import { billingErrorResponse } from "@/lib/billing/request";
 import { billingJson } from "@/lib/billing/access";
 import { FEATURE_IDS, QUALITY_IDS, RESOLUTION_IDS } from "@/lib/billing/rules/registry";

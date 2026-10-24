@@ -1,5 +1,6 @@
 import "server-only";
-import {dbEnabled,totalPaidCents} from "../db";
+import {dbEnabled} from "@/platform/db/pool";
+import {totalPaidCents} from "@/lib/payments/history";
 import {cutoutImageQuality} from "../model-config/cutout-quality";
 import {requestedFeatureModel,assertPlatformImageSelection} from "../model-config/selection-policy";
 import {getUserImageProvider,upstreamUserImageModel} from "../user-image-provider";

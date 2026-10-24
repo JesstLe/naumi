@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { OPERATOR_EMAIL } from "@/lib/operator";
-import { getOwnerEmail, setOwnerAccount, dbEnabled } from "@/lib/db";
+import {setOwnerAccount, dbEnabled} from "@/lib/db";
+import {getOwnerEmail} from "@/lib/accounts/repository";
 import { hashPassword } from "@/lib/pw";
 
 export const runtime = "nodejs";
@@ -45,7 +46,7 @@ export async function POST(req: Request) {
     const prev = (await getOwnerEmail()) || OPERATOR_EMAIL;
     if (prev === email) {
       // 同邮箱重设 = 改密码
-      const { setUserPassword } = await import("@/lib/db");
+      const {setUserPassword} = await import("@/lib/accounts/repository");
       await setUserPassword(email, hashPassword(password));
       return NextResponse.json({ ok: true, ownerEmail: email });
     }

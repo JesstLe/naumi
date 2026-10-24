@@ -4,17 +4,9 @@ import { requestImageQuality, imageQualityCost, withQualityFallback, settleToolI
 import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
-import {
-  dbEnabled,
-  reserveCredits,
-  refundCredits,
-  addArtworks,
-  getUser,
-  isBanned,
-  addReservation,
-  settleReservation,
-  sweepStaleReservations,
-} from "@/lib/db";
+import {dbEnabled, reserveCredits, refundCredits, addArtworks, addReservation, settleReservation, sweepStaleReservations} from "@/lib/db";
+import {getUser} from "@/lib/accounts/session";
+import {isBanned} from "@/lib/accounts/repository";
 import { clientIp } from "@/lib/ip";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";

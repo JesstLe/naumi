@@ -2,6 +2,8 @@
 
 日期：2026-10-24。关联：[主方案](../REFACTOR_ARCHITECTURE.md)、[源码证据](2026-10-24-current-state.md)。
 
+R4A3 最新进展：账户访问事实、会话/注册、钱包余额、支付历史、历史 provider 记录迁入五个 owner，71 个调用文件/126 个绑定切换。db 5321→4793 行、静态消费者144→130并退出静态环；原24环余下报价/执行19，视频20仍在。含动态 import 最大环66→67，session随原runtime/storage链进入，仍需后续实际解环。基线/新版函数28/88、完整源码真实PG88→146（增加同函数兼容出口断言）、195实际登录handler、wallet/entitlements/platform29/creation、tsc/lint通过。详见 [R4A3记录](../changes/2026-10-24-account-owners-r4a3.md)。同步后第2模块；R4A剩余资产/任务/跨表用例、R4B运行DDL/配置组装、R5—R6继续，整体目标active，不合main/不发布。
+
 ## 1. 迁移总原则
 
 每轮只完成一个闭合职责，采用“新实现取代旧实现”，不长期双套业务：

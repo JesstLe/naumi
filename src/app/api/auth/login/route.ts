@@ -4,7 +4,7 @@ import {
   USER_COOKIE,
   USER_TTL_MS,
 } from "@/lib/native-auth";
-import {getUser} from "@/lib/db";
+import {getUser} from "@/lib/accounts/session";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
 import { verifyPassword } from "@/lib/pw";

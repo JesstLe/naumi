@@ -5,7 +5,7 @@ import { getPool } from "@/platform/db/pool";
 import { hashPassword } from "@/lib/pw";
 import { settingsSecret } from "@/lib/settings-secret";
 import { ensureBiSchema } from "./repository";
-import { getBillingRuntime } from "@/lib/billing/server";
+import {getBillingRuntime} from "@/lib/billing/runtime";
 import { expiryFrom } from "@/lib/billing/rules/schema";
 import { BillingError } from "@/lib/billing/types";
 const base = {

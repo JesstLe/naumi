@@ -136,7 +136,7 @@ export async function requireAdmin(request: Request): Promise<boolean> {
       const { activeNativeUserEmail } = await import("@/lib/native-auth");
       const nu = await activeNativeUserEmail(request);
       if (nu) {
-        const { getUserRole } = await import("@/lib/db");
+        const {getUserRole} = await import("@/lib/accounts/repository");
         if ((await getUserRole(nu)) === "admin") return true;
       }
     } catch {
@@ -166,7 +166,7 @@ export async function resolveUserEmail(
     if (nu) return nu;
     // 单用户:登录后的站长(admin cookie)。
     if (readCookie(request, ADMIN_COOKIE) && (await adminPasswordState(request)).authenticated) {
-      const { getLocalOperatorEmail } = await import("@/lib/db");
+      const {getLocalOperatorEmail} = await import("@/lib/accounts/repository");
       return getLocalOperatorEmail();
     }
   }

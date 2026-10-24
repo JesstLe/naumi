@@ -6,14 +6,8 @@ import { NextResponse } from "next/server";
 import sharp from "sharp";
 
 import { authenticatedEmail } from "@/lib/request-auth";
-import {
-  addArtworks,
-  dbEnabled,
-  getUser,
-  listArtworksByIds,
-  refundCredits,
-  reserveCredits,
-} from "@/lib/db";
+import {addArtworks, dbEnabled, listArtworksByIds, refundCredits, reserveCredits} from "@/lib/db";
+import {getUser} from "@/lib/accounts/session";
 import { readCanvasImage } from "@/lib/canvas-image-input";
 import { editImage } from "@/lib/image-edit";
 import { storageEnabled, uploadImage } from "@/lib/storage";

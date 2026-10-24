@@ -13,13 +13,8 @@ import { supplierCostFetch } from "@/lib/supplier-cost/collect";
 import { legacyAgentVision } from "@/lib/model-config/legacy-vision";
 import type { ImageContent, AssistantMessage, Model, createModels } from "@earendil-works/pi-ai";
 import type { UserMessage } from "@earendil-works/pi-ai";
-import {
-  dbEnabled,
-  getAgentSession,
-  getUser,
-  creditMeteringEnabled,
-  saveAgentSession,
-} from "@/lib/db";
+import {dbEnabled, getAgentSession, creditMeteringEnabled, saveAgentSession} from "@/lib/db";
+import {getUser} from "@/lib/accounts/session";
 import { AGENT_SYSTEM_PROMPT, createNaumiTools } from "@/lib/agent/naumi-tools";
 import { getImageJob } from "@/lib/image-job-repository";
 import { recordBiModelCompletion, modelExecutionTelemetry } from "@/lib/bi/model-observer";

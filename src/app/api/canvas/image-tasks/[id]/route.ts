@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { authenticatedEmail } from "@/lib/request-auth";
 import { getCanvasImageTask, publicCanvasImageTask } from "@/lib/canvas-image-tasks";
-import { getUser } from "@/lib/db";
+import {getUser} from "@/lib/accounts/session";
 import { safeError } from "@/lib/api-error";
 
 export const runtime = "nodejs";

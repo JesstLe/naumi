@@ -18,16 +18,9 @@ import { toVisionDataUrl } from "@/lib/vision-image";
 import OpenAI from "openai";
 import { requestedTextModel } from "@/lib/text-models";
 import { safeError } from "@/lib/api-error";
-import {
-  dbEnabled,
-  addArtworks,
-  getUser,
-  getImageJobChargedCredits,
-  isBanned,
-  touchReservation,
-  sweepStaleReservations,
-  listArtworksByIds,
-} from "@/lib/db";
+import {dbEnabled, addArtworks, getImageJobChargedCredits, touchReservation, sweepStaleReservations, listArtworksByIds} from "@/lib/db";
+import {getUser} from "@/lib/accounts/session";
+import {isBanned} from "@/lib/accounts/repository";
 import { clientIp } from "@/lib/ip";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";

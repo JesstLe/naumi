@@ -85,9 +85,8 @@ export async function applySetup(input: SetupInput): Promise<SetupResult> {
   const adminEmail = (input.adminEmail ?? "").trim().toLowerCase();
   if (adminEmail && adminPassword && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) {
     try {
-      const { getOrCreateUser, setUserPassword, setUserRole } = await import(
-        "@/lib/db"
-      );
+      const {getOrCreateUser} = await import("@/lib/accounts/session");
+const {setUserPassword, setUserRole} = await import("@/lib/accounts/repository");
       const { hashPassword } = await import("@/lib/pw");
       await getOrCreateUser(adminEmail, "站长");
       await setUserPassword(adminEmail, hashPassword(adminPassword));

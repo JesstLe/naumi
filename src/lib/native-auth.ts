@@ -23,7 +23,7 @@ export const CREDITS_METERING_SETTING = "credits_metering";
 // 独立于多用户 —— 单用户也能开来给自己/他人做用量控制。永不抛错。
 export async function creditsMeteringOn(): Promise<boolean> {
   if (process.env.DATABASE_URL) {
-    const {getBillingRuntime} = await import("@/lib/billing/server");
+    const {getBillingRuntime} = await import("@/lib/billing/runtime");
     const mode = (await (await getBillingRuntime()).config.current()).config.switches.metering;
     if (mode !== "legacy-auto") return mode === "on";
   }

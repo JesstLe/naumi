@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { getBillingRuntime } from "./server";
+import {getBillingRuntime} from "@/lib/billing/runtime";
 import { fingerprint } from "./fingerprint";
 import type { GrantInput, Tx, ConfigSnapshot, ExpiryPolicy } from "./types";
 export async function signupGrantTx(tx: Tx, email: string, snapshot: ConfigSnapshot) {

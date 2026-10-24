@@ -1,6 +1,7 @@
 import 'server-only';
 import { randomUUID } from 'node:crypto';
-import { getPool, getUser, adjustUserCredits } from '@/lib/db';
+import {getPool, adjustUserCredits} from "@/lib/db";
+import {getUser} from "@/lib/accounts/session";
 import { saveFeaturePolicy, userFeaturePolicy, FeatureAccessError } from '@/lib/feature-access/server';
 import { BillingError } from '@/lib/billing/types';
 import { operationSchema, commandSchema, canonical, digest, centralUrl, verifyCommand, resultSchema, statusSchema, type FleetCommand, type FleetResult, type SignedFleetCommand } from './contracts';

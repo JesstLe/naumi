@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { dbEnabled, redeemCardKey, getUser } from "@/lib/db";
+import {dbEnabled, redeemCardKey} from "@/lib/db";
+import {getUser} from "@/lib/accounts/session";
 import { resolveUserEmail } from "@/lib/admin-auth";
 
 export const runtime = "nodejs";

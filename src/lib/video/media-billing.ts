@@ -1,6 +1,6 @@
 import "server-only";
-import {totalPaidCents} from "../db";
-import {getBillingRuntime,meteringFor} from "../billing/server";
+import {totalPaidCents} from "@/lib/payments/history";
+import {getBillingRuntime, meteringFor} from "@/lib/billing/runtime";
 import {quote} from "../billing/quote";
 import {BillingError,type BillingQuote} from "../billing/types";
 import type {MediaJobRequest} from "./media-job-schema";

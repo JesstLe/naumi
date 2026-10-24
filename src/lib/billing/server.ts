@@ -1,5 +1,6 @@
 import "server-only";
-import {dbEnabled,totalPaidCents} from "../db";
+import {dbEnabled} from "@/platform/db/pool";
+import {totalPaidCents} from "@/lib/payments/history";
 import {resolveUserEmail} from "../admin-auth";
 import {currentModelBillingSnapshot,currentModelExecution} from "../model-config/context";
 import {currentImagegenStep} from "../imagegen/context";

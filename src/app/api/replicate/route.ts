@@ -6,14 +6,9 @@ import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import { editImage, isImageTimeout } from "@/lib/image-edit";
 import { safeError } from "@/lib/api-error";
-import {
-  dbEnabled,
-  reserveCredits,
-  refundCredits,
-  addArtworks,
-  getUser,
-  isBanned,
-} from "@/lib/db";
+import {dbEnabled, reserveCredits, refundCredits, addArtworks} from "@/lib/db";
+import {getUser} from "@/lib/accounts/session";
+import {isBanned} from "@/lib/accounts/repository";
 import { clientIp } from "@/lib/ip";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { multiUserEnabled, signResetToken } from "@/lib/native-auth";
-import { userExists } from "@/lib/db";
+import {userExists} from "@/lib/accounts/repository";
 import { sendMail } from "@/lib/mailer";
 import { getRuntimeBrand } from "@/lib/brand-runtime";
 import { rateLimit } from "@/lib/rate-limit";
