@@ -17,8 +17,10 @@ if (mode === 'baseline') {
   console.log(`BASELINE=CONFIRMED CHECKS=${checks} SHARED_SHELLS=0 VIDEO_EDIT=MODAL SUPPLIER_CALLS=0`);
   process.exit(0);
 }
-check(shells === 3, 'existing image, pending image, text all share shell');
-check((client.match(/<CanvasComposerFooter\s/g) || []).length === 3, 'shared footers');
+const extracted=client.includes('<CanvasImageComposer');
+const image=extracted?read('src/components/canvas/image-composer.tsx'):'', text=extracted?read('src/components/canvas/text-composer.tsx'):'';
+check(extracted ? (client.match(/<CanvasImageComposer\s/g)||[]).length===2 && (client.match(/<CanvasTextComposer\s/g)||[]).length===1 && [image,text].every(source=>source.includes('<CanvasComposerShell')) : shells===3, 'existing image, pending image, text all share shell');
+check(extracted ? [image,text].every(source=>source.includes('<CanvasComposerFooter')) : (client.match(/<CanvasComposerFooter\s/g)||[]).length===3, 'shared footers');
 check(dialog.includes('if(dock)return <CanvasComposerShell'), 'video shares shell');
 check(client.includes('presentation="dock"') && !client.includes('videoEditId'), 'all normal canvas video entries use compact presentation');
 check(!client.includes('↑</span>') && !client.includes('◆ {selectedTextRefs.length}'), 'no character-based icons in changed dock');
@@ -27,7 +29,7 @@ const shell = read('src/components/canvas/composer-shell.tsx'), css = read('src/
 for (const token of ['forwardRef<HTMLDivElement, Props>', 'data-composer-kind={kind}', 'onDismiss', 'onToggleExpand', 'aria-expanded={expanded}', 'CanvasActionPanel', 'data-composer-controls', 'data-composer-actions']) check(shell.includes(token), token);
 for (const token of ['container-type: inline-size', 'flex-wrap: wrap', 'min-width: 0', '#fff', '.actions > button:last-child', '[data-composer-body]']) check(css.includes(token), token);
 const compact = read('src/components/canvas/video/compact-composer.tsx'), fields = read('src/components/canvas/video/settings-fields.tsx'), settings = read('src/components/canvas/video/settings-panel.tsx');
-for (const token of ['<CanvasComposerFooter', 'numbered.length>0', 'label={V(\'视频生成模式\')}', 'label={V(\'视频时长\')}', 'advancedOpen&&<CanvasActionPanel', 'videoModeRoles', 'videoDurations(cap)', 'onCloseAdvanced']) check(compact.includes(token), token);
+for (const token of ['<CanvasComposerFooter', 'numbered.length>0', 'label={V(\'视频生成模式\')}', 'label={V(\'视频时长\')}', 'advancedOpen&&<CanvasActionPanel', 'videoModeRoles', 'videoDurations(cap, config.mode)', 'onCloseAdvanced']) check(compact.includes(token), token);
 check(fields.includes('advancedOnly={hideComposerFields}'), 'advanced keeps audio and uncommon capabilities');
 check(settings.includes('!advancedOnly&&<>') && settings.includes('生成声音') && settings.includes('supportsNegativePrompt'), 'basic duplicate controls hidden, advanced capabilities remain');
 for (const token of ['localComposerDrafts', 'JSON.stringify([draftScope,node.id])', 'localComposerDrafts.size > 64', 'incoming===baseline.current||incoming===local', "['needs_attention','creation_unknown']", 'submitting.current', 'estimate.quote']) check(dialog.includes(token), token);

@@ -32,6 +32,8 @@
 
 ## 开发约定
 
+2026-10-24 R3E：图片/空白节点共用创作栏与参数控件，文字创作栏独立持有菜单/尺寸呈现状态。Canvas **8534行**；174个保留执行函数正文不变，58组SSR对照一致，真实控件15项及文字6/图片5/历史12通过，最终tsc通过。见 [R3E](changes/2026-10-24-canvas-composers-r3e.md)。同步后第2模块；下一模块R4A基础DB/事务，R3外围UI、跨请求CAS与R4B—R6继续，不合main/不部署。
+
 2026-10-24 R3D：普通文字/反推/帮写共用 retained text task，已知答案续存不再生成，unknown 保留原 operation/报价；初次请求复用原 BillingProvider 持久 intent。Canvas **9342 行**；基线 3/15、新版 18/77、真实 PG24、实际 Next6 及最终 tsc 通过。见 [R3D](changes/2026-10-24-canvas-text-tasks-r3d.md)。本轮为同步后第1模块；原无 node-slot intent 升级、多 tab/CAS、UI 组合及 R4—R6 仍在后续。不合 main、不部署，整体目标 active。
 
 2026-10-24 R3C3：节点复制/历史添加/删除/项目删除及批运行 owner 已接入。Canvas **9575行**；旧4/9→新19/59，真实PG24→32，真实控件11及相邻12＋12＋5＋5通过。单图/混合复制共用原复制事务，已知结果不再重复创建，删除保留原operation，批运行沿用原任务。见 [R3C3](changes/2026-10-24-canvas-node-operations-r3c3.md)。本轮第3模块，main刷新与普通整合后计数归零；整体继续R3后续及R4—R6，不合main/不部署。

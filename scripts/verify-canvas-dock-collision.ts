@@ -17,7 +17,8 @@ if (baseline) {
   assert.ok(original.includes("new ResizeObserver(measure)"));
   assert.ok(original.includes("[docksReady, canvasSize.width, canvasSize.height,"));
   assert.ok(original.includes("toolbarWidth: toolbar.offsetWidth"));
-  assert.ok(original.includes("minHeight: Math.min(218, dockStyle?.maxHeight ?? 218)"));
+  const textComposer=original.includes("<CanvasTextComposer")?readFileSync("src/components/canvas/text-composer.tsx","utf8"):original;
+  assert.ok(textComposer.includes("minHeight: Math.min(218, dockStyle?.maxHeight ?? 218)"));
   assert.ok(original.includes("const maxHeight = Math.min(preferredHeight, aboveSpace)") || layout.includes("const maxHeight = Math.min(preferredHeight, aboveSpace)"));
   let cases = 0;
   for (const [safeTop,safeBottom] of [[64,356],[64,530],[64,684],[108,716],[64,916]]) {

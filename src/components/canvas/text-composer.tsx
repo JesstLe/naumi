@@ -1,0 +1,393 @@
+"use client";
+import {useEffect,useLayoutEffect,useMemo,useRef,useState,type RefObject,type Dispatch,type SetStateAction} from "react";
+import {ArrowUp,Image as ImageIcon,Loader2,PenLine,Plus,X} from "lucide-react";
+import {CachedImage} from "@/components/cached-image";
+import {Textarea} from "@/components/ui/textarea";
+import {TextModelSelect} from "@/components/ui/text-model-select";
+import {FeatureVisible} from "@/lib/feature-access/client";
+import {useI18n} from "@/lib/i18n/locale-context";
+import {cdnUrl} from "@/lib/cdn";
+import {cn} from "@/lib/utils";
+import {isHostedImageUrl as hasRenderableImage} from "@/lib/media-url";
+import type {Artwork} from "@/lib/mock-data";
+import type {CanvasTextNode} from "@/lib/canvas/text-document-model";
+import type {CanvasTextTaskState} from "@/lib/canvas/text-task";
+import type {DockPlacement} from "@/lib/canvas/dock-placement";
+import type {CanvasSize,SafeArea} from "@/lib/canvas/dock-layout";
+import {CanvasComposerShell,CanvasComposerFooter} from "./composer-shell";
+
+type ComposerReference=Pick<Artwork,"id"|"image"|"title">;
+export type CanvasTextComposerProps={
+  node:CanvasTextNode; members:ComposerReference[]; light:boolean;
+  draft:{prompt:string;onChange:(value:string)=>void};
+  task:{state:CanvasTextTaskState;retryable:boolean;onGenerate:()=>unknown};
+  layout:{dockRef:RefObject<HTMLDivElement|null>;style?:DockPlacement;safeArea:SafeArea;canvasSize:CanvasSize;expanded:boolean;onExpandedChange:Dispatch<SetStateAction<boolean>>};
+  onDismiss:()=>void;onReference:(id:string,enabled:boolean)=>unknown;onMenuOpenChange:(open:boolean)=>void;
+  assist:{busy:boolean;onPickProduct:()=>void};image:{disabled:boolean;onGenerate:()=>void};
+};
+/** Owns only composer presentation. Draft, document and paid task remain with
+ * their existing owners; callbacks do not create a second execution path. */
+export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,draft,task,layout,onDismiss,onReference,onMenuOpenChange,assist,image}:CanvasTextComposerProps){
+  const {locale,t}=useI18n(),L=(zh:string,en:string)=>locale==="en"?en:zh;
+  const {prompt:textPrompt,onChange:setTextPrompt}=draft;
+  const {dockRef:textComposerDockRef,style:dockStyle,safeArea:overlaySafeArea,canvasSize,expanded:textComposerExpanded,onExpandedChange:setTextComposerExpanded}=layout;
+  const assistBusy=assist.busy;
+  const [textComposerManuallySized,setTextComposerManuallySized]=useState(false);
+  const textComposerBodyRef=useRef<HTMLDivElement>(null),textPromptRef=useRef<HTMLTextAreaElement>(null);
+  const [textReferenceMenuOpen,setTextReferenceMenuOpen]=useState(false);
+  const [mentionState,setMentionState]=useState<{query:string;start:number}|null>(null);
+  useLayoutEffect(()=>{onMenuOpenChange(textReferenceMenuOpen||!!mentionState);return()=>onMenuOpenChange(false);},[textReferenceMenuOpen,mentionState,onMenuOpenChange]);
+  useEffect(() => {
+    const textarea = textPromptRef.current;
+    if (!textarea) return;
+    if (textComposerExpanded) {
+      textarea.style.height = "100%";
+      textarea.style.overflowY = "auto";
+      return;
+    }
+    if (textComposerManuallySized) return;
+    // 收起态至少展示约 5 行；短文本不再塌成两行，长文本自适应到 240px 后滚动。
+    const minHeight = 112;
+    const maxHeight = 240;
+    textarea.style.height = "0px";
+    textarea.style.height = `${Math.min(maxHeight, Math.max(minHeight, textarea.scrollHeight))}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+  }, [textPrompt, textComposerExpanded, textComposerManuallySized, selectedText.id]);
+  useEffect(() => {
+    setTextComposerManuallySized(false);
+    if (textComposerDockRef.current) textComposerDockRef.current.style.height = "";
+  }, [selectedText.id, selectedText.content, selectedText.prompt, textComposerDockRef]);
+  useEffect(() => {
+    const dock = textComposerDockRef.current;
+    const body = textComposerBodyRef.current;
+    const textarea = textPromptRef.current;
+    if (!dock || !body || !textarea) return;
+    const syncHeight = () => {
+      const manuallySized = !textComposerExpanded && Boolean(dock.style.height);
+      if (manuallySized !== textComposerManuallySized) {
+        setTextComposerManuallySized(manuallySized);
+      }
+      if (textComposerExpanded || manuallySized) {
+        // 即使用户拖动 Dock 或浏览器恢复了原生 resize 高度，也不允许输入区退回两行。
+        textarea.style.height = `${Math.max(112, body.clientHeight)}px`;
+        textarea.style.overflowY = "auto";
+      }
+    };
+    syncHeight();
+    const observer = new ResizeObserver(syncHeight);
+    observer.observe(dock);
+    observer.observe(body);
+    return () => observer.disconnect();
+  }, [selectedText.id, textComposerExpanded, textComposerManuallySized, textComposerDockRef]);
+  const selectedTextRefs = useMemo(
+    () =>
+      (selectedText?.sourceIds ?? [])
+        .map((id) => members.find((member) => member.id === id))
+        .filter(Boolean) as ComposerReference[],
+    [selectedText, members]
+  );
+  return (
+            <CanvasComposerShell
+              ref={textComposerDockRef}
+
+              data-testid="text-node-dock"
+              style={
+                textComposerExpanded
+                  ? {
+                      left: overlaySafeArea.left,
+                      right: overlaySafeArea.right,
+                      top: dockStyle?.top ?? overlaySafeArea.top,
+                      bottom: overlaySafeArea.bottom,
+                      width: "auto",
+                      maxHeight: dockStyle?.maxHeight,
+                      minHeight: Math.min(218, dockStyle?.maxHeight ?? 218),
+                    }
+                  : dockStyle ? { ...dockStyle, minHeight: Math.min(218, dockStyle.maxHeight ?? 218) } : {
+                      left: 12,
+                      bottom: 12,
+                      width: canvasSize.width ? Math.max(1, Math.min(820, canvasSize.width - 24)) : 820,
+                    }
+              }
+              className={textComposerExpanded ? "resize-none" : "resize-y"}
+             kind="text" heading={selectedText.title || L("文字生成", "Text generation")} onDismiss={onDismiss} expanded={textComposerExpanded} onToggleExpand={() => { if (textComposerDockRef.current) textComposerDockRef.current.style.height = ""; setTextComposerManuallySized(false); setTextComposerExpanded(value => !value); }} expandLabel={L("展开文字编辑窗口", "Expand text editor")} collapseLabel={L("收起文字编辑窗口", "Collapse text editor")} closeLabel={L("关闭创作栏", "Close composer")}>
+              <div
+                ref={textComposerBodyRef} data-composer-body="true"
+                className="flex min-h-0 flex-1 items-stretch gap-2 overflow-hidden px-3.5 pb-2 pt-3"
+              >
+                <button
+                  type="button"
+                  title={t("canvas.textAddReference")}
+                  aria-label={t("canvas.textAddReference")}
+                  aria-expanded={textReferenceMenuOpen}
+                  onClick={() => setTextReferenceMenuOpen((open) => !open)}
+                  className={cn(
+                    "mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-[9px] border transition-colors",
+                    lightCanvas
+                      ? "border-[#dfe4ea] bg-[#f3f5f7] text-[#596271] hover:border-[#aeb8c5] hover:bg-[#e9edf2] hover:text-[#20242c]"
+                      : "border-[#2a2d36] bg-[#1f2229] text-[#b9c0cb] hover:border-[#4a505c] hover:text-white"
+                  )}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
+                <Textarea
+                  autoFocus
+                  ref={textPromptRef}
+                  value={textPrompt}
+                  placeholder={t("canvas.textPromptPlaceholder")}
+                  onChange={(event) => {
+                    setTextPrompt(event.target.value);
+                    // 检测光标前未完成的 "@关键词" → 弹出图片选择框
+                    const el = event.target;
+                    const caret = el.selectionStart ?? event.target.value.length;
+                    const before = event.target.value.slice(0, caret);
+                    const m = before.match(/@([^@\n\s]{0,24})$/);
+                    setMentionState(
+                      m ? { query: m[1], start: caret - m[1].length - 1 } : null
+                    );
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape" && mentionState) {
+                      event.preventDefault();
+                      setMentionState(null);
+                      return;
+                    }
+                    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                      event.preventDefault();
+                      void task.onGenerate();
+                    }
+                  }}
+                  className={cn(
+                    "h-full min-h-[112px] min-w-[160px] flex-1 resize-none border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed shadow-none focus-visible:border-0 focus-visible:bg-transparent focus-visible:ring-0",
+                    textComposerExpanded || textComposerManuallySized
+                      ? "h-full max-h-none overflow-y-auto"
+                      : "max-h-[240px] overflow-y-hidden",
+                    lightCanvas
+                      ? "text-[#303641] placeholder:text-[#929aa6]"
+                      : "text-[#e7e9ee] placeholder:text-[#818895]"
+                  )}
+                />
+
+
+              </div>
+              {/* @提及选图:输入 @ 触发,点击=插入 @图片名 并绑引用(等同连线) */}
+              {mentionState && selectedText && (() => {
+                const q = mentionState.query.toLowerCase();
+                const options = members
+                  .filter(
+                    (member) =>
+                      hasRenderableImage(member.image) &&
+                      (!q || (member.title || "").toLowerCase().includes(q))
+                  )
+                  .slice(0, 8);
+                return (
+                  <div
+                    data-testid="mention-picker"
+                    className={cn(
+                      "border-t px-3.5 py-2.5",
+                      lightCanvas
+                        ? "border-[#edf0f3] bg-[#fafbfd]"
+                        : "border-[#2a2d36] bg-[#17191f]"
+                    )}
+                  >
+                    <p
+                      className={cn(
+                        "mb-2 text-[11px] font-medium",
+                        lightCanvas ? "text-[#697383]" : "text-[#9aa1ae]"
+                      )}
+                    >
+                      {t("canvas.mentionPickHint")}
+                    </p>
+                    {options.length ? (
+                      <div className="flex max-h-28 flex-wrap gap-1.5 overflow-auto">
+                        {options.map((member) => (
+                          <button
+                            key={member.id}
+                            type="button"
+                            onClick={() => {
+                              const insert = `@${member.title || t("canvas.imageNode")} `;
+                              const end = mentionState.start + 1 + mentionState.query.length;
+                              setTextPrompt(
+                                textPrompt.slice(0, mentionState.start) +
+                                  insert +
+                                  textPrompt.slice(end)
+                              );
+                              setMentionState(null);
+                              void onReference(member.id, true);
+                            }}
+                            className={cn(
+                              "flex max-w-[210px] items-center gap-1.5 rounded-[8px] border px-2 py-1 text-[11px] font-medium transition-colors",
+                              lightCanvas
+                                ? "border-[#dfe4ea] bg-white text-[#46505e] hover:border-[#8794a4] hover:bg-[#f2f5f8] hover:text-[#20242c]"
+                                : "border-[#343842] bg-[#20232a] text-[#cdd2da] hover:border-[#6bd7ec] hover:text-[#8fe7f5]"
+                            )}
+                          >
+                            <CachedImage src={cdnUrl(member.image)} alt="" className="h-5 w-5 flex-none object-cover" />
+                            <span className="truncate">@{member.title || t("canvas.imageNode")}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p
+                        className={cn(
+                          "text-[11px]",
+                          lightCanvas ? "text-[#7b8492]" : "text-[#7f8793]"
+                        )}
+                      >
+                        {t("canvas.mentionEmpty")}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+              {textReferenceMenuOpen && (
+                <div
+                  className={cn(
+                    "border-t px-3.5 py-2.5",
+                    lightCanvas
+                      ? "border-[#edf0f3] bg-[#fafbfd]"
+                      : "border-[#2a2d36] bg-[#17191f]"
+                  )}
+                >
+                  <p
+                    className={cn(
+                      "mb-2 text-[11px] font-medium",
+                      lightCanvas ? "text-[#697383]" : "text-[#9aa1ae]"
+                    )}
+                  >
+                    {t("canvas.textReferenceHint")}
+                  </p>
+                  <div className="flex max-h-24 flex-wrap gap-1.5 overflow-auto">
+                    {members.map((reference) => {
+                      const checked = (selectedText.sourceIds ?? []).includes(reference.id);
+                      return (
+                        <button
+                          key={reference.id}
+                          type="button"
+                          data-artwork-id={reference.id}
+                          onClick={() =>
+                            void onReference(reference.id, !checked)
+                          }
+                          className={cn(
+                            "flex max-w-[210px] items-center gap-1.5 border px-2 py-1 text-[11px] font-medium transition-colors",
+                            checked
+                              ? lightCanvas
+                                ? "border-[#8aa6b2] bg-[#e8f2f5] text-[#315a68]"
+                                : "border-[#6bd7ec] bg-[#163842] text-[#8fe7f5]"
+                              : lightCanvas
+                                ? "border-[#dfe4ea] bg-white text-[#46505e] hover:border-[#9aa6b5] hover:bg-[#f2f5f8]"
+                                : "border-[#343842] bg-[#20232a] text-[#cdd2da] hover:border-[#596170]"
+                          )}
+                        >
+                          <CachedImage src={cdnUrl(reference.image)} alt="" className="h-5 w-5 flex-none object-cover" />
+                          <span className="truncate">@{reference.title}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {!!selectedTextRefs.length && (
+                <div
+                  className={cn(
+                    "flex flex-wrap gap-1.5 border-t px-3.5 py-2",
+                    lightCanvas ? "border-[#edf0f3]" : "border-[#2a2d36]"
+                  )}
+                >
+                  {selectedTextRefs.map((reference) => (
+                    <span
+                      key={reference.id}
+                      className={cn(
+                        "flex max-w-[220px] items-center gap-1 rounded-[8px] border py-0.5 pl-2 pr-1 text-[11px] font-semibold",
+                        lightCanvas
+                          ? "border-[#b9d0d8] bg-[#e8f2f5] text-[#315a68]"
+                          : "border-[#24505f] bg-[#163842] text-[#8fe7f5]"
+                      )}
+                    >
+                      <span className="truncate">@{reference.title}</span>
+                      <button
+                        type="button"
+                        aria-label={`${t("canvas.textRemoveReference")} ${reference.title}`}
+                        onClick={() =>
+                          void onReference(reference.id, false)
+                        }
+                        className={cn(
+                          "flex h-4 w-4 flex-none items-center justify-center rounded transition-colors",
+                          lightCanvas
+                            ? "text-[#668a96] hover:bg-[#cfe2e8] hover:text-[#284d59]"
+                            : "text-[#79bcc7] hover:bg-[#24505f] hover:text-white"
+                        )}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {task.state.error && (
+                <p className="px-12 pb-2 text-xs font-medium text-red-400">{task.state.error}</p>
+              )}
+              <CanvasComposerFooter testId="text-node-dock-footer" controls={<>
+                <TextModelSelect feature="canvas.text-generate" compact dark={false} direction="up" />
+
+                <button
+                  type="button"
+                  disabled={assistBusy}
+                  onClick={() => assist.onPickProduct()}
+                  title={t("canvas.assistWriteHint")}
+                  className={cn(
+                    "flex h-9 items-center gap-1.5 rounded-[9px] border px-3 text-[11px] font-semibold transition-colors disabled:opacity-45",
+                    lightCanvas
+                      ? "border-[#d8dde4] bg-white text-[#46505e] hover:border-[#aeb7c3] hover:bg-[#f2f4f6] hover:text-[#20242c]"
+                      : "border-[#343842] text-[#d5d8df] hover:bg-[#24272f] hover:text-white"
+                  )}
+                >
+                  {assistBusy ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <PenLine className="h-3.5 w-3.5" />
+                  )}
+                  {t("canvas.assistWrite")}
+                </button>
+                <FeatureVisible feature="generate"><button
+                  type="button"
+                  disabled={image.disabled}
+                  onClick={() => image.onGenerate()}
+                  title={t("canvas.genImagesHint")}
+                  className={cn(
+                    "flex h-9 items-center gap-1.5 rounded-[9px] border px-3 text-[11px] font-semibold transition-colors",
+                    lightCanvas
+                      ? "border-[#d8dde4] bg-white text-[#46505e] hover:border-[#aeb7c3] hover:bg-[#f2f4f6] hover:text-[#20242c]"
+                      : "border-[#343842] text-[#d5d8df] hover:bg-[#24272f] hover:text-white"
+                  )}
+                >
+                  <ImageIcon className="h-3.5 w-3.5" />
+                  {t("canvas.genImages")}
+                </button></FeatureVisible>
+                 </>} actions={<> <span
+                  className={cn(
+                    "text-[11px] font-semibold",
+                    lightCanvas ? "text-[#547886]" : "text-[#6bd7ec]"
+                  )}
+                >
+                  {selectedTextRefs.length}/5
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void task.onGenerate()}
+                  disabled={(!textPrompt.trim()&&!task.retryable) || task.state.busy || selectedText.status==="generating"&&task.state.phase==="idle"}
+                  title={task.retryable?L("继续原任务","Resume original task"):t("canvas.textGenerate")} aria-label={task.retryable?L("继续原任务","Resume original task"):t("canvas.textGenerate")}
+                  className={cn(
+                    "flex h-10 w-10 items-center justify-center rounded-[11px] transition-opacity hover:opacity-90 disabled:opacity-45",
+                    lightCanvas ? "bg-[#20242c] text-white" : "bg-white text-[#111]"
+                  )}
+                >
+                  {task.state.busy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ArrowUp aria-hidden="true" className="h-4 w-4" />
+                  )}
+                </button>
+               </>}/>
+            </CanvasComposerShell>
+  );
+}
