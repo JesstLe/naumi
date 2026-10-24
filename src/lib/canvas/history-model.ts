@@ -2,6 +2,7 @@ import type { Artwork } from "../mock-data";
 import type { CanvasVideoNode } from "./video-node-schema";
 import type { CanvasNodeSettings } from "./node-settings";
 import type { CanvasHistoryOperation } from "./history-contract";
+import { changeCanvasParent } from "./parent-link";
 
 import type { CanvasTextNode } from "./text-document-model";
 export type { CanvasTextNode } from "./text-document-model";
@@ -62,6 +63,7 @@ export type CanvasHistoryAction =
   | { kind: "parent"; targetId: string; parentId: string; added: boolean }
   // 文字节点字段级快照(内容/引用/产品绑定/尺寸):undo 应用 from,redo 应用 to
   | { kind: "text-patch"; id: string; from: TextPatchFields; to: TextPatchFields }
+  | { kind: "text-patch-many"; changes: Array<{id:string;from:TextPatchFields;to:TextPatchFields}> }
   // 节点重命名
   | { kind: "rename"; id: string; from: string; to: string }
   // 图片节点画布尺寸/位置(NodeResizer 手动拖拽)
@@ -117,6 +119,7 @@ export function compileCanvasHistory(action: CanvasHistoryAction, undo: boolean,
     case "text-delete": case "text-add": texts(action.records,action.kind === "text-delete" ? undo : !undo); break;
     case "parent": operations.push({type:"parent",id:action.targetId,parentId:action.parentId,add:undo?!action.added:action.added}); break;
     case "text-patch": operations.push({type:"text-patch",id:action.id,fields:action[side]}); break;
+    case "text-patch-many": action.changes.forEach(change=>operations.push({type:"text-patch",id:change.id,fields:change[side]})); break;
     case "rename": operations.push({type:"rename",id:action.id,title:action[side]}); break;
     case "art-size": operations.push({type:"size",id:action.id,...action[side]}); break;
     case "mark": action.changes.forEach(change => operations.push({type:"mark",id:change.id,marked:change[side]})); break;
@@ -147,12 +150,7 @@ export function reduceHistoryArtworks(current: Artwork[] | null, operations: Can
         case "rename": return {...node,title:op.title};
         case "size": return {...node,canvasX:op.x,canvasY:op.y,canvasWidth:op.width,canvasHeight:op.height};
         case "mark": return {...node,marked:op.marked};
-        case "parent": {
-          const parents = new Set(node.parentIds || []); let primary = node.parentId;
-          if (op.add) { if (!primary) primary = op.parentId; else if (primary !== op.parentId) parents.add(op.parentId); }
-          else { if (primary === op.parentId) primary = null; parents.delete(op.parentId); }
-          return {...node,parentId:primary,parentIds:Array.from(parents)};
-        }
+        case "parent": return {...node,...changeCanvasParent(node,op.parentId,op.add)};
         default: return node;
       }
     }) ?? next;

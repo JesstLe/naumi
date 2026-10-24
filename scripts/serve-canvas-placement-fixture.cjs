@@ -10,7 +10,7 @@ const texts=historyMode?[{id:'text-history',projectKey:'tree:placement-root',tit
 const initialArts=structuredClone(arts),initialTexts=structuredClone(texts);
 const model={id:'gpt-image-2',label:'GPT Image 2',modality:'image',supportsEdit:true,qualities:['low','medium','high'],qualitySupported:true,nativeResolutions:['1K'],generationParameters:{ratios:['auto','1:1','3:4'],resolutions:['1K']}};
 const state={submissions:[],positions:[],history:[],jobs:{},paidCalls:0,apiErrors:[],failNextPosition:false,failNextHistory:false,textSaves:[],historyApplied:[],failTextSaves:false,failTextRead:false,failArtworkAccount:false,failArtworkIds:false,accountReads:0,artworkIdReads:[]};
-const appliedHistory=new Map();
+const appliedHistory=new Map();let loseHistoryResponse=false;
 const taskState={details:[],edits:[],detailJobs:{},failPoll:false};
 const app=cp.spawn(process.execPath,['node_modules/next/dist/bin/next','dev','-p',String(nextPort)],{env:{...process.env,DATABASE_URL:'',NAUMI_MULTI_USER:'0',SETTINGS_SECRET:crypto.randomUUID(),VIDEO_WORKER_SECRET:crypto.randomUUID(),NAUMI_VIDEO_WORKER:'0',OPENAI_API_KEY:'fixture-not-a-key',OPENAI_BASE_URL:'http://127.0.0.1:1/v1',NEXT_PUBLIC_SUPABASE_URL:'',NEXT_PUBLIC_SUPABASE_ANON_KEY:'',NEXT_TELEMETRY_DISABLED:'1',NEXT_DIST_DIR:dist},stdio:['ignore','pipe','pipe']});
 app.stdout.on('data',b=>process.stdout.write(b));app.stderr.on('data',b=>process.stderr.write(b));
@@ -21,7 +21,7 @@ const server=http.createServer(async(req,res)=>{
  let raw='';if(req.method==='POST')for await(const b of req)raw+=b;
  const body=raw.startsWith('{')?JSON.parse(raw):{};
  if(p==='/__fixture/state')return json(res,{...state,...taskState,artworks:arts,texts});
- if(p==='/__fixture/reset'){taskState.details=[];taskState.edits=[];taskState.detailJobs={};taskState.failPoll=false;arts.splice(0,arts.length,...structuredClone(initialArts));texts.splice(0,texts.length,...structuredClone(initialTexts));state.submissions.length=0;state.positions.length=0;state.history.length=0;state.historyApplied.length=0;state.textSaves.length=0;state.accountReads=0;state.artworkIdReads.length=0;appliedHistory.clear();state.jobs={};state.apiErrors.length=0;state.failNextHistory=state.failNextPosition=state.failTextSaves=state.failTextRead=state.failArtworkAccount=state.failArtworkIds=false;return json(res,{ok:true})}
+ if(p==='/__fixture/reset'){loseHistoryResponse=false;taskState.details=[];taskState.edits=[];taskState.detailJobs={};taskState.failPoll=false;arts.splice(0,arts.length,...structuredClone(initialArts));texts.splice(0,texts.length,...structuredClone(initialTexts));state.submissions.length=0;state.positions.length=0;state.history.length=0;state.historyApplied.length=0;state.textSaves.length=0;state.accountReads=0;state.artworkIdReads.length=0;appliedHistory.clear();state.jobs={};state.apiErrors.length=0;state.failNextHistory=state.failNextPosition=state.failTextSaves=state.failTextRead=state.failArtworkAccount=state.failArtworkIds=false;return json(res,{ok:true})}
  if(p.startsWith('/_next/static/chunks/')){
   const file=require('node:path').resolve(dist,p.replace('/_next/',''));
   if(file.startsWith(require('node:path').resolve(dist)+require('node:path').sep)&&fs.existsSync(file)){res.writeHead(200,{'content-type':'application/javascript'});return res.end(fs.readFileSync(file))}
@@ -39,6 +39,8 @@ const server=http.createServer(async(req,res)=>{
  if(p==='/__fixture/shutdown'){json(res,{ok:true});app.kill();return server.close(()=>process.exit(0));}
  if(p==='/__fixture/fail-position'){state.failNextPosition=true;return json(res,{ok:true})}
  if(p==='/__fixture/fail-history'){state.failNextHistory=true;return json(res,{ok:true})}
+ if(p==='/__fixture/lose-history-response'){loseHistoryResponse=true;return json(res,{ok:true})}
+ if(p==='/__fixture/group'){for(const art of arts)art.canvasGroupId=u.searchParams.get('enabled')==='1'?'group-fixture':null;return json(res,{ok:true})}
  if(p==='/__fixture/text-failure'){state.failTextSaves=u.searchParams.get('save')==='1';state.failTextRead=u.searchParams.get('read')==='1';return json(res,{ok:true})}
  if(p==='/__fixture/artwork-failure'){state.failArtworkAccount=u.searchParams.get('account')==='1';state.failArtworkIds=u.searchParams.get('ids')==='1';return json(res,{ok:true})}
  if(p.startsWith('/api/')){
@@ -83,11 +85,14 @@ const server=http.createServer(async(req,res)=>{
     if(op.type==='position'){const n=op.text?t:a;if(n){n.canvasX=op.x;n.canvasY=op.y}}
     if(a&&op.type==='visibility')a.deletedAt=op.visible?null:now;
     if(a&&op.type==='rename')a.title=op.title;
+    if(a&&op.type==='parent'){
+     const parents=new Set(a.parentIds||[]);if(op.add){parents.add(op.parentId);a.parentId??=op.parentId;}else{parents.delete(op.parentId);if(a.source!=='canvas-add'&&a.parentId===op.parentId)a.parentId=null;}a.parentIds=[...parents];
+    }
     if(t&&op.type==='text-patch')Object.assign(t,op.fields);
     if(op.type==='text-delete'){const i=texts.findIndex(t=>t.id===op.id);if(i>=0)texts.splice(i,1);}
     if(op.type==='text-restore'){const i=texts.findIndex(t=>t.id===op.node.id);if(i>=0)texts[i]=op.node;else texts.push(op.node);}
    }
-   appliedHistory.set(body.operationId,body);state.historyApplied.push(body);return json(res,{ok:true,persisted:true});
+   appliedHistory.set(body.operationId,body);state.historyApplied.push(body);if(loseHistoryResponse){loseHistoryResponse=false;return json(res,{error:'fixture response lost after commit'},503);}return json(res,{ok:true,persisted:true});
   }
   if(p==='/api/canvas/text-nodes'){
    if(req.method==='POST'){state.textSaves.push(body);if(state.failTextSaves)return json(res,{error:'fixture text save failed'},503);const i=texts.findIndex(t=>t.id===body.id);if(i>=0)texts[i]=body;else texts.push(body);return json(res,{ok:true,persisted:true,node:body});}

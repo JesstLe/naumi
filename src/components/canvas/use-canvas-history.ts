@@ -54,7 +54,7 @@ export function useCanvasHistory(input: Input) {
   // retains its epoch even if the user navigates A -> B -> A.
   const pushUndo = useCallback((action: CanvasHistoryAction) => owner.push(scope,action),[owner,scope]);
   const lists = owner.list(scope);
-  return {undoStack:lists.undo,redoStack:lists.redo,pushUndo,historySaving:owner.busy.current,historyBusyRef:owner.busy,
+  return {scope,submit:(target:typeof scope,prepare:()=>CanvasHistoryAction|null)=>owner.submit(target,prepare),undoStack:lists.undo,redoStack:lists.redo,pushUndo,historySaving:owner.busy.current,historyBusyRef:owner.busy,
     setHistorySaving:owner.setBusy,applyHistory:(action: CanvasHistoryAction,undo: boolean,revision?:number) => owner.apply(scope,action,undo,revision),
     doUndo:() => owner.step(scope,true),doRedo:() => owner.step(scope,false),historyCurrent:scope.viewCurrent};
 }

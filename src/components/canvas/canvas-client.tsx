@@ -7,6 +7,11 @@ import {TextNodeContext} from "./nodes/text-node";
 import {canvasNodeTypes,canvasEdgeTypes} from "./nodes/registry";
 import {useCanvasSceneActions} from "./use-canvas-scene-actions";
 import {useCanvasScene} from "./use-canvas-scene";
+import {useCanvasSelection} from "./use-canvas-selection";
+import {useCanvasDrag} from "./use-canvas-drag";
+import {canvasNodeClick,canvasFlowSelection,canvasSelectionIds} from "@/lib/canvas/selection";
+import {compileCanvasLink,type CanvasLinkIntent} from "@/lib/canvas/link-command";
+import {compileCanvasMove} from "@/lib/canvas/drag-controller";
 
 import { updateAssistantTimeline, restoreAssistantTimeline, type AssistantTimelineTurn } from "@/lib/canvas/assistant-timeline";
 import { CachedImage } from "@/components/cached-image";
@@ -769,8 +774,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   worksRef.current=works;
 
   const frameChoice=useCanvasFrameChoice(imageDraftScope(user?.email,targetEmail,activeKey));
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedPendId, setSelectedPendId] = useState<string | null>(null);
+  const canvasSelection=useCanvasSelection();
+  const {selectedId,setSelectedId,selectedPendId,setSelectedPendId,selectedTextId,setSelectedTextId,selectedEdge,setSelectedEdge,multiSel,setMultiSel}=canvasSelection;
   const selectedIdRef = useRef<string | null>(null);
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -1002,11 +1007,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 剪刀剪线:鼠标悬停的连线 + 光标在画布内的位置(屏幕坐标,相对 canvasArea)
   const edgeHoverHintRef = useRef<CanvasEdgeHoverHandle>(null);
   // 连线选中(RF 原生点击选中):Delete/Backspace 才剪断,不再点一下就删
-  const [selectedEdge, setSelectedEdge] = useState<{
-    id: string;
-    source: string;
-    target: string;
-  } | null>(null);
   const cuttingEdgesRef = useRef(new Set<string>());
   // 占位/空白节点(添加节点/拉线建节点 → 先出空白节点,里面上传带进度,完成后变真节点)
   const [pendNodes, setPendNodes] = useState<Pend[]>([]);
@@ -1034,7 +1034,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     project:activeKey,enabled:ready&&!!user&&!!targetEmail,readOnly,notice:flashTip});
   const {nodes:textNodes,set:setTextNodes,ready:textNodesReady,unsaved:unsavedTextCount} = canvasTextDocument;
   const textNodesRef = useRef(textNodes); textNodesRef.current = textNodes;
-  const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [textPrompt, setTextPrompt] = useState("");
   const [textError, setTextError] = useState<string | null>(null);
   // 文字节点一键放大/还原只改变当前画布视图，不写回节点尺寸；刷新后仍使用用户保存的原尺寸。
@@ -1353,20 +1352,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const ids = [...artworks.map(n => n.id), ...result.textNodes.map(n => n.id)];
       window.requestAnimationFrame(() => window.requestAnimationFrame(() => void rfRef.current?.fitView({ nodes: ids.map(id => ({ id })), padding: 0.2, duration: 240, maxZoom: 1 })));
     } });
-  const dragStartRef = useRef<{ id: string; x: number; y: number } | null>(null);
-  const selectionDragStartRef = useRef<
-    Record<string, { x: number; y: number }>
-  >({});
-  const groupedDragStartRef = useRef<{
-    anchorId: string;
-    starts: Record<string, { x: number; y: number }>;
-  } | null>(null);
-  const skipSelectionDragStopRef = useRef(false);
   // 右键未选节点会先按桌面习惯单选；若用户随后点“加入批量选择”，
   // 仍可恢复右键前的选择集合并把当前节点加入其中。
   const contextSelectionBaseRef = useRef<string[]>([]);
   // 框选多选(React Flow 选中集合)
-  const [multiSel, setMultiSel] = useState<string[]>([]);
   const [canvasTool, setCanvasTool] = useState<CanvasPrimaryTool>("move");
   const boxSelectMode = canvasTool === "marquee";
   // 画布默认亮色；仅显式保存 dark 时使用暗色，保留用户本地选择。
@@ -1661,7 +1650,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         /* ignore */
       }
     }
-  }, [projects, activeKey, creatingNew, browsing, works]);
+  }, [projects, activeKey, creatingNew, browsing, works, setSelectedId]);
 
   // ?node=<作品id>:跳到该图所在项目并选中聚焦(管理员从后台点图进来时)
   useEffect(() => {
@@ -1682,7 +1671,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       }
       setBrowsing(false); // 新建/上传/深链 → 直接进入该项目画布,不停在网格
     }
-  }, [projects,videoNodesStore.ready,textNodesReady,works]);
+  }, [projects,videoNodesStore.ready,textNodesReady,works,setSelectedId]);
 
   // Optional desktop deep link; the original /canvas defaults are unchanged.
   const desktopProjectOpened = useRef<string | null>(null);
@@ -1960,7 +1949,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setSelectedTextId(null);
     setNodeRenameValue(label);
     setRenamingNodeId(id);
-  }, [readOnly]);
+  }, [readOnly,setSelectedId,setSelectedPendId,setSelectedTextId]);
 
   const extractVideoToCanvas = useCallback((id:string,action:VideoPlayerAction)=>{
     if(readOnly||!user||nodeSettingsRef.current[id]?.locked)return;
@@ -2495,7 +2484,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     operations:generationOperationRef.current,workflowManifests,actions:sceneActions}),
     [nodes,edges,active,activeKey,generationTasks,pendNodes,textNodes,videoNodesStore.nodes,videoTaskStore.tasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,
       locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutCatalog,cutoutCatalogError,workflowManifests,sceneActions,canvasArtworkDocument.scope]);
-  const {rfNodes,setRfNodes,onNodesChange,rfEdges,setRfEdges,onEdgesChange}=useCanvasScene(displayNodes,displayEdges,canvasArtworkDocument.scope);
+  const {rfNodes,setRfNodes,onNodesChange,rfEdges,setRfEdges,onEdgesChange,holdPositions}=useCanvasScene(displayNodes,displayEdges,canvasArtworkDocument.scope);
   useEffect(()=>{
     const pending=pendingNodeSelectionRef.current;if(!pending)return;
     if(pending.owner!==user?.email.toLowerCase()){pendingNodeSelectionRef.current=null;return;}
@@ -2521,23 +2510,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   useEffect(() => {
     setSelectedEdge(null);
     setRfEdges(current => current.map(edge => edge.selected ? { ...edge, selected: false } : edge));
-  }, [activeKey, user?.email, setRfEdges]);
+  }, [activeKey, user?.email, setRfEdges, setSelectedEdge]);
 
   function applyArtworkSelection(ids: string[]) {
-    setSelectedEdge(null);
-    setRfEdges(current => current.map(edge => edge.selected ? { ...edge, selected: false } : edge));
-    const valid = new Set(
-      ids.filter((id) => active?.members.some((item) => item.id === id)||videoNodesStore.nodes.some(node=>node.id===id&&node.projectKey===activeKey)||textNodesRef.current.some(node=>node.id===id&&node.projectKey===activeKey))
-    );
-    const next = Array.from(valid);
-    setMultiSel(next);
-    setRfNodes((current) =>
-      current.map((node) => ({ ...node, selected: valid.has(node.id) }))
-    );
-    setSelectedPendId(null);
-    const onlyText=next.length===1&&textNodesRef.current.some(node=>node.id===next[0]);
-    setSelectedTextId(onlyText?next[0]:null);
-    setSelectedId(next.length===1&&!onlyText?next[0]:null);
+    const kinds=new Map<string,"art"|"text"|"video">([
+      ...(active?.members||[]).map(node=>[node.id,"art"] as const),
+      ...videoNodesStore.nodes.filter(node=>node.projectKey===activeKey).map(node=>[node.id,"video"] as const),
+      ...textNodesRef.current.filter(node=>node.projectKey===activeKey).map(node=>[node.id,"text"] as const),
+    ]);
+    const patch=canvasSelectionIds(ids,kinds),valid=new Set(patch.multiSel);
+    canvasSelection.patch(patch);
+    setRfEdges(current=>current.map(edge=>edge.selected?{...edge,selected:false}:edge));
+    setRfNodes(current=>current.map(node=>({...node,selected:valid.has(node.id)})));
   }
 
   function toggleArtworkBatchSelection(nodeId: string, base = multiSel) {
@@ -4471,188 +4455,35 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     spawnSourceRef.current = params.nodeId ?? null;
     setLinking(true);
   }
-  async function onConnect(conn: {
-    source?: string | null;
-    target?: string | null;
-  }) {
-    // 连到了某个目标节点 → 多输入(标记避免误弹新建菜单)
-    connectedRef.current = true;
-    const source = conn.source;
-    const target = conn.target;
-    if (!source || !target || source === target) return;
-    if (source.startsWith("task-") || target.startsWith("task-")) return;
-    const videoTarget=videoNodesStore.nodes.find(node=>node.id===target);
-    if(videoTarget){
-      if(readOnly||isNodeLocked(target))return;
-      const choice=videoInputChoices.find(item=>item.nodeId===source);if(!choice||videoTarget.inputs.some(input=>input.nodeId===source))return;
-      try{await patchVideoNode(target,{inputs:videoModeRoles([...videoTarget.inputs,{id:`ref-${browserRandomUUID()}`,nodeId:choice.nodeId,kind:choice.kind,role:choice.kind==="text"?"context":choice.kind==="video"?"source_video":choice.kind==="audio"?"source_audio":"reference",value:choice.value}],videoTarget.config.mode)});}catch(error){flashTip(error instanceof Error?error.message:"视频引用保存失败");}return;
-    }
-
-    // 连到空白占位节点 → 加为它的输入(客户端)
-    if (target.startsWith("pend-")) {
-      if (pendNodesRef.current.some(node => node.id === target && (node.generating || node.uploading))) return;
-      setPendNodes((prev) =>
-        prev.map((p) =>
-          p.id === target
-            ? {
-                ...p,
-                inputs: Array.from(new Set([...(p.inputs ?? []), source])),
-              }
-            : p
-        )
-      );
-      return;
-    }
-    if (source.startsWith("pend-") || target.startsWith("pend-")) return;
-    if (target.startsWith("text-")) {
-      if (source.startsWith("text-")) { await updateTextReference(target, source, true); return; }
-      const art = active?.members.find((member) => member.id === source);
-      const textNode = textNodes.find((node) => node.id === target);
-      if (!art || !textNode) return;
-      // 多选了 ≥2 个文字节点时:这次连线=批量绑定产品图(全部连接 + @产品图前缀)
-      const batchTextIds = multiSel.filter((id) => id.startsWith("text-"));
-      if (batchTextIds.length >= 2 && batchTextIds.includes(target)) {
-        const targets = batchTextIds
-          .map((id) => textNodes.find((node) => node.id === id))
-          .filter(
-            (node): node is CanvasTextNode =>
-              !!node && (!activeKey || node.projectKey === activeKey)
-          );
-        await Promise.all(targets.map((node) => bindProductToTextNode(node, art)));
-        flashTip(fmt(t("canvas.productBound"), { n: targets.length }));
-        return;
-      }
-      // 已绑产品的节点再连一张图 = 换绑产品图
-      if ((textNode.productIds ?? []).length) {
-        await bindProductToTextNode(textNode, art);
-        return;
-      }
-      void updateTextReference(target, source, true);
-      return;
-    }
-    if (source.startsWith("text-")) {
-      const textNode = textNodes.find((node) => node.id === source);
-      if (!textNode || target.startsWith("text-")) return;
-      const updated: CanvasTextNode = {
-        ...textNode,
-        targetIds: Array.from(new Set([...(textNode.targetIds ?? []), target])),
-        updatedAt: new Date().toISOString(),
-      };
-      setTextNodes((current) =>
-        current.map((node) => (node.id === updated.id ? updated : node))
-      );
-      void persistTextNode(updated);
-      return;
-    }
-    // 连到已有真实节点 → 多输入,写库(带防环)
-    await addParentToNode(target, source);
-  }
-  // 多输入:给目标节点追加父节点(防环:源不能是目标的后代)
-  async function addParentToNode(targetId: string, sourceId: string) {
-    if (readOnly || !user || !active || isNodeLocked(targetId) || isNodeLocked(sourceId)) return;
-    const account = canvasAccountRef.current;
-    const byId = new Map(active.members.map((m) => [m.id, m]));
-    const target = byId.get(targetId);
-    if (target && explicitCanvasParent(target, sourceId)) return; // Existing link: no duplicate undo entry.
-    const parents = (id: string): string[] => {
-      const m = byId.get(id);
-      if (!m) return [];
-      const ps: string[] = [];
-      if (m.parentId && byId.has(m.parentId) && explicitCanvasParent(m, m.parentId)) ps.push(m.parentId);
-      for (const pid of m.parentIds ?? [])
-        if (pid && byId.has(pid)) ps.push(pid);
-      return ps;
-    };
-    // target 是否是 source 的祖先?是则连接会成环,跳过
-    const up = [sourceId];
-    const seen = new Set<string>();
-    let guard = 0;
-    while (up.length && guard++ < 2000) {
-      const id = up.pop() as string;
-      if (id === targetId) {
-        flashTip(t("canvas.linkCycle"));
-        return;
-      }
-      if (seen.has(id)) continue;
-      seen.add(id);
-      up.push(...parents(id));
-    }
+  async function submitCanvasLink(intent:CanvasLinkIntent) {
+    if(readOnly||!user)return false;
+    const scope=canvasHistory.scope;
+    // Drain current drafts before snapshotting link fields. The history owner
+    // serializes the command and retains an unknown response's original body.
     try {
-      const res = await privateFetchRaw("/api/artworks/parents", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          email: user.email,
-          id: targetId,
-          parentId: sourceId,
-        }),
-      });
-      await expectJsonOk(res, t("canvas.genFail"));
-      pushUndo({
-        kind: "parent",
-        targetId,
-        parentId: sourceId,
-        added: true,
-      }); // 连线可撤销(undo=剪断)
-      await synchronizeCanvasArtworks([targetId], async () => {
-        const fresh = await mergeWorks([targetId]);
-        if (!fresh.find(art => art.id === targetId)?.parentIds?.includes(sourceId)) throw new Error("连线已保存，参考图尚未同步，请稍后刷新");
-        return fresh;
-      }, () => canvasAccountRef.current === account);
-      flashTip(locale === "en" ? "Reference connected" : "已连接参考图");
-    } catch (e) {
-      flashTip(e instanceof Error ? e.message : t("canvas.genFail"));
-    }
+      await canvasTextDocument.flush();scope.assertView();
+      return await canvasHistory.submit(scope,()=>{
+        const memberIds=new Set(active?.members.map(node=>node.id)||[]);
+        return compileCanvasLink({
+        project:scope.project,artworks:(canvasArtworkDocument.getSnapshot().nodes||[]).filter(node=>memberIds.has(node.id)),texts:canvasTextDocument.getSnapshot().nodes,
+        videos:videoNodesStore.nodes.map(node=>videoNodesStore.getNode(node.id)||node),pending:pendNodesRef.current,selected:multiSel,choices:videoInputChoices,
+        locked:isNodeLocked,productTitle:t("canvas.productNode"),referenceLimit:t("canvas.textReferenceLimit"),cycleMessage:t("canvas.linkCycle"),productMention:withProductMention,
+      },intent);});
+    }catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.saveFailed"));return false;}
   }
-  // 剪断连线:把 source 从 target 的父节点(primary / parent_ids)里移除
-  async function cutEdge(edge: { id: string; source: string; target: string }) {
-    if (readOnly || !user || historyBusyRef.current || cuttingEdgesRef.current.has(edge.id)) return;
-    const pending = pendNodesRef.current.find(node => node.id === edge.target);
-    if (edge.source.startsWith("task-") || edge.target.startsWith("task-") || pending?.generating || pending?.uploading) return;
-    if (!rfEdges.some(current => current.id === edge.id)) return;
-    cuttingEdgesRef.current.add(edge.id);
-    edgeHoverHintRef.current?.clear();
+  async function onConnect(conn:{source?:string|null;target?:string|null}) {
+    connectedRef.current=true;
+    if(conn.source&&conn.target)await submitCanvasLink({source:conn.source,target:conn.target,add:true});
+  }
+  async function cutEdge(edge:{id:string;source:string;target:string}) {
+    if(readOnly||!user||historyBusyRef.current||cuttingEdgesRef.current.has(edge.id)||!rfEdges.some(item=>item.id===edge.id))return;
+    const scope=canvasHistory.scope;cuttingEdgesRef.current.add(edge.id);edgeHoverHintRef.current?.clear();
     try {
-      if (pending) {
-        const inputs = pending.inputs.filter(id => id !== edge.source);
-        const to = { inputs, parentId: pending.parentId === edge.source ? inputs[0] ?? null : pending.parentId, linked: inputs.length > 0 };
-        pushUndo({ kind: "pending-link", id: pending.id, from: { inputs: [...pending.inputs], parentId: pending.parentId, linked: pending.linked }, to });
-        setPendNodes(current => current.map(node => node.id === pending.id ? { ...node, ...to } : node));
-      } else if(videoNodesStore.getNode(edge.target)){
-        const node=videoNodesStore.getNode(edge.target)!;if(isNodeLocked(node.id))return;
-        const inputs=node.inputs.filter(input=>input.nodeId.replace(/^(?:text|image|video|audio):/,"")!==edge.source);
-        await patchVideoNode(node.id,{inputs:videoModeRoles(inputs,node.config.mode)});
-      } else if (edge.source.startsWith("text-") || edge.target.startsWith("text-")) {
-        // A product binding draws the same line as a reference: remove both fields.
-        // Complete queued text saves first so an older draft cannot recreate the edge.
-        await canvasTextDocument.flush();
-        const inbound = edge.target.startsWith("text-");
-        const textNode = textNodesRef.current.find(node => node.id === (inbound ? edge.target : edge.source));
-        if (!textNode) return;
-        const from = textPatchOf(textNode);
-        const to = inbound ? { ...from, sourceIds: from.sourceIds?.filter(id => id !== edge.source), productIds: from.productIds?.filter(id => id !== edge.source) }
-          : { ...from, targetIds: from.targetIds?.filter(id => id !== edge.target) };
-        const act: UndoAct = {kind:"text-patch",id:textNode.id,from,to};
-        await applyHistory(act,false); pushUndo(act);
-      } else {
-        const res = await privateFetchRaw("/api/artworks/parents", {
-          method: "DELETE", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ email: user.email, id: edge.target, parentId: edge.source }),
-          signal: AbortSignal.timeout(20_000),
-        });
-        await expectJsonOk(res, t("canvas.genFail"));
-        pushUndo({ kind: "parent", targetId: edge.target, parentId: edge.source, added: false });
-        await mergeWorks([edge.target]);
+      if(await submitCanvasLink({...edge,add:false})&&scope.viewCurrent()){
+        setRfEdges(current=>scope.viewCurrent()?current.filter(item=>item.id!==edge.id):current);
+        setSelectedEdge(current=>scope.viewCurrent()&&current?.id===edge.id?null:current);
       }
-      if (!historyCurrent()) return;
-      setRfEdges(current => current.filter(item => item.id !== edge.id));
-      setSelectedEdge(current => current?.id === edge.id ? null : current);
-    } catch (e) {
-      // Keep the persisted line and its selection on failure; retry remains available.
-      flashTip(e instanceof Error ? e.message : t("canvas.genFail"));
-    } finally {
-      cuttingEdgesRef.current.delete(edge.id);
-    }
+    }finally{cuttingEdgesRef.current.delete(edge.id);}
   }
   function onConnectEnd(
     event: MouseEvent | TouchEvent,
@@ -5365,43 +5196,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     addPendAtScreen(c.x, c.y, null, false);
   }
   function persistTextNode(node: CanvasTextNode) { return canvasTextDocument.save(node); }
-  async function updateTextReference(
-    textNodeId: string,
-    sourceId: string,
-    add: boolean
-  ) {
-    const textNode = textNodes.find((node) => node.id === textNodeId);
-    if (!textNode || sourceId === textNodeId || (!active?.members.some((member) => member.id === sourceId) && !textNodes.some(node => node.id === sourceId && node.projectKey === textNode.projectKey))) return;
-    if (add) {
-      const todo = [textNodeId], visited = new Set<string>();
-      while (todo.length) { const id = todo.pop()!; if (id === sourceId) { flashTip("不能形成循环连线"); return; }
-        if (visited.has(id)) continue; visited.add(id); todo.push(...rfEdges.filter(edge=>edge.source===id).map(edge=>edge.target)); }
-    }
-    const current = textNode.sourceIds ?? [];
-    if (add && !current.includes(sourceId) && ((sourceId.startsWith("text-") ? current.length >= 200 : current.filter(id => !id.startsWith("text-")).length >= 5))) {
-      flashTip(t("canvas.textReferenceLimit"));
-      return;
-    }
-    const sourceIds = add
-      ? Array.from(new Set([...current, sourceId]))
-      : current.filter((id) => id !== sourceId);
-    const updated: CanvasTextNode = {
-      ...textNode,
-      sourceIds,
-      updatedAt: new Date().toISOString(),
-    };
-    if (sourceIds.join("\u0000") !== current.join("\u0000")) {
-      pushUndo({
-        kind: "text-patch",
-        id: textNode.id,
-        from: textPatchOf(textNode),
-        to: textPatchOf(updated),
-      });
-    }
-    setTextNodes((items) =>
-      items.map((item) => (item.id === updated.id ? updated : item))
-    );
-    await persistTextNode(updated);
+  async function updateTextReference(textNodeId:string,sourceId:string,add:boolean) {
+    return submitCanvasLink({source:sourceId,target:textNodeId,add});
   }
   function resizeTextNode(
     id: string,
@@ -5595,27 +5391,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // ===== 竞品反推 → 智能帮写 → 成套生成 链路 =====
 
   // 绑定/换绑文字节点的产品图:productIds 记录绑定,@产品图 行刷新到内容开头
-  async function bindProductToTextNode(node: CanvasTextNode, art: Artwork) {
-    const updated: CanvasTextNode = {
-      ...node,
-      productIds: [art.id],
-      content: withProductMention(
-        node.content || "",
-        art.title || t("canvas.productNode")
-      ),
-      updatedAt: new Date().toISOString(),
-    };
-    pushUndo({
-      kind: "text-patch",
-      id: node.id,
-      from: textPatchOf(node),
-      to: textPatchOf(updated),
-    });
-    setTextNodes((items) =>
-      items.map((item) => (item.id === updated.id ? updated : item))
-    );
-    await persistTextNode(updated);
-  }
+
 
   // 批量反推:每张竞品图右侧生成一个"逆向提示词"文字节点(2 路并发,失败节点保留可重试)
   async function reversePromptsForSelection(arts: Artwork[]) {
@@ -6265,69 +6041,22 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const clip=readGenericNodeClip();if(clip){await duplicateCanvasNodes(clip.ids);return;}
   }
 
-  // 拖拽后记住节点坐标(本地即时生效 + 异步持久化)
-  function saveNodePosition(id: string, x: number, y: number) {
-    if (isNodeLocked(id)) return;
-    if (readOnly || id.startsWith("task-") || !user) return;
-    setWorks((prev) =>
-      prev
-        ? prev.map((w) =>
-            w.id === id ? { ...w, canvasX: x, canvasY: y } : w
-          )
-        : prev
-    );
-    privateFetchRaw("/api/artworks/position", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: user.email, id, x, y }),
-    }).then(response => expectJsonOk(response, t("canvas.saveFailed"))).catch(error => flashTip(error instanceof Error ? error.message : t("canvas.saveFailed")));
-  }
-
-  async function saveManyNodePositions(moves:Array<{id:string;from:{x:number;y:number};to:{x:number;y:number}}>){
-    if(readOnly||!user||!moves.length||historyBusyRef.current)return;
-    moves=moves.filter(move=>!isNodeLocked(move.id));if(!moves.length)return;
-    historyBusyRef.current=true;setHistorySaving(true);const act:UndoAct={kind:"move-many",moves};
-    try{await applyHistory(act,false);pushUndo(act);}catch(error){if(!historyCurrent())return;const positions=new Map(moves.map(move=>[move.id,move.from]));setRfNodes(current=>current.map(node=>positions.has(node.id)?{...node,position:positions.get(node.id)!}:node));flashTip(error instanceof Error?error.message:t("canvas.saveFailed"));}
-    finally{historyBusyRef.current=false;setHistorySaving(false);}
-  }
-
-  function rememberManyNodeDrag(nodes: Node[]) {
-    selectionDragStartRef.current =
-      nodes.length > 1
-        ? Object.fromEntries(
-            nodes.map((node) => [
-              node.id,
-              { x: node.position.x, y: node.position.y },
-            ])
-          )
-        : {};
-  }
-
-  function finishManyNodeDrag(nodes: Node[]) {
-    if (nodes.length <= 1) return false;
-    const starts = selectionDragStartRef.current;
-    selectionDragStartRef.current = {};
-    if (readOnly || !user) return true;
-    const moves = nodes
-      .filter(
-        (node) =>
-          !node.id.startsWith("pend-") &&
-          !node.id.startsWith("task-") &&
-          starts[node.id]
-      )
-      .map((node) => ({
-        id: node.id,
-        from: starts[node.id],
-        to: { x: node.position.x, y: node.position.y },
-      }))
-      .filter(
-        (move) =>
-          Math.round(move.from.x) !== Math.round(move.to.x) ||
-          Math.round(move.from.y) !== Math.round(move.to.y)
-      );
-    if (moves.length) saveManyNodePositions(moves);
-    return true;
-  }
+  const canvasDrag=useCanvasDrag({
+    scope:canvasHistory.scope,selected:multiSel,nodes:rfNodes,artworks:active?.members||[],setNodes:setRfNodes,hold:holdPositions,
+    locked:id=>readOnly||!user||isNodeLocked(id),warning:flashTip,
+    local:(id,point,finished)=>{
+      rememberGenerationDrag(id,point,finished);if(!finished)return;
+      if(id.startsWith("task-")){
+        generationTaskPosRef.current[id]={...point};
+        setGenerationTasks(current=>current.map(task=>task.id===id?{...task,position:{...point}}:task));
+      }else if(id.startsWith("pend-"))setPendNodes(current=>current.map(node=>node.id===id?{...node,x:point.x,y:point.y}:node));
+    },
+    commit:(moves,scope)=>canvasHistory.submit(scope,()=>compileCanvasMove(moves,id=>{
+      const video=videoNodesStore.getNode(id);if(video)return {x:video.x,y:video.y};
+      const node=id.startsWith("text-")?canvasTextDocument.getSnapshot().nodes.find(node=>node.id===id):canvasArtworkDocument.getSnapshot().nodes?.find(node=>node.id===id);
+      return node&&typeof node.canvasX==="number"&&typeof node.canvasY==="number"?{x:node.canvasX,y:node.canvasY}:undefined;
+    })),
+  });
 
   // Explicit node focus / deep links move the view, never the nodes.
   // fitView queues until *all* nodes initialize; a large virtualized project can
@@ -7279,53 +7008,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 updateLiveViewport(vp);
                 setViewport(previous => canvasZoomState(previous, vp));
               }}
-              onNodeClick={(event, node) => {
-                if (canvasTool === "hand") return;
-                if (node.id.startsWith("task-")) return;
-                setSelectedEdge(null);
-                setRfEdges(current => current.map(edge => edge.selected ? { ...edge, selected: false } : edge));
-                if (node.id.startsWith("pend-")) {
-                  // 选中空白节点 → 出文生图/合并 dock
-                  setSelectedId(null);
-                  setSelectedTextId(null);
-                  setSelectedPendId(node.id);
-                  return;
-                }
-                if (node.id.startsWith("text-")) {
-                  setSelectedId(null);
-                  setSelectedPendId(null);
-                  setSelectedTextId(node.id);
-                  return;
-                }
-                if (event.ctrlKey || event.metaKey || event.shiftKey) {
-                  setSelectedId(null);
-                  setSelectedPendId(null);
-                  setSelectedTextId(null);
-                  return;
-                }
-                const grouped = active?.members.find((item) => item.id === node.id);
-                const groupMembers = grouped?.canvasGroupId
-                  ? active?.members.filter(
-                      (item) => item.canvasGroupId === grouped.canvasGroupId
-                    ) ?? []
-                  : [];
-                if (groupMembers.length > 1) {
-                  const memberIds = new Set(groupMembers.map((item) => item.id));
-                  setSelectedId(null);
-                  setSelectedPendId(null);
-                  setSelectedTextId(null);
-                  setMultiSel(Array.from(memberIds));
-                  setRfNodes((current) =>
-                    current.map((item) => ({
-                      ...item,
-                      selected: memberIds.has(item.id),
-                    }))
-                  );
-                  return;
-                }
-                setSelectedPendId(null);
-                setSelectedTextId(null);
-                setSelectedId(node.id);
+              onNodeClick={(event,node)=>{
+                if(canvasTool==="hand"||node.id.startsWith("task-"))return;
+                const art=active?.members.find(item=>item.id===node.id),group=art?.canvasGroupId?active?.members.filter(item=>item.canvasGroupId===art.canvasGroupId).map(item=>item.id)||[]:[];
+                const patch=canvasNodeClick(node.id,event.ctrlKey||event.metaKey||event.shiftKey,group);canvasSelection.patch(patch);
+                setRfEdges(current=>current.map(edge=>edge.selected?{...edge,selected:false}:edge));
+                if(patch.multiSel){const ids=new Set(patch.multiSel);setRfNodes(current=>current.map(item=>({...item,selected:ids.has(item.id)})));}
               }}
               onNodeDoubleClick={(_, node) => {
                 if(videoNodesStore.nodes.some(item=>item.id===node.id)){openVideoEditor(node.id);return;}
@@ -7373,206 +7061,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               }}
               onNodeContextMenu={onNodeContextMenu}
               onPaneContextMenu={onPaneContextMenu}
-              onSelectionChange={({ nodes: sel, edges: selEdges }) => {
-                const ids = sel.filter(n => n.type !== "workflowGroup").map((n) => n.id).sort();
-                // 只在选中集合"真的变化"时才更新,否则会和受控选中态形成无限 setState 循环(React #185)
-                setMultiSel((prev) => {
-                  const sortedPrev = [...prev].sort();
-                  return sortedPrev.length === ids.length &&
-                    sortedPrev.every((v, i) => v === ids[i])
-                    ? prev
-                    : ids;
-                });
-                // 连线选中态:同防抖处理,只有真的变化才更新
-                const edge = selEdges[0];
-                if (edge && ids.length === 0) {
-                  setSelectedId(null);
-                  setSelectedTextId(null);
-                  setSelectedPendId(null);
-                }
-                setSelectedEdge((prev) => {
-                  const next = edge
-                    ? { id: edge.id, source: edge.source, target: edge.target }
-                    : null;
-                  return prev?.id === next?.id ? prev : next;
-                });
-              }}
+              onSelectionChange={({nodes,edges})=>canvasSelection.update(state=>canvasFlowSelection(state,nodes,edges))}
               onSelectionStart={() => {
                 setSelectedId(null);
                 setSelectedPendId(null);
                 setSelectedTextId(null);
                 setCtxMenu(null);
               }}
-              onNodeDragStart={(_, node, draggedNodes) => {
-                dragStartRef.current = {
-                  id: node.id,
-                  x: node.position.x,
-                  y: node.position.y,
-                };
-                rememberManyNodeDrag(draggedNodes);
-                groupedDragStartRef.current = null;
-                skipSelectionDragStopRef.current = false;
-                const artwork = active?.members.find((item) => item.id === node.id);
-                const groupMembers = artwork?.canvasGroupId
-                  ? active?.members.filter(
-                      (item) => item.canvasGroupId === artwork.canvasGroupId
-                    ) ?? []
-                  : [];
-                if (
-                  groupMembers.length > 1 &&
-                  multiSel.length === groupMembers.length &&
-                  groupMembers.every((item) => multiSel.includes(item.id))
-                ) {
-                  const positions = new Map(
-                    rfNodes.map((item) => [item.id, item.position])
-                  );
-                  groupedDragStartRef.current = {
-                    anchorId: node.id,
-                    starts: Object.fromEntries(
-                      groupMembers.filter(item=>!isNodeLocked(item.id)).map((item) => [
-                        item.id,
-                        positions.get(item.id) ?? {
-                          x: item.canvasX ?? 0,
-                          y: item.canvasY ?? 0,
-                        },
-                      ])
-                    ),
-                  };
-                  skipSelectionDragStopRef.current = true;
-                }
-              }}
-              onNodeDrag={(_, node) => {
-                rememberGenerationDrag(node.id, node.position);
-                const grouped = groupedDragStartRef.current;
-                if (!grouped || grouped.anchorId !== node.id) return;
-                const anchorStart = grouped.starts[node.id];
-                if (!anchorStart) return;
-                const dx = node.position.x - anchorStart.x;
-                const dy = node.position.y - anchorStart.y;
-                setRfNodes((current) =>
-                  current.map((item) => {
-                    const start = grouped.starts[item.id];
-                    if (!start) return item;
-                    return {
-                      ...item,
-                      position:
-                        item.id === node.id
-                          ? { ...node.position }
-                          : { x: start.x + dx, y: start.y + dy },
-                    };
-                  })
-                );
-              }}
-              onNodeDragStop={(_, node, draggedNodes) => {
-                rememberGenerationDrag(node.id, node.position, true);
-                if (node.id.startsWith("task-")) {
-                  // 生成中占位:每个任务独立记住拖到的位置。
-                  generationTaskPosRef.current[node.id] = {
-                    x: node.position.x,
-                    y: node.position.y,
-                  };
-                  setGenerationTasks((current) =>
-                    current.map((task) =>
-                      task.id === node.id
-                        ? { ...task, position: { ...node.position } }
-                        : task
-                    )
-                  );
-                  return;
-                }
-                if (node.id.startsWith("pend-")) {
-                  setPendNodes((prev) =>
-                    prev.map((p) =>
-                      p.id === node.id
-                        ? { ...p, x: node.position.x, y: node.position.y }
-                        : p
-                    )
-                  );
-                  return;
-                }
-                const grouped = groupedDragStartRef.current;
-                if (grouped && grouped.anchorId === node.id) {
-                  const anchorStart = grouped.starts[node.id];
-                  groupedDragStartRef.current = null;
-                  skipSelectionDragStopRef.current = false;
-                  selectionDragStartRef.current = {};
-                  if (!anchorStart) return;
-                  const dx = node.position.x - anchorStart.x;
-                  const dy = node.position.y - anchorStart.y;
-                  const moves = Object.entries(grouped.starts)
-                    .map(([id, from]) => ({
-                      id,
-                      from,
-                      to: { x: from.x + dx, y: from.y + dy },
-                    }))
-                    .filter(
-                      (move) =>
-                        Math.round(move.from.x) !== Math.round(move.to.x) ||
-                        Math.round(move.from.y) !== Math.round(move.to.y)
-                    );
-                  const positions = new Map(moves.map((move) => [move.id, move.to]));
-                  setRfNodes((current) =>
-                    current.map((item) => {
-                      const position = positions.get(item.id);
-                      return position ? { ...item, position } : item;
-                    })
-                  );
-                  saveManyNodePositions(moves);
-                  return;
-                }
-                if(videoNodesStore.nodes.some(item=>item.id===node.id)){
-                  if(finishManyNodeDrag(draggedNodes))return;
-                  void patchVideoNode(node.id,{x:node.position.x,y:node.position.y}).catch(error=>flashTip(error.message));return;
-                }
-                // React Flow 从某个已选节点发起多选拖动时，只触发 onNodeDragStop，
-                // 第三个参数才是整组节点；onSelectionDragStop 不会触发。
-                if (finishManyNodeDrag(draggedNodes)) return;
-                if (node.id.startsWith("text-")) {
-                  const current = textNodes.find((item) => item.id === node.id);
-                  if (!current) return;
-                  const from = { x: current.canvasX, y: current.canvasY };
-                  const moved: CanvasTextNode = {
-                    ...current,
-                    canvasX: node.position.x,
-                    canvasY: node.position.y,
-                    updatedAt: new Date().toISOString(),
-                  };
-                  setTextNodes((items) =>
-                    items.map((item) => (item.id === moved.id ? moved : item))
-                  );
-                  if (Math.round(from.x) !== Math.round(moved.canvasX) || Math.round(from.y) !== Math.round(moved.canvasY)) {
-                    pushUndo({ kind: "text-move", id: moved.id, from, to: { x: moved.canvasX, y: moved.canvasY } });
-                  }
-                  void persistTextNode(moved);
-                  return;
-                }
-                const st = dragStartRef.current;
-                if (
-                  st &&
-                  st.id === node.id &&
-                  (Math.round(st.x) !== Math.round(node.position.x) ||
-                    Math.round(st.y) !== Math.round(node.position.y))
-                ) {
-                  pushUndo({
-                    kind: "move",
-                    id: node.id,
-                    from: { x: st.x, y: st.y },
-                    to: { x: node.position.x, y: node.position.y },
-                  });
-                }
-                saveNodePosition(node.id, node.position.x, node.position.y);
-              }}
-              onSelectionDragStart={(_, selectedNodes) => {
-                rememberManyNodeDrag(selectedNodes);
-              }}
-              onSelectionDragStop={(_, selectedNodes) => {
-                if (skipSelectionDragStopRef.current) {
-                  skipSelectionDragStopRef.current = false;
-                  selectionDragStartRef.current = {};
-                  return;
-                }
-                finishManyNodeDrag(selectedNodes);
-              }}
+              onNodeDragStart={(_,node,nodes)=>canvasDrag.start(node,nodes)}
+              onNodeDrag={(_,node)=>canvasDrag.move(node)}
+              onNodeDragStop={(_,node,nodes)=>void canvasDrag.finish(node,nodes)}
+              onSelectionDragStart={(_,nodes)=>canvasDrag.startMany(nodes)}
+              onSelectionDragStop={(_,nodes)=>void canvasDrag.finishMany(nodes)}
               onConnectStart={onConnectStart}
               onConnect={onConnect}
               onConnectEnd={onConnectEnd}

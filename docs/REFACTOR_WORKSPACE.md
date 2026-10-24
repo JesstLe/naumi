@@ -32,6 +32,8 @@
 
 ## 开发约定
 
+2026-10-24 R3C2 增量：选择快照、单/多/组拖动和连线命令已迁移；原子 history/回执队列覆盖新交互及既有整理/属性/undo，三处 parent 语义统一。Canvas **9800行**，基线10/28→新版33/89，真实PG26→28、相邻PG20，真实控件12＋12＋5＋5通过；详见 [R3C2记录](changes/2026-10-24-canvas-interactions-r3c2.md)。同步后第2模块，继续节点操作和R4—R6；未合main、未部署，整体目标active。
+
 2026-10-24 R3C1 增量：typed scene projection、独立节点renderer、稳定命令代理与完整值reconciliation已接入；Canvas **10300行**，30场景98检查、32组SSR HTML对照、真实Next 6＋12＋5＋5通过。见 [R3C1记录](changes/2026-10-24-canvas-scene-r3c1.md)。本轮为同步后第1模块，继续R3C2选择/连线/拖动命令及R4—R6；未合main或发布。
 
 2026-10-24 R3B4 增量：详情与同步编辑任务 owner 已迁移，普通生图/详情/编辑共享结果落地；未知提交保留原 operation/报价、已知任务只查询、已知结果只续接。Canvas 11576 行，74 场景 369 检查、真实 PG 21、Next 新控件 5/相邻生图 5 通过，见 [R3B4记录](changes/2026-10-24-canvas-task-boundaries-r3b4.md)。本轮是同步后第3模块；完成后刷新/普通整合 main 并归零，不合入 main、不发布。整体重构继续 R3C。

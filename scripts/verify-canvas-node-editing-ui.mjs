@@ -10,7 +10,9 @@ if(process.argv.includes('--baseline')){
   assert.ok(!client.includes('NodePropertiesPanel') && !client.includes('ImageCropDialog'));
   console.log('NODE_EDIT_BASELINE=PASS TEXT_STYLE=FIXED_12PX NODE_LOCK_LAYER=ABSENT LOCAL_CROP_REPLACE=ABSENT');process.exit(0);
 }
-for(const token of ['nodeSettingsRef','nodeSettingsReady','settings.order','!settings.locked','nodeTextStyle','NodePropertiesPanel','ImageCropDialog','nodeManagementItems','isNodeLocked','elevateNodesOnSelect={false}','moves=moves.filter','groupMembers.filter','propertiesOpen ||','/api/canvas/local-image-edit','onSave={settings=>commitNodeSettings'])assert.ok(presentation.includes(token)||token==='propertiesOpen ||' && client.includes('(propertiesOpen &&'),token);
+for(const token of ['nodeSettingsRef','nodeSettingsReady','settings.order','!settings.locked','nodeTextStyle','NodePropertiesPanel','ImageCropDialog','nodeManagementItems','isNodeLocked','elevateNodesOnSelect={false}','propertiesOpen ||','/api/canvas/local-image-edit','onSave={settings=>commitNodeSettings'])assert.ok(presentation.includes(token)||token==='propertiesOpen ||' && client.includes('(propertiesOpen &&'),token);
+const drag=read('src/lib/canvas/drag-controller.ts');
+assert.ok(drag.includes('chosen.filter(node=>!input.locked(node.id))')&&drag.includes('if(!to||input.locked(id))continue'),'gesture owner filters locked nodes at start and completion');
 const historyModel=read('src/lib/canvas/history-model.ts');
 for(const token of ['kind: "node-settings"','type:"node-settings"'])assert.ok(historyModel.includes(token),token+' is owned by history model');
 assert.ok(client.includes('await applyHistory(act,false); pushUndo(act)'), 'properties caller uses shared atomic history owner');

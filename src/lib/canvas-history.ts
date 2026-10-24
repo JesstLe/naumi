@@ -11,6 +11,7 @@ import {authorizeNodeInputs} from "@/lib/canvas/video-node-service";
 
 // Shared wire schema; repository keeps the atomic transaction and ownership checks.
 import { historyRequest } from "./canvas/history-contract";
+import { canvasParentCycle, changeCanvasParent } from "./canvas/parent-link";
 export { historyRequest, videoHistoryFields } from "./canvas/history-contract";
 
 /** A whole history step commits once, including mixed image/text operations. */
@@ -107,21 +108,16 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
         const f=op.fields;
         await client.query(`UPDATE app_canvas_text_nodes SET title=$3,prompt=COALESCE($4,prompt),content=$5,source_ids=$6::jsonb,target_ids=$7::jsonb,product_ids=$8::jsonb,canvas_width=$9,canvas_height=$10,updated_at=now() WHERE email=$1 AND id=$2`,[email,op.id,f.title,f.prompt,f.content,JSON.stringify(f.sourceIds),JSON.stringify(f.targetIds),JSON.stringify(f.productIds),f.width,f.height]);
       } else if (op.type === "parent") {
+        if(row.deleted_at)throw new Error("节点已删除，请刷新画布");
         if (op.add) {
           const parent=await client.query("SELECT group_id FROM app_artworks WHERE email=$1 AND id=$2 AND deleted_at IS NULL",[email,op.parentId]);
           if (!parent.rows.length || parent.rows[0].group_id!==row.group_id) throw new Error("父节点不存在或跨项目");
-          const cycle=await client.query(`WITH RECURSIVE ancestors AS (
-            SELECT id,parent_id,parent_ids FROM app_artworks WHERE email=$1 AND id=$2
-            UNION SELECT a.id,a.parent_id,a.parent_ids FROM app_artworks a JOIN ancestors p
-            ON a.id=p.parent_id OR p.parent_ids ? a.id WHERE a.email=$1
-          ) SELECT 1 FROM ancestors WHERE id=$3`,[email,op.parentId,op.id]);
-          if (cycle.rows.length) throw new Error("不能形成循环连线");
+          const graph=await client.query(`SELECT id,parent_id AS "parentId",parent_ids AS "parentIds",source_url AS source
+            FROM app_artworks WHERE email=$1 AND group_id IS NOT DISTINCT FROM $2 AND deleted_at IS NULL`,[email,row.group_id]);
+          if(canvasParentCycle(graph.rows,op.id,op.parentId))throw new Error("不能形成循环连线");
         }
-        const parents = new Set<string>(row.parent_ids || []);
-        let primary=row.parent_id;
-        if (op.add) { if (!primary) primary=op.parentId; else if (primary!==op.parentId) parents.add(op.parentId); }
-        else { if (primary===op.parentId) primary=null; parents.delete(op.parentId); }
-        await client.query("UPDATE app_artworks SET parent_id=$3,parent_ids=$4::jsonb WHERE email=$1 AND id=$2",[email,op.id,primary,JSON.stringify(Array.from(parents))]);
+        const next=changeCanvasParent({parentId:row.parent_id,parentIds:row.parent_ids,source:row.source_url},op.parentId,op.add);
+        await client.query("UPDATE app_artworks SET parent_id=$3,parent_ids=$4::jsonb WHERE email=$1 AND id=$2",[email,op.id,next.parentId,JSON.stringify(next.parentIds)]);
       }
     }
     await client.query("INSERT INTO app_canvas_history_ops(id,email,fingerprint) VALUES($1,$2,$3)",[input.operationId,email,fingerprint]);

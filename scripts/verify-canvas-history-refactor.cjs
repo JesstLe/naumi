@@ -37,13 +37,13 @@ function setup(built){
  };
  state.videos=[video()];c.videoNodesStore={getNode:id=>state.videos.find(n=>n.id===id),flush:async()=>{state.flushed++;await state.flush();},refresh:async()=>{state.refreshes++;await state.refresh();}};
  vm.createContext(c);vm.runInContext(built,c);Object.assign(c,module.exports);
- const names=['privateFetchRaw','applyHistory','doUndo','doRedo','commitNodeSettings','selectVideoResult','saveManyNodePositions',...(!baseline?['applyPendingLinkHistory','applyHistorySettings','onHistoryApplied']:[])];
+ const names=['privateFetchRaw','applyHistory','doUndo','doRedo','commitNodeSettings','selectVideoResult',...(fn.saveManyNodePositions?['saveManyNodePositions']:[]),...(!baseline?['applyPendingLinkHistory','applyHistorySettings','onHistoryApplied']:[])];
  // pushUndo is a useCallback invocation. Keep its original initializer, with a
  // fixture useCallback, rather than maintaining a handwritten copy of its body.
  c.useCallback=f=>f;
  const declarations=baseline?`const historyAccount=canvasAccountRef.current,historyScope=JSON.stringify([historyAccount,activeKey||"workspace"]);historyScopeRef.current=historyScope;const textPatchOf=${decl.textPatchOf};const pushUndo=${decl.pushUndo};const undoStack=historyUndo.filter(a=>historyScopesRef.current.get(a)===historyScope),redoStack=historyRedo.filter(a=>historyScopesRef.current.get(a)===historyScope);`
  : `const canvasHistory=${decl.canvasHistory};const {undoStack,redoStack,pushUndo,historyBusyRef,historySaving,setHistorySaving,historyCurrent}=canvasHistory;`;
- vm.runInContext(compile(`globalThis.__render=function(activeKey,user,readOnly,historyUndo,historyRedo){const active={key:activeKey,members:[],textNodes:[],videoNodes:[]};${names.map(n=>fn[n]).join('\n')}\n${declarations}\nreturn {applyHistory,doUndo,doRedo,pushUndo,commitNodeSettings,selectVideoResult,saveManyNodePositions,undoStack,redoStack};};`),c);
+ vm.runInContext(compile(`globalThis.__render=function(activeKey,user,readOnly,historyUndo,historyRedo){const active={key:activeKey,members:[],textNodes:[],videoNodes:[]};${names.map(n=>fn[n]).join('\n')}\n${declarations}\nreturn {applyHistory,doUndo,doRedo,pushUndo,commitNodeSettings,selectVideoResult,${fn.saveManyNodePositions?'saveManyNodePositions':'canvasHistory'},undoStack,redoStack};};`),c);
  let textBinding;
  const documentContext=textOwner?c.createCanvasDocumentContext():null;
  const textDocument=textOwner?c.createCanvasTextDocument({storage:()=>undefined,notice:()=>{}}):null;
@@ -76,7 +76,7 @@ async function main(){
  await test('first-project-history',async()=>{const f=setup(built);f.render(null).pushUndo({kind:'add',records:[art()]});eq(f.render('tree:A').undoStack.length,1);});
  await test('transaction-rejected',async()=>{const f=setup(built);f.render().pushUndo(actions[9]);f.state.respond=async()=>Response.json({error:'write failed'},{status:409});await f.render().doUndo();eq(f.render().undoStack.length,1);eq(f.render().redoStack.length,0);eq(f.state.texts[0].canvasX,100);});
  await test('committed-refresh-warning-keeps-undo',async()=>{const f=setup(built);f.render().pushUndo(actions[10]);f.state.refresh=async()=>{throw Error('video refresh failed')};await f.render().doUndo();eq(f.render().redoStack.length,baseline?0:1);eq(f.state.works[0].canvasX,30);ok(f.state.notices.length===1);});
- await test('actual-move-many-does-not-rollback-commit',async()=>{const f=setup(built);f.state.rf=[{id:'a',position:{x:80,y:90}}];f.state.refresh=async()=>{throw Error('video refresh failed')};await f.render().saveManyNodePositions(actions[10].moves);eq(f.render().undoStack.length,baseline?0:1);eq(f.state.rf[0].position.x,baseline?30:80);});
+ await test('actual-move-many-does-not-rollback-commit',async()=>{const f=setup(built);f.state.rf=[{id:'a',position:{x:80,y:90}}];f.state.refresh=async()=>{throw Error('video refresh failed')};const r=f.render();if(r.saveManyNodePositions)await r.saveManyNodePositions(actions[10].moves);else await r.canvasHistory.submit(r.canvasHistory.scope,()=>actions[10]);eq(f.render().undoStack.length,baseline?0:1);eq(f.state.rf[0].position.x,baseline?30:80);});
  for(const phase of ['flush','auth'])for(const kind of ['project','account','workspace'])await test(phase+'-'+kind+'-ABA',async()=>{
   const f=setup(built),r=f.render();r.pushUndo(actions[13]);const gate=wait(),entered=wait();f.state[phase]=()=>{entered.resolve();return gate.promise};const running=f.render().doUndo();await entered.promise;
   if(kind==='workspace'){f.ports.workspace='tenant';f.ports.revision++;f.ports.workspace='personal';f.ports.revision++;}

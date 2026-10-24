@@ -1,3 +1,4 @@
+import { canvasParentCycle, changeCanvasParent } from "./canvas/parent-link";
 import {randomUUID,createHash} from "node:crypto";
 import { creationProvenance, type ArtworkProvenance } from "@/lib/artwork-provenance";
 import { currentArtworkCreation } from "@/lib/artwork-provenance-context";
@@ -3144,7 +3145,7 @@ export async function addArtworkParent(
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [email]);
     const { rows } = await client.query(
-      `SELECT id, parent_id, parent_ids, group_id
+      `SELECT id, parent_id, parent_ids, group_id, source_url AS source
          FROM app_artworks
         WHERE email = $1 AND id = ANY($2::text[]) AND deleted_at IS NULL
         FOR UPDATE`,
@@ -3162,38 +3163,12 @@ export async function addArtworkParent(
     const graph = await client.query(
       `SELECT id, parent_id, parent_ids, source_url AS source
          FROM app_artworks
-        WHERE email = $1 AND group_id = $2 AND deleted_at IS NULL`,
+        WHERE email = $1 AND group_id IS NOT DISTINCT FROM $2 AND deleted_at IS NULL`,
       [email, target.group_id]
     );
-    const byId = new Map(graph.rows.map((r) => [r.id as string, r]));
-    const stack = [parentId];
-    const seen = new Set<string>();
-    while (stack.length) {
-      const current = stack.pop() as string;
-      if (current === id) throw new Error("连接会形成循环");
-      if (seen.has(current)) continue;
-      seen.add(current);
-      const node = byId.get(current);
-      if (!node) continue;
-      if (node.parent_id && (node.source !== "canvas-add" || node.parent_ids?.includes(node.parent_id))) stack.push(node.parent_id as string);
-      if (Array.isArray(node.parent_ids)) {
-        stack.push(...(node.parent_ids as string[]).filter(Boolean));
-      }
-    }
-
-    const cur: string[] = Array.isArray(target.parent_ids)
-      ? (target.parent_ids as string[])
-      : [];
-    const set = new Set(cur);
-    // parent_id also groups canvas-add uploads into a project. A deliberate
-    // connection must remain explicit even when it equals that grouping parent.
-    set.add(parentId);
-    await client.query(
-      `UPDATE app_artworks
-          SET parent_id = COALESCE(parent_id, $3), parent_ids = $4::jsonb
-        WHERE email = $1 AND id = $2`,
-      [email, id, parentId, JSON.stringify(Array.from(set))]
-    );
+    if(canvasParentCycle(graph.rows.map(row=>({id:row.id,parentId:row.parent_id,parentIds:row.parent_ids,source:row.source})),id,parentId))throw new Error("连接会形成循环");
+    const next=changeCanvasParent({parentId:target.parent_id,parentIds:target.parent_ids,source:target.source},parentId,true);
+    await client.query("UPDATE app_artworks SET parent_id=$3,parent_ids=$4::jsonb WHERE email=$1 AND id=$2",[email,id,next.parentId,JSON.stringify(next.parentIds)]);
     await client.query("COMMIT");
   } catch (e) {
     await client.query("ROLLBACK");
@@ -3238,13 +3213,8 @@ export async function removeArtworkParent(
     );
     if (rows.length) {
       const row = rows[0];
-      const next = (Array.isArray(row.parent_ids) ? row.parent_ids : []).filter((p: string) => p && p !== parentId);
-      // canvas-add primary is the project membership, not the removable input.
-      const primary = row.source === "canvas-add" || row.parent_id !== parentId ? row.parent_id : null;
-      await client.query(
-        `UPDATE app_artworks SET parent_id = $3, parent_ids = $4::jsonb WHERE email = $1 AND id = $2`,
-        [email, id, primary, JSON.stringify(next)]
-      );
+      const next=changeCanvasParent({parentId:row.parent_id,parentIds:row.parent_ids,source:row.source},parentId,false);
+      await client.query("UPDATE app_artworks SET parent_id=$3,parent_ids=$4::jsonb WHERE email=$1 AND id=$2",[email,id,next.parentId,JSON.stringify(next.parentIds)]);
     }
     await client.query("COMMIT");
   } catch (error) {
