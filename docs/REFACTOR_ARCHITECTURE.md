@@ -308,3 +308,10 @@ DDL 从 `ensureSchema` 逐个迁到发布前、带版本记录的迁移。先验
 R1A1生图、R1A2抠图/同步账务和任务读取均已切换真实调用，生产lib反向调用app route从2条变0；HTTP仍保留为公开协议adapter。R1A2复用既有claimCreation修复并发唯一键503，保留原回执及一次结算；未增加审批/报价确认。
 
 详见 [R1A2模块记录](changes/2026-10-24-cutout-billing-boundary-r1a2.md)。R1B参数/报价准备、R2统一交付、R3 Canvas、R4 DB/配置等继续推进。最大静态SCC现55（原54，拆分导致文件数增加）、视频20仍在，不能把route瘦身视为全仓解耦或容量达标。完整版本尚未交付、未合main、未部署。
+
+
+## 14. R1B准备与报价（2026-10-24续）
+
+typed quotation 移除伪Request；model identity/price共用一份snapshot；shared quality覆盖HTTP与三个planner入口；新steps保存私有preparedImage，执行不重选默认参数。原报价、老plan与原回执保持。实际PG的发布中途混价与scope覆盖问题已用A/B对照关闭，见 [R1B记录](changes/2026-10-24-image-preparation-r1b.md)。
+
+R1B结构职责已迁移，跨域SCC仍60，后续R4负责DB和配置的运行依赖剥离。接下来R2统一正常/恢复交付；最终完整候选、UI/性能验收仍未完成。

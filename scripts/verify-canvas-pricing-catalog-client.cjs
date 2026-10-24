@@ -123,7 +123,7 @@ const responseModule = execute(declaration(ast(sourceFile('src/lib/billing/acces
   'actual-billing-json.ts', { PRIVATE_HEADERS: { 'Cache-Control': 'private, no-store' } });
 const { billingJson } = responseModule.exports;
 const errorSource=sourceFile('src/lib/billing/request.ts'),errorAST=ast(errorSource);
-const { billingErrorResponse } = execute((read(errorSource).includes('function billingFailure')?declaration(errorAST,'billingFailure')+'\n':'')+declaration(errorAST, 'billingErrorResponse'),
+const { billingErrorResponse } = execute((read(errorSource).includes('function billingFailure')?declaration(errorAST,'billingFailure')+'\n':fs.existsSync(sourceFile('src/lib/billing/failure.ts'))?declaration(ast(sourceFile('src/lib/billing/failure.ts')),'billingFailure')+'\n':'')+declaration(errorAST, 'billingErrorResponse'),
   'actual-billing-error-response.ts', { BillingError, ModelConfigError, billingJson }).exports;
 function deferred() {
   let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
@@ -155,7 +155,8 @@ function catalogFixture(settings = {}) {
     getUserDefaultImageModel: async () => 'fixture-default', getOpenAISettings: async () => ({ model: 'fixture-default' }),
     isNewApiFlowImageModel: () => false };
   const names = ['meteringFor', 'billingSwitches', opts.baseline ? 'resolveBillingFacts' : 'billingCatalogFacts'];
-  const loaded = execute(names.map(name => declaration(serverAST, name)).join('\n'), 'actual-catalog-server-functions.ts', bindings);
+  const runtimePath=selected('src/lib/billing/runtime.ts'),runtimeAST=fs.existsSync(runtimePath)?ast(runtimePath):serverAST;
+  const loaded = execute(names.map(name => declaration(['meteringFor','billingSwitches'].includes(name)?runtimeAST:serverAST, name)).join('\n'), 'actual-catalog-server-functions.ts', bindings);
   const sync = () => { loaded.context.dbEnabled = state.db; loaded.context.supabaseEnabled = state.supabase; };
   sync();
   const route = execute(read(selected(FILES.route)), selected(FILES.route), { require: name => {

@@ -49,7 +49,7 @@ async function main(){
  const original=JSON.stringify(request),plan=await planImagegen(request,owner);
  assert.equal(plan.request.parameters.resolution,'2K');assert.equal(plan.steps[0].parameters.resolution,'2K');assert.equal(plan.requestedParameters!.resolution,'4K');assert.equal(plan.fingerprint,imagegenFingerprint(request));assert.equal(JSON.stringify(request),original);assert.match(plan.warnings.join(' '),/4K.*2K/);assert.equal(plan.totalCredits,expected.requestedCredits);
  // Version-pinned old requests must not acquire new policy in a recovery path.
- await assert.rejects(()=>planImagegen(request,owner,{modelVersion:plan.modelVersion,billingVersion:plan.billingVersion}),/没有支持/);
+ await assert.rejects(()=>planImagegen(request,owner,{modelVersion:plan.modelVersion,billingVersion:plan.billingVersion}),/没有支持|未开放此分辨率/);
  const old={...frozen,requestedParameters:undefined,facts:{...facts,resolution:'1K',requestedResolution:'1K'}};
  assert.deepEqual((await executor.describe(old)).frozen.facts,old.facts);assert.equal(wires.length,2,'describe/quote/plan never generate');
  const accepted=await runExecutionBundle({frozen:{modelVersion:snapshot.version,billingVersion:actualBilling.version},billing:actualBilling},()=>freezeBusinessQuote(new Request(f.origin+'/api/billing/quote'),actualBilling,billingFacts({modelId:'image-a',resolution:'2K'}),quote));

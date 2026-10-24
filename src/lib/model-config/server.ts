@@ -1,6 +1,6 @@
 import "server-only";
 import { dbEnabled, ensureSchema, getPool } from "../db";
-import { getBillingRuntime } from "../billing/server";
+import { getBillingRuntime } from "../billing/runtime";
 import { bootstrapModelConfig, readLegacyModelSources } from "./bootstrap";
 import { createCredentialStore } from "./credentials";
 import { importLegacyRouter } from "./legacy-router";

@@ -32,7 +32,7 @@ import { canonicalConfig } from "./repository";
 import { validateModelConfig, validateModelEndpoint } from "./schema";
 import { compileRouterProjection } from "./projection";
 import { ModelConfigError, type ModelSnapshot } from "./types";
-import { modelConfigurationEnabled } from "./requests";
+import { modelConfigurationEnabled } from "./availability";
 import { isNewApiFlowImageModel } from "../image-model-catalog";
 
 const identifier = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);

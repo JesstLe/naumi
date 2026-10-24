@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isFeatureId } from "@/lib/billing/rules/registry";
-import { modelConfigurationEnabled } from "@/lib/model-config/requests";
+import { modelConfigurationEnabled } from "@/lib/model-config/availability";
 import { getModelRuntime } from "@/lib/model-config/server";
 import { FEATURE_BINDINGS } from "@/lib/model-config/business";
 import { MODEL_BINDINGS } from "@/lib/model-config/bindings";

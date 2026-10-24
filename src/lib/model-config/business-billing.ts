@@ -2,8 +2,7 @@ import {resolveImageResolution} from "./resolution-fallback";
 import {assertDisplayResolution} from "./resolution-options";
 import "server-only";
 import { currentExecutionBundle, currentModelExecution } from "./context";
-import { getModelAdministration } from "./server";
-import { modelConfigurationEnabled } from "./requests";
+import {readManagedModelSnapshot} from "./snapshot-reader";
 import { selectedBusinessOption } from "./business";
 import { ModelConfigError, type ModelSnapshot } from "./types";
 import type { BillingFacts, BillingQuote, ConfigSnapshot } from "../billing/types";
@@ -67,17 +66,18 @@ export function businessBillingSnapshot(snapshot:ConfigSnapshot,models:ModelSnap
   return applyCreditOverride(snapshot,originalBusinessBillingSnapshot(snapshot,models,facts),facts);
 }
 export async function freezeBusinessQuote(request: Request, snapshot: ConfigSnapshot, facts: BillingFacts, create: (s: ConfigSnapshot, f: BillingFacts) => BillingQuote, options:{allowResolutionFallback?:boolean;effectiveResolution?:string}={}) {
-  if (facts.byok || !await modelConfigurationEnabled()) return create(snapshot, facts);
-  const admin = await getModelAdministration();
-  const version = currentExecutionBundle()?.modelVersion || currentModelExecution()?.frozen.modelVersion;
-  const models = version ? await admin.repo.byVersion(version) : await admin.repo.current();
+  return freezeBusinessQuoteForModel(snapshot,facts.byok?null:await readManagedModelSnapshot(),facts,create,{...options,accepted:request.headers.has("x-naumi-accepted-model-context")});
+}
+/** Pure pricing against the same selected model snapshot used to prepare facts. */
+export function freezeBusinessQuoteForModel(snapshot:ConfigSnapshot,models:ModelSnapshot|null,facts:BillingFacts,create:(s:ConfigSnapshot,f:BillingFacts)=>BillingQuote,options:{allowResolutionFallback?:boolean;effectiveResolution?:string;accepted?:boolean}={}){
+  if(facts.byok||!models)return create(snapshot,facts);
   const scope = currentModelExecution("image");
   const originalFacts = facts;
   // Existing frozen scopes (including old Worker/Agent children) are authoritative.
   // New scopes retain the user's selection separately, with actual tier in facts.
   const choice = options.effectiveResolution ? {requested:facts.resolution,effective:options.effectiveResolution,changed:options.effectiveResolution!==facts.resolution} : scope && scope.frozen.publicModelId===facts.modelId && scope.frozen.requestedParameters && scope.frozen.facts
     ? {requested:scope.frozen.requestedParameters?.resolution||facts.resolution,effective:scope.frozen.facts.requestedResolution||scope.frozen.facts.resolution,changed:false}
-    : scope || currentExecutionBundle() || options.allowResolutionFallback===false || request.headers.has("x-naumi-accepted-model-context")
+    : scope || currentExecutionBundle() || options.allowResolutionFallback===false || options.accepted
       ? {requested:facts.resolution,effective:facts.resolution,changed:false}
       : resolveImageResolution(models.config,facts.modelId,facts.resolution,facts.feature,facts.ratio);
   // A planner supplies both its original facts and explicit effective tier.

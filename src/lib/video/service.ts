@@ -14,7 +14,7 @@ import { BillingError } from "@/lib/billing/types";
 import { currentModelExecution, runLegacyModelExecution } from "@/lib/model-config/context";
 import type { ExecutionBundle } from "@/lib/model-config/context";
 import { getModelExecutor, withFrozenExecutionBundle } from "@/lib/model-config/execution";
-import { modelConfigurationEnabled } from "@/lib/model-config/requests";
+import { modelConfigurationEnabled } from "@/lib/model-config/availability";
 import { getModelAdministration } from "@/lib/model-config/server";
 import { ModelConfigError } from "@/lib/model-config/types";
 import {getBillingRuntime,meteringFor} from "@/lib/billing/server";

@@ -4,7 +4,8 @@ import {dbEnabled} from "../db";
 import {activeNativeAccountEmail} from "../native-auth";
 import {withSynchronousOperation} from "../billing/synchronous-operation";
 import {billingFailure} from "../billing/failure";
-import {quoteForActor,quoteForImagegenStep,getBillingRuntime} from "../billing/server";
+import {quoteForActor,quoteForImagegenStep} from "../billing/quotation";
+import {getBillingRuntime} from "../billing/runtime";
 import {multipartFieldText,multipartSubmissionFields,submissionFingerprint,type SubmissionField} from "../billing/submission-identity";
 import {withBiModelContext} from "../bi/model-observer";
 import {withModelOperation} from "../model-config/requests";
@@ -49,7 +50,7 @@ export async function submitCutoutOperation(plan:ImagegenPlan,key:string,actor:s
         identity:async()=>{await prepareOriginalCreationInput(target.buffer,target.mimeType||"application/octet-stream","reference",0);return {hash};},
         snapshot:async()=>plan.modelVersion?(await getModelAdministration()).billing.byVersion(plan.billingVersion):(await getBillingRuntime()).config.current(),
         quote:async(facts,snapshot)=>quoteForImagegenStep(owner,operationId,plan.billingVersion,facts)??await quoteForActor(owner,facts,undefined,snapshot)},async()=>{
-        try{return await withBiModelContext(owner,path,`tool-${operationId}`,()=>withModelOperation({path,body:fields,references:1,featureModel:step.modelId||"",
+        try{return await withBiModelContext(owner,path,`tool-${operationId}`,()=>withModelOperation({path,body:fields,references:1,featureModel:step.modelId||"",preparedImage:step.preparedImage,
           versions:plan.modelVersion?{modelVersion:plan.modelVersion,billingVersion:plan.billingVersion}:null},()=>executeCutout({bytes:target.buffer,type:target.mimeType||"image/png",email:owner,parentId:fields.parentId?.trim()||"",title:"抠图",category:"main",ratio:fields.ratio,resolution:fields.resolution,quality:fields.quality==="fine"?"fine":fields.quality==="fast"?"fast":""},{actor:async()=>owner,ip:null})));}
         catch(error){
           if(error instanceof TeamError)return {status:error.status,body:{error:error.message}};

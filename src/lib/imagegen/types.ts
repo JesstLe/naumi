@@ -9,7 +9,7 @@ export type CapabilityKey="edit"|"mask"|"transparent"|"inputFidelity"|"outputFor
 export type CapabilityEvidence={state:"supported"|"unsupported"|"unknown";values?:string[];source:string;checkedAt:string};
 export type CapabilitySet=Partial<Record<CapabilityKey,CapabilityEvidence>>;
 export type ImagegenPlan={quote?:{id:string;expiresAt:string};channelContractVersion?:1;requestedParameters?:{quality:string;resolution:string;ratio:string};ratioContractVersion?:1|2;request:ImagegenRequest;intent:Intent;fingerprint:string;modelVersion:number;billingVersion:number;skillInstructions?:string;
-  steps:{key:string;operation:Intent["operation"];modelId?:string;eligibleUpstreamIds:string[];parameters:Record<string,string|number|boolean>;credits:number;billingQuote?:import("../billing/types").BillingQuote}[];
+  steps:{key:string;operation:Intent["operation"];modelId?:string;eligibleUpstreamIds:string[];parameters:Record<string,string|number|boolean>;credits:number;billingQuote?:import("../billing/types").BillingQuote;preparedImage?:import("../model-config/image-preparation").PreparedImageOperation}[];
   totalCredits:number;confirmationRequired:boolean;warnings:string[];children?:{key:string;plan:ImagegenPlan}[]};
 export type ImagegenResult={operationId:string;jobId:string;status:"queued"|"running"|"pending"|"needs_attention"|"succeeded"|"partial"|"failed"|"cancelled";
   stage:"planning"|"generating"|"editing"|"postprocessing"|"saving"|"done";

@@ -6,8 +6,9 @@ import {withFrozenCreation,frozenCreationScope,currentCreationContext} from './s
 import {creationTransaction,addCreationAssetTx} from './saas/creation-writer';
 import { currentModelExecution, currentExecutionBundle, runLegacyModelExecution, type ExecutionBundle } from "@/lib/model-config/context";
 import { withFrozenExecutionBundle } from "@/lib/model-config/execution";
-import { withModelRequest, modelConfigurationEnabled } from "@/lib/model-config/requests";
-import {quoteForActor} from "@/lib/billing/server";
+import {withModelRequest} from "@/lib/model-config/requests";
+import {modelConfigurationEnabled} from "@/lib/model-config/availability";
+import {quoteForActor} from "@/lib/billing/quotation";
 import {assertQuotedVersion,requestQuoteConfirmation} from "@/lib/billing/request";
 import { resolveImageQuality, type ResolvedImageQuality } from "@/lib/image-quality";
 import { imageQualityCost, auditSettledImage } from "@/lib/image-quality-request";

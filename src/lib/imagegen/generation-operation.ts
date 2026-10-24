@@ -4,7 +4,7 @@ import {dbEnabled} from "../db";
 import {activeNativeAccountEmail} from "../native-auth";
 import {claimSubmission,saveSubmissionReceipt} from "../billing/intent";
 import {multipartSubmissionFields,submissionFingerprint,type SubmissionField} from "../billing/submission-identity";
-import {quoteForActor,quoteForImagegenStep} from "../billing/server";
+import {quoteForActor,quoteForImagegenStep} from "../billing/quotation";
 import {withModelOperation} from "../model-config/requests";
 import {withBiModelContext} from "../bi/model-observer";
 import {withArtworkCreation} from "../artwork-provenance-context";
@@ -52,7 +52,7 @@ export async function submitGenerationOperation(command:GenerationStepCommand):P
     let result:GenerationResult;
     try{result=await withFrozenCreation(scope,()=>withImagegenStep(request,intent,()=>
       withBiModelContext(owner,path,operationId,()=>withArtworkCreation({path,entry:"toolbox"},()=>
-        withModelOperation({path,body:{...fields,needsMask:files.some(f=>f.field==="mask")},references:Math.min(32,files.filter(f=>f.field==="image").length),featureModel:step.modelId||"",quality:fields.quality,
+        withModelOperation({path,body:{...fields,needsMask:files.some(f=>f.field==="mask")},references:Math.min(32,files.filter(f=>f.field==="image").length),featureModel:step.modelId||"",quality:fields.quality,preparedImage:step.preparedImage,
           versions:plan.modelVersion?{modelVersion:plan.modelVersion,billingVersion:plan.billingVersion}:null},()=>
           submitGeneration(p,{actor:async()=>owner,ip:null,featureModel:step.modelId||"",quote:async facts=>
             quoteForImagegenStep(owner,operationId,plan.billingVersion,facts)??await quoteForActor(owner,facts)})))),

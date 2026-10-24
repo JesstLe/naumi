@@ -16,7 +16,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/ip";
 import { safeError } from "@/lib/api-error";
 import { requestedTextModel } from "@/lib/text-models";
-import { modelConfigurationEnabled } from "@/lib/model-config/requests";
+import { modelConfigurationEnabled } from "@/lib/model-config/availability";
 import { VIDEO_PROMPT_OPTIMIZE_SYSTEM, validateVideoOptimizedPrompt } from "@/lib/video/prompt-assist";
 
 export const runtime = "nodejs";

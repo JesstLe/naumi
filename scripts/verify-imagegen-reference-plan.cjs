@@ -3,7 +3,7 @@ const mode=process.argv[2]||'modified',root=process.cwd();
 async function bundle(entry,state,modules,source){
  const result=await build({entryPoints:[path.resolve(entry)],bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'isolated-plan',setup(b){
  b.onResolve({filter:/^server-only$/},()=>({path:'empty',namespace:'fixture'}));
- b.onResolve({filter:/.*/},args=>{if(modules[args.path])return{path:args.path,namespace:'fixture'}});
+ b.onResolve({filter:/.*/},args=>{const key=args.importer.includes('model-config')&&args.path.startsWith('./')?'../model-config/'+args.path.slice(2):args.path;if(modules[key])return{path:key,namespace:'fixture'}});
  b.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:modules[args.path]||'',loader:'ts'}));
  if(source)b.onLoad({filter:/imagegen[\\/]plan\.ts$/},()=>({contents:fs.readFileSync(source,'utf8'),loader:'ts',resolveDir:path.resolve('src/lib/imagegen')}));
  }}]});
@@ -16,14 +16,15 @@ async function bundle(entry,state,modules,source){
  const state={inputs:[a,b],quotes:[],simulations:[],forms:[]};
  const modules={
  '../model-config/resolution-fallback':`export function resolveImageResolution(){return undefined};export function resolutionFallbackMessage(){return ''};export function resolutionFacts(facts){return facts};export function upstreamAcceptsResolution(){return true}`,
- '../model-config/image-preset':`export function selectedImagePreset(){return undefined}`,
+ '../model-config/image-preset':`export function selectedImagePreset(){return undefined};export const DISPLAY_QUALITIES=['medium'];export const presetPublicId=(p)=>p.aliases[0].id;export const effectiveImageParameters=(_p,r)=>({effective:r,requested:r})`,
  './inputs':'export async function readImagegenInputs(request){return request.inputs.map(i=>({...__fixture.inputs.find(x=>x.artworkId===i.artworkId),...i}))}',
- '../model-config/server':`const config={publicModels:[{id:'image-a',enabled:true,visible:true,modality:'image',target:{type:'upstream'}}],upstreamModels:[{id:'up',providerId:'provider',parameterMap:{imagegen:{pixelSize:'size'}},capabilities:{}}],providers:[{id:'provider',protocol:'openai-images'}]};export async function getModelAdministration(){return{repo:{current:async()=>({version:117,config})},billing:{current:async()=>({version:8})}}}`,
+ '../model-config/server':`const config={publicModels:[{id:'image-a',enabled:true,visible:true,modality:'image',target:{type:'upstream',id:'up'}}],upstreamModels:[{id:'up',providerId:'provider',enabled:true,parameterMap:{imagegen:{pixelSize:'size'}},capabilities:{qualities:['medium'],nativeResolutions:['1K']}}],providers:[{id:'provider',protocol:'openai-images',enabled:true}],bindings:{'image.generate':'image-a','image.edit':'image-a'}};export async function getModelAdministration(){return{repo:{current:async()=>({version:117,config})},billing:{current:async()=>({version:8})}}}`,
  '../model-config/runtime':`export function simulateModel(m,b,id,facts){__fixture.simulations.push(facts);return{eligible:__fixture.allowed&&!__fixture.allowed.includes(facts.ratio)?[]:[{upstreamId:'up'}],excluded:[]}}`,
  '../model-config/tool-scope':`export function assertToolScope(){};export function featureDefaultModel(){return'image-a'}`,
  '../mock-data':`export const MAX_GENERATION_DIMENSION=4096;export function resolutionForLongSide(){return'1K'}`,
- '../image-model-routing':`export function routeImageModel(id){return id}`,
+ '../image-model-routing':`export function routeImageModel(id){return id};export const imageModelDisplayId=id=>id`,
  '../billing/server':`export async function quoteForActor(owner,facts){__fixture.quotes.push(facts);return{tariff:{pricing:{mode:'fixed'}},requestedCredits:6}}`,
+ '../billing/quotation':`export async function quoteForActor(owner,facts){__fixture.quotes.push(facts);return{tariff:{pricing:{mode:'fixed'}},requestedCredits:6}}`,
  '../model-config/context':`export async function runExecutionBundle(context,fn){return fn()}`,
  '../image-skills/server':`export async function resolveImageSkill(){return undefined}`,
  './parameters':`export function mapImagegenParameters(){return{}};export function imagegenWireRequest(request){return request}`,

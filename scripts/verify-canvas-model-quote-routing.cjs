@@ -34,7 +34,7 @@ const slices = {
 };
 const allowed = new Set([
   billingPath, ...Object.keys(slices),
-  'src/lib/model-config/bindings.ts', 'src/lib/model-config/types.ts', 'src/lib/model-config/selection-policy.ts',
+  'src/lib/model-config/snapshot-reader.ts', 'src/lib/model-config/model-selection.ts', 'src/lib/model-config/bindings.ts', 'src/lib/model-config/types.ts', 'src/lib/model-config/selection-policy.ts',
   ...['quote', 'types', 'costs', 'money', 'api-cost', 'canvas-defaults', 'rules/registry', 'rules/evaluate'].map(p => `src/lib/billing/${p}.ts`),
 ]);
 let state, networkCalls = 0, supplierCalls = 0;
@@ -43,9 +43,11 @@ const forbiddenSupplier = () => { supplierCalls++; throw new Error('Unexpected r
 const mocks = {
   'src/lib/model-config/context.ts': {
     currentExecutionBundle: () => state.bundle,
+    currentModelSnapshot: () => undefined,
     currentModelExecution: role => role ? state.scopes[role] : state.globalScope,
   },
   'src/lib/model-config/requests.ts': { modelConfigurationEnabled: async () => state.configurationEnabled },
+  'src/lib/model-config/availability.ts': { modelConfigurationEnabled: async () => state.configurationEnabled },
   'src/lib/model-config/server.ts': {
     getModelAdministration: async () => {
       state.adminCalls++;
@@ -201,19 +203,22 @@ test('pool-early-return-retained', async () => {
 test('legacy-preset-id-and-provider-retained', async () => {
   const config = reset(); config.providers[0].protocol = 'apimart-images';
   config.defaultImagePreset = { enabled: true, upstreamId: 'primary', defaultModelIds: ['family'], aliases: [{ id: 'preset-id', label: 'Fixture preset' }] };
+  config.publicModels.push({...structuredClone(config.publicModels[0]),id:'preset-id'});
   assert.deepEqual(plain(await resolve()), identity('primary-provider', 'preset-id'));
 });
 test('preset-scope-retained', async () => {
-  const config = reset(); config.publicModels.push({ id: 'preset-id', toolScope: { features: ['image.generate'] } });
+  const config = reset(); config.publicModels.push({...structuredClone(config.publicModels[0]),id:'preset-id',toolScope:{features:['image.generate']}});
   config.defaultImagePreset = { enabled: true, upstreamId: 'primary', defaultModelIds: ['family'], aliases: [{ id: 'preset-id', label: 'Fixture preset' }] };
   await reject('MODEL_OUTSIDE_TOOL_SCOPE');
 });
 for (const binding of ['image.edit', 'image.generate']) test(`frozen-scope-${binding}-returns-before-admin`, async () => {
   reset(); state.forbidAdmin = true;
   state.scopes.image = { frozen: { binding, feature: 'canvas.image', publicModelId: 'frozen-model' }, connection: { providerId: 'frozen-provider' } };
-  assert.deepEqual(plain(await resolve()), identity('frozen-provider', 'frozen-model'));
+  assert.deepEqual(plain(await managedBillingModel(request(),'canvas.image','frozen-model')), identity('frozen-provider', 'frozen-model'));
   assert.equal(state.adminCalls, 0); assert.deepEqual(state.reads, []);
 });
+test('different-selected-model-does-not-inherit-enclosing-price',async()=>{reset();state.scopes.image={frozen:{binding:'image.generate',feature:'canvas.image',publicModelId:'frozen-model'},connection:{providerId:'frozen-provider'}};assert.deepEqual(plain(await resolve()),identity());});
+
 test('different-scope-feature-does-not-short-circuit', async () => {
   reset(); state.scopes.image = { frozen: { binding: 'image.edit', feature: 'canvas.expand', publicModelId: 'other-model' }, connection: { providerId: 'other-provider' } };
   assert.deepEqual(plain(await resolve()), identity()); assert.deepEqual(state.reads, ['current']);

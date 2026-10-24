@@ -134,9 +134,12 @@
 - [x] R0整合已完成质量/Canvas修复并建立运行对照。
 - [x] R1A1生图typed执行、旧HTTP兼容、原指纹/回执/账务行为对照。
 - [x] R1A2抠图typed执行、共享同步账务、任务read用例；原抠图HTTP桥删除；见 [R1A2记录](../changes/2026-10-24-cutout-billing-boundary-r1a2.md)。
-- [ ] R1—R6业务实现、集中验证、旧路径删除。
+- [x] R1B核心图片准备与报价：typed quotation、单model snapshot、共享quality、保存并消费preparedImage；见 [R1B记录](../changes/2026-10-24-image-preparation-r1b.md)。
+- [ ] R2—R6业务实现、集中验证、旧路径删除与最终整合。
 - [ ] 迁移后的实际性能、容量与生产功能验收。
 
-功能迭代完成计数：2（R1A1、R1A2；文档和测试适配不另计）。后续每完成模块更新此表，不靠会话上下文判断。
+功能迭代累计3（R1A1、R1A2、R1B）；完成R1B后刷新/整合origin/main并归零，精确结果在本轮VERIFICATION。后续每完成模块更新此表，不靠会话上下文判断。
 
 R1A2复扫：生产lib→app反向边0（另外2条release fixture import保留）；最大静态SCC55、视频20仍未消除。真实PG 49检查及原回执/账务/SSE通过，旧Canvas Agent脚本在完整基线和新版同样失败，不标全项目通过。下一模块R1B。
+
+R1B更新：真实PG baseline29/modified45检查；一笔新报价 model read 2→1、synthetic Request 1→0，发布中途不混价，显式模型不继承外层scope价格。新版SCC60、video20、动态恢复10仍待R4/R2。下一模块R2。

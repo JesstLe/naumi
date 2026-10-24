@@ -12,7 +12,7 @@ import {
 import { imageQualityCapable } from "@/lib/image-quality";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { betaPreviewEnabled } from "@/lib/commerce";
-import { modelConfigurationEnabled } from "@/lib/model-config/requests";
+import { modelConfigurationEnabled } from "@/lib/model-config/availability";
 import { getModelRuntime } from "@/lib/model-config/server";
 import { frontendImageCatalog } from "@/lib/frontend-image-models";
 

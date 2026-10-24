@@ -4,7 +4,7 @@ import { configuredVideoCatalog } from "@/lib/video/capabilities";
 import { configuredVideoProviders } from "@/lib/video/providers/config";
 import { videoCostPublic } from "@/lib/video/service";
 import {billingErrorResponse} from "@/lib/billing/request";
-import { modelConfigurationEnabled } from "@/lib/model-config/requests";
+import { modelConfigurationEnabled } from "@/lib/model-config/availability";
 import { getModelRuntime } from "@/lib/model-config/server";
 import { publicModelCatalog } from "@/lib/model-config/runtime";
 import { freezeManagedVideoCapability } from "@/lib/video/frozen-capability";

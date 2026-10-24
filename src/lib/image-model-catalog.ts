@@ -1,6 +1,6 @@
 import { getLegacyOpenAISettings } from "@/lib/settings";
 import { currentModelExecution } from "./model-config/context";
-import { modelConfigurationEnabled } from "./model-config/requests";
+import { modelConfigurationEnabled } from "./model-config/availability";
 import { getModelRuntime } from "./model-config/server";
 import { publicModelCatalog } from "./model-config/runtime";
 import type { ModelSnapshot } from "./model-config/types";

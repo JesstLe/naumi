@@ -36,7 +36,7 @@ export function assertImagegenQuoteReference(id:unknown,operationId:unknown):ass
 /** Full BillingQuote facts stay server-side, including recursively frozen children. */
 export function publicImagegenPlan(plan:ImagegenPlan):ImagegenPlan {
  const visible=structuredClone(plan);
- for(const step of visible.steps)delete (step as typeof step&{billingQuote?:unknown}).billingQuote;
+ for(const step of visible.steps){delete step.billingQuote;delete step.preparedImage;}
  if(visible.children)visible.children=visible.children.map(child=>({...child,plan:publicImagegenPlan(child.plan)}));
  return visible;
 }

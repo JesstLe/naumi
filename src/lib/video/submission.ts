@@ -5,7 +5,7 @@ import {getPool,listArtworksByIds,createVideoTaskWithReservation,type VideoTaskR
 import {currentModelExecution,currentExecutionBundle} from "../model-config/context";
 import {canonicalConfig} from "../model-config/repository";
 import {ModelConfigError} from "../model-config/types";
-import {quoteForActor} from "../billing/server";
+import {quoteForActor} from "../billing/quotation";
 import {assertQuotedVersion} from "../billing/request";
 import {ensureVideoNodeSchema,associateVideoTaskTx,getVideoNode} from "../canvas/video-node-repository";
 import {authorizeVideoProject} from "../canvas/video-node-service";
