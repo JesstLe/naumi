@@ -126,6 +126,8 @@
 
 ## 9. 当前进度
 
+R3D：普通文字、反推、帮写的 request/task/controller 已接实际 Canvas；原答案续存、原 operation/报价和 scoped 文档写入归同一 owner。Canvas 9575→9342 行；基线 3/15、新版 18/77、PG24、实际 Next6、最终 tsc 通过，原有 BillingProvider 防重机制保留。同步后第1模块；旧无 node-slot intent 升级兼容、任务跨刷新 journal、多 tab/CAS、UI 组合与 R4—R6 继续，见 [R3D记录](../changes/2026-10-24-canvas-text-tasks-r3d.md)。
+
 R3C3：复制/历史添加/选择和项目删除由node-operations负责，既有history事务/reducer承接持久回执；selection-run controller管理批执行生命周期。Canvas9800→9575行，171个非目标函数AST正文不变；基线4/9、新版19/59、PG24→32、真实控件11与相邻12＋12＋5＋5通过。第三模块main同步后计数归零。R3剩余文字内容任务及UI组合，R4—R6、跨请求/多tab文档竞态与完整build/容量仍在后续；见 [R3C3记录](../changes/2026-10-24-canvas-node-operations-r3c3.md)。
 
 R3C2：单一选择快照、gesture owner、link compiler 已真实接线。图片/文字/视频移动与连线复用原 history；`canvas-add` primary 归属、显式 parentIds 和环检测由同一规则负责。主组件10300→9800行，基线10/28→新版34/92，真实PG26→28、相邻PG20；真实Next交互12、文字历史12、详情5、图片5通过。下一步收拢创建/复制删除/批处理，R3尚未整体完成；R4—R6与完整候选验收继续。详见 [R3C2记录](../changes/2026-10-24-canvas-interactions-r3c2.md)。本轮为main同步后第2模块。
@@ -146,7 +148,10 @@ R3C2：单一选择快照、gesture owner、link compiler 已真实接线。图�
 - [x] R3B3 作品文档/读取/合并/回收站 owner，显式读取错误、保留本地修改与按ID原结果同步，见 [R3B3记录](../changes/2026-10-24-canvas-artwork-document-r3b3.md)。
 - [x] R3B4 详情与同步编辑任务、原请求/报价/回执与共用结果 attachment，见 [R3B4记录](../changes/2026-10-24-canvas-task-boundaries-r3b4.md)。
 - [x] R3C1 场景投影、独立renderer与Flow状态同步，见 [R3C1记录](../changes/2026-10-24-canvas-scene-r3c1.md)。
-- [ ] R3C2 选择/连线/拖动命令；文字/图片跨请求CAS及未知历史响应交错验收。
+- [x] R3C2 选择/连线/拖动命令，见 [R3C2记录](../changes/2026-10-24-canvas-interactions-r3c2.md)。
+- [x] R3C3 节点生命周期和批运行，见 [R3C3记录](../changes/2026-10-24-canvas-node-operations-r3c3.md)。
+- [x] R3D 文字生成/反推/帮写任务，见 [R3D记录](../changes/2026-10-24-canvas-text-tasks-r3d.md)。
+- [ ] R3 UI 组合；文字/图片跨请求 CAS、未知历史响应交错及旧 client intent 升级兼容验收。
 - [ ] R4—R6业务实现、集中验证、旧路径删除与最终整合。
 - [ ] 迁移后的实际性能、容量与生产功能验收。
 

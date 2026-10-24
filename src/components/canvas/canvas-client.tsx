@@ -9,6 +9,8 @@ import {useCanvasSceneActions} from "./use-canvas-scene-actions";
 import {useCanvasScene} from "./use-canvas-scene";
 import {useCanvasSelection} from "./use-canvas-selection";
 import {useCanvasNodeOperations} from "./use-canvas-node-operations";
+import {useCanvasTextTasks} from "./use-canvas-text-tasks";
+import {generalTextTask,derivedTextTask,stripTextMentions as stripMentionLines,withTextProduct as withProductMention} from "@/lib/canvas/text-task-request";
 import {useCanvasSelectionRun} from "./use-canvas-selection-run";
 import {newCanvasText} from "@/lib/canvas/node-commands";
 import {useCanvasDrag} from "./use-canvas-drag";
@@ -358,16 +360,6 @@ function rootOf(a: Artwork, byId: Map<string, Artwork>): Artwork {
 
 // ===== 竞品反推 → 智能帮写 → 成套生成 链路的纯文本工具 =====
 // 去掉内容开头由产品绑定自动加的 "@产品图" 行(生成图片时提示词不应包含)
-function stripMentionLines(content: string): string {
-  const lines = content.split("\n");
-  let i = 0;
-  while (i < lines.length && lines[i].trim().startsWith("@")) i++;
-  return lines.slice(i).join("\n").trim();
-}
-// 绑定/换绑产品图时,把 @产品图 行刷新到内容开头(旧 @ 行先剥掉)
-function withProductMention(content: string, title: string): string {
-  return `@${title}\n\n${stripMentionLines(content)}`.trim();
-}
 // 复刻模式生成时追加的防抄袭约束:产品取自产品原图,竞品图只当构图参考
 const REPLICATE_GUARD =
   "\n产品必须完全取自第一张参考图（产品白底图），包装、品牌、文字保持不变；其余参考图仅作构图与风格参考，严禁照搬其中的竞品标识、品牌名与文案。";
@@ -1035,7 +1027,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const {nodes:textNodes,set:setTextNodes,ready:textNodesReady,unsaved:unsavedTextCount} = canvasTextDocument;
   const textNodesRef = useRef(textNodes); textNodesRef.current = textNodes;
   const [textPrompt, setTextPrompt] = useState("");
-  const [textError, setTextError] = useState<string | null>(null);
   // 文字节点一键放大/还原只改变当前画布视图，不写回节点尺寸；刷新后仍使用用户保存的原尺寸。
   const [expandedTextIds, setExpandedTextIds] = useState<Set<string>>(new Set());
   const [textComposerExpanded, setTextComposerExpanded] = useState(false);
@@ -1325,6 +1316,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     pending: applyPendingLinkHistory, applied: onHistoryApplied, warning: flashTip,
   });
   const {undoStack,redoStack,pushUndo,historyBusyRef,historySaving,setHistorySaving,historyCurrent} = canvasHistory;
+  const textTasks=useCanvasTextTasks(canvasTextDocument.scope,{
+    document:canvasTextDocument,
+    submit:(request,submission,scope)=>privateFetch("/api/canvas/text-generate",{method:"POST",headers:{"content-type":"application/json","x-naumi-billing-intent-slot":request.node.id,...(request.operationId?{"x-naumi-billing-operation-id":request.operationId}:{})},body:JSON.stringify(request.payload),submission,isCurrent:scope.viewCurrent}),
+    history:node=>canvasHistory.record({...canvasHistory.scope,project:node.projectKey,key:JSON.stringify([canvasHistory.scope.account,canvasHistory.scope.workspace,node.projectKey])},{kind:"text-add",records:[node]}),
+    model:setTextModel,errorText:t("canvas.textGenerateFail"),
+  });
+  const promptMining=textTasks.busy("reverse"),assistBusy=textTasks.busy("assist");
   const canvasNodeOperations=useCanvasNodeOperations(canvasHistory.scope,{
     writable:()=>!!user&&!readOnly,
     snapshot:()=>({artworks:canvasArtworkDocument.getSnapshot().nodes||[],textNodes:canvasTextDocument.getSnapshot().nodes,videoNodes:videoNodesStore.allNodes.filter(node=>!node.deletedAt).map(node=>videoNodesStore.getNode(node.id)||node)}),
@@ -1375,10 +1373,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 拉线中:图片节点端口全部显形(canvas-linking),目标的前 + 不再隐形盲抓
   const [linking, setLinking] = useState(false);
   // 竞品链路:反推中/帮写中标记、产品图选择器、生成图片模式菜单
-  const [promptMining, setPromptMining] = useState(false);
   const batchRunMountedRef = useRef(true);
   useEffect(() => { batchRunMountedRef.current = true; return () => { batchRunMountedRef.current = false; }; }, []);
-  const [assistBusy, setAssistBusy] = useState(false);
   const [productPicker, setProductPicker] = useState<{ textNodeIds: string[] } | null>(null);
   const [genImageMenu, setGenImageMenu] = useState<{
     textNodeIds: string[]; imageIds: string[]; drafts: Record<string, string>;
@@ -2406,7 +2402,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     // 自动带上节点现有内容:方便"看着原文改一改再生成";切换节点时整体替换。
     // 旧逻辑在下方又用 node.prompt 写了一次,会把已有 content 覆盖为空。
     setTextPrompt(selectedText?.content || selectedText?.prompt || "");
-    setTextError(null);
     // 切换节点时清掉上一节点手动拖出的固定高度:否则新节点继承"两行小窗",
     // 且 ResizeObserver 会立刻把 manuallySized 重新置真,自适应从此失效。
     if (textComposerDockRef.current?.style.height) {
@@ -5072,7 +5067,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setSelectedPendId(null);
     setSelectedTextId(id);
     setTextPrompt(options?.prompt || "");
-    setTextError(null);
     focusEditableCanvasArea({
       x: node.canvasX,
       y: node.canvasY,
@@ -5121,60 +5115,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       void persistTextNode(updated);
     }
   }
-  async function generateTextNode(options?: { node: CanvasTextNode; prompt: string; silent?: boolean }): Promise<boolean> {
-    const target = options?.node ?? selectedText, prompt = (options?.prompt ?? textPrompt).trim();
-    if (!target || readOnly || !nodeSettingsReady || isNodeLocked(target.id) || !prompt || target.status === "generating" || generationOperationRef.current.has(`text:${target.id}`)) return false;
-    generationOperationRef.current.add(`text:${target.id}`);
-    const epoch = canvasContextEpochRef.current, account = canvasAccountRef.current;
-    const isCurrent = () => batchRunMountedRef.current && epoch === canvasContextEpochRef.current && account === canvasAccountRef.current;
-    const pending: CanvasTextNode = {
-      ...target,
-      prompt,
-      title: prompt.replace(/\s+/g, " ").slice(0, 22) || t("canvas.textGenerate"),
-      status: "generating",
-      updatedAt: new Date().toISOString(),
-    };
-    if (!options?.silent) setTextError(null);
-    setTextNodes((current) =>
-      current.map((node) => (node.id === pending.id ? pending : node))
-    );
-    try {
-      const response = await privateFetch("/api/canvas/text-generate", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ prompt, sourceIds: pending.sourceIds ?? [] }),
-      });
-      const data = await readJsonSafe(response);
-      if (!response.ok || !data?.text) {
-        throw new Error(data?.error || t("canvas.textGenerateFail"));
-      }
-      const completed: CanvasTextNode = {
-        ...pending,
-        content: String(data.text),
-        status: "completed",
-        updatedAt: new Date().toISOString(),
-      };
-      if (!isCurrent()) return false;
-      setTextModel(String(data.model || textModel));
-      setTextNodes((current) =>
-        current.map((node) => (node.id === completed.id ? completed : node))
-      );
-      return !!await persistTextNode(completed);
-    } catch (error) {
-      if (!isCurrent()) return false;
-      const message = error instanceof Error ? error.message : t("canvas.textGenerateFail");
-      const failed: CanvasTextNode = {
-        ...pending,
-        status: "failed",
-        updatedAt: new Date().toISOString(),
-      };
-      setTextNodes((current) =>
-        current.map((node) => (node.id === failed.id ? failed : node))
-      );
-      if (!options?.silent) setTextError(message);
-      await persistTextNode(failed);
-      return false;
-    } finally { generationOperationRef.current.delete(`text:${target.id}`); }
+  async function generateTextNode(options?:{node:CanvasTextNode;prompt:string;silent?:boolean}):Promise<boolean>{
+    const target=options?.node??selectedText,prompt=(options?.prompt??textPrompt).trim();
+    if(!target||readOnly||!nodeSettingsReady||isNodeLocked(target.id)||textTasks.state(target.id).busy)return false;
+    if(target.status==="generating"&&textTasks.state(target.id).phase==="idle")return false;
+    if(!prompt&&!textTasks.retryable(target.id))return false;
+    const ok=textTasks.retryable(target.id)?await textTasks.resume(target.id):await textTasks.run(generalTextTask(target,prompt,t("canvas.textGenerate")));
+    return ok;
   }
 
   // ===== 竞品反推 → 智能帮写 → 成套生成 链路 =====
@@ -5183,101 +5130,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
 
   // 批量反推:每张竞品图右侧生成一个"逆向提示词"文字节点(2 路并发,失败节点保留可重试)
-  async function reversePromptsForSelection(arts: Artwork[]) {
-    if (readOnly || !user || !activeKey || promptMining || !arts.length) return;
-    setPromptMining(true);
-    setCtxMenu(null);
-    try {
-      const positions = new Map(
-        (rfRef.current?.getNodes() ?? []).map((node) => [
-          node.id,
-          {
-            x: node.position.x,
-            y: node.position.y,
-            w: flowNodeSize(node).width,
-          },
-        ])
-      );
-      const queue = [...arts];
-      let done = 0;
-      const worker = async () => {
-        while (queue.length) {
-          const art = queue.shift();
-          if (!art) break;
-          const pos = positions.get(art.id) ?? {
-            x: art.canvasX ?? 0,
-            y: art.canvasY ?? 0,
-            w: NODE_W,
-          };
-          const id = `text-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-          const now = new Date().toISOString();
-          const node: CanvasTextNode = {
-            id,
-            projectKey: activeKey,
-            title: t("canvas.reverseTitle"),
-            prompt: "",
-            content: "",
-            status: "generating",
-            canvasX: Math.round(pos.x + pos.w + X_GAP),
-            canvasY: Math.round(pos.y),
-            createdAt: now,
-            updatedAt: now,
-            width: TEXT_NODE_DEFAULT_W,
-            height: TEXT_NODE_DEFAULT_H,
-            sourceIds: [art.id],
-            targetIds: [],
-            productIds: [],
-          };
-          setTextNodes((current) => [...current, node]);
-          try {
-            const response = await privateFetch("/api/canvas/text-generate", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                mode: "reverse",
-                prompt: "",
-                sourceIds: [art.id],
-              }),
-            });
-            const data = await readJsonSafe(response);
-            if (!response.ok || !data?.text) {
-              throw new Error(data?.error || t("canvas.reverseFail"));
-            }
-            const completed: CanvasTextNode = {
-              ...node,
-              content: String(data.text),
-              status: "completed",
-              updatedAt: new Date().toISOString(),
-            };
-            setTextNodes((current) =>
-              current.map((item) => (item.id === id ? completed : item))
-            );
-            void persistTextNode(completed);
-            pushUndo({ kind: "text-add", records: [completed] }); // 反推节点可撤销
-          } catch (error) {
-            const failed: CanvasTextNode = {
-              ...node,
-              status: "failed",
-              updatedAt: new Date().toISOString(),
-            };
-            setTextNodes((current) =>
-              current.map((item) => (item.id === id ? failed : item))
-            );
-            void persistTextNode(failed);
-            flashTip(
-              `${art.title || t("canvas.imageNode")}：${
-                error instanceof Error ? error.message : t("canvas.reverseFail")
-              }`
-            );
-          }
-          done++;
-        }
-      };
-      await Promise.all([worker(), worker()]);
-      flashTip(fmt(t("canvas.reverseDone"), { n: done }));
-    } finally {
-      setPromptMining(false);
-    }
+  async function reversePromptsForSelection(arts:Artwork[]){
+    if(readOnly||!user||!activeKey||promptMining||!arts.length)return;
+    setCtxMenu(null);const scope=canvasTextDocument.scope,live=new Map((rfRef.current?.getNodes()||[]).map(node=>[node.id,node]));
+    const requests=arts.map(source=>{const node=live.get(source.id);return derivedTextTask({mode:"reverse",source,project:activeKey,title:t("canvas.reverseTitle"),productTitle:t("canvas.productNode"),gap:X_GAP,
+      position:{x:node?.position.x??source.canvasX??0,y:node?.position.y??source.canvasY??0,width:node?flowNodeSize(node).width:NODE_W}});});
+    const result=await textTasks.batch("reverse",requests);
+    if(scope.viewCurrent())flashTip(result.failed?L(`反推：成功 ${result.succeeded}，失败 ${result.failed}`,`Reverse prompts: ${result.succeeded} succeeded, ${result.failed} failed`):fmt(t("canvas.reverseDone"),{n:result.succeeded}));
   }
 
   function currentSelectionRunTargets(ids: string[]) {
@@ -5338,107 +5197,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   );
 
   // 智能帮写:每个反推节点右侧生成成对的帮写节点(@产品图 前缀 + 已绑产品)
-  async function assistWriteForNodes(textNodeIds: string[], product: Artwork) {
-    if (readOnly || !user || !activeKey || assistBusy) return;
-    const byId = new Map(textNodes.map((node) => [node.id, node]));
-    const sources = textNodeIds
-      .map((id) => byId.get(id))
-      .filter(
-        (node): node is CanvasTextNode =>
-          !!node && node.projectKey === activeKey && !!stripMentionLines(node.content || "")
-      );
-    if (!sources.length) {
-      flashTip(t("canvas.assistNeedContent"));
-      setProductPicker(null);
-      return;
-    }
-    setAssistBusy(true);
-    setProductPicker(null);
-    try {
-      const rfNow = rfRef.current?.getNodes() ?? [];
-      const queue = [...sources];
-      const worker = async () => {
-        while (queue.length) {
-          const src = queue.shift();
-          if (!src) break;
-          const rf = rfNow.find((n) => n.id === src.id);
-          const x =
-            (rf ? rf.position.x : src.canvasX) +
-            (src.width || TEXT_NODE_DEFAULT_W) +
-            X_GAP;
-          const y = rf ? rf.position.y : src.canvasY;
-          const id = `text-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-          const now = new Date().toISOString();
-          const node: CanvasTextNode = {
-            id,
-            projectKey: activeKey,
-            title: t("canvas.assistTitle"),
-            prompt: "",
-            content: "",
-            status: "generating",
-            canvasX: Math.round(x),
-            canvasY: Math.round(y),
-            createdAt: now,
-            updatedAt: now,
-            width: TEXT_NODE_DEFAULT_W,
-            height: TEXT_NODE_DEFAULT_H,
-            sourceIds: src.sourceIds ?? [],
-            targetIds: [],
-            productIds: [product.id],
-          };
-          setTextNodes((current) => [...current, node]);
-          try {
-            const response = await privateFetch("/api/canvas/text-generate", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                mode: "assist",
-                prompt: stripMentionLines(src.content || ""),
-                sourceIds: src.sourceIds ?? [],
-                productIds: [product.id],
-              }),
-            });
-            const data = await readJsonSafe(response);
-            if (!response.ok || !data?.text) {
-              throw new Error(data?.error || t("canvas.assistFail"));
-            }
-            const completed: CanvasTextNode = {
-              ...node,
-              content: withProductMention(
-                String(data.text),
-                product.title || t("canvas.productNode")
-              ),
-              status: "completed",
-              updatedAt: new Date().toISOString(),
-            };
-            setTextNodes((current) =>
-              current.map((item) => (item.id === id ? completed : item))
-            );
-            void persistTextNode(completed);
-            pushUndo({ kind: "text-add", records: [completed] }); // 帮写节点可撤销
-          } catch (error) {
-            const failed: CanvasTextNode = {
-              ...node,
-              status: "failed",
-              updatedAt: new Date().toISOString(),
-            };
-            setTextNodes((current) =>
-              current.map((item) => (item.id === id ? failed : item))
-            );
-            void persistTextNode(failed);
-            flashTip(
-              `${src.title}：${
-                error instanceof Error ? error.message : t("canvas.assistFail")
-              }`
-            );
-          }
-        }
-      };
-      await Promise.all([worker(), worker()]);
-      flashTip(t("canvas.assistDone"));
-    } finally {
-      setAssistBusy(false);
-    }
+  async function assistWriteForNodes(textNodeIds:string[],product:Artwork){
+    if(readOnly||!user||!activeKey||assistBusy)return;
+    const sources=canvasTextDocument.getSnapshot().nodes.filter(node=>textNodeIds.includes(node.id)&&node.projectKey===activeKey&&!!stripMentionLines(node.content||""));
+    if(!sources.length){flashTip(t("canvas.assistNeedContent"));setProductPicker(null);return;}
+    setProductPicker(null);const scope=canvasTextDocument.scope,live=new Map((rfRef.current?.getNodes()||[]).map(node=>[node.id,node]));
+    const requests=sources.map(source=>{const node=live.get(source.id);return derivedTextTask({mode:"assist",source,product,project:activeKey,title:t("canvas.assistTitle"),productTitle:t("canvas.productNode"),gap:X_GAP,
+      position:{x:node?.position.x??source.canvasX,y:node?.position.y??source.canvasY,width:source.width||TEXT_NODE_DEFAULT_W}});});
+    const result=await textTasks.batch("assist",requests);
+    if(scope.viewCurrent())flashTip(result.failed?L(`帮写：成功 ${result.succeeded}，失败 ${result.failed}`,`Assisted writing: ${result.succeeded} succeeded, ${result.failed} failed`):t("canvas.assistDone"));
   }
 
   // Text is a universal image prompt; product recipes remain explicit optional modes.
@@ -8977,8 +8744,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   ))}
                 </div>
               )}
-              {textError && (
-                <p className="px-12 pb-2 text-xs font-medium text-red-400">{textError}</p>
+              {textTasks.state(selectedText.id).error && (
+                <p className="px-12 pb-2 text-xs font-medium text-red-400">{textTasks.state(selectedText.id).error}</p>
               )}
               <CanvasComposerFooter testId="text-node-dock-footer" controls={<>
                 <TextModelSelect feature="canvas.text-generate" compact dark={false} direction="up" />
@@ -9028,14 +8795,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 <button
                   type="button"
                   onClick={() => void generateTextNode()}
-                  disabled={!textPrompt.trim() || selectedText.status === "generating"}
-                  title={t("canvas.textGenerate")} aria-label={t("canvas.textGenerate")}
+                  disabled={(!textPrompt.trim()&&!textTasks.retryable(selectedText.id)) || textTasks.state(selectedText.id).busy || selectedText.status==="generating"&&textTasks.state(selectedText.id).phase==="idle"}
+                  title={textTasks.retryable(selectedText.id)?L("继续原任务","Resume original task"):t("canvas.textGenerate")} aria-label={textTasks.retryable(selectedText.id)?L("继续原任务","Resume original task"):t("canvas.textGenerate")}
                   className={cn(
                     "flex h-10 w-10 items-center justify-center rounded-[11px] transition-opacity hover:opacity-90 disabled:opacity-45",
                     lightCanvas ? "bg-[#20242c] text-white" : "bg-white text-[#111]"
                   )}
                 >
-                  {selectedText.status === "generating" ? (
+                  {textTasks.state(selectedText.id).busy ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <ArrowUp aria-hidden="true" className="h-4 w-4" />
