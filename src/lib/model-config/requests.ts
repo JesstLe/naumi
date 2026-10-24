@@ -88,13 +88,28 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
       if (artwork) parsed.body.resolution = artwork.resolution || "1K";
     }
   }
+  return runModelOperation({path:domainPath,body:parsed.body,references:parsed.references,
+    featureModel:request.headers.get("x-naumi-feature-model"),quality:request.headers.get("x-naumi-image-quality"),textModel:request.headers.get("x-naumi-text-model"),
+    quote:await imageBillingQuoteForRequest(request),versions:await acceptedModelVersions(request)},run);
+}
+
+/** Trusted operation facts, already authenticated by the owning entry. Never accepts HTTP-supplied snapshots. */
+export type ModelOperationInput={path:string;body:Record<string,any>;references:number;featureModel?:string|null;quality?:string|null;textModel?:string|null;
+  quote?:import("../billing/types").BillingQuote;versions?:{modelVersion:number;billingVersion:number}|null};
+export async function withModelOperation<T>(input:ModelOperationInput,run:()=>Promise<T>):Promise<T>{
+  assertPlatformImageSelection(input.body.model,input.body.modelId,input.featureModel);
+  if(!await modelConfigurationEnabled())return run();
+  return runModelOperation(input,run);
+}
+async function runModelOperation<T>(input:ModelOperationInput,run:()=>Promise<T>):Promise<T>{
+  const parsed={body:input.body,references:input.references};
   const admin = await getModelAdministration();
-  const quotedImage=await imageBillingQuoteForRequest(request);
-  const accepted = await acceptedModelVersions(request) || (quotedImage?.modelVersion?{modelVersion:quotedImage.modelVersion,billingVersion:quotedImage.configVersion}:null);
-  if (new URL(request.url).pathname === "/api/aplus" && parsed.body.jobId && ["approve_source", "redo_source", "generate"].includes(parsed.body.action)) return run();
+  const quotedImage=input.quote;
+  const accepted = input.versions || (quotedImage?.modelVersion?{modelVersion:quotedImage.modelVersion,billingVersion:quotedImage.configVersion}:null);
+  if (input.path === "/api/aplus" && parsed.body.jobId && ["approve_source", "redo_source", "generate"].includes(parsed.body.action)) return run();
   const [snapshot, billing] = await Promise.all([accepted ? admin.repo.byVersion(accepted.modelVersion) : admin.repo.current(), accepted ? admin.billing.byVersion(accepted.billingVersion) : admin.billing.current()]);
-  const feature = featureForRequest(new URL(request.url).pathname, parsed.body);
-  const purpose = purposeFor(new URL(request.url).pathname), executor = await getModelExecutor();
+  const feature = featureForRequest(input.path, parsed.body);
+  const purpose = purposeFor(input.path), executor = await getModelExecutor();
   if (feature === "canvas.image") {
     const step = currentImagegenStep();
     const hasReferences = step ? step.request.inputs.some(input => input.role !== "mask") : parsed.references > 0;
@@ -111,7 +126,7 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
   }
   if (purpose.image && !standaloneSegmentation) {
     const selected = String(parsed.body.model || parsed.body.modelId || "").trim();
-    const explicit = request.headers.get("x-naumi-feature-model") || selected || "";
+    const explicit = input.featureModel || selected || "";
     const explicitModelId = requestedFeatureModel(mainFeature, explicit.startsWith("byok:") ? undefined : explicit || undefined);
     const featureDefault = featureDefaultModel(snapshot.config,mainFeature,purpose.image);
     const configuredModelId = quotedImage?.facts.modelId || explicitModelId || featureDefault || snapshot.config.bindings[purpose.image];
@@ -133,7 +148,7 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     const presentation = qualityPresentation(upstreams);
     const qualities = preset ? [...DISPLAY_QUALITIES] : presentation?.qualities || option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities)));
     if (option?.parameters?.ratios?.length && !option.parameters.ratios.includes(ratio)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该比例", 400);
-    const rawQuality = String(quotedImage?.requestedParameters?.quality || quotedImage?.facts.quality || parsed.body.quality || request.headers.get("x-naumi-image-quality") || "").trim().toLowerCase();
+    const rawQuality = String(quotedImage?.requestedParameters?.quality || quotedImage?.facts.quality || parsed.body.quality || input.quality || "").trim().toLowerCase();
     const explicitQuality = purpose.image === "image.cutout" ? cutoutImageQuality(rawQuality) || "" : rawQuality;
     // An unrecognized quality value (e.g. a client sending a display label like
     // "standard") falls back to the model default with an audit note; it never
@@ -149,19 +164,19 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     const qualityFallbackReason = !explicitQuality ? null : qualityMalformed ? "malformed-quality-value" : qualityUnsupported ? "channel-unsupported" : null;
     if (qualityFallbackReason) console.warn("[image-quality-fallback]", qualityFallbackReason, explicitQuality, "->", requestedQuality);
     const presetParams = preset ? effectiveImageParameters(preset, { quality: requestedQuality, resolution: outputResolution, ratio }) : null;
-    const canvasRequest = parsed.body.origin === "canvas" || new URL(request.url).pathname.startsWith("/api/canvas/");
+    const canvasRequest = parsed.body.origin === "canvas" || input.path.startsWith("/api/canvas/");
 
     const effectiveQuality = presetParams?.effective.quality || requestedQuality;
 
     const native = presetParams ? presetParams.nativeResolution : !upstreams.some(u=>u.parameterMap.resolutionPolicy) && ["1K", "2K", "4K"].includes(outputResolution) && upstreams.some(u => u.capabilities.nativeResolutions.includes(outputResolution as "1K" | "2K" | "4K"));
     const needsEdit = purpose.image === "image.edit" || purpose.image === "image.cutout" || parsed.references > 0;
-    const needsText = new URL(request.url).pathname.includes("/canvas/image-tasks");
+    const needsText = input.path.includes("/canvas/image-tasks");
     const task = String(parsed.body.taskType || parsed.body.task || "");
     const facts: ModelFacts = { task: ["draft", "product", "detail", "layout"].includes(task) ? task as ModelFacts["task"] : needsText ? "layout" : "product", quality: effectiveQuality, resolution: native ? outputResolution : "1K", requestedResolution:outputResolution, ratio, needsEdit, preserveIdentity: needsEdit, needsText, nativeResolution: native && outputResolution !== "1K", references: parsed.references, quantity: 1, inputLength: String(parsed.body.prompt || parsed.body.text || "").length };
     const advanced=currentImagegenStep();
     const inferred=advanced?.intent||legacyImagegenIntent(parsed.body,parsed.references);
     if(advanced||inferred?.background||inferred?.conflicts.length)facts.imagegenRequirements=advanced?.intent||inferred!;
-    facts.needsMask = !!parsed.body.needsMask || new URL(request.url).pathname.includes("/canvas/image-tasks");
+    facts.needsMask = !!parsed.body.needsMask || input.path.includes("/canvas/image-tasks");
     if (presetParams) { facts.quality = requestedQuality; facts.resolution = outputResolution; }
     const allowResolutionFallback = !accepted && !(Number(parsed.body.targetWidth)>0 && Number(parsed.body.targetHeight)>0);
     const choice=allowResolutionFallback ? resolveImageResolution(snapshot.config,model?.id,outputResolution,mainFeature,ratio,{snapshot,billing,facts,options:{trustedOrigins:(process.env.MODEL_CONFIG_TRUSTED_ORIGINS||"").split(/[\s,]+/).filter(Boolean)}}) : undefined;
@@ -172,8 +187,8 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     if (canvasRequest && effectivePreset && parsed.body.resolution && (!effectivePreset.nativeResolution||!effectivePreset.nativeRatio))throw new ModelConfigError("MODEL_INCOMPATIBLE","所选模型未核验该尺寸与比例组合，请选择已开放参数",400);
     bundle.image = await executor.resolve({ allowResolutionFallback, imageUpstreamIds:advanced?.eligibleUpstreamIds, requestedParameters:advanced?.requestedParameters || (quotedImage?.requestedParameters?{...quotedImage.requestedParameters,ratio}:undefined), scopeSystem:parsed.body.origin==="canvas"?"canvas":undefined, feature: mainFeature, binding: purpose.image, requestedModelId, snapshot, billing, facts });
   }
-  const requestedTextModelId = requestedFeatureModel(mainFeature, purpose.primary === "text" || purpose.primary === "vision" ? request.headers.get("x-naumi-feature-model")?.trim() || request.headers.get("x-naumi-text-model")?.trim() || String(parsed.body.modelId || parsed.body.model || "").trim() || undefined : undefined);
-  if (purpose.video) bundle.video = await executor.resolve({ feature, binding: purpose.video, requestedModelId: request.headers.get("x-naumi-feature-model")?.trim() || parsed.body.modelId || undefined, snapshot, billing });
+  const requestedTextModelId = requestedFeatureModel(mainFeature, purpose.primary === "text" || purpose.primary === "vision" ? input.featureModel?.trim() || input.textModel?.trim() || String(parsed.body.modelId || parsed.body.model || "").trim() || undefined : undefined);
+  if (purpose.video) bundle.video = await executor.resolve({ feature, binding: purpose.video, requestedModelId: input.featureModel?.trim() || parsed.body.modelId || undefined, snapshot, billing });
   if (purpose.text && (requestedTextModelId || snapshot.config.bindings[purpose.text] || purpose.primary === "text" && mainFeature && snapshot.config.business?.[mainFeature])) bundle.text = await executor.resolve({ ...(purpose.primary === "text" ? { feature: mainFeature } : {}), binding: purpose.text, requestedModelId: requestedTextModelId, snapshot, billing, facts: { task: "product", quality: "medium", resolution: "1K", needsEdit: false, needsText: false, preserveIdentity: false, nativeResolution: false, references: parsed.references, inputLength: JSON.stringify(parsed.body.messages || parsed.body.prompt || "").length } });
   if (purpose.primary === "text" && purpose.text && mainFeature && snapshot.config.business?.[mainFeature] && bundle.text) {
     const scope = await executor.describe(bundle.text);
@@ -183,7 +198,7 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
   }
   if (!bundle.vision && purpose.vision && (snapshot.config.bindings[purpose.vision] || purpose.primary === "vision" && feature && snapshot.config.business?.[feature])) bundle.vision = await executor.resolve({ ...(purpose.primary === "vision" ? { feature, requestedModelId: requestedTextModelId } : {}), binding: purpose.vision, snapshot, billing });
   if (purpose.primary === "vision" && !bundle.vision || purpose.primary === "text" && !bundle.text || purpose.primary === "video" && !bundle.video) throw new ModelConfigError("MODEL_UNAVAILABLE", "当前用途没有可用模型绑定，请联系管理员配置", 503);
-  if (new URL(request.url).pathname === "/api/agent" && parsed.references > 0) {
+  if (input.path === "/api/agent" && parsed.references > 0) {
     if (!bundle.vision) throw new ModelConfigError("MODEL_INCOMPATIBLE", "Agent 视觉用途尚未配置，请联系管理员", 400);
     bundle.primary = "vision"; bundle.text = bundle.vision;
   }

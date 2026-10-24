@@ -25,10 +25,15 @@ export function operationIdFor(request: Request, explicit?: string) {
         throw new BillingError("INVALID_RESULT", "计费操作编号无效", 400);
     return id;
 }
-export function billingErrorResponse(error: unknown) {
+/** Transport-neutral error projection shared by HTTP and trusted typed callers. */
+export function billingFailure(error: unknown): {status:number;error:string;code?:string;accepted?:false} {
     if (error instanceof ModelConfigError)
-        return billingJson({ error: error.message, code: error.code,...(error.code==="IMAGE_QUOTE_EXPIRED"?{accepted:false}:{}) }, error.status);
+        return {status:error.status,error:error.message,code:error.code,...(error.code==="IMAGE_QUOTE_EXPIRED"?{accepted:false as const}:{})};
     if (error instanceof BillingError)
-        return billingJson({ error: error.message, code: error.code }, error.status);
-    return billingJson({ error: "计费服务暂时不可用，请稍后重试" }, 503);
+        return {status:error.status,error:error.message,code:error.code};
+    return {status:503,error:"计费服务暂时不可用，请稍后重试"};
+}
+export function billingErrorResponse(error: unknown) {
+    const {status,...body}=billingFailure(error);
+    return billingJson(body,status);
 }

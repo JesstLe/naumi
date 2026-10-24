@@ -122,11 +122,16 @@ export function nativeUserEmail(request: Request): string | null {
 export async function activeNativeUserEmail(request: Request): Promise<string | null> {
   const email = nativeUserEmail(request);
   if (!email) return null;
+  const issuedAt = Number(readCookie(request, USER_COOKIE)?.split(".")[1]) - USER_TTL_MS;
+  return activeNativeAccountEmail(email,issuedAt);
+}
+
+/** Account eligibility for an already-authenticated in-process actor; not a login endpoint. */
+export async function activeNativeAccountEmail(email:string,issuedAt=Date.now()):Promise<string|null>{
   await ensureSchema();
   const { rows } = await getPool().query("SELECT banned,auth_revoked_before,account_expires_at FROM app_users WHERE email=$1", [email]);
   const user = rows[0];
   if (!user || user.banned || (user.account_expires_at && new Date(user.account_expires_at).getTime() <= Date.now())) return null;
-  const issuedAt = Number(readCookie(request, USER_COOKIE)?.split(".")[1]) - USER_TTL_MS;
   if (user.auth_revoked_before && issuedAt <= new Date(user.auth_revoked_before).getTime()) return null;
   return email;
 }

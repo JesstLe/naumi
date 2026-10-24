@@ -1,3 +1,4 @@
+import {submissionFingerprint} from "./submission-identity";
 import {acceptedModelVersions} from "../model-config/accepted-context";
 import {getModelAdministration} from "../model-config/server";
 import { settlementFor } from "./quote";
@@ -87,7 +88,7 @@ export async function billingRequestIdentity(request: Request) {
     }
     else
         entries.push(await copy.text());
-    return { hash: createHash("sha256").update(JSON.stringify([new URL(request.url).pathname, request.headers.get("x-naumi-image-quality"), request.headers.get("x-naumi-text-model"), request.headers.get("x-naumi-feature-model"), entries])).digest("hex"), confirmation: requestQuoteConfirmation(request, body) };
+    return { hash: submissionFingerprint(new URL(request.url).pathname,request.headers.get("x-naumi-image-quality"),request.headers.get("x-naumi-text-model"),request.headers.get("x-naumi-feature-model"),entries), confirmation: requestQuoteConfirmation(request, body) };
 }
 export async function withBillingRequest(request: Request, feature: FeatureId, action: () => Promise<Response>): Promise<Response> {
     if (!dbEnabled)

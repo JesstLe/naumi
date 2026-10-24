@@ -4,7 +4,7 @@ import { build } from "esbuild";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 const require = createRequire(import.meta.url), baseline = process.argv.includes("--baseline");
-const route = readFileSync("src/app/api/generate-image/route.ts", "utf8"), parent = readFileSync("src/lib/imagegen/dispatch.ts", "utf8");
+const route = require("./lib/image-generation-source.cjs")(), parent = readFileSync("src/lib/imagegen/dispatch.ts", "utf8");
 if (baseline) {
   assert.ok(route.includes("imagegenOutputError ||= images.map(image => imageRatioMismatch"));
   assert.ok(parent.includes("if(row?.error)throw new Error(row.error)"));
@@ -42,7 +42,7 @@ if (baseline) {
   assert.ok(route.includes("imagegenOutputWarning"));assert.ok(parent.includes("warnings"));
   const canvas = readFileSync("src/components/canvas/canvas-client.tsx","utf8");
   assert.ok(canvas.includes("imageOutputWarningText(pj.warnings)"));
-  assert.ok(canvas.includes("imageOutputWarningText(result.warnings)"));
+  assert.equal(canvas.split("imageOutputWarningText(pj.warnings)").length-1,2,"existing and pending-node generation both render warnings");
   console.log("MODIFIED=PASS RATIO_DEVIATIONS=5 DELIVERED_WITH_WARNING ORIGINAL_BYTES_AND_DIMENSIONS=UNCHANGED REAL_ERRORS=RETAINED HISTORICAL_PROJECTION=READ_ONLY BILLING=UNCHANGED CANVAS_NOTICE=CONNECTED");
 }
 console.log("PRODUCTION_WRITES=0 REAL_SUPPLIER_CALLS=0 AUTO_RETRIES=0");

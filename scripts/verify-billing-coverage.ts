@@ -7,7 +7,7 @@ import {featureForRequest} from "../src/lib/model-config/feature-path";
 const sources: Record<string, string> = { "image.generate": "src/app/api/generate-image/route.ts", "image.suite": "src/app/api/suite/route.ts", "image.aplus": "src/app/api/aplus/route.ts", "canvas.image": "src/lib/canvas-image-tasks.ts", "video.generate": "src/lib/video/service.ts", "video.process":"src/lib/video/media-billing.ts", "competitor.action": "src/app/api/competitors/[id]/action/route.ts" };
 const config = fixtureConfig();
 for (const feature of FEATURE_IDS) {
-    const source = sources[feature] || `src/app/api/${feature.startsWith("canvas.") ? "canvas/" : ""}${feature.split(".")[1]}/route.ts`, text = readFileSync(source, "utf8");
+    const source = sources[feature] || `src/app/api/${feature.startsWith("canvas.") ? "canvas/" : ""}${feature.split(".")[1]}/route.ts`, text = feature==="image.generate"?require("./lib/image-generation-source.cjs")():readFileSync(source, "utf8");
     const billedText=feature==="video.generate"?readFileSync("src/lib/video/submission.ts","utf8"):text;
     if(feature==="video.generate")assert.match(text,/createValidatedVideo\(email,input/,"video entry retains validated transactional submission");
     if(feature==="image.generate"){

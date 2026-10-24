@@ -121,6 +121,15 @@ export async function resolveBillingFacts(request: Request, input: Partial<Billi
     const fallback = byok ? await managedBillingModel(request, "image.generate") : null;
     return { feature: input.feature, quantity: input.quantity, quality: input.feature==="video.generate"||input.feature in CANVAS_FREE_DEFAULTS?"medium":input.quality ?? request.headers.get("x-naumi-image-quality") ?? "medium", resolution: input.feature in CANVAS_FREE_DEFAULTS?"1K":input.resolution ?? "1K", ratio: input.ratio, modelId: model, providerId: byok ? `byok:${provider!.id}` : providerId,...(byok?{fallbackProviderId:fallback?.providerId || "openai-images",fallbackModelId:fallback?.modelId || (await getOpenAISettings()).model}:{}), byok, metered: await meteringFor(current), paidFen: await totalPaidCents(email), userGroup:"default" };
 }
+/** Shared validation for a server-owned frozen step, without a synthetic Request. */
+export function quoteForImagegenStep(actor:string|null,operationId:string|null,billingVersion:number,input:Partial<BillingFacts>&{feature:BillingFacts["feature"];quantity:number}){
+    const saved=currentImagegenStep()?.billing;
+    if(!saved)return undefined;
+    const q=saved.quote;
+    if(actor?.toLowerCase()!==saved.owner||operationId!==saved.operationId||input.feature!==q.facts.feature||input.quantity!==q.facts.quantity||(input.modelId!==undefined&&input.modelId!==q.facts.modelId)||billingVersion!==q.configVersion)
+        throw new BillingError("OPERATION_CONFLICT","冻结执行步骤与原报价不符",409);
+    return structuredClone(q);
+}
 export async function quoteForRequest(request: Request, input: Partial<BillingFacts> & {
     feature: BillingFacts["feature"];
     quantity: number;
@@ -129,12 +138,8 @@ export async function quoteForRequest(request: Request, input: Partial<BillingFa
     // Only an in-process, server-owned imagegen step can supply this quote.
     // Keep the complete tariff/facts used at preview, not just its version or
     // credits: metering and recharge changes must not reprice an accepted plan.
-    const saved=currentImagegenStep()?.billing;
-    if(saved){
-        const q=saved.quote,actor=await resolveUserEmail(request);
-        if(actor?.toLowerCase()!==saved.owner||request.headers.get("x-naumi-billing-operation-id")!==saved.operationId||input.feature!==q.facts.feature||input.quantity!==q.facts.quantity||(input.modelId!==undefined&&input.modelId!==q.facts.modelId)||Number(request.headers.get("x-naumi-billing-version"))!==q.configVersion)
-            throw new BillingError("OPERATION_CONFLICT","冻结执行步骤与原报价不符",409);
-        return structuredClone(q);
+    if(currentImagegenStep()?.billing){
+        return quoteForImagegenStep(await resolveUserEmail(request),request.headers.get("x-naumi-billing-operation-id"),Number(request.headers.get("x-naumi-billing-version")),input)!;
     }
     const browserQuote=await imageBillingQuoteForRequest(request);
     if(browserQuote){

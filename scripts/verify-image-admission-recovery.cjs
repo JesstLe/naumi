@@ -5,6 +5,8 @@ function pure(rel){const m={exports:{}};const js=buildSync({entryPoints:[path.jo
 async function bundledPlan(state){
  const {build}=require('esbuild');
  const fixtures={
+ '../saas/creation-context':`export const assertCurrentCreationFeature=async()=>{};`,
+ '../model-config/resolution-fallback':`export const resolveImageResolution=()=>undefined;export const resolutionFallbackMessage=()=>"";export const resolutionFacts=(x)=>x;export const upstreamAcceptsResolution=()=>true;`,
  './inputs':`export async function readImagegenInputs(r){return r.inputs.map(i=>({...i,width:__fixture.width,height:__fixture.height}))}`,
  '../model-config/server':`export async function getModelAdministration(){return{repo:{current:async()=>({version:121,config:__fixture.config})},billing:{current:async()=>({version:8})}}}`,
  '../model-config/runtime':`export function simulateModel(){return{eligible:__fixture.ids.map(upstreamId=>({upstreamId,providerId:'p',rank:1})),excluded:[],modelVersion:121,billingVersion:8}}`,
@@ -24,11 +26,12 @@ async function bundledPlan(state){
  }}]});const m={exports:{}};vm.runInNewContext(result.outputFiles[0].text,{module:m,exports:m.exports,require,Buffer,console,URL,Response,Request,Headers,FormData,File,process:{env:{}},__fixture:state});return m.exports;
 }
 async function legacy(sizeModule,ratio){
- const file=path.join(root,'src/app/api/generate-image/route.ts'),source=fs.readFileSync(file,'utf8'),ast=ts.createSourceFile(file,source,99,true);const fn=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='handleObservedPost');assert(fn);
+ const file=path.join(root,'src/app/api/generate-image/route.ts'),source=require('./lib/image-generation-source.cjs')(root),ast=ts.createSourceFile(file,source,99,true);const typed=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='submitGeneration');const fn=typed||ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='handleObservedPost');assert(fn);
  const state={jobs:0,quotes:0};const env={Request,Response,Buffer,Date,console,crypto,MAX_GENERATION_DIMENSION:4096,dbEnabled:false,NextResponse:{json:(v,i)=>Response.json(v,i)},ExactImageSizeError:sizeModule.ExactImageSizeError,exactImageRequestSize:sizeModule.exactImageRequestSize,
  imageWorkerAuthorized:()=>false,parseParams:async()=>({prompt:'fixture',userPrompt:'fixture',model:'gpt-image-2',origin:'canvas',images:[],targetWidth:0,targetHeight:0,ratio,resolution:'1K',quality:'medium',count:1,email:'fixture@example.test'}),currentImagegenStep:()=>undefined,assertPlatformImageSelection:()=>{},legacyImagegenIntent:()=>null,getOpenAISettings:async()=>({apiKey:'fixture',model:'gpt-image-2'}),clientIp:()=>'',rateLimit:()=>true,getImageModelCatalog:async()=>[{id:'gpt-image-2',provider:'managed',supportsEdit:true}],currentModelExecution:()=>undefined,routeImageModel:id=>id,resolveConfiguredImageQuality:()=>({executed:'medium',requested:'medium'}),imageQualityCost:async()=>{state.quotes++;return 6},getStyleGuide:async()=>({}),buildPrompt:()=> 'fixture',JOBS:{create:async()=>{state.jobs++}},kickGeneration:async()=>{},safeError:()=> 'fixture failed',BillingError:class extends Error{}};
- vm.runInNewContext(ts.transpileModule(fn.getText(ast)+';globalThis.route=handleObservedPost;',{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,env);
- const response=await env.route(new Request('http://fixture/api/generate-image',{method:'POST'}));return{status:response.status,body:await response.json(),...state};
+ env.generationResult=(body,options)=>Response.json(body,options);env.generationBillingError=()=>Response.json({error:'fixture failed'},{status:503});
+ vm.runInNewContext(ts.transpileModule(fn.getText(ast).replace('submitGeneration','handleObservedPost')+';globalThis.route=handleObservedPost;',{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,env);
+ const response=typed?await env.route(await env.parseParams(),{actor:async()=>null,ip:null,quote:async()=>undefined}):await env.route(new Request('http://fixture/api/generate-image',{method:'POST'}));return{status:response.status,body:await response.json(),...state};
 }
 (async()=>{
  const size=pure('src/lib/imagegen/request-size.ts');const state={quotes:0,width:1316,height:1754,ids:['up','apib'],config:{publicModels:[{id:'gpt-image-2',enabled:true,visible:true,modality:'image',target:{type:'upstream',id:'up'},supplierRouting:{channels:[]}}],upstreamModels:[{id:'up',providerId:'p',model:'gpt-image-2',parameterMap:{},capabilities:{}},{id:'apib',providerId:'p',model:'gpt-image-2.5-flare',parameterMap:{apimartImages:{ratios:['3:4','1:1']}},capabilities:{}}],providers:[{id:'p',protocol:'openai-images'}]}};

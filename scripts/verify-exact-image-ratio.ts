@@ -14,10 +14,7 @@ async function main() {
     root = resolve(process.argv[3] || "."),
     out = resolve(process.argv[4] || "output/canvas-exact-ratio47-20261019");
   mkdirSync(out, { recursive: true });
-  const source = readFileSync(
-      join(root, "src/app/api/generate-image/route.ts"),
-      "utf8",
-    ),
+  const source = require("./lib/image-generation-source.cjs")(root),
     ast = ts.createSourceFile("route.ts", source, ts.ScriptTarget.Latest, true);
   const declarations = ast.statements.filter(
     (n) =>

@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
-const source=fs.readFileSync('src/app/api/generate-image/route.ts','utf8'),ast=ts.createSourceFile('route.ts',source,99,true),fn=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='runJob').getText(ast);
+const source=require('./lib/image-generation-source.cjs')(),ast=ts.createSourceFile('route.ts',source,99,true),fn=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='runJob').getText(ast);
 (async()=>{
  for(const fault of ['image-checkpoint','artworks','settlement','final-receipt']){
   let state={status:'pending',paidOperations:{original:{state:'done',result:[{id:'original',url:'data:image/png;base64,fixture'}]}}},failed=false,provider=0,settles=0;

@@ -122,7 +122,8 @@ const clientAST = ast(selected(FILES.client));
 const responseModule = execute(declaration(ast(sourceFile('src/lib/billing/access.ts')), 'billingJson'),
   'actual-billing-json.ts', { PRIVATE_HEADERS: { 'Cache-Control': 'private, no-store' } });
 const { billingJson } = responseModule.exports;
-const { billingErrorResponse } = execute(declaration(ast(sourceFile('src/lib/billing/request.ts')), 'billingErrorResponse'),
+const errorSource=sourceFile('src/lib/billing/request.ts'),errorAST=ast(errorSource);
+const { billingErrorResponse } = execute((read(errorSource).includes('function billingFailure')?declaration(errorAST,'billingFailure')+'\n':'')+declaration(errorAST, 'billingErrorResponse'),
   'actual-billing-error-response.ts', { BillingError, ModelConfigError, billingJson }).exports;
 function deferred() {
   let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; });

@@ -22,7 +22,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { PromptAssistPopup } from "@/components/tools/prompt-assist-popup";
-import type { GeneratedImage } from "@/app/api/generate-image/route";
+import type { GeneratedImage } from "@/lib/imagegen/generation-types";
 import type { SessionUser } from "@/lib/auth-context";
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";

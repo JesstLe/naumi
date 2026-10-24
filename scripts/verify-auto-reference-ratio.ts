@@ -60,7 +60,7 @@ async function main(){
  check(imageRequestAdmission("658:877","gpt-image-2",false,{...up,parameterMap:{apimartImages:{ratios:["3:4"]}}}).includes("ADAPTER_RATIO_UNSUPPORTED"),"adapter explicit allowlist stays authoritative");
  const mapped:Record<string,unknown>={size:"848x1264",quality:"medium"};mapResolution(mapped,{mode:"map",field:"size",values:{"4K":"1024x1024"}},"4K","53:79");
  check(mapped.size==="1024x1024","administrator explicit size overrides suggested auto frame");
- const source=readFileSync("src/app/api/generate-image/route.ts","utf8"),ast=ts.createSourceFile("route.ts",source,99,true);
+ const source=require("./lib/image-generation-source.cjs")(),ast=ts.createSourceFile("route.ts",source,99,true);
  const node=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==="sizeFor")!;
  const js=ts.transpileModule(node.getText(ast)+";return sizeFor;",{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
  const sizeFor=new Function("exactImageRequestSize",js)(exactImageRequestSize);

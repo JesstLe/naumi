@@ -71,8 +71,8 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
     if(!child){child={state:"starting"};await update({status:"running",children:{...state.children,[step.key]:child}},{status:"running",stage:step.operation==="cutout"?"postprocessing":step.operation==="edit"?"editing":"generating"});}
     const effective=step.operation==="cutout"&&baseIds.length?{...plan,request:{...plan.request,inputs:[{artworkId:baseIds[Number(step.key.split("-")[1])||0],role:"edit-target" as const}]}}:plan;
     return executeImagegenStep(effective,step.key,owner);
-    },wasStarting),body=await response.json();
-    if(!response.ok){
+    },wasStarting),body=response.body;
+    if(response.status<200||response.status>=300){
      if(body.code==="OPERATION_PENDING"||response.status>=500){await update({status:"error"},{status:"failed",error:{code:"SUBMISSION_UNKNOWN",message:"本次生成未完成，请重试"}});return;}
      throw new NotAccepted(body.error||"执行步骤被拒绝");
     }

@@ -41,7 +41,7 @@ import {
   type PromptTemplate,
 } from "@/lib/mock-data";
 import { useClipboardImagePaste } from "@/lib/clipboard-images";
-import type { GeneratedImage } from "@/app/api/generate-image/route";
+import type { GeneratedImage } from "@/lib/imagegen/generation-types";
 import { authHeader } from "@/lib/supabase";
 import { useImageJobResume } from "@/components/use-image-job-resume";
 import { useAuth, type SessionUser } from "@/lib/auth-context";

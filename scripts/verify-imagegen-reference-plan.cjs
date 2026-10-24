@@ -65,13 +65,15 @@ async function bundle(entry,state,modules,source){
  const inferredStyle=await planImagegen({...req,prompt:'风格迁移，保持产品主体'},'fixture@example.test');check(inferredStyle.request.parameters.ratio==='1:1','intent workflow keeps target frame');
  const local=await planImagegen({...req,mode:'postprocess'},'fixture@example.test');check(local.request.parameters.ratio==='auto'&&local.totalCredits===0,'local processing untouched');
  const core=await bundle('src/lib/imagegen/generation-core.ts',state,{
+ '../saas/creation-context':`export const currentCreationContext=()=>undefined;export const assertCreationProjectInput=async()=>{};`,
  './inputs':modules['./inputs'],
  '../native-auth':`export function signUserSession(){return'fixture'};export const USER_COOKIE='fixture-session'`,
  '../model-config/accepted-context':`export async function signAcceptedModelContext(){return'fixture'}`,
  './context':`export async function withImagegenStep(request,intent,fn){return fn()}`,
- '../db':`export async function listArtworksByIds(){return[]}`,
+ '../db':`export const dbEnabled=false;export async function listArtworksByIds(){return[]};export const getPool=()=>({})`,
+ './generation-operation':`export async function submitGenerationOperation(command){__fixture.command=command;return {status:200,body:{ratio:command.parameters.ratio,count:command.parameters.images.length}}}`,
  '../../app/api/generate-image/route':`export async function POST(req){const form=await req.formData();__fixture.forms.push(form);return Response.json({ratio:form.get('ratio'),count:form.getAll('image').length})}`
  });
- const response=await core.submitGenerationCore(plan,'generate','fixture@example.test'),body=await response.json();check(body.ratio==='3:4'&&body.count===2,'actual adapter FormData ratio and references');check(state.forms[0].get('userPrompt')===req.prompt,'original user prompt unchanged');check(req.inputs[0].role==='edit-target','input roles unchanged');
- console.log(`SERVER_FRAME=PASS CASES=${checks} INPUT=1500x1500+750x1000 AUTO=3:4 QUOTE=3:4 FROZEN_STEP=3:4 ACTUAL_FORM=3:4 FINGERPRINT=ORIGINAL SAME_RATIO=CONSENSUS MIXED_RATIO=CHOICE_REQUIRED SUPPLIER_CALLS=0 EXIT=0`);
+ const response=await core.submitGenerationCore(plan,'generate','fixture@example.test'),body=response.body||await response.json();check(body.ratio==='3:4'&&body.count===2,'actual generation command ratio and references');check((state.command?.fields.userPrompt||state.forms[0]?.get('userPrompt'))===req.prompt,'original user prompt unchanged');check(req.inputs[0].role==='edit-target','input roles unchanged');
+ console.log(`SERVER_FRAME=PASS CASES=${checks} INPUT=1500x1500+750x1000 AUTO=3:4 QUOTE=3:4 FROZEN_STEP=3:4 ACTUAL_COMMAND=3:4 FINGERPRINT=ORIGINAL SAME_RATIO=CONSENSUS MIXED_RATIO=CHOICE_REQUIRED SUPPLIER_CALLS=0 EXIT=0`);
 })().catch(error=>{console.error(error);process.exitCode=1});
