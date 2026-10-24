@@ -80,7 +80,7 @@ export function createCanvasHistoryController(services: Services) {
     const {action}=pending;
     try { await applyRaw(scope,action,false);push(scope,action);commands.delete(scope.key); }
     catch(error){
-      if(error instanceof CanvasHistoryRequestError&&error.status>=400&&error.status<500)commands.delete(scope.key);
+      if(!attempts.has(action)||error instanceof CanvasHistoryRequestError&&error.status>=400&&error.status<500)commands.delete(scope.key);
       throw error;
     }
   };

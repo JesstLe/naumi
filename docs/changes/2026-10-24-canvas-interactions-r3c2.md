@@ -30,11 +30,11 @@ AST 对照确认其余 **173 个函数正文保持不变**；仅 4 个交互函�
 
 证据目录：`output/refactor-r3c2-20261024/`。
 
-- 完整基线源码与原文件字节先保存。实际旧 handler/model **10 场景 / 28 检查**，明确复现旧行为；新版实际 owner/调用方 **33 场景 / 89 检查**。
+- 完整基线源码与原文件字节先保存。实际旧 handler/model **10 场景 / 28 检查**，明确复现旧行为；新版实际 owner/调用方 **34 场景 / 92 检查**。
 - 真实隔离 PG、真实 history HTTP handler、direct parent API：基线 **26 检查**，新版 **28 检查**；项目归属、真实/伪环、owner、混合原子移动、批量文字 rollback、原 operation 单回执通过。
 - 既有真实 PG history suite **20 检查**通过，包含混合事务、并发 video CAS、重复回执和归属。
 - 真实 Next + React Flow **12 项**：保存拒绝不产生 undo、单图/文字拖动、Ctrl/Meta/Shift、多选与命名组、真实端口连线、Delete 剪边、原子双文字绑定、原操作恢复及 undo/redo。
-- 相邻真实 Next：文字/历史 **12**、详情/同步编辑 **5**、普通生图 **5**。场景 renderer **6** 项在最终 history 队列收拢前已通过；该轮只改队列时没有再重复这 6 项，最后一版的交互/文字/详情/普通生图均已重新执行。
+- 相邻真实 Next：文字/历史 **12**、详情/同步编辑 **5**、普通生图 **5**。场景 renderer **6** 项在 history 队列收拢前已通过；收拢后重跑了交互/文字/详情/普通生图。封存尾提交只补“未发请求的编译失败从队列移除”，通过 controller/tsc/lint/副本回滚复测，未再次启动浏览器；不把先前浏览器记录写成尾提交的新运行。
 - 相邻 owner：history **67/184**、text **21/58**、artwork **26/49**、任务 **74/369**、图片 **46/176**、scene **30/98**、节点 SSR **32 组**通过。
 - 全项目 TypeScript exit 0；模块 lint exit 0，保留基线的 **8 条** Canvas hook warning，没有禁用规则或新增 warning。
 - 供应商/生产调用 **0**。Next API 数据使用本地 fixture，不冒充真实 PG 浏览器或线上验收；PG 检查单独执行并标记。
@@ -47,6 +47,7 @@ AST 对照确认其余 **173 个函数正文保持不变**；仅 4 个交互函�
 - AST 对照的首次检查误把最外层 `CanvasClient` 也纳入“保留子函数正文”名单，因此 exit 1；明确单独统计被重构的组件容器后，173 个其余函数不变，原失败日志保留。
 - T3 preview 同一页面 snapshot 两次均返回 `Preview automation snapshot timed out after 15000ms.`；使用仓库独立 Edge 控件流程，未操作用户其他页面。
 - 首次相邻任务/图片 verifier 沿默认目录回写了两份 ignored `MODIFIED_RESULT.json`，本轮另存其副本并记录在 `EVIDENCE_ROUTING.json`；不把这些回写称为旧提交的重新封存。
+- 封存复核补齐一个边界：未发请求前的视频节点缺失/编译失败不保留为 unknown，避免阻塞后续无关编辑；新增实际 controller 反例，已有请求的原 body 仍保留。该修正单独提交，不改写前一提交。
 - 新串行交互队列覆盖本组件生命期，不是跨刷新持久化编辑日志；跨 tab CAS、全租户 SQL 策略审计、旧测试债务、全候选 production build 和容量实测仍未完成。
 - 选择的其他兼容 setter、键盘、菜单/节点创建/复制删除以及批处理/助手编排仍有代码在 CanvasClient；R3 整体尚未收尾。下一切片收拢节点操作，之后继续 R4 DB/配置和 R5/R6。
 
