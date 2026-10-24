@@ -5,7 +5,7 @@ import {assertWorkflowCreationScope,runWorkflowCreation,bindWorkflowCreationProj
 import {encryptAtRest,decryptAtRest} from "../settings";
 import {freezeVideoWorkflow,withFrozenWorkflowStage,workflowBindingId,type FrozenWorkflowStage} from "./workflow-freeze";
 import {createHash} from "node:crypto";
-import {getVideoTask, getVideoTaskByIdempotencyKey} from "../db";
+import {getVideoTask, getVideoTaskByIdempotencyKey} from "@/lib/video/task-repository";
 import {getPool} from "@/platform/db/pool";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {ModelConfigError} from "../model-config/types";

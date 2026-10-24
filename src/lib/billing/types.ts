@@ -227,7 +227,8 @@ export type BillingService = {
     }>;
 };
 export type ConfigRuntime = {
-    current(): Promise<ConfigSnapshot>;
+    /** A supplied transaction already owns schema readiness and connection lifetime. */
+    current(tx?: Tx): Promise<ConfigSnapshot>;
     history(limit: number): Promise<{
         version: number;
         actor: string;

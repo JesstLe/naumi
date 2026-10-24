@@ -3,7 +3,7 @@ import {z} from "zod";
 
 import { authenticatedEmail, authorizedTargetEmail } from "@/lib/request-auth";
 import { safeError } from "@/lib/api-error";
-import {getVideoTask,getVideoTaskByIdempotencyKey} from "@/lib/db";
+import {getVideoTask, getVideoTaskByIdempotencyKey} from "@/lib/video/task-repository";
 import { listVideoTaskViews, pollAndSettle, publicVideoTaskView } from "@/lib/video/service";
 
 // ---------------------------------------------------------------------------

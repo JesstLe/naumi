@@ -1,21 +1,13 @@
 import "server-only";
 
-import {
-  claimVideoTaskPoll,
-  completeVideoTask,
-  createVideoTask,
-  failVideoTask,
-  getVideoTask,
-  listDueVideoTaskRefs,
-  listVideoTasks,
-  releaseVideoTaskPoll,
-  scheduleVideoTaskRetry,
-  type VideoTaskRow,
-} from "@/lib/db";
+import {claimVideoTaskPoll, listDueVideoTaskRefs, releaseVideoTaskPoll, scheduleVideoTaskRetry} from "@/lib/video/task-polling";
+import {completeVideoTask, failVideoTask} from "@/lib/video/task-transitions";
+import {createVideoTask, getVideoTask, listVideoTasks} from "@/lib/video/task-repository";
+import {type VideoTaskRow} from "@/lib/video/task-types";
 
 // ---------------------------------------------------------------------------
-// 视频领域数据访问门面(§11 repository):service 只通过这里触达持久层。
-// 实际 SQL 仍在 db.ts(契约测试锚定在那里);本层负责聚合并暴露领域词汇。
+// Compatibility object for existing service callers. SQL and transactions live
+// in their video owners; these bindings are the same functions, not wrappers.
 // ---------------------------------------------------------------------------
 
 export type { VideoTaskRow };

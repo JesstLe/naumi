@@ -20,7 +20,10 @@ import { ModelConfigError } from "@/lib/model-config/types";
 import {getBillingRuntime, meteringFor} from "@/lib/billing/runtime";
 import {quote} from "@/lib/billing/quote";
 
-import {claimVideoTaskPoll, failVideoTask, getVideoTask, getVideoTaskByIdempotencyKey, listDueVideoTaskRefs, listVideoTasks, markVideoTaskCreated, markVideoTaskCreationUnknown, markVideoTaskAttention, noteVideoTaskResultObserved, recordVideoTaskPoll, scheduleVideoTaskRetry, touchReservation} from "@/lib/db";
+import {claimVideoTaskPoll, listDueVideoTaskRefs, noteVideoTaskResultObserved, recordVideoTaskPoll, scheduleVideoTaskRetry} from "@/lib/video/task-polling";
+import {failVideoTask, markVideoTaskCreated, markVideoTaskCreationUnknown, markVideoTaskAttention} from "@/lib/video/task-transitions";
+import {getVideoTask, getVideoTaskByIdempotencyKey, listVideoTasks} from "@/lib/video/task-repository";
+import {touchReservation} from "@/lib/billing/reservations";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 
 import {completeVideoResultSet} from "./result-completion";
@@ -34,7 +37,7 @@ import { getVideoProvider } from "@/lib/video/providers/adapter";
 
 import { resolveOpenAiVideosConfig } from "@/lib/video/providers/openai-videos";
 import { configuredVideoProviders, getVideoProviderConfig, publicProviderSnapshot } from "@/lib/video/providers/config";
-import type { VideoTaskRow } from "@/lib/db";
+import type {VideoTaskRow} from "@/lib/video/task-types";
 import type {
   VideoGenerationRequest,
   VideoProviderCreateResult,

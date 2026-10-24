@@ -1,12 +1,14 @@
 import "server-only";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "../persistence/schema";
+import type {PoolClient} from "pg";
 
 /** Raw persisted strings, not effective/decrypted configuration. Null means
  * absent; empty/false-like strings and database errors are preserved. */
-export async function getSetting(k: string): Promise<string | null> {
-  await ensureSchema();
-  const { rows } = await getPool().query(
+export async function getSetting(k: string, tx?: PoolClient): Promise<string | null> {
+  // A caller-owned transaction starts after schema initialization.
+  if (!tx) await ensureSchema();
+  const { rows } = await (tx ?? getPool()).query(
     `SELECT v FROM app_settings WHERE k = $1`,
     [k]
   );

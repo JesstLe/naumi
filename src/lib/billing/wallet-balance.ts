@@ -1,3 +1,5 @@
+import type {PoolClient} from "pg";
+import {BillingError} from "./types";
 import "server-only";
 import {getPool} from "@/platform/db/pool";
 import {withTransaction as withBillingTransaction} from "@/platform/db/transaction";
@@ -58,4 +60,36 @@ export async function getCreditOverview(
     ? { amount: rows[0].remaining as number, at: new Date(rows[0].expires_at).toISOString() }
     : null;
   return { balance, nextExpiry: next };
+}
+
+/** 事务内按 FIFO(先到期先扣)从活批次扣 n 本金。返回实际扣到的数(正常 = n)。 */
+export async function deductPrincipalFIFO(
+  client: PoolClient,
+  email: string,
+  n: number
+): Promise<number> {
+  if (n <= 0) return 0;
+  // Match the transactional billing wallet: lock the owner before any credit
+  // batch. Mixing the legacy FIFO path with user-first settlement otherwise
+  // forms a user/batch lock cycle under concurrent completion.
+  await client.query("SELECT email FROM app_users WHERE email=$1 FOR UPDATE",[email]);
+  const { rows } = await client.query(
+    `SELECT id, remaining FROM app_credit_batches
+      WHERE email = $1 AND expires_at > now() AND remaining > 0
+      ORDER BY expires_at ASC, created_at ASC
+      FOR UPDATE`,
+    [email]
+  );
+  let need = n;
+  for (const b of rows as { id: string; remaining: number }[]) {
+    if (need <= 0) break;
+    const take = Math.min(b.remaining, need);
+    await client.query(
+      `UPDATE app_credit_batches SET remaining = remaining - $2 WHERE id = $1`,
+      [b.id, take]
+    );
+    need -= take;
+  }
+  if(need>0)throw new BillingError("INSUFFICIENT_CREDITS","可用积分不足或已到期",402);
+  return n - need;
 }

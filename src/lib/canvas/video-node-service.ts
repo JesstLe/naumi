@@ -2,7 +2,7 @@ import "server-only";
 import {bindActualCreationProject,assertCreationProjectInput,currentCreationContext} from "../saas/creation-context";
 import {assertCreationObjectRefs,acceptCreationTx,creationLinkTx,completeCreationTx} from "../saas/creation-writer";
 import {createHash} from "node:crypto";
-import {getVideoTask} from "../db";
+import {getVideoTask} from "@/lib/video/task-repository";
 import {getPool} from "@/platform/db/pool";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {type ArtworkRecord} from "@/lib/artworks/types";

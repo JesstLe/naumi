@@ -32,6 +32,8 @@
 
 ## 开发约定
 
+2026-10-24 R4A5：视频与Canvas图片任务的记录/租约/转换事务、预占表和成本审计归属已迁移，53声明/29调用文件85绑定，db3769→2361行、静态消费者87→64，旧db/video6动态环拆开。真实PG复现四条legacy完成/失败持连接再借连接自等待，改显式PoolClient贯穿current/settings/metering，冻报价仍不读current。完整基线3/78→新版3/226，异步任务/视频PG/config/wallet/platform29/Canvas21/frozen-source16/model-publication/creation/auth195/persistence29/90及tsc/lint通过；旧video-reliability两边同样文本提取exit1保留。见 [R4A5](changes/2026-10-24-durable-task-owners-r4a5.md)。同步后第1模块；继续剩余数据owner与R4B组装/DDL，不合main、不部署。
+
 2026-10-24 R4A4：作品查询/写入/后台、Canvas布局/文字/项目/混合删除归属已迁入真实owner；BI上下文、SDK/stream观测、HTTP包装和managed-client身份分离，主迁移144文件358绑定。db4793→3769行、静态消费者130→87，旧67文件动态大环拆开，全项目最大动态环20；旧19静态模型环拆开，残留transport/client3环。原/新观测21/141、真实PG108→176、Canvas20/14/32、私有媒体、BI、钱包、creation、交付27、溯源、tsc与lint通过。见 [R4A4](changes/2026-10-24-artwork-observation-owners-r4a4.md)。本轮第3模块，收尾普通整合main后计数归零，整合与推送SHA见本轮DELIVERY；整体继续，不合main、不部署。
 
 2026-10-24 R4A3：账户访问事实、SessionUser/注册、钱包余额、支付历史和历史provider记录已迁入五个owner；实际71文件126绑定迁移，计费runtime直连真实owner。db5321→4793行，静态消费者144→130且db退出静态环；报价/执行环24→19，视频20仍在，动态最大66→67（session随原runtime链进入）未掩盖。函数对照各28/88、完整源码PG88→146、195实际登录handler及wallet/entitlements/creation/platform29/tsc/lint通过。见 [R4A3](changes/2026-10-24-account-owners-r4a3.md)。同步后第2模块；继续完整候选及R4B组装/DDL，不合main、不部署。

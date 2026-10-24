@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { deleteFinishedVideoTask, getVideoTask } from "@/lib/db";
+import {deleteFinishedVideoTask, getVideoTask} from "@/lib/video/task-repository";
 import { authenticatedEmail, authorizedTargetEmail } from "@/lib/request-auth";
 import { safeError } from "@/lib/api-error";
 import { publicVideoTaskView } from "@/lib/video/service";

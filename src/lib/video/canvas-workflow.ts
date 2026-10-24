@@ -3,7 +3,7 @@ import {assertWorkflowCreationScope,bindWorkflowCreationProject,validateWorkflow
 import {z} from "zod";
 import {videoNodeIdSchema,videoProjectKeySchema} from "../canvas/video-node-schema";
 import {getVideoNode} from "../canvas/video-node-repository";
-import {getVideoTask} from "../db";
+import {getVideoTask} from "@/lib/video/task-repository";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {ModelConfigError} from "../model-config/types";
 import {scheduleVideoWorkflow,ensureVideoWorkflowSchema,authorizeWorkflowInputs,validateVideoWorkflow} from "./workflow";

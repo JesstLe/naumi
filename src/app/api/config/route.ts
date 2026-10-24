@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import {creditMeteringEnabled} from "@/lib/db";
+import {creditMeteringEnabled} from "@/lib/billing/runtime";
 import {dbEnabled} from "@/platform/db/pool";
 import { storageEnabled } from "@/lib/storage";
 import { authMode } from "@/lib/auth-mode";

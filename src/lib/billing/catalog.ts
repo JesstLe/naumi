@@ -70,22 +70,28 @@ export function createConfigRuntime(deps: Deps): ConfigRuntime {
             return insert(tx, input.id, hash, input.actor, input.reason, config);
         });
     };
+    const initializeCurrent = async (tx: PoolClient) => {
+        const row = (await selectCurrent(tx)).rows[0];
+        if (row) return snapshot(row);
+        if ((await tx.query("SELECT 1 FROM app_settings WHERE k=$1", [POINTER])).rowCount)
+            throw new Error("Missing billing version");
+        const config = validateBillingConfig(await deps.initialize(tx));
+        return insert(tx, "bootstrap", fingerprint(config), "system", "现行规则初始化", config);
+    };
     const runtime: ConfigRuntime = {
-        async current() {
+        async current(tx) {
             try {
-                await ensure();
-                const found = (await selectCurrent(deps.pool)).rows[0];
+                // Task transitions have already ensured schema before BEGIN.
+                // Never check out a second connection while retaining their first.
+                if (!tx) await ensure();
+                const found = (await selectCurrent(tx ?? deps.pool)).rows[0];
                 if (found)
                     return snapshot(found);
-                return await locked(async (tx) => {
-                    const row = (await selectCurrent(tx)).rows[0];
-                    if (row)
-                        return snapshot(row);
-                    if ((await tx.query("SELECT 1 FROM app_settings WHERE k=$1", [POINTER])).rowCount)
-                        throw new Error("Missing billing version");
-                    const config = validateBillingConfig(await deps.initialize(tx));
-                    return insert(tx, "bootstrap", fingerprint(config), "system", "现行规则初始化", config);
-                });
+                if (tx) {
+                    await tx.query("SELECT pg_advisory_xact_lock(hashtext('naumi-billing-config'))");
+                    return await initializeCurrent(tx);
+                }
+                return await locked(initializeCurrent);
             }
             catch {
                 throw new BillingError("CONFIG_UNAVAILABLE", "计费配置暂时不可用，请稍后重试", 503);

@@ -10,7 +10,7 @@ import {getVideoProviderConfig} from "./providers/config";
 import {downloadVideoResultAsset} from "./providers/result-fetch";
 import type {VideoResultAssetSource} from "./providers/result-fetch";
 import type {VideoProviderAdapter,VideoProviderPollResult,VideoTaskSnapshot,VideoProviderFetchResult} from "./types";
-import type {VideoTaskRow} from "../db";
+import type {VideoTaskRow} from "@/lib/video/task-types";
 import type {MediaJobOutput} from "./media-job-schema";
 
 export type SavedVideoResultAsset=MediaJobOutput&{kind:"video"|"image"|"audio";sourceIndex:number};

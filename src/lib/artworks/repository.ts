@@ -224,3 +224,13 @@ function rowToArtwork(r: ArtworkRow): ArtworkRecord {
     createdAt: new Date(r.created_at).toISOString(),
   };
 }
+
+/** 将既有作品显式加入画布；不改变作品内容与血缘。 */
+export async function setArtworkOrigin(email: string, id: string, origin: string | null): Promise<boolean> {
+  await ensureSchema();
+  const result = await getPool().query(
+    `UPDATE app_artworks SET origin = $3 WHERE email = $1 AND id = $2 AND deleted_at IS NULL`,
+    [email.toLowerCase(), id, origin]
+  );
+  return (result.rowCount ?? 0) > 0;
+}

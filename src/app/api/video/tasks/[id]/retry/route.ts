@@ -6,7 +6,7 @@ import {sameSiteBiMutation} from "@/lib/bi/access";
 import {withBiRequest} from "@/lib/bi/request";
 import {requestQuoteConfirmation,billingErrorResponse} from "@/lib/billing/request";
 import {readBounded} from "@/lib/supplier-cost/io";
-import {getVideoTask,getVideoTaskByIdempotencyKey} from "@/lib/db";
+import {getVideoTask, getVideoTaskByIdempotencyKey} from "@/lib/video/task-repository";
 import {getVideoNode} from "@/lib/canvas/video-node-repository";
 import {createVideoGeneration,requestFromQueuedTask} from "@/lib/video/service";
 import {VideoContractError} from "@/lib/video/contract";

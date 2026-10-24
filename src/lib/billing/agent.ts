@@ -8,7 +8,7 @@ import { CREATIVE_TOOL_FEATURES } from "../agent/creative-tool-catalog";
 import {quoteForRequest} from "./server";
 import {getBillingRuntime} from "@/lib/billing/runtime";
 import type { BillingQuote, FeatureId } from "./types";
-import {getVideoTaskByIdempotencyKey} from "@/lib/db";
+import {getVideoTaskByIdempotencyKey} from "@/lib/video/task-repository";
 import {dbEnabled} from "@/platform/db/pool";
 import {getUser} from "@/lib/accounts/session";
 import { fingerprint } from "./fingerprint";

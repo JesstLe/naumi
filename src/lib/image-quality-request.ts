@@ -1,7 +1,9 @@
 import { resolveConfiguredImageQuality } from "@/lib/model-config/image-quality";
 import { currentModelExecution } from "./model-config/context";
 import "server-only";
-import { creditMeteringEnabled, addLedgerEntry, recordImageCostAudit } from "@/lib/db";
+import {addLedgerEntry} from "@/lib/db";
+import {creditMeteringEnabled} from "@/lib/billing/runtime";
+import {recordImageCostAudit} from "@/lib/billing/cost-audit-repository";
 import { imageBillCredits, qualityCostAudit } from "@/lib/billing/legacy";
 import seed from "@/lib/billing/bootstrap.json";
 import type {BillingConfig} from "@/lib/billing/types";

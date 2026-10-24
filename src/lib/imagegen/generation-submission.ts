@@ -11,7 +11,7 @@ import {TeamError} from '@/lib/teams/server';
 import {imageQualityCost} from "@/lib/image-quality-request";
 import {BillingError} from "@/lib/billing/types";
 import {MAX_GENERATION_DIMENSION, resolutionForLongSide} from "@/lib/mock-data";
-import {sweepStaleReservations} from "@/lib/db";
+import {sweepStaleReservations} from "@/lib/billing/reservations";
 import {dbEnabled} from "@/platform/db/pool";
 import {isBanned} from "@/lib/accounts/repository";
 import {safeError} from "@/lib/api-error";

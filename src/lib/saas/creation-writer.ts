@@ -237,3 +237,10 @@ export async function recordImageStateTx(tx:PoolClient,jobId:string,snapshot:unk
   }}
  }
 }
+
+/** Preserve task outcome evidence or its pending marker within the caller transaction. */
+export async function durableCreationOutcomeTx(client:PoolClient,kind:'video'|'canvas-image',id:string,email:string,status:import('@/lib/saas/creation-contracts').CreationStatus,artworkIds:string[]=[]){
+  if(!(await client.query("SELECT to_regclass('app_creation_records') AS name")).rows[0].name)return;
+  const table=kind==='video'?'app_video_tasks':'app_canvas_image_tasks';
+  await creationEvidenceTx(client,()=>recordSourceOutcomeTx(client,kind,id,email,status,{artworkIds}),()=>client.query(`UPDATE ${table} SET parameters=parameters||'{"creationEvidencePending":true}'::jsonb WHERE id=$1 AND email=$2`,[id,email]));
+}

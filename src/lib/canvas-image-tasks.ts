@@ -16,7 +16,10 @@ import { imageQualityCost, auditSettledImage } from "@/lib/image-quality-request
 import { createHash } from "node:crypto";
 import sharp from "sharp";
 
-import {beginCanvasImageTaskSubmission, saveCanvasImageTaskProviderResult, holdCanvasImageTask, claimNextCanvasImageTask, completeCanvasImageTask, createCanvasImageTaskWithReservation, failCanvasImageTask, getCanvasImageTask, getCanvasImageTaskChargedCredits, listCanvasImageTasks, retryCanvasImageTask, updateCanvasImageTaskProgress, type CanvasImageTaskRow} from "@/lib/db";
+import {beginCanvasImageTaskSubmission, saveCanvasImageTaskProviderResult, holdCanvasImageTask, claimNextCanvasImageTask, getCanvasImageTask, listCanvasImageTasks, retryCanvasImageTask, updateCanvasImageTaskProgress} from "@/lib/canvas/image-task-repository";
+import {completeCanvasImageTask, createCanvasImageTaskWithReservation, failCanvasImageTask} from "@/lib/canvas/image-task-transitions";
+import {getCanvasImageTaskChargedCredits} from "@/lib/billing/cost-audit-repository";
+import {type CanvasImageTaskRow} from "@/lib/canvas/image-task-records";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {addArtworks} from "@/lib/artworks/writer";
 import { supabaseEnabled } from "@/lib/auth-mode";

@@ -1,7 +1,8 @@
 import "server-only";
 import {createHash,randomUUID} from "node:crypto";
 import {z} from "zod";
-import {createVideoTaskWithReservation, type VideoTaskRow} from "../db";
+import {createVideoTaskWithReservation} from "@/lib/video/task-transitions";
+import {type VideoTaskRow} from "@/lib/video/task-types";
 import {getPool} from "@/platform/db/pool";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {currentModelExecution,currentExecutionBundle} from "../model-config/context";
