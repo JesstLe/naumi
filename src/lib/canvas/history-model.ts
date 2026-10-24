@@ -3,23 +3,8 @@ import type { CanvasVideoNode } from "./video-node-schema";
 import type { CanvasNodeSettings } from "./node-settings";
 import type { CanvasHistoryOperation } from "./history-contract";
 
-export type CanvasTextNode = {
-  id: string;
-  projectKey: string;
-  title: string;
-  prompt: string;
-  content: string;
-  status: "idle" | "generating" | "completed" | "failed";
-  canvasX: number;
-  canvasY: number;
-  createdAt: string;
-  updatedAt: string;
-  width: number;
-  height: number;
-  sourceIds: string[];
-  targetIds: string[];
-  productIds?: string[];
-};
+import type { CanvasTextNode } from "./text-document-model";
+export type { CanvasTextNode } from "./text-document-model";
 
 export type TextPatchFields = Pick<
   CanvasTextNode,

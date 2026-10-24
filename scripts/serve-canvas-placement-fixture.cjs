@@ -7,8 +7,9 @@ const art={id:'placement-root',title:'主图',category:'main',prompt:'保留主�
 const arts=[art,{...art,id:'placement-second',title:'邻近图片',parentId:art.id,canvasX:620,canvasY:150}];
 const historyMode=process.env.CANVAS_FIXTURE_HISTORY==='1';
 const texts=historyMode?[{id:'text-history',projectKey:'tree:placement-root',title:'历史文字',prompt:'',content:'原始文字',status:'completed',canvasX:100,canvasY:650,width:380,height:260,sourceIds:[],targetIds:[],productIds:[],createdAt:now,updatedAt:now}]:[];
+const initialArts=structuredClone(arts),initialTexts=structuredClone(texts);
 const model={id:'gpt-image-2',label:'GPT Image 2',modality:'image',supportsEdit:true,qualities:['low','medium','high'],qualitySupported:true,nativeResolutions:['1K'],generationParameters:{ratios:['auto','1:1','3:4'],resolutions:['1K']}};
-const state={submissions:[],positions:[],history:[],jobs:{},paidCalls:0,apiErrors:[],failNextPosition:false,failNextHistory:false,textSaves:[],historyApplied:[]};
+const state={submissions:[],positions:[],history:[],jobs:{},paidCalls:0,apiErrors:[],failNextPosition:false,failNextHistory:false,textSaves:[],historyApplied:[],failTextSaves:false,failTextRead:false};
 const appliedHistory=new Map();
 const app=cp.spawn(process.execPath,['node_modules/next/dist/bin/next','dev','-p',String(nextPort)],{env:{...process.env,DATABASE_URL:'',NAUMI_MULTI_USER:'0',SETTINGS_SECRET:crypto.randomUUID(),VIDEO_WORKER_SECRET:crypto.randomUUID(),NAUMI_VIDEO_WORKER:'0',OPENAI_API_KEY:'fixture-not-a-key',OPENAI_BASE_URL:'http://127.0.0.1:1/v1',NEXT_PUBLIC_SUPABASE_URL:'',NEXT_PUBLIC_SUPABASE_ANON_KEY:'',NEXT_TELEMETRY_DISABLED:'1',NEXT_DIST_DIR:dist},stdio:['ignore','pipe','pipe']});
 app.stdout.on('data',b=>process.stdout.write(b));app.stderr.on('data',b=>process.stderr.write(b));
@@ -19,7 +20,7 @@ const server=http.createServer(async(req,res)=>{
  let raw='';if(req.method==='POST')for await(const b of req)raw+=b;
  const body=raw.startsWith('{')?JSON.parse(raw):{};
  if(p==='/__fixture/state')return json(res,{...state,artworks:arts,texts});
- if(p==='/__fixture/reset'){arts.splice(2);state.submissions.length=0;state.positions.length=0;state.history.length=0;state.jobs={};state.apiErrors.length=0;return json(res,{ok:true})}
+ if(p==='/__fixture/reset'){arts.splice(0,arts.length,...structuredClone(initialArts));texts.splice(0,texts.length,...structuredClone(initialTexts));state.submissions.length=0;state.positions.length=0;state.history.length=0;state.historyApplied.length=0;state.textSaves.length=0;appliedHistory.clear();state.jobs={};state.apiErrors.length=0;state.failNextHistory=state.failNextPosition=state.failTextSaves=state.failTextRead=false;return json(res,{ok:true})}
  if(p.startsWith('/_next/static/chunks/')){
   const file=require('node:path').resolve(dist,p.replace('/_next/',''));
   if(file.startsWith(require('node:path').resolve(dist)+require('node:path').sep)&&fs.existsSync(file)){res.writeHead(200,{'content-type':'application/javascript'});return res.end(fs.readFileSync(file))}
@@ -31,6 +32,7 @@ const server=http.createServer(async(req,res)=>{
  if(p==='/__fixture/shutdown'){json(res,{ok:true});app.kill();return server.close(()=>process.exit(0));}
  if(p==='/__fixture/fail-position'){state.failNextPosition=true;return json(res,{ok:true})}
  if(p==='/__fixture/fail-history'){state.failNextHistory=true;return json(res,{ok:true})}
+ if(p==='/__fixture/text-failure'){state.failTextSaves=u.searchParams.get('save')==='1';state.failTextRead=u.searchParams.get('read')==='1';return json(res,{ok:true})}
  if(p.startsWith('/api/')){
   if(p==='/api/download'){res.writeHead(200,{'content-type':'image/png'});return res.end(fs.readFileSync('public/demos/suite-demo/suppl-src.png'));}
   if(p==='/api/media/image-cache'||p==='/api/public-image-cache')return json(res,{account:email,results:Object.fromEntries((body.sources||[]).map(source=>[source,{account:email,source,version:'fixture-v1',fetchUrl:image,bytes:fs.statSync('public/demos/suite-demo/suppl-src.png').size,contentType:'image/png'}]))});
@@ -71,7 +73,8 @@ const server=http.createServer(async(req,res)=>{
    appliedHistory.set(body.operationId,body);state.historyApplied.push(body);return json(res,{ok:true,persisted:true});
   }
   if(p==='/api/canvas/text-nodes'){
-   if(req.method==='POST'){state.textSaves.push(body);const i=texts.findIndex(t=>t.id===body.id);if(i>=0)texts[i]=body;else texts.push(body);return json(res,{ok:true,persisted:true,node:body});}
+   if(req.method==='POST'){state.textSaves.push(body);if(state.failTextSaves)return json(res,{error:'fixture text save failed'},503);const i=texts.findIndex(t=>t.id===body.id);if(i>=0)texts[i]=body;else texts.push(body);return json(res,{ok:true,persisted:true,node:body});}
+   if(state.failTextRead)return json(res,{error:'fixture text load failed'},503);
    return json(res,{nodes:texts,persisted:true});
   }
   if(p==='/api/artworks/get')return json(res,{artworks:arts.filter(a=>(u.searchParams.get('ids')||'').split(',').includes(a.id))});

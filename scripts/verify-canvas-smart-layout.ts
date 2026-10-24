@@ -73,7 +73,7 @@ const large=Array.from({length:400},(_,i)=>({id:`large-${i}`,width:300,height:40
 check(large,large.slice(1).map((node,i)=>({source:`large-${Math.floor(i/3)}`,target:node.id})));
 const elapsed=Math.round(performance.now()-start);
 const tidy=client.slice(client.indexOf("async function tidyLayout("),client.indexOf("// 下载单张图"));
-for(const token of ["smartLayout", "textIds", "getEdges", "fixed:", "await applyHistory(act, false)", "pushUndo(act)", "unsavedTextRef", "moves.length > 400"]) assert.ok(tidy.includes(token),token);
+for(const token of ["smartLayout", "textIds", "getEdges", "fixed:", "await applyHistory(act, false)", "pushUndo(act)", "canvasTextDocument", "moves.length > 400"]) assert.ok(tidy.includes(token),token);
 assert.ok(!tidy.includes("/api/artworks/position"),"no fire-and-forget per-node writes");
 const baselineArg=process.argv.indexOf("--business-baseline");
 if(baselineArg>=0){

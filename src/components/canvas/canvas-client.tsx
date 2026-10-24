@@ -23,6 +23,9 @@ import { knownCanvasNodeMeasurement } from "@/lib/canvas/node-measurement";
 import {canvasGenerationReferences,explicitCanvasParent,synchronizeCanvasArtworks,imageAspectDisplaySize} from "@/lib/canvas/input-references";
 import { canvasFocusViewport } from "@/lib/canvas/upload-visibility";
 import { stableArtworkPositions, canvasNodePosition, readPlacementCache, type CanvasPoint } from "@/lib/canvas/stable-placement";
+import { useCanvasTextDocument } from "./use-canvas-text-document";
+import { CANVAS_TEXT_DEFAULT_WIDTH as TEXT_NODE_DEFAULT_W, CANVAS_TEXT_DEFAULT_HEIGHT as TEXT_NODE_DEFAULT_H } from "@/lib/canvas/text-document-model";
+import { canvasDocumentFetch } from "@/lib/canvas/document-scope";
 import { useCanvasHistory } from "./use-canvas-history";
 import { textPatchOf, type CanvasTextNode, type TextPatchFields, type VideoPatchFields, type CanvasHistoryAction as UndoAct } from "@/lib/canvas/history-model";
 import type { HistoryCommit } from "@/lib/canvas/history-controller";
@@ -278,8 +281,6 @@ const ANCHOR_TITLE: Record<string, string> = {
 };
 const TEXT_NODE_MIN_W = 220;
 const TEXT_NODE_MIN_H = 140;
-const TEXT_NODE_DEFAULT_W = 380;
-const TEXT_NODE_DEFAULT_H = 240;
 const TEXT_NODE_MAX_W = 1200;
 const TEXT_NODE_MAX_H = 1200;
 
@@ -1971,9 +1972,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     newText: string;
   }>());
   const pendSeqRef = useRef(1);
-  const [textNodes, setTextNodes] = useState<CanvasTextNode[]>([]);
+  const canvasTextDocument = useCanvasTextDocument({account:canvasAccountRef.current,actor:user?.email||"",owner:targetEmail||user?.email||"",
+    project:activeKey,enabled:ready&&!!user&&!!targetEmail,readOnly,notice:flashTip});
+  const {nodes:textNodes,set:setTextNodes,ready:textNodesReady,unsaved:unsavedTextCount} = canvasTextDocument;
   const textNodesRef = useRef(textNodes); textNodesRef.current = textNodes;
-  const [textNodesReady, setTextNodesReady] = useState(false);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [textPrompt, setTextPrompt] = useState("");
   const [textError, setTextError] = useState<string | null>(null);
@@ -2258,16 +2260,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
     setZoomInput(zoomPercentInput(viewport.zoom || 1));
   }
-  const unsavedTextRef=useRef(new Map<string,CanvasTextNode>());
-  const textSaveQueuesRef=useRef(new Map<string,Promise<unknown>>());
-  const [unsavedTextCount,setUnsavedTextCount]=useState(0);
   const canvasHistory = useCanvasHistory({
     account: canvasAccountRef.current, project: activeKey, readOnly,
-    works: setWorks, texts: setTextNodes, settings: applyHistorySettings, selectedText: setSelectedTextId,
-    flush: async () => { await Promise.all(Array.from(textSaveQueuesRef.current.values())); await videoNodesStore.flush(); },
+    works: setWorks, textDocument: canvasTextDocument.history, settings: applyHistorySettings, selectedText: setSelectedTextId,
+    flush: videoNodesStore.flush,
     video: videoNodesStore.getNode, refresh: videoNodesStore.refresh,
     pending: applyPendingLinkHistory, applied: onHistoryApplied, warning: flashTip,
-    drafts: unsavedTextRef.current, draftsChanged: () => setUnsavedTextCount(unsavedTextRef.current.size),
   });
   const {undoStack,redoStack,pushUndo,historyBusyRef,historySaving,setHistorySaving,historyCurrent} = canvasHistory;
   const [workflowManifests, setWorkflowManifests] = useState<ImportedManifest[]>([]);
@@ -2287,8 +2285,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     onCommitted: result => {
       const artworks = result.artworks as Artwork[], importedIds = new Set(artworks.map(n => n.id));
       setWorks(current => [...(current || []).filter(n => !importedIds.has(n.id)), ...artworks]);
-      const textIds = new Set(result.textNodes.map(n => n.id));
-      setTextNodes(current => [...current.filter(n => !textIds.has(n.id)), ...result.textNodes]);
+      canvasTextDocument.accept(result.textNodes);
       setWorkflowManifests(current => [...current.filter(m => m.operationId !== result.operationId), result.manifest]);
       const settings = { ...nodeSettingsRef.current, ...result.settings }; nodeSettingsRef.current = settings; setNodeSettings(settings);
       pushUndo({ kind: "workflow-add", artworks, textNodes: result.textNodes });
@@ -2393,7 +2390,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 余额轮询会回写新的 user 对象；仅账号变化才重载画布，避免覆盖正在编辑的内容。
   const authenticatedEmail = user?.email;
   useEffect(() => {
-    setWorks(null); setNames({}); setTextNodes([]); setTextNodesReady(false);
+    setWorks(null); setNames({});
     if (!ready || !authenticatedEmail) return;
     let cancelled = false;
     const sp = new URLSearchParams(window.location.search);
@@ -2438,74 +2435,22 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       privateFetchRaw(`/api/projects?email=${encodeURIComponent(target)}`)
         .then((r) => r.json())
         .catch(() => ({ names: {} })),
-      privateFetchRaw(`/api/canvas/text-nodes?email=${encodeURIComponent(target)}`)
-        .then((r) => r.json())
-        .catch(() => ({ persisted: false, nodes: [] })),
     ])
-      .then(([acc, proj, textData]) => {
+      .then(([acc, proj]) => {
         if (cancelled) return;
         setWorks((acc?.artworks ?? []) as Artwork[]);
         setNames((proj?.names ?? {}) as Record<string, string>);
-        if (textData?.persisted) {
-          setTextNodes(
-            ((textData?.nodes ?? []) as CanvasTextNode[]).map((node) => ({
-              ...node,
-              width: Number.isFinite(node.width) && node.width > 0 ? node.width : TEXT_NODE_DEFAULT_W,
-              height: Number.isFinite(node.height) && node.height > 0 ? node.height : TEXT_NODE_DEFAULT_H,
-              sourceIds: Array.isArray(node.sourceIds) ? node.sourceIds : [],
-              targetIds: Array.isArray(node.targetIds) ? node.targetIds : [],
-              productIds: Array.isArray(node.productIds) ? node.productIds : [],
-            }))
-          );
-        } else {
-          try {
-            const local = localStorage.getItem(`naumi:canvas-text-nodes:${target.toLowerCase()}`);
-            setTextNodes(
-              local
-                    ? (JSON.parse(local) as CanvasTextNode[]).map((node) => ({
-                      ...node,
-                      width: Number.isFinite(node.width) && node.width > 0 ? node.width : TEXT_NODE_DEFAULT_W,
-                      height: Number.isFinite(node.height) && node.height > 0 ? node.height : TEXT_NODE_DEFAULT_H,
-                      sourceIds: Array.isArray(node.sourceIds) ? node.sourceIds : [],
-                      targetIds: Array.isArray(node.targetIds) ? node.targetIds : [],
-                      productIds: Array.isArray(node.productIds) ? node.productIds : [],
-                    }))
-                : []
-            );
-          } catch {
-            setTextNodes([]);
-          }
-        }
-        setTextNodesReady(true);
 
       })
       .catch(() => {
         if (!cancelled) {
           setWorks([]);
-          setTextNodesReady(true);
         }
       });
     return () => {
       cancelled = true;
     };
   }, [ready, authenticatedEmail]);
-
-  useEffect(() => {
-    const email = (targetEmail || user?.email || "").toLowerCase();
-    if (!email || !textNodesReady) return;
-    try {
-      localStorage.setItem(
-        `naumi:canvas-text-nodes:${email}`,
-        JSON.stringify(
-          textNodes.map((node) =>
-            node.status === "generating" ? { ...node, status: "idle" } : node
-          )
-        )
-      );
-    } catch {
-      /* local fallback is best effort */
-    }
-  }, [textNodes, textNodesReady, targetEmail, user?.email]);
 
   // 文字节点内容自适应高度:内容/引用/宽度变化时按估算调高(阈值 28px 防抖)。
   // 签名机制保证手动拖拽的尺寸不被覆盖 —— 只有内容真的变了才重新自适应;
@@ -5190,7 +5135,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               const snapshot=await response.json();
               if(account===canvasAccountRef.current&&epoch===assistantRequestEpoch.current&&!controller.signal.aborted){
                 const added=((snapshot.nodes||[]) as CanvasTextNode[]).filter(node=>ids.has(node.id)&&node.projectKey===acceptedVideoProject).map(node=>({...node,width:node.width||TEXT_NODE_DEFAULT_W,height:node.height||TEXT_NODE_DEFAULT_H,sourceIds:node.sourceIds||[],targetIds:node.targetIds||[],productIds:node.productIds||[]}));
-                setTextNodes(current=>{const known=new Set(current.map(node=>node.id));return [...current,...added.filter(node=>!known.has(node.id))];});
+                canvasTextDocument.accept(added);
               }
             }
           } else if (type === "artifacts" && Array.isArray(data.artifacts)) {
@@ -5673,14 +5618,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setSelectedTextId(null);
     setSelectedPendId(null);
     try {
-      const response = await privateFetchRaw("/api/canvas/nodes/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ artworkIds, textIds,videoIds,operationId:browserRandomUUID() }),
+      await canvasTextDocument.history.transaction(canvasTextDocument.scope,async()=>{
+        const response = await canvasDocumentFetch(canvasTextDocument.scope,"/api/canvas/nodes/delete", {
+          method:"POST",headers:{"content-type":"application/json"},
+          body:JSON.stringify({artworkIds,textIds,videoIds,operationId:browserRandomUUID()}),
+        });
+        await expectJsonOk(response,t("canvas.genFail"));
+        canvasTextDocument.history.applyHistory(canvasTextDocument.scope,textIds.map(id=>({type:"text-delete",id})));
       });
-      await expectJsonOk(response, t("canvas.genFail"));if(account!==canvasAccountRef.current)return;
+      if(account!==canvasAccountRef.current||!canvasTextDocument.scope.documentCurrent())return;
 
-      if(videoRecords.length){pushUndo({kind:"mixed-delete",artworks:artworkRecords,textNodes:textRecords,videoNodes:videoRecords});await videoNodesStore.refresh();}
+      if(videoRecords.length){pushUndo({kind:"mixed-delete",artworks:artworkRecords,textNodes:textRecords,videoNodes:videoRecords});await videoNodesStore.refresh().catch(()=>flashTip("删除已保存，视频显示待同步"));}
       else if (artworkRecords.length && textRecords.length) {
         pushUndo({
           kind: "mixed-delete",
@@ -5699,6 +5647,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           current.filter((node) => !deleting.has(node.id))
         );
       }
+      if(!canvasTextDocument.scope.viewCurrent())return;
       setMultiSel((current) => current.filter((id) => !deleting.has(id)));
 
       // 只有当前项目的媒体与文字节点都被删空时才退回项目网格。
@@ -5859,9 +5808,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (!user) return;const account=canvasAccountRef.current;
     setSidebarOpen(false);
     try {
-      const response=await privateFetchRaw("/api/canvas/nodes/delete",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectKey:p.key,operationId:browserRandomUUID()})});
-      await expectJsonOk(response,t("canvas.genFail"));if(account!==canvasAccountRef.current)return;await videoNodesStore.refresh();if(account!==canvasAccountRef.current)return;
-      if (p.key === activeKey) {
+      await canvasTextDocument.history.transaction(canvasTextDocument.scope,async()=>{
+        const response=await canvasDocumentFetch({...canvasTextDocument.scope,project:p.key},"/api/canvas/nodes/delete",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectKey:p.key,operationId:browserRandomUUID()})});
+        await expectJsonOk(response,t("canvas.genFail"));
+        canvasTextDocument.history.applyHistory(canvasTextDocument.scope,p.textNodes.map(node=>({type:"text-delete",id:node.id})));
+      });
+      if(account!==canvasAccountRef.current||!canvasTextDocument.scope.documentCurrent())return;
+      await videoNodesStore.refresh().catch(()=>flashTip("删除已保存，视频显示待同步"));
+      if(!canvasTextDocument.scope.documentCurrent())return;
+      if (p.key === activeKey && canvasTextDocument.scope.viewCurrent()) {
         setActiveKey(null);
         setSelectedId(null);
         setSelectedTextId(null);
@@ -6251,7 +6206,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       } else if (edge.source.startsWith("text-") || edge.target.startsWith("text-")) {
         // A product binding draws the same line as a reference: remove both fields.
         // Complete queued text saves first so an older draft cannot recreate the edge.
-        await Promise.all(Array.from(textSaveQueuesRef.current.values()));
+        await canvasTextDocument.flush();
         const inbound = edge.target.startsWith("text-");
         const textNode = textNodesRef.current.find(node => node.id === (inbound ? edge.target : edge.source));
         if (!textNode) return;
@@ -6374,8 +6329,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     historyBusyRef.current = true;
     setHistorySaving(true);
     try {
-      await Promise.all(Array.from(textSaveQueuesRef.current.values()));
-      if (unsavedTextRef.current.size) throw new Error(L("请先保存未保存的文字节点", "Save pending text changes first"));
+      await canvasTextDocument.flush();
+      if (canvasTextDocument.getSnapshot().unsaved) throw new Error(L("请先保存未保存的文字节点", "Save pending text changes first"));
       const currentNodes = (rfRef.current?.getNodes() ?? rfNodes).filter(node => node.type !== "workflowGroup");
       const currentEdges = rfRef.current?.getEdges() ?? rfEdges;
       const artworkIds = new Set(active.members.map(member => member.id));
@@ -6990,29 +6945,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const c = centerScreen();
     addPendAtScreen(c.x, c.y, null, false);
   }
-  async function persistTextNode(node: CanvasTextNode) {
-    if (!user || readOnly) return node;
-    unsavedTextRef.current.set(node.id,node);
-    const save=async()=> {
-      try {
-        const response=await privateFetchRaw("/api/canvas/text-nodes",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(node),signal:AbortSignal.timeout(20_000)});
-        const data=await expectJsonOk(response,t("canvas.genFail"));
-        if(unsavedTextRef.current.get(node.id)===node) {
-          unsavedTextRef.current.delete(node.id);
-          if(data?.node) setTextNodes(current=>current.map(item=>item.id===node.id && item.updatedAt===node.updatedAt ? data.node as CanvasTextNode : item));
-        }
-        setUnsavedTextCount(unsavedTextRef.current.size);
-        return data?.node || node;
-      } catch(error) {
-        setUnsavedTextCount(unsavedTextRef.current.size);
-        flashTip(t("canvas.saveFailed") + (error instanceof Error ? `：${error.message}` : ""));
-        return null;
-      }
-    };
-    const queue=(textSaveQueuesRef.current.get(node.id) || Promise.resolve()).then(save);
-    textSaveQueuesRef.current.set(node.id,queue);
-    return queue.finally(()=>{if(textSaveQueuesRef.current.get(node.id)===queue) textSaveQueuesRef.current.delete(node.id);});
-  }
+  function persistTextNode(node: CanvasTextNode) { return canvasTextDocument.save(node); }
   async function updateTextReference(
     textNodeId: string,
     sourceId: string,
@@ -7903,7 +7836,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(!operationId){operationId=browserRandomUUID();copyAttemptsRef.current.set(fingerprint,operationId);}
     try{
       const response=await privateFetchRaw("/api/canvas/nodes/copy",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({ids,projectKey,operationId})});const data=await expectJsonOk(response,"复制节点失败");if(epoch!==canvasContextEpochRef.current||account!==canvasAccountRef.current)return;
-      const fresh=await mergeWorks(data.artworkIds||[]);if(epoch!==canvasContextEpochRef.current||account!==canvasAccountRef.current)return;setTextNodes(current=>{const wanted=new Set((data.textNodes as CanvasTextNode[]).map(node=>node.id));return [...current.filter(node=>!wanted.has(node.id)),...data.textNodes];});await videoNodesStore.refresh();if(epoch!==canvasContextEpochRef.current||account!==canvasAccountRef.current)return;
+      const fresh=await mergeWorks(data.artworkIds||[]);if(epoch!==canvasContextEpochRef.current||account!==canvasAccountRef.current)return;canvasTextDocument.accept(data.textNodes);await videoNodesStore.refresh();if(epoch!==canvasContextEpochRef.current||account!==canvasAccountRef.current)return;
       pushUndo({kind:"mixed-add",artworks:fresh.filter(art=>(data.artworkIds||[]).includes(art.id)),textNodes:data.textNodes,videoNodes:data.nodes,projectKey:data.projectKey});
       setCreatingNew(false);setActiveKey(data.projectKey);setBrowsing(false);setSelectedId(null);setSelectedTextId(null);setSelectedPendId(null);setMultiSel(Object.values(data.idMap));const selection={ids:Object.values(data.idMap) as string[],projectKey:String(data.projectKey),owner:user.email.toLowerCase()};pendingNodeSelectionRef.current=selection;window.setTimeout(()=>{if(pendingNodeSelectionRef.current===selection)pendingNodeSelectionRef.current=null;},1500);copyAttemptsRef.current.delete(fingerprint);
     }catch(error){flashTip(error instanceof Error?error.message:"复制节点失败");}
@@ -8392,9 +8325,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
         return current()&&ids.every(id=>worksRef.current?.some(art=>art.id===id&&!!art.image));
       }}/>}
+      {canvasTextDocument.error && <div role="alert" data-testid="canvas-text-load-error" className="fixed top-20 left-1/2 z-[200] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-amber-400 bg-white px-4 py-3 text-sm text-slate-700 shadow-lg">
+        <span>{canvasTextDocument.error}</span><button className="font-semibold underline" onClick={()=>void canvasTextDocument.load()}>重新加载文字</button>
+      </div>}
       {unsavedTextCount>0 && <div role="alert" className="fixed bottom-6 left-1/2 z-[200] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-amber-500 bg-background px-4 py-3 text-sm shadow-lg">
         <span>{t("canvas.unsavedChanges")} ({unsavedTextCount})</span>
-        <button className="font-semibold underline" onClick={()=>void Promise.all(Array.from(unsavedTextRef.current.values()).map(node=>persistTextNode(node)))}>{t("canvas.retrySave")}</button>
+        <button className="font-semibold underline" onClick={()=>void canvasTextDocument.retry()}>{t("canvas.retrySave")}</button>
       </div>}
       {historySaving && <div className="fixed inset-0 z-[190] cursor-wait" aria-label={t("canvas.savingChanges")}>
         <div role="status" className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-lg bg-background px-4 py-3 text-sm shadow-lg">{t("canvas.savingChanges")}</div>
