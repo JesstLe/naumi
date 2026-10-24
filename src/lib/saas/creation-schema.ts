@@ -1,5 +1,6 @@
 import 'server-only';
-import {ensureSchema,getPool} from '@/lib/db';
+import {ensureSchema} from "@/lib/persistence/schema";
+import {getPool} from "@/platform/db/pool";
 import {ensureBillingSchema} from '@/lib/billing/schema';
 let ready:Promise<void>|null=null;
 export async function ensureCreationSchema(){

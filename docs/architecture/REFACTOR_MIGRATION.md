@@ -126,6 +126,8 @@
 
 ## 9. 当前进度
 
+R4A2：schema/settings/signup实现迁出db，43调用文件/102绑定切到owner；旧/新门面同函数，DDL SQL不变。db5928→5321行，旧db消费者178→144，最大静态SCC56→24、动态70→66仍待处理。真实6类PG61→78及旧数据保留、池压力同事务修正、core lock/wallet/creation/Canvas32/model publication、tsc/lint通过。同步后第1模块，见 [R4A2](../changes/2026-10-24-persistence-owners-r4a2.md)。业务数据owner和运行DDL退出仍未整体完成。
+
 R4A1：纯Pool/Tx基础层落地，旧db/getPool与billing Tx兼容别名均为同一实现；79纯import＋3混合字段迁移。旧db静态消费者251→178，最大静态SCC60→56，平台层无业务import/依赖环；535个保留函数正文不变。原27/157→新28/166、PG25→29、钱包/创作A/B、画布PG32/32、tsc/lint通过。第3模块按最终SYNC刷新普通整合main后归零；R4A数据owner尚未完成，见 [R4A1](../changes/2026-10-24-platform-db-r4a1.md)。
 
 R3E：三处实际创作栏收敛为 image/text 两个组件，模型/比例/质量/数量控件复用，menu/resize不再混进文档任务。Canvas9342→8534行，174个保留函数正文不变；58组SSR完全一致，真实控件15项（含三尺寸）、文字6/图片5/历史12、最终tsc通过。同步后第2模块。下一步R4A连接/事务边界；R3上传/助手/外围UI与CAS、R4B—R6继续，见 [R3E记录](../changes/2026-10-24-canvas-composers-r3e.md)。
@@ -157,7 +159,8 @@ R3C2：单一选择快照、gesture owner、link compiler 已真实接线。图�
 - [x] R3D 文字生成/反推/帮写任务，见 [R3D记录](../changes/2026-10-24-canvas-text-tasks-r3d.md)。
 - [x] R3E 图片/空白/文字创作栏与共享参数控件，见 [R3E记录](../changes/2026-10-24-canvas-composers-r3e.md)。
 - [x] R4A1 纯Pool/Tx与真实基础能力消费者，见 [R4A1记录](../changes/2026-10-24-platform-db-r4a1.md)。
-- [ ] R4A2 数据owner/查询与初始化责任、剩余混合db消费者及跨领域事务接口。
+- [x] R4A2 schema兼容初始化、settings与signup owner，见 [R4A2记录](../changes/2026-10-24-persistence-owners-r4a2.md)。
+- [ ] R4A后续身份/钱包/资产/任务数据owner、剩余混合db消费者及跨领域事务接口。
 - [ ] R3 剩余上传/助手/外围 UI 组合；文字/图片跨请求 CAS、未知历史响应交错及旧 client intent 升级兼容验收。
 - [ ] R4—R6业务实现、集中验证、旧路径删除与最终整合。
 - [ ] 迁移后的实际性能、容量与生产功能验收。

@@ -1,6 +1,8 @@
 import "server-only";
 import {createHash} from "node:crypto";
-import {getPool,ensureSchema,listArtworksByIds,listCanvasTextNodes,type CanvasTextNodeRecord} from "../db";
+import {getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
+import {listArtworksByIds,listCanvasTextNodes,type CanvasTextNodeRecord} from "../db";
 import {ensureVideoNodeSchema,saveVideoNodeTx} from "./video-node-repository";
 import {authorizeVideoProject,authorizeNodeInputs,listVideoNodes} from "./video-node-service";
 import type {CanvasVideoNode} from "./video-node-schema";

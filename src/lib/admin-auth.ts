@@ -1,6 +1,7 @@
 import "server-only";
 import { timingSafeEqual, createHmac } from "crypto";
-import { dbEnabled, getSetting, setSetting } from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {getSetting,setSetting} from "@/lib/settings/repository";
 import { isAdminToken, emailFromToken, bearer } from "@/lib/supabase-admin";
 import { supabaseEnabled } from "@/lib/auth-mode";
 import { hashPassword, verifyPassword } from "@/lib/pw";

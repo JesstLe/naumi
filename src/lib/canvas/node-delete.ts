@@ -1,6 +1,7 @@
 import "server-only";
 import {createHash} from "node:crypto";
-import {getPool,ensureSchema} from "../db";
+import {getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
 import {ensureVideoNodeSchema} from "./video-node-repository";
 import {authorizeVideoProject} from "./video-node-service";
 /** Project removal is one transaction even when it contains more than the per-selection API limit. */

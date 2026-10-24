@@ -1,5 +1,6 @@
 import "server-only";
-import { ensureSchema, getPool } from "@/lib/db";
+import {ensureSchema} from "@/lib/persistence/schema";
+import {getPool} from "@/platform/db/pool";
 import { validNodeSettings } from "@/lib/canvas/node-settings";
 
 let schema: Promise<void> | undefined;

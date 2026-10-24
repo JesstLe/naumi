@@ -3,7 +3,9 @@ import {acceptCreationTx,recordImageStateTx,creationLinkTx} from "./saas/creatio
 import "server-only";
 import { randomUUID } from "node:crypto";
 import {IMAGE_JOB_KINDS,imageJobConcurrency} from "./image-job-queue";
-import { dbEnabled, getPool, ensureSchema, deductPrincipalFIFO, refreshBalance, creditMeteringEnabled, expireDueBatches } from "@/lib/db";
+import {dbEnabled,getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
+import {deductPrincipalFIFO,refreshBalance,creditMeteringEnabled,expireDueBatches} from "@/lib/db";
 import {createBillingService} from "@/lib/billing/service";
 import type {BillingQuote,BillingResult,OperationInput} from "@/lib/billing/types";
 import { IMAGE_JOB_RELEASED_MESSAGE, imageJobHasResults } from "./image-job-failure";

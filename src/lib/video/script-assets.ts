@@ -1,7 +1,8 @@
 import "server-only";
 import {createHash} from "node:crypto";
 import {z} from "zod";
-import {ensureSchema,getPool} from "../db";
+import {ensureSchema} from "@/lib/persistence/schema";
+import {getPool} from "@/platform/db/pool";
 import {authorizeVideoProject} from "../canvas/video-node-service";
 import {ensureVideoNodeSchema} from "../canvas/video-node-repository";
 import {videoNodeIdSchema,videoProjectKeySchema} from "../canvas/video-node-schema";

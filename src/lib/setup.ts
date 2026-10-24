@@ -1,5 +1,6 @@
 import "server-only";
-import { getSetting, setSetting, dbEnabled } from "@/lib/db";
+import {getSetting,setSetting} from "@/lib/settings/repository";
+import {dbEnabled} from "@/platform/db/pool";
 import { getOpenAISettings, saveOpenAIKey } from "@/lib/settings";
 
 // Initial configuration is a one-time operation, locked by an API key or admin password.

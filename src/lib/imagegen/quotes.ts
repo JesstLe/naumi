@@ -1,6 +1,7 @@
 import "server-only";
 import {randomUUID} from "node:crypto";
-import {dbEnabled,ensureSchema,getPool} from "../db";
+import {dbEnabled,getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
 import {imagegenCreationScopeKey} from "./creation-scope";
 import {assertCurrentCreationFeature} from "../saas/creation-context";
 import {userFeaturePolicy,FeatureAccessError} from "../feature-access/server";

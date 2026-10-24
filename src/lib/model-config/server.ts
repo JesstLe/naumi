@@ -1,5 +1,6 @@
 import "server-only";
-import { dbEnabled, ensureSchema, getPool } from "../db";
+import {dbEnabled,getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
 import { getBillingRuntime } from "../billing/runtime";
 import { bootstrapModelConfig, readLegacyModelSources } from "./bootstrap";
 import { createCredentialStore } from "./credentials";

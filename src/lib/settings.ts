@@ -1,6 +1,8 @@
 import "server-only";
 import crypto from "crypto";
-import { dbEnabled, getSetting, setSetting, getSignupBonus } from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {getSetting,setSetting} from "@/lib/settings/repository";
+import {getSignupBonus} from "@/lib/billing/signup";
 import { settingsSecret } from "@/lib/settings-secret";
 import { stagingHistoryGuardEnabled } from "./staging-history";
 

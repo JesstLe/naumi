@@ -1,5 +1,6 @@
 import "server-only";
-import {getPool,ensureSchema} from "../db";
+import {getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
 import {WorkbenchError} from "./contract";
 import type {PoolClient} from "pg";
 

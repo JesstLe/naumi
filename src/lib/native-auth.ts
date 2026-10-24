@@ -1,6 +1,8 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "crypto";
-import { getSetting, getPool, ensureSchema } from "@/lib/db";
+import {getSetting} from "@/lib/settings/repository";
+import {getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
 import { supabaseEnabled } from "@/lib/auth-mode";
 import { settingsSecret } from "@/lib/settings-secret";
 

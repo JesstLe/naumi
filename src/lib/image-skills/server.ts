@@ -1,7 +1,8 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
-import { getPool, ensureSchema } from "@/lib/db";
+import {getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
 import { ensureEnterpriseSchema } from "@/lib/enterprise/server";
 import { OFFICIAL_IMAGE_SKILLS, SkillError, validateSkillDraft, validateSkillSelection, type ImageSkill } from "./catalog";
 import { skillDefinitionHash } from "./import";

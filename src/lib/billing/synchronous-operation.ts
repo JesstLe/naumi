@@ -1,7 +1,9 @@
 import "server-only";
 import {AsyncLocalStorage} from "node:async_hooks";
 import {withArtworkCreation} from "../artwork-provenance-context";
-import {dbEnabled,getPool,ensureSchema,isBanned} from "../db";
+import {dbEnabled,getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
+import {isBanned} from "../db";
 import {createBillingService,withBillingTransaction} from "./service";
 import {BillingError,type FeatureId,type OperationInput,type Tx,type BillingFacts,type BillingQuote,type ConfigSnapshot} from "./types";
 import {billingFailure} from "./failure";

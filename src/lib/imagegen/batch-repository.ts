@@ -1,5 +1,6 @@
 import "server-only";
-import {ensureSchema,getPool} from "../db";
+import {ensureSchema} from "@/lib/persistence/schema";
+import {getPool} from "@/platform/db/pool";
 import type {ImagegenRequest,ImagegenPlan,ImagegenResult} from "./types";
 let ready:Promise<void>|undefined;
 export async function ensureImagegenBatches(){

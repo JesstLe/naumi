@@ -1,7 +1,8 @@
 import 'server-only';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
-import { getPool, ensureSchema } from '@/lib/db';
+import {getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
 import { requireAdmin, resolveUserEmail } from '@/lib/admin-auth';
 import { sameSiteBillingMutation, PRIVATE_HEADERS } from '@/lib/billing/access';
 import { digest, canonical, signCommand, operationSchema, pollSchema, ackSchema, commandCapability, type FleetOperation, type FleetActor } from './contracts';

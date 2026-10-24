@@ -1,7 +1,9 @@
 import "server-only";
 import {z} from "zod";
 import {createHash} from "node:crypto";
-import {getPool,ensureSchema,addArtworksTx,type ArtworkRecord} from "../db";
+import {getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
+import {addArtworksTx,type ArtworkRecord} from "../db";
 import {storageKeyFromManagedUrl} from "../storage";
 import {canonicalConfig} from "../model-config/repository";
 import {ModelConfigError} from "../model-config/types";

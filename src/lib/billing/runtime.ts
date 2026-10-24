@@ -1,6 +1,8 @@
 import "server-only";
 import {randomUUID} from "node:crypto";
-import {dbEnabled,getPool,ensureSchema,getSetting} from "../db";
+import {dbEnabled,getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
+import {getSetting} from "@/lib/settings/repository";
 import seed from "./bootstrap.json";
 import {createConfigRuntime} from "./catalog";
 import {createBillingService} from "./service";

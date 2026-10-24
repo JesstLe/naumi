@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { ensureSchema, getPool } from "../db";
+import {ensureSchema} from "@/lib/persistence/schema";
+import {getPool} from "@/platform/db/pool";
 import { PackagingError, type PackagingBrief, type PackagingCommand, type PackagingProject, type PackagingResult } from "./contract";
 
 let ready: Promise<void> | undefined;

@@ -1,7 +1,8 @@
 import "server-only";
 import {createHash} from "node:crypto";
 import type {PoolClient} from "pg";
-import {getPool,ensureSchema} from "../db";
+import {getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
 import {canonicalConfig} from "../model-config/repository";
 import {ModelConfigError} from "../model-config/types";
 import type {CanvasVideoNode,VideoNodeWrite} from "./video-node-schema";

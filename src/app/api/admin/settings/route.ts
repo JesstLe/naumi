@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { dbEnabled, setSignupBonus } from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {setSignupBonus} from "@/lib/billing/signup";
 import {
   decryptFromClient,
   getAdminView,

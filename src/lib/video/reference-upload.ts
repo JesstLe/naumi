@@ -1,6 +1,7 @@
 import "server-only";
 import {createHash,randomUUID} from "node:crypto";
-import {ensureSchema,getPool} from "../db";
+import {ensureSchema} from "@/lib/persistence/schema";
+import {getPool} from "@/platform/db/pool";
 import {getMediaAsset,type MediaAsset} from "../media-assets";
 import {uploadImage} from "../storage";
 import {ModelConfigError} from "../model-config/types";

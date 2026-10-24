@@ -1,7 +1,8 @@
 import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import 'server-only';
 import {createHash} from 'node:crypto';
-import {dbEnabled, getPool, ensureSchema} from './db';
+import {dbEnabled,getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
 import {currentBiContext} from './bi/model-observer';
 import {readManagedObject, readPendingStoredObject, writeStoredObject, privateMedia, storageDriver} from './storage';
 import {makeMediaVariants} from './media-variants';

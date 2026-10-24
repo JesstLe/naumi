@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { dbEnabled, ensureSchema, getPool } from "@/lib/db";
+import {dbEnabled,getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
 import { requireAdmin, resolveUserEmail } from "@/lib/admin-auth";
 import { ALL_FEATURE_IDS, DEFAULT_POLICY, allows, meets, requestRequirement, TOOL_ACCESS, type AccessPolicy } from "./catalog";
 

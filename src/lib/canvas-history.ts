@@ -1,7 +1,9 @@
 import "server-only";
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import { getPool, ensureSchema,listArtworksByIds } from "@/lib/db";
+import {getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
+import {listArtworksByIds} from "@/lib/db";
 import {verifiedOwnedMedia} from "@/lib/video/media-inspection";
 import {storageKeyFromManagedUrl} from "@/lib/storage";
 import { ensureCanvasSettingsSchema } from "@/lib/canvas-node-settings-store";

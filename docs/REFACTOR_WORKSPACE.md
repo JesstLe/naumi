@@ -32,6 +32,8 @@
 
 ## 开发约定
 
+2026-10-24 R4A2：schema兼容初始化、settings raw repository和signup账务策略已有真实owner，43调用文件/102绑定切换；旧门面同函数兼容。db5928→5321行，静态消费者178→144、最大静态SCC56→24，动态最大环70→66仍未关闭。原29/89→新29/90、真实PG6类61→78、35表380列及既有入口通过；原schema第二连接自等待已复现并改同事务。见 [R4A2](changes/2026-10-24-persistence-owners-r4a2.md)。同步后第1模块；继续身份/钱包/资产owner及R4B运行DDL，不合main、不部署。
+
 2026-10-24 R4A1：纯 `src/platform/db/pool`/`transaction` 已接真实消费者，旧入口同实例/函数兼容；79处纯基础import及3混合字段迁出。旧db静态消费者251→178，最大SCC60→56，基础层业务import/环为0，535个非目标函数正文未变。基线27/157→新版28/166、真实PG25→29、wallet/creation A/B及画布PG32/32通过，tsc/lint通过。见 [R4A1](changes/2026-10-24-platform-db-r4a1.md)。本轮第3模块，收尾普通整合main并归零，精确结果见本轮SYNC；R4A2数据owner与DDL/组装环继续，不合main、不部署。
 
 2026-10-24 R3E：图片/空白节点共用创作栏与参数控件，文字创作栏独立持有菜单/尺寸呈现状态。Canvas **8534行**；174个保留执行函数正文不变，58组SSR对照一致，真实控件15项及文字6/图片5/历史12通过，最终tsc通过。见 [R3E](changes/2026-10-24-canvas-composers-r3e.md)。同步后第2模块；下一模块R4A基础DB/事务，R3外围UI、跨请求CAS与R4B—R6继续，不合main/不部署。

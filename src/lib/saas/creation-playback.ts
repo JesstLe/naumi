@@ -3,7 +3,8 @@ import {createHmac,timingSafeEqual} from 'node:crypto';
 import {z} from 'zod';
 import {settingsSecret} from '@/lib/settings-secret';
 import {adminPasswordState,ADMIN_PW_HASH_SETTING,resolveUserEmail} from '@/lib/admin-auth';
-import {getSetting,getPool} from '@/lib/db';
+import {getSetting} from "@/lib/settings/repository";
+import {getPool} from "@/platform/db/pool";
 import {supabaseEnabled} from '@/lib/auth-mode';
 const common={record:z.string().max(1600),asset:z.string().max(200),expires:z.number().int()};
 const grant=z.discriminatedUnion('mode',[

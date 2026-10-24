@@ -1,6 +1,7 @@
 import "server-only";
 import {createHash} from "node:crypto";
-import {getPool,ensureSchema} from "../db";
+import {getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
 import {getMediaAsset,registerMediaAsset} from "../media-assets";
 import {readManagedObject,writeStoredObject,storageEnabled} from "../storage";
 import {probeMedia} from "./media";

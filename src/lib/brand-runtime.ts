@@ -1,5 +1,6 @@
 import "server-only";
-import { getSetting, dbEnabled } from "@/lib/db";
+import {getSetting} from "@/lib/settings/repository";
+import {dbEnabled} from "@/platform/db/pool";
 import { SITE_NAME_SETTING } from "@/lib/setup";
 import { BRAND, BRAND_LOGO, BRAND_LOGO_HAS_TEXT } from "@/lib/brand";
 

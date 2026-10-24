@@ -1,5 +1,6 @@
 import "server-only";
-import { dbEnabled, ensureSchema, getPool } from "@/lib/db";
+import {dbEnabled,getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { imageWorkerAuthorized } from "@/lib/durable-image-jobs";
 import { billingRequestIdentity } from "./synchronous";
