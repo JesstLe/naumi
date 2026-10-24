@@ -9,7 +9,7 @@ const historyMode=process.env.CANVAS_FIXTURE_HISTORY==='1';
 const texts=historyMode?[{id:'text-history',projectKey:'tree:placement-root',title:'历史文字',prompt:'',content:'原始文字',status:'completed',canvasX:100,canvasY:650,width:380,height:260,sourceIds:[],targetIds:[],productIds:[],createdAt:now,updatedAt:now}]:[];
 const initialArts=structuredClone(arts),initialTexts=structuredClone(texts);
 const model={id:'gpt-image-2',label:'GPT Image 2',modality:'image',supportsEdit:true,qualities:['low','medium','high'],qualitySupported:true,nativeResolutions:['1K'],generationParameters:{ratios:['auto','1:1','3:4'],resolutions:['1K']}};
-const state={submissions:[],positions:[],history:[],jobs:{},paidCalls:0,apiErrors:[],failNextPosition:false,failNextHistory:false,textSaves:[],historyApplied:[],failTextSaves:false,failTextRead:false};
+const state={submissions:[],positions:[],history:[],jobs:{},paidCalls:0,apiErrors:[],failNextPosition:false,failNextHistory:false,textSaves:[],historyApplied:[],failTextSaves:false,failTextRead:false,failArtworkAccount:false,failArtworkIds:false,accountReads:0,artworkIdReads:[]};
 const appliedHistory=new Map();
 const app=cp.spawn(process.execPath,['node_modules/next/dist/bin/next','dev','-p',String(nextPort)],{env:{...process.env,DATABASE_URL:'',NAUMI_MULTI_USER:'0',SETTINGS_SECRET:crypto.randomUUID(),VIDEO_WORKER_SECRET:crypto.randomUUID(),NAUMI_VIDEO_WORKER:'0',OPENAI_API_KEY:'fixture-not-a-key',OPENAI_BASE_URL:'http://127.0.0.1:1/v1',NEXT_PUBLIC_SUPABASE_URL:'',NEXT_PUBLIC_SUPABASE_ANON_KEY:'',NEXT_TELEMETRY_DISABLED:'1',NEXT_DIST_DIR:dist},stdio:['ignore','pipe','pipe']});
 app.stdout.on('data',b=>process.stdout.write(b));app.stderr.on('data',b=>process.stderr.write(b));
@@ -20,7 +20,7 @@ const server=http.createServer(async(req,res)=>{
  let raw='';if(req.method==='POST')for await(const b of req)raw+=b;
  const body=raw.startsWith('{')?JSON.parse(raw):{};
  if(p==='/__fixture/state')return json(res,{...state,artworks:arts,texts});
- if(p==='/__fixture/reset'){arts.splice(0,arts.length,...structuredClone(initialArts));texts.splice(0,texts.length,...structuredClone(initialTexts));state.submissions.length=0;state.positions.length=0;state.history.length=0;state.historyApplied.length=0;state.textSaves.length=0;appliedHistory.clear();state.jobs={};state.apiErrors.length=0;state.failNextHistory=state.failNextPosition=state.failTextSaves=state.failTextRead=false;return json(res,{ok:true})}
+ if(p==='/__fixture/reset'){arts.splice(0,arts.length,...structuredClone(initialArts));texts.splice(0,texts.length,...structuredClone(initialTexts));state.submissions.length=0;state.positions.length=0;state.history.length=0;state.historyApplied.length=0;state.textSaves.length=0;state.accountReads=0;state.artworkIdReads.length=0;appliedHistory.clear();state.jobs={};state.apiErrors.length=0;state.failNextHistory=state.failNextPosition=state.failTextSaves=state.failTextRead=state.failArtworkAccount=state.failArtworkIds=false;return json(res,{ok:true})}
  if(p.startsWith('/_next/static/chunks/')){
   const file=require('node:path').resolve(dist,p.replace('/_next/',''));
   if(file.startsWith(require('node:path').resolve(dist)+require('node:path').sep)&&fs.existsSync(file)){res.writeHead(200,{'content-type':'application/javascript'});return res.end(fs.readFileSync(file))}
@@ -33,13 +33,14 @@ const server=http.createServer(async(req,res)=>{
  if(p==='/__fixture/fail-position'){state.failNextPosition=true;return json(res,{ok:true})}
  if(p==='/__fixture/fail-history'){state.failNextHistory=true;return json(res,{ok:true})}
  if(p==='/__fixture/text-failure'){state.failTextSaves=u.searchParams.get('save')==='1';state.failTextRead=u.searchParams.get('read')==='1';return json(res,{ok:true})}
+ if(p==='/__fixture/artwork-failure'){state.failArtworkAccount=u.searchParams.get('account')==='1';state.failArtworkIds=u.searchParams.get('ids')==='1';return json(res,{ok:true})}
  if(p.startsWith('/api/')){
   if(p==='/api/download'){res.writeHead(200,{'content-type':'image/png'});return res.end(fs.readFileSync('public/demos/suite-demo/suppl-src.png'));}
   if(p==='/api/media/image-cache'||p==='/api/public-image-cache')return json(res,{account:email,results:Object.fromEntries((body.sources||[]).map(source=>[source,{account:email,source,version:'fixture-v1',fetchUrl:image,bytes:fs.statSync('public/demos/suite-demo/suppl-src.png').size,contentType:'image/png'}]))});
   if(p==='/api/config')return json(res,{db:true,authMode:'mock',multiUser:true,commerceVisible:false,imageQualityCapable:true,creditsMetered:true,imageModels:[model],defaultImageModel:model.id});
   if(p==='/api/auth/session')return json(res,{user});
   if(p==='/api/feature-access')return json(res,{email,policy:{mode:'default',allowed:[],version:1}});
-  if(p==='/api/account')return json(res,{persisted:true,user,artworks:arts});
+  if(p==='/api/account'){state.accountReads++;if(state.failArtworkAccount)return json(res,{error:'fixture artwork load failed'},503);return json(res,{persisted:true,user,artworks:arts.filter(a=>!a.deletedAt)});}
   if(p==='/api/projects')return json(res,{names:{'tree:placement-root':'位置验收'}});
   if(p==='/api/models')return json(res,{managed:false,supported:true,feature:u.searchParams.get('feature'),version:1,models:[model],defaultModelId:model.id});
   if(p==='/api/text-models')return json(res,{models:['gpt-4o'],defaultModel:'gpt-4o'});
@@ -77,7 +78,7 @@ const server=http.createServer(async(req,res)=>{
    if(state.failTextRead)return json(res,{error:'fixture text load failed'},503);
    return json(res,{nodes:texts,persisted:true});
   }
-  if(p==='/api/artworks/get')return json(res,{artworks:arts.filter(a=>(u.searchParams.get('ids')||'').split(',').includes(a.id))});
+  if(p==='/api/artworks/get'){state.artworkIdReads.push(u.searchParams.get('ids')||'');if(state.failArtworkIds)return json(res,{error:'fixture artwork sync failed'},503);return json(res,{artworks:arts.filter(a=>!a.deletedAt&&(u.searchParams.get('ids')||'').split(',').includes(a.id))});}
   if(p==='/api/canvas/node-settings')return json(res,{persisted:true,settings:{}});
   return json(res,{items:[],tasks:[],names:{},nodes:[],settings:{},records:[],artworks:[],ok:true,persisted:true});
  }

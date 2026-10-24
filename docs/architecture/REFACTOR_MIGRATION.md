@@ -139,7 +139,8 @@
 - [x] R3A已有图片/空白与文字生图共用 typed request/scope/task controller；两份轮询/定位/receipt逻辑删除，见 [R3A记录](../changes/2026-10-24-canvas-image-task-r3a.md)。
 - [x] R3B1 原子文档编辑/历史持久化：22 类动作单编译器、4 个提交点收敛、原请求重试、分域历史及提交/同步分离，见 [R3B1记录](../changes/2026-10-24-canvas-history-r3b1.md)。
 - [x] R3B2 文字文档/草稿/保存队列 owner、历史串行边界、域隔离恢复，见 [R3B2记录](../changes/2026-10-24-canvas-text-document-r3b2.md)。
-- [ ] R3B 后续详情与编辑任务、作品加载合并；文字/图片跨请求 CAS 及未知历史响应交错验收；R3C renderer/interaction。
+- [x] R3B3 作品文档/读取/合并/回收站 owner，显式读取错误、保留本地修改与按ID原结果同步，见 [R3B3记录](../changes/2026-10-24-canvas-artwork-document-r3b3.md)。
+- [ ] R3B4 详情与同步编辑任务；文字/图片跨请求 CAS 及未知历史响应交错验收；R3C renderer/interaction。
 - [ ] R4—R6业务实现、集中验证、旧路径删除与最终整合。
 - [ ] 迁移后的实际性能、容量与生产功能验收。
 
@@ -156,3 +157,5 @@ R3A更新：Canvas主组件12422→12130行；新request/scope/controller为70/2
 R3B1更新：Canvas 12130→11936行，历史协议提交4→1，22类动作/44个正反方向wire与文档对照一致；baseline64场景134检查、modified67场景184检查。真实PG20检查、真实Next控件7项通过；后置视频刷新失败保留撤销、auth/flush ABA不提交、原operation重试不先受当前节点拦截。第3个功能模块收尾已fetch/普通merge origin/main `905c8c635e41ff3f4443d43db9776d1db3aab469`，返回Already up to date，exit0；计数归零，下一轮从1开始。R3B2/R3C未完成。
 
 R3B2更新：文字文档状态、缓存、保存/恢复队列已迁入独立 owner；Canvas 11936→11872行。baseline10/22、modified21/58、真实PG16、真实控件12通过；历史67/184及图片任务46/176保持。完整旧text-image verifier缺原pinned快照（基线/新版均setup exit1）保留为债务；多tab CAS及未知历史响应叠加写入未声称关闭。同步后第1个功能模块；整体目标继续。
+
+R3B3更新：作品state/初读/刷新/局部补取/回收站迁入owner，Canvas 11872→11747行；baseline14/23、modified26/49、真实PG14、Next控件8、真实缓存20检查通过。局部读失败不整表回退，晚到读取不覆盖本地编辑/复活删除，同workspace仍共享已有缓存。同步后第2模块；下一R3B4，整体重构继续。

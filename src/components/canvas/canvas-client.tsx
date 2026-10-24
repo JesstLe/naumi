@@ -6,7 +6,7 @@ import { cachedImageBlob, imageCacheSource, ImageCacheDenied, readBrowserImage }
 import { useFeatureAccess, FeatureVisible } from "@/lib/feature-access/client";
 
 
-import { loadAccountSnapshot, invalidateBrowserData } from "@/lib/browser-data-cache";
+import { useCanvasArtworkDocument } from "./use-canvas-artwork-document";
 import { isHostedImageUrl as hasRenderableImage } from "@/lib/media-url";
 import {useBilling} from "@/lib/billing/client";
 import { browserRandomUUID } from "@/lib/browser-crypto";
@@ -1623,12 +1623,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const { t, locale } = useI18n();
   const router = useRouter();
   const { commerceVisible } = usePaymentConfig();
-  const [works, setWorks] = useState<Artwork[] | null>(null);
   // works 的同步镜像:供 useCallback(如缩放撤销记录)读取最新值而不重挂回调
   const worksRef = useRef<Artwork[] | null>(null);
-  useEffect(() => {
-    worksRef.current = works;
-  }, [works]);
   const dimensionSyncRef = useRef(new Set<string>());
   const artworkPlacementRef = useRef({ scope: "", positions: new Map<string, CanvasPoint>() });
   const [names, setNames] = useState<Record<string, string>>({});
@@ -1684,6 +1680,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 是否已做过"刷新恢复上次项目"的初始化(避免初始挂载误清本地保存)
   const restoredRef = useRef(false);
   const [activeKey, setActiveKey] = useState<string | null>(null);
+  const canvasArtworkDocument = useCanvasArtworkDocument({account:canvasAccountRef.current,actor:user?.email||"",owner:targetEmail||user?.email||"",
+    project:activeKey,enabled:ready&&!!user&&!!targetEmail,readOnly});
+  const {nodes:works,set:setWorks} = canvasArtworkDocument;
+  worksRef.current=works;
+
   const frameChoice=useCanvasFrameChoice(imageDraftScope(user?.email,targetEmail,activeKey));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedPendId, setSelectedPendId] = useState<string | null>(null);
@@ -1914,8 +1915,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [projMenuKey, setProjMenuKey] = useState<string | null>(null);
   // 回收站(软删除的作品):打开状态 + 列表 + 操作中
   const [trashOpen, setTrashOpen] = useState(false);
-  const [trashItems, setTrashItems] = useState<Artwork[] | null>(null);
-  const [trashBusy, setTrashBusy] = useState(false);
+  const {trash:trashItems,trashBusy} = canvasArtworkDocument;
   // 剪刀剪线:鼠标悬停的连线 + 光标在画布内的位置(屏幕坐标,相对 canvasArea)
   const edgeHoverHintRef = useRef<CanvasEdgeHoverHandle>(null);
   // 连线选中(RF 原生点击选中):Delete/Backspace 才剪断,不再点一下就删
@@ -2283,8 +2283,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }, [targetEmail, user?.email]);
   const workflowPaste = useWorkflowPaste({ email: user?.email, projectKey: creatingNew ? null : activeKey, browsing, readOnly,
     onCommitted: result => {
-      const artworks = result.artworks as Artwork[], importedIds = new Set(artworks.map(n => n.id));
-      setWorks(current => [...(current || []).filter(n => !importedIds.has(n.id)), ...artworks]);
+      const artworks = result.artworks as Artwork[];
+      canvasArtworkDocument.accept(artworks);
       canvasTextDocument.accept(result.textNodes);
       setWorkflowManifests(current => [...current.filter(m => m.operationId !== result.operationId), result.manifest]);
       const settings = { ...nodeSettingsRef.current, ...result.settings }; nodeSettingsRef.current = settings; setNodeSettings(settings);
@@ -2390,7 +2390,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 余额轮询会回写新的 user 对象；仅账号变化才重载画布，避免覆盖正在编辑的内容。
   const authenticatedEmail = user?.email;
   useEffect(() => {
-    setWorks(null); setNames({});
+    setNames({});
     if (!ready || !authenticatedEmail) return;
     let cancelled = false;
     const sp = new URLSearchParams(window.location.search);
@@ -2418,35 +2418,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     restoredRef.current = true;
     setTargetEmail(target);
     setReadOnly(ro);
-    async function loadCurrentAccount() {
-      // Cache activation or a completed mutation can supersede the initial read.
-      // Re-read the current revision without delivering stale data or another account.
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try { return await loadAccountSnapshot<Artwork>(target); }
-        catch (cause) {
-          if (cancelled || attempt === 2 || !(cause instanceof Error) || cause.message !== "Account snapshot superseded") throw cause;
-        }
-      }
-      throw new Error("Canvas account initialization unavailable");
-    }
-    Promise.all([
-      // Cross-account requests bypass the browser cache; canvas never applies stale revalidation over edits.
-      loadCurrentAccount(),
-      privateFetchRaw(`/api/projects?email=${encodeURIComponent(target)}`)
-        .then((r) => r.json())
-        .catch(() => ({ names: {} })),
-    ])
-      .then(([acc, proj]) => {
-        if (cancelled) return;
-        setWorks((acc?.artworks ?? []) as Artwork[]);
-        setNames((proj?.names ?? {}) as Record<string, string>);
-
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setWorks([]);
-        }
-      });
+    void privateFetchRaw(`/api/projects?email=${encodeURIComponent(target)}`)
+      .then(response=>expectJsonOk(response,"项目名称读取失败"))
+      .then(data=>{if(!cancelled)setNames((data?.names??{}) as Record<string,string>);})
+      .catch(()=>{});
     return () => {
       cancelled = true;
     };
@@ -2843,7 +2818,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ id, width: w, height: h }),
     }).catch(() => dimensionSyncRef.current.delete(id));
-  }, [user, readOnly]);
+  }, [user, readOnly, setWorks]);
 
   const onArtworkCanvasResize = useCallback((
     id: string,
@@ -2861,6 +2836,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       width > IMAGE_NODE_MAX_W ||
       height > IMAGE_NODE_MAX_H
     ) return;
+    const prev = worksRef.current?.find((art) => art.id === id);
     setWorks((current) => current?.map((art) =>
       art.id === id
         ? { ...art, canvasX: x, canvasY: y, canvasWidth: width, canvasHeight: height }
@@ -2873,7 +2849,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       body: JSON.stringify({ id, x, y, width, height }),
     });
     // 手动缩放可撤销:从 worksRef 取拖拽前的位置与尺寸记一条 art-size
-    const prev = worksRef.current?.find((art) => art.id === id);
     if (
       prev &&
       (prev.canvasX !== x ||
@@ -2893,7 +2868,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         to: { x, y, width, height },
       });
     }
-  }, [user, readOnly, pushUndo]);
+  }, [user, readOnly, pushUndo, setWorks]);
 
   const onArtworkCanvasRatioRepair = useCallback((id: string, width: number, height: number) => {
     if (readOnly || nodeSettingsRef.current[id]?.locked) return;
@@ -2917,7 +2892,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ id, width: nextWidth, height: nextHeight, sizeOnly: true }),
     }).catch(() => {});
-  }, [user, readOnly]);
+  }, [user, readOnly, setWorks]);
 
   const requestNodeRename = useCallback((id: string, label: string) => {
     if(readOnly || nodeSettingsRef.current[id]?.locked)return;
@@ -2994,7 +2969,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const account=canvasAccountRef.current,epoch=canvasContextEpochRef.current,known=new Set((works||[]).map(art=>art.id)),now=Date.now();
     const ids=Array.from(new Set(videoNodesStore.nodes.filter(node=>node.projectKey===activeKey&&!node.deletedAt).map(node=>node.displayResultId||node.lastResultId).filter((id):id is string=>!!id&&!known.has(id)))).filter(id=>{const key=JSON.stringify([account,activeKey,id]),last=videoResultLoads.current.get(key)||0;if(now-last<15000)return false;videoResultLoads.current.set(key,now);return true;});
     if(!ids.length)return;
-    void (async()=>{for(let offset=0;offset<ids.length;offset+=100){if(account!==canvasAccountRef.current||epoch!==canvasContextEpochRef.current)return;await mergeWorks(ids.slice(offset,offset+100));}})();
+    void (async()=>{for(let offset=0;offset<ids.length;offset+=100){if(account!==canvasAccountRef.current||epoch!==canvasContextEpochRef.current)return;await mergeWorks(ids.slice(offset,offset+100));}})().catch(()=>{});
   },[user?.email,targetEmail,activeKey,readOnly,works,videoNodesStore.nodes]);
   const selectedVideo=videoNodesStore.nodes.find(node=>node.id===selectedId&&node.projectKey===activeKey&&!node.deletedAt)||null;
   const mixedNativeSelection=multiSel.length>1&&(multiSel.some(id=>videoNodesStore.getNode(id))||multiSel.some(id=>id.startsWith("text-"))&&multiSel.some(id=>!id.startsWith("text-")));
@@ -4134,127 +4109,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setTextReferenceMenuOpen(false);
   }, [selectedText?.id]);
 
-  // 整表重拉(仅初次加载 / 兜底用)。日常增删改用下面的局部更新,省 egress。
-  async function refetchWorks(isCurrent:()=>boolean=()=>true): Promise<Artwork[]> {
-    const account=canvasAccountRef.current;
-    const current=()=>account===canvasAccountRef.current&&isCurrent();
-    if(!current())return [];
-    const em = targetEmail || user?.email;
-    if (!em) return works ?? [];
-    try {
-      const r = await fetch(`/api/account?email=${encodeURIComponent(em)}`, {
-        headers: await authHeader(), cache: "no-store",
-      });
-      const d = await expectJsonOk(r, t("canvas.importSyncFailed"));
-      if(!current())return [];
-      const arr = (d?.artworks ?? []) as Artwork[];
-      setWorks(previous=>current()?arr:previous);
-      return current()?arr:[];
-    } catch {
-      return current()?works??[]:[];
-    }
-  }
-
-  // 只补指定 id 的几行(创建/连线后):取代整表重拉。返回更新后的 works(供调用方用)。
-  // 失败时兜底走整表重拉,保证数据最终一致。
-  async function mergeWorks(ids: string[],isCurrent:()=>boolean=()=>true): Promise<Artwork[]> {
-    const account=canvasAccountRef.current;
-    const currentScope=()=>account===canvasAccountRef.current&&isCurrent();
-    if(!currentScope())return [];
-    const em = targetEmail || user?.email;
-    const valid = ids.filter(Boolean);
-    if (!em || valid.length === 0) return works ?? [];
-    invalidateBrowserData(em);
-    try {
-      const r = await privateFetchRaw(
-        `/api/artworks/get?email=${encodeURIComponent(em)}&ids=${valid
-          .map(encodeURIComponent)
-          .join(",")}`,
-        { cache: "no-store" }
-      );
-      const d = await expectJsonOk(r, t("canvas.genFail"));
-      if(!currentScope())return [];
-      const fetched = (d?.artworks ?? []) as Artwork[];
-      if (fetched.length === 0) return refetchWorks(currentScope);
-      const snapshot = new Map((worksRef.current ?? []).map(art => [art.id, art]));
-      for (const art of fetched) snapshot.set(art.id, art);
-      const merged = Array.from(snapshot.values()).sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""));
-      setWorks((current) => {
-        if(!currentScope())return current;
-        const map = new Map((current ?? []).map((w) => [w.id, w]));
-        for (const a of fetched) map.set(a.id, a);
-        return Array.from(map.values()).sort((a, b) =>
-          (b.createdAt || "").localeCompare(a.createdAt || "")
-        );
-      });
-      return currentScope()?merged:[];
-    } catch {
-      // 单行补取失败 → 兜底整表重拉,确保不漏数据
-      if(!currentScope())return [];
-      return refetchWorks(currentScope);
-    }
-  }
-
-  // 本地移除指定 id(删除节点/项目):不重拉,返回更新后的 works。
-  function removeWorksLocal(ids: string[]): Artwork[] {
-    const set = new Set(ids);
-    const next = (works ?? []).filter((w) => !set.has(w.id));
-    setWorks(next);
-    return next;
-  }
+  // Document owner keeps read state, merge order and the current graph together.
+  function refetchWorks(isCurrent:()=>boolean=()=>true):Promise<Artwork[]> { return canvasArtworkDocument.refresh(isCurrent); }
+  function mergeWorks(ids:string[],isCurrent:()=>boolean=()=>true):Promise<Artwork[]> { return canvasArtworkDocument.merge(ids,isCurrent); }
+  function removeWorksLocal(ids:string[]):Artwork[] { return canvasArtworkDocument.remove(ids); }
 
   // ── 回收站 ──
   async function openTrash() {
-    setSidebarOpen(false);
-    setTrashOpen(true);
-    setTrashItems(null);
-    const em = targetEmail || user?.email;
-    if (!em) {
-      setTrashItems([]);
-      return;
-    }
-    try {
-      const r = await privateFetchRaw(`/api/artworks/trash?email=${encodeURIComponent(em)}`);
-      const d = await expectJsonOk(r, t("canvas.genFail"));
-      setTrashItems((d?.artworks ?? []) as Artwork[]);
-    } catch {
-      setTrashItems([]);
-    }
+    setSidebarOpen(false);setTrashOpen(true);await canvasArtworkDocument.loadTrash();
   }
-  async function trashAction(action: "restore" | "purge", ids: string[]) {
-    const em = targetEmail || user?.email;
-    if (!em || ids.length === 0 || trashBusy) return;
-    setTrashBusy(true);
-    try {
-      const res = await privateFetchRaw("/api/artworks/trash", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: em, action, ids }),
-      });
-      await expectJsonOk(res, t("canvas.genFail"));
-      // 从回收站列表里移除这些
-      setTrashItems((prev) =>
-        prev ? prev.filter((w) => !ids.includes(w.id)) : prev
-      );
-      // 恢复:把它们补回画布工作区
-      if (action === "restore") await mergeWorks(ids);
-    } catch (e) {
-      flashTip(e instanceof Error ? e.message : t("canvas.genFail"));
-    } finally {
-      setTrashBusy(false);
-    }
-  }
-
-  // 本地恢复整条记录(撤销删除时已持有完整记录):不重拉,返回更新后的 works。
-  function restoreWorksLocal(records: Artwork[]): Artwork[] {
-    if (!records.length) return works ?? [];
-    const map = new Map((works ?? []).map((w) => [w.id, w]));
-    for (const a of records) map.set(a.id, a);
-    const next = Array.from(map.values()).sort((a, b) =>
-      (b.createdAt || "").localeCompare(a.createdAt || "")
-    );
-    setWorks(next);
-    return next;
+  async function trashAction(action:"restore"|"purge",ids:string[]) {
+    try{await canvasArtworkDocument.trashAction(action,ids);}
+    catch(error){if(canvasArtworkDocument.scope.documentCurrent())flashTip(error instanceof Error?error.message:t("canvas.genFail"));}
   }
 
   // 生成核心:以某节点为底图(图生图)+ 提示词 → 新图作为其子节点。
@@ -5910,7 +5776,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         })
       );
     } catch {
-      await refetchWorks();
+      await refetchWorks().catch(()=>{});
       flashTip(t("canvas.genFail"));
     }
   }
@@ -7727,7 +7593,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       setPendNodes(prev => prev.filter(p => p.id !== pendId));
       setSelectedPendId(cur => cur === pendId ? null : cur);
       pendingNodeRef.current = body.id;
-      void mergeWorks([body.id]).then(fresh => pushAddUndo(body.id!, fresh));
+      await mergeWorks([body.id]).then(fresh => pushAddUndo(body.id!, fresh));
     } catch (error) {
       setGenError(error instanceof Error ? error.message : t("canvas.genFail"));
       setPendNodes(prev => prev.map(p => p.id === pendId ? { ...p, uploading: false } : p));
@@ -8208,7 +8074,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     </div>
   );
 
-  const loading = persistMode === "server" && works === null;
+  const loading = persistMode === "server" && works === null && canvasArtworkDocument.phase !== "error";
 
   // dock 里的「比例·分辨率」按钮(对齐参考站图1)。面板用 portal 渲染到 body,
   // 脱离 dock 的 overflow-hidden(否则向上展开的分辨率行会被裁掉)。
@@ -8325,8 +8191,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
         return current()&&ids.every(id=>worksRef.current?.some(art=>art.id===id&&!!art.image));
       }}/>}
-      {canvasTextDocument.error && <div role="alert" data-testid="canvas-text-load-error" className="fixed top-20 left-1/2 z-[200] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-amber-400 bg-white px-4 py-3 text-sm text-slate-700 shadow-lg">
+      {(canvasArtworkDocument.error||canvasTextDocument.error) && <div className="fixed top-20 left-1/2 z-[200] flex -translate-x-1/2 flex-col gap-2">
+      {canvasArtworkDocument.error && <div role="alert" data-testid="canvas-artwork-load-error" className="flex items-center gap-3 rounded-lg border border-amber-400 bg-white px-4 py-3 text-sm text-slate-700 shadow-lg">
+        <span>{canvasArtworkDocument.error}</span><button className="font-semibold underline" onClick={()=>void canvasArtworkDocument.retry().catch(()=>{})}>重试同步作品</button>
+      </div>}
+      {canvasTextDocument.error && <div role="alert" data-testid="canvas-text-load-error" className="flex items-center gap-3 rounded-lg border border-amber-400 bg-white px-4 py-3 text-sm text-slate-700 shadow-lg">
         <span>{canvasTextDocument.error}</span><button className="font-semibold underline" onClick={()=>void canvasTextDocument.load()}>重新加载文字</button>
+      </div>}
       </div>}
       {unsavedTextCount>0 && <div role="alert" className="fixed bottom-6 left-1/2 z-[200] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-amber-500 bg-background px-4 py-3 text-sm shadow-lg">
         <span>{t("canvas.unsavedChanges")} ({unsavedTextCount})</span>
@@ -8566,6 +8437,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               {t("canvas.loading")}
             </div>
+          ) : canvasArtworkDocument.phase === "error" && works === null ? (
+            <div data-testid="canvas-artwork-unavailable" className="flex h-full items-center justify-center text-sm text-slate-600">作品暂未加载</div>
           ) : browsing ? (
             <div
               data-testid="canvas-project-browser"
@@ -11512,7 +11385,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               </div>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
-              {trashItems === null ? (
+              {canvasArtworkDocument.trashError ? (
+                <div role="alert" className="flex items-center justify-center gap-3 p-6 text-sm"><span>{canvasArtworkDocument.trashError}</span><button onClick={()=>void canvasArtworkDocument.loadTrash()} className="underline">重试加载回收站</button></div>
+              ) : trashItems === null ? (
                 <p className="py-10 text-center text-sm text-muted-foreground">
                   {t("canvas.loading")}
                 </p>

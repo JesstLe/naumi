@@ -81,6 +81,13 @@ try {
     assert.equal(body.status,500);assert.equal(body.data.ok,false);mutationStatus=200;
     before=calls;await load();assert.equal(calls,before+1);checks.push('FAILED_MUTATION=NETWORK_RECHECK_RESPONSE_INTACT');
     before=calls;await page.evaluate(()=>fetch('/api/billing/quote',{method:'POST'}));await load();assert.equal(calls,before);checks.push('QUOTE=NO_BUSINESS_INVALIDATION');
+    before=calls;await page.evaluate(async()=>{
+      const context=partition=>({partition,isCurrent:()=>true,request:(url,init)=>fetch(url,init)});
+      await cache.loadAccountSnapshot('a@example.test','',undefined,context('workspace-a'));
+      await cache.loadAccountSnapshot('a@example.test','',undefined,context('workspace-b'));
+      await cache.loadAccountSnapshot('a@example.test','',undefined,context('workspace-a'));
+    });assert.equal(calls,before+2);checks.push('DOCUMENT_WORKSPACE_PARTITIONS=ISOLATED');
+    before=calls;const staleContext=await page.evaluate(()=>cache.loadAccountSnapshot('a@example.test','',undefined,{partition:'workspace-a',isCurrent:()=>false,request:(url,init)=>fetch(url,init)}).then(()=>false,()=>true));assert.equal(staleContext,true);assert.equal(calls,before);checks.push('STALE_DOCUMENT_CONTEXT=NO_CACHE_OR_NETWORK');
     // Completely disabled browser storage still loads from the network.
     const fallback=await ctx.newPage();await fallback.addInitScript(()=>{Object.defineProperty(window,'indexedDB',{get(){throw new Error('blocked')}});});await setup(fallback);before=calls;await load(fallback);assert.equal(calls,before+1);checks.push('DISABLED_IDB=NETWORK');
     assert.deepEqual(errors,[]);
