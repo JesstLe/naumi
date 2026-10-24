@@ -115,6 +115,6 @@ async function main(){
   await assert.rejects(recoverStoredDelivery(unknownUrl.parent,owner));checks++;
   await writeFile(join(out,"RESULTS.json"),JSON.stringify({checks,largeBytes:large.length,hash:createHash("sha256").update(large).digest("hex"),loopbackSupplierPosts:calls,realSupplierCalls:0,historicalBillingUnchanged:true,recoveryOnce:true,hubReviewNoSupplierQuery:true},null,2));
   console.log(`DELIVERY_ROUTES=PASS CHECKS=${checks} LARGE_PNG=DELIVERED OLD_RECEIPT=READ_ONLY BILLING=INDEPENDENT RAW_CHECKPOINT=RECOVERED OWNER_GUARD=PASS UNKNOWN_REPLAY=0 FORMAT_PARTIAL=HONEST RECOVERY_CHARGE=ONCE HUB_REVIEW=PAUSED LOOPBACK_POSTS=${calls} REAL_SUPPLIER_CALLS=0`);
- }finally{app.closeAllConnections();await new Promise<void>(r=>app.close(()=>r()));await db.getPool().end();await f.cleanup();}
+ }finally{app.closeAllConnections();await new Promise<void>(r=>app.close(()=>r()));await(await import("../src/lib/imagegen/coordination-pool")).closeImageCoordinationPool();await db.getPool().end();await f.cleanup();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

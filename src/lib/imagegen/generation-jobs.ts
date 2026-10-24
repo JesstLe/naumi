@@ -11,6 +11,8 @@ type Job = {
   mock?: boolean;
   mode?: string;
   persisted?: boolean;
+  deliveryComplete?:boolean;
+  billingStatus?:"confirmed"|"unavailable";
   error?: string;
   imagegenOutputError?:string;
   imagegenOutputWarning?:string;

@@ -2,14 +2,14 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
 const ts=require('typescript'),esbuild=require('esbuild'),sharp=require('sharp');
 const mode=process.argv[2]||'MODIFIED',out=path.resolve(process.argv[3]||'output/no-silent-crop47-20261015');fs.mkdirSync(out,{recursive:true});
 const routeFile=mode==='BASELINE'?path.join(out,'BASELINE_FILE.ts'):mode==='ROLLBACK'?path.join(out,'ROLLBACK_COPY.ts'):'src/app/api/generate-image/route.ts';
-const source=fs.readFileSync(routeFile,'utf8'),ast=ts.createSourceFile('route.ts',source,99,true);
+const source=mode==='MODIFIED'?require('./lib/image-generation-source.cjs')():fs.readFileSync(routeFile,'utf8'),shared=mode==='MODIFIED'&&fs.existsSync('src/lib/imagegen/complete-image-delivery.ts'),ast=ts.createSourceFile('route.ts',source,99,true);
 const names=['cropToRatio','padToRatio','detectUniformBorder','enforceOutputShape','attachImageDimensions'];const fns=[];
 ts.forEachChild(ast,n=>{if(ts.isFunctionDeclaration(n)&&names.includes(n.name?.text))fns.push(n.getText(ast));});
 const shape=esbuild.transformSync(fs.readFileSync('src/lib/imagegen/output-shape.ts','utf8').replace('import "server-only";','').replace('import sharp from "sharp";','').replace(/export /g,''),{loader:'ts',format:'cjs'}).code;
 // Bind the same installed Sharp in the VM; native dynamic import needs VM module flags.
-const code=esbuild.transformSync(fns.join('\n')+'\nglobalThis.test={enforceOutputShape,attachImageDimensions};',{loader:'ts',format:'cjs'}).code.replace(/import\("sharp"\)/g,'Promise.resolve({default:__sharp})');
+const code=esbuild.transformSync(fns.join('\n')+(shared?'\nglobalThis.test={};':'\nglobalThis.test={enforceOutputShape,attachImageDimensions};'),{loader:'ts',format:'cjs'}).code.replace(/import\("sharp"\)/g,'Promise.resolve({default:__sharp})');
 const dataUrlToBytes=url=>url.startsWith('data:')?{bytes:Buffer.from(url.split(',')[1],'base64')}:null;
-const ctx=vm.createContext({require,Buffer,sharp,__sharp:sharp,dataUrlToBytes});vm.runInContext(shape+code,ctx);
+const ctx=vm.createContext({require,Buffer,sharp,__sharp:sharp,dataUrlToBytes});vm.runInContext(shape+code,ctx);if(shared)ctx.test=require('./lib/delivery-pixels.cjs')();
 const aspectCode=esbuild.transformSync(fs.readFileSync('src/lib/imagegen/aspect.ts','utf8').replace(/export /g,'')+'\nglobalThis.aspect={inheritedImageRatio,imageAspectInstruction};',{loader:'ts'}).code;
 vm.runInContext(aspectCode,ctx);
 (async()=>{

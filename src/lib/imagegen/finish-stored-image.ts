@@ -5,9 +5,9 @@ import { resolutionLongSide } from "../mock-data";
 import { transformImage } from "../media-postprocess";
 import type { Postprocess } from "../model-config/business-schema";
 
-/** Delivery only: no provider, credentials, current config or paid operation.
- * Match generate-image's frozen postprocess > explicit frame > legacy upscale.
- * Callers keep the immutable input checkpoint, even if processing fails. */
+/** Local pixel transform shared by normal delivery and recovery. The delivery
+ * owner runs configured postprocess through its durable stage; the optional
+ * pure post branch remains for offline original-byte comparison tools. */
 export async function finishStoredImage(bytes:Buffer, input:{final:boolean;post?:Postprocess;preset:boolean;resolution?:string;targetWidth?:number;targetHeight?:number;transparent?:boolean}) {
  if(input.final)return bytes;
  if(input.post?.enabled)return (await transformImage(bytes,input.post)).bytes;

@@ -315,3 +315,7 @@ R1A1生图、R1A2抠图/同步账务和任务读取均已切换真实调用，�
 typed quotation 移除伪Request；model identity/price共用一份snapshot；shared quality覆盖HTTP与三个planner入口；新steps保存私有preparedImage，执行不重选默认参数。原报价、老plan与原回执保持。实际PG的发布中途混价与scope覆盖问题已用A/B对照关闭，见 [R1B记录](changes/2026-10-24-image-preparation-r1b.md)。
 
 R1B结构职责已迁移，跨域SCC仍60，后续R4负责DB和配置的运行依赖剥离。接下来R2统一正常/恢复交付；最终完整候选、UI/性能验收仍未完成。
+
+## 15. R2交付与恢复（2026-10-24续）
+
+正常与恢复入口实际调用completeImageDelivery，删除generation-output以及两套逐图/作品/结算逻辑；media-postprocess阶段原ID复用，旧JSONB顺序兼容，保留paid checkpoint。交付partial与实际billing settled分开，原回执/字节/单次扣款保持。见 [R2记录](changes/2026-10-24-image-delivery-r2.md)。R3 Canvas开始前保留旧batch fixture的基线/新版共同失败债务，不声称整体候选或容量验收完成。

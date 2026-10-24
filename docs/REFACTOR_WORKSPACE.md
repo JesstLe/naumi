@@ -25,7 +25,7 @@
 - 已完成固定源码目录/静态依赖盘点及核心调用链审视；主方案见 [REFACTOR_ARCHITECTURE.md](REFACTOR_ARCHITECTURE.md)，实际证据和阶段迁移台账在 `docs/architecture/`。
 - 选择模块化单体、单一准备/执行/交付用例、按数据所有者拆分；不先拆微服务或全站重写。首个建议实施闭环为消除 imagegen 对 HTTP route 的反向调用。
 - `9fc284514aeaed740cdf55cc49b611445676b517`（包含质量回退 `0fbdd5a8`）已在用户要求开始实施后普通合入，R1基线为 `4478cdca88a6e52b5db186d30ace4ef8724263c7`；不重复开发该修复。
-- 2026-10-24已实施R1A1生图与R1A2抠图/同步账务/任务读取切片，生产业务对HTTP route的两条反向调用均已移除；49项真实PG对照保留原价与原回执，并修复并发创作记录503。见 [R1A1](changes/2026-10-24-image-generation-boundary-r1a.md)、[R1A2](changes/2026-10-24-cutout-billing-boundary-r1a2.md)。R1B核心图片准备与报价也已实施，见 [R1B记录](changes/2026-10-24-image-preparation-r1b.md)；R2—R6及最终整体验收仍未完成。
+- 2026-10-24已实施R1A1生图与R1A2抠图/同步账务/任务读取切片，生产业务对HTTP route的两条反向调用均已移除；49项真实PG对照保留原价与原回执，并修复并发创作记录503。见 [R1A1](changes/2026-10-24-image-generation-boundary-r1a.md)、[R1A2](changes/2026-10-24-cutout-billing-boundary-r1a2.md)。R1B核心图片准备与报价也已实施，见 [R1B记录](changes/2026-10-24-image-preparation-r1b.md)；R2已统一交付/恢复，见 [R2记录](changes/2026-10-24-image-delivery-r2.md)；R3—R6及最终整体验收仍未完成。
 - 未复制 `.env`、业务凭据/数据库/媒体。验收使用现有node_modules的只读依赖引用、本任务loopback PG和PNG供应商fixture；不启动产品Web，不构建或调用外部供应商。
 - 质量回退已通过 `9fc2845` 保留；其他同事新提交后续按固定SHA逐项核对整合，不自动覆盖未提交工作。
 - 47 暂缓发布约定保持；本工作区建立不触发配置发布或服务器更新。

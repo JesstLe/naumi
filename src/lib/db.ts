@@ -2582,7 +2582,8 @@ export async function addArtworksTx(
   client: PoolClient,
   emailRaw: string,
   items: Omit<ArtworkRecord,"createdAt">[],
-  batchId?: string
+  batchId?: string,
+  conflict: "revive" | "preserve" = "revive"
 ): Promise<void> {
     const email=emailRaw.toLowerCase();
     for (const a of items) {
@@ -2602,7 +2603,7 @@ export async function addArtworksTx(
             style, ratio, resolution, source_url, batch_id, parent_id, template_id, parent_ids, group_id, canvas_group_id, origin,
             image_width, image_height, processing_kind, postprocess_status, canvas_width, canvas_height, video_url, creation_provenance)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27::jsonb)
-         ON CONFLICT (id) DO UPDATE SET deleted_at = NULL WHERE app_artworks.email = EXCLUDED.email`,
+         ON CONFLICT (id) ${conflict==="preserve"?"DO NOTHING":"DO UPDATE SET deleted_at = NULL WHERE app_artworks.email = EXCLUDED.email"}`,
         [
           a.id,
           email,

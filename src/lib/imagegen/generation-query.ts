@@ -5,6 +5,7 @@ import {dbEnabled,getUser} from "../db";
 import {storageEnabled} from "../storage";
 import {getOpenAISettings} from "../settings";
 import {imageJobPollState} from "../image-job-failure";
+import {readDeliveryBilling} from "./delivery-billing";
 import {JOBS} from "./generation-jobs";
 export type GenerationReadResult={status:number;body:Record<string,any>;headers?:Record<string,string>};
 function readResult(body:Record<string,any>,options?:{status?:number;headers?:Record<string,string>}):GenerationReadResult{return {status:options?.status??200,body,...(options?.headers?{headers:options.headers}:{})};}
@@ -19,7 +20,7 @@ export async function readGeneration(query:{active:boolean;jobId:string|null;act
   if(jobId?.startsWith("imagegen-")&&/^[a-f0-9-]{36}$/i.test(jobId.slice(9))){
     const owner=await query.actor();if(!owner)return readResult({error:"请先登录"},{status:401});
     const {getImagegenResult}=await import("./dispatch"),result=await getImagegenResult(jobId.slice(9),owner);if(!result)return readResult({error:"任务不存在或无权访问"},{status:404});
-    return readResult({status:result.status==="succeeded"?"done":["failed","cancelled","needs_attention"].includes(result.status)?"error":"pending",operationStatus:result.status,stage:result.stage,images:result.artifacts.map(a=>({id:a.artworkId,url:a.url,width:a.width,height:a.height})),error:result.error?.message,warnings:result.warnings,recoveryAvailable:result.recoveryAvailable,billingStatus:result.billingStatus,creditsUsed:result.chargedCredits,user:await getUser(owner)},{headers:{"cache-control":"private, no-store"}});
+    return readResult({status:["succeeded","partial"].includes(result.status)?"done":["failed","cancelled","needs_attention"].includes(result.status)?"error":"pending",operationStatus:result.status,stage:result.stage,images:result.artifacts.map(a=>({id:a.artworkId,url:a.url,width:a.width,height:a.height})),error:result.error?.message,warnings:result.warnings,recoveryAvailable:result.recoveryAvailable,billingStatus:result.billingStatus,creditsUsed:result.chargedCredits,user:await getUser(owner)},{headers:{"cache-control":"private, no-store"}});
   }
   if (jobId) {
     if (dbEnabled && (await query.actor())?.toLowerCase() !== await JOBS.owner(jobId)) {
@@ -34,14 +35,18 @@ export async function readGeneration(query:{active:boolean;jobId:string|null;act
     }
     if(job.status==="pending"&&dbEnabled){const owner=await JOBS.owner(jobId);if(owner&&await storedImageReview(jobId,owner))return readResult({status:"error",operationStatus:"needs_attention",reviewRequired:true,error:IMAGE_REVIEW_MESSAGE},{headers:{"cache-control":"private, no-store"}});}
     if (job.status === "done") {
+      const owner=await JOBS.owner(jobId);
+      const billing=owner?await readDeliveryBilling(owner,[jobId]).catch(()=>null):null;
       const notice = imageOutputNotice(job.imagegenOutputError, job.imagegenOutputWarning, !!job.images?.length);
-      if(notice.error)return readResult({status:"error",error:notice.error,images:(job.images||[]).map(({execution,...image})=>image),creditsUsed:job.creditsUsed,user:job.user});
+      if(notice.error)return readResult({status:"error",error:notice.error,images:(job.images||[]).map(({execution,...image})=>image),creditsUsed:billing?.chargedCredits??job.creditsUsed,billingStatus:billing?.confirmed?"confirmed":"unavailable",user:job.user});
       return readResult({
         status: "done",
         ok: true,
         images: (job.images || []).map(({ execution, ...image }) => image),
         user: job.user,
-        creditsUsed: job.creditsUsed,
+        creditsUsed: billing?.chargedCredits??job.creditsUsed,
+        billingStatus:billing?.confirmed?"confirmed":"unavailable",
+        operationStatus:job.deliveryComplete===false?"partial":"succeeded",
         mock: job.mock,
         persisted: job.persisted,
         quality: job.quality,

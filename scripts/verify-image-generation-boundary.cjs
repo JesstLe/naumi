@@ -55,11 +55,13 @@ async function main(){
  if(modified){
   check(/new (Request|FormData)|signUserSession|app\/api/.test(coreSource),false,'generation core has no HTTP bridge');
   const groups={'generation-provider.ts':['sizeFor','mockImages','openaiImages','newApiFlowImages','normalizeForEdit'],'generation-output.ts':['enforceOutputShape','attachImageDimensions','upscaleImages','persistToStorage'],'generation-runtime.ts':['runJob','kickGeneration'],'generation-prompt.ts':['buildPrompt','ratioPrompt']};
+  const shared=fs.existsSync(path.join(root,'src/lib/imagegen/complete-image-delivery.ts'));
+  if(shared){delete groups['generation-output.ts'];delete groups['generation-runtime.ts'];check(read(root,'src/lib/imagegen/generation-runtime.ts').includes('await completeImageDelivery('),true,'runtime invokes shared delivery');check(read(root,'src/lib/imagegen/stored-delivery.ts').includes('await completeImageDelivery('),true,'recovery invokes shared delivery');}
   for(const [file,names]of Object.entries(groups))for(const name of names)check(normalized(node(read(root,'src/lib/imagegen/'+file),name)),normalized(node(legacyRoute,name)),name+' moved without semantic edits');
   check(coreSource.includes('submitGenerationOperation'),true,'core invokes typed application');
   check(read(root,'src/app/api/generate-image/route.ts').includes('submitGeneration(input,'),true,'HTTP invokes same submission');
   check(read(root,'src/lib/imagegen/dispatch.ts').includes('body=response.body'),true,'parent consumes typed result');
  }
- console.log(`IMAGE_GENERATION_BOUNDARY=${modified?'MODIFIED_PASS':'BASELINE_PASS'} checks=${checks} scenarios=6 legacy_fingerprint=equal parser_parameters=${modified?'equal':'original'} copied_runtime=${modified?'13-functions-identical':'original'} HTTP=0 PG=0 SUPPLIER=0`);
+ console.log(`IMAGE_GENERATION_BOUNDARY=${modified?'MODIFIED_PASS':'BASELINE_PASS'} checks=${checks} scenarios=6 legacy_fingerprint=equal parser_parameters=${modified?'equal':'original'} copied_runtime=${modified?(fs.existsSync(path.join(root,'src/lib/imagegen/complete-image-delivery.ts'))?'provider-prompt-identical-delivery-shared':'13-functions-identical'):'original'} HTTP=0 PG=0 SUPPLIER=0`);
 }
 main().catch(e=>{console.error(e);process.exitCode=1});

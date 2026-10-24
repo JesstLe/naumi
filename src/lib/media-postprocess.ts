@@ -9,6 +9,7 @@ import { assertMutableStagingTask } from "./staging-history";
 import type { Postprocess } from "./model-config/business-schema";
 import {processImagegenPixels,inspectImagegenPixels} from "./imagegen/postprocess";
 import type {ImagegenRequest} from "./imagegen/types";
+import {stableJson} from "./billing/fingerprint";
 export type ImagegenPostprocessPolicy={enabled:true;kind:"imagegen";output:ImagegenRequest["output"];chroma?:ImagegenRequest["chroma"];failure:"hold"|"keep-base"};
 type MediaPostprocessPolicy=Postprocess|ImagegenPostprocessPolicy;
 export class PostprocessPending extends Error { constructor(public operationId: string) { super("底图已保存，后处理未完成；恢复只重做此阶段"); } }
@@ -43,13 +44,32 @@ export async function runPostprocess(input: { id: string; parentId: string; emai
   await assertMutableStagingTask(pool, "app_billing_operations", input.parentId);
   await assertMutableStagingTask(pool, "app_image_jobs", input.parentId);
   await assertMutableStagingTask(pool, "app_canvas_image_tasks", input.parentId);
-  const digest=createHash("sha256").update(input.bytes).update(JSON.stringify(input.policy)).digest("hex"), key=createHash("sha256").update(input.id).digest("hex");
+  const digest=createHash("sha256").update(input.bytes).update(stableJson(input.policy)).digest("hex"), key=createHash("sha256").update(input.id).digest("hex");
+  // Legacy byte reads may use the query pool (private object-storage metadata).
+  // Do that before taking a transaction connection; five recovery callers must
+  // not hold all query connections while waiting for their own nested reads.
+  const prior=(await pool.query("SELECT * FROM app_media_postprocess WHERE operation_id=$1",[input.id])).rows[0];
+  let legacyProof:{digest:string;baseUrl:string}|undefined;
+  if(prior&&prior.digest!==digest){
+    if(prior.email!==input.email||Number(prior.model_version)!==input.modelVersion||prior.parent_operation_id!==input.parentId||stableJson(prior.policy)!==stableJson(input.policy))throw new Error("后处理任务与冻结配置不一致");
+    const original=await readManagedObject(prior.base_url,64*1024*1024);
+    if(!original.bytes.equals(input.bytes))throw new Error("后处理任务与冻结配置不一致");
+    legacyProof={digest:prior.digest,baseUrl:prior.base_url};
+  }
   const tx=await pool.connect();
   try {
     await tx.query("BEGIN");
     await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`media-postprocess:${input.id}`]);
     const exists=(await tx.query("SELECT * FROM app_media_postprocess WHERE operation_id=$1",[input.id])).rows[0];
-    if(exists&&(exists.digest!==digest||exists.email!==input.email||Number(exists.model_version)!==input.modelVersion||exists.parent_operation_id!==input.parentId))throw new Error("后处理任务与冻结配置不一致");
+    if(exists){
+      if(exists.email!==input.email||Number(exists.model_version)!==input.modelVersion||exists.parent_operation_id!==input.parentId)throw new Error("后处理任务与冻结配置不一致");
+      if(exists.digest!==digest){
+        // Pre-R2 hashes depended on JS property order, which JSONB discards.
+        // Prove the saved policy AND original bytes instead of trusting a hash
+        // mismatch or rewriting historical stage evidence.
+        if(!legacyProof||legacyProof.digest!==exists.digest||legacyProof.baseUrl!==exists.base_url||stableJson(exists.policy)!==stableJson(input.policy))throw new Error("后处理任务与冻结配置不一致");
+      }
+    }
     if(!exists){
       if(input.policy.kind==="imagegen")await inspectImagegenPixels(input.bytes);
       const meta=await sharp(input.bytes).metadata(),mime=meta.format==="jpeg"?"image/jpeg":meta.format==="webp"?"image/webp":"image/png";

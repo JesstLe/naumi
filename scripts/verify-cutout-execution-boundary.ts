@@ -124,9 +124,12 @@ async function main(){
 
     const {JOBS}=await import("../src/lib/imagegen/generation-runtime"),{GET}=await import("../src/app/api/generate-image/route");
     const poll=async(job:string,email=owner)=>GET(new Request("http://internal/api/generate-image?job="+job,{headers:{cookie:`${USER_COOKIE}=${signUserSession(email,Date.now())}`}}));
-    const queryId=`query-${randomUUID()}`;await JOBS.create(queryId,owner,{status:"pending",createdAt:Date.now()}, {},0,false);
+    const queryId=`query-${randomUUID()}`;await JOBS.create(queryId,owner,{status:"pending",createdAt:Date.now()}, {},3,true);
     check((await poll(queryId,poor)).status,403,"query enforces owner");check((await (await poll(queryId)).json()).status,"pending","pending query");
     await JOBS.patch(queryId,{status:"done",images:[{id:"query-art",url:"/media/query.png",gradient:"",prompt:"",ratio:"1:1",createdAt:"fixture",execution:{quality:"medium",upstream:"private-wire",reason:"fixture",platformFunded:false}}],creditsUsed:3});
+    // Receipt charges now come from the real settlement/ledger, not an invented
+    // snapshot amount on an unbilled job. Keep the compatibility expectation 3.
+    await JOBS.settleResults(queryId,3,"fixture query settled",{state:"succeeded",items:[{id:"query-art",state:"succeeded",executedQuality:"medium"}]});
     const done=await (await poll(queryId)).json();check([done.status,done.creditsUsed],["done",3],"done query retains result");check("execution" in done.images[0],false,"query strips private execution");
     await JOBS.patch(queryId,{status:"needs_attention",error:"saved pending reason"});const review=await (await poll(queryId)).json();check([review.status,review.reviewRequired,review.error],["error",true,"saved pending reason"],"review query unchanged");
     check((await GET(new Request("http://internal/api/generate-image?active"))).status,401,"active requires login");

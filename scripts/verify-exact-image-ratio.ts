@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync,existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { resolve, join } from "node:path";
 import ts from "typescript";
@@ -23,11 +23,12 @@ async function main() {
         n.name?.text || "",
       ),
   );
-  assert.equal(declarations.length, 3);
+  const shared=existsSync(join(root,"src/lib/imagegen/complete-image-delivery.ts"));
+  assert.equal(declarations.length, shared?1:3);
   const mod = { exports: {} as any };
   const js = ts.transpileModule(
     declarations.map((n) => n.getText(ast)).join("\n") +
-      "\nmodule.exports={sizeFor,enforceOutputShape,attachImageDimensions}",
+      (shared?"\nmodule.exports={sizeFor}":"\nmodule.exports={sizeFor,enforceOutputShape,attachImageDimensions}"),
     {
       compilerOptions: {
         module: ts.ModuleKind.CommonJS,
@@ -48,6 +49,7 @@ async function main() {
     (url: string) => ({ bytes: Buffer.from(url.split(",")[1], "base64") }),
     exactImageRequestSize,
   );
+  if(shared)Object.assign(mod.exports,require("./lib/delivery-pixels.cjs")(root));
   const expected = mode === "MODIFIED" ? "1152x1536" : "1024x1536";
   assert.equal(mod.exports.sizeFor("3:4", "gpt-image-2", true), expected);
   let checks = 1;
