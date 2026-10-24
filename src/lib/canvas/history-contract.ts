@@ -1,0 +1,37 @@
+import { z } from "zod";
+import { nodeSettingsSchema } from "./node-settings";
+import { videoNodeWriteSchema } from "./video-node-schema";
+
+const id = z.string().min(1).max(200);
+const coordinate = z.number().finite().min(-1e7).max(1e7);
+const textFields = z.object({
+  title: z.string().max(80), prompt: z.string().max(4000).optional(), content: z.string().max(20000),
+  sourceIds: z.array(id).max(200), targetIds: z.array(id).max(200), productIds: z.array(id).max(200),
+  width: z.number().min(8).max(4096), height: z.number().min(8).max(100000),
+});
+const textNode = textFields.extend({ id, prompt: z.string().max(4000), projectKey: id, canvasX: coordinate, canvasY: coordinate,
+  status: z.enum(["idle", "generating", "completed", "failed"]), createdAt: z.string().datetime(),
+});
+export const videoHistoryFields=videoNodeWriteSchema.omit({id:true,projectKey:true,expectedRevision:true,operationId:true,deleted:true});
+export const historyRequest = z.object({
+  operationId: z.string().uuid(),
+  operations: z.array(z.discriminatedUnion("type", [
+    z.object({ type: z.literal("visibility"), id, visible: z.boolean() }),
+    z.object({ type: z.literal("text-restore"), node: textNode }),
+    z.object({ type: z.literal("text-delete"), id }),
+    z.object({ type: z.literal("video-visibility"), id, visible:z.boolean() }),
+    z.object({ type: z.literal("video-patch"), id, expectedRevision:z.number().int().nonnegative(), fields:videoHistoryFields }),
+    z.object({ type: z.literal("video-result"),id,expectedRevision:z.number().int().nonnegative(),artworkId:id.nullable(),expectedArtworkId:id.nullable().optional() }),
+    z.object({ type: z.literal("position"), id, text: z.boolean(), x: coordinate, y: coordinate }),
+    z.object({ type: z.literal("group"), id, value: id.nullable() }),
+    z.object({ type: z.literal("parent"), id, parentId: id, add: z.boolean() }),
+    z.object({ type: z.literal("text-patch"), id, fields: textFields }),
+    z.object({ type: z.literal("rename"), id, title: z.string().max(80) }),
+    z.object({ type: z.literal("size"), id, x: coordinate, y: coordinate, width: z.number().min(80).max(4096), height: z.number().min(80).max(4096) }),
+    z.object({ type: z.literal("mark"), id, marked: z.boolean() }),
+    z.object({ type: z.literal("node-settings"), id, text: z.boolean(), video:z.boolean().optional(), settings: nodeSettingsSchema }),
+    z.object({ type: z.literal("workflow-asset"), id, assetOperationId: z.string().uuid(), filled: z.boolean() }),
+  ])).min(1).max(400),
+});
+
+export type CanvasHistoryOperation = z.infer<typeof historyRequest>["operations"][number];

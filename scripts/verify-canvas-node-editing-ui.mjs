@@ -8,7 +8,10 @@ if(process.argv.includes('--baseline')){
   assert.ok(!client.includes('NodePropertiesPanel') && !client.includes('ImageCropDialog'));
   console.log('NODE_EDIT_BASELINE=PASS TEXT_STYLE=FIXED_12PX NODE_LOCK_LAYER=ABSENT LOCAL_CROP_REPLACE=ABSENT');process.exit(0);
 }
-for(const token of ['nodeSettingsRef','nodeSettingsReady','kind: "node-settings"','type:"node-settings"','settings.order','!settings.locked','nodeTextStyle','NodePropertiesPanel','ImageCropDialog','nodeManagementItems','isNodeLocked','elevateNodesOnSelect={false}','moves=moves.filter','groupMembers.filter','propertiesOpen ||','/api/canvas/local-image-edit','onSave={settings=>commitNodeSettings'])assert.ok(client.includes(token)||token==='propertiesOpen ||' && client.includes('(propertiesOpen &&'),token);
+for(const token of ['nodeSettingsRef','nodeSettingsReady','settings.order','!settings.locked','nodeTextStyle','NodePropertiesPanel','ImageCropDialog','nodeManagementItems','isNodeLocked','elevateNodesOnSelect={false}','moves=moves.filter','groupMembers.filter','propertiesOpen ||','/api/canvas/local-image-edit','onSave={settings=>commitNodeSettings'])assert.ok(client.includes(token)||token==='propertiesOpen ||' && client.includes('(propertiesOpen &&'),token);
+const historyModel=read('src/lib/canvas/history-model.ts');
+for(const token of ['kind: "node-settings"','type:"node-settings"'])assert.ok(historyModel.includes(token),token+' is owned by history model');
+assert.ok(client.includes('await applyHistory(act,false); pushUndo(act)'), 'properties caller uses shared atomic history owner');
 assert.ok(client.includes('fixed: !mobileIds.has(node.id) || isNodeLocked(node.id)'), 'tidy layout pins locked and temporary nodes');
 const panel=read('src/components/canvas/node-properties-panel.tsx'),crop=read('src/components/canvas/image-crop-dialog.tsx');
 for(const token of ['应用样式','自动','字号','行距','原图像素','画布显示尺寸','aria-pressed','min-[1024px]:relative','node-style-preview','role={overlay ? "dialog"','settings.locked','Escape','Tab'])assert.ok(panel.includes(token),token);

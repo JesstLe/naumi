@@ -137,7 +137,8 @@
 - [x] R1B核心图片准备与报价：typed quotation、单model snapshot、共享quality、保存并消费preparedImage；见 [R1B记录](../changes/2026-10-24-image-preparation-r1b.md)。
 - [x] R2正常生成与原结果恢复共用本地交付；真实结算/partial回执、原字节与阶段兼容；见 [R2记录](../changes/2026-10-24-image-delivery-r2.md)。
 - [x] R3A已有图片/空白与文字生图共用 typed request/scope/task controller；两份轮询/定位/receipt逻辑删除，见 [R3A记录](../changes/2026-10-24-canvas-image-task-r3a.md)。
-- [ ] R3B document/history/persistence、详情与编辑任务分域；R3C renderer/interaction。
+- [x] R3B1 原子文档编辑/历史持久化：22 类动作单编译器、4 个提交点收敛、原请求重试、分域历史及提交/同步分离，见 [R3B1记录](../changes/2026-10-24-canvas-history-r3b1.md)。
+- [ ] R3B2 文本草稿保存/恢复队列；R3B 后续详情与编辑任务、作品加载合并；R3C renderer/interaction。
 - [ ] R4—R6业务实现、集中验证、旧路径删除与最终整合。
 - [ ] 迁移后的实际性能、容量与生产功能验收。
 
@@ -150,3 +151,5 @@ R1B更新：真实PG baseline29/modified45检查；一笔新报价 model read 2�
 R2更新：shared completeImageDelivery 已替代两套逐图处理/存储/作品/结算，generation-output.ts已删除；full-tree baseline64/modified73对照关闭错误完成/结算口径，原raw checkpoint保留。旧verify-imagegen-receipts的batch planning在基线/新版均exit1，列入最终候选债务；不把主verifier通过扩大为全suite通过。R2是同步后的第1个功能模块。下一模块R3。
 
 R3A更新：Canvas主组件12422→12130行；新request/scope/controller为70/20/94行，46场景176检查及真实Next控件5项通过。原表单字段/文件字节与顺序46组一致；原10条hooks warning仍保留。第2次功能模块；下一R3B，非整个R3完成。
+
+R3B1更新：Canvas 12130→11936行，历史协议提交4→1，22类动作/44个正反方向wire与文档对照一致；baseline64场景134检查、modified67场景184检查。真实PG20检查、真实Next控件7项通过；后置视频刷新失败保留撤销、auth/flush ABA不提交、原operation重试不先受当前节点拦截。第3个功能模块收尾已fetch/普通merge origin/main `905c8c635e41ff3f4443d43db9776d1db3aab469`，返回Already up to date，exit0；计数归零，下一轮从1开始。R3B2/R3C未完成。

@@ -23,6 +23,10 @@ import { knownCanvasNodeMeasurement } from "@/lib/canvas/node-measurement";
 import {canvasGenerationReferences,explicitCanvasParent,synchronizeCanvasArtworks,imageAspectDisplaySize} from "@/lib/canvas/input-references";
 import { canvasFocusViewport } from "@/lib/canvas/upload-visibility";
 import { stableArtworkPositions, canvasNodePosition, readPlacementCache, type CanvasPoint } from "@/lib/canvas/stable-placement";
+import { useCanvasHistory } from "./use-canvas-history";
+import { textPatchOf, type CanvasTextNode, type TextPatchFields, type VideoPatchFields, type CanvasHistoryAction as UndoAct } from "@/lib/canvas/history-model";
+import type { HistoryCommit } from "@/lib/canvas/history-controller";
+import { CanvasHistoryRequestError } from "@/lib/canvas/history-scope";
 import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
 import { smartLayout } from "@/lib/canvas/smart-layout";
 import { CanvasComposerShell, CanvasComposerFooter, CanvasComposerOptions } from "./composer-shell";
@@ -445,23 +449,7 @@ const CANVAS_WORKFLOWS: Array<{
   { key: "copy", icon: Type, titleKey: "canvas.workflowCopy", descriptionKey: "canvas.workflowCopyDesc" },
 ];
 
-type CanvasTextNode = {
-  id: string;
-  projectKey: string;
-  title: string;
-  prompt: string;
-  content: string;
-  status: "idle" | "generating" | "completed" | "failed";
-  canvasX: number;
-  canvasY: number;
-  createdAt: string;
-  updatedAt: string;
-  width: number;
-  height: number;
-  sourceIds: string[];
-  targetIds: string[];
-  productIds?: string[];
-};
+
 
 
 type OcrBox = { x: number; y: number; width: number; height: number };
@@ -2023,7 +2011,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 持久视频节点与公开能力目录；规范请求经独立节点设置面板提交。
   const [videoDockAdvancedId,setVideoDockAdvancedId]=useState<string|null>(null);
   const [videoHistoryId,setVideoHistoryId]=useState<string|null>(null);
-  const videoResultAttempts=useRef(new Map<string,{operationId:string;operations:Record<string,unknown>[];from:string|null;to:string|null}>());
+  const videoResultAttempts=useRef(new Map<string,Extract<UndoAct,{kind:"video-result"}>>());
   const [videoMedia,setVideoMedia]=useState<{id:string;projectKey:string;initial:VideoPlayerAction}|null>(null);
   const videoNodesStore=useVideoNodes({email:targetEmail||user?.email,readOnly,request:privateFetchRaw});
   const videoAssetStore=useVideoAssets({email:targetEmail||user?.email,readOnly,request:privateFetchRaw});
@@ -2270,95 +2258,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
     setZoomInput(zoomPercentInput(viewport.zoom || 1));
   }
-  // 撤销/重做(实用版:移动/删除/添加/连线/文字编辑/重命名/缩放/标记)
-  // 文字节点字段快照:撤销文案编辑、引用增删、产品绑定、尺寸、标题的最小数据
-  type TextPatchFields = Pick<
-    CanvasTextNode,
-    "title" | "content" | "sourceIds" | "targetIds" | "productIds" | "width" | "height"
-  >;
-  const textPatchOf = (node: CanvasTextNode): TextPatchFields => ({
-    title: node.title,
-    content: node.content,
-    sourceIds: [...(node.sourceIds ?? [])],
-    targetIds: [...(node.targetIds ?? [])],
-    productIds: [...(node.productIds ?? [])],
-    width: node.width,
-    height: node.height,
+  const unsavedTextRef=useRef(new Map<string,CanvasTextNode>());
+  const textSaveQueuesRef=useRef(new Map<string,Promise<unknown>>());
+  const [unsavedTextCount,setUnsavedTextCount]=useState(0);
+  const canvasHistory = useCanvasHistory({
+    account: canvasAccountRef.current, project: activeKey, readOnly,
+    works: setWorks, texts: setTextNodes, settings: applyHistorySettings, selectedText: setSelectedTextId,
+    flush: async () => { await Promise.all(Array.from(textSaveQueuesRef.current.values())); await videoNodesStore.flush(); },
+    video: videoNodesStore.getNode, refresh: videoNodesStore.refresh,
+    pending: applyPendingLinkHistory, applied: onHistoryApplied, warning: flashTip,
+    drafts: unsavedTextRef.current, draftsChanged: () => setUnsavedTextCount(unsavedTextRef.current.size),
   });
-  type VideoPatchFields=Partial<Pick<CanvasVideoNode,"title"|"config"|"inputs"|"x"|"y"|"width"|"height">>;
-  type UndoAct =
-    | {kind:"video-patch";id:string;from:VideoPatchFields;to:VideoPatchFields}
-    | {kind:"video-result";id:string;from:string|null;to:string|null}
-    | {kind:"video-add";records:CanvasVideoNode[]}
-
-    | { kind: "pending-link"; id: string; from: Pick<Pend, "inputs" | "parentId" | "linked">; to: Pick<Pend, "inputs" | "parentId" | "linked"> }
-    | { kind: "workflow-add"; artworks: Artwork[]; textNodes: CanvasTextNode[] }
-    | {kind:"mixed-add";artworks:Artwork[];textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[];projectKey:string}
-    | { kind: "workflow-fill"; id: string; assetOperationId: string; from: Artwork; to: Artwork }
-    | { kind: "node-settings"; id: string; text: boolean; video?:boolean; from: CanvasNodeSettings; to: CanvasNodeSettings }
-    | { kind: "move"; id: string; from: { x: number; y: number }; to: { x: number; y: number } }
-    | {
-        kind: "move-many";
-        moves: Array<{
-          id: string;
-          from: { x: number; y: number };
-          to: { x: number; y: number };
-        }>;
-      }
-    | {
-        kind: "canvas-group";
-        changes: Array<{
-          id: string;
-          from: string | null;
-          to: string | null;
-        }>;
-      }
-    | { kind: "delete"; records: Artwork[] }
-    | {
-        kind: "mixed-delete";
-        artworks: Artwork[];
-        textNodes: CanvasTextNode[];
-        videoNodes?:CanvasVideoNode[];
-      }
-    | { kind: "add"; records: Artwork[] }
-    | { kind: "text-delete"; records: CanvasTextNode[] }
-    | { kind: "text-add"; records: CanvasTextNode[] }
-    | { kind: "text-move"; id: string; from: { x: number; y: number }; to: { x: number; y: number } }
-    // 血缘连线增删(undo/redo 应用反向)
-    | { kind: "parent"; targetId: string; parentId: string; added: boolean }
-    // 文字节点字段级快照(内容/引用/产品绑定/尺寸):undo 应用 from,redo 应用 to
-    | { kind: "text-patch"; id: string; from: TextPatchFields; to: TextPatchFields }
-    // 节点重命名
-    | { kind: "rename"; id: string; from: string; to: string }
-    // 图片节点画布尺寸/位置(NodeResizer 手动拖拽)
-    | {
-        kind: "art-size";
-        id: string;
-        from: { x: number; y: number; width: number; height: number };
-        to: { x: number; y: number; width: number; height: number };
-      }
-    // 标记/取消标记(逐 id 记录原值,批量操作共用)
-    | { kind: "mark"; changes: Array<{ id: string; from: boolean; to: boolean }> };
-  const historyAccount = canvasAccountRef.current;
-  const historyScope = JSON.stringify([historyAccount, activeKey || "workspace"]);
-  const historyScopeRef = useRef(historyScope); historyScopeRef.current = historyScope;
-  const historyScopesRef = useRef(new WeakMap<UndoAct, string>());
-  const [historyUndo, setUndoStack] = useState<UndoAct[]>([]);
-  const [historyRedo, setRedoStack] = useState<UndoAct[]>([]);
-  const undoStack = historyUndo.filter(action => historyScopesRef.current.get(action) === historyScope);
-  const redoStack = historyRedo.filter(action => historyScopesRef.current.get(action) === historyScope);
-  const pushUndo = useCallback((action: UndoAct) => {
-    // The callback keeps its originating scope across async generation/project switches.
-    // A first-created node belongs to the newly created project, not a global history.
-    const newProject = action.kind === "mixed-add" ? action.projectKey
-      : action.kind === "video-add" || action.kind === "text-add" ? action.records[0]?.projectKey
-      : action.kind === "workflow-add" ? action.textNodes[0]?.projectKey || (action.artworks[0] ? `tree:${action.artworks[0].groupId || action.artworks[0].id}` : null)
-      : action.kind === "add" && action.records[0] ? `tree:${action.records[0].groupId || action.records[0].parentId || action.records[0].id}` : null;
-    const scope = activeKey ? historyScope : JSON.stringify([historyAccount, newProject || "workspace"]);
-    historyScopesRef.current.set(action, scope);
-    setUndoStack(stack => [...stack.filter(item => historyScopesRef.current.get(item) !== scope).slice(-450), ...stack.filter(item => historyScopesRef.current.get(item) === scope).slice(-49), action]);
-    setRedoStack(stack => stack.filter(item => historyScopesRef.current.get(item) !== scope));
-  }, [historyScope, activeKey, historyAccount]);
+  const {undoStack,redoStack,pushUndo,historyBusyRef,historySaving,setHistorySaving,historyCurrent} = canvasHistory;
   const [workflowManifests, setWorkflowManifests] = useState<ImportedManifest[]>([]);
   const workflowCallbacksRef = useRef({ replace: requestReplace, select: selectWorkflowGroup });
   workflowCallbacksRef.current = { replace: requestReplace, select: selectWorkflowGroup };
@@ -4909,13 +4820,23 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
 
   async function selectVideoResult(id:string,artworkId:string|null,expectedRevision:number){
-    if(!user||readOnly||isNodeLocked(id))throw new Error("无法替换视频结果");const account=canvasAccountRef.current,project=activeProjectRef.current?.key,key=JSON.stringify([account,id,artworkId]);await videoNodesStore.flush();if(account!==canvasAccountRef.current)throw new Error("账号已切换");
-    const current=videoNodesStore.getNode(id);if(!current||current.deletedAt||current.projectKey!==project)throw new Error("视频节点不存在或项目已切换");let attempt=videoResultAttempts.current.get(key);
-    if(!attempt){if(current.revision!==expectedRevision)throw new Error("视频节点已更新，请重新选择结果");attempt={operationId:browserRandomUUID(),from:current.displayResultId||null,to:artworkId,operations:[{type:"video-result",id,expectedRevision,expectedArtworkId:current.displayResultId||null,artworkId}]};videoResultAttempts.current.set(key,attempt);}
-    const response=await privateFetchRaw("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operationId:attempt.operationId,operations:attempt.operations})});const data=await readJsonSafe(response);
-    if(!response.ok){if(response.status<500)videoResultAttempts.current.delete(key);await videoNodesStore.refresh();throw new Error(data.error||"结果选择尚未核实，请重试");}videoResultAttempts.current.delete(key);
-    if(account!==canvasAccountRef.current||activeProjectRef.current?.key!==project)return;await videoNodesStore.refresh();if(account!==canvasAccountRef.current||activeProjectRef.current?.key!==project)return;
-    if(artworkId)await mergeWorks([artworkId]);if(account!==canvasAccountRef.current||activeProjectRef.current?.key!==project)return;pushUndo({kind:"video-result",id,from:attempt.from,to:attempt.to});
+    if(!user||readOnly||isNodeLocked(id))throw new Error("无法替换视频结果");
+    const project=activeProjectRef.current?.key,key=JSON.stringify([canvasAccountRef.current,currentWorkspace(),project,id,artworkId]);
+    await videoNodesStore.flush();if(!historyCurrent())throw new Error("账号或项目已切换");
+    let act=videoResultAttempts.current.get(key);
+    if(!act){
+      const current=videoNodesStore.getNode(id);
+      if(!current||current.deletedAt||current.projectKey!==project)throw new Error("视频节点不存在或项目已切换");
+      if(current.revision!==expectedRevision)throw new Error("视频节点已更新，请重新选择结果");
+      act={kind:"video-result",id,from:current.displayResultId||null,to:artworkId};videoResultAttempts.current.set(key,act);
+    }
+    try {
+      await applyHistory(act,false,expectedRevision); videoResultAttempts.current.delete(key); pushUndo(act);
+      if(artworkId&&historyCurrent())await mergeWorks([artworkId],historyCurrent);
+    } catch(error) {
+      if(error instanceof CanvasHistoryRequestError&&error.status<500)videoResultAttempts.current.delete(key);
+      throw error;
+    }
   }
 
   async function onExpand(ratio: string) {
@@ -5801,98 +5722,23 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
   }
 
-  // A history step is persisted atomically before any local state or stack changes.
-  const historyBusyRef = useRef(false);
-  const [historySaving,setHistorySaving] = useState(false);
-  const historyAttemptsRef = useRef(new WeakMap<UndoAct, {operationId:string;operations:Array<Record<string,unknown>>}>());
-  async function applyHistory(act: UndoAct, undo: boolean) {
-    const account=canvasAccountRef.current;
-    const assertCurrentHistory = () => { if (historyScope !== historyScopeRef.current) throw new Error("项目已切换，请在当前项目重新操作"); };
-    assertCurrentHistory();
-    if (act.kind === "pending-link") {
-      const pending = pendNodesRef.current.find(node => node.id === act.id);
-      if (!pending || pending.generating || pending.uploading) throw new Error(L("节点已开始生成或已移除", "Node is generating or no longer exists"));
-      setPendNodes(current => current.map(node => node.id === act.id ? { ...node, ...act[undo ? "from" : "to"] } : node));
-      return;
-    }
-    await Promise.all(Array.from(textSaveQueuesRef.current.values()));
-    await videoNodesStore.flush();
-    const side = undo ? "from" : "to";
-    let operations: Array<Record<string, unknown>> = [];
-    const videoPatch=(id:string,fields:VideoPatchFields)=>{const current=videoNodesStore.getNode(id);if(!current)throw new Error("视频节点不存在，请刷新画布");operations.push({type:"video-patch",id,expectedRevision:current.revision,fields});};
-    const position=(id:string,point:{x:number;y:number},text=id.startsWith("text-"))=>{if(videoNodesStore.getNode(id))videoPatch(id,point);else operations.push({type:"position",id,text,...point});};
-    const visibility = (records: Artwork[], visible: boolean) => records.forEach(record => operations.push({type:"visibility",id:record.id,visible}));
-    const texts = (records: CanvasTextNode[], visible: boolean) => records.forEach(node => operations.push(visible ? {type:"text-restore",node} : {type:"text-delete",id:node.id}));
-    const videos=(records:CanvasVideoNode[],visible:boolean)=>records.forEach(node=>operations.push({type:"video-visibility",id:node.id,visible}));
-    if(act.kind==="video-patch")videoPatch(act.id,act[side]);
-    else if(act.kind==="video-result"){const current=videoNodesStore.getNode(act.id);if(!current)throw new Error("视频节点不存在");operations.push({type:"video-result",id:act.id,expectedRevision:current.revision,expectedArtworkId:act[undo?"to":"from"],artworkId:act[side]});}
-    else if(act.kind==="video-add")videos(act.records,!undo);
-    else if (act.kind === "move" || act.kind === "text-move") position(act.id,act[side],act.kind === "text-move");
-    else if (act.kind === "move-many") act.moves.forEach(move => position(move.id,move[side]));
-    else if (act.kind === "canvas-group") act.changes.forEach(change => operations.push({type:"group",id:change.id,value:change[side]}));
-    else if (act.kind === "mixed-delete" || act.kind === "workflow-add" || act.kind === "mixed-add") { const visible = act.kind === "mixed-delete" ? undo : !undo; visibility(act.artworks,visible); texts(act.textNodes,visible); if(act.kind==="mixed-delete"||act.kind==="mixed-add")videos(act.videoNodes||[],visible); }
-    else if (act.kind === "delete" || act.kind === "add") visibility(act.records,act.kind === "delete" ? undo : !undo);
-    else if (act.kind === "text-delete" || act.kind === "text-add") texts(act.records,act.kind === "text-delete" ? undo : !undo);
-    else if (act.kind === "parent") operations.push({type:"parent",id:act.targetId,parentId:act.parentId,add:undo ? !act.added : act.added});
-    else if (act.kind === "text-patch") operations.push({type:"text-patch",id:act.id,fields:act[side]});
-    else if (act.kind === "rename") operations.push({type:"rename",id:act.id,title:act[side]});
-    else if (act.kind === "art-size") operations.push({type:"size",id:act.id,...act[side]});
-    else if (act.kind === "mark") act.changes.forEach(change => operations.push({type:"mark",id:change.id,marked:change[side]}));
-    else if (act.kind === "node-settings") operations.push({type:"node-settings",id:act.id,text:act.text,video:act.video,settings:act[side]});
-    else if (act.kind === "workflow-fill") operations.push({type:"workflow-asset",id:act.id,assetOperationId:act.assetOperationId,filled:!undo});
-    let attempt=historyAttemptsRef.current.get(act);
-    if(!attempt){attempt={operationId:browserRandomUUID(),operations:structuredClone(operations)};historyAttemptsRef.current.set(act,attempt);}
-    const operationId=attempt.operationId;operations=attempt.operations;
-    assertCurrentHistory();
-    const response=await privateFetchRaw("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operationId,operations}),signal:AbortSignal.timeout(20_000)});
-    await expectJsonOk(response,t("canvas.genFail"));if(account!==canvasAccountRef.current)throw new Error("画布账号已切换");
-    // All operations below are local applications of an already committed transaction.
-    for (const op of operations) {
-      const id=op.id as string;
-      if(op.type==="video-patch"||op.type==="video-visibility")continue;
-      if (op.type === "visibility") {
-        if (op.visible) {
-          const records = act.kind === "mixed-delete" || act.kind === "workflow-add" || act.kind === "mixed-add" ? act.artworks : (act as {records:Artwork[]}).records;
-          const record = records.find(record=>record.id===id);
-          if (record) setWorks(current=>[...(current || []).filter(node=>node.id!==id),record]);
-        } else setWorks(current=>current?.filter(node=>node.id!==id) ?? current);
-      } else if (op.type === "text-restore") {
-        const node=op.node as CanvasTextNode;
-        setTextNodes(current=>[...current.filter(item=>item.id!==node.id),node]);
-      } else if (op.type === "text-delete") {
-        setTextNodes(current=>current.filter(node=>node.id!==id));
-        setSelectedTextId(current=>current===id ? null : current);
-      } else if (op.type === "node-settings") {
-        const next={...nodeSettingsRef.current,[id]:op.settings as CanvasNodeSettings};
-        nodeSettingsRef.current=next;setNodeSettings(next);
-      } else if (op.type === "position" && op.text) setTextNodes(current=>current.map(node=>node.id===id ? {...node,canvasX:op.x as number,canvasY:op.y as number} : node));
-      else if (op.type === "text-patch") setTextNodes(current=>current.map(node=>node.id===id ? {...node,...op.fields as TextPatchFields} : node));
-      else if (op.type === "workflow-asset" && act.kind === "workflow-fill") setWorks(current=>current?.map(node=>node.id===id ? act[side] : node) ?? current);
-      else setWorks(current=>current?.map(node=> {
-        if (node.id!==id) return node;
-        if (op.type === "position") return {...node,canvasX:op.x as number,canvasY:op.y as number};
-        if (op.type === "group") return {...node,canvasGroupId:op.value as string|null};
-        if (op.type === "rename") return {...node,title:op.title as string};
-        if (op.type === "size") return {...node,canvasX:op.x as number,canvasY:op.y as number,canvasWidth:op.width as number,canvasHeight:op.height as number};
-        if (op.type === "mark") return {...node,marked:op.marked as boolean};
-        if (op.type === "parent") {
-          const parentId=op.parentId as string;
-          const parents=new Set(node.parentIds || []);
-          let primary=node.parentId;
-          if (op.add) { if (!primary) primary=parentId; else if(primary!==parentId) parents.add(parentId); }
-          else { if(primary===parentId) primary=null; parents.delete(parentId); }
-          return {...node,parentId:primary,parentIds:Array.from(parents)};
-        }
-        return node;
-      }) ?? current);
-    }
-    if(operations.some(op=>op.type==="video-patch"||op.type==="video-visibility"||op.type==="video-result"))await videoNodesStore.refresh();
-    for(const op of operations) {const id=(op.id || (op.node as CanvasTextNode|undefined)?.id) as string; unsavedTextRef.current.delete(id);}
-    setUnsavedTextCount(unsavedTextRef.current.size);
-    historyAttemptsRef.current.delete(act);
-    // Data belongs to the authenticated account and may finish in the background;
-    // only project-navigation/selection effects are suppressed after a switch.
-    if (historyScope !== historyScopeRef.current) return;
+  // History controller owns request identity, commit, refresh and stacks.
+  function applyHistory(act: UndoAct, undo: boolean, initialRevision?: number) {
+    return canvasHistory.applyHistory(act,undo,initialRevision);
+  }
+  function doUndo() { return canvasHistory.doUndo(); }
+  function doRedo() { return canvasHistory.doRedo(); }
+  function applyPendingLinkHistory(act: Extract<UndoAct,{kind:"pending-link"}>, undo: boolean) {
+    const pending = pendNodesRef.current.find(node => node.id === act.id);
+    if (!pending || pending.generating || pending.uploading) throw new Error(L("节点已开始生成或已移除", "Node is generating or no longer exists"));
+    setPendNodes(current => current.map(node => node.id === act.id ? {...node,...act[undo?"from":"to"]} : node));
+  }
+  function applyHistorySettings(update: (current: Record<string,CanvasNodeSettings>) => Record<string,CanvasNodeSettings>, persisted: boolean) {
+    const next = update(nodeSettingsRef.current);
+    nodeSettingsRef.current = next; setNodeSettings(next);
+    if (!persisted && user) localStorage.setItem(`naumi:node-settings:${user.email.toLowerCase()}`,JSON.stringify(next));
+  }
+  function onHistoryApplied({action:act,undo}: HistoryCommit) {
     if(act.kind==="mixed-add"){
       if(undo&&(active?.members.length||0)===act.artworks.length&&(active?.textNodes.length||0)===act.textNodes.length&&(active?.videoNodes?.length||0)===act.videoNodes.length)setCreatingNew(true);
       if(!undo){setCreatingNew(false);setActiveKey(act.projectKey);setBrowsing(false);}
@@ -5909,30 +5755,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if (!undo) { setCreatingNew(false); setActiveKey(act.textNodes[0]?.projectKey || `tree:${act.artworks[0]?.groupId || act.artworks[0]?.id}`); setBrowsing(false); }
     }
   }
-  async function doUndo() {
-    if (historyScope !== historyScopeRef.current || !undoStack.length || historyBusyRef.current || readOnly) return;
-    historyBusyRef.current=true;
-    setHistorySaving(true);
-    const act=undoStack[undoStack.length-1];
-    try {
-      await applyHistory(act,true);
-      setUndoStack(stack=>stack.filter(item=>item!==act));
-      setRedoStack(stack=>[...stack,act]);
-    } catch (error) { flashTip(error instanceof Error ? error.message : t("canvas.genFail")); }
-    finally { historyBusyRef.current=false; setHistorySaving(false); }
-  }
-  async function doRedo() {
-    if (historyScope !== historyScopeRef.current || !redoStack.length || historyBusyRef.current || readOnly) return;
-    historyBusyRef.current=true;
-    setHistorySaving(true);
-    const act=redoStack[redoStack.length-1];
-    try {
-      await applyHistory(act,false);
-      setRedoStack(stack=>stack.filter(item=>item!==act));
-      setUndoStack(stack=>[...stack,act]);
-    } catch (error) { flashTip(error instanceof Error ? error.message : t("canvas.genFail")); }
-    finally { historyBusyRef.current=false; setHistorySaving(false); }
-  }
 
   function openProperties() {
     suspendAssistant();setOcrArtworkId(null);setPropertiesOpen(true);
@@ -5943,13 +5765,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(JSON.stringify(from)===JSON.stringify(to))return true;
     historyBusyRef.current=true;setHistorySaving(true);
     try {
-      await Promise.all(Array.from(textSaveQueuesRef.current.values()));
-      const response=await privateFetchRaw("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json"},
-        body:JSON.stringify({operationId:browserRandomUUID(),operations:[{type:"node-settings",id,text:id.startsWith("text-"),video:!!videoNodesStore.getNode(id),settings:to}]}),signal:AbortSignal.timeout(20000)});
-      const data=await expectJsonOk(response,L("属性保存失败","Failed to save properties"));
-      const next={...nodeSettingsRef.current,[id]:to};
-      if(!data.persisted)localStorage.setItem(`naumi:node-settings:${user.email.toLowerCase()}`,JSON.stringify(next));
-      nodeSettingsRef.current=next;setNodeSettings(next);pushUndo({kind:"node-settings",id,text:id.startsWith("text-"),video:!!videoNodesStore.getNode(id),from,to});return true;
+      const act: UndoAct = {kind:"node-settings",id,text:id.startsWith("text-"),video:!!videoNodesStore.getNode(id),from,to};
+      await applyHistory(act,false); pushUndo(act); return true;
     } catch(error){flashTip(error instanceof Error?error.message:t("canvas.saveFailed"));return false;}
     finally {historyBusyRef.current=false;setHistorySaving(false);}
   }
@@ -6441,19 +6258,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         const from = textPatchOf(textNode);
         const to = inbound ? { ...from, sourceIds: from.sourceIds?.filter(id => id !== edge.source), productIds: from.productIds?.filter(id => id !== edge.source) }
           : { ...from, targetIds: from.targetIds?.filter(id => id !== edge.target) };
-        const response = await privateFetchRaw("/api/canvas/history", {
-          method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ operationId: browserRandomUUID(), operations: [{ type: "text-patch", id: textNode.id, fields: to }] }),
-          signal: AbortSignal.timeout(20_000),
-        });
-        await expectJsonOk(response, t("canvas.genFail"));
-        pushUndo({ kind: "text-patch", id: textNode.id, from, to });
-        setTextNodes(current => current.map(node => node.id === textNode.id ? { ...node, sourceIds: to.sourceIds, productIds: to.productIds, targetIds: to.targetIds } : node));
-        const draft = unsavedTextRef.current.get(textNode.id);
-        if (draft?.updatedAt === textNode.updatedAt) {
-          unsavedTextRef.current.delete(textNode.id);
-          setUnsavedTextCount(unsavedTextRef.current.size);
-        }
+        const act: UndoAct = {kind:"text-patch",id:textNode.id,from,to};
+        await applyHistory(act,false); pushUndo(act);
       } else {
         const res = await privateFetchRaw("/api/artworks/parents", {
           method: "DELETE", headers: { "content-type": "application/json" },
@@ -6464,6 +6270,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         pushUndo({ kind: "parent", targetId: edge.target, parentId: edge.source, added: false });
         await mergeWorks([edge.target]);
       }
+      if (!historyCurrent()) return;
       setRfEdges(current => current.filter(item => item.id !== edge.id));
       setSelectedEdge(current => current?.id === edge.id ? null : current);
     } catch (e) {
@@ -6592,8 +6399,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         await applyHistory(act, false);
         pushUndo(act);
       }
+      if (!historyCurrent()) return;
       let frames = 0;
       const fitArrangedView = () => {
+        if (!historyCurrent()) return;
         const instance = rfRef.current;
         const liveNodes = instance?.getNodes() ?? [];
         const readyToFit = liveNodes.length > 0 && moves.every(move => {
@@ -7181,9 +6990,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const c = centerScreen();
     addPendAtScreen(c.x, c.y, null, false);
   }
-  const unsavedTextRef=useRef(new Map<string,CanvasTextNode>());
-  const textSaveQueuesRef=useRef(new Map<string,Promise<unknown>>());
-  const [unsavedTextCount,setUnsavedTextCount]=useState(0);
   async function persistTextNode(node: CanvasTextNode) {
     if (!user || readOnly) return node;
     unsavedTextRef.current.set(node.id,node);
@@ -8129,7 +7935,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(readOnly||!user||!moves.length||historyBusyRef.current)return;
     moves=moves.filter(move=>!isNodeLocked(move.id));if(!moves.length)return;
     historyBusyRef.current=true;setHistorySaving(true);const act:UndoAct={kind:"move-many",moves};
-    try{await applyHistory(act,false);pushUndo(act);}catch(error){const positions=new Map(moves.map(move=>[move.id,move.from]));setRfNodes(current=>current.map(node=>positions.has(node.id)?{...node,position:positions.get(node.id)!}:node));flashTip(error instanceof Error?error.message:t("canvas.saveFailed"));}
+    try{await applyHistory(act,false);pushUndo(act);}catch(error){if(!historyCurrent())return;const positions=new Map(moves.map(move=>[move.id,move.from]));setRfNodes(current=>current.map(node=>positions.has(node.id)?{...node,position:positions.get(node.id)!}:node));flashTip(error instanceof Error?error.message:t("canvas.saveFailed"));}
     finally{historyBusyRef.current=false;setHistorySaving(false);}
   }
 
