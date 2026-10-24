@@ -16,6 +16,11 @@ const acceptedImageReads = new AsyncLocalStorage<ReadonlySet<string>>();
 export function withAcceptedImageRead<T>(operationId: string, run: () => Promise<T>): Promise<T> {
   return acceptedImageReads.run(new Set([...(acceptedImageReads.getStore() || []), operationId]), run);
 }
+export function assertAcceptedImageReadOnly() {
+  const operationId = currentImageOperationId();
+  if (operationId && acceptedImageReads.getStore()?.has(operationId))
+    throw new ImageOperationPending(operationId, new Error("accepted-image-recovery-read-only"));
+}
 type LiveChannels = {
   model: ModelConfig["publicModels"][number] | null;
   upstreams: Pick<ModelConfig["upstreamModels"][number], "id" | "enabled" | "providerId" | "model">[];
@@ -89,8 +94,9 @@ export async function recoverableChannelIdentity(pool: Pool, scope: ModelExecuti
  * to the root: callers must check each indexed operation separately. */
 export async function acceptedImageOperationIdentities(pool: Pool, scope: ModelExecutionScope | null, jobId: string, operationId: string): Promise<Record<string, string>> {
   if (!scope) return {};
-  const targets = scope.supplierRouting?.targets.filter(t => queryableImageScope(t.scope)) ||
-    (queryableImageScope(scope) ? [{ upstreamId: scope.channelGuard?.upstreamId || "", scope }] : []);
+  const recoverable = (target: ModelExecutionScope) => !!target.imagePreset || queryableImageScope(target);
+  const targets = scope.supplierRouting?.targets.filter(t => recoverable(t.scope)) ||
+    (recoverable(scope) ? [{ upstreamId: scope.channelGuard?.upstreamId || "", scope }] : []);
   if (!targets.length || !(await pool.query("SELECT to_regclass('app_supplier_calls') AS name")).rows[0]?.name) return {};
   const calls = (await pool.query(`SELECT id,billing_unit_id,provider_id,model,account_id,attempt_id,task_id,parameters
     FROM app_supplier_calls WHERE operation_id=$1 AND public_model_id=$2 AND model_version=$3
@@ -150,9 +156,7 @@ export async function recoverableAPIMartImageOperation(pool: Pool, scope: ModelE
 /** Final dispatch gate, after request/body preparation and immediately before
  * the supplier POST. GETs retrieving an accepted task never pass this gate. */
 export async function guardChannelSubmission(pool: Pool, scope: ModelExecutionScope, dispatch = true) {
-  const operationId = currentImageOperationId();
-  if (operationId && acceptedImageReads.getStore()?.has(operationId))
-    throw new ImageOperationPending(operationId, new Error("accepted-image-recovery-read-only"));
+  assertAcceptedImageReadOnly();
   const guard = scope.channelGuard;
   if (!guard) return;
   await ensureModelSchema(pool);

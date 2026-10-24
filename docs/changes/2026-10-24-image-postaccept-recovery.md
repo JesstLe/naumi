@@ -15,6 +15,7 @@
 4. `channel-image-response.ts` 在原异常上关联固定处理阶段；`model-health/observe.ts` 记录有界内部诊断，原异常身份、cause 链及健康分类保持不变。
 5. `imagegen/failure-evidence.ts` 仅输出允许的错误名称、代码和固定分类，最多四层 cause，拒绝原始 message/stack、提示词、URL 与凭据。
 6. APIMart 逐图下载与像素解码通过后，复用同一 Response 的已验证标记，省去外层重复 JSON/base64/像素处理。原单图 32MiB、整包 48MiB 界限保持，不把健康成功当作已经交付。
+7. 最终窄审发现并修正两项兼容边界：合法成本预设也能提供精确 accepted task 证明；原任务只读上下文在实际 transport 的所有 POST 边界检查，不再依赖是否配置 channelGuard，防止阶段路由在恢复时新建备选生成。
 
 ## 验证方法
 
@@ -35,9 +36,12 @@
 
 - 基线：`BASELINE=REPRODUCED CASES=11 CHECKS=88 FAILURES=5 REAL_SUPPLIER_NETWORK=0 EVIDENCE=MOCK_AST EXIT=1`。两笔模拟旧状态均恢复在进入回调前被阻断，GET/POST 为 0。exit 1 是原故障复现，不是通过。
 - 修复版：`MODIFIED=PASS CASES=11 CHECKS=142 FAILURES=0 REAL_SUPPLIER_NETWORK=0 EVIDENCE=MOCK_AST EXIT=0`。真实模块与显式 fixture；存量任务每单原 task GET=1、生成 POST=0，不当作生产 E2E。
-- 真实隔离 PostgreSQL：`IMAGE_POSTACCEPT_POSTGRES=PASS CHECKS=16 REAL_POSTGRES=1 HTTP_CALLS=0 SUPPLIER_CALLS=0`，exit 0。
+- 真实隔离 PostgreSQL：`IMAGE_POSTACCEPT_POSTGRES=PASS CHECKS=18 REAL_POSTGRES=1 HTTP_CALLS=0 SUPPLIER_CALLS=0`，exit 0；包含上述两项边界的新增检查。
 - 原 APIMart 真实隔离 PG + loopback suite：53 checks PASS，`REAL_PAID_API_CALLS=0`，exit 0；参考图传输另核 16 个文件。
 - 内部异常留证：`IMAGE_POSTACCEPT_DIAGNOSTICS=PASS CHECKS=23 REAL_MODULE=1 SHARP=REAL HTTP_CALLS=0 DB_CALLS=0`，exit 0；包括实际适配器响应构造的原 48MiB 上限。
 - `node node_modules/typescript/bin/tsc --noEmit --incremental false`：exit 0，stdout/stderr 均为空。
 - 早期恢复 fixture 用 Hub Review `reconciling` 导致两项失败，改为普通 accepted `running` 后重跑通过；没有放宽产品 accepted 白名单。一次 PowerShell 包装引号错误导致隔离环境未注入，真实 suite 重跑通过，原失败记录保留。
-- 构建、副本回滚、Git 推送及上线结果：待本轮后续回执补充。
+- 第一版固定提交 `a1aed2dcbefd14afb716d2471743a93ed740f55d` 已推送，Linux 完整镜像构建 exit 0，91/91 静态页；仅候选，不是已上线。最终窄审的两项修正形成后续固定提交及新构建，不使用旧镜像冒充最终版。
+- 第一版副本实际回滚已通过：7 原文件恢复、4 新文件删除；副本恢复旧故障五项，与 baseline 同失败。第二版新增 transport 后需重新封存，旧制品保留为 v1，不提升为最终版。
+- 历史两单补交：限定原两组任务、原图哈希、同根 token，已完成只读预检；apply 与最终作品/账务/父子台账结果以独立真实回执为准。
+- 最终构建、副本回滚、Git 推送及上线结果：待本轮后续回执补充。

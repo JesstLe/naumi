@@ -7,7 +7,7 @@ const namespace='image_recovery_'+crypto.randomUUID().replaceAll('-','');
 const admin=new Pool({connectionString:database,ssl:false,max:1});let pool,checks=0;
 const hash=s=>crypto.createHash('sha256').update(s).digest('hex');
 function check(value,label){assert.ok(value,label);checks++;}
-function load(rel,deps){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(sourceRoot,rel),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,Buffer,Error,Set,console,require(id){if(id==='server-only')return {};if(id in deps)return deps[id];if(id.startsWith('node:'))return require(id);throw Error('unexpected-module '+id);}});return exports;}
+function load(rel,deps){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(sourceRoot,rel),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,Buffer,Error,Set,console,Request,Response,URL,Headers,process:{env:{}},require(id){if(id==='server-only')return {};if(id in deps)return deps[id];if(id.startsWith('node:'))return require(id);throw Error('unexpected-module '+id);}});return exports;}
 (async()=>{try{
  await admin.query(`CREATE SCHEMA ${namespace}`);pool=new Pool({connectionString:database,ssl:false,max:2,options:`-c search_path=${namespace}`});
  await pool.query(`CREATE TABLE app_supplier_calls(id text,operation_id text,public_model_id text,model_version int,billing_unit_id text,provider_id text,model text,account_id text,attempt_id text,task_id text,parameters jsonb,state text);
@@ -35,6 +35,19 @@ function load(rel,deps){const exports={};vm.runInNewContext(ts.transpileModule(f
  await pool.query('TRUNCATE app_supplier_calls');await insert(fixture);
  let blocked;await gateway.withImageOperation('fixture',{id:unit},()=>availability.withAcceptedImageRead(unit,async()=>{try{await availability.guardChannelSubmission(pool,scope);}catch(e){blocked=e;}}));
  check(blocked instanceof gateway.ImageOperationPending,'proved task cannot authorize new POST');
+ await pool.query('TRUNCATE app_supplier_calls');
+ const preset={...target.scope,parameterMap:{},imagePreset:{enabled:true}};
+ await insert({...fixture,attempt_id:hash(`apimart-preset:141:${unit}`)});
+ const presetProof=await availability.acceptedImageOperationIdentities(pool,preset,root,root);
+ check(presetProof[unit]?.startsWith('accepted:'),'legacy cost preset accepted task remains queryable without apimartImages map');
+ const transport=load('src/lib/model-config/transport.ts',{'./apimart-image-policy':policy,'./channel-availability':availability,
+  'https-proxy-agent':{HttpsProxyAgent:class{}},'./schema':{validateModelEndpoint:s=>s,privateModelHost:()=>false,modelMetadataHost:()=>false},
+  './types':{ModelConfigError:class extends Error{}},'./capacity':{capacityFetch:()=>{throw Error('unexpected-capacity')}},'../db':{dbEnabled:false,getPool:()=>pool},
+  '../supplier-cost/collect':{supplierCostFetch:()=>{throw Error('unexpected-cost')}},'../image-gateway':{noteImageSupplierDispatch:()=>{throw Error('unexpected-dispatch')}}});
+ let stageBlocked;await gateway.withImageOperation('fixture',{id:unit},()=>availability.withAcceptedImageRead(unit,async()=>{
+  try{await transport.modelEndpointFetch('https://supplier.invalid',{})('https://supplier.invalid/tasks',{method:'POST',body:'{}'});}catch(e){stageBlocked=e;}
+ }));
+ check(stageBlocked instanceof gateway.ImageOperationPending,'actual transport blocks recovery POST even without channelGuard');
  console.log(`IMAGE_POSTACCEPT_POSTGRES=PASS CHECKS=${checks} REAL_POSTGRES=1 HTTP_CALLS=0 SUPPLIER_CALLS=0`);
  }finally{if(pool)await pool.end();assert.match(namespace,/^image_recovery_[a-f0-9]{32}$/);await admin.query(`DROP SCHEMA IF EXISTS ${namespace} CASCADE`);await admin.end();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
