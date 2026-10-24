@@ -14,7 +14,7 @@
 - `canvas-client.tsx`：三处真实入口连接 typed props/callbacks，保留可见性、锁定与只读条件；图片 draft、文字 prompt、文档、task、history、operation 和账务仍由既有 owner 负责。
 
 Canvas **9342 → 8534 行**。AST 对照：**174 个保留函数正文不变**；仅 3 个 leaf controls 迁出。图像/文字/视频任务、HTTP、报价和保存执行函数未因拆 UI 改写。
-新增组件为 187/116/100/393 行；没有新全局 store、事件总线或 paid-task 路径。下一次改创作栏排列/mention/菜单，不需要改包含所有创作链的主组件。
+新增组件为 186/116/100/393 行；没有新全局 store、事件总线或 paid-task 路径。下一次改创作栏排列/mention/菜单，不需要改包含所有创作链的主组件。
 
 ## 保持的实际业务含义
 
@@ -50,6 +50,7 @@ Canvas **9342 → 8534 行**。AST 对照：**174 个保留函数正文不变**�
 4. `UNIFIED_DOCK.log` 和完整基线 `UNIFIED_DOCK_BASELINE.log` 均在旧 token `videoDurations(cap)` 断言 exit1；现有代码已是 `videoDurations(cap, config.mode)`。只更新该已有参数形态断言，以及新共享组件路径检查；不改视频产品代码。最终39检查通过。
 5. T3 preview 同一步两次 `Preview automation snapshot timed out after 15000ms.`；随后用仓库 Edge 流程，自有预览页关闭，未操作其他页。
 6. 图片相邻 verifier 初次使用了它不读取的 `CANVAS_IMAGE_TASK_EVIDENCE`，结果 JSON 写到旧默认 R3A 目录；现已复制到本轮 `image-tasks/`，并在两处写来源更正，见 `EVIDENCE_DESTINATION_CORRECTION.json`。旧目录该 JSON 是本轮重新执行结果，不再绑定原 R3A 提交；原 R3A 源码归档、日志及基线未改写。
+7. staged whitespace 检查发现新控件文件末尾多一个空行，exit2；删除空行后源码/归档哈希和独立副本回滚刷新，运行语句未变化，最终58组恢复对照一致。
 
 ## 收尾、回滚与剩余
 
