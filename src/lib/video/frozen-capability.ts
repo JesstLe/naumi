@@ -1,6 +1,6 @@
 import "server-only";
 import type {Pool,PoolClient} from "pg";
-import { dbEnabled,getPool } from "../db";
+import { dbEnabled,getPool } from "@/platform/db/pool";
 import type { ModelSnapshot,UpstreamModel,ModelProvider } from "../model-config/types";
 import { ModelConfigError } from "../model-config/types";
 import { supplierVideoDefinition } from "../supplier-models/video-access";

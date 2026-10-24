@@ -1,5 +1,5 @@
 import 'server-only';
-import { getPool } from '../db';
+import { getPool } from "@/platform/db/pool";
 import { excludeImportedHistory } from '../staging-history';
 
 // Pending/expired fences remain observable: elapsed lease time is NOT evidence

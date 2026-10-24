@@ -1,6 +1,6 @@
 import { applicationAPIMartImages } from "./apimart-image-policy";
 import "server-only";
-import { getPool } from "../db";
+import { getPool } from "@/platform/db/pool";
 import type { ModelExecutionScope } from "./context";
 import { executionFetch } from "./clients";
 import type { ValidationOptions } from "./schema";

@@ -1,7 +1,7 @@
 import "server-only";
 import { currentObservedCallId } from "../bi/call-scope";
 import { createHash, randomUUID } from "node:crypto";
-import { dbEnabled } from "../db";
+import { dbEnabled } from "@/platform/db/pool";
 import { currentModelExecution, type ModelExecutionScope } from "../model-config/context";
 import { currentSynchronousBilling } from "../billing/synchronous";
 import { currentImageOperationId, noteImageSupplierDispatch } from "../image-gateway";

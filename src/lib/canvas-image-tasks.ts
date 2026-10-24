@@ -24,7 +24,6 @@ import {
   claimNextCanvasImageTask,
   completeCanvasImageTask,
   createCanvasImageTaskWithReservation,
-  dbEnabled,
   failCanvasImageTask,
   getCanvasImageTask,
   getCanvasImageTaskChargedCredits,
@@ -41,7 +40,7 @@ import { editImage } from "@/lib/image-edit";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { safeError } from "@/lib/api-error";
 import { ImageOperationPending } from "@/lib/image-gateway";
-import { getPool } from "@/lib/db";
+import {dbEnabled,getPool} from "@/platform/db/pool";
 import { recoverableAPIMartImageOperation } from "@/lib/model-config/channel-availability";
 
 type Box = { x: number; y: number; width: number; height: number };

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { authenticatedEmail } from "@/lib/request-auth";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled } from "@/platform/db/pool";
 import { rateLimit } from "@/lib/rate-limit";
 import { SkillError } from "@/lib/image-skills/catalog";
 import { parseSkillImport, SKILL_IMPORT_MAX_REQUEST_BYTES } from "@/lib/image-skills/import";

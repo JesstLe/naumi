@@ -1,6 +1,6 @@
 import 'server-only';
 import type {PoolClient} from 'pg';
-import {getPool} from '@/lib/db';
+import {getPool} from "@/platform/db/pool";
 import {enterpriseRead} from '@/lib/enterprise/server';
 import {TeamError} from '@/lib/teams/server';
 import type {TeamActor} from '@/lib/teams/grants';

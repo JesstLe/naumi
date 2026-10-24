@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { biAuthorize, biJson, sameSiteBiMutation } from "@/lib/bi/access";
-import { getPool } from "@/lib/db";
+import { getPool } from "@/platform/db/pool";
 import { ensurePostprocessSchema, PostprocessPending } from "@/lib/media-postprocess";
 import { recoverPostprocess } from "@/lib/postprocess-recovery";
 import { randomUUID } from "node:crypto";

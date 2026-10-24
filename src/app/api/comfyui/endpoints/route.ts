@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled } from "@/platform/db/pool";
 import {
   deleteComfyEndpoint,
   listComfyEndpoints,

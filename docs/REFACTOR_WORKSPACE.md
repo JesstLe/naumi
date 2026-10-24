@@ -32,6 +32,8 @@
 
 ## 开发约定
 
+2026-10-24 R4A1：纯 `src/platform/db/pool`/`transaction` 已接真实消费者，旧入口同实例/函数兼容；79处纯基础import及3混合字段迁出。旧db静态消费者251→178，最大SCC60→56，基础层业务import/环为0，535个非目标函数正文未变。基线27/157→新版28/166、真实PG25→29、wallet/creation A/B及画布PG32/32通过，tsc/lint通过。见 [R4A1](changes/2026-10-24-platform-db-r4a1.md)。本轮第3模块，收尾普通整合main并归零，精确结果见本轮SYNC；R4A2数据owner与DDL/组装环继续，不合main、不部署。
+
 2026-10-24 R3E：图片/空白节点共用创作栏与参数控件，文字创作栏独立持有菜单/尺寸呈现状态。Canvas **8534行**；174个保留执行函数正文不变，58组SSR对照一致，真实控件15项及文字6/图片5/历史12通过，最终tsc通过。见 [R3E](changes/2026-10-24-canvas-composers-r3e.md)。同步后第2模块；下一模块R4A基础DB/事务，R3外围UI、跨请求CAS与R4B—R6继续，不合main/不部署。
 
 2026-10-24 R3D：普通文字/反推/帮写共用 retained text task，已知答案续存不再生成，unknown 保留原 operation/报价；初次请求复用原 BillingProvider 持久 intent。Canvas **9342 行**；基线 3/15、新版 18/77、真实 PG24、实际 Next6 及最终 tsc 通过。见 [R3D](changes/2026-10-24-canvas-text-tasks-r3d.md)。本轮为同步后第1模块；原无 node-slot intent 升级、多 tab/CAS、UI 组合及 R4—R6 仍在后续。不合 main、不部署，整体目标 active。

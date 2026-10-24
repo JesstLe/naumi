@@ -1,9 +1,10 @@
+import {withTransaction} from "@/platform/db/transaction";
 import 'server-only';
 import { createHash, randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
 import { requireAdmin, resolveUserEmail } from '@/lib/admin-auth';
-import { dbEnabled, getPool } from '@/lib/db';
+import { dbEnabled, getPool } from "@/platform/db/pool";
 import { ensureEnterpriseSchema, validateHierarchy } from '@/lib/enterprise/server';
 import { TeamError } from '@/lib/teams/server';
 import { teamJson } from '@/lib/teams/access';
@@ -40,9 +41,8 @@ export function tenantFailure(error:unknown) {
   return teamJson({error:'服务暂不可用，请使用原操作编号核对结果',code:'TENANT_UNAVAILABLE',uncertain:true},503);
 }
 async function transaction<T>(run:(tx:PoolClient)=>Promise<T>) {
-  await ensureTenantSchema(); const tx=await getPool().connect();
-  try {await tx.query('BEGIN');await tx.query("SET LOCAL statement_timeout='20s'");const result=await run(tx);await tx.query('COMMIT');return result;}
-  catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}
+  await ensureTenantSchema();
+  return withTransaction(getPool(),async tx=>{await tx.query("SET LOCAL statement_timeout='20s'");return run(tx);});
 }
 const projection=`SELECT t.id,t.name,t.owner_email,u.name AS owner_name,t.authorized_until,t.enabled,t.version,t.created_at,t.updated_at,
   COALESCE(s.enabled,true) AS enterprise_enabled,e.entitlement_name,e.seat_limit,COALESCE(e.feature_policy,'{}') AS feature_policy,

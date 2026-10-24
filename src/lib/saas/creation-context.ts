@@ -3,7 +3,7 @@ import {AsyncLocalStorage} from 'node:async_hooks';
 import {randomUUID,createHmac,timingSafeEqual} from 'node:crypto';
 import {z} from 'zod';
 import type {PoolClient} from 'pg';
-import {getPool,dbEnabled} from '@/lib/db';
+import {getPool,dbEnabled} from "@/platform/db/pool";
 import {enterpriseCreationRead} from '@/lib/enterprise/server';
 import {TeamError} from '@/lib/teams/server';
 import {ensureCreationSchema} from './creation-schema';

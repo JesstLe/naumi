@@ -1,5 +1,5 @@
 import "server-only";
-import {dbEnabled,getPool} from "../db";
+import {dbEnabled,getPool} from "@/platform/db/pool";
 import { storedDeliveryCheckpoint } from "./delivery-checkpoint";
 import { plainGeneratedOutput } from "./receipt-policy";
 import { assertMutableStagingTask, excludeImportedHistory } from "../staging-history";

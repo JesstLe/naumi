@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import type { Pool,PoolClient } from "pg";
-import { dbEnabled, getPool } from "../db";
+import { dbEnabled, getPool } from "@/platform/db/pool";
 import { videoDefinitionSchema, videoWireProfileSchema, type VideoModelDefinition, type VideoWireProfile } from "../video/capability-schema";
 import type { ModelConfig } from "../model-config/types";
 

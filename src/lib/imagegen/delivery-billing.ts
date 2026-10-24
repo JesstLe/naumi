@@ -1,5 +1,5 @@
 import "server-only";
-import {dbEnabled,getPool} from "../db";
+import {dbEnabled,getPool} from "@/platform/db/pool";
 import {imagegenStepId} from "./operation-id";
 import type {ImagegenPlan} from "./types";
 

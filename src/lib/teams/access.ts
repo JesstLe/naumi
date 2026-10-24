@@ -1,7 +1,7 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import { requireAdmin, resolveUserEmail, adminPasswordState } from "@/lib/admin-auth";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled } from "@/platform/db/pool";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/ip";
 import { teamEntryAccess } from "./grants";

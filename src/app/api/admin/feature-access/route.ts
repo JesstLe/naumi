@@ -1,5 +1,5 @@
 import { requireAdmin, resolveUserEmail } from "@/lib/admin-auth";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled } from "@/platform/db/pool";
 import { sameSiteBillingMutation } from "@/lib/billing/access";
 import { accessJson, FeatureAccessError, featureAccessUsers, saveFeaturePolicy, validatePolicyCommand } from "@/lib/feature-access/server";
 import { rateLimit } from "@/lib/rate-limit";

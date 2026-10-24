@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { dbEnabled, getPool } from "../db";
+import { dbEnabled, getPool } from "@/platform/db/pool";
 import { currentSynchronousBilling } from "../billing/synchronous";
 import { currentImageOperationId } from "../image-gateway";
 import type { ModelExecutionScope } from "./context";

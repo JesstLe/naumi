@@ -1,5 +1,5 @@
 import "server-only";
-import { dbEnabled, getPool } from "../db";
+import { dbEnabled, getPool } from "@/platform/db/pool";
 import type { ModelExecutionScope } from "../model-config/context";
 import type { ValidationOptions } from "../model-config/schema";
 import { completedChannelImage } from "../model-config/channel-image-response";

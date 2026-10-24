@@ -5,7 +5,7 @@ import {currentCreationContext,withFrozenCreation,type CreationContext} from '..
 import {acceptCreationTx,creationEventTx,recordSourceOutcomeTx,creationEvidenceTx} from '../saas/creation-writer';
 import {ensureCreationSchema} from '../saas/creation-schema';
 import {randomUUID} from "node:crypto";
-import {getPool} from "../db";
+import {getPool} from "@/platform/db/pool";
 import {imageCoordinationPool} from "./coordination-pool";
 import {imagegenRequestSchema} from "./schema";
 import {planImagegen,imagegenFingerprint} from "./plan";

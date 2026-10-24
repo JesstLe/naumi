@@ -2,7 +2,7 @@ import "server-only";
 import { createHmac } from "node:crypto";
 import type { PoolClient } from "pg";
 import { z } from "zod";
-import { getPool } from "@/lib/db";
+import { getPool } from "@/platform/db/pool";
 import { settingsSecret } from "@/lib/settings-secret";
 import { ensureTeamSchema, TeamError } from "./server";
 import type { TeamAccessGrant, TeamAccessStatus } from "./contracts";

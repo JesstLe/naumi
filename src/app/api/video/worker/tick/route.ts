@@ -6,7 +6,7 @@ import { recoverDurableImageJobs, imageWorkerAuthorized } from "@/lib/durable-im
 import { scanSupplierCostsOnce } from "@/lib/supplier-cost/worker";
 import {recoverMediaMirrors} from "@/lib/media-assets";
 import {recoverMediaJobs} from "@/lib/video/media-jobs";
-import { dbEnabled, getPool } from "@/lib/db";
+import { dbEnabled, getPool } from "@/platform/db/pool";
 import { createWorkerTickReceiptStore, runReceiptedWorkerTick, tickIdentity, workerTickWebIdentity, WorkerTickReceiptError, type WorkerTickReceiptStore } from "@/lib/release-runtime/worker-tick-receipts";
 
 export const runtime = "nodejs";

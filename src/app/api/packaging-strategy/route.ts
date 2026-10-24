@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authenticatedEmail } from "@/lib/request-auth";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled } from "@/platform/db/pool";
 import { featureRequestGate, ACCESS_HEADERS } from "@/lib/feature-access/server";
 import { rateLimit } from "@/lib/rate-limit";
 import { commandSchema, packagingMessages, parsePackagingResult, PackagingError } from "@/lib/packaging-strategy/contract";

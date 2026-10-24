@@ -4,7 +4,7 @@ import type { PoolClient } from 'pg';
 import { z } from 'zod';
 import { ensureTeamSchema, TeamError } from '@/lib/teams/server';
 import { requireTeamGrant, type TeamActor } from '@/lib/teams/grants';
-import { getPool } from '@/lib/db';
+import { getPool } from "@/platform/db/pool";
 import { settingsSecret } from '@/lib/settings-secret';
 import type { ContentPage } from '@/lib/teams/contracts';
 import type { EnterpriseIdentity, EnterpriseMember, EnterpriseRole, EnterpriseSnapshot } from './contracts';

@@ -1,7 +1,7 @@
 import { withBackgroundActivity } from "@/lib/release-runtime/background-activity";
 import "server-only";
 
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled } from "@/platform/db/pool";
 import { recoverDueVideoTasks } from "@/lib/video/service";
 import { recoverDurableImageJobs } from "@/lib/durable-image-jobs";
 import { scanSupplierCostsOnce } from "@/lib/supplier-cost/worker";

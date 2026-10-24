@@ -7,7 +7,7 @@ import {randomUUID} from "node:crypto";
 import { NextResponse } from "next/server";
 import { withBiRequest } from "@/lib/bi/model-observer";
 import { resolveUserEmail } from "@/lib/admin-auth";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled } from "@/platform/db/pool";
 import { rateLimit } from "@/lib/rate-limit";
 import { getOpenAISettings } from "@/lib/settings";
 import {

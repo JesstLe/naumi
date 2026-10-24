@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { authenticatedEmail, authorizedTargetEmail } from "@/lib/request-auth";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled } from "@/platform/db/pool";
 import { importCanvasWorkflow, listWorkflowManifests, workflowImportRequest } from "@/lib/canvas-workflow-import";
 import { readWorkflowClipboard, WORKFLOW_CLIPBOARD_LIMIT } from "@/lib/canvas/workflow-clipboard";
 import { rateLimit } from "@/lib/rate-limit";

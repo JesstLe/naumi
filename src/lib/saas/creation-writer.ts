@@ -4,7 +4,8 @@ import type {PoolClient} from 'pg';
 import {currentCreationContext,withFrozenCreation,bindActualCreationProject,creationId,type CreationContext} from './creation-context';
 import {creationStatus} from './creation-contracts';
 import {currentModelExecution,currentExecutionBundle} from '@/lib/model-config/context';
-import {getPool,dbEnabled} from '@/lib/db';
+import {getPool,dbEnabled} from "@/platform/db/pool";
+import {withTransaction} from "@/platform/db/transaction";
 import {ensureCreationSchema} from './creation-schema';
 import type {CreationStatus} from './creation-contracts';
 import {uploadImage} from '@/lib/storage';
@@ -107,7 +108,7 @@ export async function captureCreationMediaTx(tx:PoolClient,id:string,email:strin
  }
 }
 export async function creationTransaction<T>(run:(tx:PoolClient)=>Promise<T>) {
- await ensureCreationSchema();const tx=await getPool().connect();try{await tx.query('BEGIN');const result=await run(tx);await tx.query('COMMIT');return result;}catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}
+ await ensureCreationSchema();return withTransaction(getPool(),run);
 }
 export async function startCreation(kind:string,sourceId:string,email:string,payload:unknown={},frozen?:CreationContext) {
  if(!dbEnabled||!(frozen||currentCreationContext()))return null;

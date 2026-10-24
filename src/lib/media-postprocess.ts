@@ -2,7 +2,7 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import sharp from "sharp";
 import type { Pool } from "pg";
-import { dbEnabled, getPool } from "./db";
+import { dbEnabled, getPool } from "@/platform/db/pool";
 import { uploadImage } from "./storage";
 import { readManagedObject } from "./storage";
 import { assertMutableStagingTask } from "./staging-history";

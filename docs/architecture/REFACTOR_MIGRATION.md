@@ -126,6 +126,8 @@
 
 ## 9. 当前进度
 
+R4A1：纯Pool/Tx基础层落地，旧db/getPool与billing Tx兼容别名均为同一实现；79纯import＋3混合字段迁移。旧db静态消费者251→178，最大静态SCC60→56，平台层无业务import/依赖环；535个保留函数正文不变。原27/157→新28/166、PG25→29、钱包/创作A/B、画布PG32/32、tsc/lint通过。第3模块按最终SYNC刷新普通整合main后归零；R4A数据owner尚未完成，见 [R4A1](../changes/2026-10-24-platform-db-r4a1.md)。
+
 R3E：三处实际创作栏收敛为 image/text 两个组件，模型/比例/质量/数量控件复用，menu/resize不再混进文档任务。Canvas9342→8534行，174个保留函数正文不变；58组SSR完全一致，真实控件15项（含三尺寸）、文字6/图片5/历史12、最终tsc通过。同步后第2模块。下一步R4A连接/事务边界；R3上传/助手/外围UI与CAS、R4B—R6继续，见 [R3E记录](../changes/2026-10-24-canvas-composers-r3e.md)。
 
 R3D：普通文字、反推、帮写的 request/task/controller 已接实际 Canvas；原答案续存、原 operation/报价和 scoped 文档写入归同一 owner。Canvas 9575→9342 行；基线 3/15、新版 18/77、PG24、实际 Next6、最终 tsc 通过，原有 BillingProvider 防重机制保留。同步后第1模块；旧无 node-slot intent 升级兼容、任务跨刷新 journal、多 tab/CAS、UI 组合与 R4—R6 继续，见 [R3D记录](../changes/2026-10-24-canvas-text-tasks-r3d.md)。
@@ -154,6 +156,8 @@ R3C2：单一选择快照、gesture owner、link compiler 已真实接线。图�
 - [x] R3C3 节点生命周期和批运行，见 [R3C3记录](../changes/2026-10-24-canvas-node-operations-r3c3.md)。
 - [x] R3D 文字生成/反推/帮写任务，见 [R3D记录](../changes/2026-10-24-canvas-text-tasks-r3d.md)。
 - [x] R3E 图片/空白/文字创作栏与共享参数控件，见 [R3E记录](../changes/2026-10-24-canvas-composers-r3e.md)。
+- [x] R4A1 纯Pool/Tx与真实基础能力消费者，见 [R4A1记录](../changes/2026-10-24-platform-db-r4a1.md)。
+- [ ] R4A2 数据owner/查询与初始化责任、剩余混合db消费者及跨领域事务接口。
 - [ ] R3 剩余上传/助手/外围 UI 组合；文字/图片跨请求 CAS、未知历史响应交错及旧 client intent 升级兼容验收。
 - [ ] R4—R6业务实现、集中验证、旧路径删除与最终整合。
 - [ ] 迁移后的实际性能、容量与生产功能验收。

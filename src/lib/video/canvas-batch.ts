@@ -4,7 +4,7 @@ import type {CreationContext} from "../saas/creation-context";
 import {creationLinkTx} from "../saas/creation-writer";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
-import { getPool } from "../db";
+import { getPool } from "@/platform/db/pool";
 import { encryptAtRest, decryptAtRest } from "../settings";
 import { canonicalConfig } from "../model-config/repository";
 import { ModelConfigError } from "../model-config/types";

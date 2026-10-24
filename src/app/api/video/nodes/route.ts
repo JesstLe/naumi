@@ -1,6 +1,6 @@
 import {NextResponse} from "next/server";
 import {authenticatedEmail} from "@/lib/request-auth";
-import {getPool} from "@/lib/db";
+import {getPool} from "@/platform/db/pool";
 import {authorizeVideoProject} from "@/lib/canvas/video-node-service";
 import {videoNodeIdSchema,videoProjectKeySchema} from "@/lib/canvas/video-node-schema";
 import {ModelConfigError} from "@/lib/model-config/types";

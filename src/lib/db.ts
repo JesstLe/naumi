@@ -7,11 +7,12 @@ import {acceptCreationTx,assertCreationInputsTx,captureCreationMediaTx,creationL
 import {ensureCreationSchema} from '@/lib/saas/creation-schema';
 import type {ProductReceipt} from "@/lib/payments";
 import {signupGrantTx,administrativeGrantInput} from "@/lib/billing/entitlements";
-import {withBillingTransaction} from "@/lib/billing/service";
+import {withTransaction as withBillingTransaction} from "@/platform/db/transaction";
 import {reserveTaskBillingTx,settleTaskBillingTx,videoRequestFingerprint,canvasRequestFingerprint} from "@/lib/billing/task-operation";
 import {BillingError} from "@/lib/billing/types";
 import "server-only";
-import { Pool, type PoolClient } from "pg";
+import type {PoolClient} from "pg";
+import {dbEnabled,getPool} from "@/platform/db/pool";
 import { excludeImportedHistory, isImportedHistory } from "./staging-history";
 import { applyBillingSchema,markBillingSchemaReady } from "@/lib/billing/schema";
 import {withSchemaInitialization} from "./schema-initialization";
@@ -33,33 +34,11 @@ import { RETIRED_BUSINESS_PROJECTS, isRetiredBusinessProject } from "./retired-b
 // needed for the MVP — swap for proper migrations before production.
 // ---------------------------------------------------------------------------
 
-export const dbEnabled = (process.env.DATABASE_URL ?? "").trim().length > 0;
-
-let pool: Pool | null = null;
 let schemaReady: Promise<void> | null = null;
 
 // Shared transactional infrastructure for durable generation jobs.
-export { getPool, ensureSchema, deductPrincipalFIFO, refreshBalance, creditMeteringEnabled, expireDueBatches };
+export { dbEnabled, getPool, ensureSchema, deductPrincipalFIFO, refreshBalance, creditMeteringEnabled, expireDueBatches };
 
-function getPool(): Pool {
-  if (!pool) {
-    const connectionString = process.env.DATABASE_URL;
-    const cs = connectionString || "";
-    // 本地 / Docker 内网 / 显式 sslmode=disable → 不启用 SSL:自建或 compose 自带的
-    // Postgres 默认不支持 SSL(host 常见为 db / localhost / 127.* / 私有网段 / 容器名)。
-    // 只有远程托管库(如 Supabase 公网域名)才保留 SSL。
-    const noSsl =
-      /sslmode=disable/.test(cs) ||
-      /@(localhost|127\.0\.0\.1|db|postgres|nv-postgres|host\.docker\.internal)[:/]/.test(cs) ||
-      /@(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(cs);
-    pool = new Pool({
-      connectionString,
-      ssl: noSsl ? false : { rejectUnauthorized: false },
-      max: 5,
-    });
-  }
-  return pool;
-}
 
 async function ensureSchema(): Promise<void> {
   if(process.env.FLEET_PORTAL_ONLY==='1'||process.env.NAUMI_AUTH_LOGIN_ONLY==='1'){

@@ -1,5 +1,5 @@
 import "server-only";
-import { dbEnabled } from "../db";
+import { dbEnabled } from "@/platform/db/pool";
 import { supplierLedger } from "./runtime";
 import { genericReceipt } from "./adapters";
 import {ensureSupplierSchema} from "./schema";

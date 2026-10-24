@@ -1,6 +1,6 @@
 import "server-only";
 import {createHash} from "node:crypto";
-import {dbEnabled} from "../db";
+import {dbEnabled} from "@/platform/db/pool";
 import {activeNativeAccountEmail} from "../native-auth";
 import {withSynchronousOperation} from "../billing/synchronous-operation";
 import {billingFailure} from "../billing/failure";

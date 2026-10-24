@@ -11,7 +11,7 @@ import {
   ASSIST_TOOL_HINTS,
 } from "@/lib/prompt-config";
 import { resolveUserEmail } from "@/lib/admin-auth";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled } from "@/platform/db/pool";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/ip";
 import { safeError } from "@/lib/api-error";

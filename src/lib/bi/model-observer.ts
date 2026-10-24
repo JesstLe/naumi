@@ -7,7 +7,7 @@ import { withObservedCallId } from "./call-scope";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import type OpenAI from "openai";
-import { dbEnabled, getPool } from "@/lib/db";
+import { dbEnabled, getPool } from "@/platform/db/pool";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { currentImageOperationId } from "@/lib/image-gateway";
 import { ensureBiSchema } from "./repository";

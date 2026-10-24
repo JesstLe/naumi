@@ -10,7 +10,7 @@ import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 import { privateModelHost, modelMetadataHost, validateModelEndpoint, type ValidationOptions } from "./schema";
 import { ModelConfigError } from "./types";
 import { capacityFetch } from "./capacity";
-import { dbEnabled, getPool } from "../db";
+import { dbEnabled, getPool } from "@/platform/db/pool";
 import { supplierCostFetch } from "../supplier-cost/collect";
 import {noteImageSupplierDispatch} from "../image-gateway";
 import type { ModelExecutionScope } from "./context";

@@ -41,7 +41,7 @@ import {completeVideoResultSet} from "./result-completion";
 import {mediaExtension} from "./media-formats";
 
 
-import { getPool } from "@/lib/db";
+import { getPool } from "@/platform/db/pool";
 import { isImportedHistory } from "@/lib/staging-history";
 import { PermanentVideoCreateError, TransientPollError } from "@/lib/video/types";
 import { getVideoProvider } from "@/lib/video/providers/adapter";

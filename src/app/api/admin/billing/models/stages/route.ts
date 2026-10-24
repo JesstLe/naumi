@@ -1,5 +1,5 @@
 import { biAuthorize, biJson } from "@/lib/bi/access";
-import { getPool } from "@/lib/db";
+import { getPool } from "@/platform/db/pool";
 import { ensureExecutionAuditSchema } from "@/lib/model-config/execution-audit";
 import { ensurePostprocessSchema } from "@/lib/media-postprocess";
 export const runtime = "nodejs", dynamic = "force-dynamic";

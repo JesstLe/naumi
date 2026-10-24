@@ -1,5 +1,5 @@
 import 'server-only';
-import {getPool} from '@/lib/db';
+import {getPool} from "@/platform/db/pool";
 import {ensureCreationSchema} from './creation-schema';
 import {legacyCreationId} from './legacy-creations';
 export async function resolveCreationReference(type:string,id:string,email:string){

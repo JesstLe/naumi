@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { bearer, emailFromToken } from '@/lib/supabase-admin';
 import { activeNativeUserEmail } from '@/lib/native-auth';
 import { supabaseEnabled } from '@/lib/auth-mode';
-import { dbEnabled } from '@/lib/db';
+import { dbEnabled } from "@/platform/db/pool";
 import { rateLimit } from '@/lib/rate-limit';
 import { clientIp } from '@/lib/ip';
 import { teamJson } from '@/lib/teams/access';

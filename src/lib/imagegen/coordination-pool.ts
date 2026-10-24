@@ -1,6 +1,6 @@
 import "server-only";
 import {Pool} from "pg";
-import {getPool} from "../db";
+import {getPool} from "@/platform/db/pool";
 
 // A coordinator holds a cancellation/batch lock while domain code uses the
 // normal query pool. Sharing that pool lets N coordinators occupy all N

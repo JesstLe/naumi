@@ -4,7 +4,7 @@ import {submissionFingerprint} from "./submission-identity";
 import {acceptedModelVersions} from "../model-config/accepted-context";
 import {getModelAdministration} from "../model-config/server";
 import {provenanceEntry} from "../artwork-provenance";
-import {dbEnabled} from "../db";
+import {dbEnabled} from "@/platform/db/pool";
 import {resolveUserEmail} from "../admin-auth";
 import {quoteForRequest,getBillingRuntime} from "./server";
 import type {FeatureId} from "./types";

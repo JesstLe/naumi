@@ -1,7 +1,7 @@
 import "server-only";
 import { createHmac } from "node:crypto";
 import { z } from "zod";
-import { getPool } from "@/lib/db";
+import { getPool } from "@/platform/db/pool";
 import { hashPassword } from "@/lib/pw";
 import { settingsSecret } from "@/lib/settings-secret";
 import { ensureBiSchema } from "./repository";

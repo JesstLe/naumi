@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled } from "@/platform/db/pool";
 import { requireAdmin } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 

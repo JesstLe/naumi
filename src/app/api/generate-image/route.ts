@@ -7,7 +7,7 @@ import {quoteForRequest} from "@/lib/billing/server";
 import {imageWorkerAuthorized} from "@/lib/durable-image-jobs";
 import {NextResponse} from "next/server";
 import {provenanceEntry} from "@/lib/artwork-provenance";
-import {dbEnabled} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
 import {clientIp} from "@/lib/ip";
 import {resolveUserEmail} from "@/lib/admin-auth";
 import type {GenParams,GenImage} from "@/lib/imagegen/generation-types";

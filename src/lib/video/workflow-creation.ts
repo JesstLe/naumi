@@ -1,6 +1,6 @@
 import 'server-only';
 import type {PoolClient} from 'pg';
-import {getPool} from '../db';
+import {getPool} from "@/platform/db/pool";
 import {ModelConfigError} from '../model-config/types';
 import {currentCreationContext,frozenCreationScope,withFrozenCreation,withoutCreationContext,bindActualCreationProject,assertCreationProjectInput,type CreationContext} from '../saas/creation-context';
 import {acceptCreationTx,assertCreationInputsTx,assertCreationObjectRefs,captureCreationMediaTx,creationEvidenceTx,recordSourceOutcomeTx} from '../saas/creation-writer';

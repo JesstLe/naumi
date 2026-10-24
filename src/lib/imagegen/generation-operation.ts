@@ -1,6 +1,6 @@
 import "server-only";
 import {createHash} from "node:crypto";
-import {dbEnabled} from "../db";
+import {dbEnabled} from "@/platform/db/pool";
 import {activeNativeAccountEmail} from "../native-auth";
 import {claimSubmission,saveSubmissionReceipt} from "../billing/intent";
 import {multipartSubmissionFields,submissionFingerprint,type SubmissionField} from "../billing/submission-identity";

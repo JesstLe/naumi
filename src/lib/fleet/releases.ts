@@ -1,7 +1,7 @@
 import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { getPool } from '@/lib/db';
+import { getPool } from "@/platform/db/pool";
 import { ensureFleetSchema, assertInstanceAccess, FleetError } from './server';
 import { canonical, digest, type FleetActor } from './contracts';
 

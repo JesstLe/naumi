@@ -1,7 +1,7 @@
 import "server-only";
 import {randomUUID} from "node:crypto";
 import sharp from "sharp";
-import {getPool} from "../db";
+import {getPool} from "@/platform/db/pool";
 import {ensureMediaSchema,registerMediaAsset} from "../media-assets";
 import {writeStoredObject,readManagedObject} from "../storage";
 import {decodeImagegenPixels} from "./pixels";

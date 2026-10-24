@@ -1,6 +1,6 @@
 import "server-only";
 import { requireAdmin, resolveUserEmail } from "@/lib/admin-auth";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled } from "@/platform/db/pool";
 export const PRIVATE_HEADERS = { "Cache-Control": "private, no-store, max-age=0", Vary: "Cookie, Authorization", "X-Robots-Tag": "noindex, nofollow", "X-Content-Type-Options": "nosniff" };
 export function billingJson(data: unknown, status = 200) { return Response.json(data, { status, headers: PRIVATE_HEADERS }); }
 export function sameSiteBillingMutation(request: Request) {

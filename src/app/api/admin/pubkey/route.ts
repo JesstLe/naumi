@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled } from "@/platform/db/pool";
 import { getPublicKeyPem } from "@/lib/settings";
 import { requireAdmin } from "@/lib/admin-auth";
 

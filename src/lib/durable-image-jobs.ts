@@ -4,7 +4,7 @@ import { releaseRuntimeEnabled } from "@/lib/release-runtime/identity";
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, timingSafeEqual, randomUUID } from "node:crypto";
-import { dbEnabled, getPool } from "@/lib/db";
+import { dbEnabled, getPool } from "@/platform/db/pool";
 import { assertMutableStagingTask } from "./staging-history";
 import { uploadImage, readManagedObject } from "@/lib/storage";
 import { workerSecret } from "@/lib/settings-secret";

@@ -1,7 +1,7 @@
 import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
-import { dbEnabled } from "../db";
+import { dbEnabled } from "@/platform/db/pool";
 import { supplierLedger } from "./runtime";
 import { accountIdentity } from "./runtime";
 import type { createSupplierLedger } from "./repository";

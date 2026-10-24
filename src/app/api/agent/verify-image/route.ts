@@ -2,7 +2,7 @@ import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { NextResponse } from "next/server";
 import { resolveUserEmail } from "@/lib/admin-auth";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled } from "@/platform/db/pool";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { rateLimit } from "@/lib/rate-limit";
 import { getOpenAISettings } from "@/lib/settings";

@@ -3,7 +3,7 @@ import sharp from "sharp";
 import { ARTWORK_INPUT_COLUMNS, ARTWORK_INPUT_JOINS, artworkInputs } from "@/lib/bi/artwork-inputs";
 import { readImagegenInputAsset } from "@/lib/imagegen/input-assets";
 import { biAuthorize, biJson, BI_PRIVATE_HEADERS } from "@/lib/bi/access";
-import { getPool } from "@/lib/db";
+import { getPool } from "@/platform/db/pool";
 import { logBiAccess } from "@/lib/bi/repository";
 import {
   dataUrlToBytes,

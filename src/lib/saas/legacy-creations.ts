@@ -1,6 +1,6 @@
 import 'server-only';
 import {z} from 'zod';
-import {getPool} from '@/lib/db';
+import {getPool} from "@/platform/db/pool";
 import {queryBi,ensureBiSchema} from '@/lib/bi/repository';
 import {parseBiQuery} from '@/lib/bi/contracts';
 import {isManagedImageUrl} from '@/lib/storage';
