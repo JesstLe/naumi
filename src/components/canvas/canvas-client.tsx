@@ -1,4 +1,13 @@
 "use client";
+import { NODE_W, NODE_H, NODE_LABEL_H, IMAGE_NODE_MIN_W, IMAGE_NODE_MIN_H, IMAGE_NODE_MAX_W, IMAGE_NODE_MAX_H, TEXT_NODE_MIN_W, TEXT_NODE_MIN_H, TEXT_NODE_MAX_W, TEXT_NODE_MAX_H, estimateTextNodeHeight, artworkNodeSize, flowNodeSize } from "@/lib/canvas/node-geometry";
+import type {CanvasPendingNode as Pend,CanvasGenerationTask} from "@/lib/canvas/scene-types";
+import { layoutGraph, projectCanvasScene } from "@/lib/canvas/scene-projection";
+import {PendContext} from "./nodes/pending-node";
+import {TextNodeContext} from "./nodes/text-node";
+import {canvasNodeTypes,canvasEdgeTypes} from "./nodes/registry";
+import {useCanvasSceneActions} from "./use-canvas-scene-actions";
+import {useCanvasScene} from "./use-canvas-scene";
+
 import { updateAssistantTimeline, restoreAssistantTimeline, type AssistantTimelineTurn } from "@/lib/canvas/assistant-timeline";
 import { CachedImage } from "@/components/cached-image";
 import { browserImageArchive } from '@/lib/browser-image-archive';
@@ -19,15 +28,14 @@ import { clipboardImageFiles } from "@/lib/canvas/clipboard-files";
 import { CANVAS_RATIO_OPTIONS, CANVAS_RESOLUTIONS, CANVAS_MAX_COUNT, normalizeCanvasRatio, normalizeCanvasResolution, normalizeCanvasCount, normalizeCanvasQuality, canvasModelParameters, canvasCombinationSupported } from "@/lib/canvas/generation-parameters";
 import { canvasDockLayout, canvasOverlaySafeArea, type NodeScreen } from "@/lib/canvas/dock-layout";
 import { createProjectRootResolver } from "@/lib/canvas/project-roots";
-import { knownCanvasNodeMeasurement } from "@/lib/canvas/node-measurement";
-import {canvasGenerationReferences,explicitCanvasParent,synchronizeCanvasArtworks,imageAspectDisplaySize} from "@/lib/canvas/input-references";
+import { canvasGenerationReferences, explicitCanvasParent, synchronizeCanvasArtworks } from "@/lib/canvas/input-references";
 import { canvasFocusViewport } from "@/lib/canvas/upload-visibility";
-import { stableArtworkPositions, canvasNodePosition, readPlacementCache, type CanvasPoint } from "@/lib/canvas/stable-placement";
+import { readPlacementCache, type CanvasPoint } from "@/lib/canvas/stable-placement";
 import { useCanvasTextDocument } from "./use-canvas-text-document";
 import { CANVAS_TEXT_DEFAULT_WIDTH as TEXT_NODE_DEFAULT_W, CANVAS_TEXT_DEFAULT_HEIGHT as TEXT_NODE_DEFAULT_H } from "@/lib/canvas/text-document-model";
 import { canvasDocumentFetch } from "@/lib/canvas/document-scope";
 import { useCanvasHistory } from "./use-canvas-history";
-import { textPatchOf, type CanvasTextNode, type TextPatchFields, type VideoPatchFields, type CanvasHistoryAction as UndoAct } from "@/lib/canvas/history-model";
+import { textPatchOf, type CanvasTextNode, type VideoPatchFields, type CanvasHistoryAction as UndoAct } from "@/lib/canvas/history-model";
 import type { HistoryCommit } from "@/lib/canvas/history-controller";
 import { CanvasHistoryRequestError } from "@/lib/canvas/history-scope";
 import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
@@ -45,7 +53,6 @@ import {prepareCanvasDetailTask} from "@/lib/canvas/detail-task-request";
 import {createCanvasImageTask,type CanvasGeneratedImage} from "@/lib/canvas/image-task-controller";
 import {captureCanvasImageTaskScope,captureCanvasTaskOwner} from "@/lib/canvas/image-task-scope";
 import {prepareCanvasImageTask,appendCanvasImageReferences,type CanvasImageGenerationOptions} from "@/lib/canvas/image-task-request";
-import {VideoGenerationNode} from "./video/generation-node";
 import {generateCanvasVideoBatch,hasCanvasVideoBatch} from "@/lib/video/canvas-batch-client";
 import {VideoSettingsDialog,type VideoNodeDraft} from "./video/settings-dialog";
 import {VideoNodeToolbar} from "./video/node-toolbar";
@@ -53,20 +60,19 @@ import {VideoResultDock} from "./video/result-dock";
 import {useVideoCatalog} from "./video/use-video-catalog";
 import {useVideoNodes} from "./video/use-video-nodes";
 import {useVideoTasks} from "./video/use-video-tasks";
-import {VideoPlayer,mediaDownloadHref,type VideoPlayerAction} from "./video/player";
+import { mediaDownloadHref, type VideoPlayerAction } from "./video/player";
 import {MediaActionsDialog,type MediaInputChoice} from "./video/media-actions";
 import {useMediaJobs} from "./video/use-media-jobs";
 import {videoHistoryDraft} from "@/lib/video/client-history";
 import {useVideoAssets,VideoAssetImportError} from "./video/use-video-assets";
 import {VideoHistoryPicker} from "./video/history-picker";
 import type {CanvasVideoNode} from "@/lib/canvas/video-node-schema";
-import {catalogCapability,videoNodeCreationDefaults,videoModeRoles,type VideoCatalogModel,type VideoInputChoice} from "@/lib/video/client-settings";
+import { catalogCapability, videoNodeCreationDefaults, videoModeRoles, type VideoInputChoice } from "@/lib/video/client-settings";
 import {readVideoReceipt,prepareVideoReceipt,saveVideoReceipt,clearVideoReceipt} from "@/lib/video/canvas-receipts";
-import type {PublicVideoTaskView} from "@/lib/video/service";
+
 import type {PublicQuote} from "@/lib/billing/client";
 import { CanvasPerformanceProbe, recordCanvasNativeMove } from "./canvas-performance-probe";
-import {CanvasImage} from './canvas-image';
-import { classifyGenerationFailure, generationFailureMessage, generationFailureTitle, assertGenerationResultsPresent, type GenerationFailure } from '@/lib/canvas/generation-failure';
+import { generationFailureMessage, assertGenerationResultsPresent } from '@/lib/canvas/generation-failure';
 import { ImagegenHttpError, ImagegenPreparationCancelled } from '@/lib/imagegen/http';
 import { useImageNodeDraft } from './use-image-node-draft';
 import { ImageReferenceComposer } from './image-reference-composer';
@@ -85,14 +91,12 @@ import { selectionRunTargets, runSelectionBatch } from "@/lib/canvas/selection-r
 import { BatchSelectionToolbar } from "./batch-selection-toolbar";
 import { TextImageGenerationDialog } from "./text-image-generation-dialog";
 import { buildTextImageRequests, type TextImageMode } from "@/lib/canvas/text-image-inputs";
-import { GenerationPlaceholder } from "./generation-placeholder";
 import { GenerationSubmitAction } from "./generation-submit-action";
-import { generationPlaceholderSize, generationPositionForTask, placeGenerationPreview, type GenerationStage } from "@/lib/canvas/generation-feedback";
+import { generationPlaceholderSize, generationPositionForTask, placeGenerationPreview } from "@/lib/canvas/generation-feedback";
 import type { ImageSkill } from "@/lib/image-skills/catalog";
 import { CanvasAssistantPanel } from "./canvas-assistant-panel";
 import { assistantReferences, assistantAttachmentCapacity, MAX_ASSISTANT_IMAGES } from "@/lib/canvas/assistant-references";
 import { useWorkflowPaste } from "./use-workflow-paste";
-import { WorkflowDecorationNode, WorkflowGroupNode } from "./workflow-import-nodes";
 import type { ImportedManifest } from "@/lib/canvas/workflow-clipboard";
 import { CanvasAgentToggle } from "./canvas-agent-toggle";
 import { CanvasAgentOrb } from "./canvas-agent-orb";
@@ -103,13 +107,11 @@ import { agentOrbState } from "@/lib/canvas/agent-orb";
 import { reduceAgentProgress } from "@/lib/canvas/agent-progress";
 import {receiveAssistantActivity,type AssistantLiveActivity} from "@/lib/canvas/assistant-live-state";
 import { useCanvasAssistantDisclosure } from "@/lib/canvas/assistant-disclosure";
-import { defaultNodeSettings, validNodeSettings, nodeTextStyle, type CanvasNodeSettings, type CanvasCrop } from "@/lib/canvas/node-settings";
+import { defaultNodeSettings, validNodeSettings, type CanvasNodeSettings, type CanvasCrop } from "@/lib/canvas/node-settings";
 const DEFAULT_CANVAS_SETTINGS = defaultNodeSettings();
 
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -126,91 +128,22 @@ import { useWorkspaceRouter as useRouter } from "@/lib/desktop/navigation";
 import {
   ReactFlow,
   MiniMap,
-  Handle,
-  NodeResizer,
-  Position,
-  useNodesState,
-  useEdgesState,
-  getBezierPath,
   SelectionMode,
-  type NodeProps,
-  type EdgeProps,
   type Node,
   type Edge,
   type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import {
-  X,
-  Pencil,
-  MoreHorizontal,
-  Crop,
-  SlidersHorizontal,
-  Lock,
-  Unlock,
-  ArrowUpToLine,
-  ArrowDownToLine,
-  Loader2,
-  Sparkles,
-  Download,
-  Trash2,
-  Upload,
-  RotateCcw,
-  RotateCw,
-  Scissors,
-  Sun,
-  Moon,
-  Type,
-  Rotate3d,
-  Wand2,
-  Image as ImageIcon,
-  ChevronDown,
-  Home,
-  LayoutGrid,
-  Plus,
-  Maximize,
-  Maximize2,
-  Minimize2,
-  ChevronLeft,
-  Map as MapIcon,
-  Magnet,
-  Link2,
-  Clock,
-  Keyboard,
-  ShoppingBag,
-  Crown,
-  Zap,
-  MapPin,
-  BoxSelect,
-  Combine,
-  GalleryVerticalEnd,
-  ScanSearch,
-  Video,
-  Pause,
-  AlertTriangle,
-  PenLine,
-  Play,
-  MessageSquareText,
-  Workflow,
-  MousePointer2,
-  Hand,
-  ImagePlus,
-  Copy,
-  Box,
-  Ruler,
-  Focus,
-  ArrowUp,
-  type LucideIcon,
-} from "lucide-react";
+import { X, Pencil, MoreHorizontal, Crop, SlidersHorizontal, Lock, Unlock, ArrowUpToLine, ArrowDownToLine, Loader2, Sparkles, Download, Trash2, Upload, RotateCcw, RotateCw, Scissors, Sun, Moon, Type, Rotate3d, Wand2, Image as ImageIcon, ChevronDown, Home, LayoutGrid, Plus, Maximize, Maximize2, ChevronLeft, Map as MapIcon, Magnet, Clock, Keyboard, ShoppingBag, Crown, Zap, MapPin, BoxSelect, Combine, GalleryVerticalEnd, ScanSearch, Video, PenLine, Play, MessageSquareText, Workflow, MousePointer2, Hand, ImagePlus, Copy, Box, Ruler, Focus, ArrowUp, type LucideIcon } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
 import {currentWorkspace} from '@/lib/saas/workspace-client';
 import { useAuth } from "@/lib/auth-context";
 import { useCanvasCredits } from "./use-canvas-credits";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { useI18n } from "@/lib/i18n/locale-context";
-import { Button } from "@/components/ui/button";
+
 import { Textarea } from "@/components/ui/textarea";
-import { cdnUrl, cdnThumb } from "@/lib/cdn";
+import { cdnUrl } from "@/lib/cdn";
 import { ImageLightbox } from "@/components/image-lightbox";
 import type { ComfyRunPayload, ComfyRunResult } from "@/components/canvas/canvas-comfy-dialog";
 import { BRAND, BRAND_CANVAS_LOGO } from "@/lib/brand";
@@ -245,7 +178,7 @@ import {
 import {
   compactImageModelOptions,
 } from "@/lib/image-model-routing";
-import { ModelIcon } from "@/components/ui/model-icon";
+
 import { adminConfiguredFeature } from "@/lib/model-config/selection-policy";
 import { chosenFeatureModel, featureModelManaged, useFeatureModels } from "@/lib/model-config/feature-client";
 import { FeatureModelSelect } from "@/components/tools/feature-model-select";
@@ -263,14 +196,6 @@ async function privateFetchRaw(input: RequestInfo | URL, init: RequestInit = {})
 }
 // 横向链路布局(对齐原型 node-canvas-preview):深度→x 向右展开,同层兄弟→y 竖排。
 // 图片节点使用更清晰的工作尺寸，并按图片比例自适应；高分屏上保持可辨识。
-const NODE_W = 320; // 新建图片节点的默认宽度，避免高分辨率屏幕上过小
-const NODE_H = 236; // 标签行 36 + 默认图片区 200
-const NODE_LABEL_H = 36;
-const IMAGE_NODE_MIN_W = 120;
-const IMAGE_NODE_MIN_H = 108;
-const IMAGE_NODE_MAX_W = 2400;
-const IMAGE_NODE_MAX_H = 2400;
-const PORT_Y = NODE_LABEL_H + 100; // 默认空白节点连接点垂直居中
 const X_GAP = 90; // 层间横向间距
 const Y_GAP = 48; // 同层兄弟纵向间距
 const MAX_TOTAL_IMAGES = 16; // 节点图 + 追加参考图 合计上限
@@ -284,33 +209,6 @@ const ANCHOR_GRID = ["nw", "n", "ne", "w", "center", "e", "sw", "s", "se"] as co
 const ANCHOR_TITLE: Record<string, string> = {
   nw: "左上", n: "上", ne: "右上", w: "左", center: "中", e: "右", sw: "左下", s: "下", se: "右下",
 };
-const TEXT_NODE_MIN_W = 220;
-const TEXT_NODE_MIN_H = 140;
-const TEXT_NODE_MAX_W = 1200;
-const TEXT_NODE_MAX_H = 1200;
-
-// 文字节点内容自适应高度估算:标题栏36 + 内边距 + 引用芯片行 + 正文行数(12px/1.65行高)。
-// 只做粗估(阈值 28px 起才调整),手动拖大节点后不被覆盖(签名不变则不动)。
-function estimateTextNodeHeight(node: {
-  width: number;
-  content: string;
-  prompt: string;
-  sourceIds?: string[];
-}): number {
-  const width = node.width || TEXT_NODE_DEFAULT_W;
-  const charsPerLine = Math.max(8, Math.floor((width - 24) / 11));
-  const text = `${node.content || ""}\n${node.prompt || ""}`.trim();
-  const lines = text
-    ? text
-        .split("\n")
-        .reduce((n, seg) => n + Math.max(1, Math.ceil(seg.length / charsPerLine)), 0)
-    : 2;
-  const refsRows = node.sourceIds?.length ? 1 : 0;
-  const h = 32 + 20 + refsRows * 26 + lines * 20 + 14;
-  return Math.round(
-    Math.min(TEXT_NODE_MAX_H, Math.max(TEXT_NODE_DEFAULT_H, h))
-  );
-}
 // React Flow 默认只允许 50%–200%。这里使用 JavaScript 可安全表达的完整正数范围，
 // 让滚轮、触控板、按钮和百分比输入不再受产品层的人为缩放档位限制。
 const CANVAS_MIN_ZOOM = Number.EPSILON;
@@ -393,22 +291,6 @@ function zoomPercentLabel(zoom: number): string {
 }
 
 type GenerationMode = "standard" | "detail" | "triptych" | "split";
-
-type CanvasGenerationTask = {
-  isVisible?: () => boolean;
-  failure?: GenerationFailure;
-  onRetry?: () => unknown;
-  stage?: GenerationStage;
-  startedAt?: number;
-  previewSize?: { width: number; height: number };
-  count?: number;
-  completed?: number;
-  id: string;
-  operationKey: string;
-  sourceId: string;
-  label: string;
-  position: { x: number; y: number };
-};
 
 type GeneratedResult = CanvasGeneratedImage;
 
@@ -510,40 +392,6 @@ const CANVAS_RATIOS = CANVAS_RATIO_OPTIONS;
 const CANVAS_RES = CANVAS_RESOLUTIONS;
 type ImageModelOption = { id: string; label: string; supportsEdit: boolean; generationParameters?: { ratios?: string[]; resolutions?: string[]; combinations?: string[] } };
 
-function artworkImageSize(art: Pick<Artwork, "width" | "height">) {
-  const withCanvas = art as Pick<
-    Artwork,
-    "width" | "height" | "canvasWidth" | "canvasHeight"
-  >;
-  if (
-    withCanvas.canvasWidth &&
-    withCanvas.canvasWidth > 0 &&
-    withCanvas.canvasHeight &&
-    withCanvas.canvasHeight > 0
-  ) {
-    return imageAspectDisplaySize(Math.round(withCanvas.canvasWidth), Math.round(withCanvas.canvasHeight), art.width, art.height);
-  }
-  return adaptiveCanvasImageSize(art.width, art.height);
-}
-
-function artworkNodeSize(art: Pick<Artwork, "width" | "height">) {
-  const image = artworkImageSize(art);
-  return { width: image.width, height: image.height + NODE_LABEL_H, imageHeight: image.height };
-}
-
-function flowNodeSize(node: Node | undefined) {
-  if (!node) return { width: NODE_W, height: NODE_H };
-  const data = node.data as { width?: number; height?: number; nodeKind?: string } | undefined;
-  const width = data?.width && data.width > 0 ? data.width : node.measured?.width || NODE_W;
-  if (data?.nodeKind === "text") {
-    const height = data.height && data.height > 0
-      ? data.height
-      : node.measured?.height || TEXT_NODE_DEFAULT_H;
-    return { width, height };
-  }
-  const imageHeight = data?.height && data.height > 0 ? data.height : Math.max(110, (node.measured?.height || NODE_H) - NODE_LABEL_H);
-  return { width, height: imageHeight + NODE_LABEL_H };
-}
 // 重生成(拉线新建节点 / 侧栏「生成新版本」)在用户没写提示词、且原图也没有提示词
 // 可继承时的兜底词。明确要求别替换背景、别改配色/色调 —— 否则 gpt-image 在宽松指令下
 // 会顺手重画背景(实测:背景被改成黄色)。仍是重生成(非像素锁定),只是约束更强。
@@ -759,683 +607,7 @@ function projectKey(a: Artwork, byId: Map<string, Artwork>, resolveRoot = (art: 
 }
 
 // 占位节点(空白/上传中)动作上下文:让 React Flow 内的节点能调用主组件的上传
-type PendCtx = {
-  onUpload: (id: string) => void;
-  onRemove: (id: string) => void;
-};
-const PendContext = createContext<PendCtx | null>(null);
-
-type TextNodeCtx = {
-  onRemove: (id: string) => void;
-  onCopy: (text: string) => void;
-  onContentChange: (id: string, content: string) => void;
-  onContentCommit: (id: string, content: string, initialContent?: string) => void;
-  onResize: (id: string, bounds: { x: number; y: number; width: number; height: number }) => void;
-  onToggleExpand: (id: string) => void;
-};
-const TextNodeContext = createContext<TextNodeCtx | null>(null);
-
-function TextCanvasNode({ data, selected }: NodeProps) {
-  const ctx = useContext(TextNodeContext);
-  const editInitialContent = useRef<string | undefined>(undefined);
-  const d = data as {
-    __id: string;
-    title: string;
-    prompt: string;
-    content: string;
-    status: CanvasTextNode["status"];
-    sourceRefs?: Array<{ id: string; title: string }>;
-    selected?: boolean;
-    lightCanvas?: boolean;
-    expanded?: boolean;
-    settings?: CanvasNodeSettings;
-    readOnly?: boolean;
-    workflowPresentation?: { rotation: number; flipX: boolean; opacity: number };
-  };
-  const active = selected || d.selected;
-  const body = d.content || d.prompt;
-  const editableBody = d.status === "completed" || Boolean(d.content);
-  return (
-    <div className="group relative flex h-full w-full flex-col" style={d.workflowPresentation ? { transform: `rotate(${d.workflowPresentation.rotation}deg) scaleX(${d.workflowPresentation.flipX ? -1 : 1})`, opacity: d.workflowPresentation.opacity } : undefined}>
-      <NodeResizer
-        isVisible={active && !d.expanded && !d.readOnly && !d.settings?.locked}
-        minWidth={TEXT_NODE_MIN_W}
-        minHeight={TEXT_NODE_MIN_H}
-        maxWidth={TEXT_NODE_MAX_W}
-        maxHeight={String(data.__id || "").startsWith("text-import-") ? 100000 : TEXT_NODE_MAX_H}
-        color="#315fc8"
-        handleClassName="!h-2.5 !w-2.5 !border-2 !border-white !bg-[#315fc8]"
-        lineClassName="!border-[#315fc8]"
-        onResizeEnd={(_, bounds) =>
-          ctx?.onResize(d.__id, {
-            x: bounds.x,
-            y: bounds.y,
-            width: bounds.width,
-            height: bounds.height,
-          })
-        }
-      />
-      {/* 标题行跟随画布明暗切换，避免浅色画布上的浅色标题失去对比度。 */}
-      <div
-        data-testid="text-node-title"
-        className={cn(
-          "mb-1.5 flex h-[30px] flex-none items-center gap-1.5 truncate pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold leading-none",
-          d.lightCanvas ? "text-[#303641]" : "text-[#e2e6ed]"
-        )}
-      >
-        <span className="min-w-0 flex-1 truncate" title={d.title || "文字生成"}>
-          {d.title || "文字生成"}
-        </span>
-        {d.status === "generating" && (
-          <Loader2 className="h-3.5 w-3.5 flex-none animate-spin text-[#6bd7ec]" />
-        )}
-      </div>
-      {/* 内容卡与图片节点统一；选中态使用稿定式清晰蓝框，不使用光晕。 */}
-      <div
-        data-testid="text-node-card"
-        className={cn(
-          "canvas-ui-node-card relative min-h-0 flex-1 overflow-auto rounded-[10px] border px-3 py-2.5 text-[12px] leading-[1.65] transition-all",
-          d.lightCanvas ? "canvas-ui-light" : "canvas-ui-dark",
-          active
-            ? "canvas-ui-selected ring-2 ring-[#315fc8] ring-offset-2 ring-offset-transparent"
-            : ""
-        )}
-      >
-        {!!d.sourceRefs?.length && (
-          <div className="mb-2 flex flex-wrap gap-1.5">
-            {d.sourceRefs.map((reference) => (
-              <span
-                key={reference.id}
-                className={cn(
-                  "max-w-full truncate border px-1.5 py-0.5 text-[10px] font-semibold leading-4",
-                  d.lightCanvas
-                    ? "border-[#b9d0d8] bg-[#e8f2f5] text-[#315a68]"
-                    : "border-[#24505f] bg-[#163842] text-[#8fe7f5]"
-                )}
-                title={`@${reference.title}`}
-              >
-                @{reference.title}
-              </span>
-            ))}
-          </div>
-        )}
-        {d.status === "generating" ? (
-          <div className="canvas-ui-muted flex h-[108px] items-center justify-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin text-[#6366f1]" /> 正在生成文字…
-          </div>
-        ) : editableBody ? (
-          <textarea
-            aria-label="编辑生成文本"
-            readOnly={d.readOnly || d.settings?.locked}
-            style={nodeTextStyle(d.settings || DEFAULT_CANVAS_SETTINGS)}
-            value={d.content}
-            onChange={(event) => ctx?.onContentChange(d.__id, event.target.value)}
-            onFocus={() => { editInitialContent.current = d.content; }}
-            onBlur={(event) => {
-              ctx?.onContentCommit(d.__id, event.currentTarget.value, editInitialContent.current);
-              editInitialContent.current = undefined;
-            }}
-            onPointerDown={(event) => event.stopPropagation()}
-            className={cn(!d.settings?.text.color && "canvas-ui-text", "nodrag nowheel h-full min-h-[96px] w-full resize-none overflow-auto border-0 bg-transparent p-0 text-[12px] leading-[1.65] outline-none")}
-          />
-        ) : body ? (
-          <p style={nodeTextStyle(d.settings || DEFAULT_CANVAS_SETTINGS)} className="whitespace-pre-wrap break-words">{body}</p>
-        ) : (
-          <p className="canvas-ui-muted">输入需求后生成文字内容</p>
-        )}
-      </div>
-      <div className={cn("canvas-ui-surface-solid absolute right-1.5 top-1.5 hidden items-center gap-1 rounded-md pl-1 group-hover:flex", d.lightCanvas ? "canvas-ui-light" : "canvas-ui-dark")}>
-        <button
-          type="button"
-          className="canvas-ui-action nodrag flex h-6 w-6 items-center justify-center"
-          title={d.expanded ? "还原大小" : "放大查看"}
-          onClick={(event) => {
-            event.stopPropagation();
-            ctx?.onToggleExpand(d.__id);
-          }}
-        >
-          {d.expanded ? (
-            <Minimize2 className="h-3.5 w-3.5" />
-          ) : (
-            <Maximize2 className="h-3.5 w-3.5" />
-          )}
-        </button>
-        {!!d.content && (
-          <button
-            type="button"
-            className="canvas-ui-action nodrag flex h-6 w-6 items-center justify-center"
-            title="复制文字"
-            onClick={(event) => {
-              event.stopPropagation();
-              ctx?.onCopy(d.content);
-            }}
-          >
-            <span className="text-[11px]">⧉</span>
-          </button>
-        )}
-        <button
-          type="button"
-          className="nodrag flex h-6 w-6 items-center justify-center text-[#7d8694] hover:bg-[#ff6b63]/15 hover:text-[#ff6b63]"
-          title="删除文字节点"
-          disabled={d.readOnly || d.settings?.locked}
-          onClick={(event) => {
-            event.stopPropagation();
-            ctx?.onRemove(d.__id);
-          }}
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      <Handle
-        id="in"
-        type="target"
-        position={Position.Left}
-        className={cn(
-          "canvas-ui-port art-port !flex !h-12 !w-12 !-left-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !text-[26px] !font-medium !leading-none shadow-lg transition-all",
-          active
-            ? "!opacity-100"
-            : "!pointer-events-none !opacity-0 group-hover:!pointer-events-auto group-hover:!opacity-100"
-        )}
-      >
-        <span className="pointer-events-none leading-none">+</span>
-      </Handle>
-      <Handle
-        id="out"
-        type="source"
-        position={Position.Right}
-        className={cn(
-          "canvas-ui-port art-port !flex !h-12 !w-12 !-right-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !text-[26px] !font-medium !leading-none shadow-lg transition-all",
-          active
-            ? "!opacity-100"
-            : "!pointer-events-none !opacity-0 group-hover:!pointer-events-auto group-hover:!opacity-100"
-        )}
-      >
-        <span className="pointer-events-none leading-none">+</span>
-      </Handle>
-    </div>
-  );
-}
-
-// 占位/上传中节点(对齐参考站:空白节点→里面上传→进度条→填充)
-function PendNode({ data, selected }: NodeProps) {
-  const ctx = useContext(PendContext);
-  const d = data as {
-    label: string;
-    uploading?: boolean;
-    progress?: number;
-    fileName?: string;
-    fileInfo?: string;
-    generating?: boolean;
-    generationFailure?: GenerationFailure;
-    onGenerationRetry?: () => unknown;
-    generationStage?: GenerationStage;
-    generationStartedAt?: number;
-    generationSize?: { width: number; height: number };
-    generationCount?: number;
-    generationKind?: "image" | "video";
-    needsAttention?: boolean;
-    attentionTitle?: string;
-    attentionHint?: string;
-    attentionAction?: string;
-    attentionHref?: string;
-    selected?: boolean;
-    lightCanvas?: boolean;
-  };
-  const sel = selected || d.selected;
-  return (
-    <div style={d.generating || d.generationFailure ? { width: d.generationSize?.width ?? 384 } : undefined} className={cn("group relative w-[320px]", d.lightCanvas ? "canvas-ui-light" : "canvas-ui-dark")}>
-      {/* 标签(图片上方,对齐原型 .lb2) */}
-      <div className="canvas-ui-text mb-1.5 flex h-[30px] items-center gap-1.5 truncate pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold">
-        <ImageIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
-        <span className="truncate">{d.label}</span>
-      </div>
-      {/* 占位卡(原型 .nb2 + .ph2:单层卡片,选中=teal) */}
-      <div
-        style={d.generating || d.generationFailure ? { height: d.generationSize?.height ?? 384 } : undefined}
-        className={cn(
-          "canvas-ui-node-card relative flex h-[200px] flex-col items-center justify-center rounded-[12px] border px-5 text-center transition-all",
-          sel
-            ? "canvas-ui-selected ring-2 ring-[#315fc8] ring-offset-2 ring-offset-transparent"
-            : "border-dashed"
-        )}
-      >
-        {d.generationFailure ? (
-          <GenerationPlaceholder failure={d.generationFailure} onRetry={d.onGenerationRetry} />
-        ) : d.needsAttention ? (
-          <div className="flex w-full flex-col items-center gap-2.5">
-            <AlertTriangle className="h-6 w-6 text-[#b7791f]" />
-            <div className="canvas-ui-text text-[13px] font-semibold">
-              {d.attentionTitle || "视频任务需核对"}
-            </div>
-            <div className="canvas-ui-muted max-w-[250px] text-[11px] leading-5">
-              {d.attentionHint || "任务已停止自动处理，请前往视频任务页核对后继续。"}
-            </div>
-            <Link
-              href={d.attentionHref || "/video"}
-              className="nodrag nopan rounded-md border border-[#c78b2c] bg-[#fff8e8] px-3 py-1.5 text-[11px] font-semibold text-[#8a5a12] transition-colors hover:bg-[#fff1cf]"
-            >
-              {d.attentionAction || "前往视频任务"}
-            </Link>
-          </div>
-        ) : d.generating ? (
-          <GenerationPlaceholder stage={d.generationStage} startedAt={d.generationStartedAt} count={d.generationCount} kind={d.generationKind} />
-        ) : d.uploading ? (
-          <div className="flex w-full flex-col items-center gap-2.5">
-            <Loader2 className="h-5 w-5 animate-spin text-primary" />
-            <div className="canvas-ui-text text-[12px] font-medium">
-              上传中（{Math.round(d.progress ?? 0)}%）
-            </div>
-            <div className="canvas-ui-control h-1.5 w-full overflow-hidden rounded-full border-0">
-              <div
-                className="h-full rounded-full bg-primary transition-all"
-                style={{ width: `${Math.round(d.progress ?? 0)}%` }}
-              />
-            </div>
-            {d.fileInfo && (
-              <div className="canvas-ui-muted w-full truncate text-[10px]">
-                {d.fileInfo}
-              </div>
-            )}
-          </div>
-        ) : (
-          <>
-            <ImageIcon className="canvas-ui-muted mb-2 h-6 w-6" />
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                ctx?.onUpload(String((data as { __id?: string }).__id ?? ""));
-              }}
-              className="canvas-ui-control flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors hover:border-primary/60"
-            >
-              <Upload className="h-3.5 w-3.5" /> 上传图片
-            </button>
-          </>
-        )}
-      </div>
-      <Handle
-        id="in"
-        type="target"
-        position={Position.Left}
-        style={{ top: PORT_Y }}
-        className="canvas-ui-port !flex !h-12 !w-12 !-left-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !text-[26px] !font-medium !leading-none shadow-lg transition-colors"
-      >
-        <span className="pointer-events-none leading-none">+</span>
-      </Handle>
-      {!d.uploading && !d.generating && !d.needsAttention && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            ctx?.onRemove(String((data as { __id?: string }).__id ?? ""));
-          }}
-          className="canvas-ui-control nodrag absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full border text-[11px] opacity-0 transition-opacity group-hover:opacity-100"
-          title="删除空白节点"
-        >
-          ✕
-        </button>
-      )}
-    </div>
-  );
-}
-
-// 自定义连线:点亮链路时叠多层彗星流光(严格对齐原型 cw-tail/body/head/spark)
-function CometEdge({
-  sourceX,
-  sourceY,
-  targetX,
-  targetY,
-  sourcePosition,
-  targetPosition,
-  data,
-}: EdgeProps) {
-  const [path] = getBezierPath({
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX,
-    targetY,
-    targetPosition,
-  });
-  const d = data as { lit?: boolean; dim?: boolean } | undefined;
-  const lit = !!d?.lit;
-  return (
-    <>
-      {/* 加宽的透明命中区:让"鼠标放到线上"更容易触发悬停/剪断 */}
-      <path
-        className="react-flow__edge-interaction"
-        d={path}
-        fill="none"
-        strokeWidth={22}
-        stroke="transparent"
-        style={{ pointerEvents: "stroke", cursor: "pointer" }}
-      />
-      <path
-        className={cn("cw-base", lit && "cw-on", d?.dim && "cw-dim2")}
-        d={path}
-        fill="none"
-      />
-      {lit && (
-        <>
-          <path className="cw-comet cw-tail" pathLength={100} d={path} fill="none" />
-          <path className="cw-comet cw-body" pathLength={100} d={path} fill="none" />
-          <path className="cw-comet cw-head" pathLength={100} d={path} fill="none" />
-          <path className="cw-comet cw-spark" pathLength={100} d={path} fill="none" />
-        </>
-      )}
-    </>
-  );
-}
-
-/**
- * 画布视频节点表面(参照 infinite-canvas):原生 video 元素 + 播放/放大角标 +
- * 时长显示。未选中自动暂停；选中后可聚焦视频表面并用空格播放。
- * 所有媒体控件都隔离 React Flow 的拖动、滚轮和平移快捷键。
- */
-function VideoNodeSurface({url,selected,kind,onExtract}:{url:string;selected:boolean;kind:"video"|"audio";onExtract?:(action:VideoPlayerAction)=>void}) {
-  return <VideoPlayer url={url} selected={selected} kind={kind} compact onProcess={onExtract}/>;
-}
-
-function ArtNode({ data, selected, id: nodeId }: NodeProps) {
-  const d = data as {
-    id: string;
-    image?: string;
-    videoUrl?: string;
-    category?: string;
-    label: string;
-    rootLabel?: string | null;
-    version?: number;
-    prompt?: string;
-    date?: string;
-    pending?: boolean;
-    generationFailure?: GenerationFailure;
-    onGenerationRetry?: () => unknown;
-    generationStage?: GenerationStage;
-    generationStartedAt?: number;
-    generationCount?: number;
-    generationCompleted?: number;
-    inChain?: boolean;
-    marked?: boolean;
-    canvasGroupId?: string | null;
-    ratio?: string | null;
-    width?: number | null;
-    height?: number | null;
-    intrinsicWidth?: number | null;
-    processingKind?: Artwork["processingKind"];
-    intrinsicHeight?: number | null;
-    inspectOriginal?: boolean;
-    lightCanvas?: boolean;
-    onDimensions?: (id: string, width: number, height: number) => void;
-    workflowPresentation?: { rotation: number; flipX: boolean; opacity: number };
-    missingAsset?: boolean;
-    onFill?: () => void;
-    onCanvasResize?: (
-      id: string,
-      bounds: { x: number; y: number; width: number; height: number }
-    ) => void;
-    onCanvasRatioRepair?: (id: string, width: number, height: number) => void;
-    onRenameRequest?: (id: string, label: string) => void;
-    onVideoExtract?: (id: string, action: VideoPlayerAction) => void;
-    onCutout?: (id: string) => void;
-    cutoutBusy?: boolean;
-    cutoutBlocked?: boolean;
-    settings?: CanvasNodeSettings;
-    readOnly?: boolean;
-  };
-  const { can: canNodeFeature } = useFeatureAccess();
-  const imageWidth = d.width && d.width > 0 ? Math.round(d.width) : undefined;
-  const imageHeight = d.height && d.height > 0 ? Math.round(d.height) : undefined;
-  // 节点边界=图片区域(标题绝对定位悬在图上方,不占边界),端口对齐图片竖直中点
-  const portY = (imageHeight ?? 110) / 2;
-  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
-  const [forceOriginal, setForceOriginal] = useState(false);
-  const preview = !forceOriginal && !!d.intrinsicWidth && !!d.intrinsicHeight;
-  const previousImage = useRef(d.image);
-  useEffect(() => {
-    if (previousImage.current === d.image) return;
-    previousImage.current = d.image;
-    setForceOriginal(false); setNaturalSize(null); aspectFixedRef.current = false;
-  }, [d.image]);
-  const title = d.pending
-    ? d.label
-    : `${d.version ? `v${d.version}` : ""}${d.date ? ` · ${formatDate(d.date)}` : ""}${d.prompt ? `\n${d.prompt}` : ""}`;
-  // 缺尺寸/预览宽高比与元数据不符时回源解码；缩略图像素绝不回写为原图尺寸。
-  // 这里只静默修复显示高度，不写坐标、不污染用户撤销栈。
-  const aspectFixedRef = useRef(false);
-  useEffect(() => {
-    if (aspectFixedRef.current || nodeId.startsWith("art-import-") || d.pending || d.videoUrl || !naturalSize) return;
-    const iw = naturalSize.width;
-    const ih = naturalSize.height;
-    const cw = d.width;
-    const ch = d.height;
-    if (!iw || !ih || !cw || !ch) return;
-    const imgRatio = iw / ih;
-    const nodeRatio = cw / ch;
-    if (Math.abs(nodeRatio - imgRatio) / imgRatio < 0.05) return;
-    aspectFixedRef.current = true;
-    d.onCanvasRatioRepair?.(
-      nodeId,
-      Math.round(cw),
-      Math.max(IMAGE_NODE_MIN_H, Math.min(IMAGE_NODE_MAX_H, Math.round(cw / imgRatio)))
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodeId, naturalSize, d.width, d.height, d.pending, d.videoUrl]);
-  return (
-    <div
-      className={cn("group relative flex h-full w-full flex-col", d.lightCanvas ? "canvas-ui-light" : "canvas-ui-dark")}
-      data-image-width={imageWidth}
-      data-image-height={imageHeight}
-      data-intrinsic-width={d.intrinsicWidth || undefined}
-      data-intrinsic-height={d.intrinsicHeight || undefined}
-      data-canvas-group-id={d.canvasGroupId || undefined}
-    >
-      <NodeResizer
-        isVisible={selected && !d.pending && !d.readOnly && !d.settings?.locked}
-        keepAspectRatio
-        minWidth={IMAGE_NODE_MIN_W}
-        minHeight={IMAGE_NODE_MIN_H}
-        maxWidth={IMAGE_NODE_MAX_W}
-        maxHeight={IMAGE_NODE_MAX_H}
-        color="#315fc8"
-        handleClassName="!h-3 !w-3 !border-2 !border-white !bg-[#315fc8]"
-        lineClassName="!border-[#315fc8]"
-        onResizeEnd={(_, bounds) =>
-          d.onCanvasResize?.(d.id, {
-            x: bounds.x,
-            y: bounds.y,
-            width: bounds.width,
-            height: Math.max(IMAGE_NODE_MIN_H, bounds.height),
-          })
-        }
-      />
-
-      {/* 标题悬在图片上方(节点边界外):选中框/缩放框只框图片,不框标题。未选中时仅显示文件名,点击后显示标记/分组/版本。 */}
-      <div className="art-title absolute -top-[38px] left-0 right-0 z-10 flex h-[30px] items-center gap-1.5 truncate pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold leading-none text-[#e2e6ed]">
-        <span
-          className="nodrag min-w-0 flex-1 cursor-text truncate"
-          title={`${d.label} · 双击编辑`}
-          onDoubleClick={(event) => {
-            event.stopPropagation();
-            d.onRenameRequest?.(d.id, d.label);
-          }}
-        >
-          {d.label}
-        </span>
-        {selected && d.marked && (
-          <MapPin className="h-3 w-3 flex-none fill-amber-400 text-amber-400" />
-        )}
-        {d.settings?.locked && <Lock className="h-3.5 w-3.5 shrink-0" aria-label="节点已锁定" />}
-        {selected && d.canvasGroupId && (
-          <Combine className="h-3 w-3 flex-none text-[#6bd7ec]" aria-label="已成组" />
-        )}
-        {selected && d.version && (
-          <span className="art-version ml-auto flex-none rounded bg-white/10 px-1 text-[10px] font-semibold text-slate-200">
-            v{d.version}
-          </span>
-        )}
-      </div>
-
-      {/* 图片卡使用单层边框；选中态为稿定式蓝色描边与外环。 */}
-      <div
-        title={title}
-        className={cn(
-          "canvas-ui-node-card relative min-h-0 flex-1 overflow-hidden rounded-[10px] border transition-all",
-          selected
-            ? "canvas-ui-selected ring-2 ring-[#315fc8] ring-offset-2 ring-offset-transparent"
-            : d.inChain
-              ? "border-[#6366f1]/50"
-              : "border-transparent"
-        )}
-      >
-        {d.pending ? (
-          <GenerationPlaceholder stage={d.generationStage} startedAt={d.generationStartedAt} count={d.generationCount} completed={d.generationCompleted} failure={d.generationFailure} onRetry={d.onGenerationRetry} />
-        ) : d.videoUrl && d.category==="media" ? (
-          <div className="flex h-full items-center justify-center p-3"><a className="nodrag nowheel nokey rounded-lg bg-current/5 px-3 py-2 text-xs" href={mediaDownloadHref(d.videoUrl,d.label)} download>下载 {d.label}</a></div>
-        ) : d.videoUrl ? (
-          <VideoNodeSurface url={d.videoUrl} selected={selected} kind={d.category === "audio" ? "audio" : "video"} onExtract={action => d.onVideoExtract?.(d.id, action)} />
-        ) : (
-          <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <CanvasImage
-              key={d.image as string}
-              source={d.image as string}
-              forceOriginal={forceOriginal || !!d.inspectOriginal}
-              hasDimensions={!!d.intrinsicWidth && !!d.intrinsicHeight}
-              decoding="async"
-              onError={event => { if(event.currentTarget.dataset.mediaVariant!=='original')setForceOriginal(true); }}
-              alt={d.label}
-              draggable={false}
-              width={imageWidth}
-              height={imageHeight}
-              onLoad={(event) => {
-                const image = event.currentTarget;
-                if (!(image.naturalWidth > 0) || !(image.naturalHeight > 0)) return;
-                const optimized = preview && image.dataset.mediaVariant !== 'original';
-                if (optimized && Math.abs(image.naturalWidth / image.naturalHeight - d.intrinsicWidth! / d.intrinsicHeight!) > 0.02) {
-                  setForceOriginal(true); return;
-                }
-                const width = optimized ? d.intrinsicWidth! : image.naturalWidth;
-                const height = optimized ? d.intrinsicHeight! : image.naturalHeight;
-                setNaturalSize((current) =>
-                  current?.width === width && current.height === height
-                    ? current
-                    : { width, height }
-                );
-                if (
-                  d.intrinsicWidth !== width || d.intrinsicHeight !== height
-                ) d.onDimensions?.(d.id, width, height);
-              }}
-              className="block h-full w-full object-contain"
-              style={d.workflowPresentation ? { transform: `rotate(${d.workflowPresentation.rotation}deg) scaleX(${d.workflowPresentation.flipX ? -1 : 1})`, opacity: d.workflowPresentation.opacity } : undefined}
-            />
-            {d.missingAsset && <div data-testid="workflow-missing-asset" className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-50/80 text-slate-500">
-              <ImagePlus className="h-8 w-8 text-slate-400" />
-              <span className="text-sm font-medium">待补图片</span>
-              {!d.readOnly && <button type="button" className="nodrag nopan rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-                disabled={d.settings?.locked} onClick={event=>{event.stopPropagation();d.onFill?.();}}>补充图片</button>}
-            </div>}
-            {selected && canNodeFeature("cutout") && !d.readOnly && !d.missingAsset && d.onCutout && <button type="button" data-testid="canvas-image-quick-cutout"
-              aria-label="去背景，保留主体" title="去背景，保留主体" disabled={d.cutoutBusy || d.cutoutBlocked || d.settings?.locked}
-              className="nodrag nopan absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white/95 px-2 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
-              onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();d.onCutout?.(d.id);}}>
-              {d.cutoutBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> : <Scissors className="h-3.5 w-3.5"/>}去背景</button>}
-            {selected && d.rootLabel && (
-              <span className="absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">
-                {d.rootLabel}
-              </span>
-            )}
-            {selected && d.processingKind && <span className="absolute bottom-1.5 left-1.5 bg-black/70 px-1.5 py-0.5 text-[10px] text-white">{d.processingKind === "resize" ? "普通缩放" : d.processingKind === "native" ? "原生像素已校验" : d.processingKind === "ai-upscale" ? "AI 超分" : "底图"} · {naturalSize?.width || d.intrinsicWidth}×{naturalSize?.height || d.intrinsicHeight}</span>}
-          </>
-        )}
-      </div>
-
-      {/* 端口(原型 .port:22px 圆,top:78,hover 变 teal);左右都是 + 圆点 */}
-      <Handle
-        id="in"
-        type="target"
-        position={Position.Left}
-        title="连接参考图输入" aria-label="连接参考图输入"
-        isConnectable={!d.readOnly && !d.settings?.locked}
-        style={{ top: portY }}
-        className={cn(
-          "canvas-ui-port art-port !flex !h-12 !w-12 !-left-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !text-[26px] !font-medium !leading-none shadow-lg transition-all",
-          selected
-            ? "!opacity-100"
-            : "!opacity-0 group-hover:!opacity-100"
-        )}
-      >
-        <span className="pointer-events-none leading-none">+</span>
-      </Handle>
-      {!d.pending && (
-        <Handle
-          id="out"
-          type="source"
-          position={Position.Right}
-          title="拖动连接到其他图片" aria-label="拖动连接到其他图片"
-          isConnectable={!d.readOnly && !d.settings?.locked}
-          style={{ top: portY }}
-          className={cn(
-            "canvas-ui-port art-port !flex !h-12 !w-12 !-right-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !text-[26px] !font-medium !leading-none shadow-lg transition-all",
-            selected
-              ? "!opacity-100"
-              : "!pointer-events-none !opacity-0 group-hover:!pointer-events-auto group-hover:!opacity-100"
-          )}
-        >
-          <span className="pointer-events-none leading-none">+</span>
-        </Handle>
-      )}
-    </div>
-  );
-}
-
 // 计算当前选中节点的整条血缘链路:上溯所有祖先 + 下延所有衍生(含自身)
-function lineageChain(
-  members: Artwork[],
-  selectedId: string | null
-): Set<string> {
-  const chain = new Set<string>();
-  if (!selectedId) return chain;
-  const byId = new Map(members.map((m) => [m.id, m]));
-  // 项目归属不是输入；显式连线仍参与血缘和助手上下文。
-  const parentsOf = (m: Artwork): string[] => {
-    const ps = new Set<string>();
-    if (m.parentId && byId.has(m.parentId) && explicitCanvasParent(m, m.parentId)) ps.add(m.parentId);
-    for (const pid of m.parentIds ?? [])
-      if (pid && byId.has(pid)) ps.add(pid);
-    return [...ps];
-  };
-  const childrenOf = new Map<string, string[]>();
-  for (const m of members) {
-    for (const p of parentsOf(m)) {
-      const arr = childrenOf.get(p) ?? [];
-      arr.push(m.id);
-      childrenOf.set(p, arr);
-    }
-  }
-  // 上溯祖先(含多输入父,BFS)
-  const up = [selectedId];
-  let guard = 0;
-  while (up.length && guard++ < 2000) {
-    const id = up.pop() as string;
-    if (chain.has(id)) continue;
-    chain.add(id);
-    const m = byId.get(id);
-    if (m) for (const p of parentsOf(m)) up.push(p);
-  }
-  // 下延衍生(BFS)
-  const stack = [selectedId];
-  while (stack.length) {
-    const id = stack.pop() as string;
-    for (const c of childrenOf.get(id) ?? []) {
-      if (!chain.has(c)) {
-        chain.add(c);
-        stack.push(c);
-      }
-    }
-  }
-  return chain;
-}
-
 // 画布助手的一轮对话(user/assistant 纯文本;assistant 内容可含 [[GEN]]…[[/GEN]] 生图块)
 type AssistantTurn = AssistantTimelineTurn;
 
@@ -1472,92 +644,6 @@ function assistantContext(members: Artwork[], anchorId: string): Artwork[] {
 }
 
 // 构造展示节点与血缘连线；渲染不重新整理已有坐标。
-function layoutGraph(
-  arts: Artwork[],
-  rootLabel: string,
-  onDimensions: (id: string, width: number, height: number) => void,
-  onCanvasResize: (
-    id: string,
-    bounds: { x: number; y: number; width: number; height: number }
-  ) => void,
-  onCanvasRatioRepair: (id: string, width: number, height: number) => void,
-  onRenameRequest: (id: string, label: string) => void,
-  onVideoExtract: (id: string, action: VideoPlayerAction) => void,
-  generatedPositions = new Map<string, CanvasPoint>()
-): { nodes: Node[]; edges: Edge[] } {
-  const byId = new Map(arts.map((a) => [a.id, a]));
-  const sorted = [...arts].sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
-  // Rendering allocates only missing positions; only tidyLayout performs a global layout.
-  const positions = stableArtworkPositions(sorted.map(art => ({ ...art, ...artworkNodeSize(art) })), generatedPositions);
-  const nodes: Node[] = sorted.map((a, idx) => {
-    const isRoot = !(a.parentId && byId.has(a.parentId));
-    const canvasSize = artworkImageSize(a);
-    const position = positions.get(a.id) ?? { x: 0, y: 0 };
-    return {
-      id: a.id,
-      type: "art",
-      position,
-      data: {
-        id: a.id,
-        category: a.category,
-        image: a.image,
-        videoUrl: a.videoUrl ?? undefined,
-        label: a.title,
-        rootLabel: isRoot ? rootLabel : null,
-        version: idx + 1, // 项目内按生成时间的版本序号
-        prompt: a.prompt,
-        date: a.createdAt,
-        marked: !!a.marked,
-        canvasGroupId: a.canvasGroupId ?? null,
-        ratio: a.ratio,
-        width: canvasSize.width,
-        height: canvasSize.height,
-        intrinsicWidth: a.width,
-        processingKind: a.processingKind,
-        intrinsicHeight: a.height,
-        onDimensions,
-        onCanvasResize,
-        onCanvasRatioRepair,
-        onRenameRequest,
-        onVideoExtract,
-      },
-      style: {
-        width: canvasSize.width,
-        // 标题是负 top 的绝对定位元素，不占节点边界；节点高度必须等于图片卡高度。
-        height: canvasSize.height,
-      },
-    };
-  });
-  const edges: Edge[] = [];
-  for (const a of sorted) {
-    // primary 血缘边(canvas-add 独立节点不画)
-    if (a.parentId && byId.has(a.parentId) && explicitCanvasParent(a, a.parentId)) {
-      edges.push({
-        id: `e-${a.parentId}-${a.id}`,
-        source: a.parentId as string,
-        sourceHandle: "out",
-        target: a.id,
-        targetHandle: "in",
-        type: "default",
-      });
-    }
-    // 多输入额外边(显式连接,总是画)
-    for (const pid of a.parentIds ?? []) {
-      if (pid && byId.has(pid) && pid !== a.parentId) {
-        edges.push({
-          id: `e-${pid}-${a.id}`,
-          source: pid,
-          sourceHandle: "out",
-          target: a.id,
-          targetHandle: "in",
-          type: "default",
-        });
-      }
-    }
-  }
-  return { nodes, edges };
-}
-
 export function CanvasClient({ initialProject, desktopAppearance = false }: { initialProject?: string; desktopAppearance?: boolean } = {}) {
   const { can: canFeature } = useFeatureAccess();
   const billing=useBilling();
@@ -1923,33 +1009,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   } | null>(null);
   const cuttingEdgesRef = useRef(new Set<string>());
   // 占位/空白节点(添加节点/拉线建节点 → 先出空白节点,里面上传带进度,完成后变真节点)
-  type Pend = {
-    id: string;
-    x: number;
-    y: number;
-    parentId: string | null;
-    linked: boolean;
-    label: string;
-    uploading: boolean;
-    progress: number;
-    fileInfo?: string;
-    inputs: string[]; // 多输入:连进这个空白节点的源节点 id(生成时作参考图)
-    generationFailure?: GenerationFailure;
-    onGenerationRetry?: () => unknown;
-    generationStage?: GenerationStage;
-    generationStartedAt?: number;
-    generationSize?: { width: number; height: number };
-    generationCount?: number;
-    generating?: boolean; // 该空白节点正在文生图/合并生成中
-    operationKey?: string; // 编辑任务锁自己的源节点，普通空白节点仅锁自己
-    taskId?: string; // 视频等后台任务 ID，刷新后可从任务表恢复占位节点
-    taskKind?: "video" | "image-edit"; // 不同后台任务独立恢复，避免彼此清理占位节点
-    needsAttention?: boolean;
-    attentionTitle?: string;
-    attentionHint?: string;
-    attentionAction?: string;
-    attentionHref?: string;
-  };
   const [pendNodes, setPendNodes] = useState<Pend[]>([]);
   const pendNodesRef = useRef(pendNodes); pendNodesRef.current = pendNodes;
   // Session-local task ownership survives project switches; unknown paid work is
@@ -2910,6 +1969,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setVideoMedia({id,projectKey:project,initial:action});
   },[readOnly,user,videoNodesStore.getNode]);
 
+  const sceneActions=useCanvasSceneActions({
+    dimensions:onNodeDimensions,resize:onArtworkCanvasResize,ratioRepair:onArtworkCanvasRatioRepair,rename:requestNodeRename,
+    videoProcess:extractVideoToCanvas,cutout:id=>{const art=worksRef.current?.find(item=>item.id===id);if(art)void runCutout(art);},
+    generatePending:id=>{const pend=pendNodesRef.current.find(node=>node.id===id);if(pend)return generatePend({pend});},
+    videoEdit:openVideoEditor,videoHistory:setVideoHistoryId,
+    videoCancel:id=>{const node=videoNodesStore.nodes.find(node=>node.id===id);if(node?.lastTaskId)void videoTaskStore.cancel(node.lastTaskId).catch(error=>flashTip(error.message));},
+    videoPrompt:async(id,prompt)=>{const node=videoNodesStore.nodes.find(node=>node.id===id);if(node)await patchVideoNode(id,{config:{...node.config,prompt}});},
+    videoResize:(id,size)=>{void patchVideoNode(id,size).catch(error=>flashTip(error.message));},
+    workflowFill:id=>{const art=worksRef.current?.find(item=>item.id===id);if(art)workflowCallbacksRef.current.replace(art);},
+    workflowSelect:ids=>workflowCallbacksRef.current.select(ids),
+  });
   const { nodes, edges } = useMemo<{ nodes: Node[]; edges: Edge[] }>(() => {
     if (!active) return { nodes: [], edges: [] };
     const scope = `naumi:canvas-positions:${JSON.stringify([canvasAccountRef.current, active.key])}`;
@@ -2921,25 +1991,20 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     return layoutGraph(
       active.members,
       t("canvas.rootBadge"),
-      onNodeDimensions,
-      onArtworkCanvasResize,
-      onArtworkCanvasRatioRepair,
-      requestNodeRename,
-      extractVideoToCanvas,
+      sceneActions.dimensions,
+      sceneActions.resize,
+      sceneActions.ratioRepair,
+      sceneActions.rename,
+      sceneActions.videoProcess,
       artworkPlacementRef.current.positions
     );
-  }, [active, t, user?.email, targetEmail, onNodeDimensions, onArtworkCanvasResize, onArtworkCanvasRatioRepair, requestNodeRename, extractVideoToCanvas]);
+  }, [active,t,sceneActions]);
   useEffect(() => {
     const {scope, positions} = artworkPlacementRef.current;
     if (!scope) return;
     try { sessionStorage.setItem(scope, JSON.stringify(Array.from(positions).slice(-4000))); } catch { /* best effort */ }
   }, [nodes]);
 
-  const nodeTypes = useMemo(
-    () => ({ art: ArtNode, pend: PendNode, text: TextCanvasNode, videoGeneration:VideoGenerationNode, workflowDecoration: WorkflowDecorationNode, workflowGroup: WorkflowGroupNode }),
-    []
-  );
-  const edgeTypes = useMemo(() => ({ comet: CometEdge }), []);
   const videoTaskStore=useVideoTasks({email:targetEmail||user?.email,projectKey:active?.key,readOnly,request:privateFetchRaw,onCompleted:async(task,project)=>{
     const ids=task.resultAssets?.map(asset=>asset.artworkId)||[];if(task.artworkId&&!ids.includes(task.artworkId))ids.unshift(task.artworkId);
     if(activeProjectRef.current?.key!==project)return;
@@ -3424,300 +2489,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   // 生成中:在选中节点下方临时插入"生成中"占位节点;
   // 选中时:整条血缘链路点亮(蓝色流光),其余节点/连线变暗。
-  const { displayNodes, displayEdges } = useMemo<{
-    displayNodes: Node[];
-    displayEdges: Edge[];
-  }>(() => {
-    let baseNodes = nodes;
-    let baseEdges = edges;
-    // 每个生成任务都有自己的占位节点。后端超过并发上限时自行排队，画布不再全局锁死。
-    for (const task of generationTasks) {
-      if (task.isVisible && !task.isVisible()) continue;
-      if (!nodes.some((node) => node.id === task.sourceId)) continue;
-      const pos = generationTaskPosRef.current[task.id] ?? task.position;
-      const previewSize = task.previewSize ?? generationPlaceholderSize("1:1");
-      baseNodes = [
-        ...baseNodes,
-        {
-          id: task.id,
-          type: "art",
-          position: pos,
-          style: previewSize,
-          data: { id: task.id, pending: true, label: task.failure ? generationFailureTitle(task.failure, locale === "en") : task.label, lightCanvas, ...previewSize,
-            generationStage: task.stage, generationStartedAt: task.startedAt,
-            generationCount: task.count, generationCompleted: task.completed, generationFailure: task.failure, onGenerationRetry: task.onRetry },
-          selectable: false,
-          draggable: true,
-        },
-      ];
-      baseEdges = [
-        ...baseEdges,
-        {
-          id: `e-${task.id}`,
-          source: task.sourceId,
-          sourceHandle: "out",
-          target: task.id,
-          targetHandle: "in",
-          type: "default",
-          animated: !task.failure,
-          selectable: false,
-        },
-      ];
-    }
-    const chain = active
-      ? lineageChain(active.members, selectedId)
-      : new Set<string>();
-    const hasSel = !!selectedId && chain.size > 0;
-    const displayNodes: Node[] = baseNodes.map((n) => ({
-      ...n,
-        data: {
-          ...(n.data as Record<string, unknown>),
-          inChain: hasSel && chain.has(n.id),
-          inspectOriginal: n.id === selectedId && multiSel.length <= 1,
-          lightCanvas,
-      },
-      className:
-        hasSel && !chain.has(n.id) && !n.id.startsWith("task-")
-          ? "cw-dim"
-          : undefined,
-    }));
-    const displayEdges: Edge[] = baseEdges.map((e) => {
-      if (e.target.startsWith("task-")) return e;
-      if (!hasSel)
-        return {
-          ...e,
-          type: "comet",
-          data: { lit: false, dim: false },
-          className: undefined,
-          animated: false,
-        };
-      const lit = chain.has(e.source) && chain.has(e.target);
-      return {
-        ...e,
-        type: "comet",
-        data: { lit, dim: !lit },
-        className: undefined,
-        animated: false,
-      };
-    });
-    // 追加占位/空白节点(及其连线:每个 input 一条)
-    for (const p of pendNodes) {
-      displayNodes.push({
-        id: p.id,
-        type: "pend",
-        position: { x: p.x, y: p.y },
-        // RF 的多选状态由 useNodesState 维护；data.selected 只表示当前编辑中的空白节点。
-        data: {
-          __id: p.id,
-          label: p.label,
-          uploading: p.uploading,
-          progress: p.progress,
-          fileInfo: p.fileInfo,
-          generating: p.generating,
-          generationFailure: p.generationFailure,
-          onGenerationRetry: p.onGenerationRetry || (() => void generatePend({pend:p})),
-          generationStage: p.generationStage,
-          generationStartedAt: p.generationStartedAt,
-          generationSize: p.generationSize,
-          generationCount: p.generationCount,
-          generationKind: p.taskKind === "video" ? "video" : "image",
-          needsAttention: p.needsAttention,
-          attentionTitle: p.attentionTitle,
-          attentionHint: p.attentionHint,
-          attentionAction: p.attentionAction,
-          attentionHref: p.attentionHref,
-          selected: p.id === selectedPendId,
-          lightCanvas,
-        },
-      } as Node);
-      for (const src of p.inputs ?? []) {
-        if (!src) continue;
-        displayEdges.push({
-          id: `e-pend-${src}-${p.id}`,
-          selectable: !p.generating && !p.uploading,
-          source: src,
-          sourceHandle: "out",
-          target: p.id,
-          targetHandle: "in",
-          type: "comet",
-          data: { lit: false, dim: false },
-        } as Edge);
-      }
-    }
-    for(const videoNode of videoNodesStore.nodes.filter(node=>node.projectKey===activeKey)){
-      const task=videoTaskStore.tasks.find(task=>task.id===videoNode.lastTaskId),result=(works||[]).find(art=>art.id===(videoNode.displayResultId||videoNode.lastResultId)),locked=isNodeLocked(videoNode.id);
-      displayNodes.push({id:videoNode.id,type:"videoGeneration",position:{x:videoNode.x,y:videoNode.y},selected:videoNode.id===selectedId,draggable:!readOnly&&!locked,
-        style:{width:videoNode.width,height:videoNode.height},data:{node:videoNode,title:videoNode.title,prompt:videoNode.config.prompt,content:String(videoNode.revision),width:videoNode.width,height:videoNode.height,status:task?.status,progress:task?.progress,videoUrl:result?.videoUrl||(!videoNode.displayResultId?task?.videoUrl:undefined),
-          task,settings:settingsFor(videoNode.id),selected:videoNode.id===selectedId,lightCanvas,locked,readOnly,externalDock:true,resultUrl:result?.videoUrl||(!videoNode.displayResultId?task?.videoUrl:undefined),onEdit:openVideoEditor,onHistory:(id:string)=>setVideoHistoryId(id),onGenerate:openVideoEditor,onCancel:(id:string)=>{const current=videoNodesStore.nodes.find(node=>node.id===id);if(current?.lastTaskId)void videoTaskStore.cancel(current.lastTaskId).catch(error=>flashTip(error.message));},
-          onProcess:extractVideoToCanvas,onPrompt:async(id:string,prompt:string)=>{const current=videoNodesStore.nodes.find(node=>node.id===id);if(current)await patchVideoNode(id,{config:{...current.config,prompt}});},
-          onResize:(id:string,size:{x:number;y:number;width:number;height:number})=>{void patchVideoNode(id,size).catch(error=>flashTip(error.message));}}} as Node);
-      for(const input of videoNode.inputs){const source=input.nodeId.replace(/^(?:text|image|video|audio):/,"");if(!displayNodes.some(node=>node.id===source)&&!textNodes.some(node=>node.id===source)&&!videoNodesStore.nodes.some(node=>node.id===source))continue;
-        displayEdges.push({id:`e-video-${input.id}-${videoNode.id}`,source,sourceHandle:"out",target:videoNode.id,targetHandle:"in",type:"comet",data:{lit:false,dim:false}} as Edge);}
-    }
-    for (const textNode of textNodes.filter((node) => node.projectKey === activeKey)) {
-      const expanded = expandedTextIds.has(textNode.id);
-      const displayWidth = expanded ? Math.min(760, TEXT_NODE_MAX_W) : textNode.width;
-      const displayHeight = expanded
-        ? Math.min(
-            TEXT_NODE_MAX_H,
-            Math.max(420, estimateTextNodeHeight({ ...textNode, width: displayWidth }))
-          )
-        : textNode.height;
-      const sourceRefs = (textNode.sourceIds ?? [])
-        .map((id) => active?.members.find((member) => member.id === id))
-        .filter(Boolean) as Artwork[];
-      // 产品绑定(帮写节点)也显示为 @引用芯片 + 连线,与 sourceIds 视觉一致
-      const productRefs = (textNode.productIds ?? [])
-        .filter((id) => !(textNode.sourceIds ?? []).includes(id))
-        .map((id) => active?.members.find((member) => member.id === id))
-        .filter(Boolean) as Artwork[];
-      displayNodes.push({
-        id: textNode.id,
-        type: "text",
-        position: { x: textNode.canvasX, y: textNode.canvasY },
-        data: {
-          __id: textNode.id,
-          nodeKind: "text",
-          title: textNode.title,
-          prompt: textNode.prompt,
-          content: textNode.content,
-          status: textNode.status,
-          sourceRefs: [...sourceRefs, ...productRefs].map((reference) => ({
-            id: reference.id,
-            title: reference.title,
-          })),
-          selected: textNode.id === selectedTextId,
-          lightCanvas,
-          expanded,
-          width: displayWidth,
-          height: displayHeight,
-        },
-        style: { width: displayWidth, height: displayHeight },
-      } as Node);
-      for (const sourceId of Array.from(new Set([...(textNode.sourceIds ?? []), ...(textNode.productIds ?? [])]))) {
-        if (!active?.members.some((member) => member.id === sourceId) && !textNodes.some(node => node.id === sourceId && node.projectKey === activeKey)) continue;
-        displayEdges.push({
-          id: `e-image-text-${sourceId}-${textNode.id}`,
-          source: sourceId,
-          sourceHandle: "out",
-          target: textNode.id,
-          targetHandle: "in",
-          type: "comet",
-          data: { lit: false, dim: false },
-        } as Edge);
-      }
-      for (const targetId of textNode.targetIds ?? []) {
-        if (!active?.members.some((member) => member.id === targetId)) continue;
-        displayEdges.push({
-          id: `e-text-${textNode.id}-${targetId}`,
-          source: textNode.id,
-          sourceHandle: "out",
-          target: targetId,
-          targetHandle: "in",
-          type: "comet",
-          data: { lit: false, dim: false },
-        } as Edge);
-      }
-    }
-    // Restored automatic outputs keep their identity and links, while unset positions
-    // avoid the generator and existing mixed nodes even after task history is hidden.
-    const unpositionedResults = new Map<string, { x: number; y: number; width: number }>();
-    for (const videoNode of videoNodesStore.nodes.filter(node => node.projectKey === activeKey)) {
-      const task = videoTaskStore.tasks.find(task => task.id === videoNode.lastTaskId);
-      for (const id of new Set([videoNode.lastResultId, ...(task?.resultAssets.map(asset => asset.artworkId) || [])])) {
-        const art = works?.find(item => item.id === id);
-        if (id && art && art.canvasX == null && art.canvasY == null) unpositionedResults.set(id, videoNode);
-      }
-    }
-    if (unpositionedResults.size) {
-      const sizeOf = (node: Node) => ({ width: Number(node.style?.width) || Number(node.data.width) || 420, height: Number(node.style?.height) || Number(node.data.height) || 320 });
-      const occupied = displayNodes.filter(node => !unpositionedResults.has(node.id)).map(node => ({ ...node.position, ...sizeOf(node) }));
-      for (let index = 0; index < displayNodes.length; index++) {
-        const node = displayNodes[index], source = unpositionedResults.get(node.id);
-        if (!source) continue;
-        const size = sizeOf(node), position = placeGenerationPreview({ x: source.x + source.width + 96, y: source.y }, size, occupied);
-        displayNodes[index] = { ...node, position };
-        occupied.push({ ...position, ...size });
-      }
-    }
-    // 防御:节点/边按 id 去重,并丢弃指向不存在节点的悬空边
-    for (let index=0;index<displayNodes.length;index++) {
-      const node=displayNodes[index];
-      if (node.id.startsWith("pend-") || node.id.startsWith("task-")) continue;
-      const settings=nodeSettings[node.id] || DEFAULT_CANVAS_SETTINGS;
-      displayNodes[index]={...node,zIndex:settings.order,draggable:nodeSettingsReady && !readOnly && !settings.locked,
-        data:{...node.data,settings,readOnly:readOnly || !nodeSettingsReady}};
-    }
-    for (const manifest of workflowManifests.filter(m => m.projectKey === activeKey)) {
-      const origins = new Map(manifest.origins.map(o => [o.id, o]));
-      const decorations = new Map(manifest.decorations.map(d => [d.id, d]));
-      for (let i = 0; i < displayNodes.length; i++) {
-        const node = displayNodes[i], origin = origins.get(node.id), decoration = decorations.get(node.id);
-        const artwork = active?.members.find(m => m.id === node.id);
-        if (decoration) displayNodes[i] = { ...node, type: "workflowDecoration", zIndex: -50000 + i, connectable: false,
-          data: { ...node.data, image: artwork?.image || decoration.image, intrinsicWidth: artwork?.width, intrinsicHeight: artwork?.height, rotation: decoration.rotation, flipX: decoration.flipX, opacity: decoration.opacity,
-            missingAsset: artwork?.source === "workflow-placeholder", onFill: () => artwork && workflowCallbacksRef.current.replace(artwork) } };
-        else if (origin) displayNodes[i] = { ...node, data: { ...node.data, workflowPresentation: origin,
-          missingAsset: artwork?.source === "workflow-placeholder", onFill: () => artwork && workflowCallbacksRef.current.replace(artwork) } };
-      }
-      for (const group of manifest.groups) {
-        const children = displayNodes.filter(n => group.members.includes(n.id));
-        if (!children.length) continue;
-        const left = Math.min(...children.map(n => n.position.x)), top = Math.min(...children.map(n => n.position.y));
-        const right = Math.max(...children.map(n => n.position.x + Number(n.style?.width || 320))), bottom = Math.max(...children.map(n => n.position.y + Number(n.style?.height || 180)));
-        displayNodes.push({ id: group.id, type: "workflowGroup", position: { x: left - 12, y: top - 58 }, style: { width: right - left + 24, height: bottom - top + 70, pointerEvents: "none" },
-          draggable: false, selectable: false, connectable: false, focusable: false, zIndex: -60000,
-          data: { title: group.title, onSelect: () => workflowCallbacksRef.current.select(children.map(n => n.id)) } });
-      }
-    }
-    // (React Flow 遇到重复 key 或悬空边会抛出 client-side exception → 白屏)
-    const nSeen = new Set<string>();
-    const finalNodes = displayNodes.map(node => node.type === "art" && !node.data.videoUrl && !node.data.pending ? {
-      ...node, data: { ...node.data, onCutout: (id: string) => { const art = worksRef.current?.find(item => item.id === id); if(art)void runCutout(art); },
-        cutoutBusy: pendNodes.some(pend => pend.operationKey === `node:${node.id}` && pend.generating && !pend.generationFailure) || generationTasks.some(task => task.sourceId === node.id && !task.failure),
-        cutoutBlocked: !cutoutCatalog || !!cutoutCatalogError || cutoutCatalog.available === false || generationOperationRef.current.has(`node:${node.id}`) }
-    } : node).filter((n) =>
-      nSeen.has(n.id) ? false : (nSeen.add(n.id), true)
-    );
-    const nIds = nSeen;
-    const eSeen = new Set<string>();
-    const finalEdges = displayEdges.filter((e) =>
-      !e.id ||
-      eSeen.has(e.id) ||
-      !e.source ||
-      !e.target ||
-      !nIds.has(e.source) ||
-      !nIds.has(e.target)
-        ? false
-        : (eSeen.add(e.id), true)
-    );
-    return { displayNodes: finalNodes, displayEdges: finalEdges };
-  }, [
-    nodes,
-    edges,
-    generationTasks,
-    locale,
-    multiSel,
-    selectedId,
-    selectedPendId,
-    selectedTextId,
-    active,
-    activeKey,
-    pendNodes,
-    textNodes,
-    expandedTextIds,
-    lightCanvas,
-    nodeSettings,
-    nodeSettingsReady,
-    readOnly,
-    cutoutCatalog, cutoutCatalogError,
-    workflowManifests,
-    videoNodesStore.nodes,videoTaskStore.tasks,works,extractVideoToCanvas,
-  ]);
-
-  // 受控节点状态(支持拖拽);仅当底层数据/位置真正变化时重新灌入,拖拽过程中不重置。
-  const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
-  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const {displayNodes,displayEdges}=useMemo(()=>projectCanvasScene({nodes,edges,active,activeKey,generationTasks:generationTasks.filter(task=>task.isVisible?.()??true),taskPositions:generationTaskPosRef.current,
+    pendNodes,textNodes,videoNodes:videoNodesStore.nodes,videoTasks:videoTaskStore.tasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,
+    locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutAvailable:!!cutoutCatalog&&!cutoutCatalogError&&cutoutCatalog.available!==false,
+    operations:generationOperationRef.current,workflowManifests,actions:sceneActions}),
+    [nodes,edges,active,activeKey,generationTasks,pendNodes,textNodes,videoNodesStore.nodes,videoTaskStore.tasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,
+      locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutCatalog,cutoutCatalogError,workflowManifests,sceneActions,canvasArtworkDocument.scope]);
+  const {rfNodes,setRfNodes,onNodesChange,rfEdges,setRfEdges,onEdgesChange}=useCanvasScene(displayNodes,displayEdges,canvasArtworkDocument.scope);
   useEffect(()=>{
     const pending=pendingNodeSelectionRef.current;if(!pending)return;
     if(pending.owner!==user?.email.toLowerCase()){pendingNodeSelectionRef.current=null;return;}
@@ -3730,60 +2508,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setRfNodes(current => current.map(node => ({ ...node, selected: ids.includes(node.id) })));
     setMultiSel(ids);
   }
-  // 后台占位出现不移动镜头；用户正在其他节点工作时仍保留当前视野。
-  const nodesSig = useMemo(() => displayNodes
-    .map(
-      (n) =>
-        `${JSON.stringify([n.data.inspectOriginal,n.data.image,n.data.videoUrl,n.data.missingAsset,n.data.workflowPresentation,n.data.title,n.data.prompt,n.data.content,n.data.cutoutBusy,n.data.cutoutBlocked])}:${JSON.stringify([n.data.generationFailure,n.data.generationStage, n.data.generationStartedAt, n.data.generationCount, n.data.generationCompleted, n.data.generationSize, n.data.generationKind])}:${JSON.stringify((n.data as {settings?:CanvasNodeSettings}).settings)}:${n.draggable}:${n.zIndex}:${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${
-          (n.data as { pending?: boolean }).pending ? 1 : 0
-        }:${(n.data as { inChain?: boolean }).inChain ? 1 : 0}:${n.className ?? ""}:${
-          Math.round((n.data as { progress?: number }).progress ?? -1)
-        }:${(n.data as { uploading?: boolean }).uploading ? 1 : 0}:${
-          (n.data as { selected?: boolean }).selected ? 1 : 0
-        }:${(n.data as { generating?: boolean }).generating ? 1 : 0}:${
-          (n.data as { marked?: boolean }).marked ? 1 : 0
-        }:${Math.round((n.data as { width?: number }).width ?? 0)}:${
-          Math.round((n.data as { height?: number }).height ?? 0)
-        }:${(n.data as { canvasGroupId?: string }).canvasGroupId ?? ""}:${
-          (n.data as { status?: string }).status ?? ""
-        }:${String((n.data as { label?: string }).label ?? "")}:${String(
-          (n.data as { content?: string }).content ?? ""
-        ).length}:${(n.data as { lightCanvas?: boolean }).lightCanvas ? 1 : 0}:${((n.data as { sourceRefs?: Array<{ id: string }> }).sourceRefs ?? [])
-          .map((reference) => reference.id)
-          .join(",")}`
-    )
-    .join("|"), [displayNodes]);
-  const edgesSig = useMemo(() => displayEdges
-    .map(
-      (e) =>
-        `${e.id}:${(e.data as { lit?: boolean })?.lit ? 1 : 0}:${
-          (e.data as { dim?: boolean })?.dim ? 1 : 0
-        }`
-    )
-    .join("|"), [displayEdges]);
-  useEffect(() => {
-    // 数据刷新（如批量标记）时继承 React Flow 当前选择，不从 multiSel 反向灌入，
-    // 避免 selected 与 onSelectionChange 互相触发造成 React #185 无限更新。
-    setRfNodes((current) => {
-      const currentById = new Map(current.map(node => [node.id, node]));
-      return displayNodes.map((node) => ({
-        ...node,
-        ...canvasNodePosition(node, currentById.get(node.id)),
-        selected: currentById.get(node.id)?.selected ?? false,
-        // 同尺寸数据更新不会触发 ResizeObserver。保留已有测量，避免任务阶段刷新后
-        // React Flow 将其余节点永久设为 visibility:hidden，导致整张画布无法交互。
-        // Offscreen fixed-size nodes must participate in the initial fit, or
-        // virtualization can strand them outside the only measured viewport.
-        measured: currentById.get(node.id)?.measured ?? knownCanvasNodeMeasurement(node.style),
-      }));
-    });
-    setRfEdges((current) => {
-      const selected = new Set(current.filter(edge => edge.selected).map(edge => edge.id));
-      return displayEdges.map(edge => ({ ...edge, selected: edge.selectable !== false && selected.has(edge.id) }));
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodesSig, edgesSig]);
-
   function clearCanvasSelection(exitBoxMode = false) {
     setMultiSel([]);
     setSelectedEdge(null);
@@ -8537,8 +7261,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               edges={rfEdges}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
-              nodeTypes={nodeTypes}
-              edgeTypes={edgeTypes}
+              nodeTypes={canvasNodeTypes}
+              edgeTypes={canvasEdgeTypes}
               onInit={(inst) => {
                 rfRef.current = inst;
                 setFlowReady(value => value + 1);

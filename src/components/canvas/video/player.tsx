@@ -4,10 +4,8 @@ import { useEffect, useRef, useState, type SyntheticEvent } from "react";
 import { createPortal } from "react-dom";
 import { Download, Maximize2, Minimize2, Pause, Play, Volume2, VolumeX, X } from "lucide-react";
 import { isTopVideoDialog } from "./dialog-stack";
-export type VideoPlayerAction = {
-    action: "frame" | "extract_audio" | "separate" | "trim" | "concat" | "ffmpeg" | "ffprobe";
-    timestamp?: number | "first" | "last";
-};
+import type {VideoPlayerAction} from "@/lib/video/player-actions";
+export type {VideoPlayerAction} from "@/lib/video/player-actions";
 export function mediaDownloadHref(url: string, name = "video.mp4") { return `/api/download?u=${encodeURIComponent(url)}&n=${encodeURIComponent(name.replace(/[^\w.\-]+/g, "_").slice(0, 160) || "video.mp4")}`; }
 export function mediaDownloadName(url: string, fallback = "video.mp4") { try {
     const name = decodeURIComponent(new URL(url, "http://media.local").pathname.split("/").pop() || "");

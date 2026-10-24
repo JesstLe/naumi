@@ -4,11 +4,13 @@ import path from 'node:path';
 import ts from 'typescript';
 const root=path.resolve(process.argv[2]||'.'),read=p=>fs.readFileSync(path.join(root,p),'utf8');
 const client=read('src/components/canvas/canvas-client.tsx');
+const projection=read('src/lib/canvas/scene-projection.ts'),textRenderer=read('src/components/canvas/nodes/text-node.tsx');
+const presentation=client+projection+textRenderer;
 if(process.argv.includes('--baseline')){
   assert.ok(!client.includes('NodePropertiesPanel') && !client.includes('ImageCropDialog'));
   console.log('NODE_EDIT_BASELINE=PASS TEXT_STYLE=FIXED_12PX NODE_LOCK_LAYER=ABSENT LOCAL_CROP_REPLACE=ABSENT');process.exit(0);
 }
-for(const token of ['nodeSettingsRef','nodeSettingsReady','settings.order','!settings.locked','nodeTextStyle','NodePropertiesPanel','ImageCropDialog','nodeManagementItems','isNodeLocked','elevateNodesOnSelect={false}','moves=moves.filter','groupMembers.filter','propertiesOpen ||','/api/canvas/local-image-edit','onSave={settings=>commitNodeSettings'])assert.ok(client.includes(token)||token==='propertiesOpen ||' && client.includes('(propertiesOpen &&'),token);
+for(const token of ['nodeSettingsRef','nodeSettingsReady','settings.order','!settings.locked','nodeTextStyle','NodePropertiesPanel','ImageCropDialog','nodeManagementItems','isNodeLocked','elevateNodesOnSelect={false}','moves=moves.filter','groupMembers.filter','propertiesOpen ||','/api/canvas/local-image-edit','onSave={settings=>commitNodeSettings'])assert.ok(presentation.includes(token)||token==='propertiesOpen ||' && client.includes('(propertiesOpen &&'),token);
 const historyModel=read('src/lib/canvas/history-model.ts');
 for(const token of ['kind: "node-settings"','type:"node-settings"'])assert.ok(historyModel.includes(token),token+' is owned by history model');
 assert.ok(client.includes('await applyHistory(act,false); pushUndo(act)'), 'properties caller uses shared atomic history owner');

@@ -12,7 +12,7 @@ assert.equal(canvasTextEditPatch(current, current.content), null, 'non-focus cal
 assert.equal(canvasTextEditPatch(current, 'explicit change')?.from.content, current.content);
 const long = canvasTextEditPatch(current, 'a'.repeat(13000), 'old'); assert.equal(long?.to.content.length, 12000);
 assert.equal(current.content, 'new draft'); assert.equal(current.width, 420);
-const source = readFileSync('src/components/canvas/canvas-client.tsx', 'utf8');
+const source = readFileSync('src/components/canvas/canvas-client.tsx', 'utf8') + readFileSync('src/components/canvas/nodes/text-node.tsx','utf8');
 assert.match(source, /onFocus=\{\(\) => \{ editInitialContent.current = d.content; \}\}/);
 assert.match(source, /onContentCommit\(d.__id, event.currentTarget.value, editInitialContent.current\)/);
 assert.match(source, /editInitialContent.current = undefined/);

@@ -70,6 +70,7 @@ const server=http.createServer(async(req,res)=>{
   if(p==='/api/canvas/expand'&&req.method==='POST'){
    const id='edit-result-'+(taskState.edits.length+1);taskState.edits.push({id,body,operationId:req.headers['x-naumi-billing-operation-id']});arts.push({...art,id,title:'扩图结果',parentId:body.artworkId,source:'generate',canvasX:undefined,canvasY:undefined});return json(res,{id,user});
   }
+  if(p==='/api/artworks/rename'){const art=arts.find(a=>a.id===body.id);if(art)art.title=body.title;return json(res,{ok:true});}
   if(p==='/api/artworks/position'){
    if(state.failNextPosition){state.failNextPosition=false;return json(res,{error:'fixture position save failed'},500)}
    state.positions.push(body);const a=arts.find(a=>a.id===body.id);if(a){a.canvasX=body.x;a.canvasY=body.y}return json(res,{ok:true});
