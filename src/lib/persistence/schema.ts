@@ -2,6 +2,23 @@ import "server-only";
 import {getPool} from "@/platform/db/pool";
 import {applyBillingSchema,markBillingSchemaReady} from "../billing/schema";
 import {withSchemaInitialization} from "../schema-initialization";
+import type {PoolClient} from "pg";
+
+/** Preserve rows, relation identity, indexes and triggers while upgrading old
+ * globally-keyed sessions. Runs under the existing namespace DDL transaction. */
+async function ensureAgentSessionKeyTx(tx: PoolClient) {
+    const table = "app_agent_sessions";
+    const {rows} = await tx.query<{name:string;columns:string[]}>(`
+      SELECT c.conname AS name, array_agg(a.attname::text ORDER BY k.position) AS columns
+      FROM pg_constraint c
+      CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS k(attnum,position)
+      JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.attnum
+      WHERE c.contype='p' AND c.conrelid=$1::regclass GROUP BY c.conname`, [table]);
+    const primary = rows[0];
+    if (primary?.columns.length === 2 && primary.columns[0] === "email" && primary.columns[1] === "id") return;
+    if (primary) await tx.query(`ALTER TABLE ${table} DROP CONSTRAINT "${primary.name.replace(/"/g,'""')}"`);
+    await tx.query(`ALTER TABLE ${table} ADD PRIMARY KEY (email,id)`);
+}
 
 /** Application storage compatibility initializer, not the generic DB platform.
  * It does not import business repositories or the legacy db facade. R4B moves
@@ -524,6 +541,7 @@ export async function ensureSchema(): Promise<void> {
         CREATE INDEX IF NOT EXISTS app_license_act_key_idx
           ON app_license_activations (license_key);
       `);
+      await ensureAgentSessionKeyTx(schemaDb);
       // app_user_image_providers 旧结构迁移:主键曾是 email(一人一供应商的单一槽位)。
       // 检测到旧主键时把数据搬进多供应商新结构(先搬后删,不丢数据),旧配置成为
       // 「默认供应商」并保持原 enabled 作为激活态。

@@ -13,7 +13,7 @@ import { supplierCostFetch } from "@/lib/supplier-cost/collect";
 import { legacyAgentVision } from "@/lib/model-config/legacy-vision";
 import type { ImageContent, AssistantMessage, Model, createModels } from "@earendil-works/pi-ai";
 import type { UserMessage } from "@earendil-works/pi-ai";
-import {getAgentSession, saveAgentSession} from "@/lib/db";
+import {getAgentSession, saveAgentSession} from "@/lib/agent/session-repository";
 import {creditMeteringEnabled} from "@/lib/billing/runtime";
 import {dbEnabled} from "@/platform/db/pool";
 import {getUser} from "@/lib/accounts/session";

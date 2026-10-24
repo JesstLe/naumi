@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { dbEnabled } from "@/platform/db/pool";
-import {
-  deleteComfyEndpoint,
-  listComfyEndpoints,
-  saveComfyEndpoint,
-} from "@/lib/db";
+import {deleteComfyEndpoint, listComfyEndpoints, saveComfyEndpoint} from "@/lib/comfyui/repository";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/ip";

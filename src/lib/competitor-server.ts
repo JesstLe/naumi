@@ -4,7 +4,7 @@ import "server-only";
 import sharp from "sharp";
 import OpenAI from "openai";
 import { authenticatedEmail } from "./request-auth";
-import {getCompetitorItem} from "./db";
+import {getCompetitorItem} from "@/lib/competitor/repository";
 import {dbEnabled} from "@/platform/db/pool";
 import {isBanned} from "@/lib/accounts/repository";
 import { isManagedImageUrl, readManagedObject } from "./storage";

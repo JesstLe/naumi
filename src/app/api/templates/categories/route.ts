@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import {listTemplateCategories} from "@/lib/db";
+import {listTemplateCategories} from "@/lib/templates/repository";
 import {dbEnabled} from "@/platform/db/pool";
 import { TEMPLATES as SEED } from "@/lib/templates-data";
 

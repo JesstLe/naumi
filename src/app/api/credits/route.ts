@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import {listUserLedgerFiltered} from "@/lib/db";
+import {listUserLedgerFiltered} from "@/lib/billing/legacy-ledger";
 import {dbEnabled} from "@/platform/db/pool";
 import {getCreditOverview} from "@/lib/billing/wallet-balance";
 import { resolveUserEmail } from "@/lib/admin-auth";

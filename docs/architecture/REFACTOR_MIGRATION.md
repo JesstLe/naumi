@@ -2,6 +2,8 @@
 
 日期：2026-10-24。关联：[主方案](../REFACTOR_ARCHITECTURE.md)、[源码证据](2026-10-24-current-state.md)。
 
+R4A6 最新进展：模板/缓存/导入、Agent/Genchat会话、项目、Comfy、竞品及历史流水/赠额实际数据owner迁移，db2361→905、静态消费者64→35，新owner无静态/动态环；最大20环不变。原表同事务Agent改键保留OID/索引/trigger且失败回滚；Genchat原owner写入与HTTP失败语义；竞品release-first消除max5/占4的吞超时。完整基线7/205→新版7/290（76兼容身份、214运行行为），Agent/钱包/entitlement/195登录/任务3/226/持久化6/78与29/90、tsc/lint通过。详见 [R4A6](../changes/2026-10-24-content-session-owners-r4a6.md)。这是同步后第2模块；Genchat客户端仍吞非2xx、剩余db商业/管理、R4B显式DDL/组装、R5/R6继续，整体目标未完成。
+
 R4A5 最新进展：视频/Canvas图片持久任务与预占/成本审计职责已迁出，db3769→2361、静态消费者87→64，含db/video6动态环拆开。真实PG四条legacy终态路径在max5/占4时自等待已复现，现同事务读取计费与settings，原冻结报价不读current；baseline3/78、modified3/226通过，配置bootstrap同事务提交/回滚与unknown/单次扣款通过，相关现有入口/tsc/lint通过。旧video-reliability两边源码提取失败不记绿。见 [R4A5记录](../changes/2026-10-24-durable-task-owners-r4a5.md)。同步后第1模块；剩余模板/会话/管理、初始化/组装/协议/Worker及完整候选验收继续。
 
 R4A4 最新进展：作品读写/管理与Canvas数据职责已迁移；三份30字段映射合一；BI上下文/调用观测/HTTP包装分离，真实managed-client WeakSet唯一。db4793→3769、静态消费者130→87；67动态大环已拆开，最大剩余20，旧19静态模型环拆开为transport/client3；所有新增owner不在SCC。完整旧/新观测21/141、PG108→176，以及Canvas20/14/32、私有媒体/BI/账务/creation/交付27/溯源/tsc/lint通过。见 [R4A4记录](../changes/2026-10-24-artwork-observation-owners-r4a4.md)。本轮第3模块，普通整合main后归零；下一轮继续遗留视频/任务/组装/DDL及整体候选验收，不合main/不发布。

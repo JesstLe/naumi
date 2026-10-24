@@ -192,3 +192,41 @@ export async function isBanned(
   }
   return false;
 }
+
+// --- Phone binding (a phone bound to an account is stored on app_users.phone;
+//     phone-OTP login resolves a bound phone to that account's email) ---------
+
+/** The account email that has this phone bound, or null. */
+export async function findEmailByBoundPhone(
+  phone: string
+): Promise<string | null> {
+  await ensureSchema();
+  const r = await getPool().query(
+    `SELECT email FROM app_users WHERE phone = $1 LIMIT 1`,
+    [phone]
+  );
+  return r.rows[0]?.email ?? null;
+}
+
+/** Whether this Supabase auth email already exists (e.g. a synthetic phone account). */
+export async function authEmailExists(email: string): Promise<boolean> {
+  await ensureSchema();
+  const r = await getPool().query(
+    `SELECT 1 FROM auth.users WHERE email = $1 LIMIT 1`,
+    [email]
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
+/** Bind a phone to an existing account (by email). Returns false if no row. */
+export async function bindPhoneToEmail(
+  email: string,
+  phone: string
+): Promise<boolean> {
+  await ensureSchema();
+  const r = await getPool().query(
+    `UPDATE app_users SET phone = $2 WHERE email = $1`,
+    [email, phone]
+  );
+  return (r.rowCount ?? 0) > 0;
+}

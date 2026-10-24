@@ -2,7 +2,7 @@ import "server-only";
 import {createHash} from "node:crypto";
 import {NextResponse} from "next/server";
 import {authenticatedEmail} from "../request-auth";
-import {listAgentSessions, getAgentSession, renameAgentSession, deleteAgentSession} from "../db";
+import {listAgentSessions, getAgentSession, renameAgentSession, deleteAgentSession} from "@/lib/agent/session-repository";
 import {getPool} from "@/platform/db/pool";
 import {listArtworks, listArtworksByIds} from "@/lib/artworks/repository";
 import {getSession,removeRuntimeSession,renameRuntimeSession} from "./runtime";

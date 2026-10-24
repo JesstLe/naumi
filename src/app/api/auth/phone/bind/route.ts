@@ -2,11 +2,7 @@ import { PHONE_DOMAIN } from "@/lib/account-identity";
 import { NextResponse } from "next/server";
 import { smsEnabled, checkSmsCode } from "@/lib/sms";
 import { adminSupabase, bearer } from "@/lib/supabase-admin";
-import {
-  findEmailByBoundPhone,
-  authEmailExists,
-  bindPhoneToEmail,
-} from "@/lib/db";
+import {findEmailByBoundPhone, authEmailExists, bindPhoneToEmail} from "@/lib/accounts/repository";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

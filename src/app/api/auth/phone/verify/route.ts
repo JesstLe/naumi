@@ -2,7 +2,7 @@ import { PHONE_DOMAIN } from "@/lib/account-identity";
 import { NextResponse } from "next/server";
 import { smsEnabled, checkSmsCode } from "@/lib/sms";
 import { adminSupabase } from "@/lib/supabase-admin";
-import { findEmailByBoundPhone } from "@/lib/db";
+import {findEmailByBoundPhone} from "@/lib/accounts/repository";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

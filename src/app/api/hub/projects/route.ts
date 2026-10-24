@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { isRetiredBusinessProject } from "@/lib/retired-business-projects";
-import {listProjects, seedProjects, upsertProject, deleteProject} from "@/lib/db";
+import {listProjects, seedProjects, upsertProject, deleteProject} from "@/lib/projects/repository";
 import {dbEnabled} from "@/platform/db/pool";
 
 // ---------------------------------------------------------------------------

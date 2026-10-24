@@ -1,7 +1,7 @@
 import { resolveConfiguredImageQuality } from "@/lib/model-config/image-quality";
 import { currentModelExecution } from "./model-config/context";
 import "server-only";
-import {addLedgerEntry} from "@/lib/db";
+import {addLedgerEntry} from "@/lib/billing/legacy-ledger";
 import {creditMeteringEnabled} from "@/lib/billing/runtime";
 import {recordImageCostAudit} from "@/lib/billing/cost-audit-repository";
 import { imageBillCredits, qualityCostAudit } from "@/lib/billing/legacy";

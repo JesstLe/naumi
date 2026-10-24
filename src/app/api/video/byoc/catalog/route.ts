@@ -1,6 +1,6 @@
 import {NextResponse} from "next/server";
 import {authorizedTargetEmail} from "@/lib/request-auth";
-import {getActiveComfyEndpoint,listComfyWorkflows,getComfyWorkflow} from "@/lib/db";
+import {getActiveComfyEndpoint, listComfyWorkflows, getComfyWorkflow} from "@/lib/comfyui/repository";
 import {extractWorkflowInputs,type ApiWorkflow} from "@/lib/comfyui/workflow";
 import {knownComfyVideoOutput} from "@/lib/video/byoc";
 import type {VideoByocWorkflow} from "@/lib/video/byoc-settings";

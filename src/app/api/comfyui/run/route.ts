@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import {withCreationRoute,currentCreationContext} from '@/lib/saas/creation-context';
 import {claimCreation,finishCreation} from '@/lib/saas/creation-writer';
 
-import {getActiveComfyEndpoint, getComfyWorkflow} from "@/lib/db";
+import {getActiveComfyEndpoint, getComfyWorkflow} from "@/lib/comfyui/repository";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {addArtworks} from "@/lib/artworks/writer";
 import {dbEnabled} from "@/platform/db/pool";

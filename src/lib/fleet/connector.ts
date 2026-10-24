@@ -1,6 +1,6 @@
 import 'server-only';
 import { randomUUID } from 'node:crypto';
-import {adjustUserCredits} from "@/lib/db";
+import {adjustUserCredits} from "@/lib/billing/grants";
 import {getPool} from "@/platform/db/pool";
 import {getUser} from "@/lib/accounts/session";
 import { saveFeaturePolicy, userFeaturePolicy, FeatureAccessError } from '@/lib/feature-access/server';
