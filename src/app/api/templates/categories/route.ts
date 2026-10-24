@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { dbEnabled, listTemplateCategories } from "@/lib/db";
+import {listTemplateCategories} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
 import { TEMPLATES as SEED } from "@/lib/templates-data";
 
 export const runtime = "nodejs";

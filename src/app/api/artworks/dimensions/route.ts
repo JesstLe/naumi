@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { setArtworkDimensions } from "@/lib/db";
+import {setArtworkDimensions} from "@/lib/artworks/repository";
 import { authenticatedEmail } from "@/lib/request-auth";
 
 export const runtime = "nodejs";

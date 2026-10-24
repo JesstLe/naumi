@@ -1,7 +1,8 @@
 import "server-only";
 import {AsyncLocalStorage} from "node:async_hooks";
 import {createHash,randomInt} from "node:crypto";
-import {getPool,getActiveComfyEndpoint,getComfyWorkflow} from "../db";
+import {getActiveComfyEndpoint, getComfyWorkflow} from "../db";
+import {getPool} from "@/platform/db/pool";
 import {createCredentialStore} from "../model-config/credentials";
 import {ModelConfigError} from "../model-config/types";
 import {modelEndpointFetch} from "../model-config/transport";

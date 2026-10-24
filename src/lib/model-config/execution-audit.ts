@@ -1,7 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { dbEnabled, getPool } from "@/platform/db/pool";
-import { currentSynchronousBilling } from "../billing/synchronous";
+import {currentSynchronousBilling} from "@/lib/billing/synchronous-operation";
 import { currentImageOperationId } from "../image-gateway";
 import type { ModelExecutionScope } from "./context";
 import { procurementCny } from "./business";
@@ -29,7 +29,7 @@ export async function beginExecutionStage(scope: ModelExecutionScope, attempt: n
   const id = randomUUID();
   if (!dbEnabled) return id;
   const pool = getPool(); await ensureExecutionAuditSchema(pool);
-  const { currentBiOperationId } = await import("../bi/model-observer");
+  const {currentBiOperationId} = await import("@/lib/bi/context");
   const operation = currentSynchronousBilling()?.id || currentBiOperationId() || currentImageOperationId() || id;
   const cost = procurementCny(scope.procurement);
   const tx = await pool.connect();

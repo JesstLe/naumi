@@ -1,10 +1,13 @@
-import {withBillingRequest,configuredToolCost,synchronousChargedCredits} from "@/lib/billing/synchronous";
+import {withBillingRequest} from "@/lib/billing/synchronous";
+import {configuredToolCost, synchronousChargedCredits} from "@/lib/billing/synchronous-operation";
 import { managedImageEditFetch } from "@/lib/model-config/clients";
 import { requestImageQuality, imageQualityCost, withQualityFallback, settleToolImage, recordImageExecutionModel } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
-import {dbEnabled, reserveCredits, refundCredits, addArtworks, addReservation, settleReservation, sweepStaleReservations} from "@/lib/db";
+import {reserveCredits, refundCredits, addReservation, settleReservation, sweepStaleReservations} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {addArtworks} from "@/lib/artworks/writer";
 import {getUser} from "@/lib/accounts/session";
 import {isBanned} from "@/lib/accounts/repository";
 import { clientIp } from "@/lib/ip";
@@ -349,6 +352,6 @@ export async function GET(request: Request) {
   }
   return NextResponse.json(job);
 }
-import { withBiRequest } from "@/lib/bi/model-observer";
+import {withBiRequest} from "@/lib/bi/request";
 
 export async function POST(request:Request){return withBillingRequest(request,"tool.packaging3d",()=>billingRoutePost(request));}

@@ -1,10 +1,13 @@
 import { forwardLegacyAgentSession } from "@/lib/agent/legacy-runtime";
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
-import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
+import {observeOpenAI} from "@/lib/bi/model-calls";
+import {withBiRequest} from "@/lib/bi/request";
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import path from "path";
-import { dbEnabled, listArtworksByIds, type ArtworkRecord } from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {listArtworksByIds} from "@/lib/artworks/repository";
+import {type ArtworkRecord} from "@/lib/artworks/types";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
@@ -19,7 +22,8 @@ import {
 import { toVisionDataUrl } from "@/lib/vision-image";
 import { requestedTextModel } from "@/lib/text-models";
 import { CANVAS_TEXT_OUTPUT_INSTRUCTION, canvasTextInput, canvasAnswerText, canvasTextFailure, reportCanvasTextFailure } from "@/lib/canvas-text-output";
-import { withBillingRequest, configuredToolCost, completeSynchronousStream, failSynchronousStream } from "@/lib/billing/synchronous";
+import {withBillingRequest} from "@/lib/billing/synchronous";
+import {configuredToolCost, completeSynchronousStream, failSynchronousStream} from "@/lib/billing/synchronous-operation";
 import { runCanvasAgent } from "@/lib/agent/canvas";
 import { canvasAgentHistory } from "@/lib/agent/canvas-history";
 import { readHarnessBody, harnessErrorResponse, HarnessError, AgentHarness, PublicOutputBuffer, untrustedAgentData } from "@/lib/agent/harness";

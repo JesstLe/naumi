@@ -1,5 +1,5 @@
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
-import { observeOpenAI } from "@/lib/bi/model-observer";
+import {observeOpenAI} from "@/lib/bi/model-calls";
 import "server-only";
 import { adminConfiguredFeature } from "./model-config/selection-policy";
 import { featureForPath } from "./model-config/feature-path";

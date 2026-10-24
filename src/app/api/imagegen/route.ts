@@ -1,4 +1,4 @@
-import {withBiRequest} from "@/lib/bi/model-observer";
+import {withBiRequest} from "@/lib/bi/request";
 import {resolveUserEmail} from "@/lib/admin-auth";
 import {sameSiteBillingMutation} from "@/lib/billing/access";
 import {imageWorkerAuthorized} from "@/lib/durable-image-jobs";

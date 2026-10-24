@@ -2,7 +2,7 @@ import {normalizeLegacyFrameRequest, LegacyFrameError} from "@/lib/imagegen/lega
 import {currentImagegenStep} from "@/lib/imagegen/context";
 import {canvasParameterError} from "@/lib/canvas/generation-parameters";
 import {withBillingIntent} from "@/lib/billing/intent";
-import {withBiRequest} from "@/lib/bi/model-observer";
+import {withBiRequest} from "@/lib/bi/request";
 import {quoteForRequest} from "@/lib/billing/server";
 import {imageWorkerAuthorized} from "@/lib/durable-image-jobs";
 import {NextResponse} from "next/server";

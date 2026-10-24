@@ -1,4 +1,4 @@
-import { withBiRequest } from "@/lib/bi/model-observer";
+import {withBiRequest} from "@/lib/bi/request";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";

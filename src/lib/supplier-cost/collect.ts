@@ -3,7 +3,7 @@ import { currentObservedCallId } from "../bi/call-scope";
 import { createHash, randomUUID } from "node:crypto";
 import { dbEnabled } from "@/platform/db/pool";
 import { currentModelExecution, type ModelExecutionScope } from "../model-config/context";
-import { currentSynchronousBilling } from "../billing/synchronous";
+import {currentSynchronousBilling} from "@/lib/billing/synchronous-operation";
 import { currentImageOperationId, noteImageSupplierDispatch } from "../image-gateway";
 import { accountIdentity, supplierLedger } from "./runtime";
 import { genericReceipt, safeUsage, submittedAPIMartTask } from "./adapters";
@@ -16,7 +16,7 @@ import { imageSupplierFailure } from "../model-config/supplier-failure";
 import { supplierFailureEvidence } from "./failure-evidence";
 
 export async function supplierContext(scope?: ModelExecutionScope | null): Promise<CostContext> {
-  const { currentBiContext } = await import("../bi/model-observer");
+  const {currentBiContext} = await import("@/lib/bi/context");
   const billing = currentSynchronousBilling(), bi = currentBiContext();
   return { biCallId: currentObservedCallId(), operationId: billing?.id || bi?.id || currentImageOperationId() || randomUUID(), userEmail: billing?.email || bi?.email, feature: scope?.frozen.feature || billing?.feature || bi?.operation || "unattributed-call", publicModelId: scope?.frozen.publicModelId, modelVersion: scope?.frozen.modelVersion, billingVersion: scope?.frozen.billingVersion, phase: scope?.costPhase || modelCostPhase(scope?.frozen.binding,scope?.frozen.modality), matchedRuleId: scope?.costRuleId || scope?.routing?.matchedRuleId };
 }

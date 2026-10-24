@@ -2,7 +2,8 @@
 import { requestFeaturePolicy } from "@/lib/feature-access/server";
 import { allows } from "@/lib/feature-access/catalog";
 import { NextResponse } from "next/server";
-import {dbEnabled, listArtworks, getWorkbenchArtworks} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {listArtworks, getWorkbenchArtworks} from "@/lib/artworks/repository";
 import {getOrCreateUser, getUser, changeUserPlan} from "@/lib/accounts/session";
 import {recordLoginIp} from "@/lib/accounts/repository";
 import { clientIp } from "@/lib/ip";

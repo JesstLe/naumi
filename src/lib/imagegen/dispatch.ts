@@ -1,6 +1,8 @@
 import "server-only";
 import {DurableImageJobs} from "../durable-image-jobs";
-import {getPool,listArtworksByIds,addArtworks,dbEnabled} from "../db";
+import {getPool, dbEnabled} from "@/platform/db/pool";
+import {listArtworksByIds} from "@/lib/artworks/repository";
+import {addArtworks} from "@/lib/artworks/writer";
 import {readCanvasOutput} from "../canvas-image-input";
 import {inspectImagegenPixels} from "./postprocess";
 import {saveCanvasLocalEdit} from "../canvas-local-image-edit";

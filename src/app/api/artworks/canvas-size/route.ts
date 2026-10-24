@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { setArtworkCanvasLayout, setArtworkCanvasSize } from "@/lib/db";
+import {setArtworkCanvasLayout, setArtworkCanvasSize} from "@/lib/canvas/artwork-repository";
 import { authenticatedEmail } from "@/lib/request-auth";
 
 export const runtime = "nodejs";

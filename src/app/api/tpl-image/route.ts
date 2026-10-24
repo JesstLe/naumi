@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
-import {
-  dbEnabled,
-  getTemplateImageCacheState,
-  setTemplateImageCacheFailure,
-  setTemplateImageCacheSuccess,
-} from "@/lib/db";
+import {getTemplateImageCacheState, setTemplateImageCacheFailure, setTemplateImageCacheSuccess} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
 import {
   persistTemplateImage,
   remoteTemplateImageSource,

@@ -1,5 +1,6 @@
 import "server-only";
-import {getPool,getVideoTask} from "../db";
+import {getVideoTask} from "../db";
+import {getPool} from "@/platform/db/pool";
 import {ensureVideoNodeSchema} from "../canvas/video-node-repository";
 import {decryptAtRest} from "../settings";
 import {ModelConfigError} from "../model-config/types";

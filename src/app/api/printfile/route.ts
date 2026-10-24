@@ -1,7 +1,10 @@
-import {withBillingRequest,configuredToolCost,synchronousChargedCredits} from "@/lib/billing/synchronous";
+import {withBillingRequest} from "@/lib/billing/synchronous";
+import {configuredToolCost, synchronousChargedCredits} from "@/lib/billing/synchronous-operation";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
-import {dbEnabled, reserveCredits, refundCredits, addArtworks, addLedgerEntry} from "@/lib/db";
+import {reserveCredits, refundCredits, addLedgerEntry} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {addArtworks} from "@/lib/artworks/writer";
 import {getUser} from "@/lib/accounts/session";
 import {isBanned} from "@/lib/accounts/repository";
 import { clientIp } from "@/lib/ip";

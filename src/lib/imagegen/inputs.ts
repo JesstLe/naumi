@@ -1,5 +1,5 @@
 import "server-only";
-import {listArtworksByIds} from "../db";
+import {listArtworksByIds} from "@/lib/artworks/repository";
 import {readCanvasImage} from "../canvas-image-input";
 import {decodeImagegenPixels} from "./pixels";
 import {readImagegenInputAsset} from "./input-assets";

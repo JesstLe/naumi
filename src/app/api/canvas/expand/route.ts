@@ -1,12 +1,16 @@
 import { canvasParameterError } from "@/lib/canvas/generation-parameters";
-import {withBillingRequest,currentSynchronousBilling} from "@/lib/billing/synchronous";
-import { withBiRequest } from "@/lib/bi/model-observer";
+import {withBillingRequest} from "@/lib/billing/synchronous";
+import {currentSynchronousBilling} from "@/lib/billing/synchronous-operation";
+import {withBiRequest} from "@/lib/bi/request";
 import { imageRequestBilling, requestImageQuality, settleToolImage } from "@/lib/image-quality-request";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
 import { authenticatedEmail } from "@/lib/request-auth";
-import {addArtworks, dbEnabled, listArtworksByIds, refundCredits, reserveCredits} from "@/lib/db";
+import {refundCredits, reserveCredits} from "@/lib/db";
+import {listArtworksByIds} from "@/lib/artworks/repository";
+import {addArtworks} from "@/lib/artworks/writer";
+import {dbEnabled} from "@/platform/db/pool";
 import {getUser} from "@/lib/accounts/session";
 import { readCanvasImage } from "@/lib/canvas-image-input";
 import { editImage, isImageTimeout } from "@/lib/image-edit";

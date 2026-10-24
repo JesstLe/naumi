@@ -6,7 +6,9 @@ import { featureRequestGate, ACCESS_HEADERS } from "@/lib/feature-access/server"
 import { rateLimit } from "@/lib/rate-limit";
 import { commandSchema, packagingMessages, parsePackagingResult, PackagingError } from "@/lib/packaging-strategy/contract";
 import { beginPackagingCommand, finishPackagingCommand, getPackagingProject, listPackagingProjects } from "@/lib/packaging-strategy/server";
-import { withBiRequest, withBiModelContext, observeOpenAI } from "@/lib/bi/model-observer";
+import {withBiRequest} from "@/lib/bi/request";
+import {withBiModelContext} from "@/lib/bi/context";
+import {observeOpenAI} from "@/lib/bi/model-calls";
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";

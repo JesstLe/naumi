@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { competitorActor, competitorError, normalizeUpload, analyzeCompetitor, WorkspaceError } from "@/lib/competitor-server";
 import { rateLimit } from "@/lib/rate-limit";
 import { requestedTextModel } from "@/lib/text-models";
-import { withBiRequest } from "@/lib/bi/model-observer";
+import {withBiRequest} from "@/lib/bi/request";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;

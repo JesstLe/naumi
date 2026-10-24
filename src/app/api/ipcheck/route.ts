@@ -1,12 +1,15 @@
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
-import {withBillingRequest,configuredToolCost,synchronousChargedCredits} from "@/lib/billing/synchronous";
-import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
+import {withBillingRequest} from "@/lib/billing/synchronous";
+import {configuredToolCost, synchronousChargedCredits} from "@/lib/billing/synchronous-operation";
+import {observeOpenAI} from "@/lib/bi/model-calls";
+import {withBiRequest} from "@/lib/bi/request";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import OpenAI from "openai";
 import { requestedTextModel } from "@/lib/text-models";
-import {dbEnabled, reserveCredits, refundCredits, addLedgerEntry} from "@/lib/db";
+import {reserveCredits, refundCredits, addLedgerEntry} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
 import {getUser} from "@/lib/accounts/session";
 import {isBanned} from "@/lib/accounts/repository";
 import { clientIp } from "@/lib/ip";

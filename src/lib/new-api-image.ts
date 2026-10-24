@@ -1,5 +1,5 @@
 import { getNewApiImageSettings } from "@/lib/image-model-catalog";
-import { observeModelCall, modelExecutionTelemetry } from "@/lib/bi/model-observer";
+import {observeModelCall, modelExecutionTelemetry} from "@/lib/bi/model-calls";
 import { currentModelExecution, type ModelExecutionScope } from "./model-config/context";
 import { ModelConfigError } from "./model-config/types";
 import { modelEndpointFetch } from "./model-config/transport";

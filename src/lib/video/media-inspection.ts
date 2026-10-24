@@ -4,7 +4,7 @@ export {mediaExtension,inspectedMediaMime} from "./media-formats";
 import {createHash} from "node:crypto";
 import {ensureSchema} from "@/lib/persistence/schema";
 import {getPool} from "@/platform/db/pool";
-import {listArtworksByIds} from "../db";
+import {listArtworksByIds} from "@/lib/artworks/repository";
 import {canReadMedia,getMediaAsset} from "../media-assets";
 import {readManagedObject} from "../storage";
 import {ModelConfigError} from "../model-config/types";

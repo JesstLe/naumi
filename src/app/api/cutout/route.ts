@@ -1,6 +1,6 @@
 import {NextResponse} from "next/server";
 import {withBillingRequest} from "@/lib/billing/synchronous";
-import {withBiRequest} from "@/lib/bi/model-observer";
+import {withBiRequest} from "@/lib/bi/request";
 import {resolveUserEmail} from "@/lib/admin-auth";
 import {clientIp} from "@/lib/ip";
 import {executeCutout} from "@/lib/imagegen/cutout";

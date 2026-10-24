@@ -5,7 +5,7 @@ import {getBillingRuntime} from "@/lib/billing/runtime";
 import { getPool } from "@/platform/db/pool";
 import {withTransaction as withBillingTransaction} from "@/platform/db/transaction";
 import { resultSchema } from "@/lib/billing/validation";
-import { exposeAbandonedBillingOperations } from "@/lib/billing/synchronous";
+import {exposeAbandonedBillingOperations} from "@/lib/billing/synchronous-operation";
 export const runtime = "nodejs", dynamic = "force-dynamic";
 export async function GET(request: Request) { const auth = await billingAuthorize(request); if (auth instanceof Response)
     return auth; try {

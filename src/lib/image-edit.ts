@@ -1,6 +1,6 @@
 import { resolveConfiguredImageQuality } from "@/lib/model-config/image-quality";
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
-import { observeOpenAI } from "@/lib/bi/model-observer";
+import {observeOpenAI} from "@/lib/bi/model-calls";
 import "server-only";
 import OpenAI, { toFile } from "openai";
 import { getOpenAISettings } from "@/lib/settings";

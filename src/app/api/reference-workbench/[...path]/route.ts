@@ -1,7 +1,7 @@
 import {ZodError} from "zod";
 import {randomUUID,createHash} from "node:crypto";
 import {resolveUserEmail,requireAdmin} from "@/lib/admin-auth";
-import {dbEnabled, getPool} from "@/lib/db";
+import {dbEnabled, getPool} from "@/platform/db/pool";
 import {isBanned} from "@/lib/accounts/repository";
 import {sameSiteBillingMutation,PRIVATE_HEADERS} from "@/lib/billing/access";
 import {userFeaturePolicy} from "@/lib/feature-access/server";

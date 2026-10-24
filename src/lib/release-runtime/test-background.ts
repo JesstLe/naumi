@@ -11,7 +11,8 @@ async function main() {
   const { releaseStatus, releasePool, controlAdmission } = await import("./store");
   const { BACKGROUND_SCOPES, withBackgroundActivity, detachBackgroundActivity, bindBackgroundClaim } = await import("./background-activity");
   const { DurableImageJobs } = await import("../durable-image-jobs");
-  const { ensureSchema, getPool } = await import("../db");
+  const {ensureSchema} = await import("@/lib/persistence/schema");
+const {getPool} = await import("@/platform/db/pool");
   let checks = 0;
   function check(name: string, actual: unknown, expected: unknown) { assert.deepEqual(actual, expected, name); checks++; console.log(`PASS ${name}`); }
   await ensureSchema();
@@ -54,7 +55,7 @@ async function main() {
   check("ambiguous detached failure is never auto-replayed", replay, false);
   check("ambiguous background failure remains unknown", (await releaseStatus()).observations.unknownLeases > 0, true);
   check("local background coverage does not invent all tasks count", (await releaseStatus()).observations.acceptedTasks, null);
-  const { withBiRequest }=await import("../bi/model-observer");
+  const {withBiRequest} = await import("@/lib/bi/request");
   const { signUserSession, USER_COOKIE }=await import("../native-auth");
   const { withAcceptedExecution,signAgentContinuation,CONTINUATION_HEADER }=await import("./accepted-context");
   const { accountKey }=await import("./identity");

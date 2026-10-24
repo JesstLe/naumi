@@ -15,7 +15,7 @@ import { supplierLedger, accountIdentity } from "../supplier-cost/runtime";
 import { apimartTask, submittedAPIMartTask, genericReceipt } from "../supplier-cost/adapters";
 import { parseReceiptJson } from "../supplier-cost/money";
 import { readBounded, readBoundedBytes } from "../supplier-cost/io";
-import { recordBillingUsage,currentSynchronousBilling } from "../billing/synchronous";
+import {recordBillingUsage, currentSynchronousBilling} from "@/lib/billing/synchronous-operation";
 
 /** Actual submission parameters, not the original UI audit request. Old preset
  * and legacy tasks keep their previous precedence when no effective quote or

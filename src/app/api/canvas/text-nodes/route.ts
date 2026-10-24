@@ -1,12 +1,7 @@
 import { NextResponse } from "next/server";
-import {
-  dbEnabled,
-  deleteCanvasTextNodes,
-  listArtworksByIds,
-  listCanvasTextNodes,
-  upsertCanvasTextNode,
-  type CanvasTextNodeRecord,
-} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {deleteCanvasTextNodes, listCanvasTextNodes, upsertCanvasTextNode, type CanvasTextNodeRecord} from "@/lib/canvas/text-node-repository";
+import {listArtworksByIds} from "@/lib/artworks/repository";
 import { authenticatedEmail, authorizedTargetEmail } from "@/lib/request-auth";
 
 export const runtime = "nodejs";

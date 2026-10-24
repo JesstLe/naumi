@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 import sharp from "sharp";
-import {
-  addArtworks,
-  dbEnabled,
-  listArtworksByIds,
-  setArtworkPosition,
-} from "@/lib/db";
+import {listArtworksByIds} from "@/lib/artworks/repository";
+import {addArtworks} from "@/lib/artworks/writer";
+import {dbEnabled} from "@/platform/db/pool";
+import {setArtworkPosition} from "@/lib/canvas/artwork-repository";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { uploadImage,isManagedImageUrl,readManagedObject } from "@/lib/storage";
 

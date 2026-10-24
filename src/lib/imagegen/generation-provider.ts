@@ -5,7 +5,7 @@ import {exactImageRequestSize} from "@/lib/imagegen/request-size";
 import {currentModelExecution} from "@/lib/model-config/context";
 import {resolveConfiguredImageQuality} from "@/lib/model-config/image-quality";
 import {modelAwareOpenAI} from "@/lib/model-config/clients";
-import {observeOpenAI} from "@/lib/bi/model-observer";
+import {observeOpenAI} from "@/lib/bi/model-calls";
 import {toFile} from "openai";
 import {CATEGORY_IMAGES, img} from "@/lib/images";
 import {getOpenAIBaseUrl} from "@/lib/openai-base";

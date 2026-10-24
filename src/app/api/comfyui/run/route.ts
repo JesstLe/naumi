@@ -2,13 +2,10 @@ import { NextResponse } from "next/server";
 import {withCreationRoute,currentCreationContext} from '@/lib/saas/creation-context';
 import {claimCreation,finishCreation} from '@/lib/saas/creation-writer';
 
-import {
-  addArtworks,
-  dbEnabled,
-  getActiveComfyEndpoint,
-  getComfyWorkflow,
-  listArtworksByIds,
-} from "@/lib/db";
+import {getActiveComfyEndpoint, getComfyWorkflow} from "@/lib/db";
+import {listArtworksByIds} from "@/lib/artworks/repository";
+import {addArtworks} from "@/lib/artworks/writer";
+import {dbEnabled} from "@/platform/db/pool";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { readCanvasImage } from "@/lib/canvas-image-input";
 import { storageEnabled, uploadImage } from "@/lib/storage";

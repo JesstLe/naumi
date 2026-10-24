@@ -1,5 +1,6 @@
-import {withBillingRequest,currentSynchronousBilling} from "@/lib/billing/synchronous";
-import {withBiRequest} from "@/lib/bi/model-observer";
+import {withBillingRequest} from "@/lib/billing/synchronous";
+import {currentSynchronousBilling} from "@/lib/billing/synchronous-operation";
+import {withBiRequest} from "@/lib/bi/request";
 import { imageRequestBilling } from "@/lib/image-quality-request";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";

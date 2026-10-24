@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { authenticatedEmail } from "@/lib/request-auth";
-import { dbEnabled, getAgentSession } from "@/lib/db";
+import {getAgentSession} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
 import { rateLimit } from "@/lib/rate-limit";
 import { SkillError, conversationSkillDraft, validateSkillSelection } from "@/lib/image-skills/catalog";
 import { listImageSkills, saveImageSkill, archiveImageSkill, imageSkillEnterprise } from "@/lib/image-skills/server";

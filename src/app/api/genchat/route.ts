@@ -1,12 +1,7 @@
 import { NextResponse } from "next/server";
 import { authenticatedEmail } from "@/lib/request-auth";
-import {
-  dbEnabled,
-  listGenchatSessions,
-  getGenchatSession,
-  saveGenchatSession,
-  deleteGenchatSession,
-} from "@/lib/db";
+import {listGenchatSessions, getGenchatSession, saveGenchatSession, deleteGenchatSession} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
 
 // History belongs to the authenticated account, never an email from query/body.
 

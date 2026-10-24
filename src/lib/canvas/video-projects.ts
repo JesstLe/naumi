@@ -1,5 +1,6 @@
 import "server-only";
-import {getPool,getProjectNames} from "../db";
+import {getPool} from "@/platform/db/pool";
+import {getProjectNames} from "@/lib/canvas/project-repository";
 import {ensureVideoNodeSchema} from "./video-node-repository";
 export async function ownedCanvasVideoProjects(actorRaw:string){
   const actor=actorRaw.toLowerCase();await ensureVideoNodeSchema();

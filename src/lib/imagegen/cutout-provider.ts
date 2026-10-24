@@ -2,7 +2,7 @@ import "server-only";
 import {supplierCostFetch} from "../supplier-cost/collect";
 import {modelAwareOpenAI} from "../model-config/clients";
 import {markBillingUpstream} from "../billing/synchronous-operation";
-import {observeOpenAI} from "../bi/model-observer";
+import {observeOpenAI} from "@/lib/bi/model-calls";
 import {toFile} from "openai";
 import {getOpenAIBaseUrl} from "../openai-base";
 

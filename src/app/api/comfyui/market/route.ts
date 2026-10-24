@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 
-import {
-  copyComfyWorkflow,
-  dbEnabled,
-  listPublicComfyWorkflows,
-  publishComfyWorkflow,
-} from "@/lib/db";
+import {copyComfyWorkflow, listPublicComfyWorkflows, publishComfyWorkflow} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/ip";

@@ -3,7 +3,7 @@ import {TeamError} from "@/lib/teams/server";
 import { z } from "zod";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { sameSiteBiMutation } from "@/lib/bi/access";
-import { withBiRequest } from "@/lib/bi/model-observer";
+import {withBiRequest} from "@/lib/bi/request";
 import { readBounded } from "@/lib/supplier-cost/io";
 import { billingErrorResponse, requestQuoteConfirmation } from "@/lib/billing/request";
 import { BillingError } from "@/lib/billing/types";

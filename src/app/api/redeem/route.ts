@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import {dbEnabled, redeemCardKey} from "@/lib/db";
+import {redeemCardKey} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
 import {getUser} from "@/lib/accounts/session";
 import { resolveUserEmail } from "@/lib/admin-auth";
 

@@ -13,7 +13,7 @@ import { ImageOperationPending, ImageOperationDeferred, isImageGatewayModel, wit
 import {dispatchImageQueue} from "./image-job-queue";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
-import { withBiModelContext } from "@/lib/bi/model-observer";
+import {withBiModelContext} from "@/lib/bi/context";
 import type {BillingQuote,BillingResult} from "@/lib/billing/types";
 import { currentExecutionBundle, currentModelExecution, runLegacyModelExecution, type ExecutionBundle } from "@/lib/model-config/context";
 import { withFrozenExecutionBundle } from "@/lib/model-config/execution";

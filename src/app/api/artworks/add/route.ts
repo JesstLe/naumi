@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { dbEnabled, addArtworks, setArtworkPosition, listArtworksByIds } from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {listArtworksByIds} from "@/lib/artworks/repository";
+import {addArtworks} from "@/lib/artworks/writer";
+import {setArtworkPosition} from "@/lib/canvas/artwork-repository";
 import { provenanceEntry } from "@/lib/artwork-provenance";
 import { uploadImage, privateMedia, storageKeyFromManagedUrl } from "@/lib/storage";
 import {canReadMedia} from '@/lib/media-assets';

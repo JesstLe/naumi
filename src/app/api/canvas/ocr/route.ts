@@ -1,14 +1,16 @@
 import { supplierCostFetch } from "@/lib/supplier-cost/collect";
 import { currentModelExecution } from "@/lib/model-config/context";
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
-import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
+import {observeOpenAI} from "@/lib/bi/model-calls";
+import {withBiRequest} from "@/lib/bi/request";
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { requestedTextModel } from "@/lib/text-models";
 import sharp from "sharp";
 
 import { authenticatedEmail } from "@/lib/request-auth";
-import { dbEnabled, listArtworksByIds } from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {listArtworksByIds} from "@/lib/artworks/repository";
 import { readCanvasImage } from "@/lib/canvas-image-input";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
@@ -17,7 +19,8 @@ import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
 import { safeError } from "@/lib/api-error";
 import { collectPaddleRows, normalizeOcrSegments, scaleOcrSegments } from "@/lib/canvas-ocr";
-import { withBillingRequest, configuredToolCost, markBillingUpstream } from "@/lib/billing/synchronous";
+import {withBillingRequest} from "@/lib/billing/synchronous";
+import {configuredToolCost, markBillingUpstream} from "@/lib/billing/synchronous-operation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

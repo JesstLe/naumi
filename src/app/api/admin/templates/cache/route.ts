@@ -1,14 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
-import {
-  dbEnabled,
-  getTemplateImageCacheStats,
-  listTemplateImageCacheCandidates,
-  resetTemplateImageCacheFailures,
-  setTemplateImageCacheFailure,
-  setTemplateImageCacheSuccess,
-  type TemplateImageCacheCandidate,
-} from "@/lib/db";
+import {getTemplateImageCacheStats, listTemplateImageCacheCandidates, resetTemplateImageCacheFailures, setTemplateImageCacheFailure, setTemplateImageCacheSuccess, type TemplateImageCacheCandidate} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
 import { persistTemplateImage } from "@/lib/template-image-cache";
 
 export const runtime = "nodejs";

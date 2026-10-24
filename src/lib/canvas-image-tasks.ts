@@ -16,23 +16,9 @@ import { imageQualityCost, auditSettledImage } from "@/lib/image-quality-request
 import { createHash } from "node:crypto";
 import sharp from "sharp";
 
-import {
-  addArtworks,
-  beginCanvasImageTaskSubmission,
-  saveCanvasImageTaskProviderResult,
-  holdCanvasImageTask,
-  claimNextCanvasImageTask,
-  completeCanvasImageTask,
-  createCanvasImageTaskWithReservation,
-  failCanvasImageTask,
-  getCanvasImageTask,
-  getCanvasImageTaskChargedCredits,
-  listArtworksByIds,
-  listCanvasImageTasks,
-  retryCanvasImageTask,
-  updateCanvasImageTaskProgress,
-  type CanvasImageTaskRow,
-} from "@/lib/db";
+import {beginCanvasImageTaskSubmission, saveCanvasImageTaskProviderResult, holdCanvasImageTask, claimNextCanvasImageTask, completeCanvasImageTask, createCanvasImageTaskWithReservation, failCanvasImageTask, getCanvasImageTask, getCanvasImageTaskChargedCredits, listCanvasImageTasks, retryCanvasImageTask, updateCanvasImageTaskProgress, type CanvasImageTaskRow} from "@/lib/db";
+import {listArtworksByIds} from "@/lib/artworks/repository";
+import {addArtworks} from "@/lib/artworks/writer";
 import { supabaseEnabled } from "@/lib/auth-mode";
 import { creditsMeteringOn, multiUserEnabled } from "@/lib/native-auth";
 import { readCanvasImage } from "@/lib/canvas-image-input";
@@ -286,4 +272,4 @@ export function publicCanvasImageTask(task: CanvasImageTaskRow) {
   return { quality: task.parameters.qualityAudit, id, kind, sourceArtworkId, status, progress, cost, resultArtworkId, error, attempts, createdAt, completedAt,
     parameters: normalizedInput(task.parameters as Partial<TextEditTaskInput>) };
 }
-import { withBiModelContext } from "@/lib/bi/model-observer";
+import {withBiModelContext} from "@/lib/bi/context";

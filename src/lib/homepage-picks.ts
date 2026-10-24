@@ -6,11 +6,8 @@
 //      curated 池(tpl-c*, tpl-canghe-*)直接通过;leader 池还得命中白名单 tag
 //   4) deterministic shuffle 按当天日期作种,同一天所有访客看一致,跨天换批
 
-import {
-  dbEnabled,
-  listHomepageFeaturedTemplates,
-  listTemplatesInCategories,
-} from "@/lib/db";
+import {listHomepageFeaturedTemplates, listTemplatesInCategories} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
 import { TEMPLATES as SEED } from "@/lib/templates-data";
 import templateDimsJson from "@/lib/template-dims.json";
 import type { PromptTemplate } from "@/lib/mock-data";

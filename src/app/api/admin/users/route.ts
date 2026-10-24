@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import {dbEnabled, listAllUsers, adminStats, listLedger, adjustUserCredits, deleteUser, listArtworks, listUserLedger} from "@/lib/db";
+import {listAllUsers, adminStats, listLedger, adjustUserCredits, deleteUser, listUserLedger} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {listArtworks} from "@/lib/artworks/repository";
 import {getOrCreateUser, getUser} from "@/lib/accounts/session";
 import {setUserPassword, setUserRole, setUserBanned, setUserNote, banIp, unbanIp, listBannedIps} from "@/lib/accounts/repository";
 import { requireAdmin } from "@/lib/admin-auth";

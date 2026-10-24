@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { dbEnabled, addArtworkParent, removeArtworkParent } from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {addArtworkParent, removeArtworkParent} from "@/lib/canvas/artwork-repository";
 import { authenticatedEmail } from "@/lib/request-auth";
 
 export const runtime = "nodejs";

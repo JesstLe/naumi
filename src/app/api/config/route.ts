@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { dbEnabled, creditMeteringEnabled } from "@/lib/db";
+import {creditMeteringEnabled} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
 import { storageEnabled } from "@/lib/storage";
 import { authMode } from "@/lib/auth-mode";
 import { multiUserEnabled } from "@/lib/native-auth";

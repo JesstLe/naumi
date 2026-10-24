@@ -1,6 +1,6 @@
 import "server-only";
 import {createHash} from "node:crypto";
-import {listArtworksByIds} from "../db";
+import {listArtworksByIds} from "@/lib/artworks/repository";
 import {canReadMedia,getMediaAsset,importLegacyMedia} from "../media-assets";
 import {storageKeyFromManagedUrl,readManagedObject,writeStoredObject,presignStoredObject,privateMedia,remoteMediaAccess} from "../storage";
 import {createVideoReferenceMediaUrl} from "./reference-media-token";

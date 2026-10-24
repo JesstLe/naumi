@@ -1,3 +1,5 @@
+import {markManagedModelClient} from "./client-identity";
+export {isManagedModelClient} from "./client-identity";
 import { applicationAPIMartImages } from "./apimart-image-policy";
 import {currentImagegenStep} from "../imagegen/context";
 import {mapImagegenParameters,imagegenWireRequest} from "../imagegen/parameters";
@@ -17,8 +19,6 @@ import {mapResolution,RESOLUTION_FIELDS} from "./resolution-policy";
 import {policyQuality} from "./quality-policy";
 import { reverseHubImageFetch } from "./reverse-hub-images";
 import { healthObservedFetch } from "../model-health/observe";
-const managedClients = new WeakSet<OpenAI>();
-export const isManagedModelClient = (client: OpenAI) => managedClients.has(client);
 
 export function executionFetch(scope: ModelExecutionScope, options: ValidationOptions = {}): typeof fetch {
   return healthObservedFetch(scope, executionTransport(scope, options), options);
@@ -146,7 +146,7 @@ export async function managedImageEditFetch(baseUrl: string, apiKey: string, for
   const connection = scope?.connection;
   const transport = scope ? executionFetch(scope, { trustedOrigins: (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || "").split(/[\s,]+/).filter(Boolean) }) : supplierCostFetch(fetch,{providerId:"legacy-image",apiKey,baseUrl,protocol:"openai-images"});
   if (connection?.protocol === "router-images") appendImageGatewayFields(form, scope!.frozen.publicModelId);
-  const { observeModelCall, modelExecutionTelemetry } = await import("../bi/model-observer");
+  const {observeModelCall, modelExecutionTelemetry} = await import("@/lib/bi/model-calls");
   return observeModelCall(connection?.wireModel || String(form.get("model") || "unrecorded"), () => transport(`${(connection?.baseUrl || baseUrl).replace(/\/$/, "")}/images/edits`, { method: "POST", headers: { Authorization: `Bearer ${connection?.apiKey || apiKey}` }, body: form, signal }), modelExecutionTelemetry(scope) || null);
 }
 
@@ -154,7 +154,7 @@ export async function managedImageEditFetch(baseUrl: string, apiKey: string, for
 export function modelAwareOpenAI(options: ConstructorParameters<typeof OpenAI>[0], managed = true): OpenAI {
   const legacy = new OpenAI({ ...options, maxRetries:0,fetch: supplierCostFetch(options?.fetch || fetch, { providerId: managed ? "legacy-openai" : "byok", apiKey: typeof options?.apiKey==='string' ? options.apiKey : undefined, baseUrl: options?.baseURL || "https://api.openai.com/v1", protocol: "openai-compatible" }) });
   if (!managed) return legacy;
-  managedClients.add(legacy);
+  markManagedModelClient(legacy);
   const clients = new WeakMap<ModelExecutionScope, OpenAI>();
   const bodyUsesVision = (body: any) => Array.isArray(body?.messages) && body.messages.some((message: any) => Array.isArray(message.content) && message.content.some((part: any) => part?.type === "image_url" || part?.type === "input_image"));
   for (const [resource, method, role] of [[legacy.images, "generate", "image"], [legacy.images, "edit", "image"], [legacy.chat.completions, "create", "text"]] as const) {

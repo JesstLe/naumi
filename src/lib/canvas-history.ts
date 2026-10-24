@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createHash } from "node:crypto";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
-import {listArtworksByIds} from "@/lib/db";
+import {listArtworksByIds} from "@/lib/artworks/repository";
 import {verifiedOwnedMedia} from "@/lib/video/media-inspection";
 import {storageKeyFromManagedUrl} from "@/lib/storage";
 import { ensureCanvasSettingsSchema } from "@/lib/canvas-node-settings-store";

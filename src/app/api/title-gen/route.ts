@@ -1,5 +1,6 @@
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
-import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
+import {observeOpenAI} from "@/lib/bi/model-calls";
+import {withBiRequest} from "@/lib/bi/request";
 import { NextResponse } from "next/server";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import OpenAI from "openai";
@@ -7,7 +8,8 @@ import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { getTitleSystem } from "@/lib/prompt-config";
 import { resolveUserEmail } from "@/lib/admin-auth";
-import { dbEnabled, addArtworks } from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {addArtworks} from "@/lib/artworks/writer";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/ip";

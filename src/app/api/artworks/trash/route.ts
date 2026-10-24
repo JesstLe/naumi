@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
-import {
-  dbEnabled,
-  listDeletedArtworks,
-  undeleteArtworksByIds,
-  purgeArtworksByIds,
-} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {listDeletedArtworks, undeleteArtworksByIds, purgeArtworksByIds} from "@/lib/artworks/repository";
 import { authenticatedEmail, authorizedTargetEmail } from "@/lib/request-auth";
 
 export const runtime = "nodejs";

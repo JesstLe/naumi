@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { OPERATOR_EMAIL } from "@/lib/operator";
-import {setOwnerAccount, dbEnabled} from "@/lib/db";
+import {setOwnerAccount} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
 import {getOwnerEmail} from "@/lib/accounts/repository";
 import { hashPassword } from "@/lib/pw";
 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { dbEnabled, validateLicense } from "@/lib/db";
+import {validateLicense} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
 import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
 

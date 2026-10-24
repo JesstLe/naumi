@@ -3,7 +3,7 @@ import 'server-only';
 import {createHash} from 'node:crypto';
 import {dbEnabled,getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
-import {currentBiContext} from './bi/model-observer';
+import {currentBiContext} from "@/lib/bi/context";
 import {readManagedObject, readPendingStoredObject, writeStoredObject, privateMedia, storageDriver} from './storage';
 import {makeMediaVariants} from './media-variants';
 

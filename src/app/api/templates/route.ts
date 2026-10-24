@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { dbEnabled, listTemplatesPaged, syncTemplatesFromCode } from "@/lib/db";
+import {listTemplatesPaged, syncTemplatesFromCode} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { TEMPLATES as SEED } from "@/lib/templates-data";
 import {publishTemplateMedia} from "@/lib/template-published-media";

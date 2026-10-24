@@ -1,7 +1,9 @@
 import "server-only";
 import {createHash} from "node:crypto";
 import sharp from "sharp";
-import {addArtworksTx,ensureTemplateRoot,getPool,listArtworksByIds} from "../db";
+import {listArtworksByIds} from "@/lib/artworks/repository";
+import {addArtworksTx,ensureTemplateRoot} from "@/lib/artworks/writer";
+import {getPool} from "@/platform/db/pool";
 import {readCanvasOutput} from "../canvas-image-input";
 import {storageEnabled,uploadImage} from "../storage";
 import {runPostprocess,PostprocessPending} from "../media-postprocess";

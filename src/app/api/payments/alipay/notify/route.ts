@@ -1,4 +1,5 @@
-import { dbEnabled, getOrder, fulfillOrder } from "@/lib/db";
+import {getOrder, fulfillOrder} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
 import { getPaymentSettings } from "@/lib/settings";
 import { verifyAlipayNotify } from "@/lib/pay/alipay";
 

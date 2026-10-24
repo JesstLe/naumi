@@ -1,13 +1,8 @@
 import { NextResponse } from "next/server";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { isRetiredBusinessProject } from "@/lib/retired-business-projects";
-import {
-  dbEnabled,
-  listProjects,
-  seedProjects,
-  upsertProject,
-  deleteProject,
-} from "@/lib/db";
+import {listProjects, seedProjects, upsertProject, deleteProject} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
 
 // ---------------------------------------------------------------------------
 // 业务聚合注册表 API(导航下拉 + 首页卡片 + Agent 工具来源):

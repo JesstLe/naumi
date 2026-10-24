@@ -20,22 +20,8 @@ import { ModelConfigError } from "@/lib/model-config/types";
 import {getBillingRuntime, meteringFor} from "@/lib/billing/runtime";
 import {quote} from "@/lib/billing/quote";
 
-import {
-  claimVideoTaskPoll,
-  failVideoTask,
-  getVideoTask,
-  getVideoTaskByIdempotencyKey,
-  listArtworksByIds,
-  listDueVideoTaskRefs,
-  listVideoTasks,
-  markVideoTaskCreated,
-  markVideoTaskCreationUnknown,
-  markVideoTaskAttention,
-  noteVideoTaskResultObserved,
-  recordVideoTaskPoll,
-  scheduleVideoTaskRetry,
-  touchReservation,
-} from "@/lib/db";
+import {claimVideoTaskPoll, failVideoTask, getVideoTask, getVideoTaskByIdempotencyKey, listDueVideoTaskRefs, listVideoTasks, markVideoTaskCreated, markVideoTaskCreationUnknown, markVideoTaskAttention, noteVideoTaskResultObserved, recordVideoTaskPoll, scheduleVideoTaskRetry, touchReservation} from "@/lib/db";
+import {listArtworksByIds} from "@/lib/artworks/repository";
 
 import {completeVideoResultSet} from "./result-completion";
 import {mediaExtension} from "./media-formats";
@@ -354,7 +340,7 @@ export async function submitQueuedVideoTask(
   const submission=await beginVideoTaskSubmission(email,task.id);
   if(submission==="cancelled")return;
   if(submission!=="started")throw new IdempotencyConfigDriftError();
-  const {withBiModelContext}=await import("@/lib/bi/model-observer");
+  const {withBiModelContext} = await import("@/lib/bi/context");
   const created = await withBiModelContext(email,'video.generate',task.id,()=>createWithLocalImage(adapter, request, image));
   await markVideoTaskCreated({
     email,

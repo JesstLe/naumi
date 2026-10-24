@@ -7,7 +7,7 @@ import {billingFailure} from "../billing/failure";
 import {quoteForActor,quoteForImagegenStep} from "../billing/quotation";
 import {getBillingRuntime} from "../billing/runtime";
 import {multipartFieldText,multipartSubmissionFields,submissionFingerprint,type SubmissionField} from "../billing/submission-identity";
-import {withBiModelContext} from "../bi/model-observer";
+import {withBiModelContext} from "@/lib/bi/context";
 import {withModelOperation} from "../model-config/requests";
 import {getModelAdministration} from "../model-config/server";
 import {ModelConfigError} from "../model-config/types";

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { dbEnabled, deleteCanvasNodesAtomically } from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {deleteCanvasNodesAtomically} from "@/lib/canvas/node-deletion";
 import { authenticatedEmail } from "@/lib/request-auth";
 import {sameSiteBiMutation} from "@/lib/bi/access";
 import {deleteCanvasProject} from "@/lib/canvas/node-delete";

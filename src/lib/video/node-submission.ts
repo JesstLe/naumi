@@ -1,7 +1,8 @@
 import "server-only";
 import {bindActualCreationProject,currentCreationContext,frozenCreationScope} from "../saas/creation-context";
 import {authorizeNodeInputs} from "../canvas/video-node-service";
-import {getVideoTask,getVideoTaskByIdempotencyKey,listArtworksByIds} from "../db";
+import {getVideoTask, getVideoTaskByIdempotencyKey} from "../db";
+import {listArtworksByIds} from "@/lib/artworks/repository";
 import {getVideoNode} from "../canvas/video-node-repository";
 import {ModelConfigError} from "../model-config/types";
 import {BillingError} from "../billing/types";

@@ -67,7 +67,7 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     const {resolveUserEmail} = await import("../admin-auth");
     const email = await resolveUserEmail(request);
     if (email) {
-      const {listArtworksByIds} = await import("../db");
+      const {listArtworksByIds} = await import("@/lib/artworks/repository");
       const artwork = (await listArtworksByIds(email, [parsed.body.artworkId]))[0];
       if (artwork) parsed.body.resolution = artwork.resolution || "1K";
     }

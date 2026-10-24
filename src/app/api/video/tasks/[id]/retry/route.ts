@@ -3,7 +3,7 @@ import {createHash} from "node:crypto";
 import {z} from "zod";
 import {authenticatedEmail} from "@/lib/request-auth";
 import {sameSiteBiMutation} from "@/lib/bi/access";
-import {withBiRequest} from "@/lib/bi/model-observer";
+import {withBiRequest} from "@/lib/bi/request";
 import {requestQuoteConfirmation,billingErrorResponse} from "@/lib/billing/request";
 import {readBounded} from "@/lib/supplier-cost/io";
 import {getVideoTask,getVideoTaskByIdempotencyKey} from "@/lib/db";

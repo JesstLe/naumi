@@ -1,5 +1,6 @@
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
-import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
+import {observeOpenAI} from "@/lib/bi/model-calls";
+import {withBiRequest} from "@/lib/bi/request";
 import { NextResponse } from "next/server";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { dbEnabled } from "@/platform/db/pool";
