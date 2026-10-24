@@ -2,6 +2,7 @@
 
 ## 本轮状态
 
+- **15:18 后最新发布授权：**用户已明确“可以先无缝上线最新版么”，本轮47授权已更新，不再按此前暂缓发布处理。15:27真实三锁预检查发现当前same-boot 18条UNKNOWN、原扫描tick UNKNOWN及双槽RAM不足635MiB；当前结果为 `BLOCKED_BEFORE_CANDIDATE`，未部署。详见[蓝绿预检查](2026-10-24-image-postaccept-bluegreen-preflight.md)。下文HOLD均为此前收口时的历史状态。
 - 基线：`3e1e402e97f098496601cb4a134743366b6f3e4b`；修改前工作树干净。
 - 线上观测：47 Web/Worker 均为 `af22c6e5f149215cfd5bf862f781e95e67c88987` / `1792808190`。这不是本轮修复已经上线的声明。
 - 已确认缺陷：根付费操作以整单 ID 登记，fan-out 供应操作使用 `root:image:index`；根恢复检查却只查 root，第一次 indexed Pending 可排一次查询，第二次在进入供应查询前被根身份检查阻断。
