@@ -319,3 +319,7 @@ R1B结构职责已迁移，跨域SCC仍60，后续R4负责DB和配置的运行�
 ## 15. R2交付与恢复（2026-10-24续）
 
 正常与恢复入口实际调用completeImageDelivery，删除generation-output以及两套逐图/作品/结算逻辑；media-postprocess阶段原ID复用，旧JSONB顺序兼容，保留paid checkpoint。交付partial与实际billing settled分开，原回执/字节/单次扣款保持。见 [R2记录](changes/2026-10-24-image-delivery-r2.md)。R3 Canvas开始前保留旧batch fixture的基线/新版共同失败债务，不声称整体候选或容量验收完成。
+
+## 16. R3A Canvas图片任务（2026-10-24续）
+
+runGen/generatePend共用typed输入准备、捕获scope和本地controller。主组件移除两套submit/poll/place/receipt，dock和placeholder均恢复同一任务；正常UI未重写。Canvas仍12130行，document/history/persistence、详情/同步编辑任务、renderer/interaction尚待R3B/R3C，不能以本切片宣称Canvas已完全分域。实际对照和浏览器结果见 [R3A记录](changes/2026-10-24-canvas-image-task-r3a.md)。

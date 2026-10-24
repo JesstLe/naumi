@@ -15,7 +15,7 @@ assert.match(code,/\[ready, authenticatedEmail\]/);
 const load=code.slice(code.indexOf('const authenticatedEmail = user?.email;'),code.indexOf('const authenticatedEmail = user?.email;')+6000);assert.match(load,/\[ready, authenticatedEmail\]/);
 assert.doesNotMatch(code,/selected(?:Pend)?Generating && "hidden"/);
 assert.match(code,/const operationKey = `node:\$\{source.id\}`/);
-assert.match(code,/if \(selectedPendIdRef.current === pend.id\)/);
+assert.match(code,/if\(selectedPendIdRef.current===pend.id&&!activeKey\)/);
 assert.match(code,/textNodesRef.current/);
 assert.match(code,/nodesDraggable=\{!readOnly && canvasTool !== "hand"\}/);
 const sf=ts.createSourceFile('canvas.tsx',code,99,true,4),functions=new Map();
