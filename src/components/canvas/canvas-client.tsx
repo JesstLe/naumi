@@ -2489,7 +2489,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   // 生成中:在选中节点下方临时插入"生成中"占位节点;
   // 选中时:整条血缘链路点亮(蓝色流光),其余节点/连线变暗。
-  const {displayNodes,displayEdges}=useMemo(()=>projectCanvasScene({nodes,edges,active,activeKey,generationTasks:generationTasks.filter(task=>task.isVisible?.()??true),taskPositions:generationTaskPosRef.current,
+  const {displayNodes,displayEdges}=useMemo(()=>projectCanvasScene({nodes,edges,active,activeKey,generationTasks:generationTasks.filter(task=>canvasArtworkDocument.scope.viewCurrent()&&(task.isVisible?.()??true)),taskPositions:generationTaskPosRef.current,
     pendNodes,textNodes,videoNodes:videoNodesStore.nodes,videoTasks:videoTaskStore.tasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,
     locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutAvailable:!!cutoutCatalog&&!cutoutCatalogError&&cutoutCatalog.available!==false,
     operations:generationOperationRef.current,workflowManifests,actions:sceneActions}),

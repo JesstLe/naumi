@@ -58,6 +58,7 @@ Canvas 内四个节点/边 renderer、局部数据类型、geometry、layout/lin
 ## 原始记录和后续
 
 - 第一轮 TypeScript 发现展示合同缺 `nodeKind/width/height`，补完整字段而非放宽为 any。
+- 封存检查发现可见任务过滤只隐式依赖 scope，lint 实际为 9 条而非预期 8 条。补显式 `scope.viewCurrent()` 读取后为 8 条，未删除作用域依赖或禁用规则；首次封存断言失败与后续独立修正提交均留存。
 - 第一次 renderer 对照发现无可执行回调的直接 PendNode 会多显示空“重试”按钮，已按实际 callback 存在与否修正；实际投影仍提供当前 pending command。
 - 浏览器第一次 fixture 没有 sourceIds，引用标题断言失败；只给隔离 fixture 补真实引用后通过，未改产品迎合断言。
 - 协作浏览器两次 snapshot 返回 `Preview automation snapshot timed out after 15000ms.`，按仓库独立 Edge 流程验证；仅关闭本轮自有 tab。
