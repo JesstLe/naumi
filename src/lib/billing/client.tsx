@@ -148,8 +148,9 @@ export function BillingProvider({ children }: {
         headers.set("x-naumi-billing-version", String(displayed.version));
         headers.set("x-naumi-billing-credits", String(displayed.mode==="api-cost-plus" ? displayed.authorizedCredits ?? displayed.reserveCredits : displayed.credits));
         const key=await clientIntentKey(user?.email||"",url,{...init,headers});
-        let id=intents.current.get(key);try{id=id||localStorage.getItem(key)||undefined;}catch{}
-        id=id||headers.get("x-naumi-billing-operation-id")||undefined;
+        // A retained task's explicit operation is authoritative. A later task
+        // with identical content must not replace its original receipt identity.
+        let id=headers.get("x-naumi-billing-operation-id")||intents.current.get(key);try{id=id||localStorage.getItem(key)||undefined;}catch{}
         id=id||browserRandomUUID();intents.current.set(key,id);try{localStorage.setItem(key,id);}catch{}
         headers.set("x-naumi-billing-operation-id",id);
         const clearIntent=()=>{if(intents.current.get(key)===id)intents.current.delete(key);try{if(localStorage.getItem(key)===id)localStorage.removeItem(key);}catch{}};

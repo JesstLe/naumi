@@ -18,3 +18,15 @@ export async function canvasImageTaskHeaders(scope:CanvasImageTaskScope){
   if(scope.project!=="workspace")headers.set("x-naumi-project-context",scope.project);
   return headers;
 }
+
+type View={account:string;project:string|null;epoch:number;mounted:boolean};
+/** Retained UI tasks can be explicitly resumed in their original view. Each
+ * attempt gets a fresh epoch, so an old continuation never revives after ABA. */
+export function captureCanvasTaskOwner(owner:string,view:()=>View){
+  const original=view(),workspace=currentWorkspace();
+  const isVisible=()=>{const now=view();return now.mounted&&now.account===original.account&&now.project===original.project&&workspace===currentWorkspace();};
+  return {workspace,isVisible,capture(){
+    const epoch=view().epoch;
+    return captureCanvasImageTaskScope(owner,original.project,()=>isVisible()&&epoch===view().epoch);
+  }};
+}

@@ -2,10 +2,11 @@ import type {Artwork} from "../mock-data";
 import {ImagegenHttpError,ImagegenPreparationCancelled} from "../imagegen/http";
 import {completeCanvasImagegen} from "../imagegen/client-recovery";
 import {imageOutputWarningText} from "../imagegen/output-advisory";
-import {classifyGenerationFailure,assertGenerationResultsPresent,type GenerationFailure} from "./generation-failure";
+import {classifyGenerationFailure,type GenerationFailure} from "./generation-failure";
 import type {GenerationStage} from "./generation-feedback";
 import type {CanvasPoint} from "./stable-placement";
 import {canvasImageTaskHeaders,type CanvasImageTaskScope} from "./image-task-scope";
+import {createCanvasResultAttachment} from "./result-attachment";
 
 export type CanvasGeneratedImage={id:string;url:string;width?:number;height?:number};
 type Result={status:"succeeded"|"partial";images:CanvasGeneratedImage[];artworks:Artwork[];jobId:string}|{status:"cancelled"}|{status:"stale"}|{status:"failed";failure:GenerationFailure};
@@ -32,21 +33,14 @@ async function readBody(response:Response):Promise<Record<string,any>>{
 export function createCanvasImageTask(input:Services){
   const {scope}=input;
   let form:FormData|undefined,jobId:string|undefined,images:CanvasGeneratedImage[]=[],attempted=false,terminal=false,partial=false;
-  let attached=false,history=false,inflight:Promise<Result>|undefined;
+  let inflight:Promise<Result>|undefined;
   let completed:Result|undefined;
   const guard=()=>scope.assertCurrent();
+  const attachment=createCanvasResultAttachment({position:input.position,layout:{kind:"pixels",gap:input.resultGap},saveErrorText:input.saveErrorText,
+    merge:input.merge,history:input.history,attached:async(images,artworks)=>input.attached?.(images as CanvasGeneratedImage[],artworks)});
   const attach=async():Promise<Result>=>{
     guard();input.stage("saving");
-    const point=input.position();let y=point.y;
-    for(const image of images){
-      const headers=await canvasImageTaskHeaders(scope);headers.set("content-type","application/json");guard();
-      const response=await fetch("/api/artworks/position",{method:"POST",headers,body:JSON.stringify({email:scope.owner,id:image.id,x:Math.round(point.x),y:Math.round(y)})});
-      const body=await readBody(response);guard();if(!response.ok)throw new Error(body.error||input.saveErrorText);
-      y+=(image.height||110)+input.resultGap;
-    }
-    guard();const ids=images.map(image=>image.id),artworks=await input.merge(ids,scope.isCurrent);guard();assertGenerationResultsPresent(ids,artworks);
-    if(!attached){await input.attached?.(images,artworks);guard();attached=true;}
-    if(!history){input.history(ids,artworks);history=true;}
+    const artworks=await attachment(scope,images);guard();
     // Partial/needs-review delivery retains its durable receipt for the original
     // task. Image availability is not proof that every requested output finished.
     if(!partial&&jobId)completeCanvasImagegen(jobId,{owner:scope.owner,workspace:scope.workspace,project:scope.project});

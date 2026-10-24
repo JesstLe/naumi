@@ -32,6 +32,8 @@
 
 ## 开发约定
 
+2026-10-24 R3B4 增量：详情与同步编辑任务 owner 已迁移，普通生图/详情/编辑共享结果落地；未知提交保留原 operation/报价、已知任务只查询、已知结果只续接。Canvas 11576 行，74 场景 369 检查、真实 PG 21、Next 新控件 5/相邻生图 5 通过，见 [R3B4记录](changes/2026-10-24-canvas-task-boundaries-r3b4.md)。本轮是同步后第3模块；完成后刷新/普通整合 main 并归零，不合入 main、不发布。整体重构继续 R3C。
+
 2026-10-24 R3B3 增量：作品文档 owner 已迁移，读取错误/局部补取/迟到合并/回收站统一，Canvas 11747行；26场景49检查、真实PG14、真实Next8及浏览器缓存20检查通过，见 [R3B3记录](changes/2026-10-24-canvas-artwork-document-r3b3.md)。本轮是main同步后第2模块，未合main或部署；继续详情/编辑任务与整体重构。
 
 2026-10-24 R3B2 增量：文字文档、草稿缓存与恢复、保存队列归独立 owner；历史写入排队并保留后来字段修改，真实Next控件12项和PG16检查通过，见 [R3B2记录](changes/2026-10-24-canvas-text-document-r3b2.md)。Canvas主组件11872行。整体重构继续，后续文档写入CAS、作品/编辑任务与R3C—R6仍在台账；本轮为main同步后第1模块。
@@ -42,3 +44,5 @@
 - 每个完整模块更新实现记录，再集中测试；合并前刷新远端 main。
 - Git 分支推送不代表应用部署；部署另走现有蓝绿和实例收敛流程。
 - 建立证据：`output/refactor-workspace-setup-20261024/VERIFICATION.txt`。
+
+R3B4 三模块同步已执行：`git fetch origin main` 与 `git merge --no-edit origin/main` 均 exit 0，origin/main=`905c8c635e41ff3f4443d43db9776d1db3aab469`，普通 merge 返回 `Already up to date.`；累计计数归零。本轮没有把候选合入 main。
