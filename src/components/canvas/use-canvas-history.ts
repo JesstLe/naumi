@@ -45,7 +45,7 @@ export function useCanvasHistory(input: Input) {
       if (scope.documentCurrent() && operations.some(op => op.type === "node-settings")) latest.current.settings(nodes => scope.documentCurrent() ? reduceHistorySettings(nodes,operations) : nodes,persisted);
       const deleted = new Set(operations.flatMap(op => op.type === "text-delete" ? [op.id] : []));
       if (deleted.size) latest.current.selectedText(id => scope.viewCurrent() && id && deleted.has(id) ? null : id);
-      if (scope.viewCurrent()) latest.current.applied(value);
+      if (scope.viewCurrent()&&!value.initial) latest.current.applied(value);
     },
   });
   useEffect(() => { mounted.current = true; context.current!.mount(true); return () => { mounted.current = false; context.current!.mount(false); }; },[]);
@@ -54,7 +54,8 @@ export function useCanvasHistory(input: Input) {
   // retains its epoch even if the user navigates A -> B -> A.
   const pushUndo = useCallback((action: CanvasHistoryAction) => owner.push(scope,action),[owner,scope]);
   const lists = owner.list(scope);
-  return {scope,submit:(target:typeof scope,prepare:()=>CanvasHistoryAction|null)=>owner.submit(target,prepare),undoStack:lists.undo,redoStack:lists.redo,pushUndo,historySaving:owner.busy.current,historyBusyRef:owner.busy,
+  return {scope,record:(target:typeof scope,action:CanvasHistoryAction)=>owner.push(target,action),transaction:owner.transaction,acknowledge:owner.acknowledge,
+    submit:(target:typeof scope,prepare:()=>CanvasHistoryAction|null)=>owner.submit(target,prepare),undoStack:lists.undo,redoStack:lists.redo,pushUndo,historySaving:owner.busy.current,historyBusyRef:owner.busy,
     setHistorySaving:owner.setBusy,applyHistory:(action: CanvasHistoryAction,undo: boolean,revision?:number) => owner.apply(scope,action,undo,revision),
     doUndo:() => owner.step(scope,true),doRedo:() => owner.step(scope,false),historyCurrent:scope.viewCurrent};
 }

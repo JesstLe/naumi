@@ -1,18 +1,17 @@
 import "server-only";
-import {z} from "zod";
 import {createHash} from "node:crypto";
 import {getPool,ensureSchema,listArtworksByIds,listCanvasTextNodes,type CanvasTextNodeRecord} from "../db";
 import {ensureVideoNodeSchema,saveVideoNodeTx} from "./video-node-repository";
 import {authorizeVideoProject,authorizeNodeInputs,listVideoNodes} from "./video-node-service";
-import {videoNodeIdSchema,videoProjectKeySchema,type CanvasVideoNode} from "./video-node-schema";
+import type {CanvasVideoNode} from "./video-node-schema";
 import {ModelConfigError} from "../model-config/types";
 import {canonicalConfig} from "../model-config/repository";
 
-export const nodeCopyRequest=z.strictObject({operationId:z.uuid(),ids:z.array(videoNodeIdSchema).min(1).max(200).refine(ids=>new Set(ids).size===ids.length,"节点身份重复"),projectKey:videoProjectKeySchema.optional()});
-type CopyResult={artworkIds:string[];textNodes:CanvasTextNodeRecord[];nodes:CanvasVideoNode[];idMap:Record<string,string>;projectKey:string};
+import {nodeCopyRequest,type CanvasNodeCopyInput,type CanvasNodeCopyResult as CopyResult} from "./node-copy-contract";
+export {nodeCopyRequest} from "./node-copy-contract";
 function stableUuid(seed:string){const bytes=createHash("sha256").update(seed).digest().subarray(0,16);bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;const h=bytes.toString("hex");return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;}
 /** Copies media identities and editable records together. No supplier requests, media writes, task replay or fees. */
-export async function copyCanvasNodes(actorRaw:string,raw:z.infer<typeof nodeCopyRequest>):Promise<CopyResult>{
+export async function copyCanvasNodes(actorRaw:string,raw:CanvasNodeCopyInput):Promise<CopyResult>{
   const actor=actorRaw.toLowerCase(),input=nodeCopyRequest.parse(raw);await ensureSchema();await ensureVideoNodeSchema();
   const pool=getPool();await pool.query(`CREATE TABLE IF NOT EXISTS app_canvas_node_copies(email text NOT NULL,operation_id uuid NOT NULL,input_digest text NOT NULL,result jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,operation_id))`);
   const digest=createHash("sha256").update(canonicalConfig(input)).digest("hex");
@@ -22,6 +21,7 @@ export async function copyCanvasNodes(actorRaw:string,raw:z.infer<typeof nodeCop
   const wanted=new Set(input.ids),texts=textNodes.filter(node=>wanted.has(node.id)),videos=videoNodes.filter(node=>wanted.has(node.id));
   const kinds=new Map([...artworks.map(node=>[node.id,"art"] as const),...texts.map(node=>[node.id,"text"] as const),...videos.map(node=>[node.id,"vnode"] as const)]);
   if(input.ids.some(id=>!kinds.has(id)))throw new ModelConfigError("CANVAS_NODE_UNAVAILABLE","复制节点不存在或无权访问",404);
+  if(input.singleArtwork&&artworks.length!==1)throw new ModelConfigError("CANVAS_NODE_UNAVAILABLE","单图复制来源不是作品",422);
   for(const node of videos)await authorizeNodeInputs(actor,{id:node.id,operationId:input.operationId,expectedRevision:node.revision,config:node.config,inputs:node.inputs});
   const mapping=new Map(input.ids.map(id=>[id,`${kinds.get(id)}-copy-${createHash("sha256").update(`${actor}:${input.operationId}:${id}`).digest("hex").slice(0,40)}`]));
   const key=input.projectKey||`tree:${mapping.get(input.ids[0])}`;
@@ -42,7 +42,10 @@ export async function copyCanvasNodes(actorRaw:string,raw:z.infer<typeof nodeCop
       const newId=mapping.get(node.id)!,sameProject=kind==="tree"?current.group_id===projectId:current.batch_id===projectId;
       const fields={id:newId,email:actor,group_id:kind==="tree"?projectId:newId,batch_id:kind==="batch"?projectId:null,canvas_group_id:null,
         parent_id:current.parent_id&&(mapping.has(current.parent_id)||sameProject)?remap(current.parent_id):null,parent_ids:(current.parent_ids||[]).filter((id:string)=>mapping.has(id)||sameProject).map(remap),
-        canvas_x:Number(current.canvas_x||0)+40,canvas_y:Number(current.canvas_y||0)+40,origin:"canvas",source_url:current.source_url,source:"canvas-add",deleted_at:null,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
+        canvas_x:Number(current.canvas_x||0)+40,canvas_y:Number(current.canvas_y||0)+40,origin:"canvas",source_url:current.source_url,source:"canvas-add",deleted_at:null,created_at:new Date().toISOString(),updated_at:new Date().toISOString(),
+        ...(input.singleArtwork?{canvas_x:input.singleArtwork.x,canvas_y:input.singleArtwork.y,title:input.singleArtwork.title??current.title,
+          source_url:"canvas-add",parent_id:kind==="tree"&&projectId!==newId?projectId:null,parent_ids:[],
+          creation_provenance:{version:1,operation:"copy",entry:"canvas",ref:newId,sourceArtworkId:node.id,evidence:"server-route"}}:{} )};
       const result=await client.query("INSERT INTO app_artworks SELECT (jsonb_populate_record(NULL::app_artworks,to_jsonb(src)||$3::jsonb)).* FROM app_artworks src WHERE email=$1 AND id=$2 AND deleted_at IS NULL",[actor,node.id,JSON.stringify(fields)]);
       if(!result.rowCount)throw new Error("复制媒体失败");artworkIds.push(newId);
     }
@@ -61,7 +64,7 @@ export async function copyCanvasNodes(actorRaw:string,raw:z.infer<typeof nodeCop
       nodes.push(await saveVideoNodeTx(client,actor,{id:mapping.get(node.id)!,projectKey:key,operationId:stableUuid(`${actor}:${input.operationId}:${node.id}`),expectedRevision:0,title:node.title,x:node.x+40,y:node.y+40,width:node.width,height:node.height,config,inputs:node.inputs.map(ref=>({...ref,nodeId:remapReference(ref.nodeId)}))},key));
     }
     // Copy shared properties only when that table already exists; do not initialize unrelated edit tables.
-    if((await client.query("SELECT to_regclass('app_canvas_node_settings') AS name")).rows[0].name){for(const [oldId,newId] of mapping)await client.query("INSERT INTO app_canvas_node_settings(email,node_id,kind,settings) SELECT email,$3,kind,settings FROM app_canvas_node_settings WHERE email=$1 AND node_id=$2 ON CONFLICT(email,node_id) DO NOTHING",[actor,oldId,newId]);}
+    if(!input.singleArtwork&&(await client.query("SELECT to_regclass('app_canvas_node_settings') AS name")).rows[0].name){for(const [oldId,newId] of mapping)await client.query("INSERT INTO app_canvas_node_settings(email,node_id,kind,settings) SELECT email,$3,kind,settings FROM app_canvas_node_settings WHERE email=$1 AND node_id=$2 ON CONFLICT(email,node_id) DO NOTHING",[actor,oldId,newId]);}
     const result:CopyResult={artworkIds,textNodes:copiedTexts,nodes,idMap:Object.fromEntries(mapping),projectKey:key};
     await client.query("INSERT INTO app_canvas_node_copies(email,operation_id,input_digest,result) VALUES($1,$2,$3,$4::jsonb)",[actor,input.operationId,digest,JSON.stringify(result)]);await client.query("COMMIT");return result;
   }catch(error){await client.query("ROLLBACK");throw error;}finally{client.release();}

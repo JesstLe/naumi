@@ -126,6 +126,8 @@
 
 ## 9. 当前进度
 
+R3C3：复制/历史添加/选择和项目删除由node-operations负责，既有history事务/reducer承接持久回执；selection-run controller管理批执行生命周期。Canvas9800→9575行，171个非目标函数AST正文不变；基线4/9、新版19/59、PG24→32、真实控件11与相邻12＋12＋5＋5通过。第三模块main同步后计数归零。R3剩余文字内容任务及UI组合，R4—R6、跨请求/多tab文档竞态与完整build/容量仍在后续；见 [R3C3记录](../changes/2026-10-24-canvas-node-operations-r3c3.md)。
+
 R3C2：单一选择快照、gesture owner、link compiler 已真实接线。图片/文字/视频移动与连线复用原 history；`canvas-add` primary 归属、显式 parentIds 和环检测由同一规则负责。主组件10300→9800行，基线10/28→新版34/92，真实PG26→28、相邻PG20；真实Next交互12、文字历史12、详情5、图片5通过。下一步收拢创建/复制删除/批处理，R3尚未整体完成；R4—R6与完整候选验收继续。详见 [R3C2记录](../changes/2026-10-24-canvas-interactions-r3c2.md)。本轮为main同步后第2模块。
 
 2026-10-24实施更新：R0已普通整合 `9fc2845`，重构基线固定为 `4478cdca`。R1A拆成生图R1A1与抠图R1A2：生图及抠图typed提交/执行切片均已实现，原HTTP与内部调用共用同一用例，cutout桥已删除。详细修改、A/B和已知旧测试差异见 [R1A1记录](../changes/2026-10-24-image-generation-boundary-r1a.md)。

@@ -5,10 +5,10 @@ import { canvasHistoryProject, canvasHistoryScope, compileCanvasHistory, type Ca
 import { CanvasHistoryRequestError, postCanvasHistory, type CanvasHistoryScope } from "./history-scope";
 
 type Attempt = { undo: boolean; operationId: string; operations: CanvasHistoryOperation[] };
-export type HistoryCommit = {action: CanvasHistoryAction; undo: boolean; operations: CanvasHistoryOperation[]; persisted: boolean};
+export type HistoryCommit = {action: CanvasHistoryAction; undo: boolean; operations: CanvasHistoryOperation[]; persisted: boolean; initial?:boolean};
 type Services = {
   changed: () => void; readOnly: () => boolean;
-  flush: (action: CanvasHistoryAction) => Promise<unknown>; video: (id: string) => CanvasVideoNode | undefined;
+  flush: () => Promise<unknown>; video: (id: string) => CanvasVideoNode | undefined;
   transaction: <T>(scope:CanvasHistoryScope,work:()=>Promise<T>)=>Promise<T>;
   commit: (scope: CanvasHistoryScope, value: HistoryCommit) => void;
   pending: (scope: CanvasHistoryScope, action: Extract<CanvasHistoryAction,{kind:"pending-link"}>, undo: boolean) => void;
@@ -42,7 +42,7 @@ export function createCanvasHistoryController(services: Services) {
         services.pending(scope,action,reverse); return {action,undo:reverse,operations:[],persisted:false};
       }
       const value = await services.transaction(scope,async()=>{
-        await services.flush(action); scope.assertView();
+        await services.flush(); scope.assertView();
         // Replay before inspecting current nodes: a successful response may have
         // been lost, while the server revision/result has already advanced.
         let attempt = attempts.get(action);
@@ -94,6 +94,14 @@ export function createCanvasHistoryController(services: Services) {
     const action=prepare();if(!action)return false;
     commands.set(scope.key,{action,scope});await resume(scope);return true;
   });
+  const transaction=<T>(scope:CanvasHistoryScope,work:()=>Promise<T>):Promise<T>=>serialize(scope,async()=>{
+    scope.assertView();await resume(scope);
+    return services.transaction(scope,async()=>{await services.flush();scope.assertView();if(services.readOnly())throw new Error("当前画布为只读");return work();});
+  });
+  const acknowledge=(scope:CanvasHistoryScope,action:CanvasHistoryAction,persisted:boolean)=>{
+    const operations=compileCanvasHistory(action,false,services.video);
+    services.commit(scope,{action,undo:false,operations,persisted,initial:true});
+  };
   // Existing properties/layout callers also drain earlier gestures. Otherwise a
   // later successful layout could be overwritten locally by an older receipt.
   const apply = (scope:CanvasHistoryScope,action:CanvasHistoryAction,reverse:boolean,revision?:number):Promise<HistoryCommit>=>{
@@ -116,5 +124,5 @@ export function createCanvasHistoryController(services: Services) {
     } catch (error) { if (scope.viewCurrent()) services.warning(error instanceof Error ? error.message : "画布保存失败"); }
     finally { setBusy(false); }
   };
-  return {list,push,apply,submit,step,busy,setBusy};
+  return {list,push,apply,submit,transaction,acknowledge,step,busy,setBusy};
 }

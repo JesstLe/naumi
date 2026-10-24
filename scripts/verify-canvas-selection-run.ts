@@ -40,9 +40,11 @@ async function main() {
   const cancel = await runSelectionBatch(nodes, { isCurrent: () => current, canRun: () => true, run: async n => { stopped.push(n.id); current = false; return true; } });
   assert.equal(stopped.length, 1); assert.equal(cancel.skipped, nodes.length - 1);
   const batch = find("batchRunSelection"), targets = find("currentSelectionRunTargets");
-  assert.match(batch, /batchRunLockRef\.current = true/); assert.match(batch, /canvasContextEpochRef/);
-  assert.match(batch, /operationKey: `node:\$\{art\.id\}`/); assert.doesNotMatch(batch, /Date\.now\(\)|sharedPrompt|editPrompt/);
-  assert.match(batch, /art\.prompt\?\.trim\(\)/); assert.match(batch, /ratio: art\.ratio/); assert.match(batch, /resolution: art\.resolution/);
+  const controller=readFileSync("src/lib/canvas/selection-run-controller.ts","utf8");
+  assert.match(controller,/previous\.snapshot\.busy/);assert.match(controller,/scope\.viewCurrent/);
+  let run="";(function walk(n:ts.Node){if(ts.isVariableDeclaration(n)&&n.name.getText(sf)==="selectionRun")run=n.initializer!.getText(sf);ts.forEachChild(n,walk);})(sf);
+  assert.match(run, /operationKey: `node:\$\{art\.id\}`/); assert.doesNotMatch(run, /Date\.now\(\)|sharedPrompt|editPrompt/);
+  assert.match(run, /inheritableImagePrompt\(art\.prompt\)/); assert.match(run, /ratio: art\.ratio/); assert.match(run, /resolution: art\.resolution/);
   assert.match(targets, /isNodeLocked/); assert.match(targets, /art\.status === "completed"/); assert.match(targets, /canFeature\("generate"\)/);
   assert.match(source, /primaryAction=\{batchRunButton\(t\("canvas\.batchRunImages"\)\)\}/);
   assert.match(source, /primaryAction=\{batchRunButton\(t\("canvas\.batchRunText"\)\)\}/);

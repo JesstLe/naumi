@@ -9,7 +9,7 @@ const plain=x=>JSON.parse(JSON.stringify(x));let cases=0,checks=0;const eq=(a,b,
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve}},tick=()=>new Promise(r=>setImmediate(r));
 async function test(name,work){await work();cases++;console.log('CASE='+name+' PASS');}
 const node=(id='text-a',content='before')=>({id,projectKey:'tree:A',title:'copy',prompt:'',content,status:'completed',canvasX:10,canvasY:20,width:380,height:240,sourceIds:[],targetIds:[],productIds:[],createdAt:'2026-10-24T00:00:00.000Z',updatedAt:'2026-10-24T00:00:00.000Z'});
-async function bundle(){return (await build({stdin:{contents:['src/components/canvas/use-canvas-history.ts','src/lib/canvas/history-model.ts',...(baseline?[]:['src/lib/canvas/text-document.ts','src/lib/canvas/document-scope.ts'])].map(f=>'export * from '+JSON.stringify(path.join(root,f))+';').join('\n'),resolveDir:root,loader:'ts'},bundle:true,write:false,format:'cjs',platform:'node',plugins:[{name:'ports',setup(b){
+async function bundle(){return (await build({stdin:{contents:['src/components/canvas/use-canvas-history.ts','src/lib/canvas/history-model.ts',...(baseline?[]:['src/lib/canvas/text-document.ts','src/lib/canvas/document-scope.ts',...(decl.canvasNodeOperations?['src/components/canvas/use-canvas-node-operations.ts']:[])])].map(f=>'export * from '+JSON.stringify(path.join(root,f))+';').join('\n'),resolveDir:root,loader:'ts'},bundle:true,write:false,format:'cjs',platform:'node',plugins:[{name:'ports',setup(b){
  b.onResolve({filter:/^react$/},()=>({path:'react',namespace:'fixture'}));b.onResolve({filter:/supabase$/},()=>({path:'auth',namespace:'fixture'}));b.onResolve({filter:/saas\/workspace-client$/},()=>({path:'workspace',namespace:'fixture'}));
  b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='react'?'export const useRef=(...a)=>__hooks.ref(...a),useState=(...a)=>__hooks.state(...a),useEffect=(...a)=>__hooks.effect(...a),useCallback=f=>f,useSyncExternalStore=()=>0;':a.path==='auth'?'export const authHeader=()=>__ports.auth();':'export const currentWorkspace=()=>__ports.workspace,currentWorkspaceRevision=()=>__ports.revision,WORKSPACE_SELECTION="ws";',loader:'js'}));
  }}]})).outputFiles[0].text;}
@@ -27,7 +27,7 @@ function setup(built,storageMap=new Map()){
   loadAccountSnapshot:async()=>({artworks:[]}),TEXT_NODE_DEFAULT_W:380,TEXT_NODE_DEFAULT_H:240,
   setTextNodes:f=>{state.texts=typeof f==='function'?f(state.texts):f;c.textNodesRef.current=state.texts;},setUnsavedTextCount:v=>state.count=v,flashTip:s=>state.notices.push(s),t:k=>k,L:s=>s,
   expectJsonOk:async r=>{const body=await r.json();if(!r.ok)throw Error(body.error);return body;},authHeader:()=>ports.auth(),
-  videoNodesStore:{flush:async()=>{},getNode:()=>undefined,refresh:async()=>{}},browserRandomUUID:()=>crypto.randomUUID(),
+  canvasSelection:{patch(){}},canvasArtworkDocument:{getSnapshot:()=>({nodes:[]}),merge:async()=>[]},videoNodesStore:{allNodes:[],accept(){},flush:async()=>{},getNode:()=>undefined,refresh:async()=>{}},browserRandomUUID:()=>crypto.randomUUID(),
  };
  c.fetch=async(url,init={})=>{
   const body=init.body?JSON.parse(init.body):undefined;state.requests.push({url,body,headers:Object.fromEntries(new Headers(init.headers))});
@@ -40,7 +40,7 @@ function setup(built,storageMap=new Map()){
  vm.createContext(c);vm.runInContext(built,c);Object.assign(c,module.exports);vm.runInContext(compile(fn.privateFetchRaw),c);
  const owner=baseline?null:c.createCanvasTextDocument({storage:()=>storage,notice:(_s,m)=>state.notices.push(m)}),context=baseline?null:c.createCanvasDocumentContext();
  const names=['privateFetchRaw','persistTextNode','applyHistory','doUndo','doRedo','applyPendingLinkHistory','applyHistorySettings','onHistoryApplied','runProjectDelete'];
- vm.runInContext(compile(`globalThis.__render=function(user,readOnly,activeKey,canvasTextDocument){const active={key:activeKey,members:[],textNodes:[],videoNodes:[]};${names.map(n=>fn[n]).join('\n')}const canvasHistory=${decl.canvasHistory};const {undoStack,redoStack,pushUndo,historyBusyRef,historySaving,setHistorySaving,historyCurrent}=canvasHistory;return {persistTextNode,applyHistory,doUndo,doRedo,pushUndo,canvasHistory,runProjectDelete};};globalThis.__loadLegacy=${loadEffect};`),c);
+ vm.runInContext(compile(`globalThis.__render=function(user,readOnly,activeKey,canvasTextDocument){const active={key:activeKey,members:[],textNodes:[],videoNodes:[]};${names.map(n=>fn[n]).join('\n')}const canvasHistory=${decl.canvasHistory};${decl.canvasNodeOperations?`const canvasNodeOperations=${decl.canvasNodeOperations};`:''}const {undoStack,redoStack,pushUndo,historyBusyRef,historySaving,setHistorySaving,historyCurrent}=canvasHistory;return {persistTextNode,applyHistory,doUndo,doRedo,pushUndo,canvasHistory,runProjectDelete};};globalThis.__loadLegacy=${loadEffect};`),c);
  let binding,scope;
  const sync=()=>{if(binding){const snapshot=binding.getSnapshot();state.texts=snapshot.nodes;state.phase=snapshot.phase;state.error=snapshot.error;state.count=snapshot.unsaved;c.textNodesRef.current=state.texts;}};
  const render=(project=state.project,account=state.account)=>{state.project=project;state.account=account;c.canvasAccountRef.current=account;c.authenticatedEmail=account;c.user={email:account};index=0;

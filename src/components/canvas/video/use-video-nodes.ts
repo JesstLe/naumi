@@ -36,5 +36,6 @@ export function useVideoNodes({email,readOnly,request}:{email?:string;readOnly:b
   },[email,readOnly,request,merge]);
   const getNode=useCallback((id:string)=>nodesRef.current.find(node=>node.id===id),[]);
   const flush=useCallback(()=>Promise.all(Array.from(queues.current.values())),[]);
-  return {nodes:nodes.filter(node=>!node.deletedAt),allNodes:nodes,ready,error,refresh,save,copy,getNode,flush};
+  const accept=(incoming:CanvasVideoNode[],current:()=>boolean)=>{if(current())merge(incoming,email,epochRef.current);};
+  return {nodes:nodes.filter(node=>!node.deletedAt),allNodes:nodes,ready,error,refresh,save,copy,getNode,flush,accept};
 }
