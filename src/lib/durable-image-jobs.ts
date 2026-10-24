@@ -336,16 +336,34 @@ export class DurableImageJobs<T extends { status: string }> {
   async reserveReviewed(id: string) { if (dbEnabled) await repository.reserveReviewedImageJob(id); }
   async reviewSource(id: string, index: number, redo: boolean, feedback="") { return repository.reviewImageSource(id,index,redo,feedback); }
   async active(email: string) { return dbEnabled ? repository.listActiveImageJobs(email, this.kind) : []; }
-  async kick(id: string, run: (payload: Record<string, unknown>, snapshot: T) => Promise<void>) {
+  async kick(id: string, run: (payload: Record<string, unknown>, snapshot: T) => Promise<void>, recheckEmptyClaim = true) {
     if (!dbEnabled) {
       const row = this.memory.get(id);
       if (row) void run(row.payload as Record<string, unknown>, row.snapshot).catch(console.error);
       return;
     }
+    // A normal empty claim may briefly block a child wake with its activity.
+    // Recheck once after finish; notification-origin empty claims never recurse.
+    let notifyAfterRelease = this.kind === "imagegen" && recheckEmptyClaim;
+    const notifyReleased = async () => {
+      if (!notifyAfterRelease) return;
+      const kind = this.kind as "generate" | "imagegen";
+      try {
+        await execution.exit(async () => {
+          const { notifyImagegenJobReleased } = await import("./imagegen/dispatch");
+          await notifyImagegenJobReleased(id, kind);
+        });
+      } catch {
+        // Notification must not reverse a saved child result. The existing
+        // durable worker scan remains the fallback after an unavailable wake.
+        console.error(`[image-job] ${id}: parent notification failed; retained for worker recovery`);
+      }
+    };
     const executeClaimed = async (row: repository.ImageJobRow) => {
     const token = row.lease_token!;
     await bindBackgroundClaim(`${this.kind}:${id}`, token);
     const context: Execution = { id, token, queue: Promise.resolve() };
+    let failed = false;
     await execution.run(context, async () => {
       const heartbeat = setInterval(() => {
         void repository.heartbeatImageJob(id, token).catch(() => { clearInterval(heartbeat); });
@@ -366,6 +384,7 @@ export class DurableImageJobs<T extends { status: string }> {
         else await runLegacyModelExecution(resume);
       }
       catch (error) {
+        failed = true;
         console.error(`[image-job] ${id}:`, error instanceof Error ? error.message : error);
         try {
           if (error instanceof ImageOperationPending) await this.handlePending(id, error);
@@ -379,16 +398,20 @@ export class DurableImageJobs<T extends { status: string }> {
         await repository.releaseImageJob(id, token).catch(() => {});
       }
     });
+    // Recheck both sides of the lost-wake race, but do not hot-loop a failed
+    // parent. The callback also waits for its same-key release activity to finish.
+    notifyAfterRelease = this.kind === "generate" || this.kind === "imagegen" && !failed;
     };
     if(!releaseRuntimeEnabled()) {
       const row=await repository.claimImageJob(id,this.kind);
-      if(row)void executeClaimed(row).catch(console.error);
+      if(row)void executeClaimed(row).then(notifyReleased).catch(console.error);
+      else await notifyReleased();
       return;
     }
     await detachBackgroundActivity("durable-image", `${this.kind}:${id}`, "claim", async () => {
       const row=await repository.claimImageJob(id,this.kind);
       if(row)await executeClaimed(row);
-    });
+    }, notifyReleased);
   }
 }
 
