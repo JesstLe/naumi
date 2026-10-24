@@ -429,7 +429,14 @@ function canvasContract(isBaseline) {
     const attrs = Object.fromEntries(control.attributes.properties.filter(ts.isJsxAttribute).map(attr => [attr.name.getText(model.node), attr.initializer]));
     eq(attrs.modelId.expression.getText(model.node), 'genModel'); eq(attrs.resolution.expression.getText(model.node), 'genResolution');
     if (isBaseline) { eq(attrs.ratio, undefined); eq(attrs.quantity, undefined); }
-    else { eq(attrs.ratio.expression.getText(model.node), 'genRatio'); eq(attrs.quantity.expression.getText(model.node), index === 0 ? 'selectedGenerationCount' : 'genCount'); }
+    else {
+      const ratio = attrs.ratio.expression.getText(model.node);
+      eq(ratio, index === 0 ? 'generationMode === "triptych" ? "16:9" : genRatio' : 'genRatio');
+      const resolveRatio = new Function('generationMode', 'genRatio', `return (${ratio});`);
+      eq(resolveRatio('triptych', '1:1'), index === 0 ? '16:9' : '1:1');
+      eq(resolveRatio('standard', '3:4'), '3:4');
+      eq(attrs.quantity.expression.getText(model.node), index === 0 ? 'selectedGenerationCount' : 'genCount');
+    }
   }
   if (isBaseline) return;
   const beforeFile = path.join(REPO, BEFORE, FILES.canvas); eq(sha(beforeFile), PIN.canvas);
