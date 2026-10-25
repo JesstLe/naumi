@@ -117,6 +117,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/health').then(async r=>process.exit(r.ok&&(await r.json()).db?.ok===true?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 45s
 
   media-worker:
     image: ghcr.io/jesstle/naumi:latest
@@ -155,7 +161,7 @@ services:
       VIDEO_WORKER_INTERVAL_MS: ${VIDEO_WORKER_INTERVAL_MS:-15000}
     depends_on:
       app:
-        condition: service_started
+        condition: service_healthy
 
 volumes:
   pgdata:

@@ -1,12 +1,13 @@
+import {databaseSchemaReadiness} from "@/platform/db/schema-readiness";
 import 'server-only';
 import {ensureSchema} from "@/lib/persistence/schema";
 import {getPool} from "@/platform/db/pool";
 import {ensureBillingSchema} from '@/lib/billing/schema';
-let ready:Promise<void>|null=null;
 export async function ensureCreationSchema(){
+ const state=databaseSchemaReadiness(getPool(),"creation");
  await ensureSchema();
  await ensureBillingSchema(getPool());
- if(!ready)ready=getPool().query(`
+ if(!state.pending)state.pending=getPool().query(`
  CREATE TABLE IF NOT EXISTS app_creation_records(
   id text PRIMARY KEY,schema_version integer NOT NULL DEFAULT 1,actor_email text NOT NULL,
   scope_kind text NOT NULL CHECK(scope_kind IN ('personal','tenant','legacy_unconfirmed')),tenant_id uuid,
@@ -39,5 +40,5 @@ export async function ensureCreationSchema(){
  CREATE TABLE IF NOT EXISTS app_creation_contexts(
   actor_email text NOT NULL,context_kind text NOT NULL,context_id text NOT NULL,scope_kind text NOT NULL,tenant_id uuid,
   created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(actor_email,context_kind,context_id));
- `).then(()=>{}).catch(e=>{ready=null;throw e});await ready;
+ `).then(()=>{}).catch(e=>{state.pending=null;throw e});await state.pending;
 }

@@ -1,8 +1,9 @@
+import {databaseSchemaReadiness} from "@/platform/db/schema-readiness";
 import "server-only";
 import type { Pool } from "pg";
-const ready = new WeakMap<Pool, Promise<void>>();
 export async function ensureModelRuntimeSchema(pool: Pool) {
-  let pending = ready.get(pool);
+ const state=databaseSchemaReadiness(pool,"model-runtime");
+  let pending = state.pending;
   if (!pending) {
     pending = (async () => {
       const tx = await pool.connect();
@@ -15,8 +16,8 @@ export async function ensureModelRuntimeSchema(pool: Pool) {
           CREATE TABLE IF NOT EXISTS app_model_router_projections(model_version bigint NOT NULL REFERENCES app_model_config_versions(version),billing_version bigint NOT NULL,digest text NOT NULL,phase text NOT NULL,payload jsonb NOT NULL,lease_id uuid,lease_until timestamptz,PRIMARY KEY(model_version,billing_version),UNIQUE(digest));
         `); await tx.query("COMMIT");
       } catch (error) { await tx.query("ROLLBACK"); throw error; } finally { tx.release(); }
-    })().catch(error => { ready.delete(pool); throw error; });
-    ready.set(pool, pending);
+    })().catch(error => { state.pending=undefined; throw error; });
+    state.pending=pending;
   }
   return pending;
 }

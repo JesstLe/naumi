@@ -1,3 +1,4 @@
+import {databaseSchemaReadiness} from "@/platform/db/schema-readiness";
 import "server-only";
 import {randomUUID} from "node:crypto";
 import {dbEnabled,getPool} from "@/platform/db/pool";
@@ -15,16 +16,16 @@ export const IMAGEGEN_QUOTE_TTL_MS=15*60*1000;
 export type ImagegenSubmissionConfirmation={quoteId?:string;confirmed?:boolean;billingVersion?:number;modelVersion?:number;credits?:number};
 type QuoteRow={id:string;owner:string;operation_id:string;fingerprint:string;context_key:string;request:ImagegenRequest;plan:ImagegenPlan;expires_at:Date|string;expired?:boolean};
 const memory=new Map<string,QuoteRow>();
-let ready:Promise<void>|undefined;
 export async function ensureImagegenQuotes(){
+ const state=databaseSchemaReadiness(getPool(),"imagegen-quotes");
  if(!dbEnabled)return;
- if(!ready)ready=ensureSchema().then(()=>getPool().query(`CREATE TABLE IF NOT EXISTS app_imagegen_quotes(
+ if(!state.pending)state.pending=ensureSchema().then(()=>getPool().query(`CREATE TABLE IF NOT EXISTS app_imagegen_quotes(
  id uuid PRIMARY KEY,owner text NOT NULL REFERENCES app_users(email),operation_id uuid NOT NULL,
  fingerprint text NOT NULL,context_key text NOT NULL,request jsonb NOT NULL,plan jsonb NOT NULL,
  expires_at timestamptz NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
  CREATE INDEX IF NOT EXISTS app_imagegen_quotes_owner ON app_imagegen_quotes(owner,operation_id);
- CREATE INDEX IF NOT EXISTS app_imagegen_quotes_expiry ON app_imagegen_quotes(expires_at);`)).then(()=>{}).catch(e=>{ready=undefined;throw e;});
- await ready;
+ CREATE INDEX IF NOT EXISTS app_imagegen_quotes_expiry ON app_imagegen_quotes(expires_at);`)).then(()=>{}).catch(e=>{state.pending=undefined;throw e;});
+ await state.pending;
 }
 export class ImagegenQuoteError extends Error {
  readonly code="IMAGEGEN_QUOTE_INVALID";readonly status=400;

@@ -1,14 +1,15 @@
+import {databaseSchemaReadiness} from "@/platform/db/schema-readiness";
 import "server-only";
 import type { Pool,PoolClient } from "pg";
 import {withSchemaInitialization} from "../schema-initialization";
-const ready = new WeakMap<Pool, Promise<void>>();
-export function markBillingSchemaReady(pool:Pool){ready.set(pool,Promise.resolve());}
+export function markBillingSchemaReady(pool:Pool){databaseSchemaReadiness(pool,"billing").pending=Promise.resolve();}
 export function ensureBillingSchema(pool: Pool): Promise<void> {
-    let pending = ready.get(pool);
+    const state=databaseSchemaReadiness(pool,"billing");
+    let pending = state.pending;
     if (pending)
         return pending;
-    pending = withSchemaInitialization(pool,applyBillingSchema).catch(error => { ready.delete(pool); throw error; });
-    ready.set(pool, pending);
+    pending = withSchemaInitialization(pool,applyBillingSchema).catch(error => { state.pending=undefined; throw error; });
+    state.pending=pending;
     return pending;
 }
 

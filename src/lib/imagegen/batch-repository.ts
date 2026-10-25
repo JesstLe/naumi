@@ -1,10 +1,11 @@
+import {databaseSchemaReadiness} from "@/platform/db/schema-readiness";
 import "server-only";
 import {ensureSchema} from "@/lib/persistence/schema";
 import {getPool} from "@/platform/db/pool";
 import type {ImagegenRequest,ImagegenPlan,ImagegenResult} from "./types";
-let ready:Promise<void>|undefined;
 export async function ensureImagegenBatches(){
- if(!ready)ready=ensureSchema().then(()=>getPool().query(`
+ const state=databaseSchemaReadiness(getPool(),"imagegen-batches");
+ if(!state.pending)state.pending=ensureSchema().then(()=>getPool().query(`
  CREATE TABLE IF NOT EXISTS app_imagegen_batches(
  id uuid PRIMARY KEY,owner text NOT NULL REFERENCES app_users(email),fingerprint text NOT NULL,
  request jsonb NOT NULL,plan jsonb NOT NULL,state text NOT NULL DEFAULT 'running',
@@ -17,7 +18,7 @@ export async function ensureImagegenBatches(){
  PRIMARY KEY(batch_id,key));
  CREATE INDEX IF NOT EXISTS app_imagegen_batches_owner ON app_imagegen_batches(owner,created_at DESC);
  CREATE INDEX IF NOT EXISTS app_imagegen_batches_due ON app_imagegen_batches(updated_at) WHERE state IN ('running','cancelling');
- `)).then(()=>{}).catch(e=>{ready=undefined;throw e;});return ready;
+ `)).then(()=>{}).catch(e=>{state.pending=undefined;throw e;});return state.pending;
 }
 export type ImagegenBatchRow={id:string;owner:string;fingerprint:string;request:ImagegenRequest;plan:ImagegenPlan;state:string};
 export type ImagegenBatchItem={batch_id:string;key:string;ordinal:number;child_operation_id:string;request:ImagegenRequest;plan:ImagegenPlan;state:string;attempts:number;result:ImagegenResult|null;lease_token:string|null};

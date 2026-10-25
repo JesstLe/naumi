@@ -1,3 +1,4 @@
+import {databaseSchemaReadiness} from "@/platform/db/schema-readiness";
 import "server-only";
 import {getPool} from "@/platform/db/pool";
 import {applyBillingSchema,markBillingSchemaReady} from "../billing/schema";
@@ -23,20 +24,20 @@ async function ensureAgentSessionKeyTx(tx: PoolClient) {
 /** Application storage compatibility initializer, not the generic DB platform.
  * It does not import business repositories or the legacy db facade. R4B moves
  * runtime DDL to an explicit lifecycle; this boundary keeps old startup behavior. */
-let schemaReady:Promise<void>|null=null;
 
 export async function ensureSchema(): Promise<void> {
+ const state=databaseSchemaReadiness(getPool(),"core");
   if(process.env.FLEET_PORTAL_ONLY==='1'||process.env.NAUMI_AUTH_LOGIN_ONLY==='1'){
     // Central sidecar must never run general application migrations against a live mixed-version site.
     // Fleet's additive namespace is initialized separately; business/auth schema stays server-owned.
-    if(!schemaReady)schemaReady=(async()=>{
+    if(!state.pending)state.pending=(async()=>{
       await getPool().query('SELECT email,name,role,banned,auth_revoked_before,account_expires_at FROM app_users LIMIT 0');
       await getPool().query('SELECT k,v FROM app_settings LIMIT 0');
-    })().catch(error=>{schemaReady=null;throw error;});
-    return schemaReady;
+    })().catch(error=>{state.pending=null;throw error;});
+    return state.pending;
   }
-  if (!schemaReady) {
-    schemaReady = withSchemaInitialization(getPool(),async schemaDb => {
+  if (!state.pending) {
+    state.pending = withSchemaInitialization(getPool(),async schemaDb => {
       await schemaDb.query(`
         CREATE TABLE IF NOT EXISTS app_users (
           email         text PRIMARY KEY,
@@ -581,7 +582,7 @@ export async function ensureSchema(): Promise<void> {
         `);
       }
       await applyBillingSchema(schemaDb);
-    }).then(()=>{markBillingSchemaReady(getPool());}).catch(error => { schemaReady = null; throw error; });
+    }).then(()=>{markBillingSchemaReady(getPool());}).catch(error => { state.pending = null; throw error; });
   }
-  return schemaReady;
+  return state.pending;
 }

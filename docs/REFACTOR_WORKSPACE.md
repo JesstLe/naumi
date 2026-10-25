@@ -32,6 +32,8 @@
 
 ## 开发约定
 
+2026-10-25 R4B4：Next Node启动钩子顺序初始化13个基础owner，构建/Edge/无DB/sidecar分离；真实Next捕获跨bundle就绪/Pool分裂后，改为进程共用lazy查询Pool和按Pool/owner共享就绪，SQL/事务/任务语义保持。完整PG旧2/12→新7/53；实际Next旧15→新19检查，build SQL均0、首登录DDL3→0、13-owner请求DDL15→0；Compose7→12检查、Worker等Web与DB健康，不接DB迁移。相邻、类型、回滚及远端结果见 [R4B4记录](changes/2026-10-25-web-startup-r4b4.md) 与本轮DELIVERY。同步后第1模块；其它域ensure/模型首次发现、R5/R6继续，不合main、不部署，不将fixture build当完整产品构建。
+
 2026-10-25 R4B3：冻结执行与管理装配分离，4条执行到管理server引用归零；executor/prepare/发布与计费算法保持，已有模型/凭据/计费/投影只读原版本。完整PG旧6/57→新6/71、真实plan HTTP在缺管理token时旧400→新200/current99、冻结原6/current99和投影lease重试通过。相邻模型发布/执行、preparation45、读8/80、身份8/171、frozen-source16、账务/195登录、tsc/14文件lint通过；补正既有视频wire ID误用于公开模型报价及旧测试的MODEL_CHANGED预期，保留旧基线复现。详见 [R4B3记录](changes/2026-10-25-execution-assembly-r4b3.md)。第3模块同步及回滚证据见DELIVERY；显式启动与其它ensure、20/12环和R5/R6继续，不合main、不部署。
 
 2026-10-25 R4B2：原生模式事实、权限repository、唯一创作scope和项目/媒体访问与HTTP适配分离；25声明、45生产消费者90绑定迁移，339原声明AST保持，身份/账务/创作7文件环拆开，HTTP context生产静态消费者47→21。完整PG旧8/168→新8/171，195实际登录、权限、wallet/entitlements与创作writer及tsc/54文件lint通过；fixture首轮错误预期与类型问题日志保留，生产实现未因此修改。详见 [R4B2记录](changes/2026-10-25-identity-creation-boundaries-r4b2.md)；副本回滚/提交远端证据以DELIVERY为准。同步后第2模块，显式生命周期/其余ensure、视频20/恢复12环与R5/R6继续，不合main、不部署。

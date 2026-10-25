@@ -4,10 +4,13 @@ import {Pool} from "pg";
 /** Infrastructure only: importing this module never initializes schema or connects.
  * Both this entry and the legacy db facade use the same lazy query pool. */
 export const dbEnabled=(process.env.DATABASE_URL??"").trim().length>0;
-let pool:Pool|null=null;
+// Instrumentation and route bundles have different module caches but share one
+// Node process. Keep its query pool singular without opening it on import.
+const poolKey=Symbol.for("naumi.db.query-pool.v1");
+const host=globalThis as typeof globalThis & {[poolKey]?:Pool};
 
 export function getPool(): Pool {
-  if (!pool) {
+  if (!host[poolKey]) {
     const connectionString = process.env.DATABASE_URL;
     const cs = connectionString || "";
     // 本地 / Docker 内网 / 显式 sslmode=disable → 不启用 SSL:自建或 compose 自带的
@@ -17,13 +20,13 @@ export function getPool(): Pool {
       /sslmode=disable/.test(cs) ||
       /@(localhost|127\.0\.0\.1|db|postgres|nv-postgres|host\.docker\.internal)[:/]/.test(cs) ||
       /@(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(cs);
-    pool = new Pool({
+    host[poolKey] = new Pool({
       connectionString,
       ssl: noSsl ? false : { rejectUnauthorized: false },
       max: 5,
     });
   }
-  return pool;
+  return host[poolKey];
 }
 
 /** Lightweight connectivity probe used by /api/health. */

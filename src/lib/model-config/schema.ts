@@ -1,3 +1,4 @@
+import {databaseSchemaReadiness} from "@/platform/db/schema-readiness";
 import { apimartImagesSchema, applicationAPIMartImages } from "./apimart-image-policy";
 import { businessFeaturesSchema, procurementSchema, fixedMonthlyCostsSchema } from "./business-schema";
 import { imagegenCapabilitySetSchema,imagegenWireMapSchema } from "../imagegen/capabilities";
@@ -141,9 +142,9 @@ export function validateModelConfig(input: unknown, options: ValidationOptions =
   return config;
 }
 
-const schemaReady = new WeakMap<Pool, Promise<void>>();
 export async function ensureModelSchema(pool: Pool): Promise<void> {
-  let pending = schemaReady.get(pool);
+ const state=databaseSchemaReadiness(pool,"models");
+  let pending = state.pending;
   if (!pending) {
     pending = (async () => {
       const tx = await pool.connect();
@@ -185,8 +186,8 @@ export async function ensureModelSchema(pool: Pool): Promise<void> {
         await tx.query("COMMIT");
       } catch (error) { await tx.query("ROLLBACK"); throw error; }
       finally { tx.release(); }
-    })().catch(error => { schemaReady.delete(pool); throw error; });
-    schemaReady.set(pool, pending);
+    })().catch(error => { state.pending=undefined; throw error; });
+    state.pending=pending;
   }
   return pending;
 }

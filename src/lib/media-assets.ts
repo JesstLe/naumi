@@ -1,3 +1,4 @@
+import {databaseSchemaReadiness} from "@/platform/db/schema-readiness";
 import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import 'server-only';
 import {createHash} from 'node:crypto';
@@ -9,9 +10,9 @@ import {makeMediaVariants} from './media-variants';
 
 export type MediaAsset = {key:string; owner:string|null; public:boolean; remote_ready:boolean; content_type:string;
   sha256:string; bytes:number; width:number|null; height:number|null; thumbnail_key:string|null; preview_key:string|null};
-let schema: Promise<void>|null = null;
 export async function ensureMediaSchema() {
-  if (!schema) schema = ensureSchema().then(()=>getPool().query(`
+ const state=databaseSchemaReadiness(getPool(),"media");
+  if (!state.pending) state.pending = ensureSchema().then(()=>getPool().query(`
     CREATE TABLE IF NOT EXISTS app_media_assets (
       id uuid NOT NULL DEFAULT gen_random_uuid(), key text PRIMARY KEY, owner text, public boolean NOT NULL DEFAULT false,
       driver text NOT NULL, remote_ready boolean NOT NULL DEFAULT false, content_type text NOT NULL,
@@ -30,8 +31,8 @@ export async function ensureMediaSchema() {
       ALTER TABLE app_media_uploads ADD CONSTRAINT app_media_uploads_bytes_check CHECK(bytes>0 AND bytes<=67108864);
      END IF;
     END $upgrade$;
-  `)).then(()=>{}).catch(e=>{schema=null;throw e;});
-  return schema;
+  `)).then(()=>{}).catch(e=>{state.pending=null;throw e;});
+  return state.pending;
 }
 function publicKey(key:string) { return /^(?:brand|library|templates|template-cache)\//.test(key); }
 export async function getMediaAsset(key:string): Promise<MediaAsset|null> {

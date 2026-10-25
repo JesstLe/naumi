@@ -1,3 +1,4 @@
+import {databaseSchemaReadiness} from "@/platform/db/schema-readiness";
 import 'server-only';
 import {createHmac,randomUUID} from 'node:crypto';
 import {isIP} from 'node:net';
@@ -13,10 +14,10 @@ CREATE TABLE IF NOT EXISTS app_auth_login_attempts(
 CREATE INDEX IF NOT EXISTS app_auth_login_account_time ON app_auth_login_attempts(account_hash,created_at);
 CREATE INDEX IF NOT EXISTS app_auth_login_network_time ON app_auth_login_attempts(network_hash,created_at);
 CREATE INDEX IF NOT EXISTS app_auth_login_cleanup ON app_auth_login_attempts(created_at);`;
-const schemaReady=new WeakMap<Pool,Promise<void>>();
 export async function ensureLoginGuardSchema(pool:Pool){
- let ready=schemaReady.get(pool);
- if(!ready){ready=(async()=>{const tx=await pool.connect();try{await tx.query('BEGIN');await tx.query("SET LOCAL lock_timeout='3s'");await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('auth-login-schema-v1',0))");await tx.query(LOGIN_GUARD_SQL);await tx.query('COMMIT');}catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}})().catch(e=>{schemaReady.delete(pool);throw e;});schemaReady.set(pool,ready);}
+ const state=databaseSchemaReadiness(pool,"login");
+ let ready=state.pending;
+ if(!ready){ready=(async()=>{const tx=await pool.connect();try{await tx.query('BEGIN');await tx.query("SET LOCAL lock_timeout='3s'");await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('auth-login-schema-v1',0))");await tx.query(LOGIN_GUARD_SQL);await tx.query('COMMIT');}catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}})().catch(e=>{state.pending=undefined;throw e;});state.pending=ready;}
  await ready;
 }
 export function loginNetwork(raw:string|null){
