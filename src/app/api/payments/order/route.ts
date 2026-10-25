@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import {getOrder, ensureProLicenseForOrder} from "@/lib/db";
+import {getOrder, ensureProLicenseForOrder} from "@/lib/payments/orders";
 import {dbEnabled} from "@/platform/db/pool";
 import { publicCommerceEnabled } from "@/lib/commerce";
 

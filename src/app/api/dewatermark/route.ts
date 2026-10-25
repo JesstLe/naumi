@@ -8,7 +8,7 @@ import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import OpenAI, { toFile } from "openai";
-import {reserveCredits, refundCredits} from "@/lib/db";
+import {reserveCredits, refundCredits} from "@/lib/billing/legacy-credit-reservation";
 import {dbEnabled} from "@/platform/db/pool";
 import {addArtworks} from "@/lib/artworks/writer";
 import {getUser} from "@/lib/accounts/session";

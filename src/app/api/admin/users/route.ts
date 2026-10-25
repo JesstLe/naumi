@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import {listAllUsers, adminStats, deleteUser} from "@/lib/db";
+import {listAllUsers, adminStats, deleteUser} from "@/lib/accounts/administration";
 import {listLedger, listUserLedger} from "@/lib/billing/legacy-ledger";
 import {adjustUserCredits} from "@/lib/billing/grants";
 import {dbEnabled} from "@/platform/db/pool";

@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 import sharp from "sharp";
 
 import { authenticatedEmail } from "@/lib/request-auth";
-import {refundCredits, reserveCredits} from "@/lib/db";
+import {refundCredits, reserveCredits} from "@/lib/billing/legacy-credit-reservation";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {addArtworks} from "@/lib/artworks/writer";
 import {dbEnabled} from "@/platform/db/pool";

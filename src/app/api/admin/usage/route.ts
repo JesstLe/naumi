@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import {adminUsageSummary} from "@/lib/db";
+import {adminUsageSummary} from "@/lib/accounts/administration";
 import {dbEnabled} from "@/platform/db/pool";
 import { requireAdmin } from "@/lib/admin-auth";
 

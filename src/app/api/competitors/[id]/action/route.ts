@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { actionSchema, currentImage, REGION_LABELS } from "@/lib/competitor-types";
 import { competitorActor, competitorError, ownedCompetitor, readCompetitorImage, analyzeCompetitor, checkVersion, WorkspaceError } from "@/lib/competitor-server";
-import {reserveCredits, refundCredits} from "@/lib/db";
+import {reserveCredits, refundCredits} from "@/lib/billing/legacy-credit-reservation";
 import {claimCompetitorItem, releaseCompetitorItem, saveCompetitorItem} from "@/lib/competitor/repository";
 import {finishCompetitorGeneration} from "@/lib/competitor/completion";
 import {addReservation, settleReservation, sweepStaleReservations} from "@/lib/billing/reservations";

@@ -3,7 +3,7 @@ import {currentImagegenStep} from "./context";
 import {currentModelExecution} from "../model-config/context";
 import {inspectImagegenPixels} from "./postprocess";
 import {currentSynchronousBilling,configuredToolCost,synchronousChargedCredits} from "../billing/synchronous-operation";
-import {reserveCredits, refundCredits} from "../db";
+import {reserveCredits, refundCredits} from "@/lib/billing/legacy-credit-reservation";
 import {addLedgerEntry} from "@/lib/billing/legacy-ledger";
 import {dbEnabled} from "@/platform/db/pool";
 import {addArtworks} from "@/lib/artworks/writer";

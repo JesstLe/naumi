@@ -2,7 +2,7 @@ import {withBillingRequest} from "@/lib/billing/synchronous";
 import {configuredToolCost, synchronousChargedCredits} from "@/lib/billing/synchronous-operation";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
-import {reserveCredits, refundCredits} from "@/lib/db";
+import {reserveCredits, refundCredits} from "@/lib/billing/legacy-credit-reservation";
 import {addLedgerEntry} from "@/lib/billing/legacy-ledger";
 import {dbEnabled} from "@/platform/db/pool";
 import {addArtworks} from "@/lib/artworks/writer";

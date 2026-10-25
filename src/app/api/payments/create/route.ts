@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import {createOrder} from "@/lib/db";
+import {createOrder} from "@/lib/payments/orders";
 import {dbEnabled} from "@/platform/db/pool";
 import { resolveItem } from "@/lib/payments";
 import { getPaymentSettings, getPaymentStatus } from "@/lib/settings";

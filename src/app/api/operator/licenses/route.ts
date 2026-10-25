@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import {listLicenses, generateLicenses, licenseStats, setLicenseStatus} from "@/lib/db";
+import {listLicenses, generateLicenses, licenseStats, setLicenseStatus} from "@/lib/licensing/repository";
 import {dbEnabled} from "@/platform/db/pool";
 import { requireAdmin } from "@/lib/admin-auth";
 import { isLicenseIssuer } from "@/lib/edition";

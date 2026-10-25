@@ -8,7 +8,7 @@ import { insufficientCreditsMessage } from "@/lib/commerce";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import OpenAI from "openai";
 import { requestedTextModel } from "@/lib/text-models";
-import {reserveCredits, refundCredits} from "@/lib/db";
+import {reserveCredits, refundCredits} from "@/lib/billing/legacy-credit-reservation";
 import {addLedgerEntry} from "@/lib/billing/legacy-ledger";
 import {dbEnabled} from "@/platform/db/pool";
 import {getUser} from "@/lib/accounts/session";

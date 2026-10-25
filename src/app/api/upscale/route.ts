@@ -2,7 +2,7 @@ import { supplierCostFetch } from "@/lib/supplier-cost/collect";
 import {withBillingRequest} from "@/lib/billing/synchronous";
 import {configuredToolCost, synchronousChargedCredits, markBillingUpstream} from "@/lib/billing/synchronous-operation";
 import { NextResponse } from "next/server";
-import {reserveCredits, refundCredits} from "@/lib/db";
+import {reserveCredits, refundCredits} from "@/lib/billing/legacy-credit-reservation";
 import {addLedgerEntry} from "@/lib/billing/legacy-ledger";
 import {dbEnabled} from "@/platform/db/pool";
 import {addArtworks} from "@/lib/artworks/writer";

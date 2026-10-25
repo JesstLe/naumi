@@ -5,7 +5,7 @@ import { requestImageQuality, imageQualityCost, withQualityFallback, settleToolI
 import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
-import {reserveCredits, refundCredits} from "@/lib/db";
+import {reserveCredits, refundCredits} from "@/lib/billing/legacy-credit-reservation";
 import {addReservation, settleReservation, sweepStaleReservations} from "@/lib/billing/reservations";
 import {dbEnabled} from "@/platform/db/pool";
 import {addArtworks} from "@/lib/artworks/writer";

@@ -25,3 +25,17 @@ export function getPool(): Pool {
   }
   return pool;
 }
+
+/** Lightweight connectivity probe used by /api/health. */
+export async function pingDb(): Promise<{ ok: boolean; error?: string }> {
+  if (!dbEnabled) return { ok: false, error: "DATABASE_URL 未配置" };
+  try {
+    await getPool().query("SELECT 1");
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "数据库连接失败",
+    };
+  }
+}
