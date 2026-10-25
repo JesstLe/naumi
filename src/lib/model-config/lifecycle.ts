@@ -11,7 +11,7 @@ import {modelTrustedOrigins} from "./environment";
 import {ModelConfigError} from "./types";
 
 let initialization:Promise<Awaited<ReturnType<typeof initialize>>>|undefined;
-async function initialize() {
+async function initialize(requireModels:boolean) {
   if(!dbEnabled)throw new ModelConfigError("CONFIG_UNAVAILABLE","未配置数据库，模型管理暂不可用",503);
   const baseUrl=process.env.NAUMI_ROUTER_MANAGEMENT_URL||"";
   if(!baseUrl)throw new ModelConfigError("ROUTER_UNAVAILABLE","尚未配置 Router 私有管理连接",503);
@@ -26,16 +26,17 @@ async function initialize() {
     if(!discovery)throw new ModelConfigError("CONFIG_UNAVAILABLE","模型初始化状态待核对",503);
     const [sources,exported]=discovery;
     const imported=await importLegacyRouter({exported,control:router,credentials,tx});
-    return bootstrapModelConfig({credentials,sources:{...sources,router:imported},tx,trustedOrigins});
+    const config=await bootstrapModelConfig({credentials,sources:{...sources,router:imported},tx,trustedOrigins});
+    if(requireModels&&!config.publicModels.length)throw new ModelConfigError("CONFIG_NOT_READY","尚未配置模型",503);
+    return config;
   }});
   await repo.current();
   return {repo,credentials,router,trustedOrigins,pool};
 }
 
-/** Management and legacy true-cold callers share the retryable lifecycle.
- * Existing published reads do not call it. Retiring the remaining first-use
- * request adapter requires the later explicit startup/deployment migration. */
-export function initializeModelRegistry() {
-  if(!initialization)initialization=initialize().catch(error=>{initialization=undefined;throw error;});
+/** Startup and explicit management share the retryable import lifecycle.
+ * Published request/frozen reads never call it. */
+export function initializeModelRegistry(input:{requireModels?:boolean}={}) {
+  if(!initialization)initialization=initialize(input.requireModels===true).catch(error=>{initialization=undefined;throw error;});
   return initialization;
 }

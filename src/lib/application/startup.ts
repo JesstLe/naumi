@@ -1,7 +1,8 @@
 import "server-only";
 import {dbEnabled,getPool} from "@/platform/db/pool";
+import type {ModelRegistryStartup} from "../model-config/startup";
 
-export type WebStartupReport={mode:"application"|"no-database"|"sidecar";steps:string[]};
+export type WebStartupReport={mode:"application"|"no-database"|"sidecar";steps:string[];modelRegistry?:ModelRegistryStartup};
 let initializing:Promise<WebStartupReport>|undefined;
 
 /** Application composition only. Domain owners retain their transactions,
@@ -13,6 +14,7 @@ async function initialize():Promise<WebStartupReport>{
   await(await import("../model-config/schema")).ensureModelSchema(pool);steps.push("models");
   await(await import("../model-config/runtime-schema")).ensureModelRuntimeSchema(pool);steps.push("model-runtime");
   await(await import("../video/frozen-capability")).ensureVideoDefaultsSchema(pool);steps.push("video-defaults");
+  await(await import("../supplier-models/video-access")).ensureSupplierVideoSchema(pool);steps.push("supplier-video");
   await(await import("../saas/creation-schema")).ensureCreationSchema();steps.push("creation");
   await(await import("../media-assets")).ensureMediaSchema();steps.push("media");
   await(await import("../auth-login-limit")).ensureLoginGuardSchema(pool);steps.push("login");
@@ -21,7 +23,8 @@ async function initialize():Promise<WebStartupReport>{
   await(await import("../billing/image-quotes")).ensureImageBillingQuotes();steps.push("billing-quotes");
   await(await import("../imagegen/batch-repository")).ensureImagegenBatches();steps.push("imagegen-batches");
   await(await import("../reference-workbench/repository")).ensureWorkbench();steps.push("workbench");
-  return {mode:"application",steps};
+  const modelRegistry=await(await import("../model-config/startup")).prepareModelRegistry();
+  return {mode:"application",steps,modelRegistry};
 }
 
 export function initializeWebApplication():Promise<WebStartupReport>{

@@ -96,5 +96,8 @@ const {setUserPassword, setUserRole} = await import("@/lib/accounts/repository")
     }
   }
 
+  // Setup is the explicit configuration write boundary. Do not let an earlier
+  // empty boot freeze an empty registry or make the first catalog read import.
+  if(process.env.NAUMI_ROUTER_MANAGEMENT_URL)await(await import("./model-config/startup")).prepareModelRegistry();
   return { ok: true };
 }

@@ -10,7 +10,7 @@ import {Client,Pool} from "pg";
 import type {WebStartupReport} from "../src/lib/application/startup";
 
 const arg=(name:string)=>{const i=process.argv.indexOf(name);return i<0?undefined:process.argv[i+1];};
-const steps=["persistence","billing","models","model-runtime","video-defaults","creation","media","login","image-skills","imagegen-quotes","billing-quotes","imagegen-batches","workbench"];
+const steps=["persistence","billing","models","model-runtime","video-defaults","supplier-video","creation","media","login","image-skills","imagegen-quotes","billing-quotes","imagegen-batches","workbench"];
 const owner="startup@fixture.test";
 async function main(){
  assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,"1");const url=new URL(process.env.DATABASE_URL!);assert.equal(url.hostname,"127.0.0.1");assert.match(url.pathname,/fixture/);
@@ -38,13 +38,14 @@ async function main(){
   }finally{Client.prototype.query=rawQuery;globalThis.fetch=originalFetch;}return;
  }
  const schema=arg("--schema")||"startup_"+randomUUID().replaceAll("-","");assert.match(schema,/^startup_[a-f0-9]+$/);process.env.PGOPTIONS=`-c search_path=${schema}`;
- Object.assign(process.env,{SETTINGS_SECRET:"web-startup-fixture-012345678901234567890",NAUMI_MULTI_USER:"1"});delete process.env.NEXT_PUBLIC_SUPABASE_URL;delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+ Object.assign(process.env,{SETTINGS_SECRET:"web-startup-fixture-012345678901234567890",NAUMI_MULTI_USER:"1",NAUMI_ROUTER_MANAGEMENT_URL:""});delete process.env.NEXT_PUBLIC_SUPABASE_URL;delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
  const admin=new Pool({connectionString:process.env.DATABASE_URL,ssl:false,options:`-c search_path=${schema}`});let pool:Pool|undefined,trigger=false;
  // Baseline has no composition root; use its original owners only for fixture
  // seeding/compatibility checks, never describe this helper as a startup hook.
  async function originalOwners(){
   await(await load("src/lib/persistence/schema.ts")).ensureSchema();await(await(await load("src/lib/billing/runtime.ts")).getBillingRuntime()).config.current();
   await(await load("src/lib/model-config/schema.ts")).ensureModelSchema(pool);await(await load("src/lib/model-config/runtime-schema.ts")).ensureModelRuntimeSchema(pool);await(await load("src/lib/video/frozen-capability.ts")).ensureVideoDefaultsSchema(pool);
+  await(await load("src/lib/supplier-models/video-access.ts")).ensureSupplierVideoSchema(pool);
   await(await load("src/lib/saas/creation-schema.ts")).ensureCreationSchema();await(await load("src/lib/media-assets.ts")).ensureMediaSchema();await(await load("src/lib/auth-login-limit.ts")).ensureLoginGuardSchema(pool);
   await(await load("src/lib/image-skills/server.ts")).ensureImageSkills();await(await load("src/lib/imagegen/quotes.ts")).ensureImagegenQuotes();await(await load("src/lib/billing/image-quotes.ts")).ensureImageBillingQuotes();await(await load("src/lib/imagegen/batch-repository.ts")).ensureImagegenBatches();await(await load("src/lib/reference-workbench/repository.ts")).ensureWorkbench();
  }
@@ -74,7 +75,7 @@ async function main(){
    if(baseline){await assert.rejects(access(path.join(root,"src/instrumentation.ts")));checks++;eq(ddl().length,0);}
    else{
     const initialize:()=>Promise<WebStartupReport>=(await load("src/lib/application/startup.ts")).initializeWebApplication;
-    const parallel=Array.from({length:8},()=>initialize());ok(parallel.every(p=>p===parallel[0]));const results=await Promise.all(parallel);eq(results[0],{mode:"application",steps});ok(results.every(r=>r===results[0]));ok(ddl().length>0);
+    const parallel=Array.from({length:8},()=>initialize());ok(parallel.every(p=>p===parallel[0]));const results=await Promise.all(parallel);eq(results[0],{mode:"application",steps,modelRegistry:{state:"legacy"}});ok(results.every(r=>r===results[0]));ok(ddl().length>0);
     const tables=(await admin.query("SELECT tablename FROM pg_tables WHERE schemaname=$1",[schema])).rows.map(r=>r.tablename);for(const name of ["app_users","app_billing_operations","app_model_router_projections","app_video_model_defaults","app_creation_records","app_media_assets","app_auth_login_attempts","app_image_skills","app_imagegen_quotes","app_image_billing_quotes","app_imagegen_batches","app_reference_operations"])ok(tables.includes(name));
     const count=queries.length;eq(await initialize(),results[0]);eq(queries.length,count);
     const readiness=(await load("src/platform/db/schema-readiness.ts")).databaseSchemaReadiness;

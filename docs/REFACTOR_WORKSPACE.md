@@ -32,6 +32,8 @@
 
 ## 开发约定
 
+2026-10-25 R4B5：published读侧删除first-use管理/发现/导入，registry准备归Web启动、原setup配置写入或既有管理链；已有发布只读且不依赖管理token，真正首启不冻结空目录。Supplier video schema共享就绪，基础owner14；模型准备失败保留登录/管理修复。完整PG旧10/96→新10/99、实际Next23→25检查，首次目录metadata GET2→0、结构/写入SQL37→0；10项相邻、全项目tsc/11文件lint通过。新owner无环、读→lifecycle边1→0，原20/12环继续。副本回滚/远端证据见 [R4B5记录](changes/2026-10-25-model-registry-startup-r4b5.md) 与DELIVERY；同步后第2模块，其余ensure/Worker/最终验收继续，不合main、不部署。
+
 2026-10-25 R4B4：Next Node启动钩子顺序初始化13个基础owner，构建/Edge/无DB/sidecar分离；真实Next捕获跨bundle就绪/Pool分裂后，改为进程共用lazy查询Pool和按Pool/owner共享就绪，SQL/事务/任务语义保持。完整PG旧2/12→新7/53；实际Next旧15→新19检查，build SQL均0、首登录DDL3→0、13-owner请求DDL15→0；Compose7→12检查、Worker等Web与DB健康，不接DB迁移。相邻、类型、回滚及远端结果见 [R4B4记录](changes/2026-10-25-web-startup-r4b4.md) 与本轮DELIVERY。同步后第1模块；其它域ensure/模型首次发现、R5/R6继续，不合main、不部署，不将fixture build当完整产品构建。
 
 2026-10-25 R4B3：冻结执行与管理装配分离，4条执行到管理server引用归零；executor/prepare/发布与计费算法保持，已有模型/凭据/计费/投影只读原版本。完整PG旧6/57→新6/71、真实plan HTTP在缺管理token时旧400→新200/current99、冻结原6/current99和投影lease重试通过。相邻模型发布/执行、preparation45、读8/80、身份8/171、frozen-source16、账务/195登录、tsc/14文件lint通过；补正既有视频wire ID误用于公开模型报价及旧测试的MODEL_CHANGED预期，保留旧基线复现。详见 [R4B3记录](changes/2026-10-25-execution-assembly-r4b3.md)。第3模块同步及回滚证据见DELIVERY；显式启动与其它ensure、20/12环和R5/R6继续，不合main、不部署。
