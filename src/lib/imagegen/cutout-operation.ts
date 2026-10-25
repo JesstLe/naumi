@@ -11,7 +11,7 @@ import {withBiModelContext} from "@/lib/bi/context";
 import {withModelOperation} from "../model-config/requests";
 import {getModelAdministration} from "../model-config/server";
 import {ModelConfigError} from "../model-config/types";
-import {currentCreationContext,withFrozenCreation} from "../saas/creation-context";
+import {currentCreationContext,withFrozenCreation} from "@/lib/saas/creation-scope";
 import {ensureCreationSchema} from "../saas/creation-schema";
 import {prepareOriginalCreationInput} from "../saas/creation-writer";
 import {TeamError} from "../teams/server";

@@ -25,9 +25,9 @@ import {mapImagegenParameters,imagegenWireRequest} from "./parameters";
 import {publishedImagegenCapabilities} from "./capabilities";
 import type {ImagegenRequest,ImagegenPlan,Intent} from "./types";
 import type {ModelFacts} from "../model-config/types";
-import {userFeaturePolicy,FeatureAccessError} from "../feature-access/server";
+import {userFeaturePolicy,FeatureAccessError} from "@/lib/feature-access/repository";
 import {allows} from "../feature-access/catalog";
-import {assertCurrentCreationFeature} from "../saas/creation-context";
+import {assertCurrentCreationFeature} from "@/lib/saas/creation-access";
 export function imagegenFingerprint(request:ImagegenRequest){return createHash("sha256").update(JSON.stringify(imagegenRequestSchema.parse(request))).digest("hex");}
 export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{modelVersion:number;billingVersion:number}):Promise<ImagegenPlan>{
  await assertCurrentCreationFeature("/api/imagegen");

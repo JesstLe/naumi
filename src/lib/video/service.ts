@@ -9,7 +9,7 @@ import {currentPrivateVideoContext} from "./providers/private-context";
 import {decryptAtRest} from "../settings";
 import {videoWorkflowManifestSchema} from "./workflow-schema";
 import "server-only";
-import {withFrozenCreation,frozenCreationScope} from '../saas/creation-context';
+import {withFrozenCreation,frozenCreationScope} from "@/lib/saas/creation-scope";
 import { BillingError } from "@/lib/billing/types";
 import { currentModelExecution, runLegacyModelExecution } from "@/lib/model-config/context";
 import type { ExecutionBundle } from "@/lib/model-config/context";

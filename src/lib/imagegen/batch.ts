@@ -1,7 +1,7 @@
 import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import "server-only";
 import {excludeImportedHistory,isImportedHistory} from '../staging-history';
-import {currentCreationContext,withFrozenCreation,type CreationContext} from '../saas/creation-context';
+import {currentCreationContext,withFrozenCreation,type CreationContext} from "@/lib/saas/creation-scope";
 import {acceptCreationTx,creationEventTx,recordSourceOutcomeTx,creationEvidenceTx} from '../saas/creation-writer';
 import {ensureCreationSchema} from '../saas/creation-schema';
 import {randomUUID} from "node:crypto";
@@ -14,7 +14,7 @@ import {submitAcceptedImagegen,getImagegenResult} from "./dispatch";
 import {imagegenStepId} from "./generation-core";
 import {ensureImagegenBatches,imagegenBatchRow,imagegenBatchItems,type ImagegenBatchItem} from "./batch-repository";
 import type {ImagegenRequest,ImagegenPlan,ImagegenResult} from "./types";
-import {userFeaturePolicy,FeatureAccessError} from "../feature-access/server";
+import {userFeaturePolicy,FeatureAccessError} from "@/lib/feature-access/repository";
 import {allows} from "../feature-access/catalog";
 import {assertImagegenCreationScope,imagegenFrozenCreationScope,imagegenCreationScopeKey,ImagegenScopeError} from "./creation-scope";
 const terminals=new Set(["succeeded","failed","cancelled","needs_attention"]);

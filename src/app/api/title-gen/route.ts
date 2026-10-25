@@ -15,7 +15,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/ip";
 import { safeError } from "@/lib/api-error";
 import { requestedTextModel } from "@/lib/text-models";
-import {currentCreationContext} from '@/lib/saas/creation-context';
+import {currentCreationContext} from "@/lib/saas/creation-scope";
 import {startCreation,finishCreation,prepareOriginalCreationInput} from '@/lib/saas/creation-writer';
 import {operationIdFor} from '@/lib/billing/request';
 

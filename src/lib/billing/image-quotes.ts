@@ -3,7 +3,7 @@ import {randomUUID} from "node:crypto";
 import {dbEnabled,getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
 import {resolveUserEmail} from "../admin-auth";
-import {currentCreationContext} from "../saas/creation-context";
+import {currentCreationContext} from "@/lib/saas/creation-scope";
 import {ModelConfigError} from "../model-config/types";
 import {BillingError,type BillingQuote} from "./types";
 import {imageBillingFeature} from "./image-quote-policy";

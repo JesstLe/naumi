@@ -1,11 +1,13 @@
 import "server-only";
-import { createHmac, timingSafeEqual } from "crypto";
-import {getSetting} from "@/lib/settings/repository";
+import {createHmac,timingSafeEqual} from "crypto";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
-import { supabaseEnabled } from "@/lib/auth-mode";
-import { settingsSecret } from "@/lib/settings-secret";
-import type {PoolClient} from "pg";
+import {settingsSecret} from "@/lib/settings-secret";
+
+// Compatibility exports; production mode and billing callers use their owners.
+export {MULTI_USER_SETTING,multiUserEnabled} from "./accounts/mode";
+export {CREDITS_METERING_SETTING,creditsMeteringOn} from "./billing/metering";
+
 
 // ---------------------------------------------------------------------------
 // 原生多用户账号系统(Pro 多用户模式)。
@@ -16,25 +18,7 @@ import type {PoolClient} from "pg";
 // ---------------------------------------------------------------------------
 
 export const USER_COOKIE = "nv_user";
-export const USER_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 天
-export const MULTI_USER_SETTING = "multi_user_enabled";
-export const CREDITS_METERING_SETTING = "credits_metering";
-
-// 是否启用「积分计费」:开启后生图按积分扣(单用户也扣),站长后台自行加积分。
-// 独立于多用户 —— 单用户也能开来给自己/他人做用量控制。永不抛错。
-export async function creditsMeteringOn(): Promise<boolean> {
-  if (process.env.DATABASE_URL) {
-    const {getBillingRuntime} = await import("@/lib/billing/runtime");
-    const mode = (await (await getBillingRuntime()).config.current()).config.switches.metering;
-    if (mode !== "legacy-auto") return mode === "on";
-  }
-  try {
-    const flag = (await getSetting(CREDITS_METERING_SETTING))?.trim();
-    return flag === "1" || flag === "true";
-  } catch {
-    return false;
-  }
-}
+export const USER_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 function secret(): string {
   return settingsSecret();
@@ -137,18 +121,4 @@ export async function activeNativeAccountEmail(email:string,issuedAt=Date.now())
   if (!user || user.banned || (user.account_expires_at && new Date(user.account_expires_at).getTime() <= Date.now())) return null;
   if (user.auth_revoked_before && issuedAt <= new Date(user.auth_revoked_before).getTime()) return null;
   return email;
-}
-
-/** 是否启用「原生多用户」模式:无 Supabase + 已激活 Pro + 站长后台开了开关。永不抛错。 */
-export async function multiUserEnabled(tx?: PoolClient): Promise<boolean> {
-  if (supabaseEnabled) return false; // Supabase 模式另有多用户实现
-  try {
-     // 多用户是 Pro 能力
-    // env 开关(compose 里设 NAUMI_MULTI_USER=1 即开,适合技术站长)或后台开关。
-    if ((process.env.NAUMI_MULTI_USER ?? "").trim() === "1") return true;
-    const flag = (await getSetting(MULTI_USER_SETTING, tx))?.trim();
-    return flag === "1" || flag === "true";
-  } catch {
-    return false;
-  }
 }

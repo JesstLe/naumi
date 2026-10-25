@@ -1,7 +1,8 @@
 import 'server-only';
 import {createHash,randomUUID} from 'node:crypto';
 import type {PoolClient} from 'pg';
-import {currentCreationContext,withFrozenCreation,bindActualCreationProject,creationId,type CreationContext} from './creation-context';
+import {currentCreationContext,withFrozenCreation,creationId,type CreationContext} from "@/lib/saas/creation-scope";
+import {bindActualCreationProject} from "@/lib/saas/creation-access";
 import {creationStatus} from './creation-contracts';
 import {currentModelExecution,currentExecutionBundle} from '@/lib/model-config/context';
 import {getPool,dbEnabled} from "@/platform/db/pool";

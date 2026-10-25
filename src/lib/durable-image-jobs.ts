@@ -1,4 +1,4 @@
-import {withFrozenCreation,type CreationContext} from "./saas/creation-context";
+import {withFrozenCreation,type CreationContext} from "@/lib/saas/creation-scope";
 import { withBackgroundActivity, detachBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import { releaseRuntimeEnabled } from "@/lib/release-runtime/identity";
 import "server-only";

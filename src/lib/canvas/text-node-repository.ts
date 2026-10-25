@@ -1,7 +1,7 @@
 import "server-only";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
-import {currentCreationContext} from "@/lib/saas/creation-context";
+import {currentCreationContext} from "@/lib/saas/creation-scope";
 import {creationTransaction,creationEvidenceTx,creationLinkTx,addCreationAssetTx} from "@/lib/saas/creation-writer";
 
 export type CanvasTextNodeRecord = {

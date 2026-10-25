@@ -3,7 +3,7 @@ import {creditMeteringEnabled} from "@/lib/billing/runtime";
 import {dbEnabled} from "@/platform/db/pool";
 import { storageEnabled } from "@/lib/storage";
 import { authMode } from "@/lib/auth-mode";
-import { multiUserEnabled } from "@/lib/native-auth";
+import {multiUserEnabled} from "@/lib/accounts/mode";
 import { smtpConfigured } from "@/lib/mailer";
 import { getOpenAISettings } from "@/lib/settings";
 import {

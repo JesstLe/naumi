@@ -1,6 +1,6 @@
 import "server-only";
 import {assertWorkflowCreationScope,runWorkflowCreation,bindWorkflowCreationProject,acceptWorkflowCreationTx,validateWorkflowCreationInputs} from "./workflow-creation";
-import type {CreationContext} from "../saas/creation-context";
+import type {CreationContext} from "@/lib/saas/creation-scope";
 import {creationLinkTx} from "../saas/creation-writer";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";

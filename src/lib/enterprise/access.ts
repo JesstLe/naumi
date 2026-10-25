@@ -7,7 +7,7 @@ import { dbEnabled } from "@/platform/db/pool";
 import { rateLimit } from '@/lib/rate-limit';
 import { clientIp } from '@/lib/ip';
 import { teamJson } from '@/lib/teams/access';
-import { userFeaturePolicy } from '@/lib/feature-access/server';
+import {userFeaturePolicy} from "@/lib/feature-access/repository";
 import { allows } from '@/lib/feature-access/catalog';
 export async function enterpriseUserEmail(request:Request){return await emailFromToken(bearer(request))||(!supabaseEnabled?await activeNativeUserEmail(request):null);}
 export async function enterpriseAuthorize(request:Request) {

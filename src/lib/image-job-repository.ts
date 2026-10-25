@@ -1,4 +1,4 @@
-import {currentCreationContext} from "./saas/creation-context";
+import {currentCreationContext} from "@/lib/saas/creation-scope";
 import {acceptCreationTx,recordImageStateTx,creationLinkTx} from "./saas/creation-writer";
 import "server-only";
 import { randomUUID } from "node:crypto";

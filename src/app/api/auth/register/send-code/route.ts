@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { multiUserEnabled } from "@/lib/native-auth";
+import {multiUserEnabled} from "@/lib/accounts/mode";
 import {userExists} from "@/lib/accounts/repository";
 import { sendMail, smtpConfigured } from "@/lib/mailer";
 import { issueEmailCode } from "@/lib/email-code";

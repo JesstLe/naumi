@@ -1,7 +1,7 @@
 import "server-only";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
-import {currentCreationContext} from "@/lib/saas/creation-context";
+import {currentCreationContext} from "@/lib/saas/creation-scope";
 import {acceptCreationTx,creationLinkTx,captureCreationMediaTx,creationTransaction,recordSourceOutcomeTx} from "@/lib/saas/creation-writer";
 import {ensureCreationSchema} from "@/lib/saas/creation-schema";
 import {durableCreationOutcomeTx} from "@/lib/saas/creation-writer";

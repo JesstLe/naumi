@@ -2,7 +2,7 @@ import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runti
 import { runPostprocess } from "./media-postprocess";
 import { resolveConfiguredImageQuality } from "@/lib/model-config/image-quality";
 import "server-only";
-import {withFrozenCreation,frozenCreationScope,currentCreationContext} from './saas/creation-context';
+import {withFrozenCreation,frozenCreationScope,currentCreationContext} from "@/lib/saas/creation-scope";
 import {creationTransaction,addCreationAssetTx} from './saas/creation-writer';
 import { currentModelExecution, currentExecutionBundle, runLegacyModelExecution, type ExecutionBundle } from "@/lib/model-config/context";
 import { withFrozenExecutionBundle } from "@/lib/model-config/execution";
@@ -23,7 +23,8 @@ import {type CanvasImageTaskRow} from "@/lib/canvas/image-task-records";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {addArtworks} from "@/lib/artworks/writer";
 import { supabaseEnabled } from "@/lib/auth-mode";
-import { creditsMeteringOn, multiUserEnabled } from "@/lib/native-auth";
+import {creditsMeteringOn} from "@/lib/billing/metering";
+import {multiUserEnabled} from "@/lib/accounts/mode";
 import { readCanvasImage } from "@/lib/canvas-image-input";
 import { editImage } from "@/lib/image-edit";
 import { storageEnabled, uploadImage } from "@/lib/storage";

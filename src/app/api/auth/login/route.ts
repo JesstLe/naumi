@@ -1,9 +1,5 @@
-import {
-  multiUserEnabled,
-  signUserSession,
-  USER_COOKIE,
-  USER_TTL_MS,
-} from "@/lib/native-auth";
+import {signUserSession,USER_COOKIE,USER_TTL_MS} from "@/lib/native-auth";
+import {multiUserEnabled} from "@/lib/accounts/mode";
 import {getUser} from "@/lib/accounts/session";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";

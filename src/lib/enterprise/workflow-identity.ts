@@ -5,7 +5,7 @@ import { getPool } from "@/platform/db/pool";
 import { ensureEnterpriseSchema } from '@/lib/enterprise/server';
 import { requireTeamGrant } from '@/lib/teams/grants';
 import { TeamError } from '@/lib/teams/server';
-import { userFeaturePolicy } from '@/lib/feature-access/server';
+import {userFeaturePolicy} from "@/lib/feature-access/repository";
 import { allows } from '@/lib/feature-access/catalog';
 import { assertEnterpriseAllowed,deploymentPolicy,IntegrationError } from './integration/policy';
 

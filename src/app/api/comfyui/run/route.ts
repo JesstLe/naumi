@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import {withCreationRoute,currentCreationContext} from '@/lib/saas/creation-context';
+import {withCreationRoute} from "@/lib/saas/creation-context";
+import {currentCreationContext} from "@/lib/saas/creation-scope";
 import {claimCreation,finishCreation} from '@/lib/saas/creation-writer';
 
 import {getActiveComfyEndpoint, getComfyWorkflow} from "@/lib/comfyui/repository";

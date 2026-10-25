@@ -4,7 +4,7 @@ import {resolveUserEmail,requireAdmin} from "@/lib/admin-auth";
 import {dbEnabled, getPool} from "@/platform/db/pool";
 import {isBanned} from "@/lib/accounts/repository";
 import {sameSiteBillingMutation,PRIVATE_HEADERS} from "@/lib/billing/access";
-import {userFeaturePolicy} from "@/lib/feature-access/server";
+import {userFeaturePolicy} from "@/lib/feature-access/repository";
 import {allows} from "@/lib/feature-access/catalog";
 import {rateLimit} from "@/lib/rate-limit";
 import {streamImagegenZip,imagegenFilename} from "@/lib/imagegen/zip";

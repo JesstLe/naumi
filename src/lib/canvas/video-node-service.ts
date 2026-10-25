@@ -1,5 +1,6 @@
 import "server-only";
-import {bindActualCreationProject,assertCreationProjectInput,currentCreationContext} from "../saas/creation-context";
+import {bindActualCreationProject,assertCreationProjectInput} from "@/lib/saas/creation-access";
+import {currentCreationContext} from "@/lib/saas/creation-scope";
 import {assertCreationObjectRefs,acceptCreationTx,creationLinkTx,completeCreationTx} from "../saas/creation-writer";
 import {createHash} from "node:crypto";
 import {getVideoTask} from "@/lib/video/task-repository";

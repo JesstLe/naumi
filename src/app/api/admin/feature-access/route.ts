@@ -1,7 +1,8 @@
 import { requireAdmin, resolveUserEmail } from "@/lib/admin-auth";
 import { dbEnabled } from "@/platform/db/pool";
 import { sameSiteBillingMutation } from "@/lib/billing/access";
-import { accessJson, FeatureAccessError, featureAccessUsers, saveFeaturePolicy, validatePolicyCommand } from "@/lib/feature-access/server";
+import {accessJson} from "@/lib/feature-access/server";
+import {FeatureAccessError,featureAccessUsers,saveFeaturePolicy,validatePolicyCommand} from "@/lib/feature-access/repository";
 import { rateLimit } from "@/lib/rate-limit";
 export const runtime = "nodejs", dynamic = "force-dynamic";
 async function guard(request: Request) {

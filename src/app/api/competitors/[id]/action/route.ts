@@ -12,7 +12,8 @@ import {claimCompetitorItem, releaseCompetitorItem, saveCompetitorItem} from "@/
 import {finishCompetitorGeneration} from "@/lib/competitor/completion";
 import {addReservation, settleReservation, sweepStaleReservations} from "@/lib/billing/reservations";
 import {getUser} from "@/lib/accounts/session";
-import { creditsMeteringOn, multiUserEnabled } from "@/lib/native-auth";
+import {creditsMeteringOn} from "@/lib/billing/metering";
+import {multiUserEnabled} from "@/lib/accounts/mode";
 import { supabaseEnabled } from "@/lib/auth-mode";
 import { regionMask, preserveOutsideMask } from "@/lib/competitor-image";
 import { editImage } from "@/lib/image-edit";

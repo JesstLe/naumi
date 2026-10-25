@@ -1,5 +1,7 @@
 # 渐进迁移与集中验收台账
 
+R4B2最新进展（2026-10-25）：原生模式、权限持久化、唯一创作scope和项目/媒体访问分别归属，HTTP适配保留同函数兼容出口。25声明和45生产消费者90绑定迁移，339原声明保持；身份/账务/创作7环拆开，HTTP context静态消费者47→21，新owner无环。完整旧8/168→新8/171、195实际登录、权限、钱包/赠额与creation writer、tsc/54文件lint通过；同旧新版均触发的fixture错误预期及TS问题修正留证，无生产逻辑变更。见 [R4B2记录](../changes/2026-10-25-identity-creation-boundaries-r4b2.md)。同步后第2模块；显式Web/Worker生命周期/其余热路径ensure、视频20/恢复12环、R5/R6继续。
+
 日期：2026-10-24。关联：[主方案](../REFACTOR_ARCHITECTURE.md)、[源码证据](2026-10-24-current-state.md)。
 
 R4B1 最新进展（2026-10-25）：已发布快照读侧不再组装管理runtime，纯目录/模拟及legacy目录分离，8动态/6静态模型环拆开，重型repository生产静态消费者14→1。完整冷模块PG原75/新80、真正只读事务、管理凭据缺失、current/历史/损坏pointer、首次初始化失败回滚重试与实际HTTP通过；preparation同SQL观察器原/新45，管理/发布/frozen-source与相邻账务、tsc/lint通过。详见 [R4B1](../changes/2026-10-25-model-read-boundary-r4b1.md)。同步后第1模块；冷库仍有first-use兼容initializer，显式Web/Worker生命周期及其它热路径DDL、身份7环和R5/R6继续，未记全站DDL归零。

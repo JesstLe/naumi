@@ -21,7 +21,7 @@ import { plainGeneratedOutput } from "./receipt-policy";
 import { storedImageReview, IMAGE_REVIEW_MESSAGE } from "../image-job-review";
 import { storedDeliveryState, recoverStoredDelivery } from "./stored-delivery";
 import {readImagegenBilling} from "./delivery-billing";
-import {currentCreationContext} from "../saas/creation-context";
+import {currentCreationContext} from "@/lib/saas/creation-scope";
 import {assertImagegenCreationScope,imagegenCreationScopeKey,ImagegenScopeError} from "./creation-scope";
 type Parent={status:string;result:ImagegenResult;fingerprint:string;children:Record<string,{state:"starting"|"submitted"|"done";jobId?:string;ids?:string[]}>};
 const jobs=new DurableImageJobs<Parent>("imagegen");

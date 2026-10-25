@@ -5,7 +5,7 @@ import type {PoolClient} from "pg";
 import type {ArtworkRecord} from "./types";
 import {creationProvenance} from "@/lib/artwork-provenance";
 import {currentArtworkCreation} from "@/lib/artwork-provenance-context";
-import {currentCreationContext} from "@/lib/saas/creation-context";
+import {currentCreationContext} from "@/lib/saas/creation-scope";
 import {creationLinkTx,addCreationAssetTx,creationEvidenceTx} from "@/lib/saas/creation-writer";
 
 // Persist results and their best-effort creation evidence on the caller's transaction.

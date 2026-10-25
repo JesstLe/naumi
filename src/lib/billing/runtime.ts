@@ -8,7 +8,7 @@ import {createConfigRuntime} from "./catalog";
 import {createBillingService} from "./service";
 import {BillingError,type BillingConfig,type ConfigSnapshot} from "./types";
 import {supabaseEnabled} from "../auth-mode";
-import {multiUserEnabled} from "../native-auth";
+import {multiUserEnabled} from "@/lib/accounts/mode";
 import type {PoolClient} from "pg";
 
 let runtime: ReturnType<typeof assemble> | undefined;

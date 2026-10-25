@@ -1,5 +1,5 @@
 import "server-only";
-import {currentCreationContext,frozenCreationScope,type CreationContext} from "../saas/creation-context";
+import {currentCreationContext,frozenCreationScope,type CreationContext} from "@/lib/saas/creation-scope";
 
 export class ImagegenScopeError extends Error {
  readonly code="IMAGEGEN_SCOPE_CONFLICT";readonly status=409;

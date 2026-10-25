@@ -5,7 +5,7 @@ import {getPool} from "@/platform/db/pool";
 import {ensureMediaSchema,registerMediaAsset} from "../media-assets";
 import {writeStoredObject,readManagedObject} from "../storage";
 import {decodeImagegenPixels} from "./pixels";
-import {bindCreationMedia} from '../saas/creation-context';
+import {bindCreationMedia} from "@/lib/saas/creation-access";
 /** Private original references, including masks; not gallery artworks or arbitrary URLs. */
 export async function saveImagegenInput(bytes:Buffer,owner:string){
  const decoded=await decodeImagegenPixels(bytes),id=randomUUID(),meta=await sharp(bytes).metadata();

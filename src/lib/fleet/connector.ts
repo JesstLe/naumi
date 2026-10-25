@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {adjustUserCredits} from "@/lib/billing/grants";
 import {getPool} from "@/platform/db/pool";
 import {getUser} from "@/lib/accounts/session";
-import { saveFeaturePolicy, userFeaturePolicy, FeatureAccessError } from '@/lib/feature-access/server';
+import {saveFeaturePolicy,userFeaturePolicy,FeatureAccessError} from "@/lib/feature-access/repository";
 import { BillingError } from '@/lib/billing/types';
 import { operationSchema, commandSchema, canonical, digest, centralUrl, verifyCommand, resultSchema, statusSchema, type FleetCommand, type FleetResult, type SignedFleetCommand } from './contracts';
 import { ensureFleetSchema } from './server';

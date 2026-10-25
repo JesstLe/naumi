@@ -8,7 +8,7 @@ import {quoteForActor,quoteForImagegenStep} from "../billing/quotation";
 import {withModelOperation} from "../model-config/requests";
 import {withBiModelContext} from "@/lib/bi/context";
 import {withArtworkCreation} from "../artwork-provenance-context";
-import {currentCreationContext,withFrozenCreation} from "../saas/creation-context";
+import {currentCreationContext,withFrozenCreation} from "@/lib/saas/creation-scope";
 import {prepareOriginalCreationInput} from "../saas/creation-writer";
 import {ensureCreationSchema} from "../saas/creation-schema";
 import {TeamError} from "../teams/server";

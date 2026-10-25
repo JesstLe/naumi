@@ -2,7 +2,7 @@ import 'server-only';
 import { getPool } from "@/platform/db/pool";
 import { enterpriseList, enterpriseManaged } from '@/lib/enterprise/server';
 import { allows } from '@/lib/feature-access/catalog';
-import { userFeaturePolicy } from '@/lib/feature-access/server';
+import {userFeaturePolicy} from "@/lib/feature-access/repository";
 import { grantStatus, teamEntryAccess } from './grants';
 import type { EntryStatus, TeamEntryDiscovery } from './entry-contract';
 

@@ -10,7 +10,7 @@ import {enterpriseMediaResponse} from '@/lib/enterprise/media-response';
 import {z} from 'zod';
 import {listLegacyCreations,legacyCreationDetail,legacyCreationAsset} from './legacy-creations';
 import {creationPlaybackToken,readCreationPlaybackToken,platformPlaybackToken,platformPlaybackAllowed} from './creation-playback';
-import {userFeaturePolicy} from '@/lib/feature-access/server';
+import {userFeaturePolicy} from "@/lib/feature-access/repository";
 import {allows} from '@/lib/feature-access/catalog';
 function creationFailure(error:unknown){return error instanceof TeamError?teamJson({error:error.message,code:`CREATION_${error.status}`},error.status):teamJson({error:'创作证据暂不可读取，请重试',code:'CREATION_UNAVAILABLE'},503);}
 export async function creationReader(request:Request,enterprise:boolean):Promise<CreationReader|NextResponse>{

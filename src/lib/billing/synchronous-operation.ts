@@ -11,7 +11,7 @@ import {fingerprint} from "./fingerprint";
 import type {ResolvedImageQuality} from "../image-quality";
 import {currentModelExecution} from "../model-config/context";
 import {excludeImportedHistory} from "../staging-history";
-import {currentCreationContext,withFrozenCreation} from "../saas/creation-context";
+import {currentCreationContext,withFrozenCreation} from "@/lib/saas/creation-scope";
 import {claimCreation,finishCreation} from "../saas/creation-writer";
 import {TeamError} from "../teams/server";
 
