@@ -5,8 +5,8 @@ import { configuredVideoProviders } from "@/lib/video/providers/config";
 import { videoCostPublic } from "@/lib/video/service";
 import {billingErrorResponse} from "@/lib/billing/request";
 import { modelConfigurationEnabled } from "@/lib/model-config/availability";
-import { getModelRuntime } from "@/lib/model-config/server";
-import { publicModelCatalog } from "@/lib/model-config/runtime";
+import {readPublishedModelSnapshot} from "@/lib/model-config/published";
+import {publicModelCatalog} from "@/lib/model-config/public-catalog";
 import { freezeManagedVideoCapability } from "@/lib/video/frozen-capability";
 import { legacyVideoView } from "@/lib/video/model-definition";
 
@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
  try{
   if (await modelConfigurationEnabled()) {
-    const snapshot = await (await getModelRuntime()).current();
+    const snapshot = await readPublishedModelSnapshot();
     const catalog = publicModelCatalog(snapshot, "video", "video.generate");
     const models = await Promise.all(catalog.models.map(async publicModel => {
       const m = snapshot.config.publicModels.find(m => m.id === publicModel.id)!;

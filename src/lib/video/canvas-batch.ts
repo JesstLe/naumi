@@ -6,7 +6,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getPool } from "@/platform/db/pool";
 import { encryptAtRest, decryptAtRest } from "../settings";
-import { canonicalConfig } from "../model-config/repository";
+import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 import { ModelConfigError } from "../model-config/types";
 import { getVideoNode, ensureVideoNodeSchema, saveVideoNodeTx } from "../canvas/video-node-repository";
 import { videoNodeIdSchema, type CanvasVideoNode } from "../canvas/video-node-schema";

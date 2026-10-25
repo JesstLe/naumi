@@ -9,7 +9,7 @@ import {type VideoTaskRow} from "@/lib/video/task-types";
 import {getPool} from "@/platform/db/pool";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {createCredentialStore} from "../model-config/credentials";
-import {canonicalConfig} from "../model-config/repository";
+import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 import {ModelConfigError} from "../model-config/types";
 import {decryptAtRest} from "../settings";
 import {assertComfyEndpointAllowed} from "../comfyui/client";

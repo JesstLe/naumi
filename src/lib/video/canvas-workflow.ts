@@ -8,7 +8,7 @@ import {listArtworksByIds} from "@/lib/artworks/repository";
 import {ModelConfigError} from "../model-config/types";
 import {scheduleVideoWorkflow,ensureVideoWorkflowSchema,authorizeWorkflowInputs,validateVideoWorkflow} from "./workflow";
 import {workflowVideoRequestSchema,type VideoWorkflowPlan} from "./workflow-schema";
-import {canonicalConfig} from "../model-config/repository";
+import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 import {freezeVideoWorkflow,type FrozenWorkflowStage} from "./workflow-freeze";
 import type {VideoReference} from "./types";
 export const canvasWorkflowSchema=z.strictObject({id:z.uuid(),projectKey:videoProjectKeySchema,nodes:z.array(z.strictObject({id:videoNodeIdSchema,revision:z.number().int().nonnegative(),billingConfirmation:z.strictObject({version:z.number().int().positive(),credits:z.number().finite().nonnegative()}).optional()})).min(1).max(100).refine(nodes=>new Set(nodes.map(node=>node.id)).size===nodes.length,"节点不能重复")});
@@ -30,7 +30,7 @@ export async function buildCanvasVideoWorkflow(actor:string,raw:unknown):Promise
 export async function scheduleCanvasVideoWorkflow(actor:string,raw:unknown,prepared?:PreparedCanvasVideoWorkflow,signal?:AbortSignal){const input=canvasWorkflowSchema.parse(raw);
   // Stable node-list operation survives later revisions; the persisted run owns the frozen plan.
   await ensureVideoWorkflowSchema();const {getPool} = await import("@/platform/db/pool");
-  {const row=(await getPool().query("SELECT email,canvas_intent_digest,creation_scope FROM app_video_workflow_runs WHERE id=$1",[input.id])).rows[0];if(row){assertWorkflowCreationScope(row.creation_scope,actor);const {canonicalConfig}=await import("../model-config/repository"),{createHash}=await import("node:crypto"),digest=createHash("sha256").update(canonicalConfig(input)).digest("hex");if(row.email!==actor||row.canvas_intent_digest!==digest)throw new ModelConfigError("WORKFLOW_OPERATION_CONFLICT","制作链编号已用于另一请求",409);const {resumeVideoWorkflow}=await import("./workflow"),run=await resumeVideoWorkflow(input.id,actor);return {runId:input.id,taskIds:run.nodes.map(node=>node.taskId).filter((id):id is string=>!!id)};}}
+  {const row=(await getPool().query("SELECT email,canvas_intent_digest,creation_scope FROM app_video_workflow_runs WHERE id=$1",[input.id])).rows[0];if(row){assertWorkflowCreationScope(row.creation_scope,actor);const {canonicalConfig}=await import("../model-config/snapshot-value"),{createHash}=await import("node:crypto"),digest=createHash("sha256").update(canonicalConfig(input)).digest("hex");if(row.email!==actor||row.canvas_intent_digest!==digest)throw new ModelConfigError("WORKFLOW_OPERATION_CONFLICT","制作链编号已用于另一请求",409);const {resumeVideoWorkflow}=await import("./workflow"),run=await resumeVideoWorkflow(input.id,actor);return {runId:input.id,taskIds:run.nodes.map(node=>node.taskId).filter((id):id is string=>!!id)};}}
   if(prepared&&canonicalIntent(prepared.intent)!==canonicalIntent(input))throw new ModelConfigError("WORKFLOW_OPERATION_CONFLICT","预检制作链与提交不同",409);
   await bindWorkflowCreationProject(actor,input.projectKey);const plan=prepared?.plan||await buildCanvasVideoWorkflow(actor,input);return scheduleVideoWorkflow(actor,plan,input,prepared?.frozen,signal);
 }

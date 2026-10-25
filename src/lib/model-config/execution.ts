@@ -7,7 +7,7 @@ import { requestedFeatureModel } from "./selection-policy";
 import type { ConfigSnapshot } from "../billing/types";
 import type { createCredentialStore } from "./credentials";
 import type { ModelRuntime } from "./runtime";
-import { simulateModel } from "./runtime";
+import {simulateModel} from "@/lib/model-config/simulation";
 import { MODEL_BINDINGS, type ModelBinding } from "./bindings";
 import { validateModelConfig, type ValidationOptions } from "./schema";
 import { ModelConfigError, type ModelFacts, type ModelSnapshot, type Modality, type ModelProvider } from "./types";

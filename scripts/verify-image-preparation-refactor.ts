@@ -5,6 +5,7 @@ import {mkdtemp,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import sharp from "sharp";
+import {Client,Pool} from "pg";
 import {createModelFixture} from "./model-config-fixture";
 
 async function main(){
@@ -36,12 +37,13 @@ async function main(){
     const {USER_COOKIE,signUserSession}=await import("../src/lib/native-auth"),cookie=`${USER_COOKIE}=${signUserSession(owner,Date.now())}`;
     const request=(path:string,body:unknown)=>new Request("http://internal"+path,{method:"POST",headers:{cookie,"content-type":"application/json"},body:JSON.stringify(body)});
     const facts={feature:"canvas.image" as const,quantity:1,modelId:"image-a",quality:"medium",resolution:"1K",ratio:"1:1"};
-    const originalCurrent=admin.repo.current.bind(admin.repo);let modelReads=0;
-    admin.repo.current=async()=>{modelReads++;return originalCurrent();};
+    const originalCurrent=admin.repo.current.bind(admin.repo),originalQuery=Client.prototype.query;let modelReads=0;
+    const observeQuery=function(this:Client,...args:unknown[]){if(/FROM app_model_config_state s\s+(?:LEFT\s+)?JOIN app_model_config_versions v ON v.version=s.active_version/.test(String(args[0])))modelReads++;return Reflect.apply(originalQuery,this,args);} as typeof Client.prototype.query;
+    Client.prototype.query=observeQuery;
     const baseRequest=globalThis.Request;let fabricated=0;
     (globalThis as any).Request=new Proxy(baseRequest,{construct(target,args,newTarget){fabricated++;return Reflect.construct(target,args,newTarget);}});
     let q;
-    try{q=await quoteForActor(owner,facts);}finally{globalThis.Request=baseRequest;admin.repo.current=originalCurrent;}
+    try{q=await quoteForActor(owner,facts);}finally{globalThis.Request=baseRequest;Client.prototype.query=originalQuery;}
     check(q.requestedCredits,3,"normal quote");check(fabricated,baseline?1:0,"typed quote never fabricates Request");check(modelReads,baseline?2:1,"one model snapshot per new quote");
     const httpQuote=await quoteForRequest(request("/api/billing/quote",facts),facts);check(httpQuote,q,"HTTP and typed quote share full contract");
     const malformed={...facts,quality:"standard"};const defaultQuote=await quoteForActor(owner,malformed);
@@ -61,8 +63,8 @@ async function main(){
     let inside:any;await withModelRequest(request("/api/generate-image",{prompt:"fixture",origin:"canvas",model:"image-a",quality:"medium"}),async()=>{inside=await quoteForActor(owner,{...facts,modelId:"image-b"});});
     check([inside.facts.modelId,inside.requestedCredits],baseline?["image-a",3]:["image-b",9],"explicit selected model wins over unrelated enclosing scope");
     // Reusing an explicitly supplied model snapshot performs no repeated current reads.
-    if(!baseline){const models=await originalCurrent();modelReads=0;admin.repo.current=async()=>{modelReads++;throw Error("current snapshot must not be reread");};
-      try{await runExecutionBundle({frozen:{modelVersion:models.version,billingVersion:pricing.version},billing:pricing,models},()=>quoteForActor(owner,facts));check(modelReads,0,"prepared pair reused");}finally{admin.repo.current=originalCurrent;}
+    if(!baseline){const models=await originalCurrent();modelReads=0;Client.prototype.query=observeQuery;admin.repo.current=async()=>{throw Error("current snapshot must not be reread");};
+      try{await runExecutionBundle({frozen:{modelVersion:models.version,billingVersion:pricing.version},billing:pricing,models},()=>quoteForActor(owner,facts));check(modelReads,0,"prepared pair reused");}finally{admin.repo.current=originalCurrent;Client.prototype.query=originalQuery;}
     }
     check(supplier,0,"preparation is readonly: no supplier");check((await db.getPool().query("SELECT count(*)::int n FROM app_image_jobs")).rows[0].n,0,"preparation creates no job");
     const raw=imagegenRequestSchema.parse({version:1,operationId:randomUUID(),entry:"canvas",mode:"generate",prompt:"draw another bottle",modelId:"image-a",parameters:{quality:"medium",resolution:"1K",ratio:"1:1"}});
@@ -97,8 +99,12 @@ async function main(){
     const publish=async(config:typeof models.config)=>{const current=await originalCurrent(),d=await f.repo.draft("fixture"),s=await f.repo.saveDraft({id:d.id,expectedRevision:d.revision,config,actor:"fixture"}),p=await f.repo.stage({id:randomUUID(),draftId:s.id,expectedRevision:s.revision,expectedVersion:current.version,actor:"fixture",reason:"mid-quote publication"});return f.repo.markApplied(p.id,p.digest);};
     const beforeConfig=structuredClone((await f.repo.current()).config);beforeConfig.business={...beforeConfig.business,"tool.retouch":{enabled:true,defaultModelId:"image-a",options:[{modelId:"image-a",enabled:true,sort:1,unit:"image",pricing:{mode:"cny-fixed",amountMicros:"30000",creditsPerCnyMicros:"100000000",rounding:"ceil"}}]}};
     const beforeSnapshot=await publish(beforeConfig),afterConfig=structuredClone(beforeConfig);afterConfig.business!["tool.retouch"]!.options[0].pricing={mode:"cny-fixed",amountMicros:"90000",creditsPerCnyMicros:"100000000",rounding:"ceil"};
-    let raceReads=0,afterVersion=0;admin.repo.current=async()=>{raceReads++;const value=await originalCurrent();if(raceReads===1)afterVersion=(await publish(afterConfig)).version;return value;};
-    let raced;try{raced=await quoteForActor(owner,{...facts,feature:"tool.retouch"});}finally{admin.repo.current=originalCurrent;}
+    const originalPoolQuery=Pool.prototype.query;
+    let raceReads=0,afterVersion=0,publishing=false;Pool.prototype.query=function(this:Pool,...args:unknown[]){
+      if(!publishing&&/FROM app_model_config_state s\s+(?:LEFT\s+)?JOIN app_model_config_versions v ON v.version=s.active_version/.test(String(args[0]))){raceReads++;const pending=Reflect.apply(originalPoolQuery,this,args);if(raceReads===1)return pending.then(async(value:unknown)=>{publishing=true;try{afterVersion=(await publish(afterConfig)).version;}finally{publishing=false;}return value;});return pending;}
+      return Reflect.apply(originalPoolQuery,this,args);
+    } as typeof Pool.prototype.query;
+    let raced;try{raced=await quoteForActor(owner,{...facts,feature:"tool.retouch"});}finally{Pool.prototype.query=originalPoolQuery;}
     check(raceReads,baseline?2:1,"mid-publication snapshot reads");check(raced.requestedCredits,baseline?9:3,"price uses the selected snapshot, not next publication");check(raced.modelVersion,baseline?afterVersion:beforeSnapshot.version,"model version and selected snapshot consistent");check(supplier,2,"registry publication test never generates");
     console.log(`IMAGE_PREPARATION_REFACTOR=PASS mode=${baseline?"BASELINE":"MODIFIED"} checks=${checks} MODEL_READS=${baseline?2:1} SYNTHETIC_REQUESTS=${baseline?1:0} MID_PUBLICATION_PRICE=${baseline?9:3} SHARED_QUALITY=${baseline?"LEGACY_ONLY":"HTTP_CANVAS_AGENT_WORKBENCH"} SELECTED_MODEL=${baseline?"SCOPE_OVERRIDES":"EXPLICIT"} PREPARED_EXECUTION=${baseline?0:1} OLD_PLAN=DELIVERED ORIGINAL_PRICE=3 CURRENT_PRICE=17 SUPPLIER_CALLS=2 CONSUME_REPLAY=0 REAL_PG=1 EXTERNAL=0`);
   }finally{if(db){await(await import("../src/lib/imagegen/coordination-pool")).closeImageCoordinationPool();await db.getPool().end();}await f.cleanup();await rm(media,{recursive:true,force:true});console.log("PREPARATION_CLEANUP=PASS SCHEMA_DROPPED=1 POOLS_CLOSED=1 LOOPBACK_CLOSED=1 MEDIA_REMOVED=1");}

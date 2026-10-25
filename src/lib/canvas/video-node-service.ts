@@ -6,7 +6,7 @@ import {getVideoTask} from "@/lib/video/task-repository";
 import {getPool} from "@/platform/db/pool";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {type ArtworkRecord} from "@/lib/artworks/types";
-import {canonicalConfig} from "../model-config/repository";
+import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 import {publicVideoTaskSnapshot} from "../video/task-snapshot";
 import {importVideoAsset} from "../video/assets";
 import {storageKeyFromManagedUrl} from "../storage";

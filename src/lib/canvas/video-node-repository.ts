@@ -3,7 +3,7 @@ import {createHash} from "node:crypto";
 import type {PoolClient} from "pg";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
-import {canonicalConfig} from "../model-config/repository";
+import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 import {ModelConfigError} from "../model-config/types";
 import type {CanvasVideoNode,VideoNodeWrite} from "./video-node-schema";
 let ready:Promise<void>|undefined;

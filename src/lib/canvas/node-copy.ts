@@ -8,7 +8,7 @@ import {ensureVideoNodeSchema,saveVideoNodeTx} from "./video-node-repository";
 import {authorizeVideoProject,authorizeNodeInputs,listVideoNodes} from "./video-node-service";
 import type {CanvasVideoNode} from "./video-node-schema";
 import {ModelConfigError} from "../model-config/types";
-import {canonicalConfig} from "../model-config/repository";
+import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 
 import {nodeCopyRequest,type CanvasNodeCopyInput,type CanvasNodeCopyResult as CopyResult} from "./node-copy-contract";
 export {nodeCopyRequest} from "./node-copy-contract";

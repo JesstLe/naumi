@@ -1,5 +1,7 @@
+import {canonicalConfig,modelConfigDigest,decodeModelSnapshot} from "./snapshot-value";
+export {canonicalConfig,modelConfigDigest} from "./snapshot-value";
 import "server-only";
-import { createHash, createHmac, randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { settingsSecret } from "../settings-secret";
 import { registerProviderCapacities } from "./capacity";
@@ -7,13 +9,6 @@ import {ensureVideoDefaultsSchema,freezeManagedVideoCapability} from "../video/f
 import {ensureSupplierVideoSchema} from "../supplier-models/video-access";
 import { ensureModelSchema, validateModelConfig, type ValidationOptions } from "./schema";
 import { ModelConfigError, type ModelConfig, type ModelConfigRepository, type ModelDraft, type ModelPublication, type ModelSnapshot, type PublicationPhase } from "./types";
-
-export function canonicalConfig(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalConfig).join(",")}]`;
-  if (value && typeof value === "object") return `{${Object.entries(value).filter(([, v]) => v !== undefined).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([k, v]) => `${JSON.stringify(k)}:${canonicalConfig(v)}`).join(",")}}`;
-  return JSON.stringify(value);
-}
-export function modelConfigDigest(config: ModelConfig): string { return createHash("sha256").update(canonicalConfig(config)).digest("hex"); }
 function requireActor(actor: string) { if (typeof actor !== "string" || !actor.trim() || actor.length > 254) throw new ModelConfigError("INVALID_CONFIG", "操作者无效"); }
 function requireUUID(id: string) { if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new ModelConfigError("INVALID_CONFIG", "操作编号无效"); }
 function requireVersion(version: number) { if (!Number.isSafeInteger(version) || version < 1) throw new ModelConfigError("INVALID_CONFIG", "配置版本无效"); }
@@ -74,12 +69,7 @@ export function createModelRepository(deps: ValidationOptions & { pool: Pool; in
     try { await tx.query("BEGIN"); if (global) await tx.query("SELECT pg_advisory_xact_lock(hashtext('naumi-model-config'))"); const result = await run(tx); await tx.query("COMMIT"); return result; }
     catch (error) { await tx.query("ROLLBACK"); throw error; } finally { tx.release(); }
   };
-  const snapshot = (row: any): ModelSnapshot => {
-    if (!row) throw new ModelConfigError("CONFIG_UNAVAILABLE", "模型配置版本不存在", 503);
-    const config = validateModelConfig(row.config, deps); const version = Number(row.version);
-    if (!Number.isSafeInteger(version) || version < 1 || row.digest !== modelConfigDigest(config)) throw new ModelConfigError("CONFIG_UNAVAILABLE", "模型配置摘要不一致", 503);
-    return { version, digest: row.digest, config };
-  };
+  const snapshot = (row: any): ModelSnapshot => decodeModelSnapshot(row,deps);
   const selectCurrent = async (sql: Pool | PoolClient) => (await sql.query("SELECT v.* FROM app_model_config_state s JOIN app_model_config_versions v ON v.version=s.active_version WHERE singleton=true")).rows[0];
   const selectPublication = async (sql: Pool | PoolClient, id: string) => (await sql.query("SELECT p.*,v.digest FROM app_model_publications p JOIN app_model_config_versions v ON p.version=v.version WHERE p.id=$1", [id])).rows[0];
   const repo: ModelConfigRepository = {

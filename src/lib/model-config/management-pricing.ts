@@ -8,7 +8,7 @@ import {ModelConfigError,type ModelSnapshot} from "./types";
 import {businessBillingSnapshot,freezeImagePresetQuote} from "./business-billing";
 import {managedModelCreditRule,MANAGED_MODEL_CREDIT_PREFIX,type ManagedModelCreditPricing} from "./credit-overrides";
 import type {ManagedModelRow,ManagedModelCreditGrid} from "./management";
-import {publicModelCatalog} from "./runtime";
+import {publicModelCatalog} from "@/lib/model-config/public-catalog";
 import {selectedImagePreset,effectiveImageParameters} from "./image-preset";
 import {imageModelDisplayId} from "../image-model-routing";
 

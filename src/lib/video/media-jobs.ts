@@ -11,7 +11,7 @@ import {type ArtworkRecord} from "@/lib/artworks/types";
 import {canReadMedia,getMediaAsset,registerMediaAsset} from "../media-assets";
 import {readManagedObject,storageKeyFromManagedUrl,writeStoredObject} from "../storage";
 import {ModelConfigError} from "../model-config/types";
-import {canonicalConfig} from "../model-config/repository";
+import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 import {getVideoNode,ensureVideoNodeSchema} from "../canvas/video-node-repository";
 import {authorizeVideoProject} from "../canvas/video-node-service";
 import {mediaJobRequestSchema,type MediaJobRequest,type MediaJobOutput,type MediaProbe,type MediaJobStatus,type PublicMediaJob} from "./media-job-schema";

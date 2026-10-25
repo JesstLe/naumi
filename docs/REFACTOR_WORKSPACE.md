@@ -32,6 +32,8 @@
 
 ## 开发约定
 
+2026-10-25 R4B1：已发布模型读取与管理组装分离，纯目录/模拟与legacy目录分别归属；原模型8动态/6静态环拆开，重型repository生产静态消费者14→1，reader/catalog到server2边归零。真正冷进程PG只读75→80检查通过，管理token故障不拖已发布读取、历史/坏pointer不seed、空库兼容初始化回滚重试与HTTP保持；原preparation用真实SQL观察器新旧45通过，相关管理/发布/frozen-source16/账务/195登录/任务/内容/商业/持久化/tsc/lint通过。见 [R4B1](changes/2026-10-25-model-read-boundary-r4b1.md)。同步后第1模块；真正空库first-use兼容adapter仍在，显式启动和其余热路径DDL、身份7环、R5/R6继续，不合main、不部署。
+
 2026-10-25 R4A7：旧db最后37声明和35消费者/67绑定迁至卡密、License、订单、后台账号与旧预占owner；db905→51行纯兼容出口，生产静态消费者35→0，223原导出名保持，新owner无环。完整基线6/138→新版6/164（26同函数兼容检查）及原商品/赠额合同、并发单次履约、回滚、unknown不重放通过；相邻账务/195登录/任务3/226/内容7/290/持久化6/78与29/90/平台PG29与unit28/166、tsc/lint通过。见 [R4A7](changes/2026-10-25-commercial-admin-owners-r4a7.md)。本轮第3模块，收尾整合main后计数归零以DELIVERY为准；下一R4B初始化/组装，历史owner全量改绑/授权竞争与最终候选验收仍未完成，不合main、不部署。
 
 2026-10-24 R4A6：模板/缓存/导入、Agent/Genchat会话、项目、Comfy、竞品与历史流水/赠额归属迁移，82声明、36消费者/89绑定，db2361→905行、静态消费者64→35，新owner无环。Agent旧键迁移改原表同事务、Genchat跨owner覆盖与HTTP虚假成功修正、竞品完成后先释放连接再刷新余额；完整基线7/205→新版7/290（含76兼容出口，214行为检查），相邻Agent/钱包/赠额/195登录/任务3/226/持久化6/78与29/90、全项目tsc和本轮lint通过。见 [R4A6](changes/2026-10-24-content-session-owners-r4a6.md)。同步后第2模块；剩余db商业/管理用例、R4B热路径DDL/组装、Genchat客户端错误状态、Worker与最终候选继续，不合main、不部署。

@@ -6,7 +6,7 @@ import {type VideoTaskRow} from "@/lib/video/task-types";
 import {getPool} from "@/platform/db/pool";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {currentModelExecution,currentExecutionBundle} from "../model-config/context";
-import {canonicalConfig} from "../model-config/repository";
+import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 import {ModelConfigError} from "../model-config/types";
 import {quoteForActor} from "../billing/quotation";
 import {assertQuotedVersion} from "../billing/request";

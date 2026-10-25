@@ -6,7 +6,7 @@ import {ensureSchema} from "@/lib/persistence/schema";
 import {addArtworksTx} from "@/lib/artworks/writer";
 import {type ArtworkRecord} from "@/lib/artworks/types";
 import {storageKeyFromManagedUrl} from "../storage";
-import {canonicalConfig} from "../model-config/repository";
+import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 import {ModelConfigError} from "../model-config/types";
 import {verifiedOwnedMedia,ensureMediaInspectionSchema} from "./media-inspection";
 import {ensureMediaSchema} from "../media-assets";

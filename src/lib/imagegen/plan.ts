@@ -14,7 +14,7 @@ import {selectImageQuality} from "../model-config/image-quality-selection";
 import {prepareImageOperation} from "../model-config/image-preparation";
 import {selectFeatureModel} from "../model-config/model-selection";
 import {selectedImagePreset} from "../model-config/image-preset";
-import {simulateModel} from "../model-config/runtime";
+import {simulateModel} from "@/lib/model-config/simulation";
 import {assertToolScope,featureDefaultModel} from "../model-config/tool-scope";
 import {MAX_GENERATION_DIMENSION,resolutionForLongSide} from "../mock-data";
 import {routeImageModel} from "../image-model-routing";

@@ -4,7 +4,7 @@ import type { ValidationOptions } from "./schema";
 import { publicUpstreamIds } from "./channel-policy";
 import { businessRoutePlan, selectedBusinessOption } from "./business";
 import { selectedImagePreset } from "./image-preset";
-import { simulateModel } from "./runtime";
+import {simulateModel} from "@/lib/model-config/simulation";
 import { imageRequestAdmission } from "../imagegen/request-admission";
 
 export const IMAGE_RESOLUTION_TIERS = ["1K", "2K", "4K"] as const;

@@ -4,7 +4,7 @@ import { ModelConfigError } from "./types";
 import { FEATURE_BINDINGS } from "./business";
 import { MODEL_BINDINGS } from "./bindings";
 import { compactImageModelOptions, imageModelDisplayId } from "../image-model-routing";
-import { publicModelCatalog } from "./runtime";
+import {publicModelCatalog} from "@/lib/model-config/public-catalog";
 import { adminConfiguredFeature } from "./selection-policy";
 import { featureDefaultModel } from "./tool-scope";
 import type { FeatureId } from "../billing/rules/registry";

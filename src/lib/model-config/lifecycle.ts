@@ -1,0 +1,41 @@
+import "server-only";
+import {dbEnabled,getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
+import {bootstrapModelConfig,readLegacyModelSources} from "./bootstrap";
+import {createCredentialStore} from "./credentials";
+import {importLegacyRouter} from "./legacy-router";
+import {createModelRepository} from "./repository";
+import {createRouterControl} from "./router-client";
+import {ensureModelSchema} from "./schema";
+import {modelTrustedOrigins} from "./environment";
+import {ModelConfigError} from "./types";
+
+let initialization:Promise<Awaited<ReturnType<typeof initialize>>>|undefined;
+async function initialize() {
+  if(!dbEnabled)throw new ModelConfigError("CONFIG_UNAVAILABLE","未配置数据库，模型管理暂不可用",503);
+  const baseUrl=process.env.NAUMI_ROUTER_MANAGEMENT_URL||"";
+  if(!baseUrl)throw new ModelConfigError("ROUTER_UNAVAILABLE","尚未配置 Router 私有管理连接",503);
+  const trustedOrigins=modelTrustedOrigins();
+  const router=createRouterControl({baseUrl,token:process.env.NAUMI_ROUTER_MANAGEMENT_TOKEN||"",envelopeSecret:process.env.MODEL_CONFIG_ENVELOPE_SECRET||"",trustedOrigins});
+  await ensureSchema();
+  const pool=getPool();await ensureModelSchema(pool);
+  const credentials=createCredentialStore(pool);
+  const initialized=(await pool.query("SELECT 1 FROM app_model_config_state WHERE singleton=true")).rowCount;
+  const discovery=initialized?undefined:await Promise.all([readLegacyModelSources(),router.legacy()]);
+  const repo=createModelRepository({pool,trustedOrigins,initialize:async tx=>{
+    if(!discovery)throw new ModelConfigError("CONFIG_UNAVAILABLE","模型初始化状态待核对",503);
+    const [sources,exported]=discovery;
+    const imported=await importLegacyRouter({exported,control:router,credentials,tx});
+    return bootstrapModelConfig({credentials,sources:{...sources,router:imported},tx,trustedOrigins});
+  }});
+  await repo.current();
+  return {repo,credentials,router,trustedOrigins,pool};
+}
+
+/** Management and legacy true-cold callers share the retryable lifecycle.
+ * Existing published reads do not call it. Retiring the remaining first-use
+ * request adapter requires the later explicit startup/deployment migration. */
+export function initializeModelRegistry() {
+  if(!initialization)initialization=initialize().catch(error=>{initialization=undefined;throw error;});
+  return initialization;
+}

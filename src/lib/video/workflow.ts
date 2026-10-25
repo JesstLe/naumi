@@ -14,7 +14,7 @@ import {createVideoGeneration,type CreateVideoInput} from "./service";
 import {authorizeVideoReferences} from "./reference-materialization";
 import {videoWorkflowPlanSchema,workflowVideoRequestSchema,type VideoWorkflowPlan,type WorkflowVideoRequest} from "./workflow-schema";
 import {getVideoNode} from "../canvas/video-node-repository";
-import {canonicalConfig} from "../model-config/repository";
+import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 import type {VideoGenerationRequest,VideoReference} from "./types";
 
 export type VideoWorkflowNodeStatus="pending"|"processing"|"completed"|"blocked"|"needs_confirmation"|"needs_attention"|"cancelled";

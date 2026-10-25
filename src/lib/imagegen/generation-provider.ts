@@ -10,7 +10,7 @@ import {toFile} from "openai";
 import {CATEGORY_IMAGES, img} from "@/lib/images";
 import {getOpenAIBaseUrl} from "@/lib/openai-base";
 import {getStyleGuide} from "@/lib/prompt-config";
-import {isOpenAIImagesEditModel} from "@/lib/image-model-catalog";
+import {isOpenAIImagesEditModel} from "@/lib/image-model-legacy-catalog";
 import {isQualityUnsupportedError} from "@/lib/image-quality";
 import {generateNewApiImage} from "@/lib/new-api-image";
 import {imageGatewayFields, ImageOperationPending, isImageGatewayModel, withImageIndex} from "@/lib/image-gateway";
