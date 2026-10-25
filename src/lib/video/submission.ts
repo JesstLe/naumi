@@ -85,7 +85,8 @@ export async function createValidatedVideo(email:string,input:CreateVideoInput,h
     const context={provider:providerConfig,profile:"gemini" as const,request};
     rejectAdvanced(context);selectWireOptions(context,GEMINI_WIRE_OPTIONS);
   }
-  const billingQuote=await quoteForActor(email,{feature:"video.generate",quantity:1,modelId,providerId,resolution:request.resolution});
+  // Customer pricing selects the frozen public alias; transport retains wire modelId.
+  const billingQuote=await quoteForActor(email,{feature:"video.generate",quantity:1,modelId:execution?.frozen.publicModelId||modelId,providerId,resolution:request.resolution});
   assertQuotedVersion(input.billingConfirmation||{},billingQuote);
   const taskId=`vid-${randomUUID()}`,cost=billingQuote.requestedCredits;
   const {workflowManifest,...stableRequest}=request;

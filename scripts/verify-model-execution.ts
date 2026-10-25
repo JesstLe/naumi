@@ -196,6 +196,8 @@ async function main() {
     const created = await videoService.createVideoGeneration(email, input);
     const stored = await globalDb.getVideoTask(email, created.taskId);
     assert.ok(stored?.upstreamId); assert.equal((stored.parameters.modelExecutions as any).modelVersion, second.version);
+    assert.equal(stored.model, "wire-video-two", "Supplier transport keeps its frozen wire model");
+    assert.equal(stored.billingQuote?.facts.modelId, "video-a", "Customer pricing uses the frozen public alias, not the supplier wire model");
     assert.equal(videoService.publicVideoTaskView(stored).model, "video-a", "Public task polling must retain the selected alias without disclosing the supplier wire model");
     assert.equal(videoService.publicVideoTaskView(stored).providerId, "managed-video");
     assert.ok(!JSON.stringify(stored).includes("fixture-video-rotated"));
@@ -265,7 +267,10 @@ async function main() {
       assert.equal(q.facts.providerId, "p1");
     });
     assert.equal(calls.length, beforeQuotes, "Quotes must not call any supplier");
-    await assert.rejects(quoteForRequest(new Request("http://fixture.test/api/billing/quote", { headers: { cookie, "x-naumi-model-version": String(first.version) } }), { feature: "image.generate", quantity: 1 }), (e: any) => e.code === "MODEL_CHANGED");
+    const refreshedQuote = await quoteForRequest(new Request("http://fixture.test/api/billing/quote", { headers: { cookie, "x-naumi-model-version": String(first.version) } }), { feature: "image.generate", quantity: 1 });
+    assert.equal(refreshedQuote.modelVersion, rotateStaged.version, "A stale image client header does not restore a MODEL_CHANGED confirmation gate");
+    assert.equal(refreshedQuote.facts.modelId, "image-a");
+    assert.equal(calls.length, beforeQuotes, "Refreshing the server quote does not submit generation");
     const { signAcceptedModelContext } = await import("../src/lib/model-config/accepted-context");
     const { withModelRequest } = await import("../src/lib/model-config/requests");
     const { currentModelExecution } = await import("../src/lib/model-config/context");

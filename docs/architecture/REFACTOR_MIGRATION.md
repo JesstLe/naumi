@@ -1,5 +1,7 @@
 # 渐进迁移与集中验收台账
 
+R4B3最新进展（2026-10-25）：实际执行与管理装配4条引用归零，原executor/prepare/发布/计费算法保持；冻结模型/凭据/计费/投影只读原版本。完整旧6/57→新6/71、实际HTTP缺token旧400→新200、冻结原6/current99、lease故障重试通过；相邻模型发布/执行、preparation45、读8/80、身份8/171、视频双入口16、账务/195登录与tsc/14文件lint通过。发现旧视频wire/public报价混用，完整旧基线复现后最小修正；旧MODEL_CHANGED断言按去确认协议更新，未恢复门槛。见 [R4B3记录](../changes/2026-10-25-execution-assembly-r4b3.md)。第3模块同步以DELIVERY为准；显式启动/其它热路径ensure、20/12环与R5/R6继续，不代表全站验收。
+
 R4B2最新进展（2026-10-25）：原生模式、权限持久化、唯一创作scope和项目/媒体访问分别归属，HTTP适配保留同函数兼容出口。25声明和45生产消费者90绑定迁移，339原声明保持；身份/账务/创作7环拆开，HTTP context静态消费者47→21，新owner无环。完整旧8/168→新8/171、195实际登录、权限、钱包/赠额与creation writer、tsc/54文件lint通过；同旧新版均触发的fixture错误预期及TS问题修正留证，无生产逻辑变更。见 [R4B2记录](../changes/2026-10-25-identity-creation-boundaries-r4b2.md)。同步后第2模块；显式Web/Worker生命周期/其余热路径ensure、视频20/恢复12环、R5/R6继续。
 
 日期：2026-10-24。关联：[主方案](../REFACTOR_ARCHITECTURE.md)、[源码证据](2026-10-24-current-state.md)。

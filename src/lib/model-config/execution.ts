@@ -22,7 +22,7 @@ import {type FrozenVideoCapability} from "../video/frozen-capability-schema";
 
 export type ExecutionModel = { imageUpstreamIds?: string[]; video?: FrozenVideoCapability; requestedParameters?: import("./image-preset").ImageParameters; feature?: string; modelVersion: number; billingVersion: number; modelDigest: string; publicModelId: string; binding: string; modality: Modality; target: { type: "upstream" | "pool"; id: string }; credentialRef?: string; routerDigest?: string; facts?: ModelFacts };
 export type ExecutionConnection = { providerId: string; protocol: string; baseUrl: string; apiKey: string; wireModel: string; timeoutMs: number; credentialRef?: string; maxConcurrent?: number; options?: ModelProvider["options"] };
-type Dependencies = ValidationOptions & { runtime: Pick<ModelRuntime, "byVersion" | "prepareExecution"> & Partial<Pick<ModelRuntime, "validateExecutionProjection">>; credentials: ReturnType<typeof createCredentialStore>; billingByVersion?:(version:number)=>Promise<ConfigSnapshot>; gateway: () => { baseUrl: string; apiKey: string } };
+type Dependencies = ValidationOptions & { runtime: Pick<ModelRuntime, "byVersion" | "prepareExecution"> & Partial<Pick<ModelRuntime, "validateExecutionProjection">>; credentials: Pick<ReturnType<typeof createCredentialStore>,"read">; billingByVersion?:(version:number)=>Promise<ConfigSnapshot>; gateway: () => { baseUrl: string; apiKey: string } };
 import {executionSchema,imageUpstreamIdsSchema} from "./execution-contract";
 export function createModelExecutor(deps: Dependencies) {
   const describe = async (raw: ExecutionModel): Promise<ModelExecutionScope> => {
@@ -169,13 +169,13 @@ export function createModelExecutor(deps: Dependencies) {
 }
 
 export async function getModelExecutor() {
-  const { getModelAdministration } = await import("./server");
-  const admin = await getModelAdministration();
-  return createModelExecutor({ runtime: admin.runtime,billingByVersion:version=>admin.billing.byVersion(version), credentials: admin.credentials, trustedOrigins: admin.trustedOrigins,
+  const {getModelExecutionServices}=await import("./execution-services");
+  const services=getModelExecutionServices();
+  return createModelExecutor({ runtime:services.runtime,billingByVersion:services.billing.byVersion,credentials:services.credentials,trustedOrigins:services.trustedOrigins,
     gateway: () => ({ baseUrl: process.env.NAUMI_ROUTER_GENERATION_URL || "", apiKey: process.env.NAUMI_ROUTER_GENERATION_TOKEN || "" }) });
 }
 export async function withExecutionModel<T>(model: ExecutionModel, run: () => Promise<T>) { return (await getModelExecutor()).run(model, run); }
 export async function withFrozenExecutionBundle<T>(bundle: ExecutionBundle, run: () => Promise<T>) {
-  const {getBillingRuntime} = await import("@/lib/billing/runtime");
-  return (await getModelExecutor()).runBundle(bundle, await (await getBillingRuntime()).config.byVersion(bundle.billingVersion), run);
+  const {readFrozenBillingSnapshot}=await import("../billing/frozen-config");
+  return (await getModelExecutor()).runBundle(bundle,await readFrozenBillingSnapshot(bundle.billingVersion),run);
 }

@@ -1,6 +1,7 @@
+import {billingSnapshotFromRow as snapshot} from "./frozen-config";
 import "server-only";
 import type { Pool, PoolClient } from "pg";
-import { BillingError, type BillingConfig, type ConfigRuntime, type ConfigSnapshot } from "./types";
+import { BillingError, type BillingConfig, type ConfigRuntime } from "./types";
 import { validateBillingConfig } from "./rules/schema";
 import { ensureBillingSchema } from "./schema";
 import { fingerprint } from "./fingerprint";
@@ -16,12 +17,7 @@ type Row = {
     actor: string;
     request_fingerprint: string;
 };
-function snapshot(row: Row): ConfigSnapshot {
-    const version = Number(row.version);
-    if (!Number.isSafeInteger(version) || version < 1)
-        throw new BillingError("CONFIG_UNAVAILABLE", "计费配置版本无效", 503);
-    return { version, config: validateBillingConfig(row.config) };
-}
+
 function validateWrite(id: string, actor: string, reason: string, version: number) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) || !actor || actor.length > 254 || !reason.trim() || reason.length > 500 || !Number.isSafeInteger(version) || version < 1)
         throw new BillingError("INVALID_CONFIG", "配置发布参数无效", 400);

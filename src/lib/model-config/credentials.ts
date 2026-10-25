@@ -1,7 +1,8 @@
+import {createCredentialReader} from "./credential-reader";
 import "server-only";
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
-import { decryptAtRest, decryptFromClient, encryptAtRest } from "../settings";
+import { decryptFromClient, encryptAtRest } from "../settings";
 import { ensureModelSchema } from "./schema";
 import { ModelConfigError } from "./types";
 
@@ -22,13 +23,6 @@ export function createCredentialStore(pool: Pool) {
       try { plain = await decryptFromClient(input.ciphertext); } catch { throw new ModelConfigError("INVALID_CREDENTIAL", "凭据密文无法验证"); }
       return importPlain({ providerId: input.providerId, plain, actor: input.actor });
     },
-    async read(id: string, providerId: string) {
-      if (!/^[0-9a-f-]{36}$/i.test(id)) throw new ModelConfigError("CREDENTIAL_UNAVAILABLE", "供应商凭据不可用", 503);
-      await ensureModelSchema(pool);
-      const row = (await pool.query("SELECT key_enc FROM app_model_credentials WHERE id=$1 AND provider_id=$2", [id, providerId])).rows[0];
-      const value = row && decryptAtRest(row.key_enc);
-      if (!value) throw new ModelConfigError("CREDENTIAL_UNAVAILABLE", "供应商凭据不可用", 503);
-      return value;
-    },
+    read:createCredentialReader(pool,()=>ensureModelSchema(pool)).read,
   };
 }

@@ -3,7 +3,7 @@ import { featureForRequest } from "./feature-path";
 import {imageBillingQuoteForRequest} from "../billing/image-quotes";
 import { requestedFeatureModel, assertPlatformImageSelection } from "./selection-policy";
 import "server-only";
-import { getModelAdministration } from "./server";
+import {getModelExecutionServices} from "./execution-services";
 import { getModelExecutor } from "./execution";
 import { type ExecutionBundle } from "./context";
 import { ModelConfigError } from "./types";
@@ -87,11 +87,11 @@ export async function withModelOperation<T>(input:ModelOperationInput,run:()=>Pr
 }
 async function runModelOperation<T>(input:ModelOperationInput,run:()=>Promise<T>):Promise<T>{
   const parsed={body:input.body,references:input.references};
-  const admin = await getModelAdministration();
+  const services=getModelExecutionServices();
   const quotedImage=input.quote;
   const accepted = input.versions || (quotedImage?.modelVersion?{modelVersion:quotedImage.modelVersion,billingVersion:quotedImage.configVersion}:null);
   if (input.path === "/api/aplus" && parsed.body.jobId && ["approve_source", "redo_source", "generate"].includes(parsed.body.action)) return run();
-  const [snapshot, billing] = await Promise.all([accepted ? admin.repo.byVersion(accepted.modelVersion) : admin.repo.current(), accepted ? admin.billing.byVersion(accepted.billingVersion) : admin.billing.current()]);
+  const [snapshot,billing]=await Promise.all([accepted?services.models.byVersion(accepted.modelVersion):services.models.current(),accepted?services.billing.byVersion(accepted.billingVersion):services.billing.current()]);
   const feature = featureForRequest(input.path, parsed.body);
   const purpose = purposeFor(input.path), executor = await getModelExecutor();
   if (feature === "canvas.image") {

@@ -9,7 +9,7 @@ import {getBillingRuntime} from "../billing/runtime";
 import {multipartFieldText,multipartSubmissionFields,submissionFingerprint,type SubmissionField} from "../billing/submission-identity";
 import {withBiModelContext} from "@/lib/bi/context";
 import {withModelOperation} from "../model-config/requests";
-import {getModelAdministration} from "../model-config/server";
+import {readFrozenBillingSnapshot} from "../billing/frozen-config";
 import {ModelConfigError} from "../model-config/types";
 import {currentCreationContext,withFrozenCreation} from "@/lib/saas/creation-scope";
 import {ensureCreationSchema} from "../saas/creation-schema";
@@ -48,7 +48,7 @@ export async function submitCutoutOperation(plan:ImagegenPlan,key:string,actor:s
       scope.parameters={...scope.parameters,ratio:fields.ratio,resolution:fields.resolution,quality:fields.quality};
       const result=await withImagegenStep(request,intent,()=>withSynchronousOperation({email:owner,operationId,path,feature:"tool.cutout",
         identity:async()=>{await prepareOriginalCreationInput(target.buffer,target.mimeType||"application/octet-stream","reference",0);return {hash};},
-        snapshot:async()=>plan.modelVersion?(await getModelAdministration()).billing.byVersion(plan.billingVersion):(await getBillingRuntime()).config.current(),
+        snapshot:async()=>plan.modelVersion?readFrozenBillingSnapshot(plan.billingVersion):(await getBillingRuntime()).config.current(),
         quote:async(facts,snapshot)=>quoteForImagegenStep(owner,operationId,plan.billingVersion,facts)??await quoteForActor(owner,facts,undefined,snapshot)},async()=>{
         try{return await withBiModelContext(owner,path,`tool-${operationId}`,()=>withModelOperation({path,body:fields,references:1,featureModel:step.modelId||"",preparedImage:step.preparedImage,
           versions:plan.modelVersion?{modelVersion:plan.modelVersion,billingVersion:plan.billingVersion}:null},()=>executeCutout({bytes:target.buffer,type:target.mimeType||"image/png",email:owner,parentId:fields.parentId?.trim()||"",title:"抠图",category:"main",ratio:fields.ratio,resolution:fields.resolution,quality:fields.quality==="fine"?"fine":fields.quality==="fast"?"fast":""},{actor:async()=>owner,ip:null})));}
