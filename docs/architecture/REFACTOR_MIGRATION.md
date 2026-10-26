@@ -1,5 +1,8 @@
 # 渐进迁移与集中验收台账
 
+2026-10-27 R6D：改名/位置/显示尺寸与布局/标记/分组六份旧metadata SQL统一调用原history行writer，复用同owner锁/单连接事务；纯row投影迁独立叶模块避免循环，旧隐藏metadata/NULL自动布局/原像素与返回形态保留。NULL独立根分组原子拒绝，空legacy根与child保持同项目语义；旧完整树18/80复现，旧相邻receipt预期修正后完整基线180/新版182通过，原失败保留。row及parent-link正文不变，SCC0，metadata SQL6→0。固定源码core23/最终类型/回滚/四产物/Git以DELIVERY为准；同步后第1模块，外围UI/旧入口、长时负载/依赖及最终整合继续，不合main、不部署，整体active。见[R6D记录](../changes/2026-10-27-refactor-canvas-artwork-writer-r6d.md)。
+
+
 2026-10-27 R6C：完整产品浏览器实际发现公开config/models/text目录仍依赖管理runtime；已改已发布快照query，提取原priceHint共用投影，运行边4→0；坏/缺管理连接完整旧PG16→新24，core22及完整Linux同镜像通过。真实两browser9组涵盖图片/文字冲突、明确解决/undo-redo、空白生图/参考编辑/刷新、181.68秒16轮混合读取，2图2笔12积分/弹窗0/页面异常0；实际Worker排空exit0。4475hash回滚与旧16行为恢复、被测应用b79f和最终验收脚本提交分层见[R6C记录](../changes/2026-10-27-refactor-product-browser-r6c.md)。第3模块，收尾普通同步main归零，不合main不部署，整体active。
 
 2026-10-26 R6B：R6A固定完整镜像的Web/combined direct Worker实际运行125检查通过，真实登录/报价提交/原价与current/交付账务/Canvas CAS/工作台两图/真实FFmpeg及排空exit0；测试用户4笔57、retained3笔18，UNKNOWN不重放。4471hash副本恢复及验收入口四产物见[R6B记录](../changes/2026-10-26-refactor-runtime-r6b.md)，计数2；不是浏览器或容量证明。

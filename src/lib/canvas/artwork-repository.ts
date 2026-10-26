@@ -2,182 +2,47 @@ import "server-only";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
 import {canvasParentCycle,changeCanvasParent} from "./parent-link";
+import {writeCanvasArtworks} from "./artwork-write-repository";
+import {CanvasArtworkWriteConflict,type CanvasArtworkFields} from "./artwork-write";
 
-// 画布用:记住某作品在画布上被手动拖到的坐标(email 限定)。
-export async function setArtworkPosition(
-  emailRaw: string,
-  id: string,
-  x: number,
-  y: number
-): Promise<boolean> {
-  await ensureSchema();
-  if (!id || !Number.isFinite(x) || !Number.isFinite(y)) return false;
-  const result = await getPool().query(
-    `UPDATE app_artworks SET canvas_x = $3, canvas_y = $4 WHERE email = $1 AND id = $2`,
-    [emailRaw.toLowerCase(), id, x, y]
-  );
-  return (result.rowCount ?? 0) > 0;
+/** Legacy transport adapters retain their validation/return shapes. All metadata
+ * updates use the same row writer and owner transaction as Canvas history. */
+async function writeOne(email:string,id:string,fields:Partial<CanvasArtworkFields>,allowHidden=false):Promise<boolean>{
+ try{await writeCanvasArtworks(email,[{id,fields,allowHidden}]);return true;}
+ catch(error){if(error instanceof CanvasArtworkWriteConflict&&(!error.current||!error.current.visible))return false;throw error;}
 }
 
-// 画布用：保存图片节点的显示尺寸与位置，不修改原图真实像素。
-export async function setArtworkCanvasLayout(
-  emailRaw: string,
-  id: string,
-  x: number,
-  y: number,
-  width: number,
-  height: number
-): Promise<boolean> {
-  await ensureSchema();
-  const px = Number(x);
-  const py = Number(y);
-  const w = Math.round(width);
-  const h = Math.round(height);
-  if (
-    !id ||
-    !Number.isFinite(px) ||
-    !Number.isFinite(py) ||
-    !Number.isFinite(w) ||
-    !Number.isFinite(h) ||
-    w < 80 ||
-    h < 80 ||
-    w > 4096 ||
-    h > 4096
-  ) return false;
-  const result = await getPool().query(
-    `UPDATE app_artworks
-        SET canvas_x = $3, canvas_y = $4, canvas_width = $5, canvas_height = $6
-      WHERE email = $1 AND id = $2 AND deleted_at IS NULL`,
-    [emailRaw.toLowerCase(), id, px, py, w, h]
-  );
-  return (result.rowCount ?? 0) > 0;
+export async function setArtworkPosition(emailRaw:string,id:string,x:number,y:number):Promise<boolean>{
+ await ensureSchema();if(!id||!Number.isFinite(x)||!Number.isFinite(y))return false;
+ // Historical placement updates hidden metadata too, without restoring visibility.
+ return writeOne(emailRaw,id,{canvasX:x,canvasY:y},true);
 }
-
-// 自动比例修复只更新显示尺寸，保留 NULL 坐标，让未手动拖动的节点继续参与自动布局。
-export async function setArtworkCanvasSize(
-  emailRaw: string,
-  id: string,
-  width: number,
-  height: number
-): Promise<boolean> {
-  await ensureSchema();
-  const w = Math.round(width);
-  const h = Math.round(height);
-  if (
-    !id ||
-    !Number.isFinite(w) ||
-    !Number.isFinite(h) ||
-    w < 80 ||
-    h < 80 ||
-    w > 4096 ||
-    h > 4096
-  ) return false;
-  const result = await getPool().query(
-    `UPDATE app_artworks
-        SET canvas_width = $3, canvas_height = $4
-      WHERE email = $1 AND id = $2 AND deleted_at IS NULL`,
-    [emailRaw.toLowerCase(), id, w, h]
-  );
-  return (result.rowCount ?? 0) > 0;
+export async function setArtworkCanvasLayout(emailRaw:string,id:string,x:number,y:number,width:number,height:number):Promise<boolean>{
+ await ensureSchema();const px=Number(x),py=Number(y),w=Math.round(width),h=Math.round(height);
+ if(!id||![px,py,w,h].every(Number.isFinite)||w<80||h<80||w>4096||h>4096)return false;
+ return writeOne(emailRaw,id,{canvasX:px,canvasY:py,canvasWidth:w,canvasHeight:h});
 }
-
-// 画布用:标记/取消标记某个重要节点(email 限定)。
-export async function setArtworkMarked(
-  emailRaw: string,
-  id: string,
-  marked: boolean
-): Promise<boolean> {
-  await ensureSchema();
-  if (!id) return false;
-  const result = await getPool().query(
-    `UPDATE app_artworks SET marked = $3 WHERE email = $1 AND id = $2 AND deleted_at IS NULL`,
-    [emailRaw.toLowerCase(), id, marked]
-  );
-  return (result.rowCount ?? 0) > 0;
+export async function setArtworkCanvasSize(emailRaw:string,id:string,width:number,height:number):Promise<boolean>{
+ await ensureSchema();const w=Math.round(width),h=Math.round(height);
+ if(!id||![w,h].every(Number.isFinite)||w<80||h<80||w>4096||h>4096)return false;
+ // Only display dimensions change; NULL auto-layout coordinates remain NULL.
+ return writeOne(emailRaw,id,{canvasWidth:w,canvasHeight:h});
 }
-
-export type CanvasGroupAssignment = {
-  id: string;
-  canvasGroupId: string | null;
-};
-
-// 画布成组/解组。canvas_group_id 只表达编辑关系，不改变项目 group_id、父子血缘或连线。
-export async function setArtworkCanvasGroups(
-  emailRaw: string,
-  assignmentsRaw: CanvasGroupAssignment[]
-): Promise<CanvasGroupAssignment[]> {
-  await ensureSchema();
-  const email = emailRaw.toLowerCase();
-  const assignments = Array.from(
-    new Map(
-      assignmentsRaw
-        .filter((item) => item?.id)
-        .slice(0, 200)
-        .map((item) => [
-          item.id,
-          {
-            id: item.id,
-            canvasGroupId: item.canvasGroupId?.trim().slice(0, 120) || null,
-          },
-        ])
-    ).values()
-  );
-  if (!assignments.length) return [];
-
-  const client = await getPool().connect();
-  try {
-    await client.query("BEGIN");
-    const ids = assignments.map((item) => item.id);
-    const { rows } = await client.query(
-      `SELECT id, group_id, canvas_group_id
-         FROM app_artworks
-        WHERE email = $1 AND id = ANY($2::text[]) AND deleted_at IS NULL
-        FOR UPDATE`,
-      [email, ids]
-    );
-    if (rows.length !== assignments.length) {
-      throw new Error("节点不存在或无权访问");
-    }
-    const projectById = new Map(rows.map((row) => [String(row.id), String(row.group_id || row.id)]));
-    const projectByCanvasGroup = new Map<string, string>();
-    for (const assignment of assignments) {
-      if (!assignment.canvasGroupId) continue;
-      const projectId = projectById.get(assignment.id) as string;
-      const seenProject = projectByCanvasGroup.get(assignment.canvasGroupId);
-      if (seenProject && seenProject !== projectId) {
-        throw new Error("只能对同一画布项目中的节点成组");
-      }
-      projectByCanvasGroup.set(assignment.canvasGroupId, projectId);
-    }
-    if (projectByCanvasGroup.size) {
-      const existing = await client.query(
-        `SELECT id, canvas_group_id, group_id
-           FROM app_artworks
-          WHERE email = $1 AND canvas_group_id = ANY($2::text[]) AND deleted_at IS NULL`,
-        [email, Array.from(projectByCanvasGroup.keys())]
-      );
-      for (const row of existing.rows) {
-        const expected = projectByCanvasGroup.get(String(row.canvas_group_id));
-        if (expected && expected !== String(row.group_id || row.id)) {
-          throw new Error("画布分组不能跨项目复用");
-        }
-      }
-    }
-    for (const assignment of assignments) {
-      await client.query(
-        `UPDATE app_artworks SET canvas_group_id = $3
-          WHERE email = $1 AND id = $2 AND deleted_at IS NULL`,
-        [email, assignment.id, assignment.canvasGroupId]
-      );
-    }
-    await client.query("COMMIT");
-    return assignments;
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
+export async function setArtworkMarked(emailRaw:string,id:string,marked:boolean):Promise<boolean>{
+ await ensureSchema();if(!id)return false;return writeOne(emailRaw,id,{marked});
+}
+export async function renameArtwork(emailRaw:string,id:string,title:string):Promise<void>{
+ await ensureSchema();const t=title.trim().slice(0,80);if(!id||!t)return;
+ await writeOne(emailRaw,id,{title:t},true);
+}
+export type CanvasGroupAssignment={id:string;canvasGroupId:string|null};
+export async function setArtworkCanvasGroups(emailRaw:string,assignmentsRaw:CanvasGroupAssignment[]):Promise<CanvasGroupAssignment[]>{
+ await ensureSchema();
+ const assignments=Array.from(new Map(assignmentsRaw.filter(item=>item?.id).slice(0,200).map(item=>[item.id,{id:item.id,canvasGroupId:item.canvasGroupId?.trim().slice(0,120)||null}])).values());
+ if(!assignments.length)return [];
+ try{await writeCanvasArtworks(emailRaw,assignments.map(a=>({id:a.id,fields:{canvasGroupId:a.canvasGroupId}})));}
+ catch(error){if(error instanceof CanvasArtworkWriteConflict)throw new Error("节点不存在或无权访问");throw error;}
+ return assignments;
 }
 
 // 给某节点追加一个父节点(多输入):合并进 parent_ids(去重,排除自身)。

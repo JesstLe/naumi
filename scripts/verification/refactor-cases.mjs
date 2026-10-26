@@ -20,6 +20,7 @@ export const refactorCases=[
  node('artwork-fields','canvas','scripts/verify-canvas-artwork-write.cjs','CANVAS_ARTWORK_WRITE=PASS'),
  ts('text-pg','canvas','scripts/verify-canvas-text-concurrency-pg.ts','CANVAS_TEXT_CONCURRENCY=PASS'),
  ts('artwork-pg','canvas','scripts/verify-canvas-artwork-concurrency-pg.ts','CANVAS_ARTWORK_CONCURRENCY=PASS'),
+ ts('artwork-writer','canvas','scripts/verify-canvas-artwork-writer-pg.ts','CANVAS_ARTWORK_WRITER=PASS'),
  node('history','canvas','scripts/verify-canvas-history-refactor.cjs','CANVAS_HISTORY_REFACTOR=PASS'),
  ts('node-operations','canvas','scripts/verify-canvas-node-operations-pg.ts','CANVAS_NODE_OPERATIONS_PG=PASS'),
  ts('video-wire','video','scripts/verify-video-node-capability-options.ts','VIDEO_NODE_CAPABILITY_OPTIONS=PASS'),

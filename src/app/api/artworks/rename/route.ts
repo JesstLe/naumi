@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import {dbEnabled} from "@/platform/db/pool";
-import {renameArtwork} from "@/lib/artworks/repository";
+import {renameArtwork} from "@/lib/canvas/artwork-repository";
 import { authenticatedEmail } from "@/lib/request-auth";
 
 export const runtime = "nodejs";

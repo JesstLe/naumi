@@ -1,5 +1,8 @@
 # 核心链路重构专用工作区
 
+2026-10-27 R6D：改名/位置/显示尺寸与布局/标记/分组六份旧metadata SQL统一调用原history行writer，复用同owner锁/单连接事务；纯row投影迁独立叶模块避免循环，旧隐藏metadata/NULL自动布局/原像素与返回形态保留。NULL独立根分组原子拒绝，空legacy根与child保持同项目语义；旧完整树18/80复现，旧相邻receipt预期修正后完整基线180/新版182通过，原失败保留。row及parent-link正文不变，SCC0，metadata SQL6→0。固定源码core23/最终类型/回滚/四产物/Git以DELIVERY为准；同步后第1模块，外围UI/旧入口、长时负载/依赖及最终整合继续，不合main、不部署，整体active。见[R6D记录](changes/2026-10-27-refactor-canvas-artwork-writer-r6d.md)。
+
+
 2026-10-27 R6C：完整产品浏览器实际暴露config/models/text-models读入口仍创建管理runtime，坏管理凭据导致500/503及会话hydrate失败；已拆公开catalog query并共享原价格投影，三个真实消费者改绑，published pointer不依赖管理连接。完整旧树PG16复现→新24通过；固定b79f core22、完整Linux同镜像、真实两浏览器9组/2图2笔12积分/弹窗0/页面异常0、181.68秒16轮混合读取、SIGTERM排空exit0通过；SCC0，读→管理运行边4→0。4475hash副本回滚/旧16行为恢复、最终脚本与被测应用SHA分层及四产物以DELIVERY为准。第3模块，收尾后普通整合main归零；剩余writer/UI和长时负载/依赖漏洞继续，不合main、不部署，整体active。见[R6C记录](changes/2026-10-27-refactor-product-browser-r6c.md)。
 
 2026-10-26 R6B：复用R6A固定完整Linux镜像，完整Web与同Image ID combined direct Worker实际运行；真实登录/HTTP报价提交/排队/供应商合成PNG/存储读回/父子回执/一次扣款、慢供应商期间Web健康5次5—8ms、同tick新任务唤醒、原6/current17、图片与文字CAS/工作台两图/原生FFmpeg和终态POSIX排空，125检查通过。四类retained任务三笔18积分，用户四笔57积分，live lease和unknown不重放保持；自有5容器/internal network/PG tmpfs已清理。产品src/services未修改；新增可复用整包运行验收，不把准备阶段失败改绿，也不将本地fixture当浏览器/容量/远端CI。详见[R6B记录](changes/2026-10-26-refactor-runtime-r6b.md)及本轮DELIVERY；同步后第2模块，后续R6C浏览器/持续热态和剩余writer/UI继续，不合main、不部署，整体active。
