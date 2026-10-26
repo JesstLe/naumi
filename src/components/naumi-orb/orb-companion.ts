@@ -1,20 +1,9 @@
-import type { OrbState } from "./orb-model";
+import type {OrbState,OrbAttention,OrbCue} from "@/lib/canvas/orb-contract";
+import {orbToolFace} from "@/lib/canvas/agent-orb";
+export {orbToolFace};
 
 /** Presentation only. No messages, provider calls, timers or global session state. */
-export type OrbAttention = "waiting" | "restricted";
-export type OrbCue =
-  | { type: "submit" | "connected" | "delta" | "done" | "stop" | "reset" | "hover" | "activate" | "activity" | "drag" | "copied" }
-  | { type: "attention-resolved"; tool?: string }
-  | { type: "draft"; text: string }
-  | { type: "tool-start"; tool: string }
-  | { type: "tool-end"; error: boolean }
-  | { type: "artifacts"; count: number }
-  | { type: "attention"; kind: OrbAttention }
-  | { type: "failure"; code?: string }
-  | { type: "restore"; running: boolean; outcome: "idle" | "running" | "done" | "error" | "stopped"; attention?: OrbAttention; phase?: OrbState; recall?: boolean }
-  | { type: "feedback"; positive: boolean }
-  | { type: "tick" };
-
+export type {OrbAttention,OrbCue} from "@/lib/canvas/orb-contract";
 export interface OrbCompanion {
   scope: string; now: number; lastActivity: number; startedAt: number;
   phase: OrbState; busy: boolean; attention?: OrbAttention;
@@ -29,12 +18,7 @@ export function createOrbCompanion(scope: string, now: number): OrbCompanion {
   return { scope, now, lastActivity: now, startedAt: now, phase: "idle", busy: false,
     bootAt: now, terminalAt: 0, toolFailures: 0, artifactCount: 0, negativeCount: 0, cooldownUntil: 0 };
 }
-export function orbToolFace(tool: string): OrbState {
-  if (/^(search_|list_|get_history|find_|retrieve_)/.test(tool)) return "searching";
-  if (/^(verify_|check_|inspect_|analyze_)/.test(tool)) return "focused";
-  if (/^(fetch_|browse_|web_|download_)/.test(tool)) return "connecting";
-  return "working";
-}
+
 function react(model: OrbCompanion, face: OrbState, now: number, duration: number = ORB_TIMING.reaction): OrbCompanion {
   return { ...model, reaction: { face, until: now + duration }, cooldownUntil: now + ORB_TIMING.cooldown };
 }

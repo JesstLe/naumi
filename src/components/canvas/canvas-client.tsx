@@ -24,7 +24,9 @@ import {canvasNodeClick,canvasFlowSelection,canvasSelectionIds} from "@/lib/canv
 import {compileCanvasLink,type CanvasLinkIntent} from "@/lib/canvas/link-command";
 import {compileCanvasMove} from "@/lib/canvas/drag-controller";
 
-import { updateAssistantTimeline, restoreAssistantTimeline, type AssistantTimelineTurn } from "@/lib/canvas/assistant-timeline";
+import {useCanvasAssistant} from "./use-canvas-assistant";
+import {canvasDocumentFetch} from "@/lib/canvas/document-scope";
+import type {CanvasAssistantContext} from "@/lib/canvas/assistant-session";
 import { CachedImage } from "@/components/cached-image";
 import { browserImageArchive } from '@/lib/browser-image-archive';
 import { cachedImageBlob, imageCacheSource, ImageCacheDenied, readBrowserImage } from '@/lib/browser-image-cache';
@@ -103,19 +105,12 @@ import { BatchSelectionToolbar } from "./batch-selection-toolbar";
 import { TextImageGenerationDialog } from "./text-image-generation-dialog";
 import { buildTextImageRequests, type TextImageMode } from "@/lib/canvas/text-image-inputs";
 import { generationPlaceholderSize, generationPositionForTask, placeGenerationPreview } from "@/lib/canvas/generation-feedback";
-import type { ImageSkill } from "@/lib/image-skills/catalog";
 import { CanvasAssistantPanel } from "./canvas-assistant-panel";
-import { assistantReferences, assistantAttachmentCapacity, MAX_ASSISTANT_IMAGES } from "@/lib/canvas/assistant-references";
 import { useWorkflowPaste } from "./use-workflow-paste";
 import type { ImportedManifest } from "@/lib/canvas/workflow-clipboard";
 import { CanvasAgentToggle } from "./canvas-agent-toggle";
 import { CanvasAgentOrb } from "./canvas-agent-orb";
-import { restoredOrbOutcome, type AgentOrbOutcome, type AgentOrbStep } from "@/lib/canvas/agent-orb";
 import { useOrbCompanion } from "../naumi-orb/use-orb-companion";
-import { classifyAgentFailure } from "@/lib/agent/recovery";
-import { agentOrbState } from "@/lib/canvas/agent-orb";
-import { reduceAgentProgress } from "@/lib/canvas/agent-progress";
-import {receiveAssistantActivity,type AssistantLiveActivity} from "@/lib/canvas/assistant-live-state";
 import { useCanvasAssistantDisclosure } from "@/lib/canvas/assistant-disclosure";
 import { defaultNodeSettings, validNodeSettings, type CanvasNodeSettings, type CanvasCrop } from "@/lib/canvas/node-settings";
 const DEFAULT_CANVAS_SETTINGS = defaultNodeSettings();
@@ -418,41 +413,8 @@ function projectKey(a: Artwork, byId: Map<string, Artwork>, resolveRoot = (art: 
 
 // 占位节点(空白/上传中)动作上下文:让 React Flow 内的节点能调用主组件的上传
 // 计算当前选中节点的整条血缘链路:上溯所有祖先 + 下延所有衍生(含自身)
-// 画布助手的一轮对话(user/assistant 纯文本;assistant 内容可含 [[GEN]]…[[/GEN]] 生图块)
-type AssistantTurn = AssistantTimelineTurn;
 
 // 画布助手上下文:锚定节点 + 上游祖先(BFS 近者优先),最多 5 张(与后端 MAX_CONTEXT_IMAGES 对齐)
-function assistantContext(members: Artwork[], anchorId: string): Artwork[] {
-  const byId = new Map(members.map((m) => [m.id, m]));
-  const anchor = byId.get(anchorId);
-  if (!anchor) return [];
-  const parentsOf = (m: Artwork): string[] => {
-    const ps = new Set<string>();
-    if (m.parentId && byId.has(m.parentId) && explicitCanvasParent(m, m.parentId)) ps.add(m.parentId);
-    for (const pid of m.parentIds ?? [])
-      if (pid && byId.has(pid)) ps.add(pid);
-    return [...ps];
-  };
-  const out: Artwork[] = [anchor];
-  const seen = new Set([anchorId]);
-  const queue: string[] = [anchorId];
-  let guard = 0;
-  while (queue.length && out.length < 5 && guard++ < 2000) {
-    const id = queue.shift() as string;
-    const m = byId.get(id);
-    if (!m) continue;
-    for (const p of parentsOf(m)) {
-      if (seen.has(p)) continue;
-      seen.add(p);
-      const art = byId.get(p);
-      if (art) out.push(art);
-      queue.push(p);
-      if (out.length >= 5) break;
-    }
-  }
-  return out.slice(0, 5);
-}
-
 // 构造展示节点与血缘连线；渲染不重新整理已有坐标。
 export function CanvasClient({ initialProject, desktopAppearance = false }: { initialProject?: string; desktopAppearance?: boolean } = {}) {
   const { can: canFeature } = useFeatureAccess();
@@ -863,51 +825,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const videoNodeCreateDisabled=videoModelCatalog.loading||videoNodeCreateBusy;
   const videoNodeCreateLabel=videoModelCatalog.loading?L("视频模型加载中…","Loading video models…"):videoNodeCreationReady?L("新增视频节点","Add video node"):L("重试视频模型","Retry video models");
   const [annotateArtwork, setAnnotateArtwork] = useState<Artwork | null>(null);
-  // 画布助手:围绕选中节点+上游链的多轮对话,[[GEN]] 提示词可一键生图回画布
-  const [assistantArtworkId, setAssistantArtworkId] = useState<string | null>(null);
-  const [assistantTurns, setAssistantTurns] = useState<AssistantTurn[]>([]);
-  const [assistantInput, setAssistantInput] = useState("");
-  const [assistantAttachments, setAssistantAttachments] = useState<Artwork[]>([]);
-  const [assistantExcludedReferences, setAssistantExcludedReferences] = useState<string[]>([]);
-  const [assistantUploading, setAssistantUploading] = useState(false);
-  const [assistantUploadError, setAssistantUploadError] = useState<string | null>(null);
-  const assistantUploadToken = useRef<object | null>(null);
-  const [assistantSkill, setAssistantSkill] = useState<ImageSkill | null>(null);
-  const [assistantBusy, setAssistantBusy] = useState(false);
-  const [assistantResponding, setAssistantResponding] = useState(false);
-  const [assistantActivity,setAssistantActivity]=useState<AssistantLiveActivity>({phase:"connecting"});
-  const [assistantSteps, setAssistantSteps] = useState<AgentOrbStep[]>([]);
-  const [assistantOutcome, setAssistantOutcome] = useState<AgentOrbOutcome>("idle");
-  const orbCompanion = useOrbCompanion(`${user?.email || ""}:${activeKey || "workspace"}`);
-  const orbCue = orbCompanion.emit;
-  const assistantController = useRef<AbortController | null>(null);
-  const assistantSessionId = useRef(browserRandomUUID());
-  const assistantLiveSessionId = useRef("");
-  const [assistantError, setAssistantError] = useState<string | null>(null);
-  const [assistantContinueTurn, setAssistantContinueTurn] = useState<string | null>(null);
-  const assistantRetry = useRef<{ input: string; anchorId: string; referencesKey: string; history: AssistantTurn[]; body: string } | null>(null);
-  const assistantRequestEpoch = useRef(0);
-  const { open: assistantOpen, focusInput: assistantFocusInput, disclose: discloseAssistant, suspend: suspendAssistant } = useCanvasAssistantDisclosure(user?.email);
-  const assistantVisible = canFeature("agent") && assistantOpen && !propertiesOpen && !ocrArtworkId;
-  const assistantProject = useRef({ key: activeKey, email: user?.email });
-  useEffect(() => {
-    if (assistantProject.current.key === activeKey && assistantProject.current.email === user?.email) return;
-    assistantProject.current = { key: activeKey, email: user?.email };
-    assistantRequestEpoch.current += 1;
-    assistantController.current?.abort();
-    assistantSessionId.current=browserRandomUUID();
-    setAssistantSteps([]); setAssistantOutcome("idle");
-    setAssistantArtworkId(null);
-    setAssistantTurns([]);
-    setAssistantInput("");
-    assistantUploadToken.current = null;
-    setAssistantAttachments([]); setAssistantExcludedReferences([]); setAssistantUploading(false); setAssistantUploadError(null);
-    setAssistantError(null);
-    setAssistantContinueTurn(null);
-    setAssistantBusy(false);
-    assistantRetry.current = null;
-  }, [activeKey, user?.email]);
-  useEffect(() => () => { assistantRequestEpoch.current += 1; assistantController.current?.abort(); assistantUploadToken.current=null; }, []);
+  // The session owner owns transcript, stream, recovery and attachments.
+  const assistantSession=useCanvasAssistant(canvasArtworkDocument.scope);
+  const {anchorId:assistantArtworkId,turns:assistantTurns,input:assistantInput,uploading:assistantUploading,uploadError:assistantUploadError,
+    skill:assistantSkill,busy:assistantBusy,responding:assistantResponding,activity:assistantActivity,steps:assistantSteps,outcome:assistantOutcome,
+    error:assistantError,continueTurn:assistantContinueTurn}=assistantSession.state;
+  const orbCompanion=useOrbCompanion(`${user?.email||""}:${canvasArtworkDocument.scope.workspace}:${activeKey||"workspace"}`);
+  const orbCue=orbCompanion.emit;
+  const {open:assistantOpen,focusInput:assistantFocusInput,disclose:discloseAssistant,suspend:suspendAssistant}=useCanvasAssistantDisclosure(user?.email);
+  const assistantVisible=canFeature("agent")&&assistantOpen&&!propertiesOpen&&!ocrArtworkId;
   // 拉线「生成衍生图」:建好空白节点后,把光标自动落进提示词框,引导用户写"改什么"
   const pendPromptRef = useRef<HTMLTextAreaElement>(null);
   // 占位 dock 与已生成节点保持同一自适应视野。
@@ -2687,8 +2613,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   async function openImageTextEditor(artwork: Artwork) {
     if (readOnly || !user) return;
-    assistantController.current?.abort();
-    assistantController.current = null;
+    assistantSession.detach();
     setPropertiesOpen(false);
     const requestEpoch = ocrRequestEpochRef.current + 1;
     ocrRequestEpochRef.current = requestEpoch;
@@ -3095,53 +3020,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setOcrArtworkId(null); // 与在线改字面板互斥
     discloseAssistant(true);
     if (assistantBusy || assistantArtworkId === artwork.id) return;
-    setAssistantArtworkId(artwork.id);
-    assistantRetry.current = null;
+    assistantSession.anchor(artwork.id);
   }
 
-  async function stopAssistantTask() {
-    orbCue({ type: "stop" });
-    assistantController.current?.abort();
-    const sessionId=assistantLiveSessionId.current||assistantSessionId.current;
-    if(sessionId.startsWith("cv-"))await privateFetchRaw("/api/canvas/assistant/control",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"stop",sessionId,projectKey:activeKey||"workspace"})}).catch(()=>null);
-  }
-
-  async function restoreAssistantConversation(_anchorId:string,id:string) {
-    assistantUploadToken.current=null;setAssistantUploading(false);setAssistantUploadError(null);setAssistantAttachments([]);setAssistantExcludedReferences([]);
-    const controller=new AbortController();assistantController.current?.abort();assistantController.current=controller;
-    assistantLiveSessionId.current=id;
-    setAssistantContinueTurn(null);
-    assistantSessionId.current=id;setAssistantSteps([]);setAssistantOutcome("running");setAssistantBusy(true);setAssistantResponding(false);setAssistantActivity({phase:"connecting"});setAssistantInput("");setAssistantError(null);setAssistantContinueTurn(null);assistantRetry.current=null;
-    let recalled = false;
-    try{
-      for(;;){
-        const response=await privateFetchRaw(`/api/canvas/assistant?projectKey=${encodeURIComponent(activeKey||"workspace")}&id=${encodeURIComponent(id)}`,{signal:controller.signal});
-        const data=await expectJsonOk(response,"历史对话读取失败");
-        if(controller.signal.aborted||assistantController.current!==controller)return;
-        setAssistantActivity({phase:"processing",lastEventAt:Date.now()});
-        setAssistantArtworkId(data.session.anchorId||null);setSelectedId(data.session.anchorId||null);setSelectedTextId(null);
-        if(Array.isArray(data.session.referenceIds)){
-          const restored=await mergeWorks(data.session.referenceIds);
-          if(controller.signal.aborted||assistantController.current!==controller)return;
-          setAssistantAttachments(data.session.referenceIds.map((refId:string)=>restored.find(art=>art.id===refId)).filter((art:Artwork|undefined):art is Artwork=>!!art));
-          setAssistantExcludedReferences(assistantContext(restored,data.session.anchorId||"").filter(art=>!data.session.referenceIds.includes(art.id)).map(art=>art.id));
-        }
-        setAssistantTurns(restoreAssistantTimeline(data.session.turns, data.session.steps || [], locale === "en"));
-        let steps: AgentOrbStep[] = [];
-        const historySteps=data.session.steps||[], currentTurn=historySteps.findLastIndex((step:{type:string})=>step.type==="canvas_turn");
-        for (const step of historySteps.slice(Math.max(0,currentTurn))) steps = reduceAgentProgress(steps, step, locale === "en", !!data.session.running);
-        setAssistantSteps(steps);
-        setAssistantOutcome(restoredOrbOutcome(data.session));
-        {
-          orbCue({ type: "restore", recall: !recalled, running: !!data.session.running, outcome: restoredOrbOutcome(data.session), attention: data.session.attention, phase: agentOrbState(!!data.session.running, restoredOrbOutcome(data.session), steps) });
-          recalled = true;
-        }
-        if(!data.session.running){setAssistantContinueTurn(data.session.continueFromTurnId||null);if(data.session.error)setAssistantError(data.session.error);const ids=data.session.turns.flatMap((turn:AssistantTurn)=>(turn.artifacts||[]).map(art=>art.id));if(ids.length)await mergeWorks(ids);break;}
-        await new Promise(resolve=>window.setTimeout(resolve,1000));
-      }
-    }catch(error){if(assistantController.current===controller){orbCue(controller.signal.aborted?{type:"stop"}:{type:"failure",code:classifyAgentFailure(error).code});setAssistantOutcome(controller.signal.aborted?"stopped":"error");setAssistantError(controller.signal.aborted?"已停止跟随任务，请在历史中核对已有结果":error instanceof Error?error.message:"历史对话读取失败");}}
-    finally{if(assistantController.current===controller){assistantController.current=null;setAssistantBusy(false);}}
-  }
+  function stopAssistantTask(){return assistantSession.stop(canvasAssistantContext());}
+  function restoreAssistantConversation(_anchorId:string,id:string){return assistantSession.restore(id,canvasAssistantContext());}
 
   function closeAssistant() {
     discloseAssistant(false);
@@ -3158,206 +3041,34 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 图片是可选上下文，换图不清空对话或改变项目会话身份。
   useEffect(() => {
     if (assistantOpen && !assistantBusy && selectedId && selectedId !== assistantArtworkId) {
-      setAssistantArtworkId(selectedId);
-      assistantRetry.current = null;
+      assistantSession.anchor(selectedId);
     }
-  }, [selectedId, assistantArtworkId, assistantOpen, assistantBusy]);
+  }, [selectedId, assistantArtworkId, assistantOpen, assistantBusy,assistantSession]);
   // Project/unmount guards own cancellation; restoring history may change its anchor.
 
-  function currentAssistantReferences() {
-    const members=active?.members??[];
-    const inherited=assistantArtworkId?assistantContext(members,assistantArtworkId):[];
-    return assistantReferences(inherited,assistantAttachments,assistantExcludedReferences);
-  }
-
-  async function uploadAssistantImages(files:File[]) {
-    // Attachments belong to the next turn; the in-flight request body is already frozen.
-    if(assistantUploadToken.current||readOnly||!user||!files.length)return;
-    const token={},account=canvasAccountRef.current,project=activeKey,session=assistantSessionId.current;
-    const isCurrent=()=>assistantUploadToken.current===token&&account===canvasAccountRef.current&&project===(activeProjectRef.current?.key??null)&&session===assistantSessionId.current;
-    const capacity=assistantAttachmentCapacity(currentAssistantReferences().map(art=>art.id));
-    if(!capacity){setAssistantUploadError(locale==='en'?`Up to ${MAX_ASSISTANT_IMAGES} images. Remove one to add another.`:`最多添加 ${MAX_ASSISTANT_IMAGES} 张图片，请先移除一张再添加。`);return;}
-    assistantUploadToken.current=token;setAssistantUploading(true);setAssistantUploadError(null);assistantRetry.current=null;
-    try{
-      const ids=await uploadRoot(files.slice(0,capacity),{assistant:true,isCurrent});
-      if(!isCurrent())return;
-      const fresh=await mergeWorks(ids);
-      if(!isCurrent())return;
-      const added=ids.map(id=>fresh.find(art=>art.id===id)).filter((art):art is Artwork=>!!art);
-      setAssistantAttachments(current=>assistantReferences([], [...current,...added]));
-      const errors=[];
-      if(ids.length<Math.min(files.length,capacity))errors.push(locale==='en'?'Some images failed to upload. Your existing images are kept.':'部分图片添加失败，已有图片已保留，请查看上传结果后重试。');
-      if(added.length<ids.length)errors.push(locale==='en'?'Images saved; refresh the canvas to select them.':'图片已保存，列表读取未完成，请刷新画布后选择。');
-      if(files.length>capacity)errors.push(locale==='en'?`Up to ${MAX_ASSISTANT_IMAGES} images; extra files were not uploaded.`:`最多添加 ${MAX_ASSISTANT_IMAGES} 张图片，超出的文件未上传。`);
-      setAssistantUploadError(errors.join(' ')||null);
-    }catch(error){if(isCurrent())setAssistantUploadError(error instanceof Error?error.message:'图片添加失败，已有图片已保留');}
-    finally{if(assistantUploadToken.current===token){assistantUploadToken.current=null;setAssistantUploading(false);}}
-  }
-
-  async function sendAssistantMessage(continueText = false) {
-    const continueFromTurnId = continueText ? assistantContinueTurn : null;
-    if (continueText && !continueFromTurnId) return;
-    const text = continueText ? "继续输出" : assistantInput.trim();
-    if (assistantBusy || assistantUploadToken.current || !text) return;
-    const references=currentAssistantReferences();
-    const source = references[0];
-    const anchorId=source?.id||"";
-    const referencesKey=JSON.stringify(references.map(art=>art.id));
-    const previousAttempt = assistantRetry.current;
-    const reuseAttempt=!continueText&&previousAttempt?.input===text&&previousAttempt.anchorId===anchorId&&previousAttempt.referencesKey===referencesKey;
-    const history = reuseAttempt ? previousAttempt.history : [
-      ...assistantTurns,
-      { id: `as-u-${Date.now()}`, role: "user" as const, content: text },
-    ];
-    const attempt = reuseAttempt ? previousAttempt : {
-      input: text, anchorId, referencesKey, history,
-      body: JSON.stringify({ mode: "agent", continueText, continueFromTurnId, skill: assistantSkill ? { id: assistantSkill.id, revision: assistantSkill.revision } : null, sessionId: assistantSessionId.current, turnId: browserRandomUUID(), anchorId, videoNodeId:videoNodesStore.getNode(assistantArtworkId||selectedId||"")?.id,textNodeId:textNodes.find(node=>node.id===(assistantArtworkId||selectedId))?.id, projectKey: activeKey||"workspace", contextIds: references.map(artwork=>artwork.id), messages: continueText ? [] : history.slice(-12).map(({ role, content }) => ({ role, content: content.slice(0, 4000) })), imageModelId: chosenFeatureModel("canvas.image") || genModel, ratio: genRatio, resolution: genResolution, quality: genQuality }),
+  function canvasAssistantContext():CanvasAssistantContext {
+    const scope=canvasArtworkDocument.scope;
+    return {english:locale==="en",members:active?.members??[],imageModelId:chosenFeatureModel("canvas.image")||genModel,
+      ratio:genRatio,resolution:genResolution,quality:genQuality,
+      videoNodeId:videoNodesStore.getNode(assistantArtworkId||selectedId||"")?.id,textNodeId:textNodes.find(node=>node.id===(assistantArtworkId||selectedId))?.id,
+      submit:(body,signal,submission,isCurrent)=>privateFetch("/api/canvas/assistant",{method:"POST",headers:{"content-type":"application/json"},body,signal,submission,isCurrent}),
+      read:(url,init)=>canvasDocumentFetch(scope,url,init,true),merge:ids=>mergeWorks(ids,scope.viewCurrent),history:pushAddUndoMany,
+      upload:(files,options)=>uploadRoot(files,options),cue:orbCue,
+      selectAnchor:id=>{setSelectedId(id);setSelectedTextId(null);},
+      video:async(nodes,isCurrent)=>{if(isCurrent()&&nodes.some(node=>node.projectKey===scope.project))await videoNodesStore.refresh();},
+      text:async(nodes,signal,isCurrent)=>{
+        const ids=new Set(nodes.filter(node=>node.projectKey===scope.project).map(node=>node.id)),email=targetEmail||user?.email;
+        if(!ids.size||!email||!isCurrent())return;
+        const response=await canvasDocumentFetch(scope,`/api/canvas/text-nodes?email=${encodeURIComponent(email)}`,{signal},true);
+        if(!response.ok)throw Error("剧本资产已保存，画布文字读取暂不可用");const snapshot=await response.json();
+        if(isCurrent())canvasTextDocument.accept(((snapshot.nodes||[]) as CanvasTextNode[]).filter(node=>ids.has(node.id)&&node.projectKey===scope.project).map(node=>({...node,width:node.width||TEXT_NODE_DEFAULT_W,height:node.height||TEXT_NODE_DEFAULT_H,sourceIds:node.sourceIds||[],targetIds:node.targetIds||[],productIds:node.productIds||[]})));
+      },
+      revealVideo:async(result,isCurrent)=>{if(activeProjectRef.current?.key||!isCurrent())return;await videoNodesStore.refresh();if(isCurrent()){setCreatingNew(false);setBrowsing(false);setActiveKey(result.key);setSelectedId(result.nodeId);}},
     };
-    assistantRetry.current = attempt;
-    const epoch = ++assistantRequestEpoch.current;
-    setAssistantError(null);
-    setAssistantBusy(true);
-    setAssistantResponding(false);
-    setAssistantActivity({phase:"connecting"});
-    setAssistantSteps([]); setAssistantOutcome("running");
-    orbCue({ type: "submit" });
-    const controller = new AbortController();
-    const acceptedSession = assistantSessionId.current;
-    assistantLiveSessionId.current=acceptedSession;
-    let serverSessionId = acceptedSession;
-    assistantController.current = controller;
-    let receivedText = "";
-    let recoveryTurn: string | null = null;
-    setAssistantContinueTurn(null);
-    const artifactIds = new Set<string>();
-    let videoProjectResult:{key:string;nodeId:string}|undefined;
-    const acceptedVideoProject=activeKey;
-    let orbFailureCode: string | undefined;
-    // Show this turn immediately, including image/session preparation before SSE opens.
-    setAssistantTurns([...history,{id:`as-a-${Date.now()}`,role:"assistant",content:""}]);
-    setAssistantInput("");
-    try {
-      const response = await privateFetch("/api/canvas/assistant", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: attempt.body,
-        signal: controller.signal,
-      });
-      if (epoch !== assistantRequestEpoch.current) return;
-      if(acceptedSession!==assistantSessionId.current||controller.signal.aborted)throw new Error("任务上下文已切换");
-      if (!response.ok || !response.body) {
-        const data = await readJsonSafe(response);
-        orbFailureCode = response.status === 401 || response.status === 403 ? "AUTH" : response.status === 402 ? "CREDITS" : response.status === 400 ? "VALIDATION" : undefined;
-        throw new Error(data?.error || "画布助手暂时不可用");
-      }
-      orbCue({ type: "connected" });
-      setAssistantActivity({phase:"processing",lastEventAt:Date.now()});
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      let text = "";
-      let streamError: string | null = null;
-      let completed = false;
-      let lastOrbDelta = 0;
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (epoch !== assistantRequestEpoch.current) { await reader.cancel(); return; }
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const parts = buf.split("\n\n");
-        buf = parts.pop() ?? "";
-        for (const part of parts) {
-          if(acceptedSession!==assistantSessionId.current||controller.signal.aborted)throw new Error("任务上下文已切换");
-          const evLine = part.split("\n").find((l) => l.startsWith("event: "));
-          const dataLine = part.split("\n").find((l) => l.startsWith("data: "));
-          if (!evLine || !dataLine) continue;
-          const type = evLine.slice(7).trim();
-          const data = JSON.parse(dataLine.slice(6)) as Record<string, unknown>;
-          setAssistantActivity(current=>receiveAssistantActivity(current,type,data,Date.now()));
-          if (["delta", "assistant", "tool_start", "tool_end", "attention", "artifacts", "final"].includes(type)) setAssistantTurns(current => updateAssistantTimeline(current, { ...data, type }, locale === "en"));
-          if(type==="open"){serverSessionId=String(data.sessionId||acceptedSession);assistantLiveSessionId.current=serverSessionId;}
-          if(type==="done" && data.ok===true)completed=true;
-          if (type === "attention") {
-            setAssistantSteps(current => reduceAgentProgress(current, { ...data, type }, locale === "en"));
-            const attention = data.kind === "waiting" || data.kind === "restricted" ? data.kind : undefined;
-            if (attention) orbCue({ type: "attention", kind: attention });
-            else if (data.kind === "resolved") orbCue({ type: "attention-resolved", tool: String(data.tool || "") });
-          }
-          if (type === "delta") {
-            if (Date.now() - lastOrbDelta > 650) { lastOrbDelta = Date.now(); orbCue({ type: "delta" }); }
-            setAssistantResponding(true);
-            text += (data.text as string) || "";
-            receivedText = text;
-            setAssistantTurns((current) => {
-              const copy = [...current];
-              copy[copy.length - 1] = { ...copy[copy.length - 1], content: text };
-              return copy;
-            });
-          } else if (type === "error") {
-            if (data.canContinue === true && typeof data.continueFromTurnId === "string") recoveryTurn = data.continueFromTurnId;
-            if (typeof data.code === "string") orbFailureCode = data.code;
-            streamError = (data.error as string) || (data.message as string) || "画布助手暂时不可用";
-          } else if (type === "tool_start" || type === "tool_end") {
-            orbCue(type === "tool_start" ? { type: "tool-start", tool: String(data.tool || "") } : { type: "tool-end", error: !!data.isError });
-            setAssistantResponding(false);
-            setAssistantSteps(current => reduceAgentProgress(current, { ...data, type }, locale === "en"));
-          } else if(type==="video_nodes"&&Array.isArray(data.nodes)){
-            const nodes=data.nodes as {id:string;projectKey:string}[];
-            if(acceptedVideoProject){if(nodes.some(node=>node.projectKey===acceptedVideoProject))await videoNodesStore.refresh();}
-            else if(nodes[0])videoProjectResult={key:nodes[0].projectKey,nodeId:nodes[0].id};
-          } else if(type==="text_nodes"&&Array.isArray(data.nodes)){
-            const ids=new Set((data.nodes as {id:string;projectKey:string}[]).filter(node=>node.projectKey===acceptedVideoProject).map(node=>node.id));
-            const account=canvasAccountRef.current,email=targetEmail||user?.email;
-            if(ids.size&&email){
-              const response=await privateFetchRaw(`/api/canvas/text-nodes?email=${encodeURIComponent(email)}`,{signal:controller.signal});
-              if(!response.ok)throw new Error("剧本资产已保存，画布文字读取暂不可用");
-              const snapshot=await response.json();
-              if(account===canvasAccountRef.current&&epoch===assistantRequestEpoch.current&&!controller.signal.aborted){
-                const added=((snapshot.nodes||[]) as CanvasTextNode[]).filter(node=>ids.has(node.id)&&node.projectKey===acceptedVideoProject).map(node=>({...node,width:node.width||TEXT_NODE_DEFAULT_W,height:node.height||TEXT_NODE_DEFAULT_H,sourceIds:node.sourceIds||[],targetIds:node.targetIds||[],productIds:node.productIds||[]}));
-                canvasTextDocument.accept(added);
-              }
-            }
-          } else if (type === "artifacts" && Array.isArray(data.artifacts)) {
-            setAssistantSteps(current => reduceAgentProgress(current, { ...data, type }, locale === "en"));
-            const artifacts = data.artifacts as {id:string;image:string;title:string}[];
-            artifacts.forEach(art => artifactIds.add(art.id));
-            orbCue({ type: "artifacts", count: artifactIds.size });
-            setAssistantTurns(current => { const copy = [...current], last = copy[copy.length-1]; if(last) copy[copy.length-1] = {...last, artifacts:Array.from(new Map([...(last.artifacts || []),...artifacts].map(art=>[art.id,art])).values())}; return copy; });
-          } else if (type === "final") {
-            text = String(data.reply || text);
-            setAssistantTurns(current => { const copy = [...current], last = copy[copy.length-1]; if(last) copy[copy.length-1] = {...last,content:text}; return copy; });
-          }
-        }
-      }
-      if (streamError) throw new Error(streamError);
-      if (!completed) throw new Error("任务连接已中断，请从历史核对执行结果，避免重复生图");
-      if (!text.trim()) throw new Error("助手没有返回内容，请重试");
-      setAssistantTurns((current) => {
-        const copy = [...current];
-        copy[copy.length - 1] = { ...copy[copy.length - 1], content: text.trim() };
-        return copy;
-      });
-      if (assistantRetry.current === attempt) assistantRetry.current = null;
-      assistantSessionId.current = serverSessionId;
-      setAssistantOutcome("done");
-      orbCue({ type: "done" });
-      if(videoProjectResult&&!activeProjectRef.current?.key){await videoNodesStore.refresh();if(epoch===assistantRequestEpoch.current){setCreatingNew(false);setBrowsing(false);setActiveKey(videoProjectResult.key);setSelectedId(videoProjectResult.nodeId);}}
-    } catch (error) {
-      if (epoch !== assistantRequestEpoch.current) return;
-      if(acceptedSession!==assistantSessionId.current)return;
-      if (assistantRetry.current === attempt && !recoveryTurn && !receivedText) setAssistantInput(continueText ? "" : text);
-      setAssistantContinueTurn(controller.signal.aborted ? null : recoveryTurn);
-      assistantSessionId.current=serverSessionId;
-      const failureCode = orbFailureCode || classifyAgentFailure(error).code;
-      const aborted = controller.signal.aborted || failureCode === "ABORTED";
-      setAssistantOutcome(aborted ? "stopped" : "error");
-      orbCue(aborted ? { type: "stop" } : { type: "failure", code: failureCode });
-      setAssistantError(controller.signal.aborted ? "任务已停止，可从历史继续。已生成的结果会保留。" : error instanceof Error ? error.message : "画布助手暂时不可用");
-    } finally {
-      if (artifactIds.size) { const ids = [...artifactIds]; const fresh = await mergeWorks(ids); pushAddUndoMany(ids,fresh); }
-      if (assistantController.current === controller) { assistantController.current = null; setAssistantBusy(false); }
-    }
   }
+  function currentAssistantReferences(){return assistantSession.refs(canvasAssistantContext());}
+  function uploadAssistantImages(files:File[]){if(readOnly||!user)return Promise.resolve();return assistantSession.upload(files,canvasAssistantContext());}
+  function sendAssistantMessage(continueText=false){if(readOnly||!user)return Promise.resolve();return assistantSession.send(canvasAssistantContext(),continueText);}
 
   // 助手回复里的 [[GEN]] 提示词 → 复用 runGen 管线(占位节点/撤销/计费)生成子节点
   function genFromAssistant(prompt: string) {
@@ -3376,10 +3087,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
 
   // 展示层保留原始 Markdown 和已有生图入口，不修改 Agent 执行或历史数据。
-  async function copyAssistantText(content: string) {
-    const session = assistantSessionId.current, epoch = assistantRequestEpoch.current;
-    const ok = await copyText(content);
-    if (ok && session === assistantSessionId.current && epoch === assistantRequestEpoch.current) orbCue({ type: "copied" });
+  async function copyAssistantText(content:string){
+    const accepted=assistantSession.identity(),ok=await copyText(content),now=assistantSession.identity();
+    if(ok&&assistantSession.isCurrent()&&accepted.sessionId===now.sessionId&&accepted.epoch===now.epoch)orbCue({type:"copied"});
     return ok;
   }
   function renderAssistantContent(content: string) {
@@ -7733,8 +7443,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           return <CanvasAssistantPanel open={assistantVisible} focusInput={assistantFocusInput} contextReady={true} modelControl={<TextModelSelect feature="canvas.assistant" compact composer dark={!lightCanvas} />} key={`assistant:${activeKey || "empty"}`} historyScopeKey={activeKey||"workspace"} light={lightCanvas} anchorTitle={anchor?.title || (locale==="en"?"Text conversation":"文本对话")}
             contextImages={currentAssistantReferences().map(artwork => ({ id: artwork.id, title: artwork.title, image: cdnUrl(artwork.image) }))}
             onUploadImages={files=>void uploadAssistantImages(files)} uploadingImages={assistantUploading} uploadError={assistantUploadError}
-            onRemoveReference={id=>{if(assistantBusy||assistantUploadToken.current)return;setAssistantAttachments(current=>current.filter(art=>art.id!==id));setAssistantExcludedReferences(current=>[...current,id]);setAssistantUploadError(null);assistantRetry.current=null;}}
-            selectedSkill={assistantSkill} onSkillSelect={skill => { setAssistantSkill(skill); assistantRetry.current = null; }} skillAccountKey={user?.email || ""} skillSessionId={assistantSessionId.current} turns={assistantTurns} input={assistantInput} busy={assistantBusy} error={assistantError} canContinue={!!assistantContinueTurn} onContinue={()=>void sendAssistantMessage(true)} steps={assistantSteps} english={locale === "en"} responding={assistantResponding} activity={assistantActivity} attention={orbCompanion.model.attention} onStop={() => void stopAssistantTask()}
+            onRemoveReference={assistantSession.removeReference}
+            selectedSkill={assistantSkill} onSkillSelect={assistantSession.skill} skillAccountKey={user?.email || ""} skillSessionId={assistantSession.identity().sessionId} turns={assistantTurns} input={assistantInput} busy={assistantBusy} error={assistantError} canContinue={!!assistantContinueTurn} onContinue={()=>void sendAssistantMessage(true)} steps={assistantSteps} english={locale === "en"} responding={assistantResponding} activity={assistantActivity} attention={orbCompanion.model.attention} onStop={() => void stopAssistantTask()}
             labels={{title: t("canvas.assistant.title"),
               scrollToBottom: t("canvas.assistant.scrollToBottom"),
               newChat: t("canvas.assistant.newChat"),
@@ -7762,13 +7472,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               retry: t("canvas.assistant.retry")}}
             tasks={["main", "detail", "scene", "retouch", "background", "copyLayout", "review", "prompt"].map(id => ({ id, label: t(`canvas.assistant.${id}`), prompt: t(`canvas.assistant.${id}Prompt`) }))}
             costLabel={billing.catalog?.features["canvas.assistant"]?.prices.medium?.["1K"] === 0 ? "对话免费 · 生图另行计费" : billing.catalog?.features["canvas.assistant"]?.prices.medium?.["1K"] != null ? `${billing.catalog.features["canvas.assistant"].prices.medium["1K"]} 积分 / 轮 · 生图另行计费` : "对话报价加载中 · 生图另行计费"}
-            onInputChange={value => { setAssistantInput(value); orbCue({ type: "draft", text: value }); }} onSend={() => void sendAssistantMessage()}
-            onClearReference={()=>{if(assistantUploadToken.current)return;setAssistantAttachments([]);setAssistantExcludedReferences([]);setAssistantArtworkId(null);setSelectedId(null);setSelectedTextId(null);assistantRetry.current=null;}}
-            onNewChat={() => { if(assistantUploadToken.current)return;setAssistantAttachments([]);setAssistantExcludedReferences([]);setAssistantUploadError(null);orbCue({ type: "reset" }); assistantSessionId.current = browserRandomUUID(); setAssistantSteps([]); setAssistantOutcome("idle"); setAssistantTurns([]); setAssistantInput(""); setAssistantError(null); setAssistantContinueTurn(null); assistantRetry.current = null; }}
-            historyLoader={async () => { const response=await privateFetchRaw(`/api/canvas/assistant?projectKey=${encodeURIComponent(activeKey||"workspace")}`);const data=await expectJsonOk(response,"历史记录读取失败");return (data.sessions||[]).map((session:{id:string;title:string;updatedAt:string;anchorId:string})=>({...session,turns:[]})); }}
-            onRenameHistory={async(id,title)=>{await expectJsonOk(await privateFetchRaw(`/api/canvas/assistant?projectKey=${encodeURIComponent(activeKey || "workspace")}&id=${encodeURIComponent(id)}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({title})}),"会话改名失败");}}
-            onDeleteHistory={async(id)=>{await expectJsonOk(await privateFetchRaw(`/api/canvas/assistant?projectKey=${encodeURIComponent(activeKey || "workspace")}&id=${encodeURIComponent(id)}`,{method:"DELETE"}),"删除会话失败");if(assistantSessionId.current===id){orbCue({ type: "reset" }); assistantSessionId.current=browserRandomUUID();setAssistantContinueTurn(null);setAssistantError(null);setAssistantTurns([]);setAssistantSteps([]); setAssistantOutcome("idle");}}}
-            onRestoreChat={(turns,id) => { if(id){void restoreAssistantConversation(anchor?.id||"",id);return;}orbCue({ type: "reset" }); assistantSessionId.current=browserRandomUUID();setAssistantSteps([]); setAssistantOutcome("idle");setAssistantTurns(turns);setAssistantInput("");setAssistantError(null);setAssistantContinueTurn(null);assistantRetry.current=null; }}
+            onInputChange={value=>{assistantSession.input(value);orbCue({type:"draft",text:value});}} onSend={() => void sendAssistantMessage()}
+            onSynchronizeResults={assistantSession.state.syncIds.length?()=>void assistantSession.synchronize():undefined}
+            onClearReference={()=>{if(assistantSession.isUploading())return;assistantSession.clearReferences();setSelectedId(null);setSelectedTextId(null);}}
+            onNewChat={()=>assistantSession.newChat(canvasAssistantContext())}
+            historyLoader={()=>assistantSession.list(canvasAssistantContext())}
+            onRenameHistory={(id,title)=>assistantSession.rename(id,title,canvasAssistantContext())}
+            onDeleteHistory={id=>assistantSession.remove(id,canvasAssistantContext())}
+            onRestoreChat={(turns,id)=>{if(id){void restoreAssistantConversation(anchor?.id||"",id);return;}assistantSession.newChat(canvasAssistantContext(),turns);}}
             onClose={closeAssistant}
             onPreview={image => setLightbox({ src: image.image, alt: image.title })}
             onCopy={copyAssistantText} feedbackLabels={locale === "en" ? { positive: "Helpful", negative: "Needs improvement" } : { positive: "有帮助", negative: "需要改进" }} onFeedback={positive => orbCue({ type: "feedback", positive })} renderContent={renderAssistantContent}

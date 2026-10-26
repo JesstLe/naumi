@@ -27,7 +27,7 @@ export type SavedConversation = { id: string; title: string; turns: CanvasAssist
 
 /** Presentation-only sidebar: the parent owns SSE, context, model routing and billing. */
 export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns, input, busy, error,
-  selectedSkill, onSkillSelect, skillAccountKey, skillSessionId, costLabel, labels, tasks, onInputChange, onSend, onContinue, canContinue = false, onNewChat, onRestoreChat, onClose, onPreview,
+  selectedSkill, onSkillSelect, skillAccountKey, skillSessionId, costLabel, labels, tasks, onInputChange, onSend, onContinue, onSynchronizeResults, canContinue = false, onNewChat, onRestoreChat, onClose, onPreview,
   onCopy, onFeedback, feedbackLabels = { positive: "有帮助", negative: "需要改进" }, renderContent, modelControl, steps = [], onStop, onClearReference, onUploadImages, onRemoveReference, uploadingImages = false, uploadError, historyLoader, historyScopeKey = "", onRenameHistory, onDeleteHistory, open = true, focusInput = true, contextReady = true, english = false, responding = false, attention, activity,
 }: {
   selectedSkill?: ImageSkill | null;
@@ -66,6 +66,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
   onInputChange: (value: string) => void;
   onSend: () => void;
   onContinue?: () => void;
+  onSynchronizeResults?:()=>void;
   canContinue?: boolean;
   onNewChat: () => void;
   onRestoreChat: (turns: CanvasAssistantTurn[], id?:string) => void;
@@ -320,7 +321,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
       {uploadingImages && <div role="status" className="canvas-ui-muted mb-2 flex items-center gap-2 text-[12px]"><Loader2 className="h-3.5 w-3.5 animate-spin" />{english ? "Adding images…" : "正在添加图片…"}</div>}
       {error && <div role="alert" className="mb-2 rounded-xl border border-[#f0c8c3] bg-[#fff5f3] px-3 py-2 text-[12px] text-[#b44f43]">
         {error}
-        <button type="button" disabled={busy || uploadingImages || (!canContinue && !input.trim())} className="ml-2 font-semibold underline disabled:opacity-40" onClick={canContinue && onContinue ? onContinue : onSend}>{canContinue && onContinue ? (english ? "Continue output" : "继续输出") : labels.retry}</button>
+        <button type="button" disabled={busy || uploadingImages || (!onSynchronizeResults && !canContinue && !input.trim())} className="ml-2 font-semibold underline disabled:opacity-40" onClick={onSynchronizeResults|| (canContinue&&onContinue?onContinue:onSend)}>{onSynchronizeResults?(english?"Sync saved results":"同步已有结果"):canContinue&&onContinue?(english?"Continue output":"继续输出"):labels.retry}</button>
       </div>}
       <div ref={referenceArea} data-testid="canvas-assistant-composer" className="relative rounded-[20px] border border-[var(--canvas-ui-border)] p-3 shadow-[0_2px_12px_rgba(15,23,42,0.02)] transition-[border-color,box-shadow] focus-within:border-[var(--canvas-ui-border-strong)] focus-within:shadow-[0_0_0_3px_var(--canvas-ui-soft)]">
         <div className="mb-2 flex min-w-0 items-center justify-between gap-2">

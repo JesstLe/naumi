@@ -1,5 +1,4 @@
-import type { OrbState } from "../../components/naumi-orb/orb-model";
-import { orbToolFace } from "../../components/naumi-orb/orb-companion";
+import type { OrbState } from "./orb-contract";
 import type { PublicToolDetails } from "../agent/tool-presentation";
 
 export type AgentOrbOutcome = "idle" | "running" | "done" | "error" | "stopped";
@@ -45,3 +44,10 @@ export function readOrbPosition(raw: string | null): OrbPoint {
   return { x: 1, y: .18 };
 }
 export function orbPositionKey(email: string) { return `naumi:canvas-agent-orb:v1:${encodeURIComponent(email.toLowerCase())}`; }
+
+export function orbToolFace(tool: string): OrbState {
+  if (/^(search_|list_|get_history|find_|retrieve_)/.test(tool)) return "searching";
+  if (/^(verify_|check_|inspect_|analyze_)/.test(tool)) return "focused";
+  if (/^(fetch_|browse_|web_|download_)/.test(tool)) return "connecting";
+  return "working";
+}

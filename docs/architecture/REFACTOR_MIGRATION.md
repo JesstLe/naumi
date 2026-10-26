@@ -1,5 +1,7 @@
 # 渐进迁移与集中验收台账
 
+2026-10-26 R5M：Canvas助手会话/SSE/历史/附件/停止/原意图重试归唯一owner，Canvas8080→7791行，163函数保持/8adapter；纯Orb合同及兼容同对象，原helper不变。旧9类34→新15类55、实际双HTTP入口与PG20、完整BillingProvider实际Next6/相邻15+5、feedback29/Orb128、tsc/lint通过（原8warning），SCC0。4412hash完整副本回滚/四产物/远端以DELIVERY为准；第3模块封存后普通整合main，整体继续CAS/外围组合/R6，不合main、不部署。见 [R5M记录](../changes/2026-10-26-canvas-assistant-session-r5m.md)。
+
 2026-10-26 R5I后三模块main普通整合：c1578088接73384aaa，三冲突已按真实owner迁入，未恢复巨型durable/存储实现；保留Workerinflight排空、真实失败证据与原素材查询，新增bind失败只释放own lease。完整旧c157 cleanup两例转UNKNOWN已重现；合并后真实PG清理8/失败证据38、父回执25、项目素材33、UI19、unit15/Python14、Linux图片Worker71/实际Next六入口20通过，SCC静态/全导入仍0，tsc通过/lint原3warning保留。双parent提交、4380hash回滚、四产物/远端/清理以main-sync DELIVERY为准；计数归零，外围UI-CAS/R6继续，不合main、不部署。见 [整合记录](../changes/2026-10-26-refactor-main-sync-r5i.md)。
 
 2026-10-26 R5I：对象存储raw/managed-read/upload/metadata-query、项目访问/key、TeamError和Fleet发布合同按owner分离；77存储/媒体消费者及其它调用改绑，旧出口同函数/对象兼容。7194原声明保持、37迁移、2动态import改目标、算法变化0；emitted静态环2→0/全导入环4→0，raw22→8和wire1778→98输入只作结构指标。完整旧新团队/私有媒体/本地回退/项目/Fleet通过；真实项目PNG导入33、loopback存储20/远程优先20两侧通过，Linux图片Worker71/实际Next六入口20及tsc/lint通过。旧视频全站fixture缺Router的setup失败保留。四产物/4368hash副本回滚/patch/提交及三模块main整合以DELIVERY为准；外围UI-CAS/整包CI/基准容量/R6继续，不合main、不部署。见 [R5I记录](../changes/2026-10-26-leaf-owner-boundaries-r5i.md)。
