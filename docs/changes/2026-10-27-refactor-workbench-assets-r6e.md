@@ -27,3 +27,15 @@
 独立Python16旧测试通过；新增实际鉴权资产/原字节/旧URL兼容负例后首次17测试耗尽同一个fixture client的既有登录次数，最后旧geometry测试429。仅新增用例改用独立测试client标识，不改产品限流或跳过断言；最终17通过（1条第三方anyio弃用warning），原失败保留。
 
 主应用全项目tsc、两文件lint已exit0。核心新增静态workbench-assets入口：实际CLI原字节复制、实际renderer和三个环境合同；不把静态子入口声称为浏览器验收。最终固定SHA core24和完整19场景报告、四产物/回滚/Git以DELIVERY为准。
+
+
+## 固定源码最终结果
+
+固定清洁源码`7ca81bccbee90f31a47686402e6e1361967967f0`，core全文件digest=`b7dbbff17cb6789f78086012a8033fac5fe318cf551fb67e4c4fd093e42b2bbc`：24入口全部PASS，failed0/not-run0、exit0。其中workbench-assets静态38检查，实际build/renderer/三环境合同，未启动浏览器；其它23入口全部沿原core。
+
+- 实际浏览器最终19场景712检查，0页面异常、无积分确认、未登录不执行页面/读取settings、原unknown只查receipt；六资产原字节相同，三页CSS hash、页面/控件投影和原paid wire精确旧新一致。API/session/生成是loopback fixture，实际页面/renderer/bridge未替换，不冒充真实PG/供应商/完整Next镜像验收。
+- 独立Python完整旧16/新版17测试均通过，FastAPI实际路由返回同源资产字节、未登录401、非白名单404、旧URL相同；仅保留第三方anyio弃用warning。
+- 全项目tsc与两文件lint均空输出exit0，runner自测12类65检查通过；TypeScript擦除后的全仓静态/字面动态导入环均0。
+- 234个共用页面/history函数在只还原显式环境表达式后文本相同，明确差异只有single.loadSettings的已存模型选择时序和history.source的canonical/desktop图片键；没有据此声称任意算法等价。样式原字节hash相同。
+
+后续收尾只更新本文和主台账；被测应用/脚本/服务字节与最终文档提交分层绑定，独立副本回滚恢复4484原hash及原19场景行为。原失败记录、精确命令/literal/exit、四产物、远端SHA和自有资源清理以DELIVERY.json为准。R6E本模块完成不等于全项目完成，整体active。
