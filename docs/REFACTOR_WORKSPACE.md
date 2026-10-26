@@ -1,5 +1,7 @@
 # 核心链路重构专用工作区
 
+2026-10-26 R5N：在线改字扫描/草稿/原operation入队与后台观察归唯一owner，原侧栏独立，结果复用attachment；Canvas7791→7311，164函数保持/8adapter，旧平行状态删除。旧10类35→新22类79、SSR24同HTML、实际OCR/任务/账务PG28、Next5/相邻15+5+5、助手55通过；最终compiler/结构/4425hash副本回滚与四产物/远端清理以DELIVERY为准。第1模块，CAS/外围组合/R6继续，不合main、不部署。见 [R5N记录](changes/2026-10-26-canvas-image-text-r5n.md)。
+
 2026-10-26 R5M后三模块普通整合：0bb21cfb接固定d460e61f，无Git冲突，Pool真owner保持，receipt非import正文等incoming；维护runner补Pool同实例alias且保留固定b15绑定，不执行生产repair。旧新primitive29→35/完整源码入口24→37，placement23/runner真实PG、助手15类55、tsc/lint通过；SCC仍0。4419hash副本回滚/四产物/双parent及远端以main-sync DELIVERY为准，计数归零，整体CAS/外围组合/R6继续，不合main、不部署。见 [同步记录](changes/2026-10-26-refactor-main-sync-r5m.md)。
 
 2026-10-26 R5M：Canvas助手会话/SSE/历史/附件/停止/原意图重试归唯一owner，Canvas8080→7791行，163函数保持/8adapter；纯Orb合同及兼容同对象，原helper不变。旧9类34→新15类55、实际双HTTP入口与PG20、完整BillingProvider实际Next6/相邻15+5、feedback29/Orb128、tsc/lint通过（原8warning），SCC0。4412hash完整副本回滚/四产物/远端以DELIVERY为准；第3模块封存后普通整合main，整体继续CAS/外围组合/R6，不合main、不部署。见 [R5M记录](changes/2026-10-26-canvas-assistant-session-r5m.md)。

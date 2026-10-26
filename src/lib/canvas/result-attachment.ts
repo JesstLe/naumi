@@ -7,7 +7,7 @@ import {readImagegenResponse} from "../imagegen/http";
 export type CanvasResultImage={id:string;url?:string;width?:number;height?:number};
 type Layout={kind:"pixels";gap:number}|{kind:"detail";gap:number;height:(art:Artwork)=>number}|{kind:"single"};
 type Services={
-  position:()=>CanvasPoint;layout:Layout;saveErrorText:string;
+  position:()=>CanvasPoint|undefined;layout:Layout;saveErrorText:string;
   merge:(ids:string[],current:()=>boolean)=>Promise<Artwork[]>;
   history:(ids:string[],artworks:Artwork[])=>void;
   attached?:(images:CanvasResultImage[],artworks:Artwork[])=>Promise<void>|void;
@@ -26,9 +26,9 @@ export function createCanvasResultAttachment(input:Services){
       const body=await readImagegenResponse<{artworks:Artwork[]}>(response,input.saveErrorText);scope.assertCurrent();
       assertGenerationResultsPresent(ids,body.artworks||[]);metadata=new Map(body.artworks.map(art=>[art.id,art]));
     }
-    let y=point.y;
+    let y=point?.y??0;
     for(const image of images){
-      if(!placed.has(image.id)){
+      if(!placed.has(image.id)&&point){
         const headers=await canvasImageTaskHeaders(scope);headers.set("content-type","application/json");scope.assertCurrent();
         const body={...(input.layout.kind==="single"?{}:{email:scope.owner}),id:image.id,x:Math.round(point.x),y:Math.round(y)};
         const response=await fetch("/api/artworks/position",{method:"POST",headers,body:JSON.stringify(body)});

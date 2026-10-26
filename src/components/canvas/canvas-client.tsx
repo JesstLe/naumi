@@ -25,6 +25,9 @@ import {compileCanvasLink,type CanvasLinkIntent} from "@/lib/canvas/link-command
 import {compileCanvasMove} from "@/lib/canvas/drag-controller";
 
 import {useCanvasAssistant} from "./use-canvas-assistant";
+import {useCanvasImageTextEditor} from "./use-canvas-image-text-editor";
+import {CanvasImageTextPanel} from "./image-text-panel";
+import type {CanvasImageTextContext,CanvasOcrSegment as OcrSegment} from "@/lib/canvas/image-text-editor";
 import {canvasDocumentFetch} from "@/lib/canvas/document-scope";
 import type {CanvasAssistantContext} from "@/lib/canvas/assistant-session";
 import { CachedImage } from "@/components/cached-image";
@@ -327,14 +330,6 @@ const CANVAS_WORKFLOWS: Array<{
 
 
 
-type OcrBox = { x: number; y: number; width: number; height: number };
-type OcrSegment = {
-  id: string;
-  text: string;
-  editedText: string;
-  confidence: number;
-  box: OcrBox;
-};
 
 // 沿血缘上溯到根作品(带环保护)
 function rootOf(a: Artwork, byId: Map<string, Artwork>): Artwork {
@@ -769,16 +764,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [canvasImageTaskRefreshKey, setCanvasImageTaskRefreshKey] = useState(0);
   const settledCanvasVideoTaskRef = useRef(new Set<string>());
   const failedCanvasVideoTaskRef = useRef(new Set<string>());
-  const settledCanvasImageTaskRef = useRef(new Set<string>());
-  const failedCanvasImageTaskRef = useRef(new Set<string>());
-  const ocrApplyLockRef = useRef(false);
-  const ocrRequestEpochRef = useRef(0);
-  const ocrTaskSegmentRef = useRef(new Map<string, {
-    artworkId: string;
-    segmentId: string;
-    oldText: string;
-    newText: string;
-  }>());
   const pendSeqRef = useRef(1);
   const canvasTextDocument = useCanvasTextDocument({account:canvasAccountRef.current,actor:user?.email||"",owner:targetEmail||user?.email||"",
     project:activeKey,enabled:ready&&!!user&&!!targetEmail,readOnly,notice:flashTip});
@@ -790,17 +775,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [textComposerExpanded, setTextComposerExpanded] = useState(false);
   const textComposerDockRef = useRef<HTMLDivElement>(null);
   const [textComposerMenuOpen,setTextComposerMenuOpen]=useState(false);
-  const [ocrArtworkId, setOcrArtworkId] = useState<string | null>(null);
-  const [ocrSegments, setOcrSegments] = useState<OcrSegment[]>([]);
-  const [ocrStatus, setOcrStatus] = useState<"idle" | "scanning" | "ready" | "applying" | "done" | "error">("idle");
-  const [ocrEngine, setOcrEngine] = useState("");
-  const [ocrError, setOcrError] = useState<string | null>(null);
-  const [ocrApplyingId, setOcrApplyingId] = useState<string | null>(null);
-  const [ocrProgress, setOcrProgress] = useState(0);
-  const [ocrImageSize, setOcrImageSize] = useState<{ width: number; height: number } | null>(null);
-  const [ocrFocusedId, setOcrFocusedId] = useState<string | null>(null);
-  // 扩图/标注编辑复用占位落地管线 landEditResult，重复提交仅锁对应源节点。
-  // 生图、扩图和标注共用按源节点的同步守卫，不阻塞其他节点。
+  const imageTextEditor=useCanvasImageTextEditor(canvasArtworkDocument.scope);
+  const {artworkId:ocrArtworkId}=imageTextEditor.state;
+
   const [expandOpen, setExpandOpen] = useState(false);
   // ComfyUI 工作流面板(BYOC:算力在用户端点,不扣积分)
   const [comfyOpen, setComfyOpen] = useState(false);
@@ -1374,19 +1351,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (previous.key !== next.key || previous.email !== next.email) {
       previousCanvasContextRef.current = next;
       canvasContextEpochRef.current += 1;
-      ocrRequestEpochRef.current += 1;
-      setOcrArtworkId(null);
-      setOcrSegments([]);
-      setOcrStatus("idle");
     }
   }, [active, activeKey, user?.email]);
 
   // 进入空白画布 = 新建项目;选中/拿到真实项目后自动退出该模式
   function startNewProject() {
-    ocrRequestEpochRef.current += 1;
-    setOcrArtworkId(null);
-    setOcrSegments([]);
-    setOcrStatus("idle");
+    imageTextEditor.close();
     resetImportScope();
     setCreatingNew(true);
     setBrowsing(false);
@@ -1435,10 +1405,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   // 打开某个画布项目(从网格落地页点卡片)
   function openProject(key: string) {
-    ocrRequestEpochRef.current += 1;
-    setOcrArtworkId(null);
-    setOcrSegments([]);
-    setOcrStatus("idle");
+    imageTextEditor.close();
     resetImportScope();
     setActiveKey(key);
     setSelectedId(null);
@@ -1455,10 +1422,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   // 返回项目网格落地页(实际状态切换)
   function doBackToBrowser() {
-    ocrRequestEpochRef.current += 1;
-    setOcrArtworkId(null);
-    setOcrSegments([]);
-    setOcrStatus("idle");
+    imageTextEditor.close();
     resetImportScope();
     setBrowsing(true);
     setSelectedId(null);
@@ -1835,143 +1799,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     };
   }, [user?.email, active?.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 改字任务由 PostgreSQL + video-worker 持续执行。关闭侧栏、刷新或离开页面后，
-  // 再次进入同一项目会恢复占位节点，并在任务完成后把稳定作品合回画布。
-  useEffect(() => {
-    if (!user || !active || persistMode !== "server") return;
-    const projectKey = active.key;
-    let stopped = false;
-    let timer: number | null = null;
-    const sync = async () => {
-      try {
-        const project = activeProjectRef.current;
-        if (!project || project.key !== projectKey) return;
-        const sourceIds = project.members.map((item) => item.id);
-        const sourceIdChunks = Array.from(
-          { length: Math.max(1, Math.ceil(sourceIds.length / 80)) },
-          (_, index) => sourceIds.slice(index * 80, index * 80 + 80)
-        );
-        const responses = await Promise.all(sourceIdChunks.map((chunk) =>
-          privateFetchRaw(`/api/canvas/image-tasks?limit=500&sourceIds=${encodeURIComponent(chunk.join(","))}`)
-        ));
-        if (stopped) return;
-        if (responses.some((response) => !response.ok)) throw new Error("图片编辑任务查询失败");
-        const payloads = await Promise.all(responses.map((response) => readJsonSafe(response)));
-        if (stopped) return;
-        const currentProject = activeProjectRef.current;
-        if (!currentProject || currentProject.key !== projectKey) return;
-        const tasks = payloads.flatMap((data) => Array.isArray(data?.tasks) ? data.tasks : []) as Array<{
-          id: string;
-          kind: "text-edit";
-          sourceArtworkId: string;
-          parameters?: { canvasX?: number; canvasY?: number; newText?: string };
-          status: "queued" | "processing" | "needs_attention" | "completed" | "failed";
-          progress?: number;
-          resultArtworkId?: string;
-          error?: string;
-        }>;
-        const memberIds = new Set(currentProject.members.map((item) => item.id));
-        const relevant = tasks.filter((task) => task.kind === "text-edit" && memberIds.has(task.sourceArtworkId));
-        if (stopped) return;
-        const running = relevant.filter((task) => task.status === "queued" || task.status === "processing");
-        const runningIds = new Set(running.map((task) => task.id));
-        const terminalIds = new Set(relevant.filter((task) => task.status === "completed" || task.status === "failed" || task.status === "needs_attention").map((task) => task.id));
-        setPendNodes((items) => {
-          const progressByTask = new Map(running.map((task) => [task.id, Math.max(5, Math.min(95, Number(task.progress || 0)))]));
-          const kept = items
-            .filter((item) => item.taskKind !== "image-edit" || !item.taskId || !terminalIds.has(item.taskId))
-            .map((item) => item.taskKind === "image-edit" && item.taskId && progressByTask.has(item.taskId)
-              ? { ...item, progress: progressByTask.get(item.taskId) as number }
-              : item);
-          const known = new Set(kept.filter((item) => item.taskKind === "image-edit").map((item) => item.taskId).filter(Boolean));
-          for (const task of running) {
-            if (known.has(task.id)) continue;
-            const source = currentProject.members.find((item) => item.id === task.sourceArtworkId);
-            const sourceNode = source ? rfRef.current?.getNode(source.id) : null;
-            const sourceSize = sourceNode && source ? flowNodeSize(sourceNode) : source ? artworkNodeSize(source) : { width: NODE_W, height: NODE_H };
-            const x = task.parameters?.canvasX == null ? Number.NaN : Number(task.parameters.canvasX);
-            const y = task.parameters?.canvasY == null ? Number.NaN : Number(task.parameters.canvasY);
-            kept.push({
-              id: `pend-image-task-${task.id}`,
-              taskId: task.id,
-              taskKind: "image-edit",
-              x: Number.isFinite(x) ? x : (sourceNode?.position.x ?? source?.canvasX ?? 0) + sourceSize.width + X_GAP,
-              y: Number.isFinite(y) ? y : sourceNode?.position.y ?? source?.canvasY ?? 0,
-              parentId: task.sourceArtworkId,
-              linked: true,
-              label: task.parameters?.newText ? `改字结果 · ${String(task.parameters.newText).slice(0, 18)}` : "改字结果生成中",
-              uploading: false,
-              progress: Math.max(5, Math.min(95, Number(task.progress || 0))),
-              inputs: [task.sourceArtworkId],
-              generating: true,
-            });
-          }
-          return kept;
-        });
-
-        for (const task of relevant) {
-          if (
-            task.status === "completed" &&
-            task.resultArtworkId &&
-            !memberIds.has(task.resultArtworkId) &&
-            !settledCanvasImageTaskRef.current.has(task.id)
-          ) {
-            if (stopped) return;
-            const x = task.parameters?.canvasX == null ? Number.NaN : Number(task.parameters.canvasX);
-            const y = task.parameters?.canvasY == null ? Number.NaN : Number(task.parameters.canvasY);
-            if (Number.isFinite(x) && Number.isFinite(y)) {
-              const positionResponse = await privateFetchRaw("/api/artworks/position", {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ id: task.resultArtworkId, x: Math.round(x), y: Math.round(y) }),
-              });
-              if (stopped) return;
-              if (!positionResponse.ok) throw new Error("改字结果定位失败");
-            }
-            if (stopped) return;
-            const fresh = await mergeWorks([task.resultArtworkId]);
-            if (stopped) return;
-            if (!fresh.some((item) => item.id === task.resultArtworkId)) continue;
-            settledCanvasImageTaskRef.current.add(task.id);
-            pushAddUndo(task.resultArtworkId, fresh);
-            await refreshCredits();
-            if (stopped) return;
-            if (ocrArtworkId === task.sourceArtworkId) {
-              const segmentTask = ocrTaskSegmentRef.current.get(task.id);
-              if (segmentTask && segmentTask.artworkId === task.sourceArtworkId) {
-                setOcrSegments((items) => items.map((item) =>
-                  item.id === segmentTask.segmentId
-                    ? { ...item, text: segmentTask.newText, editedText: segmentTask.newText }
-                    : item
-                ));
-              }
-              setOcrProgress(100);
-              setOcrStatus(running.some((item) => item.sourceArtworkId === task.sourceArtworkId) ? "ready" : "done");
-            }
-            ocrTaskSegmentRef.current.delete(task.id);
-            flashTip("文字修改完成，结果已生成在原图右侧");
-          }
-          if ((task.status === "failed" || task.status === "needs_attention") && !failedCanvasImageTaskRef.current.has(task.id)) {
-            failedCanvasImageTaskRef.current.add(task.id);
-            if (ocrArtworkId === task.sourceArtworkId) {
-              setOcrProgress(0);
-              setOcrStatus("error");
-              setOcrError(task.error || "在线改字失败，请稍后重试");
-            }
-            flashTip(task.error || "在线改字失败，请稍后重试");
-          }
-        }
-        if (!stopped) timer = window.setTimeout(sync, runningIds.size ? 3000 : 15000);
-      } catch {
-        if (!stopped) timer = window.setTimeout(sync, 10000);
-      }
-    };
-    void sync();
-    return () => {
-      stopped = true;
-      if (timer != null) window.clearTimeout(timer);
-    };
-  }, [user?.email, active?.key, persistMode, canvasImageTaskRefreshKey, ocrArtworkId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The owner observes the existing durable tasks; opening/closing OCR does not restart its task identity.
+  useEffect(()=>{
+    if(!user||!active||persistMode!=="server")return;
+    return imageTextEditor.follow(canvasImageTextContext());
+  },[user?.email,active?.key,persistMode,canvasImageTaskRefreshKey,canvasArtworkDocument.scope]); // eslint-disable-line react-hooks/exhaustive-deps
   const selectedBatchArts = useMemo(() => {
     if (!active || multiSel.length < 2) return [];
     const byId = new Map(active.members.map((art) => [art.id, art]));
@@ -2611,154 +2443,20 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     });
   }
 
-  async function openImageTextEditor(artwork: Artwork) {
-    if (readOnly || !user) return;
-    assistantSession.detach();
-    setPropertiesOpen(false);
-    const requestEpoch = ocrRequestEpochRef.current + 1;
-    ocrRequestEpochRef.current = requestEpoch;
-    suspendAssistant(); // 与画布助手面板互斥，不覆盖用户显隐偏好
-    setOcrArtworkId(artwork.id);
-    setOcrSegments([]);
-    setOcrEngine("");
-    setOcrError(null);
-    setOcrImageSize(null);
-    setOcrFocusedId(null);
-    setOcrStatus("scanning");
-    setOcrProgress(12);
-    const progressTimer = window.setInterval(() => {
-      setOcrProgress((current) =>
-        current >= 88
-          ? current
-          : Math.min(88, current + Math.max(2, Math.round((92 - current) / 8)))
-      );
-    }, 650);
-    try {
-      const response = await privateFetch("/api/canvas/ocr", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ artworkId: artwork.id }),
-      });
-      const data = await readJsonSafe(response);
-      if (requestEpoch !== ocrRequestEpochRef.current) return;
-      if (!response.ok) throw new Error(data?.error || "图片文字识别失败");
-      const segments = ((data?.segments ?? []) as Array<{
-        id?: string;
-        text?: string;
-        confidence?: number;
-        box?: OcrBox;
-      }>).map((segment, index) => ({
-        id: segment.id || `ocr-${index + 1}`,
-        text: String(segment.text || ""),
-        editedText: String(segment.text || ""),
-        confidence: Number(segment.confidence || 0),
-        box: segment.box as OcrBox,
-      })).filter((segment) => segment.text && segment.box);
-      if (!segments.length) {
-        throw new Error("未识别到可编辑文字，请换一张更清晰的图片重试");
-      }
-      setOcrSegments(segments);
-      setOcrEngine(String(data?.engine || "ocr"));
-      const imageWidth = Number(data?.image?.width || 0);
-      const imageHeight = Number(data?.image?.height || 0);
-      setOcrImageSize(imageWidth > 0 && imageHeight > 0 ? { width: imageWidth, height: imageHeight } : null);
-      setOcrFocusedId(segments[0]?.id || null);
-      setOcrProgress(100);
-      setOcrStatus("ready");
-    } catch (error) {
-      if (requestEpoch !== ocrRequestEpochRef.current) return;
-      setOcrError(error instanceof Error ? error.message : "图片文字识别失败");
-      setOcrStatus("error");
-      setOcrProgress(0);
-    } finally {
-      window.clearInterval(progressTimer);
-    }
+  function canvasImageTextContext():CanvasImageTextContext {
+    const scope=canvasArtworkDocument.scope;
+    return {owner:targetEmail||user?.email||"",quality:genQuality,members:()=>activeProjectRef.current?.key===scope.project?activeProjectRef.current.members:[],
+      position:source=>{const node=rfRef.current?.getNode(source.id),size=node?flowNodeSize(node):artworkNodeSize(source);return{x:(node?.position.x??source.canvasX??0)+size.width+X_GAP,y:node?.position.y??source.canvasY??0};},
+      scan:(body,signal,submission,isCurrent)=>privateFetch("/api/canvas/ocr",{method:"POST",headers:{"content-type":"application/json"},body,signal,submission,isCurrent}),
+      submit:(body,submission,isCurrent)=>privateFetch("/api/canvas/image-tasks",{method:"POST",headers:{"content-type":"application/json","x-naumi-billing-operation-id":String(JSON.parse(body).operationId)},body,submission,isCurrent}),
+      read:url=>canvasDocumentFetch(scope,url,{},true),pending:change=>{if(scope.viewCurrent())setPendNodes(change);},
+      merge:(ids,isCurrent)=>mergeWorks(ids,isCurrent),history:pushAddUndoMany,refresh:()=>setCanvasImageTaskRefreshKey(value=>value+1),credits:refreshCredits,notice:message=>{if(scope.viewCurrent())flashTip(message);}};
   }
-
-  async function applyOcrSegment(segment: OcrSegment) {
-    if (readOnly || !user || !ocrArtworkId || ocrApplyLockRef.current) return;
-    const requestEpoch = ocrRequestEpochRef.current;
-    const sourceArtworkId = ocrArtworkId;
-    const source = active?.members.find((artwork) => artwork.id === ocrArtworkId);
-    if (!source) return;
-    const nextText = segment.editedText.trim();
-    if (!nextText || nextText === segment.text) {
-      setOcrError(nextText ? "请先修改文字内容" : "新文字不能为空");
-      return;
-    }
-    const sourceNode = rfRef.current?.getNode(source.id);
-    const sourceSize = sourceNode ? flowNodeSize(sourceNode) : artworkNodeSize(source);
-    const x = (sourceNode?.position.x ?? source.canvasX ?? 0) + sourceSize.width + X_GAP;
-    const y = sourceNode?.position.y ?? source.canvasY ?? 0;
-    const operationId = browserRandomUUID();
-    const pendingId = `pend-text-edit-${operationId}`;
-    const pending: Pend = {
-      id: pendingId,
-      taskKind: "image-edit",
-      x,
-      y,
-      parentId: source.id,
-      linked: true,
-      label: `改字结果 · ${nextText}`,
-      uploading: false,
-      progress: 8,
-      inputs: [source.id],
-      generating: true,
-    };
-    setPendNodes((current) => [...current, pending]);
-    ocrApplyLockRef.current = true;
-    setOcrApplyingId(segment.id);
-    setOcrStatus("applying");
-    setOcrError(null);
-    setOcrProgress(8);
-    try {
-      const response = await privateFetch("/api/canvas/image-tasks", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          kind: "text-edit",
-          quality: genQuality,
-          artworkId: source.id,
-          oldText: segment.text,
-          newText: nextText,
-          box: segment.box,
-          canvasX: Math.round(x),
-          canvasY: Math.round(y),
-          operationId,
-        }),
-      });
-      const data = await readJsonSafe(response);
-      const taskId = String(data?.taskId || "");
-      if (!response.ok || !taskId) throw new Error(data?.error || "在线改字任务创建失败");
-      setPendNodes((items) => items.map((item) =>
-        item.id === pendingId
-          ? { ...item, taskId, taskKind: "image-edit" }
-          : item
-      ));
-      ocrTaskSegmentRef.current.set(taskId, {
-        artworkId: sourceArtworkId,
-        segmentId: segment.id,
-        oldText: segment.text,
-        newText: nextText,
-      });
-      setCanvasImageTaskRefreshKey((value) => value + 1);
-      if (requestEpoch === ocrRequestEpochRef.current) {
-        setOcrProgress(0);
-        setOcrStatus("ready");
-      }
-      flashTip("改字任务已进入后台，可关闭面板继续其他工作");
-    } catch (error) {
-      setPendNodes((items) => items.filter((item) => item.id !== pendingId));
-      if (requestEpoch === ocrRequestEpochRef.current) {
-        setOcrError(error instanceof Error ? error.message : "在线改字任务创建失败");
-        setOcrStatus("error");
-        setOcrProgress(0);
-      }
-    } finally {
-      ocrApplyLockRef.current = false;
-      setOcrApplyingId(null);
-    }
+  async function openImageTextEditor(artwork:Artwork){
+    if(readOnly||!user)return;assistantSession.detach();setPropertiesOpen(false);suspendAssistant();
+    await imageTextEditor.open(artwork,canvasImageTextContext());
   }
+  function applyOcrSegment(segment:OcrSegment){if(readOnly||!user)return Promise.resolve();return imageTextEditor.apply(segment,canvasImageTextContext());}
 
   /** React owns the placeholder; task and attachment own execution/recovery. */
   async function landEditResult(source: Artwork, request: CanvasEditRequest, label: string): Promise<boolean> {
@@ -3017,7 +2715,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   function openAssistant(artwork: Artwork) {
     if (readOnly || !user) return;
     setPropertiesOpen(false);
-    setOcrArtworkId(null); // 与在线改字面板互斥
+    imageTextEditor.close(); // 与在线改字面板互斥
     discloseAssistant(true);
     if (assistantBusy || assistantArtworkId === artwork.id) return;
     assistantSession.anchor(artwork.id);
@@ -3033,7 +2731,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   function toggleAssistant() {
     if (assistantVisible) { closeAssistant(); return; }
     setPropertiesOpen(false);
-    setOcrArtworkId(null);
+    imageTextEditor.close();
     discloseAssistant(true);
     if (selected && !assistantBusy && selected.id !== assistantArtworkId) openAssistant(selected);
   }
@@ -3437,7 +3135,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
 
   function openProperties() {
-    suspendAssistant();setOcrArtworkId(null);setPropertiesOpen(true);
+    suspendAssistant();imageTextEditor.close();setPropertiesOpen(true);
   }
   async function commitNodeSettings(id: string, to: CanvasNodeSettings) {
     if (!user || readOnly || !nodeSettingsReady || historyBusyRef.current) return false;
@@ -7160,186 +6858,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             }}
           />}
 
-          {ocrArtworkId && (
-            <aside
-              aria-label="在线改字面板"
-              className="canvas-ui-surface canvas-ui-surface-solid canvas-ui-side-panel absolute bottom-4 right-4 top-4 z-30 flex w-[min(390px,calc(100%-2rem))] flex-col overflow-hidden border"
-            >
-              <div className="flex items-start justify-between border-b border-[var(--canvas-ui-border)] px-4 py-3.5">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-[15px] font-bold">
-                    <Type className="h-4 w-4 text-[#248da1]" /> 在线改字
-                  </div>
-                  <p className="mt-1 truncate text-[12px] canvas-ui-muted">
-                    {active?.members.find((artwork) => artwork.id === ocrArtworkId)?.title || "图片节点"}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  aria-label="关闭在线改字"
-                  onClick={() => {
-                    ocrRequestEpochRef.current += 1;
-                    setOcrArtworkId(null);
-                    setOcrSegments([]);
-                    setOcrError(null);
-                    setOcrImageSize(null);
-                    setOcrFocusedId(null);
-                    setOcrApplyingId(null);
-                    setOcrStatus("idle");
-                  }}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg canvas-ui-action"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              {(ocrStatus === "scanning" || ocrStatus === "applying") && (
-                <div className="border-b border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-soft)] px-4 py-3">
-                  <div className="flex items-center justify-between text-[12px] font-semibold canvas-ui-muted">
-                    <span className="flex items-center gap-2">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-[#248da1]" />
-                      {ocrStatus === "scanning" ? "正在扫描整张图片并提取文字" : "正在匹配原图字体并生成结果"}
-                    </span>
-                    <span>{Math.round(ocrProgress)}%</span>
-                  </div>
-                  <div className="mt-2 h-1.5 overflow-hidden bg-[#dfe6ec]">
-                    <div
-                      className="h-full bg-[#248da1] transition-all"
-                      style={{ width: `${Math.max(4, Math.min(100, ocrProgress))}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-                <div className="mb-3"><label className="mb-2 block text-xs">文字识别模型<TextModelSelect feature="canvas.ocr" compact dark={!lightCanvas} /></label><FeatureModelSelect feature="canvas.text-edit" disabled={ocrStatus === "applying"} /><ImageQualityControl compact feature="canvas.text-edit" resolution={active?.members.find(a => a.id === ocrArtworkId)?.resolution || "1K"} disabled={ocrStatus === "applying"} /></div>
-                {ocrError && (
-                  <div className="mb-3 border border-[#f0c8c3] bg-[#fff5f3] px-3 py-2 text-[12px] font-medium text-[#b44f43]">
-                    {ocrError}
-                  </div>
-                )}
-                {ocrStatus === "done" && !ocrError && (
-                  <div className="mb-3 border border-[#bfe1d3] bg-[#f2fbf7] px-3 py-2 text-[12px] font-medium text-[#28785e]">
-                    已生成改字结果，并放在原图右侧。
-                  </div>
-                )}
-                {ocrStatus === "ready" && ocrSegments.length === 0 && (
-                  <div className="py-12 text-center text-[13px] canvas-ui-muted">
-                    没有识别到可编辑文字。
-                  </div>
-                )}
-                {ocrSegments.length > 0 && ocrImageSize && (() => {
-                  const artwork = active?.members.find((item) => item.id === ocrArtworkId);
-                  if (!artwork?.image) return null;
-                  return (
-                    <div className="mb-3 rounded-xl border border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-soft)] p-2">
-                      <div className="mb-2 flex items-center justify-between text-[11px] font-semibold canvas-ui-muted">
-                        <span>整图文字定位</span>
-                        <span>{ocrSegments.length} 处</span>
-                      </div>
-                      <div
-                        data-testid="ocr-image-preview"
-                        className="relative mx-auto w-full overflow-hidden bg-white"
-                        style={{ aspectRatio: `${ocrImageSize.width} / ${ocrImageSize.height}` }}
-                      >
-                        <NextImage
-                          src={cdnUrl(artwork.image)}
-                          alt="OCR 整图预览"
-                          fill
-                          unoptimized
-                          sizes="390px"
-                          className="object-contain"
-                        />
-                        {ocrSegments.map((segment, index) => {
-                          const focused = ocrFocusedId === segment.id;
-                          return (
-                            <button
-                              key={segment.id}
-                              type="button"
-                              aria-label={`定位文字 ${index + 1}`}
-                              title={segment.text}
-                              onClick={() => {
-                                setOcrFocusedId(segment.id);
-                                document.getElementById(`ocr-segment-${segment.id}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-                              }}
-                              className={cn(
-                                "absolute border-2 transition-colors",
-                                focused
-                                  ? "border-[#315fc8] bg-[#315fc8]/15"
-                                  : "border-[#248da1]/70 bg-[#248da1]/10 hover:border-[#315fc8]"
-                              )}
-                              style={{
-                                left: `${(segment.box.x / ocrImageSize.width) * 100}%`,
-                                top: `${(segment.box.y / ocrImageSize.height) * 100}%`,
-                                width: `${(segment.box.width / ocrImageSize.width) * 100}%`,
-                                height: `${(segment.box.height / ocrImageSize.height) * 100}%`,
-                              }}
-                            >
-                              <span className="absolute -left-0.5 -top-5 bg-[#25313b] px-1 text-[9px] font-bold leading-4 text-white">
-                                {index + 1}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })()}
-                <div className="space-y-3">
-                  {ocrSegments.map((segment, index) => (
-                    <section
-                      id={`ocr-segment-${segment.id}`}
-                      key={segment.id}
-                      onMouseEnter={() => setOcrFocusedId(segment.id)}
-                      onFocusCapture={() => setOcrFocusedId(segment.id)}
-                      className={cn(
-                        "rounded-xl border bg-[var(--canvas-ui-soft)] p-3 transition-colors",
-                        ocrFocusedId === segment.id ? "border-[#315fc8]" : "border-[var(--canvas-ui-border)]"
-                      )}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-bold uppercase tracking-wide canvas-ui-muted">
-                          文字 {index + 1}
-                        </span>
-                        <span className="text-[10px] canvas-ui-muted">
-                          {Math.round(segment.confidence * 100)}% · {segment.box.x},{segment.box.y} · {segment.box.width}×{segment.box.height}
-                        </span>
-                      </div>
-                      <p className="mt-2 break-words text-[12px] canvas-ui-muted">
-                        原文：{segment.text}
-                      </p>
-                      <textarea
-                        aria-label={`修改文字 ${index + 1}`}
-                        value={segment.editedText}
-                        disabled={ocrStatus === "applying"}
-                        onChange={(event) => setOcrSegments((items) => items.map((item) =>
-                          item.id === segment.id ? { ...item, editedText: event.target.value } : item
-                        ))}
-                        rows={2}
-                        maxLength={300}
-                        className="canvas-ui-input mt-2 w-full resize-y rounded-lg border px-2.5 py-2 text-[14px] font-medium leading-5 outline-none transition-colors focus:border-[#248da1]"
-                      />
-                      <div className="mt-2 flex justify-end">
-                        <button
-                          type="button"
-                          aria-label={`应用文字 ${index + 1}`}
-                          disabled={ocrStatus === "applying" || !segment.editedText.trim() || segment.editedText.trim() === segment.text}
-                          onClick={() => void applyOcrSegment(segment)}
-                          className="canvas-ui-primary flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold text-white hover:bg-[#182129] disabled:cursor-not-allowed disabled:opacity-35"
-                        >
-                          {ocrApplyingId === segment.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-                          应用
-                        </button>
-                      </div>
-                    </section>
-                  ))}
-                </div>
-              </div>
-              <div className="border-t border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-soft)] px-4 py-2 text-[10px] canvas-ui-muted">
-                {ocrEngine ? `识别引擎：${ocrEngine === "paddleocr" ? "PaddleOCR" : "视觉模型兜底"}` : "优先使用 PaddleOCR 扫描整图"}
-              </div>
-            </aside>
-          )}
+          <CanvasImageTextPanel state={imageTextEditor.state} artwork={active?.members.find(artwork=>artwork.id===ocrArtworkId)} lightCanvas={lightCanvas}
+            onClose={imageTextEditor.close} onFocus={imageTextEditor.focus} onEdit={imageTextEditor.edit} onApply={applyOcrSegment} />
 
           {/* 重命名节点:在节点标签处弹出内联输入(编辑按钮触发),失焦/回车确定、Esc 取消 */}
           {renamingNodeId &&
