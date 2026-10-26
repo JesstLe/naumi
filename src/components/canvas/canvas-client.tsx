@@ -44,7 +44,7 @@ import { clipboardImageFiles } from "@/lib/canvas/clipboard-files";
 import { CANVAS_RATIO_OPTIONS, CANVAS_MAX_COUNT, normalizeCanvasRatio, normalizeCanvasResolution, normalizeCanvasCount, normalizeCanvasQuality, canvasModelParameters } from "@/lib/canvas/generation-parameters";
 import { canvasDockLayout, canvasOverlaySafeArea, type NodeScreen } from "@/lib/canvas/dock-layout";
 import { createProjectRootResolver } from "@/lib/canvas/project-roots";
-import { canvasGenerationReferences, explicitCanvasParent, synchronizeCanvasArtworks } from "@/lib/canvas/input-references";
+import { canvasGenerationReferences, explicitCanvasParent } from "@/lib/canvas/input-references";
 import { canvasFocusViewport } from "@/lib/canvas/upload-visibility";
 import { readPlacementCache, type CanvasPoint } from "@/lib/canvas/stable-placement";
 import { useCanvasTextDocument } from "./use-canvas-text-document";
@@ -171,9 +171,10 @@ import {
   toggleAccountTheme,
 } from "@/components/account/account-dock-menu";
 import { cn, formatDate } from "@/lib/utils";
-import { bytesLabel, prepareImageUploads, uploadFormData } from "@/lib/client-image-upload";
+import {useCanvasImageImports} from "./use-canvas-image-imports";
+import {CanvasImageImportStatus} from "./image-import-status";
+import {CANVAS_IMAGE_UPLOAD_LIMIT as MAX_UPLOAD,type CanvasImageImportContext} from "@/lib/canvas/image-imports";
 import {
-  adaptiveCanvasImageSize,
   type Artwork,
   GENERATION_STYLES,
 } from "@/lib/mock-data";
@@ -201,7 +202,6 @@ async function privateFetchRaw(input: RequestInfo | URL, init: RequestInit = {})
 const X_GAP = 90; // 层间横向间距
 const Y_GAP = 48; // 同层兄弟纵向间距
 const MAX_TOTAL_IMAGES = 16; // 节点图 + 追加参考图 合计上限
-const MAX_UPLOAD = 64 * 1024 * 1024;
 const MAX_GENERATION_COUNT = CANVAS_MAX_COUNT;
 type CanvasPrimaryTool = "move" | "marquee" | "hand";
 // 扩图使用同一组比例选项，不包含自适应（必须指定外扩目标）。
@@ -701,13 +701,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const uploadCtxRef = useRef<{ parentId: string | null; x: number; y: number } | null>(
     null
   );
-  // A captured scope survives queued drops, but is replaced when the user changes projects.
-  const importScopeRef = useRef<{
-    rootId: string | null;
-    queue: Promise<void>;
-    rects: { x: number; y: number; width: number; height: number; owner: number; index: number }[];
-  }>({ rootId: null, queue: Promise.resolve(), rects: [] });
-  const importSeqRef = useRef(0);
+  const imageImportOwner=useCanvasImageImports();
+  const imageImports=imageImportOwner.batches.filter(batch=>batch.workspace===canvasArtworkDocument.scope.workspace);
+  const importSynchronizationVisible=imageImports.some(batch=>batch.owner===user?.email.toLowerCase()&&batch.phase==="sync"&&batch.nodeIds?.length);
   const dragDepthRef = useRef(0);
   const [fileDragOver, setFileDragOver] = useState(false);
   const [nodeTypeMenu, setNodeTypeMenu] = useState<{ x: number; y: number; cx: number; cy: number } | null>(null);
@@ -723,18 +719,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       window.removeEventListener("paste", onPaste);
     };
   }, []);
-  const importResyncRef = useRef(new Set<number>());
-  const [imageImports, setImageImports] = useState<{
-    id: number; total: number; done: number; success: number; finished: boolean;
-    errors: { name: string; message: string }[];
-    phase: "optimizing" | "uploading" | "sync" | "done";
-    owner?: string;
-    originalBytes: number; uploadBytes: number; uploadedBytes: number;
-    nodeIds?: string[];
-  }[]>([]);
-
   function resetImportScope() {
-    importScopeRef.current = { rootId: null, queue: Promise.resolve(), rects: [] };
+    imageImportOwner.reset();
     uploadCtxRef.current = null;
     dragDepthRef.current = 0;
     setFileDragOver(false);
@@ -4336,195 +4322,29 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   canvasPasteHandlerRef.current = handleCanvasPaste;
 
-  // Multi-select and native file drops share one import path. Copy the live FileList first.
-  function uploadRoot(files: FileList | File[] | null, options?:{assistant:boolean;isCurrent:()=>boolean}):Promise<string[]> {
-    const picked = Array.from(files ?? []);
-    if (rootUploadRef.current) rootUploadRef.current.value = "";
-    if (readOnly || !user || browsing || !picked.length) return Promise.resolve([]);
-    const box = canvasAreaRef.current?.getBoundingClientRect();
-    const center = rfRef.current?.screenToFlowPosition({
-      x: (box?.left ?? 0) + (box?.width ?? 0) / 2,
-      y: (box?.top ?? 0) + (box?.height ?? 0) / 2,
-    }, { snapToGrid: false }) ?? { x: 0, y: 0 };
-    const ctx = (!options?.assistant ? uploadCtxRef.current : null) ?? {
-      parentId: activeRootId(), x: center.x - NODE_W / 2, y: center.y - NODE_H / 2,
-    };
-    if(!options?.assistant)uploadCtxRef.current = null;
-    const scope = importScopeRef.current;
-    if (ctx.parentId) scope.rootId = ctx.parentId;
-    const id = ++importSeqRef.current;
-    const email = user.email;
-    const uploadAccount = canvasAccountRef.current;
-    const failures: { name: string; message: string }[] = [];
-    const valid = picked.filter(file => {
-      const supported = /^(image\/png|image\/jpeg|image\/webp)$/.test(file.type) ||
-        (!file.type && /\.(png|jpe?g|webp)$/i.test(file.name));
-      const message = !supported ? t("canvas.importUnsupported") :
-        file.size > MAX_UPLOAD ? t("canvas.importTooLarge") :
-        file.size === 0 ? t("canvas.importEmpty") : "";
-      if (message) failures.push({ name: file.name, message });
-      return !message;
-    });
-    const canvasGroupId = valid.length > 1
-      ? `canvas-import-${Date.now()}-${id}`
-      : null;
-    const columns = Math.min(4, Math.ceil(Math.sqrt(valid.length)));
-    const entries = valid.map(file => ({ file, pos: { x: ctx.x, y: ctx.y } }));
-    setImageImports(current => [...current.filter(batch => !batch.finished || batch.errors.length > 0), {
-      id, owner: email.toLowerCase(), total: picked.length, done: failures.length, success: 0, errors: failures, finished: false,
-      phase: "optimizing", originalBytes: valid.reduce((sum, file) => sum + file.size, 0),
-      uploadBytes: valid.reduce((sum, file) => sum + file.size, 0), uploadedBytes: 0,
-    }]);
-    const run = async () => {
-      if(options&&!options.isCurrent()){
-        setImageImports(current=>current.map(batch=>batch.id===id?{...batch,finished:true,phase:"done"}:batch));
-        return [];
-      }
-      const prepared = await prepareImageUploads(entries.map(entry => entry.file), 1, {preserveOriginal:true});
-      // 解码完成后按图片比例生成舒适的画布初始尺寸；原图像素仍单独保存。
-      const preparedCanvasSizes = prepared.map((item) =>
-        adaptiveCanvasImageSize(item.width, item.height)
-      );
-      const rowCount = Math.max(1, columns);
-      let batchWidth = 0;
-      let batchHeight = 0;
-      const relative: { x: number; y: number }[] = [];
-      for (let start = 0; start < prepared.length; start += rowCount) {
-        const row = preparedCanvasSizes.slice(start, start + rowCount);
-        let rowX = 0;
-        const rowHeight = Math.max(
-          ...row.map((item) => item.height + NODE_LABEL_H),
-          NODE_H
-        );
-        row.forEach((item, offset) => {
-          relative[start + offset] = { x: rowX, y: batchHeight };
-          rowX += item.width + X_GAP;
-        });
-        batchWidth = Math.max(batchWidth, Math.max(0, rowX - X_GAP));
-        batchHeight += rowHeight + Y_GAP;
-      }
-      batchHeight = Math.max(0, batchHeight - Y_GAP);
-      const firstCanvasSize = preparedCanvasSizes[0] ?? { width: NODE_W, height: NODE_H - NODE_LABEL_H };
-      const baseX = ctx.x + NODE_W / 2 - firstCanvasSize.width / 2;
-      const baseY = ctx.y + NODE_H / 2 - (firstCanvasSize.height + NODE_LABEL_H) / 2;
-      const existingRects = [
-        ...(importScopeRef.current === scope ? rfRef.current?.getNodes() ?? rfNodes : rfNodes).map((node) => {
-          const size = flowNodeSize(node);
-          return { x: node.position.x, y: node.position.y, width: size.width, height: size.height };
-        }),
-        ...scope.rects,
-      ];
-      // Allocate only the new batch near the requested point. A distant node must
-      // never push an upload to the bottom of the entire project.
-      const nearby = placeGenerationPreview({ x: baseX, y: baseY },
-        { width: batchWidth, height: batchHeight }, existingRects);
-      entries.forEach((entry, index) => {
-        entry.pos.x = Math.round(nearby.x + relative[index].x);
-        entry.pos.y = Math.round(nearby.y + relative[index].y);
-      });
-      const batchRects = entries.map((entry, index) => ({
-        x: entry.pos.x,
-        y: entry.pos.y,
-        width: preparedCanvasSizes[index]?.width || NODE_W,
-        height: (preparedCanvasSizes[index]?.height || NODE_H - NODE_LABEL_H) + NODE_LABEL_H,
-        owner: id,
-        index,
-      }));
-      // Queued drops close over an earlier React render, so rfNodes alone cannot see the
-      // preceding batch. Keep native-size rectangles in the shared import scope as soon
-      // as the batch is laid out, then retain only successfully imported rectangles.
-      scope.rects.push(...batchRects);
-      const uploadBytes = prepared.reduce((sum, item) => sum + item.uploadBytes, 0);
-      const loaded = new Array(prepared.length).fill(0) as number[];
-      setImageImports(current => current.map(batch => batch.id === id ? {
-        ...batch, phase: "uploading", uploadBytes,
-      } : batch));
-      const ids: (string | undefined)[] = [];
-      const upload = async (index: number) => {
-        const { file, pos } = entries[index];
-        const selected = prepared[index];
-        let error = "";
-        try {
-          if(options&&!options.isCurrent())throw new Error(locale==='en'?'Conversation changed; upload cancelled.':'对话已切换，已取消尚未开始的上传。');
-          if(selected.error)throw new Error(selected.error);
-          const fd = new FormData();
-          fd.append("email", email);
-          fd.append("image", selected.file);
-          fd.append("title", file.name);
-          if (canvasGroupId) fd.append("canvasGroupId", canvasGroupId);
-          if (scope.rootId) fd.append("parentId", scope.rootId);
-          fd.append("x", String(pos.x));
-          fd.append("y", String(pos.y));
-          const d = await uploadFormData<{ id?: string; error?: string }>(
-            "/api/artworks/add", fd,
-            (sent, total) => {
-              loaded[index] = total ? Math.min(selected.uploadBytes, sent / total * selected.uploadBytes) : 0;
-              setImageImports(current => current.map(batch => batch.id === id ? {
-                ...batch, uploadedBytes: Math.round(loaded.reduce((sum, value) => sum + value, 0)),
-              } : batch));
-            }, 120_000, options ? () => {if(!options.isCurrent())throw new Error("对话已切换，已取消尚未开始的上传。");} : undefined
-          );
-          if (!d?.id) throw new Error(d?.error || t("canvas.importFailed"));
-          ids[index] = d.id;
-          if (!scope.rootId) scope.rootId = d.id;
-        } catch (e) {
-          error = e instanceof Error ? e.message : t("canvas.importFailed");
-        }
-        loaded[index] = selected.uploadBytes;
-        setImageImports(current => current.map(batch => batch.id === id ? {
-          ...batch, done: batch.done + 1, success: batch.success + (error ? 0 : 1),
-          errors: error ? [...batch.errors, { name: file.name, message: error }] : batch.errors,
-          uploadedBytes: Math.round(loaded.reduce((sum, value) => sum + value, 0)),
-        } : batch));
-      };
-      let next = 0;
-      // The first successful image is the project root; a failed first image must not split the batch.
-      while (!scope.rootId && next < entries.length) await upload(next++);
-      await Promise.all(Array.from({ length: Math.min(2, entries.length - next) }, async () => {
-        while (next < entries.length) await upload(next++);
-      }));
-      const added = ids.filter((value): value is string => !!value);
-      scope.rects = scope.rects.filter((rect) => rect.owner !== id || !!ids[rect.index]);
-      setImageImports(current => current.map(batch => batch.id === id ? { ...batch, nodeIds: added, phase: "sync" } : batch));
-      if (added.length && (!options || options.isCurrent())) {
-        // Background uploads must not drag the user back after they switch projects.
-        if (importScopeRef.current === scope && !options?.assistant) {
-          openPendingNodeWithoutSelectionRef.current = true;
-          pendingNodeRef.current = added[0];
-        }
-        const fresh = await synchronizeCanvasArtworks(added, () => mergeWorks(added), () => canvasAccountRef.current === uploadAccount);
-        if (importScopeRef.current === scope) pushAddUndoMany(added, fresh);
-      }
-      setImageImports(current => current.map(batch => batch.id === id ? {
-        ...batch, finished: true, phase: "done", uploadedBytes: batch.uploadBytes, nodeIds: added,
-      } : batch));
-      return added;
-    };
-    // Batches stay ordered; after root creation, each batch uses up to two uploads.
-    const result = scope.queue.then(run, run).catch(() => {
-      setImageImports(current => current.map(batch => batch.id === id ? {
-        ...batch, finished: true,
-        phase: batch.nodeIds?.length ? "sync" : batch.phase,
-        errors: [...batch.errors, { name: t("canvas.importSync"), message: batch.nodeIds?.length ? "图片已保存，画布尚未同步；请点击同步图片，无需重新上传" : t("canvas.importSyncFailed") }],
-      } : batch));
-      return [];
-    });
-    scope.queue=result.then(()=>{});
-    return result;
+  // DOM FileList/viewport capture stays at the edge; queue, transport and saved
+  // receipt synchronization are owned by the shared importer.
+  function canvasImportContext():CanvasImageImportContext {
+    const scope=canvasArtworkDocument.scope;
+    return {owner:user!.email,account:canvasAccountRef.current,workspace:scope.workspace,project:scope.project,
+      documentCurrent:scope.documentCurrent,viewCurrent:scope.viewCurrent,
+      rects:()=>((scope.viewCurrent()?rfRef.current?.getNodes():undefined)??rfNodes).map(node=>({...node.position,...flowNodeSize(node)})),
+      merge:ids=>mergeWorks(ids),history:pushAddUndoMany,
+      reveal:id=>{openPendingNodeWithoutSelectionRef.current=true;pendingNodeRef.current=id;},t,locale};
   }
-  async function retryImportSynchronization(batchId: number) {
-    const batch = imageImports.find(item => item.id === batchId);
-    if (!batch?.nodeIds?.length || batch.owner !== user?.email.toLowerCase() || readOnly || importResyncRef.current.has(batchId)) return;
-    importResyncRef.current.add(batchId);
-    const account = canvasAccountRef.current;
-    setImageImports(current => current.map(item => item.id === batchId ? { ...item, finished: false } : item));
-    try {
-      const fresh = await synchronizeCanvasArtworks(batch.nodeIds, () => mergeWorks(batch.nodeIds!), () => canvasAccountRef.current === account);
-      pushAddUndoMany(batch.nodeIds, fresh);
-      setImageImports(current => current.map(item => item.id === batchId ? { ...item, finished: true, phase: "done", errors: item.errors.filter(error => error.name !== t("canvas.importSync")) } : item));
-    } catch {
-      setImageImports(current => current.map(item => item.id === batchId ? { ...item, finished: true, phase: "sync" } : item));
-    } finally { importResyncRef.current.delete(batchId); }
+  function uploadRoot(files:FileList|File[]|null,options?:{assistant:boolean;isCurrent:()=>boolean}):Promise<string[]> {
+    const picked=Array.from(files??[]);
+    if(rootUploadRef.current)rootUploadRef.current.value="";
+    if(readOnly||!user||browsing||!picked.length)return Promise.resolve([]);
+    const box=canvasAreaRef.current?.getBoundingClientRect();
+    const center=rfRef.current?.screenToFlowPosition({x:(box?.left??0)+(box?.width??0)/2,y:(box?.top??0)+(box?.height??0)/2},{snapToGrid:false})??{x:0,y:0};
+    const point=(!options?.assistant?uploadCtxRef.current:null)??{parentId:activeRootId(),x:center.x-NODE_W/2,y:center.y-NODE_H/2};
+    if(!options?.assistant)uploadCtxRef.current=null;
+    return imageImportOwner.upload(picked,point,canvasImportContext(),options);
+  }
+  async function retryImportSynchronization(batchId:number){
+    if(!user||readOnly)return;
+    try{await imageImportOwner.synchronize(batchId,canvasImportContext());}catch{/* Saved IDs remain on the import status, without uploading again. */}
   }
 
   // 在画布某屏幕点(相对画布区)上传图片:落在当前项目、该点的画布坐标
@@ -5122,50 +4942,27 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     return execute();
   }
 
-  // 占位节点里选了图片 → 带进度上传 → 完成后移除占位、刷新出真节点
-  async function doUploadPend(files: FileList | null) {
-    const pendId = pendUploadTargetRef.current;
-    pendUploadTargetRef.current = null;
-    // 必须先取出 File 再清空 input —— input.value="" 会清空这个"活的"FileList,
-    // 若先清空,后面 files[0] 就拿不到文件了(之前上传无反应的根因)。
-    const file = files && files.length ? files[0] : null;
-    if (pendUploadRef.current) pendUploadRef.current.value = "";
-    if (!pendId || !file || !user) return;
-    const pend = pendNodes.find((p) => p.id === pendId);
-    if (!pend) return;
-    const info = `${file.name} · ${Math.round(file.size / 1024)}KB`;
-    setPendNodes((prev) =>
-      prev.map((p) =>
-        p.id === pendId
-          ? { ...p, uploading: true, progress: 0, fileInfo: info }
-          : p
-      )
-    );
-    const fd = new FormData();
-    fd.append("email", user.email);
-    fd.append("image", file);
-    // 有输入(拉线/连多输入)→挂第一个输入并画线;否则挂当前项目根、独立无线
-    if (pend.inputs && pend.inputs.length) {
-      fd.append("parentId", pend.inputs[0]);
-      fd.append("linked", "1");
-    } else {
-      const root = activeRootId();
-      if (root) fd.append("parentId", root);
-    }
-    fd.append("x", String(Math.round(pend.x)));
-    fd.append("y", String(Math.round(pend.y)));
-    try {
-      const body = await uploadFormData<{ id?: string; error?: string }>("/api/artworks/add", fd,
-        (sent, total) => setPendNodes(prev => prev.map(p => p.id === pendId ? { ...p, progress: total ? sent / total * 100 : 0 } : p)));
-      if (!body.id) throw new Error(body.error || t("canvas.genFail"));
-      setPendNodes(prev => prev.filter(p => p.id !== pendId));
-      setSelectedPendId(cur => cur === pendId ? null : cur);
-      pendingNodeRef.current = body.id;
-      await mergeWorks([body.id]).then(fresh => pushAddUndo(body.id!, fresh));
-    } catch (error) {
-      setGenError(error instanceof Error ? error.message : t("canvas.genFail"));
-      setPendNodes(prev => prev.map(p => p.id === pendId ? { ...p, uploading: false } : p));
-    }
+  // Placeholder import keeps its saved ID on sync failure; the shared import
+  // status resumes reads rather than asking the user to upload the file again.
+  async function doUploadPend(files:FileList|null){
+    const pendId=pendUploadTargetRef.current;pendUploadTargetRef.current=null;
+    const file=files?.length?files[0]:null;
+    if(pendUploadRef.current)pendUploadRef.current.value="";
+    if(!pendId||!file||!user||readOnly)return;
+    const pend=pendNodes.find(node=>node.id===pendId);if(!pend)return;
+    const context=canvasImportContext(),scope=canvasArtworkDocument.scope;
+    setPendNodes(nodes=>nodes.map(node=>node.id===pendId?{...node,uploading:true,progress:0,generationFailure:undefined,fileInfo:`${file.name} · ${Math.round(file.size/1024)}KB`}:node));
+    try{
+      await imageImportOwner.uploadPending(file,{pendingId:pendId,parentId:pend.inputs?.[0]||activeRootId(),linked:!!pend.inputs?.length,x:pend.x,y:pend.y},context,{
+        progress:progress=>{if(scope.viewCurrent())setPendNodes(nodes=>nodes.map(node=>node.id===pendId?{...node,progress}:node));},
+        attached:id=>{setPendNodes(nodes=>nodes.filter(node=>node.id!==pendId));setSelectedPendId(current=>current===pendId?null:current);pendingNodeRef.current=id;},
+      });
+    }catch(error){if(scope.viewCurrent()){
+      setGenError(error instanceof Error?error.message:t("canvas.genFail"));
+      const saved=imageImportOwner.pendingBatch(pendId,context);
+      setPendNodes(nodes=>nodes.map(node=>node.id===pendId?{...node,uploading:false,
+        ...(saved?.nodeIds?.length?{generationFailure:{kind:"sync" as const,message:"图片已保存，画布尚未同步；点击重试读取原结果，无需重新上传"},onGenerationRetry:()=>retryImportSynchronization(saved.id)}:{})}:node));
+    }}
   }
   function showCopyTip() {
     setCopyTip(true);
@@ -5638,7 +5435,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         return current()&&ids.every(id=>worksRef.current?.some(art=>art.id===id&&!!art.image));
       }}/>}
       {(canvasArtworkDocument.error||canvasTextDocument.error) && <div className="fixed top-20 left-1/2 z-[200] flex -translate-x-1/2 flex-col gap-2">
-      {canvasArtworkDocument.error && <div role="alert" data-testid="canvas-artwork-load-error" className="flex items-center gap-3 rounded-lg border border-amber-400 bg-white px-4 py-3 text-sm text-slate-700 shadow-lg">
+      {canvasArtworkDocument.error && !importSynchronizationVisible && <div role="alert" data-testid="canvas-artwork-load-error" className="flex items-center gap-3 rounded-lg border border-amber-400 bg-white px-4 py-3 text-sm text-slate-700 shadow-lg">
         <span>{canvasArtworkDocument.error}</span><button className="font-semibold underline" onClick={()=>void canvasArtworkDocument.retry().catch(()=>{})}>重试同步作品</button>
       </div>}
       {canvasTextDocument.error && <div role="alert" data-testid="canvas-text-load-error" className="flex items-center gap-3 rounded-lg border border-amber-400 bg-white px-4 py-3 text-sm text-slate-700 shadow-lg">
@@ -6720,45 +6517,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               </div>
             </div>
           )}
-          {imageImports.some(batch => batch.owner === user?.email.toLowerCase()) && (
-            <div className="absolute right-3 top-[108px] z-40 max-h-[40%] w-80 max-w-[calc(100%-24px)] overflow-y-auto rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm md:top-16" data-testid="canvas-import-status" aria-live="polite">
-              {imageImports.filter(batch => batch.owner === user?.email.toLowerCase()).map(batch => (
-                <div key={batch.id} className="border-b border-slate-100 p-3 last:border-0">
-                  <div className="flex items-center gap-2 text-xs font-medium">
-                    {!batch.finished && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    <span className="flex-1">{batch.phase === "sync" ? (locale === "en" ? "Syncing canvas" : "等待画布同步") : batch.finished ? t("canvas.importDone") : t("canvas.importBusy")} {batch.done} / {batch.total} · {t("canvas.importSuccess")} {batch.success}{batch.errors.length ? ` · ${t("canvas.importErrors")} ${batch.errors.length}` : ""}</span>
-                    {batch.finished && <button type="button" aria-label={t("canvas.importDismiss")} className="p-1 hover:bg-slate-100" onClick={() => setImageImports(current => current.filter(item => item.id !== batch.id))}><X className="h-3.5 w-3.5" /></button>}
-                  </div>
-                  {!batch.finished && (
-                    <div className="mt-2">
-                      <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-                        <div className="h-full rounded-full bg-sky-500 transition-[width] duration-200" style={{ width: `${batch.phase === "optimizing" ? 8 : Math.min(100, batch.uploadBytes ? batch.uploadedBytes / batch.uploadBytes * 100 : 0)}%` }} />
-                      </div>
-                      <div className="mt-1 flex justify-between text-[11px] text-slate-500">
-                        <span>{batch.phase === "optimizing" ? t("canvas.importOptimizing") : `${Math.round(batch.uploadBytes ? batch.uploadedBytes / batch.uploadBytes * 100 : 0)}%`}</span>
-                        <span>{batch.uploadBytes < batch.originalBytes ? `${bytesLabel(batch.originalBytes)} → ${bytesLabel(batch.uploadBytes)}` : bytesLabel(batch.uploadBytes)}</span>
-                      </div>
-                    </div>
-                  )}
-                  {batch.finished && batch.phase === "sync" && batch.owner === user?.email.toLowerCase() && <button type="button" data-testid="canvas-import-resync" className="mt-2 rounded-md px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50" onClick={() => void retryImportSynchronization(batch.id)}>{locale === "en" ? "Sync saved images" : "同步图片"}</button>}
-                  {batch.finished && batch.nodeIds?.some(id => active?.members.some(member => member.id === id)) && (
-                    <button type="button" data-testid="canvas-import-locate" className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50"
-                      onClick={() => {
-                        const id = batch.nodeIds?.find(id => active?.members.some(member => member.id === id));
-                        if (id) { setSelectedId(null); setSelectedTextId(null); setSelectedPendId(null); setFocusId(id); }
-                      }}>
-                      <ScanSearch className="h-3.5 w-3.5" />{locale === "en" ? "View image" : "查看图片"}
-                    </button>
-                  )}
-                  {batch.errors.length > 0 && (
-                    <ul className="mt-2 space-y-1 text-xs text-red-600">
-                      {batch.errors.map((error, index) => <li key={index} className="break-words">{error.name}：{error.message}</li>)}
-                    </ul>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+          <CanvasImageImportStatus batches={imageImports} owner={user?.email||""} active={active} locale={locale} t={t}
+            onDismiss={imageImportOwner.dismiss} onSynchronize={id=>void retryImportSynchronization(id)}
+            onLocate={id=>{setSelectedId(null);setSelectedTextId(null);setSelectedPendId(null);setFocusId(id);}} />
 
           {/* 新建项目空白画布:引导文案(右键即可加节点) */}
           {creatingNew && !active && pendNodes.length === 0 && (

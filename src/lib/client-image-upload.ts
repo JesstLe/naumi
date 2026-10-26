@@ -93,8 +93,9 @@ export async function uploadFormData<T>(
   onProgress?: (loaded: number, total: number) => void,
   timeoutMs = 120_000,
   assertCurrent?: () => void,
+  requestHeaders?: Record<string,string>,
 ): Promise<T> {
-  const headers = await authHeader();
+  const headers = {...await authHeader(),...requestHeaders};
   assertCurrent?.();
   const file=form.get('image');
   const previews=file instanceof File?originalPreviews.get(file):undefined;

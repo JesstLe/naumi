@@ -236,3 +236,5 @@ R3C1更新：Canvas 11576→10300行；183个保留函数AST正文未变，节�
 R5J更新：已普通整合固定b15d4761到真实owner；完整源码active/notification父回执24检查、GET14、primitive29、后台39、LinuxWorker71/Next20通过，SCC仍0。完整基线4390hash与副本恢复以本轮DELIVERY为准；同步计数0，下一模块Canvas外围UI/CAS和R6，不合main、不部署。见 [R5J](../changes/2026-10-26-parent-receipt-integration-r5j.md)。
 
 R5K：工作区页面导航/7lazy页面/QR生命周期已迁独立UI owner，Canvas8319行、171函数保持、完整旧44/新59及15快照相同，实际Next6+15+5通过；SCC0、原8lint warning保留。副本回滚/提交见DELIVERY，计数1，跨请求CAS/助手上传和R6继续。见 [记录](../changes/2026-10-26-canvas-workspace-pages-r5k.md)。
+
+R5L：三类导入唯一owner、原ID只读同步/队列归属/冻结头和大图预览共用，Canvas8080行/167函数保持；旧40/新59、transport17/SSR18、真实NextPG5和大图10、相邻15+5通过。跨刷新intent未做、多tabCAS/助手和R6继续。四产物/回滚/Git见DELIVERY；计数2，下一模块后main普通同步。见 [R5L](../changes/2026-10-26-canvas-image-imports-r5l.md)。

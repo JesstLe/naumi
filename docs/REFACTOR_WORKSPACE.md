@@ -1,5 +1,7 @@
 # 核心链路重构专用工作区
 
+2026-10-26 R5L：Canvas三类图片导入接唯一owner/订阅及status view，队列/root随账号工作空间隔离、原ID只读续接，同占位并发一次；Canvas8319→8080，167函数保持/4adapter改写。旧10类40复现→新14类59、transport15/17、SSR18、实际Next+PG5组/5原图、真实浏览器>12MiB占位10检查、相邻15+5通过；tsc/lint原8warning、SCC0。4402hash副本回滚/四产物/远端及清理以DELIVERY为准；第2模块，助手/CAS/R6继续，不合main、不部署。见 [R5L记录](changes/2026-10-26-canvas-image-imports-r5l.md)。
+
 2026-10-26 R5K：Canvas工作区页面owner持页面栈/QR状态/原刷新请求，view持7lazy页面与body portal，主组件真实改绑，仅回调模板应用/余额刷新；Canvas8534→8319行，171函数保持/1关闭调用改绑。完整旧React44/新59与15快照同、实际Next页面6/创作栏15/图片任务5、tsc/lint通过（原8warning），SCC仍0。4397hash副本回滚/四产物/远端及清理以本轮DELIVERY为准；第1模块，main新增b310文档待后续同步，外围UI-CAS/R6继续，不合main、不部署。见 [R5K记录](changes/2026-10-26-canvas-workspace-pages-r5k.md)。
 
 2026-10-26 R5J：普通整合固定b15d4761，原结果父回执接真实Pool owner，正文/SQL/CAS保持；dispatch保留direct Worker与delivery-billing，post-accept诊断按精确Response持久化。完整旧树active入口queued复现6/新版实际双入口24、primitive29、同URL GET14、诊断23/后台证据39、Linux图片Worker71/实际Next六入口20与tsc/lint通过；导入SCC仍0。4390hash完整副本回滚/四产物/双parent提交与远端清理以本轮DELIVERY为准。main同步计数0，Canvas外围UI-CAS/R6继续，不合main、不部署。见 [R5J记录](changes/2026-10-26-parent-receipt-integration-r5j.md)。
