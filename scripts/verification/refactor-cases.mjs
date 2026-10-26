@@ -4,6 +4,8 @@ import path from "node:path";
 const ts=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:true,tsx:true});
 const node=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:false,tsx:false});
 export const refactorCases=[
+ node('admin-settings','foundation','scripts/verify-admin-settings-refactor.mjs','ADMIN_SETTINGS=PASS',['--static']),
+ ts('admin-settings-pg','foundation','scripts/verify-admin-settings-pg.ts','ADMIN_SETTINGS_PG=PASS'),
  node('admin-usage','foundation','scripts/verify-admin-usage-refactor.mjs','ADMIN_USAGE=PASS',['--static']),
  node('workbench-assets','foundation','scripts/verify-workbench-assets.mjs','WORKBENCH_ASSETS=PASS',['--static']),
  node('platform-unit','foundation','scripts/verify-platform-db.cjs','PLATFORM_DB=PASS'),
