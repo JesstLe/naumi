@@ -78,15 +78,17 @@ const accountFilter = (email: string, authorizedEmployees = false) => `
 const inRange = (alias: string) =>
   `${alias}.created_at >= $1::timestamptz AND ${alias}.created_at < $2::timestamptz`;
 const values = (q: BiQuery) => [q.start, q.end, q.email, q.q, q.accountType];
+const imageOperationStatus = "COALESCE(j.snapshot#>>'{result,status}',j.snapshot->>'status','unknown')";
+const normalizedOperationStatus = (value:string) => `CASE WHEN ${value} IN ('done','completed','success') THEN 'succeeded' WHEN ${value} IN ('error','rejected') THEN 'failed' WHEN ${value} IN ('pending','reviewing') THEN 'queued' WHEN ${value} IN ('processing','generating') THEN 'running' WHEN ${value} IN ('queued','running','succeeded','partial','failed','cancel_requested','cancelled','needs_review') THEN ${value} ELSE 'needs_review' END`;
 const operationSql = (selected = false) => `SELECT 'app_image_jobs'::text AS source_table,EXISTS(SELECT 1 FROM app_ledger WHERE email=j.email AND id='led-image-'||j.id AND kind='consume') AS has_ledger_charge,j.id,j.email,j.kind,j.created_at,j.updated_at,
-  COALESCE(j.snapshot->>'status','unknown') AS status,COALESCE(j.snapshot->>'stage','') AS stage,
+  ${imageOperationStatus} AS status,COALESCE(j.snapshot#>>'{result,stage}',j.snapshot->>'stage','') AS stage,
   COALESCE(j.payload->'p'->>'userPrompt',j.payload->'p'->>'prompt',j.payload->>'extra',j.snapshot->>'extra','') AS content,
   COALESCE(j.payload->'p'->>'model',j.payload->>'model',j.snapshot->>'model','') AS requested_model,
   COALESCE(j.snapshot->'quality'->>'requested','') AS requested_quality,
   COALESCE(j.payload->'p'->>'resolution','') AS resolution,j.cost AS quoted_credits,
   COALESCE((SELECT -sum(l.delta) FROM app_ledger l WHERE l.email=j.email AND l.id='led-image-'||j.id),0) AS billed_credits,
   CASE WHEN j.billing_settled THEN 0 ELSE j.reserved_cost END AS reserved_credits,j.billing_settled AS settled,
-  COALESCE(j.snapshot->>'error','') AS error
+  COALESCE(j.snapshot#>>'{result,error,message}',j.snapshot->>'error','') AS error
  FROM app_image_jobs j ${selected ? "JOIN selected k ON k.source_table='app_image_jobs' AND k.id=j.id AND k.email=j.email" : ""}
  UNION ALL SELECT 'app_canvas_image_tasks',EXISTS(SELECT 1 FROM app_ledger WHERE email=c.email AND id='led-canvas-image-'||c.id AND kind='consume'),c.id,c.email,'canvas-'||c.kind,c.created_at,c.updated_at,c.status,'' AS stage,
   COALESCE(c.parameters->>'newText',c.parameters->>'prompt','') AS content,'' AS requested_model,
@@ -104,10 +106,10 @@ const operationSource = operationSql();
 
 /** Keys are cheap; expand JSON and billing only for the selected page. */
 function operationKeys() {
-  const status = (value: string, review: string) => `($6::text='' OR ${value}=$6 OR ($6='review' AND (${review})))`;
+  const status = (value: string, review: string) => `($6::text='' OR ${value}=$6 OR ($6 LIKE 'creation:%' AND ${normalizedOperationStatus(value)}=substring($6 from 10)) OR ($6='review' AND (${review})))`;
   return `SELECT 'app_image_jobs'::text AS source_table,j.id,j.email,j.created_at
     FROM app_image_jobs j WHERE ${accountFilter("j.email")} AND ${inRange("j")}
-      AND ${status("COALESCE(j.snapshot->>'status','unknown')", "j.snapshot->>'status'='needs_attention' OR j.snapshot->>'stage' IN ('checking','reviewing') OR j.snapshot->>'error' LIKE '%核查%'")}
+      AND ${status(imageOperationStatus, "j.snapshot->>'status'='needs_attention' OR j.snapshot->>'stage' IN ('checking','reviewing') OR j.snapshot->>'error' LIKE '%核查%'")}
     UNION ALL SELECT 'app_canvas_image_tasks',c.id,c.email,c.created_at
     FROM app_canvas_image_tasks c WHERE ${accountFilter("c.email")} AND ${inRange("c")}
       AND ${status("c.status", "c.status='needs_attention' OR c.error LIKE '%核查%'")}

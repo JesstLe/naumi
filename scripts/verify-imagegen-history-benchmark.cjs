@@ -18,7 +18,7 @@ for (let i = 2; i < process.argv.length; i++) {
     assert(process.argv[i + 1] && !process.argv[i + 1].startsWith('--'), 'Missing --case');
     options.cases.push(path.resolve(process.argv[++i]));
   }
-  else if (['--root', '--output', '--phase', '--suite'].includes(flag)) {
+  else if (['--root', '--output', '--phase', '--suite', '--observations'].includes(flag)) {
     assert(process.argv[i + 1] && !process.argv[i + 1].startsWith('--'), `Missing ${flag}`);
     options[flag.slice(2)] = process.argv[++i];
   } else throw Error(`Unknown argument: ${flag}`);
@@ -26,12 +26,13 @@ for (let i = 2; i < process.argv.length; i++) {
 options.root = fs.realpathSync(path.resolve(options.root));
 options.output = path.resolve(options.output);
 assert(['baseline', 'modified', 'compare'].includes(options.phase));
-assert(['history', 'pricing-friction'].includes(options.suite));
-const manifestPath = path.join(repo, 'docs/benchmarks/imagegen-history-20261023.json');
+assert(['history', 'pricing-friction','admin-anomalies'].includes(options.suite));
+const manifestPath = path.join(repo, options.suite==='admin-anomalies'?'docs/benchmarks/admin-anomaly-watch.json':'docs/benchmarks/imagegen-history-20261023.json');
 const manifestBytes = fs.readFileSync(manifestPath);
 const manifest = JSON.parse(manifestBytes.toString('utf8'));
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 const manifestSha256 = digest(manifestBytes);
+const observationLedger=options.observations?require('./admin-anomaly-benchmark.cjs').verifyLedger(path.resolve(options.observations)):null;
 // Optional offline evidence packages are verified and indexed, never executed.
 // A captured case does not turn a mechanism suite into an employee exact replay.
 const capturedCases = options.cases.map(caseDir => {
@@ -119,8 +120,8 @@ function save() {
     employeeExactRequestsReplayed: 0, historicalIncidentsResolvedByThisRun: 0,
     historyCounting: 'Never sum overlapping cohorts or parent/child/provider rows. Test assertions are not employee incidents.',
     productSourceChanged: false, productionMutations: 0, externalSupplierCalls: 0,
-    completedChecks: results.length, expectedChecks: options.suite === 'pricing-friction' ? (options.phase === 'compare' ? 8 : 4) : options.phase === 'baseline' ? 5 : options.phase === 'modified' ? 10 : 15,
-    ...outcome, scenarios: manifest.scenarios, capturedCases, results};
+    completedChecks: results.length, expectedChecks: options.suite==='admin-anomalies'?(options.phase==='compare'?2:1):options.suite === 'pricing-friction' ? (options.phase === 'compare' ? 8 : 4) : options.phase === 'baseline' ? 5 : options.phase === 'modified' ? 10 : 15,
+    ...outcome, scenarios: manifest.scenarios, capturedCases, observationLedger, results};
   fs.writeFileSync(path.join(options.output, 'REPORT.json'), JSON.stringify(report, null, 2) + '\n');
   const md = ['# 历史失败行为 benchmark', '', `版本：\`${sourceCommit}\`；结论：**${outcome.status}**；退出码：${outcome.exit}。`,
     '员工原始完整请求精确重放：0；以下为保留故障机制/操作次序的隔离复现。不是生产任务重提，也不是历史任务已修复计数。', '',
@@ -134,7 +135,10 @@ const B0 = '1871f84d181c8b5dc48ee506544a3857875907c1';
 const B1 = '05598fe53bd03bfbaa74ff6ee5b39c2b689cb055';
 const B2 = '9f049b07b4219b46ef8a5cb51bc49a4a0ad33e26';
 try {
-  if (options.suite === 'pricing-friction') {
+  if(options.suite==='admin-anomalies'){
+    if(options.phase!=='modified'){const root=baselineRoot('af22c6e5f149215cfd5bf862f781e95e67c88987');probe('admin-anomalies','baseline',root,'scripts/verify-admin-anomaly-regressions.ts',['--baseline','--source-root',root],['BASELINE=REPRODUCED SCANNER_FIXED_KEY_BLOCK=1 LEGACY_FILTER_MISMATCH=1','"supplierPosts":0']);}
+    if(options.phase!=='baseline')probe('admin-anomalies','modified',options.root,'scripts/verify-admin-anomaly-regressions.ts',[],['"mode":"modified"','"failed":[]','"supplierPosts":0','"originalUnknownPreserved":true']);
+  } else if (options.suite === 'pricing-friction') {
     if (options.phase !== 'modified') {
       const root = baselineRoot('84fc45effa74b15785dfaaa39cd39598b19734ca');
       probe('pricing-core', 'baseline', root, 'scripts/verify-pricing-friction-core.ts', ['baseline'], ['PRICING_FRICTION_CORE=PASS mode=baseline', 'rich=PRICE_CHANGED', 'consume_rows=0']);
