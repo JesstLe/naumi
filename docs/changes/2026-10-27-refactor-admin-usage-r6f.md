@@ -27,3 +27,15 @@
 - 旧local-media verifier消费者迁到实际member-artwork owner，初次未剥export导致VM语法错误；只修旧harness的导出消除，现原本地/远端作品链接断言全部通过，不把跳过helper当通过。
 
 最终同SHA core25/完整浏览器、main普通同步、结构/四产物/回滚与清理以DELIVERY为准。原设置16个保留声明精确不变；导航别名/迁移规则原字节相同；auth probe仅删除无关loadUsers和旧bonus state，原配置回填/保存/加密/支付/积分兼容保持。
+
+
+## 固定源码封版记录
+
+固定清洁merge源码`8f3bc5bf3571cfc2e5af1b36a0c49bbe099c6d81`，两个parent为实现`a663d40f085d487a899801b667aaa8e7a1125da5`与main`cde64c6aedd75c5197ee2ae17e7bac8759fb8bed`；upstream只增加既有发布记录文档，无产品冲突。原整合main为a1a56371，本次第三模块普通同步完成，累计归零；没有把重构分支合入main或开启发布。
+
+- core25/25 PASS、failed0/not-run0、exit0；全文件digest=`62eac4d5565be69830dc99dcf5f6928860ffa38af3f2bba42f6a520612e88fe4`。其中新增admin-usage为实际目标编译/原链接/退休分支静态24检查，不冒充浏览器。
+- 最终完整旧浏览器28／新版31检查，7组HTML完全相同，关闭/成员倒序/离开/token旧响应不回写，配置页用户读取1→0；同body原备注/封禁/站点名更新、用量period/错误重试和原权限负例保持。
+- 原admin-access PG、local-media UI、tsc/lint通过；runner12类66检查；emitted静态/全字面导入环均0。系统设置3331→1971行，16个保留函数精确文本相同，导航兼容策略原字节保持。
+- 此后只更新本文及台账，最终SHA与被测mergeSHA分层登记；全部产品/服务/验证脚本字节一致。四产物/4487hash独立回滚和原28行为恢复、patch复放、远端及cleanup以DELIVERY为准。
+
+整体active。本模块只收敛用量/会员详情与退休平行面板；剩余配置输入职责/测试资产、长时混合生成负载、依赖及最终完整版本整合不记完成。R6E曾被工具拒绝删除的三个Pythonfixture目录不由本轮重试清理。

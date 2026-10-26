@@ -1,6 +1,6 @@
 # 渐进迁移与集中验收台账
 
-2026-10-27 R6F：系统设置的可达usage/详情迁独立UI owner，已被旧路由迁走的users/ledger/artworks平行视图删除；3331→1971行，不再配置鉴权成功就读全部用户。关闭/换成员/离开/换token旧读失效，原备注/禁用POST不重放；旧新实际React27→31、7组HTML精确同、真实admin-access PG/tsc/lint/本地媒体链接通过。最终固定core25、扩展浏览器、第三模块main同步和副本回滚/四产物/Git见DELIVERY；整体active、不合main不部署，剩余配置面板/测试资产/长时负载/依赖和最终整合继续。见[R6F记录](../changes/2026-10-27-refactor-admin-usage-r6f.md)。
+2026-10-27 R6F：系统设置的可达usage/详情迁独立UI owner，已被旧路由迁走的users/ledger/artworks平行视图删除；3331→1971行，不再配置鉴权成功就读全部用户。关闭/换成员/离开/换token旧读失效，原备注/禁用POST不重放；旧新实际React27→31、7组HTML精确同、真实admin-access PG/tsc/lint/本地媒体链接通过。固定merge8f3bc5bf core25/25、最终浏览器28→31、7快照同、runner12/66通过，第三模块普通同步cde64c6a完成并归零；副本回滚/四产物/Git见DELIVERY；整体active、不合main不部署，剩余配置面板/测试资产/长时负载/依赖和最终整合继续。见[R6F记录](../changes/2026-10-27-refactor-admin-usage-r6f.md)。
 
 
 2026-10-27 R6E：三工作台页面/history继续共用唯一源，API/账号存储/模型/导航显式归环境adapter；build只复制原字节，删除两份隐式全局字符串转换，补完整head/body。native/desktop/standalone三环境保持独立协议，Python新增鉴权白名单资产URL、旧URL保留；原任务/报价未知查询链不改。完整旧浏览器19/235、新版图片/原wire补强19/712、Python16→17、tsc/lint、固定7ca81bcc core24/24与runner12/65通过；副本回滚/四产物与Git见DELIVERY。同步后第2模块，admin大面板/测试资产/长时负载/依赖和最终整合继续，整体active、不合main不部署。见[R6E记录](../changes/2026-10-27-refactor-workbench-assets-r6e.md)。
