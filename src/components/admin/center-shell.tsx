@@ -7,7 +7,7 @@ import { Activity, ArrowLeft, BarChart3, Building2, HeartPulse, ImageIcon, Layer
 import type { BiSection } from "@/lib/bi/contracts";
 import styles from "./center-shell.module.css";
 
-type Section = BiSection | "billing" | "pricing" | "settings" | "model-config" | "model-health" | "model-management" | "teams" | "team-access" | "feature-access" | "deployments" | "tenants" | "creations" | "supplier-balances";
+type Section = BiSection | "billing" | "pricing" | "settings" | "model-config" | "model-health" | "model-management" | "teams" | "team-access" | "feature-access" | "deployments" | "tenants" | "creations" | "supplier-balances" | "health";
 type Entry = { id: Section; label: string; icon: typeof Users; href?: string };
 const groups: { label: string; entries: Entry[] }[] = [
  {label:"",entries:[
@@ -17,6 +17,7 @@ const groups: { label: string; entries: Entry[] }[] = [
  {id:"creations",label:"创作记录",icon:ImageIcon,href:"/admin/creations"},
  {id:"billing",label:"套餐与账务",icon:Wallet,href:"/admin/billing"},
  {id:"model-management",label:"模型与供应商",icon:Layers,href:"/admin/model-management"},
+ {id:"health",label:"运行健康",icon:HeartPulse,href:"/admin/health"},
  {id:"settings",label:"系统与审计",icon:ShieldCheck,href:"/admin?view=settings"}]},
  {label:"",entries:[{id:"deployments",label:"部署管理",icon:Building2,href:"/admin/deployments"}]}
 ];

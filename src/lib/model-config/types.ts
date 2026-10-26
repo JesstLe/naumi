@@ -12,7 +12,7 @@ export type ModelFacts = { imagegenRequirements?:import("../imagegen/types").Int
 export type PublicationPhase = "staged" | "preparing" | "activating" | "applied" | "failed" | "unknown";
 export type ModelPublication = { id: string; version: number; digest: string; phase: PublicationPhase; errorCode?: string };
 export type ModelVersionSummary = ModelPublication & { actor: string; reason: string; createdAt: string };
-export type StageInput = { id: string; draftId: string; expectedRevision: number; expectedVersion: number; actor: string; reason: string };
+export type StageInput = { id: string; draftId: string; expectedRevision: number; expectedVersion: number; actor: string; reason: string; acceptStaleBase?: boolean };
 export type RestoreInput = { id: string; targetVersion: number; expectedVersion: number; actor: string; reason: string };
 export interface ModelConfigRepository {
   current(): Promise<ModelSnapshot>;
