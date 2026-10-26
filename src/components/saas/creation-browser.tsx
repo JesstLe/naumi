@@ -4,7 +4,7 @@ import {usePathname,useRouter,useSearchParams} from 'next/navigation';
 import {ArrowLeft,ChevronRight,ImageIcon,RefreshCw,X} from 'lucide-react';
 import {authHeader} from '@/lib/supabase';
 import {useAuth} from '@/lib/auth-context';
-import type {CreationPage,CreationDetail,CreationAsset} from '@/lib/saas/creation-contracts';
+import type {CreationPage,CreationDetail,CreationAsset,CreationFailure} from '@/lib/saas/creation-contracts';
 import styles from './saas.module.css';
 import historyStyles from './creation-history-nav.module.css';
 const labels:Record<string,string>={queued:'排队中',running:'处理中',succeeded:'已完成',partial:'部分成功',failed:'失败',cancel_requested:'取消申请中',cancelled:'已取消',needs_review:'待核查'};
@@ -38,7 +38,7 @@ function ScopedCreationBrowser({tenantId,enterprise=false}:{tenantId?:string;ent
 
   {error?<div className={styles.error} role="alert">{error} <button onClick={()=>setRetry(v=>v+1)}>重试</button></div>:null}
   <div className={styles.detailGrid}>
-   <section className={`${styles.panel} ${styles.recordList}`} aria-label="创作记录列表">{historyNav}{filtersUi}<div className={historyStyles.range}><span>{range}</span>{platformHistory&&legacy&&!allHistory&&<button onClick={()=>update({period:'all',from:'',to:'',page:'1'})}>全部日期</button>}</div>{loading?<div className={styles.empty} role="status">正在读取记录</div>:!page?.items.length?<div className={styles.empty}><ImageIcon size={30}/>{legacy?'暂无匹配的历史生成记录':'暂无匹配的创作记录'}</div>:page.items.map(item=><button className={`${styles.record} ${selected===item.id?styles.selected:''}`} key={item.id} onClick={()=>update({creationId:item.id,assetPage:"",eventPage:"",childPage:""})}><div><strong>{item.title}</strong><p>{item.actorName} · {new Date(item.acceptedAt).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</p><CreationStatus status={item.status}/></div><ChevronRight size={16}/></button>)}
+   <section className={`${styles.panel} ${styles.recordList}`} aria-label="创作记录列表">{historyNav}{filtersUi}<div className={historyStyles.range}><span>{range}</span>{platformHistory&&legacy&&!allHistory&&<button onClick={()=>update({period:'all',from:'',to:'',page:'1'})}>全部日期</button>}</div>{loading?<div className={styles.empty} role="status">正在读取记录</div>:!page?.items.length?<div className={styles.empty}><ImageIcon size={30}/>{legacy?'暂无匹配的历史生成记录':'暂无匹配的创作记录'}</div>:page.items.map(item=><button className={`${styles.record} ${selected===item.id?styles.selected:''}`} key={item.id} onClick={()=>update({creationId:item.id,assetPage:"",eventPage:"",childPage:""})}><div><strong>{item.title}</strong><p>{item.actorName} · {new Date(item.acceptedAt).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</p><CreationStatus status={item.status}/>{!enterprise&&item.failure&&<p className={styles.failureSummary}>{item.failure.title}{item.failure.code&&`（${item.failure.code}）`}</p>}</div><ChevronRight size={16}/></button>)}
    {page&&<div className={styles.pager}><span>共 {page.pagination.total} 条</span><div className={styles.actions}><button aria-label="上一页" disabled={page.pagination.page===1} onClick={()=>update({page:String(page.pagination.page-1)})}>‹</button><span>{page.pagination.page}</span><button aria-label="下一页" disabled={page.pagination.page*page.pagination.size>=page.pagination.total} onClick={()=>update({page:String(page.pagination.page+1)})}>›</button></div></div>}</section>
    <section className={`${styles.panel} ${selected?styles.detail:''}`} aria-label="创作全链路详情">{selected&&<button className={styles.mobileBack} onClick={()=>update({creationId:''})}><ArrowLeft size={15}/>返回列表</button>}{detailError?<div className={styles.error} role="alert">{detailError}<button onClick={()=>setRetry(v=>v+1)}>重试</button></div>:detail?<CreationDetailView detail={detail} api={api} tenantId={tenantId} onPage={(key,value)=>update({[key]:String(value)})} onChild={id=>update({creationId:id,assetPage:'',eventPage:'',childPage:''})}/>:<div className={styles.empty}>{selected?'正在读取详情':'选择创作记录查看输入、结果与费用'}</div>}</section>
   </div>
@@ -48,6 +48,7 @@ export function CreationDetailView({detail,api,tenantId,onPage,onChild}:{detail:
  const count=(v:number|null)=>v===null?(detail.billing.state==='not_applicable'?'不适用':'未记录'):`${v} 积分`;
  return <><div className={styles.detailTitle}><div><h2>{detail.title}</h2><p>{detail.actorName} · {new Date(detail.acceptedAt).toLocaleString('zh-CN')}</p></div><CreationStatus status={detail.status}/></div>
  {detail.evidencePending&&<p role="status" className={styles.error}>部分执行资料待核查，结果与账务按已记录证据显示。</p>}
+  {api==='/api/admin/creations'&&detail.failure&&<CreationFailureView failure={detail.failure}/>}
  <div className={styles.mediaGrid}>{detail.assets.map(a=><CreationMedia key={`${detail.id}:${a.id}`} asset={a} api={`${api}/${detail.id}/assets/${a.id}${tenantId?`?tenantId=${tenantId}`:''}`}/>)}</div>
  <EvidencePager label="素材" page={detail.assetPagination} onPage={value=>onPage?.('assetPage',value)}/>
  {!detail.assets.length&&<div className={styles.empty} style={{minHeight:130}}>输入与产物素材未记录</div>}
@@ -58,6 +59,16 @@ export function CreationDetailView({detail,api,tenantId,onPage,onChild}:{detail:
  <div className={styles.billing}><strong>费用结算</strong><span>报价 {count(detail.billing.quoted)}</span><span>预占 {count(detail.billing.reserved)}</span><span>实扣 <b>{count(detail.billing.charged)}</b></span><span>释放预占 {count(detail.billing.released)}</span><span>退款 {count(detail.billing.refunded)}</span></div><p className={styles.muted}>扣款账户：{detail.billing.payerAccountId||'未记录'} · {detail.billing.state==='settled'?'已结算':detail.billing.state==='pending'?'待结算':detail.billing.state==='not_applicable'?'无需扣费':'账务未记录'}</p>
  {detail.billing.operations.length>0&&<details className={styles.technical}><summary>关联账务操作</summary>{detail.billing.operations.map(o=><p key={o.id} style={{marginTop:10,overflowWrap:'anywhere'}}>{o.id} · {o.state} · {count(o.charged)}</p>)}</details>}
  {detail.technical&&<details className={styles.technical}><summary>技术与来源信息</summary><pre>{JSON.stringify(detail.technical,null,2)}</pre></details>}</>;
+}
+export function CreationFailureView({failure:f}:{failure:CreationFailure}){
+ const state:Record<string,string>={unknown:'待确认',pending:'待确认',started:'已发起，结果待确认',submitted:'已提交，结果待确认',accepted:'已受理，结果待确认',rejected:'已拒绝','response-received':'已收到响应','stream-completed':'响应流已结束',completed:'已完成',failed:'失败',cancelled:'已取消',reported:'已有费用回执',reconciled:'已对账',estimated:'暂估',not_charged:'明确未扣费',released:'预占已释放',settled:'已结算',reserved:'预占中',hold:'待核对',manual:'待人工核对'};
+ const amount=(v:number|null)=>v===null?'未确认':`${v} 积分`;
+ return <section className={styles.failurePanel} aria-label="失败原因"><h3>{f.title}{f.code&&<code>{f.code}</code>}</h3><p>{f.description}</p><dl>
+  <div><dt>失败阶段</dt><dd>{f.stage}</dd></div>
+  <div><dt>依据</dt><dd>{f.evidence==='supplier_receipt'?'原供应调用回执':f.evidence==='task_state'?'原任务状态':'未记录'}{f.observedAt&&` · ${new Date(f.observedAt).toLocaleString('zh-CN')}`}</dd></div>
+  {f.supplier&&<><div><dt>供应通道 / 模型</dt><dd>{f.supplier.provider||'未记录'} / {f.supplier.model||'未记录'}</dd></div><div><dt>供应结果 / 费用</dt><dd>{state[f.supplier.state]||'待确认'} / {state[f.supplier.costStatus]||'待确认'}</dd></div></>}
+  <div><dt>对应任务账务</dt><dd>{f.customerBilling?`${state[f.customerBilling.state]||'待确认'} · 实扣 ${amount(f.customerBilling.charged)} · 剩余预占 ${amount(f.customerBilling.reserved)}`:'未记录，不推断为未扣费'}</dd></div>
+ </dl></section>;
 }
 function EvidencePager({label,page,onPage}:{label:string;page?:{page:number;size:number;total:number};onPage:(value:number)=>void}){if(!page||page.total<=page.size)return null;return <div className={styles.pager}><span>{label}共 {page.total} 条</span><div className={styles.actions}><button disabled={page.page<=1} onClick={()=>onPage(page.page-1)}>上一页</button><span>{page.page}</span><button disabled={page.page*page.size>=page.total} onClick={()=>onPage(page.page+1)}>下一页</button></div></div>;}
 export function CreationMedia({asset,api}:{asset:CreationAsset;api:string}){
