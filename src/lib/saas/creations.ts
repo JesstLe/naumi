@@ -9,6 +9,7 @@ import {creationSourceEvidence,videoWorkflowEvidenceAvailable} from './creation-
 import {publicCreationParameters} from './creation-writer';
 import {creationStatus,type CreationFilters,type CreationPage,type CreationSummary,type CreationDetail,type CreationAsset} from './creation-contracts';
 import {creationFailures,hasCreationFailure} from './creation-failures';
+import {creationAssetViewSql,creationAssetViewOrder} from './creation-asset-view';
 
 export type CreationReader={platform:true}|{platform:false;actor:TeamActor;tenantId:string};
 async function scoped<T>(reader:CreationReader,run:(tx:PoolClient,visible:string[]|null)=>Promise<T>){
@@ -93,17 +94,16 @@ async function authorizedRecord(tx:PoolClient,reader:CreationReader,id:string,vi
  const row=(await tx.query(`${await recordSelect(tx)} WHERE c.id=$1 ${reader.platform?'':'AND c.tenant_id=$2'}`,[id,...(reader.platform?[]:[reader.tenantId])])).rows[0];
  if(!row||!reader.platform&&visible&&!visible.includes(row.actor_email))throw new TeamError('记录不存在或无权访问',404);return row;
 }
-const asset=(a:Record<string,any>):CreationAsset=>({id:a.id,direction:a.direction,role:a.role,position:a.position,...(Number.isInteger(a.input_position)?{inputPosition:a.input_position}:{}),...(a.execution_ref?{executionRef:a.execution_ref}:{}),variant:a.variant,mime:a.mime,bytes:a.byte_size===null?null:Number(a.byte_size),hash:a.hash,availability:a.availability,mediaType:a.media_type,...(a.text_content?{text:a.text_content}:{})});
+const asset=(a:Record<string,any>):CreationAsset=>({id:a.id,direction:a.direction,role:a.role,...(Array.isArray(a.roles)?{roles:a.roles.filter((v:unknown)=>typeof v==='string')}:{}),position:a.position,...(Number.isInteger(a.input_position)?{inputPosition:a.input_position}:{}),...(a.execution_ref?{executionRef:a.execution_ref}:{}),variant:a.variant,mime:a.mime,bytes:a.byte_size===null?null:Number(a.byte_size),hash:a.hash,availability:a.availability,mediaType:a.media_type,...(a.text_content?{text:a.text_content}:{})});
 type DetailPages={assetPage?:number;eventPage?:number;childPage?:number};
 const familySql=`WITH RECURSIVE family AS(SELECT id,actor_email,tenant_id FROM app_creation_records WHERE id=$1 UNION ALL SELECT c.id,c.actor_email,c.tenant_id FROM app_creation_records c JOIN family p ON c.parent_id=p.id AND c.actor_email=p.actor_email AND c.tenant_id IS NOT DISTINCT FROM p.tenant_id)`;
 export async function creationDetail(reader:CreationReader,id:string,pages:DetailPages={}):Promise<CreationDetail>{return scoped(reader,async(tx,visible)=>{
  const row=await authorizedRecord(tx,reader,id,visible);const size=24,assetPage=pages.assetPage||1,eventPage=pages.eventPage||1,childPage=pages.childPage||1;
  const sourceEvidence=await creationSourceEvidence(tx,id);
- const assetKey=`CASE WHEN data->>'direction'='output' AND data->>'storage_ref' LIKE 'artwork:%' THEN data->>'storage_ref' ELSE data->>'id' END`;
  const assetSql=`${familySql}, asset_rows AS(SELECT to_jsonb(a) AS data,0 AS priority FROM app_creation_assets a JOIN family f ON f.id=a.creation_id
- UNION ALL SELECT value,1 FROM jsonb_array_elements($2::jsonb)), dedup_assets AS(SELECT DISTINCT ON (${assetKey}) data FROM asset_rows ORDER BY ${assetKey},priority,data->>'id')`;
+ UNION ALL SELECT value,1 FROM jsonb_array_elements($2::jsonb)),${creationAssetViewSql}`;
  const assetValues=[id,JSON.stringify(sourceEvidence.assets)];
- const assets=await tx.query(`${assetSql} SELECT data FROM dedup_assets ORDER BY data->>'direction',(data->>'position')::int,data->>'variant',data->>'id' LIMIT $3 OFFSET $4`,[...assetValues,size,(assetPage-1)*size]);
+ const assets=await tx.query(`${assetSql} SELECT data FROM dedup_assets ORDER BY ${creationAssetViewOrder} LIMIT $3 OFFSET $4`,[...assetValues,size,(assetPage-1)*size]);
  const assetCount=Number((await tx.query(`${assetSql} SELECT count(*)::int AS n FROM dedup_assets`,assetValues)).rows[0].n);
  const events=await tx.query(`${familySql} SELECT e.* FROM app_creation_events e JOIN family f ON f.id=e.creation_id ORDER BY occurred_at,e.id LIMIT $2 OFFSET $3`,[id,size,(eventPage-1)*size]);
  const billing=await tx.query(`${familySql} SELECT o.id,o.state,o.charged_credits,o.reserved_credits,o.quote,max(l.reserved_credits) AS evidence_reserved,max(l.released_credits) AS evidence_released FROM family f JOIN app_creation_links l ON l.creation_id=f.id AND l.target_type='billing' JOIN app_billing_operations o ON o.id=l.target_id AND o.email=l.actor_email GROUP BY o.id`,[id]);
