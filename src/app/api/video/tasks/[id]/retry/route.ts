@@ -8,7 +8,8 @@ import {requestQuoteConfirmation,billingErrorResponse} from "@/lib/billing/reque
 import {readBounded} from "@/lib/supplier-cost/io";
 import {getVideoTask, getVideoTaskByIdempotencyKey} from "@/lib/video/task-repository";
 import {getVideoNode} from "@/lib/canvas/video-node-repository";
-import {createVideoGeneration,requestFromQueuedTask} from "@/lib/video/service";
+import {createVideoGeneration} from "@/lib/video/creation";
+import {requestFromQueuedTask} from "@/lib/video/runtime";
 import {VideoContractError} from "@/lib/video/contract";
 import {BillingError} from "@/lib/billing/types";
 import {ModelConfigError} from "@/lib/model-config/types";

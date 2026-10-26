@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { configuredVideoCatalog } from "@/lib/video/capabilities";
 import { configuredVideoProviders } from "@/lib/video/providers/config";
-import { videoCostPublic } from "@/lib/video/service";
+import {videoCostPublic} from "@/lib/video/queries";
 import {billingErrorResponse} from "@/lib/billing/request";
 import { modelConfigurationEnabled } from "@/lib/model-config/availability";
 import {readPublishedModelSnapshot} from "@/lib/model-config/published";

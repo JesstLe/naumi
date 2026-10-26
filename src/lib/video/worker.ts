@@ -2,11 +2,11 @@ import { withBackgroundActivity } from "@/lib/release-runtime/background-activit
 import "server-only";
 
 import { dbEnabled } from "@/platform/db/pool";
-import { recoverDueVideoTasks } from "@/lib/video/service";
+import {recoverDueVideoTasks} from "@/lib/video/runtime";
 import { recoverDurableImageJobs } from "@/lib/worker/image-recovery";
 import { scanSupplierCostsOnce } from "@/lib/supplier-cost/worker";
 import {recoverVideoWorkflows} from "./workflow";
-import {applicationTasksRunHere} from "../application/task-execution";
+import {applicationTasksRunHere,deferApplicationTask} from "../application/task-execution";
 
 // ---------------------------------------------------------------------------
 // 视频后台 worker(§7):周期恢复扫描,处理"页面关闭后遗留的进行中任务"。
@@ -56,5 +56,6 @@ export function startVideoWorker(): void {
 }
 
 export async function scanVideoWorkerOnce():Promise<number> {
+  if(await deferApplicationTask())return 0;
   return withBackgroundActivity("app-worker-scan", "video-worker-scan", "claim", () => scanVideoWorkerOnceLocal(), () => 0);
 }

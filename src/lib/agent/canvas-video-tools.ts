@@ -8,7 +8,7 @@ import {scheduleCanvasVideoWorkflow,type PreparedCanvasVideoWorkflow} from "../v
 import {inputReference,selectedVideoCatalogModel} from "../video/client-settings";
 import {orderedInputSchema} from "../video/references";
 import {mediaJobRequestSchema} from "../video/media-job-schema";
-import type {PublicVideoTaskView} from "../video/service";
+import {type PublicVideoTaskView} from "../video/queries";
 import type {CanvasAgentContext} from "./canvas-context";
 type Deps={preparedWorkflow?:()=>PreparedCanvasVideoWorkflow|undefined;confirmation?:()=>{version:number;credits:number}|undefined;actor:string;canvas?:CanvasAgentContext;internal:(path:string,signal?:AbortSignal,init?:RequestInit)=>Promise<any>};
 const op=Type.String({pattern:"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"});

@@ -104,7 +104,7 @@ export async function createVideoTaskWithReservation(input: {
           provider_id, source, source_id, parameters, video_references, capability_snapshot,
           idempotency_key, next_poll_at, poll_lock_until, channel_id, provider_snapshot,billing_quote,billing_request_fingerprint)
        VALUES ($1,$2,'',$3,$4,$5,$6,'queued',$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,
-               $15,now(),now() + ($18 || ' seconds')::interval,$16,$17::jsonb,$19::jsonb,$20)
+               $15,now(),CASE WHEN $18::int=0 THEN NULL ELSE now() + ($18 || ' seconds')::interval END,$16,$17::jsonb,$19::jsonb,$20)
        RETURNING *`,
       [
         input.id,
@@ -124,7 +124,7 @@ export async function createVideoTaskWithReservation(input: {
         idempotencyKey,
         (input.channelId ?? input.providerId ?? "").slice(0, 100),
         JSON.stringify(input.providerSnapshot ?? {}),
-        Math.max(30, Math.trunc(input.leaseSeconds ?? 210)),
+        input.leaseSeconds===0?0:Math.max(30, Math.trunc(input.leaseSeconds ?? 210)),
         input.billingQuote?JSON.stringify(input.billingQuote):null,requestHash,
       ]
     );

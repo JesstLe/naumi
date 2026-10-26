@@ -10,7 +10,7 @@ import {defaultNodeSettings,type CanvasNodeSettings} from "./node-settings";
 import type {CanvasGenerationTask,CanvasPendingNode,CanvasSceneActions,CanvasArtNodeData,CanvasTextNodeData,CanvasPendingNodeData} from "./scene-types";
 import type {CanvasTextNode} from "./text-document-model";
 import type {CanvasVideoNode} from "./video-node-schema";
-import type {PublicVideoTaskView} from "../video/service";
+import {type PublicVideoTaskView} from "../video/queries";
 import type {ImportedManifest} from "./workflow-clipboard";
 import type {VideoPlayerAction} from "../video/player-actions";
 const DEFAULT_CANVAS_SETTINGS=defaultNodeSettings();

@@ -14,7 +14,7 @@ import { VideoSettingsFields } from "./settings-fields";
 import { VideoSourceAttribution } from "./source-attribution";
 import { VideoField, videoFieldClass, videoButtonClass, assertVideoFieldsValid } from "./form-controls";
 import { isTopVideoDialog } from "./dialog-stack";
-import type { PublicVideoTaskView } from "@/lib/video/service";
+import {type PublicVideoTaskView} from "@/lib/video/queries";
 type CachedComposer = { title:string; config:VideoNodeConfig; inputs:OrderedInput[]; revision:number; baseline:string };
 const localComposerDrafts = new Map<string,CachedComposer>();
 export type VideoNodeDraft = {

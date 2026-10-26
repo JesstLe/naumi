@@ -7,7 +7,7 @@ import {listArtworksByIds} from "@/lib/artworks/repository";
 import {getVideoNode} from "../canvas/video-node-repository";
 import {ModelConfigError} from "../model-config/types";
 import {BillingError} from "../billing/types";
-import {createVideoGeneration} from "./service";
+import {createVideoGeneration} from "./creation";
 import {readOwnedVideoWorkflow} from "./workflow-source";
 import {requireOwnedVideoText} from "./submission";
 import type {VideoReference} from "./types";
