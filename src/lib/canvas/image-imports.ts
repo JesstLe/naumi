@@ -9,7 +9,7 @@ export const CANVAS_IMAGE_UPLOAD_LIMIT=64*1024*1024;
 const X_GAP=90,Y_GAP=48;
 export type CanvasImportPoint={parentId:string|null;x:number;y:number};
 export type CanvasImageImportBatch={
-  id:number;owner:string;workspace:string;total:number;done:number;success:number;finished:boolean;
+  id:number;owner:string;workspace:string;project:string|null;total:number;done:number;success:number;finished:boolean;
   errors:{name:string;message:string}[];phase:"optimizing"|"uploading"|"sync"|"done";
   originalBytes:number;uploadBytes:number;uploadedBytes:number;nodeIds?:string[];hidden?:boolean;
 };
@@ -92,7 +92,7 @@ export function createCanvasImageImports(){
     const columns = Math.min(4, Math.ceil(Math.sqrt(valid.length)));
     const entries = valid.map(file => ({ file, pos: { x: ctx.x, y: ctx.y } }));
     setImageImports(current => [...current.filter(batch => !batch.finished || batch.errors.length > 0), {
-      id, owner: email.toLowerCase(), workspace:context.workspace,total: picked.length, done: failures.length, success: 0, errors: failures, finished: false,
+      id, owner: email.toLowerCase(), workspace:context.workspace,project:context.project,total: picked.length, done: failures.length, success: 0, errors: failures, finished: false,
       phase: "optimizing", originalBytes: valid.reduce((sum, file) => sum + file.size, 0),
       uploadBytes: valid.reduce((sum, file) => sum + file.size, 0), uploadedBytes: 0,
     }]);
@@ -212,7 +212,7 @@ export function createCanvasImageImports(){
     if(!context.documentCurrent())throw Error("账号或工作空间已切换");
     const id=++sequence,scope=captureScope(context),email=context.owner,{t}=context;
     saved.set(id,{context,scope,historyRecorded:false,pendingId:point.pendingId});
-    setImageImports(rows=>[...rows.filter(batch=>!batch.finished||batch.errors.length>0),{id,owner:email.toLowerCase(),workspace:context.workspace,total:1,done:0,success:0,finished:false,errors:[],phase:"uploading",originalBytes:file.size,uploadBytes:file.size,uploadedBytes:0}]);
+    setImageImports(rows=>[...rows.filter(batch=>!batch.finished||batch.errors.length>0),{id,owner:email.toLowerCase(),workspace:context.workspace,project:context.project,total:1,done:0,success:0,finished:false,errors:[],phase:"uploading",originalBytes:file.size,uploadBytes:file.size,uploadedBytes:0}]);
     try{
       const [prepared]=await prepareImageUploads([file],1,{preserveOriginal:true});
       if(prepared.error)throw Error(prepared.error);

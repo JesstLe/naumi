@@ -703,7 +703,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   );
   const imageImportOwner=useCanvasImageImports();
   const imageImports=imageImportOwner.batches.filter(batch=>batch.workspace===canvasArtworkDocument.scope.workspace);
-  const importSynchronizationVisible=imageImports.some(batch=>batch.owner===user?.email.toLowerCase()&&batch.phase==="sync"&&batch.nodeIds?.length);
+  const importSynchronizationVisible=imageImports.some(batch=>batch.owner===user?.email.toLowerCase()&&batch.phase==="sync"&&batch.project===activeKey&&batch.nodeIds?.length);
   const dragDepthRef = useRef(0);
   const [fileDragOver, setFileDragOver] = useState(false);
   const [nodeTypeMenu, setNodeTypeMenu] = useState<{ x: number; y: number; cx: number; cy: number } | null>(null);

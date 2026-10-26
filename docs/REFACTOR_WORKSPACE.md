@@ -1,6 +1,6 @@
 # 核心链路重构专用工作区
 
-2026-10-26 R5L：Canvas三类图片导入接唯一owner/订阅及status view，队列/root随账号工作空间隔离、原ID只读续接，同占位并发一次；Canvas8319→8080，167函数保持/4adapter改写。旧10类40复现→新14类59、transport15/17、SSR18、实际Next+PG5组/5原图、真实浏览器>12MiB占位10检查、相邻15+5通过；tsc/lint原8warning、SCC0。4402hash副本回滚/四产物/远端及清理以DELIVERY为准；第2模块，助手/CAS/R6继续，不合main、不部署。见 [R5L记录](changes/2026-10-26-canvas-image-imports-r5l.md)。
+2026-10-26 R5L：Canvas三类图片导入接唯一owner/订阅及status view，队列/root随账号工作空间隔离、原ID只读续接，同占位并发一次；Canvas8319→8080，167函数保持/4adapter改写。旧10类40复现→新15类63、transport15/17、SSR18、实际Next+PG5组/5原图、真实浏览器>12MiB占位10检查、相邻15+5通过；tsc/lint原8warning、SCC0。4402hash副本回滚/四产物/远端及清理以DELIVERY为准；第2模块，助手/CAS/R6继续，不合main、不部署。见 [R5L记录](changes/2026-10-26-canvas-image-imports-r5l.md)。
 
 2026-10-26 R5K：Canvas工作区页面owner持页面栈/QR状态/原刷新请求，view持7lazy页面与body portal，主组件真实改绑，仅回调模板应用/余额刷新；Canvas8534→8319行，171函数保持/1关闭调用改绑。完整旧React44/新59与15快照同、实际Next页面6/创作栏15/图片任务5、tsc/lint通过（原8warning），SCC仍0。4397hash副本回滚/四产物/远端及清理以本轮DELIVERY为准；第1模块，main新增b310文档待后续同步，外围UI-CAS/R6继续，不合main、不部署。见 [R5K记录](changes/2026-10-26-canvas-workspace-pages-r5k.md)。
 
@@ -112,3 +112,5 @@
 R3B4 三模块同步已执行：`git fetch origin main` 与 `git merge --no-edit origin/main` 均 exit 0，origin/main=`905c8c635e41ff3f4443d43db9776d1db3aab469`，普通 merge 返回 `Already up to date.`；累计计数归零。本轮没有把候选合入 main。
 
 收尾再次fetch发现origin/main已推进到`b15d4761b938428c449531e2d8744401a38a2ec7`（原结果父回执与postaccept原因修复）。当前已完成并验证的普通整合来源固定`73384aaa`；新增提交另列下一轮待整合，不冒充已包含，不开启发布。
+
+R5L收尾补正：错误去重仅匹配saved batch的原project，旧项目待同步不隐藏新项目读取错误；15类63检查含实际Canvas条件的跨项目反例。生产修改仅新增batch.project及条件匹配，未重跑相邻浏览器；完整本轮产物刷新到后续修正提交。
