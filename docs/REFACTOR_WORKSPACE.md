@@ -1,5 +1,7 @@
 # 核心链路重构专用工作区
 
+2026-10-26 R5D：视频协议合同/纯helper/registry/endpoint分离，19个protocol模块和4个生产消费者改绑；原20文件codec注册环及adapter/upload2文件环已拆，最大emitted静态/全导入SCC均20→3，其余环成员保持，新owner不入环。7170原生产声明保持（21迁移，仅codec查同Map改窄getter），codec/endpoint正文变化0；helper实际bundle生产输入31→6、codec19→0。完整基线/新版53profiles、2506操作结果精确相同，独立912wire/1254场景8251断言、旧33SKU802断言、family886、真实PG双入口16、实际Next六入口20、Worker31及tsc/lint通过。旧provider夹具Request/原生transport注入已修，同夹具两侧48模拟HTTP通过，原失败留存。副本回滚/四产物/远端以R5D DELIVERY为准；同步后第1模块，视频执行归属/媒体runtime/其它小环/UI-CAS/R6继续，不合main、不部署。见 [R5D记录](changes/2026-10-26-video-wire-boundaries-r5d.md)。
+
 2026-10-26 R5C 后 main 普通整合：incoming `368c93e2` 的 13 处冲突已按真实 owner 迁入，未恢复巨型 db/任务/Canvas 实现。父完成通知改为应用注入 completion port，Worker 增加视频协调池排空后关闭；settings/OpenAI/SMTP 原批量算法保留。完整8e203648基线和整合版实际Linux/PG同71检查通过，实际Next六入口20、生命周期37、项目归属31、父完成24+PG19、postaccept11/142+PG18、异常12、视频协调9组、settings78、config14及价格控件22组通过；全项目tsc/源码lint通过。原最大20环和所有SCC成员与整合前完全一致，新owner入环0、db生产消费者0；不是全产品/容量验收。原始失败和旧image定价verifier债务保留。副本回滚/patch、双parent提交与远端以本轮VERIFICATION/DELIVERY为准；本轮三模块main同步计数归零，下一阶段继续视频/媒体runtime与R6，不合main、不部署。见 [整合记录](changes/2026-10-26-refactor-main-sync-r5c.md)。
 
 2026-10-26 R5C：四类持久图片、批次/工作台、改字及原图续交统一Web保存/Worker执行；PG通知仅唤醒、原表/周期恢复兜底，同tick按原lane继续接新任务，排空不补领。完整旧/新Linux16/71、实际Next六入口20、策略18、相邻恢复156/回执59/持久化36/工作台13组及旧进程29/32/39通过；冻结6/current17仍原价，Web执行0/批次HTTP0、混合unknown/显式取消不重提。新owner无环、7124非目标声明和九算法文件保持；tsc/19lint通过。旧image定价verifier端口陈旧导致exit1、五文件对照同失败，仍显式债务，不回退published只读。见 [R5C记录](changes/2026-10-26-image-worker-ownership-r5c.md) 及DELIVERY；本轮第3模块，普通同步main后归零；视频新提交/媒体runtime/20环/UI-CAS/R6继续，不合main、不部署。

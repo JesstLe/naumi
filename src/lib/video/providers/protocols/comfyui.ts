@@ -1,4 +1,5 @@
-import {createdResult,field,object,polled,rejectAdvanced,string,unsupportedWire,type VideoWireContext,type VideoWireRequest,type VideoWireCodec} from "../wire";
+import {createdResult,field,object,polled,rejectAdvanced,string,unsupportedWire} from "../wire-helpers";
+import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire-contracts";
 import {compileWorkflowInputs} from "./workflow-inputs";
 import {TransientPollError} from "../../types";
 export function buildComfyUICreate(context:VideoWireContext):VideoWireRequest{

@@ -2,7 +2,7 @@ import {buildMiniMaxCreate,minimaxCodec} from "./minimax";
 import {normalizeVideoInput,VideoContractError} from "../../contract";
 import definitions from "../../../model-config/video-family-capabilities.json";
 import type {VideoModelDefinition} from "../../capability-schema";
-import type {VideoWireContext,VideoWireCodec} from "../wire";
+import type {VideoWireContext,VideoWireCodec} from "../wire-contracts";
 
 function create(context:VideoWireContext){
   const spec=definitions.items.find(item=>item.providerId==="geeknow-video-h3"&&item.model===context.request.modelId);

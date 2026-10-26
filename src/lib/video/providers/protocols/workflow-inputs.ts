@@ -1,5 +1,6 @@
 import {videoWorkflowManifestSchema,type VideoWorkflowManifest} from "../../workflow-schema";
-import {unsupportedWire,type VideoWireContext} from "../wire";
+import {unsupportedWire} from "../wire-helpers";
+import type {VideoWireContext} from "../wire-contracts";
 import type {VideoReference} from "../../types";
 
 export function compileWorkflowInputs(context:VideoWireContext):{manifest:VideoWorkflowManifest;body:Record<string,unknown>}{

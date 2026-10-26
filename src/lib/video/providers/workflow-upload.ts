@@ -1,8 +1,9 @@
 import "server-only";
 import {readManagedObject} from "../../storage";
 import {readBounded} from "../../supplier-cost/io";
-import {field,string,unsupportedWire,type VideoWireContext} from "./wire";
-import {videoWireEndpoint} from "./wire-adapter";
+import {field,string,unsupportedWire} from "./wire-helpers";
+import type {VideoWireContext} from "./wire-contracts";
+import {videoWireEndpoint} from "./wire-endpoint";
 import {createHash} from "node:crypto";
 import {mediaExtension} from "../media-formats";
 

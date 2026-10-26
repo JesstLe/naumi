@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import {createRequire} from "node:module";
+import vm from "node:vm";
+import path from "node:path";
+import {build} from "esbuild";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -15,11 +19,13 @@ let geminiOfficialPayload: unknown = null;
 let minimaxOfficialPayload: unknown = null;
 let geminiMediaMode: "direct" | "redirect" | "external" | "" = "";
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-  const url = String(input);
-  fetchCalls.push({ url, method: init?.method || "GET", headers: new Headers(init?.headers), redirect: init?.redirect });
-  calls.push(`${init?.method || "GET"} ${url}`);
-  if (init?.method === "POST" && !url.endsWith("/task/openapi/outputs")) {
-    const requestHeaders = new Headers(init.headers);
+  // The actual cost/transport boundary passes Request objects, not necessarily
+  // a URL + init pair. Observe their real method/headers without changing cases.
+  const request = new Request(input, init), url = request.url, method = request.method;
+  fetchCalls.push({ url, method, headers: request.headers, redirect: request.redirect });
+  calls.push(`${method} ${url}`);
+  if (method === "POST" && !url.endsWith("/task/openapi/outputs")) {
+    const requestHeaders = request.headers;
     createIdempotencyKeys.push(
       requestHeaders.get("Idempotency-Key") || requestHeaders.get("X-Idempotency-Key") || ""
     );
@@ -54,7 +60,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     return new Response(new Uint8Array([0, 1, 2, 3]), { status: 200, headers: { "content-type": "video/mp4" } });
   }
   if (url.endsWith("/task/openapi/outputs")) return json({ code: 0, data: [{ fileUrl: "https://fixture.test/result.mp4" }] });
-  if (init?.method === "POST") {
+  if (method === "POST") {
     if (url.includes("predictLongRunning")) return json({ name: "operations/gemini-1" });
     return json({ id: `${url.includes("createTask") ? "kie" : "task"}-1`, status: "queued" });
   }
@@ -86,8 +92,17 @@ for (const [prefix, base, model] of [
 }
 
 async function main() {
-const { getVideoProvider } = await import("@/lib/video/providers/adapter");
-const { openAiVideosAdapter } = await import("@/lib/video/providers/openai-videos");
+// Execute actual adapter/decoder/download sources while replacing only the
+// network transport port. Production modelEndpointFetch uses node:http rather
+// than global fetch, so a fetch-only fixture must not import that live port.
+const bundled=await build({stdin:{contents:`export {getVideoProvider} from './src/lib/video/providers/adapter';export {openAiVideosAdapter} from './src/lib/video/providers/openai-videos';`,resolveDir:process.cwd()},
+  bundle:true,write:false,platform:"node",format:"cjs",external:["pg","sharp"],alias:{"server-only":path.resolve("scripts/fleet-server-only.cjs")},tsconfig:"tsconfig.json",
+  plugins:[{name:"fixture-transport-port",setup(b){b.onLoad({filter:/[\\/]model-config[\\/]transport\.ts$/},()=>({contents:"export function modelEndpointFetch(){return (input,init)=>globalThis.fetch(new Request(input,{...init,redirect:'manual'}))}",loader:"ts"}));}}]});
+const projected={exports:{} as {getVideoProvider:typeof import('../src/lib/video/providers/adapter')['getVideoProvider'];openAiVideosAdapter:typeof import('../src/lib/video/providers/openai-videos')['openAiVideosAdapter']}};
+vm.runInNewContext(bundled.outputFiles[0].text,{module:projected,exports:projected.exports,require:createRequire(import.meta.url),
+  fetch:globalThis.fetch,console,process,Error,Buffer,URL,URLSearchParams,Request,Response,Headers,FormData,Blob,File,AbortSignal,AbortController,
+  ReadableStream,TransformStream,TextEncoder,TextDecoder,Uint8Array,setTimeout,clearTimeout,setInterval,clearInterval},{filename:'actual-provider-fixture.cjs',timeout:5000});
+const {getVideoProvider,openAiVideosAdapter}=projected.exports;
 
 const request = {
   source: "workbench" as const,

@@ -1,5 +1,6 @@
 import {VideoContractError} from "../../contract";
-import {createdResult,field,mediaUrl,polled,rejectAdvanced,selectWireOptions,type VideoWireContext,type VideoWireRequest,type VideoWireCodec} from "../wire";
+import {createdResult,field,mediaUrl,polled,rejectAdvanced,selectWireOptions} from "../wire-helpers";
+import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire-contracts";
 
 // The nested output_config and images fields reproduce the successful Geek
 // receipts. They intentionally do not replace any existing OpenAI profile.

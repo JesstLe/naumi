@@ -1,5 +1,6 @@
 import {TransientPollError} from "../../types";
-import {createdResult,field,polled,rejectAdvanced,selectWireOptions,string,unsupportedWire,wireReferences,type VideoWireContext,type VideoWireRequest,type VideoWireCodec} from "../wire";
+import {createdResult,field,polled,rejectAdvanced,selectWireOptions,string,unsupportedWire,wireReferences} from "../wire-helpers";
+import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire-contracts";
 // Toonflow-app ae9e5f1 packages/providers/src/media/tfRouter.ts. Copyright (c) 2026 HBAI-Ltd, MIT.
 export const TF_ROUTER_PROFILES=["tfrouter-generic","tfrouter-kling","tfrouter-kling-omni","tfrouter-grok"] as const;
 export function buildTFRouterCreate(context:VideoWireContext):VideoWireRequest{
