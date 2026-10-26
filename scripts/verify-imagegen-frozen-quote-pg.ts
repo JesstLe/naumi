@@ -225,7 +225,7 @@ async function main(){
       const expiredHeaders=new Headers(oldQuoteHeaders);expiredHeaders.set("x-naumi-billing-operation-id",randomUUID());
       await expire(pExpired);
       const expiredBatchRequest=imagegenRequestSchema.parse({...rBatch,operationId:randomUUID()}),expiredBatchPreview=await preview(expiredBatchRequest);await expire(expiredBatchPreview);
-      
+
       const {assertQuotedVersion}=await import("../src/lib/billing/request");assert.doesNotThrow(()=>assertQuotedVersion({version:999999,credits:0},saved.quote));
       assert.doesNotThrow(()=>assertQuotedVersion({version:999999,credits:0},{...saved.quote,facts:{...saved.quote.facts,feature:"video.generate"}}),"pricing-friction rework made assertQuotedVersion a compatibility no-op");
       assert.equal(wires.length,2);assert.equal(Number((await pool.query("SELECT count(*) n FROM app_ledger WHERE kind='consume'")).rows[0].n),2);
