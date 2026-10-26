@@ -1,5 +1,7 @@
 # 核心链路重构专用工作区
 
+2026-10-26 R6B：复用R6A固定完整Linux镜像，完整Web与同Image ID combined direct Worker实际运行；真实登录/HTTP报价提交/排队/供应商合成PNG/存储读回/父子回执/一次扣款、慢供应商期间Web健康5次5—8ms、同tick新任务唤醒、原6/current17、图片与文字CAS/工作台两图/原生FFmpeg和终态POSIX排空，125检查通过。四类retained任务三笔18积分，用户四笔57积分，live lease和unknown不重放保持；自有5容器/internal network/PG tmpfs已清理。产品src/services未修改；新增可复用整包运行验收，不把准备阶段失败改绿，也不将本地fixture当浏览器/容量/远端CI。详见[R6B记录](changes/2026-10-26-refactor-runtime-r6b.md)及本轮DELIVERY；同步后第2模块，后续R6C浏览器/持续热态和剩余writer/UI继续，不合main、不部署，整体active。
+
 2026-10-26 R6A：21个现有核心入口按六组统一串行、同SHA/全文件摘要/环境与literal日志绑定；dirty或分组PARTIAL、失败NOT_RUN保真，Docker候选构建前依赖同source core。修旧fixture真实owner/研究资料依赖，并发现修复completed-parent忽略deliveryComplete=false的误报成功（保留原图原价改partial）。清洁整组/完整Linux镜像/回滚/remote以本轮DELIVERY为准；第1模块，R6B整包运行/性能/最终CI和历史债务继续，不合main、不部署。见 [R6A记录](changes/2026-10-26-refactor-acceptance-r6a.md)。
 
 2026-10-26 R5P后三模块普通整合：ee60d3c0接固定a1a56371，24路径自动合并；健康页直连Pool owner，旧草稿保护/原pointerCAS/创作去重/公告/进度保留。旧新发布base3→7、registry/素材PG16/创作完整PG/实际组件UI20、图片20-44/文字16-47/进度与公开合同通过；最终类型/结构/4451hash回滚/双parent与远端见main-sync DELIVERY，计数归零。R6同SHA全候选/旧兼容writer与容量继续，不合main、不部署。见 [同步记录](changes/2026-10-26-refactor-main-sync-r5p.md)。
