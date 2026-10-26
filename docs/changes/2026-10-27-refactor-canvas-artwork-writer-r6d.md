@@ -28,3 +28,12 @@
 四产物位于`output/refactor-r6d-20261027/{MODIFIED_FILE.tar,DIFF_FILE.patch,VERIFICATION.txt,ROLLBACK.sh}`；原4481文件逐字节哈希、独立完整副本回滚、恢复旧行为和patch复放以DELIVERY.json实录为准。核心同SHA验收与最终文档提交分层绑定；本模块不构建新完整镜像，不借R6C旧镜像声称R6D整包验收。
 
 仅完成一个metadata写入owner闭环。真实像素/parent link/创建删除仍各自有语义owner；旧无base入口不升级成浏览器CAS协议，不新增history store。剩余外围UI/旧入口与测试资产、长时混合生成负载、依赖漏洞及最终整合继续；本轮计数1，整体active，不合main、不部署。
+
+## 固定源码集中运行结果
+
+固定清洁源码`cdb5d1e44232d5a6fb6016b7d0178071badea3a8`：`REFACTOR_VERIFICATION=PASS SCOPE=core PASSED=23 FAILED=0 NOT_RUN=0`，exit0；全文件digest=`4d75c3e25473730a09c0790feb79994d65a2d186f91776d29b7bcc4ad7d52d84`。
+
+- 新writer扩展18类80检查、六真实HTTP、真实PG：SQL0/shared owner fence、NULL根原子拒绝、空legacy根与child成功、隐藏metadata与NULL坐标保持、SQL异常整批回滚、一空闲连接无自等待；exit0。
+- core包含图片并发20类44检查、文字并发16类47、node PG32、history67类184、报价/交付/权限/启动/视频/Worker原回执；各literal与exit见`core-candidate/REPORT.json`和分项日志。23是入口数，不是所有业务断言总数。
+- 额外实际history HTTP/PG20检查通过；runner自测12类64检查通过；最终全项目`tsc --noEmit`空输出exit0，七改动TS文件lint空输出exit0。
+- 后续只有本段及工作区登记文档更新；最终Git提交与上述core SHA明确分层，全部`src/`、`services/`、`scripts/`字节与被测固定提交一致，最终封存脚本逐字节检查。未把旧完整镜像当本轮新代码整包运行结果。
