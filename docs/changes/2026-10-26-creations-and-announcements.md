@@ -47,4 +47,15 @@
 
 首轮公开目录校验拒绝“提交”一词，导致通知加载测试暴露错误；改为用户视角“运行”，没有放宽校验器，第二轮与最终轮均通过。baseline首次测试已复现但测试清理在其他schema pool仍连接时DROP DATABASE导致错误，已移除进程内强制DROP，由专属fixture容器统一收尾；第二轮相同业务断言通过，exit1只有预期复现。原始预检R1 tick列名id错误、R2 started_at错误保留，核对真实schema后R3使用tick_id/accepted_at通过；未改生产表以适配检查脚本。
 
-证据目录为`E:/Workspace/naumi/output/release47-creations-20261026-r1/`，原始失败、完整命令、哈希、fixture截图均保留。副本回滚及固定main镜像构建为下一步，未创建生产候选，也未将本地验收称为已上线。
+证据目录为`E:/Workspace/naumi/output/release47-creations-20261026-r1/`，原始失败、完整命令、哈希、fixture截图均保留。
+
+## 最终候选与当前发布条件
+
+- 产品提交`76e2a35f00a691c007c8566d589b48a0673ec670`已普通合main并推送；固定main候选`a33ed3aead88e87d617ad859a5b59ecf53dd27ed`与已测产品tree完全相同。
+- BUILD_VERSION=`1793021601`，本机Linux Docker完整构建exit0；Image ID=`sha256:ecc67f94fb4d9ef07f92d62447220a2b5d4ce27bc2633b5c95247979d55a5cba`。
+- 导出镜像246,562,816 bytes，SHA256=`ead1680b24dc5dd325d135b686cdc4e10da81f252f3affc0fd5bddcd5d5ed1f3`。网络隔离、只读镜像实例四项真实HTTP检查通过：版本/commit、23版94条公告、旧页面版本上限、首页通知SSR。临时镜像验收容器已停止移除；该验收不包含生产DB及付费供应调用。
+- GitHub镜像工作流40334619216在执行步骤前因账单/支出限制未启动；本机固定源码构建完成，不把GitHub失败改记成功。本地构建包装器在成功导出镜像并落盘BUILD_RESULT后，因控制台GBK编码输出特殊字符退出1；原Docker exit0和镜像核验保留，没有重跑构建冒充首次成功。
+- 副本回滚恢复7份旧文件、删除6份新增文件；实际恢复目录重新运行旧版PG/浏览器用例，分别REPRODUCED 5项/2项、预期exit1；修改态源码与候选镜像保留。
+- 21:56三锁最终只读预检：当前Web/Worker同b15d4761镜像，Worker正常且最近tick completed；两旧Web/旧Worker已停止。MemAvailable=4738MiB，只是当时读数，不等于峰值容量验收。
+- 生产台账仍revision836；两轮SWITCHED_CLEANUP_PENDING未收尾，runtimeRecovery.effectiveWorker仍指向已停止旧Worker，监督timer/service为inactive。当前Web完整acceptedTasks/agentSessions为null、覆盖partial；原历史活动记录仍存在。下一次正常发布需先真实对账旧槽退役/在途归属并更新恢复绑定及未收尾记录，不伪填0、不删UNKNOWN、不复用历史直接切授权。
+- 本轮完成范围是**候选准备**；没有上传/启动生产新槽、切流、修改生产配置或重放任务。最终交接文档为代码候选之后的文档提交，不需要为了文档重建镜像。
