@@ -14,7 +14,7 @@ import type {ApiWorkflow} from "../comfyui/workflow";
 import {getVideoNode,associateVideoTaskTx} from "../canvas/video-node-repository";
 import {ensureVideoNodeSchema} from "@/lib/canvas/storage-schema";
 
-import {authorizeVideoProject} from "../canvas/video-node-service";
+import { authorizeVideoProject } from "../canvas/project-access";
 import {videoWorkflowManifestSchema} from "./workflow-schema";
 import {compileVideoPrompt} from "./prompt";
 import {videoReferenceSchema,orderedInputSchema} from "./references";

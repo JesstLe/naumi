@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import {getPool} from "@/platform/db/pool";
 import {listArtworksByIds} from "@/lib/artworks/repository";
-import { uploadImage } from "@/lib/storage";
+import { uploadImage } from "@/lib/media-upload";
 import { readCanvasOutput } from "@/lib/canvas-image-input";
 import { IMAGEGEN_OUTPUT_MAX_BYTES } from "./imagegen/image-limits";
 import {ensureCanvasSettingsSchema} from "@/lib/canvas/storage-schema";

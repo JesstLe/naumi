@@ -14,7 +14,7 @@ import {billingJson} from "./access";
 import {withCreationRequest} from "../saas/creation-context";
 import {currentCreationContext} from "@/lib/saas/creation-scope";
 import {prepareOriginalCreationInput} from "../saas/creation-writer";
-import {TeamError} from "../teams/server";
+import { TeamError } from "../teams/errors";
 import {withSynchronousOperation,type SynchronousResult} from "./synchronous-operation";
 // Existing tools keep this compatibility export; no second billing implementation.
 export {currentSynchronousBilling,recordBillingUsage,markBillingUpstream,exposeAbandonedBillingOperations,synchronousCost,settleSynchronous,configuredToolCost,synchronousChargedCredits,completeSynchronousStream,failSynchronousStream} from "./synchronous-operation";

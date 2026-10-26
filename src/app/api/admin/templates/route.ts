@@ -3,7 +3,8 @@ import {getTemplate, listTemplates, updateTemplate} from "@/lib/templates/reposi
 import {setTemplateImageCacheSuccess} from "@/lib/templates/cache-repository";
 import {dbEnabled} from "@/platform/db/pool";
 import { requireAdmin } from "@/lib/admin-auth";
-import { storageEnabled, uploadImage } from "@/lib/storage";
+import { storageEnabled } from "@/lib/object-storage/runtime";
+import { uploadImage } from "@/lib/media-upload";
 import {persistTemplateImage} from "@/lib/template-image-cache";
 import {remoteTemplateImageSource, templateImageDeliveryUrl} from "@/lib/templates/image-source";
 

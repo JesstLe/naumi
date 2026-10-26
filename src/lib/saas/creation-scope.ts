@@ -2,7 +2,7 @@ import 'server-only';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
-import {TeamError} from '@/lib/teams/server';
+import { TeamError } from "@/lib/teams/errors";
 
 // One in-process scope store shared by HTTP ingress, execution and durable recovery.
 

@@ -4,7 +4,7 @@ import {deleteCanvasNodesAtomically} from "@/lib/canvas/node-deletion";
 import { authenticatedEmail } from "@/lib/request-auth";
 import {sameSiteBiMutation} from "@/lib/bi/access";
 import {deleteCanvasProject} from "@/lib/canvas/node-delete";
-import {videoProjectKeySchema} from "@/lib/canvas/video-node-schema";
+import { videoProjectKeySchema } from "@/lib/canvas/project-key";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

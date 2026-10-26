@@ -5,7 +5,7 @@ import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {verifiedOwnedMedia} from "@/lib/video/media-inspection";
-import {storageKeyFromManagedUrl} from "@/lib/storage";
+import { storageKeyFromManagedUrl } from "@/lib/object-storage/runtime";
 import {ensureCanvasSettingsSchema} from "@/lib/canvas/storage-schema";
 
 import {videoNodeWriteSchema} from "@/lib/canvas/video-node-schema";

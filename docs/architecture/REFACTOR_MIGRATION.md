@@ -1,5 +1,7 @@
 # 渐进迁移与集中验收台账
 
+2026-10-26 R5I：对象存储raw/managed-read/upload/metadata-query、项目访问/key、TeamError和Fleet发布合同按owner分离；77存储/媒体消费者及其它调用改绑，旧出口同函数/对象兼容。7194原声明保持、37迁移、2动态import改目标、算法变化0；emitted静态环2→0/全导入环4→0，raw22→8和wire1778→98输入只作结构指标。完整旧新团队/私有媒体/本地回退/项目/Fleet通过；真实项目PNG导入33、loopback存储20/远程优先20两侧通过，Linux图片Worker71/实际Next六入口20及tsc/lint通过。旧视频全站fixture缺Router的setup失败保留。四产物/4368hash副本回滚/patch/提交及三模块main整合以DELIVERY为准；外围UI-CAS/整包CI/基准容量/R6继续，不合main、不部署。见 [R5I记录](../changes/2026-10-26-leaf-owner-boundaries-r5i.md)。
+
 2026-10-26 R5H：功能绑定/默认/工具范围/兼容候选6个原规则归feature-model-policy，15实际生产消费者改绑；business和tool-scope只依赖纯规则，不再双向引用。7194原声明保持/6迁移/算法变化0，24配置13161决策旧新精确同、6兼容导出同对象/函数；旧两文件环拆除、其它SCC成员保持、新owner入环0。完整旧/新管理scope/价格、Canvas真实23、准备45、批次/抠图/工作台/家族和报价36通过；实际控件、完整类型/构建、4365hash副本回滚、patch、四产物与提交远端以R5H DELIVERY为准。真实Next管理控件通过；纠正Node启动import的正向编译分支，原正文/9真值表保持、health500→200；原observer/lint/Next失败留存不改PASS；同步后第2模块，剩余4全导入小环、外围UI-CAS/R6继续，不合main、不部署。见 [R5H记录](../changes/2026-10-26-feature-model-policy-r5h.md)。
 
 2026-10-26 R5G：执行组合/通道策略/阶段策略/provider transport/SDK工厂归属分离，必填函数参数完成路由回调、不建全局registry；旧三文件环拆除，新owner入环0、其余SCC成员保持、最大3→2。7191原声明保持/6迁移/3组合改动，原Flow/路由/SDK正文及10算法文件保持；实际fetch bundle OpenAI SDK输入145→0。完整旧/新五组真实PG/SDK/多进程矩阵通过，修正恢复fixture父审计与review/running状态后两侧恢复通过；健康/参数/供应商/liveguard邻接与图片Worker71通过，历史quota仍OPEN。四产物/4359hash副本回滚/实际Next/tsc/lint/提交远端见R5G DELIVERY；同步后第1模块，剩余2文件小环/外围UI-CAS/R6继续，不合main、不部署。见 [R5G记录](../changes/2026-10-26-model-execution-transport-r5g.md)。

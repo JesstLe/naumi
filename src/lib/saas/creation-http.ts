@@ -3,7 +3,7 @@ import {NextResponse} from 'next/server';
 import {tenantAuthorize} from './tenants';
 import {enterpriseAuthorize} from '@/lib/enterprise/access';
 import {teamJson,PRIVATE_HEADERS} from '@/lib/teams/access';
-import {TeamError} from '@/lib/teams/server';
+import { TeamError } from "@/lib/teams/errors";
 import {creationFiltersSchema} from './creation-contracts';
 import {listCreations,creationDetail,creationAsset,type CreationReader} from './creations';
 import {enterpriseMediaResponse} from '@/lib/enterprise/media-response';

@@ -53,7 +53,7 @@ export function validateVideoWorkflow(raw:unknown):VideoWorkflowPlan{
   return plan;
 }
 function operationId(runId:string,nodeId:string){return `video-wf-${createHash("sha256").update(`${runId}\0${nodeId}`).digest("hex")}`;}
-async function authorizeProject(actor:string,key:string){const {authorizeVideoProject}=await import("../canvas/video-node-service");await authorizeVideoProject(actor,key);}
+async function authorizeProject(actor:string,key:string){const {authorizeVideoProject}=await import("../canvas/project-access");await authorizeVideoProject(actor,key);}
 export async function authorizeWorkflowInputs(actor:string,plan:VideoWorkflowPlan){
   for(const node of plan.nodes){
     if(node.canvasNodeId){const current=await getVideoNode(actor,node.canvasNodeId);if(!current||current.projectKey!==plan.projectKey||current.revision!==node.canvasNodeRevision)throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT","制作链节点不存在或已更新",409);node.canvasContentDigest=createHash("sha256").update(canonicalConfig({config:current.config,inputs:current.inputs})).digest("hex");node.canvasLastTaskId=current.lastTaskId;}

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { enterpriseAuthorize } from '@/lib/enterprise/access';
 import { enterpriseOverviewMeta, enterpriseProfileCommand, updateEnterpriseProfile } from '@/lib/saas/enterprise-overview';
 import { teamJson, teamMutationOrigin } from '@/lib/teams/access';
-import { TeamError } from '@/lib/teams/server';
+import { TeamError } from "@/lib/teams/errors";
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

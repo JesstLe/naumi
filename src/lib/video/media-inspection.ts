@@ -7,8 +7,9 @@ import {createHash} from "node:crypto";
 
 import {getPool} from "@/platform/db/pool";
 import {listArtworksByIds} from "@/lib/artworks/repository";
-import {canReadMedia,getMediaAsset} from "../media-assets";
-import {readManagedObject} from "../storage";
+import { canReadMedia } from "../media-assets";
+import { getMediaAsset } from "../media-assets-reader";
+import { readManagedObject } from "../object-storage/managed-read";
 import {ModelConfigError} from "../model-config/types";
 import {probeMedia} from "./media";
 import {probeStaticImage} from "./static-image-probe";

@@ -17,7 +17,7 @@ import { getUser } from "@/lib/accounts/session";
 import { isBanned } from "@/lib/accounts/repository";
 import { clientIp } from "@/lib/ip";
 import { resolveUserEmail } from "@/lib/admin-auth";
-import { storageEnabled } from "@/lib/storage";
+import { storageEnabled } from "@/lib/object-storage/runtime";
 import { getOpenAISettings } from "@/lib/settings";
 import { getImageModelCatalog } from "@/lib/image-model-catalog";
 import {APLUS_MODULES,JOBS,kickAplus,patchJob,ratioFor,sizeFor} from "@/lib/aplus/runtime";

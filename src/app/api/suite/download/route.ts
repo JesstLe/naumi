@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import path from "path";
-import { isManagedImageUrl, readManagedObject, privateMedia, storageKeyFromManagedUrl } from "@/lib/storage";
+import { isManagedImageUrl, privateMedia, storageKeyFromManagedUrl } from "@/lib/object-storage/runtime";
+import { readManagedObject } from "@/lib/object-storage/managed-read";
 import {authenticatedEmail} from '@/lib/request-auth';
 import {canReadMedia} from '@/lib/media-assets';
 

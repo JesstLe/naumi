@@ -1,3 +1,5 @@
+import {TeamError} from "./errors";
+export {TeamError} from "./errors";
 import {ensureTeamSchema} from "@/lib/teams/schema";
 export {ensureTeamSchema};
 import "server-only";
@@ -11,9 +13,6 @@ import {settingsSecret} from "@/lib/settings-secret";
 import {requireTeamGrant,type TeamActor} from "./grants";
 import type {ContentSection,TeamSnapshot} from "./contracts";
 
-
-
-export class TeamError extends Error { constructor(message: string, public status = 403) { super(message); } }
 const email = z.string().trim().min(1).max(254).transform(v => v.toLowerCase());
 const instant = z.string().datetime({ offset: true });
 const base = { id: z.string().uuid(), teamId: z.string().uuid() };

@@ -3,7 +3,7 @@ import {imageOutputNotice} from "./output-advisory";
 import {storedImageReview,IMAGE_REVIEW_MESSAGE} from "../image-job-review";
 import {dbEnabled} from "@/platform/db/pool";
 import {getUser} from "@/lib/accounts/session";
-import {storageEnabled} from "../storage";
+import { storageEnabled } from "../object-storage/runtime";
 import {getOpenAISettings} from "../settings";
 import {imageJobPollState} from "../image-job-failure";
 import {readDeliveryBilling} from "./delivery-billing";

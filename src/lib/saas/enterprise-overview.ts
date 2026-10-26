@@ -3,7 +3,7 @@ import { createHmac } from 'node:crypto';
 import { z } from 'zod';
 import { enterpriseRead } from '@/lib/enterprise/server';
 import { settingsSecret } from '@/lib/settings-secret';
-import { TeamError } from '@/lib/teams/server';
+import { TeamError } from "@/lib/teams/errors";
 import type { TeamActor } from '@/lib/teams/grants';
 import type { EnterpriseOverviewMeta } from '@/components/enterprise/saas-overview-contracts';
 

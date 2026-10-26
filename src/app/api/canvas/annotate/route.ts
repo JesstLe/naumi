@@ -14,7 +14,8 @@ import {dbEnabled} from "@/platform/db/pool";
 import {getUser} from "@/lib/accounts/session";
 import { readCanvasImage } from "@/lib/canvas-image-input";
 import { editImage } from "@/lib/image-edit";
-import { storageEnabled, uploadImage } from "@/lib/storage";
+import { storageEnabled } from "@/lib/object-storage/runtime";
+import { uploadImage } from "@/lib/media-upload";
 import { safeError } from "@/lib/api-error";
 
 // ---------------------------------------------------------------------------

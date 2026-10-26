@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { dbEnabled } from "@/platform/db/pool";
 import { requireAdmin } from "@/lib/admin-auth";
-import { storageEnabled, uploadImage } from "@/lib/storage";
+import { storageEnabled } from "@/lib/object-storage/runtime";
+import { uploadImage } from "@/lib/media-upload";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

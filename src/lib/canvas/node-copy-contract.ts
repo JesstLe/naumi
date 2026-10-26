@@ -1,5 +1,6 @@
 import {z} from "zod";
-import {videoNodeIdSchema,videoProjectKeySchema,type CanvasVideoNode} from "./video-node-schema";
+import { videoNodeIdSchema, type CanvasVideoNode } from "./video-node-schema";
+import { videoProjectKeySchema } from "./project-key";
 import type {CanvasTextNode} from "./text-document-model";
 
 const coordinate=z.number().finite().min(-1e7).max(1e7);

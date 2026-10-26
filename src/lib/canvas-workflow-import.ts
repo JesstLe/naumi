@@ -14,7 +14,8 @@ import {defaultNodeSettings,type CanvasNodeSettings} from "@/lib/canvas/node-set
 import {readWorkflowClipboard,gaodingAssetUrl,WORKFLOW_CLIPBOARD_LIMIT,type ImportedElement,type ImportedManifest} from "@/lib/canvas/workflow-clipboard";
 import {inertSvg,pathSvg} from "@/lib/canvas/workflow-vector";
 import {fetchPublicImageBytes} from "@/lib/template-image-cache";
-import {uploadImage,deleteImageByUrl} from "@/lib/storage";
+import { uploadImage } from "@/lib/media-upload";
+import { deleteImageByUrl } from "@/lib/object-storage/runtime";
 import {editCanvasPixels} from "@/lib/canvas-local-image-edit";
 
 export const workflowImportRequest = z.object({

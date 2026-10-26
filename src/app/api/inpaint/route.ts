@@ -12,7 +12,8 @@ import {getUser} from "@/lib/accounts/session";
 import {isBanned} from "@/lib/accounts/repository";
 import { clientIp } from "@/lib/ip";
 import { resolveUserEmail } from "@/lib/admin-auth";
-import { storageEnabled, uploadImage } from "@/lib/storage";
+import { storageEnabled } from "@/lib/object-storage/runtime";
+import { uploadImage } from "@/lib/media-upload";
 import { isGenerationResolution, resolutionLongSide } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 

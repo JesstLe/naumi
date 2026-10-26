@@ -14,7 +14,7 @@ import {ModelConfigError} from "../model-config/types";
 import {currentCreationContext,withFrozenCreation} from "@/lib/saas/creation-scope";
 import {ensureCreationSchema} from "../saas/creation-schema";
 import {prepareOriginalCreationInput} from "../saas/creation-writer";
-import {TeamError} from "../teams/server";
+import { TeamError } from "../teams/errors";
 import {readImagegenInputs} from "./inputs";
 import {imagegenStepIntent} from "./step-intent";
 import {imagegenStepId} from "./operation-id";

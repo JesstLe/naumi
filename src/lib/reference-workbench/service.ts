@@ -26,7 +26,7 @@ import {modelAwareOpenAI} from "../model-config/clients";
 import {requestedTextModel} from "../text-models";
 import {toVisionDataUrl} from "../vision-image";
 import {getOpenAISettings} from "../settings";
-import {dataUrlToBytes} from "../storage";
+import { dataUrlToBytes } from "../object-storage/runtime";
 import {DEFAULT_PROMPT,DEFAULT_INSTRUCTION,MODES,LABELS,settings,relativePath,classify,imageUrl,ratio,geometryMatches,stableId,requestId,digest,WorkbenchError,type Asset,type Project,type Settings} from "./contract";
 import {chatPlanInstruction,parseChatPlan,textFailureState,type TextFailureStage} from "./chat-plan";
 export {parseChatPlan} from "./chat-plan";

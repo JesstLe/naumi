@@ -5,7 +5,9 @@ import {addArtworks} from "@/lib/artworks/writer";
 import {dbEnabled} from "@/platform/db/pool";
 import {setArtworkPosition} from "@/lib/canvas/artwork-repository";
 import { authenticatedEmail } from "@/lib/request-auth";
-import { uploadImage,isManagedImageUrl,readManagedObject } from "@/lib/storage";
+import { uploadImage } from "@/lib/media-upload";
+import { isManagedImageUrl } from "@/lib/object-storage/runtime";
+import { readManagedObject } from "@/lib/object-storage/managed-read";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

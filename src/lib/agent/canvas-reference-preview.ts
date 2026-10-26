@@ -1,6 +1,7 @@
 import "server-only";
-import { getMediaAsset } from "../media-assets";
-import { isManagedImageUrl, storageKeyFromManagedUrl, readManagedObject } from "../storage";
+import { getMediaAsset } from "../media-assets-reader";
+import { isManagedImageUrl, storageKeyFromManagedUrl } from "../object-storage/runtime";
+import { readManagedObject } from "../object-storage/managed-read";
 
 /** Call only after artwork ownership is checked. Never create variants on this read path. */
 export async function readCanvasVisionReference(image: string) {

@@ -2,9 +2,10 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import path from "path";
-import { fetchStoredObject, MEDIA_DIR, storageDriver, privateMedia, remoteMediaAccess, presignStoredObject } from "@/lib/storage";
+import { fetchStoredObject, MEDIA_DIR, storageDriver, privateMedia, remoteMediaAccess, presignStoredObject } from "@/lib/object-storage/runtime";
 import {authenticatedEmail} from "@/lib/request-auth";
-import {canReadMedia,getMediaAsset,importLegacyMedia,ensureMediaVariants} from "@/lib/media-assets";
+import { canReadMedia, importLegacyMedia, ensureMediaVariants } from "@/lib/media-assets";
+import { getMediaAsset } from "@/lib/media-assets-reader";
 
 // 本地磁盘存储的图片对外伺服(STORAGE_DRIVER=local 时用)。
 // R2/OSS 部署下图片走绝对 CDN URL,不会打到这里 —— 此路由留着无害。

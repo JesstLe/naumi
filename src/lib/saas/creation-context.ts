@@ -3,7 +3,7 @@ import {createHmac,timingSafeEqual} from 'node:crypto';
 import {z} from 'zod';
 import {getPool,dbEnabled} from '@/platform/db/pool';
 import {enterpriseCreationRead} from '@/lib/enterprise/server';
-import {TeamError} from '@/lib/teams/server';
+import { TeamError } from "@/lib/teams/errors";
 import {ensureCreationSchema} from './creation-schema';
 import {settingsSecret} from '@/lib/settings-secret';
 import {userFeaturePolicy} from '@/lib/feature-access/repository';

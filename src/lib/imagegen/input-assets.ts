@@ -5,7 +5,8 @@ import {getPool} from "@/platform/db/pool";
 import {registerMediaAsset} from "../media-assets";
 import {ensureMediaSchema} from "@/lib/media-assets-schema";
 
-import {writeStoredObject,readManagedObject} from "../storage";
+import { writeStoredObject } from "../object-storage/runtime";
+import { readManagedObject } from "../object-storage/managed-read";
 import {decodeImagegenPixels} from "./pixels";
 import {bindCreationMedia} from "@/lib/saas/creation-access";
 /** Private original references, including masks; not gallery artworks or arbitrary URLs. */

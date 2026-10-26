@@ -3,7 +3,8 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {insertCompetitorItem, listCompetitorItems} from "@/lib/competitor/repository";
-import { uploadImage, deleteImageByUrl } from "@/lib/storage";
+import { uploadImage } from "@/lib/media-upload";
+import { deleteImageByUrl } from "@/lib/object-storage/runtime";
 import { competitorActor, competitorError, normalizeUpload, WorkspaceError } from "@/lib/competitor-server";
 import { normalizeImportPath } from "@/lib/competitor-types";
 

@@ -1,5 +1,5 @@
 import "server-only";
-import {readManagedObject} from "../../storage";
+import { readManagedObject } from "../../object-storage/managed-read";
 import {readBounded} from "../../supplier-cost/io";
 import {field,string,unsupportedWire} from "./wire-helpers";
 import type {VideoWireContext} from "./wire-contracts";

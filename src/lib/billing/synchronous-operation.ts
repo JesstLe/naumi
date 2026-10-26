@@ -13,7 +13,7 @@ import {currentModelExecution} from "../model-config/context";
 import {excludeImportedHistory} from "../staging-history";
 import {currentCreationContext,withFrozenCreation} from "@/lib/saas/creation-scope";
 import {claimCreation,finishCreation} from "../saas/creation-writer";
-import {TeamError} from "../teams/server";
+import { TeamError } from "../teams/errors";
 
 type Context = {
     usageIncomplete?: boolean;

@@ -7,7 +7,7 @@ import {currentModelExecution} from "@/lib/model-config/context";
 import {featureForRequest} from "@/lib/model-config/feature-path";
 import {assertPlatformImageSelection} from "@/lib/model-config/selection-policy";
 import {resolveConfiguredImageQuality} from "@/lib/model-config/image-quality";
-import {TeamError} from '@/lib/teams/server';
+import { TeamError } from "@/lib/teams/errors";
 import {imageQualityCost} from "@/lib/image-quality-request";
 import {BillingError} from "@/lib/billing/types";
 import {MAX_GENERATION_DIMENSION, resolutionForLongSide} from "@/lib/mock-data";

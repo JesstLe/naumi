@@ -14,7 +14,8 @@ import {getUser} from "@/lib/accounts/session";
 import {isBanned} from "@/lib/accounts/repository";
 import { clientIp } from "@/lib/ip";
 import { resolveUserEmail } from "@/lib/admin-auth";
-import { storageEnabled, uploadImage } from "@/lib/storage";
+import { storageEnabled } from "@/lib/object-storage/runtime";
+import { uploadImage } from "@/lib/media-upload";
 
 // ---------------------------------------------------------------------------
 // AI 商品精修:单张商品原图 + 快捷优化项(多选) + 补充要求 → 图生图精修。

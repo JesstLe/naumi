@@ -2,7 +2,7 @@ import 'server-only';
 import type {PoolClient} from 'pg';
 import {getPool,dbEnabled} from '@/platform/db/pool';
 import {enterpriseCreationRead} from '@/lib/enterprise/server';
-import {TeamError} from '@/lib/teams/server';
+import { TeamError } from "@/lib/teams/errors";
 import {requestRequirement,TOOL_ACCESS,allows,type AccessPolicy} from '@/lib/feature-access/catalog';
 import {userFeaturePolicy} from '@/lib/feature-access/repository';
 import {ensureCreationSchema} from './creation-schema';

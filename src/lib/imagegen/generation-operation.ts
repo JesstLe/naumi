@@ -11,7 +11,7 @@ import {withArtworkCreation} from "../artwork-provenance-context";
 import {currentCreationContext,withFrozenCreation} from "@/lib/saas/creation-scope";
 import {prepareOriginalCreationInput} from "../saas/creation-writer";
 import {ensureCreationSchema} from "../saas/creation-schema";
-import {TeamError} from "../teams/server";
+import { TeamError } from "../teams/errors";
 import {withImagegenStep} from "./context";
 import {imagegenStepId} from "./operation-id";
 import {submitGeneration,generationBillingError} from "./generation-submission";

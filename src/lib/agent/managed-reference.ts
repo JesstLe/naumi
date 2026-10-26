@@ -1,6 +1,7 @@
 import 'server-only';
 import sharp from 'sharp';
-import {privateMedia,storageKeyFromManagedUrl,readManagedObject} from '../storage';
+import { privateMedia, storageKeyFromManagedUrl } from "../object-storage/runtime";
+import { readManagedObject } from "../object-storage/managed-read";
 import {canReadMedia} from '../media-assets';
 
 export async function managedAgentReference(raw:string, origins:string[], email:string) {

@@ -1,5 +1,5 @@
 import {withCreationRoute} from "@/lib/saas/creation-context";
-import {TeamError} from "@/lib/teams/server";
+import { TeamError } from "@/lib/teams/errors";
 import {NextResponse} from "next/server";
 import {authenticatedEmail} from "@/lib/request-auth";
 import {sameSiteBiMutation} from "@/lib/bi/access";

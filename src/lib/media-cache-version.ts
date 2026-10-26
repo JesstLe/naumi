@@ -2,8 +2,8 @@ import 'server-only';
 import {stat} from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
-import {MEDIA_DIR,storageDriver,storageKeyFromManagedUrl,dataUrlToBytes} from './storage';
-import {getMediaAsset} from './media-assets';
+import { MEDIA_DIR, storageDriver, storageKeyFromManagedUrl, dataUrlToBytes } from "./object-storage/runtime";
+import { getMediaAsset } from "./media-assets-reader";
 export async function mediaCacheVersion(raw:string):Promise<string|null>{
   const inline=dataUrlToBytes(raw);
   if(inline && inline.bytes.length<=32*1024*1024)return createHash('sha256').update(inline.bytes).digest('hex');

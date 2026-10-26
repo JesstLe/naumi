@@ -20,7 +20,8 @@ import { billingErrorResponse } from "@/lib/billing/request";
 import { expansionGeometry, composeExpandedImage, ExpandInputError } from "@/lib/canvas/expand-image";
 import { expansionUsesMask } from "@/lib/canvas/expand-capabilities";
 import { currentModelExecution } from "@/lib/model-config/context";
-import { storageEnabled, uploadImage } from "@/lib/storage";
+import { storageEnabled } from "@/lib/object-storage/runtime";
+import { uploadImage } from "@/lib/media-upload";
 import { safeError } from "@/lib/api-error";
 
 // ---------------------------------------------------------------------------

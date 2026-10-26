@@ -14,7 +14,8 @@ import {getUser} from "@/lib/accounts/session";
 import {isBanned} from "@/lib/accounts/repository";
 import { clientIp } from "@/lib/ip";
 import { resolveUserEmail } from "@/lib/admin-auth";
-import { storageEnabled, uploadImage } from "@/lib/storage";
+import { storageEnabled } from "@/lib/object-storage/runtime";
+import { uploadImage } from "@/lib/media-upload";
 
 // ---------------------------------------------------------------------------
 // 爆款图复刻:商品原图(1-3) + 爆款参考图(1) + 复刻程度 → 图生图单张出图。

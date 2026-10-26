@@ -1,5 +1,5 @@
 import "server-only";
-import {isManagedImageUrl} from "@/lib/storage";
+import { isManagedImageUrl } from "@/lib/object-storage/runtime";
 
 export function normalizeHttpUrl(raw: string): string | null {
   try {

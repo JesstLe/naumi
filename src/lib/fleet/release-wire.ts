@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { sign, verify, createPrivateKey, createPublicKey } from 'node:crypto';
-import { releaseManifestSchema } from './releases';
+import { releaseManifestSchema } from "./release-contracts";
 export const releaseJobSchema=z.object({id:z.string().uuid(),instanceId:z.string().uuid(),leaseId:z.string().uuid(),expiresAt:z.number().int(),baseSource:z.string().regex(/^[a-f0-9]{40}$/),baseVersion:z.string().regex(/^[0-9]+$/),manifest:releaseManifestSchema}).strict();
 export type ReleaseJob=z.infer<typeof releaseJobSchema>;
 export const releaseResultSchema=z.object({planId:z.string().uuid(),leaseId:z.string().uuid(),state:z.enum(['accepted','failed','blocked']),code:z.enum(['OK','BASELINE_CHANGED','GATE_MISSING','LOCK_BUSY','CHECK_FAILED','ROLLBACK_FAILED','UNKNOWN']),source:z.string().regex(/^[a-f0-9]{40}$/).optional(),version:z.string().max(40).optional(),evidenceSha:z.string().regex(/^[a-f0-9]{64}$/).optional()}).strict();

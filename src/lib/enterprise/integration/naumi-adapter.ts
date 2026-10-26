@@ -1,6 +1,6 @@
 import 'server-only';
 import type { TeamActor } from '@/lib/teams/grants';
-import { TeamError } from '@/lib/teams/server';
+import { TeamError } from "@/lib/teams/errors";
 import { enterpriseList,enterpriseSnapshot,enterpriseRead } from '../server';
 import { enterpriseAnalytics,analyticsQuerySchema } from '../analytics';
 import {queryBi,queryEnterpriseOperations} from "@/lib/bi/repository";

@@ -2,13 +2,8 @@ import "server-only";
 
 import path from "node:path";
 
-import {
-  dataUrlToBytes,
-  isManagedImageUrl,
-  readManagedObject,
-  privateMedia,
-  storageKeyFromManagedUrl,
-} from "@/lib/storage";
+import { dataUrlToBytes, isManagedImageUrl, privateMedia, storageKeyFromManagedUrl } from "@/lib/object-storage/runtime";
+import { readManagedObject } from "@/lib/object-storage/managed-read";
 import {canReadMedia} from '@/lib/media-assets';
 import { IMAGEGEN_OUTPUT_MAX_BYTES } from "./imagegen/image-limits";
 

@@ -4,7 +4,7 @@ import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
 import {ensureVideoNodeSchema} from "@/lib/canvas/storage-schema";
 
-import {authorizeVideoProject} from "./video-node-service";
+import { authorizeVideoProject } from "./project-access";
 /** Project removal is one transaction even when it contains more than the per-selection API limit. */
 export async function deleteCanvasProject(actorRaw:string,projectKey:string,operationId:string){
   const actor=actorRaw.toLowerCase();await ensureSchema();await ensureVideoNodeSchema();await authorizeVideoProject(actor,projectKey);

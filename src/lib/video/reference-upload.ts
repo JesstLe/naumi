@@ -3,8 +3,8 @@ import "server-only";
 import {createHash,randomUUID} from "node:crypto";
 
 import {getPool} from "@/platform/db/pool";
-import {getMediaAsset,type MediaAsset} from "../media-assets";
-import {uploadImage} from "../storage";
+import { getMediaAsset, type MediaAsset } from "../media-assets-reader";
+import { uploadImage } from "../media-upload";
 import {ModelConfigError} from "../model-config/types";
 import {bindCreationMedia} from "@/lib/saas/creation-access";
 

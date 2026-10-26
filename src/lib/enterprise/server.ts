@@ -4,7 +4,7 @@ import 'server-only';
 import {createHmac,randomUUID} from 'node:crypto';
 import type {PoolClient} from 'pg';
 import {z} from 'zod';
-import {TeamError} from "@/lib/teams/server";
+import { TeamError } from "@/lib/teams/errors";
 
 
 import {requireTeamGrant,type TeamActor} from '@/lib/teams/grants';

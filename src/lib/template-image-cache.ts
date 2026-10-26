@@ -9,12 +9,8 @@ import http, { type IncomingMessage } from "http";
 import https from "https";
 import { isIP } from "net";
 import path from "path";
-import {
-  isManagedImageUrl,
-  managedObjectExists,
-  MEDIA_DIR,
-  uploadImage,
-} from "@/lib/storage";
+import { isManagedImageUrl, managedObjectExists, MEDIA_DIR } from "@/lib/object-storage/runtime";
+import { uploadImage } from "@/lib/media-upload";
 
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const MAX_REDIRECTS = 4;

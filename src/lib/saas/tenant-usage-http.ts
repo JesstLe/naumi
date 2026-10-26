@@ -2,7 +2,7 @@ import 'server-only';
 import { NextResponse } from 'next/server';
 import { biAuthorize, biJson } from '@/lib/bi/access';
 import { enterpriseAuthorize } from '@/lib/enterprise/access';
-import { TeamError } from '@/lib/teams/server';
+import { TeamError } from "@/lib/teams/errors";
 import type { TeamActor } from '@/lib/teams/grants';
 import { tenantUsageQuery } from './tenant-usage-contracts';
 import { enterpriseTenantUsage, platformTenantUsage } from './tenant-usage';

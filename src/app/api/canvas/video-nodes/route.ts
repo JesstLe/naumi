@@ -1,10 +1,11 @@
 import {withCreationRoute} from "@/lib/saas/creation-context";
-import {TeamError} from "@/lib/teams/server";
+import { TeamError } from "@/lib/teams/errors";
 import {NextResponse} from "next/server";
 import {authenticatedEmail,authorizedTargetEmail} from "@/lib/request-auth";
 import {sameSiteBiMutation} from "@/lib/bi/access";
 import {readBounded} from "@/lib/supplier-cost/io";
-import {listVideoNodes,saveVideoNode,authorizeVideoProject} from "@/lib/canvas/video-node-service";
+import { listVideoNodes, saveVideoNode } from "@/lib/canvas/video-node-service";
+import { authorizeVideoProject } from "@/lib/canvas/project-access";
 import {ModelConfigError} from "@/lib/model-config/types";
 export const runtime="nodejs",dynamic="force-dynamic";
 function failure(error:unknown){return (error instanceof ModelConfigError||error instanceof TeamError)?NextResponse.json({error:error.message,code:"code" in error?error.code:undefined},{status:error.status}):NextResponse.json({error:"视频节点暂时不可用"},{status:503});}

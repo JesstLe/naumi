@@ -1,6 +1,6 @@
 import "server-only";
 import {withCreationRequest} from "@/lib/saas/creation-context";
-import {TeamError} from "@/lib/teams/server";
+import { TeamError } from "@/lib/teams/errors";
 import {CONTINUATION_HEADER,withAcceptedContinuationRequest} from "@/lib/release-runtime/accepted-context";
 import {releaseError,ReleaseRuntimeError} from "@/lib/release-runtime/identity";
 import {dbEnabled} from "@/platform/db/pool";

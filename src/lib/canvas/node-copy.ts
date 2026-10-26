@@ -8,7 +8,8 @@ import {listCanvasTextNodes, type CanvasTextNodeRecord} from "@/lib/canvas/text-
 import {saveVideoNodeTx} from "./video-node-repository";
 import {ensureVideoNodeSchema} from "@/lib/canvas/storage-schema";
 
-import {authorizeVideoProject,authorizeNodeInputs,listVideoNodes} from "./video-node-service";
+import { authorizeNodeInputs, listVideoNodes } from "./video-node-service";
+import { authorizeVideoProject } from "./project-access";
 import type {CanvasVideoNode} from "./video-node-schema";
 import {ModelConfigError} from "../model-config/types";
 import {canonicalConfig} from "@/lib/model-config/snapshot-value";

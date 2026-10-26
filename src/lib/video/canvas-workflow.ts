@@ -1,7 +1,8 @@
 import "server-only";
 import {assertWorkflowCreationScope,bindWorkflowCreationProject,validateWorkflowCreationInputs} from "./workflow-creation";
 import {z} from "zod";
-import {videoNodeIdSchema,videoProjectKeySchema} from "../canvas/video-node-schema";
+import { videoNodeIdSchema } from "../canvas/video-node-schema";
+import { videoProjectKeySchema } from "../canvas/project-key";
 import {getVideoNode} from "../canvas/video-node-repository";
 import {getVideoTask} from "@/lib/video/task-repository";
 import {listArtworksByIds} from "@/lib/artworks/repository";

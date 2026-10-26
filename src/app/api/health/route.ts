@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {pingDb} from "@/platform/db/pool";
 import {dbEnabled} from "@/platform/db/pool";
-import { storageEnabled } from "@/lib/storage";
+import { storageEnabled } from "@/lib/object-storage/runtime";
 import { getOpenAISettings } from "@/lib/settings";
 import { authMode } from "@/lib/auth-mode";
 

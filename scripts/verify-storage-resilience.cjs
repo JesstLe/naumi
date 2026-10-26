@@ -1,16 +1,10 @@
 /* Actual loopback HTTP blackholes + real local files. Catalog/worker are
  * isolated fixtures; no production database, customer media or suppliers. */
-const assert=require('node:assert/strict'),fs=require('node:fs/promises'),sync=require('node:fs');
-const path=require('node:path'),os=require('node:os'),http=require('node:http'),vm=require('node:vm');
-const crypto=require('node:crypto'),ts=require('typescript');
+const assert=require('node:assert/strict'),fs=require('node:fs/promises');
+const path=require('node:path'),os=require('node:os'),http=require('node:http');
+const crypto=require('node:crypto');
 const sha=b=>crypto.createHash('sha256').update(b).digest('hex');
-function load(file,dependencies={}) {
- const source=sync.readFileSync(file,'utf8'),exports={};
- const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
- vm.runInNewContext(js,{exports,Buffer,Response,Request,Headers,AbortSignal,URL,process,console,fetch,
-  require:n=>n==='server-only'?{}:Object.hasOwn(dependencies,n)?dependencies[n]:require(n)},{filename:file});
- return exports;
-}
+const {loadStorageSource:load}=require('./storage-source-fixture.cjs');
 const availability=load('src/lib/object-storage/write-availability.ts');
 let clock=100000;
 class TestClockAvailability extends availability.WriteAvailability {constructor(){super(()=>clock);}}
@@ -31,7 +25,7 @@ async function main(){
  await new Promise(r=>server.listen(0,'127.0.0.1',r));directory=await fs.mkdtemp(path.join(os.tmpdir(),'naumi-storage-resilience-'));
  const config={driver:'s3',enabled:true,mediaDir:directory,privateMedia:true,accessMode:'proxy',endpoint:`http://127.0.0.1:${server.address().port}`,bucket:'fixture',region:'garage',accessKeyId:'fixture-access',secretAccessKey:'fixture-secret',pathStyle:true,publicBase:''};
  const catalog=new Map();
- const storage=()=>load('src/lib/storage.ts',{'./object-storage/config':{storageConfiguration:()=>config},'./object-storage/adapter':adapter,'./image-upload-policy':{ORIGINAL_IMAGE_MAX_BYTES:64*1024*1024},'./media-assets':{getMediaAsset:async k=>catalog.get(k)||null}});
+ const storage=()=>load('src/lib/storage.ts',{'./object-storage/config':{storageConfiguration:()=>config},'./object-storage/adapter':adapter,'./image-upload-policy':{ORIGINAL_IMAGE_MAX_BYTES:64*1024*1024},'./media-assets':{getMediaAsset:async k=>catalog.get(k)||null},'./media-assets-reader':{getMediaAsset:async k=>catalog.get(k)||null}});
  let count=0;function check(value,label){assert.ok(value,label);count++;console.log('CHECK',count,label);}
  const bytes=crypto.randomBytes(8192);let s=storage();
  const h=heads;
@@ -82,10 +76,10 @@ async function main(){
  const queries=[],uploads=[];const rows=[{key:'corrupt',content_type:'image/png',bytes:bytes.length,sha256:sha(bytes)},
   {key:'good',content_type:'image/png',bytes:bytes.length,sha256:sha(bytes)}];
  const pool={connect:async()=>({query:async(q,v)=>{queries.push({q,v});return {rows:q.startsWith('SELECT key,')?rows:[]};},release(){}}),query:async()=>({rows:[]})};
+ const storageFixture={privateMedia:true,storageDriver:'s3',readPendingStoredObject:async k=>({bytes:k==='good'?bytes:Buffer.from('damaged'),size:k==='good'?bytes.length:7}),readManagedObject:async()=>{throw Error('unexpected remote read');},writeStoredObject:async(b,_t,k)=>{uploads.push({k,hash:sha(b)});return {remoteReady:true};}};
  const media=load('src/lib/media-assets.ts',{'@/lib/release-runtime/background-activity':{withBackgroundActivity:async(_k,_id,_m,f)=>f(),bindBackgroundClaim:async()=>{}},
-  './db':{dbEnabled:true,ensureSchema:async()=>{},getPool:()=>pool},'./bi/model-observer':{currentBiContext:()=>null},'./media-variants':{},
-  './storage':{privateMedia:true,storageDriver:'s3',readPendingStoredObject:async k=>({bytes:k==='good'?bytes:Buffer.from('damaged'),size:k==='good'?bytes.length:7}),
-   readManagedObject:async()=>{throw Error('unexpected remote read');},writeStoredObject:async(b,_t,k)=>{uploads.push({k,hash:sha(b)});return {remoteReady:true};}}});
+  '@/platform/db/pool':{dbEnabled:true,getPool:()=>pool},'@/lib/persistence/schema':{ensureSchema:async()=>{}},'@/lib/media-assets-schema':{ensureMediaSchema:async()=>{}},'@/lib/bi/context':{currentBiContext:()=>null},'./media-variants':{},
+  './storage':storageFixture,'./object-storage/runtime':storageFixture,'./object-storage/managed-read':storageFixture});
  await media.recoverMediaMirrors(2);
  check(uploads.length===1&&uploads[0].k==='good','corrupt mirror never uploads and does not starve next item');
  const updates=queries.filter(v=>v.q.startsWith('UPDATE app_media_assets SET remote_ready='));

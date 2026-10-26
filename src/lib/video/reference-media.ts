@@ -3,8 +3,8 @@ import {createHash} from "node:crypto";
 import {open,realpath} from "node:fs/promises";
 import path from "node:path";
 import {Readable} from "node:stream";
-import {getMediaAsset} from "../media-assets";
-import {fetchStoredObject,MEDIA_DIR,storageDriver} from "../storage";
+import { getMediaAsset } from "../media-assets-reader";
+import { fetchStoredObject, MEDIA_DIR, storageDriver } from "../object-storage/runtime";
 import {matchesVideoReferenceMediaAsset,verifyVideoReferenceMediaPathSegment,type VideoReferenceMediaAsset,type VideoReferenceMediaClaims} from "./reference-media-token";
 
 type ByteRange={start:number;end:number;length:number;partial:boolean;wire:string};

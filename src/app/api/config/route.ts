@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {creditMeteringEnabled} from "@/lib/billing/runtime";
 import {dbEnabled} from "@/platform/db/pool";
-import { storageEnabled } from "@/lib/storage";
+import { storageEnabled } from "@/lib/object-storage/runtime";
 import { authMode } from "@/lib/auth-mode";
 import {multiUserEnabled} from "@/lib/accounts/mode";
 import { smtpConfigured } from "@/lib/mailer";

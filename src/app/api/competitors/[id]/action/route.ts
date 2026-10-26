@@ -17,7 +17,7 @@ import {multiUserEnabled} from "@/lib/accounts/mode";
 import { supabaseEnabled } from "@/lib/auth-mode";
 import { regionMask, preserveOutsideMask } from "@/lib/competitor-image";
 import { editImage } from "@/lib/image-edit";
-import { uploadImage } from "@/lib/storage";
+import { uploadImage } from "@/lib/media-upload";
 import { rateLimit } from "@/lib/rate-limit";
 import { requestedTextModel } from "@/lib/text-models";
 

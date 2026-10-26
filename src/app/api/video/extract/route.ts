@@ -3,7 +3,7 @@ import {z} from "zod";
 import {NextResponse} from "next/server";
 import {authenticatedEmail} from "@/lib/request-auth";
 import {listArtworksByIds} from "@/lib/artworks/repository";
-import {storageKeyFromManagedUrl} from "@/lib/storage";
+import { storageKeyFromManagedUrl } from "@/lib/object-storage/runtime";
 import {ModelConfigError} from "@/lib/model-config/types";
 import {BillingError} from "@/lib/billing/types";
 import {MediaPriceChangedError} from "@/lib/video/media-billing";

@@ -5,8 +5,8 @@ import {createHash,randomUUID} from "node:crypto";
 import sharp from "sharp";
 
 import {dbEnabled,getPool} from "@/platform/db/pool";
-import {uploadImage} from "./storage";
-import {readManagedObject} from "./storage";
+import { uploadImage } from "./media-upload";
+import { readManagedObject } from "./object-storage/managed-read";
 import {assertMutableStagingTask} from "./staging-history";
 import type {Postprocess} from "./model-config/business-schema";
 import {processImagegenPixels,inspectImagegenPixels} from "./imagegen/postprocess";

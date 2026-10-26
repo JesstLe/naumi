@@ -14,11 +14,8 @@ import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/ip";
 import { safeError } from "@/lib/api-error";
-import {
-  dataUrlToBytes,
-  isManagedImageUrl,
-  readManagedObject,
-} from "@/lib/storage";
+import { dataUrlToBytes, isManagedImageUrl } from "@/lib/object-storage/runtime";
+import { readManagedObject } from "@/lib/object-storage/managed-read";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import { requestedTextModel } from "@/lib/text-models";
 import { CANVAS_TEXT_OUTPUT_INSTRUCTION, canvasTextInput, canvasAnswerText, canvasTextFailure, reportCanvasTextFailure } from "@/lib/canvas-text-output";

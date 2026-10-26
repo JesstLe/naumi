@@ -3,14 +3,16 @@ import {randomUUID,createHash} from 'node:crypto';
 import sharp from 'sharp';
 import {z} from 'zod';
 import {authenticatedEmail} from '@/lib/request-auth';
-import {getMediaAsset} from "@/lib/media-assets";
+import { getMediaAsset } from "@/lib/media-assets-reader";
 import {ensureMediaSchema} from "@/lib/media-assets-schema";
 
 import {getPool} from "@/platform/db/pool";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {addArtworks} from "@/lib/artworks/writer";
 import {setArtworkPosition} from "@/lib/canvas/artwork-repository";
-import {privateMedia,storageDriver,remoteMediaAccess,presignStoredObject,readManagedObject,uploadImage} from '@/lib/storage';
+import { privateMedia, storageDriver, remoteMediaAccess, presignStoredObject } from "@/lib/object-storage/runtime";
+import { readManagedObject } from "@/lib/object-storage/managed-read";
+import { uploadImage } from "@/lib/media-upload";
 import {adaptiveCanvasImageSize} from '@/lib/mock-data';
 import {ORIGINAL_IMAGE_MAX_BYTES} from '@/lib/image-upload-policy';
 import {browserPreviewsFromForm,saveCanvasOriginal,type BrowserPreviews} from '@/lib/canvas-original-upload';

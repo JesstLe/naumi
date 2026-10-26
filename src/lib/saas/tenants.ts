@@ -10,7 +10,7 @@ import {dbEnabled,getPool} from "@/platform/db/pool";
 import {validateHierarchy} from "@/lib/enterprise/server";
 
 
-import {TeamError} from '@/lib/teams/server';
+import { TeamError } from "@/lib/teams/errors";
 import {teamJson} from '@/lib/teams/access';
 import {ALL_FEATURE_IDS} from '@/lib/feature-access/catalog';
 import type {TeamActor} from '@/lib/teams/grants';

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import {TeamError} from "@/lib/teams/server";
+import { TeamError } from "@/lib/teams/errors";
 import { z } from "zod";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { sameSiteBiMutation } from "@/lib/bi/access";

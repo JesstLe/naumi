@@ -14,7 +14,7 @@ import {assertQuotedVersion} from "../billing/request";
 import {associateVideoTaskTx,getVideoNode} from "../canvas/video-node-repository";
 import {ensureVideoNodeSchema} from "@/lib/canvas/storage-schema";
 
-import {authorizeVideoProject} from "../canvas/video-node-service";
+import { authorizeVideoProject } from "../canvas/project-access";
 import {normalizeVideoInput,resolveVideoCapability,VideoContractError} from "./contract";
 import {compileVideoPrompt} from "./prompt";
 import {compileVideoCamera} from "./camera";

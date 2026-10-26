@@ -4,7 +4,7 @@ import {authenticatedEmail} from "@/lib/request-auth";
 import {sameSiteBiMutation} from "@/lib/bi/access";
 import {readBounded} from "@/lib/supplier-cost/io";
 import {sendVideoTaskToCanvas} from "@/lib/canvas/video-node-service";
-import {videoProjectKeySchema} from "@/lib/canvas/video-node-schema";
+import { videoProjectKeySchema } from "@/lib/canvas/project-key";
 import {ModelConfigError} from "@/lib/model-config/types";
 export const runtime="nodejs",dynamic="force-dynamic";
 export async function POST(request:Request,context:{params:Promise<{id:string}>}){

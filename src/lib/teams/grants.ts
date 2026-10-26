@@ -4,7 +4,7 @@ import type { PoolClient } from "pg";
 import { z } from "zod";
 import { getPool } from "@/platform/db/pool";
 import { settingsSecret } from "@/lib/settings-secret";
-import {TeamError} from "./server";
+import { TeamError } from "./errors";
 import {ensureTeamSchema} from "@/lib/teams/schema";
 
 import type { TeamAccessGrant, TeamAccessStatus } from "./contracts";

@@ -4,10 +4,11 @@ import {createHash} from "node:crypto";
 import {z} from "zod";
 
 import {getPool} from "@/platform/db/pool";
-import {authorizeVideoProject} from "../canvas/video-node-service";
+import { authorizeVideoProject } from "../canvas/project-access";
 
 
-import {videoNodeIdSchema,videoProjectKeySchema} from "../canvas/video-node-schema";
+import { videoNodeIdSchema } from "../canvas/video-node-schema";
+import { videoProjectKeySchema } from "../canvas/project-key";
 import {ModelConfigError} from "../model-config/types";
 import {adaptiveCanvasImageSize} from "../mock-data";
 

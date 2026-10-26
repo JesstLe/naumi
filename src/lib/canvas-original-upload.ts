@@ -2,7 +2,8 @@ import "server-only";
 import sharp from "sharp";
 import {createHash} from "node:crypto";
 import {ORIGINAL_IMAGE_MAX_BYTES,ORIGINAL_IMAGE_MAX_PIXELS} from "./image-upload-policy";
-import {uploadImage,privateMedia,writeStoredObject} from "./storage";
+import { uploadImage } from "./media-upload";
+import { privateMedia, writeStoredObject } from "./object-storage/runtime";
 import {ensureMediaSchema} from "@/lib/media-assets-schema";
 
 import {getPool} from "@/platform/db/pool";
