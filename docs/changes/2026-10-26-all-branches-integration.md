@@ -45,6 +45,15 @@
 
 旧 `verify-imagegen-frozen-quote-pg.ts` 默认模式仍在取消断言报 `400 !== 409`。原905c8c完整归档、副本独立CWD和原脚本得到相同exit1；`--simplify`通过，但其异步fixture收尾有“pool after end”诊断，日志保留。默认模式后续未执行的矩阵不记通过，不为变绿恢复产品的旧拒绝逻辑。
 
-首轮完整构建因共享node_modules缺少Geist字体文件失败（非TS或应用编译错误）；不修改共享依赖，改用本任务全新构建副本、原package-lock独立npm ci。独立 npm ci exit0；同4040份tracked输入的完整 Next15.5.27 build exit0（106.777s），产品/scripts hash逐份保持。原Hook/img lint提示保留；这是本机构建，不是Linux镜像或部署验收。副本回滚和推送结果待下文更新。
+首轮完整构建因共享node_modules缺少Geist字体文件失败（非TS或应用编译错误）；不修改共享依赖，改用本任务全新构建副本、原package-lock独立npm ci。独立 npm ci exit0；同4040份tracked输入的完整 Next15.5.27 build exit0（106.777s），产品/scripts hash逐份保持。原Hook/img lint提示保留；这是本机构建，不是Linux镜像或部署验收。独立副本回滚已实际恢复原4004文件；最终打包、回滚行为复验及Git推送回执以同目录VERIFICATION.txt与JSON记录为准。
 
 既有历史观察项继续OPEN，不用Git合并或本地通过宣称线上问题全部已修复；巡检计划仍未启用。
+
+
+## 交付与保护边界
+
+四制品位于 `output/all-branches-20261026/{MODIFIED_FILE.tar,DIFF_FILE.patch,VERIFICATION.txt,ROLLBACK.sh}`。原始 `ORIGINAL_FILE.tar` 的SHA256为 `fab88521a1adaa64630a8d04485a38249da5174fc7204ce333b5cd3409eeeba5`；rollback只接纳本目录有标记的 `rollback-copy`，逐文件核对输入后恢复原tree，不修改Git/数据库/交付归档。
+
+最后一次整合复核时 origin/main 仍为905c8c63。五条有效非重构tip已是整合分支祖先，两个指定重构tip不是祖先；四条等价补丁及七条历史/基线排除理由均保留。共享主目录18个未提交文件原始hash再验不变。原本地试合分支已命名 `codex/excluded-refactor-attempt-20261026`，不推送，不作为当前候选。
+
+最终主线同步只允许普通快进，不强推、不自动stash或提交他人内容。GitHub构建候选不等于上线；本轮线上调用、配置发布、数据库业务写入、供应商重提和巡检定时器启用均为0。
