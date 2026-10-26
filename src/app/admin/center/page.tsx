@@ -11,5 +11,15 @@ export default async function AdminCenterPage({ searchParams }: { searchParams: 
   const query = await searchParams;
   const section = BI_SECTIONS.includes(query.section as BiSection) ? query.section as BiSection : "overview";
   await requireAdminPage(`/admin/center?section=${section}`);
-  return section === "overview" ? <Suspense><PlatformConsole /></Suspense> : <BiDashboard initialSection={section} />;
+  // The SaaS summary cards stay on top; the full operations overview
+  // (consumption / revenue / artwork metrics, date-filtered trend and drill-down)
+  // renders below so the pre-redesign data panels remain on the landing page.
+  return section === "overview" ? (
+    <>
+      <Suspense><PlatformConsole /></Suspense>
+      <Suspense><BiDashboard initialSection="overview" /></Suspense>
+    </>
+  ) : (
+    <BiDashboard initialSection={section} />
+  );
 }

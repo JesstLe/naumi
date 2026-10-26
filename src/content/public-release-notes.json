@@ -1,5 +1,76 @@
 [
   {
+    "version": "1793021601",
+    "title": {
+      "zh": "通知公告与创作记录体验升级",
+      "en": "Announcements and creation history improvements"
+    },
+    "improvements": [
+      {
+        "zh": "新增通知按钮，可随时查看产品公告和更新记录。",
+        "en": "A new notification button opens product announcements and update history."
+      },
+      {
+        "zh": "新增未读数量提示，并支持一键将公告标为已读。",
+        "en": "Unread counts and a mark-all-as-read action make updates easier to track."
+      },
+      {
+        "zh": "已打开的页面也能发现新公告，无需先刷新正在编辑的画布。",
+        "en": "Open pages can discover new announcements without refreshing an in-progress canvas."
+      },
+      {
+        "zh": "在同一浏览器中保留已读状态，并同步到其他已打开页面。",
+        "en": "Read status is retained in the same browser and synchronized across open tabs."
+      },
+      {
+        "zh": "补充早期创作、画布、素材和交互改进记录，按时间集中查看。",
+        "en": "Earlier creation, canvas, media and interaction improvements are collected in chronological history."
+      },
+      {
+        "zh": "创作详情优先展示生成结果，再查看输入素材。",
+        "en": "Creation details show generated results before input media."
+      },
+      {
+        "zh": "同一素材的原图和参考用途合并为标签，减少重复图片。",
+        "en": "Original-image and reference roles are combined into labels for the same input."
+      },
+      {
+        "zh": "处理后输入默认收起，需要对比时再展开查看。",
+        "en": "Processed inputs stay collapsed until you want to inspect them."
+      },
+      {
+        "zh": "每项画布任务分别展示生成进度，长时间等待时仍有清晰反馈。",
+        "en": "Each canvas task shows its own progress with clear feedback during longer waits."
+      },
+      {
+        "zh": "生成结果到达前，进度保持在完成之前，避免提前显示完成。",
+        "en": "Progress remains below completion until the result is available."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "修复同一输入图在不同处理环节重复铺满创作详情的问题。",
+        "en": "Fixed the same input filling creation details repeatedly across processing steps."
+      },
+      {
+        "zh": "素材翻页按合并后的项目计数，避免重复记录占据多页。",
+        "en": "Media pagination counts grouped items rather than filling pages with repeated records."
+      },
+      {
+        "zh": "不同内容的处理图和蒙版分别保留，查看原始输入时不再混淆。",
+        "en": "Distinct processed images and masks remain separate from original inputs."
+      },
+      {
+        "zh": "修复部分任务已有完成结果但画布仍停留在等待状态的问题。",
+        "en": "Fixed some canvas tasks remaining in a waiting state after completion."
+      },
+      {
+        "zh": "修复部分已有结果缺少画布关联与落位的问题。",
+        "en": "Fixed missing canvas placement and links for some existing results."
+      }
+    ]
+  },
+  {
     "version": "1793003573",
     "title": {
       "zh": "图片任务状态与结果读取优化",
@@ -375,6 +446,180 @@
       {
         "zh": "改善图片完整展示和切回页面时的加载体验。",
         "en": "Improve full-image presentation and image retention when returning to the page."
+      }
+    ]
+  },
+  {
+    "version": "1791975598",
+    "title": {
+      "zh": "参考图上传与创作入口改进",
+      "en": "Reference uploads and creation entry improvements"
+    },
+    "improvements": [
+      {
+        "zh": "统一普通、桌面和团队创作页面的参考图上传体验。",
+        "en": "Reference-image uploads share the same handling across standard, desktop and team views."
+      },
+      {
+        "zh": "工作台入口名称更清晰，常用创作入口采用浅色布局。",
+        "en": "Clearer workbench labels and a light layout improve access to frequently used tools."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "修复部分图片上传过程中意外失败的问题。",
+        "en": "Fixed unexpected failures during some image uploads."
+      },
+      {
+        "zh": "上传异常时给出明确提示，避免出现难以理解的页面内容。",
+        "en": "Upload errors show clear messages rather than confusing page content."
+      },
+      {
+        "zh": "结果暂未确认时保留原任务，不盲目创建重复请求。",
+        "en": "Original tasks are retained when results are unconfirmed instead of blindly creating duplicates."
+      }
+    ]
+  },
+  {
+    "version": "1791913676",
+    "title": {
+      "zh": "图片复看与大画布浏览优化",
+      "en": "Image revisiting and large-canvas browsing"
+    },
+    "improvements": [
+      {
+        "zh": "在同一浏览器内复看已加载的图片时优先复用已有内容。",
+        "en": "Previously loaded images can be reused when revisiting them in the same browser."
+      },
+      {
+        "zh": "改善作品页和画布之间切换时的图片加载体验。",
+        "en": "Image loading is improved when switching between artwork pages and the canvas."
+      },
+      {
+        "zh": "浏览器存储空间不足时，图片仍沿正常读取方式打开。",
+        "en": "Images continue to load normally when browser storage space is limited."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "退出登录后清理对应的本地图片缓存。",
+        "en": "Signing out clears the corresponding local image cache."
+      },
+      {
+        "zh": "读取失败的内容不作为正常图片缓存，保留重新加载入口。",
+        "en": "Failed reads are not cached as successful images and can be retried."
+      }
+    ]
+  },
+  {
+    "version": "1791911575",
+    "title": {
+      "zh": "画布图片编辑与透明图片支持",
+      "en": "Canvas image editing and transparent images"
+    },
+    "improvements": [
+      {
+        "zh": "支持从普通图片节点直接发起透明图片创作。",
+        "en": "Transparent-image creation can be started directly from a standard image node."
+      },
+      {
+        "zh": "图片工具保留所选素材与编辑关系，便于继续创作。",
+        "en": "Image tools retain selected media and editing relationships for continued work."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "改善图片创作选项与实际执行结果之间的一致性。",
+        "en": "Improved consistency between image creation options and the resulting work."
+      }
+    ]
+  },
+  {
+    "version": "1791860709",
+    "title": {
+      "zh": "素材上传、预览与原图下载改进",
+      "en": "Media uploads, previews and original downloads"
+    },
+    "improvements": [
+      {
+        "zh": "支持按可视区域加载画布图片，减少屏幕外素材的无效读取。",
+        "en": "Canvas images can load according to the visible area instead of loading off-screen media."
+      },
+      {
+        "zh": "缩放画布时按显示尺寸选择图片预览。",
+        "en": "Canvas zoom can select previews suited to the displayed image size."
+      },
+      {
+        "zh": "保留原图用于下载和后续编辑，不以缩略图替换原始素材。",
+        "en": "Original images remain available for download and editing rather than being replaced by thumbnails."
+      },
+      {
+        "zh": "支持项目图片打包下载。",
+        "en": "Project images can be downloaded together in an archive."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "改善上传完成后的素材确认，避免同一上传重复形成作品。",
+        "en": "Upload completion checks help avoid creating duplicate artworks from one upload."
+      },
+      {
+        "zh": "私人素材的查看和下载沿用各自的访问权限。",
+        "en": "Private media viewing and downloads retain their access controls."
+      }
+    ]
+  },
+  {
+    "version": "1791858436",
+    "title": {
+      "zh": "创作助手与批量工作台更新",
+      "en": "Creative assistant and batch workbench updates"
+    },
+    "improvements": [
+      {
+        "zh": "创作助手支持实时显示回复，并保留项目内会话记录。",
+        "en": "The creative assistant streams replies and retains conversations within projects."
+      },
+      {
+        "zh": "支持在项目中重命名并重新打开已有创作会话。",
+        "en": "Existing creative conversations can be renamed and reopened within a project."
+      },
+      {
+        "zh": "批量工作台支持集中运行并查看各项任务结果。",
+        "en": "The batch workbench supports grouped submissions and individual task results."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "不同项目的创作会话分别保存，减少切换时的混淆。",
+        "en": "Creative conversations are stored separately by project to avoid confusion when switching."
+      },
+      {
+        "zh": "改善手机尺寸下的创作页面和操作布局。",
+        "en": "Improved creation pages and controls at mobile screen sizes."
+      }
+    ]
+  },
+  {
+    "version": "1791778796",
+    "title": {
+      "zh": "工作台与模板导航整理",
+      "en": "Workbench and template navigation"
+    },
+    "improvements": [
+      {
+        "zh": "模板统一放入工作台，常用入口更集中。",
+        "en": "Templates are collected in the workbench for easier access."
+      },
+      {
+        "zh": "手机底部导航增加工作台入口。",
+        "en": "The mobile bottom navigation includes a workbench entry."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "移除顶部重复模板入口，同时保留旧链接的跳转。",
+        "en": "Removed duplicate template navigation while retaining redirects from older links."
       }
     ]
   }

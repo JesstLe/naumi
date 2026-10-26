@@ -1,5 +1,7 @@
 # 核心链路重构专用工作区
 
+2026-10-26 R5P后三模块普通整合：ee60d3c0接固定a1a56371，24路径自动合并；健康页直连Pool owner，旧草稿保护/原pointerCAS/创作去重/公告/进度保留。旧新发布base3→7、registry/素材PG16/创作完整PG/实际组件UI20、图片20-44/文字16-47/进度与公开合同通过；最终类型/结构/4451hash回滚/双parent与远端见main-sync DELIVERY，计数归零。R6同SHA全候选/旧兼容writer与容量继续，不合main、不部署。见 [同步记录](changes/2026-10-26-refactor-main-sync-r5p.md)。
+
 2026-10-26 R5P：图片元数据8字段与文字共享纯三方合并，Canvas改名/标记/批组/缩放/drag归原history单写链；canonical原receipt和选择删除基线接真实文档。Canvas7319→7133，174原函数167保持/7明确改绑；完整旧9/18→新20/44、Next双tab6/批量3/相邻15、文字16/47和原history/node/交互20/32/28/纯184、tsc/lint通过（原8warning）。4441hash副本回滚/四产物/远端以DELIVERY为准；第3模块，后续普通整合c622b314见main-sync交付，旧raw wire/系统定位兼容与R6继续，不合main、不部署。见 [R5P记录](changes/2026-10-26-canvas-artwork-concurrency-r5p.md)。
 
 2026-10-26 R5O：文字autosave/history/选择删除共用12字段三方合并、owner事务与引用防环，原operation重试回canonical，真实冲突两份内容保留；无新DDL/正常创作确认。Canvas7311→7319，173原函数保持；完整旧9/18复现覆盖复活→新16/47关闭、纯96、真实双tab Next4、相邻控件15+5、PG16/24/20/32/28与历史184通过。最终tsc/lint、4433hash完整副本回滚/四产物/远端清理见DELIVERY；第2模块，旧无base入口保留兼容，图片CAS/外围组合/R6继续，不合main、不部署。见 [R5O记录](changes/2026-10-26-canvas-text-concurrency-r5o.md)。

@@ -144,6 +144,10 @@ export function createModelRepository(deps: ValidationOptions & { pool: Pool; in
         if (!active || Number(active.version) !== input.expectedVersion) throw new ModelConfigError("CONFIG_CONFLICT", "配置已被更新，请刷新后重新发布", 409);
         const row = (await tx.query("SELECT * FROM app_model_drafts WHERE id=$1 FOR UPDATE", [input.draftId])).rows[0];
         if (!row || row.actor !== input.actor || Number(row.revision) !== input.expectedRevision) throw new ModelConfigError("DRAFT_CONFLICT", "草稿已更新或不可用", 409);
+        // A draft saved before other publications landed carries their base state and
+        // silently reverts them on publish. Require an explicit opt-in for that.
+        if (Number(row.based_on_version) < Number(active.version) && input.acceptStaleBase !== true)
+          throw new ModelConfigError("PUBLISH_STALE_DRAFT_BASE", `草稿基于旧版本 v${row.based_on_version}（当前 v${active.version}），可能携带已过时改动；请刷新后台基于当前版本重建草稿，或确认后携带 acceptStaleBase 重试`, 409);
         const config = validateModelConfig((await readDraft(tx, row)).config, deps); await checkCredentials(tx, config); const digest = modelConfigDigest(config);
         const version = (await tx.query("INSERT INTO app_model_config_versions(operation_id,actor,reason,config,digest) VALUES($1,$2,$3,$4::jsonb,$5) RETURNING version", [input.id,input.actor,input.reason,JSON.stringify(config),digest])).rows[0].version;
         await tx.query("INSERT INTO app_model_publications(id,version,expected_version,request_fingerprint,phase) VALUES($1,$2,$3,$4,'staged')", [input.id,version,input.expectedVersion,fingerprint]);
