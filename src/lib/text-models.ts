@@ -9,7 +9,7 @@ import { getOpenAIBaseUrl } from "./openai-base";
 import { getOpenAISettings } from "./settings";
 import { currentModelExecution } from "./model-config/context";
 import { modelConfigurationEnabled } from "./model-config/availability";
-import { getModelRuntime } from "./model-config/server";
+import {readPublishedModelCatalog} from "./model-config/catalog-query";
 
 const DEFAULT_TEXT_MODEL =
   process.env.OPENAI_TEXT_MODEL || process.env.AGENT_MODEL || "gpt-5.6-luna";
@@ -78,7 +78,7 @@ export async function textModelCatalog(): Promise<{
   version?: number;
 }> {
   if (await modelConfigurationEnabled()) {
-    const catalog = await (await getModelRuntime()).publicCatalog("text");
+    const catalog = await readPublishedModelCatalog("text");
     return { version: catalog.version, defaultModel: catalog.bindings["text.generate"] || catalog.models[0]?.id || "", models: catalog.models.map(m => m.id), discovery: "configured" };
   }
   // 白名单模式:目录即别名/清单本身,不做上游发现(对外隔离上游真实模型名)

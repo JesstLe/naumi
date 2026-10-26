@@ -9,8 +9,7 @@ import {ensureModelRuntimeSchema} from "./runtime-schema";
 import type {ValidationOptions} from "./schema";
 import {ModelConfigError,type ModelConfigRepository,type ModelPublication,type Modality,type RestoreInput,type StageInput,type ModelFacts} from "./types";
 import type {FeatureId} from "../billing/rules/registry";
-import {modelCreditView} from "./management-pricing";
-import {publicModelCatalog} from "./public-catalog";
+import {modelCatalogWithPricing} from "./catalog-pricing";
 import {simulateModel} from "./simulation";
 export {publicModelCatalog} from "./public-catalog";
 export {simulateModel,type RoutingSimulation} from "./simulation";
@@ -62,7 +61,7 @@ export function createModelRuntime(deps: Dependencies) {
   };
   return {
     current: () => deps.repo.current(), byVersion: (version: number) => deps.repo.byVersion(version),
-    publicCatalog: async (modality: Modality, feature?: FeatureId, supplied?: ModelSnapshot) => {const snapshot=supplied??await deps.repo.current(),catalog=publicModelCatalog(snapshot,modality,feature);if(!feature)return catalog;const billing=await deps.billing();return {...catalog,models:catalog.models.map(model=>{const v=modelCreditView(billing,snapshot,feature,model.id);const unit=v.unit==="image"?"张":v.unit==="item"?"项":"次";return {...model,creditHint:v.credits===null?"价格需核对":`${v.estimated?"预估":"参考"}${modality==="image"?"标准1K ":""}${v.credits} 积分/${unit}`};})};},
+    publicCatalog: async (modality: Modality, feature?: FeatureId, supplied?: ModelSnapshot) => modelCatalogWithPricing(supplied??await deps.repo.current(),modality,feature,feature?await deps.billing():undefined),
     prepareExecution,
     validateExecutionProjection,
     publish: async (input: StageInput) => apply(await deps.repo.stage(input)),

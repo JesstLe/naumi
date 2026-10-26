@@ -8,6 +8,7 @@ export const refactorCases=[
  ts('platform-pg','foundation','scripts/verify-platform-db-pg.ts','PLATFORM_DB_PG=PASS'),
  ts('identity','foundation','scripts/verify-identity-creation-boundaries-pg.ts','IDENTITY_CREATION_BOUNDARIES_PG=PASS'),
  ts('startup','foundation','scripts/verify-application-persistence-pg.ts','APPLICATION_PERSISTENCE_PG=PASS'),
+ ts('catalog-read','foundation','scripts/verify-model-catalog-read-pg.ts','MODEL_CATALOG_READ=PASS'),
  ts('preparation','generation','scripts/verify-image-preparation-refactor.ts','IMAGE_PREPARATION_REFACTOR=PASS'),
  ts('delivery','generation','scripts/verify-image-delivery-continuation.ts','IMAGE_DELIVERY_CONTINUATION=PASS'),
  ts('completed-parent','generation','scripts/verify-completed-parent-entry-pg.ts','COMPLETED_PARENT_ENTRY=PASS'),
