@@ -143,11 +143,15 @@ export async function notifyImagegenJobReleased(id:string,kind:"generate"|"image
   CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(parent.snapshot->'children')='object' THEN parent.snapshot->'children' ELSE '{}'::jsonb END) link
   JOIN app_image_jobs child ON child.id=link.value->>'jobId' AND child.kind='generate' AND child.email=parent.email
   WHERE ${kind==="generate"?"child.id=$1":"parent.id=$1"} AND parent.kind='imagegen'
-   AND parent.snapshot->>'status' IN ('pending','running') AND parent.lease_token IS NULL
+    AND parent.snapshot->>'status' IN ('pending','running') AND (parent.lease_token IS NULL OR parent.lease_until<now())
    AND link.value->>'state'='submitted' AND child.snapshot->>'status' IN ('done','error','needs_attention')
    AND child.lease_token IS NULL`,[id]);
  for(const row of rows){
   const snapshot=row.snapshot as Parent,plan=row.plan as ImagegenPlan;
+   if(plan?.request&&plainGeneratedOutput(plan)){
+    const {finalizeCompletedParent}=await import('./completed-parent-receipt');
+    if(await finalizeCompletedParent(row.id,row.email))continue;
+   }
   // Never wake from a later step past an unresolved sibling, or replay an
   // existing "starting" intent whose acceptance has not been checkpointed.
   const step=plan?.steps?.find(step=>snapshot.children?.[step.key]?.state!=="done");
@@ -214,6 +218,11 @@ export async function getImagegenResult(operationId:string,owner:string):Promise
   if(recovery?.available||recovery?.ids&&!recovery.complete)try{await recoverStoredDelivery(id,owner);}catch{/* Preserve the original checkpoint on a leased/failing delivery. */}
  }
  const review=await presentPendingReview(id,owner,saved);if(review)return review;
+ if(['pending','running'].includes(saved.status)){
+  const {finalizeCompletedParent}=await import('./completed-parent-receipt');
+  try{if(await finalizeCompletedParent(id,owner))return (await jobs.get(id,false))!.result;}
+  catch{console.error('[imagegen] completed-child receipt unavailable; original task retained');return saved.result;}
+ }
  if(!["done","error","needs_attention"].includes(saved.status))await resumeImagegen(id);
  const current=(await jobs.get(id,false))!;
  if(current.status==="error"&&current.result.status!=="failed")return {...current.result,status:"failed",error:{code:"EXECUTION_FAILED",message:"图片加载失败，请重试"}};

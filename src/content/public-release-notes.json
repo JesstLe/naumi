@@ -1,5 +1,23 @@
 [
   {
+    "version": "1793003573",
+    "title": {
+      "zh": "图片任务状态与结果读取优化",
+      "en": "Image task status and result retrieval improvements"
+    },
+    "improvements": [],
+    "fixes": [
+      {
+        "zh": "修复部分图片已完成后任务仍显示等待的问题。",
+        "en": "Fixed some image tasks remaining in a waiting state after their result was completed."
+      },
+      {
+        "zh": "改善读取原结果图片时对短暂网络中断的处理。",
+        "en": "Improved handling of brief network interruptions while retrieving original image results."
+      }
+    ]
+  },
+  {
     "version": "1792979563",
     "title": {
       "zh": "图片任务结果读取修复",

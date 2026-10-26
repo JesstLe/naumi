@@ -14,6 +14,7 @@ import type { CostContext } from "./types";
 import { ModelConfigError } from "../model-config/types";
 import { imageSupplierFailure } from "../model-config/supplier-failure";
 import { supplierFailureEvidence } from "./failure-evidence";
+import {bindResponseDiagnostics} from './response-diagnostics';
 
 export async function supplierContext(scope?: ModelExecutionScope | null): Promise<CostContext> {
   const { currentBiContext } = await import("../bi/model-observer");
@@ -55,9 +56,12 @@ export function supplierCostFetch(fetcher: typeof fetch, connection: { providerI
       row=(await ledger.pool.query("SELECT * FROM app_supplier_calls WHERE account_id=$1 AND request_id=$2 ORDER BY started_at LIMIT 1",[accountId,task])).rows[0];
       if(!row)return dispatch(request);
     }else row = await ledger.begin({ ...context, phase:connection.phase||context.phase,attemptId: request.headers.get('idempotency-key')||randomUUID(), accountId, providerId: connection.providerId, model: model || "unknown", procurement: scope?.procurement });
+    const diagnosticResponse=(response:Response)=>bindResponseDiagnostics(response,async failure=>{
+      await ledger.pool.query("UPDATE app_supplier_calls SET evidence=COALESCE(evidence,'{}'::jsonb)||jsonb_build_object('postAcceptanceFailure',$2::jsonb),updated_at=now() WHERE id=$1",[row.id,JSON.stringify(failure)]);
+    });
     try {
       const response = await dispatch(request);
-      if (!response.body) { await ledger.apply(row.id, genericReceipt({}, response.ok ? "response-received" : "unknown", scope?.procurement)); return response; }
+      if (!response.body) { await ledger.apply(row.id, genericReceipt({}, response.ok ? "response-received" : "unknown", scope?.procurement)); return diagnosticResponse(response); }
       const stream = response.headers.get("content-type")?.includes("text/event-stream");
       // Consume receipt bytes alongside the caller, without cloning/ buffering entire b64 image outputs.
       const reader = response.body.getReader(), decoder = new TextDecoder();
@@ -91,7 +95,7 @@ export function supplierCostFetch(fetcher: typeof fetch, connection: { providerI
         },
         async cancel(reason) { await reader.cancel(reason); await finish("unknown"); },
       });
-      return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+      return diagnosticResponse(new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers }));
     } catch (error) {
       if (error instanceof ModelConfigError && ["CHANNEL_DISABLED","CONFIG_UNAVAILABLE"].includes(error.code)) {
         const receipt=genericReceipt({billing_status:"not_charged"},"rejected",scope?.procurement);

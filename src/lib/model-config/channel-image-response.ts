@@ -12,6 +12,10 @@ export function validatedChannelImageResponse(response: Response) {
 }
 const failureStages = new WeakMap<object, string>();
 export const channelImageFailureStage = (error: unknown) => error && typeof error === "object" ? failureStages.get(error) : undefined;
+const retryableDownload=(error:unknown)=>{
+ const e=error as {code?:string;cause?:{code?:string}}|null;
+ return ['ECONNRESET','ETIMEDOUT','UND_ERR_SOCKET','ERR_STREAM_PREMATURE_CLOSE','UND_ERR_CONNECT_TIMEOUT'].includes(e?.code||e?.cause?.code||'');
+};
 
 /** Complete and validate the image before accepting a supplier attempt. */
 export async function completedChannelImage(response: Response, signal: AbortSignal, options: ValidationOptions) {
@@ -32,9 +36,18 @@ export async function completedChannelImage(response: Response, signal: AbortSig
       const url = new URL(item.url);
       stage = "download-image";
       try {
-        const download = await modelEndpointFetch(url.origin, options)(url, { redirect: "error", signal: AbortSignal.any([signal, AbortSignal.timeout(60000)]) });
-        if (!download.ok) { await download.body?.cancel(); throw Error("supplier-image-download-failed"); }
-        bytes = await readBoundedBytes(download);
+        const downloadSignal=AbortSignal.any([signal,AbortSignal.timeout(60000)]);
+        const fetchImage=modelEndpointFetch(url.origin,options);
+        // Retry only the SAME result URL's read, at most once within the original
+        // 60s budget. No generator POST, channel fallback, auth or redirects.
+        for(let attempt=0;;attempt++){
+          try{
+            downloadSignal.throwIfAborted();
+            const download=await fetchImage(url,{method:'GET',redirect:'error',signal:downloadSignal});
+            if(!download.ok){await download.body?.cancel();throw Error('supplier-image-download-failed');}
+            bytes=await readBoundedBytes(download);break;
+          }catch(error){if(attempt!==0||downloadSignal.aborted||!retryableDownload(error))throw error;}
+        }
       } catch (cause) { throw new Error("supplier-image-download-failed", { cause }); }
     } else throw Error("supplier-image-missing");
     stage = "validate-size";
