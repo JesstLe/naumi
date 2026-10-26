@@ -1,5 +1,23 @@
 [
   {
+    "version": "1792979563",
+    "title": {
+      "zh": "图片任务结果读取修复",
+      "en": "Image task result access fixes"
+    },
+    "improvements": [],
+    "fixes": [
+      {
+        "zh": "修复上传图片画布首次生成完成后，错误提示任务不存在的问题。",
+        "en": "Fixed tasks incorrectly appearing unavailable after the first image completes on an uploaded-image canvas."
+      },
+      {
+        "zh": "修复部分已完成图片仍显示排队中的问题，并保留原图片与积分记录。",
+        "en": "Fixed some completed images remaining queued while preserving original images and credit records."
+      }
+    ]
+  },
+  {
     "version": "1792976998",
     "title": {
       "zh": "图片结果展示修复",

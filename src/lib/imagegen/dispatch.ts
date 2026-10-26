@@ -19,15 +19,15 @@ import { plainGeneratedOutput } from "./receipt-policy";
 import { storedImageReview, IMAGE_REVIEW_MESSAGE } from "../image-job-review";
 import { storedDeliveryState, recoverStoredDelivery } from "./stored-delivery";
 import {currentCreationContext} from "../saas/creation-context";
-import {assertImagegenCreationScope,imagegenCreationScopeKey,ImagegenScopeError} from "./creation-scope";
+import {assertImagegenCreationScope,assertAcceptedImagegenCreationScope,imagegenCreationScopeKey,ImagegenScopeError} from "./creation-scope";
 type Parent={status:string;result:ImagegenResult;fingerprint:string;children:Record<string,{state:"starting"|"submitted"|"done";jobId?:string;ids?:string[]}>};
 const jobs=new DurableImageJobs<Parent>("imagegen");
 const memoryScopes=new Map<string,unknown>();
 async function assertParentScope(id:string,owner:string){
  if(!dbEnabled){assertImagegenCreationScope(memoryScopes.get(id),owner);return;}
- const row=(await getPool().query("SELECT payload->'creationScope' AS scope FROM app_image_jobs WHERE id=$1 AND email=$2 AND kind='imagegen'",[id,owner.toLowerCase()])).rows[0];
+ const row=(await getPool().query("SELECT payload->'creationScope' AS scope,payload->'plan'->'request' AS request FROM app_image_jobs WHERE id=$1 AND email=$2 AND kind='imagegen'",[id,owner.toLowerCase()])).rows[0];
  if(!row)throw new ImagegenScopeError();
- assertImagegenCreationScope(row.scope,owner);
+ await assertAcceptedImagegenCreationScope(row.scope,owner,row.request);
 }
 class NotAccepted extends Error{}
 const parentId=(id:string)=>`imagegen-${id}`;
