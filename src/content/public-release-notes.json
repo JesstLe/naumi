@@ -1,5 +1,23 @@
 [
   {
+    "version": "1792976998",
+    "title": {
+      "zh": "图片结果展示修复",
+      "en": "Image result display fixes"
+    },
+    "improvements": [],
+    "fixes": [
+      {
+        "zh": "修复图片已完成后，创作记录仍显示排队中的问题。",
+        "en": "Fixed completed images sometimes remaining queued in creation history."
+      },
+      {
+        "zh": "修正部分异常任务的已扣积分显示。",
+        "en": "Corrected charged-credit displays for some unsuccessful tasks."
+      }
+    ]
+  },
+  {
     "version": "1792815643",
     "title": {
       "zh": "图片生成体验修复",
