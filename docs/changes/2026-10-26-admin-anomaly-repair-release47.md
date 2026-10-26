@@ -32,3 +32,26 @@
 公开更新说明已绑定候选BUILD_VERSION=1793003573并通过维护脚本校验。当前仍是发布准备：不得将合并、隔离测试、镜像构建或公开文案误称上线。旧发布CLEANUP_PENDING、Worker未知tick/活动及双槽预算必须先取得真实收敛证据；保留原UNKNOWN和运行实例，普通发布不借用此前临时直接切流授权。
 
 验证与原始/修改/回滚证据统一在 ignored `output/admin-anomaly-repair-release47-20261026/`。代码修复、候选构建、实际切流和历史任务恢复分别验收，不把本地测试等同已上线。
+
+## 17:19 实际切换结果（覆盖上面的发布准备状态）
+
+用户再次明确要求立即切换后，本轮执行限定Web切流，不再将常规完整收敛门槛当作继续等待的完成状态。没有缩减原2560MiB容器上限、1152MiB heap或停止旧槽；完整3584MiB最坏情形预算未通过，按明确直接切换记录此例外，在真实候选启动、就绪和切流前保持至少1024MiB观察余量。切换完成时MemAvailable=2202MiB，不称完整双槽最坏峰值容量验收。
+
+- 切换时间：2026-10-26 17:19:11 +08:00，三锁全程共持；nginx配置CAS、候选及回切完整语法校验和平滑reload通过。
+- 已合并并推送main的源码：`b15d4761b938428c449531e2d8744401a38a2ec7`；公开版本`1793003573`；App镜像`sha256:f82652b872c74294b7520768a4a277618430055dedbe0dd15e0490d19a4362e2`。
+- 新Web：`naumi47-web-anomaly-repair-20261026-r1`，真实loopback13117，新admission=open；旧13116改为draining，两份旧Web和原Worker都保留。数据/媒体/配置原样沿用，未回灌DB或生成付费测试任务。
+- 真实新槽DB、原登录、项目/画布/节点/图片技能、studio3d、desktop、admin及公开更新记录检查通过；本机外部HTTPS连续19次version请求全200，其中8次确认新版。不是用户浏览器完整交互验收。
+- 可读数据库备份1,135,615,771 bytes，备份SHA与目录可读证明保留；回切包保持新旧静态资源并集，独立副本验证2文件通过，线上回切check-only通过，未实际回切。
+- 原3699条UNKNOWN观察全记录保持不变，这些是活动观察，不是3699笔生成请求。旧Worker仍paused/unknown、未更新；recovery supervisor仍暂停待重新绑定。
+
+### 原12笔父状态已真实恢复
+
+17:23—17:24在同一固定镜像上，调用已验证的纯结果`finalizeCompletedParent`，只处理此前exact12原身份。1笔在定向处理前已成功，11笔本次补齐；最终12个parent均done/succeeded，12份管理创作记录均succeeded，原owner/workspace下12个真实原GET回执均HTTP200/succeeded。每笔原child、billing、ledger、supplier及UNKNOWN前后完全相同，原计费合计82保持，新增生成/扣费0。
+
+同一benchmark台账按明确原身份和上述持久化/GET证据核销对应父状态案例；不因有界巡检本轮未见而关闭其余历史案例。原始private身份和回执只留ignored output，未提交Git。
+
+### 原始失败及未完成项
+
+R1把canonical编码的manifest hash误按原始文件字节比较，修正观察器后保留原失败；R2镜像导出config digest与远端OCI Image ID表示差异，核对真实加载ID、固定env及rootfs后修正，没有重建/重导入冒充新镜像；R3完整任务snapshot读失败，未将其改为PASS，已完成备份未重跑。R4按明确直接切换执行，只有精确UNKNOWN保持证明，`preservationVerified=false / comparisonNotRun=true`继续保留。canonical revision835 / `SWITCHED_CLEANUP_PENDING`，不是完整Worker交接或整站收敛COMPLETE。
+
+6个未发供应的原排队child与2个没有原URL/本地像素的下载失败任务，不在此次12笔回执核销内。旧Worker未知tick、旧槽排空、supervisor rebind和完整任务preservation仍待收尾。代码上线不冒充这些历史债务已经消失。
