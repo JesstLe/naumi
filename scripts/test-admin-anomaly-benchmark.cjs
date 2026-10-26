@@ -1,0 +1,15 @@
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const {analyze,merge}=require('./admin-anomaly-benchmark.cjs');
+const now='2026-10-26T02:00:00Z',old='2026-10-26T00:00:00Z';
+const row=(id,extra={})=>({id,owner:'fixture@local.test',table:'app_image_jobs',kind:'generate',status:'pending',createdAt:old,updatedAt:old,children:[],deliveredOutputs:0,...extra});
+const snap=rows=>({schemaVersion:1,observedAt:now,target:'47.105.59.142',sourceCommit:'a'.repeat(40),readOnly:true,coverage:{truncatedTables:[]},adminApi:[{status:200},{status:200}],rows});
+test('parent plus child count as one logical incident; different reasons remain separate',()=>{const r=analyze(snap([row('p',{kind:'imagegen',children:['c']}),row('c',{status:'done',deliveredOutputs:1})]));assert.equal(r.logicalIncidentCount,1);assert(r.findings.some(f=>f.type==='parent-receipt-stale'));});
+test('active normal queue is not timeout',()=>assert.equal(analyze(snap([row('a',{createdAt:now,updatedAt:now})])).findings.length,0));
+test('historical fence remains excluded',()=>assert.equal(analyze(snap([row('a',{historyProtected:true})])).findings.length,0));
+test('foreign-owner child never establishes delivered parent',()=>assert(!analyze(snap([row('p',{kind:'imagegen',children:['c']}),row('c',{owner:'other',status:'done',deliveredOutputs:1})])).findings.some(f=>f.type==='parent-receipt-stale')));
+test('unknown paid request is evidence not permission to retry',()=>{const r=analyze(snap([row('a',{paidStates:['started']})]));assert(r.findings[0].evidence[0].unknownSubmission);assert.equal(r.supplierCalls,0);});
+test('dedupe keeps original firstSeen, no automatic closure on absent bounded sample',()=>{const r=analyze(snap([row('a')]));const first=merge(null,r),again=merge(first,r);assert.equal(Object.keys(again.cases).length,1);assert.equal(Object.values(again.cases)[0].observations,2);assert.equal(Object.keys(merge(again,analyze(snap([]))).cases).length,1);});
+test('API failure or truncation not healthy',()=>{let s=snap([]);s.adminApi[0].status=503;assert.equal(analyze(s).coverage.complete,false);s=snap([]);s.coverage.truncatedTables=['app_image_jobs'];assert.equal(analyze(s).coverage.complete,false);});
+test('malformed observation and duplicate rows rejected',()=>{assert.throws(()=>analyze({collectionFailed:true}));assert.throws(()=>analyze(snap([row('a'),row('a')])));});
+test('report contains no owner, raw IDs, prompt, secret, or error text',()=>{const r=analyze(snap([row('PRIVATE_ID',{owner:'secret@test',status:'failed',error:'secret-token-sensitive URL'})]));const s=JSON.stringify(r);for(const v of ['PRIVATE_ID','secret@test','secret-token-sensitive'])assert(!s.includes(v));});
+test('scanner fixed key unknown is separately reported and does not add generation count',()=>{const s=snap([]);s.scannerActivities=[{key:'recovery-dispatch-scan',state:'unknown',outcome:'background-promise-unconfirmed',heartbeatAt:old}];const r=analyze(s);assert.equal(r.findings[0].type,'scanner-permanent-block');assert.equal(r.logicalIncidentCount,0);});

@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "frozenProductCommit": "af22c6e5f149215cfd5bf862f781e95e67c88987",
+  "employeeExactRequestsReplayed": 0,
+  "countingPolicy": "Group by same-owner root operation; keep different observations as evidence, never add parent, child and provider rows as requests.",
+  "scenarios": [
+    {
+      "id": "AW01",
+      "origin": "live-admin-read-20261026",
+      "behavior": "一次协调扫描异常将固定扫描键永久锁在UNKNOWN，后续整个恢复扫描停止",
+      "suite": "admin-anomalies",
+      "replayFidelity": "real-local-pg-activity-store-with-stubbed-internal-dispatch",
+      "historyClosure": "OPEN",
+      "localStatus": "FIXED_LOCAL_REGRESSION_PASS_NOT_DEPLOYED",
+      "limitation": "保留原UNKNOWN；新协调扫描使用独立身份，原付费任务的稳定身份继续阻断重放。未部署。"
+    },
+    {
+      "id": "AW02",
+      "origin": "live-admin-read-20261026",
+      "behavior": "后台历史列表和详情状态不一致；统一状态筛选遗漏pending/failed/completed等源状态",
+      "suite": "admin-anomalies",
+      "replayFidelity": "real-local-pg-and-real-readers",
+      "historyClosure": "OPEN",
+      "localStatus": "FIXED_LOCAL_REGRESSION_PASS_NOT_DEPLOYED",
+      "limitation": "只修读取投影与筛选，不写任务状态；采样时间跨请求漂移单独考虑。未部署。"
+    },
+    {
+      "id": "AW03",
+      "origin": "live-admin-read-20261026",
+      "behavior": "父回执排队而子图与作品已存在",
+      "suite": "admin-anomalies",
+      "replayFidelity": "observed-not-exact-replayed",
+      "historyClosure": "OPEN",
+      "localStatus": "SCANNER_FIX_RELATED_NOT_PROVEN_PER_INCIDENT",
+      "limitation": "不能仅凭作品存在直接把父任务标成功，仍须完成原合同与账务收尾。"
+    },
+    {
+      "id": "AW04",
+      "origin": "live-admin-read-20261026",
+      "behavior": "生成失败、长时间排队、结果未知、checkpoint未交付",
+      "suite": "admin-anomalies",
+      "replayFidelity": "observed-not-exact-replayed",
+      "historyClosure": "OPEN",
+      "localStatus": "TRIAGE_BACKLOG",
+      "limitation": "每案需保留原版本、租约、供应商和账务证据；外部故障及历史保全不计为已修复代码bug。"
+    }
+  ]
+}

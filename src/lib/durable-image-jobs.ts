@@ -273,6 +273,12 @@ async function recoverDurableImageJobsLocal(): Promise<number> {
   return count+await recoverImagegenBatches()+await recoverStoredDeliveries();
 }
 
+let recoveryScan:Promise<number>|undefined;
 export async function recoverDurableImageJobs():Promise<number> {
-  return withBackgroundActivity("durable-image", "recovery-dispatch-scan", "claim", () => recoverDurableImageJobsLocal(), () => 0);
+  // A scan is a new coordinator observation, not the identity of a paid job.
+  // Keep an earlier failed scan UNKNOWN, but do not let its fixed key disable
+  // every future tick. Each child's original claim/UNKNOWN checks still apply.
+  if(!recoveryScan)recoveryScan=withBackgroundActivity("durable-image", `recovery-dispatch-scan:${randomUUID()}`, "claim",
+    () => recoverDurableImageJobsLocal(), () => 0).finally(()=>{recoveryScan=undefined;});
+  return recoveryScan;
 }
