@@ -1,6 +1,6 @@
 import "server-only";
 import type { ModelExecutionScope } from "./context";
-import { executionFetch } from "./clients";
+import { executionFetch } from "./execution-fetch";
 
 /** Each instance closes over one immutable account; running streams never re-read mutable settings. */
 export async function configuredPiModels(scope: ModelExecutionScope,actor?:{userEmail:string;feature:string}) {

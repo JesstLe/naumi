@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 const baseline = process.argv.includes("--baseline"), require = createRequire(import.meta.url);
-const events = [], sources = new Set(["src/lib/model-config/channel-fetch.ts", "src/lib/model-config/supplier-failure.ts", "src/lib/imagegen/request-size.ts", "src/lib/api-error.ts"].map(f => resolve(f)));
+const routed=existsSync("src/lib/model-config/channel-routing.ts");
+const events = [], sources = new Set([routed?"src/lib/model-config/channel-routing.ts":"src/lib/model-config/channel-fetch.ts", "src/lib/model-config/supplier-failure.ts", "src/lib/imagegen/request-size.ts", "src/lib/api-error.ts"].map(f => resolve(f)));
 const fixture = globalThis.__sunjiangFixture = { events, calls: 0, receipts: [], index: 0, releases: 0 };
 const mocks = {
   "server-only": "",
-  "../db": "exports.getPool=()=>({query:async()=>{throw Error('UNEXPECTED_DB')}});",
+  "@/platform/db/pool": "exports.getPool=()=>({query:async()=>{throw Error('UNEXPECTED_DB')}});",
   "./apimart-image-policy": "exports.applicationAPIMartImages=()=>false;",
   "./clients": "exports.executionFetch=()=>async()=>{const f=globalThis.__sunjiangFixture;f.calls++;const r=f.receipts.shift();return Response.json(r.body,{status:r.status});};",
   "./channel-scheduler": "exports.claimChannel=async(_p,_id,_pol,targets,visited)=>{const target=targets.find(t=>!visited.has(t.upstreamId));if(!target)throw Error('UNEXPECTED_CLAIM');return {target,release:async()=>{globalThis.__sunjiangFixture.releases++;}};};exports.recordChannelOutcome=async()=>{};",
@@ -21,7 +22,10 @@ const mocks = {
   "./channel-availability": "exports.channelOperationKey=()=>undefined;",
   "./channel-health-policy": "exports.retryAfterMs=()=>undefined;",
 };
-const bundled = await build({ stdin: { contents: 'export {channelRoutingFetch} from "./src/lib/model-config/channel-fetch";export * from "./src/lib/imagegen/request-size";export {safeError} from "./src/lib/api-error";', resolveDir: process.cwd() }, bundle: true, platform: "node", format: "cjs", write: false,
+const entry=(routed?`import {createChannelRoutingFetch} from "./src/lib/model-config/channel-routing";
+const execute=()=>async()=>{const f=globalThis.__sunjiangFixture;f.calls++;const r=f.receipts.shift();return Response.json(r.body,{status:r.status});};
+export const channelRoutingFetch=(scope,options)=>createChannelRoutingFetch(scope,options,execute);`:'export {channelRoutingFetch} from "./src/lib/model-config/channel-fetch";')+'export * from "./src/lib/imagegen/request-size";export {safeError} from "./src/lib/api-error";';
+const bundled = await build({ stdin: { contents: entry, resolveDir: process.cwd() }, bundle: true, platform: "node", format: "cjs", write: false,
   plugins: [{ name: "isolated-channel", setup(b) {
     b.onResolve({ filter: /.*/ }, args => {
       if (Object.hasOwn(mocks, args.path)) return { path: args.path, namespace: "mock" };
@@ -86,17 +90,17 @@ if (baseline) {
     assert.ok(!JSON.stringify({ result, events }).includes(rawSecret));
     assert.ok(safeError({ code }) !== "服务繁忙,请稍后重试");
   }
-  const fallback = await reject([{ status: 400, body: { error: { code: "invalid_image" } } }, { status: 503, body: { error: {}, billing_status:"not_charged" } }]);
+  const fallback = await reject([{ status: 400, body: { error: { code: "invalid_image" },billing_status:"not_charged" } }, { status: 503, body: { error: {}, billing_status:"not_charged" } }]);
   assert.equal(fallback.body.error.code, "IMAGE_UPSTREAM_UNAVAILABLE");
   assert.equal(fixture.calls, 2, "no additional retry/fallback is introduced");
   await assert.rejects(reject([{status:503,body:{error:{message:rawSecret}}},{status:200,body:{data:[]}}]), /./);
   assert.equal(fixture.calls,1,"ambiguous paid rejection must not fail over");assert.equal(fixture.releases,1);
   assert.equal(fixture.events.at(-1)[1],"unknown");assert.equal(fixture.events.at(-1)[3].upstreamFailure.code,"IMAGE_UPSTREAM_UNAVAILABLE");assert.ok(!JSON.stringify(fixture.events).includes(rawSecret));
-  const source = readFileSync("src/app/api/generate-image/route.ts", "utf8");
+  const source = readFileSync("src/lib/imagegen/generation-runtime.ts", "utf8");
   assert.ok(source.includes("imageRatioValidationPolicy"));
-  assert.ok(source.includes("!(p.targetWidth > 0 && p.targetHeight > 0)"));
+  assert.ok(source.includes("ratio:scope?imageRatioValidationPolicy"));
   console.log("MODIFIED=PASS RATIO_DIAGNOSTIC=RETAINED TASK_DELIVERY=ADVISORY FAILURE_CATEGORIES=7 AUDIT=SANITIZED STATUS=PRESERVED ATTEMPTS=UNCHANGED");
 }
 assert.deepEqual(observed, { width: 848, height: 1264, ratio: "53:79" });
-console.log("PIXELS_AND_DIMENSIONS=UNCHANGED PRODUCTION_WRITES=0 REAL_SUPPLIER_CALLS=0");
+console.log("PIXELS_AND_DIMENSIONS=UNCHANGED PRODUCTION_WRITES=0 REAL_SUPPLIER_CALLS=0 ACTUAL_POLICY=1 TRANSPORT_AND_SCHEDULER=FIXTURE");
 delete globalThis.__sunjiangFixture;
