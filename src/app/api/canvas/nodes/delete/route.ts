@@ -1,3 +1,5 @@
+import {z} from "zod";
+import {CanvasArtworkWriteConflict,canvasArtworkFieldsSchema} from "@/lib/canvas/artwork-write";
 import {canvasTextSnapshotSchema} from "@/lib/canvas/history-contract";
 import {CanvasTextWriteConflict} from "@/lib/canvas/text-write";
 import { NextResponse } from "next/server";
@@ -15,7 +17,7 @@ export async function POST(request: Request) {
   const email = await authenticatedEmail(request);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   if(!sameSiteBiMutation(request))return NextResponse.json({error:"不允许跨站修改"},{status:403});
-  let body: { artworkIds?: string[]; textIds?: string[];videoIds?:string[];operationId?:string;projectKey?:string;expectedTexts?:unknown };
+  let body: { artworkIds?: string[]; textIds?: string[];videoIds?:string[];operationId?:string;projectKey?:string;expectedTexts?:unknown;expectedArtworks?:unknown };
   try {
     body = await request.json();
   } catch {
@@ -43,10 +45,13 @@ export async function POST(request: Request) {
   }
   const expected=body.expectedTexts===undefined?undefined:canvasTextSnapshotSchema.array().safeParse(body.expectedTexts);
   if(expected&&!expected.success)return NextResponse.json({error:"文字删除基线无效"},{status:422});
+  const artworkExpected=body.expectedArtworks===undefined?undefined:z.array(z.object({id:z.string().min(1).max(200),fields:canvasArtworkFieldsSchema})).safeParse(body.expectedArtworks);
+  if(artworkExpected&&!artworkExpected.success)return NextResponse.json({error:"图片删除基线无效"},{status:422});
   try {
-    const deleted = await deleteCanvasNodesAtomically(email, artworkIds, textIds,videoIds,body.operationId,expected?.success?expected.data.map(n=>({...n,updatedAt:n.updatedAt||n.createdAt})):undefined);
+    const deleted = await deleteCanvasNodesAtomically(email, artworkIds, textIds,videoIds,body.operationId,expected?.success?expected.data.map(n=>({...n,updatedAt:n.updatedAt||n.createdAt})):undefined,artworkExpected?.success?artworkExpected.data:undefined);
     return NextResponse.json({ ok: true, persisted: true, ...deleted });
   } catch (error) {
+    if(error instanceof CanvasArtworkWriteConflict)return NextResponse.json({error:error.message,code:error.code,id:error.id,fields:error.fields,current:error.current},{status:409});
     if(error instanceof CanvasTextWriteConflict)return NextResponse.json({error:error.message,code:error.code,id:error.id,fields:error.fields,current:error.current},{status:409});
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "删除节点失败" },

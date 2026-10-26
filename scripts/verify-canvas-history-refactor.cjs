@@ -22,8 +22,8 @@ function setup(built){
  const slots=[],effects=[];let cursor=0,uid=0;
  const hooks={ref(value){const i=cursor++;return slots[i]??(slots[i]={current:value});},state(value){const i=cursor++;if(!(i in slots))slots[i]=typeof value==='function'?value():value;return [slots[i],v=>{slots[i]=typeof v==='function'?v(slots[i]):v;state.renderWrites++;}];},effect(f){const i=cursor++;if(!(i in slots)){slots[i]=true;effects.push(f());}}};
  const ports={workspace:'personal',revision:0,async auth(){await state.auth();return {'x-naumi-workspace':ports.workspace,'x-naumi-project-context':'tree:WRONG','authorization':'fixture'};}};
- const module={exports:{}};
- const c={__ports:ports,__hooks:hooks,module,exports:module.exports,console,Promise,Error,Map,Set,WeakMap,Headers,Request,Response,AbortSignal,structuredClone,crypto:globalThis.crypto,localStorage:{setItem(){}},
+ const projectedModule={exports:{}};
+ const c={canvasArtworkDocument:{history:undefined},__ports:ports,__hooks:hooks,module:projectedModule,exports:projectedModule.exports,console,Promise,Error,Map,Set,WeakMap,Headers,Request,Response,AbortSignal,structuredClone,crypto:globalThis.crypto,localStorage:{setItem(){}},
   historyScopesRef:{current:new WeakMap()},historyScopeRef:{current:''},historyBusyRef:{current:false},historyAttemptsRef:{current:new WeakMap()},
   canvasAccountRef:{current:state.account},activeProjectRef:{current:{key:state.project}},videoResultAttempts:{current:new Map()},unsavedTextRef:{current:new Map()},textSaveQueuesRef:{current:new Map()},
   pendNodesRef:{current:state.pending},textNodesRef:{current:state.texts},nodeSettingsRef:{current:{}},nodeSettingsReady:true,
@@ -33,10 +33,10 @@ function setup(built){
   flashTip:s=>state.notices.push(s),setHistorySaving:()=>{},setUnsavedTextCount:()=>{},setSelectedTextId:()=>{},setNodeSettings:v=>{state.settings=v;},
   setWorks:f=>{if(state.deferredWorks)state.deferredWorks.push(f);else state.works=f(state.works);},setTextNodes:f=>{if(state.deferredTexts)state.deferredTexts.push(f);else {state.texts=f(state.texts);c.textNodesRef.current=state.texts;}},setPendNodes:f=>{state.pending=f(state.pending);c.pendNodesRef.current=state.pending;},
   setCreatingNew:()=>state.views++,setActiveKey:()=>state.views++,setBrowsing:()=>state.views++,setUndoStack:f=>state.undo=f(state.undo),setRedoStack:f=>state.redo=f(state.redo),
-  settingsFor:()=>module.exports.defaultNodeSettings(),isNodeLocked:()=>false,mergeWorks:async()=>{},setRfNodes:f=>{state.rf=f(state.rf||[]);},
+  settingsFor:()=>projectedModule.exports.defaultNodeSettings(),isNodeLocked:()=>false,mergeWorks:async()=>{},setRfNodes:f=>{state.rf=f(state.rf||[]);},
  };
  state.videos=[video()];c.videoNodesStore={getNode:id=>state.videos.find(n=>n.id===id),flush:async()=>{state.flushed++;await state.flush();},refresh:async()=>{state.refreshes++;await state.refresh();}};
- vm.createContext(c);vm.runInContext(built,c);Object.assign(c,module.exports);
+ vm.createContext(c);vm.runInContext(built,c);Object.assign(c,projectedModule.exports);
  const names=['privateFetchRaw','applyHistory','doUndo','doRedo','commitNodeSettings','selectVideoResult',...(fn.saveManyNodePositions?['saveManyNodePositions']:[]),...(!baseline?['applyPendingLinkHistory','applyHistorySettings','onHistoryApplied']:[])];
  // pushUndo is a useCallback invocation. Keep its original initializer, with a
  // fixture useCallback, rather than maintaining a handwritten copy of its body.

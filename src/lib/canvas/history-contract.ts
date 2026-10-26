@@ -1,3 +1,4 @@
+import {canvasArtworkFieldsSchema} from "./artwork-write";
 import { z } from "zod";
 import { nodeSettingsSchema } from "./node-settings";
 import { videoNodeWriteSchema } from "./video-node-schema";
@@ -17,19 +18,20 @@ export const videoHistoryFields=videoNodeWriteSchema.omit({id:true,projectKey:tr
 export const historyRequest = z.object({
   operationId: z.string().uuid(),
   operations: z.array(z.discriminatedUnion("type", [
-    z.object({ type: z.literal("visibility"), id, visible: z.boolean() }),
+    z.object({ type: z.literal("visibility"), id, visible: z.boolean(),expectedArtwork:canvasArtworkFieldsSchema.partial().optional() }),
     z.object({ type: z.literal("text-restore"), node: textNode,expectMissing:z.boolean().optional() }),
     z.object({ type: z.literal("text-delete"), id,expected:textNode.optional() }),
     z.object({ type: z.literal("video-visibility"), id, visible:z.boolean() }),
     z.object({ type: z.literal("video-patch"), id, expectedRevision:z.number().int().nonnegative(), fields:videoHistoryFields }),
     z.object({ type: z.literal("video-result"),id,expectedRevision:z.number().int().nonnegative(),artworkId:id.nullable(),expectedArtworkId:id.nullable().optional() }),
-    z.object({ type: z.literal("position"), id, text: z.boolean(), x: coordinate, y: coordinate,expected:z.object({x:coordinate,y:coordinate}).optional() }),
-    z.object({ type: z.literal("group"), id, value: id.nullable() }),
+    z.object({ type: z.literal("position"), id, text: z.boolean(), x: coordinate, y: coordinate,expected:z.object({x:coordinate,y:coordinate}).optional(),expectedArtwork:canvasArtworkFieldsSchema.partial().optional() }),
+    z.object({ type: z.literal("group"), id, value: id.nullable(),expectedArtwork:canvasArtworkFieldsSchema.partial().optional() }),
     z.object({ type: z.literal("parent"), id, parentId: id, add: z.boolean() }),
     z.object({ type: z.literal("text-patch"), id, fields: textFields,expected:textFields.optional() }),
-    z.object({ type: z.literal("rename"), id, title: z.string().max(80) }),
-    z.object({ type: z.literal("size"), id, x: coordinate, y: coordinate, width: z.number().min(80).max(4096), height: z.number().min(80).max(4096) }),
-    z.object({ type: z.literal("mark"), id, marked: z.boolean() }),
+    z.object({ type: z.literal("rename"), id, title: z.string().max(80),expectedArtwork:canvasArtworkFieldsSchema.partial().optional() }),
+    z.object({ type: z.literal("size"), id, x: coordinate, y: coordinate, width: z.number().min(80).max(4096), height: z.number().min(80).max(4096),expectedArtwork:canvasArtworkFieldsSchema.partial().optional() }),
+    z.object({type:z.literal("art-dimensions"),id,width:z.number().min(80).max(4096),height:z.number().min(80).max(4096),expectedArtwork:canvasArtworkFieldsSchema.partial().optional()}),
+    z.object({ type: z.literal("mark"), id, marked: z.boolean(),expectedArtwork:canvasArtworkFieldsSchema.partial().optional() }),
     z.object({ type: z.literal("node-settings"), id, text: z.boolean(), video:z.boolean().optional(), settings: nodeSettingsSchema }),
     z.object({ type: z.literal("workflow-asset"), id, assetOperationId: z.string().uuid(), filled: z.boolean() }),
   ])).min(1).max(400),

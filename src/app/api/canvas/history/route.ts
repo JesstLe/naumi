@@ -1,3 +1,4 @@
+import {CanvasArtworkWriteConflict} from "@/lib/canvas/artwork-write";
 import {CanvasTextWriteConflict} from "@/lib/canvas/text-write";
 import { NextResponse } from "next/server";
 import { authenticatedEmail } from "@/lib/request-auth";
@@ -14,6 +15,7 @@ export async function POST(request: Request) {
     const receipt=dbEnabled?await saveCanvasHistory(email,parsed.data):undefined;
     return NextResponse.json({ok:true,persisted:dbEnabled,...receipt});
   } catch (error) {
+    if(error instanceof CanvasArtworkWriteConflict)return NextResponse.json({error:error.message,code:error.code,id:error.id,fields:error.fields,current:error.current},{status:409});
     if(error instanceof CanvasTextWriteConflict)return NextResponse.json({error:error.message,code:error.code,id:error.id,fields:error.fields,current:error.current},{status:409});
     return NextResponse.json({error:error instanceof Error ? error.message : "画布保存失败，请重试"},{status:409});
   }

@@ -1,3 +1,4 @@
+import {artworkFields,type CanvasArtworkFields,type CanvasArtworkReceipt} from "./artwork-write";
 import type { Artwork } from "../mock-data";
 import type { CanvasVideoNode } from "./video-node-schema";
 import type { CanvasNodeSettings } from "./node-settings";
@@ -21,7 +22,8 @@ export const textPatchOf = (node: CanvasTextNode): TextPatchFields => ({
   height: node.height,
 });
 export type VideoPatchFields=Partial<Pick<CanvasVideoNode,"title"|"config"|"inputs"|"x"|"y"|"width"|"height">>;
-export type CanvasHistoryAction =
+export type CanvasHistoryAction = (
+  | {kind:"art-dimensions";id:string;from:{width:number;height:number};to:{width:number;height:number}}
   | {kind:"video-patch";id:string;from:VideoPatchFields;to:VideoPatchFields}
   | {kind:"video-result";id:string;from:string|null;to:string|null}
   | {kind:"video-add";records:CanvasVideoNode[]}
@@ -74,7 +76,7 @@ export type CanvasHistoryAction =
       to: { x: number; y: number; width: number; height: number };
     }
   // 标记/取消标记(逐 id 记录原值,批量操作共用)
-  | { kind: "mark"; changes: Array<{ id: string; from: boolean; to: boolean }> };
+  | { kind: "mark"; changes: Array<{ id: string; from: boolean; to: boolean }> }) & {artworkBases?:Record<string,Partial<CanvasArtworkFields>>};
 
 export function canvasHistoryScope(account: string, workspace: string, project: string | null) {
   return JSON.stringify([account, workspace, project || "workspace"]);
@@ -96,9 +98,10 @@ export function compileCanvasHistory(action: CanvasHistoryAction, undo: boolean,
   const getVideo = (id: string) => { const node = video(id); if (!node) throw new Error("视频节点不存在，请刷新画布"); return node; };
   const videoPatch = (id: string, fields: VideoPatchFields) => operations.push({type:"video-patch",id,expectedRevision:getVideo(id).revision,fields});
   const position = (id: string, point: {x:number;y:number}, text = id.startsWith("text-"),expected?:{x:number;y:number}) => {
-    if (video(id)) videoPatch(id,point); else operations.push({type:"position",id,text,...point,...(text&&expected?{expected}:{})});
+    if (video(id)) videoPatch(id,point); else operations.push({type:"position",id,text,...point,...(text&&expected?{expected}:!text&&expected?{expectedArtwork:{canvasX:expected.x,canvasY:expected.y,...(!undo?action.artworkBases?.[id]:{})}}:{})});
   };
-  const visibility = (records: Artwork[], visible: boolean) => records.forEach(record => operations.push({type:"visibility",id:record.id,visible}));
+  const expected=(id:string,base:Partial<CanvasArtworkFields>)=>({...base,...(!undo?action.artworkBases?.[id]:{})});
+  const visibility = (records: Artwork[], visible: boolean) => records.forEach(record => operations.push({type:"visibility",id:record.id,visible,expectedArtwork:visible?{visible:false}:artworkFields(record,true)}));
   const texts = (records: CanvasTextNode[], visible: boolean) => records.forEach(node => operations.push(visible
     ? {type:"text-restore",node:{...node,productIds:node.productIds || []},expectMissing:true} : {type:"text-delete",id:node.id,expected:{...node,productIds:node.productIds||[]}}));
   const videos = (records: CanvasVideoNode[], visible: boolean) => records.forEach(node => operations.push({type:"video-visibility",id:node.id,visible}));
@@ -109,7 +112,7 @@ export function compileCanvasHistory(action: CanvasHistoryAction, undo: boolean,
     case "video-add": videos(action.records,!undo); break;
     case "move": case "text-move": position(action.id,action[side],action.kind === "text-move",action[undo?"to":"from"]); break;
     case "move-many": action.moves.forEach(move => position(move.id,move[side],undefined,move[undo?"to":"from"])); break;
-    case "canvas-group": action.changes.forEach(change => operations.push({type:"group",id:change.id,value:change[side]})); break;
+    case "canvas-group": action.changes.forEach(change => operations.push({type:"group",id:change.id,value:change[side],expectedArtwork:expected(change.id,{canvasGroupId:change[undo?"to":"from"]})})); break;
     case "mixed-delete": case "workflow-add": case "mixed-add": {
       const visible = action.kind === "mixed-delete" ? undo : !undo;
       visibility(action.artworks,visible); texts(action.textNodes,visible);
@@ -120,9 +123,10 @@ export function compileCanvasHistory(action: CanvasHistoryAction, undo: boolean,
     case "parent": operations.push({type:"parent",id:action.targetId,parentId:action.parentId,add:undo?!action.added:action.added}); break;
     case "text-patch": operations.push({type:"text-patch",id:action.id,fields:action[side],expected:action[undo?"to":"from"]}); break;
     case "text-patch-many": action.changes.forEach(change=>operations.push({type:"text-patch",id:change.id,fields:change[side],expected:change[undo?"to":"from"]})); break;
-    case "rename": operations.push({type:"rename",id:action.id,title:action[side]}); break;
-    case "art-size": operations.push({type:"size",id:action.id,...action[side]}); break;
-    case "mark": action.changes.forEach(change => operations.push({type:"mark",id:change.id,marked:change[side]})); break;
+    case "art-dimensions": operations.push({type:"art-dimensions",id:action.id,...action[side],expectedArtwork:expected(action.id,{canvasWidth:action[undo?"to":"from"].width,canvasHeight:action[undo?"to":"from"].height})});break;
+    case "rename": operations.push({type:"rename",id:action.id,title:action[side],expectedArtwork:expected(action.id,{title:action[undo?"to":"from"]})}); break;
+    case "art-size": operations.push({type:"size",id:action.id,...action[side],expectedArtwork:expected(action.id,{canvasX:action[undo?"to":"from"].x,canvasY:action[undo?"to":"from"].y,canvasWidth:action[undo?"to":"from"].width,canvasHeight:action[undo?"to":"from"].height})}); break;
+    case "mark": action.changes.forEach(change => operations.push({type:"mark",id:change.id,marked:change[side],expectedArtwork:expected(change.id,{marked:change[undo?"to":"from"]})})); break;
     case "node-settings": operations.push({type:"node-settings",id:action.id,text:action.text,video:action.video,settings:action[side]}); break;
     case "workflow-fill": operations.push({type:"workflow-asset",id:action.id,assetOperationId:action.assetOperationId,filled:!undo}); break;
     default: { const exhaustive: never = action; throw new Error(`Unknown canvas history action: ${exhaustive}`); }
@@ -149,6 +153,7 @@ export function reduceHistoryArtworks(current: Artwork[] | null, operations: Can
         case "group": return {...node,canvasGroupId:op.value};
         case "rename": return {...node,title:op.title};
         case "size": return {...node,canvasX:op.x,canvasY:op.y,canvasWidth:op.width,canvasHeight:op.height};
+        case "art-dimensions": return {...node,canvasWidth:op.width,canvasHeight:op.height};
         case "mark": return {...node,marked:op.marked};
         case "parent": return {...node,...changeCanvasParent(node,op.parentId,op.add)};
         default: return node;
@@ -170,4 +175,29 @@ export function reduceHistoryTexts(current: CanvasTextNode[], operations: Canvas
 
 export function reduceHistorySettings(current: Record<string,CanvasNodeSettings>, operations: CanvasHistoryOperation[]) {
   return operations.reduce((settings,op) => op.type === "node-settings" ? {...settings,[op.id]:op.settings} : settings,current);
+}
+
+/** Explicit keep-local rebases only metadata from the original rejected action.
+ * No automatic retries against an updated same-field baseline. */
+export function rebaseCanvasArtworkAction(action:CanvasHistoryAction,receipt:CanvasArtworkReceipt,undo=false):CanvasHistoryAction{
+ if(undo){
+  if("from" in action&&"to" in action)action={...action,from:action.to,to:action.from} as CanvasHistoryAction;
+  else if(action.kind==="move-many")action={...action,moves:action.moves.map(m=>({...m,from:m.to,to:m.from}))};
+  else if(action.kind==="mark"||action.kind==="canvas-group")action={...action,changes:action.changes.map(m=>({...m,from:m.to,to:m.from}))} as CanvasHistoryAction;
+  else if(action.kind==="delete"||action.kind==="add")action={...action,kind:action.kind==="delete"?"add":"delete"};
+  else if(action.kind==="mixed-delete"||action.kind==="mixed-add")action={...action,kind:action.kind==="mixed-delete"?"mixed-add":"mixed-delete",projectKey:"projectKey" in action?action.projectKey:`tree:${receipt.node.groupId||receipt.node.id}`} as CanvasHistoryAction;
+  else if(action.kind==="workflow-add")action={kind:"mixed-delete",artworks:action.artworks,textNodes:action.textNodes};
+ }
+ const node=receipt.node,id=node.id,fields=artworkFields(node,receipt.visible);
+ const next={...action,artworkBases:{...action.artworkBases,[id]:fields}} as CanvasHistoryAction;
+ if(next.kind==="rename"&&next.id===id)next.from=node.title;
+ if(next.kind==="move"&&next.id===id){next.to={x:next.to.x===next.from.x?node.canvasX??next.to.x:next.to.x,y:next.to.y===next.from.y?node.canvasY??next.to.y:next.to.y};next.from={x:node.canvasX??next.from.x,y:node.canvasY??next.from.y};}
+ if(next.kind==="move-many")next.moves=next.moves.map(move=>move.id===id?{...move,to:{x:move.to.x===move.from.x?node.canvasX??move.to.x:move.to.x,y:move.to.y===move.from.y?node.canvasY??move.to.y:move.to.y},from:{x:node.canvasX??move.from.x,y:node.canvasY??move.from.y}}:move);
+ if(next.kind==="art-size"&&next.id===id){const current={x:node.canvasX??next.from.x,y:node.canvasY??next.from.y,width:node.canvasWidth??next.from.width,height:node.canvasHeight??next.from.height};next.to=Object.fromEntries(Object.entries(next.to).map(([k,v])=>[k,v===next.from[k as keyof typeof next.from]?current[k as keyof typeof current]:v])) as typeof next.to;next.from=current;}
+ if(next.kind==="mark")next.changes=next.changes.map(change=>change.id===id?{...change,from:!!node.marked}:change);
+ if(next.kind==="art-dimensions"&&next.id===id)next.from={width:node.canvasWidth??next.from.width,height:node.canvasHeight??next.from.height};
+ if(next.kind==="delete"||next.kind==="add")next.records=next.records.map(n=>n.id===id?node:n);
+ if(next.kind==="mixed-delete"||next.kind==="mixed-add"||next.kind==="workflow-add")next.artworks=next.artworks.map(n=>n.id===id?node:n);
+ if(next.kind==="canvas-group")next.changes=next.changes.map(change=>change.id===id?{...change,from:node.canvasGroupId??null}:change);
+ return next;
 }

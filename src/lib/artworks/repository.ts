@@ -190,7 +190,7 @@ export async function listDeletedArtworks(
 }
 
 /** One lossless row projection for active, selected and trashed artworks. */
-function rowToArtwork(r: ArtworkRow): ArtworkRecord {
+export function rowToArtwork(r: ArtworkRow): ArtworkRecord {
   return {
     id: r.id,
     title: r.title,

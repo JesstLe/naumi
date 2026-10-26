@@ -1,11 +1,16 @@
+import {reduceHistoryArtworks,rebaseCanvasArtworkAction,type CanvasHistoryAction} from "./history-model";
+import type {HistoryCommit} from "./history-controller";
+import type {CanvasArtworkConflict} from "./artwork-write";
+export type ArtworkDocumentConflict=CanvasArtworkConflict&{action:CanvasHistoryAction;undo:boolean};
+export type CanvasArtworkHistoryPort={transaction<T>(scope:CanvasDocumentScope,work:()=>Promise<T>):Promise<T>;applyHistory(scope:CanvasDocumentScope,commit:HistoryCommit):void;conflict(scope:CanvasDocumentScope,value:CanvasArtworkConflict,action:CanvasHistoryAction,undo:boolean):void};
 import type { Artwork } from "../mock-data";
 import { invalidateBrowserData, loadAccountSnapshot } from "../browser-data-cache";
 import { canvasDocumentFetch, type CanvasDocumentScope } from "./document-scope";
 import { artworkRows, mergeArtworkFields, sortCanvasArtworks } from "./artwork-document-model";
 
-export type ArtworkDocumentSnapshot={nodes:Artwork[]|null;phase:"idle"|"loading"|"ready"|"error";error:string;trash:Artwork[]|null;trashError:string;trashBusy:boolean};
-export const EMPTY_ARTWORK_DOCUMENT:ArtworkDocumentSnapshot={nodes:null,phase:"idle",error:"",trash:null,trashError:"",trashBusy:false};
-type Bucket={snapshot:ArtworkDocumentSnapshot;listeners:Set<()=>void>;revision:number;changes:Map<string,number>;deleted:Set<string>;read:number;rowReads:Map<string,number>;statusRead:number;lastIds?:string[];trashRead:number};
+export type ArtworkDocumentSnapshot={conflicts:Record<string,ArtworkDocumentConflict>;nodes:Artwork[]|null;phase:"idle"|"loading"|"ready"|"error";error:string;trash:Artwork[]|null;trashError:string;trashBusy:boolean};
+export const EMPTY_ARTWORK_DOCUMENT:ArtworkDocumentSnapshot={conflicts:{},nodes:null,phase:"idle",error:"",trash:null,trashError:"",trashBusy:false};
+type Bucket={snapshot:ArtworkDocumentSnapshot;listeners:Set<()=>void>;revision:number;changes:Map<string,number>;deleted:Set<string>;read:number;rowReads:Map<string,number>;statusRead:number;lastIds?:string[];trashRead:number;frame?:Map<string,Artwork>};
 const documentKey=(scope:CanvasDocumentScope)=>JSON.stringify([scope.account,scope.workspace]);
 class ArtworkReadError extends Error{constructor(message:string,readonly status?:number){super(message);}}
 const denied=(error:unknown)=>!!error&&typeof error==="object"&&"status" in error&&[401,403].includes(Number(error.status));
@@ -15,6 +20,17 @@ const denied=(error:unknown)=>!!error&&typeof error==="object"&&"status" in erro
 export function createCanvasArtworkDocument(){
   const buckets=new Map<string,Bucket>();
   const publish=(b:Bucket,patch:Partial<ArtworkDocumentSnapshot>)=>{b.snapshot={...b.snapshot,...patch};b.listeners.forEach(fn=>fn());};
+  const get=(scope:CanvasDocumentScope)=>buckets.get(documentKey(scope));
+  const history:CanvasArtworkHistoryPort={
+    async transaction(scope,work){const b=get(scope);if(!b)return work();const before=b.frame;b.frame=new Map((b.snapshot.nodes||[]).map(n=>[n.id,n]));try{return await work();}finally{b.frame=before;}},
+    conflict(scope,value,action,undo){const b=get(scope);if(!b||!scope.documentCurrent())return;publish(b,{conflicts:{...b.snapshot.conflicts,[value.id]:{...value,action,undo}}});},
+    applyHistory(scope,value){const b=get(scope);if(!b||!scope.documentCurrent())return;const live=b.snapshot.nodes,projected=reduceHistoryArtworks(live,value.operations,value.action,value.undo);
+      if(!value.artworkNodes){publish(b,{nodes:projected});return;}
+      const ids=new Set(value.artworkIds||value.artworkNodes.map(r=>r.node.id)),byId=new Map(value.artworkNodes.map(r=>[r.node.id,r])),nodes=(projected||[]).filter(n=>!ids.has(n.id));
+      for(const id of ids){const receipt=byId.get(id);if(receipt?.visible){nodes.push(mergeArtworkFields(receipt.node,b.frame?.get(id),(live||[]).find(n=>n.id===id)));b.deleted.delete(id);}else b.deleted.add(id);b.changes.set(id,++b.revision);}
+      publish(b,{nodes:sortCanvasArtworks(nodes)});
+    },
+  };
   function bind(scope:CanvasDocumentScope,owner:string,writable:boolean){
     const key=documentKey(scope);let b=buckets.get(key);
     if(!b){b={snapshot:EMPTY_ARTWORK_DOCUMENT,listeners:new Set(),revision:0,changes:new Map(),deleted:new Set(),read:0,rowReads:new Map(),statusRead:0,trashRead:0};buckets.set(key,b);}
@@ -94,7 +110,13 @@ export function createCanvasArtworkDocument(){
         if(action==="restore"){for(const id of ids)state.deleted.delete(id);if(current())await read(ids);}else remove(ids);
       }finally{publish(state,{trashBusy:false});}
     };
-    return {getSnapshot:()=>state.snapshot,subscribe:(fn:()=>void)=>{state.listeners.add(fn);return()=>{state.listeners.delete(fn);};},set:update,accept,remove,
+    const resolveConflict=(id:string,choice:"local"|"server")=>{
+      if(!current()||!writable)return null;const conflict=state.snapshot.conflicts[id];if(!conflict)return null;
+      if(choice==="local")return conflict.current?.visible?rebaseCanvasArtworkAction(conflict.action,conflict.current,conflict.undo):null;
+      const conflicts={...state.snapshot.conflicts};delete conflicts[id];const nodes=(state.snapshot.nodes||[]).filter(n=>n.id!==id);if(conflict.current?.visible)nodes.push(conflict.current.node);update(sortCanvasArtworks(nodes));publish(state,{conflicts});return null;
+    };
+    const clearConflict=(id:string)=>{const conflicts={...state.snapshot.conflicts};delete conflicts[id];publish(state,{conflicts});};
+    return {resolveConflict,clearConflict,history,getSnapshot:()=>state.snapshot,subscribe:(fn:()=>void)=>{state.listeners.add(fn);return()=>{state.listeners.delete(fn);};},set:update,accept,remove,
       merge:(ids:string[],extra?:()=>boolean)=>read(ids,extra),refresh:(extra?:()=>boolean)=>read(undefined,extra),load:()=>read(undefined,undefined,true),retry:()=>read(state.lastIds),loadTrash,trashAction};
   }
   return {bind};

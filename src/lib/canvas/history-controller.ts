@@ -5,7 +5,7 @@ import { canvasHistoryProject, canvasHistoryScope, compileCanvasHistory, type Ca
 import { CanvasHistoryRequestError, postCanvasHistory, type CanvasHistoryScope } from "./history-scope";
 
 type Attempt = { undo: boolean; operationId: string; operations: CanvasHistoryOperation[] };
-export type HistoryCommit = {action: CanvasHistoryAction; undo: boolean; operations: CanvasHistoryOperation[]; persisted: boolean; initial?:boolean;textNodes?:import("./text-document-model").CanvasTextNode[]};
+export type HistoryCommit = {artworkNodes?:import("./artwork-write").CanvasArtworkReceipt[];artworkIds?:string[];action: CanvasHistoryAction; undo: boolean; operations: CanvasHistoryOperation[]; persisted: boolean; initial?:boolean;textNodes?:import("./text-document-model").CanvasTextNode[]};
 type Services = {
   changed: () => void; readOnly: () => boolean;
   flush: () => Promise<unknown>; video: (id: string) => CanvasVideoNode | undefined;
@@ -13,6 +13,7 @@ type Services = {
   commit: (scope: CanvasHistoryScope, value: HistoryCommit) => void;
   pending: (scope: CanvasHistoryScope, action: Extract<CanvasHistoryAction,{kind:"pending-link"}>, undo: boolean) => void;
   conflict?:(scope:CanvasHistoryScope,value:NonNullable<CanvasHistoryRequestError["conflict"]>)=>void;
+  artworkConflict?:(scope:CanvasHistoryScope,value:NonNullable<CanvasHistoryRequestError["artworkConflict"]>,action:CanvasHistoryAction,undo:boolean)=>void;
   refresh: () => Promise<unknown>; warning: (message: string) => void;
 };
 
@@ -23,7 +24,7 @@ export function createCanvasHistoryController(services: Services) {
   const scopes = new WeakMap<CanvasHistoryAction,string>(), attempts = new WeakMap<CanvasHistoryAction,Attempt>();
   const flights = new WeakMap<CanvasHistoryAction,{undo:boolean;promise:Promise<HistoryCommit>}>();
   const queuedFlights = new WeakMap<CanvasHistoryAction,{undo:boolean;promise:Promise<HistoryCommit>}>();
-  const commands = new Map<string,{action:CanvasHistoryAction;scope:CanvasHistoryScope}>(), queues = new Map<string,Promise<unknown>>();
+  const commands = new Map<string,{action:CanvasHistoryAction;scope:CanvasHistoryScope;record?:boolean}>(), queues = new Map<string,Promise<unknown>>();
   const busy = {current:false};
   const list = (scope: CanvasHistoryScope) => ({undo:undo.filter(a => scopes.get(a) === scope.key),redo:redo.filter(a => scopes.get(a) === scope.key)});
   const push = (scope: CanvasHistoryScope, action: CanvasHistoryAction) => {
@@ -54,9 +55,9 @@ export function createCanvasHistoryController(services: Services) {
         }
         let response;
         try{response=await postCanvasHistory(scope,{operationId:attempt.operationId,operations:attempt.operations});}
-        catch(error){if(error instanceof CanvasHistoryRequestError&&error.conflict){attempts.delete(action);services.conflict?.(scope,error.conflict);}throw error;}
-        const value = {action,undo:reverse,operations:attempt.operations,persisted:response.persisted,textNodes:response.textNodes};
-        attempts.delete(action);
+        catch(error){if(error instanceof CanvasHistoryRequestError&&error.conflict){attempts.delete(action);services.conflict?.(scope,error.conflict);}if(error instanceof CanvasHistoryRequestError&&error.artworkConflict){attempts.delete(action);services.artworkConflict?.(scope,error.artworkConflict,action,reverse);}throw error;}
+        const value = {action,undo:reverse,operations:attempt.operations,artworkNodes:response.artworkNodes,artworkIds:response.artworkIds,persisted:response.persisted,textNodes:response.textNodes};
+        attempts.delete(action);delete action.artworkBases;
         // A scoped document owner can acknowledge its own durable drafts after
         // navigation. UI adapters still guard all current-view React writes.
         try { services.commit(scope,value); }
@@ -81,7 +82,7 @@ export function createCanvasHistoryController(services: Services) {
     const pending=commands.get(scope.key);if(!pending)return;
     if(!pending.scope.documentCurrent()){commands.delete(scope.key);return;}
     const {action}=pending;
-    try { await applyRaw(scope,action,false);push(scope,action);commands.delete(scope.key); }
+    try { await applyRaw(scope,action,false);if(pending.record!==false)push(scope,action);commands.delete(scope.key); }
     catch(error){
       if(!attempts.has(action)||error instanceof CanvasHistoryRequestError&&error.status>=400&&error.status<500)commands.delete(scope.key);
       throw error;
@@ -92,18 +93,18 @@ export function createCanvasHistoryController(services: Services) {
     const run=previous.catch(()=>{}).then(work);queues.set(scope.key,run);
     return run.finally(()=>{if(queues.get(scope.key)===run)queues.delete(scope.key);});
   };
-  const submit = (scope:CanvasHistoryScope,prepare:()=>CanvasHistoryAction|null) => serialize(scope,async()=>{
+  const submit = (scope:CanvasHistoryScope,prepare:()=>CanvasHistoryAction|null,record=true) => serialize(scope,async()=>{
     scope.assertView();await resume(scope);scope.assertView();
     const action=prepare();if(!action)return false;
-    commands.set(scope.key,{action,scope});await resume(scope);return true;
+    commands.set(scope.key,{action,scope,record});await resume(scope);return true;
   });
   const transaction=<T>(scope:CanvasHistoryScope,work:()=>Promise<T>):Promise<T>=>serialize(scope,async()=>{
     scope.assertView();await resume(scope);
     return services.transaction(scope,async()=>{await services.flush();scope.assertView();if(services.readOnly())throw new Error("当前画布为只读");return work();});
   });
-  const acknowledge=(scope:CanvasHistoryScope,action:CanvasHistoryAction,persisted:boolean)=>{
+  const acknowledge=(scope:CanvasHistoryScope,action:CanvasHistoryAction,persisted:boolean,receipt?:Pick<HistoryCommit,"artworkNodes"|"artworkIds">)=>{
     const operations=compileCanvasHistory(action,false,services.video);
-    services.commit(scope,{action,undo:false,operations,persisted,initial:true});
+    services.commit(scope,{action,undo:false,operations,persisted,initial:true,...receipt});
   };
   // Existing properties/layout callers also drain earlier gestures. Otherwise a
   // later successful layout could be overwritten locally by an older receipt.
@@ -127,5 +128,6 @@ export function createCanvasHistoryController(services: Services) {
     } catch (error) { if (scope.viewCurrent()) services.warning(error instanceof Error ? error.message : "画布保存失败"); }
     finally { setBusy(false); }
   };
-  return {list,push,apply,submit,transaction,acknowledge,step,busy,setBusy};
+  const discard=(action:CanvasHistoryAction)=>{undo=undo.filter(a=>a!==action);redo=redo.filter(a=>a!==action);attempts.delete(action);services.changed();};
+  return {discard,list,push,apply,submit,transaction,acknowledge,step,busy,setBusy};
 }

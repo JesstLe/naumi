@@ -1,4 +1,6 @@
 "use client";
+import {artworkFields} from "@/lib/canvas/artwork-write";
+import {CanvasArtworkConflicts} from "./artwork-conflicts";
 import { NODE_W, NODE_H, NODE_LABEL_H, IMAGE_NODE_MIN_W, IMAGE_NODE_MIN_H, IMAGE_NODE_MAX_W, IMAGE_NODE_MAX_H, TEXT_NODE_MIN_W, TEXT_NODE_MIN_H, TEXT_NODE_MAX_W, TEXT_NODE_MAX_H, estimateTextNodeHeight, artworkNodeSize, flowNodeSize } from "@/lib/canvas/node-geometry";
 import type {CanvasPendingNode as Pend,CanvasGenerationTask} from "@/lib/canvas/scene-types";
 import { layoutGraph, projectCanvasScene } from "@/lib/canvas/scene-projection";
@@ -954,7 +956,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   const canvasHistory = useCanvasHistory({
     account: canvasAccountRef.current, project: activeKey, readOnly,
-    works: setWorks, textDocument: canvasTextDocument.history, settings: applyHistorySettings, selectedText: setSelectedTextId,
+    artworkDocument:canvasArtworkDocument.history, works: setWorks, textDocument: canvasTextDocument.history, settings: applyHistorySettings, selectedText: setSelectedTextId,
     flush: videoNodesStore.flush,
     video: videoNodesStore.getNode, refresh: videoNodesStore.refresh,
     pending: applyPendingLinkHistory, applied: onHistoryApplied, warning: flashTip,
@@ -1496,6 +1498,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }).catch(() => dimensionSyncRef.current.delete(id));
   }, [user, readOnly, setWorks]);
 
+  const artworkCommandsRef=useRef({history:canvasHistory,document:canvasArtworkDocument,warning:flashTip,failed:()=>t("canvas.genFail")});artworkCommandsRef.current={history:canvasHistory,document:canvasArtworkDocument,warning:flashTip,failed:()=>t("canvas.genFail")};
   const onArtworkCanvasResize = useCallback((
     id: string,
     bounds: { x: number; y: number; width: number; height: number }
@@ -1512,39 +1515,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       width > IMAGE_NODE_MAX_W ||
       height > IMAGE_NODE_MAX_H
     ) return;
-    const prev = worksRef.current?.find((art) => art.id === id);
-    setWorks((current) => current?.map((art) =>
-      art.id === id
-        ? { ...art, canvasX: x, canvasY: y, canvasWidth: width, canvasHeight: height }
-        : art
-    ) ?? current);
-    if (!user || readOnly) return;
-    void privateFetchRaw("/api/artworks/canvas-size", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id, x, y, width, height }),
-    });
-    // 手动缩放可撤销:从 worksRef 取拖拽前的位置与尺寸记一条 art-size
-    if (
-      prev &&
-      (prev.canvasX !== x ||
-        prev.canvasY !== y ||
-        prev.canvasWidth !== width ||
-        prev.canvasHeight !== height)
-    ) {
-      pushUndo({
-        kind: "art-size",
-        id,
-        from: {
-          x: prev.canvasX ?? x,
-          y: prev.canvasY ?? y,
-          width: prev.canvasWidth ?? width,
-          height: prev.canvasHeight ?? height,
-        },
-        to: { x, y, width, height },
-      });
-    }
-  }, [user, readOnly, pushUndo, setWorks]);
+    if(!user)return;const {history:historyOwner,document,warning,failed}=artworkCommandsRef.current,scope=historyOwner.scope;
+    void historyOwner.submit(scope,()=>{
+      const prev=document.getSnapshot().nodes?.find(art=>art.id===id);if(!prev)return null;
+      if(prev.canvasX===x&&prev.canvasY===y&&prev.canvasWidth===width&&prev.canvasHeight===height)return null;
+      return {kind:"art-size",id,from:{x:prev.canvasX??x,y:prev.canvasY??y,width:prev.canvasWidth??width,height:prev.canvasHeight??height},to:{x,y,width,height},artworkBases:{[id]:artworkFields(prev)}};
+    }).catch(error=>{if(scope.viewCurrent())warning(error instanceof Error?error.message:failed());});
+  }, [user, readOnly]);
 
   const onArtworkCanvasRatioRepair = useCallback((id: string, width: number, height: number) => {
     if (readOnly || nodeSettingsRef.current[id]?.locked) return;
@@ -1557,18 +1534,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       nextWidth > IMAGE_NODE_MAX_W ||
       nextHeight > IMAGE_NODE_MAX_H
     ) return;
-    setWorks((current) => current?.map((art) =>
-      art.id === id
-        ? { ...art, canvasWidth: nextWidth, canvasHeight: nextHeight }
-        : art
-    ) ?? current);
-    if (!user || readOnly) return;
-    void privateFetchRaw("/api/artworks/canvas-size", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id, width: nextWidth, height: nextHeight, sizeOnly: true }),
-    }).catch(() => {});
-  }, [user, readOnly, setWorks]);
+    if(!user)return;const {history:historyOwner,document,warning,failed}=artworkCommandsRef.current,scope=historyOwner.scope,prev=document.getSnapshot().nodes?.find(art=>art.id===id);if(!prev)return;
+    if(prev.canvasWidth===nextWidth&&prev.canvasHeight===nextHeight)return;
+    void historyOwner.submit(scope,()=>({kind:"art-dimensions",id,from:{width:prev.canvasWidth??nextWidth,height:prev.canvasHeight??nextHeight},to:{width:nextWidth,height:nextHeight},artworkBases:{[id]:artworkFields(prev)}}),false).catch(error=>{if(scope.viewCurrent())warning(error instanceof Error?error.message:failed());});
+  }, [user, readOnly]);
 
   const requestNodeRename = useCallback((id: string, label: string) => {
     if(readOnly || nodeSettingsRef.current[id]?.locked)return;
@@ -2143,69 +2112,20 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       }
       return;
     }
-    const cur = (works ?? []).find((w) => w.id === id);
-    if (!cur || cur.title === name) return;
-    setWorks((prev) =>
-      prev ? prev.map((w) => (w.id === id ? { ...w, title: name } : w)) : prev
-    );
-    try {
-      const res = await privateFetchRaw("/api/artworks/rename", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: user.email, id, title: name }),
-      });
-      await expectJsonOk(res, t("canvas.genFail"));
-      pushUndo({ kind: "rename", id, from: cur.title, to: name });
-    } catch (e) {
-      setWorks((prev) =>
-        prev ? prev.map((w) => (w.id === id ? { ...w, title: cur.title } : w)) : prev
-      );
-      flashTip(e instanceof Error ? e.message : t("canvas.genFail"));
-    }
+    const scope=canvasHistory.scope;
+    try{await canvasHistory.submit(scope,()=>{const cur=canvasArtworkDocument.getSnapshot().nodes?.find(w=>w.id===id);return cur&&cur.title!==name?{kind:"rename",id,from:cur.title,to:name}:null;});}
+    catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.genFail"));}
   }
 
-  async function renameGeneratedArtwork(id: string, title: string) {
-    if (!user || !title.trim()) return;
-    setWorks((current) =>
-      current?.map((work) =>
-        work.id === id ? { ...work, title: title.trim() } : work
-      ) ?? current
-    );
-    await privateFetchRaw("/api/artworks/rename", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: user.email, id, title: title.trim() }),
-    }).catch(() => {});
+  async function renameGeneratedArtwork(id:string,title:string){
+    if(!user||!title.trim())return;const cur=canvasArtworkDocument.getSnapshot().nodes?.find(w=>w.id===id);if(!cur||cur.title===title.trim())return;
+    const scope=canvasHistory.scope;try{await canvasHistory.submit(scope,()=>({kind:"rename",id,from:cur.title,to:title.trim().slice(0,80)}),false);}catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.genFail"));}
   }
 
-  async function toggleNodeMark() {
-    if (!selected || !user || readOnly) return;
-    const id = selected.id;
-    const previous = !!selected.marked;
-    const marked = !previous;
-    setWorks((items) =>
-      items?.map((item) => (item.id === id ? { ...item, marked } : item)) ?? items
-    );
-    try {
-      const response = await privateFetchRaw("/api/artworks/mark", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id, marked }),
-      });
-      await expectJsonOk(response, t("canvas.genFail"));
-      pushUndo({
-        kind: "mark",
-        changes: [{ id, from: previous, to: marked }],
-      });
-      flashTip(t(marked ? "canvas.dockMarkedTip" : "canvas.dockUnmarkedTip"));
-    } catch (error) {
-      setWorks((items) =>
-        items?.map((item) =>
-          item.id === id ? { ...item, marked: previous } : item
-        ) ?? items
-      );
-      flashTip(error instanceof Error ? error.message : t("canvas.genFail"));
-    }
+  async function toggleNodeMark(){
+    if(!selected||!user||readOnly)return;const id=selected.id,scope=canvasHistory.scope;
+    try{await canvasHistory.submit(scope,()=>{const cur=canvasArtworkDocument.getSnapshot().nodes?.find(w=>w.id===id);return cur?{kind:"mark",changes:[{id,from:!!cur.marked,to:!cur.marked}]}:null;});}
+    catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.genFail"));}
   }
 
   async function saveRename(key: string) {
@@ -3111,6 +3031,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(choice!=="local"||!saved||!scope.documentCurrent())return;
     canvasHistory.record(scope,conflict?.current?{kind:"text-patch",id:saved.id,from:textPatchOf(conflict.current),to:textPatchOf(saved)}:{kind:"text-add",records:[saved]});
   }
+  async function resolveArtworkConflict(id:string,choice:"local"|"server"){
+    const scope=canvasHistory.scope,conflict=canvasArtworkDocument.conflicts[id],action=canvasArtworkDocument.resolveConflict(id,choice);if(!action){if(choice==="server"&&conflict)canvasHistory.discard(conflict.action);return;}
+    try{await canvasHistory.submit(scope,()=>action);if(scope.documentCurrent()){canvasArtworkDocument.clearConflict(id);if(conflict)canvasHistory.discard(conflict.action);}}catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.genFail"));}
+  }
   function doUndo() { return canvasHistory.doUndo(); }
   function doRedo() { return canvasHistory.doRedo(); }
   function applyPendingLinkHistory(act: Extract<UndoAct,{kind:"pending-link"}>, undo: boolean) {
@@ -3289,132 +3213,20 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     );
   }
 
-  async function markBatchSelection() {
-    if (!user || readOnly || selectedBatchArts.length < 2) return;
-    const marked = !selectedBatchAllMarked;
-    try {
-      const responses = await Promise.all(
-        selectedBatchIds.map((id) =>
-          privateFetchRaw("/api/artworks/mark", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ id, marked }),
-          })
-        )
-      );
-      if (responses.some((response) => !response.ok)) throw new Error();
-      const ids = new Set(selectedBatchIds);
-      // 批量标记可撤销:逐 id 记录原值(部分已标记的节点原值不同)
-      pushUndo({
-        kind: "mark",
-        changes: selectedBatchArts.map((art) => ({
-          id: art.id,
-          from: !!art.marked,
-          to: marked,
-        })),
-      });
-      setWorks((items) =>
-        items?.map((item) => (ids.has(item.id) ? { ...item, marked } : item)) ??
-        items
-      );
-      flashTip(
-        fmt(t(marked ? "canvas.batchMarked" : "canvas.batchUnmarked"), {
-          n: selectedBatchIds.length,
-        })
-      );
-    } catch {
-      await refetchWorks().catch(()=>{});
-      flashTip(t("canvas.genFail"));
-    }
+  async function markBatchSelection(){
+    if(!user||readOnly||selectedBatchArts.length<2)return;const scope=canvasHistory.scope,ids=new Set(selectedBatchIds),marked=!selectedBatchAllMarked;
+    try{await canvasHistory.submit(scope,()=>({kind:"mark",changes:(canvasArtworkDocument.getSnapshot().nodes||[]).filter(a=>ids.has(a.id)).map(a=>({id:a.id,from:!!a.marked,to:marked}))}));}
+    catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.genFail"));}
   }
-
-  async function applyCanvasGroupAssignments(
-    assignments: Array<{ id: string; canvasGroupId: string | null }>
-  ) {
-    if (!assignments.length) return assignments;
-    const response = await privateFetchRaw("/api/canvas/groups", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ assignments }),
-    });
-    const data = await expectJsonOk(response, t("canvas.groupFail"));
-    const applied = Array.isArray(data?.assignments)
-      ? (data.assignments as Array<{ id: string; canvasGroupId: string | null }>)
-      : assignments;
-    const groupById = new Map(applied.map((item) => [item.id, item.canvasGroupId]));
-    setWorks((current) =>
-      current?.map((artwork) =>
-        groupById.has(artwork.id)
-          ? { ...artwork, canvasGroupId: groupById.get(artwork.id) ?? null }
-          : artwork
-      ) ?? current
-    );
-    return applied;
+  async function groupBatchSelection(){
+    if(!user||readOnly||selectedBatchArts.length<2)return;const scope=canvasHistory.scope,ids=new Set(selectedBatchIds),group=`canvas-group-${browserRandomUUID()}`;
+    try{await canvasHistory.submit(scope,()=>({kind:"canvas-group",changes:(canvasArtworkDocument.getSnapshot().nodes||[]).filter(a=>ids.has(a.id)).map(a=>({id:a.id,from:a.canvasGroupId??null,to:group}))}));}
+    catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.groupFail"));}
   }
-
-  async function groupBatchSelection() {
-    if (!user || readOnly || selectedBatchArts.length < 2) return;
-    const before = new Map(
-      selectedBatchArts.map((artwork) => [artwork.id, artwork.canvasGroupId ?? null])
-    );
-    try {
-      const response = await privateFetchRaw("/api/canvas/groups", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "group", ids: selectedBatchIds }),
-      });
-      const data = await expectJsonOk(response, t("canvas.groupFail"));
-      const applied = (data.assignments ?? []) as Array<{
-        id: string;
-        canvasGroupId: string | null;
-      }>;
-      if (applied.length !== selectedBatchIds.length) throw new Error(t("canvas.groupFail"));
-      const groupById = new Map(applied.map((item) => [item.id, item.canvasGroupId]));
-      setWorks((current) =>
-        current?.map((artwork) =>
-          groupById.has(artwork.id)
-            ? { ...artwork, canvasGroupId: groupById.get(artwork.id) ?? null }
-            : artwork
-        ) ?? current
-      );
-      pushUndo({
-        kind: "canvas-group",
-        changes: applied.map((item) => ({
-          id: item.id,
-          from: before.get(item.id) ?? null,
-          to: item.canvasGroupId,
-        })),
-      });
-      flashTip(fmt(t("canvas.groupDone"), { n: applied.length }));
-    } catch (error) {
-      flashTip(error instanceof Error ? error.message : t("canvas.groupFail"));
-    }
-  }
-
-  async function ungroupBatchSelection() {
-    if (!user || readOnly || !active || !selectedBatchCanvasGroupId) return;
-    const members = active.members.filter(
-      (artwork) => artwork.canvasGroupId === selectedBatchCanvasGroupId
-    );
-    if (!members.length) return;
-    const assignments = members.map((artwork) => ({
-      id: artwork.id,
-      canvasGroupId: null,
-    }));
-    try {
-      await applyCanvasGroupAssignments(assignments);
-      pushUndo({
-        kind: "canvas-group",
-        changes: members.map((artwork) => ({
-          id: artwork.id,
-          from: selectedBatchCanvasGroupId,
-          to: null,
-        })),
-      });
-      flashTip(fmt(t("canvas.ungroupDone"), { n: members.length }));
-    } catch (error) {
-      flashTip(error instanceof Error ? error.message : t("canvas.groupFail"));
-    }
+  async function ungroupBatchSelection(){
+    if(!user||readOnly||!active||!selectedBatchCanvasGroupId)return;const scope=canvasHistory.scope,group=selectedBatchCanvasGroupId;
+    try{await canvasHistory.submit(scope,()=>({kind:"canvas-group",changes:(canvasArtworkDocument.getSnapshot().nodes||[]).filter(a=>a.canvasGroupId===group).map(a=>({id:a.id,from:a.canvasGroupId??null,to:null}))}));}
+    catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.groupFail"));}
   }
 
   async function stitchBatchSelection() {
@@ -4502,11 +4314,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         setGenerationTasks(current=>current.map(task=>task.id===id?{...task,position:{...point}}:task));
       }else if(id.startsWith("pend-"))setPendNodes(current=>current.map(node=>node.id===id?{...node,x:point.x,y:point.y}:node));
     },
-    commit:(moves,scope)=>canvasHistory.submit(scope,()=>compileCanvasMove(moves,id=>{
+    commit:(moves,scope)=>canvasHistory.submit(scope,()=>{const action=compileCanvasMove(moves,id=>{
       const video=videoNodesStore.getNode(id);if(video)return {x:video.x,y:video.y};
       const node=id.startsWith("text-")?canvasTextDocument.getSnapshot().nodes.find(node=>node.id===id):canvasArtworkDocument.getSnapshot().nodes?.find(node=>node.id===id);
       return node&&typeof node.canvasX==="number"&&typeof node.canvasY==="number"?{x:node.canvasX,y:node.canvasY}:undefined;
-    })),
+    });if(action)action.artworkBases=Object.fromEntries(moves.flatMap(move=>{const node=canvasArtworkDocument.getSnapshot().nodes?.find(n=>n.id===move.id);return node?[[node.id,artworkFields(node)]]:[]}));return action;}),
   });
 
   // Explicit node focus / deep links move the view, never the nodes.
@@ -4857,7 +4669,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         <span>{canvasTextDocument.error}</span><button className="font-semibold underline" onClick={()=>void canvasTextDocument.load()}>重新加载文字</button>
       </div>}
       </div>}
-      {Object.keys(canvasTextDocument.conflicts).length>0&&<div className="fixed bottom-20 left-1/2 z-[200] flex -translate-x-1/2 flex-col gap-2"><CanvasTextConflicts conflicts={canvasTextDocument.conflicts} nodes={textNodes} onResolve={resolveTextConflict}/></div>}
+      {(Object.keys(canvasTextDocument.conflicts).length>0||Object.keys(canvasArtworkDocument.conflicts).length>0)&&<div className="fixed bottom-20 left-1/2 z-[200] flex -translate-x-1/2 flex-col gap-2"><CanvasArtworkConflicts conflicts={canvasArtworkDocument.conflicts} onResolve={resolveArtworkConflict} />
+          <CanvasTextConflicts conflicts={canvasTextDocument.conflicts} nodes={textNodes} onResolve={resolveTextConflict}/></div>}
       {unsavedTextCount>0 && <div role="alert" className="fixed bottom-6 left-1/2 z-[200] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-amber-500 bg-background px-4 py-3 text-sm shadow-lg">
         <span>{t("canvas.unsavedChanges")} ({unsavedTextCount})</span>
         <button className="font-semibold underline" onClick={()=>void canvasTextDocument.retry()}>{t("canvas.retrySave")}</button>

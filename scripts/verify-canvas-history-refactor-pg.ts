@@ -16,7 +16,7 @@ async function main() {
     const owner="history-r3b@fixture.test",other="other-r3b@fixture.test";
     await db.getOrCreateUser(owner);await db.getOrCreateUser(other);
     const art=(id:string)=>({id,title:id,category:"main" as const,prompt:"fixture",createdAt:new Date().toISOString(),status:"completed" as const,image:"/media/fixture.png",gradient:"",groupId:"A",canvasX:10,canvasY:20});
-    await db.addArtworks(owner,[art("a")]);await db.addArtworks(other,[art("other")]);
+    await db.addArtworks(owner,[art("a")]);await db.addArtworks(other,[art("other")]);await db.getPool().query("UPDATE app_artworks SET canvas_x=10,canvas_y=20 WHERE email=$1",[owner]);
     const text={id:"text-a",projectKey:"tree:A",title:"copy",prompt:"",content:"before",status:"completed" as const,canvasX:10,canvasY:20,width:380,height:260,sourceIds:[],targetIds:[],productIds:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
     await db.upsertCanvasTextNode(owner,text);
     const video=await import("../src/lib/canvas/video-node-repository");await video.ensureVideoNodeSchema();

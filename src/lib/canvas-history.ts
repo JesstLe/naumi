@@ -1,3 +1,4 @@
+import {writeCanvasArtworkTx,readCanvasArtworkReceiptTx} from "./canvas/artwork-write-repository";
 import "server-only";
 import {validateCanvasTextLinksTx} from "./canvas/text-node-links";
 import {mergeCanvasTextWrite,assertCanvasTextVersion,CanvasTextWriteConflict} from "./canvas/text-write";
@@ -35,7 +36,7 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
   if(input.operations.some(op=>op.type==="video-result")){
     // Replay first, even if a previously accepted input has since been removed. Media I/O never holds a transaction connection.
     const previous=(await getPool().query("SELECT fingerprint FROM app_canvas_history_ops WHERE email=$1 AND id=$2",[email,input.operationId])).rows[0];
-    if(previous){if(previous.fingerprint!==fingerprint)throw new Error("操作编号已使用");return;}
+    if(previous){if(previous.fingerprint!==fingerprint)throw new Error("操作编号已使用");}else
     for(const op of input.operations){if(op.type!=="video-result"||!op.artworkId||verifiedResults.has(op.artworkId))continue;
       const art=(await listArtworksByIds(email,[op.artworkId]))[0],key=storageKeyFromManagedUrl(art?.videoUrl||"");if(!art||art.status!=="completed"||!key)throw new Error("视频素材不存在或无权访问");
       const media=await verifiedOwnedMedia(email,key,art.id);if(!media.mimeType.startsWith("video/"))throw new Error("请选择真实视频素材");verifiedResults.set(art.id,art.videoUrl!);
@@ -44,6 +45,8 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
   const client = await getPool().connect();
   const textIds=[...new Set(input.operations.flatMap(op=>op.type==="text-restore"?[op.node.id]:op.type==="text-delete"||op.type==="text-patch"||op.type==="position"&&op.text?[op.id]:[]))];
   const textReceipt=async()=>({textNodes:textIds.length?(await client.query("SELECT * FROM app_canvas_text_nodes WHERE email=$1 AND id=ANY($2::text[])",[email,textIds])).rows.map(mapCanvasTextNode):[]});
+  const artworkIds=[...new Set(input.operations.flatMap(op=>op.type==="text-restore"||op.type==="text-delete"||op.type==="text-patch"||op.type.startsWith("video-")||op.type==="position"&&op.text||op.type==="node-settings"&&(op.text||op.video)?[]:"id" in op?[op.id]:[]))];
+  const receipt=async()=>({...await textReceipt(),artworkNodes:await readCanvasArtworkReceiptTx(client,email,artworkIds),artworkIds});
   try {
     await client.query("BEGIN");
     // Serialize steps per owner, including concurrent retries of one request.
@@ -51,7 +54,7 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
     const previous = await client.query("SELECT fingerprint FROM app_canvas_history_ops WHERE email=$1 AND id=$2", [email,input.operationId]);
     if (previous.rows.length) {
       if (previous.rows[0].fingerprint !== fingerprint) throw new Error("操作编号已使用");
-      const receipt=await textReceipt();await client.query("COMMIT"); return receipt;
+      const saved=await receipt();await client.query("COMMIT"); return saved;
     }
     if(hasVideo)await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${email}`]);
     for (const [index,op] of input.operations.entries()) {
@@ -82,6 +85,10 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
         if (!result.rowCount) throw new Error("文字节点不存在或无权修改");
         continue;
       }
+      if(op.type==="art-dimensions"||op.type==="visibility"||op.type==="rename"||op.type==="size"||op.type==="mark"||op.type==="group"||op.type==="position"&&!op.text){
+        const fields=op.type==="art-dimensions"?{canvasWidth:op.width,canvasHeight:op.height}:op.type==="visibility"?{visible:op.visible}:op.type==="rename"?{title:op.title}:op.type==="size"?{canvasX:op.x,canvasY:op.y,canvasWidth:op.width,canvasHeight:op.height}:op.type==="mark"?{marked:op.marked}:op.type==="group"?{canvasGroupId:op.value}: {canvasX:op.x,canvasY:op.y};
+        await writeCanvasArtworkTx(client,email,op.id,fields,op.expectedArtwork);continue;
+      }
       const text = op.type === "text-delete" || op.type === "text-patch" || ((op.type === "position" || op.type === "node-settings") && op.text);
       const video=op.type==="node-settings"&&op.video===true;
       const table = text ? "app_canvas_text_nodes" : video?"app_canvas_video_nodes":"app_artworks";
@@ -106,19 +113,9 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
           [email,op.id,op.text ? "text" : "image",JSON.stringify(op.settings)]);
         continue;
       }
-      if (op.type === "visibility") await client.query("UPDATE app_artworks SET deleted_at=CASE WHEN $3 THEN NULL ELSE now() END WHERE email=$1 AND id=$2",[email,op.id,op.visible]);
-      else if (op.type === "text-delete") await client.query("DELETE FROM app_canvas_text_nodes WHERE email=$1 AND id=$2",[email,op.id]);
+      if (op.type === "text-delete") await client.query("DELETE FROM app_canvas_text_nodes WHERE email=$1 AND id=$2",[email,op.id]);
       else if (op.type === "position") await client.query(`UPDATE ${table} SET canvas_x=$3,canvas_y=$4 WHERE email=$1 AND id=$2`,[email,op.id,textPosition?.canvasX??op.x,textPosition?.canvasY??op.y]);
-      else if (op.type === "rename") await client.query("UPDATE app_artworks SET title=$3 WHERE email=$1 AND id=$2",[email,op.id,op.title]);
-      else if (op.type === "size") await client.query("UPDATE app_artworks SET canvas_x=$3,canvas_y=$4,canvas_width=$5,canvas_height=$6 WHERE email=$1 AND id=$2",[email,op.id,op.x,op.y,op.width,op.height]);
-      else if (op.type === "mark") await client.query("UPDATE app_artworks SET marked=$3 WHERE email=$1 AND id=$2",[email,op.id,op.marked]);
-      else if (op.type === "group") {
-        if (op.value) {
-          const other = await client.query("SELECT 1 FROM app_artworks WHERE email=$1 AND canvas_group_id=$2 AND group_id IS DISTINCT FROM $3 AND deleted_at IS NULL",[email,op.value,row.group_id]);
-          if (other.rows.length) throw new Error("不能跨项目成组");
-        }
-        await client.query("UPDATE app_artworks SET canvas_group_id=$3 WHERE email=$1 AND id=$2",[email,op.id,op.value]);
-      } else if (op.type === "text-patch") {
+ else if (op.type === "text-patch") {
         const current=mapCanvasTextNode(row);
         const f=op.expected?mergeCanvasTextWrite(op.id,current,op.fields,op.expected):op.fields;
         if(op.expected)await validateCanvasTextLinksTx(client,email,{...current,...f});
@@ -137,7 +134,7 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
       }
     }
     await client.query("INSERT INTO app_canvas_history_ops(id,email,fingerprint) VALUES($1,$2,$3)",[input.operationId,email,fingerprint]);
-    const receipt=await textReceipt();await client.query("COMMIT");return receipt;
+    const saved=await receipt();await client.query("COMMIT");return saved;
   } catch (error) { await client.query("ROLLBACK"); throw error; }
   finally { client.release(); }
 }
