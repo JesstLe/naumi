@@ -207,7 +207,7 @@ export function createModelRuntime(deps: Dependencies) {
   };
   return {
     current: () => deps.repo.current(), byVersion: (version: number) => deps.repo.byVersion(version),
-    publicCatalog: async (modality: Modality, feature?: FeatureId) => {const snapshot=await deps.repo.current(),catalog=publicModelCatalog(snapshot,modality,feature);if(!feature)return catalog;const billing=await deps.billing();return {...catalog,models:catalog.models.map(model=>{const v=modelCreditView(billing,snapshot,feature,model.id);const unit=v.unit==="image"?"张":v.unit==="item"?"项":"次";return {...model,creditHint:v.credits===null?"价格需核对":`${v.estimated?"预估":"参考"}${modality==="image"?"标准1K ":""}${v.credits} 积分/${unit}`};})};},
+    publicCatalog: async (modality: Modality, feature?: FeatureId, supplied?: ModelSnapshot) => {const snapshot=supplied??await deps.repo.current(),catalog=publicModelCatalog(snapshot,modality,feature);if(!feature)return catalog;const billing=await deps.billing();return {...catalog,models:catalog.models.map(model=>{const v=modelCreditView(billing,snapshot,feature,model.id);const unit=v.unit==="image"?"张":v.unit==="item"?"项":"次";return {...model,creditHint:v.credits===null?"价格需核对":`${v.estimated?"预估":"参考"}${modality==="image"?"标准1K ":""}${v.credits} 积分/${unit}`};})};},
     prepareExecution,
     async validateExecutionProjection(input: { modelVersion: number; billingVersion: number; digest: string }) {
       await ready();
