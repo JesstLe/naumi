@@ -11,7 +11,14 @@ export const creationFiltersSchema = z.object({
   from:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),to:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 }).superRefine((v,c)=>{for(const k of ['from','to'] as const)if(v[k]&&(!Number.isFinite(Date.parse(v[k]!))||new Date(v[k]!).toISOString().slice(0,10)!==v[k]))c.addIssue({code:'custom',message:'日期无效'});if(v.from&&v.to&&(v.to<v.from||Date.parse(v.to)-Date.parse(v.from)>366*86400000))c.addIssue({code:'custom',message:'日期范围无效'});if(v.period==='all'&&(v.source!=='legacy'||v.from||v.to))c.addIssue({code:'custom',message:'全部日期仅用于未指定日期的历史记录'});});
 export type CreationFilters = z.infer<typeof creationFiltersSchema>;
-export type CreationSummary = {id:string;title:string;actorEmail:string;actorName:string;tenantId:string|null;scopeKind:'personal'|'tenant'|'legacy_unconfirmed';sourceKind:string;status:CreationStatus;acceptedAt:string;settledCredits:number|null;thumbnailAssetId:string|null;completeness:EvidenceState};
+/** Platform-only, allowlisted diagnostic projection. Never a retry permission. */
+export type CreationFailure = {
+ title:string;description:string;stage:string;code:string|null;evidence:'supplier_receipt'|'task_state'|'not_recorded';
+ observedAt:string|null;incomplete:boolean;
+ supplier:{provider:string|null;model:string|null;state:string;costStatus:string;httpStatus:number|null}|null;
+ customerBilling:{state:string;charged:number|null;reserved:number|null}|null;
+};
+export type CreationSummary = {id:string;title:string;actorEmail:string;actorName:string;tenantId:string|null;scopeKind:'personal'|'tenant'|'legacy_unconfirmed';sourceKind:string;status:CreationStatus;acceptedAt:string;settledCredits:number|null;thumbnailAssetId:string|null;completeness:EvidenceState;failure?:CreationFailure};
 export type CreationAsset = {id:string;direction:'input'|'output';role:string;position:number;inputPosition?:number;executionRef?:string;variant:'original'|'processed';mime:string|null;bytes:number|null;hash:string|null;availability:EvidenceState;mediaType:'image'|'video'|'audio'|'file';text?:string};
 export type CreationEvent = {id:string;eventKey:string;type:string;status:string;summary:string;occurredAt:string;observedAt:string};
 export type EvidencePagination={page:number;size:number;total:number};

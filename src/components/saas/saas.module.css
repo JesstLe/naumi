@@ -11,3 +11,12 @@
 
 .page:has(.tenantHeader)>.heading{margin-bottom:8px}.detail dl{margin:0}.detail .mediaGrid{margin:12px 0}.detail .mediaBox img{height:240px;max-height:240px;aspect-ratio:auto}.detail .facts{padding:11px 0}.modelChip{display:inline-block;margin-top:7px;font-size:12px;color:#647993}.detail .timeline{margin:16px 0}.detail .billing{padding:14px 0;margin-top:10px}
 @media(max-width:760px){.page:has(.tenantHeader)>.heading{margin-bottom:16px}.detail .mediaBox img{height:auto;max-height:260px;aspect-ratio:1.06}}
+.failureSummary{color:#a74721!important;font-size:12px;line-height:1.55;overflow-wrap:anywhere;margin-top:8px!important}
+.failurePanel{margin:16px 0;padding:16px 18px;border:1px solid #efd8c8;border-radius:10px;background:#fffaf5;color:#544135}
+.failurePanel h3{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:15px;margin:0 0 8px;color:#8a3515}
+.failurePanel code{font-size:12px;padding:2px 6px;border-radius:4px;background:#f7e9dd;color:#7c4028}
+.failurePanel>p{font-size:13px;line-height:1.65;margin:0 0 12px;color:#756456}
+.failurePanel dl{margin:0;display:grid;gap:8px}
+.failurePanel dl>div{display:grid;grid-template-columns:128px minmax(0,1fr);gap:12px;font-size:12px;line-height:1.65}
+.failurePanel dt{color:#857365}.failurePanel dd{margin:0;overflow-wrap:anywhere}
+@media(max-width:600px){.failurePanel{padding:13px}.failurePanel dl>div{grid-template-columns:1fr;gap:1px}}

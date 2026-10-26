@@ -16,6 +16,17 @@ function acceptedParent() {
   return span?.canAdmit?{id:span.id,account:null,instanceId:identity.instanceId,bootId:identity.bootId}:currentAcceptedParent();
 }
 
+function reportFailure(scope: BackgroundScope, stage: "action" | "finish", error: unknown) {
+  // Preserve a useful failure stage without logging SQL, prompts or credentials.
+  let code = "UNCLASSIFIED";
+  try {
+    const value = error as { code?: unknown; message?: unknown };
+    if (typeof value?.code === "string" && /^(?:[0-9A-Z]{5}|E[A-Z_]{2,40}|RELEASE_[A-Z_]{1,60})$/.test(value.code)) code = value.code;
+    else if (typeof value?.message === "string" && /timeout exceeded when trying to connect/i.test(value.message)) code = "PG_POOL_TIMEOUT";
+  } catch { /* Diagnostic access must never replace the original exception. */ }
+  console.error(`[release-background] scope=${scope} stage=${stage} code=${code}`);
+}
+
 /** The release lease observes this JS promise; original business lease/locking
  * still decides whether paid work may execute. No retry/submission occurs here. */
 export async function withBackgroundActivity<T>(scope: BackgroundScope, workKey: string, admission: "claim" | "continuation", action: () => Promise<T>, onDraining: () => Promise<T> | T): Promise<T> {
@@ -26,11 +37,14 @@ export async function withBackgroundActivity<T>(scope: BackgroundScope, workKey:
   const timer = setInterval(() => { void heartbeatActivity(id).catch(() => undefined); }, 10000); timer.unref?.();
   const span: Span = { id, scope, admission, canAdmit: admission==="claim"||!!parent, timer };
   return contexts.run(span, async () => {
+    let stage: "action" | "finish" = "action";
     try {
       const result = await action();
+      stage = "finish";
       await finishActivity(id, "background-promise-completed");
       return result;
     } catch (error) {
+      reportFailure(scope, stage, error);
       // An exception is not proof that a remote accepted operation did not run.
       // Preserve ambiguity instead of making retirement see a fabricated zero.
       await unknownActivity(id, "background-promise-unconfirmed").catch(() => undefined);
@@ -55,8 +69,9 @@ export async function detachBackgroundActivity(scope: BackgroundScope, workKey: 
   const timer = setInterval(() => { void heartbeatActivity(id).catch(() => undefined); }, 10000); timer.unref?.();
   const span: Span = { id, scope, admission, canAdmit: admission==="claim"||!!parent, timer };
   void trackBackgroundWork(contexts.run(span, async () => {
-    try { await action(); await finishActivity(id, "detached-background-completed"); return true; }
-    catch { await unknownActivity(id, "detached-background-unconfirmed").catch(() => undefined); return false; }
+    let stage: "action" | "finish" = "action";
+    try { await action(); stage = "finish"; await finishActivity(id, "detached-background-completed"); return true; }
+    catch (error) { reportFailure(scope, stage, error); await unknownActivity(id, "detached-background-unconfirmed").catch(() => undefined); return false; }
     finally { clearInterval(timer); }
   }).then(finished => finished && onSettled ? contexts.exit(onSettled) : undefined)).catch(() => undefined);
   return true;

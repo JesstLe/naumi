@@ -8,6 +8,7 @@ import {ensureCreationSchema} from './creation-schema';
 import {creationSourceEvidence,videoWorkflowEvidenceAvailable} from './creation-source-evidence';
 import {publicCreationParameters} from './creation-writer';
 import {creationStatus,type CreationFilters,type CreationPage,type CreationSummary,type CreationDetail,type CreationAsset} from './creation-contracts';
+import {creationFailures,hasCreationFailure} from './creation-failures';
 
 export type CreationReader={platform:true}|{platform:false;actor:TeamActor;tenantId:string};
 async function scoped<T>(reader:CreationReader,run:(tx:PoolClient,visible:string[]|null)=>Promise<T>){
@@ -84,7 +85,9 @@ export async function listCreations(reader:CreationReader,f:CreationFilters):Pro
  COALESCE((SELECT jsonb_agg(p ORDER BY accepted_at DESC,id DESC) FROM page_rows p),'[]'::jsonb) AS items,
  COALESCE((SELECT jsonb_agg(m ORDER BY "settledCredits" DESC,email) FROM member_usage m),'[]'::jsonb) AS member_usage FROM aggregate`,[...values,f.size,(f.page-1)*f.size])).rows[0];
  const {items:rows,member_usage:memberUsage,...aggregate}=result;const total=Number(aggregate.total);
- return {items:rows.map(summary),pagination:{total,page:f.page,size:f.size},appliedFilters:f,generatedAt:new Date().toISOString(),scope:reader.platform?'platform':visible?'member':'tenant',availability:'available',summary:{total,activeMembers:aggregate.active_members,settledCredits:aggregate.charged??null,pending:aggregate.pending,failed:aggregate.failed,needsReview:aggregate.review},memberUsage};
+  const items:CreationSummary[]=rows.map(summary);
+  if(reader.platform){const failures=await creationFailures(tx,items.filter(i=>hasCreationFailure(i.status)).map(i=>({id:i.id,email:i.actorEmail})));for(const item of items)if(failures.has(item.id))item.failure=failures.get(item.id);}
+  return {items,pagination:{total,page:f.page,size:f.size},appliedFilters:f,generatedAt:new Date().toISOString(),scope:reader.platform?'platform':visible?'member':'tenant',availability:'available',summary:{total,activeMembers:aggregate.active_members,settledCredits:aggregate.charged??null,pending:aggregate.pending,failed:aggregate.failed,needsReview:aggregate.review},memberUsage};
 });}
 async function authorizedRecord(tx:PoolClient,reader:CreationReader,id:string,visible:string[]|null){
  const row=(await tx.query(`${await recordSelect(tx)} WHERE c.id=$1 ${reader.platform?'':'AND c.tenant_id=$2'}`,[id,...(reader.platform?[]:[reader.tenantId])])).rows[0];
@@ -113,7 +116,9 @@ export async function creationDetail(reader:CreationReader,id:string,pages:Detai
  const charged=settled?ops.reduce((n,o)=>n+Number(o.charged_credits),0):noCharge?0:null;
  const sumKnown=(key:string)=>ops.length&&ops.every(o=>o[key]!==null&&o[key]!==undefined)?ops.reduce((n,o)=>n+Number(o[key]),0):null;
  const recordedParams=row.parameters_snapshot?.values||{};
+  const failure=reader.platform&&hasCreationFailure(row.live_status||row.status)?(await creationFailures(tx,[{id:row.id,email:row.actor_email}])).get(row.id):undefined;
  return {...summary(row),settledCredits:charged,evidencePending:sourceEvidence.pending,
+  ...(failure?{failure}:{}),
  request:{state:row.request_snapshot?.state||'not_recorded',text:row.request_snapshot?.text??null},
  parameters:{state:row.parameters_snapshot?.state||'not_recorded',values:reader.platform?recordedParams:publicCreationParameters(recordedParams)},
  model:{state:row.model_snapshot?.state||'not_recorded',label:row.model_snapshot?.label||null},

@@ -1,5 +1,7 @@
 # 渐进迁移与集中验收台账
 
+2026-10-26 R5I后三模块main普通整合：c1578088接73384aaa，三冲突已按真实owner迁入，未恢复巨型durable/存储实现；保留Workerinflight排空、真实失败证据与原素材查询，新增bind失败只释放own lease。完整旧c157 cleanup两例转UNKNOWN已重现；合并后真实PG清理8/失败证据38、父回执25、项目素材33、UI19、unit15/Python14、Linux图片Worker71/实际Next六入口20通过，SCC静态/全导入仍0，tsc通过/lint原3warning保留。双parent提交、4380hash回滚、四产物/远端/清理以main-sync DELIVERY为准；计数归零，外围UI-CAS/R6继续，不合main、不部署。见 [整合记录](../changes/2026-10-26-refactor-main-sync-r5i.md)。
+
 2026-10-26 R5I：对象存储raw/managed-read/upload/metadata-query、项目访问/key、TeamError和Fleet发布合同按owner分离；77存储/媒体消费者及其它调用改绑，旧出口同函数/对象兼容。7194原声明保持、37迁移、2动态import改目标、算法变化0；emitted静态环2→0/全导入环4→0，raw22→8和wire1778→98输入只作结构指标。完整旧新团队/私有媒体/本地回退/项目/Fleet通过；真实项目PNG导入33、loopback存储20/远程优先20两侧通过，Linux图片Worker71/实际Next六入口20及tsc/lint通过。旧视频全站fixture缺Router的setup失败保留。四产物/4368hash副本回滚/patch/提交及三模块main整合以DELIVERY为准；外围UI-CAS/整包CI/基准容量/R6继续，不合main、不部署。见 [R5I记录](../changes/2026-10-26-leaf-owner-boundaries-r5i.md)。
 
 2026-10-26 R5H：功能绑定/默认/工具范围/兼容候选6个原规则归feature-model-policy，15实际生产消费者改绑；business和tool-scope只依赖纯规则，不再双向引用。7194原声明保持/6迁移/算法变化0，24配置13161决策旧新精确同、6兼容导出同对象/函数；旧两文件环拆除、其它SCC成员保持、新owner入环0。完整旧/新管理scope/价格、Canvas真实23、准备45、批次/抠图/工作台/家族和报价36通过；实际控件、完整类型/构建、4365hash副本回滚、patch、四产物与提交远端以R5H DELIVERY为准。真实Next管理控件通过；纠正Node启动import的正向编译分支，原正文/9真值表保持、health500→200；原observer/lint/Next失败留存不改PASS；同步后第2模块，剩余4全导入小环、外围UI-CAS/R6继续，不合main、不部署。见 [R5H记录](../changes/2026-10-26-feature-model-policy-r5h.md)。
@@ -228,3 +230,5 @@ R3B4更新：Canvas 11747→11576 行；详情与抠图/扩图/标注拥有 type
 R3B4 三模块同步已执行：`git fetch origin main` 与 `git merge --no-edit origin/main` 均 exit 0，origin/main=`905c8c635e41ff3f4443d43db9776d1db3aab469`，普通 merge 返回 `Already up to date.`；累计计数归零。本轮没有把候选合入 main。
 
 R3C1更新：Canvas 11576→10300行；183个保留函数AST正文未变，节点/投影/交互状态分责。基线27/74、新版30/98；32个SSR HTML相同，17组场景保持＋1组隐藏任务busy修正；400节点单改1对象替换400→1（非线上性能结论）。真实Canvas6、文字历史12、详情编辑5、普通生图5通过。同步后第1模块，下一R3C2，整体目标active。
+
+收尾再次fetch发现origin/main已推进到`b15d4761b938428c449531e2d8744401a38a2ec7`（原结果父回执与postaccept原因修复）。当前已完成并验证的普通整合来源固定`73384aaa`；新增提交另列下一轮待整合，不冒充已包含，不开启发布。

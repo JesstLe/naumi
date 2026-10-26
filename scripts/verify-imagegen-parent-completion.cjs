@@ -122,6 +122,7 @@ function fixture({runtime = true} = {}) {
     },
     async bindBackgroundActivity(id, key, token) {
       assert.equal(f.activities.get(id)?.state, 'active', 'real wrapper binds an active activity');
+      if (f.hooks.beforeBind) await f.hooks.beforeBind(id, key, token);
       Object.assign(f.activities.get(id), {key, token}); f.event('activity-bind', {id, key, token});
     },
     async heartbeatActivity() {},
@@ -344,6 +345,11 @@ function fixture({runtime = true} = {}) {
     },
   };
 
+  // Ownership-only aliases: execute the same fixture boundaries after the refactor.
+  for (const deps of Object.values(dependencies)) {
+    if (deps['@/lib/storage']) {deps['@/lib/media-upload']=deps['@/lib/storage'];deps['@/lib/object-storage/managed-read']=deps['@/lib/storage'];deps['@/lib/object-storage/runtime']=deps['@/lib/storage'];}
+    if (deps['@/lib/teams/server']) deps['@/lib/teams/errors']=deps['@/lib/teams/server'];
+  }
   dependencies['src/lib/image-jobs/runtime.ts']['@/lib/application/task-execution']={deferApplicationTask:async()=>false};
   dependencies['src/lib/image-jobs/runtime.ts']['@/lib/worker/inflight']=()=>load('src/lib/worker/inflight.ts');
   dependencies['src/lib/image-job-repository.ts']['@/lib/saas/creation-scope']=()=>load('src/lib/saas/creation-scope.ts');
@@ -368,7 +374,7 @@ function fixture({runtime = true} = {}) {
 
   function load(relative) {
     if (f.modules.has(relative)) return f.modules.get(relative).exports;
-    const {selected, code} = readSource(relative), module = {exports: {}}; f.modules.set(relative, module);
+    const {selected, code} = readSource(relative), loadedModule = {exports: {}}; f.modules.set(relative, loadedModule);
     const imports = specifier => {
       if (specifier === 'server-only') return {};
       if (specifier === 'zod') return require('zod');
@@ -387,16 +393,16 @@ function fixture({runtime = true} = {}) {
       if (!Object.hasOwn(map, specifier)) throw new FixtureBoundaryError(`UNMOCKED_IMPORT:${relative}:${specifier}`);
       return typeof map[specifier] === 'function' ? map[specifier]() : map[specifier];
     };
-    vm.runInNewContext(code, {module, exports: module.exports, require: imports, Buffer, structuredClone,
+    vm.runInNewContext(code, {module:loadedModule, exports: loadedModule.exports, require: imports, Buffer, structuredClone,
       URL, Request, Response, Headers, AbortSignal, Date: Clock, process: processFixture,
       console: {error: (...v) => f.logs.push(v.map(String).join(' ')), log: (...v) => f.logs.push(v.map(String).join(' '))},
       fetch: (..._v) => {f.metrics.network++; f.metrics.supplierPosts++; throw new ForbiddenBusinessEntry('FORBIDDEN_NETWORK');},
       ...timers}, {filename: selected, timeout: 10000});
     if (relative === 'src/lib/image-job-repository.ts') {
-      const settle = module.exports.settleImageJob;
-      module.exports.settleImageJob = (...v) => {f.metrics.settleCalls++; return settle(...v);};
+      const settle = loadedModule.exports.settleImageJob;
+      loadedModule.exports.settleImageJob = (...v) => {f.metrics.settleCalls++; return settle(...v);};
     }
-    return module.exports;
+    return loadedModule.exports;
   }
   f.load = load;
   f.api = load('src/lib/imagegen/dispatch.ts');
@@ -604,6 +610,25 @@ async function modifiedRun() {
       };
       await f.notify(); assert.equal(f.metrics.cooldownClears, 0); assert.equal(f.metrics.claims, 0);
       if (mutation === 'lease') assert.equal(f.parent().lease_token, 'new-owner'); f.assertZeroPaid();
+    }
+  });
+  await caseRun('pre-execution release binding failure releases only owned job lease without executing or clearing UNKNOWN', async () => {
+    for (const replaceLease of [false, true]) {
+      const f = fixture(); f.parent().lease_until = null;
+      f.hooks.beforeBind = async (_id, key) => {
+        if (key !== `imagegen:${PID}`) return;
+        if (replaceLease) {f.parent().lease_token = 'another-executor'; f.parent().lease_until = f.clock + 120000;}
+        throw new Error('timeout exceeded when trying to connect');
+      };
+      await f.api.resumeImagegen(PID); await drain(f);
+      assert.equal(f.parent().snapshot.status, 'pending');
+      assert.equal(f.parent().lease_token, replaceLease ? 'another-executor' : null);
+      assert.equal(f.metrics.fixtureProducerCalls || 0, 0);
+      assert.equal(f.metrics.notificationReads || 0, 0);
+      assert([...f.activities.values()].some(a => a.state === 'unknown'));
+      assert(f.logs.some(line => line.includes('stage=action code=PG_POOL_TIMEOUT')));
+      const claims = f.metrics.claims; await f.api.resumeImagegen(PID); await drain(f); assert.equal(f.metrics.claims, claims);
+      f.assertZeroPaid();
     }
   });
   await caseRun('parent execution catch plus failed error persistence does not self-hot-loop', async () => {

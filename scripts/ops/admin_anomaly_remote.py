@@ -10,6 +10,7 @@ import urllib.request
 import urllib.parse
 import base64
 import sys
+import re
 
 LIMIT = 2000
 
@@ -29,12 +30,63 @@ def env(row):
     return dict(v.split('=', 1) for v in row['Config']['Env'] if '=' in v)
 
 
+def current_web_port(dump):
+    """Bind the reviewed public location, not an old container's stable name."""
+    sections = re.findall(r'^# configuration file /etc/nginx/sites-enabled/reference-workbench:\n(.*?)(?=^# configuration file |\Z)', dump, re.M | re.S)
+    assert len(sections) == 1, 'PUBLIC_GATEWAY_FILE_AMBIGUOUS'
+    body = '\n'.join(line.split('#', 1)[0] for line in sections[0].splitlines())
+    assert re.search(r'\bserver_name\s+47\.105\.59\.142\s*;', body), 'PUBLIC_HOST_CHANGED'
+    locations = re.findall(r'\blocation\s+/\s*\{([^{}]*)\}', body, re.S)
+    ports = []
+    for location in locations:
+        if re.fullmatch(r'\s*return\s+30[178]\s+https://(?:\$host|47\.105\.59\.142)\$request_uri\s*;\s*', location):
+            continue  # The same file contains the HTTP -> HTTPS redirect.
+        matches = re.findall(r'\bproxy_pass\s+"?http://127\.0\.0\.1:(\d+)"?\s*;', location)
+        assert len(matches) == 1, 'PUBLIC_LOCATION_UNBOUND'
+        ports.append(int(matches[0]))
+    assert ports and len(set(ports)) == 1 and 1024 <= ports[0] <= 65535, 'PUBLIC_UPSTREAM_AMBIGUOUS'
+    return ports[0]
+
+
+def select_current_web(containers, port):
+    matches = [row for row in containers if row['State']['Running'] and any(
+        p.get('HostIp') == '127.0.0.1' and p.get('HostPort') == str(port)
+        for p in row['NetworkSettings']['Ports'].get('3000/tcp') or [])]
+    assert len(matches) == 1, 'PUBLIC_CONTAINER_AMBIGUOUS'
+    row = matches[0]
+    assert re.fullmatch(r'[a-f0-9]{40}', env(row).get('SOURCE_COMMIT', '')), 'PUBLIC_SOURCE_MISSING'
+    return row
+
+
+def fixed_image_pages(query, image_sql, limit):
+    # Freeze identities, not OFFSET positions that move between transactions.
+    selection = image_sql[image_sql.index('FROM app_image_jobs WHERE'):image_sql.index(')\n    SELECT')]
+    selected = query("SELECT jsonb_build_object('id',id) " + selection)
+    ids = [r['id'] for r in selected]
+    assert len(ids) <= limit + 1 and len(ids) == len(set(ids)), 'SELECTION_IDENTITIES_INVALID'
+    start = image_sql.index('WHERE (updated_at')
+    end = image_sql.index('ORDER BY', start)
+    images = []
+    for offset in range(0, len(ids), 100):
+        keys = ids[offset:offset + 100]
+        quoted = ','.join("'" + v.replace("'", "''") + "'" for v in keys)
+        page = query(image_sql[:start] + 'WHERE id IN (' + quoted + ') ' + image_sql[end:])
+        assert len(page) == len(keys) and {r['id'] for r in page} == set(keys), 'PINNED_TASK_SET_CHANGED'
+        images.extend(page)
+    return images
+
+
 def main():
-    web = inspect('naumi47-web-all-20261023-r1')
+    assert hashlib.sha256(open('/etc/machine-id','rb').read().strip()).hexdigest() == 'eb32806db06dfe9ec55f17a3be5c59476ca0a45fec8ce442e0437530212cb3df'
+    gateway = command(['nginx', '-T']).decode()
+    port = current_web_port(gateway)
+    ids = command(['docker', 'ps', '-q']).decode().split()
+    assert ids and len(ids) <= 100, 'CONTAINER_INVENTORY_UNBOUNDED'
+    containers = json.loads(command(['docker', 'inspect', *ids]))
+    web = select_current_web(containers, port)
     db = inspect('naumi-staging-db-1')
     we, de = env(web), env(db)
     assert web['State']['Running'] and db['State']['Running']
-    assert hashlib.sha256(open('/etc/machine-id','rb').read().strip()).hexdigest() == 'eb32806db06dfe9ec55f17a3be5c59476ca0a45fec8ce442e0437530212cb3df'
     prefix = ['docker','exec','-i',db['Id'],'psql','-XqAt','--no-password','-v','ON_ERROR_STOP=1','-U',de.get('POSTGRES_USER','postgres'),'-d',de.get('POSTGRES_DB',de.get('POSTGRES_USER','postgres'))]
 
     def query(sql):
@@ -69,11 +121,8 @@ def main():
     ) FROM picked j"""
     # Project large JSONB checkpoints in small pages, not one giant aggregation.
     # No snapshot/private images or request bodies are returned.
-    images=[]
-    for offset in range(0,LIMIT+1,100):
-        page=query(image_sql.replace('LIMIT '+str(LIMIT+1)+')','LIMIT '+str(min(100,LIMIT+1-offset))+' OFFSET '+str(offset)+')'))
-        images.extend(page)
-        if len(page)<min(100,LIMIT+1-offset):break
+    # Same selection predicate for IDs and row projection; each page is bounded.
+    images = fixed_image_pages(query, image_sql, LIMIT)
     lit = lambda v: "'"+v.replace("'","''")+"'"
     image_count=len(images)
     child_ids={child for row in images for child in row.get('children',[])}-{row['id'] for row in images}
@@ -131,14 +180,35 @@ def main():
                 data=json.load(response);details.append({'table':ref['table'],'id':ref['id'],'owner':ref['email'],'listStatus':item['status'],'detailStatus':data.get('status'),'httpStatus':response.status,'outputAssets':sum(a.get('direction')=='output' for a in data.get('assets',[]))})
         except Exception as e:details.append({'httpStatus':getattr(e,'code',None),'errorType':type(e).__name__})
     activities=query("SELECT jsonb_build_object('scope',work_scope,'key',work_key,'state',state,'outcome',outcome,'heartbeatAt',heartbeat_at,'bootId',boot_id,'instanceId',instance_id) FROM app_release_activities WHERE work_scope='durable-image' AND admission_key='recovery-dispatch-scan' AND state<>'finished' ORDER BY heartbeat_at DESC LIMIT 20")
+    recent = query("SELECT jsonb_build_object('hours',w.hours,'kind',j.kind,'status',COALESCE(j.snapshot#>>'{result,status}',j.snapshot->>'status','unknown'),'count',count(*),'protectedCount',count(*) FILTER(WHERE EXISTS(SELECT 1 FROM naumi_staging_guard.origin_rows h WHERE h.table_name='app_image_jobs' AND h.row_key=j.id))) FROM (VALUES(1),(24),(72)) w(hours) JOIN app_image_jobs j ON j.created_at>=now()-make_interval(hours=>w.hours) GROUP BY w.hours,j.kind,COALESCE(j.snapshot#>>'{result,status}',j.snapshot->>'status','unknown') ORDER BY w.hours,j.kind,COALESCE(j.snapshot#>>'{result,status}',j.snapshot->>'status','unknown')")
+    latest = query("SELECT jsonb_build_object('kind',kind,'status',COALESCE(snapshot#>>'{result,status}',snapshot->>'status','unknown'),'createdAt',created_at,'updatedAt',updated_at) FROM app_image_jobs ORDER BY created_at DESC LIMIT 8")
+    worker_states = []
+    for worker in containers:
+        worker_env = env(worker)
+        if worker_env.get('NAUMI_WORKER_RELEASE_CONTROL') != '1' or not worker_env.get('NAUMI_WORKER_STATE_FILE'):
+            continue
+        worker_state = {'name':worker['Name'].lstrip('/'),'sourceCommit':worker_env.get('SOURCE_COMMIT'),'image':worker['Image'],'running':worker['State']['Running'],'startedAt':worker['State']['StartedAt'],'appOrigin':worker_env.get('NAUMI_APP_ORIGIN')}
+        try:
+            state=json.loads(command(['docker','exec',worker['Id'],'cat',worker_env['NAUMI_WORKER_STATE_FILE']],timeout=15))
+            worker_state.update({k:state.get(k) for k in ('schemaVersion','revision','paused','uncertain')})
+            worker_state['lastTick']={k:state.get('lastTick',{}).get(k) for k in ('id','phase','startedAt','dispatchedAt','finishedAt','completedAt')} if state.get('lastTick') else None
+        except Exception as e: worker_state['stateReadError']=type(e).__name__
+        worker_states.append(worker_state)
+    health={}
+    try:
+        with urllib.request.urlopen(base+'/api/health',timeout=10) as response:health={'status':response.status,'data':json.load(response)}
+    except Exception as e:health={'status':getattr(e,'code',None),'errorType':type(e).__name__}
     after_web,after_db=inspect(web['Id']),inspect(db['Id'])
     assert after_web['State']['StartedAt']==web['State']['StartedAt'] and after_db['State']['StartedAt']==db['State']['StartedAt']
+    assert command(['nginx', '-T']).decode() == gateway, 'PUBLIC_GATEWAY_CHANGED_DURING_READ'
     counts={t:sum(r['table']==t for r in images+other) for t in ('app_image_jobs','app_canvas_image_tasks','app_video_tasks')}
     truncated=[t for t,n in counts.items() if (image_count if t=='app_image_jobs' else n)>LIMIT]
     print(json.dumps({'schemaVersion':1,'target':'47.105.59.142','observedAt':dt.datetime.now(dt.timezone.utc).isoformat(),
         'sourceCommit':we.get('SOURCE_COMMIT'),'build':we.get('BUILD_VERSION'),'image':web['Image'],
-        'coverage':{'lookbackHours':72,'limitPerTable':LIMIT,'counts':counts,'truncatedTables':truncated,'selection':'all bounded nonterminal + recent failures + referenced children','adminListPagesPerSource':1},
-        'readOnly':True,'supplierCalls':0,'businessWrites':0,'rows':images+other,'adminApi':api,'adminDetails':details,'scannerActivities':activities},ensure_ascii=False))
+        'coverage':{'lookbackHours':72,'limitPerTable':LIMIT,'counts':counts,'truncatedTables':truncated,'selection':'all bounded nonterminal + recent failures + referenced children','adminListPagesPerSource':1,'pagination':'fixed selected primary keys; per-page read-only repeatable read; not one global snapshot'},
+        'readOnly':True,'supplierCalls':0,'businessWrites':0,'recentImageJobCounts':recent,'latestImageJobs':latest,'workerStates':worker_states,'health':health,
+        'webBinding':{'id':web['Id'],'name':web['Name'].lstrip('/'),'port':port,'gatewaySha256':hashlib.sha256(gateway.encode()).hexdigest()},
+        'rows':images+other,'adminApi':api,'adminDetails':details,'scannerActivities':activities},ensure_ascii=False))
 
 
 if __name__=='__main__':
