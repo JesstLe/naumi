@@ -4,7 +4,7 @@ import {selectFeatureModel} from "./model-selection";
 import {publicUpstreamIds} from "./channel-policy";
 import {assertDisplayResolution} from "./resolution-options";
 import {requestedFeatureModel} from "./selection-policy";
-import {featureDefaultModel} from "./tool-scope";
+import { featureDefaultModel } from "./feature-model-policy";
 import {effectiveImageParameters,type ImageParameters} from "./image-preset";
 import {resolutionForLongSide} from "../mock-data";
 import {routeImageModel} from "../image-model-routing";

@@ -14,7 +14,7 @@ import {deferApplicationTask} from "../application/task-execution";
 import type {ImagegenPlan,ImagegenRequest} from "../imagegen/types";
 import {getModelAdministration} from "../model-config/server";
 import {workbenchModelOptions} from "./model-options";
-import {modelAllowedForFeature,featureDefaultModel} from "../model-config/tool-scope";
+import { modelAllowedForFeature, featureDefaultModel } from "../model-config/feature-model-policy";
 import {quoteForRequest} from "../billing/server";
 import {withBillingRequest} from "../billing/synchronous";
 import {configuredToolCost} from "@/lib/billing/synchronous-operation";

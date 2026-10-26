@@ -1,5 +1,5 @@
 import "server-only";
-import {compatiblePublicModels,FEATURE_BINDINGS} from "./business";
+import { compatiblePublicModels, FEATURE_BINDINGS, featureDefaultModel, modelAllowedForFeature } from "./feature-model-policy";
 import {isSeedreamWire} from "./seedream-preflight";
 import {adminConfiguredFeature} from "./selection-policy";
 import {MODEL_BINDINGS} from "./bindings";
@@ -7,7 +7,6 @@ import {publicUpstreamIds} from "./channel-policy";
 import type {FeatureId} from "../billing/rules/registry";
 import type {ModelSnapshot,Modality} from "./types";
 import {DISPLAY_QUALITIES,selectedImagePreset} from "./image-preset";
-import {featureDefaultModel,modelAllowedForFeature} from "./tool-scope";
 import {qualityPresentation} from "./quality-policy";
 
 export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, feature?: FeatureId, includeAll = false) {

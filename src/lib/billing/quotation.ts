@@ -14,7 +14,7 @@ import {currentModelBillingSnapshot} from "../model-config/context";
 import {managedBillingSelection} from "../model-config/billing-model";
 import {freezeBusinessQuoteForModel} from "../model-config/business-billing";
 import {selectImageQuality} from "../model-config/image-quality-selection";
-import {FEATURE_BINDINGS} from "../model-config/business";
+import { FEATURE_BINDINGS } from "../model-config/feature-model-policy";
 import {readManagedModelSnapshot} from "../model-config/snapshot-reader";
 import {currentImagegenStep} from "../imagegen/context";
 import {getBillingRuntime,meteringFor} from "./runtime";

@@ -2,7 +2,7 @@ import {MODEL_BINDINGS,type ModelBinding} from "./bindings";
 import {selectedBusinessOption} from "./business";
 import {selectedImagePreset,presetPublicId} from "./image-preset";
 import {requestedFeatureModel} from "./selection-policy";
-import {featureDefaultModel,assertToolScope} from "./tool-scope";
+import { featureDefaultModel, assertToolScope } from "./feature-model-policy";
 import {ModelConfigError,type ModelConfig} from "./types";
 
 /** One public model identity for execution and pricing. Channel admission is a separate decision. */

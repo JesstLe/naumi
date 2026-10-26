@@ -26,9 +26,12 @@ const billingPath = 'src/lib/model-config/billing-model.ts';
 const sourcePath = path.join(sourceRoot, billingPath);
 const sourceSha256 = crypto.createHash('sha256').update(fs.readFileSync(sourcePath)).digest('hex');
 const modules = new Map();
+const policyPath = 'src/lib/model-config/feature-model-policy.ts';
+const modernPolicy = fs.existsSync(path.join(sourceRoot, policyPath));
 const slices = {
-  'src/lib/model-config/business.ts': ['FEATURE_BINDINGS', 'selectedBusinessOption', 'upstreamSupportsFeature', 'compatiblePublicModels'],
-  'src/lib/model-config/tool-scope.ts': ['modelAllowedForFeature', 'featureDefaultModel', 'assertToolScope'],
+  ...(modernPolicy ? { [policyPath]: ['FEATURE_BINDINGS', 'upstreamSupportsFeature', 'compatiblePublicModels', 'modelAllowedForFeature', 'featureDefaultModel', 'assertToolScope'] } : {}),
+  'src/lib/model-config/business.ts': modernPolicy ? ['selectedBusinessOption'] : ['FEATURE_BINDINGS', 'selectedBusinessOption', 'upstreamSupportsFeature', 'compatiblePublicModels'],
+  'src/lib/model-config/tool-scope.ts': modernPolicy ? [] : ['modelAllowedForFeature', 'featureDefaultModel', 'assertToolScope'],
   'src/lib/model-config/image-preset.ts': ['isDefaultImageFeature', 'selectedImagePreset', 'presetPublicId'],
   'src/lib/model-config/channel-policy.ts': ['publicUpstreamIds'],
 };
@@ -80,7 +83,7 @@ function load(relative) {
     const ast = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
     const names = new Set(slices[relative]), found = new Set();
     source = ast.statements.filter(node => {
-      if (ts.isImportDeclaration(node)) return true;
+      if (ts.isImportDeclaration(node) || modernPolicy && ts.isExportDeclaration(node)) return true;
       const declarations = ts.isVariableStatement(node) ? node.declarationList.declarations : [node];
       const selected = declarations.some(d => d.name && names.has(d.name.getText(ast)));
       if (selected) declarations.forEach(d => { if (d.name) found.add(d.name.getText(ast)); });
@@ -93,8 +96,8 @@ function load(relative) {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
   });
   assert.equal(compiled.diagnostics.filter(d => d.category === ts.DiagnosticCategory.Error).length, 0, `TS transpilation: ${relative}`);
-  const module = { exports: {} };
-  modules.set(relative, module);
+  const loadedModule = { exports: {} };
+  modules.set(relative, loadedModule);
   const requireLocal = specifier => {
     if (specifier === 'server-only') return {};
     assert.ok(specifier.startsWith('.'), `No external dependency or network client: ${specifier}`);
@@ -104,12 +107,12 @@ function load(relative) {
   const run = vm.runInNewContext(`(function(require,module,exports){${compiled.outputText}\n})`, {
     structuredClone, fetch: forbiddenNetwork,
   }, { filename });
-  run(requireLocal, module, module.exports);
-  return module.exports;
+  run(requireLocal, loadedModule, loadedModule.exports);
+  return loadedModule.exports;
 }
 
 const { managedBillingModel } = load(billingPath);
-const { compatiblePublicModels, FEATURE_BINDINGS } = load('src/lib/model-config/business.ts');
+const { compatiblePublicModels, FEATURE_BINDINGS } = load(modernPolicy ? policyPath : 'src/lib/model-config/business.ts');
 const { quote } = load('src/lib/billing/quote.ts');
 const { ModelConfigError } = load('src/lib/model-config/types.ts');
 const plain = value => JSON.parse(JSON.stringify(value));

@@ -1,5 +1,7 @@
 # 渐进迁移与集中验收台账
 
+2026-10-26 R5H：功能绑定/默认/工具范围/兼容候选6个原规则归feature-model-policy，15实际生产消费者改绑；business和tool-scope只依赖纯规则，不再双向引用。7194原声明保持/6迁移/算法变化0，24配置13161决策旧新精确同、6兼容导出同对象/函数；旧两文件环拆除、其它SCC成员保持、新owner入环0。完整旧/新管理scope/价格、Canvas真实23、准备45、批次/抠图/工作台/家族和报价36通过；实际控件、完整类型/构建、4365hash副本回滚、patch、四产物与提交远端以R5H DELIVERY为准。真实Next管理控件通过；纠正Node启动import的正向编译分支，原正文/9真值表保持、health500→200；原observer/lint/Next失败留存不改PASS；同步后第2模块，剩余4全导入小环、外围UI-CAS/R6继续，不合main、不部署。见 [R5H记录](../changes/2026-10-26-feature-model-policy-r5h.md)。
+
 2026-10-26 R5G：执行组合/通道策略/阶段策略/provider transport/SDK工厂归属分离，必填函数参数完成路由回调、不建全局registry；旧三文件环拆除，新owner入环0、其余SCC成员保持、最大3→2。7191原声明保持/6迁移/3组合改动，原Flow/路由/SDK正文及10算法文件保持；实际fetch bundle OpenAI SDK输入145→0。完整旧/新五组真实PG/SDK/多进程矩阵通过，修正恢复fixture父审计与review/running状态后两侧恢复通过；健康/参数/供应商/liveguard邻接与图片Worker71通过，历史quota仍OPEN。四产物/4359hash副本回滚/实际Next/tsc/lint/提交远端见R5G DELIVERY；同步后第1模块，剩余2文件小环/外围UI-CAS/R6继续，不合main、不部署。见 [R5G记录](../changes/2026-10-26-model-execution-transport-r5g.md)。
 
 2026-10-26 R5F：媒体纯合同/bundle迁src/modules/media，原生引擎/HTTP/C/runtime组装迁services/media-worker，scripts仅稳定CLI和测试兼容出口；Web到测试媒体runtime边归零。7224声明一致/50迁移，C/shell原字节相同、SCC成员保持最大3；95合同结果精确同、Linux原生引擎/新旧HTTP40/40及frame-trim字节hash相同。实测旧独立容器缺KILL使降权FFmpeg取消迟滞，补齐Compose/独立发布配置后3秒内取消/排空检查通过，负对照保留。完整standalone+Worker+media runtime镜像构建及镜像内媒体40、实际Web六入口20、邻接视频65/图片71/退休7进程38通过；不当容量/上线证明。四产物/4352hash副本回滚/提交远端及第3模块main同步以R5F DELIVERY为准；整体继续剩余环/UI-CAS/R6，不合main、不部署。见 [R5F记录](../changes/2026-10-26-media-runtime-boundary-r5f.md)。

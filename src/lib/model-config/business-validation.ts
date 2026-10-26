@@ -1,6 +1,7 @@
 import type { ModelConfig } from "./types";
 import { ModelConfigError } from "./types";
-import { compatiblePublicModels, FEATURE_BINDINGS, procurementCny, upstreamSupportsFeature } from "./business";
+import { procurementCny } from "./business";
+import { compatiblePublicModels, FEATURE_BINDINGS, upstreamSupportsFeature } from "./feature-model-policy";
 import { MODEL_BINDINGS } from "./bindings";
 import { cnyCredits } from "../billing/money";
 

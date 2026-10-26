@@ -20,7 +20,7 @@ import { readBounded } from "../supplier-cost/io";
 import { getModelAdministration } from "./server";
 import { readProviderCatalog, refreshProviderCatalog } from "./catalog-store";
 import {publicModelCatalog} from "@/lib/model-config/public-catalog";
-import { FEATURE_BINDINGS } from "./business";
+import { FEATURE_BINDINGS } from "./feature-model-policy";
 import { MODEL_BINDINGS } from "./bindings";
 import { managedModelRows, managedModelCandidates, MODEL_MANAGEMENT_PROTOCOLS, switchManagedModel, renameManagedModel, applyModelToolScope, applyModelQualityParameters, orderManagedModels } from "./management";
 import { DISPLAY_QUALITY_IDS,qualityPolicySchema } from "./quality-policy";

@@ -1,7 +1,7 @@
 import {resolveUserEmail} from "@/lib/admin-auth";
 import {readPublishedModelSnapshot} from "@/lib/model-config/published";
 import {getBillingRuntime} from "@/lib/billing/runtime";
-import {featureDefaultModel,assertToolScope} from "@/lib/model-config/tool-scope";
+import { featureDefaultModel, assertToolScope } from "@/lib/model-config/feature-model-policy";
 import {routeImageModel} from "@/lib/image-model-routing";
 import {simulateModel} from "@/lib/model-config/simulation";
 import {publishedImagegenCapabilities} from "@/lib/imagegen/capabilities";

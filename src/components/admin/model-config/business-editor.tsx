@@ -4,7 +4,8 @@ import type { ModelConfig } from "@/lib/model-config/types";
 import type { ConfigSnapshot, Pricing } from "@/lib/billing/types";
 import { FEATURE_IDS, type FeatureId } from "@/lib/billing/rules/registry";
 import { FEATURE_LABELS } from "@/lib/billing/labels";
-import { FEATURE_BINDINGS, compatiblePublicModels, procurementCny } from "@/lib/model-config/business";
+import { procurementCny } from "@/lib/model-config/business";
+import { FEATURE_BINDINGS, compatiblePublicModels, featureDefaultModel, modelAllowedForFeature } from "@/lib/model-config/feature-model-policy";
 import { MODEL_BINDINGS } from "@/lib/model-config/bindings";
 import type { BusinessOption, BusinessRouting, Procurement } from "@/lib/model-config/business-schema";
 import { Field, Choice, TextField, NumberField, Toggle, Panel, buttonClass, inputClass } from "./fields";
@@ -12,7 +13,6 @@ import { authHeader } from "@/lib/supabase";
 import { StageInspector } from "./stage-inspector";
 import { adminConfiguredFeature } from "@/lib/model-config/selection-policy";
 import { cnyCredits } from "@/lib/billing/money";
-import { featureDefaultModel,modelAllowedForFeature } from "@/lib/model-config/tool-scope";
 
 function displayedCredits(amount:string,p:{creditsPerCnyMicros:string;rounding:"ceil"|"floor"|"nearest"}) {try{return cnyCredits(amount,p);}catch{return "金额超出范围";}}
 export function MoneyField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {

@@ -2,10 +2,9 @@ import { z } from "zod";
 import type { ModelConfig } from "./types";
 import { ModelConfigError } from "./types";
 import { procurementSchema } from "./business-schema";
-import { FEATURE_BINDINGS } from "./business";
+import { FEATURE_BINDINGS, featureDefaultModel } from "./feature-model-policy";
 import type { FeatureId } from "../billing/types";
 import type { ConfigSnapshot } from "../billing/types";
-import { featureDefaultModel } from "./tool-scope";
 import type { ModelBinding } from "./bindings";
 
 const id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);

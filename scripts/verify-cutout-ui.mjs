@@ -87,6 +87,8 @@ const apiMocks = {
   "@/lib/model-config/types": "exports.ModelConfigError=class extends Error {};",
   "@/lib/settings": "exports.getCutoutSettings=async()=>({backend:globalThis.__cutoutUi.backend,replicateToken:globalThis.__cutoutUi.token});",
 };
+apiMocks["@/lib/model-config/availability"] = apiMocks["@/lib/model-config/requests"];
+apiMocks["@/lib/model-config/feature-model-policy"] = apiMocks["@/lib/model-config/business"];
 const api = await build({ stdin: { contents: 'export {GET} from "./src/app/api/models/route";', resolveDir: process.cwd() }, bundle: true, platform: "node", format: "cjs", write: false,
   plugins: [{ name: "isolated-catalog-api", setup(b) {
     b.onResolve({ filter: /.*/ }, args => apiMocks[args.path] ? { path: args.path, namespace: "api-mock" } : undefined);

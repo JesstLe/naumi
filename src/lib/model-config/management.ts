@@ -1,12 +1,11 @@
 import {channelEditable,channelProtocol} from "./channel-policy";
 import type { ModelConfig, ModelSnapshot, Modality } from "./types";
 import { ModelConfigError } from "./types";
-import { FEATURE_BINDINGS } from "./business";
+import { FEATURE_BINDINGS, featureDefaultModel } from "./feature-model-policy";
 import { MODEL_BINDINGS } from "./bindings";
 import { compactImageModelOptions, imageModelDisplayId } from "../image-model-routing";
 import {publicModelCatalog} from "@/lib/model-config/public-catalog";
 import { adminConfiguredFeature } from "./selection-policy";
-import { featureDefaultModel } from "./tool-scope";
 import type { FeatureId } from "../billing/rules/registry";
 import {resolutionConfiguration} from "./resolution-policy";
 import { qualityConfiguration, qualityPolicySchema } from "./quality-policy";

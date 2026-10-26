@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { isFeatureId } from "@/lib/billing/rules/registry";
 import { modelConfigurationEnabled } from "@/lib/model-config/availability";
 import { getModelRuntime } from "@/lib/model-config/server";
-import { FEATURE_BINDINGS } from "@/lib/model-config/business";
+import { FEATURE_BINDINGS } from "@/lib/model-config/feature-model-policy";
 import { MODEL_BINDINGS } from "@/lib/model-config/bindings";
 import { ModelConfigError } from "@/lib/model-config/types";
 import { frontendImageCatalog } from "@/lib/frontend-image-models";

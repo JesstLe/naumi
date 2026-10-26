@@ -1,4 +1,4 @@
-import { FEATURE_BINDINGS, upstreamSupportsFeature } from "./business";
+import { FEATURE_BINDINGS, upstreamSupportsFeature } from "./feature-model-policy";
 import "server-only";
 import { requestedFeatureModel } from "./selection-policy";
 import type { FeatureId } from "../billing/rules/registry";

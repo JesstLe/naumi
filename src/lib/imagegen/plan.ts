@@ -15,7 +15,7 @@ import {prepareImageOperation} from "../model-config/image-preparation";
 import {selectFeatureModel} from "../model-config/model-selection";
 import {selectedImagePreset} from "../model-config/image-preset";
 import {simulateModel} from "@/lib/model-config/simulation";
-import {assertToolScope,featureDefaultModel} from "../model-config/tool-scope";
+import { assertToolScope, featureDefaultModel } from "../model-config/feature-model-policy";
 import {MAX_GENERATION_DIMENSION,resolutionForLongSide} from "../mock-data";
 import {routeImageModel} from "../image-model-routing";
 import {quoteForActor} from "../billing/quotation";
