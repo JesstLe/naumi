@@ -234,3 +234,5 @@ R3C1更新：Canvas 11576→10300行；183个保留函数AST正文未变，节�
 收尾再次fetch发现origin/main已推进到`b15d4761b938428c449531e2d8744401a38a2ec7`（原结果父回执与postaccept原因修复）。当前已完成并验证的普通整合来源固定`73384aaa`；新增提交另列下一轮待整合，不冒充已包含，不开启发布。
 
 R5J更新：已普通整合固定b15d4761到真实owner；完整源码active/notification父回执24检查、GET14、primitive29、后台39、LinuxWorker71/Next20通过，SCC仍0。完整基线4390hash与副本恢复以本轮DELIVERY为准；同步计数0，下一模块Canvas外围UI/CAS和R6，不合main、不部署。见 [R5J](../changes/2026-10-26-parent-receipt-integration-r5j.md)。
+
+R5K：工作区页面导航/7lazy页面/QR生命周期已迁独立UI owner，Canvas8319行、171函数保持、完整旧44/新59及15快照相同，实际Next6+15+5通过；SCC0、原8lint warning保留。副本回滚/提交见DELIVERY，计数1，跨请求CAS/助手上传和R6继续。见 [记录](../changes/2026-10-26-canvas-workspace-pages-r5k.md)。

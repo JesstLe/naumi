@@ -11,6 +11,8 @@ import {useCanvasSelection} from "./use-canvas-selection";
 import {useCanvasNodeOperations} from "./use-canvas-node-operations";
 import {useCanvasTextTasks} from "./use-canvas-text-tasks";
 import {CanvasSelect} from "./composer-controls";
+import {useCanvasWorkspacePages} from "./use-canvas-workspace-pages";
+import {CanvasWorkspacePagesView} from "./canvas-workspace-pages";
 import {CanvasImageComposer,type CanvasImageComposerProps} from "./image-composer";
 import {CanvasTextComposer} from "./text-composer";
 import type {CanvasGenerationMode as GenerationMode} from "./image-generation-controls";
@@ -160,13 +162,6 @@ const ImageCropDialog = dynamic(() => import("./image-crop-dialog").then(module 
 const NodePropertiesPanel = dynamic(() => import("./node-properties-panel").then(module => module.NodePropertiesPanel), { ssr: false, loading: panelLoading });
 const AnnotateEditorModal = dynamic(() => import("./annotate-editor").then(module => module.AnnotateEditorModal), { ssr: false, loading: panelLoading });
 const CanvasComfyDialog = dynamic(() => import("./canvas-comfy-dialog").then(module => module.CanvasComfyDialog), { ssr: false, loading: panelLoading });
-const TemplatesClient = dynamic(() => import("@/components/templates/templates-client").then(module => module.TemplatesClient), { ssr: false, loading: panelLoading });
-const CreditPacks = dynamic(() => import("@/components/credits/credit-packs").then(module => module.CreditPacks), { ssr: false, loading: panelLoading });
-const PayQrModal = dynamic(() => import("@/components/credits/pay-qr-modal").then(module => module.PayQrModal), { ssr: false, loading: panelLoading });
-const AccountClient = dynamic(() => import("@/components/account/account-client").then(module => module.AccountClient), { ssr: false, loading: panelLoading });
-const SecurityClient = dynamic(() => import("@/components/account/security-client").then(module => module.SecurityClient), { ssr: false, loading: panelLoading });
-const GenerateClient = dynamic(() => import("@/components/generate/generate-client").then(module => module.GenerateClient), { ssr: false, loading: panelLoading });
-const CheckoutClient = dynamic(() => import("@/components/checkout/checkout-client").then(module => module.CheckoutClient), { ssr: false, loading: panelLoading });
 import { usePaymentConfig } from "@/lib/payment-context";
 import { useRecharge } from "@/lib/recharge-modal-context";
 import {
@@ -1003,56 +998,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 左下角缩放下拉菜单 + 可输入的缩放值
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
   const [zoomInput, setZoomInput] = useState("100");
-  // 右上角按钮在画布内弹窗打开的页面;支持层叠(下一级页面也在弹窗内,可返回)
-  type ModalRoute = {
-    page: "templates" | "plans" | "account" | "generate" | "checkout" | "security";
-    params?: Record<string, string>;
-  };
-  const [modalStack, setModalStack] = useState<ModalRoute[]>([]);
-  const modalTop = modalStack[modalStack.length - 1] ?? null;
-  // 画布内扫码支付(原生支付宝/微信二维码 + 轮询到账,统一走共用 PayQrModal)
-  const [payModal, setPayModal] = useState<{
-    orderId: string;
-    qrContent: string;
-    provider: "alipay" | "wechat";
-    credits: number;
-    bonus: number;
-    fen: number;
-    discount?: string;
-    packId: string;
-  } | null>(null);
-  // 打开一级弹窗(右上角按钮)
-  function openModal(page: ModalRoute["page"]) {
-    setModalStack([{ page }]);
-  }
-  // 弹窗内点链接 → 进下一级(画布内层叠);返回 = 出栈
-  const MODAL_ROUTES: Record<string, ModalRoute["page"]> = {
-    "/templates": "templates",
-    "/plans": "plans",
-    "/account": "account",
-    "/account/security": "security",
-    "/generate": "generate",
-  };
-  function pushModalHref(href: string): boolean {
-    const [path, qs] = href.split("?");
-    const route = path.replace(/\/+$/, "") || "/";
-    const page = MODAL_ROUTES[route];
-    if (!page) return false; // 未知/外部 → 不拦截,照常跳转
-    if (!commerceVisible && (page === "plans" || page === "checkout")) {
-      return false;
-    }
-    const params = qs ? Object.fromEntries(new URLSearchParams(qs)) : undefined;
-    setModalStack((s) => [...s, { page, params }]);
-    return true;
-  }
-  function modalBack() {
-    setModalStack((s) => (s.length > 1 ? s.slice(0, -1) : []));
-  }
+  const workspacePages=useCanvasWorkspacePages({commerceVisible,email:targetEmail||user?.email});
+  const openModal=workspacePages.open;
   // 模板「做同款」→ 关弹窗 + 用模板图在画布里新建一个项目(独立根节点),选中后即可在画布内生成衍生
   async function applyTemplateToCanvas(templateId: string) {
     if (!user || readOnly) return;
     resetImportScope();
-    setModalStack([]);
+    workspacePages.close();
     setBrowsing(false);
     setCreatingNew(true); // 先进空白画布态,避免闪到旧项目;拿到新节点后自动切过去
     setActiveKey(null);
@@ -1098,11 +1050,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       flashTip(e instanceof Error ? e.message : t("canvas.genFail"));
     }
   }
-  // 扫码支付二维码渲染 + 轮询到账 + 倒计时统一由共用 PayQrModal 处理(见下方 JSX)。
-  // 预加载二维码库:进会员弹窗时就把 qrcode chunk 拉好,点开通后秒出码
-  useEffect(() => {
-    if (modalTop?.page === "plans") void import("qrcode");
-  }, [modalTop?.page]);
   // 缩放输入框跟随实际缩放(用户改值后回车应用)
   useEffect(() => {
     setZoomInput(zoomPercentInput(viewport.zoom || 1));
@@ -5379,8 +5326,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 打开时必须完全让出键盘，避免用户在账户/帮助等上层界面操作时误删底层节点。
   const canvasShortcutLayerOpen = Boolean(
     accountDockOpen ||
-      modalTop ||
-      payModal ||
+      workspacePages.isOpen ||
       helpOpen ||
       confirmModal ||
       lightbox ||
@@ -8364,169 +8310,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           onClose={() => setLightbox(null)}
         />
       )}
-      {/* 右上角按钮:在画布内弹窗打开模板/会员/账户(可层叠下一级,可返回) */}
-      {modalTop &&
-        typeof document !== "undefined" &&
-        createPortal(
-          <div
-            className={cn(
-              "fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm text-foreground",
-              lightCanvas ? "canvas-ui-light" : "dark canvas-ui-dark"
-            )}
-            onClick={() => setModalStack([])}
-          >
-            <div
-              className={cn(
-                "relative flex h-[88vh] w-full flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl",
-                modalTop.page === "templates" || modalTop.page === "generate"
-                  ? "max-w-6xl"
-                  : "max-w-5xl"
-              )}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex flex-none items-center justify-between border-b border-border px-5 py-3">
-                <div className="flex min-w-0 items-center gap-1.5">
-                  {modalStack.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={modalBack}
-                      aria-label={t("canvas.backToProjects")}
-                      className="flex h-8 w-8 flex-none items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                    >
-                      <ChevronLeft className="h-5 w-5" />
-                    </button>
-                  )}
-                  <span className="truncate text-base font-bold text-foreground">
-                    {modalTop.page === "templates"
-                      ? t("nav.templates")
-                      : modalTop.page === "plans"
-                        ? t("nav.plans")
-                        : modalTop.page === "account"
-                          ? t("nav.account")
-                          : modalTop.page === "security"
-                            ? "账户与安全"
-                            : modalTop.page === "generate"
-                              ? t("nav.generate")
-                              : "结算"}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setModalStack([])}
-                  aria-label={t("canvas.close")}
-                  className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <div
-                className="min-h-0 flex-1 overflow-y-auto"
-                onClickCapture={(e) => {
-                  // 弹窗内点向 模板/会员/账户/生成 的内部链接 → 不跳页面,改为在弹窗内进下一级;
-                  // 未知/外部(支付等)照常跳转。
-                  const a = (e.target as HTMLElement).closest("a");
-                  if (!a) return;
-                  const href = a.getAttribute("href") || "";
-                  if (!href.startsWith("/")) return; // 外链照常
-                  // 模板「做同款」(/generate?template=ID)→ 关弹窗,在画布里新建一个项目
-                  const [hp, hq] = href.split("?");
-                  if (hp.replace(/\/+$/, "") === "/generate") {
-                    const tplId = new URLSearchParams(hq || "").get("template");
-                    if (tplId) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      void applyTemplateToCanvas(tplId);
-                      return;
-                    }
-                  }
-                  if (pushModalHref(href)) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }
-                }}
-              >
-                {modalTop.page === "templates" && (
-                  <TemplatesClient gridClass="columns-2 md:columns-3 xl:columns-4" />
-                )}
-                {commerceVisible && modalTop.page === "plans" && (
-                  <div className="p-4">
-                    <CreditPacks
-                      onCheckout={(orderId, info) => {
-                        if (!info.pack) return;
-                        setPayModal({
-                          orderId,
-                          qrContent: info.qrContent,
-                          provider: info.provider,
-                          credits: info.pack.credits,
-                          bonus: info.pack.bonus,
-                          fen: info.pack.fen,
-                          discount: info.pack.discount,
-                          packId: info.pack.id,
-                        });
-                      }}
-                    />
-                  </div>
-                )}
-                {modalTop.page === "account" && <AccountClient />}
-                {modalTop.page === "security" && <SecurityClient />}
-                {modalTop.page === "generate" && (
-                  <GenerateClient seedTemplateId={modalTop.params?.template} />
-                )}
-                {commerceVisible && modalTop.page === "checkout" && (
-                  <CheckoutClient pack={modalTop.params?.pack} />
-                )}
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
-      {/* 画布内扫码支付:统一走共用 PayQrModal */}
-      {commerceVisible && payModal && (
-        <PayQrModal
-          open={!!payModal}
-          orderId={payModal.orderId}
-          provider={payModal.provider}
-          qrContent={payModal.qrContent}
-          credits={payModal.credits}
-          bonus={payModal.bonus}
-          fen={payModal.fen}
-          discount={payModal.discount}
-          onClose={() => setPayModal(null)}
-          onPaid={() => void refreshCredits()}
-          onRefresh={async () => {
-            const em = targetEmail || user?.email;
-            if (!em) return;
-            try {
-              const res = await fetch("/api/payments/create", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  email: em,
-                  kind: "pack",
-                  itemId: payModal.packId,
-                  method: payModal.provider,
-                }),
-              });
-              const data = await res.json();
-              if (res.ok && data.mode === "native" && data.qrContent) {
-                setPayModal((m) =>
-                  m
-                    ? {
-                        ...m,
-                        orderId: data.orderId,
-                        qrContent: String(data.qrContent),
-                        provider:
-                          (data.provider as "alipay" | "wechat") ?? m.provider,
-                      }
-                    : m
-                );
-              }
-            } catch {
-              /* ignore */
-            }
-          }}
-        />
-      )}
+      <CanvasWorkspacePagesView pages={workspacePages} lightCanvas={lightCanvas} commerceVisible={commerceVisible}
+        t={t} applyTemplateToCanvas={applyTemplateToCanvas} refreshCredits={refreshCredits} />
     </div>
     </TextNodeContext.Provider>
     </PendContext.Provider>
