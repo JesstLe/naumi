@@ -1,5 +1,7 @@
 # 渐进迁移与集中验收台账
 
+R5B（2026-10-26）：实际独立Worker direct执行共享scan，原PG回执绑定Worker，等待detached原回调再完成tick/排空/关pool，HTTP旧协议保持；combined环境分离与direct不强杀、handoff角色观察接通。Linux真实PG旧8/新29、锁阻塞SIGTERM32、崩溃原tick只读核对39、combined31通过，Web POST1→0、冻结原6/current17单次结算18；31unit/91断言/Python30+4、相邻156/36/59和tsc/lint通过。独立bundle验证及Docker/Compose接线完成，47专用clone仍为HTTP，首次提交排队/唤醒与该发布角色整合继续，不冒充全重活已离Web。见 [R5B](../changes/2026-10-26-direct-application-worker-r5b.md) 及DELIVERY；同步后第2模块，剩余媒体runtime/20环/外围UI-CAS/全产品R6继续，不合main、不部署。
+
 R5A（2026-10-26）：套图/A+51声明及DurableImageJobs真实执行owner分离，route780→221/1072→374，恢复四类原任务不再HTTP回跳，tick保留原受理/回执/鉴权。58迁移声明/helper及7069非目标声明保持，12文件恢复环已拆、新owner无环、scan不达HTTP route。完整PG旧5/129→新5/156、实际Next34→37、冻结6/current17及release实际后台排空通过；全项目tsc/20文件lint、相邻15直接通过与middleware24/Linux补验通过。旧stopping新旧同fixture cleanup42P01、无参legacy用例均保留非绿，见 [R5A记录](../changes/2026-10-26-worker-recovery-boundary-r5a.md)。副本回滚/提交见DELIVERY；同步后第1模块。R5B独立进程执行/媒体runtime与R6继续，不合main、不部署。
 
 R4B6（2026-10-25）：核心DDL归真实SQL owner，33声明/片段迁20文件，46+16次query参数与6838个非目标生产声明保持；37-owner启动组合、billing配置/账务服务装配分离及Canvas复制schema闭合。完整PG旧3/35→新3/36、实际Next22→24检查通过，26原公开函数首次DDL20→0，134表/1208列/255约束/241索引一致；21相邻脚本、全项目tsc/99文件lint通过。startup依赖16→3、静态可达215→132，新owner不入环，原20/12等环保持；角色协调与BI显式索引不混入普通Web。失败literal、绑定、回滚/patch与同步证据见 [R4B6记录](../changes/2026-10-25-persistence-startup-owners-r4b6.md) 及DELIVERY。本轮第3模块，收尾普通整合main后归零，整体继续R5/R6，不合main、不部署。

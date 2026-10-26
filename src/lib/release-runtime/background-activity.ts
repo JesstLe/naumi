@@ -3,6 +3,7 @@ import process from "node:process";
 import { releaseIdentity, releaseRuntimeEnabled } from "./identity";
 import { currentAcceptedParent } from "./accepted-context";
 import { OBSERVED_BACKGROUND_SCOPES, beginBackgroundActivity, bindBackgroundActivity, finishActivity, heartbeatActivity, unknownActivity } from "./store";
+import {trackBackgroundWork} from "../worker/inflight";
 
 export const BACKGROUND_SCOPES = OBSERVED_BACKGROUND_SCOPES;
 export type BackgroundScope = typeof BACKGROUND_SCOPES[number];
@@ -47,16 +48,16 @@ export async function bindBackgroundClaim(workKey: string, originalLeaseToken?: 
 /** Register durably before returning to a worker tick/HTTP caller, then retain
  * the lease until the detached promise really settles. */
 export async function detachBackgroundActivity(scope: BackgroundScope, workKey: string, admission: "claim" | "continuation", action: () => Promise<void>): Promise<boolean> {
-  if (!releaseRuntimeEnabled()) { void action().catch(() => undefined); return true; }
+  if (!releaseRuntimeEnabled()) { void trackBackgroundWork(action()).catch(() => undefined); return true; }
   const parent=acceptedParent();
   const id = await beginBackgroundActivity(scope, workKey, admission, parent);
   if (!id) return false;
   const timer = setInterval(() => { void heartbeatActivity(id).catch(() => undefined); }, 10000); timer.unref?.();
   const span: Span = { id, scope, admission, canAdmit: admission==="claim"||!!parent, timer };
-  void contexts.run(span, async () => {
+  void trackBackgroundWork(contexts.run(span, async () => {
     try { await action(); await finishActivity(id, "detached-background-completed"); }
     catch { await unknownActivity(id, "detached-background-unconfirmed").catch(() => undefined); }
     finally { clearInterval(timer); }
-  });
+  }));
   return true;
 }

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "build:worker": "node scripts/build-application-worker.mjs",
     "verify:model-health": "tsx --conditions react-server scripts/verify-model-health.ts",
     "verify:model-health-ui": "node scripts/verify-model-health-ui.mjs",
     "verify:worker-handoff": "node --test scripts/test-worker-runtime.mjs && node scripts/verify-worker-handoff.mjs",

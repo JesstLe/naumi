@@ -3,6 +3,7 @@
 /.next-*/
 /out/
 /build
+/dist/worker/
 /test-results/
 *.tsbuildinfo
 next-env.d.ts

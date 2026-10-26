@@ -56,15 +56,20 @@ export function fileStateStore(filename) {
 
 export class WorkerRuntime {
   constructor({origin,secret,instanceId,commit,store=null,startPaused=false,fetchImpl=fetch,
-    targetInstanceId=process.env.NAUMI_WORKER_TARGET_INSTANCE_ID,timeoutMs=300000,stopOnUncertain=true,clock=()=>new Date().toISOString(),log=()=>{}}) {
+    targetInstanceId=process.env.NAUMI_WORKER_TARGET_INSTANCE_ID,timeoutMs=300000,stopOnUncertain=true,clock=()=>new Date().toISOString(),log=()=>{},tickTransport=null}) {
     assert(typeof secret==='string'&&secret.trim().length>=32,'WORKER_SECRET_REQUIRED',400);
     assert(Number.isInteger(timeoutMs)&&timeoutMs>0,'INVALID_TICK_TIMEOUT',400);
     this.origin=workerOrigin(origin);this.secret=secret;this.instanceId=instanceId;this.commit=commit;this.targetInstanceId=targetInstanceId;
     this.store=store;this.fetch=fetchImpl;this.timeoutMs=timeoutMs;this.stopOnUncertain=!!store||stopOnUncertain;
+    assert(!tickTransport||tickTransport.mode==='direct'&&store&&typeof tickTransport.dispatch==='function'&&typeof tickTransport.read==='function','INVALID_DIRECT_WORKER_TRANSPORT',400);
+    this.transport=tickTransport;
+    if(tickTransport)assert(tickTransport.identity?.instanceId===instanceId&&tickTransport.identity?.commit===commit&&
+      uuid(tickTransport.identity?.bootId)&&targetInstanceId===instanceId,'DIRECT_WORKER_IDENTITY_MISMATCH',400);
     this.clock=clock;this.log=log;this.bootId=randomUUID();this.activePromise=null;this.timer=null;
     this.fault=null;this.initialized=false;this.stopping=false;this.writeQueue=Promise.resolve();this.controlQueue=Promise.resolve();
     this.state={schemaVersion:1,identity:{origin:this.origin,instanceId,commit,...(store?{targetInstanceId}: {})},revision:0,
       paused:startPaused,uncertain:false,lastTick:null,operations:{}};
+    if(tickTransport){this.state.identity.executionMode='direct';this.bootId=tickTransport.identity.bootId;}
   }
   async init() {
     assert(!this.initialized,'WORKER_ALREADY_INITIALIZED');
@@ -97,11 +102,11 @@ export class WorkerRuntime {
   snapshot() {
     return {schemaVersion:1,bootId:this.bootId,instanceId:this.instanceId,commit:this.commit,
       origin:this.origin,observedAt:this.clock(),revision:this.state.revision,paused:this.state.paused,
-      targetInstanceId:this.targetInstanceId,
+      targetInstanceId:this.targetInstanceId,...(this.transport?{executionMode:'direct',...this.transport.snapshot()}:{}),
       phase:this.fault||this.state.uncertain?'UNKNOWN':this.state.paused?(this.activePromise?'DRAINING':'QUIESCENT'):(this.activePromise?'RUNNING':'IDLE'),
       activeTicks:this.activePromise?1:0,unresolvedTicks:this.state.uncertain?1:0,
       tickDrainComplete:this.initialized&&!!this.store&&this.state.paused&&!this.activePromise&&
-        !['dispatched','unknown'].includes(this.state.lastTick?.phase)&&!this.state.uncertain&&!this.fault,
+        !['dispatched','unknown'].includes(this.state.lastTick?.phase)&&!this.state.uncertain&&!this.fault&&(!this.transport||this.transport.snapshot().backgroundTasks===0),
       durableControl:!!this.store,durableTickReceipts:!!this.store,receiptProtocol:this.store?1:null,lastTick:this.state.lastTick?{...this.state.lastTick}:null,
       // Intentionally unknown: no unsafe translation of HTTP tick counts into jobs.
       workerLeases:null,acceptedTasks:null,agentSessions:null,controlFault:this.fault};
@@ -145,6 +150,7 @@ export class WorkerRuntime {
       finally {await reader.cancel().catch(()=>{});}
     } else data=await response.json();
     const r=data?.receipt,server=data?.server;
+    if(this.transport)assert(server?.role==='worker','DIRECT_TICK_EXECUTOR_ROLE_MISMATCH');
     assert(server?.instanceId===tick.targetWebInstanceId&&server.commit===tick.workerCommit&&uuid(server.bootId),'TICK_SERVER_IDENTITY_MISMATCH');
     assert(r?.schemaVersion===1&&r.tickId===tick.id&&r.worker?.instanceId===tick.workerInstanceId&&
       r.worker.bootId===tick.workerBootId&&r.worker.commit===tick.workerCommit&&r.web?.instanceId===tick.targetWebInstanceId&&
@@ -160,7 +166,7 @@ export class WorkerRuntime {
     assert(uuid(tick.workerBootId)&&tick.workerInstanceId===this.instanceId&&tick.workerCommit===this.commit&&tick.targetWebInstanceId===this.targetInstanceId,'WORKER_TICK_ORIGINAL_IDENTITY_MISSING');
     // Never POST during reconciliation. Missing/running/unknown/unreachable/mismatched evidence leaves state unchanged.
     let verified;
-    try {verified=await this.receiptResponse(await this.fetch(`${this.origin}/api/video/worker/tick?tickId=${tick.id}`,{method:'GET',headers:this.tickHeaders(tick),signal:AbortSignal.timeout(Math.min(this.timeoutMs,10000))}),tick);}
+    try {verified=await this.receiptResponse(this.transport?await this.transport.read(tick):await this.fetch(`${this.origin}/api/video/worker/tick?tickId=${tick.id}`,{method:'GET',headers:this.tickHeaders(tick),signal:AbortSignal.timeout(Math.min(this.timeoutMs,10000))}),tick);}
     catch {throw new WorkerControlError('WORKER_TICK_RECONCILE_UNVERIFIED');}
     assert(input.expectedRevision===this.state.revision,'WORKER_REVISION_CONFLICT');
     tick.phase='complete';tick.finishedAt=verified.receipt.completedAt;
@@ -190,7 +196,7 @@ export class WorkerRuntime {
       // A concurrent drain may have won while the intent was being persisted.
       if(this.state.paused) {tick.phase='rejected';tick.reason='PAUSED_BEFORE_DISPATCH';await this.persist();return {skipped:true};}
       dispatched=true;
-      const response=await this.fetch(`${this.origin}/api/video/worker/tick`,{
+      const response=this.transport?await this.transport.dispatch(tick):await this.fetch(`${this.origin}/api/video/worker/tick`,{
         method:'POST',headers:this.store?this.tickHeaders(tick):{'x-video-worker-secret':this.secret},signal:AbortSignal.timeout(this.timeoutMs)});
       if(!this.store&&[401,403].includes(response.status)) {
         tick.phase='rejected';tick.httpStatus=response.status;await this.persist();return {rejected:true};
@@ -217,6 +223,7 @@ export class WorkerRuntime {
     this.stopping=true;clearInterval(this.timer);this.timer=null;this.state.paused=true;
     let failed=false;try{await this.persist();}catch{failed=true;}
     await this.activePromise;
+    if(this.transport)try{if(!await this.transport.drain())failed=true;}catch{failed=true;}
     try{await this.persist();}catch{failed=true;}
     return !failed&&!this.activePromise&&!this.state.uncertain&&!this.fault&&
       !['dispatched','unknown'].includes(this.state.lastTick?.phase);

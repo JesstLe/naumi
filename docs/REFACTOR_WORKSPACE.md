@@ -21,6 +21,8 @@
 
 ## 当前完成与未完成
 
+- 2026-10-26 R5B：独立scanner接原应用scan，direct回执明确实际Worker，原detached Promise登记/等待后才完成tick和关pool；combined direct scanner不沿用HTTP caller12秒强杀。真实Linux/PG旧8→新29、SIGTERM阻塞排空32、崩溃原回执核对39、combined真进程31通过，Web POST1→0、原6/current17三笔18不变；31unit/combined91、Python30+4、相邻156/36/59及tsc/13文件lint通过。bundle4137396字节/2333输入/HTTP route0，仅外置pg/sharp；Docker/Compose接入并核对，47专用clone仍HTTP未切换。见 [R5B](changes/2026-10-26-direct-application-worker-r5b.md)。第2模块，副本回滚/提交以DELIVERY为准；首次提交排队唤醒、47direct交接、媒体runtime/R6继续，不合main、不部署。
+
 - 2026-10-26 R5A：套图/A+51声明迁真实runtime，route780→221/1072→374；DurableImageJobs/鉴权/恢复owner分离、统一七阶段scan，四类原任务恢复不再HTTP回跳。完整PG旧5/129→新5/156、实际Next34→37通过，原结果/冻结6-current17/三笔结算18、live lease/unknown及release排空保持；12文件恢复环拆开、新owner无环。相邻15项直接通过，middleware24和Linux生命周期补验通过；旧stopping脚本完整新旧同cleanup42P01债务保留、不记绿。见 [R5A记录](changes/2026-10-26-worker-recovery-boundary-r5a.md)。本轮同步后第1模块，提交/回滚/远端以DELIVERY为准。R5B独立进程执行及媒体runtime迁移、剩余环和外围UI/CAS、R6完整候选继续，不合main、不部署。
 
 - 已建立独立工作树和重构说明。

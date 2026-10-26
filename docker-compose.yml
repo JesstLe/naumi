@@ -32,7 +32,7 @@ services:
       # Naumi 实例固定走 3012 端口(http://localhost:3012)。
       # 若 80 已被占用(如装了宝塔/nginx),设 HTTP_PORT=8080 后重跑即可。
       - "${HTTP_PORT:-3012}:3000"
-    environment:
+    environment: &application-environment
       DATABASE_URL: ${DATABASE_URL:-postgres://naumi:naumi@db:5432/naumi?sslmode=disable}
       # 大陆服务器连不上 api.openai.com 时,设为任意 OpenAI 兼容中转地址即可。
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
@@ -154,11 +154,25 @@ services:
   video-worker:
     image: ghcr.io/jesstle/naumi:latest
     restart: unless-stopped
+    stop_grace_period: ${WORKER_STOP_GRACE_PERIOD:-10m}
     command: ["node", "scripts/video-worker.mjs"]
     environment:
+      <<: *application-environment
+      NAUMI_WORKER_EXECUTION: direct
+      NAUMI_INSTANCE_ID: ${NAUMI_WORKER_INSTANCE_ID:-naumi-worker}
+      NAUMI_RELEASE_RUNTIME: "1"
+      NAUMI_RELEASE_ADMISSION_START: open
+      NAUMI_WORKER_RELEASE_CONTROL: "1"
+      NAUMI_WORKER_START_PAUSED: "0"
+      NAUMI_WORKER_STATE_FILE: /release-state/worker.json
       NAUMI_APP_ORIGIN: http://app:3000
+      INTERNAL_APP_ORIGIN: http://app:3000
       VIDEO_WORKER_SECRET: ${VIDEO_WORKER_SECRET:?请配置独立随机 VIDEO_WORKER_SECRET}
       VIDEO_WORKER_INTERVAL_MS: ${VIDEO_WORKER_INTERVAL_MS:-15000}
+    volumes:
+      - appdata:/data
+      - mediajobs:/scratch
+      - workerstate:/release-state
     depends_on:
       app:
         condition: service_healthy
@@ -167,3 +181,4 @@ volumes:
   pgdata:
   appdata:
   mediajobs:
+  workerstate:

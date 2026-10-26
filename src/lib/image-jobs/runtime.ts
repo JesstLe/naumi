@@ -17,6 +17,7 @@ import { currentExecutionBundle, currentModelExecution, runLegacyModelExecution,
 import { withFrozenExecutionBundle } from "@/lib/model-config/execution";
 import { recoverableChannelIdentity } from "@/lib/model-config/channel-availability";
 import { IMAGE_JOB_RELEASED_MESSAGE } from "@/lib/image-job-failure";
+import {trackBackgroundWork} from "@/lib/worker/inflight";
 
 type Execution = { id: string; token: string; queue: Promise<unknown> };
 
@@ -194,7 +195,7 @@ export class DurableImageJobs<T extends { status: string }> {
   async kick(id: string, run: (payload: Record<string, unknown>, snapshot: T) => Promise<void>) {
     if (!dbEnabled) {
       const row = this.memory.get(id);
-      if (row) void run(row.payload as Record<string, unknown>, row.snapshot).catch(console.error);
+      if (row) void trackBackgroundWork(run(row.payload as Record<string, unknown>, row.snapshot)).catch(console.error);
       return;
     }
     const executeClaimed = async (row: repository.ImageJobRow) => {
@@ -237,7 +238,7 @@ export class DurableImageJobs<T extends { status: string }> {
     };
     if(!releaseRuntimeEnabled()) {
       const row=await repository.claimImageJob(id,this.kind);
-      if(row)void executeClaimed(row).catch(console.error);
+      if(row)void trackBackgroundWork(executeClaimed(row)).catch(console.error);
       return;
     }
     await detachBackgroundActivity("durable-image", `${this.kind}:${id}`, "claim", async () => {
