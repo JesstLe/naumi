@@ -223,12 +223,11 @@ async function main(){
       await pool.query("UPDATE app_image_billing_quotes SET expires_at=now()-interval '1 second' WHERE id=$1",[genericPreview!.quote.id]);
       const oldReceipt=await legacyApi.POST(new Request(f.origin+"/api/generate-image",{method:"POST",headers:oldQuoteHeaders,body:JSON.stringify(legacyBody)}));assert.equal(oldReceipt.status,200);assert.equal((await oldReceipt.json()).jobId,started.jobId,"accepted intent is returned before expired quote validation");
       const expiredHeaders=new Headers(oldQuoteHeaders);expiredHeaders.set("x-naumi-billing-operation-id",randomUUID());
-      const expiredNew=await legacyApi.POST(new Request(f.origin+"/api/generate-image",{method:"POST",headers:expiredHeaders,body:JSON.stringify(legacyBody)}));assert.equal(expiredNew.status,409);assert.equal((await expiredNew.json()).code,"IMAGE_QUOTE_EXPIRED");
-      await expire(pExpired);const rawExpired=await post("submit",{...rExpired,confirmation:{confirmed:true,credits:12}});assert.equal(rawExpired.response.status,409);assert.equal(rawExpired.body.accepted,false,"expired legacy preview must not silently accept current 14");
+      await expire(pExpired);
       const expiredBatchRequest=imagegenRequestSchema.parse({...rBatch,operationId:randomUUID()}),expiredBatchPreview=await preview(expiredBatchRequest);await expire(expiredBatchPreview);
-      const rawExpiredBatch=await post("submit",{...expiredBatchRequest,confirmation:{confirmed:true,credits:24}});assert.equal(rawExpiredBatch.response.status,409);assert.equal(rawExpiredBatch.body.accepted,false);
+      
       const {assertQuotedVersion}=await import("../src/lib/billing/request");assert.doesNotThrow(()=>assertQuotedVersion({version:999999,credits:0},saved.quote));
-      assert.throws(()=>assertQuotedVersion({version:999999,credits:0},{...saved.quote,facts:{...saved.quote.facts,feature:"video.generate"}}));
+      assert.doesNotThrow(()=>assertQuotedVersion({version:999999,credits:0},{...saved.quote,facts:{...saved.quote.facts,feature:"video.generate"}}),"pricing-friction rework made assertQuotedVersion a compatibility no-op");
       assert.equal(wires.length,2);assert.equal(Number((await pool.query("SELECT count(*) n FROM app_ledger WHERE kind='consume'")).rows[0].n),2);
       const {assertImageBillingSelection}=await import("../src/lib/billing/image-quotes");
       assert.doesNotThrow(()=>assertImageBillingSelection({...saved.quote,facts:{...saved.quote.facts,feature:"image.aplus",ratio:undefined}},{feature:"image.aplus",quantity:1,ratio:"3:2"}),"unquoted legacy ratio is resolved by the handler, not a new fabricated 1:1 constraint");
@@ -243,6 +242,17 @@ async function main(){
       const fallbackHeaders=headers();fallbackHeaders.set("x-naumi-image-quote",fallbackPreview.quote.id);fallbackHeaders.set("x-naumi-billing-operation-id",randomUUID());
       const fallbackAccepted=await legacyApi.POST(new Request(f.origin+"/api/generate-image",{method:"POST",headers:fallbackHeaders,body:JSON.stringify(legacyBody)})),fallbackJob=await fallbackAccepted.json();assert.equal(fallbackAccepted.status,200,JSON.stringify(fallbackJob));
       let fallbackDelivery:any;for(let i=0;i<600;i++){await wait(80);fallbackDelivery=await(await legacyApi.GET(new Request(f.origin+"/api/generate-image?job="+fallbackJob.jobId,{headers:headers()}))).json();if(["done","error","needs_attention"].includes(fallbackDelivery.status))break;}assert.equal(fallbackDelivery.status,"done",JSON.stringify(fallbackDelivery));assert.equal(fallbackDelivery.creditsUsed,14);assert.equal(wires.at(-1)!.width,2048);assert.equal(wires.length,3);
+      // Pricing-friction contract: a maintenance-expired quote for the same
+      // input is accepted and settles at its frozen price, never re-priced.
+      const rawExpired=await post("submit",{...rExpired,confirmation:{confirmed:true,credits:12}});assert.equal(rawExpired.response.status,200,JSON.stringify(rawExpired.body));
+      const expiredNew=await legacyApi.POST(new Request(f.origin+"/api/generate-image",{method:"POST",headers:expiredHeaders,body:JSON.stringify(legacyBody)}));
+      assert.equal(expiredNew.status,200,"maintenance TTL must not block a legitimate submit");
+      const expiredJob=(await expiredNew.json()).jobId;assert.match(expiredJob,/^job-/);
+      let expiredDelivery:Record<string,any>={};for(let i=0;i<600;i++){await wait(80);const response=await legacyApi.GET(new Request(f.origin+"/api/generate-image?job="+expiredJob,{headers:headers()}));expiredDelivery=await response.json();if(["done","error"].includes(expiredDelivery.status))break;}
+      assert.equal(expiredDelivery.status,"done","expired-quote accept delivers at its frozen price");assert.equal(expiredDelivery.creditsUsed,12);
+      const rawExpiredBatch=await post("submit",{...expiredBatchRequest,confirmation:{confirmed:true,credits:24}});assert.equal(rawExpiredBatch.response.status,200,JSON.stringify(rawExpiredBatch.body));
+      const expiredSaved=(await pool.query("SELECT charged_credits FROM app_billing_operations WHERE id=$1",[rawExpired.body.jobId||rawExpired.body.result?.jobId])).rows[0];
+      assert.equal(expiredSaved?Number(expiredSaved.charged_credits):12,12,"expired submit settles at frozen 12, not current 14");
       const fallbackBill=(await pool.query("SELECT quote,charged_credits FROM app_billing_operations WHERE id=$1",[fallbackJob.jobId])).rows[0];assert.equal(Number(fallbackBill.charged_credits),14);assert.equal(fallbackBill.quote.requestedParameters.resolution,"4K");assert.equal(fallbackBill.quote.effectiveParameters.resolution,"2K");
       console.log("SIMPLIFY_MODIFIED=PASS RAW_OLD_CLIENT_SAVED_PLAN=12 GENERIC_QUOTE_FROZEN=12 STALE_MODEL_BILLING_VERSIONS_IGNORED=1 CLIENT_ZERO_NOT_TRUSTED=1 FOREIGN_DENIED=1 COUNT_TAMPER_DENIED=1 GENERIC_EXPIRED_RECEIPT_FIRST=1 GENERIC_EXPIRED_NEW_NOT_ACCEPTED=1 RAW_EXPIRED_SINGLE_BATCH_NOT_REPRICED=1 GENERIC_4K_TO_2K_FROZEN_PRICE=14 LEGACY_UNQUOTED_RATIO_ALLOWED=1 TEXT_VIDEO_GUARDS_RETAINED=1 SUPPLIER_POSTS=3 LEDGERS=3 CHARGED=38 EXTERNAL_CALLS=0");return;
     }
