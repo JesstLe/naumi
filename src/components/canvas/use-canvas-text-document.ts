@@ -21,5 +21,5 @@ export function useCanvasTextDocument(input:{account:string;actor:string;owner:s
   // changes do; a balance-only user object refresh doesn't overwrite drafts.
   const loadRef=useRef(document.load);loadRef.current=document.load;
   useEffect(()=>{if(input.enabled)void loadRef.current();},[input.account,input.enabled,revision]);
-  return {...document,scope,nodes:snapshot.nodes,ready:snapshot.phase==="ready",error:snapshot.error,unsaved:snapshot.unsaved};
+  return {...document,scope,nodes:snapshot.nodes,ready:snapshot.phase==="ready",error:snapshot.error,unsaved:snapshot.unsaved,conflicts:snapshot.conflicts};
 }

@@ -1,4 +1,6 @@
 import "server-only";
+import {assertCanvasTextVersion} from "./text-write";
+import {mapCanvasTextNode,type CanvasTextNodeRecord} from "./text-node-repository";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
 import {createHash} from "node:crypto";
@@ -8,7 +10,8 @@ export async function deleteCanvasNodesAtomically(
   artworkIds: string[],
   textIds: string[],
   videoIds:string[]=[],
-  operationId?:string
+  operationId?:string,
+  expectedTexts?:CanvasTextNodeRecord[]
 ): Promise<{ artworks: number; textNodes: number;videoNodes:number }> {
   await ensureSchema();
   const email = emailRaw.toLowerCase();
@@ -17,7 +20,8 @@ export async function deleteCanvasNodesAtomically(
   const cleanVideoIds=Array.from(new Set(videoIds.filter(Boolean)));
   if([cleanArtworkIds,cleanTextIds,cleanVideoIds].some(ids=>ids.length>200))throw new Error("单次删除节点过多");
   if(cleanVideoIds.length)await (await import("./video-node-repository")).ensureVideoNodeSchema();
-  const fingerprint=createHash("sha256").update(JSON.stringify({delete:{artworkIds:[...cleanArtworkIds].sort(),textIds:[...cleanTextIds].sort(),videoIds:[...cleanVideoIds].sort()}})).digest("hex");
+  if(expectedTexts&&(expectedTexts.length!==cleanTextIds.length||new Set(expectedTexts.map(n=>n.id)).size!==cleanTextIds.length||expectedTexts.some(n=>!cleanTextIds.includes(n.id))))throw new Error("文字删除基线无效");
+  const fingerprint=createHash("sha256").update(JSON.stringify({delete:{artworkIds:[...cleanArtworkIds].sort(),textIds:[...cleanTextIds].sort(),videoIds:[...cleanVideoIds].sort(),...(expectedTexts?{expectedTexts}:{} )}})).digest("hex");
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -26,7 +30,9 @@ export async function deleteCanvasNodesAtomically(
       if(saved){if(saved.fingerprint!==fingerprint)throw new Error("操作编号已使用");await client.query("COMMIT");return {artworks:cleanArtworkIds.length,textNodes:cleanTextIds.length,videoNodes:cleanVideoIds.length};}}
     if(cleanVideoIds.length)await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${email}`]);
     for(const [table,ids] of [["app_artworks",cleanArtworkIds],["app_canvas_text_nodes",cleanTextIds],["app_canvas_video_nodes",cleanVideoIds]] as const){
-      if(ids.length&&(await client.query(`SELECT id FROM ${table} WHERE email=$1 AND id=ANY($2::text[]) FOR UPDATE`,[email,ids])).rowCount!==ids.length)throw new Error("节点不存在或无权修改");
+      if(ids.length){const result=await client.query(`SELECT * FROM ${table} WHERE email=$1 AND id=ANY($2::text[]) FOR UPDATE`,[email,ids]);if(result.rowCount!==ids.length)throw new Error("节点不存在或无权修改");
+        if(table==="app_canvas_text_nodes"&&expectedTexts)for(const expected of expectedTexts)assertCanvasTextVersion(expected.id,mapCanvasTextNode(result.rows.find(row=>row.id===expected.id)),expected);
+      }
     }
     let artworks = 0;
     let textNodes = 0;

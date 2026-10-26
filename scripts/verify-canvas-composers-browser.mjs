@@ -10,12 +10,13 @@ const browser=await chromium.launch({channel:'msedge',headless:true}),context=aw
 await context.addCookies([{name:'naumi_locale',value:'zh',url:base}]);const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
 await page.route(base+'/api/billing/quote',route=>{const input=route.request().postDataJSON();return route.fulfill({json:{...input,credits:13*(input.quantity||1),reserveCredits:13*(input.quantity||1),version:1}});});
 page.on('request',req=>{if(req.url().endsWith('/api/billing/quote'))quotes.push(req.postDataJSON());});
-const state=()=>fetch(base+'/__fixture/state').then(r=>r.json()),node=id=>page.locator(`.react-flow__node[data-id="${id}"]`),pass=name=>{checks.push(name);console.log('PASS '+name)};
+const realText=process.env.CANVAS_FIXTURE_REAL_TEXT==='1';
+const state=async()=>{const state=await fetch(base+'/__fixture/state').then(r=>r.json());if(realText)state.texts=(await fetch(base+'/__fixture/pg-state').then(r=>r.json())).nodes;return state},node=id=>page.locator(`.react-flow__node[data-id="${id}"]`),pass=name=>{checks.push(name);console.log('PASS '+name)};
 const image=page.getByTestId('image-node-dock'),text=page.getByTestId('text-node-dock');
 async function close(){const button=page.getByRole('button',{name:'关闭创作栏',exact:true});if(await button.isVisible())await button.click();}
 async function open(){await page.goto(base+'/canvas',{waitUntil:'domcontentloaded'});await expect(node('placement-root')).toBeVisible();const assistant=page.getByRole('button',{name:'收起助手',exact:true});if(await assistant.isVisible())await assistant.click();}
 try{
- await fetch(base+'/__fixture/reset');await open();await node('placement-root').click({position:{x:90,y:110}});await expect(image).toBeVisible();
+ await fetch(base+'/__fixture/reset');if(realText)await fetch(base+'/__fixture/reset-text');await open();await node('placement-root').click({position:{x:90,y:110}});await expect(image).toBeVisible();
  await image.locator('textarea').fill('R3E image draft');await image.getByRole('spinbutton',{name:'生成图片数量'}).fill('3');
  await image.getByRole('button',{name:/· 1K/}).click();const parameters=page.getByTestId('canvas-generation-parameters');await expect(parameters).toBeVisible();await parameters.getByRole('button',{name:'3:4',exact:true}).click();await page.keyboard.press('Escape');await expect(parameters).toHaveCount(0);
  await expect.poll(()=>quotes.some(q=>q.feature==='canvas.image'&&q.modelId==='gpt-image-2'&&q.quantity===3&&q.ratio==='3:4'&&q.resolution==='1K')).toBe(true);

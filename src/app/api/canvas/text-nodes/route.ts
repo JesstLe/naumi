@@ -1,3 +1,5 @@
+import {canvasTextSnapshotSchema} from "@/lib/canvas/history-contract";
+import {CanvasTextWriteConflict} from "@/lib/canvas/text-write";
 import { NextResponse } from "next/server";
 import {dbEnabled} from "@/platform/db/pool";
 import {deleteCanvasTextNodes, listCanvasTextNodes, upsertCanvasTextNode, type CanvasTextNodeRecord} from "@/lib/canvas/text-node-repository";
@@ -23,7 +25,7 @@ export async function POST(request: Request) {
   const email = await authenticatedEmail(request);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
 
-  let body: Partial<CanvasTextNodeRecord>;
+  let body: Partial<CanvasTextNodeRecord>&{base?:CanvasTextNodeRecord|null};
   try {
     body = await request.json();
   } catch {
@@ -49,7 +51,7 @@ export async function POST(request: Request) {
         .filter(Boolean)
     )
   ).slice(0, 200);
-  if (sourceIds.length) {
+  if (sourceIds.length&&!Object.hasOwn(body,"base")) {
     const references = await listArtworksByIds(email, sourceIds);
     const projectTexts = (await listCanvasTextNodes(email)).filter(node => node.projectKey === projectKey);
     const texts = projectTexts.filter(node => sourceIds.includes(node.id) && node.id !== id);
@@ -76,7 +78,7 @@ export async function POST(request: Request) {
         .filter(Boolean)
     )
   ).slice(0, 2);
-  if (productIds.length) {
+  if (productIds.length&&!Object.hasOwn(body,"base")) {
     const products = await listArtworksByIds(email, productIds);
     if (products.length !== productIds.length) {
       return NextResponse.json(
@@ -86,6 +88,8 @@ export async function POST(request: Request) {
     }
   }
   const now = new Date().toISOString();
+  if(Object.hasOwn(body,"base")&&body.base!==null){const parsed=canvasTextSnapshotSchema.safeParse(body.base);if(!parsed.success||parsed.data.id!==id||parsed.data.projectKey!==projectKey)return NextResponse.json({error:"文字保存基线无效"},{status:400});body.base={...parsed.data,updatedAt:parsed.data.updatedAt||now};}
+  try{
   const node = await upsertCanvasTextNode(email, {
     id,
     projectKey,
@@ -111,8 +115,9 @@ export async function POST(request: Request) {
           .filter(Boolean)
       )
     ).slice(0, 200),
-  });
+  },Object.hasOwn(body,"base")?{base:body.base!}:undefined);
   return NextResponse.json({ persisted: true, node });
+  }catch(error){if(error instanceof CanvasTextWriteConflict)return NextResponse.json({error:error.message,code:error.code,id:error.id,fields:error.fields,current:error.current},{status:409});if(error instanceof Error&&/引用节点|绑定的产品图|循环连线/.test(error.message))return NextResponse.json({error:error.message},{status:400});throw error;}
 }
 
 export async function DELETE(request: Request) {

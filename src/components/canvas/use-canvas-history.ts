@@ -36,10 +36,11 @@ export function useCanvasHistory(input: Input) {
     flush: () => latest.current.flush(), transaction: (scope,work) => latest.current.textDocument.transaction(scope,work),
     video: id => latest.current.video(id), refresh: () => latest.current.refresh(),
     warning: message => latest.current.warning(message),
+    conflict:(scope,value)=>latest.current.textDocument.conflict?.(scope,value),
     pending: (scope,action,undo) => { scope.assertView(); latest.current.pending(action,undo); },
     commit: (scope,value) => {
       const {action,undo,operations,persisted} = value;
-      latest.current.textDocument.applyHistory(scope,operations);
+      latest.current.textDocument.applyHistory(scope,operations,value.textNodes);
       // Check in deferred React updater bodies too, not just before enqueueing.
       latest.current.works(nodes => scope.documentCurrent() ? reduceHistoryArtworks(nodes,operations,action,undo) : nodes);
       if (scope.documentCurrent() && operations.some(op => op.type === "node-settings")) latest.current.settings(nodes => scope.documentCurrent() ? reduceHistorySettings(nodes,operations) : nodes,persisted);
@@ -54,7 +55,7 @@ export function useCanvasHistory(input: Input) {
   // retains its epoch even if the user navigates A -> B -> A.
   const pushUndo = useCallback((action: CanvasHistoryAction) => owner.push(scope,action),[owner,scope]);
   const lists = owner.list(scope);
-  return {scope,record:(target:typeof scope,action:CanvasHistoryAction)=>owner.push(target,action),transaction:owner.transaction,acknowledge:owner.acknowledge,
+  return {scope,conflict:(target:typeof scope,value:import("@/lib/canvas/text-document").TextDocumentConflict)=>latest.current.textDocument.conflict?.(target,value),record:(target:typeof scope,action:CanvasHistoryAction)=>owner.push(target,action),transaction:owner.transaction,acknowledge:owner.acknowledge,
     submit:(target:typeof scope,prepare:()=>CanvasHistoryAction|null)=>owner.submit(target,prepare),undoStack:lists.undo,redoStack:lists.redo,pushUndo,historySaving:owner.busy.current,historyBusyRef:owner.busy,
     setHistorySaving:owner.setBusy,applyHistory:(action: CanvasHistoryAction,undo: boolean,revision?:number) => owner.apply(scope,action,undo,revision),
     doUndo:() => owner.step(scope,true),doRedo:() => owner.step(scope,false),historyCurrent:scope.viewCurrent};

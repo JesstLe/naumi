@@ -1,4 +1,6 @@
 import "server-only";
+import {validateCanvasTextLinksTx} from "./text-node-links";
+import {mergeCanvasTextWrite,CanvasTextWriteConflict} from "./text-write";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
 import {currentCreationContext} from "@/lib/saas/creation-scope";
@@ -22,7 +24,7 @@ export type CanvasTextNodeRecord = {
   productIds: string[];
 };
 
-function mapCanvasTextNode(row: Record<string, unknown>): CanvasTextNodeRecord {
+export function mapCanvasTextNode(row: Record<string, unknown>): CanvasTextNodeRecord {
   const status = String(row.status || "completed");
   return {
     id: String(row.id || ""),
@@ -65,13 +67,26 @@ export async function listCanvasTextNodes(
 
 export async function upsertCanvasTextNode(
   emailRaw: string,
-  node: CanvasTextNodeRecord
+  node: CanvasTextNodeRecord,
+  options?:{base:CanvasTextNodeRecord|null}
 ): Promise<CanvasTextNodeRecord> {
   await ensureSchema();
-  const status = ["idle", "generating", "completed", "failed"].includes(node.status)
+  let status = ["idle", "generating", "completed", "failed"].includes(node.status)
     ? node.status
     : "completed";
-  const { rows } = await getPool().query(
+  const client=await getPool().connect();let rows:Record<string,unknown>[];
+  try{
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[emailRaw.toLowerCase()]);
+    if(options){
+      const existing=(await client.query("SELECT * FROM app_canvas_text_nodes WHERE id=$1 FOR UPDATE",[node.id])).rows[0];
+      if(existing&&existing.email!==emailRaw.toLowerCase())throw new Error("文字节点不存在或无权修改");
+      const current=existing?mapCanvasTextNode(existing):null;
+      if(options.base&&options.base.id!==node.id)throw new CanvasTextWriteConflict(node.id,["id"],current);
+      node=mergeCanvasTextWrite(node.id,current,node,options.base);status=node.status;
+      await validateCanvasTextLinksTx(client,emailRaw.toLowerCase(),node);
+    }
+    const result=await client.query(
     `INSERT INTO app_canvas_text_nodes
        (id, email, project_key, title, prompt, content, status, canvas_x, canvas_y, canvas_width, canvas_height, created_at, updated_at, source_ids, target_ids, product_ids)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE($12::timestamptz, now()),now(),$13::jsonb,$14::jsonb,$15::jsonb)
@@ -111,6 +126,10 @@ export async function upsertCanvasTextNode(
       JSON.stringify(node.productIds ?? []),
     ]
   );
+    rows=result.rows;
+    if(!rows[0])throw new Error("文字节点不存在或无权修改");
+    await client.query("COMMIT");
+  }catch(error){await client.query("ROLLBACK");throw error;}finally{client.release();}
   if (!rows[0]) throw new Error("文字节点不存在或无权修改");
   const creation=currentCreationContext();if(creation?.creationId&&creation.actorEmail===emailRaw.toLowerCase()){
     await creationTransaction(tx=>creationEvidenceTx(tx,async()=>{

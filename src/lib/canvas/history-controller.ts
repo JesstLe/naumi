@@ -5,13 +5,14 @@ import { canvasHistoryProject, canvasHistoryScope, compileCanvasHistory, type Ca
 import { CanvasHistoryRequestError, postCanvasHistory, type CanvasHistoryScope } from "./history-scope";
 
 type Attempt = { undo: boolean; operationId: string; operations: CanvasHistoryOperation[] };
-export type HistoryCommit = {action: CanvasHistoryAction; undo: boolean; operations: CanvasHistoryOperation[]; persisted: boolean; initial?:boolean};
+export type HistoryCommit = {action: CanvasHistoryAction; undo: boolean; operations: CanvasHistoryOperation[]; persisted: boolean; initial?:boolean;textNodes?:import("./text-document-model").CanvasTextNode[]};
 type Services = {
   changed: () => void; readOnly: () => boolean;
   flush: () => Promise<unknown>; video: (id: string) => CanvasVideoNode | undefined;
   transaction: <T>(scope:CanvasHistoryScope,work:()=>Promise<T>)=>Promise<T>;
   commit: (scope: CanvasHistoryScope, value: HistoryCommit) => void;
   pending: (scope: CanvasHistoryScope, action: Extract<CanvasHistoryAction,{kind:"pending-link"}>, undo: boolean) => void;
+  conflict?:(scope:CanvasHistoryScope,value:NonNullable<CanvasHistoryRequestError["conflict"]>)=>void;
   refresh: () => Promise<unknown>; warning: (message: string) => void;
 };
 
@@ -51,8 +52,10 @@ export function createCanvasHistoryController(services: Services) {
           attempt = {undo:reverse,operationId:browserRandomUUID(),operations:structuredClone(compileCanvasHistory(action,reverse,services.video,initialRevision))};
           attempts.set(action,attempt);
         }
-        const response = await postCanvasHistory(scope,{operationId:attempt.operationId,operations:attempt.operations});
-        const value = {action,undo:reverse,operations:attempt.operations,persisted:response.persisted};
+        let response;
+        try{response=await postCanvasHistory(scope,{operationId:attempt.operationId,operations:attempt.operations});}
+        catch(error){if(error instanceof CanvasHistoryRequestError&&error.conflict){attempts.delete(action);services.conflict?.(scope,error.conflict);}throw error;}
+        const value = {action,undo:reverse,operations:attempt.operations,persisted:response.persisted,textNodes:response.textNodes};
         attempts.delete(action);
         // A scoped document owner can acknowledge its own durable drafts after
         // navigation. UI adapters still guard all current-view React writes.

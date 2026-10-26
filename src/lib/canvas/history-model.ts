@@ -95,20 +95,20 @@ export function compileCanvasHistory(action: CanvasHistoryAction, undo: boolean,
   const side = undo ? "from" : "to", operations: CanvasHistoryOperation[] = [];
   const getVideo = (id: string) => { const node = video(id); if (!node) throw new Error("视频节点不存在，请刷新画布"); return node; };
   const videoPatch = (id: string, fields: VideoPatchFields) => operations.push({type:"video-patch",id,expectedRevision:getVideo(id).revision,fields});
-  const position = (id: string, point: {x:number;y:number}, text = id.startsWith("text-")) => {
-    if (video(id)) videoPatch(id,point); else operations.push({type:"position",id,text,...point});
+  const position = (id: string, point: {x:number;y:number}, text = id.startsWith("text-"),expected?:{x:number;y:number}) => {
+    if (video(id)) videoPatch(id,point); else operations.push({type:"position",id,text,...point,...(text&&expected?{expected}:{})});
   };
   const visibility = (records: Artwork[], visible: boolean) => records.forEach(record => operations.push({type:"visibility",id:record.id,visible}));
   const texts = (records: CanvasTextNode[], visible: boolean) => records.forEach(node => operations.push(visible
-    ? {type:"text-restore",node:{...node,productIds:node.productIds || []}} : {type:"text-delete",id:node.id}));
+    ? {type:"text-restore",node:{...node,productIds:node.productIds || []},expectMissing:true} : {type:"text-delete",id:node.id,expected:{...node,productIds:node.productIds||[]}}));
   const videos = (records: CanvasVideoNode[], visible: boolean) => records.forEach(node => operations.push({type:"video-visibility",id:node.id,visible}));
   switch (action.kind) {
     case "pending-link": break;
     case "video-patch": videoPatch(action.id,action[side]); break;
     case "video-result": operations.push({type:"video-result",id:action.id,expectedRevision:initialRevision ?? getVideo(action.id).revision,expectedArtworkId:action[undo?"to":"from"],artworkId:action[side]}); break;
     case "video-add": videos(action.records,!undo); break;
-    case "move": case "text-move": position(action.id,action[side],action.kind === "text-move"); break;
-    case "move-many": action.moves.forEach(move => position(move.id,move[side])); break;
+    case "move": case "text-move": position(action.id,action[side],action.kind === "text-move",action[undo?"to":"from"]); break;
+    case "move-many": action.moves.forEach(move => position(move.id,move[side],undefined,move[undo?"to":"from"])); break;
     case "canvas-group": action.changes.forEach(change => operations.push({type:"group",id:change.id,value:change[side]})); break;
     case "mixed-delete": case "workflow-add": case "mixed-add": {
       const visible = action.kind === "mixed-delete" ? undo : !undo;
@@ -118,8 +118,8 @@ export function compileCanvasHistory(action: CanvasHistoryAction, undo: boolean,
     case "delete": case "add": visibility(action.records,action.kind === "delete" ? undo : !undo); break;
     case "text-delete": case "text-add": texts(action.records,action.kind === "text-delete" ? undo : !undo); break;
     case "parent": operations.push({type:"parent",id:action.targetId,parentId:action.parentId,add:undo?!action.added:action.added}); break;
-    case "text-patch": operations.push({type:"text-patch",id:action.id,fields:action[side]}); break;
-    case "text-patch-many": action.changes.forEach(change=>operations.push({type:"text-patch",id:change.id,fields:change[side]})); break;
+    case "text-patch": operations.push({type:"text-patch",id:action.id,fields:action[side],expected:action[undo?"to":"from"]}); break;
+    case "text-patch-many": action.changes.forEach(change=>operations.push({type:"text-patch",id:change.id,fields:change[side],expected:change[undo?"to":"from"]})); break;
     case "rename": operations.push({type:"rename",id:action.id,title:action[side]}); break;
     case "art-size": operations.push({type:"size",id:action.id,...action[side]}); break;
     case "mark": action.changes.forEach(change => operations.push({type:"mark",id:change.id,marked:change[side]})); break;
@@ -162,7 +162,7 @@ export function reduceHistoryTexts(current: CanvasTextNode[], operations: Canvas
   return operations.reduce((nodes,op) => {
     if (op.type === "text-restore") return [...nodes.filter(node => node.id !== op.node.id),op.node as CanvasTextNode];
     if (op.type === "text-delete") return nodes.filter(node => node.id !== op.id);
-    if (op.type === "text-patch") return nodes.map(node => node.id === op.id ? {...node,...op.fields} : node);
+    if (op.type === "text-patch") return nodes.map(node => node.id === op.id ? {...node,...Object.fromEntries(Object.entries(op.fields).filter(([key,value])=>!op.expected||JSON.stringify(value)!==JSON.stringify(op.expected[key as keyof typeof op.expected])))} : node);
     if (op.type === "position" && op.text) return nodes.map(node => node.id === op.id ? {...node,canvasX:op.x,canvasY:op.y} : node);
     return nodes;
   }, current);

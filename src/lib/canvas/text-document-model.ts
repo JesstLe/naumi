@@ -6,7 +6,7 @@ export type CanvasTextNode = {
 };
 export const CANVAS_TEXT_DEFAULT_WIDTH=380;
 export const CANVAS_TEXT_DEFAULT_HEIGHT=240;
-export type TextDocumentCache = {version:2;nodes:CanvasTextNode[];drafts:CanvasTextNode[]};
+export type TextDocumentCache = {version:2;nodes:CanvasTextNode[];drafts:CanvasTextNode[];confirmed?:CanvasTextNode[]};
 
 export const textDocumentKey = (actor:string,owner:string,workspace:string) =>
   `naumi:canvas-text:v2:${JSON.stringify([actor.toLowerCase(),owner.toLowerCase(),workspace])}`;
@@ -18,9 +18,9 @@ export function normalizeTextNodes(value:unknown):CanvasTextNode[] {
       width:Number.isFinite(node.width)&&node.width>0?node.width:CANVAS_TEXT_DEFAULT_WIDTH,height:Number.isFinite(node.height)&&node.height>0?node.height:CANVAS_TEXT_DEFAULT_HEIGHT,
       sourceIds:Array.isArray(node.sourceIds)?node.sourceIds:[],targetIds:Array.isArray(node.targetIds)?node.targetIds:[],productIds:Array.isArray(node.productIds)?node.productIds:[]}));
 }
-export function textCache(nodes:CanvasTextNode[],drafts:CanvasTextNode[]):TextDocumentCache {
+export function textCache(nodes:CanvasTextNode[],drafts:CanvasTextNode[],confirmed?:CanvasTextNode[]):TextDocumentCache {
   const stopped=(items:CanvasTextNode[])=>items.map(node=>node.status==="generating"?{...node,status:"idle" as const}:node);
-  return {version:2,nodes:stopped(nodes),drafts:stopped(drafts)};
+  return {version:2,nodes:stopped(nodes),drafts:stopped(drafts),...(confirmed?{confirmed}:{} )};
 }
 export function mergeTextDrafts(nodes:CanvasTextNode[],drafts:Iterable<CanvasTextNode>) {
   const merged=new Map(nodes.map(node=>[node.id,node]));for(const draft of drafts)merged.set(draft.id,draft);return Array.from(merged.values());

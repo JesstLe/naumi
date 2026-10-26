@@ -1,3 +1,4 @@
+import type {TextDocumentConflict} from "./text-document";
 import {browserRandomUUID} from "../browser-crypto";
 import type {Artwork} from "../mock-data";
 import {canvasDocumentFetch,type CanvasDocumentScope} from "./document-scope";
@@ -9,15 +10,15 @@ import type {CanvasVideoNode} from "./video-node-schema";
 type CopyIntent=Omit<CanvasNodeCopyInput,"operationId">;
 type Ports={
   writable:()=>boolean;snapshot:()=>CanvasNodeRecords;
-  history:{transaction<T>(scope:CanvasDocumentScope,work:()=>Promise<T>):Promise<T>;
+  history:{conflict?:(scope:CanvasDocumentScope,value:TextDocumentConflict)=>void;transaction<T>(scope:CanvasDocumentScope,work:()=>Promise<T>):Promise<T>;
     acknowledge(scope:CanvasDocumentScope,action:CanvasHistoryAction,persisted:boolean):void;record(scope:CanvasDocumentScope,action:CanvasHistoryAction):void};
   artworks:(ids:string[])=>Promise<Artwork[]>;
   videos:(nodes:CanvasVideoNode[],current:()=>boolean)=>void;
 };
-class NodeRequestError extends Error{constructor(message:string,readonly status:number){super(message);}}
+class NodeRequestError extends Error{constructor(message:string,readonly status:number,readonly conflict?:TextDocumentConflict){super(message);}}
 async function post(scope:CanvasDocumentScope,url:string,body:unknown){
   const response=await canvasDocumentFetch(scope,url,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body),signal:AbortSignal.timeout(20_000)},true);
-  const data=await response.json().catch(()=>null);if(!response.ok)throw new NodeRequestError(data?.error||"画布操作失败",response.status);
+  const data=await response.json().catch(()=>null);if(!response.ok)throw new NodeRequestError(data?.error||"画布操作失败",response.status,data?.code==="CANVAS_TEXT_CONFLICT"?{id:data.id,fields:data.fields,current:data.current}:undefined);
   if(!data?.ok)throw new Error("画布保存结果待核实，请重试原操作");return data;
 }
 const rejected=(error:unknown)=>error instanceof NodeRequestError&&error.status>=400&&error.status<500;
@@ -29,7 +30,7 @@ const atProject=(scope:CanvasDocumentScope,project:string|null):CanvasDocumentSc
 export function createCanvasNodeOperations(){
   type CopyAttempt={body:CanvasNodeCopyInput;result?:CanvasNodeCopyResult;action?:CanvasHistoryAction;recorded?:boolean;flight?:Promise<CanvasNodeCopyResult>};
   const copies=new Map<string,CopyAttempt>(),deletions=new Map<string,{body:{projectKey:string;operationId:string};saved?:boolean;persisted?:boolean;flight?:Promise<void>}>();
-  type Removal={body?:{operationId:string;artworkIds:string[];textIds:string[];videoIds:string[]};records?:CanvasNodeRecords;action?:CanvasHistoryAction;recorded?:boolean;saved?:boolean;persisted?:boolean;flight?:Promise<boolean>};
+  type Removal={body?:{operationId:string;artworkIds:string[];textIds:string[];videoIds:string[];expectedTexts?:import("./text-document-model").CanvasTextNode[]};records?:CanvasNodeRecords;action?:CanvasHistoryAction;recorded?:boolean;saved?:boolean;persisted?:boolean;flight?:Promise<boolean>};
   const removals=new Map<string,Removal>();
   function bind(scope:CanvasDocumentScope,ports:Ports){
     const assert=()=>{scope.assertView();if(!ports.writable())throw new Error("当前画布为只读");};
@@ -68,7 +69,7 @@ export function createCanvasNodeOperations(){
           const records=canvasDeleteRecords(ids,ports.snapshot()),action=canvasDeletionAction(records);
           if(!action){removals.delete(key);return false;}
           retained.records=records;retained.action=action;
-          retained.body={operationId:browserRandomUUID(),artworkIds:records.artworks.map(node=>node.id),textIds:records.textNodes.map(node=>node.id),videoIds:records.videoNodes.map(node=>node.id)};
+          retained.body={operationId:browserRandomUUID(),artworkIds:records.artworks.map(node=>node.id),textIds:records.textNodes.map(node=>node.id),videoIds:records.videoNodes.map(node=>node.id),expectedTexts:records.textNodes};
         }
         if(!retained.saved){const result=await post(scope,"/api/canvas/nodes/delete",retained.body);retained.saved=true;retained.persisted=result.persisted!==false;}
         if(!scope.documentCurrent())throw new Error("节点已删除，请返回原账号同步");
@@ -76,7 +77,7 @@ export function createCanvasNodeOperations(){
         ports.history.acknowledge(scope,retained.action!,retained.persisted!==false);
         const now=new Date().toISOString();ports.videos(retained.records!.videoNodes.map(node=>({...node,deletedAt:now,revision:node.revision+1})),scope.documentCurrent);
         removals.delete(key);return true;
-      }).catch(error=>{if(!retained.body||!retained.saved&&rejected(error))removals.delete(key);throw error;}).finally(()=>{retained.flight=undefined;});
+      }).catch(error=>{if(error instanceof NodeRequestError&&error.conflict)ports.history.conflict?.(scope,error.conflict);if(!retained.body||!retained.saved&&rejected(error))removals.delete(key);throw error;}).finally(()=>{retained.flight=undefined;});
       retained.flight=run;return run;
     };
     const removeProject=(projectKey:string):Promise<void>=>{

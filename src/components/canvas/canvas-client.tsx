@@ -53,6 +53,7 @@ import { canvasGenerationReferences, explicitCanvasParent } from "@/lib/canvas/i
 import { canvasFocusViewport } from "@/lib/canvas/upload-visibility";
 import { readPlacementCache, type CanvasPoint } from "@/lib/canvas/stable-placement";
 import { useCanvasTextDocument } from "./use-canvas-text-document";
+import {CanvasTextConflicts} from "./text-conflicts";
 import { CANVAS_TEXT_DEFAULT_WIDTH as TEXT_NODE_DEFAULT_W, CANVAS_TEXT_DEFAULT_HEIGHT as TEXT_NODE_DEFAULT_H } from "@/lib/canvas/text-document-model";
 import { useCanvasHistory } from "./use-canvas-history";
 import { textPatchOf, type CanvasTextNode, type VideoPatchFields, type CanvasHistoryAction as UndoAct } from "@/lib/canvas/history-model";
@@ -3104,6 +3105,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   function applyHistory(act: UndoAct, undo: boolean, initialRevision?: number) {
     return canvasHistory.applyHistory(act,undo,initialRevision);
   }
+  async function resolveTextConflict(id:string,choice:"local"|"server"){
+    const scope=canvasHistory.scope,conflict=canvasTextDocument.conflicts[id];
+    const saved=await canvasTextDocument.resolve(id,choice);
+    if(choice!=="local"||!saved||!scope.documentCurrent())return;
+    canvasHistory.record(scope,conflict?.current?{kind:"text-patch",id:saved.id,from:textPatchOf(conflict.current),to:textPatchOf(saved)}:{kind:"text-add",records:[saved]});
+  }
   function doUndo() { return canvasHistory.doUndo(); }
   function doRedo() { return canvasHistory.doRedo(); }
   function applyPendingLinkHistory(act: Extract<UndoAct,{kind:"pending-link"}>, undo: boolean) {
@@ -4850,6 +4857,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         <span>{canvasTextDocument.error}</span><button className="font-semibold underline" onClick={()=>void canvasTextDocument.load()}>重新加载文字</button>
       </div>}
       </div>}
+      {Object.keys(canvasTextDocument.conflicts).length>0&&<div className="fixed bottom-20 left-1/2 z-[200] flex -translate-x-1/2 flex-col gap-2"><CanvasTextConflicts conflicts={canvasTextDocument.conflicts} nodes={textNodes} onResolve={resolveTextConflict}/></div>}
       {unsavedTextCount>0 && <div role="alert" className="fixed bottom-6 left-1/2 z-[200] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-amber-500 bg-background px-4 py-3 text-sm shadow-lg">
         <span>{t("canvas.unsavedChanges")} ({unsavedTextCount})</span>
         <button className="font-semibold underline" onClick={()=>void canvasTextDocument.retry()}>{t("canvas.retrySave")}</button>

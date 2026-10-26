@@ -1,4 +1,7 @@
 import "server-only";
+import {validateCanvasTextLinksTx} from "./canvas/text-node-links";
+import {mergeCanvasTextWrite,assertCanvasTextVersion,CanvasTextWriteConflict} from "./canvas/text-write";
+import {mapCanvasTextNode} from "./canvas/text-node-repository";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import {getPool} from "@/platform/db/pool";
@@ -39,6 +42,8 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
     }
   }
   const client = await getPool().connect();
+  const textIds=[...new Set(input.operations.flatMap(op=>op.type==="text-restore"?[op.node.id]:op.type==="text-delete"||op.type==="text-patch"||op.type==="position"&&op.text?[op.id]:[]))];
+  const textReceipt=async()=>({textNodes:textIds.length?(await client.query("SELECT * FROM app_canvas_text_nodes WHERE email=$1 AND id=ANY($2::text[])",[email,textIds])).rows.map(mapCanvasTextNode):[]});
   try {
     await client.query("BEGIN");
     // Serialize steps per owner, including concurrent retries of one request.
@@ -46,7 +51,7 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
     const previous = await client.query("SELECT fingerprint FROM app_canvas_history_ops WHERE email=$1 AND id=$2", [email,input.operationId]);
     if (previous.rows.length) {
       if (previous.rows[0].fingerprint !== fingerprint) throw new Error("操作编号已使用");
-      await client.query("COMMIT"); return;
+      const receipt=await textReceipt();await client.query("COMMIT"); return receipt;
     }
     if(hasVideo)await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${email}`]);
     for (const [index,op] of input.operations.entries()) {
@@ -67,6 +72,7 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
       }
       if (op.type === "text-restore") {
         const n = op.node;
+        if(op.expectMissing){const existing=(await client.query("SELECT * FROM app_canvas_text_nodes WHERE id=$1 FOR UPDATE",[n.id])).rows[0];if(existing&&existing.email!==email)throw new Error("文字节点不存在或无权修改");mergeCanvasTextWrite(n.id,existing?mapCanvasTextNode(existing):null,n,null);}
         const result = await client.query(`INSERT INTO app_canvas_text_nodes(id,email,project_key,title,prompt,content,status,canvas_x,canvas_y,canvas_width,canvas_height,created_at,source_ids,target_ids,product_ids)
           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb,$15::jsonb)
           ON CONFLICT(id) DO UPDATE SET project_key=EXCLUDED.project_key,title=EXCLUDED.title,prompt=EXCLUDED.prompt,content=EXCLUDED.content,status=EXCLUDED.status,
@@ -80,8 +86,11 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
       const video=op.type==="node-settings"&&op.video===true;
       const table = text ? "app_canvas_text_nodes" : video?"app_canvas_video_nodes":"app_artworks";
       const owned = await client.query(`SELECT * FROM ${table} WHERE email=$1 AND id=$2 FOR UPDATE`, [email,op.id]);
+      if(!owned.rows.length&&(op.type==="text-patch"&&op.expected||op.type==="text-delete"&&op.expected||op.type==="position"&&op.text&&op.expected))throw new CanvasTextWriteConflict(op.id,["deleted"],null);
       if (!owned.rows.length) throw new Error("节点不存在或无权修改，请刷新画布");
       const row = owned.rows[0];
+      if(op.type==="text-delete"&&op.expected)assertCanvasTextVersion(op.id,mapCanvasTextNode(row),op.expected);
+      const textPosition=op.type==="position"&&op.text&&op.expected?mergeCanvasTextWrite(op.id,mapCanvasTextNode(row),{canvasX:op.x,canvasY:op.y},{canvasX:op.expected.x,canvasY:op.expected.y}):null;
       if (op.type === "workflow-asset") {
         const versions = await client.query("SELECT before_asset,after_asset FROM app_canvas_workflow_asset_ops WHERE email=$1 AND id=$2 AND node_id=$3", [email,op.assetOperationId,op.id]);
         const version = versions.rows[0];
@@ -99,7 +108,7 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
       }
       if (op.type === "visibility") await client.query("UPDATE app_artworks SET deleted_at=CASE WHEN $3 THEN NULL ELSE now() END WHERE email=$1 AND id=$2",[email,op.id,op.visible]);
       else if (op.type === "text-delete") await client.query("DELETE FROM app_canvas_text_nodes WHERE email=$1 AND id=$2",[email,op.id]);
-      else if (op.type === "position") await client.query(`UPDATE ${table} SET canvas_x=$3,canvas_y=$4 WHERE email=$1 AND id=$2`,[email,op.id,op.x,op.y]);
+      else if (op.type === "position") await client.query(`UPDATE ${table} SET canvas_x=$3,canvas_y=$4 WHERE email=$1 AND id=$2`,[email,op.id,textPosition?.canvasX??op.x,textPosition?.canvasY??op.y]);
       else if (op.type === "rename") await client.query("UPDATE app_artworks SET title=$3 WHERE email=$1 AND id=$2",[email,op.id,op.title]);
       else if (op.type === "size") await client.query("UPDATE app_artworks SET canvas_x=$3,canvas_y=$4,canvas_width=$5,canvas_height=$6 WHERE email=$1 AND id=$2",[email,op.id,op.x,op.y,op.width,op.height]);
       else if (op.type === "mark") await client.query("UPDATE app_artworks SET marked=$3 WHERE email=$1 AND id=$2",[email,op.id,op.marked]);
@@ -110,7 +119,9 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
         }
         await client.query("UPDATE app_artworks SET canvas_group_id=$3 WHERE email=$1 AND id=$2",[email,op.id,op.value]);
       } else if (op.type === "text-patch") {
-        const f=op.fields;
+        const current=mapCanvasTextNode(row);
+        const f=op.expected?mergeCanvasTextWrite(op.id,current,op.fields,op.expected):op.fields;
+        if(op.expected)await validateCanvasTextLinksTx(client,email,{...current,...f});
         await client.query(`UPDATE app_canvas_text_nodes SET title=$3,prompt=COALESCE($4,prompt),content=$5,source_ids=$6::jsonb,target_ids=$7::jsonb,product_ids=$8::jsonb,canvas_width=$9,canvas_height=$10,updated_at=now() WHERE email=$1 AND id=$2`,[email,op.id,f.title,f.prompt,f.content,JSON.stringify(f.sourceIds),JSON.stringify(f.targetIds),JSON.stringify(f.productIds),f.width,f.height]);
       } else if (op.type === "parent") {
         if(row.deleted_at)throw new Error("节点已删除，请刷新画布");
@@ -126,7 +137,7 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
       }
     }
     await client.query("INSERT INTO app_canvas_history_ops(id,email,fingerprint) VALUES($1,$2,$3)",[input.operationId,email,fingerprint]);
-    await client.query("COMMIT");
+    const receipt=await textReceipt();await client.query("COMMIT");return receipt;
   } catch (error) { await client.query("ROLLBACK"); throw error; }
   finally { client.release(); }
 }

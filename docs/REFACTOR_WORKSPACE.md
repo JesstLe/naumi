@@ -1,5 +1,7 @@
 # 核心链路重构专用工作区
 
+2026-10-26 R5O：文字autosave/history/选择删除共用12字段三方合并、owner事务与引用防环，原operation重试回canonical，真实冲突两份内容保留；无新DDL/正常创作确认。Canvas7311→7319，173原函数保持；完整旧9/18复现覆盖复活→新16/47关闭、纯96、真实双tab Next4、相邻控件15+5、PG16/24/20/32/28与历史184通过。最终tsc/lint、4433hash完整副本回滚/四产物/远端清理见DELIVERY；第2模块，旧无base入口保留兼容，图片CAS/外围组合/R6继续，不合main、不部署。见 [R5O记录](changes/2026-10-26-canvas-text-concurrency-r5o.md)。
+
 2026-10-26 R5N：在线改字扫描/草稿/原operation入队与后台观察归唯一owner，原侧栏独立，结果复用attachment；Canvas7791→7311，164函数保持/8adapter，旧平行状态删除。旧10类35→新22类79、SSR24同HTML、实际OCR/任务/账务PG28、Next5/相邻15+5+5、助手55通过；最终compiler/结构/4425hash副本回滚与四产物/远端清理以DELIVERY为准。第1模块，CAS/外围组合/R6继续，不合main、不部署。见 [R5N记录](changes/2026-10-26-canvas-image-text-r5n.md)。
 
 2026-10-26 R5M后三模块普通整合：0bb21cfb接固定d460e61f，无Git冲突，Pool真owner保持，receipt非import正文等incoming；维护runner补Pool同实例alias且保留固定b15绑定，不执行生产repair。旧新primitive29→35/完整源码入口24→37，placement23/runner真实PG、助手15类55、tsc/lint通过；SCC仍0。4419hash副本回滚/四产物/双parent及远端以main-sync DELIVERY为准，计数归零，整体CAS/外围组合/R6继续，不合main、不部署。见 [同步记录](changes/2026-10-26-refactor-main-sync-r5m.md)。
