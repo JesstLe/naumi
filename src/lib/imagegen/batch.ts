@@ -1,5 +1,6 @@
 import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import "server-only";
+import {deferApplicationTask} from "../application/task-execution";
 import {excludeImportedHistory,isImportedHistory} from '../staging-history';
 import {currentCreationContext,withFrozenCreation,type CreationContext} from "@/lib/saas/creation-scope";
 import {acceptCreationTx,creationEventTx,recordSourceOutcomeTx,creationEvidenceTx} from '../saas/creation-writer';
@@ -82,7 +83,7 @@ export async function submitAcceptedImagegenBatch(plan:ImagegenPlan,owner:string
   }
   await tx.query("COMMIT");
  }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
- return {id:request.operationId,children:childIds};
+ await deferApplicationTask();return {id:request.operationId,children:childIds};
 }
 /** Parent row lock is held through durable child receipt creation: cancel and submit have one order. */
 async function submitNextLocal(id:string){
@@ -156,15 +157,17 @@ export async function cancelImagegenBatch(id:string,owner:string){
  }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
 }
 export async function recoverImagegenBatches(){
+ if(await deferApplicationTask())return 0;
  await ensureImagegenBatches();const ids=(await getPool().query(`SELECT id FROM app_imagegen_batches WHERE state IN ('running','cancelling') ${excludeImportedHistory('app_imagegen_batches')} ORDER BY updated_at LIMIT 20`)).rows;
- const origin=process.env.INTERNAL_APP_ORIGIN||"http://127.0.0.1:3000";let count=0;
- for(const row of ids){const response=await fetch(`${origin}/api/imagegen/batches/${row.id}`,{method:"POST",headers:{"content-type":"application/json","x-video-worker-secret":process.env.VIDEO_WORKER_SECRET||""},body:JSON.stringify({action:"tick"}),signal:AbortSignal.timeout(10000)});if(response.ok)count++;}return count;
+ let count=0;
+ for(const row of ids)try{await runImagegenBatchTick(row.id);count++;}catch{console.error("[imagegen-batch] saved batch retained for next scan");}return count;
 }
 
 async function submitNext(id:string) {
   return withBackgroundActivity("imagegen-child", id, "claim", () => submitNextLocal(id), () => false);
 }
 export async function runImagegenBatchTick(id:string) {
+ if(await deferApplicationTask())return;
  if(await isImportedHistory(getPool(),'app_imagegen_batches',id))return;
   return withBackgroundActivity("imagegen-batch", id, "continuation", () => runImagegenBatchTickLocal(id), () => undefined);
 }

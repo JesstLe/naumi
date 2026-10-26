@@ -60,6 +60,18 @@ if(parentControlled){
   process.once('disconnect',stop);
   const deadline=setTimeout(stop,60000);deadline.unref();await startPermit;clearTimeout(deadline);
 }
+let pendingWake=false;
+const requestWake=()=>{
+  if(stopping||!parentAllowed||worker.state.paused||worker.state.uncertain)return;
+  // Coalesce notifications during a tick, then scan once after it settles.
+  // Never start a concurrent tick or bypass the original pause/UNKNOWN state.
+  if(worker.activePromise){
+    if(!pendingWake){pendingWake=true;void worker.activePromise.finally(()=>{pendingWake=false;requestWake();}).catch(()=>{});}
+    return;
+  }
+  void worker.tick().catch(()=>{});
+};
+if(!stopping&&application)await application.listen(requestWake,()=>!stopping&&parentAllowed&&!worker.state.paused&&!worker.state.uncertain,intervalMs);
 if(!stopping)await worker.start(intervalMs);
 
 }

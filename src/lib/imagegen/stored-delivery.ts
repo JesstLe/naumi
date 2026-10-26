@@ -8,6 +8,7 @@ import { selectedBusinessOption } from "../model-config/business";
 import { selectedImagePreset } from "../model-config/image-preset";
 import { imageCoordinationPool } from "./coordination-pool";
 import {completeImageDelivery} from "./complete-image-delivery";
+import {applicationTasksRunHere,wakeApplicationWorker,deferApplicationTask} from "../application/task-execution";
 
 async function deliverySource(parentId:string,owner:string){
  const parent=(await getPool().query("SELECT * FROM app_image_jobs WHERE id=$1 AND email=$2 AND kind='imagegen'",[parentId,owner.toLowerCase()])).rows[0];
@@ -56,6 +57,15 @@ export async function recoverStoredDelivery(parentId:string,owner:string){
   if(parent.snapshot.status==="done"&&child.snapshot.deliveryRecovery?.complete===true&&child.snapshot.deliveryRecovery?.ids?.length)return {ok:true,complete:child.snapshot.deliveryRecovery.complete===true,artworkIds:child.snapshot.deliveryRecovery.ids};
   const checkpoint=storedDeliveryCheckpoint(child.snapshot);if(!checkpoint)throw Error("未找到完整的本地原始图片，不会重新生成");
   if(!checkpoint.allDone)throw Error("仍有未确定的上游调用，仅保留已知原结果");
+  if(!applicationTasksRunHere()){
+   // The original owner/history/lease/checkpoint checks above still govern.
+   // Only the processing/settlement owner changes; no second task is created.
+   const changed=await pool.query(`UPDATE app_image_jobs SET snapshot=snapshot||'{"deliveryRecoveryRequested":true}'::jsonb
+    WHERE id=$1 AND email=$2 AND COALESCE(snapshot->>'deliveryRecoveryRequested','false')<>'true'`,[parent.id,owner]);
+   if(changed.rowCount)await wakeApplicationWorker();
+   return {ok:true,complete:false,artworkIds:child.snapshot.deliveryRecovery?.ids||[],queued:true};
+  }
+  await pool.query("UPDATE app_image_jobs SET snapshot=snapshot-'deliveryRecoveryRequested' WHERE id=$1 AND email=$2",[parent.id,owner]);
   const plan=parent.payload.plan as ImagegenPlan,p=child.payload.p||{};
   const frozen=child.payload.modelExecutions?.image;
   const version=frozen?(await pool.query("SELECT config FROM app_model_config_versions WHERE version=$1 AND digest=$2",[frozen.modelVersion,frozen.modelDigest])).rows[0]:null;
@@ -93,15 +103,16 @@ export async function recoverStoredDelivery(parentId:string,owner:string){
  * imported history, cancelled jobs and active leases are not selected. */
 export async function recoverStoredDeliveries(){
  if(!dbEnabled)return 0;
+ if(await deferApplicationTask())return 0;
  const pool=getPool();
  // Materialize a small parent page before inspecting any large child checkpoint.
  // A correlated JSONB join made PostgreSQL repeatedly scan/toast multi-MB images.
- const scan=await pool.connect();let rows:{id:string;email:string;children:Record<string,{jobId?:string}>}[];
+ const scan=await pool.connect();let rows:{id:string;email:string;requested:boolean;children:Record<string,{jobId?:string}>}[];
  try{await scan.query("BEGIN;SET LOCAL statement_timeout='1500ms'");
-  rows=(await scan.query(`SELECT id,email,snapshot->'children' children FROM app_image_jobs WHERE kind='imagegen'
+  rows=(await scan.query(`SELECT id,email,snapshot->'children' children,snapshot->>'deliveryRecoveryRequested'='true' AS requested FROM app_image_jobs WHERE kind='imagegen'
    AND snapshot->>'status' IN ('error','needs_attention') AND lease_token IS NULL
-   AND created_at>now()-interval '7 days' AND updated_at<now()-interval '20 seconds'
-   AND COALESCE((snapshot->>'deliveryRecoveryAttempts')::int,0)<5
+   AND (snapshot->>'deliveryRecoveryRequested'='true' OR (created_at>now()-interval '7 days' AND updated_at<now()-interval '20 seconds'
+   AND COALESCE((snapshot->>'deliveryRecoveryAttempts')::int,0)<5))
    ${excludeImportedHistory("app_image_jobs")}
    ORDER BY updated_at DESC,id LIMIT 16`)).rows;
   await scan.query("COMMIT");
@@ -110,7 +121,7 @@ export async function recoverStoredDeliveries(){
  for(const row of rows){
   const children=Object.values(row.children||{});if(children.length!==1||!children[0].jobId)continue;
   const retry=(await pool.query("SELECT (snapshot->>'deliveryAttempts')::int n FROM app_image_jobs WHERE id=$1 AND email=$2 AND kind='generate' AND lease_token IS NULL",[children[0].jobId,row.email])).rows[0];
-  if(!(retry?.n>=3))continue;
+  if(!(retry?.n>=3)&&!row.requested)continue;
   const state=await storedDeliveryState(row.id,row.email);if(!state?.available&&!state?.ids)continue;
   try{await recoverStoredDelivery(row.id,row.email);completed++;}
   catch{await pool.query(`UPDATE app_image_jobs SET snapshot=jsonb_set(snapshot,'{deliveryRecoveryAttempts}',to_jsonb(COALESCE((snapshot->>'deliveryRecoveryAttempts')::int,0)+1)),updated_at=now() WHERE id=$1 AND lease_token IS NULL AND snapshot->>'status' IN ('error','needs_attention')`,[row.id]);}

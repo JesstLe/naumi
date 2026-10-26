@@ -6,6 +6,7 @@ import { recoverDueVideoTasks } from "@/lib/video/service";
 import { recoverDurableImageJobs } from "@/lib/worker/image-recovery";
 import { scanSupplierCostsOnce } from "@/lib/supplier-cost/worker";
 import {recoverVideoWorkflows} from "./workflow";
+import {applicationTasksRunHere} from "../application/task-execution";
 
 // ---------------------------------------------------------------------------
 // 视频后台 worker(§7):周期恢复扫描,处理"页面关闭后遗留的进行中任务"。
@@ -34,6 +35,7 @@ async function scanVideoWorkerOnceLocal(): Promise<number> {
 }
 
 export function startVideoWorker(): void {
+  if(!applicationTasksRunHere())return;
   if (process.env.NAUMI_VIDEO_WORKER === "0") return;
   if (started) return;
   started = true;

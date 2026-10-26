@@ -1,5 +1,7 @@
 # 核心链路重构专用工作区
 
+2026-10-26 R5C：四类持久图片、批次/工作台、改字及原图续交统一Web保存/Worker执行；PG通知仅唤醒、原表/周期恢复兜底，同tick按原lane继续接新任务，排空不补领。完整旧/新Linux16/71、实际Next六入口20、策略18、相邻恢复156/回执59/持久化36/工作台13组及旧进程29/32/39通过；冻结6/current17仍原价，Web执行0/批次HTTP0、混合unknown/显式取消不重提。新owner无环、7124非目标声明和九算法文件保持；tsc/19lint通过。旧image定价verifier端口陈旧导致exit1、五文件对照同失败，仍显式债务，不回退published只读。见 [R5C记录](changes/2026-10-26-image-worker-ownership-r5c.md) 及DELIVERY；本轮第3模块，普通同步main后归零；视频新提交/媒体runtime/20环/UI-CAS/R6继续，不合main、不部署。
+
 建立日期：2026-10-24。
 
 ## 工作区与基线

@@ -98,6 +98,8 @@ services:
       INTERNAL_APP_ORIGIN: http://127.0.0.1:3000
       # 外置视频 worker 通过内部鉴权端点驱动恢复，app 内不再启动定时器。
       NAUMI_VIDEO_WORKER: "0"
+      # Saved image jobs/batches/reference tasks execute only in the direct Worker.
+      NAUMI_APPLICATION_TASK_EXECUTION: ${NAUMI_APPLICATION_TASK_EXECUTION:-worker}
       MEDIA_WORKER_ORIGIN: http://media-worker:3001
       MEDIA_WORKER_SECRET: ${MEDIA_WORKER_SECRET:?请配置独立随机 MEDIA_WORKER_SECRET}
       MEDIA_JOB_DIR: /scratch

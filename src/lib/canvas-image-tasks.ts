@@ -120,6 +120,7 @@ export async function enqueueTextEditTask(email: string, raw: Partial<TextEditTa
     cost,
     metered,
   });
+  await deferApplicationTask();
   return task;
 }
 
@@ -253,6 +254,7 @@ export async function processCanvasImageTask(task: CanvasImageTaskRow): Promise<
 }
 
 export async function recoverCanvasImageTasks(limit = 2): Promise<number> {
+  if(await deferApplicationTask())return 0;
   let processed = 0;
   for (let index = 0; index < Math.min(Math.max(limit, 1), 5); index += 1) {
     const claimed = await withBackgroundActivity("canvas-image", `claim:${index}`, "claim", async () => {
@@ -277,3 +279,4 @@ export function publicCanvasImageTask(task: CanvasImageTaskRow) {
     parameters: normalizedInput(task.parameters as Partial<TextEditTaskInput>) };
 }
 import {withBiModelContext} from "@/lib/bi/context";
+import {deferApplicationTask} from "./application/task-execution";

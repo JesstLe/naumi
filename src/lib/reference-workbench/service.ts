@@ -10,6 +10,7 @@ import {saveImagegenInput,readImagegenInputAsset} from "../imagegen/input-assets
 import {readCanvasImage} from "../canvas-image-input";
 import {planImagegen,imagegenFingerprint} from "../imagegen/plan";
 import {submitAcceptedImagegenBatch,readImagegenBatch,runImagegenBatchTick} from "../imagegen/batch";
+import {deferApplicationTask} from "../application/task-execution";
 import type {ImagegenPlan,ImagegenRequest} from "../imagegen/types";
 import {getModelAdministration} from "../model-config/server";
 import {workbenchModelOptions} from "./model-options";
@@ -219,8 +220,10 @@ export async function chatState(owner:string,sid:string){
 async function recoverReferenceWorkbenchLocal(){await ensureWorkbench();const ops=(await getPool().query<Operation>(`SELECT * FROM app_reference_operations WHERE state='accepted' ${excludeImportedHistory('app_reference_operations')} ORDER BY created_at LIMIT 10`)).rows;for(const op of ops)await synchronize(op);}
 
 export async function synchronize(op:Operation) {
+  if(op.state!=="accepted"||await deferApplicationTask())return;
   return withBackgroundActivity("reference-sync", op.id, "continuation", () => synchronizeLocal(op), () => undefined);
 }
 export async function recoverReferenceWorkbench() {
+  if(await deferApplicationTask())return;
   return withBackgroundActivity("reference-sync", "reference-recovery-scan", "claim", () => recoverReferenceWorkbenchLocal(), () => undefined);
 }

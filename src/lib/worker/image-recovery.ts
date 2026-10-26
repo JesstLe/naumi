@@ -3,6 +3,7 @@ import {dbEnabled} from "@/platform/db/pool";
 import {dueImageJobs,type ImageJobRow} from "../image-job-repository";
 import {dispatchImageQueue} from "../image-job-queue";
 import {withBackgroundActivity} from "../release-runtime/background-activity";
+import {deferApplicationTask} from "../application/task-execution";
 
 /** Only persisted job identities reach this dispatcher. The original use case
  * claims the same DB lease and restores its frozen scope, quote and checkpoints.
@@ -27,5 +28,6 @@ async function recoverDurableImageJobsLocal():Promise<number>{
 }
 
 export async function recoverDurableImageJobs():Promise<number>{
+ if(await deferApplicationTask())return 0;
  return withBackgroundActivity("durable-image","recovery-dispatch-scan","claim",()=>recoverDurableImageJobsLocal(),()=>0);
 }

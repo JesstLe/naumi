@@ -7,6 +7,7 @@ import {createWorkerTickReceiptStore,runReceiptedWorkerTick,type TickIdentity,ty
 import {closeImageCoordinationPool} from "../imagegen/coordination-pool";
 import {scanApplicationWorkerOnce} from "./scan";
 import {backgroundWorkCount,waitForBackgroundWork} from "./inflight";
+import {listenForApplicationWork} from "./wakeup";
 
 type LocalTick={id:string;workerInstanceId:string;workerBootId:string;workerCommit:string;targetWebInstanceId:string};
 /** Same durable receipt schema/protocol. Its legacy `web` field names the actual
@@ -15,8 +16,11 @@ export async function createDirectWorkerApplication(){
  if(!dbEnabled||!releaseRuntimeEnabled())throw Error("DIRECT_WORKER_DATABASE_AND_RELEASE_RUNTIME_REQUIRED");
  const identity:TickWebIdentity={...releaseIdentity()};
  const receiptStore=createWorkerTickReceiptStore(getPool());let closed=false,closing:Promise<void>|undefined;
+ let listener:Awaited<ReturnType<typeof listenForApplicationWork>>|undefined;
+ let listening:Promise<void>|undefined;
+ let wakeVersion=0,signalWake:(()=>void)|undefined,canClaim=()=>true,scanIntervalMs=15000;
  const close=()=>closing??(closing=(async()=>{
-  closed=true;await waitForBackgroundWork();
+  closed=true;await listening;await listener?.close();await waitForBackgroundWork();
   const results=await Promise.allSettled([closeImageCoordinationPool(),getPool().end(),releasePool().end()]);
   if(results.some(r=>r.status==="rejected"))throw Error("DIRECT_WORKER_POOL_CLOSE_FAILED");
  })());
@@ -31,11 +35,29 @@ export async function createDirectWorkerApplication(){
  };
  return {
   mode:"direct" as const,identity,
-  snapshot:()=>({executorRole:"worker",backgroundTasks:backgroundWorkCount()}),
+  snapshot:()=>({executorRole:"worker",backgroundTasks:backgroundWorkCount(),wakeupConnected:listener?.connected()===true}),
+  listen(onWake:()=>void,allowed:()=>boolean,intervalMs:number){return listening??(listening=(async()=>{
+   if(closed)return;canClaim=allowed;scanIntervalMs=intervalMs;
+   listener=await listenForApplicationWork(()=>{wakeVersion++;signalWake?.();onWake();});if(closed)await listener.close();
+  })());},
   async dispatch(tick:LocalTick){
    if(closed)throw Error("DIRECT_WORKER_CLOSED");
    const result=await runReceiptedWorkerTick(receiptStore,input(tick),identity,async()=>{
-    const summary=await scanApplicationWorkerOnce();
+    let seen=wakeVersion;const summary=await scanApplicationWorkerOnce();
+    // A slow paid callback must not stall later users until the whole tick
+    // finishes. Hints extend this SAME receipted tick, through original DB lanes.
+    // Drain/parent gating stops extra scans, never the already-claimed callbacks.
+    while(backgroundWorkCount()||canClaim()&&seen!==wakeVersion){
+     if(canClaim()&&seen!==wakeVersion){
+      seen=wakeVersion;const next=await scanApplicationWorkerOnce();
+      for(const key of ["processed","mediaProcessed","generationProcessed","supplierCostsProcessed","mediaSaved","videoProcessed","imageProcessed"] as const)summary[key]+=next[key];
+      summary.at=next.at;continue;
+     }
+     if(!backgroundWorkCount())break;
+     let timer:ReturnType<typeof setTimeout>|undefined;
+     const wake=new Promise<void>(resolve=>{signalWake=resolve;timer=setTimeout(()=>{wakeVersion++;resolve();},scanIntervalMs);});
+     try{await Promise.race([waitForBackgroundWork(),wake]);}finally{signalWake=undefined;clearTimeout(timer);}
+    }
     // A completed receipt means the claimed local callbacks actually settled,
     // not merely that an HTTP kick or the scan's outer promise returned.
     await waitForBackgroundWork();const status=await releaseStatus();

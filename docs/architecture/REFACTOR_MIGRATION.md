@@ -1,5 +1,7 @@
 # 渐进迁移与集中验收台账
 
+R5C（2026-10-26）：原四类图片任务、批次/工作台、Canvas改字、原图续交以部署归属统一Web保存/Worker执行，批次HTTP回跳删除；PG通知+单独LISTEN唤醒，失联/漏通知由原scan恢复，同tick按原lane接新任务，drain不补领。完整Linux旧16/新71、实际Next六入口20、策略18、相邻恢复156/回执59/持久化36/工作台13组和旧Worker实际29/32/39通过；单价冻结6/current17，混合unknown/原op/取消/原价保留。7124非目标声明/九算法文件保持，新owner无环、旧最大20仍在；tsc/19lint通过。旧image定价脚本client9后陈旧model注入失败，五文件投影同依赖同失败，留R6不冒充PASS。详见 [R5C](../changes/2026-10-26-image-worker-ownership-r5c.md)，第3模块main普通同步后归零；视频新提交和发布角色迁移、媒体runtime/小环/UI-CAS/全产品验收继续，不合main、不部署。
+
 R5B（2026-10-26）：实际独立Worker direct执行共享scan，原PG回执绑定Worker，等待detached原回调再完成tick/排空/关pool，HTTP旧协议保持；combined环境分离与direct不强杀、handoff角色观察接通。Linux真实PG旧8/新29、锁阻塞SIGTERM32、崩溃原tick只读核对39、combined31通过，Web POST1→0、冻结原6/current17单次结算18；31unit/91断言/Python30+4、相邻156/36/59和tsc/lint通过。独立bundle验证及Docker/Compose接线完成，47专用clone仍为HTTP，首次提交排队/唤醒与该发布角色整合继续，不冒充全重活已离Web。见 [R5B](../changes/2026-10-26-direct-application-worker-r5b.md) 及DELIVERY；同步后第2模块，剩余媒体runtime/20环/外围UI-CAS/全产品R6继续，不合main、不部署。
 
 R5A（2026-10-26）：套图/A+51声明及DurableImageJobs真实执行owner分离，route780→221/1072→374，恢复四类原任务不再HTTP回跳，tick保留原受理/回执/鉴权。58迁移声明/helper及7069非目标声明保持，12文件恢复环已拆、新owner无环、scan不达HTTP route。完整PG旧5/129→新5/156、实际Next34→37、冻结6/current17及release实际后台排空通过；全项目tsc/20文件lint、相邻15直接通过与middleware24/Linux补验通过。旧stopping新旧同fixture cleanup42P01、无参legacy用例均保留非绿，见 [R5A记录](../changes/2026-10-26-worker-recovery-boundary-r5a.md)。副本回滚/提交见DELIVERY；同步后第1模块。R5B独立进程执行/媒体runtime与R6继续，不合main、不部署。

@@ -18,6 +18,7 @@ import { withFrozenExecutionBundle } from "@/lib/model-config/execution";
 import { recoverableChannelIdentity } from "@/lib/model-config/channel-availability";
 import { IMAGE_JOB_RELEASED_MESSAGE } from "@/lib/image-job-failure";
 import {trackBackgroundWork} from "@/lib/worker/inflight";
+import {deferApplicationTask} from "@/lib/application/task-execution";
 
 type Execution = { id: string; token: string; queue: Promise<unknown> };
 
@@ -193,6 +194,7 @@ export class DurableImageJobs<T extends { status: string }> {
   async reviewSource(id: string, index: number, redo: boolean, feedback="") { return repository.reviewImageSource(id,index,redo,feedback); }
   async active(email: string) { return dbEnabled ? repository.listActiveImageJobs(email, this.kind) : []; }
   async kick(id: string, run: (payload: Record<string, unknown>, snapshot: T) => Promise<void>) {
+    if(await deferApplicationTask())return;
     if (!dbEnabled) {
       const row = this.memory.get(id);
       if (row) void trackBackgroundWork(run(row.payload as Record<string, unknown>, row.snapshot)).catch(console.error);
