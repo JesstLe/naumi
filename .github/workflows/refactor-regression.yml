@@ -1,0 +1,56 @@
+name: Core refactor regression
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'services/**', 'scripts/**', 'package*.json', 'Dockerfile', '.dockerignore', 'next.config.*', 'tsconfig*.json', 'docs/apimart-image25-pricing-20261008.json', '.github/workflows/**']
+  pull_request:
+    paths: ['src/**', 'services/**', 'scripts/**', 'package*.json', 'Dockerfile', '.dockerignore', 'next.config.*', 'tsconfig*.json', 'docs/apimart-image25-pricing-20261008.json', '.github/workflows/**']
+  workflow_call:
+    inputs:
+      source_commit:
+        type: string
+        required: true
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  core:
+    if: github.repository == 'JesstLe/naumi'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fixture
+          POSTGRES_PASSWORD: isolated-fixture
+          POSTGRES_DB: refactor_fixture
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U fixture -d refactor_fixture"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_commit || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Verify orchestration and workflow wiring
+        run: node scripts/verify-refactor-runner.mjs
+      - name: Run source-bound core regression
+        run: node scripts/verify-refactor.mjs --expected-sha "${{ inputs.source_commit || github.sha }}" --out output/refactor-ci
+        env:
+          DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/refactor_fixture
+          NAUMI_VERIFY_ISOLATED_DB: '1'
+          SETTINGS_SECRET: refactor-ci-fixture-only-not-production-20261026
+          NODE_OPTIONS: --conditions=react-server
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: refactor-core-${{ inputs.source_commit || github.sha }}
+          path: output/refactor-ci/
+          if-no-files-found: error

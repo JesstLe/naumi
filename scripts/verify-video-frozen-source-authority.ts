@@ -22,7 +22,7 @@ async function main(){
   assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');
   const database=new URL(process.env.DATABASE_URL||'http://invalid');
   assert.equal(database.hostname,'127.0.0.1');
-  assert.match(database.pathname,/^\/naumi_video_fixture_[a-z0-9_]+$/);
+  assert.match(database.pathname,/^\/[a-z0-9_]*fixture[a-z0-9_]*$/);
   let supplierPosts=0,httpRequests=0,hookPosts=0,creationErrors=0,fetchCalls=0;
   const f=await createModelFixture((req,res)=>{httpRequests++;if(req.method==='POST')supplierPosts++;res.writeHead(500);res.end('Unexpected HTTP in frozen-source regression');});
   const previousEnv={PGOPTIONS:process.env.PGOPTIONS,NAUMI_ROUTER_MANAGEMENT_URL:process.env.NAUMI_ROUTER_MANAGEMENT_URL,NAUMI_ROUTER_MANAGEMENT_TOKEN:process.env.NAUMI_ROUTER_MANAGEMENT_TOKEN,MODEL_CONFIG_ENVELOPE_SECRET:process.env.MODEL_CONFIG_ENVELOPE_SECRET,MODEL_CONFIG_TRUSTED_ORIGINS:process.env.MODEL_CONFIG_TRUSTED_ORIGINS};

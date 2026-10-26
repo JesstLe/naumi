@@ -38,7 +38,7 @@ async function main(){
  fs.writeFile=(async(path:any,...args:any[])=>{if(fault&&String(path).includes(fault.child)&&/generations|image-delivery/.test(String(path)))trip("storage");return (write as any)(path,...args);}) as typeof fs.writeFile;
  try{
   f.config.upstreamModels[0].model="gpt-image-2";f.config.upstreamModels[0].capabilities.nativeResolutions=[];f.config.upstreamModels[0].parameterMap.resolution={};
-  const version=await f.repo.current();db=await import("../src/lib/db");await db.ensureSchema();
+  const version=await f.repo.current();db=await import("../src/lib/db");await db.ensureSchema();await (await import("../src/lib/saas/creation-schema")).ensureCreationSchema();
   closeLocks=(await import("../src/lib/imagegen/coordination-pool")).closeImageCoordinationPool;
   const owner=`r2-${randomUUID()}@fixture.test`,other=`r2-other-${randomUUID()}@fixture.test`;await db.getOrCreateUser(owner);await db.getOrCreateUser(other);
   const {createBillingService,withBillingTransaction}=await import("../src/lib/billing/service");

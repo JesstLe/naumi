@@ -17,6 +17,7 @@ on:
       - 'tailwind.config.*'
       - 'docs/apimart-image25-pricing-20261008.json'
       - '.github/workflows/docker.yml'
+      - '.github/workflows/refactor-regression.yml'
   workflow_dispatch:
     inputs:
       source_commit:
@@ -75,8 +76,13 @@ jobs:
           gh release create "$release_tag" --repo "$GITHUB_REPOSITORY" --target "$sha" --draft --prerelease \
             --title "Naumi image candidate ${sha:0:12}" \
             --notes 'Fixed image candidate. No automatic production deployment. Published only after all requested images finish.'
-  docker:
+  regression:
     needs: resolve
+    uses: ./.github/workflows/refactor-regression.yml
+    with:
+      source_commit: ${{ needs.resolve.outputs.sha }}
+  docker:
+    needs: [resolve, regression]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
