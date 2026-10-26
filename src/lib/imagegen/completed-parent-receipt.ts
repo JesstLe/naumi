@@ -6,6 +6,7 @@ import {recordImageStateTx} from '../saas/creation-writer';
 import {readCanvasOutput} from '../canvas-image-input';
 import {inspectImagegenPixels} from './postprocess';
 import {plainGeneratedOutput} from './receipt-policy';
+import {legacyRatioWarning} from './output-advisory';
 import type {ImagegenPlan,ImagegenResult} from './types';
 
 const digest=(v:unknown)=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
@@ -14,12 +15,13 @@ const expiredOrEmpty=(row:Record<string,any>)=>!row.lease_token||row.lease_until
 /** Project one already settled, fully stored child. No generator, supplier,
  * settlement, release-activity mutation, or general UNKNOWN recovery is used.
  * The old activity remains audit evidence; this is a separate result receipt. */
-export async function finalizeCompletedParent(parentId:string,owner:string):Promise<boolean>{
+export async function finalizeCompletedParent(parentId:string,owner:string,options:{repairTerminalReceipt?:boolean}={}):Promise<boolean>{
  if(!dbEnabled)return false;
  const pool=getPool();owner=owner.toLowerCase();
  const read=async(id:string,kind:string)=>(await pool.query("SELECT *,lease_until>clock_timestamp() AS lease_live FROM app_image_jobs WHERE id=$1 AND email=$2 AND kind=$3",[id,owner,kind])).rows[0];
  const parent=await read(parentId,'imagegen');
- if(!parent||!['pending','running'].includes(parent.snapshot.status)||!expiredOrEmpty(parent))return false;
+ const allowed=options.repairTerminalReceipt?['pending','running','error','done']:['pending','running'];
+ if(!parent||!allowed.includes(parent.snapshot.status)||!expiredOrEmpty(parent))return false;
  const plan=parent.payload.plan as ImagegenPlan;
  if(!Array.isArray(plan?.steps)||plan.steps.length!==1||!plainGeneratedOutput(plan))return false;
  const children=parent.snapshot.children||{},keys=Object.keys(children),step=plan.steps[0];
@@ -27,7 +29,8 @@ export async function finalizeCompletedParent(parentId:string,owner:string):Prom
  if(keys.length!==1||!link?.jobId||!['submitted','done'].includes(link.state))return false;
  if(Object.values(parent.snapshot.paidOperations||{}).length)return false;
  const child=await read(link.jobId,'generate');
- if(!child||child.snapshot.status!=='done'||!child.billing_settled||!expiredOrEmpty(child)||child.snapshot.imagegenOutputError)return false;
+ const ratioNotice=options.repairTerminalReceipt?legacyRatioWarning(child?.snapshot.imagegenOutputError):undefined;
+ if(!child||child.snapshot.status!=='done'||!child.billing_settled||!expiredOrEmpty(child)||child.snapshot.imagegenOutputError&&!ratioNotice)return false;
  if(Object.values(child.snapshot.paidOperations||{}).some((a:any)=>!['done','rejected'].includes(a.state)||Object.values(a.children||{}).some((v:any)=>!['done','rejected'].includes(v.state))))return false;
  const images=child.snapshot.images;
  if(!Array.isArray(images)||images.length<1||images.length>4||images.length!==plan.request.variants)return false;
@@ -61,7 +64,11 @@ export async function finalizeCompletedParent(parentId:string,owner:string):Prom
   if(charged===null||!Number.isSafeInteger(charged)||charged<0||billing&&!['settled','released'].includes(billing.state)){
    await tx.query('ROLLBACK');return false;
   }
-  const warnings=[...new Set([...(parent.snapshot.result?.warnings||[]),...(child.snapshot.imagegenOutputWarning?[child.snapshot.imagegenOutputWarning]:[])])];
+  if(parent.snapshot.status==='done'){
+   if(parent.snapshot.result?.status!=='succeeded'){await tx.query('ROLLBACK');return false;}
+   await recordImageStateTx(tx,parentId,parent.snapshot);await tx.query('COMMIT');return true;
+  }
+  const warnings=[...new Set([...(parent.snapshot.result?.warnings||[]),...(child.snapshot.imagegenOutputWarning?[child.snapshot.imagegenOutputWarning]:[]),...(ratioNotice?[ratioNotice]:[])])];
   const result={...parent.snapshot.result,status:'succeeded',stage:'done',artifacts,chargedCredits:charged,billingStatus:'confirmed',warnings};delete result.error;
   const snapshot={...parent.snapshot,status:'done',result,children:{...children,[step.key]:{...link,state:'done',ids}},
    completedChildReceipt:{version:1,childId:child.id,childSnapshotSha256:digest(child.snapshot),previousParentSnapshotSha256:digest(parent.snapshot),previousExpiredLeaseSha256:parent.lease_token?digest(parent.lease_token):null,observedAt:new Date().toISOString()}};
