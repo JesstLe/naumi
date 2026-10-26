@@ -1,33 +1,23 @@
+import {ensurePostprocessSchema} from "@/lib/media-postprocess-schema";
+export {ensurePostprocessSchema};
 import "server-only";
-import { createHash, randomUUID } from "node:crypto";
+import {createHash,randomUUID} from "node:crypto";
 import sharp from "sharp";
-import type { Pool } from "pg";
-import { dbEnabled, getPool } from "@/platform/db/pool";
-import { uploadImage } from "./storage";
-import { readManagedObject } from "./storage";
-import { assertMutableStagingTask } from "./staging-history";
-import type { Postprocess } from "./model-config/business-schema";
+
+import {dbEnabled,getPool} from "@/platform/db/pool";
+import {uploadImage} from "./storage";
+import {readManagedObject} from "./storage";
+import {assertMutableStagingTask} from "./staging-history";
+import type {Postprocess} from "./model-config/business-schema";
 import {processImagegenPixels,inspectImagegenPixels} from "./imagegen/postprocess";
 import type {ImagegenRequest} from "./imagegen/types";
 import {stableJson} from "./billing/fingerprint";
 export type ImagegenPostprocessPolicy={enabled:true;kind:"imagegen";output:ImagegenRequest["output"];chroma?:ImagegenRequest["chroma"];failure:"hold"|"keep-base"};
 type MediaPostprocessPolicy=Postprocess|ImagegenPostprocessPolicy;
 export class PostprocessPending extends Error { constructor(public operationId: string) { super("底图已保存，后处理未完成；恢复只重做此阶段"); } }
-const ready = new WeakMap<Pool, Promise<unknown>>();
+
 type PostprocessResult = { url:string; width:number; height:number; kind:Postprocess["kind"]|"base"|"imagegen"; status:"succeeded"|"failed-kept-base";mime?:string;transparentPixels?:number;totalPixels?:number };
-export async function ensurePostprocessSchema(pool: Pool) {
-  let p = ready.get(pool);
-  if (!p) { p = pool.query(`CREATE TABLE IF NOT EXISTS app_media_postprocess(
-    operation_id text PRIMARY KEY,parent_operation_id text NOT NULL,email text NOT NULL,model_version bigint NOT NULL,
-    digest text NOT NULL,policy jsonb NOT NULL,base_url text NOT NULL,result_url text,width int,height int,
-    state text NOT NULL,attempts int NOT NULL DEFAULT 0,lease_id uuid,lease_until timestamptz,error text,
-    processing_kind text NOT NULL,cost_cny_micros numeric(30,0),created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
-    ALTER TABLE app_media_postprocess ADD COLUMN IF NOT EXISTS next_attempt_at timestamptz;
-    ALTER TABLE app_media_postprocess ADD COLUMN IF NOT EXISTS output_mime text;
-    ALTER TABLE app_media_postprocess ADD COLUMN IF NOT EXISTS transparent_pixels bigint;
-    ALTER TABLE app_media_postprocess ADD COLUMN IF NOT EXISTS total_pixels bigint;`).catch(e => { ready.delete(pool); throw e; }); ready.set(pool,p); }
-  await p;
-}
+
 export async function transformImage(bytes: Buffer, policy: MediaPostprocessPolicy) {
   if(policy.kind==="imagegen")return {...await processImagegenPixels(bytes,policy),kind:"imagegen" as const};
   if (policy.kind === "ai-upscale") throw new Error("AI 超分供应商回执尚未接通");

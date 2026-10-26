@@ -1,20 +1,12 @@
+import {ensureCanvasSettingsSchema} from "@/lib/canvas/storage-schema";
+export {ensureCanvasSettingsSchema};
 import "server-only";
-import {ensureSchema} from "@/lib/persistence/schema";
-import {getPool} from "@/platform/db/pool";
-import { validNodeSettings } from "@/lib/canvas/node-settings";
 
-let schema: Promise<void> | undefined;
-export async function ensureCanvasSettingsSchema() {
-  await ensureSchema();
-  if (!schema) schema = getPool().query(`CREATE TABLE IF NOT EXISTS app_canvas_node_settings (
-    email text NOT NULL, node_id text NOT NULL, kind text NOT NULL CHECK(kind IN ('text','image')),
-    settings jsonb NOT NULL DEFAULT '{}'::jsonb, updated_at timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY(email,node_id));
-    CREATE TABLE IF NOT EXISTS app_canvas_local_edits (
-      email text NOT NULL, operation_id uuid NOT NULL, fingerprint text NOT NULL, artwork_id text NOT NULL,
-      PRIMARY KEY(email,operation_id));`).then(() => undefined).catch(error => { schema = undefined; throw error; });
-  await schema;
-}
+import {getPool} from "@/platform/db/pool";
+import {validNodeSettings} from "@/lib/canvas/node-settings";
+
+
+
 export async function listCanvasNodeSettings(email: string) {
   await ensureCanvasSettingsSchema();
   await (await import("@/lib/canvas/video-node-repository")).ensureVideoNodeSchema();

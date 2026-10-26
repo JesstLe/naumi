@@ -1,5 +1,6 @@
 import {withWorkflowContinuation} from "@/lib/video/workflow-creation";
-import {ensureVideoWorkflowSchema} from "@/lib/video/workflow";
+import {ensureVideoWorkflowSchema} from "@/lib/video/storage-schema";
+
 import {NextResponse} from "next/server";
 import {authenticatedEmail} from "@/lib/request-auth";
 import {sameSiteBiMutation} from "@/lib/bi/access";

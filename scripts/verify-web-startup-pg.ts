@@ -8,13 +8,14 @@ import path from "node:path";
 import {pathToFileURL} from "node:url";
 import {Client,Pool} from "pg";
 import type {WebStartupReport} from "../src/lib/application/startup";
+import {expectedPersistenceSteps} from "./persistence-owner-fixture";
 
 const arg=(name:string)=>{const i=process.argv.indexOf(name);return i<0?undefined:process.argv[i+1];};
-const steps=["persistence","billing","models","model-runtime","video-defaults","supplier-video","creation","media","login","image-skills","imagegen-quotes","billing-quotes","imagegen-batches","workbench"];
 const owner="startup@fixture.test";
 async function main(){
  assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,"1");const url=new URL(process.env.DATABASE_URL!);assert.equal(url.hostname,"127.0.0.1");assert.match(url.pathname,/fixture/);
  const root=path.resolve(arg("--source-root")||"."),baseline=process.argv.includes("--baseline"),mode=baseline?"BASELINE":"MODIFIED",part=arg("--part"),out=path.resolve(process.env.WEB_STARTUP_EVIDENCE||"output/refactor-r4b4-20261025");await mkdir(out,{recursive:true});
+ const steps=await expectedPersistenceSteps(root);
  const load=(f:string)=>import(pathToFileURL(path.join(root,f)).href);
  async function child(args:string[],name:string){
   const cp=spawn(process.execPath,["--conditions=react-server","--import","tsx",path.resolve("scripts/verify-web-startup-pg.ts"),"--source-root",root,...args,...(baseline?["--baseline"]:[])],{env:{...process.env,TSX_TSCONFIG_PATH:path.join(root,"tsconfig.json")},windowsHide:true,stdio:["ignore","pipe","pipe"]});let stdout="",stderr="";

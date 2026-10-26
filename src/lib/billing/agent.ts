@@ -1,6 +1,8 @@
 import "server-only";
 import {prepareCanvasVideoWorkflow,type PreparedCanvasVideoWorkflow} from "../video/canvas-workflow";
-import {getVideoWorkflow,ensureVideoWorkflowSchema} from "../video/workflow";
+import {getVideoWorkflow} from "../video/workflow";
+import {ensureVideoWorkflowSchema} from "@/lib/video/storage-schema";
+
 import {videoAgentOperationId} from "../agent/canvas-video-tools";
 import {getVideoNode} from "../canvas/video-node-repository";
 import {mediaBillingQuote} from "../video/media-billing";

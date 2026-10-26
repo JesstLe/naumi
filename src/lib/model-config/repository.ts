@@ -5,9 +5,14 @@ import { createHmac, randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { settingsSecret } from "../settings-secret";
 import { registerProviderCapacities } from "./capacity";
-import {ensureVideoDefaultsSchema,freezeManagedVideoCapability} from "../video/frozen-capability";
-import {ensureSupplierVideoSchema} from "../supplier-models/video-access";
-import { ensureModelSchema, validateModelConfig, type ValidationOptions } from "./schema";
+import {freezeManagedVideoCapability} from "../video/frozen-capability";
+import {ensureVideoDefaultsSchema} from "@/lib/video/model-defaults-schema";
+
+import {ensureSupplierVideoSchema} from "@/lib/supplier-models/video-schema";
+
+import {validateModelConfig,type ValidationOptions} from "./schema";
+import {ensureModelSchema} from "@/lib/model-config/storage-schema";
+
 import { ModelConfigError, type ModelConfig, type ModelConfigRepository, type ModelDraft, type ModelPublication, type ModelSnapshot, type PublicationPhase } from "./types";
 function requireActor(actor: string) { if (typeof actor !== "string" || !actor.trim() || actor.length > 254) throw new ModelConfigError("INVALID_CONFIG", "操作者无效"); }
 function requireUUID(id: string) { if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new ModelConfigError("INVALID_CONFIG", "操作编号无效"); }

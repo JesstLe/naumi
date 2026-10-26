@@ -1,11 +1,12 @@
-import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
+import {ensureVideoWorkflowSchema as ensureWorkflowSchema} from "@/lib/video/storage-schema";
+import {withBackgroundActivity,bindBackgroundClaim} from "@/lib/release-runtime/background-activity";
 import "server-only";
 import {creationTransaction} from "../saas/creation-writer";
 import {assertWorkflowCreationScope,runWorkflowCreation,bindWorkflowCreationProject,validateWorkflowCreationInputs,acceptWorkflowCreationTx,updateWorkflowCreationTx} from "./workflow-creation";
 import {encryptAtRest,decryptAtRest} from "../settings";
 import {freezeVideoWorkflow,withFrozenWorkflowStage,workflowBindingId,type FrozenWorkflowStage} from "./workflow-freeze";
 import {createHash} from "node:crypto";
-import {getVideoTask, getVideoTaskByIdempotencyKey} from "@/lib/video/task-repository";
+import {getVideoTask,getVideoTaskByIdempotencyKey} from "@/lib/video/task-repository";
 import {getPool} from "@/platform/db/pool";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {ModelConfigError} from "../model-config/types";
@@ -18,22 +19,8 @@ import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 import type {VideoGenerationRequest,VideoReference} from "./types";
 
 export type VideoWorkflowNodeStatus="pending"|"processing"|"completed"|"blocked"|"needs_confirmation"|"needs_attention"|"cancelled";
-let ready:Promise<void>|undefined;
-async function ensureWorkflowSchema(){if(!ready)ready=getPool().query(`
- CREATE TABLE IF NOT EXISTS app_video_workflow_runs(id uuid PRIMARY KEY,email text NOT NULL,project_key text NOT NULL,plan jsonb NOT NULL,plan_digest text NOT NULL,
-   cancellation_requested_at timestamptz,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
- CREATE INDEX IF NOT EXISTS app_video_workflow_runs_owner_idx ON app_video_workflow_runs(email,project_key,created_at DESC);
- ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS confirmations jsonb NOT NULL DEFAULT '{}'::jsonb;
- ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS input_digest text;
- ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS canvas_intent_digest text;
- ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS frozen_nodes_enc text;
- ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS creation_scope jsonb;
- ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS creation_evidence_pending boolean NOT NULL DEFAULT false;
- ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS public_frozen_nodes jsonb NOT NULL DEFAULT '{}'::jsonb;
- CREATE TABLE IF NOT EXISTS app_video_workflow_run_nodes(run_id uuid NOT NULL REFERENCES app_video_workflow_runs(id),node_id text NOT NULL,status text NOT NULL DEFAULT 'pending',
-   task_id text,error text,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(run_id,node_id));
- ALTER TABLE app_video_workflow_run_nodes ADD COLUMN IF NOT EXISTS result_assets jsonb NOT NULL DEFAULT '[]'::jsonb;
-`).then(()=>undefined).catch(error=>{ready=undefined;throw error;});await ready;}
+
+
 
 function substitute(template:string,variables:NonNullable<VideoWorkflowPlan["variables"]>){
   return template.replace(/\{\{\s*var\s+([A-Za-z0-9._:-]+)\s*\}\}/g,(_match,name:string)=>{

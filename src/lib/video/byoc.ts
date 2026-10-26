@@ -15,7 +15,9 @@ import {decryptAtRest} from "../settings";
 import {assertComfyEndpointAllowed} from "../comfyui/client";
 import type {ApiWorkflow} from "../comfyui/workflow";
 import {runLegacyModelExecution} from "../model-config/context";
-import {getVideoNode,associateVideoTaskTx,ensureVideoNodeSchema} from "../canvas/video-node-repository";
+import {getVideoNode,associateVideoTaskTx} from "../canvas/video-node-repository";
+import {ensureVideoNodeSchema} from "@/lib/canvas/storage-schema";
+
 import {authorizeVideoProject} from "../canvas/video-node-service";
 import {videoWorkflowManifestSchema} from "./workflow-schema";
 import {compileVideoPrompt} from "./prompt";

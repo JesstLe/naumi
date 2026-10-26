@@ -1,18 +1,21 @@
+import {ensureWorkflowImportSchema} from "@/lib/canvas/storage-schema";
+export {ensureWorkflowImportSchema};
 import "server-only";
-import { createHash, randomUUID } from "node:crypto";
+import {createHash,randomUUID} from "node:crypto";
 import sharp from "sharp";
-import { z } from "zod";
+import {z} from "zod";
 import {getPool} from "@/platform/db/pool";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {type ArtworkRecord} from "@/lib/artworks/types";
 import {type CanvasTextNodeRecord} from "@/lib/canvas/text-node-repository";
-import { ensureCanvasSettingsSchema } from "@/lib/canvas-node-settings-store";
-import { defaultNodeSettings, type CanvasNodeSettings } from "@/lib/canvas/node-settings";
-import { readWorkflowClipboard, gaodingAssetUrl, WORKFLOW_CLIPBOARD_LIMIT, type ImportedElement, type ImportedManifest } from "@/lib/canvas/workflow-clipboard";
-import { inertSvg, pathSvg } from "@/lib/canvas/workflow-vector";
-import { fetchPublicImageBytes } from "@/lib/template-image-cache";
-import { uploadImage, deleteImageByUrl } from "@/lib/storage";
-import { editCanvasPixels } from "@/lib/canvas-local-image-edit";
+
+
+import {defaultNodeSettings,type CanvasNodeSettings} from "@/lib/canvas/node-settings";
+import {readWorkflowClipboard,gaodingAssetUrl,WORKFLOW_CLIPBOARD_LIMIT,type ImportedElement,type ImportedManifest} from "@/lib/canvas/workflow-clipboard";
+import {inertSvg,pathSvg} from "@/lib/canvas/workflow-vector";
+import {fetchPublicImageBytes} from "@/lib/template-image-cache";
+import {uploadImage,deleteImageByUrl} from "@/lib/storage";
+import {editCanvasPixels} from "@/lib/canvas-local-image-edit";
 
 export const workflowImportRequest = z.object({
   operationId: z.string().uuid(), html: z.string().min(1).max(WORKFLOW_CLIPBOARD_LIMIT),
@@ -21,21 +24,8 @@ export const workflowImportRequest = z.object({
 }).strict();
 export type WorkflowImportResult = { operationId: string; projectKey: string; artworks: ArtworkRecord[]; textNodes: CanvasTextNodeRecord[];
   manifest: ImportedManifest; settings: Record<string, CanvasNodeSettings>; missingReferences: number };
-let schema: Promise<void> | undefined;
-export async function ensureWorkflowImportSchema() {
-  await ensureCanvasSettingsSchema();
-  if (!schema) schema = getPool().query(`CREATE TABLE IF NOT EXISTS app_canvas_workflow_imports (
-    email text NOT NULL, operation_id uuid NOT NULL, fingerprint text NOT NULL,
-    project_key text NOT NULL, result jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY(email,operation_id));
-    CREATE INDEX IF NOT EXISTS app_canvas_workflow_imports_project_idx ON app_canvas_workflow_imports(email,project_key);
-    CREATE TABLE IF NOT EXISTS app_canvas_workflow_asset_ops (
-      email text NOT NULL, id uuid NOT NULL, node_id text NOT NULL, fingerprint text NOT NULL,
-      before_asset jsonb NOT NULL, after_asset jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
-      PRIMARY KEY(email,id));`)
-    .then(() => undefined).catch(error => { schema = undefined; throw error; });
-  await schema;
-}
+
+
 export async function listWorkflowManifests(email: string) {
   await ensureWorkflowImportSchema();
   const { rows } = await getPool().query("SELECT result->'manifest' AS manifest FROM app_canvas_workflow_imports WHERE email=$1 ORDER BY created_at DESC LIMIT 1000", [email]);

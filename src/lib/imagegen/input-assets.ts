@@ -2,7 +2,9 @@ import "server-only";
 import {randomUUID} from "node:crypto";
 import sharp from "sharp";
 import {getPool} from "@/platform/db/pool";
-import {ensureMediaSchema,registerMediaAsset} from "../media-assets";
+import {registerMediaAsset} from "../media-assets";
+import {ensureMediaSchema} from "@/lib/media-assets-schema";
+
 import {writeStoredObject,readManagedObject} from "../storage";
 import {decodeImagegenPixels} from "./pixels";
 import {bindCreationMedia} from "@/lib/saas/creation-access";

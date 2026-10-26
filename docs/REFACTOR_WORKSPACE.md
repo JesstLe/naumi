@@ -32,6 +32,8 @@
 
 ## 开发约定
 
+2026-10-25 R4B6：核心schema与业务runtime分开，33声明/DDL片段迁20个SQL owner文件，Web由轻量37-owner组合准备；billing配置不再构造wallet/task service，Canvas复制移除每次CREATE。46+16次query参数及6838个非目标声明保持，原兼容出口继续复用。完整PG旧3/35→新3/36、实际Next旧22→新24检查通过，26公开函数首次DDL20→0，134表/1208列/255约束/241索引一致；21相邻脚本、全项目tsc/99文件lint通过。startup直接依赖16→3、静态可达215→132，新owner无环；原20/12等环未关。失败literal、绑定、独立副本回滚及patch/提交远端证据见 [R4B6记录](changes/2026-10-25-persistence-startup-owners-r4b6.md) 与DELIVERY。第3模块收尾普通同步main后归零；Fleet/发布协调/Worker及显式BI索引保留边界，R5/R6继续，不合main、不部署。
+
 2026-10-25 R4B5：published读侧删除first-use管理/发现/导入，registry准备归Web启动、原setup配置写入或既有管理链；已有发布只读且不依赖管理token，真正首启不冻结空目录。Supplier video schema共享就绪，基础owner14；模型准备失败保留登录/管理修复。完整PG旧10/96→新10/99、实际Next23→25检查，首次目录metadata GET2→0、结构/写入SQL37→0；10项相邻、全项目tsc/11文件lint通过。新owner无环、读→lifecycle边1→0，原20/12环继续。副本回滚/远端证据见 [R4B5记录](changes/2026-10-25-model-registry-startup-r4b5.md) 与DELIVERY；同步后第2模块，其余ensure/Worker/最终验收继续，不合main、不部署。
 
 2026-10-25 R4B4：Next Node启动钩子顺序初始化13个基础owner，构建/Edge/无DB/sidecar分离；真实Next捕获跨bundle就绪/Pool分裂后，改为进程共用lazy查询Pool和按Pool/owner共享就绪，SQL/事务/任务语义保持。完整PG旧2/12→新7/53；实际Next旧15→新19检查，build SQL均0、首登录DDL3→0、13-owner请求DDL15→0；Compose7→12检查、Worker等Web与DB健康，不接DB迁移。相邻、类型、回滚及远端结果见 [R4B4记录](changes/2026-10-25-web-startup-r4b4.md) 与本轮DELIVERY。同步后第1模块；其它域ensure/模型首次发现、R5/R6继续，不合main、不部署，不将fixture build当完整产品构建。

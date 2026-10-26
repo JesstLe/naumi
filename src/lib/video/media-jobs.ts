@@ -1,10 +1,12 @@
-import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
+import {ensureMediaJobSchema} from "@/lib/video/storage-schema";
+export {ensureMediaJobSchema};
+import {withBackgroundActivity,bindBackgroundClaim} from "@/lib/release-runtime/background-activity";
 import "server-only";
 import {verifiedOwnedMedia,type FrozenMediaInput} from "./media-inspection";
 export {verifiedOwnedMedia} from "./media-inspection";
 import {createHash,randomUUID} from "node:crypto";
 import {getPool} from "@/platform/db/pool";
-import {ensureSchema} from "@/lib/persistence/schema";
+
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {addArtworksTx} from "@/lib/artworks/writer";
 import {type ArtworkRecord} from "@/lib/artworks/types";
@@ -12,7 +14,9 @@ import {canReadMedia,getMediaAsset,registerMediaAsset} from "../media-assets";
 import {readManagedObject,storageKeyFromManagedUrl,writeStoredObject} from "../storage";
 import {ModelConfigError} from "../model-config/types";
 import {canonicalConfig} from "@/lib/model-config/snapshot-value";
-import {getVideoNode,ensureVideoNodeSchema} from "../canvas/video-node-repository";
+import {getVideoNode} from "../canvas/video-node-repository";
+import {ensureVideoNodeSchema} from "@/lib/canvas/storage-schema";
+
 import {authorizeVideoProject} from "../canvas/video-node-service";
 import {mediaJobRequestSchema,type MediaJobRequest,type MediaJobOutput,type MediaProbe,type MediaJobStatus,type PublicMediaJob} from "./media-job-schema";
 import {prepareMediaInputs,prepareMediaAuxiliary,auxiliaryMediaBytes,mediaWorkerHealth,cleanupMediaWorkerJob,mediaWorkerRequest,mediaWorkerConfigured,readMediaWorkerOutput,MediaWorkerError,type WorkerJobView} from "./media";
@@ -27,21 +31,8 @@ import type {BillingQuote} from "../billing/types";
 type BundleFile={name:string;key:string;sha256:string;bytes:number};
 type FrozenInput=FrozenMediaInput&{bundleFiles?:BundleFile[];bundleEntry?:string};
 type JobRow={id:string;email:string;operation_id:string;request:MediaJobRequest;input_digest:string;inputs:FrozenInput[];status:MediaJobStatus;processed_seconds:number;outputs:MediaJobOutput[];error:string|null;cancellation_requested_at:Date|null;created_at:Date;updated_at:Date;query_result:string|null;billing_quote:BillingQuote|null;auxiliary_files_enc:string|null;cleanup_completed_at:Date|null};
-let ready:Promise<void>|undefined;
-export async function ensureMediaJobSchema(){
-  if(!ready)ready=ensureSchema().then(()=>getPool().query(`
-    CREATE TABLE IF NOT EXISTS app_video_media_jobs(id uuid PRIMARY KEY,email text NOT NULL,operation_id uuid NOT NULL,input_digest text NOT NULL,
-      request jsonb NOT NULL,inputs jsonb NOT NULL,status text NOT NULL DEFAULT 'queued',processed_seconds double precision NOT NULL DEFAULT 0,
-      outputs jsonb NOT NULL DEFAULT '[]',query_result text,error text,cancellation_requested_at timestamptz,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),UNIQUE(email,operation_id));
-    CREATE INDEX IF NOT EXISTS app_video_media_jobs_pending_idx ON app_video_media_jobs(updated_at) WHERE status IN ('queued','processing');
-    CREATE INDEX IF NOT EXISTS app_video_media_jobs_owner_history_idx ON app_video_media_jobs(email,created_at DESC,id DESC);
-    ALTER TABLE app_video_media_jobs ADD COLUMN IF NOT EXISTS billing_quote jsonb;
-    ALTER TABLE app_video_media_jobs ADD COLUMN IF NOT EXISTS auxiliary_files_enc text;
-    ALTER TABLE app_video_media_jobs ADD COLUMN IF NOT EXISTS cleanup_completed_at timestamptz;
-    ALTER TABLE app_video_media_jobs ADD COLUMN IF NOT EXISTS output_manifest jsonb;
-    CREATE TABLE IF NOT EXISTS app_video_media_probes(storage_key text NOT NULL,sha256 text NOT NULL,probe jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(storage_key,sha256));
-  `)).then(()=>undefined).catch(error=>{ready=undefined;throw error;});await ready;
-}
+
+
 function unavailable():never{throw new ModelConfigError("MEDIA_INPUT_UNAVAILABLE","媒体素材不存在或无权访问",404);}
 function digest(value:unknown){return createHash("sha256").update(canonicalConfig(value)).digest("hex");}
 async function resolveInput(actor:string,id:string):Promise<FrozenInput>{

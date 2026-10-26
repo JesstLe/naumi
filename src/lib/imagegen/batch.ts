@@ -12,7 +12,9 @@ import {planImagegen,imagegenFingerprint} from "./plan";
 import {assertImagegenQuoteReference,frozenImagegenQuote,latestImagegenQuote,type ImagegenSubmissionConfirmation} from "./quotes";
 import {submitAcceptedImagegen,getImagegenResult} from "./dispatch";
 import {imagegenStepId} from "./generation-core";
-import {ensureImagegenBatches,imagegenBatchRow,imagegenBatchItems,type ImagegenBatchItem} from "./batch-repository";
+import {imagegenBatchRow,imagegenBatchItems,type ImagegenBatchItem} from "./batch-repository";
+import {ensureImagegenBatches} from "@/lib/imagegen/storage-schema";
+
 import type {ImagegenRequest,ImagegenPlan,ImagegenResult} from "./types";
 import {userFeaturePolicy,FeatureAccessError} from "@/lib/feature-access/repository";
 import {allows} from "../feature-access/catalog";

@@ -6,7 +6,9 @@ import {getVideoNode} from "../canvas/video-node-repository";
 import {getVideoTask} from "@/lib/video/task-repository";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {ModelConfigError} from "../model-config/types";
-import {scheduleVideoWorkflow,ensureVideoWorkflowSchema,authorizeWorkflowInputs,validateVideoWorkflow} from "./workflow";
+import {scheduleVideoWorkflow,authorizeWorkflowInputs,validateVideoWorkflow} from "./workflow";
+import {ensureVideoWorkflowSchema} from "@/lib/video/storage-schema";
+
 import {workflowVideoRequestSchema,type VideoWorkflowPlan} from "./workflow-schema";
 import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 import {freezeVideoWorkflow,type FrozenWorkflowStage} from "./workflow-freeze";

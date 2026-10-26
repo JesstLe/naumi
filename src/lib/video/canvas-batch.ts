@@ -1,19 +1,24 @@
+import {ensureVideoBatchSchema as ensureBatchSchema} from "@/lib/video/storage-schema";
 import "server-only";
 import {assertWorkflowCreationScope,runWorkflowCreation,bindWorkflowCreationProject,acceptWorkflowCreationTx,validateWorkflowCreationInputs} from "./workflow-creation";
 import type {CreationContext} from "@/lib/saas/creation-scope";
 import {creationLinkTx} from "../saas/creation-writer";
-import { createHash, randomUUID } from "node:crypto";
-import { z } from "zod";
-import { getPool } from "@/platform/db/pool";
-import { encryptAtRest, decryptAtRest } from "../settings";
+import {createHash,randomUUID} from "node:crypto";
+import {z} from "zod";
+import {getPool} from "@/platform/db/pool";
+import {encryptAtRest,decryptAtRest} from "../settings";
 import {canonicalConfig} from "@/lib/model-config/snapshot-value";
-import { ModelConfigError } from "../model-config/types";
-import { getVideoNode, ensureVideoNodeSchema, saveVideoNodeTx } from "../canvas/video-node-repository";
-import { videoNodeIdSchema, type CanvasVideoNode } from "../canvas/video-node-schema";
-import { buildCanvasVideoWorkflow } from "./canvas-workflow";
-import { authorizeWorkflowInputs, scheduleVideoWorkflow, getVideoWorkflow, ensureVideoWorkflowSchema } from "./workflow";
-import { freezeVideoWorkflow, type FrozenWorkflowStage } from "./workflow-freeze";
-import type { VideoWorkflowPlan } from "./workflow-schema";
+import {ModelConfigError} from "../model-config/types";
+import {getVideoNode,saveVideoNodeTx} from "../canvas/video-node-repository";
+
+
+import {videoNodeIdSchema,type CanvasVideoNode} from "../canvas/video-node-schema";
+import {buildCanvasVideoWorkflow} from "./canvas-workflow";
+import {authorizeWorkflowInputs,scheduleVideoWorkflow,getVideoWorkflow} from "./workflow";
+
+
+import {freezeVideoWorkflow,type FrozenWorkflowStage} from "./workflow-freeze";
+import type {VideoWorkflowPlan} from "./workflow-schema";
 
 export const canvasVideoBatchSchema = z.strictObject({
   nodeId: videoNodeIdSchema, expectedRevision: z.number().int().nonnegative(), idempotencyKey: z.uuid(),
@@ -21,16 +26,8 @@ export const canvasVideoBatchSchema = z.strictObject({
   billingVersion: z.number().int().positive().optional(), billingCredits: z.number().finite().nonnegative().optional(),
 });
 type PreparedBatch = { plan: VideoWorkflowPlan; frozen: Record<string, FrozenWorkflowStage>; nodeIds: string[] };
-let ready: Promise<void> | undefined;
-async function ensureBatchSchema() {
-  if (!ready) ready = Promise.all([ensureVideoNodeSchema(), ensureVideoWorkflowSchema()]).then(() => getPool().query(`
-    CREATE TABLE IF NOT EXISTS app_canvas_video_batches (
-      id uuid PRIMARY KEY, email text NOT NULL, node_id text NOT NULL, input_digest text NOT NULL,
-      prepared_enc text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
-    ); ALTER TABLE app_canvas_video_batches ADD COLUMN IF NOT EXISTS creation_scope jsonb
-  `)).then(() => undefined).catch(error => { ready = undefined; throw error; });
-  await ready;
-}
+
+
 export async function readCanvasVideoBatch(actor: string, nodeId: string, id: string) {
   await ensureBatchSchema();
   const row = (await getPool().query("SELECT 1 FROM app_canvas_video_batches WHERE id=$1 AND email=$2 AND node_id=$3", [id, actor.toLowerCase(), nodeId])).rows[0];

@@ -2,7 +2,8 @@ import 'server-only';
 import { createPrivateKey,randomUUID,sign } from 'node:crypto';
 import { enterpriseUserEmail } from './access';
 import { getPool } from "@/platform/db/pool";
-import { ensureEnterpriseSchema } from '@/lib/enterprise/server';
+import {ensureEnterpriseSchema} from "@/lib/enterprise/schema";
+
 import { requireTeamGrant } from '@/lib/teams/grants';
 import { TeamError } from '@/lib/teams/server';
 import {userFeaturePolicy} from "@/lib/feature-access/repository";

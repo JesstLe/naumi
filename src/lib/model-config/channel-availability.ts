@@ -4,7 +4,8 @@ import { createHash } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import type { ChannelTarget } from "./channel-scheduler";
 import type { ModelExecutionScope } from "./context";
-import { ensureModelSchema } from "./schema";
+import {ensureModelSchema} from "@/lib/model-config/storage-schema";
+
 import { ModelConfigError, type ModelConfig } from "./types";
 import { currentImageOperationId, ImageOperationPending } from "../image-gateway";
 

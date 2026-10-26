@@ -1,7 +1,9 @@
 import 'server-only';
 import {enterpriseCreationRead} from '../server';
 import {creationLedger} from '../analytics';
-import {ensureBiSchema,queryBi,queryEnterpriseOperations} from '@/lib/bi/repository';
+import {queryBi,queryEnterpriseOperations} from "@/lib/bi/repository";
+import {ensureBiSchema} from "@/lib/bi/schema";
+
 import {parseBiQuery} from '@/lib/bi/contracts';
 import type {BiRow} from '@/lib/bi/contracts';
 import {normalizeRecord} from './normalize';

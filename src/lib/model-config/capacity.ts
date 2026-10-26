@@ -2,7 +2,8 @@ import "server-only";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import type { ModelConfig } from "./types";
-import { ensureModelSchema } from "./schema";
+import {ensureModelSchema} from "@/lib/model-config/storage-schema";
+
 import { ModelConfigError } from "./types";
 import { decryptAtRest } from "../settings";
 import { settingsSecret } from "../settings-secret";

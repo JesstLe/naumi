@@ -1,13 +1,14 @@
+import {ensureVideoReferenceUploadSchema as ensureReferenceUploadSchema} from "@/lib/video/storage-schema";
 import "server-only";
 import {createHash,randomUUID} from "node:crypto";
-import {ensureSchema} from "@/lib/persistence/schema";
+
 import {getPool} from "@/platform/db/pool";
 import {getMediaAsset,type MediaAsset} from "../media-assets";
 import {uploadImage} from "../storage";
 import {ModelConfigError} from "../model-config/types";
 import {bindCreationMedia} from "@/lib/saas/creation-access";
-let ready:Promise<void>|undefined;
-async function ensureReferenceUploadSchema(){if(!ready)ready=ensureSchema().then(()=>getPool().query("CREATE TABLE IF NOT EXISTS app_video_reference_uploads(email text NOT NULL,operation_id uuid NOT NULL,storage_key text NOT NULL,sha256 text NOT NULL,mime_type text NOT NULL,bytes bigint NOT NULL,status text NOT NULL DEFAULT 'reserved',claim_token uuid NOT NULL,lease_expires_at timestamptz NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,operation_id))")).then(()=>undefined).catch(error=>{ready=undefined;throw error;});await ready;}
+
+
 /** Reserve immutable upload identity before object I/O, without holding pool connections during the upload. */
 export async function uploadVideoReference(actorRaw:string,operationId:string,key:string,bytes:Uint8Array,mimeType:string){
   const actor=actorRaw.toLowerCase(),sha256=createHash("sha256").update(bytes).digest("hex"),token=randomUUID();await ensureReferenceUploadSchema();

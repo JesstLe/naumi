@@ -4,7 +4,9 @@ import type { PoolClient } from "pg";
 import { z } from "zod";
 import { getPool } from "@/platform/db/pool";
 import { settingsSecret } from "@/lib/settings-secret";
-import { ensureTeamSchema, TeamError } from "./server";
+import {TeamError} from "./server";
+import {ensureTeamSchema} from "@/lib/teams/schema";
+
 import type { TeamAccessGrant, TeamAccessStatus } from "./contracts";
 
 export type TeamActor = { email: string; admin: boolean; consoleAdmin?: boolean };

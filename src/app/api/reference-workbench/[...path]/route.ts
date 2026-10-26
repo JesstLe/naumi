@@ -10,7 +10,9 @@ import {rateLimit} from "@/lib/rate-limit";
 import {streamImagegenZip,imagegenFilename} from "@/lib/imagegen/zip";
 import {cancelImagegenBatch} from "@/lib/imagegen/batch";
 import {defaults,settings,classify,LABELS,imageUrl,WorkbenchError,type Asset,type Project} from "@/lib/reference-workbench/contract";
-import {ensureWorkbench,document,documents,putDocument,operations,operation,transaction} from "@/lib/reference-workbench/repository";
+import {document,documents,putDocument,operations,operation,transaction} from "@/lib/reference-workbench/repository";
+import {ensureWorkbench} from "@/lib/reference-workbench/schema";
+
 import {ownedAsset,imageBytes,uploadFolder,projectItems,preview,accept,singleState,chatState,synchronize,publicModels} from "@/lib/reference-workbench/service";
 
 import {workbenchFailure,type WorkbenchStage} from "@/lib/reference-workbench/errors";

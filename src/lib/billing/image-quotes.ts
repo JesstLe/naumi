@@ -1,8 +1,10 @@
-import {databaseSchemaReadiness} from "@/platform/db/schema-readiness";
+import {ensureImageBillingQuotes} from "@/lib/billing/image-quote-schema";
+export {ensureImageBillingQuotes};
+
 import "server-only";
 import {randomUUID} from "node:crypto";
 import {dbEnabled,getPool} from "@/platform/db/pool";
-import {ensureSchema} from "@/lib/persistence/schema";
+
 import {resolveUserEmail} from "../admin-auth";
 import {currentCreationContext} from "@/lib/saas/creation-scope";
 import {ModelConfigError} from "../model-config/types";
@@ -11,15 +13,7 @@ import {imageBillingFeature} from "./image-quote-policy";
 
 type Row={id:string;owner:string;scope_key:string;quote:BillingQuote;expires_at:Date|string;expired?:boolean};
 function scopeKey(){const c=currentCreationContext();return JSON.stringify([c?.scopeKind||"personal",c?.tenantId||null]);}
-export async function ensureImageBillingQuotes(){
- const state=databaseSchemaReadiness(getPool(),"billing-quotes");
-  if(!dbEnabled)return;
-  if(!state.pending)state.pending=ensureSchema().then(()=>getPool().query(`CREATE TABLE IF NOT EXISTS app_image_billing_quotes(
-    id uuid PRIMARY KEY,owner text NOT NULL REFERENCES app_users(email),scope_key text NOT NULL,
-    quote jsonb NOT NULL,expires_at timestamptz NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
-    CREATE INDEX IF NOT EXISTS app_image_billing_quotes_expiry ON app_image_billing_quotes(expires_at);`)).then(()=>{}).catch(e=>{state.pending=undefined;throw e;});
-  await state.pending;
-}
+
 /** Only opaque IDs leave the server; complete tariffs and cost facts remain private. */
 export async function issueImageBillingQuote(request:Request,quote:BillingQuote){
   if(!imageBillingFeature(quote.facts.feature)||!dbEnabled)return undefined;

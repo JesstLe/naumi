@@ -10,7 +10,9 @@ import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 import {ModelConfigError} from "../model-config/types";
 import {quoteForActor} from "../billing/quotation";
 import {assertQuotedVersion} from "../billing/request";
-import {ensureVideoNodeSchema,associateVideoTaskTx,getVideoNode} from "../canvas/video-node-repository";
+import {associateVideoTaskTx,getVideoNode} from "../canvas/video-node-repository";
+import {ensureVideoNodeSchema} from "@/lib/canvas/storage-schema";
+
 import {authorizeVideoProject} from "../canvas/video-node-service";
 import {normalizeVideoInput,resolveVideoCapability,VideoContractError} from "./contract";
 import {compileVideoPrompt} from "./prompt";

@@ -1,50 +1,21 @@
+import {ensureEnterpriseSchema} from "@/lib/enterprise/schema";
+export {ensureEnterpriseSchema};
 import 'server-only';
-import { createHmac, randomUUID } from 'node:crypto';
-import type { PoolClient } from 'pg';
-import { z } from 'zod';
-import { ensureTeamSchema, TeamError } from '@/lib/teams/server';
-import { requireTeamGrant, type TeamActor } from '@/lib/teams/grants';
-import { getPool } from "@/platform/db/pool";
-import { settingsSecret } from '@/lib/settings-secret';
-import type { ContentPage } from '@/lib/teams/contracts';
-import type { EnterpriseIdentity, EnterpriseMember, EnterpriseRole, EnterpriseSnapshot } from './contracts';
-import { pinnedEnterpriseIds,IntegrationError } from './integration/policy';
+import {createHmac,randomUUID} from 'node:crypto';
+import type {PoolClient} from 'pg';
+import {z} from 'zod';
+import {TeamError} from "@/lib/teams/server";
 
-let ready: Promise<void> | null = null;
-export async function ensureEnterpriseSchema() {
-  await ensureTeamSchema();
-  if (!ready) ready = getPool().query(`
-    CREATE TABLE IF NOT EXISTS app_enterprise_settings(
-      team_id uuid PRIMARY KEY REFERENCES app_account_teams(id), enabled boolean NOT NULL DEFAULT true,
-      created_at timestamptz NOT NULL DEFAULT now());
-    CREATE TABLE IF NOT EXISTS app_enterprise_roles(
-      enterprise_id uuid NOT NULL REFERENCES app_enterprise_settings(team_id), id uuid NOT NULL,
-      name text NOT NULL CHECK(length(name) BETWEEN 1 AND 60), level integer NOT NULL CHECK(level BETWEEN 1 AND 998),
-      manage_members boolean NOT NULL DEFAULT false, view_records boolean NOT NULL DEFAULT false,
-      version integer NOT NULL DEFAULT 0, PRIMARY KEY(enterprise_id,id));
-    CREATE TABLE IF NOT EXISTS app_enterprise_members(
-      enterprise_id uuid NOT NULL REFERENCES app_enterprise_settings(team_id), email text NOT NULL REFERENCES app_users(email),
-      supervisor_email text NOT NULL REFERENCES app_users(email), role_id uuid,
-      employment text NOT NULL CHECK(employment IN ('permanent','intern')), version integer NOT NULL DEFAULT 0,
-      PRIMARY KEY(enterprise_id,email), UNIQUE(email), CHECK(email<>supervisor_email),
-      FOREIGN KEY(enterprise_id,role_id) REFERENCES app_enterprise_roles(enterprise_id,id));
-    CREATE INDEX IF NOT EXISTS app_enterprise_members_supervisor ON app_enterprise_members(enterprise_id,supervisor_email);
-    ALTER TABLE app_enterprise_members ADD COLUMN IF NOT EXISTS membership_status text NOT NULL DEFAULT 'active' CHECK(membership_status IN ('active','suspended'));
-    ALTER TABLE app_enterprise_members ADD COLUMN IF NOT EXISTS membership_expires_at timestamptz;
-    ALTER TABLE app_enterprise_members ADD COLUMN IF NOT EXISTS joined_at timestamptz NOT NULL DEFAULT now();
-    ALTER TABLE app_enterprise_members ADD COLUMN IF NOT EXISTS left_at timestamptz;
-    CREATE TABLE IF NOT EXISTS app_tenant_entitlements(
-      tenant_id uuid PRIMARY KEY REFERENCES app_account_teams(id),entitlement_name text,
-      seat_limit integer CHECK(seat_limit IS NULL OR seat_limit>0),feature_policy jsonb NOT NULL DEFAULT '{}',
-      updated_by text NOT NULL,updated_at timestamptz NOT NULL DEFAULT now());
-    CREATE TABLE IF NOT EXISTS app_enterprise_audit(
-      id uuid PRIMARY KEY, enterprise_id uuid NOT NULL REFERENCES app_enterprise_settings(team_id), actor text NOT NULL,
-      action text NOT NULL, target text NOT NULL DEFAULT '', fingerprint text NOT NULL, result jsonb NOT NULL, changes jsonb NOT NULL DEFAULT '{}',
-      created_at timestamptz NOT NULL DEFAULT now());
-    ALTER TABLE app_enterprise_audit ADD COLUMN IF NOT EXISTS changes jsonb NOT NULL DEFAULT '{}';
-  `).then(()=>{}).catch(e=>{ready=null;throw e});
-  await ready;
-}
+
+import {requireTeamGrant,type TeamActor} from '@/lib/teams/grants';
+import {getPool} from "@/platform/db/pool";
+import {settingsSecret} from '@/lib/settings-secret';
+import type {ContentPage} from '@/lib/teams/contracts';
+import type {EnterpriseIdentity,EnterpriseMember,EnterpriseRole,EnterpriseSnapshot} from './contracts';
+import {pinnedEnterpriseIds,IntegrationError} from './integration/policy';
+
+
+
 // Legacy teams belonging to an activated enterprise cannot bypass ERP scope or content restrictions.
 export async function enterpriseManaged(email: string) {
   await ensureEnterpriseSchema();

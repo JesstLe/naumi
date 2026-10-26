@@ -1,10 +1,9 @@
 import "server-only";
 import {randomUUID} from "node:crypto";
 import {dbEnabled,getPool} from "@/platform/db/pool";
-import {ensureSchema} from "@/lib/persistence/schema";
 import {getSetting} from "@/lib/settings/repository";
 import seed from "./bootstrap.json";
-import {createConfigRuntime} from "./catalog";
+import {getBillingConfiguration} from "./configuration";
 import {createBillingService} from "./service";
 import {BillingError,type BillingConfig,type ConfigSnapshot} from "./types";
 import {supabaseEnabled} from "../auth-mode";
@@ -12,27 +11,7 @@ import {multiUserEnabled} from "@/lib/accounts/mode";
 import type {PoolClient} from "pg";
 
 let runtime: ReturnType<typeof assemble> | undefined;
-function assemble() {
-    return { service: createBillingService(), config: createConfigRuntime({ pool: getPool(), ensureSchema, initialize: async (tx) => {
-                const config = structuredClone(seed) as BillingConfig;
-                const settings = (await tx.query<{
-                    k: string;
-                    v: string;
-                }>("SELECT k,v FROM app_settings WHERE k=ANY($1)", [["signup_bonus_credits", "credits_metering", "pay_enabled"]])).rows;
-                const old = Object.fromEntries(settings.map(x => [x.k, x.v]));
-                const bonus = Number(old.signup_bonus_credits);
-                if (old.signup_bonus_credits !== undefined && Number.isSafeInteger(bonus) && bonus >= 0)
-                    config.credits.signup.amount = Math.min(bonus, 100000);
-                // legacy-auto preserves Supabase/multi-user plus the original manual switch.
-                const recharge = old.pay_enabled === undefined ? process.env.NEXT_PUBLIC_RECHARGE_ENABLED === "true" : old.pay_enabled === "1";
-                config.switches.commerce = process.env.NAUMI_PUBLIC_COMMERCE === "1";
-                config.switches.recharge = recharge;
-                const video = Number(process.env.VIDEO_TASK_COST);
-                if (Number.isSafeInteger(video) && video > 0 && video <= 2147483647)
-                    config.features["video.generate"].pricing = { mode: "fixed", credits: video };
-                return config;
-            } }) };
-}
+function assemble(){return {service:createBillingService(),config:getBillingConfiguration()};}
 export async function getBillingRuntime() {
     if (!dbEnabled)
         throw new BillingError("CONFIG_UNAVAILABLE", "未配置数据库，计费管理暂不可用", 503);

@@ -1,7 +1,9 @@
 import 'server-only';
 import {z} from 'zod';
 import {getPool} from "@/platform/db/pool";
-import {queryBi,ensureBiSchema} from '@/lib/bi/repository';
+import {queryBi} from "@/lib/bi/repository";
+import {ensureBiSchema} from "@/lib/bi/schema";
+
 import {parseBiQuery} from '@/lib/bi/contracts';
 import {isManagedImageUrl} from '@/lib/storage';
 import {creationStatus,type CreationDetail,type CreationFilters,type CreationPage,type CreationSummary,type CreationAsset} from './creation-contracts';

@@ -18,7 +18,9 @@ import {adaptiveCanvasImageSize} from "../mock-data";
 import {ModelConfigError} from "../model-config/types";
 import {authorizeVideoReferences} from "../video/reference-materialization";
 import {videoNodeWriteSchema,videoNodeConfigSchema,videoProjectKeySchema,type CanvasVideoNode,type VideoNodeWrite} from "./video-node-schema";
-import {ensureVideoNodeSchema,getVideoNode,listVideoNodes,saveVideoNodeTx,associateVideoTaskTx,completeVideoNodeTx} from "./video-node-repository";
+import {getVideoNode,listVideoNodes,saveVideoNodeTx,associateVideoTaskTx,completeVideoNodeTx} from "./video-node-repository";
+import {ensureVideoNodeSchema} from "@/lib/canvas/storage-schema";
+
 export {getVideoNode,listVideoNodes};
 
 export async function authorizeVideoProject(actor:string,rawKey:string){

@@ -2,7 +2,8 @@ import "server-only";
 import {createHash} from "node:crypto";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
-import {ensureVideoNodeSchema} from "./video-node-repository";
+import {ensureVideoNodeSchema} from "@/lib/canvas/storage-schema";
+
 import {authorizeVideoProject} from "./video-node-service";
 /** Project removal is one transaction even when it contains more than the per-selection API limit. */
 export async function deleteCanvasProject(actorRaw:string,projectKey:string,operationId:string){

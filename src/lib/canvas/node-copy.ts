@@ -1,10 +1,13 @@
+import {ensureCanvasNodeCopySchema} from "./storage-schema";
 import "server-only";
 import {createHash} from "node:crypto";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {listCanvasTextNodes, type CanvasTextNodeRecord} from "@/lib/canvas/text-node-repository";
-import {ensureVideoNodeSchema,saveVideoNodeTx} from "./video-node-repository";
+import {saveVideoNodeTx} from "./video-node-repository";
+import {ensureVideoNodeSchema} from "@/lib/canvas/storage-schema";
+
 import {authorizeVideoProject,authorizeNodeInputs,listVideoNodes} from "./video-node-service";
 import type {CanvasVideoNode} from "./video-node-schema";
 import {ModelConfigError} from "../model-config/types";
@@ -16,7 +19,7 @@ function stableUuid(seed:string){const bytes=createHash("sha256").update(seed).d
 /** Copies media identities and editable records together. No supplier requests, media writes, task replay or fees. */
 export async function copyCanvasNodes(actorRaw:string,raw:CanvasNodeCopyInput):Promise<CopyResult>{
   const actor=actorRaw.toLowerCase(),input=nodeCopyRequest.parse(raw);await ensureSchema();await ensureVideoNodeSchema();
-  const pool=getPool();await pool.query(`CREATE TABLE IF NOT EXISTS app_canvas_node_copies(email text NOT NULL,operation_id uuid NOT NULL,input_digest text NOT NULL,result jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,operation_id))`);
+  const pool=getPool();await ensureCanvasNodeCopySchema();
   const digest=createHash("sha256").update(canonicalConfig(input)).digest("hex");
   const previous=(await pool.query("SELECT input_digest,result FROM app_canvas_node_copies WHERE email=$1 AND operation_id=$2",[actor,input.operationId])).rows[0];
   if(previous){if(previous.input_digest!==digest)throw new ModelConfigError("NODE_OPERATION_CONFLICT","复制操作编号已用于另一请求",409);return previous.result;}

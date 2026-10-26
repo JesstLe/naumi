@@ -5,7 +5,8 @@ import { createCredentialStore } from "../model-config/credentials";
 import { decimalMicros } from "./money";
 import type { createSupplierLedger } from "./repository";
 import type { CostContext } from "./types";
-import { ensureModelSchema } from "../model-config/schema";
+import {ensureModelSchema} from "@/lib/model-config/storage-schema";
+
 
 /** Import durable internal Router attempts, never the aggregate external SDK response. GET-only recovery. */
 export async function importRouterOperation(ledger: ReturnType<typeof createSupplierLedger>, payload: { operation: string; context: CostContext; frozen?: any; requestStartedAt?: string }, fetcher?: typeof fetch) {

@@ -1,0 +1,59 @@
+import "server-only";
+import {databaseSchemaReadiness} from "@/platform/db/schema-readiness";
+import {ensureSchema} from "@/lib/persistence/schema";
+import {getPool} from "@/platform/db/pool";
+
+export async function ensureCanvasSettingsSchema() {
+ const state=databaseSchemaReadiness(getPool(),"canvas-settings");
+  await ensureSchema();
+  if (!state.pending) state.pending = getPool().query(`CREATE TABLE IF NOT EXISTS app_canvas_node_settings (
+    email text NOT NULL, node_id text NOT NULL, kind text NOT NULL CHECK(kind IN ('text','image')),
+    settings jsonb NOT NULL DEFAULT '{}'::jsonb, updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY(email,node_id));
+    CREATE TABLE IF NOT EXISTS app_canvas_local_edits (
+      email text NOT NULL, operation_id uuid NOT NULL, fingerprint text NOT NULL, artwork_id text NOT NULL,
+      PRIMARY KEY(email,operation_id));`).then(() => undefined).catch(error => { state.pending = undefined; throw error; });
+  await state.pending;
+}
+
+export async function ensureWorkflowImportSchema() {
+ const state=databaseSchemaReadiness(getPool(),"canvas-workflow-import");
+  await ensureCanvasSettingsSchema();
+  if (!state.pending) state.pending = getPool().query(`CREATE TABLE IF NOT EXISTS app_canvas_workflow_imports (
+    email text NOT NULL, operation_id uuid NOT NULL, fingerprint text NOT NULL,
+    project_key text NOT NULL, result jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY(email,operation_id));
+    CREATE INDEX IF NOT EXISTS app_canvas_workflow_imports_project_idx ON app_canvas_workflow_imports(email,project_key);
+    CREATE TABLE IF NOT EXISTS app_canvas_workflow_asset_ops (
+      email text NOT NULL, id uuid NOT NULL, node_id text NOT NULL, fingerprint text NOT NULL,
+      before_asset jsonb NOT NULL, after_asset jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY(email,id));`)
+    .then(() => undefined).catch(error => { state.pending = undefined; throw error; });
+  await state.pending;
+}
+
+export async function ensureVideoNodeSchema(){
+ const state=databaseSchemaReadiness(getPool(),"canvas-video-nodes");
+  if(!state.pending)state.pending=ensureSchema().then(()=>getPool().query(`
+    CREATE TABLE IF NOT EXISTS app_canvas_video_projects(email text NOT NULL,project_key text NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,project_key));
+    ALTER TABLE app_canvas_video_projects ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
+    CREATE TABLE IF NOT EXISTS app_canvas_video_nodes(email text NOT NULL,id text NOT NULL,project_key text NOT NULL,revision bigint NOT NULL DEFAULT 1,
+      title text NOT NULL DEFAULT '视频',x double precision NOT NULL DEFAULT 0,y double precision NOT NULL DEFAULT 0,
+      width double precision NOT NULL DEFAULT 384,height double precision NOT NULL DEFAULT 320,config jsonb NOT NULL DEFAULT '{}',inputs jsonb NOT NULL DEFAULT '[]',
+      last_task_id text,last_result_id text,deleted_at timestamptz,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,id));
+    CREATE INDEX IF NOT EXISTS app_canvas_video_nodes_project_idx ON app_canvas_video_nodes(email,project_key,updated_at DESC);
+    ALTER TABLE app_canvas_video_nodes ADD COLUMN IF NOT EXISTS display_result_id text;
+    CREATE TABLE IF NOT EXISTS app_canvas_video_task_sends(email text NOT NULL,task_id text NOT NULL,project_key text NOT NULL,result jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,task_id,project_key));
+    CREATE TABLE IF NOT EXISTS app_canvas_video_workflow_sources(email text NOT NULL,task_id text NOT NULL,public_model_id text NOT NULL,manifest_enc text NOT NULL,digest text,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,task_id));
+    CREATE TABLE IF NOT EXISTS app_canvas_video_node_operations(email text NOT NULL,operation_id uuid NOT NULL,node_id text NOT NULL,
+      input_digest text NOT NULL,result jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,operation_id));
+    CREATE TABLE IF NOT EXISTS app_canvas_video_node_copies(email text NOT NULL,operation_id uuid NOT NULL,input_digest text NOT NULL,
+      result jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,operation_id));
+  `)).then(()=>undefined).catch(error=>{state.pending=undefined;throw error;});await state.pending;
+}
+
+export async function ensureCanvasNodeCopySchema(){
+ const state=databaseSchemaReadiness(getPool(),"canvas-node-copy");
+ if(!state.pending)state.pending=getPool().query(`CREATE TABLE IF NOT EXISTS app_canvas_node_copies(email text NOT NULL,operation_id uuid NOT NULL,input_digest text NOT NULL,result jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,operation_id))`).then(()=>undefined).catch(error=>{state.pending=undefined;throw error;});
+ await state.pending;
+}

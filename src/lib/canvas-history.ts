@@ -6,9 +6,12 @@ import {ensureSchema} from "@/lib/persistence/schema";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {verifiedOwnedMedia} from "@/lib/video/media-inspection";
 import {storageKeyFromManagedUrl} from "@/lib/storage";
-import { ensureCanvasSettingsSchema } from "@/lib/canvas-node-settings-store";
+import {ensureCanvasSettingsSchema} from "@/lib/canvas/storage-schema";
+
 import {videoNodeWriteSchema} from "@/lib/canvas/video-node-schema";
-import {ensureVideoNodeSchema,saveVideoNodeTx} from "@/lib/canvas/video-node-repository";
+import {saveVideoNodeTx} from "@/lib/canvas/video-node-repository";
+import {ensureVideoNodeSchema} from "@/lib/canvas/storage-schema";
+
 import {authorizeNodeInputs} from "@/lib/canvas/video-node-service";
 
 // Shared wire schema; repository keeps the atomic transaction and ownership checks.

@@ -1,6 +1,7 @@
+import {databaseSchemaReadiness} from "@/platform/db/schema-readiness";
 import "server-only";
 import type { Pool } from "pg";
-const ready = new WeakMap<Pool, Promise<void>>();
+
 export const SUPPLIER_COST_SQL = `
 CREATE TABLE IF NOT EXISTS app_supplier_accounts(
  id text PRIMARY KEY,provider_id text NOT NULL,protocol text NOT NULL,base_url text NOT NULL,credential_ref uuid,
@@ -65,10 +66,11 @@ CREATE TABLE IF NOT EXISTS app_supplier_admin_audit(
 CREATE TABLE IF NOT EXISTS app_supplier_variable_costs(id uuid PRIMARY KEY,operation_id text NOT NULL,amount_cny_micros numeric(30,0) NOT NULL CHECK(amount_cny_micros>=0),label text NOT NULL,evidence text NOT NULL,actor text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
 `;
 export async function ensureSupplierSchema(pool: Pool) {
-  let p = ready.get(pool);
+ const state=databaseSchemaReadiness(pool,"supplier-cost");
+  let p = state.pending;
   if (!p) {
-    p = (async () => { const tx = await pool.connect(); try { await tx.query("BEGIN"); await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('naumi-supplier-cost-schema-v1',0))"); await tx.query(SUPPLIER_COST_SQL); await tx.query("COMMIT"); } catch (e) { await tx.query("ROLLBACK"); throw e; } finally { tx.release(); } })().catch(e => { ready.delete(pool); throw e; });
-    ready.set(pool, p);
+    p = (async () => { const tx = await pool.connect(); try { await tx.query("BEGIN"); await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('naumi-supplier-cost-schema-v1',0))"); await tx.query(SUPPLIER_COST_SQL); await tx.query("COMMIT"); } catch (e) { await tx.query("ROLLBACK"); throw e; } finally { tx.release(); } })().catch(e => { state.pending=undefined; throw e; });
+    state.pending=p;
   }
   await p;
 }

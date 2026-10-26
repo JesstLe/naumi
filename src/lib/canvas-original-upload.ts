@@ -3,7 +3,8 @@ import sharp from "sharp";
 import {createHash} from "node:crypto";
 import {ORIGINAL_IMAGE_MAX_BYTES,ORIGINAL_IMAGE_MAX_PIXELS} from "./image-upload-policy";
 import {uploadImage,privateMedia,writeStoredObject} from "./storage";
-import {ensureMediaSchema} from "./media-assets";
+import {ensureMediaSchema} from "@/lib/media-assets-schema";
+
 import {getPool} from "@/platform/db/pool";
 
 export type BrowserPreviews={thumbnail:Buffer;preview:Buffer};

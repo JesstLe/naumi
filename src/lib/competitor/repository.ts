@@ -1,24 +1,13 @@
+import {ensureCompetitorSchema} from "@/lib/competitor/schema";
 import "server-only";
 import {getPool} from "@/platform/db/pool";
-import {ensureSchema} from "@/lib/persistence/schema";
+
 import type {CompetitorItem} from "@/lib/competitor-types";
 
 // Competitor workspace: owner-scoped optimistic writes and expiring model leases.
-let competitorSchema: Promise<void> | null = null;
 
-async function ensureCompetitorSchema() {
-  await ensureSchema();
-  if (!competitorSchema) competitorSchema = getPool().query(`
-    CREATE TABLE IF NOT EXISTS app_competitor_items (
-      id uuid PRIMARY KEY, email text NOT NULL, batch_id uuid NOT NULL,
-      path text NOT NULL, state jsonb NOT NULL, revision integer NOT NULL DEFAULT 0,
-      job_id uuid, busy_until timestamptz, created_at timestamptz NOT NULL DEFAULT now(),
-      UNIQUE(email, batch_id, path)
-    );
-    CREATE INDEX IF NOT EXISTS app_competitor_owner_idx ON app_competitor_items(email, created_at);
-  `).then(() => {}).catch(e => { competitorSchema = null; throw e; });
-  await competitorSchema;
-}
+
+
 
 export function competitorRow(r: Record<string, any>): CompetitorItem {
   return { ...r.state, id: r.id, batchId: r.batch_id, path: r.path,

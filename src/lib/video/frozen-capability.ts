@@ -1,23 +1,18 @@
-import {databaseSchemaReadiness} from "@/platform/db/schema-readiness";
+import {ensureVideoDefaultsSchema} from "@/lib/video/model-defaults-schema";
+export {ensureVideoDefaultsSchema};
+
 import "server-only";
 import type {Pool,PoolClient} from "pg";
-import { dbEnabled,getPool } from "@/platform/db/pool";
-import type { ModelSnapshot,UpstreamModel,ModelProvider } from "../model-config/types";
-import { ModelConfigError } from "../model-config/types";
-import { supplierVideoDefinition } from "../supplier-models/video-access";
-import { managedVideoDefinition } from "./model-definition";
-import { videoProfileProtocol } from "./capability-schema";
+import {dbEnabled,getPool} from "@/platform/db/pool";
+import type {ModelSnapshot,UpstreamModel,ModelProvider} from "../model-config/types";
+import {ModelConfigError} from "../model-config/types";
+import {supplierVideoDefinition} from "../supplier-models/video-access";
+import {managedVideoDefinition} from "./model-definition";
+import {videoProfileProtocol} from "./capability-schema";
 
 import {frozenVideoSchema,type FrozenVideoCapability} from './frozen-capability-schema';
 export {frozenVideoSchema,type FrozenVideoCapability} from './frozen-capability-schema';
-export async function ensureVideoDefaultsSchema(pool:Pool){
- const state=databaseSchemaReadiness(pool,"video-defaults");
-  let schema=state.pending;
-  if(!schema){schema=pool.query(`CREATE TABLE IF NOT EXISTS app_video_model_defaults (
-    model_version bigint NOT NULL,upstream_id text NOT NULL,model_digest text NOT NULL,value jsonb NOT NULL,
-    created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(model_version,upstream_id));`).then(()=>undefined).catch(error=>{state.pending=undefined;throw error;});state.pending=schema;}
-  await schema;
-}
+
 export async function freezeManagedVideoCapability(snapshot:ModelSnapshot,upstream:UpstreamModel,provider:ModelProvider,connection?:Pool|PoolClient):Promise<FrozenVideoCapability>{
   const create=async()=>{
     const value=managedVideoDefinition(upstream,provider,await supplierVideoDefinition(provider.id,upstream.model,connection));

@@ -1,7 +1,8 @@
 import "server-only";
 import {getPool} from "@/platform/db/pool";
 import {getProjectNames} from "@/lib/canvas/project-repository";
-import {ensureVideoNodeSchema} from "./video-node-repository";
+import {ensureVideoNodeSchema} from "@/lib/canvas/storage-schema";
+
 export async function ownedCanvasVideoProjects(actorRaw:string){
   const actor=actorRaw.toLowerCase();await ensureVideoNodeSchema();
   const [artRows,textRows,videoRows,deletedRows,names]=await Promise.all([

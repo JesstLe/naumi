@@ -3,7 +3,8 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { decryptFromClient, encryptAtRest } from "../settings";
-import { ensureModelSchema } from "./schema";
+import {ensureModelSchema} from "@/lib/model-config/storage-schema";
+
 import { ModelConfigError } from "./types";
 
 export function createCredentialStore(pool: Pool) {

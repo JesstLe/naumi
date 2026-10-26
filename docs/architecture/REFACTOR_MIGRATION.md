@@ -1,5 +1,7 @@
 # 渐进迁移与集中验收台账
 
+R4B6（2026-10-25）：核心DDL归真实SQL owner，33声明/片段迁20文件，46+16次query参数与6838个非目标生产声明保持；37-owner启动组合、billing配置/账务服务装配分离及Canvas复制schema闭合。完整PG旧3/35→新3/36、实际Next22→24检查通过，26原公开函数首次DDL20→0，134表/1208列/255约束/241索引一致；21相邻脚本、全项目tsc/99文件lint通过。startup依赖16→3、静态可达215→132，新owner不入环，原20/12等环保持；角色协调与BI显式索引不混入普通Web。失败literal、绑定、回滚/patch与同步证据见 [R4B6记录](../changes/2026-10-25-persistence-startup-owners-r4b6.md) 及DELIVERY。本轮第3模块，收尾普通整合main后归零，整体继续R5/R6，不合main、不部署。
+
 R4B5（2026-10-25）：发布读取删除动态管理bootstrap，缺表/缺current/历史版本不发现或重写；准备归Web启动/原setup写入/管理入口，首启空配置不提前发布。PG旧10/96→新10/99、实际Next旧23→新25检查，首次目录metadata GET2→0/结构与写入SQL37→0；14-owner及真实故障后原管理恢复、10项相邻、全项目tsc/11文件lint通过。发布读→lifecycle边1→0、新owner无环，原20/12环保留；副本回滚与远端证据见 [R4B5记录](../changes/2026-10-25-model-registry-startup-r4b5.md)。同步后第2模块，其余热路径初始化、Worker与最终完整验收继续，不合main、不部署。
 
 R4B4（2026-10-25）：新增Next Node显式Web基础初始化，13-owner保留原SQL/事务，build/Edge/无DB/sidecar跳过；实际Next发现并修正跨bundle Pool/就绪分裂，按真实Pool/owner共享Promise。PG旧2/12→新7/53；Next实际登录/health/probe旧15→新19检查，build SQL=0、首登录DDL3→0、请求DDL15→0；Compose7→12检查，Worker等待Web/DB健康且不迁移。相邻、类型、副本回滚/补丁/远端证据见 [R4B4记录](../changes/2026-10-25-web-startup-r4b4.md)。不是完整产品/standalone build或全站DDL退出，模型首次发现、其它域ensure与R5/R6继续。同步后第1模块，不合main、不部署。

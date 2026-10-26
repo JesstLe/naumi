@@ -29,7 +29,9 @@ import {dataUrlToBytes} from "../storage";
 import {DEFAULT_PROMPT,DEFAULT_INSTRUCTION,MODES,LABELS,settings,relativePath,classify,imageUrl,ratio,geometryMatches,stableId,requestId,digest,WorkbenchError,type Asset,type Project,type Settings} from "./contract";
 import {chatPlanInstruction,parseChatPlan,textFailureState,type TextFailureStage} from "./chat-plan";
 export {parseChatPlan} from "./chat-plan";
-import {ensureWorkbench,document,putDocument,documents,transaction,operation,operations,type Operation} from "./repository";
+import {document,putDocument,documents,transaction,operation,operations,type Operation} from "./repository";
+import {ensureWorkbench} from "@/lib/reference-workbench/schema";
+
 
 export async function ownedAsset(owner:string,id:string):Promise<Asset>{
  if(id.startsWith("asset-")){const a=await readImagegenInputAsset(id,owner).catch(()=>{throw new WorkbenchError("素材不存在或无权访问",404);});const saved=await document<Asset>(owner,"asset",id).catch(()=>null);if(saved)return saved;const sharp=(await import("sharp")).default,m=await sharp(a.buffer).metadata();return {artworkId:id,url:a.url,width:m.width!,height:m.height!,relative:id};}

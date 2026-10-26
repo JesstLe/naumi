@@ -3,7 +3,9 @@ import {randomUUID,createHash} from 'node:crypto';
 import sharp from 'sharp';
 import {z} from 'zod';
 import {authenticatedEmail} from '@/lib/request-auth';
-import {ensureMediaSchema,getMediaAsset} from '@/lib/media-assets';
+import {getMediaAsset} from "@/lib/media-assets";
+import {ensureMediaSchema} from "@/lib/media-assets-schema";
+
 import {getPool} from "@/platform/db/pool";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {addArtworks} from "@/lib/artworks/writer";

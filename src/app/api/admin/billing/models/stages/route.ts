@@ -1,7 +1,9 @@
 import { biAuthorize, biJson } from "@/lib/bi/access";
 import { getPool } from "@/platform/db/pool";
-import { ensureExecutionAuditSchema } from "@/lib/model-config/execution-audit";
-import { ensurePostprocessSchema } from "@/lib/media-postprocess";
+import {ensureExecutionAuditSchema} from "@/lib/model-config/execution-audit-schema";
+
+import {ensurePostprocessSchema} from "@/lib/media-postprocess-schema";
+
 export const runtime = "nodejs", dynamic = "force-dynamic";
 export async function GET(request:Request) {
   const auth=await biAuthorize(request);if(auth instanceof Response)return auth;

@@ -8,7 +8,8 @@ import {currentModelExecution,type ModelExecutionScope} from "@/lib/model-config
 import {isManagedModelClient} from "@/lib/model-config/client-identity";
 import {currentBiContext} from "./context";
 import {withObservedCallId} from "./call-scope";
-import {ensureBiSchema} from "./repository";
+import {ensureBiSchema} from "@/lib/bi/schema";
+
 
 export function modelExecutionTelemetry(scope: ModelExecutionScope | null | undefined) {
   return scope ? { frontendModel: scope.frontendModel, publicModelId: scope.frozen.publicModelId, providerId: scope.connection.providerId, modelVersion: scope.frozen.modelVersion, billingVersion: scope.frozen.billingVersion, digest: scope.frozen.routerDigest || scope.frozen.modelDigest } : undefined;

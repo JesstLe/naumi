@@ -9,12 +9,14 @@ import path from "node:path";
 import {pathToFileURL} from "node:url";
 import {Client,Pool} from "pg";
 import type {ModelSnapshot} from "../src/lib/model-config/types";
+import {expectedPersistenceSteps} from "./persistence-owner-fixture";
 
 const arg=(name:string)=>{const i=process.argv.indexOf(name);return i<0?undefined:process.argv[i+1];};
 const parts=["cold-read","web-startup","published","retry","orphaned","accepted-missing","inflight","unconfigured","setup","sidecar"];
 async function main(){
  assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,"1");const url=new URL(process.env.DATABASE_URL!);assert.equal(url.hostname,"127.0.0.1");assert.match(url.pathname,/fixture/);
  const root=path.resolve(arg("--source-root")||"."),baseline=process.argv.includes("--baseline"),mode=baseline?"BASELINE":"MODIFIED",part=arg("--part"),out=path.resolve(process.env.MODEL_REGISTRY_EVIDENCE||"output/refactor-r4b5-20261025");await mkdir(out,{recursive:true});
+ const expectedOwners=(await expectedPersistenceSteps(root)).length;
  const load=(f:string)=>import(pathToFileURL(path.join(root,f)).href);
  async function child(args:string[],name:string,script="scripts/verify-model-registry-startup-pg.ts"){
   const cp=spawn(process.execPath,["--conditions=react-server","--import","tsx",path.resolve(script),"--source-root",root,...args,...(baseline?["--baseline"]:[])],{env:{...process.env,TSX_TSCONFIG_PATH:path.join(root,"tsconfig.json"),WEB_STARTUP_EVIDENCE:out},windowsHide:true,stdio:["ignore","pipe","pipe"]});let stdout="",stderr="";cp.stdout.on("data",b=>stdout+=b);cp.stderr.on("data",b=>stderr+=b);const code=await new Promise<number|null>((resolve,reject)=>{cp.once("error",reject);cp.once("close",resolve);});await writeFile(path.join(out,name),stdout+stderr+`\nEXIT=${code}\n`);process.stdout.write(stdout);process.stderr.write(stderr);assert.equal(code,0,name);return stdout;
@@ -52,7 +54,7 @@ async function main(){
    if(baseline){ok((await current()).version>0);eq(metadata,2);eq(await count("app_model_config_versions"),1);}
    else{await rejectRead();eq(metadata,0);eq(mutations().length,0);eq((await admin.query("SELECT to_regclass('app_model_config_state') AS n")).rows[0].n,null);}
   }else if(part==="web-startup"){
-   const report=await boot();eq(report.steps.length,baseline?13:14);eq(report.modelRegistry,baseline?undefined:{state:"initialized",version:1});eq(metadata,baseline?0:2);const before=metadata;queries.length=0;const snapshot=await current();ok(snapshot.config.publicModels.some(m=>m.id==="fixture-wire"));const writes=mutations().length;if(baseline)ok(writes>0);else eq(writes,0);eq(metadata-before,baseline?2:0);await badLogin();
+   const report=await boot();eq(report.steps.length,expectedOwners);eq(report.modelRegistry,baseline?undefined:{state:"initialized",version:1});eq(metadata,baseline?0:2);const before=metadata;queries.length=0;const snapshot=await current();ok(snapshot.config.publicModels.some(m=>m.id==="fixture-wire"));const writes=mutations().length;if(baseline)ok(writes>0);else eq(writes,0);eq(metadata-before,baseline?2:0);await badLogin();
   }else if(part==="published"){
    if(!baseline)eq(await prepare(),{state:"published",version:saved!.version});eq(await current(),saved);eq(await(await load("src/lib/model-config/published.ts")).readPublishedModelSnapshot(saved!.version),saved);eq(mutations().length,0);eq(metadata,0);eq((await pool!.query("SHOW transaction_read_only")).rows[0].transaction_read_only,"on");
   }else if(part==="retry"){

@@ -6,7 +6,8 @@ import {createCredentialStore} from "./credentials";
 import {importLegacyRouter} from "./legacy-router";
 import {createModelRepository} from "./repository";
 import {createRouterControl} from "./router-client";
-import {ensureModelSchema} from "./schema";
+import {ensureModelSchema} from "@/lib/model-config/storage-schema";
+
 import {modelTrustedOrigins} from "./environment";
 import {ModelConfigError} from "./types";
 

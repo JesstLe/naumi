@@ -7,7 +7,8 @@ import {listArtworksByIds} from "@/lib/artworks/repository";
 import { uploadImage } from "@/lib/storage";
 import { readCanvasOutput } from "@/lib/canvas-image-input";
 import { IMAGEGEN_OUTPUT_MAX_BYTES } from "./imagegen/image-limits";
-import { ensureCanvasSettingsSchema } from "@/lib/canvas-node-settings-store";
+import {ensureCanvasSettingsSchema} from "@/lib/canvas/storage-schema";
+
 import { cropSchema, pixelCrop, type CanvasCrop } from "@/lib/canvas/node-settings";
 import { adaptiveCanvasImageSize } from "@/lib/mock-data";
 import {imagegenOutputSchema,imagegenChromaSchema} from "./imagegen/schema";
