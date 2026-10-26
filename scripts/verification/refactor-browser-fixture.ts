@@ -7,7 +7,7 @@ import sharp from 'sharp';
 import {getPool} from '../../src/platform/db/pool';
 import {uploadImage} from '../../src/lib/media-upload';
 import {addArtworks} from '../../src/lib/artworks/writer';
-import {upsertCanvasTextNode} from '../../src/lib/canvas/text-node-repository';
+import {upsertCanvasTextNode,listCanvasTextNodes} from '../../src/lib/canvas/text-node-repository';
 import {setProjectName} from '../../src/lib/canvas/project-repository';
 const sql=getPool(),arg=(key:string)=>{const i=process.argv.indexOf(key);return i<0?undefined:process.argv[i+1]};
 async function main(){
@@ -24,7 +24,7 @@ async function main(){
   const input=JSON.parse(await readFile('/evidence/SETUP.json','utf8')),action=arg('--action');
   if(action==='snapshot'){
    const artworks=(await sql.query('SELECT id,title,canvas_x,canvas_y,canvas_width,canvas_height,marked,deleted_at FROM app_artworks WHERE email=$1 ORDER BY id',[input.owner])).rows;
-   const texts=(await sql.query('SELECT id,title,content,width,height FROM app_canvas_text_nodes WHERE email=$1 ORDER BY id',[input.owner])).rows;
+   const texts=await listCanvasTextNodes(input.owner);
    const ledger=(await sql.query("SELECT count(*)::int n,COALESCE(-sum(delta),0)::int amount FROM app_ledger WHERE email=$1 AND kind='consume'",[input.owner])).rows[0];
    const jobs=(await sql.query('SELECT id,kind,snapshot,payload->\'plan\'->\'request\'->>\'operationId\' AS operation_id FROM app_image_jobs WHERE email=$1',[input.owner])).rows;
    console.log(JSON.stringify({artworks,texts,ledger,jobs}));return;

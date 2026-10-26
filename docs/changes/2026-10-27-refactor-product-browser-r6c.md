@@ -15,9 +15,17 @@
 - `verify-model-catalog-read-pg.ts`完整源码真实PG/HTTP adapter对照：坏管理凭据/缺管理地址/正常管理地址；原16检查复现读取失败，新24检查公开读取保持、原6积分hint、写SQL0、外部调用0。此回归进入既有core catalog。
 - 既有整包运行编排增加browser suite：只发布自有Web到127.0.0.1临时端口，PG/供应商/Worker不发布端口；Browser直接使用真实Web。普通runtime suite仍用internal network。
 
-## 尚在验证
+## 集中结果
 
-新完整镜像构建、完整产品两tab创作/冲突/刷新、持续混合读取与资源观察、core/类型/lint、独立副本回滚及提交收尾，以`output/refactor-r6c-20261026/`为准。前两次失败分别为Docker internal bridge不发布host port及旧应用目录管理耦合，原始结果保留。
+固定应用候选 `b79f4776537c936b01ebc4fa1584813b6ea228dc` 的完整Linux镜像已构建，Image ID `sha256:c98c0f832c420c4961f739aab5c6922fc3d9b2fb55bcb3d3f7159f16aebd042f`。相同完整源码摘要 `f9b9c2bdeb08e5582af9f815ec5dd1a6c199b2f01586b9d492b7084055f89c06` 的 **22 项 core PASS/exit0**，新增catalog回归已包含；全项目tsc及本轮lint通过，emitted静态/全literal导入SCC仍0，三消费者到管理server的运行边4→0。
+
+`browser-4`实际完整产品9组通过、exit0：两份独立认证浏览器上下文；图片改名冲突/保留两份/明确解决/undo-redo，文字冲突保留草稿/使用服务器版本，真实空白节点显示6积分→Web受理不执行→Worker调用合成供应商→完整作品落地，参考图走真实edit通道，再刷新原文档。恰好2张新图、2笔12积分，确认弹窗0、页面异常0、外部页面请求0；仅两个预期冲突接口返回409。
+
+持续混合读取181.68秒、16轮（health/account/projects/text-nodes）后仍只有原2次生成和原2笔扣款；Web容器内存首336.4MiB、末338.6MiB；Worker首148MiB、末135.1MiB。数值为Docker memory usage，不是RSS或容量证明。原报告字段`mixedReadMs`实际包含docker stats采样时间，不应解释为HTTP耗时；后续代码已改名`sampleCycleMs`，原报告未改写。未将该标签修正当作重跑180秒。
+
+真实Worker完成tick后drain、SIGTERM exit0；五个本轮容器及网络全部清理。完整图片原生样式截图已打开检查（`browser-4/full-product-canvas.png`），浅色布局保持。四产物、4475hash副本回滚、旧16项行为恢复、patch精确复放与最终Git远端绑定以DELIVERY为准。
+
+前两次失败分别为Docker internal bridge不发布host port及旧应用目录管理耦合；`browser-3`新应用能加载后，测试观察器误用text表`width`字段而失败，改为已有text-node repository读取，未修改产品SQL或降低断言。最终测试helper与封版文档提交可能晚于b79f：明确区分被测应用SHA、验收脚本SHA，验证全部生产src/services字节相同，不冒充重新构建。首次tsc的脚本`this`类型错误也保留。
 
 旧writer核对：主图片交互已不调用rename/mark/canvas-size/groups旧URL；position仍被结果落点、导入、恢复和其它明确消费者使用，不可凭字符串“旧”一删了之。独立raw接口与内部定位writer的统一留给后续闭合模块，未在本轮顺手改掉。
 
@@ -25,4 +33,4 @@
 python scripts/verify-refactor-runtime.py --suite browser --soak-seconds 180 --image-manifest IMAGE_MANIFEST --out output/refactor-r6c-browser-next
 ```
 
-3分钟、两browser的小样本仅证明本机联动与资源观察；不是10万活跃容量、生产、外网供应商或远端required CI证据。
+本轮为main同步后的第3模块；封版后普通整合origin/main并将计数归零，未将任务分支合main或部署。3分钟、两browser的小样本仅证明本机联动与资源观察；不是10万活跃容量、生产、外网供应商或远端required CI证据。旧writer、外围UI/测试资产整理、长时混合生成负载及依赖漏洞、最终完整候选仍未完成，整体保持active。

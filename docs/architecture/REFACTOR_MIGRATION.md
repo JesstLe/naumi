@@ -1,5 +1,9 @@
 # 渐进迁移与集中验收台账
 
+2026-10-27 R6C：完整产品浏览器实际发现公开config/models/text目录仍依赖管理runtime；已改已发布快照query，提取原priceHint共用投影，运行边4→0；坏/缺管理连接完整旧PG16→新24，core22及完整Linux同镜像通过。真实两browser9组涵盖图片/文字冲突、明确解决/undo-redo、空白生图/参考编辑/刷新、181.68秒16轮混合读取，2图2笔12积分/弹窗0/页面异常0；实际Worker排空exit0。4475hash回滚与旧16行为恢复、被测应用b79f和最终验收脚本提交分层见[R6C记录](../changes/2026-10-27-refactor-product-browser-r6c.md)。第3模块，收尾普通同步main归零，不合main不部署，整体active。
+
+2026-10-26 R6B：R6A固定完整镜像的Web/combined direct Worker实际运行125检查通过，真实登录/报价提交/原价与current/交付账务/Canvas CAS/工作台两图/真实FFmpeg及排空exit0；测试用户4笔57、retained3笔18，UNKNOWN不重放。4471hash副本恢复及验收入口四产物见[R6B记录](../changes/2026-10-26-refactor-runtime-r6b.md)，计数2；不是浏览器或容量证明。
+
 2026-10-26 R6A：21个现有核心入口按六组统一串行、同SHA/全文件摘要/环境与literal日志绑定；dirty或分组PARTIAL、失败NOT_RUN保真，Docker候选构建前依赖同source core。修旧fixture真实owner/研究资料依赖，并发现修复completed-parent忽略deliveryComplete=false的误报成功（保留原图原价改partial）。清洁整组/完整Linux镜像/回滚/remote以本轮DELIVERY为准；第1模块，R6B整包运行/性能/最终CI和历史债务继续，不合main、不部署。见 [R6A记录](../changes/2026-10-26-refactor-acceptance-r6a.md)。
 
 2026-10-26 R5P后三模块普通整合：ee60d3c0接固定a1a56371，24路径自动合并；健康页直连Pool owner，旧草稿保护/原pointerCAS/创作去重/公告/进度保留。旧新发布base3→7、registry/素材PG16/创作完整PG/实际组件UI20、图片20-44/文字16-47/进度与公开合同通过；最终类型/结构/4451hash回滚/双parent与远端见main-sync DELIVERY，计数归零。R6同SHA全候选/旧兼容writer与容量继续，不合main、不部署。见 [同步记录](../changes/2026-10-26-refactor-main-sync-r5p.md)。

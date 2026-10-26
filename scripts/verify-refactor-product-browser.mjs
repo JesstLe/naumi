@@ -43,7 +43,8 @@ try{
  while(performance.now()-soakStart<duration*1000){
   const t=performance.now();const replies=await Promise.all(['/api/health','/api/account','/api/projects','/api/canvas/text-nodes'].map(p=>pb.request.get(base+p)));for(const r of replies)assert.equal(r.status(),200,await r.text());
   const memory=await exec('docker',['stats','--no-stream','--format','{{json .}}',worker,worker.replace(/-worker$/,'-web')],{encoding:'utf8',windowsHide:true});
-  samples.push({atMs:Math.round(performance.now()-soakStart),mixedReadMs:Math.round(performance.now()-t),docker:memory.stdout.trim().split('\n').map(JSON.parse),browserHeap:await pb.evaluate(()=>performance.memory?{used:performance.memory.usedJSHeapSize,total:performance.memory.totalJSHeapSize}:null)});iterations++;
+  // This whole cycle includes docker stats collection; it is not HTTP latency.
+  samples.push({atMs:Math.round(performance.now()-soakStart),sampleCycleMs:Math.round(performance.now()-t),docker:memory.stdout.trim().split('\n').map(JSON.parse),browserHeap:await pb.evaluate(()=>performance.memory?{used:performance.memory.usedJSHeapSize,total:performance.memory.totalJSHeapSize}:null)});iterations++;
   await pb.waitForTimeout(Math.min(10000,Math.max(0,duration*1000-(performance.now()-soakStart))));
  }
  assert.ok(iterations>=5);assert.equal((await stats()).calls,1);assert.equal((await stats()).edits,1);assert.deepEqual((await snapshot()).ledger,{n:2,amount:12});pass(`sustained ${duration}s two-browser mixed reads retain exactly two deliveries and two debits`);
