@@ -1,5 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
+<head>
+<script src="/reference-workbench/workbench-environment.js"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>单图生成</title>
@@ -52,7 +54,8 @@ button.ghost{background:#eef1f4;color:#24292f}
 @media(max-width:760px){.appHeader .lanLinkBox{display:none}}
 </style>
 
-<header class="appHeader"><div class="brand">生图软件</div><div class="version">v1.3</div><div class="activePage">旧单图生成</div><div class="lanLinkBox" title="本站地址"><span class="lanLinkText">本站链接：https://47.105.59.142/single</span><button class="copyLanBtn" onclick="copyLanLink('https://47.105.59.142/single')">复制</button></div><div class="spacer"></div><button class="headerAction" onclick="downloadCurrentPageImages()">下载当前页面图片包</button><div class="menuWrap"><button class="menuBtn" onclick="toggleAppMenu(event)">功能菜单</button><div id="appMenuPanel" class="menuPanel"><a class="" href="/chat-image">聊天生图</a><a class="active" href="/single">旧单图生成</a><a class="" href="/workbench">参考图工作台</a><a href="/admin" id="adminMenuLink" style="display:none">渠道管理</a></div></div></header>
+</head>
+<body><header class="appHeader"><div class="brand">生图软件</div><div class="version">v1.3</div><div class="activePage">旧单图生成</div><div class="lanLinkBox" title="本站地址"><span class="lanLinkText">本站链接：</span><button class="copyLanBtn" onclick="copyLanLink(WorkbenchEnvironment.home())">复制</button></div><div class="spacer"></div><button class="headerAction" onclick="downloadCurrentPageImages()">下载当前页面图片包</button><div class="menuWrap"><button class="menuBtn" onclick="toggleAppMenu(event)">功能菜单</button><div id="appMenuPanel" class="menuPanel"><a class="" href="/chat-image" data-workbench-view="chat-image">聊天生图</a><a class="active" href="/single" data-workbench-view="single">旧单图生成</a><a class="" href="/workbench" data-workbench-view="workbench">参考图工作台</a><a href="/admin" data-workbench-view="admin" id="adminMenuLink" style="display:none">渠道管理</a></div></div></header>
 <main>
   <section>
     <div class="grid">
@@ -96,7 +99,7 @@ function imagePathFromUrl(url){
     const value=String(url||"");
     if(!value||value.startsWith("data:"))return "";
     const parsed=new URL(value,location.href);
-    if(parsed.pathname!=="/api/image")return "";
+    if(!WorkbenchEnvironment.isImagePath(parsed.pathname))return "";
     return parsed.searchParams.get("path")||"";
   }catch(_e){return "";}
 }
@@ -104,7 +107,7 @@ function downloadImageUrl(url){
   const path=imagePathFromUrl(url);
   if(path){
     const a=document.createElement("a");
-    a.href="/api/image?download=1&path="+encodeURIComponent(path);
+    a.href=WorkbenchEnvironment.api("image?download=1&path=")+encodeURIComponent(path);
     a.download="";
     document.body.appendChild(a);
     a.click();
@@ -137,7 +140,7 @@ function visibleImagePaths(){
 async function downloadCurrentPageImages(){
   const paths=visibleImagePaths();
   if(!paths.length){alert("当前页面没有可下载的图片");return;}
-  const response=await fetch("/api/images-zip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paths,filename:"当前页面图片包_"+new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")+".zip"})});
+  const response=await fetch(WorkbenchEnvironment.api("images-zip"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paths,filename:"当前页面图片包_"+new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")+".zip"})});
   if(!response.ok){alert(await window.NaumiWorkbenchError(response,"下载图片包失败"));return;}
   const blob=await response.blob();
   const url=URL.createObjectURL(blob);
@@ -172,19 +175,19 @@ function esc(s){return String(s??"").replace(/[&<>"']/g,c=>{if(c==="&")return "&
 function safeCount(){const n=Number(ui.count.value||1); return Math.max(1,Math.min(20,Number.isFinite(n)?Math.round(n):1));}
 async function saveSingleSettings(){
   const payload={single_quality:ui.quality.value,single_resolution:ui.resolution.value,single_ratio:ui.ratio.value,single_count:safeCount()};
-  localStorage.setItem(singleSettingsKey,JSON.stringify(payload));
+  WorkbenchEnvironment.storage().setItem(singleSettingsKey,JSON.stringify(payload));
   if(!config.settings_editable)return;
-  const response=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const response=await fetch(WorkbenchEnvironment.api('settings'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   if(!response.ok)throw new Error(await window.NaumiWorkbenchError(response,'保存单图参数失败'));
 }
 async function loadSettings(){
-  config=await(await fetch('/api/settings')).json();
+  config=await(await fetch(WorkbenchEnvironment.api('settings'))).json();
   const adminLink=document.getElementById('adminMenuLink');if(adminLink)adminLink.style.display=config.settings_editable?'':'none';
   templates=Array.isArray(config.provider_templates)?config.provider_templates:[];
   ui.template.innerHTML='<option value="">服务器自动分配</option>';
-  ui.template.disabled=true;
-  let local={}; try{local=JSON.parse(localStorage.getItem(singleSettingsKey)||'{}')||{};}catch(e){local={};}
+  let local={}; try{local=JSON.parse(WorkbenchEnvironment.storage().getItem(singleSettingsKey)||'{}')||{};}catch(e){local={};}
   ui.template.value='';
+  WorkbenchEnvironment.models(ui.template);
   ui.quality.value=local.single_quality||config.single_quality||config.quality||'high';
   ui.resolution.value=local.single_resolution||config.single_resolution||config.resolution||'2k';
   ui.ratio.value=local.single_ratio||config.single_ratio||'1:1';
@@ -198,8 +201,8 @@ function clearRefs(){refList=[]; ui.images.value=''; renderRefs(); ui.status.tex
 function openImage(url){ui.modal.innerHTML=`<img src="${url}">`; ui.modal.classList.add('open');}
 function closeModal(){ui.modal.classList.remove('open'); ui.modal.innerHTML='';}
 function singleTasksKey(){return 'gpt-image-pil-single-tasks-'+String(config.auth_username||'shared');}
-function loadTaskIds(){try{taskIds=JSON.parse(localStorage.getItem(singleTasksKey())||'[]')||[];}catch(e){taskIds=[];} taskData={};}
-function saveTaskIds(){taskIds=[...new Set(taskIds)].slice(0,50); localStorage.setItem(singleTasksKey(),JSON.stringify(taskIds));}
+function loadTaskIds(){try{taskIds=JSON.parse(WorkbenchEnvironment.storage().getItem(singleTasksKey())||'[]')||[];}catch(e){taskIds=[];} taskData={};}
+function saveTaskIds(){taskIds=[...new Set(taskIds)].slice(0,50); WorkbenchEnvironment.storage().setItem(singleTasksKey(),JSON.stringify(taskIds));}
 function addTaskId(id){taskIds=[id,...taskIds.filter(x=>x!==id)]; saveTaskIds();}
 function statusName(s){return {running:'生成中',done:'完成',partial:'部分完成',failed:'失败'}[s]||s||'-';}
 function statusClass(s){return ['running','done','partial','failed'].includes(s)?s:'';}
@@ -227,14 +230,14 @@ function renderTaskList(){
 }
 async function refreshTasks(){
   try{
-    const server=await (await fetch('/api/single/tasks')).json();
+    const server=await (await fetch(WorkbenchEnvironment.api('single/tasks'))).json();
     if(Array.isArray(server.tasks)){
       for(const t of server.tasks){if(t.task_id){taskData[t.task_id]=t; if(!taskIds.includes(t.task_id))taskIds.push(t.task_id);}}
     }
     if(!taskIds.length){renderTaskList(); return;}
     await Promise.all(taskIds.map(async id=>{
       try{
-        const response=await fetch('/api/single/status?id='+encodeURIComponent(id));
+        const response=await fetch(WorkbenchEnvironment.api('single/status?id=')+encodeURIComponent(id));
         const data=await response.json();
         if(data.ok)taskData[id]=data;
       }catch(e){}
@@ -253,7 +256,7 @@ async function refreshTasks(){
     ui.status.textContent='任务列表刷新失败：'+error;
   }
 }
-async function openPath(path){downloadImageUrl('/api/image?path='+encodeURIComponent(path));}
+async function openPath(path){downloadImageUrl(WorkbenchEnvironment.api('image?path=')+encodeURIComponent(path));}
 async function generate(){
   const text=ui.prompt.value.trim();
   if(!text){alert('请先填写提示词'); return;}
@@ -263,7 +266,7 @@ async function generate(){
   ui.status.textContent=`正在提交：${total} 个并发任务...`;
   try{
     await saveSingleSettings();
-    const response=await fetch('/api/single/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:text,quality:ui.quality.value,resolution:ui.resolution.value,ratio:ui.ratio.value,count:total,request_id:crypto.randomUUID(),images:refList.map(x=>x.data_url)})});
+    const response=await fetch(WorkbenchEnvironment.api('single/start'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:text,quality:ui.quality.value,resolution:ui.resolution.value,ratio:ui.ratio.value,count:total,request_id:crypto.randomUUID(),images:refList.map(x=>x.data_url)})});
     if(!response.ok)throw new Error(await window.NaumiWorkbenchError(response,"报价或提交未完成，请查询任务状态"));
     const data=await response.json();
     if(!data.task_id)throw new Error("回执暂不可用，请查询原任务，勿重复提交");
@@ -284,12 +287,12 @@ loadSettings().then(()=>{loadTaskIds(); refreshTasks();});
 </script>
 
 <script>
-function appHeartbeat(){fetch('/api/heartbeat').catch(()=>{});}
+function appHeartbeat(){fetch(WorkbenchEnvironment.api('heartbeat')).catch(()=>{});}
 async function appAuthCheck(){
   try{
-    const r=await fetch('/api/auth/status');
+    const r=await fetch(WorkbenchEnvironment.api('auth/status'));
     if(r.status===401||r.status===403){
-      if(location.pathname!='/login') location.href='/login';
+      if(location.pathname!=WorkbenchEnvironment.signIn()) location.href=WorkbenchEnvironment.signIn();
     }
   }catch(e){}
 }
@@ -297,4 +300,5 @@ appHeartbeat();
 setInterval(appHeartbeat, 3000);
 setInterval(appAuthCheck, 300000);
 </script>
+</body>
 </html>

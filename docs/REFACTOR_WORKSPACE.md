@@ -1,5 +1,8 @@
 # 核心链路重构专用工作区
 
+2026-10-27 R6E：三工作台页面/history继续共用唯一源，API/账号存储/模型/导航显式归环境adapter；build只复制原字节，删除两份隐式全局字符串转换，补完整head/body。native/desktop/standalone三环境保持独立协议，Python新增鉴权白名单资产URL、旧URL保留；原任务/报价未知查询链不改。首轮完整旧新浏览器19场景235→368、Python16→17、tsc/lint通过；最终图片/原wire补强、固定SHA core24/回滚/四产物与Git见DELIVERY。同步后第2模块，admin大面板/测试资产/长时负载/依赖和最终整合继续，整体active、不合main不部署。见[R6E记录](changes/2026-10-27-refactor-workbench-assets-r6e.md)。
+
+
 2026-10-27 R6D：改名/位置/显示尺寸与布局/标记/分组六份旧metadata SQL统一调用原history行writer，复用同owner锁/单连接事务；纯row投影迁独立叶模块避免循环，旧隐藏metadata/NULL自动布局/原像素与返回形态保留。NULL独立根分组原子拒绝，空legacy根与child保持同项目语义；旧完整树18/80复现，旧相邻receipt预期修正后完整基线180/新版182通过，原失败保留。row及parent-link正文不变，SCC0，metadata SQL6→0。固定清洁cdb5d1e4 core23/23、新writer18/80、实际history PG20、runner12/64及最终tsc/lint通过；副本回滚/四产物/Git以DELIVERY为准；同步后第1模块，外围UI/旧入口、长时负载/依赖及最终整合继续，不合main、不部署，整体active。见[R6D记录](changes/2026-10-27-refactor-canvas-artwork-writer-r6d.md)。
 
 

@@ -8,12 +8,12 @@
   function finished(transaction) { return new Promise((resolve, reject) => { transaction.oncomplete = resolve; transaction.onerror = () => reject(transaction.error); transaction.onabort = () => reject(transaction.error); }); }
   async function init() {
     if (database) return;
-    const response = await fetch('/api/auth/status', { cache: 'no-store' });
+    const response = await fetch(WorkbenchEnvironment.api('auth/status'), { cache: 'no-store' });
     if (!response.ok) throw Error('登录失效，本机缓存未读取');
     const auth = await response.json(); identity = auth.id;
     if (!identity) throw Error('账号标识缺失');
     database = await new Promise((resolve, reject) => {
-      const opening = indexedDB.open('reference-workbench-history-v1-' + identity, 1);
+      const opening = indexedDB.open(WorkbenchEnvironment.historyDatabase(identity), 1);
       opening.onupgradeneeded = () => { for (const name of ['images', 'projects', 'templates']) opening.result.createObjectStore(name, { keyPath: 'key' }); };
       opening.onsuccess = () => resolve(opening.result); opening.onerror = () => reject(opening.error);
     });
@@ -24,7 +24,7 @@
   async function put(store, row) { await init(); const tx = database.transaction(store, 'readwrite'), done = finished(tx); tx.objectStore(store).put(row); await done; }
   function source(url) {
     if (originals.has(url)) return originals.get(url);
-    try { const parsed = new URL(url, location.href); return parsed.origin === location.origin && parsed.pathname === '/api/image' ? parsed.pathname + '?path=' + encodeURIComponent(parsed.searchParams.get('path')) : ''; } catch (_) { return ''; }
+    try { const parsed = new URL(url, location.href); return parsed.origin === location.origin && WorkbenchEnvironment.isImagePath(parsed.pathname) ? WorkbenchEnvironment.historyImagePath() + '?path=' + encodeURIComponent(parsed.searchParams.get('path')) : ''; } catch (_) { return ''; }
   }
   async function blob(url) {
     const key = source(url); if (!key) throw Error('图片不是当前工作台素材');
@@ -45,7 +45,7 @@
     const value = await blob(url), local = URL.createObjectURL(value); urls.set(key, local); originals.set(local, key); return local;
   }
   async function remember(root, rows) {
-    const check = await fetch('/api/auth/status', { cache: 'no-store' });
+    const check = await fetch(WorkbenchEnvironment.api('auth/status'), { cache: 'no-store' });
     if (!check.ok) { release(); throw Error('登录失效，本机历史未读取'); }
     const auth = await check.json(); if (identity && auth.id !== identity) release();
     await init(); lastRoot = root;
@@ -81,7 +81,7 @@
   function saveBlob(value, name) { const local = URL.createObjectURL(value), a = document.createElement('a'); a.href = local; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(local), 2000); }
   async function archive(imageUrls) { const zip = new JSZip(); let total = 0, number = 0; for (const url of imageUrls) { const value = await blob(url); total += value.size; if (total > 256 * 1024 * 1024) throw Error('本机打包超过256MB'); const path = new URL(source(url), location.origin).searchParams.get('path'); zip.file(String(++number).padStart(3, '0') + '_' + path.split('/').pop(), await value.arrayBuffer()); } if (!number) throw Error('没有可下载图片'); return zip.generateAsync({ type: 'blob' }); }
   async function saveTemplate(item, version, name) {
-    const response = await fetch('/api/workbench/templates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, ref_path: item.ref_path, version_path: version.path, workbench_root: currentRoot(), config: workbenchRequestConfig() }) });
+    const response = await fetch(WorkbenchEnvironment.api('workbench/templates'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, ref_path: item.ref_path, version_path: version.path, workbench_root: currentRoot(), config: workbenchRequestConfig() }) });
     const data = await response.json(); if (!response.ok) throw Error(data.detail || '模板保存失败');
     const template = data.template;
     const referenceBlob = await blob(template.reference_url), resultBlob = await blob(template.result_url);
@@ -113,7 +113,7 @@
       const text = document.createElement('div'); text.className = 'status'; text.textContent = row.template.prompt; box.append(text);
       const apply = document.createElement('button'); apply.textContent = '套用到当前产品'; apply.onclick = async () => {
         try { if (!currentRoot()) throw Error('请先选择当前产品文件夹');
-          const response = await fetch('/api/workbench/templates/' + encodeURIComponent(row.template.id) + '/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workbench_root: currentRoot() }) });
+          const response = await fetch(WorkbenchEnvironment.api('workbench/templates/') + encodeURIComponent(row.template.id) + '/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workbench_root: currentRoot() }) });
           const data = await response.json(); if (!response.ok) throw Error(data.detail || '模板套用失败');
           for (const field of ['quality', 'resolution', 'timeout']) if (data.parameters && data.parameters[field] !== undefined) document.getElementById(field).value = String(data.parameters[field]);
           setPromptOverride(data.ref_path, data.prompt); document.getElementById('mode').value = 'all_sku'; closeModal(); await loadRefs(); status.textContent = '模板参考图、原版提示词与生成参数已套用，当前产品图保持不变。';

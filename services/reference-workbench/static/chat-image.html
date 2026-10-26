@@ -1,5 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
+<head>
+<script src="/reference-workbench/workbench-environment.js"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>聊天生图</title>
@@ -51,7 +53,8 @@ button.ghost{background:#eef1f4;color:#24292f}
 @media(max-width:760px){.appHeader .lanLinkBox{display:none}}
 </style>
 
-<header class="appHeader"><div class="brand">生图软件</div><div class="version">v1.3</div><div class="activePage">聊天生图</div><div class="lanLinkBox" title="本站地址"><span class="lanLinkText">本站链接：https://47.105.59.142/chat-image</span><button class="copyLanBtn" onclick="copyLanLink('https://47.105.59.142/chat-image')">复制</button></div><div class="spacer"></div><button class="headerAction" onclick="downloadCurrentPageImages()">下载当前页面图片包</button><div class="menuWrap"><button class="menuBtn" onclick="toggleAppMenu(event)">功能菜单</button><div id="appMenuPanel" class="menuPanel"><a class="active" href="/chat-image">聊天生图</a><a class="" href="/single">旧单图生成</a><a class="" href="/workbench">参考图工作台</a><a href="/admin" id="adminMenuLink" style="display:none">渠道管理</a></div></div></header>
+</head>
+<body><header class="appHeader"><div class="brand">生图软件</div><div class="version">v1.3</div><div class="activePage">聊天生图</div><div class="lanLinkBox" title="本站地址"><span class="lanLinkText">本站链接：</span><button class="copyLanBtn" onclick="copyLanLink(WorkbenchEnvironment.home())">复制</button></div><div class="spacer"></div><button class="headerAction" onclick="downloadCurrentPageImages()">下载当前页面图片包</button><div class="menuWrap"><button class="menuBtn" onclick="toggleAppMenu(event)">功能菜单</button><div id="appMenuPanel" class="menuPanel"><a class="active" href="/chat-image" data-workbench-view="chat-image">聊天生图</a><a class="" href="/single" data-workbench-view="single">旧单图生成</a><a class="" href="/workbench" data-workbench-view="workbench">参考图工作台</a><a href="/admin" data-workbench-view="admin" id="adminMenuLink" style="display:none">渠道管理</a></div></div></header>
 <main>
   <aside class="sidebar">
     <div class="sideTop"><button onclick="newChat()">新建对话</button></div>
@@ -108,7 +111,7 @@ function imagePathFromUrl(url){
     const value=String(url||"");
     if(!value||value.startsWith("data:"))return "";
     const parsed=new URL(value,location.href);
-    if(parsed.pathname!=="/api/image")return "";
+    if(!WorkbenchEnvironment.isImagePath(parsed.pathname))return "";
     return parsed.searchParams.get("path")||"";
   }catch(_e){return "";}
 }
@@ -116,7 +119,7 @@ function downloadImageUrl(url){
   const path=imagePathFromUrl(url);
   if(path){
     const a=document.createElement("a");
-    a.href="/api/image?download=1&path="+encodeURIComponent(path);
+    a.href=WorkbenchEnvironment.api("image?download=1&path=")+encodeURIComponent(path);
     a.download="";
     document.body.appendChild(a);
     a.click();
@@ -149,7 +152,7 @@ function visibleImagePaths(){
 async function downloadCurrentPageImages(){
   const paths=visibleImagePaths();
   if(!paths.length){alert("当前页面没有可下载的图片");return;}
-  const response=await fetch("/api/images-zip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paths,filename:"当前页面图片包_"+new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")+".zip"})});
+  const response=await fetch(WorkbenchEnvironment.api("images-zip"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paths,filename:"当前页面图片包_"+new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")+".zip"})});
   if(!response.ok){alert(await window.NaumiWorkbenchError(response,"下载图片包失败"));return;}
   const blob=await response.blob();
   const url=URL.createObjectURL(blob);
@@ -163,7 +166,7 @@ async function downloadCurrentPageImages(){
 }
 </script>
 <script>
-let config={}; let templates=[]; let uploadImages=[]; let pollTimer=null; let currentSessionId=localStorage.getItem('chat-image-session-id-'+String(config.auth_id||''))||''; let viewerImages=[]; let viewerIndex=0; let previewDragIndex=-1; let editorState=null; let lastChatSignature='';
+let config={}; let templates=[]; let uploadImages=[]; let pollTimer=null; let currentSessionId=WorkbenchEnvironment.storage().getItem('chat-image-session-id-'+String(config.auth_id||''))||''; let viewerImages=[]; let viewerIndex=0; let previewDragIndex=-1; let editorState=null; let lastChatSignature='';
 const ui={
   template:document.getElementById('template'), taskMode:document.getElementById('taskMode'), ratioMode:document.getElementById('ratioMode'), quality:document.getElementById('quality'), resolution:document.getElementById('resolution'),
   ratio:document.getElementById('ratio'), count:document.getElementById('count'), images:document.getElementById('images'), folderImages:document.getElementById('folderImages'),
@@ -183,20 +186,20 @@ function safeCount(){const n=Number(ui.count.value||1); return Math.max(1,Math.m
 function chatSettingsPayload(){return {single_quality:ui.quality.value,single_resolution:ui.resolution.value,single_ratio:ui.ratio.value,single_count:safeCount(),chat_task_mode:ui.taskMode.value,chat_ratio_mode:ui.ratioMode.value};}
 async function saveSettings(){
   const payload=chatSettingsPayload();
-  localStorage.setItem(chatSettingsKey,JSON.stringify(payload));
+  WorkbenchEnvironment.storage().setItem(chatSettingsKey,JSON.stringify(payload));
   if(!config.settings_editable)return;
-  const response=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const response=await fetch(WorkbenchEnvironment.api('settings'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   if(!response.ok)throw new Error(await window.NaumiWorkbenchError(response,'保存聊天生图参数失败'));
 }
 async function loadSettings(){
-  config=await(await fetch('/api/settings')).json();
+  config=await(await fetch(WorkbenchEnvironment.api('settings'))).json();
   const adminLink=document.getElementById('adminMenuLink');if(adminLink)adminLink.style.display=config.settings_editable?'':'none';
   templates=Array.isArray(config.provider_templates)?config.provider_templates:[];
-  let local={}; try{local=JSON.parse(localStorage.getItem(chatSettingsKey)||'{}')||{};}catch(e){local={};}
+  let local={}; try{local=JSON.parse(WorkbenchEnvironment.storage().getItem(chatSettingsKey)||'{}')||{};}catch(e){local={};}
   ui.template.innerHTML='<option value="">服务器自动分配</option>';
   ui.template.value='';
-  ui.template.disabled=true;
-  currentSessionId=localStorage.getItem('chat-image-session-id-'+String(config.auth_id||''))||'';
+  WorkbenchEnvironment.models(ui.template);
+  currentSessionId=WorkbenchEnvironment.storage().getItem('chat-image-session-id-'+String(config.auth_id||''))||'';
   ui.taskMode.value=local.chat_task_mode||config.chat_task_mode||'confirm';
   ui.ratioMode.value=local.chat_ratio_mode||config.chat_ratio_mode||'smart';
   ui.quality.value=local.single_quality||config.single_quality||config.quality||'high';
@@ -224,7 +227,7 @@ async function downloadAnswerImages(encodedPaths){
   paths=(paths||[]).filter(Boolean);
   if(!paths.length){alert('这个回答里没有可下载的生成图片');return;}
   const filename='聊天回答图片包_'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.zip';
-  const response=await fetch('/api/images-zip',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths,filename})});
+  const response=await fetch(WorkbenchEnvironment.api('images-zip'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths,filename})});
   if(!response.ok){alert(await window.NaumiWorkbenchError(response,'下载本回答图片失败'));return;}
   const blob=await response.blob();
   const url=URL.createObjectURL(blob);
@@ -270,7 +273,7 @@ function messageHtml(m){
   return `<div class="msg ${cls}"><div class="bubble"><div class="msgTime">${formatTime(m.created_at)}</div>${text}${statusHtml}${planActions}${imgs?`<div class="attachments">${imgs}</div>`:''}${batchDownload}${results?`<div class="results">${results}</div>`:''}${failures}</div></div>`;
 }
 function renderState(data){
-  currentSessionId=Object.prototype.hasOwnProperty.call(data,'session_id')?String(data.session_id||''):currentSessionId; if(currentSessionId)localStorage.setItem('chat-image-session-id-'+String(config.auth_id||''),currentSessionId); else localStorage.removeItem('chat-image-session-id-'+String(config.auth_id||''));
+  currentSessionId=Object.prototype.hasOwnProperty.call(data,'session_id')?String(data.session_id||''):currentSessionId; if(currentSessionId)WorkbenchEnvironment.storage().setItem('chat-image-session-id-'+String(config.auth_id||''),currentSessionId); else WorkbenchEnvironment.storage().removeItem('chat-image-session-id-'+String(config.auth_id||''));
   renderSessions(data.sessions||[]);
   const messages=Array.isArray(data.messages)?data.messages:[];
   const signature=JSON.stringify(messages.map(m=>({id:m.id,role:m.role,status:m.status,text:m.text,updated_at:m.updated_at,created_at:m.created_at,images:(m.images||[]).length,results:(m.results||[]).map(r=>[r.output_url,r.output_path,r.updated_at,r.prompt_index,r.variant_index,r.ratio,r.template]),failures:(m.failures||[]).map(f=>[f.error,f.prompt_index,f.variant_index])})));
@@ -291,21 +294,21 @@ function renderState(data){
   if(!runningAll&&pollTimer){clearInterval(pollTimer); pollTimer=null;}
   updateElapsed();
 }
-async function refreshState(){const data=await(await fetch('/api/chat-image/state?session_id='+encodeURIComponent(currentSessionId))).json(); renderState(data);}
-async function switchSession(id){currentSessionId=id; localStorage.setItem('chat-image-session-id-'+String(config.auth_id||''),id); await refreshState();}
-async function newChat(){const data=await(await fetch('/api/chat-image/new',{method:'POST'})).json(); renderState(data); ui.message.focus();}
-async function deleteSession(event,id){event.stopPropagation(); if(!confirm('确认删除这个对话吗？删除后历史记录不可恢复。'))return; const data=await(await fetch('/api/chat-image/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:id})})).json(); renderState(data);}
+async function refreshState(){const data=await(await fetch(WorkbenchEnvironment.api('chat-image/state?session_id=')+encodeURIComponent(currentSessionId))).json(); renderState(data);}
+async function switchSession(id){currentSessionId=id; WorkbenchEnvironment.storage().setItem('chat-image-session-id-'+String(config.auth_id||''),id); await refreshState();}
+async function newChat(){const data=await(await fetch(WorkbenchEnvironment.api('chat-image/new'),{method:'POST'})).json(); renderState(data); ui.message.focus();}
+async function deleteSession(event,id){event.stopPropagation(); if(!confirm('确认删除这个对话吗？删除后历史记录不可恢复。'))return; const data=await(await fetch(WorkbenchEnvironment.api('chat-image/delete'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:id})})).json(); renderState(data);}
 async function confirmPlan(messageId){
   await saveSettings().catch(()=>{});
   ui.status.textContent='已确认，正在提交生成...';
   const selectedTemplate=ui.template.value;
   const settings={quality:ui.quality.value,resolution:ui.resolution.value,ratio:ui.ratio.value,count:safeCount(),task_mode:ui.taskMode.value,ratio_mode:ui.ratioMode.value};
-  const response=await fetch('/api/chat-image/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:currentSessionId,message_id:messageId,active_provider_template:selectedTemplate,settings})});
+  const response=await fetch(WorkbenchEnvironment.api('chat-image/confirm'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:currentSessionId,message_id:messageId,active_provider_template:selectedTemplate,settings})});
   if(!response.ok){ui.status.textContent=await window.NaumiWorkbenchError(response,'确认未完成，请查询原任务');return;}
   const data=await response.json();
   renderState(data);
 }
-async function cancelPlan(messageId){const data=await(await fetch('/api/chat-image/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:currentSessionId,message_id:messageId})})).json(); renderState(data);}
+async function cancelPlan(messageId){const data=await(await fetch(WorkbenchEnvironment.api('chat-image/cancel'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:currentSessionId,message_id:messageId})})).json(); renderState(data);}
 async function sendMessage(){
   const sendButton=document.getElementById('sendBtn');if(sendButton.disabled)return;
   const text=ui.message.value.trim();
@@ -314,14 +317,14 @@ async function sendMessage(){
   try{await saveSettings(); ui.status.textContent='正在发送...';
   const selectedTemplate=ui.template.value;
   const settings={quality:ui.quality.value,resolution:ui.resolution.value,ratio:ui.ratio.value,count:safeCount(),task_mode:ui.taskMode.value,ratio_mode:ui.ratioMode.value};
-  const response=await fetch('/api/chat-image/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:currentSessionId,request_id:crypto.randomUUID(),message:text,images:uploadImages.map(x=>x.data_url),active_provider_template:selectedTemplate,settings})});
+  const response=await fetch(WorkbenchEnvironment.api('chat-image/send'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:currentSessionId,request_id:crypto.randomUUID(),message:text,images:uploadImages.map(x=>x.data_url),active_provider_template:selectedTemplate,settings})});
   if(!response.ok){ui.status.textContent=await window.NaumiWorkbenchError(response,'报价或提交未完成，请查询任务状态');return;}
   const data=await response.json();
   ui.message.value=''; uploadImages=[]; renderPreview(); renderState(data);
   }catch(e){ui.status.textContent='发送失败：'+e.message;}finally{sendButton.disabled=false;}
 }
-async function clearChat(){if(!confirm('确认清空当前对话？'))return; const data=await(await fetch('/api/chat-image/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:currentSessionId})})).json(); renderState(data);}
-async function openPath(encoded){downloadImageUrl('/api/image?path='+encodeURIComponent(decodeURIComponent(encoded)));}
+async function clearChat(){if(!confirm('确认清空当前对话？'))return; const data=await(await fetch(WorkbenchEnvironment.api('chat-image/clear'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:currentSessionId})})).json(); renderState(data);}
+async function openPath(encoded){downloadImageUrl(WorkbenchEnvironment.api('image?path=')+encodeURIComponent(decodeURIComponent(encoded)));}
 async function useAsReference(url){await addReferenceFromUrl(url,'上一张生成结果');}
 function openAnnotator(url){
   const encoded=encodeURIComponent(url||'');
@@ -359,12 +362,12 @@ loadSettings().then(refreshState);
 </script>
 
 <script>
-function appHeartbeat(){fetch('/api/heartbeat').catch(()=>{});}
+function appHeartbeat(){fetch(WorkbenchEnvironment.api('heartbeat')).catch(()=>{});}
 async function appAuthCheck(){
   try{
-    const r=await fetch('/api/auth/status');
+    const r=await fetch(WorkbenchEnvironment.api('auth/status'));
     if(r.status===401||r.status===403){
-      if(location.pathname!='/login') location.href='/login';
+      if(location.pathname!=WorkbenchEnvironment.signIn()) location.href=WorkbenchEnvironment.signIn();
     }
   }catch(e){}
 }
@@ -372,4 +375,5 @@ appHeartbeat();
 setInterval(appHeartbeat, 3000);
 setInterval(appAuthCheck, 300000);
 </script>
+</body>
 </html>
