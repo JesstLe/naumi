@@ -19,15 +19,15 @@ import { plainGeneratedOutput } from "./receipt-policy";
 import { storedImageReview, IMAGE_REVIEW_MESSAGE } from "../image-job-review";
 import { storedDeliveryState, recoverStoredDelivery } from "./stored-delivery";
 import {currentCreationContext} from "../saas/creation-context";
-import {assertImagegenCreationScope,imagegenCreationScopeKey,ImagegenScopeError} from "./creation-scope";
+import {assertImagegenCreationScope,assertAcceptedImagegenCreationScope,imagegenCreationScopeKey,ImagegenScopeError} from "./creation-scope";
 type Parent={status:string;result:ImagegenResult;fingerprint:string;children:Record<string,{state:"starting"|"submitted"|"done";jobId?:string;ids?:string[]}>};
 const jobs=new DurableImageJobs<Parent>("imagegen");
 const memoryScopes=new Map<string,unknown>();
 async function assertParentScope(id:string,owner:string){
  if(!dbEnabled){assertImagegenCreationScope(memoryScopes.get(id),owner);return;}
- const row=(await getPool().query("SELECT payload->'creationScope' AS scope FROM app_image_jobs WHERE id=$1 AND email=$2 AND kind='imagegen'",[id,owner.toLowerCase()])).rows[0];
+ const row=(await getPool().query("SELECT payload->'creationScope' AS scope,payload->'plan'->'request' AS request FROM app_image_jobs WHERE id=$1 AND email=$2 AND kind='imagegen'",[id,owner.toLowerCase()])).rows[0];
  if(!row)throw new ImagegenScopeError();
- assertImagegenCreationScope(row.scope,owner);
+ await assertAcceptedImagegenCreationScope(row.scope,owner,row.request);
 }
 class NotAccepted extends Error{}
 const parentId=(id:string)=>`imagegen-${id}`;
@@ -82,7 +82,12 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
    if(child!.state==="submitted"){
     const row=(await getPool().query("SELECT email,snapshot FROM app_image_jobs WHERE id=$1 AND kind='generate'",[child!.jobId])).rows[0];
     if(!row||row.email!==owner){await update({status:"error"},{status:"failed",error:{code:"CHILD_MISSING",message:"生成任务读取失败，请重试"}});return;}
-    if(row.snapshot.status==="needs_attention"){await update({status:"error"},{status:"failed",error:{code:"CHILD_PENDING",message:row.snapshot.error||"本次未取得图片，请重试"}});return;}
+    if(row.snapshot.status==="needs_attention"){
+     // A review state does not erase a charge already settled by this child.
+     // Only project the existing ledger; this path never settles it again.
+     const charge=await childCharges(owner,state.children,plan);
+     await update({status:"error"},{status:"failed",chargedCredits:charge,billingStatus:"confirmed",error:{code:"CHILD_PENDING",message:row.snapshot.error||"本次未取得图片，请重试"}});return;
+    }
     if(row.snapshot.status==="error"){
      const attempts=Object.values(row.snapshot.paidOperations||{}) as {state:string}[];
      if(attempts.length&&attempts.every(a=>a.state==="rejected"))throw new NotAccepted(row.snapshot.error||"供应商明确未受理");
@@ -128,7 +133,35 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
   const safeToRestart=chargeKnown&&charged===0&&!kept.length&&!Object.values(state.children).some(c=>c.state==="done");
   await update({status:error instanceof ImagegenStopped?"done":"error"},{status:error instanceof ImagegenStopped?"cancelled":"failed",artifacts:kept,chargedCredits:charged,billingStatus:chargeKnown?"confirmed":"unavailable",warnings:[...warnings],error:error instanceof ImagegenStopped?undefined:{code:error instanceof NotAccepted?(safeToRestart?"NOT_ACCEPTED":"PARTIAL_EXECUTION_REJECTED"):"EXECUTION_FAILED",message:error instanceof Error?error.message:"图像处理失败"}});}
 }
-export async function resumeImagegen(id:string){await jobs.kick(id,(payload,snapshot)=>runParent(id,payload,snapshot));}
+export async function resumeImagegen(id:string,recheckEmptyClaim=true){await jobs.kick(id,(payload,snapshot)=>runParent(id,payload,snapshot),recheckEmptyClaim);}
+/** Reconcile only an already-submitted terminal child through the frozen parent
+ * plan. Called outside execution ALS after either side has released its lease. */
+export async function notifyImagegenJobReleased(id:string,kind:"generate"|"imagegen"):Promise<void>{
+ if(!dbEnabled)return;
+ const {rows}=await getPool().query(`SELECT parent.id,parent.email,parent.snapshot,parent.payload->'plan' AS plan,child.id AS child_id
+  FROM app_image_jobs parent
+  CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(parent.snapshot->'children')='object' THEN parent.snapshot->'children' ELSE '{}'::jsonb END) link
+  JOIN app_image_jobs child ON child.id=link.value->>'jobId' AND child.kind='generate' AND child.email=parent.email
+  WHERE ${kind==="generate"?"child.id=$1":"parent.id=$1"} AND parent.kind='imagegen'
+   AND parent.snapshot->>'status' IN ('pending','running') AND parent.lease_token IS NULL
+   AND link.value->>'state'='submitted' AND child.snapshot->>'status' IN ('done','error','needs_attention')
+   AND child.lease_token IS NULL`,[id]);
+ for(const row of rows){
+  const snapshot=row.snapshot as Parent,plan=row.plan as ImagegenPlan;
+  // Never wake from a later step past an unresolved sibling, or replay an
+  // existing "starting" intent whose acceptance has not been checkpointed.
+  const step=plan?.steps?.find(step=>snapshot.children?.[step.key]?.state!=="done");
+  if(!step||plan.steps.some(step=>snapshot.children?.[step.key]?.state==="starting"))continue;
+  const child=snapshot.children?.[step.key];
+  if(child?.state!=="submitted"||child.jobId!==row.child_id)continue;
+  // releaseImageJob leaves pending parents on a 10s cooldown. Clear only that
+  // unowned delay, never another executor's live lease; kick keeps its claim CAS.
+  const ready=await getPool().query(`UPDATE app_image_jobs SET lease_until=NULL
+   WHERE id=$1 AND email=$2 AND kind='imagegen' AND lease_token IS NULL
+    AND snapshot->>'status' IN ('pending','running') AND snapshot=$3::jsonb RETURNING id`,[row.id,row.email,JSON.stringify(snapshot)]);
+  if(ready.rowCount)await resumeImagegen(row.id,false);
+ }
+}
 async function presentPendingReview(id:string,owner:string,snapshot:Parent):Promise<ImagegenResult|null>{
  if(!["pending","running"].includes(snapshot.status))return null;
  for(const child of Object.values(snapshot.children||{}))if(child.jobId&&await storedImageReview(child.jobId,owner))return {...snapshot.result,status:"failed",error:{code:"EXECUTION_FAILED",message:"本次未取得图片，请重试"}};

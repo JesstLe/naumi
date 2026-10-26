@@ -2,9 +2,10 @@ import "server-only";
 import { dbEnabled, getPool } from "../db";
 import type { ModelExecutionScope } from "../model-config/context";
 import type { ValidationOptions } from "../model-config/schema";
-import { completedChannelImage } from "../model-config/channel-image-response";
+import { completedChannelImage, channelImageFailureStage } from "../model-config/channel-image-response";
 import {ModelConfigError} from "../model-config/types";
-import { ImageOperationDeferred } from "../image-gateway";
+import { ImageOperationDeferred, currentImageOperationId } from "../image-gateway";
+import { imageFailureEvidence } from "../imagegen/failure-evidence";
 import { prepareChannelText } from "../model-config/channel-text-response";
 import { createHealthRepository } from "./repository";
 import { healthTargetKey } from "./targets";
@@ -45,6 +46,15 @@ export function healthObservedFetch(scope: ModelExecutionScope, fetcher: typeof 
       if (!valid.streaming) await observeBusinessHealth(scope,{success:true,reason:null,status,latencyMs:Date.now()-started});
       return valid.response;
     } catch (error) {
+      if (image && status !== null && status >= 200 && status < 300) {
+        // This response already exists; logging cannot authorize another POST.
+        // The original exception still propagates, with bounded diagnostics only.
+        try { console.error("[image-postaccept]", JSON.stringify({
+          operationId: currentImageOperationId(), modelVersion: scope.frozen.modelVersion,
+          stage: channelImageFailureStage(error) || "observe-image", status,
+          ...imageFailureEvidence(error),
+        })); } catch { /* Observability must not break delivery. */ }
+      }
       if (!request.signal.aborted && !(error instanceof ImageOperationDeferred) && !(error instanceof ModelConfigError && error.code === "PROVIDER_BUSY")) await observeBusinessHealth(scope,classifyHealthFailure(error,status,Date.now()-started));
       throw error;
     }

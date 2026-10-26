@@ -11450,7 +11450,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     }
                   />
                   {ratioControl}
-                  <ImageQualityControl compact feature="canvas.image" modelId={genModel} resolution={genResolution} />
+                  <ImageQualityControl compact feature="canvas.image" modelId={genModel} resolution={genResolution} ratio={generationMode === "triptych" ? "16:9" : genRatio} quantity={selectedGenerationCount} />
                   {generationMode === "standard" || generationMode === "detail" ? (
                     <ImageCountControl
                       value={genCount}
@@ -11575,7 +11575,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   }
                 />
                 {ratioControl}
-                <ImageQualityControl compact feature="canvas.image" modelId={genModel} resolution={genResolution} />
+                <ImageQualityControl compact feature="canvas.image" modelId={genModel} resolution={genResolution} ratio={genRatio} quantity={genCount} />
                 <ImageCountControl
                   value={genCount}
                   onChange={setGenCount}

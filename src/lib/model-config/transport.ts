@@ -1,6 +1,6 @@
 import { applicationAPIMartImages } from "./apimart-image-policy";
 import "server-only";
-import { guardChannelSubmission } from "./channel-availability";
+import { guardChannelSubmission, assertAcceptedImageReadOnly } from "./channel-availability";
 import { lookup } from "node:dns/promises";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
@@ -32,6 +32,7 @@ export function modelEndpointFetch(baseUrl: string, options: ValidationOptions =
     const url = new URL(request.url);
     if (url.origin !== base.origin || url.username || url.password || url.hash) throw new ModelConfigError("INVALID_ENDPOINT", "模型请求超出已配置接口范围");
     if (request.signal.aborted) throw request.signal.reason;
+    if (request.method === "POST") assertAcceptedImageReadOnly();
     // Recheck after cost-ledger preparation too: its DB waits must not create
     // a window in which an administrator's completed disable is ignored.
     if (request.method === "POST" && provider?.costScope?.channelGuard) await guardChannelSubmission(getPool(), provider.costScope, !applicationAPIMartImages(provider.costScope.connection.protocol,provider.costScope.parameterMap) || /\/images\/generations$/.test(url.pathname));
@@ -75,6 +76,7 @@ export function modelEndpointFetch(baseUrl: string, options: ValidationOptions =
   const guarded: typeof fetch = async (input, init) => {
     const request = new Request(input, init);
     request.signal.throwIfAborted();
+    if (request.method === "POST") assertAcceptedImageReadOnly();
     if (request.method === "POST" && provider?.costScope?.channelGuard) await guardChannelSubmission(getPool(), provider.costScope, false);
     request.signal.throwIfAborted();
     return observed(request);

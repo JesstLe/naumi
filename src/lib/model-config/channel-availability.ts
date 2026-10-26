@@ -1,5 +1,6 @@
 import { applicationAPIMartImages, queryableImageScope } from "./apimart-image-policy";
 import "server-only";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import type { ChannelTarget } from "./channel-scheduler";
@@ -9,6 +10,17 @@ import { ModelConfigError, type ModelConfig } from "./types";
 import { currentImageOperationId, ImageOperationPending } from "../image-gateway";
 
 export type ChannelGuard = { upstreamId: string; operationKey?: string };
+const acceptedImageReads = new AsyncLocalStorage<ReadonlySet<string>>();
+/** Recovery of a proved task may read it, but must never turn a missing/failed
+ * receipt into a fresh supplier POST (including channel failover). */
+export function withAcceptedImageRead<T>(operationId: string, run: () => Promise<T>): Promise<T> {
+  return acceptedImageReads.run(new Set([...(acceptedImageReads.getStore() || []), operationId]), run);
+}
+export function assertAcceptedImageReadOnly() {
+  const operationId = currentImageOperationId();
+  if (operationId && acceptedImageReads.getStore()?.has(operationId))
+    throw new ImageOperationPending(operationId, new Error("accepted-image-recovery-read-only"));
+}
 type LiveChannels = {
   model: ModelConfig["publicModels"][number] | null;
   upstreams: Pick<ModelConfig["upstreamModels"][number], "id" | "enabled" | "providerId" | "model">[];
@@ -77,6 +89,52 @@ export async function recoverableChannelIdentity(pool: Pool, scope: ModelExecuti
   return target ? "channel:"+createHash("sha256").update(JSON.stringify([key,target.upstreamId,target.scope.connection.providerId,target.scope.connection.baseUrl,target.scope.connection.wireModel])).digest("hex") : undefined;
 }
 
+/** Unlike a pre-dispatch routing pin, this is proof of an accepted task belonging
+ * to this job AND this exact frozen adapter operation. Never alias root:image:0
+ * to the root: callers must check each indexed operation separately. */
+export async function acceptedImageOperationIdentities(pool: Pool, scope: ModelExecutionScope | null, jobId: string, operationId: string): Promise<Record<string, string>> {
+  if (!scope) return {};
+  const recoverable = (target: ModelExecutionScope) => !!target.imagePreset || queryableImageScope(target);
+  const targets = scope.supplierRouting?.targets.filter(t => recoverable(t.scope)) ||
+    (recoverable(scope) ? [{ upstreamId: scope.channelGuard?.upstreamId || "", scope }] : []);
+  if (!targets.length || !(await pool.query("SELECT to_regclass('app_supplier_calls') AS name")).rows[0]?.name) return {};
+  const calls = (await pool.query(`SELECT id,billing_unit_id,provider_id,model,account_id,attempt_id,task_id,parameters
+    FROM app_supplier_calls WHERE operation_id=$1 AND public_model_id=$2 AND model_version=$3
+      AND (billing_unit_id=$4 OR left(billing_unit_id,length($4)+7)=$4||':image:')
+      AND task_id IS NOT NULL AND task_id<>'' AND parameters IS NOT NULL
+      AND state IN ('submitted','processing','running','completed','success','succeeded')`,
+  [jobId, scope.frozen.publicModelId, scope.frozen.modelVersion, operationId])).rows;
+  const result: Record<string, string> = {};
+  const seen = new Set<string>();
+  for (const call of calls) {
+    const unit = call.billing_unit_id as string;
+    if (unit !== operationId && !(unit.startsWith(`${operationId}:image:`) && /^(0|[1-9]\d*)$/.test(unit.slice(operationId.length + 7)))) continue;
+    if (seen.has(unit)) throw new ImageOperationPending(unit, new Error("accepted-image-operation-ambiguous"));
+    seen.add(unit);
+    const matched = targets.filter(({ scope: target }) => {
+      const c = target.connection;
+      if (call.provider_id !== c.providerId || call.model !== c.wireModel || typeof call.parameters?.requestHash !== "string") return false;
+      const hub = c.options?.imageAdapter === "reverse-hub";
+      const account = createHash("sha256").update((hub ? c.baseUrl.replace(/\/$/, "") : c.baseUrl) + "\0" + c.apiKey).digest("hex");
+      const attempt = createHash("sha256").update(hub ? `reverse-hub:${target.frozen.modelVersion}:${c.providerId}:${c.wireModel}:${unit}` :
+        target.imagePreset ? `apimart-preset:${target.frozen.modelVersion}:${unit}` :
+          JSON.stringify(["apimart-images-v1", target.frozen.modelVersion, target.frozen.publicModelId, c.providerId, c.wireModel, unit])).digest("hex");
+      return call.account_id === account && call.attempt_id === attempt;
+    });
+    if (matched.length !== 1) continue;
+    const target = matched[0];
+    const key = channelOperationKey(scope, unit);
+    if (scope.supplierRouting) {
+      const pin = await readChannelOperationPin(pool, scope.frozen.publicModelId, scope.supplierRouting.targets, key, unit);
+      if (pin?.upstream_id !== target.upstreamId) continue;
+    }
+    result[unit] = "accepted:" + createHash("sha256").update(JSON.stringify([
+      key, target.upstreamId, call.id, call.task_id, call.account_id, call.attempt_id,
+    ])).digest("hex");
+  }
+  return result;
+}
+
 /** Canvas text edits have their own pre-submission checkpoint. Only an exact
  * frozen APIMart marker/task may pass it again; an absent ledger is NOT a retry
  * permit. Keep its quality-suffixed operation ID identical to editImage(). */
@@ -98,6 +156,7 @@ export async function recoverableAPIMartImageOperation(pool: Pool, scope: ModelE
 /** Final dispatch gate, after request/body preparation and immediately before
  * the supplier POST. GETs retrieving an accepted task never pass this gate. */
 export async function guardChannelSubmission(pool: Pool, scope: ModelExecutionScope, dispatch = true) {
+  assertAcceptedImageReadOnly();
   const guard = scope.channelGuard;
   if (!guard) return;
   await ensureModelSchema(pool);
