@@ -24,10 +24,14 @@ export function creationFailureFromRow(row:Record<string,any>):CreationFailure{
  const transport=typeof row.transport_code==='string'&&Object.hasOwn(transportLabels,row.transport_code)?row.transport_code:null;
  const category=typeof row.failure_category==='string'&&Object.hasOwn(categoryLabels,row.failure_category)?row.failure_category:null;
  const hasCall=!!row.call_id;
+ const postStages:Record<string,string>={'download-image':'原结果图片下载失败','decode-pixels':'原结果图片解码失败','parse-response':'供应响应解析失败','validate-envelope':'供应响应缺少有效图片','read-response':'供应响应读取失败','decode-base64':'原结果图片编码异常','validate-size':'原结果图片大小异常','serialize-response':'原结果转换失败','parse-image-url':'原结果图片地址异常'};
+ const postStage=typeof row.post_stage==='string'&&Object.hasOwn(postStages,row.post_stage)?row.post_stage:null;
+ const postCode=Array.isArray(row.post_causes)?row.post_causes.map((c:any)=>c?.code).find((c:unknown)=>typeof c==='string'&&Object.hasOwn(transportLabels,c)):null;
  const responseSucceeded=httpStatus!==null&&httpStatus<400&&['response-received','stream-completed','completed'].includes(row.call_state);
  const failure:CreationFailure={...missingCreationFailure(),evidence:'task_state',observedAt:when(row.call_updated_at||row.updated_at),
   supplier:hasCall?{provider:label(row.provider_id),model:label(row.actual_model||row.model),state:knownState(row.call_state,['started','unknown','rejected','submitted','accepted','response-received','stream-completed','completed','failed','cancelled']),costStatus:knownState(row.cost_status,['pending','estimated','reported','reconciled','not_charged']),httpStatus}:null,
   customerBilling:row.billing_state?{state:knownState(row.billing_state,['reserved','settled','released','hold','manual']),charged:credits(row.charged_credits),reserved:credits(row.reserved_credits)}:null};
+ if(hasCall&&postStage)return {...failure,title:postStage==='download-image'&&postCode==='ECONNRESET'?'原结果图片下载连接被重置':postStages[postStage],description:'供应响应已经返回；这是读取或处理原结果时的错误，不等于生成请求未被受理。',stage:postStage==='download-image'?'下载原结果图片':'结果处理 / 交付',code:postCode||null,evidence:'supplier_receipt'};
  if(hasCall&&(transport||row.failure_category==='transport')&&!responseSucceeded)return {...failure,title:transport?transportLabels[transport]:'供应调用通信异常',description:'调用链路发生通信异常；具体断点及供应商是否受理，以原回执为准。',stage:'供应调用',code:transport,evidence:'supplier_receipt'};
  if(hasCall&&(category||httpStatus!==null&&httpStatus>=400)&&!responseSucceeded)return {...failure,title:category?categoryLabels[category]:`供应接口返回 HTTP ${httpStatus}`,description:'原因来自该任务最近一次供应回执；未记录的信息不推断为额度、权限或扣费结论。',stage:'供应调用',code:httpStatus?`HTTP ${httpStatus}`:null,evidence:'supplier_receipt'};
  if(hasCall&&Number(row.delivered)>0)return {...failure,title:'供应响应已有输出，任务交付仍异常',description:'供应记录中的输出数量不等于本地图片已保存或交付，需核对结果处理与交付记录。',stage:'结果处理 / 交付',code:null,evidence:'supplier_receipt'};
@@ -60,7 +64,8 @@ async function readFailures(tx:Reader,refs:Ref[],roots:string[],incomplete=false
  LEFT JOIN app_billing_operations b ON b.id=t.id AND b.email=t.email
  ${supplierPresent?`LEFT JOIN LATERAL (
   SELECT s.id AS call_id,s.provider_id,s.model,s.actual_model,s.state AS call_state,s.cost_status,s.delivered,s.updated_at AS call_updated_at,
-  s.evidence->>'transportCode' AS transport_code,s.evidence->>'failureCategory' AS failure_category,s.evidence->>'httpStatus' AS http_status
+  s.evidence->>'transportCode' AS transport_code,s.evidence->>'failureCategory' AS failure_category,s.evidence->>'httpStatus' AS http_status,
+  s.evidence#>>'{postAcceptanceFailure,stage}' AS post_stage,s.evidence#>'{postAcceptanceFailure,causes}' AS post_causes
   FROM app_supplier_calls s WHERE s.operation_id=t.id AND s.user_email=t.email ORDER BY s.started_at DESC,s.id DESC LIMIT 1)s ON true`:''}
  ORDER BY t.root,t.updated_at DESC,t.id`;
  const rows=(await tx.query(sql,[JSON.stringify(refs)])).rows;

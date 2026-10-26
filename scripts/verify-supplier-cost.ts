@@ -3,8 +3,9 @@ import { randomUUID } from "node:crypto";
 import { createModelFixture } from "./model-config-fixture";
 import { readFile } from "node:fs/promises";
 async function main(){
-  let posts=0,queries=0,remoteCost="0.021", routerRecord:unknown;
+  let posts=0,queries=0,remoteCost="0.021", routerRecord:unknown, originalImageGets=0;
   const f=await createModelFixture(async(req,res)=>{
+    if(req.url?.startsWith('/broken-original')){assert.equal(req.method,'GET');originalImageGets++;req.socket.destroy();return;}
     if(req.method==='POST'){posts++;res.writeHead(400);res.end('{}');return;}
     queries++;res.setHeader('content-type','application/json');
     if(req.url?.startsWith('/internal/operations/'))return res.end(JSON.stringify(routerRecord));
@@ -103,6 +104,35 @@ async function main(){
     assert.equal((await api.GET(userReq('/api/admin/supplier-cost'))).status,404);assert.equal((await actions.POST(userReq('/api/admin/supplier-cost/actions','POST'))).status,404);
     const full=(await f.sql.query('SELECT * FROM app_supplier_calls')).rows;assert.ok(!JSON.stringify(full).includes('fixture-private-key'));assert.ok(!JSON.stringify(full).includes('secret prompt'));assert.ok(!JSON.stringify((await f.sql.query('SELECT hint FROM app_supplier_callback_inbox')).rows).includes('999'));
     const reopened=createSupplierLedger(f.sql);assert.equal((await reopened.task(id,'task_one')).amount_micros,'21000');
+    // Real collector -> health validator -> exact call's durable diagnostics.
+    // Only the result GET uses loopback HTTP; all generation responses are fixtures.
+    const {healthObservedFetch}=await import('../src/lib/model-health/observe');
+    const originalAccounting=(await f.sql.query("SELECT (SELECT jsonb_agg(b ORDER BY id) FROM app_billing_operations b) billing,(SELECT jsonb_agg(l ORDER BY id) FROM app_ledger l) ledger")).rows;
+    const scope={frozen:{feature:'canvas.image',modality:'image',modelVersion:141},connection:{providerId:'diagnostic-fixture'}} as any;
+    let fixtureResponses=0;
+    const cases=[{id:'diag-download',body:{data:[{url:f.origin+'/broken-original?secret=never-persist-this'}]},stage:'download-image'},
+      {id:'diag-decode',body:{data:[{b64_json:Buffer.from('not an image').toString('base64')}]},stage:'decode-pixels'},
+      {id:'diag-empty',body:null,stage:'read-response'}];
+    await Promise.all(cases.map(async c=>{
+      const collected=supplierCostFetch(async()=>{fixtureResponses++;return c.body?Response.json(c.body):new Response(null,{status:200})},
+        {providerId:'diagnostic-fixture',apiKey:'fixture-private-key',baseUrl:f.origin,wireModel:'image-fixture',protocol:'openai-images'});
+      const observed=healthObservedFetch(scope,collected,{trustedOrigins:[f.origin]});
+      await withBiModelContext('cost-user@example.test','canvas.image.generate',c.id,async()=>{
+        await assert.rejects(observed(f.origin+'/v1/images/generations',{method:'POST',body:'{}'}),/supplier-image-(download-failed|invalid-output)|empty receipt/);
+      });
+    }));
+    for(const c of cases){
+      const rows=(await f.sql.query('SELECT * FROM app_supplier_calls WHERE operation_id=$1',[c.id])).rows;
+      assert.equal(rows.length,1);const saved=rows[0];
+      assert.equal(saved.state,'response-received');assert.equal(saved.cost_status,'pending');if(c.body)assert.equal(saved.evidence.httpStatus,200);
+      assert.equal(saved.evidence.postAcceptanceFailure.stage,c.stage);assert.equal(saved.evidence.postAcceptanceFailure.status,200);
+      assert.ok(Number.isFinite(Date.parse(saved.evidence.postAcceptanceFailure.observedAt)));
+      assert.ok(!JSON.stringify(saved.evidence).includes('never-persist-this'));assert.ok(!JSON.stringify(saved.evidence).includes('fixture-private-key'));
+      if(c.stage==='download-image')assert.ok(saved.evidence.postAcceptanceFailure.causes.some((v:any)=>['ECONNRESET','UND_ERR_SOCKET'].includes(v.code)));
+    }
+    assert.equal(originalImageGets,2);assert.equal(fixtureResponses,3);assert.equal(posts,0);
+    assert.deepEqual((await f.sql.query("SELECT (SELECT jsonb_agg(b ORDER BY id) FROM app_billing_operations b) billing,(SELECT jsonb_agg(l ORDER BY id) FROM app_ledger l) ledger")).rows,originalAccounting);
+    console.log('POSTACCEPT_DURABLE_DIAGNOSTICS=PASS REAL_PG=1 EXACT_CALLS=3 CROSS_CALL_LEAK=0 ORIGINAL_IMAGE_GETS=2 GENERATION_RESPONSES=FIXTURE CUSTOMER_ACCOUNTING=UNCHANGED');
     console.log('SUPPLIER_COST=PASS DUPLICATE_CALLBACK=ONE POLL_RACE=ONE ZERO=REPORTED MISSING_USAGE=SUPPORTED FAILED_CHARGE=RECORDED LATE_COST=RECOVERED REFUND_HISTORY=ONE PARTIAL_BATCH=ONE_RECEIPT MIXED_TOTAL=121000 UNATTRIBUTED=NOT_ASSIGNED DECIMAL=EXACT NON_ADMIN=404 DB_REOPEN=PASS PAID_POSTS=0');
   }finally{await db.getPool().end();await f.cleanup()}
 }

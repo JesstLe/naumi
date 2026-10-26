@@ -330,6 +330,7 @@ function fixture({runtime = true} = {}) {
       './receipt-policy': () => load('src/lib/imagegen/receipt-policy.ts'),
       '../image-job-review': {storedImageReview: async () => null, IMAGE_REVIEW_MESSAGE: 'fixture-review'},
       './stored-delivery': {storedDeliveryState: async () => null, recoverStoredDelivery: fail('unexpected-recovery')},
+      './completed-parent-receipt': {finalizeCompletedParent:async()=>false},
       '@/lib/saas/creation-scope': () => load('src/lib/saas/creation-scope.ts'), './creation-scope': () => load('src/lib/imagegen/creation-scope.ts'),
     },
     'src/lib/imagegen/generation-core.ts': {

@@ -11,6 +11,7 @@ import { createHealthRepository } from "./repository";
 import { healthTargetKey } from "./targets";
 import { classifyHealthFailure } from "./outcomes";
 import type { HealthResult } from "./contracts";
+import {recordImageResponseFailure} from '../supplier-cost/response-diagnostics';
 
 export async function observeBusinessHealth(scope: ModelExecutionScope, result: HealthResult) {
   if (!dbEnabled || scope.frozen.feature === "system.model-health" || !scope.connection.credentialRef || scope.connection.providerId === "managed-router") return;
@@ -27,9 +28,9 @@ export function healthObservedFetch(scope: ModelExecutionScope, fetcher: typeof 
     const image = scope.frozen.modality === "image" && /\/images\/(generations|edits)$/.test(new URL(request.url).pathname);
     const text = scope.frozen.modality === "text" && /\/chat\/completions$/.test(new URL(request.url).pathname);
     if (request.method !== "POST" || !image && !text) return fetcher(request);
-    const started = Date.now(); let status: number | null = null;
+    const started = Date.now(); let status: number | null = null,acceptedResponse:Response|null=null;
     try {
-      const response = await fetcher(request); status = response.status;
+      const response = await fetcher(request); status = response.status;acceptedResponse=response;
       if (!response.ok) {
         // User-specific parameter rejection and local capacity do not condemn the supplier.
         if (response.headers.get("x-naumi-local-capacity") !== "1" && ([401,402,403,429].includes(status) || status >= 500)) await observeBusinessHealth(scope,classifyHealthFailure(null,status,Date.now()-started));
@@ -47,6 +48,7 @@ export function healthObservedFetch(scope: ModelExecutionScope, fetcher: typeof 
       return valid.response;
     } catch (error) {
       if (image && status !== null && status >= 200 && status < 300) {
+        if(acceptedResponse)await recordImageResponseFailure(acceptedResponse,{stage:channelImageFailureStage(error)||'observe-image',status,...imageFailureEvidence(error),observedAt:new Date().toISOString()});
         // This response already exists; logging cannot authorize another POST.
         // The original exception still propagates, with bounded diagnostics only.
         try { console.error("[image-postaccept]", JSON.stringify({
