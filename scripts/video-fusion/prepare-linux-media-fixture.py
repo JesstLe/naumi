@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import pathlib
+import re
 import subprocess
 import sys
 import tarfile
@@ -16,10 +17,13 @@ if len(commit) != 40 or any(c not in "0123456789abcdef" for c in commit):
     raise ValueError("Exact committed source required")
 assets, output = pathlib.Path(assets_raw).resolve(), pathlib.Path(output_raw).resolve()
 output.mkdir(parents=True, exist_ok=False)
-files = ["Dockerfile", "scripts/video-fusion/media-sandbox.c",
-         "scripts/video-fusion/prepare-media-runtime.sh", "scripts/video-fusion/media-engine.mjs",
-         "scripts/video-fusion/media-bundle.mjs", "scripts/video-media-worker.mjs",
-         "scripts/verify-video-media-sandbox.mjs"]
+modern = subprocess.run(["git", "cat-file", "-e", commit + ":services/media-worker/engine.mjs"], capture_output=True).returncode == 0
+files = ["Dockerfile", "scripts/video-media-worker.mjs", "scripts/verify-video-media-sandbox.mjs"]
+files += (["services/media-worker/sandbox.c", "services/media-worker/prepare-runtime.sh",
+           "services/media-worker/engine.mjs", "services/media-worker/main.mjs",
+           "src/modules/media/contract.mjs", "src/modules/media/bundle.mjs"] if modern else
+          ["scripts/video-fusion/media-sandbox.c", "scripts/video-fusion/prepare-media-runtime.sh",
+           "scripts/video-fusion/media-engine.mjs", "scripts/video-fusion/media-bundle.mjs"])
 archive = subprocess.check_output(["git", "archive", "--format=tar", commit, *files])
 with tarfile.open(fileobj=io.BytesIO(archive)) as source:
     for name in files:
@@ -30,20 +34,23 @@ with tarfile.open(fileobj=io.BytesIO(archive)) as source:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(source.extractfile(member).read())
 production = (output / "Dockerfile").read_text(encoding="utf-8")
-start = production.index("FROM node:24-bookworm-slim AS media-runtime")
-end = production.index("FROM node:24-bookworm-slim AS runner", start)
+start = re.search(r"^FROM .+ AS media-runtime$", production, re.M).start()
+end = re.search(r"^FROM .+ AS runner$", production[start:], re.M).start() + start
 stage = production[start:end]
-runner = """FROM node:24-bookworm-slim AS verify
+base = re.search(r"^ARG NODE_BASE_IMAGE=.+$", production, re.M)
+base_arg = base.group(0) + "\n" if base else ""
+runner_base = "${NODE_BASE_IMAGE}" if base else "node:24-bookworm-slim"
+runner = f"""FROM {runner_base} AS verify
 WORKDIR /app
 ARG SOURCE_COMMIT
 ENV NODE_ENV=production SOURCE_COMMIT=$SOURCE_COMMIT
 COPY --from=media-runtime /opt/naumi-media-runtime /opt/naumi-media-runtime
 COPY --from=media-runtime /usr/local/bin/naumi-media-sandbox /usr/local/bin/naumi-media-sandbox
-COPY scripts/ ./scripts/
+COPY . .
 USER root
 CMD ["node","scripts/verify-video-media-sandbox.mjs"]
 """
-(output / "Dockerfile.media-fixture").write_text(stage + runner, encoding="utf-8", newline="\n")
+(output / "Dockerfile.media-fixture").write_text(base_arg + stage + runner, encoding="utf-8", newline="\n")
 manifest = json.loads((assets / "manifest.json").read_text(encoding="utf-8"))
 video = next(v for v in manifest["files"] if v["name"] == "landscape-4-audio.mp4")
 raw = (assets / video["name"]).read_bytes()

@@ -6,7 +6,7 @@ import path from "node:path";
 import {createVideoFixture} from "./video-fusion/harness";
 import {readLimitedVideoResponse} from "../src/lib/video/result-download";
 import type {MediaJobRequest,MediaJobOutput} from "../src/lib/video/media-job-schema";
-import {inspectMediaBundle} from "./video-fusion/media-bundle.mjs";
+import {inspectMediaBundle} from "../src/modules/media/bundle.mjs";
 import type {ConfigSnapshot} from "../src/lib/billing/types";
 
 type Job={id:string;status:string;outputs:MediaJobOutput[];queryResult:string|null;cost:number;billingVersion:number;processedSeconds:number};

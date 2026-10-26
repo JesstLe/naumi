@@ -4,7 +4,7 @@ import {spawn} from 'node:child_process';
 import {mkdir,readFile,writeFile,cp,chown,chmod,rm} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import path from 'node:path';
-import {MediaEngine,mediaJobDirectory,parseProbe} from './video-fusion/media-engine.mjs';
+import {MediaEngine,mediaJobDirectory,parseProbe} from '../services/media-worker/engine.mjs';
 
 // Run only in a dedicated fixed-source Linux fixture container. No formal DB,
 // provider credentials, object-store credentials or business media is mounted.

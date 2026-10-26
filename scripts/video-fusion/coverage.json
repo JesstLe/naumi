@@ -2204,7 +2204,7 @@
       "name": "FFmpeg表达力及多输入多输出取消",
       "state": "application-e2e-passed",
       "implementation": [
-        "scripts/video-fusion/media-engine.mjs",
+        "services/media-worker/engine.mjs",
         "src/lib/video/media-jobs.ts",
         "src/lib/agent/canvas-video-tools.ts"
       ],

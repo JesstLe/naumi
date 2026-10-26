@@ -11,7 +11,7 @@ const file=fileURLToPath(import.meta.url),project=path.resolve(path.dirname(file
 const fixtureOwner='canvas-video-fusion-20261013';
 if(process.argv[2]==='--worker'){
   assert.equal(process.env.NAUMI_MEDIA_RETIREMENT_FIXTURE,'1');
-  const {MediaEngine}=await import('./video-fusion/media-engine.mjs');
+  const {MediaEngine}=await import('../services/media-worker/engine.mjs');
   const original=MediaEngine.prototype.run;
   MediaEngine.prototype.run=async function(id,request,onProgress,signal){
     if(!request.fixtureHold)return original.call(this,id,request,onProgress,signal);

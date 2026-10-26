@@ -97,7 +97,7 @@ def main():
             shutil.copyfile(script, client / 'probe.mjs')
             name = tag + '-' + str(memory)
             args = ['docker', 'run', '-d', '--name', name, '--label', 'io.naumi.media-max-io=' + tag, '--network', 'none', '--user', '0:0', '--read-only', '--cap-drop', 'ALL']
-            for cap in ('SYS_CHROOT', 'SETUID', 'SETGID', 'CHOWN', 'DAC_OVERRIDE', 'FOWNER'):
+            for cap in ('SYS_CHROOT', 'SETUID', 'SETGID', 'CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'KILL'):
                 args += ['--cap-add', cap]
             args += ['--security-opt', 'no-new-privileges', '--pids-limit', '160', '--memory=' + str(memory) + 'm', '--memory-swap=' + str(memory) + 'm', '--cpus=1', '--tmpfs', '/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777', '--tmpfs', '/tmp/naumi-media-sandbox:rw,exec,nosuid,nodev,size=2g,mode=755', '--tmpfs', '/data:rw,size=1m,mode=755', '--mount', 'type=bind,src=' + str(scratch) + ',dst=/scratch', '--mount', 'type=bind,src=' + str(client) + ',dst=/probe,readonly', '-e', 'MEDIA_WORKER_SECRET=synthetic-local-media-memory-probe-' + tag, '-e', 'MEDIA_JOB_DIR=/scratch', '--entrypoint', 'node', image, 'scripts/video-media-worker.mjs']
             run(args)

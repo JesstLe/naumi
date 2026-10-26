@@ -52,8 +52,8 @@ RUN if [ "$NEXT_PUBLIC_CANVAS_PERF_PROBE" = "1" ]; then npm run build -- --profi
 # ── isolated media runtime (no compiler in the release image) ────────────────
 FROM ${NODE_BASE_IMAGE} AS media-runtime
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg gcc libc6-dev fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
-COPY scripts/video-fusion/media-sandbox.c /tmp/media-sandbox.c
-COPY scripts/video-fusion/prepare-media-runtime.sh /tmp/prepare-media-runtime.sh
+COPY services/media-worker/sandbox.c /tmp/media-sandbox.c
+COPY services/media-worker/prepare-runtime.sh /tmp/prepare-media-runtime.sh
 RUN cc -O2 -Wall -Wextra -Werror /tmp/media-sandbox.c -o /usr/local/bin/naumi-media-sandbox && sh /tmp/prepare-media-runtime.sh
 
 # ── runtime ─────────────────────────────────────────────────────────────────
@@ -86,8 +86,10 @@ COPY --from=build --chown=nextjs:nodejs /app/dist/worker ./dist/worker
 COPY --from=build --chown=nextjs:nodejs /app/scripts/release-http-observer.cjs ./scripts/release-http-observer.cjs
 COPY --from=build --chown=nextjs:nodejs /app/scripts/runtime-memory.cjs ./scripts/runtime-memory.cjs
 COPY --from=build --chown=nextjs:nodejs /app/scripts/video-media-worker.mjs ./scripts/video-media-worker.mjs
-COPY --from=build --chown=nextjs:nodejs /app/scripts/video-fusion/media-engine.mjs ./scripts/video-fusion/media-engine.mjs
-COPY --from=build --chown=nextjs:nodejs /app/scripts/video-fusion/media-bundle.mjs ./scripts/video-fusion/media-bundle.mjs
+COPY --from=build --chown=nextjs:nodejs /app/services/media-worker/main.mjs ./services/media-worker/main.mjs
+COPY --from=build --chown=nextjs:nodejs /app/services/media-worker/engine.mjs ./services/media-worker/engine.mjs
+COPY --from=build --chown=nextjs:nodejs /app/src/modules/media/contract.mjs ./src/modules/media/contract.mjs
+COPY --from=build --chown=nextjs:nodejs /app/src/modules/media/bundle.mjs ./src/modules/media/bundle.mjs
 COPY --from=media-runtime /opt/naumi-media-runtime /opt/naumi-media-runtime
 COPY --from=media-runtime /usr/local/bin/naumi-media-sandbox /usr/local/bin/naumi-media-sandbox
 COPY --from=build --chown=nextjs:nodejs /app/scripts/rotate-settings-secret.mjs ./scripts/rotate-settings-secret.mjs
