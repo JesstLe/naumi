@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
+import {scanApplicationWorkerOnce as scan} from "@/lib/worker/scan";
 
-import { scanVideoWorkerOnce } from "@/lib/video/worker";
-import { recoverCanvasImageTasks } from "@/lib/canvas-image-tasks";
-import { recoverDurableImageJobs, imageWorkerAuthorized } from "@/lib/durable-image-jobs";
-import { scanSupplierCostsOnce } from "@/lib/supplier-cost/worker";
-import {recoverMediaMirrors} from "@/lib/media-assets";
-import {recoverMediaJobs} from "@/lib/video/media-jobs";
+import { imageWorkerAuthorized } from "@/lib/worker/authorization";
 import { dbEnabled, getPool } from "@/platform/db/pool";
 import { createWorkerTickReceiptStore, runReceiptedWorkerTick, tickIdentity, workerTickWebIdentity, WorkerTickReceiptError, type WorkerTickReceiptStore } from "@/lib/release-runtime/worker-tick-receipts";
 
@@ -21,26 +17,6 @@ function store() {
 const headers = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
 function failure(error: unknown) {
   return NextResponse.json({error:error instanceof WorkerTickReceiptError ? error.code : "WORKER_TICK_RECEIPT_UNAVAILABLE"}, {status:error instanceof WorkerTickReceiptError ? error.status : 503,headers});
-}
-async function scan() {
-  const videoProcessed = await scanVideoWorkerOnce();
-  const imageProcessed = await recoverCanvasImageTasks(2);
-  const generationProcessed = await recoverDurableImageJobs();
-  await import("@/lib/reference-workbench/service").then(m=>m.recoverReferenceWorkbench());
-  const supplierCostsProcessed = await scanSupplierCostsOnce();
-  const mediaSaved = await recoverMediaMirrors().catch(()=>0);
-  const mediaProcessed=await recoverMediaJobs();
-  return {
-    ok: true,
-    processed: videoProcessed + imageProcessed + generationProcessed + mediaProcessed,
-    mediaProcessed,
-    generationProcessed,
-    supplierCostsProcessed,
-    mediaSaved,
-    videoProcessed,
-    imageProcessed,
-    at: new Date().toISOString(),
-  };
 }
 export async function POST(request: Request) {
   if (!imageWorkerAuthorized(request)) return NextResponse.json({ error: "worker authentication failed" }, { status: 401,headers });

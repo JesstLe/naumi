@@ -2,7 +2,7 @@ import "server-only";
 import {dbEnabled,getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
 import { resolveUserEmail } from "@/lib/admin-auth";
-import { imageWorkerAuthorized } from "@/lib/durable-image-jobs";
+import { imageWorkerAuthorized } from "@/lib/worker/authorization";
 import { billingRequestIdentity } from "./synchronous";
 import { operationIdFor, billingErrorResponse } from "./request";
 import { billingJson, sameSiteBillingMutation } from "./access";

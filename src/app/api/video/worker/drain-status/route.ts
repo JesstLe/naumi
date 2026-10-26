@@ -1,4 +1,4 @@
-import { imageWorkerAuthorized } from '@/lib/durable-image-jobs';
+import { imageWorkerAuthorized } from "@/lib/worker/authorization";
 import { readWorkerDrainStatus } from '@/lib/worker/drain-status';
 
 export const runtime = 'nodejs';

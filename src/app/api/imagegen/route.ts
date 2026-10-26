@@ -1,7 +1,7 @@
 import {withBiRequest} from "@/lib/bi/request";
 import {resolveUserEmail} from "@/lib/admin-auth";
 import {sameSiteBillingMutation} from "@/lib/billing/access";
-import {imageWorkerAuthorized} from "@/lib/durable-image-jobs";
+import { imageWorkerAuthorized } from "@/lib/worker/authorization";
 import {imagegenRequestSchema} from "@/lib/imagegen/schema";
 import {submitImagegen,getImagegenResult,resumeImagegen,readImagegenReceipt} from "@/lib/imagegen/dispatch";
 import {submitImagegenBatch,readImagegenBatchReceipt} from "@/lib/imagegen/batch";

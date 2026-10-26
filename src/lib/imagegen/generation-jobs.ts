@@ -1,5 +1,5 @@
 import "server-only";
-import {DurableImageJobs} from "../durable-image-jobs";
+import { DurableImageJobs } from "@/lib/image-jobs/runtime";
 import type {getUser} from "@/lib/accounts/session";
 import type {GeneratedImage} from "./generation-types";
 /** Persistence owner shared by submit/read/runtime; reading does not import provider execution. */

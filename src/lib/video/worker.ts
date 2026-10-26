@@ -3,7 +3,7 @@ import "server-only";
 
 import { dbEnabled } from "@/platform/db/pool";
 import { recoverDueVideoTasks } from "@/lib/video/service";
-import { recoverDurableImageJobs } from "@/lib/durable-image-jobs";
+import { recoverDurableImageJobs } from "@/lib/worker/image-recovery";
 import { scanSupplierCostsOnce } from "@/lib/supplier-cost/worker";
 import {recoverVideoWorkflows} from "./workflow";
 

@@ -1,7 +1,7 @@
 import {z} from "zod";
 import {resolveUserEmail} from "@/lib/admin-auth";
 import {sameSiteBillingMutation} from "@/lib/billing/access";
-import {imageWorkerAuthorized} from "@/lib/durable-image-jobs";
+import { imageWorkerAuthorized } from "@/lib/worker/authorization";
 import {readImagegenBatch,runImagegenBatchTick,cancelImagegenBatch} from "@/lib/imagegen/batch";
 import {withCreationReceiptRoute} from "@/lib/saas/creation-context";
 export const runtime="nodejs";

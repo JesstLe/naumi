@@ -1,5 +1,5 @@
 import "server-only";
-import {DurableImageJobs} from "../durable-image-jobs";
+import { DurableImageJobs } from "@/lib/image-jobs/runtime";
 import {getPool, dbEnabled} from "@/platform/db/pool";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {addArtworks} from "@/lib/artworks/writer";

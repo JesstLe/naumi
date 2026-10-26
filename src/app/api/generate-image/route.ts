@@ -4,7 +4,7 @@ import {canvasParameterError} from "@/lib/canvas/generation-parameters";
 import {withBillingIntent} from "@/lib/billing/intent";
 import {withBiRequest} from "@/lib/bi/request";
 import {quoteForRequest} from "@/lib/billing/server";
-import {imageWorkerAuthorized} from "@/lib/durable-image-jobs";
+import { imageWorkerAuthorized } from "@/lib/worker/authorization";
 import {NextResponse} from "next/server";
 import {provenanceEntry} from "@/lib/artwork-provenance";
 import {dbEnabled} from "@/platform/db/pool";
