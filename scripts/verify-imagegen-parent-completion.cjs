@@ -122,6 +122,7 @@ function fixture({runtime = true} = {}) {
     },
     async bindBackgroundActivity(id, key, token) {
       assert.equal(f.activities.get(id)?.state, 'active', 'real wrapper binds an active activity');
+      if (f.hooks.beforeBind) await f.hooks.beforeBind(id, key, token);
       Object.assign(f.activities.get(id), {key, token}); f.event('activity-bind', {id, key, token});
     },
     async heartbeatActivity() {},
@@ -569,6 +570,25 @@ async function modifiedRun() {
       };
       await f.notify(); assert.equal(f.metrics.cooldownClears, 0); assert.equal(f.metrics.claims, 0);
       if (mutation === 'lease') assert.equal(f.parent().lease_token, 'new-owner'); f.assertZeroPaid();
+    }
+  });
+  await caseRun('pre-execution release binding failure releases only owned job lease without executing or clearing UNKNOWN', async () => {
+    for (const replaceLease of [false, true]) {
+      const f = fixture(); f.parent().lease_until = null;
+      f.hooks.beforeBind = async (_id, key) => {
+        if (key !== `imagegen:${PID}`) return;
+        if (replaceLease) {f.parent().lease_token = 'another-executor'; f.parent().lease_until = f.clock + 120000;}
+        throw new Error('timeout exceeded when trying to connect');
+      };
+      await f.api.resumeImagegen(PID); await drain(f);
+      assert.equal(f.parent().snapshot.status, 'pending');
+      assert.equal(f.parent().lease_token, replaceLease ? 'another-executor' : null);
+      assert.equal(f.metrics.fixtureProducerCalls || 0, 0);
+      assert.equal(f.metrics.notificationReads || 0, 0);
+      assert([...f.activities.values()].some(a => a.state === 'unknown'));
+      assert(f.logs.some(line => line.includes('stage=action code=PG_POOL_TIMEOUT')));
+      const claims = f.metrics.claims; await f.api.resumeImagegen(PID); await drain(f); assert.equal(f.metrics.claims, claims);
+      f.assertZeroPaid();
     }
   });
   await caseRun('parent execution catch plus failed error persistence does not self-hot-loop', async () => {

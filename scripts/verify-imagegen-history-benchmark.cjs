@@ -90,7 +90,7 @@ function baselineRoot(ref) {
 }
 function probe(id, phase, root, script, args, expected, expectedExit = 0) {
   let entry = script;
-  const actualRoot = id === 'rate' || options.suite === 'pricing-friction' && id !== 'pricing-core' ? repo : root;
+  const actualRoot = id === 'rate' || ['release-finish-isolation','parent-binding'].includes(id) || options.suite === 'pricing-friction' && id !== 'pricing-core' ? repo : root;
   if (phase === 'baseline' && script.endsWith('.ts') && actualRoot === root) {
     entry = path.posix.join('scripts', '__history_' + path.basename(script));
     fs.copyFileSync(path.join(repo, script), path.join(root, entry));
@@ -120,7 +120,7 @@ function save() {
     employeeExactRequestsReplayed: 0, historicalIncidentsResolvedByThisRun: 0,
     historyCounting: 'Never sum overlapping cohorts or parent/child/provider rows. Test assertions are not employee incidents.',
     productSourceChanged: false, productionMutations: 0, externalSupplierCalls: 0,
-    completedChecks: results.length, expectedChecks: options.suite==='admin-anomalies'?(options.phase==='compare'?2:1):options.suite === 'pricing-friction' ? (options.phase === 'compare' ? 8 : 4) : options.phase === 'baseline' ? 5 : options.phase === 'modified' ? 10 : 15,
+    completedChecks: results.length, expectedChecks: options.suite==='admin-anomalies'?(options.phase==='compare'?6:3):options.suite === 'pricing-friction' ? (options.phase === 'compare' ? 8 : 4) : options.phase === 'baseline' ? 5 : options.phase === 'modified' ? 10 : 15,
     ...outcome, scenarios: manifest.scenarios, capturedCases, observationLedger, results};
   fs.writeFileSync(path.join(options.output, 'REPORT.json'), JSON.stringify(report, null, 2) + '\n');
   const md = ['# 历史失败行为 benchmark', '', `版本：\`${sourceCommit}\`；结论：**${outcome.status}**；退出码：${outcome.exit}。`,
@@ -138,6 +138,15 @@ try {
   if(options.suite==='admin-anomalies'){
     if(options.phase!=='modified'){const root=baselineRoot('af22c6e5f149215cfd5bf862f781e95e67c88987');probe('admin-anomalies','baseline',root,'scripts/verify-admin-anomaly-regressions.ts',['--baseline','--source-root',root],['BASELINE=REPRODUCED SCANNER_FIXED_KEY_BLOCK=1 LEGACY_FILTER_MISMATCH=1','"supplierPosts":0']);}
     if(options.phase!=='baseline')probe('admin-anomalies','modified',options.root,'scripts/verify-admin-anomaly-regressions.ts',[],['"mode":"modified"','"failed":[]','"supplierPosts":0','"originalUnknownPreserved":true']);
+    if(options.phase!=='modified'){
+      const root=baselineRoot('368c93e2343c57a330a0db6831ccbef01283ed6d');
+      probe('release-finish-isolation','baseline',root,'scripts/verify-release-finish-isolation.cjs',['--baseline','--source-root',root],['BASELINE=REPRODUCED CLEANUP_FAILURE_TO_UNKNOWN=2','REAL_PG=1']);
+      probe('parent-binding','baseline',root,'scripts/verify-imagegen-parent-completion.cjs',['--source-root',root,'--output-root',path.join(options.output,'parent-baseline')],['IMAGEGEN_PARENT_COMPLETION=FAIL CASES=25 FAILED=1','SUPPLIER_POST=0'],1);
+    }
+    if(options.phase!=='baseline'){
+      probe('release-finish-isolation','modified',options.root,'scripts/verify-release-finish-isolation.cjs',[],['MODIFIED=PASS GROUPS=8 REAL_PG=1','ORIGINAL_UNKNOWN_PRESERVED=1']);
+      probe('parent-binding','modified',options.root,'scripts/verify-imagegen-parent-completion.cjs',['--output-root',path.join(options.output,'parent-modified')],['IMAGEGEN_PARENT_COMPLETION=PASS CASES=25 FAILED=0','SUPPLIER_POST=0']);
+    }
   } else if (options.suite === 'pricing-friction') {
     if (options.phase !== 'modified') {
       const root = baselineRoot('84fc45effa74b15785dfaaa39cd39598b19734ca');

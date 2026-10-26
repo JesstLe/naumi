@@ -361,7 +361,13 @@ export class DurableImageJobs<T extends { status: string }> {
     };
     const executeClaimed = async (row: repository.ImageJobRow) => {
     const token = row.lease_token!;
-    await bindBackgroundClaim(`${this.kind}:${id}`, token);
+    try { await bindBackgroundClaim(`${this.kind}:${id}`, token); }
+    catch (error) {
+      // No user execution has started. Release only the lease this call just
+      // acquired; keep the activity error/UNKNOWN and original paid checkpoints.
+      await repository.releaseImageJob(id, token).catch(() => {});
+      throw error;
+    }
     const context: Execution = { id, token, queue: Promise.resolve() };
     let failed = false;
     await execution.run(context, async () => {

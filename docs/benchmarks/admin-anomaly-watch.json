@@ -43,6 +43,37 @@
       "historyClosure": "OPEN",
       "localStatus": "TRIAGE_BACKLOG",
       "limitation": "每案需保留原版本、租约、供应商和账务证据；外部故障及历史保全不计为已修复代码bug。"
+    },
+    {
+      "id": "AW05",
+      "origin": "live-admin-triage-20261026",
+      "behavior": "完成回执和历史记录清理共用事务，清理错误把已完成动作重新变成UNKNOWN并挡住后续收尾",
+      "suite": "admin-anomalies",
+      "replayFidelity": "real-local-pg-real-finish-and-background-wrapper-with-cleanup-faults",
+      "historyClosure": "OPEN",
+      "localStatus": "FIXED_LOCAL_REGRESSION_PASS_NOT_DEPLOYED",
+      "limitation": "本地复现清理故障链；现场已确认release连接池超时和任务UNKNOWN，但不将每条UNKNOWN的原始异常猜为清理错误。原UNKNOWN不自动清除。"
+    },
+    {
+      "id": "AW06",
+      "origin": "live-admin-triage-20261026",
+      "behavior": "业务lease领取后，绑定release活动异常发生在执行finally之前，自己领取的lease未释放",
+      "suite": "admin-anomalies",
+      "replayFidelity": "whole-source-VM-original-lease-and-competing-owner-fault-fixtures",
+      "historyClosure": "OPEN",
+      "localStatus": "FIXED_LOCAL_REGRESSION_PASS_NOT_DEPLOYED",
+      "limitation": "仅按自己的原token释放未开始执行的lease；不同owner的lease与原任务UNKNOWN均保留，不自动重放生成。"
+    },
+    {
+      "id": "AW07",
+      "origin": "live-admin-read-20261026",
+      "behavior": "巡检硬编码旧Web与OFFSET并发分页导致读错入口或重复/漏行，超时缺完整失败回执",
+      "suite": "admin-anomalies",
+      "replayFidelity": "actual-live-read-plus-native-python-collector-contract-tests",
+      "historyClosure": "OPEN",
+      "localStatus": "COLLECTOR_FIXED_AND_MANUAL_LIVE_READ_PASS",
+      "limitation": "固定nginx当前入口与选定主键分页，失败不报健康；逐页只读并非全局业务快照，人工首轮通过不冒充计划触发历史。"
     }
-  ]
+  ],
+  "triageBaselineCommit": "368c93e2343c57a330a0db6831ccbef01283ed6d"
 }

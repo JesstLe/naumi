@@ -37,10 +37,12 @@ function analyze(snapshot){
  for(const d of snapshot.adminDetails||[])if(d.httpStatus===200&&normalize(d.listStatus)!==normalize(d.detailStatus)){
   const r=byId.get(`${d.table}:${d.id}:${d.owner}`);if(r&&!r.historyProtected)add(r,'admin-list-detail-mismatch',{listStatus:d.listStatus,detailStatus:d.detailStatus},'application-defect-candidate');
  }
- for(const a of snapshot.scannerActivities||[])if(a.key==='recovery-dispatch-scan'&&a.state==='unknown')add({table:'app_release_activities',id:a.key,owner:snapshot.target,kind:'recovery-scan',status:a.state},'scanner-permanent-block',{outcome:a.outcome,heartbeatAt:a.heartbeatAt},'confirmed-fixed-key-poisoning');
+ for(const a of snapshot.scannerActivities||[])if(a.key==='recovery-dispatch-scan'&&a.state==='unknown')add({table:'app_release_activities',id:a.key,owner:snapshot.target,kind:'recovery-scan',status:a.state},'scanner-permanent-block',{outcome:a.outcome,heartbeatAt:a.heartbeatAt},'preserved-fixed-scan-unknown');
  const apiHealthy=(snapshot.adminApi||[]).length>=2&&snapshot.adminApi.every(r=>r.status===200);
  const truncated=snapshot.coverage?.truncatedTables||[];
- return {schemaVersion:1,target:snapshot.target,observedAt:snapshot.observedAt,sourceCommit:snapshot.sourceCommit,image:snapshot.image,coverage:{...snapshot.coverage,apiHealthy,complete:apiHealthy&&!truncated.length,scope:'72h terminal history plus bounded nonterminal sweep; not lifetime completeness'},observedRows:rows.length,preservedHistoryRows:preserved,logicalIncidentCount:new Set([...findings.values()].filter(f=>f.type!=='scanner-permanent-block').map(f=>f.rootPseudonym)).size,findings:[...findings.values()],supplierCalls:0,businessWrites:0,deployed:false};
+ const runtime={healthStatus:snapshot.health?.status??null,dbOkay:snapshot.health?.data?.db?.ok??null,workers:(snapshot.workerStates||[]).map(w=>({name:w.name,sourceCommit:w.sourceCommit,paused:w.paused,uncertain:w.uncertain,tickPhase:w.lastTick?.phase??null,stateReadError:w.stateReadError??null})).sort((a,b)=>String(a.name).localeCompare(String(b.name)))};
+ const recentImageJobs=(snapshot.recentImageJobCounts||[]).map(r=>({hours:r.hours,kind:r.kind,status:r.status,count:r.count,protectedCount:r.protectedCount}));
+ return {schemaVersion:1,target:snapshot.target,observedAt:snapshot.observedAt,sourceCommit:snapshot.sourceCommit,image:snapshot.image,runtime,recentImageJobs,coverage:{...snapshot.coverage,apiHealthy,complete:apiHealthy&&!truncated.length,scope:'72h terminal history plus bounded nonterminal sweep; not lifetime completeness'},observedRows:rows.length,preservedHistoryRows:preserved,logicalIncidentCount:new Set([...findings.values()].filter(f=>f.type!=='scanner-permanent-block').map(f=>f.rootPseudonym)).size,findings:[...findings.values()],supplierCalls:0,businessWrites:0,deployed:false};
 }
 function errorCategory(code,message){const s=String(code||'')+' '+String(message||'');return /timeout|超时/i.test(s)?'timeout':/403|quota|额度/i.test(s)?'supplier-quota-or-permission':/unknown|不一致|核查/i.test(s)?'unresolved-submission':/结果|图片/i.test(s)?'output-unavailable':'unclassified';}
 function merge(previous,report){
@@ -50,16 +52,28 @@ function merge(previous,report){
  return {schemaVersion:1,lastObservedAt:report.observedAt,cases};
 }
 function atomic(file,value){fs.mkdirSync(path.dirname(file),{recursive:true});const tmp=file+'.tmp-'+crypto.randomUUID();fs.writeFileSync(tmp,JSON.stringify(value,null,2)+'\n',{mode:0o600,flag:'wx'});fs.renameSync(tmp,file);}
+function changes(previous,report,ledger){
+ const newCases=report.findings.filter(f=>!ledger?.cases?.[f.id]).map(f=>f.id);
+ const oldBacklog=previous?.findings.filter(f=>f.type==='stalled-or-timeout').length||0,backlog=report.findings.filter(f=>f.type==='stalled-or-timeout').length;
+ const backlogIncreased=!!previous&&backlog-oldBacklog>=Math.max(5,Math.ceil(oldBacklog*.2));
+ const runtimeChanged=!!previous&&JSON.stringify(previous.runtime)!==JSON.stringify(report.runtime);
+ const coverageChanged=!!previous&&previous.coverage.complete!==report.coverage.complete;
+ return {notify:!previous||newCases.length>0||backlogIncreased||runtimeChanged||coverageChanged||!report.coverage.complete,newCases,backlogIncreased,runtimeChanged,coverageChanged,notObservedAreNotResolved:true};
+}
 function record(input,out){
  const raw=fs.readFileSync(input);if(raw.length>32*1024*1024)throw Error('OBSERVATION_TOO_LARGE');
  const report=analyze(JSON.parse(raw)),ledgerFile=path.join(out,'cases.json');
  fs.mkdirSync(out,{recursive:true});const id=report.observedAt.replace(/[^0-9]/g,'')+'-'+hash(raw.toString()).slice(0,8),reportFile=path.join(out,'observations',id+'.json');
  if(fs.existsSync(reportFile))return {reportFile,report,duplicate:true};
  const previous=fs.existsSync(ledgerFile)?JSON.parse(fs.readFileSync(ledgerFile,'utf8')):null;
+ const last=path.join(out,'LAST_REPORT.json'),prior=fs.existsSync(last)?JSON.parse(fs.readFileSync(last,'utf8')):null;
+ const delta=changes(prior,report,previous);
  atomic(reportFile,report);atomic(ledgerFile,merge(previous,report));
- const summary=['# 后台异常巡检',`采集时间：${report.observedAt}`,`版本：${report.sourceCommit}`,`覆盖：${report.coverage.complete?'有界窗口完整':'PARTIAL，保留采集缺口'}`,`逻辑异常任务：${report.logicalIncidentCount}；异常条目：${report.findings.length}；保全历史行：${report.preservedHistoryRows}`, '线上写入0；供应商调用0；修复未部署。', '',...report.findings.map(f=>`- ${f.id} | ${f.type} | ${f.rootPseudonym} | ${f.resolution}`)].join('\n');
+ atomic(last,report);atomic(path.join(out,'CHANGES.json'),delta);
+ const recent=[1,24].map(hours=>{const rows=report.recentImageJobs.filter(r=>r.kind==='imagegen'&&r.hours===hours);return `最近${hours}小时imagegen父任务：${rows.map(r=>`${r.status}=${r.count}`).join(' / ')||'未采集'}`;});
+ const summary=['# 后台异常巡检',`采集时间：${report.observedAt}`,`版本：${report.sourceCommit}`,`覆盖：${report.coverage.complete?'有界窗口完整':'PARTIAL，保留采集缺口'}`,`逻辑异常任务：${report.logicalIncidentCount}；异常条目：${report.findings.length}；保全历史行：${report.preservedHistoryRows}`, '线上写入0；供应商调用0；本轮未执行部署。',...recent,`运行状态：${JSON.stringify(report.runtime)}`,`变更：${JSON.stringify(delta)}`, '',...report.findings.map(f=>`- ${f.id} | ${f.type} | ${f.rootPseudonym} | ${f.resolution}`)].join('\n');
  fs.writeFileSync(path.join(out,'LATEST.md'),summary+'\n');
- return {reportFile,report,duplicate:false};
+ return {reportFile,report,delta,duplicate:false};
 }
 function verifyLedger(file){
  const bytes=fs.readFileSync(file);if(bytes.length>32*1024*1024)throw Error('LEDGER_TOO_LARGE');const x=JSON.parse(bytes);
@@ -72,5 +86,5 @@ function verifyLedger(file){
  }
  return {sha256:crypto.createHash('sha256').update(bytes).digest('hex'),cases:Object.keys(x.cases).length,byType:counts,lastObservedAt:x.lastObservedAt,exactRequestsReplayed:0,historicalIncidentsResolved:0};
 }
-module.exports={analyze,merge,record,verifyLedger};
-if(require.main===module){try{const args=process.argv.slice(2);if(args.length!==2)throw Error('USE_INPUT_JSON_OUTPUT_DIRECTORY');const r=record(path.resolve(args[0]),path.resolve(args[1]));console.log(`ADMIN_ANOMALY_WATCH=RECORDED INCIDENTS=${r.report.logicalIncidentCount} FINDINGS=${r.report.findings.length} COVERAGE=${r.report.coverage.complete?'BOUNDED_COMPLETE':'PARTIAL'} DUPLICATE=${r.duplicate?1:0} DEPLOYED=0`);}catch(e){console.error('ADMIN_ANOMALY_WATCH=ERROR '+e.message);process.exitCode=1;}}
+module.exports={analyze,merge,record,verifyLedger,changes};
+if(require.main===module){try{const args=process.argv.slice(2);if(args.length!==2)throw Error('USE_INPUT_JSON_OUTPUT_DIRECTORY');const r=record(path.resolve(args[0]),path.resolve(args[1]));console.log(`ADMIN_ANOMALY_WATCH=RECORDED INCIDENTS=${r.report.logicalIncidentCount} FINDINGS=${r.report.findings.length} COVERAGE=${r.report.coverage.complete?'BOUNDED_COMPLETE':'PARTIAL'} DUPLICATE=${r.duplicate?1:0} NOTIFY=${r.delta?.notify?1:0} DEPLOYED=0`);}catch(e){console.error('ADMIN_ANOMALY_WATCH=ERROR '+e.message);process.exitCode=1;}}

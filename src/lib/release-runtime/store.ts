@@ -176,12 +176,17 @@ export async function finishActivity(id: string, outcome = "completed"): Promise
     const updated = await db.query("UPDATE app_release_activities SET state='finished',finished_at=now(),heartbeat_at=now(),outcome=$4 WHERE id=$1 AND instance_id=$2 AND boot_id=$3 AND state='active' RETURNING id", [id, identity.instanceId, identity.bootId, outcome]);
     if (!updated.rowCount) throw new ReleaseRuntimeError("RELEASE_ACTIVITY_FINISH_CONFLICT", 409);
     await db.query("UPDATE app_release_session_owners SET state='idle',updated_at=now() WHERE run_id=$1 AND instance_id=$2 AND boot_id=$3 AND state='running'", [id, identity.instanceId, identity.bootId]);
+  });
+  // Completion is durable before optional retention work. A failed cleanup is
+  // not uncertainty about an already completed promise and must not roll its
+  // receipt back to active/unknown, blocking the original job's next wake.
+  try {
     // Bounded housekeeping only for already finished request observations. Never
     // expires active/unknown work or deletes the durable owner/run uncertainty.
     // Bound each retention window before merging. An OR over the finished_at
     // index otherwise walks every recent accepted-work row to find no expired
     // request observations on an otherwise idle server.
-    await db.query(`DELETE FROM app_release_activities WHERE id IN (
+    await releasePool().query(`DELETE FROM app_release_activities WHERE id IN (
       SELECT id FROM (
         (SELECT id,finished_at FROM app_release_activities
           WHERE state='finished' AND activity_kind='request' AND finished_at<now()-interval '15 minutes'
@@ -192,7 +197,7 @@ export async function finishActivity(id: string, outcome = "completed"): Promise
           ORDER BY finished_at LIMIT 100)
       ) expired ORDER BY finished_at LIMIT 100
     )`);
-  });
+  } catch { console.warn("[release-runtime] finished-activity-cleanup-deferred"); }
 }
 export async function unknownActivity(id: string, reason: string): Promise<void> {
   const identity = releaseIdentity(); await ensureReleaseSchema();
