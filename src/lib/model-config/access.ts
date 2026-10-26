@@ -13,7 +13,7 @@ export type ModelAdminAction = "read" | "draft" | "validate" | "simulate" | "pub
 const positive = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const identifier = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);
 const draftInput = z.strictObject({ id: z.uuid(), expectedRevision: positive, config: z.unknown() });
-const publishInput = z.strictObject({ id: z.uuid(), draftId: z.uuid(), expectedRevision: positive, expectedVersion: positive, reason: z.string().trim().min(1).max(500) });
+const publishInput = z.strictObject({ id: z.uuid(), draftId: z.uuid(), expectedRevision: positive, expectedVersion: positive, reason: z.string().trim().min(1).max(500), acceptStaleBase: z.boolean().optional() });
 const restoreInput = z.strictObject({ id: z.uuid(), targetVersion: positive, expectedVersion: positive, reason: z.string().trim().min(1).max(500) });
 const validationInput = z.strictObject({ draftId: z.uuid(), expectedRevision: positive });
 const simulationInput = z.strictObject({ draftId: z.uuid(), publicModelId: identifier, facts: z.strictObject({ task: z.enum(["draft", "product", "detail", "layout"]), quality: z.enum(["low", "medium", "high", "xhigh", "max", "auto"]), resolution: z.enum(["1K", "2K", "4K"]), needsEdit: z.boolean(), needsMask: z.boolean().optional(), preserveIdentity: z.boolean(), needsText: z.boolean(), nativeResolution: z.boolean(), references: z.number().int().min(0).max(32), quantity: z.number().int().min(1).max(4).default(1) }).refine(f => f.needsEdit === (f.references > 0), "编辑操作必须与参考图数量一致") });
