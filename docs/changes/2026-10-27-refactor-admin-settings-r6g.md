@@ -25,3 +25,14 @@
 - 原用量完整基线30/新版31、7组HTML精确相同（MODE=MODIFIED是原兼容检查模式，source-root明确完整R6G基线），原迟到详情/原动作/权限继续通过。
 - 全项目tsc、9个新/改TS文件lint空输出exit0；原encryptKey/pemToDer/hasSubtle三个函数正文、ReadyBadge、导航策略精确文本保持；主组件1971→201行、只留3个导航state hooks。
 - 加入原core runner两入口：admin-settings静态实际目标编译/RSA字节验证，以及实际PG合同；完整浏览器单列，不将静态PASS称浏览器验收。最终固定SHA core27与产物在封版时登记。
+
+
+## 固定源码封版结果
+
+固定清洁源码`5f31890a037d2b61f42dc3c635fdd3dc9fdb2fff`，core全文件digest=`07fe5c581b45fcd5ba1412765f49d69c2d8408a168300d901cc762c45ddada89`：27/27入口PASS、failed0/not-run0、exit0；其中新增静态实际目标编译/RSA10检查、实际PG36检查。完整浏览器固定源码59检查与原15组HTML/原POST语义精确对照，不借静态检查冒充浏览器。
+
+最终全项目tsc、9个新/改TS文件lint空输出exit0；runner12类68检查，emitted静态/全字面导入环均0。原formatter未引入，非目标代码不批量重排。随后仅文档更新，产品/服务/验证脚本字节与上述被测固定SHA一致；最终Git提交另列，不虚称所有报告都运行在文档SHA。
+
+独立副本回滚将恢复4495原文件hash、原57检查/15HTML及旧草稿清零/旧会话POST/托管mode丢失/鉴权失败仍显示的原行为；实际工作区保留新版。精确命令/literal/exit、四产物、patch复放、远端SHA与自有PG清理以DELIVERY为准。
+
+本轮第1模块，实际已整合main仍为`cde64c6aedd75c5197ee2ae17e7bac8759fb8bed`，没有合回main/部署。整体active：model-management大面板、测试脚本/文档资产归属、依赖与长时混合生成负载及最终完整版本整合继续。

@@ -1,6 +1,6 @@
 # 渐进迁移与集中验收台账
 
-2026-10-27 R6G：系统设置1971→201行，接口/登录支付/站点内容/账号积分面板各有草稿；共享会话只持安全快照和原提交。RSA三函数/徽标/导航原文保持，原输入/原payload/HTTPfallback不变；跨面板保存不清未保存草稿，旧会话加密continuation不POST，安全回包保留GET独有mode。完整旧57/新59、15HTML同、真实handler/PG36、相邻用量30→31及tsc/lint通过；固定core27/四产物/回滚/提交以DELIVERY为准。同步后第1模块，model-management/测试资产/长时负载/依赖和最终整合继续，整体active、不合main不部署。见[R6G记录](../changes/2026-10-27-refactor-admin-settings-r6g.md)。
+2026-10-27 R6G：系统设置1971→201行，接口/登录支付/站点内容/账号积分面板各有草稿；共享会话只持安全快照和原提交。RSA三函数/徽标/导航原文保持，原输入/原payload/HTTPfallback不变；跨面板保存不清未保存草稿，旧会话加密continuation不POST，安全回包保留GET独有mode。完整旧57/新59、15HTML同、真实handler/PG36、相邻用量30→31及tsc/lint通过；固定5f31890a core27/27、runner12/68、最终类型/结构通过；四产物/回滚/提交以DELIVERY为准。同步后第1模块，model-management/测试资产/长时负载/依赖和最终整合继续，整体active、不合main不部署。见[R6G记录](../changes/2026-10-27-refactor-admin-settings-r6g.md)。
 
 
 2026-10-27 R6F：系统设置的可达usage/详情迁独立UI owner，已被旧路由迁走的users/ledger/artworks平行视图删除；3331→1971行，不再配置鉴权成功就读全部用户。关闭/换成员/离开/换token旧读失效，原备注/禁用POST不重放；旧新实际React27→31、7组HTML精确同、真实admin-access PG/tsc/lint/本地媒体链接通过。固定merge8f3bc5bf core25/25、最终浏览器28→31、7快照同、runner12/66通过，第三模块普通同步cde64c6a完成并归零；副本回滚/四产物/Git见DELIVERY；整体active、不合main不部署，剩余配置面板/测试资产/长时负载/依赖和最终整合继续。见[R6F记录](../changes/2026-10-27-refactor-admin-usage-r6f.md)。
