@@ -5,6 +5,7 @@ import { useI18n } from "@/lib/i18n/locale-context";
 import { usePathname } from "next/navigation";
 import styles from "./site-version.module.css";
 import { ReleaseNotes, releaseVersionLabel } from "./release-notes";
+import { AnnouncementButton } from "./announcement-button";
 
 // These literals belong to the loaded JavaScript bundle, never to a fresh SSR response.
 const loadedVersion=process.env.NEXT_PUBLIC_BUILD_VERSION || "0";
@@ -17,10 +18,11 @@ export function SiteVersion(){
   const {locale}=useI18n(),L=(zh:string,en:string)=>locale==="en"?en:zh;
   const [open,setOpen]=useState(false),[latest,setLatest]=useState<{version:string;commit?:string}|null>(null),[failed,setFailed]=useState(false),[checking,setChecking]=useState(false);
   const [view,setView]=useState<"version"|"notes">("version");
+  const [announcementCheck,setAnnouncementCheck]=useState(0);
   const panel=useRef<HTMLDivElement>(null),button=useRef<HTMLDivElement>(null),opener=useRef<HTMLButtonElement>(null),inFlight=useRef(false);
   const check=useCallback(async()=>{
     if(inFlight.current)return;inFlight.current=true;setChecking(true);
-    try{const r=await fetch(versionEndpoint,{cache:"no-store",signal:AbortSignal.timeout(10000)});if(!r.ok)throw Error("Version unavailable");const data=await r.json();if(typeof data.version!=="string" || !/^\d{1,11}$/.test(data.version))throw Error("Invalid version");setLatest(data);setFailed(false);}
+    try{const r=await fetch(versionEndpoint,{cache:"no-store",signal:AbortSignal.timeout(10000)});if(!r.ok)throw Error("Version unavailable");const data=await r.json();if(typeof data.version!=="string" || !/^\d{1,11}$/.test(data.version))throw Error("Invalid version");setLatest(data);setAnnouncementCheck(value=>value+1);setFailed(false);}
     catch{setFailed(true);}finally{setChecking(false);inFlight.current=false;}
   },[versionEndpoint]);
   useEffect(()=>{void check();const timer=setInterval(()=>{if(document.visibilityState==="visible")void check();},60000);const visible=()=>{if(document.visibilityState==="visible")void check();};document.addEventListener("visibilitychange",visible);window.addEventListener("focus",visible);return()=>{clearInterval(timer);document.removeEventListener("visibilitychange",visible);window.removeEventListener("focus",visible);};},[check]);
@@ -39,7 +41,7 @@ export function SiteVersion(){
     </div>}
     <div ref={button} className={styles.actions}>
     <button className={styles.badge} data-update={different} aria-label={L("查看网站版本","View website version")} aria-expanded={open && view==="version"} onClick={(event)=>{opener.current=event.currentTarget;setOpen(!(open && view==="version"));setView("version");if(!open)void check();}}>v{versionLabel(loadedVersion)}{different && <span>{L("可更新","Update")}</span>}</button>
-    <button className={styles.notesButton} aria-expanded={open && view==="notes"} onClick={(event)=>{opener.current=event.currentTarget;setOpen(!(open && view==="notes"));setView("notes");}}>{L("更新说明","What's new")}</button>
+    <AnnouncementButton endpoint={notesEndpoint} publishedVersion={latest?.version||loadedVersion} loadedVersion={loadedVersion} refreshKey={announcementCheck} english={locale==="en"} onOpen={()=>setOpen(false)}/>
     </div>
   </div>;
 }
