@@ -30,7 +30,7 @@ export function GenerationPlaceholder({ stage = "generating", startedAt, count =
     return () => window.clearInterval(timer);
   }, [failure]);
   const seconds = Math.max(0, Math.floor((now - start) / 1000));
-  const candidate = generationDisplayProgress(stage, seconds, completed, count);
+  const candidate = generationDisplayProgress(stage, seconds, completed, count, start);
   const displayed = useRef({ start, percent: candidate });
   if (displayed.current.start !== start) displayed.current = { start, percent: candidate };
   else displayed.current.percent = Math.max(displayed.current.percent, candidate);
