@@ -160,6 +160,7 @@ function catalogFixture(settings = {}) {
   const sync = () => { loaded.context.dbEnabled = state.db; loaded.context.supabaseEnabled = state.supabase; };
   sync();
   const route = execute(read(selected(FILES.route)), selected(FILES.route), { require: name => {
+    if (name === '@/lib/billing/runtime') return {...loaded.exports,billingSnapshot:bindings.billingSnapshot};
     if (name === '@/lib/billing/server') return { ...loaded.exports, billingSnapshot: bindings.billingSnapshot };
     if (name === '@/lib/billing/request') return { billingErrorResponse: error => { state.errors.push(error); return billingErrorResponse(error); } };
     if (name === '@/lib/billing/access') return { billingJson };
@@ -426,12 +427,34 @@ function canvasContract(isBaseline) {
   const model = ast(selected(FILES.canvas));
   const feature = node => node.attributes.properties.find(attr => ts.isJsxAttribute(attr) && attr.name.getText(model.node) === 'feature')?.initializer?.text;
   const controls = find(model, node => ts.isJsxSelfClosingElement(node) && node.tagName.getText(model.node) === 'ImageQualityControl' && feature(node) === 'canvas.image');
+  if(!controls.length&&!isBaseline){
+    // The two shell sites now share the actual controls owner. Prove real
+    // model/resolution, displayed-mode ratio and count through that owner.
+    const controlModel=ast(sourceFile('src/components/canvas/image-generation-controls.tsx'));
+    const owned=find(controlModel,n=>ts.isJsxSelfClosingElement(n)&&n.tagName.getText(controlModel.node)==='ImageQualityControl');eq(owned.length,1);
+    const attrs=Object.fromEntries(owned[0].attributes.properties.filter(ts.isJsxAttribute).map(a=>[a.name.getText(controlModel.node),a.initializer]));
+    eq(attrs.modelId.expression.getText(controlModel.node),'model.value');eq(attrs.resolution.expression.getText(controlModel.node),'resolution');
+    const ratio=attrs.ratio.expression.getText(controlModel.node),effective=new Function('mode','ratio',`return (${ratio});`);
+    eq(effective('triptych','1:1'),'16:9');eq(effective('standard','3:4'),'3:4');eq(attrs.quantity.expression.getText(controlModel.node),'quantity');
+    const composer=find(model,n=>ts.isJsxSelfClosingElement(n)&&n.tagName.getText(model.node)==='CanvasImageComposer');eq(composer.length,2);
+    for(const site of composer){const attrs=Object.fromEntries(site.attributes.properties.filter(ts.isJsxAttribute).map(a=>[a.name.getText(model.node),a.initializer]));eq(attrs.controls.expression.getText(model.node),'imageComposerControls');}
+    const source=read(selected(FILES.canvas));assert.ok(/mode:generationMode[^\n]*ratio:genRatio/.test(source));
+    assert.ok(controlModel.node.text.includes('mode==="split"?3:mode==="triptych"?1:count')||read(sourceFile('src/components/canvas/image-generation-controls.tsx')).includes('mode==="split"?3:mode==="triptych"?1:count'));
+    return;
+  }
   eq(controls.length, 2);
   for (const [index, control] of controls.entries()) {
     const attrs = Object.fromEntries(control.attributes.properties.filter(ts.isJsxAttribute).map(attr => [attr.name.getText(model.node), attr.initializer]));
     eq(attrs.modelId.expression.getText(model.node), 'genModel'); eq(attrs.resolution.expression.getText(model.node), 'genResolution');
     if (isBaseline) { eq(attrs.ratio, undefined); eq(attrs.quantity, undefined); }
-    else { eq(attrs.ratio.expression.getText(model.node), 'genRatio'); eq(attrs.quantity.expression.getText(model.node), index === 0 ? 'selectedGenerationCount' : 'genCount'); }
+    else {
+      const ratio = attrs.ratio.expression.getText(model.node);
+      eq(ratio, index === 0 ? 'generationMode === "triptych" ? "16:9" : genRatio' : 'genRatio');
+      const resolveRatio = new Function('generationMode', 'genRatio', `return (${ratio});`);
+      eq(resolveRatio('triptych', '1:1'), index === 0 ? '16:9' : '1:1');
+      eq(resolveRatio('standard', '3:4'), '3:4');
+      eq(attrs.quantity.expression.getText(model.node), index === 0 ? 'selectedGenerationCount' : 'genCount');
+    }
   }
   if (isBaseline) return;
   const beforeFile = path.join(REPO, BEFORE, FILES.canvas); eq(sha(beforeFile), PIN.canvas);

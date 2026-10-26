@@ -1,0 +1,2899 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-26T02:07:19.466232+00:00",
+  "sourceCommit": "af22c6e5f149215cfd5bf862f781e95e67c88987",
+  "coverage": {
+    "lookbackHours": 72,
+    "limitPerTable": 2000,
+    "counts": {
+      "app_image_jobs": 606,
+      "app_canvas_image_tasks": 0,
+      "app_video_tasks": 1
+    },
+    "truncatedTables": [],
+    "selection": "all bounded nonterminal + recent failures + referenced children",
+    "adminListPagesPerSource": 1,
+    "apiHealthy": true,
+    "complete": true,
+    "scope": "72h terminal history plus bounded nonterminal sweep; not lifetime completeness"
+  },
+  "logicalIncidentCount": 297,
+  "employeeExactRequestsReplayed": 0,
+  "deployed": false,
+  "cases": [
+    {
+      "id": "case-9f75135980f7391f284246a9",
+      "rootPseudonym": "op-e6ff803b2d58f1512138ea42618eb327",
+      "type": "parent-receipt-stale",
+      "classification": "application-defect-candidate",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-294166c519fc5cebabfb4c0c",
+      "rootPseudonym": "op-086c213d6717fdf0744c629f96ab058a",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-b92ad96f539b4a4fa7b58ac0",
+      "rootPseudonym": "op-299c70073afb97b5d50261d36d1f55d8",
+      "type": "parent-receipt-stale",
+      "classification": "application-defect-candidate",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-fcd87901152de3db305cb8a5",
+      "rootPseudonym": "op-9f559b40329f7e7d13fdb50bbb1d4051",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-97c85f95d9f12fc4f8b2e208",
+      "rootPseudonym": "op-f5e082c9e3da61bfddf555632ca9cf79",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-1550cda3b58117423fffc01b",
+      "rootPseudonym": "op-8a4feaea7001bd22747534a20015501c",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-a48101565db4dd5fbd2567dc",
+      "rootPseudonym": "op-1c1106a35374e47b8461204fcd631c6d",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-30045b83742f0442d7dbd516",
+      "rootPseudonym": "op-7db0c0a3520727b4c158fa1f93aeb9f7",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-01d0a911a9cd3359f77eb896",
+      "rootPseudonym": "op-8602642d9b839d375fb244616b3f7d92",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-0f65004fec534341c284b5cd",
+      "rootPseudonym": "op-f810cb343b976f9f2d53b892a7512e73",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-d7f9f09053977fe76d8dd47b",
+      "rootPseudonym": "op-ee57be898d946e2699bba8c1c485f748",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-3e2ff833929c5eaccfa4a714",
+      "rootPseudonym": "op-576bf0da22e374ae037a4a77629bd533",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-0dd4af5e13f948d9a673403c",
+      "rootPseudonym": "op-4115301f32daff3000751497358466de",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-bcf5abb079dcece4bf4316a2",
+      "rootPseudonym": "op-9aca857b1ccb365e7a361020e0e49798",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-8fd13b272cb41488e6359a09",
+      "rootPseudonym": "op-19df87f4f7439874b8fa59669efa01d3",
+      "type": "parent-receipt-stale",
+      "classification": "application-defect-candidate",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-0bd5faf590b8ee7dd7ee75f1",
+      "rootPseudonym": "op-19df87f4f7439874b8fa59669efa01d3",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-ab441f5fd4347241274e5919",
+      "rootPseudonym": "op-ae905b3841ccba526665983734e55f5b",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f39139e80a8269f62ea88a07",
+      "rootPseudonym": "op-a409b24ea9d76cd6f68fada47bfbafcc",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-880b3df0deaab6737171773d",
+      "rootPseudonym": "op-3c4277300949baa9c0ae166dab7006b3",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f2441c5bece8e3b36afd67cd",
+      "rootPseudonym": "op-5cf5d533a69ca47888ed77d8c5322cef",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-592949f562be465cd4ae2a90",
+      "rootPseudonym": "op-3a3fba322a2a971a5d10808729b19f98",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-16f73961da6932fadcb567bb",
+      "rootPseudonym": "op-abaa5cde91c316d4db1a0a728b1ee4c6",
+      "type": "parent-receipt-stale",
+      "classification": "application-defect-candidate",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-fc4c7717faa6060f6796999e",
+      "rootPseudonym": "op-abaa5cde91c316d4db1a0a728b1ee4c6",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-cbc4cce5d11a7f668c2d04d0",
+      "rootPseudonym": "op-bf0e589bac7eb5a1e39512365c4b6c41",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-de4e5d8ba714f11398c25648",
+      "rootPseudonym": "op-1d3e4bd666109fbd4a47c95b966fb506",
+      "type": "parent-receipt-stale",
+      "classification": "application-defect-candidate",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-d2d2120faa1c922b05dc46c0",
+      "rootPseudonym": "op-1d3e4bd666109fbd4a47c95b966fb506",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-16927545eb52e5684ca8581b",
+      "rootPseudonym": "op-ac79d58aec730845328c4474d94e470a",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-3cc6ca62011b5aac0cce772e",
+      "rootPseudonym": "op-5b1823e73efd7d8126fff3de7b49ee55",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-7a661d6ecf2e6a93760e7927",
+      "rootPseudonym": "op-d37bc8f53a239230ee9180b28119f747",
+      "type": "parent-receipt-stale",
+      "classification": "application-defect-candidate",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-2fe73404f2653392ddf9a8aa",
+      "rootPseudonym": "op-d37bc8f53a239230ee9180b28119f747",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-12a31e61a7772bd941314c7c",
+      "rootPseudonym": "op-6abf27704cd7004082bf59cf92ae8ef4",
+      "type": "parent-receipt-stale",
+      "classification": "application-defect-candidate",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-c8971a5627752251cebc0631",
+      "rootPseudonym": "op-6abf27704cd7004082bf59cf92ae8ef4",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f96ea13387a30a3c1188e33d",
+      "rootPseudonym": "op-88df8540a2f9bf675968a6b021971272",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f8032ef1b27843c3d947cd98",
+      "rootPseudonym": "op-bcdbadb1224e32834d4b97bb891abe61",
+      "type": "parent-receipt-stale",
+      "classification": "application-defect-candidate",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-46c0a80d7e799d139e7f7897",
+      "rootPseudonym": "op-bcdbadb1224e32834d4b97bb891abe61",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-2ad153008a5b7fcdc099954e",
+      "rootPseudonym": "op-0505f6f002e41b2678c6f0a75e2696ca",
+      "type": "parent-receipt-stale",
+      "classification": "application-defect-candidate",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-ad18663756f340027ca61c04",
+      "rootPseudonym": "op-0505f6f002e41b2678c6f0a75e2696ca",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-980c12950df57726bb243323",
+      "rootPseudonym": "op-a019939ce4929b55aeb312707257a719",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-30ecd3d4f86f93b6e161ac2f",
+      "rootPseudonym": "op-d9792fd92043da72a4cb4c114052b1f3",
+      "type": "parent-receipt-stale",
+      "classification": "application-defect-candidate",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-b71635158c88e977b92433dd",
+      "rootPseudonym": "op-d9792fd92043da72a4cb4c114052b1f3",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-81187399c5fc3d9a4662b59a",
+      "rootPseudonym": "op-a1100c6a7c540b5cc12f250ba8db997e",
+      "type": "parent-receipt-stale",
+      "classification": "application-defect-candidate",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-1b1034fe3762bc89082b56b9",
+      "rootPseudonym": "op-a1100c6a7c540b5cc12f250ba8db997e",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-c087754ef3142892fcc3798d",
+      "rootPseudonym": "op-3536eb08ed55811ff343337029586bf8",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-c44c578e52d0404a28300e4e",
+      "rootPseudonym": "op-b1fc3c03b5b7ff8d43b1fe35232b89b2",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-cfa6d6f44759250360dfe2d1",
+      "rootPseudonym": "op-69056921620bed0a68f8de0d547096f1",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-07d3f45b8ef2b0c0e36cd209",
+      "rootPseudonym": "op-892c35456d6847446517ca95c4d4e597",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-056cc5cb9bcfc20468982195",
+      "rootPseudonym": "op-752b20ba3ea992e75dd15b9f67967135",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-24d2d262e21e7eae24701884",
+      "rootPseudonym": "op-34ab0d86ca9402b1efb2740f01dad94c",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-ed80164d81b894ac05b442e6",
+      "rootPseudonym": "op-91fec9d325cf9644f766c1ca52171990",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-a6f5c0f3cf85093e0daeb35f",
+      "rootPseudonym": "op-4c00c1119897f4e9a09fd30976496367",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-022116d930fc3be71e6e0fb7",
+      "rootPseudonym": "op-71a452d77b61b0ab85c8ede682b9ce0b",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-82e25c326ed1bf9b0647ead9",
+      "rootPseudonym": "op-482ed57b4c30fbfff86de4c78eb9d9b3",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-2262d7dd8a82bdcdf5a8a0e3",
+      "rootPseudonym": "op-ec72a7e9943ce46485c08b32971eecdc",
+      "type": "stalled-or-timeout",
+      "classification": "observation-not-retry-permission",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-cf60fbd5c52cf73bc3f0cf23",
+      "rootPseudonym": "op-3f2fad6ab5538b45da35cee34d168867",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-d7c58f376b520f4dd8504b56",
+      "rootPseudonym": "op-1f27818af494c1eebaec30c5b205effa",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-45bb60afc1f2d130b397baa7",
+      "rootPseudonym": "op-4ad4c7e28a51b4cd4fa6f694011d332e",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-d2aed8c956f4c7bfe77e6263",
+      "rootPseudonym": "op-826f9c35dd93a7995bf4da4caa75b975",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-41e51da13c118a9de8df265d",
+      "rootPseudonym": "op-e1f2db8cba7e1e9178b113915d2024f0",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-3946be2630cec0bb3179c2a9",
+      "rootPseudonym": "op-9e6bb3a6c20a70347c3162faa2e7edd8",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-d3ab25811ffd3a4e21f95b38",
+      "rootPseudonym": "op-54b3e514f77ba5aa24d54b8cd0c96ab0",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f5c2504677c584449cc4ee59",
+      "rootPseudonym": "op-f7b9c7a95c3091b3a9224aa49659caeb",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-86f89e89b075e5c694d3282d",
+      "rootPseudonym": "op-c87eec61fc947ffef33a239f6ef1720f",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-ae4709031cc4e82c7ed601ea",
+      "rootPseudonym": "op-3392575c8e49f310e79ffdee0dedb01c",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-13ea8fe8ff6016621b99c031",
+      "rootPseudonym": "op-435ac8b3c634e8b78403ff15ba43c03a",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-956295f05a07a48dc82aceab",
+      "rootPseudonym": "op-ed53fdbe8347d0afaadbeb4782a582d7",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-2a498e87921bb88b0da1ad31",
+      "rootPseudonym": "op-c1e46cc7150e305373fbe369560a688e",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-a6077adb4675a53a3ac914bc",
+      "rootPseudonym": "op-7b08eaab516c7add6107fc04ff01c914",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-e1c26a052f45f9fce84df32d",
+      "rootPseudonym": "op-9657f6d0a0be6244d87226326e94dcd0",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-b540cde49539ec4537368ec7",
+      "rootPseudonym": "op-5beef76582ff4f31678aa1af7cb704e9",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-2b42cf9e2b4c45b125a9ede9",
+      "rootPseudonym": "op-7ed63b89cd989635fcec4673f70d3b77",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-b95e07944ab08671412c5c6d",
+      "rootPseudonym": "op-93741220816c450aa5a2cb994ec32d9d",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-93d9230156dfd915aec714dd",
+      "rootPseudonym": "op-a5555f3e6b410734e754da30f4620877",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-651a7c3a3177225ca4ccbb3b",
+      "rootPseudonym": "op-197e5442a1dda7fe76d34bf1eb4ac366",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f3e52b0b02a0ebabf6a43601",
+      "rootPseudonym": "op-72b9ba100db8198128b9d66336ed470e",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-55fd8b94c71421595e9c5199",
+      "rootPseudonym": "op-55b4b66639cce7edc8a900d14f4e4af8",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-a59b16e197d586989c331dd9",
+      "rootPseudonym": "op-952b8ba800b3be6e6a34fe5da473f01f",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-bc8a46fa1ddb93e3b93513c2",
+      "rootPseudonym": "op-7027df30c805b0cdd805871a266c0155",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f9a54c51dc5eb97ea3379314",
+      "rootPseudonym": "op-d75d186c57216572b1cb9442188c270f",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-acc9409768f2066c77fb9a2e",
+      "rootPseudonym": "op-3643594e9a5dd1d8046c6c3a1f4204dc",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-9e4e5607c4a18a2487e78f3f",
+      "rootPseudonym": "op-5248d0a09f2b164d0f14163eeeb4a539",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-bdc5851e8ac5ace29df89695",
+      "rootPseudonym": "op-af9eee80f810a7ede456b454ba685a8c",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f53f7afc3217fe2e77944aa7",
+      "rootPseudonym": "op-6116f8460d1999637b69025e2868ccbb",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-b037a7b0bd8a9db50d4279a9",
+      "rootPseudonym": "op-3a2e27eba699d60bda75039feec97c7f",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-cfc7bd2dfe94b289188cb6c2",
+      "rootPseudonym": "op-f7905662ec49d4a8acad1191e5ad8bac",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-cfa0dd41a8bc00ffbcfba6a1",
+      "rootPseudonym": "op-3432d8048590b477b5ec149a4df0d6a1",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-cd6217fe3032af051182bd65",
+      "rootPseudonym": "op-09a74cc3521e8f46e5afabaaf2b27757",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-d09fdb358f34e57c6fd05708",
+      "rootPseudonym": "op-45bba68e8290c0d7de9f4e46e244f0a4",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-78fba9c4f186877ccc777023",
+      "rootPseudonym": "op-a45009f805d78f3ac49a91c342c56571",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-3cae9e18a1203d2a0b8e14cf",
+      "rootPseudonym": "op-e2a77814435c62fb858fc4dd49386eec",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-45ccc874225a2eba85c82c36",
+      "rootPseudonym": "op-f70ed4f74f53be74afa0a72011d0db0f",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f332178252067cb4ad2a3422",
+      "rootPseudonym": "op-92e76279b100bca9590078d97cd1cc77",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-dc0384565bbea60f3a581791",
+      "rootPseudonym": "op-d4200c9c252a765af8fcdf4dfd3704f7",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-c86486692276ceeee966665b",
+      "rootPseudonym": "op-d4200c9c252a765af8fcdf4dfd3704f7",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-83b53e717e8c0e7a45e161e5",
+      "rootPseudonym": "op-0f8587c4fefd61632006b7e65bed1776",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-924825bc5deb980727a83e3a",
+      "rootPseudonym": "op-e5f4d24fad88a1f4af358da8ed11f6ae",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-612466ead3c1fd9edcf19724",
+      "rootPseudonym": "op-da80135d90e80e703c07dd478483f09a",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-447ca8664ef529afdc79183b",
+      "rootPseudonym": "op-c685f5bf088b21951df54a080da15174",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-a4148d323e626c8caceaa01c",
+      "rootPseudonym": "op-058f8c82ae3ca91e5c572acc1449a8cc",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-7f3c0a4a6da7624a7d465a21",
+      "rootPseudonym": "op-d975dd88c8f3476435ca97485e1bbbb6",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-98921cd12a0126d0b5830fc4",
+      "rootPseudonym": "op-112c08e75d2c19cc8747d822a2cfa0ff",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-02d45f5e4454ce5a6f4e53b1",
+      "rootPseudonym": "op-49c2c23fdf9fb4958503dcaaf70c581d",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-5673f88f111aaba545387b4d",
+      "rootPseudonym": "op-cba8ace87203f34bd456f0fac121c77f",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-76c7ece6727e5a43d55a87dc",
+      "rootPseudonym": "op-74137bc0eb9d6f21c9d5bb5d56faf5dc",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-8bd380283f9ad9e47cd6e10d",
+      "rootPseudonym": "op-74137bc0eb9d6f21c9d5bb5d56faf5dc",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-eeee9a85462175e291622633",
+      "rootPseudonym": "op-a4bdf4c0ce011d49e6cc74aaf1371f26",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-2e7b50567f9e3937a5c05fb6",
+      "rootPseudonym": "op-a4bdf4c0ce011d49e6cc74aaf1371f26",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-37a17287263c58aa3b3eb7f8",
+      "rootPseudonym": "op-b4e0df48e8f4c3903933f7d40ab4074b",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-bb750690f54cb01d0cd053a7",
+      "rootPseudonym": "op-46522e92f7042bd62877d5269bef8a90",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f4382482a148a43a7e848ae6",
+      "rootPseudonym": "op-46522e92f7042bd62877d5269bef8a90",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-d073a112a6087562362ab2c1",
+      "rootPseudonym": "op-bdfaff260ae0f73186fc0572925fcf60",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-7dad58df69d5434b4203f530",
+      "rootPseudonym": "op-bdfaff260ae0f73186fc0572925fcf60",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-c260bb923f7e1f30eccf58a6",
+      "rootPseudonym": "op-128cb38f4a7ae34595111b10b7cf88e3",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-72ba5901504e5fa4391c5a2c",
+      "rootPseudonym": "op-1e3f09912aa82b342cc3ad837b4f4904",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-142593c0f8bd92821167589b",
+      "rootPseudonym": "op-1e3f09912aa82b342cc3ad837b4f4904",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-4707b7d4cb7afa7b8c65615e",
+      "rootPseudonym": "op-b724e45f774421637cb2297840c4afbe",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-e621ece6717c60466225b19f",
+      "rootPseudonym": "op-b724e45f774421637cb2297840c4afbe",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-6b2267b7802f15e3a9971fdd",
+      "rootPseudonym": "op-12629e8ccf7af3343c9db5f83be35ec6",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-8802f6c4cd1f2d52ab57b10d",
+      "rootPseudonym": "op-12629e8ccf7af3343c9db5f83be35ec6",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f6d70de394ee8e7b04f8263d",
+      "rootPseudonym": "op-86ffadb49f58b88762b9a6076362dc7a",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-bcccddb8a4cd9875cbbe1090",
+      "rootPseudonym": "op-86ffadb49f58b88762b9a6076362dc7a",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f0d37903ae1c098d9a803ffd",
+      "rootPseudonym": "op-ffcbf8b667d6a16c4914855a973de8f1",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-048b28d9abc4ba335aaf5967",
+      "rootPseudonym": "op-ffcbf8b667d6a16c4914855a973de8f1",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-de673008d908043de108f539",
+      "rootPseudonym": "op-3dedf985fa0e5e3cf7daa74eb2443a39",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-29e05099bf1264e3408e521e",
+      "rootPseudonym": "op-3dedf985fa0e5e3cf7daa74eb2443a39",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-2a7bbb8ed8dc3e1196533328",
+      "rootPseudonym": "op-6e543659c5e512b3d8c3d5a8430d12f4",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f337ebafc27c249527b7fa6f",
+      "rootPseudonym": "op-6e543659c5e512b3d8c3d5a8430d12f4",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-859ac157b6c4e0ab9630ae80",
+      "rootPseudonym": "op-a24a2cafd3149b64a8b5cf1e497948db",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-b2a36a19ed920c8aa3f415cd",
+      "rootPseudonym": "op-a24a2cafd3149b64a8b5cf1e497948db",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-0be01d4fb0b7f7b9d2506653",
+      "rootPseudonym": "op-7d3b3a1c11fa1c00a67dcedc5c1313cd",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-dcad6b73c563d5cb93dd2256",
+      "rootPseudonym": "op-7d3b3a1c11fa1c00a67dcedc5c1313cd",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-70d818c193b158ec7356a485",
+      "rootPseudonym": "op-6767a9fcb35625e904c5a52f0c089d6d",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-fc4133beb7528cdb8dcab87b",
+      "rootPseudonym": "op-36d96ab51ec9394ce9acdb770ab0b142",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-9628cfd735f66e0f80b97b56",
+      "rootPseudonym": "op-6767a9fcb35625e904c5a52f0c089d6d",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-d4ceafc61052e8e405d1cb0e",
+      "rootPseudonym": "op-36d96ab51ec9394ce9acdb770ab0b142",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-d65af15323461bd09c8796a2",
+      "rootPseudonym": "op-5f96f5008a28ad65ff8935f29a707461",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-c176ba580d8570d8e9422913",
+      "rootPseudonym": "op-5f96f5008a28ad65ff8935f29a707461",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-38a19c0b1c3c78c133cc0540",
+      "rootPseudonym": "op-12c8f78d8834ebe34d9a381012354d0c",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-083111cfd4f7ac8d7930fb41",
+      "rootPseudonym": "op-12c8f78d8834ebe34d9a381012354d0c",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-b9daefc8bd8cd8c5f80a7e7b",
+      "rootPseudonym": "op-8f85f51df160250bbf9576af7519ab29",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-4896cd8786848bf453743590",
+      "rootPseudonym": "op-8f85f51df160250bbf9576af7519ab29",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-5f5139ad36bec78f49905991",
+      "rootPseudonym": "op-348c9d0bc01dcafba2439f99703f8eea",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-864b2e7a10fd1c5bad946ced",
+      "rootPseudonym": "op-348c9d0bc01dcafba2439f99703f8eea",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-92f2a8445755af905e552dd3",
+      "rootPseudonym": "op-57572938f170a81fd44d58e1c56556f3",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-7d746210497a88666e90c758",
+      "rootPseudonym": "op-57572938f170a81fd44d58e1c56556f3",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-80a0a3235ef92c8b8617d142",
+      "rootPseudonym": "op-e5198c10f85720d8cac4138b0bf7166a",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-5f926793d3b43dcbdbacd43c",
+      "rootPseudonym": "op-e5198c10f85720d8cac4138b0bf7166a",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-ff6daf0f97961d180b9506b4",
+      "rootPseudonym": "op-e27efe4d6c87c36d90988355a96073b1",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-89e6ed0f8a009f17dc9bbdf2",
+      "rootPseudonym": "op-e27efe4d6c87c36d90988355a96073b1",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-ddab9f0e01eaf355b077ae77",
+      "rootPseudonym": "op-42dfb35d4a0f44e5948bef2d696118d7",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-2d8de269e9de42bd24d9d392",
+      "rootPseudonym": "op-42dfb35d4a0f44e5948bef2d696118d7",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-598cf6b3d4b8aeec645a58a4",
+      "rootPseudonym": "op-0b0a9a1ef7471c91deb5076b663e1147",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-5b7a9f7f544f95feb02f9e42",
+      "rootPseudonym": "op-0b0a9a1ef7471c91deb5076b663e1147",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-256bcf9605610989e2c81e58",
+      "rootPseudonym": "op-95254b8d21b370d8e48b0ee162d43ec8",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-3efc333bd4c6bf7e5cbccbaf",
+      "rootPseudonym": "op-95254b8d21b370d8e48b0ee162d43ec8",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-09f051da955ab0731cc8e51f",
+      "rootPseudonym": "op-c1af55febe014f7bd2e1b43f4ce97bd0",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-d6e96d2ce8eafc289b08ab2b",
+      "rootPseudonym": "op-c1af55febe014f7bd2e1b43f4ce97bd0",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-3d1c20de98b30907d1136bde",
+      "rootPseudonym": "op-7ff0aa99f7cf4f2e3133f9cb8a7e911f",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-d5cc3308a87c52db8f29cda7",
+      "rootPseudonym": "op-7ff0aa99f7cf4f2e3133f9cb8a7e911f",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-c552c5395501c57260fb8aaf",
+      "rootPseudonym": "op-a1617901c4c22352bccdcc6db49e9666",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-eb6b7f01b721cbcba57d1167",
+      "rootPseudonym": "op-a1617901c4c22352bccdcc6db49e9666",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-5ee803da248c059541573404",
+      "rootPseudonym": "op-c767bcbb02dce66d88c06a377d3ccc4a",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-d4fa82cd9c3627035118f1e4",
+      "rootPseudonym": "op-c767bcbb02dce66d88c06a377d3ccc4a",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-4e8fd5e5682c4895ec166fc3",
+      "rootPseudonym": "op-cf7de3115924a56cb154972b98ce11cc",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-5c3aefdaa4176c0509de50fe",
+      "rootPseudonym": "op-cf7de3115924a56cb154972b98ce11cc",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-1d8a13118365d71073d1845a",
+      "rootPseudonym": "op-6470ab888d741d94ffe050c764fc9a08",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-c48ee1be2f66db1cae66710d",
+      "rootPseudonym": "op-6470ab888d741d94ffe050c764fc9a08",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-26f06d19724c984fe77015b6",
+      "rootPseudonym": "op-37b774096cae2f444dfdb17bb2c30a6b",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-0bdb8fb7b7d33f60805c9ef4",
+      "rootPseudonym": "op-2588452d8f6a5140cfd8e5f2127974e0",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-41fc5b737007fbfbca9fee1f",
+      "rootPseudonym": "op-2588452d8f6a5140cfd8e5f2127974e0",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-9588fa6219ab48eb54471140",
+      "rootPseudonym": "op-5ed90d73de9d1325990cc390203f4c0a",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-78059937e4dec785cc2d20a1",
+      "rootPseudonym": "op-5ed90d73de9d1325990cc390203f4c0a",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-b51da9ae1d6203084dffd24a",
+      "rootPseudonym": "op-6890f58436aa161b88f5d3b1ba9dcf56",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-c5f59fc9b3f1cf02cbae8e4b",
+      "rootPseudonym": "op-6890f58436aa161b88f5d3b1ba9dcf56",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-0513d806db6a7b7e5f884781",
+      "rootPseudonym": "op-68758d3095fea77866e34a6d56991e36",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-804b530e5f6f68cfe2cb0c0a",
+      "rootPseudonym": "op-5f1a0d280544419c41fc5de3c1f26096",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-98c40d82030005cd5f568fd3",
+      "rootPseudonym": "op-927b2a56f7f26559b7da848c71f9bcd8",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-ffc66ba6f5c1adb5aeacce27",
+      "rootPseudonym": "op-927b2a56f7f26559b7da848c71f9bcd8",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-df19e7500b9dd7f470dde457",
+      "rootPseudonym": "op-15c92a9012a14a5d867af732c0e004c2",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-2a56506e9c7d0ab1edc494b5",
+      "rootPseudonym": "op-2097172321cd795378273b0fa7f7d3e3",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-b89493b400ff822002564010",
+      "rootPseudonym": "op-0a9b56e1aa1f649f1a2cac9b15c00c45",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-4bbe546a22a4db65f8c9d125",
+      "rootPseudonym": "op-0a9b56e1aa1f649f1a2cac9b15c00c45",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f0d9b9b3dc313f87acf04cb2",
+      "rootPseudonym": "op-fc5cbe7069305b9085533f658d1a3225",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-dc1ad194b57fe4ce25836139",
+      "rootPseudonym": "op-fc5cbe7069305b9085533f658d1a3225",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-d615fe2f9152245bf6fc21ef",
+      "rootPseudonym": "op-d80ab8374663b4d401df2ca956019269",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-cc2792cc318a9974561fb863",
+      "rootPseudonym": "op-064efae46e39133fe52cf141e41ac634",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-cc6b3a68bb44b63735af6c65",
+      "rootPseudonym": "op-064efae46e39133fe52cf141e41ac634",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-1a2d9233e448ca439126f182",
+      "rootPseudonym": "op-50a256738d859ca5ec7f56cfc4f8e6a8",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-6597690b59bdbd0d91943d2a",
+      "rootPseudonym": "op-b86a0a691874713dd9c29c535ad70f4d",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-b75fe4190b331c247f5288a9",
+      "rootPseudonym": "op-b86a0a691874713dd9c29c535ad70f4d",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-4dab6519c9ef27450d9e358d",
+      "rootPseudonym": "op-8f614f3f42629739ad924be78c50c3e0",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-6909c8f719e840ee3fe805e4",
+      "rootPseudonym": "op-8f614f3f42629739ad924be78c50c3e0",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-6b08fd42854fed253824fc4a",
+      "rootPseudonym": "op-ceec2b80429583ffdb714b16e9742f31",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-ab7f917cc3173c744b100903",
+      "rootPseudonym": "op-ceec2b80429583ffdb714b16e9742f31",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-c98ade33f563269684ea3688",
+      "rootPseudonym": "op-0662a1a1fcb75471df5cc1ce5cf00378",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-2c2fa85dbfe5f7fd519dd3ab",
+      "rootPseudonym": "op-c5c8c8026c6c52afe9de203a9c1a3ea8",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-ea459b76f541fae730012a77",
+      "rootPseudonym": "op-96c20e87ae8b9c3574e3ff05619783fa",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-9c1b0ae95694f5af463ee209",
+      "rootPseudonym": "op-ebcef1c90430b0498757b15bbd21314e",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-7193a62dd6ce998c05762b02",
+      "rootPseudonym": "op-1d861b0869469c1f8433267cfea846ba",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-b6a8f63c1f88f139213779db",
+      "rootPseudonym": "op-ecc62c948999838e728cccb687226ac0",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-dbf65626916289c7c1af5edc",
+      "rootPseudonym": "op-6f8f6280b523a9bb959acf80ad15ecb1",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-b31b1015fcb542d305ba1fe0",
+      "rootPseudonym": "op-2b21baf94092ef3c0b8688ae2e778d75",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-1e0ad6c4819ddfe1a7dc4d7c",
+      "rootPseudonym": "op-8023809b83a7b65c2a8abe04bad67a98",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f678eaadae2c81fbb75d8bb1",
+      "rootPseudonym": "op-547ce797dbf8a09e6a2f09a3d5ce8af6",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-90a6b009260e3972b7be048e",
+      "rootPseudonym": "op-a9768d4da1fe659d9dc6eae565a498a1",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f7be9fc31ca2b63bdab4f14d",
+      "rootPseudonym": "op-9f96dbdcd52529cfe956cf32880c1092",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-bac7094d32bffe4fe3aecc43",
+      "rootPseudonym": "op-5336bf9f9669bcf5f3a9a5c65c9394f4",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-bca6c0dc09c2bfb9aec64f5a",
+      "rootPseudonym": "op-1e7b8e9cdbf2c2a0149ded1417701e05",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-86e460f31395a15dbfded264",
+      "rootPseudonym": "op-efb4abcc31ccb76dd6ac28105e03eda0",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-d35409dd6471332de544df22",
+      "rootPseudonym": "op-8e913f6001e9d22b13d6e27df93a4ac9",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-0831330643908d41ecd106fb",
+      "rootPseudonym": "op-2e534df53968494d5fda50b015ce96e5",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-236c968f96ce9c20f47b32f9",
+      "rootPseudonym": "op-88e38f08e6692030cbc3f02b98d1f5f5",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-c566f0be0243965916f7ea06",
+      "rootPseudonym": "op-5e5dbb30116fa075d8bfe77f30dcfba9",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f86851d2bca5f653c134f9e2",
+      "rootPseudonym": "op-5502812c89046061174e9c25a8710e61",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-1ea831823788ec794fbd3fdf",
+      "rootPseudonym": "op-7455624098f61d1a426a7d3a52038d95",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-803db805e69c85cd52b3ce29",
+      "rootPseudonym": "op-08f8693d544e0e4b5ba8764c720b12b2",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-80611120375d220c8ba525ef",
+      "rootPseudonym": "op-48a83797e8fd3c608fc2e7f12d8c7795",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-2d71b26de933ee2c7fa38f4a",
+      "rootPseudonym": "op-ca3f70958a14e463ff99dabfd4d75a2a",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-ad3933472c54401b94c09546",
+      "rootPseudonym": "op-a0370576b3a5bd553000e2ece1168ef4",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-b14753dde56f9f6a6b4403ad",
+      "rootPseudonym": "op-eac2e0f59b80f49ff24d0fda4fd5fab4",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-feb410f29866df7d5a6c47f5",
+      "rootPseudonym": "op-f62d44849faa5f2e02273ecb6f22bc90",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-1c3eb8ee776f99e3d5faf87d",
+      "rootPseudonym": "op-a7deadd167a31bd8f8fff3bb817937be",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-897d1a42d5883d6cfe84bb7e",
+      "rootPseudonym": "op-de7fbf5531bad523cc48f6a44a0819f4",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-ed5f8062eaba11ee439283c5",
+      "rootPseudonym": "op-2090311358c5e90146fe14d19518df59",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-aceffd9c2e5016e6e7354224",
+      "rootPseudonym": "op-1071ac09cd79269282762bd179addb4d",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-31d06a29c441259584ea9671",
+      "rootPseudonym": "op-0e6d30d82c336921bf63c84e8f54057c",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-8e0e6e466fab50653a13949f",
+      "rootPseudonym": "op-fefb884366f006adcfe28310993b0c52",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-12111be3eef01cb0423a8917",
+      "rootPseudonym": "op-c93836fe8fab05045e578f826994149e",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-dc3f3a1ab1cd2d407e46845b",
+      "rootPseudonym": "op-c8d474ebbd5eaf59eda2218d42686f6f",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-eaaf4a1dbf514421d59e1c51",
+      "rootPseudonym": "op-6ae4371515bc21e39697a20340e0ad89",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-e4636877e41856591436d660",
+      "rootPseudonym": "op-e1102af09067ca778b4dc2b1f280c082",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-3f5fbb5ff2bb6be07f009df4",
+      "rootPseudonym": "op-7c23c2beaa9960972bdb8e757fbc29da",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-c09c3eed751e92d8260c927f",
+      "rootPseudonym": "op-4e01921d271a7c264aa01642ff3d6221",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-5335ff084805cad4570afde4",
+      "rootPseudonym": "op-e031552c9646a39b5390f4fc8315a556",
+      "type": "generation-failed",
+      "classification": "needs-cause-proof",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-b24a9402da7a94dc191d1a3f",
+      "rootPseudonym": "op-0f311479a753c77267de3afd00030034",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-a84704332e3bfeddb01bc7e2",
+      "rootPseudonym": "op-f31cd5e521a99b30816c3bae643cd307",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-c649de4b426d4f1e34178b29",
+      "rootPseudonym": "op-601826f51075645bb33aba2020b003ef",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-629d562f05f6d86891023387",
+      "rootPseudonym": "op-7e335a2a6aae409a7511bcba927c1e1b",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-0ee2dcd7762ec6aeda2be8ef",
+      "rootPseudonym": "op-2b45eff4c424108899e0c5745abbb1b4",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-3a2329de40c3a3ea0f34e48b",
+      "rootPseudonym": "op-ac56e79c618ffc121d6939391e119f29",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-7ec12199720b89cebdcd612d",
+      "rootPseudonym": "op-8372362de4a04d59cbbdf585c7e1c06a",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-64f83574e3cd1a57bc9b0b99",
+      "rootPseudonym": "op-755bf5990f081e5c4fff5b3423e9bd8f",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-ff077c43252684ad228a4ecd",
+      "rootPseudonym": "op-fa96989704937ce843c03340e58a39a3",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-1a7ca90208927a2614152ae9",
+      "rootPseudonym": "op-483369264be83bc13b550e26957c005d",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-cb24963602c96f7b728bd8df",
+      "rootPseudonym": "op-30bf84e7cabf58b2d0e9fc4473dfbf90",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-52a01cfa9440e48ccb2c1f9a",
+      "rootPseudonym": "op-e89fcce24d91319738853b7e769a6ece",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-fdf238c7f7ca6cb9a982db05",
+      "rootPseudonym": "op-e89fcce24d91319738853b7e769a6ece",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-4fefeea772948f4361339741",
+      "rootPseudonym": "op-e8ba7a2d812f2023819964257fe10b10",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-9715118e4e53dae4db22f3ce",
+      "rootPseudonym": "op-db84ba6243733e7445d7672674d6794c",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-5498ec3a34f59027e34d1e4d",
+      "rootPseudonym": "op-db84ba6243733e7445d7672674d6794c",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-bccd929d1f771f56300a3f23",
+      "rootPseudonym": "op-808bc95329d5a2cb411c0f7d2e92e2c2",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f57ea6968859b5a38114a83a",
+      "rootPseudonym": "op-808bc95329d5a2cb411c0f7d2e92e2c2",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-ee106ef2e7dd82079bb8ff74",
+      "rootPseudonym": "op-14f3128eda54f63e2548bbfa8d045a35",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-6f4ca8160b72d06964577481",
+      "rootPseudonym": "op-14f3128eda54f63e2548bbfa8d045a35",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-a855e3015f0a33e12f7d5810",
+      "rootPseudonym": "op-179b1ad9f28eea5c936c9df4a0305d52",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-92e0f124b3c6379fca22c383",
+      "rootPseudonym": "op-179b1ad9f28eea5c936c9df4a0305d52",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-b42c8eca9561e21e8fa20852",
+      "rootPseudonym": "op-e45605385b2b0cee6c42b75750bb0d0b",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-cf7c4273773b95628b188211",
+      "rootPseudonym": "op-4ed81f1c69c7a9032fd7e751a0e9913a",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-2b2206b70338593cc38cfc27",
+      "rootPseudonym": "op-f4129fdc7c76a235cdc15e26675dc36b",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-7931ec6cd3c43dcb74cf4bd8",
+      "rootPseudonym": "op-e1ca3800f7ea36251a054bbd1a9aa92e",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-0d34d37d53c9fdbaee989a29",
+      "rootPseudonym": "op-e1ca3800f7ea36251a054bbd1a9aa92e",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-d500003b319d51f10edbcbe1",
+      "rootPseudonym": "op-90e739a47634ce86c4eda4d07be17566",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-3ed87e26a68f8277b9f794de",
+      "rootPseudonym": "op-90e739a47634ce86c4eda4d07be17566",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-a221ca2f41f88a74e6a9bf04",
+      "rootPseudonym": "op-6d07b70394fe1da7dc3524f4074213bf",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-65690c043664e53bdcfdd372",
+      "rootPseudonym": "op-372a4e4ea3780ab4244b1e21a59b10da",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-de5ed973490f95943b8c4c1d",
+      "rootPseudonym": "op-2ce37391555a353f0970cc9f8ceb850e",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-480d11cb56e2c9b80123963b",
+      "rootPseudonym": "op-5df240b6f1af4be0bcb59d59e1c7540e",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-94089c1ca13e985edc0a97d5",
+      "rootPseudonym": "op-e20f30c5cb6a54c35bade5cbd02699e8",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-c301c80c7a5657bacc740bae",
+      "rootPseudonym": "op-670658742de9c5a9bdd62ae1f46b27ce",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f1a663f2a59c3a2f8f9f10ef",
+      "rootPseudonym": "op-f882168c8026323adbefbab198c07f98",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-8f21c469e7098f3427fc7ed7",
+      "rootPseudonym": "op-69dca737aa708ac2e72bfefaf61d47b2",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-eeab231cbf4da9100c170c38",
+      "rootPseudonym": "op-bf6b9db53ec3521a9383f84fdcae82ae",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-489fb95829a0784fc4c13c72",
+      "rootPseudonym": "op-701e04c2de395c3c3575677231791426",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-33162fc19a47e97abf07f095",
+      "rootPseudonym": "op-7189d05ea4e1b53394a7ff97d7de532f",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-dc2b0cb6dd8c6bb7599c3922",
+      "rootPseudonym": "op-c5f0bc55365bbc562945441f321a7622",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-2b8b868af0462032afb5733e",
+      "rootPseudonym": "op-8f4d66ebe981916bd5c383eafecdd615",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-004a346e19ebac62c4f059d0",
+      "rootPseudonym": "op-e1288bbc566bcda6ec1aba7c8ee426ce",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-10ef28ac123f73a4e32086f4",
+      "rootPseudonym": "op-d85fe53c379c554faa6c1673fb02d0ea",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-22ee52f10f73d91e03cba245",
+      "rootPseudonym": "op-4d9dc226da050748a27c76743d6d0f3c",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-b6774af5f2865458c19e7ced",
+      "rootPseudonym": "op-91e355bc0b3d9fb47e295aab75b5cab1",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-72344f0d55ab852c0444f033",
+      "rootPseudonym": "op-ff4b0f18806f75661fa006736cc9f040",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-7d6e8eb6c9418d0c205d4b43",
+      "rootPseudonym": "op-15ad53b66f4996ba6abbf7d829724964",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-421c372ad1c2bb3259d17416",
+      "rootPseudonym": "op-d629ff91c3ba6b3740644d0804e0d411",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-a95c2672f9072f2efc0a040b",
+      "rootPseudonym": "op-fdfd4cbd321a16c9b40902610e2df2fa",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-a892db1aacd3c6ffb23c04fe",
+      "rootPseudonym": "op-a980c45ba0e4b203f788cdc97c35bc29",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-486d83ffe1ffda45ec761f5b",
+      "rootPseudonym": "op-f28e32d49b173372a2c2459e76b5c6f0",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-eef5afe6ecbc3dbb583c3fca",
+      "rootPseudonym": "op-979b614fd6e798fed8bdfecae39b83af",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-5ba1843dd0e9f999af382ee1",
+      "rootPseudonym": "op-2f0d40cf5fa95be68b1cd54205021919",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-bc5dcab24936c9d219aa8e9a",
+      "rootPseudonym": "op-56e4d83eafd8ca9ad3a439820594cb36",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-3da7e1613c6370a260ef570e",
+      "rootPseudonym": "op-e50c4c25632c829b4b523d66853bcc40",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-c5133fb9b50208fd112a65cc",
+      "rootPseudonym": "op-0bd1fb77ab33140f3a1df496022c75af",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-e79c8fb5a0158fdfa3bdcd99",
+      "rootPseudonym": "op-c164d6486737505a40e78eb7cd39973c",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-05d1e6edd50a8f27ff6ab634",
+      "rootPseudonym": "op-99839cb06615ef25a5118bf93c8c3ad5",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-0dcc7be9aa4281ca9c857c7b",
+      "rootPseudonym": "op-5bdf7ff22b2306151d58c18eecfd6f53",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-b874d0576da894109f985218",
+      "rootPseudonym": "op-ba8097d55b71391f7853d16aaff84e24",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-e83359d75773d6c2b3789d8d",
+      "rootPseudonym": "op-1ed463ecbcee2838e4f9f133e71e5150",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-6836f8b2427d75ae8506a37e",
+      "rootPseudonym": "op-491b41d048e28a9a388afe68cc9f0e03",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-ba815106ac1d92871a269503",
+      "rootPseudonym": "op-a06214dabc355c5d5993fb166f6275ff",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-23826bc8a97a57d709de8478",
+      "rootPseudonym": "op-53de2eb07e31eb4e3d9d16b4fb975a48",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-80c5526de48bd43699ae3506",
+      "rootPseudonym": "op-73dd510d986c6f7572e0d14b19f14f37",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-e14194a614f08b45ea71d51f",
+      "rootPseudonym": "op-387f7f54c242bdaf2785cd0750aeb903",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-b46f9690eb9578fc36a25183",
+      "rootPseudonym": "op-a1bd28d80d0daf068c17a20094b704ca",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-cfa9513ff260c80e3346f791",
+      "rootPseudonym": "op-6ea304968ba38c52e0ec554b266bc5c4",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-84f7e6133bba8028fa4c6537",
+      "rootPseudonym": "op-b28595eba6276a830a0c6a4fbc49ecff",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-4eb820615bf11803c8410fc8",
+      "rootPseudonym": "op-b28595eba6276a830a0c6a4fbc49ecff",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-63588da5e608055fa94f0d7e",
+      "rootPseudonym": "op-ce55b85d29d2fd0e1b8a1de37f8fb628",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-a9547c9535d0d0cd544fd879",
+      "rootPseudonym": "op-432f3a7011761debad2cb002a19ae460",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-26b20ee7d38ffd1bb6782f76",
+      "rootPseudonym": "op-eabece58029ec9d426ac089a12590817",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-b8337d6b7acf3d285b2f1083",
+      "rootPseudonym": "op-cf27864f59c982a24af553c0acd87ba5",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-8ec1dd0094fa670586ca74df",
+      "rootPseudonym": "op-80c3ace3210a5ca6c4b9b246a8c228ae",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-a73e1adeb5a073718efacd4a",
+      "rootPseudonym": "op-b0a88562f76a71f6fc37db7596b01b5c",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-53f5762d15334bf53fc425de",
+      "rootPseudonym": "op-bf439efb45d6f52e9125485f12e184d5",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-7e043086f8a60f2bbc68291a",
+      "rootPseudonym": "op-c99a808ec2bd27998a086503c6a1a484",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-a43b9c817a76ddecd3997a86",
+      "rootPseudonym": "op-06451790518c77349aaadaa3dbe606db",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-4af362a8f17e52fb83a3866a",
+      "rootPseudonym": "op-7200596781e229a638ec567f367cd263",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-1c418d4ef4206b33acb26e43",
+      "rootPseudonym": "op-4b449f40c08d8b85aeae5b0ec77537cb",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-6c90dd7b10a80260461bade0",
+      "rootPseudonym": "op-e52ca371307f88a1d99f1ac8aa75fa1c",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-6d8a294b0edd609127321315",
+      "rootPseudonym": "op-b3b3bb7773797fbfc3e3f71cbede9cf4",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-89c660ed6239d2b66a88bcf6",
+      "rootPseudonym": "op-469feacf222e71608242f8740a8f2255",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-e3567a288af83de144fbeb7d",
+      "rootPseudonym": "op-b06c74ad2e65e9316370c07a89409093",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f74d7f7c60dd010135e610a8",
+      "rootPseudonym": "op-34ed2ed33f55b8980fce696eea8b9adc",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-048c3712bab51e1f5a1c3a63",
+      "rootPseudonym": "op-aed5c52c9c107c1056ac7706fe509bf3",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-c0badcd2f387a92c6a310907",
+      "rootPseudonym": "op-43b849dac44dd97152e3bda85e41a4e3",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-ec1a6e04488247b70d4f35d9",
+      "rootPseudonym": "op-04e8f5060aa0b83cd7e541027dadded9",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-6f06f6a7cd2e268b2d24cb61",
+      "rootPseudonym": "op-02a653cd83f1f6ec135207ea35d43b54",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-9e46a53ac9140ab3d1ebe331",
+      "rootPseudonym": "op-ab5e624e791e82a7cd15d582354947e6",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f17f50b712df81a608579a29",
+      "rootPseudonym": "op-9312d4aac1445a9830970ff8180e74b8",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-801fd2c471c06fc99806c889",
+      "rootPseudonym": "op-0fa1f4d627b7598649df05e6ee4fa4b6",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-893389f0c4e237a27a783f7d",
+      "rootPseudonym": "op-f0a3926e8b79bf58a9252ceb9b10fb6c",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-23d1bc65f0719f2e957493e5",
+      "rootPseudonym": "op-03a39aa845899dbfd09ac8fc87eab041",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-3aadb6227ad7e6c9479a182c",
+      "rootPseudonym": "op-80696c22eb7edcfc1c1d11d64a5ab8ee",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-daf5ce8aa095bef6fe85a2d3",
+      "rootPseudonym": "op-bec7f6af411e4db9e6868ec2de15672b",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-6a04dd5e0b05ec285a7efe07",
+      "rootPseudonym": "op-59c5cef0a65e173acf425ac49e80eb48",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-d154e4069589c188adf13349",
+      "rootPseudonym": "op-13552b8bb503b28dc25d755a171e4f62",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-0a1c97d37c668ecba4d6ef3d",
+      "rootPseudonym": "op-9bb36cbff88dfdb447f80f6d5d23f3fc",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-7684fc6c8c9e88356d6c096a",
+      "rootPseudonym": "op-ce472424bc9c97211b2ac9ad908bbc01",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-daad634d3aba3ab4d6b0d97e",
+      "rootPseudonym": "op-fe137e102e41e94b0014178fc58583d2",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-ace3e2d6c1186f4c2060f0d1",
+      "rootPseudonym": "op-12803f359324c57a3a4f34c096777be7",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-90099dcddae31fd1e15ca5f5",
+      "rootPseudonym": "op-58f15060a6a52ab8f399eb8ef08a8d2e",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-a0a6c09241c009781d048120",
+      "rootPseudonym": "op-b456d22254803574099334e727db05a0",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-e8f31553abd9bbdb9162a776",
+      "rootPseudonym": "op-7978ee0b93c9d8a5b3cf9d078e6365cb",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-c950b989e3cd8b4957be3141",
+      "rootPseudonym": "op-a4ef13300ad7e9d12f19698b9ed58e1e",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-11b8deca6194de39dd16cd21",
+      "rootPseudonym": "op-465c869cab072fff5d8e7e2bd15806e9",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-b32059a7cbe76c651cfeaef4",
+      "rootPseudonym": "op-ce884b29401704c12afbd31fdc3a2222",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-baf3bc0330eb5aa7f0affcd4",
+      "rootPseudonym": "op-1264ec75db449d2dde986b40086efe9e",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-666e8097d5fb967641f3a7f9",
+      "rootPseudonym": "op-3b97720fd9e2cf3e535409f133ede22d",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-ad2325d2c66eefe700671473",
+      "rootPseudonym": "op-82e9d60371c5c0f378cecee62778b097",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-f9f82eaea9156940cbfe8cea",
+      "rootPseudonym": "op-04e8f5060aa0b83cd7e541027dadded9",
+      "type": "checkpoint-not-delivered",
+      "classification": "original-result-only",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-84a0ab7524d5337a8284d389",
+      "rootPseudonym": "op-742fe9ffe9617787f80999e15f8bec83",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-0ca255d4fdb0c29999284981",
+      "rootPseudonym": "op-0491cbc6444695b2c798aa51112456f2",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-8170c1c9bcffc23610aa24d4",
+      "rootPseudonym": "op-cd856b97596a53fe73b4f5fbabf8b8fb",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-28a904809e592df96dbb6289",
+      "rootPseudonym": "op-82e2d5efb31425b775ad4d1a83d7e3a9",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-6579323a8638367bbd1b7589",
+      "rootPseudonym": "op-cc5fe582c1018c3bb5aaeebd5b0c4aa9",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-d74d550234a7c975127ee653",
+      "rootPseudonym": "op-4fbe4c32c886710ec566e0c59a58ecf7",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-9c1a41ee65513e40a374a2c9",
+      "rootPseudonym": "op-f029f91fa5674b918ef7a4580e19a9af",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-2fd94122ba50c7e73e90cee9",
+      "rootPseudonym": "op-aee7cbefa24cb6c9fcfdc03cb7073894",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-0f472495b6b66fc187f57db6",
+      "rootPseudonym": "op-f2126b2be810520ab88e898af7f48994",
+      "type": "unresolved-outcome",
+      "classification": "requires-original-receipt",
+      "historyClosure": "OPEN",
+      "localFix": null
+    },
+    {
+      "id": "case-069f6bd2f10cde3d58a6bd1f",
+      "rootPseudonym": "op-a55d828d648dae6423088503946b8811",
+      "type": "admin-list-detail-mismatch",
+      "classification": "application-defect-candidate",
+      "historyClosure": "OPEN",
+      "localFix": {
+        "status": "FIXED_LOCAL_NOT_DEPLOYED",
+        "regression": "scripts/verify-admin-anomaly-regressions.ts",
+        "benchmark": "benchmark-r1/REPORT.json",
+        "productionStatus": "unchanged"
+      }
+    },
+    {
+      "id": "case-bb0fefab58e3af8e96cb9b23",
+      "rootPseudonym": "op-6689abddb8ca24064241af5d88e89bc5",
+      "type": "scanner-permanent-block",
+      "classification": "confirmed-fixed-key-poisoning",
+      "historyClosure": "OPEN",
+      "localFix": {
+        "status": "FIXED_LOCAL_NOT_DEPLOYED",
+        "regression": "scripts/verify-admin-anomaly-regressions.ts",
+        "benchmark": "benchmark-r1/REPORT.json",
+        "productionStatus": "unchanged"
+      }
+    }
+  ]
+}

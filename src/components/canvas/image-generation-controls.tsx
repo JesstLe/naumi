@@ -107,7 +107,7 @@ export function CanvasImageGenerationControls({pending,light:lightCanvas,model,m
       triggerClass="canvas-ui-control flex h-8 cursor-pointer items-center gap-1.5 rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold disabled:opacity-45"
       trigger={<>{displayedMode==="detail"?<GalleryVerticalEnd className="h-3.5 w-3.5"/>:pending?<Sparkles className="h-3.5 w-3.5"/>:<Rotate3d className="h-3.5 w-3.5"/>}{t(shortLabel[displayedMode])}</>}/>
     {ratioControl}{ratioMenu}
-    <ImageQualityControl compact feature="canvas.image" modelId={model.value} resolution={resolution} ratio={ratio} quantity={quantity}/>
+    <ImageQualityControl compact feature="canvas.image" modelId={model.value} resolution={resolution} ratio={mode==="triptych"?"16:9":ratio} quantity={quantity}/>
     {pending||mode==="standard"||mode==="detail"?<ImageCountControl value={count} onChange={onCount} light/>:
       <span className="canvas-ui-control inline-flex h-8 items-center gap-1.5 rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold">
         <ImageIcon aria-hidden="true" className="h-3.5 w-3.5 shrink-0"/>{t(mode==="split"?"canvas.viewNodesCount":"canvas.viewSheetCount")}

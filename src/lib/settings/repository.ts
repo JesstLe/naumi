@@ -23,3 +23,18 @@ export async function setSetting(k: string, v: string): Promise<void> {
     [k, v]
   );
 }
+
+/** Batched raw read; absent/empty values and failures are preserved. No cache. */
+export async function getSettings(keys: readonly string[]): Promise<Record<string, string | null>> {
+  const values: Record<string, string | null> = Object.create(null);
+  const uniqueKeys = Array.from(new Set(keys));
+  if (!uniqueKeys.length) return values;
+  for (const key of uniqueKeys) values[key] = null;
+  await ensureSchema();
+  const { rows } = await getPool().query<{ k: string; v: string }>(
+    `SELECT k, v FROM app_settings WHERE k = ANY($1::text[])`,
+    [uniqueKeys]
+  );
+  for (const row of rows) values[row.k] = row.v;
+  return values;
+}

@@ -13,7 +13,9 @@ async function main(){
  assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,"1");assert.equal(new URL(process.env.DATABASE_URL!).hostname,"127.0.0.1");
  const root=path.resolve(arg("--source-root")||"."),baseline=process.argv.includes("--baseline"),ownership=process.argv.includes("--ownership"),mode=baseline?"BASELINE":"MODIFIED",out=path.resolve(process.env.WORKER_RECOVERY_EVIDENCE||"output/refactor-r5a-20261026");await mkdir(out,{recursive:true});
  const original=JSON.parse(await readFile(path.join(out,"BASELINE.json"),"utf8")) as {originalHashes:Record<string,string>};
- const additions=execFileSync("git",["ls-files","--others","--exclude-standard","-z"],{encoding:"utf8"}).split("\0").filter(Boolean),files=[...new Set([...Object.keys(original.originalHashes),...additions])].sort();
+ // A normal merge can introduce already-staged files absent from the pinned
+ // refactor baseline. Include the current index, not only untracked additions.
+ const additions=execFileSync("git",["ls-files","--cached","--others","--exclude-standard","-z"],{encoding:"utf8"}).split("\0").filter(Boolean),files=[...new Set([...Object.keys(original.originalHashes),...additions])].sort();
  const fixture=await mkdtemp(path.join(out,`next-${mode.toLowerCase()}-`)),code=path.join(fixture,"code"),hashes:Record<string,string>={};await mkdir(code,{recursive:true});
  for(const f of files){try{await access(path.join(root,f));}catch(e){if(f in original.originalHashes)throw e;continue;}const target=path.join(code,f);await mkdir(path.dirname(target),{recursive:true});await copyFile(path.join(root,f),target);const raw=await readFile(target);hashes[f]=createHash("sha256").update(raw).digest("hex");if(baseline&&f in original.originalHashes)assert.equal(hashes[f],original.originalHashes[f]);}
  await writeFile(path.join(out,`NEXT_${mode}_SOURCE.json`),JSON.stringify({root,fixture,hashes},null,2));await symlink(path.resolve("node_modules"),path.join(fixture,"node_modules"),"junction");

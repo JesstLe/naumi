@@ -1,5 +1,6 @@
 import {billingSnapshotFromRow as snapshot} from "./frozen-config";
 import "server-only";
+import type {ConfigSnapshot} from "./types";
 import type { Pool, PoolClient } from "pg";
 import { BillingError, type BillingConfig, type ConfigRuntime } from "./types";
 import { validateBillingConfig } from "./rules/schema";
@@ -23,6 +24,8 @@ function validateWrite(id: string, actor: string, reason: string, version: numbe
         throw new BillingError("INVALID_CONFIG", "配置发布参数无效", 400);
 }
 export function createConfigRuntime(deps: Deps): ConfigRuntime {
+    // Frozen versions are append-only. The mutable current pointer stays fresh.
+    const immutableVersions = new Map<number, Promise<ConfigSnapshot>>();
     const ensure = async () => { await deps.ensureSchema(); await ensureBillingSchema(deps.pool); };
     const locked = async <T>(run: (tx: PoolClient) => Promise<T>) => {
         const tx = await deps.pool.connect();
@@ -97,10 +100,23 @@ export function createConfigRuntime(deps: Deps): ConfigRuntime {
             if (!Number.isSafeInteger(version) || version < 1)
                 throw new BillingError("INVALID_CONFIG", "配置版本无效", 400);
             await ensure();
-            const row = (await deps.pool.query<Row>("SELECT * FROM app_billing_config_versions WHERE version=$1", [version])).rows[0];
-            if (!row)
-                throw new BillingError("CONFIG_UNAVAILABLE", "配置版本不存在", 404);
-            return snapshot(row);
+            let pending = immutableVersions.get(version);
+            if (!pending) {
+                pending = deps.pool.query<Row>("SELECT * FROM app_billing_config_versions WHERE version=$1", [version]).then(result => {
+                    const row = result.rows[0];
+                    if (!row) throw new BillingError("CONFIG_UNAVAILABLE", "配置版本不存在", 404);
+                    return snapshot(row);
+                }).catch(error => {
+                    if (immutableVersions.get(version) === pending) immutableVersions.delete(version);
+                    throw error;
+                });
+                immutableVersions.set(version, pending);
+                if (immutableVersions.size > 64) immutableVersions.delete(immutableVersions.keys().next().value!);
+            } else {
+                immutableVersions.delete(version); immutableVersions.set(version, pending);
+            }
+            // Never expose the retained value to a caller's local mutations.
+            return structuredClone(await pending);
         },
         async history(limit) {
             if (!Number.isInteger(limit) || limit < 1 || limit > 100)

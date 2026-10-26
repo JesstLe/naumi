@@ -5,6 +5,7 @@ import {releaseIdentity,releaseRuntimeEnabled} from "../release-runtime/identity
 import {ensureReleaseSchema,releasePool,releaseStatus} from "../release-runtime/store";
 import {createWorkerTickReceiptStore,runReceiptedWorkerTick,type TickIdentity,type TickWebIdentity} from "../release-runtime/worker-tick-receipts";
 import {closeImageCoordinationPool} from "../imagegen/coordination-pool";
+import {closeVideoCoordinationPool} from "../video/coordination-pool";
 import {scanApplicationWorkerOnce} from "./scan";
 import {backgroundWorkCount,waitForBackgroundWork} from "./inflight";
 import {listenForApplicationWork} from "./wakeup";
@@ -21,7 +22,7 @@ export async function createDirectWorkerApplication(){
  let wakeVersion=0,signalWake:(()=>void)|undefined,canClaim=()=>true,scanIntervalMs=15000;
  const close=()=>closing??(closing=(async()=>{
   closed=true;await listening;await listener?.close();await waitForBackgroundWork();
-  const results=await Promise.allSettled([closeImageCoordinationPool(),getPool().end(),releasePool().end()]);
+  const results=await Promise.allSettled([closeImageCoordinationPool(),closeVideoCoordinationPool(),getPool().end(),releasePool().end()]);
   if(results.some(r=>r.status==="rejected"))throw Error("DIRECT_WORKER_POOL_CLOSE_FAILED");
  })());
  try{

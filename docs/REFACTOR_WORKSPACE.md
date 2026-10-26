@@ -1,5 +1,7 @@
 # 核心链路重构专用工作区
 
+2026-10-26 R5C 后 main 普通整合：incoming `368c93e2` 的 13 处冲突已按真实 owner 迁入，未恢复巨型 db/任务/Canvas 实现。父完成通知改为应用注入 completion port，Worker 增加视频协调池排空后关闭；settings/OpenAI/SMTP 原批量算法保留。完整8e203648基线和整合版实际Linux/PG同71检查通过，实际Next六入口20、生命周期37、项目归属31、父完成24+PG19、postaccept11/142+PG18、异常12、视频协调9组、settings78、config14及价格控件22组通过；全项目tsc/源码lint通过。原最大20环和所有SCC成员与整合前完全一致，新owner入环0、db生产消费者0；不是全产品/容量验收。原始失败和旧image定价verifier债务保留。副本回滚/patch、双parent提交与远端以本轮VERIFICATION/DELIVERY为准；本轮三模块main同步计数归零，下一阶段继续视频/媒体runtime与R6，不合main、不部署。见 [整合记录](changes/2026-10-26-refactor-main-sync-r5c.md)。
+
 2026-10-26 R5C：四类持久图片、批次/工作台、改字及原图续交统一Web保存/Worker执行；PG通知仅唤醒、原表/周期恢复兜底，同tick按原lane继续接新任务，排空不补领。完整旧/新Linux16/71、实际Next六入口20、策略18、相邻恢复156/回执59/持久化36/工作台13组及旧进程29/32/39通过；冻结6/current17仍原价，Web执行0/批次HTTP0、混合unknown/显式取消不重提。新owner无环、7124非目标声明和九算法文件保持；tsc/19lint通过。旧image定价verifier端口陈旧导致exit1、五文件对照同失败，仍显式债务，不回退published只读。见 [R5C记录](changes/2026-10-26-image-worker-ownership-r5c.md) 及DELIVERY；本轮第3模块，普通同步main后归零；视频新提交/媒体runtime/20环/UI-CAS/R6继续，不合main、不部署。
 
 建立日期：2026-10-24。

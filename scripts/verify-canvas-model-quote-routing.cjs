@@ -63,6 +63,12 @@ const mocks = {
   },
 };
 
+mocks['src/lib/model-config/published.ts']={readPublishedModelSnapshot:async version=>{
+  state.adminCalls++;assert.equal(state.forbidAdmin,false,'Matching frozen scope returns before published read');
+  state.reads.push(version===undefined?'current':`byVersion:${version}`);
+  if(version===undefined)return state.snapshot;
+  assert.ok(state.versions[version],'Known accepted snapshot');return state.versions[version];
+}};
 function load(relative) {
   if (mocks[relative]) return mocks[relative];
   assert.ok(allowed.has(relative), `No unexpected I/O dependency: ${relative}`);

@@ -45,7 +45,7 @@ export {getOrCreateUser,getUser,changeUserPlan} from "@/lib/accounts/session";
 export {getCreditOverview,expireDueBatches,refreshBalance} from "@/lib/billing/wallet-balance";
 export {totalPaidCents} from "@/lib/payments/history";
 export {type UserImageProviderRecord,listUserImageProviderRecords,getUserImageProviderRecord,getUserImageProviderRecordById,countUserImageProviderRecords,upsertUserImageProviderRecord,activateUserImageProviderRecord,deleteUserImageProviderRecord} from "@/lib/user-image-provider/repository";
-export {getSetting,setSetting} from "./settings/repository";
+export {getSetting,getSettings,setSetting} from "./settings/repository";
 export {getSignupBonus,setSignupBonus} from "./billing/signup";
 export {dbEnabled,getPool} from "@/platform/db/pool";
 export {ensureSchema} from "@/lib/persistence/schema";

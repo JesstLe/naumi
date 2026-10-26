@@ -24,12 +24,14 @@ export const dynamic = "force-dynamic";
 // server persistence and the localStorage mock.
 export async function GET(request: Request) {
   const multiUser = await multiUserEnabled();
-  const imageSettings = await getOpenAISettings();
   const email = dbEnabled ? await authenticatedEmail(request) : null;
-  const imageModels = await getImageModelCatalog(email);
-  const managed = await modelConfigurationEnabled() ? await (await getModelRuntime()).publicCatalog("image") : null;
-  const featureCatalog = managed ? await (await getModelRuntime()).publicCatalog("image", "image.generate") : null;
-  const defaultModel = featureCatalog?.defaultModelId || managed?.bindings["image.generate"] || managed?.models[0]?.id || imageSettings.model;
+  // Share one snapshot inside this request, never a stale cross-request pointer.
+  const modelRuntime = await modelConfigurationEnabled() ? await getModelRuntime() : null;
+  const modelSnapshot = modelRuntime ? await modelRuntime.current() : undefined;
+  const imageModels = await getImageModelCatalog(email, modelSnapshot);
+  const managed = modelRuntime ? await modelRuntime.publicCatalog("image", undefined, modelSnapshot) : null;
+  const featureCatalog = modelRuntime ? await modelRuntime.publicCatalog("image", "image.generate", modelSnapshot) : null;
+  const defaultModel = featureCatalog?.defaultModelId || managed?.bindings["image.generate"] || managed?.models[0]?.id || (await getOpenAISettings()).model;
   const userDefaultModel = await getUserDefaultImageModel(email);
   const presentation = frontendImageCatalog({
     defaultModelId: userDefaultModel || defaultModel,

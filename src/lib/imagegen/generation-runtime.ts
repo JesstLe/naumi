@@ -166,7 +166,7 @@ export async function runJob(
   }
 }
 
-export async function kickGeneration(id: string) {
+export async function kickGeneration(id: string,onReleased?:import("../image-jobs/runtime").ImageJobReleased) {
   await JOBS.kick(id, async (payload) => {
     const p = payload.p as GenParams;
     const settings = await getOpenAISettings();
@@ -187,5 +187,5 @@ export async function kickGeneration(id: string) {
       provider ? { ...provider, model: upstreamUserImageModel(p.model) } : null,
       dbEnabled && !!p.email, Number(payload.cost));
     if(p.imagegen)await withImagegenStep(p.imagegen.request,p.imagegen.intent,execute);else await execute();
-  });
+  },true,onReleased);
 }

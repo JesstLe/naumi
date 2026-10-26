@@ -5,7 +5,7 @@ import { currentModelExecution } from "./model-config/context";
 import { ModelConfigError } from "./model-config/types";
 import { setTimeout as sleep } from "node:timers/promises";
 
-type ImageOperation = {
+export type ImageOperation = {
   /** Caller trust boundary: arbitrary BYOK endpoints are never durable Router. */
   managedGateway?: boolean;
   durable?: boolean;
@@ -21,6 +21,11 @@ type ImageOperation = {
   textAccuracy?: "auto" | "required" | "best_effort";
 };
 const operations = new AsyncLocalStorage<ImageOperation>();
+export type ImageIndexCheckpoint = <T>(model: string, operation: ImageOperation, run: () => Promise<T>) => Promise<T>;
+const imageIndexCheckpoints = new AsyncLocalStorage<ImageIndexCheckpoint>();
+export function withImageIndexCheckpoint<T>(checkpoint: ImageIndexCheckpoint, run: () => Promise<T>): Promise<T> {
+  return imageIndexCheckpoints.run(checkpoint, run);
+}
 
 export function isImageGatewayModel(model: string) {
   const scope = currentModelExecution("image");
@@ -141,5 +146,8 @@ export function appendImageGatewayFields(form: FormData, model: string) {
 export function withImageIndex<T>(model: string, index: number, run: () => Promise<T>) {
   const operation = operations.getStore();
   if (!operation) return run();
-  return withImageOperation(model, { ...operation, id: `${operation.id}:image:${index}` }, run);
+  const indexedOperation = { ...operation, id: `${operation.id}:image:${index}` };
+  const execute = () => withImageOperation(model, indexedOperation, run);
+  const checkpoint = imageIndexCheckpoints.getStore();
+  return checkpoint ? checkpoint(model, indexedOperation, execute) : execute();
 }

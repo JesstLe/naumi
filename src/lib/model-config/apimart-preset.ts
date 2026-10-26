@@ -16,6 +16,7 @@ import { apimartTask, submittedAPIMartTask, genericReceipt } from "../supplier-c
 import { parseReceiptJson } from "../supplier-cost/money";
 import { readBounded, readBoundedBytes } from "../supplier-cost/io";
 import {recordBillingUsage, currentSynchronousBilling} from "@/lib/billing/synchronous-operation";
+import {validatedChannelImageResponse} from "./channel-image-response";
 
 /** Actual submission parameters, not the original UI audit request. Old preset
  * and legacy tasks keep their previous precedence when no effective quote or
@@ -164,7 +165,11 @@ export function apimartImagesFetch(scope: ModelExecutionScope, options: Validati
           // authorize billing for the output. No image URLs or prompt persist.
           await ledger.pool.query("UPDATE app_supplier_calls SET parameters=parameters || $2::jsonb WHERE id=$1",[row.id,JSON.stringify({acceptedOutputs:data.length,actualDimensions,deliveryNotices:[...new Set(deliveryNotices)],preparation:scope.frozen.feature==="image.aplus"&&unit.includes(":source:")})]);
           recordBillingUsage(receipt.usage,files.length>0);
-          return Response.json({created:Math.floor(Date.now()/1000),data,usage:receipt.usage});
+          const payload=JSON.stringify({created:Math.floor(Date.now()/1000),data,usage:receipt.usage});
+          // Preserve the existing whole-response bound without parsing and
+          // decoding images a second time in the outer health/routing layers.
+          if(Buffer.byteLength(payload,"utf8")>48*1024*1024)throw new Error("receipt too large");
+          return validatedChannelImageResponse(new Response(payload,{headers:{"content-type":"application/json"}}));
         }
         await new Promise<void>((resolve,reject)=>{const timer=setTimeout(()=>{request.signal.removeEventListener("abort",abort);resolve();},overrides?.pollMs??2000);const abort=()=>{clearTimeout(timer);reject(request.signal.reason);};request.signal.addEventListener("abort",abort,{once:true});if(request.signal.aborted)abort();});
       }

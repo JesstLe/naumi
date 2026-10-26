@@ -5,7 +5,7 @@ import "server-only";
 import {randomUUID} from "node:crypto";
 import {dbEnabled,getPool} from "@/platform/db/pool";
 
-import {imagegenCreationScopeKey} from "./creation-scope";
+import {imagegenCreationScopeKey,assertAcceptedImagegenCreationScope,ImagegenScopeError} from "./creation-scope";
 import {assertCurrentCreationFeature} from "@/lib/saas/creation-access";
 import {userFeaturePolicy,FeatureAccessError} from "@/lib/feature-access/repository";
 import {allows} from "../feature-access/catalog";
@@ -26,6 +26,14 @@ export class ImagegenQuoteError extends Error {
 export function assertImagegenQuoteReference(id:unknown,operationId:unknown):asserts id is string {
  const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
  if(typeof id!=="string"||!uuid.test(id)||typeof operationId!=="string"||!uuid.test(operationId))throw new ImagegenQuoteError();
+}
+async function matchesQuoteScope(row:QuoteRow,owner:string){
+ if(row.context_key===imagegenCreationScopeKey(owner))return true;
+ // Old uploaded-image previews may precede the stable project binding. Keep
+ // their exact original price only when their stored canvas anchor proves it.
+ if(row.context_key!==JSON.stringify(["personal",null,null]))return false;
+ try{await assertAcceptedImagegenCreationScope({actorEmail:row.owner,scopeKind:"personal",tenantId:null},owner,row.request);return true;}
+ catch(error){if(error instanceof ImagegenScopeError)return false;throw error;}
 }
 /** Full BillingQuote facts stay server-side, including recursively frozen children. */
 export function publicImagegenPlan(plan:ImagegenPlan):ImagegenPlan {
@@ -53,7 +61,7 @@ export async function readImagegenQuote(id:string,owner:string,operationId:strin
  assertImagegenQuoteReference(id,operationId);
  await ensureImagegenQuotes();
  const row:QuoteRow|undefined=dbEnabled?(await getPool().query("SELECT *,expires_at<=now() AS expired FROM app_imagegen_quotes WHERE id=$1 AND owner=$2 AND operation_id=$3",[id,owner.toLowerCase(),operationId])).rows[0]:memory.get(id);
- if(!row||row.owner!==owner.toLowerCase()||row.operation_id!==operationId||row.context_key!==imagegenCreationScopeKey(owner)||row.fingerprint!==imagegenFingerprint(row.request)||row.plan.fingerprint!==row.fingerprint)throw new ImagegenQuoteError();
+ if(!row||row.owner!==owner.toLowerCase()||row.operation_id!==operationId||!await matchesQuoteScope(row,owner)||row.fingerprint!==imagegenFingerprint(row.request)||row.plan.fingerprint!==row.fingerprint)throw new ImagegenQuoteError();
  return structuredClone(row);
 }
 /** Old pages ignore quote.id, but their preview still created a server quote.
@@ -61,8 +69,9 @@ export async function readImagegenQuote(id:string,owner:string,operationId:strin
  * or claimed amount to current configuration. */
 export async function latestImagegenQuote(request:ImagegenRequest,owner:string){
  await ensureImagegenQuotes();const fingerprint=imagegenFingerprint(request),context=imagegenCreationScopeKey(owner);
- const row:QuoteRow|undefined=dbEnabled?(await getPool().query("SELECT * FROM app_imagegen_quotes WHERE owner=$1 AND operation_id=$2 AND fingerprint=$3 AND context_key=$4 ORDER BY created_at DESC,id DESC LIMIT 1",[owner.toLowerCase(),request.operationId,fingerprint,context])).rows[0]:[...memory.values()].reverse().find(q=>q.owner===owner.toLowerCase()&&q.operation_id===request.operationId&&q.fingerprint===fingerprint&&q.context_key===context);
- return row?.id;
+ const contexts=[context,JSON.stringify(["personal",null,null])];
+ const row:QuoteRow|undefined=dbEnabled?(await getPool().query("SELECT * FROM app_imagegen_quotes WHERE owner=$1 AND operation_id=$2 AND fingerprint=$3 AND context_key=ANY($4::text[]) ORDER BY created_at DESC,id DESC LIMIT 1",[owner.toLowerCase(),request.operationId,fingerprint,contexts])).rows[0]:[...memory.values()].reverse().find(q=>q.owner===owner.toLowerCase()&&q.operation_id===request.operationId&&q.fingerprint===fingerprint&&contexts.includes(q.context_key));
+ return row&&await matchesQuoteScope(row,owner)?row.id:undefined;
 }
 export async function frozenImagegenQuote(request:ImagegenRequest,owner:string,confirmation:ImagegenSubmissionConfirmation){
  const row=await readImagegenQuote(confirmation.quoteId!,owner,request.operationId);

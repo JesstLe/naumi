@@ -10,6 +10,7 @@ import {getPool} from "@/platform/db/pool";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {addArtworksTx} from "@/lib/artworks/writer";
 import {type ArtworkRecord} from "@/lib/artworks/types";
+import {acquireVideoCoordinationLock} from "./coordination-pool";
 import {canReadMedia,getMediaAsset,registerMediaAsset} from "../media-assets";
 import {readManagedObject,storageKeyFromManagedUrl,writeStoredObject} from "../storage";
 import {ModelConfigError} from "../model-config/types";
@@ -208,16 +209,25 @@ async function getMediaJobLocal(actorRaw:string,id:string,process=true){
   const actor=actorRaw.toLowerCase();let row=await getRow(actor,id);if(!row)return null;
   if(!process)return publicMediaJob(row);
   if(!["queued","processing"].includes(row.status)){await cleanupMediaJob(row);return publicMediaJob(row);}
-  const lock=await getPool().connect();const key=`media-job:${id}`;let acquired=false;
+  const lock=await acquireVideoCoordinationLock(`media-job:${id}`);
   try{
-    acquired=(await lock.query("SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS acquired",[key])).rows[0].acquired;
-    if(!acquired)return publicMediaJob(row);
+    if(!lock.acquired)return publicMediaJob(row);
     row=await getRow(actor,id);if(!row)return null;if(!["queued","processing"].includes(row.status))return publicMediaJob(row);
     let view:WorkerJobView;
     try{view=await mediaWorkerRequest(id,"GET");}catch(error){
       if(!(error instanceof MediaWorkerError)||error.status!==404)throw error;
       if(row.cancellation_requested_at){await finishMediaJobFailure(actor,id,"cancelled");row=(await getRow(actor,id))!;await cleanupMediaJob(row);return publicMediaJob(row);}
-      const dispatched=await withBackgroundActivity("media-job", `${id}:dispatch`, "claim", async()=>{await bindBackgroundClaim(id);return dispatch(row!);},()=>null);
+      const dispatched=await withBackgroundActivity("media-job", `${id}:dispatch`, "claim", async()=>{
+        await bindBackgroundClaim(id);
+        try{return await dispatch(row!);}
+        catch(error){
+          // The local worker's explicit busy rejection precedes acceptance.
+          // Finish this no-op claim so the next poll can retry the same job;
+          // ambiguous transport/processing failures still remain unknown.
+          if(error instanceof MediaWorkerError&&error.status===429)return null;
+          throw error;
+        }
+      },()=>null);
       if(!dispatched)return publicMediaJob(row);
       view=dispatched;
     }
@@ -229,7 +239,7 @@ async function getMediaJobLocal(actorRaw:string,id:string,process=true){
     }else await getPool().query("UPDATE app_video_media_jobs SET status=$2,processed_seconds=$3,updated_at=now() WHERE id=$1",[id,view.status,view.processedSeconds]);
     return publicMediaJob((await getRow(actor,id))!);
   }catch(error){if(error instanceof MediaWorkerError&&error.status===429){const pending=await getRow(actor,id);return pending?publicMediaJob(pending):null;}throw error;}
-  finally{if(acquired)await lock.query("SELECT pg_advisory_unlock(hashtextextended($1,0))",[key]).catch(()=>{});lock.release();}
+  finally{await lock.release();}
 }
 export async function cancelMediaJob(actorRaw:string,id:string){const actor=actorRaw.toLowerCase(),row=await getRow(actor,id);if(!row)return null;
   if(["completed","failed","cancelled"].includes(row.status))return publicMediaJob(row);

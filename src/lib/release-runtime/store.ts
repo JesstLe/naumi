@@ -178,7 +178,20 @@ export async function finishActivity(id: string, outcome = "completed"): Promise
     await db.query("UPDATE app_release_session_owners SET state='idle',updated_at=now() WHERE run_id=$1 AND instance_id=$2 AND boot_id=$3 AND state='running'", [id, identity.instanceId, identity.bootId]);
     // Bounded housekeeping only for already finished request observations. Never
     // expires active/unknown work or deletes the durable owner/run uncertainty.
-    await db.query("DELETE FROM app_release_activities WHERE id IN (SELECT id FROM app_release_activities WHERE state='finished' AND ((activity_kind='request' AND finished_at<now()-interval '15 minutes') OR (activity_kind='accepted-work' AND finished_at<now()-interval '7 days')) ORDER BY finished_at LIMIT 100)");
+    // Bound each retention window before merging. An OR over the finished_at
+    // index otherwise walks every recent accepted-work row to find no expired
+    // request observations on an otherwise idle server.
+    await db.query(`DELETE FROM app_release_activities WHERE id IN (
+      SELECT id FROM (
+        (SELECT id,finished_at FROM app_release_activities
+          WHERE state='finished' AND activity_kind='request' AND finished_at<now()-interval '15 minutes'
+          ORDER BY finished_at LIMIT 100)
+        UNION ALL
+        (SELECT id,finished_at FROM app_release_activities
+          WHERE state='finished' AND activity_kind='accepted-work' AND finished_at<now()-interval '7 days'
+          ORDER BY finished_at LIMIT 100)
+      ) expired ORDER BY finished_at LIMIT 100
+    )`);
   });
 }
 export async function unknownActivity(id: string, reason: string): Promise<void> {

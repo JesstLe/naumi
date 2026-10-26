@@ -59,16 +59,13 @@ export async function bindActualCreationProject(email:string,id:string,options:{
   }
  }else if(!options.newRoot){
   if(context.tenantId)throw new TeamError('现有项目归属未记录，请在企业空间新建项目',409);
-  // An owned text-only personal canvas has no artwork output proof yet.
-  // Fix its destination before quoting/acceptance so completion cannot change
-  // a frozen null parent into a different receipt scope. Legacy receipt reads
-  // remain non-binding, and an unproven tenant project is still rejected above.
-  const textProject=!options.receipt&&(await tx.query("SELECT 1 FROM app_canvas_text_nodes WHERE email=$1 AND project_key=$2 LIMIT 1",[email.toLowerCase(),id])).rowCount;
-  if(!textProject){delete context.parentContext;return context;}
+  // Physical ownership was checked above. Uploaded-image, text and video
+  // personal canvases all keep the same project before and after first output.
+  // Receipt reads authorize that project without creating a binding row.
  }
  if(!options.receipt)await tx.query("INSERT INTO app_creation_contexts(actor_email,context_kind,context_id,scope_kind,tenant_id) VALUES($1,'project',$2,$3,$4) ON CONFLICT DO NOTHING",[email.toLowerCase(),id,context.scopeKind,context.tenantId]);
  const saved=options.receipt?proof:(await tx.query("SELECT scope_kind,tenant_id FROM app_creation_contexts WHERE actor_email=$1 AND context_kind='project' AND context_id=$2",[email.toLowerCase(),id])).rows[0];
- if(saved.scope_kind!==context.scopeKind||saved.tenant_id!==context.tenantId)throw new TeamError('当前项目的工作空间已固定，请新建项目',409);
+ if(saved&&(saved.scope_kind!==context.scopeKind||saved.tenant_id!==context.tenantId))throw new TeamError('当前项目的工作空间已固定，请新建项目',409);
  context.parentContext=id;return context;
 }
 /** Validate referenced text/video projects without changing the destination. */

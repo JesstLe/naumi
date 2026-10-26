@@ -14,6 +14,7 @@ import type {GenParams,GenImage} from "@/lib/imagegen/generation-types";
 export type {GeneratedImage} from "@/lib/imagegen/generation-types";
 import {submitGeneration} from "@/lib/imagegen/generation-submission";
 import {kickGeneration} from "@/lib/imagegen/generation-runtime";
+import {notifyImagegenJobReleased} from "@/lib/imagegen/dispatch";
 
 import {readGeneration} from "@/lib/imagegen/generation-query";
 
@@ -122,7 +123,7 @@ async function handleObservedPost(request: Request) {
   if(imageWorkerAuthorized(request)){
     const body=await request.json();
     if(typeof body.workerJobId!=="string")return NextResponse.json({error:"无效任务"},{status:400});
-    await kickGeneration(body.workerJobId);return NextResponse.json({ok:true});
+    await kickGeneration(body.workerJobId,notifyImagegenJobReleased);return NextResponse.json({ok:true});
   }
   let input:GenParams|null;
   try{input=await parseParams(request);}catch{return NextResponse.json({error:"请求格式不正确"},{status:400});}

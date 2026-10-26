@@ -1,5 +1,7 @@
 # 渐进迁移与集中验收台账
 
+2026-10-26 R5C 后 main 普通整合：incoming `368c93e2` 的 13 处冲突已按真实 owner 迁入，未恢复巨型 db/任务/Canvas 实现。父完成通知改为应用注入 completion port，Worker 增加视频协调池排空后关闭；settings/OpenAI/SMTP 原批量算法保留。完整8e203648基线和整合版实际Linux/PG同71检查通过，实际Next六入口20、生命周期37、项目归属31、父完成24+PG19、postaccept11/142+PG18、异常12、视频协调9组、settings78、config14及价格控件22组通过；全项目tsc/源码lint通过。原最大20环和所有SCC成员与整合前完全一致，新owner入环0、db生产消费者0；不是全产品/容量验收。原始失败和旧image定价verifier债务保留。副本回滚/patch、双parent提交与远端以本轮VERIFICATION/DELIVERY为准；本轮三模块main同步计数归零，下一阶段继续视频/媒体runtime与R6，不合main、不部署。见 [整合记录](../changes/2026-10-26-refactor-main-sync-r5c.md)。
+
 R5C（2026-10-26）：原四类图片任务、批次/工作台、Canvas改字、原图续交以部署归属统一Web保存/Worker执行，批次HTTP回跳删除；PG通知+单独LISTEN唤醒，失联/漏通知由原scan恢复，同tick按原lane接新任务，drain不补领。完整Linux旧16/新71、实际Next六入口20、策略18、相邻恢复156/回执59/持久化36/工作台13组和旧Worker实际29/32/39通过；单价冻结6/current17，混合unknown/原op/取消/原价保留。7124非目标声明/九算法文件保持，新owner无环、旧最大20仍在；tsc/19lint通过。旧image定价脚本client9后陈旧model注入失败，五文件投影同依赖同失败，留R6不冒充PASS。详见 [R5C](../changes/2026-10-26-image-worker-ownership-r5c.md)，第3模块main普通同步后归零；视频新提交和发布角色迁移、媒体runtime/小环/UI-CAS/全产品验收继续，不合main、不部署。
 
 R5B（2026-10-26）：实际独立Worker direct执行共享scan，原PG回执绑定Worker，等待detached原回调再完成tick/排空/关pool，HTTP旧协议保持；combined环境分离与direct不强杀、handoff角色观察接通。Linux真实PG旧8/新29、锁阻塞SIGTERM32、崩溃原tick只读核对39、combined31通过，Web POST1→0、冻结原6/current17单次结算18；31unit/91断言/Python30+4、相邻156/36/59和tsc/lint通过。独立bundle验证及Docker/Compose接线完成，47专用clone仍为HTTP，首次提交排队/唤醒与该发布角色整合继续，不冒充全重活已离Web。见 [R5B](../changes/2026-10-26-direct-application-worker-r5b.md) 及DELIVERY；同步后第2模块，剩余媒体runtime/20环/外围UI-CAS/全产品R6继续，不合main、不部署。

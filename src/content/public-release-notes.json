@@ -1,5 +1,59 @@
 [
   {
+    "version": "1792979563",
+    "title": {
+      "zh": "图片任务结果读取修复",
+      "en": "Image task result access fixes"
+    },
+    "improvements": [],
+    "fixes": [
+      {
+        "zh": "修复上传图片画布首次生成完成后，错误提示任务不存在的问题。",
+        "en": "Fixed tasks incorrectly appearing unavailable after the first image completes on an uploaded-image canvas."
+      },
+      {
+        "zh": "修复部分已完成图片仍显示排队中的问题，并保留原图片与积分记录。",
+        "en": "Fixed some completed images remaining queued while preserving original images and credit records."
+      }
+    ]
+  },
+  {
+    "version": "1792976998",
+    "title": {
+      "zh": "图片结果展示修复",
+      "en": "Image result display fixes"
+    },
+    "improvements": [],
+    "fixes": [
+      {
+        "zh": "修复图片已完成后，创作记录仍显示排队中的问题。",
+        "en": "Fixed completed images sometimes remaining queued in creation history."
+      },
+      {
+        "zh": "修正部分异常任务的已扣积分显示。",
+        "en": "Corrected charged-credit displays for some unsuccessful tasks."
+      }
+    ]
+  },
+  {
+    "version": "1792815643",
+    "title": {
+      "zh": "图片生成体验修复",
+      "en": "Image generation reliability fixes"
+    },
+    "improvements": [],
+    "fixes": [
+      {
+        "zh": "修复部分图片已生成但结果未显示的问题。",
+        "en": "Fixed some generated images not appearing in the results."
+      },
+      {
+        "zh": "改善多张图片的结果恢复，避免重复生成已完成的图片。",
+        "en": "Improved multi-image recovery to avoid regenerating completed images."
+      }
+    ]
+  },
+  {
     "version": "1792808190",
     "title": {
       "zh": "画布创作体验修复",
