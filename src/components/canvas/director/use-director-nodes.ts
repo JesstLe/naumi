@@ -6,7 +6,7 @@ import type { VideoPrivateFetch } from "../video/use-video-nodes";
 
 export class DirectorClientError extends Error { constructor(message: string, public status: number, public code?: string) { super(message); } }
 export function useDirectorNodes({ email, readOnly, request }: { email?: string; readOnly: boolean; request: VideoPrivateFetch }) {
-  const [allNodes, setNodes] = useState<CanvasDirectorNode[]>([]), [ready, setReady] = useState(false), [error, setError] = useState("");
+  const [allNodes, setNodes] = useState<CanvasDirectorNode[]>([]), [ready, setReady] = useState(false), [error, setError] = useState(""),[pending,setPending]=useState(0);
   const nodesRef = useRef(allNodes), identity = useRef({ email, readOnly, epoch: 0 }), queues = useRef(new Map<string, Promise<unknown>>()), attempts = useRef(new Map<string,string>()); nodesRef.current = allNodes;
   if (identity.current.email !== email || identity.current.readOnly !== readOnly) identity.current = { email, readOnly, epoch: identity.current.epoch + 1 };
   const epoch = identity.current.epoch;
@@ -22,12 +22,13 @@ export function useDirectorNodes({ email, readOnly, request }: { email?: string;
     if (identity.current.epoch === epoch) { merge(data.nodes || [], epoch); setReady(true); setError(""); }
   }, [email, epoch, request, merge]);
   useEffect(() => {
-    nodesRef.current = []; setNodes([]); setError(""); setReady(!email); queues.current.clear(); attempts.current.clear(); let stopped = false;
+    nodesRef.current = []; setNodes([]); setError("");setPending(0); setReady(!email); queues.current.clear(); attempts.current.clear(); let stopped = false;
     const load = () => { if (!email) return; void refresh().catch(cause => { if (!stopped && identity.current.epoch === epoch) { setReady(true); setError(cause instanceof Error ? cause.message : "导演工程加载失败"); } }); };
     load(); const resume = () => { if (document.visibilityState === "visible") load(); }; window.addEventListener("focus", resume); document.addEventListener("visibilitychange", resume);
     return () => { stopped = true; window.removeEventListener("focus", resume); document.removeEventListener("visibilitychange", resume); };
   }, [email, epoch, refresh]);
   const save = useCallback((id: string, patch: Partial<Omit<DirectorNodeWrite, "id" | "operationId">>): Promise<CanvasDirectorNode> => {
+    if(!email||readOnly)return Promise.reject(new Error("画布账号或编辑状态已改变"));setPending(value=>value+1);
     const execute = async () => {
       if (!email || readOnly || identity.current.epoch !== epoch) throw new Error("画布账号或编辑状态已改变");
       const old = nodesRef.current.find(node => node.id === id), input={...patch,id,expectedRevision:patch.expectedRevision??old?.revision??0},fingerprint=JSON.stringify([email,epoch,input]);
@@ -39,7 +40,7 @@ export function useDirectorNodes({ email, readOnly, request }: { email?: string;
       attempts.current.delete(fingerprint);if (identity.current.epoch !== epoch) throw new Error("工程已保存，画布账号已切换"); merge([data.node], epoch); return data.node as CanvasDirectorNode;
     };
     const previous = queues.current.get(id) || Promise.resolve(), promise = previous.catch(() => {}).then(execute); queues.current.set(id, promise);
-    void promise.finally(() => { if (queues.current.get(id) === promise) queues.current.delete(id); }).catch(() => {}); return promise;
+    void promise.finally(() => { if (queues.current.get(id) === promise) queues.current.delete(id);if(identity.current.epoch===epoch)setPending(value=>Math.max(0,value-1)); }).catch(() => {}); return promise;
   }, [email, readOnly, epoch, request, refresh, merge]);
   const attachOutput = useCallback(async (id: string, artworkId: string, kind: "image" | "video", expectedRevision: number, operationId: string) => {
     if (!email || readOnly || identity.current.epoch !== epoch) throw new Error("画布账号或编辑状态已改变");
@@ -49,5 +50,5 @@ export function useDirectorNodes({ email, readOnly, request }: { email?: string;
   }, [email, readOnly, epoch, request, merge]);
   const getNode = useCallback((id: string) => nodesRef.current.find(node => node.id === id), []);
   const flush = useCallback(() => Promise.all([...queues.current.values()]), []);
-  return { nodes: useMemo(() => allNodes.filter(node => !node.deletedAt), [allNodes]), allNodes, ready, error, refresh, save, attachOutput, getNode, flush };
+  return { nodes: useMemo(() => allNodes.filter(node => !node.deletedAt), [allNodes]), allNodes, ready, error,saving:pending>0, refresh, save, attachOutput, getNode, flush };
 }

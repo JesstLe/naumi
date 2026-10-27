@@ -6155,7 +6155,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
   }
   async function doUndo() {
-    if (historyScope !== historyScopeRef.current || !undoStack.length || historyBusyRef.current || readOnly) return;
+    if (historyScope !== historyScopeRef.current || !undoStack.length || historyBusyRef.current || directorNodesStore.saving || readOnly) return;
     historyBusyRef.current=true;
     setHistorySaving(true);
     const act=undoStack[undoStack.length-1];
@@ -6167,7 +6167,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     finally { historyBusyRef.current=false; setHistorySaving(false); }
   }
   async function doRedo() {
-    if (historyScope !== historyScopeRef.current || !redoStack.length || historyBusyRef.current || readOnly) return;
+    if (historyScope !== historyScopeRef.current || !redoStack.length || historyBusyRef.current || directorNodesStore.saving || readOnly) return;
     historyBusyRef.current=true;
     setHistorySaving(true);
     const act=redoStack[redoStack.length-1];
@@ -10078,12 +10078,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   </button>
                   <span className="mx-0.5 h-5 w-px flex-none bg-[var(--canvas-ui-border)] sm:mx-1 sm:h-6" />
                   <button type="button" data-tool="undo" aria-label={t("canvas.undo")} title={`${t("canvas.undo")} (${shortcut("Z")})`}
-                    disabled={historySaving || undoStack.length === 0} onClick={() => void doUndo()}
+                    disabled={historySaving || directorNodesStore.saving || undoStack.length === 0} onClick={() => void doUndo()}
                     className="canvas-ui-action flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors disabled:opacity-40 sm:h-9 sm:w-9">
                     <RotateCcw className="h-[18px] w-[18px]" aria-hidden="true" />
                   </button>
                   <button type="button" data-tool="redo" aria-label={t("canvas.redo")} title={`${t("canvas.redo")} (${isMac ? "⇧⌘Z" : "CtrlY"})`}
-                    disabled={historySaving || redoStack.length === 0} onClick={() => void doRedo()}
+                    disabled={historySaving || directorNodesStore.saving || redoStack.length === 0} onClick={() => void doRedo()}
                     className="canvas-ui-action flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors disabled:opacity-40 sm:h-9 sm:w-9">
                     <RotateCw className="h-[18px] w-[18px]" aria-hidden="true" />
                   </button>
@@ -10554,7 +10554,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               const videoNode=videoNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey);
               const directorNode=directorNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey);
               if (ctxMenu.nodeId && !node && !textNode && !pendNode&&!videoNode&&!directorNode) return null;
-              const mutationDisabled = readOnly || !nodeSettingsReady || historySaving || Boolean(ctxMenu.nodeId && isNodeLocked(ctxMenu.nodeId));
+              const mutationDisabled = readOnly || !nodeSettingsReady || historySaving || directorNodesStore.saving || Boolean(ctxMenu.nodeId && isNodeLocked(ctxMenu.nodeId));
               const Sep = () => <div className="canvas-ui-divider my-1 h-px" />;
               const batchContextSelection = Boolean(
                 node &&
