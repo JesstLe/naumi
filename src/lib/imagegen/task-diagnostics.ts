@@ -57,6 +57,9 @@ function exactLocalReason(message:unknown):TaskReasonCode|null {
   if(/^(任务产物不存在或无权访问|任务产物不存在)$/.test(value))return 'output-unavailable';
   if(/^(输入素材不存在或无权访问|输入图片不存在|素材不存在或无权访问)$/.test(value))return 'input-unavailable';
   if(/^(模型未返回有效图片|supplier-image-missing)$/.test(value))return 'image-missing';
+  if(value==='supplier-image-invalid-output')return 'image-decode';
+  if(value==='supplier-image-size-invalid')return 'image-size';
+  if(value==='supplier-image-download-failed')return 'image-download';
   return null;
 }
 export function taskFailureDiagnostic(error:unknown,stage:unknown='execute'):TaskFailureDiagnostic {
@@ -71,8 +74,13 @@ export function taskFailureDiagnostic(error:unknown,stage:unknown='execute'):Tas
       current=value.cause;
     }
   } catch { /* hostile diagnostic getters */ }
+  // Free-form errors can echo prompts. A word match alone is not a confirmed
+  // cause; require a finite code, exact local signature, or typed native error.
   const reason=own(taskReasonLabels,code)?code as TaskReasonCode:exactLocalReason(message)||
-    causes.map(c=>own(taskReasonLabels,c.code)?c.code as TaskReasonCode:own(taskReasonLabels,c.kind)?c.kind as TaskReasonCode:null).find(Boolean)||null;
+    causes.map(c=>own(taskReasonLabels,c.code)?c.code as TaskReasonCode:
+      c.name==='RangeError'&&c.kind==='stack-limit'?'stack-limit':
+      c.name==='SyntaxError'&&c.kind==='json'?'json':
+      c.name==='TimeoutError'||c.name==='APIConnectionTimeoutError'?'timeout':null).find(Boolean)||null;
   return {version:1,stage:safeStage(stage),reason,observedAt:new Date().toISOString(),causes};
 }
 /** Read only known scalars from persisted evidence; never trust arbitrary stored keys. */
