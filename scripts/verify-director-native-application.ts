@@ -5,11 +5,12 @@ import {createServer} from "node:http";
 import {mkdir, writeFile, unlink} from "node:fs/promises";
 import path from "node:path";
 import {Pool} from "pg";
-import {chromium,expect} from "@playwright/test";
-import {newDirectorProject} from "../src/lib/director/project";
+import {chromium,expect as originalExpect} from "@playwright/test";
+import {newDirectorProject,directorProjectSchema,directorProjectFingerprint} from "../src/lib/director/project";
 import {createVideoFixture, CAP_RICH} from "./video-fusion/harness";
 import {prepareVideoAssets} from "./video-fusion/assets.mjs";
 import {generateCanvasVideo} from "../src/lib/video/canvas-submission";
+const expect=originalExpect.configure({timeout:30000});
 
 /** Real Next/API/transactions/worker/storage/billing; disposable PostgreSQL and simulated upstreams only. */
 async function main() {
@@ -51,6 +52,8 @@ async function main() {
     const simultaneous=await Promise.all([1,2].map(x=>h.request<any>("a","PATCH",`/api/canvas/director-nodes/${id}`,{expectedRevision:1,operationId:randomUUID(),x})));assert.deepEqual(simultaneous.map(r=>r.status).sort(),[200,409]);
     let node=(await h.request<any>("a","GET",`/api/canvas/director-nodes/${id}`)).body.node;
     const updated=await h.request<any>("a","PATCH",`/api/canvas/director-nodes/${id}`,{expectedRevision:node.revision,operationId:randomUUID(),project:{...project,panoramaArtworkId:h.refs.image.id}});assert.equal(updated.status,200,JSON.stringify(updated.body));node=updated.body.node;
+    const parsedProject=directorProjectSchema.parse(node.project);assert.notEqual(JSON.stringify(node.project),JSON.stringify(parsedProject));assert.equal(directorProjectFingerprint(node.project),directorProjectFingerprint(parsedProject));
+    await writeFile(path.join(out,'JSONB_PROJECT_ORDER.json'),JSON.stringify({realPostgres:true,rawStringComparisonDifferent:true,semanticFingerprintEqual:true,postgresKeys:Object.keys(node.project),parsedKeys:Object.keys(parsedProject)},null,2));
     const bad=await h.request<any>("b","POST","/api/canvas/director-nodes",{...payload,id:'director-b-'+randomUUID(),projectKey:undefined,operationId:randomUUID(),project:{...project,panoramaArtworkId:h.refs.image.id}});assert.equal(bad.status,404);
     const copied=await h.request<any>("a","POST","/api/canvas/nodes/copy",{operationId:randomUUID(),ids:[id,h.refs.image.id],projectKey:key});assert.equal(copied.status,200,JSON.stringify(copied.body));assert.equal(copied.body.directorNodes.length,1);const copy=copied.body.directorNodes[0];assert.equal(copy.project.panoramaArtworkId,copied.body.idMap[h.refs.image.id]);assert.deepEqual(copy.outputs,[]);
     const atomic=await h.request<any>("a","POST","/api/canvas/history",{operationId:randomUUID(),operations:[{type:"director-patch",id,expectedRevision:node.revision,fields:{x:999}},{type:"visibility",id:'missing-other-owned-media',visible:false}]});assert.equal(atomic.status,409);assert.equal((await h.request<any>("a","GET",`/api/canvas/director-nodes/${id}`)).body.node.x,node.x);
@@ -69,7 +72,12 @@ async function main() {
     browser=await chromium.launch({headless:true,args:['--enable-unsafe-swiftshader']});const context=await browser.newContext({viewport:{width:1440,height:960}});await context.addCookies([{name:'nv_user',value:h.cookies.a.slice(8),url:h.baseUrl,httpOnly:true,sameSite:'Lax'},{name:'naumi_locale',value:'zh',url:h.baseUrl}]);page=await context.newPage();page.setDefaultTimeout(180000);const errors=browserErrors;page.on('pageerror',(error:Error)=>errors.push(error.message));page.on('request',(request:any)=>{const url=new URL(request.url());network.push({phase:'request',url:url.pathname});});page.on('response',(response:any)=>{const url=new URL(response.url());network.push({phase:'response',url:url.pathname,status:response.status()});});page.on('requestfailed',(request:any)=>{const url=new URL(request.url());network.push({phase:'failed',url:url.pathname,failure:request.failure()?.errorText});});
     await page.goto(`${h.baseUrl}/canvas?node=${id}`,{waitUntil:'domcontentloaded',timeout:180000});const card=page.locator(`.react-flow__node[data-id="${id}"]`);await card.getByTestId('director-canvas-node').waitFor();await card.getByRole('button',{name:'打开3D导演台',exact:true}).first().click();const editor=page.getByTestId('director-editor');await editor.locator('canvas[data-director-renderer="webgl"]').waitFor();await expect(editor.getByRole('button',{name:'图片回画布',exact:true})).toBeEnabled();
     await editor.getByLabel('工程名称',{exact:true}).fill('原生导演验收');await editor.getByRole('button',{name:'行走',exact:true}).click();await editor.getByRole('button',{name:'方体',exact:true}).click();await editor.getByLabel('位置 X',{exact:true}).fill('-1');await editor.getByRole('button',{name:'添加机位',exact:true}).click();await editor.getByLabel('对象名称',{exact:true}).fill('运动机位');await editor.getByRole('button',{name:'方体 2',exact:true}).click();
-    await editor.getByRole('button',{name:'关键帧',exact:true}).click();await editor.getByLabel('导演时间轴',{exact:true}).focus();await page.keyboard.press('End');await editor.getByLabel('位置 X',{exact:true}).fill('1');await editor.getByRole('button',{name:'关键帧',exact:true}).click();await editor.getByRole('button',{name:'保存工程',exact:true}).click();await expect(editor.getByRole('button',{name:'保存工程',exact:true})).toBeDisabled();await expect(editor.getByRole('button',{name:'图片回画布',exact:true})).toBeEnabled();
+    await editor.getByRole('button',{name:'关键帧',exact:true}).click();await editor.getByLabel('导演时间轴',{exact:true}).focus();await page.keyboard.press('End');await editor.getByLabel('位置 X',{exact:true}).fill('1');await editor.getByRole('button',{name:'关键帧',exact:true}).click();
+    const savingAt=Date.now(),savedResponse=page.waitForResponse((response:any)=>new URL(response.url()).pathname===`/api/canvas/director-nodes/${id}`&&response.request().method()==='PATCH');
+    await editor.getByRole('button',{name:'保存工程',exact:true}).click();const saved=await savedResponse;assert.equal(saved.status(),200);await saved.finished();
+    const persistedProject=(await h.request<any>('a','GET',`/api/canvas/director-nodes/${id}`)).body.node.project;assert.equal(persistedProject.name,'原生导演验收');assert.equal(persistedProject.keyframes.length,2);
+    await writeFile(path.join(out,'SAVE_RECEIPT.json'),JSON.stringify({status:'PASS',http:200,elapsedMs:Date.now()-savingAt,projectName:persistedProject.name,keyframes:persistedProject.keyframes.length}));
+    await expect(editor.getByRole('button',{name:'保存工程',exact:true})).toBeDisabled();await expect(editor.getByRole('button',{name:'图片回画布',exact:true})).toBeEnabled();
     await page.screenshot({path:path.join(out,'actual-editor-desktop.png')});
     await editor.getByRole('button',{name:'图片回画布',exact:true}).click();await expect.poll(async()=>{const r=await h.request<any>('a','GET',`/api/canvas/director-nodes/${id}`);return r.body.node.outputs.length;},{timeout:120000}).toBe(1);await expect(editor.getByRole('button',{name:'视频回画布',exact:true})).toBeEnabled();
     await editor.getByRole('button',{name:'视频回画布',exact:true}).click();await expect.poll(async()=>{const r=await h.request<any>('a','GET',`/api/canvas/director-nodes/${id}`);return r.body.node.outputs.length;},{timeout:120000}).toBe(2);await expect(editor.getByRole('button',{name:'视频回画布',exact:true})).toBeEnabled();

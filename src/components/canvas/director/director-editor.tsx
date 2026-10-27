@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Box, Camera, ChevronLeft, Circle, Clapperboard, Download, Image as ImageIcon, Layers, Loader2, Move, Pause, Play, Plus, Redo2, Rotate3D, Save, Scaling, Settings2, Trash2, Undo2, Upload, UserRound, Video, X } from "lucide-react";
 import { browserRandomUUID } from "@/lib/browser-crypto";
-import { directorProjectSchema, DIRECTOR_POSES, newDirectorEntity, recordDirectorKeyframe, sampleDirectorProject, type DirectorEntity, type DirectorProject, type DirectorView } from "@/lib/director/project";
+import { directorProjectFingerprint, directorProjectSchema, DIRECTOR_POSES, newDirectorEntity, recordDirectorKeyframe, sampleDirectorProject, type DirectorEntity, type DirectorProject, type DirectorView } from "@/lib/director/project";
 import type { DirectorEngine } from "@/lib/director/engine";
 import type { CanvasDirectorNode } from "@/lib/canvas/director-node-schema";
 import s from "./director-editor.module.css";
@@ -16,14 +16,14 @@ export function DirectorEditor({ node, images, english = false, readOnly, draftS
   const cacheKey = `naumi:director-draft:${draftScope}:${node.id}`, restored = useRef<{project: DirectorProject; revision: number} | null | undefined>(undefined);
   if (restored.current === undefined) { restored.current = null; try { const value = !readOnly && JSON.parse(sessionStorage.getItem(cacheKey) || "null"); if (value && Number.isInteger(value.revision) && value.revision > 0) restored.current = { project: directorProjectSchema.parse(value.project), revision: value.revision }; } catch {} }
   const [draft, setDraft] = useState(() => structuredClone(restored.current?.project || node.project)), [selected, setSelected] = useState<string | null>(node.project.entities[0]?.id || null), [time, setTime] = useState(0), [playing, setPlaying] = useState(false), [busy, setBusy] = useState<"save" | "image" | "video" | "send" | null>(null), [progress, setProgress] = useState(0), [error, setError] = useState(""), [mode, setMode] = useState<"translate" | "rotate" | "scale">("translate"), [drawer, setDrawer] = useState<"list" | "inspector" | null>(null), [engineReady, setEngineReady] = useState(false), [historyVersion, setHistoryVersion] = useState(0), [pending, setPending] = useState<{ file: File; kind: "image" | "video" } | null>(null);
-  const dialog = useRef<HTMLDivElement>(null), host = useRef<HTMLDivElement>(null), engine = useRef<DirectorEngine | undefined>(undefined), draftRef = useRef(draft), saved = useRef(JSON.stringify(node.project)), revision = useRef(restored.current?.revision || node.revision), undo = useRef<DirectorProject[]>([]), redo = useRef<DirectorProject[]>([]), gesture = useRef<DirectorProject | undefined>(undefined), recordAbort = useRef<AbortController | undefined>(undefined), closing = useRef(false), alive = useRef(true), lock = useRef(false), animation = useRef(0), file = useRef<HTMLInputElement>(null);
+  const dialog = useRef<HTMLDivElement>(null), host = useRef<HTMLDivElement>(null), engine = useRef<DirectorEngine | undefined>(undefined), draftRef = useRef(draft), saved = useRef(directorProjectFingerprint(node.project)), revision = useRef(restored.current?.revision || node.revision), undo = useRef<DirectorProject[]>([]), redo = useRef<DirectorProject[]>([]), gesture = useRef<DirectorProject | undefined>(undefined), recordAbort = useRef<AbortController | undefined>(undefined), closing = useRef(false), alive = useRef(true), lock = useRef(false), animation = useRef(0), file = useRef<HTMLInputElement>(null);
   draftRef.current = draft;
-  const disabled = readOnly || !!busy || playing, camera = draft.cameras.find(item => item.id === draft.activeCameraId)!, entity = draft.entities.find(item => item.id === selected), dirty = JSON.stringify(draft) !== saved.current;
+  const disabled = readOnly || !!busy || playing, camera = draft.cameras.find(item => item.id === draft.activeCameraId)!, entity = draft.entities.find(item => item.id === selected), dirty = directorProjectFingerprint(draft) !== saved.current;
   const [durationText,setDurationText]=useState(String(draft.duration));useEffect(()=>setDurationText(String(draft.duration)),[draft.duration]);
-  useEffect(() => { if(readOnly)return;const cache=()=>{try{if(JSON.stringify(draftRef.current)!==saved.current)sessionStorage.setItem(cacheKey,JSON.stringify({project:draftRef.current,revision:revision.current}));else sessionStorage.removeItem(cacheKey);}catch{}};const timer=setTimeout(cache,300);return()=>{clearTimeout(timer);cache();}; },[draft,cacheKey,readOnly]);
+  useEffect(() => { if(readOnly)return;const cache=()=>{try{if(directorProjectFingerprint(draftRef.current)!==saved.current)sessionStorage.setItem(cacheKey,JSON.stringify({project:draftRef.current,revision:revision.current}));else sessionStorage.removeItem(cacheKey);}catch{}};const timer=setTimeout(cache,300);return()=>{clearTimeout(timer);cache();}; },[draft,cacheKey,readOnly]);
   useEffect(()=>{const hide=()=>{if(document.visibilityState==="hidden")recordAbort.current?.abort();};document.addEventListener('visibilitychange',hide);return()=>document.removeEventListener('visibilitychange',hide);},[]);
   const change = useCallback((update: (project: DirectorProject) => DirectorProject, commit = true) => {
-    const before = draftRef.current, next = update(before); if (JSON.stringify(before) === JSON.stringify(next) && !gesture.current) return;
+    const before = draftRef.current, next = update(before); if (directorProjectFingerprint(before) === directorProjectFingerprint(next) && !gesture.current) return;
     if (!commit) gesture.current ||= before;
     else { undo.current = [...undo.current.slice(-49), gesture.current || before]; redo.current = []; gesture.current = undefined; setHistoryVersion(value => value + 1); }
     draftRef.current = next; setDraft(next); setError("");
@@ -44,9 +44,9 @@ export function DirectorEditor({ node, images, english = false, readOnly, draftS
   useEffect(() => { engine.current?.setProject(draft, panorama); }, [draft, panorama, engineReady]);
   useEffect(() => { engine.current?.select(readOnly || !!busy || playing ? null : selected); engine.current?.mode(mode); }, [selected, readOnly, busy, playing, mode, engineReady]);
   async function persist() {
-    if (readOnly || JSON.stringify(draftRef.current) === saved.current) return { ...node, revision: revision.current };
+    if (readOnly || directorProjectFingerprint(draftRef.current) === saved.current) return { ...node, revision: revision.current };
     const parsed=directorProjectSchema.safeParse(draftRef.current);if(!parsed.success)throw new Error(parsed.error.issues[0]?.message||L("工程参数无效","Invalid project settings"));
-    const project = parsed.data, result = await onSave(project, revision.current); revision.current = result.revision; saved.current = JSON.stringify(project); try{sessionStorage.removeItem(cacheKey);}catch{} if (alive.current) setHistoryVersion(value => value + 1); return result;
+    const project = parsed.data, result = await onSave(project, revision.current); revision.current = result.revision; saved.current = directorProjectFingerprint(project); try{sessionStorage.removeItem(cacheKey);}catch{} if (alive.current) setHistoryVersion(value => value + 1); return result;
   }
   async function close() {
     if (lock.current) { if (recordAbort.current) { closing.current = true; recordAbort.current.abort(); } return; }

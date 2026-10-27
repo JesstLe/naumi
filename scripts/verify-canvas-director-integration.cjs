@@ -6,7 +6,11 @@ let checks=0;const eq=(a,b)=>{assert.deepEqual(a,b);checks++},ok=x=>{assert.ok(x
 const now='2026-10-27T00:00:00.000Z',project={version:1,name:'Director',panoramaArtworkId:'image',entities:[],cameras:[],activeCameraId:'camera',duration:2,keyframes:[]};
 const director={id:'director-one',projectKey:'tree:one',revision:3,title:'Director',x:10,y:20,width:420,height:280,project,outputs:[{artworkId:'image',kind:'image'}],deletedAt:null,createdAt:now,updatedAt:now};
 // Use the real main schema for valid engineering data in modified checks.
-if(!baseline){const p=load(['src/lib/director/project.ts']).newDirectorProject();p.panoramaArtworkId='image';director.project=p}
+if(!baseline){const rules=load(['src/lib/director/project.ts']),p=rules.newDirectorProject(),fp=rules.directorProjectFingerprint;
+ const reordered=JSON.parse(JSON.stringify(p,(_key,value)=>value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.keys(value).sort().reverse().map(key=>[key,value[key]])):value));
+ eq(JSON.stringify(p)!==JSON.stringify(reordered),true);eq(fp(p),fp(reordered));eq(fp(p)===fp({...p,name:'changed'}),false);
+ const entities=[p.entities[0],{...p.entities[0],id:'entity-two'}];eq(fp({...p,entities})===fp({...p,entities:[...entities].reverse()}),false);
+ p.panoramaArtworkId='image';director.project=p}
 const artwork={id:'image',origin:'canvas',source:'canvas-add',title:'Image',image:'/media/image.png',status:'completed',createdAt:now,groupId:'one',canvasX:0,canvasY:0};
 const input={works:[artwork],names:{},t:k=>k,readOnly:false,pinnedNode:null,textNodes:[],videoNodes:[],directorNodes:[director]};
 const projects=lib.canvasProjects(input);eq(projects[0].count,baseline?1:2);eq(projects[0].directorNodes?.length,baseline?undefined:1);
