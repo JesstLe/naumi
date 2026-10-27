@@ -3,9 +3,10 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import { createModelFixture } from "./model-config-fixture";
 import { fixtureConfig } from "./billing-unit-fixture";
+let cleanupOnFailure=async()=>{};
 
 async function main() {
-  let close = async () => {}, activeDigest = "", queries = 0, paid = 0, dropNext = false;
+  let close = async (_code=0) => {}, activeDigest = "", queries = 0, paid = 0, dropNext = false;
   const publications = new Map<string, unknown>();
   const f = await createModelFixture(async (req, res) => {
     const send = (status: number, body: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
@@ -28,6 +29,21 @@ async function main() {
     if (req.method === "POST") paid++;
     send(405, { error: "Generation forbidden" });
   });
+  let next:ReturnType<typeof spawn>|undefined,closing=false;
+  close=async(code=0)=>{
+    if(closing)return;closing=true;
+    if(next?.pid && next.exitCode===null){
+      if(process.platform==="win32")await new Promise(resolve=>spawn("taskkill",["/pid",String(next!.pid),"/T","/F"],{windowsHide:true,stdio:"ignore"}).once("exit",resolve));
+      else next.kill();
+    }
+    const db=await import("../src/lib/db");
+    await db.getPool().end();await f.cleanup();
+    await rm("output/model-management-fixture/fixture.json",{force:true});process.exit(code);
+  };
+  cleanupOnFailure=()=>close(1);
+  process.on("message",message=>{const control=message as {action?:string;runId?:string};if(control.action==="stop"&&control.runId===process.env.NAUMI_MODEL_UI_RUN_ID)void close();});
+  process.on("disconnect",()=>void close());
+  process.on("SIGINT",()=>void close());process.on("SIGTERM",()=>void close());
   process.env.PGOPTIONS = `-c search_path=${f.schemaName}`;
   process.env.NEXT_DIST_DIR = "output/model-management-fixture/next";
   process.env.NAUMI_VIDEO_WORKER = "0";
@@ -68,15 +84,7 @@ async function main() {
   const billing=createConfigRuntime({ pool: f.sql, ensureSchema: db.ensureSchema, initialize: async () => fixtureBilling });
   const beforeBilling=await billing.current();await billing.publish({id:crypto.randomUUID(),expectedVersion:beforeBilling.version,config:fixtureBilling,actor:"fixture",reason:"Enable isolated UI pricing"});
   await mkdir("output/model-management-fixture", { recursive: true });
-  const next = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", "54989"], { env: process.env, windowsHide: true, stdio: "inherit" });
-  let closing = false;
-  close = async () => {
-    if (closing) return; closing = true;
-    if (process.platform === "win32") await new Promise(resolve => spawn("taskkill", ["/pid", String(next.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" }).once("exit", resolve));
-    else next.kill();
-    await db.getPool().end(); await f.cleanup(); await rm("output/model-management-fixture/fixture.json", { force: true }); process.exit(0);
-  };
-  await writeFile("output/model-management-fixture/fixture.json", JSON.stringify({ control: f.origin, memberCookie: native.signUserSession("mvp-member@example.test", Date.now()), schemaName: f.schemaName }));
-  process.on("SIGINT", () => void close()); process.on("SIGTERM", () => void close());
+  next = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", "54989"], { env: process.env, windowsHide: true, stdio: "inherit" });
+  await writeFile("output/model-management-fixture/fixture.json", JSON.stringify({ control: f.origin, memberCookie: native.signUserSession("mvp-member@example.test", Date.now()), schemaName: f.schemaName,runId:process.env.NAUMI_MODEL_UI_RUN_ID }));
 }
-main().catch(e => { console.error(e); process.exitCode = 1; });
+main().catch(async e => { console.error(e);process.exitCode=1;await cleanupOnFailure(); });

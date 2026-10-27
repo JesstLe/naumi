@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
-import {chromium,expect} from "@playwright/test";
+import {chromium,expect as baseExpect} from "@playwright/test";
 async function main(){
  if(process.env.NAUMI_VERIFY_ISOLATED_DB!=="1")throw Error("Isolated fixture only");
  const f=JSON.parse(await readFile("output/model-management-fixture/fixture.json","utf8")),origin="http://127.0.0.1:54989";
  const browser=await chromium.launch({channel:"msedge",headless:true}),context=await browser.newContext({viewport:{width:1440,height:1050},acceptDownloads:true});
- const page=await context.newPage();page.setDefaultTimeout(45000);expect.configure({timeout:45000});const errors:string[]=[];page.on("pageerror",e=>errors.push(e.message));
+ const expect=baseExpect.configure({timeout:45000});
+ const page=await context.newPage();page.setDefaultTimeout(45000);const errors:string[]=[];page.on("pageerror",e=>errors.push(e.message));
  try{
   assert.equal((await context.request.post(origin+"/api/admin/login",{data:{password:"MvpFixture2026!"}})).status(),200);await context.addCookies([{name:"nv_user",value:f.memberCookie,domain:"127.0.0.1",path:"/"}]);
   const before=await(await context.request.get(origin+"/api/admin/bi/model-config")).json();

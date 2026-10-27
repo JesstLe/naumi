@@ -4,6 +4,7 @@ import path from "node:path";
 const ts=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:true,tsx:true});
 const node=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:false,tsx:false});
 export const refactorCases=[
+ node('model-ui-runner','foundation','scripts/verify-model-ui-runner.mjs','MODEL_UI_RUNNER=PASS MODE=MODIFIED'),
  node('supplier-library','foundation','scripts/verify-supplier-library-refactor.mjs','SUPPLIER_LIBRARY_REFACTOR=PASS',['--static']),
  node('model-management','foundation','scripts/verify-model-management-refactor.mjs','MODEL_MANAGEMENT_REFACTOR=PASS',['--static']),
  node('admin-settings','foundation','scripts/verify-admin-settings-refactor.mjs','ADMIN_SETTINGS=PASS',['--static']),
