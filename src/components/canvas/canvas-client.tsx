@@ -11,6 +11,7 @@ import {useCanvasSceneActions} from "./use-canvas-scene-actions";
 import {useCanvasScene} from "./use-canvas-scene";
 import {useCanvasSelection} from "./use-canvas-selection";
 import {useCanvasNodeOperations} from "./use-canvas-node-operations";
+import {useCanvasClipboard} from "./use-canvas-clipboard";
 import {useCanvasTextTasks} from "./use-canvas-text-tasks";
 import {CanvasSelect} from "./composer-controls";
 import {useCanvasWorkspacePages} from "./use-canvas-workspace-pages";
@@ -34,7 +35,7 @@ import {canvasDocumentFetch} from "@/lib/canvas/document-scope";
 import type {CanvasAssistantContext} from "@/lib/canvas/assistant-session";
 import { CachedImage } from "@/components/cached-image";
 import { browserImageArchive } from '@/lib/browser-image-archive';
-import { cachedImageBlob, imageCacheSource, ImageCacheDenied, readBrowserImage } from '@/lib/browser-image-cache';
+import { cachedImageBlob, imageCacheSource, ImageCacheDenied } from '@/lib/browser-image-cache';
 import { useFeatureAccess, FeatureVisible } from "@/lib/feature-access/client";
 
 
@@ -47,7 +48,6 @@ import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 import { copyText } from "@/lib/clipboard";
 import { createImageDownloadName } from "@/lib/download";
-import { clipboardImageFiles } from "@/lib/canvas/clipboard-files";
 import { CANVAS_RATIO_OPTIONS, CANVAS_MAX_COUNT, normalizeCanvasRatio, normalizeCanvasResolution, normalizeCanvasCount, normalizeCanvasQuality, canvasModelParameters } from "@/lib/canvas/generation-parameters";
 import { canvasDockLayout, canvasOverlaySafeArea, type NodeScreen } from "@/lib/canvas/dock-layout";
 import {canvasProjects,canvasProjectMonths,type CanvasProject as Project,type CanvasWorkflowKey} from "@/lib/canvas/project-catalog";
@@ -106,7 +106,6 @@ import { CanvasRenderLayerGuard } from './canvas-render-layer-guard';
 import { CanvasEdgeHoverHint, type CanvasEdgeHoverHandle } from './canvas-edge-hover-hint';
 import { canvasZoomState } from '@/lib/canvas/viewport-state';
 import {CANVAS_MIN_ZOOM,CANVAS_MAX_ZOOM} from "@/lib/canvas/view-controls";
-import {CANVAS_MODAL_SELECTOR,isEditableClipboardTarget} from "@/lib/canvas/input-target";
 import {useCanvasViewControls} from "./use-canvas-view-controls";
 import {CanvasViewToolbar} from "./view-toolbar";
 import {CanvasToolButtons} from "./tool-buttons";
@@ -225,43 +224,7 @@ const ANCHOR_TITLE: Record<string, string> = {
 // 让滚轮、触控板、按钮和百分比输入不再受产品层的人为缩放档位限制。
 
 
-const CANVAS_NODE_CLIPBOARD_TYPE = "application/x-naumi-canvas-node";
-// Persistent controls block their own events; only modal layers block the canvas.
 
-
-function canvasNodeIdFromClipboard(data: DataTransfer): string | null {
-  const direct = data.getData(CANVAS_NODE_CLIPBOARD_TYPE).trim();
-  if (direct) return direct;
-  const html = data.getData("text/html");
-  const matched = html.match(/data-naumi-canvas-node="([^"]+)"/i);
-  if (!matched?.[1]) return null;
-  try {
-    return decodeURIComponent(matched[1]);
-  } catch {
-    return null;
-  }
-}
-
-function escapeClipboardHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
-
-function setCanvasNodeClipboardData(data: DataTransfer, nodeId: string, title: string) {
-  try {
-    data.setData(CANVAS_NODE_CLIPBOARD_TYPE, nodeId);
-  } catch {
-    // Safari may reject non-standard clipboard MIME types; text/html remains portable.
-  }
-  data.setData("text/plain", title);
-  data.setData(
-    "text/html",
-    `<span data-naumi-canvas-node="${encodeURIComponent(nodeId)}">${escapeClipboardHtml(title)}</span>`
-  );
-}
 
 
 
@@ -548,26 +511,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const extraPreviewUrls = useRef(extraPreviews); extraPreviewUrls.current = extraPreviews;
   const extraInputRef = useRef<HTMLInputElement>(null);
   // 节点剪贴板(复制/粘贴节点)+ 上传作根节点的文件 input
-  const nodeClipRef = useRef<Artwork | null>(null);
-  const genericNodeClipRef=useRef<{marker:string;ids:string[];owner:string}|null>(null);
   const pendingNodeSelectionRef=useRef<{ids:string[];projectKey:string;owner:string}|null>(null);
-  // window copy 只消费紧邻本次画布 Cmd/Ctrl+C 的一次事件，不能让陈旧节点
-  // 覆盖后续普通网页文本复制。
-  const canvasCopyIntentRef = useRef<string | null>(null);
-  const canvasCopyHandlerRef = useRef<(event: ClipboardEvent) => void>(() => {});
-  const canvasPasteHandlerRef = useRef<(event: ClipboardEvent) => void>(() => {});
-  const [hasClip, setHasClip] = useState(false);
-  useEffect(() => {
-    // The portable clipboard already persists owned node identities. Restore its
-    // availability after a project navigation/reload, and never carry another
-    // account's in-memory clipboard into the next account.
-    nodeClipRef.current = null;
-    genericNodeClipRef.current = null;
-    canvasCopyIntentRef.current = null;
-    const clip = readGenericNodeClip();
-    if (clip) genericNodeClipRef.current = clip;
-    setHasClip(!!clip);
-  }, [user?.email]);
   const [copyTip, setCopyTip] = useState(false);
   const rootUploadRef = useRef<HTMLInputElement>(null);
   // 空白右键「上传图片/添加节点」时记下落点(画布坐标)与挂靠的当前项目根,供 uploadRoot 用
@@ -580,18 +524,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const dragDepthRef = useRef(0);
   const [fileDragOver, setFileDragOver] = useState(false);
   const [nodeTypeMenu, setNodeTypeMenu] = useState<{ x: number; y: number; cx: number; cy: number } | null>(null);
-  // paste 必须挂在 window：点击 React Flow 空白处后 activeElement 可能仍是 body，
-  // 只给 canvas div 绑定 onPaste 会漏掉系统截图和内部节点粘贴。
-  useEffect(() => {
-    const onCopy = (event: ClipboardEvent) => canvasCopyHandlerRef.current(event);
-    const onPaste = (event: ClipboardEvent) => canvasPasteHandlerRef.current(event);
-    window.addEventListener("copy", onCopy);
-    window.addEventListener("paste", onPaste);
-    return () => {
-      window.removeEventListener("copy", onCopy);
-      window.removeEventListener("paste", onPaste);
-    };
-  }, []);
   function resetImportScope() {
     imageImportOwner.reset();
     uploadCtxRef.current = null;
@@ -3238,59 +3170,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if(scope.viewCurrent())selectCopiedNodes(result,true);
     }catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:L("复制节点失败，请重试","Could not duplicate this node. Please try again."));}
   }
-  /**
-   * 统一处理画布 paste：系统 image/* 永远优先导入；输入框纯文本交给浏览器；
-   * 其余场景只有确认是本画布节点格式时才执行内部节点粘贴。
-   */
-  function handleCanvasPaste(event: ClipboardEvent) {
-    if (event.target instanceof Element && event.target.closest('[data-canvas-hotkeys-blocked="true"], [data-canvas-hotkeys-scope="assistant"]')) return;
-    if (
-      !ready ||
-      !user ||
-      readOnly ||
-      browsing ||
-      loading ||
-      canvasShortcutLayerOpen ||
-      document.querySelector(CANVAS_MODAL_SELECTOR)
-    ) {
-      return;
-    }
-    const data = event.clipboardData;
-    if (!data) return;
-    if (!isEditableClipboardTarget(event.target)) {
-      const box = canvasAreaRef.current?.getBoundingClientRect();
-      const point = rfRef.current?.screenToFlowPosition({ x: (box?.left ?? 0) + (box?.width ?? 0) / 2, y: (box?.top ?? 0) + (box?.height ?? 0) / 2 }, { snapToGrid: false }) || { x: 0, y: 0 };
-      if (workflowPaste.paste(data.getData("text/html"), point)) { event.preventDefault(); return; }
-    }
-    const files = clipboardImageFiles(data);
-    if (files.length) {
-      event.preventDefault();
-      const box = canvasAreaRef.current?.getBoundingClientRect();
-      const center = rfRef.current?.screenToFlowPosition({
-        x: (box?.left ?? 0) + (box?.width ?? 0) / 2,
-        y: (box?.top ?? 0) + (box?.height ?? 0) / 2,
-      }, { snapToGrid: false }) ?? { x: 0, y: 0 };
-      uploadCtxRef.current = {
-        parentId: activeRootId(), x: center.x - NODE_W / 2, y: center.y - NODE_H / 2,
-      };
-      const transfer = new DataTransfer();
-      for (const file of files) transfer.items.add(file);
-      uploadRoot(transfer.files);
-      return;
-    }
-    if (isEditableClipboardTarget(event.target)) return;
-    const nodeId = canvasNodeIdFromClipboard(data);
-    const generic=readGenericNodeClip(nodeId||undefined);if(nodeId&&generic){event.preventDefault();void duplicateCanvasNodes(generic.ids);return;}
-    const copied = nodeClipRef.current;
-    if (!copied) return;
-    if (nodeId !== copied.id) return;
-    const box = canvasAreaRef.current?.getBoundingClientRect();
-    if (!box) return;
-    event.preventDefault();
-    void pasteNode();
-  }
-  canvasPasteHandlerRef.current = handleCanvasPaste;
-
   // DOM FileList/viewport capture stays at the edge; queue, transport and saved
   // receipt synchronization are owned by the shared importer.
   function canvasImportContext():CanvasImageImportContext {
@@ -3937,99 +3816,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setCopyTip(true);
     setTimeout(() => setCopyTip(false), 1500);
   }
-  // 复制图片到系统剪贴板(剪贴板只可靠支持 PNG,非 PNG 先转码;失败退回复制图片链接)
-  async function copyImageToClipboard(image: string) {
-    try {
-      let blob = await readBrowserImage(image);
-      if (blob.type !== "image/png") {
-        const bmp = await createImageBitmap(blob);
-        const c = document.createElement("canvas");
-        c.width = bmp.width;
-        c.height = bmp.height;
-        c.getContext("2d")?.drawImage(bmp, 0, 0);
-        blob = await new Promise<Blob>((resolve) =>
-          c.toBlob((b) => resolve(b as Blob), "image/png")
-        );
-      }
-      // 图片写剪贴板仅安全上下文(HTTPS)可用;HTTP 下抛错 → 落到下面复制链接兜底
-      if (!navigator.clipboard?.write) throw new Error("no clipboard");
-      await navigator.clipboard.write([
-        new ClipboardItem({ "image/png": blob }),
-      ]);
-      showCopyTip();
-    } catch {
-      // 兜底:复制图片链接(copyText 内含 HTTP execCommand 兜底)
-      if (await copyText(cdnUrl(image))) showCopyTip();
-    }
-  }
-  function handleCanvasCopy(event: ClipboardEvent) {
-    const generic=genericNodeClipRef.current;
-    if(generic&&canvasCopyIntentRef.current===generic.marker&&!isEditableClipboardTarget(event.target)&&event.clipboardData){event.preventDefault();setCanvasNodeClipboardData(event.clipboardData,generic.marker,L("画布节点","Canvas nodes"));canvasCopyIntentRef.current=null;return;}
-
-    const copied = nodeClipRef.current;
-    const intendedNodeId = canvasCopyIntentRef.current;
-    canvasCopyIntentRef.current = null;
-    if (
-      !copied ||
-      intendedNodeId !== copied.id ||
-      selected?.id !== copied.id ||
-      isEditableClipboardTarget(event.target)
-    ) {
-      return;
-    }
-    const data = event.clipboardData;
-    if (!data) return;
-    const title = copied.title || t("canvas.imageNode");
-    event.preventDefault();
-    setCanvasNodeClipboardData(data, copied.id, title);
-  }
-  canvasCopyHandlerRef.current = handleCanvasCopy;
-
-  async function writeCanvasNodeClipboard(a: Pick<Artwork,"id"|"title">) {
-    const title = a.title || t("canvas.imageNode");
-    const html = `<span data-naumi-canvas-node="${encodeURIComponent(a.id)}">${escapeClipboardHtml(title)}</span>`;
-    try {
-      if (navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
-        await navigator.clipboard.write([
-          new ClipboardItem({
-            "text/plain": new Blob([title], { type: "text/plain" }),
-            "text/html": new Blob([html], { type: "text/html" }),
-          }),
-        ]);
-        return;
-      }
-    } catch {
-      // Safari/HTTP/权限失败时通过同步 copy 事件写入同样的 HTML 标记。
-    }
-    let wroteMarker = false;
-    const onCopy = (event: ClipboardEvent) => {
-      if (!event.clipboardData) return;
-      wroteMarker = true;
-      event.preventDefault();
-      setCanvasNodeClipboardData(event.clipboardData, a.id, title);
-    };
-    document.addEventListener("copy", onCopy, { capture: true, once: true });
-    const copied = document.execCommand("copy");
-    if (!wroteMarker) document.removeEventListener("copy", onCopy, true);
-    if (!copied && !wroteMarker) await copyText(title);
-  }
-
-  function copyNodeToClip(a: Artwork, writeSystemClipboard = false) {
-    genericNodeClipRef.current=null;nodeClipRef.current = a;
-    setHasClip(true);
-    if (writeSystemClipboard) void writeCanvasNodeClipboard(a);
-  }
-  function copyCanvasSelection(ids:string[]){
-    if(!user||!ids.length)return;
-    const wanted=Array.from(new Set(ids)).filter(id=>videoNodesStore.getNode(id)||textNodesRef.current.some(node=>node.id===id)||(works||[]).some(node=>node.id===id));if(!wanted.length)return;
-    const clip={marker:`clip-${browserRandomUUID()}`,ids:wanted,owner:user.email.toLowerCase()};genericNodeClipRef.current=clip;nodeClipRef.current=null;setHasClip(true);canvasCopyIntentRef.current=clip.marker;
-    try{localStorage.setItem(`naumi:canvas-node-clipboard:${user.email.toLowerCase()}`,JSON.stringify(clip));}catch{}
-    void writeCanvasNodeClipboard({id:clip.marker,title:L("画布节点","Canvas nodes")});
-  }
-  function readGenericNodeClip(marker?:string){
-    let clip=genericNodeClipRef.current;try{if(!clip&&user)clip=JSON.parse(localStorage.getItem(`naumi:canvas-node-clipboard:${user.email.toLowerCase()}`)||"null");}catch{}
-    return clip&&clip.owner===user?.email.toLowerCase()&&typeof clip.marker==="string"&&Array.isArray(clip.ids)&&clip.ids.length>0&&clip.ids.length<=200&&clip.ids.every(id=>typeof id==="string")&&(!marker||clip.marker===marker)?clip:null;
-  }
+  const clipboard=useCanvasClipboard({
+    owner:user?.email,account:canvasAccountRef.current,workspace:canvasArtworkDocument.scope.workspace,current:canvasArtworkDocument.scope.documentCurrent,
+    imageLabel:t("canvas.imageNode"),selectionLabel:L("画布节点","Canvas nodes"),
+    state:()=>({ready,readOnly,browsing,loading,blocked:canvasShortcutLayerOpen,selected:selected||null,selectedId,selectedTextId,multiSel}),
+    contains:id=>!!videoNodesStore.getNode(id)||textNodesRef.current.some(node=>node.id===id)||(works||[]).some(node=>node.id===id),
+    isVideo:id=>!!videoNodesStore.getNode(id),hasCanvas:()=>!!canvasAreaRef.current,
+    center:()=>{const box=canvasAreaRef.current?.getBoundingClientRect();return rfRef.current?.screenToFlowPosition({x:(box?.left??0)+(box?.width??0)/2,y:(box?.top??0)+(box?.height??0)/2},{snapToGrid:false})??{x:0,y:0};},
+    workflow:(html,point)=>workflowPaste.paste(html,point),
+    images:(files,point)=>{uploadCtxRef.current={parentId:activeRootId(),x:point.x-NODE_W/2,y:point.y-NODE_H/2};const data=new DataTransfer();for(const file of files)data.items.add(file);uploadRoot(data.files);},
+    duplicateArtwork:duplicateArt,duplicateNodes:duplicateCanvasNodes,copied:()=>flashTip(t("canvas.copied")),imageCopied:showCopyTip,
+  });
+  const {hasClip}=clipboard;
   function selectCopiedNodes(result:{idMap:Record<string,string>;projectKey:string},focusSingle=false) {
     const ids=Object.values(result.idMap);setCreatingNew(false);setActiveKey(result.projectKey);setBrowsing(false);
     canvasSelection.patch({selectedId:focusSingle&&ids.length===1?ids[0]:null,selectedTextId:null,selectedPendId:null,multiSel:ids});
@@ -4041,10 +3839,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     try{const result=await canvasNodeOperations.copy({ids,projectKey:!browsing&&!creatingNew?active?.key:undefined});if(scope.viewCurrent())selectCopiedNodes(result);}
     catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:"复制节点失败");}
   }
-  async function pasteNode() {
-    if(nodeClipRef.current){await duplicateArt(nodeClipRef.current);return;}
-    const clip=readGenericNodeClip();if(clip){await duplicateCanvasNodes(clip.ids);return;}
-  }
+
 
   const canvasDrag=useCanvasDrag({
     scope:canvasHistory.scope,selected:multiSel,nodes:rfNodes,artworks:active?.members||[],setNodes:setRfNodes,hold:holdPositions,
@@ -4125,17 +3920,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     switch(action.kind){
       case "tool":viewControls.selectTool(action.tool);return;
       case "add-text":{const center=centerScreen();addTextNodeAtScreen(center.x,center.y);return;}
-      case "copy":{
-        canvasCopyIntentRef.current=null;const native=window.getSelection();
-        if((multiSel.length>1||selectedTextId||selectedId&&videoNodesStore.getNode(selectedId))&&(!native||native.isCollapsed)){
-          copyCanvasSelection(multiSel.length?multiSel:[selectedTextId||selectedId!]);flashTip(t("canvas.copied"));return;
-        }
-        if(!selected||(native&&!native.isCollapsed))return;
-        canvasCopyIntentRef.current=selected.id;
-        window.setTimeout(()=>{if(canvasCopyIntentRef.current===selected.id)canvasCopyIntentRef.current=null;},1000);
-        copyNodeToClip(selected,true);flashTip(t("canvas.copied"));return;
-      }
-      case "paste-media":canvasCopyIntentRef.current=null;void pasteNode();return;
+      case "copy":clipboard.copyShortcut();return;
+      case "paste-media":clipboard.clearIntent();void clipboard.paste();return;
       case "undo":void doUndo();return;
       case "redo":void doRedo();return;
       case "zoom-in":void viewControls.zoomIn(160);return;
@@ -4149,7 +3935,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   useCanvasKeyboard({state:()=>({readOnly,browsing,blocked:canvasShortcutLayerOpen,busy:historyBusyRef.current||cuttingEdgesRef.current.size>0,tool:canvasTool,
     selectedId,selectedTextId,selectedEdge:!!selectedEdge,selectedGenerating,multiSel,
-    mediaCopyIntent:!!canvasCopyIntentRef.current&&(nodeClipRef.current?.id===canvasCopyIntentRef.current||genericNodeClipRef.current?.marker===canvasCopyIntentRef.current)}),perform:performCanvasShortcut});
+    mediaCopyIntent:clipboard.hasMediaIntent()}),perform:performCanvasShortcut});
 
 
 
@@ -4700,7 +4486,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
               {mixedNativeSelection&&!readOnly&&<BatchSelectionToolbar label={L("节点操作","Node actions")} selectionLabel={L(`已选择 ${multiSel.length} 个节点`,`${multiSel.length} nodes selected`)} clearLabel={t("canvas.batchClear")} testId="mixed-node-batch-bar" onClear={()=>clearCanvasSelection(true)} primaryAction={batchRunButton(L(`批量运行 (${selectionRunCount})`, `Run selection (${selectionRunCount})`))}>
                 {selectedTextBatchNodes.length > 0 && selectedBatchArts.length > 0 && <FeatureVisible feature="generate"><button type="button" className="canvas-ui-action rounded-lg px-3 py-2 text-xs" disabled={!nodeSettingsReady || textImageSubmitting || selectedTextBatchNodes.some(node => isNodeLocked(node.id) || node.status === "generating")} onClick={() => openTextImageMenu(selectedTextBatchNodes.map(node => node.id), selectedBatchIds)}><ImageIcon className="mr-1.5 inline h-4 w-4" />{t("canvas.genImages")}</button></FeatureVisible>}
-                <button type="button" className="canvas-ui-action rounded-lg px-3 py-2 text-xs" onClick={()=>copyCanvasSelection(multiSel)}>{t("canvas.copyNode")}</button>
+                <button type="button" className="canvas-ui-action rounded-lg px-3 py-2 text-xs" onClick={()=>clipboard.copySelection(multiSel)}>{t("canvas.copyNode")}</button>
                 <button type="button" className="canvas-ui-action rounded-lg px-3 py-2 text-xs" disabled={historySaving||multiSel.some(isNodeLocked)} onClick={()=>void duplicateCanvasNodes(multiSel)}>{t("canvas.duplicate")}</button>
                 <button type="button" className="canvas-ui-action rounded-lg px-3 py-2 text-xs" disabled={historySaving||multiSel.some(isNodeLocked)} onClick={()=>batchDelete(multiSel)}>{t("canvas.delete")}</button>
               </BatchSelectionToolbar>}
@@ -5050,7 +4836,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         <Item label={L("属性设置","Properties")} disabled={readOnly} onClick={()=>{setSelectedId(videoNode.id);openProperties();}}/>
                         {nodeManagementItems(videoNode.id).map(item=><Item key={item.id} label={item.label} disabled={item.disabled} onClick={item.onSelect}/>)}
                         <Sep/>
-                        <Item label={t("canvas.copyNode")} onClick={()=>copyCanvasSelection(multiSel.includes(videoNode.id)?multiSel:[videoNode.id])}/>
+                        <Item label={t("canvas.copyNode")} onClick={()=>clipboard.copySelection(multiSel.includes(videoNode.id)?multiSel:[videoNode.id])}/>
                         <Item label={t("canvas.duplicate")} disabled={mutationDisabled} onClick={()=>void duplicateCanvasNodes(multiSel.includes(videoNode.id)?multiSel:[videoNode.id])}/>
                         <Item label={t("canvas.delete")} disabled={mutationDisabled} danger onClick={()=>batchDelete(multiSel.includes(videoNode.id)?multiSel:[videoNode.id])}/>
                       </>
@@ -5060,7 +4846,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         <Item label={t("canvas.toolbar.productCopy")} disabled={mutationDisabled || assistBusy} onClick={() => setProductPicker({ textNodeIds: [textNode.id] })} />
                         <FeatureVisible feature="generate"><Item label={t("canvas.toolbar.textToImages")} disabled={mutationDisabled || textNode.status === "generating"} onClick={() => openTextImageMenu([textNode.id])} /></FeatureVisible>
                         <Sep />
-                        <Item label={t("canvas.copyNode")} onClick={()=>copyCanvasSelection(multiSel.includes(textNode.id)?multiSel:[textNode.id])}/>
+                        <Item label={t("canvas.copyNode")} onClick={()=>clipboard.copySelection(multiSel.includes(textNode.id)?multiSel:[textNode.id])}/>
                         <Item label={t("canvas.duplicate")} disabled={mutationDisabled} onClick={()=>void duplicateCanvasNodes(multiSel.includes(textNode.id)?multiSel:[textNode.id])}/>
                         <Item label={t("canvas.copyToClipboard")} disabled={!textNode.content} onClick={() => void copyText(textNode.content).then(ok => ok && showCopyTip())} />
                         <Item label={L("文字样式", "Text style")} disabled={readOnly} onClick={openProperties} />
@@ -5120,12 +4906,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                           <Item
                             label={t("canvas.copyNode")}
                             hk={shortcut("C")}
-                            onClick={() => copyNodeToClip(node, true)}
+                            onClick={() => clipboard.copyArtwork(node, true)}
                           />
                         )}
                         <Item
                           label={t("canvas.copyImage")}
-                          onClick={() => void copyImageToClipboard(node.image)}
+                          onClick={() => void clipboard.copyImage(node.image)}
                         />
                         {!readOnly && (
                           <Item
@@ -5150,7 +4936,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                             label={t("canvas.paste")}
                             hk={shortcut("V")}
                             disabled={!hasClip}
-                            onClick={() => void pasteNode()}
+                            onClick={() => void clipboard.paste()}
                           />
                         )}
                         <Sep />
@@ -5206,7 +4992,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                           label={t("canvas.paste")}
                           hk={shortcut("V")}
                           disabled={readOnly || !hasClip}
-                          onClick={() => void pasteNode()}
+                          onClick={() => void clipboard.paste()}
                         />
                       </>
                     )}
@@ -5224,7 +5010,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             onSettings={()=>setVideoDockAdvancedId(current=>current===selectedVideo.id?null:selectedVideo.id)}
             onHistory={()=>setVideoHistoryId(selectedVideo.id)}
             onRename={()=>{setNodeRenameValue(selectedVideo.title);setRenamingNodeId(selectedVideo.id);}}
-            onCopy={()=>copyCanvasSelection([selectedVideo.id])} onDuplicate={()=>void duplicateCanvasNodes([selectedVideo.id])}
+            onCopy={()=>clipboard.copySelection([selectedVideo.id])} onDuplicate={()=>void duplicateCanvasNodes([selectedVideo.id])}
             onDownload={()=>{const result=videoInputChoices.find(choice=>choice.nodeId===selectedVideo.id&&choice.available);if(result)downloadVideo(result.value);}}
             onDelete={()=>batchDelete([selectedVideo.id])} onProperties={openProperties} management={nodeManagementItems(selectedVideo.id)}/>}
           {selected?.videoUrl&&selectedBatchArts.length<=1&&multiSel.length<=1&&!propertiesOpen&&topbarStyle&&<VideoNodeToolbar
@@ -5232,7 +5018,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             readOnly={readOnly} locked={isNodeLocked(selected.id)} busy={!nodeSettingsReady||historySaving} hasResult hasHistory={false}
             settingsLabel={L("视频处理","Video tools")} onSettings={()=>extractVideoToCanvas(selected.id,{action:'trim'})} onHistory={()=>{}}
             onRename={()=>{setNodeRenameValue(selected.title);setRenamingNodeId(selected.id);}}
-            onCopy={()=>copyCanvasSelection([selected.id])} onDuplicate={()=>void duplicateArt(selected)} onDownload={()=>downloadVideo(selected.videoUrl!)}
+            onCopy={()=>clipboard.copySelection([selected.id])} onDuplicate={()=>void duplicateArt(selected)} onDownload={()=>downloadVideo(selected.videoUrl!)}
             onDelete={()=>void deleteTree(selected.id)} onProperties={openProperties} management={nodeManagementItems(selected.id)}/>}
           {/* 顶部图像工具条：统一使用16px Lucide线性图标，颜色继承画布主题。 */}
           {((selected&&!selected.videoUrl) || selectedPend) &&
@@ -5458,8 +5244,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   { id: "video", icon: Video, label: videoNodeCreationReady?t("canvas.toolbar.video"):videoNodeCreateLabel, hint: t("canvas.toolbar.videoHint"),
                     disabled: readOnly||videoNodeCreateDisabled, onSelect: () => { void openVideoNodeFromSelection(); } },
                   ...(selected ? [
-                    {id:"copy-node",icon:Copy,label:t("canvas.copyNode"),onSelect:()=>copyNodeToClip(selected,true)},
-                    {id:"copy-image",icon:ImageIcon,label:t("canvas.copyImage"),onSelect:()=>void copyImageToClipboard(selected.image)},
+                    {id:"copy-node",icon:Copy,label:t("canvas.copyNode"),onSelect:()=>clipboard.copyArtwork(selected,true)},
+                    {id:"copy-image",icon:ImageIcon,label:t("canvas.copyImage"),onSelect:()=>void clipboard.copyImage(selected.image)},
                     {id:"duplicate-node",icon:Plus,label:t("canvas.duplicate"),disabled:readOnly,onSelect:()=>void duplicateArt(selected)},
                     ...nodeManagementItems(selected.id),
                     {id:"properties",icon:SlidersHorizontal,label:L("属性设置","Properties"),onSelect:openProperties},
