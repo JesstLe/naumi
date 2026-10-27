@@ -82,6 +82,9 @@ export function exactRatioPixels(
   ratio: string,
   model: string,
 ): { width: number; height: number } | undefined {
+  // This is a custom-ratio fallback, not an override for a named ratio that an
+  // administrator deliberately left out of the channel's allowed list.
+  if (Object.hasOwn(EXACT_SIZES, ratio)) return;
   let size: string | undefined;
   try { size = exactImageRequestSize(ratio, model, true); }
   catch (error) { if (error instanceof ExactImageSizeError) return; throw error; }
