@@ -1,6 +1,6 @@
 # 渐进迁移与集中验收台账
 
-2026-10-27 R6H：模型管理目录/发布会话与12类编辑器分责，单一带类型editor替代独立弹窗flags，原RSA helper同函数兼容；完整旧33/新53、18HTML与原POST精确同，late-read旧STALE→新FRESH、卸载后原pending保留且GET0，真实PG五组/类型/结构通过。历史参数fixture旧新同失败已修准备，生产CAS不改；四产物/固定core/远端以DELIVERY为准。同步后第2模块，资料大面板/测试资产/长时负载/依赖与最终整合继续，不合main不部署，整体active。见[R6H记录](../changes/2026-10-27-refactor-model-management-r6h.md)。
+2026-10-27 R6H：模型管理目录/发布会话与12类编辑器分责，单一带类型editor替代独立弹窗flags，原RSA helper同函数兼容；完整旧33/新53、18HTML与原POST精确同，late-read旧STALE→新FRESH、卸载后原pending保留且GET0，真实PG五组/类型/结构通过。历史参数fixture旧新同失败已修准备，生产CAS不改；固定1bd07c79 core28/28、最终浏览器53/18及tsc/lint通过；17原函数/1476后端字节不变、SCC0。四产物/副本回滚/远端以DELIVERY为准。同步后第2模块，资料大面板/测试资产/长时负载/依赖与最终整合继续，不合main不部署，整体active。见[R6H记录](../changes/2026-10-27-refactor-model-management-r6h.md)。
 
 
 2026-10-27 R6G：系统设置1971→201行，接口/登录支付/站点内容/账号积分面板各有草稿；共享会话只持安全快照和原提交。RSA三函数/徽标/导航原文保持，原输入/原payload/HTTPfallback不变；跨面板保存不清未保存草稿，旧会话加密continuation不POST，安全回包保留GET独有mode。完整旧57/新59、15HTML同、真实handler/PG36、相邻用量30→31及tsc/lint通过；固定5f31890a core27/27、runner12/68、最终类型/结构通过；四产物/回滚/提交以DELIVERY为准。同步后第1模块，model-management/测试资产/长时负载/依赖和最终整合继续，整体active、不合main不部署。见[R6G记录](../changes/2026-10-27-refactor-admin-settings-r6g.md)。

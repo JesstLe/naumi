@@ -31,3 +31,13 @@
 ## 原失败原样保留
 
 首个 tsc 缺迁移后 Search import 已修；首个浏览器基线反例验证后旧页面版本故意过时，下一独立用例未刷新，造成 fixture CAS 失败，已独立重载。扩展故障样本时直接 destroy socket 被 Chromium 传输层同编号重试掩盖；现采用真实服务端完成后丢弃浏览器响应的明确 fault，保留失败日志。基线首个 tsx CLI --tsconfig 调用准备失败后改为已用 Node --import tsx。上述失败没有改写为PASS。
+
+## 固定源码验收
+
+被测固定实现 `1bd07c79b7f9b7a3e0e45b66784e482b8e417718`，core 文件摘要 `f1a45fbcd36f117bbb308295c3c02329b19f065a0c32c02c1859a0f2a554425f`：28/28 PASS，failed=0、not-run=0、exit0。新增模型管理 static 14 检查仅为真实目标编译与纯编辑器转换，不冒充浏览器、API 或 PG。固定源码浏览器仍为 53 检查/18 精确 HTML/20 原 POST 对照，tsc 与仅本轮 TS 文件 lint 均空输出 exit0。
+
+结构检查：入口 444→64 行、80,790→9,219 字节，页面 state hooks 24→4；17 个原顶层 helper/编辑器函数正文原字节保持，原 credential 与 ProviderEditor 两函数正文保持。1,476 个原后端/路由/服务文件字节精确不变；emitted 静态/全导入环均0。实际目标浏览器 bundle 不再引入 ProviderEditor。
+
+自有 PG 容器已按 task label/回环端口核对，其他连接0、随机用户schema0后停止并删除，自有端口关闭；没有操作其他容器。浏览器、loopback和各suite连接均已关闭。
+
+随后仅更新文档，最终 commit 与上述实现 SHA 分开登记，产品/服务/验证脚本字节须在最终封存逐一确认。独立副本回滚将恢复原 4507 文件hash与旧33检查/18HTML行为，实际工作区保留新代码；最终四产物与远端观察以 DELIVERY 为准。
