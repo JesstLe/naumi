@@ -436,6 +436,7 @@ def main(argv=None):
     parser.add_argument('action', choices=['check', 'begin', *STAGES, 'status', 'publish47-nas', 'publish47-saas', 'publish47-video-family', 'abort47-video-family', 'bind47-capacity', 'publish47-imagegen-simplify', 'publish47-no-user', 'publish103-refactor'])
     parser.add_argument('--config', type=pathlib.Path)
     parser.add_argument('--review', type=pathlib.Path)
+    parser.add_argument('--resume-review', type=pathlib.Path)
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--plan', type=pathlib.Path)
     parser.add_argument('--snapshot', type=pathlib.Path)
@@ -450,9 +451,14 @@ def main(argv=None):
                 'ABORT_REVIEW_AND_APPLY_ONLY_FOR_ABORT_ACTION')
         if a.action == 'publish103-refactor':
             require(os.name == 'posix' and a.config is not None, 'LIVE_103_REFACTOR_CONFIG_REQUIRED')
-            from release103_refactor import main as publish103
-            publish103(a.config)
+            if a.resume_review is not None:
+                from resume103_refactor import main as resume103
+                resume103(a.config,a.resume_review)
+            else:
+                from release103_refactor import main as publish103
+                publish103(a.config)
             return 0
+        require(a.resume_review is None,'RESUME_REVIEW_ONLY_FOR_103_REFACTOR')
         if a.action == 'abort47-video-family':
             require(os.name == 'posix' and a.config is not None and a.review is not None,
                     'LIVE_VIDEO_FAMILY_ABORT_CONFIG_AND_REVIEW_REQUIRED')
