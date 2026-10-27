@@ -5,7 +5,7 @@ import type { CanvasVideoNode } from "../canvas/video-node-schema";
 export function videoBatchQuote(quote: PublicQuote | null, count: number): PublicQuote | null {
   return quote ? { ...quote, quantity: count, credits: quote.credits * count, reserveCredits: quote.reserveCredits * count, authorizedCredits: quote.authorizedCredits === undefined ? undefined : quote.authorizedCredits * count } : null;
 }
-type Draft = Pick<CanvasVideoNode, "title" | "config" | "inputs"> & { expectedRevision: number };
+import type {VideoNodeDraft as Draft} from "./canvas-draft";
 type BatchRun = { nodes: { id: string; status: string; error?: string | null; taskId?: string | null }[] };
 type Receipt = { draft: string; body: { expectedRevision: number; idempotencyKey: string; count: number; billingVersion?: number; billingCredits?: number } };
 const fingerprint = (draft: Draft) => JSON.stringify({ title: draft.title, config: draft.config, inputs: draft.inputs });

@@ -1,6 +1,7 @@
 import {canvasArtworkFieldsSchema} from "./artwork-write";
 import { z } from "zod";
 import { nodeSettingsSchema } from "./node-settings";
+import {directorNodeWriteSchema} from "./director-node-schema";
 import { videoNodeWriteSchema } from "./video-node-schema";
 
 const id = z.string().min(1).max(200);
@@ -15,6 +16,7 @@ const textNode = textFields.extend({ id, prompt: z.string().max(4000), projectKe
 });
 export const canvasTextSnapshotSchema=textNode.extend({updatedAt:z.string().datetime().optional()});
 export const videoHistoryFields=videoNodeWriteSchema.omit({id:true,projectKey:true,expectedRevision:true,operationId:true,deleted:true});
+export const directorHistoryFields=directorNodeWriteSchema.omit({id:true,projectKey:true,expectedRevision:true,operationId:true,deleted:true});
 export const historyRequest = z.object({
   operationId: z.string().uuid(),
   operations: z.array(z.discriminatedUnion("type", [
@@ -23,6 +25,8 @@ export const historyRequest = z.object({
     z.object({ type: z.literal("text-delete"), id,expected:textNode.optional() }),
     z.object({ type: z.literal("video-visibility"), id, visible:z.boolean() }),
     z.object({ type: z.literal("video-patch"), id, expectedRevision:z.number().int().nonnegative(), fields:videoHistoryFields }),
+    z.object({type:z.literal("director-visibility"),id,visible:z.boolean()}),
+    z.object({type:z.literal("director-patch"),id,expectedRevision:z.number().int().nonnegative(),fields:directorHistoryFields}),
     z.object({ type: z.literal("video-result"),id,expectedRevision:z.number().int().nonnegative(),artworkId:id.nullable(),expectedArtworkId:id.nullable().optional() }),
     z.object({ type: z.literal("position"), id, text: z.boolean(), x: coordinate, y: coordinate,expected:z.object({x:coordinate,y:coordinate}).optional(),expectedArtwork:canvasArtworkFieldsSchema.partial().optional() }),
     z.object({ type: z.literal("group"), id, value: id.nullable(),expectedArtwork:canvasArtworkFieldsSchema.partial().optional() }),
@@ -32,7 +36,7 @@ export const historyRequest = z.object({
     z.object({ type: z.literal("size"), id, x: coordinate, y: coordinate, width: z.number().min(80).max(4096), height: z.number().min(80).max(4096),expectedArtwork:canvasArtworkFieldsSchema.partial().optional() }),
     z.object({type:z.literal("art-dimensions"),id,width:z.number().min(80).max(4096),height:z.number().min(80).max(4096),expectedArtwork:canvasArtworkFieldsSchema.partial().optional()}),
     z.object({ type: z.literal("mark"), id, marked: z.boolean(),expectedArtwork:canvasArtworkFieldsSchema.partial().optional() }),
-    z.object({ type: z.literal("node-settings"), id, text: z.boolean(), video:z.boolean().optional(), settings: nodeSettingsSchema }),
+    z.object({ type: z.literal("node-settings"), id, text: z.boolean(), video:z.boolean().optional(), director:z.boolean().optional(), settings: nodeSettingsSchema }),
     z.object({ type: z.literal("workflow-asset"), id, assetOperationId: z.string().uuid(), filled: z.boolean() }),
   ])).min(1).max(400),
 });

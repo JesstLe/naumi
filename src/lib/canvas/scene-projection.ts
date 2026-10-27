@@ -150,10 +150,11 @@ export function lineageChain(
 }
 
 
+import type {CanvasDirectorNode} from "./director-node-schema";
 export type CanvasSceneInput={
   nodes:Node[];edges:Edge[];active:{members:Artwork[]}|null;activeKey:string|null;
   generationTasks:Omit<CanvasGenerationTask,"isVisible">[];taskPositions:Record<string,CanvasPoint>;pendNodes:CanvasPendingNode[];
-  textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[];videoTasks:PublicVideoTaskView[];works:Artwork[]|null;
+  textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];videoTasks:PublicVideoTaskView[];works:Artwork[]|null;
   selectedId:string|null;selectedPendId:string|null;selectedTextId:string|null;multiSel:string[];expandedTextIds:Set<string>;
   locale:string;lightCanvas:boolean;nodeSettings:Record<string,CanvasNodeSettings>;nodeSettingsReady:boolean;readOnly:boolean;
   cutoutAvailable:boolean;operations:ReadonlySet<string>;workflowManifests:ImportedManifest[];actions:CanvasSceneActions;
@@ -161,7 +162,7 @@ export type CanvasSceneInput={
 /** Pure view composition: the document and task owners supply DTOs; renderers
  * receive presentation and commands only. No network, persistence or React state. */
 export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];displayEdges:Edge[]}{
-  const {nodes,edges,active,activeKey,generationTasks,taskPositions,pendNodes,textNodes,videoNodes,videoTasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutAvailable,operations,workflowManifests,actions}=input;
+  const {nodes,edges,active,activeKey,generationTasks,taskPositions,pendNodes,textNodes,videoNodes,directorNodes=[],videoTasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutAvailable,operations,workflowManifests,actions}=input;
   const baseIds=new Set(nodes.map(node=>node.id)),memberById=new Map((active?.members||[]).map(art=>[art.id,art])),memberIds=new Set(memberById.keys());
   const textIds=new Set(textNodes.map(node=>node.id)),projectTextIds=new Set(textNodes.filter(node=>node.projectKey===activeKey).map(node=>node.id)),videoIds=new Set(videoNodes.map(node=>node.id));
   const busyArtworkIds=new Set([...pendNodes.filter(node=>node.generating&&!node.generationFailure&&node.operationKey?.startsWith("node:")).map(node=>node.operationKey!.slice(5)),...generationTasks.filter(task=>!task.failure).map(task=>task.sourceId)]);
@@ -274,6 +275,13 @@ export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];
           data: { lit: false, dim: false },
         } as Edge);
       }
+    }
+    for(const director of directorNodes.filter(node=>node.projectKey===activeKey)){
+      const preview=director.outputs.filter(output=>output.kind==="image").map(output=>workById.get(output.artworkId)?.image).filter(Boolean).at(-1),locked=!!nodeSettings[director.id]?.locked;
+      displayNodes.push({id:director.id,type:"director",position:{x:director.x,y:director.y},selected:director.id===selectedId||multiSel.includes(director.id),draggable:!readOnly&&!locked,style:{width:director.width,height:director.height},
+        data:{node:director,title:director.title,content:String(director.revision),width:director.width,height:director.height,preview,selected:director.id===selectedId,english:locale==="en",locked,onEdit:actions.directorEdit}});
+      if(director.project.panoramaArtworkId&&displayNodes.some(node=>node.id===director.project.panoramaArtworkId))displayEdges.push({id:`e-director-background-${director.id}`,source:director.project.panoramaArtworkId,sourceHandle:"out",target:director.id,targetHandle:"in",type:"comet",data:{lit:false,dim:false}});
+      for(const output of director.outputs)if(displayNodes.some(node=>node.id===output.artworkId))displayEdges.push({id:`e-director-output-${director.id}-${output.artworkId}`,source:director.id,sourceHandle:"out",target:output.artworkId,targetHandle:"in",type:"comet",selectable:false,deletable:false,data:{lit:false,dim:false}});
     }
     for(const videoNode of videoNodes.filter(node=>node.projectKey===activeKey)){
       const task=videoTaskById.get(videoNode.lastTaskId||""),result=workById.get(videoNode.displayResultId||videoNode.lastResultId||""),locked=!!nodeSettings[videoNode.id]?.locked;

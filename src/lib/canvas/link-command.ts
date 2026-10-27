@@ -1,4 +1,5 @@
 import type {Artwork} from "../mock-data";
+import type {CanvasDirectorNode} from "./director-node-schema";
 import type {CanvasVideoNode} from "./video-node-schema";
 import type {CanvasPendingNode} from "./scene-types";
 import {browserRandomUUID} from "../browser-crypto";
@@ -7,7 +8,7 @@ import {explicitCanvasParent} from "./input-references";
 import {canvasParentCycle} from "./parent-link";
 import {textPatchOf,type CanvasTextNode,type CanvasHistoryAction} from "./history-model";
 
-type Snapshot={project:string|null;artworks:Artwork[];texts:CanvasTextNode[];videos:CanvasVideoNode[];pending:CanvasPendingNode[];
+type Snapshot={project:string|null;artworks:Artwork[];texts:CanvasTextNode[];videos:CanvasVideoNode[];directors?:CanvasDirectorNode[];pending:CanvasPendingNode[];
   selected:string[];choices:VideoInputChoice[];locked:(id:string)=>boolean;
   productTitle:string;referenceLimit:string;cycleMessage:string;productMention:(content:string,title:string)=>string};
 export type CanvasLinkIntent={source:string;target:string;add:boolean;product?:boolean};
@@ -23,8 +24,16 @@ function reaches(s:Snapshot,source:string,target:string){
 /** Compile exactly one link gesture into the existing atomic history contract.
  * No React, network, independent text saves or optimistic document writes. */
 export function compileCanvasLink(s:Snapshot,intent:CanvasLinkIntent):CanvasHistoryAction|null{
-  const {source,target,add}=intent;
+  const {target,add}=intent;let source=intent.source;
+  if(s.locked(source)||s.locked(target))return null;
+  const fromDirector=s.directors?.find(node=>node.id===source);if(fromDirector)source=fromDirector.outputs.at(-1)?.artworkId||"";
   if(!source||!target||source===target||source.startsWith("task-")||target.startsWith("task-")||s.locked(source)||s.locked(target))return null;
+  const director=s.directors?.find(node=>node.id===target);
+  if(director){
+    if(add&&!s.choices.some(choice=>choice.nodeId===source&&choice.kind==="image"&&choice.available))throw new Error("请选择已完成的背景图片");
+    const before=director.project.panoramaArtworkId;if(add?before===source:before!==source)return null;
+    return {kind:"director-patch",id:director.id,from:{project:director.project},to:{project:{...director.project,panoramaArtworkId:add?source:null}}};
+  }
   const video=s.videos.find(node=>node.id===target);
   if(video){
     const matches=(id:string)=>id.replace(/^(?:text|image|video|audio):/,"")===source;

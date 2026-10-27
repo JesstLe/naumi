@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
 import type { Artwork } from "@/lib/mock-data";
 import type { CanvasNodeSettings } from "@/lib/canvas/node-settings";
+import type {CanvasDirectorNode} from "@/lib/canvas/director-node-schema";
 import type { CanvasVideoNode } from "@/lib/canvas/video-node-schema";
 import { currentWorkspaceRevision, WORKSPACE_SELECTION } from "@/lib/saas/workspace-client";
 import { createCanvasDocumentContext } from "@/lib/canvas/document-scope";
@@ -15,7 +16,7 @@ type Input = {
   works: Dispatch<SetStateAction<Artwork[] | null>>; textDocument: CanvasTextHistoryPort;
   settings: (update: (current: Record<string,CanvasNodeSettings>) => Record<string,CanvasNodeSettings>, persisted: boolean) => void;
   selectedText: Dispatch<SetStateAction<string | null>>;
-  flush: () => Promise<unknown>; video: (id: string) => CanvasVideoNode | undefined; refresh: () => Promise<unknown>;
+  flush: () => Promise<unknown>; video: (id: string) => CanvasVideoNode | undefined;director?:(id:string)=>CanvasDirectorNode|undefined; refresh: () => Promise<unknown>;
   pending: (action: Extract<CanvasHistoryAction,{kind:"pending-link"}>, undo: boolean) => void;
   applied: (value: HistoryCommit) => void; warning: (message: string) => void;
 };
@@ -35,7 +36,7 @@ export function useCanvasHistory(input: Input) {
     changed: () => { if (mounted.current) render(n => n + 1); },
     readOnly: () => latest.current.readOnly,
     flush: () => latest.current.flush(), transaction: (scope,work) => latest.current.textDocument.transaction(scope,()=>latest.current.artworkDocument?latest.current.artworkDocument.transaction(scope,work):work()),
-    video: id => latest.current.video(id), refresh: () => latest.current.refresh(),
+    video: id => latest.current.video(id),director:id=>latest.current.director?.(id), refresh: () => latest.current.refresh(),
     warning: message => latest.current.warning(message),
     conflict:(scope,value)=>latest.current.textDocument.conflict?.(scope,value),
     artworkConflict:(scope,value,action,undo)=>latest.current.artworkDocument?.conflict(scope,value,action,undo),

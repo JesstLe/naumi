@@ -30,12 +30,18 @@ export function createCanvasDocumentContext() {
   };
 }
 
-export async function canvasDocumentFetch(scope: CanvasDocumentScope, url: string, init: RequestInit = {}, viewRequired = false) {
+export async function canvasDocumentHeaders(scope: CanvasDocumentScope, extra?: HeadersInit, viewRequired = false) {
   const guard = () => { if (viewRequired) scope.assertView(); else if (!scope.documentCurrent()) throw new Error("账号或工作空间已切换"); };
   guard(); const headers = new Headers(await authHeader()); guard();
   for (const key of Array.from(headers.keys())) if (/^x-naumi-(workspace|project-context|scope|tenant(?:-id)?|creation-parent|creation-context)$/i.test(key)) headers.delete(key);
-  new Headers(init.headers).forEach((value,key) => headers.set(key,value));
+  new Headers(extra).forEach((value,key) => headers.set(key,value));
   headers.set("x-naumi-workspace",scope.workspace);
   if (scope.project) headers.set("x-naumi-project-context",scope.project);
+  return headers;
+}
+
+export async function canvasDocumentFetch(scope: CanvasDocumentScope, url: string, init: RequestInit = {}, viewRequired = false) {
+  const headers=await canvasDocumentHeaders(scope,init.headers,viewRequired);
+  if(viewRequired)scope.assertView();else if(!scope.documentCurrent())throw new Error("账号或工作空间已切换");
   return fetch(url,{...init,headers});
 }

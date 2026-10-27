@@ -14,22 +14,28 @@ import type {CanvasVideoNode} from "./video-node-schema";
 import {ModelConfigError} from "../model-config/types";
 import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 
+import {ensureDirectorNodeSchema} from "./storage-schema";
+import {listDirectorNodes,saveDirectorNodeTx} from "./director-node-repository";
+import {authorizeDirectorInputs} from "./director-node-service";
+import type {CanvasDirectorNode} from "./director-node-schema";
+import {assertCreationProjectInput} from "../saas/creation-access";
 import {nodeCopyRequest,type CanvasNodeCopyInput,type CanvasNodeCopyResult as CopyResult} from "./node-copy-contract";
 export {nodeCopyRequest} from "./node-copy-contract";
 function stableUuid(seed:string){const bytes=createHash("sha256").update(seed).digest().subarray(0,16);bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;const h=bytes.toString("hex");return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;}
 /** Copies media identities and editable records together. No supplier requests, media writes, task replay or fees. */
 export async function copyCanvasNodes(actorRaw:string,raw:CanvasNodeCopyInput):Promise<CopyResult>{
-  const actor=actorRaw.toLowerCase(),input=nodeCopyRequest.parse(raw);await ensureSchema();await ensureVideoNodeSchema();
+  const actor=actorRaw.toLowerCase(),input=nodeCopyRequest.parse(raw);await ensureSchema();await ensureVideoNodeSchema();await ensureDirectorNodeSchema();
   const pool=getPool();await ensureCanvasNodeCopySchema();
   const digest=createHash("sha256").update(canonicalConfig(input)).digest("hex");
   const previous=(await pool.query("SELECT input_digest,result FROM app_canvas_node_copies WHERE email=$1 AND operation_id=$2",[actor,input.operationId])).rows[0];
   if(previous){if(previous.input_digest!==digest)throw new ModelConfigError("NODE_OPERATION_CONFLICT","复制操作编号已用于另一请求",409);return previous.result;}
-  const [artworks,textNodes,videoNodes]=await Promise.all([listArtworksByIds(actor,input.ids),listCanvasTextNodes(actor),listVideoNodes(actor)]);
-  const wanted=new Set(input.ids),texts=textNodes.filter(node=>wanted.has(node.id)),videos=videoNodes.filter(node=>wanted.has(node.id));
-  const kinds=new Map([...artworks.map(node=>[node.id,"art"] as const),...texts.map(node=>[node.id,"text"] as const),...videos.map(node=>[node.id,"vnode"] as const)]);
+  const [artworks,textNodes,videoNodes,directorRecords]=await Promise.all([listArtworksByIds(actor,input.ids),listCanvasTextNodes(actor),listVideoNodes(actor),listDirectorNodes(actor)]);
+  const wanted=new Set(input.ids),texts=textNodes.filter(node=>wanted.has(node.id)),videos=videoNodes.filter(node=>wanted.has(node.id)),directors=directorRecords.filter(node=>wanted.has(node.id));
+  const kinds=new Map([...artworks.map(node=>[node.id,"art"] as const),...texts.map(node=>[node.id,"text"] as const),...videos.map(node=>[node.id,"vnode"] as const),...directors.map(node=>[node.id,"director"] as const)]);
   if(input.ids.some(id=>!kinds.has(id)))throw new ModelConfigError("CANVAS_NODE_UNAVAILABLE","复制节点不存在或无权访问",404);
   if(input.singleArtwork&&artworks.length!==1)throw new ModelConfigError("CANVAS_NODE_UNAVAILABLE","单图复制来源不是作品",422);
   for(const node of videos)await authorizeNodeInputs(actor,{id:node.id,operationId:input.operationId,expectedRevision:node.revision,config:node.config,inputs:node.inputs});
+  for(const node of directors){await assertCreationProjectInput(actor,node.projectKey);await authorizeDirectorInputs(actor,{project:node.project});}
   const mapping=new Map(input.ids.map(id=>[id,`${kinds.get(id)}-copy-${createHash("sha256").update(`${actor}:${input.operationId}:${id}`).digest("hex").slice(0,40)}`]));
   const key=input.projectKey||`tree:${mapping.get(input.ids[0])}`;
   if(input.projectKey)await authorizeVideoProject(actor,key);
@@ -42,7 +48,7 @@ export async function copyCanvasNodes(actorRaw:string,raw:CanvasNodeCopyInput):P
     if(saved){if(saved.input_digest!==digest)throw new ModelConfigError("NODE_OPERATION_CONFLICT","复制操作编号已用于另一请求",409);await client.query("COMMIT");return saved.result;}
     await client.query("INSERT INTO app_canvas_video_projects(email,project_key) VALUES($1,$2) ON CONFLICT DO NOTHING",[actor,key]);
     const [kind,projectId]=[key.slice(0,key.indexOf(":")),key.slice(key.indexOf(":")+1)];
-    const artworkIds:string[]=[],copiedTexts:CanvasTextNodeRecord[]=[],nodes:CanvasVideoNode[]=[];
+    const artworkIds:string[]=[],copiedTexts:CanvasTextNodeRecord[]=[],nodes:CanvasVideoNode[]=[],directorNodes:CanvasDirectorNode[]=[];
     for(const node of artworks){
       const current=(await client.query("SELECT * FROM app_artworks WHERE email=$1 AND id=$2 AND deleted_at IS NULL FOR SHARE",[actor,node.id])).rows[0];
       if(!current)throw new ModelConfigError("CANVAS_NODE_UNAVAILABLE","复制媒体已删除",409);
@@ -70,9 +76,15 @@ export async function copyCanvasNodes(actorRaw:string,raw:CanvasNodeCopyInput):P
       const config={...node.config,references:refs(node.config.references),elements:node.config.elements?.map(element=>({...element,references:refs(element.references)!})),shots:node.config.shots?.map(shot=>({...shot,textNodeId:shot.textNodeId?remapReference(shot.textNodeId):undefined}))};
       nodes.push(await saveVideoNodeTx(client,actor,{id:mapping.get(node.id)!,projectKey:key,operationId:stableUuid(`${actor}:${input.operationId}:${node.id}`),expectedRevision:0,title:node.title,x:node.x+40,y:node.y+40,width:node.width,height:node.height,config,inputs:node.inputs.map(ref=>({...ref,nodeId:remapReference(ref.nodeId)}))},key));
     }
+    for(const node of directors){
+      const current=(await client.query("SELECT revision FROM app_canvas_director_nodes WHERE email=$1 AND id=$2 AND deleted_at IS NULL FOR SHARE",[actor,node.id])).rows[0];
+      if(!current||Number(current.revision)!==node.revision)throw new ModelConfigError("DIRECTOR_REVISION_CONFLICT","导演工程已更新，请重新复制",409);
+      directorNodes.push(await saveDirectorNodeTx(client,actor,{id:mapping.get(node.id)!,operationId:stableUuid(`${actor}:${input.operationId}:${node.id}`),expectedRevision:0,title:node.title,x:node.x+40,y:node.y+40,width:node.width,height:node.height,
+        project:{...node.project,panoramaArtworkId:node.project.panoramaArtworkId?remap(node.project.panoramaArtworkId):null}},key));
+    }
     // Copy shared properties only when that table already exists; do not initialize unrelated edit tables.
     if(!input.singleArtwork&&(await client.query("SELECT to_regclass('app_canvas_node_settings') AS name")).rows[0].name){for(const [oldId,newId] of mapping)await client.query("INSERT INTO app_canvas_node_settings(email,node_id,kind,settings) SELECT email,$3,kind,settings FROM app_canvas_node_settings WHERE email=$1 AND node_id=$2 ON CONFLICT(email,node_id) DO NOTHING",[actor,oldId,newId]);}
-    const result:CopyResult={artworkIds,textNodes:copiedTexts,nodes,idMap:Object.fromEntries(mapping),projectKey:key};
+    const result:CopyResult={artworkIds,textNodes:copiedTexts,nodes,...(directorNodes.length?{directorNodes}:{}),idMap:Object.fromEntries(mapping),projectKey:key};
     await client.query("INSERT INTO app_canvas_node_copies(email,operation_id,input_digest,result) VALUES($1,$2,$3,$4::jsonb)",[actor,input.operationId,digest,JSON.stringify(result)]);await client.query("COMMIT");return result;
   }catch(error){await client.query("ROLLBACK");throw error;}finally{client.release();}
 }

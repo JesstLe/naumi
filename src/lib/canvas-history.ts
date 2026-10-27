@@ -17,11 +17,16 @@ import {saveVideoNodeTx} from "@/lib/canvas/video-node-repository";
 import {ensureVideoNodeSchema} from "@/lib/canvas/storage-schema";
 
 import {authorizeNodeInputs} from "@/lib/canvas/video-node-service";
+import {directorNodeWriteSchema} from "@/lib/canvas/director-node-schema";
+import {saveDirectorNodeTx} from "@/lib/canvas/director-node-repository";
+import {ensureDirectorNodeSchema} from "@/lib/canvas/storage-schema";
+import {authorizeDirectorInputs} from "@/lib/canvas/director-node-service";
+import {assertCreationProjectInput} from "@/lib/saas/creation-access";
 
 // Shared wire schema; repository keeps the atomic transaction and ownership checks.
 import { historyRequest } from "./canvas/history-contract";
 import { canvasParentCycle, changeCanvasParent } from "./canvas/parent-link";
-export { historyRequest, videoHistoryFields } from "./canvas/history-contract";
+export { historyRequest, videoHistoryFields, directorHistoryFields } from "./canvas/history-contract";
 
 /** A whole history step commits once, including mixed image/text operations. */
 export async function saveCanvasHistory(email: string, input: z.infer<typeof historyRequest>) {
@@ -29,6 +34,8 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
   await ensureSchema();
   const hasVideo=input.operations.some(op=>op.type==="video-patch"||op.type==="video-visibility"||op.type==="video-result"||op.type==="node-settings"&&op.video);
   if(hasVideo)await ensureVideoNodeSchema();
+  const hasDirector=input.operations.some(op=>op.type==="director-patch"||op.type==="director-visibility"||op.type==="node-settings"&&op.director);
+  if(hasDirector)await ensureDirectorNodeSchema();
   if (input.operations.some(op => op.type === "node-settings")) await ensureCanvasSettingsSchema();
   if (input.operations.some(op => op.type === "workflow-asset")) await (await import("@/lib/canvas-workflow-import")).ensureWorkflowImportSchema();
   const fingerprint = createHash("sha256").update(JSON.stringify(input.operations)).digest("hex");
@@ -45,7 +52,7 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
   const client = await getPool().connect();
   const textIds=[...new Set(input.operations.flatMap(op=>op.type==="text-restore"?[op.node.id]:op.type==="text-delete"||op.type==="text-patch"||op.type==="position"&&op.text?[op.id]:[]))];
   const textReceipt=async()=>({textNodes:textIds.length?(await client.query("SELECT * FROM app_canvas_text_nodes WHERE email=$1 AND id=ANY($2::text[])",[email,textIds])).rows.map(mapCanvasTextNode):[]});
-  const artworkIds=[...new Set(input.operations.flatMap(op=>op.type==="text-restore"||op.type==="text-delete"||op.type==="text-patch"||op.type.startsWith("video-")||op.type==="position"&&op.text||op.type==="node-settings"&&(op.text||op.video)?[]:"id" in op?[op.id]:[]))];
+  const artworkIds=[...new Set(input.operations.flatMap(op=>op.type==="text-restore"||op.type==="text-delete"||op.type==="text-patch"||(op.type.startsWith("video-")||op.type.startsWith("director-"))||op.type==="position"&&op.text||op.type==="node-settings"&&(op.text||op.video||op.director)?[]:"id" in op?[op.id]:[]))];
   const receipt=async()=>({...await textReceipt(),artworkNodes:await readCanvasArtworkReceiptTx(client,email,artworkIds),artworkIds});
   try {
     await client.query("BEGIN");
@@ -56,8 +63,18 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
       if (previous.rows[0].fingerprint !== fingerprint) throw new Error("操作编号已使用");
       const saved=await receipt();await client.query("COMMIT"); return saved;
     }
-    if(hasVideo)await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${email}`]);
+    if(hasVideo||hasDirector)await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${email}`]);
     for (const [index,op] of input.operations.entries()) {
+      if(op.type==="director-patch"||op.type==="director-visibility"){
+        const row=(await client.query("SELECT revision,project_key FROM app_canvas_director_nodes WHERE email=$1 AND id=$2 FOR UPDATE",[email,op.id])).rows[0];
+        if(!row)throw new Error("导演节点不存在或无权修改");
+        await assertCreationProjectInput(email,String(row.project_key));
+        const digest=createHash("sha256").update(`director:${input.operationId}:${index}:${op.id}`).digest().subarray(0,16);digest[6]=(digest[6]&15)|64;digest[8]=(digest[8]&63)|128;const hex=digest.toString("hex");
+        const operationId=`${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+        const write=directorNodeWriteSchema.parse({id:op.id,expectedRevision:op.type==="director-patch"?op.expectedRevision:Number(row.revision),operationId,...(op.type==="director-patch"?op.fields:{deleted:!op.visible})});
+        if(op.type==="director-patch")await authorizeDirectorInputs(email,write);
+        await saveDirectorNodeTx(client,email,write,String(row.project_key));continue;
+      }
       if(op.type==="video-result"){
         const node=(await client.query("SELECT revision,display_result_id,deleted_at FROM app_canvas_video_nodes WHERE email=$1 AND id=$2 FOR UPDATE",[email,op.id])).rows[0];if(!node||node.deleted_at)throw new Error("视频节点不存在或无权修改");if(Number(node.revision)!==op.expectedRevision||op.expectedArtworkId!==undefined&&(node.display_result_id||null)!==op.expectedArtworkId)throw new Error("视频节点已更新，请重新选择结果");
         if(op.artworkId){const art=(await client.query("SELECT video_url,status,deleted_at FROM app_artworks WHERE email=$1 AND id=$2 FOR SHARE",[email,op.artworkId])).rows[0];if(!art||art.deleted_at||art.status!=="completed"||art.video_url!==verifiedResults.get(op.artworkId))throw new Error("视频素材已删除或改变");}
@@ -91,11 +108,12 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
       }
       const text = op.type === "text-delete" || op.type === "text-patch" || ((op.type === "position" || op.type === "node-settings") && op.text);
       const video=op.type==="node-settings"&&op.video===true;
-      const table = text ? "app_canvas_text_nodes" : video?"app_canvas_video_nodes":"app_artworks";
+      const table = text ? "app_canvas_text_nodes" : video?"app_canvas_video_nodes":op.type==="node-settings"&&op.director?"app_canvas_director_nodes":"app_artworks";
       const owned = await client.query(`SELECT * FROM ${table} WHERE email=$1 AND id=$2 FOR UPDATE`, [email,op.id]);
       if(!owned.rows.length&&(op.type==="text-patch"&&op.expected||op.type==="text-delete"&&op.expected||op.type==="position"&&op.text&&op.expected))throw new CanvasTextWriteConflict(op.id,["deleted"],null);
       if (!owned.rows.length) throw new Error("节点不存在或无权修改，请刷新画布");
       const row = owned.rows[0];
+      if(op.type==="node-settings"&&op.director)await assertCreationProjectInput(email,String(row.project_key));
       if(op.type==="text-delete"&&op.expected)assertCanvasTextVersion(op.id,mapCanvasTextNode(row),op.expected);
       const textPosition=op.type==="position"&&op.text&&op.expected?mergeCanvasTextWrite(op.id,mapCanvasTextNode(row),{canvasX:op.x,canvasY:op.y},{canvasX:op.expected.x,canvasY:op.expected.y}):null;
       if (op.type === "workflow-asset") {

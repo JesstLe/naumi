@@ -1,5 +1,6 @@
 import type {Artwork} from "@/lib/mock-data";
 import type {CanvasTextNode} from "./history-model";
+import type {CanvasDirectorNode} from "./director-node-schema";
 import type {CanvasVideoNode} from "./video-node-schema";
 import {isHostedImageUrl as hasRenderableImage} from "@/lib/media-url";
 import {createProjectRootResolver} from "./project-roots";
@@ -9,6 +10,7 @@ export type CanvasProject = {
   members: Artwork[];
   textNodes: CanvasTextNode[];
   videoNodes?: CanvasVideoNode[];
+  directorNodes?:CanvasDirectorNode[];
   isSuite: boolean;
   cover: string;
   count: number;
@@ -39,7 +41,7 @@ function projectKey(a: Artwork, byId: Map<string, Artwork>, resolveRoot = (art: 
 }
 
 /** Pure projection shared by browser cards and active project selection. */
-export function canvasProjects({works,names,t,readOnly,pinnedNode,textNodes,videoNodes}:{works:Artwork[]|null;names:Record<string,string>;t:(key:string)=>string;readOnly:boolean;pinnedNode:string|null;textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[]}):CanvasProject[]{
+export function canvasProjects({works,names,t,readOnly,pinnedNode,textNodes,videoNodes,directorNodes=[]}:{works:Artwork[]|null;names:Record<string,string>;t:(key:string)=>string;readOnly:boolean;pinnedNode:string|null;textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[]}):CanvasProject[]{
     const arts = (works ?? []).filter(
       (a) => a.status === "completed" && a.origin!=="workbench" && (hasRenderableImage(a.image) || Boolean(a.videoUrl))
     );
@@ -117,6 +119,11 @@ export function canvasProjects({works,names,t,readOnly,pinnedNode,textNodes,vide
       const existing=projectMap.get(videoNode.projectKey);
       if(existing){existing.videoNodes=[...(existing.videoNodes||[]),videoNode];existing.count++;if(videoNode.updatedAt>existing.latestAt)existing.latestAt=videoNode.updatedAt;}
       else projectMap.set(videoNode.projectKey,{key:videoNode.projectKey,members:[],textNodes:[],videoNodes:[videoNode],isSuite:false,cover:"",count:1,name:names[videoNode.projectKey]||videoNode.title,latestAt:videoNode.updatedAt});
+    }
+    for(const node of directorNodes){
+      const existing=projectMap.get(node.projectKey);
+      if(existing){existing.directorNodes=[...(existing.directorNodes||[]),node];existing.count++;if(node.updatedAt>existing.latestAt)existing.latestAt=node.updatedAt;}
+      else projectMap.set(node.projectKey,{key:node.projectKey,members:[],textNodes:[],directorNodes:[node],isSuite:false,cover:"",count:1,name:names[node.projectKey]||node.title,latestAt:node.updatedAt});
     }
     const projects = Array.from(projectMap.values());
     projects.sort((a, b) => (a.latestAt < b.latestAt ? 1 : -1));
