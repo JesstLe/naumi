@@ -40,7 +40,17 @@
 
 18:51 只读47：最近1小时13个父任务均 succeeded；24小时775 succeeded / 42 failed / 6 partial / 1 needs_review / 1 cancelled / 1 queued。当前 Worker IDLE、未暂停、无未决 tick；媒体待补传0。另有1条13:07旧boot的媒体变体 UNKNOWN 观测，旧进程已在17:42重启；发布须精确保留旧证据并区分当前执行，不能删除或伪造完成。
 
-固定 main 构建、三锁发布、原任务推进与副本回滚证据待完成。当前此文档不代表发布已完成。
+### 19:21 实际发布完成
+
+- 固定 main `e2217c983fe74f4829f2cacb3f69305428af0b11` / `1793098906`，47 Web 与 Worker 同镜像 `sha256:cb2c92d5a00fed17c49cda9f95f8bff5ef4dc7b0bd0f943d29132b25045fdb26`。
+- 三锁蓝绿完成，未接单候选实际重启后新 boot / 默认 draining / 配置 pin 稳定通过。真实现有账号与后台 GET 通过；Windows 外网版本、canvas、34项静态资源200。
+- 原任务/冻结绑定/账务保全核验通过，剩余违规0、unknown tables0。旧 Web/Worker 均停止且 restart=no。那1条旧 boot 媒体 UNKNOWN 原样保留，不改业务成功状态。
+- 19:22 新 Web open、当前 unknownLeases0；Worker IDLE、paused=false、unresolvedTicks0；恢复服务连续 PASS。现有私有原图3846字节读取200/156ms、原摘要相同，匿名401；这不是大图带宽或新收费生成验收。切流后观测窗口尚无新父任务。
+- 追加人工 drain 优先级保护后，最终 Worker tests25 / supervisor22；Linux host gates14通过。独立源码副本回滚恢复原哈希并复现旧阻塞；生产回滚未执行。
+- 首次发布在导入前遇到 Linux 文件名大小写问题；原备份、快照、操作 UUID 保持，修正后从同一事务记录续行，未重复备份/创建候选/重放任务。
+- 本地封存：`E:/Workspace/naumi-p0-worker-media-recovery-20261027/output/p0-recovery-20261027/VERIFICATION.txt`。服务端：`/opt/naumi-staging/evidence/release47-p0-worker-media-20261027-r1/transaction-r2/`。
+
+用户随后授权完整执行架构升级；P0上线不等于生成执行已移出 Web。该后续改造另开独立任务分支，不合并既有重构分支。
 
 复用入口：
 ```text
