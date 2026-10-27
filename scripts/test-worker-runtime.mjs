@@ -4,6 +4,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {WorkerRuntime,fileStateStore,createWorkerControlServer} from './worker-runtime.mjs';
+import {tickFailure} from './worker-runtime.mjs';
 
 const id='11111111-1111-4111-8111-111111111111', op=()=>crypto.randomUUID();
 const commit='a'.repeat(40), secret='worker-secret-47-'.padEnd(40,'x');
@@ -13,6 +14,14 @@ const completed=(init,result={ok:true})=>response({ok:true,server:{instanceId:ta
  tickId:init.headers['x-naumi-worker-tick-id'],worker:{instanceId:init.headers['x-naumi-worker-instance-id'],bootId:init.headers['x-naumi-worker-boot-id'],commit},
  web:{instanceId:targetInstanceId,commit,bootId:webBootId},phase:'completed',acceptedAt:'2026-10-16T00:00:00.000Z',completedAt:'2026-10-16T00:00:01.000Z',result}});
 const deferred=()=>{let resolve;const promise=new Promise(r=>{resolve=r});return {promise,resolve};};
+
+test('tick diagnostics retain bounded cause and status without credentials',async()=>{
+ const w=new WorkerRuntime({...options(memoryStore()),startPaused:false,fetchImpl:async()=>new Response('secret-body',{status:503})});
+ await w.init();await w.tick();assert.equal(w.snapshot().lastTick.httpStatus,503);
+ assert.equal(w.snapshot().lastTick.failure.code,'TICK_HTTP_ERROR');
+ assert.deepEqual(tickFailure(Object.assign(new Error('https://secret@host/token'),{cause:{code:'UND_ERR_BODY_TIMEOUT'}})),{code:'Error',cause:'UND_ERR_BODY_TIMEOUT'});
+ assert.ok(!JSON.stringify(w.snapshot()).includes('secret-body'));
+});
 
 test('paused durable worker resumes once and drains without duplicate tick',async()=>{
  const dir=await mkdtemp(path.join(tmpdir(),'worker-runtime-'));
