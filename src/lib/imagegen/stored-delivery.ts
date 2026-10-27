@@ -15,6 +15,7 @@ import { selectedBusinessOption } from "../model-config/business";
 import { selectedImagePreset } from "../model-config/image-preset";
 import { finishStoredImage } from "./finish-stored-image";
 import { imageCoordinationPool } from "./coordination-pool";
+import { imageFailureEvidence, imageFailureFrames } from "./failure-evidence";
 
 async function deliverySource(parentId:string,owner:string){
  const parent=(await getPool().query("SELECT * FROM app_image_jobs WHERE id=$1 AND email=$2 AND kind='imagegen'",[parentId,owner.toLowerCase()])).rows[0];
@@ -148,7 +149,7 @@ export async function recoverStoredDeliveries(){
   if(!(retry?.n>=3))continue;
   const state=await storedDeliveryState(row.id,row.email);if(!state?.available&&!state?.ids)continue;
   try{await recoverStoredDelivery(row.id,row.email);completed++;}
-  catch{await pool.query(`UPDATE app_image_jobs SET snapshot=jsonb_set(snapshot,'{deliveryRecoveryAttempts}',to_jsonb(COALESCE((snapshot->>'deliveryRecoveryAttempts')::int,0)+1)),updated_at=now() WHERE id=$1 AND lease_token IS NULL AND snapshot->>'status' IN ('error','needs_attention')`,[row.id]);}
+  catch(error){console.error("[imagegen] stored delivery failed",JSON.stringify({jobId:row.id,...imageFailureEvidence(error),frames:imageFailureFrames(error)}));await pool.query(`UPDATE app_image_jobs SET snapshot=jsonb_set(snapshot,'{deliveryRecoveryAttempts}',to_jsonb(COALESCE((snapshot->>'deliveryRecoveryAttempts')::int,0)+1)),updated_at=now() WHERE id=$1 AND lease_token IS NULL AND snapshot->>'status' IN ('error','needs_attention')`,[row.id]);}
   if(completed>=2)break;
  }
  return completed;

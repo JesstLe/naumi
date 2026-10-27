@@ -28,3 +28,17 @@ export function imageFailureEvidence(error: unknown) {
   } catch { /* Diagnostic access must never replace the original exception. */ }
   return { causes };
 }
+
+/** Server diagnostics only: retain source frames, never the exception message,
+ * request URL, data URL, prompt, or arguments that V8 may put in the first line. */
+export function imageFailureFrames(error: unknown): string[] {
+  try {
+    if (!(error instanceof Error) || typeof error.stack !== "string") return [];
+    return error.stack.split("\n").slice(1, 17).flatMap(line => {
+      const frame = line.match(/(?:\/app\/\.next\/server\/|\/app\/src\/)[A-Za-z0-9_./-]+:\d+:\d+/);
+      if (frame) return [frame[0]];
+      const native = line.match(/^\s*at (RegExp\.(?:exec|test)|String\.(?:repeat|match)|Function\.from|Buffer\.from|new (?:Array|Uint8Array))\b/);
+      return native ? [native[1]] : [];
+    }).slice(0, 8);
+  } catch { return []; }
+}
