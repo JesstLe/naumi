@@ -19,7 +19,7 @@ export function setCanvasNodeClipboardData(data:Pick<DataTransfer,"setData">,nod
   try{data.setData(CANVAS_NODE_CLIPBOARD_TYPE,nodeId);}catch{/* HTML remains portable when custom MIME is unsupported. */}
   data.setData("text/plain",title);data.setData("text/html",canvasNodeClipboardHtml(nodeId,title));
 }
-/** Keep the established personal key and legacy personal payload. Tenant clips
+/** Keep the established personal key and legacy payload. New tenant clips
  * use the same record with an explicit workspace, never another workspace's IDs. */
 export function canvasClipboardStorageKey(owner:string,workspace:string){
   const base=`naumi:canvas-node-clipboard:${owner.toLowerCase()}`;
@@ -28,6 +28,6 @@ export function canvasClipboardStorageKey(owner:string,workspace:string){
 export function canvasClipboardSelection(value:unknown,owner:string,workspace:string,marker?:string):CanvasClipboardSelection|null{
   if(!value||typeof value!=="object")return null;
   const clip=value as CanvasClipboardSelection;
-  return clip.owner===owner.toLowerCase()&&(clip.workspace??"personal")===workspace&&typeof clip.marker==="string"&&
+  return clip.owner===owner.toLowerCase()&&(clip.workspace===undefined||clip.workspace===workspace)&&typeof clip.marker==="string"&&
     Array.isArray(clip.ids)&&clip.ids.length>0&&clip.ids.length<=200&&clip.ids.every(id=>typeof id==="string")&&(!marker||clip.marker===marker)?clip:null;
 }

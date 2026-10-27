@@ -24,7 +24,19 @@ export function useCanvasClipboard(options:Options){
   const latest=useRef(options);latest.current=options;
   const [,changed]=useState(0),session=useRef<Session|null>(null),mounted=useRef(true),timer=useRef<ReturnType<typeof setTimeout>|null>(null);
   const owner=options.owner?.toLowerCase()||"",key=JSON.stringify([options.account,owner,options.workspace]);
-  function stored(scope:Session,marker?:string){try{return canvasClipboardSelection(JSON.parse(localStorage.getItem(scope.storageKey)||"null"),scope.owner,scope.workspace,marker);}catch{return null;}}
+  function stored(scope:Session,marker?:string){
+    try{
+      const value=canvasClipboardSelection(JSON.parse(localStorage.getItem(scope.storageKey)||"null"),scope.owner,scope.workspace,marker);if(value)return value;
+      // Pre-workspace records had only an owner. Preserve those legacy IDs for
+      // the original copy API to authorize; never treat a new explicit workspace
+      // record as legacy, and never rewrite another workspace's saved record.
+      if(scope.workspace!=="personal"){
+        const legacy=JSON.parse(localStorage.getItem(canvasClipboardStorageKey(scope.owner,"personal"))||"null");
+        if(legacy?.workspace===undefined)return canvasClipboardSelection(legacy,scope.owner,scope.workspace,marker);
+      }
+    }catch{/* An unavailable or malformed local record does not block native paste. */}
+    return null;
+  }
   if(session.current?.key!==key){
     const next:Session={key,owner,workspace:options.workspace,storageKey:canvasClipboardStorageKey(owner,options.workspace),artwork:null,selection:null,intent:null,revision:0};
     if(owner)next.selection=stored(next);session.current=next;
