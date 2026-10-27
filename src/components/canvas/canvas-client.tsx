@@ -1324,7 +1324,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     void (async()=>{for(let offset=0;offset<ids.length;offset+=100){if(account!==canvasAccountRef.current||epoch!==canvasContextEpochRef.current)return;await mergeWorks(ids.slice(offset,offset+100));}})().catch(()=>{});
   },[user?.email,targetEmail,activeKey,readOnly,works,videoNodesStore.nodes]);
   const selectedVideo=videoNodesStore.nodes.find(node=>node.id===selectedId&&node.projectKey===activeKey&&!node.deletedAt)||null;
-  const mixedNativeSelection=multiSel.length>1&&(multiSel.some(id=>videoNodesStore.getNode(id))||multiSel.some(id=>id.startsWith("text-"))&&multiSel.some(id=>!id.startsWith("text-")));
+  const mixedNativeSelection=multiSel.length>1&&(multiSel.some(id=>videoNodesStore.getNode(id))||multiSel.some(id=>textNodesRef.current.some(node=>node.id===id))&&multiSel.some(id=>!textNodesRef.current.some(node=>node.id===id)));
   const selected = useMemo(
     () => active?.members.find((a) => a.id === selectedId) ?? null,
     [active, selectedId]
@@ -1507,7 +1507,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const selectedTextBatchNodes = useMemo(() => {
     const byId = new Map(textNodes.map((node) => [node.id, node]));
     return multiSel
-      .filter((id) => id.startsWith("text-"))
       .map((id) => byId.get(id))
       .filter(
         (node): node is CanvasTextNode =>
