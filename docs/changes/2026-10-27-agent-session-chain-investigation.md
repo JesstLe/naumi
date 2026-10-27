@@ -7,6 +7,7 @@
 - 原 HEAD `fada4d9ecd5bf873c65bea4515f0cc8abdd9338b`；`git fetch origin main` 后 main 为 `fada2f9a94f357eec59f4359ec80295b4a05a3cd`。
 - 已普通合并，合并提交 `5c92ea965eda09d524b71cb3e86984e92097a42c`，无冲突，保留图片/文字 Dock 优化。共享 root 的 18 项未提交不改。
 - 收尾刷新发现 main 新增后台失败诊断，已再次普通合入 `27e5f0a40c6fb11d5c3f3439f474b1d7082253e5`；第二次合并 `646c8491c1cf67d88e6b91a8b06b9e01e89eab41`。这批现有失败诊断不覆盖下述 Agent 缓存历史问题。
+- 最后一次刷新 main 为 `187559d2f6830a2ab34fc232b9ecdaa1ad6f036b`（自适应比例/像素准入修复），已再合入，合并提交 `60eb54be290d66b21e5966843e58f0dcc30c7dd6`；受影响比例检查 139 项通过，Agent 缓存复现仍成立。
 - 本轮是定位与复现，不是修复上线。新增审计脚本和本记录；没有重放付费任务、修改模型配置、改生产会话或发布服务器。
 - 私有证据目录：`E:/Workspace/naumi/output/agent-session-chain-20261027`；原始会话、SQL、账务和模型快照仅保留在 ignored output，不提交用户原始内容与凭据。
 
