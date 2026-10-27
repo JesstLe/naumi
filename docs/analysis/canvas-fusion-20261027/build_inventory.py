@@ -11,7 +11,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 BASE = "3f1aa4a158cfbf47cdfef5e663bc2200ce6fa61e"
 FUSION = "6dd5d51b379ad5b6fe1ed1244c08d239f30c59b5"
-MAIN = "305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea"
+MAIN = "4e15e71a2d56ba8518340c04a256cf920b978e41"
 
 def git(*args):
     return subprocess.check_output(["git", *args], cwd=ROOT).decode("utf-8")

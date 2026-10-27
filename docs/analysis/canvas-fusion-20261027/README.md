@@ -20,9 +20,11 @@
 | 旧融合分支 | `codex/canvas-video-fusion-20261013` |
 | 旧分支头 | `6dd5d51b379ad5b6fe1ed1244c08d239f30c59b5`，2026-10-17 |
 | 该任务开工主线 | `3f1aa4a158cfbf47cdfef5e663bc2200ce6fa61e` |
-| 本轮检查的 main | `305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea` |
+| 本轮检查的 main | `4e15e71a2d56ba8518340c04a256cf920b978e41` |
 | 原设计的 infinite-canvas 来源 | `tigerowo/infinite-canvas@68b37db04b9083c3ff0af67ffe362f85d04d1f9f` |
 | 原设计的 Toonflow 来源 | `HBAI-Ltd/Toonflow-app@ae9e5f1ac4f37713b902fed7fa5ca87819b324ae` |
+
+开工核对main为`305e1c72`，合并前刷新并整合到上述`4e15e71a`（同期图片提示词优化入口调整）。已重建本报告；43项能力锚点涉及的80份源码与本次新主线一致。
 
 Git 祖先检查 exit 0，`MAIN..FUSION` 独有提交数为 **0**：旧分支已完整包含在上述 main 历史中，**无需把旧分支再合一次**。
 

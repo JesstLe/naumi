@@ -1,5 +1,5 @@
 {
-  "main": "305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea",
+  "main": "4e15e71a2d56ba8518340c04a256cf920b978e41",
   "fusion": "6dd5d51b379ad5b6fe1ed1244c08d239f30c59b5",
   "capabilities": [
     {
@@ -17,21 +17,21 @@
           "file": "src/components/canvas/canvas-client.tsx",
           "line": 7347,
           "anchor": "function createCanvasNode",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/canvas-client.tsx#L7347",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/canvas-client.tsx#L7347",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/node-submission.ts",
           "line": 13,
           "anchor": "export async function submitCanvasVideo",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/node-submission.ts#L13",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/node-submission.ts#L13",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/app/api/canvas/video-nodes/[id]/generate/route.ts",
           "line": 15,
           "anchor": "export async function POST",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/app/api/canvas/video-nodes/[id]/generate/route.ts#L15",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/app/api/canvas/video-nodes/[id]/generate/route.ts#L15",
           "branch_file_state": "main后续修改"
         }
       ],
@@ -51,21 +51,21 @@
           "file": "src/components/canvas/video/reference-list.tsx",
           "line": 29,
           "anchor": "交换首尾帧",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/reference-list.tsx#L29",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/reference-list.tsx#L29",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/client-settings.ts",
           "line": 48,
           "anchor": "export function videoModeRoles",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/client-settings.ts#L48",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/client-settings.ts#L48",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/contract.ts",
           "line": 56,
           "anchor": "export function normalizeVideoInput",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/contract.ts#L56",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/contract.ts#L56",
           "branch_file_state": "main后续修改"
         }
       ],
@@ -85,21 +85,21 @@
           "file": "src/lib/video/references.ts",
           "line": 19,
           "anchor": "export const orderedInputSchema",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/references.ts#L19",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/references.ts#L19",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/reference-materialization.ts",
           "line": 15,
           "anchor": "export async function authorizeVideoReferences",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/reference-materialization.ts#L15",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/reference-materialization.ts#L15",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/components/canvas/video/settings-fields.tsx",
           "line": 78,
           "anchor": "上传视频参考素材",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/settings-fields.tsx#L78",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/settings-fields.tsx#L78",
           "branch_file_state": "main后续修改"
         }
       ],
@@ -120,21 +120,21 @@
           "file": "src/lib/video/references.ts",
           "line": 24,
           "anchor": "export function numberVideoInputs",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/references.ts#L24",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/references.ts#L24",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/prompt.ts",
           "line": 3,
           "anchor": "export function compileVideoPrompt",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/prompt.ts#L3",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/prompt.ts#L3",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/components/canvas/video/compact-composer.tsx",
           "line": 34,
           "anchor": "{{ref ${index}}}",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/compact-composer.tsx#L34",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/compact-composer.tsx#L34",
           "branch_file_state": "main后续修改"
         }
       ],
@@ -154,21 +154,21 @@
           "file": "src/app/api/video/catalog/route.ts",
           "line": 21,
           "anchor": "export async function GET",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/app/api/video/catalog/route.ts#L21",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/app/api/video/catalog/route.ts#L21",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/client-settings.ts",
           "line": 59,
           "anchor": "export function reconcileVideoSettings",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/client-settings.ts#L59",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/client-settings.ts#L59",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/components/canvas/video/use-video-catalog.ts",
           "line": 7,
           "anchor": "useVideoCatalog",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/use-video-catalog.ts#L7",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/use-video-catalog.ts#L7",
           "branch_file_state": "main相同"
         }
       ],
@@ -188,21 +188,21 @@
           "file": "src/lib/video/capability-schema.ts",
           "line": 24,
           "anchor": "export const videoDefinitionSchema",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/capability-schema.ts#L24",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/capability-schema.ts#L24",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/parameter-options.ts",
           "line": 4,
           "anchor": "export",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/parameter-options.ts#L4",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/parameter-options.ts#L4",
           "branch_file_state": "不在历史分支净差异内，另核来源"
         },
         {
           "file": "src/components/canvas/video/parameter-panel.tsx",
           "line": 8,
           "anchor": "export function VideoParameterPanel",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/parameter-panel.tsx#L8",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/parameter-panel.tsx#L8",
           "branch_file_state": "不在历史分支净差异内，另核来源"
         }
       ],
@@ -223,21 +223,21 @@
           "file": "src/components/canvas/video/settings-panel.tsx",
           "line": 43,
           "anchor": "Object.entries(cap.providerOptions",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/settings-panel.tsx#L43",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/settings-panel.tsx#L43",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/contract.ts",
           "line": 47,
           "anchor": "omittedProviderOptions",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/contract.ts#L47",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/contract.ts#L47",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/providers/wire.ts",
           "line": 79,
           "anchor": "export function selectWireOptions",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/wire.ts#L79",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/wire.ts#L79",
           "branch_file_state": "main后续修改"
         }
       ],
@@ -257,21 +257,21 @@
           "file": "src/components/canvas/video/camera-settings.tsx",
           "line": 9,
           "anchor": "export function CameraSettings",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/camera-settings.tsx#L9",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/camera-settings.tsx#L9",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/camera.ts",
           "line": 5,
           "anchor": "export function compileVideoCamera",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/camera.ts#L5",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/camera.ts#L5",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/submission.ts",
           "line": 62,
           "anchor": "const cameraPrompt=compileVideoCamera",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/submission.ts#L62",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/submission.ts#L62",
           "branch_file_state": "main后续修改"
         }
       ],
@@ -291,21 +291,21 @@
           "file": "src/components/canvas/video/shot-editor.tsx",
           "line": 6,
           "anchor": "export function ShotEditor",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/shot-editor.tsx#L6",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/shot-editor.tsx#L6",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/contract.ts",
           "line": 44,
           "anchor": "shots",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/contract.ts#L44",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/contract.ts#L44",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/providers/protocols/kie.ts",
           "line": 25,
           "anchor": "multi_prompt",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/kie.ts#L25",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/kie.ts#L25",
           "branch_file_state": "main相同"
         }
       ],
@@ -325,21 +325,21 @@
           "file": "src/components/canvas/video/element-editor.tsx",
           "line": 7,
           "anchor": "export function ElementEditor",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/element-editor.tsx#L7",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/element-editor.tsx#L7",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/contract.ts",
           "line": 44,
           "anchor": "elements",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/contract.ts#L44",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/contract.ts#L44",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/providers/protocols/apimart.ts",
           "line": 16,
           "anchor": "elements",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/apimart.ts#L16",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/apimart.ts#L16",
           "branch_file_state": "main相同"
         }
       ],
@@ -359,21 +359,21 @@
           "file": "src/components/canvas/video/settings-panel.tsx",
           "line": 45,
           "anchor": "characterOrientation",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/settings-panel.tsx#L45",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/settings-panel.tsx#L45",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/providers/protocols/kie.ts",
           "line": 9,
           "anchor": "motion",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/kie.ts#L9",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/kie.ts#L9",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/providers/protocols/tokendance.ts",
           "line": 10,
           "anchor": "tokendance-kling-motion",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/tokendance.ts#L10",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/tokendance.ts#L10",
           "branch_file_state": "main相同"
         }
       ],
@@ -394,21 +394,21 @@
           "file": "src/lib/video/script-assets.ts",
           "line": 36,
           "anchor": "export async function saveVideoScriptAsset",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/script-assets.ts#L36",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/script-assets.ts#L36",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/agent/canvas-video-tools.ts",
           "line": 82,
           "anchor": "tool(\"plan_video_storyboard\"",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/agent/canvas-video-tools.ts#L82",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/agent/canvas-video-tools.ts#L82",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/production-prompt.ts",
           "line": 18,
           "anchor": "完整剧本默认原样保留",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/production-prompt.ts#L18",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/production-prompt.ts#L18",
           "branch_file_state": "main相同"
         }
       ],
@@ -429,21 +429,21 @@
           "file": "src/lib/agent/canvas-video-tools.ts",
           "line": 106,
           "anchor": "tool(\"extend_video\"",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/agent/canvas-video-tools.ts#L106",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/agent/canvas-video-tools.ts#L106",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/workflow.ts",
           "line": 103,
           "anchor": "async function dependencyReference",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/workflow.ts#L103",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/workflow.ts#L103",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/production-prompt.ts",
           "line": 43,
           "anchor": "连续镜头、硬切、同机位",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/production-prompt.ts#L43",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/production-prompt.ts#L43",
           "branch_file_state": "main相同"
         }
       ],
@@ -463,21 +463,21 @@
           "file": "src/lib/agent/canvas-video-tools.ts",
           "line": 107,
           "anchor": "tool(\"edit_video\"",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/agent/canvas-video-tools.ts#L107",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/agent/canvas-video-tools.ts#L107",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/production-prompt.ts",
           "line": 52,
           "anchor": "视频编辑：",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/production-prompt.ts#L52",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/production-prompt.ts#L52",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/contract.ts",
           "line": 113,
           "anchor": "video_edit",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/contract.ts#L113",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/contract.ts#L113",
           "branch_file_state": "main后续修改"
         }
       ],
@@ -498,21 +498,21 @@
           "file": "src/lib/agent/creative-tool-catalog.ts",
           "line": 6,
           "anchor": "video:",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/agent/creative-tool-catalog.ts#L6",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/agent/creative-tool-catalog.ts#L6",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/agent/canvas-video-tools.ts",
           "line": 74,
           "anchor": "tool(\"get_video_config\"",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/agent/canvas-video-tools.ts#L74",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/agent/canvas-video-tools.ts#L74",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/agent/naumi-tools.ts",
           "line": 89,
           "anchor": "${VIDEO_PRODUCTION_PROMPT}",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/agent/naumi-tools.ts#L89",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/agent/naumi-tools.ts#L89",
           "branch_file_state": "main后续修改"
         }
       ],
@@ -533,21 +533,21 @@
           "file": "src/lib/video/canvas-workflow.ts",
           "line": 14,
           "anchor": "export async function buildCanvasVideoWorkflow",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/canvas-workflow.ts#L14",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/canvas-workflow.ts#L14",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/workflow.ts",
           "line": 50,
           "anchor": "export function validateVideoWorkflow",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/workflow.ts#L50",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/workflow.ts#L50",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/workflow-freeze.ts",
           "line": 32,
           "anchor": "export async function freezeVideoWorkflow",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/workflow-freeze.ts#L32",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/workflow-freeze.ts#L32",
           "branch_file_state": "main后续修改"
         }
       ],
@@ -568,21 +568,21 @@
           "file": "src/lib/video/service.ts",
           "line": 559,
           "anchor": "export async function recoverDueVideoTasks",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/service.ts#L559",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/service.ts#L559",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/worker.ts",
           "line": 56,
           "anchor": "export async function scanVideoWorkerOnce",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/worker.ts#L56",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/worker.ts#L56",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/components/canvas/video/use-video-history.ts",
           "line": 15,
           "anchor": "export function useVideoHistory",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/use-video-history.ts#L15",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/use-video-history.ts#L15",
           "branch_file_state": "main相同"
         }
       ],
@@ -602,21 +602,21 @@
           "file": "src/lib/video/cancellation.ts",
           "line": 20,
           "anchor": "export async function requestVideoCancellation",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/cancellation.ts#L20",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/cancellation.ts#L20",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/cancellation.ts",
           "line": 59,
           "anchor": "export async function sendPendingVideoCancellation",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/cancellation.ts#L59",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/cancellation.ts#L59",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/app/api/video/tasks/[id]/cancel/route.ts",
           "line": 7,
           "anchor": "POST",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/app/api/video/tasks/[id]/cancel/route.ts#L7",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/app/api/video/tasks/[id]/cancel/route.ts#L7",
           "branch_file_state": "main相同"
         }
       ],
@@ -636,21 +636,21 @@
           "file": "src/components/canvas/video/player.tsx",
           "line": 20,
           "anchor": "export function VideoPlayer",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/player.tsx#L20",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/player.tsx#L20",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/assets.ts",
           "line": 16,
           "anchor": "export async function importVideoAsset",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/assets.ts#L16",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/assets.ts#L16",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/components/canvas/canvas-client.tsx",
           "line": 1162,
           "anchor": "function VideoNodeSurface",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/canvas-client.tsx#L1162",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/canvas-client.tsx#L1162",
           "branch_file_state": "main后续修改"
         }
       ],
@@ -670,21 +670,21 @@
           "file": "src/components/canvas/video/player.tsx",
           "line": 8,
           "anchor": "action: \"frame\"",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/player.tsx#L8",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/player.tsx#L8",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/media-jobs.ts",
           "line": 82,
           "anchor": "export async function createMediaJob",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/media-jobs.ts#L82",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/media-jobs.ts#L82",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "scripts/video-fusion/media-engine.mjs",
           "line": 79,
           "anchor": "presetMediaCommand",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/scripts/video-fusion/media-engine.mjs#L79",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/scripts/video-fusion/media-engine.mjs#L79",
           "branch_file_state": "main相同"
         }
       ],
@@ -704,21 +704,21 @@
           "file": "src/components/canvas/video/media-actions.tsx",
           "line": 40,
           "anchor": "id: \"extract_audio\"",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/media-actions.tsx#L40",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/media-actions.tsx#L40",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/media-job-schema.ts",
           "line": 6,
           "anchor": "extract_audio",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/media-job-schema.ts#L6",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/media-job-schema.ts#L6",
           "branch_file_state": "main相同"
         },
         {
           "file": "scripts/video-fusion/media-engine.mjs",
           "line": 79,
           "anchor": "presetMediaCommand",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/scripts/video-fusion/media-engine.mjs#L79",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/scripts/video-fusion/media-engine.mjs#L79",
           "branch_file_state": "main相同"
         }
       ],
@@ -738,21 +738,21 @@
           "file": "src/components/canvas/video/media-actions.tsx",
           "line": 141,
           "anchor": "参数数组 JSON",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/media-actions.tsx#L141",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/media-actions.tsx#L141",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/agent/canvas-video-tools.ts",
           "line": 110,
           "anchor": "tool(\"process_video\"",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/agent/canvas-video-tools.ts#L110",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/agent/canvas-video-tools.ts#L110",
           "branch_file_state": "main相同"
         },
         {
           "file": "scripts/video-fusion/media-engine.mjs",
           "line": 56,
           "anchor": "nativeMediaArgs",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/scripts/video-fusion/media-engine.mjs#L56",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/scripts/video-fusion/media-engine.mjs#L56",
           "branch_file_state": "main相同"
         }
       ],
@@ -773,21 +773,21 @@
           "file": "src/lib/video/result-assets.ts",
           "line": 70,
           "anchor": "export async function collectVideoResultAssets",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/result-assets.ts#L70",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/result-assets.ts#L70",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/result-completion.ts",
           "line": 7,
           "anchor": "export async function completeVideoResultSet",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/result-completion.ts#L7",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/result-completion.ts#L7",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/reference-materialization.ts",
           "line": 15,
           "anchor": "export async function authorizeVideoReferences",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/reference-materialization.ts#L15",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/reference-materialization.ts#L15",
           "branch_file_state": "main后续修改"
         }
       ],
@@ -807,21 +807,21 @@
           "file": "src/components/video/video-studio-session.tsx",
           "line": 36,
           "anchor": "function VideoStudioSession",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/video/video-studio-session.tsx#L36",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/video/video-studio-session.tsx#L36",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/canvas/video-node-service.ts",
           "line": 110,
           "anchor": "export async function sendVideoTaskToCanvas",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/canvas/video-node-service.ts#L110",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/canvas/video-node-service.ts#L110",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/app/api/video/tasks/[id]/send-to-canvas/route.ts",
           "line": 10,
           "anchor": "POST",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/app/api/video/tasks/[id]/send-to-canvas/route.ts#L10",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/app/api/video/tasks/[id]/send-to-canvas/route.ts#L10",
           "branch_file_state": "main相同"
         }
       ],
@@ -842,21 +842,21 @@
           "file": "src/lib/video/providers/protocols/openai-compatible.ts",
           "line": 54,
           "anchor": "openAICompatibleCodec",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/openai-compatible.ts#L54",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/openai-compatible.ts#L54",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/providers/protocols/index.ts",
           "line": 20,
           "anchor": "export function installVideoWireCodecs",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/index.ts#L20",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/index.ts#L20",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/providers/wire.ts",
           "line": 16,
           "anchor": "export function buildVideoCreate",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/wire.ts#L16",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/wire.ts#L16",
           "branch_file_state": "main后续修改"
         }
       ],
@@ -877,21 +877,21 @@
           "file": "src/lib/video/providers/protocols/ark.ts",
           "line": 15,
           "anchor": "arkCodec",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/ark.ts#L15",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/ark.ts#L15",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/providers/protocols/index.ts",
           "line": 20,
           "anchor": "export function installVideoWireCodecs",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/index.ts#L20",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/index.ts#L20",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/providers/wire.ts",
           "line": 16,
           "anchor": "export function buildVideoCreate",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/wire.ts#L16",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/wire.ts#L16",
           "branch_file_state": "main后续修改"
         }
       ],
@@ -912,28 +912,28 @@
           "file": "src/lib/video/providers/protocols/kie.ts",
           "line": 68,
           "anchor": "kieCodec",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/kie.ts#L68",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/kie.ts#L68",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/providers/protocols/index.ts",
           "line": 20,
           "anchor": "export function installVideoWireCodecs",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/index.ts#L20",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/index.ts#L20",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/providers/wire.ts",
           "line": 16,
           "anchor": "export function buildVideoCreate",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/wire.ts#L16",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/wire.ts#L16",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/providers/protocols/apimart.ts",
           "line": 42,
           "anchor": "apimartCodec",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/apimart.ts#L42",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/apimart.ts#L42",
           "branch_file_state": "main相同"
         }
       ],
@@ -954,28 +954,28 @@
           "file": "src/lib/video/providers/protocols/gemini.ts",
           "line": 34,
           "anchor": "geminiCodec",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/gemini.ts#L34",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/gemini.ts#L34",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/providers/protocols/index.ts",
           "line": 20,
           "anchor": "export function installVideoWireCodecs",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/index.ts#L20",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/index.ts#L20",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/providers/wire.ts",
           "line": 16,
           "anchor": "export function buildVideoCreate",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/wire.ts#L16",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/wire.ts#L16",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/providers/protocols/minimax.ts",
           "line": 16,
           "anchor": "minimaxCodec",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/minimax.ts#L16",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/minimax.ts#L16",
           "branch_file_state": "main相同"
         }
       ],
@@ -996,35 +996,35 @@
           "file": "src/lib/video/providers/protocols/comfyui.ts",
           "line": 32,
           "anchor": "comfyUICodec",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/comfyui.ts#L32",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/comfyui.ts#L32",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/providers/protocols/index.ts",
           "line": 20,
           "anchor": "export function installVideoWireCodecs",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/index.ts#L20",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/index.ts#L20",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/providers/wire.ts",
           "line": 16,
           "anchor": "export function buildVideoCreate",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/wire.ts#L16",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/wire.ts#L16",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/byoc.ts",
           "line": 46,
           "anchor": "export async function submitByocComfyVideo",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/byoc.ts#L46",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/byoc.ts#L46",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/components/canvas/video/byoc-settings.tsx",
           "line": 9,
           "anchor": "export function VideoByocSettings",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/byoc-settings.tsx#L9",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/byoc-settings.tsx#L9",
           "branch_file_state": "main相同"
         }
       ],
@@ -1045,21 +1045,21 @@
           "file": "src/lib/video/providers/protocols/tokendance.ts",
           "line": 16,
           "anchor": "TOKEN_DANCE_PROFILES",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/tokendance.ts#L16",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/tokendance.ts#L16",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/providers/protocols/index.ts",
           "line": 20,
           "anchor": "export function installVideoWireCodecs",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/index.ts#L20",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/index.ts#L20",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/providers/wire.ts",
           "line": 16,
           "anchor": "export function buildVideoCreate",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/wire.ts#L16",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/wire.ts#L16",
           "branch_file_state": "main后续修改"
         }
       ],
@@ -1080,21 +1080,21 @@
           "file": "src/lib/video/providers/protocols/tfrouter.ts",
           "line": 4,
           "anchor": "TF_ROUTER_PROFILES",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/tfrouter.ts#L4",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/tfrouter.ts#L4",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/providers/protocols/index.ts",
           "line": 20,
           "anchor": "export function installVideoWireCodecs",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/index.ts#L20",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/index.ts#L20",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/providers/wire.ts",
           "line": 16,
           "anchor": "export function buildVideoCreate",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/wire.ts#L16",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/wire.ts#L16",
           "branch_file_state": "main后续修改"
         }
       ],
@@ -1115,21 +1115,21 @@
           "file": "src/lib/video/providers/protocols/compshare.ts",
           "line": 5,
           "anchor": "COMPSHARE_PROFILES",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/compshare.ts#L5",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/compshare.ts#L5",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/providers/protocols/index.ts",
           "line": 20,
           "anchor": "export function installVideoWireCodecs",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/index.ts#L20",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/index.ts#L20",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/providers/wire.ts",
           "line": 16,
           "anchor": "export function buildVideoCreate",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/wire.ts#L16",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/wire.ts#L16",
           "branch_file_state": "main后续修改"
         }
       ],
@@ -1150,21 +1150,21 @@
           "file": "src/lib/video/submission.ts",
           "line": 4,
           "anchor": "createVideoTaskWithReservation",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/submission.ts#L4",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/submission.ts#L4",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/frozen-capability.ts",
           "line": 20,
           "anchor": "freezeManagedVideoCapability",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/frozen-capability.ts#L20",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/frozen-capability.ts#L20",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/canvas/video-node-service.ts",
           "line": 37,
           "anchor": "export async function authorizeNodeInputs",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/canvas/video-node-service.ts#L37",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/canvas/video-node-service.ts#L37",
           "branch_file_state": "main后续修改"
         }
       ],
@@ -1185,14 +1185,14 @@
           "file": "src/components/canvas/canvas-client.tsx",
           "line": 1588,
           "anchor": "export function CanvasClient",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/canvas-client.tsx#L1588",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/canvas-client.tsx#L1588",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/components/canvas/node-menu-items.ts",
           "line": 7,
           "anchor": "export function canvasNodeMenuItems",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/node-menu-items.ts#L7",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/node-menu-items.ts#L7",
           "branch_file_state": "不在历史分支净差异内，另核来源"
         }
       ],
@@ -1212,21 +1212,21 @@
           "file": "src/lib/canvas/video-node-schema.ts",
           "line": 17,
           "anchor": "export const videoNodeWriteSchema",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/canvas/video-node-schema.ts#L17",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/canvas/video-node-schema.ts#L17",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/canvas/video-node-repository.ts",
           "line": 32,
           "anchor": "export async function saveVideoNodeTx",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/canvas/video-node-repository.ts#L32",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/canvas/video-node-repository.ts#L32",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/canvas/video-node-service.ts",
           "line": 78,
           "anchor": "export async function copyVideoNodes",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/canvas/video-node-service.ts#L78",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/canvas/video-node-service.ts#L78",
           "branch_file_state": "main后续修改"
         }
       ],
@@ -1246,21 +1246,21 @@
           "file": "src/lib/video/task-snapshot.ts",
           "line": 11,
           "anchor": "export function publicVideoTaskSnapshot",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/task-snapshot.ts#L11",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/task-snapshot.ts#L11",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/workflow-source.ts",
           "line": 10,
           "anchor": "export async function readOwnedVideoWorkflow",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/workflow-source.ts#L10",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/workflow-source.ts#L10",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/client-history.ts",
           "line": 7,
           "anchor": "videoHistoryDraft",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/client-history.ts#L7",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/client-history.ts#L7",
           "branch_file_state": "main相同"
         }
       ],
@@ -1280,21 +1280,21 @@
           "file": "src/lib/video/media.ts",
           "line": 13,
           "anchor": "export function mediaWorkerConfigured",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/media.ts#L13",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/media.ts#L13",
           "branch_file_state": "main相同"
         },
         {
           "file": "src/lib/video/media-jobs.ts",
           "line": 156,
           "anchor": "async function publish",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/media-jobs.ts#L156",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/media-jobs.ts#L156",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "scripts/video-fusion/media-engine.mjs",
           "line": 3,
           "anchor": "createReadStream",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/scripts/video-fusion/media-engine.mjs#L3",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/scripts/video-fusion/media-engine.mjs#L3",
           "branch_file_state": "main相同"
         }
       ],
@@ -1314,21 +1314,21 @@
           "file": "src/lib/video/canvas-batch.ts",
           "line": 43,
           "anchor": "export async function submitCanvasVideoBatch",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/canvas-batch.ts#L43",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/canvas-batch.ts#L43",
           "branch_file_state": "不在历史分支净差异内，另核来源"
         },
         {
           "file": "src/lib/video/canvas-batch-client.ts",
           "line": 21,
           "anchor": "generateCanvasVideoBatch",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/canvas-batch-client.ts#L21",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/canvas-batch-client.ts#L21",
           "branch_file_state": "不在历史分支净差异内，另核来源"
         },
         {
           "file": "src/app/api/canvas/video-nodes/[id]/batch/route.ts",
           "line": 31,
           "anchor": "POST",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/app/api/canvas/video-nodes/[id]/batch/route.ts#L31",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/app/api/canvas/video-nodes/[id]/batch/route.ts#L31",
           "branch_file_state": "不在历史分支净差异内，另核来源"
         }
       ],
@@ -1348,21 +1348,21 @@
           "file": "src/components/canvas/video/parameter-panel.tsx",
           "line": 8,
           "anchor": "export function VideoParameterPanel",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/parameter-panel.tsx#L8",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/parameter-panel.tsx#L8",
           "branch_file_state": "不在历史分支净差异内，另核来源"
         },
         {
           "file": "src/lib/video/prompt-assist.ts",
           "line": 6,
           "anchor": "export function validateVideoOptimizedPrompt",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/prompt-assist.ts#L6",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/prompt-assist.ts#L6",
           "branch_file_state": "不在历史分支净差异内，另核来源"
         },
         {
           "file": "src/components/canvas/video/compact-composer.tsx",
           "line": 68,
           "anchor": "<VideoPromptOptimizer",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/compact-composer.tsx#L68",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/compact-composer.tsx#L68",
           "branch_file_state": "main后续修改"
         }
       ],
@@ -1382,21 +1382,21 @@
           "file": "src/lib/video/coordination-pool.ts",
           "line": 37,
           "anchor": "acquireVideoCoordinationLock",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/coordination-pool.ts#L37",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/coordination-pool.ts#L37",
           "branch_file_state": "不在历史分支净差异内，另核来源"
         },
         {
           "file": "src/lib/video/workflow-creation.ts",
           "line": 17,
           "anchor": "bindWorkflowCreationProject",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/workflow-creation.ts#L17",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/workflow-creation.ts#L17",
           "branch_file_state": "不在历史分支净差异内，另核来源"
         },
         {
           "file": "src/lib/video/reference-media.ts",
           "line": 11,
           "anchor": "export",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/reference-media.ts#L11",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/reference-media.ts#L11",
           "branch_file_state": "不在历史分支净差异内，另核来源"
         }
       ],
@@ -1414,21 +1414,21 @@
           "file": "src/lib/video/providers/protocols/index.ts",
           "line": 14,
           "anchor": "APIB_VERIFIED_PROFILES",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/index.ts#L14",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/index.ts#L14",
           "branch_file_state": "main后续修改"
         },
         {
           "file": "src/lib/video/providers/protocols/apib-documented.ts",
           "line": 49,
           "anchor": "apibDocumentedCodec",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/apib-documented.ts#L49",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/apib-documented.ts#L49",
           "branch_file_state": "不在历史分支净差异内，另核来源"
         },
         {
           "file": "src/lib/video/providers/protocols/geek-h3-documented.ts",
           "line": 16,
           "anchor": "geekH3DocumentedCodec",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/geek-h3-documented.ts#L16",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/geek-h3-documented.ts#L16",
           "branch_file_state": "不在历史分支净差异内，另核来源"
         }
       ],
@@ -1448,21 +1448,21 @@
           "file": "src/app/studio3d/page.tsx",
           "line": 5,
           "anchor": "export default function Studio3dPage",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/app/studio3d/page.tsx#L5",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/app/studio3d/page.tsx#L5",
           "branch_file_state": "不在历史分支净差异内，另核来源"
         },
         {
           "file": "src/lib/studio3d/engine.ts",
           "line": 8,
           "anchor": "export class StudioEngine",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/studio3d/engine.ts#L8",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/studio3d/engine.ts#L8",
           "branch_file_state": "不在历史分支净差异内，另核来源"
         },
         {
           "file": "src/lib/studio3d/project.ts",
           "line": 68,
           "anchor": "template: z.enum",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/studio3d/project.ts#L68",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/studio3d/project.ts#L68",
           "branch_file_state": "不在历史分支净差异内，另核来源"
         }
       ],
@@ -1482,7 +1482,7 @@
           "file": "src/components/canvas/node-menu-items.ts",
           "line": 7,
           "anchor": "export function canvasNodeMenuItems",
-          "url": "https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/node-menu-items.ts#L7",
+          "url": "https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/node-menu-items.ts#L7",
           "branch_file_state": "不在历史分支净差异内，另核来源"
         }
       ],

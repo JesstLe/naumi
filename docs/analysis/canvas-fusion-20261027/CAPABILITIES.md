@@ -1,6 +1,6 @@
 # 当前 main 能力逐项矩阵
 
-固定主线：`305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea`。V01—V24/P01—P08/S01—S02完整保留原34项，X01—X03补充基础设施，L01—L06区分后续与独立模块。
+固定主线：`4e15e71a2d56ba8518340c04a256cf920b978e41`。V01—V24/P01—P08/S01—S02完整保留原34项，X01—X03补充基础设施，L01—L06区分后续与独立模块。
 
 证据级别：本轮沿当前源码核对入口、规则与调用，不是当前供应商/DB/浏览器的运行验收。每项测试文件只是后续集中验收入口，不把历史通过结果继承为本轮PASS。
 
@@ -60,9 +60,9 @@
 **按Naumi原生逻辑的方向**：复用节点与创作栏；入口围绕文字或已选素材，不另建一套上游画布。
 
 **源码锚点**：
-- [src/components/canvas/canvas-client.tsx:7347](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/canvas-client.tsx#L7347) — `function createCanvasNode`；main后续修改。
-- [src/lib/video/node-submission.ts:13](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/node-submission.ts#L13) — `export async function submitCanvasVideo`；main后续修改。
-- [src/app/api/canvas/video-nodes/[id]/generate/route.ts:15](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/app/api/canvas/video-nodes/[id]/generate/route.ts#L15) — `export async function POST`；main后续修改。
+- [src/components/canvas/canvas-client.tsx:7347](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/canvas-client.tsx#L7347) — `function createCanvasNode`；main后续修改。
+- [src/lib/video/node-submission.ts:13](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/node-submission.ts#L13) — `export async function submitCanvasVideo`；main后续修改。
+- [src/app/api/canvas/video-nodes/[id]/generate/route.ts:15](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/app/api/canvas/video-nodes/[id]/generate/route.ts#L15) — `export async function POST`；main后续修改。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-canvas.ts`、`scripts/verify-video-fusion-creation.mjs`。
 
@@ -76,9 +76,9 @@
 **按Naumi原生逻辑的方向**：保留首尾的真实含义；与原画布连线/引用统一表达，不让用户同时维护重复列表。
 
 **源码锚点**：
-- [src/components/canvas/video/reference-list.tsx:29](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/reference-list.tsx#L29) — `交换首尾帧`；main相同。
-- [src/lib/video/client-settings.ts:48](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/client-settings.ts#L48) — `export function videoModeRoles`；main后续修改。
-- [src/lib/video/contract.ts:56](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/contract.ts#L56) — `export function normalizeVideoInput`；main后续修改。
+- [src/components/canvas/video/reference-list.tsx:29](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/reference-list.tsx#L29) — `交换首尾帧`；main相同。
+- [src/lib/video/client-settings.ts:48](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/client-settings.ts#L48) — `export function videoModeRoles`；main后续修改。
+- [src/lib/video/contract.ts:56](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/contract.ts#L56) — `export function normalizeVideoInput`；main后续修改。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-reference-boundaries.ts`。
 
@@ -92,9 +92,9 @@
 **按Naumi原生逻辑的方向**：继续复用正式素材身份，简化引用操作；不把上游计数或字段当固定产品限制。
 
 **源码锚点**：
-- [src/lib/video/references.ts:19](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/references.ts#L19) — `export const orderedInputSchema`；main相同。
-- [src/lib/video/reference-materialization.ts:15](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/reference-materialization.ts#L15) — `export async function authorizeVideoReferences`；main后续修改。
-- [src/components/canvas/video/settings-fields.tsx:78](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/settings-fields.tsx#L78) — `上传视频参考素材`；main后续修改。
+- [src/lib/video/references.ts:19](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/references.ts#L19) — `export const orderedInputSchema`；main相同。
+- [src/lib/video/reference-materialization.ts:15](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/reference-materialization.ts#L15) — `export async function authorizeVideoReferences`；main后续修改。
+- [src/components/canvas/video/settings-fields.tsx:78](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/settings-fields.tsx#L78) — `上传视频参考素材`；main后续修改。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-reference-limits.ts`。
 
@@ -108,9 +108,9 @@
 **按Naumi原生逻辑的方向**：保留稳定身份、顺序和角色；普通用户层统一为 Naumi 的 @/素材标签，编译器内部负责协议编号。不能直接批量替换旧提示词。
 
 **源码锚点**：
-- [src/lib/video/references.ts:24](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/references.ts#L24) — `export function numberVideoInputs`；main相同。
-- [src/lib/video/prompt.ts:3](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/prompt.ts#L3) — `export function compileVideoPrompt`；main相同。
-- [src/components/canvas/video/compact-composer.tsx:34](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/compact-composer.tsx#L34) — `{{ref ${index}}}`；main后续修改。
+- [src/lib/video/references.ts:24](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/references.ts#L24) — `export function numberVideoInputs`；main相同。
+- [src/lib/video/prompt.ts:3](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/prompt.ts#L3) — `export function compileVideoPrompt`；main相同。
+- [src/components/canvas/video/compact-composer.tsx:34](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/compact-composer.tsx#L34) — `{{ref ${index}}}`；main后续修改。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-reference-order.ts`、`scripts/verify-video-fusion-reference-edges.ts`。
 
@@ -124,9 +124,9 @@
 **按Naumi原生逻辑的方向**：模型目录继续是唯一参数来源；同一模型在主创作栏和高级设置保持一致。
 
 **源码锚点**：
-- [src/app/api/video/catalog/route.ts:21](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/app/api/video/catalog/route.ts#L21) — `export async function GET`；main相同。
-- [src/lib/video/client-settings.ts:59](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/client-settings.ts#L59) — `export function reconcileVideoSettings`；main后续修改。
-- [src/components/canvas/video/use-video-catalog.ts:7](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/use-video-catalog.ts#L7) — `useVideoCatalog`；main相同。
+- [src/app/api/video/catalog/route.ts:21](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/app/api/video/catalog/route.ts#L21) — `export async function GET`；main相同。
+- [src/lib/video/client-settings.ts:59](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/client-settings.ts#L59) — `export function reconcileVideoSettings`；main后续修改。
+- [src/components/canvas/video/use-video-catalog.ts:7](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/use-video-catalog.ts#L7) — `useVideoCatalog`；main相同。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-client-settings.ts`。
 
@@ -140,9 +140,9 @@
 **按Naumi原生逻辑的方向**：保留真正影响输出的参数；常用项集中，协议差异由适配层处理。
 
 **源码锚点**：
-- [src/lib/video/capability-schema.ts:24](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/capability-schema.ts#L24) — `export const videoDefinitionSchema`；main后续修改。
-- [src/lib/video/parameter-options.ts:4](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/parameter-options.ts#L4) — `export`；不在历史分支净差异内，另核来源。
-- [src/components/canvas/video/parameter-panel.tsx:8](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/parameter-panel.tsx#L8) — `export function VideoParameterPanel`；不在历史分支净差异内，另核来源。
+- [src/lib/video/capability-schema.ts:24](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/capability-schema.ts#L24) — `export const videoDefinitionSchema`；main后续修改。
+- [src/lib/video/parameter-options.ts:4](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/parameter-options.ts#L4) — `export`；不在历史分支净差异内，另核来源。
+- [src/components/canvas/video/parameter-panel.tsx:8](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/parameter-panel.tsx#L8) — `export function VideoParameterPanel`；不在历史分支净差异内，另核来源。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-client-settings.ts`。
 
@@ -156,9 +156,9 @@
 **按Naumi原生逻辑的方向**：用户能理解的业务控制项保留；供应商 key 收入映射层/管理员界面，不机械照搬到创作界面。
 
 **源码锚点**：
-- [src/components/canvas/video/settings-panel.tsx:43](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/settings-panel.tsx#L43) — `Object.entries(cap.providerOptions`；main后续修改。
-- [src/lib/video/contract.ts:47](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/contract.ts#L47) — `omittedProviderOptions`；main后续修改。
-- [src/lib/video/providers/wire.ts:79](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/wire.ts#L79) — `export function selectWireOptions`；main后续修改。
+- [src/components/canvas/video/settings-panel.tsx:43](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/settings-panel.tsx#L43) — `Object.entries(cap.providerOptions`；main后续修改。
+- [src/lib/video/contract.ts:47](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/contract.ts#L47) — `omittedProviderOptions`；main后续修改。
+- [src/lib/video/providers/wire.ts:79](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/wire.ts#L79) — `export function selectWireOptions`；main后续修改。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-contract.ts`、`scripts/verify-video-fusion-advanced-settings.ts`。
 
@@ -172,9 +172,9 @@
 **按Naumi原生逻辑的方向**：摄影参数按镜头创作组织；与3D导演台机位区分，未来通过明确导出的镜头信息连接。
 
 **源码锚点**：
-- [src/components/canvas/video/camera-settings.tsx:9](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/camera-settings.tsx#L9) — `export function CameraSettings`；main相同。
-- [src/lib/video/camera.ts:5](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/camera.ts#L5) — `export function compileVideoCamera`；main相同。
-- [src/lib/video/submission.ts:62](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/submission.ts#L62) — `const cameraPrompt=compileVideoCamera`；main后续修改。
+- [src/components/canvas/video/camera-settings.tsx:9](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/camera-settings.tsx#L9) — `export function CameraSettings`；main相同。
+- [src/lib/video/camera.ts:5](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/camera.ts#L5) — `export function compileVideoCamera`；main相同。
+- [src/lib/video/submission.ts:62](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/submission.ts#L62) — `const cameraPrompt=compileVideoCamera`；main后续修改。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-settings.mjs`。
 
@@ -188,9 +188,9 @@
 **按Naumi原生逻辑的方向**：区分一个模型任务内的多镜头与多个视频节点；用我们的文字/镜头节点组织，避免用户误把两者当同一开关。
 
 **源码锚点**：
-- [src/components/canvas/video/shot-editor.tsx:6](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/shot-editor.tsx#L6) — `export function ShotEditor`；main相同。
-- [src/lib/video/contract.ts:44](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/contract.ts#L44) — `shots`；main后续修改。
-- [src/lib/video/providers/protocols/kie.ts:25](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/kie.ts#L25) — `multi_prompt`；main相同。
+- [src/components/canvas/video/shot-editor.tsx:6](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/shot-editor.tsx#L6) — `export function ShotEditor`；main相同。
+- [src/lib/video/contract.ts:44](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/contract.ts#L44) — `shots`；main后续修改。
+- [src/lib/video/providers/protocols/kie.ts:25](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/kie.ts#L25) — `multi_prompt`；main相同。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-script-multishot.ts`。
 
@@ -204,9 +204,9 @@
 **按Naumi原生逻辑的方向**：作为未来角色/场景节点的可复用底层；素材身份、不同状态和复用规则需单独设计。
 
 **源码锚点**：
-- [src/components/canvas/video/element-editor.tsx:7](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/element-editor.tsx#L7) — `export function ElementEditor`；main相同。
-- [src/lib/video/contract.ts:44](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/contract.ts#L44) — `elements`；main后续修改。
-- [src/lib/video/providers/protocols/apimart.ts:16](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/apimart.ts#L16) — `elements`；main相同。
+- [src/components/canvas/video/element-editor.tsx:7](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/element-editor.tsx#L7) — `export function ElementEditor`；main相同。
+- [src/lib/video/contract.ts:44](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/contract.ts#L44) — `elements`；main后续修改。
+- [src/lib/video/providers/protocols/apimart.ts:16](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/apimart.ts#L16) — `elements`；main相同。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-advanced-settings.ts`。
 
@@ -220,9 +220,9 @@
 **按Naumi原生逻辑的方向**：用参考素材职责表达动作来源；朝向作为必要业务控制，不暴露原始供应商字段名。
 
 **源码锚点**：
-- [src/components/canvas/video/settings-panel.tsx:45](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/settings-panel.tsx#L45) — `characterOrientation`；main后续修改。
-- [src/lib/video/providers/protocols/kie.ts:9](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/kie.ts#L9) — `motion`；main相同。
-- [src/lib/video/providers/protocols/tokendance.ts:10](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/tokendance.ts#L10) — `tokendance-kling-motion`；main相同。
+- [src/components/canvas/video/settings-panel.tsx:45](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/settings-panel.tsx#L45) — `characterOrientation`；main后续修改。
+- [src/lib/video/providers/protocols/kie.ts:9](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/kie.ts#L9) — `motion`；main相同。
+- [src/lib/video/providers/protocols/tokendance.ts:10](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/tokendance.ts#L10) — `tokendance-kling-motion`；main相同。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-ic-protocols.ts`。
 
@@ -236,9 +236,9 @@
 **按Naumi原生逻辑的方向**：复用文字节点和现有Agent；补清晰的原稿→片段→视频关系，不要求用户操作字符下标。
 
 **源码锚点**：
-- [src/lib/video/script-assets.ts:36](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/script-assets.ts#L36) — `export async function saveVideoScriptAsset`；main相同。
-- [src/lib/agent/canvas-video-tools.ts:82](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/agent/canvas-video-tools.ts#L82) — `tool("plan_video_storyboard"`；main相同。
-- [src/lib/video/production-prompt.ts:18](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/production-prompt.ts#L18) — `完整剧本默认原样保留`；main相同。
+- [src/lib/video/script-assets.ts:36](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/script-assets.ts#L36) — `export async function saveVideoScriptAsset`；main相同。
+- [src/lib/agent/canvas-video-tools.ts:82](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/agent/canvas-video-tools.ts#L82) — `tool("plan_video_storyboard"`；main相同。
+- [src/lib/video/production-prompt.ts:18](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/production-prompt.ts#L18) — `完整剧本默认原样保留`；main相同。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-script.ts`、`scripts/verify-video-fusion-mosaic.ts`。
 
@@ -252,9 +252,9 @@
 **按Naumi原生逻辑的方向**：复用画布连线和任务状态表达依赖；不另建和画布割裂的调度页面。
 
 **源码锚点**：
-- [src/lib/agent/canvas-video-tools.ts:106](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/agent/canvas-video-tools.ts#L106) — `tool("extend_video"`；main相同。
-- [src/lib/video/workflow.ts:103](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/workflow.ts#L103) — `async function dependencyReference`；main后续修改。
-- [src/lib/video/production-prompt.ts:43](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/production-prompt.ts#L43) — `连续镜头、硬切、同机位`；main相同。
+- [src/lib/agent/canvas-video-tools.ts:106](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/agent/canvas-video-tools.ts#L106) — `tool("extend_video"`；main相同。
+- [src/lib/video/workflow.ts:103](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/workflow.ts#L103) — `async function dependencyReference`；main后续修改。
+- [src/lib/video/production-prompt.ts:43](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/production-prompt.ts#L43) — `连续镜头、硬切、同机位`；main相同。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-continuity.ts`、`scripts/verify-video-fusion-production.ts`。
 
@@ -268,9 +268,9 @@
 **按Naumi原生逻辑的方向**：围绕用户选中的视频和想改的内容提供原生编辑；复用生成任务，不新增平行编辑后端。
 
 **源码锚点**：
-- [src/lib/agent/canvas-video-tools.ts:107](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/agent/canvas-video-tools.ts#L107) — `tool("edit_video"`；main相同。
-- [src/lib/video/production-prompt.ts:52](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/production-prompt.ts#L52) — `视频编辑：`；main相同。
-- [src/lib/video/contract.ts:113](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/contract.ts#L113) — `video_edit`；main后续修改。
+- [src/lib/agent/canvas-video-tools.ts:107](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/agent/canvas-video-tools.ts#L107) — `tool("edit_video"`；main相同。
+- [src/lib/video/production-prompt.ts:52](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/production-prompt.ts#L52) — `视频编辑：`；main相同。
+- [src/lib/video/contract.ts:113](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/contract.ts#L113) — `video_edit`；main后续修改。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-production.ts`。
 
@@ -284,9 +284,9 @@
 **按Naumi原生逻辑的方向**：让Agent操作与用户手工操作同一份节点，聊天完成不冒充视频完成。
 
 **源码锚点**：
-- [src/lib/agent/creative-tool-catalog.ts:6](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/agent/creative-tool-catalog.ts#L6) — `video:`；main相同。
-- [src/lib/agent/canvas-video-tools.ts:74](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/agent/canvas-video-tools.ts#L74) — `tool("get_video_config"`；main相同。
-- [src/lib/agent/naumi-tools.ts:89](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/agent/naumi-tools.ts#L89) — `${VIDEO_PRODUCTION_PROMPT}`；main后续修改。
+- [src/lib/agent/creative-tool-catalog.ts:6](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/agent/creative-tool-catalog.ts#L6) — `video:`；main相同。
+- [src/lib/agent/canvas-video-tools.ts:74](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/agent/canvas-video-tools.ts#L74) — `tool("get_video_config"`；main相同。
+- [src/lib/agent/naumi-tools.ts:89](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/agent/naumi-tools.ts#L89) — `${VIDEO_PRODUCTION_PROMPT}`；main后续修改。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-agent.ts`、`scripts/verify-video-fusion-agent-sse.ts`。
 
@@ -300,9 +300,9 @@
 **按Naumi原生逻辑的方向**：选择节点/连线就是编排依据；配置继承、等待原因和恢复状态应回到画布。
 
 **源码锚点**：
-- [src/lib/video/canvas-workflow.ts:14](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/canvas-workflow.ts#L14) — `export async function buildCanvasVideoWorkflow`；main后续修改。
-- [src/lib/video/workflow.ts:50](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/workflow.ts#L50) — `export function validateVideoWorkflow`；main后续修改。
-- [src/lib/video/workflow-freeze.ts:32](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/workflow-freeze.ts#L32) — `export async function freezeVideoWorkflow`；main后续修改。
+- [src/lib/video/canvas-workflow.ts:14](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/canvas-workflow.ts#L14) — `export async function buildCanvasVideoWorkflow`；main后续修改。
+- [src/lib/video/workflow.ts:50](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/workflow.ts#L50) — `export function validateVideoWorkflow`；main后续修改。
+- [src/lib/video/workflow-freeze.ts:32](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/workflow-freeze.ts#L32) — `export async function freezeVideoWorkflow`；main后续修改。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-mixed-dag.ts`、`scripts/verify-video-fusion-workflow-freeze.ts`。
 
@@ -316,9 +316,9 @@
 **按Naumi原生逻辑的方向**：保留可靠后台，前端集中显示当前节点状态和可操作下一步；不再加一套浏览器轮询存储体系。
 
 **源码锚点**：
-- [src/lib/video/service.ts:559](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/service.ts#L559) — `export async function recoverDueVideoTasks`；main后续修改。
-- [src/lib/video/worker.ts:56](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/worker.ts#L56) — `export async function scanVideoWorkerOnce`；main相同。
-- [src/components/canvas/video/use-video-history.ts:15](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/use-video-history.ts#L15) — `export function useVideoHistory`；main相同。
+- [src/lib/video/service.ts:559](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/service.ts#L559) — `export async function recoverDueVideoTasks`；main后续修改。
+- [src/lib/video/worker.ts:56](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/worker.ts#L56) — `export async function scanVideoWorkerOnce`；main相同。
+- [src/components/canvas/video/use-video-history.ts:15](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/use-video-history.ts#L15) — `export function useVideoHistory`；main相同。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-history-recovery.ts`、`scripts/verify-video-fusion-submission-retry.ts`。
 
@@ -332,9 +332,9 @@
 **按Naumi原生逻辑的方向**：保留两阶段语义，用简洁的取消中/已停止反馈，不以隐藏节点代替停止任务。
 
 **源码锚点**：
-- [src/lib/video/cancellation.ts:20](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/cancellation.ts#L20) — `export async function requestVideoCancellation`；main后续修改。
-- [src/lib/video/cancellation.ts:59](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/cancellation.ts#L59) — `export async function sendPendingVideoCancellation`；main后续修改。
-- [src/app/api/video/tasks/[id]/cancel/route.ts:7](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/app/api/video/tasks/[id]/cancel/route.ts#L7) — `POST`；main相同。
+- [src/lib/video/cancellation.ts:20](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/cancellation.ts#L20) — `export async function requestVideoCancellation`；main后续修改。
+- [src/lib/video/cancellation.ts:59](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/cancellation.ts#L59) — `export async function sendPendingVideoCancellation`；main后续修改。
+- [src/app/api/video/tasks/[id]/cancel/route.ts:7](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/app/api/video/tasks/[id]/cancel/route.ts#L7) — `POST`；main相同。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-cancellation.ts`。
 
@@ -348,9 +348,9 @@
 **按Naumi原生逻辑的方向**：复用播放器和资产导入；独立音频节点只补真正缺少的创建、编辑与连线语义。
 
 **源码锚点**：
-- [src/components/canvas/video/player.tsx:20](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/player.tsx#L20) — `export function VideoPlayer`；main相同。
-- [src/lib/video/assets.ts:16](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/assets.ts#L16) — `export async function importVideoAsset`；main相同。
-- [src/components/canvas/canvas-client.tsx:1162](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/canvas-client.tsx#L1162) — `function VideoNodeSurface`；main后续修改。
+- [src/components/canvas/video/player.tsx:20](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/player.tsx#L20) — `export function VideoPlayer`；main相同。
+- [src/lib/video/assets.ts:16](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/assets.ts#L16) — `export async function importVideoAsset`；main相同。
+- [src/components/canvas/canvas-client.tsx:1162](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/canvas-client.tsx#L1162) — `function VideoNodeSurface`；main后续修改。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-player.ts`。
 
@@ -364,9 +364,9 @@
 **按Naumi原生逻辑的方向**：保留原生一键抽帧，作为视频编辑/3D预演结果继续创作的公共能力。
 
 **源码锚点**：
-- [src/components/canvas/video/player.tsx:8](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/player.tsx#L8) — `action: "frame"`；main相同。
-- [src/lib/video/media-jobs.ts:82](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/media-jobs.ts#L82) — `export async function createMediaJob`；main后续修改。
-- [scripts/video-fusion/media-engine.mjs:79](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/scripts/video-fusion/media-engine.mjs#L79) — `presetMediaCommand`；main相同。
+- [src/components/canvas/video/player.tsx:8](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/player.tsx#L8) — `action: "frame"`；main相同。
+- [src/lib/video/media-jobs.ts:82](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/media-jobs.ts#L82) — `export async function createMediaJob`；main后续修改。
+- [scripts/video-fusion/media-engine.mjs:79](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/scripts/video-fusion/media-engine.mjs#L79) — `presetMediaCommand`；main相同。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-derived-media.ts`。
 
@@ -380,9 +380,9 @@
 **按Naumi原生逻辑的方向**：保留这些常用动作；不要因想做音频节点或剪辑器而重写现有媒体处理后端。
 
 **源码锚点**：
-- [src/components/canvas/video/media-actions.tsx:40](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/media-actions.tsx#L40) — `id: "extract_audio"`；main相同。
-- [src/lib/video/media-job-schema.ts:6](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/media-job-schema.ts#L6) — `extract_audio`；main相同。
-- [scripts/video-fusion/media-engine.mjs:79](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/scripts/video-fusion/media-engine.mjs#L79) — `presetMediaCommand`；main相同。
+- [src/components/canvas/video/media-actions.tsx:40](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/media-actions.tsx#L40) — `id: "extract_audio"`；main相同。
+- [src/lib/video/media-job-schema.ts:6](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/media-job-schema.ts#L6) — `extract_audio`；main相同。
+- [scripts/video-fusion/media-engine.mjs:79](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/scripts/video-fusion/media-engine.mjs#L79) — `presetMediaCommand`；main相同。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-media-interface.ts`。
 
@@ -396,9 +396,9 @@
 **按Naumi原生逻辑的方向**：引擎复用；常用操作用可视化业务参数表达。原生JSON应属于专家/Agent层，不拿它代替普通用户的多轨剪辑。
 
 **源码锚点**：
-- [src/components/canvas/video/media-actions.tsx:141](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/media-actions.tsx#L141) — `参数数组 JSON`；main相同。
-- [src/lib/agent/canvas-video-tools.ts:110](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/agent/canvas-video-tools.ts#L110) — `tool("process_video"`；main相同。
-- [scripts/video-fusion/media-engine.mjs:56](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/scripts/video-fusion/media-engine.mjs#L56) — `nativeMediaArgs`；main相同。
+- [src/components/canvas/video/media-actions.tsx:141](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/media-actions.tsx#L141) — `参数数组 JSON`；main相同。
+- [src/lib/agent/canvas-video-tools.ts:110](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/agent/canvas-video-tools.ts#L110) — `tool("process_video"`；main相同。
+- [scripts/video-fusion/media-engine.mjs:56](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/scripts/video-fusion/media-engine.mjs#L56) — `nativeMediaArgs`；main相同。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-native-media.ts`。
 
@@ -412,9 +412,9 @@
 **按Naumi原生逻辑的方向**：统一作品/素材选择和连线，使角色、场景、音频、导演台输出都走同一条资产链。
 
 **源码锚点**：
-- [src/lib/video/result-assets.ts:70](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/result-assets.ts#L70) — `export async function collectVideoResultAssets`；main相同。
-- [src/lib/video/result-completion.ts:7](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/result-completion.ts#L7) — `export async function completeVideoResultSet`；main相同。
-- [src/lib/video/reference-materialization.ts:15](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/reference-materialization.ts#L15) — `export async function authorizeVideoReferences`；main后续修改。
+- [src/lib/video/result-assets.ts:70](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/result-assets.ts#L70) — `export async function collectVideoResultAssets`；main相同。
+- [src/lib/video/result-completion.ts:7](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/result-completion.ts#L7) — `export async function completeVideoResultSet`；main相同。
+- [src/lib/video/reference-materialization.ts:15](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/reference-materialization.ts#L15) — `export async function authorizeVideoReferences`；main后续修改。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-derived-media.ts`、`scripts/verify-video-fusion-results.ts`。
 
@@ -428,9 +428,9 @@
 **按Naumi原生逻辑的方向**：保留工作台入口但不自动灌满画布；与原生节点共用能力，不维护另一套参数逻辑。
 
 **源码锚点**：
-- [src/components/video/video-studio-session.tsx:36](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/video/video-studio-session.tsx#L36) — `function VideoStudioSession`；main相同。
-- [src/lib/canvas/video-node-service.ts:110](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/canvas/video-node-service.ts#L110) — `export async function sendVideoTaskToCanvas`；main后续修改。
-- [src/app/api/video/tasks/[id]/send-to-canvas/route.ts:10](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/app/api/video/tasks/[id]/send-to-canvas/route.ts#L10) — `POST`；main相同。
+- [src/components/video/video-studio-session.tsx:36](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/video/video-studio-session.tsx#L36) — `function VideoStudioSession`；main相同。
+- [src/lib/canvas/video-node-service.ts:110](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/canvas/video-node-service.ts#L110) — `export async function sendVideoTaskToCanvas`；main后续修改。
+- [src/app/api/video/tasks/[id]/send-to-canvas/route.ts:10](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/app/api/video/tasks/[id]/send-to-canvas/route.ts#L10) — `POST`；main相同。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-workbench.ts`。
 
@@ -444,9 +444,9 @@
 **按Naumi原生逻辑的方向**：继续留在供应商适配层。用户以模型和创作需求为主，不照搬协议路径/技术字段到画布。
 
 **源码锚点**：
-- [src/lib/video/providers/protocols/openai-compatible.ts:54](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/openai-compatible.ts#L54) — `openAICompatibleCodec`；main相同。
-- [src/lib/video/providers/protocols/index.ts:20](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/index.ts#L20) — `export function installVideoWireCodecs`；main后续修改。
-- [src/lib/video/providers/wire.ts:16](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/wire.ts#L16) — `export function buildVideoCreate`；main后续修改。
+- [src/lib/video/providers/protocols/openai-compatible.ts:54](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/openai-compatible.ts#L54) — `openAICompatibleCodec`；main相同。
+- [src/lib/video/providers/protocols/index.ts:20](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/index.ts#L20) — `export function installVideoWireCodecs`；main后续修改。
+- [src/lib/video/providers/wire.ts:16](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/wire.ts#L16) — `export function buildVideoCreate`；main后续修改。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-wire.ts`、`scripts/verify-video-fusion-protocol-coverage.mjs`。
 
@@ -460,9 +460,9 @@
 **按Naumi原生逻辑的方向**：继续留在供应商适配层。用户以模型和创作需求为主，不照搬协议路径/技术字段到画布。
 
 **源码锚点**：
-- [src/lib/video/providers/protocols/ark.ts:15](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/ark.ts#L15) — `arkCodec`；main相同。
-- [src/lib/video/providers/protocols/index.ts:20](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/index.ts#L20) — `export function installVideoWireCodecs`；main后续修改。
-- [src/lib/video/providers/wire.ts:16](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/wire.ts#L16) — `export function buildVideoCreate`；main后续修改。
+- [src/lib/video/providers/protocols/ark.ts:15](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/ark.ts#L15) — `arkCodec`；main相同。
+- [src/lib/video/providers/protocols/index.ts:20](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/index.ts#L20) — `export function installVideoWireCodecs`；main后续修改。
+- [src/lib/video/providers/wire.ts:16](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/wire.ts#L16) — `export function buildVideoCreate`；main后续修改。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-wire.ts`、`scripts/verify-video-fusion-protocol-coverage.mjs`。
 
@@ -476,10 +476,10 @@
 **按Naumi原生逻辑的方向**：继续留在供应商适配层。用户以模型和创作需求为主，不照搬协议路径/技术字段到画布。
 
 **源码锚点**：
-- [src/lib/video/providers/protocols/kie.ts:68](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/kie.ts#L68) — `kieCodec`；main相同。
-- [src/lib/video/providers/protocols/index.ts:20](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/index.ts#L20) — `export function installVideoWireCodecs`；main后续修改。
-- [src/lib/video/providers/wire.ts:16](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/wire.ts#L16) — `export function buildVideoCreate`；main后续修改。
-- [src/lib/video/providers/protocols/apimart.ts:42](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/apimart.ts#L42) — `apimartCodec`；main相同。
+- [src/lib/video/providers/protocols/kie.ts:68](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/kie.ts#L68) — `kieCodec`；main相同。
+- [src/lib/video/providers/protocols/index.ts:20](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/index.ts#L20) — `export function installVideoWireCodecs`；main后续修改。
+- [src/lib/video/providers/wire.ts:16](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/wire.ts#L16) — `export function buildVideoCreate`；main后续修改。
+- [src/lib/video/providers/protocols/apimart.ts:42](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/apimart.ts#L42) — `apimartCodec`；main相同。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-wire.ts`、`scripts/verify-video-fusion-protocol-coverage.mjs`。
 
@@ -493,10 +493,10 @@
 **按Naumi原生逻辑的方向**：继续留在供应商适配层。用户以模型和创作需求为主，不照搬协议路径/技术字段到画布。
 
 **源码锚点**：
-- [src/lib/video/providers/protocols/gemini.ts:34](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/gemini.ts#L34) — `geminiCodec`；main相同。
-- [src/lib/video/providers/protocols/index.ts:20](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/index.ts#L20) — `export function installVideoWireCodecs`；main后续修改。
-- [src/lib/video/providers/wire.ts:16](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/wire.ts#L16) — `export function buildVideoCreate`；main后续修改。
-- [src/lib/video/providers/protocols/minimax.ts:16](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/minimax.ts#L16) — `minimaxCodec`；main相同。
+- [src/lib/video/providers/protocols/gemini.ts:34](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/gemini.ts#L34) — `geminiCodec`；main相同。
+- [src/lib/video/providers/protocols/index.ts:20](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/index.ts#L20) — `export function installVideoWireCodecs`；main后续修改。
+- [src/lib/video/providers/wire.ts:16](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/wire.ts#L16) — `export function buildVideoCreate`；main后续修改。
+- [src/lib/video/providers/protocols/minimax.ts:16](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/minimax.ts#L16) — `minimaxCodec`；main相同。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-wire.ts`、`scripts/verify-video-fusion-protocol-coverage.mjs`。
 
@@ -510,11 +510,11 @@
 **按Naumi原生逻辑的方向**：继续留在供应商适配层。用户以模型和创作需求为主，不照搬协议路径/技术字段到画布。
 
 **源码锚点**：
-- [src/lib/video/providers/protocols/comfyui.ts:32](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/comfyui.ts#L32) — `comfyUICodec`；main相同。
-- [src/lib/video/providers/protocols/index.ts:20](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/index.ts#L20) — `export function installVideoWireCodecs`；main后续修改。
-- [src/lib/video/providers/wire.ts:16](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/wire.ts#L16) — `export function buildVideoCreate`；main后续修改。
-- [src/lib/video/byoc.ts:46](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/byoc.ts#L46) — `export async function submitByocComfyVideo`；main相同。
-- [src/components/canvas/video/byoc-settings.tsx:9](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/byoc-settings.tsx#L9) — `export function VideoByocSettings`；main相同。
+- [src/lib/video/providers/protocols/comfyui.ts:32](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/comfyui.ts#L32) — `comfyUICodec`；main相同。
+- [src/lib/video/providers/protocols/index.ts:20](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/index.ts#L20) — `export function installVideoWireCodecs`；main后续修改。
+- [src/lib/video/providers/wire.ts:16](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/wire.ts#L16) — `export function buildVideoCreate`；main后续修改。
+- [src/lib/video/byoc.ts:46](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/byoc.ts#L46) — `export async function submitByocComfyVideo`；main相同。
+- [src/components/canvas/video/byoc-settings.tsx:9](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/byoc-settings.tsx#L9) — `export function VideoByocSettings`；main相同。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-wire.ts`、`scripts/verify-video-fusion-protocol-coverage.mjs`。
 
@@ -528,9 +528,9 @@
 **按Naumi原生逻辑的方向**：继续留在供应商适配层。用户以模型和创作需求为主，不照搬协议路径/技术字段到画布。
 
 **源码锚点**：
-- [src/lib/video/providers/protocols/tokendance.ts:16](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/tokendance.ts#L16) — `TOKEN_DANCE_PROFILES`；main相同。
-- [src/lib/video/providers/protocols/index.ts:20](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/index.ts#L20) — `export function installVideoWireCodecs`；main后续修改。
-- [src/lib/video/providers/wire.ts:16](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/wire.ts#L16) — `export function buildVideoCreate`；main后续修改。
+- [src/lib/video/providers/protocols/tokendance.ts:16](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/tokendance.ts#L16) — `TOKEN_DANCE_PROFILES`；main相同。
+- [src/lib/video/providers/protocols/index.ts:20](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/index.ts#L20) — `export function installVideoWireCodecs`；main后续修改。
+- [src/lib/video/providers/wire.ts:16](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/wire.ts#L16) — `export function buildVideoCreate`；main后续修改。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-wire.ts`、`scripts/verify-video-fusion-protocol-coverage.mjs`。
 
@@ -544,9 +544,9 @@
 **按Naumi原生逻辑的方向**：继续留在供应商适配层。用户以模型和创作需求为主，不照搬协议路径/技术字段到画布。
 
 **源码锚点**：
-- [src/lib/video/providers/protocols/tfrouter.ts:4](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/tfrouter.ts#L4) — `TF_ROUTER_PROFILES`；main相同。
-- [src/lib/video/providers/protocols/index.ts:20](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/index.ts#L20) — `export function installVideoWireCodecs`；main后续修改。
-- [src/lib/video/providers/wire.ts:16](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/wire.ts#L16) — `export function buildVideoCreate`；main后续修改。
+- [src/lib/video/providers/protocols/tfrouter.ts:4](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/tfrouter.ts#L4) — `TF_ROUTER_PROFILES`；main相同。
+- [src/lib/video/providers/protocols/index.ts:20](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/index.ts#L20) — `export function installVideoWireCodecs`；main后续修改。
+- [src/lib/video/providers/wire.ts:16](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/wire.ts#L16) — `export function buildVideoCreate`；main后续修改。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-wire.ts`、`scripts/verify-video-fusion-protocol-coverage.mjs`。
 
@@ -560,9 +560,9 @@
 **按Naumi原生逻辑的方向**：继续留在供应商适配层。用户以模型和创作需求为主，不照搬协议路径/技术字段到画布。
 
 **源码锚点**：
-- [src/lib/video/providers/protocols/compshare.ts:5](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/compshare.ts#L5) — `COMPSHARE_PROFILES`；main相同。
-- [src/lib/video/providers/protocols/index.ts:20](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/index.ts#L20) — `export function installVideoWireCodecs`；main后续修改。
-- [src/lib/video/providers/wire.ts:16](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/wire.ts#L16) — `export function buildVideoCreate`；main后续修改。
+- [src/lib/video/providers/protocols/compshare.ts:5](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/compshare.ts#L5) — `COMPSHARE_PROFILES`；main相同。
+- [src/lib/video/providers/protocols/index.ts:20](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/index.ts#L20) — `export function installVideoWireCodecs`；main后续修改。
+- [src/lib/video/providers/wire.ts:16](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/wire.ts#L16) — `export function buildVideoCreate`；main后续修改。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-wire.ts`、`scripts/verify-video-fusion-protocol-coverage.mjs`。
 
@@ -576,9 +576,9 @@
 **按Naumi原生逻辑的方向**：继续使用Naumi公共能力，不引入上游账号、浏览器明文凭据或独立计费体系。
 
 **源码锚点**：
-- [src/lib/video/submission.ts:4](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/submission.ts#L4) — `createVideoTaskWithReservation`；main后续修改。
-- [src/lib/video/frozen-capability.ts:20](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/frozen-capability.ts#L20) — `freezeManagedVideoCapability`；main相同。
-- [src/lib/canvas/video-node-service.ts:37](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/canvas/video-node-service.ts#L37) — `export async function authorizeNodeInputs`；main后续修改。
+- [src/lib/video/submission.ts:4](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/submission.ts#L4) — `createVideoTaskWithReservation`；main后续修改。
+- [src/lib/video/frozen-capability.ts:20](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/frozen-capability.ts#L20) — `freezeManagedVideoCapability`；main相同。
+- [src/lib/canvas/video-node-service.ts:37](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/canvas/video-node-service.ts#L37) — `export async function authorizeNodeInputs`；main后续修改。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-safety.mjs`、`scripts/verify-video-fusion-manifest-access.ts`。
 
@@ -592,8 +592,8 @@
 **按Naumi原生逻辑的方向**：按能力完整切片开发；复用原有画布结构和撤销/选择逻辑，避免再加独立画布。
 
 **源码锚点**：
-- [src/components/canvas/canvas-client.tsx:1588](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/canvas-client.tsx#L1588) — `export function CanvasClient`；main后续修改。
-- [src/components/canvas/node-menu-items.ts:7](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/node-menu-items.ts#L7) — `export function canvasNodeMenuItems`；不在历史分支净差异内，另核来源。
+- [src/components/canvas/canvas-client.tsx:1588](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/canvas-client.tsx#L1588) — `export function CanvasClient`；main后续修改。
+- [src/components/canvas/node-menu-items.ts:7](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/node-menu-items.ts#L7) — `export function canvasNodeMenuItems`；不在历史分支净差异内，另核来源。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-protection.mjs`、`scripts/verify-video-fusion-readonly.ts`。
 
@@ -607,9 +607,9 @@
 **按Naumi原生逻辑的方向**：为新增角色/场景/导演台节点设计时复用公共项目、身份和历史语义，不复制视频专属schema当万能节点。
 
 **源码锚点**：
-- [src/lib/canvas/video-node-schema.ts:17](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/canvas/video-node-schema.ts#L17) — `export const videoNodeWriteSchema`；main后续修改。
-- [src/lib/canvas/video-node-repository.ts:32](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/canvas/video-node-repository.ts#L32) — `export async function saveVideoNodeTx`；main相同。
-- [src/lib/canvas/video-node-service.ts:78](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/canvas/video-node-service.ts#L78) — `export async function copyVideoNodes`；main后续修改。
+- [src/lib/canvas/video-node-schema.ts:17](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/canvas/video-node-schema.ts#L17) — `export const videoNodeWriteSchema`；main后续修改。
+- [src/lib/canvas/video-node-repository.ts:32](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/canvas/video-node-repository.ts#L32) — `export async function saveVideoNodeTx`；main相同。
+- [src/lib/canvas/video-node-service.ts:78](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/canvas/video-node-service.ts#L78) — `export async function copyVideoNodes`；main后续修改。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-node-operations.ts`。
 
@@ -623,9 +623,9 @@
 **按Naumi原生逻辑的方向**：统一结果选用与再编辑交互；旧结果及用户后续编辑分别保留。
 
 **源码锚点**：
-- [src/lib/video/task-snapshot.ts:11](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/task-snapshot.ts#L11) — `export function publicVideoTaskSnapshot`；main相同。
-- [src/lib/video/workflow-source.ts:10](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/workflow-source.ts#L10) — `export async function readOwnedVideoWorkflow`；main相同。
-- [src/lib/video/client-history.ts:7](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/client-history.ts#L7) — `videoHistoryDraft`；main相同。
+- [src/lib/video/task-snapshot.ts:11](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/task-snapshot.ts#L11) — `export function publicVideoTaskSnapshot`；main相同。
+- [src/lib/video/workflow-source.ts:10](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/workflow-source.ts#L10) — `export async function readOwnedVideoWorkflow`；main相同。
+- [src/lib/video/client-history.ts:7](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/client-history.ts#L7) — `videoHistoryDraft`；main相同。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-history-assets.ts`。
 
@@ -639,9 +639,9 @@
 **按Naumi原生逻辑的方向**：保留底层处理服务，不用浏览器长任务替代。新增UI只通过现有媒体任务契约调用。
 
 **源码锚点**：
-- [src/lib/video/media.ts:13](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/media.ts#L13) — `export function mediaWorkerConfigured`；main相同。
-- [src/lib/video/media-jobs.ts:156](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/media-jobs.ts#L156) — `async function publish`；main后续修改。
-- [scripts/video-fusion/media-engine.mjs:3](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/scripts/video-fusion/media-engine.mjs#L3) — `createReadStream`；main相同。
+- [src/lib/video/media.ts:13](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/media.ts#L13) — `export function mediaWorkerConfigured`；main相同。
+- [src/lib/video/media-jobs.ts:156](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/media-jobs.ts#L156) — `async function publish`；main后续修改。
+- [scripts/video-fusion/media-engine.mjs:3](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/scripts/video-fusion/media-engine.mjs#L3) — `createReadStream`；main相同。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-fusion-native-media.ts`。
 
@@ -655,9 +655,9 @@
 **按Naumi原生逻辑的方向**：保留并核对两种批量交互的一致性，禁止按旧分支覆盖它。
 
 **源码锚点**：
-- [src/lib/video/canvas-batch.ts:43](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/canvas-batch.ts#L43) — `export async function submitCanvasVideoBatch`；不在历史分支净差异内，另核来源。
-- [src/lib/video/canvas-batch-client.ts:21](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/canvas-batch-client.ts#L21) — `generateCanvasVideoBatch`；不在历史分支净差异内，另核来源。
-- [src/app/api/canvas/video-nodes/[id]/batch/route.ts:31](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/app/api/canvas/video-nodes/[id]/batch/route.ts#L31) — `POST`；不在历史分支净差异内，另核来源。
+- [src/lib/video/canvas-batch.ts:43](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/canvas-batch.ts#L43) — `export async function submitCanvasVideoBatch`；不在历史分支净差异内，另核来源。
+- [src/lib/video/canvas-batch-client.ts:21](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/canvas-batch-client.ts#L21) — `generateCanvasVideoBatch`；不在历史分支净差异内，另核来源。
+- [src/app/api/canvas/video-nodes/[id]/batch/route.ts:31](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/app/api/canvas/video-nodes/[id]/batch/route.ts#L31) — `POST`；不在历史分支净差异内，另核来源。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-node-controls.ts`。
 
@@ -671,9 +671,9 @@
 **按Naumi原生逻辑的方向**：作为后续原生交互基线，不回退旧的大表单；保持参数业务含义和引用身份。
 
 **源码锚点**：
-- [src/components/canvas/video/parameter-panel.tsx:8](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/parameter-panel.tsx#L8) — `export function VideoParameterPanel`；不在历史分支净差异内，另核来源。
-- [src/lib/video/prompt-assist.ts:6](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/prompt-assist.ts#L6) — `export function validateVideoOptimizedPrompt`；不在历史分支净差异内，另核来源。
-- [src/components/canvas/video/compact-composer.tsx:68](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/video/compact-composer.tsx#L68) — `<VideoPromptOptimizer`；main后续修改。
+- [src/components/canvas/video/parameter-panel.tsx:8](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/parameter-panel.tsx#L8) — `export function VideoParameterPanel`；不在历史分支净差异内，另核来源。
+- [src/lib/video/prompt-assist.ts:6](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/prompt-assist.ts#L6) — `export function validateVideoOptimizedPrompt`；不在历史分支净差异内，另核来源。
+- [src/components/canvas/video/compact-composer.tsx:68](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/video/compact-composer.tsx#L68) — `<VideoPromptOptimizer`；main后续修改。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-node-controls.ts`。
 
@@ -687,9 +687,9 @@
 **按Naumi原生逻辑的方向**：属于可靠性与资产隔离实现，继续复用，普通UI不增加同义开关。
 
 **源码锚点**：
-- [src/lib/video/coordination-pool.ts:37](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/coordination-pool.ts#L37) — `acquireVideoCoordinationLock`；不在历史分支净差异内，另核来源。
-- [src/lib/video/workflow-creation.ts:17](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/workflow-creation.ts#L17) — `bindWorkflowCreationProject`；不在历史分支净差异内，另核来源。
-- [src/lib/video/reference-media.ts:11](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/reference-media.ts#L11) — `export`；不在历史分支净差异内，另核来源。
+- [src/lib/video/coordination-pool.ts:37](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/coordination-pool.ts#L37) — `acquireVideoCoordinationLock`；不在历史分支净差异内，另核来源。
+- [src/lib/video/workflow-creation.ts:17](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/workflow-creation.ts#L17) — `bindWorkflowCreationProject`；不在历史分支净差异内，另核来源。
+- [src/lib/video/reference-media.ts:11](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/reference-media.ts#L11) — `export`；不在历史分支净差异内，另核来源。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-video-coordination-pool.cjs`。
 
@@ -703,9 +703,9 @@
 **按Naumi原生逻辑的方向**：保留当前已接适配，统一收敛在供应商层，不重新搬旧分支的协议全集覆盖主线。
 
 **源码锚点**：
-- [src/lib/video/providers/protocols/index.ts:14](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/index.ts#L14) — `APIB_VERIFIED_PROFILES`；main后续修改。
-- [src/lib/video/providers/protocols/apib-documented.ts:49](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/apib-documented.ts#L49) — `apibDocumentedCodec`；不在历史分支净差异内，另核来源。
-- [src/lib/video/providers/protocols/geek-h3-documented.ts:16](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/video/providers/protocols/geek-h3-documented.ts#L16) — `geekH3DocumentedCodec`；不在历史分支净差异内，另核来源。
+- [src/lib/video/providers/protocols/index.ts:14](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/index.ts#L14) — `APIB_VERIFIED_PROFILES`；main后续修改。
+- [src/lib/video/providers/protocols/apib-documented.ts:49](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/apib-documented.ts#L49) — `apibDocumentedCodec`；不在历史分支净差异内，另核来源。
+- [src/lib/video/providers/protocols/geek-h3-documented.ts:16](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/video/providers/protocols/geek-h3-documented.ts#L16) — `geekH3DocumentedCodec`；不在历史分支净差异内，另核来源。
 
 <a id="l05"></a>
 ## L05 · 相关但独立：3D产品工作台
@@ -717,9 +717,9 @@
 **按Naumi原生逻辑的方向**：可复用适合的几何/渲染经验；不要把入口跳转或改名当作导演台完成。云端画布回传另行设计。
 
 **源码锚点**：
-- [src/app/studio3d/page.tsx:5](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/app/studio3d/page.tsx#L5) — `export default function Studio3dPage`；不在历史分支净差异内，另核来源。
-- [src/lib/studio3d/engine.ts:8](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/studio3d/engine.ts#L8) — `export class StudioEngine`；不在历史分支净差异内，另核来源。
-- [src/lib/studio3d/project.ts:68](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/lib/studio3d/project.ts#L68) — `template: z.enum`；不在历史分支净差异内，另核来源。
+- [src/app/studio3d/page.tsx:5](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/app/studio3d/page.tsx#L5) — `export default function Studio3dPage`；不在历史分支净差异内，另核来源。
+- [src/lib/studio3d/engine.ts:8](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/studio3d/engine.ts#L8) — `export class StudioEngine`；不在历史分支净差异内，另核来源。
+- [src/lib/studio3d/project.ts:68](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/lib/studio3d/project.ts#L68) — `template: z.enum`；不在历史分支净差异内，另核来源。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-studio3d.ts`。
 
@@ -733,6 +733,6 @@
 **按Naumi原生逻辑的方向**：后续逐项做原生业务闭环，验收后再启用；不把菜单是否可点当成底层能力盘点结论。
 
 **源码锚点**：
-- [src/components/canvas/node-menu-items.ts:7](https://github.com/JesstLe/naumi/blob/305e1c72ef7e2fd9d594dc6c6e8263386a47c9ea/src/components/canvas/node-menu-items.ts#L7) — `export function canvasNodeMenuItems`；不在历史分支净差异内，另核来源。
+- [src/components/canvas/node-menu-items.ts:7](https://github.com/JesstLe/naumi/blob/4e15e71a2d56ba8518340c04a256cf920b978e41/src/components/canvas/node-menu-items.ts#L7) — `export function canvasNodeMenuItems`；不在历史分支净差异内，另核来源。
 
 **已有测试入口（本轮未执行）**：`scripts/verify-canvas-node-menu.cjs`。
