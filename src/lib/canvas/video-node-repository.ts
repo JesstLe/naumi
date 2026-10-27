@@ -1,6 +1,7 @@
 import {ensureVideoNodeSchema} from "@/lib/canvas/storage-schema";
 export {ensureVideoNodeSchema};
 import "server-only";
+import {remapVideoPromptReferences} from "../video/prompt-references";
 import {createHash} from "node:crypto";
 import type {PoolClient} from "pg";
 import {getPool} from "@/platform/db/pool";
@@ -34,12 +35,17 @@ export async function saveVideoNodeTx(client:PoolClient,actor:string,input:Video
     while(pending.length){const id=pending.pop()!;if(id===input.id)throw new ModelConfigError("VIDEO_DEPENDENCY_CYCLE","视频引用不能形成循环",422);if(seen.has(id))continue;seen.add(id);pending.push(...(graph.get(id)||[]));}
   }
   await client.query("INSERT INTO app_canvas_video_projects(email,project_key) VALUES($1,$2) ON CONFLICT(email,project_key) DO UPDATE SET deleted_at=NULL",[actor,projectKey]);
+  let config=input.config??old?.config??{};
+  if(old&&input.inputs!==undefined&&(input.config===undefined||input.config.prompt===old.config?.prompt)){
+    const prompt=remapVideoPromptReferences(old.config?.prompt||"",old.inputs||[],input.inputs);
+    if(prompt!==(old.config?.prompt||""))config={...config,prompt};
+  }
   const row=(await client.query(`INSERT INTO app_canvas_video_nodes(email,id,project_key,title,x,y,width,height,config,inputs,deleted_at)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,CASE WHEN $11 THEN now() ELSE NULL END)
     ON CONFLICT(email,id) DO UPDATE SET title=EXCLUDED.title,x=EXCLUDED.x,y=EXCLUDED.y,width=EXCLUDED.width,height=EXCLUDED.height,
       config=EXCLUDED.config,inputs=EXCLUDED.inputs,deleted_at=EXCLUDED.deleted_at,revision=app_canvas_video_nodes.revision+1,updated_at=now() RETURNING *`,
     [actor,input.id,projectKey,input.title??old?.title??"视频",input.x??old?.x??0,input.y??old?.y??0,input.width??old?.width??384,input.height??old?.height??320,
-      JSON.stringify(input.config??old?.config??{}),JSON.stringify(input.inputs??old?.inputs??[]),input.deleted===undefined?!!old?.deleted_at:input.deleted])).rows[0];
+      JSON.stringify(config),JSON.stringify(input.inputs??old?.inputs??[]),input.deleted===undefined?!!old?.deleted_at:input.deleted])).rows[0];
   const result=mapNode(row);
   await client.query("INSERT INTO app_canvas_video_node_operations(email,operation_id,node_id,input_digest,result) VALUES($1,$2,$3,$4,$5::jsonb)",[actor,input.operationId,input.id,digest,JSON.stringify(result)]);
   return result;
