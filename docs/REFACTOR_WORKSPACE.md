@@ -1,5 +1,7 @@
 # 核心链路重构专用工作区
 
+2026-10-27 R6L：Canvas项目投影/命名会话/列表菜单标题归独立owner，卡片与标题共用Enter/Escape输入，删工作流说明。7132→6524行，169原函数及3规则正文保持；旧38→新44/18投影/7HTML同，迟到读取/先失败覆盖后成功/切号回写/Escape吞下次保存关闭。真实Next-PG11、固定f319d76e core32/32、完整Linux同镜像运行125和双浏览器9组/180秒/2图2笔12积分、类型及相邻诊断/比例通过。冷dev加载SyntaxError首次根因未关闭，原失败保留。第3模块已普通整合固定main8e412abe（merge6ef35a8a），诊断迁真实owner不恢复旧大文件，SCC0、计数归零。4544hash回滚/补丁/四产物/远端以DELIVERY为准；整体active、不合main不部署。见[R6L记录](changes/2026-10-27-canvas-project-catalog-r6l.md)。
+
 2026-10-27 R6K：固定Next15.5.28/MCP1.32/SMTP10.1.4/Sharp0.35.5/Zod4.6.6与兼容PostCSS，生产audit13→0/完整lock0；完整旧依赖31→新36，实际后处理/SMTP/旧MCP业务观察相同。1526src字节保持/20纯类型擦除相同/3运行字节边界+1纯helper；固定7f3116e4 core31/31、完整Linux同镜像Web/Worker125、产品双浏览器9组/302.19秒25轮/2图2笔12积分/弹窗0及tsc/lint通过。旧cache专项缺Next准备失败保留，不冒充通过；四产物/raw-byte patch/4541hash副本回滚/清理与远端以DELIVERY为准。同步后第2模块，整体active、不合main不部署，下一模块后普通同步main。见[R6K记录](changes/2026-10-27-refactor-dependencies-r6k.md)。
 
 2026-10-27 R6J：九UI入口共用原fixture生命周期，Next/checker改在原字节副本运行，源配置恢复写归零；旧wrapper3检查复现覆盖后写→新真实子进程42检查保留，实际Next+PG资料库全流程通过/源码tsconfig与next-env原hash保持。当前生产依赖audit13项原报告保留不批量升级；固定16518614 core30/30/最终实际Next-PG/类型通过，原src-services1846hash保持；四产物/回滚与远端见DELIVERY。同步后第1模块，整体active、不合main不部署。见[R6J记录](changes/2026-10-27-refactor-model-ui-runner-r6j.md)。
