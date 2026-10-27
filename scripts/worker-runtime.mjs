@@ -11,6 +11,12 @@ export class WorkerControlError extends Error {
 const assert=(ok, code, status)=>{if(!ok)throw new WorkerControlError(code,status);};
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+// Only bounded error codes/names, never URL, response body, SQL or secrets.
+export function tickFailure(error) {
+  const valid=value=>typeof value==='string'&&/^[A-Za-z][A-Za-z0-9_]{1,79}$/.test(value)?value:undefined;
+  return {code:valid(error?.code)||valid(error instanceof WorkerControlError?error.message:undefined)||valid(error?.name)||'UNCLASSIFIED',
+    ...(valid(error?.cause?.code)?{cause:valid(error.cause.code)}:{})};
+}
 
 export function workerOrigin(value) {
   const parsed=new URL(value);
@@ -103,6 +109,7 @@ export class WorkerRuntime {
       tickDrainComplete:this.initialized&&!!this.store&&this.state.paused&&!this.activePromise&&
         !['dispatched','unknown'].includes(this.state.lastTick?.phase)&&!this.state.uncertain&&!this.fault,
       durableControl:!!this.store,durableTickReceipts:!!this.store,receiptProtocol:this.store?1:null,lastTick:this.state.lastTick?{...this.state.lastTick}:null,
+      activeTickAgeMs:this.activePromise&&this.state.lastTick?Math.max(0,Date.parse(this.clock())-Date.parse(this.state.lastTick.startedAt)):0,
       // Intentionally unknown: no unsafe translation of HTTP tick counts into jobs.
       workerLeases:null,acceptedTasks:null,agentSessions:null,controlFault:this.fault};
   }
@@ -192,6 +199,7 @@ export class WorkerRuntime {
       dispatched=true;
       const response=await this.fetch(`${this.origin}/api/video/worker/tick`,{
         method:'POST',headers:this.store?this.tickHeaders(tick):{'x-video-worker-secret':this.secret},signal:AbortSignal.timeout(this.timeoutMs)});
+      tick.httpStatus=response.status;
       if(!this.store&&[401,403].includes(response.status)) {
         tick.phase='rejected';tick.httpStatus=response.status;await this.persist();return {rejected:true};
       }
@@ -199,14 +207,18 @@ export class WorkerRuntime {
       const verified=this.store?await this.receiptResponse(response,tick):null;
       const data=verified?verified.result:await response.json();assert(data?.ok===true,'INVALID_TICK_RESPONSE');
       if(verified)tick.serverReceiptSha256=hash(verified.receipt);
+      tick.durationMs=Math.max(0,Date.parse(this.clock())-Date.parse(tick.startedAt));
+      if(data.phasesMs)tick.phasesMs=data.phasesMs;
+      if(data.mediaRecovery)tick.mediaRecovery=data.mediaRecovery;
       tick.phase='complete';tick.finishedAt=this.clock();await this.persist();
       if(data.processed)this.log(`[video-worker] processed=${data.processed} at=${data.at}`);
       return data;
-    } catch {
+    } catch (error) {
       tick.phase=dispatched?'unknown':'rejected';tick.finishedAt=this.clock();
+      tick.failure=tickFailure(error);tick.durationMs=Math.max(0,Date.parse(tick.finishedAt)-Date.parse(tick.startedAt));
       if(dispatched&&this.stopOnUncertain) {this.state.uncertain=true;this.state.paused=true;}
       try {await this.persist();}catch {/* snapshot retains the control fault */}
-      this.log('[video-worker] TICK_OUTCOME_UNKNOWN');return {error:'TICK_OUTCOME_UNKNOWN'};
+      this.log('[video-worker] TICK_OUTCOME_UNKNOWN '+JSON.stringify({tickId:tick.id,httpStatus:tick.httpStatus,durationMs:tick.durationMs,...tick.failure}));return {error:'TICK_OUTCOME_UNKNOWN'};
     }
   }
   start(intervalMs=15000) {

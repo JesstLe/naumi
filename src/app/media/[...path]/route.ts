@@ -2,7 +2,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import path from "path";
-import { fetchStoredObject, MEDIA_DIR, storageDriver, privateMedia, remoteMediaAccess, presignStoredObject } from "@/lib/storage";
+import { fetchStoredObject, MEDIA_DIR, storageDriver, privateMedia, remoteMediaAccess, presignStoredObject,hasVerifiedStoredMirror } from "@/lib/storage";
 import {authenticatedEmail} from "@/lib/request-auth";
 import {canReadMedia,getMediaAsset,importLegacyMedia,ensureMediaVariants} from "@/lib/media-assets";
 
@@ -53,7 +53,7 @@ export async function GET(
     return new Response("Bad request", { status: 400 });
   }
 
-  let rel = segs.join("/"),registeredContentType:string|undefined,remoteVersion:string|undefined,remoteFailure=false,remoteReadable=false,remoteMissing=false;
+  let rel = segs.join("/"),registeredContentType:string|undefined,remoteVersion:string|undefined,remoteFailure=false,remoteReadable=false,remoteMissing=false,verifiedMirror=false;
   if (privateMedia) {
     try {
       const owner=await authenticatedEmail(request);
@@ -71,6 +71,7 @@ export async function GET(
       remoteVersion=storageDriver!=="local"&&asset?.remote_ready ? asset.sha256 : undefined;
       const requestedVersion=new URL(request.url).searchParams.get("cacheVersion");
       if(remoteVersion&&requestedVersion&&requestedVersion!==remoteVersion)return new Response("Media changed",{status:409,headers:{"cache-control":"no-store"}});
+      verifiedMirror=await hasVerifiedStoredMirror(rel,asset);
       // Keep manifest URLs on the authenticated App origin so their relative
       // segment/key references resolve through the same per-file authorization.
       if(remoteMediaAccess==='redirect'&&asset?.remote_ready && storageDriver!=='local'&&!/\.(m3u8|mpd)$/i.test(rel)) {
@@ -80,9 +81,9 @@ export async function GET(
       }
     } catch {return new Response('Storage unavailable',{status:503,headers:{'cache-control':'no-store'}});}
   }
-  if (storageDriver !== "local" && (!privateMedia || remoteReadable && (remoteMediaAccess === "proxy" || /\.(m3u8|mpd)$/i.test(rel)))) {
+  if (!verifiedMirror && storageDriver !== "local" && (!privateMedia || remoteReadable && (remoteMediaAccess === "proxy" || /\.(m3u8|mpd)$/i.test(rel)))) {
     try {
-      const upstream = await fetchStoredObject(rel, request.headers.get("range") || "");
+      const upstream = await fetchStoredObject(rel, request.headers.get("range") || "",request.signal);
       if (privateMedia && upstream.status === 404) { remoteMissing=true;throw new Error("remote missing; try mirror"); }
       if (privateMedia && !upstream.ok && upstream.status !== 416) throw new Error("remote unavailable; try mirror");
       const headers = new Headers();

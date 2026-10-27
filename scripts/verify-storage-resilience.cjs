@@ -81,16 +81,17 @@ async function main(){
  // next good item to progress. SQL transaction semantics remain a fixture.
  const queries=[],uploads=[];const rows=[{key:'corrupt',content_type:'image/png',bytes:bytes.length,sha256:sha(bytes)},
   {key:'good',content_type:'image/png',bytes:bytes.length,sha256:sha(bytes)}];
- const pool={connect:async()=>({query:async(q,v)=>{queries.push({q,v});return {rows:q.startsWith('SELECT key,')?rows:[]};},release(){}}),query:async()=>({rows:[]})};
+ const query=async(q,v)=>{queries.push({q,v});return {rows:q.includes('RETURNING a.key')?rows.map(r=>({...r,claim_until:'2026-10-27T00:00:00Z'})):[]};};
+ const pool={connect:async()=>({query,release(){}}),query};
  const media=load('src/lib/media-assets.ts',{'@/lib/release-runtime/background-activity':{withBackgroundActivity:async(_k,_id,_m,f)=>f(),bindBackgroundClaim:async()=>{}},
   './db':{dbEnabled:true,ensureSchema:async()=>{},getPool:()=>pool},'./bi/model-observer':{currentBiContext:()=>null},'./media-variants':{},
   './storage':{privateMedia:true,storageDriver:'s3',readPendingStoredObject:async k=>({bytes:k==='good'?bytes:Buffer.from('damaged'),size:k==='good'?bytes.length:7}),
-   readManagedObject:async()=>{throw Error('unexpected remote read');},writeStoredObject:async(b,_t,k)=>{uploads.push({k,hash:sha(b)});return {remoteReady:true};}}});
+   readManagedObject:async()=>{throw Error('unexpected remote read');},mirrorStoredObject:async(b,_t,k)=>{uploads.push({k,hash:sha(b)});return {remoteReady:true};}}});
  await media.recoverMediaMirrors(2);
  check(uploads.length===1&&uploads[0].k==='good','corrupt mirror never uploads and does not starve next item');
  const updates=queries.filter(v=>v.q.startsWith('UPDATE app_media_assets SET remote_ready='));
  check(updates.length===2&&updates[0].v[1]===false&&updates[1].v[1]===true,'both rows receive persisted retry state');
- check(queries.some(v=>v.q==='COMMIT'),'one corrupt mirror does not roll back successful retry');
+ check(!queries.some(v=>v.q==='BEGIN')&&updates.every(v=>v.q.includes('sha256=$3')&&v.q.includes('retry_after=$4')),'no network transaction and both completions use original content/claim CAS');
  console.log(JSON.stringify({passed:true,cases:count,realLoopbackHttp:true,realLocalFiles:true,catalogAndWorker:'fixture',supplierCalls:0}));
 }
 const deadline=setTimeout(()=>{console.error('TEST_DEADLINE_EXCEEDED');for(const s of sockets)s.destroy();},40000);main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{
