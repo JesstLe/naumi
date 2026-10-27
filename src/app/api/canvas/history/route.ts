@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { dbEnabled } from "@/lib/db";
 import { historyRequest, saveCanvasHistory } from "@/lib/canvas-history";
+import {withCreationRoute} from "@/lib/saas/creation-context";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   const email=await authenticatedEmail(request);
   if (!email) return NextResponse.json({error:"请先登录"},{status:401});
   const parsed=historyRequest.safeParse(await request.json().catch(()=>null));
@@ -16,3 +17,4 @@ export async function POST(request: Request) {
     return NextResponse.json({error:error instanceof Error ? error.message : "画布保存失败，请重试"},{status:409});
   }
 }
+export function POST(request:Request){return withCreationRoute(request,()=>handlePost(request));}
