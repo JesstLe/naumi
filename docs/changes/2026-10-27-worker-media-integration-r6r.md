@@ -29,7 +29,7 @@
 
 ## 当前状态
 
-本记录先固定来源与实现边界。代码整合、集中验证、原／新对照、四产物及副本回滚结果随实施更新；整体目标保持 active。
+主线能力已按重构 owner 完成整合；原／新完整源对照、固定镜像与实际产品控件的集中验收全部通过。四产物、副本回滚、远端同步和自有资源清理的逐条回执统一由本轮 `output/refactor-r6r-20261027/DELIVERY.json` 与 `VERIFICATION.txt` 记录；整体目标保持 active。
 
 ## 验证要求
 
@@ -52,4 +52,26 @@
 
 ## 集中封版入口
 
-本轮把 NAS、媒体 lane、真实 Worker/慢 NAS A/B、原回执、remote-first、存储韧性、supervisor 和 direct runtime 接入既有 required core 目录，**44 → 52 项**；不是新测试框架。固定源码下的完整 core、Linux 镜像、runtime、产品控件、四产物和副本回滚结果在封版后补录，不以上述首次局部结果冒充。
+本轮把 NAS、媒体 lane、真实 Worker/慢 NAS A/B、原回执、remote-first、存储韧性、supervisor 和 direct runtime 接入既有 required core 目录，**44 → 52 项**；不是新测试框架。
+
+## 最终固定源码与产品验收
+
+- 业务与全部验证输入固定在 `216220bd9ea90c03b9e5a88dfe63d05600b778af`；source digest：`bc7592787459e4f2e3bfb208c9480563c2c7c7d8fa5a8d0ed53ed3d08aa09dc6`。随后仅补录文档，不改变被测业务／core／浏览器输入字节。
+- 完整 Linux 镜像：`sha256:78e132825d2321a027b24c79d8b2af9b348a312ef596c1978fd611af903ac039`；同一固定镜像包含完整 Web、direct Worker 与媒体运行包，无服务器部署。
+- required core **52/52**、failed **0**、notRun **0**；完整 tsc、受影响模块 lint 均 exit **0**。静态、全 import 与 emitted 两类 SCC 均为 **0**；既有两个 fixture Route 导入和 billing toast UI 依赖单列，未包装成全站分层完成。
+- 同镜像实际应用／PG runtime **125 检查**通过；真实 Edge 产品控件 **36 检查**通过，双原生登录身份、60 秒混合读取、route mocks **0**、积分确认弹窗 **0**。原图片／文字冲突、剪贴板、三视图、重做、合成和 Comfy 控件保持；Comfy 两张产物增量客户扣款 **0**，原 7 笔／42 fixture 积分保持。
+- 两套 runtime/browser 自有容器及网络均已清理，POSIX Worker drain exit **0**。本轮独立 PG 在回滚行为验证完成后统一核实并清理，最终状态以 `CLEANUP.json` 为准。
+
+可复用命令与真实输入、字面输出和退出码保留在本轮各 `*_RUN.json`；原／新为完整 source-root，不用替代业务 scan 或 fake 账务推断通过。完整 package/core/runtime/browser 来源绑定见 `SOURCE_BINDING.json`。
+
+## 保留的失败与边界
+
+初次新夹具的 snapshot 字段、后台完成等待及清理次序错误，以及结构观察器遗漏 named function expression，均保留原始失败，修正后重跑相关完整入口。结构证明使用真实 `git merge-file` 三方结果，不错误要求保留 direct transport 的 Worker runtime 整份等于主线。
+
+中间候选 `2e0cfbfc` 的 NAS 夹具 definite-assignment TypeScript 错误导致 tsc／Linux build 失败；仅修复夹具声明，发射 JS 精确不变，随后重新固定到 `216220bd` 完整跑通 core、tsc、Linux 包及产品验收。旧失败没有改写为成功，也不据此认定生产故障。
+
+本轮无新表、任务引擎、计费 owner、业务限额或确认流程；不合 main、不 SSH、不部署、不接发布锁。完整本地产品验证不等于真实付费供应商质量或 10 万活跃容量验证。
+
+## 后续切片
+
+R6S 继续 Canvas 视频提交、原回执恢复与 batch 编排边界：先跟踪 `generateVideoDraft`、`saveVideoDraft` 及 `canvas-batch-client` 的真实调用，复用现有 node revision CAS、原 receipt body、冻结报价、素材身份、任务／Worker／账务／历史 owner。不建万能 setter hook、新队列或另一套计费状态。先封存本切片，再修改下一模块；整体项目尚未完成。

@@ -173,3 +173,5 @@ R6Q 固定 `ed0450be`：core44/44、完整Linux同镜像runtime125、真实双�
 ## R6R：Worker／媒体恢复主线整合
 
 固定 e2217c98 的 4提交/17路径能力按现有 owner 整合；storage 兼容面、shared scan 和 direct Worker 不回退到旧单体。真实原/新双入口慢 NAS 对照33/35检查已通过；完整封版见 [R6R记录](changes/2026-10-27-worker-media-integration-r6r.md)。整体重构继续，未合main、未部署。
+
+R6R 最终固定业务源 `216220bd`，core **52/52**、同完整 Linux 镜像 runtime **125**、真实产品控件 **36** 全部通过；tsc/lint exit0，静态／全 import／emitted SCC 全0。慢 NAS 双入口 A/B 为33/35检查，恢复原18积分，供应商重提0，网络事务1→0。仅后续文档提交；四产物、4661原hash副本回滚、Git/cleanup最终证据见本轮 DELIVERY。继续独立整体重构，下一边界为 Canvas 视频提交与 batch；未合main、未部署。
