@@ -1,5 +1,28 @@
 [
   {
+    "version": "1793111694",
+    "title": {
+      "zh": "画布创作体验更新",
+      "en": "Canvas creation update"
+    },
+    "improvements": [
+      {
+        "zh": "新增导演节点，可编辑镜头并导出画面和视频。",
+        "en": "Added director nodes for editing shots and exporting images and video."
+      },
+      {
+        "zh": "导演节点支持复制、删除和历史恢复。",
+        "en": "Director nodes support copying, deletion and history recovery."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "改善视频生成任务的状态反馈。",
+        "en": "Improved progress feedback for video generation."
+      }
+    ]
+  },
+  {
     "version": "1793021601",
     "title": {
       "zh": "通知公告与创作记录体验升级",
