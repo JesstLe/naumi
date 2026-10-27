@@ -433,7 +433,7 @@ def record_failed_observation(folder, action, p, revision, reason):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['check', 'begin', *STAGES, 'status', 'publish47-nas', 'publish47-saas', 'publish47-video-family', 'abort47-video-family', 'bind47-capacity', 'publish47-imagegen-simplify', 'publish47-no-user'])
+    parser.add_argument('action', choices=['check', 'begin', *STAGES, 'status', 'publish47-nas', 'publish47-saas', 'publish47-video-family', 'abort47-video-family', 'bind47-capacity', 'publish47-imagegen-simplify', 'publish47-no-user', 'publish103-refactor'])
     parser.add_argument('--config', type=pathlib.Path)
     parser.add_argument('--review', type=pathlib.Path)
     parser.add_argument('--apply', action='store_true')
@@ -448,6 +448,11 @@ def main(argv=None):
     try:
         require(a.action == 'abort47-video-family' or a.review is None and a.apply is False,
                 'ABORT_REVIEW_AND_APPLY_ONLY_FOR_ABORT_ACTION')
+        if a.action == 'publish103-refactor':
+            require(os.name == 'posix' and a.config is not None, 'LIVE_103_REFACTOR_CONFIG_REQUIRED')
+            from release103_refactor import main as publish103
+            publish103(a.config)
+            return 0
         if a.action == 'abort47-video-family':
             require(os.name == 'posix' and a.config is not None and a.review is not None,
                     'LIVE_VIDEO_FAMILY_ABORT_CONFIG_AND_REVIEW_REQUIRED')
