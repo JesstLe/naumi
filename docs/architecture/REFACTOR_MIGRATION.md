@@ -305,3 +305,9 @@ R6Q 集中封版：core44/44、runtime125、真实产品36通过；静态/全imp
 主线媒体lane归 shared worker/scan，原variant/mirror SQL与CAS分别归 media-assets 的两个应用owner，bytes runtime组装独立镜像验证；媒体与download共用serveMedia，不再穿透Route。保留真实后台活动、人工drain和原回执；required core52项。参见 [R6R](../changes/2026-10-27-worker-media-integration-r6r.md)。
 
 R6R 封版来源 `216220bd`：shared scan／媒体 background lane、bytes本地镜像组件、variant／mirror CAS与共用media/download应用owner已整合。core52/52、同镜像runtime125、实际产品36、tsc/lint和SCC全0通过。人工drain／UNKNOWN／原冻结价和原任务恢复保持，tick入口哈希未变，storage兼容面5行、media Route6行；new tables/task/billing owners=0。四产物、独立副本恢复及远端一致见本轮 DELIVERY；下一切片先勘察Canvas视频编排，不把本模块通过扩大为整个重构交付。
+
+## R6S：导演共享文档 owner 与视频提交应用边界
+
+固定 main `2fb3e8d9` 的导演能力接入原 renderer registry／scene projection、history contract/controller、node lifecycle、selection/link/project 和 persistence startup；不复制旧 Canvas/db 单体。`video/canvas-submission` 编排保存、原任务查询、单任务／批次分流及刷新，`canvas-draft` 共享编辑合同，现有文档／账务／任务状态 owner 不迁移。工程内容身份归 `director/project`，解决真实 JSONB 键序导致保存后仍 dirty，不放松实际内容与数组顺序比较。
+
+候选 `231d6930` 完整 core57/57、实际导演 Next/PG/WebGL、独占端口管理GUI、完整 Linux 同镜像 runtime125／产品浏览器36、tsc／lint和四类SCC0通过；原db字节保持，额外表／平行任务／平行账务引擎0。原树4671文件、补丁／副本回滚与最终远端／清理见本片DELIVERY。Canvas仍5626行；本片闭合不等于R3—R6或全项目完成，后续继续实际UI／助手编排与最终整合。详见[R6S模块记录](../changes/2026-10-27-canvas-native-integration-r6s.md)。

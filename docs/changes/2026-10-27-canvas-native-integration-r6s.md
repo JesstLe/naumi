@@ -45,3 +45,23 @@
 此次完整复测还校正了旧验收的实际合同：从“生图模型”行打开选择器而不假设当前默认名称，仍检查管理员改名选项、家族选项、无积分菜单和实际 7→8 积分报价；分辨率弹窗与恢复按钮使用当前可见名称；旧 4K 显示圈定拒绝改为检查已实现的 requested=4K／effective=1K 报价回退，不恢复 409 拦截；网站版本检查加载 bundle 的版本、公开版本 API 及更新／离线／回滚／刷新，不再要求当前 UI 已移除的内部 commit 文案。原跨路由 operation、未知发布恢复、RSA 来源注册、工具范围、非管理员 404 和移动端无溢出断言全部保留。
 
 各次冷启动、旧选择器及旧弹窗预期失败逐次留存，未改写为通过；最后一轮完整运行才作为本项通过证据。失败时增加自有页面 HTML／截图留证，只在错误分支执行，不吞原异常。接下来的统一 core、最终类型／结构、完整 Linux 包和回滚仍使用固定源码集中封版。
+
+## 固定源码集中封版
+
+应用及全部验收输入固定为 `231d6930b681fb296a0acd7ca834bcd2b25c8800`，完整字节摘要 `e28593b8cf74489e0c360b1a5d4f705e2d39522ccb356cecdd4693502773528a`。以下不是旧批次拼接，均为本次固定源实际结果：
+
+| 层次 | 实际命令与结果 |
+|---|---|
+| 统一 core | `node scripts/verify-refactor.mjs --expected-sha 231d6930b681fb296a0acd7ca834bcd2b25c8800 --out output/refactor-r6s-20261027/core-delivery`；57/57，failed=0、notRun=0，exit 0 |
+| 类型／lint | `node node_modules/typescript/bin/tsc --noEmit --incremental false` 及定向 64 文件 ESLint；均 exit 0，精确 lint 参数在 `LINT_DELIVERY_RUN.json` |
+| 本片定向 | 视频 baseline 30 类／110 检查，新版 30／121；导演 owner 旧 5／新 34；导演纯规则 30。原实现控制只投影对应 Canvas 函数或主线编辑器叶文件，不称完整主线 A/B |
+| 导演真实应用 | 原 HTTP／PG／React-WebGL／媒体／scheduler 与钱包；混合复制删除恢复、CAS 一方成功、原回执重放、PNG／WebM、真实 JSONB 内容身份通过。新视频 client 丢失已受理响应后只查原任务；单张及批次 client POST 恰好 2、模拟供应商 create 恰好 4，真实付费供应商调用 0 |
+| Linux 完整包 | `node scripts/verify-refactor-image.mjs --expected-sha 231d6930b681fb296a0acd7ca834bcd2b25c8800 --out output/refactor-r6s-20261027/image-final`；正式 Dockerfile 完整 Web／Worker／原生媒体包通过 |
+| 同镜像运行 | `python scripts/verify-refactor-runtime.py --image-manifest output/refactor-r6s-20261027/image-final/BUILD_RESULT.json --out output/refactor-r6s-20261027/runtime-final --suite runtime`；125 检查，实际登录、提交、原 Worker、原 6/current17、未知不重放、原生 FFmpeg 与 POSIX 排空 exit 0 |
+| 同镜像产品浏览器 | 同一脚本 `--out output/refactor-r6s-20261027/browser-final --suite browser --soak-seconds 60`；36 检查、双独立登录上下文、route mocks=0、确认弹窗=0；7 份预期生成、7 笔合计 42 fixture 积分，无刷新增扣；exit 0 |
+
+完整镜像 ID：`sha256:f79ab280bc537470c44e5593e935932c758a07ff1cb50e224dacf13aa707a119`。运行及产品浏览器各自的容器、网络、PG tmpfs 已清理，最终镜像保留。管理 GUI 与 core 的非文档输入逐文件相等；本次文档跟进不替换产品代码或验收输入，绑定见 `GUI_SOURCE_BINDING.json` 和最终 `SOURCE_BINDING.json`。
+
+结构核验：原 `db.ts` 字节精确保持、1858 个未触及产品文件 SHA256 保持、8 个主线 repository/service 函数正文保持、139 个原 Canvas 函数保持；新增完整导演能力并移出视频编排后 Canvas 5586→5626 行。两个新增数据表来自本轮主线原生导演能力，额外表／平行任务引擎／平行计费引擎均 0。静态、全 import 及编译擦除后两类 SCC 均 0；原两条 release fixture→Route 和一条 billing client→toast 反向边继续单列。唯一未解析源码目标是构建生成的 `dist/worker/application.cjs`，完整镜像 manifest/hash 与实际 Worker 运行另有通过记录。
+
+原始 4671 文件完整归档、精确补丁、四产物、独立副本回滚及恢复后原行为、最终提交／远端和自有 PG 清理以 `output/refactor-r6s-20261027/DELIVERY.json`、`VERIFICATION.txt` 为最终证据；所有中间失败保留，不改写成通过。本轮不合回 main、不 SSH、不发布、不操作部署锁。整体重构目标继续：Canvas 其余 UI／助手编排、剩余跨模块依赖和实际容量／最终整合尚未由本片闭合。
