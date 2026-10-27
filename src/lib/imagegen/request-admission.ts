@@ -1,4 +1,4 @@
-import { exactImageRequestSize, ExactImageSizeError } from "./request-size";
+import { exactImageRequestSize, exactRatioPixels, ExactImageSizeError } from "./request-size";
 import { unsupportedReverseHubRatio } from "./ratio-support";
 
 type RouteSource = {
@@ -24,7 +24,11 @@ export function imageRequestAdmission(
     if (!(error instanceof ExactImageSizeError)) throw error;
     codes.push("EXACT_RATIO_UNSUPPORTED");
   }
-  if (source.parameterMap.apimartImages && !source.parameterMap.apimartImages.ratios.includes(ratio))
+  if (source.parameterMap.apimartImages && !source.parameterMap.apimartImages.ratios.includes(ratio)
+    // Follow-reference ratios outside the named list are delivered as native
+    // 16-grid pixel sizes when the exact-size contract covers the model
+    // (apib probed 2026-10-27), so only reject when no pixels can be sized.
+    && !exactRatioPixels(ratio, supplierRouting ? publicModelId : source.model))
     codes.push("ADAPTER_RATIO_UNSUPPORTED");
   return codes;
 }
