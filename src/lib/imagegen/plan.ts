@@ -97,7 +97,7 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
    // A family may have different native wire contracts. A deficient candidate
    // is excluded before freeze; it must not reject compatible suppliers too.
    const required={inputFidelity:request.parameters.inputFidelity,moderation:request.parameters.moderation,pixelSize:request.parameters.width,outputCompression:request.output.compressionMode==="native"?request.output.compression:undefined};
-   const missing=Object.entries(required).some(([key,value])=>value!==undefined&&(!source.parameterMap.imagegen?.[key as keyof NonNullable<typeof source.parameterMap.imagegen>]||source.parameterMap.imagegen[key as keyof NonNullable<typeof source.parameterMap.imagegen>]==="omit"));
+   const missing=Object.entries(required).some(([key,value])=>value!==undefined&&(!source.parameterMap.imagegen?.[key as keyof NonNullable<typeof source.parameterMap.imagegen>]));
    let unsupported=missing;
    if(!missing){
     try{
