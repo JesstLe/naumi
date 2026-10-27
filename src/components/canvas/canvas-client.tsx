@@ -105,6 +105,13 @@ import { imageDraftScope } from '@/lib/canvas/image-node-drafts';
 import { CanvasRenderLayerGuard } from './canvas-render-layer-guard';
 import { CanvasEdgeHoverHint, type CanvasEdgeHoverHandle } from './canvas-edge-hover-hint';
 import { canvasZoomState } from '@/lib/canvas/viewport-state';
+import {CANVAS_MIN_ZOOM,CANVAS_MAX_ZOOM} from "@/lib/canvas/view-controls";
+import {CANVAS_MODAL_SELECTOR,isEditableClipboardTarget} from "@/lib/canvas/input-target";
+import {useCanvasViewControls} from "./use-canvas-view-controls";
+import {CanvasViewToolbar} from "./view-toolbar";
+import {CanvasToolButtons} from "./tool-buttons";
+import {useCanvasKeyboard} from "./use-canvas-keyboard";
+import type {CanvasKeyboardAction} from "@/lib/canvas/keyboard-command";
 import { shouldVirtualizeCanvas } from '@/lib/canvas/virtualization';
 import { CanvasActionMenu, CanvasActionPanel } from "./canvas-action-menu";
 import { CanvasHelpDialog } from "./canvas-help-dialog";
@@ -207,7 +214,6 @@ const X_GAP = 90; // 层间横向间距
 const Y_GAP = 48; // 同层兄弟纵向间距
 const MAX_TOTAL_IMAGES = 16; // 节点图 + 追加参考图 合计上限
 const MAX_GENERATION_COUNT = CANVAS_MAX_COUNT;
-type CanvasPrimaryTool = "move" | "marquee" | "hand";
 // 扩图使用同一组比例选项，不包含自适应（必须指定外扩目标）。
 const EXPAND_RATIOS = CANVAS_RATIO_OPTIONS.filter(r => r.id !== "auto").map(r => r.id);
 // 扩图锚点九宫格(原图贴哪一侧,新内容补其余方向) + 提示文案
@@ -217,24 +223,11 @@ const ANCHOR_TITLE: Record<string, string> = {
 };
 // React Flow 默认只允许 50%–200%。这里使用 JavaScript 可安全表达的完整正数范围，
 // 让滚轮、触控板、按钮和百分比输入不再受产品层的人为缩放档位限制。
-const CANVAS_MIN_ZOOM = Number.EPSILON;
-const CANVAS_MAX_ZOOM = Number.MAX_SAFE_INTEGER;
 
-type DesktopPlatform = "mac" | "windows" | "other";
 
 const CANVAS_NODE_CLIPBOARD_TYPE = "application/x-naumi-canvas-node";
 // Persistent controls block their own events; only modal layers block the canvas.
-const CANVAS_MODAL_SELECTOR = '.fixed.inset-0, [data-canvas-hotkeys-blocked="true"][aria-modal="true"]';
 
-function isEditableClipboardTarget(target: EventTarget | null): boolean {
-  const element = target instanceof Element ? target : null;
-  if (!element) return false;
-  return Boolean(
-    element.closest(
-      'input, textarea, [contenteditable="true"], [contenteditable=""], [role="textbox"]'
-    )
-  );
-}
 
 function canvasNodeIdFromClipboard(data: DataTransfer): string | null {
   const direct = data.getData(CANVAS_NODE_CLIPBOARD_TYPE).trim();
@@ -270,31 +263,8 @@ function setCanvasNodeClipboardData(data: DataTransfer, nodeId: string, title: s
   );
 }
 
-function detectDesktopPlatform(): DesktopPlatform {
-  if (typeof navigator === "undefined") return "other";
-  const nav = navigator as Navigator & {
-    userAgentData?: { platform?: string };
-  };
-  const platform = `${nav.userAgentData?.platform ?? ""} ${navigator.platform ?? ""} ${navigator.userAgent ?? ""}`;
-  if (/Mac|iPhone|iPad|iPod/i.test(platform)) return "mac";
-  if (/Win/i.test(platform)) return "windows";
-  return "other";
-}
 
-function zoomPercentInput(zoom: number): string {
-  return String(zoom * 100);
-}
 
-function zoomPercentLabel(zoom: number): string {
-  const percent = zoom * 100;
-  if (percent < 0.01 || percent >= 1_000_000) {
-    return `${percent.toExponential(2)}%`;
-  }
-  if (percent >= 1000) {
-    return `${Math.round(percent).toLocaleString("en-US")}%`;
-  }
-  return `${Number(percent.toFixed(2))}%`;
-}
 
 
 
@@ -521,8 +491,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     CanvasGenerationTask[]
   >([]);
   // 自由拖动是默认；用户主动开启磁铁时才吸附网格。全局整理仅由手动动作触发。
-  const [showMinimap, setShowMinimap] = useState(false);
-  const [snapGrid, setSnapGrid] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
   const [zipping, setZipping] = useState(false);
   const [stitching, setStitching] = useState(false);
@@ -536,9 +504,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 视口变换(平移/缩放),用于把生成器面板停靠到选中节点正下方并跟随
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
   const viewportRef = useRef(viewport);
-  const zoomLabelRef = useRef<HTMLSpanElement>(null);
-  const zoomButtonRef = useRef<HTMLButtonElement>(null);
-  const zoomInputRef = useRef<HTMLInputElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const previousCanvasSizeRef = useRef({ width: 0, height: 0 });
   const previousViewportAnchorRef = useRef<string | null>(null);
@@ -786,6 +751,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [creatingNew, setCreatingNew] = useState(false);
   // 项目网格落地页(Figma 式):进画布先看项目卡片,点卡片才进入该项目的画布
   const [browsing, setBrowsing] = useState(true);
+  const viewControls=useCanvasViewControls({flow:rfRef,area:canvasAreaRef,zoom:viewport.zoom,zoomLabel:t("canvas.toolbar.zoom"),desktopAppearance,enabled:ready&&!!user,
+    contextKey:canvasArtworkDocument.scope.key,browsing,onMarquee:()=>{setSelectedId(null);setSelectedPendId(null);setSelectedTextId(null);clearCanvasSelection();}});
+  const {tool:canvasTool,showMinimap,snapGrid,lightCanvas,isMac,modifierKey,zoomMenuOpen}=viewControls;
+  const boxSelectMode=canvasTool==="marquee";
   // 浏览器后退支持:进做图页(browsing=false)时往历史压一条,使「后退」先回项目页而非离开 /canvas。
   const editorPushedRef = useRef(false);
   const browsingRef = useRef(true);
@@ -826,17 +795,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 帮助/快捷键弹框 + 画布工具栏临时提示
   const [helpOpen, setHelpOpen] = useState(false);
   const [tipMsg, setTipMsg] = useState<string | null>(null);
-  const [desktopPlatform, setDesktopPlatform] = useState<DesktopPlatform>("other");
-  useEffect(() => setDesktopPlatform(detectDesktopPlatform()), []);
-  const isMac = desktopPlatform === "mac";
-  const modifierKey = isMac ? "⌘" : "Ctrl";
   const shortcut = (key: string) => `${modifierKey}${key}`;
   // 主工具栏仅保留选择/移动、创建和设置；创建菜单与设置菜单互斥。
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [moreToolsOpen, setMoreToolsOpen] = useState(false);
   // 左下角缩放下拉菜单 + 可输入的缩放值
-  const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
-  const [zoomInput, setZoomInput] = useState("100");
   const workspacePages=useCanvasWorkspacePages({commerceVisible,email:targetEmail||user?.email});
   const openModal=workspacePages.open;
   // 模板「做同款」→ 关弹窗 + 用模板图在画布里新建一个项目(独立根节点),选中后即可在画布内生成衍生
@@ -889,18 +852,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       flashTip(e instanceof Error ? e.message : t("canvas.genFail"));
     }
   }
-  // 缩放输入框跟随实际缩放(用户改值后回车应用)
-  useEffect(() => {
-    setZoomInput(zoomPercentInput(viewport.zoom || 1));
-  }, [viewport.zoom]);
-  function applyZoomInput() {
-    const percent = Number(zoomInput.replace(",", "."));
-    if (Number.isFinite(percent) && percent > 0) {
-      rfRef.current?.zoomTo(percent / 100, { duration: 200 });
-      return;
-    }
-    setZoomInput(zoomPercentInput(viewport.zoom || 1));
-  }
   const canvasHistory = useCanvasHistory({
     account: canvasAccountRef.current, project: activeKey, readOnly,
     artworkDocument:canvasArtworkDocument.history, works: setWorks, textDocument: canvasTextDocument.history, settings: applyHistorySettings, selectedText: setSelectedTextId,
@@ -951,18 +902,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 右键未选节点会先按桌面习惯单选；若用户随后点“加入批量选择”，
   // 仍可恢复右键前的选择集合并把当前节点加入其中。
   const contextSelectionBaseRef = useRef<string[]>([]);
-  // 框选多选(React Flow 选中集合)
-  const [canvasTool, setCanvasTool] = useState<CanvasPrimaryTool>("move");
-  const boxSelectMode = canvasTool === "marquee";
-  // 画布默认亮色；仅显式保存 dark 时使用暗色，保留用户本地选择。
-  const [lightCanvas, setLightCanvas] = useState(() => {
-    if (desktopAppearance) return true;
-    try {
-      return typeof window === "undefined" || localStorage.getItem("nv:canvas:bg") !== "dark";
-    } catch {
-      return true;
-    }
-  });
   // 拉线中:图片节点端口全部显形(canvas-linking),目标的前 + 不再隐形盲抓
   const [linking, setLinking] = useState(false);
   // 竞品链路:反推中/帮写中标记、产品图选择器、生成图片模式菜单
@@ -1746,7 +1685,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setRfNodes((current) =>
       current.map((node) => (node.selected ? { ...node, selected: false } : node))
     );
-    if (exitBoxMode) setCanvasTool("move");
+    if (exitBoxMode) viewControls.selectTool("move");
   }
 
   useEffect(() => {
@@ -1889,10 +1828,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }, [docksReady, canvasSize.width, canvasSize.height, selectedId, selectedPendId, selectedTextId, selectedBatchArts.length, selectedTextBatchNodes.length, readOnly, browsing, textComposerExpanded]);
 
   function updateLiveViewport(vp:{x:number;y:number;zoom:number}) {
-    const label=zoomPercentLabel(vp.zoom);
-    if(zoomLabelRef.current)zoomLabelRef.current.textContent=label;
-    zoomButtonRef.current?.setAttribute("aria-label",`${t("canvas.toolbar.zoom")} ${label}`);
-    if(zoomInputRef.current&&document.activeElement!==zoomInputRef.current)zoomInputRef.current.value=zoomPercentInput(vp.zoom);
+    viewControls.syncZoom(vp.zoom);
     const screen=selectedNodeScreen(vp);
     if(!screen)return;
     const layout=canvasDockLayout({nodeScreen:screen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,readOnly,nodeTitleHeight:selectedVideo||selected?.videoUrl?38:0});
@@ -4185,196 +4121,37 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       textComposerMenuOpen
   );
 
-  // macOS / Windows 共用键盘层：⌘ 或 Ctrl 作为主修饰键；输入框和上层界面不接管系统快捷键。
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const el =
-        e.target instanceof Element
-          ? e.target
-          : document.activeElement;
-      const tag = el?.tagName;
-      const mod = e.metaKey || e.ctrlKey;
-      const key = e.key.toLowerCase();
-      if (
-        e.defaultPrevented ||
-        e.isComposing ||
-        el?.closest('[data-canvas-hotkeys-blocked="true"], [data-canvas-hotkeys-scope="assistant"]') ||
-        canvasShortcutLayerOpen ||
-        document.querySelector(CANVAS_MODAL_SELECTOR) ||
-        tag === "INPUT" ||
-        tag === "TEXTAREA" ||
-        tag === "SELECT" ||
-        isEditableClipboardTarget(el)
-      ) {
-        // A focused modal/menu button is not an editor: Backspace must not invoke
-        // WebKit's history navigation even while canvas commands yield to it.
-        if (!browsing && key === "backspace" && !e.isComposing && tag !== "SELECT" && !isEditableClipboardTarget(el)) e.preventDefault();
-        return;
-      }
-      if (historyBusyRef.current || cuttingEdgesRef.current.size > 0) {
-        // Let unrelated browser shortcuts and viewport actions pass through.
-        if ((mod && (key === "z" || key === "y")) || key === "delete" || key === "backspace") { e.preventDefault(); return; }
-      }
-      if (!mod && !e.altKey && !e.shiftKey && !readOnly && !browsing) {
-        if (key === "v") {
-          e.preventDefault();
-          setCanvasTool("move");
-          return;
-        }
-        if (key === "m") {
-          e.preventDefault();
-          setCanvasTool("marquee");
-          setSelectedId(null);
-          setSelectedPendId(null);
-          setSelectedTextId(null);
-          clearCanvasSelection();
-          return;
-        }
-        if (key === "h") {
-          e.preventDefault();
-          setCanvasTool("hand");
-          return;
-        }
-      }
-      if (
-        e.shiftKey &&
-        !mod &&
-        !e.altKey &&
-        e.code === "KeyT" &&
-        !readOnly &&
-        !browsing
-      ) {
-        e.preventDefault();
-        const c = centerScreen();
-        addTextNodeAtScreen(c.x, c.y);
-        return;
-      }
-      if (mod && key === "c") {
-        canvasCopyIntentRef.current = null;
-        const nativeText=window.getSelection();
-        if((multiSel.length>1||selectedTextId||selectedId&&videoNodesStore.getNode(selectedId))&&(!nativeText||nativeText.isCollapsed)){
+  function performCanvasShortcut(action:CanvasKeyboardAction){
+    switch(action.kind){
+      case "tool":viewControls.selectTool(action.tool);return;
+      case "add-text":{const center=centerScreen();addTextNodeAtScreen(center.x,center.y);return;}
+      case "copy":{
+        canvasCopyIntentRef.current=null;const native=window.getSelection();
+        if((multiSel.length>1||selectedTextId||selectedId&&videoNodesStore.getNode(selectedId))&&(!native||native.isCollapsed)){
           copyCanvasSelection(multiSel.length?multiSel:[selectedTextId||selectedId!]);flashTip(t("canvas.copied"));return;
         }
-        const nativeSelection = window.getSelection();
-        if (!selected || (nativeSelection && !nativeSelection.isCollapsed)) return;
-        canvasCopyIntentRef.current = selected.id;
-        window.setTimeout(() => {
-          if (canvasCopyIntentRef.current === selected.id) {
-            canvasCopyIntentRef.current = null;
-          }
-        }, 1000);
-        // Chrome/Playwright and some macOS WebKit paths do not emit a native
-        // `copy` event when focus sits on a non-editable video/audio surface.
-        // Write the portable node marker explicitly so the following Cmd/Ctrl+V
-        // can still verify and paste the selected media node.
-        copyNodeToClip(selected, true);
-        flashTip(t("canvas.copied"));
-        return;
+        if(!selected||(native&&!native.isCollapsed))return;
+        canvasCopyIntentRef.current=selected.id;
+        window.setTimeout(()=>{if(canvasCopyIntentRef.current===selected.id)canvasCopyIntentRef.current=null;},1000);
+        copyNodeToClip(selected,true);flashTip(t("canvas.copied"));return;
       }
-      if (
-        mod &&
-        key === "v" &&
-        (tag === "VIDEO" || tag === "AUDIO") &&
-        canvasCopyIntentRef.current &&
-        (nodeClipRef.current?.id === canvasCopyIntentRef.current||genericNodeClipRef.current?.marker===canvasCopyIntentRef.current)
-      ) {
-        // Native media focus can suppress both copy/paste clipboard events.
-        // Consume only the short-lived intent created by the immediately
-        // preceding canvas copy, so ordinary system clipboard paste is intact.
-        e.preventDefault();
-        canvasCopyIntentRef.current = null;
-        void pasteNode();
-        return;
-      }
-      if (mod && key === "z") {
-        if (readOnly) return;
-        e.preventDefault();
-        if (e.shiftKey) void doRedo();
-        else void doUndo();
-        return;
-      }
-      if (mod && key === "y") {
-        if (readOnly) return;
-        e.preventDefault();
-        void doRedo();
-        return;
-      }
-      if (mod && ["+", "=", "add"].includes(key)) {
-        e.preventDefault();
-        void rfRef.current?.zoomIn({ duration: 160 });
-        return;
-      }
-      if (mod && ["-", "_", "subtract"].includes(key)) {
-        e.preventDefault();
-        void rfRef.current?.zoomOut({ duration: 160 });
-        return;
-      }
-      if (mod && key === "0") {
-        e.preventDefault();
-        void rfRef.current?.fitView({ duration: 240, padding: 0.2, maxZoom: 1 });
-        return;
-      }
-      if (e.key === "Delete" || e.key === "Backspace") {
-        // Safari/WebKit can navigate back on Backspace when no editable field owns it.
-        // Empty canvas selection must be a no-op, not leave the current project.
-        if (!browsing) e.preventDefault();
-        if (readOnly || e.repeat) return;
-        if (selectedEdge) {
-          e.preventDefault();
-          void cutEdge(selectedEdge);
-          return;
-        }
-        if (selectedGenerating) return;
-        const realSel = multiSel.filter(
-          (id) => !id.startsWith("pend-") && !id.startsWith("task-")
-        );
-        if (realSel.length >= 1) {
-          e.preventDefault();
-          void runDelete(realSel);
-        } else if (selectedId) {
-          e.preventDefault();
-          void runDelete([selectedId]);
-        } else if (selectedTextId) {
-          e.preventDefault();
-          void removeTextNode(selectedTextId);
-        }
-        return;
-      }
-      if (e.key === "Escape" && canvasTool !== "move") {
-        e.preventDefault();
-        clearCanvasSelection(true);
-      }
+      case "paste-media":canvasCopyIntentRef.current=null;void pasteNode();return;
+      case "undo":void doUndo();return;
+      case "redo":void doRedo();return;
+      case "zoom-in":void viewControls.zoomIn(160);return;
+      case "zoom-out":void viewControls.zoomOut(160);return;
+      case "fit":void viewControls.fit(240);return;
+      case "cut-edge":if(selectedEdge)void cutEdge(selectedEdge);return;
+      case "remove":void runDelete(action.ids);return;
+      case "remove-text":void removeTextNode(action.id);return;
+      case "clear":clearCanvasSelection(true);return;
     }
-    // Capture before React Flow/native media surfaces stop bubbling key events.
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    readOnly,
-    selectedId,
-    selectedTextId,
-    selectedGenerating,
-    multiSel,
-    selectedEdge,
-    undoStack,
-    redoStack,
-    canvasTool,
-    browsing,
-    canvasShortcutLayerOpen,
-    nodeSettingsReady,
-  ]);
+  }
+  useCanvasKeyboard({state:()=>({readOnly,browsing,blocked:canvasShortcutLayerOpen,busy:historyBusyRef.current||cuttingEdgesRef.current.size>0,tool:canvasTool,
+    selectedId,selectedTextId,selectedEdge:!!selectedEdge,selectedGenerating,multiSel,
+    mediaCopyIntent:!!canvasCopyIntentRef.current&&(nodeClipRef.current?.id===canvasCopyIntentRef.current||genericNodeClipRef.current?.marker===canvasCopyIntentRef.current)}),perform:performCanvasShortcut});
 
-  // Ctrl/⌘ + 滚轮:阻止浏览器整页缩放(画布内由 React Flow 自己缩放)
-  useEffect(() => {
-    if (!ready || !user) return;
-    const el = canvasAreaRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      if (e.ctrlKey || e.metaKey) e.preventDefault();
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, [ready, user, browsing]);
+
 
   useEffect(() => {
     if (!ready || !user) return;
@@ -4865,60 +4642,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   aria-label={t("canvas.toolPalette")}
                   className="canvas-ui-surface absolute bottom-[76px] left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-0 overflow-x-auto rounded-2xl border px-1 py-1.5 text-[#20242c] shadow-[0_12px_34px_rgba(15,23,42,0.18)] backdrop-blur min-[390px]:gap-0.5 min-[390px]:px-1.5 min-[800px]:bottom-5"
                 >
-                  <button
-                    type="button"
-                    data-tool="move"
-                    onClick={() => setCanvasTool("move")}
-                    aria-label={`${t("canvas.moveTool")} (V)`}
-                title={`${t("canvas.moveTool")} (V)`}
-                    aria-pressed={canvasTool === "move"}
-                    className={cn(
-                      "flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9",
-                      canvasTool === "move"
-                        ? "canvas-ui-primary shadow-sm"
-                        : "canvas-ui-action"
-                    )}
-                  >
-                    <MousePointer2 className="h-[18px] w-[18px]" />
-                  </button>
-                  <button
-                    type="button"
-                    data-tool="marquee"
-                    onClick={() => {
-                      setCanvasTool("marquee");
-                      setSelectedId(null);
-                      setSelectedPendId(null);
-                      setSelectedTextId(null);
-                      clearCanvasSelection();
-                    }}
-                    aria-label={`${t("canvas.boxSelect")} (M)`}
-                title={`${t("canvas.boxSelect")} (M)`}
-                    aria-pressed={canvasTool === "marquee"}
-                    className={cn(
-                      "flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9",
-                      canvasTool === "marquee"
-                        ? "canvas-ui-primary shadow-sm"
-                        : "canvas-ui-action"
-                    )}
-                  >
-                    <BoxSelect className="h-[18px] w-[18px]" />
-                  </button>
-                  <button
-                    type="button"
-                    data-tool="hand"
-                    onClick={() => setCanvasTool("hand")}
-                    aria-label={`${t("canvas.handTool")} (H)`}
-                title={`${t("canvas.handTool")} (H)`}
-                    aria-pressed={canvasTool === "hand"}
-                    className={cn(
-                      "flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9",
-                      canvasTool === "hand"
-                        ? "canvas-ui-primary shadow-sm"
-                        : "canvas-ui-action"
-                    )}
-                  >
-                    <Hand className="h-[18px] w-[18px]" />
-                  </button>
+                  <CanvasToolButtons tool={canvasTool} onSelect={viewControls.selectTool} t={t}/>
 
                   <span className="mx-0.5 h-5 w-px flex-none bg-[var(--canvas-ui-border)] sm:mx-1 sm:h-6" />
 
@@ -5156,172 +4880,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
           {/* 左下角视图工具:整理画布 / 小地图 / 网格吸附 / 适应视图 / 画布颜色 / 缩放% */}
           {!browsing && (active || creatingNew) && (
-            <div
-              data-testid="canvas-view-toolbar"
-              className={cn(
-                "canvas-ui-surface absolute bottom-4 left-4 flex items-center gap-0.5 rounded-xl border p-1.5",
-                zoomMenuOpen ? "z-40" : "z-20"
-              )}
-            >
-              {!readOnly && (
-                <button
-                  type="button"
-                  title={t("canvas.ctxTidy")}
-                  aria-label={t("canvas.ctxTidy")}
-                  onClick={tidyLayout}
-                  disabled={historySaving || !nodeSettingsReady || !textNodesReady}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                >
-                  <LayoutGrid className="h-4 w-4" />
-                </button>
-              )}
-              <button
-                type="button"
-                title={t("canvas.minimap")}
-                aria-pressed={showMinimap}
-                aria-label={t("canvas.minimap")}
-                onClick={() => setShowMinimap((v) => !v)}
-                className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-secondary",
-                  showMinimap ? "text-foreground" : "text-muted-foreground"
-                )}
-              >
-                <MapIcon className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                title={t("canvas.snap")}
-                aria-pressed={snapGrid}
-                aria-label={t("canvas.snap")}
-                onClick={() => setSnapGrid((v) => !v)}
-                className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-secondary",
-                  snapGrid ? "text-primary" : "text-muted-foreground"
-                )}
-              >
-                <Magnet className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                title={t("canvas.ctxFit")}
-                aria-label={t("canvas.ctxFit")}
-                onClick={() =>
-                  rfRef.current?.fitView({ duration: 400, padding: 0.2, maxZoom: 1 })
-                }
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-              >
-                <Maximize className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                data-testid="canvas-theme-toggle"
-                aria-label={t(lightCanvas ? "canvas.toolbar.darkCanvas" : "canvas.toolbar.lightCanvas")}
-                title={t(lightCanvas ? "canvas.toolbar.darkCanvas" : "canvas.toolbar.lightCanvas")}
-                aria-pressed={!lightCanvas}
-                onClick={() => setLightCanvas(v => { const next = !v; try { localStorage.setItem("nv:canvas:bg", next ? "light" : "dark"); } catch { /* Keep theme switching even without local storage. */ } return next; })}
-                className="canvas-ui-action flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315fc8]"
-              >
-                {lightCanvas ? <Moon className="h-4 w-4" aria-hidden="true" /> : <Sun className="h-4 w-4" aria-hidden="true" />}
-              </button>
-              <span className="mx-0.5 h-5 w-px bg-border" />
-              {/* 缩放 % → 点击弹出缩放菜单(放大/缩小/适合屏幕/缩放至…) */}
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setZoomMenuOpen((v) => !v)}
-                  title={t("canvas.toolbar.zoom")}
-                  ref={zoomButtonRef}
-                  aria-label={`${t("canvas.toolbar.zoom")} ${zoomPercentLabel(viewport.zoom)}`}
-                  aria-expanded={zoomMenuOpen}
-                  className="rounded-lg px-1.5 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                >
-                  <span ref={zoomLabelRef}>{zoomPercentLabel(viewport.zoom)}</span>
-                </button>
-                {zoomMenuOpen && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-40"
-                      onClick={() => setZoomMenuOpen(false)}
-                    />
-                    <div className="absolute bottom-[calc(100%+10px)] left-1/2 z-50 -translate-x-1/2">
-                    <div className="canvas-ui-surface menu-pop-up w-52 overflow-hidden rounded-xl border py-1.5">
-                      {/* 可输入的缩放值 */}
-                      <div className="canvas-ui-control mx-1.5 mb-1 flex items-center justify-between rounded-lg px-3 py-2">
-                        <input
-                          ref={zoomInputRef}
-                          value={zoomInput}
-                          onChange={(e) => {
-                            const next = e.target.value.replace(",", ".");
-                            if (/^\d*(?:\.\d*)?(?:e[+-]?\d*)?$/i.test(next)) {
-                              setZoomInput(next);
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              applyZoomInput();
-                              setZoomMenuOpen(false);
-                            }
-                          }}
-                          className="w-16 bg-transparent text-sm font-medium outline-none"
-                          inputMode="decimal"
-                        />
-                        <span className="text-sm text-[#9aa1ae]">%</span>
-                      </div>
-                      {[
-                        {
-                          label: "放大",
-                          hk: `${modifierKey} +`,
-                          fn: () => rfRef.current?.zoomIn({ duration: 200 }),
-                        },
-                        {
-                          label: "缩小",
-                          hk: `${modifierKey} -`,
-                          fn: () => rfRef.current?.zoomOut({ duration: 200 }),
-                        },
-                        { sep: true },
-                        {
-                          label: "缩放至50%",
-                          fn: () => rfRef.current?.zoomTo(0.5, { duration: 200 }),
-                        },
-                        {
-                          label: "缩放至100%",
-                          fn: () => rfRef.current?.zoomTo(1, { duration: 200 }),
-                        },
-                        {
-                          label: "缩放至800%",
-                          fn: () => rfRef.current?.zoomTo(8, { duration: 200 }),
-                        },
-                      ].map((it, i) =>
-                        it.sep ? (
-                          <div
-                            key={`s${i}`}
-                            className="my-1 h-px bg-[#2a2d36]"
-                          />
-                        ) : (
-                          <button
-                            key={it.label}
-                            type="button"
-                            onClick={() => {
-                              it.fn?.();
-                              setZoomMenuOpen(false);
-                            }}
-                            className="flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors hover:bg-[#2a2e38]"
-                          >
-                            <span>{it.label}</span>
-                            {it.hk && (
-                              <span className="text-xs text-[#9aa1ae]">
-                                {it.hk}
-                              </span>
-                            )}
-                          </button>
-                        )
-                      )}
-                    </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
+            <CanvasViewToolbar controls={viewControls} zoom={viewport.zoom} readOnly={readOnly} tidyDisabled={historySaving||!nodeSettingsReady||!textNodesReady} onTidy={tidyLayout} t={t}/>
           )}
 
           {/* 拉线落空白:新建节点菜单(基于源图衍生) */}

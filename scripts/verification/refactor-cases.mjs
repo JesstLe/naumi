@@ -26,6 +26,7 @@ export const refactorCases=[
  ts('workbench-price','pricing','scripts/verify-pricing-friction-workbench.ts','WORKBENCH_MODIFIED=PASS',['--mode','modified']),
  node('text-fields','canvas','scripts/verify-canvas-text-write.cjs','CANVAS_TEXT_WRITE=PASS'),
  node('project-catalog','canvas','scripts/verify-canvas-project-catalog.mjs','CANVAS_PROJECT_CATALOG=PASS',['--static']),
+ node('input-controls','canvas','scripts/verify-canvas-input-controls.mjs','CANVAS_INPUT_CONTROLS=PASS',['--static']),
  node('artwork-fields','canvas','scripts/verify-canvas-artwork-write.cjs','CANVAS_ARTWORK_WRITE=PASS'),
  ts('text-pg','canvas','scripts/verify-canvas-text-concurrency-pg.ts','CANVAS_TEXT_CONCURRENCY=PASS'),
  ts('artwork-pg','canvas','scripts/verify-canvas-artwork-concurrency-pg.ts','CANVAS_ARTWORK_CONCURRENCY=PASS'),
