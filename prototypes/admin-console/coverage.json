@@ -1,0 +1,207 @@
+{
+  "sourceCommit": "cde64c6aedd75c5197ee2ae17e7bac8759fb8bed",
+  "baselinePreviewCommit": "2a318ac48190cba5b6880d309544db78946b9cd3",
+  "sourceHashes": {
+    "src/components/admin/center-shell.tsx": "73288defe3a4efc60a8e3d219034d6fa623f7d5c52855c7e1b5b2815c469c265",
+    "src/components/admin/model-config/manager.tsx": "aace0f62c7ff50ccfff38bdc0689c4d4c2b3ec4d01c2dd25b2c79c308dc7cf60",
+    "src/components/admin/billing/billing-manager.tsx": "3823dc737da260b1aefbe2ed48a244a3779a3b189016385081e8903ceab67dfd",
+    "src/components/admin/billing/supplier-cost-manager.tsx": "5e9aa3c8b751cc438730a22336e02da001a6077a294f2077947fc9cc0b878758",
+    "src/components/admin/admin-settings.tsx": "2d4979e15eb2ae3090f0e6fe81b03db5746bb2a2e6a8a59eeeb572ffe219f220",
+    "src/components/saas/platform-console.tsx": "25f38a2955fe4c0823a06329a21727e23cb5563da9eb5d381ad1945dada2f48d",
+    "src/components/saas/creation-browser.tsx": "885826a3b8e902d5074ec10fc4014330c13e36936910afcb89301f4b40ee2e75",
+    "src/components/admin/model-management/model-management.tsx": "8271d97081135d716f4acd32fa01fb941fa284b7cb1d72222e853ee2bf1951cf",
+    "src/lib/admin-navigation.ts": "a766f783436abd23f183061e01c0c32f2f526fbb573d0493c8afda375b03451c"
+  },
+  "sideSubpages": [
+    {
+      "label": "统一创作",
+      "url": "/admin/creations"
+    },
+    {
+      "label": "历史业务任务",
+      "url": "/admin/center?section=operations"
+    },
+    {
+      "label": "图片",
+      "url": "/admin/center?section=artworks"
+    },
+    {
+      "label": "对话",
+      "url": "/admin/center?section=conversations"
+    },
+    {
+      "label": "调用审计",
+      "url": "/admin/center?section=calls"
+    },
+    {
+      "label": "租户",
+      "url": "/admin/tenants"
+    },
+    {
+      "label": "既有团队",
+      "url": "/admin/teams"
+    },
+    {
+      "label": "入口授权",
+      "url": "/admin/team-access"
+    },
+    {
+      "label": "用户",
+      "url": "/admin/center?section=users"
+    },
+    {
+      "label": "功能权限",
+      "url": "/admin/feature-access"
+    },
+    {
+      "label": "账务配置",
+      "url": "/admin/billing"
+    },
+    {
+      "label": "钱包与充值",
+      "url": "/admin/billing?section=wallet"
+    },
+    {
+      "label": "充值订单",
+      "url": "/admin/center?section=orders"
+    },
+    {
+      "label": "积分流水",
+      "url": "/admin/center?section=ledger"
+    },
+    {
+      "label": "价格表",
+      "url": "/admin/billing/price-table"
+    },
+    {
+      "label": "采购与对账",
+      "url": "/admin/billing/supplier-cost"
+    },
+    {
+      "label": "定价测算",
+      "url": "/admin/pricing"
+    },
+    {
+      "label": "模型管理",
+      "url": "/admin/model-management"
+    },
+    {
+      "label": "供应商余额",
+      "url": "/admin/supplier-balances"
+    },
+    {
+      "label": "完整配置",
+      "url": "/admin/bi/models"
+    },
+    {
+      "label": "健康巡检",
+      "url": "/admin/model-health"
+    },
+    {
+      "label": "质量审计",
+      "url": "/admin/center?section=models"
+    },
+    {
+      "label": "站点与接口",
+      "url": "/admin?view=settings"
+    },
+    {
+      "label": "管理日志",
+      "url": "/admin/center?section=management"
+    },
+    {
+      "label": "访问记录",
+      "url": "/admin/center?section=access"
+    }
+  ],
+  "routes": [
+    "admin",
+    "admin/bi",
+    "admin/billing",
+    "admin/center",
+    "admin/creations",
+    "admin/deployments",
+    "admin/feature-access",
+    "admin/health",
+    "admin/model-health",
+    "admin/model-management",
+    "admin/mvp",
+    "admin/pricing",
+    "admin/supplier-balances",
+    "admin/team-access",
+    "admin/teams",
+    "admin/tenants",
+    "admin/tenants/[tenantId]",
+    "admin/mvp/library",
+    "admin/model-management/library",
+    "admin/creations/resolve",
+    "admin/creations/[id]",
+    "admin/billing/price-table",
+    "admin/billing/supplier-cost",
+    "admin/bi/models"
+  ],
+  "nestedTabs": {
+    "creationSources": [
+      "新创作",
+      "历史生成",
+      "图片作品"
+    ],
+    "tenantDetail": [
+      "概览",
+      "成员与权限",
+      "套餐与额度",
+      "创作记录",
+      "账务",
+      "操作记录"
+    ],
+    "modelManagement": [
+      "模型映射",
+      "上游来源",
+      "供应商模型库"
+    ],
+    "modelConfiguration": [
+      "APIMart 默认预设",
+      "模型批量配置",
+      "功能计费与路由",
+      "供应商",
+      "上游模型",
+      "公开模型",
+      "混合路由",
+      "默认用途",
+      "路由模拟",
+      "发布记录"
+    ],
+    "billingWallet": [
+      "业务收费",
+      "供应商成本",
+      "特殊定价规则",
+      "充值套餐",
+      "赠送与总开关",
+      "版本历史",
+      "人工核对"
+    ],
+    "supplierCost": [
+      "调用成本明细",
+      "成本统计",
+      "对账异常",
+      "账户与折算"
+    ],
+    "siteSettings": [
+      "用户用量",
+      "模板管理",
+      "试穿素材库",
+      "提示词配置",
+      "接口与模型",
+      "登录与支付",
+      "品牌与站点",
+      "站点页面",
+      "兑换码",
+      "账号积分调整",
+      "旧部署与中转密钥"
+    ]
+  },
+  "implementation": "local-only-fixture",
+  "coverageStatus": "complete-local-preview",
+  "previewRouteStates": 88,
+  "notes": "25 source shell links and 24 source app route mappings; 88 preview route states include default aliases, not 88 distinct production functions"
+}
