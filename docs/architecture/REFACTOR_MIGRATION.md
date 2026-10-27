@@ -297,3 +297,5 @@ R5L收尾补正：错误去重仅匹配saved batch的原project，旧项目待�
 ## R6Q 请求与工作流 owner
 
 Canvas 请求翻译归 `canvas/creation-request`；Comfy 共享合同、同步图片应用和原回执归 `comfyui`，视频复用既有 BYOC 持久任务；Canvas 控制器只处理原意图及结果 attachment。页面不再定义请求/计价规则或工作流执行循环。新表/任务引擎/计费引擎均 0；整体目标继续，参见 [R6Q](../changes/2026-10-27-canvas-request-workflow-r6q.md)。
+
+R6Q 集中封版：core44/44、runtime125、真实产品36通过；静态/全import/emitted SCC均0。原协议10调用不变、已存在部分产物链接复用，查询与提交分开；UNKNOWN只能查原回执，明确未受理结束旧意图可改参。整体后续Canvas视频提交/批次等应用边界继续，最终四产物及回滚见DELIVERY。

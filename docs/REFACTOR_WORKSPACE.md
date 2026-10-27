@@ -167,3 +167,5 @@ R5L收尾补正：错误去重仅匹配saved batch的原project，旧项目待�
 ## R6Q：Canvas 请求与 Comfy 工作流
 
 独立分支继续整体重构，普通整合 main `fb5dfe80810ed1d796c6050e5487b92e6fa02c1d`。请求适配、工作流共享合同/应用和原回执恢复归明确 owner；不新增表、任务/计费引擎和用户确认。实现/证据/未完成边界见 [R6Q记录](changes/2026-10-27-canvas-request-workflow-r6q.md)。尚未合 main 或部署。
+
+R6Q 固定 `ed0450be`：core44/44、完整Linux同镜像runtime125、真实双浏览器36和原生工作流4检查通过；Canvas5688→5586、route257→34，原151函数与1863产品hash保持。后续继续视频提交/批次及外围编排边界；本切片不等于整个项目完成。四产物/回滚/Git最终回执统一本轮DELIVERY。
