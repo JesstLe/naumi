@@ -86,7 +86,11 @@ class Release:
         return worker_handoff.execute(a,folder,lambda argv:self.tx.run(argv).decode())['state']
     def media(self,row,action):
         js="const a=process.argv[1];const r=await fetch('http://127.0.0.1:3001/'+a,{method:a==='health'?'GET':'POST',headers:{authorization:'Bearer '+process.env.MEDIA_WORKER_SECRET},signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error('MEDIA_HTTP_'+r.status);console.log(JSON.stringify(await r.json()));"
-        result=json.loads(self.tx.run(['docker','exec','-e','NODE_OPTIONS=',row['Id'],'node','--input-type=module','-e',js,action]));require(result['version']==environment(row)['SOURCE_COMMIT'] and result['sandbox'] is True,'MEDIA_IDENTITY_CHANGED');return result
+        result=json.loads(self.tx.run(['docker','exec','-e','NODE_OPTIONS=',row['Id'],'node','--input-type=module','-e',js,action]))
+        if action!='health':
+            require(result.get('ok') and result.get('draining') is (action=='drain'),'MEDIA_MODE_NOT_ACKNOWLEDGED')
+            observed=self.media(row,'health');require(observed['draining']==result['draining'],'MEDIA_MODE_NOT_OBSERVED');return {**observed,'controlReceipt':result}
+        require(result['version']==environment(row)['SOURCE_COMMIT'] and result['sandbox'] is True,'MEDIA_IDENTITY_CHANGED');return result
     def wait(self,fn,label,seconds=90):
         end=time.monotonic()+seconds
         while True:
@@ -119,7 +123,7 @@ class Release:
         parsed=compat.Dump(self.dump);self.before={p:pathlib.Path(p).read_bytes()for p in parsed.files};self.real={p:str(pathlib.Path(p).resolve())for p in self.before}
         self.tx.save('nginx-before.private.txt',self.dump.encode());self.tx.save('nginx-files-before.private.json',{p:base64.b64encode(b).decode()for p,b in self.before.items()})
         email=self.sql("SELECT json_build_object('email',email)FROM app_users WHERE role='admin' AND banned=false ORDER BY joined_at LIMIT 1;")[0]['email']
-        secret=environment(self.old['web'])['SETTINGS_SECRET'];exp=str(int(time.time()*1000)+2*3600*1000);eb=base64.urlsafe_b64encode(email.encode()).decode().rstrip('=')
+        secret=environment(self.old['web'])['SETTINGS_SECRET'];exp=str(int(time.time()*1000)+30*24*3600*1000);eb=base64.urlsafe_b64encode(email.encode()).decode().rstrip('=')
         self.cookie='nv_user='+eb+'.'+exp+'.'+hmac.new(secret.encode(),('user:'+eb+'.'+exp).encode(),hashlib.sha256).hexdigest();self.tx.save('cookie.private',self.cookie.encode())
         self.request(self.old['web'],'/api/auth/session')
         self.wait(lambda:self.request(self.old['web'],'/api/video/worker/drain-status',auth=False,worker=True).get('drained'),'PREEXISTING_EXECUTION_CHECK')

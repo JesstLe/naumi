@@ -1,5 +1,5 @@
 """Resume only the original, pre-candidate capacity abort; no gate bypass."""
-import base64, copy, fcntl, json, pathlib, time
+import base64, copy, fcntl, json, pathlib, time,hashlib,hmac
 from release103_refactor import Release, TARGET, MACHINE, CANON, validate_config, now
 from release47_host import HostTransaction, require, sha, public_identity
 import release47_task_snapshot as tasks
@@ -15,18 +15,25 @@ def main(config,review):
             require(sha(raw)==check['canonicalSha256'] and state['revision']==check['revision'],'RESUME_CANONICAL_CAS_CHANGED')
             record=state['blueGreen103Releases'][c['releaseId']]
             local_preflight=check.get('mode')=='local-startup-context'
-            require(record['phase']==('CLEANUP_PENDING'if local_preflight else'ABORTED') and record['commit']==c['commit'] and record['image']==c['image'],'ONLY_ORIGINAL_PRE_CANDIDATE_ABORT')
-            expected={'database-backup','image-load'}|({'create-media','create-web'}if local_preflight else set())
+            candidate_ready=check.get('mode')=='candidate-native-session'
+            require(record['phase']==('ROLLBACK_FAILED'if candidate_ready else'CLEANUP_PENDING'if local_preflight else'ABORTED') and record['commit']==c['commit'] and record['image']==c['image'],'ONLY_ORIGINAL_PRE_CANDIDATE_ABORT')
+            expected={'database-backup','image-load'}|({'create-media','create-web','create-worker','start-media','start-web','start-worker'}if candidate_ready else{'create-media','create-web'}if local_preflight else set())
             require(set(record['operations'])==expected and all(o['phase']==('UNKNOWN'if local_preflight and name=='create-web'else'ACKNOWLEDGED')for name,o in record['operations'].items()),'UNKNOWN_OR_LATER_OPERATION_BLOCKS_RESUME')
             failure=json.loads((tx.folder/'FAILURE.json').read_bytes())
             require(failure.get('phase')=='BACKED_UP' and failure.get('error')=='DUAL_SLOT_PEAK_CAPACITY_GATE','ONLY_TRANSIENT_CAPACITY_ABORT')
             if local_preflight:
                 log=tx.folder/'resume-controller.private.log'
                 require(sha(log.read_bytes())==check.get('failureLogSha256') and log.read_text().rstrip().endswith('release47_host.Hold: FIXED_RUNTIME_RECOVERY_CONTEXT_REQUIRED'),'EXACT_LOCAL_PREFLIGHT_FAILURE_REQUIRED')
+            if candidate_ready:
+                log=tx.folder/'final-resume-controller.private.log';require(sha(log.read_bytes())==check.get('failureLogSha256') and log.read_text().rstrip().endswith('release47_host.Hold: EXISTING_ACCOUNT_NOT_ACCEPTED'),'EXACT_NATIVE_SESSION_CHECK_FAILURE_REQUIRED')
             rows=json.loads(tx.run(['docker','inspect',*tx.run(['docker','ps','-aq','--no-trunc']).decode().split()]))
-            require(sorted(r['Id']for r in rows if r['State']['Running'])==sorted(c['runningIds']),'RESUME_RUNNING_BASELINE_CHANGED')
+            created_ids=[record['operations']['create-'+role]['receipt']['id']for role in ['web','worker','media']]if candidate_ready else[]
+            require(sorted(r['Id']for r in rows if r['State']['Running'])==sorted(c['runningIds']+created_ids),'RESUME_RUNNING_BASELINE_CHANGED')
             candidates={role:r for r in rows for role,name in c['newNames'].items()if r['Name'].lstrip('/')==name}
-            require(set(candidates)==({'media'}if local_preflight else set()),'CANDIDATE_ALREADY_EXISTS_RECONCILE')
+            require(set(candidates)==({'web','worker','media'}if candidate_ready else{'media'}if local_preflight else set()),'CANDIDATE_ALREADY_EXISTS_RECONCILE')
+            if candidate_ready:
+                for role,row in candidates.items():
+                    pin=record['operations']['create-'+role]['receipt'];require(row['Id']==pin['id']and row['Image']==pin['image']==c['image']and row['State']['Running']and row['HostConfig']['RestartPolicy']['Name']=='no','ORIGINAL_RUNNING_CANDIDATE_CHANGED')
             if local_preflight:
                 require(public_identity(candidates['media'])==record['operations']['create-media']['receipt'] and not candidates['media']['State']['Running'],'PREVIOUS_MEDIA_CREATE_CHANGED')
                 folder=pathlib.Path('/opt/naumi-staging/releases')/c['releaseId']/'web'
@@ -59,9 +66,24 @@ def main(config,review):
             memory=release.memory
             release.memory=lambda:release.wait(memory,'UNCHANGED_CAPACITY_GATE',seconds=90)
             record.setdefault('resumeHistory',[]).append({'at':now(),'originalAbort':copy.deepcopy(failure),'canonicalReviewSha256':sha(raw),'backupRepeated':False,'imageReloaded':False,'capacityGateUnchanged':True})
-            release.phase('BACKED_UP')
+            if candidate_ready:
+                import release47_controls as controls
+                from release47_host import environment
+                # Observe the partial rollback, rather than clearing a sticky
+                # failure from its label alone. No public cutover happened.
+                app=controls.app_status(tx,public_identity(candidates['web']));obs=app['observations'];worker=release.worker(candidates['worker'],'status');media=release.media(candidates['media'],'health')
+                require(app['admission']['mode']=='draining'and all(obs[k]==0 for k in ['activeRequests','trackedAcceptedWork','agentRuns','unknownLeases'])and worker['paused']and worker['activeTicks']==worker['unresolvedTicks']==0 and media['draining']and media['running']==media['queued']==0,'ROLLBACK_STATE_NOT_ACTUALLY_QUIESCENT')
+                release.wait(lambda:release.request(candidates['web'],'/api/video/worker/drain-status',auth=False,worker=True)['drained'],'CURRENT_DOMAIN_QUIESCENT')
+                email=release.sql("SELECT json_build_object('email',email)FROM app_users WHERE role='admin'AND banned=false ORDER BY joined_at LIMIT 1;")[0]['email'];eb=base64.urlsafe_b64encode(email.encode()).decode().rstrip('=');exp=str(int(time.time()*1000)+30*24*3600*1000);secret=environment(release.old['web'])['SETTINGS_SECRET']
+                cookie='nv_user='+eb+'.'+exp+'.'+hmac.new(secret.encode(),('user:'+eb+'.'+exp).encode(),hashlib.sha256).hexdigest();tx.save('cookie-before-native-ttl-fix.private',release.cookie.encode());release.cookie=cookie
+                require(release.request(release.old['web'],'/api/auth/session').get('user')and release.request(candidates['web'],'/api/auth/session').get('user'),'FRESH_NATIVE_SESSION_NOT_ACCEPTED')
+                path=tx.folder/'cookie.private';path.write_text(cookie);path.chmod(0o600)
+                proof={'at':now(),'gatewayStillOriginal':True,'currentCandidateWork':0,'workerPaused':True,'mediaDrained':True,'legacyDrainProven':False,'oldAndNewNativeAccountAccepted':True,'originalFailureLogSha256':check['failureLogSha256'],'originalFailure':'test cookie issuedAt derived from short TTL; media control receipt requires separate health read'}
+                tx.save('rollback-failure-reconciled.json',proof);record['rollbackFailureResolution']=proof
+            release.phase('CANDIDATE_READY'if candidate_ready else'BACKED_UP')
             try:
-                release.candidates();release.acceptance();release.assets();release.switch();release.finish()
+                if not candidate_ready:release.candidates()
+                release.acceptance();release.assets();release.switch();release.finish()
             except BaseException:
                 try:release.rollback()
                 except BaseException:release.phase('ROLLBACK_FAILED')
