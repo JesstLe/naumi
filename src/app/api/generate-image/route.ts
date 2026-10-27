@@ -6,6 +6,7 @@ import { exactImageRequestSize, imageRatioValidationPolicy, ExactImageSizeError 
 import { imageRatioWarning, imageOutputNotice } from "@/lib/imagegen/output-advisory";
 import { storedImageReview, IMAGE_REVIEW_MESSAGE } from "@/lib/image-job-review";
 import { storedDeliveryCheckpoint } from "@/lib/imagegen/delivery-checkpoint";
+import { imageFailureEvidence, imageFailureFrames } from "@/lib/imagegen/failure-evidence";
 import { unsupportedReverseHubRatio, REVERSE_HUB_RATIO_MESSAGE } from "@/lib/imagegen/ratio-support";
 import {currentImagegenStep,withImagegenStep} from "@/lib/imagegen/context";
 import {legacyImagegenIntent} from "@/lib/imagegen/legacy-intent";
@@ -953,7 +954,7 @@ async function runJob(
     if(checkpoint){
       // Do not log raw messages: they may contain prompts, URLs or credentials.
       const failure={stage:deliveryStage,name:e instanceof Error?e.name:"Error",code:String((e as {code?:unknown})?.code||"DELIVERY_FAILED").replace(/[^A-Za-z0-9_-]/g,"").slice(0,64)};
-      console.error("[generate-image] delivery failed",JSON.stringify({jobId,...failure,attempt:deliveryAttempt+1}));
+      console.error("[generate-image] delivery failed",JSON.stringify({jobId,...failure,attempt:deliveryAttempt+1,...imageFailureEvidence(e),frames:imageFailureFrames(e)}));
       await JOBS.patch(jobId,{deliveryAttempts:deliveryAttempt+1,deliveryFailure:failure});
       if(deliveryAttempt<2&&checkpoint.allDone){
         await new Promise(resolve=>setTimeout(resolve,250*(deliveryAttempt+1)));
