@@ -1,5 +1,7 @@
 # 渐进迁移与集中验收台账
 
+2026-10-27 R6N：Canvas剪贴板协议/原HTML marker、账号/工作空间复制会话和native transport归3个owner，旧个人key/owner-only记录保留、由原API授权；6083→5868行，153原函数及1859其它原src/services hash保持，移除11内联函数，SCC0。完整旧22组123→新124/24字节合同同、模型44、输入3948/相邻/类型通过；修新tab旧内存、过期intent、切号/卸载后旧回退及bitmap释放。真实页面又捕获按text-前缀猜类型造成混合工具栏缺失，按实际record修复、保留原r6c-text。固定a8a37079 core34/34、完整Linux同镜像125、产品双browser27（剪贴板6）通过，copyPOST2/undo-redo同ID/额外supplier与consume0；60秒混合读5轮，报告99.49秒含尾部剪贴板阶段。4585hash回滚/四产物/远端见DELIVERY；计数2，开工main bc6af06d的12条待下一轮普通整合，整体active、不合main不部署。见[R6N记录](../changes/2026-10-27-canvas-clipboard-r6n.md)。
+
 2026-10-27 R6M：Canvas快捷键纯decision/单capture监听、视图状态与工具条归独立owner，共用原输入归属与V/M/H切换；6524→6083行，162原函数与1852其它原src/services hash保持、4helper正文迁移、SCC0。完整原21→新3948/3925事件矩阵/2HTML同，修复制旧标题/缩放草稿覆盖/Escape菜单与监听重挂；固定8c21b6a7 core33/33、完整Linux同镜像运行125、产品双浏览器21组/182.2秒16轮/2图2笔12积分/弹窗0/页面异常0，类型及相邻通过。Windows冷dev及精确源码复用仍有layout.js eval解析失败，194段Node/Edge独立语法通过，根因未关闭、原失败保留；不冒用为产品通过。4573hash副本回滚/补丁/四产物及远端以DELIVERY为准；同步后第1模块，下一剪贴板会话，整体active、不合main不部署。见[R6M记录](../changes/2026-10-27-canvas-input-controls-r6m.md)。
 
 2026-10-27 R6L：Canvas项目投影/命名会话/列表菜单标题归独立owner，卡片与标题共用Enter/Escape输入，删工作流说明。7132→6524行，169原函数及3规则正文保持；旧38→新44/18投影/7HTML同，迟到读取/先失败覆盖后成功/切号回写/Escape吞下次保存关闭。真实Next-PG11、固定f319d76e core32/32、完整Linux同镜像运行125和双浏览器9组/180秒/2图2笔12积分、类型及相邻诊断/比例通过。冷dev加载SyntaxError首次根因未关闭，原失败保留。第3模块已普通整合固定main8e412abe（merge6ef35a8a），诊断迁真实owner不恢复旧大文件，SCC0、计数归零。4544hash回滚/补丁/四产物/远端以DELIVERY为准；整体active、不合main不部署。见[R6L记录](../changes/2026-10-27-canvas-project-catalog-r6l.md)。
