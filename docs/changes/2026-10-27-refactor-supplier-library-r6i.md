@@ -21,3 +21,13 @@
 同步完成后读取：旧闭包回旧筛选（OLD），新版保持当前筛选（CURRENT）；离开页面后迟到导出：旧会下载（DOWNLOAD），新版NONE。原写入不取消、不重放。真实PG三组supplier metadata/quality defaults/resolution通过；相邻模型管理完整浏览器35检查/18HTML/原POST通过（未重复其原函数AST检查），本轮tsc/lint空输出exit0，runner12类70检查通过。
 
 截图检查发现共用图像高级资料编辑器还带原长说明及重复未知提示，本轮移除这些纯文案；保留实际fallback来源和日期，原控件/字段/协议不变。固定源码后再执行最终浏览器与core，不把此前截图当作最终字节。
+
+## 固定源码与同步封版
+
+固定实现 `31c1bf156c8df0461f92c2a1388b19a08fb72cbe`，digest `318b9d8185397776b1b4723cf8cf3ddea024f5f9d8f03c593c39bb3c0a0c7dc9`：core 29/29 PASS、failed0/not-run0/exit0，其中资料库static16只是真实编译与原金额纯函数，不冒充浏览器/PG。固定源码最终浏览器25与原5组字段/3个POST精确对照，tsc/lint空输出exit0。新截图已打开检查；浏览器fixture明确auth/Next link/API替代，不扩大为完整Next或线上验收。
+
+结构：主入口109→27行、28,375→4,884字节；原costSummary/download两helper正文保持，1,476原后端/路由/服务文件hash保持，emitted静态/全导入环均0。原文档序列化提取纯draft-values供实际form与static共同消费，没有另起配置schema或业务框架。
+
+本轮第三模块，fetch/普通merge origin/main均exit0，返回Already up to date；来源仍cde64c6a，计数归零，精确命令及结果在MAIN_SYNC.json。没有把重构分支合回main或发布。自有65486隔离PG已核实schema0/其他连接0后停止删除，其他容器未动。
+
+最终文档提交与被测实现分开，产品/服务/验证字节逐一绑定；四产物、20路径patch、副本回滚4526原hash及旧21检查行为、最终Git/远端见DELIVERY。后续继续测试资产/文档归属、依赖与长时混合运行、整体UI组合和完整最终版本交付，整体active。
