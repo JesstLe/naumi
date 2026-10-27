@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 import { selectionRunTargets, runSelectionBatch } from "../src/lib/canvas/selection-run";
+import {canvasInheritedImagePrompt} from "../src/lib/canvas/image-creation";
 
 async function main() {
   const source = readFileSync(process.env.CANVAS_SELECTION_SOURCE || "src/components/canvas/canvas-client.tsx", "utf8");
@@ -44,7 +45,9 @@ async function main() {
   assert.match(controller,/previous\.snapshot\.busy/);assert.match(controller,/scope\.viewCurrent/);
   let run="";(function walk(n:ts.Node){if(ts.isVariableDeclaration(n)&&n.name.getText(sf)==="selectionRun")run=n.initializer!.getText(sf);ts.forEachChild(n,walk);})(sf);
   assert.match(run, /operationKey: `node:\$\{art\.id\}`/); assert.doesNotMatch(run, /Date\.now\(\)|sharedPrompt|editPrompt/);
-  assert.match(run, /inheritableImagePrompt\(art\.prompt\)/); assert.match(run, /ratio: art\.ratio/); assert.match(run, /resolution: art\.resolution/);
+  assert.match(run, /canvasInheritedImagePrompt\(art\.prompt\)/); assert.match(run, /ratio: art\.ratio/); assert.match(run, /resolution: art\.resolution/);
+  assert.equal(canvasInheritedImagePrompt(" 原节点配方 "),"原节点配方");
+  assert.equal(canvasInheritedImagePrompt("旧引用【图1】"),canvasInheritedImagePrompt(""));
   assert.match(targets, /isNodeLocked/); assert.match(targets, /art\.status === "completed"/); assert.match(targets, /canFeature\("generate"\)/);
   assert.match(source, /primaryAction=\{batchRunButton\(t\("canvas\.batchRunImages"\)\)\}/);
   assert.match(source, /primaryAction=\{batchRunButton\(t\("canvas\.batchRunText"\)\)\}/);

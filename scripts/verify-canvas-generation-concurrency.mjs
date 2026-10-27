@@ -20,7 +20,12 @@ assert.match(code,/textNodesRef.current/);
 assert.match(code,/nodesDraggable=\{!readOnly && canvasTool !== "hand"\}/);
 const sf=ts.createSourceFile('canvas.tsx',code,99,true,4),functions=new Map();
 function walk(n){if(ts.isFunctionDeclaration(n)&&n.name)functions.set(n.name.text,n.getText(sf));ts.forEachChild(n,walk);}walk(sf);
-for(const name of ['runGen','runCutout','landEditResult','runComfyWorkflow','generateSplitViews','generateDetailSequence','retrySelected']) assert.doesNotMatch(functions.get(name),/setSelectedId\(/,name+' must not steal current selection');
+const creationPath=path.join(root,'src/lib/canvas/image-creation.ts');
+if(fs.existsSync(creationPath)){
+ const text=fs.readFileSync(creationPath,'utf8'),owner=ts.createSourceFile(creationPath,text,99,true);
+ function visitOwner(node){if(ts.isFunctionDeclaration(node)&&node.name?.text==='splitViews')functions.set('generateSplitViews',node.getText(owner));ts.forEachChild(node,visitOwner);}visitOwner(owner);
+}
+for(const name of ['runGen','runCutout','landEditResult','runComfyWorkflow','generateSplitViews','generateDetailSequence','retrySelected']){assert.ok(functions.get(name),'actual owner '+name);assert.doesNotMatch(functions.get(name),/setSelectedId\(/,name+' must not steal current selection');}
 const baselineArg=process.argv.indexOf('--baseline-file');
 if(baselineArg>=0){
  const before=fs.readFileSync(process.argv[baselineArg+1],'utf8');

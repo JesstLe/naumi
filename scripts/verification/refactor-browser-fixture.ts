@@ -23,7 +23,7 @@ async function main(){
   }
   const input=JSON.parse(await readFile('/evidence/SETUP.json','utf8')),action=arg('--action');
   if(action==='snapshot'){
-   const artworks=(await sql.query('SELECT id,title,canvas_x,canvas_y,canvas_width,canvas_height,marked,deleted_at FROM app_artworks WHERE email=$1 ORDER BY id',[input.owner])).rows;
+   const artworks=(await sql.query('SELECT id,title,parent_id,parent_ids,prompt,ratio,resolution,canvas_x,canvas_y,canvas_width,canvas_height,marked,deleted_at FROM app_artworks WHERE email=$1 ORDER BY id',[input.owner])).rows;
    const texts=await listCanvasTextNodes(input.owner);
    const ledger=(await sql.query("SELECT count(*)::int n,COALESCE(-sum(delta),0)::int amount FROM app_ledger WHERE email=$1 AND kind='consume'",[input.owner])).rows[0];
    const jobs=(await sql.query('SELECT id,kind,snapshot,payload->\'plan\'->\'request\'->>\'operationId\' AS operation_id FROM app_image_jobs WHERE email=$1',[input.owner])).rows;

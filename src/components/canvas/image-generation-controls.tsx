@@ -8,8 +8,9 @@ import {CANVAS_RATIO_OPTIONS,canvasCombinationSupported,type canvasModelParamete
 import {CanvasModelSelect,type CanvasModelOption} from "./model-select";
 import {CanvasParameterPopover} from "./parameter-popover";
 import {CanvasSelect,ImageCountControl,RatioIcon} from "./composer-controls";
+import type {CanvasImageCreationMode} from "@/lib/canvas/image-creation";
 
-export type CanvasGenerationMode="standard"|"detail"|"triptych"|"split";
+export type CanvasGenerationMode=CanvasImageCreationMode;
 export type CanvasImageGenerationControlsProps={
   pending:boolean;light:boolean;
   model:{value:string;options:CanvasModelOption[];placeholder:string;onChange:(value:string)=>void};

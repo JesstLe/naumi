@@ -1,3 +1,7 @@
+## 2026-10-27 R6P Canvas创作应用（验证中）
+
+普通/三视图/详情分发、重做与助手生成意图归 image-creation；四端口复用原图片任务、详情、历史和scope，未增加平行任务/账务owner。旧48/新49、34组合同、9组时序通过，后续固定包与回滚见DELIVERY；主线纯文档已普通同步e4369998，功能计数1，整体active。[记录](../changes/2026-10-27-canvas-image-creation-r6p.md)。
+
 ## 2026-10-27 R6O 主线 owner 整合
 
 固定 main `4e15e71a`、merge `ffa8882a` 已集中验证：core39/39、完整Linux同镜像125、真实产品browser27、优化控件12、tsc/lint、SCC0；1802原文件hash不变，152原Canvas函数保持，6session声明/1媒体函数/9main leaf相同。新参数计划与会话/交付/传输沿真实owner，未恢复db/runtime/Canvas大文件。完整4591hash与四产物、独立副本回滚及远端见DELIVERY，功能计数归零，整体active、不合main不部署。[模块记录](../changes/2026-10-27-main-owner-integration-r6o.md)。

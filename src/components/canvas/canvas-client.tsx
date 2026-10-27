@@ -1,4 +1,5 @@
 "use client";
+import {executeCanvasImageCreation,retryCanvasImageCreation,generateCanvasAssistantImage,canvasBlankImagePrompt,canvasInheritedImagePrompt,CANVAS_IMAGE_REFERENCE_LIMIT as MAX_TOTAL_IMAGES,type CanvasImageCreationServices} from "@/lib/canvas/image-creation";
 import {canvasNodeMenuItems} from "./node-menu-items";
 import {artworkFields} from "@/lib/canvas/artwork-write";
 import {CanvasArtworkConflicts} from "./artwork-conflicts";
@@ -212,7 +213,7 @@ async function privateFetchRaw(input: RequestInfo | URL, init: RequestInit = {})
 // 图片节点使用更清晰的工作尺寸，并按图片比例自适应；高分屏上保持可辨识。
 const X_GAP = 90; // 层间横向间距
 const Y_GAP = 48; // 同层兄弟纵向间距
-const MAX_TOTAL_IMAGES = 16; // 节点图 + 追加参考图 合计上限
+ // 节点图 + 追加参考图 合计上限
 const MAX_GENERATION_COUNT = CANVAS_MAX_COUNT;
 // 扩图使用同一组比例选项，不包含自适应（必须指定外扩目标）。
 const EXPAND_RATIOS = CANVAS_RATIO_OPTIONS.filter(r => r.id !== "auto").map(r => r.id);
@@ -272,28 +273,6 @@ async function expectJsonOk(res: Response, fallback: string): Promise<any> {
 // 画布生成器:比例选项(对齐参考站图1 的网格)。w/h 只用于画小图标;
 // 实际出图尺寸由后端 sizeFor 按方向(横/竖/方)映射到 gpt-image 支持的尺寸。
 type ImageModelOption = { id: string; label: string; supportsEdit: boolean; generationParameters?: { ratios?: string[]; resolutions?: string[]; combinations?: string[] } };
-
-// 重生成(拉线新建节点 / 侧栏「生成新版本」)在用户没写提示词、且原图也没有提示词
-// 可继承时的兜底词。明确要求别替换背景、别改配色/色调 —— 否则 gpt-image 在宽松指令下
-// 会顺手重画背景(实测:背景被改成黄色)。仍是重生成(非像素锁定),只是约束更强。
-const FAITHFUL_REGEN_PROMPT =
-  "在保持主体、背景、配色、材质、光影与构图不变的前提下,仅提升清晰度与画质,输出一张干净的高质量版本;不要替换背景、不要改变背景颜色或整体色调。";
-const VIEW_CONSISTENCY_RULES =
-  "必须严格保持同一件产品：外形比例、结构、包装文字、Logo、颜色、材质、零件数量和所有识别性细节一致。使用统一白色影棚背景、相同镜头高度、焦距、光线、阴影强度与产品尺度，不得重新设计产品。";
-
-function viewPrompt(
-  role: "正面" | "侧面" | "背面",
-  feedback: string,
-  anchor = false
-) {
-  return `${VIEW_CONSISTENCY_RULES} 输出产品${role}标准视图，产品完整露出并居中，画面只出现一个产品。${
-    anchor
-      ? "第一张参考图是主体原图，第二张参考图是已经确认的正面锚点；以正面锚点锁定产品身份和视觉规格。"
-      : "以参考主体图为唯一产品依据。"
-  }${feedback ? ` 用户补充要求：${feedback}` : ""}`;
-}
-
-
 
 // 占位节点(空白/上传中)动作上下文:让 React Flow 内的节点能调用主组件的上传
 // 计算当前选中节点的整条血缘链路:上溯所有祖先 + 下延所有衍生(含自身)
@@ -1978,64 +1957,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     return landEditResult(source,{kind:"cutout",source},"抠图");
   }
 
+  function canvasImageCreationServices():CanvasImageCreationServices {
+    const scope=captureCanvasTaskOwner(user?.email||"",()=>({account:canvasAccountRef.current,project:activeProjectRef.current?.key||null,epoch:canvasContextEpochRef.current,mounted:batchRunMountedRef.current})).capture();
+    return {isCurrent:scope.isCurrent,generate:runGen,rename:renameGeneratedArtwork,
+      detail:input=>generateDetailSequence(input.source,input.references,input.prompt,input.files,undefined,input.referenceInputs)};
+  }
+
   // 面板「生成」:用编辑框提示词 + 参数 + 追加参考图(留空=按这张图再生成一张)
-  async function generateChild() {
-    if (!selected) return;
-    if (dockReferenceState.error) { setGenError(dockReferenceState.error); return; }
-    if (referenceError) { setGenError(referenceError); return; }
-    if (visibleDockRefs.length + extraFiles.length > MAX_TOTAL_IMAGES) { setGenError(`一次最多使用 ${MAX_TOTAL_IMAGES} 张图片，请移除多余引用`); return; }
-    if (generationMode === "detail") {
-      const references = visibleDockRefs.length ? visibleDockRefs : [selected];
-      await generateDetailSequence(selected, references, editPrompt.trim(), extraFiles, undefined, composerReferences);
-      return;
-    }
-    if (generationMode === "triptych") {
-      const feedback = editPrompt.trim();
-      const result = await runGen(
-        selected,
-        `${VIEW_CONSISTENCY_RULES} 在同一张横向画布中制作正面、侧面、背面三个等宽分区，按从左到右顺序排列并完整露出；三个分区中的产品必须是同一件产品，背景与尺度统一。${
-          feedback ? ` 用户补充要求：${feedback}` : ""
-        }`,
-        {
-          ratio: "16:9",
-          style: genStyle,
-          count: 1,
-          resolution: genResolution,
-          parentId: selected.id,
-          refUrls: [selected.image],
-          referenceInputs: composerReferences,
-          taskLabel: "三视图合成中…",
-          userPrompt: feedback || "生成正侧背三视图",
-        }
-      );
-      if (result[0]) await renameGeneratedArtwork(result[0].id, "正侧背三视图");
-      return;
-    }
-    if (generationMode === "split") {
-      if(!composerReferences.length){setGenError("请先选择一张编辑目标，再生成三视图");return;}
-      if(composerReferences.length>=MAX_TOTAL_IMAGES){setGenError("分图需要为生成的正面锚点预留一张参考图位置");return;}
-      await generateSplitViews(selected, editPrompt.trim(), composerReferences);
-      return;
-    }
-    const text =
-      editPrompt.trim() || inheritableImagePrompt(selected.prompt) || FAITHFUL_REGEN_PROMPT;
-    // 新图 = 选中节点的子节点(落在它下方,血缘父=选中节点)。
-    // 参考图 = dock 里可见的全部引用图(用户所见即所用,多图全送、不丢图)。
-    // 若用户在 dock 删掉了自动引用图、改上传了自己的图:用上传图作参考。
-    const useUploadAsBase = visibleDockRefs.length === 0 && extraFiles.length > 0;
-    await runGen(selected, text, {
-      ratio: genRatio,
-      style: genStyle,
-      count: genCount,
-      resolution: genResolution,
-      parentId: selected.id,
-      parentIds: visibleDockRefs.filter(ref => ref.id !== selected.id).map(ref => ref.id),
-      baseFile: useUploadAsBase ? extraFiles[0] : undefined,
-      extra: useUploadAsBase ? extraFiles.slice(1) : extraFiles,
-      refUrls: useUploadAsBase ? [] : visibleDockRefs.map((r) => r.image),
-      userPrompt: editPrompt.trim(),
-      referenceInputs: composerReferences,
-    });
+  async function generateChild(){
+    if(!selected)return;
+    const services=canvasImageCreationServices();
+    const issue=await executeCanvasImageCreation({source:selected,prompt:editPrompt,mode:generationMode,parameters:{ratio:genRatio,style:genStyle,count:genCount,resolution:genResolution},references:visibleDockRefs,files:extraFiles,referenceInputs:composerReferences,referenceError:dockReferenceState.error||referenceError},services);
+    if(issue&&services.isCurrent())setGenError(issue);
   }
 
   function canvasImageTextContext():CanvasImageTextContext {
@@ -2364,19 +2297,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   function sendAssistantMessage(continueText=false){if(readOnly||!user)return Promise.resolve();return assistantSession.send(canvasAssistantContext(),continueText);}
 
   // 助手回复里的 [[GEN]] 提示词 → 复用 runGen 管线(占位节点/撤销/计费)生成子节点
-  function genFromAssistant(prompt: string) {
-    const source = assistantArtworkId
-      ? active?.members.find((artwork) => artwork.id === assistantArtworkId)
-      : null;
-    const text = prompt.trim();
-    if (!source || !text) return;
-    void runGen(source, text, {
-      count: 1,
-      parentId: source.id,
-      refUrls: [source.image],
-      taskLabel: "助手生成中…",
-      userPrompt: "画布助手生成",
-    });
+  function genFromAssistant(prompt:string){
+    const source=active?.members.find(artwork=>artwork.id===assistantArtworkId);
+    void generateCanvasAssistantImage(source,prompt,canvasImageCreationServices());
   }
 
   // 展示层保留原始 Markdown 和已有生图入口，不修改 Agent 执行或历史数据。
@@ -2389,60 +2312,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     return <AssistantRichText content={content} light={lightCanvas} english={locale === "en"} onCopy={copyAssistantText} onGenerate={genFromAssistant} />;
   }
 
-  async function generateSplitViews(source: Artwork, feedback: string, referenceInputs?: CanvasImageReference[]) {
-    const viewSet = `views:${source.id}:${Date.now()}`;
-    const front = await runGen(source, viewPrompt("正面", feedback), {
-      ratio: genRatio,
-      style: genStyle,
-      count: 1,
-      resolution: genResolution,
-      parentId: source.id,
-      refUrls: [source.image],
-      operationKey: `${viewSet}:front`,
-      referenceInputs,
-      taskLabel: "生成正面锚点…",
-      userPrompt: feedback ? `正面视图：${feedback}` : "生成正面视图",
-      taskOffset: 0,
-    });
-    const anchor = front[0];
-    if (!anchor) return;
-    await renameGeneratedArtwork(anchor.id, "正面视图");
-    const shared = [source.image, anchor.url];
-    const anchoredReferences = referenceInputs ? [...referenceInputs, { key: `node:${anchor.id}`, sourceNodeId: anchor.id, title: "正面锚点", url: anchor.url, number: Math.max(0,...referenceInputs.map(ref=>ref.number))+1, role: "reference" as const }] : undefined;
-    const [side, back] = await Promise.all([
-      runGen(source, viewPrompt("侧面", feedback, true).replace("第二张参考图", "最后一张参考图"), {
-        ratio: genRatio,
-        style: genStyle,
-        count: 1,
-        resolution: genResolution,
-        parentId: source.id,
-        parentIds: [anchor.id],
-        refUrls: shared,
-        operationKey: `${viewSet}:side`,
-        referenceInputs: anchoredReferences,
-        taskLabel: "生成侧面视图…",
-        userPrompt: feedback ? `侧面视图：${feedback}` : "生成侧面视图",
-        taskOffset: 1,
-      }),
-      runGen(source, viewPrompt("背面", feedback, true).replace("第二张参考图", "最后一张参考图"), {
-        ratio: genRatio,
-        style: genStyle,
-        count: 1,
-        resolution: genResolution,
-        parentId: source.id,
-        parentIds: [anchor.id],
-        refUrls: shared,
-        operationKey: `${viewSet}:back`,
-        referenceInputs: anchoredReferences,
-        taskLabel: "生成背面视图…",
-        userPrompt: feedback ? `背面视图：${feedback}` : "生成背面视图",
-        taskOffset: 2,
-      }),
-    ]);
-    if (side[0]) await renameGeneratedArtwork(side[0].id, "侧面视图");
-    if (back[0]) await renameGeneratedArtwork(back[0].id, "背面视图");
-    // 三视图完成后保留用户当前选择。
-  }
+
 
   // 复用 A+ 的视觉规划与逐张串行生成管线：所选 N 张图直接作为已准备好的
   // 多视角参考，不再重复白底提取；按详情模块顺序生成，随后纵向排列为兄弟节点。
@@ -2539,36 +2409,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     return execute();
   }
 
-  async function retrySelected() {
-    if (!selected) return;
-    if (dockReferenceState.error || referenceError) { setGenError(dockReferenceState.error || referenceError); return; }
-    const feedback = editPrompt.trim();
-    const originalPrompt = inheritableImagePrompt(selected.prompt) || FAITHFUL_REGEN_PROMPT;
-    const prompt = `${originalPrompt}${
-      feedback && feedback !== originalPrompt
-        ? `\n本次重做要求：${feedback}`
-        : "\n重新生成一个新版本，严格保持产品身份和关键细节。"
-    }`;
-    const parent = selected.parentId
-      ? active?.members.find((item) => item.id === selected.parentId) ?? selected
-      : selected;
-    const retried = await runGen(parent, prompt, {
-      ratio: genRatio,
-      style: selected.style || genStyle,
-      count: 1,
-      resolution: selected.resolution || genResolution,
-      parentId: selected.parentId || selected.id,
-      parentIds: selected.parentIds ?? [],
-      refUrls: [selected.image, ...(parent.id === selected.id ? [] : [parent.image])],
-      referenceInputs: composerReferences,
-      operationKey: `retry:${selected.id}`,
-      taskLabel: "按要求重做中…",
-      userPrompt: feedback || inheritableImagePrompt(selected.prompt) || "重做当前图片",
-    });
-    if (retried[0]) {
-      await renameGeneratedArtwork(retried[0].id, `${selected.title} · 重做`);
-      // 重做完成不打断当前草稿。
-    }
+  async function retrySelected(){
+    if(!selected)return;
+    const services=canvasImageCreationServices();
+    const issue=await retryCanvasImageCreation({source:selected,prompt:editPrompt,parameters:{ratio:genRatio,style:genStyle,count:genCount,resolution:genResolution},members:active?.members??[],referenceInputs:composerReferences,referenceError:dockReferenceState.error||referenceError},services);
+    if(issue&&services.isCurrent())setGenError(issue);
   }
 
   // 顶部图像工具条:6 个一键动作(预设提示词,各自衍生一个子节点)
@@ -3533,7 +3378,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           if (!art) return false;
           // Artwork persists prompt/ratio/resolution/style, not an individual
           // model/quality/count recipe. Those retain the current canvas defaults.
-          const results = await runGen(art, inheritableImagePrompt(art.prompt) || FAITHFUL_REGEN_PROMPT, {
+          const results = await runGen(art, canvasInheritedImagePrompt(art.prompt), {
             ratio: art.ratio || "1:1", resolution: art.resolution || genResolution,
             style: art.style || "", count: 1, parentId: art.id, refUrls: [art.image],
             isCurrent, operationKey: `node:${art.id}`, taskLabel: L("批量运行中…", "Running selection…"),
@@ -3730,13 +3575,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     // (那会让输出莫名其妙变样,还被存成节点提示词)。改为沿用主输入图自身的
     // 提示词(延续它的配方);没有则用"保持主体/构图/风格"的中性词。
     const promptToUse =
-      text ||
-      inputTextNodes
-        .map((node) => node.content.trim() || node.prompt.trim())
-        .filter(Boolean)
-        .join("\n\n") ||
-      inheritableImagePrompt(inputArts[0]?.prompt) ||
-      FAITHFUL_REGEN_PROMPT;
+      canvasBlankImagePrompt(text,inputTextNodes,inputArts);
     setGenError(null);
     const generationSize = generationPlaceholderSize(opts?.ratio || genRatio);
     const livePend = rfRef.current?.getNode(pend.id)?.position ?? pendNodesRef.current.find(node => node.id === pend.id) ?? pend;

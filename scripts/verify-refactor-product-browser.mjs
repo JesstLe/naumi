@@ -8,6 +8,7 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {verifyCanvasInputControls} from './verification/canvas-input-controls-browser.mjs';
 import {verifyCanvasClipboardBrowser} from './verification/canvas-clipboard-browser.mjs';
+import {verifyCanvasImageCreationBrowser} from './verification/canvas-image-creation-browser.mjs';
 const exec=promisify(execFile),arg=name=>{const i=process.argv.indexOf(name);return i<0?undefined:process.argv[i+1]},base=arg('--base'),worker=arg('--worker'),out=path.resolve(arg('--out')),duration=Number(arg('--soak-seconds')||180);
 assert.equal(new URL(base).hostname,'127.0.0.1');assert.match(worker,/^refactor-r6c-[a-f0-9]+-worker$/);assert.ok(duration>=60&&duration<=1800);
 const input=JSON.parse(await readFile(path.join(out,'SETUP.json'),'utf8')),checks=[],errors=[],dialogs=[],requests=[],responses=[],samples=[];
@@ -52,7 +53,8 @@ try{
  }
  assert.ok(iterations>=5);assert.equal((await stats()).calls,1);assert.equal((await stats()).edits,1);assert.deepEqual((await snapshot()).ledger,{n:2,amount:12});pass(`sustained ${duration}s two-browser mixed reads retain exactly two deliveries and two debits`);
  checks.push(...await verifyCanvasClipboardBrowser({page:pb,expect,out:path.join(out,'clipboard'),snapshot,stats,requests,owner:input.owner}));
+ checks.push(...await verifyCanvasImageCreationBrowser({page:pb,expect,out:path.join(out,'image-creation'),snapshot,stats,open}));
  await helper('drain');await expect.poll(async()=>(await helper('status')).tickDrainComplete).toBe(true);assert.equal(dialogs.length,0);assert.deepEqual(errors,[]);assert.equal(requests.filter(r=>['/api/artworks/rename','/api/artworks/mark','/api/artworks/canvas-size','/api/canvas/groups'].includes(r.path)).length,0);
  const final=await snapshot(),report={status:'PASS',checks,source:'fixed image recorded by parent INPUT.json',actualFullProduct:true,actualBrowser:true,browser:'msedge-headless',routeMocks:0,authProvidersReplaced:0,checksCount:checks.length,errors,dialogs,requests,responses,samples,soakSeconds:(performance.now()-soakStart)/1000,iterations,final,fixture:await stats(),capacityClaim:false};
- await writeFile(path.join(out,'BROWSER_RESULT.json'),JSON.stringify(report,null,2)+'\n');console.log(`REFACTOR_PRODUCT_BROWSER=PASS CHECKS=${checks.length} FULL_IMAGE=1 NATIVE_HTTP=1 BROWSER_ROUTES_MOCKED=0 TWO_CONTEXTS=2 IMAGE_TEXT_CONFLICT=RETAINED DELIVERIES=2 USER_CONSUME=2 USER_CREDITS=12 CONFIRM_DIALOGS=0 SOAK_SECONDS=${duration} EXTERNAL=0 DEPLOY=0`);
+ await writeFile(path.join(out,'BROWSER_RESULT.json'),JSON.stringify(report,null,2)+'\n');console.log(`REFACTOR_PRODUCT_BROWSER=PASS CHECKS=${checks.length} FULL_IMAGE=1 NATIVE_HTTP=1 BROWSER_ROUTES_MOCKED=0 TWO_CONTEXTS=2 IMAGE_TEXT_CONFLICT=RETAINED DELIVERIES=${final.ledger.n} USER_CONSUME=${final.ledger.n} USER_CREDITS=${final.ledger.amount} CONFIRM_DIALOGS=0 SOAK_SECONDS=${duration} EXTERNAL=0 DEPLOY=0`);
 }catch(error){await pb.screenshot({path:path.join(out,'browser-failure.png')}).catch(()=>{});await writeFile(path.join(out,'BROWSER_FAILURE.json'),JSON.stringify({error:String(error),stack:error.stack,checks,errors,dialogs,requests,responses,bodyA:await pa.locator('body').innerText().catch(()=>''),bodyB:await pb.locator('body').innerText().catch(()=>''),state:await snapshot().catch(e=>String(e)),samples},null,2)+'\n');throw error;}finally{await browser.close();}
