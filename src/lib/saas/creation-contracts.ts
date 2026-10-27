@@ -17,6 +17,8 @@ export type CreationFailure = {
  observedAt:string|null;incomplete:boolean;
  supplier:{provider:string|null;model:string|null;state:string;costStatus:string;httpStatus:number|null}|null;
  customerBilling:{state:string;charged:number|null;reserved:number|null}|null;
+ diagnosis?:{certainty:'confirmed'|'unconfirmed'|'evidence_missing';facts:string[];missing:string[];nextChecks:string[];
+  taskId:string|null;callId:string|null;requestId:string|null;taskState:string;source:'task_diagnostic'|'delivery_checkpoint'|'legacy_task'|'supplier_receipt'|'none'};
 };
 export type CreationSummary = {id:string;title:string;actorEmail:string;actorName:string;tenantId:string|null;scopeKind:'personal'|'tenant'|'legacy_unconfirmed';sourceKind:string;status:CreationStatus;acceptedAt:string;settledCredits:number|null;thumbnailAssetId:string|null;completeness:EvidenceState;failure?:CreationFailure};
 export type CreationAsset = {id:string;direction:'input'|'output';role:string;roles?:string[];position:number;inputPosition?:number;executionRef?:string;variant:'original'|'processed';mime:string|null;bytes:number|null;hash:string|null;availability:EvidenceState;mediaType:'image'|'video'|'audio'|'file';text?:string};

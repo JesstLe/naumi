@@ -390,6 +390,9 @@ function fixture({runtime = true} = {}) {
         '@/lib/persistence/schema':{ensureSchema:async()=>{}},
       };
       if(Object.hasOwn(ownedPorts,specifier))return typeof ownedPorts[specifier]==='function'?ownedPorts[specifier]():ownedPorts[specifier];
+      if ((specifier==='./task-diagnostics' && relative==='src/lib/imagegen/dispatch.ts') || (specifier==='./imagegen/task-diagnostics' && ['src/lib/image-job-repository.ts'].includes(relative))) return load('src/lib/imagegen/task-diagnostics.ts');
+      if(relative==='src/lib/image-jobs/runtime.ts' && specifier==='../imagegen/task-diagnostics')return load('src/lib/imagegen/task-diagnostics.ts');
+      if(relative==='src/lib/imagegen/task-diagnostics.ts' && specifier==='./failure-evidence')return load('src/lib/imagegen/failure-evidence.ts');
       const map = dependencies[relative] || {};
       if (!Object.hasOwn(map, specifier)) throw new FixtureBoundaryError(`UNMOCKED_IMPORT:${relative}:${specifier}`);
       return typeof map[specifier] === 'function' ? map[specifier]() : map[specifier];
@@ -642,6 +645,8 @@ async function modifiedRun() {
   await caseRun('generate catch still notifies only its actual persisted terminal result', async () => {
     const f = fixture(); await f.completeChild('error', {throwAfter: true}); await drain(f);
     assert.equal(f.parent().snapshot.result.status, 'failed'); assert.ok(f.metrics.notificationReads > 0);
+    assert.equal(f.child().snapshot.failureDiagnostic?.version,1,'actual Durable catch persists bounded diagnostic');
+    assert.equal(f.child().snapshot.failureDiagnostic?.stage,'execute');
   });
   await caseRun('real readImagegenReceipt remains strictly read-only', async () => {
     const f = fixture(); const before = JSON.stringify([...f.rows]);

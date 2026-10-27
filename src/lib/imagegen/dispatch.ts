@@ -1,3 +1,4 @@
+import {taskFailureDiagnostic,type TaskFailureDiagnostic} from "./task-diagnostics";
 import "server-only";
 import { DurableImageJobs } from "@/lib/image-jobs/runtime";
 import {getPool, dbEnabled} from "@/platform/db/pool";
@@ -23,7 +24,7 @@ import { storedDeliveryState, recoverStoredDelivery } from "./stored-delivery";
 import {readImagegenBilling} from "./delivery-billing";
 import {currentCreationContext} from "@/lib/saas/creation-scope";
 import {assertImagegenCreationScope,assertAcceptedImagegenCreationScope,imagegenCreationScopeKey,ImagegenScopeError} from "./creation-scope";
-type Parent={status:string;result:ImagegenResult;fingerprint:string;children:Record<string,{state:"starting"|"submitted"|"done";jobId?:string;ids?:string[]}>};
+type Parent={failureDiagnostic?:TaskFailureDiagnostic;status:string;result:ImagegenResult;fingerprint:string;children:Record<string,{state:"starting"|"submitted"|"done";jobId?:string;ids?:string[]}>};
 const jobs=new DurableImageJobs<Parent>("imagegen");
 const memoryScopes=new Map<string,unknown>();
 async function assertParentScope(id:string,owner:string){
@@ -132,7 +133,7 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
   try{const billing=await readImagegenBilling(owner,state.children,plan);charged=billing.chargedCredits;chargeKnown=billing.confirmed;}catch{warnings.add("积分结算信息暂未同步，请查看积分记录");}
   for(const id of new Set(baseIds.length?baseIds:ids))try{kept.push(...await artifacts([id],owner));}catch{/* Other retained outputs remain recoverable; do not discard them. */}
   const safeToRestart=chargeKnown&&charged===0&&!kept.length&&!Object.values(state.children).some(c=>c.state==="done");
-  await update({status:error instanceof ImagegenStopped?"done":"error"},{status:error instanceof ImagegenStopped?"cancelled":"failed",artifacts:kept,chargedCredits:charged,billingStatus:chargeKnown?"confirmed":"unavailable",warnings:[...warnings],error:error instanceof ImagegenStopped?undefined:{code:error instanceof NotAccepted?(safeToRestart?"NOT_ACCEPTED":"PARTIAL_EXECUTION_REJECTED"):"EXECUTION_FAILED",message:error instanceof Error?error.message:"图像处理失败"}});}
+  await update({status:error instanceof ImagegenStopped?"done":"error",...(error instanceof ImagegenStopped?{}:{failureDiagnostic:taskFailureDiagnostic(error,state.result.stage==="postprocessing"?"parent-finalize":"execute")})},{status:error instanceof ImagegenStopped?"cancelled":"failed",artifacts:kept,chargedCredits:charged,billingStatus:chargeKnown?"confirmed":"unavailable",warnings:[...warnings],error:error instanceof ImagegenStopped?undefined:{code:error instanceof NotAccepted?(safeToRestart?"NOT_ACCEPTED":"PARTIAL_EXECUTION_REJECTED"):"EXECUTION_FAILED",message:error instanceof Error?error.message:"图像处理失败"}});}
 }
 export async function resumeImagegen(id:string,recheckEmptyClaim=true){await jobs.kick(id,(payload,snapshot)=>runParent(id,payload,snapshot),recheckEmptyClaim,notifyImagegenJobReleased);}
 /** Reconcile only an already-submitted terminal child through the frozen parent

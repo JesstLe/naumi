@@ -5,7 +5,7 @@ const source=require('./lib/image-generation-source.cjs')(),ast=ts.createSourceF
   let state={status:'pending'},failed=false,provider=0,settles=0;
   const paid=[{id:'original',url:'data:image/png;base64,fixture'}];
   const trip=s=>{if(s===fault&&!failed){failed=true;throw Object.assign(Error('synthetic transient failure'),{code:'ECONNRESET'});}};
-  const context={console,Buffer,Date,Error,Promise,Set,Math,setTimeout,currentModelExecution:()=>null,imageOutputNotice:()=>({}),
+  const context={console,Buffer,Date,Error,Promise,Set,Math,setTimeout,currentModelExecution:()=>null,imageOutputNotice:()=>({}),imageFailureEvidence:()=>({causes:[]}),imageFailureFrames:()=>[],taskFailureDiagnostic:()=>({version:1,stage:'execute',reason:null,causes:[]}),
    storedDeliveryCheckpoint:s=>s.images?.length?{images:s.images,allDone:true,final:true}:s.paidOperations?{images:s.paidOperations.original.result,allDone:true,final:false}:null,
    JOBS:{get:async()=>state,paidOperation:async()=>{provider++;state.paidOperations={original:{state:'done',result:paid}};return paid},patch:async(id,p)=>{if(p.status==='done')trip('final-receipt');else if(p.images)trip('image-checkpoint');state={...state,...p}},set:async(id,s)=>{trip('final-receipt');state=s},settleResults:async()=>{trip('settlement');settles=1}},
    enforceOutputShape:async i=>i,upscaleImages:async i=>i,attachImageDimensions:async i=>i,persistToStorage:async i=>i,storageEnabled:false,

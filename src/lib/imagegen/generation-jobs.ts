@@ -2,6 +2,7 @@ import "server-only";
 import { DurableImageJobs } from "@/lib/image-jobs/runtime";
 import type {getUser} from "@/lib/accounts/session";
 import type {GeneratedImage} from "./generation-types";
+import type {TaskFailureDiagnostic} from "./task-diagnostics";
 /** Persistence owner shared by submit/read/runtime; reading does not import provider execution. */
 type Job = {
   status: "pending" | "done" | "error" | "needs_attention";
@@ -17,6 +18,7 @@ type Job = {
   imagegenOutputError?:string;
   imagegenOutputWarning?:string;
   deliveryAttempts?:number;
+  failureDiagnostic?:TaskFailureDiagnostic;
   deliveryFailure?:{stage:string;name:string;code:string};
   createdAt: number;
   sourceUrl?: string | null;

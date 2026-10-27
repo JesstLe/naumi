@@ -1,4 +1,6 @@
 import "server-only";
+import {taskFailureDiagnostic} from "./task-diagnostics";
+import {imageFailureEvidence,imageFailureFrames} from "./failure-evidence";
 import {imageRatioValidationPolicy} from "@/lib/imagegen/request-size";
 import {storedDeliveryCheckpoint} from "@/lib/imagegen/delivery-checkpoint";
 import {withImagegenStep} from "@/lib/imagegen/context";
@@ -130,6 +132,8 @@ export async function runJob(
       imagegenOutputWarning,
     });
   } catch (e) {
+    // Diagnostic persistence never changes paid-task recovery or settlement.
+    await JOBS.patch(jobId,{failureDiagnostic:taskFailureDiagnostic(e,deliveryStage)}).catch(()=>{console.error("[generate-image] diagnostic checkpoint unavailable");});
     if (e instanceof ImageOperationPending) { await JOBS.handlePending(jobId, e); return; }
     if (e instanceof PostprocessPending) {
       const exhausted = e instanceof PostprocessPending && (await getPool().query("SELECT 1 FROM app_media_postprocess WHERE operation_id=$1 AND attempts>=3",[e.operationId])).rowCount;
@@ -141,7 +145,7 @@ export async function runJob(
     if(checkpoint){
       // Do not log raw messages: they may contain prompts, URLs or credentials.
       const failure={stage:deliveryStage,name:e instanceof Error?e.name:"Error",code:String((e as {code?:unknown})?.code||"DELIVERY_FAILED").replace(/[^A-Za-z0-9_-]/g,"").slice(0,64)};
-      console.error("[generate-image] delivery failed",JSON.stringify({jobId,...failure,attempt:deliveryAttempt+1}));
+      console.error("[generate-image] delivery failed",JSON.stringify({jobId,...failure,attempt:deliveryAttempt+1,...imageFailureEvidence(e),frames:imageFailureFrames(e)}));
       await JOBS.patch(jobId,{deliveryAttempts:deliveryAttempt+1,deliveryFailure:failure});
       if(deliveryAttempt<2&&checkpoint.allDone){
         await new Promise(resolve=>setTimeout(resolve,250*(deliveryAttempt+1)));

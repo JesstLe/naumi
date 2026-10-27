@@ -61,14 +61,14 @@ export function supplierCostFetch(fetcher: typeof fetch, connection: { providerI
     });
     try {
       const response = await dispatch(request);
-      if (!response.body) { await ledger.apply(row.id, genericReceipt({}, response.ok ? "response-received" : "unknown", scope?.procurement)); return diagnosticResponse(response); }
+      if (!response.body) { const receipt=genericReceipt({}, response.ok ? "response-received" : "unknown", scope?.procurement); await ledger.apply(row.id,{...receipt,evidence:{...receipt.evidence,httpStatus:response.status,metadataComplete:true,...supplierFailureEvidence(response.status,{})}}); return diagnosticResponse(response); }
       const stream = response.headers.get("content-type")?.includes("text/event-stream");
       // Consume receipt bytes alongside the caller, without cloning/ buffering entire b64 image outputs.
       const reader = response.body.getReader(), decoder = new TextDecoder();
       const capture = new ReceiptBuffer(), hash = createHash("sha256");
       let pending = "", usage: unknown, id: string | undefined, responseModel: string | undefined, completed = false, finished = false;
       const event = (line: string) => { if (!line.startsWith("data:")) return; const text = line.slice(5).trim(); if (text === "[DONE]") { completed = true; return; } try { const d = parseReceiptJson(text); if (d.usage) usage = safeUsage(d.usage); if (d.id) id = d.id; if (typeof d.model === "string") responseModel = d.model.slice(0,200); } catch { /* incomplete supplier event */ } };
-      const finish = async (state: string) => {
+      const finish = async (state: string, streamError?:unknown) => {
         if (finished) return; finished = true;
         let body: any = stream ? { usage, id, model: responseModel } : {};
         if (!stream) { capture.push(decoder.decode()); const raw = capture.result(); if (raw) try { body = parseReceiptJson(raw); } catch { /* missing receipt remains pending */ } }
@@ -76,7 +76,7 @@ export function supplierCostFetch(fetcher: typeof fetch, connection: { providerI
         const receipt = genericReceipt(body, state, apimartSubmit?undefined:scope?.procurement);
         if(apimartSubmit){receipt.delivered=undefined;receipt.outputs=undefined;}
         receipt.requestId ||= response.headers.get("x-request-id") || undefined;
-        receipt.evidence = { ...receipt.evidence, responseSha256: hash.digest("hex"), httpStatus: response.status, metadataComplete: stream || capture.result() !== null, ...supplierFailureEvidence(response.status,body) };
+        receipt.evidence = { ...receipt.evidence, responseSha256: hash.digest("hex"), httpStatus: response.status, metadataComplete: stream || capture.result() !== null, ...supplierFailureEvidence(response.status,body),...(streamError?{streamFailure:supplierFailureEvidence(0,undefined,streamError),...supplierFailureEvidence(0,undefined,streamError)}:{}) };
         if (!response.ok && !stream && (scope?.frozen.modality === "image" || connection.protocol === "openai-images")) receipt.evidence.upstreamFailure = imageSupplierFailure(response.status, body);
         if (!stream && ["apimart-images", "apimart"].includes(connection.protocol || "") && request.method === "POST") receipt.taskId = submittedAPIMartTask(body) || undefined;
         await ledger.apply(row.id, receipt);
@@ -91,7 +91,7 @@ export function supplierCostFetch(fetcher: typeof fetch, connection: { providerI
             if (stream) { pending += decoder.decode(part.value, { stream: true }); let end; while ((end = pending.indexOf("\n")) >= 0) { event(pending.slice(0,end)); pending = pending.slice(end+1); } if (pending.length > 131072) pending = ""; }
             else capture.push(decoder.decode(part.value,{stream:true}));
             controller.enqueue(part.value);
-          } catch (e) { await finish("unknown"); controller.error(e); }
+          } catch (e) { await finish("unknown",e); controller.error(e); }
         },
         async cancel(reason) { await reader.cancel(reason); await finish("unknown"); },
       });
