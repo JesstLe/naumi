@@ -163,3 +163,7 @@ R3B4 三模块同步已执行：`git fetch origin main` 与 `git merge --no-edit
 收尾再次fetch发现origin/main已推进到`b15d4761b938428c449531e2d8744401a38a2ec7`（原结果父回执与postaccept原因修复）。当前已完成并验证的普通整合来源固定`73384aaa`；新增提交另列下一轮待整合，不冒充已包含，不开启发布。
 
 R5L收尾补正：错误去重仅匹配saved batch的原project，旧项目待同步不隐藏新项目读取错误；15类63检查含实际Canvas条件的跨项目反例。生产修改仅新增batch.project及条件匹配，未重跑相邻浏览器；完整本轮产物刷新到后续修正提交。
+
+## R6Q：Canvas 请求与 Comfy 工作流
+
+独立分支继续整体重构，普通整合 main `fb5dfe80810ed1d796c6050e5487b92e6fa02c1d`。请求适配、工作流共享合同/应用和原回执恢复归明确 owner；不新增表、任务/计费引擎和用户确认。实现/证据/未完成边界见 [R6Q记录](changes/2026-10-27-canvas-request-workflow-r6q.md)。尚未合 main 或部署。

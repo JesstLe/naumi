@@ -5,7 +5,7 @@ import {canvasImageTaskHeaders,type CanvasImageTaskScope} from "./image-task-sco
 import {readImagegenResponse} from "../imagegen/http";
 
 export type CanvasResultImage={id:string;url?:string;width?:number;height?:number};
-type Layout={kind:"pixels";gap:number}|{kind:"detail";gap:number;height:(art:Artwork)=>number}|{kind:"single"};
+type Layout={kind:"pixels";gap:number}|{kind:"detail";gap:number;height:(art:Artwork)=>number}|{kind:"single"}|{kind:"offset";step:number};
 type Services={
   position:()=>CanvasPoint|undefined;layout:Layout;saveErrorText:string;
   merge:(ids:string[],current:()=>boolean)=>Promise<Artwork[]>;
@@ -27,10 +27,11 @@ export function createCanvasResultAttachment(input:Services){
       assertGenerationResultsPresent(ids,body.artworks||[]);metadata=new Map(body.artworks.map(art=>[art.id,art]));
     }
     let y=point?.y??0;
-    for(const image of images){
+    for(const [index,image] of images.entries()){
       if(!placed.has(image.id)&&point){
         const headers=await canvasImageTaskHeaders(scope);headers.set("content-type","application/json");scope.assertCurrent();
-        const body={...(input.layout.kind==="single"?{}:{email:scope.owner}),id:image.id,x:Math.round(point.x),y:Math.round(y)};
+        const offset=input.layout.kind==="offset"?index*input.layout.step:0;
+        const body={...(input.layout.kind==="single"||input.layout.kind==="offset"?{}:{email:scope.owner}),id:image.id,x:Math.round(point.x+offset),y:Math.round(y+offset)};
         const response=await fetch("/api/artworks/position",{method:"POST",headers,body:JSON.stringify(body)});
         await readImagegenResponse(response,input.saveErrorText);placed.add(image.id);scope.assertCurrent();
       }

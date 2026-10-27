@@ -23,6 +23,8 @@ export const refactorCases=[
  ts('image-parameter-plan-pg','generation','scripts/verify-image-parameter-plan-pg.ts','IMAGE_PARAMETER_PLAN_PG=PASS'),
  node('prompt-optimizer','canvas','scripts/verify-canvas-prompt-optimizer.cjs','MODIFIED_API=PASS'),
  node('image-creation','canvas','scripts/verify-canvas-image-creation.cjs','CANVAS_IMAGE_CREATION=PASS'),
+ node('request-workflow','canvas','scripts/verify-canvas-request-workflow.cjs','CANVAS_REQUEST_WORKFLOW=PASS MODE=MODIFIED'),
+ ts('comfy-run-pg','canvas','scripts/verify-comfy-run-pg.ts','COMFY_RUN_PG=PASS MODE=MODIFIED'),
  node('image-task','canvas','scripts/verify-canvas-image-task-refactor.cjs','CANVAS_IMAGE_TASK_REFACTOR=PASS'),
  ts('preparation','generation','scripts/verify-image-preparation-refactor.ts','IMAGE_PREPARATION_REFACTOR=PASS'),
  ts('delivery','generation','scripts/verify-image-delivery-continuation.ts','IMAGE_DELIVERY_CONTINUATION=PASS'),

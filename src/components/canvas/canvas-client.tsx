@@ -68,10 +68,10 @@ import type { HistoryCommit } from "@/lib/canvas/history-controller";
 import { CanvasHistoryRequestError } from "@/lib/canvas/history-scope";
 import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
 import { smartLayout } from "@/lib/canvas/smart-layout";
-import {submitCanvasImagegen,resolveCanvasDetailFrame,resolveCanvasLegacyFrame} from "@/lib/imagegen/canvas-client";
+import {submitCanvasCreationRequest,type CanvasCreationRequestInit} from "@/lib/canvas/creation-request";
 import {ImagegenPendingRecovery} from "./imagegen-pending-recovery";
 import {FrameRatioDialog,useCanvasFrameChoice} from "./frame-ratio-dialog";
-import {createRetainedBillingSubmission,type RetainedBillingSubmission} from "@/lib/billing/client-submission";
+import {createRetainedBillingSubmission} from "@/lib/billing/client-submission";
 import {createCanvasResultAttachment} from "@/lib/canvas/result-attachment";
 import {createCanvasEditTask,type CanvasEditRequest} from "@/lib/canvas/edit-task";
 import {createCanvasDetailTask} from "@/lib/canvas/detail-task-controller";
@@ -99,10 +99,10 @@ import {readVideoReceipt,prepareVideoReceipt,saveVideoReceipt,clearVideoReceipt}
 import type {PublicQuote} from "@/lib/billing/client";
 import { CanvasPerformanceProbe, recordCanvasNativeMove } from "./canvas-performance-probe";
 import { generationFailureMessage, assertGenerationResultsPresent } from '@/lib/canvas/generation-failure';
-import { ImagegenHttpError, ImagegenPreparationCancelled } from '@/lib/imagegen/http';
+import { ImagegenPreparationCancelled } from '@/lib/imagegen/http';
 import { useImageNodeDraft } from './use-image-node-draft';
 import { resolveCanvasImageReferences, changeImageReferenceRole, imageReferenceManifest, inheritableImagePrompt, type CanvasImageReference, type ImageReferenceCandidate } from '@/lib/canvas/image-references';
-import { canvasReferenceManifestSchema, compileReferenceInstructions, referenceManifestError } from '@/lib/imagegen/reference-labels';
+import { referenceManifestError } from '@/lib/imagegen/reference-labels';
 import { imageDraftScope } from '@/lib/canvas/image-node-drafts';
 import { CanvasRenderLayerGuard } from './canvas-render-layer-guard';
 import { CanvasEdgeHoverHint, type CanvasEdgeHoverHandle } from './canvas-edge-hover-hint';
@@ -166,7 +166,8 @@ import { useI18n } from "@/lib/i18n/locale-context";
 import { Textarea } from "@/components/ui/textarea";
 import { cdnUrl } from "@/lib/cdn";
 import { ImageLightbox } from "@/components/image-lightbox";
-import type { ComfyRunPayload, ComfyRunResult } from "@/components/canvas/canvas-comfy-dialog";
+import type {ComfyRunPayload,ComfyRunResult} from "@/lib/comfyui/run-contract";
+import {createCanvasComfyWorkflow,comfyRunReceiptKey} from "@/lib/canvas/comfy-workflow";
 import { BRAND, BRAND_CANVAS_LOGO } from "@/lib/brand";
 const panelLoading = () => <div role="status" className="p-4 text-sm text-slate-500">加载中…</div>;
 const AssistantRichText = dynamic(() => import("./assistant-richtext").then(module => module.AssistantRichText), { ssr: false, loading: panelLoading });
@@ -195,7 +196,7 @@ import {
 } from "@/lib/image-model-routing";
 
 import { adminConfiguredFeature } from "@/lib/model-config/selection-policy";
-import { chosenFeatureModel, featureModelManaged, useFeatureModels } from "@/lib/model-config/feature-client";
+import { chosenFeatureModel, useFeatureModels } from "@/lib/model-config/feature-client";
 import { FeatureModelSelect } from "@/components/tools/feature-model-select";
 import { TextModelSelect } from "@/components/ui/text-model-select";
 import { useTextModel } from "@/lib/text-model-context";
@@ -282,58 +283,11 @@ type ImageModelOption = { id: string; label: string; supportsEdit: boolean; gene
 export function CanvasClient({ initialProject, desktopAppearance = false }: { initialProject?: string; desktopAppearance?: boolean } = {}) {
   const { can: canFeature } = useFeatureAccess();
   const billing=useBilling();
-  async function privateFetch(input:RequestInfo|URL,init:RequestInit & { isCurrent?: () => boolean; submission?: RetainedBillingSubmission }={}){
-    const workspace=currentWorkspace(),projectContext=activeProjectRef.current?.key;
-    const capturedHeaders=new Headers(init.headers);capturedHeaders.set('x-naumi-workspace',workspace);if(projectContext&&projectContext!=='workspace')capturedHeaders.set('x-naumi-project-context',projectContext);init={...init,headers:capturedHeaders};
-    const assertCurrent=()=>{if(currentWorkspace()!==workspace||init.isCurrent&&!init.isCurrent())throw new ImagegenPreparationCancelled();};
-    assertCurrent();
-    if(init.submission?.ready)return init.submission.retry(billing,assertCurrent,await authHeader());
-    const path=String(input).split('?')[0];
-    const features:Record<string,FeatureId>={"/api/generate-image":"canvas.image","/api/aplus":"image.aplus","/api/suite":"image.suite","/api/cutout":"tool.cutout","/api/canvas/image-tasks":"canvas.image","/api/canvas/expand":"canvas.expand","/api/canvas/text-edit":"canvas.text-edit","/api/canvas/annotate":"canvas.annotate","/api/canvas/text-generate":"canvas.text-generate","/api/canvas/assistant":"canvas.assistant","/api/canvas/ocr":"canvas.ocr","/api/video/generate":"video.generate"};
-    if(init.method!=="POST"||!features[path])return privateFetchRaw(input,init);
-    const form=init.body instanceof FormData?init.body:null;
-    if(path==="/api/aplus"&&form){
-      const account=canvasAccountRef.current,project=activeProjectRef.current?.key||null,epoch=canvasContextEpochRef.current;
-      await resolveCanvasDetailFrame(form,frameChoice.chooseFrame,()=>account===canvasAccountRef.current&&project===(activeProjectRef.current?.key||null)&&epoch===canvasContextEpochRef.current&&(init.isCurrent?.()??true));
-    }
-    const body=form?Object.fromEntries(Array.from(form.entries()).filter((entry)=>typeof entry[1]==="string")):typeof init.body==="string"?JSON.parse(init.body):{};
-    if(path==="/api/generate-image"&&form&&user&&body.ratiogen!=="1"&&(!body.userPrompt||String(body.userPrompt).trim()===String(body.prompt).trim())){
-      const account=canvasAccountRef.current,project=activeProjectRef.current?.key||null,epoch=canvasContextEpochRef.current;
-      return submitCanvasImagegen(form,active?.members[0]?.id,message=>flashTip(message),{owner:user.email,project:active?.key||"workspace",chooseFrame:frameChoice.chooseFrame,
-        isCurrent:()=>account===canvasAccountRef.current&&project===(activeProjectRef.current?.key||null)&&epoch===canvasContextEpochRef.current&&(init.isCurrent?.()??true)});
-    }
-    if (path === "/api/generate-image") {
-      if(form){form.set('ratio',normalizeCanvasRatio(body.ratio));await resolveCanvasLegacyFrame(form,frameChoice.chooseFrame,()=>{try{assertCurrent();return true;}catch{return false;}});assertCurrent();body.ratio=String(form.get('ratio')||'auto');}
-      if(form?.has("canvasReferences")) {
-        try {
-          const manifest=canvasReferenceManifestSchema.parse(JSON.parse(String(form.get("canvasReferences"))));
-          if(manifest.length!==form.getAll("image").length)throw new Error("参考图片顺序不一致，请重新选择");
-          body.prompt=compileReferenceInstructions(String(body.prompt||""),manifest);
-          form.set("prompt",body.prompt as string);form.delete("canvasReferences");delete body.canvasReferences;
-        } catch(error) {
-          throw new ImagegenHttpError(error instanceof Error?error.message:"参考图片信息无效",400,false);
-        }
-      }
-      body.ratio = normalizeCanvasRatio(body.ratio);
-      body.resolution = normalizeCanvasResolution(body.resolution);
-      body.count = String(normalizeCanvasCount(body.count));
-      delete body.targetWidth; delete body.targetHeight;
-      if (form) { form.delete("targetWidth"); form.delete("targetHeight"); }
-    }
-    if (path === "/api/generate-image" || ["/api/canvas/image-tasks", "/api/canvas/expand", "/api/canvas/annotate", "/api/canvas/text-edit"].includes(path)) {
-      body.quality = normalizeCanvasQuality(body.quality || canvasToolQualities[features[path]] || genQuality);
-      if (form) for (const key of ["ratio", "resolution", "count", "quality"]) { if (body[key] !== undefined) form.set(key, String(body[key])); }
-      else init = { ...init, body: JSON.stringify(body) };
-    }
-    const source=active?.members.find(art=>art.id===body.artworkId);
-    const quantity=path==="/api/aplus"?Math.max(1,form?.getAll("module").length||body.modules?.length||1):path==="/api/suite"?(body.structure==="custom"?JSON.parse(String(body.shots||"[]")).length:13):Number(body.count||1);
-    const headers=new Headers(init.headers);for(const [key,value] of Object.entries(await authHeader()))headers.set(key,value);
-    headers.set('x-naumi-workspace',workspace);
-    if (body.quality) headers.set("x-naumi-image-quality", String(body.quality));
-    headers.set("x-naumi-canvas","1");
-    const feature=features[path],modelId=["/api/aplus","/api/suite"].includes(path)?body.modelId||body.model||genModel:adminConfiguredFeature(feature) ? undefined : featureModelManaged(feature) && !["image.generate","video.generate"].includes(feature) ? chosenFeatureModel(feature) : body.modelId||body.model||undefined;
-    const facts={canvas:true,feature,quantity,quality:String(body.quality||genQuality),resolution:String(body.resolution||source?.resolution||"1K"),modelId,providerId:body.providerId,ratio:body.ratio};
-    return init.submission ? init.submission.submit(billing,path,{...init,headers},facts,assertCurrent) : billing.quoteAndSubmit(path,{...init,headers},facts,assertCurrent);
+  function privateFetch(input:RequestInfo|URL,init:CanvasCreationRequestInit={}){
+    const account=canvasAccountRef.current,project=activeProjectRef.current?.key||null,epoch=canvasContextEpochRef.current;
+    const scope=captureCanvasImageTaskScope(user?.email||"",project,()=>batchRunMountedRef.current&&account===canvasAccountRef.current&&project===(activeProjectRef.current?.key||null)&&epoch===canvasContextEpochRef.current&&(init.isCurrent?.()??true));
+    return submitCanvasCreationRequest(input,init,{scope,authenticated:!!user,sourceId:active?.members[0]?.id,sources:active?.members||[],model:genModel,quality:genQuality,toolQualities:canvasToolQualities},
+      {billing,request:privateFetchRaw,chooseFrame:frameChoice.chooseFrame,notice:message=>{if(scope.isCurrent())flashTip(message);}});
   }
   const { model: textModel, setModel: setTextModel } = useTextModel();
   const { user, ready, remaining, persistMode, applyServerUser, signOut } = useAuth();
@@ -2134,101 +2088,44 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     await landEditResult(source,{kind:"expand",artworkId:source.id,ratio,anchor:expandAnchor},"扩图");
   }
 
-  /**
-   * ComfyUI 工作流执行(BYOC,不扣积分):占位节点 + 假进度 → /api/comfyui/run →
-   * 图片产物逐张落到源图右侧(血缘 parentId)→ mergeWorks → 撤销。
-   * 与 landEditResult 分开:产物是复数(图/视频),视频由面板直出预览不挂树。
-   */
-  async function runComfyWorkflow(
-    source: Artwork,
-    payload: ComfyRunPayload
-  ): Promise<ComfyRunResult> {
-    if (readOnly || !user) throw new Error("只读画布不能执行工作流");
-    const operationKey = `node:${source.id}`;
-    if (generationOperationRef.current.has(operationKey)) throw new Error("当前节点已有任务在进行");
-    generationOperationRef.current.add(operationKey);
-    const sourceNode = rfRef.current?.getNode(source.id);
-    const sourceSize = sourceNode ? flowNodeSize(sourceNode) : artworkNodeSize(source);
-    const baseX = (sourceNode?.position.x ?? source.canvasX ?? 0) + sourceSize.width + X_GAP;
-    const baseY = sourceNode?.position.y ?? source.canvasY ?? 0;
-    const pendingId = `pend-comfy-${browserRandomUUID()}`;
-    setPendNodes((current) => [
-      ...current,
-      {
-        id: pendingId,
-        operationKey,
-        x: baseX,
-        y: baseY,
-        parentId: source.id,
-        linked: true,
-        label: "工作流结果",
-        uploading: false,
-        progress: 8,
-        inputs: [source.id],
-        generating: true,
-      },
-    ]);
-
-    const timer = window.setInterval(() => {
-      setPendNodes((items) =>
-        items.map((item) =>
-          item.id === pendingId
-            ? { ...item, progress: Math.min(92, item.progress + Math.max(1, Math.round((96 - item.progress) / 9))) }
-            : item
-        )
-      );
-    }, 1200);
-    try {
-      const response = await privateFetchRaw("/api/comfyui/run", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ artworkId: source.id, ...payload }),
+  const comfyRunsRef=useRef(new Map<string,{task:ReturnType<typeof createCanvasComfyWorkflow>;owner:ReturnType<typeof captureCanvasTaskOwner>;node:Pend}>());
+  /** Canvas projects workflow state; the application owns submission/recovery. */
+  async function runComfyWorkflow(source:Artwork,payload:ComfyRunPayload):Promise<ComfyRunResult>{
+    if(readOnly||!user)throw new Error("只读画布不能执行工作流");
+    const operationKey=`node:${source.id}`;
+    if(generationOperationRef.current.has(operationKey))throw new Error("当前节点已有任务在进行");
+    const owner=captureCanvasTaskOwner(user.email,()=>({account:canvasAccountRef.current,project:activeProjectRef.current?.key||null,epoch:canvasContextEpochRef.current,mounted:batchRunMountedRef.current}));
+    const key=comfyRunReceiptKey(owner.capture(),source.id);
+    let retained=comfyRunsRef.current.get(key);
+    if(!retained){
+      const sourceNode=rfRef.current?.getNode(source.id),size=sourceNode?flowNodeSize(sourceNode):artworkNodeSize(source);
+      const position={x:(sourceNode?.position.x??source.canvasX??0)+size.width+X_GAP,y:sourceNode?.position.y??source.canvasY??0};
+      const pendingId=`pend-comfy-${browserRandomUUID()}`;
+      const node:Pend={id:pendingId,operationKey,...position,parentId:source.id,linked:true,label:"工作流结果",uploading:false,progress:8,inputs:[source.id],generating:true,generationStage:"generating",generationStartedAt:Date.now()};
+      const task=createCanvasComfyWorkflow({sourceId:source.id,payload,receiptKey:key,storage:localStorage,
+        attach:createCanvasResultAttachment({layout:{kind:"offset",step:40},saveErrorText:"工作流结果定位失败",
+          position:()=>livePendingPosition(pendingId,position),merge:(ids,current)=>taskDocumentRef.current.merge(ids,current),
+          history:(ids,arts)=>{for(const id of ids)taskDocumentRef.current.history([id],arts);}}),
+        submitted:async()=>{await videoTaskStore.refresh();},
+        saving:()=>{if(owner.isVisible())setPendNodes(nodes=>nodes.map(item=>item.id===pendingId?{...item,generationStage:"saving"}:item));},
       });
-      const data = await readJsonSafe(response);
-      if (!response.ok) throw new Error(data?.error || "工作流执行失败");
-      const images = (data.images ?? []) as { id: string }[];
-      const livePosition = livePendingPosition(pendingId, {x:baseX,y:baseY});
-      for (let i = 0; i < images.length; i++) {
-        const x = Math.round(livePosition.x + i * 40);
-        const y = Math.round(livePosition.y + i * 40);
-        await privateFetchRaw("/api/artworks/position", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id: images[i].id, x, y }),
-        });
-        const fresh = await mergeWorks([images[i].id]);
-        pushAddUndo(images[i].id, fresh);
-        // 多张结果独立落地，不自动切换选中节点。
+      retained={task,owner,node};comfyRunsRef.current.set(key,retained);
+    }
+    const {task,node}=retained,scope=retained.owner.capture();scope.assertCurrent();
+    generationOperationRef.current.add(operationKey);
+    setPendNodes(nodes=>[...nodes.filter(item=>item.id!==node.id),{...node,generating:true}]);
+    const timer=window.setInterval(()=>{if(scope.isCurrent())setPendNodes(nodes=>nodes.map(item=>item.id===node.id?{...item,progress:Math.min(92,item.progress+Math.max(1,Math.round((96-item.progress)/9)))}:item));},1200);
+    try{
+      const result=await task.run(scope);
+      if(task.finished)comfyRunsRef.current.delete(key);
+      if(scope.isCurrent()){
+        if(result.state==="completed")flashTip(result.images?.length?`工作流完成，${result.images.length} 张结果已生成在原图右侧`:"工作流完成，视频已生成");
+        if(result.state==="submitted")flashTip("视频工作流已提交");
       }
-      // 视频产物已落成画布节点,同样 merge 挂树(与图片并列)
-      const videoArtworkId = String(data.videoArtworkId || "");
-      if (videoArtworkId) {
-        await privateFetchRaw("/api/artworks/position", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            id: videoArtworkId,
-            x: Math.round(livePosition.x + images.length * 40),
-            y: Math.round(livePosition.y + images.length * 40),
-          }),
-        });
-        const freshVideo = await mergeWorks([videoArtworkId]);
-        pushAddUndo(videoArtworkId, freshVideo);
-      }
-      flashTip(
-        images.length
-          ? `工作流完成，${images.length} 张结果已生成在原图右侧`
-          : videoArtworkId
-            ? "工作流完成，视频已生成在原图右侧"
-            : "工作流完成，视频在面板中预览"
-      );
-      return { images: data.images, videos: data.videos };
-    } catch (error) {
-      throw error instanceof Error ? error : new Error("工作流执行失败");
-    } finally {
-      window.clearInterval(timer);
-      setPendNodes((items) => items.filter((item) => item.id !== pendingId));
-      generationOperationRef.current.delete(operationKey);
+      return result;
+    }finally{
+      window.clearInterval(timer);generationOperationRef.current.delete(operationKey);
+      if(scope.isCurrent())setPendNodes(nodes=>nodes.filter(item=>item.id!==node.id));
     }
   }
 
@@ -5226,6 +5123,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
           {/* ComfyUI 工作流面板(BYOC):端点/导入/运行,图片产物按血缘挂树 */}
           {canFeature("comfyui") && (comfyOpen || comfyMounted) && <CanvasComfyDialog
+            key={`${canvasAccountRef.current}:${currentWorkspace()}:${activeKey}:${canvasContextEpochRef.current}`}
             open={comfyOpen}
             onClose={() => setComfyOpen(false)}
             source={selected}
