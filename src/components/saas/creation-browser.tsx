@@ -74,6 +74,15 @@ export function CreationFailureView({failure:f}:{failure:CreationFailure}){
   <div><dt>依据</dt><dd>{f.evidence==='supplier_receipt'?'原供应调用回执':f.evidence==='task_state'?'原任务状态':'未记录'}{f.observedAt&&` · ${new Date(f.observedAt).toLocaleString('zh-CN')}`}</dd></div>
   {f.supplier&&<><div><dt>供应通道 / 模型</dt><dd>{f.supplier.provider||'未记录'} / {f.supplier.model||'未记录'}</dd></div><div><dt>供应结果 / 费用</dt><dd>{state[f.supplier.state]||'待确认'} / {state[f.supplier.costStatus]||'待确认'}</dd></div></>}
   <div><dt>对应任务账务</dt><dd>{f.customerBilling?`${state[f.customerBilling.state]||'待确认'} · 实扣 ${amount(f.customerBilling.charged)} · 剩余预占 ${amount(f.customerBilling.reserved)}`:'未记录，不推断为未扣费'}</dd></div>
+  {f.diagnosis&&<>
+   <div><dt>原因确认状态</dt><dd>{{confirmed:'已确认异常',unconfirmed:'执行结果待确认',evidence_missing:'证据待补齐'}[f.diagnosis.certainty]}</dd></div>
+   {f.diagnosis.facts.length>0&&<div><dt>已记录事实</dt><dd>{f.diagnosis.facts.map(fact=><p key={fact}>{fact}</p>)}</dd></div>}
+   {f.diagnosis.missing.length>0&&<div><dt>缺失的证据</dt><dd>{f.diagnosis.missing.map(item=><p key={item}>{item}</p>)}</dd></div>}
+   {f.diagnosis.taskId&&<div><dt>执行任务 ID</dt><dd><code>{f.diagnosis.taskId}</code></dd></div>}
+   {f.diagnosis.callId&&<div><dt>供应调用 ID</dt><dd><code>{f.diagnosis.callId}</code></dd></div>}
+   {f.diagnosis.requestId&&<div><dt>供应请求 / 任务 ID</dt><dd><code>{f.diagnosis.requestId}</code></dd></div>}
+   {f.diagnosis.nextChecks.length>0&&<div><dt>核对步骤</dt><dd><ol>{f.diagnosis.nextChecks.map(item=><li key={item}>{item}</li>)}</ol></dd></div>}
+  </>}
  </dl></section>;
 }
 function EvidencePager({label,page,onPage}:{label:string;page?:{page:number;size:number;total:number};onPage:(value:number)=>void}){if(!page||page.total<=page.size)return null;return <div className={styles.pager}><span>{label}共 {page.total} 条</span><div className={styles.actions}><button disabled={page.page<=1} onClick={()=>onPage(page.page-1)}>上一页</button><span>{page.page}</span><button disabled={page.page*page.size>=page.total} onClick={()=>onPage(page.page+1)}>下一页</button></div></div>;}
