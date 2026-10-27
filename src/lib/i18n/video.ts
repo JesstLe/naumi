@@ -24,5 +24,12 @@ Object.assign(videoEn, {
   "视频生成参数":"Video parameters", "比例":"Aspect ratio", "清晰度":"Resolution", "选择视频秒数":"Select video seconds", "生成数量":"Number of videos", "个视频":"videos", "声音跟随模型":"Model default audio",
   "提示词优化":"Optimize prompt", "正在优化提示词…":"Optimizing prompt…", "优化预览":"Prompt preview", "重新优化":"Try again", "应用提示词":"Apply prompt", "原提示词已修改，请重新优化":"Prompt changed. Optimize again.", "提示词优化失败":"Could not optimize prompt",
 });
+Object.assign(videoEn, {
+  "选择引用素材":"Choose a reference", "没有匹配的素材":"No matching assets", "素材用途":"Role",
+  "随机种子":"Seed", "固定机位":"Fixed camera", "返回尾帧":"Return last frame", "草稿预览":"Draft preview",
+  "提示词遵循度":"Prompt adherence", "保留原声":"Keep original audio", "智能分镜":"Automatic shots",
+  "模型提示词增强":"Model prompt enhancement", "音色":"Voice", "语速":"Speech speed", "朗读文本":"Spoken text", "兼容参数":"Compatibility options",
+  "引用素材已移除，请重新选择或删除对应引用":"A referenced asset was removed. Select it again or remove its mention.",
+});
 export const videoZh:Record<string,string>=Object.fromEntries(Object.keys(videoEn).map(key=>[key,key]));
 videoZh["关闭开关"]="关闭";

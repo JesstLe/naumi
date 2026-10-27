@@ -1,4 +1,5 @@
 import { numberVideoInputs, type OrderedInput } from "./references";
+import { VideoContractError } from "./contract";
 
 export function compileVideoPrompt(prompt:string,inputs:readonly OrderedInput[],cameraPrompt="") {
   const numbered=numberVideoInputs(inputs),bindings:Record<string,OrderedInput>={};
@@ -6,8 +7,8 @@ export function compileVideoPrompt(prompt:string,inputs:readonly OrderedInput[],
   for(const [kind,label] of [["image","图片"],["video","视频"],["audio","音频"]] as const){
     for(const input of numbered.byKind[kind])bindings[`${label}${input.index}`]=input;
   }
-  for(const match of prompt.matchAll(/\{\{\s*ref\s+(\d+)\s*\}\}/g))if(!bindings[`ref ${Number(match[1])}`])throw new Error(`引用标记不存在：ref ${match[1]}`);
-  for(const match of prompt.matchAll(/(?:图片|视频|音频)([1-9]\d*)/g))if(!bindings[match[0]])throw new Error(`引用标记不存在：${match[0]}`);
+  for(const match of prompt.matchAll(/\{\{\s*ref\s+(\d+)\s*\}\}/g))if(!bindings[`ref ${Number(match[1])}`])throw new VideoContractError("VIDEO_PROMPT_REFERENCE_INVALID",Number(match[1])===0?"引用素材已移除，请重新选择或删除对应引用":`引用标记不存在：ref ${match[1]}`,["prompt"]);
+  for(const match of prompt.matchAll(/(?:图片|视频|音频)([1-9]\d*)/g))if(!bindings[match[0]])throw new VideoContractError("VIDEO_PROMPT_REFERENCE_INVALID",`引用标记不存在：${match[0]}`,["prompt"]);
   const labels={text:"参考文字",image:"图片",video:"视频",audio:"音频"};
   const compiled=prompt.replace(/\{\{\s*ref\s+(\d+)\s*\}\}/g,(_match,index)=>{
     const input=numbered.all[Number(index)-1];return `${labels[input.kind]}${input.kindIndex}`;

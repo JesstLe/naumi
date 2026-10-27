@@ -5,6 +5,7 @@ import { CachedImage } from "@/components/cached-image";
 import { ArrowDown, ArrowUp, X } from "lucide-react";
 import type { OrderedInput } from "@/lib/video/references";
 import { numberVideoInputs } from "@/lib/video/references";
+import { videoReferenceNames } from "@/lib/video/prompt-references";
 import { VIDEO_ROLE_LABELS, VIDEO_KIND_LABELS, type VideoInputChoice } from "@/lib/video/client-settings";
 import { VideoField, videoFieldClass, videoButtonClass } from "./form-controls";
 export function ReferenceList({ inputs, choices, onChange }: {
@@ -13,14 +14,14 @@ export function ReferenceList({ inputs, choices, onChange }: {
     onChange: (next: OrderedInput[],preserveRoles?:boolean) => void;
 }) {
     const V = useVideoI18n();
-    const numbered = numberVideoInputs(inputs).all;
+    const numbered = numberVideoInputs(inputs).all, names = videoReferenceNames(inputs, choices);
     function move(index: number, offset: number) { const next = [...inputs]; [next[index], next[index + offset]] = [next[index + offset], next[index]]; onChange(next); }
     return <div className="space-y-2" data-testid="video-reference-list">
     {numbered.map((input, index) => {
             const choice = choices.find(item => item.nodeId === input.nodeId), roles = input.kind === "text" ? ["context", "author"] : input.kind === "image" ? ["reference", "first_frame", "last_frame", "element"] : input.kind === "video" ? ["source_video", "reference", "element"] : ["source_audio", "reference", "element"];
             return <div key={input.id} className="flex items-center gap-2 rounded-lg border border-current/10 p-2" data-testid="video-reference-row">
         <div className="flex h-10 w-12 shrink-0 items-center justify-center overflow-hidden rounded bg-current/5">{choice?.thumbnail ? <CachedImage src={choice.thumbnail} alt="" className="h-full w-full object-cover"/> : <span className="text-[10px]">{V(VIDEO_KIND_LABELS[input.kind])}</span>}</div>
-        <div className="min-w-0 flex-1"><p className="truncate text-xs" title={choice?.title || input.value}>{choice?.title || (input.kind === "text" ? input.value : input.nodeId)}</p><p className="text-[10px] opacity-60">ref {input.index} · {V(VIDEO_KIND_LABELS[input.kind])}{input.kindIndex}{choice?.available === false ? V(" · 尚未完成") : ""}</p>
+        <div className="min-w-0 flex-1"><p className="truncate text-xs" title={names.get(input.id)}>{names.get(input.id)}</p>{choice?.available === false && <p className="text-[10px] opacity-60">{V("尚未完成")}</p>}
           <select aria-label={V(`引用${input.index}角色`)} data-testid="video-reference-role" className="mt-1 max-w-full bg-transparent text-[11px]" value={input.role} onChange={event => onChange(inputs.map((item, i) => i === index ? { ...item, role: event.target.value as OrderedInput["role"] } : item),true)}>{roles.map(role => <option key={role} value={role}>{V(VIDEO_ROLE_LABELS[role as OrderedInput["role"]])}</option>)}</select>
         </div>
         <div className="flex shrink-0 items-center gap-1"><button aria-label={V(`上移引用${input.index}`)} title={V("上移")} className={videoButtonClass} disabled={index === 0} onClick={() => move(index, -1)}><ArrowUp size={12}/></button><button aria-label={V(`下移引用${input.index}`)} title={V("下移")} className={videoButtonClass} disabled={index === inputs.length - 1} onClick={() => move(index, 1)}><ArrowDown size={12}/></button><button aria-label={V(`移除引用${input.index}`)} title={V("移除")} className={videoButtonClass} onClick={() => onChange(inputs.filter((_, i) => i !== index))}><X size={12}/></button></div>
