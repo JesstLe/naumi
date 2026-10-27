@@ -36,6 +36,9 @@ function setup(built){
   settingsFor:()=>projectedModule.exports.defaultNodeSettings(),isNodeLocked:()=>false,mergeWorks:async()=>{},setRfNodes:f=>{state.rf=f(state.rf||[]);},
  };
  state.videos=[video()];c.videoNodesStore={getNode:id=>state.videos.find(n=>n.id===id),flush:async()=>{state.flushed++;await state.flush();},refresh:async()=>{state.refreshes++;await state.refresh();}};
+ // Existing image/text/video cases have no director nodes. Bind the new
+ // document port without changing their original flush/refresh observations.
+ c.directorNodesStore={saving:false,getNode:()=>undefined,flush:async()=>{},refresh:async()=>{}};
  vm.createContext(c);vm.runInContext(built,c);Object.assign(c,projectedModule.exports);
  const names=['privateFetchRaw','applyHistory','doUndo','doRedo','commitNodeSettings','selectVideoResult',...(fn.saveManyNodePositions?['saveManyNodePositions']:[]),...(!baseline?['applyPendingLinkHistory','applyHistorySettings','onHistoryApplied']:[])];
  // pushUndo is a useCallback invocation. Keep its original initializer, with a
