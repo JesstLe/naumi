@@ -83,8 +83,24 @@ async function workflows(){
  handler=async()=>Response.json(output);positions=[];history=[];failPosition=true;const local=create('local'),localPosts=posts;check((await local.run(scope)).state,'needs_review');check(history,[]);check((await local.run(scope)).state,'completed');check(posts,localPosts+1);check(history,['image-a','image-b','video-c']);pass('position rejection resumes saved outputs, no supplier rerun, history once');
  handler=async()=>Response.json({ok:true,taskId:'durable-video',images:[],videos:[]},{status:202});const video=create('video');check((await video.run(scope)).state,'submitted');check(native,['durable-video']);check(video.finished,true);pass('202 hands off to native video owner without completed-image projection');
  let release;handler=()=>new Promise(resolve=>{release=resolve;});const parallel=create('parallel'),first=parallel.run(scope),second=parallel.run(scope);assert.equal(first,second);checks++;await new Promise(resolve=>setImmediate(resolve));release(Response.json(output));await first;pass('one controller coalesces concurrent run calls');
- handler=async()=>Response.json({error:'endpoint missing',accepted:false},{status:400});const denied=create('denied');await assert.rejects(denied.run(scope),/endpoint missing/);checks++;check(memory.has('denied'),false);pass('explicitly unaccepted request remains a real input error, not UNKNOWN');
+ handler=async()=>Response.json({error:'endpoint missing',accepted:false},{status:400});const denied=create('denied');await assert.rejects(denied.run(scope),/endpoint missing/);checks++;check(memory.has('denied'),false);check(denied.finished,true);pass('explicitly unaccepted request releases old intent so corrected workflow input is not ignored');
  memory.set('failed','known-failed');handler=async()=>Response.json({state:'failed',message:'required nodes missing'});const failed=create('failed');check((await failed.run(scope)).state,'failed');check(failed.finished,true);check(memory.has('failed'),false);pass('known failed receipt closes original intent without automatic replay');
+ // Actual Canvas composition: a pre-accept error releases the retained task,
+ // while UNKNOWN still keeps its original controller and performs GET only.
+ const runs=new Map(),pend=[],compositionBodies=[];
+ const composed=closure(root,'runComfyWorkflow',{...primitives,readOnly:false,user:{email:scope.owner},generationOperationRef:{current:new Set()},canvasAccountRef:{current:'account'},activeProjectRef:{current:{key:scope.project}},canvasContextEpochRef:{current:1},batchRunMountedRef:{current:true},
+  comfyRunsRef:{current:runs},captureCanvasTaskOwner:()=>({capture:()=>scope,isVisible:scope.isCurrent,workspace:scope.workspace}),comfyRunReceiptKey,createCanvasComfyWorkflow,createCanvasResultAttachment,
+  rfRef:{current:null},flowNodeSize:()=>({width:300,height:300}),artworkNodeSize:()=>({width:300,height:300}),X_GAP:90,browserRandomUUID:()=>crypto.randomUUID(),localStorage:storage,
+  taskDocumentRef:{current:{merge:async ids=>ids.map(id=>({id,image:'/media/'+id+'.png'})),history:()=>{}}},videoTaskStore:{refresh:async()=>{}},livePendingPosition:()=>({x:400,y:50}),
+  setPendNodes:fn=>{const next=fn(pend);pend.splice(0,pend.length,...next);},window:{setInterval:()=>1,clearInterval:()=>{}},flashTip:()=>{}});
+ const source={id:'source',canvasX:10,canvasY:20},initialPayload={workflowId:'before-error',texts:{},seeds:{},numerics:{}};
+ handler=async(url,init)=>{compositionBodies.push(JSON.parse(init.body));return Response.json({error:'endpoint missing',accepted:false},{status:400});};
+ await assert.rejects(composed(source,initialPayload),/endpoint missing/);checks++;check(runs.size,0);check(pend.length,0);
+ handler=async(url,init)=>{compositionBodies.push(JSON.parse(init.body));return Response.json(output);};
+ check((await composed(source,{...initialPayload,workflowId:'corrected-after-error'})).state,'completed');check(compositionBodies.map(body=>body.workflowId),['before-error','corrected-after-error']);check(runs.size,0);
+ handler=async()=>{throw Error('response lost');};check((await composed(source,initialPayload)).state,'needs_review');check(runs.size,1);const compositionPosts=posts;
+ handler=async(url,init)=>{check(init.method,undefined);return Response.json({...output,state:'completed'});};
+ check((await composed(source,{...initialPayload,workflowId:'must-not-replace-unknown'})).state,'completed');check(posts,compositionPosts);check(runs.size,0);pass('actual Canvas releases known-unaccepted input but retains and reads UNKNOWN original intent');
  const keys=[comfyRunReceiptKey(scope,'source'),comfyRunReceiptKey({...scope,owner:'other@fixture.test'},'source'),comfyRunReceiptKey({...scope,workspace:'tenant'},'source'),comfyRunReceiptKey({...scope,project:'tree:other'},'source')];check(new Set(keys).size,4);pass('browser receipts are partitioned by account, workspace, project and source');
  current=false;const stopped=create('stopped'),stoppedPosts=posts;check((await stopped.run(scope)).state,'stale');check(posts,stoppedPosts);check(memory.has('stopped'),false);pass('stale preparation never sends or persists a new operation');
 }

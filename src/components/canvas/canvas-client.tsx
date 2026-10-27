@@ -2117,13 +2117,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const timer=window.setInterval(()=>{if(scope.isCurrent())setPendNodes(nodes=>nodes.map(item=>item.id===node.id?{...item,progress:Math.min(92,item.progress+Math.max(1,Math.round((96-item.progress)/9)))}:item));},1200);
     try{
       const result=await task.run(scope);
-      if(task.finished)comfyRunsRef.current.delete(key);
       if(scope.isCurrent()){
         if(result.state==="completed")flashTip(result.images?.length?`工作流完成，${result.images.length} 张结果已生成在原图右侧`:"工作流完成，视频已生成");
         if(result.state==="submitted")flashTip("视频工作流已提交");
       }
       return result;
     }finally{
+      if(task.finished&&comfyRunsRef.current.get(key)?.task===task)comfyRunsRef.current.delete(key);
       window.clearInterval(timer);generationOperationRef.current.delete(operationKey);
       if(scope.isCurrent())setPendNodes(nodes=>nodes.filter(item=>item.id!==node.id));
     }
@@ -5123,7 +5123,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
           {/* ComfyUI 工作流面板(BYOC):端点/导入/运行,图片产物按血缘挂树 */}
           {canFeature("comfyui") && (comfyOpen || comfyMounted) && <CanvasComfyDialog
-            key={`${canvasAccountRef.current}:${currentWorkspace()}:${activeKey}:${canvasContextEpochRef.current}`}
+            key={`${canvasAccountRef.current}:${currentWorkspace()}:${activeKey}:${canvasContextEpochRef.current}:${selected?.id||""}`}
             open={comfyOpen}
             onClose={() => setComfyOpen(false)}
             source={selected}

@@ -43,7 +43,7 @@ export function createCanvasComfyWorkflow(input:Services){
         }
         let body:Record<string,any>;
         try{body=await readImagegenResponse(response,"工作流未完成，请检查原任务");}
-        catch(error){if(error instanceof ImagegenHttpError&&error.accepted===false){attempted=false;clear();}throw error;}
+        catch(error){if(error instanceof ImagegenHttpError&&error.accepted===false){attempted=false;finished=true;clear();}throw error;}
         const taskId=typeof body.taskId==="string"&&body.taskId?body.taskId:undefined;
         // Capture before the view guard: a late saved result is retained for an
         // explicit continuation in its original view, never projected elsewhere.
