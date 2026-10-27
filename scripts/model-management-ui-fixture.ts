@@ -45,7 +45,7 @@ async function main() {
   process.on("disconnect",()=>void close());
   process.on("SIGINT",()=>void close());process.on("SIGTERM",()=>void close());
   process.env.PGOPTIONS = `-c search_path=${f.schemaName}`;
-  process.env.NEXT_DIST_DIR = "output/model-management-fixture/next";
+  process.env.NEXT_DIST_DIR ||= "output/model-management-fixture/next";
   process.env.NAUMI_VIDEO_WORKER = "0";
   process.env.NAUMI_MULTI_USER = "1";
   process.env.BUILD_VERSION="1791542000";
@@ -84,7 +84,7 @@ async function main() {
   const billing=createConfigRuntime({ pool: f.sql, ensureSchema: db.ensureSchema, initialize: async () => fixtureBilling });
   const beforeBilling=await billing.current();await billing.publish({id:crypto.randomUUID(),expectedVersion:beforeBilling.version,config:fixtureBilling,actor:"fixture",reason:"Enable isolated UI pricing"});
   await mkdir("output/model-management-fixture", { recursive: true });
-  next = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", "54989"], { env: process.env, windowsHide: true, stdio: "inherit" });
+  next = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", process.env.NAUMI_MODEL_UI_PORT||"54989"], { env: process.env, windowsHide: true, stdio: "inherit" });
   await writeFile("output/model-management-fixture/fixture.json", JSON.stringify({ control: f.origin, memberCookie: native.signUserSession("mvp-member@example.test", Date.now()), schemaName: f.schemaName,runId:process.env.NAUMI_MODEL_UI_RUN_ID }));
 }
 main().catch(async e => { console.error(e);process.exitCode=1;await cleanupOnFailure(); });

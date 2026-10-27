@@ -5,7 +5,7 @@ import sharp from "sharp";
 
 async function main(){
  const live=Boolean(process.env.MODEL_MANAGEMENT_BROWSER_COOKIE_FILE);if(!live&&process.env.NAUMI_VERIFY_ISOLATED_DB!=="1")throw Error("Requires isolated fixture or protected staging session");
- const origin=live?"http://120.27.162.85":"http://127.0.0.1:54989",out=`output/canvas-ui-integration-20261009/${live?"live":"local"}`;await mkdir(out,{recursive:true});
+ const origin=live?"http://120.27.162.85":(process.env.NAUMI_MODEL_UI_BASE_URL||"http://127.0.0.1:54989"),out=`output/canvas-ui-integration-20261009/${live?"live":"local"}`;await mkdir(out,{recursive:true});
  const fixture=live?null:JSON.parse(await readFile("output/model-management-fixture/fixture.json","utf8")),browser=await chromium.launch({channel:process.platform==="win32"?"msedge":undefined,headless:true}),context=await browser.newContext({viewport:{width:1440,height:1000}}),expect=baseExpect.configure({timeout:45000});
  const get=async(path:string)=>{const r=await context.request.get(origin+path);assert.equal(r.status(),200);return r.json();};let mocked=0,blocked=0;const errors:string[]=[];
  try{

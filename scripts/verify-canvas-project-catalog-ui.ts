@@ -7,7 +7,7 @@ import {chromium,expect as baseExpect,type Page} from "@playwright/test";
 async function main(){
   assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,"1");
   const fixture=JSON.parse(await readFile("output/model-management-fixture/fixture.json","utf8"));
-  const origin="http://127.0.0.1:54989",out=path.resolve(process.env.PROJECT_UI_EVIDENCE||"output/canvas-project-catalog-ui");await mkdir(out,{recursive:true});
+  const origin=(process.env.NAUMI_MODEL_UI_BASE_URL||"http://127.0.0.1:54989"),out=path.resolve(process.env.PROJECT_UI_EVIDENCE||"output/canvas-project-catalog-ui");await mkdir(out,{recursive:true});
   const browser=await chromium.launch({channel:process.platform==="win32"?"msedge":undefined,headless:true}),context=await browser.newContext({viewport:{width:1440,height:1000}});
   const expect=baseExpect.configure({timeout:45000}),checks:string[]=[],errors:string[]=[],posts:unknown[]=[];
   const requestFailures:unknown[]=[],scripts:unknown[]=[];

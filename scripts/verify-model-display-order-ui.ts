@@ -8,7 +8,7 @@ import { compactImageModelOptions } from "../src/lib/image-model-routing";
 async function main() {
   const live = Boolean(process.env.MODEL_MANAGEMENT_BROWSER_COOKIE_FILE);
   if (!live && process.env.NAUMI_VERIFY_ISOLATED_DB !== "1") throw Error("Requires isolated fixture or protected staging session");
-  const origin = live ? "http://120.27.162.85" : "http://127.0.0.1:54989";
+  const origin = live ? "http://120.27.162.85" : (process.env.NAUMI_MODEL_UI_BASE_URL||"http://127.0.0.1:54989");
   const out = `output/stable-model-order-20261009/${live ? "live" : "local"}`;
   await mkdir(out, { recursive: true });
   const fixture = live ? null : JSON.parse(await readFile("output/model-management-fixture/fixture.json", "utf8"));

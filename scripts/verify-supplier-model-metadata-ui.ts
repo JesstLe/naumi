@@ -3,7 +3,7 @@ import {readFile} from "node:fs/promises";
 import {chromium,expect as baseExpect} from "@playwright/test";
 async function main(){
  if(process.env.NAUMI_VERIFY_ISOLATED_DB!=="1")throw Error("Isolated fixture only");
- const f=JSON.parse(await readFile("output/model-management-fixture/fixture.json","utf8")),origin="http://127.0.0.1:54989";
+ const f=JSON.parse(await readFile("output/model-management-fixture/fixture.json","utf8")),origin=(process.env.NAUMI_MODEL_UI_BASE_URL||"http://127.0.0.1:54989");
  const browser=await chromium.launch({channel:"msedge",headless:true}),context=await browser.newContext({viewport:{width:1440,height:1050},acceptDownloads:true});
  const expect=baseExpect.configure({timeout:45000});
  const page=await context.newPage();page.setDefaultTimeout(45000);const errors:string[]=[];page.on("pageerror",e=>errors.push(e.message));

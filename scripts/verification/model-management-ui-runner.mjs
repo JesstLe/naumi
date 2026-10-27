@@ -16,17 +16,19 @@ async function stopOwned(child,completion,runId){
   }else child.kill('SIGTERM');
   if(!await waitForExit(completion,5000))throw Error('OWNED_UI_PROCESS_DID_NOT_EXIT');
 }
-export async function runModelManagementUi(verificationFile,{root=process.cwd(),env=process.env,startupTimeoutMs=120000,pollMs=250}={}){
+export async function runModelManagementUi(verificationFile,{root=process.cwd(),env=process.env,startupTimeoutMs=120000,pollMs=250,port=0}={}){
   root=await fs.realpath(root);
   const database=new URL(env.DATABASE_URL||'http://invalid');
   if(env.NAUMI_VERIFY_ISOLATED_DB!=='1'||database.hostname!=='127.0.0.1')throw Error('Requires isolated local PostgreSQL');
   if(!/^scripts\/verify-[\w-]+\.ts$/.test(verificationFile))throw Error('MODEL_UI_VERIFICATION_ENTRY_REQUIRED');
-  await new Promise((resolve,reject)=>{const probe=createServer();probe.once('error',()=>reject(Error('MODEL_UI_PORT_IN_USE')));probe.listen(54989,'127.0.0.1',()=>probe.close(resolve));});
+  if(!Number.isInteger(port)||port<0||port>65535)throw Error('MODEL_UI_PORT_INVALID');
+  port=await new Promise((resolve,reject)=>{const probe=createServer();probe.once('error',()=>reject(Error('MODEL_UI_PORT_IN_USE')));probe.listen(port,'127.0.0.1',()=>{const assigned=probe.address().port;probe.close(()=>resolve(assigned));});});
+  const origin=`http://127.0.0.1:${port}`;
   const base=path.join(root,'output/model-management-fixture'),runId=randomUUID();await fs.mkdir(base,{recursive:true});
   // Keep the previous standalone fixture marker authoritative; never stop it.
   if(await fs.stat(path.join(base,'fixture.json')).then(()=>true,()=>false))throw Error('Existing fixture must be stopped first');
   const lockPath=path.join(base,'runner.lock'),lock=await fs.open(lockPath,'wx');await lock.writeFile(JSON.stringify({runId,pid:process.pid})+'\n');
-  const run=path.join(base,'runs',runId),source=path.join(run,'source');let fixture,fixtureDone,checker,checkerDone,result={runId,status:'STARTING',verificationFile,root,source,exit:1};
+  const run=path.join(base,'runs',runId),source=path.join(run,'source');let fixture,fixtureDone,checker,checkerDone,result={runId,status:'STARTING',verificationFile,root,source,origin,port,exit:1};
   try{
     await fs.mkdir(source,{recursive:true});
     const identity=await sourceIdentity(root);result.sourceIdentity=identity;
@@ -34,14 +36,16 @@ export async function runModelManagementUi(verificationFile,{root=process.cwd(),
     for(const file of files){const src=path.resolve(root,file),dest=path.resolve(source,file);if(path.relative(root,src).startsWith('..')||path.relative(source,dest).startsWith('..'))throw Error('UI_SOURCE_PATH_ESCAPE');const stat=await fs.lstat(src);if(!stat.isFile()||stat.isSymbolicLink())throw Error('UI_SOURCE_MUST_BE_FILE');await fs.mkdir(path.dirname(dest),{recursive:true});await fs.copyFile(src,dest);}
     for(const file of files)if(hash(await fs.readFile(path.join(source,file)))!==identity.hashes[file])throw Error('UI_SOURCE_CHANGED_DURING_COPY');
     await fs.symlink(path.join(root,'node_modules'),path.join(source,'node_modules'),process.platform==='win32'?'junction':'dir');
-    const childEnv={...env,NEXT_DIST_DIR:'output/model-management-fixture/next',NAUMI_MODEL_UI_RUN_ID:runId};
+    // The source copy already owns its cwd. Keep Next's cache path short on
+    // Windows rather than nesting another full evidence path inside it.
+    const childEnv={...env,NEXT_DIST_DIR:'.next',NAUMI_MODEL_UI_RUN_ID:runId,NAUMI_MODEL_UI_PORT:String(port),NAUMI_MODEL_UI_BASE_URL:origin};
     const spawnTs=(file,server=false,ipc=false)=>spawn(process.execPath,[...(server?['--conditions=react-server']:[]),'--import',loader,file],{cwd:source,env:childEnv,windowsHide:true,stdio:ipc?['ignore','inherit','inherit','ipc']:['ignore','inherit','inherit']});
     fixture=spawnTs('scripts/model-management-ui-fixture.ts',true,true);fixtureDone=observed(fixture);
     const metadata=path.join(source,'output/model-management-fixture/fixture.json'),started=Date.now();let ready=false;
     while(Date.now()-started<startupTimeoutMs){
       if(fixture.exitCode!==null||fixture.signalCode!==null)throw Error('Fixture exited during setup: '+JSON.stringify(await fixtureDone));
       let state;try{state=JSON.parse(await fs.readFile(metadata,'utf8'));}catch{}
-      if(state){if(state.runId!==runId)throw Error('MODEL_UI_METADATA_OWNER_MISMATCH');try{if((await fetch('http://127.0.0.1:54989/api/health',{signal:AbortSignal.timeout(2000)})).ok){ready=true;break;}}catch{}}
+      if(state){if(state.runId!==runId)throw Error('MODEL_UI_METADATA_OWNER_MISMATCH');try{if((await fetch(origin+'/api/health',{signal:AbortSignal.timeout(2000)})).ok){ready=true;break;}}catch{}}
       await wait(pollMs);
     }
     if(!ready)throw Error('Fixture startup timed out');

@@ -8,7 +8,7 @@ import {DISPLAY_QUALITY_IDS,DEFAULT_QUALITY_LABELS} from "../src/lib/model-confi
 async function main(){
  const live=Boolean(process.env.MODEL_MANAGEMENT_BROWSER_COOKIE_FILE);
  if(!live&&process.env.NAUMI_VERIFY_ISOLATED_DB!=="1")throw Error("Requires isolated fixture or protected staging session");
- const origin=live?"http://120.27.162.85":"http://127.0.0.1:54989",out=`output/managed-model-parameters-20261009/${live?"live":"local"}`;
+ const origin=live?"http://120.27.162.85":(process.env.NAUMI_MODEL_UI_BASE_URL||"http://127.0.0.1:54989"),out=`output/managed-model-parameters-20261009/${live?"live":"local"}`;
  await mkdir(out,{recursive:true});
  const fixture=live?null:JSON.parse(await readFile("output/model-management-fixture/fixture.json","utf8"));
  const browser=await chromium.launch({channel:process.platform==="win32"?"msedge":undefined,headless:true}),context=await browser.newContext({viewport:{width:1440,height:1000}}),expect=baseExpect.configure({timeout:45000});
