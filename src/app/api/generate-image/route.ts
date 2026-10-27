@@ -1,3 +1,4 @@
+import {taskFailureDiagnostic,type TaskFailureDiagnostic} from "@/lib/imagegen/task-diagnostics";
 import { inheritedImageRatio, imageAspectInstruction } from "@/lib/imagegen/aspect";
 import { normalizeLegacyFrameRequest, LegacyFrameError } from "@/lib/imagegen/legacy-frame-request";
 import { preserveGeneratedFrame, sourceImageDimensions } from "@/lib/imagegen/output-shape";
@@ -716,6 +717,7 @@ type Job = {
   imagegenOutputError?:string;
   imagegenOutputWarning?:string;
   deliveryAttempts?:number;
+  failureDiagnostic?:TaskFailureDiagnostic;
   deliveryFailure?:{stage:string;name:string;code:string};
   createdAt: number;
   sourceUrl?: string | null;
@@ -938,6 +940,9 @@ async function runJob(
       imagegenOutputWarning,
     });
   } catch (e) {
+    // Persist only finite diagnostic scalars; a diagnostic write failure must not
+    // change the existing paid-task recovery/settlement path.
+    await JOBS.patch(jobId,{failureDiagnostic:taskFailureDiagnostic(e,deliveryStage)}).catch(()=>{console.error("[generate-image] diagnostic checkpoint unavailable");});
     if (e instanceof ImageOperationPending) { await JOBS.handlePending(jobId, e); return; }
     if (e instanceof PostprocessPending) {
       const exhausted = e instanceof PostprocessPending && (await getPool().query("SELECT 1 FROM app_media_postprocess WHERE operation_id=$1 AND attempts>=3",[e.operationId])).rowCount;

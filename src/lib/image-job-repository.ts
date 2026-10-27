@@ -1,3 +1,4 @@
+import {readTaskDiagnostic,type TaskFailureDiagnostic} from "./imagegen/task-diagnostics";
 import {currentCreationContext} from "./saas/creation-context";
 import {acceptCreationTx,recordImageStateTx,creationLinkTx} from "./saas/creation-writer";
 import "server-only";
@@ -207,7 +208,7 @@ export async function holdImageJobBilling(id:string) {
 /** Stop an undelivered operation without pretending its supplier cost is zero.
  * Serializes against settlement and other workers; only this job's remaining
  * reservation is released. Supplier calls and paid intent remain untouched. */
-export async function failUndeliveredImageJob(id: string, token: string | null, reasonCode: string) {
+export async function failUndeliveredImageJob(id: string, token: string | null, reasonCode: string, diagnostic?:TaskFailureDiagnostic) {
   await assertMutableStagingTask(getPool(), "app_image_jobs", id);
   const tx = await getPool().connect();
   try {
@@ -239,7 +240,7 @@ export async function failUndeliveredImageJob(id: string, token: string | null, 
     await tx.query("INSERT INTO app_billing_reconciliations(id,operation_id,email,actor,request_fingerprint,reason,proof,result,charge) VALUES($1,$2,$3,'system:image-job', $4,'图片未交付，释放预占积分',$5,$6::jsonb,0)",
       [`image-release-${id}`, id, row.email, `image-release-${id}`, JSON.stringify(proof), JSON.stringify({ state: "unknown", ...proof })]);
     await tx.query(`UPDATE app_image_jobs SET snapshot=snapshot || $2::jsonb,billing_settled=true,reserved_cost=0,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1`,
-      [id, JSON.stringify({ status: "error", error: IMAGE_JOB_RELEASED_MESSAGE, failureCode: reasonCode, customerBilling: "released", supplierCostStatus: "pending", creditsReleased: released, stoppedAt: Date.now() })]);
+      [id, JSON.stringify({ status: "error", error: IMAGE_JOB_RELEASED_MESSAGE, failureCode: reasonCode, ...(diagnostic?{failureDiagnostic:readTaskDiagnostic(diagnostic)}:{}), customerBilling: "released", supplierCostStatus: "pending", creditsReleased: released, stoppedAt: Date.now() })]);
     await tx.query("COMMIT"); return true;
   } catch (error) { await tx.query("ROLLBACK"); throw error; }
   finally { tx.release(); }

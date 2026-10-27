@@ -12,10 +12,11 @@ export function supplierFailureEvidence(status: number, body: unknown, error?: u
   else if (/invalid[_ -]?(?:api[_ -]?)?key|authentication|unauthorized|无效.*密钥/.test(text)) failureCategory = "credential";
   else if (/model[_ -]?(?:not[_ -]?found|not[_ -]?allowed)|model.*permission|模型.*权限/.test(text)) failureCategory = "model-permission";
   else if (/content[_ -]?policy|moderation|safety|内容.*审核/.test(text)) failureCategory = "content-policy";
+  else if (/invalid[_ -]?(?:parameter|argument|size)|unsupported[_ -]?(?:parameter|size)|参数.*不支持|参数.*无效/.test(text)) failureCategory = "invalid-parameters";
   else if (status === 429) failureCategory = "rate-limit";
   else if (status === 401 || status === 403) failureCategory = "authorization-or-edge";
   else if (status >= 500) failureCategory = "upstream-unavailable";
   const code = [e.code, e.cause?.code, e.errors?.[0]?.code].find(value => typeof value === "string" &&
-    ["ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "ENETUNREACH", "EHOSTUNREACH", "UND_ERR_CONNECT_TIMEOUT", "CERT_HAS_EXPIRED", "UNABLE_TO_VERIFY_LEAF_SIGNATURE"].includes(value));
+    ["ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "ENETUNREACH", "EHOSTUNREACH", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_SOCKET", "ERR_STREAM_PREMATURE_CLOSE", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT", "ABORT_ERR", "CERT_HAS_EXPIRED", "UNABLE_TO_VERIFY_LEAF_SIGNATURE"].includes(value));
   return error ? { failureCategory: "transport", ...(code ? { transportCode: code } : {}) } : { failureCategory };
 }
