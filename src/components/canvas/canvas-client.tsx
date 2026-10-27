@@ -67,7 +67,8 @@ import { shouldVirtualizeCanvas } from '@/lib/canvas/virtualization';
 import { CanvasModelSelect } from "./model-select";
 import { CanvasActionMenu, CanvasActionPanel } from "./canvas-action-menu";
 import { CanvasHelpDialog } from "./canvas-help-dialog";
-import { ContextMenuSurface, ContextMenuItem as Item } from "./context-menu-surface";
+import { ContextMenuSurface, ContextMenuSubmenu, ContextMenuItem as Item } from "./context-menu-surface";
+import { canvasNodeMenuItems } from "./node-menu-items";
 import { selectionRunTargets, runSelectionBatch } from "@/lib/canvas/selection-run";
 import { BatchSelectionToolbar } from "./batch-selection-toolbar";
 import { TextImageGenerationDialog } from "./text-image-generation-dialog";
@@ -1840,7 +1841,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const importSeqRef = useRef(0);
   const dragDepthRef = useRef(0);
   const [fileDragOver, setFileDragOver] = useState(false);
-  const [nodeTypeMenu, setNodeTypeMenu] = useState<{ x: number; y: number; cx: number; cy: number } | null>(null);
   // paste 必须挂在 window：点击 React Flow 空白处后 activeElement 可能仍是 body，
   // 只给 canvas div 绑定 onPaste 会漏掉系统截图和内部节点粘贴。
   useEffect(() => {
@@ -7346,7 +7346,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   function createCanvasNode(kind: "text" | "image" | "video", point = centerScreen()) {
     if (readOnly) return;
-    setNodeTypeMenu(null);
     if (kind === "text") addTextNodeAtScreen(point.x, point.y);
     else if (kind === "image") addPendAtScreen(point.x, point.y, null, false);
     else if (canFeature("video")) void openVideoNodeFromSelection(true, point);
@@ -8519,7 +8518,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       (propertiesOpen && (selectedId || selectedTextId)) ||
       cropArtwork ||
       ratioMenuOpen ||
-      nodeTypeMenu ||
       expandOpen ||
         !!videoHistoryId ||
       !!videoMedia ||
@@ -9981,11 +9979,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     open={addMenuOpen} onOpenChange={open => { setMoreToolsOpen(false); setAddMenuOpen(open); }}
                     triggerIcon={Plus} iconOnly triggerTestId="canvas-add-node-button" menuTestId="canvas-create-menu"
                     triggerClassName="flex h-7 w-7 flex-none items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 sm:h-9 sm:w-9"
-                    items={[
-                      { id: "text", icon: Type, label: t("canvas.toolbar.addText"), onSelect: () => createCanvasNode("text") },
-                      { id: "image-node", icon: ImagePlus, label: t("canvas.toolbar.addImageNode"), onSelect: () => createCanvasNode("image") },
-                      { id: "video-node", icon: Video, label: videoNodeCreateLabel, disabled: !canFeature("video")||videoNodeCreateDisabled, onSelect: () => createCanvasNode("video") },
-                    ]}
+                    items={canvasNodeMenuItems({ L, readOnly, videoDisabled: !canFeature("video") || videoNodeCreateDisabled, onCreate: kind => createCanvasNode(kind) })}
                   />
                   <button type="button" data-tool="text" aria-label={t("canvas.toolbar.addText")} title={t("canvas.toolbar.addText")}
                     onClick={() => { const c = centerScreen(); addTextNodeAtScreen(c.x, c.y); }}
@@ -10463,14 +10457,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               );
             })()}
 
-          {nodeTypeMenu && <div data-testid="canvas-node-type-menu">
-            <ContextMenuSurface x={nodeTypeMenu.cx} y={nodeTypeMenu.cy} light={true} onClose={() => setNodeTypeMenu(null)}>
-              <Item label={t("canvas.toolbar.addText")} disabled={readOnly} onClick={() => createCanvasNode("text", nodeTypeMenu)} />
-              <Item label={t("canvas.toolbar.addImageNode")} disabled={readOnly} onClick={() => createCanvasNode("image", nodeTypeMenu)} />
-              <Item label={videoNodeCreateLabel} disabled={readOnly || !canFeature("video") || videoNodeCreateDisabled} onClick={() => createCanvasNode("video", nodeTypeMenu)} />
-            </ContextMenuSurface>
-          </div>}
-
           {/* 上传图片作根节点(隐藏 input,右键「上传图片/添加节点」触发) */}
           <input
             ref={rootUploadRef}
@@ -10699,16 +10685,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     ) : (
                       /* 空白右键菜单(对齐原型 czcanvas) */
                       <>
-                        <Item
-                          label={t("canvas.textGenerate")}
-                          hk="⇧T"
-                          disabled={readOnly}
-                          onClick={() => addTextNodeAtScreen(ctxMenu.x, ctxMenu.y)}
-                        />
-                        <Item
+                        <ContextMenuSubmenu
                           label={t("canvas.addNode")}
                           disabled={readOnly}
-                          onClick={() => setNodeTypeMenu({ x: ctxMenu.x, y: ctxMenu.y, cx: ctxMenu.cx, cy: ctxMenu.cy })}
+                          items={canvasNodeMenuItems({ L, readOnly, videoDisabled: !canFeature("video") || videoNodeCreateDisabled, onCreate: kind => createCanvasNode(kind, ctxMenu) })}
                         />
                         <Item
                           label={t("canvas.uploadImage")}
