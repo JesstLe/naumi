@@ -13,27 +13,13 @@ import {verifiedOwnedMedia} from "../video/media-inspection";
 import {adaptiveCanvasImageSize} from "../mock-data";
 import {ModelConfigError} from "../model-config/types";
 import {authorizeVideoReferences} from "../video/reference-materialization";
-import {videoNodeWriteSchema,videoNodeConfigSchema,videoProjectKeySchema,type CanvasVideoNode,type VideoNodeWrite} from "./video-node-schema";
+import {videoNodeWriteSchema,videoNodeConfigSchema,type CanvasVideoNode,type VideoNodeWrite} from "./video-node-schema";
 import {ensureVideoNodeSchema,getVideoNode,listVideoNodes,saveVideoNodeTx,associateVideoTaskTx,completeVideoNodeTx} from "./video-node-repository";
 export {getVideoNode,listVideoNodes};
+import {authorizeCanvasProject as authorizeVideoProject,mayCreateCanvasRoot as mayCreateOwnRoot} from "./project-access";
+export {authorizeVideoProject};
+import {authorizeCharacterInputs} from "./character-references";
 
-export async function authorizeVideoProject(actor:string,rawKey:string){
-  const parsed=videoProjectKeySchema.safeParse(rawKey);if(!parsed.success)throw new ModelConfigError("VIDEO_PROJECT_UNAVAILABLE","画布项目不存在",404);
-  await ensureVideoNodeSchema();const pool=getPool(),[kind,id]=[rawKey.slice(0,rawKey.indexOf(":")),rawKey.slice(rawKey.indexOf(":")+1)];
-  const own=(await pool.query(`SELECT 1 FROM app_canvas_video_projects WHERE email=$1 AND project_key=$2
-    UNION ALL SELECT 1 FROM app_canvas_video_nodes WHERE email=$1 AND project_key=$2
-    UNION ALL SELECT 1 FROM app_canvas_text_nodes WHERE email=$1 AND project_key=$2
-    UNION ALL SELECT 1 FROM app_artworks WHERE email=$1 AND deleted_at IS NULL AND
-      (($3='tree' AND (group_id=$4 OR id=$4)) OR ($3='batch' AND batch_id=$4)) LIMIT 1`,[actor,rawKey,kind,id])).rowCount;
-  if(!own)throw new ModelConfigError("VIDEO_PROJECT_UNAVAILABLE","画布项目不存在或无权访问",404);
-}
-async function mayCreateOwnRoot(actor:string,input:VideoNodeWrite,key:string){
-  if(key!==`tree:${input.id}`)return false;
-  const other=(await getPool().query(`SELECT 1 FROM app_canvas_video_projects WHERE project_key=$1 AND email<>$2
-    UNION ALL SELECT 1 FROM app_canvas_text_nodes WHERE project_key=$1 AND email<>$2
-    UNION ALL SELECT 1 FROM app_artworks WHERE email<>$2 AND (group_id=$3 OR id=$3) LIMIT 1`,[key,actor,input.id])).rowCount;
-  return !other;
-}
 export async function authorizeNodeInputs(actor:string,input:VideoNodeWrite){
   const config=input.config;
   const refs=[...(config?.references||[]),...(config?.elements||[]).flatMap(e=>e.references)];
@@ -44,6 +30,7 @@ export async function authorizeNodeInputs(actor:string,input:VideoNodeWrite){
     references:config.references||[],elements:config.elements,idempotencyKey:input.operationId});}
   for(const ref of input.inputs||[]){
     if(ref.kind==="text"){
+      if(ref.nodeId.startsWith("character:")){await authorizeCharacterInputs(actor,[ref]);continue;}
       if(ref.nodeId.startsWith("inline:"))continue;
       const id=ref.nodeId.replace(/^text:/,"");
       const text=(await getPool().query("SELECT project_key FROM app_canvas_text_nodes WHERE email=$1 AND id=$2",[actor,id])).rows[0];
