@@ -99,7 +99,7 @@ async function workflows(){
  handler=async(url,init)=>{compositionBodies.push(JSON.parse(init.body));return Response.json(output);};
  check((await composed(source,{...initialPayload,workflowId:'corrected-after-error'})).state,'completed');check(compositionBodies.map(body=>body.workflowId),['before-error','corrected-after-error']);check(runs.size,0);
  handler=async()=>{throw Error('response lost');};check((await composed(source,initialPayload)).state,'needs_review');check(runs.size,1);const compositionPosts=posts;
- handler=async(url,init)=>{check(init.method,undefined);return Response.json({...output,state:'completed'});};
+ handler=async(url,init)=>{assert.equal(init.method,undefined);checks++;return Response.json({...output,state:'completed'});};
  check((await composed(source,{...initialPayload,workflowId:'must-not-replace-unknown'})).state,'completed');check(posts,compositionPosts);check(runs.size,0);pass('actual Canvas releases known-unaccepted input but retains and reads UNKNOWN original intent');
  const keys=[comfyRunReceiptKey(scope,'source'),comfyRunReceiptKey({...scope,owner:'other@fixture.test'},'source'),comfyRunReceiptKey({...scope,workspace:'tenant'},'source'),comfyRunReceiptKey({...scope,project:'tree:other'},'source')];check(new Set(keys).size,4);pass('browser receipts are partitioned by account, workspace, project and source');
  current=false;const stopped=create('stopped'),stoppedPosts=posts;check((await stopped.run(scope)).state,'stale');check(posts,stoppedPosts);check(memory.has('stopped'),false);pass('stale preparation never sends or persists a new operation');
