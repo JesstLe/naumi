@@ -22,7 +22,9 @@
 - [x] 原画布入口、项目列表及混合复制/删除/撤销的事务接入；真实画布菜单新建、拖动、撤销/重做、创建副本、删除/恢复均已补验。
 - [x] 图像和视频输出、媒体关联与后续引用；完整本地应用闭环已通过。
 - [x] 集中规则/DB/API/真实WebGL/媒体验收，以及相邻视频引用和最新main的Worker/media定向回归。
-- [ ] 独立副本回滚与四项交付归档、main合并推送及任务资源收尾。
+- [x] 独立副本回滚与四项交付归档；原始文件哈希恢复、新文件移除、旧导演菜单禁用及产品工作台保留均已核验，开发代码保持修改。
+
+本记录随任务普通合入main；合入/推送与任务资源收尾的最终SHA、文件哈希和实际状态，以证据目录的`VERIFICATION.txt`及`git-integration.json`回执为准，不把本地验收当作服务器发布。
 
 原始基线归档：`E:/Workspace/naumi/output/canvas-director-native-20261027/ORIGINAL.zip`，SHA256 `18794ec7bea9fab238e827f73cd43a8219b8613e2647ed26084b180e293c1ddc`。
 
@@ -71,3 +73,20 @@
 最新证据为`application-final/`，其中桌面/390px/画布图及真实PNG/WebM均存在；移动端和画布截图已重开目视检查，视频以FFprobe实际解码确认为48帧，FFmpeg逐帧MD5显示运动。此前`application-synced/actual-editor-mobile.png`只拍到加载状态，保留为历史，不用作最终移动端验收。
 
 画布位置保存期间以导演节点pending队列暂缓undo/redo和修改菜单，避免保存回执未落地就撤销；节点`data-revision`用于验收实际保存版本，不改变服务端版本语义。Python观察器首次打印Node测试的Unicode勾号时遭遇GBK编码错误；测试已实际exit0，完整日志已保存，改为UTF-8后复用已完成记录继续，不重跑已完成测试冒充修复。
+
+## 交付归档与恢复
+
+目录：`E:/Workspace/naumi/output/canvas-director-native-20261027`。
+
+- `MODIFIED_FILE.zip`：仅本任务33个变更文件，不含同事P0发布记录、凭据、依赖或构建目录。
+- `DIFF_FILE.patch`：相对`main@9e8feb6d7d9a96a632dbe8f7e4a2566e9b950b19`的task-only binary/full-index补丁。
+- `VERIFICATION.txt`：基线/修改/回滚精确命令、输入、字面输出、exit及证据层级；附最终Git和资源回执。
+- 可执行`ROLLBACK.sh`：先逐文件校验修改版本，再反向应用补丁并核对所有基线哈希。仅在独立副本执行，不回灌DB、不撤销在途任务，也不对共享工作区执行。
+
+同步基线归档`ORIGINAL_MAIN_SYNC.zip`的SHA256为`1a5f4c1550a76176e02ea468e4026ba8f3b636d26962b7a61002b9e7a74eba84`；后续主线仅多一份同事文档，33个任务路径的基线哈希已与最终patch基线逐项比较一致。
+
+回滚输入为归档基线叠加修改包的第二份副本，并在副本内`git init`，检查`git rev-parse --show-prefix`为空，防止父仓库prefix跳过补丁。实际输出：`ROLLBACK_INPUT_HASHES=PASS FILES=33`、`ROLLBACK_BASELINE_HASHES=PASS FILES=33 NEW_FILES=ABSENT`、`ROLLBACK_PATCH=PASS TASK_PATCH=REVERSED EXIT=0`；行为复测为`ROLLBACK_DIRECTOR=PASS MENU=DISABLED NATIVE_EDITOR=ABSENT PRODUCT_STUDIO=SEPARATE EXIT=0`。开发版本33个文件仍匹配修改包，原始两个归档哈希保持。
+
+打包首次使用`git show commit:path`检查不存在的`[id]`路由，Git返回当前提交说明而非blob，导致观察器的基线断言失败；已改用`git cat-file blob`精确读取，原始归档和源码没有因此改动。失败日志保留。
+
+实现检查点为`c9f30820`，真实交互/移动端收尾为`04d0b1f4`；后续仅文档与主线普通整合。独立角色、场景、音频、多轨4项仍未实现；不把它们列入本模块的已完成项。
