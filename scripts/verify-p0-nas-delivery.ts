@@ -11,7 +11,7 @@ async function main(){
  if(process.env.NAUMI_VERIFY_ISOLATED_DB!=='1'||new URL(process.env.DATABASE_URL||'http://invalid').hostname!=='127.0.0.1')throw Error('Isolated loopback PG required');
  const admin=new Pool({connectionString:process.env.DATABASE_URL}),schema='p0_'+randomUUID().replaceAll('-','');await admin.query(`CREATE SCHEMA ${schema}`);
  const dir=await mkdtemp(path.join(tmpdir(),'naumi-p0-media-')),objects=new Map<string,Buffer>();let gets=0,puts=0,release!:()=>void,arrived!:()=>void;
- let gate:Promise<void>,atPut:Promise<void>;const hold=()=>{gate=new Promise<void>(r=>release=r);atPut=new Promise<void>(r=>arrived=r);};hold();
+ let gate!:Promise<void>,atPut!:Promise<void>;const hold=()=>{gate=new Promise<void>(r=>release=r);atPut=new Promise<void>(r=>arrived=r);};hold();
  const server=createServer(async(req,res)=>{
   if(req.method==='HEAD'){res.writeHead(objects.has(req.url!)?200:404);res.end();return;}
   if(req.method==='PUT'){puts++;const chunks:Buffer[]=[];for await(const c of req)chunks.push(c);arrived();await gate;objects.set(req.url!,Buffer.concat(chunks));res.writeHead(200);res.end();return;}
