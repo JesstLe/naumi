@@ -86,6 +86,8 @@ export class WorkerRuntime {
         assert(saved.lastTick===null||saved.lastTick&&uuid(saved.lastTick.id)&&
           ['dispatched','complete','rejected','unknown'].includes(saved.lastTick.phase),'CORRUPT_WORKER_TICK');
         this.state=saved;
+        if(saved.lastTick?.phase==='dispatched'&&!saved.paused&&saved.lastTick.controlRevision===saved.revision)
+          saved.lastTick.autoRecoveryRevision=saved.revision;
         if(['dispatched','unknown'].includes(saved.lastTick?.phase)) {this.state.paused=true;this.state.uncertain=true;this.state.lastTick.phase='unknown';}
         if(saved.uncertain)this.state.paused=true;
       }
@@ -106,6 +108,7 @@ export class WorkerRuntime {
       targetInstanceId:this.targetInstanceId,
       phase:this.fault||this.state.uncertain?'UNKNOWN':this.state.paused?(this.activePromise?'DRAINING':'QUIESCENT'):(this.activePromise?'RUNNING':'IDLE'),
       activeTicks:this.activePromise?1:0,unresolvedTicks:this.state.uncertain?1:0,
+      automaticRecoveryEligible:this.state.paused&&this.state.uncertain&&this.state.lastTick?.autoRecoveryRevision===this.state.revision,
       tickDrainComplete:this.initialized&&!!this.store&&this.state.paused&&!this.activePromise&&
         !['dispatched','unknown'].includes(this.state.lastTick?.phase)&&!this.state.uncertain&&!this.fault,
       durableControl:!!this.store,durableTickReceipts:!!this.store,receiptProtocol:this.store?1:null,lastTick:this.state.lastTick?{...this.state.lastTick}:null,
@@ -188,7 +191,7 @@ export class WorkerRuntime {
   }
   async dispatch() {
     if(this.state.paused||this.fault)return {skipped:true};
-    const tick={id:randomUUID(),phase:'dispatched',startedAt:this.clock(),...(this.store?{
+    const tick={id:randomUUID(),phase:'dispatched',startedAt:this.clock(),controlRevision:this.state.revision,...(this.store?{
       workerBootId:this.bootId,workerInstanceId:this.instanceId,workerCommit:this.commit,targetWebInstanceId:this.targetInstanceId}: {})};this.state.lastTick=tick;
     // Persist intent before network dispatch: a crash cannot look like clean drain.
     try {await this.persist();}catch {return {error:'WORKER_STATE_WRITE_FAILED'};}
@@ -216,7 +219,11 @@ export class WorkerRuntime {
     } catch (error) {
       tick.phase=dispatched?'unknown':'rejected';tick.finishedAt=this.clock();
       tick.failure=tickFailure(error);tick.durationMs=Math.max(0,Date.parse(tick.finishedAt)-Date.parse(tick.startedAt));
-      if(dispatched&&this.stopOnUncertain) {this.state.uncertain=true;this.state.paused=true;}
+      if(dispatched&&this.stopOnUncertain) {
+        // A manual drain during the HTTP call wins over automatic recovery.
+        if(!this.state.paused&&tick.controlRevision===this.state.revision)tick.autoRecoveryRevision=this.state.revision;
+        this.state.uncertain=true;this.state.paused=true;
+      }
       try {await this.persist();}catch {/* snapshot retains the control fault */}
       this.log('[video-worker] TICK_OUTCOME_UNKNOWN '+JSON.stringify({tickId:tick.id,httpStatus:tick.httpStatus,durationMs:tick.durationMs,...tick.failure}));return {error:'TICK_OUTCOME_UNKNOWN'};
     }
