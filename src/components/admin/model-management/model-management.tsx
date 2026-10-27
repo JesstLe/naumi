@@ -22,6 +22,7 @@ import type {VideoModelDefinition,VideoWireProfile} from "@/lib/video/capability
 import {VideoCapabilityEditor} from "../model-config/video-capability-editor";
 import {videoParametersSchema,type VideoParameters} from "@/lib/model-config/video-policy";
 
+import {ImageMappingEditor} from "./image-mapping-editor";
 import {ImagegenRoutesEditor} from "./imagegen-routes-editor";
 
 type State = ModelManagementState & { catalogs: CatalogEntry[] };
@@ -82,6 +83,7 @@ export function ModelManagement() {
   const [channelRow,setChannelRow]=useState<ManagedModelRow|null>(null);
   const [channelDraft,setChannelDraft]=useState<ChannelPolicy|null>(null);
   const [resolutionRow,setResolutionRow]=useState<ManagedModelRow|null>(null);
+  const [mappingRow,setMappingRow]=useState<ManagedModelRow|null>(null);
   const [parameters,setParameters]=useState<ManagedModelRow|null>(null);
   const [videoParameters,setVideoParameters]=useState<ManagedModelRow|null>(null);
 
@@ -141,8 +143,8 @@ export function ModelManagement() {
     try { sessionStorage.setItem(pendingKey, JSON.stringify(operation)); } catch {}
     try {
       const result = await api(operation);
-      if (result.publication.phase !== "applied") { setScope(null);setPrice(null);setParameters(null);setVideoParameters(null);setResolutionRow(null);setChannelRow(null);setSorting(false); setNotice("发布结果待核对。请点击“核对并继续”，系统会沿用同一操作，不重复创建发布。"); return; }
-      clearPending(); setRow(null); setScope(null);setPrice(null);setParameters(null);setVideoParameters(null);setResolutionRow(null);setChannelRow(null);setSorting(false); setConnect(false); setRegister(null);
+      if (result.publication.phase !== "applied") { setScope(null);setPrice(null);setParameters(null);setMappingRow(null);setVideoParameters(null);setResolutionRow(null);setChannelRow(null);setSorting(false); setNotice("发布结果待核对。请点击“核对并继续”，系统会沿用同一操作，不重复创建发布。"); return; }
+      clearPending(); setRow(null); setScope(null);setPrice(null);setParameters(null);setMappingRow(null);setVideoParameters(null);setResolutionRow(null);setChannelRow(null);setSorting(false); setConnect(false); setRegister(null);
       if(["pricing","parameters","video-parameters","resolutions","channels","order","scope","switch","rename"].includes(operation.action))window.dispatchEvent(new Event(MODEL_CATALOG_REFRESH));
       setNotice(operation.action === "video-parameters" ? "视频能力已生效。" : operation.action === "channels" ? "供应通道已生效，新任务使用新策略，已接受任务保留原配置。" : operation.action === "resolutions" ? "分辨率显示与供应通道映射已生效。新任务使用新配置，已接受任务保留原参数。" : operation.action === "order" ? "模型排序已生效，前端各工具按此顺序展示可用模型。" : operation.action === "parameters" ? "显示档位与上游映射已生效。新请求使用新参数，已接受的任务保留原映射。" : operation.action === "pricing" ? "积分售价已生效。前端报价与实际扣费使用同一配置，已开始的任务保留原报价。" : operation.action === "scope" ? "工具范围已生效。新请求使用新范围，已经开始的任务保留原配置。" : operation.action === "rename" ? "显示名称已更新，前端刷新模型列表后生效。" : operation.action === "switch" ? "实际模型已切换。新请求使用新配置，已经开始的任务保留原模型。" : operation.action === "connect" ? "上游已接入，正在自动发现模型 ID。" : "模型已添加到可切换列表。");
       const refreshed = await load(true);
@@ -152,7 +154,7 @@ export function ModelManagement() {
     } catch (e) {
       const failure = e as Error & { code?:string; operationNotStaged?: boolean; publication?: { phase: string } };
       if (failure.operationNotStaged || failure.publication?.phase === "failed") clearPending();
-      else {setScope(null);setPrice(null);setParameters(null);setVideoParameters(null);setResolutionRow(null);setChannelRow(null);setSorting(false);}
+      else {setScope(null);setPrice(null);setParameters(null);setMappingRow(null);setVideoParameters(null);setResolutionRow(null);setChannelRow(null);setSorting(false);}
       setError(failure.message || "操作失败，请重试");
       if(failure.code==="METADATA_CHANGED")await load(false);
     } finally { setBusy(false); mutationGuard.current = false; }
@@ -180,6 +182,7 @@ export function ModelManagement() {
         ];
         if (r.channelsEditable) actions.push({ label: "供应通道", group: "routing", disabled: locked || !state.managed, onClick: () => { setError(""); setChannelDraft(null); setChannelRow(r); } });
         if (r.modality === "video") actions.push({ label: "视频能力", group: "parameters", disabled: locked || !state.managed || !r.videoConfig?.routes.length, onClick: () => { setError(""); setVideoParameters(r); } });
+        if(r.modality==='image')actions.push({label:'统一参数映射',group:'parameters',disabled:locked||r.preset||!r.resolutionConfig?.routes.every(v=>v.editable)||!r.qualityConfig?.routes.every(v=>v.editable),onClick:()=>{setError('');setMappingRow(r);}});
         if (r.modality === "image") actions.push(
           { label: "参数设置", group: "parameters", disabled: locked || r.preset || !r.qualityConfig?.routes.every(v => v.editable), title: r.preset || !r.qualityConfig?.routes.every(v => v.editable) ? "此路径由外部路由或成本预设管理参数" : "配置显示档位与实际传参", onClick: () => { setError(""); setParameters(r); } },
           { label: "分辨率设置", group: "parameters", disabled: locked || !state.managed, onClick: () => { setError(""); setResolutionRow(r); } },
@@ -199,6 +202,7 @@ export function ModelManagement() {
     {advancedRow&&state&&<Dialog title="图像高级参数" locked={locked} onClose={()=>setAdvancedRow(null)}><label className={styles.field}>前端模型<select value={advancedRow.id} disabled={locked} onChange={e=>setAdvancedRow(state.rows.find(r=>r.id===e.target.value)||null)}>{state.rows.filter(r=>r.modality==="image").map(r=><option key={r.id} value={r.id}>{r.label}</option>)}</select></label><ImagegenRoutesEditor key={advancedRow.id} row={advancedRow} locked={locked} onSave={routes=>void run(operation("imagegen-parameters",{rowId:advancedRow.id,routes}))}/></Dialog>}
     {channelRow && state && <ChannelsDialog row={state.rows.find(r=>r.id===channelRow.id)||channelRow} state={state} initial={channelDraft} refreshing={refreshing} locked={locked} error={error} onRefresh={id=>void refreshProvider(id)} onRegister={(providerId,model,draft)=>{setChannelDraft(draft);setRegister({providerId,model,returnChannelRowId:channelRow.id});setChannelRow(null);}} onClose={()=>setChannelRow(null)} onSave={policy=>void run(operation("channels",{rowId:channelRow.id,policy}))}/>}
     {resolutionRow && <ResolutionsDialog row={resolutionRow} locked={locked} error={error} onClose={()=>setResolutionRow(null)} onSave={(resolutions,parameters)=>void run(operation("resolutions",{rowId:resolutionRow.id,resolutions,...(parameters!==undefined?{parameters}:{})}))}/>}
+    {mappingRow && <Dialog title="图片参数映射" locked={locked} onClose={()=>setMappingRow(null)}><ImageMappingEditor row={mappingRow} locked={locked} error={error} onClose={()=>setMappingRow(null)} onSave={mapping=>{void run(operation('image-mapping',{rowId:mappingRow.id,mapping}));}}/></Dialog>}
     {parameters && <ParametersDialog row={state?.rows.find(r=>r.id===parameters.id) || parameters} locked={locked} error={error} onClose={()=>setParameters(null)} onSave={value=>void run(operation("parameters",{rowId:parameters.id,parameters:value}))}/>}
     {videoParameters && <VideoParametersDialog row={videoParameters} locked={locked} error={error} onClose={()=>setVideoParameters(null)} onSave={routes=>void run(operation("video-parameters",{rowId:videoParameters.id,routes}))}/>}
     {sorting && state && <OrderDialog rows={state.rows} locked={locked} error={error} onClose={()=>setSorting(false)} onSave={rowIds=>void run(operation("order",{rowIds}))} />}

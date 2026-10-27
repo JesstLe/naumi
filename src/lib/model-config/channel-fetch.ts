@@ -1,3 +1,4 @@
+import {localImageRejection,localImageRejectionResponse} from './local-image-rejection';
 import { applicationAPIMartImages } from "./apimart-image-policy";
 import "server-only";
 import { getPool } from "../db";
@@ -64,6 +65,8 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
           await recordChannelOutcome(pool, target, true, status, {startedAt:claim.startedAt});
           return complete;
         }
+        const local=localImageRejection(response);
+        if(local){await response.body?.cancel();await finishExecutionStage(audit,'rejected-not-charged',status,{localFailure:{code:local.code,status:local.status}});finished=true;return localImageRejectionResponse(local);}
         const raw = await readBounded(response, 1024 * 1024).catch(() => "");
         let receipt: any; try { receipt = JSON.parse(raw); } catch { receipt = null; }
         if (!text) lastImageFailure = imageSupplierFailure(status, receipt);

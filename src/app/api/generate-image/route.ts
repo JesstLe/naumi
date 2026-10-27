@@ -828,7 +828,7 @@ async function runJob(
         imagegenOutputWarning ||= images.map(image => imageRatioWarning(p.ratio, image, ratioPolicy)).find(Boolean);
         nativeRatioChecked = true;
       }
-      images = await upscaleImages(images, p.resolution);
+      if(scope?.frozen.imageParameterPlanVersion!==1)images = await upscaleImages(images, p.resolution);
     }
     }
     images = await attachImageDimensions(images);

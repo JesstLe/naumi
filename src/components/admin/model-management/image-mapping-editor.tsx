@@ -1,0 +1,33 @@
+"use client";
+import {useState} from 'react';
+import type {ManagedModelRow} from '@/lib/model-config/management';
+import {compileImageParameterPlan} from '@/lib/model-config/image-parameter-plan';
+import {DEFAULT_QUALITY_LABELS,DISPLAY_QUALITY_IDS} from '@/lib/model-config/quality-policy';
+import {RESOLUTION_FIELDS,RATIO_FIELDS} from '@/lib/model-config/resolution-policy';
+import type {ImageMappingEditorInput} from '@/lib/model-config/image-mapping-editor';
+import styles from './model-management.module.css';
+export function ImageMappingEditor({row,locked,error,onClose,onSave}:{row:ManagedModelRow;locked:boolean;error:string;onClose:()=>void;onSave:(value:ImageMappingEditorInput)=>void}){
+ const [qualities,setQualities]=useState<string[]>(row.qualityConfig?.choices.map(c=>c.id)||['medium']);
+ const [resolutions,setResolutions]=useState<string[]>(row.displayResolutions||['1K','2K','4K']);
+ const [routes,setRoutes]=useState(()=>row.parameterSources?.map(s=>{const q=row.qualityConfig?.routes.find(r=>r.upstreamId===s.id),r=row.resolutionConfig?.routes.find(r=>r.upstreamId===s.id);return {source:s,qualityMode:q?.mode||'omit',qualityValues:{...q?.values},resolutionMode:r?.mode==='omit'?'omit':'map',field:r?.field||'resolution',ratioField:r?.ratioField,values:{...r?.values}};})||[]);
+ const [ratio,setRatio]=useState('1:1');
+ const payload=():ImageMappingEditorInput=>({qualities:qualities as ImageMappingEditorInput['qualities'],resolutions:resolutions as ImageMappingEditorInput['resolutions'],routes:routes.map(r=>({upstreamId:r.source.id,quality:{mode:r.qualityMode as 'map'|'omit'|'passthrough',choices:qualities.map(id=>({id:id as 'medium',label:DEFAULT_QUALITY_LABELS[id as 'medium'],...(r.qualityMode==='map'?{value:r.qualityValues[id]}:{})}))},resolution:{mode:r.resolutionMode as 'map'|'omit',field:r.field,ratioField:r.ratioField,values:r.values}}))});
+ const previews=routes.map((r,i)=>{try{const p=payload().routes[i],source={...r.source,parameterMap:{...r.source.parameterMap,qualityPolicy:p.quality,resolutionPolicy:p.resolution}};return {wire:compileImageParameterPlan(source,{quality:qualities[0]||'medium',resolution:resolutions.at(-1)||'1K',ratio},{publicModelId:row.publicIds[0],protocol:r.source.protocol,modelVersion:0}).wire,error:''};}catch(e){return {wire:null,error:e instanceof Error?e.message:'映射无效'};}});
+ const valid=qualities.length>0&&resolutions.length>0&&routes.length>0&&routes.every(r=>(r.qualityMode!=='map'||qualities.every(q=>r.qualityValues[q]?.trim()))&&(r.resolutionMode!=='map'||resolutions.every(v=>r.values[v]?.trim())))&&previews.every(p=>!p.error);
+ const patch=(i:number,value:Partial<typeof routes[number]>)=>setRoutes(old=>old.map((r,n)=>n===i?{...r,...value}:r));
+ const toggle=(values:string[],id:string,set:(v:string[])=>void)=>set(values.includes(id)?values.filter(x=>x!==id):[...values,id]);
+ return <form onSubmit={e=>{e.preventDefault();if(valid)onSave(payload());}}><fieldset className={styles.dialogBody} disabled={locked}>
+ {error&&<p role="alert" className={styles.error}>{error}</p>}
+ <section><h3>前端选项</h3><div className={styles.parameterOptionRow}>{DISPLAY_QUALITY_IDS.map(q=><button type="button" key={q} aria-pressed={qualities.includes(q)} onClick={()=>toggle(qualities,q,setQualities)}>{DEFAULT_QUALITY_LABELS[q]}</button>)}</div><div className={styles.parameterOptionRow}>{['1K','2K','4K'].map(r=><button type="button" key={r} aria-pressed={resolutions.includes(r)} onClick={()=>toggle(resolutions,r,setResolutions)}>{r}</button>)}</div></section>
+ {routes.map((r,i)=><section key={r.source.id} className={styles.parameterRoute}><h3>{r.source.provider} · {r.source.model}</h3>
+ <label className={styles.field}>质量处理<select aria-label={`${r.source.id}质量处理`} value={r.qualityMode} onChange={e=>patch(i,{qualityMode:e.target.value as typeof r.qualityMode})}><option value="map">映射</option><option value="passthrough">原值发送</option><option value="omit">不发送</option></select></label>
+ <table className={styles.mappingTable}><thead><tr><th>前端选项</th><th>上游字段</th><th>上游值</th></tr></thead><tbody>{qualities.map(q=><tr key={q}><td>{q}</td><td>quality</td><td>{r.qualityMode==='map'?<input aria-label={`${r.source.id} ${q}映射`} value={r.qualityValues[q]||''} onChange={e=>patch(i,{qualityValues:{...r.qualityValues,[q]:e.target.value}})}/>:r.qualityMode==='omit'?'不发送':q}</td></tr>)}</tbody></table>
+ <label className={styles.field}>分辨率处理<select aria-label={`${r.source.id}分辨率处理`} value={r.resolutionMode} onChange={e=>patch(i,{resolutionMode:e.target.value})}><option value="map">映射</option><option value="omit">不发送</option></select></label>
+ <label className={styles.field}>分辨率字段<select value={r.field} onChange={e=>patch(i,{field:e.target.value as typeof r.field})}>{RESOLUTION_FIELDS.map(f=><option key={f}>{f}</option>)}</select></label>
+ <table className={styles.mappingTable}><tbody>{resolutions.map(v=><tr key={v}><td>{v}</td><td>{r.field}</td><td>{r.resolutionMode==='map'?<input aria-label={`${r.source.id} ${v}映射`} value={r.values[v]||''} onChange={e=>patch(i,{values:{...r.values,[v]:e.target.value}})}/>:'不发送'}</td></tr>)}</tbody></table>
+ <details><summary>比例字段与资料</summary><label className={styles.field}>比例字段<select value={r.ratioField||''} onChange={e=>patch(i,{ratioField:e.target.value as typeof r.ratioField||undefined})}><option value="">沿用协议</option>{RATIO_FIELDS.filter(f=>f!==r.field).map(f=><option key={f}>{f}</option>)}</select></label><div>供应商资料：{r.source.nativeResolutions.join(' / ')||'未维护'}</div></details>
+ {previews[i].error&&<p role="alert" className={styles.error}>{previews[i].error}</p>}
+ <details open><summary>实际请求预览 · {qualities[0]} / {resolutions.at(-1)}</summary><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',background:'#f5f7fb',padding:12,borderRadius:8,color:'#1e293b'}}>{JSON.stringify(previews[i].wire,null,2)}</pre></details>
+ </section>)}<label className={styles.field}>预览比例<input style={{minWidth:0,width:"100%",boxSizing:"border-box"}} value={ratio} onChange={e=>setRatio(e.target.value)}/></label></fieldset>
+ <footer className={styles.dialogFooter}><button type="button" className={styles.secondary} onClick={onClose} disabled={locked}>取消</button><button className={styles.primary} disabled={locked||!valid}>保存映射并生效</button></footer></form>;
+}

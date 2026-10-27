@@ -249,3 +249,10 @@ export async function recordImageStateTx(tx:PoolClient,jobId:string,snapshot:unk
   }}
  }
 }
+
+/** Admin-only execution facts; no prompt, credential, media URL or raw supplier body. */
+export async function recordImageParameterPlan(plan:import('../model-config/image-parameter-plan').ImageParameterPlan){
+ const scope=currentCreationContext();if(!dbEnabled||!scope?.creationId)return;
+ const id=key(plan.upstreamId,JSON.stringify(plan.requested));
+ await getPool().query(`UPDATE app_creation_records SET parameters_snapshot=jsonb_set(parameters_snapshot,'{values}',COALESCE(parameters_snapshot->'values','{}'::jsonb)||jsonb_build_object('executionPlans',COALESCE(parameters_snapshot#>'{values,executionPlans}','{}'::jsonb)||jsonb_build_object($3::text,$4::jsonb))) WHERE id=$1 AND actor_email=$2`,[scope.creationId,scope.actorEmail,id,JSON.stringify(plan)]);
+}

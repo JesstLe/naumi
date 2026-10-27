@@ -64,7 +64,7 @@ export function CreationDetailView({detail,api,tenantId,onPage,onChild}:{detail:
  {processed.length>0&&<details className={styles.technical} open={showProcessed} onToggle={e=>setShowProcessed(e.currentTarget.open)}><summary>处理后输入（{processed.length}）</summary>{showProcessed&&media(processed)}</details>}
  <EvidencePager label="素材" page={detail.assetPagination} onPage={value=>onPage?.('assetPage',value)}/>
  {!detail.assets.length&&<div className={styles.empty} style={{minHeight:130}}>输入与产物素材未记录</div>}
- <dl><div className={styles.facts}><dt>原始要求</dt><dd>{detail.request.state==='recorded'?detail.request.text||'已记录为空':'未记录'}</dd></div><div className={styles.facts}><dt>创作参数</dt><dd>{detail.parameters.state==='recorded'?<ParameterChips values={detail.parameters.values}/ >:'未记录'}{detail.model.label&&<span className={styles.modelChip}>模型：{detail.model.label}</span>}</dd></div></dl>
+ <dl><div className={styles.facts}><dt>原始要求</dt><dd>{detail.request.state==='recorded'?detail.request.text||'已记录为空':'未记录'}</dd></div><div className={styles.facts}><dt>创作参数</dt><dd>{detail.parameters.state==='recorded'?<><ParameterChips values={detail.parameters.values}/ ><ImageExecutionParameters value={detail.parameters.values.executionPlans}/></>:'未记录'}{detail.model.label&&<span className={styles.modelChip}>模型：{detail.model.label}</span>}</dd></div></dl>
  <h3 style={{marginTop:18,fontSize:16}}>执行过程</h3>{detail.events.length?<div className={styles.timeline}>{detail.events.map(e=><div key={e.id} className={styles.event}><strong>{eventSummary(e)}</strong><span className={styles.muted}>{new Date(e.occurredAt).toLocaleTimeString('zh-CN')}</span><CreationStatus status={e.status}/></div>)}</div>:<div className={styles.empty} style={{minHeight:70}}>执行事件未记录</div>}
  <EvidencePager label="执行事件" page={detail.eventPagination} onPage={value=>onPage?.('eventPage',value)}/>
  {detail.children?.length>0&&<details className={styles.technical}><summary>关联子任务（{detail.childPagination.total}）</summary>{detail.children.map(child=><button key={child.id} className={styles.record} onClick={()=>onChild?.(child.id)}><span>{child.title}</span><CreationStatus status={child.status}/></button>)}<EvidencePager label="子任务" page={detail.childPagination} onPage={value=>onPage?.('childPage',value)}/></details>}
@@ -101,3 +101,10 @@ export function CreationMedia({asset,api,title}:{asset:CreationAsset;api:string;
 }
 
 function ParameterChips({values}:{values:Record<string,unknown>}){const labels:Record<string,string>={ratio:'比例',resolution:'分辨率',quality:'质量',quantity:'数量',count:'数量',seconds:'时长',size:'尺寸',background:'背景',format:'格式',compression:'压缩',mode:'模式',width:'宽',height:'高',inputFidelity:'输入保真',moderation:'审核'};const entries=Object.entries(values).flatMap(([k,v]):[string,unknown][]=>v&&typeof v==='object'?Object.entries(v as Record<string,unknown>):[[k,v]]).filter(([,v])=>['string','number','boolean'].includes(typeof v));return <span className={styles.parameterChips}>{entries.map(([k,v],i)=><span key={`${k}-${i}`}><b>{labels[k]||k}</b> {String(v)}</span>)}</span>;}
+
+function ImageExecutionParameters({value}:{value:unknown}){
+ if(!value||typeof value!=='object')return null;
+ const plans=Object.values(value as Record<string,any>).filter(p=>p?.version===1&&p.requested&&p.wire);
+ if(!plans.length)return null;
+ return <details className={styles.technical}><summary>实际发送参数</summary>{plans.map((p,i)=><div key={i}><strong>{p.upstreamId}</strong><div>用户选择：{p.requested.resolution} / {p.requested.quality} / {p.requested.ratio}</div><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{JSON.stringify(p.wire,null,2)}</pre></div>)}</details>;
+}

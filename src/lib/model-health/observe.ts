@@ -1,3 +1,4 @@
+import {localImageRejection} from '../model-config/local-image-rejection';
 import "server-only";
 import { dbEnabled, getPool } from "../db";
 import type { ModelExecutionScope } from "../model-config/context";
@@ -31,6 +32,7 @@ export function healthObservedFetch(scope: ModelExecutionScope, fetcher: typeof 
     const started = Date.now(); let status: number | null = null,acceptedResponse:Response|null=null;
     try {
       const response = await fetcher(request); status = response.status;acceptedResponse=response;
+      if(localImageRejection(response))return response;
       if (!response.ok) {
         // User-specific parameter rejection and local capacity do not condemn the supplier.
         if (response.headers.get("x-naumi-local-capacity") !== "1" && ([401,402,403,429].includes(status) || status >= 500)) await observeBusinessHealth(scope,classifyHealthFailure(null,status,Date.now()-started));

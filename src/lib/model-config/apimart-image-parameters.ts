@@ -1,3 +1,5 @@
+import {executionImageParameterPlan} from './image-plan-runtime';
+import {applyImageParameterPlan} from './image-parameter-plan';
 import "server-only";
 import type { ModelExecutionScope } from "./context";
 import { ModelConfigError } from "./types";
@@ -9,6 +11,8 @@ import { publishedImagegenCapabilities } from "../imagegen/capabilities";
 import { exactRatioPixels } from "../imagegen/request-size";
 
 export function apimartImageParameters(scope: ModelExecutionScope, requested: { quality: string; resolution: string; ratio: string }) {
+  const plan=executionImageParameterPlan(scope,{},requested);
+  if(plan)return {expectedPixels:plan.expectedPixels,requested:plan.requested,effective:{...requested,...plan.effective},upstream:applyImageParameterPlan({},plan) as Record<string,string|number|boolean>,promptConstraints:[] as string[],nativeRatio:!!plan.expectedPixels,nativeResolution:!!plan.expectedPixels,parameterPlan:plan};
   const map = scope.parameterMap, policy = map.apimartImages;
   if (!policy || !map.qualityPolicy || !map.resolutionPolicy) throw new ModelConfigError("INVALID_CONFIG", "异步图片通道缺少显式参数契约");
   // Follow-reference ratios outside the named list ride the gpt-image

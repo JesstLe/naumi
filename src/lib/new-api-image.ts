@@ -1,3 +1,5 @@
+import {executionImageParameterPlan} from './model-config/image-plan-runtime';
+import {applyImageParameterPlan} from './model-config/image-parameter-plan';
 import { getNewApiImageSettings } from "@/lib/image-model-catalog";
 import { observeModelCall, modelExecutionTelemetry } from "@/lib/bi/model-observer";
 import { currentModelExecution, type ModelExecutionScope } from "./model-config/context";
@@ -102,7 +104,8 @@ export async function generateNewApiImage(input: {
   const quality = managed && scope.parameterMap.qualityPolicy ? policyQuality(scope.parameterMap.qualityPolicy, scope.frozen.facts?.quality || input.quality) : undefined;
   const requestedResolution=scope?.frozen.facts?.requestedResolution;
   const legacyResolution=requestedResolution && (scope?.capabilities.nativeResolutions as string[]|undefined)?.includes(requestedResolution) ? requestedResolution : scope?.frozen.facts?.resolution;
-  const mapSize=(body:Record<string,any>)=>mapResolution(body,managed?scope.parameterMap.resolutionPolicy:undefined,scope?.frozen.facts?.requestedResolution||scope?.frozen.facts?.resolution,scope?.frozen.facts?.ratio);
+  const parameterPlan=managed?executionImageParameterPlan(scope,{}):undefined;
+  const mapSize=(body:Record<string,any>)=>parameterPlan?applyImageParameterPlan(body,parameterPlan):mapResolution(body,managed?scope.parameterMap.resolutionPolicy:undefined,scope?.frozen.facts?.requestedResolution||scope?.frozen.facts?.resolution,scope?.frozen.facts?.ratio);
   const submit = managed ? modelEndpointFetch(settings.baseUrl, { trustedOrigins: input.trustedOrigins || (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || "").split(/[\s,]+/).filter(Boolean) }, {...scope.connection,costScope:scope}) : supplierCostFetch(fetch,{providerId:"legacy-flow",apiKey:settings.apiKey,baseUrl:settings.baseUrl,wireModel,protocol:"new-api-flow"});
   if (!settings.baseUrl || !settings.apiKey) {
     throw new Error("New API 生图分组尚未配置");

@@ -22,6 +22,7 @@ export const featureNames: Record<string, string> = {
   "tool.inpaint": "局部重绘", "tool.extract": "提取", "tool.garment3d": "服装 3D", "tool.packaging3d": "包装 3D",
 };
 export type ManagedModelRow = {
+  parameterSources?:{id:string;model:string;protocol:string;provider:string;nativeResolutions:string[];parameterMap:import("./types").UpstreamModel["parameterMap"]}[];
   id: string; label: string; alias: string; modality: Modality; supplierRouting?:ModelConfig["publicModels"][number]["supplierRouting"]; channelsEditable?:boolean; displayResolutions?: string[]; publicIds: string[];
   features: { id: string; label: string }[];
   routes: { upstreamId: string; model: string; providerId: string; provider: string; kind: string; enabled: boolean }[];
@@ -95,7 +96,7 @@ export function managedModelRows(snapshot: ModelSnapshot, catalogs: { feature: s
     }).map(c => c.id);
     row.scopeOptions = managedModelScopeOptions(row,eligibleCatalogs);
     row.canvasUnified = row.publicIds.every(id=>config.publicModels.find(m=>m.id===id)?.toolScope?.systems?.includes("canvas"));
-    if (row.modality === "image") {const ids=[...new Set(row.routes.map(r=>r.upstreamId))];row.qualityConfig=qualityConfiguration(config,ids);row.resolutionConfig=resolutionConfiguration(config,ids);}
+    if (row.modality === "image") {const ids=[...new Set(row.routes.map(r=>r.upstreamId))];row.parameterSources=ids.map(id=>{const u=config.upstreamModels.find(u=>u.id===id)!,p=config.providers.find(p=>p.id===u.providerId)!;return {id:u.id,model:u.model,protocol:p.protocol,provider:p.name,nativeResolutions:u.capabilities.nativeResolutions,parameterMap:structuredClone(u.parameterMap)};});row.qualityConfig=qualityConfiguration(config,ids);row.resolutionConfig=resolutionConfiguration(config,ids);}
   }
   return Array.from(rows.values());
 }

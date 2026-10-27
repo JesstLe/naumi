@@ -28,7 +28,7 @@ import { smartLayout } from "@/lib/canvas/smart-layout";
 import { CanvasComposerShell, CanvasComposerFooter, CanvasComposerOptions } from "./composer-shell";
 import { CanvasPromptOptimizer } from "./prompt-optimizer";
 import { CanvasParameterPopover } from "./parameter-popover";
-import {submitCanvasImagegen,resolveCanvasDetailFrame,completeCanvasImagegen} from "@/lib/imagegen/canvas-client";
+import {submitCanvasImagegen,resolveCanvasDetailFrame,resolveCanvasLegacyFrame,completeCanvasImagegen} from "@/lib/imagegen/canvas-client";
 import {ImagegenPendingRecovery} from "./imagegen-pending-recovery";
 import {FrameRatioDialog,useCanvasFrameChoice} from "./frame-ratio-dialog";
 import {imageOutputWarningText} from "@/lib/imagegen/output-advisory";
@@ -1607,6 +1607,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         isCurrent:()=>account===canvasAccountRef.current&&project===(activeProjectRef.current?.key||null)&&epoch===canvasContextEpochRef.current&&(init.isCurrent?.()??true)});
     }
     if (path === "/api/generate-image") {
+      if(form){form.set('ratio',normalizeCanvasRatio(body.ratio));await resolveCanvasLegacyFrame(form,frameChoice.chooseFrame,()=>{try{assertCurrent();return true;}catch{return false;}});assertCurrent();body.ratio=String(form.get('ratio')||'auto');}
       if(form?.has("canvasReferences")) {
         try {
           const manifest=canvasReferenceManifestSchema.parse(JSON.parse(String(form.get("canvasReferences"))));

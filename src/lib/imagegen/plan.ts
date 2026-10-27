@@ -1,5 +1,6 @@
 import {resolveImageResolution,resolutionFallbackMessage,resolutionFacts,upstreamAcceptsResolution} from "../model-config/resolution-fallback";
 import "server-only";
+import {compileImageParameterPlan,imagePlanSelection,configuredImageCapabilities} from '../model-config/image-parameter-plan';
 import {createHash} from "node:crypto";
 import {imagegenRequestSchema} from "./schema";
 import {resolveImagegenIntent} from "./intent";
@@ -100,8 +101,8 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
    let unsupported=missing;
    if(!missing){
     try{
-     const extra=mapImagegenParameters(imagegenWireRequest({...request,output:{...request.output,background:requirements.background||undefined}}),publishedImagegenCapabilities(source.capabilities),source.parameterMap.imagegen||{});
-     unsupported=Object.keys(extra).length>0&&(!["openai-images","router-images"].includes(provider!.protocol)||provider?.options?.imageAdapter==="reverse-hub");
+     const extra=mapImagegenParameters(imagegenWireRequest({...request,output:{...request.output,background:requirements.background||undefined}}),configuredImageCapabilities(source,publishedImagegenCapabilities(source.capabilities)),source.parameterMap.imagegen||{});
+     unsupported=Object.keys(extra).length>0&&(!["openai-images","router-images","apimart-images"].includes(provider!.protocol)||provider?.options?.imageAdapter==="reverse-hub");
     }catch(error){if(!(error instanceof Error)||!/^实际参数/.test(error.message))throw error;unsupported=true;}
    }
    if(unsupported)candidates.excluded.push({upstreamId:candidate.upstreamId,codes:["IMAGEGEN_PARAMETER_UNSUPPORTED"]});
@@ -113,6 +114,7 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
   assertToolScope(models.config,featureId,modelId);
   if(model.target.type!=="upstream"&&!model.supplierRouting&&candidates.excluded.length)throw new ImagegenPlanError("当前聚合通道尚不能限制高级参数候选，请管理员维护全部候选能力");
   const q=await runExecutionBundle({frozen:{modelVersion:models.version,billingVersion:billing.version},billing},()=>quoteForActor(owner,{feature:featureId,quantity:operation==="cutout"?1:request.variants,modelId,quality:request.parameters.quality||"medium",resolution:requestedResolution,ratio:request.parameters.ratio||"1:1"},{effectiveResolution:stageFacts.resolution}));
+  if(q.imageParameterPlanVersion===1)q.imageParameterPlans=Object.fromEntries(candidates.eligible.map(c=>{const u=models.config.upstreamModels.find(u=>u.id===c.upstreamId)!,p=models.config.providers.find(p=>p.id===u.providerId)!;return [u.id,compileImageParameterPlan(u,imagePlanSelection({...stageFacts,requestedResolution:stageFacts.resolution},{...request,output:{...request.output,background:requirements.background||undefined}}),{publicModelId:modelId,protocol:p.protocol,modelVersion:models.version,adapter:p.options?.imageAdapter})];}));
   if(stageResolution?.changed)warnings.push(resolutionFallbackMessage(stageResolution));
   steps.push({key,operation,modelId,eligibleUpstreamIds:candidates.eligible.map(c=>c.upstreamId),parameters:{quality:request.parameters.quality||"medium",resolution:stageFacts.resolution,ratio:request.parameters.ratio||"1:1"},credits:q.tariff.pricing.mode==="api-cost-plus"?q.authorizedCredits:q.requestedCredits,billingQuote:q});
  };
@@ -128,6 +130,6 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
   for(let i=0;i<request.variants;i++)await append(`cutout-${i}`,"cutout",cutout,{...intent,operation:"cutout"},"tool.cutout");
   warnings.push("所选模型先生成，再通过后台指定的抠图模型生成透明图；两步积分已合计，原图保留。");
  }else await append("generate",intent.operation,id,intent,feature);
- return {...((resolutionChoice?.changed||steps.some(s=>s.parameters.resolution!==requestedResolution))?{requestedParameters:{quality:request.parameters.quality||"medium",resolution:requestedResolution,ratio:request.parameters.ratio||"1:1"}}:{}),channelContractVersion:1,ratioContractVersion:2,request,intent,fingerprint,modelVersion:models.version,billingVersion:billing.version,skillInstructions:skill?.instructions,steps,totalCredits:steps.reduce((n,s)=>n+s.credits,0),confirmationRequired:false,warnings};
+ return {imageParameterPlanVersion:1,...((resolutionChoice?.changed||steps.some(s=>s.parameters.resolution!==requestedResolution))?{requestedParameters:{quality:request.parameters.quality||"medium",resolution:requestedResolution,ratio:request.parameters.ratio||"1:1"}}:{}),channelContractVersion:1,ratioContractVersion:2,request,intent,fingerprint,modelVersion:models.version,billingVersion:billing.version,skillInstructions:skill?.instructions,steps,totalCredits:steps.reduce((n,s)=>n+s.credits,0),confirmationRequired:false,warnings};
 }
 

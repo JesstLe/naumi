@@ -1,3 +1,5 @@
+import {executionImageParameterPlan} from './image-plan-runtime';
+import {applyImageParameterPlan} from './image-parameter-plan';
 import "server-only";
 import { createHash } from "node:crypto";
 import sharp from "sharp";
@@ -57,7 +59,8 @@ export async function reverseHubImageRequest(request: Request, scope: ModelExecu
     ratio = [...RATIOS].sort((a, b) => { const value = (r: string) => { const [w, h] = r.split(":").map(Number); return Math.abs(Math.log(w / h / aspect)); }; return value(a) - value(b); })[0];
   }
   if (!RATIOS.has(ratio)) reject("即梦不支持该比例，请选择已开放的比例");
-  mapResolution(parameters, scope.parameterMap.resolutionPolicy, resolution, ratio);
+  const parameterPlan=executionImageParameterPlan(scope,body,{quality:String(scope.frozen.facts?.quality||'medium'),resolution:resolution||'1K',ratio});
+  if(parameterPlan)applyImageParameterPlan(parameters,parameterPlan);else mapResolution(parameters, scope.parameterMap.resolutionPolicy, resolution, ratio);
   if (parameters.resolution && !["1k", "1.5k", "2k", "4k"].includes(parameters.resolution) || Object.keys(parameters).some(k => !["prompt", "n", "response_format", "resolution", "ratio"].includes(k))) reject("即梦分辨率映射字段或实际值无效");
   parameters.ratio = ratio;
   if (mask) {

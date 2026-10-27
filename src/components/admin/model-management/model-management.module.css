@@ -191,3 +191,14 @@
 .parameterAdvanced { margin-top:14px; padding:12px; border:1px dashed #dce6f0; border-radius:8px; }
 .parameterAdvanced summary { cursor:pointer; color:#617a90; font-size:12px; }
 .parameterAdvanced[open] summary { margin-bottom:12px; }
+
+.mappingTable { width:100%; table-layout:fixed; border-collapse:collapse; margin:12px 0; font-size:13px; }
+.mappingTable th,.mappingTable td { padding:8px 6px; text-align:left; border-bottom:1px solid #e5ebf3; overflow-wrap:anywhere; }
+.mappingTable input { box-sizing:border-box; min-width:0; width:100%; padding:8px; border:1px solid #d9e2ee; border-radius:6px; color:#1e293b; background:#fff; }
+.mappingTable th { color:#64748b; font-size:12px; font-weight:500; }
+@media(max-width:600px) { .mappingTable { font-size:12px; } .mappingTable th,.mappingTable td { padding:6px 3px; } }
+
+.parameterRoute h3 { margin:0 0 16px; font-size:14px; }
+.parameterOptionRow { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; }
+.parameterOptionRow button { padding:7px 12px; border:1px solid #dce4ef; border-radius:8px; background:white; color:#475569; font:inherit; cursor:pointer; }
+.parameterOptionRow button[aria-pressed=true] { color:#1d4ed8; border-color:#93b4f8; background:#eff6ff; }
