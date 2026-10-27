@@ -15,7 +15,8 @@ export function publicOutputBoundary(text: string, literals: readonly string[]):
     suffix(literal);
     for (let at = text.indexOf(literal); at >= 0; at = text.indexOf(literal, at + 1)) ranges.push([at, at + literal.length]);
   }
-  suffix("sk-", true); suffix("Bearer ", true); suffix("-----BEGIN "); suffix("![");
+  suffix("sk-", true); suffix("Bearer ", true); suffix("-----BEGIN "); suffix("!["); suffix("/media/");
+  for(const match of text.matchAll(/\/media\/[\w./%-]+/g)) { const stop=match.index!+match[0].length; if(stop===text.length)end=Math.min(end,match.index!); else ranges.push([match.index!,stop]); }
   for (const match of text.matchAll(/\b(?:sk-[A-Za-z0-9_-]*|Bearer(?:\s+[A-Za-z0-9._~-]*)?)/gi)) {
     const start = match.index!, stop = start + match[0].length;
     if (stop === text.length) end = Math.min(end, start);

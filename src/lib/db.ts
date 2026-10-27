@@ -4100,6 +4100,8 @@ export type AgentSessionRow = {
   steps: unknown;
   created_at: string;
   updated_at: string;
+  /** Exact database timestamp, not a JS Date rounded to milliseconds. */
+  revision?: string;
 };
 
 // ── 业务项目注册表 ──────────────────────────────────────────────────────────
@@ -4216,20 +4218,33 @@ export async function saveAgentSession(
   id: string,
   title: string,
   messages: unknown,
-  steps: unknown
-): Promise<void> {
+  steps: unknown,
+  expectedRevision?: string | null
+): Promise<string> {
   await ensureSchema();
   await migrateAgentSessions();
-  await getPool().query(
+  const values = [id, email.toLowerCase(), title.slice(0, 120), JSON.stringify(messages ?? []), JSON.stringify(steps ?? [])];
+  // UPDATE must never become INSERT: a deleted session cannot be resurrected by
+  // a late cached writer, including a delete racing this statement.
+  const saved = typeof expectedRevision === "string" ? await getPool().query(
+    `UPDATE app_agent_sessions SET title=$3,messages=$4,steps=$5,
+       updated_at=GREATEST(clock_timestamp(),updated_at + interval '1 microsecond')
+     WHERE id=$1 AND email=$2 AND updated_at=$6::timestamptz
+     RETURNING updated_at::text AS revision`, [...values, expectedRevision]
+  ) : await getPool().query(
     `INSERT INTO app_agent_sessions (id, email, title, messages, steps, updated_at)
-     VALUES ($1,$2,$3,$4,$5,now())
+     VALUES ($1,$2,$3,$4,$5,clock_timestamp())
      ON CONFLICT (email, id) DO UPDATE SET
        title = EXCLUDED.title,
        messages = EXCLUDED.messages,
        steps = EXCLUDED.steps,
-       updated_at = now()`,
-    [id, email.toLowerCase(), title.slice(0, 120), JSON.stringify(messages ?? []), JSON.stringify(steps ?? [])]
+       updated_at = GREATEST(clock_timestamp(),app_agent_sessions.updated_at + interval '1 microsecond')
+     WHERE $6::boolean
+     RETURNING updated_at::text AS revision`,
+    [...values, expectedRevision === undefined]
   );
+  if (!saved.rows[0]) throw Object.assign(new Error("会话已在其他连接更新，请重新打开会话；已有任务不会重新执行"), { code: "AGENT_SESSION_CONFLICT" });
+  return saved.rows[0].revision as string;
 }
 
 // 旧库迁移:若表存在但主键不是 (email,id),原地重建(数据保留)。
@@ -4289,7 +4304,7 @@ export async function getAgentSession(
   await ensureSchema();
   await migrateAgentSessions();
   const { rows } = await getPool().query(
-    `SELECT id, email, title, messages, steps, created_at, updated_at
+    `SELECT id, email, title, messages, steps, created_at, updated_at, updated_at::text AS revision
        FROM app_agent_sessions WHERE id = $1 AND email = $2`,
     [id, email.toLowerCase()]
   );
@@ -4312,6 +4327,16 @@ export async function listAgentSessions(
   return rows as AgentSessionRow[];
 }
 
+/** Resolve only explicit historical addresses; never infer artifacts from prose. */
+export async function knownAgentMedia(email: string, urls: string[]): Promise<string[]> {
+  const paths = [...new Set(urls)].filter(url => /^\/media\/[\w./%-]+$/.test(url)).slice(-100);
+  if (!paths.length) return [];
+  await ensureSchema();
+  const { rows } = await getPool().query(`SELECT image_url AS url FROM app_artworks WHERE email=$1 AND image_url=ANY($2::text[]) AND deleted_at IS NULL
+    UNION SELECT video_url AS url FROM app_artworks WHERE email=$1 AND video_url=ANY($2::text[]) AND deleted_at IS NULL`, [email.toLowerCase(), paths]);
+  return rows.map(row => row.url as string);
+}
+
 export async function renameAgentSession(
   email: string,
   id: string,
@@ -4321,7 +4346,7 @@ export async function renameAgentSession(
   await migrateAgentSessions();
   const result = await getPool().query(
     `UPDATE app_agent_sessions
-        SET title = $3, updated_at = now()
+        SET title = $3, updated_at = GREATEST(clock_timestamp(),updated_at + interval '1 microsecond')
       WHERE id = $1 AND email = $2`,
     [id, email.toLowerCase(), title.slice(0, 120)]
   );

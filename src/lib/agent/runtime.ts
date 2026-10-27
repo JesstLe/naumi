@@ -1,5 +1,6 @@
 
 import { streamDiagnostic } from "./stream-recovery";
+import { resultMediaUrls, unsupportedMedia, unsupportedReview, evidenceOnlyReply, EXECUTION_EVIDENCE_PROMPT, type ToolReceipt } from "./execution-evidence";
 import { agentRestrictionMessage } from "./public-status";
 import {createModelActivityTracker,type PublicModelPhase} from "./model-activity";
 import { publicToolDetails } from "./tool-presentation";
@@ -19,6 +20,7 @@ import {
   getUser,
   creditMeteringEnabled,
   saveAgentSession,
+  knownAgentMedia,
 } from "@/lib/db";
 import { AGENT_SYSTEM_PROMPT, createNaumiTools } from "@/lib/agent/naumi-tools";
 import { getImageJob } from "@/lib/image-job-repository";
@@ -37,7 +39,7 @@ import { startAgentActivity, endAgentActivity, type AgentActivity } from "@/lib/
 import { withAcceptedExecution } from "@/lib/release-runtime/accepted-context";
 import { accountKey, releaseIdentity } from "@/lib/release-runtime/identity";
 import {currentCreationContext,withFrozenCreation,bindCreationParent,assertCreationFeature,type CreationContext} from '@/lib/saas/creation-context';
-import {startCreation,finishCreation} from '@/lib/saas/creation-writer';
+import {startCreation,finishCreation,recordAgentToolEvidence} from '@/lib/saas/creation-writer';
 import {enterpriseCreationRead} from '@/lib/enterprise/server';
 
 // ---------------------------------------------------------------------------
@@ -97,11 +99,18 @@ export type Session = {
   email: string;
   title: string;
   /** 凭证对(cookie+authorization),会话续期时刷新 */
-  cred: { cookie: string; authorization: string; imageQuality?: string; canvas?: CanvasAgentContext;imageSkill?:Pick<ImageSkill,"id"|"revision"> };
+  cred: { cookie: string; authorization: string; imageQuality?: string; originalRequest?: string; canvas?: CanvasAgentContext;imageSkill?:Pick<ImageSkill,"id"|"revision"> };
   contextStamp?: string;
   onToolResult?: (result: unknown, tool: string, toolCallId: string) => Promise<void>;
   toolResultsPending?: Promise<void>;
   persistPending?: Promise<void>;
+  persistedRevision?: string | null;
+  persistenceConflict?: boolean;
+  knownMedia: Set<string>;
+  receipts: ToolReceipt[];
+  evidenceMismatch?: boolean;
+  taskContext?: { request: string; references: string[]; currentRequest: string };
+  preflightFailures: Map<string,{message:string;code:string}>;
   turnId?: string;
   createdAt: number;
   lastUsedAt: number;
@@ -258,31 +267,38 @@ async function createRuntimeSession(
   const managed = scope ? await configuredPiModels(scope,{userEmail:email,feature:options ? 'canvas.assistant' : 'agent.text'}) : null;
   const contextStamp = JSON.stringify({ canvas: options?.canvas, billingVersion: currentExecutionBundle()?.billingVersion, imageSkill: imageSkill ? { id: imageSkill.id, revision: imageSkill.revision } : null });
   const existing = SESSIONS.get(key(email, sessionId));
-  if (existing && (existing.running || existing.canvasExecuting || existing.modelId === modelId && existing.modelExecutionStamp === managed?.stamp && existing.contextStamp === contextStamp)) {
+  if (existing && (existing.running || existing.canvasExecuting)) {
     existing.lastUsedAt = Date.now();
-    // 凭证刷新:token/会话可能已轮换,常驻实例必须用最新凭证
-    if (!existing.running && !existing.canvasExecuting) existing.cred = { ...cred, canvas: options?.canvas,imageSkill:imageSkill?{id:imageSkill.id,revision:imageSkill.revision}:undefined };
-    if (!existing.running && !existing.canvasExecuting) existing.onToolResult = options?.onToolResult;
     return existing;
   }
-
-  // A skill/context switch must rebuild the prompt from the latest persisted history.
-  await existing?.persistPending;
+  // An idle owner may migrate between slots. Never reuse its old memory without
+  // checking the current durable snapshot, including writes from older binaries.
+  await existing?.persistPending?.catch(() => undefined);
+  const persisted = dbEnabled ? await getAgentSession(email, sessionId) : null;
+  if (existing && !existing.persistenceConflict && (!dbEnabled || existing.persistedRevision === (persisted?.revision ?? null)) &&
+      existing.modelId === modelId && existing.modelExecutionStamp === managed?.stamp && existing.contextStamp === contextStamp) {
+    existing.lastUsedAt = Date.now();
+    existing.cred = { ...cred, canvas: options?.canvas, imageSkill: imageSkill ? { id: imageSkill.id, revision: imageSkill.revision } : undefined };
+    existing.onToolResult = options?.onToolResult;
+    return existing;
+  }
   if (existing) SESSIONS.delete(key(email, sessionId));
   const models = managed?.models || await ensureModels(modelId);
   const model = models.getModel("naumi-relay", managed?.wireModel || modelId);
   if (!model) throw new Error("模型不可用");
 
-  const persisted = dbEnabled
-    ? await getAgentSession(email, sessionId)
-    : null;
   const savedHistory = Array.isArray(persisted?.messages) ? persisted.messages.filter((turn:any)=>["user","assistant"].includes(turn?.role)&&typeof turn?.content==="string").map((turn:any)=>({role:String(turn.role),content:String(turn.content)})) : history;
+  const historicUrls = savedHistory.flatMap(turn => [...turn.content.matchAll(/\/media\/[\w./%-]+/g)].map(match => match[0]));
   const session: Session = {
     creationScope:currentCreationContext()?{...currentCreationContext()!}:undefined,
     harness: new AgentHarness(email, sessionId, event => appendSessionEvent(session, "harness", event)),
     id: sessionId,
     modelId,
     modelExecutionStamp: managed?.stamp,
+    persistedRevision: persisted?.revision ?? null,
+    knownMedia: new Set(dbEnabled ? await knownAgentMedia(email, historicUrls) : []),
+    receipts: Array.isArray(persisted?.steps) ? persisted.steps.flatMap((e:any)=>e.type==="tool_end"&&e.receipt&&typeof e.receipt.callId==="string"&&Array.isArray(e.receipt.outputs)?[e.receipt]:[]) : [],
+    preflightFailures: new Map(),
     email,
     title: persisted?.title || history[0]?.content.slice(0, 120) || "Agent 任务",
     cred: { ...cred, canvas: options?.canvas,imageSkill:imageSkill?{id:imageSkill.id,revision:imageSkill.revision}:undefined },
@@ -305,15 +321,15 @@ async function createRuntimeSession(
   session.harness.registerSecret(settings.apiKey);
   const tools = createNaumiTools(
     new Request(process.env.INTERNAL_APP_ORIGIN || "http://127.0.0.1:3012/"), email,
-    () => ({...session.cred,...session.preparedBilling,imagegenPlan:session.preparedImagegen,videoWorkflow:session.preparedVideoWorkflow}),
+    () => ({...session.cred,...session.preparedBilling,imagegenPlan:session.preparedImagegen,videoWorkflow:session.preparedVideoWorkflow,originalRequest:session.taskContext?.request}),
     acceptedBundle ? () => signAcceptedModelContext(email, acceptedBundle) : undefined,
-    options?.canvas, session.harness,
+    options?.canvas, session.harness, () => session.taskContext,
   );
   session.harness.configure(describeNaumiTools(tools));
   let modelRequestedAt = 0;
   const agent = new Agent({
     initialState: {
-      systemPrompt: buildAgentSystemPrompt(AGENT_SYSTEM_PROMPT, "", latestUserText({ messages: savedHistory })),
+      systemPrompt: buildAgentSystemPrompt(AGENT_SYSTEM_PROMPT + "\n" + EXECUTION_EVIDENCE_PROMPT, "", latestUserText({ messages: savedHistory })),
       model: model as Model<"openai-completions">,
       tools,
       messages: conversationMessages(savedHistory,managed?.wireModel||modelId),
@@ -355,6 +371,7 @@ async function createRuntimeSession(
       }
       const precheck = () => agentBillingPrecheck(session,toolCall.name,args as Record<string,unknown>,toolCall.id);
       const result = session.harness.sanitize(await (acceptedBundle ? withFrozenExecutionBundle(acceptedBundle, precheck) : precheck()));
+      if(result?.block)session.preflightFailures.set(toolCall.id,{message:result.reason,code:'code' in result&&typeof result.code==='string'?result.code:'TOOL_NOT_SUBMITTED'});
       // Typed presentation signal only; billing decisions and public reply stay intact.
       if (result && "attention" in result && result.attention) appendSessionEvent(session, "attention", { id: toolCall.id, kind: result.attention, tool: toolCall.name, message: result.reason });
       else if (!result?.block) {
@@ -376,7 +393,12 @@ async function createRuntimeSession(
     modelActivity(event);
     if (event.type === "message_start" && event.message.role === "assistant") {
       modelStartedAt = Date.now();
-      publicOutput = new PublicOutputBuffer(session.harness, text => session.onDelta?.(text));
+      publicOutput = new PublicOutputBuffer(session.harness, text => {
+        const missing = unsupportedMedia(text, session.knownMedia);
+        if (missing.length) session.evidenceMismatch = true;
+        for (const url of missing) text = text.split(url).join("[未核验的媒体地址]");
+        session.onDelta?.(text);
+      });
     }
     const push = (type: string, data: Record<string, unknown>) => {
       session.events.push({ type, at: Date.now(), data: session.harness.sanitize(data) });
@@ -396,6 +418,25 @@ async function createRuntimeSession(
       const details = (e.result as { details?: { publicSummary?: string; verificationStatus?: string } } | undefined)
         ?.details;
       const toolFailed = !!(e.isError || e.result?.isError || details?.verificationStatus === "unavailable");
+      const raw = e.result as {details?:Record<string,unknown>;content?:{type?:string;text?:string}[]} | undefined;
+      const outputs = toolFailed ? [] : resultMediaUrls(e.result);
+      outputs.forEach(url => session.knownMedia.add(url));
+      const preflight=session.preflightFailures.get(e.toolCallId);
+      const rawSummary = preflight?.message || raw?.details?.publicSummary || (toolFailed ? raw?.content?.filter(p=>p.type==="text").map(p=>p.text||"").join("\n") : "工具执行完成");
+      const summary = session.harness.publicText(String(rawSummary || "工具执行失败"), false).replace(/https?:\/\/[^\s"<>]+/g,"[服务地址]").slice(0,300);
+      const receipt: ToolReceipt = {callId:e.toolCallId,tool:e.toolName||"",turnId:session.turnId||"",success:!toolFailed,outputs,summary,
+        ...(preflight?{code:preflight.code,submissionState:"not_submitted" as const}:{}),
+        ...(typeof raw?.details?.verificationStatus==="string"?{verification:raw.details.verificationStatus as ToolReceipt["verification"]}:{}),
+        ...(typeof raw?.details?.score==="number"?{score:raw.details.score}:{}),...(typeof raw?.details?.imageUrl==="string"?{imageUrl:raw.details.imageUrl}:{})};
+      session.receipts.push(receipt);
+      if(session.receipts.length>256)session.receipts.splice(0,session.receipts.length-256);
+      // Persist the outcome before optional asynchronous canvas attachment.
+      push("tool_end", {
+        id: e.toolCallId, tool: e.toolName ?? "", summary, turnId: session.turnId, outputs, receipt,
+        ...(preflight?{code:preflight.code,submissionState:"not_submitted"}:{}), isError: toolFailed,
+      });
+      session.preflightFailures.delete(e.toolCallId);
+      void persistAgentSession(session).catch(()=>undefined);
       if (!toolFailed && session.onToolResult) {
         const pending = session.onToolResult(e.result, e.toolName || "", e.toolCallId);
         session.toolResultsPending = Promise.all([session.toolResultsPending || Promise.resolve(),pending]).then(()=>undefined);
@@ -403,17 +444,6 @@ async function createRuntimeSession(
         try { await pending; }
         catch { push("error", { message: "工具结果已生成，画布挂载需要恢复；请勿重新生成" }); }
       }
-      push("tool_end", {
-        id: e.toolCallId,
-        tool: e.toolName ?? "",
-        summary:
-          details?.publicSummary ||
-          (toolFailed
-            ? "工具执行失败，请查看安全错误提示"
-            : "工具执行完成"),
-        isError: toolFailed,
-      });
-      void persistAgentSession(session).catch(()=>undefined);
     } else if(event.type === "tool_execution_update") {
       const update=event as unknown as {toolCallId:string;toolName?:string;partialResult?:{details?:{publicSummary?:string;stage?:string}}};
       if(update.partialResult?.details?.publicSummary)push("tool_start",{id:update.toolCallId,tool:update.toolName||"",summary:update.partialResult.details.publicSummary,stage:update.partialResult.details.stage});
@@ -432,6 +462,13 @@ async function createRuntimeSession(
         publicOutput?.finish(); publicOutput = undefined;
         for (const part of e.message.content || []) {
           if (part && typeof part === "object" && "type" in part && part.type === "text" && "text" in part) part.text = session.harness.publicText(String(part.text));
+        }
+        const candidateText = (e.message.content as {type?:string;text?:string}[]).filter(p=>p.type==="text").map(p=>p.text||"").join("");
+        if (unsupportedMedia(candidateText, session.knownMedia).length || unsupportedReview(candidateText, session.receipts, session.turnId || "")) {
+          session.evidenceMismatch = true;
+          const text = evidenceOnlyReply(session.receipts.filter(r=>r.turnId===session.turnId));
+          e.message.content = [{type:"text",text}, ...e.message.content.filter((p:any)=>p.type!=="text")];
+          push("attention", {kind:"restricted",code:"EXECUTION_EVIDENCE_MISMATCH",message:"完成说明与实际执行记录不一致，已保留可核实的结果",turnId:session.turnId});
         }
         const message = event.message as {model?: string; provider?: string; responseModel?: string; stopReason?: string; usage?: {input?: number; output?: number}};
         if (message.model && message.provider !== "naumi-local") void recordBiModelCompletion({
@@ -460,7 +497,7 @@ async function createRuntimeSession(
       session.running = true;
       push("agent_start", {});
     } else if (event.type === "agent_end") {
-      session.running = false;
+      // Keep admission closed until result attachment and durable evidence finish.
       session.lastUsedAt = Date.now();
       push("agent_end", {});
       void persistAgentSession(session).catch(()=>undefined);
@@ -486,12 +523,19 @@ async function createRuntimeSession(
       if (!session.turnId || session.turnId === lastPromptTurn) session.turnId = crypto.randomUUID();
       lastPromptTurn = session.turnId;
       session.harness.begin(input, originalAbort);
+      session.evidenceMismatch = false;
+      const previousRequests = agent.state.messages.filter(m=>m.role==="user").map(m=>typeof m.content==="string"?m.content:m.content.filter((p:any)=>p.type==="text").map((p:any)=>p.text).join("\n"));
+      const requestContext = `前序用户要求（按时间顺序，最新修改优先）：\n${previousRequests.join("\n\n")}\n\n本轮用户原文：\n${input}`;
+      const references = [...new Set([...(options?.canvas.imageUrls||[]), ...Array.from(requestContext.matchAll(/\[商品图\]\s*(?:https?:\/\/[^\s/]+)?(\/media\/[\w./%-]+)/g),m=>m[1])])].slice(-6);
+      references.forEach(url=>session.knownMedia.add(url));
+      session.taskContext = {request:requestContext.slice(-6000),references,currentRequest:input};
+      session.cred.originalRequest = session.taskContext.request;
       session.harness.modelStep();
       agent.prepareNextTurn=()=>{session.harness.modelStep();return undefined;};
       const identity=releaseIdentity(),activity=session.releaseActivity;
       const context=currentCreationContext()||session.creationScope;
       const creation=context?await bindCreationParent({...context,requestText:input},sessionId):undefined;
-      const messageStart=agent.state.messages.length,eventStart=session.events.length;
+      const messageStart=agent.state.messages.length;
       return await withFrozenCreation(creation,async()=>{
         const id=await startCreation('agent-turn',`${sessionId}:${session.turnId}`,email,{prompt:input});
         session.creationScope=creation?{...creation,creationId:undefined,requestText:undefined}:undefined;
@@ -499,10 +543,14 @@ async function createRuntimeSession(
           const result=await withAcceptedExecution(activity?{id:activity.id,account:accountKey(email),instanceId:identity.instanceId,bootId:identity.bootId}:undefined,()=>originalPrompt(session.harness.publicText(input,false), images));
           const replies=agent.state.messages.slice(messageStart).filter(m=>m.role==='assistant');
           const last=replies.at(-1) as {content?:unknown;stopReason?:string}|undefined;
-          const text=replies.flatMap(m=>Array.isArray(m.content)?m.content.filter((p:any)=>p.type==='text').map((p:any)=>String(p.text||'')):[]).join('\n');
-          const errors=session.events.slice(eventStart).some(e=>e.type==='tool_end'&&e.data.isError===true);
-          const status=last?.stopReason==='aborted'?'cancelled':last?.stopReason==='error'?'failed':['deferred','length'].includes(last?.stopReason||'')?'needs_review':errors?'partial':'succeeded';
-          await finishCreation(id||undefined,email,status,{text,eventKey:`turn:${session.turnId}:finished`});
+          const text=Array.isArray(last?.content)?last.content.filter((p:any)=>p.type==='text').map((p:any)=>String(p.text||'')).join('\n'):'';
+          const receipts=session.receipts.filter(r=>r.turnId===session.turnId);
+          const errors=receipts.some(r=>!r.success);
+          const reviewPending=receipts.some(r=>r.verification==='failed'||r.verification==='unavailable');
+          const status=last?.stopReason==='aborted'?'cancelled':last?.stopReason==='error'?'failed':session.evidenceMismatch||reviewPending||['deferred','length'].includes(last?.stopReason||'')?'needs_review':errors?'partial':'succeeded';
+          const evidenceSaved = await recordAgentToolEvidence(id||undefined,email,receipts.map(r=>({id:r.callId,tool:r.tool,isError:!r.success,summary:r.summary,code:r.code,submissionState:r.submissionState})));
+          if(!evidenceSaved)appendSessionEvent(session,"error",{code:"CREATION_EVIDENCE_PENDING",message:"工具结果已保留，执行记录待核查；请勿重新生成",turnId:session.turnId});
+          await finishCreation(id||undefined,email,evidenceSaved?status:'needs_review',{text,eventKey:`turn:${session.turnId}:finished`});
           return result;
         }catch(error){await finishCreation(id||undefined,email,'needs_review',{eventKey:`turn:${session.turnId}:interrupted`,summary:'本轮执行中断，已接受的工具任务按其固定任务状态恢复'});throw error;}
       });
@@ -511,7 +559,8 @@ async function createRuntimeSession(
       session.harness.finish();
       // Canvas holds accepted-work ownership through result attachment/billing,
       // not merely until the model's final token or the client disconnect.
-      if (!session.canvasExecuting) await completeAgentReleaseActivity(session);
+      try { if (!session.canvasExecuting) await completeAgentReleaseActivity(session); }
+      finally { session.running = false; }
     }
   }) as typeof agent.prompt;
   SESSIONS.set(key(email, sessionId), session);
@@ -580,6 +629,7 @@ export function appendSessionEvent(
 export async function persistAgentSession(session: Session): Promise<void> {
   if (!dbEnabled || session.id.startsWith("tmp-")) return;
   session.persistPending = (session.persistPending || Promise.resolve()).catch(() => undefined).then(async () => {
+  if (session.persistenceConflict) throw Object.assign(new Error("会话已更新，请重新打开会话；已有任务不会重新执行"), { code: "AGENT_SESSION_CONFLICT" });
   const messages = session.agent.state.messages.flatMap((message) => {
     if (message.role !== "user" && message.role !== "assistant") return [];
     const content = Array.isArray(message.content)
@@ -593,13 +643,17 @@ export async function persistAgentSession(session: Session): Promise<void> {
   const steps = session.events
     .filter((event) => ["harness","plan","tool_start","tool_end","attention","canvas_turn","image_skill","artifacts","video_nodes","text_nodes","agent_start","agent_end","canvas_terminal","assistant","canvas_reply","model_stream_end","error"].includes(event.type))
     .map((event) => ({ ...event.data, type: event.type, at: event.at }));
-  await saveAgentSession(
+  try { session.persistedRevision = await saveAgentSession(
     session.email,
     session.id,
     session.harness.publicText(session.title,false),
     messages,
-    steps
-  );
+    steps,
+    session.persistedRevision ?? null
+  ); } catch (error) {
+    if ((error as { code?: string }).code === "AGENT_SESSION_CONFLICT") session.persistenceConflict = true;
+    throw error;
+  }
   });
   await session.persistPending;
 }

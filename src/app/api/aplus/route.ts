@@ -732,7 +732,7 @@ async function parseInput(request: Request) {
     requestedQuality: f.get("quality") ?? undefined,
     billingVersion:f.get("billingVersion")??undefined,billingCredits:f.get("billingCredits")??undefined,
     images,
-    extra: (f.get("text") ?? "").toString().trim().slice(0, 600),
+    extra: (f.get("text") ?? "").toString().trim().slice(0, 6000),
     platform: (f.get("platform") ?? "amazon").toString().trim().slice(0, 20),
     lang: (f.get("lang") ?? "auto").toString().trim().slice(0, 10),
     format,

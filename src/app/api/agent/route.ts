@@ -131,7 +131,12 @@ async function handlePut(request: Request) {
   }
   appendSessionEvent(session, "plan", { items: buildTaskPlan(message, !!imageSkill?.instructions.includes("name: brand-packaging-strategy")) });
   session.running = true;
-  await persistAgentSession(session);
+  try { await persistAgentSession(session); }
+  catch(error) {
+    session.running=false;
+    if((error as {code?:string}).code==='AGENT_SESSION_CONFLICT')return NextResponse.json({error:'会话已在其他连接更新，请重新打开；已有任务不会重新执行',code:'AGENT_SESSION_CONFLICT',sessionId},{status:409});
+    throw error;
+  }
 
   const encoder = new TextEncoder();
   let cancelStream = () => {
@@ -421,7 +426,11 @@ async function handlePost(request: Request) {
     clearTimeout(timeout);
     request.signal.removeEventListener("abort",onAbort);
     session.running=false;
-    await persistAgentSession(session);
+    try { await persistAgentSession(session); }
+    catch(error) {
+      if((error as {code?:string}).code==='AGENT_SESSION_CONFLICT')return NextResponse.json({error:'会话已在其他连接更新，请重新打开；已有任务不会重新执行',code:'AGENT_SESSION_CONFLICT',sessionId:tempId},{status:409});
+      throw error;
+    }
   }
   const lastAssistant = [...session.agent.state.messages]
     .reverse()

@@ -150,6 +150,19 @@ export async function finishCreation(id:string|undefined,email:string,status:Cre
   await getPool().query("UPDATE app_creation_records SET status='needs_review',updated_at=now() WHERE id=$1 AND actor_email=$2",[id,email.toLowerCase()]).catch(()=>{});
  }
 }
+/** Append each actual tool outcome to its immutable turn, independent of session snapshots. */
+export async function recordAgentToolEvidence(id:string|undefined,email:string,events:Record<string,unknown>[]) {
+ if(!dbEnabled||!id||!events.length)return true;
+ try { await creationTransaction(async tx=>{
+  if(!(await tx.query('SELECT 1 FROM app_creation_records WHERE id=$1 AND actor_email=$2',[id,email.toLowerCase()])).rowCount)throw new Error('创作证据归属不一致');
+  for(const e of events.slice(0,64)){
+   const evidence={tool:String(e.tool||'').slice(0,80),callId:String(e.id||'').slice(0,120),failed:!!e.isError,summary:String(e.summary||'').slice(0,220),code:typeof e.code==='string'?e.code.slice(0,80):undefined,submissionState:e.submissionState==='not_submitted'?'not_submitted':undefined};
+   // The existing event column contract truncates at 1000 chars; keep valid JSON.
+   while(JSON.stringify(evidence).length>1000&&evidence.summary)evidence.summary=evidence.summary.slice(0,-1);
+   await creationEventTx(tx,id,`tool:${String(e.id)}`,'agent-tool',e.isError?'failed':'succeeded',JSON.stringify(evidence));
+  }
+ }); return true; } catch { return false; } // Evidence failure never repeats a successful paid operation.
+}
 export async function withCreationOperation<T>(kind:string,sourceId:string,email:string,payload:unknown,run:()=>Promise<T>,outputs:(result:T)=>{artworkIds?:string[];text?:string} = ()=>({})) {
  const scope=currentCreationContext();if(!scope||!dbEnabled)return run();
  const id=await startCreation(kind,sourceId,email,payload);

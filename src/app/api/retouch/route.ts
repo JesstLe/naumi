@@ -49,7 +49,7 @@ async function parseInput(request: Request) {
       type: file.type || "image/png",
     },
     options: options.length > 0 ? options : ["gloss", "clarity"],
-    extra: (f.get("text") ?? "").toString().trim().slice(0, 400),
+    extra: (f.get("text") ?? "").toString().trim().slice(0, 6000),
     email: (f.get("email") ?? "").toString().trim(),
   };
 }

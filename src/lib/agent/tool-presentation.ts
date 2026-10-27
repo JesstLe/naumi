@@ -24,9 +24,12 @@ export function publicToolDetails(tool: string, input: unknown, canvas?: CanvasA
   add("quality", canvasEdit ? canvas.quality : args.quality ?? (imageCanvas ? canvas.quality : undefined), value => /^(?:low|medium|high|xhigh|max)$/.test(value));
   add("output_format", args.output_format, value => /^(?:png|jpeg|webp|mp4|webm)$/.test(value));
   add("background", args.background, value => /^(?:transparent|opaque)$/.test(value));
+  add("model", args.model, value => /^[\w.:-]{1,100}$/.test(value));
+  add("degree", args.degree, value => /^(?:high|style)$/.test(value));
+  if(Array.isArray(args.input_roles))add("input_roles",args.input_roles.join(","),value=>/^(?:edit-target|reference|insert|style)(?:,(?:edit-target|reference|insert|style))*$/.test(value));
   // These Canvas edits always use the server-resolved reference set, not the model's URL argument.
   const canvasRefs = canvasEdit && canvas.imageUrls.length > 0;
-  const refs = canvasRefs ? canvas.imageUrls : Array.isArray(args.image_urls) ? args.image_urls.filter(x => typeof x === "string") : tool === "generate_image" && imageCanvas ? canvas.imageUrls : typeof args.image_url === "string" ? [args.image_url] : [];
+  const refs = canvasRefs ? canvas.imageUrls : Array.isArray(args.image_urls) ? args.image_urls.filter(x => typeof x === "string") : tool === "generate_image" && imageCanvas ? canvas.imageUrls : typeof args.image_url === "string" ? [args.image_url] : [args.product_image_url,args.reference_image_url].filter(x=>typeof x==='string');
   const targetId = canvas?.anchorId && refs.includes(canvas.imageUrls[0]) ? canvas.anchorId : undefined;
   return { parameters, ...(targetId ? { targetId } : {}), ...(refs.length ? { inputCount: Math.min(refs.length, 32) } : {}) };
 }

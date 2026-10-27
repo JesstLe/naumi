@@ -16,6 +16,7 @@ CREATE TABLE app_billing_operations(id text PRIMARY KEY,email text,state text,ch
 CREATE TABLE app_supplier_calls(id uuid PRIMARY KEY,operation_id text,user_email text,provider_id text,model text,actual_model text,state text,cost_status text,delivered int,request_id text,task_id text,evidence jsonb,started_at timestamptz default now(),updated_at timestamptz default now());
 CREATE TABLE app_creation_records(id text PRIMARY KEY,actor_email text,tenant_id uuid,parent_id text,source_kind text,source_id text);
 CREATE TABLE app_creation_links(creation_id text,actor_email text,target_type text,target_id text);
+CREATE TABLE app_creation_events(creation_id text,type text,status text,summary text,occurred_at timestamptz default now());
 CREATE TABLE app_video_workflow_runs(id uuid PRIMARY KEY,email text);
 CREATE TABLE app_video_workflow_run_nodes(run_id uuid,node_id text,task_id text,status text,error text,updated_at timestamptz default now());`);
 const owner='owner@failure.fixture',other='other@failure.fixture',tenant=crypto.randomUUID(),tenant2=crypto.randomUUID();

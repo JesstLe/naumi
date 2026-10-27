@@ -60,7 +60,7 @@ async function parseInput(request: Request) {
     products,
     ref: refImg,
     degree: (f.get("degree") ?? "high").toString().trim() === "style" ? "style" : "high",
-    extra: (f.get("text") ?? "").toString().trim().slice(0, 400),
+    extra: (f.get("text") ?? "").toString().trim().slice(0, 6000),
     reversePrompt: (f.get("reversePrompt") ?? "").toString().trim().slice(0, 8000),
     platform: (f.get("platform") ?? "amazon").toString().trim().slice(0, 20),
     lang: (f.get("lang") ?? "auto").toString().trim().slice(0, 10),
