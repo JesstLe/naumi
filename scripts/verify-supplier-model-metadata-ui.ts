@@ -10,9 +10,9 @@ async function main(){
   assert.equal((await context.request.post(origin+"/api/admin/login",{data:{password:"MvpFixture2026!"}})).status(),200);await context.addCookies([{name:"nv_user",value:f.memberCookie,domain:"127.0.0.1",path:"/"}]);
   const before=await(await context.request.get(origin+"/api/admin/bi/model-config")).json();
   await page.goto(origin+"/admin/model-management");await page.getByRole("link",{name:"元数据与成本库",exact:true}).click();
-  await expect(page.getByRole("heading",{name:"模型规格与成本，有据可查。",exact:true})).toBeVisible();
-  await page.getByRole("button",{name:"导入现有配置与缓存",exact:true}).click();
-  await expect(page.getByRole("status")).toContainText("人工维护的能力和成本保留");
+  await expect(page.getByRole("heading",{name:"供应商资料库",exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"导入配置与缓存",exact:true}).click();
+  await expect(page.getByRole("status")).toContainText("导入配置");
   await page.getByTestId("metadata-edit-gpt-image-2").click();const dialog=page.getByRole("dialog",{name:"维护供应商模型元数据",exact:true});
   await dialog.getByLabel("模型家族",{exact:true}).fill("验收图片家族");await dialog.getByLabel("品牌",{exact:true}).fill("验收品牌");
   await dialog.getByLabel("能力信息状态",{exact:true}).selectOption("documented");await dialog.getByLabel("能力信息来源",{exact:true}).fill("Isolated fixture specification only");
@@ -30,7 +30,7 @@ async function main(){
   const saved=await(await context.request.get(origin+"/api/admin/model-management/library?brand="+encodeURIComponent("验收品牌"))).json();const model=saved.models[0];
   assert.equal(model.prices[0].inputMicrosPerMillion,"1250000");assert.equal(model.prices[0].cachedInputMicrosPerMillion,"125000");assert.equal(model.capabilityState,"documented");assert.equal(model.parameterMetadata.seed.default,42);
   const downloading=page.waitForEvent("download");await page.getByRole("button",{name:"导出当前页",exact:true}).click();const file=await downloading,exported=JSON.parse(await readFile((await file.path())!,"utf8"));assert.equal(exported.schemaVersion,1);assert.equal(exported.models.length,1);assert.ok(!JSON.stringify(exported).includes("credentialRef"));
-  await page.getByRole("button",{name:"发现目录并同步",exact:true}).click();await expect(page.getByRole("status")).toContainText("人工维护的能力和成本保留");
+  await page.getByRole("button",{name:"同步上游目录",exact:true}).click();await expect(page.getByRole("status")).toContainText("导入配置");
   const preserved=await(await context.request.get(origin+"/api/admin/model-management/library?id="+model.id)).json();assert.equal(preserved.model.brand,"验收品牌");assert.deepEqual(preserved.model.prices,model.prices);
   await page.getByTestId("metadata-edit-gpt-image-2").click();await dialog.getByRole("button",{name:"查看修订记录",exact:true}).click();await expect(dialog.getByText(/v2 ·/)).toBeVisible();await dialog.getByRole("button",{name:"取消",exact:true}).click();
   await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.getByTestId("metadata-edit-gpt-image-2").click();

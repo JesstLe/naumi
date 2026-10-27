@@ -1,0 +1,10 @@
+import type {SupplierMetadata,SupplierModelSummary} from "@/lib/supplier-models/types";
+export const endpoint="/api/admin/model-management/library";
+export const states:Record<string,string>={unknown:"未知",configured:"来自配置",documented:"文档声明",verified:"已验证"};
+export const bases:Record<string,string>={request:"按次",image:"按张",token:"按token量",second:"按秒",frame:"按帧"};
+export const modalities:Record<string,string>={unknown:"未分类",image:"图片",text:"文字",video:"视频",audio:"音频",embedding:"向量",other:"其他"};
+export type Listing={models:SupplierModelSummary[];total:number;page:number;pageSize:number;facets:{providers:{id:string;name:string}[];families:string[];brands:string[]};providers:{id:string;name:string;enabled:boolean}[]};
+export type Filter={q:string;provider:string;family:string;brand:string;basis:string;state:string;page:number};
+export const moneyFields=["amountMicros","inputMicrosPerMillion","outputMicrosPerMillion","cachedInputMicrosPerMillion","imageInputMicrosPerMillion"] as const;
+export const moneyNames:Record<string,string>={amountMicros:"单价",inputMicrosPerMillion:"输入 / 百万token",outputMicrosPerMillion:"输出 / 百万token",cachedInputMicrosPerMillion:"缓存输入 / 百万token",imageInputMicrosPerMillion:"图片输入 / 百万token"};
+export type ChangeMetadata=<K extends keyof SupplierMetadata>(key:K,value:SupplierMetadata[K])=>void;

@@ -1,5 +1,7 @@
 # 渐进迁移与集中验收台账
 
+2026-10-27 R6I：供应商资料库查询/详情/单文档草稿与能力/报价/映射分责，去口号和说明，微金额与原资料/原id保留；完整旧21/新25与5组可编辑字段/原POST同、sync旧闭包OLD→CURRENT/卸载导出DOWNLOAD→NONE、PG三组/相邻管理35-18/类型通过。第3模块，固定core/四产物/副本回滚与main普通同步见DELIVERY，整体active、不合main不部署。见[R6I记录](../changes/2026-10-27-refactor-supplier-library-r6i.md)。
+
 2026-10-27 R6H：模型管理目录/发布会话与12类编辑器分责，单一带类型editor替代独立弹窗flags，原RSA helper同函数兼容；完整旧33/新53、18HTML与原POST精确同，late-read旧STALE→新FRESH、卸载后原pending保留且GET0，真实PG五组/类型/结构通过。历史参数fixture旧新同失败已修准备，生产CAS不改；固定1bd07c79 core28/28、最终浏览器53/18及tsc/lint通过；17原函数/1476后端字节不变、SCC0。四产物/副本回滚/远端以DELIVERY为准。同步后第2模块，资料大面板/测试资产/长时负载/依赖与最终整合继续，不合main不部署，整体active。见[R6H记录](../changes/2026-10-27-refactor-model-management-r6h.md)。
 
 

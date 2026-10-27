@@ -16,7 +16,6 @@ export function ImagegenMetadataEditor({parameters,onChange,disabled}:{parameter
     onChange({...parameters,imagegen:next});
   };
   return <fieldset disabled={disabled||!parameters}><legend>图像高级能力与参数依据</legend>
-    <p>人工维护优先；没有人工记录时使用有来源的供应商资料。保存此库不会改变既有执行映射，发布配置时固定引用。</p>
     {IMAGEGEN_CAPABILITY_KEYS.map(key=>{const own=manual.capabilities[key],fallback=supplier.capabilities[key];return <fieldset key={key}><legend>{names[key]}</legend>
       <label>支持情况<select aria-label={`${names[key]}支持情况`} value={own?.state??"inherit"} onChange={e=>change(key,e.target.value==="inherit"?null:{state:e.target.value as CapabilityEvidence["state"]})}>
         <option value="inherit">使用供应商资料兜底{fallback?`（${fallback.state==="supported"?"文档支持":"未知"}）`:"（未知）"}</option>
@@ -29,7 +28,7 @@ export function ImagegenMetadataEditor({parameters,onChange,disabled}:{parameter
         <option value="">未维护{supplier.wireMap[key]?`；文档建议 ${supplier.wireMap[key]}`:"，不猜测"}</option>
         {IMAGEGEN_FIELDS_BY_CAPABILITY[key].map(field=><option key={field} value={field}>{field==="omit"?"明确不发送":field}</option>)}
       </select></label>}
-      <small>{own?"人工设置":fallback?`来源兜底：${fallback.source}；${fallback.checkedAt}`:"供应商没有提供已确认资料，状态未知"}</small>
+      {!own&&fallback&&<small>{fallback.source} · {fallback.checkedAt}</small>}
     </fieldset>;})}
   </fieldset>;
 }
