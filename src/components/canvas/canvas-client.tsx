@@ -50,7 +50,10 @@ import { createImageDownloadName } from "@/lib/download";
 import { clipboardImageFiles } from "@/lib/canvas/clipboard-files";
 import { CANVAS_RATIO_OPTIONS, CANVAS_MAX_COUNT, normalizeCanvasRatio, normalizeCanvasResolution, normalizeCanvasCount, normalizeCanvasQuality, canvasModelParameters } from "@/lib/canvas/generation-parameters";
 import { canvasDockLayout, canvasOverlaySafeArea, type NodeScreen } from "@/lib/canvas/dock-layout";
-import { createProjectRootResolver } from "@/lib/canvas/project-roots";
+import {canvasProjects,canvasProjectMonths,type CanvasProject as Project,type CanvasWorkflowKey} from "@/lib/canvas/project-catalog";
+import {useCanvasProjectCatalog} from "./use-canvas-project-catalog";
+import {CanvasProjectBrowser} from "./project-browser";
+import {CanvasProjectMenu,CanvasProjectTitle} from "./project-chrome";
 import { canvasGenerationReferences, explicitCanvasParent } from "@/lib/canvas/input-references";
 import { canvasFocusViewport } from "@/lib/canvas/upload-visibility";
 import { readPlacementCache, type CanvasPoint } from "@/lib/canvas/stable-placement";
@@ -171,7 +174,7 @@ import {
   currentThemeIsDark,
   toggleAccountTheme,
 } from "@/components/account/account-dock-menu";
-import { cn, formatDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import {useCanvasImageImports} from "./use-canvas-image-imports";
 import {CanvasImageImportStatus} from "./image-import-status";
 import {CANVAS_IMAGE_UPLOAD_LIMIT as MAX_UPLOAD,type CanvasImageImportContext} from "@/lib/canvas/image-imports";
@@ -305,45 +308,6 @@ function fmt(s: string, vars: Record<string, string | number>): string {
 }
 
 
-type Project = {
-  key: string;
-  members: Artwork[];
-  textNodes: CanvasTextNode[];
-  videoNodes?: CanvasVideoNode[];
-  isSuite: boolean;
-  cover: string;
-  count: number;
-  name: string;
-  latestAt: string;
-};
-
-type CanvasWorkflowKey = "hero" | "detail" | "views" | "copy";
-const CANVAS_WORKFLOWS: Array<{
-  key: CanvasWorkflowKey;
-  icon: LucideIcon;
-  titleKey: string;
-  descriptionKey: string;
-}> = [
-  { key: "hero", icon: ImageIcon, titleKey: "canvas.workflowHero", descriptionKey: "canvas.workflowHeroDesc" },
-  { key: "detail", icon: GalleryVerticalEnd, titleKey: "canvas.workflowDetail", descriptionKey: "canvas.workflowDetailDesc" },
-  { key: "views", icon: Rotate3d, titleKey: "canvas.workflowViews", descriptionKey: "canvas.workflowViewsDesc" },
-  { key: "copy", icon: Type, titleKey: "canvas.workflowCopy", descriptionKey: "canvas.workflowCopyDesc" },
-];
-
-
-
-
-
-// 沿血缘上溯到根作品(带环保护)
-function rootOf(a: Artwork, byId: Map<string, Artwork>): Artwork {
-  let cur = a;
-  let guard = 0;
-  while (cur.parentId && byId.has(cur.parentId) && guard++ < 200) {
-    cur = byId.get(cur.parentId) as Artwork;
-  }
-  return cur;
-}
-
 // ===== 竞品反推 → 智能帮写 → 成套生成 链路的纯文本工具 =====
 // 去掉内容开头由产品绑定自动加的 "@产品图" 行(生成图片时提示词不应包含)
 // 复刻模式生成时追加的防抄袭约束:产品取自产品原图,竞品图只当构图参考
@@ -395,19 +359,7 @@ function viewPrompt(
   }${feedback ? ` 用户补充要求：${feedback}` : ""}`;
 }
 
-// 项目键:只有"一键套图"(batchId 以 suite- 开头)整批算一个项目;
-// 普通生成的批次号是 b-...(每次生成都有),不能当项目分组依据,否则每次迭代都成独立项目、
-// 血缘连不起来 —— 普通图一律按血缘树(根 id)分组。
-function isSuiteBatch(id?: string | null): boolean {
-  return !!id && id.startsWith("suite-");
-}
-function projectKey(a: Artwork, byId: Map<string, Artwork>, resolveRoot = (art: Artwork) => rootOf(art, byId)): string {
-  const r = resolveRoot(a);
-  if (isSuiteBatch(r.batchId)) return `batch:${r.batchId}`;
-  // 稳定分组:优先用 group_id(删中间节点也不变,下游节点不会跑去别的项目);
-  // 没有 group_id 的老数据回退到"血缘树根 id"。
-  return `tree:${a.groupId || r.id}`;
-}
+
 
 // 占位节点(空白/上传中)动作上下文:让 React Flow 内的节点能调用主组件的上传
 // 计算当前选中节点的整条血缘链路:上溯所有祖先 + 下延所有衍生(含自身)
@@ -480,7 +432,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const worksRef = useRef<Artwork[] | null>(null);
   const dimensionSyncRef = useRef(new Set<string>());
   const artworkPlacementRef = useRef({ scope: "", positions: new Map<string, CanvasPoint>() });
-  const [names, setNames] = useState<Record<string, string>>({});
   // 管理员看指定用户:?email=<用户> → 只读查看该用户画布;?node=<作品id> → 预选中那张
   const [targetEmail, setTargetEmail] = useState<string | null>(null);
   const [readOnly, setReadOnly] = useState(false);
@@ -537,16 +488,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     project:activeKey,enabled:ready&&!!user&&!!targetEmail,readOnly});
   const {nodes:works,set:setWorks} = canvasArtworkDocument;
   worksRef.current=works;
+  const projectCatalog=useCanvasProjectCatalog({scope:canvasArtworkDocument.scope,ready:ready&&!!targetEmail,actor:user?.email||"",target:targetEmail||"",readOnly,notice:flashTip,failure:t("canvas.genFail")});
 
   const frameChoice=useCanvasFrameChoice(imageDraftScope(user?.email,targetEmail,activeKey));
   const canvasSelection=useCanvasSelection();
   const {selectedId,setSelectedId,selectedPendId,setSelectedPendId,selectedTextId,setSelectedTextId,selectedEdge,setSelectedEdge,multiSel,setMultiSel}=canvasSelection;
   const selectedIdRef = useRef<string | null>(null);
-  const [renamingKey, setRenamingKey] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [browserTab, setBrowserTab] = useState<"all" | "workflows">("all");
-  const cancelEditRef = useRef(false); // Esc 取消时跳过失焦保存
   const imageDraftNodeId = selectedPendId || selectedId;
   const imageDraftArtwork = selectedPendId ? undefined : works?.find(art => art.id === selectedId);
   const imageDraft = useImageNodeDraft(
@@ -748,7 +696,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     return () => document.removeEventListener("keydown", close);
   }, [historyPicker]);
   // 「全部项目」网格里每张卡片的「...」菜单(重命名/删除)当前展开的是哪个项目
-  const [projMenuKey, setProjMenuKey] = useState<string | null>(null);
   // 回收站(软删除的作品):打开状态 + 列表 + 操作中
   const [trashOpen, setTrashOpen] = useState(false);
   const {trash:trashItems,trashBusy} = canvasArtworkDocument;
@@ -1081,9 +1028,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 余额轮询会回写新的 user 对象；仅账号变化才重载画布，避免覆盖正在编辑的内容。
   const authenticatedEmail = user?.email;
   useEffect(() => {
-    setNames({});
     if (!ready || !authenticatedEmail) return;
-    let cancelled = false;
     const sp = new URLSearchParams(window.location.search);
     const emailParam = sp.get("email");
     const target = emailParam || authenticatedEmail;
@@ -1109,13 +1054,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     restoredRef.current = true;
     setTargetEmail(target);
     setReadOnly(ro);
-    void privateFetchRaw(`/api/projects?email=${encodeURIComponent(target)}`)
-      .then(response=>expectJsonOk(response,"项目名称读取失败"))
-      .then(data=>{if(!cancelled)setNames((data?.names??{}) as Record<string,string>);})
-      .catch(()=>{});
-    return () => {
-      cancelled = true;
-    };
   }, [ready, authenticatedEmail]);
 
   // 文字节点内容自适应高度:内容/引用/宽度变化时按估算调高(阈值 28px 防抖)。
@@ -1169,116 +1107,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, user]);
 
-  const { projects } = useMemo(() => {
-    const arts = (works ?? []).filter(
-      (a) => a.status === "completed" && a.origin!=="workbench" && (hasRenderableImage(a.image) || Boolean(a.videoUrl))
-    );
-    const byId = new Map(arts.map((a) => [a.id, a]));
-    const groups = new Map<string, Artwork[]>();
-    const resolveRoot = createProjectRootResolver(byId);
-    for (const a of arts) {
-      const k = projectKey(a, byId, resolveRoot);
-      const arr = groups.get(k) ?? [];
-      arr.push(a);
-      groups.set(k, arr);
-    }
-    // 画布只是"高级工作台":单一作品库不分家,但项目列表只展示真正在画布作业过的项目 ——
-    //   · 套图批次(本来就是一组)
-    //   · 多节点血缘树(用户在画布上迭代/衍生过)
-    //   · 含"显式加入画布"的节点(上传/复制/历史/拉线衍生 = source∈下表)
-    //   · 用户重命名过的(说明在意它)
-    // 那些从没在画布动过的、孤张一次性生图(生图页/套图页直接产出的单图)不在画布出现,
-    // 它们仍在作品库/生图页可见。轻度用户因此基本不会看到画布。
-    const CANVAS_SOURCES = new Set(["canvas-add", "derived", "upload"]);
-    const imageProjects: Project[] = Array.from(groups.entries())
-      .map(([key, members]) => {
-        members.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
-        const latest = members[members.length - 1];
-        const root =
-          members.find((m) => !(m.parentId && byId.has(m.parentId))) ??
-          members[0];
-        const isSuite = key.startsWith("batch:");
-        const defaultName = isSuite ? t("canvas.suiteProject") : root.title;
-        return {
-          key,
-          members,
-          textNodes: [],
-          isSuite,
-          cover: latest.image,
-          count: members.length,
-          name: names[key] ?? defaultName,
-          latestAt: latest.createdAt,
-        };
-      })
-      .filter(
-        (p) =>
-          // 管理员只读查看用户作品时不过滤:让单张一次性生图也能进画布(否则深链找不到→空白)
-          readOnly ||
-          p.isSuite ||
-          p.members.length > 1 && !p.members.every(member=>member.origin==="workbench") ||
-          p.members.some((m) => m.source && CANVAS_SOURCES.has(m.source)) ||
-          p.members.some((m) => m.origin === "canvas") ||
-          p.members.some((m) => m.marked) ||
-          names[p.key] != null ||
-          // ?node= 深链进来的那张(如抠图「送画布」):即使单张也放行,否则落到空列表
-          (pinnedNode != null && p.members.some((m) => m.id === pinnedNode))
-      );
-    const projectMap = new Map(imageProjects.map((project) => [project.key, project]));
-    for (const textNode of textNodes) {
-      const existing = projectMap.get(textNode.projectKey);
-      if (existing) {
-        existing.textNodes.push(textNode);
-        existing.count = existing.members.length + existing.textNodes.length;
-        if (textNode.updatedAt > existing.latestAt) existing.latestAt = textNode.updatedAt;
-        continue;
-      }
-      projectMap.set(textNode.projectKey, {
-        key: textNode.projectKey,
-        members: [],
-        textNodes: [textNode],
-        isSuite: false,
-        cover: "",
-        count: 1,
-        name: names[textNode.projectKey] ?? textNode.title ?? t("canvas.textProject"),
-        latestAt: textNode.updatedAt || textNode.createdAt,
-      });
-    }
-    for(const videoNode of videoNodesStore.nodes){
-      const existing=projectMap.get(videoNode.projectKey);
-      if(existing){existing.videoNodes=[...(existing.videoNodes||[]),videoNode];existing.count++;if(videoNode.updatedAt>existing.latestAt)existing.latestAt=videoNode.updatedAt;}
-      else projectMap.set(videoNode.projectKey,{key:videoNode.projectKey,members:[],textNodes:[],videoNodes:[videoNode],isSuite:false,cover:"",count:1,name:names[videoNode.projectKey]||videoNode.title,latestAt:videoNode.updatedAt});
-    }
-    const projects = Array.from(projectMap.values());
-    projects.sort((a, b) => (a.latestAt < b.latestAt ? 1 : -1));
-    return { projects };
-  }, [works, names, t, readOnly, pinnedNode, textNodes,videoNodesStore.nodes]);
-
-  const projectMonths = useMemo(() => {
-    const language =
-      typeof navigator !== "undefined" && navigator.language
-        ? navigator.language
-        : "zh-CN";
-    const formatter = new Intl.DateTimeFormat(language, {
-      year: "numeric",
-      month: "long",
-    });
-    const sections = new Map<string, { label: string; projects: Project[] }>();
-    for (const project of projects) {
-      const date = new Date(project.latestAt);
-      const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
-      const key = `${safeDate.getFullYear()}-${String(safeDate.getMonth() + 1).padStart(2, "0")}`;
-      const section = sections.get(key) ?? {
-        label: formatter.format(safeDate),
-        projects: [],
-      };
-      section.projects.push(project);
-      sections.set(key, section);
-    }
-    return Array.from(sections.entries()).map(([key, section]) => ({
-      key,
-      ...section,
-    }));
-  }, [projects]);
+  const projects=useMemo(()=>canvasProjects({works,names:projectCatalog.names,t,readOnly,pinnedNode,textNodes,videoNodes:videoNodesStore.nodes}),[works,projectCatalog.names,t,readOnly,pinnedNode,textNodes,videoNodesStore.nodes]);
+  const projectMonths=useMemo(()=>canvasProjectMonths(projects,typeof navigator!=="undefined"&&navigator.language?navigator.language:"zh-CN"),[projects]);
 
   // 打开中的项目消失了(被删 / 根节点变化导致 key 变)→ 回到项目网格,而非自动弹别的项目
   useEffect(() => {
@@ -2126,30 +1956,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(!selected||!user||readOnly)return;const id=selected.id,scope=canvasHistory.scope;
     try{await canvasHistory.submit(scope,()=>{const cur=canvasArtworkDocument.getSnapshot().nodes?.find(w=>w.id===id);return cur?{kind:"mark",changes:[{id,from:!!cur.marked,to:!cur.marked}]}:null;});}
     catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.genFail"));}
-  }
-
-  async function saveRename(key: string) {
-    const name = renameValue.trim();
-    setRenamingKey(null);
-    if (readOnly || !name || !user) return;
-    const previous = names[key];
-    setNames((prev) => ({ ...prev, [key]: name }));
-    try {
-      const res = await privateFetchRaw("/api/projects", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: user.email, key, name }),
-      });
-      await expectJsonOk(res, t("canvas.genFail"));
-    } catch (e) {
-      setNames((prev) => {
-        const next = { ...prev };
-        if (previous) next[key] = previous;
-        else delete next[key];
-        return next;
-      });
-      flashTip(e instanceof Error ? e.message : t("canvas.genFail"));
-    }
   }
 
   // Prompt/ratio are synchronously node-scoped drafts. Only ephemeral dock UI
@@ -3169,7 +2975,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     try {
       await canvasNodeOperations.removeProject(p.key);
       if(!scope.documentCurrent())return;
-      setNames(previous=>{if(!scope.documentCurrent())return previous;const next={...previous};delete next[p.key];return next;});
+      if(scope.documentCurrent())projectCatalog.remove(p.key);
       if(scope.viewCurrent()&&p.key===activeKey){setActiveKey(null);canvasSelection.patch({selectedId:null,selectedTextId:null,selectedPendId:null});setCreatingNew(false);setBrowsing(true);}
     }catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.genFail"));}
   }
@@ -4374,7 +4180,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       moreToolsOpen ||
       zoomMenuOpen ||
       sidebarOpen ||
-      projMenuKey ||
+      projectCatalog.menuKey ||
       textComposerExpanded ||
       textComposerMenuOpen
   );
@@ -4765,97 +4571,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       )}
 
       <div className="relative flex min-h-0 flex-1">
-        {/* 左上项目下拉:点击外部关闭 */}
-        {sidebarOpen && (
-          <div
-            className="absolute inset-0 z-30"
-            onClick={() => setSidebarOpen(false)}
-          />
-        )}
-        <aside
-          className={cn(
-            "canvas-ui-surface absolute left-3 top-[108px] z-40 flex max-h-[min(72vh,540px)] w-[min(200px,calc(100%-24px))] flex-col overflow-hidden rounded-2xl border transition-all duration-150 md:top-[60px]",
-            lightCanvas ? "canvas-ui-light" : "canvas-ui-dark",
-            sidebarOpen
-              ? "pointer-events-auto translate-y-0 opacity-100"
-              : "pointer-events-none -translate-y-1 opacity-0"
-          )}
-        >
-          {/* 项目菜单(对齐原型图3:回到主页/全部项目/创建新项目/重命名/删除项目) */}
-          <div className="flex-none border-b border-border p-1.5">
-            {/* 全部项目 = 画布的项目网格(不是作品库) */}
-            <button
-              type="button"
-              onClick={backToBrowser}
-              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-secondary"
-            >
-              <LayoutGrid className="h-4 w-4 text-muted-foreground" />
-              {t("canvas.allProjects")}
-            </button>
-            <Link
-              href="/"
-              onClick={() => setSidebarOpen(false)}
-              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-foreground transition-colors hover:bg-secondary"
-            >
-              <Home className="h-4 w-4 text-muted-foreground" />
-              {t("canvas.home")}
-            </Link>
-            {/* 作品库 = 所有生成作品的画廊(/dashboard),与画布项目区分开 */}
-            <Link
-              href="/dashboard"
-              onClick={() => setSidebarOpen(false)}
-              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-foreground transition-colors hover:bg-secondary"
-            >
-              <ImageIcon className="h-4 w-4 text-muted-foreground" />
-              {t("nav.dashboard")}
-            </Link>
-            {/* 回收站:已删除的作品(保留 180 天,可恢复) */}
-            {!readOnly && (
-              <button
-                type="button"
-                onClick={openTrash}
-                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-secondary"
-              >
-                <Trash2 className="h-4 w-4 text-muted-foreground" />
-                {t("canvas.trash")}
-              </button>
-            )}
-            <div className="my-1 h-px bg-border" />
-            <button
-              type="button"
-              onClick={startNewProject}
-              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-secondary"
-            >
-              <Plus className="h-4 w-4 text-muted-foreground" />
-              {t("canvas.newProject")}
-            </button>
-            {active && !readOnly && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    // 关掉下拉,改名统一在左上 pill 内联完成(避免双输入抢焦点)
-                    setSidebarOpen(false);
-                    setRenamingKey(active.key);
-                    setRenameValue(active.name);
-                  }}
-                  className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-secondary"
-                >
-                  <Pencil className="h-4 w-4 text-muted-foreground" />
-                  {t("canvas.rename")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void deleteProject(active)}
-                  className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-red-400 transition-colors hover:bg-red-500/10"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  {t("canvas.deleteProjectShort")}
-                </button>
-              </>
-            )}
-          </div>
-        </aside>
+        <CanvasProjectMenu active={active} catalog={projectCatalog} readOnly={readOnly} open={sidebarOpen} setOpen={setSidebarOpen} lightCanvas={lightCanvas} t={t} onBrowse={backToBrowser} onTrash={openTrash} onNew={startNewProject} onDelete={deleteProject}/>
 
         {/* 右:画布 */}
         <div
@@ -4911,253 +4627,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           ) : canvasArtworkDocument.phase === "error" && works === null ? (
             <div data-testid="canvas-artwork-unavailable" className="flex h-full items-center justify-center text-sm text-slate-600">作品暂未加载</div>
           ) : browsing ? (
-            <div
-              data-testid="canvas-project-browser"
-              className="h-full overflow-y-auto bg-[#f6f7f9] px-4 py-6 text-[#20242c] sm:px-8 sm:py-8"
-            >
-              <div className="mx-auto w-full max-w-[1680px]">
-                <div className="mb-7 flex items-end justify-between border-b border-[#dfe3e8]">
-                  <div className="flex items-center gap-7">
-                    <button
-                      type="button"
-                      onClick={() => setBrowserTab("all")}
-                      className={cn(
-                        "border-b-2 pb-3 text-[15px] font-semibold transition-colors",
-                        browserTab === "all"
-                          ? "border-[#20242c] text-[#20242c]"
-                          : "border-transparent text-[#7a8492] hover:text-[#20242c]"
-                      )}
-                    >
-                      {t("canvas.allProjects")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setBrowserTab("workflows")}
-                      className={cn(
-                        "border-b-2 pb-3 text-[15px] font-semibold transition-colors",
-                        browserTab === "workflows"
-                          ? "border-[#20242c] text-[#20242c]"
-                          : "border-transparent text-[#7a8492] hover:text-[#20242c]"
-                      )}
-                    >
-                      {t("canvas.commonWorkflows")}
-                    </button>
-                  </div>
-                  {!readOnly && (
-                    <button
-                      type="button"
-                      onClick={startNewProject}
-                      className="mb-2.5 flex h-9 items-center gap-2 bg-[#20242c] px-3.5 text-sm font-semibold text-white transition-colors hover:bg-[#343a43]"
-                    >
-                      <Plus className="h-4 w-4" />
-                      {t("canvas.newProject")}
-                    </button>
-                  )}
-                </div>
+                        <CanvasProjectBrowser months={projectMonths} catalog={projectCatalog} readOnly={readOnly} t={t} onNew={startNewProject} onWorkflow={startWorkflow} onOpen={openProject} onDelete={deleteProject}/>
 
-                {projMenuKey && (
-                  <div
-                    className="fixed inset-0 z-20"
-                    onClick={() => setProjMenuKey(null)}
-                  />
-                )}
-
-                <section className="mb-10">
-                  <div className="mb-3 flex items-center justify-between">
-                    <h2 className="text-base font-semibold text-[#20242c]">
-                      {t("canvas.commonWorkflows")}
-                    </h2>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    {CANVAS_WORKFLOWS.map((workflow) => {
-                      const WorkflowIcon = workflow.icon;
-                      return (
-                        <button
-                          key={workflow.key}
-                          type="button"
-                          onClick={() => startWorkflow(workflow.key)}
-                          disabled={readOnly}
-                          className="group flex min-h-[108px] items-start gap-4 border border-[#dfe3e8] bg-white p-4 text-left shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-all hover:-translate-y-0.5 hover:border-[#aeb7c4] hover:shadow-[0_8px_22px_rgba(16,24,40,0.08)] disabled:cursor-default disabled:opacity-60"
-                        >
-                          <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[10px] border border-[#dfe3e8] bg-[#f4f6f8] text-[#46505e] group-hover:border-[#b9c4d2] group-hover:bg-[#edf2f6]">
-                            <WorkflowIcon className="h-5 w-5" />
-                          </span>
-                          <span className="min-w-0">
-                            <span className="block text-sm font-semibold text-[#20242c]">
-                              {t(workflow.titleKey)}
-                            </span>
-                            <span className="mt-1 block text-xs leading-5 text-[#707b89]">
-                              {t(workflow.descriptionKey)}
-                            </span>
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-
-                {browserTab === "all" && (
-                  <section>
-                    <h2 className="mb-4 text-base font-semibold text-[#20242c]">
-                      {t("canvas.personalProjects")}
-                    </h2>
-
-                    {projectMonths.length === 0 && (
-                      <div className="grid grid-cols-2 gap-x-5 gap-y-7 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                        {!readOnly && (
-                          <button
-                            type="button"
-                            onClick={startNewProject}
-                            className="group flex flex-col gap-2 text-left"
-                          >
-                            <span className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-2 border border-dashed border-[#bfc7d2] bg-white text-[#697482] transition-colors group-hover:border-[#7f8b9a] group-hover:text-[#20242c]">
-                              <Plus className="h-7 w-7" strokeWidth={1.5} />
-                              <span className="text-sm font-medium">{t("canvas.startCreate")}</span>
-                            </span>
-                          </button>
-                        )}
-                      </div>
-                    )}
-
-                    {projectMonths.map((section, sectionIndex) => (
-                      <div key={section.key} className="mb-9">
-                        <div className="mb-3 flex items-center gap-3">
-                          <h3 className="text-sm font-semibold text-[#596473]">
-                            {section.label}
-                          </h3>
-                          <span className="h-px flex-1 bg-[#e3e6ea]" />
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-5 gap-y-7 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 min-[1920px]:grid-cols-6">
-                          {sectionIndex === 0 && !readOnly && (
-                            <button
-                              type="button"
-                              onClick={startNewProject}
-                              className="group flex flex-col gap-2 text-left"
-                            >
-                              <span className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-2 border border-dashed border-[#bfc7d2] bg-white text-[#697482] transition-colors group-hover:border-[#7f8b9a] group-hover:text-[#20242c]">
-                                <Plus className="h-7 w-7" strokeWidth={1.5} />
-                                <span className="text-sm font-medium">{t("canvas.startCreate")}</span>
-                              </span>
-                            </button>
-                          )}
-
-                          {section.projects.map((p) => (
-                            <div key={p.key} className="group flex flex-col gap-2">
-                              <button
-                                type="button"
-                                onClick={() => openProject(p.key)}
-                                title={p.name}
-                                className="relative aspect-[16/10] w-full overflow-hidden rounded-[12px] border border-[#d8dde4] bg-white transition-all group-hover:border-[#9da8b6] group-hover:shadow-[0_8px_24px_rgba(16,24,40,0.10)]"
-                              >
-                                {p.cover ? (
-                                  /* eslint-disable-next-line @next/next/no-img-element */
-                                  <CachedImage
-                                    src={cdnUrl(p.cover)}
-                                    alt={p.name}
-                                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.025]"
-                                  />
-                                ) : (
-                                  <div className="flex h-full w-full items-center justify-center bg-[#f2f4f7] p-5 text-left text-[#525b69]">
-                                    <div className="w-full border border-[#dce1e8] bg-white p-3 shadow-sm">
-                                      <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold text-[#7b8491]">
-                                        <Type className="h-3.5 w-3.5" /> {t("canvas.textGenerate")}
-                                      </div>
-                                      <p className="line-clamp-4 whitespace-pre-wrap text-[10px] leading-relaxed">
-                                        {p.textNodes[0]?.content || p.textNodes[0]?.prompt || t("canvas.textEmpty")}
-                                      </p>
-                                    </div>
-                                  </div>
-                                )}
-                              </button>
-                              <div className="flex min-w-0 items-start justify-between gap-2 px-0.5">
-                                <div className="min-w-0 flex-1">
-                                  {renamingKey === p.key && !readOnly ? (
-                                    <input
-                                      autoFocus
-                                      value={renameValue}
-                                      onChange={(e) => setRenameValue(e.target.value)}
-                                      onFocus={(e) => e.currentTarget.select()}
-                                      onClick={(e) => e.stopPropagation()}
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter") e.currentTarget.blur();
-                                        if (e.key === "Escape") {
-                                          cancelEditRef.current = true;
-                                          setRenamingKey(null);
-                                        }
-                                      }}
-                                      onBlur={() => {
-                                        if (cancelEditRef.current) {
-                                          cancelEditRef.current = false;
-                                          return;
-                                        }
-                                        saveRename(p.key);
-                                      }}
-                                      maxLength={60}
-                                      className="w-full border border-[#8090a3] bg-white px-1.5 py-0.5 text-sm font-medium text-[#20242c] outline-none"
-                                    />
-                                  ) : (
-                                    <div className="truncate text-sm font-medium text-[#20242c]">
-                                      {p.name}
-                                    </div>
-                                  )}
-                                  <div className="truncate text-[11px] text-[#7a8492]">
-                                    {formatDate(p.latestAt)}
-                                  </div>
-                                </div>
-                                {!readOnly && (
-                                  <div className="relative flex-none">
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setProjMenuKey((key) => key === p.key ? null : p.key);
-                                      }}
-                                      title={t("canvas.more")}
-                                      className="-mr-1 flex h-7 w-7 items-center justify-center text-[#7a8492] transition-colors hover:bg-[#e9edf2] hover:text-[#20242c]"
-                                    >
-                                      <MoreHorizontal className="h-4 w-4" />
-                                    </button>
-                                    {projMenuKey === p.key && (
-                                      <div className="menu-pop-down absolute right-0 top-9 z-30 w-32 overflow-hidden border border-[#d8dde4] bg-white p-1 text-[#20242c] shadow-xl">
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setProjMenuKey(null);
-                                            setRenamingKey(p.key);
-                                            setRenameValue(p.name);
-                                          }}
-                                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f1f3f6]"
-                                        >
-                                          <Pencil className="h-4 w-4 text-[#7a8492]" />
-                                          {t("canvas.rename")}
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setProjMenuKey(null);
-                                            deleteProject(p);
-                                          }}
-                                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm text-[#d24b45] transition-colors hover:bg-[#fff0ef]"
-                                        >
-                                          <Trash2 className="h-4 w-4" />
-                                          {t("canvas.deleteProjectShort")}
-                                        </button>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </section>
-                )}
-              </div>
-            </div>
           ) : (
 
               <ReactFlow
@@ -5311,86 +4782,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           {/* ── 进入项目后的全屏悬浮挂件(对齐原型:左上项目/右上挂件/底部工具条) ── */}
           {!browsing && (
             <>
-              {/* 左上:logo(点开项目菜单) + 项目名(点进入内联编辑,失焦/回车确定) */}
-              <div className="absolute left-3 top-3 z-30 max-w-[calc(100%-1.5rem)]">
-                <div
-                  data-testid="canvas-project-chrome"
-                  className={cn(
-                    "canvas-ui-surface flex max-w-full items-center gap-0.5 overflow-hidden rounded-xl border px-1.5 py-1.5 backdrop-blur transition-colors",
-                    sidebarOpen && "!border-[var(--canvas-ui-border-strong)]"
-                  )}
-                >
-                  {/* logo:点击展开「项目/重命名/删除…」菜单 */}
-                  <button
-                    type="button"
-                    onClick={() => setSidebarOpen((v) => !v)}
-                    title={BRAND}
-                    className="flex flex-none items-center gap-1 rounded-lg px-1 pr-0.5 transition-colors hover:bg-white/5"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <CachedImage
-                      src={BRAND_CANVAS_LOGO}
-                      alt={BRAND}
-                      className="h-7 w-auto max-w-[108px] flex-none rounded-lg object-contain sm:max-w-[140px]"
-                    />
-                    <ChevronDown
-                      className={cn(
-                        "h-4 w-4 flex-none text-muted-foreground transition-transform",
-                        sidebarOpen && "rotate-180"
-                      )}
-                    />
-                  </button>
-                  {/* 项目名:只读时纯展示;否则点击进入内联编辑 */}
-                  {renamingKey === active?.key && active && !readOnly ? (
-                    <input
-                      autoFocus
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onFocus={(e) => e.currentTarget.select()}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") e.currentTarget.blur();
-                        if (e.key === "Escape") {
-                          cancelEditRef.current = true;
-                          setRenamingKey(null);
-                        }
-                      }}
-                      onBlur={() => {
-                        if (cancelEditRef.current) {
-                          cancelEditRef.current = false;
-                          return;
-                        }
-                        saveRename(active.key);
-                      }}
-                      maxLength={60}
-                      placeholder={t("canvas.renamePlaceholder")}
-                      className="ml-0.5 w-[35vw] max-w-[180px] rounded-lg border border-primary/60 bg-background px-2 py-1 text-sm font-bold text-foreground outline-none"
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (readOnly || !active) {
-                          setSidebarOpen((v) => !v);
-                          return;
-                        }
-                        setRenamingKey(active.key);
-                        setRenameValue(active.name);
-                      }}
-                      title={
-                        readOnly ? undefined : t("canvas.rename")
-                      }
-                      className="ml-0.5 max-w-[35vw] truncate rounded-lg px-2 py-1 text-left text-sm font-bold text-foreground transition-colors hover:bg-white/5 sm:max-w-[200px]"
-                    >
-                      {active ? active.name : t("canvas.newProject")}
-                    </button>
-                  )}
-                  {readOnly && (
-                    <span className="flex-none rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400">
-                      只读
-                    </span>
-                  )}
-                </div>
-              </div>
+              <CanvasProjectTitle active={active} catalog={projectCatalog} readOnly={readOnly} open={sidebarOpen} setOpen={setSidebarOpen} t={t}/>
 
               {/* 右上:分享(下载)/ 模板库 / 会员特惠+积分 / 头像 */}
               <div data-testid="canvas-top-actions" style={{ top: canvasSize.width > 0 && canvasSize.width < 768 ? 60 : 12 }} className="absolute right-3 z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-1.5 overflow-visible">
