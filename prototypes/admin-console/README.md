@@ -62,3 +62,7 @@ node prototypes/admin-console/verify.cjs --root <ABS/prototypes/admin-console> -
 路由与筛选写入本地 URL hash；刷新可以恢复当前子页面/筛选，业务演示草稿仍只在内存中。原始 API、付费生成、Worker、数据库和部署逻辑均不接入。
 
 验证资料：`E:/Workspace/naumi/output/admin-ui-subpages-20261027-r1/`。此目录保存真实初版备份、首次失败、最终回归、副本回滚及完整四制品。
+
+## 真实后台接入（2026-10-27）
+
+用户确认后，正式 Next 后台已接入此浅色布局、完整导航和真实版本公告入口，复用原业务组件/API；见 [真实接入记录](../../docs/changes/2026-10-27-admin-ui-integration.md)。本目录继续保留为离线设计参考，不作为正式后台路由。源码整合与后续服务器发布分别验收。

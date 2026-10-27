@@ -395,7 +395,7 @@ const statuses: Partial<Record<BiSection, [string, string][]>> = {
   ],
 };
 
-export function BiDashboard({ initialSection = "overview" }: { initialSection?: BiSection }) {
+export function BiDashboard({ initialSection = "overview", embedded = false }: { initialSection?: BiSection; embedded?:boolean }) {
   const router = useRouter();
   const [section, setSection] = useState<BiSection>(initialSection);
   const [draft, setDraft] = useState<Filter>(initialFilter);
@@ -520,7 +520,7 @@ export function BiDashboard({ initialSection = "overview" }: { initialSection?: 
   }
   const active = sections.find((s) => s.id === section)!;
   return (
-    <AdminCenterShell active={section} onBiNavigate={navigate}>
+    <AdminCenterShell embedded={embedded} active={section} onBiNavigate={navigate}>
     <div className={styles.shell}>
       <BiTooltip />
       <main className={styles.main}>

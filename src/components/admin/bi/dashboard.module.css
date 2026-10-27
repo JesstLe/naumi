@@ -1,11 +1,11 @@
 .shell {
-  --ink: #192b43;
-  --muted: #67758a;
-  --line: #dfe5ed;
-  --blue: #205ecf;
+  --ink: var(--admin-ink,#192b43);
+  --muted: var(--admin-secondary,#67758a);
+  --line: var(--admin-border,#dfe5ed);
+  --blue: var(--admin-accent,#205ecf);
   display: flex;
-  min-height: 100vh;
-  background: #f2f5f9;
+  min-height: 0;
+  background: var(--admin-background,#f2f5f9);
   color: var(--ink);
   font-size: 13px;
   line-height: 1.5;
@@ -91,7 +91,7 @@
   margin-left: 0;
   min-width: 0;
   flex: 1;
-  padding: 32px 36px 24px;
+  padding: 28px 30px 24px;
   max-width: 1900px;
 }
 .header {
@@ -101,7 +101,7 @@
   gap: 25px;
   margin-bottom: 25px;
 }
-.header h1 {
+.header :is(h1,h2) {
   font-size: 26px;
   line-height: 1.3;
   font-weight: 650;
@@ -692,7 +692,7 @@
     margin-left: 0;
     padding: 22px 14px;
   }
-  .header h1 {
+  .header :is(h1,h2) {
     font-size: 23px;
   }
   .header {
@@ -759,7 +759,7 @@
   background: #174da5;
 }
 .bars > button:focus-visible {
-  outline: 2px solid #205ecf;
+  outline: 2px solid var(--admin-accent,#205ecf);
   outline-offset: 3px;
 }
 .tooltip {
@@ -806,7 +806,7 @@
   gap: 13px;
 }
 .tableWrap [data-bi-tip]:focus-visible {
-  outline: 2px solid #205ecf;
+  outline: 2px solid var(--admin-accent,#205ecf);
   outline-offset: 3px;
 }
 
@@ -822,3 +822,5 @@
   float: right;
   text-decoration: underline;
 }
+
+.metrics button{border-radius:14px;box-shadow:var(--shadow-card)}.tableWrap{border-radius:13px}.tableWrap th{background:var(--admin-surface,#eef3f9)}.tableWrap tr:hover td{background:var(--admin-surface,#f6f9ff)}.chart,.modelOverview{border-radius:14px}.filters{padding:18px;background:white;border:1px solid var(--line);border-radius:12px}.filters input,.filters select{border-radius:8px}.main{width:100%;max-width:1680px;margin:0 auto}@media(max-width:760px){.main{padding:20px 16px}.filters{padding:12px;gap:10px}}

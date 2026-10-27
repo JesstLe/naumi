@@ -11,7 +11,7 @@ const watermark=(value:string|null)=>value&&validVersion(value)?value:"0";
 type Notes={version:string;entries:PublicReleaseNote[];status:"loading"|"ready"|"error"};
 
 /** Public announcements follow the live version, even when an old canvas stays open. */
-export function AnnouncementButton({endpoint,publishedVersion,loadedVersion,refreshKey=0,english=false,onOpen}:{endpoint:string;publishedVersion:string;loadedVersion:string;refreshKey?:number;english?:boolean;onOpen?:()=>void}){
+export function AnnouncementButton({endpoint,publishedVersion,loadedVersion,refreshKey=0,english=false,onOpen,placement="above"}:{endpoint:string;publishedVersion:string;loadedVersion:string;refreshKey?:number;english?:boolean;onOpen?:()=>void;placement?:"above"|"below"}){
  const {user,ready}=useAuth(),L=(zh:string,en:string)=>english?en:zh;
  const storageKey=`naumi:announcements:read:${encodeURIComponent(user?.email.toLowerCase()||"guest")}`;
  const [read,setRead]=useState({key:"",version:"0"}),[open,setOpen]=useState(false),[retry,setRetry]=useState(0);
@@ -45,7 +45,7 @@ export function AnnouncementButton({endpoint,publishedVersion,loadedVersion,refr
  const current=notes.version===publishedVersion,entries=current?notes.entries:[],status=current?notes.status:"loading";
  const seen=read.key===storageKey?read.version:"0",unread=ready?entries.filter(n=>Number(n.version)>Number(seen)).length:0;
  const markRead=()=>{const newest=entries[0]?.version;if(!ready||status!=="ready"||!newest)return;let saved="0";try{saved=watermark(localStorage.getItem(storageKey));}catch{}const version=String(Math.max(Number(seen),Number(newest),Number(saved)));setRead({key:storageKey,version});try{localStorage.setItem(storageKey,version);}catch{}};
- return <div ref={root} className={styles.root}>
+ return <div ref={root} className={styles.root} data-placement={placement}>
   <button ref={trigger} className={styles.trigger} data-unread={unread} aria-label={unread?L(`通知，${unread} 条未读公告`,`Notifications, ${unread} unread announcements`):L("通知","Notifications")} aria-expanded={open} aria-haspopup="dialog" onClick={()=>{if(!open)onOpen?.();setOpen(!open);}}><Bell size={16}/><span>{L("通知","Notifications")}</span>{unread>0&&<b className={styles.count}>{unread>99?"99+":unread}</b>}</button>
   {open&&<section role="dialog" aria-label={L("通知公告","Announcements")} className={styles.panel}>
    <header><div><strong>{L("通知公告","Announcements")}</strong>{unread>0&&<span>{L(`${unread} 条未读`,`${unread} unread`)}</span>}</div><button ref={close} aria-label={L("关闭通知","Close announcements")} onClick={()=>{setOpen(false);trigger.current?.focus();}}><X size={18}/></button></header>
