@@ -50,7 +50,7 @@ async function finish() {
   await page.route(/^https?:/, r => r.abort());
   const url = pathToFileURL(path.join(root, 'index.html')).href;
   const shot = async name => { const p = path.join(out, name + '.png'); await page.screenshot({ path: p, fullPage: true }); report.screenshots.push({ name, path: p, sha256: sha(p) }); };
-  const go = async p => { await page.locator(`.sidebar [data-page="${p}"]`).click(); };
+  const go = async p => { await page.locator(`.sidebar [data-page="${p}"]`).click(); const route={tasks:'tasks/unified',models:'models/manage',users:'users/list',billing:'billing/ledger',settings:'settings/site'}[p]; if(route) await page.locator(`.module-nav [data-route="${route}"]`).click(); if(p==='settings')await page.locator('[data-route="settings/site/brand"]').click(); };
   const close = async () => { await page.locator('#detail-dialog [aria-label="关闭详情"]').click(); };
   await page.goto(url);
   await page.locator('h1').waitFor();
@@ -98,7 +98,7 @@ async function finish() {
     const text = await page.locator('#detail-dialog').textContent();
     assert.ok(await page.locator('#detail-dialog').evaluate(e => e.open));
     for (const field of ['APIMart', 'GPT Image 1.5', '执行时间线', '已结算', '8 积分', '0 积分']) assert.ok(text.includes(field), field);
-    assert.equal(await page.locator('.output-art svg').count(), 1);
+    assert.equal(await page.locator('#detail-dialog .dialog-content > .output-art svg').count(), 1);
     await shot('03-task-drawer-desktop');
   });
   await check('Native modal traps focus, Escape closes and restores trigger', async () => {
@@ -112,7 +112,7 @@ async function finish() {
     await page.locator('[data-task="demo-img-2804"]').click();
     let t = await page.locator('#detail-dialog').textContent();
     assert.ok(t.includes('尚未提交供应商') && t.includes('6 积分') && t.includes('0 积分'));
-    assert.equal(await page.locator('.output-art svg[role="img"]').count(), 0);
+    assert.equal(await page.locator('#detail-dialog .dialog-content > .output-art svg[role="img"]').count(), 0);
     await close();
     await page.locator('[data-task="demo-img-2805"]').click();
     t = await page.locator('#detail-dialog').textContent();
@@ -215,7 +215,7 @@ async function finish() {
   await check('CSV export contains only the filtered demonstration records', async () => {
     await go('tasks');
     await page.locator('#task-query').fill('demo-img-2801');
-    const downloadPromise = page.waitForEvent('download');
+    const downloadPromise = page.waitForEvent('download'); downloadPromise.catch(()=>{});
     await page.locator('[data-action="export-tasks"]').click();
     const download = await downloadPromise;
     const p = path.join(out, download.suggestedFilename());

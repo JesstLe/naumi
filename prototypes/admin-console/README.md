@@ -49,3 +49,16 @@ node prototypes/admin-console/verify.cjs --root <ABS/prototypes/admin-console> -
 - 图表按实际容器重新绘制，窄屏保持可读字号；抽屉关闭后焦点返回原触发按钮。
 - 原工作区 18 项未提交文件将按开工 SHA 逐一核对；本地预览源保存在独立 Git 分支，不合 main、不发布服务器。
 - 原始报告、独立回滚副本与四制品：`E:/Workspace/naumi/output/admin-ui-local-preview-20261027-r1/`。
+
+
+## 2026-10-27 子页面补齐
+
+本轮不再仅展示七个一级概念页。按照固定 main 共用侧栏，保留 25 个二级入口、24 个源码页面路径及其兼容映射，新增租户、运行健康、部署管理；内层标签/详情逐项见 [COVERAGE.md](COVERAGE.md)。
+
+截图五项完整保留：统一创作、历史业务任务、图片、对话、调用审计。模型配置、钱包、采购成本、站点设置、租户详情等内层标签都可进入；不是多个标签指向同一张占位页。
+
+可编辑源：`subpages.js`、`subpages.css`。运行 `node prototypes/admin-console/build-preview.cjs` 后仍交付一个可独立打开的 `index.html`。`coverage.json` 固定实际源路径与 SHA；`verify-subpages.cjs` 验证完整覆盖，`verify.cjs` 保留初版交互回归。
+
+路由与筛选写入本地 URL hash；刷新可以恢复当前子页面/筛选，业务演示草稿仍只在内存中。原始 API、付费生成、Worker、数据库和部署逻辑均不接入。
+
+验证资料：`E:/Workspace/naumi/output/admin-ui-subpages-20261027-r1/`。此目录保存真实初版备份、首次失败、最终回归、副本回滚及完整四制品。
