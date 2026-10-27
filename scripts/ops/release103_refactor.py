@@ -220,12 +220,17 @@ class Release:
                 if target.exists():require(sha(target.read_bytes())==sha(f.read_bytes()),'IMMUTABLE_ASSET_COLLISION')
                 else:target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(f,target);count+=1
         for p in [newroot,*newroot.rglob('*')]:p.chmod(0o755 if p.is_dir()else 0o644)
-        after={p:b.replace(('127.0.0.1:'+str(self.c['oldPort'])).encode(),('127.0.0.1:'+str(self.c['newPort'])).encode()).replace(str(oldroot).encode(),str(newroot).encode())for p,b in self.before.items()}
         # Existing host Router already targets this stable loopback address.
         # Restore that exact private callback without restarting the Router or
         # adding any public listener/another Web process.
         self.router_binding()
         sock=socket.socket();require(sock.connect_ex(('127.0.0.1',13012))!=0,'LEGACY_CAPACITY_PORT_UNEXPECTED_LISTENER');sock.close()
+        self.render_gateway(newroot)
+        syntax_check(self.tx,self.after,self.root/'isolated-nginx-check')
+        self.tx.save('static-assets.json',{'root':str(newroot),'newFiles':count,'previousFilesRetained':True,'isolatedNginxTest':True});self.phase('READY')
+    def render_gateway(self,newroot):
+        oldroot=pathlib.Path(self.c['oldAssetRoot'])
+        after={p:b.replace(('127.0.0.1:'+str(self.c['oldPort'])).encode(),('127.0.0.1:'+str(self.c['newPort'])).encode()).replace(str(oldroot).encode(),str(newroot).encode())for p,b in self.before.items()}
         site='/etc/nginx/sites-enabled/default'
         callback=('\nserver { listen 127.0.0.1:13012; server_name _; client_max_body_size 4k; '
                   'location = /api/internal/model-capacity { proxy_pass http://127.0.0.1:13105; '
@@ -236,8 +241,6 @@ class Release:
         parsed=compat.Dump(self.dump)
         self.after=after;self.afterdump=parsed.render({p:b.decode()+('\n'if parsed.files[p]==self.before[p].decode()+'\n'else'')for p,b in after.items()})
         require('127.0.0.1:'+str(self.c['oldPort']) not in self.afterdump,'OLD_ORIGIN_STILL_REFERENCED')
-        syntax_check(self.tx,after,self.root/'isolated-nginx-check')
-        self.tx.save('static-assets.json',{'root':str(newroot),'newFiles':count,'previousFilesRetained':True,'isolatedNginxTest':True});self.phase('READY')
     def router_binding(self,live=False):
         root=pathlib.Path('/proc/4460');require(root.joinpath('comm').read_text().strip()=='naumi-router','ROUTER_PROCESS_REVIEW_CHANGED')
         env=dict(p.decode().split('=',1)for p in root.joinpath('environ').read_bytes().split(b'\0')if b'='in p)
@@ -258,7 +261,7 @@ class Release:
     def gateway(self,forward=True):
         before,after,dump,afterdump=(self.before,self.after,self.dump,self.afterdump)if forward else(self.after,self.before,self.afterdump,self.dump)
         patches=[{'path':p,'beforeSha256':sha(before[p]),'afterSha256':sha(after[p])}for p in before if before[p]!=after[p]]
-        folder=self.tx.folder;self.tx.folder=self.root/('gateway-forward'if forward else'gateway-rollback');self.tx.folder.mkdir(mode=0o700)
+        folder=self.tx.folder;self.tx.folder=self.root/(('gateway-forward'if forward else'gateway-rollback')+'-'+str(self.state['revision']));self.tx.folder.mkdir(mode=0o700)
         try:return controls.switch_gateway_bundle(self.tx,{'configClosureValidated':True,'baselineFileCasVerified':True,'beforeDumpSha256':sha(dump.encode()),'afterDumpSha256':sha(afterdump.encode()),'patches':patches},before,{p['path']:after[p['path']]for p in patches},expected_dump_sha=sha(dump.encode()),logical_to_real=self.real)
         finally:self.tx.folder=folder
     def drain(self,group=None):
@@ -279,7 +282,7 @@ class Release:
         self.op('pause-old-worker',lambda _:self.worker(self.old['worker'],'drain'));self.worker_paused=True
         self.op('drain-old-web',lambda _:controls.control_app(self.tx,public_identity(self.old['web']),'drain',str(uuid.uuid4())));self.app_drained=True
         self.op('drain-old-media',lambda _:self.media(self.old['media'],'drain'))
-        proof=self.wait(self.drain,'OLD_DRAIN',seconds=120);self.tx.save('old-drain-proof.json',proof)
+        proof=self.wait(self.drain,'OLD_DRAIN',seconds=120);self.tx.save('old-drain-proof-'+str(self.state['revision'])+'.json',proof)
         require(not self.tx.run(['ss','-Htn','state','established','( sport = :13104 or dport = :13104 )']).strip(),'OLD_LOOPBACK_CONNECTIONS_ACTIVE')
         # No new old-slot admissions, no old scanner and no old media queue;
         # the one fresh proof covers this bounded sequential retirement.
@@ -288,8 +291,12 @@ class Release:
                 self.tx.run(['docker','update','--restart=no',r['Id']]);self.tx.run(['docker','stop','--time','60',r['Id']],timeout=75);a=self.tx.inspect(r['Id']);require(not a['State']['Running'] and not a['State']['OOMKilled'] and a['State']['ExitCode']!=137,'OLD_STOP_NOT_CLEAN');return public_identity(a)
             self.op('retire-'+role,stop)
         self.old_stopped=True
-        self.op('resume-new-worker',lambda _:self.worker(self.new['worker'],'resume'))
-        self.wait(lambda:self.worker(self.new['worker'],'status').get('lastTick',{}).get('phase')=='complete','NEW_WORKER_RECEIPT')
+        resumed_at=time.time();self.op('resume-new-worker',lambda _:self.worker(self.new['worker'],'resume'))
+        def completed_tick():
+            status=self.worker(self.new['worker'],'status');tick=status.get('lastTick')or{}
+            if tick.get('phase')!='complete' or not tick.get('startedAt'):return False
+            return dt.datetime.fromisoformat(tick['startedAt'].replace('Z','+00:00')).timestamp()>=resumed_at and tick.get('workerBootId')==status['bootId'] and tick.get('workerCommit')==self.c['commit']
+        self.wait(completed_tick,'NEW_WORKER_RECEIPT')
     def finish(self):
         self.acceptance();self.tx.save('capacity-final.json',self.memory())
         req=urllib.request.Request('http://127.0.0.1/api/version',headers={'Host':TARGET})
