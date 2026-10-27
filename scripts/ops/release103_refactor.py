@@ -6,6 +6,7 @@ paid tasks, copies another site's data, or restores a database on rollback.
 import base64, copy, datetime as dt, hashlib, hmac, http.client
 import json, os, pathlib, re, shutil, socket, time, urllib.parse, uuid
 import urllib.request
+import urllib.error
 from types import SimpleNamespace
 from release47_host import HostTransaction, Hold, environment, public_identity, require, sha, file_sha
 import release47_controls as controls
@@ -174,7 +175,7 @@ class Release:
         archive=self.root/'image.tar.gz';require(archive.is_file() and file_sha(archive)==self.c['archiveSha256'],'FIXED_IMAGE_ARCHIVE_CHANGED')
         self.op('image-load',lambda _:{'loaded':bool(self.tx.run(['docker','load','-i',str(archive)],timeout=300)),'archiveSha256':self.c['archiveSha256']})
         image=json.loads(self.tx.run(['docker','image','inspect',self.c['image']]))[0];ie=dict(v.split('=',1)for v in image['Config']['Env']);require(ie.get('SOURCE_COMMIT')==self.c['commit'] and ie.get('BUILD_VERSION')==self.c['buildVersion'],'IMAGE_PROVENANCE_MISMATCH')
-        self.tx.save('capacity-before.json',self.memory())
+        self.tx.save('capacity-before-'+str(self.state['revision'])+'.json',self.memory())
         sock=socket.socket();require(sock.connect_ex(('127.0.0.1',self.c['newPort']))!=0,'CANDIDATE_PORT_BUSY');sock.close()
         for role in ['media','web','worker']:self.op('create-'+role,lambda _,r=role:self.clone(r))
         for role in ['media','web','worker']:
@@ -216,11 +217,40 @@ class Release:
                 else:target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(f,target);count+=1
         for p in [newroot,*newroot.rglob('*')]:p.chmod(0o755 if p.is_dir()else 0o644)
         after={p:b.replace(('127.0.0.1:'+str(self.c['oldPort'])).encode(),('127.0.0.1:'+str(self.c['newPort'])).encode()).replace(str(oldroot).encode(),str(newroot).encode())for p,b in self.before.items()}
+        # Existing host Router already targets this stable loopback address.
+        # Restore that exact private callback without restarting the Router or
+        # adding any public listener/another Web process.
+        self.router_binding()
+        sock=socket.socket();require(sock.connect_ex(('127.0.0.1',13012))!=0,'LEGACY_CAPACITY_PORT_UNEXPECTED_LISTENER');sock.close()
+        site='/etc/nginx/sites-enabled/default'
+        callback=('\nserver { listen 127.0.0.1:13012; server_name _; client_max_body_size 4k; '
+                  'location = /api/internal/model-capacity { proxy_pass http://127.0.0.1:13105; '
+                  'proxy_http_version 1.1; proxy_set_header Host $host; proxy_set_header Connection ""; '
+                  'proxy_read_timeout 10s; proxy_buffering off; } location / { return 404; } }\n')
+        require(site in after,'REVIEWED_CAPACITY_SITE_MISSING');after[site]+=callback.encode()
         require(any(after[p]!=self.before[p]for p in after),'EMPTY_GATEWAY_CHANGE')
-        self.after=after;self.afterdump=self.dump.replace('127.0.0.1:'+str(self.c['oldPort']),'127.0.0.1:'+str(self.c['newPort'])).replace(str(oldroot),str(newroot))
+        parsed=compat.Dump(self.dump)
+        self.after=after;self.afterdump=parsed.render({p:b.decode()+('\n'if parsed.files[p]==self.before[p].decode()+'\n'else'')for p,b in after.items()})
         require('127.0.0.1:'+str(self.c['oldPort']) not in self.afterdump,'OLD_ORIGIN_STILL_REFERENCED')
         syntax_check(self.tx,after,self.root/'isolated-nginx-check')
         self.tx.save('static-assets.json',{'root':str(newroot),'newFiles':count,'previousFilesRetained':True,'isolatedNginxTest':True});self.phase('READY')
+    def router_binding(self,live=False):
+        root=pathlib.Path('/proc/4460');require(root.joinpath('comm').read_text().strip()=='naumi-router','ROUTER_PROCESS_REVIEW_CHANGED')
+        env=dict(p.decode().split('=',1)for p in root.joinpath('environ').read_bytes().split(b'\0')if b'='in p)
+        address=env.get('NAUMI_MODEL_CAPACITY_URL');token=env.get('NAUMI_ROUTER_MANAGEMENT_TOKEN','')
+        require(address=='http://127.0.0.1:13012/api/internal/model-capacity' and len(token)>=32 and hmac.compare_digest(token,environment(self.new['web']).get('NAUMI_ROUTER_MANAGEMENT_TOKEN','')),'ROUTER_CALLBACK_AUTHORITY_CHANGED')
+        require(root.joinpath('ns/net').stat().st_ino==pathlib.Path('/proc/self/ns/net').stat().st_ino,'ROUTER_NAMESPACE_CHANGED')
+        if live:
+            codes=[]
+            for auth in [True,False]:
+                req=urllib.request.Request(address,data=b'{}',headers={'content-type':'application/json',**({'authorization':'Bearer '+token}if auth else{})})
+                try:
+                    with urllib.request.urlopen(req,timeout=15)as response:code=response.status
+                except urllib.error.HTTPError as error:code=error.code;error.close()
+                codes.append(code)
+            require(codes==[400,404],'ACTUAL_ROUTER_CALLBACK_NOT_BOUND')
+            self.tx.save('router-callback-acceptance.json',{'at':now(),'sourcePid':4460,'privateOnly':True,'malformedAuthenticated':400,'anonymous':404,'capacityAcquireCalls':0,'routerRestarted':False,'targetCommit':self.c['commit']})
+        else:self.tx.save('router-callback-preflight.json',{'at':now(),'sourcePid':4460,'tokenMatches':True,'sameHostNetwork':True,'existingPrivatePort':13012})
     def gateway(self,forward=True):
         before,after,dump,afterdump=(self.before,self.after,self.dump,self.afterdump)if forward else(self.after,self.before,self.afterdump,self.dump)
         patches=[{'path':p,'beforeSha256':sha(before[p]),'afterSha256':sha(after[p])}for p in before if before[p]!=after[p]]
@@ -262,6 +292,7 @@ class Release:
         with urllib.request.urlopen(req,timeout=15)as response:public=json.loads(response.read())
         require(public=={'version':self.c['buildVersion'],'commit':self.c['commit']},'PUBLIC_GATEWAY_VERSION_DRIFT')
         self.tx.save('public-gateway-version.json',{'version':public,'observedAt':now()})
+        self.router_binding(live=True)
         w=self.new['web'];secret=environment(w)['RELEASE_CONTROL_SECRET'];spec={'releaseId':self.c['releaseId'],'commit':self.c['commit'],'buildVersion':self.c['buildVersion'],'releaseSecret':secret}
         state=next(m['Source']for m in w['Mounts']if m['Destination']=='/release-state');startup.write_activation(pathlib.Path(state)/'activation.json',startup.activation_marker(spec,{'name':self.c['newNames']['web']},True))
         for r in self.new.values():self.tx.run(['docker','update','--restart=unless-stopped',r['Id']])
