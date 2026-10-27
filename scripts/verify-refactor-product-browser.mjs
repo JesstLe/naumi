@@ -6,6 +6,7 @@ import {readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
+import {verifyCanvasInputControls} from './verification/canvas-input-controls-browser.mjs';
 const exec=promisify(execFile),arg=name=>{const i=process.argv.indexOf(name);return i<0?undefined:process.argv[i+1]},base=arg('--base'),worker=arg('--worker'),out=path.resolve(arg('--out')),duration=Number(arg('--soak-seconds')||180);
 assert.equal(new URL(base).hostname,'127.0.0.1');assert.match(worker,/^refactor-r6c-[a-f0-9]+-worker$/);assert.ok(duration>=60&&duration<=1800);
 const input=JSON.parse(await readFile(path.join(out,'SETUP.json'),'utf8')),checks=[],errors=[],dialogs=[],requests=[],responses=[],samples=[];
@@ -26,6 +27,7 @@ async function rename(p,title){await close(p);await node(p).click({position:{x:9
 async function finish(p,index){await expect.poll(async()=>{const s=await snapshot();return s.artworks.filter(n=>!['r6c-root','r6c-second'].includes(n.id)).length;}).toBe(index);await expect(p.getByTestId('generation-placeholder')).toHaveCount(0,{timeout:90000});}
 try{
  await login(a);await login(b);await open(pa);await open(pb);pass('packaged product loads native project in two independent authenticated browser contexts');
+ const beforeControls=await snapshot();checks.push(...await verifyCanvasInputControls({page:pb,expect,out:path.join(out,'input-controls')}));assert.deepEqual(await snapshot(),beforeControls);assert.equal((await stats()).calls,0);pass('packaged input controls preserve real PG artwork/text/task/ledger state before generation');
  await rename(pa,'R6C browser A');await expect.poll(async()=>(await row('r6c-root')).title).toBe('R6C browser A');await rename(pb,'R6C browser B retained');
  const conflict=pb.getByTestId('canvas-artwork-conflict');await expect(conflict).toBeVisible();await conflict.getByText('查看两份修改',{exact:true}).click();await expect(conflict).toContainText('R6C browser A');await expect(conflict).toContainText('R6C browser B retained');await conflict.getByRole('button',{name:'保留本页修改',exact:true}).click();await expect.poll(async()=>(await row('r6c-root')).title).toBe('R6C browser B retained');pass('full-image browser rename conflict retains two versions and explicitly resolves through real PG history');
  await close(pb);const toolbar=pb.getByTestId('canvas-main-toolbar');await toolbar.locator('[data-tool="undo"]').click();await expect.poll(async()=>(await row('r6c-root')).title).toBe('R6C browser A');await toolbar.locator('[data-tool="redo"]').click();await expect.poll(async()=>(await row('r6c-root')).title).toBe('R6C browser B retained');pass('full-image conflict resolution remains one real undo/redo action');
