@@ -10,6 +10,8 @@ export const diagnosticStages = {
 } as const;
 export type DiagnosticStage = keyof typeof diagnosticStages;
 export const taskReasonLabels = {
+  IMAGE_MAPPING_INVALID:'图片参数映射配置不完整或冲突',
+  MODEL_PARAMETER_UNAVAILABLE:'本地参数映射未配置此选项',
   CHANNEL_DISABLED:'执行通道已停用', CONFIG_UNAVAILABLE:'冻结模型配置暂不可读取',
   CONFIG_NOT_READY:'模型配置尚未就绪', CREDENTIAL_UNAVAILABLE:'执行凭据不可读取',
   INVALID_CREDENTIAL:'执行凭据配置无效', MODEL_UNAVAILABLE:'所选模型不可用',

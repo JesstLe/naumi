@@ -30,7 +30,7 @@ export async function canvasAgentHistory(request:Request){
  let anchorId=id?anchors.find(art=>id.startsWith(canvasSessionPrefix(art.id)))?.id||"":requestedAnchor;
  if(request.method==="GET"){
   if(!id){await listAgentSessions(email,1);const rows=await getPool().query("SELECT id,title,updated_at FROM app_agent_sessions WHERE email=$1 AND id LIKE ANY($2::text[]) ORDER BY updated_at DESC LIMIT 50",[email.toLowerCase(),prefixes.map(prefix=>prefix+"%")]);return NextResponse.json({sessions:rows.rows.map(row=>({id:row.id,title:row.title,updatedAt:row.updated_at,anchorId:anchors.find(art=>row.id.startsWith(canvasSessionPrefix(art.id)))?.id}))});}
-  await getSession(email,id)?.persistPending;
+  await getSession(email,id)?.persistPending?.catch(()=>undefined);
   const rawSaved=await getAgentSession(email,id);if(!rawSaved)return NextResponse.json({error:"会话不存在"},{status:404});
   const saved=(getSession(email,id)?.harness || new AgentHarness(email,id)).sanitize(rawSaved);
   const steps=Array.isArray(saved.steps)?saved.steps:[];
@@ -63,7 +63,7 @@ export async function canvasAgentHistory(request:Request){
  }
  if(!id)return NextResponse.json({error:"缺少会话编号"},{status:400});
  if(getSession(email,id)?.running || getSession(email,id)?.canvasExecuting)return NextResponse.json({error:"任务仍在执行，请先停止"},{status:409});
- await getSession(email,id)?.persistPending;
+ await getSession(email,id)?.persistPending?.catch(()=>undefined);
  if(request.method==="PATCH"){
   const body=await request.json().catch(()=>null),title=String(body?.title||"").trim().slice(0,120);if(!title)return NextResponse.json({error:"请输入会话名称"},{status:400});
   if(!await renameAgentSession(email,id,title))return NextResponse.json({error:"会话不存在"},{status:404});renameRuntimeSession(email,id,title);return NextResponse.json({ok:true});

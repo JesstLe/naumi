@@ -95,7 +95,7 @@ export async function runJob(
     const scope=currentModelExecution("image");
     const delivery=await completeImageDelivery({jobId,owner:p.email,params:p,images,final,useDb,legacyCost:userProvider?0:cost,
       mock:!apiKey&&!userProvider&&imageModel.provider!=="new-api-flow",
-      policy:{known:true,modelVersion:scope?.frozen.modelVersion,post:scope?.businessOption?.postprocess,preset:!!scope?.imagePreset,
+      policy:{known:true,modelVersion:scope?.frozen.modelVersion,imageParameterPlanVersion:scope?.frozen.imageParameterPlanVersion,post:scope?.businessOption?.postprocess,preset:!!scope?.imagePreset,
         ratio:scope?imageRatioValidationPolicy(scope.supplierRouting?scope.supplierRouting.targets.map(target=>target.scope.connection):[scope.connection]):undefined},
       stage:value=>{deliveryStage=value;},
     });

@@ -33,7 +33,7 @@ export {deductPrincipalFIFO} from "@/lib/billing/wallet-balance";
 export {creditMeteringEnabled} from "@/lib/billing/runtime";
 export {setArtworkOrigin} from "@/lib/artworks/repository";
 export {type ArtworkRecord,type AdminArtwork} from "@/lib/artworks/types";
-export {getWorkbenchArtworks,listArtworks,listArtworksByIds,setArtworkDimensions,renameArtwork,deleteArtworksByIds,undeleteArtworksByIds,purgeArtworksByIds,listDeletedArtworks} from "@/lib/artworks/repository";
+export {knownAgentMedia,getWorkbenchArtworks,listArtworks,listArtworksByIds,setArtworkDimensions,renameArtwork,deleteArtworksByIds,undeleteArtworksByIds,purgeArtworksByIds,listDeletedArtworks} from "@/lib/artworks/repository";
 export {addArtworks,addArtworksTx,ensureTemplateRoot} from "@/lib/artworks/writer";
 export {listAllArtworks,getArtworkById,deleteArtwork,importedArtworkIds} from "@/lib/artworks/administration";
 export {setArtworkPosition,setArtworkCanvasLayout,setArtworkCanvasSize,setArtworkMarked,type CanvasGroupAssignment,setArtworkCanvasGroups,addArtworkParent,removeArtworkParent} from "@/lib/canvas/artwork-repository";

@@ -120,6 +120,15 @@ async function main() {
     const historicalDraft=await f.repo.draft(historicalActor),savedHistoricalDraft=await f.repo.saveDraft({id:historicalDraft.id,expectedRevision:historicalDraft.revision,config:renameManagedModel(historical.config,historicalRow,historicalBody.label),actor:historicalActor});
     await runtime.publish({id:historicalBody.id,draftId:savedHistoricalDraft.id,expectedRevision:savedHistoricalDraft.revision,expectedVersion:historical.version,actor:historicalActor,reason:`MVP 改名 ${historicalBody.rowId} → ${historicalBody.label}`});
     const historicalVersion=(await f.repo.current()).version;assert.equal((await handler(request(historicalBody))).status,200,"Pre-rename persisted publication fingerprint must replay");assert.equal((await f.repo.current()).version,historicalVersion);
+    const mappingSnapshot=await f.repo.current(),mappingRow=(await(await handler(request())).json()).rows.find((r:any)=>r.modality==='image');
+    const mapping={qualities:['medium','high'],resolutions:['1K','2K','4K'],routes:mappingRow.routes.map((r:any)=>({upstreamId:r.upstreamId,quality:{mode:'map',choices:[{id:'medium',label:'标准',value:'medium'},{id:'high',label:'高',value:'medium'}]},resolution:{mode:'map',field:'resolution',ratioField:'size',values:{'1K':'1k','2K':'2k','4K':'2k'}}}))};
+    const mapBody={action:'image-mapping',id:randomUUID(),expectedVersion:mappingSnapshot.version,rowId:mappingRow.id,mapping};
+    const mapResponse=await handler(request(mapBody));assert.equal(mapResponse.status,200,await mapResponse.clone().text());
+    const mapped=await f.repo.current();assert.equal(mapped.config.upstreamModels.find(u=>u.id===mappingRow.routes[0].upstreamId)!.parameterMap.resolutionPolicy!.values['4K'],'2k');
+    assert.equal((await handler(request(mapBody))).status,200);assert.equal((await f.repo.current()).version,mapped.version);
+    assert.equal((await handler(request({...mapBody,id:randomUUID()}))).status,409);
+    assert.deepEqual(await f.repo.draft(actor),fullDraft,'Combined parameter publication preserves unrelated draft');
+    console.log('IMAGE_MAPPING_HTTP=PASS ATOMIC_PUBLICATION=PASS ORIGINAL_DRAFT=UNCHANGED SAME_ID=ONCE STALE_VERSION=409');
     console.log("ADMIN_MODEL_MANAGEMENT=PASS HISTORICAL_REASON_FINGERPRINT_REPLAY=PASS ACTIVE_CATALOG=PASS SOURCES=PASS SWITCH_EXECUTION=PASS FROZEN_TASK=PASS DRAFT_PRESERVED=PASS SAME_ID_RECOVERY=PASS RSA_CREDENTIAL=PASS DISCOVERY=PASS EXPLICIT_CAPABILITIES=PASS NON_ADMIN=404 CSRF=403 VERSION_CONFLICT=409 PAID_GENERATION=0");
   } finally { const db = await import("../src/lib/db"); await db.getPool().end(); await f.cleanup(); }
 }

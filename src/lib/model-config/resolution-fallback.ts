@@ -17,7 +17,7 @@ export type ResolutionContext = { snapshot: ModelSnapshot; billing: ConfigSnapsh
  * size map may omit 1K (the normal API size), so retain its native tier list. */
 export function upstreamResolutionTiers(upstream: UpstreamModel, ratio?: string): string[] {
   const map = upstream.parameterMap;
-  let tiers = map.resolutionPolicy?.mode === "map"
+  let tiers = map.resolutionPolicy?.mode === "omit" ? [...IMAGE_RESOLUTION_TIERS] : map.resolutionPolicy?.mode === "map"
     ? Object.keys(map.resolutionPolicy.values).filter(k => !!map.resolutionPolicy!.values[k as ImageResolutionTier])
     : Array.from(new Set([...upstream.capabilities.nativeResolutions, ...Object.keys(map.resolution || {})]));
   if (map.apimartImages && ratio && ratio !== "auto") {
@@ -27,7 +27,7 @@ export function upstreamResolutionTiers(upstream: UpstreamModel, ratio?: string)
       // 2026-10-27), so the declared tiers stay available for it.
       if (!exactRatioPixels(ratio, upstream.model)) return [];
     } else if (map.apimartImages.outputDimensions) {
-      tiers = tiers.filter(t => !!map.apimartImages!.outputDimensions![`${t}:${ratio}`]);
+      tiers = tiers.filter(t => {const wire=map.resolutionPolicy?.mode==="map"?map.resolutionPolicy.values[t as ImageResolutionTier]:undefined;const actual=wire&&/^[124]k$/i.test(wire)?wire.toUpperCase():t;return !!map.apimartImages!.outputDimensions![`${actual}:${ratio}`] || !!map.resolutionPolicy;});
     }
   }
   return IMAGE_RESOLUTION_TIERS.filter(t => tiers.includes(t));

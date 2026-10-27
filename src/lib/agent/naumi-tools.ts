@@ -1,4 +1,5 @@
 import {webBytes} from "@/platform/bytes/web";
+import {appendOriginalRequest} from "./execution-evidence";
 import {creationContinuationHeader} from "@/lib/saas/creation-context";
 
 import { assertAgentToolAccess } from "@/lib/feature-access/server";
@@ -57,6 +58,7 @@ const TOOL_TIMEOUT_MS = {
   edit_video: 300_000,
   creative_tool: 300_000,
   verify_image_output: 100_000,
+  inspect_images: 100_000,
   read_only: 15_000,
 } as const;
 
@@ -64,9 +66,10 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
 
 ## 可用工具
 1. search_templates / list_my_artworks / get_balance / verify_image_output:只读,不消耗积分。
-2. generate_image:文生图/图生图。参数 prompt(必填)、ratio(1:1/3:4/4:3/16:9/9:16)、resolution(1K/2K/4K)、count(1-4)、model(仅当用户明确点名生图模型时填写)。计费金额以系统当前报价为准。
+2. generate_image:文生图/图生图。参数 prompt(必填)、ratio、resolution、count、model。用户指定模型优先；参数不匹配时用 list_image_models 查询真实目录，不把某个模型的限制说成全部工具不可用，不猜模型ID。计费金额以系统当前报价为准。
 3. retouch_product:商品精修。参数 image_url、options(数组)、text。计费金额以系统当前报价为准。
 4. recolor_product:产品换色。参数 image_url、color(如 #27AE60)、strength(20-100)。计费金额以系统当前报价为准。
+5. inspect_images:读取参考图片和文字，不能用生成结果质检代替读图。
 5. replicate_hot:爆款复刻。参数 product_image_url、reference_image_url、degree(high/style)、text。计费金额以系统当前报价为准。
 6. generate_suite:一键电商套图。默认智能生成 13 张；用户指定数量/版式时传 structure=custom 与 shots。费用由当前配置和任务数量决定。
  7. generate_aplus:A+ 第一步，只提取白底商品母图并返回待审核图片与 job_id。参数 image_url、platform、lang、format、modules(数组)、text。
@@ -99,15 +102,15 @@ ${VIDEO_PRODUCTION_PROMPT}
 ## 工作规则
 0.5 大额计费确认闸:当一次工具调用触发系统配置的大额确认门槛(套图、A+、多张/2K 生图等)时,系统会拦截第一次调用并提示报价。此时必须先向用户报出预计积分数,等用户明确同意后,再携带 confirm=true 重新调用同一工具;用户拒绝或犹豫就不要执行,改为给出更小规模的替代方案。
 1. 用户消息里的商品图以 URL 形式出现(格式:[商品图] <url> 或工具返回的图片 URL);工具的图片参数必须传入,用户没给就先要,不要编造 URL。
-2. 每次工具调用都有积分成本;同一任务参数相同不要重复调用。
+2. 生成/编辑工具按实际报价计费，只读工具不扣积分；同一任务参数相同不要重复调用。
 3. 工具返回的图片 URL 用 Markdown 图片语法展示:![描述](url)。
 4. 长耗时工具(套图/A+)先告知用户等待时间。
  5. A+ 必须分两步：先调用 generate_aplus 展示每张白底母图，等待用户逐张确认；用户说某张不合格时调用 review_aplus_source(action=redo)并原样带上修改要求；只有全部通过后才调用 continue_aplus_generation。不得替用户默认通过母图。
- 6. 每个生成/精修/换色/复刻/套图/A+ 任务产出后，必须调用 verify_image_output 检查至少一张代表图；套图/A+ 优先检查首图和最后一图。未通过时明确列出问题，最多只允许在结果明确失败且不会重复扣费不明时重做一次。检查返回 verificationStatus=unavailable 表示检查未完成，不代表图片生成失败或图片不合格；保留并交付已生成图片，说明未自动验收，不因此重生成、重复扣费或宣称检查通过。
+ 6. 每个生成/精修/换色/复刻/套图/A+ 任务产出后，必须调用 verify_image_output 检查至少一张代表图；套图/A+ 优先检查首图和最后一图。未通过时明确列出问题，保留已有产物，等待用户明确选择后才重做；不自动重复收费生成。检查返回 verificationStatus=unavailable 表示检查未完成，不代表图片生成失败或图片不合格；保留并交付已生成图片，说明未自动验收，不因此重生成、重复扣费或宣称检查通过。
  7. 任务完成后用中文简要总结:做了什么、视觉检查结果、产出哪些图、扣了多少积分。
  8. 与图片生成无关的问题直接回答,不要调用工具。`;
 
-export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string; imageQuality?: string;billingVersion?:number;billingCredits?:number;billingOperationId?:string;imagegenPlan?:ImagegenPlan;videoWorkflow?:PreparedCanvasVideoWorkflow;imageSkill?:ImagegenPlan["request"]["skill"] }, acceptedModelContext?: string | (() => string), canvas?: CanvasAgentContext, harness?: AgentHarness): AgentTool[] {
+export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string; imageQuality?: string;originalRequest?:string;billingVersion?:number;billingCredits?:number;billingOperationId?:string;imagegenPlan?:ImagegenPlan;videoWorkflow?:PreparedCanvasVideoWorkflow;imageSkill?:ImagegenPlan["request"]["skill"] }, acceptedModelContext?: string | (() => string), canvas?: CanvasAgentContext, harness?: AgentHarness, taskContext?: () => {request:string;references:string[]}|undefined): AgentTool[] {
   // 双凭证:可变 getter —— 每次工具执行时读取最新 cookie/authorization,
   // 常驻会话的凭证刷新(runtime 层 existing.cred = cred)即刻生效,无需重建 Agent。
   const credGetter =
@@ -425,8 +428,18 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         );
         return {
           content: [{ type: "text", text: `最近作品:\n${list.join("\n")}` }],
-          details: { count: items.length, publicSummary: `返回 ${items.length} 个作品` },
+          details: { count: items.length, urls: items.map(a=>a.url), publicSummary: `返回 ${items.length} 个作品` },
         };
+      },
+    },
+    {
+      name: "list_image_models",
+      label: "图片模型能力",
+      description: "只读查询当前生图模型目录、可编辑能力和参考图上限。maxReferenceImages是已启用通道中声明的最大数量，referenceLimitVerified=false表示声明尚未验证；最终以计划/工具回执为准。不修改全局默认配置。",
+      parameters: Type.Object({}), executionMode: "sequential",
+      execute: async (_id,_params,signal) => {
+        const d=await withToolTimeout("read_only",()=>internal("/api/models?feature=image.generate",signal),signal);
+        return {content:[{type:"text",text:JSON.stringify(d)}],details:{publicSummary:"已读取当前图片模型能力"}};
       },
     },
     {
@@ -489,7 +502,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         model: Type.Optional(
           Type.String({
             description:
-              "生图模型 id。仅当用户明确点名某个生图模型时填写;不确定就省略,走站内默认。",
+              "生图模型 id。用户明确选择优先；否则从list_image_models真实目录选择适合参考数量/参数的模型，不猜ID。省略使用当前默认。",
           })
         ),
         confirm: Type.Optional(
@@ -588,7 +601,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         (p.options?.length ? p.options : ["gloss", "clarity"]).forEach((o) =>
           fd.append("option", o)
         );
-        if (p.text) fd.append("text", p.text);
+        fd.append("text",appendOriginalRequest(p.text||"",taskContext?.()?.request));
         const d = await withToolTimeout(
           "retouch_product",
           () => internal("/api/retouch", signal, { method: "POST", body: fd }),
@@ -667,7 +680,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         fd.append("image", await urlToFile(p.product_image_url, signal));
         fd.append("ref", await urlToFile(p.reference_image_url, signal));
         fd.append("degree", p.degree || "high");
-        if (p.text) fd.append("text", p.text);
+        fd.append("text",appendOriginalRequest(p.text||"",taskContext?.()?.request));
         const d = await withToolTimeout(
           "replicate_hot",
           () => internal("/api/replicate", signal, { method: "POST", body: fd }),
@@ -755,7 +768,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         const urls = p.image_url.split(",").map((u) => u.trim()).filter(Boolean);
         for (const u of urls) fd.append("image", await urlToFile(u, signal));
         fd.append("platform", p.platform || "taobao");
-        if (p.text) fd.append("text", p.text);
+        fd.append("text",appendOriginalRequest(p.text||"",taskContext?.()?.request));
         const custom = p.structure === "custom" && (p.shots?.length ?? 0) > 0;
         fd.append("structure", custom ? "custom" : "auto");
         if (custom) fd.append("shots", JSON.stringify(p.shots!.slice(0, 20)));
@@ -846,7 +859,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
           ? p.modules
           : ["hero", "selling", "scene", "angles"]
         ).forEach((m) => fd.append("module", m));
-        if (p.text) fd.append("text", p.text);
+        fd.append("text",appendOriginalRequest(p.text||"",taskContext?.()?.request));
         const d = await withToolTimeout(
           "generate_aplus",
           async () => {
@@ -1196,10 +1209,27 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         return {
           content: [{ type: "text", text: parts.join("\n\n") || "执行完成(无产物)" }],
           details: {
-            images: images.map((im) => im.url),
+            images: images.map((im) => im.url), videos: videos.map(v=>v.url),
             publicSummary: `工作流出图 ${images.length} 张/视频 ${videos.length} 个`,
           },
         };
+      },
+    },
+    {
+      name: "inspect_images",
+      label: "读取图片",
+      description: "只读识别用户给出的图片、逐字提取可见文字并比较构图/颜色。不会生成图片，不把未读清内容补写为事实。",
+      parameters: Type.Object({image_urls:Type.Array(Type.String(),{minItems:1,maxItems:6}),question:Type.String({minLength:1,maxLength:2000})}),
+      replay: "safe", executionMode: "sequential",
+      execute: async (_id, params, signal) => {
+        const p=params as {image_urls:string[];question:string};
+        const d=await withToolTimeout("inspect_images",async owned=>{
+          const fd=new FormData();fd.append("mode","inspect");fd.append("goal",p.question);
+          for(const url of p.image_urls)fd.append("reference",await urlToFile(url,owned));
+          return internal("/api/agent/verify-image",owned,{method:"POST",body:fd});
+        },signal);
+        if(typeof d.description!=="string"||!d.description.trim())throw new Error("读图未返回有效内容，请核对该次工具错误，不推断素材为空");
+        return {content:[{type:"text",text:d.description}],details:{publicSummary:"图片读取完成",inspectionStatus:"completed"}};
       },
     },
     {
@@ -1210,11 +1240,12 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
       parameters: Type.Object({
         image_url: Type.String({ description: "需要检查的站内图片 URL" }),
         goal: Type.String({ description: "用户原始目标和本张图应满足的要求" }),
+        reference_image_urls: Type.Optional(Type.Array(Type.String(),{maxItems:6,description:"产品原图和构图/文字参考，按原始顺序，不用生成图冒充对照图"})),
       }),
       replay: "safe",
       executionMode: "sequential",
       execute: async (_id, params, signal) => {
-        const p = params as { image_url: string; goal: string };
+        const p = params as { image_url: string; goal: string;reference_image_urls?:string[] };
         let result: any;
         try {
           // Vision inference is not a quick GET. Bound download + inference together,
@@ -1222,7 +1253,11 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
           result = await withToolTimeout("verify_image_output", async ownedSignal => {
             const fd = new FormData();
             fd.append("image", await urlToFile(p.image_url, ownedSignal));
-            fd.append("goal", p.goal.slice(0, 1200));
+            const task=taskContext?.();
+            fd.append("goal", p.goal.slice(0, 2000));
+            if(task?.request)fd.append("original_request",task.request);
+            const references=[...new Set([...(task?.references||[]),...(p.reference_image_urls||[])])].filter(url=>url!==p.image_url).slice(0,6);
+            for(const url of references)fd.append("reference",await urlToFile(url,ownedSignal));
             return internal("/api/agent/verify-image", ownedSignal, { method: "POST", body: fd });
           }, signal);
           if (typeof result.passed !== "boolean" || typeof result.score !== "number" || !Number.isFinite(result.score)) throw new Error("Invalid inspection result");
@@ -1244,6 +1279,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
           content: [{ type: "text", text }],
           details: {
             verificationStatus: passed ? "passed" : "failed",
+            imageUrl: p.image_url,
             passed,
             score: Number(result.score) || 0,
             issues,
@@ -1280,11 +1316,11 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
   const all=[...tools,...creative,...videoTools];
   for(const tool of all)if(SHARED_IMAGEGEN_TOOLS.has(tool.name)){
     const legacyExecute=tool.execute,existing=(tool.parameters as unknown as {properties:Record<string,TSchema>}).properties;
-    tool.parameters=Type.Object({...existing,ratio:Type.Optional(Type.String({pattern:"^(auto|[1-9]\\d{0,5}:[1-9]\\d{0,5})$",description:"默认auto。仅用户明确指定比例才填写数字比例。自适应跟随本次构图关键图的实际宽高，不按上传顺序，也不默认方图。"})),frame_image_url:Type.Optional(Type.String({description:"本次构图关键图的URL，必须来自image_urls。产品替换场景选布局参考图，产品图仅提供主体；风格/色彩图不决定画幅。多图任务根据用户意图与图像内容确定，确有歧义时询问用户，不猜测。"})),image_urls:Type.Optional(Type.Array(Type.String(),{maxItems:32})),input_roles:Type.Optional(Type.Array(Type.Union(["edit-target","reference","insert","style"].map(v=>Type.Literal(v))),{maxItems:32})),mask_url:tool.name==="inpaint_image"?existing.mask_url:Type.Optional(Type.String()),background:Type.Optional(Type.Union([Type.Literal("transparent"),Type.Literal("opaque")])),use_case:Type.Optional(Type.String()),augment:Type.Optional(Type.Boolean()),batch_prompts:Type.Optional(Type.Array(Type.Object({key:Type.Optional(Type.String({pattern:"^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$"})),name:Type.Optional(Type.String({minLength:1,maxLength:100})),prompt:Type.String({minLength:1,maxLength:6000})}),{minItems:1,maxItems:100})),batch_concurrency:Type.Optional(Type.Integer({minimum:1,maximum:5})),batch_attempts:Type.Optional(Type.Integer({minimum:1,maximum:3})),batch_fail_fast:Type.Optional(Type.Boolean()),local_process:Type.Optional(Type.Boolean({description:"仅在用户要求转换格式、缩小尺寸或控制底色去背景时开启；处理原图，不调用收费模型"})),chroma:Type.Optional(Type.Object({keyColor:Type.Optional(Type.String({pattern:"^#[a-fA-F0-9]{6}$"})),tolerance:Type.Optional(Type.Integer({minimum:0,maximum:255})),autoKey:Type.Optional(Type.Union(["none","corners","border"].map(v=>Type.Literal(v)))),softMatte:Type.Optional(Type.Boolean()),transparentThreshold:Type.Optional(Type.Number({minimum:0,maximum:255})),opaqueThreshold:Type.Optional(Type.Number({minimum:0,maximum:255})),edgeFeather:Type.Optional(Type.Number({minimum:0,maximum:64})),edgeContract:Type.Optional(Type.Integer({minimum:0,maximum:16})),spillCleanup:Type.Optional(Type.Boolean())})),output_format:Type.Optional(Type.Union(["png","jpeg","webp"].map(v=>Type.Literal(v)))),compression:Type.Optional(Type.Integer({minimum:0,maximum:100})),compression_mode:Type.Optional(Type.Union([Type.Literal("local"),Type.Literal("native")])),flatten_color:Type.Optional(Type.String({pattern:"^#[a-fA-F0-9]{6}$"})),downscale_max_dim:Type.Optional(Type.Integer({minimum:64,maximum:8192})),input_fidelity:Type.Optional(Type.String()),moderation:Type.Optional(Type.String()),width:Type.Optional(Type.Integer({minimum:64,maximum:5120})),height:Type.Optional(Type.Integer({minimum:64,maximum:5120}))});
+    tool.parameters=Type.Object({...existing,ratio:Type.Optional(Type.String({pattern:"^(auto|[1-9]\\d{0,5}:[1-9]\\d{0,5})$",description:"默认auto。仅用户明确指定比例才填写数字比例。自适应跟随本次构图关键图的实际宽高，不按上传顺序，也不默认方图。"})),frame_image_url:Type.Optional(Type.String({description:"本次构图关键图的URL，必须来自image_urls。产品替换场景选布局参考图，产品图仅提供主体；风格/色彩图不决定画幅。多图任务根据用户意图与图像内容确定，确有歧义时询问用户，不猜测。"})),image_urls:Type.Optional(Type.Array(Type.String(),{maxItems:32})),input_roles:Type.Optional(Type.Array(Type.Union(["edit-target","reference","insert","style"].map(v=>Type.Literal(v))),{maxItems:32,description:"与image_urls逐一对应；修改已有图必须有edit-target。换产品时原布局图=edit-target，新产品=insert，配色图=style。不要全部标reference。"})),mask_url:tool.name==="inpaint_image"?existing.mask_url:Type.Optional(Type.String()),background:Type.Optional(Type.Union([Type.Literal("transparent"),Type.Literal("opaque")])),use_case:Type.Optional(Type.String()),augment:Type.Optional(Type.Boolean()),batch_prompts:Type.Optional(Type.Array(Type.Object({key:Type.Optional(Type.String({pattern:"^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$"})),name:Type.Optional(Type.String({minLength:1,maxLength:100})),prompt:Type.String({minLength:1,maxLength:6000})}),{minItems:1,maxItems:100})),batch_concurrency:Type.Optional(Type.Integer({minimum:1,maximum:5})),batch_attempts:Type.Optional(Type.Integer({minimum:1,maximum:3})),batch_fail_fast:Type.Optional(Type.Boolean()),local_process:Type.Optional(Type.Boolean({description:"仅在用户要求转换格式、缩小尺寸或控制底色去背景时开启；处理原图，不调用收费模型"})),chroma:Type.Optional(Type.Object({keyColor:Type.Optional(Type.String({pattern:"^#[a-fA-F0-9]{6}$"})),tolerance:Type.Optional(Type.Integer({minimum:0,maximum:255})),autoKey:Type.Optional(Type.Union(["none","corners","border"].map(v=>Type.Literal(v)))),softMatte:Type.Optional(Type.Boolean()),transparentThreshold:Type.Optional(Type.Number({minimum:0,maximum:255})),opaqueThreshold:Type.Optional(Type.Number({minimum:0,maximum:255})),edgeFeather:Type.Optional(Type.Number({minimum:0,maximum:64})),edgeContract:Type.Optional(Type.Integer({minimum:0,maximum:16})),spillCleanup:Type.Optional(Type.Boolean())})),output_format:Type.Optional(Type.Union(["png","jpeg","webp"].map(v=>Type.Literal(v)))),compression:Type.Optional(Type.Integer({minimum:0,maximum:100})),compression_mode:Type.Optional(Type.Union([Type.Literal("local"),Type.Literal("native")])),flatten_color:Type.Optional(Type.String({pattern:"^#[a-fA-F0-9]{6}$"})),downscale_max_dim:Type.Optional(Type.Integer({minimum:64,maximum:8192})),input_fidelity:Type.Optional(Type.String()),moderation:Type.Optional(Type.String()),width:Type.Optional(Type.Integer({minimum:64,maximum:5120})),height:Type.Optional(Type.Integer({minimum:64,maximum:5120}))});
     tool.execute=async(id,args,signal,onUpdate)=>{
       if((args as any)._category)return legacyExecute(id,args,signal,onUpdate);
       const cred=credGetter(),prepared="imagegenPlan" in cred?cred.imagegenPlan:undefined;
-      const sharedRequest=prepared?undefined:await agentImagegenRequest(tool.name,args as Record<string,any>,agentEmail,canvas,cred.imageQuality,"imageSkill" in cred?cred.imageSkill:undefined);
+      const sharedRequest=prepared?undefined:await agentImagegenRequest(tool.name,args as Record<string,any>,agentEmail,canvas,cred.imageQuality,"imageSkill" in cred?cred.imageSkill:undefined,"originalRequest" in cred?cred.originalRequest:undefined);
       const plan=prepared||await (sharedRequest!.mode==="batch"?planImagegenBatch:planImagegen)(sharedRequest!,agentEmail);
       if(!prepared&&plan.totalCredits>0&&harness)throw new Error("请先通过系统图像计划报价后执行");
       return executeAgentImagegen(plan,agentEmail,signal,result=>onUpdate?.(imagegenAgentStage(result)));
@@ -1328,7 +1364,7 @@ export function describeNaumiTools(tools: { name: string; description: string; p
     name: t.name,
     description: t.description,
     parameters: (t.parameters || {}) as Record<string,unknown>,
-    write: CANVAS_VIDEO_WRITE_TOOLS.has(t.name) || !!CREATIVE_TOOL_FEATURES[t.name] || !/^(search_|list_|get_|plan_|verify_|check_)/.test(t.name),
+    write: CANVAS_VIDEO_WRITE_TOOLS.has(t.name) || !!CREATIVE_TOOL_FEATURES[t.name] || !/^(search_|list_|get_|plan_|verify_|check_|inspect_)/.test(t.name),
     timeoutMs: (TOOL_TIMEOUT_MS as Record<string,number>)[t.name] || (/^(search_|list_|get_|plan_)/.test(t.name) ? TOOL_TIMEOUT_MS.read_only : TOOL_TIMEOUT_MS.creative_tool),
   }));
 }

@@ -64,7 +64,7 @@ export function apimartImagesFetch(scope: ModelExecutionScope, options: Validati
       const form=await request.formData();body=Object.fromEntries(Array.from(form.entries()).filter(([,v])=>typeof v==="string"));
       for(const [key,value] of Array.from(form.entries())) if(typeof value!=="string") {if(/^image(?:\[\])?$/.test(key))files.push(value);else if(key==="mask")mask=value;}
     } else body=await request.json();
-    if (body.background === "transparent" && !scope.capabilities.transparent) throw new ModelConfigError("MODEL_INCOMPATIBLE","当前实际模型未核验透明背景能力",422);
+    if (body.background === "transparent" && !scope.capabilities.transparent && !(scope.frozen.imageParameterPlanVersion===1&&scope.parameterMap.imagegen?.transparent==="background")) throw new ModelConfigError("MODEL_INCOMPATIBLE","当前实际模型未核验透明背景能力",422);
     const editing=new URL(request.url).pathname.endsWith("/edits");
     if(body.image_urls || body.image || body.mask || body.mask_url)throw new ModelConfigError("INVALID_REQUEST","参考图和蒙版需要使用受控文件上传");
     const n=Number(body.n??1);
@@ -101,7 +101,7 @@ export function apimartImagesFetch(scope: ModelExecutionScope, options: Validati
     // Never reinterpret a frozen task as unaccepted or authorize a new POST.
     if(!p&&!previous.parameters&&!previous.task_id)await seedreamPreflight(c.wireModel,body.prompt,files,n);
     if(!previous.parameters&&!previous.task_id)await guardChannelSubmission(ledger.pool,scope);
-    const claimed=await ledger.pool.query(`UPDATE app_supplier_calls SET parameters=$2::jsonb,billing_unit_id=$3 WHERE id=$1 AND parameters IS NULL RETURNING id`,[row.id,JSON.stringify({requested:params.requested,effective:params.effective,upstream:params.upstream,requestHash,modelVersion:scope.frozen.modelVersion,...(p?{factorBps:p.factorBps}:{adapter:"apimart-images-v1"})}),unit]);
+    const claimed=await ledger.pool.query(`UPDATE app_supplier_calls SET parameters=$2::jsonb,billing_unit_id=$3 WHERE id=$1 AND parameters IS NULL RETURNING id`,[row.id,JSON.stringify({requested:params.requested,effective:params.effective,upstream:params.upstream,...("parameterPlan" in params?{parameterPlan:params.parameterPlan}:{}),requestHash,modelVersion:scope.frozen.modelVersion,...(p?{factorBps:p.factorBps}:{adapter:"apimart-images-v1"})}),unit]);
     const original=(await ledger.pool.query("SELECT * FROM app_supplier_calls WHERE id=$1",[row.id])).rows[0];
     if(original.parameters?.requestHash!==requestHash)throw new ModelConfigError("OPERATION_CONFLICT","相同调用编号的请求内容发生变化",409);
     let taskId=original.task_id as string|undefined;
@@ -113,7 +113,7 @@ export function apimartImagesFetch(scope: ModelExecutionScope, options: Validati
         for(const file of files){const form=new FormData();form.set("file",file);const upload=await json("/v1/uploads/images",{method:"POST",body:form,signal:request.signal});if(typeof upload.url!=="string"||!/^https:\/\//.test(upload.url))throw new Error("APIMart upload receipt missing URL");image_urls.push(upload.url);}
         let mask_url:string|undefined;
         if(mask)mask_url=`data:image/png;base64,${Buffer.from(await mask.arrayBuffer()).toString("base64")}`;
-        const payload={model:c.wireModel,...((p?p.versionParameter:scope.parameterMap.version)?{version:p?p.versionParameter:scope.parameterMap.version}:{}),prompt:[body.prompt,...params.promptConstraints].join("\n"),n,...params.upstream,...(image_urls.length?{image_urls}:{}),...(mask_url?{mask_url}:{}),...(body.background === "transparent" ? {background:"transparent"} : {}),...(!("output_format" in params.upstream)?{output_format:"png"}:{})};
+        const payload={model:c.wireModel,...((p?p.versionParameter:scope.parameterMap.version)?{version:p?p.versionParameter:scope.parameterMap.version}:{}),prompt:[body.prompt,...params.promptConstraints].join("\n"),n,...params.upstream,...(image_urls.length?{image_urls}:{}),...(mask_url?{mask_url}:{}),...(scope.frozen.imageParameterPlanVersion!==1&&body.background === "transparent" ? {background:"transparent"} : {}),...(!("output_format" in params.upstream)&&!(scope.frozen.imageParameterPlanVersion===1&&scope.parameterMap.imagegen?.outputFormat==="omit")?{output_format:"png"}:{})};
         generationPosted=true;
         const submitted=await json("/v1/images/generations",{method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":attemptId,"X-APIMart-Response-Version":"2026-07-27"},body:JSON.stringify(payload),signal:request.signal});
         taskId=submittedAPIMartTask(submitted)||undefined;if(!taskId)throw new ImageOperationPending(unit,new Error("APIMart受理响应缺少明确任务ID"));

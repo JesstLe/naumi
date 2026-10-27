@@ -1,4 +1,5 @@
 "use client";
+import {canvasNodeMenuItems} from "./node-menu-items";
 import {artworkFields} from "@/lib/canvas/artwork-write";
 import {CanvasArtworkConflicts} from "./artwork-conflicts";
 import { NODE_W, NODE_H, NODE_LABEL_H, IMAGE_NODE_MIN_W, IMAGE_NODE_MIN_H, IMAGE_NODE_MAX_W, IMAGE_NODE_MAX_H, TEXT_NODE_MIN_W, TEXT_NODE_MIN_H, TEXT_NODE_MAX_W, TEXT_NODE_MAX_H, estimateTextNodeHeight, artworkNodeSize, flowNodeSize } from "@/lib/canvas/node-geometry";
@@ -66,7 +67,7 @@ import type { HistoryCommit } from "@/lib/canvas/history-controller";
 import { CanvasHistoryRequestError } from "@/lib/canvas/history-scope";
 import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
 import { smartLayout } from "@/lib/canvas/smart-layout";
-import {submitCanvasImagegen,resolveCanvasDetailFrame} from "@/lib/imagegen/canvas-client";
+import {submitCanvasImagegen,resolveCanvasDetailFrame,resolveCanvasLegacyFrame} from "@/lib/imagegen/canvas-client";
 import {ImagegenPendingRecovery} from "./imagegen-pending-recovery";
 import {FrameRatioDialog,useCanvasFrameChoice} from "./frame-ratio-dialog";
 import {createRetainedBillingSubmission,type RetainedBillingSubmission} from "@/lib/billing/client-submission";
@@ -114,7 +115,7 @@ import type {CanvasKeyboardAction} from "@/lib/canvas/keyboard-command";
 import { shouldVirtualizeCanvas } from '@/lib/canvas/virtualization';
 import { CanvasActionMenu, CanvasActionPanel } from "./canvas-action-menu";
 import { CanvasHelpDialog } from "./canvas-help-dialog";
-import { ContextMenuSurface, ContextMenuItem as Item } from "./context-menu-surface";
+import { ContextMenuSurface, ContextMenuSubmenu, ContextMenuItem as Item } from "./context-menu-surface";
 import { selectionRunTargets } from "@/lib/canvas/selection-run";
 import { BatchSelectionToolbar } from "./batch-selection-toolbar";
 import { TextImageGenerationDialog } from "./text-image-generation-dialog";
@@ -323,6 +324,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         isCurrent:()=>account===canvasAccountRef.current&&project===(activeProjectRef.current?.key||null)&&epoch===canvasContextEpochRef.current&&(init.isCurrent?.()??true)});
     }
     if (path === "/api/generate-image") {
+      if(form){form.set('ratio',normalizeCanvasRatio(body.ratio));await resolveCanvasLegacyFrame(form,frameChoice.chooseFrame,()=>{try{assertCurrent();return true;}catch{return false;}});assertCurrent();body.ratio=String(form.get('ratio')||'auto');}
       if(form?.has("canvasReferences")) {
         try {
           const manifest=canvasReferenceManifestSchema.parse(JSON.parse(String(form.get("canvasReferences"))));
@@ -523,7 +525,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const importSynchronizationVisible=imageImports.some(batch=>batch.owner===user?.email.toLowerCase()&&batch.phase==="sync"&&batch.project===activeKey&&batch.nodeIds?.length);
   const dragDepthRef = useRef(0);
   const [fileDragOver, setFileDragOver] = useState(false);
-  const [nodeTypeMenu, setNodeTypeMenu] = useState<{ x: number; y: number; cx: number; cy: number } | null>(null);
   function resetImportScope() {
     imageImportOwner.reset();
     uploadCtxRef.current = null;
@@ -3352,7 +3353,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   function createCanvasNode(kind: "text" | "image" | "video", point = centerScreen()) {
     if (readOnly) return;
-    setNodeTypeMenu(null);
     if (kind === "text") addTextNodeAtScreen(point.x, point.y);
     else if (kind === "image") addPendAtScreen(point.x, point.y, null, false);
     else if (canFeature("video")) void openVideoNodeFromSelection(true, point);
@@ -3900,7 +3900,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       (propertiesOpen && (selectedId || selectedTextId)) ||
       cropArtwork ||
       imageComposerMenuOpen ||
-      nodeTypeMenu ||
       expandOpen ||
         !!videoHistoryId ||
       !!videoMedia ||
@@ -4435,11 +4434,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     open={addMenuOpen} onOpenChange={open => { setMoreToolsOpen(false); setAddMenuOpen(open); }}
                     triggerIcon={Plus} iconOnly triggerTestId="canvas-add-node-button" menuTestId="canvas-create-menu"
                     triggerClassName="flex h-7 w-7 flex-none items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 sm:h-9 sm:w-9"
-                    items={[
-                      { id: "text", icon: Type, label: t("canvas.toolbar.addText"), onSelect: () => createCanvasNode("text") },
-                      { id: "image-node", icon: ImagePlus, label: t("canvas.toolbar.addImageNode"), onSelect: () => createCanvasNode("image") },
-                      { id: "video-node", icon: Video, label: videoNodeCreateLabel, disabled: !canFeature("video")||videoNodeCreateDisabled, onSelect: () => createCanvasNode("video") },
-                    ]}
+                    items={canvasNodeMenuItems({ L, readOnly, videoDisabled: !canFeature("video") || videoNodeCreateDisabled, onCreate: kind => createCanvasNode(kind) })}
                   />
                   <button type="button" data-tool="text" aria-label={t("canvas.toolbar.addText")} title={t("canvas.toolbar.addText")}
                     onClick={() => { const c = centerScreen(); addTextNodeAtScreen(c.x, c.y); }}
@@ -4716,14 +4711,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               );
             })()}
 
-          {nodeTypeMenu && <div data-testid="canvas-node-type-menu">
-            <ContextMenuSurface x={nodeTypeMenu.cx} y={nodeTypeMenu.cy} light={true} onClose={() => setNodeTypeMenu(null)}>
-              <Item label={t("canvas.toolbar.addText")} disabled={readOnly} onClick={() => createCanvasNode("text", nodeTypeMenu)} />
-              <Item label={t("canvas.toolbar.addImageNode")} disabled={readOnly} onClick={() => createCanvasNode("image", nodeTypeMenu)} />
-              <Item label={videoNodeCreateLabel} disabled={readOnly || !canFeature("video") || videoNodeCreateDisabled} onClick={() => createCanvasNode("video", nodeTypeMenu)} />
-            </ContextMenuSurface>
-          </div>}
-
           {/* 上传图片作根节点(隐藏 input,右键「上传图片/添加节点」触发) */}
           <input
             ref={rootUploadRef}
@@ -4952,16 +4939,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     ) : (
                       /* 空白右键菜单(对齐原型 czcanvas) */
                       <>
-                        <Item
-                          label={t("canvas.textGenerate")}
-                          hk="⇧T"
-                          disabled={readOnly}
-                          onClick={() => addTextNodeAtScreen(ctxMenu.x, ctxMenu.y)}
-                        />
-                        <Item
+                        <ContextMenuSubmenu
                           label={t("canvas.addNode")}
                           disabled={readOnly}
-                          onClick={() => setNodeTypeMenu({ x: ctxMenu.x, y: ctxMenu.y, cx: ctxMenu.cx, cy: ctxMenu.cy })}
+                          items={canvasNodeMenuItems({ L, readOnly, videoDisabled: !canFeature("video") || videoNodeCreateDisabled, onCreate: kind => createCanvasNode(kind, ctxMenu) })}
                         />
                         <Item
                           label={t("canvas.uploadImage")}
@@ -5476,7 +5457,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             onProcess={action=>extractVideoToCanvas(selected.id,action)} onContinue={()=>void openVideoNodeFromSelection()}/>}
           {canFeature("generate") && selected && !selected.videoUrl && selectedBatchArts.length <= 1 && !propertiesOpen && (
             <CanvasImageComposer key={`dock-${imageDraft.key||selected.id}`} pending={false} title={selected.title}
-              dockRef={panelRef} style={dockStyle} readOnly={readOnly} onDismiss={()=>setSelectedId(null)}
+              dockRef={panelRef} style={dockStyle} readOnly={readOnly} optimizationDisabled={!nodeSettingsReady||isNodeLocked(selected.id)} onDismiss={()=>setSelectedId(null)}
               referenceEditor={{...imageComposerReferences,textareaRef:promptAreaRef,placeholder:t("canvas.promptPlaceholder"),readOnly}}
               upload={{inputRef:extraInputRef,available:composerReferences.length<MAX_TOTAL_IMAGES,onFiles:pickExtra}}
               controls={imageComposerControls} error={genError}
@@ -5484,13 +5465,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               generation={{generating:selectedGenerating,failure:selectedGenerationFailure,onGenerate:selectedGenerationFailure&&selectedGenerationRetry?selectedGenerationRetry:generateChild}}/>
           )}
           {canFeature("generate") && selectedPend && !readOnly && (
-            <CanvasImageComposer key={`pdock-${imageDraft.key||selectedPend.id}`} pending dockRef={panelRef} style={dockStyle}
+            <CanvasImageComposer key={`pdock-${imageDraft.key||selectedPend.id}`} pending dockRef={panelRef} style={dockStyle} optimizationDisabled={!nodeSettingsReady||isNodeLocked(selectedPend.id)}
               onDismiss={()=>setSelectedPendId(null)} controls={imageComposerControls} error={genError}
               referenceEditor={{...imageComposerReferences,textareaRef:pendPromptRef,placeholder:t("canvas.pendPromptPlaceholder")}}
               generation={{generating:selectedPendGenerating,failure:selectedPend.generationFailure,onGenerate:selectedPend.generationFailure&&selectedPend.onGenerationRetry?selectedPend.onGenerationRetry:()=>generatePend()}}/>
           )}
           {selectedText && selectedTextBatchNodes.length <= 1 && !readOnly && !propertiesOpen && !isNodeLocked(selectedText.id) && (
-            <CanvasTextComposer key={`tdock-${selectedText.id}`} node={selectedText} members={active?.members??[]} light={lightCanvas}
+            <CanvasTextComposer key={`tdock-${selectedText.id}`} node={selectedText} members={active?.members??[]} light={lightCanvas} optimization={{contextKey:JSON.stringify([user?.email,targetEmail,activeKey,selectedText.id]),disabled:readOnly||!nodeSettingsReady||isNodeLocked(selectedText.id)}}
               draft={{prompt:textPrompt,onChange:setTextPrompt}} task={{state:textTasks.state(selectedText.id),retryable:textTasks.retryable(selectedText.id),onGenerate:()=>generateTextNode()}}
               layout={{dockRef:textComposerDockRef,style:dockStyle,safeArea:overlaySafeArea,canvasSize,expanded:textComposerExpanded,onExpandedChange:setTextComposerExpanded}}
               onDismiss={()=>setSelectedTextId(null)} onReference={(id,enabled)=>updateTextReference(selectedText.id,id,enabled)} onMenuOpenChange={setTextComposerMenuOpen}

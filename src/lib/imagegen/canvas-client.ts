@@ -5,6 +5,7 @@ import {previewImagegen,startImagegen,pollImagegen,uploadImagegenInput,imagegenS
 import type {ImagegenRequest} from "./types";
 import {automaticFrameRatio,frameCandidates,frameRatio,FrameRatioChoiceRequired,type FrameInput} from "./frame-ratio";
 import {resolveImagegenIntent} from "./intent";
+import {legacyImagegenIntent} from './legacy-intent';
 import {ImagegenPreparationCancelled} from "./http";
 import {browserImageHeader} from "../browser-reference-image";
 import {canvasReferenceManifestSchema,referenceManifestError} from "./reference-labels";
@@ -12,6 +13,27 @@ import {currentWorkspace} from '../saas/workspace-client';
 import {canvasImagegenActionKey,pendingAttemptKey,readPendingAttempt,savePendingAttempt,withPendingAttempt,type ImagegenPendingAttempt} from './client-recovery';
 export {completeCanvasImagegen} from './client-recovery';
 export type CanvasFrameChoice={artworkId:string;url:string;label:string;width:number;height:number;ratio:string};
+/** The specialized/redo route quotes the same resolved frame it submits.
+ * Header-only local inspection: no upload, provider call or changed intent ID. */
+export async function resolveCanvasLegacyFrame(form:FormData,chooseFrame:(choices:CanvasFrameChoice[])=>Promise<string|null>,isCurrent:()=>boolean){
+ const ratio=String(form.get('ratio')||'auto');
+ if(ratio!=='auto'||form.get('ratiogen')==='1'||Number(form.get('targetWidth'))>0||Number(form.get('targetHeight'))>0)return;
+ const files=form.getAll('image').filter((x):x is File=>x instanceof File&&x.size>0);
+ if(!files.length)return;
+ const manifest=form.has('canvasReferences')?canvasReferenceManifestSchema.parse(JSON.parse(String(form.get('canvasReferences')))):null;
+ if(manifest&&manifest.length!==files.length)throw new Error('参考图与实际上传图片不一致');
+ const inputs:FrameInput[]=files.map((_,index)=>({artworkId:String(index),role:manifest?.[index].role||(index?'reference':'edit-target')}));
+ const intent=legacyImagegenIntent({userPrompt:form.get('userPrompt'),prompt:form.get('prompt'),origin:'canvas'},files.length);
+ const candidates=frameCandidates(inputs,intent?.useCase),choices:CanvasFrameChoice[]=[];
+ try{
+  for(const input of candidates){const i=Number(input.artworkId),size=await browserImageHeader(files[i]);if(!isCurrent())throw new ImagegenPreparationCancelled();Object.assign(input,size);choices.push({artworkId:input.artworkId,url:URL.createObjectURL(files[i]),label:manifest?.[i]?`图${manifest[i].number} · ${manifest[i].title}`:`图片 ${i+1}`,...size,ratio:frameRatio(size)!});}
+  if(!choices.length)return;
+  const selected=choices.every(x=>x.ratio===choices[0].ratio)?choices[0].artworkId:await chooseFrame(choices);
+  if(!isCurrent()||selected===null)throw new ImagegenPreparationCancelled();
+  const choice=choices.find(x=>x.artworkId===selected);if(!choice)throw new Error('所选画幅已失效');
+  form.set('ratio',choice.ratio);
+ }finally{choices.forEach(x=>URL.revokeObjectURL(x.url));}
+}
 /** Specialized long-detail submissions share the same choice UI, before quote.
  * Only temporary local object URLs are used; no duplicate media upload/storage. */
 export async function resolveCanvasDetailFrame(form:FormData,chooseFrame:(choices:CanvasFrameChoice[])=>Promise<string|null>,isCurrent:()=>boolean){

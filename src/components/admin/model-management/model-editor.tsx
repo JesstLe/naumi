@@ -1,4 +1,5 @@
 "use client";
+import {ImageMappingEditor} from "./image-mapping-editor";
 import type {Operation,State} from "./contracts";
 import {registeredEditor,type EditorState} from "./editor-state";
 import {Dialog} from "./dialog";
@@ -25,6 +26,7 @@ export function ModelEditor({editor,state,locked,busy,error,refreshing,onRefresh
     case "rename":return <RenameDialog row={editor.row} locked={locked} onClose={close} onSave={label=>void onPublish(operation("rename",{rowId:editor.row.id,label}))}/>;
     case "advanced":return <Dialog title="图像高级参数" locked={locked} onClose={close}><label className={styles.field}>前端模型<select value={editor.row.id} disabled={locked} onChange={e=>{const row=state.rows.find(row=>row.id===e.target.value);onChange(row?{kind:"advanced",row}:null);}}>{state.rows.filter(row=>row.modality==="image").map(row=><option key={row.id} value={row.id}>{row.label}</option>)}</select></label><ImagegenRoutesEditor key={editor.row.id} row={editor.row} locked={locked} onSave={routes=>void onPublish(operation("imagegen-parameters",{rowId:editor.row.id,routes}))}/></Dialog>;
     case "channels":return <ChannelsDialog row={state.rows.find(row=>row.id===editor.row.id)||editor.row} state={state} initial={editor.draft} refreshing={refreshing} locked={locked} error={error} onRefresh={onRefresh} onRegister={(providerId,model,draft)=>onChange({kind:"register",providerId,model,returnTo:{...editor,draft}})} onClose={close} onSave={policy=>void onPublish(operation("channels",{rowId:editor.row.id,policy}))}/>;
+    case "mapping":return <Dialog title="统一参数映射" locked={locked} onClose={close}><ImageMappingEditor row={state.rows.find(row=>row.id===editor.row.id)||editor.row} locked={locked} error={error} onClose={close} onSave={mapping=>void onPublish(operation("image-mapping",{rowId:editor.row.id,mapping}))}/></Dialog>;
     case "resolution":return <ResolutionsDialog row={editor.row} locked={locked} error={error} onClose={close} onSave={(resolutions,parameters)=>void onPublish(operation("resolutions",{rowId:editor.row.id,resolutions,...(parameters!==undefined?{parameters}:{})}))}/>;
     case "parameters":return <ParametersDialog row={state.rows.find(row=>row.id===editor.row.id)||editor.row} locked={locked} error={error} onClose={close} onSave={parameters=>void onPublish(operation("parameters",{rowId:editor.row.id,parameters}))}/>;
     case "video":return <VideoParametersDialog row={editor.row} locked={locked} error={error} onClose={close} onSave={routes=>void onPublish(operation("video-parameters",{rowId:editor.row.id,routes}))}/>;

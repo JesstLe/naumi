@@ -114,7 +114,8 @@ async function runModelOperation<T>(input:ModelOperationInput,run:()=>Promise<T>
       if(input.preparedImage.binding!==expected)throw new ModelConfigError("EXECUTION_MISMATCH","准备方案与输入用途不一致",503);
     }
     const prepared=input.preparedImage?validatePreparedImage(input.preparedImage,snapshot,billing,mainFeature,input.preparedImage.binding):prepareImageOperation({...input,feature:mainFeature,binding:purpose.image,accepted:!!accepted,advanced:currentImagegenStep()},snapshot,billing);
-    bundle.image=await executor.resolve({preparedImage:prepared,feature:mainFeature,binding:prepared.binding,requestedModelId:prepared.modelId,snapshot,billing,scopeSystem:parsed.body.origin==="canvas"?"canvas":undefined});
+    const advanced=currentImagegenStep();
+    bundle.image=await executor.resolve({imageParameterPlanVersion:advanced?.billing?.quote.imageParameterPlanVersion??quotedImage?.imageParameterPlanVersion??(accepted?0:1),imageParameterPlans:advanced?.billing?.quote.imageParameterPlans??quotedImage?.imageParameterPlans,preparedImage:prepared,feature:mainFeature,binding:prepared.binding,requestedModelId:prepared.modelId,snapshot,billing,scopeSystem:parsed.body.origin==="canvas"?"canvas":undefined});
   }
 
   const requestedTextModelId = requestedFeatureModel(mainFeature, purpose.primary === "text" || purpose.primary === "vision" ? input.featureModel?.trim() || input.textModel?.trim() || String(parsed.body.modelId || parsed.body.model || "").trim() || undefined : undefined);

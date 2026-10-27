@@ -20,7 +20,7 @@ import {imageOutputNotice,imageRatioWarning} from "./output-advisory";
 import {JOBS} from "./generation-jobs";
 import {readDeliveryBilling} from "./delivery-billing";
 
-export type DeliveryPolicy={known:boolean;modelVersion?:number;post?:Postprocess;preset:boolean;ratio?:ImageRatioValidationPolicy};
+export type DeliveryPolicy={known:boolean;modelVersion?:number;imageParameterPlanVersion?:1;post?:Postprocess;preset:boolean;ratio?:ImageRatioValidationPolicy};
 type DeliveryInput={
   jobId:string;owner:string;params:Partial<GenParams>;images:StoredImage[];final:boolean;
   policy:DeliveryPolicy;useDb:boolean;legacyCost:number;recovery?:boolean;mock?:boolean;
@@ -82,7 +82,7 @@ export async function completeImageDelivery(input:DeliveryInput){
           complete=false;postprocessStatus="pending";warnings.add(PROCESSING_WARNING);
         }
       }else{
-        try{bytes=await finishStoredImage(bytes,{final:false,preset:policy.preset,resolution:p.resolution,targetWidth:p.targetWidth,targetHeight:p.targetHeight,transparent});}
+        try{bytes=await finishStoredImage(bytes,{final:false,preset:policy.preset,imageParameterPlanVersion:policy.imageParameterPlanVersion,resolution:p.resolution,targetWidth:p.targetWidth,targetHeight:p.targetHeight,transparent});}
         catch{complete=false;warnings.add(PROCESSING_WARNING);}
       }
     }

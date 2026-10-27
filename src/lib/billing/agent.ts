@@ -30,7 +30,7 @@ export const AGENT_FEATURES: Record<string, {
 export async function agentQuote(name: string, args: Record<string, any>, email: string, cred: {
     cookie: string;
     authorization: string;
-    imageQuality?: string;
+    imageQuality?: string; originalRequest?: string;
     canvas?: CanvasAgentContext;
     imageSkill?:import("../imagegen/types").ImagegenRequest["skill"];
 }): Promise<{
@@ -49,7 +49,7 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
     if (!entry)
         return null;
     const runtime = await getBillingRuntime(), snapshot=currentModelBillingSnapshot()??await runtime.config.current(),threshold=snapshot.config.thresholds.agentConfirmCredits;
-    if((SHARED_IMAGEGEN_TOOLS.has(name)||canvas&&CANVAS_IMAGE_TOOLS.has(name))&&!args._category){const request=await agentImagegenRequest(name,args,email,canvas,cred.imageQuality,cred.imageSkill),bundle=currentExecutionBundle(),plan=await (request.mode==="batch"?planImagegenBatch:planImagegen)(request,email,bundle?{modelVersion:bundle.modelVersion,billingVersion:bundle.billingVersion}:undefined);return {quote:{configVersion:plan.billingVersion,modelVersion:plan.modelVersion,requestedCredits:plan.totalCredits,authorizedCredits:plan.totalCredits},label:entry.label,threshold:plan.confirmationRequired?0:threshold,imagegenPlan:plan};}
+    if((SHARED_IMAGEGEN_TOOLS.has(name)||canvas&&CANVAS_IMAGE_TOOLS.has(name))&&!args._category){const request=await agentImagegenRequest(name,args,email,canvas,cred.imageQuality,cred.imageSkill,cred.originalRequest),bundle=currentExecutionBundle(),plan=await (request.mode==="batch"?planImagegenBatch:planImagegen)(request,email,bundle?{modelVersion:bundle.modelVersion,billingVersion:bundle.billingVersion}:undefined);return {quote:{configVersion:plan.billingVersion,modelVersion:plan.modelVersion,requestedCredits:plan.totalCredits,authorizedCredits:plan.totalCredits},label:entry.label,threshold:plan.confirmationRequired?0:threshold,imagegenPlan:plan};}
     if(name==="run_video_workflow"){
       const projectKey=canvas?.video?.projectKey||args.project_key;if(!projectKey||canvas?.video?.projectKey&&args.project_key&&args.project_key!==canvas.video.projectKey)throw new Error("请选择当前项目的实际镜头");
       const prepared=await prepareCanvasVideoWorkflow(email,{id:args.operation_id,projectKey,nodes:args.nodes}),quotes=Object.values(prepared.frozen).map(stage=>stage.quote),credits=quotes.reduce((total,q)=>total+q.credits,0),authorizedCredits=quotes.reduce((total,q)=>total+q.authorizedCredits,0);
@@ -75,7 +75,7 @@ export type AgentBillingSession = {
     cred: {
         cookie: string;
         authorization: string;
-        imageQuality?: string;
+        imageQuality?: string; originalRequest?: string;
         canvas?: CanvasAgentContext;
     };
     id: string;
@@ -104,7 +104,9 @@ export async function agentBillingPrecheck(session: AgentBillingSession, name: s
         quoted = await agentQuote(name, args as Record<string, any>, session.email, session.cred);
     }
     catch (error) {
-        return { block: true, reason: error instanceof Error ? error.message : "报价暂不可用" };
+        const detail=error as {code?:string;issues?:{message?:string}[]};
+        return { block: true, reason: Array.isArray(detail.issues)?detail.issues.map(i=>i.message).filter(Boolean).join("；").slice(0,500):error instanceof Error ? error.message : "报价暂不可用",
+          code:typeof detail.code==="string"?detail.code:Array.isArray(detail.issues)?"ARGUMENT_INVALID":"PLAN_UNAVAILABLE",submissionState:"not_submitted" as const };
     }
     if (!quoted)
         return undefined;

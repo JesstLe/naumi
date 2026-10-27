@@ -1,3 +1,4 @@
+import {executionImageParameterPlan} from './image-plan-runtime';
 import "server-only";
 import type {ModelExecutionScope} from "./context";
 import type {ValidationOptions} from "./schema";
@@ -9,7 +10,19 @@ import {createStageRoutingFetch} from "./stage-routing-policy";
 /** One composition point. Policy receives this factory explicitly; provider
  * adaptation does not import policy, SDK clients, or a mutable global registry. */
 export function executionFetch(scope: ModelExecutionScope, options: ValidationOptions = {}): typeof fetch {
-  return healthObservedFetch(scope, executionTransport(scope, options), options);
+  const transport=healthObservedFetch(scope,executionTransport(scope,options),options);
+  if(scope.supplierRouting||scope.frozen.modality!=="image"||scope.frozen.imageParameterPlanVersion!==1)return transport;
+  return async(input,init)=>{
+    const request=new Request(input,init);
+    if(request.method==="POST"){
+      const plan=executionImageParameterPlan(scope);
+      if(plan)try{
+        const {recordImageParameterPlan}=await import("../saas/creation-writer");
+        await recordImageParameterPlan(plan);
+      }catch{/* Diagnostics never authorize another generation. */}
+    }
+    return transport(request);
+  };
 }
 function executionTransport(scope:ModelExecutionScope,options:ValidationOptions):typeof fetch{
  if(scope.supplierRouting)return channelRoutingFetch(scope,options);

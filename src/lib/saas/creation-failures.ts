@@ -133,5 +133,19 @@ export async function creationFailures(tx:Reader,roots:{id:string;email:string}[
   UNION SELECT root,actor_email,source_kind,source_id,depth FROM family)
  SELECT DISTINCT * FROM refs ORDER BY root,id,type LIMIT 1001`,[JSON.stringify(roots)])).rows;
  const refs:Ref[]=rows.flatMap(r=>{const table=sourceTable(r.type);return table?[{root:r.root,table_name:table,id:r.id,email:r.email}]:[];});
- return readFailures(tx,refs,roots.map(r=>r.id),rows.length>1000||rows.some(r=>r.depth===16));
+ const result=await readFailures(tx,refs,roots.map(r=>r.id),rows.length>1000||rows.some(r=>r.depth===16));
+ // Agent preflight failures do not have image-job rows: read their own immutable
+ // turn events, never reinterpret a sibling's successful paid task as failed.
+ const tools=(await tx.query(`SELECT DISTINCT ON (e.creation_id) e.creation_id,e.summary,e.occurred_at FROM app_creation_events e
+  JOIN app_creation_records c ON c.id=e.creation_id
+  JOIN jsonb_to_recordset($1::jsonb) r(id text,email text) ON r.id=c.id AND r.email=c.actor_email
+  WHERE e.type='agent-tool' AND e.status='failed' ORDER BY e.creation_id,e.occurred_at DESC LIMIT 100`,[JSON.stringify(roots)])).rows;
+ for(const event of tools){
+  if(result.get(event.creation_id)?.evidence!=='not_recorded')continue;
+  let detail;try{detail=JSON.parse(event.summary)}catch{continue}
+  if(typeof detail.tool!=='string'||typeof detail.summary!=='string')continue;
+  const f=missingCreationFailure();
+  result.set(event.creation_id,{...f,title:detail.submissionState==='not_submitted'?'工具参数检查未通过，尚未提交':'Agent 工具执行未完成',description:detail.summary,stage:detail.tool,code:typeof detail.code==='string'?detail.code:null,evidence:'task_state',observedAt:new Date(event.occurred_at).toISOString(),diagnosis:{certainty:'confirmed',facts:[detail.summary],missing:[],nextChecks:['核对本轮工具调用与各子任务账务'],taskId:null,callId:typeof detail.callId==='string'?detail.callId:null,requestId:null,taskState:'failed',source:'task_diagnostic'}});
+ }
+ return result;
 }

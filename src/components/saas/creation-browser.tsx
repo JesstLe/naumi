@@ -4,10 +4,15 @@ import {usePathname,useRouter,useSearchParams} from 'next/navigation';
 import {ArrowLeft,ChevronRight,ImageIcon,RefreshCw,X} from 'lucide-react';
 import {authHeader} from '@/lib/supabase';
 import {useAuth} from '@/lib/auth-context';
+import Markdown from 'react-markdown';
 import type {CreationPage,CreationDetail,CreationAsset,CreationFailure} from '@/lib/saas/creation-contracts';
 import styles from './saas.module.css';
 import historyStyles from './creation-history-nav.module.css';
 const labels:Record<string,string>={queued:'排队中',running:'处理中',succeeded:'已完成',partial:'部分成功',failed:'失败',cancel_requested:'取消申请中',cancelled:'已取消',needs_review:'待核查'};
+function eventSummary(event:{type:string;summary:string}){
+ if(event.type==='agent-tool'){try{const detail=JSON.parse(event.summary);if(typeof detail.tool==='string'&&typeof detail.summary==='string')return `${detail.tool} · ${detail.summary}`;}catch{}}
+ return event.summary;
+}
 export function CreationStatus({status}:{status:string}){return <span className={`${styles.badge} ${styles[status]||''}`}>{labels[status]||'未记录'}</span>;}
 export function CreationBrowser(props:{tenantId?:string;enterprise?:boolean}){const {user}=useAuth();return <ScopedCreationBrowser key={`${user?.email||'console'}:${props.tenantId||'*'}:${props.enterprise?'enterprise':'platform'}`} {...props}/>;}
 function ScopedCreationBrowser({tenantId,enterprise=false}:{tenantId?:string;enterprise?:boolean}){
@@ -47,19 +52,20 @@ function ScopedCreationBrowser({tenantId,enterprise=false}:{tenantId?:string;ent
 export function CreationDetailView({detail,api,tenantId,onPage,onChild}:{detail:CreationDetail;api:string;tenantId?:string;onPage?:(key:string,value:number)=>void;onChild?:(id:string)=>void}){
  const [showProcessed,setShowProcessed]=useState(false);
  useEffect(()=>setShowProcessed(false),[detail.id]);
- const outputs=detail.assets.filter(a=>a.direction==='output'),inputs=detail.assets.filter(a=>a.direction==='input'&&a.variant!=='processed'),processed=detail.assets.filter(a=>a.direction==='input'&&a.variant==='processed');
+ const outputs=detail.assets.filter(a=>a.direction==='output'&&a.role!=='reply'),replies=detail.assets.filter(a=>a.direction==='output'&&a.role==='reply'),inputs=detail.assets.filter(a=>a.direction==='input'&&a.variant!=='processed'),processed=detail.assets.filter(a=>a.direction==='input'&&a.variant==='processed');
  const media=(assets:CreationAsset[],result=false)=><div className={styles.mediaGrid}>{assets.map((a,i)=><CreationMedia key={`${detail.id}:${a.id}`} asset={a} title={result?(assets.length>1?`结果 ${i+1}`:''):undefined} api={`${api}/${detail.id}/assets/${a.id}${tenantId?`?tenantId=${tenantId}`:''}`}/>)}</div>;
  const count=(v:number|null)=>v===null?(detail.billing.state==='not_applicable'?'不适用':'未记录'):`${v} 积分`;
  return <><div className={styles.detailTitle}><div><h2>{detail.title}</h2><p>{detail.actorName} · {new Date(detail.acceptedAt).toLocaleString('zh-CN')}</p></div><CreationStatus status={detail.status}/></div>
  {detail.evidencePending&&<p role="status" className={styles.error}>部分执行资料待核查，结果与账务按已记录证据显示。</p>}
   {api==='/api/admin/creations'&&detail.failure&&<CreationFailureView failure={detail.failure}/>}
  {outputs.length>0&&<section className={styles.mediaSection} aria-label="生成结果"><h3>生成结果</h3>{media(outputs,true)}</section>}
+ {replies.length>0&&<section className={styles.mediaSection} aria-label="最终答复"><h3>最终答复</h3>{replies.map(reply=><div key={reply.id} style={{lineHeight:1.75,overflowWrap:'anywhere'}}><Markdown skipHtml components={{img:({alt})=><span>{alt||'图片'}</span>,a:({children})=><span>{children}</span>}}>{reply.text||''}</Markdown></div>)}</section>}
  {inputs.length>0&&<section className={styles.mediaSection} aria-label="输入素材"><h3>输入素材</h3>{media(inputs)}</section>}
  {processed.length>0&&<details className={styles.technical} open={showProcessed} onToggle={e=>setShowProcessed(e.currentTarget.open)}><summary>处理后输入（{processed.length}）</summary>{showProcessed&&media(processed)}</details>}
  <EvidencePager label="素材" page={detail.assetPagination} onPage={value=>onPage?.('assetPage',value)}/>
  {!detail.assets.length&&<div className={styles.empty} style={{minHeight:130}}>输入与产物素材未记录</div>}
- <dl><div className={styles.facts}><dt>原始要求</dt><dd>{detail.request.state==='recorded'?detail.request.text||'已记录为空':'未记录'}</dd></div><div className={styles.facts}><dt>创作参数</dt><dd>{detail.parameters.state==='recorded'?<ParameterChips values={detail.parameters.values}/ >:'未记录'}{detail.model.label&&<span className={styles.modelChip}>模型：{detail.model.label}</span>}</dd></div></dl>
- <h3 style={{marginTop:18,fontSize:16}}>执行过程</h3>{detail.events.length?<div className={styles.timeline}>{detail.events.map(e=><div key={e.id} className={styles.event}><strong>{e.summary}</strong><span className={styles.muted}>{new Date(e.occurredAt).toLocaleTimeString('zh-CN')}</span><CreationStatus status={e.status}/></div>)}</div>:<div className={styles.empty} style={{minHeight:70}}>执行事件未记录</div>}
+ <dl><div className={styles.facts}><dt>原始要求</dt><dd>{detail.request.state==='recorded'?detail.request.text||'已记录为空':'未记录'}</dd></div><div className={styles.facts}><dt>创作参数</dt><dd>{detail.parameters.state==='recorded'?<><ParameterChips values={detail.parameters.values}/ ><ImageExecutionParameters value={detail.parameters.values.executionPlans}/></>:'未记录'}{detail.model.label&&<span className={styles.modelChip}>模型：{detail.model.label}</span>}</dd></div></dl>
+ <h3 style={{marginTop:18,fontSize:16}}>执行过程</h3>{detail.events.length?<div className={styles.timeline}>{detail.events.map(e=><div key={e.id} className={styles.event}><strong>{eventSummary(e)}</strong><span className={styles.muted}>{new Date(e.occurredAt).toLocaleTimeString('zh-CN')}</span><CreationStatus status={e.status}/></div>)}</div>:<div className={styles.empty} style={{minHeight:70}}>执行事件未记录</div>}
  <EvidencePager label="执行事件" page={detail.eventPagination} onPage={value=>onPage?.('eventPage',value)}/>
  {detail.children?.length>0&&<details className={styles.technical}><summary>关联子任务（{detail.childPagination.total}）</summary>{detail.children.map(child=><button key={child.id} className={styles.record} onClick={()=>onChild?.(child.id)}><span>{child.title}</span><CreationStatus status={child.status}/></button>)}<EvidencePager label="子任务" page={detail.childPagination} onPage={value=>onPage?.('childPage',value)}/></details>}
  <div className={styles.billing}><strong>费用结算</strong><span>报价 {count(detail.billing.quoted)}</span><span>预占 {count(detail.billing.reserved)}</span><span>实扣 <b>{count(detail.billing.charged)}</b></span><span>释放预占 {count(detail.billing.released)}</span><span>退款 {count(detail.billing.refunded)}</span></div><p className={styles.muted}>扣款账户：{detail.billing.payerAccountId||'未记录'} · {detail.billing.state==='settled'?'已结算':detail.billing.state==='pending'?'待结算':detail.billing.state==='not_applicable'?'无需扣费':'账务未记录'}</p>
@@ -73,7 +79,7 @@ export function CreationFailureView({failure:f}:{failure:CreationFailure}){
   <div><dt>失败阶段</dt><dd>{f.stage}</dd></div>
   <div><dt>依据</dt><dd>{f.evidence==='supplier_receipt'?'原供应调用回执':f.evidence==='task_state'?'原任务状态':'未记录'}{f.observedAt&&` · ${new Date(f.observedAt).toLocaleString('zh-CN')}`}</dd></div>
   {f.supplier&&<><div><dt>供应通道 / 模型</dt><dd>{f.supplier.provider||'未记录'} / {f.supplier.model||'未记录'}</dd></div><div><dt>供应结果 / 费用</dt><dd>{state[f.supplier.state]||'待确认'} / {state[f.supplier.costStatus]||'待确认'}</dd></div></>}
-  <div><dt>对应任务账务</dt><dd>{f.customerBilling?`${state[f.customerBilling.state]||'待确认'} · 实扣 ${amount(f.customerBilling.charged)} · 剩余预占 ${amount(f.customerBilling.reserved)}`:'未记录，不推断为未扣费'}</dd></div>
+  <div><dt>对应任务账务</dt><dd>{f.customerBilling?`${state[f.customerBilling.state]||'待确认'} · 实扣 ${amount(f.customerBilling.charged)} · 剩余预占 ${amount(f.customerBilling.reserved)}`:'该失败步骤未记录账务，本轮结算单独列出'}</dd></div>
   {f.diagnosis&&<>
    <div><dt>原因确认状态</dt><dd>{{confirmed:'已确认异常',unconfirmed:'执行结果待确认',evidence_missing:'证据待补齐'}[f.diagnosis.certainty]}</dd></div>
    {f.diagnosis.facts.length>0&&<div><dt>已记录事实</dt><dd>{f.diagnosis.facts.map(fact=><p key={fact}>{fact}</p>)}</dd></div>}
@@ -95,3 +101,10 @@ export function CreationMedia({asset,api,title}:{asset:CreationAsset;api:string;
 }
 
 function ParameterChips({values}:{values:Record<string,unknown>}){const labels:Record<string,string>={ratio:'比例',resolution:'分辨率',quality:'质量',quantity:'数量',count:'数量',seconds:'时长',size:'尺寸',background:'背景',format:'格式',compression:'压缩',mode:'模式',width:'宽',height:'高',inputFidelity:'输入保真',moderation:'审核'};const entries=Object.entries(values).flatMap(([k,v]):[string,unknown][]=>v&&typeof v==='object'?Object.entries(v as Record<string,unknown>):[[k,v]]).filter(([,v])=>['string','number','boolean'].includes(typeof v));return <span className={styles.parameterChips}>{entries.map(([k,v],i)=><span key={`${k}-${i}`}><b>{labels[k]||k}</b> {String(v)}</span>)}</span>;}
+
+function ImageExecutionParameters({value}:{value:unknown}){
+ if(!value||typeof value!=='object')return null;
+ const plans=Object.values(value as Record<string,any>).filter(p=>p?.version===1&&p.requested&&p.wire);
+ if(!plans.length)return null;
+ return <details className={styles.technical}><summary>实际发送参数</summary>{plans.map((p,i)=><div key={i}><strong>{p.upstreamId}</strong><div>用户选择：{p.requested.resolution} / {p.requested.quality} / {p.requested.ratio}</div><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{JSON.stringify(p.wire,null,2)}</pre></div>)}</details>;
+}

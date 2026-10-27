@@ -24,7 +24,7 @@ const checks = [
   [/type CanvasPrimaryTool\s*=\s*"move"\s*\|\s*"marquee"\s*\|\s*"hand"/.test(toolTypes), "three primary canvas tools are declared"],
   [client.includes('data-testid="canvas-main-toolbar"') && client.includes('bottom-[76px] left-1/2') && client.includes('min-[800px]:bottom-5'), "main toolbar stays centered at the bottom"],
   [["move", "marquee", "hand"].every(tool => tools.includes(`data-tool="${tool}"`)) && client.includes('dataTool="more"'), "primary tools and settings remain reachable"],
-  [["text", "image-node", "upload", "history"].every(tool => client.includes(`data-tool="${tool}"`)) && client.includes('menuTestId="canvas-create-menu"'), "frequent creation shortcuts stay visible alongside the three-node creation menu"],
+  [["text", "image-node", "upload", "history"].every(tool => client.includes(`data-tool="${tool}"`)) && client.includes('menuTestId="canvas-create-menu"'), "frequent creation shortcuts stay visible alongside the shared node creation menu"],
   [client.includes('data-tool="undo"') && client.includes('data-tool="redo"') && client.includes('onClick={() => void doUndo()}') && client.includes('onClick={() => void doRedo()}'), "visible undo and redo controls use existing history operations"],
   [!client.includes('data-tool="generate"') && !client.includes('data-tool="link"'), "focus-only and hint-only buttons no longer imply real generation or connection tools"],
   [client.includes('nodesDraggable={!readOnly && canvasTool !== "hand"}') && client.includes('canvas-hand-tool'), "hand tool switches the canvas into pan mode"],

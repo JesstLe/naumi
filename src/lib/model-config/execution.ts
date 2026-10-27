@@ -1,3 +1,5 @@
+import {canonicalConfig} from './snapshot-value';
+import {compileImageParameterPlan,imagePlanSelection,type ImageParameterPlans} from './image-parameter-plan';
 import {resolveImageResolution, resolutionFacts, upstreamAcceptsResolution} from "./resolution-fallback";
 import { applicationAPIMartImages } from "./apimart-image-policy";
 import "server-only";
@@ -20,7 +22,7 @@ import {validatePreparedImage,type PreparedImageOperation} from "./prepared-imag
 import {freezeManagedVideoCapability} from "../video/frozen-capability";
 import {type FrozenVideoCapability} from "../video/frozen-capability-schema";
 
-export type ExecutionModel = { imageUpstreamIds?: string[]; video?: FrozenVideoCapability; requestedParameters?: import("./image-preset").ImageParameters; feature?: string; modelVersion: number; billingVersion: number; modelDigest: string; publicModelId: string; binding: string; modality: Modality; target: { type: "upstream" | "pool"; id: string }; credentialRef?: string; routerDigest?: string; facts?: ModelFacts };
+export type ExecutionModel = { imageParameterPlanVersion?:1; imageParameterPlans?:ImageParameterPlans; imageUpstreamIds?: string[]; video?: FrozenVideoCapability; requestedParameters?: import("./image-preset").ImageParameters; feature?: string; modelVersion: number; billingVersion: number; modelDigest: string; publicModelId: string; binding: string; modality: Modality; target: { type: "upstream" | "pool"; id: string }; credentialRef?: string; routerDigest?: string; facts?: ModelFacts };
 export type ExecutionConnection = { providerId: string; protocol: string; baseUrl: string; apiKey: string; wireModel: string; timeoutMs: number; credentialRef?: string; maxConcurrent?: number; options?: ModelProvider["options"] };
 type Dependencies = ValidationOptions & { runtime: Pick<ModelRuntime, "byVersion" | "prepareExecution"> & Partial<Pick<ModelRuntime, "validateExecutionProjection">>; credentials: Pick<ReturnType<typeof createCredentialStore>,"read">; billingByVersion?:(version:number)=>Promise<ConfigSnapshot>; gateway: () => { baseUrl: string; apiKey: string } };
 import {executionSchema,imageUpstreamIdsSchema} from "./execution-contract";
@@ -30,6 +32,13 @@ export function createModelExecutor(deps: Dependencies) {
     if (!parsed.success) throw new ModelConfigError("EXECUTION_MISMATCH", "任务执行配置无效，需要核查原记录", 503);
     const frozen = parsed.data;
     const snapshot = await deps.runtime.byVersion(frozen.modelVersion);
+    if(frozen.imageParameterPlanVersion===1){
+      if(!frozen.imageParameterPlans||!Object.keys(frozen.imageParameterPlans).length)throw new ModelConfigError('EXECUTION_MISMATCH','冻结参数计划缺失',503);
+      for(const [id,plan]of Object.entries(frozen.imageParameterPlans)){
+        const u=snapshot.config.upstreamModels.find(u=>u.id===id),p=snapshot.config.providers.find(p=>p.id===u?.providerId);
+        if(!u||!p||plan.upstreamId!==id||plan.modelVersion!==frozen.modelVersion||canonicalConfig(plan)!==canonicalConfig(compileImageParameterPlan(u,plan.requested,{publicModelId:frozen.publicModelId,protocol:p.protocol,modelVersion:frozen.modelVersion,adapter:p.options?.imageAdapter})))throw new ModelConfigError('EXECUTION_MISMATCH','冻结参数映射与原配置不符',503);
+      }
+    }
     const frontendModel = frontendModelSelection(snapshot, frozen.modality, frozen.publicModelId);
     const publicModel = snapshot.config.publicModels.find(m => m.id === frozen.publicModelId && m.enabled && m.modality === frozen.modality);
     const purpose = MODEL_BINDINGS[frozen.binding as ModelBinding];
@@ -59,7 +68,7 @@ export function createModelExecutor(deps: Dependencies) {
     let scope:ModelExecutionScope;
     if(publicModel.supplierRouting){
       if(!deps.billingByVersion)throw new ModelConfigError("CONFIG_UNAVAILABLE","供应通道无法读取冻结计费版本",503);
-      const eligible=frozen.modality==="image"&&frozen.facts?new Set(simulateModel(snapshot,await deps.billingByVersion(frozen.billingVersion),publicModel.id,frozen.facts,deps).eligible.map(u=>u.upstreamId)):new Set(publicModel.supplierRouting.channels.filter(c=>c.enabled&&snapshot.config.upstreamModels.some(u=>u.id===c.upstreamId&&u.enabled&&u.capabilities[purpose.capability]&&(!(frozen.feature==="canvas.assistant"&&frozen.facts?.references)||u.capabilities.vision)&&snapshot.config.providers.some(p=>p.id===u.providerId&&p.enabled))).map(c=>c.upstreamId));
+      const eligible=frozen.modality==="image"&&frozen.facts?new Set(simulateModel(snapshot,await deps.billingByVersion(frozen.billingVersion),publicModel.id,frozen.facts,{...deps,imageParameterPlanVersion:frozen.imageParameterPlanVersion??0}).eligible.map(u=>u.upstreamId)):new Set(publicModel.supplierRouting.channels.filter(c=>c.enabled&&snapshot.config.upstreamModels.some(u=>u.id===c.upstreamId&&u.enabled&&u.capabilities[purpose.capability]&&(!(frozen.feature==="canvas.assistant"&&frozen.facts?.references)||u.capabilities.vision)&&snapshot.config.providers.some(p=>p.id===u.providerId&&p.enabled))).map(c=>c.upstreamId));
       if(frozen.modality==="image" && frozen.requestedParameters && frozen.facts) for(const id of eligible) {
         const u=snapshot.config.upstreamModels.find(u=>u.id===id)!;
         if(!upstreamAcceptsResolution(u,frozen.facts.requestedResolution||frozen.facts.resolution,frozen.facts.ratio))eligible.delete(id);
@@ -86,7 +95,7 @@ export function createModelExecutor(deps: Dependencies) {
     return scope;
   };
   return {
-    async resolve(input: { preparedImage?:PreparedImageOperation; imageUpstreamIds?:string[]; allowResolutionFallback?:boolean; requestedParameters?:import("./image-preset").ImageParameters; scopeSystem?:"canvas"; feature?: string; binding: string; requestedModelId?: string; snapshot: ModelSnapshot; billing: ConfigSnapshot; facts?: ModelFacts }): Promise<ExecutionModel> {
+    async resolve(input: { preparedImage?:PreparedImageOperation; imageParameterPlanVersion?:1|0; imageParameterPlans?:ImageParameterPlans; imageUpstreamIds?:string[]; allowResolutionFallback?:boolean; requestedParameters?:import("./image-preset").ImageParameters; scopeSystem?:"canvas"; feature?: string; binding: string; requestedModelId?: string; snapshot: ModelSnapshot; billing: ConfigSnapshot; facts?: ModelFacts }): Promise<ExecutionModel> {
       const prepared=input.preparedImage?validatePreparedImage(input.preparedImage,input.snapshot,input.billing,input.feature,input.binding):undefined;
       if(prepared)input={...input,requestedModelId:prepared.modelId,facts:prepared.facts,requestedParameters:prepared.requestedParameters,imageUpstreamIds:prepared.eligibleUpstreamIds,allowResolutionFallback:false};
       input = { ...input, requestedModelId: requestedFeatureModel(input.feature, input.requestedModelId) };
@@ -149,7 +158,14 @@ export function createModelExecutor(deps: Dependencies) {
       }
       const projection = routed ? await deps.runtime.prepareExecution({ snapshot: input.snapshot, billing: input.billing }) : undefined;
       const video = purpose.modality === "video" && upstream && provider ? await freezeManagedVideoCapability(input.snapshot,upstream,provider) : undefined;
-      return { ...(imageUpstreamIds ? {imageUpstreamIds:[...imageUpstreamIds]} : {}), ...(video ? {video} : {}), ...(requestedParameters ? {requestedParameters} : {}), ...(input.feature ? { feature: input.feature } : {}), modelVersion: input.snapshot.version, billingVersion: input.billing.version, modelDigest: input.snapshot.digest, publicModelId: model.id, binding: input.binding, modality: model.modality, target: structuredClone(target), ...(provider?.credentialRef ? { credentialRef: provider.credentialRef } : {}), ...(projection ? { routerDigest: projection.digest } : {}), ...(input.facts ? { facts: structuredClone(input.facts) } : {}) };
+      let imageParameterPlans=input.imageParameterPlans;
+      const planVersion=purpose.modality==='image'&&!routed&&!preset&&(input.facts||input.imageParameterPlans)&&input.imageParameterPlanVersion!==0?1:undefined;
+      if(planVersion&&input.facts&&!imageParameterPlans){
+        const ids=imageUpstreamIds|| (model.supplierRouting?simulateModel(input.snapshot,input.billing,model.id,input.facts,deps).eligible.map(c=>c.upstreamId):plan?plan.targets:[upstream!.id]);
+        imageParameterPlans=Object.fromEntries(ids.map(id=>{const u=config.upstreamModels.find(u=>u.id===id)!,p=config.providers.find(p=>p.id===u.providerId)!;
+          return [id,compileImageParameterPlan(u,imagePlanSelection(input.facts!),{publicModelId:model.id,protocol:p.protocol,modelVersion:input.snapshot.version,adapter:p.options?.imageAdapter})];}));
+      }
+      return { ...(planVersion?{imageParameterPlanVersion:planVersion,imageParameterPlans}:{}), ...(imageUpstreamIds ? {imageUpstreamIds:[...imageUpstreamIds]} : {}), ...(video ? {video} : {}), ...(requestedParameters ? {requestedParameters} : {}), ...(input.feature ? { feature: input.feature } : {}), modelVersion: input.snapshot.version, billingVersion: input.billing.version, modelDigest: input.snapshot.digest, publicModelId: model.id, binding: input.binding, modality: model.modality, target: structuredClone(target), ...(provider?.credentialRef ? { credentialRef: provider.credentialRef } : {}), ...(projection ? { routerDigest: projection.digest } : {}), ...(input.facts ? { facts: structuredClone(input.facts) } : {}) };
     },
     describe,
     async clientFor(model: ExecutionModel) { const scope = await describe(model); return { client: executionOpenAI(scope, deps), wireModel: scope.connection.wireModel }; },

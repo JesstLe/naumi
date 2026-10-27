@@ -76,7 +76,7 @@ export async function recoverStoredDelivery(parentId:string,owner:string){
   const processingKnown=!frozen||!!version;
   const preset=version?!!selectedImagePreset(version.config,frozen.feature,frozen.publicModelId,frozen.binding):false;
   const delivery=await completeImageDelivery({jobId:child.id,owner,params:{...p,email:owner,userPrompt:p.userPrompt||plan.request.prompt},images:checkpoint.images,final:checkpoint.final,
-    policy:{known:processingKnown,modelVersion:frozen?.modelVersion,post,preset},useDb:true,legacyCost:Number(child.payload.cost||0),recovery:true,
+    policy:{known:processingKnown,modelVersion:frozen?.modelVersion,imageParameterPlanVersion:frozen?.imageParameterPlanVersion,post,preset},useDb:true,legacyCost:Number(child.payload.cost||0),recovery:true,
     sourceNodeId:plan.request.sourceNodeId,entry:plan.request.entry,transparent:plan.intent.background==="transparent",stage:()=>{},
   });
   const {images,artifacts,billing}=delivery,ids=images.map(image=>image.id);

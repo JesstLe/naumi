@@ -46,6 +46,7 @@ export function ModelManagement() {
         if (r.channelsEditable) actions.push({ label: "供应通道", group: "routing", disabled: locked || !state.managed, onClick: () => { setError(""); setEditor({kind:"channels",row:r,draft:null}); } });
         if (r.modality === "video") actions.push({ label: "视频能力", group: "parameters", disabled: locked || !state.managed || !r.videoConfig?.routes.length, onClick: () => { setError(""); setEditor({kind:"video",row:r}); } });
         if (r.modality === "image") actions.push(
+          { label: "统一参数映射", group: "parameters", disabled: locked || !state.managed || r.preset || !r.parameterSources?.length || !r.resolutionConfig?.routes.every(route=>route.editable) || !r.qualityConfig?.routes.every(route=>route.editable), onClick: () => { setError(""); setEditor({kind:"mapping",row:r}); } },
           { label: "参数设置", group: "parameters", disabled: locked || r.preset || !r.qualityConfig?.routes.every(v => v.editable), title: r.preset || !r.qualityConfig?.routes.every(v => v.editable) ? "此路径由外部路由或成本预设管理参数" : "配置显示档位与实际传参", onClick: () => { setError(""); setEditor({kind:"parameters",row:r}); } },
           { label: "分辨率设置", group: "parameters", disabled: locked || !state.managed, onClick: () => { setError(""); setEditor({kind:"resolution",row:r}); } },
         );

@@ -73,5 +73,5 @@ export const TOOL_ACCESS: Record<string, string> = {
   check_image_ip: "ipcheck", prepare_print_file: "printfile", generate_variations: "variations", fuse_images: "fuse",
   generate_titles: "titles", list_competitor_items: "competitors", import_competitor_image: "competitors",
   analyze_competitor: "competitors", replicate_competitor: "competitors", edit_competitor: "competitors",
-  get_balance: "agent", verify_image_output: "agent", list_agent_tools: "agent",
+  get_balance: "agent", list_image_models: "agent", inspect_images: "agent", verify_image_output: "agent", list_agent_tools: "agent",
 };

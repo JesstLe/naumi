@@ -1,0 +1,58 @@
+# 图片参数统一计划与103验收发布
+
+## 用户批准与当前状态
+
+- 批准完整方案：供应商资料仅辅助配置；已发布人工映射决定实际发送。4K→2k、high→medium、不发送均为正式配置。
+- 覆盖图片配置、准入/报价、各通道映射、冻结执行、结果和错误记录、画布重做；不合重构分支，不修改共享工作树未提交内容。
+- 独立工作树 `E:/Workspace/naumi-image-redo-quote-20261027`。已整合 Agent 固定交接 `6190f3a6627f3349b0b17309a9efd046e39d313a`（含功能 `95cc9722`、main `3421bb47`）。
+- 用户最新明确覆盖103蓝绿规则：**本次103.30.76.93先完成固定main镜像和备份，再停止旧Naumi Web/Worker并直接替换；数据库/媒体/独立基础服务保留。47不发布。**
+- 实现、测试、main整合与103发布尚在进行，不能把方案记录当完成。
+
+## 实施规则
+
+1. 一个纯参数解析模块给准入、报价、请求编码、后台预览复用；资料为空不否决明确映射，明确禁用/omit/false/0保留。
+2. 客户选择、实际上游值、实际图片尺寸分别记录；上游映射不改原售价，不自动增加放大或付费重提。
+3. 新执行使用带版本的参数计划；原冻结任务保留旧解释。通道各自转换，元数据刷新不改已发布配置或已受理任务。
+4. 映射字段冲突、缺映射和编码不合法在提交前指出；供应商实际响应与本地校验错误分开。
+5. 集中验证完整模块：4K→2k/high→medium/omit、空资料、不同协议、字段冲突、报价身份、归属/幂等、历史恢复与副本回滚。
+
+## 原始故障
+
+v150 Nano Banana Pro 前端显示1K/2K/4K，apib通道能力数组为空，adapter在映射前检查原始档位，导致本地MODEL_INCOMPATIBLE被错标IMAGE_REQUEST_REJECTED。现场证据与零网络真实adapter复现只在 ignored `output/image-redo-quote-20261027/rejection-133612-r3/`。
+
+## 验收与发布记录
+
+待实现后补充固定提交、集中结果、四产物、103真实入口/镜像/备份/回滚、实际验收结果和用户待验收项。
+
+## 实现与集中验收（发布前）
+
+- 共用 `image-parameter-plan.ts` 编译前端选择、每通道 wire/omit、有效档位、可选像素预期；缺资料不否决显式映射。`image-plan-runtime.ts` 只读原冻结执行，不读当前资料。
+- 新报价与 ExecutionModel 记录计划版本1和逐通道计划；复开核对原模型版本/digest和编译结果。旧任务无标记走原解释；未知受理、防重放、原报价/账务保留。
+- OpenAI、APIMart应用异步、Flow、Reverse Hub 接同一编译结果；业务阶段/供应通道仍各自负责受理身份。外部Router和成本预设保留原专用协议，后台不会开放其不支持的手工覆盖。
+- 映射后的质量/分辨率不再拿原始显示值对供应商资料作二次白名单检查；高级显式字段映射覆盖资料缺省。明确结构性操作/蒙版/参考数量约束保留。
+- 新计划不隐式调用历史 upscaleImages；显式后处理规则保留。后台记录用户选择/实际发送，实际图像尺寸由实际输出记录。
+- 后台新增统一参数映射表、同编译器真实请求预览、一次CAS发布质量与分辨率；元数据作为参考不强制同步。原高级参数、专用协议编辑器继续使用。
+- 本地错误响应使用进程内WeakMap身份，不能由供应响应自报type伪造；OPERATION_CONFLICT保持受理不确定语义。
+- 画布重做先按真实参考图头解析比例，再报价/提交；账号/工作区失效中止，不自动重复收费。
+
+集中结果：原版4项复现；新参数编译/实际loopback发送25项、真实PG冻结复开/旧任务/篡改校验、后台真实HTTP原子发布/同ID重放/旧版本冲突通过；异步适配原受理/恢复/账务回归、分辨率46、比例139、图片报价25组74检查、交付重试4故障、后台诊断PG24、Agent修复58、Canvas 138场景1208断言通过。新编辑器1440/390实际组件验证通过，0外网/页面错误；全量tsc通过。以output最新TEST_RESULTS日志为准，初次测试失败保留。
+
+分支核对：除明确排除的refactor/历史rollback/baseline外，远端已完成分支均被整合；本地4个t3功能分支patch-equivalent，无需重复提交。共享18项未提交UI改动不纳入。
+
+103初查：主Web/Worker为56aa3233；13104为真实nginx入口；同机旧c05a主Web/Worker还运行。另有独立media执行器和fleet portal、DB/Hub/NewAPI/Redis。更新将停掉旧Naumi Web/Worker、替换media到同版，保留独立fleet和基础设施；没有操作47。
+
+## 103最终上线（2026-10-27 15:20 北京）
+
+- 用户批准停旧直替，最终固定main源码 `a57909b03377a705337a9f0830e7cf7b8ae4bc6d`，版本 `1793085307`，镜像 `sha256:2c74d3c3f0e545c8b2b5d055fc1474d7af6fb1831ce84d8aefe809292b02d6e7`。
+- 入口 `http://103.30.76.93`，主Web/Worker/media分别为 `naumi103-web-parameters-main-20261027`、`naumi103-worker-parameters-main-20261027`、`naumi103-media-parameters-main-20261027`，同固定镜像。
+- 原56aa与c05a两对Web/Worker、旧media及本轮中间f942三实例均已停止/restart=no。独立fleet portal、DB/Redis/NewAPI/Hub、媒体保留；nginx入口13104不变。
+- 公网 `/api/version`、`/api/health`、`/canvas` 均HTTP200；实际版本与main固定SHA一致；DB health ok。原账号鉴权GET及管理员模型管理200，5个图像家族返回统一映射资料。
+- Worker paused=false、unresolvedTicks=0；真实同版Web completed tick已核验。该事实不是历史所有待核查任务已完成。
+- 103原模型配置v112保留，未同步47的v150/用户/媒体，不自动修改价格或真实参数映射。本轮真实付费生成测试0；用户接下来在103配置并验收4K→2k/high→medium、重做、Agent和节点菜单。
+- 本轮供应商适配53项、核心参数25、真实PG16、分辨率46、比例139、原报价25组74检查、后台PG24、Agent58、Canvas138场景1208断言、后台原子CAS发布、UI1440/390、全量tsc和固定生产构建通过。最新节点菜单实际组件定向复测通过。
+- 四产物及51文件副本回滚精确恢复通过；原空能力误拦截和auto报价错位恢复重现，修改交付副本未回滚。输出根 `E:/Workspace/naumi/output/image-parameter-plan-103-20261027/`。
+- 真实备份可读、未回灌数据库。最终证据 `/opt/naumi-staging/evidence/image-parameter-plan-20261027-main/`，最终程序回退命令 `python3 -B /opt/naumi-staging/evidence/image-parameter-plan-20261027-main/rollback103-main.py`（保留业务数据）。
+- 保留本轮失败：第一次包清单在tar关闭前计算hash导致组包校验拒绝；更正后通过。第一轮直替后的验收脚本误用旧库不存在的created_at，已自动回切并确认原站200；改用joined_at并强制ON_ERROR_STOP后复用同镜像发布成功。发布期间main新增菜单已补入最终固定版本，不把中间f942称为最终main。
+- 本条是发布后文档，不另行构建镜像。47未发布，原4轮会话PREVIEW未写回。
+
+- 已合并本任务分支工作区在交付前归档清理；证据已移动到上述主工作区 ignored output 并重验51文件SHA。隔离PG容器已停止，volume保留。

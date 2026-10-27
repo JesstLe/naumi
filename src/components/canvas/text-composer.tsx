@@ -1,6 +1,8 @@
 "use client";
 import {useEffect,useLayoutEffect,useMemo,useRef,useState,type RefObject,type Dispatch,type SetStateAction} from "react";
 import {ArrowUp,Image as ImageIcon,Loader2,PenLine,Plus,X} from "lucide-react";
+import {CanvasPromptOptimizer} from "./prompt-optimizer";
+import {optimizeCanvasPrompt} from "@/lib/canvas/prompt-optimizer-client";
 import {CachedImage} from "@/components/cached-image";
 import {Textarea} from "@/components/ui/textarea";
 import {TextModelSelect} from "@/components/ui/text-model-select";
@@ -20,6 +22,7 @@ type ComposerReference=Pick<Artwork,"id"|"image"|"title">;
 export type CanvasTextComposerProps={
   node:CanvasTextNode; members:ComposerReference[]; light:boolean;
   draft:{prompt:string;onChange:(value:string)=>void};
+  optimization?:{contextKey:string|null;disabled:boolean};
   task:{state:CanvasTextTaskState;retryable:boolean;onGenerate:()=>unknown};
   layout:{dockRef:RefObject<HTMLDivElement|null>;style?:DockPlacement;safeArea:SafeArea;canvasSize:CanvasSize;expanded:boolean;onExpandedChange:Dispatch<SetStateAction<boolean>>};
   onDismiss:()=>void;onReference:(id:string,enabled:boolean)=>unknown;onMenuOpenChange:(open:boolean)=>void;
@@ -27,7 +30,7 @@ export type CanvasTextComposerProps={
 };
 /** Owns only composer presentation. Draft, document and paid task remain with
  * their existing owners; callbacks do not create a second execution path. */
-export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,draft,task,layout,onDismiss,onReference,onMenuOpenChange,assist,image}:CanvasTextComposerProps){
+export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,draft,optimization,task,layout,onDismiss,onReference,onMenuOpenChange,assist,image}:CanvasTextComposerProps){
   const {locale,t}=useI18n(),L=(zh:string,en:string)=>locale==="en"?en:zh;
   const {prompt:textPrompt,onChange:setTextPrompt}=draft;
   const {dockRef:textComposerDockRef,style:dockStyle,safeArea:overlaySafeArea,canvasSize,expanded:textComposerExpanded,onExpandedChange:setTextComposerExpanded}=layout;
@@ -328,6 +331,9 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
               )}
               <CanvasComposerFooter testId="text-node-dock-footer" controls={<>
                 <TextModelSelect feature="canvas.text-generate" compact dark={false} direction="up" />
+                <CanvasPromptOptimizer contextKey={optimization?.contextKey??null} prompt={textPrompt}
+                  disabled={!optimization || optimization.disabled || task.state.busy || selectedText.status === "generating" || assistBusy} english={locale === "en"}
+                  onOptimize={(prompt, signal) => optimizeCanvasPrompt("canvas-text", prompt, signal)} onApply={setTextPrompt}/>
 
                 <button
                   type="button"

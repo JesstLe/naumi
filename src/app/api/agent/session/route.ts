@@ -8,7 +8,6 @@ import {
   getSession,
   removeRuntimeSession,
   renameRuntimeSession,
-  persistAgentSession,
 } from "@/lib/agent/runtime";
 
 // ---------------------------------------------------------------------------
@@ -39,7 +38,7 @@ export async function GET(request: Request) {
   const id = (url.searchParams.get("id") ?? "").trim();
   if (id) {
     if(id.startsWith("cv-"))return NextResponse.json({error:"请从画布查看此会话"},{status:400});
-    await getSession(email,id)?.persistPending;
+    await getSession(email,id)?.persistPending?.catch(()=>undefined);
     const s = await getAgentSession(email, id);
     if (!s) return NextResponse.json({ error: "会话不存在" }, { status: 404 });
     return NextResponse.json({ session: new AgentHarness(email, id).sanitize(s) });
@@ -77,13 +76,15 @@ export async function POST(request: Request) {
   }
   if(id.startsWith("cv-"))return NextResponse.json({error:"请从画布管理此会话"},{status:400});
   const live=getSession(email,id);
-  if(live){await persistAgentSession(live);return NextResponse.json({ok:true,serverOwned:true});}
+  // Client autosave is not authority to flush an idle process's cached snapshot.
+  if(live){await live.persistPending?.catch(()=>undefined);return NextResponse.json({ok:true,serverOwned:true});}
   if(await getAgentSession(email,id))return NextResponse.json({ok:true,serverOwned:true});
   const title = (body?.title ?? "").trim().slice(0, 120);
   const messages = Array.isArray(body?.messages) ? body!.messages.slice(-100) : [];
   try { validateHarnessHistory(messages); } catch(error) { return harnessErrorResponse(error); }
   // Imported history cannot manufacture approval or tool execution evidence.
-  await saveAgentSession(email, id, title, new AgentHarness(email, id).sanitize(messages), []);
+  try { await saveAgentSession(email, id, title, new AgentHarness(email, id).sanitize(messages), [], null); }
+  catch(error) { if((error as {code?:string}).code!=="AGENT_SESSION_CONFLICT")throw error; }
   return NextResponse.json({ ok: true });
 }
 
@@ -110,7 +111,7 @@ export async function PATCH(request: Request) {
   }
   if(id.startsWith("cv-"))return NextResponse.json({error:"请从画布管理此会话"},{status:400});
   if(getSession(email,id)?.running)return NextResponse.json({error:"请先停止任务"},{status:409});
-  await getSession(email,id)?.persistPending;
+  await getSession(email,id)?.persistPending?.catch(()=>undefined);
   const renamed = await renameAgentSession(email, id, title);
   if (!renamed) {
     return NextResponse.json({ error: "会话不存在" }, { status: 404 });
@@ -139,7 +140,7 @@ export async function DELETE(request: Request) {
       { status: 409 }
     );
   }
-  await getSession(email, id)?.persistPending;
+  await getSession(email, id)?.persistPending?.catch(()=>undefined);
   await deleteAgentSession(email, id);
   removeRuntimeSession(email, id);
   return NextResponse.json({ ok: true });

@@ -1,3 +1,4 @@
+import {executionImageParameterPlan} from '../model-config/image-plan-runtime';
 import "server-only";
 import { currentObservedCallId } from "../bi/call-scope";
 import { createHash, randomUUID } from "node:crypto";
@@ -56,6 +57,8 @@ export function supplierCostFetch(fetcher: typeof fetch, connection: { providerI
       row=(await ledger.pool.query("SELECT * FROM app_supplier_calls WHERE account_id=$1 AND request_id=$2 ORDER BY started_at LIMIT 1",[accountId,task])).rows[0];
       if(!row)return dispatch(request);
     }else row = await ledger.begin({ ...context, phase:connection.phase||context.phase,attemptId: request.headers.get('idempotency-key')||randomUUID(), accountId, providerId: connection.providerId, model: model || "unknown", procurement: scope?.procurement });
+    const parameterPlan=scope?.frozen.modality==='image'?executionImageParameterPlan(scope):undefined;
+    if(parameterPlan&&request.method==='POST')await ledger.pool.query("UPDATE app_supplier_calls SET parameters=COALESCE(parameters,'{}'::jsonb)||jsonb_build_object('parameterPlan',$2::jsonb) WHERE id=$1 AND (parameters->'parameterPlan') IS NULL",[row.id,JSON.stringify(parameterPlan)]);
     const diagnosticResponse=(response:Response)=>bindResponseDiagnostics(response,async failure=>{
       await ledger.pool.query("UPDATE app_supplier_calls SET evidence=COALESCE(evidence,'{}'::jsonb)||jsonb_build_object('postAcceptanceFailure',$2::jsonb),updated_at=now() WHERE id=$1",[row.id,JSON.stringify(failure)]);
     });

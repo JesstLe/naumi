@@ -1,3 +1,5 @@
+import {compileImageParameterPlan,imagePlanSelection} from './image-parameter-plan';
+import {publicUpstreamIds} from './channel-policy';
 import {resolveImageResolution} from "./resolution-fallback";
 import {assertDisplayResolution} from "./resolution-options";
 import "server-only";
@@ -115,6 +117,18 @@ export function freezeBusinessQuoteForModel(snapshot:ConfigSnapshot,models:Model
     q.requestedParameters = {quality:originalFacts.quality,resolution:originalResolution,ratio:originalFacts.ratio||"1:1"};
     q.effectiveParameters = {...(q.effectiveParameters||q.requestedParameters),resolution:choice.effective};
     q.legacyCompatible = false;
+  }
+  // Freeze administrator mappings alongside the unchanged customer tariff.
+  // Saved quotes return before this function, so historical quotes are not upgraded.
+  if(model?.modality==='image'&&model.target.type==='upstream'&&(!scope||scope.frozen.imageParameterPlanVersion===1)){
+    q.imageParameterPlanVersion=1;q.imageParameterPlans={};
+    for(const id of publicUpstreamIds(models.config,model)){
+      const u=models.config.upstreamModels.find(u=>u.id===id),p=models.config.providers.find(p=>p.id===u?.providerId);
+      if(!u?.enabled||!p?.enabled)continue;
+      try{q.imageParameterPlans[id]=compileImageParameterPlan(u,imagePlanSelection({...facts,resolution:choice.effective}),{publicModelId:model.id,protocol:p.protocol,modelVersion:models.version,adapter:p.options?.imageAdapter});}
+      catch(error){if(!model.supplierRouting)throw error;}
+    }
+    if(!Object.keys(q.imageParameterPlans).length)throw new ModelConfigError('IMAGE_MAPPING_INVALID','没有完整的图片参数映射',422);
   }
   return q;
 }

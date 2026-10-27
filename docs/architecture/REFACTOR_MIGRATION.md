@@ -1,3 +1,7 @@
+## 2026-10-27 R6O 主线 owner 整合（验证中）
+
+固定 incoming `4e15e71a`，双parent普通merge。会话写入归session-repository、历史媒体归artworks、图片编译/合同/传输/交付各沿原owner；新映射接单一typed editor；提示词UI接image/text composer与窄浏览器transport。新旧任务版本显式分开，正常与续交一致；没有恢复旧db大文件、聚合runtime或Canvas内联dock。功能计数归零，整体active；[模块记录](../changes/2026-10-27-main-owner-integration-r6o.md)。
+
 # 渐进迁移与集中验收台账
 
 2026-10-27 R6N：Canvas剪贴板协议/原HTML marker、账号/工作空间复制会话和native transport归3个owner，旧个人key/owner-only记录保留、由原API授权；6083→5868行，153原函数及1859其它原src/services hash保持，移除11内联函数，SCC0。完整旧22组123→新124/24字节合同同、模型44、输入3948/相邻/类型通过；修新tab旧内存、过期intent、切号/卸载后旧回退及bitmap释放。真实页面又捕获按text-前缀猜类型造成混合工具栏缺失，按实际record修复、保留原r6c-text。固定a8a37079 core34/34、完整Linux同镜像125、产品双browser27（剪贴板6）通过，copyPOST2/undo-redo同ID/额外supplier与consume0；60秒混合读5轮，报告99.49秒含尾部剪贴板阶段。4585hash回滚/四产物/远端见DELIVERY；计数2，开工main bc6af06d的12条待下一轮普通整合，整体active、不合main不部署。见[R6N记录](../changes/2026-10-27-canvas-clipboard-r6n.md)。

@@ -1,3 +1,6 @@
+import {localImageRejectionResponse} from './local-image-rejection';
+import {executionImageParameterPlan} from './image-plan-runtime';
+import {applyImageParameterPlan} from './image-parameter-plan';
 import "server-only";
 import {applicationAPIMartImages} from "./apimart-image-policy";
 import {currentImagegenStep} from "../imagegen/context";
@@ -21,7 +24,7 @@ export function providerExecutionTransport(scope: ModelExecutionScope, options: 
       catch (error) {
         // Hash/identity conflicts can refer to an already paid Hub task. They
         // must not be relabelled as proof that another supplier may be called.
-        if (error instanceof ModelConfigError && ["INVALID_REQUEST","MODEL_INCOMPATIBLE","PROVIDER_BUSY","CHANNEL_DISABLED","CONFIG_UNAVAILABLE"].includes(error.code)) return Response.json({ error: { message: error.message, code: error.code, billing_status: "not_charged" } }, { status: error.code === "CONFIG_UNAVAILABLE" ? 429 : error.status });
+        if (error instanceof ModelConfigError && ["INVALID_REQUEST","MODEL_INCOMPATIBLE","PROVIDER_BUSY","CHANNEL_DISABLED","CONFIG_UNAVAILABLE"].includes(error.code)) return localImageRejectionResponse(error);
         throw error;
       }
     };
@@ -31,7 +34,7 @@ export function providerExecutionTransport(scope: ModelExecutionScope, options: 
     return async(input,init)=>{try{return await adapter(input,init);}catch(error){
       // The SDK otherwise hides our definite parameter/output rejection inside
       // a connection error. Unknown paid acceptance remains Pending, not 4xx.
-      if(error instanceof ModelConfigError && ["INVALID_REQUEST","MODEL_INCOMPATIBLE","OPERATION_CONFLICT","MODEL_PARAMETER_UNAVAILABLE","PROVIDER_BUSY","CHANNEL_DISABLED","CONFIG_UNAVAILABLE"].includes(error.code))return Response.json({error:{message:error.message,type:"naumi_async_image_rejection",code:error.code,...(error.code!=="OPERATION_CONFLICT"?{billing_status:"not_charged"}:{})}},{status:error.status});
+      if(error instanceof ModelConfigError && ["INVALID_REQUEST","MODEL_INCOMPATIBLE","OPERATION_CONFLICT","MODEL_PARAMETER_UNAVAILABLE","IMAGE_MAPPING_INVALID","PROVIDER_BUSY","CHANNEL_DISABLED","CONFIG_UNAVAILABLE"].includes(error.code))return localImageRejectionResponse(error);
       throw error;
     }};
   }
@@ -43,6 +46,8 @@ export function providerExecutionTransport(scope: ModelExecutionScope, options: 
     if (request.method !== "POST" || !/\/(?:images\/(?:generations|edits)|chat\/completions)$/.test(new URL(request.url).pathname)) return transport(request);
     const map = (body: Record<string, any>) => {
       body.model = connection.wireModel;
+      const parameterPlan=executionImageParameterPlan(scope,body);
+      if(parameterPlan&&frozen.modality==='image')return applyImageParameterPlan(body,parameterPlan);
       if ((scope.businessOption?.pricing?.mode === "usage" || scope.procurement?.basis === "tokens") && body.stream && connection.protocol === "openai-chat") body.stream_options = { ...body.stream_options, include_usage: true };
       if (connection.protocol !== "router-images") {
         if (parameterMap.qualityPolicy) {
@@ -65,6 +70,8 @@ export function providerExecutionTransport(scope: ModelExecutionScope, options: 
     };
     if (request.headers.get("content-type")?.includes("multipart/form-data")) {
       const form = await request.formData(); const fields = map(Object.fromEntries(Array.from(form.entries()).filter(([, value]) => typeof value === "string")));
+      const parameterPlan=executionImageParameterPlan(scope,fields);
+      if(parameterPlan)for(const field of parameterPlan.clear)if(!field.includes('.')&&!Object.hasOwn(fields,field))form.delete(field);
       if(parameterMap.resolutionPolicy)for(const field of RESOLUTION_FIELDS)if(!Object.prototype.hasOwnProperty.call(fields,field))form.delete(field);
       if (parameterMap.qualityPolicy?.mode === "omit") form.delete("quality");
       for (const [key, value] of Object.entries(fields)) if (["string","number","boolean"].includes(typeof value)) form.set(key, String(value));
@@ -82,7 +89,7 @@ export function providerExecutionTransport(scope: ModelExecutionScope, options: 
     try { return await mappedFetch(input, init); }
     catch (error) {
       // SDKs otherwise turn this local pre-submission rejection into an unknown connection failure.
-      if (error instanceof ModelConfigError && ["PROVIDER_BUSY", "CHANNEL_DISABLED", "CONFIG_UNAVAILABLE"].includes(error.code)) return Response.json({ error: { message: error.message, type: "naumi_capacity", billing_status: "not_charged", code: error.code } }, { status: error.code === "CONFIG_UNAVAILABLE" ? 429 : error.status });
+      if (error instanceof ModelConfigError && ["PROVIDER_BUSY", "CHANNEL_DISABLED", "CONFIG_UNAVAILABLE"].includes(error.code)) return localImageRejectionResponse(error);
       throw error;
     }
   };
@@ -115,7 +122,7 @@ function flowImageFetch(scope: ModelExecutionScope, options: ValidationOptions):
   return async (input, init) => {
     try { return await submit(input, init); }
     catch (error) {
-      if (error instanceof ModelConfigError && ["MODEL_INCOMPATIBLE", "INVALID_REQUEST", "PROVIDER_BUSY", "CHANNEL_DISABLED", "CONFIG_UNAVAILABLE", "UPSTREAM_REJECTED_NOT_CHARGED"].includes(error.code)) return Response.json({ error: { message: error.message, type: "naumi_pre_submission", billing_status: "not_charged", code: error.code } }, { status: error.code === "CONFIG_UNAVAILABLE" ? 429 : error.status });
+      if (error instanceof ModelConfigError && ["MODEL_INCOMPATIBLE", "INVALID_REQUEST", "PROVIDER_BUSY", "CHANNEL_DISABLED", "CONFIG_UNAVAILABLE", "UPSTREAM_REJECTED_NOT_CHARGED"].includes(error.code)) return error.code==="UPSTREAM_REJECTED_NOT_CHARGED"?Response.json({error:{message:error.message,code:error.code,billing_status:"not_charged"}},{status:error.status}):localImageRejectionResponse(error);
       throw error;
     }
   };

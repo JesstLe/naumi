@@ -140,6 +140,8 @@ export type ConfigSnapshot = {
     config: BillingConfig;
 };
 export type BillingQuote = {
+    imageParameterPlanVersion?:1;
+    imageParameterPlans?:import("../model-config/image-parameter-plan").ImageParameterPlans;
     refundExpiry?: ExpiryPolicy;
     imagePreset?: import("../model-config/image-preset").ImagePreset;
     requestedParameters?: import("../model-config/image-preset").ImageParameters;

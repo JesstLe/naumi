@@ -1,5 +1,6 @@
 import {ensureExecutionAuditSchema} from "@/lib/model-config/execution-audit-schema";
 export {ensureExecutionAuditSchema};
+import {executionImageParameterPlan} from './image-plan-runtime';
 import "server-only";
 import {randomUUID} from "node:crypto";
 import {dbEnabled,getPool} from "@/platform/db/pool";
@@ -31,6 +32,8 @@ export async function beginExecutionStage(scope: ModelExecutionScope, attempt: n
     }
     await tx.query("INSERT INTO app_model_execution_stages(id,operation_id,feature,public_model_id,model_version,billing_version,provider_id,wire_model,matched_rule_id,phase,state,attempt,estimated_cost_cny_micros,cost_source) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$13,'submitted',$10,$11,$12)", [id,operation,scope.frozen.feature || scope.frozen.binding,scope.frozen.publicModelId,scope.frozen.modelVersion,scope.frozen.billingVersion,scope.connection.providerId,scope.connection.wireModel,ruleId || null,attempt,cost?.basis !== "tokens" ? cost?.amountMicros ?? null : null,cost ? `${cost.source};${cost.updatedAt}` : "unknown",scope.frozen.modality === "text" ? "text" : scope.frozen.binding === "image.edit" ? "edit" : "generation"]);
     await tx.query("UPDATE app_model_execution_stages SET procurement=$2::jsonb WHERE id=$1", [id, scope.procurement ? JSON.stringify(scope.procurement) : null]);
+    const parameterPlan=executionImageParameterPlan(scope);
+    if(parameterPlan)await tx.query("UPDATE app_model_execution_stages SET usage=$2::jsonb WHERE id=$1",[id,JSON.stringify({parameterPlan})]);
     await tx.query("COMMIT"); return id;
   } catch (e) { await tx.query("ROLLBACK"); throw e; } finally { tx.release(); }
 }
@@ -38,5 +41,5 @@ export async function finishExecutionStage(id: string, state: string, status?: n
   if (!dbEnabled) return;
   const pool=getPool(),row=(await pool.query("SELECT procurement FROM app_model_execution_stages WHERE id=$1",[id])).rows[0];
   const cost=stageCost(row?.procurement,state,usage);
-  await pool.query("UPDATE app_model_execution_stages SET state=$2,status=$3,usage=$4::jsonb,cost_cny_micros=$5,cost_status=$6,updated_at=now() WHERE id=$1", [id,state,status || null,usage ? JSON.stringify(usage) : null,cost.amount,cost.status]);
+  await pool.query("UPDATE app_model_execution_stages SET state=$2,status=$3,usage=COALESCE(usage,'{}'::jsonb)||COALESCE($4::jsonb,'{}'::jsonb),cost_cny_micros=$5,cost_status=$6,updated_at=now() WHERE id=$1", [id,state,status || null,usage ? JSON.stringify(usage) : null,cost.amount,cost.status]);
 }

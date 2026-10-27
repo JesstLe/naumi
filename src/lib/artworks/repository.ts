@@ -166,3 +166,13 @@ export async function setArtworkOrigin(email: string, id: string, origin: string
   );
   return (result.rowCount ?? 0) > 0;
 }
+
+/** Resolve explicit owned historical media; never infer a result from prose. */
+export async function knownAgentMedia(email: string, urls: string[]): Promise<string[]> {
+  const paths = [...new Set(urls)].filter(url => /^\/media\/[\w./%-]+$/.test(url)).slice(-100);
+  if (!paths.length) return [];
+  await ensureSchema();
+  const { rows } = await getPool().query(`SELECT image_url AS url FROM app_artworks WHERE email=$1 AND image_url=ANY($2::text[]) AND deleted_at IS NULL
+    UNION SELECT video_url AS url FROM app_artworks WHERE email=$1 AND video_url=ANY($2::text[]) AND deleted_at IS NULL`, [email.toLowerCase(), paths]);
+  return rows.map(row => row.url as string);
+}

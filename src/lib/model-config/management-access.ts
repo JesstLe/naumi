@@ -1,3 +1,4 @@
+import {imageMappingEditorSchema,applyImageMappingEditor} from './image-mapping-editor';
 import { readImageModelMetadata } from "../supplier-models/image-model-metadata";
 import {applyResolutionParameters,resolutionParametersSchema} from "./resolution-policy";
 import {imagegenRoutePolicySchema,applyImagegenModelParameters} from "./imagegen-policy";
@@ -43,6 +44,7 @@ const input = z.discriminatedUnion("action", [
   z.strictObject({action:z.literal("video-parameters"),...common,rowId:identifier,routes:videoParametersSchema}),
   z.strictObject({action:z.literal("imagegen-parameters"),...common,rowId:identifier,routes:z.array(imagegenRoutePolicySchema).max(100).nullable()}),
   z.strictObject({action:z.literal("channels"),...common,rowId:identifier,policy:channelPolicySchema.nullable()}),
+  z.strictObject({action:z.literal("image-mapping"),...common,rowId:identifier,mapping:imageMappingEditorSchema}),
   z.strictObject({action:z.literal("resolutions"),...common,rowId:identifier,resolutions:z.array(z.enum(["1K","2K","4K"])).min(1).max(3).nullable(),parameters:resolutionParametersSchema.nullable().optional()}),
   z.strictObject({ action: z.literal("discover"), providerId: identifier, force: z.boolean().optional() }),
   z.strictObject({ action: z.literal("credential"), providerId: identifier, ciphertext: z.string().min(1).max(32768).optional(), keyPlain: z.string().min(1).max(16384).optional() }),
@@ -146,6 +148,9 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
           }
         } else if(body.action === "order") {
           config=orderManagedModels(config,rows(snapshot),body.rowIds);
+        } else if(body.action === "image-mapping") {
+          const row=rows(snapshot).find(r=>r.id===body.rowId);if(!row||row.modality!=="image"||row.preset||!row.resolutionConfig?.routes.every(r=>r.editable)||!row.qualityConfig?.routes.every(r=>r.editable))throw new ModelConfigError("IMAGE_MAPPING_INVALID","此模型参数由协议预设管理",422);
+          config=applyImageMappingEditor(config,row.publicIds,[...new Set(row.routes.map(r=>r.upstreamId))],body.mapping);
         } else if (body.action === "switch" || body.action === "rename" || body.action === "scope" || body.action === "parameters" || body.action === "resolutions" || body.action === "channels" || body.action === "imagegen-parameters" || body.action === "video-parameters") {
           const row = rows(snapshot).find(r => r.id === body.rowId);
           if (!row) throw new ModelConfigError("MODEL_UNAVAILABLE", "前端当前没有展示该模型，请刷新", 409);
@@ -190,7 +195,7 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
         draft = await admin.repo.saveDraft({ id: draft.id, expectedRevision: draft.revision, config, actor });
       }
       staged = true;
-      const publication = await admin.runtime.publish({ id: body.id, draftId: draft.id, expectedRevision: draft.revision, expectedVersion: body.expectedVersion, actor, reason: `MVP ${body.action === "video-parameters" ? `视频能力 ${body.rowId}` : body.action === "imagegen-parameters" ? `图像高级参数 ${body.rowId}` : body.action === "scope-compat" ? "回滚兼容：展开画布系统范围" : body.action === "order" ? "模型展示排序" : body.action === "channels" ? `供应通道 ${body.rowId}` : body.action === "resolutions" ? `分辨率选项 ${body.rowId}` : body.action === "parameters" ? `参数映射 ${body.rowId}` : body.action === "scope" ? `工具范围 ${body.rowId}` : body.action === "switch" ? `切换 ${body.rowId} → ${body.upstreamId}` : body.action === "rename" ? `改名 ${body.rowId} → ${body.label}` : body.action === "connect" ? `接入来源 ${body.name}` : `添加模型 ${body.model}`}` });
+      const publication = await admin.runtime.publish({ id: body.id, draftId: draft.id, expectedRevision: draft.revision, expectedVersion: body.expectedVersion, actor, reason: `MVP ${body.action === "image-mapping" ? `图片参数映射 ${body.rowId}` : body.action === "video-parameters" ? `视频能力 ${body.rowId}` : body.action === "imagegen-parameters" ? `图像高级参数 ${body.rowId}` : body.action === "scope-compat" ? "回滚兼容：展开画布系统范围" : body.action === "order" ? "模型展示排序" : body.action === "channels" ? `供应通道 ${body.rowId}` : body.action === "resolutions" ? `分辨率选项 ${body.rowId}` : body.action === "parameters" ? `参数映射 ${body.rowId}` : body.action === "scope" ? `工具范围 ${body.rowId}` : body.action === "switch" ? `切换 ${body.rowId} → ${body.upstreamId}` : body.action === "rename" ? `改名 ${body.rowId} → ${body.label}` : body.action === "connect" ? `接入来源 ${body.name}` : `添加模型 ${body.model}`}` });
       let discovery;
       if (body.action === "connect" && publication.phase === "applied") {
         const provider = (await admin.repo.current()).config.providers.find(p=>p.id===`mvp-${body.id}`);

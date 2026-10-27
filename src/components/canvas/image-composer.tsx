@@ -1,5 +1,7 @@
 "use client";
 import type {ComponentProps,CSSProperties,RefObject} from "react";
+import {CanvasPromptOptimizer} from "./prompt-optimizer";
+import {optimizeCanvasPrompt} from "@/lib/canvas/prompt-optimizer-client";
 import {Box,Focus,MapPin,RotateCcw,Upload} from "lucide-react";
 import {cn} from "@/lib/utils";
 import {GENERATION_STYLES} from "@/lib/mock-data";
@@ -11,7 +13,7 @@ import {GenerationSubmitAction} from "./generation-submit-action";
 import {CanvasImageGenerationControls,type CanvasImageGenerationControlsProps} from "./image-generation-controls";
 
 export type CanvasImageComposerProps={
-  pending:boolean;title?:string;readOnly?:boolean;style?:CSSProperties;dockRef:RefObject<HTMLDivElement|null>;onDismiss:()=>void;
+  pending:boolean;title?:string;readOnly?:boolean;optimizationDisabled?:boolean;style?:CSSProperties;dockRef:RefObject<HTMLDivElement|null>;onDismiss:()=>void;
   referenceEditor:Omit<ComponentProps<typeof ImageReferenceComposer>,"children"> & {identity:string|null};
   upload?:{inputRef:RefObject<HTMLInputElement|null>;available:boolean;onFiles:(files:FileList|null)=>unknown};
   controls:Omit<CanvasImageGenerationControlsProps,"pending">;
@@ -20,7 +22,7 @@ export type CanvasImageComposerProps={
 };
 /** Existing and blank image nodes share one draft/reference/control presentation.
  * No task, billing or document state is created here. */
-export function CanvasImageComposer({pending,title,readOnly=false,style,dockRef,onDismiss,referenceEditor,upload,controls,imageActions,generation,error}:CanvasImageComposerProps){
+export function CanvasImageComposer({pending,title,readOnly=false,optimizationDisabled=false,style,dockRef,onDismiss,referenceEditor,upload,controls,imageActions,generation,error}:CanvasImageComposerProps){
   const {locale,t}=useI18n(),L=(zh:string,en:string)=>locale==="en"?en:zh;
   const {identity,...references}=referenceEditor;
   return <CanvasComposerShell data-testid={pending?"pending-node-dock":"image-node-dock"} ref={dockRef}
@@ -38,6 +40,7 @@ export function CanvasImageComposer({pending,title,readOnly=false,style,dockRef,
     </div>
     {!readOnly&&<CanvasComposerFooter controls={<>
       <CanvasImageGenerationControls {...controls} pending={pending}/>
+      <CanvasPromptOptimizer contextKey={identity} prompt={references.prompt} disabled={readOnly||optimizationDisabled||generation.generating} english={locale==="en"} onOptimize={(prompt,signal)=>optimizeCanvasPrompt("canvas-image",prompt,signal)} onApply={references.onPrompt}/>
       {imageActions&&(
                   <CanvasComposerOptions label={L("更多图片参数", "More image settings")}><CanvasSelect
                         dir="up"
