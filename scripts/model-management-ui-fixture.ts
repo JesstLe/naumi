@@ -92,6 +92,13 @@ async function main() {
   const fixtureBilling=fixtureConfig();fixtureBilling.switches.metering="on";
   const billing=createConfigRuntime({ pool: f.sql, ensureSchema: db.ensureSchema, initialize: async () => fixtureBilling });
   const beforeBilling=await billing.current();await billing.publish({id:crypto.randomUUID(),expectedVersion:beforeBilling.version,config:fixtureBilling,actor:"fixture",reason:"Enable isolated UI pricing"});
+  if(process.env.VERIFY_ADMIN_UI_INTEGRATION === "1") {
+    process.env.STORAGE_DRIVER="local";
+    process.env.MEDIA_DIR=process.cwd()+"/output/model-management-fixture/admin-media";
+    const seed=spawn(process.execPath,["--conditions=react-server","--import","tsx","scripts/seed-saas-admin-preview.ts"],{env:process.env,windowsHide:true,stdio:"inherit"});
+    const code=await new Promise<number|null>((resolve,reject)=>{seed.once("error",reject);seed.once("exit",resolve);});
+    if(code!==0)throw Error("ADMIN_UI_REAL_FIXTURE_SEED_FAILED");
+  }
   await mkdir("output/model-management-fixture", { recursive: true });
   next = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", process.env.NAUMI_MODEL_UI_PORT||"54989"], { env: process.env, windowsHide: true, stdio: "inherit" });
   await writeFile("output/model-management-fixture/fixture.json", JSON.stringify({ control: f.origin, memberCookie: native.signUserSession("mvp-member@example.test", Date.now()), schemaName: f.schemaName,runId:process.env.NAUMI_MODEL_UI_RUN_ID }));

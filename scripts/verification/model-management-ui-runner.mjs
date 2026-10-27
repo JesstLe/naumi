@@ -20,7 +20,7 @@ export async function runModelManagementUi(verificationFile,{root=process.cwd(),
   root=await fs.realpath(root);
   const database=new URL(env.DATABASE_URL||'http://invalid');
   if(env.NAUMI_VERIFY_ISOLATED_DB!=='1'||database.hostname!=='127.0.0.1')throw Error('Requires isolated local PostgreSQL');
-  if(!/^scripts\/verify-[\w-]+\.ts$/.test(verificationFile))throw Error('MODEL_UI_VERIFICATION_ENTRY_REQUIRED');
+  if(!/^scripts\/verify-[\w-]+\.(?:ts|cjs)$/.test(verificationFile))throw Error('MODEL_UI_VERIFICATION_ENTRY_REQUIRED');
   if(!Number.isInteger(port)||port<0||port>65535)throw Error('MODEL_UI_PORT_INVALID');
   port=await new Promise((resolve,reject)=>{const probe=createServer();probe.once('error',()=>reject(Error('MODEL_UI_PORT_IN_USE')));probe.listen(port,'127.0.0.1',()=>{const assigned=probe.address().port;probe.close(()=>resolve(assigned));});});
   const origin=`http://127.0.0.1:${port}`;

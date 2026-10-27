@@ -7,6 +7,8 @@ export const refactorCases=[
  node('dependencies','foundation','scripts/verify-dependency-compatibility.mjs','DEPENDENCY_COMPATIBILITY=PASS'),
  node('source-identity','foundation','scripts/verify-refactor-source-identity.mjs','REFACTOR_SOURCE_IDENTITY=PASS'),
  node('model-ui-runner','foundation','scripts/verify-model-ui-runner.mjs','MODEL_UI_RUNNER=PASS MODE=MODIFIED'),
+ node('admin-entry','foundation','scripts/verify-admin-entry.mjs','ADMIN_ENTRY=PASS MODE=MODIFIED'),
+ node('admin-shell','foundation','scripts/verify-admin-ui-integration.cjs','ADMIN_UI_INTEGRATION=PASS'),
  node('supplier-library','foundation','scripts/verify-supplier-library-refactor.mjs','SUPPLIER_LIBRARY_REFACTOR=PASS',['--static']),
  node('model-management','foundation','scripts/verify-model-management-refactor.mjs','MODEL_MANAGEMENT_REFACTOR=PASS',['--static']),
  node('admin-settings','foundation','scripts/verify-admin-settings-refactor.mjs','ADMIN_SETTINGS=PASS',['--static']),
