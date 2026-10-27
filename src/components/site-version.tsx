@@ -12,8 +12,13 @@ const loadedVersion=process.env.NEXT_PUBLIC_BUILD_VERSION || "0";
 export function versionLabel(value:string){
   return releaseVersionLabel(value);
 }
-export function SiteVersion(){
-  const path=usePathname() || "",versionEndpoint=path === "/desktop" || path.startsWith("/desktop/") ? "/desktop/api/version" : "/api/version";
+export function SiteVersion({embedded=false}:{embedded?:boolean}={}){
+  const path=usePathname()||"";
+  if(!embedded&&(path==="/admin"||path.startsWith("/admin/")))return null;
+  return <VersionControls path={path} embedded={embedded}/>;
+}
+function VersionControls({path,embedded}:{path:string;embedded:boolean}){
+  const versionEndpoint=path === "/desktop" || path.startsWith("/desktop/") ? "/desktop/api/version" : "/api/version";
   const notesEndpoint=versionEndpoint.replace(/version$/, "release-notes");
   const {locale}=useI18n(),L=(zh:string,en:string)=>locale==="en"?en:zh;
   const [open,setOpen]=useState(false),[latest,setLatest]=useState<{version:string;commit?:string}|null>(null),[failed,setFailed]=useState(false),[checking,setChecking]=useState(false);
@@ -30,7 +35,7 @@ export function SiteVersion(){
   useEffect(()=>{if(open)panel.current?.querySelector<HTMLButtonElement>("header button")?.focus();},[open]);
   const different=loadedVersion!=="0" && !!latest && latest.version!=="0" && latest.version!==loadedVersion;
   const refresh=()=>{const url=new URL(window.location.href);url.searchParams.set("v",latest?.version || loadedVersion);window.location.replace(url.toString());};
-  return <div className={styles.root} data-testid="site-version" data-loaded-version={loadedVersion}>
+  return <div className={`${styles.root} ${embedded?styles.embedded:""}`} data-testid="site-version" data-loaded-version={loadedVersion}>
     {open && <div ref={panel} className={styles.panel} role="dialog" aria-label={view==="notes" ? L("更新说明","What's new") : L("网站版本","Website version")}><header><b>{view==="notes" ? L("更新说明","What's new") : L("网站版本","Website version")}</b><button aria-label={L("关闭版本信息","Close version details")} onClick={()=>{setOpen(false);opener.current?.focus();}}><X size={16}/></button></header>
       <nav className={styles.tabs} aria-label={L("版本信息视图","Version information views")}><button aria-pressed={view==="notes"} onClick={()=>setView("notes")}>{L("更新记录","Updates")}</button><button aria-pressed={view==="version"} onClick={()=>setView("version")}>{L("版本信息","Version")}</button></nav>
       {view==="notes" ? <ReleaseNotes endpoint={notesEndpoint} version={loadedVersion} english={locale==="en"}/> : <>
@@ -41,7 +46,7 @@ export function SiteVersion(){
     </div>}
     <div ref={button} className={styles.actions}>
     <button className={styles.badge} data-update={different} aria-label={L("查看网站版本","View website version")} aria-expanded={open && view==="version"} onClick={(event)=>{opener.current=event.currentTarget;setOpen(!(open && view==="version"));setView("version");if(!open)void check();}}>v{versionLabel(loadedVersion)}{different && <span>{L("可更新","Update")}</span>}</button>
-    <AnnouncementButton endpoint={notesEndpoint} publishedVersion={latest?.version||loadedVersion} loadedVersion={loadedVersion} refreshKey={announcementCheck} english={locale==="en"} onOpen={()=>setOpen(false)}/>
+    <AnnouncementButton endpoint={notesEndpoint} publishedVersion={latest?.version||loadedVersion} loadedVersion={loadedVersion} refreshKey={announcementCheck} english={locale==="en"} onOpen={()=>setOpen(false)} placement={embedded?"below":"above"}/>
     </div>
   </div>;
 }

@@ -18,7 +18,7 @@ async function api(url:string,init?:RequestInit){const response=await fetch(url,
 const num=(v:number|null|undefined)=>v===null||v===undefined?'未记录':v.toLocaleString('zh-CN');
 const date=(v:string|null)=>v?new Date(v).toLocaleDateString('zh-CN'):'永久';
 const tenantStatus:Record<string,string>={active:'正常',suspended:'已暂停',expired:'已到期'};
-export function PlatformConsole({view='overview',tenantId}:{view?:'overview'|'tenants'|'tenant'|'creations';tenantId?:string}){
+export function PlatformConsole({view='overview',tenantId,embedded=false}:{embedded?:boolean;view?:'overview'|'tenants'|'tenant'|'creations';tenantId?:string}){
  const q=useSearchParams(),router=useRouter(),path=usePathname();const [data,setData]=useState<Overview|TenantList|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[retry,setRetry]=useState(0),[editing,setEditing]=useState<Tenant|null|false>(false);
  const update=(values:Record<string,string>)=>{const p=new URLSearchParams(q.toString());for(const[k,v]of Object.entries(values))v?p.set(k,v):p.delete(k);router.replace(`${path}?${p}`,{scroll:false});};
  const filters=new URLSearchParams();for(const key of ['q','status','from','to','page','sort'])if(q.get(key))filters.set(key,q.get(key)!);const filterKey=filters.toString();
@@ -27,7 +27,7 @@ export function PlatformConsole({view='overview',tenantId}:{view?:'overview'|'te
  const defaultTo=new Date(Date.now()+8*3600000).toISOString().slice(0,10),displayedTo=q.get('to')||defaultTo;
  const endDay=/^\d{4}-\d{2}-\d{2}$/.test(displayedTo)&&Number.isFinite(Date.parse(displayedTo))?displayedTo:defaultTo;
  const displayedFrom=q.get('from')||new Date(Date.parse(endDay+'T00:00:00Z')-6*86400000).toISOString().slice(0,10);
- return <AdminCenterShell active={view==='overview'?'overview':view==='creations'?'creations':'tenants'}><div className={styles.page}>
+ return <AdminCenterShell embedded={embedded} active={view==='overview'?'overview':view==='creations'?'creations':'tenants'}><div className={styles.page}>
   {view==='tenant'&&tenantId?<TenantDetail tenantId={tenantId}/>:view==='creations'?<><div className={styles.heading}><h1>创作记录</h1></div><CreationBrowser/></>:<>
   <div className={styles.heading}><div className={styles.actions}><h1>{view==='overview'?'平台总览':'租户管理'}</h1><input aria-label="开始日期" type="date" value={displayedFrom} onChange={e=>update({from:e.target.value,page:'1'})}/><span className={styles.muted}>—</span><input aria-label="结束日期" type="date" value={displayedTo} onChange={e=>update({to:e.target.value,page:'1'})}/></div><button className={styles.primary} onClick={()=>setEditing(null)}><Plus size={17}/>新建租户</button></div>
   {error&&<div className={styles.error} role="alert">{error}<button onClick={()=>setRetry(v=>v+1)}>重试</button></div>}
