@@ -298,7 +298,7 @@ async function genOneShot(
   if (!exactFrame && size === "1536x1024" && descriptor?.provider !== "new-api-flow") {
     const [width, height] = size.split("x").map(Number);
     const mod = (await import("sharp")) as unknown as {
-      default?: typeof import("sharp");
+      default?: typeof import("sharp").default;
     } & typeof import("sharp");
     const sharp = mod.default ?? mod;
     const anchor = await sharp({

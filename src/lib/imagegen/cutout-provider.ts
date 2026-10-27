@@ -6,10 +6,10 @@ import {observeOpenAI} from "@/lib/bi/model-calls";
 import {toFile} from "openai";
 import {getOpenAIBaseUrl} from "../openai-base";
 
-async function loadSharp(): Promise<typeof import("sharp") | null> {
+async function loadSharp(): Promise<typeof import("sharp").default | null> {
   try {
     const mod = (await import("sharp")) as unknown as {
-      default?: typeof import("sharp");
+      default?: typeof import("sharp").default;
     } & typeof import("sharp");
     return mod.default ?? mod;
   } catch {
@@ -150,7 +150,7 @@ export async function cutoutOpenAI(
   let png = bytes;
   try {
     const mod = (await import("sharp")) as unknown as {
-      default?: typeof import("sharp");
+      default?: typeof import("sharp").default;
     } & typeof import("sharp");
     const sharp = mod.default ?? mod;
     png = await sharp(bytes).rotate().png().toBuffer();

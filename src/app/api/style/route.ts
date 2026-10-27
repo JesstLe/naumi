@@ -70,7 +70,7 @@ async function parseInput(request: Request): Promise<StyleInput | null> {
 async function toPng(buf: Buffer): Promise<Buffer> {
   try {
     const mod = (await import("sharp")) as unknown as {
-      default?: typeof import("sharp");
+      default?: typeof import("sharp").default;
     } & typeof import("sharp");
     const sharp = mod.default ?? mod;
     return await sharp(buf).rotate().png().toBuffer();

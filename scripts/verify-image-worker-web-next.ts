@@ -27,7 +27,7 @@ async function main(){
   // The old authenticated kick also remains enqueue-only, not an execution bypass.
   eq(await kickHttp(data),[200,200,200,200]);
   const events=(await readFile(log,"utf8")).trim().split("\n").filter(Boolean).map(s=>JSON.parse(s));eq(events.filter(e=>e.kind==="unexpected").length,0);eq(events.filter(e=>e.kind==="reentry").length,0);
-  console.log(`IMAGE_WORKER_WEB_NEXT=PASS checks=${checks} ACTUAL_NEXT=15.5.27 HANDLERS=6 WEB_CLAIMS=0 NEW_SUBMISSION=ACCEPTED CURRENT17_FROZEN=1 SUPPLIER_POST=0 CONSUME=0 HTTP_WORKER_TICK=409`);
+  console.log(`IMAGE_WORKER_WEB_NEXT=PASS checks=${checks} ACTUAL_NEXT=${JSON.parse(await readFile("node_modules/next/package.json","utf8")).version} HANDLERS=6 WEB_CLAIMS=0 NEW_SUBMISSION=ACCEPTED CURRENT17_FROZEN=1 SUPPLIER_POST=0 CONSUME=0 HTTP_WORKER_TICK=409`);
  }finally{await closeImageCoordinationPool();await pool().end();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

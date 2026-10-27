@@ -60,7 +60,7 @@ function sizeForRatio(
 async function upscaleLong(buf: Buffer, target: number): Promise<Buffer> {
   try {
     const mod = (await import("sharp")) as unknown as {
-      default?: typeof import("sharp");
+      default?: typeof import("sharp").default;
     } & typeof import("sharp");
     const sharp = mod.default ?? mod;
     const meta = await sharp(buf).metadata();
@@ -137,7 +137,7 @@ async function applyBg(
     return { buf, contentType: "image/png", ext: "png" };
   try {
     const mod = (await import("sharp")) as unknown as {
-      default?: typeof import("sharp");
+      default?: typeof import("sharp").default;
     } & typeof import("sharp");
     const sharp = mod.default ?? mod;
     const out = await sharp(buf)
@@ -153,7 +153,7 @@ async function applyBg(
 async function toPng(buf: Buffer): Promise<Buffer> {
   try {
     const mod = (await import("sharp")) as unknown as {
-      default?: typeof import("sharp");
+      default?: typeof import("sharp").default;
     } & typeof import("sharp");
     const sharp = mod.default ?? mod;
     return await sharp(buf).rotate().png().toBuffer();

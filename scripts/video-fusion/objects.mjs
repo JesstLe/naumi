@@ -4,7 +4,7 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 /** A private, signature-verified fixture store. It never connects to a real bucket. */
-export function createFixtureObjects({ root, accessKeyId, secretAccessKey, bucket, calls, allowedOrigins=[] }) {
+export function createFixtureObjects({ root, accessKeyId, secretAccessKey, bucket, calls, allowedOrigins=/** @type {string[]} */([]) }) {
   root=path.resolve(root);
   return async function handle(req,res,origin) {
     const json=(status,message)=>{res.writeHead(status,{"content-type":"application/json"});res.end(JSON.stringify({error:message}));};

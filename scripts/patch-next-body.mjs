@@ -1,4 +1,4 @@
-// Backport vercel/next.js#85418 for our pinned Next 15.5.27. Remove only after
+// Backport vercel/next.js#85418 for reviewed Next 15.5.27/15.5.28. Remove only after
 // the installed CJS and ESM implementations both await body finalization.
 import fs from "node:fs";
 import path from "node:path";
@@ -16,7 +16,7 @@ export function patchNextBody(root = "node_modules/next", standalone = false) {
   const changes = paths.map(relative => {
     const target = path.join(root, relative), source = fs.readFileSync(target, "utf8");
     if (source.split(corrected).length === 2 && source.split(original).length === 2) return { target, source, changed: false };
-    if (version !== "15.5.27" || source.split(original).length !== 2 || !source.includes("if (hasRequestBody)")) {
+    if (!["15.5.27","15.5.28"].includes(version) || source.split(original).length !== 2 || !source.includes("if (hasRequestBody)")) {
       throw new Error(`Next ${version}: unexpected body-finalization implementation in ${relative}; review before building`);
     }
     return { target, source: source.replace(original, corrected), changed: true };

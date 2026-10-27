@@ -1,5 +1,7 @@
 # 核心链路重构专用工作区
 
+2026-10-27 R6K：固定Next15.5.28/MCP1.32/SMTP10.1.4/Sharp0.35.5/Zod4.6.6与兼容PostCSS，原生产audit13→0、完整lock0；旧新实际postprocess/SMTP/MCP对照通过，Sharp ESM与Node24类型边界显式迁移、不绕过类型检查。固定core/完整Linux镜像及运行/回滚与Git待本轮DELIVERY封存，第2模块，整体active、不合main不部署。见[R6K记录](changes/2026-10-27-refactor-dependencies-r6k.md)。
+
 2026-10-27 R6J：九UI入口共用原fixture生命周期，Next/checker改在原字节副本运行，源配置恢复写归零；旧wrapper3检查复现覆盖后写→新真实子进程42检查保留，实际Next+PG资料库全流程通过/源码tsconfig与next-env原hash保持。当前生产依赖audit13项原报告保留不批量升级；固定16518614 core30/30/最终实际Next-PG/类型通过，原src-services1846hash保持；四产物/回滚与远端见DELIVERY。同步后第1模块，整体active、不合main不部署。见[R6J记录](changes/2026-10-27-refactor-model-ui-runner-r6j.md)。
 
 2026-10-27 R6I：供应商资料库查询/详情/单文档草稿与能力/报价/映射分责，去口号和说明，微金额与原资料/原id保留；完整旧21/新25与5组可编辑字段/原POST同、sync旧闭包OLD→CURRENT/卸载导出DOWNLOAD→NONE、PG三组/相邻管理35-18/类型通过。固定31c1bf15 core29/29/最终浏览器25-5/tsc-lint通过，入口109→27行、1476后端hash保持/SCC0；第3模块普通同步cde64c6a完成并归零，四产物/副本回滚/远端见DELIVERY，整体active、不合main不部署。见[R6I记录](changes/2026-10-27-refactor-supplier-library-r6i.md)。

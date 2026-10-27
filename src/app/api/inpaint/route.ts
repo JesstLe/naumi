@@ -71,7 +71,7 @@ async function parseInput(request: Request): Promise<InpaintInput | null> {
 async function toPng(buf: Buffer): Promise<Buffer> {
   try {
     const mod = (await import("sharp")) as unknown as {
-      default?: typeof import("sharp");
+      default?: typeof import("sharp").default;
     } & typeof import("sharp");
     const sharp = mod.default ?? mod;
     return await sharp(buf).rotate().png().toBuffer();
@@ -86,7 +86,7 @@ async function upscaleTo(buf: Buffer, resolution: string): Promise<Buffer> {
   if (!target) return buf;
   try {
     const mod = (await import("sharp")) as unknown as {
-      default?: typeof import("sharp");
+      default?: typeof import("sharp").default;
     } & typeof import("sharp");
     const sharp = mod.default ?? mod;
     const meta = await sharp(buf).metadata();

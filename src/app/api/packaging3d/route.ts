@@ -108,7 +108,7 @@ async function parseInput(request: Request): Promise<Input | null> {
 
 async function normalizeImage(bytes: Buffer): Promise<Buffer> {
   const mod = (await import("sharp")) as unknown as {
-    default?: typeof import("sharp");
+    default?: typeof import("sharp").default;
   } & typeof import("sharp");
   const sharp = mod.default ?? mod;
   return sharp(bytes, { density: 220 }).rotate().png().toBuffer();
@@ -118,7 +118,7 @@ async function upscaleTo(bytes: Buffer, resolution: string): Promise<Buffer> {
   const target = resolutionLongSide(resolution);
   if (!target) return bytes;
   const mod = (await import("sharp")) as unknown as {
-    default?: typeof import("sharp");
+    default?: typeof import("sharp").default;
   } & typeof import("sharp");
   const sharp = mod.default ?? mod;
   const meta = await sharp(bytes).metadata();

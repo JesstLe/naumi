@@ -1,10 +1,11 @@
+import {webBytes} from "@/platform/bytes/web";
 import { sha256 } from "@noble/hashes/sha256";
 
 /** HTTP origins lack SubtleCrypto. Keep exactly the same SHA-256 on both paths. */
 export async function browserSha256Hex(value: Uint8Array): Promise<string> {
   const subtle = globalThis.crypto?.subtle;
   const hash = subtle
-    ? new Uint8Array(await subtle.digest("SHA-256", value))
+    ? new Uint8Array(await subtle.digest("SHA-256", webBytes(value)))
     : sha256(value);
   return Array.from(hash, byte => byte.toString(16).padStart(2, "0")).join("");
 }

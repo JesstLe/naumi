@@ -67,7 +67,7 @@ async function parseInput(request: Request): Promise<AvatarInput | null> {
 async function toPng(buf: Buffer): Promise<Buffer> {
   try {
     const mod = (await import("sharp")) as unknown as {
-      default?: typeof import("sharp");
+      default?: typeof import("sharp").default;
     } & typeof import("sharp");
     const sharp = mod.default ?? mod;
     return await sharp(buf).rotate().png().toBuffer();
@@ -83,7 +83,7 @@ async function applyBg(
   if (bg === "transparent") return { buf, ext: "png" };
   try {
     const mod = (await import("sharp")) as unknown as {
-      default?: typeof import("sharp");
+      default?: typeof import("sharp").default;
     } & typeof import("sharp");
     const sharp = mod.default ?? mod;
     const out = await sharp(buf)

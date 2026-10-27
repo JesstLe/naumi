@@ -1,3 +1,4 @@
+import {webBytes} from "@/platform/bytes/web";
 import {creationContinuationHeader} from "@/lib/saas/creation-context";
 
 import { assertAgentToolAccess } from "@/lib/feature-access/server";
@@ -230,7 +231,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
     const managed = await managedAgentReference(raw, [base, new URL(req.url).origin], agentEmail);
     if (managed) {
       if (signal?.aborted) throw new Error("aborted");
-      return new File([managed.bytes], "reference.png", {type:managed.contentType});
+      return new File([webBytes(managed.bytes)], "reference.png", {type:managed.contentType});
     }
     if(canvas?.imageUrls.includes(raw)){
       const inline=dataUrlToBytes(raw),object=inline?{bytes:inline.bytes,contentType:inline.contentType}:isManagedImageUrl(raw)?await readManagedObject(raw,MAX_IMAGE_BYTES):null;
@@ -240,7 +241,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
     assertMediaUrl(raw, base);
     if (u.origin !== base) {
       const remote = await publicImageBytes(u, ALLOWED_IMG_HOST_RE, MAX_IMAGE_BYTES, signal);
-      return new File([remote.bytes], "reference.png", { type: remote.contentType });
+      return new File([webBytes(remote.bytes)], "reference.png", { type: remote.contentType });
     }
     const res = await fetch(u.toString(), {
       signal,
@@ -254,7 +255,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
     }
     const buf = await readBoundedBytes(res, MAX_IMAGE_BYTES);
     if (buf.length > MAX_IMAGE_BYTES) throw new Error("图片超过 12MB 上限");
-    return new File([buf], "image.png", { type: type || "image/png" });
+    return new File([webBytes(buf)], "image.png", { type: type || "image/png" });
   }
 
   async function pollJob(

@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     let ext = (file.type.split("/")[1] || "png").replace(/[^a-z0-9]/gi, "") || "png";
     try {
       const mod = (await import("sharp")) as unknown as {
-        default?: typeof import("sharp");
+        default?: typeof import("sharp").default;
       } & typeof import("sharp");
       const sharp = mod.default ?? mod;
       const png = await sharp(Buffer.from(bytes))

@@ -130,7 +130,7 @@ async function billingRoutePost(request: Request) {
     let out: Buffer;
     try {
       const mod = (await import("sharp")) as unknown as {
-        default?: typeof import("sharp");
+        default?: typeof import("sharp").default;
       } & typeof import("sharp");
       const sharp = mod.default ?? mod;
       out = await sharp(input.bytes)

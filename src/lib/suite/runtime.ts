@@ -248,7 +248,7 @@ async function makeProductReference(
   images: { buf: Buffer; type: string }[]
 ): Promise<Buffer> {
   const mod = (await import("sharp")) as unknown as {
-    default?: typeof import("sharp");
+    default?: typeof import("sharp").default;
   } & typeof import("sharp");
   const sharp = mod.default ?? mod;
   const tileSize = 960;
@@ -304,7 +304,7 @@ async function normalizeShotRatio(
   const target = RATIO_DIMENSIONS[ratio];
   if (!target) return bytes;
   const mod = (await import("sharp")) as unknown as {
-    default?: typeof import("sharp");
+    default?: typeof import("sharp").default;
   } & typeof import("sharp");
   const sharp = mod.default ?? mod;
   const metadata = await sharp(bytes).metadata();

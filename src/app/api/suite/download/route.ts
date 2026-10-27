@@ -1,3 +1,4 @@
+import {webBytes} from "@/platform/bytes/web";
 import JSZip from "jszip";
 import path from "path";
 import { isManagedImageUrl, privateMedia, storageKeyFromManagedUrl } from "@/lib/object-storage/runtime";
@@ -93,7 +94,7 @@ export async function POST(request: Request) {
   }
 
   const blob = await zip.generateAsync({ type: "nodebuffer" });
-  return new Response(blob, {
+  return new Response(webBytes(blob), {
     status: 200,
     headers: {
       "content-type": "application/zip",

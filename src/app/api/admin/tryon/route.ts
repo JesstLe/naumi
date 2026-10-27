@@ -56,7 +56,7 @@ export async function POST(req: Request) {
 
       const loadSharp = async () => {
         const mod = (await import("sharp")) as unknown as {
-          default?: typeof import("sharp");
+          default?: typeof import("sharp").default;
         } & typeof import("sharp");
         return mod.default ?? mod;
       };
