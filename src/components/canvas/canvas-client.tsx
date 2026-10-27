@@ -26,6 +26,7 @@ import { stableArtworkPositions, canvasNodePosition, readPlacementCache, type Ca
 import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
 import { smartLayout } from "@/lib/canvas/smart-layout";
 import { CanvasComposerShell, CanvasComposerFooter, CanvasComposerOptions } from "./composer-shell";
+import { CanvasPromptOptimizer } from "./prompt-optimizer";
 import { CanvasParameterPopover } from "./parameter-popover";
 import {submitCanvasImagegen,resolveCanvasDetailFrame,completeCanvasImagegen} from "@/lib/imagegen/canvas-client";
 import {ImagegenPendingRecovery} from "./imagegen-pending-recovery";
@@ -189,7 +190,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
-import {currentWorkspace} from '@/lib/saas/workspace-client';
+import {currentWorkspace,currentWorkspaceRevision} from '@/lib/saas/workspace-client';
 import { useAuth } from "@/lib/auth-context";
 import { useCanvasCredits } from "./use-canvas-credits";
 import { useAuthModal } from "@/lib/auth-modal-context";
@@ -247,6 +248,16 @@ async function privateFetchRaw(input: RequestInfo | URL, init: RequestInit = {})
   for (const [key, value] of Object.entries(auth)) headers.set(key, value);
   if(workspace)headers.set('x-naumi-workspace',workspace);
   return fetch(input, { ...init, headers });
+}
+async function optimizeCanvasPrompt(tool: "canvas-image" | "canvas-text", prompt: string, signal: AbortSignal) {
+  const workspace = currentWorkspace(), revision = currentWorkspaceRevision();
+  const auth = await authHeader();
+  signal.throwIfAborted();
+  if (currentWorkspaceRevision() !== revision) throw new Error("工作空间已切换，请重新优化");
+  const response = await fetch("/api/prompt-assist", { method: "POST", headers: { ...auth, "content-type": "application/json", "x-naumi-workspace": workspace }, body: JSON.stringify({ idea: prompt, mode: "optimize", tool }), signal });
+  const data = await readJsonSafe(response);
+  if (!response.ok || typeof data?.prompt !== "string") throw new Error(data?.error || "提示词优化失败，原文已保留");
+  return data.prompt as string;
 }
 // 横向链路布局(对齐原型 node-canvas-preview):深度→x 向右展开,同层兄弟→y 竖排。
 // 图片节点使用更清晰的工作尺寸，并按图片比例自适应；高分屏上保持可辨识。
@@ -11465,6 +11476,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         : t("canvas.viewSheetCount")}
                     </span>
                   )}
+                  <CanvasPromptOptimizer contextKey={imageDraft.key} prompt={editPrompt} disabled={readOnly || !nodeSettingsReady || selectedGenerating || isNodeLocked(selected.id)} english={locale === "en"}
+                    onOptimize={(prompt, signal) => optimizeCanvasPrompt("canvas-image", prompt, signal)} onApply={setEditPrompt}/>
                   <CanvasComposerOptions label={L("更多图片参数", "More image settings")}><DarkSelect
                         dir="up"
                         light={true}
@@ -11581,6 +11594,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   onChange={setGenCount}
                   light={true}
                 />
+                <CanvasPromptOptimizer contextKey={imageDraft.key} prompt={editPrompt} disabled={readOnly || !nodeSettingsReady || selectedPendGenerating || isNodeLocked(selectedPend.id)} english={locale === "en"}
+                  onOptimize={(prompt, signal) => optimizeCanvasPrompt("canvas-image", prompt, signal)} onApply={setEditPrompt}/>
                  </>} actions={<>
                 <GenerationSubmitAction generating={selectedPendGenerating} failure={selectedPend.generationFailure}
                   onGenerate={() => generatePend()} english={locale === "en"} />
@@ -11831,6 +11846,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               )}
               <CanvasComposerFooter testId="text-node-dock-footer" controls={<>
                 <TextModelSelect feature="canvas.text-generate" compact dark={false} direction="up" />
+                <CanvasPromptOptimizer contextKey={JSON.stringify([user?.email, targetEmail, activeKey, selectedText.id])} prompt={textPrompt}
+                  disabled={readOnly || !nodeSettingsReady || selectedText.status === "generating" || assistBusy || isNodeLocked(selectedText.id)} english={locale === "en"}
+                  onOptimize={(prompt, signal) => optimizeCanvasPrompt("canvas-text", prompt, signal)} onApply={setTextPrompt}/>
 
                 <button
                   type="button"
