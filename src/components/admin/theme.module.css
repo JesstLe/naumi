@@ -1,0 +1,12 @@
+/* Admin-only tokens. Do not mutate the user's theme or the Canvas/enterprise root. */
+.theme{--admin-background:#f7f8fa;--admin-ink:#20222c;--admin-secondary:#707587;--admin-border:#e8eaf0;--admin-surface:#f5f6f9;--admin-accent:#6b58d9;--admin-accent-soft:#f0edfc;--admin-card:#fff;--admin-panel-radius:14px;
+--background:220 23% 97%;--foreground:230 16% 15%;--card:0 0% 100%;--card-foreground:230 16% 15%;--popover:0 0% 100%;--popover-foreground:230 16% 15%;--primary:249 63% 60%;--primary-foreground:0 0% 100%;--secondary:228 25% 97%;--secondary-foreground:230 16% 15%;--muted:228 25% 97%;--muted-foreground:227 9% 45%;--accent:249 63% 60%;--accent-foreground:0 0% 100%;--border:225 21% 92%;--input:225 21% 87%;--ring:249 63% 60%;
+--c-bg:var(--admin-background);--c-card:#fff;--c-subtle:#f4f5f8;--c-subtle2:#f7f8fa;--c-subtle3:#f0f1f5;--c-track:#edeef3;--c-border:var(--admin-border);--c-border2:#dfe2eb;--c-border3:#e8eaf0;--c-line:#eff0f5;--c-text:var(--admin-ink);--c-text2:#474c5e;--c-text3:var(--admin-secondary);--c-text4:#858b9d;--c-success:#23866a;--c-danger:#c14750;--c-warn:#a8741c;--c-warn-bg:#fff6e7;--c-blue:#4c77bc;--c-violet:var(--admin-accent);--c-gold:#967526;--c-disabled-fill:#d4d7e1;--c-disabled-text:#969cac;--c-seg-inactive:#707587;--c-tint-b:#edf4fd;--c-tint-v:#f0edfc;--c-tint-a:#fff6e7;--c-tint-g:#eaf7f2;--c-tint-r:#fcf0f0;--c-tint-gold:#fff6e7;
+--acc:var(--admin-accent);--acc2:#8170e4;--acc-tint:var(--admin-accent-soft);--acc-border:#dcd6f6;--grad-acc:linear-gradient(180deg,#8170e4,#6b58d9);--shadow-card:0 2px 8px #20222c04;--shadow-btn:0 2px 5px #6b58d91a;--shadow-pop:0 18px 54px #20222c1f;--ring-focus:0 0 0 3px #6b58d920;
+min-width:0;min-height:100%;background:var(--admin-background);color:var(--admin-ink);color-scheme:light;accent-color:var(--admin-accent);font-family:var(--font-geist-sans),-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+.theme,.theme *,.theme *::before,.theme *::after{box-sizing:border-box}
+.theme :where(button,input,select,textarea){font-family:inherit}
+.theme :where(button){cursor:pointer}.theme :where(button:disabled){cursor:not-allowed}
+.theme :where(h1){letter-spacing:-.6px}.theme :where(table){font-variant-numeric:tabular-nums}
+.theme :where(input,textarea,select){max-width:100%}
+.theme :where(dialog){color:var(--admin-ink);color-scheme:light}

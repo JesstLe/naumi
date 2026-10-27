@@ -1,9 +1,9 @@
-.page { color:#172033; }
+.page { color:var(--admin-ink,#172033); }
 .page .header { padding:28px 0 24px; }
 .page .header h1 { margin:0; font-size:26px; letter-spacing:-.6px; }
 .page .toolbar { justify-content:flex-start; gap:12px; flex-wrap:wrap; }
 .page .toolbar>label { margin-left:auto; }
 .page .count { color:#94a0b0; font-size:11px; margin-left:4px; }
-.page .mapping { border-radius:12px; border-color:#e2e8f0; box-shadow:0 2px 8px #0f172a03; }
+.page .mapping { border-radius:12px; border-color:var(--admin-border,#e2e8f0); box-shadow:0 2px 8px #0f172a03; }
 .page .listFooter { color:#94a0b0; font-size:11px; margin-top:12px; }
 @media(max-width:620px) { .page .header { flex-direction:row; align-items:center; padding:24px 0; gap:12px; } .page .header h1 { font-size:23px; } .page .toolbar { flex-direction:row; } .page .toolbar>label { width:100%; margin-left:0; } }

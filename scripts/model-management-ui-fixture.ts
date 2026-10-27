@@ -68,7 +68,16 @@ async function main() {
   f.config.publicModels.push(...["square","portrait","three-four"].map(s=>({...structuredClone(f.config.publicModels[0]),id:"gemini-3.0-pro-image-"+s,label:"gemini-3.0-pro-image-"+s,target:{type:"upstream" as const,id:"family-image"}})));
   if(process.env.VERIFY_CANVAS_NODE_EDITING === "1") f.config.upstreamModels[0].parameterMap.qualityPolicy={mode:"map",choices:(["low","medium","high","xhigh","max"] as const).map((id,i)=>({id,label:["低","标准","高","超高","最高"][i],value:["xhigh","max"].includes(id)?"high":id}))};
   const db = await import("../src/lib/db"), auth = await import("../src/lib/admin-auth"), native = await import("../src/lib/native-auth");
-  await db.ensureSchema(); await db.setSetting("multi_user_enabled","1"); await f.repo.current(); await auth.setAdminPassword("MvpFixture2026!");
+  await db.ensureSchema();
+  if(process.env.VERIFY_ADMIN_UI_INTEGRATION === "1") {
+    const release=await import("../src/lib/release-runtime/store");
+    await release.ensureReleaseSchema();await release.releasePool().end();
+    const {createWorkerTickReceiptStore}=await import("../src/lib/release-runtime/worker-tick-receipts");
+    const commit="a".repeat(40),tick={tickId:crypto.randomUUID(),workerInstanceId:"fixture-worker",workerBootId:crypto.randomUUID(),workerCommit:commit,targetWebInstanceId:"fixture-web"};
+    const web={instanceId:"fixture-web",bootId:crypto.randomUUID(),commit};
+    const ticks=createWorkerTickReceiptStore(f.sql);await ticks.accept(tick,web);await ticks.complete(tick,web,{ok:true,fixture:true});
+  }
+  await db.setSetting("multi_user_enabled","1"); await f.repo.current(); await auth.setAdminPassword("MvpFixture2026!");
   await db.getOrCreateUser("mvp-member@example.test", "普通成员");
   if(process.env.VERIFY_CANVAS_NODE_EDITING === "1") {
     process.env.STORAGE_DRIVER="local";

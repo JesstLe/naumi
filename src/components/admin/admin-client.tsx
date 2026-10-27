@@ -58,8 +58,9 @@ export function AdminClient() {
   const { user, ready } = useAuth();
   const { openAuth } = useAuthModal();
   const [status, setStatus] = useState<
-    "loading" | "denied" | "ok" | "local-login"
+    "loading" | "denied" | "ok" | "local-login" | "unavailable"
   >("loading");
+  const [accessRetry, setAccessRetry] = useState(0);
   // ok 时:是否走本地管理员通道(决定 AdminSettings 用 cookie 而非 Bearer)。
   const [localAdmin, setLocalAdmin] = useState(false);
   useEffect(() => {
@@ -79,7 +80,7 @@ export function AdminClient() {
       // ── ① 本地管理员通道(开源版/自托管)──
       try {
         const r = await fetch("/api/admin/login", { cache: "no-store" });
-        if (!r.ok) { setPwErr("后台验证暂不可用，请稍后重试"); setStatus("local-login"); return; }
+        if (!r.ok) { if (!cancelled) setStatus("unavailable"); return; }
         const d = (await r.json()) as {
           localAvailable?: boolean;
           localAuthed?: boolean;
@@ -100,7 +101,10 @@ export function AdminClient() {
           return;
         }
       } catch {
-        /* 忽略,回落 Supabase 通道 */
+        // An unavailable session read is not a permission rejection. Keep the
+        // page closed and retry the authoritative check, never trust cached UI state.
+        if (!cancelled) setStatus("unavailable");
+        return;
       }
 
       // ── ② 官方云 Supabase 通道 ──
@@ -139,7 +143,7 @@ export function AdminClient() {
     return () => {
       cancelled = true;
     };
-  }, [ready, user, openAuth]);
+  }, [ready, user, openAuth, accessRetry]);
 
   async function submitLocal() {
     if (pw.length < 1) return;
@@ -224,6 +228,13 @@ export function AdminClient() {
         校验管理员权限…
       </div>
     );
+  }
+
+  if (status === "unavailable") {
+    return <div className="container flex min-h-[60vh] flex-col items-center justify-center gap-4 text-center">
+      <p role="status" className="text-sm text-muted-foreground">后台验证暂不可用</p>
+      <Button variant="outline" onClick={() => { setStatus("loading"); setAccessRetry(value => value + 1); }}>重新验证</Button>
+    </div>;
   }
 
   if (status === "denied") {

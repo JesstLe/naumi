@@ -26,3 +26,5 @@
 .panel .tabs button[aria-pressed=true]{color:#426bbb;border-bottom-color:#6688d5;font-weight:600}
 .panel header button{display:grid;place-items:center;border:0;background:transparent;color:#8c97a8;cursor:pointer;border-radius:5px;width:28px;height:28px}
 @media(max-width:767px){.notesButton{font-size:9px}.panel{max-height:calc(100dvh - 160px)}}
+
+.embedded{position:relative;right:auto;bottom:auto;z-index:40}.embedded .panel{top:calc(100% + 12px);bottom:auto}.embedded .badge{background:var(--admin-surface,#f7f8fa);border-color:var(--admin-border,#e8eaf0);box-shadow:none;white-space:nowrap}.embedded .actions{gap:9px}@media(max-width:1000px){.embedded .badge{font-size:0;min-height:34px;min-width:34px;padding:6px}.embedded .badge::before{content:"版本";font-size:10px}.embedded .badge span{font-size:0}}@media(max-width:800px){.embedded .panel{position:fixed;top:70px;right:12px;bottom:auto}}

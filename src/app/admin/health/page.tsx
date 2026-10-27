@@ -1,3 +1,4 @@
+import {AdminCenterShell} from "@/components/admin/center-shell";
 import { requireAdminPage } from "@/lib/admin-page";
 import { dbEnabled, getPool } from "@/platform/db/pool";
 
@@ -42,7 +43,7 @@ export default async function AdminHealthPage() {
   const supplierErrors = supplier.filter(r => !["completed", "stream-completed", "response-received", "submitting"].includes(String(r.state)));
 
   return (
-    <div className="container py-8 text-sm">
+    <AdminCenterShell active="health"><div className="container py-8 text-sm">
       <h1 className="mb-4 text-lg font-semibold">运行健康</h1>
       <p className="mb-6 text-muted-foreground">队列、Worker、恢复扫描与供应商通道的实时状态。红灯项需要立即处理；黄灯项需要关注。</p>
 
@@ -92,6 +93,6 @@ export default async function AdminHealthPage() {
 
       <h2 className="mb-2 font-semibold">并发闸门（当前配置 v{config[0] ? num(config[0].version) : "-"}，仅启用通道）</h2>
       <p className="text-muted-foreground">{gates.length ? gates.join(" · ") : "无启用通道"}</p>
-    </div>
+    </div></AdminCenterShell>
   );
 }
