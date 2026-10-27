@@ -1,4 +1,4 @@
-2026-10-27 R6O：正在普通整合固定 main `4e15e71a` 的25提交，16处冲突按真实owner迁移；保留db/runtime/Canvas已拆边界，Agent会话CAS、统一图片参数计划、映射管理、节点菜单及图片/文字优化已落盘，首轮tsc与新功能定向通过，集中core/Linux/回滚仍待封存；功能计数归零，整体active、不合main不部署。见[R6O记录](changes/2026-10-27-main-owner-integration-r6o.md)。
+2026-10-27 R6O：固定 main `4e15e71a` 25 提交普通整合（merge `ffa8882a`），16 处冲突按真实 owner 迁移，db/runtime/Canvas 旧巨石未回流。会话 CAS、统一图片计划/映射、菜单及优化已验证；core39/39、完整 Linux 同镜像125、真实产品双浏览器27、完整 Linux Canvas 优化控件12、tsc/lint通过，SCC0。6会话声明/1媒体函数/9main leaf保持，1802原src/services hash保持，Canvas5868→5849。4591hash回滚与四产物/远端以DELIVERY为准；计数0、整体active、不合main不部署。见[R6O记录](changes/2026-10-27-main-owner-integration-r6o.md)。
 
 # 核心链路重构专用工作区
 

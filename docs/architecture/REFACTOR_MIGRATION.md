@@ -1,6 +1,6 @@
-## 2026-10-27 R6O 主线 owner 整合（验证中）
+## 2026-10-27 R6O 主线 owner 整合
 
-固定 incoming `4e15e71a`，双parent普通merge。会话写入归session-repository、历史媒体归artworks、图片编译/合同/传输/交付各沿原owner；新映射接单一typed editor；提示词UI接image/text composer与窄浏览器transport。新旧任务版本显式分开，正常与续交一致；没有恢复旧db大文件、聚合runtime或Canvas内联dock。功能计数归零，整体active；[模块记录](../changes/2026-10-27-main-owner-integration-r6o.md)。
+固定 main `4e15e71a`、merge `ffa8882a` 已集中验证：core39/39、完整Linux同镜像125、真实产品browser27、优化控件12、tsc/lint、SCC0；1802原文件hash不变，152原Canvas函数保持，6session声明/1媒体函数/9main leaf相同。新参数计划与会话/交付/传输沿真实owner，未恢复db/runtime/Canvas大文件。完整4591hash与四产物、独立副本回滚及远端见DELIVERY，功能计数归零，整体active、不合main不部署。[模块记录](../changes/2026-10-27-main-owner-integration-r6o.md)。
 
 # 渐进迁移与集中验收台账
 
