@@ -1,14 +1,15 @@
 import 'server-only';
 import {AwsClient} from 'aws4fetch';
 import {createReadStream} from 'node:fs';
-import {mkdir,stat,writeFile,unlink} from 'node:fs/promises';
+import {mkdir,stat,writeFile,unlink,rename} from 'node:fs/promises';
+import {randomUUID} from 'node:crypto';
 import {Readable} from 'node:stream';
 import path from 'node:path';
 import type {StorageConfiguration} from './config';
 import {WriteAvailability,nasWriteTimeout} from './write-availability';
 export interface ObjectStorage {
   put(key:string,bytes:Uint8Array,type:string,cache:string):Promise<void>;
-  get(key:string,range?:string):Promise<Response>;
+  get(key:string,range?:string,signal?:AbortSignal):Promise<Response>;
   exists(key:string):Promise<boolean>;
   delete(key:string):Promise<void>;
   presign(method:'GET'|'PUT',key:string,expires:number,headers?:Headers,filename?:string):Promise<string>;
@@ -24,7 +25,8 @@ export class StorageRequestError extends Error {
 export function createObjectStorage(config:StorageConfiguration):ObjectStorage {
   const full=(key:string)=>{const root=path.resolve(config.mediaDir),file=path.resolve(root,safeStorageKey(key));if(!file.startsWith(root+path.sep))throw new Error('对象路径非法');return file;};
   if(config.driver==='local') return {
-    async put(key,bytes){const file=full(key);await mkdir(path.dirname(file),{recursive:true});await writeFile(file,Buffer.from(bytes));},
+    async put(key,bytes){const file=full(key);await mkdir(path.dirname(file),{recursive:true});const temporary=file+'.'+randomUUID()+'.tmp';
+      try{await writeFile(temporary,bytes,{flag:'wx',mode:0o600});await rename(temporary,file);}finally{await unlink(temporary).catch(e=>{if(e.code!=='ENOENT')throw e;});}},
     async get(key,range=''){
       const file=full(key);let info;try{info=await stat(file);}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return new Response(null,{status:404});throw e;}
       if(!info.isFile())return new Response(null,{status:404});
@@ -70,7 +72,7 @@ export function createObjectStorage(config:StorageConfiguration):ObjectStorage {
         if(!response.ok)throw new StorageRequestError(response.status,'PUT');
       } catch(error) {nasWrites?.failed();throw error;}
     },
-    get(key,range=''){return request(key,{method:'GET',headers:range?{range}:{}});},
+    get(key,range='',signal){return request(key,{method:'GET',headers:range?{range}:{},...(signal?{signal:AbortSignal.any([signal,AbortSignal.timeout(120000)])}:{})});},
     async exists(key){const response=await request(key,{method:'HEAD',signal:AbortSignal.timeout(30000)});if(response.status===404)return false;if(!response.ok)throw new StorageRequestError(response.status,'HEAD');return true;},
     async delete(key){const response=await request(key,{method:'DELETE',signal:AbortSignal.timeout(30000)});if(!response.ok&&response.status!==404)throw new StorageRequestError(response.status,'DELETE');},
     async presign(method,key,expires,headers=new Headers(),filename){if(!Number.isInteger(expires)||expires<1||expires>900)throw new Error('签名有效期非法');const url=endpoint(key);url.searchParams.set('X-Amz-Expires',String(expires));if(filename&&method==='GET')url.searchParams.set('response-content-disposition',`attachment; filename="${filename.replace(/[^\w.\-]/g,'_').slice(0,160)}"`);return(await signer().sign(url,{method,headers,aws:{signQuery:true,allHeaders:headers.has('content-length')}})).url;},

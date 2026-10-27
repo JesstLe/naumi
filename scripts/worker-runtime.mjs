@@ -11,6 +11,12 @@ export class WorkerControlError extends Error {
 const assert=(ok, code, status)=>{if(!ok)throw new WorkerControlError(code,status);};
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+// Only bounded error codes/names, never URL, response body, SQL or secrets.
+export function tickFailure(error) {
+  const valid=value=>typeof value==='string'&&/^[A-Za-z][A-Za-z0-9_]{1,79}$/.test(value)?value:undefined;
+  return {code:valid(error?.code)||valid(error instanceof WorkerControlError?error.message:undefined)||valid(error?.name)||'UNCLASSIFIED',
+    ...(valid(error?.cause?.code)?{cause:valid(error.cause.code)}:{})};
+}
 
 export function workerOrigin(value) {
   const parsed=new URL(value);
@@ -80,6 +86,8 @@ export class WorkerRuntime {
         assert(saved.lastTick===null||saved.lastTick&&uuid(saved.lastTick.id)&&
           ['dispatched','complete','rejected','unknown'].includes(saved.lastTick.phase),'CORRUPT_WORKER_TICK');
         this.state=saved;
+        if(saved.lastTick?.phase==='dispatched'&&!saved.paused&&saved.lastTick.controlRevision===saved.revision)
+          saved.lastTick.autoRecoveryRevision=saved.revision;
         if(['dispatched','unknown'].includes(saved.lastTick?.phase)) {this.state.paused=true;this.state.uncertain=true;this.state.lastTick.phase='unknown';}
         if(saved.uncertain)this.state.paused=true;
       }
@@ -100,9 +108,11 @@ export class WorkerRuntime {
       targetInstanceId:this.targetInstanceId,
       phase:this.fault||this.state.uncertain?'UNKNOWN':this.state.paused?(this.activePromise?'DRAINING':'QUIESCENT'):(this.activePromise?'RUNNING':'IDLE'),
       activeTicks:this.activePromise?1:0,unresolvedTicks:this.state.uncertain?1:0,
+      automaticRecoveryEligible:this.state.paused&&this.state.uncertain&&this.state.lastTick?.autoRecoveryRevision===this.state.revision,
       tickDrainComplete:this.initialized&&!!this.store&&this.state.paused&&!this.activePromise&&
         !['dispatched','unknown'].includes(this.state.lastTick?.phase)&&!this.state.uncertain&&!this.fault,
       durableControl:!!this.store,durableTickReceipts:!!this.store,receiptProtocol:this.store?1:null,lastTick:this.state.lastTick?{...this.state.lastTick}:null,
+      activeTickAgeMs:this.activePromise&&this.state.lastTick?Math.max(0,Date.parse(this.clock())-Date.parse(this.state.lastTick.startedAt)):0,
       // Intentionally unknown: no unsafe translation of HTTP tick counts into jobs.
       workerLeases:null,acceptedTasks:null,agentSessions:null,controlFault:this.fault};
   }
@@ -181,7 +191,7 @@ export class WorkerRuntime {
   }
   async dispatch() {
     if(this.state.paused||this.fault)return {skipped:true};
-    const tick={id:randomUUID(),phase:'dispatched',startedAt:this.clock(),...(this.store?{
+    const tick={id:randomUUID(),phase:'dispatched',startedAt:this.clock(),controlRevision:this.state.revision,...(this.store?{
       workerBootId:this.bootId,workerInstanceId:this.instanceId,workerCommit:this.commit,targetWebInstanceId:this.targetInstanceId}: {})};this.state.lastTick=tick;
     // Persist intent before network dispatch: a crash cannot look like clean drain.
     try {await this.persist();}catch {return {error:'WORKER_STATE_WRITE_FAILED'};}
@@ -192,6 +202,7 @@ export class WorkerRuntime {
       dispatched=true;
       const response=await this.fetch(`${this.origin}/api/video/worker/tick`,{
         method:'POST',headers:this.store?this.tickHeaders(tick):{'x-video-worker-secret':this.secret},signal:AbortSignal.timeout(this.timeoutMs)});
+      tick.httpStatus=response.status;
       if(!this.store&&[401,403].includes(response.status)) {
         tick.phase='rejected';tick.httpStatus=response.status;await this.persist();return {rejected:true};
       }
@@ -199,14 +210,22 @@ export class WorkerRuntime {
       const verified=this.store?await this.receiptResponse(response,tick):null;
       const data=verified?verified.result:await response.json();assert(data?.ok===true,'INVALID_TICK_RESPONSE');
       if(verified)tick.serverReceiptSha256=hash(verified.receipt);
+      tick.durationMs=Math.max(0,Date.parse(this.clock())-Date.parse(tick.startedAt));
+      if(data.phasesMs)tick.phasesMs=data.phasesMs;
+      if(data.mediaRecovery)tick.mediaRecovery=data.mediaRecovery;
       tick.phase='complete';tick.finishedAt=this.clock();await this.persist();
       if(data.processed)this.log(`[video-worker] processed=${data.processed} at=${data.at}`);
       return data;
-    } catch {
+    } catch (error) {
       tick.phase=dispatched?'unknown':'rejected';tick.finishedAt=this.clock();
-      if(dispatched&&this.stopOnUncertain) {this.state.uncertain=true;this.state.paused=true;}
+      tick.failure=tickFailure(error);tick.durationMs=Math.max(0,Date.parse(tick.finishedAt)-Date.parse(tick.startedAt));
+      if(dispatched&&this.stopOnUncertain) {
+        // A manual drain during the HTTP call wins over automatic recovery.
+        if(!this.state.paused&&tick.controlRevision===this.state.revision)tick.autoRecoveryRevision=this.state.revision;
+        this.state.uncertain=true;this.state.paused=true;
+      }
       try {await this.persist();}catch {/* snapshot retains the control fault */}
-      this.log('[video-worker] TICK_OUTCOME_UNKNOWN');return {error:'TICK_OUTCOME_UNKNOWN'};
+      this.log('[video-worker] TICK_OUTCOME_UNKNOWN '+JSON.stringify({tickId:tick.id,httpStatus:tick.httpStatus,durationMs:tick.durationMs,...tick.failure}));return {error:'TICK_OUTCOME_UNKNOWN'};
     }
   }
   start(intervalMs=15000) {

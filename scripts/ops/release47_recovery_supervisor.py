@@ -7,6 +7,7 @@ databases. An interrupted scanner may be superseded only by a separate audited
 human operation; this supervisor NEVER performs that operation automatically.
 """
 import argparse
+import copy
 import datetime as dt
 import json
 import os
@@ -29,6 +30,12 @@ def encoded(value):
 def static_pin(row):
     """No secret leaves the host. Pins include RAM, mounts, ports, env and image."""
     value = {k: row[k] for k in ['Id', 'Name', 'Image', 'Config', 'HostConfig', 'Mounts']}
+    # Docker 29 persists default DNS as null but reports [] after daemon reboot.
+    # Both mean host defaults; normalize to the enrolled null representation.
+    # A real resolver list (and every other configuration field) remains pinned.
+    value['HostConfig'] = copy.deepcopy(row['HostConfig'])
+    if value['HostConfig'].get('Dns') == []:
+        value['HostConfig']['Dns'] = None
     # Docker may reorder its inspect Mounts array at a stop/start. Destination
     # identity is unique; order has no semantics and must not invalidate pins.
     value['Mounts'] = sorted(row['Mounts'], key=lambda m: m['Destination'])
@@ -172,7 +179,7 @@ class Supervisor:
         self.record(filename, log)
         return fresh
 
-    def admit(self, spec, status):
+    def admit(self, spec, status, operation_suffix=''):
         if spec['role'] == 'worker':
             require(status.get('unresolvedTicks') == 0 and status.get('phase') != 'UNKNOWN' and
                     not status.get('controlFault'),
@@ -190,7 +197,7 @@ class Supervisor:
             boot = status['identity']['bootId']
             request = {'action': 'resume', 'instanceId': spec['name'], 'bootId': boot,
                        'expectedRevision': status['admission']['revision']}
-        path = self.folder / (spec['role'] + '-resume-' + boot + '.json')
+        path = self.folder / (spec['role'] + '-resume-' + boot + operation_suffix + '.json')
         if path.exists():
             log = json.loads(path.read_bytes())
             require(log['request']['bootId'] == boot, 'RECOVERY_CONTROL_BOOT_CHANGED')
@@ -207,6 +214,46 @@ class Supervisor:
         log.update(phase='ACKNOWLEDGED', receipt=result, observedAt=now())
         self.record(path.name, log)
         return fresh
+
+    def recover_completed_tick(self, spec, status):
+        """Reconcile only the original UUID through the Worker's GET verifier.
+
+        A missing/running/unknown receipt remains paused. This is not tick
+        supersession and never sends a generation POST or clears a DB row.
+        """
+        tick = status.get('lastTick') or {}
+        if not (status.get('paused') is True and status.get('activeTicks') == 0 and
+                tick.get('phase') in ['unknown','complete'] and not status.get('controlFault')):
+            return status, False
+        if tick.get('phase') == 'unknown' and status.get('automaticRecoveryEligible') is not True:
+            return status, False
+        if tick.get('phase') == 'complete' and not tick.get('id'): return status, False
+        require(isinstance(tick.get('id'), str), 'ORIGINAL_UNKNOWN_TICK_ID_REQUIRED')
+        try: uuid.UUID(tick['id']); uuid.UUID(status['bootId'])
+        except (ValueError, KeyError): raise Hold('ORIGINAL_UNKNOWN_TICK_ID_REQUIRED') from None
+        path = self.folder / ('worker-reconcile-' + status['bootId'] + '-' + tick['id'] + '.json')
+        if path.exists():
+            log = json.loads(path.read_bytes())
+            require(log['request']['tickId'] == tick['id'] and log['request']['bootId'] == status['bootId'],
+                    'RECOVERY_RECONCILE_IDENTITY_CHANGED')
+        else:
+            if tick.get('phase') != 'unknown' or status.get('unresolvedTicks') != 1: return status, False
+            log = {'phase': 'INTENT_RECORDED', 'request': {'action': 'reconcile',
+                   'tickId': tick['id'], 'bootId': status['bootId'], 'expectedRevision': status['revision'],
+                   'operationId': str(uuid.uuid4())}, 'at': now()}
+            self.record(path.name, log)
+        if tick.get('phase') == 'complete' and status.get('revision') != log['request']['expectedRevision'] + 1:
+            return status, False
+        result = self.adapter.control(spec, log['request'])
+        fresh = self.adapter.status(spec)
+        require(fresh.get('bootId') == status['bootId'] and fresh.get('unresolvedTicks') == 0 and
+                fresh.get('paused') is True and (fresh.get('lastTick') or {}).get('id') == tick['id'] and
+                fresh['lastTick'].get('phase') == 'complete', 'RECOVERY_RECONCILE_NOT_OBSERVED')
+        # The next CAS resume is tied to this acknowledged reconciliation, not
+        # to the presence of paused=true (which could be an operator drain).
+        log.update(phase='ACKNOWLEDGED', receipt=result, revision=fresh['revision'], observedAt=now())
+        self.record(path.name, log)
+        return fresh, True
 
     def once(self):
         web, worker = self.manifest['web'], self.manifest.get('worker')
@@ -236,13 +283,16 @@ class Supervisor:
             require(ws.get('instanceId') == worker['name'] and ws.get('commit') == self.manifest['commit'] and
                     ws.get('targetInstanceId') == web['name'] and ws.get('origin') == 'http://' + web['name'] + ':3000',
                     'RECOVERY_WORKER_TARGET_MISMATCH')
-            # The host never clears UNKNOWN. A fresh successor is enrolled only
-            # by the explicit interrupted-scanner handoff, outside this loop.
+            ws, reconciled = self.recover_completed_tick(worker, ws)
             worker_enrollment = self.folder / ('worker-enrolled-' + ws['bootId'] + '.json')
-            if worker_enrollment.exists(): require(not ws['paused'], 'OPERATOR_WORKER_PAUSE_REMAINS_PAUSED')
-            ws = self.admit(worker, ws)
+            if worker_enrollment.exists(): require(not ws['paused'] or reconciled, 'OPERATOR_WORKER_PAUSE_REMAINS_PAUSED')
+            # Per-tick UUIDs keep later repairs independent; retries preserve
+            # the same intent after a lost control response or supervisor crash.
+            ws = self.admit(worker, ws, '-tick-' + ws['lastTick']['id'] if reconciled else '')
             if not worker_enrollment.exists(): self.record(worker_enrollment.name, {'at': now(), 'bootId': ws['bootId']})
-            result.update(worker=public_identity(wr), workerBootId=ws['bootId'], workerState=ws)
+            result.update(worker=public_identity(wr), workerBootId=ws['bootId'], workerState=ws,
+                          reconciledCompletedTick=reconciled,
+                          progressWarning='LONG_RUNNING_TICK' if ws.get('activeTickAgeMs',0)>60000 else None)
         self.record('latest.json', result)
         return result
 

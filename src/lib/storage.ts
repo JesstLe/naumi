@@ -1,6 +1,7 @@
 import "server-only";
 
-import { readFile, stat } from "fs/promises";
+import { readFile, stat, statfs, mkdir } from "fs/promises";
+import {createReadStream} from 'node:fs';
 import path from "path";
 import {createHash} from "node:crypto";
 import { storageConfiguration } from "./object-storage/config";
@@ -12,6 +13,7 @@ export const storageDriver: "local" | "r2" | "s3" = config.driver;
 export const storageEnabled = config.enabled;
 export const privateMedia = config.privateMedia;
 export const remoteMediaAccess = config.accessMode;
+export const deferredNasDelivery = process.env.NAUMI_NAS_DEFER_UPLOAD==='1' && config.driver==='s3' && config.privateMedia && config.accessMode==='proxy';
 export const MEDIA_DIR = path.resolve(config.mediaDir);
 const MEDIA_URL_PREFIX = "/media";
 const CACHE_CONTROL = "public, max-age=31536000, immutable";
@@ -70,6 +72,18 @@ export async function writeStoredObject(bytes: Uint8Array, contentType: string, 
     await local.put(normalized, bytes, contentType, "private, max-age=300");
     return { remoteReady: false };
   }
+  // Opt-in NAS delivery: acknowledge durable local bytes, not a remote upload.
+  // Catalog remote_ready=false is the existing retry queue. A slow tunnel is
+  // no longer part of the paid generation's response time. Keep disk reserve;
+  // large video objects and low-space writes retain the remote-first contract.
+  if(deferredNasDelivery && bytes.byteLength<=64*1024*1024){
+    await mkdir(MEDIA_DIR,{recursive:true});
+    const space=await statfs(MEDIA_DIR);
+    if(space.bavail*space.bsize>4*1024**3+bytes.byteLength){
+      await local.put(normalized,bytes,contentType,'private, max-age=300');
+      return {remoteReady:false};
+    }
+  }
   try {
     await backend.put(normalized, bytes, contentType, "private, max-age=300");
     return { remoteReady: true };
@@ -79,6 +93,31 @@ export async function writeStoredObject(bytes: Uint8Array, contentType: string, 
     });
     return { remoteReady: false };
   }
+}
+
+/** Recovery uploads the original immutable bytes, bypassing deferred delivery.
+ * Never calls a model, creates a generation identity, or touches billing. */
+export async function mirrorStoredObject(bytes:Uint8Array,contentType:string,key:string){
+  if(storageDriver==='local')return {remoteReady:false};
+  await backend.put(safeKey(key),bytes,contentType,'private, max-age=300');
+  return {remoteReady:true};
+}
+
+type MirrorIdentity={bytes:number|string;sha256:string};
+const verifiedMirrors=new Map<string,string>();
+export async function hasVerifiedStoredMirror(key:string,asset:MirrorIdentity|null|undefined){
+  if(!deferredNasDelivery||!asset)return false;
+  const file=path.join(MEDIA_DIR,safeKey(key));
+  try{
+    const info=await stat(file);if(!info.isFile()||info.size!==Number(asset.bytes))return false;
+    const version=`${info.dev}:${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}:${asset.sha256}`;
+    if(verifiedMirrors.get(file)===version)return true;
+    const hash=createHash('sha256');for await(const chunk of createReadStream(file))hash.update(chunk);
+    const after=await stat(file);
+    if(after.ino!==info.ino||after.mtimeMs!==info.mtimeMs||after.ctimeMs!==info.ctimeMs||after.size!==info.size||hash.digest('hex')!==asset.sha256)return false;
+    if(verifiedMirrors.size>=1024)verifiedMirrors.delete(verifiedMirrors.keys().next().value!);
+    verifiedMirrors.set(file,version);return true;
+  }catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return false;throw error;}
 }
 
 export async function presignStoredObject(method: "GET" | "PUT", key: string, expires = 300, contentType?: string, filename?: string, contentLength?: number) {
@@ -93,8 +132,8 @@ export async function presignStoredObject(method: "GET" | "PUT", key: string, ex
   return backend.presign(method,key,expires,headers,filename);
 }
 
-export async function fetchStoredObject(key: string, range = ""): Promise<Response> {
-  return backend.get(safeKey(key), range);
+export async function fetchStoredObject(key: string, range = "", signal?:AbortSignal): Promise<Response> {
+  return backend.get(safeKey(key), range,signal);
 }
 
 export async function readManagedObject(
@@ -107,6 +146,9 @@ export async function readManagedObject(
     if (privateMedia) {
       const {getMediaAsset}=await import('./media-assets');
       const asset=await getMediaAsset(key);
+      if(await hasVerifiedStoredMirror(key,asset)){
+        const saved=await readLocalMirror(key,maxBytes);return {...saved,contentType:asset!.content_type||saved.contentType};
+      }
       // A pending upload has not been acknowledged by the remote store. Its
       // durable mirror must be usable immediately, including as a model input.
       if(asset && !asset.remote_ready) {

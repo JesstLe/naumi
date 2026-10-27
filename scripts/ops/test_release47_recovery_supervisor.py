@@ -3,6 +3,7 @@ import json
 import pathlib
 import tempfile
 import unittest
+import uuid
 
 from release47_host import Hold
 from release47_recovery_supervisor import Supervisor, recovery_binding, encoded, sha, static_pin
@@ -155,6 +156,64 @@ class Recovery(unittest.TestCase):
         self.fake.worker.update(phase='RUNNING', lastTick={'phase': 'dispatched'}, activeTicks=1)
         self.assertEqual(self.supervisor.once()['workerState']['phase'], 'RUNNING')
         self.assertEqual(self.fake.controls, [])
+
+    def test_docker_reboot_default_dns_does_not_change_static_pin(self):
+        row=dict(Id='id',Name='web',Image='image',Config={'Env':['SAMPLE=1']},HostConfig={'Dns':None},Mounts=[])
+        pin=static_pin(row);row['HostConfig']['Dns']=[]
+        self.assertEqual(static_pin(row),pin)
+        self.assertEqual(row['HostConfig']['Dns'],[], 'pin calculation must not mutate inspect')
+        row['HostConfig']['Dns']=['192.0.2.53'];self.assertNotEqual(static_pin(row),pin)
+        row['HostConfig']['Dns']=[];row['Config']['Env']=['SAMPLE=2'];self.assertNotEqual(static_pin(row),pin)
+
+    def completed_receipt_recovery(self):
+        self.fake.worker.update(bootId=str(uuid.uuid4()),activeTicks=0)
+        self.supervisor.once()
+        tick=str(uuid.uuid4());self.fake.worker.update(paused=True,unresolvedTicks=1,phase='UNKNOWN',automaticRecoveryEligible=True,lastTick={'id':tick,'phase':'unknown'})
+        original=self.fake.control;receipts={}
+        def control(spec,request):
+            if request['action']=='reconcile':
+                if request['operationId'] in receipts:return receipts[request['operationId']]
+                self.fake.controls.append((spec['id'],copy.deepcopy(request)))
+                self.fake.worker.update(paused=True,unresolvedTicks=0,phase='QUIESCENT',revision=request['expectedRevision']+1)
+                self.fake.worker['lastTick']['phase']='complete'
+                receipts[request['operationId']]={'operationId':request['operationId']}
+                return receipts[request['operationId']]
+            return original(spec,request)
+        self.fake.control=control
+        return control,tick
+
+    def test_original_completed_receipt_reconciles_then_resumes_same_boot(self):
+        self.completed_receipt_recovery()
+        result=self.supervisor.once();self.assertTrue(result['reconciledCompletedTick'])
+        self.assertEqual([c[1]['action'] for c in self.fake.controls],['reconcile','resume'])
+        self.assertFalse(self.fake.worker['paused']);self.supervisor.once()
+        self.assertEqual(len(self.fake.controls),2)
+        self.fake.worker.update(paused=True,phase='QUIESCENT',revision=self.fake.worker['revision']+1)
+        with self.assertRaisesRegex(Hold,'OPERATOR_WORKER_PAUSE'):self.supervisor.once()
+
+    def test_lost_reconcile_reply_reuses_original_uuid_then_resumes(self):
+        control,_=self.completed_receipt_recovery();lost=True
+        def once(spec,request):
+            nonlocal lost
+            result=control(spec,request)
+            if request['action']=='reconcile' and lost:lost=False;raise Hold('REPLY_LOST')
+            return result
+        self.fake.control=once
+        with self.assertRaisesRegex(Hold,'REPLY_LOST'):self.supervisor.once()
+        self.supervisor.once();self.assertFalse(self.fake.worker['paused'])
+        self.assertEqual([c[1]['action'] for c in self.fake.controls],['reconcile','resume'])
+
+    def test_unverified_original_receipt_does_not_resume(self):
+        self.completed_receipt_recovery()
+        self.fake.control=lambda *_:(_ for _ in ()).throw(Hold('WORKER_TICK_RECONCILE_UNVERIFIED'))
+        before=copy.deepcopy(self.fake.worker)
+        with self.assertRaisesRegex(Hold,'UNVERIFIED'):self.supervisor.once()
+        self.assertEqual(self.fake.worker,before)
+
+    def test_manual_drain_of_unknown_tick_does_not_trigger_recovery(self):
+        self.completed_receipt_recovery();self.fake.worker['automaticRecoveryEligible']=False
+        with self.assertRaisesRegex(Hold,'OPERATOR_WORKER_PAUSE'):self.supervisor.once()
+        self.assertEqual(self.fake.controls,[])
 
 
 if __name__ == '__main__': unittest.main()

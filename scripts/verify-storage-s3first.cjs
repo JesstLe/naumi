@@ -14,7 +14,7 @@ function fixture(driver='s3'){
  const remote={put:async()=>{calls.push('remote.put');if(state.putError)throw Error('remote-write-failed')},get:async()=>{calls.push('remote.get');if(state.getError)throw Error('remote-read-failed');return state.response()},delete:async()=>{}};
  const filePromises={stat:async p=>{calls.push('local.stat');const b=files.get(p);if(!b)throw Object.assign(Error('missing'),{code:'ENOENT'});return {isFile:()=>true,size:b.length}},readFile:async p=>{calls.push('local.read');return files.get(p)}};
  const exp={};const sandbox={exports:exp,Buffer,Response,Headers,process:{env:{}},console,require:n=>{
- if(n==='server-only')return {};if(n==='node:crypto')return require(n);if(n==='fs/promises')return filePromises;if(n==='path')return path;
+ if(n==='server-only')return {};if(n==='node:crypto'||n==='node:fs')return require(n);if(n==='fs/promises')return filePromises;if(n==='path')return path;
  if(n==='./object-storage/config')return{storageConfiguration:()=>config};
  if(n==='./object-storage/adapter')return{createObjectStorage:c=>c.driver==='local'?local:remote,safeStorageKey:k=>{if(!k||k.includes('..')||k.startsWith('/'))throw Error('unsafe');return k}};
  if(n==='./image-upload-policy')return{ORIGINAL_IMAGE_MAX_BYTES:64*1024*1024};
