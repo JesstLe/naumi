@@ -50,7 +50,9 @@ v150 Nano Banana Pro 前端显示1K/2K/4K，apib通道能力数组为空，adapt
 - Worker paused=false、unresolvedTicks=0；真实同版Web completed tick已核验。该事实不是历史所有待核查任务已完成。
 - 103原模型配置v112保留，未同步47的v150/用户/媒体，不自动修改价格或真实参数映射。本轮真实付费生成测试0；用户接下来在103配置并验收4K→2k/high→medium、重做、Agent和节点菜单。
 - 本轮供应商适配53项、核心参数25、真实PG16、分辨率46、比例139、原报价25组74检查、后台PG24、Agent58、Canvas138场景1208断言、后台原子CAS发布、UI1440/390、全量tsc和固定生产构建通过。最新节点菜单实际组件定向复测通过。
-- 四产物及51文件副本回滚精确恢复通过；原空能力误拦截和auto报价错位恢复重现，修改交付副本未回滚。输出根 `E:/Workspace/naumi-image-redo-quote-20261027/output/image-redo-quote-20261027/`。
+- 四产物及51文件副本回滚精确恢复通过；原空能力误拦截和auto报价错位恢复重现，修改交付副本未回滚。输出根 `E:/Workspace/naumi/output/image-parameter-plan-103-20261027/`。
 - 真实备份可读、未回灌数据库。最终证据 `/opt/naumi-staging/evidence/image-parameter-plan-20261027-main/`，最终程序回退命令 `python3 -B /opt/naumi-staging/evidence/image-parameter-plan-20261027-main/rollback103-main.py`（保留业务数据）。
 - 保留本轮失败：第一次包清单在tar关闭前计算hash导致组包校验拒绝；更正后通过。第一轮直替后的验收脚本误用旧库不存在的created_at，已自动回切并确认原站200；改用joined_at并强制ON_ERROR_STOP后复用同镜像发布成功。发布期间main新增菜单已补入最终固定版本，不把中间f942称为最终main。
 - 本条是发布后文档，不另行构建镜像。47未发布，原4轮会话PREVIEW未写回。
+
+- 已合并本任务分支工作区在交付前归档清理；证据已移动到上述主工作区 ignored output 并重验51文件SHA。隔离PG容器已停止，volume保留。
