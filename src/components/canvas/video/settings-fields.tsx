@@ -5,6 +5,9 @@ import type { OrderedInput } from "@/lib/video/references";
 import { catalogCapability, selectedVideoCatalogModel, videoModeRoles, type VideoCatalogModel, type VideoNodeConfig, type VideoInputChoice } from "@/lib/video/client-settings";
 import { compileVideoPrompt } from "@/lib/video/prompt";
 import { compileVideoCamera } from "@/lib/video/camera";
+import { insertVideoPromptReference, remapVideoPromptReferences } from "@/lib/video/prompt-references";
+import { browserRandomUUID } from "@/lib/browser-crypto";
+import { VideoPromptEditor } from "./prompt-editor";
 import { useVideoByocCatalog } from "./use-byoc-catalog";
 import { VideoByocSettings } from "./byoc-settings";
 import { VideoSettingsPanel } from "./settings-panel";
@@ -46,7 +49,14 @@ export function VideoSettingsFields({ config, inputs, models, choices, nodeId, e
         onInputs(ordered);
         next = { ...next, references: [] };
     } onConfig(next); setError(""); }
-    function changeInputs(next: OrderedInput[],preserveRoles=false) { const ordered = config.comfyWorkflowId||preserveRoles ? next : videoModeRoles(next, config.mode); onInputs(ordered); onConfig({ ...config, references: [] }); setError(""); }
+    function changeInputs(next: OrderedInput[],preserveRoles=false) { const ordered = config.comfyWorkflowId||preserveRoles ? next : videoModeRoles(next, config.mode); onInputs(ordered); onConfig({ ...config, prompt: remapVideoPromptReferences(config.prompt || "", inputs, ordered), references: [] }); setError(""); }
+    function mention(choice: VideoInputChoice, start: number, end: number) {
+        if (readOnly || busy || uploading || !choice.available) return;
+        const next = inputs.some(input => input.nodeId === choice.nodeId) ? inputs : [...inputs, { id: `ref-${browserRandomUUID()}`, nodeId: choice.nodeId, kind: choice.kind, role: choice.kind === "text" ? "context" as const : choice.kind === "video" ? "source_video" as const : choice.kind === "audio" ? "source_audio" as const : "reference" as const, value: choice.value }];
+        const ordered = config.comfyWorkflowId ? next : videoModeRoles(next, config.mode), input = ordered.find(item => item.nodeId === choice.nodeId)!;
+        const inserted = insertVideoPromptReference(config.prompt || "", inputs, ordered, choices, input.id, start, end);
+        onInputs(ordered); onConfig({ ...config, prompt: inserted.prompt, references: [] }); return inserted.caret;
+    }
     function appendImports(uploaded: VideoInputChoice[]) { changeInputs([...inputs, ...uploaded.filter(choice => !inputs.some(input => input.nodeId === choice.nodeId)).map(choice => ({ id: `ref-${choice.id}`, nodeId: choice.nodeId, kind: choice.kind, role: choice.kind === "video" ? "source_video" as const : choice.kind === "audio" ? "source_audio" as const : "reference" as const, value: choice.value }))]); }
     async function importFiles(files: File[]) { if (!onImport || busy || uploading || readOnly || !files.length)
         return; setUploading(true); onImportBusyChange?.(true); setError(""); try {
@@ -73,7 +83,7 @@ export function VideoSettingsFields({ config, inputs, models, choices, nodeId, e
         onConfig({ ...config, modelId: selected.id, comfyWorkflowId: selected.id, comfyInputs: selected.defaultMappings, comfyOverrides: undefined }); }}><option value="" disabled>{V("\u9009\u62E9\u5DE5\u4F5C\u6D41")}</option>{byoc.catalog?.workflows.map(item => <option key={item.id} value={item.id}>{item.name}{item.videoOutput ? "" : V(" · 自定义输出")}</option>)}</select></VideoField><VideoByocSettings workflow={workflow} config={config} onChange={changeConfig}/></> : <VideoSettingsPanel advancedOnly={hideComposerFields} disabled={readOnly || busy || uploading} config={config} models={models} onChange={changeConfig} onNotice={setNotice}/>}
           {byoc.error && <p role="status" className="text-xs text-amber-500">{byoc.error}</p>}<button type="button" className={videoButtonClass} onClick={() => void byoc.refresh()}>{V("\u5237\u65B0\u81EA\u5907\u5DE5\u4F5C\u6D41")}</button>
           {notice && <p role="status" className="text-xs text-amber-500">{notice}</p>}
-          {!hideComposerFields&&<VideoField label={V("视频描述")}><textarea aria-label={V("视频描述")} rows={6} className={videoFieldClass} value={config.prompt || ""} onChange={event => changeConfig({ ...config, prompt: event.target.value })}/></VideoField>}
+          {!hideComposerFields&&<VideoField label={V("视频描述")}><VideoPromptEditor prompt={config.prompt || ""} inputs={inputs} choices={choices} nodeId={nodeId} rows={6} className={videoFieldClass} readOnly={readOnly || busy || uploading} onPrompt={prompt => changeConfig({ ...config, prompt })} onMention={mention}/></VideoField>}
           <details className="text-xs"><summary className="cursor-pointer opacity-70">{V("\u7F16\u8BD1\u9884\u89C8")}</summary><pre data-testid="video-compiled-prompt" className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-current/5 p-3 font-sans text-[11px]">{preview}</pre></details>
         </div><div className="space-y-4"><VideoSection title={V("引用素材")}>{onImport && <label className={`${videoButtonClass} inline-flex cursor-pointer`}><span>{V("\u4E0A\u4F20\u56FE\u7247 / \u89C6\u9891 / \u97F3\u9891")}</span><input aria-label={V("上传视频参考素材")} type="file" multiple accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/webm" className="sr-only" disabled={busy || readOnly} onChange={event => { const files = Array.from(event.target.files || []); event.target.value = ""; void importFiles(files); }}/></label>}{canLoadMoreAssets && onLoadMoreAssets && <button type="button" className={videoButtonClass} disabled={busy || readOnly} onClick={() => void onLoadMoreAssets().catch(cause => setError(cause instanceof Error ? cause.message : "素材历史加载失败"))}>{V("\u52A0\u8F7D\u66F4\u591A\u5386\u53F2\u7D20\u6750")}</button>}<ReferenceList inputs={inputs} choices={choices.filter(choice => choice.nodeId !== nodeId)} onChange={changeInputs}/></VideoSection>
           {cap.supportsMultiShot === true && <VideoSection title={V("分镜")}><ShotEditor shots={config.shots || []} duration={config.durationSeconds} maxShots={cap.maxShots} choices={choices} onChange={shots => changeConfig({ ...config, shots: shots.length ? shots : undefined })}/></VideoSection>}

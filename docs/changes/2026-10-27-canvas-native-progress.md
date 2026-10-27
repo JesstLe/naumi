@@ -1,0 +1,66 @@
+# 画布能力原生化：持续实施记录
+
+## 目标与当前状态
+
+用户于2026-10-27要求制定目标并持续推进。执行原则见 [画布能力融合原则](../CANVAS_CAPABILITY_ADAPTATION.md)，已完成的全量盘点见 [能力清单](../analysis/canvas-fusion-20261027/README.md)。
+
+- [x] 视频模块：统一连线、素材和@的引用表达，保持稳定身份与旧数据兼容。
+- [x] 视频模块：常用/高级参数使用业务标签，保留false、0、未发送及未知兼容配置。
+- [x] 视频模块：集中验证保存、重排、删除、刷新、复制、生成编译与结果复用；按本节记录普通合并推送main。
+- [ ] 3D导演台：按Naumi原生节点实现角色/场景/机位编辑、工程保存及图像/视频输出回画布；不是嵌入上游旧页面或给产品3D改名。
+
+当前目标保持进行中，视频模块完成不等于整个目标完成。服务器暂缓发布决定继续有效；本任务不连接服务器或重放真实在途任务。
+
+## 视频模块开工
+
+- 基线 `origin/main@e4369998d00f044cf5ad0150e8c7b7dbc055e12f`。
+- 独立任务分支 `codex/canvas-video-native-20261027`，工作区 `E:/Workspace/naumi-canvas-video-native-20261027`。
+- 共享管理分支及原有修改保持不动。现有生成、计费、供应商、任务和媒体处理链复用。
+
+## 已确认的实现问题与选定方式
+
+1. 旧视频提示词按位置保存`{{ref N}}`及媒体分类编号。输入重排或移除时，现有编号会静默指向另一素材。
+2. 采用稳定输入ID推导重新编号：在引用变化时重映射旧标记，删除被引用素材后保留一个明确失效标记，禁止隐式改指向。继续保存现有提示词格式，不引入新的存储/协议字段，旧服务端仍可识别失效引用。
+3. 用户编辑区投影为命名的`@【素材名】`，@选择与素材/连线共用现有inputs；显示层与供应商编号编译层分离。不建立第二套引用存储。
+4. 前端编辑使用相同的纯函数；节点保存事务再覆盖来自连线、删除和Agent的原提示词不变/仅inputs变化情况，防止只修一个界面。
+5. 已明确含义的模型选项提供业务标签；未知选项保留在折叠的兼容设置内，不删除用户原值、不改变wire映射。
+6. 删除后的标记固定为`{{ref 0}}`，当前与旧编译器均拒绝它；重新添加同名或同一素材也不自动修复，用户重新选择引用才表达新的意图。输入ID相同但nodeId/kind变化同样判失效。
+7. 完整应用验收发现失效提示词经API返回通用503；编译器现抛出已有`VideoContractError`，返回`422 / VIDEO_PROMPT_REFERENCE_INVALID / fields=["prompt"]`，不预扣、不发供应商。
+
+## 视频模块职责与接口
+
+- `src/lib/video/prompt-references.ts`：纯引用重排、命名投影与序列化，不访问React/DB/供应商。
+- `src/components/canvas/video/prompt-editor.tsx`：共享多行编辑器与@选择器，处理选择区、键盘和IME；它是文本投影，不是不可编辑的富文本chip。
+- `src/lib/video/option-labels.ts`：已知选项的业务名称；不定义供应商能力，不改变wire。
+- `video-node-repository.saveVideoNodeTx`：在现有锁/事务内修正仅inputs变化或原提示词未变化的请求。显式修改后的新提示词按新inputs解释；不另开事务，不改变操作摘要/重放/并发版本规则。
+- 素材、连线、@共用原有`inputs`；存储和发送仍使用原`{{ref N}}`及分类编号，没有新增数据库列、迁移、第二套引用或轮询机制。
+- 生成结果、复制、账务与私有媒体继续走既有模块；不替换供应商、模型默认、冻结报价或历史任务。
+
+## 集中验收与交付
+
+证据根目录：`E:/Workspace/naumi/output/canvas-video-native-20261027`。原始基线Git归档SHA256：`0cd6adab6e13109826d53d3a7ccb0591be05b02a1967b390ebb6f4b808db15bf`。
+
+| 命令（任务工作区） | 实际结果与证据层级 |
+|---|---|
+| `node scripts/verify-video-native-references.cjs BASELINE <baseline>` | PASS；复现重排/删除静默改指向；事务重放PASS |
+| `node scripts/verify-video-native-references.cjs MODIFIED .` | PASS；120种混排、稳定身份、删除失效、命名往返、重复名称、位置插入、旧协议与事务重放 |
+| `node scripts/verify-video-native-postgres.cjs BASELINE <baseline>` / `MODIFIED .` | 均PASS；临时Docker PostgreSQL的真实事务，基线复现、修改后身份稳定、并发仅一方成功、重放去重；容器已清理 |
+| `node scripts/verify-video-native-ui.cjs BASELINE <baseline> <browser>` / `MODIFIED . <browser>` | 均PASS；实际React组件和Chromium，@/素材共用输入、重排/删除、保存刷新、Ark wire、0/false/兼容参数、390px、只读、英文；pageerror=0，外部请求=0。鉴权/目录/图片边界为fixture |
+| `node --conditions=react-server --import tsx scripts/verify-video-native-application.ts <application>` | PASS；真实Next/API/DB/Worker/存储/账务，保存重排、删除422且无预扣、复制、提交重放、私有媒体SHA/跨账号404、结果回挂及第二次生成引用。模拟供应商创建2次、真实付费0；临时容器/子进程清理 |
+| `node --conditions=react-server --import tsx scripts/verify-video-fusion-client-settings.ts` | PASS；既有默认/角色/完整提示词/明确设置变化/回执身份 |
+| `node --conditions=react-server --import tsx scripts/verify-video-node-capability-options.ts` | PASS；32模型、92模式、912 wire案例、1254检查项、8251断言、HTTP/付费0。使用原独立调研JSON；首次缺少忽略目录资料的失败原样保留 |
+| 指定变更文件`eslint --max-warnings 0`；`tsc --noEmit --incremental false` | PASS；完整命令及exit记录见VERIFICATION.txt |
+
+桌面与390px截图已逐张打开检查。未连接线上服务，未验证真实供应商视频质量/真实额度，也未把模拟供应商结果当作生产验收。
+
+交付材料：`MODIFIED_FILE.zip`、`DIFF_FILE.patch`、`VERIFICATION.txt`、可执行`ROLLBACK.sh`；回滚仅在另一份基线+修改归档的副本验证，校验原始文件哈希和旧行为恢复，开发版本保持修改。原始测试失败日志与修正过程保留，不改写为第一次即通过。
+
+现有`verify-video-fusion-reference-order.ts`同步更新为稳定身份期望：编号随身份调整，删除阻止生成，重新添加不自动修复。这份历史浏览器用例本轮未单独重跑；新组件和应用用例分别提供当前证据。
+
+Git：以`e4369998`为基线，合并前再次fetch，选择性提交并普通合入/推送main；精确提交和远端SHA记录于VERIFICATION.txt。功能迭代计数`0→1`；无服务器发布，发布/空间维护计数不增加。
+
+## 下一模块：原生3D导演台
+
+按上游`infinite-canvas@68b37db04b9083c3ff0af67ffe362f85d04d1f9f`的场景/角色→姿态与机位→镜头/关键帧→保存工程→图像/视频回画布流程实施。不嵌入其iframe，不改名现有`/studio3d`。
+
+先落地Naumi原生导演工程、编辑器和原画布节点入口，复用Three.js与私有媒体/素材登记；工程及节点归属、版本保存和复制删除必须贯通。截图或视频输出沿现有媒体链回画布，再参与@和视频生成。菜单其余角色/场景/音频/多轨占位保持按真实实现状态启用；导演台节点未实现前保持置灰。
