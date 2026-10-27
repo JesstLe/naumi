@@ -82,7 +82,9 @@ export function exactRatioPixels(
   ratio: string,
   model: string,
 ): { width: number; height: number } | undefined {
-  const size = exactImageRequestSize(ratio, model, true);
+  let size: string | undefined;
+  try { size = exactImageRequestSize(ratio, model, true); }
+  catch (error) { if (error instanceof ExactImageSizeError) return; throw error; }
   if (!size || size === "auto") return;
   const [width, height] = size.split("x").map(Number);
   return Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0

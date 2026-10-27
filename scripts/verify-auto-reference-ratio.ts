@@ -64,6 +64,8 @@ async function main(){
  check(imageRequestAdmission("658:877","gemini-3.0-pro-image-portrait",false,{model:"gemini-3.0-pro-image-portrait",parameterMap:{apimartImages:{ratios:["3:4"]}}}).includes("ADAPTER_RATIO_UNSUPPORTED"),"models without the exact-size contract stay allowlist-bound");
  check(JSON.stringify(exactRatioPixels("277:360","gpt-image-2"))===JSON.stringify({width:960,height:1248}),"probe ratio sizes to the verified grid");
  check(exactRatioPixels("277:360","wire-image-one")===undefined && exactRatioPixels("auto","gpt-image-2")===undefined,"pixel helper is contract-scoped");
+ check(exactRatioPixels("100:1","gpt-image-2")===undefined && exactRatioPixels("NaN:1","gpt-image-2")===undefined,"unrepresentable ratios remain admission rejections rather than throwing");
+ check(imageRequestAdmission("100:1","gpt-image-2",false,{...up,parameterMap:{apimartImages:{ratios:["3:4"]}}}).includes("ADAPTER_RATIO_UNSUPPORTED"),"unsupported custom ratio keeps controlled rejection");
  const mapped:Record<string,unknown>={size:"848x1264",quality:"medium"};mapResolution(mapped,{mode:"map",field:"size",values:{"4K":"1024x1024"}},"4K","53:79");
  check(mapped.size==="1024x1024","administrator explicit size overrides suggested auto frame");
  const source=readFileSync("src/app/api/generate-image/route.ts","utf8"),ast=ts.createSourceFile("route.ts",source,99,true);
