@@ -169,3 +169,7 @@ R5L收尾补正：错误去重仅匹配saved batch的原project，旧项目待�
 独立分支继续整体重构，普通整合 main `fb5dfe80810ed1d796c6050e5487b92e6fa02c1d`。请求适配、工作流共享合同/应用和原回执恢复归明确 owner；不新增表、任务/计费引擎和用户确认。实现/证据/未完成边界见 [R6Q记录](changes/2026-10-27-canvas-request-workflow-r6q.md)。尚未合 main 或部署。
 
 R6Q 固定 `ed0450be`：core44/44、完整Linux同镜像runtime125、真实双浏览器36和原生工作流4检查通过；Canvas5688→5586、route257→34，原151函数与1863产品hash保持。后续继续视频提交/批次及外围编排边界；本切片不等于整个项目完成。四产物/回滚/Git最终回执统一本轮DELIVERY。
+
+## R6R：Worker／媒体恢复主线整合
+
+固定 e2217c98 的 4提交/17路径能力按现有 owner 整合；storage 兼容面、shared scan 和 direct Worker 不回退到旧单体。真实原/新双入口慢 NAS 对照33/35检查已通过；完整封版见 [R6R记录](changes/2026-10-27-worker-media-integration-r6r.md)。整体重构继续，未合main、未部署。

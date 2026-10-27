@@ -52,6 +52,8 @@ export async function createDirectWorkerApplication(){
      if(canClaim()&&seen!==wakeVersion){
       seen=wakeVersion;const next=await scanApplicationWorkerOnce();
       for(const key of ["processed","mediaProcessed","generationProcessed","supplierCostsProcessed","mediaSaved","videoProcessed","imageProcessed"] as const)summary[key]+=next[key];
+      for(const [name,elapsed] of Object.entries(next.phasesMs))summary.phasesMs[name]=(summary.phasesMs[name]||0)+elapsed;
+      summary.durationMs+=next.durationMs;summary.mediaRecovery=next.mediaRecovery;
       summary.at=next.at;continue;
      }
      if(!backgroundWorkCount())break;

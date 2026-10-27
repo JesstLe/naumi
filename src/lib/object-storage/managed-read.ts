@@ -1,6 +1,6 @@
 import "server-only";
 import {createHash} from "node:crypto";
-import {storageKeyFromManagedUrl,storageDriver,privateMedia,readLocalMirror,fetchStoredObject} from "./runtime";
+import {storageKeyFromManagedUrl,storageDriver,privateMedia,readLocalMirror,fetchStoredObject,hasVerifiedStoredMirror} from "./runtime";
 export async function readManagedObject(
   url: string,
   maxBytes = Number.POSITIVE_INFINITY
@@ -11,6 +11,9 @@ export async function readManagedObject(
     if (privateMedia) {
       const {getMediaAsset}=await import('../media-assets-reader');
       const asset=await getMediaAsset(key);
+      if(await hasVerifiedStoredMirror(key,asset)){
+        const saved=await readLocalMirror(key,maxBytes);return {...saved,contentType:asset!.content_type||saved.contentType};
+      }
       // A pending upload has not been acknowledged by the remote store. Its
       // durable mirror must be usable immediately, including as a model input.
       if(asset && !asset.remote_ready) {

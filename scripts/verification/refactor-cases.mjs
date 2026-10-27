@@ -46,8 +46,16 @@ export const refactorCases=[
  ts('node-operations','canvas','scripts/verify-canvas-node-operations-pg.ts','CANVAS_NODE_OPERATIONS_PG=PASS'),
  ts('video-wire','video','scripts/verify-video-node-capability-options.ts','VIDEO_NODE_CAPABILITY_OPTIONS=PASS'),
  ts('video-source','video','scripts/verify-video-frozen-source-authority.ts','VIDEO_FROZEN_SOURCE_AUTHORITY=PASS'),
+ node('storage-remote','generation','scripts/verify-storage-s3first.cjs','S3FIRST_MODIFIED=PASS'),
+ node('storage-resilience','generation','scripts/verify-storage-resilience.cjs','"passed":true'),
+ ts('media-lanes','runtime','scripts/verify-p0-media-recovery.ts','P0_MEDIA_RECOVERY PASS'),
+ ts('nas-delivery','runtime','scripts/verify-p0-nas-delivery.ts','P0_NAS_DELIVERY PASS'),
+ ts('worker-media','runtime','scripts/verify-worker-media-integration-pg.ts','WORKER_MEDIA_INTEGRATION=PASS MODE=MODIFIED'),
+ ts('worker-receipts','runtime','scripts/verify-worker-tick-receipts.ts','WORKER_TICK_RECEIPTS=PASS'),
+ {id:'recovery-supervisor',group:'runtime',file:'scripts/ops/test_release47_recovery_supervisor.py',args:['-v'],expect:'OK',pg:false,python:true},
+ node('direct-worker-unit','runtime','scripts/verify-direct-worker-runtime.mjs','# fail 0',['--test-runner']),
  node('worker-unit','runtime','scripts/test-worker-runtime.mjs','# fail 0',['--test-runner']),
  node('worker-process','runtime','scripts/verify-worker-handoff.mjs','WORKER_HANDOFF_PROCESS=PASS'),
 ];
-export function caseCommand(item){if(process.platform==='win32'&&item.id==='worker-process')return ['docker','run','--rm','--init','--network','none','--read-only','--tmpfs','/tmp:rw,size=64m','--label','naumi.task=refactor-r6a-20261026','--mount','type=bind,src='+path.resolve('scripts')+',dst=/verification,readonly','--entrypoint','node','node:24-bookworm-slim','/verification/verify-worker-handoff.mjs'];return [process.execPath,...(item.args?.includes('--test-runner')?['--test','--test-reporter=tap']:item.tsx?['--conditions=react-server','--import','tsx']:[]),item.file,...(item.args||[]).filter(v=>v!=='--test-runner')];}
+export function caseCommand(item){if(item.python)return ['python','-X','utf8','-B',item.file,...(item.args||[])];if(process.platform==='win32'&&item.id==='worker-process')return ['docker','run','--rm','--init','--network','none','--read-only','--tmpfs','/tmp:rw,size=64m','--label','naumi.task=refactor-r6a-20261026','--mount','type=bind,src='+path.resolve('scripts')+',dst=/verification,readonly','--entrypoint','node','node:24-bookworm-slim','/verification/verify-worker-handoff.mjs'];return [process.execPath,...(item.args?.includes('--test-runner')?['--test','--test-reporter=tap']:item.tsx?['--conditions=react-server','--import','tsx']:[]),item.file,...(item.args||[]).filter(v=>v!=='--test-runner')];}
 export function selectRefactorCases(group){if(!group||group==='core')return refactorCases;const selected=refactorCases.filter(c=>c.group===group);if(!selected.length)throw Error('UNKNOWN_VERIFICATION_GROUP: '+group);return selected;}

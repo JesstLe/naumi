@@ -1,9 +1,10 @@
 import "server-only";
-import {readFile,stat} from "fs/promises";
+import {readFile,stat,statfs,mkdir} from "fs/promises";
 import path from "path";
 import {storageConfiguration} from "./config";
 import {createObjectStorage,safeStorageKey} from "./adapter";
 import {ORIGINAL_IMAGE_MAX_BYTES} from "../image-upload-policy";
+import {createStoredMirrorVerifier} from "./local-mirror";
 const config = storageConfiguration(process.env);
 
 export const storageDriver: "local" | "r2" | "s3" = config.driver;
@@ -13,8 +14,10 @@ export const storageEnabled = config.enabled;
 export const privateMedia = config.privateMedia;
 
 export const remoteMediaAccess = config.accessMode;
+export const deferredNasDelivery=process.env.NAUMI_NAS_DEFER_UPLOAD==='1'&&config.driver==='s3'&&config.privateMedia&&config.accessMode==='proxy';
 
 export const MEDIA_DIR = path.resolve(config.mediaDir);
+export const hasVerifiedStoredMirror=createStoredMirrorVerifier(MEDIA_DIR,deferredNasDelivery);
 
 export const MEDIA_URL_PREFIX = "/media";
 
@@ -50,6 +53,18 @@ export async function writeStoredObject(bytes: Uint8Array, contentType: string, 
     await local.put(normalized, bytes, contentType, "private, max-age=300");
     return { remoteReady: false };
   }
+  // Opt-in NAS delivery: acknowledge durable local bytes, not a remote upload.
+  // Catalog remote_ready=false is the existing retry queue. A slow tunnel is
+  // no longer part of the paid generation's response time. Keep disk reserve;
+  // large video objects and low-space writes retain the remote-first contract.
+  if(deferredNasDelivery && bytes.byteLength<=64*1024*1024){
+    await mkdir(MEDIA_DIR,{recursive:true});
+    const space=await statfs(MEDIA_DIR);
+    if(space.bavail*space.bsize>4*1024**3+bytes.byteLength){
+      await local.put(normalized,bytes,contentType,'private, max-age=300');
+      return {remoteReady:false};
+    }
+  }
   try {
     await backend.put(normalized, bytes, contentType, "private, max-age=300");
     return { remoteReady: true };
@@ -60,6 +75,13 @@ export async function writeStoredObject(bytes: Uint8Array, contentType: string, 
     return { remoteReady: false };
   }
 }
+
+export async function mirrorStoredObject(bytes:Uint8Array,contentType:string,key:string){
+  if(storageDriver==='local')return {remoteReady:false};
+  await backend.put(safeKey(key),bytes,contentType,'private, max-age=300');
+  return {remoteReady:true};
+}
+
 
 export async function presignStoredObject(method: "GET" | "PUT", key: string, expires = 300, contentType?: string, filename?: string, contentLength?: number) {
   if (!storageEnabled || storageDriver === "local") throw new Error("对象存储未启用");
@@ -73,8 +95,8 @@ export async function presignStoredObject(method: "GET" | "PUT", key: string, ex
   return backend.presign(method,key,expires,headers,filename);
 }
 
-export async function fetchStoredObject(key: string, range = ""): Promise<Response> {
-  return backend.get(safeKey(key), range);
+export async function fetchStoredObject(key: string, range = "",signal?:AbortSignal): Promise<Response> {
+  return backend.get(safeKey(key), range,signal);
 }
 
 export async function readLocalMirror(key: string, maxBytes: number): Promise<{ bytes: Buffer; contentType: string; size: number }> {

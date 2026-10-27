@@ -1,17 +1,18 @@
 import {ensureMediaSchema} from "@/lib/media-assets-schema";
 export {ensureMediaSchema};
 
-import {withBackgroundActivity,bindBackgroundClaim} from "@/lib/release-runtime/background-activity";
 import 'server-only';
 import {createHash} from 'node:crypto';
 import {dbEnabled,getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
 import {currentBiContext} from "@/lib/bi/context";
 import {readManagedObject} from './object-storage/managed-read';
-import {readPendingStoredObject,writeStoredObject,privateMedia,storageDriver} from './object-storage/runtime';
-import {getMediaAsset,type MediaAsset} from './media-assets-reader';
+import {storageDriver} from './object-storage/runtime';
+import {getMediaAsset} from './media-assets-reader';
 export {getMediaAsset,getMediaAssets,type MediaAsset} from './media-assets-reader';
-import {makeMediaVariants} from './media-variants';
+import {ensureMediaVariants} from "./media-assets/variants";
+export {ensureMediaVariants} from "./media-assets/variants";
+export {recoverMediaMirrors} from "./media-assets/mirror-recovery";
 
 function publicKey(key:string) { return /^(?:brand|library|templates|template-cache)\//.test(key); }
 
@@ -55,64 +56,4 @@ export async function registerMediaAsset(key:string, raw:Uint8Array, contentType
     sha256=EXCLUDED.sha256,bytes=EXCLUDED.bytes,content_type=EXCLUDED.content_type`,
     [key,owner?.toLowerCase()||currentBiContext()?.email||null,publicKey(key),storageDriver,remoteReady,contentType,sha,bytes.length]);
   if(prepareVariants&&/^image\/(png|jpe?g|webp|gif|avif)$/.test(contentType)) await ensureMediaVariants(key,bytes).catch(()=>{});
-}
-async function ensureMediaVariantsLocal(key:string, bytes?:Buffer) {
-  const asset=await getMediaAsset(key); if(!asset || asset.thumbnail_key&&asset.preview_key) return asset;
-  const tx=await getPool().connect();
-  try {
-    await tx.query('BEGIN');
-    // Cross-process lock, not an in-memory-only deduplication promise.
-    await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`media-variants:${key}`]);
-    const current=(await tx.query('SELECT * FROM app_media_assets WHERE key=$1',[key])).rows[0] as MediaAsset;
-    if(current.thumbnail_key&&current.preview_key) {await tx.query('COMMIT');return current;}
-    const input=bytes || (await readManagedObject(`/media/${key}`,32*1024*1024)).bytes;
-    const v=await makeMediaVariants(input);
-    const prefix=`media-variants/${current.sha256}`, thumbnail=`${prefix}-512.webp`, preview=`${prefix}-1600.webp`;
-    const thumbResult=await writeStoredObject(v.thumbnail,'image/webp',thumbnail),previewResult=await writeStoredObject(v.preview,'image/webp',preview);
-    for(const [k,body,ready] of [[thumbnail,v.thumbnail,thumbResult.remoteReady],[preview,v.preview,previewResult.remoteReady]] as const)
-      await tx.query(`INSERT INTO app_media_assets(key,owner,public,driver,remote_ready,content_type,sha256,bytes,width,height)
-        VALUES($1,$2,$3,$4,$5,'image/webp',$6,$7,$8,$9) ON CONFLICT(key) DO NOTHING`,
-        [k,current.owner,current.public,storageDriver,ready,createHash('sha256').update(body).digest('hex'),body.length,v.width,v.height]);
-    await tx.query('UPDATE app_media_assets SET thumbnail_key=$2,preview_key=$3,width=$4,height=$5 WHERE key=$1',[key,thumbnail,preview,v.width,v.height]);
-    await tx.query('COMMIT');
-    return {...current,thumbnail_key:thumbnail,preview_key:preview,width:v.width,height:v.height};
-  } catch(e) {await tx.query('ROLLBACK');throw e;} finally {tx.release();}
-}
-
-// Only retry saving bytes, never repeat a model request or touch billing.
-async function recoverMediaMirrorsLocal(limit=2) {
-  if(!privateMedia || storageDriver==='local'||!dbEnabled) return 0;
-  await ensureMediaSchema();
-  const tx=await getPool().connect();
-  try {
-    await tx.query('BEGIN');
-    const pending=(await tx.query(`SELECT key,content_type,sha256,bytes FROM app_media_assets WHERE NOT remote_ready
-      AND retry_after<=now() ORDER BY retry_after LIMIT $1 FOR UPDATE SKIP LOCKED`,[limit])).rows;
-    for(const row of pending) {
-      await bindBackgroundClaim(row.key);
-      let ready=false;
-      try {
-        let saved;
-        try {saved=await readPendingStoredObject(row.key,250*1024*1024);}
-        catch(error) {
-          if((error as NodeJS.ErrnoException)?.code!=='ENOENT')throw error;
-          // Legacy catalog imports can reference an existing remote original.
-          saved=await readManagedObject(`/media/${row.key}`,250*1024*1024);
-        }
-        if(saved.size!==Number(row.bytes)||createHash('sha256').update(saved.bytes).digest('hex')!==row.sha256)
-          throw new Error('待补传素材校验失败');
-        ready=(await writeStoredObject(saved.bytes,row.content_type,row.key)).remoteReady;
-      } catch {console.warn('MEDIA_MIRROR_RETRY_DEFERRED');}
-      // One missing/corrupt object must not continuously starve the queue.
-      await tx.query(`UPDATE app_media_assets SET remote_ready=$2,retry_after=now()+interval '5 minutes' WHERE key=$1`,[row.key,ready]);
-    }
-    await tx.query('COMMIT');return pending.length;
-  }catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}
-}
-
-export async function recoverMediaMirrors(limit=2) {
-  return withBackgroundActivity("media-mirror", "media-mirror-scan", "claim", () => recoverMediaMirrorsLocal(limit), () => 0);
-}
-export async function ensureMediaVariants(key:string,bytes?:Buffer) {
-  return withBackgroundActivity("media-variant", key, "continuation", () => ensureMediaVariantsLocal(key,bytes), () => getMediaAsset(key));
 }
