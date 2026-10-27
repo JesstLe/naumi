@@ -40,3 +40,17 @@ v150 Nano Banana Pro 前端显示1K/2K/4K，apib通道能力数组为空，adapt
 分支核对：除明确排除的refactor/历史rollback/baseline外，远端已完成分支均被整合；本地4个t3功能分支patch-equivalent，无需重复提交。共享18项未提交UI改动不纳入。
 
 103初查：主Web/Worker为56aa3233；13104为真实nginx入口；同机旧c05a主Web/Worker还运行。另有独立media执行器和fleet portal、DB/Hub/NewAPI/Redis。更新将停掉旧Naumi Web/Worker、替换media到同版，保留独立fleet和基础设施；没有操作47。
+
+## 103最终上线（2026-10-27 15:20 北京）
+
+- 用户批准停旧直替，最终固定main源码 `a57909b03377a705337a9f0830e7cf7b8ae4bc6d`，版本 `1793085307`，镜像 `sha256:2c74d3c3f0e545c8b2b5d055fc1474d7af6fb1831ce84d8aefe809292b02d6e7`。
+- 入口 `http://103.30.76.93`，主Web/Worker/media分别为 `naumi103-web-parameters-main-20261027`、`naumi103-worker-parameters-main-20261027`、`naumi103-media-parameters-main-20261027`，同固定镜像。
+- 原56aa与c05a两对Web/Worker、旧media及本轮中间f942三实例均已停止/restart=no。独立fleet portal、DB/Redis/NewAPI/Hub、媒体保留；nginx入口13104不变。
+- 公网 `/api/version`、`/api/health`、`/canvas` 均HTTP200；实际版本与main固定SHA一致；DB health ok。原账号鉴权GET及管理员模型管理200，5个图像家族返回统一映射资料。
+- Worker paused=false、unresolvedTicks=0；真实同版Web completed tick已核验。该事实不是历史所有待核查任务已完成。
+- 103原模型配置v112保留，未同步47的v150/用户/媒体，不自动修改价格或真实参数映射。本轮真实付费生成测试0；用户接下来在103配置并验收4K→2k/high→medium、重做、Agent和节点菜单。
+- 本轮供应商适配53项、核心参数25、真实PG16、分辨率46、比例139、原报价25组74检查、后台PG24、Agent58、Canvas138场景1208断言、后台原子CAS发布、UI1440/390、全量tsc和固定生产构建通过。最新节点菜单实际组件定向复测通过。
+- 四产物及51文件副本回滚精确恢复通过；原空能力误拦截和auto报价错位恢复重现，修改交付副本未回滚。输出根 `E:/Workspace/naumi-image-redo-quote-20261027/output/image-redo-quote-20261027/`。
+- 真实备份可读、未回灌数据库。最终证据 `/opt/naumi-staging/evidence/image-parameter-plan-20261027-main/`，最终程序回退命令 `python3 -B /opt/naumi-staging/evidence/image-parameter-plan-20261027-main/rollback103-main.py`（保留业务数据）。
+- 保留本轮失败：第一次包清单在tar关闭前计算hash导致组包校验拒绝；更正后通过。第一轮直替后的验收脚本误用旧库不存在的created_at，已自动回切并确认原站200；改用joined_at并强制ON_ERROR_STOP后复用同镜像发布成功。发布期间main新增菜单已补入最终固定版本，不把中间f942称为最终main。
+- 本条是发布后文档，不另行构建镜像。47未发布，原4轮会话PREVIEW未写回。
