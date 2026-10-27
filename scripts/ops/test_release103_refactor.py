@@ -26,5 +26,11 @@ class Guards(unittest.TestCase):
     def test_no_fixture_or_target_state_override(self):
         self.assertEqual(r.CANON.as_posix(),'/opt/naumi-staging/releases/release-lifecycle/current.json')
         self.assertEqual(r.TARGET,'103.30.76.93')
+    def test_startup_context_keeps_fixed_binding(self):
+        import release_runtime_recovery as recovery
+        self.assertEqual(recovery.context('release103-refactor-20261027','a'*40,'1793111694','naumi103-web-refactor-20261027')['commit'],'a'*40)
+        self.assertEqual(recovery.context('canvas-video-fusion-legacy','a'*40,'1793111694','legacy')['instanceId'],'legacy')
+        for rid in ['anything','release47-unrelated','release103-refactor-../other']:
+            with self.assertRaises(r.Hold):recovery.context(rid,'a'*40,'1793111694','web')
 
 if __name__=='__main__':unittest.main()

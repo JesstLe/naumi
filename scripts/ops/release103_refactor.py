@@ -127,7 +127,7 @@ class Release:
         self.phase('BACKED_UP')
     def docker_api(self,path,data):
         c=DockerHTTP('localhost');c.request('POST','/v1.45'+path,json.dumps(data),{'Content-Type':'application/json'});r=c.getresponse();raw=r.read();c.close();require(r.status<300,'DOCKER_API_'+str(r.status));return json.loads(raw)if raw else None
-    def clone(self,role):
+    def clone(self,role,*,reuse_empty_state=False):
         old=self.old[role];name=self.c['newNames'][role];e=environment(old);e.update(SOURCE_COMMIT=self.c['commit'],BUILD_VERSION=self.c['buildVersion'])
         for k in ['NAUMI_RELEASE_BOOT_ID','NAUMI_RELEASE_BOOT_SOURCE','NAUMI_RELEASE_COMMIT','NAUMI_RELEASE_INSTANCE_ID']:e.pop(k,None)
         if role=='web':e.update(NAUMI_INSTANCE_ID=name,NAUMI_RELEASE_ADMISSION_START='draining',NAUMI_RELEASE_PEERS='{}',INTERNAL_APP_ORIGIN='http://127.0.0.1:3000',MEDIA_WORKER_ORIGIN='http://'+self.c['newNames']['media']+':3001',NAUMI_VIDEO_WORKER='0')
@@ -145,7 +145,9 @@ class Release:
         mounts=[];state=None
         for m in old['Mounts']:
             if m['Destination']=='/release-state':
-                state=pathlib.Path('/opt/naumi-staging/releases')/self.c['releaseId']/role;state.mkdir(mode=0o700,parents=True,exist_ok=False);os.chown(state,1001,1001)
+                state=pathlib.Path('/opt/naumi-staging/releases')/self.c['releaseId']/role
+                if reuse_empty_state:require(role=='web' and state.is_dir() and not state.is_symlink() and state.stat().st_uid==1001 and not state.stat().st_mode&0o077 and not list(state.iterdir()),'ONLY_VERIFIED_EMPTY_PRE_CREATE_STATE')
+                state.mkdir(mode=0o700,parents=True,exist_ok=reuse_empty_state);os.chown(state,1001,1001)
                 mounts.append({'Type':'bind','Source':str(state),'Target':'/release-state','ReadOnly':False})
             elif m['Destination']=='/scratch':
                 scratch=self.root/'media-scratch';scratch.mkdir(mode=0o700,exist_ok=True);os.chown(scratch,1001,1001)
