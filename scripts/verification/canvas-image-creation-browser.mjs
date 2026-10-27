@@ -35,7 +35,7 @@ export async function verifyCanvasImageCreationBrowser({page,expect,out,snapshot
 
  await select();await dock.getByRole('textbox',{name:'节点提示词',exact:true}).fill('R6P 重做只调整光照，保留原产品');
  const retryBefore=await snapshot(),retryStats=await stats(),sourceTitle=retryBefore.artworks.find(row=>row.id==='r6c-root').title;
- await dock.getByRole('button',{name:'更多图片参数',exact:true}).click();await page.getByRole('button',{name:'重做',exact:true}).click();
+ await dock.getByRole('button',{name:'更多图片参数',exact:true}).click();await page.getByTestId('canvas-node-action-panel').getByRole('button',{name:'重做',exact:true}).click();
  const retried=await done(retryBefore,1);await expect.poll(async()=>fresh(await snapshot(),retryBefore)[0]?.title).toBe(sourceTitle+' · 重做');
  const version=fresh(await snapshot(),retryBefore)[0];assert.equal(version.parent_id,'r6c-root');assert.equal((await stats()).edits-retryStats.edits,1);
  stages.push({kind:'retry',artwork:version,ledger:retried.ledger});

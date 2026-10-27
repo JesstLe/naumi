@@ -1,6 +1,6 @@
-## 2026-10-27 R6P Canvas创作应用（验证中）
+## 2026-10-27 R6P Canvas创作应用
 
-普通/三视图/详情分发、重做与助手生成意图归 image-creation；四端口复用原图片任务、详情、历史和scope，未增加平行任务/账务owner。旧48/新49、34组合同、9组时序通过，后续固定包与回滚见DELIVERY；主线纯文档已普通同步e4369998，功能计数1，整体active。[记录](../changes/2026-10-27-canvas-image-creation-r6p.md)。
+普通/三视图/详情分发、重做及助手生成意图归真实image-creation；4端口复用原任务/历史/scope。旧48/新49、34合同/9时序、原任务46/176通过；Canvas5849→5688，148原函数、1871其它产品hash保持、控件emitted JS同。固定8de98c45 core41/41、完整Linux同镜像125、真实产品32（本轮新创作5）通过，总7笔42积分；外部观察器2处修正单独hash绑定。完整4622hash/四产物/回滚/远端见DELIVERY；固定主线e4369998已普通同步，功能计数1，整体active。[记录](../changes/2026-10-27-canvas-image-creation-r6p.md)。
 
 ## 2026-10-27 R6O 主线 owner 整合
 
@@ -221,7 +221,7 @@ R4A3 最新进展：账户访问事实、会话/注册、钱包余额、支付�
 不做：新增用户确认/限额、全站搬迁、新事件总线、另建benchmark、发布现场操作。
 ```
 
-## 9. 当前进度
+## 9. 历史时点进度（当前状态以上方逐轮记录为准）
 
 R4A2：schema/settings/signup实现迁出db，43调用文件/102绑定切到owner；旧/新门面同函数，DDL SQL不变。db5928→5321行，旧db消费者178→144，最大静态SCC56→24、动态70→66仍待处理。真实6类PG61→78及旧数据保留、池压力同事务修正、core lock/wallet/creation/Canvas32/model publication、tsc/lint通过。同步后第1模块，见 [R4A2](../changes/2026-10-24-persistence-owners-r4a2.md)。业务数据owner和运行DDL退出仍未整体完成。
 
