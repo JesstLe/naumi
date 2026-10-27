@@ -168,7 +168,7 @@ class Recovery(unittest.TestCase):
     def completed_receipt_recovery(self):
         self.fake.worker.update(bootId=str(uuid.uuid4()),activeTicks=0)
         self.supervisor.once()
-        tick=str(uuid.uuid4());self.fake.worker.update(paused=True,unresolvedTicks=1,phase='UNKNOWN',lastTick={'id':tick,'phase':'unknown'})
+        tick=str(uuid.uuid4());self.fake.worker.update(paused=True,unresolvedTicks=1,phase='UNKNOWN',automaticRecoveryEligible=True,lastTick={'id':tick,'phase':'unknown'})
         original=self.fake.control;receipts={}
         def control(spec,request):
             if request['action']=='reconcile':
@@ -209,6 +209,11 @@ class Recovery(unittest.TestCase):
         before=copy.deepcopy(self.fake.worker)
         with self.assertRaisesRegex(Hold,'UNVERIFIED'):self.supervisor.once()
         self.assertEqual(self.fake.worker,before)
+
+    def test_manual_drain_of_unknown_tick_does_not_trigger_recovery(self):
+        self.completed_receipt_recovery();self.fake.worker['automaticRecoveryEligible']=False
+        with self.assertRaisesRegex(Hold,'OPERATOR_WORKER_PAUSE'):self.supervisor.once()
+        self.assertEqual(self.fake.controls,[])
 
 
 if __name__ == '__main__': unittest.main()

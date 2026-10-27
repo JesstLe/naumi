@@ -225,6 +225,8 @@ class Supervisor:
         if not (status.get('paused') is True and status.get('activeTicks') == 0 and
                 tick.get('phase') in ['unknown','complete'] and not status.get('controlFault')):
             return status, False
+        if tick.get('phase') == 'unknown' and status.get('automaticRecoveryEligible') is not True:
+            return status, False
         if tick.get('phase') == 'complete' and not tick.get('id'): return status, False
         require(isinstance(tick.get('id'), str), 'ORIGINAL_UNKNOWN_TICK_ID_REQUIRED')
         try: uuid.UUID(tick['id']); uuid.UUID(status['bootId'])

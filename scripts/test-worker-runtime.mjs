@@ -21,6 +21,17 @@ test('tick diagnostics retain bounded cause and status without credentials',asyn
  assert.equal(w.snapshot().lastTick.failure.code,'TICK_HTTP_ERROR');
  assert.deepEqual(tickFailure(Object.assign(new Error('https://secret@host/token'),{cause:{code:'UND_ERR_BODY_TIMEOUT'}})),{code:'Error',cause:'UND_ERR_BODY_TIMEOUT'});
  assert.ok(!JSON.stringify(w.snapshot()).includes('secret-body'));
+ assert.equal(w.snapshot().automaticRecoveryEligible,true);
+ await w.control({action:'drain',operationId:op(),bootId:w.bootId,expectedRevision:w.state.revision});
+ assert.equal(w.snapshot().automaticRecoveryEligible,false,'manual drain supersedes automatic retry permission');
+});
+
+test('manual drain during a lost response remains paused for operator',async()=>{
+ let release;const gate=new Promise(r=>release=r),w=new WorkerRuntime({...options(memoryStore()),startPaused:false,
+   fetchImpl:async()=>{await gate;throw Error('lost');}});await w.init();
+ const running=w.tick();await new Promise(r=>setImmediate(r));
+ await w.control({action:'drain',operationId:op(),bootId:w.bootId,expectedRevision:w.state.revision});
+ release();await running;assert.equal(w.snapshot().phase,'UNKNOWN');assert.equal(w.snapshot().automaticRecoveryEligible,false);
 });
 
 test('paused durable worker resumes once and drains without duplicate tick',async()=>{
