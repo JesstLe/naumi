@@ -4,24 +4,9 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { base64ToBinary, validateGlb, type StudioProject } from "./project";
 import { buildPhotoMesh } from "./photo-mesh";
 import { buildCarton, buildWrap } from "./packaging-mesh";
+import { disposeObject } from "../three/dispose";
+export { disposeObject } from "../three/dispose";
 
-export function disposeObject(object: THREE.Object3D) {
-  const materials = new Set<THREE.Material>(),
-    textures = new Set<THREE.Texture>();
-  object.traverse((child) => {
-    if (!(child instanceof THREE.Mesh)) return;
-    child.geometry.dispose();
-    for (const material of Array.isArray(child.material)
-      ? child.material
-      : [child.material]) {
-      materials.add(material);
-      for (const value of Object.values(material))
-        if (value instanceof THREE.Texture) textures.add(value);
-    }
-  });
-  materials.forEach((m) => m.dispose());
-  textures.forEach((t) => t.dispose());
-}
 function bodyMaterial(p: StudioProject) {
   return new THREE.MeshPhysicalMaterial({
     color: p.color,
