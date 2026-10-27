@@ -4,7 +4,7 @@ const source=fs.readFileSync('src/app/api/generate-image/route.ts','utf8'),ast=t
  for(const fault of ['image-checkpoint','artworks','settlement','final-receipt']){
   let state={status:'pending',paidOperations:{original:{state:'done',result:[{id:'original',url:'data:image/png;base64,fixture'}]}}},failed=false,provider=0,settles=0;
   const trip=s=>{if(s===fault&&!failed){failed=true;throw Object.assign(Error('synthetic transient failure'),{code:'ECONNRESET'});}};
-  const context={console,Buffer,Date,Error,Promise,Set,Math,setTimeout,currentModelExecution:()=>null,imageOutputNotice:()=>({}),
+  const context={console,Buffer,Date,Error,Promise,Set,Math,setTimeout,currentModelExecution:()=>null,imageOutputNotice:()=>({}),imageFailureEvidence:()=>({causes:[]}),imageFailureFrames:()=>[],taskFailureDiagnostic:()=>({version:1,stage:'execute',reason:null,causes:[]}),
    storedDeliveryCheckpoint:s=>s.images?.length?{images:s.images,allDone:true,final:true}:s.paidOperations?{images:s.paidOperations.original.result,allDone:true,final:false}:null,
    JOBS:{get:async()=>state,paidOperation:async()=>{provider++;return state.paidOperations.original.result},patch:async(id,p)=>{if(p.images)trip('image-checkpoint');state={...state,...p}},set:async(id,s)=>{trip('final-receipt');state=s},settleResults:async()=>{trip('settlement');settles=1}},
    enforceOutputShape:async i=>i,upscaleImages:async i=>i,attachImageDimensions:async i=>i,persistToStorage:async i=>i,storageEnabled:false,

@@ -71,6 +71,29 @@ export function exactImageRequestSize(
   // Reject an unsupported exact contract rather than silently reverting to direction-only.
   throw new ExactImageSizeError(ratio);
 }
+
+/** 16-grid pixel dimensions for a custom ratio under the gpt-image exact-size
+ * contract, or undefined when the model lacks that contract or the ratio
+ * cannot be sized. apib accepts these native pixel sizes directly (probed
+ * 2026-10-27: size=960x1248 accepted with exact-pixel output), so follow-
+ * reference ratios outside a channel's named list ride this path instead of
+ * being rejected. */
+export function exactRatioPixels(
+  ratio: string,
+  model: string,
+): { width: number; height: number } | undefined {
+  // This is a custom-ratio fallback, not an override for a named ratio that an
+  // administrator deliberately left out of the channel's allowed list.
+  if (Object.hasOwn(EXACT_SIZES, ratio)) return;
+  let size: string | undefined;
+  try { size = exactImageRequestSize(ratio, model, true); }
+  catch (error) { if (error instanceof ExactImageSizeError) return; throw error; }
+  if (!size || size === "auto") return;
+  const [width, height] = size.split("x").map(Number);
+  return Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0
+    ? { width, height }
+    : undefined;
+}
 export function imageRatioMismatch(
   requested: string,
   image: { width?: number; height?: number; ratio?: string },

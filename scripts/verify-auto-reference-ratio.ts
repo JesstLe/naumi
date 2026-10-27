@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import sharp from "sharp";
 import ts from "typescript";
-import { exactImageRequestSize } from "../src/lib/imagegen/request-size";
+import { exactImageRequestSize, exactRatioPixels } from "../src/lib/imagegen/request-size";
 import { automaticFrameRatio, defaultFrameSource } from "../src/lib/imagegen/frame-ratio";
 import { normalizeLegacyFrameRequest } from "../src/lib/imagegen/legacy-frame-request";
 import { imagegenRequestSchema } from "../src/lib/imagegen/schema";
@@ -57,7 +57,16 @@ async function main(){
  check((await legacy(1060,1580,"auto",6)).form.get("ratio")==="79:53","EXIF display orientation");
  const up={model:"gpt-image-2",parameterMap:{}};
  check(imageRequestAdmission("658:877","gpt-image-2",false,up).length===0,"new admission accepts supported grid contract");
- check(imageRequestAdmission("658:877","gpt-image-2",false,{...up,parameterMap:{apimartImages:{ratios:["3:4"]}}}).includes("ADAPTER_RATIO_UNSUPPORTED"),"adapter explicit allowlist stays authoritative");
+ // Follow-reference ratios outside the channel's named list ride the gpt-image
+ // exact pixel contract instead of being rejected (apib probe 2026-10-27:
+ // size=960x1248 accepted, output exactly those pixels).
+ check(imageRequestAdmission("658:877","gpt-image-2",false,{...up,parameterMap:{apimartImages:{ratios:["3:4"]}}}).length===0,"unlisted custom ratio rides exact pixel contract");
+ check(imageRequestAdmission("658:877","gemini-3.0-pro-image-portrait",false,{model:"gemini-3.0-pro-image-portrait",parameterMap:{apimartImages:{ratios:["3:4"]}}}).includes("ADAPTER_RATIO_UNSUPPORTED"),"models without the exact-size contract stay allowlist-bound");
+ check(JSON.stringify(exactRatioPixels("277:360","gpt-image-2"))===JSON.stringify({width:960,height:1248}),"probe ratio sizes to the verified grid");
+ check(exactRatioPixels("277:360","wire-image-one")===undefined && exactRatioPixels("auto","gpt-image-2")===undefined,"pixel helper is contract-scoped");
+ check(exactRatioPixels("100:1","gpt-image-2")===undefined && exactRatioPixels("NaN:1","gpt-image-2")===undefined,"unrepresentable ratios remain admission rejections rather than throwing");
+ check(imageRequestAdmission("100:1","gpt-image-2",false,{...up,parameterMap:{apimartImages:{ratios:["3:4"]}}}).includes("ADAPTER_RATIO_UNSUPPORTED"),"unsupported custom ratio keeps controlled rejection");
+ check(imageRequestAdmission("1:1","gpt-image-2",false,{...up,parameterMap:{apimartImages:{ratios:["3:4"]}}}).includes("ADAPTER_RATIO_UNSUPPORTED"),"explicitly excluded named ratio remains excluded");
  const mapped:Record<string,unknown>={size:"848x1264",quality:"medium"};mapResolution(mapped,{mode:"map",field:"size",values:{"4K":"1024x1024"}},"4K","53:79");
  check(mapped.size==="1024x1024","administrator explicit size overrides suggested auto frame");
  const source=readFileSync("src/app/api/generate-image/route.ts","utf8"),ast=ts.createSourceFile("route.ts",source,99,true);
