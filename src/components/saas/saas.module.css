@@ -21,3 +21,4 @@
 .failurePanel dl>div{display:grid;grid-template-columns:128px minmax(0,1fr);gap:12px;font-size:12px;line-height:1.65}
 .failurePanel dt{color:#857365}.failurePanel dd{margin:0;overflow-wrap:anywhere}
 @media(max-width:600px){.failurePanel{padding:13px}.failurePanel dl>div{grid-template-columns:1fr;gap:1px}}
+.failurePanel dd p{margin:0 0 3px;font-size:12px;line-height:1.65}.failurePanel dd ol{margin:0;padding-left:18px}.failurePanel dd code{white-space:normal;overflow-wrap:anywhere}.failurePanel dd li+li{margin-top:4px}

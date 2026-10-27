@@ -1,3 +1,4 @@
+import {taskFailureDiagnostic} from "./imagegen/task-diagnostics";
 import {withFrozenCreation,type CreationContext} from "./saas/creation-context";
 import { withBackgroundActivity, detachBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import { releaseRuntimeEnabled } from "@/lib/release-runtime/identity";
@@ -394,8 +395,8 @@ export class DurableImageJobs<T extends { status: string }> {
         console.error(`[image-job] ${id}:`, error instanceof Error ? error.message : error);
         try {
           if (error instanceof ImageOperationPending) await this.handlePending(id, error);
-          else if (!(await repository.failUndeliveredImageJob(id, token, "image-worker-failed")))
-            await this.patch(id, { status: "error", error: "本次未取得图片，请重试" } as unknown as Partial<T>);
+          else if (!(await repository.failUndeliveredImageJob(id, token, "image-worker-failed", taskFailureDiagnostic(error,"execute"))))
+            await this.patch(id, { status: "error", error: "本次未取得图片，请重试", failureDiagnostic:taskFailureDiagnostic(error,"execute") } as unknown as Partial<T>);
         } catch (failure) { console.error(`[image-job] ${id}: unable to stop task`, failure instanceof Error ? failure.message : "unknown"); }
       }
       finally {
