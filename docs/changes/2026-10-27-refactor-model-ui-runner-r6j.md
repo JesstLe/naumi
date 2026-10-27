@@ -26,3 +26,11 @@
 - 真实Next15.5.27+隔离PG与Edge完整资料库流程通过：真实登录、路由、5维筛选/金额/JSON保存、导出、同步保留人工资料、修订历史、390px、普通成员404、模型配置/草稿/积分不变，paid0。源码tsconfig与ignored next-env运行前后hash均精确相同。
 - 初次actual Next运行暴露旧checker误用expect.configure（返回的配置对象未使用，实际仍5秒），只修observer为真正45秒expect后通过；没放宽产品约束。首次新runner的--import绝对Windows路径缺file URL、微型fixture缺ESM type造成TLA准备失败均已修，原日志保留。
 - 最终runner新增sourceIdentity/逐文件复制后hash核对，绑定完整原输入；固定源码后集中core与一次最终Next证据另列，不把之前过程SHA冒作最终SHA。
+
+## 固定源码封版
+
+固定实现16518614925af1950364049358e541873c034cbf，core digest506731f2c97021cc354a5fdcde6985df4bb800782d216ff4aa8fa21d8df603b8：30/30 PASS、failed0/not-run0/exit0，包含实际子进程42检查。独立真实Next+PG+Edge再跑完整资料库检查通过，runner实际sourceIdentity绑定该固定clean SHA，源config/next-env hash原字节保持。tsc/lint空输出exit0。
+
+原src/services共1846文件字节不变；九wrapper212→27行，不向生产引入runner。自有PG65487已核实无用户schema/其他连接后停止删除。Next、checker和fixture均已退出，原数据未迁移、不接生产。
+
+最终仅文档补充与实现SHA分开记录，产品/验证字节逐一绑定；四产物18路径patch、副本回滚4538原hash及旧wrapper3项行为、远端Git以DELIVERY为准。本轮同步后第1模块；依赖13项待后续具体修复，长时混合运行与整体最终整合继续，整体active。
