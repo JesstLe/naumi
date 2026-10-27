@@ -32,7 +32,9 @@ if (process.argv.includes('--baseline')) {
 
 assert.equal((main.match(/data-tool="/g) || []).length, 9);
 assert.equal((main.match(/<CanvasActionMenu /g) || []).length, 2);
-for (const id of ['text', 'image-node', 'video-node']) assert.equal((main.match(new RegExp(`id: "${id}"`, 'g')) || []).length, 1);
+assert.ok(main.includes('items={canvasNodeMenuItems('));
+const nodeItems = read('src/components/canvas/node-menu-items.ts');
+for (const id of ['text', 'image-node', 'video-node']) assert.equal((nodeItems.match(new RegExp(`id: "${id}"`, 'g')) || []).length, 1);
 for (const id of ['text', 'image-node', 'upload', 'history', 'undo', 'redo']) assert.equal((main.match(new RegExp(`data-tool="${id}"`, 'g')) || []).length, 1);
 assert.ok(main.includes('void doUndo()') && main.includes('void doRedo()'));
 assert.ok(main.includes('historySaving || undoStack.length === 0') && main.includes('historySaving || redoStack.length === 0'));

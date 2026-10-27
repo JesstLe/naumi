@@ -83,7 +83,8 @@ try {
   await palette.getByTestId("canvas-add-node-button").click();
   const createMenu = page.getByTestId("canvas-create-menu");
   await expect(createMenu).toBeVisible();
-  await expect(createMenu.getByRole("menuitem")).toHaveCount(3);
+  await expect(createMenu.getByRole("menuitem")).toHaveCount(8);
+  await expect(createMenu.locator('button:disabled')).toHaveCount(5);
   await expect(createMenu.locator('[data-action="image-node"]')).toBeVisible();
   await expect(createMenu.locator('[data-action="video-node"]')).toBeVisible();
   await page.waitForTimeout(180);
