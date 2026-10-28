@@ -7,6 +7,8 @@ import path from "node:path";
 import { Client, Pool } from "pg";
 import {withAudioSource,audioInputIdentity} from "../src/lib/audio/project";
 import { createVideoFixture, CAP_RICH } from "./video-fusion/harness";
+import {verifyAudioMatrix} from "./verify-audio-native-matrix";
+import {verifyAudioInteractions} from "./verify-audio-native-interactions";
 import { prepareVideoAssets } from "./video-fusion/assets.mjs";
 
 /** Real local app/DB/task/worker/media/billing. Suppliers are isolated fixtures, not paid providers. */
@@ -65,6 +67,11 @@ async function main() {
     const assetsRoot = path.join(out, "assets"); await prepareVideoAssets(assetsRoot, [4]);
     const h = fixture = await createVideoFixture({ startWorker: false, databaseUrl, assetsRoot, videoDefinition: { ...CAP_RICH, providerOptions: { seed: { type: "integer", minimum: 0, maximum: 9999 } } } });
 
+    if(process.argv.includes('--matrix-only')){const matrix=await verifyAudioMatrix(h,out);await writeFile(path.join(out,'result.json'),JSON.stringify({matrixOnly:true,matrix},null,2));console.log('AUDIO_MATRIX=PASS NONZERO_FROZEN=3 CANCEL_FAILURE_REFUND=PASS UNKNOWN_ACK_RESTART=ONE_JOB CONCURRENT_CAS=ONE_WINNER MIXED_HISTORY=ATOMIC FOREIGN_TENANT_MEDIA=DENIED TOTAL_CHARGED=17 PAID_CALLS=0');return;}
+    if(process.argv.includes('--ui-only')){
+      const id='vnode-audio-ui-anchor-'+randomUUID(),made=await h.request<any>('a','POST','/api/canvas/video-nodes',{id,projectKey:`tree:${id}`,expectedRevision:0,operationId:randomUUID(),config:{modelId:'video-a',providerId:'managed-video',mode:'reference',prompt:'',durationSeconds:4,resolution:'720p',aspectRatio:'16:9',generateAudio:false},inputs:[]});assert.equal(made.status,201,JSON.stringify(made.body));
+      const interactions=await verifyAudioInteractions(h,out,id);await writeFile(path.join(out,'result.json'),JSON.stringify({uiOnly:true,interactions},null,2));console.log('AUDIO_NATIVE_CANVAS=PASS UI_IMPORT_EDIT_RENDER_ADOPT=PASS GRAPH_HISTORY=PASS HANDLE_MENTION_VIDEO=PASS WORKFLOW_FROZEN=PASS SIMULATED_CREATES=3 PAID_CALLS=0');return;
+    }
     const id='audio-'+randomUUID(),projectKey=`tree:${id}`,audio=withAudioSource(h.refs.audio.id),create={id,projectKey,audio,expectedRevision:0,operationId:randomUUID()};
     console.log('AUDIO_PHASE=SAVE_AND_AUTH');
     const before=await h.creditState('a'),created=await h.request<any>('a','POST','/api/canvas/audio-nodes',create);

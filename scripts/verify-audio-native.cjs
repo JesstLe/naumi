@@ -32,6 +32,13 @@ check(()=>assert.equal(lib.audioInputChoices([node],[{id:'sound-a',nodeId:'sound
 check(()=>assert.equal(lib.audioInputChoices([{...node,deletedAt:'now'}],[]).length,0));
 check(()=>assert.equal(lib.audioNodeWriteSchema.safeParse({id:node.id,operationId:op,expectedRevision:0,audio:project}).success,true));
 check(()=>{let selected;menu({L:zh=>zh,readOnly:false,videoDisabled:false,onCreate:id=>selected=id}).find(item=>item.id==='audio').onSelect();assert.equal(selected,'audio');assert.equal(menu({L:zh=>zh,readOnly:true,videoDisabled:false,onCreate(){}}).find(item=>item.id==='audio').disabled,true);});
+const alias={id:'live-audio',nodeId:lib.audioInputIdentity(node.id),kind:'audio',role:'source_audio',value:'/media/stale.wav'},choice={id:alias.nodeId,nodeId:alias.nodeId,kind:'audio',title:'旁白',value:'/media/current.wav',available:true};
+check(()=>assert.equal(lib.previewAudioInputs([alias],[choice])[0].value,'/media/current.wav'));
+check(()=>assert.throws(()=>lib.previewAudioInputs([alias],[])));
+check(()=>assert.throws(()=>lib.previewAudioInputs([alias],[{...choice,available:false}])));
+check(()=>assert.throws(()=>lib.previewAudioInputs([{...alias,kind:'video'}],[choice])));
+check(()=>assert.throws(()=>lib.previewAudioInputs([{...alias,role:'reference'}],[choice])));
+check(()=>assert.equal(lib.previewAudioInputs([{...alias,nodeId:'audio:legacy'}],[])[0].value,alias.value));
 function run(args,binary='ffmpeg'){const p=spawnSync(binary,args,{windowsHide:true,maxBuffer:16*1024*1024});assert.equal(p.status,0,String(p.stderr));return p.stdout;}
 fs.mkdirSync(out,{recursive:true});const input=path.join(out,'original.wav'),output=path.join(out,'edited.wav');
 run(['-y','-v','error','-f','lavfi','-i','sine=frequency=440:sample_rate=48000:duration=4','-c:a','pcm_s16le',input]);

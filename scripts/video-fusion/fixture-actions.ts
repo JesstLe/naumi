@@ -7,7 +7,14 @@ const guard=await fixtureDatabase();await guard.end();
 const {getPool,createVideoTaskWithReservation}=await import("../../src/lib/db");
 const email=process.env.VIDEO_FIXTURE_ACTION_ACTOR||"",sourceId=process.env.VIDEO_FIXTURE_ACTION_SOURCE||"";
 try{
-  if(process.argv.includes("--prepare-queued")||process.argv.includes("--node-reservation-failure")){
+  if(process.argv.includes("--set-media-price")){
+    const credits=Number(process.env.VIDEO_FIXTURE_ACTION_CREDITS);if(!Number.isSafeInteger(credits)||credits<0||credits>100)throw new Error("Invalid fixture media price");
+    const {getBillingRuntime}=await import("../../src/lib/billing/server"),runtime=await getBillingRuntime(),current=await runtime.config.current(),config=structuredClone(current.config);
+    config.features["video.process"].enabled=true;
+    config.features["video.process"].pricing={mode:"fixed",credits};
+    const result=await runtime.config.publish({id:randomUUID(),expectedVersion:current.version,config,actor:"isolated-audio-fixture",reason:"Native audio reservation and settlement matrix"});
+    process.stdout.write(JSON.stringify({version:result.version,credits,tariff:result.config.features["video.process"]}));
+  }else if(process.argv.includes("--prepare-queued")||process.argv.includes("--node-reservation-failure")){
     const row=(await getPool().query("SELECT * FROM app_video_tasks WHERE email=$1 AND id=$2",[email,sourceId])).rows[0];
     if(!row||row.parameters.version!==2)throw new Error("Owned versioned fixture task required");
     const id=`vid-${randomUUID()}`,idempotencyKey=randomUUID(),request={...row.parameters.request,idempotencyKey,canvasNodeId:undefined,nodeRevision:undefined};

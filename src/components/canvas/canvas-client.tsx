@@ -10803,8 +10803,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               const directorNode=directorNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey);
               const characterNode=characterNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey);
               const sceneNode=sceneNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey);
-                  const audioNode=audioNodesStore.nodes.find(node=>node.id===ctxMenu.nodeId&&node.projectKey===activeKey)||null;
-              if (ctxMenu.nodeId && !node && !textNode && !pendNode&&!videoNode&&!directorNode&&!characterNode&&!sceneNode) return null;
+              const audioNode=audioNodesStore.nodes.find(node=>node.id===ctxMenu.nodeId&&node.projectKey===activeKey)||null;
+              if (ctxMenu.nodeId && !node && !textNode && !pendNode&&!videoNode&&!directorNode&&!characterNode&&!sceneNode&&!audioNode) return null;
               const mutationDisabled = readOnly || !nodeSettingsReady || historySaving || directorNodesStore.saving || characterNodesStore.saving || sceneNodesStore.saving || audioNodesStore.saving || Boolean(ctxMenu.nodeId && isNodeLocked(ctxMenu.nodeId));
               const Sep = () => <div className="canvas-ui-divider my-1 h-px" />;
               const batchContextSelection = Boolean(
