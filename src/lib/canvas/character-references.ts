@@ -1,12 +1,12 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
-import { getPool, listArtworksByIds, type ArtworkRecord } from "../db";
+import { getPool } from "../db";
 import { characterReferenceText, frozenCharacterInputIdentity, parseCharacterInputIdentity, type CharacterProject } from "../character/project";
 import { ModelConfigError } from "../model-config/types";
 import { assertCreationProjectInput } from "../saas/creation-context";
-import { assertCreationObjectRefs, assertCreationInputsTx } from "../saas/creation-writer";
-import { expandCharacterReferences } from "../character/references";
+import {requireVisualImages} from "./visual-images";
+import type {VisualReferenceExpansion} from "./visual-references";
 import type { OrderedInput } from "../video/references";
 import { ensureCharacterNodeSchema, mapCharacterNode } from "./character-node-repository";
 
@@ -16,26 +16,11 @@ function unavailable(message = "角色或外观不存在，或无权访问"): ne
 export function characterImageIds(character: CharacterProject) {
   return [...new Set(character.appearances.flatMap(appearance => appearance.referenceArtworkIds))];
 }
-function assertImages(ids: readonly string[], artworks: readonly Pick<ArtworkRecord, "id" | "status" | "image" | "videoUrl">[]) {
-  const byId = new Map(artworks.map(art => [art.id, art]));
-  for (const id of ids) {
-    const art = byId.get(id);
-    if (!art || art.status !== "completed" || !art.image || art.videoUrl) unavailable("角色参考图片不存在、尚未完成或已改变类型");
-  }
-}
 export async function authorizeCharacterImages(actor: string, character: CharacterProject) {
-  const ids = characterImageIds(character);
-  if (!ids.length) return;
-  await assertCreationObjectRefs(actor, ids);
-  assertImages(ids, await listArtworksByIds(actor, ids));
+  await requireVisualImages(actor, characterImageIds(character), "character");
 }
-/** Recheck under shared row locks in the caller's save/history transaction. */
 export async function lockCharacterImagesTx(client: PoolClient, actor: string, character: CharacterProject) {
-  const ids = characterImageIds(character);
-  if (!ids.length) return;
-  await assertCreationInputsTx(client, actor, ids);
-  const rows = (await client.query("SELECT id,status,image_url,video_url FROM app_artworks WHERE email=$1 AND id=ANY($2::text[]) AND deleted_at IS NULL FOR SHARE", [actor, ids])).rows;
-  assertImages(ids, rows.map(row => ({ id: String(row.id), status: row.status, image: row.image_url, videoUrl: row.video_url })));
+  await requireVisualImages(actor, characterImageIds(character), "character", client);
 }
 
 /** Resolves all role identities in one DB read; clients never supply the trusted definition. */
@@ -59,20 +44,19 @@ async function loadCharacterInputs(actor: string, inputs: readonly OrderedInput[
   });
   for (const node of records) await assertCreationProjectInput(actor, node.projectKey);
   const imageIds = [...new Set(resolved.flatMap(binding => binding.appearance.referenceArtworkIds))];
-  await assertCreationObjectRefs(actor, imageIds);
-  const images = await listArtworksByIds(actor, imageIds);
-  assertImages(imageIds, images);
+  const images = await requireVisualImages(actor, imageIds, "character");
   const byImageId = new Map(images.map(art => [art.id, art]));
   return resolved.map(binding => ({ ...binding, images: binding.appearance.referenceArtworkIds.map(id => byImageId.get(id)!) }));
 }
 export async function authorizeCharacterInputs(actor: string, inputs: readonly OrderedInput[]) {
   await loadCharacterInputs(actor.toLowerCase(), inputs);
 }
-export async function resolveCharacterVideoInputs(actor: string, inputs: readonly OrderedInput[], prompt: string) {
+export async function characterVideoDefinitions(actor: string, inputs: readonly OrderedInput[]): Promise<VisualReferenceExpansion[]> {
   const resolved = await loadCharacterInputs(actor.toLowerCase(), inputs);
-  if (!resolved.length) return { inputs: [...inputs], prompt, characters: [] };
-  const definitions = resolved.map(binding => ({
+  if (!resolved.length) return [];
+  return resolved.map(binding => ({
     inputId: binding.input.id,
+    referenceLabel: "角色参考" as const,
     text: characterReferenceText(binding.node.character, binding.appearanceId),
     frozenNodeId: frozenCharacterInputIdentity(binding.id, binding.appearanceId, binding.node.revision),
     images: binding.images.map(image => ({
@@ -80,5 +64,4 @@ export async function resolveCharacterVideoInputs(actor: string, inputs: readonl
       artworkId: image.id, value: image.image,
     })),
   }));
-  return {...expandCharacterReferences(inputs, prompt, definitions), characters: resolved.map(binding => ({id: binding.id, appearanceId: binding.appearanceId, revision: binding.node.revision}))};
 }

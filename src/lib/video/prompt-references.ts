@@ -1,5 +1,5 @@
 import { numberVideoInputs, type OrderedInput } from "./references";
-import { parseCharacterInputIdentity } from "../character/project";
+import {parseVisualInputIdentity} from "../canvas/visual-input-identity";
 
 type ReferenceName = { nodeId: string; title: string };
 type Mention = { start: number; end: number; raw: string; input?: OrderedInput };
@@ -22,11 +22,11 @@ export function remapVideoPromptReferences(prompt: string, before: readonly Orde
   let result = "", cursor = 0;
   for (const mention of mentions(prompt, before)) {
     const candidate = mention.input && next.get(mention.input.id);
-    const previousCharacter = mention.input?.kind === "text" ? parseCharacterInputIdentity(mention.input.nodeId) : null;
-    const nextCharacter = candidate?.kind === "text" ? parseCharacterInputIdentity(candidate.nodeId) : null;
-    // An explicitly selected look changes the binding option, not the character
-    // identity. Replacing the character itself still invalidates the mention.
-    const sameSource = candidate?.nodeId === mention.input?.nodeId || !!previousCharacter && previousCharacter.id === nextCharacter?.id;
+    const previousAsset = mention.input?.kind === "text" ? parseVisualInputIdentity(mention.input.nodeId) : null;
+    const nextAsset = candidate?.kind === "text" ? parseVisualInputIdentity(candidate.nodeId) : null;
+    // An explicitly selected look/state changes the binding option, not the asset
+    // identity. Replacing the asset itself still invalidates the mention.
+    const sameSource = candidate?.nodeId === mention.input?.nodeId || !!previousAsset && previousAsset.kind === nextAsset?.kind && previousAsset.id === nextAsset?.id;
     const target = candidate && sameSource && candidate.kind === mention.input?.kind ? candidate : undefined;
     // ref 0 is deliberately invalid in both current and older compilers. Never retarget a removed/missing source.
     const marker = !target ? "{{ref 0}}" : mention.raw.startsWith("{{") ? `{{ref ${target.index}}}` : `${kindLabels[target.kind]}${target.kindIndex}`;
@@ -41,7 +41,7 @@ export function remapVideoPromptReferences(prompt: string, before: readonly Orde
 export function videoReferenceNames(inputs: readonly OrderedInput[], choices: readonly ReferenceName[]): Map<string, string> {
   const used = new Set<string>(["失效引用"]), result = new Map<string, string>();
   for (const input of inputs) {
-    const characterName = input.nodeId.startsWith("character:") || input.nodeId.startsWith("inline:character:") ? input.value.split("\n")[0] : undefined;
+    const characterName = /^(?:inline:)?(?:character|scene):/.test(input.nodeId) ? input.value.split("\n")[0] : undefined;
     const base = (choices.find(choice => choice.nodeId === input.nodeId)?.title || characterName || kindLabels[input.kind])
       .replace(/[【】\r\n]/g, " ").trim() || kindLabels[input.kind];
     let name = base, suffix = 2;

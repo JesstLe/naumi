@@ -7,7 +7,9 @@ import { storageKeyFromManagedUrl } from "../storage";
 import { verifiedOwnedMedia } from "../video/media-inspection";
 import { authorizeVideoProject } from "./video-node-service";
 import { directorNodeWriteSchema, directorOutputSchema, type DirectorNodeWrite } from "./director-node-schema";
-import { directorOperationTx, ensureDirectorNodeSchema, getDirectorNode, mapDirectorNode, saveDirectorNodeTx } from "./director-node-repository";
+import { directorOperationTx, findDirectorOperation, ensureDirectorNodeSchema, getDirectorNode, mapDirectorNode, saveDirectorNodeTx } from "./director-node-repository";
+import {resolveDirectorSceneProject} from "./scene-references";
+import {requireVisualImages} from "./visual-images";
 export { getDirectorNode, listDirectorNodes } from "./director-node-repository";
 
 export async function authorizeDirectorInputs(actor: string, input: Pick<DirectorNodeWrite, "project">) {
@@ -20,6 +22,9 @@ export async function saveDirectorNode(actorRaw: string, raw: unknown) {
   const actor = actorRaw.toLowerCase(), parsed = directorNodeWriteSchema.safeParse(raw);
   if (!parsed.success) throw new ModelConfigError("INVALID_DIRECTOR_NODE", "导演工程字段无效", 422, parsed.error.issues.map(issue => issue.path.join(".")));
   const input = parsed.data; await ensureDirectorNodeSchema(); const old = await getDirectorNode(actor, input.id, true), key = input.projectKey || old?.projectKey || `tree:${input.id}`;
+  const originalIntent = {action: "save", input, projectKey: key};
+  const replay = await findDirectorOperation(actor, input.operationId, originalIntent);
+  if (replay) {await assertCreationProjectInput(actor, key); return replay;}
   let newRoot = false;
   try { await authorizeVideoProject(actor, key); } catch (error) {
     if (!(error instanceof ModelConfigError) || old || input.expectedRevision !== 0 || key !== `tree:${input.id}`) throw error;
@@ -32,7 +37,9 @@ export async function saveDirectorNode(actorRaw: string, raw: unknown) {
   const tx = await getPool().connect(); try {
     await tx.query("BEGIN"); await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`video-node-graph:${actor}`]);
     await bindActualCreationProject(actor, key, { tx, newRoot });
-    const node = await saveDirectorNodeTx(tx, actor, input, key); await tx.query("COMMIT"); return node;
+    const project = input.project ? await resolveDirectorSceneProject(actor, input.project, old?.project, tx) : undefined;
+    if (project?.panoramaArtworkId) await requireVisualImages(actor, [project.panoramaArtworkId], "scene", tx);
+    const node = await saveDirectorNodeTx(tx, actor, {...input, ...(project ? {project} : {})}, key, originalIntent); await tx.query("COMMIT"); return node;
   } catch (error) { await tx.query("ROLLBACK"); throw error; } finally { tx.release(); }
 }
 export async function attachDirectorOutput(actorRaw: string, id: string, raw: unknown) {

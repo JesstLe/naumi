@@ -31,6 +31,13 @@ export async function getDirectorNode(actor: string, id: string, includeDeleted 
 export async function listDirectorNodes(actor: string, includeDeleted = false) {
   await ensureDirectorNodeSchema(); return (await getPool().query("SELECT * FROM app_canvas_director_nodes WHERE email=$1 AND ($2 OR deleted_at IS NULL) ORDER BY created_at,id", [actor, includeDeleted])).rows.map(mapDirectorNode);
 }
+export async function findDirectorOperation(actor: string, operationId: string, input: unknown) {
+  await ensureDirectorNodeSchema();
+  const digest = createHash("sha256").update(canonicalConfig(input)).digest("hex");
+  const row = (await getPool().query("SELECT input_digest,result FROM app_canvas_director_operations WHERE email=$1 AND operation_id=$2", [actor, operationId])).rows[0];
+  if (row && row.input_digest !== digest) throw new ModelConfigError("DIRECTOR_OPERATION_CONFLICT", "操作编号已用于另一项修改", 409);
+  return row?.result as CanvasDirectorNode | undefined;
+}
 export async function directorOperationTx(client: PoolClient, actor: string, operationId: string, input: unknown) {
   await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`video-node-graph:${actor}`]);
   const digest = createHash("sha256").update(canonicalConfig(input)).digest("hex");
@@ -39,8 +46,8 @@ export async function directorOperationTx(client: PoolClient, actor: string, ope
   return { digest, replay: replay?.result as CanvasDirectorNode | undefined };
 }
 /** Caller owns the transaction. Shared graph lock composes with mixed copy/delete/history. */
-export async function saveDirectorNodeTx(client: PoolClient, actor: string, input: DirectorNodeWrite, projectKey: string): Promise<CanvasDirectorNode> {
-  const operation = await directorOperationTx(client, actor, input.operationId, { action: "save", input, projectKey }); if (operation.replay) return operation.replay;
+export async function saveDirectorNodeTx(client: PoolClient, actor: string, input: DirectorNodeWrite, projectKey: string, originalIntent?: unknown): Promise<CanvasDirectorNode> {
+  const operation = await directorOperationTx(client, actor, input.operationId, originalIntent ?? { action: "save", input, projectKey }); if (operation.replay) return operation.replay;
   const old = (await client.query("SELECT * FROM app_canvas_director_nodes WHERE email=$1 AND id=$2 FOR UPDATE", [actor, input.id])).rows[0];
   if (old ? Number(old.revision) !== input.expectedRevision : input.expectedRevision !== 0) throw new ModelConfigError("DIRECTOR_REVISION_CONFLICT", "导演工程已更新，草稿已保留，请重新读取后保存", 409);
   if (old && old.project_key !== projectKey) throw new ModelConfigError("DIRECTOR_PROJECT_CONFLICT", "请复制导演节点到目标项目", 409);

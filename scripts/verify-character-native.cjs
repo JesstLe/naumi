@@ -20,7 +20,7 @@ if (mode !== 'MODIFIED') {
   console.log(`${mode}_CHARACTER=PASS MENU=DISABLED MODEL=ABSENT API=ABSENT EXISTING_VIDEO_DIRECTOR=PRESERVED EXIT=0`);
   process.exit(0);
 }
-const lib = load(`export * from './src/lib/character/project';export * from './src/lib/character/canvas';export * from './src/lib/canvas/character-node-schema';export {remapVideoPromptReferences} from './src/lib/video/prompt-references';export {orderedInputSchema} from './src/lib/video/references';export {validateVideoSettings} from './src/lib/video/client-settings';`);
+const lib = load(`export * from './src/lib/character/project';export * from './src/lib/character/canvas';export {previewVisualInputs as previewCharacterInputs} from './src/lib/canvas/visual-references';export * from './src/lib/canvas/character-node-schema';export {remapVideoPromptReferences} from './src/lib/video/prompt-references';export {orderedInputSchema} from './src/lib/video/references';export {validateVideoSettings} from './src/lib/video/client-settings';`);
 let cases = 0;
 const check = action => { action(); cases++; };
 const project = lib.newCharacterProject('林舟');
