@@ -311,3 +311,7 @@ R6R 封版来源 `216220bd`：shared scan／媒体 background lane、bytes本地
 固定 main `2fb3e8d9` 的导演能力接入原 renderer registry／scene projection、history contract/controller、node lifecycle、selection/link/project 和 persistence startup；不复制旧 Canvas/db 单体。`video/canvas-submission` 编排保存、原任务查询、单任务／批次分流及刷新，`canvas-draft` 共享编辑合同，现有文档／账务／任务状态 owner 不迁移。工程内容身份归 `director/project`，解决真实 JSONB 键序导致保存后仍 dirty，不放松实际内容与数组顺序比较。
 
 候选 `231d6930` 完整 core57/57、实际导演 Next/PG/WebGL、独占端口管理GUI、完整 Linux 同镜像 runtime125／产品浏览器36、tsc／lint和四类SCC0通过；原db字节保持，额外表／平行任务／平行账务引擎0。原树4671文件、补丁／副本回滚与最终远端／清理见本片DELIVERY。Canvas仍5626行；本片闭合不等于R3—R6或全项目完成，后续继续实际UI／助手编排与最终整合。详见[R6S模块记录](../changes/2026-10-27-canvas-native-integration-r6s.md)。
+## 2026-10-28 R6T：管理入口状态与展示分责
+
+固定main `00a27d6a` 浅色管理台整合到既有真实业务页面；`use-admin-entry` 单独拥有入口本地／云读取、可选缓存及密码响应生命周期，页面仅展示／跳转。账号／ready／mount身份约束异步continuation，旧读可取消、已发送密码POST不取消不重放；服务端授权规则、领域数据和原钱包任务系统不改。254→115行，1421领域/API/服务及113Canvas原hash保持、新schema/task/billing owner0。固定 `f7b86c24` core59/59全部新执行、正式完整Linux同镜像runtime125／产品36／后台真实GUI78、tsc/lint、四类SCC0通过；三条已知fixture/UI反向边继续单列。完整4696hash副本回滚／最终远端／清理以DELIVERY为准，历史失败保留，不将该片当整体完成。剩余Canvas／助手编排、整体性能容量和最终整合继续；不合main、不部署。见[R6T记录](../changes/2026-10-28-admin-entry-ownership-r6t.md)。
+
