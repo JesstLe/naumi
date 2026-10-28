@@ -215,8 +215,10 @@ def main(config):
     c=json.loads(pathlib.Path(config).read_bytes());validate(c)
     with HostTransaction(c['target'],shared.HOSTS[c['target']],c['evidenceRoot']) as tx:
         with open(shared.CANON.parent/'.lifecycle.lock','a+') as lock:
-            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB);r=resume_prepared(tx,c) if c.get('resumePrepared') else Release(tx,c)
-            try:r.prepare();r.replace();r.finish()
+            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB);r=resume_final(tx,c) if c.get('resumeFinal') else resume_prepared(tx,c) if c.get('resumePrepared') else Release(tx,c)
+            try:
+                if not c.get('resumeFinal'):r.prepare();r.replace()
+                r.finish()
             except BaseException:
                 if r.record['releaseId'] in r.state.get('siteControlReleases',{}):r.rollback()
                 raise
@@ -243,3 +245,26 @@ def resume_prepared(tx,c):
     r.switched=r.old_stopped=r.worker_paused=r.app_drained=False
     r.op('prepared-baseline-reconciled',lambda _:{'originalBackupReused':True,'oldProgramUnchanged':True,'taskSnapshotReused':True,'historicalGuard':'same SQL history scope as actual predecessor; no original CASE05 artifact exists on this host','previousFailureRetained':True})
     return r
+
+def resume_final(tx,c):
+    """Reconcile the exact already-published pair; never repeat stop/start."""
+    root=tx.folder;raw=shared.CANON.read_bytes();state=json.loads(raw)
+    require(sha(raw)==c['canonicalSha256'] and state['revision']==c['canonicalRevision'],'FINAL_CANONICAL_CHANGED')
+    original=json.loads((root/'release-config.private.json').read_bytes())
+    ignore={'resumePrepared','resumeFinal','canonicalSha256','canonicalRevision','date','toolsCommit','storageProbeSha256'}
+    require({k:v for k,v in c.items() if k not in ignore}=={k:v for k,v in original.items() if k not in ignore},'PUBLISHED_SCOPE_CHANGED')
+    record=state['siteControlReleases'][c['releaseId']];ops=record['operations']
+    require(record['phase']=='CLEANUP_PENDING' and record.get('gatewaySwitched') is True and all(v['phase']=='ACKNOWLEDGED' for v in ops.values()) and ops.get('gateway-switch',{}).get('receipt',{}).get('afterDumpSha256')==sha(tx.run(['nginx','-T'])),'ACKNOWLEDGED_PUBLISHED_PAIR_REQUIRED')
+    r=Release.__new__(Release);r.tx=tx;r.c=c;r.root=root;r.state=state;r.record=record;r.disk=sha(raw);r.initial=raw;r.extra=[]
+    r.rows=json.loads(tx.run(['docker','inspect',*tx.run(['docker','ps','-aq','--no-trunc']).decode().split()]));r.byname={v['Name'].lstrip('/'):v for v in r.rows};r.old={k:r.byname[n] for k,n in c['oldNames'].items()};r.new={k:r.byname[n] for k,n in c['newNames'].items()}
+    for k,v in r.old.items():require(not v['State']['Running'] and v['Id']==c['oldPins'][k]['id'] and v['HostConfig']['RestartPolicy']['Name']=='no','OLD_INSTANCE_NOT_RETIRED')
+    for k,v in r.new.items():
+        require(v['State']['Running'] and v['Image']==c['image'] and v['Id']==ops['web-create-stopped' if k=='web' else 'worker-create']['receipt']['id'] and environment(v)['SOURCE_COMMIT']==c['commit'],'PUBLISHED_INSTANCE_CHANGED')
+    expected=set(c['runningIds'])-{v['Id'] for v in r.old.values()}|{v['Id'] for v in r.new.values()}
+    require({v['Id'] for v in r.rows if v['State']['Running']}==expected,'UNREVIEWED_RUNNING_INSTANCE')
+    r.db=r.byname['naumi-staging-db-1'];r.de=environment(r.db);r.configuration=json.loads((root/'configuration-before.json').read_bytes());r.cookie=(root/'acceptance-cookie.private').read_text()
+    snapshots=list(root.glob('task-snapshot-*.json'));require(len(snapshots)==1,'ORIGINAL_TASK_SNAPSHOT_REQUIRED');r.task_before=tasks.Snapshot(public={},private=json.loads(snapshots[0].read_bytes()))
+    r.previousRecovery=copy.deepcopy(state['runtimeRecovery']);r.previousManifest=json.loads((root/'supervisor-before.private.json').read_bytes());r.switched=r.old_stopped=True;r.worker_paused=r.app_drained=False
+    r.guard=HistoricalEvidence(r);r.guard.before=json.loads((root/'retained-history-before.json').read_bytes());r.guard.sequence=len(list(root.glob('retained-history-[0-9]*.json')))
+    r.op('published-pair-reconciled',lambda _:{'sameWebWorker':True,'noRestart':True,'noBackupRepeat':True,'acceptanceMode':'preserved deferred NAS queue; original immediate-storage assumption corrected','previousFailureRetained':True})
+    r.phase('PUBLIC_ACCEPTANCE');return r
