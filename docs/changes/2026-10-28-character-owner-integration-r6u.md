@@ -33,3 +33,19 @@
 第三轮87c3f2ec的core为27通过／1失败／35未执行：Canvas真实HTTP200且已编译，但页面报Invalid or unexpected token、未挂载节点。此轮没有将其认作供应商或业务拒绝；Windows dev初次解析根因尚未证明。观察器恢复原角色/导演测试使用的已安装Playwright headless shell（原适配改用Edge不是产品需求），复用导演原有的实际HTML与入口静态资源预热，并保存pageerror完整stack。资源仍通过真实HTTP取得，不mock、改写或过滤JS；原失败与cleanup保留，后续按实际结果判断。
 
 906a0011的完整core已通过49项（含真实角色和导演应用），在原history投影夹具失败：从实际Canvas抽取的新组合引用characterNodesStore，夹具只提供video/director端口。补充明确的空角色store端口，不更改原图片/文字/视频断言或观察计数；新角色本身由共享owner39、规则38和真实应用验证，不拿空端口当角色行为证明。该SHA的完整Linux镜像、同镜像runtime125和产品browser36已经通过，保留原材料；最终固定版另行同源验收。
+
+## 最终固定候选验收
+
+应用与全部验收输入固定 `511ade12c1babfb05e5d91a5bae1e994939ff69b`，digest `5ed4a7fd45ab22fe7d5ca23263db3bd67bfc9aee1a68f9991496ca70ffa72054`；正式Dockerfile完整Web/Worker/media镜像 `sha256:e1d82ac86dde10eca5b01ecfb438e8a7bd49b6d99a26048269ba3b69c094c26d`。后续仅文档提交，最终Git SHA由DELIVERY另绑，不将文档提交冒充镜像应用源码。
+
+- core-finalized：63/63全部本轮新执行，reused=0、failed=0、notRun=0，exit0；含新角色共享owner39/规则38/真实组件和完整角色应用、原导演WebGL/PNG/WebM/实际视频应用、history67场景184检查及原其余账务/权限/恢复/视频/Worker链路。不是拼接14、27或49项的旧批次。
+- 角色实际应用：原生菜单创建/上传/外观编辑保存刷新、移动/锁定/复制/删除/undo/redo、真实handle与@及外观选择、只有角色输入的真实视频生成、混合复制图片/角色alias重映射、角色先于图片恢复及失败整步回滚；A→B制作链在A期间编辑/删除角色后仍使用B原冻结设定和原价，原operation重放不新增请求。模拟供应商创建5，真实付费0，pageerror0。
+- 同一完整Linux镜像runtime125、产品双浏览器36通过，路由mock0/确认弹窗0、7交付/7笔42fixture积分、60秒混合读取；真实PG/Worker/私有媒体/原生FFmpeg/POSIX drain exit0。该产品浏览器矩阵与角色本地Next应用分别记录，不把通用Linux产品矩阵称为Linux角色全交互验收。
+- 最终全项目tsc、受影响文件lint通过；原Canvas8个hooks warning保留。静态/全import/编译擦除两类SCC均0；原2条fixture→Route及1条billing client→toast仍单列。1874原src/services文件hash不变，db兼容面字节不变，主线22叶文件精确保留；两个纯角色规则模块保持主线原字节。
+- Canvas5626→5687行是新增完整角色能力后的净变化，144/158原函数正文保持，14处原函数按角色适配明确改绑，0删除；5个新增角色创建/编辑/素材/草稿adapter记录为后续外围编排收敛对象，不把行数下降当唯一架构收益。
+
+四产物、4707原hash独立副本恢复、原树owner7与菜单/模型/API缺席复现、补丁实际应用、哈希保护拒绝副本后来修改、远端一致及自有资源清理统一以本片DELIVERY为准。失败记录、字段/分支、每次命令与字面输出/退出码保留于VERIFICATION与FAILURE_INDEX；实际工作树保留整合后的角色能力。
+
+## 整体目标仍未退出
+
+本片不合main、不部署、不SSH或操作发布锁。原Canvas仍5687行、外围助手/界面组合及兼容入口退出继续推进；同机前后性能、容量和最终整合验收仍需按原R0—R6退出标准取证。静态SCC0、局部应用和本片完整包通过不等于10万活跃容量或整个重构交付。下一片先对照原退出表与实际代码收敛剩余助手/外围编排，不机械复制新功能到旧单体。

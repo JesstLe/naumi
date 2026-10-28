@@ -318,3 +318,5 @@ R6R 封版来源 `216220bd`：shared scan／媒体 background lane、bytes本地
 ## R6U：角色能力接入现有数据与交互owner
 
 角色DDL归canvas/storage-schema并加入显式应用启动；角色渲染/项目投影/历史合同与编译/节点生命周期/混合事务沿原owner，db兼容面不新增实现。video/input-choice纯叶合同消除展示选择与角色预览的type-only循环，旧类型导出保持；新增角色操作不新建任务/计费引擎或确认。固定主线3f3ac34c，完整集中验收进行中，最终证据见本轮DELIVERY；整体active、不合main不部署。见[R6U](../changes/2026-10-28-character-owner-integration-r6u.md)。
+
+R6U固定验收 `511ade12`：core63/63全部新执行、角色共享owner39/规则38/实际Next+PG+Worker+私有媒体+账务和原生浏览器完整交互、同Linux镜像125/36通过，tsc/lint及四类SCC0。主线两张角色表归原schema/startup，db原字节与1874其它产品hash保持；4707hash副本回滚/最终Git/清理以DELIVERY为准。原14/27/27/49阶段失败不拼接最终通过。Canvas仍5687行与5个角色adapter及助手/外围编排待收敛，性能/容量和整体退出审计未由本片替代；整体active，不合main不部署。
