@@ -37,6 +37,14 @@ def scoped_activity_baseline(snapshot,history):
     evidence={'originalSnapshotSha256':tasks.sha(original),'delegatedTable':'app_release_activities','retainedRows':retained['count'],'retainedRowsSha256':retained['sha256'],'currentPairActiveAtBaseline':0,'originalArtifactUnchanged':True,'unknownReclassified':False}
     return tasks.Snapshot(public={},private=scoped),evidence
 
+def original_task_snapshot(root):
+    paths=list(root.glob('task-snapshot-*.json'))
+    if (root/'task-history-delegation.json').exists():
+        expected=json.loads((root/'task-history-delegation.json').read_bytes())['originalSnapshotSha256']
+        paths=[p for p in paths if tasks.sha(json.loads(p.read_bytes()))==expected]
+    require(len(paths)==1,'ORIGINAL_TASK_SNAPSHOT_REQUIRED')
+    return tasks.Snapshot(public={},private=json.loads(paths[0].read_bytes()))
+
 class HistoricalEvidence:
     """Same retained-history scope as the actual 2026-10-28 predecessor.
 
@@ -218,6 +226,10 @@ class Release(shared.Release):
         if delegation:self.tx.save('task-history-delegation.json',delegation)
         collector=current_activity_collector([self.c['oldNames']['web'],self.c['newNames']['web']])
         after=collector.collect_task_snapshot(self.tx.run,public_identity(self.db),self.tx.save,previous=before.private,projection='proof',row_limit=5000,allow_absent_tables=tasks.ADDITIVE_TABLES,statement_timeout_ms=15000)
+        self.finish_task_proof(before.private,after.private)
+
+    def finish_task_proof(self,before,after):
+        require(self.marker('browser-after.json') and self.record.get('storageAccepted') is True,'COMPLETED_PUBLIC_ACCEPTANCE_REQUIRED')
         proof=tasks.compare_task_snapshots(before,after);proof['retainedHistoricalObservationsExact']=True;proof['scope']='all-original-business-task-graph-and-current-pair-observations-plus-separate-exact-retained-history';self.tx.save('task-preservation.json',proof);require(proof['preservationVerified'],'TASK_PRESERVATION_FAILED')
         self.guard.check('final');self.tx.save('capacity-final.json',self.memory())
         for r in self.old.values():
@@ -271,7 +283,7 @@ def resume_prepared(tx,c):
     require(sha(tx.run(['nginx','-T']))==c['nginxSha256'],'ORIGINAL_GATEWAY_CHANGED')
     r.db=r.byname['naumi-staging-db-1'];r.de=environment(r.db);r.configuration=json.loads((root/'configuration-before.json').read_bytes());r.cookie=(root/'cookie.private').read_text()
     r.dump=(root/'nginx-before.private.txt').read_text();r.before={p:base64.b64decode(v) for p,v in json.loads((root/'nginx-files-before.private.json').read_bytes()).items()};r.real={p:str(pathlib.Path(p).resolve()) for p in r.before}
-    snapshots=list(root.glob('task-snapshot-*.json'));require(len(snapshots)==1,'ORIGINAL_TASK_SNAPSHOT_REQUIRED');r.task_before=tasks.Snapshot(public={},private=json.loads(snapshots[0].read_bytes()))
+    r.task_before=original_task_snapshot(root)
     backup=json.loads((root/'backup-readable.json').read_bytes());require(file_sha(backup['path'])==backup['sha256'],'ORIGINAL_BACKUP_CHANGED')
     r.previousRecovery=copy.deepcopy(state['runtimeRecovery']);r.previousManifest=json.loads((root/'supervisor-before.private.json').read_bytes())
     r.switched=r.old_stopped=r.worker_paused=r.app_drained=False
@@ -300,7 +312,7 @@ def resume_final(tx,c):
         expected.add(row['Id']);r.extra.append(row)
     require({v['Id'] for v in r.rows if v['State']['Running']}==expected,'UNREVIEWED_RUNNING_INSTANCE')
     r.db=r.byname['naumi-staging-db-1'];r.de=environment(r.db);r.configuration=json.loads((root/'configuration-before.json').read_bytes());r.cookie=(root/'acceptance-cookie.private').read_text()
-    snapshots=list(root.glob('task-snapshot-*.json'));require(len(snapshots)==1,'ORIGINAL_TASK_SNAPSHOT_REQUIRED');r.task_before=tasks.Snapshot(public={},private=json.loads(snapshots[0].read_bytes()))
+    r.task_before=original_task_snapshot(root)
     r.previousRecovery=copy.deepcopy(state['runtimeRecovery']);r.previousManifest=json.loads((root/'supervisor-before.private.json').read_bytes());r.switched=r.old_stopped=True;r.worker_paused=r.app_drained=False
     r.guard=HistoricalEvidence(r);r.guard.before=json.loads((root/'retained-history-before.json').read_bytes());r.guard.sequence=len(list(root.glob('retained-history-[0-9]*.json')))
     if 'published-pair-reconciled' not in ops:
