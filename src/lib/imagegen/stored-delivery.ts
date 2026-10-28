@@ -1,4 +1,5 @@
 import "server-only";
+import {attachCanvasImageVersions} from "../canvas/image-version-store";
 import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { dbEnabled,getPool,listArtworksByIds,addArtworks,getImageJobChargedCredits } from "../db";
@@ -110,12 +111,13 @@ export async function recoverStoredDelivery(parentId:string,owner:string){
   }
   const chargedCredits=await getImageJobChargedCredits(child.id),recovery={ids,complete,recoveredAt:new Date().toISOString()};
   const billingConfirmed=(await pool.query("SELECT billing_settled FROM app_image_jobs WHERE id=$1",[child.id])).rows[0]?.billing_settled===true;
+  const canvasAttachment=await attachCanvasImageVersions(owner,plan.request,ids,complete);
   const tx=await pool.connect();try{
    await tx.query("BEGIN");
    const lockedRows=await tx.query("SELECT id,lease_token,snapshot->>'status' status FROM app_image_jobs WHERE id=ANY($1::text[]) ORDER BY id FOR UPDATE",[[parent.id,child.id]]);
    if(lockedRows.rowCount!==2||lockedRows.rows.some(r=>r.lease_token||!["done","error","needs_attention"].includes(r.status)))throw Error("原任务仍在收尾");
    await tx.query("UPDATE app_image_jobs SET snapshot=(snapshot-'error') || $3::jsonb,updated_at=now() WHERE id=$1 AND email=$2",[child.id,owner,JSON.stringify({deliveryRecovery:recovery,images,status:"done",creditsUsed:chargedCredits,persisted:true,...(warnings.size?{imagegenOutputWarning:[...warnings].join("；")}:{} )})]);
-   const result={...parent.snapshot.result,status:complete?"succeeded":"partial",stage:"done",artifacts,chargedCredits,billingStatus:billingConfirmed?"confirmed":"unavailable",recoveryAvailable:false,warnings:[...warnings]};delete result.error;
+   const result={...parent.snapshot.result,status:complete?"succeeded":"partial",stage:"done",artifacts,canvasAttachment,chargedCredits,billingStatus:billingConfirmed?"confirmed":"unavailable",recoveryAvailable:false,warnings:[...warnings]};delete result.error;
    const children=Object.fromEntries(Object.entries(parent.snapshot.children).map(([k,v])=>[k,{...(v as object),state:"done",ids}]));
    await tx.query("UPDATE app_image_jobs SET snapshot=snapshot || $3::jsonb,updated_at=now() WHERE id=$1 AND email=$2",[parent.id,owner,JSON.stringify({status:"done",result,children})]);
    await tx.query("COMMIT");

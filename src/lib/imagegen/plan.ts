@@ -26,11 +26,13 @@ import type {ModelFacts} from "../model-config/types";
 import {userFeaturePolicy,FeatureAccessError} from "../feature-access/server";
 import {allows} from "../feature-access/catalog";
 import {assertCurrentCreationFeature} from "../saas/creation-context";
+import {assertCanvasRegeneration} from "../canvas/image-version-store";
 export function imagegenFingerprint(request:ImagegenRequest){return createHash("sha256").update(JSON.stringify(imagegenRequestSchema.parse(request))).digest("hex");}
 export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{modelVersion:number;billingVersion:number}):Promise<ImagegenPlan>{
  await assertCurrentCreationFeature("/api/imagegen");
  const request=imagegenRequestSchema.parse(raw),skill=await resolveImageSkill(owner,request.skill),intent=resolveImagegenIntent({...request,useCase:request.useCase||skill?.useCase});
  if(intent.conflicts.length)throw new ImagegenPlanError(intent.conflicts.join("；"));
+ await assertCanvasRegeneration(owner,request);
  const access=await userFeaturePolicy(owner),imageAllowed=["generate","batchshot","variations","fuse"].some(id=>allows(access,id));
  if(request.entry==="canvas"&&!allows(access,"canvas")||request.entry==="agent"&&!allows(access,"agent")||intent.operation!=="postprocess"&&!imageAllowed||intent.operation==="postprocess"&&!["canvas","works","generate"].some(id=>allows(access,id)))throw new FeatureAccessError("此图像功能尚未授权");
  if(intent.operation==="cutout"&&!allows(access,"cutout"))throw new FeatureAccessError("抠图功能尚未授权");

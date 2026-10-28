@@ -24,6 +24,7 @@ export async function ensureCreationSchema(){
  CREATE INDEX IF NOT EXISTS app_creation_asset_record ON app_creation_assets(creation_id);
  ALTER TABLE app_creation_assets ADD COLUMN IF NOT EXISTS input_position integer;
  ALTER TABLE app_creation_assets ADD COLUMN IF NOT EXISTS execution_ref text;
+ ALTER TABLE app_creation_assets ADD COLUMN IF NOT EXISTS storage_snapshot text;
  CREATE TABLE IF NOT EXISTS app_creation_events(
   id text PRIMARY KEY,creation_id text NOT NULL REFERENCES app_creation_records(id),event_key text NOT NULL,type text NOT NULL,
   status text NOT NULL,summary text NOT NULL DEFAULT '',occurred_at timestamptz NOT NULL DEFAULT now(),observed_at timestamptz NOT NULL DEFAULT now(),

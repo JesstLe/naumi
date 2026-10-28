@@ -20,7 +20,10 @@ import { CANVAS_RATIO_OPTIONS, CANVAS_RESOLUTIONS, CANVAS_MAX_COUNT, normalizeCa
 import { canvasDockLayout, canvasOverlaySafeArea, type NodeScreen } from "@/lib/canvas/dock-layout";
 import { createProjectRootResolver } from "@/lib/canvas/project-roots";
 import { knownCanvasNodeMeasurement } from "@/lib/canvas/node-measurement";
-import {canvasGenerationReferences,explicitCanvasParent,synchronizeCanvasArtworks,imageAspectDisplaySize} from "@/lib/canvas/input-references";
+import {canvasGenerationReferences,canvasRegenerationReferences,explicitCanvasParent,synchronizeCanvasArtworks,imageAspectDisplaySize} from "@/lib/canvas/input-references";
+import {isCanvasImageVersion,type CanvasImageAttachment,type CanvasImageVersion,type CanvasImageVersionList} from "@/lib/canvas/image-versions";
+import {frameRatio} from "@/lib/imagegen/frame-ratio";
+import {ImageVersionControl} from "./image-version-control";
 import { canvasFocusViewport } from "@/lib/canvas/upload-visibility";
 import { stableArtworkPositions, canvasNodePosition, readPlacementCache, type CanvasPoint } from "@/lib/canvas/stable-placement";
 import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
@@ -433,6 +436,7 @@ const DETAIL_MODULE_ORDER = [
 ] as const;
 
 type CanvasGenerationTask = {
+  replaceNode?: boolean;
   failure?: GenerationFailure;
   onRetry?: () => unknown;
   stage?: GenerationStage;
@@ -1235,6 +1239,8 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
     onVideoExtract?: (id: string, action: VideoPlayerAction) => void;
     onCutout?: (id: string) => void;
     cutoutBusy?: boolean;
+    regenerating?: boolean;
+    regenerationFailure?: boolean;
     cutoutBlocked?: boolean;
     settings?: CanvasNodeSettings;
     readOnly?: boolean;
@@ -1391,6 +1397,8 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
               {!d.readOnly && <button type="button" className="nodrag nopan rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40"
                 disabled={d.settings?.locked} onClick={event=>{event.stopPropagation();d.onFill?.();}}>补充图片</button>}
             </div>}
+            {d.regenerationFailure&&<div role="alert" className="absolute bottom-2 left-2 z-10 rounded-lg bg-red-50 px-2 py-1 text-xs font-medium text-red-600">重新生成未完成</div>}
+            {d.regenerating&&<div role="status" className="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-white/65 text-sm font-medium text-slate-700"><Loader2 size={18} className="animate-spin"/>重新生成中…</div>}
             {selected && canNodeFeature("cutout") && !d.readOnly && !d.missingAsset && d.onCutout && <button type="button" data-testid="canvas-image-quick-cutout"
               aria-label="去背景，保留主体" title="去背景，保留主体" disabled={d.cutoutBusy || d.cutoutBlocked || d.settings?.locked}
               className="nodrag nopan absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white/95 px-2 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
@@ -2347,6 +2355,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   type ScenePatchFields=Partial<Pick<CanvasSceneNode,"title"|"scene"|"x"|"y"|"width"|"height">>;
   type DirectorPatchFields=Partial<Pick<CanvasDirectorNode,"title"|"project"|"x"|"y"|"width"|"height">>;
   type UndoAct =
+    | {kind:"image-version";id:string;from:{versionId:string;image:string};to:{versionId:string;image:string}}
     | {kind:"character-patch";id:string;from:CharacterPatchFields;to:CharacterPatchFields}
     | {kind:"audio-patch";id:string;from:AudioPatchFields;to:AudioPatchFields}
     | {kind:"audio-add";records:CanvasAudioNode[]}
@@ -2718,7 +2727,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   const { projects } = useMemo(() => {
     const arts = (works ?? []).filter(
-      (a) => a.status === "completed" && a.origin!=="workbench" && (hasRenderableImage(a.image) || Boolean(a.videoUrl))
+      (a) => a.status === "completed" && a.origin!=="workbench" && !isCanvasImageVersion(a) && (hasRenderableImage(a.image) || Boolean(a.videoUrl))
     );
     const byId = new Map(arts.map((a) => [a.id, a]));
     const groups = new Map<string, Artwork[]>();
@@ -3592,12 +3601,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     ) || (!!selectedId && pendNodes.some(node => node.generating && !node.generationFailure && node.parentId === selectedId));
   const selectedGenerationFailure = generationTasks.find(task => task.failure && task.sourceId === selectedId)?.failure
     || pendNodes.find(node => node.generationFailure && node.parentId === selectedId)?.generationFailure;
-  // dock 显示显式连线输入和当前节点；隐藏的项目父节点不自动成为参考图。
-  // “重做”生成同级新版本，但仍只使用创作栏中当前可见的图片，不暗加历史输入。
+  // Regeneration uses incoming references, not its own output. Explicit tools keep their edit target.
   const dockReferenceState = useMemo(() => {
-    try { return { references: canvasGenerationReferences(selected, active?.members ?? []), error: "" }; }
-    catch(error) { return { references: selected ? [selected] : [], error: error instanceof Error ? error.message : "参考图尚未同步" }; }
-  }, [selected, active?.members]);
+    try { return { references: generationMode==="standard"?canvasRegenerationReferences(selected, active?.members ?? []):canvasGenerationReferences(selected, active?.members ?? []), error: "" }; }
+    catch(error) { return { references: [], error: error instanceof Error ? error.message : "参考图尚未同步" }; }
+  }, [selected, active?.members,generationMode]);
   const dockRefs = dockReferenceState.references;
   // 用户可在 dock 里"×"掉自动引用图(改用自己上传的);hiddenRefIds 随选中切换清空
   const [hiddenRefIds, setHiddenRefIds] = useState<string[]>([]);
@@ -3728,6 +3736,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     // 每个生成任务都有自己的占位节点。后端超过并发上限时自行排队，画布不再全局锁死。
     for (const task of generationTasks) {
       if (!nodes.some((node) => node.id === task.sourceId)) continue;
+      if(task.replaceNode){baseNodes=baseNodes.map(node=>node.id===task.sourceId?{...node,data:{...node.data,regenerating:!task.failure,regenerationFailure:!!task.failure}}:node);continue;}
       const pos = generationTaskPosRef.current[task.id] ?? task.position;
       const previewSize = task.previewSize ?? generationPlaceholderSize("1:1");
       baseNodes = [
@@ -4051,7 +4060,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const nodesSig = useMemo(() => displayNodes
     .map(
       (n) =>
-        `${JSON.stringify([n.data.inspectOriginal,n.data.image,n.data.videoUrl,n.data.missingAsset,n.data.workflowPresentation,n.data.title,n.data.prompt,n.data.content,n.data.cutoutBusy,n.data.cutoutBlocked])}:${JSON.stringify([n.data.generationFailure,n.data.generationStage, n.data.generationStartedAt, n.data.generationCount, n.data.generationCompleted, n.data.generationSize, n.data.generationKind])}:${JSON.stringify((n.data as {settings?:CanvasNodeSettings}).settings)}:${n.draggable}:${n.zIndex}:${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${
+        `${JSON.stringify([n.data.inspectOriginal,n.data.image,n.data.videoUrl,n.data.missingAsset,n.data.workflowPresentation,n.data.title,n.data.prompt,n.data.content,n.data.cutoutBusy,n.data.cutoutBlocked,n.data.regenerating,n.data.regenerationFailure])}:${JSON.stringify([n.data.generationFailure,n.data.generationStage, n.data.generationStartedAt, n.data.generationCount, n.data.generationCompleted, n.data.generationSize, n.data.generationKind])}:${JSON.stringify((n.data as {settings?:CanvasNodeSettings}).settings)}:${n.draggable}:${n.zIndex}:${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${
           (n.data as { pending?: boolean }).pending ? 1 : 0
         }:${(n.data as { inChain?: boolean }).inChain ? 1 : 0}:${n.className ?? ""}:${
           Math.round((n.data as { progress?: number }).progress ?? -1)
@@ -4601,9 +4610,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       taskOffset?: number;
       userPrompt?: string;
       isCurrent?: () => boolean;
+      replaceNode?: boolean;
     }
   ): Promise<GeneratedResult[]> {
-    if (readOnly || !user) return [];
+    if (readOnly || !user || isNodeLocked(source.id)) return [];
     const text = prompt.trim();
     if (!text && !opts?.ratiogen) return []; // 改比例可无提示词(服务端用固定重构图指令)
     const requestedCount = opts?.ratiogen ? 1 : Math.max(1, opts?.count ?? 1);
@@ -4629,25 +4639,26 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const lastFailure = replacedFailures[replacedFailures.length - 1];
     const retryPosition = lastFailure ? generationTaskPosRef.current[lastFailure.id] || lastFailure.position : undefined;
     for (const failed of replacedFailures) { delete generationTaskPosRef.current[failed.id]; delete generationTaskSizeRef.current[failed.id]; }
-    const taskPosition = reserveGenerationPosition(taskId, preferredPosition, previewSize, retryPosition);
+    const taskPosition = opts?.replaceNode ? sourceNode?.position||{x:source.canvasX||0,y:source.canvasY||0} : reserveGenerationPosition(taskId, preferredPosition, previewSize, retryPosition);
     setGenerationTasks((current) => [
       ...current.filter(task => !(task.operationKey === operationKey && task.failure)),
       {
         id: taskId,
         operationKey,
         sourceId: source.id,
+        replaceNode:opts?.replaceNode,
         label: opts?.taskLabel || t("canvas.pending"),
         stage: "preparing", startedAt: Date.now(), previewSize, count: requestedCount,
         position: taskPosition,
       },
     ]);
     setGenError(null);
-    let attempted = false, terminal = false, jobId: string | undefined, resultIds: string[] = [];
+    let attempted = false, terminal = false, jobId: string | undefined, resultIds: string[] = [], attachment:CanvasImageAttachment|undefined;
     let failure: GenerationFailure | undefined;
     const requestAccount = canvasAccountRef.current, requestProject = activeProjectRef.current?.key || null;
-    const requestWorkspace = currentWorkspace(), requestOwner = user.email.toLowerCase();
+    const requestWorkspace = currentWorkspace(), requestWorkspaceRevision=currentWorkspaceRevision(), requestOwner = user.email.toLowerCase();
     const requestEpoch = canvasContextEpochRef.current;
-    const current = () => requestAccount === canvasAccountRef.current && requestProject === (activeProjectRef.current?.key || null) && requestEpoch === canvasContextEpochRef.current && currentWorkspace() === requestWorkspace && (opts?.isCurrent?.() ?? true);
+    const current = () => requestAccount === canvasAccountRef.current && requestProject === (activeProjectRef.current?.key || null) && requestEpoch === canvasContextEpochRef.current && currentWorkspace() === requestWorkspace && currentWorkspaceRevision()===requestWorkspaceRevision && (opts?.isCurrent?.() ?? true);
     try {
       // 下载一张图为 File(底图/参考图统一走 /api/download 代理)
       const dlFile = async (url: string, name: string): Promise<File> => {
@@ -4672,10 +4683,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       }
       const fd = new FormData();
       fd.append("prompt", text);
+      if(opts?.replaceNode){fd.set("canvasTargetNode",source.id);fd.set("canvasTargetImage",source.image);fd.set("canvasTargetRevision",String(source.canvasImageRevision||0));}
       fd.set("imagegenNodeId",operationKey);fd.set("imagegenNodeX",String(taskPosition.x));fd.set("imagegenNodeY",String(taskPosition.y));
       if (opts?.userPrompt?.trim()) fd.append("userPrompt", opts.userPrompt.trim());
       fd.append("category", source.category || "main");
-      const requestedRatio = normalizeCanvasRatio(opts?.ratio || "auto");
+      const chosenRatio = opts?.ratio || "auto";
+      const requestedRatio = normalizeCanvasRatio(opts?.replaceNode && chosenRatio === "auto" ?
+        (source.ratio && source.ratio !== "auto" ? source.ratio : frameRatio({width:source.width||0,height:source.height||0})) || "auto" : chosenRatio);
       fd.append("ratio", requestedRatio);
 
       fd.append("resolution", normalizeCanvasResolution(opts?.resolution || source.resolution));
@@ -4733,6 +4747,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         if (!pr.ok) throw new Error(pj.error || t("canvas.genFail"));
         if(pj.status==="pending")setGenerationTasks(current=>current.map(task=>task.id===taskId?{...task,stage:"generating"}:task));
         if (pj.status === "done") {
+          attachment=pj.canvasAttachment;
           const warning=imageOutputWarningText(pj.warnings);if(warning)flashTip(warning);
           setGenerationTasks(current => current.map(task => task.id === taskId ? { ...task, stage: "saving" } : task));
           generated = ((pj.images ?? []) as { id?: string; url?: string; width?: number; height?: number }[])
@@ -4748,6 +4763,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           break;
         }
         if (pj.status === "error") {
+          attachment=pj.canvasAttachment;
           terminal = !pj.reviewRequired && pj.operationStatus !== "needs_attention";
           resultIds = (pj.images || []).filter((image: { id?: string; url?: string }) => image.id && image.url).map((image: { id: string }) => image.id);
           throw new Error(pj.error || t("canvas.genFail"));
@@ -4757,6 +4773,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       // 把新节点落到"生成中占位"所在的位置(源节点右侧,或用户拖动后的位置),
       // 这样生成完成后不会跳到自动布局的位置 —— 与图1的占位位置一致。
       if (!current()) return [];
+      if(opts?.replaceNode){
+        if(!attachment||attachment.nodeId!==source.id)throw new Error("生成已完成，节点版本尚未同步；请核对原任务，不要重复生成");
+        const fresh=await mergeWorks([source.id],current);if(!current())return [];
+        assertGenerationResultsPresent([source.id],fresh);
+        if((fresh.find(art=>art.id===source.id)?.canvasImageRevision||0)<attachment.revision)throw new Error("节点版本尚未同步，请检查原任务");
+        if(attachment.applied&&fresh.find(art=>art.id===source.id)?.canvasImageRevision===attachment.revision){pushUndo({kind:"image-version",id:source.id,from:{versionId:attachment.previousVersionId,image:attachment.previousImage},to:{versionId:attachment.versionId,image:generated[0].url}});}
+        if(jobId)completeCanvasImagegen(jobId,{owner:requestOwner,project:requestProject||"workspace",workspace:requestWorkspace});
+        return generated;
+      }
       const basePos = generationTaskPosRef.current[taskId] ?? taskPosition;
       if (basePos && newIds.length) {
         let resultY = basePos.y;
@@ -4801,8 +4826,16 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       setGenerationTasks(tasks => tasks.map(task => task.id === taskId ? { ...task, failure: retainedFailure,
         onRetry: resultIds.length ? async () => {
           if(!current())return;
-          const fresh=await mergeWorks(resultIds,current);if(!current())return;assertGenerationResultsPresent(resultIds,fresh);
-          if(jobId&&resultIds.every(id=>worksRef.current?.some(art=>art.id===id&&!!art.image)))completeCanvasImagegen(jobId,{owner:requestOwner,project:requestProject||"workspace",workspace:requestWorkspace});
+          if(opts?.replaceNode){
+            const headers=new Headers(await authHeader());headers.set("x-naumi-workspace",requestWorkspace);if(requestProject)headers.set("x-naumi-project-context",requestProject);
+            const receipt=await fetch(`/api/generate-image?job=${encodeURIComponent(jobId!)}`,{headers,cache:"no-store"});const data=await readJsonSafe(receipt);
+            if(!receipt.ok||!data.canvasAttachment||data.canvasAttachment.nodeId!==source.id)throw new Error("原任务结果已保留，节点版本尚未同步，请稍后检查");
+            attachment=data.canvasAttachment;
+          }
+          const visibleIds=opts?.replaceNode?[source.id]:resultIds;
+          const fresh=await mergeWorks(visibleIds,current);if(!current())return;assertGenerationResultsPresent(visibleIds,fresh);
+          if(opts?.replaceNode&&attachment&&(fresh.find(art=>art.id===source.id)?.canvasImageRevision||0)<attachment.revision)throw new Error("节点版本尚未同步，请稍后检查");
+          if(jobId&&visibleIds.every(id=>fresh.some(art=>art.id===id&&!!art.image)))completeCanvasImagegen(jobId,{owner:requestOwner,project:requestProject||"workspace",workspace:requestWorkspace});
           setGenerationTasks(tasks=>tasks.filter(task=>task.id!==taskId));setGenError(null);
         } : () => runGen(source,prompt,opts) } : task));
       return [];
@@ -4838,8 +4871,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     return response;
   }
 
-  // 面板「生成」:用编辑框提示词 + 参数 + 追加参考图(留空=按这张图再生成一张)
-  async function generateChild() {
+  // Existing image's primary action regenerates that same node; explicit tools still branch.
+  async function generateSelectedImage() {
     if (!selected) return;
     if (dockReferenceState.error) { setGenError(dockReferenceState.error); return; }
     if (referenceError) { setGenError(referenceError); return; }
@@ -4879,11 +4912,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
     const text =
       editPrompt.trim() || inheritableImagePrompt(selected.prompt) || FAITHFUL_REGEN_PROMPT;
-    // 新图 = 选中节点的子节点(落在它下方,血缘父=选中节点)。
+    // Standard action updates this node; only explicit tools create descendants.
     // 参考图 = dock 里可见的全部引用图(用户所见即所用,多图全送、不丢图)。
     // 若用户在 dock 删掉了自动引用图、改上传了自己的图:用上传图作参考。
     const useUploadAsBase = visibleDockRefs.length === 0 && extraFiles.length > 0;
     await runGen(selected, text, {
+      replaceNode:true,
       ratio: genRatio,
       style: genStyle,
       count: genCount,
@@ -4893,7 +4927,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       baseFile: useUploadAsBase ? extraFiles[0] : undefined,
       extra: useUploadAsBase ? extraFiles.slice(1) : extraFiles,
       refUrls: useUploadAsBase ? [] : visibleDockRefs.map((r) => r.image),
-      userPrompt: editPrompt.trim(),
+      userPrompt: text,
       referenceInputs: composerReferences,
     });
   }
@@ -6016,37 +6050,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
   }
 
-  async function retrySelected() {
-    if (!selected) return;
-    if (dockReferenceState.error || referenceError) { setGenError(dockReferenceState.error || referenceError); return; }
-    const feedback = editPrompt.trim();
-    const originalPrompt = inheritableImagePrompt(selected.prompt) || FAITHFUL_REGEN_PROMPT;
-    const prompt = `${originalPrompt}${
-      feedback && feedback !== originalPrompt
-        ? `\n本次重做要求：${feedback}`
-        : "\n重新生成一个新版本，严格保持产品身份和关键细节。"
-    }`;
-    const parent = selected.parentId
-      ? active?.members.find((item) => item.id === selected.parentId) ?? selected
-      : selected;
-    const retried = await runGen(parent, prompt, {
-      ratio: genRatio,
-      style: selected.style || genStyle,
-      count: 1,
-      resolution: selected.resolution || genResolution,
-      parentId: selected.parentId || selected.id,
-      parentIds: selected.parentIds ?? [],
-      refUrls: [selected.image, ...(parent.id === selected.id ? [] : [parent.image])],
-      referenceInputs: composerReferences,
-      operationKey: `retry:${selected.id}`,
-      taskLabel: "按要求重做中…",
-      userPrompt: feedback || inheritableImagePrompt(selected.prompt) || "重做当前图片",
-    });
-    if (retried[0]) {
-      await renameGeneratedArtwork(retried[0].id, `${selected.title} · 重做`);
-      // 重做完成不打断当前草稿。
-    }
-  }
+
 
   // 顶部图像工具条:6 个一键动作(预设提示词,各自衍生一个子节点)
   const QUICK_ACTIONS: {
@@ -6235,8 +6239,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [historySaving,setHistorySaving] = useState(false);
   const historyAttemptsRef = useRef(new WeakMap<UndoAct, {operationId:string;operations:Array<Record<string,unknown>>}>());
   async function applyHistory(act: UndoAct, undo: boolean) {
-    const account=canvasAccountRef.current;
-    const assertCurrentHistory = () => { if (historyScope !== historyScopeRef.current) throw new Error("项目已切换，请在当前项目重新操作"); };
+    const account=canvasAccountRef.current,workspace=currentWorkspace(),workspaceRevision=currentWorkspaceRevision();
+    const assertCurrentHistory = () => { if (workspaceRevision!==currentWorkspaceRevision()||historyScope !== historyScopeRef.current) throw new Error("项目已切换，请在当前项目重新操作"); };
     assertCurrentHistory();
     if (act.kind === "pending-link") {
       const pending = pendNodesRef.current.find(node => node.id === act.id);
@@ -6261,7 +6265,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const characters=(records:CanvasCharacterNode[],visible:boolean)=>records.forEach(node=>operations.push({type:"character-visibility",id:node.id,visible}));
     const scenes=(records:CanvasSceneNode[],visible:boolean)=>records.forEach(node=>operations.push({type:"scene-visibility",id:node.id,visible}));
     const audios=(records:CanvasAudioNode[],visible:boolean)=>records.forEach(node=>operations.push({type:"audio-visibility",id:node.id,visible}));
-    if(act.kind==="audio-patch")audioPatch(act.id,act[side]);
+    if(act.kind==="image-version"){
+      const current=worksRef.current?.find(art=>art.id===act.id);if(!current)throw new Error("图片节点不存在，请刷新画布");
+      if(current.image!==act[undo?"to":"from"].image||current.canvasImageVersionId&&current.canvasImageVersionId!==act[undo?"to":"from"].versionId)throw new Error("节点版本已改变，请从历史版本重新选择");
+      operations.push({type:"image-version",id:act.id,versionId:act[side].versionId,expectedImage:current.image,expectedRevision:current.canvasImageRevision||0});
+    }
+    else if(act.kind==="audio-patch")audioPatch(act.id,act[side]);
     else if(act.kind==="audio-add")audios(act.records,!undo);
     else if(act.kind==="scene-patch")scenePatch(act.id,act[side]);
     else if(act.kind==="scene-add")scenes(act.records,!undo);
@@ -6289,8 +6298,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(!attempt){attempt={operationId:browserRandomUUID(),operations:structuredClone(operations)};historyAttemptsRef.current.set(act,attempt);}
     const operationId=attempt.operationId;operations=attempt.operations;
     assertCurrentHistory();
-    const response=await privateFetchRaw("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operationId,operations}),signal:AbortSignal.timeout(20_000)});
-    await expectJsonOk(response,t("canvas.genFail"));if(account!==canvasAccountRef.current)throw new Error("画布账号已切换");
+    const response=await privateFetchRaw("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json","x-naumi-workspace":workspace,...(activeKey?{"x-naumi-project-context":activeKey}:{})},body:JSON.stringify({operationId,operations}),signal:AbortSignal.timeout(20_000)});
+    await expectJsonOk(response,t("canvas.genFail"));assertCurrentHistory();if(account!==canvasAccountRef.current)throw new Error("画布账号已切换");
     // All operations below are local applications of an already committed transaction.
     for (const op of operations) {
       const id=op.id as string;
@@ -6330,6 +6339,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         }
         return node;
       }) ?? current);
+    }
+    if(act.kind==="image-version"){
+      const fresh=await mergeWorks([act.id],()=>account===canvasAccountRef.current&&historyScope===historyScopeRef.current&&workspaceRevision===currentWorkspaceRevision());
+      if(account===canvasAccountRef.current&&historyScope===historyScopeRef.current&&workspaceRevision===currentWorkspaceRevision()){const node=fresh.find(art=>art.id===act.id);if(node)imageDraft.seed(act.id,{prompt:inheritableImagePrompt(node.prompt)});}
     }
     if(operations.some(op=>op.type==="video-patch"||op.type==="video-visibility"||op.type==="video-result"))await videoNodesStore.refresh();
     if(operations.some(op=>op.type==="director-patch"||op.type==="director-visibility"))await directorNodesStore.refresh();
@@ -6373,6 +6386,22 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         && (active?.textNodes.length || 0) === act.textNodes.length) setCreatingNew(true);
       if (!undo) { setCreatingNew(false); setActiveKey(act.textNodes[0]?.projectKey || `tree:${act.artworks[0]?.groupId || act.artworks[0]?.id}`); setBrowsing(false); }
     }
+  }
+  const imageVersionAttemptRef=useRef<{key:string;act:Extract<UndoAct,{kind:"image-version"}>}|null>(null);
+  async function loadImageVersions(nodeId:string):Promise<CanvasImageVersionList>{
+    const scope=historyScope,workspace=currentWorkspace(),epoch=canvasContextEpochRef.current;
+    const response=await privateFetchRaw(`/api/canvas/image-versions?nodeId=${encodeURIComponent(nodeId)}`,{cache:"no-store",headers:{"x-naumi-workspace":workspace,...(activeKey?{"x-naumi-project-context":activeKey}:{})}});
+    const result=await expectJsonOk(response,"历史版本读取失败");
+    if(scope!==historyScopeRef.current||workspace!==currentWorkspace()||epoch!==canvasContextEpochRef.current)throw new Error("项目已切换，请重新打开历史版本");
+    return result as CanvasImageVersionList;
+  }
+  async function selectImageVersion(nodeId:string,version:CanvasImageVersion,from:CanvasImageVersionList){
+    if(readOnly||historyBusyRef.current||isNodeLocked(nodeId))return;
+    const key=JSON.stringify([historyScope,nodeId,from.revision,version.id]);
+    const act=imageVersionAttemptRef.current?.key===key?imageVersionAttemptRef.current.act:{kind:"image-version" as const,id:nodeId,from:{versionId:from.currentVersionId,image:from.image},to:{versionId:version.id,image:version.image}};
+    imageVersionAttemptRef.current={key,act};historyBusyRef.current=true;setHistorySaving(true);
+    try{await applyHistory(act,false);if(historyScope===historyScopeRef.current)pushUndo(act);imageVersionAttemptRef.current=null;}
+    finally{historyBusyRef.current=false;setHistorySaving(false);}
   }
   async function doUndo() {
     if (historyScope !== historyScopeRef.current || !undoStack.length || historyBusyRef.current || directorNodesStore.saving || characterNodesStore.saving || sceneNodesStore.saving || audioNodesStore.saving || readOnly) return;
@@ -9194,10 +9223,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       "flex h-dvh min-h-[100svh] flex-col overflow-hidden bg-background text-foreground",
       lightCanvas ? "canvas-ui-light" : "dark canvas-ui-dark"
     )}>
-      {!readOnly&&<ImagegenPendingRecovery {...recoveryScope} isCurrent={recoveryCurrent} onAttach={async(ids,isMounted)=>{
+      {!readOnly&&<ImagegenPendingRecovery {...recoveryScope} isCurrent={recoveryCurrent} onAttach={async(ids,isMounted,attachment)=>{
         const current=()=>recoveryCurrent()&&isMounted();if(!current())return false;
         const fresh=await mergeWorks(ids,current);if(!current())return false;
         assertGenerationResultsPresent(ids,fresh);
+        if(attachment&&(fresh.find(art=>art.id===attachment.nodeId)?.canvasImageRevision||0)<attachment.revision)return false;
         // A queued React updater is not delivery. Observe the committed canvas
         // after one frame; a suspended/stale render retains its original receipt.
         await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
@@ -11765,7 +11795,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     <input ref={extraInputRef} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={event=>pickExtra(event.target.files)} />
                     {composerReferences.length < MAX_TOTAL_IMAGES && <button type="button" onClick={()=>extraInputRef.current?.click()}
                       title={t("canvas.toolbar.addReference")} aria-label={t("canvas.toolbar.addReference")}
-                      className="canvas-ui-action flex h-[68px] w-12 flex-none items-center justify-center rounded-[10px] border border-dashed border-[var(--canvas-ui-border)] hover:!border-[#6366f1]/60"><Upload className="h-4 w-4" /></button>}
+                      className={cn("canvas-ui-action flex flex-none items-center justify-center rounded-[10px] border border-dashed border-[var(--canvas-ui-border)] hover:!border-[#6366f1]/60",composerReferences.length?"h-[68px] w-12":"h-8 gap-1.5 px-2.5 text-xs")}><Upload className="h-4 w-4" />{!composerReferences.length&&L("参考图","Reference")}</button>}
                   </>}
                 </ImageReferenceComposer>
                 {genError && (
@@ -11871,19 +11901,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       >
                         <Focus aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
                         {t("canvas.dockFocus")}
-                      </button><button
-                    type="button"
-                    onClick={() => void retrySelected()}
-                    disabled={selectedGenerating}
-                    title={t("canvas.retryImageHint")}
-                    className="canvas-ui-control flex h-10 items-center gap-1.5 rounded-[11px] border px-3 text-[12.5px] font-semibold disabled:opacity-45"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    {t("canvas.retryImage")}
-                  </button></CanvasComposerOptions> </>} actions={<>
+                      </button></CanvasComposerOptions> </>} actions={<>
 
+                  <ImageVersionControl contextKey={`${historyScope}:${selected.id}`} revision={selected.canvasImageRevision||0}
+                    disabled={readOnly||historySaving||isNodeLocked(selected.id)} english={locale==="en"}
+                    load={()=>loadImageVersions(selected.id)} onSelect={(version,from)=>selectImageVersion(selected.id,version,from)}/>
                   <GenerationSubmitAction generating={selectedGenerating} failure={selectedGenerationFailure}
-                    onGenerate={generateChild} english={locale === "en"} />
+                    actionLabel={generationMode==="standard"?L("重新生成","Regenerate"):undefined}
+                    onGenerate={()=>{const failed=generationTasks.find(task=>task.sourceId===selected.id&&task.replaceNode&&task.failure);return generationMode==="standard"&&failed?.onRetry?failed.onRetry():generateSelectedImage();}} english={locale === "en"} />
                  </>}/>
               )}
             </CanvasComposerShell>

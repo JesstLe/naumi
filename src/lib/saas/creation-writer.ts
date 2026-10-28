@@ -211,15 +211,22 @@ export async function addCreationAssetTx(tx:PoolClient,id:string,email:string,a:
   if((await tx.query('SELECT 1 FROM app_creation_assets WHERE creation_id=$1 AND direction=$2 AND storage_ref=$3',[id,a.direction,a.storageRef])).rowCount)return;
   position=Number((await tx.query('SELECT COALESCE(max(position),-1)+1 AS next FROM app_creation_assets WHERE creation_id=$1 AND direction=$2 AND role=$3 AND variant=$4',[id,a.direction,a.role,a.variant||'original'])).rows[0].next);
  }
+ // The artwork identity stays a link; freeze the actual pixels accepted now.
+ // Canvas display versions must never rewrite historical creation media.
+ let storageSnapshot:string|null=null;
+ if(a.storageRef.startsWith('artwork:')&&!a.storageRef.startsWith('artwork:asset-')){
+  const work=(await tx.query('SELECT image_url,video_url,canvas_image_version FROM app_artworks WHERE id=$1 AND email=$2 FOR SHARE',[a.storageRef.slice(8),email])).rows[0];
+  if(work)storageSnapshot=a.mediaType==='video'?work.video_url:(a.direction==='input'?work.canvas_image_version?.image:null)||work.image_url;
+ }
  let metadata:{sha256?:string;bytes?:number;content_type?:string}|undefined;
  if((await tx.query("SELECT to_regclass('app_media_assets') AS name")).rows[0].name){
-  let ref=a.storageRef;
+  let ref=storageSnapshot||a.storageRef;
   if(ref.startsWith('artwork:asset-')){const id=ref.slice('artwork:asset-'.length);metadata=(await tx.query('SELECT sha256,bytes,content_type FROM app_media_assets WHERE owner=$1 AND key=ANY($2::text[])',[email,['png','jpg','webp'].map(ext=>`imagegen-inputs/${id}.${ext}`)])).rows[0];}
   else {if(ref.startsWith('artwork:'))ref=(await tx.query('SELECT image_url FROM app_artworks WHERE id=$1 AND email=$2',[ref.slice(8),email])).rows[0]?.image_url||'';
    if(ref.startsWith('/media/'))metadata=(await tx.query('SELECT sha256,bytes,content_type FROM app_media_assets WHERE key=$1',[ref.slice(7)])).rows[0];}
  }
  const mime=a.mime||metadata?.content_type||null,mediaType=a.mediaType||(mime?.startsWith('video/')?'video':mime?.startsWith('audio/')?'audio':mime&&!mime.startsWith('image/')?'file':'image');
- await tx.query(`INSERT INTO app_creation_assets(id,creation_id,actor_email,direction,role,position,variant,storage_ref,mime,media_type,text_content,hash,byte_size,availability,input_position,execution_ref) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) ON CONFLICT(creation_id,direction,role,position,variant) DO NOTHING`,[a.id||`ca-${randomUUID()}`,id,email,a.direction,a.role,position,a.variant||'original',a.storageRef,mime,mediaType,a.text??null,metadata?.sha256||null,metadata?.bytes??null,a.availability||'recorded',a.sourcePosition??null,a.captureRef??null]);
+ await tx.query(`INSERT INTO app_creation_assets(id,creation_id,actor_email,direction,role,position,variant,storage_ref,mime,media_type,text_content,hash,byte_size,availability,input_position,execution_ref,storage_snapshot) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) ON CONFLICT(creation_id,direction,role,position,variant) DO NOTHING`,[a.id||`ca-${randomUUID()}`,id,email,a.direction,a.role,position,a.variant||'original',a.storageRef,mime,mediaType,a.text??null,metadata?.sha256||null,metadata?.bytes??null,a.availability||'recorded',a.sourcePosition??null,a.captureRef??null,storageSnapshot]);
 }
 export function publicCreationParameters(value:unknown):Record<string,unknown>{
  const p=obj(value),allowed=['ratio','resolution','quality','count','quantity','size','seconds','durationSeconds','aspectRatio','generateAudio','watermark','mode','width','height','x','y','platform','style','lang','seed','variants','inputFidelity','moderation','format','compression','background','compressionMode','flattenColor','downscaleMaxDim'];

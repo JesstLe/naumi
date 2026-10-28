@@ -185,6 +185,8 @@ export type Artwork = {
   createdAt: string;
   status: "completed" | "processing" | "failed";
   image: string;
+  canvasImageRevision?: number;
+  canvasImageVersionId?: string;
   gradient: string;
   style?: string;
   ratio?: string;
