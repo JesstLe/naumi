@@ -10,12 +10,26 @@ import release103_refactor as base
 import release47_controls as controls
 import release47_task_snapshot as tasks
 import release47_recovery_supervisor as recovery
-from release47_preserved_unknown import Guard
-from release47_saas_successor import CASE05_BASELINE,CASE05_SHA256
 
 ACK='不用双槽了 只保留最新的'
 ENTERPRISE='1095114e-6b57-429e-a954-7d663907e0c9'
 SOURCE='naumi47-tdh'
+
+class HistoricalEvidence:
+    """Same retained-history scope as the actual 2026-10-28 predecessor.
+
+    Business tasks, supplier calls and ledger remain in the full task snapshot.
+    Historical slot observations are additionally protected by exact SQL hashes.
+    """
+    def __init__(self,r):self.r=r;self.before=None;self.sequence=0
+    def capture(self):
+        names=','.join("'"+self.r.c[k]['web']+"'" for k in ['oldNames','newNames'])
+        return self.r.sql("SELECT jsonb_build_object('kind','historicalActivities','count',count(*),'sha256',encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(a) ORDER BY id),'[]')::text,'UTF8')),'hex')) FROM app_release_activities a WHERE state<>'finished' AND instance_id NOT IN ("+names+");SELECT jsonb_build_object('kind','oldSessionOwners','count',count(*),'sha256',encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(a) ORDER BY account_key,session_id,kind),'[]')::text,'UTF8')),'hex')) FROM app_release_session_owners a WHERE instance_id NOT IN ("+names+");")
+    def establish(self):
+        self.before=self.capture();self.r.tx.save('retained-history-before.json',self.before)
+    def check(self,stage):
+        after=self.capture();require(self.before==after,'RETAINED_HISTORICAL_OBSERVATIONS_CHANGED');self.sequence+=1
+        self.r.tx.save('retained-history-'+str(self.sequence)+'.json',{'stage':stage,'exact':True,'data':after,'unknownReclassified':False})
 
 def validate(c):
     require(c.get('target')=='47.105.59.142' and c.get('authorization')==shared.AUTHORIZATION and c.get('replacementAuthorization')==ACK,'EXPLICIT_SINGLE_INSTANCE_AUTHORIZATION_REQUIRED')
@@ -33,10 +47,10 @@ def validate(c):
 
 class Release(shared.Release):
     def prepare(self):
-        super().prepare()
+        if not self.c.get('resumePrepared'):super().prepare()
         self.record.update(releaseMode='STOP_OLD_REPLACE',replacementAuthorization=ACK,independentCollaboration=False)
         self.persist()
-        self.guard=Guard({'baselinePath':CASE05_BASELINE,'baselineSha256':CASE05_SHA256,'allowedAdditiveColumns':{},'supplementalPath':str(self.root/'preserved-case05.private.json')},self.sql,self.tx.save)
+        self.guard=HistoricalEvidence(self)
         self.guard.establish()
         owner=self.sql("SELECT json_build_object('email',t.owner_email) FROM app_account_teams t JOIN app_users u ON u.email=t.owner_email WHERE t.id='"+ENTERPRISE+"' AND NOT u.banned;")
         require(len(owner)==1,'ACTIVE_COMPANY_OWNER_REQUIRED')
@@ -201,8 +215,31 @@ def main(config):
     c=json.loads(pathlib.Path(config).read_bytes());validate(c)
     with HostTransaction(c['target'],shared.HOSTS[c['target']],c['evidenceRoot']) as tx:
         with open(shared.CANON.parent/'.lifecycle.lock','a+') as lock:
-            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB);r=Release(tx,c)
+            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB);r=resume_prepared(tx,c) if c.get('resumePrepared') else Release(tx,c)
             try:r.prepare();r.replace();r.finish()
             except BaseException:
                 if r.record['releaseId'] in r.state.get('siteControlReleases',{}):r.rollback()
                 raise
+
+def resume_prepared(tx,c):
+    """Continue the one verified pre-stop preparation failure; no repeated backup."""
+    root=tx.folder;raw=shared.CANON.read_bytes();state=json.loads(raw)
+    require(sha(raw)==c['canonicalSha256'] and state['revision']==c['canonicalRevision'],'RESUME_CANONICAL_CHANGED')
+    original=json.loads((root/'release-config.private.json').read_bytes())
+    ignore={'resumePrepared','canonicalSha256','canonicalRevision','date','toolsCommit'}
+    require({k:v for k,v in c.items() if k not in ignore}=={k:v for k,v in original.items() if k not in ignore},'PREPARED_SCOPE_CHANGED')
+    record=state['siteControlReleases'][c['releaseId']]
+    require(record['phase']=='ROLLED_BACK' and record.get('gatewaySwitched') is False and set(record['operations'])=={'database-backup'} and record['operations']['database-backup']['phase']=='ACKNOWLEDGED','EXACT_PRE_STOP_RESUME_REQUIRED')
+    r=Release.__new__(Release);r.tx=tx;r.c=c;r.root=root;r.state=state;r.record=record;r.disk=sha(raw);r.initial=raw;r.extra=[];r.new={}
+    r.rows=json.loads(tx.run(['docker','inspect',*tx.run(['docker','ps','-aq','--no-trunc']).decode().split()]));r.byname={v['Name'].lstrip('/'):v for v in r.rows};r.old={k:r.byname[n] for k,n in c['oldNames'].items()}
+    require(sorted(v['Id'] for v in r.rows if v['State']['Running'])==sorted(c['runningIds']),'RUNNING_BASELINE_CHANGED')
+    for k,v in r.old.items():require(public_identity(v)==c['oldPins'][k],'ORIGINAL_SLOT_CHANGED')
+    require(sha(tx.run(['nginx','-T']))==c['nginxSha256'],'ORIGINAL_GATEWAY_CHANGED')
+    r.db=r.byname['naumi-staging-db-1'];r.de=environment(r.db);r.configuration=json.loads((root/'configuration-before.json').read_bytes());r.cookie=(root/'cookie.private').read_text()
+    r.dump=(root/'nginx-before.private.txt').read_text();r.before={p:base64.b64decode(v) for p,v in json.loads((root/'nginx-files-before.private.json').read_bytes()).items()};r.real={p:str(pathlib.Path(p).resolve()) for p in r.before}
+    snapshots=list(root.glob('task-snapshot-*.json'));require(len(snapshots)==1,'ORIGINAL_TASK_SNAPSHOT_REQUIRED');r.task_before=tasks.Snapshot(public={},private=json.loads(snapshots[0].read_bytes()))
+    backup=json.loads((root/'backup-readable.json').read_bytes());require(file_sha(backup['path'])==backup['sha256'],'ORIGINAL_BACKUP_CHANGED')
+    r.previousRecovery=copy.deepcopy(state['runtimeRecovery']);r.previousManifest=json.loads((root/'supervisor-before.private.json').read_bytes())
+    r.switched=r.old_stopped=r.worker_paused=r.app_drained=False
+    r.op('prepared-baseline-reconciled',lambda _:{'originalBackupReused':True,'oldProgramUnchanged':True,'taskSnapshotReused':True,'historicalGuard':'same SQL history scope as actual predecessor; no original CASE05 artifact exists on this host','previousFailureRetained':True})
+    return r
