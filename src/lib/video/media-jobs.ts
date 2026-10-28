@@ -20,6 +20,7 @@ import {inspectedMediaMime} from "./media-formats";
 import {mediaBillingQuote,confirmMediaQuote} from "./media-billing";
 import {reserveTaskBillingTx,settleTaskBillingTx} from "../billing/task-operation";
 import type {BillingQuote} from "../billing/types";
+import type {PoolClient} from "pg";
 
 type BundleFile={name:string;key:string;sha256:string;bytes:number};
 type FrozenInput=FrozenMediaInput&{bundleFiles?:BundleFile[];bundleEntry?:string};
@@ -74,6 +75,14 @@ export async function listMediaJobs(actorRaw:string,options:{projectKey?:string;
   return {jobs:page.map(publicMediaJob),nextCursor};
 }
 async function getRow(actor:string,id:string):Promise<JobRow|null>{await ensureMediaJobSchema();return (await getPool().query("SELECT * FROM app_video_media_jobs WHERE email=$1 AND id=$2",[actor,id])).rows[0]||null;}
+/** Read-only receipt for an editor adopting a completed output. The media module
+ * owns the frozen inputs/recipe; callers do not query or write its tables. */
+export async function readMediaJobEvidence(actorRaw:string,id:string,completed=true,tx?:PoolClient){
+  const actor=actorRaw.toLowerCase(),row=tx?(await tx.query("SELECT * FROM app_video_media_jobs WHERE email=$1 AND id=$2 FOR SHARE",[actor,id])).rows[0] as JobRow|undefined:await getRow(actor,id);
+  if(!row)throw new ModelConfigError("MEDIA_JOB_UNAVAILABLE","媒体任务不存在或无权访问",404);
+  if(completed&&row.status!=="completed")throw new ModelConfigError("MEDIA_JOB_PENDING","媒体任务尚未完成",409);
+  return {operationId:row.operation_id,status:row.status,request:row.request,inputs:row.inputs,outputs:row.outputs};
+}
 function presetOutputs(request:MediaJobRequest):string[]{
   if(["ffmpeg","ffprobe"].includes(request.action))return request.outputs;
   if(request.outputs.length)throw new ModelConfigError("INVALID_MEDIA_OUTPUTS","预设处理使用固定格式，请使用原生命令自定义输出",422);

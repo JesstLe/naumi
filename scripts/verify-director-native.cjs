@@ -5,7 +5,7 @@ const menu=load(`export {canvasNodeMenuItems} from './src/components/canvas/node
 const items=menu({L:zh=>zh,readOnly:false,videoDisabled:false,onCreate:()=>{}});
 assert.equal(items.find(item=>item.id==='stage-3d').disabled,!modified);
 assert.equal(menu({L:zh=>zh,readOnly:true,videoDisabled:false,onCreate:()=>{}}).find(item=>item.id==='stage-3d').disabled,true);
-assert.equal(items.find(item=>item.id==='character').disabled,!fs.existsSync(path.join(root,'src/lib/character/project.ts')));assert.equal(items.find(item=>item.id==='audio').disabled,true);
+assert.equal(items.find(item=>item.id==='character').disabled,!fs.existsSync(path.join(root,'src/lib/character/project.ts')));assert.equal(items.find(item=>item.id==='audio').disabled,!fs.existsSync(path.join(root,'src/lib/audio/project.ts')));
 assert.ok(fs.existsSync(path.join(root,'src/lib/studio3d/project.ts')));
 if(!modified){assert.equal(fs.existsSync(path.join(root,'src/lib/director/project.ts')),false);console.log(`${mode}_DIRECTOR=PASS MENU=DISABLED NATIVE_EDITOR=ABSENT PRODUCT_STUDIO=SEPARATE EXIT=0`);process.exit(0);}
 const lib=load(`export * from './src/lib/director/project';export * from './src/lib/director/scene';export * from './src/lib/director/webm';export {disposeObject} from './src/lib/three/dispose';export * as THREE from 'three';`);

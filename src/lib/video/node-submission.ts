@@ -10,7 +10,7 @@ import {readOwnedVideoWorkflow} from "./workflow-source";
 import {requireOwnedVideoText} from "./submission";
 import type {VideoReference} from "./types";
 import type {OrderedInput} from "./references";
-import {resolveCanvasVisualInputs} from "../canvas/visual-reference-service";
+import {resolveCanvasNodeInputs} from "../canvas/node-inputs";
 export async function submitCanvasVideo(actorRaw:string,input:{nodeId:string;expectedRevision:number;idempotencyKey:string;billingConfirmation?:{version?:number;credits?:number}}){
   const actor=actorRaw.toLowerCase(),existing=await getVideoTaskByIdempotencyKey(actor,input.idempotencyKey);
   if(existing){
@@ -23,7 +23,7 @@ export async function submitCanvasVideo(actorRaw:string,input:{nodeId:string;exp
   if(!node)throw new ModelConfigError("VIDEO_NODE_UNAVAILABLE","视频节点不存在",404);
   if(node.revision!==input.expectedRevision)throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT","视频节点已更新，请重新读取后生成",409);
   await bindActualCreationProject(actor,node.projectKey);
-  const resolved=await resolveCanvasVisualInputs(actor,node.inputs,node.config.prompt||"");
+  const resolved=await resolveCanvasNodeInputs(actor,node.inputs,node.config.prompt||"");
   await authorizeNodeInputs(actor,{id:node.id,expectedRevision:node.revision,operationId:input.idempotencyKey,config:node.config,inputs:resolved.inputs});
   const {comfyWorkflowId,comfyInputs,comfyOverrides,workflowTaskId,camera,batchCount:_batchCount,...config}={...node.config,prompt:resolved.prompt};
   let workflowManifest=config.workflowManifest;
