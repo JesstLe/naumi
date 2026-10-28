@@ -1,5 +1,5 @@
-import type {CanvasCharacterNode} from "@/lib/canvas/character-node-schema";
 "use client";
+import type {CanvasCharacterNode} from "@/lib/canvas/character-node-schema";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
 import type { Artwork } from "@/lib/mock-data";
 import type { CanvasNodeSettings } from "@/lib/canvas/node-settings";

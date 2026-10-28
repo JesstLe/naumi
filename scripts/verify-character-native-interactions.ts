@@ -31,7 +31,8 @@ export async function verifyCharacterInteractions(h: Awaited<ReturnType<typeof c
     const get = async (id: string) => (await h.request<any>("a", "GET", `/api/canvas/character-nodes/${id}`)).body.node;
     const video = async (id: string) => (await h.request<any>("a", "GET", `/api/canvas/video-nodes/${id}`)).body.node;
     const freeBefore = await h.creditState("a"), createsBefore = h.supplierCalls().filter(call => call.phase === "create").length;
-    await page.goto(`${h.baseUrl}/canvas?node=${existingVideoId}`, {waitUntil: "domcontentloaded", timeout: 180000});
+    const navigation=await page.goto(`${h.baseUrl}/canvas?node=${existingVideoId}`, {waitUntil: "domcontentloaded", timeout: 180000});
+    assert.equal(navigation?.status(),200,"Actual Canvas must compile and return HTTP200 before waiting for controls");
     await page.locator(`.react-flow__node[data-id="${existingVideoId}"]`).waitFor();
     await page.getByTestId("canvas-project-chrome").getByRole("button", {name: "Naumi", exact: true}).click();
     await page.locator("aside").getByRole("button", {name: "创建新项目", exact: true}).click();

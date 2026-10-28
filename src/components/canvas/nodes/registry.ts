@@ -1,5 +1,5 @@
-import {CharacterCanvasNode} from "../character/character-node";
 "use client";
+import {CharacterCanvasNode} from "../character/character-node";
 import {DirectorCanvasNode} from "../director/director-node";
 import {ArtNode} from "./artwork-node";
 import {TextCanvasNode} from "./text-node";

@@ -1,8 +1,8 @@
+"use client";
 import {useCharacterNodes} from "./character/use-character-nodes";
 import type {CanvasCharacterNode} from "@/lib/canvas/character-node-schema";
 import {newCharacterProject,characterInputIdentity,parseCharacterInputIdentity,characterReferenceText,type CharacterProject} from "@/lib/character/project";
 import {characterInputChoices} from "@/lib/character/canvas";
-"use client";
 import {executeCanvasImageCreation,retryCanvasImageCreation,generateCanvasAssistantImage,canvasBlankImagePrompt,canvasInheritedImagePrompt,CANVAS_IMAGE_REFERENCE_LIMIT as MAX_TOTAL_IMAGES,type CanvasImageCreationServices} from "@/lib/canvas/image-creation";
 import {canvasNodeMenuItems} from "./node-menu-items";
 import {artworkFields} from "@/lib/canvas/artwork-write";

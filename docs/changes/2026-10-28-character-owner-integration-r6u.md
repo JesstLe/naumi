@@ -27,3 +27,5 @@
 当前实现集中验收尚在进行，不称全片或整体重构完成；四产物、4707原hash独立副本回滚、Git/远端及自有资源清理以本片DELIVERY为最终回执。完整原角色业务记录保留在2026-10-27-character-native.md，后续仍有Canvas/助手外围编排、最终整合与性能容量验收。
 
 首轮固定66a171aa的core为14通过／1失败／48未执行：持久化验收元数据仍按38个启动owner，新角色已使实际启动变39；补充版本化39-step预期及可选角色owner冷/热校验，未删除原冷启动、真实故障重试、在途账务保留断言。新增纯owner测试的首个失败是video fixture缺projectKey导致未进入当前项目投影，已补真实项目字段；原失败留证。结构观察器首次使用Windows默认GBK读Node UTF-8输出，改为显式UTF-8。
+
+第二轮3cb9275b的core为27通过／1失败／35未执行：角色实际应用后端步骤完成，但Canvas初次访问500。真实pageerror与已打开截图确认本轮整合把import放在use client之前，修正Canvas、renderer registry及history hook的声明prologue，并加入实际源码prologue回归。不是Windows缓存或供应商问题。另补同一外观重复input的精确删除反例，过滤使用input.id而非nodeId；不新增重复引用限制。原应用失败、90秒控件等待与资源清理完整保留，后续导航先断言实际HTTP200以直接暴露编译错误。

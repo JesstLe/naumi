@@ -58,7 +58,7 @@ export function compileCanvasLink(s:Snapshot,intent:CanvasLinkIntent):CanvasHist
     if(!add&&!video.inputs.some(input=>matches(input.nodeId)))return null;
     const inputs=add?[...video.inputs,{id:`ref-${browserRandomUUID()}`,nodeId:choice!.nodeId,kind:choice!.kind,
       role:choice!.kind==="text"?"context" as const:choice!.kind==="video"?"source_video" as const:choice!.kind==="audio"?"source_audio" as const:"reference" as const,value:choice!.value}]
-      :video.inputs.filter(input=>!matches(input.nodeId));
+      :video.inputs.filter(input=>removed?input.id!==removed.id:!matches(input.nodeId));
     return {kind:"video-patch",id:video.id,from:{inputs:video.inputs},to:{inputs:videoModeRoles(inputs,video.config.mode)}};
   }
   const pending=s.pending.find(node=>node.id===target);
