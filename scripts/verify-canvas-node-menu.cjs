@@ -18,6 +18,7 @@ const root = path.resolve(process.argv[3] || '.');
 const out = path.resolve(process.argv[4] || 'output/canvas-node-menu');
 const current = process.cwd();
 const modified = mode === 'MODIFIED';
+const nativeCharacter = modified && fs.readFileSync(path.join(root,'src/components/canvas/node-menu-items.ts'),'utf8').includes('onCreate("character")');
 const nativeDirector = modified && fs.readFileSync(path.join(root,'src/components/canvas/node-menu-items.ts'),'utf8').includes('onCreate("director")');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const client = read('src/components/canvas/canvas-client.tsx');
@@ -45,6 +46,7 @@ const scope = vm.createContext({
   addTextNodeAtScreen: (...args) => calls.push(['text', ...args]),
   addPendAtScreen: (...args) => calls.push(['image', ...args]),
   createDirectorNode: (...args) => calls.push(['director', ...args]),
+  createCharacterNode: (...args) => calls.push(['character', ...args]),
   canFeature: () => videoAllowed, openVideoNodeFromSelection: (...args) => calls.push(['video', ...args]),
 });
 vm.runInContext(ts.transpileModule(createNode, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText, scope);
@@ -84,6 +86,7 @@ const entry = `
     const addPendAtScreen = (...args) => record('image', ...args);
     const openVideoNodeFromSelection = (...args) => record('video', ...args);
     const createDirectorNode = (...args) => record('director', ...args);
+    const createCharacterNode = (...args) => record('character', ...args);
     const triggerUpload = (...args) => record('upload', ...args);
     const openHistoryPicker = (...args) => record('history', ...args);
     const doUndo = () => record('undo'), doRedo = () => record('redo'), pasteNode = () => record('paste');
@@ -154,7 +157,7 @@ async function main() {
       await trigger().hover(); await submenu.waitFor();
       assert.equal(await parent.isVisible(), true);
       assert.deepEqual(await labels(submenu), expectedLabels);
-      assert.equal(await submenu.locator('button:disabled').count(), nativeDirector ? 4 : 5);
+      assert.equal(await submenu.locator('button:disabled').count(), nativeCharacter ? 3 : nativeDirector ? 4 : 5);
       assert.equal(await submenu.locator('svg').count(), 8);
       assert.deepEqual(await recorded(), []);
       const a = await trigger().boundingBox(), b = await submenu.boundingBox();
@@ -162,11 +165,12 @@ async function main() {
       await page.mouse.move(b.x + 20, b.y + 20, { steps: 8 });
       assert.equal(await submenu.isVisible(), true);
       await page.screenshot({ path: path.join(out, 'modified-desktop.png') });
-      for (const id of ['character', 'scene', ...(nativeDirector?[]:['stage-3d']), 'audio', 'multitrack']) {
+      for (const id of [...(nativeCharacter?[]:['character']), 'scene', ...(nativeDirector?[]:['stage-3d']), 'audio', 'multitrack']) {
         await submenu.locator('[data-action="' + id + '"]').evaluate(button => button.click());
       }
       assert.deepEqual(await recorded(), []);
       assert.equal(await submenu.isVisible(), true);
+      if(nativeCharacter){await submenu.getByRole('menuitem',{name:'角色',exact:true}).click();assert.deepEqual(await recorded(),[['character',{x:71,y:83,cx:220,cy:120}]]);await open();await trigger().click();}
       if(nativeDirector){await submenu.getByRole('menuitem',{name:'3D 导演台',exact:true}).click();assert.deepEqual(await recorded(),[['director',{x:71,y:83,cx:220,cy:120}]]);await open();await trigger().click();}
       await submenu.getByRole('menuitem', { name: '文本', exact: true }).click();
       assert.deepEqual(await recorded(), [['text', 71, 83]]);
@@ -176,9 +180,9 @@ async function main() {
         assert.deepEqual(await recorded(), [expected]);
       }
       await open(); await trigger().focus(); await page.keyboard.press('ArrowRight');
-      await submenu.waitFor(); assert.equal(await page.evaluate(() => document.activeElement.textContent), nativeDirector ? '3D 导演台' : '文本');
+      await submenu.waitFor(); assert.equal(await page.evaluate(() => document.activeElement.textContent), nativeCharacter ? '角色' : nativeDirector ? '3D 导演台' : '文本');
       await page.keyboard.press('ArrowUp'); assert.equal(await page.evaluate(() => document.activeElement.textContent), '视频');
-      await page.keyboard.press('Home'); assert.equal(await page.evaluate(() => document.activeElement.textContent), nativeDirector ? '3D 导演台' : '文本');
+      await page.keyboard.press('Home'); assert.equal(await page.evaluate(() => document.activeElement.textContent), nativeCharacter ? '角色' : nativeDirector ? '3D 导演台' : '文本');
       await page.keyboard.press('End'); assert.equal(await page.evaluate(() => document.activeElement.textContent), '视频');
       await page.keyboard.press('ArrowLeft'); await submenu.waitFor({ state: 'hidden' });
       assert.equal(await trigger().evaluate(button => button === document.activeElement), true);
@@ -193,13 +197,13 @@ async function main() {
       for (const options of [{ video: false }, { busy: true }]) {
         await configure(options); await open(); await trigger().click();
         assert.equal(await submenu.getByRole('menuitem', { name: '视频', exact: true }).isDisabled(), true);
-        assert.equal(await submenu.locator('button:not(:disabled)').count(), nativeDirector ? 3 : 2);
+        assert.equal(await submenu.locator('button:not(:disabled)').count(), nativeCharacter ? 4 : nativeDirector ? 3 : 2);
       }
       await configure({});
       await page.getByTestId('canvas-add-node-button').click();
       const toolbarMenu = page.getByTestId('canvas-create-menu');
       assert.deepEqual(await labels(toolbarMenu), expectedLabels);
-      assert.equal(await toolbarMenu.locator('button:disabled').count(), nativeDirector ? 4 : 5);
+      assert.equal(await toolbarMenu.locator('button:disabled').count(), nativeCharacter ? 3 : nativeDirector ? 4 : 5);
       await toolbarMenu.getByRole('menuitem', { name: '图片', exact: true }).click();
       assert.deepEqual((await recorded()).at(-1), ['image', 400, 300, null, false]);
       for (const [label, action] of [['上传图片', ['upload', 71, 83]], ['从生成历史选择', ['history', 71, 83]], ['撤销', ['undo']], ['粘贴', ['paste']]]) {
@@ -227,7 +231,7 @@ async function main() {
     }
     assert.deepEqual(errors, []); assert.deepEqual(external, []);
     console.log(modified
-      ? `MODIFIED=PASS TOP_TEXT=REMOVED ARROW=YES TYPES=8 ENABLED=${nativeDirector?4:3} DISABLED=${nativeDirector?4:5} DIRECTOR=${nativeDirector?'ENABLED':'PLACEHOLDER'} POSITION=EXACT KEYBOARD=PASS VIEWPORTS=3 READONLY=PASS VIDEO_GUARD=PASS TOOLBAR=PASS PAGE_ERRORS=0 EXTERNAL_REQUESTS=0`
+      ? `MODIFIED=PASS TOP_TEXT=REMOVED ARROW=YES TYPES=8 ENABLED=${nativeCharacter?5:nativeDirector?4:3} DISABLED=${nativeCharacter?3:nativeDirector?4:5} CHARACTER=${nativeCharacter?'ENABLED':'PLACEHOLDER'} DIRECTOR=${nativeDirector?'ENABLED':'PLACEHOLDER'} POSITION=EXACT KEYBOARD=PASS VIEWPORTS=3 READONLY=PASS VIDEO_GUARD=PASS TOOLBAR=PASS PAGE_ERRORS=0 EXTERNAL_REQUESTS=0`
       : `${mode}=PASS TOP_TEXT=PRESENT ARROW=NO TYPES=3 POSITION=EXACT PAGE_ERRORS=0 EXTERNAL_REQUESTS=0`);
   } finally { await browser.close(); }
 }

@@ -9,10 +9,11 @@ import {videoByocOverridesSchema} from "./byoc-settings";
 import {videoWorkflowManifestSchema} from "./workflow-schema";
 import {compileVideoCamera} from "./camera";
 import {videoParameterScope} from "./parameter-options";
+import {previewCharacterInputs} from "../character/canvas";
 
 export type VideoNodeConfig=CanvasVideoNode["config"];
 export type VideoCatalogModel=VideoModelCapability&{isDefault?:boolean};
-export type VideoInputChoice={id:string;nodeId:string;kind:OrderedInput["kind"];title:string;value:string;thumbnail?:string;available:boolean};
+export type VideoInputChoice={id:string;nodeId:string;kind:OrderedInput["kind"];title:string;value:string;thumbnail?:string;available:boolean;category?:"character";referenceArtworkIds?:readonly string[]};
 export function resolveVideoTextInputs(inputs:readonly OrderedInput[],choices:readonly VideoInputChoice[]):OrderedInput[]{
   return inputs.map(input=>{
     if(input.kind!=="text"||input.nodeId.startsWith("inline:"))return input;
@@ -87,19 +88,20 @@ export function inputReference(input:OrderedInput):VideoReference|null{
 }
 export function validateVideoSettings(config:VideoNodeConfig,inputs:OrderedInput[],cap:ResolvedVideoCapability,choices:readonly VideoInputChoice[]=[]){
   try{
+    const preview=previewCharacterInputs(inputs,config.prompt||"",choices);
     if(config.comfyWorkflowId){
       videoByocOverridesSchema.parse(config.comfyOverrides||{});
       if(config.comfyInputs)videoWorkflowManifestSchema.shape.inputs.parse(config.comfyInputs);
       for(const fields of Object.values(config.comfyOverrides?.numerics||{}))for(const value of Object.values(fields))if(!Number.isInteger(value)||value<=0)throw new Error("工作流数值需为正整数");
       if(inputs.some(input=>choices.find(choice=>choice.nodeId===input.nodeId)?.available===false))throw new Error("前序素材尚未完成");
-      compileVideoPrompt(config.prompt||"",inputs);return null;
+      compileVideoPrompt(preview.prompt,preview.inputs);return null;
     }
     if(!config.modelId)throw new Error("请选择视频模型");
     if(inputs.some(input=>{const choice=choices.find(item=>item.nodeId===input.nodeId);return choice&& !choice.available;}))throw new Error("前序素材尚未完成");
     if(config.camera&&cap.supportsCamera!==true)throw new Error("摄影设置能力未配置或已禁用");
-    const references=inputs.length?inputs.flatMap(input=>{const ref=inputReference(input);return ref?[ref]:[];}):config.references||[];
-    normalizeVideoInput({...config,references,orderedInputs:inputs.length?inputs:undefined},cap);
-    compileVideoPrompt(config.prompt||"",inputs,compileVideoCamera(config.camera));
+    const references=preview.inputs.length?preview.inputs.flatMap(input=>{const ref=inputReference(input);return ref?[ref]:[];}):config.references||[];
+    normalizeVideoInput({...config,prompt:preview.prompt,references,orderedInputs:preview.inputs.length?preview.inputs:undefined},cap);
+    compileVideoPrompt(preview.prompt,preview.inputs,compileVideoCamera(config.camera));
     return null;
   }catch(error){return error instanceof Error?error.message:"视频参数无效";}
 }
