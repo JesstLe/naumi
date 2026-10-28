@@ -32,7 +32,15 @@ async function main() {
   }catch{res.writeHead(500);res.end();}});
   try {
     container=docker(["run","--detach","--rm","--name",name,"--label",`naumi.task=${owner}`,"--memory","768m","--cpus","2","--tmpfs","/var/lib/postgresql/data","--publish","127.0.0.1::5432","--env-file",envFile,"postgres:16-alpine"]);
-    let ready=false;for(let i=0;i<60;i++){if(spawnSync("docker",["exec",container,"pg_isready","-U","postgres","-d",database],{windowsHide:true,stdio:"ignore"}).status===0){ready=true;break;}await new Promise(r=>setTimeout(r,200));}assert.ok(ready);
+    // The image's temporary initialization server can answer its Unix socket
+    // before the final TCP postmaster exists. Our actual clients use TCP.
+    const readiness:Array<{attempt:number;exit:number|null;literal:string}>=[];
+    let ready=false;for(let i=0;i<60;i++){
+      const probe=spawnSync("docker",["exec",container,"pg_isready","--host","127.0.0.1","-U","postgres","-d",database],{windowsHide:true,encoding:"utf8"});
+      readiness.push({attempt:i,exit:probe.status,literal:probe.stdout+probe.stderr});
+      if(probe.status===0){ready=true;break;}await new Promise(r=>setTimeout(r,200));
+    }
+    await writeFile(path.join(out,"postgres-readiness.json"),JSON.stringify({transport:"TCP",ready,samples:readiness},null,2));assert.ok(ready);
     const port=Number(docker(["port",container,"5432/tcp"]).split(":").at(-1));
     const databaseUrl=`postgresql://postgres:${password}@127.0.0.1:${port}/${database}`;pool=new Pool({connectionString:databaseUrl,max:2});
     await pool.query("CREATE TABLE public.naumi_video_fixture_guard(owner text NOT NULL)");await pool.query("INSERT INTO public.naumi_video_fixture_guard VALUES($1)",["canvas-video-fusion-20261013"]);
@@ -143,7 +151,13 @@ async function main() {
     console.log('DIRECTOR_APPLICATION=PASS REAL_APP_DB_WEBGL=PASS SCENE_CHARACTER_CAMERA_KEYS=PASS SAVE_RELOAD=PASS MIXED_COPY_DELETE_RESTORE=ATOMIC REVISION=ONE_WINNER REPLAY=PASS UI_CREATE_DRAG_COPY_DELETE_UNDO_REDO=PASS PNG_WEBM=CANVAS_OWNED_HASHES RENDER_CHARGES=0 BOTH_OUTPUTS=VIDEO_TASK_REUSED EXTRACTED_VIDEO_CLIENT=ACTUAL_HTTP_PG LOST_RESPONSE=ORIGINAL_LOOKUP BATCH=ORIGINAL_BODY CLIENT_POSTS=2 SIMULATED_CREATES=4 PAID_CALLS=0 PAGE_ERRORS=0');
   }catch(error){await writeFile(path.join(out,'browser-diagnostics.json'),JSON.stringify({errors:browserErrors,network},null,2));if(page){await page.screenshot({path:path.join(out,'failure.png')}).catch(()=>{});await writeFile(path.join(out,'failure.txt'),await page.locator('body').innerText().catch(()=>''));}throw error;}finally{
     if(browser)await browser.close();if(fixture)await fixture.stop();if(listening)await new Promise<void>(r=>router.close(()=>r()));if(pool)await pool.end();
-    if(container){assert.equal(docker(["inspect","--format",'{{index .Config.Labels "naumi.task"}}',container]),owner);docker(["rm","--force",container]);}
+    if(container){
+      assert.equal(docker(["inspect","--format",'{{index .Config.Labels "naumi.task"}}',container]),owner);
+      await writeFile(path.join(out,"postgres-final-state.json"),docker(["inspect","--format","{{json .State}}",container]));
+      const logs=spawnSync("docker",["logs",container],{encoding:"utf8",windowsHide:true});
+      await writeFile(path.join(out,"postgres-final.log"),(logs.stdout||"")+(logs.stderr||""));
+      docker(["rm","--force",container]);
+    }
     await unlink(envFile);
     await writeFile(path.join(out,'CLEANUP.json'),JSON.stringify({status:'PASS',fixtureStopped:true,browserClosed:true,routerClosed:true,poolClosed:true,ownContainerRemoved:container,environmentFileRemoved:true}));
   }
