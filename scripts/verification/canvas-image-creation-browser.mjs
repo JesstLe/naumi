@@ -35,7 +35,7 @@ export async function verifyCanvasImageCreationBrowser({page,expect,out,snapshot
  pass('three-view mode creates real front/side/back artifacts with original source and delivered anchor lineage');
  pass('three-view stages charge exactly three six-credit operations through the original Worker');
 
- await select();await mode('普通生成');await dock.getByRole('textbox',{name:'节点提示词',exact:true}).fill('R6W 原位重新生成，只调整光照');
+ await select();await mode('普通生成');await dock.getByRole('textbox',{name:'节点提示词',exact:true}).fill('R6W 橙色小熊站在窗台，柔和光照');
  const retryBefore=await snapshot(),retryStats=await stats(),originalNode=retryBefore.artworks.find(row=>row.id==='r6c-root');
  await expect(dock.getByTestId('generation-submit-action')).toContainText('重新生成');await dock.getByTestId('generation-submit-action').click();
  const retried=await done(retryBefore,1),version=fresh(retried,retryBefore)[0],current=retried.artworks.find(row=>row.id==='r6c-root');
