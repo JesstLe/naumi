@@ -57,7 +57,13 @@ async function main(){
     const prepare=async()=>({bytes:png,width:16,height:12});
     const locks:boolean[]=[];
     const result=await workflow.importCanvasWorkflow(email,input,{prepare:async()=>{
-      const unlocked=(await f.sql.query("SELECT pg_try_advisory_xact_lock(hashtextextended($1,0)) AS free",[email])).rows[0].free;
+      // Observe without taking the very lock measured by four parallel
+      // preparers; pg_try_advisory_xact_lock probes can contend with each other.
+      const unlocked=(await f.sql.query(`WITH h AS (SELECT hashtextextended($1,0) AS id)
+        SELECT NOT EXISTS(SELECT 1 FROM pg_locks l,h WHERE l.locktype='advisory' AND l.granted
+          AND l.objsubid=1 AND l.classid::bigint=((h.id >> 32)&4294967295::bigint)
+          AND l.objid::bigint=(h.id&4294967295::bigint)
+          AND l.database=(SELECT oid FROM pg_database WHERE datname=current_database())) AS free`,[email])).rows[0].free;
       locks.push(unlocked);return prepare();
     }});
     eq(locks.length,4);eq(locks.every(v=>v===!baseline),true);eq([result.artworks.length,result.textNodes.length],[4,2]);
