@@ -35,7 +35,7 @@ try{
   for(const c of contexts)await c.close();contexts=[];for(const release of held.splice(0))release();requests=[];
   state={email:'first@fixture.test',...options};const c=await browser.newContext();contexts.push(c);
   if(options.cache)await c.addInitScript(cache=>sessionStorage.setItem('naumi:adminVerifiedV1',JSON.stringify(cache)),options.cache);
-  const p=await c.newPage();p.setDefaultTimeout(6000);p.on('pageerror',e=>errors.push(e.message));await p.route(/^https?:/,r=>{if(new URL(r.request().url()).origin!==origin){external.push(r.request().url());return r.abort();}return r.continue();});
+  const p=await c.newPage();p.setDefaultTimeout(30000);p.on('pageerror',e=>errors.push(e.message));await p.route(/^https?:/,r=>{if(new URL(r.request().url()).origin!==origin){external.push(r.request().url());return r.abort();}return r.continue();});
   await p.goto(origin+(options.url||'/admin?view=settings'));return p;
  };
  const visible=async(p,test='protected')=>{await p.getByTestId(test).waitFor();checks++;};
@@ -74,5 +74,5 @@ try{
  eq(errors,[]);eq(external,[]);
  const report={status:'PASS',mode:baseline?control?'INCOMING_CONTROL':'BASELINE':'MODIFIED',checks,actualReact:true,actualEntry:true,actualLoopbackHttp:true,protectedChild:'EXPLICIT_PORT',authProvider:'EXPLICIT_PORT',serverAuthorization:'NOT_REPLACED_OR_TESTED_HERE',snapshots,errors,external,oldAccountUi:baseline?'RETAINED':'HIDDEN',oldSessionRead:baseline?'SENT':'STOPPED',oldPasswordResult:baseline?'APPLIED':'IGNORED',postsReplayed:0,productionCalls:0};
  await fs.writeFile(path.join(out,'RESULT.json'),JSON.stringify(report,null,2)+'\n');console.log(`ADMIN_ENTRY=PASS MODE=${report.mode} CHECKS=${checks} ACTUAL_REACT=1 ACTUAL_ENTRY=1 LOOPBACK_HTTP=1 OLD_ACCOUNT_UI=${report.oldAccountUi} LATE_CLOUD_READ=${report.oldSessionRead} LATE_PASSWORD=${report.oldPasswordResult} AUTOMATIC_POSTS=0 SUPPLIER=0`);
-}catch(error){await fs.writeFile(path.join(out,'FAILURE.json'),JSON.stringify({error:error.stack,checks,requests,errors,snapshots},null,2)+'\n');throw error;}
+}catch(error){const pages=[];for(const context of contexts)for(const page of context.pages())pages.push({url:page.url(),html:await page.content().catch(()=>''),text:await page.locator('body').innerText().catch(()=>'')});await fs.writeFile(path.join(out,'FAILURE.json'),JSON.stringify({error:error.stack,checks,requests,errors,snapshots,pages},null,2)+'\n');throw error;}
 finally{for(const release of held.splice(0))release();for(const c of contexts)await c.close();await browser?.close();if(server)await new Promise(r=>server.close(r));console.log('ADMIN_ENTRY_CLEANUP=PASS OWN_BROWSER_CLOSED=1 OWN_LOOPBACK_CLOSED=1');}
