@@ -6,7 +6,7 @@
 - 重构基线 `840a81b4ddd531f600ba885db3b4a27648d5d0e2`。
 - 本轮固定 main 输入 `4345de529e7ca46b29207f93dbb85034044affd1`，27 commits / 74 paths。
 - 4770 个原始文件已归档并记录 SHA；证据在 `output/refactor-r6x-20261028/`。
-- 当前为合并整合，尚未提交；不合 main、不部署。整体重构目标继续，47 HOLD 不变。
+- 本轮普通 merge 与修正已固定为 `bdcbb265559023365021167c0eea885a3e230da0`；不合 main、不部署。整体重构目标继续，47 HOLD 不变。
 
 ## 模块、接口和状态归属
 
@@ -45,6 +45,22 @@
 
 ## 未完成项
 
-集中修正受影响 verifier 的真实 owner 消费、42 schema-owner 启动矩阵、原生音频/报价/结果位置/多轨验证；完成 merge 索引、固定候选、正式镜像与 runtime/browser、全局四产物/副本回滚及远端 SHA。完整项目的退出台账、required CI 与性能证据仍继续。
+本模块代码与集中验收已完成；全局完整源码四产物、4770 原始 hash 副本回滚、远端 SHA 和资源清理由本轮 DELIVERY.json 最终封存。完整项目的 Canvas 剩余职责收敛、required CI 强制状态与同机性能证据仍继续。
 
 **长分支说明：** 本重构分支超过 48 小时仍保留，是持续整体重构专线，用户要求独立完整重构版本；本轮不将它合 main 或部署。主线增量按固定 SHA 普通整合，整体退出审计另行记录。
+
+## 最终固定候选验收
+
+- 应用/core/镜像 source：`bdcbb265559023365021167c0eea885a3e230da0`；全文件摘要 `58a7fc7c018e8e73d27e4c5797adf9beb6fe6c3a15b1dfa3e63358f4cdc163ed`。
+- 完整 core **83/83**：75 项同 SHA/digest/env/log-hash 证明由只读 collector 收拢为明确 PARTIAL resume 输入，collector 执行数 0；原 runner 独立核验全部证明后实际新执行另 8 项。原 partial/失败报告和日志没有被改写。
+- 正式 Dockerfile 完整 Linux Web + direct Worker 同镜像：`sha256:1664b3d95500c5bc416b8313d29ceec53ca563e77af8f623cf88161b45992c7b`。
+- 同镜像 runtime **125** 检查，实际产品双浏览器 **37** 项；route mock=0、页面错误=0、额外确认弹窗=0。
+- 原生音频完整 Canvas 单独通过真实导入/波形/播放/剪辑/自动采用/保留迟到旧结果/拖动/复制删除/undo-redo/handle 与提及/视频生成及工作流冻结。供应商为隔离模拟，真实付费调用 0。
+- 非零音频矩阵通过：冻结 3 积分后 current 变 7 仍按原价，取消/失败释放、丢失受理回包并重启恢复同一 job、并发 CAS 一个胜出、混合历史原子回滚、外租户素材拒绝。三笔实际 fixture 扣款 3/7/7，共 17，最终预占 0。
+- 原 384 MiB 临时 PG 发生 SQLSTATE 53100；直接领域诊断及 df 97% 证据已留存。只退役原自有空闲 fixture，改为 1 GiB tmpfs 和有界 WAL；未修改产品恢复/计费逻辑。随后大 inline 交付和完整 core 通过。
+- 集中回归发现两个导入被准备脚本放到 use-client 指令之前，已恢复实际 Next client 边界，未放宽检查。
+- 原始角色鼠标超时留存。共享验收 helper 检查可拖动 class、视口连续稳定和真实 hit-test 后仅做一次 mouse 手势；角色/场景/音频真实 PG 移动与 undo-redo 通过。旧运行没有命中证据，未将其唯一根因写死，也没有改产品 drag 逻辑或加重复手势。
+- CI 显式准备 pinned Playwright Chromium/Edge 与 FFmpeg；本轮两次 GitHub 规则读取仍为真实 HTTP403，未将静态工作流写成远端 required-check 强制生效。
+- 三个兼容出口 db/storage/generate-image 字节保持、1905 其它原产品文件保持；音频两表原 SQL 精确保留，42 startup owners，平行任务/计费/历史引擎 0，四类 SCC 集合 0。Canvas 仍有 5804 行，整体继续，不以本模块验收代替全项目完成。
+
+原始 command/input/literal/exit、失败索引和应用/最终文档 SHA 分层以 `output/refactor-r6x-20261028/VERIFICATION.txt`、`SOURCE_BINDING.json`、`DELIVERY.json` 为准。交付包为完整源码归档而非仅 delta，仍只在本独立分支交付。
