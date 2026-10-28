@@ -39,6 +39,10 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - name: Install media test runtime
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Install pinned Playwright test browsers
+        run: npx --no-install playwright install --with-deps chromium msedge
       - name: Verify orchestration and workflow wiring
         run: node scripts/verify-refactor-runner.mjs
       - name: Run source-bound core regression
@@ -48,6 +52,7 @@ jobs:
           NAUMI_VERIFY_ISOLATED_DB: '1'
           SETTINGS_SECRET: refactor-ci-fixture-only-not-production-20261026
           NODE_OPTIONS: --conditions=react-server
+          GOMAXPROCS: '2'
       - uses: actions/upload-artifact@v4
         if: always()
         with:

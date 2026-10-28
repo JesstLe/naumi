@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {dragCanvasNode} from "./verification/canvas-node-drag";
 import {randomUUID,createHash} from "node:crypto";
 import {writeFile} from "node:fs/promises";
 import path from "node:path";
@@ -52,7 +53,7 @@ export async function verifyAudioInteractions(h:Awaited<ReturnType<typeof create
     await expect.poll(async()=>(await h.request<any>('a','GET',`/api/video/media-jobs/${staleJob.id}`)).body.job.status,{timeout:120000}).toBe('completed');await expect(editor.getByRole('button',{name:'采用结果',exact:true})).toBeVisible();node=await get(id);assert.equal(node.audio.adopted.artworkId,adoptedId);assert.equal(node.audio.edit.gain,.75);assert.equal(node.audio.render.operationId,staleOperation);await page.screenshot({path:path.join(out,'actual-stale-result-retained.png')});
     await editor.getByRole('button',{name:'保存并关闭音频',exact:true}).click();await editor.waitFor({state:'hidden'});node=await get(id);const reset=await h.request<any>('a','PATCH',`/api/canvas/audio-nodes/${id}`,{expectedRevision:node.revision,operationId:randomUUID(),audio:{...node.audio,edit:node.audio.adopted.edit,render:null}});assert.equal(reset.status,200,JSON.stringify(reset.body));await page.reload({waitUntil:'domcontentloaded'});await title.waitFor();
     console.log('AUDIO_PHASE=UI_LIFECYCLE');
-    node=await get(id);const box=await title.boundingBox();assert.ok(box);await page.mouse.move(box.x+Math.min(55,box.width/2),box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+Math.min(55,box.width/2)+75,box.y+box.height/2+50,{steps:12});await page.mouse.up();
+    node=await get(id);await dragCanvasNode(page,title,{x:75,y:50},path.join(out,"actual-node-drag.json"));
     await expect.poll(async()=>(await get(id)).x).not.toBe(node.x);const moved=await get(id);console.log('AUDIO_UI_STEP=DRAG_SAVED');await page.locator('button[data-tool="undo"]').click();await expect.poll(async()=>(await get(id)).x).toBe(node.x);await page.locator('button[data-tool="redo"]').click();await expect.poll(async()=>(await get(id)).x).toBe(moved.x);
     console.log('AUDIO_UI_STEP=DRAG_UNDO_REDO');await title.click({button:'right'});await page.getByRole('menuitem',{name:'锁定节点',exact:true}).click();await title.click({button:'right'});await expect(page.getByRole('menuitem',{name:/^创建副本/})).toBeDisabled();await page.getByRole('menuitem',{name:'解锁节点',exact:true}).click();
     console.log('AUDIO_UI_STEP=LOCK_UNLOCK');await title.click({button:'right'});await page.getByRole('menuitem',{name:/^创建副本/}).click();await expect.poll(async()=>(await live()).filter(item=>item.projectKey===projectKey).length).toBe(2);const duplicate=(await live()).find(item=>item.projectKey===projectKey&&item.id!==id);assert.ok(duplicate);

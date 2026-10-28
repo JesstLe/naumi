@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {dragCanvasNode} from "./verification/canvas-node-drag";
 import {createHash, randomUUID} from "node:crypto";
 import {writeFile} from "node:fs/promises";
 import path from "node:path";
@@ -82,9 +83,7 @@ export async function verifyCharacterInteractions(h: Awaited<ReturnType<typeof c
     assert.deepEqual(await h.creditState("a"), freeBefore); assert.equal(h.supplierCalls().filter(call => call.phase === "create").length, createsBefore);
     await page.reload({waitUntil: "domcontentloaded"}); await title.waitFor();
     console.log("CHARACTER_PHASE=UI_LIFECYCLE");
-    node = await get(id); const drag = await title.boundingBox(); assert.ok(drag);
-    await page.mouse.move(drag.x + Math.min(65, drag.width / 2), drag.y + drag.height / 2); await page.mouse.down();
-    await page.mouse.move(drag.x + Math.min(65, drag.width / 2) + 80, drag.y + drag.height / 2 + 55, {steps: 12}); await page.mouse.up();
+    node = await get(id); await dragCanvasNode(page,title,{x:80,y:55},path.join(out,"actual-node-drag.json"));
     await expect.poll(async () => (await get(id)).x, {timeout: 60000}).not.toBe(node.x); const moved = await get(id);
     await expect(card.getByTestId("character-canvas-node")).toHaveAttribute("data-revision", String(moved.revision));
     await page.locator('button[data-tool="undo"]').click(); await expect.poll(async () => (await get(id)).x).toBe(node.x);

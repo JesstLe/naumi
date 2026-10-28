@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {dragCanvasNode} from "./verification/canvas-node-drag";
 import {spawnSync} from "node:child_process";
 import {createHash, randomUUID} from "node:crypto";
 import {writeFile} from "node:fs/promises";
@@ -89,13 +90,7 @@ export async function verifySceneInteractions(h: Awaited<ReturnType<typeof creat
     // Use the real header's actionability first, then perform exactly one drag.
     // Do not retry a gesture after a missing write or weaken the PG assertion.
     await title.hover();
-    node = await get(id); const drag = await title.boundingBox(); assert.ok(drag);
-    const dragPoint = {x: drag.x + Math.min(65, drag.width / 2), y: drag.y + drag.height / 2};
-    const dragHit = await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.closest(".react-flow__node")?.getAttribute("data-id"), dragPoint);
-    assert.equal(dragHit, id, "The actual pointer must hit the intended scene header");
-    await writeFile(path.join(out, "drag-input.json"), JSON.stringify({node, header: drag, point: dragPoint, hit: dragHit, gestures: 1}, null, 2));
-    await page.mouse.move(drag.x + Math.min(65, drag.width / 2), drag.y + drag.height / 2); await page.mouse.down();
-    await page.mouse.move(drag.x + Math.min(65, drag.width / 2) + 80, drag.y + drag.height / 2 + 55, {steps: 12}); await page.mouse.up();
+    node = await get(id); await dragCanvasNode(page,title,{x:80,y:55},path.join(out,"actual-node-drag.json"));
     await expect.poll(async () => (await get(id)).x, {timeout: 60000}).not.toBe(node.x); const moved = await get(id);
     await expect(card.getByTestId("scene-canvas-node")).toHaveAttribute("data-revision", String(moved.revision));
     await page.locator('button[data-tool="undo"]').click(); await expect.poll(async () => (await get(id)).x).toBe(node.x);
