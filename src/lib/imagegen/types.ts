@@ -12,6 +12,7 @@ export type ImagegenPlan={imageParameterPlanVersion?:1;quote?:{id:string;expires
   steps:{key:string;operation:Intent["operation"];modelId?:string;eligibleUpstreamIds:string[];parameters:Record<string,string|number|boolean>;credits:number;billingQuote?:import("../billing/types").BillingQuote}[];
   totalCredits:number;confirmationRequired:boolean;warnings:string[];children?:{key:string;plan:ImagegenPlan}[]};
 export type ImagegenResult={operationId:string;jobId:string;status:"queued"|"running"|"pending"|"needs_attention"|"succeeded"|"partial"|"failed"|"cancelled";
+  canvasAttachment?:import("../canvas/image-versions").CanvasImageAttachment;
   stage:"planning"|"generating"|"editing"|"postprocessing"|"saving"|"done";
   artifacts:{artworkId:string;url:string;width:number;height:number;mime:string;transparentPixels:number;totalPixels:number;visiblePixels?:number;fullyTransparentPixels?:number}[];
   chargedCredits:number;billingStatus?:"confirmed"|"unavailable";recoveryAvailable?:boolean;warnings?:string[];progress?:{completed:number;total:number};error?:{code:string;message:string}};

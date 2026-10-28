@@ -891,7 +891,7 @@ async function runJob(
             style: p.style || null,
             ratio: im.ratio || p.ratio || null,
             resolution: p.resolution || null,
-            source: sourceUrl,
+            source: p.imagegen?.request.canvasTarget ? "canvas-node-version" : sourceUrl,
             parentId: parent,
             parentIds: p.parentIds.filter((x) => x && x !== parent),
             groupId: p.projectGroupId || undefined,
@@ -1204,7 +1204,7 @@ async function handleGet(request: Request) {
   if(jobId?.startsWith("imagegen-")&&/^[a-f0-9-]{36}$/i.test(jobId.slice(9))){
     const owner=await resolveUserEmail(request);if(!owner)return NextResponse.json({error:"请先登录"},{status:401});
     const {getImagegenResult}=await import("@/lib/imagegen/dispatch"),result=await getImagegenResult(jobId.slice(9),owner);if(!result)return NextResponse.json({error:"任务不存在或无权访问"},{status:404});
-    return NextResponse.json({status:result.status==="succeeded"?"done":["failed","cancelled","needs_attention"].includes(result.status)?"error":"pending",operationStatus:result.status,stage:result.stage,images:result.artifacts.map(a=>({id:a.artworkId,url:a.url,width:a.width,height:a.height})),error:result.error?.message,warnings:result.warnings,recoveryAvailable:result.recoveryAvailable,billingStatus:result.billingStatus,creditsUsed:result.chargedCredits,user:await getUser(owner)},{headers:{"cache-control":"private, no-store"}});
+    return NextResponse.json({status:result.status==="succeeded"?"done":["failed","cancelled","needs_attention"].includes(result.status)?"error":"pending",operationStatus:result.status,stage:result.stage,canvasAttachment:result.canvasAttachment,images:result.artifacts.map(a=>({id:a.artworkId,url:a.url,width:a.width,height:a.height})),error:result.error?.message,warnings:result.warnings,recoveryAvailable:result.recoveryAvailable,billingStatus:result.billingStatus,creditsUsed:result.chargedCredits,user:await getUser(owner)},{headers:{"cache-control":"private, no-store"}});
   }
   if (jobId) {
     if (dbEnabled && (await resolveUserEmail(request))?.toLowerCase() !== await JOBS.owner(jobId)) {

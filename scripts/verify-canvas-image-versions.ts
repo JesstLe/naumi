@@ -1,0 +1,66 @@
+import assert from "node:assert/strict";
+import {randomUUID} from "node:crypto";
+import {addArtworks,getOrCreateUser,getPool,listArtworks,listArtworksByIds,setArtworkDimensions,setArtworkCanvasLayout} from "../src/lib/db";
+import {ensureCanvasImageVersions,assertCanvasRegeneration,attachCanvasImageVersions,listCanvasImageVersions} from "../src/lib/canvas/image-version-store";
+import {saveCanvasHistory,historyRequest} from "../src/lib/canvas-history";
+import {canvasRegenerationReferences,canvasGenerationReferences} from "../src/lib/canvas/input-references";
+import {imagegenRequestSchema} from "../src/lib/imagegen/schema";
+import {withFrozenCreation} from "../src/lib/saas/creation-context";
+import {addCreationAssetTx} from "../src/lib/saas/creation-writer";
+import type {Artwork} from "../src/lib/mock-data";
+
+async function main(){
+ const owner=`regen-${randomUUID()}@example.test`,pool=getPool(),checks:string[]=[];
+ const ok=(name:string)=>{checks.push(name);console.log('CHECK='+name)};
+ await getOrCreateUser(owner,"Canvas regeneration fixture");await ensureCanvasImageVersions();
+ const root=`node-${randomUUID()}`,old="/media/fixture-original.png",project=`tree:${root}`;
+ const context={actorEmail:owner,scopeKind:'personal' as const,tenantId:null,parentContext:project};
+ const inScope=<T>(run:()=>Promise<T>)=>withFrozenCreation(context,run);
+ const raw=async()=> (await pool.query('SELECT * FROM app_artworks WHERE email=$1 AND id=$2',[owner,root])).rows[0];
+ const current=async()=> (await listArtworksByIds(owner,[root]))[0];
+ const request=(revision=0,image=old)=>imagegenRequestSchema.parse({version:1,operationId:randomUUID(),entry:'canvas',mode:'generate',sourceNodeId:root,prompt:'窗台小熊',canvasTarget:{nodeId:root,expectedImage:image,expectedRevision:revision},parameters:{ratio:'4:3'}});
+ const add=async(id:string,image:string)=>addArtworks(owner,[{id,title:'已生成',prompt:'窗台小熊',status:'completed',category:'main',image,gradient:'',parentId:root,groupId:root,origin:'canvas',width:1600,height:1200,source:'canvas-node-version'}]);
+ await addArtworks(owner,[{id:root,title:'原节点',prompt:'原始提示词',status:'completed',category:'main',image:old,gradient:'',groupId:root,origin:'canvas',source:'canvas-add',canvasX:120,canvasY:80,canvasWidth:320,canvasHeight:240,width:800,height:600}]);
+ await setArtworkCanvasLayout(owner,root,120,80,320,240);
+ const original=await raw();
+ const counts=async()=> (await pool.query('SELECT (SELECT count(*) FROM app_ledger) AS ledger,(SELECT count(*) FROM app_billing_operations) AS billing,(SELECT count(*) FROM app_image_jobs) AS jobs')).rows[0];const before=await counts();
+ await inScope(()=>assertCanvasRegeneration(owner,request()));
+ assert.equal((await inScope(()=>listCanvasImageVersions(owner,root))).versions[0].id,'initial');ok('initial-version-and-target-validation');
+ const id1=`result-${randomUUID()}`,id2=`result-${randomUUID()}`;await add(id1,'/media/fixture-result-one.png');await add(id2,'/media/fixture-result-two.png');
+ const req=request(),attached=await inScope(()=>attachCanvasImageVersions(owner,req,[id1,id2]));assert.equal(attached?.applied,true);
+ let node=await current();assert.equal(node.id,root);assert.equal(node.image,'/media/fixture-result-one.png');assert.equal(node.canvasImageRevision,1);
+ const row=await raw();for(const key of ['image_url','prompt','title','canvas_x','canvas_y','canvas_width','canvas_height','parent_id','parent_ids','group_id'])assert.deepEqual(row[key],original[key],key);
+ assert.equal((await listArtworksByIds(owner,[root],{original:true}))[0].image,old);assert.equal((await listArtworks(owner)).filter(x=>x.id===id1||x.id===id2).length,0);
+ assert.equal((await inScope(()=>listCanvasImageVersions(owner,root))).versions.length,3);ok('same-node-position-links-original-receipt-and-multiple-history-versions');
+ await setArtworkDimensions(owner,root,1600,1200);assert.equal((await raw()).image_width,800);ok('late-browser-dimensions-do-not-rewrite-original-metadata');
+ assert.deepEqual(await inScope(()=>attachCanvasImageVersions(owner,req,[id1,id2])),attached);assert.equal((await current()).canvasImageRevision,1);ok('completion-replay-is-idempotent');
+ const select=async(versionId:string,expectedRevision:number,expectedImage:string,operationId=randomUUID())=>{const op=historyRequest.parse({operationId,operations:[{type:'image-version',id:root,versionId,expectedRevision,expectedImage}]});await inScope(()=>saveCanvasHistory(owner,op));return op;};
+ const undo=await select('initial',1,node.image);assert.equal((await current()).image,old);await inScope(()=>saveCanvasHistory(owner,undo));assert.equal((await current()).canvasImageRevision,2);
+ await select(id1,2,old);node=await current();assert.equal(node.image,attached?.versionId===id1?'/media/fixture-result-one.png':'unexpected');ok('history-select-undo-redo-and-network-replay');
+ await assert.rejects(()=>select(id2,1,node.image),/版本已改变/);await assert.rejects(()=>inScope(()=>assertCanvasRegeneration(owner,req)),/已更新/);ok('stale-selection-and-stale-submit-rejected');
+ await select('initial',3,node.image);const stale=request(4,old);await select(id1,4,old);await select('initial',5,'/media/fixture-result-one.png');
+ const lateId=`result-${randomUUID()}`;await add(lateId,'/media/late.png');const late=await inScope(()=>attachCanvasImageVersions(owner,stale,[lateId]));assert.equal(late?.applied,false);assert.equal(late?.reason,'changed');assert.equal((await current()).image,old);ok('A-B-A-revision-prevents-late-overwrite');
+ const r1=request(6,old),r2=request(6,old),c1=`result-${randomUUID()}`,c2=`result-${randomUUID()}`;await add(c1,'/media/concurrent-one.png');await add(c2,'/media/concurrent-two.png');
+ const winners=await Promise.all([inScope(()=>attachCanvasImageVersions(owner,r1,[c1])),inScope(()=>attachCanvasImageVersions(owner,r2,[c2]))]);assert.equal(winners.filter(r=>r?.applied).length,1);node=await current();assert.equal(node.canvasImageRevision,7);ok('concurrent-completions-have-one-winner-both-results-retained');
+ const lockReq=request(7,node.image);await pool.query("INSERT INTO app_canvas_node_settings(email,node_id,kind,settings) VALUES($1,$2,'image','{\"locked\":true}')",[owner,root]);
+ await assert.rejects(()=>inScope(()=>assertCanvasRegeneration(owner,lockReq)),/解锁/);const lockedId=`result-${randomUUID()}`;await add(lockedId,'/media/locked.png');assert.equal((await inScope(()=>attachCanvasImageVersions(owner,lockReq,[lockedId])))?.reason,'locked');assert.equal((await current()).image,node.image);await assert.rejects(()=>select('initial',7,node.image),/解锁/);await pool.query('DELETE FROM app_canvas_node_settings WHERE email=$1 AND node_id=$2',[owner,root]);ok('locked-target-keeps-original-and-receipt');
+ await assert.rejects(()=>listCanvasImageVersions('foreign@example.test',root),/无权/);
+ await assert.rejects(()=>withFrozenCreation({...context,parentContext:'tree:other'},()=>assertCanvasRegeneration(owner,request(7,node.image))),/当前画布项目/);
+ const tenant=randomUUID();await pool.query("INSERT INTO app_creation_contexts(actor_email,context_kind,context_id,scope_kind,tenant_id) VALUES($1,'project',$2,'tenant',$3)",[owner,project,tenant]);
+ await assert.rejects(()=>inScope(()=>listCanvasImageVersions(owner,root)),/其他企业/);await assert.rejects(()=>withFrozenCreation({...context,scopeKind:'tenant',tenantId:randomUUID()},()=>listCanvasImageVersions(owner,root)),/其他企业/);
+ await pool.query('DELETE FROM app_creation_contexts WHERE actor_email=$1 AND context_id=$2',[owner,project]);ok('owner-project-and-tenant-isolation');
+ const failedId=`result-${randomUUID()}`;await add(failedId,'/media/partial.png');const failed=await inScope(()=>attachCanvasImageVersions(owner,request(7,node.image),[failedId],false));assert.equal(failed?.applied,false);assert.equal((await current()).image,node.image);ok('failed-processing-retains-old-image-and-readable-output');
+ // Creation inputs snapshot the current displayed media; outputs retain original immutable files.
+ const creation=`cr-${randomUUID()}`;await pool.query("INSERT INTO app_creation_records(id,actor_email,scope_kind,source_kind,source_id) VALUES($1,$2,'personal','fixture',$1)",[creation,owner]);
+ const tx=await pool.connect();try{await tx.query('BEGIN');for(const direction of ['input','output'] as const)await addCreationAssetTx(tx,creation,owner,{direction,role:'image',position:0,storageRef:`artwork:${root}`});await tx.query('COMMIT');}finally{tx.release();}
+ const assets=(await pool.query('SELECT direction,storage_snapshot FROM app_creation_assets WHERE creation_id=$1',[creation])).rows;assert.equal(assets.find(a=>a.direction==='input')?.storage_snapshot,node.image);assert.equal(assets.find(a=>a.direction==='output')?.storage_snapshot,old);
+ await select('initial',7,node.image);assert.equal((await pool.query("SELECT storage_snapshot FROM app_creation_assets WHERE creation_id=$1 AND direction='input'",[creation])).rows[0].storage_snapshot,node.image);ok('creation-history-pixels-frozen-before-and-after-version-switch');
+ const deletedReq=request(8,old),deletedId=`result-${randomUUID()}`;await add(deletedId,'/media/deleted.png');await pool.query('UPDATE app_artworks SET deleted_at=now() WHERE email=$1 AND id=$2',[owner,root]);assert.equal((await inScope(()=>attachCanvasImageVersions(owner,deletedReq,[deletedId])))?.reason,'deleted');assert.ok((await raw()).deleted_at);await assert.rejects(()=>inScope(()=>listCanvasImageVersions(owner,root)),/无权/);ok('deleted-node-never-resurrected');
+ await pool.query('DELETE FROM app_artworks WHERE email=$1 AND id=$2',[owner,root]);const orphanId=`result-${randomUUID()}`;await add(orphanId,'/media/orphan.png');assert.equal((await inScope(()=>attachCanvasImageVersions(owner,request(8,old),[orphanId])))?.reason,'deleted');assert.equal((await listArtworksByIds(owner,[orphanId]))[0].source,null);ok('purged-target-retains-accessible-result');
+ const art={id:'output',image:old,source:'generate',parentId:'input',parentIds:['input']} as Artwork,input={id:'input',image:'/media/ref.png'} as Artwork;
+ assert.deepEqual(canvasRegenerationReferences(art,[art,input]).map(a=>a.id),['input']);assert.deepEqual(canvasRegenerationReferences({...art,source:'canvas-add',parentIds:[]},[art,input]),[]);assert.deepEqual(canvasGenerationReferences({...art,parentIds:[]},[art,input]).map(a=>a.id),['output']);ok('incoming-only-reference-and-explicit-tool-edit-target');
+ assert.deepEqual(await counts(),before);ok('version-operations-create-no-task-reservation-or-charge');
+ console.log(`IMAGE_VERSIONS=PASS CASES=${checks.length} DATABASE=real-postgres SUPPLIER_CALLS=0`);
+ await pool.end();
+}
+main().catch(async error=>{console.error(error);await getPool().end();process.exitCode=1});
