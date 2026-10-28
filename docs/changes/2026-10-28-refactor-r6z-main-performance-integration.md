@@ -31,3 +31,15 @@ placement700随机／70血缘图／6组与原坐标精确一致；同机浏览�
 29文件ESLint修复fixture局部module变量命名后exit0，9个既有／主线warning保留；原失败literal未覆盖。实际源码四类SCC均0。
 
 首次固定e589 core在新增图片组件夹具第4项终止（3通过／1失败／90未运行），真实日志保留。原因是core为服务端测试继承react-server，夹具require.resolve把DOM入口解析为无createRoot的RSC文件。已在浏览器夹具中显式选择同一已安装React包的浏览器入口，不替换产品组件或应用源码；修正后集中重测，原失败不改写。
+
+## 本轮固定候选验收收尾
+
+固定完整源码 `b778072d47df303392419d3ab54e6b59d89df5ea`，完整Linux Web/direct Worker同镜像 `sha256:76f4a7d1a183069c11433d089e5addebe90b2cc2b39a1db0b63630c327daa06c`。core94/94通过（54项相同commit/digest/环境及日志SHA复用，40项恢复后实际执行），同镜像运行177检查（含原生多轨52）及产品双浏览器37检查均exit0。账务原价、未知受理、原结果续交、权限、共享history和实际Canvas／音频／多轨／场景／角色／导演均保持；不把旧e589的3通过、或b778早期54通过后的失败报告改写为成功。
+
+**仍开放的本地问题：一次MEDIA_STATE_WRITE_FAILED未再次出现，具体errno及根因尚未捕获。** 原失败发生场景fixture准备阶段；该次临时资源已关闭。文件操作诊断实际挂入原媒体子进程，负控制ENOENT确实被记录并原样抛出，带诊断的完整场景与其后不带诊断的实际入口均通过，未记录实际媒体fs错误；这不是根因修复证明。相关媒体main／engine／harness对基线字节相同也不证明旧版已复现该事故。`MEDIA_STATE_DIAGNOSIS.json`保留此边界，不通过重试到绿或删错误取消该项。
+
+根PG在core结束后检查连接0／随机schema0再按精确ID和label移除。最终runtime／browser各自完成POSIX Worker排空exit0和自有容器／网络清理。源码全包、字节级patch、独立副本恢复4844原hash、后到编辑零写保护及最终远端以本目录 `output/refactor-r6z-20261028/DELIVERY.json` 和 `VERIFICATION.txt` 为准。文档收尾提交与固定应用／镜像分别记录并校验非docs字节一致。
+
+已整合 main `b6b5af3b1b2cc3d7f9519e0035623f01cb5342b4` 的6条提交，同步模块计数归零；收尾fetch观测main `eca93b8b10d51f7debeff3a446e89fe66d35031f`，另有4条后续提交。本轮不合回main、不部署，47 HOLD不变；项目目标active。
+
+🔴 **独立重构分支超过48小时未合main**：整体重构与最终退出尚未完成，不能以本轮整合通过冒充最终完整版本。下一完整开发切片仍为模板／工作流导入owner；它尚未实施。复用captured document scope、原节点操作回执、作品／文字文档与history，并继续跟进上述媒体状态诊断，禁止把creation证据记录当作幂等执行锁。
