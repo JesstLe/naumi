@@ -23,6 +23,7 @@ export const imagegenRequestSchema=z.strictObject({
   useCase:z.enum(IMAGEGEN_USE_CASES.map(x=>x.id) as [typeof IMAGEGEN_USE_CASES[number]["id"],...typeof IMAGEGEN_USE_CASES[number]["id"][]]).optional(),
   skill:z.strictObject({id:z.string().regex(/^(official:[a-z-]+|personal:[a-f0-9-]{36})$/),revision:z.number().int().positive()}).optional(),
   augment:z.boolean().default(false),modelId:resourceId.optional(),sourceNodeId:resourceId.optional(),
+  canvasTarget:z.strictObject({nodeId:resourceId,expectedRevision:z.number().int().nonnegative(),expectedImage:z.string().min(1).max(4096)}).optional(),
   inputs:z.array(z.strictObject({artworkId:resourceId,role:z.enum(["edit-target","reference","insert","style","mask"]),reference:referenceLabelSchema.optional(),originalArtworkId:resourceId.optional(),inputVariant:z.enum(['original','processed']).optional()})).max(32).default([]),
   frameSourceId:resourceId.optional(),
   framePolicy:z.literal("all-inputs").optional(),
@@ -35,6 +36,7 @@ export const imagegenRequestSchema=z.strictObject({
   chroma:imagegenChromaSchema.optional(),
 }).superRefine((v,ctx)=>{
   const issue=(message:string,path:string[])=>ctx.addIssue({code:"custom",message,path});
+  if(v.canvasTarget&&(v.entry!=="canvas"||v.mode==="batch"||v.mode==="postprocess"||v.sourceNodeId!==v.canvasTarget.nodeId))issue("原位生成必须对应当前画布图片节点",["canvasTarget"]);
   const targets=v.inputs.filter(i=>i.role==="edit-target"),masks=v.inputs.filter(i=>i.role==="mask");
   if(v.frameSourceId&&!v.inputs.some(i=>i.artworkId===v.frameSourceId&&i.role!=="mask"))issue("画幅来源必须是本次引用的图片",["frameSourceId"]);
   if(v.inputs.some(i=>i.reference)){

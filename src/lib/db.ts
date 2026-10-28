@@ -146,6 +146,8 @@ async function ensureSchema(): Promise<void> {
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_x double precision;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_y double precision;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS image_width integer;
+        ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_image_version jsonb;
+        ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_image_revision integer NOT NULL DEFAULT 0;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS image_height integer;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS processing_kind text;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS postprocess_status text;
@@ -2183,6 +2185,8 @@ export type ArtworkRecord = {
   prompt: string;
   status: string;
   image: string;
+  canvasImageRevision?: number;
+  canvasImageVersionId?: string;
   gradient: string;
   createdAt: string;
   style?: string | null;
@@ -2693,10 +2697,10 @@ export async function listArtworks(
   await ensureSchema();
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
-            style, ratio, resolution, source_url, batch_id, parent_id, template_id,
+            style, ratio, resolution, source_url, batch_id, parent_id, template_id, canvas_image_version, canvas_image_revision,
             parent_ids, canvas_x, canvas_y, image_width, image_height, processing_kind, postprocess_status, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, video_url, creation_provenance, created_at
        FROM app_artworks
-      WHERE email = $1 AND deleted_at IS NULL
+      WHERE email = $1 AND deleted_at IS NULL AND source_url IS DISTINCT FROM 'canvas-node-version'
       ORDER BY created_at DESC LIMIT 1000`,
     [emailRaw.toLowerCase()]
   );
@@ -2704,13 +2708,15 @@ export async function listArtworks(
     id: r.id,
     title: r.title,
     category: r.category,
-    prompt: r.prompt,
+    prompt: r.canvas_image_version?.prompt ?? r.prompt,
     status: r.status,
-    image: r.image_url,
+    image: r.canvas_image_version?.image ?? r.image_url,
+    canvasImageRevision: Number(r.canvas_image_revision || 0),
+    canvasImageVersionId: r.canvas_image_version?.id || "initial",
     gradient: r.gradient,
-    style: r.style ?? null,
-    ratio: r.ratio ?? null,
-    resolution: r.resolution ?? null,
+    style: r.canvas_image_version?.style ?? r.style ?? null,
+    ratio: r.canvas_image_version?.ratio ?? r.ratio ?? null,
+    resolution: r.canvas_image_version?.resolution ?? r.resolution ?? null,
     source: r.source_url ?? null,
     batchId: r.batch_id ?? null,
     parentId: r.parent_id ?? null,
@@ -2718,8 +2724,8 @@ export async function listArtworks(
     templateId: r.template_id ?? null,
     canvasX: r.canvas_x ?? null,
     canvasY: r.canvas_y ?? null,
-    width: r.image_width ?? null,
-    height: r.image_height ?? null,
+    width: r.canvas_image_version?.width ?? r.image_width ?? null,
+    height: r.canvas_image_version?.height ?? r.image_height ?? null,
     processingKind: r.processing_kind ?? null,
     postprocessStatus: r.postprocess_status ?? null,
     canvasWidth: r.canvas_width ?? null,
@@ -2738,30 +2744,33 @@ export async function listArtworks(
 // 而不是整表重拉 —— 大幅减少数据库出站流量(Supabase egress)。
 export async function listArtworksByIds(
   emailRaw: string,
-  ids: string[]
+  ids: string[],
+  options: { original?: boolean } = {}
 ): Promise<ArtworkRecord[]> {
   await ensureSchema();
   const clean = ids.filter(Boolean);
   if (clean.length === 0) return [];
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
-            style, ratio, resolution, source_url, batch_id, parent_id, template_id,
+            style, ratio, resolution, source_url, batch_id, parent_id, template_id, canvas_image_version, canvas_image_revision,
             parent_ids, canvas_x, canvas_y, image_width, image_height, processing_kind, postprocess_status, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, video_url, creation_provenance, created_at
        FROM app_artworks
       WHERE email = $1 AND id = ANY($2::text[]) AND deleted_at IS NULL`,
     [emailRaw.toLowerCase(), clean]
   );
-  return rows.map((r) => ({
+  return rows.map((row) => { const r = options.original ? {...row, canvas_image_version: null, canvas_image_revision: 0} : row; return ({
     id: r.id,
     title: r.title,
     category: r.category,
-    prompt: r.prompt,
+    prompt: r.canvas_image_version?.prompt ?? r.prompt,
     status: r.status,
-    image: r.image_url,
+    image: r.canvas_image_version?.image ?? r.image_url,
+    canvasImageRevision: Number(r.canvas_image_revision || 0),
+    canvasImageVersionId: r.canvas_image_version?.id || "initial",
     gradient: r.gradient,
-    style: r.style ?? null,
-    ratio: r.ratio ?? null,
-    resolution: r.resolution ?? null,
+    style: r.canvas_image_version?.style ?? r.style ?? null,
+    ratio: r.canvas_image_version?.ratio ?? r.ratio ?? null,
+    resolution: r.canvas_image_version?.resolution ?? r.resolution ?? null,
     source: r.source_url ?? null,
     batchId: r.batch_id ?? null,
     parentId: r.parent_id ?? null,
@@ -2769,8 +2778,8 @@ export async function listArtworksByIds(
     templateId: r.template_id ?? null,
     canvasX: r.canvas_x ?? null,
     canvasY: r.canvas_y ?? null,
-    width: r.image_width ?? null,
-    height: r.image_height ?? null,
+    width: r.canvas_image_version?.width ?? r.image_width ?? null,
+    height: r.canvas_image_version?.height ?? r.image_height ?? null,
     processingKind: r.processing_kind ?? null,
     postprocessStatus: r.postprocess_status ?? null,
     canvasWidth: r.canvas_width ?? null,
@@ -2782,7 +2791,7 @@ export async function listArtworksByIds(
     marked: !!r.marked,
     videoUrl: r.video_url ?? null,
     createdAt: new Date(r.created_at).toISOString(),
-  }));
+  }); });
 }
 
 // 找/建"模板原图"根作品:用户首次从某模板「做同款」时,在其名下落一条代表该模板的
@@ -2985,7 +2994,8 @@ export async function setArtworkDimensions(
   if (!id || !Number.isFinite(w) || !Number.isFinite(h) || w < 1 || h < 1 || w > 8192 || h > 8192) return false;
   const result = await getPool().query(
     `UPDATE app_artworks
-        SET image_width = $3, image_height = $4
+        SET image_width = CASE WHEN canvas_image_version IS NULL THEN $3 ELSE image_width END,
+            image_height = CASE WHEN canvas_image_version IS NULL THEN $4 ELSE image_height END
       WHERE email = $1 AND id = $2 AND deleted_at IS NULL`,
     [emailRaw.toLowerCase(), id, w, h]
   );

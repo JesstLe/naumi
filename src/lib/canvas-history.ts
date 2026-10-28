@@ -1,4 +1,5 @@
 import "server-only";
+import {ensureCanvasImageVersions,selectCanvasImageVersionTx} from "./canvas/image-version-store";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { getPool, ensureSchema,listArtworksByIds } from "@/lib/db";
@@ -58,6 +59,7 @@ export const historyRequest = z.object({
     z.object({ type: z.literal("mark"), id, marked: z.boolean() }),
     z.object({ type: z.literal("node-settings"), id, text: z.boolean(), video:z.boolean().optional(), director:z.boolean().optional(), character:z.boolean().optional(), scene:z.boolean().optional(), settings: nodeSettingsSchema }),
     z.object({ type: z.literal("workflow-asset"), id, assetOperationId: z.string().uuid(), filled: z.boolean() }),
+    z.object({type:z.literal("image-version"),id,versionId:id,expectedRevision:z.number().int().nonnegative(),expectedImage:z.string().min(1).max(4096)}),
   ])).min(1).max(400),
 });
 
@@ -65,6 +67,7 @@ export const historyRequest = z.object({
 export async function saveCanvasHistory(email: string, input: z.infer<typeof historyRequest>) {
   email=email.toLowerCase();
   await ensureSchema();
+  if(input.operations.some(op=>op.type==="image-version"))await ensureCanvasImageVersions();
   const hasVideo=input.operations.some(op=>op.type==="video-patch"||op.type==="video-visibility"||op.type==="video-result"||op.type==="node-settings"&&op.video);
   if(hasVideo)await ensureVideoNodeSchema();
   const hasDirector=input.operations.some(op=>op.type==="director-patch"||op.type==="director-visibility"||op.type==="node-settings"&&op.director);
@@ -99,6 +102,7 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
     if(hasVideo||hasDirector||hasCharacter||hasScene)await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${email}`]);
     const changedCharacters=new Set<string>(),changedScenes=new Set<string>(),changedDirectors=new Set<string>();
     for (const [index,op] of input.operations.entries()) {
+      if(op.type==="image-version"){await selectCanvasImageVersionTx(client,email,op.id,op.versionId,op.expectedImage,op.expectedRevision);continue;}
       if(op.type==="scene-patch"||op.type==="scene-visibility"){
         const row=(await client.query("SELECT revision,project_key,scene FROM app_canvas_scene_nodes WHERE email=$1 AND id=$2 FOR UPDATE",[email,op.id])).rows[0];
         if(!row)throw new Error("场景不存在或无权修改");
