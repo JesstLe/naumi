@@ -18,6 +18,7 @@ import {ensureVideoNodeSchema,getVideoNode,listVideoNodes,saveVideoNodeTx,associ
 export {getVideoNode,listVideoNodes};
 import {authorizeCanvasProject as authorizeVideoProject,mayCreateCanvasRoot as mayCreateOwnRoot} from "./project-access";
 export {authorizeVideoProject};
+import {authorizeSceneInputs} from "./scene-references";
 import {authorizeCharacterInputs} from "./character-references";
 
 export async function authorizeNodeInputs(actor:string,input:VideoNodeWrite){
@@ -30,6 +31,7 @@ export async function authorizeNodeInputs(actor:string,input:VideoNodeWrite){
     references:config.references||[],elements:config.elements,idempotencyKey:input.operationId});}
   for(const ref of input.inputs||[]){
     if(ref.kind==="text"){
+      if(ref.nodeId.startsWith("scene:")){await authorizeSceneInputs(actor,[ref]);continue;}
       if(ref.nodeId.startsWith("character:")){await authorizeCharacterInputs(actor,[ref]);continue;}
       if(ref.nodeId.startsWith("inline:"))continue;
       const id=ref.nodeId.replace(/^text:/,"");
