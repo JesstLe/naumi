@@ -2973,15 +2973,12 @@ export async function setArtworkPosition(
   emailRaw: string,
   id: string,
   x: number,
-  y: number
+  y: number,
+  initializeOnly = false
 ): Promise<boolean> {
   await ensureSchema();
-  if (!id || !Number.isFinite(x) || !Number.isFinite(y)) return false;
-  const result = await getPool().query(
-    `UPDATE app_artworks SET canvas_x = $3, canvas_y = $4 WHERE email = $1 AND id = $2`,
-    [emailRaw.toLowerCase(), id, x, y]
-  );
-  return (result.rowCount ?? 0) > 0;
+  const { writeArtworkPosition } = await import("./artworks/placement");
+  return writeArtworkPosition(getPool(), emailRaw, id, x, y, initializeOnly);
 }
 
 // 画布用:记录图片真实像素尺寸。旧数据在浏览器首次加载原图后自动回填。
