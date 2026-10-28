@@ -343,7 +343,7 @@ def resume_after_worker_start(tx,c):
     require(sorted(v['Id'] for v in r.rows if v['State']['Running'])==sorted([*c['runningIds'],*[v['Id'] for v in r.new.values()]]),'UNREVIEWED_RUNNING_INSTANCE')
     r.db=r.byname['naumi-staging-db-1'];r.de=environment(r.db);r.configuration=json.loads((root/'configuration-before.json').read_bytes());r.cookie=(root/'acceptance-cookie.private').read_text()
     r.dump=(root/'nginx-before.private.txt').read_text();r.before={p:base64.b64decode(v) for p,v in json.loads((root/'nginx-files-before.private.json').read_bytes()).items()};r.real={p:str(pathlib.Path(p).resolve()) for p in r.before}
-    snapshots=list(root.glob('task-snapshot-*.json'));require(len(snapshots)==1,'ORIGINAL_TASK_SNAPSHOT_AMBIGUOUS');r.task_before=SimpleNamespace(private=json.loads(snapshots[0].read_bytes()))
+    snapshots=list(root.glob('task-snapshot-*.json'));require(len(snapshots)==1,'ORIGINAL_TASK_SNAPSHOT_AMBIGUOUS');r.task_before=tasks.Snapshot(public={},private=json.loads(snapshots[0].read_bytes()))
     r.switched=r.old_stopped=r.worker_paused=r.app_drained=False
     require(controls.app_status(tx,public_identity(r.new['web']))['admission']['mode']=='draining','CANDIDATE_ALREADY_ACCEPTING')
     require(r.worker(r.new['worker'],'status')['paused'],'CANDIDATE_WORKER_ACTIVE')
