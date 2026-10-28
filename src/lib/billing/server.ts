@@ -125,7 +125,7 @@ export async function quoteForRequest(request: Request, input: Partial<BillingFa
     feature: BillingFacts["feature"];
     quantity: number;
     ratio?: string;
-},frozenSnapshot?:ConfigSnapshot,options?:{allowResolutionFallback?:boolean}) {
+},frozenSnapshot?:ConfigSnapshot,options?:{allowResolutionFallback?:boolean;deferImageFrame?:boolean}) {
     // Only an in-process, server-owned imagegen step can supply this quote.
     // Keep the complete tariff/facts used at preview, not just its version or
     // credits: metering and recharge changes must not reprice an accepted plan.
