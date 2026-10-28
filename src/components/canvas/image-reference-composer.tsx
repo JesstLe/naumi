@@ -4,7 +4,7 @@ import { useId, useRef, useState, type ReactNode, type RefObject } from "react";
 import { AtSign, LocateFixed, X } from "lucide-react";
 import { CachedImage } from "@/components/cached-image";
 import { Textarea } from "@/components/ui/textarea";
-import { cdnUrl } from "@/lib/cdn";
+import { cdnThumb } from "@/lib/cdn";
 import { insertImageReference, type CanvasImageReference } from "@/lib/canvas/image-references";
 import { referenceRoleLabels, type ReferenceRole } from "@/lib/imagegen/reference-labels";
 
@@ -39,7 +39,7 @@ export function ImageReferenceComposer(props: Props) {
     <div className="mb-3 flex max-h-48 flex-wrap gap-2 overflow-y-auto" aria-label={english ? "Input images" : "输入图片"}>
       {references.map(ref => <div key={ref.key} className="relative flex w-[calc(50%-4px)] min-w-[138px] gap-2 sm:w-[166px] rounded-[10px] border border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-panel)] p-2" data-reference-number={ref.number}>
         <button type="button" onClick={() => props.onPreview(ref)} className="relative h-12 w-12 shrink-0 overflow-hidden rounded-md" aria-label={`${english ? "Preview image" : "预览图"}${ref.number}`}>
-          <CachedImage src={cdnUrl(ref.url)} alt={ref.title} className="h-full w-full object-cover" />
+          <CachedImage src={cdnThumb(ref.url, 128)} reuseActivePreview alt="" className="h-full w-full object-cover" />
           <span className="absolute bottom-0 left-0 rounded-tr bg-black/65 px-1 text-[10px] text-white">{english ? "Img " : "图"}{ref.number}</span>
         </button>
         <div className="min-w-0 flex-1 pr-1">
