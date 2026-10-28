@@ -1,5 +1,6 @@
 import {taskFailureDiagnostic,type TaskFailureDiagnostic} from "./task-diagnostics";
 import "server-only";
+import {attachCanvasImageVersions,assertCanvasRegeneration} from "../canvas/image-version-store";
 import {DurableImageJobs} from "../durable-image-jobs";
 import {getPool,listArtworksByIds,addArtworks,dbEnabled} from "../db";
 import {readCanvasOutput} from "../canvas-image-input";
@@ -33,7 +34,7 @@ async function assertParentScope(id:string,owner:string){
 class NotAccepted extends Error{}
 const parentId=(id:string)=>`imagegen-${id}`;
 async function artifacts(ids:string[],owner:string){
- const works=await listArtworksByIds(owner,ids);
+ const works=await listArtworksByIds(owner,ids,{original:true});
  const results=[];
  for(const id of ids){const w=works.find(w=>w.id===id);if(!w?.image)throw new Error("任务产物不存在或无权访问");const input=await readCanvasOutput(w.image,"http://internal",owner),pixels=await inspectImagegenPixels(input.buffer);results.push({artworkId:id,url:w.image,mime:input.mimeType,...pixels});}
  return results;
@@ -125,14 +126,18 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
   const result=await artifacts(ids,owner);
   if(plan.intent.background==="transparent"&&result.some(a=>a.transparentPixels===0||a.visiblePixels===0))throw new Error("结果没有有效透明主体；原生成版本已保留，请调整模型能力或抠图设置");
   const charge=await childCharges(owner,state.children,plan);
-  await update({status:"done"},{status:"succeeded",stage:"done",artifacts:result,chargedCredits:charge,billingStatus:"confirmed",warnings:[...warnings],error:undefined});
+  const canvasAttachment=await attachCanvasImageVersions(owner,plan.request,ids);
+  if(canvasAttachment&&!canvasAttachment.applied)warnings.add("节点已更新或锁定，新结果已保存在历史版本，未覆盖当前图片");
+  await update({status:"done"},{status:"succeeded",stage:"done",artifacts:result,canvasAttachment,chargedCredits:charge,billingStatus:"confirmed",warnings:[...warnings],error:undefined});
  }catch(error){
   let kept:ImagegenResult["artifacts"]=[],charged=state.result.chargedCredits,chargeKnown=false;
   // Read actual settlement independently: an unreadable image must not turn a paid result into a zero-credit receipt.
   try{charged=await childCharges(owner,state.children,plan);chargeKnown=true;}catch{warnings.add("积分结算信息暂未同步，请查看积分记录");}
   for(const id of new Set(baseIds.length?baseIds:ids))try{kept.push(...await artifacts([id],owner));}catch{/* Other retained outputs remain recoverable; do not discard them. */}
+  let canvasAttachment:ImagegenResult["canvasAttachment"];
+  if(kept.length)try{canvasAttachment=await attachCanvasImageVersions(owner,plan.request,kept.map(a=>a.artworkId),false);}catch{warnings.add("已保留生成结果，节点历史待同步");}
   const safeToRestart=chargeKnown&&charged===0&&!kept.length&&!Object.values(state.children).some(c=>c.state==="done");
-  await update({status:error instanceof ImagegenStopped?"done":"error",...(error instanceof ImagegenStopped?{}:{failureDiagnostic:taskFailureDiagnostic(error,state.result.stage==="postprocessing"?"parent-finalize":"execute")})},{status:error instanceof ImagegenStopped?"cancelled":"failed",artifacts:kept,chargedCredits:charged,billingStatus:chargeKnown?"confirmed":"unavailable",warnings:[...warnings],error:error instanceof ImagegenStopped?undefined:{code:error instanceof NotAccepted?(safeToRestart?"NOT_ACCEPTED":"PARTIAL_EXECUTION_REJECTED"):"EXECUTION_FAILED",message:error instanceof Error?error.message:"图像处理失败"}});}
+  await update({status:error instanceof ImagegenStopped?"done":"error",...(error instanceof ImagegenStopped?{}:{failureDiagnostic:taskFailureDiagnostic(error,state.result.stage==="postprocessing"?"parent-finalize":"execute")})},{status:error instanceof ImagegenStopped?"cancelled":"failed",artifacts:kept,canvasAttachment,chargedCredits:charged,billingStatus:chargeKnown?"confirmed":"unavailable",warnings:[...warnings],error:error instanceof ImagegenStopped?undefined:{code:error instanceof NotAccepted?(safeToRestart?"NOT_ACCEPTED":"PARTIAL_EXECUTION_REJECTED"):"EXECUTION_FAILED",message:error instanceof Error?error.message:"图像处理失败"}});}
 }
 export async function resumeImagegen(id:string,recheckEmptyClaim=true){await jobs.kick(id,(payload,snapshot)=>runParent(id,payload,snapshot),recheckEmptyClaim);}
 /** Reconcile only an already-submitted terminal child through the frozen parent
@@ -251,6 +256,7 @@ export async function submitAcceptedImagegen(plan:ImagegenPlan,owner:string,fing
  const request=plan.request,id=parentId(request.operationId),prior=await jobs.get(id,false);
  if(prior){if(await jobs.owner(id)!==owner.toLowerCase()||prior.fingerprint!==fingerprint)throw new Error("提交编号与已有请求冲突");await assertParentScope(id,owner);await resumeImagegen(id);return prior.result;}
  imagegenCreationScopeKey(owner);
+ await assertCanvasRegeneration(owner,request);
  const result:ImagegenResult={operationId:request.operationId,jobId:id,status:"queued",stage:"planning",artifacts:[],chargedCredits:0,...(plan.warnings.length?{warnings:[...plan.warnings]}:{})};
  try{await jobs.create(id,owner,{status:"pending",result,fingerprint,children:{}},{plan},0,false);if(!dbEnabled)memoryScopes.set(id,structuredClone(currentCreationContext()));}catch(error){const race=await jobs.get(id,false);if(!race||await jobs.owner(id)!==owner.toLowerCase()||race.fingerprint!==fingerprint)throw error;await assertParentScope(id,owner);return race.result;}
  await resumeImagegen(id);return result;
