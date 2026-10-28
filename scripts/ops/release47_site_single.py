@@ -204,8 +204,14 @@ class Release(shared.Release):
     def finish(self):
         self.wait(lambda:(self.worker(self.new['worker'],'status').get('lastTick') or {}).get('phase')=='complete','WORKER_RECEIPT',120)
         self.acceptance();self.guard.check('after-public')
-        self.op('bind-current-recovery',self.bind_recovery)
-        self.op('start-central-connector',lambda _:self.connector(self.new['web']))
+        if 'bind-current-recovery' not in self.record['operations']:
+            self.op('bind-current-recovery',self.bind_recovery)
+        else:
+            manifest=json.loads((self.root/'supervisor-manifest.private.json').read_bytes())
+            require(self.record['operations']['bind-current-recovery']['phase']=='ACKNOWLEDGED' and sha(recovery.encoded(manifest))==self.record['operations']['bind-current-recovery']['receipt']['manifestSha256'],'ACKNOWLEDGED_RECOVERY_CHANGED')
+            recovery.recovery_binding(self.state,manifest)
+        if 'start-central-connector' not in self.record['operations']:
+            self.op('start-central-connector',lambda _:self.connector(self.new['web']))
         self.wait(lambda:self.marker('browser-after.json'),'PUBLIC_BROWSER_ACCEPTANCE',600)
         self.guard.check('before-task-proof')
         before,delegation=scoped_activity_baseline(self.task_before,self.guard.before)
@@ -297,5 +303,6 @@ def resume_final(tx,c):
     snapshots=list(root.glob('task-snapshot-*.json'));require(len(snapshots)==1,'ORIGINAL_TASK_SNAPSHOT_REQUIRED');r.task_before=tasks.Snapshot(public={},private=json.loads(snapshots[0].read_bytes()))
     r.previousRecovery=copy.deepcopy(state['runtimeRecovery']);r.previousManifest=json.loads((root/'supervisor-before.private.json').read_bytes());r.switched=r.old_stopped=True;r.worker_paused=r.app_drained=False
     r.guard=HistoricalEvidence(r);r.guard.before=json.loads((root/'retained-history-before.json').read_bytes());r.guard.sequence=len(list(root.glob('retained-history-[0-9]*.json')))
-    r.op('published-pair-reconciled',lambda _:{'sameWebWorker':True,'noRestart':True,'noBackupRepeat':True,'acceptanceMode':'preserved deferred NAS queue; original immediate-storage assumption corrected','previousFailureRetained':True})
+    if 'published-pair-reconciled' not in ops:
+        r.op('published-pair-reconciled',lambda _:{'sameWebWorker':True,'noRestart':True,'noBackupRepeat':True,'acceptanceMode':'preserved deferred NAS queue; original immediate-storage assumption corrected','previousFailureRetained':True})
     r.phase('PUBLIC_ACCEPTANCE');return r
