@@ -1,5 +1,23 @@
 [
   {
+    "version": "1793187130",
+    "title": {
+      "zh": "大图查看与稳定性修复",
+      "en": "Large-image viewing and stability fixes"
+    },
+    "improvements": [],
+    "fixes": [
+      {
+        "zh": "修复部分已生成的大图在参考工作台中查看失败的问题。",
+        "en": "Fixed failures when viewing some large generated images in the reference workspace."
+      },
+      {
+        "zh": "减少图片读取异常后的资源占用，改善长时间使用的稳定性。",
+        "en": "Reduced resource retention after image-read errors to improve stability during extended use."
+      }
+    ]
+  },
+  {
     "version": "1793180474",
     "title": {
       "zh": "画布图片显示与项目浏览优化",

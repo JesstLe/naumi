@@ -80,8 +80,8 @@ export async function serveMedia(request:Request,segs:string[]) {
   if (!verifiedMirror && storageDriver !== "local" && (!privateMedia || remoteReadable && (remoteMediaAccess === "proxy" || /\.(m3u8|mpd)$/i.test(rel)))) {
     try {
       const upstream = await fetchStoredObject(rel, request.headers.get("range") || "",request.signal);
-      if (privateMedia && upstream.status === 404) { remoteMissing=true;throw new Error("remote missing; try mirror"); }
-      if (privateMedia && !upstream.ok && upstream.status !== 416) throw new Error("remote unavailable; try mirror");
+      if (privateMedia && upstream.status === 404) { await upstream.body?.cancel().catch(()=>{});remoteMissing=true;throw new Error("remote missing; try mirror"); }
+      if (privateMedia && !upstream.ok && upstream.status !== 416) { await upstream.body?.cancel().catch(()=>{});throw new Error("remote unavailable; try mirror"); }
       const headers = new Headers();
       for (const name of [
         "accept-ranges",

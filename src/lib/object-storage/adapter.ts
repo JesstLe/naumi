@@ -54,7 +54,10 @@ export function createObjectStorage(config:StorageConfiguration):ObjectStorage {
     const signed=await signer().sign(endpoint(key),{...init,signal});
     // Keep the original cancellation signal on fetch itself, rather than
     // relying only on the signal cloned into the temporary signed Request.
-    return fetch(signed,{signal});
+    // Signed storage responses own a live transport stream. Next's data-cache
+    // clone can retain its other branch after the caller rejects/cancels a
+    // large object, so these reads must never enter that cache.
+    return fetch(signed,{signal,cache:'no-store'});
   }
   return {
     async put(key,bytes,type,cache){

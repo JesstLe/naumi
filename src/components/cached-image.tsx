@@ -1,6 +1,6 @@
 'use client';
 import { forwardRef, useEffect, useLayoutEffect, useRef, useState, useCallback, type ImgHTMLAttributes } from 'react';
-import { type BrowserImageReadOptions, acquireCanvasImageByteSlot, acquireBrowserImage, imageCacheAccount, imageCacheSource, publicCachedImage } from '@/lib/browser-image-cache';
+import { type BrowserImageReadOptions, acquireCanvasImageByteSlot, acquireBrowserImage, borrowActiveBrowserImage, imageCacheAccount, imageCacheSource, publicCachedImage } from '@/lib/browser-image-cache';
 
 type ImageLease = Awaited<ReturnType<typeof acquireBrowserImage>>;
 type Display = ImageLease & { identity: string; source: string; owner: string; revision: number };
@@ -9,6 +9,8 @@ type Props = ImgHTMLAttributes<HTMLImageElement> & {
   networkQueue?: BrowserImageReadOptions['networkQueue'];
   /** Same underlying asset across quality variants, never across different images. */
   imageIdentity?: string;
+  /** Opt-in first-frame handoff from an already authorized, visible image. */
+  reuseActivePreview?: boolean;
 };
 
 async function decodeImage(url: string, crossOrigin: Props['crossOrigin'], signal: AbortSignal) {
@@ -27,7 +29,7 @@ async function decodeImage(url: string, crossOrigin: Props['crossOrigin'], signa
 /** Keep an authorized, decoded frame until its replacement is ready. Byte
  * caching alone does not prevent a blank frame when React changes img.src. */
 export const CachedImage = forwardRef<HTMLImageElement, Props>(function CachedImage(
-  { src, loading, onError, onCacheSettled, networkQueue, imageIdentity, ...props }, forwarded,
+  { src, loading, onError, onCacheSettled, networkQueue, imageIdentity, reuseActivePreview, ...props }, forwarded,
 ) {
   const ref = useRef<HTMLImageElement | null>(null);
   const held = useRef<Display | null>(null), retired = useRef<ImageLease[]>([]);
@@ -77,6 +79,15 @@ export const CachedImage = forwardRef<HTMLImageElement, Props>(function CachedIm
     // React has committed the new src; only now release the previous Blob URL.
     for (const lease of retired.current.splice(0)) lease.release();
   }, [resolved]);
+  useLayoutEffect(() => {
+    if (!reuseActivePreview || !managed || !visible || !owner || typeof src !== 'string') return;
+    if (held.current?.identity === identity && held.current.owner === owner && held.current.revision === revision) return;
+    releaseDisplay();
+    const preview = borrowActiveBrowserImage(src);
+    if (!preview) return;
+    const next = { ...preview, identity, source: preview.source || managed, owner, revision };
+    held.current = next; setResolved(next);
+  }, [reuseActivePreview, src, managed, visible, identity, owner, revision, releaseDisplay]);
   useEffect(() => releaseDisplay, [releaseDisplay]);
   useEffect(() => {
     setDenied('');
@@ -94,6 +105,7 @@ export const CachedImage = forwardRef<HTMLImageElement, Props>(function CachedIm
       candidate.networkComplete?.();
       if (!managed) candidate.release(); // native byte slot is done after decode
       if (controller.signal.aborted) { candidate.release(); return; }
+      candidate.markDecoded?.();
       const next = { ...candidate, identity, source: managed || src, owner, revision };
       candidate = undefined; // display now owns this lease, not the request effect
       if (held.current) retired.current.push(held.current);
@@ -105,7 +117,10 @@ export const CachedImage = forwardRef<HTMLImageElement, Props>(function CachedIm
     return () => { controller.abort(); candidate?.release(); };
   }, [src, managed, controlled, identity, owner, visible, revision, networkQueue, props.crossOrigin, releaseDisplay]);
   const frame = src && resolved?.identity === identity && resolved.owner === owner && resolved.revision === revision ? resolved : null;
+  // Preview buttons already have an accessible name. A cold request must not
+  // paint broken-image alt text while it authorizes; error callbacks still run.
   return <img {...props} ref={attach} loading={loading}
+    style={reuseActivePreview && controlled && !frame ? { ...props.style, visibility: 'hidden' } : props.style}
     src={controlled ? (denied === src ? 'data:image/png;base64,invalid' : frame?.url) : src}
     data-browser-image-denied={denied === src ? 'true' : undefined}
     data-browser-image-cache={managed ? (frame?.url.startsWith('blob:') ? 'local' : 'pending') : 'native'}

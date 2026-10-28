@@ -1,4 +1,5 @@
 "use client";
+import {useCanvasTemplateImports} from "./use-canvas-template-imports";
 import {createCanvasTimelineActions} from "@/lib/canvas/timeline-actions";
 import {useTimelineNodes} from "./timeline/use-timeline-nodes";
 import {timelineInputChoices} from "@/lib/timeline/canvas";
@@ -716,55 +717,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 左下角缩放下拉菜单 + 可输入的缩放值
   const workspacePages=useCanvasWorkspacePages({commerceVisible,email:targetEmail||user?.email});
   const openModal=workspacePages.open;
+  // Import presentation belongs to this surface, independently of document
+  // ownership. Closing/reopening a modal or gallery must not steal later focus.
+  const importViewRef=useRef({browsing,creatingNew,stack:workspacePages.modalStack});
+  if(importViewRef.current.browsing!==browsing||importViewRef.current.creatingNew!==creatingNew||importViewRef.current.stack!==workspacePages.modalStack)importViewRef.current={browsing,creatingNew,stack:workspacePages.modalStack};
+  const importView=importViewRef.current,importViewCurrent=()=>importViewRef.current===importView;
   // 模板「做同款」→ 关弹窗 + 用模板图在画布里新建一个项目(独立根节点),选中后即可在画布内生成衍生
-  async function applyTemplateToCanvas(templateId: string) {
-    if (!user || readOnly) return;
-    resetImportScope();
-    workspacePages.close();
-    setBrowsing(false);
-    setCreatingNew(true); // 先进空白画布态,避免闪到旧项目;拿到新节点后自动切过去
-    setActiveKey(null);
-    setSelectedId(null);
-    try {
-      const res = await fetch(
-        `/api/templates?ids=${encodeURIComponent(templateId)}&pageSize=1`,
-        { cache: "no-store" }
-      );
-      const data = await res.json();
-      const list = (data.templates ?? []) as Artwork[];
-      const tpl =
-        list.find((t) => t.id === templateId) ?? (list[0] as Artwork | undefined);
-      if (!tpl) return;
-      const r = await privateFetchRaw("/api/artworks/add", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          email: user.email,
-          // 不传 parentId → 独立根节点 → 自成一个新项目(新画布)
-          src: {
-            image: tpl.image,
-            title: tpl.title || (tpl.prompt ? tpl.prompt.slice(0, 16) : "模板"),
-            category: tpl.category || "main",
-            prompt: tpl.prompt || "",
-            style: tpl.style,
-            ratio: tpl.ratio,
-            resolution: tpl.resolution,
-            templateId: tpl.id,
-            width: tpl.width,
-            height: tpl.height,
-          },
-        }),
-      });
-      const d = await expectJsonOk(r, t("canvas.genFail"));
-      if (!d?.id) throw new Error(t("canvas.genFail"));
-      if (d?.id) pendingNodeRef.current = d.id; // 切到新项目并选中该节点
-      const fresh = await mergeWorks(d?.id ? [d.id] : []);
-      pushAddUndo(d?.id ?? null, fresh);
-    } catch (e) {
-      setCreatingNew(false);
-      setBrowsing(true);
-      flashTip(e instanceof Error ? e.message : t("canvas.genFail"));
-    }
+  async function applyTemplateToCanvas(templateId:string){
+    if(!user||readOnly)return;
+    const scope=canvasArtworkDocument.scope;
+    try{await templateImports.apply(templateId);}
+    catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.genFail"));}
   }
   const canvasHistory = useCanvasHistory({
     account: canvasAccountRef.current, project: activeKey, readOnly,
@@ -774,6 +737,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     pending: applyPendingLinkHistory, applied: onHistoryApplied, warning: flashTip,
   });
   const {undoStack,redoStack,pushUndo,historyBusyRef,historySaving,setHistorySaving,historyCurrent} = canvasHistory;
+  const templateImports=useCanvasTemplateImports(canvasArtworkDocument.scope,{
+    writable:()=>!!user&&!readOnly,viewCurrent:importViewCurrent,merge:ids=>canvasArtworkDocument.merge(ids),history:canvasHistory,
+    open:(id,projectKey)=>{resetImportScope();workspacePages.close();setBrowsing(false);setCreatingNew(false);setActiveKey(projectKey);setSelectedId(id);setSelectedTextId(null);},
+  });
   const textTasks=useCanvasTextTasks(canvasTextDocument.scope,{
     document:canvasTextDocument,
     submit:(request,submission,scope)=>privateFetch("/api/canvas/text-generate",{method:"POST",headers:{"content-type":"application/json","x-naumi-billing-intent-slot":request.node.id,...(request.operationId?{"x-naumi-billing-operation-id":request.operationId}:{})},body:JSON.stringify(request.payload),submission,isCurrent:scope.viewCurrent}),
@@ -793,25 +760,27 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const email = targetEmail || user?.email;
     setWorkflowManifests([]);
     if (!email) return;
-    let cancelled = false;
-    void privateFetchRaw(`/api/canvas/workflow-import?email=${encodeURIComponent(email)}`).then(response => response.json()).then(data => {
-      if (!cancelled && Array.isArray(data.manifests)) setWorkflowManifests(current => Array.from(new Map([...data.manifests, ...current].map(m => [m.operationId, m])).values()));
+    let cancelled = false;const scope=canvasArtworkDocument.scope;
+    void canvasDocumentFetch({...scope,project:null},`/api/canvas/workflow-import?email=${encodeURIComponent(email)}`).then(response => response.json()).then(data => {
+      if (!cancelled && scope.documentCurrent() && Array.isArray(data.manifests)) setWorkflowManifests(current => Array.from(new Map([...data.manifests, ...current].map(m => [m.operationId, m])).values()));
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [targetEmail, user?.email]);
-  const workflowPaste = useWorkflowPaste({ email: user?.email, projectKey: creatingNew ? null : activeKey, browsing, readOnly,
-    onCommitted: result => {
+  }, [targetEmail, user?.email,canvasArtworkDocument.scope.workspace]);
+  const workflowPaste = useWorkflowPaste({scope:canvasArtworkDocument.scope,writable:()=>!!user&&!readOnly&&!browsing,viewCurrent:importViewCurrent,
+    onCommitted: (result,scope,present) => {
       const artworks = result.artworks as Artwork[];
       canvasArtworkDocument.accept(artworks);
       canvasTextDocument.accept(result.textNodes);
-      setWorkflowManifests(current => [...current.filter(m => m.operationId !== result.operationId), result.manifest]);
-      const settings = { ...nodeSettingsRef.current, ...result.settings }; nodeSettingsRef.current = settings; setNodeSettings(settings);
-      pushUndo({ kind: "workflow-add", artworks, textNodes: result.textNodes });
+      setWorkflowManifests(current => scope.documentCurrent()?[...current.filter(m => m.operationId !== result.operationId), result.manifest]:current);
+      setNodeSettings(current=>scope.documentCurrent()?{...current,...result.settings}:current);
+      canvasHistory.record({...scope,project:result.projectKey,key:JSON.stringify([scope.account,scope.workspace,result.projectKey])},{kind:"workflow-add",artworks,textNodes:result.textNodes});
+      if(!present)return;
       setCreatingNew(false); setActiveKey(result.projectKey); setSelectedId(null); setSelectedTextId(null);
       const missingAssets = artworks.filter(n => n.source === "workflow-placeholder").length;
       flashTip(missingAssets ? `工作流已导入，${missingAssets} 张图片待补齐` : result.missingReferences ? `工作流已导入，${result.missingReferences} 个外部引用未包含在选择中` : "工作流已导入");
       const ids = [...artworks.map(n => n.id), ...result.textNodes.map(n => n.id)];
-      window.requestAnimationFrame(() => window.requestAnimationFrame(() => void rfRef.current?.fitView({ nodes: ids.map(id => ({ id })), padding: 0.2, duration: 240, maxZoom: 1 })));
+      const expectedViewEpoch=canvasContextEpochRef.current+(scope.project===result.projectKey?0:1);
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => {if(scope.documentCurrent()&&canvasContextEpochRef.current===expectedViewEpoch&&activeProjectRef.current?.key===result.projectKey)void rfRef.current?.fitView({ nodes: ids.map(id => ({ id })), padding: 0.2, duration: 240, maxZoom: 1 });}));
     } });
   // 右键未选节点会先按桌面习惯单选；若用户随后点“加入批量选择”，
   // 仍可恢复右键前的选择集合并把当前节点加入其中。

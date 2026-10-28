@@ -1,18 +1,24 @@
 import { NextResponse } from "next/server";
 import { authenticatedEmail, authorizedTargetEmail } from "@/lib/request-auth";
 import { dbEnabled } from "@/platform/db/pool";
-import { importCanvasWorkflow, listWorkflowManifests, workflowImportRequest } from "@/lib/canvas-workflow-import";
+import { importCanvasWorkflow, readCanvasWorkflowImport, listWorkflowManifests, workflowImportRequest } from "@/lib/canvas/workflow-import";
 import { readWorkflowClipboard, WORKFLOW_CLIPBOARD_LIMIT } from "@/lib/canvas/workflow-clipboard";
 import { rateLimit } from "@/lib/rate-limit";
-import {withCreationRoute} from '@/lib/saas/creation-context';
+import {withCreationRoute,withCreationReceiptRoute} from '@/lib/saas/creation-context';
 import {withCreationOperation} from '@/lib/saas/creation-writer';
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+async function handleGet(request: Request) {
   const email = await authorizedTargetEmail(request, new URL(request.url).searchParams.get("email"), true);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   if (!dbEnabled) return NextResponse.json({ manifests: [] });
+  const operationId=new URL(request.url).searchParams.get("operationId");
+  if(operationId){
+    if(!workflowImportRequest.shape.operationId.safeParse(operationId).success)return NextResponse.json({error:"导入编号无效"},{status:400});
+    try{const result=await readCanvasWorkflowImport(email,operationId);return result?NextResponse.json({result}):NextResponse.json({error:"尚无导入回执"},{status:404});}
+    catch{return NextResponse.json({error:"这次导入已撤销或暂未同步，请检查原画布"},{status:409});}
+  }
   return NextResponse.json({ manifests: await listWorkflowManifests(email) });
 }
 async function handlePost(request: Request) {
@@ -54,3 +60,5 @@ async function handlePost(request: Request) {
   return new Response(stream, { headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store", "x-accel-buffering": "no" } });
 }
 export function POST(request:Request){return withCreationRoute(request,()=>handlePost(request));}
+
+export function GET(request:Request){return withCreationReceiptRoute(request,()=>handleGet(request));}
