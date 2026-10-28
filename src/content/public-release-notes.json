@@ -1,5 +1,36 @@
 [
   {
+    "version": "1793164841",
+    "title": {
+      "zh": "画布创作与音频编辑更新",
+      "en": "Canvas creation and audio editing update"
+    },
+    "improvements": [
+      {
+        "zh": "新增音频节点，可剪辑音频、调整音量与淡入淡出，并将采用的结果连接到视频创作。",
+        "en": "New audio nodes let you trim audio, adjust volume and fades, and connect adopted results to video creation."
+      },
+      {
+        "zh": "已有图片可在原节点重新生成，并通过版本历史查看、切换和撤销结果。",
+        "en": "Regenerate an existing image in place, then review, switch and undo results through version history."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "修复自动比例下部分生成报价不显示、重试后仍不可用的问题。",
+        "en": "Fixed missing generation prices with automatic aspect ratios, including failed price refreshes."
+      },
+      {
+        "zh": "修复连续生成或恢复任务时，已完成图片意外移动的问题。",
+        "en": "Fixed completed images moving unexpectedly during consecutive generation or task recovery."
+      },
+      {
+        "zh": "改善图片生成的参数兼容与失败诊断，减少无明确原因的失败。",
+        "en": "Improved image parameter compatibility and failure diagnostics to reduce unexplained failures."
+      }
+    ]
+  },
+  {
     "version": "1793021601",
     "title": {
       "zh": "通知公告与创作记录体验升级",
