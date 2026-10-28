@@ -1,5 +1,5 @@
 import { enterpriseSiteIdentity } from '@/lib/site-control/identity';
-import { enterpriseAdminLocation } from '@/lib/site-control/enterprise-navigation';
+import { enterpriseAdminLocation, enterpriseRequestUrl } from '@/lib/site-control/enterprise-navigation';
 import { NextResponse, type NextRequest } from "next/server";
 import { featureRequestGate, ACCESS_HEADERS, accessJson } from "@/lib/feature-access/server";
 import { requestRequirement } from "@/lib/feature-access/catalog";
@@ -29,18 +29,18 @@ export async function middleware(req: NextRequest) {
     if (path.startsWith('/admin/')) {
       // Node middleware's internal URL may use localhost. Preserve the request
       // authority so the redirect retains the browser's host-scoped cookie.
-      const origin=new URL(req.url);origin.host=req.headers.get('host')||origin.host;if(req.headers.get('x-forwarded-proto')==='https')origin.protocol='https:';
+      const origin=enterpriseRequestUrl(req.url,req.headers.get('host'),req.headers.get('x-forwarded-proto'));
       return NextResponse.redirect(new URL(enterpriseAdminLocation(path,req.nextUrl.searchParams),origin),{status:307,headers:ACCESS_HEADERS});
     }
     if (path === '/' || path === '/enterprise/workflow') {
-      const target=req.nextUrl.clone();target.pathname=path==='/'?'/dashboard':'/enterprise';
+      const target=enterpriseRequestUrl(req.url,req.headers.get('host'),req.headers.get('x-forwarded-proto'));target.pathname=path==='/'?'/dashboard':'/enterprise';
       return NextResponse.redirect(target,{status:307,headers:ACCESS_HEADERS});
     }
   }
   const headers = new Headers(req.headers);
   headers.set("x-pathname", req.nextUrl.pathname);
   if((['/enterprise/workflow','/enterprise/workspace'].includes(path)||dedicated&&['/enterprise','/admin'].includes(path))&&!await resolveUserEmail(req)){
-    const login=req.nextUrl.clone();login.pathname='/sign-in';login.search='?redirect='+encodeURIComponent(path);
+    const login=enterpriseRequestUrl(req.url,req.headers.get('host'),req.headers.get('x-forwarded-proto'));login.pathname='/sign-in';login.search='?redirect='+encodeURIComponent(path);
     return NextResponse.redirect(login,{status:307,headers:ACCESS_HEADERS});
   }
   let protectedRoute;

@@ -93,8 +93,9 @@ class Release(shared.Release):
 
     def finish(self):
         self.wait(lambda:(self.worker(self.new['worker'],'status').get('lastTick') or {}).get('phase')=='complete','NEW_WORKER_RECEIPT',120)
-        self.acceptance(storage=True);self.guard.check('after-public')
-        self.op('bind-current-recovery',lambda op:prior.Release.bind_recovery(self,op))
+        if not self.c.get('resumeFinal'):
+            self.acceptance(storage=True);self.guard.check('after-public')
+            self.op('bind-current-recovery',lambda op:prior.Release.bind_recovery(self,op))
         self.wait(lambda:self.marker('browser-after.json'),'PUBLIC_BROWSER',600)
         self.op('proof-worker-barrier',lambda _:self.worker(self.new['worker'],'drain'))
         try:
@@ -119,14 +120,61 @@ class Release(shared.Release):
             self.phase('CLEANUP_PENDING',gatewaySwitched=True,databaseRestored=False,tasksReplayed=False)
         else:super().rollback()
 
+def resume_final(tx,c):
+    """Finish a verified published pair after browser acceptance timeout."""
+    root=tx.folder;raw=shared.CANON.read_bytes();state=json.loads(raw)
+    require(sha(raw)==c['canonicalSha256'] and state['revision']==c['canonicalRevision'],'FINAL_CANONICAL_CHANGED')
+    original=json.loads((root/'release-config.private.json').read_bytes())
+    ignore={'resumeFinal','canonicalSha256','canonicalRevision','toolsCommit'}
+    require({k:v for k,v in c.items() if k not in ignore}=={k:v for k,v in original.items() if k not in ignore},'PUBLISHED_SCOPE_CHANGED')
+    record=state['siteControlReleases'][c['releaseId']];ops=record['operations']
+    require(record['phase']=='CLEANUP_PENDING' and record.get('gatewaySwitched') is True and all(v['phase']=='ACKNOWLEDGED' for v in ops.values()),'PUBLISHED_ACKNOWLEDGED_PAIR_REQUIRED')
+    require(ops['gateway-switch']['receipt']['afterDumpSha256']==sha(tx.run(['nginx','-T'])),'PUBLISHED_GATEWAY_CHANGED')
+    require('bind-current-recovery' in ops and json.loads((root/'storage-acceptance.json').read_bytes()).get('passed') is True,'PRIOR_ACCEPTANCE_REQUIRED')
+    r=Release.__new__(Release);r.tx=tx;r.c=c;r.root=root;r.state=state;r.record=record;r.disk=sha(raw);r.initial=raw;r.extra=[]
+    r.rows=json.loads(tx.run(['docker','inspect',*tx.run(['docker','ps','-aq','--no-trunc']).decode().split()]));r.byname={v['Name'].lstrip('/'):v for v in r.rows}
+    r.old={k:r.byname[n] for k,n in c['oldNames'].items()};r.new={k:r.byname[n] for k,n in c['newNames'].items()}
+    for k,v in r.old.items():require(not v['State']['Running'] and v['Id']==c['oldPins'][k]['id'] and v['HostConfig']['RestartPolicy']['Name']=='no','OLD_INSTANCE_NOT_RETIRED')
+    for k,v in r.new.items():require(v['State']['Running'] and v['Image']==c['image'] and v['Id']==ops[k+'-create']['receipt']['id'] and environment(v)['SOURCE_COMMIT']==c['commit'],'PUBLISHED_INSTANCE_CHANGED')
+    require({v['Id'] for v in r.rows if v['State']['Running']}==set(c['runningIds'])-{v['Id'] for v in r.old.values()}|{v['Id'] for v in r.new.values()},'UNREVIEWED_RUNNING_INSTANCE')
+    r.db=r.byname['naumi-staging-db-1'];r.de=environment(r.db);r.configuration=json.loads((root/'configuration-before.json').read_bytes());r.cookies=json.loads((root/'acceptance-identities.private.json').read_bytes());r.cookie=r.cookies['owner']
+    r.task_before=prior.original_task_snapshot(root);r.collector=prior.current_activity_collector([c['oldNames']['web'],c['newNames']['web']]);r.switched=r.old_stopped=True;r.worker_paused=r.app_drained=False
+    r.guard=prior.HistoricalEvidence(r);r.guard.before=json.loads((root/'retained-history-before.json').read_bytes());r.guard.sequence=len(list(root.glob('retained-history-[0-9]*.json')))
+    r.op('published-pair-reconciled',lambda _:{'sameWebWorker':True,'backupRepeated':False,'previousFailureRetained':True})
+    return r
+
+def canonicalize_redirects(r):
+    """Normalize only this app's internal-port Location headers at its gateway."""
+    compat=shared.compat;r.dump=r.tx.run(['nginx','-T']).decode();parsed=compat.Dump(r.dump)
+    r.before={p:pathlib.Path(p).read_bytes() for p in parsed.files};r.real={p:str(pathlib.Path(p).resolve()) for p in r.before};edits={}
+    directive='\n    proxy_redirect https://$host:3000/ https://$http_host/;\n    proxy_redirect http://$host:3000/ $scheme://$http_host/;\n'
+    for name,nodes in parsed.nodes.items():
+        for node in compat.walk(nodes):
+            if node.name!='location' or not any(n.name=='proxy_pass' and n.args==['http://127.0.0.1:'+str(r.c['newPort'])] for n in node.children or []):continue
+            require(not any(n.name=='proxy_redirect' for n in node.children),'EXISTING_REDIRECT_RULE_REVIEW_REQUIRED')
+            at=node.closing;require(type(at) is int,'LOCATION_CLOSING_REQUIRED');edits.setdefault(name,[]).append((at,at,directive))
+    require(edits,'NO_APP_GATEWAY_LOCATION');r.afterdump,r.after=shared.render_file_edits(r.dump,r.before,edits)
+    shared.syntax_check(r.tx,r.after,r.root/'isolated-redirect-check')
+    r.op('canonicalize-public-redirects',lambda _:r.gateway())
+    def bind(_):
+        recovery=prior.recovery;p=r.root/'supervisor-manifest.private.json';m=json.loads(p.read_bytes())
+        require(sha(recovery.encoded(m))==r.state['runtimeRecovery']['manifestSha256'],'RECOVERY_MANIFEST_CHANGED')
+        m['gatewayDumpSha256']=sha(r.tx.run(['nginx','-T']));r.tx.save(p.name,m);r.state['runtimeRecovery']['manifestSha256']=sha(recovery.encoded(m));r.persist();recovery.recovery_binding(r.state,m)
+        result=recovery.Supervisor(m,pathlib.Path(m['journalDir']),recovery.Adapter(r.tx,m)).once();r.tx.save('redirect-recovery-acceptance.json',result)
+        return {'manifestSha256':sha(recovery.encoded(m)),'sameInstances':True,'gatewayOnly':True}
+    r.op('refresh-gateway-recovery',bind);r.phase('PUBLIC_ACCEPTANCE')
+
 def main(config):
     import fcntl
     c=json.loads(pathlib.Path(config).read_bytes());validate(c)
     with HostTransaction(c['target'],shared.HOSTS[c['target']],c['evidenceRoot']) as tx:
         with open(shared.CANON.parent/'.lifecycle.lock','a+') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-            r=Release(tx,c)
-            try:r.prepare();r.candidates();r.acceptance();r.assets();r.switch();r.finish()
+            r=resume_final(tx,c) if c.get('resumeFinal') else Release(tx,c)
+            try:
+                if c.get('resumeFinal'):canonicalize_redirects(r)
+                else:r.prepare();r.candidates();r.acceptance();r.assets();r.switch()
+                r.finish()
             except BaseException:r.rollback();raise
 
 if __name__=='__main__':
