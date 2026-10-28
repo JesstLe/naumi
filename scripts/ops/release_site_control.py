@@ -388,6 +388,9 @@ def resume_after_worker_start(tx,c):
 def main(config):
     import fcntl
     c=json.loads(pathlib.Path(config).read_bytes())
+    if c.get('target')=='47.105.59.142' and c.get('releaseMode')=='BLUE_GREEN_HISTORY':
+        from release47_enterprise_history import main as history_main
+        return history_main(config)
     if c.get('target')=='47.105.59.142' and c.get('releaseMode')=='STOP_OLD_REPLACE':
         from release47_site_single import main as single_main
         return single_main(config)
