@@ -1,5 +1,5 @@
 """Blue/green successor for the already dedicated 47 site; no site bootstrap."""
-import base64,datetime as dt,fcntl,hashlib,hmac,json,pathlib,re,time,uuid
+import base64,datetime as dt,hashlib,hmac,json,pathlib,re,time,uuid
 import release_site_control as shared
 import release47_site_single as prior
 import release103_refactor as base
@@ -120,6 +120,7 @@ class Release(shared.Release):
         else:super().rollback()
 
 def main(config):
+    import fcntl
     c=json.loads(pathlib.Path(config).read_bytes());validate(c)
     with HostTransaction(c['target'],shared.HOSTS[c['target']],c['evidenceRoot']) as tx:
         with open(shared.CANON.parent/'.lifecycle.lock','a+') as lock:
