@@ -5,9 +5,9 @@ import { getPool, listArtworksByIds, type ArtworkRecord } from "../db";
 import { characterReferenceText, frozenCharacterInputIdentity, parseCharacterInputIdentity, type CharacterProject } from "../character/project";
 import { ModelConfigError } from "../model-config/types";
 import { assertCreationProjectInput } from "../saas/creation-context";
-import { assertCreationObjectRefs } from "../saas/creation-writer";
-import { remapVideoPromptReferences } from "../video/prompt-references";
-import { numberVideoInputs, type OrderedInput } from "../video/references";
+import { assertCreationObjectRefs, assertCreationInputsTx } from "../saas/creation-writer";
+import { expandCharacterReferences } from "../character/references";
+import type { OrderedInput } from "../video/references";
 import { ensureCharacterNodeSchema, mapCharacterNode } from "./character-node-repository";
 
 function unavailable(message = "角色或外观不存在，或无权访问"): never {
@@ -33,6 +33,7 @@ export async function authorizeCharacterImages(actor: string, character: Charact
 export async function lockCharacterImagesTx(client: PoolClient, actor: string, character: CharacterProject) {
   const ids = characterImageIds(character);
   if (!ids.length) return;
+  await assertCreationInputsTx(client, actor, ids);
   const rows = (await client.query("SELECT id,status,image_url,video_url FROM app_artworks WHERE email=$1 AND id=ANY($2::text[]) AND deleted_at IS NULL FOR SHARE", [actor, ids])).rows;
   assertImages(ids, rows.map(row => ({ id: String(row.id), status: row.status, image: row.image_url, videoUrl: row.video_url })));
 }
@@ -70,32 +71,14 @@ export async function authorizeCharacterInputs(actor: string, inputs: readonly O
 export async function resolveCharacterVideoInputs(actor: string, inputs: readonly OrderedInput[], prompt: string) {
   const resolved = await loadCharacterInputs(actor.toLowerCase(), inputs);
   if (!resolved.length) return { inputs: [...inputs], prompt, characters: [] };
-  const byInput = new Map(resolved.map(binding => [binding.input.id, binding]));
-  const expanded: OrderedInput[] = [];
-  const imageInputs = new Map<string, string[]>();
-  for (const input of inputs) {
-    const binding = byInput.get(input.id);
-    if (!binding) { expanded.push({ ...input }); continue; }
-    expanded.push({ ...input, value: characterReferenceText(binding.node.character, binding.appearanceId) });
-    const ids: string[] = [];
-    for (const image of binding.images) {
-      const id = `character-ref-${createHash("sha256").update(JSON.stringify([input.id, image.id])).digest("hex").slice(0, 40)}`;
-      expanded.push({ id, nodeId: image.id, kind: "image", role: "reference", value: image.image });
-      ids.push(id);
-    }
-    imageInputs.set(input.id, ids);
-  }
-  // Existing markers keep the same source identity even though expansion moves
-  // later media. Only after remapping do live roles become immutable inline text.
-  const nextPrompt = remapVideoPromptReferences(prompt, inputs, expanded);
-  const numbering = numberVideoInputs(expanded);
-  const imageNumbers = new Map(numbering.byKind.image.map(input => [input.id, input.kindIndex]));
-  const frozen = expanded.map(input => {
-    const binding = byInput.get(input.id);
-    if (!binding) return input;
-    const images = imageInputs.get(input.id) || [];
-    const legend = images.length ? `角色参考：${images.map(id => `图片${imageNumbers.get(id)}`).join("、")}` : "";
-    return { ...input, nodeId: frozenCharacterInputIdentity(binding.id, binding.appearanceId, binding.node.revision), value: [input.value, legend].filter(Boolean).join("\n") };
-  });
-  return { inputs: frozen, prompt: nextPrompt, characters: resolved.map(binding => ({ id: binding.id, appearanceId: binding.appearanceId, revision: binding.node.revision })) };
+  const definitions = resolved.map(binding => ({
+    inputId: binding.input.id,
+    text: characterReferenceText(binding.node.character, binding.appearanceId),
+    frozenNodeId: frozenCharacterInputIdentity(binding.id, binding.appearanceId, binding.node.revision),
+    images: binding.images.map(image => ({
+      inputId: `character-ref-${createHash("sha256").update(JSON.stringify([binding.input.id, image.id])).digest("hex").slice(0, 40)}`,
+      artworkId: image.id, value: image.image,
+    })),
+  }));
+  return {...expandCharacterReferences(inputs, prompt, definitions), characters: resolved.map(binding => ({id: binding.id, appearanceId: binding.appearanceId, revision: binding.node.revision}))};
 }

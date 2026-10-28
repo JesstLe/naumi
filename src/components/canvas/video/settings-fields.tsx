@@ -1,4 +1,5 @@
 "use client";
+import {previewCharacterInputs} from "@/lib/character/canvas";
 import {useVideoI18n} from "./i18n";
 import { useState } from "react";
 import type { OrderedInput } from "@/lib/video/references";
@@ -39,7 +40,8 @@ export function VideoSettingsFields({ config, inputs, models, choices, nodeId, e
     const byoc = useVideoByocCatalog(email), workflow = byoc.catalog?.workflows.find(item => item.id === config.comfyWorkflowId);
     const cap = catalogCapability(selectedVideoCatalogModel(models,config));
     const preview = (() => { try {
-        return compileVideoPrompt(config.prompt || "", inputs, compileVideoCamera(config.camera)).prompt;
+        const expanded = previewCharacterInputs(inputs, config.prompt || "", choices);
+        return compileVideoPrompt(expanded.prompt, expanded.inputs, compileVideoCamera(config.camera)).prompt;
     }
     catch (cause) {
         return cause instanceof Error ? cause.message : "引用无效";

@@ -13,14 +13,14 @@ function load(source) {
   return module.exports;
 }
 const menu = load(`export {canvasNodeMenuItems} from './src/components/canvas/node-menu-items';`).canvasNodeMenuItems;
-assert.equal(menu({ L: zh => zh, readOnly: false, videoDisabled: false, onCreate() {} }).find(item => item.id === 'character').disabled, true);
+assert.equal(menu({ L: zh => zh, readOnly: false, videoDisabled: false, onCreate() {} }).find(item => item.id === 'character').disabled, mode !== 'MODIFIED');
 if (mode !== 'MODIFIED') {
   assert.equal(fs.existsSync(path.join(root, 'src/lib/character/project.ts')), false);
   assert.equal(fs.existsSync(path.join(root, 'src/app/api/canvas/character-nodes/route.ts')), false);
   console.log(`${mode}_CHARACTER=PASS MENU=DISABLED MODEL=ABSENT API=ABSENT EXISTING_VIDEO_DIRECTOR=PRESERVED EXIT=0`);
   process.exit(0);
 }
-const lib = load(`export * from './src/lib/character/project';export * from './src/lib/canvas/character-node-schema';export {orderedInputSchema} from './src/lib/video/references';`);
+const lib = load(`export * from './src/lib/character/project';export * from './src/lib/character/canvas';export * from './src/lib/canvas/character-node-schema';export {remapVideoPromptReferences} from './src/lib/video/prompt-references';export {orderedInputSchema} from './src/lib/video/references';export {validateVideoSettings} from './src/lib/video/client-settings';`);
 let cases = 0;
 const check = action => { action(); cases++; };
 const project = lib.newCharacterProject('林舟');
@@ -47,4 +47,20 @@ check(() => {
 });
 check(() => assert.equal(lib.characterNodeWriteSchema.safeParse({ id: 'role-a', expectedRevision: 0, operationId: '11111111-1111-4111-8111-111111111111', character: changed, x: 0, deleted: false }).success, true));
 check(() => assert.equal(lib.characterNodeWriteSchema.safeParse({ id: 'role-a', expectedRevision: 0, operationId: '11111111-1111-4111-8111-111111111111', character: changed, x: Infinity }).success, false));
-console.log(`CHARACTER_CORE_RULES=PASS CASES=${cases} IDENTITY=STABLE APPEARANCES=EXPLICIT FROZEN_REVISION=PASS LEGACY_INPUT_WIRE=COMPATIBLE MENU=STILL_DISABLED UI=PENDING EXIT=0`);
+const record = {id:'role-a',projectKey:'tree:role-a',revision:1,title:changed.name,x:0,y:0,width:320,height:300,character:changed,deletedAt:null,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+const media = [{id:'image-a',nodeId:'image-a',kind:'image',title:'Photo',value:'/media/photo.png',available:true}];
+check(() => { const choices=lib.characterInputChoices([record],media);assert.equal(choices.length,2);assert.equal(choices[1].category,'character');assert.equal(choices[1].nodeId,'character:role-a#coat');assert.equal(choices[1].available,true);assert.equal(choices[1].thumbnail,'/media/photo.png'); });
+check(() => assert.equal(lib.characterInputChoices([record],[])[1].available,false));
+check(() => assert.equal(lib.characterInputChoices([{...record,deletedAt:new Date().toISOString()}],media).length,0));
+const input={id:'role-reference',nodeId:'character:role-a#base',kind:'text',role:'context',value:'Role'};
+check(() => assert.equal(lib.remapVideoPromptReferences('Follow {{ref 1}}',[input],[{...input,nodeId:'character:role-a#coat'}]),'Follow {{ref 1}}'));
+check(() => assert.equal(lib.remapVideoPromptReferences('Follow {{ref 1}}',[input],[{...input,nodeId:'character:role-b#base'}]),'Follow {{ref 0}}'));
+check(() => assert.equal(menu({L:zh=>zh,readOnly:true,videoDisabled:false,onCreate(){}}).find(item=>item.id==='character').disabled,true));
+const roleInput={...input,nodeId:'character:role-a#coat'},roleChoices=[...media,...lib.characterInputChoices([record],media)];
+const config={modelId:'video-a',mode:'reference',prompt:'Follow {{ref 1}}',durationSeconds:4,resolution:'720p',aspectRatio:'16:9'};
+const cap={sources:{},modes:['reference'],durationResolutionMap:[{durations:[4],resolutions:['720p']}],aspectRatios:['16:9'],limits:{images:1}};
+check(() => {const preview=lib.previewCharacterInputs([roleInput],config.prompt,roleChoices);assert.equal(preview.inputs.length,2);assert.ok(preview.inputs[0].value.includes('角色参考：图片1'));assert.equal(preview.inputs[1].nodeId,'image-a');});
+check(() => assert.equal(lib.validateVideoSettings(config,[roleInput],cap,roleChoices),null));
+check(() => assert.match(lib.validateVideoSettings(config,[roleInput],{...cap,limits:{images:0}},roleChoices),/数量/));
+check(() => assert.match(lib.validateVideoSettings(config,[roleInput],cap,[]),/不可用/));
+console.log(`CHARACTER_CORE_RULES=PASS CASES=${cases} IDENTITY=STABLE APPEARANCES=EXPLICIT FROZEN_REVISION=PASS LEGACY_INPUT_WIRE=COMPATIBLE MENU=WRITABLE_ONLY UI_CODE=IMPLEMENTED EXIT=0`);

@@ -7,6 +7,7 @@ import path from "node:path";
 import { Client, Pool } from "pg";
 import { newCharacterProject, characterInputIdentity } from "../src/lib/character/project";
 import { createVideoFixture, CAP_RICH } from "./video-fusion/harness";
+import { verifyCharacterInteractions } from "./verify-character-native-interactions";
 import { prepareVideoAssets } from "./video-fusion/assets.mjs";
 
 /** Real local app/DB/task/worker/media/billing. Suppliers are isolated fixtures, not paid providers. */
@@ -128,8 +129,10 @@ async function main() {
     const replayAfterRemoval = await h.request<any>("a", "POST", "/api/canvas/character-nodes", create); assert.equal(replayAfterRemoval.status, 201, JSON.stringify(replayAfterRemoval.body)); assert.equal(replayAfterRemoval.body.node.revision, 1);
     assert.equal((await h.request("a", "GET", `/api/canvas/character-nodes/${id}`)).status, 404);
     assert.equal(h.supplierCalls().filter(call => call.phase === "create").length, 2);
-    await writeFile(path.join(out, "result.json"), JSON.stringify({ realApp: true, realPostgres: true, realWorkerStorageBilling: true, characterRevisionOneWinner: true, crossAccount404: true, forgedClientDefinitionIgnored: true, expandedReferenceOrderStable: true, roleAndAppearanceIdentityFrozen: true, laterEditLeavesOldTaskUnchanged: true, twoNodesReuseSameRole: true, savedReplayAfterDependencyDeletion: true, acceptedTaskReplayAfterRoleDeletion: true, missingRoleNoCharge: true, privateOutputHash: true, simulatedSupplierCreates: 2, paidCalls: 0, uiTested: false, menuEnabled: false, taskIds: [first.task.id, second.task.id] }, null, 2));
-    console.log("CHARACTER_CORE_APPLICATION=PASS REAL_APP_DB_WORKER_STORAGE_BILLING=PASS REVISION=ONE_WINNER CROSS_ACCOUNT=404 SERVER_ROLE=TRUSTED EXPANDED_ORDER=STABLE SNAPSHOTS=IMMUTABLE TWO_NODE_REUSE=PASS REPLAY_AFTER_DELETE=PASS MISSING_ROLE=NO_CHARGE MEDIA_HASH=PASS SIMULATED_CREATES=2 PAID_CALLS=0 UI=PENDING");
+    const interactions = await verifyCharacterInteractions(h, out, secondId);
+    assert.equal(h.supplierCalls().filter(call => call.phase === "create").length, 5);
+    await writeFile(path.join(out, "result.json"), JSON.stringify({ realApp: true, realPostgres: true, realWorkerStorageBilling: true, characterRevisionOneWinner: true, crossAccount404: true, forgedClientDefinitionIgnored: true, expandedReferenceOrderStable: true, roleAndAppearanceIdentityFrozen: true, laterEditLeavesOldTaskUnchanged: true, twoNodesReuseSameRole: true, savedReplayAfterDependencyDeletion: true, acceptedTaskReplayAfterRoleDeletion: true, missingRoleNoCharge: true, privateOutputHash: true, simulatedSupplierCreates: 5, paidCalls: 0, uiTested: true, menuEnabled: true, interactions, taskIds: [first.task.id, second.task.id] }, null, 2));
+    console.log("CHARACTER_APPLICATION=PASS REAL_APP_DB_WORKER_STORAGE_BILLING=PASS REVISION=ONE_WINNER CROSS_ACCOUNT=404 SERVER_ROLE=TRUSTED EXPANDED_ORDER=STABLE SNAPSHOTS=IMMUTABLE TWO_NODE_REUSE=PASS REPLAY_AFTER_DELETE=PASS MISSING_ROLE=NO_CHARGE MEDIA_HASH=PASS UI_CREATE_UPLOAD_LOOKS_DRAG_LOCK_COPY_DELETE_UNDO_REDO=PASS HANDLE_AND_MENTION=PASS MIXED_HISTORY=ATOMIC WORKFLOW_FROZEN_AFTER_EDIT_DELETE=PASS SIMULATED_CREATES=5 PAID_CALLS=0 PAGE_ERRORS=0");
   } catch (error) {
     if (container) {
       const logs = spawnSync("docker", ["logs", container], { encoding: "utf8", windowsHide: true });
