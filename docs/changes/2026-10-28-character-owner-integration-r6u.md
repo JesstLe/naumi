@@ -25,3 +25,5 @@
 初次类型检查定位accept端口、旧复制方法名、节点记录可选字段和bindActualCreationProject的实际导入owner；已针对真实调用方修正。首次命令用npx交给Windows无shell子进程在创建进程前失败，改为直接node运行本地typescript；原记录保留。脚本接线时的断言/准备失败不冒充业务故障，失败记录不覆盖。
 
 当前实现集中验收尚在进行，不称全片或整体重构完成；四产物、4707原hash独立副本回滚、Git/远端及自有资源清理以本片DELIVERY为最终回执。完整原角色业务记录保留在2026-10-27-character-native.md，后续仍有Canvas/助手外围编排、最终整合与性能容量验收。
+
+首轮固定66a171aa的core为14通过／1失败／48未执行：持久化验收元数据仍按38个启动owner，新角色已使实际启动变39；补充版本化39-step预期及可选角色owner冷/热校验，未删除原冷启动、真实故障重试、在途账务保留断言。新增纯owner测试的首个失败是video fixture缺projectKey导致未进入当前项目投影，已补真实项目字段；原失败留证。结构观察器首次使用Windows默认GBK读Node UTF-8输出，改为显式UTF-8。

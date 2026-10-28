@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {readFile} from "node:fs/promises";
+import {readFile,access} from "node:fs/promises";
 import {createHash} from "node:crypto";
 import path from "node:path";
 import vm from "node:vm";
@@ -32,5 +32,5 @@ export function persistenceOwnerLoader(root:string,modern:boolean){
   vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,ports,{filename:owner.from});
   projections.push({file:owner.from,name:owner.name,sha256:createHash("sha256").update(fn.getText(sf)).digest("hex")});return (evaluated.exports as {run:(pool?:Pool)=>Promise<unknown>}).run;
  }
- return {projections,async all(pool:Pool){for(const owner of PERSISTENCE_OWNERS){const key=owner.from+":"+owner.name;let pending=loaded.get(key);if(!pending){pending=resolve(owner);loaded.set(key,pending);}const fn=await pending;assert.equal(typeof fn,"function",key);await fn(owner.pool?pool:undefined);}}};
+ return {projections,async all(pool:Pool){const owners=[...PERSISTENCE_OWNERS];if(modern&&await access(path.join(root,"src/lib/canvas/character-node-schema.ts")).then(()=>true,()=>false))owners.push({from:"src/lib/canvas/character-node-repository.ts",to:"src/lib/canvas/storage-schema.ts",name:"ensureCharacterNodeSchema",newName:"ensureCharacterNodeSchema"});for(const owner of owners){const key=owner.from+":"+owner.name;let pending=loaded.get(key);if(!pending){pending=resolve(owner);loaded.set(key,pending);}const fn=await pending;assert.equal(typeof fn,"function",key);await fn(owner.pool?pool:undefined);}}};
 }
