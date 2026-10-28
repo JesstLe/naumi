@@ -31,4 +31,10 @@
 
 ## 验证与未完成项
 
-本轮证据统一保存在忽略目录 `E:/Workspace/naumi/output/canvas-result-placement-fix-20261028/`。完整4221个原文件及hash已归档；提交、最终验证和清理由 `VERIFICATION.txt` / `DELIVERY.json` 记录。47未发布，本轮不执行SSH、供应商调用或线上数据修正。旧页面已加载的JS不因Git合并自动更换，不将本地修复说成线上已生效。
+本轮证据统一保存在忽略目录 `E:/Workspace/naumi/output/canvas-result-placement-fix-20261028/`。完整4221个原文件及hash已归档；提交、最终验证和清理由 `VERIFICATION.txt` / `DELIVERY.json` 记录。47未发布，坐标修复未修改线上数据；后续报价只读诊断和 Gemini 独立纯色探针分别见对应模块记录。旧页面已加载的JS不因Git合并自动更换，不将本地修复说成线上已生效。
+
+## 主线协作整合
+
+已普通整合主线 `cfb6f80033fd89885f1337d6fbe83d82c663e253` 的图片原位重生成/版本历史，四处同文件冲突逐项合并：保留原位 attachment/修订校验与 workspace revision，同时保留本次 `fresh` 快照凭据收尾和 partial/needs_attention 保留规则；原位续交在异步鉴权/读取后复核上下文。专项 VM 增补已有 workspace revision 接口，未移除原断言。
+
+副本回滚以该整合前主线为基线，仅撤销本任务路径的差异，不撤销别人的原位重生成功能。最初 `87695ea3` 全量原 hash/源码继续保留；整合基线与回滚 hash 单独记录。
