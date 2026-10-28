@@ -1,5 +1,19 @@
 [
   {
+    "version": "1793204789",
+    "title": {
+      "zh": "团队使用体验优化",
+      "en": "Team experience improvements"
+    },
+    "improvements": [],
+    "fixes": [
+      {
+        "zh": "优化功能未开放时的页面反馈，减少无效请求与错误提示。",
+        "en": "Improve feedback for unavailable features and avoid unnecessary requests and errors."
+      }
+    ]
+  },
+  {
     "version": "1793200513",
     "title": {
       "zh": "协作交付体验更新",

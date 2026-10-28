@@ -191,6 +191,8 @@ class Release(base.Release):
         if union.exists():
             require(self.c.get('resumeCandidate')=='gateway','STATIC_UNION_ALREADY_EXISTS');compat.verify_assets(manifest,union)
         else:compat.materialize_assets(manifest,union)
+        require(union.parent==pathlib.Path('/var/www/naumi-assets-compat') and not union.parent.is_symlink(),'PUBLIC_STATIC_PARENT_REQUIRED')
+        union.parent.chmod(0o755)
         for p in [union,*union.rglob('*')]:p.chmod(0o755 if p.is_dir() else 0o644)
         edits={};ports=[self.c['oldPort']]+([13062] if 'portal' in self.old else [])
         for name,nodes in parsed.nodes.items():
