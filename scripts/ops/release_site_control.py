@@ -136,7 +136,8 @@ class Release(base.Release):
         self.wait(lambda:self.request(self.new['web'],'/api/health',auth=False).get('db',{}).get('ok'),'WEB_READY')
         w=self.op('worker-create',lambda _:controls.clone_worker(self.tx,public_identity(self.new['web']),name=self.c['newNames']['worker'],memory_mib=1024,cpu=1,state_dir='/opt/naumi-staging/releases/'+self.c['releaseId']+'/worker',reviewed_combined_media=True,reviewed_runtime_memory=True))
         self.op('worker-start',lambda _:controls.start_worker(self.tx,w,base.available(),reviewed_combined_media=True,reviewed_runtime_memory=True));self.new['worker']=self.tx.inspect(w['id'])
-        require(self.worker(self.new['worker'],'status')['paused'],'CANDIDATE_WORKER_NOT_PAUSED');self.phase('CANDIDATE_READY',new={k:public_identity(r) for k,r in self.new.items()})
+        self.wait(lambda:self.worker(self.new['worker'],'status')['paused'],'CANDIDATE_WORKER_PAUSED',90)
+        self.phase('CANDIDATE_READY',new={k:public_identity(r) for k,r in self.new.items()})
 
     def acceptance(self):
         w=self.new['web'];version=self.request(w,'/api/version',auth=False)
@@ -322,14 +323,44 @@ class Release(base.Release):
         self.phase('COMPLETE',completedAt=base.now(),new={k:public_identity(self.tx.inspect(r['Id'])) for k,r in self.new.items()},old={k:public_identity(self.tx.inspect(r['Id'])) for k,r in self.old.items()},sameWebWorkerImage=True,configurationPreserved=True,legacyHistoricalUncertaintyRetained=True)
         self.tx.save('FINAL_STATUS.json',self.record)
 
+def resume_after_worker_start(tx,c):
+    """Reconcile this exact pre-switch startup wait; never repeat create or backup."""
+    from types import SimpleNamespace
+    root=tx.folder;original=json.loads((root/'release-config.private.json').read_bytes())
+    require(c.get('originalConfigSha256')==file_sha(root/'release-config.private.json'),'ORIGINAL_REVIEW_CHANGED')
+    require({k:v for k,v in c.items() if k not in ['resumeCandidate','originalConfigSha256','canonicalRevision','canonicalSha256','date']}=={k:v for k,v in original.items() if k not in ['canonicalRevision','canonicalSha256','date']},'RESUME_SCOPE_CHANGED')
+    raw=CANON.read_bytes();state=json.loads(raw)
+    require(sha(raw)==c['canonicalSha256'] and state['revision']==c['canonicalRevision'],'RESUME_CANONICAL_CHANGED')
+    record=state['siteControlReleases'][c['releaseId']]
+    require(record['phase']=='CLEANUP_PENDING' and record.get('gatewaySwitched') is False and set(record['operations'])=={'database-backup','image-load','web-create','web-start','worker-create','worker-start'} and all(o['phase']=='ACKNOWLEDGED' for o in record['operations'].values()),'ONLY_ACKNOWLEDGED_PRE_SWITCH_STARTUP_RESUME')
+    require(sha(tx.run(['nginx','-T']))==c['nginxSha256'],'PRE_SWITCH_GATEWAY_CHANGED')
+    r=Release.__new__(Release);r.tx=tx;r.c=c;r.root=root;r.state=state;r.record=record;r.disk=sha(raw);r.initial=raw
+    r.rows=json.loads(tx.run(['docker','inspect',*tx.run(['docker','ps','-aq','--no-trunc']).decode().split()]));r.byname={v['Name'].lstrip('/'):v for v in r.rows}
+    r.old={k:r.byname[n] for k,n in c['oldNames'].items()};r.new={k:r.byname[n] for k,n in c['newNames'].items()};r.extra=[]
+    for k,v in r.old.items():require(public_identity(v)==c['oldPins'][k],'OLD_INSTANCE_CHANGED')
+    for k,v in r.new.items():
+        require(v['Id']==record['operations'][k+'-create']['receipt']['id'] and v['Image']==c['image'] and v['State']['Running'] and v['HostConfig']['RestartPolicy']['Name']=='no','ORIGINAL_CANDIDATE_CHANGED')
+    require(sorted(v['Id'] for v in r.rows if v['State']['Running'])==sorted([*c['runningIds'],*[v['Id'] for v in r.new.values()]]),'UNREVIEWED_RUNNING_INSTANCE')
+    r.db=r.byname['naumi-staging-db-1'];r.de=environment(r.db);r.configuration=json.loads((root/'configuration-before.json').read_bytes());r.cookie=(root/'acceptance-cookie.private').read_text()
+    r.dump=(root/'nginx-before.private.txt').read_text();r.before={p:base64.b64decode(v) for p,v in json.loads((root/'nginx-files-before.private.json').read_bytes()).items()};r.real={p:str(pathlib.Path(p).resolve()) for p in r.before}
+    snapshots=list(root.glob('task-snapshot-*.json'));require(len(snapshots)==1,'ORIGINAL_TASK_SNAPSHOT_AMBIGUOUS');r.task_before=SimpleNamespace(private=json.loads(snapshots[0].read_bytes()))
+    r.switched=r.old_stopped=r.worker_paused=r.app_drained=False
+    require(controls.app_status(tx,public_identity(r.new['web']))['admission']['mode']=='draining','CANDIDATE_ALREADY_ACCEPTING')
+    require(r.worker(r.new['worker'],'status')['paused'],'CANDIDATE_WORKER_ACTIVE')
+    r.op('startup-readiness-reconciled',lambda _: {'sameCandidateIds':{k:public_identity(v) for k,v in r.new.items()},'backupRepeated':False,'gatewayUnchanged':True})
+    r.phase('CANDIDATE_READY',new={k:public_identity(v) for k,v in r.new.items()})
+    return r
+
 def main(config):
     import fcntl
     c=json.loads(pathlib.Path(config).read_bytes());validate(c)
     with HostTransaction(c['target'],HOSTS[c['target']],c['evidenceRoot']) as tx:
         with open(CANON.parent/'.lifecycle.lock','a+') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-            r=Release(tx,c)
-            try:r.prepare();r.candidates();r.acceptance();r.assets();r.switch();r.finish()
+            r=resume_after_worker_start(tx,c) if c.get('resumeCandidate') else Release(tx,c)
+            try:
+                if not c.get('resumeCandidate'):r.prepare();r.candidates()
+                r.acceptance();r.assets();r.switch();r.finish()
             except BaseException:
                 if r.record['releaseId'] in r.state.get('siteControlReleases',{}):r.rollback()
                 raise
