@@ -1,11 +1,12 @@
+import { enrollNativeMember, type NativeTeamBinding } from './native-membership';
 import { createPublicKey,verify,randomUUID,type KeyObject } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { Pool,PoolClient } from 'pg';
 import { z } from 'zod';
-import { id,WorkflowError,type Principal } from './contracts';
+import { id,permission,WorkflowError,type Principal } from './contracts';
 import { resolveDatabaseActor } from './identity';
 const instance=z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,79}$/),subject=z.string().trim().min(1).max(254);
-export const sourceIdentitySchema=z.strictObject({sourceInstance:instance,sourceEnterprise:id,sourceSubject:subject,teamId:id.optional()});
+export const sourceIdentitySchema=z.strictObject({sourceInstance:instance,sourceEnterprise:id,sourceSubject:subject,teamId:id.optional(),sourcePermissions:z.array(permission).max(5).optional(),sourceName:z.string().trim().min(1).max(100).optional()});
 export type SourceIdentity=z.infer<typeof sourceIdentitySchema>;
 const claims=sourceIdentitySchema.extend({iss:z.string(),aud:z.string(),iat:z.number().int(),exp:z.number().int(),jti:id});
 function ensure(v:unknown,code:string,status=403):asserts v {if(!v)throw new WorkflowError(status,code);}
@@ -18,21 +19,21 @@ export function createSourceVerifier(options:{issuer:string;audience:string;publ
   const key=keys.get(h.kid);if(!key||!verify(null,Buffer.from(parts[0]+'.'+parts[1]),key,Buffer.from(parts[2],'base64url')))return null;
   const c=claims.parse(JSON.parse(Buffer.from(parts[1],'base64url').toString())),now=Math.floor((options.now?.()??Date.now())/1000);
   if(c.iss!==options.issuer||c.aud!==options.audience||c.iat>now||c.exp<=now||c.exp<=c.iat||c.exp-c.iat>60)return null;
-  return {sourceInstance:c.sourceInstance,sourceEnterprise:c.sourceEnterprise,sourceSubject:c.sourceSubject,...(c.teamId?{teamId:c.teamId}:{})};
+  return {sourceInstance:c.sourceInstance,sourceEnterprise:c.sourceEnterprise,sourceSubject:c.sourceSubject,...(c.teamId?{teamId:c.teamId}:{}),...(c.sourcePermissions?{sourcePermissions:c.sourcePermissions}:{}),...(c.sourceName?{sourceName:c.sourceName}:{})};
  }catch{return null;}};
 }
 export type SourceAuthenticate=ReturnType<typeof createSourceVerifier>;
 export class SourceIdentityStore {
- constructor(readonly pool:Pool,private acceptBinding?:(source:SourceIdentity,enterpriseId:string)=>boolean){}
+ constructor(readonly pool:Pool,private acceptBinding?:(source:SourceIdentity,enterpriseId:string)=>boolean,private nativeBindings:NativeTeamBinding[]=[]){}
  private async transaction<T>(run:(tx:PoolClient)=>Promise<T>){const tx=await this.pool.connect();try{await tx.query('BEGIN');await tx.query("SET LOCAL lock_timeout='3s'; SET LOCAL statement_timeout='10s'");const r=await run(tx);await tx.query('COMMIT');return r;}catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}}
  private async binding(tx:PoolClient,input:SourceIdentity){
-  const s=sourceIdentitySchema.parse(input);const row=(await tx.query(`SELECT i.enterprise_id,i.subject FROM enterprise_workflow.source_identities i JOIN enterprise_workflow.source_enterprises e USING(source_instance,source_enterprise,enterprise_id) JOIN enterprise_workflow.accounts a ON a.enterprise_id=i.enterprise_id AND a.subject=i.subject WHERE i.source_instance=$1 AND i.source_enterprise=$2 AND i.source_subject=$3 AND i.enabled AND e.enabled AND a.enabled AND (a.expires_at IS NULL OR a.expires_at>now()) FOR SHARE OF i,e,a`,[s.sourceInstance,s.sourceEnterprise,s.sourceSubject])).rows[0];
+  const s=sourceIdentitySchema.parse(input);const native=this.nativeBindings.find(b=>b.sourceInstance===s.sourceInstance&&b.sourceEnterprise===s.sourceEnterprise&&b.nativeTeamId);if(native){ensure(!this.acceptBinding||this.acceptBinding(s,native.enterpriseId),'SOURCE_DEPLOYMENT_NOT_ALLOWED');await enrollNativeMember(tx,s,native);}const row=(await tx.query(`SELECT i.enterprise_id,i.subject FROM enterprise_workflow.source_identities i JOIN enterprise_workflow.source_enterprises e USING(source_instance,source_enterprise,enterprise_id) JOIN enterprise_workflow.accounts a ON a.enterprise_id=i.enterprise_id AND a.subject=i.subject WHERE i.source_instance=$1 AND i.source_enterprise=$2 AND i.source_subject=$3 AND i.enabled AND e.enabled AND a.enabled AND (a.expires_at IS NULL OR a.expires_at>now()) FOR SHARE OF i,e,a`,[s.sourceInstance,s.sourceEnterprise,s.sourceSubject])).rows[0];
   ensure(row,'SOURCE_IDENTITY_NOT_BOUND');ensure(!this.acceptBinding||this.acceptBinding(s,row.enterprise_id),'SOURCE_DEPLOYMENT_NOT_ALLOWED');return row as {enterprise_id:string;subject:string};
  }
  async workspaces(source:SourceIdentity){return this.transaction(async tx=>{const b=await this.binding(tx,source),teams=(await tx.query(`SELECT m.team_id,t.name FROM enterprise_workflow.team_members m JOIN enterprise_workflow.teams t USING(enterprise_id,team_id) WHERE m.enterprise_id=$1 AND m.subject=$2 AND m.enabled AND t.enabled AND (m.expires_at IS NULL OR m.expires_at>now()) ORDER BY m.team_id`,[b.enterprise_id,b.subject])).rows;const visible=[];
-  for(const t of teams){const p={enterpriseId:b.enterprise_id,subject:b.subject,teamId:t.team_id};const actor=await resolveDatabaseActor(tx,p);if(actor)visible.push({teamId:t.team_id,name:t.name,permissions:actor.permissions,workKinds:actor.workKinds});}
+  for(const t of teams){const p={enterpriseId:b.enterprise_id,subject:b.subject,teamId:t.team_id,sourcePermissions:source.sourcePermissions};const actor=await resolveDatabaseActor(tx,p);if(actor)visible.push({teamId:t.team_id,name:t.name,permissions:actor.permissions,workKinds:actor.workKinds});}
   return {enterpriseId:b.enterprise_id,subject:b.subject,teams:visible};});}
- async principal(source:SourceIdentity):Promise<Principal>{return this.transaction(async tx=>{ensure(source.teamId,'TEAM_REQUIRED',400);const b=await this.binding(tx,source),p={enterpriseId:b.enterprise_id,subject:b.subject,teamId:source.teamId,sourceBinding:{sourceInstance:source.sourceInstance,sourceEnterprise:source.sourceEnterprise,sourceSubject:source.sourceSubject}};ensure(await resolveDatabaseActor(tx,p),'MEMBERSHIP_REQUIRED');return p;});}
+ async principal(source:SourceIdentity):Promise<Principal>{return this.transaction(async tx=>{ensure(source.teamId,'TEAM_REQUIRED',400);const b=await this.binding(tx,source),p={enterpriseId:b.enterprise_id,subject:b.subject,teamId:source.teamId,sourcePermissions:source.sourcePermissions,sourceBinding:{sourceInstance:source.sourceInstance,sourceEnterprise:source.sourceEnterprise,sourceSubject:source.sourceSubject}};ensure(await resolveDatabaseActor(tx,p),'MEMBERSHIP_REQUIRED');return p;});}
  /** Explicit provisioning command, not exposed as a public HTTP/bootstrap endpoint. */
  async configure(principal:Principal,input:unknown){
   const common={sourceInstance:instance,sourceEnterprise:id,expectedVersion:z.number().int().nonnegative(),enabled:z.boolean(),reason:z.string().trim().min(1).max(200)};

@@ -14,7 +14,7 @@ export async function startRuntime(c:RuntimeConfig,b:RuntimeBundle,role:'api'|'w
  const pool=runtimePool(c.databaseUrl);try{
   await checkRuntimeDatabase(pool,c,b,{operational:false,deep:true});await storageCheck(c);
   const keys=Object.fromEntries(Object.entries(c.publicKeys).map(([kid,pem])=>[kid,createPublicKey(pem)]));
-  const identities=new SourceIdentityStore(pool,(source,id)=>c.tenants.some(t=>t.enterpriseId===id&&t.sourceInstance===source.sourceInstance&&t.sourceEnterprise===source.sourceEnterprise));
+  const identities=new SourceIdentityStore(pool,(source,id)=>c.tenants.some(t=>t.enterpriseId===id&&t.sourceInstance===source.sourceInstance&&t.sourceEnterprise===source.sourceEnterprise),c.tenants);
   const signed=createSourceVerifier({issuer:'naumi-workflow-bff',audience:'enterprise-workflow-source',publicKeys:keys});
   const authenticate:typeof signed=async req=>{const identity=await signed(req);return identity&&c.tenants.some(t=>t.sourceInstance===identity.sourceInstance&&t.sourceEnterprise===identity.sourceEnterprise)?identity:null;};
   const delivery=new DeliveryStore(pool,resolveDatabaseActor,c.deliveryRoot,32*1024*1024,2*1024*1024*1024,runtimeScanPolicy(c)),notifications=new NotificationStore(pool,resolveDatabaseActor,runtimeConnectors(c)),routing=new RoutingStore(pool,resolveDatabaseActor,notifications);

@@ -15,7 +15,7 @@ const kind = z.enum(['design', 'artwork']);
 export const calendarDate=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(s=>{const d=new Date(s+'T00:00:00Z');return !isNaN(+d)&&d.toISOString().slice(0,10)===s;});
 export const permission = z.enum(['request', 'dispatch', 'execute', 'review', 'manage']);
 export type Permission = z.infer<typeof permission>;
-export type Principal = { enterpriseId: string; subject: string; teamId?: string; sourceBinding?:{sourceInstance:string;sourceEnterprise:string;sourceSubject:string} };
+export type Principal = { enterpriseId: string; subject: string; teamId?: string; sourceBinding?:{sourceInstance:string;sourceEnterprise:string;sourceSubject:string}; sourcePermissions?:Permission[] };
 // Resolved by a live server-side identity adapter, never accepted from browser JSON.
 export type Actor = Principal & { permissions: Permission[]; workKinds: WorkKind[] };
 export type WorkKind = z.infer<typeof kind>;

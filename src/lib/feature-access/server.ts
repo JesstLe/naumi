@@ -1,3 +1,5 @@
+import { siteProfile } from '@/lib/site-control/store';
+import { intersectSitePolicy } from '@/lib/site-control/contracts';
 import "server-only";
 import { createHash } from "node:crypto";
 import { dbEnabled, ensureSchema, getPool } from "@/lib/db";
@@ -16,22 +18,33 @@ export function policyFromRow(row?: Record<string, any>): AccessPolicy {
   if (!["default", "custom"].includes(row.mode) || !Array.isArray(row.allowed) || row.allowed.some((id: unknown) => typeof id !== "string" || !ALL_FEATURE_IDS.includes(id))) throw new FeatureAccessError("权限配置异常", 503);
   return { mode: row.mode, allowed: row.mode === "default" ? ALL_FEATURE_IDS : row.allowed, version: Number(row.version) };
 }
-export async function userFeaturePolicy(email: string): Promise<AccessPolicy> {
+export async function userFeaturePolicy(email: string, options: { site?: boolean } = {}): Promise<AccessPolicy> {
   if (!dbEnabled) return { ...DEFAULT_POLICY };
   await ensureFeatureAccessSchema();
   const result = await getPool().query("SELECT mode,allowed,version FROM app_feature_access WHERE email=$1", [email.trim().toLowerCase()]);
-  return policyFromRow(result.rows[0]);
+  const policy = policyFromRow(result.rows[0]);
+  if (options.site === false) return policy;
+  const site = await siteProfile();
+  return site.mode === 'enterprise' ? intersectSitePolicy(policy, site.policy) : policy;
 }
-export async function requestFeaturePolicy(request: Request) {
+export async function requestFeaturePolicy(request: Request, options: { site?: boolean } = {}) {
   const email = await resolveUserEmail(request);
   const admin = await requireAdmin(request);
   if (admin) return { email, admin: true, policy: { ...DEFAULT_POLICY } };
-  return { email, admin: false, policy: email ? await userFeaturePolicy(email) : null };
+  return { email, admin: false, policy: email ? await userFeaturePolicy(email, options) : null };
 }
 export async function featureRequestGate(request: Request): Promise<Response | null> {
   const url = new URL(request.url), requirement = requestRequirement(url.pathname, request.method);
   if (!requirement || !dbEnabled) return null;
-  const { email, admin, policy } = await requestFeaturePolicy(request);
+  const path = url.pathname.startsWith('/desktop/api/') ? url.pathname.slice('/desktop'.length) : url.pathname;
+  const management = (path === '/api/enterprise' || path.startsWith('/api/enterprise/')) && !path.startsWith('/api/enterprise/workflow');
+  // These entries distinguish accepted receipts/retries from genuinely new work
+  // inside their authoritative transaction. Do not revoke a frozen receipt here.
+  const receiptAware = ['/api/imagegen','/api/generate-image','/api/imagegen/cancel','/api/canvas/image-versions'].includes(path)
+    || /^\/api\/imagegen\/batches\/[^/]+(?:\/download)?$/.test(path)
+    || /^\/api\/canvas\/timeline-nodes\/[^/]+\/render$/.test(path);
+  const enforceSite = !management && !receiptAware && (request.method !== 'GET' && request.method !== 'HEAD' || !path.startsWith('/api/'));
+  const { email, admin, policy } = await requestFeaturePolicy(request, { site: enforceSite });
   if (admin) return null;
   const canonicalPath = url.pathname.startsWith("/desktop/api/") ? url.pathname.slice("/desktop".length) : url.pathname;
   const api = canonicalPath.startsWith("/api/");

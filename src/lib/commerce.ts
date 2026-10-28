@@ -1,3 +1,4 @@
+import { enterpriseSiteIdentity } from '@/lib/site-control/identity';
 import "server-only";
 
 /**
@@ -6,7 +7,7 @@ import "server-only";
  * 正式开放时显式设置 NAUMI_PUBLIC_COMMERCE=1。
  */
 export const publicCommerceEnabled =
-  (process.env.NAUMI_PUBLIC_COMMERCE || "").trim() === "1";
+  !enterpriseSiteIdentity() && (process.env.NAUMI_PUBLIC_COMMERCE || "").trim() === "1";
 
 /** Internal image quality previews do not publish pricing reports. */
 export const betaPreviewEnabled =
@@ -17,4 +18,4 @@ export const pricingVisible = false;
 /** 普通业务接口在额度不足时使用，避免内测阶段继续引导充值。 */
 export const insufficientCreditsMessage = publicCommerceEnabled
   ? "积分不足，请充值后重试"
-  : "积分不足，请联系内测管理员补充额度";
+  : enterpriseSiteIdentity() ? "额度不足，请联系管理员" : "积分不足，请联系内测管理员补充额度";

@@ -1,4 +1,5 @@
 "use client";
+import {useSiteProfile} from '@/lib/site-control/client';
 import {WorkspaceSelector} from "@/components/saas/workspace-selector";
 import { CachedImage } from "@/components/cached-image";
 import { useFeatureAccess } from "@/lib/feature-access/client";
@@ -58,6 +59,7 @@ const MENU_COLS = [
 ].map((col) => col.filter(Boolean));
 
 export function AppRail() {
+  const site = useSiteProfile(), name = site.mode === 'enterprise' ? site.policy.brand : BRAND;
   const { t, locale } = useI18n();
   const { can, canPage } = useFeatureAccess();
   const visibleTools = TOOLS.filter(tool => tool.live !== false && canPage(tool.href));
@@ -181,7 +183,7 @@ export function AppRail() {
         {/* 内容走和页面一致的居中容器,保证导航与下方内容左右对齐 */}
         <div className="flex h-full w-full items-center gap-1 px-5 sm:px-6 lg:px-8">
         {/* 品牌 */}
-        <Link href="/" title={BRAND} className="mr-2 flex items-center gap-2">
+        <Link href="/" title={name} className="mr-2 flex items-center gap-2">
           <span
             className={cn(
               "flex h-8 w-8 flex-none items-center justify-center overflow-hidden rounded-[9px]",
@@ -191,16 +193,16 @@ export function AppRail() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <CachedImage
               src={BRAND_SQUARE_LOGO}
-              alt={BRAND}
+              alt={name}
               className="h-8 w-8 rounded-[9px] object-contain"
             />
           </span>
-          <span className="text-[15px] font-bold tracking-tight">{BRAND}</span>
+          <span className="text-[15px] font-bold tracking-tight">{name}</span>
         </Link>
 
         {/* 导航(设计顺序:首页 / 工作台 / 创作▾ / 模板 / 作品 / 画布) */}
         <nav className="flex items-center gap-0.5">
-          {[...NAV_BEFORE, ...(can("agent") && !can("workspace") ? [{href: "/agent", label: {zh: "Agent", en: "Agent"}, Icon: Sparkles}] : []), ...(can("templates") && !can("workspace") ? [{href: "/templates", label: {zh: "模板", en: "Templates"}, Icon: LayoutGrid}] : [])].map((it) => (
+          {[...(site.mode==='enterprise'?NAV_BEFORE.filter(item=>item.href!=='/'):NAV_BEFORE), ...(can("agent") && !can("workspace") ? [{href: "/agent", label: {zh: "Agent", en: "Agent"}, Icon: Sparkles}] : []), ...(can("templates") && !can("workspace") ? [{href: "/templates", label: {zh: "模板", en: "Templates"}, Icon: LayoutGrid}] : [])].map((it) => (
             <TopLink key={it.href} {...it} />
           ))}
           {/* 创作:hover 出 mega 下拉;点击进创作中心 /tools(不再弹左侧抽屉)。 */}
@@ -265,7 +267,7 @@ export function AppRail() {
               </div>
             </div>
           </div>}
-          {NAV_AFTER.map((it) => (
+          {[...NAV_AFTER,...(site.mode==='enterprise'&&can('team')?[{href:'/enterprise',label:{zh:'协作交付',en:'Collaboration'},Icon:LayoutGrid}]:[])].map((it) => (
             <TopLink key={it.href} {...it} />
           ))}
         </nav>

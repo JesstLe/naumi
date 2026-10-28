@@ -1,3 +1,4 @@
+import { enterpriseSiteIdentity } from '@/lib/site-control/identity';
 import { NextResponse, type NextRequest } from "next/server";
 import { featureRequestGate, ACCESS_HEADERS, accessJson } from "@/lib/feature-access/server";
 import { requestRequirement } from "@/lib/feature-access/catalog";
@@ -20,10 +21,23 @@ export async function middleware(req: NextRequest) {
     const allowed=path==='/admin/deployments'||['/api/version','/api/health','/api/admin/fleet','/api/admin/fleet/status','/api/admin/fleet/releases','/api/fleet/poll','/api/fleet/ack','/api/fleet/releases/poll','/api/fleet/releases/ack'].includes(path);
     if(!allowed)return accessJson({error:'Not found'},404);
   }
+  const dedicated = enterpriseSiteIdentity();
+  const path = req.nextUrl.pathname;
+  if (dedicated) {
+    if (path.startsWith('/api/admin/') || path === '/api/admin' || path === '/setup' || path.startsWith('/api/setup') || path==='/api/auth' || path.startsWith('/api/auth/register') || ['/pricing','/buy','/sign-up'].includes(path)) return accessJson({error:'Not found'},404);
+    if (path.startsWith('/admin/')) {
+      const target=req.nextUrl.clone();target.pathname='/admin';target.search='';
+      return NextResponse.redirect(target,{status:307,headers:ACCESS_HEADERS});
+    }
+    if (path === '/' || path === '/enterprise/workflow') {
+      const target=req.nextUrl.clone();target.pathname=path==='/'?'/dashboard':'/enterprise';
+      return NextResponse.redirect(target,{status:307,headers:ACCESS_HEADERS});
+    }
+  }
   const headers = new Headers(req.headers);
   headers.set("x-pathname", req.nextUrl.pathname);
-  if(req.nextUrl.pathname==='/enterprise/workflow'&&!await resolveUserEmail(req)){
-    const login=req.nextUrl.clone();login.pathname='/sign-in';login.search='?redirect=%2Fenterprise%2Fworkflow';
+  if((['/enterprise/workflow','/enterprise/workspace'].includes(path)||dedicated&&['/enterprise','/admin'].includes(path))&&!await resolveUserEmail(req)){
+    const login=req.nextUrl.clone();login.pathname='/sign-in';login.search='?redirect='+encodeURIComponent(path);
     return NextResponse.redirect(login,{status:307,headers:ACCESS_HEADERS});
   }
   let protectedRoute;
@@ -52,6 +66,12 @@ export async function middleware(req: NextRequest) {
   if(req.headers.has(CONTINUATION_HEADER)) {
     try { await verifyAgentContinuation(req,await resolveUserEmail(req),false); }
     catch(error){return releaseError(error);}
+  }
+  if(dedicated&&path==='/enterprise') {
+    // Keep the render destination separate from the legacy URL, which redirects
+    // to /enterprise. Next may run middleware again after an internal rewrite.
+    const target=req.nextUrl.clone();target.pathname='/enterprise/workspace';
+    return NextResponse.rewrite(target,{request:{headers},headers:ACCESS_HEADERS});
   }
   return NextResponse.next({ request: { headers }, ...(protectedRoute ? { headers: ACCESS_HEADERS } : {}) });
 }

@@ -16,7 +16,7 @@ export async function enterpriseAuthorize(request:Request) {
   const email=await enterpriseUserEmail(request);
   if(!email)return teamJson({error:'请先登录企业账号'},401);
   if(!dbEnabled)return teamJson({error:'数据库未配置'},503);
-  if(!allows(await userFeaturePolicy(email),'team'))return teamJson({error:'企业管理功能尚未授权'},403);
+  if(!allows(await userFeaturePolicy(email,{site:false}),'team'))return teamJson({error:'企业管理功能尚未授权'},403);
   const actor={email,admin:false,consoleAdmin:false};
   if(!rateLimit(`enterprise:${actor.email}:${clientIp(request)}`,240,60_000))return teamJson({error:'操作过于频繁'},429);
   return actor;

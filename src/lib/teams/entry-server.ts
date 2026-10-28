@@ -1,3 +1,4 @@
+import { enterpriseSiteIdentity } from '@/lib/site-control/identity';
 import 'server-only';
 import { getPool } from '@/lib/db';
 import { enterpriseList, enterpriseManaged } from '@/lib/enterprise/server';
@@ -8,6 +9,12 @@ import type { EntryStatus, TeamEntryDiscovery } from './entry-contract';
 
 /** Discovery reports the existing authorization rules; it never creates a grant. */
 export async function discoverTeamEntry(email: string): Promise<TeamEntryDiscovery> {
+  if (enterpriseSiteIdentity()) {
+    const policy = await userFeaturePolicy(email, { site: false });
+    const entries = allows(policy, 'team') ? await enterpriseList({email,admin:false}) : [];
+    const allowed = entries.length > 0;
+    return { allowed, canManageTeams: false, enterprise: true, expiresAt: null, startsAt: null, status: allowed ? 'active' : 'forbidden', href: '/admin' };
+  }
   const [access, managed, policy] = await Promise.all([
     teamEntryAccess(email), enterpriseManaged(email), userFeaturePolicy(email),
   ]);

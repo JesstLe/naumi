@@ -1,3 +1,4 @@
+import {workflowPermissionsSchema,DEFAULT_WORKFLOW_PERMISSIONS} from './workflow-permissions';
 import 'server-only';
 import { createHmac, randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
@@ -22,6 +23,7 @@ export async function ensureEnterpriseSchema() {
       name text NOT NULL CHECK(length(name) BETWEEN 1 AND 60), level integer NOT NULL CHECK(level BETWEEN 1 AND 998),
       manage_members boolean NOT NULL DEFAULT false, view_records boolean NOT NULL DEFAULT false,
       version integer NOT NULL DEFAULT 0, PRIMARY KEY(enterprise_id,id));
+    ALTER TABLE app_enterprise_roles ADD COLUMN IF NOT EXISTS workflow_permissions jsonb NOT NULL DEFAULT '["request","execute"]';
     CREATE TABLE IF NOT EXISTS app_enterprise_members(
       enterprise_id uuid NOT NULL REFERENCES app_enterprise_settings(team_id), email text NOT NULL REFERENCES app_users(email),
       supervisor_email text NOT NULL REFERENCES app_users(email), role_id uuid,
@@ -93,7 +95,7 @@ async function scope(tx:PoolClient,actor:TeamActor,id:string,allowSelf=false):Pr
     const grant=(await tx.query('SELECT expires_at FROM app_team_access_grants WHERE email=$1 FOR SHARE',[team.owner_email])).rows[0];
     if(grant)accessExpiry=grant.expires_at;
   }
-  const roles=(await tx.query('SELECT id,name,level,manage_members,view_records,version FROM app_enterprise_roles WHERE enterprise_id=$1 FOR SHARE',[id])).rows as EnterpriseRole[];
+  const roles=(await tx.query('SELECT id,name,level,manage_members,view_records,workflow_permissions,version FROM app_enterprise_roles WHERE enterprise_id=$1 FOR SHARE',[id])).rows as EnterpriseRole[];
   const nodes=(await tx.query(`SELECT m.email,m.supervisor_email,m.role_id,m.employment,m.version,m.membership_status,m.membership_expires_at,
     (NOT u.banned AND (u.account_expires_at IS NULL OR u.account_expires_at>now())) AS global_active
     FROM app_enterprise_members m JOIN app_users u ON u.email=m.email WHERE m.enterprise_id=$1 FOR SHARE OF m,u`,[id])).rows as Node[];
@@ -163,7 +165,7 @@ const common={id:z.string().uuid(),enterpriseId:z.string().uuid()};
 const target={...common,email:z.string().trim().min(1).max(254).transform(s=>s.toLowerCase()),expectedVersion:z.number().int().nonnegative(),expectedUserVersion:z.number().int().nonnegative()};
 const instant=z.string().datetime({offset:true});
 export const enterpriseCommandSchema=z.discriminatedUnion('action',[
-  z.object({...common,action:z.literal('role'),roleId:z.string().uuid(),expectedVersion:z.number().int().nonnegative().nullable(),name:z.string().trim().min(1).max(60),level:z.number().int().min(1).max(998),manageMembers:z.boolean(),viewRecords:z.boolean()}).strict(),
+  z.object({...common,action:z.literal('role'),roleId:z.string().uuid(),expectedVersion:z.number().int().nonnegative().nullable(),name:z.string().trim().min(1).max(60),level:z.number().int().min(1).max(998),manageMembers:z.boolean(),viewRecords:z.boolean(),workflowPermissions:workflowPermissionsSchema.optional()}).strict(),
   z.object({...target,action:z.literal('organization'),roleId:z.string().uuid().nullable(),supervisorEmail:z.string().trim().min(1).max(254).transform(s=>s.toLowerCase()),employment:z.enum(['permanent','intern']),expiresAt:instant.nullable()}).strict(),
   z.object({...target,action:z.literal('expiry'),expiresAt:instant.nullable()}).strict(),
   z.object({...target,action:z.literal('status'),banned:z.boolean()}).strict(),
@@ -187,11 +189,11 @@ export async function mutateEnterprise(actor:TeamActor,command:z.infer<typeof en
     if(command.action==='role'){
       const old=s.roles.find(r=>r.id===command.roleId);
       if((old?.version??null)!==command.expectedVersion)throw new TeamError('岗位已更新，请刷新后重试',409);
-      const next={id:command.roleId,name:command.name,level:command.level,manage_members:command.manageMembers,view_records:command.viewRecords,version:(old?.version??-1)+1};
+      const next={id:command.roleId,name:command.name,level:command.level,manage_members:command.manageMembers,view_records:command.viewRecords,workflow_permissions:command.workflowPermissions??old?.workflow_permissions??DEFAULT_WORKFLOW_PERMISSIONS,version:(old?.version??-1)+1};
       validateHierarchy(s.team.owner_email,s.nodes,[...s.roles.filter(r=>r.id!==next.id),next]);
       changes={before:old||null,after:next};
-      await tx.query(`INSERT INTO app_enterprise_roles(enterprise_id,id,name,level,manage_members,view_records) VALUES($1,$2,$3,$4,$5,$6)
-        ON CONFLICT(enterprise_id,id) DO UPDATE SET name=excluded.name,level=excluded.level,manage_members=excluded.manage_members,view_records=excluded.view_records,version=app_enterprise_roles.version+1`,[command.enterpriseId,command.roleId,command.name,command.level,command.manageMembers,command.viewRecords]);
+      await tx.query(`INSERT INTO app_enterprise_roles(enterprise_id,id,name,level,manage_members,view_records,workflow_permissions) VALUES($1,$2,$3,$4,$5,$6,$7)
+        ON CONFLICT(enterprise_id,id) DO UPDATE SET name=excluded.name,level=excluded.level,manage_members=excluded.manage_members,view_records=excluded.view_records,workflow_permissions=excluded.workflow_permissions,version=app_enterprise_roles.version+1`,[command.enterpriseId,command.roleId,command.name,command.level,command.manageMembers,command.viewRecords,JSON.stringify(next.workflow_permissions)]);
     }else{
       const m=s.nodes.find(n=>n.email===command.email)!;
       const u=(await tx.query('SELECT role,management_version,banned,account_expires_at FROM app_users WHERE email=$1 FOR UPDATE',[m.email])).rows[0];

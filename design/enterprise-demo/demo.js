@@ -21,14 +21,15 @@ const initial=()=>({schema:1,nextId:28,requirements:[
 {id:'TK-305',planStart:'2026-10-16',planEnd:'2026-10-16',estimatedHours:4,quantity:3,unit:'张',req:'REQ-1023',title:'新品旅行套组 · 渠道适配',kind:'artwork',team:'商品制作组',status:'accepted',assignee:'artist',percent:100,points:3,due:'2026-10-18',reworks:0,quality:4,logs:['周然提交交付稿','沈悦验收通过，质量4/5']},
 {id:'TK-306',scheduleTag:'urgent',owner:'artist',planStart:'2026-10-21',planEnd:'2026-10-22',estimatedHours:8,quantity:3,unit:'张',req:'REQ-1027',title:'双11首页 · 促销氛围图适配',kind:'artwork',team:'商品制作组',status:'blocked',assignee:'artist',percent:30,points:5,due:'2026-10-22',reworks:0,logs:['周然标记阻塞：等待活动价格确认']}
 ],activity:[{who:'reviewer',text:'验收通过了「新品旅行套组 · 渠道适配」',time:'10分钟前'},{who:'designer',text:'提交了「氨基酸洁面 · 新品详情页」',time:'28分钟前'},{who:'ops',text:'提交了「植研身体乳 · 卖点长图」',time:'42分钟前'}],facts:[{task:'TK-305',contributor:'artist',points:3,quality:4,reworks:0}],filters:{}});
-let state;try{state=REAL_PRODUCT?{schema:1,nextId:1,requirements:[],tasks:[],activity:[],facts:[],filters:{}}:JSON.parse(localStorage.getItem(KEY));if(state?.schema!==1||!Array.isArray(state.tasks)||!Array.isArray(state.requirements)||!Array.isArray(state.facts)||!Array.isArray(state.activity))state=initial();}catch{state=initial();}
+const LIVE_WORKSPACE=REAL_PRODUCT||document.documentElement?.dataset?.workspaceMode==='enterprise';
+let state;try{state=LIVE_WORKSPACE?{schema:1,nextId:1,requirements:[],tasks:[],activity:[],facts:[],filters:{}}:JSON.parse(localStorage.getItem(KEY));if(state?.schema!==1||!Array.isArray(state.tasks)||!Array.isArray(state.requirements)||!Array.isArray(state.facts)||!Array.isArray(state.activity))state=initial();}catch{state=initial();}
 let view=location.hash==='#schedule'?'schedule':'dashboard',role='lead',taskTab='all',listFilter='all',search='',boardMode=false,drawerData=null,modalFocus=null;
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const person=(id,small=false)=>id?`<span class="person"><span class="avatar ${PEOPLE[id]?.color||''}">${PEOPLE[id]?.initial||'?'}</span>${small?'':esc(PEOPLE[id]?.name||id)}</span>`:'<span class="subline">未指派</span>';
 const tag=(s)=>{const x=STATUS[s]||[s,''];return `<span class="tag ${x[1]}">${x[0]}</span>`;};
 const reqFor=t=>state.requirements.find(r=>r.id===t.req);
 const route=(shop,type)=>shop==='其他店铺'?'待分配':type==='活动视觉'?'品牌视觉组':type==='详情页设计'?'商品设计组':'商品制作组';
-function save(){if(REAL_PRODUCT)return;try{localStorage.setItem(KEY,JSON.stringify(state));}catch{toast('浏览器未允许保存，当前操作仅在本次预览有效');}}
+function save(){if(LIVE_WORKSPACE)return;try{localStorage.setItem(KEY,JSON.stringify(state));}catch{toast('浏览器未允许保存，当前操作仅在本次预览有效');}}
 function toast(t){$('#toast').textContent=t;$('#toast').classList.add('show');clearTimeout(window.toastTimer);window.toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),3000);}
 function activity(text){state.activity.unshift({who:role,text,time:'刚刚'});state.activity=state.activity.slice(0,14);save();}
 const navs=[['dashboard','grid','工作台',''],['requirements','file','需求中心','6'],['tasks','task','任务中心','6'],['schedule','calendar','团队排期',''],['assets','image','素材与交付',''],['performance','chart','贡献与绩效','']];
