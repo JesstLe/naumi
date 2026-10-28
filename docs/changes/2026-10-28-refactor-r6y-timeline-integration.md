@@ -43,3 +43,12 @@
 - 旧 fixture 默认输出曾覆盖本地历史 persistence cold log；精确原字节未捕获，不虚构恢复。原失败副本及影响记录在 EVIDENCE_OUTPUT_FINDING，后续所有入口显式绑定本轮独占证据目录。
 
 当前整体仍 active；新增6项入口已登记原 required core catalog（89项），但本轮89全量、最终Linux镜像/runtime/product-browser尚待运行，不套用R6X的通过数字。
+
+
+## 固定应用源码的整画布收尾
+
+固定应用提交 `8d4e0e8cca15d168397d5f8456bbc71f84900866` 的真实整画布已通过（`TIMELINE_NATIVE_CANVAS_CONTROL_FIXED_RUN.json`，exit0）：纯多轨项目创建/深链/刷新，真实素材导入与双端裁剪，原生音频 handle 与来源边，实际预览和私有成片像素、GainNode混音，丢受理回包且job列表离线后的同operation/job恢复，后到草稿保留，明确采用与原undo/redo，成片handle/@引用生成视频，删除后的原任务replay，以及拖动/锁/复制删除和撤销重做。实际媒体扣款3，模拟供应商create1，真实付费调用0，pageErrors0。
+
+来源边恢复原 `e-timeline-input-${timeline.id}-${source}` 身份；同源多片段只显示一条边，源节点投影顺序不再影响连线存在。稳定scene回调与新memo依赖均已补齐；不通过改掉旧验收预期掩盖产品接线问题。
+
+本轮新增6项验证入口已接原catalog（现89项）；这里只交付该完整模块与相邻链路的已验证源码，不宣称89全量或R6Y Linux镜像、runtime、双浏览器整站门禁已完成。源码四产物、4817原hash的副本恢复、远端及资源状态以本轮 `DELIVERY.json` / `LIVE_HANDOFF.json` 为准。整个重构目标继续 active；下一轮先跑固定源码完整门禁，再继续实际Canvas模板/导入和原生节点共享生命周期的变化传播收敛。

@@ -186,3 +186,8 @@ R6Q 固定 `ed0450be`：core44/44、完整Linux同镜像runtime125、真实双�
 
 R6R 最终固定业务源 `216220bd`，core **52/52**、同完整 Linux 镜像 runtime **125**、真实产品控件 **36** 全部通过；tsc/lint exit0，静态／全 import／emitted SCC 全0。慢 NAS 双入口 A/B 为33/35检查，恢复原18积分，供应商重提0，网络事务1→0。仅后续文档提交；四产物、4661原hash副本回滚、Git/cleanup最终证据见本轮 DELIVERY。继续独立整体重构，下一边界为 Canvas 视频提交与 batch；未合main、未部署。
 2026-10-28 R6T：普通整合固定main `00a27d6a` 的浅色后台及真实页面；管理入口的本地／云会话、缓存、读请求与密码响应归唯一 `use-admin-entry` owner，页面254→115行，旧账号UI／迟到GET与密码授权不串号，原API鉴权和密码POST不重放。1421领域/API/服务、113Canvas原hash及6主线UI模块保持，新表／平行任务／计费owner0。固定应用 `f7b86c24`，core59/59全部新执行、完整Linux同镜像runtime125／产品双browser36／后台GUI78、tsc/lint与四类SCC0通过；后台覆盖原35页桌面／390px及真实业务读写，非docs输入与core差异0。Windows dev65/13失败和中断／PG准备失败原样保留，不拼接通过。4696hash副本回滚／四产物／远端和清理以本轮DELIVERY为准。整体active，不合main不部署，继续剩余Canvas／助手编排和最终整合。见[R6T记录](changes/2026-10-28-admin-entry-ownership-r6t.md)。
+
+
+## 2026-10-28 R6Y：多轨接入文档与媒体 owners
+
+固定main `294beac9` 的3提交/45路径已普通整合，11处冲突原文保留；timeline动作/尝试身份归独立owner，history/node/project/scene/link与43-owner startup承接新增节点，原db/storage/generate-image/媒体CLI字节保持。固定应用 `8d4e0e8c` 的owner17/70、FFmpeg108、真实组件、真实Next/PG/Worker/媒体/账务矩阵和完整Canvas交互通过；原音频18/67、history67/184、PG node32与scope receipt23保持。完整89/core、R6Y Linux镜像/runtime/product-browser未运行，不借用R6X结果。四产物/副本4817hash/远端与接续状态见R6Y DELIVERY/LIVE_HANDOFF；整体active、不合main不部署。见[R6Y模块记录](changes/2026-10-28-refactor-r6y-timeline-integration.md)。
