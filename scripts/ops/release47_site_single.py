@@ -287,6 +287,11 @@ def resume_final(tx,c):
     for k,v in r.new.items():
         require(v['State']['Running'] and v['Image']==c['image'] and v['Id']==ops['web-create-stopped' if k=='web' else 'worker-create']['receipt']['id'] and environment(v)['SOURCE_COMMIT']==c['commit'],'PUBLISHED_INSTANCE_CHANGED')
     expected=set(c['runningIds'])-{v['Id'] for v in r.old.values()}|{v['Id'] for v in r.new.values()}
+    connector=ops.get('start-central-connector',{})
+    if connector.get('phase')=='ACKNOWLEDGED':
+        receipt=connector['receipt'];row=next((v for v in r.rows if v['Id']==receipt['id']),None)
+        require(row is not None and public_identity(row)==receipt and row['Image']==c['runtimeImage'],'PUBLISHED_CONNECTOR_CHANGED')
+        expected.add(row['Id']);r.extra.append(row)
     require({v['Id'] for v in r.rows if v['State']['Running']}==expected,'UNREVIEWED_RUNNING_INSTANCE')
     r.db=r.byname['naumi-staging-db-1'];r.de=environment(r.db);r.configuration=json.loads((root/'configuration-before.json').read_bytes());r.cookie=(root/'acceptance-cookie.private').read_text()
     snapshots=list(root.glob('task-snapshot-*.json'));require(len(snapshots)==1,'ORIGINAL_TASK_SNAPSHOT_REQUIRED');r.task_before=tasks.Snapshot(public={},private=json.loads(snapshots[0].read_bytes()))
