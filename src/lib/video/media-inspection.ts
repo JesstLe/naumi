@@ -3,7 +3,8 @@ import {mediaExtension,inspectedMediaMime} from "./media-formats";
 export {mediaExtension,inspectedMediaMime} from "./media-formats";
 import {createHash} from "node:crypto";
 import {ensureSchema,getPool,listArtworksByIds} from "../db";
-import {canReadMedia,getMediaAsset} from "../media-assets";
+import {canReadMedia,getMediaAsset,getMediaAssetTx} from "../media-assets";
+import type {PoolClient} from "pg";
 import {readManagedObject} from "../storage";
 import {ModelConfigError} from "../model-config/types";
 import {probeMedia} from "./media";
@@ -11,6 +12,18 @@ import {probeStaticImage} from "./static-image-probe";
 import type {MediaProbe} from "./media-job-schema";
 
 export type FrozenMediaInput={key:string;artworkId:string|null;sha256:string;bytes:number;mimeType:string;extension:string;probe:MediaProbe;groupId:string|null};
+/** Freeze an already decoded immutable asset under the caller's graph transaction.
+ * Initial import/preflight performs byte I/O. This path opens no pool connection,
+ * runs no Worker, and also sees artwork restored earlier in the same transaction. */
+export async function inspectedOwnedMediaTx(tx:PoolClient,actor:string,key:string,artworkId:string):Promise<FrozenMediaInput>{
+  const art=(await tx.query("SELECT group_id FROM app_artworks WHERE email=$1 AND id=$2 AND deleted_at IS NULL AND (video_url=$3 OR image_url=$3) FOR SHARE",[actor,artworkId,`/media/${key}`])).rows[0];
+  const asset=await getMediaAssetTx(tx,key);
+  if(!art||!asset)throw new ModelConfigError("MEDIA_INPUT_UNAVAILABLE","媒体素材不存在或无权访问",404);
+  const probe=(await tx.query("SELECT probe FROM app_video_media_probes WHERE storage_key=$1 AND sha256=$2 AND decoder_version=1",[key,asset.sha256])).rows[0]?.probe as MediaProbe|undefined;
+  if(!probe)throw new ModelConfigError("MEDIA_INSPECTION_REQUIRED","音频尚未完成真实解码，请重新导入",422);
+  const declared=asset.content_type.split('/')[0] as 'image'|'video'|'audio',mimeType=inspectedMediaMime(probe,declared==='video'&&!probe.videoCodec&&probe.audioCodecs.length?'audio':declared,asset.content_type);
+  return {key,artworkId,sha256:asset.sha256,bytes:Number(asset.bytes),mimeType,extension:mediaExtension(mimeType),probe,groupId:art.group_id||null};
+}
 let ready:Promise<void>|undefined;
 export async function ensureMediaInspectionSchema(){
   if(!ready)ready=ensureSchema().then(()=>getPool().query("CREATE TABLE IF NOT EXISTS app_video_media_probes(storage_key text NOT NULL,sha256 text NOT NULL,probe jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(storage_key,sha256)); ALTER TABLE app_video_media_probes ADD COLUMN IF NOT EXISTS decoder_version integer NOT NULL DEFAULT 0")).then(()=>undefined).catch(error=>{ready=undefined;throw error;});await ready;

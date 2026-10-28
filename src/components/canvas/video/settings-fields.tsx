@@ -1,5 +1,5 @@
 "use client";
-import {previewVisualInputs} from "@/lib/canvas/visual-references";
+import {previewCanvasInputs} from "@/lib/canvas/input-preview";
 import {useVideoI18n} from "./i18n";
 import { useState } from "react";
 import type { OrderedInput } from "@/lib/video/references";
@@ -40,7 +40,7 @@ export function VideoSettingsFields({ config, inputs, models, choices, nodeId, e
     const byoc = useVideoByocCatalog(email), workflow = byoc.catalog?.workflows.find(item => item.id === config.comfyWorkflowId);
     const cap = catalogCapability(selectedVideoCatalogModel(models,config));
     const preview = (() => { try {
-        const expanded = previewVisualInputs(inputs, config.prompt || "", choices);
+        const expanded = previewCanvasInputs(inputs, config.prompt || "", choices);
         return compileVideoPrompt(expanded.prompt, expanded.inputs, compileVideoCamera(config.camera)).prompt;
     }
     catch (cause) {

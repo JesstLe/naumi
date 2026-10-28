@@ -10,13 +10,13 @@ import {workflowVideoRequestSchema,type VideoWorkflowPlan} from "./workflow-sche
 import {canonicalConfig} from "../model-config/repository";
 import {freezeVideoWorkflow,type FrozenWorkflowStage} from "./workflow-freeze";
 import type {VideoReference} from "./types";
-import {resolveCanvasVisualInputs} from "../canvas/visual-reference-service";
+import {resolveCanvasNodeInputs} from "../canvas/node-inputs";
 export const canvasWorkflowSchema=z.strictObject({id:z.uuid(),projectKey:videoProjectKeySchema,nodes:z.array(z.strictObject({id:videoNodeIdSchema,revision:z.number().int().nonnegative(),billingConfirmation:z.strictObject({version:z.number().int().positive(),credits:z.number().finite().nonnegative()}).optional()})).min(1).max(100).refine(nodes=>new Set(nodes.map(node=>node.id)).size===nodes.length,"节点不能重复")});
 export async function buildCanvasVideoWorkflow(actor:string,raw:unknown):Promise<VideoWorkflowPlan>{
   const input=canvasWorkflowSchema.parse(raw),selected=new Set(input.nodes.map(node=>node.id)),nodes:VideoWorkflowPlan["nodes"]=[];
   for(const requested of input.nodes){const current=await getVideoNode(actor,requested.id);if(!current||current.projectKey!==input.projectKey||current.revision!==requested.revision)throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT","制作链节点不存在或已更新",409);
     if(current.lastTaskId){const old=await getVideoTask(actor,current.lastTaskId);if(old&&["queued","processing","needs_attention"].includes(old.status))throw new ModelConfigError("VIDEO_NODE_BUSY","节点仍有正在执行或待核查的任务",409);}
-    const resolved=await resolveCanvasVisualInputs(actor,current.inputs,current.config.prompt||"");
+    const resolved=await resolveCanvasNodeInputs(actor,current.inputs,current.config.prompt||"");
     const references:VideoReference[]=[],ordered=structuredClone(resolved.inputs),bindings:NonNullable<VideoWorkflowPlan["nodes"][number]["mediaBindings"]>=[],dependsOn=new Set<string>();
     for(const source of ordered){if(source.kind==="text")continue;const id=source.nodeId.replace(/^(image|video|audio):/,"");if(selected.has(id)){dependsOn.add(id);bindings.push({fromNodeId:id,inputId:source.id,kind:source.kind,role:source.role as VideoReference["role"]});continue;}
       const previous=await getVideoNode(actor,id);let artworkId=id;if(previous){const task=previous.lastTaskId?await getVideoTask(actor,previous.lastTaskId):null;if(!previous.displayResultId&&task&&task.status!=="completed"||!previous.displayResultId&&!previous.lastResultId)throw new ModelConfigError("VIDEO_DEPENDENCY_PENDING","未加入制作链的前序素材尚未完成",409);artworkId=previous.displayResultId||previous.lastResultId!;}

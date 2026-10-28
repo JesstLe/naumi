@@ -5,6 +5,7 @@ import {dbEnabled, getPool, ensureSchema} from './db';
 import {currentBiContext} from './bi/model-observer';
 import {readManagedObject, readPendingStoredObject, writeStoredObject, mirrorStoredObject, privateMedia, storageDriver} from './storage';
 import {makeMediaVariants} from './media-variants';
+import type {PoolClient} from 'pg';
 
 export type MediaAsset = {key:string; owner:string|null; public:boolean; remote_ready:boolean; content_type:string;
   sha256:string; bytes:number; width:number|null; height:number|null; thumbnail_key:string|null; preview_key:string|null};
@@ -37,6 +38,10 @@ export async function getMediaAsset(key:string): Promise<MediaAsset|null> {
   if(!dbEnabled) return null;
   await ensureMediaSchema();
   return (await getPool().query('SELECT * FROM app_media_assets WHERE key=$1',[key])).rows[0] || null;
+}
+/** Caller owns a transaction after media schema initialization. */
+export async function getMediaAssetTx(tx:PoolClient,key:string):Promise<MediaAsset|null>{
+  return (await tx.query('SELECT * FROM app_media_assets WHERE key=$1 FOR SHARE',[key])).rows[0]||null;
 }
 /** A request-local metadata snapshot; callers still authorize ownership for
  * every canonical source before using any variant. No cross-request ACL cache. */

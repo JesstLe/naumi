@@ -18,6 +18,9 @@ import {ensureCharacterNodeSchema,saveCharacterNodeTx} from "@/lib/canvas/charac
 import {sceneNodeWriteSchema} from "./canvas/scene-node-schema";
 import {ensureSceneNodeSchema,saveSceneNodeTx} from "./canvas/scene-node-repository";
 import {lockSceneImagesTx} from "./canvas/scene-references";
+import {audioNodeWriteSchema} from "./canvas/audio-node-schema";
+import {ensureAudioNodeSchema,saveAudioNodeTx} from "./canvas/audio-node-repository";
+import {validateAudioProject} from "./canvas/audio-project-validation";
 import {requireVisualImages} from "./canvas/visual-images";
 import {lockCharacterImagesTx} from "@/lib/canvas/character-references";
 
@@ -34,6 +37,7 @@ const textNode = textFields.extend({ id, prompt: z.string().max(4000), projectKe
 export const videoHistoryFields=videoNodeWriteSchema.omit({id:true,projectKey:true,expectedRevision:true,operationId:true,deleted:true});
 export const directorHistoryFields=directorNodeWriteSchema.omit({id:true,projectKey:true,expectedRevision:true,operationId:true,deleted:true});
 export const characterHistoryFields=characterNodeWriteSchema.omit({id:true,projectKey:true,expectedRevision:true,operationId:true,deleted:true});
+export const audioHistoryFields=audioNodeWriteSchema.omit({id:true,projectKey:true,expectedRevision:true,operationId:true,deleted:true});
 export const sceneHistoryFields=sceneNodeWriteSchema.omit({id:true,projectKey:true,expectedRevision:true,operationId:true,deleted:true});
 export const historyRequest = z.object({
   operationId: z.string().uuid(),
@@ -47,6 +51,8 @@ export const historyRequest = z.object({
     z.object({ type: z.literal("director-patch"), id, expectedRevision:z.number().int().nonnegative(), fields:directorHistoryFields }),
     z.object({ type: z.literal("character-visibility"), id, visible:z.boolean() }),
     z.object({ type: z.literal("character-patch"), id, expectedRevision:z.number().int().nonnegative(), fields:characterHistoryFields }),
+    z.object({ type: z.literal("audio-visibility"), id, visible:z.boolean() }),
+    z.object({ type: z.literal("audio-patch"), id, expectedRevision:z.number().int().nonnegative(), fields:audioHistoryFields }),
     z.object({ type: z.literal("scene-visibility"), id, visible:z.boolean() }),
     z.object({ type: z.literal("scene-patch"), id, expectedRevision:z.number().int().nonnegative(), fields:sceneHistoryFields }),
     z.object({ type: z.literal("video-result"),id,expectedRevision:z.number().int().nonnegative(),artworkId:id.nullable(),expectedArtworkId:id.nullable().optional() }),
@@ -57,7 +63,7 @@ export const historyRequest = z.object({
     z.object({ type: z.literal("rename"), id, title: z.string().max(80) }),
     z.object({ type: z.literal("size"), id, x: coordinate, y: coordinate, width: z.number().min(80).max(4096), height: z.number().min(80).max(4096) }),
     z.object({ type: z.literal("mark"), id, marked: z.boolean() }),
-    z.object({ type: z.literal("node-settings"), id, text: z.boolean(), video:z.boolean().optional(), director:z.boolean().optional(), character:z.boolean().optional(), scene:z.boolean().optional(), settings: nodeSettingsSchema }),
+    z.object({ type: z.literal("node-settings"), id, text: z.boolean(), video:z.boolean().optional(), director:z.boolean().optional(), character:z.boolean().optional(), scene:z.boolean().optional(), audio:z.boolean().optional(), settings: nodeSettingsSchema }),
     z.object({ type: z.literal("workflow-asset"), id, assetOperationId: z.string().uuid(), filled: z.boolean() }),
     z.object({type:z.literal("image-version"),id,versionId:id,expectedRevision:z.number().int().nonnegative(),expectedImage:z.string().min(1).max(4096)}),
   ])).min(1).max(400),
@@ -74,6 +80,8 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
   if(hasDirector)await ensureDirectorNodeSchema();
   const hasCharacter=input.operations.some(op=>op.type==="character-patch"||op.type==="character-visibility"||op.type==="node-settings"&&op.character);
   if(hasCharacter)await ensureCharacterNodeSchema();
+  const hasAudio=input.operations.some(op=>op.type==="audio-patch"||op.type==="audio-visibility"||op.type==="node-settings"&&op.audio);
+  if(hasAudio)await ensureAudioNodeSchema();
   const hasScene=input.operations.some(op=>op.type==="scene-patch"||op.type==="scene-visibility"||op.type==="node-settings"&&op.scene);
   if(hasScene)await ensureSceneNodeSchema();
   if (input.operations.some(op => op.type === "node-settings")) await ensureCanvasSettingsSchema();
@@ -99,9 +107,18 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
       if (previous.rows[0].fingerprint !== fingerprint) throw new Error("操作编号已使用");
       await client.query("COMMIT"); return;
     }
-    if(hasVideo||hasDirector||hasCharacter||hasScene)await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${email}`]);
-    const changedCharacters=new Set<string>(),changedScenes=new Set<string>(),changedDirectors=new Set<string>();
+    if(hasVideo||hasDirector||hasCharacter||hasScene||hasAudio)await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${email}`]);
+    const changedCharacters=new Set<string>(),changedScenes=new Set<string>(),changedAudios=new Set<string>(),changedDirectors=new Set<string>();
     for (const [index,op] of input.operations.entries()) {
+      if(op.type==="audio-patch"||op.type==="audio-visibility"){
+        const row=(await client.query("SELECT revision,project_key,audio FROM app_canvas_audio_nodes WHERE email=$1 AND id=$2 FOR UPDATE",[email,op.id])).rows[0];
+        if(!row)throw new Error("音频不存在或无权修改");
+        await assertCreationProjectInput(email,String(row.project_key));
+        const bytes=createHash("sha256").update(`audio:${input.operationId}:${index}:${op.id}`).digest().subarray(0,16);bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;const hex=bytes.toString("hex");
+        const operationId=`${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+        const write=audioNodeWriteSchema.parse({id:op.id,expectedRevision:op.type==="audio-patch"?op.expectedRevision:Number(row.revision),operationId,...(op.type==="audio-patch"?op.fields:{deleted:!op.visible})});
+        await saveAudioNodeTx(client,email,write,String(row.project_key));changedAudios.add(op.id);continue;
+      }
       if(op.type==="image-version"){await selectCanvasImageVersionTx(client,email,op.id,op.versionId,op.expectedImage,op.expectedRevision);continue;}
       if(op.type==="scene-patch"||op.type==="scene-visibility"){
         const row=(await client.query("SELECT revision,project_key,scene FROM app_canvas_scene_nodes WHERE email=$1 AND id=$2 FOR UPDATE",[email,op.id])).rows[0];
@@ -158,12 +175,12 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
       }
       const text = op.type === "text-delete" || op.type === "text-patch" || ((op.type === "position" || op.type === "node-settings") && op.text);
       const video=op.type==="node-settings"&&op.video===true;
-      const table = text ? "app_canvas_text_nodes" : video?"app_canvas_video_nodes":op.type==="node-settings"&&op.director?"app_canvas_director_nodes":op.type==="node-settings"&&op.character?"app_canvas_character_nodes":op.type==="node-settings"&&op.scene?"app_canvas_scene_nodes":"app_artworks";
+      const table = text ? "app_canvas_text_nodes" : video?"app_canvas_video_nodes":op.type==="node-settings"&&op.director?"app_canvas_director_nodes":op.type==="node-settings"&&op.character?"app_canvas_character_nodes":op.type==="node-settings"&&op.scene?"app_canvas_scene_nodes":op.type==="node-settings"&&op.audio?"app_canvas_audio_nodes":"app_artworks";
       const owned = await client.query(`SELECT * FROM ${table} WHERE email=$1 AND id=$2 FOR UPDATE`, [email,op.id]);
       if (!owned.rows.length) throw new Error("节点不存在或无权修改，请刷新画布");
       const row = owned.rows[0];
       if(op.type==="node-settings"&&op.director)await assertCreationProjectInput(email,String(row.project_key));
-      if(op.type==="node-settings"&&(op.character||op.scene))await assertCreationProjectInput(email,String(row.project_key));
+      if(op.type==="node-settings"&&(op.character||op.scene||op.audio))await assertCreationProjectInput(email,String(row.project_key));
       if (op.type === "workflow-asset") {
         const versions = await client.query("SELECT before_asset,after_asset FROM app_canvas_workflow_asset_ops WHERE email=$1 AND id=$2 AND node_id=$3", [email,op.assetOperationId,op.id]);
         const version = versions.rows[0];
@@ -221,6 +238,10 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
     if(changedScenes.size){
       const rows=(await client.query("SELECT scene FROM app_canvas_scene_nodes WHERE email=$1 AND id=ANY($2::text[]) AND deleted_at IS NULL",[email,[...changedScenes]])).rows;
       for(const row of rows)await lockSceneImagesTx(client,email,row.scene);
+    }
+    if(changedAudios.size){
+      const rows=(await client.query("SELECT audio FROM app_canvas_audio_nodes WHERE email=$1 AND id=ANY($2::text[]) AND deleted_at IS NULL",[email,[...changedAudios]])).rows;
+      for(const row of rows)await validateAudioProject(email,row.audio,client);
     }
     if(changedDirectors.size){
       const rows=(await client.query("SELECT project FROM app_canvas_director_nodes WHERE email=$1 AND id=ANY($2::text[]) AND deleted_at IS NULL",[email,[...changedDirectors]])).rows;
