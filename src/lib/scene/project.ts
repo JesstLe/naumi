@@ -36,6 +36,14 @@ export type SceneBackground = z.infer<typeof sceneBackgroundSchema>;
 export function newSceneProject(name = "场景"): SceneProject {
   return {version: 1, name, description: "", defaultStateId: "base", states: [{id: "base", name: "默认", description: "", referenceArtworkIds: [], background: null}]};
 }
+/** First binding gets a regular image background, never an inferred panorama.
+ * Removing the selected background chooses the next actual reference or none. */
+export function sceneStateWithReferences(state: SceneState, ids: readonly string[]): SceneState {
+  const references = [...new Set(ids)];
+  const keep = state.background && references.includes(state.background.artworkId);
+  const select = !!state.background || !state.referenceArtworkIds.length;
+  return {...state, referenceArtworkIds: references, background: keep ? {...state.background!} : select && references.length ? {artworkId: references[0], projection: "image"} : null};
+}
 export function sceneInputIdentity(id: string, stateId: string) {
   return `scene:${sceneIdSchema.parse(id)}#${sceneStateIdSchema.parse(stateId)}`;
 }

@@ -1,6 +1,7 @@
 /** Canvas video UI; user prompts, workflow JSON and model labels are never translated. */
 export const videoEn:Record<string,string>={
   "已保存":"Saved",
+  "场景":"Scene","场景或状态素材已不可用":"Scene or state is unavailable","场景参考图片尚未完成或已不可用":"Scene reference image is pending or unavailable",
   "角色或外观素材已不可用":"Character or look is unavailable",
   "角色参考图片尚未完成或已不可用":"Character reference image is pending or unavailable",
   "视频预览":"Video preview","编辑后重试":"Edit and retry","展开描述":"Expand prompt","收起描述":"Collapse prompt","描述你想生成的视频…":"Describe the video you want to create…","画幅与清晰度":"Aspect ratio and resolution","更多视频参数":"More video options","返回视频创作":"Back to video composer",

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import {sceneDirectorSnapshotSchema} from "../scene/project";
 
 const id = z.string().min(1).max(160);
 const value = z.number().finite().min(-10000).max(10000);
@@ -29,6 +30,8 @@ const frame = z.object({ id, time: z.number().finite().min(0).max(120), cameraId
 export const directorProjectSchema = z.object({
   version: z.literal(1), name: z.string().trim().min(1).max(100), aspectRatio: z.enum(["16:9", "9:16", "1:1"]),
   duration: z.number().finite().min(1).max(120), background: color, floor: color,
+  sceneReference: sceneDirectorSnapshotSchema.nullable().optional(),
+  backgroundProjection: z.enum(["image", "panorama"]).optional(),
   panoramaArtworkId: id.nullable(), panoramaRotation: z.number().finite().min(-360).max(360),
   entities: z.array(directorEntitySchema).max(256), cameras: z.array(camera).min(1).max(64), activeCameraId: id,
   keyframes: z.array(frame).max(1024),
