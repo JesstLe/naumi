@@ -135,7 +135,7 @@ export async function creationAsset(reader:CreationReader,id:string,assetId:stri
  await authorizedRecord(tx,reader,id,visible);let a=(await tx.query(`${familySql} SELECT a.* FROM app_creation_assets a JOIN family f ON f.id=a.creation_id WHERE a.id=$2`,[id,assetId])).rows[0];
  if(!a&&assetId.startsWith('recovered-'))a=(await creationSourceEvidence(tx,id)).assets.find(asset=>asset.id===assetId);
  if(!a)throw new TeamError('素材不存在或无权访问',404);
- let url=a.storage_ref as string;
+ let url=(a.storage_snapshot||a.storage_ref) as string;
  if(url.startsWith('artwork:')){const artworkId=url.slice(8);if(artworkId.startsWith('asset-')){const {readImagegenInputAsset}=await import('@/lib/imagegen/input-assets');url=(await readImagegenInputAsset(artworkId,a.actor_email)).url;}
  else {const work=(await tx.query('SELECT image_url,video_url FROM app_artworks WHERE id=$1 AND email=$2 AND deleted_at IS NULL',[artworkId,a.actor_email])).rows[0];if(!work)throw new TeamError('素材已失效',404);url=a.media_type==='video'?work.video_url:work.image_url;}}
  const {isManagedImageUrl}=await import('@/lib/storage');if(!isManagedImageUrl(url)&&!url.startsWith('data:image/'))throw new TeamError('素材不在受控存储中',422);

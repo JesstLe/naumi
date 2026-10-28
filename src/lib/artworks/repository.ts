@@ -30,10 +30,10 @@ export async function listArtworks(
   await ensureSchema();
   const { rows } = await getPool().query<ArtworkRow>(
     `SELECT id, title, category, prompt, status, image_url, gradient,
-            style, ratio, resolution, source_url, batch_id, parent_id, template_id,
+            style, ratio, resolution, source_url, batch_id, parent_id, template_id, canvas_image_version, canvas_image_revision,
             parent_ids, canvas_x, canvas_y, image_width, image_height, processing_kind, postprocess_status, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, video_url, creation_provenance, created_at
        FROM app_artworks
-      WHERE email = $1 AND deleted_at IS NULL
+      WHERE email = $1 AND deleted_at IS NULL AND source_url IS DISTINCT FROM 'canvas-node-version'
       ORDER BY created_at DESC LIMIT 1000`,
     [emailRaw.toLowerCase()]
   );
@@ -44,20 +44,21 @@ export async function listArtworks(
 // 而不是整表重拉 —— 大幅减少数据库出站流量(Supabase egress)。
 export async function listArtworksByIds(
   emailRaw: string,
-  ids: string[]
+  ids: string[],
+  options: {original?:boolean} = {}
 ): Promise<ArtworkRecord[]> {
   await ensureSchema();
   const clean = ids.filter(Boolean);
   if (clean.length === 0) return [];
   const { rows } = await getPool().query<ArtworkRow>(
     `SELECT id, title, category, prompt, status, image_url, gradient,
-            style, ratio, resolution, source_url, batch_id, parent_id, template_id,
+            style, ratio, resolution, source_url, batch_id, parent_id, template_id, canvas_image_version, canvas_image_revision,
             parent_ids, canvas_x, canvas_y, image_width, image_height, processing_kind, postprocess_status, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, video_url, creation_provenance, created_at
        FROM app_artworks
       WHERE email = $1 AND id = ANY($2::text[]) AND deleted_at IS NULL`,
     [emailRaw.toLowerCase(), clean]
   );
-  return rows.map(rowToArtwork);
+  return rows.map(row=>rowToArtwork(options.original?{...row,canvas_image_version:null,canvas_image_revision:0}:row));
 }
 
 // 画布用:记录图片真实像素尺寸。旧数据在浏览器首次加载原图后自动回填。
@@ -73,7 +74,8 @@ export async function setArtworkDimensions(
   if (!id || !Number.isFinite(w) || !Number.isFinite(h) || w < 1 || h < 1 || w > 8192 || h > 8192) return false;
   const result = await getPool().query(
     `UPDATE app_artworks
-        SET image_width = $3, image_height = $4
+        SET image_width = CASE WHEN canvas_image_version IS NULL THEN $3 ELSE image_width END,
+            image_height = CASE WHEN canvas_image_version IS NULL THEN $4 ELSE image_height END
       WHERE email = $1 AND id = $2 AND deleted_at IS NULL`,
     [emailRaw.toLowerCase(), id, w, h]
   );

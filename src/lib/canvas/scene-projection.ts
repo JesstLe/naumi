@@ -175,6 +175,7 @@ export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];
     // 每个生成任务都有自己的占位节点。后端超过并发上限时自行排队，画布不再全局锁死。
     for (const task of generationTasks) {
       if (!baseIds.has(task.sourceId)) continue;
+      if(task.replaceNode){const index=baseNodes.findIndex(node=>node.id===task.sourceId);if(index>=0)baseNodes[index]={...baseNodes[index],data:{...baseNodes[index].data,regenerating:!task.failure,regenerationFailure:!!task.failure}};continue;}
       const pos = taskPositions[task.id] ?? task.position;
       const previewSize = task.previewSize ?? generationPlaceholderSize("1:1");
       baseNodes.push({

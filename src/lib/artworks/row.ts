@@ -2,6 +2,8 @@ import type {ArtworkRecord} from "./types";
 
 export type ArtworkRow = Pick<ArtworkRecord,"id"|"title"|"category"|"prompt"|"status"|"gradient"|"style"|"ratio"|"resolution"|"origin"|"marked"> & {
   image_url: string;
+  canvas_image_revision?: number;
+  canvas_image_version?: (Partial<Pick<ArtworkRecord,"image"|"prompt"|"style"|"ratio"|"resolution"|"width"|"height">>&{id:string})|null;
   source_url?: string | null;
   batch_id?: string | null;
   parent_id?: string | null;
@@ -28,13 +30,15 @@ export function rowToArtwork(r: ArtworkRow): ArtworkRecord {
     id: r.id,
     title: r.title,
     category: r.category,
-    prompt: r.prompt,
+    prompt: r.canvas_image_version?.prompt ?? r.prompt,
     status: r.status,
-    image: r.image_url,
+    image: r.canvas_image_version?.image ?? r.image_url,
+    canvasImageRevision: Number(r.canvas_image_revision || 0),
+    canvasImageVersionId: r.canvas_image_version?.id || "initial",
     gradient: r.gradient,
-    style: r.style ?? null,
-    ratio: r.ratio ?? null,
-    resolution: r.resolution ?? null,
+    style: r.canvas_image_version?.style ?? r.style ?? null,
+    ratio: r.canvas_image_version?.ratio ?? r.ratio ?? null,
+    resolution: r.canvas_image_version?.resolution ?? r.resolution ?? null,
     source: r.source_url ?? null,
     batchId: r.batch_id ?? null,
     parentId: r.parent_id ?? null,
@@ -42,8 +46,8 @@ export function rowToArtwork(r: ArtworkRow): ArtworkRecord {
     templateId: r.template_id ?? null,
     canvasX: r.canvas_x ?? null,
     canvasY: r.canvas_y ?? null,
-    width: r.image_width ?? null,
-    height: r.image_height ?? null,
+    width: r.canvas_image_version?.width ?? r.image_width ?? null,
+    height: r.canvas_image_version?.height ?? r.image_height ?? null,
     processingKind: r.processing_kind ?? null,
     postprocessStatus: r.postprocess_status ?? null,
     canvasWidth: r.canvas_width ?? null,

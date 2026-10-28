@@ -21,7 +21,7 @@ export async function readGeneration(query:{active:boolean;jobId:string|null;act
   if(jobId?.startsWith("imagegen-")&&/^[a-f0-9-]{36}$/i.test(jobId.slice(9))){
     const owner=await query.actor();if(!owner)return readResult({error:"请先登录"},{status:401});
     const {getImagegenResult}=await import("./dispatch"),result=await getImagegenResult(jobId.slice(9),owner);if(!result)return readResult({error:"任务不存在或无权访问"},{status:404});
-    return readResult({status:["succeeded","partial"].includes(result.status)?"done":["failed","cancelled","needs_attention"].includes(result.status)?"error":"pending",operationStatus:result.status,stage:result.stage,images:result.artifacts.map(a=>({id:a.artworkId,url:a.url,width:a.width,height:a.height})),error:result.error?.message,warnings:result.warnings,recoveryAvailable:result.recoveryAvailable,billingStatus:result.billingStatus,creditsUsed:result.chargedCredits,user:await getUser(owner)},{headers:{"cache-control":"private, no-store"}});
+    return readResult({status:["succeeded","partial"].includes(result.status)?"done":["failed","cancelled","needs_attention"].includes(result.status)?"error":"pending",operationStatus:result.status,stage:result.stage,canvasAttachment:result.canvasAttachment,images:result.artifacts.map(a=>({id:a.artworkId,url:a.url,width:a.width,height:a.height})),error:result.error?.message,warnings:result.warnings,recoveryAvailable:result.recoveryAvailable,billingStatus:result.billingStatus,creditsUsed:result.chargedCredits,user:await getUser(owner)},{headers:{"cache-control":"private, no-store"}});
   }
   if (jobId) {
     if (dbEnabled && (await query.actor())?.toLowerCase() !== await JOBS.owner(jobId)) {

@@ -3,6 +3,8 @@ import type {CanvasPoint} from "./stable-placement";
 import {assertGenerationResultsPresent} from "./generation-failure";
 import {canvasImageTaskHeaders,type CanvasImageTaskScope} from "./image-task-scope";
 import {readImagegenResponse} from "../imagegen/http";
+import type {CanvasImageAttachment} from "./image-versions";
+import type {CanvasHistoryAction} from "./history-model";
 
 export type CanvasResultImage={id:string;url?:string;width?:number;height?:number};
 type Layout={kind:"pixels";gap:number}|{kind:"detail";gap:number;height:(art:Artwork)=>number}|{kind:"single"}|{kind:"offset";step:number};
@@ -43,5 +45,33 @@ export function createCanvasResultAttachment(input:Services){
     const added=ids.filter(id=>!recorded.has(id));
     if(added.length){input.history(added,artworks);added.forEach(id=>recorded.add(id));}
     return artworks;
+  };
+}
+
+/** An in-place result changes the existing display, never its canvas placement.
+ * Task completion and explicit original-receipt recovery share this path. A
+ * later version choice stays authoritative and cannot become a new undo step. */
+export function createCanvasImageVersionAttachment(input:{
+  nodeId:string;merge:Services["merge"];
+  history?:(action:Extract<CanvasHistoryAction,{kind:"image-version"}>)=>void;
+}){
+  const recorded=new Set<string>();
+  return async(scope:Pick<CanvasImageTaskScope,"assertCurrent"|"isCurrent">,attachment:CanvasImageAttachment|undefined)=>{
+    scope.assertCurrent();
+    if(!attachment||attachment.nodeId!==input.nodeId)throw new Error("生成已完成，节点版本尚未同步；请检查原任务，不要重复生成");
+    if(attachment.reason==="deleted")throw new Error("原节点已删除，生成结果已保存在创作记录");
+    const fresh=await input.merge([input.nodeId],scope.isCurrent);scope.assertCurrent();
+    assertGenerationResultsPresent([input.nodeId],fresh);
+    const node=fresh.find(art=>art.id===input.nodeId)!;
+    if((node.canvasImageRevision||0)<attachment.revision)throw new Error("节点版本尚未同步，请检查原任务");
+    if(attachment.applied&&node.canvasImageRevision===attachment.revision){
+      if(node.canvasImageVersionId!==attachment.versionId)throw new Error("节点版本尚未同步，请检查原任务");
+      const key=JSON.stringify([attachment.nodeId,attachment.versionId,attachment.revision]);
+      if(input.history&&!recorded.has(key)){
+        input.history({kind:"image-version",id:input.nodeId,from:{versionId:attachment.previousVersionId,image:attachment.previousImage},to:{versionId:attachment.versionId,image:node.image}});
+        recorded.add(key);
+      }
+    }
+    return fresh;
   };
 }

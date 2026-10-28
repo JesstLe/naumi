@@ -132,7 +132,7 @@ export async function completeImageDelivery(input:DeliveryInput){
       const prompt=p.userPrompt||p.prompt||"生成图片",title=prompt.length>16?`${prompt.slice(0,16)}…`:prompt;
       await addArtworksTx(tx,owner,fresh.filter(im=>!current.some(row=>row.id===im.id)).map(im=>({
         id:im.id,title,category:p.category||"main",prompt,status:"completed",image:im.url,gradient:im.gradient,
-        style:p.style||null,ratio:im.ratio||p.ratio||null,resolution:p.resolution||null,source:sourceUrl,
+        style:p.style||null,ratio:im.ratio||p.ratio||null,resolution:p.resolution||null,source:p.imagegen?.request.canvasTarget?"canvas-node-version":sourceUrl,
         parentId:root?.id||null,parentIds:lineage.filter(work=>work.id!==root?.id).map(work=>work.id),groupId:p.projectGroupId||root?.groupId||undefined,
         origin:p.origin||input.entry||null,width:im.width??null,height:im.height??null,processingKind:im.processingKind??null,postprocessStatus:im.postprocessStatus??null,
         creationProvenance:{version:1,operation:"generate",entry:p.origin==="canvas"?"canvas":provenanceEntry(input.entry||p.entry),ref:jobId,evidence:input.recovery?"stored-paid-checkpoint":"server-route"},

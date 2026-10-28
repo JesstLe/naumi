@@ -69,10 +69,11 @@ export async function bindActualCreationProject(email:string,id:string,options:{
  context.parentContext=id;return context;
 }
 /** Validate referenced text/video projects without changing the destination. */
-export async function assertCreationProjectInput(email:string,id:string){
+export async function assertCreationProjectInput(email:string,id:string,tx?:Pick<PoolClient,"query">,sameScope=false){
  const context=currentCreationContext();if(!dbEnabled||!context)return;
- await ensureCreationSchema();const row=(await getPool().query("SELECT scope_kind,tenant_id FROM app_creation_contexts WHERE actor_email=$1 AND context_kind='project' AND context_id=$2",[email.toLowerCase(),id])).rows[0];
+ if(!tx)await ensureCreationSchema();const row=(await (tx||getPool()).query("SELECT scope_kind,tenant_id FROM app_creation_contexts WHERE actor_email=$1 AND context_kind='project' AND context_id=$2",[email.toLowerCase(),id])).rows[0];
  if(row?.scope_kind==='tenant'&&row.tenant_id!==context.tenantId)throw new TeamError('不能直接引用其他企业的素材',403);
+ if(sameScope&&((row?.scope_kind||'personal')!==context.scopeKind||(row?.tenant_id||null)!==context.tenantId))throw new TeamError('图片节点与当前工作空间不符',403);
 }
 export async function bindCreationMedia(email:string,reference:string) {
  const scope=currentCreationContext();if(!dbEnabled||!scope)return;

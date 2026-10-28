@@ -112,6 +112,8 @@ export async function ensureSchema(): Promise<void> {
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_x double precision;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_y double precision;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS image_width integer;
+        ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_image_version jsonb;
+        ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_image_revision integer NOT NULL DEFAULT 0;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS image_height integer;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS processing_kind text;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS postprocess_status text;

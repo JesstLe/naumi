@@ -23,6 +23,7 @@ export async function finalizeCompletedParent(parentId:string,owner:string,optio
  const allowed=options.repairTerminalReceipt?['pending','running','error','done']:['pending','running'];
  if(!parent||!allowed.includes(parent.snapshot.status)||!expiredOrEmpty(parent))return false;
  const plan=parent.payload.plan as ImagegenPlan;
+ if(plan?.request?.canvasTarget)return false; // durable canvas attachment belongs to runParent
  if(!Array.isArray(plan?.steps)||plan.steps.length!==1||!plainGeneratedOutput(plan))return false;
  const children=parent.snapshot.children||{},keys=Object.keys(children),step=plan.steps[0];
  const link=children[step.key];

@@ -1,3 +1,5 @@
+import type {CanvasImageAttachment} from "./image-versions";
+import type {CanvasHistoryAction} from "./history-model";
 import type {Artwork} from "../mock-data";
 import {ImagegenHttpError,ImagegenPreparationCancelled} from "../imagegen/http";
 import {completeCanvasImagegen} from "../imagegen/client-recovery";
@@ -6,11 +8,12 @@ import {classifyGenerationFailure,type GenerationFailure} from "./generation-fai
 import type {GenerationStage} from "./generation-feedback";
 import type {CanvasPoint} from "./stable-placement";
 import {canvasImageTaskHeaders,type CanvasImageTaskScope} from "./image-task-scope";
-import {createCanvasResultAttachment} from "./result-attachment";
+import {createCanvasResultAttachment,createCanvasImageVersionAttachment} from "./result-attachment";
 
 export type CanvasGeneratedImage={id:string;url:string;width?:number;height?:number};
 type Result={status:"succeeded"|"partial";images:CanvasGeneratedImage[];artworks:Artwork[];jobId:string}|{status:"cancelled"}|{status:"stale"}|{status:"failed";failure:GenerationFailure};
 type Services={
+  replacement?:{nodeId:string;history:(action:Extract<CanvasHistoryAction,{kind:"image-version"}>)=>void};
   scope:CanvasImageTaskScope;prepare:()=>Promise<FormData>;
   submit:(form:FormData,current:()=>boolean)=>Promise<Response>;
   position:()=>CanvasPoint;
@@ -34,13 +37,14 @@ export function createCanvasImageTask(input:Services){
   const {scope}=input;
   let form:FormData|undefined,jobId:string|undefined,images:CanvasGeneratedImage[]=[],attempted=false,terminal=false,partial=false;
   let inflight:Promise<Result>|undefined;
-  let completed:Result|undefined;
+  let completed:Result|undefined,canvasAttachment:CanvasImageAttachment|undefined;
+  const versionAttachment=input.replacement?createCanvasImageVersionAttachment({nodeId:input.replacement.nodeId,merge:input.merge,history:input.replacement.history}):undefined;
   const guard=()=>scope.assertCurrent();
   const attachment=createCanvasResultAttachment({position:input.position,layout:{kind:"pixels",gap:input.resultGap},saveErrorText:input.saveErrorText,
     merge:input.merge,history:input.history,attached:async(images,artworks)=>input.attached?.(images as CanvasGeneratedImage[],artworks)});
   const attach=async():Promise<Result>=>{
     guard();input.stage("saving");
-    const artworks=await attachment(scope,images);guard();
+    const artworks=versionAttachment?await versionAttachment(scope,canvasAttachment):await attachment(scope,images);guard();
     // Partial/needs-review delivery retains its durable receipt for the original
     // task. Image availability is not proof that every requested output finished.
     if(!partial&&jobId)completeCanvasImagegen(jobId,{owner:scope.owner,workspace:scope.workspace,project:scope.project});
@@ -49,7 +53,10 @@ export function createCanvasImageTask(input:Services){
   const execute=async():Promise<Result>=>{
     try{
       guard();
-      if(images.length)return await attach();
+      if(images.length){
+        if(versionAttachment&&!canvasAttachment&&jobId){const headers=await canvasImageTaskHeaders(scope);guard();const response=await fetch(`/api/generate-image?job=${encodeURIComponent(jobId)}`,{cache:"no-store",headers}),body=await readBody(response);guard();if(!response.ok)throw new Error(body.error||input.errorText);canvasAttachment=body.canvasAttachment;}
+        return await attach();
+      }
       if(!jobId){
         input.stage("preparing");form??=await input.prepare();guard();attempted=true;
         const response=await input.submit(form,scope.isCurrent),body=await readBody(response);guard();
@@ -64,6 +71,7 @@ export function createCanvasImageTask(input:Services){
         const body=await readBody(response);guard();if(!response.ok)throw new Error(body.error||input.errorText);
         if(body.user)input.user(body.user);
         if(body.status==="done"||body.status==="error"){
+          canvasAttachment=body.canvasAttachment;
           images=(Array.isArray(body.images)?body.images:[]).filter((image:any)=>typeof image?.id==="string"&&!!image.id&&typeof image.url==="string"&&!!image.url).map((image:any)=>({id:image.id,url:image.url,width:image.width,height:image.height}));
           terminal=!body.reviewRequired&&body.operationStatus!=="needs_attention";
           partial=body.status==="error"||body.operationStatus==="partial";

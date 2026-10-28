@@ -1,0 +1,53 @@
+/** Actual request, projection, history, row and attachment owners. Only browser
+ * I/O ports are recorded. Persistence/CAS is covered by the paired real-PG suite. */
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),{build}=require('esbuild');
+const root=process.cwd(),out=path.resolve(process.env.IMAGE_VERSION_EVIDENCE||'output/canvas-image-version-integration');
+const checks=[],pass=name=>{checks.push(name);console.log('CHECK='+name);},plain=x=>JSON.parse(JSON.stringify(x));
+async function main(){
+ const exports=['canvas/image-task-request','canvas/image-task-controller','canvas/result-attachment','canvas/history-model','canvas/history-contract','canvas/scene-projection','artworks/row','imagegen/schema'];
+ const built=await build({stdin:{contents:exports.map(p=>`export * from './src/lib/${p}';`).join('\n'),resolveDir:root,loader:'ts'},bundle:true,write:false,platform:'node',format:'cjs',plugins:[{name:'recorded-browser-io',setup(b){
+  b.onResolve({filter:/supabase$/},()=>({path:'auth',namespace:'ports'}));b.onResolve({filter:/saas\/workspace-client$/},()=>({path:'workspace',namespace:'ports'}));b.onResolve({filter:/browser-image-cache$/},()=>({path:'pixels',namespace:'ports'}));
+  b.onLoad({filter:/.*/,namespace:'ports'},a=>({contents:a.path==='auth'?'export const authHeader=async()=>({});':a.path==='pixels'?'export const readBrowserImage=url=>__io.read(url);':'export const currentWorkspace=()=>"personal";export const currentWorkspaceRevision=()=>0;',loader:'js'}));
+ }}]});
+ const io={reads:[],async read(url){io.reads.push(url);return new Blob(['fixture pixels'],{type:'image/png'});}},module={exports:{}},calls=[];
+ const c={module,exports:module.exports,require,process:{env:{}},console,__io:io,File,Blob,FormData,Headers,Response,Request,URL,AbortSignal,TextEncoder,TextDecoder,Buffer,crypto:globalThis.crypto,structuredClone,Date,Math,Set,Map,Promise,setTimeout:f=>{queueMicrotask(f);return 1;},clearTimeout(){}};
+ vm.createContext(c);vm.runInContext(built.outputFiles[0].text,c);const api=module.exports;
+ const source={id:'source',image:'/media/old.png',title:'source',prompt:'original recipe',category:'main',width:1024,height:768,canvasX:160,canvasY:90,canvasWidth:300,canvasHeight:225,canvasImageRevision:3,canvasImageVersionId:'v3'};
+ let current=true;const scope={owner:'fixture@example.test',workspace:'personal',project:'tree:source',isCurrent:()=>current,assertCurrent(){if(!current)throw Error('stale-view');}};
+ const request={kind:'derived',scope,operationKey:'operation-original',position:{x:160,y:90},prompt:'  new recipe  ',quality:'medium',model:'',source,models:[],options:{replaceNode:true,ratio:'auto',count:2,resolution:'2K',refUrls:[],userPrompt:'new recipe'}};
+ let form=await api.prepareCanvasImageTask(request);
+ assert.equal(form.get('canvasTargetNode'),'source');assert.equal(form.get('canvasTargetImage'),source.image);assert.equal(form.get('canvasTargetRevision'),'3');assert.equal(form.get('ratio'),'4:3');assert.equal(form.getAll('image').length,0);assert.deepEqual(io.reads,[]);pass('same-node request freezes revision, inherits pixels ratio and never adds its output as an implicit reference');
+ form=await api.prepareCanvasImageTask({...request,options:{...request.options,referenceInputs:[{key:'ref',sourceNodeId:'parent',number:1,title:'parent',role:'reference',url:'/media/input.png'}]},referenceInputs:[{key:'ref',sourceNodeId:'parent',number:1,title:'parent',role:'reference',url:'/media/input.png'}]});
+ assert.equal(form.getAll('image').length,1);assert.deepEqual(io.reads,['/media/input.png']);assert.match(form.get('canvasReferences'),/parent/);pass('explicit incoming reference retains order, identity and original file bytes');
+ const attachment={nodeId:'source',applied:true,previousVersionId:'v3',previousImage:source.image,versionId:'v4',revision:4};
+ let fresh={...source,image:'/media/new.png',canvasImageVersionId:'v4',canvasImageRevision:4},undo=[],mergeIds=[];
+ const attach=api.createCanvasImageVersionAttachment({nodeId:'source',merge:async ids=>{mergeIds.push([...ids]);return [fresh];},history:a=>undo.push(a)});
+ await attach(scope,attachment);await attach(scope,attachment);assert.equal(undo.length,1);assert.deepEqual(mergeIds,[['source'],['source']]);assert.equal(fresh.canvasX,160);pass('completion and recovery merge only the original node and record one version undo, with zero placement POSTs');
+ const compiled=api.compileCanvasHistory(undo[0],true,()=>undefined,undefined,undefined,undefined,undefined,()=>fresh);
+ assert.deepEqual(plain(compiled),[{type:'image-version',id:'source',versionId:'v3',expectedImage:fresh.image,expectedRevision:4}]);
+ fresh={...source,canvasImageRevision:5};const redo=api.compileCanvasHistory(undo[0],false,()=>undefined,undefined,undefined,undefined,undefined,()=>fresh);assert.equal(redo[0].expectedRevision,5);assert.equal(redo[0].versionId,'v4');
+ fresh={...fresh,canvasImageVersionId:'later'};assert.throws(()=>api.compileCanvasHistory(undo[0],false,()=>undefined,undefined,undefined,undefined,undefined,()=>fresh),/版本已改变/);pass('shared undo/redo compiler freezes current revision and rejects a stale version identity');
+ fresh={...source,image:'/media/later.png',canvasImageVersionId:'later',canvasImageRevision:6};await attach(scope,attachment);assert.equal(undo.length,1);
+ await attach(scope,{...attachment,applied:false,revision:6});assert.equal(undo.length,1);
+ await assert.rejects(attach(scope,{...attachment,reason:'deleted',applied:false}),/已删除/);await assert.rejects(attach(scope,undefined),/不要重复生成/);
+ current=false;await assert.rejects(attach(scope,attachment),/stale-view/);current=true;pass('late, partial, deleted and stale-view results cannot overwrite a newer display or create false undo steps');
+ const actions=new Proxy({},{get:()=>()=>{}}),node={id:'source',type:'art',position:{x:160,y:90},data:{id:'source',image:source.image},style:{width:300,height:225}};
+ const projection={nodes:[node],edges:[],active:{members:[source]},activeKey:'tree:source',generationTasks:[{id:'task-original',sourceId:'source',replaceNode:true,position:{x:700,y:80},label:'generating',stage:'generating'}],taskPositions:{},pendNodes:[],textNodes:[],videoNodes:[],videoTasks:[],works:[source],selectedId:'source',selectedPendId:null,selectedTextId:null,multiSel:[],expandedTextIds:new Set(),locale:'zh',lightCanvas:true,nodeSettings:{},nodeSettingsReady:true,readOnly:false,cutoutAvailable:false,operations:new Set(),workflowManifests:[],actions};
+ const waiting=api.projectCanvasScene(projection);assert.equal(waiting.displayNodes.length,1);assert.equal(waiting.displayEdges.length,0);assert.equal(waiting.displayNodes[0].data.image,source.image);assert.equal(waiting.displayNodes[0].data.regenerating,true);assert.deepEqual(plain(waiting.displayNodes[0].position),node.position);
+ projection.generationTasks[0].failure={kind:'failed',message:'fixture'};const failed=api.projectCanvasScene(projection);assert.equal(failed.displayNodes.length,1);assert.equal(failed.displayNodes[0].data.regenerationFailure,true);assert.equal(failed.displayNodes[0].data.image,source.image);pass('waiting and failure project on the same visible node without placeholder nodes, edges or position changes');
+ const raw={id:'source',title:'source',category:'main',prompt:'original',status:'completed',gradient:'',image_url:source.image,created_at:new Date(0).toISOString(),image_width:800,image_height:600,canvas_x:160,canvas_y:90,canvas_width:300,canvas_height:225,canvas_image_revision:4,canvas_image_version:{id:'v4',image:'/media/new.png',prompt:'new',width:1600,height:1200}};
+ const saved=JSON.stringify(raw),display=api.rowToArtwork(raw);assert.equal(display.image,'/media/new.png');assert.equal(display.width,1600);assert.equal(display.canvasWidth,300);assert.equal(display.prompt,'new');assert.equal(JSON.stringify(raw),saved);pass('single artwork row projection changes display metadata without mutating original storage evidence or canvas geometry');
+ const inline='data:image/png;base64,'+'A'.repeat(6_600_000),operationId='11111111-1111-4111-8111-111111111111';
+ assert.equal(api.imagegenRequestSchema.parse({version:1,operationId,entry:'canvas',mode:'generate',prompt:'inline fixture',sourceNodeId:'source',canvasTarget:{nodeId:'source',expectedImage:inline,expectedRevision:0}}).canvasTarget.expectedImage,inline);
+ assert.equal(api.historyRequest.parse({operationId,operations:[{type:'image-version',id:'source',versionId:'initial',expectedImage:inline,expectedRevision:0}]}).operations[0].expectedImage,inline);pass('large existing inline media identity survives both submission and history contracts without URL-length rejection');
+ for(const missing of [false,true]){
+  let posts=0,polls=0,histories=0,positions=0,notices=0;fresh={...source,image:'/media/new.png',canvasImageVersionId:'v4',canvasImageRevision:4};
+  c.fetch=async(url,init)=>{calls.push(String(url));if(String(url).includes('/position')){positions++;throw Error('unexpected position write');}polls++;return Response.json({status:'done',images:[{id:'v4',url:fresh.image}],canvasAttachment:missing&&polls===1?undefined:attachment});};
+  const task=api.createCanvasImageTask({scope,prepare:async()=>new FormData(),submit:async()=>{posts++;return Response.json({jobId:'original-job'});},position:()=>({x:700,y:80}),merge:async ids=>{assert.deepEqual(plain(ids),['source']);return [fresh];},history:()=>{throw Error('unexpected derived history');},replacement:{nodeId:'source',history:()=>histories++},stage:()=>{},user:()=>{},notice:()=>notices++,errorText:'fixture error',saveErrorText:'fixture sync',resultGap:40});
+  const first=await task.run();assert.equal(first.status,missing?'failed':'succeeded');if(missing)assert.equal((await task.run()).status,'succeeded');await task.run();assert.equal(posts,1);assert.equal(histories,1);assert.equal(positions,0);assert.equal(polls,missing?2:1);
+ }
+ pass('actual task controller attaches in place and recovers a missing attachment by GET of the original job, never another submit');
+ fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify({status:'PASS',checks,actualOwners:exports,network:'recorded browser ports',realPG:false,placementPosts:0,knownJobReposts:0,inlineBytes:inline.length},null,2)+'\n');
+ console.log(`IMAGE_VERSION_INTEGRATION=PASS CHECKS=${checks.length} ACTUAL_OWNERS=8 PLACEMENT_POSTS=0 KNOWN_JOB_REPOSTS=0 INLINE_BYTES=${inline.length} SUPPLIER=0`);
+}
+main().catch(error=>{console.error(error);process.exitCode=1;});

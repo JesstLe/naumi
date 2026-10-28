@@ -4,11 +4,11 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),asse
 const args=process.argv.slice(2),arg=n=>{const i=args.indexOf(n);return i<0?undefined:args[i+1];},baseline=args.includes('--baseline'),root=path.resolve(arg('--source-root')||'.'),out=path.resolve(arg('--out')||path.join(process.env.CANVAS_CREATION_EVIDENCE||'output/canvas-image-creation','run'));
 const read=p=>fs.readFileSync(path.join(root,p),'utf8'),source=read('src/components/canvas/canvas-client.tsx'),ast=ts.createSourceFile('canvas.tsx',source,99,true,4),fns={},constants=[];let blank;
 function visit(n){
- if(ts.isFunctionDeclaration(n)&&['generateChild','generateSplitViews','retrySelected','genFromAssistant','canvasImageCreationServices','viewPrompt'].includes(n.name?.text))fns[n.name.text]=n.getText(ast);
+ if(ts.isFunctionDeclaration(n)&&['generateSelectedImage','generateChild','generateSplitViews','retrySelected','genFromAssistant','canvasImageCreationServices','viewPrompt'].includes(n.name?.text))fns[n.name.text]=n.getText(ast);
  if(ts.isVariableDeclaration(n)&&['FAITHFUL_REGEN_PROMPT','VIEW_CONSISTENCY_RULES','MAX_TOTAL_IMAGES'].includes(n.name.getText(ast))){let s=n;while(!ts.isVariableStatement(s))s=s.parent;constants.push(s.getText(ast));}
  if(ts.isVariableDeclaration(n)&&n.name.getText(ast)==='promptToUse')blank=n.initializer.getText(ast);
  ts.forEachChild(n,visit);
-}visit(ast);assert.ok(blank&&fns.generateChild&&fns.retrySelected&&fns.genFromAssistant);assert.equal(!!fns.generateSplitViews,baseline);
+}visit(ast);const primary=fns.generateSelectedImage?'generateSelectedImage':'generateChild',hasRedo=!!fns.retrySelected;assert.ok(blank&&fns[primary]&&fns.genFromAssistant);assert.equal(!!fns.generateSplitViews,baseline);
 const transpile=text=>ts.transpileModule(text,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
 async function bundled(){
  const entry=['export * from "./src/lib/canvas/image-references";','export * from "./src/lib/canvas/image-task-scope";',...(!baseline?['export * from "./src/lib/canvas/image-creation";']:[])].join('\n');
@@ -37,7 +37,7 @@ function fixture(code,options={}){
  };
  c.renameGeneratedArtwork=async(id,title)=>{c.renames.push([id,title]);if(options.hold==='rename'&&!used){used=true;entered.resolve();await release.promise;}};
  c.generateDetailSequence=async(...values)=>{c.details.push(await plain(values));};c.setGenError=error=>{c.errors.push(error);};
- vm.runInContext(transpile(constants.join('\n')+'\n'+Object.values(fns).join('\n')+`\nfunction blankPrompt(text,inputTextNodes,inputArts){return ${blank};}\nglobalThis.entries={generateChild,retrySelected,genFromAssistant,blankPrompt};`),c);
+ vm.runInContext(transpile(constants.join('\n')+'\n'+Object.values(fns).join('\n')+`\nfunction blankPrompt(text,inputTextNodes,inputArts){return ${blank};}\nglobalThis.entries={generateChild:${primary},${hasRedo?'retrySelected,':''}genFromAssistant,blankPrompt};`),c);
  const snapshot=async()=>({calls:await plain(c.calls),renames:await plain(c.renames),details:await plain(c.details),errors:await plain(c.errors)});
  const run=async(kind='dock')=>{await (kind==='retry'?c.entries.retrySelected():kind==='assistant'?c.entries.genFromAssistant(c.editPrompt):c.entries.generateChild());await Promise.all(c.pending);await Promise.resolve();return snapshot();};
  return {c,source,parent,ref,file,run,snapshot,entered:entered.promise,release:release.resolve,switch(kind){
@@ -65,7 +65,7 @@ async function main(){
   ['retry-numbered-recipe',f=>{f.source.prompt='错误引用【图3】';f.c.editPrompt='';},'retry'],['retry-invalid-reference',f=>{f.c.referenceError='原引用冲突';},'retry'],
   ['assistant-original-source',()=>{},'assistant'],['assistant-empty-prompt',f=>{f.c.editPrompt=' ';},'assistant'],['assistant-anchor-not-loaded',f=>{f.c.assistantArtworkId='missing';},'assistant'],
  ];
- for(const [name,configure,kind] of cases){const f=fixture(code);configure(f);const result=await f.run(kind);if(name==='split-anchor-then-side-back'){
+ for(const [name,configure,kind] of cases){if(kind==='retry'&&!hasRedo)continue;const f=fixture(code);configure(f);const result=await f.run(kind);if(name==='split-anchor-then-side-back'){
    eq(result.calls.length,3,name);eq(result.calls[1].options.parentIds,['front'],'anchor lineage');eq(result.calls[1].options.referenceInputs.at(-1).number,12,'anchor ordinal');eq(result.calls[1].options.referenceInputs.at(-1).role,'reference','anchor role');eq(result.renames,[['front','正面视图'],['side','侧面视图'],['back','背面视图']],'view titles');
   }common.push({name,result});checks++;}
  for(const [name,opts,mode,expected]of [['front-empty',{fail:'front'},'split',1],['side-empty',{fail:'side'},'split',3],['triptych-empty',{fail:'result'},'triptych',1]]){
@@ -77,9 +77,9 @@ async function main(){
   const f=fixture(code,{hold:'rename'});f.c.generationMode='split';const work=f.run();await f.entered;f.switch(kind);f.release();const result=await work;
   const follows=result.calls.length-1;eq(follows,baseline||kind==='selection'?2:0,'follow-up after '+kind);races.push({kind,followupCalls:follows,renames:result.renames});
  }
- for(const action of ['dock','retry']){const f=fixture(code,{hold:'generate'});f.c.generationMode='triptych';const work=f.run(action);await f.entered;f.switch('project');f.release();const result=await work;eq(result.renames.length,baseline?1:0,'stale final title '+action);races.push({kind:'final-title-'+action,renames:result.renames.length});}
+ for(const action of hasRedo?['dock','retry']:['dock']){const f=fixture(code,{hold:'generate'});f.c.generationMode='triptych';const work=f.run(action);await f.entered;f.switch('project');f.release();const result=await work;eq(result.renames.length,baseline?1:0,'stale final title '+action);races.push({kind:'final-title-'+action,renames:result.renames.length});}
  const priorPath=arg('--baseline-report');if(priorPath){const prior=JSON.parse(fs.readFileSync(priorPath,'utf8'));eq(JSON.parse(JSON.stringify(common)),prior.common,'all original creative instructions/options/file bytes/order/lineage');}
- const report={status:'PASS',mode:baseline?'BASELINE':'MODIFIED',checks,common,races,scope:'ACTUAL_CANVAS_ADAPTERS_AND_APPLICATION_WITH_TASK_PORTS',supplier:0,network:0,pg:false};
+ const report={status:'PASS',mode:baseline?'BASELINE':'MODIFIED',checks,common,races,primary,retiredRedo:!hasRedo,scope:'ACTUAL_CANVAS_ADAPTERS_AND_APPLICATION_WITH_TASK_PORTS',supplier:0,network:0,pg:false};
  fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify(report,null,2)+'\n');
  console.log(`CANVAS_IMAGE_CREATION=PASS MODE=${report.mode} CHECKS=${checks} COMMON_CASES=${common.length} RACES=${races.length} CREATIVE_BODY=${baseline?'INLINE':'OWNED'} ORIGINAL_FILE_BYTES=RETAINED STALE_FOLLOWUPS=${baseline?12:0} SELECTION_CONTINUES=1 TASK_OWNER=REUSED NETWORK=0 SUPPLIER=0`);
 }

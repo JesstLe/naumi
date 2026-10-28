@@ -1,3 +1,4 @@
+import {ensureCanvasImageVersions,selectCanvasImageVersionTx} from "./canvas/image-version-store";
 import {sceneNodeWriteSchema} from "./canvas/scene-node-schema";
 import {saveSceneNodeTx} from "./canvas/scene-node-repository";
 import {ensureSceneNodeSchema} from "./canvas/storage-schema";
@@ -41,6 +42,7 @@ export { historyRequest, videoHistoryFields, directorHistoryFields, characterHis
 export async function saveCanvasHistory(email: string, input: z.infer<typeof historyRequest>) {
   email=email.toLowerCase();
   await ensureSchema();
+  if(input.operations.some(op=>op.type==="image-version"))await ensureCanvasImageVersions();
   const hasVideo=input.operations.some(op=>op.type==="video-patch"||op.type==="video-visibility"||op.type==="video-result"||op.type==="node-settings"&&op.video);
   if(hasVideo)await ensureVideoNodeSchema();
   const hasDirector=input.operations.some(op=>op.type==="director-patch"||op.type==="director-visibility"||op.type==="node-settings"&&op.director);
@@ -79,6 +81,7 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
     if(hasVideo||hasDirector||hasCharacter||hasScene)await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${email}`]);
     const changedCharacters=new Set<string>(),changedScenes=new Set<string>(),changedDirectors=new Set<string>();
     for (const [index,op] of input.operations.entries()) {
+      if(op.type==="image-version"){await selectCanvasImageVersionTx(client,email,op.id,op.versionId,op.expectedImage,op.expectedRevision);continue;}
       if(op.type==="scene-patch"||op.type==="scene-visibility"){
         const row=(await client.query("SELECT revision,project_key,scene FROM app_canvas_scene_nodes WHERE email=$1 AND id=$2 FOR UPDATE",[email,op.id])).rows[0];
         if(!row)throw new Error("场景不存在或无权修改");

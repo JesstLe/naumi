@@ -8,6 +8,8 @@ export type ArtworkRecord = {
   prompt: string;
   status: string;
   image: string;
+  canvasImageRevision?: number;
+  canvasImageVersionId?: string;
   gradient: string;
   createdAt: string;
   style?: string | null;

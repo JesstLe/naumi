@@ -115,3 +115,14 @@ export async function ensureSceneNodeSchema() {
   `)).then(() => undefined).catch(error => { state.pending = undefined; throw error; });
   await state.pending;
 }
+
+export async function ensureCanvasImageVersionSchema(){
+ const state=databaseSchemaReadiness(getPool(),"canvas-image-versions");await ensureSchema();
+ state.pending ||= getPool().query(`CREATE TABLE IF NOT EXISTS app_canvas_image_versions (
+    email text NOT NULL, node_id text NOT NULL, version_id text NOT NULL, operation_id uuid,
+    asset jsonb NOT NULL, attachment jsonb, created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY(email,node_id,version_id));
+    CREATE INDEX IF NOT EXISTS canvas_image_version_operation ON app_canvas_image_versions(email,operation_id);
+    CREATE INDEX IF NOT EXISTS canvas_image_version_node ON app_canvas_image_versions(email,node_id,created_at);`).then(()=>undefined).catch(error=>{state.pending=undefined;throw error;});
+ await state.pending;
+}

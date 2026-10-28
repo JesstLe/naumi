@@ -1,4 +1,7 @@
 "use client";
+import {loadCanvasImageVersions} from "@/lib/canvas/image-version-client";
+import type {CanvasImageVersion,CanvasImageVersionList} from "@/lib/canvas/image-versions";
+import {createCanvasImageVersionAttachment} from "@/lib/canvas/result-attachment";
 import {useSceneNodes} from "./scene/use-scene-nodes";
 import {newSceneProject,sceneInputIdentity,sceneReferenceText,sceneStateWithReferences,sceneDirectorSnapshot,type SceneProject} from "@/lib/scene/project";
 import {applySceneDirectorSnapshot} from "@/lib/scene/director";
@@ -7,7 +10,7 @@ import {useCharacterNodes} from "./character/use-character-nodes";
 import type {CanvasCharacterNode} from "@/lib/canvas/character-node-schema";
 import {newCharacterProject,characterInputIdentity,parseCharacterInputIdentity,characterReferenceText,type CharacterProject} from "@/lib/character/project";
 import {characterInputChoices} from "@/lib/character/canvas";
-import {executeCanvasImageCreation,retryCanvasImageCreation,generateCanvasAssistantImage,canvasBlankImagePrompt,canvasInheritedImagePrompt,CANVAS_IMAGE_REFERENCE_LIMIT as MAX_TOTAL_IMAGES,type CanvasImageCreationServices} from "@/lib/canvas/image-creation";
+import {executeCanvasImageCreation,generateCanvasAssistantImage,canvasBlankImagePrompt,canvasInheritedImagePrompt,CANVAS_IMAGE_REFERENCE_LIMIT as MAX_TOTAL_IMAGES,type CanvasImageCreationServices} from "@/lib/canvas/image-creation";
 import {canvasNodeMenuItems} from "./node-menu-items";
 import {artworkFields} from "@/lib/canvas/artwork-write";
 import {CanvasArtworkConflicts} from "./artwork-conflicts";
@@ -64,7 +67,7 @@ import {canvasProjects,canvasProjectMonths,type CanvasProject as Project,type Ca
 import {useCanvasProjectCatalog} from "./use-canvas-project-catalog";
 import {CanvasProjectBrowser} from "./project-browser";
 import {CanvasProjectMenu,CanvasProjectTitle} from "./project-chrome";
-import { canvasGenerationReferences, explicitCanvasParent } from "@/lib/canvas/input-references";
+import { canvasGenerationReferences,canvasRegenerationReferences, explicitCanvasParent } from "@/lib/canvas/input-references";
 import { canvasFocusViewport } from "@/lib/canvas/upload-visibility";
 import { readPlacementCache, type CanvasPoint } from "@/lib/canvas/stable-placement";
 import { useCanvasTextDocument } from "./use-canvas-text-document";
@@ -746,7 +749,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     account: canvasAccountRef.current, project: activeKey, readOnly,
     artworkDocument:canvasArtworkDocument.history, works: setWorks, textDocument: canvasTextDocument.history, settings: applyHistorySettings, selectedText: setSelectedTextId,
     flush:()=>Promise.all([videoNodesStore.flush(),directorNodesStore.flush(),characterNodesStore.flush(),sceneNodesStore.flush()]),
-    video: videoNodesStore.getNode,director:directorNodesStore.getNode,character:characterNodesStore.getNode,scene:sceneNodesStore.getNode, refresh:()=>Promise.all([videoNodesStore.refresh(),directorNodesStore.refresh(),characterNodesStore.refresh(),sceneNodesStore.refresh()]),
+    video: videoNodesStore.getNode,director:directorNodesStore.getNode,character:characterNodesStore.getNode,scene:sceneNodesStore.getNode,artwork:id=>canvasArtworkDocument.getSnapshot().nodes?.find(node=>node.id===id), refresh:()=>Promise.all([videoNodesStore.refresh(),directorNodesStore.refresh(),characterNodesStore.refresh(),sceneNodesStore.refresh()]),
     pending: applyPendingLinkHistory, applied: onHistoryApplied, warning: flashTip,
   });
   const {undoStack,redoStack,pushUndo,historyBusyRef,historySaving,setHistorySaving,historyCurrent} = canvasHistory;
@@ -1502,9 +1505,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // dock 显示显式连线输入和当前节点；隐藏的项目父节点不自动成为参考图。
   // “重做”生成同级新版本，但仍只使用创作栏中当前可见的图片，不暗加历史输入。
   const dockReferenceState = useMemo(() => {
-    try { return { references: canvasGenerationReferences(selected, active?.members ?? []), error: "" }; }
-    catch(error) { return { references: selected ? [selected] : [], error: error instanceof Error ? error.message : "参考图尚未同步" }; }
-  }, [selected, active?.members]);
+    try { return { references: generationMode==="standard"?canvasRegenerationReferences(selected,active?.members??[]):canvasGenerationReferences(selected,active?.members??[]), error: "" }; }
+    catch(error) { return { references: [], error: error instanceof Error ? error.message : "参考图尚未同步" }; }
+  }, [selected, active?.members,generationMode]);
   const dockRefs = dockReferenceState.references;
   // 用户可在 dock 里"×"掉自动引用图(改用自己上传的);hiddenRefIds 随选中切换清空
   const [hiddenRefIds, setHiddenRefIds] = useState<string[]>([]);
@@ -1872,7 +1875,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     prompt: string,
     opts?: CanvasImageGenerationOptions
   ): Promise<GeneratedResult[]> {
-    if (readOnly || !user) return [];
+    if (readOnly || !user || isNodeLocked(source.id)) return [];
     const text = prompt.trim();
     if (!text && !opts?.ratiogen) return []; // 改比例可无提示词(服务端用固定重构图指令)
     const requestedCount = opts?.ratiogen ? 1 : Math.max(1, opts?.count ?? 1);
@@ -1898,13 +1901,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const lastFailure = replacedFailures[replacedFailures.length - 1];
     const retryPosition = lastFailure ? generationTaskPosRef.current[lastFailure.id] || lastFailure.position : undefined;
     for (const failed of replacedFailures) { delete generationTaskPosRef.current[failed.id]; delete generationTaskSizeRef.current[failed.id]; }
-    const taskPosition = reserveGenerationPosition(taskId, preferredPosition, previewSize, retryPosition);
+    const taskPosition = opts?.replaceNode ? sourceNode?.position||{x:source.canvasX||0,y:source.canvasY||0} : reserveGenerationPosition(taskId, preferredPosition, previewSize, retryPosition);
     setGenerationTasks((current) => [
       ...current.filter(task => !(task.operationKey === operationKey && task.failure)),
       {
         id: taskId,
         operationKey,
-        sourceId: source.id,
+        sourceId: source.id,replaceNode:opts?.replaceNode,
         label: opts?.taskLabel || t("canvas.pending"),
         stage: "preparing", startedAt: Date.now(), previewSize, count: requestedCount,
         position: taskPosition,
@@ -1913,7 +1916,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setGenError(null);
     const requestAccount=canvasAccountRef.current,requestProject=activeProjectRef.current?.key||null,requestEpoch=canvasContextEpochRef.current;
     const scope=captureCanvasImageTaskScope(user.email,requestProject,()=>batchRunMountedRef.current&&requestAccount===canvasAccountRef.current&&requestProject===(activeProjectRef.current?.key||null)&&requestEpoch===canvasContextEpochRef.current&&(opts?.isCurrent?.()??true));
-    const task=createCanvasImageTask({scope,
+    const task=createCanvasImageTask({scope,replacement:opts?.replaceNode?{nodeId:source.id,history:pushUndo}:undefined,
       prepare:()=>prepareCanvasImageTask({kind:"derived",scope,operationKey,position:taskPosition,prompt:text,source,options:opts||{},models:imageModels,model:genModel,quality:genQuality,referenceInputs:opts?.referenceInputs}),
       submit:async(form,isCurrent)=>privateFetch("/api/generate-image",{method:"POST",headers:await authHeader(),body:form,isCurrent}),
       position:()=>generationTaskPosRef.current[taskId]??taskPosition,
@@ -1963,7 +1966,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
 
   // 面板「生成」:用编辑框提示词 + 参数 + 追加参考图(留空=按这张图再生成一张)
-  async function generateChild(){
+  async function generateSelectedImage(){
     if(!selected)return;
     const services=canvasImageCreationServices();
     const issue=await executeCanvasImageCreation({source:selected,prompt:editPrompt,mode:generationMode,parameters:{ratio:genRatio,style:genStyle,count:genCount,resolution:genResolution},references:visibleDockRefs,files:extraFiles,referenceInputs:composerReferences,referenceError:dockReferenceState.error||referenceError},services);
@@ -2415,13 +2418,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     return execute();
   }
 
-  async function retrySelected(){
-    if(!selected)return;
-    const services=canvasImageCreationServices();
-    const issue=await retryCanvasImageCreation({source:selected,prompt:editPrompt,parameters:{ratio:genRatio,style:genStyle,count:genCount,resolution:genResolution},members:active?.members??[],referenceInputs:composerReferences,referenceError:dockReferenceState.error||referenceError},services);
-    if(issue&&services.isCurrent())setGenError(issue);
-  }
-
   // 顶部图像工具条:6 个一键动作(预设提示词,各自衍生一个子节点)
   const QUICK_ACTIONS: {
     key: string;
@@ -2573,6 +2569,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (!persisted && user) localStorage.setItem(`naumi:node-settings:${user.email.toLowerCase()}`,JSON.stringify(next));
   }
   function onHistoryApplied({action:act,undo}: HistoryCommit) {
+    if(act.kind==="image-version"){const node=canvasArtworkDocument.getSnapshot().nodes?.find(node=>node.id===act.id);if(node)imageDraft.seed(act.id,{prompt:inheritableImagePrompt(node.prompt)});}
     if(act.kind==="mixed-add"){
       if(undo&&(active?.members.length||0)===act.artworks.length&&(active?.textNodes.length||0)===act.textNodes.length&&(active?.videoNodes?.length||0)===act.videoNodes.length&&(active?.directorNodes?.length||0)===(act.directorNodes?.length||0)&&(active?.characterNodes?.length||0)===(act.characterNodes?.length||0)&&(active?.sceneNodes?.length||0)===(act.sceneNodes?.length||0))setCreatingNew(true);
       if(!undo){setCreatingNew(false);setActiveKey(act.projectKey);setBrowsing(false);}
@@ -2602,6 +2599,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
   }
 
+  function loadImageVersions(nodeId:string){return loadCanvasImageVersions(canvasHistory.scope,nodeId);}
+  async function selectImageVersion(nodeId:string,version:CanvasImageVersion,from:CanvasImageVersionList){
+    if(readOnly||historyBusyRef.current||isNodeLocked(nodeId))return;
+    await canvasHistory.submit(canvasHistory.scope,()=>({kind:"image-version",id:nodeId,from:{versionId:from.currentVersionId,image:from.image},to:{versionId:version.id,image:version.image}}));
+  }
   function openProperties() {
     suspendAssistant();imageTextEditor.close();setPropertiesOpen(true);
   }
@@ -3882,9 +3884,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       "flex h-dvh min-h-[100svh] flex-col overflow-hidden bg-background text-foreground",
       lightCanvas ? "canvas-ui-light" : "dark canvas-ui-dark"
     )}>
-      {!readOnly&&<ImagegenPendingRecovery {...recoveryScope} isCurrent={recoveryCurrent} onAttach={async(ids,isMounted)=>{
+      {!readOnly&&<ImagegenPendingRecovery {...recoveryScope} isCurrent={recoveryCurrent} onAttach={async(ids,isMounted,attachment)=>{
         const current=()=>recoveryCurrent()&&isMounted();if(!current())return false;
-        const fresh=await mergeWorks(ids,current);if(!current())return false;
+        const fresh=attachment?await createCanvasImageVersionAttachment({nodeId:attachment.nodeId,merge:mergeWorks})({isCurrent:current,assertCurrent:()=>{if(!current())throw new Error("画布已切换");}},attachment):await mergeWorks(ids,current);if(!current())return false;
         assertGenerationResultsPresent(ids,fresh);
         // A queued React updater is not delivery. Observe the committed canvas
         // after one frame; a suspended/stale render retains its original receipt.
@@ -5361,8 +5363,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               referenceEditor={{...imageComposerReferences,textareaRef:promptAreaRef,placeholder:t("canvas.promptPlaceholder"),readOnly}}
               upload={{inputRef:extraInputRef,available:composerReferences.length<MAX_TOTAL_IMAGES,onFiles:pickExtra}}
               controls={imageComposerControls} error={genError}
-              imageActions={{style:genStyle,onStyle:setGenStyle,marked:!!selected.marked,onMark:toggleNodeMark,onFocus:()=>setFocusId(selected.id),onRetry:retrySelected}}
-              generation={{generating:selectedGenerating,failure:selectedGenerationFailure,onGenerate:selectedGenerationFailure&&selectedGenerationRetry?selectedGenerationRetry:generateChild}}/>
+              imageActions={{style:genStyle,onStyle:setGenStyle,marked:!!selected.marked,onMark:toggleNodeMark,onFocus:()=>setFocusId(selected.id)}}
+              versions={{contextKey:`${canvasHistory.scope.key}:${selected.id}`,revision:selected.canvasImageRevision||0,disabled:readOnly||historySaving||isNodeLocked(selected.id),english:locale==="en",load:()=>loadImageVersions(selected.id),onSelect:(version,from)=>selectImageVersion(selected.id,version,from)}}
+              generation={{actionLabel:generationMode==="standard"?L("重新生成","Regenerate"):undefined,generating:selectedGenerating,failure:selectedGenerationFailure,onGenerate:selectedGenerationFailure&&selectedGenerationRetry?selectedGenerationRetry:generateSelectedImage}}/>
           )}
           {canFeature("generate") && selectedPend && !readOnly && (
             <CanvasImageComposer key={`pdock-${imageDraft.key||selectedPend.id}`} pending dockRef={panelRef} style={dockStyle} optimizationDisabled={!nodeSettingsReady||isNodeLocked(selectedPend.id)}

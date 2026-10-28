@@ -51,9 +51,9 @@ export async function executeCanvasImageCreation(input:CanvasImageCreationInput,
   }
   const uploadAsBase=!input.references.length&&input.files.length>0;
   await services.generate(source,feedback||canvasInheritedImagePrompt(source.prompt),{
-    ...parameters,parentId:source.id,parentIds:input.references.filter(ref=>ref.id!==source.id).map(ref=>ref.id),
+    ...parameters,replaceNode:true,parentId:source.id,parentIds:input.references.filter(ref=>ref.id!==source.id).map(ref=>ref.id),
     baseFile:uploadAsBase?input.files[0]:undefined,extra:uploadAsBase?input.files.slice(1):input.files,
-    refUrls:uploadAsBase?[]:input.references.map(ref=>ref.image),userPrompt:feedback,referenceInputs,isCurrent:services.isCurrent,
+    refUrls:uploadAsBase?[]:input.references.map(ref=>ref.image),userPrompt:feedback||canvasInheritedImagePrompt(source.prompt),referenceInputs,isCurrent:services.isCurrent,
   });
 }
 
@@ -77,21 +77,6 @@ async function splitViews(input:CanvasImageCreationInput,services:CanvasImageCre
   }));
   if(side[0]&&services.isCurrent())await services.rename(side[0].id,"侧面视图");
   if(back[0]&&services.isCurrent())await services.rename(back[0].id,"背面视图");
-}
-
-/** A redo creates one new version, retaining selected-image lineage and the
- * original prompt. It does not recreate a failed/unknown task operation. */
-export async function retryCanvasImageCreation(input:Omit<CanvasImageCreationInput,"mode"|"references"|"files">&{members:Artwork[]},services:CanvasImageCreationServices){
-  if(!services.isCurrent())return;
-  if(input.referenceError)return input.referenceError;
-  const {source,parameters}=input,feedback=input.prompt.trim(),original=canvasInheritedImagePrompt(source.prompt);
-  const parent=source.parentId?input.members.find(item=>item.id===source.parentId)??source:source;
-  const images=await services.generate(parent,`${original}${feedback&&feedback!==original?`\n本次重做要求：${feedback}`:"\n重新生成一个新版本，严格保持产品身份和关键细节。"}`,{
-    ratio:parameters.ratio,style:source.style||parameters.style,count:1,resolution:source.resolution||parameters.resolution,parentId:source.parentId||source.id,parentIds:source.parentIds??[],
-    refUrls:[source.image,...(parent.id===source.id?[]:[parent.image])],referenceInputs:input.referenceInputs,operationKey:`retry:${source.id}`,taskLabel:"按要求重做中…",
-    userPrompt:feedback||inheritableImagePrompt(source.prompt)||"重做当前图片",isCurrent:services.isCurrent,
-  });
-  if(images[0]&&services.isCurrent())await services.rename(images[0].id,`${source.title} · 重做`);
 }
 
 export async function generateCanvasAssistantImage(source:Artwork|undefined|null,prompt:string,services:CanvasImageCreationServices){

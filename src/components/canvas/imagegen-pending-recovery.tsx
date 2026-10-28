@@ -1,12 +1,13 @@
 "use client";
 
 import {useEffect,useRef,useState} from 'react';
+import type {CanvasImageAttachment} from "@/lib/canvas/image-versions";
 import {pollImagegen} from '@/lib/imagegen/client';
 import {completeCanvasImagegen,listPendingAttempts,pendingAttemptKey,type ImagegenPendingAttempt} from '@/lib/imagegen/client-recovery';
 
 export type ImagegenPendingRecoveryProps={
  owner:string;workspace:string;project:string;isCurrent?:()=>boolean;
- onAttach:(ids:string[],isCurrent:()=>boolean)=>Promise<boolean>;
+ onAttach:(ids:string[],isCurrent:()=>boolean,attachment?:CanvasImageAttachment)=>Promise<boolean>;
 };
 
 /** The root-level entry survives removal of the original blank canvas node. */
@@ -46,7 +47,10 @@ function ScopedRecovery({owner,workspace,project,isCurrent,onAttach}:ImagegenPen
    let message=labels[result.status]||'状态待确认';
    if((result.status==='succeeded'||result.status==='partial')&&ids.length){
     if(!current())return;
-    const attached=await callbacks.current.onAttach(ids,current);
+    const target=attempt.request.canvasTarget,attachment=result.canvasAttachment;
+    if(target&&(!attachment||attachment.nodeId!==target.nodeId))throw new Error('原任务图片已保存，节点版本仍待同步');
+    if(target&&attachment?.reason==='deleted')throw new Error('原节点已删除，生成结果已保存在创作记录');
+    const attached=await callbacks.current.onAttach(target?[target.nodeId]:ids,current,attachment);
     if(!current())return;
     if(result.status==='succeeded'&&attached){
      completeCanvasImagegen(`imagegen-${attempt.operationId}`,{owner:attempt.owner,workspace:attempt.workspace,project:attempt.project});

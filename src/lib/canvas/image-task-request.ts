@@ -1,3 +1,4 @@
+import {frameRatio} from "../imagegen/frame-ratio";
 import type {Artwork} from "../mock-data";
 import {readBrowserImage} from "../browser-image-cache";
 import {routeImageModel} from "../image-model-routing";
@@ -9,7 +10,7 @@ import type {CanvasImageTaskScope} from "./image-task-scope";
 
 export type CanvasImageGenerationOptions={ratio?:string;style?:string;count?:number;resolution?:string;transparent?:boolean;ratiogen?:boolean;
   extra?:File[];baseFile?:File;refUrls?:string[];referenceInputs?:CanvasImageReference[];parentId?:string;parentIds?:string[];
-  operationKey?:string;taskLabel?:string;taskOffset?:number;userPrompt?:string;isCurrent?:()=>boolean};
+  replaceNode?:boolean;operationKey?:string;taskLabel?:string;taskOffset?:number;userPrompt?:string;isCurrent?:()=>boolean};
 export type CanvasImageModelOption={id:string;label:string;supportsEdit:boolean;generationParameters?:{ratios?:string[];resolutions?:string[];combinations?:string[]}};
 type RequestBase={scope:CanvasImageTaskScope;operationKey:string;position:CanvasPoint;prompt:string;quality:string;model:string;referenceInputs?:CanvasImageReference[]};
 export type CanvasImageTaskRequest=RequestBase&({
@@ -32,7 +33,8 @@ export async function appendCanvasImageReferences(form:FormData,refs:CanvasImage
 export async function prepareCanvasImageTask(input:CanvasImageTaskRequest){
   const {scope}=input;scope.assertCurrent();const form=new FormData();
   const derived=input.kind==="derived",options=derived?input.options:undefined;
-  const ratio=normalizeCanvasRatio(derived?options?.ratio||"auto":input.ratio);
+  const chosenRatio=derived?options?.ratio||"auto":input.ratio;
+  const ratio=normalizeCanvasRatio(derived&&options?.replaceNode&&chosenRatio==="auto"?(input.source.ratio&&input.source.ratio!=="auto"?input.source.ratio:frameRatio({width:input.source.width||0,height:input.source.height||0}))||"auto":chosenRatio);
   const resolution=normalizeCanvasResolution(derived?options?.resolution||input.source.resolution:input.resolution);
   form.set("prompt",input.prompt.trim());form.set("imagegenNodeId",input.operationKey);
   form.set("imagegenNodeX",String(input.position.x));form.set("imagegenNodeY",String(input.position.y));
@@ -43,6 +45,7 @@ export async function prepareCanvasImageTask(input:CanvasImageTaskRequest){
   if(input.model)form.set("model",derived?routeImageModel(input.model,ratio,input.models):input.model);
   form.set("email",scope.owner);form.set("origin","canvas");
   if(derived){
+    if(options?.replaceNode){form.set("canvasTargetNode",input.source.id);form.set("canvasTargetImage",input.source.image);form.set("canvasTargetRevision",String(input.source.canvasImageRevision||0));if(scope.project.startsWith("tree:"))form.set("projectGroupId",scope.project.slice(5));}
     if(options?.userPrompt?.trim())form.set("userPrompt",options.userPrompt.trim());
     if(options?.transparent)form.set("transparent","1");if(options?.ratiogen)form.set("ratiogen","1");
     form.set("parentId",options?.parentId??input.source.id);form.set("parentIds",JSON.stringify(options?.parentIds??[]));
@@ -56,7 +59,7 @@ export async function prepareCanvasImageTask(input:CanvasImageTaskRequest){
     if(options?.baseFile)form.append("image",options.baseFile);
     else{
       const urls=(options?.refUrls||[]).filter(Boolean);
-      for(const [index,url] of (urls.length?urls:[input.source.image]).entries()){
+      for(const [index,url] of (urls.length?urls:options?.replaceNode?[]:[input.source.image]).entries()){
         scope.assertCurrent();const blob=await readBrowserImage(url);scope.assertCurrent();
         form.append("image",new File([blob],urls.length?`ref-${index}.png`:"base.png",{type:blob.type||"image/png"}));
       }

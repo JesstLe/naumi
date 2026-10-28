@@ -45,6 +45,7 @@ export type CanvasArtNodeData = {
     onRenameRequest?: (id: string, label: string) => void;
     onVideoExtract?: (id: string, action: VideoPlayerAction) => void;
     onCutout?: (id: string) => void;
+    regenerating?:boolean;regenerationFailure?:boolean;
     cutoutBusy?: boolean;
     cutoutBlocked?: boolean;
     settings?: CanvasNodeSettings;
@@ -120,6 +121,7 @@ export type CanvasPendingNode = {
   };
 
 export type CanvasGenerationTask = {
+  replaceNode?:boolean;
   isVisible?: () => boolean;
   failure?: GenerationFailure;
   onRetry?: () => unknown;

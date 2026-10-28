@@ -45,6 +45,7 @@ export const historyRequest = z.object({
     z.object({type:z.literal("art-dimensions"),id,width:z.number().min(80).max(4096),height:z.number().min(80).max(4096),expectedArtwork:canvasArtworkFieldsSchema.partial().optional()}),
     z.object({ type: z.literal("mark"), id, marked: z.boolean(),expectedArtwork:canvasArtworkFieldsSchema.partial().optional() }),
     z.object({ type: z.literal("node-settings"), id, text: z.boolean(), video:z.boolean().optional(), director:z.boolean().optional(), character:z.boolean().optional(), scene:z.boolean().optional(), settings: nodeSettingsSchema }),
+    z.object({type:z.literal("image-version"),id,versionId:id,expectedRevision:z.number().int().nonnegative(),expectedImage:z.string().min(1)}),
     z.object({ type: z.literal("workflow-asset"), id, assetOperationId: z.string().uuid(), filled: z.boolean() }),
   ])).min(1).max(400),
 });

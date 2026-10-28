@@ -29,6 +29,7 @@ export type ScenePatchFields=Partial<Pick<CanvasSceneNode,"title"|"scene"|"x"|"y
 export type CharacterPatchFields=Partial<Pick<CanvasCharacterNode,"title"|"character"|"x"|"y"|"width"|"height">>;
 export type DirectorPatchFields=Partial<Pick<CanvasDirectorNode,"title"|"project"|"x"|"y"|"width"|"height">>;
 export type CanvasHistoryAction = (
+  | {kind:"image-version";id:string;from:{versionId:string;image:string};to:{versionId:string;image:string}}
   | {kind:"art-dimensions";id:string;from:{width:number;height:number};to:{width:number;height:number}}
   | {kind:"scene-patch";id:string;from:ScenePatchFields;to:ScenePatchFields}
   | {kind:"scene-add";records:CanvasSceneNode[]}
@@ -106,7 +107,7 @@ export function canvasHistoryProject(action: CanvasHistoryAction) {
 /** Pure command compiler. Revisions are read after pending writes drain, once per
  * attempt. Retries use the controller's frozen body, not a fresh revision. */
 export function compileCanvasHistory(action: CanvasHistoryAction, undo: boolean,
-  video: (id: string) => CanvasVideoNode | undefined, initialRevision?: number, director:(id:string)=>CanvasDirectorNode|undefined=()=>undefined, character: (id: string) => CanvasCharacterNode | undefined = () => undefined,scene:(id:string)=>CanvasSceneNode|undefined=()=>undefined): CanvasHistoryOperation[] {
+  video: (id: string) => CanvasVideoNode | undefined, initialRevision?: number, director:(id:string)=>CanvasDirectorNode|undefined=()=>undefined, character: (id: string) => CanvasCharacterNode | undefined = () => undefined,scene:(id:string)=>CanvasSceneNode|undefined=()=>undefined,artwork:(id:string)=>Artwork|undefined=()=>undefined): CanvasHistoryOperation[] {
   const side = undo ? "from" : "to", operations: CanvasHistoryOperation[] = [];
   const getVideo = (id: string) => { const node = video(id); if (!node) throw new Error("视频节点不存在，请刷新画布"); return node; };
   const videoPatch = (id: string, fields: VideoPatchFields) => operations.push({type:"video-patch",id,expectedRevision:getVideo(id).revision,fields});
@@ -122,6 +123,12 @@ export function compileCanvasHistory(action: CanvasHistoryAction, undo: boolean,
     ? {type:"text-restore",node:{...node,productIds:node.productIds || []},expectMissing:true} : {type:"text-delete",id:node.id,expected:{...node,productIds:node.productIds||[]}}));
   const videos = (records: CanvasVideoNode[], visible: boolean) => records.forEach(node => operations.push({type:"video-visibility",id:node.id,visible}));
   switch (action.kind) {
+    case "image-version": {
+      const current=artwork(action.id),before=action[undo?"to":"from"];
+      if(!current)throw new Error("图片节点不存在，请刷新画布");
+      if(current.image!==before.image||(current.canvasImageVersionId||"initial")!==before.versionId)throw new Error("节点版本已改变，请从历史版本重新选择");
+      operations.push({type:"image-version",id:action.id,versionId:action[side].versionId,expectedImage:current.image,expectedRevision:current.canvasImageRevision||0});break;
+    }
     case "pending-link": break;
     case "scene-patch":scenePatch(action.id,action[side]);break;
     case "scene-add":action.records.forEach(node=>operations.push({type:"scene-visibility",id:node.id,visible:!undo}));break;
