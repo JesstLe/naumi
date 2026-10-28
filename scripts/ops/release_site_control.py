@@ -369,7 +369,7 @@ def resume_after_worker_start(tx,c):
     r.dump=(root/'nginx-before.private.txt').read_text();r.before={p:base64.b64decode(v) for p,v in json.loads((root/'nginx-files-before.private.json').read_bytes()).items()};r.real={p:str(pathlib.Path(p).resolve()) for p in r.before}
     snapshots=list(root.glob('task-snapshot-*.json'));require(len(snapshots)==1,'ORIGINAL_TASK_SNAPSHOT_AMBIGUOUS');r.task_before=tasks.Snapshot(public={},private=json.loads(snapshots[0].read_bytes()))
     r.switched=r.old_stopped=r.worker_paused=r.app_drained=False
-    require(controls.app_status(tx,public_identity(r.new['web']))['admission']['mode']==('accepting' if gateway else 'draining'),'CANDIDATE_ADMISSION_CHANGED')
+    require(controls.app_status(tx,public_identity(r.new['web']))['admission']['mode']==('open' if gateway else 'draining'),'CANDIDATE_ADMISSION_CHANGED')
     require(r.worker(r.new['worker'],'status')['paused'],'CANDIDATE_WORKER_ACTIVE')
     if gateway:
         require(all(pathlib.Path(p).read_bytes()==data for p,data in r.before.items()),'GATEWAY_PREIMAGE_NOT_RESTORED')
