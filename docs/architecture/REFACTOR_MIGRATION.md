@@ -1,3 +1,5 @@
+2026-10-28 R6Y最终候选：多轨接入既有Canvas/history/node/project/scene/media owner；原生Linux合成抓出的线程默认值作用域缺陷只改media contract，显式参数、沙箱及原报价/钱包保持。固定 `32cd25de` core90/90（50同源日志哈希复用+40新执行）、完整Linux同镜像运行177（新增原生多轨52）、产品双browser37、类型/lint及四类SCC0通过；五处转场/叠加像素和双音轨增益实测通过。原失败/中断留证；自有根PG及runtime/browser资源已清理。最终四产物/全源码/4817原hash副本回滚与远端以delivery-final为准，不覆盖原模块检查点。最新main `b6b5af3b` 的6条提交待下一模块普通整合；Canvas模板/导入、共享生命周期、性能/CI及最终退出仍待，整体active、不合main、不部署。见[R6Y记录](../changes/2026-10-28-refactor-r6y-timeline-integration.md)。
+
 ## 2026-10-27 R6P Canvas创作应用
 
 普通/三视图/详情分发、重做及助手生成意图归真实image-creation；4端口复用原任务/历史/scope。旧48/新49、34合同/9时序、原任务46/176通过；Canvas5849→5688，148原函数、1871其它产品hash保持、控件emitted JS同。固定8de98c45 core41/41、完整Linux同镜像125、真实产品32（本轮新创作5）通过，总7笔42积分；外部观察器2处修正单独hash绑定。完整4622hash/四产物/回滚/远端见DELIVERY；固定主线e4369998已普通同步，功能计数1，整体active。[记录](../changes/2026-10-27-canvas-image-creation-r6p.md)。

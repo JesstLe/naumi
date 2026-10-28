@@ -64,3 +64,19 @@
 原镜像挂入修复contract的定向原生实验已成功，仅作为源代码overlay验证，不冒充最终镜像验收。四源像素/混音/源hash/退役回执验证现接入原 `verify-refactor-runtime.py` 与原 runtime fixture；移除新增块后原125检查体字节完全相同。素材向量必须来自同commit/digest、PASS的core报告，不能挪用旧候选结果。原core目录新增媒体默认值条目后为90项。最终固定源码 core90、重新构建、同镜像原生多轨/runtime与产品浏览器验收待本轮执行，旧D9的89与旧运行失败均保留，不套写成新候选通过。
 
 最终收尾证据独立写入 `output/refactor-r6y-20261028/delivery-final/`；此前根目录四产物保持原模块检查点不覆盖。整个重构仍active；Canvas模板/导入和共享原生节点生命周期、同机性能、有效required CI及整体整合退出仍待后续。
+
+## R6Y最终固定候选验收（2026-10-28）
+
+固定应用源码 `32cd25de7d2097efd417351ae796cb6b49fa16a8`，digest `91667c31938457f94ba0e5ae6575745fd185060742859fc5f89423f1d4844719`，完整Linux镜像 `sha256:1c0065bc4e2647d315ac3c6cfc76a0d7cf75067f5dc9ed3a2ad6d6c8888dc7bb`。此前D9镜像的原生多轨失败未改写，修复后使用生产Dockerfile重新构建并完成同镜像Web/direct Worker验收；没有以contract overlay实验代替最终打包结果。
+
+- **core90/90，failed0、notRun0，exit0**。宿主测试进程中断后，保留原未完成报告，核验进程已退出与自有fixture归属再排空/清理。原同源50项经相同commit/digest/环境及日志SHA验证复用，恢复后实际执行40项；不记成90项全新执行。旧场景未完成用例重新执行，素材向量五文件逐字节复制并校验四源hash，来源见 `CORE_RESUME_PROVENANCE.json`。
+- **运行177项，exit0**。原125检查体保持，新增真实Linux四源合成52检查；输出320×180、3.5秒，五处叠加/转场像素对照通过。440Hz实际增益0.501022、660Hz实际增益0.247949，后段静音、四源hash不变及PATCH退役后GET410通过；没有替换镜像内媒体引擎。
+- **完整产品双浏览器37检查，exit0**。实际登录、图文冲突/共享undo-redo、原位版本、原任务交付、剪贴板、三视图及Comfy工作流通过；7笔fixture交付/7笔42积分，弹窗0、页面异常0、外部供应商付费调用0。60秒混合读取是本地回归，不是容量或稳定运行SLO。
+- 全项目TypeScript与本轮4文件ESLint exit0；实际源码扫描四类SCC均0。纯线程合同旧3复现、新18通过，原始预期错误、Linux真实失败及进程中断均留证。
+- 根PG在core终止后核验其他连接0、随机schema0，再移除精确ID/label的自有容器；最终runtime/browser均完成同镜像Worker POSIX排空exit0，并删除各自容器与网络。中断前自有浏览器/场景fixture也已单独核验清理，未操作其他资源。
+
+最终源码/补丁/验证/副本回滚交付位置为 `output/refactor-r6y-20261028/delivery-final/`，原根目录四产物保持封存不覆盖。完整源码、原4817hash恢复、后到编辑写0保护及最终远端SHA以该目录 `DELIVERY.json` / `VERIFICATION.txt` 为准；本段之后的文档提交与固定应用镜像分别绑定，并验证非docs字节相同。
+
+**整体目标仍active，不合main、不部署，47 HOLD不变。** 截至本次fetch，main为 `b6b5af3b1b2cc3d7f9519e0035623f01cb5342b4`，相对于本轮已整合 `294beac9862f9877d763afd12d29ca83a544adfd` 尚有6条提交；先完成本轮固定候选，再在下一完整模块前普通整合，不在集中验收中移动源码。
+
+🔴 **独立重构分支已超过48小时尚未合main。** 原因是用户要求持续独立整体重构，Canvas模板/导入、剩余共享生命周期的变化传播、同机性能、有效required CI及最终整合退出仍未完成；不是已经宣布整体完成的普通修复。下一切片复用现有document scope、artwork/text document、image-imports与history，收敛模板与工作流导入的异步归属及已创建回执恢复，不另建导入队列/历史系统。只读定位见 `NEXT_SLICE_READONLY.json`，尚未冒充实现。
