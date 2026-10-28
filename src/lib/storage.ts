@@ -223,18 +223,34 @@ export async function deleteImageByUrl(url: string): Promise<boolean> {
 }
 
 export function dataUrlToBytes(url: string): { bytes: Uint8Array; contentType: string } | null {
-  // String slicing instead of a capture-group regex: 2K PNG data URLs reach
-  // ~6.5M base64 characters and the regex engine's stack limit (RangeError:
-  // stack-limit from RegExp.exec) is exceeded well before that. Buffer.from
-  // tolerates invalid base64 characters, so strict charset validation is
-  // unnecessary for this transport-only decode.
-  const prefix = "data:";
+  // Keep large payloads out of RegExp. Buffer.from silently ignores invalid
+  // characters, so validate before decoding rather than accepting damaged bytes.
+  // Existing callers use a bare MIME type, not parameterized/percent-encoded URLs.
+  if (!url.startsWith("data:")) return null;
   const marker = ";base64,";
-  if (!url.startsWith(prefix)) return null;
-  const markerIdx = url.indexOf(marker, prefix.length);
-  if (markerIdx === -1) return null;
-  const base64 = url.slice(markerIdx + marker.length);
-  if (!base64) return null;
-  const contentType = url.slice(prefix.length, markerIdx);
-  return { contentType, bytes: new Uint8Array(Buffer.from(base64, "base64")) };
+  const markerIdx = url.indexOf(";", 5);
+  if (markerIdx <= 5 || !url.startsWith(marker, markerIdx)) return null;
+  const slash = url.indexOf("/", 5);
+  if (slash <= 5 || slash >= markerIdx - 1) return null;
+  for (let i = 5; i < markerIdx; i++) {
+    if (i === slash) continue;
+    const c = url.charCodeAt(i);
+    if (!(c >= 65 && c <= 90 || c >= 97 && c <= 122 || c >= 48 && c <= 57 || "!#$%&'*+-.^_`|~".includes(url[i]))) return null;
+  }
+
+  const start = markerIdx + marker.length;
+  let end = url.length, padding = 0;
+  while (end > start && url.charCodeAt(end - 1) === 61) {
+    end--;
+    if (++padding > 2) return null;
+  }
+  const length = end - start;
+  // Padded and unpadded standard Base64 are supported. Padding belongs only at
+  // the end, and a single trailing sextet cannot encode a complete byte.
+  if (!length || length % 4 === 1 || padding > 0 && (url.length - start) % 4 !== 0) return null;
+  for (let i = start; i < end; i++) {
+    const c = url.charCodeAt(i);
+    if (!(c >= 65 && c <= 90 || c >= 97 && c <= 122 || c >= 48 && c <= 57 || c === 43 || c === 47)) return null;
+  }
+  return { contentType: url.slice(5, markerIdx), bytes: new Uint8Array(Buffer.from(url.slice(start), "base64")) };
 }
