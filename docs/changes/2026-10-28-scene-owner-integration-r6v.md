@@ -34,3 +34,7 @@
 完整旧对象存储实现上运行新 Data URL 全量检查得到 41 项中 14 个负例失败（原进程 exit 1）；这些正是旧 regex 对 MIME/填充位的宽松行为，不是主线脚本原先预期的另一个中间版 baseline。所有正例含大图在本机旧实现上通过，不能声称在本机复现原线上栈溢出。`baseline-proof.py` 对固定 14 个失败名、41 项和全正例通过作精确断言，exit 0；原失败日志保留。新版 41/41 通过。回滚时仍须重复旧行为并对照相同失败集合。
 
 真实场景完整应用首轮通过：实际 Next、隔离 PG、Worker、私有媒体、账务和 Chromium 全流程，模拟供应商创建 5 次、真实付费 0、pageerror 0；覆盖场景创建/上传/状态/移动/锁定/复制删除/撤销重做、引用、导演背景、混合事务和制作链冻结。首次模块 lint 在两份主线 verifier 的局部 `module` 变量报错；仅改局部绑定名，原错误保留为 `LINT_MODULE.log`，Canvas 原 hooks warning 单列。
+
+### 固定候选首轮失败与控件前置条件修正
+
+`dd38806d` 的完整core在场景刷新后首次raw鼠标拖动时停止：29 PASS / 1 FAIL / 39 NOT_RUN，PG坐标仍536，未观察到拖动保存请求，页面错误为0；失败截图/诊断/cleanup原样保留在 `core-final/scene-application`。早先实际场景完整应用通过并不覆盖这次失败。脚本直接boundingBox读不等待Flow视图定位的actionability，因此加入真实标题hover的稳定/命中检查，记录单次pointer坐标；仍要求同一次实际拖动产生PG坐标变化及原undo/redo，不增加重试或放宽业务断言。该前置条件修正待新固定候选重新集中验收；不能仅据静态推断宣称原失败根因已关闭。原固定源码Linux镜像/runtime125/browser36通过，保持独立证据。
