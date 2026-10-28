@@ -20,3 +20,19 @@
 .checkButton:disabled { opacity:.6; cursor:wait; }
 @keyframes canvas-progress-shimmer { 0%,20% {transform:translateX(-100%)} 85%,100% {transform:translateX(100%)} }
 @media (prefers-reduced-motion:reduce) { .shimmer {animation:none} .fill {transition:none} }
+/* In-place regeneration fits even a user-resized node; never grow its bounds. */
+@container (max-width: 190px) {
+  .root { padding-inline:10px; }
+  .heading { font-size:11px; gap:4px; }
+  .percent { font-size:38px; }
+  .steps { gap:4px; }
+  .step { font-size:9px; gap:3px; }
+}
+@container (max-height: 190px) {
+  .root { min-height:0; padding:6px 10px; gap:4px; }
+  .heading { font-size:11px; line-height:16px; gap:4px; }
+  .percent { font-size:28px; letter-spacing:-1px; }
+  .percent span { font-size:14px; }
+  .hint { display:none; }
+  .steps { margin-top:0; gap:4px; }
+}
