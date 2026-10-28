@@ -20,7 +20,7 @@ function load(relative,dependencies={}){
  const file=path.join(root,relative),source=fs.readFileSync(file,'utf8');
  const output=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
  const module={exports:{}};
- const imports=id=>{if(id==='server-only')return {};if(id in dependencies)return dependencies[id];if(id.startsWith('node:'))return require(id);throw Error(`Unmocked import ${id} in ${relative}`);};
+ const imports=id=>{if(id==='server-only')return {};if(id in dependencies)return dependencies[id];if(id==='../staging-history')return load('src/lib/staging-history.ts');if(id==='./task-diagnostics'||id==='../canvas/image-version-store')return new Proxy({},{get:()=>()=>{throw Error(`Receipt-only fixture unexpectedly executed ${id}`);}});if(id.startsWith('node:'))return require(id);throw Error(`Unmocked import ${id} in ${relative}`);};
  const sandbox={module,exports:module.exports,require:imports,structuredClone,Buffer,Response,Request,Headers,URL,Date,process:{env:{}},console,setTimeout,clearTimeout,AbortSignal};
  vm.runInNewContext(output,sandbox,{filename:file});return module.exports;
 }
@@ -73,6 +73,7 @@ function dispatchFixture(savedScope){
  class Jobs{async get(){return row?.snapshot;}async owner(){return row?.email;}async kick(){kicks++;}async create(_id,email,snapshot){creates++;if(createRace){row=winner();throw Error('unique race');}row={email,snapshot,scope:context};}}
  const mocks={'../durable-image-jobs':{DurableImageJobs:Jobs},'../db':{dbEnabled:true,getPool:()=>({query:async()=>({rows:row?[{scope:row.scope}]:[]})})},'./plan':{imagegenFingerprint:fingerprint,planImagegen:async()=>{plans++;return plan();}},'./confirmation':{ImagegenConfirmationChanged:Changed},'./quotes':{assertImagegenQuoteReference:reference,frozenImagegenQuote:async()=>{if(quoteRace){row=winner();throw Error('permission revoked after winner');}return plan();}},'./schema':{imagegenRequestSchema:schema},'../saas/creation-context':creation,'./creation-scope':scope,'./stored-delivery':{storedDeliveryState:async()=>null},'../image-job-review':{storedImageReview:async()=>false}};
  for(const key of ['../canvas-image-input','./postprocess','../canvas-local-image-edit','./adapters','./generation-core','./cancel','./input-assets','./inputs','./mask','./output-advisory','./receipt-policy'])mocks[key]={};
+ mocks['../canvas/image-version-store']={assertCanvasRegeneration:async(_owner,request)=>assert.equal(request.canvasTarget,undefined,'Receipt fixture has no regeneration target')};
  const api=load('src/lib/imagegen/dispatch.ts',mocks);
  return {api,get row(){return row;},set row(v){row=v;},counts:()=>({kicks,creates,plans}),race:()=>{row=undefined;createRace=true;},quoteRace:()=>{row=undefined;quoteRace=true;}};
 }
@@ -116,7 +117,7 @@ test('batch worker child polls install only valid persisted scope and clear ambi
   const batch={id:operationId,owner,state:'running',request:{batch:{concurrency:1,maxAttempts:1}},plan:{creationScope:saved}},item={key:'one',state:'submitted',child_operation_id:'child',attempts:1};let seen='not-called';
   const query=async sql=>sql.includes('SELECT state FROM app_imagegen_batches')?{rows:[{state:'running'}]}:sql.includes('SELECT * FROM app_imagegen_batch_items')?{rows:[item]}:sql.includes('SELECT state FROM app_imagegen_batch_items')?{rows:[{state:'submitted'}]}:sql.includes('SELECT * FROM app_imagegen_batches')?{rows:[{state:'paused'}]}:{rows:[]};
   const mocks={'@/lib/release-runtime/background-activity':{withBackgroundActivity:async(_kind,_id,_stage,run)=>run()},'../saas/creation-context':creation,'../saas/creation-writer':{},'../saas/creation-schema':{},'../db':{},'./coordination-pool':{imageCoordinationPool:()=>({connect:async()=>({query,release(){}})})},'./schema':{},'./plan':{},'./confirmation':{},'./quotes':{},'./dispatch':{getImagegenResult:async()=>{seen=context;return {status:'pending'};}},'./generation-core':{},'./batch-repository':{imagegenBatchRow:async()=>batch,imagegenBatchItems:async()=>[item]},'../feature-access/server':{},'../feature-access/catalog':{},'./creation-scope':scope};
-  const api=load('src/lib/imagegen/batch.ts',mocks);context=tenantB;
+  mocks['../db']={getPool:()=>({query})};const api=load('src/lib/imagegen/batch.ts',mocks);context=tenantB;
   if(saved&&saved.actorEmail!==owner){await assert.rejects(()=>api.runImagegenBatchTick(operationId));assert.equal(seen,'not-called');}
   else{await api.runImagegenBatchTick(operationId);assert.equal(seen,saved);assert.equal(context,tenantB);}
  }context=undefined;

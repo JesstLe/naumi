@@ -25,30 +25,36 @@ import {ensureAudioNodeSchema,listAudioNodes,saveAudioNodeTx} from "./audio-node
 import {validateAudioProject} from "./audio-project-validation";
 import type {CanvasAudioNode} from "./audio-node-schema";
 
+import {ensureTimelineNodeSchema,listTimelineNodes,saveTimelineNodeTx} from "./timeline-node-repository";
+import {validateTimelineProject,validateTimelineAdoption} from "./timeline-project-validation";
+import type {CanvasTimelineNode} from "./timeline-node-schema";
+import type {TimelineProject} from "../timeline/project";
+
 export const nodeCopyRequest=z.strictObject({operationId:z.uuid(),ids:z.array(videoNodeIdSchema).min(1).max(200).refine(ids=>new Set(ids).size===ids.length,"节点身份重复"),projectKey:videoProjectKeySchema.optional()});
-type CopyResult={artworkIds:string[];textNodes:CanvasTextNodeRecord[];nodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];idMap:Record<string,string>;projectKey:string};
+type CopyResult={artworkIds:string[];textNodes:CanvasTextNodeRecord[];nodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];timelineNodes?:CanvasTimelineNode[];idMap:Record<string,string>;projectKey:string};
 function stableUuid(seed:string){const bytes=createHash("sha256").update(seed).digest().subarray(0,16);bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;const h=bytes.toString("hex");return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;}
 /** Copies media identities and editable records together. No supplier requests, media writes, task replay or fees. */
 export async function copyCanvasNodes(actorRaw:string,raw:z.infer<typeof nodeCopyRequest>):Promise<CopyResult>{
-  const actor=actorRaw.toLowerCase(),input=nodeCopyRequest.parse(raw);await ensureSchema();await ensureVideoNodeSchema();await ensureDirectorNodeSchema();await ensureCharacterNodeSchema();await ensureSceneNodeSchema();await ensureAudioNodeSchema();
+  const actor=actorRaw.toLowerCase(),input=nodeCopyRequest.parse(raw);await ensureSchema();await ensureVideoNodeSchema();await ensureDirectorNodeSchema();await ensureCharacterNodeSchema();await ensureSceneNodeSchema();await ensureAudioNodeSchema();await ensureTimelineNodeSchema();
   const pool=getPool();await pool.query(`CREATE TABLE IF NOT EXISTS app_canvas_node_copies(email text NOT NULL,operation_id uuid NOT NULL,input_digest text NOT NULL,result jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,operation_id))`);
   const digest=createHash("sha256").update(canonicalConfig(input)).digest("hex");
   const previous=(await pool.query("SELECT input_digest,result FROM app_canvas_node_copies WHERE email=$1 AND operation_id=$2",[actor,input.operationId])).rows[0];
   if(previous){if(previous.input_digest!==digest)throw new ModelConfigError("NODE_OPERATION_CONFLICT","复制操作编号已用于另一请求",409);return previous.result;}
-  const [artworks,textNodes,videoNodes,directorRecords,characterRecords,sceneRecords,audioRecords]=await Promise.all([listArtworksByIds(actor,input.ids),listCanvasTextNodes(actor),listVideoNodes(actor),listDirectorNodes(actor),listCharacterNodes(actor),listSceneNodes(actor),listAudioNodes(actor)]);
-  const wanted=new Set(input.ids),texts=textNodes.filter(node=>wanted.has(node.id)),videos=videoNodes.filter(node=>wanted.has(node.id)),directors=directorRecords.filter(node=>wanted.has(node.id)),characters=characterRecords.filter(node=>wanted.has(node.id)),scenes=sceneRecords.filter(node=>wanted.has(node.id)),audios=audioRecords.filter(node=>wanted.has(node.id));
-  const kinds=new Map([...artworks.map(node=>[node.id,"art"] as const),...texts.map(node=>[node.id,"text"] as const),...videos.map(node=>[node.id,"vnode"] as const),...directors.map(node=>[node.id,"director"] as const),...characters.map(node=>[node.id,"character"] as const),...scenes.map(node=>[node.id,"scene"] as const),...audios.map(node=>[node.id,"audio"] as const)]);
+  const [artworks,textNodes,videoNodes,directorRecords,characterRecords,sceneRecords,audioRecords,timelineRecords]=await Promise.all([listArtworksByIds(actor,input.ids),listCanvasTextNodes(actor),listVideoNodes(actor),listDirectorNodes(actor),listCharacterNodes(actor),listSceneNodes(actor),listAudioNodes(actor),listTimelineNodes(actor)]);
+  const wanted=new Set(input.ids),texts=textNodes.filter(node=>wanted.has(node.id)),videos=videoNodes.filter(node=>wanted.has(node.id)),directors=directorRecords.filter(node=>wanted.has(node.id)),characters=characterRecords.filter(node=>wanted.has(node.id)),scenes=sceneRecords.filter(node=>wanted.has(node.id)),audios=audioRecords.filter(node=>wanted.has(node.id)),timelines=timelineRecords.filter(node=>wanted.has(node.id));
+  const kinds=new Map([...artworks.map(node=>[node.id,"art"] as const),...texts.map(node=>[node.id,"text"] as const),...videos.map(node=>[node.id,"vnode"] as const),...directors.map(node=>[node.id,"director"] as const),...characters.map(node=>[node.id,"character"] as const),...scenes.map(node=>[node.id,"scene"] as const),...audios.map(node=>[node.id,"audio"] as const),...timelines.map(node=>[node.id,"timeline"] as const)]);
   if(input.ids.some(id=>!kinds.has(id)))throw new ModelConfigError("CANVAS_NODE_UNAVAILABLE","复制节点不存在或无权访问",404);
   for(const node of videos)await authorizeNodeInputs(actor,{id:node.id,operationId:input.operationId,expectedRevision:node.revision,config:node.config,inputs:node.inputs});
   for(const node of directors){await assertCreationProjectInput(actor,node.projectKey);await authorizeDirectorInputs(actor,{project:node.project});}
   for(const node of characters){await assertCreationProjectInput(actor,node.projectKey);await authorizeCharacterImages(actor,node.character);}
   for(const node of scenes){await assertCreationProjectInput(actor,node.projectKey);await authorizeSceneImages(actor,node.scene);}
   for(const node of audios){await assertCreationProjectInput(actor,node.projectKey);await validateAudioProject(actor,node.audio);}
+  for(const node of timelines){await assertCreationProjectInput(actor,node.projectKey);await validateTimelineProject(actor,node.timeline);if(node.adopted)await validateTimelineAdoption(actor,node.adopted);}
   const mapping=new Map(input.ids.map(id=>[id,`${kinds.get(id)}-copy-${createHash("sha256").update(`${actor}:${input.operationId}:${id}`).digest("hex").slice(0,40)}`]));
   const key=input.projectKey||`tree:${mapping.get(input.ids[0])}`;
   if(input.projectKey)await authorizeVideoProject(actor,key);
   const remap=(id:string)=>mapping.get(id)||id;
-  const remapReference=(nodeId:string)=>{const scene=parseSceneInputIdentity(nodeId);if(scene)return sceneInputIdentity(remap(scene.id),scene.stateId);const character=parseCharacterInputIdentity(nodeId);if(character)return characterInputIdentity(remap(character.id),character.appearanceId);const prefix=nodeId.match(/^(?:text|image|video|audio|audio-node):/)?.[0]||"";return `${prefix}${remap(nodeId.slice(prefix.length))}`;};
+  const remapReference=(nodeId:string)=>{const scene=parseSceneInputIdentity(nodeId);if(scene)return sceneInputIdentity(remap(scene.id),scene.stateId);const character=parseCharacterInputIdentity(nodeId);if(character)return characterInputIdentity(remap(character.id),character.appearanceId);const prefix=nodeId.match(/^(?:text|image|video|audio|audio-node|timeline-node):/)?.[0]||"";return `${prefix}${remap(nodeId.slice(prefix.length))}`;};
   const client=await pool.connect();
   try{
     await client.query("BEGIN");await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[actor]);await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${actor}`]);
@@ -56,7 +62,7 @@ export async function copyCanvasNodes(actorRaw:string,raw:z.infer<typeof nodeCop
     if(saved){if(saved.input_digest!==digest)throw new ModelConfigError("NODE_OPERATION_CONFLICT","复制操作编号已用于另一请求",409);await client.query("COMMIT");return saved.result;}
     await client.query("INSERT INTO app_canvas_video_projects(email,project_key) VALUES($1,$2) ON CONFLICT DO NOTHING",[actor,key]);
     const [kind,projectId]=[key.slice(0,key.indexOf(":")),key.slice(key.indexOf(":")+1)];
-    const artworkIds:string[]=[],copiedTexts:CanvasTextNodeRecord[]=[],nodes:CanvasVideoNode[]=[],directorNodes:CanvasDirectorNode[]=[],characterNodes:CanvasCharacterNode[]=[],sceneNodes:CanvasSceneNode[]=[],audioNodes:CanvasAudioNode[]=[];
+    const artworkIds:string[]=[],copiedTexts:CanvasTextNodeRecord[]=[],nodes:CanvasVideoNode[]=[],directorNodes:CanvasDirectorNode[]=[],characterNodes:CanvasCharacterNode[]=[],sceneNodes:CanvasSceneNode[]=[],audioNodes:CanvasAudioNode[]=[],timelineNodes:CanvasTimelineNode[]=[];
     for(const node of artworks){
       const current=(await client.query("SELECT * FROM app_artworks WHERE email=$1 AND id=$2 AND deleted_at IS NULL FOR SHARE",[actor,node.id])).rows[0];
       if(!current)throw new ModelConfigError("CANVAS_NODE_UNAVAILABLE","复制媒体已删除",409);
@@ -111,9 +117,17 @@ export async function copyCanvasNodes(actorRaw:string,raw:z.infer<typeof nodeCop
       await validateAudioProject(actor,audio,client);
       audioNodes.push(await saveAudioNodeTx(client,actor,{id:mapping.get(node.id)!,operationId:stableUuid(`${actor}:${input.operationId}:${node.id}`),expectedRevision:0,title:node.title,x:node.x+40,y:node.y+40,width:node.width,height:node.height,audio},key));
     }
+    const remapTimeline=(project:TimelineProject):TimelineProject=>({...project,tracks:project.tracks.map(track=>({...track,clips:track.clips.map(clip=>({...clip,artworkId:remap(clip.artworkId),...(clip.canvasSourceId?{canvasSourceId:remap(clip.canvasSourceId)}:{})}))}))});
+    for(const node of timelines){
+      const current=(await client.query("SELECT revision FROM app_canvas_timeline_nodes WHERE email=$1 AND id=$2 AND deleted_at IS NULL FOR SHARE",[actor,node.id])).rows[0];
+      if(!current||Number(current.revision)!==node.revision)throw new ModelConfigError("TIMELINE_REVISION_CONFLICT","多轨工程已更新，请重新复制",409);
+      const timeline=remapTimeline(node.timeline),adopted=node.adopted?{...node.adopted,artworkId:remap(node.adopted.artworkId),project:remapTimeline(node.adopted.project)}:null;
+      await validateTimelineProject(actor,timeline,client);if(adopted)await validateTimelineAdoption(actor,adopted,client);
+      timelineNodes.push(await saveTimelineNodeTx(client,actor,{id:mapping.get(node.id)!,operationId:stableUuid(`${actor}:${input.operationId}:${node.id}`),expectedRevision:0,title:node.title,x:node.x+40,y:node.y+40,width:node.width,height:node.height,timeline,adopted},key));
+    }
     // Copy shared properties only when that table already exists; do not initialize unrelated edit tables.
     if((await client.query("SELECT to_regclass('app_canvas_node_settings') AS name")).rows[0].name){for(const [oldId,newId] of mapping)await client.query("INSERT INTO app_canvas_node_settings(email,node_id,kind,settings) SELECT email,$3,kind,settings FROM app_canvas_node_settings WHERE email=$1 AND node_id=$2 ON CONFLICT(email,node_id) DO NOTHING",[actor,oldId,newId]);}
-    const result:CopyResult={artworkIds,textNodes:copiedTexts,nodes,...(directorNodes.length?{directorNodes}:{}),...(characterNodes.length?{characterNodes}:{}),...(sceneNodes.length?{sceneNodes}:{}),...(audioNodes.length?{audioNodes}:{}),idMap:Object.fromEntries(mapping),projectKey:key};
+    const result:CopyResult={artworkIds,textNodes:copiedTexts,nodes,...(directorNodes.length?{directorNodes}:{}),...(characterNodes.length?{characterNodes}:{}),...(sceneNodes.length?{sceneNodes}:{}),...(audioNodes.length?{audioNodes}:{}),...(timelineNodes.length?{timelineNodes}:{}),idMap:Object.fromEntries(mapping),projectKey:key};
     await client.query("INSERT INTO app_canvas_node_copies(email,operation_id,input_digest,result) VALUES($1,$2,$3,$4::jsonb)",[actor,input.operationId,digest,JSON.stringify(result)]);await client.query("COMMIT");return result;
   }catch(error){await client.query("ROLLBACK");throw error;}finally{client.release();}
 }

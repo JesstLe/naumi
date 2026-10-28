@@ -4,7 +4,7 @@ const identity=z.string().min(1).max(160);
 const seconds=z.number().finite().nonnegative();
 const gain=z.number().finite().min(0).max(4);
 export const timelineClipSchema=z.strictObject({
-  id:identity,artworkId:identity,position:seconds,inPoint:seconds,duration:z.number().finite().positive(),
+  id:identity,artworkId:identity,canvasSourceId:identity.optional(),position:seconds,inPoint:seconds,duration:z.number().finite().positive(),
   gain:gain.default(1),fadeIn:seconds.default(0),fadeOut:seconds.default(0),
   audioEnabled:z.boolean().default(true),transitionIn:seconds.default(0),
 }).superRefine((clip,ctx)=>{
@@ -26,6 +26,9 @@ export const timelineProjectSchema=z.strictObject({
 export type TimelineProject=z.infer<typeof timelineProjectSchema>;
 export type TimelineClip=z.infer<typeof timelineClipSchema>;
 export type TimelineTrack=TimelineProject["tracks"][number];
+export const timelineNodeIdSchema=z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/);
+export const timelineInputIdentity=(id:string)=>`timeline-node:${timelineNodeIdSchema.parse(id)}`;
+export function parseTimelineInputIdentity(value:string){const id=value.startsWith("timeline-node:")?timelineNodeIdSchema.safeParse(value.slice(14)):null;return id?.success?id.data:null;}
 export type TimelineSource={artworkId:string;kind:"image"|"video"|"audio";durationSeconds:number|null;hasAudio:boolean};
 const sourceSchema=z.strictObject({artworkId:identity,kind:z.enum(["image","video","audio"]),durationSeconds:z.number().finite().positive().nullable(),hasAudio:z.boolean()})
   .superRefine((source,ctx)=>{if(source.kind!=="image"&&source.durationSeconds===null||source.kind==="image"&&source.hasAudio)ctx.addIssue({code:"custom",message:"素材解码信息无效"});});
