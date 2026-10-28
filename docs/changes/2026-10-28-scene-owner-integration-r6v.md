@@ -38,3 +38,15 @@
 ### 固定候选首轮失败与控件前置条件修正
 
 `dd38806d` 的完整core在场景刷新后首次raw鼠标拖动时停止：29 PASS / 1 FAIL / 39 NOT_RUN，PG坐标仍536，未观察到拖动保存请求，页面错误为0；失败截图/诊断/cleanup原样保留在 `core-final/scene-application`。早先实际场景完整应用通过并不覆盖这次失败。脚本直接boundingBox读不等待Flow视图定位的actionability，因此加入真实标题hover的稳定/命中检查，记录单次pointer坐标；仍要求同一次实际拖动产生PG坐标变化及原undo/redo，不增加重试或放宽业务断言。该前置条件修正待新固定候选重新集中验收；不能仅据静态推断宣称原失败根因已关闭。原固定源码Linux镜像/runtime125/browser36通过，保持独立证据。
+
+## 最终固定候选集中验收
+
+应用与验收输入固定 `2ad57f69a22b5b8a7f6d914caec437f7998e8ea1`，digest `beb862181be127546a71818675820980bd92cccc8f93e0a812201ca9ba367854`；正式Dockerfile完整Web/Worker/media镜像 `sha256:d49ff4570361d34f2d54e432363354b98d2f8958e6d22a440e2fe631593e1bfa`。后续仅文档提交，最终Git SHA由DELIVERY绑定。
+
+- 完整 core **69/69**，失败0、未执行0；29项按同SHA/digest与日志hash复用，40项在后续独立执行；包括Data URL实际提交/存储/恢复14检查、场景/角色/导演各自完整应用。
+- 场景共享owner51、规则39；实际场景编辑器、原生菜单/上传/状态/移动/锁定/复制删除/撤销重做、引用与导演背景、混合事务、两镜头冻结制作链通过，5次模拟供应商创建、真实付费0、pageerror0。
+- 同一完整Linux镜像runtime125、产品双浏览器36通过，route mock0、确认弹窗0；该产品浏览器与Windows实际场景专属应用是分别记录的两组验收，不互相冒充。
+- 全项目TypeScript与模块lint通过；Canvas已有7条hooks warning保留，未用关闭规则隐藏。初次两个verifier局部变量lint错误、Git阶段预备失败、正常merge冲突和旧decoder负例exit1留存，不抹成通过。
+- 四类import SCC均0；两个release fixture→app及billing toast→UI反向边仍单列。原db/storage兼容面保持，1880其它产品文件hash保持；原Canvas163函数150正文相同、13接线变更、0删除，5752行仍是后续继续收敛对象。
+
+后续同源core曾在真实拖动/undo/redo和锁定/解锁通过后遇到copy入口ECONNRESET，原因未确认；同一时间另一完整镜像browser的原生Docker CLI明确报内存分配失败。两份失败与cleanup均保留。最终改为顺序执行，GOMAXPROCS=2仅约束fixture原生工具并行；使用原runner严格同SHA/digest/业务环境/日志hash复用29个已通过项，剩余40项新执行，不把复用写成全新运行。副本回滚、补丁重放、四产物、push/远端和自有资源cleanup待输出目录封存；真实工作树保留整合后的代码。整体重构尚未完成。
