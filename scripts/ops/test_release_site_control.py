@@ -20,5 +20,12 @@ class SiteReleaseTests(unittest.TestCase):
         c=self.config();context=site.startup.context(c['releaseId'],c['commit'],c['buildVersion'],c['newNames']['web'])
         self.assertEqual(context['releaseId'],c['releaseId'])
         self.assertEqual(context['instanceId'],c['newNames']['web'])
+    def test_nginx_dump_separator_never_written_into_files(self):
+        name='/etc/nginx/nginx.conf';raw='events {}\nhttp { server { listen 80; location / { proxy_pass http://127.0.0.1:13105; } } }\n'
+        dump='# configuration file '+name+':\n'+raw+'\n';start=raw.index('http://127.0.0.1:13105')
+        rendered,after=site.render_file_edits(dump,{name:raw.encode()},{name:[(start,start+len('http://127.0.0.1:13105'),'http://127.0.0.1:13106')]})
+        self.assertEqual(after[name],raw.replace('13105','13106').encode())
+        self.assertEqual(rendered,dump.replace('13105','13106'))
+        self.assertEqual(site.render_file_edits(dump,{name:raw.encode()},{}),(dump,{name:raw.encode()}))
 
 if __name__=='__main__':unittest.main()

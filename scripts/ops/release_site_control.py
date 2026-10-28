@@ -20,6 +20,18 @@ HOSTS={'47.105.59.142':'eb32806db06dfe9ec55f17a3be5c59476ca0a45fec8ce442e0437530
        '103.30.76.93':'26721373f7ecea7a5a9173a43bb017cd362d1f7ed9864b402874576a9e4fee35'}
 AUTHORIZATION='103统一管理47的功能开放，47的/admin做企业管理、/enterprise做协作交付，把真实数据和权限链路接通，验收后再上线，别影响正在使用的员工。'
 
+def render_file_edits(dump,before,edits):
+    parsed=compat.Dump(dump);after=dict(before);sections={}
+    for name,changes in edits.items():
+        raw=before[name].decode();body=parsed.files[name]
+        require(body.startswith(raw) and not body[len(raw):].strip(),'DUMP_FILE_BOUNDARY_CHANGED')
+        value=raw
+        for start,end,replacement in sorted(changes,reverse=True):
+            require(0<=start<=end<=len(raw),'EDIT_OUTSIDE_REAL_FILE')
+            value=value[:start]+replacement+value[end:]
+        after[name]=value.encode();sections[name]=value+body[len(raw):]
+    return parsed.render(sections),after
+
 def validate(c):
     require(c.get('target') in HOSTS and c.get('authorization')==AUTHORIZATION,'SITE_ROLLOUT_AUTHORIZATION_REQUIRED')
     host=c['target'].split('.')[0]
@@ -170,9 +182,15 @@ class Release(base.Release):
                         if child.name=='alias' and len(child.args)==1 and pathlib.Path(child.args[0]).is_dir():roots.add(child.args[0].rstrip('/'))
         require(roots,'EXISTING_ASSET_ROOT_REQUIRED')
         for i,p in enumerate(sorted(roots)):sources.append(('old-'+str(i),pathlib.Path(p)))
-        extracted=self.root/'candidate-static';extracted.mkdir(mode=0o700)
-        self.tx.run(['docker','cp',self.new['web']['Id']+':/app/.next/static/.',str(extracted)],timeout=90);sources.append(('candidate',extracted))
-        manifest=compat.collect_assets(sources,[(a['url'],a['path']) for a in aliases]);union=pathlib.Path('/var/www/naumi-assets-compat')/self.c['releaseId'];compat.materialize_assets(manifest,union)
+        extracted=self.root/'candidate-static'
+        if not extracted.exists():
+            extracted.mkdir(mode=0o700);self.tx.run(['docker','cp',self.new['web']['Id']+':/app/.next/static/.',str(extracted)],timeout=90)
+        else:require(self.c.get('resumeCandidate')=='gateway','EXTRACTION_ALREADY_EXISTS')
+        sources.append(('candidate',extracted))
+        manifest=compat.collect_assets(sources,[(a['url'],a['path']) for a in aliases]);union=pathlib.Path('/var/www/naumi-assets-compat')/self.c['releaseId']
+        if union.exists():
+            require(self.c.get('resumeCandidate')=='gateway','STATIC_UNION_ALREADY_EXISTS');compat.verify_assets(manifest,union)
+        else:compat.materialize_assets(manifest,union)
         for p in [union,*union.rglob('*')]:p.chmod(0o755 if p.is_dir() else 0o644)
         edits={};ports=[self.c['oldPort']]+([13062] if 'portal' in self.old else [])
         for name,nodes in parsed.nodes.items():
@@ -183,15 +201,10 @@ class Release(base.Release):
                         if token.value==old or token.value.startswith(old+'/') or token.value.startswith(old+'$'):
                             edits.setdefault(name,[]).append((token.start,token.end,compat.quote('http://127.0.0.1:'+str(self.c['newPort'])+token.value[len(old):])))
                     if node.name=='alias' and token.value.rstrip('/') in roots:edits.setdefault(name,[]).append((token.start,token.end,compat.quote(str(union/'_next/static')+'/')))
-        patches={}
-        for name,changes in edits.items():
-            value=parsed.files[name]
-            for start,end,replacement in sorted(changes,reverse=True):value=value[:start]+replacement+value[end:]
-            patches[name]=value
-        require(patches,'EMPTY_GATEWAY_TRANSITION');self.afterdump=parsed.render(patches);self.after={p:patches.get(p,parsed.files[p]).encode() for p in self.before}
+        require(edits,'EMPTY_GATEWAY_TRANSITION');self.afterdump,self.after=render_file_edits(self.dump,self.before,edits)
         # Exact legacy aliases and all unrelated services stay unchanged.
         require(compat.alias_inventory(compat.Dump(self.afterdump))==aliases,'LEGACY_ALIAS_CHANGED')
-        syntax_check(self.tx,self.after,self.root/'isolated-nginx-check');self.tx.save('static-union.json',{'files':len(manifest['assets']),'manifestSha256':file_sha(union/'manifest.json'),'oldAliasesUnchanged':True})
+        syntax_check(self.tx,self.after,self.root/('isolated-nginx-check-'+str(self.state['revision'])));self.tx.save('static-union-'+str(self.state['revision'])+'.json',{'files':len(manifest['assets']),'manifestSha256':file_sha(union/'manifest.json'),'oldAliasesUnchanged':True})
         self.phase('READY')
 
     def marker(self,name):
@@ -220,10 +233,11 @@ class Release(base.Release):
 
     def switch(self):
         self.wait(lambda:self.marker('browser-before.json'),'REAL_CANDIDATE_ACCEPTANCE',600)
-        self.op('pause-old-worker',lambda _:self.worker(self.old['worker'],'drain'));self.worker_paused=True
+        action=self.retry_reconciled if self.c.get('resumeCandidate')=='gateway' else self.op
+        action('pause-old-worker',lambda _:self.worker(self.old['worker'],'drain'));self.worker_paused=True
         self.wait(lambda:(lambda s:s['paused'] and s['activeTicks']==s['unresolvedTicks']==0 and s.get('backgroundTasks',0)==0)(self.worker(self.old['worker'],'status')),'OLD_WORKER_QUIESCENT',120)
-        self.op('open-new-web',lambda _:controls.control_app(self.tx,public_identity(self.new['web']),'resume',str(uuid.uuid4())))
-        self.op('gateway-switch',lambda _:self.gateway());self.switched=True;self.phase('SWITCHED')
+        action('open-new-web',lambda _:controls.control_app(self.tx,public_identity(self.new['web']),'resume',str(uuid.uuid4())))
+        action('gateway-switch',lambda _:self.gateway());self.switched=True;self.phase('SWITCHED')
         self.op('drain-old-web',lambda _:controls.control_app(self.tx,public_identity(self.old['web']),'drain',str(uuid.uuid4())));self.app_drained=True
         proof=self.wait(self.drain,'OLD_EXECUTION',180);self.tx.save('old-drain.json',proof)
         if 'media' in self.old:
@@ -233,6 +247,14 @@ class Release(base.Release):
         self.op('resume-new-worker',lambda _:self.worker(self.new['worker'],'resume'))
         self.wait(lambda:(self.worker(self.new['worker'],'status').get('lastTick') or {}).get('phase')=='complete','NEW_WORKER_RECEIPT',120)
         self.phase('WORKER_ACTIVE');self.wait(lambda:self.marker('browser-after.json'),'PUBLIC_ACCEPTANCE',600)
+
+    def retry_reconciled(self,name,fn):
+        require(name in ['pause-old-worker','open-new-web','gateway-switch'] and self.record['operations'].get('gateway-preimage-reconciled',{}).get('phase')=='ACKNOWLEDGED','EXPLICIT_PREIMAGE_RECONCILIATION_REQUIRED')
+        op=self.record['operations'][name];op.setdefault('attempts',[]).append({k:copy.deepcopy(v) for k,v in op.items() if k!='attempts'})
+        op.update(phase='INTENT_RECORDED',at=base.now());self.persist()
+        try:receipt=fn(op['operationId'])
+        except BaseException:op['phase']='UNKNOWN';self.persist();raise
+        op.update(phase='ACKNOWLEDGED',receipt=receipt);self.persist();return receipt
 
     def stop_media(self):
         row=self.old['media'];s=self.media(row,'health');require(s['draining'] and s['running']==s['queued']==0,'MEDIA_NOT_QUIESCENT')
@@ -332,7 +354,9 @@ def resume_after_worker_start(tx,c):
     raw=CANON.read_bytes();state=json.loads(raw)
     require(sha(raw)==c['canonicalSha256'] and state['revision']==c['canonicalRevision'],'RESUME_CANONICAL_CHANGED')
     record=state['siteControlReleases'][c['releaseId']]
-    require(record['phase']=='CLEANUP_PENDING' and record.get('gatewaySwitched') is False and set(record['operations'])=={'database-backup','image-load','web-create','web-start','worker-create','worker-start'} and all(o['phase']=='ACKNOWLEDGED' for o in record['operations'].values()),'ONLY_ACKNOWLEDGED_PRE_SWITCH_STARTUP_RESUME')
+    gateway=c.get('resumeCandidate')=='gateway'
+    expected={'database-backup','image-load','web-create','web-start','worker-create','worker-start'}|({'startup-readiness-reconciled','pause-old-worker','open-new-web','gateway-switch'} if gateway else set())
+    require(record['phase']=='CLEANUP_PENDING' and record.get('gatewaySwitched') is False and set(record['operations'])==expected and all(o['phase']==('UNKNOWN' if gateway and name=='gateway-switch' else 'ACKNOWLEDGED') for name,o in record['operations'].items()),'ONLY_REVIEWED_PRE_SWITCH_RESUME')
     require(sha(tx.run(['nginx','-T']))==c['nginxSha256'],'PRE_SWITCH_GATEWAY_CHANGED')
     r=Release.__new__(Release);r.tx=tx;r.c=c;r.root=root;r.state=state;r.record=record;r.disk=sha(raw);r.initial=raw
     r.rows=json.loads(tx.run(['docker','inspect',*tx.run(['docker','ps','-aq','--no-trunc']).decode().split()]));r.byname={v['Name'].lstrip('/'):v for v in r.rows}
@@ -345,9 +369,16 @@ def resume_after_worker_start(tx,c):
     r.dump=(root/'nginx-before.private.txt').read_text();r.before={p:base64.b64decode(v) for p,v in json.loads((root/'nginx-files-before.private.json').read_bytes()).items()};r.real={p:str(pathlib.Path(p).resolve()) for p in r.before}
     snapshots=list(root.glob('task-snapshot-*.json'));require(len(snapshots)==1,'ORIGINAL_TASK_SNAPSHOT_AMBIGUOUS');r.task_before=tasks.Snapshot(public={},private=json.loads(snapshots[0].read_bytes()))
     r.switched=r.old_stopped=r.worker_paused=r.app_drained=False
-    require(controls.app_status(tx,public_identity(r.new['web']))['admission']['mode']=='draining','CANDIDATE_ALREADY_ACCEPTING')
+    require(controls.app_status(tx,public_identity(r.new['web']))['admission']['mode']==('accepting' if gateway else 'draining'),'CANDIDATE_ADMISSION_CHANGED')
     require(r.worker(r.new['worker'],'status')['paused'],'CANDIDATE_WORKER_ACTIVE')
-    r.op('startup-readiness-reconciled',lambda _: {'sameCandidateIds':{k:public_identity(v) for k,v in r.new.items()},'backupRepeated':False,'gatewayUnchanged':True})
+    if gateway:
+        require(all(pathlib.Path(p).read_bytes()==data for p,data in r.before.items()),'GATEWAY_PREIMAGE_NOT_RESTORED')
+        require(not r.worker(r.old['worker'],'status')['paused'],'OLD_WORKER_NOT_RESUMED')
+        import urllib.request
+        req=urllib.request.Request('http://127.0.0.1/api/version',headers={'Host':c['target']})
+        with urllib.request.urlopen(req,timeout=15) as response:observed=json.loads(response.read())
+        require(observed['commit']==c['oldCommit'],'PUBLIC_NOT_ON_PREIMAGE')
+    r.op('gateway-preimage-reconciled' if gateway else 'startup-readiness-reconciled',lambda _: {'sameCandidateIds':{k:public_identity(v) for k,v in r.new.items()},'backupRepeated':False,'gatewayUnchanged':True,'originalOperationId':record['operations'].get('gateway-switch',{}).get('operationId')})
     r.phase('CANDIDATE_READY',new={k:public_identity(v) for k,v in r.new.items()})
     return r
 
