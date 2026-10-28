@@ -223,7 +223,18 @@ export async function deleteImageByUrl(url: string): Promise<boolean> {
 }
 
 export function dataUrlToBytes(url: string): { bytes: Uint8Array; contentType: string } | null {
-  const match = /^data:([^;]+);base64,([A-Za-z0-9+/=]+)$/.exec(url);
-  if (!match) return null;
-  return { contentType: match[1], bytes: new Uint8Array(Buffer.from(match[2], "base64")) };
+  // String slicing instead of a capture-group regex: 2K PNG data URLs reach
+  // ~6.5M base64 characters and the regex engine's stack limit (RangeError:
+  // stack-limit from RegExp.exec) is exceeded well before that. Buffer.from
+  // tolerates invalid base64 characters, so strict charset validation is
+  // unnecessary for this transport-only decode.
+  const prefix = "data:";
+  const marker = ";base64,";
+  if (!url.startsWith(prefix)) return null;
+  const markerIdx = url.indexOf(marker, prefix.length);
+  if (markerIdx === -1) return null;
+  const base64 = url.slice(markerIdx + marker.length);
+  if (!base64) return null;
+  const contentType = url.slice(prefix.length, markerIdx);
+  return { contentType, bytes: new Uint8Array(Buffer.from(base64, "base64")) };
 }
