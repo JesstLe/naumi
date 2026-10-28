@@ -42,15 +42,27 @@
 - 保留缓存 decoded-reference handoff 及工作台大结果单次读取。main 原测试的 managed-read 查找改为识别实际 owner，仍执行原 socket/大结果断言，不跳过案例。
 - 三处合并冲突的 1/2/3 stages 保留在 `output/refactor-r7a-20261028/merge-stages/`。
 
-## 集中验证（待最终固定源码封版）
+## 固定源码集中验证
 
-目前已观察到：baseline 实际 handler/PG 31 检查复现重复创建和媒体事务占用；新实际 handler/PG 63 检查通过，覆盖并发胜出、取消、准备/SQL 故障、目标中途删除、原回执、账本不变、61/100/200 素材。客户端实际 owner/document-scope 的初次完整 12 组/45 检查通过；随后增加模板原回执 GET 和 modal 视图案例，将在固定源码统一复测。
+固定测试源码 `b3dc22e7e1c79e9e3828aa8a11cbd8434bdf660b`，完整源 digest `d86de39c325d8d3caeab0010304ae7e86b3ef4c100fe762adc4dd80c4a989e32`。之后只补文档，不替换实际产品字节。
 
-保留尝试记录：端口整合初次 tsc 的重复声明/类型导入错误已经修正；Windows tar 非 ASCII 路径提取失败改为 Python 读取原 archive；客户端 fixture 初次缺 atob，只有六组日志但 exit 0，明确记为 INCOMPLETE，未作为通过。fixture 已补实际 Web API 和未结束 watchdog，不以 exit 0 代替完成标记。
+- 43 个受影响入口全部实际执行通过，exit 0，**不是完整 core 96 入口重跑**；复用已有 runner，不另建测试框架。原报告的 scoped `PARTIAL` 表示非完整 core，不是某个案例未执行。报告：`output/refactor-r7a-20261028/focused-final/REPORT.json`。
+- 旧实际 JSON handler / PG：31 检查复现重复创建、媒体准备占有账号锁；旧客户端两实际函数的 2 组 / 5 检查复现迟到导航及跨工作空间提交。
+- 新实际 JSON / NDJSON handler / PG：63 检查；原 ID、同 op 并发、原回执 GET、当前行读回、源/目标归属、目标中途删除、取消、准备失败、SQL 原子回滚、并发首份发布胜出和输家文件清理均通过；61/100/200 素材可导入；账本不变、供应商/外部调用 0。
+- 实际两个客户端 owner + 真实 document scope：14 组 / 50 检查；包含 auth 前后工作空间切换、账号切换、同项目 modal 变更、已知 ID 只读取、未知结果先读原回执、确无回执时同原 body / operation、无换号自动重提、NDJSON 无末尾换行及取消后的迟到完成。
+- 原 history 67 组 / 184 检查、node operations 真实 HTTP/PG 32、交付续交 73、原位重生成/图片版本/原参数/价格与账务等直接受影响链路通过。
+- 相邻主线：真实 socket 13 检查通过；实际 PG/HTTP 23,079,275 B 图片工作台单次读取 9 检查；真实 React、HTTP、IndexedDB、Edge 解码预览 17 检查通过。它们不是完整 Canvas 产品浏览器验收。
+- 全项目 `tsc --noEmit --incremental false` exit 0；`next lint` exit 0、现有整体 38 条 warning 保留（含本次 manifest effect 的 scope 依赖提示，业务已按 documentCurrent / actor-workspace 捕获；后续 manifests owner 收敛时一起清理，不用禁用规则掩盖）。四类 SCC 均 0。
+- 新两项 verifier 接入同一 refactor required catalog，catalog 从 94 到 96；配置接入不等于 GitHub 已实际强制放行。
+
+保留所有失败/准备记录：初次 tsc 重复声明/类型导入错误已修正；Windows tar 非 ASCII 路径提取失败改为 Python 读取原 archive；客户端 fixture 初次缺 atob，只有六组日志但 exit 0，明确记为 INCOMPLETE，补齐 Web API 和未结束 watchdog 后完整通过；集中 runner 的最初导入路径错误保留为 setup failure。
+
+第一轮固定源码集中回归 27 通过后在锁测量断言停止，原报告与 exit 1 完整保留。旧探针用 `pg_try_advisory_xact_lock`，四路 prepare 的探针自身会互相竞争，测量有污染；现在只读 `pg_locks` 的同一 64-bit advisory key，不改变被测锁状态。修改仅是 verifier，不改产品实现；最终 43 个入口从头实际执行通过，没有把旧失败重写为通过。
+
+最终四产物、字节级 patch 应用、完整独立副本回滚及 later-edit guard 见 `output/refactor-r7a-20261028/DELIVERY.json` / `VERIFICATION.txt`；实际工作树保留重构版，不回滚本目录。
 
 ## 未完成项
 
-- 此切片最终集中回归、类型/lint、架构图及独立副本回滚材料待封版。
 - workflow placeholder fill 自身的媒体处理事务仍沿既有实现，本次只闭合整批导入；后续原生节点 lifecycle 切片再处理对应变化传播。
 - 全应用固定候选、完整性能/INP/容量、远端 required CI 的实际强制证据、最终主线整合与整体退出仍未完成。
 - 不把局部 PG/浏览器组件 fixture 写成线上实测或 10 万活跃容量已达成；本轮没有供应商付费调用和生产发布，47 HOLD 保持。
