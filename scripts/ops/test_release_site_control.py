@@ -28,4 +28,13 @@ class SiteReleaseTests(unittest.TestCase):
         self.assertEqual(rendered,dump.replace('13105','13106'))
         self.assertEqual(site.render_file_edits(dump,{name:raw.encode()},{}),(dump,{name:raw.encode()}))
 
+    def test_47_single_requires_explicit_latest_authorization(self):
+        import release47_site_single as single
+        c=self.config();c.update(target='47.105.59.142',releaseId='release47-site-control-20261029-r1',evidenceRoot='/opt/naumi-staging/evidence/release47-site-control-20261029-r1',replacementAuthorization=single.ACK,releaseMode='STOP_OLD_REPLACE',workspaceModules=[],webMemoryMiB=2560,oldPort=13121,newPort=13122,fleetInstanceId='246f021c-04ce-40e3-a3a6-ba6741233c15',oldNames={'web':'naumi47-old-web','worker':'naumi47-old-worker'},newNames={'web':'naumi47-new-web','worker':'naumi47-new-worker'})
+        c['webEnvironment']={'NAUMI_ENTERPRISE_DEPLOYMENT_MODE':'dedicated','NAUMI_ENTERPRISE_SOURCE_INSTANCE_ID':single.SOURCE,'NAUMI_ENTERPRISE_ALLOWED_IDS':single.ENTERPRISE,'NAUMI_FLEET_MEDIA_ORIGIN':'https://47.105.59.142','FLEET_INSTANCE_ID':c['fleetInstanceId'],'FLEET_CONTROL_ENABLED':'0','FLEET_PORTAL_ONLY':'0','FLEET_RELEASE_DISPATCH_ENABLED':'0','FLEET_SCHEDULER_ENABLED':'0'}
+        single.validate(c)
+        for key,value in [('replacementAuthorization',''),('workspaceModules',['tasks']),('restoreDatabase',True),('webMemoryMiB',2048),('target','103.30.76.93')]:
+            altered=copy.deepcopy(c);altered[key]=value
+            with self.subTest(key=key),self.assertRaises(Hold):single.validate(altered)
+
 if __name__=='__main__':unittest.main()
