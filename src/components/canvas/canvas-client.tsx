@@ -3379,7 +3379,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           const positionResponse = await privateFetchRaw("/api/artworks/position", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({
+            body: JSON.stringify({ mode: "initialize",
               id: task.artworkId,
               x: Math.round((sourceNode?.position.x ?? source?.canvasX ?? 0) + size.width + X_GAP),
               y: Math.round(sourceNode?.position.y ?? source?.canvasY ?? 0),
@@ -3502,7 +3502,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               const positionResponse = await privateFetchRaw("/api/artworks/position", {
                 method: "POST",
                 headers: { "content-type": "application/json" },
-                body: JSON.stringify({ id: task.resultArtworkId, x: Math.round(x), y: Math.round(y) }),
+                body: JSON.stringify({ mode: "initialize", id: task.resultArtworkId, x: Math.round(x), y: Math.round(y) }),
               });
               if (stopped) return;
               if (!positionResponse.ok) throw new Error("改字结果定位失败");
@@ -4653,6 +4653,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       },
     ]);
     setGenError(null);
+    let receiptComplete = false;
     let attempted = false, terminal = false, jobId: string | undefined, resultIds: string[] = [], attachment:CanvasImageAttachment|undefined;
     let failure: GenerationFailure | undefined;
     const requestAccount = canvasAccountRef.current, requestProject = activeProjectRef.current?.key || null;
@@ -4747,6 +4748,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         if (!pr.ok) throw new Error(pj.error || t("canvas.genFail"));
         if(pj.status==="pending")setGenerationTasks(current=>current.map(task=>task.id===taskId?{...task,stage:"generating"}:task));
         if (pj.status === "done") {
+          receiptComplete = pj.reviewRequired !== true && pj.operationStatus !== "partial" && pj.operationStatus !== "needs_attention";
           attachment=pj.canvasAttachment;
           const warning=imageOutputWarningText(pj.warnings);if(warning)flashTip(warning);
           setGenerationTasks(current => current.map(task => task.id === taskId ? { ...task, stage: "saving" } : task));
@@ -4779,7 +4781,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         assertGenerationResultsPresent([source.id],fresh);
         if((fresh.find(art=>art.id===source.id)?.canvasImageRevision||0)<attachment.revision)throw new Error("节点版本尚未同步，请检查原任务");
         if(attachment.applied&&fresh.find(art=>art.id===source.id)?.canvasImageRevision===attachment.revision){pushUndo({kind:"image-version",id:source.id,from:{versionId:attachment.previousVersionId,image:attachment.previousImage},to:{versionId:attachment.versionId,image:generated[0].url}});}
-        if(jobId)completeCanvasImagegen(jobId,{owner:requestOwner,project:requestProject||"workspace",workspace:requestWorkspace});
+        if(jobId&&receiptComplete)completeCanvasImagegen(jobId,{owner:requestOwner,project:requestProject||"workspace",workspace:requestWorkspace});
         return generated;
       }
       const basePos = generationTaskPosRef.current[taskId] ?? taskPosition;
@@ -4792,7 +4794,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             return privateFetchRaw("/api/artworks/position", {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({
+              body: JSON.stringify({ mode: "initialize",
                 email: user.email,
                 id,
                 x: Math.round(basePos.x),
@@ -4803,10 +4805,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         );
       }
       if (!current()) return [];
-      const fresh = await mergeWorks(newIds,current); // 补这次新生成的几张(已带上面保存的坐标),不整表重拉
+      const fresh = await mergeWorks(newIds,current); // 已保存坐标并核实作品；凭据收尾使用本次快照，不等待 React effect。
       if (!current()) return [];
       assertGenerationResultsPresent(newIds, fresh);
-      if(jobId&&newIds.every(id=>worksRef.current?.some(art=>art.id===id&&!!art.image)))completeCanvasImagegen(jobId,{owner:requestOwner,project:requestProject||"workspace",workspace:requestWorkspace});
+      if(jobId&&receiptComplete&&newIds.every(id=>fresh.some(art=>art.id===id&&!!art.image)))completeCanvasImagegen(jobId,{owner:requestOwner,project:requestProject||"workspace",workspace:requestWorkspace});
       pushAddUndoMany(newIds, fresh); // 面板生成/三视图/改比例/重做/快捷动作可撤销
 
       if (newIds.length > 0 && newIds.length < requestedCount) {
@@ -4827,15 +4829,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         onRetry: resultIds.length ? async () => {
           if(!current())return;
           if(opts?.replaceNode){
-            const headers=new Headers(await authHeader());headers.set("x-naumi-workspace",requestWorkspace);if(requestProject)headers.set("x-naumi-project-context",requestProject);
+            const headers=new Headers(await authHeader());if(!current())return;headers.set("x-naumi-workspace",requestWorkspace);if(requestProject)headers.set("x-naumi-project-context",requestProject);
             const receipt=await fetch(`/api/generate-image?job=${encodeURIComponent(jobId!)}`,{headers,cache:"no-store"});const data=await readJsonSafe(receipt);
+            if(!current())return;
             if(!receipt.ok||!data.canvasAttachment||data.canvasAttachment.nodeId!==source.id)throw new Error("原任务结果已保留，节点版本尚未同步，请稍后检查");
             attachment=data.canvasAttachment;
+            receiptComplete=data.status==="done"&&data.reviewRequired!==true&&data.operationStatus!=="partial"&&data.operationStatus!=="needs_attention";
           }
           const visibleIds=opts?.replaceNode?[source.id]:resultIds;
           const fresh=await mergeWorks(visibleIds,current);if(!current())return;assertGenerationResultsPresent(visibleIds,fresh);
           if(opts?.replaceNode&&attachment&&(fresh.find(art=>art.id===source.id)?.canvasImageRevision||0)<attachment.revision)throw new Error("节点版本尚未同步，请稍后检查");
-          if(jobId&&visibleIds.every(id=>fresh.some(art=>art.id===id&&!!art.image)))completeCanvasImagegen(jobId,{owner:requestOwner,project:requestProject||"workspace",workspace:requestWorkspace});
+          if(jobId&&receiptComplete&&visibleIds.every(id=>fresh.some(art=>art.id===id&&!!art.image)))completeCanvasImagegen(jobId,{owner:requestOwner,project:requestProject||"workspace",workspace:requestWorkspace});
           setGenerationTasks(tasks=>tasks.filter(task=>task.id!==taskId));setGenError(null);
         } : () => runGen(source,prompt,opts) } : task));
       return [];
@@ -5142,7 +5146,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const livePosition = livePendingPosition(pendingId, stored ? {x:stored.x,y:stored.y} : {x,y});
       await privateFetchRaw("/api/artworks/position", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: resultId, x: Math.round(livePosition.x), y: Math.round(livePosition.y) }),
+        body: JSON.stringify({ mode: "initialize", id: resultId, x: Math.round(livePosition.x), y: Math.round(livePosition.y) }),
       }).then(response => { if (!response.ok) throw new Error(`${label}结果定位失败`); });
       if (!current()) return false;
       const fresh = await mergeWorks([resultId]);
@@ -5457,7 +5461,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         await privateFetchRaw("/api/artworks/position", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id: images[i].id, x, y }),
+          body: JSON.stringify({ mode: "initialize", id: images[i].id, x, y }),
         });
         const fresh = await mergeWorks([images[i].id]);
         pushAddUndo(images[i].id, fresh);
@@ -5469,7 +5473,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         await privateFetchRaw("/api/artworks/position", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({
+          body: JSON.stringify({ mode: "initialize",
             id: videoArtworkId,
             x: Math.round(livePosition.x + images.length * 40),
             y: Math.round(livePosition.y + images.length * 40),
@@ -6010,7 +6014,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           return privateFetchRaw("/api/artworks/position", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({
+            body: JSON.stringify({ mode: "initialize",
               email: user.email,
               id,
               x: Math.round(livePosition.x),
@@ -8425,6 +8429,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       prev.map((p) => (p.id === pend.id ? { ...p, generationFailure: undefined, onGenerationRetry: undefined, generating: true, generationStage: "preparing", generationStartedAt: Date.now(),
         ...generationPosition, generationSize, generationCount: normalizeCanvasCount(genCount) } : p))
     );
+    let receiptComplete = false;
     let attempted = false, terminal = false, jobId: string | undefined, resultIds: string[] = [];
     let failure: GenerationFailure | undefined;
     const requestAccount = canvasAccountRef.current, requestProject = activeProjectRef.current?.key || null;
@@ -8503,6 +8508,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         if (!pr.ok) throw new Error(pj.error || t("canvas.genFail"));
         if(pj.status==="pending")setPendNodes(current=>current.map(p=>p.id===pend.id?{...p,generationStage:"generating"}:p));
         if (pj.status === "done") {
+          receiptComplete = pj.reviewRequired !== true && pj.operationStatus !== "partial" && pj.operationStatus !== "needs_attention";
           const warning=imageOutputWarningText(pj.warnings);if(warning)flashTip(warning);
           setPendNodes(current => current.map(p => p.id === pend.id ? { ...p, generationStage: "saving" } : p));
           generatedSizes = ((pj.images ?? []) as { id?: string; width?: number; height?: number }[])
@@ -8532,7 +8538,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             return privateFetchRaw("/api/artworks/position", {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({
+              body: JSON.stringify({ mode: "initialize",
                 email: user.email,
                 id,
                 x: Math.round(livePosition.x),
@@ -8551,7 +8557,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const fresh = await mergeWorks(newIds,current);
       if (!current()) return false;
       assertGenerationResultsPresent(newIds, fresh);
-      if(jobId&&newIds.every(id=>worksRef.current?.some(art=>art.id===id&&!!art.image)))completeCanvasImagegen(jobId,{owner:requestOwner,project:requestProject||"workspace",workspace:requestWorkspace});
+      if(jobId&&receiptComplete&&newIds.every(id=>fresh.some(art=>art.id===id&&!!art.image)))completeCanvasImagegen(jobId,{owner:requestOwner,project:requestProject||"workspace",workspace:requestWorkspace});
       setPendNodes((prev) => prev.filter((p) => p.id !== pend.id));
 
       setSelectedPendId((current) => (current === pend.id ? null : current));
@@ -8589,7 +8595,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         onGenerationRetry: resultIds.length ? async () => {
           if(!current())return;
           const fresh=await mergeWorks(resultIds,current);if(!current())return;assertGenerationResultsPresent(resultIds,fresh);
-          if(jobId&&resultIds.every(id=>worksRef.current?.some(art=>art.id===id&&!!art.image)))completeCanvasImagegen(jobId,{owner:requestOwner,project:requestProject||"workspace",workspace:requestWorkspace});
+          if(jobId&&receiptComplete&&resultIds.every(id=>fresh.some(art=>art.id===id&&!!art.image)))completeCanvasImagegen(jobId,{owner:requestOwner,project:requestProject||"workspace",workspace:requestWorkspace});
           setPendNodes(nodes=>nodes.filter(node=>node.id!==pend.id));setSelectedPendId(id=>id===pend.id?null:id);setGenError(null);
         } : () => generatePend({pend:{...pend,generating:false,generationFailure:undefined},prompt:text,referenceInputs}) } : p));
       return false;
@@ -9229,10 +9235,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         const fresh=await mergeWorks(ids,current);if(!current())return false;
         assertGenerationResultsPresent(ids,fresh);
         if(attachment&&(fresh.find(art=>art.id===attachment.nodeId)?.canvasImageRevision||0)<attachment.revision)return false;
-        // A queued React updater is not delivery. Observe the committed canvas
-        // after one frame; a suspended/stale render retains its original receipt.
+        // The persisted, verified merge snapshot is the delivery proof. Allow
+        // the projection to paint without depending on a later ref-sync effect.
         await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
-        return current()&&ids.every(id=>worksRef.current?.some(art=>art.id===id&&!!art.image));
+        return current()&&ids.every(id=>fresh.some(art=>art.id===id&&!!art.image));
       }}/>}
       {unsavedTextCount>0 && <div role="alert" className="fixed bottom-6 left-1/2 z-[200] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-amber-500 bg-background px-4 py-3 text-sm shadow-lg">
         <span>{t("canvas.unsavedChanges")} ({unsavedTextCount})</span>
