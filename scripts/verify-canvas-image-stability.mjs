@@ -65,7 +65,12 @@ const bundle = await build({ stdin: { contents: entry, resolveDir: repo, loader:
     b.onResolve({ filter: /^\.\/supabase$|^@\/lib\/i18n\/locale-context$/ }, a => ({ path: a.path.includes('locale') ? 'locale' : 'auth', namespace: 'fixture' }));
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, a => ({ contents: a.path === 'auth' ? 'export async function authHeader(){return {}}' : 'export function useI18n(){return {locale:"en"}}', loader: 'js' }));
     b.onResolve({ filter: /^@\// }, async a => { for (const ext of ['.tsx', '.ts']) { const p = await source('src/' + a.path.slice(2) + ext); if (await exists(p)) return { path: p }; } throw new Error('Missing source: ' + a.path); });
-    b.onResolve({ filter: /^(react(?:\/|$)|react-dom(?:\/|$)|@xyflow\/react$)/ }, a => ({ path: req.resolve(a.path) }));
+    b.onResolve({ filter: /^(react(?:\/|$)|react-dom(?:\/|$)|@xyflow\/react$)/ }, a => {
+      // The parent core process also tests server code with react-server. These
+      // actual DOM components need the package's browser entry, not an RSC stub.
+      const match=/^(react|react-dom)(?:\/(jsx-runtime|jsx-dev-runtime|client))?$/.exec(a.path);
+      return {path:match?path.join(path.dirname(req.resolve(match[1]+'/package.json')),(match[2]||'index')+'.js'):req.resolve(a.path)};
+    });
   } }],
 });
 const loaded = [];

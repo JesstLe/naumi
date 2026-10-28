@@ -29,3 +29,5 @@ placement700随机／70血缘图／6组与原坐标精确一致；同机浏览�
 初始验证准备遗漏MAX_GENERATION_DIMENSION及原background观察新增的worker/inflight依赖，原失败日志保留；已分别加载实际原常量和真实inflight模块后复测。产品未因此改回旧单体、删断言或伪装成功。94固定源码core／完整Linux候选尚待本轮集中执行。
 
 29文件ESLint修复fixture局部module变量命名后exit0，9个既有／主线warning保留；原失败literal未覆盖。实际源码四类SCC均0。
+
+首次固定e589 core在新增图片组件夹具第4项终止（3通过／1失败／90未运行），真实日志保留。原因是core为服务端测试继承react-server，夹具require.resolve把DOM入口解析为无createRoot的RSC文件。已在浏览器夹具中显式选择同一已安装React包的浏览器入口，不替换产品组件或应用源码；修正后集中重测，原失败不改写。
