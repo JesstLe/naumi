@@ -19,6 +19,8 @@ export async function verifyCanvasImageCreationBrowser({page,expect,out,snapshot
  async function done(before,count){
   await expect.poll(async()=>fresh(await snapshot(),before).length,{timeout:90000}).toBe(count);
   await expect(page.getByTestId('generation-placeholder')).toHaveCount(0,{timeout:90000});
+  await expect(page.getByRole('status').filter({hasText:'重新生成中'})).toHaveCount(0,{timeout:90000});
+  await expect.poll(()=>page.evaluate(()=>Object.keys(sessionStorage).filter(key=>key.startsWith('naumi:imagegen-pending:v1:')).length),{timeout:90000}).toBe(0);
   await expect.poll(async()=>(await snapshot()).ledger.n).toBe(before.ledger.n+count);
   const state=await snapshot();assert.deepEqual(state.ledger,{n:before.ledger.n+count,amount:before.ledger.amount+count*6});return state;
  }
