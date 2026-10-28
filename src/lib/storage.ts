@@ -166,16 +166,25 @@ export async function readManagedObject(
     let response: Response | null = null, remoteError: unknown = null;
     try { response = await fetchStoredObject(key); } catch (error) { remoteError = error; }
     if (response && response.ok) {
-      const declared = Number(response.headers.get("content-length") || 0);
-      if (declared > maxBytes) throw new Error("对象超过大小限制");
-      const reader = response.body?.getReader(), chunks: Uint8Array[] = []; let size = 0;
-      if (!reader) throw new Error("对象内容为空");
-      try { for (;;) { const next = await reader.read(); if (next.done) break; size += next.value.byteLength;
-        if (size > maxBytes) throw new Error("对象超过大小限制"); chunks.push(next.value); } }
-      finally { await reader.cancel().catch(() => {}); }
-      const bytes = Buffer.concat(chunks);
-      return { bytes, contentType: response.headers.get("content-type") || "application/octet-stream", size: bytes.byteLength };
+      let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+      try {
+        const declared = Number(response.headers.get("content-length") || 0);
+        if (declared > maxBytes) throw new Error("对象超过大小限制");
+        reader = response.body?.getReader();
+        const chunks: Uint8Array[] = []; let size = 0;
+        if (!reader) throw new Error("对象内容为空");
+        for (;;) { const next = await reader.read(); if (next.done) break; size += next.value.byteLength;
+          if (size > maxBytes) throw new Error("对象超过大小限制"); chunks.push(next.value); }
+        const bytes = Buffer.concat(chunks);
+        return { bytes, contentType: response.headers.get("content-type") || "application/octet-stream", size: bytes.byteLength };
+      } finally {
+        // Header rejection happens before getReader(). It must release the
+        // socket too, not leave megabytes queued in every hop of the NAS tunnel.
+        if (reader) { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+        else await response.body?.cancel().catch(() => {});
+      }
     }
+    await response?.body?.cancel().catch(() => {});
     try {
       return await readLocalMirror(key, maxBytes);
     } catch (localError) {

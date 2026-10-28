@@ -5,7 +5,7 @@ import {excludeImportedHistory,isImportedHistory} from '../staging-history';
 import {randomUUID} from "node:crypto";
 import {getPool,listArtworksByIds,isBanned} from "../db";
 import {saveImagegenInput,readImagegenInputAsset} from "../imagegen/input-assets";
-import {readCanvasImage} from "../canvas-image-input";
+import {readCanvasImage,readCanvasOutput} from "../canvas-image-input";
 import {planImagegen,imagegenFingerprint} from "../imagegen/plan";
 import {submitAcceptedImagegenBatch,readImagegenBatch,runImagegenBatchTick} from "../imagegen/batch";
 import type {ImagegenPlan,ImagegenRequest} from "../imagegen/types";
@@ -32,7 +32,15 @@ export async function ownedAsset(owner:string,id:string):Promise<Asset>{
  const work=(await listArtworksByIds(owner,[id]))[0];if(!work?.image||work.videoUrl)throw new WorkbenchError("素材不存在或无权访问",404);
  const original=await readCanvasImage(work.image,"http://internal",owner),sharp=(await import("sharp")).default,m=await sharp(original.buffer).metadata();return {artworkId:id,url:work.image,width:m.width!,height:m.height!,relative:work.title||id};
 }
-export async function imageBytes(owner:string,id:string){const a=await ownedAsset(owner,id);return readCanvasImage(a.url,"http://internal",owner);}
+export async function imageBytes(owner:string,id:string){
+ // Viewing an owned generated output uses the existing output budget, not the
+ // 12 MiB reference-upload budget. Do not download it once for metadata and
+ // again for display. Input assets keep their original ownership/size checks.
+ if(id.startsWith("asset-"))return readImagegenInputAsset(id,owner).catch(()=>{throw new WorkbenchError("素材不存在或无权访问",404);});
+ const work=(await listArtworksByIds(owner,[id]))[0];
+ if(!work?.image||work.videoUrl)throw new WorkbenchError("素材不存在或无权访问",404);
+ return readCanvasOutput(work.image,"http://internal",owner);
+}
 async function saveAsset(owner:string,bytes:Buffer,relative:string){if(bytes.length>12*1024*1024)throw new WorkbenchError("单张原图需小于12MiB",413);const saved={...await saveImagegenInput(bytes,owner),relative};await putDocument(owner,"asset",saved.artworkId,saved);return saved;}
 async function inlineAssets(owner:string,raw:unknown){
  if(!Array.isArray(raw)||raw.length>8)throw new WorkbenchError("最多选择8张参考图");let total=0;const assets=[];
