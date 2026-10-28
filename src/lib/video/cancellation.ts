@@ -26,7 +26,10 @@ export async function requestVideoCancellation(actorRaw:string,id:string){
     await client.query("BEGIN");const task=(await client.query("SELECT * FROM app_video_tasks WHERE email=$1 AND id=$2 FOR UPDATE",[actor,id])).rows[0];
     if(!task)throw new ModelConfigError("VIDEO_TASK_UNAVAILABLE","视频任务不存在",404);
     if(!["completed","failed","cancelled"].includes(task.status)){
-      await client.query("UPDATE app_video_tasks SET cancellation_requested_at=COALESCE(cancellation_requested_at,now()),updated_at=now() WHERE email=$1 AND id=$2",[actor,id]);
+      // Wake the existing task without stealing an active poll lease. Only the
+      // first cancel request advances its due time; repeated clicks do not bypass
+      // a later supplier backoff or resubmit an already accepted generation.
+      await client.query("UPDATE app_video_tasks SET next_poll_at=CASE WHEN cancellation_requested_at IS NULL THEN now() ELSE next_poll_at END,cancellation_requested_at=COALESCE(cancellation_requested_at,clock_timestamp()),updated_at=now() WHERE email=$1 AND id=$2",[actor,id]);
       if(task.parameters?.creationScope)await creationEvidenceTx(client,()=>recordSourceOutcomeTx(client,'video',id,actor,'cancel_requested',{eventKey:'cancel-requested',summary:'已申请取消，等待上游确认'}));
       // This durable marker is set immediately before the supplier request, under this same row lock.
       if(task.status==="queued"&&!task.upstream_id&&task.parameters?.version===2&&task.parameters.submissionState==="prepared")

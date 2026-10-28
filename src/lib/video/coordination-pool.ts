@@ -11,6 +11,17 @@ const poolKey = Symbol.for("naumi.video.coordination.pg.v1");
 const slotsKey = Symbol.for("naumi.video.coordination.slots.v1");
 const runtime = process as typeof process & { [poolKey]?: Pool };
 
+/** Checkout rejected before a client or lock query existed. This is an explicit
+ * infrastructure failure, not a busy slot and not ambiguous business execution. */
+export class VideoCoordinationCheckoutError extends Error {
+  readonly code = "VIDEO_COORDINATION_UNAVAILABLE";
+  readonly status = 503;
+  constructor(readonly coordinationKey: string, cause: unknown) {
+    super("视频任务连接暂不可用，请稍后重试", { cause });
+    this.name = "VideoCoordinationCheckoutError";
+  }
+}
+
 export function getVideoCoordinationPool(): Pool {
   if (!runtime[poolKey]) {
     const options = getPool().options;
@@ -57,11 +68,9 @@ export async function acquireVideoCoordinationLock(key: string): Promise<{
   let client: PoolClient;
   try {
     client = await pool.connect();
-  } catch {
-    // No client and no try_lock query: nothing was accepted or executed. Let
-    // the caller finish its read-only activity so a later poll can try again.
+  } catch (error) {
     releaseSlot();
-    return { acquired: false, release: async () => {} };
+    throw new VideoCoordinationCheckoutError(key, error);
   }
   let failed = false;
   const onError = () => { failed = true; };

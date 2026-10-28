@@ -1,6 +1,7 @@
+import {withVideoCoordinationActivity} from "./coordination-activity";
 import {deferApplicationTask} from "../application/task-execution";
 import {ensureVideoWorkflowSchema as ensureWorkflowSchema} from "@/lib/video/storage-schema";
-import {withBackgroundActivity,detachBackgroundActivity,bindBackgroundClaim} from "@/lib/release-runtime/background-activity";
+import {detachBackgroundActivity,bindBackgroundClaim} from "@/lib/release-runtime/background-activity";
 import "server-only";
 import {creationTransaction} from "../saas/creation-writer";
 import {assertWorkflowCreationScope,runWorkflowCreation,bindWorkflowCreationProject,validateWorkflowCreationInputs,acceptWorkflowCreationTx,updateWorkflowCreationTx} from "./workflow-creation";
@@ -217,5 +218,5 @@ export async function resumeVideoWorkflow(runId:string,actor?:string) {
     return getVideoWorkflow(run.email,runId);
   };
   if(await deferApplicationTask())return view();
-  return withBackgroundActivity("video-workflow", runId, "claim", () => resumeVideoWorkflowLocal(runId,actor), view);
+  return withVideoCoordinationActivity("video-workflow", runId, "claim", `video-workflow:${runId}`, () => resumeVideoWorkflowLocal(runId,actor), view);
 }

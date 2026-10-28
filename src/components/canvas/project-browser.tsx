@@ -1,7 +1,6 @@
 "use client";
 import {Image as ImageIcon,GalleryVerticalEnd,Rotate3d,Type,Plus,MoreHorizontal,Pencil,Trash2,type LucideIcon} from "lucide-react";
-import {CachedImage} from "@/components/cached-image";
-import {cdnUrl} from "@/lib/cdn";
+import {ProjectBrowserSurface,ProjectCover} from "./project-browser-surface";
 import {cn,formatDate} from "@/lib/utils";
 import type {CanvasProject,CanvasWorkflowKey,canvasProjectMonths} from "@/lib/canvas/project-catalog";
 import type {CanvasProjectCatalog} from "./use-canvas-project-catalog";
@@ -18,13 +17,10 @@ const CANVAS_WORKFLOWS: Array<{
   { key: "copy", icon: Type, titleKey: "canvas.workflowCopy" },
 ];
 
-type Props={months:ReturnType<typeof canvasProjectMonths>;catalog:CanvasProjectCatalog;readOnly:boolean;t:(key:string)=>string;
+type Props={visible?:boolean;months:ReturnType<typeof canvasProjectMonths>;catalog:CanvasProjectCatalog;readOnly:boolean;t:(key:string)=>string;
  onNew:()=>void;onWorkflow:(key:CanvasWorkflowKey)=>void;onOpen:(key:string)=>void;onDelete:(project:CanvasProject)=>void};
-export function CanvasProjectBrowser({months,catalog,readOnly,t,onNew,onWorkflow,onOpen,onDelete}:Props){return (
-<div
-              data-testid="canvas-project-browser"
-              className="h-full overflow-y-auto bg-[#f6f7f9] px-4 py-6 text-[#20242c] sm:px-8 sm:py-8"
-            >
+export function CanvasProjectBrowser({visible=true,months,catalog,readOnly,t,onNew,onWorkflow,onOpen,onDelete}:Props){return (
+<ProjectBrowserSurface visible={visible}>
               <div className="mx-auto w-full max-w-[1680px]">
                 <div className="mb-7 flex items-end justify-between border-b border-[#dfe3e8]">
                   <div className="flex items-center gap-7">
@@ -158,11 +154,7 @@ export function CanvasProjectBrowser({months,catalog,readOnly,t,onNew,onWorkflow
                               >
                                 {p.cover ? (
                                   /* eslint-disable-next-line @next/next/no-img-element */
-                                  <CachedImage
-                                    src={cdnUrl(p.cover)}
-                                    alt={p.name}
-                                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.025]"
-                                  />
+                                  <ProjectCover source={p.cover} title={p.name} />
                                 ) : (
                                   <div className="flex h-full w-full items-center justify-center bg-[#f2f4f7] p-5 text-left text-[#525b69]">
                                     <div className="w-full border border-[#dce1e8] bg-white p-3 shadow-sm">
@@ -241,4 +233,4 @@ export function CanvasProjectBrowser({months,catalog,readOnly,t,onNew,onWorkflow
                   </section>
                 )}
               </div>
-            </div>);}
+            </ProjectBrowserSurface>);}

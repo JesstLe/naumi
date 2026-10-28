@@ -4118,16 +4118,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           }}
         >
           {!browsing && workflowPaste.status}
+          <CanvasProjectBrowser key={`${canvasArtworkDocument.scope.account}:${canvasArtworkDocument.scope.workspace}`} visible={!loading && browsing}
+            months={projectMonths} catalog={projectCatalog} readOnly={readOnly} t={t} onNew={startNewProject} onWorkflow={startWorkflow} onOpen={openProject} onDelete={deleteProject}/>
           {loading ? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               {t("canvas.loading")}
             </div>
           ) : canvasArtworkDocument.phase === "error" && works === null ? (
             <div data-testid="canvas-artwork-unavailable" className="flex h-full items-center justify-center text-sm text-slate-600">作品暂未加载</div>
-          ) : browsing ? (
-                        <CanvasProjectBrowser months={projectMonths} catalog={projectCatalog} readOnly={readOnly} t={t} onNew={startNewProject} onWorkflow={startWorkflow} onOpen={openProject} onDelete={deleteProject}/>
-
-          ) : (
+          ) : browsing ? null : (
 
               <ReactFlow
               key={active?.key ?? "__new__"}

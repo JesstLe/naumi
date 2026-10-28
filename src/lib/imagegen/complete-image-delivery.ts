@@ -1,3 +1,4 @@
+import {createImageDeliveryBytes} from "./delivery-bytes";
 import "server-only";
 import {createHash} from "node:crypto";
 import sharp from "sharp";
@@ -5,7 +6,7 @@ import {listArtworksByIds} from "@/lib/artworks/repository";
 import {addArtworksTx,ensureTemplateRoot} from "@/lib/artworks/writer";
 import {getPool} from "@/platform/db/pool";
 import {readCanvasOutput} from "../canvas-image-input";
-import { storageEnabled } from "../object-storage/runtime";
+import { storageEnabled,dataUrlToBytes } from "../object-storage/runtime";
 import { uploadImage } from "../media-upload";
 import {runPostprocess,PostprocessPending} from "../media-postprocess";
 import {provenanceEntry} from "../artwork-provenance";
@@ -48,8 +49,9 @@ export async function completeImageDelivery(input:DeliveryInput){
   let imagegenOutputError=notice.error,complete=input.final?saved?.deliveryComplete!==false:true;
   const warnings=new Set<string>(notice.warning?[notice.warning]:[]),images:GeneratedImage[]=[],artifacts:ImagegenResult["artifacts"]=[];
   if(!policy.known){complete=false;warnings.add("已保留原图，原处理配置缺失，未按当前配置改写");}
-  const fresh:GeneratedImage[]=[];
+  const fresh:GeneratedImage[]=[],deliveryBytes=createImageDeliveryBytes(dataUrlToBytes);
   for(const [index,image] of input.images.entries()){
+    try {
     const baseId=`art-${jobId}-${index}`;
     let id=input.final&&image.id===baseId+"-delivery"?image.id:baseId,existing=await existingArtwork(id,owner,useDb);
     const metadata={id,gradient:"",prompt:p.userPrompt||p.prompt||"",ratio:p.ratio||"",createdAt:new Date(saved?.createdAt||Date.now()).toISOString(),...image};
@@ -58,7 +60,7 @@ export async function completeImageDelivery(input:DeliveryInput){
       const result={...metadata,id} as GeneratedImage;images.push(result);if(!existing)fresh.push(result);continue;
     }
     stage("output-processing");
-    const source=await readCanvasOutput(input.final&&existing?existing.image_url:image.url,"http://internal",owner);
+    const source=await readCanvasOutput(input.final&&existing?existing.image_url:image.url,"http://internal",owner,deliveryBytes);
     let bytes=source.buffer,processingKind=metadata.processingKind,postprocessStatus=metadata.postprocessStatus;
     const transparent=input.transparent??p.transparent;
     if(transparent){const pixels=await inspectImagegenPixels(bytes);if(!pixels.transparentPixels||!pixels.visiblePixels){imagegenOutputError="模型未返回有效透明主体；已生成原图保留，请调整透明能力配置";complete=false;}}
@@ -72,7 +74,7 @@ export async function completeImageDelivery(input:DeliveryInput){
         // Same stage identity, original base digest and attempt budget on BOTH entrances.
         try{
           const result=await runPostprocess({id:`${jobId}:postprocess:${index}`,parentId:jobId,email:owner,modelVersion:policy.modelVersion!,bytes,policy:policy.post});
-          bytes=(await readCanvasOutput(result.url,"http://internal",owner)).buffer;
+          bytes=(await readCanvasOutput(result.url,"http://internal",owner,deliveryBytes)).buffer;
           processingKind=result.kind;postprocessStatus=result.status;
           if(result.status!=="succeeded"){complete=false;warnings.add(PROCESSING_WARNING);}
         }catch(error){
@@ -90,10 +92,10 @@ export async function completeImageDelivery(input:DeliveryInput){
     // An older partial recovery or a user edit is immutable. A transformed
     // result gets a deterministic derivative, never an overwrite or resurrection.
     if(existing&&!input.final&&!bytes.equals(source.buffer)){
-      const prior=(await readCanvasOutput(existing.image_url,"http://internal",owner)).buffer;
+      const prior=(await readCanvasOutput(existing.image_url,"http://internal",owner,deliveryBytes)).buffer;
       if(!bytes.equals(prior)){id+="-delivery";existing=await existingArtwork(id,owner,useDb);}
     }
-    if(existing)bytes=(await readCanvasOutput(existing.image_url,"http://internal",owner)).buffer;
+    if(existing)bytes=(await readCanvasOutput(existing.image_url,"http://internal",owner,deliveryBytes)).buffer;
     const pixels=await inspectImagegenPixels(bytes),meta=await sharp(bytes).metadata();
     if(!pixels.visiblePixels)throw Error("原结果没有可见图片内容");
     if(transparent&&!pixels.transparentPixels){complete=false;warnings.add("已保留生成图片，实际图片不是透明背景");}
@@ -107,9 +109,10 @@ export async function completeImageDelivery(input:DeliveryInput){
     catch{warnings.add("图片已保留，独立媒体保存暂未完成");}
     // Retain the established inline fallback. A storage outage must not discard
     // a valid paid result already durably checkpointed in the job/DB.
-    url||=`data:${mime};base64,${bytes.toString("base64")}`;
+    url||=deliveryBytes.encode(bytes,mime);
     const result={...metadata,id,url,width:pixels.width,height:pixels.height,ratio:ratio(pixels.width,pixels.height),processingKind,postprocessStatus} as GeneratedImage;
     images.push(result);artifacts.push({artworkId:id,url,mime,...pixels});if(!existing)fresh.push(result);
+    } finally { deliveryBytes.clear(); }
   }
   let sourceUrl=saved?.sourceUrl||null;
   const first=p.images?.[0];

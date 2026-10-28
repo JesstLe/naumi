@@ -76,16 +76,16 @@ function transpile(source, filename) {
   }).outputText;
 }
 function execute(source, filename, locals, imports = {}) {
-  const module = { exports: {} };
+  const fixtureModule = { exports: {} };
   const context = vm.createContext({
-    ...locals, module, exports: module.exports, Error, console,
+    ...locals, module:fixtureModule, exports: fixtureModule.exports, Error, console,
     require(name) {
       check(Object.prototype.hasOwnProperty.call(imports, name), 'unexpected dependency requested by isolated source');
       return imports[name];
     },
   });
   new vm.Script(source, { filename }).runInContext(context, { timeout: 1500 });
-  return module.exports;
+  return fixtureModule.exports;
 }
 
 // Extract the original declaration verbatim. Only a separate export statement
@@ -336,14 +336,15 @@ async function faults(definitions, helper, env, prefix) {
   {
     const before = helper.control.events.length;
     helper.control.fault = 'connect-reject';
-    const lock = await helper.acquireVideoCoordinationLock(`${prefix}:connect-reject`);
-    check(!lock.acquired && pool[SLOTS] === 0 && helper.control.active.size === 0,
-      'pre-client connection rejection did not return false and release its slot');
-    await lock.release(); await lock.release();
+    let failure;
+    try { await helper.acquireVideoCoordinationLock(`${prefix}:connect-reject`); } catch (error) { failure = error; }
+    check(failure?.name === 'VideoCoordinationCheckoutError' && failure.coordinationKey === `${prefix}:connect-reject`
+      && failure.cause instanceof VerificationError && pool[SLOTS] === 0 && helper.control.active.size === 0,
+      'pre-client connection rejection did not report its cause and release its slot');
     const events = helper.control.events.slice(before);
     check(events.length === 2 && events[0].kind === 'connect' && events[0].slots === 1
       && events[1].kind === 'connect-reject', 'pre-client rejection executed coordination SQL or a client release');
-    check(pool[SLOTS] === 0, 'no-op connect-rejection release changed the reservation count');
+    check(pool[SLOTS] === 0, 'connect-rejection leaked a reservation');
   }
   for (const definition of definitions) {
     const id = `${prefix}-connect-reject-${definition.name}`;
@@ -351,16 +352,17 @@ async function faults(definitions, helper, env, prefix) {
     const harness = runner(definition, helper, env.business, async () => { bodies++; });
     const before = helper.control.events.length;
     helper.control.fault = 'connect-reject';
-    const result = await harness.call(id);
-    check(result.id === id && bodies === 0 && harness.stats.updates === 0 && harness.stats.finalViews === 1
+    let failure;
+    try { await harness.call(id); } catch (error) { failure = error; }
+    check(failure?.name === 'VideoCoordinationCheckoutError' && bodies === 0 && harness.stats.updates === 0 && harness.stats.finalViews === 0
       && harness.stats.creationUpdates === 0 && harness.stats.claims === 0,
-      'actual callsite did not remain read-only after pre-client connection rejection');
+      'actual callsite did not report a no-work checkout failure');
     const events = helper.control.events.slice(before);
     check(events.length === 2 && events[0].kind === 'connect' && events[0].slots === 1
       && events[1].kind === 'connect-reject' && pool[SLOTS] === 0 && helper.control.active.size === 0,
       'actual callsite connect-rejection leaked a slot or issued coordination SQL');
     await harness.call(id);
-    check(bodies === 1 && harness.stats.updates === 1 && harness.stats.finalViews === 2 && pool[SLOTS] === 0,
+    check(bodies === 1 && harness.stats.updates === 1 && harness.stats.finalViews === 1 && pool[SLOTS] === 0,
       'actual callsite could not retry after pre-client connection rejection');
   }
   for (const fault of ['acquire-ack-error', 'malformed-ack', 'unlock-reject', 'unlock-false', 'client-error']) {
@@ -558,7 +560,7 @@ async function run({ connectionString } = {}) {
       }
       await step('real child process: same-key exclusion both directions, immediate busy result, retry and failed-try return',
         () => crossProcess(primary, env, url, prefix));
-      await step('actual helper faults: connect-reject read-only/retry, acquire error/malformed acknowledgement throws, unlock rejection/false, client/caller error, duplicate release',
+      await step('actual helper faults: checkout error and retry, acquire error/malformed acknowledgement throws, unlock rejection/false, client/caller error, duplicate release',
         () => faults(definitions, primary, env, prefix));
       await step('final repeat entry: both actual callsites and no coordination lease leaks', async () => {
         for (const definition of definitions) await runner(definition, primary, env.business).call(`${prefix}-final`);
