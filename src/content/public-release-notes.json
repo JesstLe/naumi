@@ -1,5 +1,36 @@
 [
   {
+    "version": "1793180474",
+    "title": {
+      "zh": "画布图片显示与项目浏览优化",
+      "en": "Smoother canvas images and project browsing"
+    },
+    "improvements": [
+      {
+        "zh": "项目封面改用按需加载的缩略图，减少等待和流量。",
+        "en": "Project covers now load thumbnails on demand to reduce waiting and data use."
+      },
+      {
+        "zh": "在画布和全部项目之间切换时，保留已加载封面和列表位置。",
+        "en": "Loaded covers and list position are retained when switching between the canvas and all projects."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "修复画布缩放升级图片清晰度时出现短暂白屏的问题。",
+        "en": "Fixed brief blank images when zooming upgrades image quality on the canvas."
+      },
+      {
+        "zh": "修复已加载图片暂时移出画面再返回时重复清空显示的问题。",
+        "en": "Fixed loaded images being cleared when temporarily leaving and re-entering view."
+      },
+      {
+        "zh": "高清图片加载较慢时继续显示已有画面，避免白色提示遮住图片。",
+        "en": "Existing images remain visible during slow high-resolution loading instead of being covered by a white notice."
+      }
+    ]
+  },
+  {
     "version": "1793175770",
     "title": {
       "zh": "画布多轨编辑与创作体验优化",
