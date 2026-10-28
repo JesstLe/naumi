@@ -9,7 +9,7 @@ import {videoByocOverridesSchema} from "./byoc-settings";
 import {videoWorkflowManifestSchema} from "./workflow-schema";
 import {compileVideoCamera} from "./camera";
 import {videoParameterScope} from "./parameter-options";
-import {previewCharacterInputs} from "../character/canvas";
+import {previewVisualInputs} from "../canvas/visual-references";
 
 export type VideoNodeConfig=CanvasVideoNode["config"];
 export type VideoCatalogModel=VideoModelCapability&{isDefault?:boolean};
@@ -89,7 +89,7 @@ export function inputReference(input:OrderedInput):VideoReference|null{
 }
 export function validateVideoSettings(config:VideoNodeConfig,inputs:OrderedInput[],cap:ResolvedVideoCapability,choices:readonly VideoInputChoice[]=[]){
   try{
-    const preview=previewCharacterInputs(inputs,config.prompt||"",choices);
+    const preview=previewVisualInputs(inputs,config.prompt||"",choices);
     if(config.comfyWorkflowId){
       videoByocOverridesSchema.parse(config.comfyOverrides||{});
       if(config.comfyInputs)videoWorkflowManifestSchema.shape.inputs.parse(config.comfyInputs);

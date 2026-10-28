@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useId, useImperativeHandle, useRef, useState } from "react";
-import { Film, Music2, Type, Image, UserRound } from "lucide-react";
+import { Film, Music2, Type, Image, UserRound, Mountain } from "lucide-react";
 import { CachedImage } from "@/components/cached-image";
 import { displayVideoPrompt, serializeVideoPrompt } from "@/lib/video/prompt-references";
 import type { OrderedInput } from "@/lib/video/references";
@@ -66,7 +66,7 @@ export const VideoPromptEditor = forwardRef<VideoPromptEditorHandle, {
         else if (event.key === "Enter" && selected) insert(selected);
       }}/>
     {query && !readOnly && <div id={id} role="listbox" aria-label={V("选择引用素材")} className="canvas-ui-control mb-2 max-h-40 overflow-y-auto rounded-lg border p-1 shadow-sm">
-      {options.map((choice, index) => { const Icon = choice.category === "character" ? UserRound : choice.kind === "image" ? Image : choice.kind === "video" ? Film : choice.kind === "audio" ? Music2 : Type;
+      {options.map((choice, index) => { const Icon = choice.category === "scene" ? Mountain : choice.category === "character" ? UserRound : choice.kind === "image" ? Image : choice.kind === "video" ? Film : choice.kind === "audio" ? Music2 : Type;
         return <button key={choice.id} id={`${id}-${index}`} type="button" role="option" aria-selected={choice === selected} disabled={!choice.available}
           onMouseDown={event => event.preventDefault()} onClick={() => insert(choice)}
           className={`canvas-ui-action flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs disabled:opacity-40 ${choice === selected ? "bg-indigo-500/10" : ""}`}>

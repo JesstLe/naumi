@@ -42,6 +42,8 @@ function setup(built){
  // These legacy image/text/video cases also have no character records.
  // Bind the actual new document port; preserve every original observation/assertion.
  c.characterNodesStore={saving:false,getNode:()=>undefined,flush:async()=>{},refresh:async()=>{}};
+ // Original image/text/video cases contain no scene records; preserve counters.
+ c.sceneNodesStore={saving:false,getNode:()=>undefined,flush:async()=>{},refresh:async()=>{}};
  vm.createContext(c);vm.runInContext(built,c);Object.assign(c,projectedModule.exports);
  const names=['privateFetchRaw','applyHistory','doUndo','doRedo','commitNodeSettings','selectVideoResult',...(fn.saveManyNodePositions?['saveManyNodePositions']:[]),...(!baseline?['applyPendingLinkHistory','applyHistorySettings','onHistoryApplied']:[])];
  // pushUndo is a useCallback invocation. Keep its original initializer, with a

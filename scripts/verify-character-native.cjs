@@ -8,9 +8,9 @@ const mode = process.argv[2] || 'MODIFIED';
 const root = path.resolve(process.argv[3] || '.');
 function load(source) {
   const built = esbuild.buildSync({ stdin: { contents: source, loader: 'ts', resolveDir: root }, bundle: true, write: false, platform: 'node', format: 'cjs', nodePaths: [path.resolve('node_modules')] });
-  const module = { exports: {} };
-  vm.runInThisContext('(function(module,exports,require){' + built.outputFiles[0].text + '\n})')(module, module.exports, require);
-  return module.exports;
+  const loaded = { exports: {} };
+  vm.runInThisContext('(function(module,exports,require){' + built.outputFiles[0].text + '\n})')(loaded, loaded.exports, require);
+  return loaded.exports;
 }
 const menu = load(`export {canvasNodeMenuItems} from './src/components/canvas/node-menu-items';`).canvasNodeMenuItems;
 assert.equal(menu({ L: zh => zh, readOnly: false, videoDisabled: false, onCreate() {} }).find(item => item.id === 'character').disabled, mode !== 'MODIFIED');
@@ -20,7 +20,7 @@ if (mode !== 'MODIFIED') {
   console.log(`${mode}_CHARACTER=PASS MENU=DISABLED MODEL=ABSENT API=ABSENT EXISTING_VIDEO_DIRECTOR=PRESERVED EXIT=0`);
   process.exit(0);
 }
-const lib = load(`export * from './src/lib/character/project';export * from './src/lib/character/canvas';export * from './src/lib/canvas/character-node-schema';export {remapVideoPromptReferences} from './src/lib/video/prompt-references';export {orderedInputSchema} from './src/lib/video/references';export {validateVideoSettings} from './src/lib/video/client-settings';`);
+const lib = load(`export * from './src/lib/character/project';export * from './src/lib/character/canvas';export {previewVisualInputs as previewCharacterInputs} from './src/lib/canvas/visual-references';export * from './src/lib/canvas/character-node-schema';export {remapVideoPromptReferences} from './src/lib/video/prompt-references';export {orderedInputSchema} from './src/lib/video/references';export {validateVideoSettings} from './src/lib/video/client-settings';`);
 let cases = 0;
 const check = action => { action(); cases++; };
 const project = lib.newCharacterProject('林舟');

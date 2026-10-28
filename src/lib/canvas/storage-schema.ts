@@ -93,3 +93,25 @@ export async function ensureCharacterNodeSchema() {
   `)).then(() => undefined).catch(error => { state.pending = undefined; throw error; });
   await state.pending;
 }
+
+export async function ensureSceneNodeSchema() {
+  const state=databaseSchemaReadiness(getPool(),"canvas-scene-nodes");
+  state.pending ||= ensureVideoNodeSchema().then(() => getPool().query(`
+    CREATE TABLE IF NOT EXISTS app_canvas_scene_nodes (
+      email text NOT NULL, id text NOT NULL, project_key text NOT NULL,
+      revision bigint NOT NULL DEFAULT 1, title text NOT NULL DEFAULT '场景',
+      x double precision NOT NULL DEFAULT 0, y double precision NOT NULL DEFAULT 0,
+      width double precision NOT NULL DEFAULT 360, height double precision NOT NULL DEFAULT 260,
+      scene jsonb NOT NULL, deleted_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY(email,id)
+    );
+    CREATE INDEX IF NOT EXISTS app_canvas_scene_nodes_project_idx
+      ON app_canvas_scene_nodes(email,project_key,updated_at DESC);
+    CREATE TABLE IF NOT EXISTS app_canvas_scene_operations (
+      email text NOT NULL, operation_id uuid NOT NULL, input_digest text NOT NULL,
+      result jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(email,operation_id)
+    );
+  `)).then(() => undefined).catch(error => { state.pending = undefined; throw error; });
+  await state.pending;
+}

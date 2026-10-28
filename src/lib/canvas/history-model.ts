@@ -1,3 +1,4 @@
+import type {CanvasSceneNode} from "./scene-node-schema";
 import type {CanvasCharacterNode} from "./character-node-schema";
 import {artworkFields,type CanvasArtworkFields,type CanvasArtworkReceipt} from "./artwork-write";
 import type { Artwork } from "../mock-data";
@@ -24,10 +25,13 @@ export const textPatchOf = (node: CanvasTextNode): TextPatchFields => ({
   height: node.height,
 });
 export type VideoPatchFields=Partial<Pick<CanvasVideoNode,"title"|"config"|"inputs"|"x"|"y"|"width"|"height">>;
+export type ScenePatchFields=Partial<Pick<CanvasSceneNode,"title"|"scene"|"x"|"y"|"width"|"height">>;
 export type CharacterPatchFields=Partial<Pick<CanvasCharacterNode,"title"|"character"|"x"|"y"|"width"|"height">>;
 export type DirectorPatchFields=Partial<Pick<CanvasDirectorNode,"title"|"project"|"x"|"y"|"width"|"height">>;
 export type CanvasHistoryAction = (
   | {kind:"art-dimensions";id:string;from:{width:number;height:number};to:{width:number;height:number}}
+  | {kind:"scene-patch";id:string;from:ScenePatchFields;to:ScenePatchFields}
+  | {kind:"scene-add";records:CanvasSceneNode[]}
   | {kind:"character-patch";id:string;from:CharacterPatchFields;to:CharacterPatchFields}
   | {kind:"character-add";records:CanvasCharacterNode[]}
   | {kind:"director-patch";id:string;from:DirectorPatchFields;to:DirectorPatchFields}
@@ -38,9 +42,9 @@ export type CanvasHistoryAction = (
 
   | { kind: "pending-link"; id: string; from: { inputs: string[]; parentId: string | null; linked: boolean }; to: { inputs: string[]; parentId: string | null; linked: boolean } }
   | { kind: "workflow-add"; artworks: Artwork[]; textNodes: CanvasTextNode[] }
-  | {kind:"mixed-add";artworks:Artwork[];textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];projectKey:string}
+  | {kind:"mixed-add";artworks:Artwork[];textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];projectKey:string}
   | { kind: "workflow-fill"; id: string; assetOperationId: string; from: Artwork; to: Artwork }
-  | { kind: "node-settings"; id: string; text: boolean; video?:boolean; director?:boolean; character?:boolean; from: CanvasNodeSettings; to: CanvasNodeSettings }
+  | { kind: "node-settings"; id: string; text: boolean; video?:boolean; director?:boolean; character?:boolean; scene?:boolean; from: CanvasNodeSettings; to: CanvasNodeSettings }
   | { kind: "move"; id: string; from: { x: number; y: number }; to: { x: number; y: number } }
   | {
       kind: "move-many";
@@ -64,7 +68,7 @@ export type CanvasHistoryAction = (
       artworks: Artwork[];
       textNodes: CanvasTextNode[];
       videoNodes?:CanvasVideoNode[];
-      directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];
+      directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];
     }
   | { kind: "add"; records: Artwork[] }
   | { kind: "text-delete"; records: CanvasTextNode[] }
@@ -94,7 +98,7 @@ export function canvasHistoryScope(account: string, workspace: string, project: 
 /** First insertion creates its project; the originating callback owns late work. */
 export function canvasHistoryProject(action: CanvasHistoryAction) {
   return action.kind === "mixed-add" ? action.projectKey
-    : action.kind === "video-add" || action.kind === "director-add" || action.kind === "character-add" || action.kind === "text-add" ? action.records[0]?.projectKey
+    : action.kind === "video-add" || action.kind === "director-add" || action.kind === "character-add" || action.kind === "scene-add" || action.kind === "text-add" ? action.records[0]?.projectKey
     : action.kind === "workflow-add" ? action.textNodes[0]?.projectKey || (action.artworks[0] ? `tree:${action.artworks[0].groupId || action.artworks[0].id}` : null)
     : action.kind === "add" && action.records[0] ? `tree:${action.records[0].groupId || action.records[0].parentId || action.records[0].id}` : null;
 }
@@ -102,14 +106,15 @@ export function canvasHistoryProject(action: CanvasHistoryAction) {
 /** Pure command compiler. Revisions are read after pending writes drain, once per
  * attempt. Retries use the controller's frozen body, not a fresh revision. */
 export function compileCanvasHistory(action: CanvasHistoryAction, undo: boolean,
-  video: (id: string) => CanvasVideoNode | undefined, initialRevision?: number, director:(id:string)=>CanvasDirectorNode|undefined=()=>undefined, character: (id: string) => CanvasCharacterNode | undefined = () => undefined): CanvasHistoryOperation[] {
+  video: (id: string) => CanvasVideoNode | undefined, initialRevision?: number, director:(id:string)=>CanvasDirectorNode|undefined=()=>undefined, character: (id: string) => CanvasCharacterNode | undefined = () => undefined,scene:(id:string)=>CanvasSceneNode|undefined=()=>undefined): CanvasHistoryOperation[] {
   const side = undo ? "from" : "to", operations: CanvasHistoryOperation[] = [];
   const getVideo = (id: string) => { const node = video(id); if (!node) throw new Error("视频节点不存在，请刷新画布"); return node; };
   const videoPatch = (id: string, fields: VideoPatchFields) => operations.push({type:"video-patch",id,expectedRevision:getVideo(id).revision,fields});
+  const scenePatch=(id:string,fields:ScenePatchFields)=>{const node=scene(id);if(!node)throw new Error("场景不存在，请刷新画布");operations.push({type:"scene-patch",id,expectedRevision:node.revision,fields});};
   const characterPatch=(id:string,fields:CharacterPatchFields)=>{const node=character(id);if(!node)throw new Error("角色不存在，请刷新画布");operations.push({type:"character-patch",id,expectedRevision:node.revision,fields});};
   const directorPatch=(id:string,fields:DirectorPatchFields)=>{const node=director(id);if(!node)throw new Error("导演节点不存在，请刷新画布");operations.push({type:"director-patch",id,expectedRevision:node.revision,fields});};
   const position = (id: string, point: {x:number;y:number}, text = id.startsWith("text-"),expected?:{x:number;y:number}) => {
-    if(character(id))characterPatch(id,point);else if(director(id))directorPatch(id,point);else if (video(id)) videoPatch(id,point); else operations.push({type:"position",id,text,...point,...(text&&expected?{expected}:!text&&expected?{expectedArtwork:{canvasX:expected.x,canvasY:expected.y,...(!undo?action.artworkBases?.[id]:{})}}:{})});
+    if(scene(id))scenePatch(id,point);else if(character(id))characterPatch(id,point);else if(director(id))directorPatch(id,point);else if (video(id)) videoPatch(id,point); else operations.push({type:"position",id,text,...point,...(text&&expected?{expected}:!text&&expected?{expectedArtwork:{canvasX:expected.x,canvasY:expected.y,...(!undo?action.artworkBases?.[id]:{})}}:{})});
   };
   const expected=(id:string,base:Partial<CanvasArtworkFields>)=>({...base,...(!undo?action.artworkBases?.[id]:{})});
   const visibility = (records: Artwork[], visible: boolean) => records.forEach(record => operations.push({type:"visibility",id:record.id,visible,expectedArtwork:visible?{visible:false}:artworkFields(record,true)}));
@@ -118,6 +123,8 @@ export function compileCanvasHistory(action: CanvasHistoryAction, undo: boolean,
   const videos = (records: CanvasVideoNode[], visible: boolean) => records.forEach(node => operations.push({type:"video-visibility",id:node.id,visible}));
   switch (action.kind) {
     case "pending-link": break;
+    case "scene-patch":scenePatch(action.id,action[side]);break;
+    case "scene-add":action.records.forEach(node=>operations.push({type:"scene-visibility",id:node.id,visible:!undo}));break;
     case "character-patch":characterPatch(action.id,action[side]);break;
     case "character-add":action.records.forEach(node=>operations.push({type:"character-visibility",id:node.id,visible:!undo}));break;
     case "director-patch":directorPatch(action.id,action[side]);break;
@@ -131,7 +138,7 @@ export function compileCanvasHistory(action: CanvasHistoryAction, undo: boolean,
     case "mixed-delete": case "workflow-add": case "mixed-add": {
       const visible = action.kind === "mixed-delete" ? undo : !undo;
       visibility(action.artworks,visible); texts(action.textNodes,visible);
-      if (action.kind !== "workflow-add") {videos(action.videoNodes || [],visible);(action.directorNodes||[]).forEach(node=>operations.push({type:"director-visibility",id:node.id,visible}));(action.characterNodes||[]).forEach(node=>operations.push({type:"character-visibility",id:node.id,visible}));} break;
+      if (action.kind !== "workflow-add") {videos(action.videoNodes || [],visible);(action.directorNodes||[]).forEach(node=>operations.push({type:"director-visibility",id:node.id,visible}));(action.characterNodes||[]).forEach(node=>operations.push({type:"character-visibility",id:node.id,visible}));(action.sceneNodes||[]).forEach(node=>operations.push({type:"scene-visibility",id:node.id,visible}));} break;
     }
     case "delete": case "add": visibility(action.records,action.kind === "delete" ? undo : !undo); break;
     case "text-delete": case "text-add": texts(action.records,action.kind === "text-delete" ? undo : !undo); break;
@@ -142,7 +149,7 @@ export function compileCanvasHistory(action: CanvasHistoryAction, undo: boolean,
     case "rename": operations.push({type:"rename",id:action.id,title:action[side],expectedArtwork:expected(action.id,{title:action[undo?"to":"from"]})}); break;
     case "art-size": operations.push({type:"size",id:action.id,...action[side],expectedArtwork:expected(action.id,{canvasX:action[undo?"to":"from"].x,canvasY:action[undo?"to":"from"].y,canvasWidth:action[undo?"to":"from"].width,canvasHeight:action[undo?"to":"from"].height})}); break;
     case "mark": action.changes.forEach(change => operations.push({type:"mark",id:change.id,marked:change[side],expectedArtwork:expected(change.id,{marked:change[undo?"to":"from"]})})); break;
-    case "node-settings": operations.push({type:"node-settings",id:action.id,text:action.text,video:action.video,director:action.director,character:action.character,settings:action[side]}); break;
+    case "node-settings": operations.push({type:"node-settings",id:action.id,text:action.text,video:action.video,director:action.director,character:action.character,scene:action.scene,settings:action[side]}); break;
     case "workflow-fill": operations.push({type:"workflow-asset",id:action.id,assetOperationId:action.assetOperationId,filled:!undo}); break;
     default: { const exhaustive: never = action; throw new Error(`Unknown canvas history action: ${exhaustive}`); }
   }

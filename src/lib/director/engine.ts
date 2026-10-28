@@ -5,6 +5,7 @@ import { disposeObject } from "../three/dispose";
 import { buildDirectorEntity, applyDirectorEntity } from "./scene";
 import { directorOutputSize, sampleDirectorProject, type DirectorProject, type DirectorTransform, type DirectorView } from "./project";
 import { finalizeDirectorWebm,muxDirectorWebm,type DirectorEncodedFrame } from "./webm";
+import {directorBackgroundCrop} from "./background";
 
 type Callbacks = { onView: (view: DirectorView) => void; onSelect: (id: string | null) => void; onTransform: (id: string, transform: Omit<DirectorTransform, "pose">, commit: boolean) => void; onError: (message: string) => void };
 function waitForPaint(signal:AbortSignal){return new Promise<void>((resolve,reject)=>{
@@ -23,6 +24,7 @@ export class DirectorEngine {
   private floor: THREE.Mesh; private grid = new THREE.GridHelper(40, 40, "#b6c0cc", "#d4dbe3");
   private observer: ResizeObserver; private disposed = false; private project?: DirectorProject; private selected: string | null = null;
   private currentView = ""; private panorama = ""; private panoramaSequence = 0; private pendingTexture: Promise<void> = Promise.resolve();
+  private backgroundProjection: "image" | "panorama" = "panorama";
   private down = { x: 0, y: 0 }; private exporting = false;
   constructor(private host: HTMLElement, private callbacks: Callbacks) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, powerPreference: "high-performance" });
@@ -75,24 +77,33 @@ export class DirectorEngine {
     const view = project.cameras.find(camera => camera.id === project.activeCameraId)!.view, key = JSON.stringify(view);
     if (key !== this.currentView) { this.currentView = key; this.camera.position.fromArray(view.position); this.controls.target.fromArray(view.target); this.camera.fov = view.fov; this.camera.updateProjectionMatrix(); this.controls.update(); }
     const url = project.panoramaArtworkId ? panoramaUrl || "" : "";
-    if (url !== this.panorama) {
-      this.panorama = url; const sequence = ++this.panoramaSequence;
+    const projection = project.backgroundProjection ?? "panorama";
+    this.renderer.domElement.dataset.directorBackgroundMode = url ? projection : "color";
+    if (url !== this.panorama || projection !== this.backgroundProjection) {
+      this.panorama = url; this.backgroundProjection = projection; const sequence = ++this.panoramaSequence;
       if (this.scene.background instanceof THREE.Texture) this.scene.background.dispose(); this.scene.background = new THREE.Color(project.background);
       this.pendingTexture = url ? new THREE.TextureLoader().loadAsync(url).then(texture => {
         if (this.disposed || sequence !== this.panoramaSequence) { texture.dispose(); return; }
-        texture.colorSpace = THREE.SRGBColorSpace; texture.mapping = THREE.EquirectangularReflectionMapping; this.scene.background = texture; this.render();
-      }).catch(() => { if (sequence === this.panoramaSequence && !this.disposed) this.callbacks.onError("全景背景加载失败，请重新选择画布图片"); throw new Error("全景背景加载失败"); }) : Promise.resolve();
+        texture.colorSpace = THREE.SRGBColorSpace; texture.mapping = projection === "panorama" ? THREE.EquirectangularReflectionMapping : THREE.UVMapping; this.scene.background = texture; this.fitBackground(); this.render();
+      }).catch(() => { if (sequence === this.panoramaSequence && !this.disposed) this.callbacks.onError("背景图片加载失败，请重新选择画布图片"); throw new Error("背景图片加载失败"); }) : Promise.resolve();
       void this.pendingTexture.catch(() => {});
     }
     if (!url) this.scene.background = new THREE.Color(project.background);
-    this.scene.backgroundRotation.y = THREE.MathUtils.degToRad(project.panoramaRotation); this.resize(); this.select(this.selected); this.render();
+    this.scene.backgroundRotation.y = projection === "panorama" ? THREE.MathUtils.degToRad(project.panoramaRotation) : 0; this.resize(); this.select(this.selected); this.render();
+  }
+  private fitBackground() {
+    const texture = this.scene.background;
+    if (!(texture instanceof THREE.Texture) || this.backgroundProjection !== "image") return;
+    const image = texture.image as {width?: number; height?: number}, [width, height] = directorOutputSize(this.project?.aspectRatio || "16:9");
+    const crop = directorBackgroundCrop((image.width || 1) / (image.height || 1), width / height);
+    texture.repeat.fromArray(crop.repeat); texture.offset.fromArray(crop.offset); texture.updateMatrix();
   }
   render = () => { if (!this.disposed) this.renderer.render(this.scene, this.camera); };
   private resize() {
     if (this.disposed || this.exporting) return;
     const [width, height] = directorOutputSize(this.project?.aspectRatio || "16:9"), ratio = width / height, box = this.host.getBoundingClientRect();
     const w = Math.max(1, Math.min(box.width, box.height * ratio)), h = Math.max(1, w / ratio);
-    this.renderer.setSize(w, h, false); this.renderer.domElement.style.width = `${w}px`; this.renderer.domElement.style.height = `${h}px`; this.camera.aspect = ratio; this.camera.updateProjectionMatrix(); this.render();
+    this.renderer.setSize(w, h, false); this.renderer.domElement.style.width = `${w}px`; this.renderer.domElement.style.height = `${h}px`; this.camera.aspect = ratio; this.camera.updateProjectionMatrix(); this.fitBackground(); this.render();
   }
   private beginOutput() {
     if (this.exporting || !this.project || this.disposed || this.renderer.getContext().isContextLost()) throw new Error("三维视窗尚未就绪");

@@ -1,4 +1,8 @@
-import {characterInputIdentity,parseCharacterInputIdentity} from "../character/project";
+import type {CanvasSceneNode} from "./scene-node-schema";
+import {characterInputIdentity} from "../character/project";
+import {sceneInputIdentity,sceneStateWithReferences,sceneDirectorSnapshot} from "../scene/project";
+import {applySceneDirectorSnapshot} from "../scene/director";
+import {parseVisualInputIdentity} from "./visual-input-identity";
 import type {CanvasCharacterNode} from "./character-node-schema";
 import type {Artwork} from "../mock-data";
 import type {CanvasDirectorNode} from "./director-node-schema";
@@ -10,7 +14,7 @@ import {explicitCanvasParent} from "./input-references";
 import {canvasParentCycle} from "./parent-link";
 import {textPatchOf,type CanvasTextNode,type CanvasHistoryAction} from "./history-model";
 
-type Snapshot={project:string|null;artworks:Artwork[];texts:CanvasTextNode[];videos:CanvasVideoNode[];directors?:CanvasDirectorNode[];characters?:CanvasCharacterNode[];pending:CanvasPendingNode[];
+type Snapshot={project:string|null;artworks:Artwork[];texts:CanvasTextNode[];videos:CanvasVideoNode[];directors?:CanvasDirectorNode[];characters?:CanvasCharacterNode[];scenes?:CanvasSceneNode[];pending:CanvasPendingNode[];
   selected:string[];choices:VideoInputChoice[];locked:(id:string)=>boolean;
   productTitle:string;referenceLimit:string;cycleMessage:string;productMention:(content:string,title:string)=>string};
 export type CanvasLinkIntent={source:string;target:string;add:boolean;edgeId?:string;product?:boolean};
@@ -30,6 +34,21 @@ export function compileCanvasLink(s:Snapshot,intent:CanvasLinkIntent):CanvasHist
   if(s.locked(source)||s.locked(target))return null;
   const fromDirector=s.directors?.find(node=>node.id===source);if(fromDirector)source=fromDirector.outputs.at(-1)?.artworkId||"";
   if(!source||!target||source===target||source.startsWith("task-")||target.startsWith("task-")||s.locked(source)||s.locked(target))return null;
+  const fromScene=s.scenes?.find(node=>node.id===source);
+  if(fromScene){
+    const director=s.directors?.find(node=>node.id===target);
+    if(director){const project=add?applySceneDirectorSnapshot(director.project,sceneDirectorSnapshot(fromScene.id,fromScene.scene,fromScene.scene.defaultStateId,fromScene.revision)):{...director.project,panoramaArtworkId:null,sceneReference:null};return {kind:"director-patch",id:director.id,from:{project:director.project},to:{project}};}
+    if(!s.videos.some(node=>node.id===target))throw new Error("场景请连接到视频或导演台");
+    if(add)source=sceneInputIdentity(fromScene.id,fromScene.scene.defaultStateId);
+  }
+  const scene=s.scenes?.find(node=>node.id===target);
+  if(scene){
+    if(add&&!s.choices.some(choice=>choice.nodeId===source&&choice.kind==="image"&&choice.available))throw new Error("请选择已完成的场景参考图");
+    const id=scene.scene.defaultStateId,state=scene.scene.states.find(item=>item.id===id)!;
+    if(state.referenceArtworkIds.includes(source)===add)return null;
+    const refs=add?[...state.referenceArtworkIds,source]:state.referenceArtworkIds.filter(value=>value!==source);
+    return {kind:"scene-patch",id:scene.id,from:{scene:scene.scene},to:{scene:{...scene.scene,states:scene.scene.states.map(item=>item.id===id?sceneStateWithReferences(item,refs):item)}}};
+  }
   const fromCharacter=s.characters?.find(node=>node.id===source);
   if(fromCharacter){
     if(!s.videos.some(node=>node.id===target))throw new Error("角色请连接到视频节点");
@@ -47,12 +66,12 @@ export function compileCanvasLink(s:Snapshot,intent:CanvasLinkIntent):CanvasHist
   if(director){
     if(add&&!s.choices.some(choice=>choice.nodeId===source&&choice.kind==="image"&&choice.available))throw new Error("请选择已完成的背景图片");
     const before=director.project.panoramaArtworkId;if(add?before===source:before!==source)return null;
-    return {kind:"director-patch",id:director.id,from:{project:director.project},to:{project:{...director.project,panoramaArtworkId:add?source:null}}};
+    return {kind:"director-patch",id:director.id,from:{project:director.project},to:{project:{...director.project,panoramaArtworkId:add?source:null,...(add?{backgroundProjection:"image" as const}:{}),sceneReference:null}}};
   }
   const video=s.videos.find(node=>node.id===target);
   if(video){
     const removed=!add&&intent.edgeId?video.inputs.find(input=>`e-video-${input.id}-${video.id}`===intent.edgeId):undefined;
-    const matches=(id:string)=>removed?id===removed.nodeId:!add?(parseCharacterInputIdentity(id)?.id||id.replace(/^(?:text|image|video|audio):/,""))===source:id===source||id.replace(/^(?:text|image|video|audio):/,"")===source;
+    const matches=(id:string)=>removed?id===removed.nodeId:!add?(parseVisualInputIdentity(id)?.id||id.replace(/^(?:text|image|video|audio):/,""))===source:id===source||id.replace(/^(?:text|image|video|audio):/,"")===source;
     const choice=s.choices.find(item=>item.nodeId===source);
     if(add&&(!choice||video.inputs.some(input=>matches(input.nodeId))))return null;
     if(!add&&!video.inputs.some(input=>matches(input.nodeId)))return null;

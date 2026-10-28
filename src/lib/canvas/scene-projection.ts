@@ -1,4 +1,5 @@
-import {parseCharacterInputIdentity} from "../character/project";
+import type {CanvasSceneNode} from "./scene-node-schema";
+import {parseVisualInputIdentity} from "./visual-input-identity";
 import type {CanvasCharacterNode} from "./character-node-schema";
 import type {Node,Edge} from "@xyflow/react";
 import type {Artwork} from "../mock-data";
@@ -156,7 +157,7 @@ import type {CanvasDirectorNode} from "./director-node-schema";
 export type CanvasSceneInput={
   nodes:Node[];edges:Edge[];active:{members:Artwork[]}|null;activeKey:string|null;
   generationTasks:Omit<CanvasGenerationTask,"isVisible">[];taskPositions:Record<string,CanvasPoint>;pendNodes:CanvasPendingNode[];
-  textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];videoTasks:PublicVideoTaskView[];works:Artwork[]|null;
+  textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];videoTasks:PublicVideoTaskView[];works:Artwork[]|null;
   selectedId:string|null;selectedPendId:string|null;selectedTextId:string|null;multiSel:string[];expandedTextIds:Set<string>;
   locale:string;lightCanvas:boolean;nodeSettings:Record<string,CanvasNodeSettings>;nodeSettingsReady:boolean;readOnly:boolean;
   cutoutAvailable:boolean;operations:ReadonlySet<string>;workflowManifests:ImportedManifest[];actions:CanvasSceneActions;
@@ -164,7 +165,7 @@ export type CanvasSceneInput={
 /** Pure view composition: the document and task owners supply DTOs; renderers
  * receive presentation and commands only. No network, persistence or React state. */
 export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];displayEdges:Edge[]}{
-  const {nodes,edges,active,activeKey,generationTasks,taskPositions,pendNodes,textNodes,videoNodes,directorNodes=[],characterNodes=[],videoTasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutAvailable,operations,workflowManifests,actions}=input;
+  const {nodes,edges,active,activeKey,generationTasks,taskPositions,pendNodes,textNodes,videoNodes,directorNodes=[],characterNodes=[],sceneNodes=[],videoTasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutAvailable,operations,workflowManifests,actions}=input;
   const baseIds=new Set(nodes.map(node=>node.id)),memberById=new Map((active?.members||[]).map(art=>[art.id,art])),memberIds=new Set(memberById.keys());
   const textIds=new Set(textNodes.map(node=>node.id)),projectTextIds=new Set(textNodes.filter(node=>node.projectKey===activeKey).map(node=>node.id)),videoIds=new Set(videoNodes.map(node=>node.id));
   const busyArtworkIds=new Set([...pendNodes.filter(node=>node.generating&&!node.generationFailure&&node.operationKey?.startsWith("node:")).map(node=>node.operationKey!.slice(5)),...generationTasks.filter(task=>!task.failure).map(task=>task.sourceId)]);
@@ -283,11 +284,17 @@ export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];
       displayNodes.push({id:character.id,type:"character",position:{x:character.x,y:character.y},selected:character.id===selectedId||multiSel.includes(character.id),draggable:!readOnly&&!locked,style:{width:character.width,height:character.height},data:{node:character,title:character.title,content:String(character.revision),width:character.width,height:character.height,preview,selected:character.id===selectedId,english:locale==="en",locked,onEdit:actions.characterEdit}});
       for(const source of appearance.referenceArtworkIds)if(displayNodes.some(node=>node.id===source))displayEdges.push({id:`e-character-reference-${character.id}-${source}`,source,sourceHandle:"out",target:character.id,targetHandle:"in",type:"comet",data:{lit:false,dim:false}});
     }
+    for(const scene of sceneNodes.filter(node=>node.projectKey===activeKey)){
+      const state=scene.scene.states.find(item=>item.id===scene.scene.defaultStateId)!,preview=workById.get(state.background?.artworkId||state.referenceArtworkIds[0])?.image,locked=!!nodeSettings[scene.id]?.locked;
+      displayNodes.push({id:scene.id,type:"scene",position:{x:scene.x,y:scene.y},selected:scene.id===selectedId||multiSel.includes(scene.id),draggable:!readOnly&&!locked,style:{width:scene.width,height:scene.height},data:{node:scene,title:scene.title,content:String(scene.revision),width:scene.width,height:scene.height,preview,selected:scene.id===selectedId,english:locale==="en",locked,onEdit:actions.sceneEdit}});
+      for(const source of state.referenceArtworkIds)if(displayNodes.some(node=>node.id===source))displayEdges.push({id:`e-scene-reference-${scene.id}-${source}`,source,sourceHandle:"out",target:scene.id,targetHandle:"in",type:"comet",data:{lit:false,dim:false}});
+    }
     for(const director of directorNodes.filter(node=>node.projectKey===activeKey)){
       const preview=director.outputs.filter(output=>output.kind==="image").map(output=>workById.get(output.artworkId)?.image).filter(Boolean).at(-1),locked=!!nodeSettings[director.id]?.locked;
       displayNodes.push({id:director.id,type:"director",position:{x:director.x,y:director.y},selected:director.id===selectedId||multiSel.includes(director.id),draggable:!readOnly&&!locked,style:{width:director.width,height:director.height},
         data:{node:director,title:director.title,content:String(director.revision),width:director.width,height:director.height,preview,selected:director.id===selectedId,english:locale==="en",locked,onEdit:actions.directorEdit}});
-      if(director.project.panoramaArtworkId&&displayNodes.some(node=>node.id===director.project.panoramaArtworkId))displayEdges.push({id:`e-director-background-${director.id}`,source:director.project.panoramaArtworkId,sourceHandle:"out",target:director.id,targetHandle:"in",type:"comet",data:{lit:false,dim:false}});
+      if(!director.project.sceneReference&&director.project.panoramaArtworkId&&displayNodes.some(node=>node.id===director.project.panoramaArtworkId))displayEdges.push({id:`e-director-background-${director.id}`,source:director.project.panoramaArtworkId,sourceHandle:"out",target:director.id,targetHandle:"in",type:"comet",data:{lit:false,dim:false}});
+      if(director.project.sceneReference&&displayNodes.some(node=>node.id===director.project.sceneReference!.sceneId))displayEdges.push({id:`e-director-scene-${director.id}-${director.project.sceneReference.sceneId}`,source:director.project.sceneReference.sceneId,sourceHandle:"out",target:director.id,targetHandle:"in",type:"comet",data:{lit:false,dim:false}});
       for(const output of director.outputs)if(displayNodes.some(node=>node.id===output.artworkId))displayEdges.push({id:`e-director-output-${director.id}-${output.artworkId}`,source:director.id,sourceHandle:"out",target:output.artworkId,targetHandle:"in",type:"comet",selectable:false,deletable:false,data:{lit:false,dim:false}});
     }
     for(const videoNode of videoNodes.filter(node=>node.projectKey===activeKey)){
@@ -296,7 +303,7 @@ export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];
         style:{width:videoNode.width,height:videoNode.height},data:{node:videoNode,title:videoNode.title,prompt:videoNode.config.prompt,content:String(videoNode.revision),width:videoNode.width,height:videoNode.height,status:task?.status,progress:task?.progress,videoUrl:result?.videoUrl||(!videoNode.displayResultId?task?.videoUrl:undefined),
           task,settings:nodeSettings[videoNode.id]||DEFAULT_CANVAS_SETTINGS,selected:videoNode.id===selectedId,lightCanvas,locked,readOnly,externalDock:true,resultUrl:result?.videoUrl||(!videoNode.displayResultId?task?.videoUrl:undefined),onEdit:actions.videoEdit,onHistory:actions.videoHistory,onGenerate:actions.videoEdit,onCancel:actions.videoCancel,
           onProcess:actions.videoProcess,onPrompt:actions.videoPrompt,onResize:actions.videoResize}} as Node);
-      for(const input of videoNode.inputs){const source=parseCharacterInputIdentity(input.nodeId)?.id||input.nodeId.replace(/^(?:text|image|video|audio):/,"");if(!displayNodes.some(node=>node.id===source)&&!textIds.has(source)&&!videoIds.has(source))continue;
+      for(const input of videoNode.inputs){const source=parseVisualInputIdentity(input.nodeId)?.id||input.nodeId.replace(/^(?:text|image|video|audio):/,"");if(!displayNodes.some(node=>node.id===source)&&!textIds.has(source)&&!videoIds.has(source))continue;
         displayEdges.push({id:`e-video-${input.id}-${videoNode.id}`,source,sourceHandle:"out",target:videoNode.id,targetHandle:"in",type:"comet",data:{lit:false,dim:false}} as Edge);}
     }
     for (const textNode of textNodes.filter((node) => node.projectKey === activeKey)) {
