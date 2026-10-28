@@ -6299,7 +6299,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const operationId=attempt.operationId;operations=attempt.operations;
     assertCurrentHistory();
     const response=await privateFetchRaw("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json","x-naumi-workspace":workspace,...(activeKey?{"x-naumi-project-context":activeKey}:{})},body:JSON.stringify({operationId,operations}),signal:AbortSignal.timeout(20_000)});
-    await expectJsonOk(response,t("canvas.genFail"));assertCurrentHistory();if(account!==canvasAccountRef.current)throw new Error("画布账号已切换");
+    await expectJsonOk(response,t("canvas.genFail"));
+    if(workspaceRevision!==currentWorkspaceRevision()||account!==canvasAccountRef.current)throw new Error("画布账号或工作空间已切换");
     // All operations below are local applications of an already committed transaction.
     for (const op of operations) {
       const id=op.id as string;

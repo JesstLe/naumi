@@ -6,6 +6,8 @@ import { mkdir, writeFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { Client, Pool } from "pg";
 import {withAudioSource,audioInputIdentity} from "../src/lib/audio/project";
+import {newCharacterProject,characterInputIdentity} from "../src/lib/character/project";
+import {newSceneProject,sceneInputIdentity} from "../src/lib/scene/project";
 import { createVideoFixture, CAP_RICH } from "./video-fusion/harness";
 import {verifyAudioMatrix} from "./verify-audio-native-matrix";
 import {verifyAudioInteractions} from "./verify-audio-native-interactions";
@@ -104,7 +106,10 @@ async function main() {
     console.log('AUDIO_PHASE=VIDEO_ACCEPTANCE');
     const baseConfig = { modelId: "video-a", providerId: "managed-video", mode: "reference", prompt: "保持 {{ref 1}}，人物 {{ref 2}}，对比 {{ref 3}}，另看 图片1", durationSeconds: 4, resolution: "720p", aspectRatio: "16:9", generateAudio: false, providerOptions: { seed: 0 } };
 
-    const config={...baseConfig,prompt:'配音 {{ref 1}}，画面 {{ref 2}}'},inputs=[{id:'audio-source',nodeId:audioInputIdentity(id),kind:'audio',role:'source_audio',value:'/media/FORGED.wav'},{id:'image-source',nodeId:h.refs.image.id,kind:'image',role:'reference',value:h.refs.image.url}];
+    const characterId='character-audio-'+randomUUID(),sceneId='scene-audio-'+randomUUID(),character=newCharacterProject('司灯人'),scene=newSceneProject('木廊');
+    character.description='蓝色工作服';character.appearances[0].referenceArtworkIds=[h.refs.image.id];scene.description='石桌靠东';scene.states[0].referenceArtworkIds=[h.refs.lastImage.id];
+    for(const [route,nodeId,fields] of [['character-nodes',characterId,{character}],['scene-nodes',sceneId,{scene}]] as const){const made=await h.request<any>('a','POST',`/api/canvas/${route}`,{id:nodeId,projectKey,expectedRevision:0,operationId:randomUUID(),...fields});assert.equal(made.status,201,JSON.stringify(made.body));}
+    const config={...baseConfig,prompt:'配音 {{ref 1}}，人物 {{ref 2}}，场景 {{ref 3}}，对比 {{ref 4}}'},inputs=[{id:'audio-source',nodeId:audioInputIdentity(id),kind:'audio',role:'source_audio',value:'/media/FORGED.wav'},{id:'person',nodeId:characterInputIdentity(characterId,'base'),kind:'text',role:'context',value:'FORGED_CHARACTER'},{id:'place',nodeId:sceneInputIdentity(sceneId,'base'),kind:'text',role:'context',value:'FORGED_SCENE'},{id:'image-source',nodeId:h.refs.image.id,kind:'image',role:'reference',value:h.refs.image.url}];
     async function videoNode(nodeId: string) {
       const result = await h.request<any>("a", "POST", "/api/canvas/video-nodes", { id: nodeId, projectKey, expectedRevision: 0, operationId: randomUUID(), config, inputs });
       assert.equal(result.status, 201, JSON.stringify(result.body)); return result.body.node;
@@ -124,15 +129,18 @@ async function main() {
 
     const videoId='vnode-audio-'+randomUUID();await videoNode(videoId);const first=await generate(videoId),frozen=await h.taskPersistence('a',first.task.id);
     assert.equal(frozen.parameters.request.references.find((ref:any)=>ref.kind==='audio').artworkId,output.artworkId);
-    assert.ok(!JSON.stringify(frozen).includes('FORGED.wav'));
+    assert.ok(!JSON.stringify(frozen).includes('FORGED'));
+    const acceptedInputs=frozen.parameters.request.orderedInputs;assert.equal(acceptedInputs.length,6);assert.equal(acceptedInputs[1].nodeId,`inline:character:${characterId}#base@1`);assert.equal(acceptedInputs[3].nodeId,`inline:scene:${sceneId}#base@1`);
+    assert.deepEqual(frozen.parameters.request.references.map((ref:any)=>ref.artworkId),[output.artworkId,h.refs.image.id,h.refs.lastImage.id,h.refs.image.id]);
+    assert.ok(frozen.parameters.request.prompt.includes('角色参考：图片1'));assert.ok(frozen.parameters.request.prompt.includes('场景参考：图片2'));assert.ok(frozen.parameters.request.prompt.includes('对比 图片3'));assert.ok(frozen.parameters.request.prompt.includes('配音 音频1'));
     const frozenText=JSON.stringify(frozen);
     console.log('AUDIO_PHASE=REPLAY_AFTER_DELETE');
     const deleted=await h.request<any>('a','POST','/api/canvas/nodes/delete',{artworkIds:[h.refs.audio.id],audioIds:[id],operationId:randomUUID()});assert.equal(deleted.status,200,JSON.stringify(deleted.body));
     const afterDelete=await h.creditState('a');
     const acceptedReplay=await h.request<any>('a','POST',`/api/canvas/audio-nodes/${id}/render`,renderIntent);assert.equal(acceptedReplay.status,200,JSON.stringify(acceptedReplay.body));assert.equal(acceptedReplay.body.job.id,job.id);
     const replayVideo=await h.request<any>('a','POST',`/api/canvas/video-nodes/${videoId}/generate`,first.request);assert.equal(replayVideo.body.taskId,first.task.id);assert.deepEqual(await h.creditState('a'),afterDelete);assert.equal(JSON.stringify(await h.taskPersistence('a',first.task.id)),frozenText);
-    const summary={realAppDbMediaWorker:true,realFfmpegJob:true,adoptedRecipeVerified:true,originalAndDraftSeparate:true,crossAccount404:true,sourceDeletedAcceptedReplay:true,videoSnapshotImmutable:true,mixedCopyRestore:true,mediaCost:job.cost,simulatedSupplierCreates:1,paidCalls:0,job,taskId:first.task.id};
-    await writeFile(path.join(out,'result.json'),JSON.stringify(summary,null,2));console.log('AUDIO_APPLICATION_CORE=PASS REAL_APP_DB_MEDIA_WORKER=PASS REAL_FFMPEG=PASS RECIPE=TRUSTED PRIVATE_MEDIA_SHA=PASS CROSS_ACCOUNT=404 MIXED_COPY_HISTORY=PASS VIDEO_FROZEN=PASS ACCEPTED_REPLAY_AFTER_DELETE=PASS SIMULATED_CREATES=1 PAID_CALLS=0');
+    const summary={realAppDbMediaWorker:true,realFfmpegJob:true,adoptedRecipeVerified:true,originalAndDraftSeparate:true,crossAccount404:true,sourceDeletedAcceptedReplay:true,videoSnapshotImmutable:true,mixedCopyRestore:true,mixedAudioCharacterSceneNumberingOnce:true,mediaCost:job.cost,simulatedSupplierCreates:1,paidCalls:0,job,taskId:first.task.id};
+    await writeFile(path.join(out,'result.json'),JSON.stringify(summary,null,2));console.log('AUDIO_APPLICATION_CORE=PASS REAL_APP_DB_MEDIA_WORKER=PASS REAL_FFMPEG=PASS RECIPE=TRUSTED PRIVATE_MEDIA_SHA=PASS CROSS_ACCOUNT=404 MIXED_COPY_HISTORY=PASS VIDEO_FROZEN=PASS MIXED_AUDIO_CHARACTER_SCENE=PASS ACCEPTED_REPLAY_AFTER_DELETE=PASS SIMULATED_CREATES=1 PAID_CALLS=0');
   } finally {
     if (fixture) await fixture.stop(); if (listening) await new Promise<void>(resolve => router.close(() => resolve())); if (pool) await pool.end();
     if (container) { assert.equal(docker(["inspect", "--format", '{{index .Config.Labels "naumi.task"}}', container]), owner); docker(["rm", "--force", container]); }
