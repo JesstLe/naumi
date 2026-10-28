@@ -10,6 +10,7 @@ import {addCreationAssetTx} from "../src/lib/saas/creation-writer";
 import type {Artwork} from "../src/lib/mock-data";
 
 async function main(){
+ if(process.env.NAUMI_VERIFY_ISOLATED_DB!=="1"||new URL(process.env.DATABASE_URL||"http://invalid").hostname!=="127.0.0.1")throw new Error("Requires isolated local PostgreSQL");
  const owner=`regen-${randomUUID()}@example.test`,pool=getPool(),checks:string[]=[];
  const ok=(name:string)=>{checks.push(name);console.log('CHECK='+name)};
  await getOrCreateUser(owner,"Canvas regeneration fixture");await ensureCanvasImageVersions();
