@@ -126,3 +126,25 @@ export async function ensureCanvasImageVersionSchema(){
     CREATE INDEX IF NOT EXISTS canvas_image_version_node ON app_canvas_image_versions(email,node_id,created_at);`).then(()=>undefined).catch(error=>{state.pending=undefined;throw error;});
  await state.pending;
 }
+
+export async function ensureAudioNodeSchema(){
+ await ensureVideoNodeSchema();const state=databaseSchemaReadiness(getPool(),"canvas-audio-nodes");
+ if(!state.pending)state.pending=getPool().query(`
+    CREATE TABLE IF NOT EXISTS app_canvas_audio_nodes (
+      email text NOT NULL, id text NOT NULL, project_key text NOT NULL,
+      revision bigint NOT NULL DEFAULT 1, title text NOT NULL DEFAULT '音频',
+      x double precision NOT NULL DEFAULT 0, y double precision NOT NULL DEFAULT 0,
+      width double precision NOT NULL DEFAULT 360, height double precision NOT NULL DEFAULT 200,
+      audio jsonb NOT NULL, deleted_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY(email,id)
+    );
+    CREATE INDEX IF NOT EXISTS app_canvas_audio_nodes_project_idx
+      ON app_canvas_audio_nodes(email,project_key,updated_at DESC);
+    CREATE TABLE IF NOT EXISTS app_canvas_audio_operations (
+      email text NOT NULL, operation_id uuid NOT NULL, input_digest text NOT NULL,
+      result jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(email,operation_id)
+    );
+  `).then(()=>undefined).catch(error=>{state.pending=undefined;throw error;});
+ await state.pending;
+}

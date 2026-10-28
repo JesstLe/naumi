@@ -1,3 +1,4 @@
+import type {PoolClient} from "pg";
 import "server-only";
 import {dbEnabled,getPool} from "@/platform/db/pool";
 import {ensureMediaSchema} from "./media-assets-schema";
@@ -14,4 +15,9 @@ export async function getMediaAssets(keys:string[]):Promise<Map<string,MediaAsse
  if(!dbEnabled||!keys.length)return new Map();await ensureMediaSchema();
  const rows=(await getPool().query('SELECT * FROM app_media_assets WHERE key=ANY($1::text[])',[Array.from(new Set(keys))])).rows;
  return new Map(rows.map(row=>[String(row.key),row as MediaAsset]));
+}
+
+/** Caller owns the initialized media transaction; no pool borrowing here. */
+export async function getMediaAssetTx(tx:PoolClient,key:string):Promise<MediaAsset|null>{
+ return (await tx.query("SELECT * FROM app_media_assets WHERE key=$1 FOR SHARE",[key])).rows[0]||null;
 }

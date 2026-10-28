@@ -67,17 +67,19 @@ function originalBusinessBillingSnapshot(snapshot: ConfigSnapshot, models: Model
 export function businessBillingSnapshot(snapshot:ConfigSnapshot,models:ModelSnapshot,facts:BillingFacts){
   return applyCreditOverride(snapshot,originalBusinessBillingSnapshot(snapshot,models,facts),facts);
 }
-export async function freezeBusinessQuote(request: Request, snapshot: ConfigSnapshot, facts: BillingFacts, create: (s: ConfigSnapshot, f: BillingFacts) => BillingQuote, options:{allowResolutionFallback?:boolean;effectiveResolution?:string}={}) {
+export async function freezeBusinessQuote(request: Request, snapshot: ConfigSnapshot, facts: BillingFacts, create: (s: ConfigSnapshot, f: BillingFacts) => BillingQuote, options:{allowResolutionFallback?:boolean;effectiveResolution?:string;deferImageFrame?:boolean}={}) {
   return freezeBusinessQuoteForModel(snapshot,facts.byok?null:await readManagedModelSnapshot(),facts,create,{...options,accepted:request.headers.has("x-naumi-accepted-model-context")});
 }
 /** Pure pricing against the same selected model snapshot used to prepare facts. */
-export function freezeBusinessQuoteForModel(snapshot:ConfigSnapshot,models:ModelSnapshot|null,facts:BillingFacts,create:(s:ConfigSnapshot,f:BillingFacts)=>BillingQuote,options:{allowResolutionFallback?:boolean;effectiveResolution?:string;accepted?:boolean}={}){
+export function freezeBusinessQuoteForModel(snapshot:ConfigSnapshot,models:ModelSnapshot|null,facts:BillingFacts,create:(s:ConfigSnapshot,f:BillingFacts)=>BillingQuote,options:{allowResolutionFallback?:boolean;effectiveResolution?:string;deferImageFrame?:boolean;accepted?:boolean}={}){
   if(facts.byok||!models)return create(snapshot,facts);
   const scope = currentModelExecution("image");
   const originalFacts = facts;
+  // Display has no reference pixels. Frozen/accepted execution never uses this path.
+  const deferredFrame=options.deferImageFrame===true&&facts.ratio==="auto"&&!scope&&!currentExecutionBundle()&&!options.accepted;
   // Existing frozen scopes (including old Worker/Agent children) are authoritative.
   // New scopes retain the user's selection separately, with actual tier in facts.
-  const choice = options.effectiveResolution ? {requested:facts.resolution,effective:options.effectiveResolution,changed:options.effectiveResolution!==facts.resolution} : scope && scope.frozen.publicModelId===facts.modelId && scope.frozen.requestedParameters && scope.frozen.facts
+  const choice = deferredFrame ? {requested:facts.resolution,effective:facts.resolution,changed:false} : options.effectiveResolution ? {requested:facts.resolution,effective:options.effectiveResolution,changed:options.effectiveResolution!==facts.resolution} : scope && scope.frozen.publicModelId===facts.modelId && scope.frozen.requestedParameters && scope.frozen.facts
     ? {requested:scope.frozen.requestedParameters?.resolution||facts.resolution,effective:scope.frozen.facts.requestedResolution||scope.frozen.facts.resolution,changed:false}
     : scope || currentExecutionBundle() || options.allowResolutionFallback===false || options.accepted
       ? {requested:facts.resolution,effective:facts.resolution,changed:false}
@@ -120,7 +122,7 @@ export function freezeBusinessQuoteForModel(snapshot:ConfigSnapshot,models:Model
   }
   // Freeze administrator mappings alongside the unchanged customer tariff.
   // Saved quotes return before this function, so historical quotes are not upgraded.
-  if(model?.modality==='image'&&model.target.type==='upstream'&&(!scope||scope.frozen.imageParameterPlanVersion===1)){
+  if(!deferredFrame&&model?.modality==='image'&&model.target.type==='upstream'&&(!scope||scope.frozen.imageParameterPlanVersion===1)){
     q.imageParameterPlanVersion=1;q.imageParameterPlans={};
     for(const id of publicUpstreamIds(models.config,model)){
       const u=models.config.upstreamModels.find(u=>u.id===id),p=models.config.providers.find(p=>p.id===u?.providerId);

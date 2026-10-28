@@ -1,3 +1,4 @@
+import {getAudioNode} from "@/lib/canvas/audio-node-repository";
 import {getSceneNode} from "@/lib/canvas/scene-node-repository";
 import {getCharacterNode} from "@/lib/canvas/character-node-repository";
 import {z} from "zod";
@@ -22,14 +23,14 @@ async function handlePost(request: Request) {
   const email = await authenticatedEmail(request);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   if(!sameSiteBiMutation(request))return NextResponse.json({error:"不允许跨站修改"},{status:403});
-  let body: { artworkIds?: string[]; textIds?: string[];videoIds?:string[];directorIds?:string[];characterIds?:string[];sceneIds?:string[];operationId?:string;projectKey?:string;expectedTexts?:unknown;expectedArtworks?:unknown };
+  let body: { artworkIds?: string[]; textIds?: string[];videoIds?:string[];directorIds?:string[];characterIds?:string[];sceneIds?:string[];audioIds?:string[];operationId?:string;projectKey?:string;expectedTexts?:unknown;expectedArtworks?:unknown };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "请求格式不正确" }, { status: 400 });
   }
   if(body.projectKey!==undefined){
-    if(!videoProjectKeySchema.safeParse(body.projectKey).success||!body.operationId||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.operationId)||body.artworkIds||body.textIds||body.videoIds||body.directorIds||body.characterIds||body.sceneIds)return NextResponse.json({error:"项目删除字段无效"},{status:422});
+    if(!videoProjectKeySchema.safeParse(body.projectKey).success||!body.operationId||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.operationId)||body.artworkIds||body.textIds||body.videoIds||body.directorIds||body.characterIds||body.sceneIds||body.audioIds)return NextResponse.json({error:"项目删除字段无效"},{status:422});
     if(!dbEnabled)return NextResponse.json({ok:true,persisted:false});
     try{await deleteCanvasProject(email,body.projectKey,body.operationId);return NextResponse.json({ok:true,persisted:true});}catch(error){return NextResponse.json({error:error instanceof Error?error.message:"项目删除失败"},{status:409});}
   }
@@ -43,9 +44,10 @@ async function handlePost(request: Request) {
   const directorIds=Array.isArray(body.directorIds)?body.directorIds.map(id=>String(id).trim()).filter(Boolean):[];
   const characterIds=Array.isArray(body.characterIds)?body.characterIds.map(id=>String(id).trim()).filter(Boolean):[];
   const sceneIds=Array.isArray(body.sceneIds)?body.sceneIds.map(id=>String(id).trim()).filter(Boolean):[];
-  if(artworkIds.length>200||textIds.length>200||videoIds.length>200||directorIds.length>200||characterIds.length>200||sceneIds.length>200)return NextResponse.json({error:"单次删除节点过多，请分批操作"},{status:422});
+  const audioIds=Array.isArray(body.audioIds)?body.audioIds.map(id=>String(id).trim()).filter(Boolean):[];
+  if(artworkIds.length>200||textIds.length>200||videoIds.length>200||directorIds.length>200||characterIds.length>200||sceneIds.length>200||audioIds.length>200)return NextResponse.json({error:"单次删除节点过多，请分批操作"},{status:422});
   if(body.operationId!==undefined&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.operationId))return NextResponse.json({error:"删除操作编号无效"},{status:422});
-  if (!artworkIds.length && !textIds.length&&!videoIds.length&&!directorIds.length&&!characterIds.length&&!sceneIds.length) {
+  if (!artworkIds.length && !textIds.length&&!videoIds.length&&!directorIds.length&&!characterIds.length&&!sceneIds.length&&!audioIds.length) {
     return NextResponse.json({ error: "缺少待删除节点" }, { status: 400 });
   }
   if (!dbEnabled) {
@@ -59,7 +61,8 @@ async function handlePost(request: Request) {
     for(const id of directorIds){const node=await getDirectorNode(email,id,true);if(node)await assertCreationProjectInput(email,node.projectKey);}
     for(const id of characterIds){const node=await getCharacterNode(email,id,true);if(node)await assertCreationProjectInput(email,node.projectKey);}
     for(const id of sceneIds){const node=await getSceneNode(email,id,true);if(node)await assertCreationProjectInput(email,node.projectKey);}
-    const deleted = await deleteCanvasNodesAtomically(email, artworkIds, textIds,videoIds,body.operationId,expected?.success?expected.data.map(n=>({...n,updatedAt:n.updatedAt||n.createdAt})):undefined,artworkExpected?.success?artworkExpected.data:undefined,directorIds,characterIds,sceneIds);
+    for(const id of audioIds){const node=await getAudioNode(email,id,true);if(node)await assertCreationProjectInput(email,node.projectKey);}
+    const deleted = await deleteCanvasNodesAtomically(email, artworkIds, textIds,videoIds,body.operationId,expected?.success?expected.data.map(n=>({...n,updatedAt:n.updatedAt||n.createdAt})):undefined,artworkExpected?.success?artworkExpected.data:undefined,directorIds,characterIds,sceneIds,audioIds);
     return NextResponse.json({ ok: true, persisted: true, ...deleted });
   } catch (error) {
     if(error instanceof CanvasArtworkWriteConflict)return NextResponse.json({error:error.message,code:error.code,id:error.id,fields:error.fields,current:error.current},{status:409});

@@ -1,3 +1,4 @@
+import type {CanvasAudioNode} from "./audio-node-schema";
 import type {Artwork} from "../mock-data";
 import type {CanvasSceneNode} from "./scene-node-schema";
 import type {CanvasCharacterNode} from "./character-node-schema";
@@ -12,7 +13,7 @@ type Attempt = { undo: boolean; operationId: string; operations: CanvasHistoryOp
 export type HistoryCommit = {artworkNodes?:import("./artwork-write").CanvasArtworkReceipt[];artworkIds?:string[];action: CanvasHistoryAction; undo: boolean; operations: CanvasHistoryOperation[]; persisted: boolean; initial?:boolean;textNodes?:import("./text-document-model").CanvasTextNode[]};
 type Services = {
   changed: () => void; readOnly: () => boolean;
-  flush: () => Promise<unknown>; video: (id: string) => CanvasVideoNode | undefined;director?:(id:string)=>CanvasDirectorNode|undefined;character?:(id:string)=>CanvasCharacterNode|undefined;scene?:(id:string)=>CanvasSceneNode|undefined;artwork?:(id:string)=>Artwork|undefined;
+  flush: () => Promise<unknown>; video: (id: string) => CanvasVideoNode | undefined;director?:(id:string)=>CanvasDirectorNode|undefined;character?:(id:string)=>CanvasCharacterNode|undefined;scene?:(id:string)=>CanvasSceneNode|undefined;artwork?:(id:string)=>Artwork|undefined;audio?:(id:string)=>CanvasAudioNode|undefined;
   transaction: <T>(scope:CanvasHistoryScope,work:()=>Promise<T>)=>Promise<T>;
   commit: (scope: CanvasHistoryScope, value: HistoryCommit) => void;
   pending: (scope: CanvasHistoryScope, action: Extract<CanvasHistoryAction,{kind:"pending-link"}>, undo: boolean) => void;
@@ -54,7 +55,7 @@ export function createCanvasHistoryController(services: Services) {
         let attempt = attempts.get(action);
         if (attempt && attempt.undo !== reverse) throw new Error("请先核实原画布操作");
         if (!attempt) {
-          attempt = {undo:reverse,operationId:browserRandomUUID(),operations:structuredClone(compileCanvasHistory(action,reverse,services.video,initialRevision,services.director,services.character,services.scene,services.artwork))};
+          attempt = {undo:reverse,operationId:browserRandomUUID(),operations:structuredClone(compileCanvasHistory(action,reverse,services.video,initialRevision,services.director,services.character,services.scene,services.artwork,services.audio))};
           attempts.set(action,attempt);
         }
         let response;
@@ -69,7 +70,7 @@ export function createCanvasHistoryController(services: Services) {
         return value;
       });
       if (scope.documentCurrent()) {
-        if (value.operations.some(op => op.type.startsWith("video-")||op.type.startsWith("director-")||op.type.startsWith("character-")||op.type.startsWith("scene-"))) {
+        if (value.operations.some(op => op.type.startsWith("video-")||op.type.startsWith("director-")||op.type.startsWith("character-")||op.type.startsWith("scene-")||op.type.startsWith("audio-"))) {
           try { await services.refresh(); }
           catch { if (scope.viewCurrent()) services.warning("修改已保存，视频显示待同步"); }
         }

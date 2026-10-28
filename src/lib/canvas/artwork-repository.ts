@@ -7,15 +7,15 @@ import {CanvasArtworkWriteConflict,type CanvasArtworkFields} from "./artwork-wri
 
 /** Legacy transport adapters retain their validation/return shapes. All metadata
  * updates use the same row writer and owner transaction as Canvas history. */
-async function writeOne(email:string,id:string,fields:Partial<CanvasArtworkFields>,allowHidden=false):Promise<boolean>{
- try{await writeCanvasArtworks(email,[{id,fields,allowHidden}]);return true;}
+async function writeOne(email:string,id:string,fields:Partial<CanvasArtworkFields>,allowHidden=false,initializePosition=false):Promise<boolean>{
+ try{await writeCanvasArtworks(email,[{id,fields,allowHidden,initializePosition}]);return true;}
  catch(error){if(error instanceof CanvasArtworkWriteConflict&&(!error.current||!error.current.visible))return false;throw error;}
 }
 
-export async function setArtworkPosition(emailRaw:string,id:string,x:number,y:number):Promise<boolean>{
+export async function setArtworkPosition(emailRaw:string,id:string,x:number,y:number,initializeOnly=false):Promise<boolean>{
  await ensureSchema();if(!id||!Number.isFinite(x)||!Number.isFinite(y))return false;
  // Historical placement updates hidden metadata too, without restoring visibility.
- return writeOne(emailRaw,id,{canvasX:x,canvasY:y},true);
+ return writeOne(emailRaw,id,{canvasX:x,canvasY:y},true,initializeOnly);
 }
 export async function setArtworkCanvasLayout(emailRaw:string,id:string,x:number,y:number,width:number,height:number):Promise<boolean>{
  await ensureSchema();const px=Number(x),py=Number(y),w=Math.round(width),h=Math.round(height);

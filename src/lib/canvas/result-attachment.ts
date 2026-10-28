@@ -33,7 +33,7 @@ export function createCanvasResultAttachment(input:Services){
       if(!placed.has(image.id)&&point){
         const headers=await canvasImageTaskHeaders(scope);headers.set("content-type","application/json");scope.assertCurrent();
         const offset=input.layout.kind==="offset"?index*input.layout.step:0;
-        const body={...(input.layout.kind==="single"||input.layout.kind==="offset"?{}:{email:scope.owner}),id:image.id,x:Math.round(point.x+offset),y:Math.round(y+offset)};
+        const body={mode:"initialize",...(input.layout.kind==="single"||input.layout.kind==="offset"?{}:{email:scope.owner}),id:image.id,x:Math.round(point.x+offset),y:Math.round(y+offset)};
         const response=await fetch("/api/artworks/position",{method:"POST",headers,body:JSON.stringify(body)});
         await readImagegenResponse(response,input.saveErrorText);placed.add(image.id);scope.assertCurrent();
       }

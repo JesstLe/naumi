@@ -81,12 +81,12 @@ export function quoteForImagegenStep(actor:string|null,operationId:string|null,b
     return structuredClone(q);
 }
 /** Trusted domain services have already authenticated and owner-checked this actor. */
-export async function quoteForActor(email:string,input:QuoteInput,options?:{effectiveResolution?:string},frozenSnapshot?:ConfigSnapshot){
+export async function quoteForActor(email:string,input:QuoteInput,options?:{effectiveResolution?:string;deferImageFrame?:boolean},frozenSnapshot?:ConfigSnapshot){
     const snapshot=frozenSnapshot??currentModelBillingSnapshot()??await(await getBillingRuntime()).config.current();
     return prepareActorQuote({actor:email},input,snapshot,options);
 }
 /** One model snapshot supplies identity, parameters and price for this preparation. */
-export async function prepareActorQuote(selection:QuoteSelection,input:QuoteInput,billing:ConfigSnapshot,options?:{allowResolutionFallback?:boolean;effectiveResolution?:string}){
+export async function prepareActorQuote(selection:QuoteSelection,input:QuoteInput,billing:ConfigSnapshot,options?:{allowResolutionFallback?:boolean;effectiveResolution?:string;deferImageFrame?:boolean}){
     if(dbEnabled&&!selection.actor)throw new BillingError("INVALID_RESULT","请先登录",401);
     assertPlatformImageSelection(input.modelId,selection.featureModel);
     const models=await readManagedModelSnapshot();

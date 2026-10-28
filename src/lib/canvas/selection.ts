@@ -20,7 +20,7 @@ export function canvasFlowSelection(state:CanvasSelection,nodes:Array<{id:string
   const current=[...state.multiSel].sort();
   return patchCanvasSelection(state,{...(edge&&!ids.length?focus:{}),multiSel:equalIds(current,ids)?state.multiSel:ids,selectedEdge:edge});
 }
-export function canvasSelectionIds(ids:string[],kinds:ReadonlyMap<string,"art"|"text"|"video"|"director"|"character"|"scene">):Partial<CanvasSelection>{
+export function canvasSelectionIds(ids:string[],kinds:ReadonlyMap<string,"art"|"text"|"video"|"director"|"character"|"scene"|"audio">):Partial<CanvasSelection>{
   const valid=[...new Set(ids.filter(id=>kinds.has(id)))],one=valid.length===1?valid[0]:null;
   return {...focus,selectedEdge:null,multiSel:valid,selectedTextId:one&&kinds.get(one)==="text"?one:null,selectedId:one&&kinds.get(one)!=="text"?one:null};
 }

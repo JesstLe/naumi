@@ -1,3 +1,4 @@
+import type {CanvasAudioNode} from "./audio-node-schema";
 import type {CanvasSceneNode} from "./scene-node-schema";
 import type {CanvasCharacterNode} from "./character-node-schema";
 import {z} from "zod";
@@ -15,4 +16,4 @@ export const nodeCopyRequest=z.strictObject({
   singleArtwork:z.strictObject({x:coordinate,y:coordinate,title:z.string().max(80).optional()}).optional(),
 }).refine(input=>!input.singleArtwork||input.ids.length===1,"单图复制需要一个来源");
 export type CanvasNodeCopyInput=z.infer<typeof nodeCopyRequest>;
-export type CanvasNodeCopyResult={artworkIds:string[];textNodes:CanvasTextNode[];nodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];idMap:Record<string,string>;projectKey:string};
+export type CanvasNodeCopyResult={artworkIds:string[];textNodes:CanvasTextNode[];nodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];idMap:Record<string,string>;projectKey:string};

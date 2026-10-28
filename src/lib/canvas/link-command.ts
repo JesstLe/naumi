@@ -1,3 +1,5 @@
+import {audioInputIdentity,newAudioProject,withAudioSource} from "../audio/project";
+import type {CanvasAudioNode} from "./audio-node-schema";
 import type {CanvasSceneNode} from "./scene-node-schema";
 import {characterInputIdentity} from "../character/project";
 import {sceneInputIdentity,sceneStateWithReferences,sceneDirectorSnapshot} from "../scene/project";
@@ -14,14 +16,14 @@ import {explicitCanvasParent} from "./input-references";
 import {canvasParentCycle} from "./parent-link";
 import {textPatchOf,type CanvasTextNode,type CanvasHistoryAction} from "./history-model";
 
-type Snapshot={project:string|null;artworks:Artwork[];texts:CanvasTextNode[];videos:CanvasVideoNode[];directors?:CanvasDirectorNode[];characters?:CanvasCharacterNode[];scenes?:CanvasSceneNode[];pending:CanvasPendingNode[];
+type Snapshot={project:string|null;artworks:Artwork[];texts:CanvasTextNode[];videos:CanvasVideoNode[];directors?:CanvasDirectorNode[];characters?:CanvasCharacterNode[];scenes?:CanvasSceneNode[];audios?:CanvasAudioNode[];pending:CanvasPendingNode[];
   selected:string[];choices:VideoInputChoice[];locked:(id:string)=>boolean;
   productTitle:string;referenceLimit:string;cycleMessage:string;productMention:(content:string,title:string)=>string};
 export type CanvasLinkIntent={source:string;target:string;add:boolean;edgeId?:string;product?:boolean};
 function reaches(s:Snapshot,source:string,target:string){
   const edges=[...s.artworks.flatMap(node=>[...new Set([...(node.parentIds||[]),...(node.parentId&&explicitCanvasParent(node,node.parentId)?[node.parentId]:[])])].map(parent=>({source:parent,target:node.id}))),
     ...s.texts.flatMap(node=>[...[...(node.sourceIds||[]),...(node.productIds||[])].map(id=>({source:id,target:node.id})),...(node.targetIds||[]).map(id=>({source:node.id,target:id}))]),
-    ...s.videos.flatMap(node=>node.inputs.map(input=>({source:input.nodeId.replace(/^(?:text|image|video|audio):/,""),target:node.id}))),
+    ...s.videos.flatMap(node=>node.inputs.map(input=>({source:input.nodeId.replace(/^(?:text|image|video|audio|audio-node):/,""),target:node.id}))),
     ...s.pending.flatMap(node=>node.inputs.map(source=>({source,target:node.id})))];
   const seen=new Set<string>(),todo=[source];
   while(todo.length){const id=todo.pop()!;if(id===target)return true;if(seen.has(id))continue;seen.add(id);todo.push(...edges.filter(edge=>edge.source===id).map(edge=>edge.target));}
@@ -34,6 +36,10 @@ export function compileCanvasLink(s:Snapshot,intent:CanvasLinkIntent):CanvasHist
   if(s.locked(source)||s.locked(target))return null;
   const fromDirector=s.directors?.find(node=>node.id===source);if(fromDirector)source=fromDirector.outputs.at(-1)?.artworkId||"";
   if(!source||!target||source===target||source.startsWith("task-")||target.startsWith("task-")||s.locked(source)||s.locked(target))return null;
+  const fromAudio=s.audios?.find(node=>node.id===source);
+  if(fromAudio){if(!s.videos.some(node=>node.id===target))throw new Error("音频请连接到视频节点");if(add)source=audioInputIdentity(fromAudio.id);}
+  const audio=s.audios?.find(node=>node.id===target);
+  if(audio){if(audio.audio.sourceArtworkId===source&&add||audio.audio.sourceArtworkId!==source&&!add)return null;if(add&&!s.choices.some(choice=>choice.nodeId===source&&choice.kind==="audio"&&choice.available))throw new Error("请选择已完成的音频素材");return {kind:"audio-patch",id:audio.id,from:{audio:audio.audio},to:{audio:add?withAudioSource(source):newAudioProject()}};}
   const fromScene=s.scenes?.find(node=>node.id===source);
   if(fromScene){
     const director=s.directors?.find(node=>node.id===target);
@@ -71,7 +77,7 @@ export function compileCanvasLink(s:Snapshot,intent:CanvasLinkIntent):CanvasHist
   const video=s.videos.find(node=>node.id===target);
   if(video){
     const removed=!add&&intent.edgeId?video.inputs.find(input=>`e-video-${input.id}-${video.id}`===intent.edgeId):undefined;
-    const matches=(id:string)=>removed?id===removed.nodeId:!add?(parseVisualInputIdentity(id)?.id||id.replace(/^(?:text|image|video|audio):/,""))===source:id===source||id.replace(/^(?:text|image|video|audio):/,"")===source;
+    const matches=(id:string)=>removed?id===removed.nodeId:!add?(parseVisualInputIdentity(id)?.id||id.replace(/^(?:text|image|video|audio|audio-node):/,""))===source:id===source||id.replace(/^(?:text|image|video|audio|audio-node):/,"")===source;
     const choice=s.choices.find(item=>item.nodeId===source);
     if(add&&(!choice||video.inputs.some(input=>matches(input.nodeId))))return null;
     if(!add&&!video.inputs.some(input=>matches(input.nodeId)))return null;

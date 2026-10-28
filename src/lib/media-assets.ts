@@ -9,7 +9,7 @@ import {currentBiContext} from "@/lib/bi/context";
 import {readManagedObject} from './object-storage/managed-read';
 import {storageDriver} from './object-storage/runtime';
 import {getMediaAsset} from './media-assets-reader';
-export {getMediaAsset,getMediaAssets,type MediaAsset} from './media-assets-reader';
+export {getMediaAsset,getMediaAssets,getMediaAssetTx,type MediaAsset} from './media-assets-reader';
 import {ensureMediaVariants} from "./media-assets/variants";
 export {ensureMediaVariants} from "./media-assets/variants";
 export {recoverMediaMirrors} from "./media-assets/mirror-recovery";

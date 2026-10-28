@@ -148,6 +148,7 @@ export type CanvasSceneActions={
   generatePending:(id:string)=>unknown;
   directorEdit?:(id:string)=>void;
   characterEdit?:(id:string)=>void;
+  audioEdit?:(id:string)=>void;
   sceneEdit?:(id:string)=>void;
   videoEdit:(id:string)=>void;
   videoHistory:(id:string)=>void;

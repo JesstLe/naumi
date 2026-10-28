@@ -1,3 +1,4 @@
+import {SupplierAdapterResponseError,adapterFailureEvidence,recordSupplierAdapterFailure} from "../supplier-cost/adapter-failure";
 import "server-only";
 import { apimartImageParameters } from "./apimart-image-parameters";
 import { seedreamPreflight } from "./seedream-preflight";
@@ -52,8 +53,10 @@ export function apimartImagesFetch(scope: ModelExecutionScope, options: Validati
   const json=async (path:string,init:RequestInit={}) => {
     const response=await transport(`${base}${path}`,{...init,headers:{...auth,...init.headers}});
     const raw=await readBounded(response,2*1024*1024);
-    const parsed=parseReceiptJson(raw);
-    if(!response.ok) { const e=new Error(`APIMart HTTP ${response.status}`) as Error & {status:number;notCharged:boolean};e.status=response.status;e.notCharged=parsed?.billing_status==="not_charged"||parsed?.error?.billing_status==="not_charged";throw e; }
+    let parsed: any;
+    try { parsed=parseReceiptJson(raw); }
+    catch { throw new SupplierAdapterResponseError(response.status,raw,undefined,true); }
+    if(!response.ok) throw new SupplierAdapterResponseError(response.status,raw,parsed);
     return parsed;
   };
   return async(input,init)=>{
@@ -107,22 +110,30 @@ export function apimartImagesFetch(scope: ModelExecutionScope, options: Validati
     let taskId=original.task_id as string|undefined;
     if(!claimed.rowCount&&!taskId)throw new ImageOperationPending(unit,new Error("APIMart原调用受理状态待核查"));
     let generationPosted=!!taskId;
+    let adapterStage="upload";
     try {
       if(!taskId) {
         const image_urls:string[]=[];
         for(const file of files){const form=new FormData();form.set("file",file);const upload=await json("/v1/uploads/images",{method:"POST",body:form,signal:request.signal});if(typeof upload.url!=="string"||!/^https:\/\//.test(upload.url))throw new Error("APIMart upload receipt missing URL");image_urls.push(upload.url);}
         let mask_url:string|undefined;
         if(mask)mask_url=`data:image/png;base64,${Buffer.from(await mask.arrayBuffer()).toString("base64")}`;
-        const payload={model:c.wireModel,...((p?p.versionParameter:scope.parameterMap.version)?{version:p?p.versionParameter:scope.parameterMap.version}:{}),prompt:[body.prompt,...params.promptConstraints].join("\n"),n,...params.upstream,...(image_urls.length?{image_urls}:{}),...(mask_url?{mask_url}:{}),...(scope.frozen.imageParameterPlanVersion!==1&&body.background === "transparent" ? {background:"transparent"} : {}),...(!("output_format" in params.upstream)&&!(scope.frozen.imageParameterPlanVersion===1&&scope.parameterMap.imagegen?.outputFormat==="omit")?{output_format:"png"}:{})};
+        // Generic async channels send only configured fields. Gemini uses this
+        // field as response transport (url), not the locally exported PNG format.
+        // Keep the historical GPT preset's explicit contract and administrator maps.
+        const payload={model:c.wireModel,...((p?p.versionParameter:scope.parameterMap.version)?{version:p?p.versionParameter:scope.parameterMap.version}:{}),prompt:[body.prompt,...params.promptConstraints].join("\n"),n,...params.upstream,...(image_urls.length?{image_urls}:{}),...(mask_url?{mask_url}:{}),...(scope.frozen.imageParameterPlanVersion!==1&&body.background === "transparent" ? {background:"transparent"} : {}),...(p&&!("output_format" in params.upstream)&&!(scope.frozen.imageParameterPlanVersion===1&&scope.parameterMap.imagegen?.outputFormat==="omit")?{output_format:"png"}:{})};
         generationPosted=true;
+        adapterStage="submit";
         const submitted=await json("/v1/images/generations",{method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":attemptId,"X-APIMart-Response-Version":"2026-07-27"},body:JSON.stringify(payload),signal:request.signal});
+        adapterStage="submit-receipt";
         taskId=submittedAPIMartTask(submitted)||undefined;if(!taskId)throw new ImageOperationPending(unit,new Error("APIMart受理响应缺少明确任务ID"));
+        adapterStage="persist-task";
         await ledger.apply(row.id,{state:"submitted",taskId,status:"pending",source:"apimart-submit",evidence:{source:"apimart-submit"}});
         await ledger.enqueue(`task:${row.id}`,"task",{callId:row.id},accountId);
       }
       const deadline=Date.now()+Math.min(240000,c.timeoutMs);
       while(Date.now()<deadline) {
         request.signal.throwIfAborted();
+        adapterStage="poll";
         const raw=await json(`/v1/tasks/${encodeURIComponent(taskId!)}`,{signal:request.signal}),receipt=apimartTask(raw,taskId!);
         if(receipt.amountMicros==null&&receipt.usage&&procurement?.basis==="tokens") {
           const estimate=genericReceipt({status:receipt.state,usage:receipt.usage},receipt.state,procurement);
@@ -139,6 +150,7 @@ export function apimartImagesFetch(scope: ModelExecutionScope, options: Validati
           const data=[],actualDimensions:{width?:number;height?:number}[]=[];
           for(const url of urls.slice(0,n)) {
            try{
+            adapterStage="download";
             const parsed=new URL(url);
             if(parsed.protocol!=="https:"&&!options.trustedOrigins?.includes(parsed.origin))throw new Error("untrusted image protocol");
             const fetchMedia=overrides?.media||modelEndpointFetch(parsed.origin,options);
@@ -160,6 +172,7 @@ export function apimartImagesFetch(scope: ModelExecutionScope, options: Validati
            }catch(error){if(request.signal.aborted)throw error;deliveryNotices.push("output-download-incomplete");}
           }
           if(!data.length)throw new Error("APIMart no decodable output downloaded");
+          adapterStage="deliver";
           // Supplier completion is not yet customer delivery. A polling worker
           // may update the receipt, but only this pixel/download acceptance can
           // authorize billing for the output. No image URLs or prompt persist.
@@ -175,13 +188,16 @@ export function apimartImagesFetch(scope: ModelExecutionScope, options: Validati
       }
       throw new ImageOperationPending(unit,new Error("APIMart任务仍在处理中"));
     }catch(error){
+      const failure=adapterFailureEvidence(error,adapterStage);
+      try { await recordSupplierAdapterFailure(ledger.pool,row.id,failure,generationPosted&&!taskId); }
+      catch { console.error("[apimart-adapter] diagnostic-write-failed",{callId:row.id,stage:adapterStage}); }
       if(error instanceof ImageOperationDeferred && !taskId && claimed.rowCount){
         await ledger.pool.query("UPDATE app_supplier_calls SET parameters=NULL,state='pre-submission-failed' WHERE id=$1 AND task_id IS NULL AND parameters->>'requestHash'=$2",[row.id,requestHash]);
         throw error;
       }
       const explicitNotCharged=(error as {notCharged?:boolean})?.notCharged===true;
       if(!taskId&&(!generationPosted || explicitNotCharged || error instanceof ModelConfigError && error.code==="PROVIDER_BUSY")){
-        if(explicitNotCharged)await ledger.apply(row.id,{state:"rejected",status:"reported",amountMicros:"0",currency:procurement?.currency||"USD",source:"explicit-not-charged",evidence:{source:"explicit-not-charged"}});
+        if(explicitNotCharged)await ledger.apply(row.id,{state:"rejected",status:"reported",amountMicros:"0",currency:procurement?.currency||"USD",source:"explicit-not-charged",evidence:{...failure,source:"explicit-not-charged"}});
         if(scope.channelGuard?.operationKey)await ledger.pool.query("DELETE FROM app_model_channel_operations WHERE operation_key=$1 AND upstream_id=$2",[scope.channelGuard.operationKey,scope.channelGuard.upstreamId]);
         await ledger.pool.query("UPDATE app_supplier_calls SET parameters=NULL,state='pre-submission-failed' WHERE id=$1 AND task_id IS NULL",[row.id]);
         const busy=error instanceof ModelConfigError&&error.code==="PROVIDER_BUSY";

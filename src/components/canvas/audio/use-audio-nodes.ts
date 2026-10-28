@@ -1,0 +1,64 @@
+"use client";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { browserRandomUUID } from "@/lib/browser-crypto";
+import type { CanvasAudioNode, AudioNodeWrite } from "@/lib/canvas/audio-node-schema";
+import type {createCanvasAudioActions} from "@/lib/canvas/audio-actions";
+import type {PublicMediaJob} from "@/lib/video/media-job-schema";
+import type {CanvasNodeSettings} from "@/lib/canvas/node-settings";
+import type { VideoPrivateFetch } from "../video/use-video-nodes";
+
+export class AudioClientError extends Error { constructor(message: string, public status: number, public code?: string) { super(message); } }
+export function useAudioNodes({ email, readOnly, request }: { email?: string; readOnly: boolean; request: VideoPrivateFetch }) {
+  const [allNodes, setNodes] = useState<CanvasAudioNode[]>([]), [ready, setReady] = useState(false), [error, setError] = useState(""),[pending,setPending]=useState(0);
+  const nodesRef = useRef(allNodes), identity = useRef({ email, readOnly, epoch: 0 }), queues = useRef(new Map<string, Promise<unknown>>()), attempts = useRef(new Map<string,string>()); nodesRef.current = allNodes;
+  if (identity.current.email !== email || identity.current.readOnly !== readOnly) identity.current = { email, readOnly, epoch: identity.current.epoch + 1 };
+  const epoch = identity.current.epoch;
+  const merge = useCallback((incoming: CanvasAudioNode[], expected: number) => {
+    if (expected !== identity.current.epoch) return;
+    const map = new Map(nodesRef.current.map(node => [node.id, node])); let changed = false;
+    for (const node of incoming) { const old = map.get(node.id); if (!old || old.revision < node.revision) { map.set(node.id, node); changed = true; } }
+    if (changed) { nodesRef.current = [...map.values()]; setNodes(nodesRef.current); }
+  }, []);
+  const refresh = useCallback(async () => {
+    if (!email) return; const response = await request(`/api/canvas/audio-nodes?includeDeleted=1&email=${encodeURIComponent(email)}`, { cache: "no-store" }), data = await response.json();
+    if (!response.ok) throw new AudioClientError(data.error || "音频加载失败", response.status);
+    if (identity.current.epoch === epoch) { merge(data.nodes || [], epoch); setReady(true); setError(""); }
+  }, [email, epoch, request, merge]);
+  useEffect(() => {
+    nodesRef.current = []; setNodes([]); setError("");setPending(0); setReady(!email); queues.current.clear(); attempts.current.clear(); let stopped = false;
+    const load = () => { if (!email) return; void refresh().catch(cause => { if (!stopped && identity.current.epoch === epoch) { setReady(true); setError(cause instanceof Error ? cause.message : "音频加载失败"); } }); };
+    load(); const resume = () => { if (document.visibilityState === "visible") load(); }; window.addEventListener("focus", resume); document.addEventListener("visibilitychange", resume);
+    return () => { stopped = true; window.removeEventListener("focus", resume); document.removeEventListener("visibilitychange", resume); };
+  }, [email, epoch, refresh]);
+  const save = useCallback((id: string, patch: Partial<Omit<AudioNodeWrite, "id" | "operationId">>): Promise<CanvasAudioNode> => {
+    if(!email||readOnly)return Promise.reject(new Error("画布账号或编辑状态已改变"));setPending(value=>value+1);
+    const execute = async () => {
+      if (!email || readOnly || identity.current.epoch !== epoch) throw new Error("画布账号或编辑状态已改变");
+      const old = nodesRef.current.find(node => node.id === id), input={...patch,id,expectedRevision:patch.expectedRevision??old?.revision??0},fingerprint=JSON.stringify([email,epoch,input]);
+      let operationId=attempts.current.get(fingerprint);if(!operationId){operationId=browserRandomUUID();attempts.current.set(fingerprint,operationId);}
+      const response = await request(old ? `/api/canvas/audio-nodes/${encodeURIComponent(id)}` : "/api/canvas/audio-nodes", {
+        method: old ? "PATCH" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...input, operationId }),
+      }), data = await response.json();
+      if (!response.ok) { if (response.status === 409) void refresh().catch(() => {}); throw new AudioClientError(data.error || "音频保存失败", response.status, data.code); }
+      attempts.current.delete(fingerprint);if (identity.current.epoch !== epoch) throw new Error("音频已保存，画布账号已切换"); merge([data.node], epoch); return data.node as CanvasAudioNode;
+    };
+    const previous = queues.current.get(id) || Promise.resolve(), promise = previous.catch(() => {}).then(execute); queues.current.set(id, promise);
+    void promise.finally(() => { if (queues.current.get(id) === promise) queues.current.delete(id);if(identity.current.epoch===epoch)setPending(value=>Math.max(0,value-1)); }).catch(() => {}); return promise;
+  }, [email, readOnly, epoch, request, refresh, merge]);
+  const render = useCallback(async (id:string, expectedRevision:number, operationId:string) => {
+    if(!email||readOnly||identity.current.epoch!==epoch)throw new Error("画布账号或编辑状态已改变");
+    const response=await request(`/api/canvas/audio-nodes/${encodeURIComponent(id)}/render`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({expectedRevision,operationId})}),data=await response.json();
+    if(!response.ok){if(response.status===409)void refresh().catch(()=>{});throw new AudioClientError(data.error||"音频处理尚未核实，请使用同一操作重试",response.status,data.code);}
+    if(identity.current.epoch!==epoch)throw new Error("音频处理已受理，画布账号已切换");merge([data.node],epoch);return data;
+  },[email,readOnly,epoch,request,refresh,merge]);
+  const getNode = useCallback((id: string) => nodesRef.current.find(node => node.id === id), []);
+  const flush = useCallback(() => Promise.all([...queues.current.values()]), []);
+  return { accept:(nodes:CanvasAudioNode[],isCurrent:()=>boolean)=>{if(isCurrent())merge(nodes,epoch);},nodes: useMemo(() => allNodes.filter(node => !node.deletedAt), [allNodes]), allNodes, ready, error,saving:pending>0, refresh, save, render, getNode, flush };
+}
+
+/** React scheduling only; the scope-bound audio command owns adoption rules. */
+export function useAudioResultAdoption(input:{commands:ReturnType<ReturnType<typeof createCanvasAudioActions>["bind"]>;nodes:CanvasAudioNode[];jobs:PublicMediaJob[];context:string;readOnly:boolean;ready:boolean;settings:Record<string,CanvasNodeSettings>}){
+  const commands=useRef(input.commands);commands.current=input.commands;
+  const {nodes,jobs,context,readOnly,ready,settings}=input;
+  useEffect(()=>{if(!readOnly&&ready)commands.current.adoptReady(nodes);},[nodes,jobs,context,readOnly,ready,settings]);
+}
