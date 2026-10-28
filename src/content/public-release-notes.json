@@ -1,5 +1,36 @@
 [
   {
+    "version": "1793175770",
+    "title": {
+      "zh": "画布多轨编辑与创作体验优化",
+      "en": "Multitrack editing and smoother creation"
+    },
+    "improvements": [
+      {
+        "zh": "新增多轨编辑，可编排图片、视频和音频，预览并导出成片。",
+        "en": "Arrange images, video and audio in a multitrack editor, preview the result and export a finished video."
+      },
+      {
+        "zh": "减少大图结果处理中的重复工作，改善图片交付效率。",
+        "en": "Reduced repeated processing of large images for more efficient delivery."
+      },
+      {
+        "zh": "加快大量节点首次定位，保留已有画布布局。",
+        "en": "Faster initial placement for large groups of nodes while preserving existing canvas layouts."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "修复部分视频任务等待和停止处理中的异常。",
+        "en": "Fixed issues affecting waiting video tasks and stop requests."
+      },
+      {
+        "zh": "改善部分任务连接异常时的错误反馈。",
+        "en": "Improved feedback when a task encounters a connection error."
+      }
+    ]
+  },
+  {
     "version": "1793164841",
     "title": {
       "zh": "画布创作与音频编辑更新",

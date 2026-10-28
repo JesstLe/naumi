@@ -5166,6 +5166,7 @@ export async function claimVideoTaskPoll(
             last_polled_at = now(),
             updated_at = now()
       WHERE email = $1 AND id = $2 AND status IN ('queued','processing')
+        AND (next_poll_at IS NULL OR next_poll_at <= now())
         AND (poll_lock_until IS NULL OR poll_lock_until < now())`,
     [email.toLowerCase(), id, Math.max(15, Math.trunc(leaseSeconds))]
   );
@@ -5593,7 +5594,10 @@ export async function scheduleVideoTaskRetry(
   await ensureSchema();
   const { rows } = await getPool().query<{ poll_attempts: number }>(
     `UPDATE app_video_tasks
-        SET next_poll_at = now() + ($3 || ' seconds')::interval,
+        SET next_poll_at = CASE
+              WHEN cancellation_requested_at > last_polled_at THEN now()
+              ELSE now() + ($3 || ' seconds')::interval
+            END,
             poll_attempts = CASE
               WHEN $6 AND result_observed_at IS NULL THEN 1
               WHEN $7 THEN 1
