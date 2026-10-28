@@ -19,6 +19,7 @@ export {getVideoNode,listVideoNodes};
 import {authorizeCanvasProject as authorizeVideoProject,mayCreateCanvasRoot as mayCreateOwnRoot} from "./project-access";
 export {authorizeVideoProject};
 import {authorizeSceneInputs} from "./scene-references";
+import {resolveCanvasTimelineInputs} from "./timeline-references";
 import {resolveCanvasAudioInputs} from "./audio-references";
 import {authorizeCharacterInputs} from "./character-references";
 
@@ -40,6 +41,7 @@ export async function authorizeNodeInputs(actor:string,input:VideoNodeWrite){
       if(!text)throw new ModelConfigError("VIDEO_INPUT_UNAVAILABLE","引用文字节点不存在或无权访问",404);
       await assertCreationProjectInput(actor,text.project_key);
     }else{
+      if(ref.nodeId.startsWith("timeline-node:")){await resolveCanvasTimelineInputs(actor,[ref]);continue;}
       if(ref.nodeId.startsWith("audio-node:")){await resolveCanvasAudioInputs(actor,[ref]);continue;}
       const nodeId=ref.nodeId.replace(/^(?:image|video|audio):/,""),art=(await listArtworksByIds(actor,[nodeId]))[0];
       const video=art?null:await getVideoNode(actor,nodeId);
