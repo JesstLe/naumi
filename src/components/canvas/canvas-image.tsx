@@ -25,7 +25,7 @@ export function CanvasImage({source,forceOriginal,hasDimensions,...props}:Omit<I
   const rank={thumbnail:0,preview:1,original:2};
   // Do not replace already-decoded sharper pixels with a lower-quality request
   // when zooming out or selecting another node. Source changes never reuse it.
-  const variant=loaded?.source===source&&rank[loaded.variant]>rank[requested]?loaded.variant:requested;
+  const variant=loaded?.source===source&&(!visible||rank[loaded.variant]>rank[requested])?loaded.variant:requested;
   useEffect(()=>{
     const element=ref.current;if(!element)return;
     return observeCanvasImageVisibility(element,setVisible);
@@ -35,17 +35,21 @@ export function CanvasImage({source,forceOriginal,hasDimensions,...props}:Omit<I
     return observeCanvasImageSize(element,(width,height)=>setLocalWidth(Math.max(width,height)));
   },[retry,source]);
   const url=variant==='original'?cdnUrl(source):cdnThumb(source,variant==='thumbnail'?512:1600);
-  const canLoad=visible&&!!source&&localWidth>0;
+  // Keep decoded pixels while panning out and back. Unseen/offscreen requests
+  // are still cancelled; retaining a loaded image does not eagerly load peers.
+  const hasFrame=loaded?.source===source;
+  const canLoad=!!source&&(hasFrame||(visible&&localWidth>0));
   useEffect(()=>{setFailed(false);},[url]);
   const loadKey=`${url}:${retry}`;
   useEffect(()=>{
-    if(!canLoad||settled===loadKey)return;
+    // A slow quality upgrade must not cover an already usable frame in white.
+    if(!canLoad||hasFrame||settled===loadKey)return;
     const timer=window.setTimeout(()=>setFailed(true),20000);
     return()=>window.clearTimeout(timer);
-  },[canLoad,loadKey,settled]);
+  },[canLoad,hasFrame,loadKey,settled]);
   // All visible nodes authorize in bounded metadata batches; only cache misses
   // enter the six-slot byte queue. Cached pixels need no network slot.
-  return <><CachedImage key={`${source}:${retry}`} networkQueue="canvas" crossOrigin="anonymous" {...props} ref={ref} src={canLoad?url:undefined} decoding="async"
+  return <><CachedImage key={`${source}:${retry}`} imageIdentity={source} networkQueue="canvas" crossOrigin="anonymous" {...props} ref={ref} src={canLoad?url:undefined} decoding="async"
     data-media-variant={variant} data-media-visible={visible?'true':'false'}
     onLoad={event=>{setSettled(loadKey);setFailed(false);setLoaded(current=>current?.source===source&&current.variant===variant?current:{source,variant});props.onLoad?.(event);}}
     onError={event=>{setFailed(true);props.onError?.(event);}} />

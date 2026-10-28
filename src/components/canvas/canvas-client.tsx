@@ -84,6 +84,7 @@ import type {PublicVideoTaskView} from "@/lib/video/service";
 import type {PublicQuote} from "@/lib/billing/client";
 import { CanvasPerformanceProbe, recordCanvasNativeMove } from "./canvas-performance-probe";
 import {CanvasImage} from './canvas-image';
+import {ProjectBrowserSurface,ProjectCover} from './project-browser-surface';
 import { classifyGenerationFailure, generationFailureMessage, generationFailureTitle, assertGenerationResultsPresent, type GenerationFailure } from '@/lib/canvas/generation-failure';
 import { ImagegenHttpError, ImagegenPreparationCancelled } from '@/lib/imagegen/http';
 import { useImageNodeDraft } from './use-image-node-draft';
@@ -9560,15 +9561,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           }}
         >
           {!browsing && workflowPaste.status}
-          {loading ? (
+          {loading && (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               {t("canvas.loading")}
             </div>
-          ) : browsing ? (
-            <div
-              data-testid="canvas-project-browser"
-              className="h-full overflow-y-auto bg-[#f6f7f9] px-4 py-6 text-[#20242c] sm:px-8 sm:py-8"
-            >
+          )}
+            <ProjectBrowserSurface key={`${user?.email || ''}:${currentWorkspace()}`} visible={!loading && browsing}>
               <div className="mx-auto w-full max-w-[1680px]">
                 <div className="mb-7 flex items-end justify-between border-b border-[#dfe3e8]">
                   <div className="flex items-center gap-7">
@@ -9705,11 +9703,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                               >
                                 {p.cover ? (
                                   /* eslint-disable-next-line @next/next/no-img-element */
-                                  <CachedImage
-                                    src={cdnUrl(p.cover)}
-                                    alt={p.name}
-                                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.025]"
-                                  />
+                                  <ProjectCover source={p.cover} title={p.name} />
                                 ) : (
                                   <div className="flex h-full w-full items-center justify-center bg-[#f2f4f7] p-5 text-left text-[#525b69]">
                                     <div className="w-full border border-[#dce1e8] bg-white p-3 shadow-sm">
@@ -9811,8 +9805,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   </section>
                 )}
               </div>
-            </div>
-          ) : (
+            </ProjectBrowserSurface>
+          {!loading && !browsing && (
 
               <ReactFlow
               key={active?.key ?? "__new__"}
