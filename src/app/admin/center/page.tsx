@@ -1,3 +1,4 @@
+import {AdminCenterShell} from "@/components/admin/center-shell";
 import {Suspense} from "react";
 import {PlatformConsole} from "@/components/saas/platform-console";
 import { requireAdminPage } from "@/lib/admin-page";
@@ -15,10 +16,10 @@ export default async function AdminCenterPage({ searchParams }: { searchParams: 
   // (consumption / revenue / artwork metrics, date-filtered trend and drill-down)
   // renders below so the pre-redesign data panels remain on the landing page.
   return section === "overview" ? (
-    <>
-      <Suspense><PlatformConsole /></Suspense>
-      <Suspense><BiDashboard initialSection="overview" /></Suspense>
-    </>
+    <AdminCenterShell active="overview">
+      <Suspense><PlatformConsole embedded /></Suspense>
+      <Suspense><BiDashboard initialSection="overview" embedded /></Suspense>
+    </AdminCenterShell>
   ) : (
     <BiDashboard initialSection={section} />
   );
