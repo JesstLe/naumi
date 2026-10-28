@@ -10,9 +10,9 @@ const expect = playwrightExpect.configure({timeout: 60000});
 
 /** Extends the same isolated app run. No additional server, real provider or account. */
 export async function verifyCharacterInteractions(h: Awaited<ReturnType<typeof createVideoFixture>>, out: string, existingVideoId: string) {
-  const errors: string[] = [], network: unknown[] = [];
+  const errors: string[] = [], network: unknown[] = [], errorDetails:unknown[]=[];
   let page: Page | undefined;
-  const browser = await chromium.launch({headless:true,channel:process.platform==='win32'?'msedge':undefined});
+  const browser = await chromium.launch({headless:true});
   try {
     console.log("CHARACTER_PHASE=UI_PREWARM");
     const warm: unknown[] = [];
@@ -21,10 +21,15 @@ export async function verifyCharacterInteractions(h: Awaited<ReturnType<typeof c
       assert.equal(response.status, 200, JSON.stringify({url, body: response.body}));
     }
     await writeFile(path.join(out, "ui-prewarm.json"), JSON.stringify(warm, null, 2));
+    // Reuse the director verifier's real-entry warmup. No route mocks or JS rewriting.
+    const htmlResponse=await fetch(`${h.baseUrl}/canvas?node=${existingVideoId}`,{headers:{cookie:h.cookies.a},signal:AbortSignal.timeout(180000)});assert.equal(htmlResponse.status,200);
+    const html=await htmlResponse.text(),entryAssets=[...new Set(Array.from(html.matchAll(/(?:src|href)="([^"<>]+)"/g),match=>match[1].replaceAll('&amp;','&')).filter(url=>url.startsWith('/_next/static/')&&!url.includes('.woff')))];
+    const warmed=[];for(const url of entryAssets){const response=await fetch(h.baseUrl+url,{signal:AbortSignal.timeout(180000)});assert.equal(response.status,200,url);warmed.push({url,bytes:(await response.arrayBuffer()).byteLength});}
+    await writeFile(path.join(out,'prewarm-assets.json'),JSON.stringify(warmed,null,2));
     const context = await browser.newContext({viewport: {width: 1440, height: 960}});
     await context.addCookies([{name: "nv_user", value: h.cookies.a.slice(8), url: h.baseUrl, httpOnly: true, sameSite: "Lax"}, {name: "naumi_locale", value: "zh", url: h.baseUrl}]);
     page = await context.newPage(); page.setDefaultTimeout(90000);
-    page.on("pageerror", error => errors.push(error.message));
+    page.on("pageerror", error => {errors.push(error.message);errorDetails.push({message:error.message,stack:error.stack});});
     page.on("request", request => {if(request.method()!=="GET"&&!request.url().includes("_next"))network.push({request:new URL(request.url()).pathname,body:request.postData()?.slice(0,1500)});});
     page.on("response", response => network.push({path: new URL(response.url()).pathname, status: response.status()}));
     const live = async () => (await h.request<any>("a", "GET", "/api/canvas/character-nodes")).body.nodes as any[];
@@ -199,7 +204,7 @@ export async function verifyCharacterInteractions(h: Awaited<ReturnType<typeof c
     await writeFile(path.join(out, "interaction-result.json"), JSON.stringify(evidence, null, 2));
     return evidence;
   } catch (error) {
-    await writeFile(path.join(out, "browser-diagnostics.json"), JSON.stringify({errors, network}, null, 2));
+    await writeFile(path.join(out, "browser-diagnostics.json"), JSON.stringify({errors, errorDetails, network}, null, 2));
     if (page) {await page.screenshot({path: path.join(out, "failure.png")}).catch(() => {}); await writeFile(path.join(out, "failure.txt"), await page.locator("body").innerText().catch(() => ""));}
     throw error;
   } finally {await browser.close();}

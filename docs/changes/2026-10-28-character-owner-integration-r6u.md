@@ -29,3 +29,5 @@
 首轮固定66a171aa的core为14通过／1失败／48未执行：持久化验收元数据仍按38个启动owner，新角色已使实际启动变39；补充版本化39-step预期及可选角色owner冷/热校验，未删除原冷启动、真实故障重试、在途账务保留断言。新增纯owner测试的首个失败是video fixture缺projectKey导致未进入当前项目投影，已补真实项目字段；原失败留证。结构观察器首次使用Windows默认GBK读Node UTF-8输出，改为显式UTF-8。
 
 第二轮3cb9275b的core为27通过／1失败／35未执行：角色实际应用后端步骤完成，但Canvas初次访问500。真实pageerror与已打开截图确认本轮整合把import放在use client之前，修正Canvas、renderer registry及history hook的声明prologue，并加入实际源码prologue回归。不是Windows缓存或供应商问题。另补同一外观重复input的精确删除反例，过滤使用input.id而非nodeId；不新增重复引用限制。原应用失败、90秒控件等待与资源清理完整保留，后续导航先断言实际HTTP200以直接暴露编译错误。
+
+第三轮87c3f2ec的core为27通过／1失败／35未执行：Canvas真实HTTP200且已编译，但页面报Invalid or unexpected token、未挂载节点。此轮没有将其认作供应商或业务拒绝；Windows dev初次解析根因尚未证明。观察器恢复原角色/导演测试使用的已安装Playwright headless shell（原适配改用Edge不是产品需求），复用导演原有的实际HTML与入口静态资源预热，并保存pageerror完整stack。资源仍通过真实HTTP取得，不mock、改写或过滤JS；原失败与cleanup保留，后续按实际结果判断。

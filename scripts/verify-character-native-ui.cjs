@@ -36,7 +36,7 @@ async function main() {
   const css = bundle.outputFiles.find(file=>file.path.endsWith('.css')).text;
   const html = path.join(out,'fixture.html');
   fs.writeFileSync(html, '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#f4f6fa}*{box-sizing:border-box}'+css+'</style><body><div id="root"></div><script>'+js.replaceAll('</script','<\\/script')+'</script></body></html>');
-  const browser = await chromium.launch({headless:true,channel:process.platform==='win32'?'msedge':undefined});
+  const browser = await chromium.launch({headless:true});
   const page = await browser.newPage({viewport:{width:1440,height:960}}), errors = [], external = [];
   page.setDefaultTimeout(15000);
   page.on('pageerror', error=>errors.push(error.message));
