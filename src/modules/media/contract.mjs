@@ -44,7 +44,11 @@ export function nativeMediaArgs(args,inputs,outputs,binary,auxiliary=[],localPro
   if(!Array.isArray(args)||args.length>512||args.some(v=>typeof v!=='string'||v.length>16384||v.includes('\0')))throw new Error('INVALID_MEDIA_ARGS');
   const forbidden=new Set(['-protocol_whitelist','-protocol_blacklist','-progress','-report','-stdin','-y','-n']);
   const fileOptions=new Set(['-i','-filter_script','-filter_complex_script','-vstats_file','-passlogfile','-attach','-dump_attachment','-segment_list','-hls_segment_filename','-hls_key_info_file']);
-  const result=[];let inputFormat=null;
+  const result=[];let inputFormat=null,codecFileStart=0;
+  // Codec options belong to the next input/output file, not to the process.
+  // Repeat the existing default per file, before explicit codec options so
+  // request-specific values and stream specifiers retain their precedence.
+  const codecFile=()=>{if(binary==='ffmpeg')result.splice(codecFileStart,0,'-threads','2');codecFileStart=result.length;};
   for(let i=0;i<args.length;i++){
     const value=args[i];if(forbidden.has(value)||/^-dump_attachment(?::|$)/.test(value))throw new Error('CONTROLLED_MEDIA_OPTION');
     if(args[i-1]!=='-metadata'&&/(?:^|[=,:"'])\/(?:[A-Za-z_.])|[A-Za-z]:[\\/]|\.\.[\\/]/.test(value))throw new Error('MEDIA_EMBEDDED_PATH_FORBIDDEN');
@@ -53,15 +57,16 @@ export function nativeMediaArgs(args,inputs,outputs,binary,auxiliary=[],localPro
     if(value==='-i'||fileOptions.has(value)){
       const next=args[++i];if(!next||(!(/^(?:asset|output|aux):\d+(?:\/[\w%.$-]+)*$|^assets:[a-z0-9]{1,8}$/.test(next))&&!(value==='-i'&&inputFormat==='lavfi')))throw new Error('VIRTUAL_MEDIA_PATH_REQUIRED');
       inputFormat=null;
-      result.push(value,replaceVirtual(next,inputs,outputs,auxiliary));continue;
+      result.push(value,replaceVirtual(next,inputs,outputs,auxiliary));if(value==='-i')codecFile();continue;
     }
     if((value.startsWith('/')||/^[a-z]:[\\/]/i.test(value)||value.includes('../')||value.includes('..\\'))&&!value.includes('asset:')&&!value.includes('output:')&&!value.includes('aux:'))throw new Error('MEDIA_PATH_FORBIDDEN');
     if(/^(asset|output|aux):/.test(value)&&!/^((asset|output|aux):\d+)(?:\/[\w%.$-]+)*$/.test(value))throw new Error('INVALID_VIRTUAL_MEDIA_PATH');
     if((value==='-init_seg_name'||value==='-media_seg_name')&&(!args[i+1]||!/^[\w%.$-]+$/.test(args[i+1])))throw new Error('SEGMENT_NAME_MUST_BE_LOCAL');
     result.push(replaceVirtual(value,inputs,outputs,auxiliary));
+    if(/^output:\d+(?:\/[\w%.$-]+)*$/.test(value)||value==='-')codecFile();
   }
   const restricted=['-protocol_whitelist',localProtocols];
-  return binary==='ffmpeg'?['-hide_banner','-nostdin','-y',...restricted,'-threads','2','-filter_threads','2','-filter_complex_threads','2',...result]:[...restricted,...result];
+  return binary==='ffmpeg'?['-hide_banner','-nostdin','-y',...restricted,'-filter_threads','2','-filter_complex_threads','2',...result]:[...restricted,...result];
 }
 
 export function presetMediaCommand(request,inputs,outputs,probes){

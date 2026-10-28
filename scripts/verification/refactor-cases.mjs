@@ -6,6 +6,7 @@ const node=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:false,
 export const refactorCases=[
  node('dependencies','foundation','scripts/verify-dependency-compatibility.mjs','DEPENDENCY_COMPATIBILITY=PASS'),
  node('source-identity','foundation','scripts/verify-refactor-source-identity.mjs','REFACTOR_SOURCE_IDENTITY=PASS'),
+ node('media-codec-threads','foundation','scripts/verify-media-codec-threads.mjs','MEDIA_CODEC_THREADS=PASS MODE=MODIFIED'),
  node('dataurl-decoder','foundation','scripts/verify-dataurl-decoding.cjs','DATAURL_DECODER=PASS'),
  ts('dataurl-delivery','foundation','scripts/verify-dataurl-delivery.ts','DATAURL_DELIVERY=PASS'),
  node('model-ui-runner','foundation','scripts/verify-model-ui-runner.mjs','MODEL_UI_RUNNER=PASS MODE=MODIFIED'),

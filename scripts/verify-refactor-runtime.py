@@ -5,13 +5,14 @@ The setup/check bundle's source hashes must match the application's saved image
 manifest. Only new acceptance code is mounted; no runtime source is replaced.
 """
 from pathlib import Path
-import argparse, hashlib, json, subprocess, sys, time, uuid
+import argparse, hashlib, json, subprocess, sys, time, uuid, shutil
 
 sys.stdout.reconfigure(encoding='utf8')
 root = Path.cwd().resolve()
 parser = argparse.ArgumentParser()
 parser.add_argument('--image-manifest', required=True)
 parser.add_argument('--out', required=True)
+parser.add_argument('--timeline-vectors', help='Core timeline-rules evidence directory; defaults beside image/core')
 parser.add_argument('--suite', choices=['runtime', 'browser'], default='runtime')
 parser.add_argument('--soak-seconds', type=int, default=180)
 args = parser.parse_args()
@@ -118,6 +119,17 @@ fs.writeFileSync(out+'/FIXTURE_SOURCE.json',JSON.stringify({hashes:Object.fromEn
         time.sleep(.5)
     run(['docker', 'exec', db, 'psql', '-X', '-v', 'ON_ERROR_STOP=1', '-U', 'fixture', '-d', 'naumi_runtime_fixture_r6b', '-c', 'CREATE SCHEMA ' + schema], 'SCHEMA')
     (out / 'media').mkdir(); (out / 'state').mkdir()
+
+    if args.suite == 'runtime':
+        vector_root = Path(args.timeline_vectors).resolve() if args.timeline_vectors else Path(args.image_manifest).resolve().parent.parent / 'core' / 'timeline-rules'
+        core = json.loads((vector_root.parent / 'REPORT.json').read_text(encoding='utf8'))
+        assert core['status'] == 'PASS' and core['source']['commit'] == identity['commit'] and core['source']['digest'] == identity['digest'], 'TIMELINE_VECTORS_SOURCE_MISMATCH'
+        vector = json.loads((vector_root / 'result.json').read_text(encoding='utf8'))
+        assert vector['realFfmpeg'] and vector['existingEngineVirtualCommand'], 'TIMELINE_CORE_VECTORS_REQUIRED'
+        timeline_inputs = out / 'timeline-inputs'; timeline_inputs.mkdir()
+        for filename in ['result.json', 'red.mp4', 'blue.mp4', 'music.wav', 'green.png']:
+            shutil.copyfile(vector_root / filename, timeline_inputs / filename)
+
     common = {'DATABASE_URL': 'postgresql://fixture:fixture-local-only@db:5432/naumi_runtime_fixture_r6b?sslmode=disable', 'PGOPTIONS': '-c search_path=' + schema,
               'NAUMI_VERIFY_ISOLATED_DB': '1', 'SETTINGS_SECRET': 'r6b-isolated-settings-fixture-only-20261026', 'MODEL_CONFIG_ENVELOPE_SECRET': 'r6b-isolated-envelope-fixture-only',
               'MODEL_CONFIG_TRUSTED_ORIGINS': 'http://provider:3300', 'NAUMI_ROUTER_MANAGEMENT_URL': 'http://provider:3300', 'NAUMI_ROUTER_MANAGEMENT_TOKEN': 'fixture-no-control-calls', 'NAUMI_MULTI_USER': '1', 'NAUMI_AUTH_LOGIN_ONLY': '0', 'NAUMI_AUTH_COOKIE_SECURE': '0',

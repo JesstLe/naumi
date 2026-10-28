@@ -129,6 +129,40 @@ async function run(){
  const native=await until(()=>mediaCall('GET','/jobs/'+mid),r=>['completed','failed','cancelled'].includes(r.body.status),'native media');eq(native.body.status,'completed',JSON.stringify(native.body));
  const nativeOutput=native.body.result.outputs[0],nativeBytes=await readFile(mdir+'/results/'+nativeOutput.name);eq(createHash('sha256').update(nativeBytes).digest('hex'),nativeOutput.sha256);eq(nativeOutput.probe.width,1024);eq(nativeOutput.probe.height,1024);eq(nativeOutput.probe.videoCodec,'png');
  eq((await mediaCall('PATCH','/jobs/'+mid)).status,200);eq((await mediaCall('GET','/jobs/'+mid)).status,410);
+ // Execute the core-verified four-source recipe
+ // through this same image's actual native media Worker and Linux sandbox.
+ const timelineChecksBefore=checks,vector=JSON.parse(await readFile('/evidence/timeline-inputs/result.json','utf8')),timelineId=randomUUID(),timelineDir='/scratch/'+timelineId;
+ const vectorFiles:Record<string,string>={red:'red.mp4',blue:'blue.mp4',music:'music.wav',green:'green.png'},sourceBytes:Record<string,Buffer>={};
+ await mkdir(timelineDir+'/inputs',{recursive:true});
+ const manifest=[];
+ for(const id of vector.recipe.inputs){const name=vectorFiles[id],bytes=await readFile('/evidence/timeline-inputs/'+name);eq(createHash('sha256').update(bytes).digest('hex'),vector.sourceHashesUnchanged[id]);sourceBytes[id]=bytes;await writeFile(timelineDir+'/inputs/'+name,bytes);manifest.push({name,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')});}
+ const timelineRequest={action:vector.recipe.action,inputs:manifest,outputs:vector.recipe.outputs,args:vector.recipe.args,auxiliaryFiles:vector.recipe.auxiliaryFiles,auxiliaryOutputs:vector.recipe.auxiliaryOutputs};
+ eq((await mediaCall('POST','/jobs/'+timelineId,timelineRequest)).status,202);
+ const timelineRun=await until(()=>mediaCall('GET','/jobs/'+timelineId),r=>['completed','failed','cancelled'].includes(r.body.status),'packaged native timeline');eq(timelineRun.body.status,'completed',JSON.stringify(timelineRun.body));
+ const movie=timelineRun.body.result.outputs.find((v:any)=>v.name==='timeline.mp4');ok(movie);eq(movie.probe.width,320);eq(movie.probe.height,180);ok(Math.abs(movie.probe.durationSeconds-3.5)<.04);ok(movie.probe.audioCodecs.length>0);
+ const movieBytes=await readFile(timelineDir+'/results/'+movie.name);eq(createHash('sha256').update(movieBytes).digest('hex'),movie.sha256);
+ const probeId=randomUUID(),probeDir='/scratch/'+probeId;await mkdir(probeDir+'/inputs',{recursive:true});
+ const probeInputs=[{name:'rendered.mp4',bytes:movieBytes},...['red','music'].map(id=>({name:vectorFiles[id],bytes:sourceBytes[id]}))];
+ for(const input of probeInputs)await writeFile(probeDir+'/inputs/'+input.name,input.bytes);
+ const times=[.5,1.8,2.25,2.75,3.25],probeOutputs=[...times.map((_,i)=>'pixel-'+i+'.png'),'mixed.wav','source440.wav','source660.wav'],probeArgs=['-i','asset:0','-i','asset:1','-i','asset:2'];
+ for(const [i,time] of times.entries())probeArgs.push('-map','0:v:0','-ss',String(time),'-frames:v','1','-vf','scale=1:1','output:'+i);
+ for(const i of [0,1,2])probeArgs.push('-map',i+':a:0','-ac','1','-ar','48000','-c:a','pcm_f32le','output:'+(5+i));
+ eq((await mediaCall('POST','/jobs/'+probeId,{action:'ffmpeg',inputs:probeInputs.map(input=>({name:input.name,bytes:input.bytes.length,sha256:createHash('sha256').update(input.bytes).digest('hex')})),outputs:probeOutputs,args:probeArgs})).status,202);
+ const probeRun=await until(()=>mediaCall('GET','/jobs/'+probeId),r=>['completed','failed','cancelled'].includes(r.body.status),'packaged timeline pixels and mix');eq(probeRun.body.status,'completed',JSON.stringify(probeRun.body));
+ const probes:Record<string,Buffer>={},colors:Record<string,number[]>={};
+ for(const name of probeOutputs){const entry=probeRun.body.result.outputs.find((v:any)=>v.name===name);ok(entry);const bytes=await readFile(probeDir+'/results/'+name);eq(createHash('sha256').update(bytes).digest('hex'),entry.sha256);probes[name]=bytes;}
+ for(const [i,time] of times.entries()){const rgb=[...(await sharp(probes['pixel-'+i+'.png']).removeAlpha().raw().toBuffer())];eq(rgb.length,3);colors[String(time)]=rgb;ok(rgb.every((v,c)=>Math.abs(v-vector.pixels[String(time)][c])<=4));}
+ function pcm(bytes:Buffer){for(let i=12;i+8<=bytes.length;){const size=bytes.readUInt32LE(i+4);if(bytes.toString('ascii',i,i+4)==='data')return bytes.subarray(i+8,Math.min(bytes.length,i+8+size));i+=8+size+(size%2);}throw Error('PCM_DATA_MISSING');}
+ function amp(buffer:Buffer,time:number,hz:number){let re=0,im=0;const start=Math.round(time*48000),n=4800;for(let j=0;j<n;j++){const x=buffer.readFloatLE((start+j)*4),phase=2*Math.PI*hz*j/48000;re+=x*Math.cos(phase);im-=x*Math.sin(phase);}return 2*Math.hypot(re,im)/n;}
+ const mixed=pcm(probes['mixed.wav']),redGain=amp(mixed,.8,440)/amp(pcm(probes['source440.wav']),1.05,440),musicGain=amp(mixed,.8,660)/amp(pcm(probes['source660.wav']),.3,660);
+ ok(Math.abs(redGain-.5)<.04);ok(Math.abs(musicGain-.25)<.04);ok(amp(mixed,2.8,440)<.002);ok(amp(mixed,2.8,660)<.002);
+ for(const id of vector.recipe.inputs)eq(createHash('sha256').update(await readFile(timelineDir+'/inputs/'+vectorFiles[id])).digest('hex'),vector.sourceHashesUnchanged[id]);
+ for(const id of [timelineId,probeId]){eq((await mediaCall('PATCH','/jobs/'+id)).status,200);eq((await mediaCall('GET','/jobs/'+id)).status,410);}
+ const packagedTimeline={status:'PASS',source,image:process.env.R6B_IMAGE_ID,actualPackagedWorker:true,actualLinuxSandbox:true,sourceInputs:vector.sourceHashesUnchanged,outputSha256:movie.sha256,width:320,height:180,duration:movie.probe.durationSeconds,colors,redGain,musicGain,originalRuntimeAssertionsUnchanged:true,additionalChecks:checks-timelineChecksBefore,engineReplacement:false};
+ await writeFile(out+'/PACKAGED_TIMELINE_RESULT.json',JSON.stringify(packagedTimeline,null,2)+'\n');
+ console.log('PACKAGED_TIMELINE_NATIVE=PASS SAME_IMAGE=1 SOURCES=4 ACTUAL_LINUX_SANDBOX=1 DISSOLVE_OVERLAY_PIXELS=5 AUDIO_GAIN=MEASURED SOURCE_HASHES=UNCHANGED RETIREMENT_ACK=PASS CHECKS='+packagedTimeline.additionalChecks);
+
+
  await until(stats,s=>s.calls===4,'exact four fixture outputs');
  await http('/api/reference-workbench/single/start',{...wb,native_quote:{id:wq.body.id,confirmed:false}});eq((await stats()).calls,4);eq(await ledger(),{n:4,amount:57});
  await control('drain');const final=await until(controlStatus,s=>s.tickDrainComplete,'final worker drain');eq(final.unresolvedTicks,0);eq(final.backgroundTasks,0);eq(final.mediaWorker.running,0);

@@ -52,3 +52,15 @@
 来源边恢复原 `e-timeline-input-${timeline.id}-${source}` 身份；同源多片段只显示一条边，源节点投影顺序不再影响连线存在。稳定scene回调与新memo依赖均已补齐；不通过改掉旧验收预期掩盖产品接线问题。
 
 本轮新增6项验证入口已接原catalog（现89项）；这里只交付该完整模块与相邻链路的已验证源码，不宣称89全量或R6Y Linux镜像、runtime、双浏览器整站门禁已完成。源码四产物、4817原hash的副本恢复、远端及资源状态以本轮 `DELIVERY.json` / `LIVE_HANDOFF.json` 为准。整个重构目标继续 active；下一轮先跑固定源码完整门禁，再继续实际Canvas模板/导入和原生节点共享生命周期的变化传播收敛。
+
+## 完整固定候选验收发现：Linux 多输入线程作用域
+
+固定 `d9e96c01828cee317006e01b208029a409968ac5` 的核心89项实际执行（复用0）通过，完整生产 Dockerfile 的 Linux Web/direct Worker 打包通过；这两层没有替代运行验收。扩展实际 Linux 多轨合成时，同一镜像中的四源配方报 `Parsed_scale_39 / Resource temporarily unavailable`，原始失败与退出1保留在 `output/refactor-r6y-20261028/RUNTIME_RUN.json`，临时容器及网络退出清理通过。
+
+同镜像、同配方、同沙箱和2 CPU/1536MiB容器的四组实际对照：原实现失败；仅补每输入2线程成功；仅补编码输出2线程仍失败；输入/输出均补成功。原 `nativeMediaArgs` 的 `-threads 2` 是下一个文件的 codec 参数，只约束首个输入，后续解码器仍自动扩展。采样到的进程线程峰值不是总资源或容量测量，不据此推断10万用户性能。
+
+修复仅落到既有纯媒体 contract owner：每个输入和输出文件组先放入原有2线程默认值，再保留配方显式参数及流选择器的覆盖顺序；`ffprobe` 保持原字节，简单/复杂滤镜调度不变。没有修改沙箱RLIMIT、队列、并发、报价、钱包、Canvas配方或Worker引擎，也没有新增业务限制。新增纯合同验证旧3检查复现首输入作用域、新18检查覆盖多输入/多输出、显式参数优先、辅助文件及原错误。旧负例准备中误预期嵌入路径错误，实际原合同返回 `VIRTUAL_MEDIA_PATH_REQUIRED`，已修验证预期并保留失败exit1。
+
+原镜像挂入修复contract的定向原生实验已成功，仅作为源代码overlay验证，不冒充最终镜像验收。四源像素/混音/源hash/退役回执验证现接入原 `verify-refactor-runtime.py` 与原 runtime fixture；移除新增块后原125检查体字节完全相同。素材向量必须来自同commit/digest、PASS的core报告，不能挪用旧候选结果。原core目录新增媒体默认值条目后为90项。最终固定源码 core90、重新构建、同镜像原生多轨/runtime与产品浏览器验收待本轮执行，旧D9的89与旧运行失败均保留，不套写成新候选通过。
+
+最终收尾证据独立写入 `output/refactor-r6y-20261028/delivery-final/`；此前根目录四产物保持原模块检查点不覆盖。整个重构仍active；Canvas模板/导入和共享原生节点生命周期、同机性能、有效required CI及整体整合退出仍待后续。
