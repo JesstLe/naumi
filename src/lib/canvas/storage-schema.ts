@@ -148,3 +148,17 @@ export async function ensureAudioNodeSchema(){
   `).then(()=>undefined).catch(error=>{state.pending=undefined;throw error;});
  await state.pending;
 }
+
+export async function ensureTimelineNodeSchema(){
+ await ensureVideoNodeSchema();const state=databaseSchemaReadiness(getPool(),"canvas-timeline-nodes");
+ if(!state.pending)state.pending=getPool().query(`
+    CREATE TABLE IF NOT EXISTS app_canvas_timeline_nodes (
+      email text NOT NULL,id text NOT NULL,project_key text NOT NULL,revision bigint NOT NULL DEFAULT 1,title text NOT NULL DEFAULT '多轨',
+      x double precision NOT NULL DEFAULT 0,y double precision NOT NULL DEFAULT 0,width double precision NOT NULL DEFAULT 400,height double precision NOT NULL DEFAULT 280,
+      timeline jsonb NOT NULL,adopted jsonb,render jsonb,deleted_at timestamptz,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,id)
+    );
+    CREATE INDEX IF NOT EXISTS app_canvas_timeline_nodes_project_idx ON app_canvas_timeline_nodes(email,project_key,updated_at DESC);
+    CREATE TABLE IF NOT EXISTS app_canvas_timeline_operations(email text NOT NULL,operation_id uuid NOT NULL,input_digest text NOT NULL,result jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,operation_id));
+  `).then(()=>undefined).catch(error=>{state.pending=undefined;throw error;});
+ await state.pending;
+}

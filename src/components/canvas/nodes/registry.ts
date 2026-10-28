@@ -1,4 +1,5 @@
 "use client";
+import {TimelineCanvasNode} from "../timeline/timeline-node";
 import {AudioCanvasNode} from "../audio/audio-node";
 import {SceneCanvasNode} from "../scene/scene-node";
 import {CharacterCanvasNode} from "../character/character-node";
@@ -10,5 +11,5 @@ import {CometEdge} from "./comet-edge";
 import {VideoGenerationNode} from "../video/generation-node";
 import {WorkflowDecorationNode,WorkflowGroupNode} from "../workflow-import-nodes";
 /** Stable registry; adding a renderer does not modify the Canvas orchestrator. */
-export const canvasNodeTypes={art:ArtNode,pend:PendNode,text:TextCanvasNode,videoGeneration:VideoGenerationNode,director:DirectorCanvasNode,character:CharacterCanvasNode,scene:SceneCanvasNode,audio:AudioCanvasNode,workflowDecoration:WorkflowDecorationNode,workflowGroup:WorkflowGroupNode};
+export const canvasNodeTypes={art:ArtNode,pend:PendNode,text:TextCanvasNode,videoGeneration:VideoGenerationNode,director:DirectorCanvasNode,character:CharacterCanvasNode,scene:SceneCanvasNode,audio:AudioCanvasNode,timeline:TimelineCanvasNode,workflowDecoration:WorkflowDecorationNode,workflowGroup:WorkflowGroupNode};
 export const canvasEdgeTypes={comet:CometEdge};

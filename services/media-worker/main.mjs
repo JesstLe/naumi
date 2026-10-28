@@ -28,12 +28,15 @@ async function retiredState(id){
     const after=await handle.stat();if(!after.isFile()||before.dev!==after.dev||before.ino!==after.ino||after.size!==before.size)return null;
     const buffer=Buffer.alloc(1025),{bytesRead}=await handle.read(buffer,0,buffer.length,0);if(bytesRead!==after.size)return null;
     const receipt=JSON.parse(buffer.subarray(0,bytesRead).toString('utf8'));
-    if(!receipt||receipt.id!==id||!terminal(receipt.status)||typeof receipt.retiredAt!=='string')return null;
+    if(!receipt||receipt.id!==id||!terminal(receipt.status)||typeof receipt.retiredAt!=='string'||receipt.acknowledged!==undefined&&typeof receipt.acknowledged!=='boolean')return null;
     const at=Date.parse(receipt.retiredAt);if(!Number.isFinite(at)||new Date(at).toISOString()!==receipt.retiredAt||at>Date.now())return null;
     return receipt;
   }catch{return null;}finally{await handle?.close().catch(()=>{});}
 }
-async function retire(id,status){await atomicJson(path.join(retiredRoot,`${id}.json`),{id,status,retiredAt:new Date().toISOString()});}
+// A cancellation fences late POSTs immediately, but is not an App settlement
+// acknowledgment. Keep its terminal view available until PATCH acknowledges it.
+async function retire(id,status,acknowledged=true){await atomicJson(path.join(retiredRoot,`${id}.json`),{id,status,acknowledged,retiredAt:new Date().toISOString()});}
+async function acknowledgedRetirement(id){const receipt=await retiredState(id);return receipt&&receipt.acknowledged!==false?receipt:null;}
 if(!fixture){
   const id=randomUUID(),directory=mediaJobDirectory(root,id);await mkdir(path.join(directory,'inputs'),{recursive:true,mode:0o700});
   try{await engine.run(id,{action:'ffmpeg',inputs:[],outputs:[],args:['-version']});}
@@ -60,7 +63,7 @@ async function withJobLock(id,run){
 async function reconcileRetiredJobs(){
   for(const id of jobs.keys())await withJobLock(id,async()=>{
     const job=jobs.get(id);if(!job||!terminal(job.view.status)||engine.active.has(id))return;
-    if(await retiredState(id)){
+    if(await acknowledgedRetirement(id)){
       // Only evict local state. A peer owns any shared output/file cleanup.
       if(jobs.get(id)===job&&terminal(job.view.status)&&!engine.active.has(id))jobs.delete(id);
     }
@@ -72,7 +75,7 @@ function capacity(){const values=[...jobs.values()];return {running,queued:value
 for(const entry of await readdir(root,{withFileTypes:true})){
   if(!entry.isDirectory()||!/^[0-9a-f-]{36}$/.test(entry.name))continue;
   const view=await savedState(entry.name);
-  if(view?.owner==='naumi-media-worker'&&terminal(view.status)&&!await retiredState(entry.name))jobs.set(entry.name,{id:entry.name,digest:view.digest,controller:new AbortController(),view});
+  if(view?.owner==='naumi-media-worker'&&terminal(view.status)&&!await acknowledgedRetirement(entry.name))jobs.set(entry.name,{id:entry.name,digest:view.digest,controller:new AbortController(),view});
 }
 async function dispatch(){
   if(stopping||running>=concurrency)return;
@@ -116,10 +119,10 @@ const server=http.createServer(async(request,response)=>{
       }
       const saved=job?job.view:await savedState(id);
       if(request.method==='GET'){
-        if((!job||terminal(job.view.status)&&!engine.active.has(id))&&await retiredState(id)){send(response,410,{error:'MEDIA_JOB_RETIRED'});return;}
+        if((!job||terminal(job.view.status)&&!engine.active.has(id))&&await acknowledgedRetirement(id)){send(response,410,{error:'MEDIA_JOB_RETIRED'});return;}
         const available=job||saved&&terminal(saved.status);send(response,available?200:404,available?saved:{error:'NOT_FOUND'});return;}
       if(request.method==='DELETE'){
-        if(!terminal(job?.view.status||saved?.status))await retire(id,'cancelled');
+        if(!terminal(job?.view.status||saved?.status))await retire(id,'cancelled',false);
         if(!job&&!saved){
           await mkdir(directory,{recursive:true,mode:0o700});
           job={id,digest:null,controller:new AbortController(),view:{owner:'naumi-media-worker',id,digest:null,status:'cancelled',processedSeconds:0,createdAt:new Date().toISOString(),finishedAt:new Date().toISOString()}};

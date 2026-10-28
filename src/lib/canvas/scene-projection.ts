@@ -1,3 +1,4 @@
+import type {CanvasTimelineNode} from "./timeline-node-schema";
 import type {CanvasAudioNode} from "./audio-node-schema";
 import type {CanvasSceneNode} from "./scene-node-schema";
 import {parseVisualInputIdentity} from "./visual-input-identity";
@@ -158,7 +159,7 @@ import type {CanvasDirectorNode} from "./director-node-schema";
 export type CanvasSceneInput={
   nodes:Node[];edges:Edge[];active:{members:Artwork[]}|null;activeKey:string|null;
   generationTasks:Omit<CanvasGenerationTask,"isVisible">[];taskPositions:Record<string,CanvasPoint>;pendNodes:CanvasPendingNode[];
-  textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];videoTasks:PublicVideoTaskView[];works:Artwork[]|null;
+  textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];timelineNodes?:CanvasTimelineNode[];videoTasks:PublicVideoTaskView[];works:Artwork[]|null;
   selectedId:string|null;selectedPendId:string|null;selectedTextId:string|null;multiSel:string[];expandedTextIds:Set<string>;
   locale:string;lightCanvas:boolean;nodeSettings:Record<string,CanvasNodeSettings>;nodeSettingsReady:boolean;readOnly:boolean;
   cutoutAvailable:boolean;operations:ReadonlySet<string>;workflowManifests:ImportedManifest[];actions:CanvasSceneActions;
@@ -166,7 +167,7 @@ export type CanvasSceneInput={
 /** Pure view composition: the document and task owners supply DTOs; renderers
  * receive presentation and commands only. No network, persistence or React state. */
 export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];displayEdges:Edge[]}{
-  const {nodes,edges,active,activeKey,generationTasks,taskPositions,pendNodes,textNodes,videoNodes,directorNodes=[],characterNodes=[],sceneNodes=[],audioNodes=[],videoTasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutAvailable,operations,workflowManifests,actions}=input;
+  const {nodes,edges,active,activeKey,generationTasks,taskPositions,pendNodes,textNodes,videoNodes,directorNodes=[],characterNodes=[],sceneNodes=[],audioNodes=[],timelineNodes=[],videoTasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutAvailable,operations,workflowManifests,actions}=input;
   const baseIds=new Set(nodes.map(node=>node.id)),memberById=new Map((active?.members||[]).map(art=>[art.id,art])),memberIds=new Set(memberById.keys());
   const textIds=new Set(textNodes.map(node=>node.id)),projectTextIds=new Set(textNodes.filter(node=>node.projectKey===activeKey).map(node=>node.id)),videoIds=new Set(videoNodes.map(node=>node.id));
   const busyArtworkIds=new Set([...pendNodes.filter(node=>node.generating&&!node.generationFailure&&node.operationKey?.startsWith("node:")).map(node=>node.operationKey!.slice(5)),...generationTasks.filter(task=>!task.failure).map(task=>task.sourceId)]);
@@ -291,6 +292,10 @@ export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];
       displayNodes.push({id:audio.id,type:"audio",position:{x:audio.x,y:audio.y},selected:audio.id===selectedId||multiSel.includes(audio.id),draggable:!readOnly&&!locked,style:{width:audio.width,height:audio.height},data:{node:audio,title:audio.title,content:String(audio.revision),width:audio.width,height:audio.height,url,selected:audio.id===selectedId,english:locale==='en',locked,onEdit:actions.audioEdit}} as Node);
       if(audio.audio.sourceArtworkId&&displayNodes.some(node=>node.id===audio.audio.sourceArtworkId))displayEdges.push({id:`e-audio-source-${audio.id}`,source:audio.audio.sourceArtworkId,sourceHandle:"out",target:audio.id,targetHandle:"in",type:"comet",data:{lit:false,dim:false}} as Edge);
     }
+    for(const timeline of timelineNodes.filter(node=>node.projectKey===activeKey)){
+      const art=workById.get(timeline.adopted?.artworkId||""),locked=!!nodeSettings[timeline.id]?.locked;
+      displayNodes.push({id:timeline.id,type:"timeline",position:{x:timeline.x,y:timeline.y},selected:timeline.id===selectedId||multiSel.includes(timeline.id),draggable:!readOnly&&!locked,style:{width:timeline.width,height:timeline.height},data:{node:timeline,title:timeline.title,content:String(timeline.revision),width:timeline.width,height:timeline.height,url:art?.videoUrl,selected:timeline.id===selectedId,english:locale==='en',locked,onEdit:actions.timelineEdit}} as Node);
+    }
     for(const scene of sceneNodes.filter(node=>node.projectKey===activeKey)){
       const state=scene.scene.states.find(item=>item.id===scene.scene.defaultStateId)!,preview=workById.get(state.background?.artworkId||state.referenceArtworkIds[0])?.image,locked=!!nodeSettings[scene.id]?.locked;
       displayNodes.push({id:scene.id,type:"scene",position:{x:scene.x,y:scene.y},selected:scene.id===selectedId||multiSel.includes(scene.id),draggable:!readOnly&&!locked,style:{width:scene.width,height:scene.height},data:{node:scene,title:scene.title,content:String(scene.revision),width:scene.width,height:scene.height,preview,selected:scene.id===selectedId,english:locale==="en",locked,onEdit:actions.sceneEdit}});
@@ -310,7 +315,7 @@ export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];
         style:{width:videoNode.width,height:videoNode.height},data:{node:videoNode,title:videoNode.title,prompt:videoNode.config.prompt,content:String(videoNode.revision),width:videoNode.width,height:videoNode.height,status:task?.status,progress:task?.progress,videoUrl:result?.videoUrl||(!videoNode.displayResultId?task?.videoUrl:undefined),
           task,settings:nodeSettings[videoNode.id]||DEFAULT_CANVAS_SETTINGS,selected:videoNode.id===selectedId,lightCanvas,locked,readOnly,externalDock:true,resultUrl:result?.videoUrl||(!videoNode.displayResultId?task?.videoUrl:undefined),onEdit:actions.videoEdit,onHistory:actions.videoHistory,onGenerate:actions.videoEdit,onCancel:actions.videoCancel,
           onProcess:actions.videoProcess,onPrompt:actions.videoPrompt,onResize:actions.videoResize}} as Node);
-      for(const input of videoNode.inputs){const source=parseVisualInputIdentity(input.nodeId)?.id||input.nodeId.replace(/^(?:text|image|video|audio|audio-node):/,"");if(!displayNodes.some(node=>node.id===source)&&!textIds.has(source)&&!videoIds.has(source))continue;
+      for(const input of videoNode.inputs){const source=parseVisualInputIdentity(input.nodeId)?.id||input.nodeId.replace(/^(?:text|image|video|audio|audio-node|timeline-node):/,"");if(!displayNodes.some(node=>node.id===source)&&!textIds.has(source)&&!videoIds.has(source))continue;
         displayEdges.push({id:`e-video-${input.id}-${videoNode.id}`,source,sourceHandle:"out",target:videoNode.id,targetHandle:"in",type:"comet",data:{lit:false,dim:false}} as Edge);}
     }
     for (const textNode of textNodes.filter((node) => node.projectKey === activeKey)) {
@@ -430,6 +435,11 @@ export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];
       }
     }
     // (React Flow 遇到重复 key 或悬空边会抛出 client-side exception → 白屏)
+    // Reference identity is source-based, not clip-based. Resolve after every
+    // native node is projected so source visibility never depends on loop order.
+    for(const timeline of timelineNodes.filter(node=>node.projectKey===activeKey)){
+      for(const source of new Set(timeline.timeline.tracks.flatMap(track=>track.clips.map(clip=>clip.canvasSourceId||clip.artworkId))))if(displayNodes.some(node=>node.id===source))displayEdges.push({id:`e-timeline-input-${timeline.id}-${source}`,source,sourceHandle:"out",target:timeline.id,targetHandle:"in",type:"comet",data:{lit:false,dim:false}} as Edge);
+    }
     const nSeen = new Set<string>();
     const finalNodes = displayNodes.map(node => node.type === "art" && !node.data.videoUrl && !node.data.pending ? {
       ...node, data: { ...node.data, onCutout: actions.cutout,

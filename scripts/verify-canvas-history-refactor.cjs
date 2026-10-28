@@ -45,6 +45,7 @@ function setup(built){
  // Original image/text/video cases contain no scene records; preserve counters.
  c.sceneNodesStore={saving:false,getNode:()=>undefined,flush:async()=>{},refresh:async()=>{}};
  c.audioNodesStore={saving:false,getNode:()=>undefined,flush:async()=>{},refresh:async()=>{}};
+ c.timelineNodesStore={saving:false,getNode:()=>undefined,flush:async()=>{},refresh:async()=>{}};
  vm.createContext(c);vm.runInContext(built,c);Object.assign(c,projectedModule.exports);
  const names=['privateFetchRaw','applyHistory','doUndo','doRedo','commitNodeSettings','selectVideoResult',...(fn.saveManyNodePositions?['saveManyNodePositions']:[]),...(!baseline?['applyPendingLinkHistory','applyHistorySettings','onHistoryApplied']:[])];
  // pushUndo is a useCallback invocation. Keep its original initializer, with a

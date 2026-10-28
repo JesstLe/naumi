@@ -1,3 +1,7 @@
+import {timelineInputIdentity} from "../timeline/project";
+import {appendTimelineClip,removeTimelineClip} from "../timeline/edit";
+import type {CanvasTimelineNode} from "./timeline-node-schema";
+import type {TimelineMaterial} from "./timeline-node-schema";
 import {audioInputIdentity,newAudioProject,withAudioSource} from "../audio/project";
 import type {CanvasAudioNode} from "./audio-node-schema";
 import type {CanvasSceneNode} from "./scene-node-schema";
@@ -16,14 +20,21 @@ import {explicitCanvasParent} from "./input-references";
 import {canvasParentCycle} from "./parent-link";
 import {textPatchOf,type CanvasTextNode,type CanvasHistoryAction} from "./history-model";
 
-type Snapshot={project:string|null;artworks:Artwork[];texts:CanvasTextNode[];videos:CanvasVideoNode[];directors?:CanvasDirectorNode[];characters?:CanvasCharacterNode[];scenes?:CanvasSceneNode[];audios?:CanvasAudioNode[];pending:CanvasPendingNode[];
+type Snapshot={project:string|null;artworks:Artwork[];texts:CanvasTextNode[];videos:CanvasVideoNode[];directors?:CanvasDirectorNode[];characters?:CanvasCharacterNode[];scenes?:CanvasSceneNode[];audios?:CanvasAudioNode[];timelines?:CanvasTimelineNode[];timelineMaterials?:TimelineMaterial[];pending:CanvasPendingNode[];
   selected:string[];choices:VideoInputChoice[];locked:(id:string)=>boolean;
   productTitle:string;referenceLimit:string;cycleMessage:string;productMention:(content:string,title:string)=>string};
 export type CanvasLinkIntent={source:string;target:string;add:boolean;edgeId?:string;product?:boolean};
+/** Resolve only the canvas identity. Media ownership, duration and hashes must
+ * still come from the timeline material inspection before compiling a clip. */
+export function canvasLinkMediaSource(s:Snapshot,source:string){
+  const audio=s.audios?.find(node=>node.id===source),timeline=s.timelines?.find(node=>node.id===source),video=s.videos.find(node=>node.id===source),scene=s.scenes?.find(node=>node.id===source),character=s.characters?.find(node=>node.id===source),director=s.directors?.find(node=>node.id===source);
+  const state=scene?.scene.states.find(state=>state.id===scene.scene.defaultStateId),appearance=character?.character.appearances.find(item=>item.id===character.character.defaultAppearanceId);
+  return audio?.audio.adopted?.artworkId||timeline?.adopted?.artworkId||video?.displayResultId||video?.lastResultId||state?.background?.artworkId||state?.referenceArtworkIds[0]||appearance?.referenceArtworkIds[0]||director?.outputs.at(-1)?.artworkId||source;
+}
 function reaches(s:Snapshot,source:string,target:string){
   const edges=[...s.artworks.flatMap(node=>[...new Set([...(node.parentIds||[]),...(node.parentId&&explicitCanvasParent(node,node.parentId)?[node.parentId]:[])])].map(parent=>({source:parent,target:node.id}))),
     ...s.texts.flatMap(node=>[...[...(node.sourceIds||[]),...(node.productIds||[])].map(id=>({source:id,target:node.id})),...(node.targetIds||[]).map(id=>({source:node.id,target:id}))]),
-    ...s.videos.flatMap(node=>node.inputs.map(input=>({source:input.nodeId.replace(/^(?:text|image|video|audio|audio-node):/,""),target:node.id}))),
+    ...s.videos.flatMap(node=>node.inputs.map(input=>({source:input.nodeId.replace(/^(?:text|image|video|audio|audio-node|timeline-node):/,""),target:node.id}))),
     ...s.pending.flatMap(node=>node.inputs.map(source=>({source,target:node.id})))];
   const seen=new Set<string>(),todo=[source];
   while(todo.length){const id=todo.pop()!;if(id===target)return true;if(seen.has(id))continue;seen.add(id);todo.push(...edges.filter(edge=>edge.source===id).map(edge=>edge.target));}
@@ -36,10 +47,20 @@ export function compileCanvasLink(s:Snapshot,intent:CanvasLinkIntent):CanvasHist
   if(s.locked(source)||s.locked(target))return null;
   const fromDirector=s.directors?.find(node=>node.id===source);if(fromDirector)source=fromDirector.outputs.at(-1)?.artworkId||"";
   if(!source||!target||source===target||source.startsWith("task-")||target.startsWith("task-")||s.locked(source)||s.locked(target))return null;
+  const timeline=s.timelines?.find(node=>node.id===target);
+  if(timeline){
+    if(!add){let project=timeline.timeline;for(const track of project.tracks)for(const clip of track.clips)if((clip.canvasSourceId||clip.artworkId)===source)project=removeTimelineClip(project,clip.id);return JSON.stringify(project)===JSON.stringify(timeline.timeline)?null:{kind:"timeline-patch",id:timeline.id,from:{timeline:timeline.timeline},to:{timeline:project}};}
+    const material=s.timelineMaterials?.find(item=>item.artworkId===canvasLinkMediaSource(s,intent.source));if(!material)throw new Error("请选择已完成且已检验的素材");
+    const clipId=browserRandomUUID(),added=appendTimelineClip(timeline.timeline,material,{clipId,trackId:"",newTrackId:browserRandomUUID(),newTrackName:material.kind==="audio"?"音频":"画面"});
+    if(intent.source!==material.artworkId)added.project.tracks.flatMap(track=>track.clips).find(clip=>clip.id===clipId)!.canvasSourceId=intent.source;
+    return {kind:"timeline-patch",id:timeline.id,from:{timeline:timeline.timeline},to:{timeline:added.project}};
+  }
   const fromAudio=s.audios?.find(node=>node.id===source);
   if(fromAudio){if(!s.videos.some(node=>node.id===target))throw new Error("音频请连接到视频节点");if(add)source=audioInputIdentity(fromAudio.id);}
   const audio=s.audios?.find(node=>node.id===target);
   if(audio){if(audio.audio.sourceArtworkId===source&&add||audio.audio.sourceArtworkId!==source&&!add)return null;if(add&&!s.choices.some(choice=>choice.nodeId===source&&choice.kind==="audio"&&choice.available))throw new Error("请选择已完成的音频素材");return {kind:"audio-patch",id:audio.id,from:{audio:audio.audio},to:{audio:add?withAudioSource(source):newAudioProject()}};}
+  const fromTimeline=s.timelines?.find(node=>node.id===source);
+  if(fromTimeline){if(!s.videos.some(node=>node.id===target))throw new Error("多轨成片请连接到视频节点");if(add)source=timelineInputIdentity(fromTimeline.id);}
   const fromScene=s.scenes?.find(node=>node.id===source);
   if(fromScene){
     const director=s.directors?.find(node=>node.id===target);
@@ -77,7 +98,7 @@ export function compileCanvasLink(s:Snapshot,intent:CanvasLinkIntent):CanvasHist
   const video=s.videos.find(node=>node.id===target);
   if(video){
     const removed=!add&&intent.edgeId?video.inputs.find(input=>`e-video-${input.id}-${video.id}`===intent.edgeId):undefined;
-    const matches=(id:string)=>removed?id===removed.nodeId:!add?(parseVisualInputIdentity(id)?.id||id.replace(/^(?:text|image|video|audio|audio-node):/,""))===source:id===source||id.replace(/^(?:text|image|video|audio|audio-node):/,"")===source;
+    const matches=(id:string)=>removed?id===removed.nodeId:!add?(parseVisualInputIdentity(id)?.id||id.replace(/^(?:text|image|video|audio|audio-node|timeline-node):/,""))===source:id===source||id.replace(/^(?:text|image|video|audio|audio-node|timeline-node):/,"")===source;
     const choice=s.choices.find(item=>item.nodeId===source);
     if(add&&(!choice||video.inputs.some(input=>matches(input.nodeId))))return null;
     if(!add&&!video.inputs.some(input=>matches(input.nodeId)))return null;

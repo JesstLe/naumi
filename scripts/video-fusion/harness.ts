@@ -207,7 +207,13 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
       supplierCalls:()=>[...supplier.calls,...objectCalls],setScenario:(name:string)=>supplier.setScenario(name),
       async request<T=unknown>(account:Account,method:string,url:string,body?:unknown){
         if(!url.startsWith("/")||url.startsWith("//"))throw new Error("Fixture requests must stay in the fixture app");
-        const response=await fetch(baseUrl+url,{method,headers:{cookie:seed.cookies[account],...(body!==undefined?{"content-type":"application/json"}:{}),"x-naumi-billing-operation-id":String((body as {idempotencyKey?:string})?.idempotencyKey||randomUUID())},...(body!==undefined?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(90_000)});
+        // Inspection/control HTTP must not inherit an idle socket from the App
+        // process deliberately killed by restart tests. Browser traffic and the
+        // real unknown-acceptance requests keep their original transport. Each
+        // call below is still exactly one request: never retry a POST here.
+        let response:Response;
+        try{response=await fetch(baseUrl+url,{method,headers:{connection:"close",cookie:seed.cookies[account],...(body!==undefined?{"content-type":"application/json"}:{}),"x-naumi-billing-operation-id":String((body as {idempotencyKey?:string})?.idempotencyKey||randomUUID())},...(body!==undefined?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(90_000)});}
+        catch(error){logs.push(`fixture-control: ${method} ${url} transport failed: ${String(error)}`);throw new Error(`Fixture HTTP ${method} ${url} transport failed`,{cause:error});}
         const type=response.headers.get("content-type")||"";
         const data=type.includes("application/json")?await response.json():await response.arrayBuffer();
         return {status:response.status,body:data as T,headers:response.headers};

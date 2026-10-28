@@ -1,3 +1,7 @@
+import {timelineNodeWriteSchema} from "./canvas/timeline-node-schema";
+import {ensureTimelineNodeSchema} from "./canvas/storage-schema";
+import {saveTimelineNodeTx} from "./canvas/timeline-node-repository";
+import {validateTimelineProject,validateTimelineAdoption} from "./canvas/timeline-project-validation";
 import {audioNodeWriteSchema} from "./canvas/audio-node-schema";
 import {saveAudioNodeTx} from "./canvas/audio-node-repository";
 import {ensureAudioNodeSchema} from "./canvas/storage-schema";
@@ -40,7 +44,7 @@ import {assertCreationProjectInput} from "@/lib/saas/creation-access";
 // Shared wire schema; repository keeps the atomic transaction and ownership checks.
 import { historyRequest } from "./canvas/history-contract";
 import { canvasParentCycle, changeCanvasParent } from "./canvas/parent-link";
-export { historyRequest, videoHistoryFields, directorHistoryFields, characterHistoryFields, sceneHistoryFields,audioHistoryFields } from "./canvas/history-contract";
+export { historyRequest, videoHistoryFields, directorHistoryFields, characterHistoryFields, sceneHistoryFields,audioHistoryFields,timelineHistoryFields } from "./canvas/history-contract";
 
 /** A whole history step commits once, including mixed image/text operations. */
 export async function saveCanvasHistory(email: string, input: z.infer<typeof historyRequest>) {
@@ -53,6 +57,8 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
   if(hasDirector)await ensureDirectorNodeSchema();
   const hasCharacter=input.operations.some(op=>op.type==="character-patch"||op.type==="character-visibility"||op.type==="node-settings"&&op.character);
   if(hasCharacter)await ensureCharacterNodeSchema();
+  const hasTimeline=input.operations.some(op=>op.type==="timeline-patch"||op.type==="timeline-visibility"||op.type==="node-settings"&&op.timeline);
+  if(hasTimeline)await ensureTimelineNodeSchema();
   const hasAudio=input.operations.some(op=>op.type==="audio-patch"||op.type==="audio-visibility"||op.type==="node-settings"&&op.audio);
   if(hasAudio)await ensureAudioNodeSchema();
   const hasScene=input.operations.some(op=>op.type==="scene-patch"||op.type==="scene-visibility"||op.type==="node-settings"&&op.scene);
@@ -84,9 +90,18 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
       if (previous.rows[0].fingerprint !== fingerprint) throw new Error("操作编号已使用");
       const saved=await receipt();await client.query("COMMIT"); return saved;
     }
-    if(hasVideo||hasDirector||hasCharacter||hasScene||hasAudio)await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${email}`]);
-    const changedCharacters=new Set<string>(),changedScenes=new Set<string>(),changedAudios=new Set<string>(),changedDirectors=new Set<string>();
+    if(hasVideo||hasDirector||hasCharacter||hasScene||hasAudio||hasTimeline)await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${email}`]);
+    const changedCharacters=new Set<string>(),changedScenes=new Set<string>(),changedTimelines=new Set<string>(),changedAudios=new Set<string>(),changedDirectors=new Set<string>();
     for (const [index,op] of input.operations.entries()) {
+      if(op.type==="timeline-patch"||op.type==="timeline-visibility"){
+        const row=(await client.query("SELECT revision,project_key,timeline FROM app_canvas_timeline_nodes WHERE email=$1 AND id=$2 FOR UPDATE",[email,op.id])).rows[0];
+        if(!row)throw new Error("多轨不存在或无权修改");
+        await assertCreationProjectInput(email,String(row.project_key),client);
+        const bytes=createHash("sha256").update(`timeline:${input.operationId}:${index}:${op.id}`).digest().subarray(0,16);bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;const hex=bytes.toString("hex");
+        const operationId=`${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+        const write=timelineNodeWriteSchema.parse({id:op.id,expectedRevision:op.type==="timeline-patch"?op.expectedRevision:Number(row.revision),operationId,...(op.type==="timeline-patch"?op.fields:{deleted:!op.visible})});
+        await saveTimelineNodeTx(client,email,write,String(row.project_key));changedTimelines.add(op.id);continue;
+      }
       if(op.type==="audio-patch"||op.type==="audio-visibility"){
         const row=(await client.query("SELECT revision,project_key,audio FROM app_canvas_audio_nodes WHERE email=$1 AND id=$2 FOR UPDATE",[email,op.id])).rows[0];
         if(!row)throw new Error("音频不存在或无权修改");
@@ -157,12 +172,13 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
       }
       const text = op.type === "text-delete" || op.type === "text-patch" || ((op.type === "position" || op.type === "node-settings") && op.text);
       const video=op.type==="node-settings"&&op.video===true;
-      const table = text ? "app_canvas_text_nodes" : video?"app_canvas_video_nodes":op.type==="node-settings"&&op.director?"app_canvas_director_nodes":op.type==="node-settings"&&op.character?"app_canvas_character_nodes":op.type==="node-settings"&&op.scene?"app_canvas_scene_nodes":op.type==="node-settings"&&op.audio?"app_canvas_audio_nodes":"app_artworks";
+      const table = text ? "app_canvas_text_nodes" : video?"app_canvas_video_nodes":op.type==="node-settings"&&op.director?"app_canvas_director_nodes":op.type==="node-settings"&&op.character?"app_canvas_character_nodes":op.type==="node-settings"&&op.scene?"app_canvas_scene_nodes":op.type==="node-settings"&&op.timeline?"app_canvas_timeline_nodes":op.type==="node-settings"&&op.audio?"app_canvas_audio_nodes":"app_artworks";
       const owned = await client.query(`SELECT * FROM ${table} WHERE email=$1 AND id=$2 FOR UPDATE`, [email,op.id]);
       if(!owned.rows.length&&(op.type==="text-patch"&&op.expected||op.type==="text-delete"&&op.expected||op.type==="position"&&op.text&&op.expected))throw new CanvasTextWriteConflict(op.id,["deleted"],null);
       if (!owned.rows.length) throw new Error("节点不存在或无权修改，请刷新画布");
       const row = owned.rows[0];
       if(op.type==="node-settings"&&(op.director||op.character||op.scene))await assertCreationProjectInput(email,String(row.project_key));
+      if(op.type==="node-settings"&&op.timeline)await assertCreationProjectInput(email,String(row.project_key),client);
       if(op.type==="text-delete"&&op.expected)assertCanvasTextVersion(op.id,mapCanvasTextNode(row),op.expected);
       const textPosition=op.type==="position"&&op.text&&op.expected?mergeCanvasTextWrite(op.id,mapCanvasTextNode(row),{canvasX:op.x,canvasY:op.y},{canvasX:op.expected.x,canvasY:op.expected.y}):null;
       if (op.type === "workflow-asset") {
@@ -209,6 +225,10 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
     if(changedScenes.size){
       const rows=(await client.query("SELECT scene FROM app_canvas_scene_nodes WHERE email=$1 AND id=ANY($2::text[]) AND deleted_at IS NULL",[email,[...changedScenes]])).rows;
       for(const row of rows)await lockSceneImagesTx(client,email,row.scene);
+    }
+    if(changedTimelines.size){
+      const rows=(await client.query("SELECT timeline,adopted FROM app_canvas_timeline_nodes WHERE email=$1 AND id=ANY($2::text[]) AND deleted_at IS NULL",[email,[...changedTimelines]])).rows;
+      for(const row of rows){await validateTimelineProject(email,row.timeline,client);if(row.adopted)await validateTimelineAdoption(email,row.adopted,client);}
     }
     if(changedAudios.size){
       const rows=(await client.query("SELECT audio FROM app_canvas_audio_nodes WHERE email=$1 AND id=ANY($2::text[]) AND deleted_at IS NULL",[email,[...changedAudios]])).rows;

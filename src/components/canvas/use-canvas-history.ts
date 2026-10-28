@@ -1,4 +1,5 @@
 "use client";
+import type {CanvasTimelineNode} from "@/lib/canvas/timeline-node-schema";
 import type {CanvasAudioNode} from "@/lib/canvas/audio-node-schema";
 import type {CanvasSceneNode} from "@/lib/canvas/scene-node-schema";
 import type {CanvasCharacterNode} from "@/lib/canvas/character-node-schema";
@@ -19,7 +20,7 @@ type Input = {
   works: Dispatch<SetStateAction<Artwork[] | null>>; textDocument: CanvasTextHistoryPort;
   settings: (update: (current: Record<string,CanvasNodeSettings>) => Record<string,CanvasNodeSettings>, persisted: boolean) => void;
   selectedText: Dispatch<SetStateAction<string | null>>;
-  flush: () => Promise<unknown>; video: (id: string) => CanvasVideoNode | undefined;director?:(id:string)=>CanvasDirectorNode|undefined;character?:(id:string)=>CanvasCharacterNode|undefined;scene?:(id:string)=>CanvasSceneNode|undefined;artwork?:(id:string)=>Artwork|undefined;audio?:(id:string)=>CanvasAudioNode|undefined; refresh: () => Promise<unknown>;
+  flush: () => Promise<unknown>; video: (id: string) => CanvasVideoNode | undefined;director?:(id:string)=>CanvasDirectorNode|undefined;character?:(id:string)=>CanvasCharacterNode|undefined;scene?:(id:string)=>CanvasSceneNode|undefined;artwork?:(id:string)=>Artwork|undefined;audio?:(id:string)=>CanvasAudioNode|undefined;timeline?:(id:string)=>CanvasTimelineNode|undefined; refresh: () => Promise<unknown>;
   pending: (action: Extract<CanvasHistoryAction,{kind:"pending-link"}>, undo: boolean) => void;
   applied: (value: HistoryCommit) => void; warning: (message: string) => void;
 };
@@ -39,7 +40,7 @@ export function useCanvasHistory(input: Input) {
     changed: () => { if (mounted.current) render(n => n + 1); },
     readOnly: () => latest.current.readOnly,
     flush: () => latest.current.flush(), transaction: (scope,work) => latest.current.textDocument.transaction(scope,()=>latest.current.artworkDocument?latest.current.artworkDocument.transaction(scope,work):work()),
-    video: id => latest.current.video(id),director:id=>latest.current.director?.(id),character:id=>latest.current.character?.(id),scene:id=>latest.current.scene?.(id),artwork:id=>latest.current.artwork?.(id),audio:id=>latest.current.audio?.(id), refresh: () => latest.current.refresh(),
+    video: id => latest.current.video(id),director:id=>latest.current.director?.(id),character:id=>latest.current.character?.(id),scene:id=>latest.current.scene?.(id),artwork:id=>latest.current.artwork?.(id),audio:id=>latest.current.audio?.(id),timeline:id=>latest.current.timeline?.(id), refresh: () => latest.current.refresh(),
     warning: message => latest.current.warning(message),
     conflict:(scope,value)=>latest.current.textDocument.conflict?.(scope,value),
     artworkConflict:(scope,value,action,undo)=>latest.current.artworkDocument?.conflict(scope,value,action,undo),

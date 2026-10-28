@@ -17,6 +17,7 @@ export function useCanvasSceneActions(actions:CanvasSceneActions):CanvasSceneAct
     directorEdit:(...args)=>current.current.directorEdit?.(...args),
     characterEdit:(...args)=>current.current.characterEdit?.(...args),
     audioEdit:(...args)=>current.current.audioEdit?.(...args),
+    timelineEdit:(...args)=>current.current.timelineEdit?.(...args),
     sceneEdit:(...args)=>current.current.sceneEdit?.(...args),
     videoEdit:(...args)=>current.current.videoEdit(...args),
     videoHistory:(...args)=>current.current.videoHistory(...args),
