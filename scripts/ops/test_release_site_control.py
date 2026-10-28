@@ -37,4 +37,25 @@ class SiteReleaseTests(unittest.TestCase):
             altered=copy.deepcopy(c);altered[key]=value
             with self.subTest(key=key),self.assertRaises(Hold):single.validate(altered)
 
+    def test_47_historical_overflow_requires_exact_full_coverage(self):
+        import release47_site_single as single
+        original={'rowLimit':5000,'tables':{'app_release_activities':{'status':'observed','selectedCount':6034,'activeCount':6034,'rows':[{'id':'retained'}]},'app_image_jobs':{'rows':[{'id':'paid-original'}]}}}
+        snapshot=single.tasks.Snapshot(public={},private=original)
+        history=[{'kind':'historicalActivities','count':6034,'sha256':'a'*64}]
+        scoped,evidence=single.scoped_activity_baseline(snapshot,history)
+        self.assertEqual(scoped.private['tables']['app_release_activities']['selectedCount'],0)
+        self.assertEqual(scoped.private['tables']['app_image_jobs'],original['tables']['app_image_jobs'])
+        self.assertEqual(original['tables']['app_release_activities']['selectedCount'],6034)
+        self.assertFalse(evidence['unknownReclassified'])
+        history[0]['count']=6033
+        with self.assertRaises(Hold):single.scoped_activity_baseline(snapshot,history)
+
+    def test_47_current_observation_scope_keeps_business_predicates(self):
+        import release47_site_single as single
+        collector=single.current_activity_collector(['naumi47-web-old','naumi47-web-new'])
+        self.assertIn('instance_id',collector.SPECS['app_release_activities'][1])
+        for table in single.tasks.SPECS:
+            if table!='app_release_activities':self.assertEqual(collector.SPECS[table],single.tasks.SPECS[table])
+        self.assertNotIn('instance_id',single.tasks.SPECS['app_release_activities'][1])
+
 if __name__=='__main__':unittest.main()

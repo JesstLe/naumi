@@ -3,7 +3,7 @@
 Offline build/backup/policy/bootstrap/static preparation precede a short stop/start.
 Never runs both Webs, restores business data, or replays paid operations.
 """
-import base64,copy,datetime as dt,hashlib,hmac,json,os,pathlib,re,shutil,time,uuid
+import base64,copy,datetime as dt,hashlib,hmac,importlib.util,json,os,pathlib,re,shutil,sys,time,uuid
 from release47_host import HostTransaction,require,file_sha,environment,public_identity,sha
 import release_site_control as shared
 import release103_refactor as base
@@ -14,6 +14,28 @@ import release47_recovery_supervisor as recovery
 ACK='不用双槽了 只保留最新的'
 ENTERPRISE='1095114e-6b57-429e-a954-7d663907e0c9'
 SOURCE='naumi47-tdh'
+
+def current_activity_collector(names):
+    """Bound live-slot observations; HistoricalEvidence covers excluded rows."""
+    require(len(names)==2 and all(re.fullmatch('naumi47-web-[a-z0-9-]+',n) for n in names),'CURRENT_PAIR_REQUIRED')
+    spec=importlib.util.spec_from_file_location('_site47_current_tasks',tasks.__file__)
+    module=importlib.util.module_from_spec(spec);sys.modules[spec.name]=module;spec.loader.exec_module(module)
+    module.SPECS=dict(module.SPECS);module.GRAPH_FIELDS=[*module.GRAPH_FIELDS,'instance_id']
+    key,predicate=module.SPECS['app_release_activities']
+    module.SPECS['app_release_activities']=(key,'('+predicate+") AND j->>'instance_id' IN ("+','.join(module.literal(n) for n in names)+')')
+    return module
+
+def scoped_activity_baseline(snapshot,history):
+    """Retain the original artifact; delegate only a proven historical overflow."""
+    original=snapshot.private;table=original['tables']['app_release_activities']
+    if table.get('selectedCount',0)<=original.get('rowLimit',5000):return snapshot,None
+    retained=next((v for v in history if v.get('kind')=='historicalActivities'),{})
+    # Every originally active observation must be in the separately hashed set.
+    # Never hide business-task overflow or an unobserved current-slot activity.
+    require(table.get('status')=='observed' and table.get('activeCount')==table.get('selectedCount')==retained.get('count') and re.fullmatch('[a-f0-9]{64}',retained.get('sha256','')),'HISTORICAL_OVERFLOW_NOT_FULLY_COVERED')
+    scoped=copy.deepcopy(original);scoped['tables']['app_release_activities']={**table,'rows':[],'selectedCount':0,'activeCount':0}
+    evidence={'originalSnapshotSha256':tasks.sha(original),'delegatedTable':'app_release_activities','retainedRows':retained['count'],'retainedRowsSha256':retained['sha256'],'currentPairActiveAtBaseline':0,'originalArtifactUnchanged':True,'unknownReclassified':False}
+    return tasks.Snapshot(public={},private=scoped),evidence
 
 class HistoricalEvidence:
     """Same retained-history scope as the actual 2026-10-28 predecessor.
@@ -185,8 +207,12 @@ class Release(shared.Release):
         self.op('bind-current-recovery',self.bind_recovery)
         self.op('start-central-connector',lambda _:self.connector(self.new['web']))
         self.wait(lambda:self.marker('browser-after.json'),'PUBLIC_BROWSER_ACCEPTANCE',600)
-        after=tasks.collect_task_snapshot(self.tx.run,public_identity(self.db),self.tx.save,previous=self.task_before.private,projection='proof',row_limit=5000,allow_absent_tables=tasks.ADDITIVE_TABLES,statement_timeout_ms=15000)
-        proof=tasks.compare_task_snapshots(self.task_before,after);self.tx.save('task-preservation.json',proof);require(proof['preservationVerified'],'TASK_PRESERVATION_FAILED')
+        self.guard.check('before-task-proof')
+        before,delegation=scoped_activity_baseline(self.task_before,self.guard.before)
+        if delegation:self.tx.save('task-history-delegation.json',delegation)
+        collector=current_activity_collector([self.c['oldNames']['web'],self.c['newNames']['web']])
+        after=collector.collect_task_snapshot(self.tx.run,public_identity(self.db),self.tx.save,previous=before.private,projection='proof',row_limit=5000,allow_absent_tables=tasks.ADDITIVE_TABLES,statement_timeout_ms=15000)
+        proof=tasks.compare_task_snapshots(before,after);proof['retainedHistoricalObservationsExact']=True;proof['scope']='all-original-business-task-graph-and-current-pair-observations-plus-separate-exact-retained-history';self.tx.save('task-preservation.json',proof);require(proof['preservationVerified'],'TASK_PRESERVATION_FAILED')
         self.guard.check('final');self.tx.save('capacity-final.json',self.memory())
         for r in self.old.values():
             row=self.tx.inspect(r['Id']);require(not row['State']['Running'] and row['HostConfig']['RestartPolicy']['Name']=='no','OLD_SLOT_RUNNING')
