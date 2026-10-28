@@ -86,7 +86,7 @@ def verify_media_status(media, commit):
     return media
 
 
-def verify_status(status, args, instance_id, media_required=False):
+def verify_status(status, args, instance_id, media_required=False, direct=False):
     require(isinstance(status, dict) and status.get('schemaVersion') == 1 and
             status.get('instanceId') == instance_id and status.get('commit') == args.expected_commit and
             status.get('origin') == args.expected_origin.rstrip('/'), 'WORKER_CONTROL_STATUS_DRIFT')
@@ -98,6 +98,11 @@ def verify_status(status, args, instance_id, media_required=False):
     require(type(status.get('activeTicks')) is int and status['activeTicks'] in [0, 1] and
             type(status.get('unresolvedTicks')) is int and status['unresolvedTicks'] in [0, 1],
             'WORKER_TICK_COUNTS_UNKNOWN')
+    if direct:
+        require(status.get('executionMode') == 'direct' and status.get('executorRole') == 'worker' and
+                status.get('targetInstanceId') == instance_id and
+                type(status.get('backgroundTasks')) is int and status['backgroundTasks'] >= 0,
+                'DIRECT_WORKER_EXECUTION_NOT_OBSERVED')
     if media_required or 'mediaWorker' in status:
         verify_media_status(status.get('mediaWorker'), args.expected_commit)
     return status
@@ -127,7 +132,8 @@ def authorize_release(args, state, plan):
 def execute(args, folder, command):
     row, env = inspect_identity(args, command)
     media_required = env.get('NAUMI_MEDIA_WORKER') == '1'
-    status = verify_status(remote(command, args.container), args, env['NAUMI_INSTANCE_ID'], media_required)
+    direct = env.get('NAUMI_WORKER_EXECUTION') == 'direct'
+    status = verify_status(remote(command, args.container), args, env['NAUMI_INSTANCE_ID'], media_required, direct)
     if args.action == 'status':
         return {'result': 'OBSERVED', 'state': status, 'containerId': row['Id']}
     require(re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', args.operation_id or ''),
@@ -179,7 +185,7 @@ def execute(args, folder, command):
     try:
         result = remote(command, args.container, request)
         require(result.get('receipt', {}).get('action') == args.action, 'WORKER_RECEIPT_ACTION_MISMATCH')
-        fresh = verify_status(remote(command, args.container), args, env['NAUMI_INSTANCE_ID'], media_required)
+        fresh = verify_status(remote(command, args.container), args, env['NAUMI_INSTANCE_ID'], media_required, direct)
         require(fresh['bootId'] == result['state']['bootId'], 'WORKER_BOOT_CHANGED_AFTER_CONTROL')
         require(type(result['receipt'].get('revision')) is int and
                 fresh['revision'] >= result['receipt']['revision'], 'WORKER_RECEIPT_REVISION_MISMATCH')
@@ -193,7 +199,8 @@ def execute(args, folder, command):
                     fresh.get('lastTick', {}).get('id') == args.tick_id and
                     server_receipt.get('tickId') == args.tick_id and server_receipt.get('phase') == 'completed',
                     'TICK_RECONCILIATION_NOT_OBSERVED')
-            require(server_receipt.get('web', {}).get('instanceId') == env.get('NAUMI_WORKER_TARGET_INSTANCE_ID') and
+            target = env['NAUMI_INSTANCE_ID'] if env.get('NAUMI_WORKER_EXECUTION') == 'direct' else env.get('NAUMI_WORKER_TARGET_INSTANCE_ID')
+            require(server_receipt.get('web', {}).get('instanceId') == target and
                     server_receipt.get('web', {}).get('commit') == args.expected_commit,
                     'TICK_RECONCILIATION_TARGET_DRIFT')
         record.update(phase='ACKNOWLEDGED', receipt=result['receipt'], observed=fresh)
