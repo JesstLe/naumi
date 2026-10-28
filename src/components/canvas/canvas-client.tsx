@@ -1407,8 +1407,10 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
                 disabled={d.settings?.locked} onClick={event=>{event.stopPropagation();d.onFill?.();}}>补充图片</button>}
             </div>}
             {d.regenerationFailure&&<div role="alert" className="absolute bottom-2 left-2 z-10 rounded-lg bg-red-50 px-2 py-1 text-xs font-medium text-red-600">重新生成未完成</div>}
-            {d.regenerating&&<div role="status" className="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-white/65 text-sm font-medium text-slate-700"><Loader2 size={18} className="animate-spin"/>重新生成中…</div>}
-            {selected && canNodeFeature("cutout") && !d.readOnly && !d.missingAsset && d.onCutout && <button type="button" data-testid="canvas-image-quick-cutout"
+            {d.regenerating && <div data-testid="regeneration-progress" className="absolute inset-0 z-10 bg-[var(--canvas-ui-surface,#fff)]" style={{ containerType: "size" }}>
+              <GenerationPlaceholder stage={d.generationStage} startedAt={d.generationStartedAt} count={d.generationCount} completed={d.generationCompleted} />
+            </div>}
+            {selected && !d.regenerating && canNodeFeature("cutout") && !d.readOnly && !d.missingAsset && d.onCutout && <button type="button" data-testid="canvas-image-quick-cutout"
               aria-label="去背景，保留主体" title="去背景，保留主体" disabled={d.cutoutBusy || d.cutoutBlocked || d.settings?.locked}
               className="nodrag nopan absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white/95 px-2 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
               onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();d.onCutout?.(d.id);}}>
@@ -3762,7 +3764,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     // 每个生成任务都有自己的占位节点。后端超过并发上限时自行排队，画布不再全局锁死。
     for (const task of generationTasks) {
       if (!nodes.some((node) => node.id === task.sourceId)) continue;
-      if(task.replaceNode){baseNodes=baseNodes.map(node=>node.id===task.sourceId?{...node,data:{...node.data,regenerating:!task.failure,regenerationFailure:!!task.failure}}:node);continue;}
+      if (task.replaceNode) {
+        // Display-only projection: retain the original geometry, image and edges.
+        baseNodes = baseNodes.map(node => node.id === task.sourceId ? { ...node, data: { ...node.data,
+          regenerating: !task.failure, regenerationFailure: !!task.failure,
+          generationStage: task.stage, generationStartedAt: task.startedAt,
+          generationCount: task.count, generationCompleted: task.completed,
+        } } : node);
+        continue;
+      }
       const pos = generationTaskPosRef.current[task.id] ?? task.position;
       const previewSize = task.previewSize ?? generationPlaceholderSize("1:1");
       baseNodes = [
