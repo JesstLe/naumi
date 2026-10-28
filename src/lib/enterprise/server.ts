@@ -1,3 +1,4 @@
+import {administeredSite,siteAdministrators} from './site-administrator';
 import {workflowPermissionsSchema,DEFAULT_WORKFLOW_PERMISSIONS} from './workflow-permissions';
 import 'server-only';
 import { createHmac, randomUUID } from 'node:crypto';
@@ -50,6 +51,7 @@ export async function ensureEnterpriseSchema() {
 // Legacy teams belonging to an activated enterprise cannot bypass ERP scope or content restrictions.
 export async function enterpriseManaged(email: string) {
   await ensureEnterpriseSchema();
+  if(await administeredSite(getPool(),email))return true;
   return !!(await getPool().query(`SELECT 1 FROM app_enterprise_settings s JOIN app_account_teams t ON t.id=s.team_id
     WHERE t.owner_email=$1 OR EXISTS(SELECT 1 FROM app_enterprise_members m WHERE m.enterprise_id=s.team_id AND m.email=$1)`,[email])).rowCount;
 }
@@ -100,7 +102,8 @@ async function scope(tx:PoolClient,actor:TeamActor,id:string,allowSelf=false):Pr
     (NOT u.banned AND (u.account_expires_at IS NULL OR u.account_expires_at>now())) AS global_active
     FROM app_enterprise_members m JOIN app_users u ON u.email=m.email WHERE m.enterprise_id=$1 FOR SHARE OF m,u`,[id])).rows as Node[];
   validateHierarchy(team.owner_email,nodes,roles);
-  const owner=actor.admin||team.owner_email===actor.email;
+  const siteAdmin=(await administeredSite(tx,actor.email))===id;
+  const owner=actor.admin||team.owner_email===actor.email||siteAdmin;
   const node=nodes.find(m=>m.email===actor.email),role=roles.find(r=>r.id===node?.role_id);
   if(!owner&&(!node||!activeMembership(node)||!allowSelf&&(!role||!role.manage_members&&!role.view_records)))throw new TeamError('当前企业身份已停用、到期或岗位没有管理权限');
   const entitlementRow=(await tx.query('SELECT entitlement_name,seat_limit,feature_policy FROM app_tenant_entitlements WHERE tenant_id=$1 FOR SHARE',[id])).rows[0];
@@ -110,6 +113,7 @@ async function scope(tx:PoolClient,actor:TeamActor,id:string,allowSelf=false):Pr
   else {visible.add(actor.email);let changed=!allowSelf||!!role?.view_records;while(changed){changed=false;for(const m of nodes)if(activeMembership(m)&&visible.has(m.supervisor_email)&&!visible.has(m.email)){visible.add(m.email);changed=true}}}
   // Membership management needs paused descendants so they can be restored;
   // content readers retain the separate effective-membership set above.
+  if(owner){const administrators=await siteAdministrators(tx,id);if(administrators.length){for(const email of administrators)visible.add(email);visible.add(team.owner_email);}}
   const manageable=new Set<string>(owner?nodes.map(n=>n.email):[actor.email]);
   if(!owner&&role?.manage_members){let changed=true;while(changed){changed=false;for(const m of nodes)if(manageable.has(m.supervisor_email)&&!manageable.has(m.email)){manageable.add(m.email);changed=true;}}}
   return {team:{id:team.id,name:team.name,owner_email:team.owner_email,authorized_until:accessExpiry,owner},owner,level:owner?0:role?.level??999,manageMembers:owner||!!role?.manage_members,viewRecords:owner||!!role?.view_records,roles,nodes,visible,manageable,entitlement};
@@ -134,8 +138,9 @@ export async function enterpriseRead<T>(actor:TeamActor,id:string,run:(tx:PoolCl
 export async function enterpriseList(actor:TeamActor,allowSelf=false):Promise<EnterpriseIdentity[]> {
   return transaction(async tx=>{
     let pinned:string[];try{pinned=pinnedEnterpriseIds()}catch{throw new TeamError('企业部署范围尚未配置',503)}
+    const siteId=await administeredSite(tx,actor.email);
     const rows=(await tx.query(`SELECT t.id,t.name,t.owner_email,t.authorized_until FROM app_enterprise_settings s JOIN app_account_teams t ON t.id=s.team_id
-      WHERE $2 OR t.owner_email=$1 OR EXISTS(SELECT 1 FROM app_enterprise_members m WHERE m.enterprise_id=s.team_id AND m.email=$1) ORDER BY t.name`,[actor.email,actor.admin])).rows;
+      WHERE $2 OR t.id=$3::uuid OR t.owner_email=$1 OR EXISTS(SELECT 1 FROM app_enterprise_members m WHERE m.enterprise_id=s.team_id AND m.email=$1) ORDER BY t.name`,[actor.email,actor.admin,siteId])).rows;
     const result:EnterpriseIdentity[]=[];
     for(const t of rows){if(pinned.length&&!pinned.includes(t.id))continue;try{result.push((await scope(tx,actor,t.id,allowSelf)).team)}catch(e){if(!(e instanceof TeamError)||actor.admin)throw e}}
     return result;

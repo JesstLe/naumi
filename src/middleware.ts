@@ -1,4 +1,5 @@
 import { enterpriseSiteIdentity } from '@/lib/site-control/identity';
+import { enterpriseAdminLocation } from '@/lib/site-control/enterprise-navigation';
 import { NextResponse, type NextRequest } from "next/server";
 import { featureRequestGate, ACCESS_HEADERS, accessJson } from "@/lib/feature-access/server";
 import { requestRequirement } from "@/lib/feature-access/catalog";
@@ -26,8 +27,10 @@ export async function middleware(req: NextRequest) {
   if (dedicated) {
     if (path.startsWith('/api/admin/') || path === '/api/admin' || path === '/setup' || path.startsWith('/api/setup') || path==='/api/auth' || path.startsWith('/api/auth/register') || ['/pricing','/buy','/sign-up'].includes(path)) return accessJson({error:'Not found'},404);
     if (path.startsWith('/admin/')) {
-      const target=req.nextUrl.clone();target.pathname='/admin';target.search='';
-      return NextResponse.redirect(target,{status:307,headers:ACCESS_HEADERS});
+      // Node middleware's internal URL may use localhost. Preserve the request
+      // authority so the redirect retains the browser's host-scoped cookie.
+      const origin=new URL(req.url);origin.host=req.headers.get('host')||origin.host;if(req.headers.get('x-forwarded-proto')==='https')origin.protocol='https:';
+      return NextResponse.redirect(new URL(enterpriseAdminLocation(path,req.nextUrl.searchParams),origin),{status:307,headers:ACCESS_HEADERS});
     }
     if (path === '/' || path === '/enterprise/workflow') {
       const target=req.nextUrl.clone();target.pathname=path==='/'?'/dashboard':'/enterprise';

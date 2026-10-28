@@ -70,11 +70,11 @@ export async function logBiAccess(
 const scopeSql = () => `WITH query_window AS (SELECT $1::timestamptz AS starts, $2::timestamptz AS ends,
   $3::text AS email,$4::text AS keyword,$5::text AS account_type)`;
 const scope = scopeSql();
-const accountFilter = (email: string, authorizedEmployees = false) => `
+const accountFilter = (email: string, authorizedEmployees = false, scopeBind = 8) => `
   (${email} IS NOT NULL AND ($3::text='' OR ${email}=$3)
   AND ($4::text='' OR position(lower($4) in lower(${email}||' '||COALESCE((SELECT filter_user.name FROM app_users filter_user WHERE filter_user.email=${email}),'')||' '||COALESCE((SELECT filter_profile.company FROM app_bi_account_profiles filter_profile WHERE filter_profile.email=${email}),'')))>0)
   AND ($5::text='' OR COALESCE((SELECT filter_profile.account_type FROM app_bi_account_profiles filter_profile WHERE filter_profile.email=${email}),'unknown')=$5)
-  ${authorizedEmployees ? `AND ${email}=ANY($8::text[])` : ''})`;
+  ${authorizedEmployees ? `AND ${email}=ANY($${scopeBind}::text[])` : ''})`;
 const inRange = (alias: string) =>
   `${alias}.created_at >= $1::timestamptz AND ${alias}.created_at < $2::timestamptz`;
 const values = (q: BiQuery) => [q.start, q.end, q.email, q.q, q.accountType];
@@ -105,16 +105,16 @@ const operationSql = (selected = false) => `SELECT 'app_image_jobs'::text AS sou
 const operationSource = operationSql();
 
 /** Keys are cheap; expand JSON and billing only for the selected page. */
-function operationKeys() {
+function operationKeys(authorizedEmployees = false) {
   const status = (value: string, review: string) => `($6::text='' OR ${value}=$6 OR ($6 LIKE 'creation:%' AND ${normalizedOperationStatus(value)}=substring($6 from 10)) OR ($6='review' AND (${review})))`;
   return `SELECT 'app_image_jobs'::text AS source_table,j.id,j.email,j.created_at
-    FROM app_image_jobs j WHERE ${accountFilter("j.email")} AND ${inRange("j")}
+    FROM app_image_jobs j WHERE ${accountFilter("j.email", authorizedEmployees, 7)} AND ${inRange("j")}
       AND ${status(imageOperationStatus, "j.snapshot->>'status'='needs_attention' OR j.snapshot->>'stage' IN ('checking','reviewing') OR j.snapshot->>'error' LIKE '%核查%'")}
     UNION ALL SELECT 'app_canvas_image_tasks',c.id,c.email,c.created_at
-    FROM app_canvas_image_tasks c WHERE ${accountFilter("c.email")} AND ${inRange("c")}
+    FROM app_canvas_image_tasks c WHERE ${accountFilter("c.email", authorizedEmployees, 7)} AND ${inRange("c")}
       AND ${status("c.status", "c.status='needs_attention' OR c.error LIKE '%核查%'")}
     UNION ALL SELECT 'app_video_tasks',v.id,v.email,v.created_at
-    FROM app_video_tasks v WHERE ${accountFilter("v.email")} AND ${inRange("v")}
+    FROM app_video_tasks v WHERE ${accountFilter("v.email", authorizedEmployees, 7)} AND ${inRange("v")}
       AND ${status("v.status", "v.status='needs_attention' OR v.error LIKE '%核查%'")}`;
 }
 const operationPageSource = operationSql(true);
@@ -196,7 +196,7 @@ async function snapshot<T>(
 /** Scoped callers must supply a server-authorized member list and its transaction.
  * This path is artworks-only; it never grants enterprise users other BI sections. */
 export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowedEmails: readonly string[] }): Promise<BiResponse> {
-  if (access && q.section !== "artworks") throw new Error("Scoped BI supports artworks only");
+  if (access && !["artworks", "operations"].includes(q.section)) throw new Error("Scoped BI supports artworks and operations only");
   await ensureBiSchema();
   const result: BiResponse = {
     section: q.section,
@@ -307,10 +307,10 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
         : "created_at DESC,id DESC";
   // Parameter indices remain valid in both statements; use a LIMIT/OFFSET-free
   // one-row count result so empty pages still report the real total.
-  const keys = q.section === "operations" ? operationKeys() : "";
+  const keys = q.section === "operations" ? operationKeys(!!access) : "";
   const countSql = `${scopedSql} SELECT count(*)::int AS total FROM (${keys || countSource || source}) result`;
   const pageSql = keys
-    ? `${scopedSql}, selected AS MATERIALIZED (SELECT * FROM (${keys}) k ORDER BY created_at DESC,id DESC,source_table LIMIT $7 OFFSET $8)
+    ? `${scopedSql}, selected AS MATERIALIZED (SELECT * FROM (${keys}) k ORDER BY created_at DESC,id DESC,source_table LIMIT $${filterBinds.length + 1} OFFSET $${filterBinds.length + 2})
        SELECT * FROM (${operationPageSource}) result ORDER BY created_at DESC,id DESC,source_table`
     : pagePrefix ? `${scopedSql}${pagePrefix} SELECT * FROM (${source}) result ORDER BY ${order}`
     : `${scopedSql} SELECT * FROM (${source}) result ORDER BY ${order} LIMIT $${filterBinds.length + 1} OFFSET $${filterBinds.length + 2}`;
