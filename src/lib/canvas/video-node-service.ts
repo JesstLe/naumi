@@ -1,4 +1,5 @@
-import {authorizeVideoProject} from "./project-access";
+import {authorizeCharacterInputs} from "./character-references";
+import {authorizeVideoProject,mayCreateCanvasRoot as mayCreateOwnRoot} from "./project-access";
 export {authorizeVideoProject} from "./project-access";
 import "server-only";
 import {bindActualCreationProject,assertCreationProjectInput} from "@/lib/saas/creation-access";
@@ -25,13 +26,7 @@ import {ensureVideoNodeSchema} from "@/lib/canvas/storage-schema";
 
 export {getVideoNode,listVideoNodes};
 
-async function mayCreateOwnRoot(actor:string,input:VideoNodeWrite,key:string){
-  if(key!==`tree:${input.id}`)return false;
-  const other=(await getPool().query(`SELECT 1 FROM app_canvas_video_projects WHERE project_key=$1 AND email<>$2
-    UNION ALL SELECT 1 FROM app_canvas_text_nodes WHERE project_key=$1 AND email<>$2
-    UNION ALL SELECT 1 FROM app_artworks WHERE email<>$2 AND (group_id=$3 OR id=$3) LIMIT 1`,[key,actor,input.id])).rowCount;
-  return !other;
-}
+
 export async function authorizeNodeInputs(actor:string,input:VideoNodeWrite){
   const config=input.config;
   const refs=[...(config?.references||[]),...(config?.elements||[]).flatMap(e=>e.references)];
@@ -42,6 +37,7 @@ export async function authorizeNodeInputs(actor:string,input:VideoNodeWrite){
     references:config.references||[],elements:config.elements,idempotencyKey:input.operationId});}
   for(const ref of input.inputs||[]){
     if(ref.kind==="text"){
+      if(ref.nodeId.startsWith("character:")){await authorizeCharacterInputs(actor,[ref]);continue;}
       if(ref.nodeId.startsWith("inline:"))continue;
       const id=ref.nodeId.replace(/^text:/,"");
       const text=(await getPool().query("SELECT project_key FROM app_canvas_text_nodes WHERE email=$1 AND id=$2",[actor,id])).rows[0];

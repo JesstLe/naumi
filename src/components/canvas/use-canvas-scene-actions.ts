@@ -15,6 +15,7 @@ export function useCanvasSceneActions(actions:CanvasSceneActions):CanvasSceneAct
     cutout:(...args)=>current.current.cutout(...args),
     generatePending:(...args)=>current.current.generatePending(...args),
     directorEdit:(...args)=>current.current.directorEdit?.(...args),
+    characterEdit:(...args)=>current.current.characterEdit?.(...args),
     videoEdit:(...args)=>current.current.videoEdit(...args),
     videoHistory:(...args)=>current.current.videoHistory(...args),
     videoCancel:(...args)=>current.current.videoCancel(...args),

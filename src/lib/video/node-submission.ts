@@ -12,6 +12,7 @@ import {readOwnedVideoWorkflow} from "./workflow-source";
 import {requireOwnedVideoText} from "./submission";
 import type {VideoReference} from "./types";
 import type {OrderedInput} from "./references";
+import {resolveCharacterVideoInputs} from "../canvas/character-references";
 export async function submitCanvasVideo(actorRaw:string,input:{nodeId:string;expectedRevision:number;idempotencyKey:string;billingConfirmation?:{version?:number;credits?:number}}){
   const actor=actorRaw.toLowerCase(),existing=await getVideoTaskByIdempotencyKey(actor,input.idempotencyKey);
   if(existing){
@@ -24,14 +25,15 @@ export async function submitCanvasVideo(actorRaw:string,input:{nodeId:string;exp
   if(!node)throw new ModelConfigError("VIDEO_NODE_UNAVAILABLE","视频节点不存在",404);
   if(node.revision!==input.expectedRevision)throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT","视频节点已更新，请重新读取后生成",409);
   await bindActualCreationProject(actor,node.projectKey);
-  await authorizeNodeInputs(actor,{id:node.id,expectedRevision:node.revision,operationId:input.idempotencyKey,config:node.config,inputs:node.inputs});
-  const {comfyWorkflowId,comfyInputs,comfyOverrides,workflowTaskId,camera,batchCount:_batchCount,...config}=node.config;
+  const resolved=await resolveCharacterVideoInputs(actor,node.inputs,node.config.prompt||"");
+  await authorizeNodeInputs(actor,{id:node.id,expectedRevision:node.revision,operationId:input.idempotencyKey,config:node.config,inputs:resolved.inputs});
+  const {comfyWorkflowId,comfyInputs,comfyOverrides,workflowTaskId,camera,batchCount:_batchCount,...config}={...node.config,prompt:resolved.prompt};
   let workflowManifest=config.workflowManifest;
   if(workflowTaskId&&!workflowManifest){const old=await readOwnedVideoWorkflow(actor,workflowTaskId);
     if(old.publicModelId!==config.modelId)throw new ModelConfigError("VIDEO_WORKFLOW_MODEL_CONFLICT","历史工作流与当前模型不一致，请重新选择模型",409);workflowManifest=old.manifest;
   }
   const references:VideoReference[]=[],orderedInputs:OrderedInput[]=[];
-  for(const source of node.inputs){
+  for(const source of resolved.inputs){
     if(source.kind==="text"){
       orderedInputs.push({...source,value:source.nodeId.startsWith("inline:")?source.value:await requireOwnedVideoText(actor,source.nodeId)});continue;
     }
@@ -50,10 +52,10 @@ export async function submitCanvasVideo(actorRaw:string,input:{nodeId:string;exp
     orderedInputs.push({...source,value:url});
   }
   if(comfyWorkflowId){const {submitByocComfyVideo}=await import("./byoc");return submitByocComfyVideo(actor,{workflowId:comfyWorkflowId,nodeId:node.id,expectedRevision:input.expectedRevision,projectKey:node.projectKey,
-    idempotencyKey:input.idempotencyKey,prompt:config.prompt||"",references:node.inputs.length?references:config.references,orderedInputs:node.inputs.length?orderedInputs:undefined,inputMappings:comfyInputs,...comfyOverrides,
+    idempotencyKey:input.idempotencyKey,prompt:config.prompt||"",references:resolved.inputs.length?references:config.references,orderedInputs:resolved.inputs.length?orderedInputs:undefined,inputMappings:comfyInputs,...comfyOverrides,
     negativePrompt:config.negativePrompt,resolution:config.resolution,aspectRatio:config.aspectRatio,generateAudio:config.generateAudio,watermark:config.watermark,
     ...(config.durationSeconds&&config.durationSeconds>0?{durationSeconds:config.durationSeconds}:{})});}
   return createVideoGeneration(actor,{...config,workflowManifest,camera,source:"canvas",sourceId:node.id,nodeId:node.id,nodeRevision:input.expectedRevision,projectKey:node.projectKey,
-    prompt:config.prompt||"",seconds:String(config.durationSeconds??""),size:config.resolution||"",references:node.inputs.length?references:config.references,
-    orderedInputs:node.inputs.length?orderedInputs:undefined,idempotencyKey:input.idempotencyKey,billingConfirmation:input.billingConfirmation});
+    prompt:config.prompt||"",seconds:String(config.durationSeconds??""),size:config.resolution||"",references:resolved.inputs.length?references:config.references,
+    orderedInputs:resolved.inputs.length?orderedInputs:undefined,idempotencyKey:input.idempotencyKey,billingConfirmation:input.billingConfirmation});
 }

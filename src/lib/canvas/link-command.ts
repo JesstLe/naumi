@@ -1,3 +1,5 @@
+import {characterInputIdentity,parseCharacterInputIdentity} from "../character/project";
+import type {CanvasCharacterNode} from "./character-node-schema";
 import type {Artwork} from "../mock-data";
 import type {CanvasDirectorNode} from "./director-node-schema";
 import type {CanvasVideoNode} from "./video-node-schema";
@@ -8,10 +10,10 @@ import {explicitCanvasParent} from "./input-references";
 import {canvasParentCycle} from "./parent-link";
 import {textPatchOf,type CanvasTextNode,type CanvasHistoryAction} from "./history-model";
 
-type Snapshot={project:string|null;artworks:Artwork[];texts:CanvasTextNode[];videos:CanvasVideoNode[];directors?:CanvasDirectorNode[];pending:CanvasPendingNode[];
+type Snapshot={project:string|null;artworks:Artwork[];texts:CanvasTextNode[];videos:CanvasVideoNode[];directors?:CanvasDirectorNode[];characters?:CanvasCharacterNode[];pending:CanvasPendingNode[];
   selected:string[];choices:VideoInputChoice[];locked:(id:string)=>boolean;
   productTitle:string;referenceLimit:string;cycleMessage:string;productMention:(content:string,title:string)=>string};
-export type CanvasLinkIntent={source:string;target:string;add:boolean;product?:boolean};
+export type CanvasLinkIntent={source:string;target:string;add:boolean;edgeId?:string;product?:boolean};
 function reaches(s:Snapshot,source:string,target:string){
   const edges=[...s.artworks.flatMap(node=>[...new Set([...(node.parentIds||[]),...(node.parentId&&explicitCanvasParent(node,node.parentId)?[node.parentId]:[])])].map(parent=>({source:parent,target:node.id}))),
     ...s.texts.flatMap(node=>[...[...(node.sourceIds||[]),...(node.productIds||[])].map(id=>({source:id,target:node.id})),...(node.targetIds||[]).map(id=>({source:node.id,target:id}))]),
@@ -28,6 +30,19 @@ export function compileCanvasLink(s:Snapshot,intent:CanvasLinkIntent):CanvasHist
   if(s.locked(source)||s.locked(target))return null;
   const fromDirector=s.directors?.find(node=>node.id===source);if(fromDirector)source=fromDirector.outputs.at(-1)?.artworkId||"";
   if(!source||!target||source===target||source.startsWith("task-")||target.startsWith("task-")||s.locked(source)||s.locked(target))return null;
+  const fromCharacter=s.characters?.find(node=>node.id===source);
+  if(fromCharacter){
+    if(!s.videos.some(node=>node.id===target))throw new Error("角色请连接到视频节点");
+    if(add)source=characterInputIdentity(fromCharacter.id,fromCharacter.character.defaultAppearanceId);
+  }
+  const character=s.characters?.find(node=>node.id===target);
+  if(character){
+    if(add&&!s.choices.some(choice=>choice.nodeId===source&&choice.kind==="image"&&choice.available))throw new Error("请选择已完成的角色参考图");
+    const id=character.character.defaultAppearanceId,appearance=character.character.appearances.find(item=>item.id===id)!;
+    if(appearance.referenceArtworkIds.includes(source)===add)return null;
+    const referenceArtworkIds=add?[...appearance.referenceArtworkIds,source]:appearance.referenceArtworkIds.filter(value=>value!==source);
+    return {kind:"character-patch",id:character.id,from:{character:character.character},to:{character:{...character.character,appearances:character.character.appearances.map(item=>item.id===id?{...item,referenceArtworkIds}:item)}}};
+  }
   const director=s.directors?.find(node=>node.id===target);
   if(director){
     if(add&&!s.choices.some(choice=>choice.nodeId===source&&choice.kind==="image"&&choice.available))throw new Error("请选择已完成的背景图片");
@@ -36,7 +51,8 @@ export function compileCanvasLink(s:Snapshot,intent:CanvasLinkIntent):CanvasHist
   }
   const video=s.videos.find(node=>node.id===target);
   if(video){
-    const matches=(id:string)=>id.replace(/^(?:text|image|video|audio):/,"")===source;
+    const removed=!add&&intent.edgeId?video.inputs.find(input=>`e-video-${input.id}-${video.id}`===intent.edgeId):undefined;
+    const matches=(id:string)=>removed?id===removed.nodeId:!add?(parseCharacterInputIdentity(id)?.id||id.replace(/^(?:text|image|video|audio):/,""))===source:id===source||id.replace(/^(?:text|image|video|audio):/,"")===source;
     const choice=s.choices.find(item=>item.nodeId===source);
     if(add&&(!choice||video.inputs.some(input=>matches(input.nodeId))))return null;
     if(!add&&!video.inputs.some(input=>matches(input.nodeId)))return null;

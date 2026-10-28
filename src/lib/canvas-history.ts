@@ -1,3 +1,7 @@
+import {characterNodeWriteSchema} from "./canvas/character-node-schema";
+import {saveCharacterNodeTx} from "./canvas/character-node-repository";
+import {ensureCharacterNodeSchema} from "./canvas/storage-schema";
+import {lockCharacterImagesTx} from "./canvas/character-references";
 import {writeCanvasArtworkTx,readCanvasArtworkReceiptTx} from "./canvas/artwork-write-repository";
 import "server-only";
 import {validateCanvasTextLinksTx} from "./canvas/text-node-links";
@@ -26,7 +30,7 @@ import {assertCreationProjectInput} from "@/lib/saas/creation-access";
 // Shared wire schema; repository keeps the atomic transaction and ownership checks.
 import { historyRequest } from "./canvas/history-contract";
 import { canvasParentCycle, changeCanvasParent } from "./canvas/parent-link";
-export { historyRequest, videoHistoryFields, directorHistoryFields } from "./canvas/history-contract";
+export { historyRequest, videoHistoryFields, directorHistoryFields, characterHistoryFields } from "./canvas/history-contract";
 
 /** A whole history step commits once, including mixed image/text operations. */
 export async function saveCanvasHistory(email: string, input: z.infer<typeof historyRequest>) {
@@ -36,6 +40,8 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
   if(hasVideo)await ensureVideoNodeSchema();
   const hasDirector=input.operations.some(op=>op.type==="director-patch"||op.type==="director-visibility"||op.type==="node-settings"&&op.director);
   if(hasDirector)await ensureDirectorNodeSchema();
+  const hasCharacter=input.operations.some(op=>op.type==="character-patch"||op.type==="character-visibility"||op.type==="node-settings"&&op.character);
+  if(hasCharacter)await ensureCharacterNodeSchema();
   if (input.operations.some(op => op.type === "node-settings")) await ensureCanvasSettingsSchema();
   if (input.operations.some(op => op.type === "workflow-asset")) await (await import("@/lib/canvas-workflow-import")).ensureWorkflowImportSchema();
   const fingerprint = createHash("sha256").update(JSON.stringify(input.operations)).digest("hex");
@@ -52,7 +58,7 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
   const client = await getPool().connect();
   const textIds=[...new Set(input.operations.flatMap(op=>op.type==="text-restore"?[op.node.id]:op.type==="text-delete"||op.type==="text-patch"||op.type==="position"&&op.text?[op.id]:[]))];
   const textReceipt=async()=>({textNodes:textIds.length?(await client.query("SELECT * FROM app_canvas_text_nodes WHERE email=$1 AND id=ANY($2::text[])",[email,textIds])).rows.map(mapCanvasTextNode):[]});
-  const artworkIds=[...new Set(input.operations.flatMap(op=>op.type==="text-restore"||op.type==="text-delete"||op.type==="text-patch"||(op.type.startsWith("video-")||op.type.startsWith("director-"))||op.type==="position"&&op.text||op.type==="node-settings"&&(op.text||op.video||op.director)?[]:"id" in op?[op.id]:[]))];
+  const artworkIds=[...new Set(input.operations.flatMap(op=>op.type==="text-restore"||op.type==="text-delete"||op.type==="text-patch"||(op.type.startsWith("video-")||op.type.startsWith("director-")||op.type.startsWith("character-"))||op.type==="position"&&op.text||op.type==="node-settings"&&(op.text||op.video||op.director||op.character)?[]:"id" in op?[op.id]:[]))];
   const receipt=async()=>({...await textReceipt(),artworkNodes:await readCanvasArtworkReceiptTx(client,email,artworkIds),artworkIds});
   try {
     await client.query("BEGIN");
@@ -63,8 +69,18 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
       if (previous.rows[0].fingerprint !== fingerprint) throw new Error("操作编号已使用");
       const saved=await receipt();await client.query("COMMIT"); return saved;
     }
-    if(hasVideo||hasDirector)await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${email}`]);
+    if(hasVideo||hasDirector||hasCharacter)await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${email}`]);
+    const changedCharacters=new Set<string>();
     for (const [index,op] of input.operations.entries()) {
+      if(op.type==="character-patch"||op.type==="character-visibility"){
+        const row=(await client.query("SELECT revision,project_key,character FROM app_canvas_character_nodes WHERE email=$1 AND id=$2 FOR UPDATE",[email,op.id])).rows[0];
+        if(!row)throw new Error("角色不存在或无权修改");
+        await assertCreationProjectInput(email,String(row.project_key));
+        const bytes=createHash("sha256").update(`character:${input.operationId}:${index}:${op.id}`).digest().subarray(0,16);bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;const hex=bytes.toString("hex");
+        const operationId=`${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+        const write=characterNodeWriteSchema.parse({id:op.id,expectedRevision:op.type==="character-patch"?op.expectedRevision:Number(row.revision),operationId,...(op.type==="character-patch"?op.fields:{deleted:!op.visible})});
+        await saveCharacterNodeTx(client,email,write,String(row.project_key));changedCharacters.add(op.id);continue;
+      }
       if(op.type==="director-patch"||op.type==="director-visibility"){
         const row=(await client.query("SELECT revision,project_key FROM app_canvas_director_nodes WHERE email=$1 AND id=$2 FOR UPDATE",[email,op.id])).rows[0];
         if(!row)throw new Error("导演节点不存在或无权修改");
@@ -108,12 +124,12 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
       }
       const text = op.type === "text-delete" || op.type === "text-patch" || ((op.type === "position" || op.type === "node-settings") && op.text);
       const video=op.type==="node-settings"&&op.video===true;
-      const table = text ? "app_canvas_text_nodes" : video?"app_canvas_video_nodes":op.type==="node-settings"&&op.director?"app_canvas_director_nodes":"app_artworks";
+      const table = text ? "app_canvas_text_nodes" : video?"app_canvas_video_nodes":op.type==="node-settings"&&op.director?"app_canvas_director_nodes":op.type==="node-settings"&&op.character?"app_canvas_character_nodes":"app_artworks";
       const owned = await client.query(`SELECT * FROM ${table} WHERE email=$1 AND id=$2 FOR UPDATE`, [email,op.id]);
       if(!owned.rows.length&&(op.type==="text-patch"&&op.expected||op.type==="text-delete"&&op.expected||op.type==="position"&&op.text&&op.expected))throw new CanvasTextWriteConflict(op.id,["deleted"],null);
       if (!owned.rows.length) throw new Error("节点不存在或无权修改，请刷新画布");
       const row = owned.rows[0];
-      if(op.type==="node-settings"&&op.director)await assertCreationProjectInput(email,String(row.project_key));
+      if(op.type==="node-settings"&&(op.director||op.character))await assertCreationProjectInput(email,String(row.project_key));
       if(op.type==="text-delete"&&op.expected)assertCanvasTextVersion(op.id,mapCanvasTextNode(row),op.expected);
       const textPosition=op.type==="position"&&op.text&&op.expected?mergeCanvasTextWrite(op.id,mapCanvasTextNode(row),{canvasX:op.x,canvasY:op.y},{canvasX:op.expected.x,canvasY:op.expected.y}):null;
       if (op.type === "workflow-asset") {
@@ -150,6 +166,12 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
         const next=changeCanvasParent({parentId:row.parent_id,parentIds:row.parent_ids,source:row.source_url},op.parentId,op.add);
         await client.query("UPDATE app_artworks SET parent_id=$3,parent_ids=$4::jsonb WHERE email=$1 AND id=$2",[email,op.id,next.parentId,JSON.stringify(next.parentIds)]);
       }
+    }
+    // Validate the final graph state: a mixed undo may restore a character
+    // before its image operations. All rows remain inside this transaction.
+    if(changedCharacters.size){
+      const rows=(await client.query("SELECT character FROM app_canvas_character_nodes WHERE email=$1 AND id=ANY($2::text[]) AND deleted_at IS NULL",[email,[...changedCharacters]])).rows;
+      for(const row of rows)await lockCharacterImagesTx(client,email,row.character);
     }
     await client.query("INSERT INTO app_canvas_history_ops(id,email,fingerprint) VALUES($1,$2,$3)",[input.operationId,email,fingerprint]);
     const saved=await receipt();await client.query("COMMIT");return saved;

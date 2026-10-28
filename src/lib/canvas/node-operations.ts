@@ -1,3 +1,4 @@
+import type {CanvasCharacterNode} from "./character-node-schema";
 import {artworkFields,type CanvasArtworkConflict,type CanvasArtworkReceipt} from "./artwork-write";
 import type {TextDocumentConflict} from "./text-document";
 import {browserRandomUUID} from "../browser-crypto";
@@ -17,6 +18,7 @@ type Ports={
   artworks:(ids:string[])=>Promise<Artwork[]>;
   videos:(nodes:CanvasVideoNode[],current:()=>boolean)=>void;
   directors?:(nodes:CanvasDirectorNode[],current:()=>boolean)=>void;
+  characters?:(nodes:CanvasCharacterNode[],current:()=>boolean)=>void;
 };
 class NodeRequestError extends Error{constructor(message:string,readonly status:number,readonly conflict?:TextDocumentConflict,readonly artworkConflict?:CanvasArtworkConflict){super(message);}}
 async function post(scope:CanvasDocumentScope,url:string,body:unknown){
@@ -33,7 +35,7 @@ const atProject=(scope:CanvasDocumentScope,project:string|null):CanvasDocumentSc
 export function createCanvasNodeOperations(){
   type CopyAttempt={body:CanvasNodeCopyInput;result?:CanvasNodeCopyResult;action?:CanvasHistoryAction;recorded?:boolean;flight?:Promise<CanvasNodeCopyResult>};
   const copies=new Map<string,CopyAttempt>(),deletions=new Map<string,{body:{projectKey:string;operationId:string};saved?:boolean;receipt?:{artworkNodes?:CanvasArtworkReceipt[];artworkIds?:string[]};persisted?:boolean;flight?:Promise<void>}>();
-  type Removal={body?:{operationId:string;artworkIds:string[];textIds:string[];videoIds:string[];directorIds?:string[];expectedTexts?:import("./text-document-model").CanvasTextNode[];expectedArtworks?:Array<{id:string;fields:import("./artwork-write").CanvasArtworkFields}>};records?:CanvasNodeRecords;action?:CanvasHistoryAction;recorded?:boolean;saved?:boolean;receipt?:{artworkNodes?:CanvasArtworkReceipt[];artworkIds?:string[]};persisted?:boolean;flight?:Promise<boolean>};
+  type Removal={body?:{operationId:string;artworkIds:string[];textIds:string[];videoIds:string[];directorIds?:string[];characterIds?:string[];expectedTexts?:import("./text-document-model").CanvasTextNode[];expectedArtworks?:Array<{id:string;fields:import("./artwork-write").CanvasArtworkFields}>};records?:CanvasNodeRecords;action?:CanvasHistoryAction;recorded?:boolean;saved?:boolean;receipt?:{artworkNodes?:CanvasArtworkReceipt[];artworkIds?:string[]};persisted?:boolean;flight?:Promise<boolean>};
   const removals=new Map<string,Removal>();
   function bind(scope:CanvasDocumentScope,ports:Ports){
     const assert=()=>{scope.assertView();if(!ports.writable())throw new Error("当前画布为只读");};
@@ -54,11 +56,11 @@ export function createCanvasNodeOperations(){
         const artworks=await ports.artworks(result.artworkIds);
         if(!scope.documentCurrent())throw new Error("节点已复制，请返回原账号同步");
         if(result.artworkIds.some(id=>!artworks.some(node=>node.id===id)))throw new Error("节点已复制，作品尚未同步，请重试原操作");
-        retained.action??={kind:"mixed-add",artworks:artworks.filter(node=>result.artworkIds.includes(node.id)),textNodes:result.textNodes,videoNodes:result.nodes,...(result.directorNodes?{directorNodes:result.directorNodes}:{}),projectKey:result.projectKey};
+        retained.action??={kind:"mixed-add",artworks:artworks.filter(node=>result.artworkIds.includes(node.id)),textNodes:result.textNodes,videoNodes:result.nodes,...(result.directorNodes?{directorNodes:result.directorNodes}:{}),...(result.characterNodes?{characterNodes:result.characterNodes}:{}),projectKey:result.projectKey};
         const target=atProject(scope,result.projectKey);
         // Record the durable mutation before any optional presentation refresh.
         if(!retained.recorded){ports.history.record(target,retained.action);retained.recorded=true;}
-        ports.history.acknowledge(target,retained.action,true);ports.videos(result.nodes,scope.documentCurrent);if(result.directorNodes)ports.directors?.(result.directorNodes,scope.documentCurrent);
+        ports.history.acknowledge(target,retained.action,true);ports.videos(result.nodes,scope.documentCurrent);if(result.directorNodes)ports.directors?.(result.directorNodes,scope.documentCurrent);if(result.characterNodes)ports.characters?.(result.characterNodes,scope.documentCurrent);
         copies.delete(key);return result;
       }).catch(error=>{if(!retained.result&&rejected(error))copies.delete(key);throw error;}).finally(()=>{retained.flight=undefined;});
       retained.flight=run;return run;
@@ -72,7 +74,7 @@ export function createCanvasNodeOperations(){
           const records=canvasDeleteRecords(ids,ports.snapshot()),action=canvasDeletionAction(records);
           if(!action){removals.delete(key);return false;}
           retained.records=records;retained.action=action;
-          retained.body={operationId:browserRandomUUID(),artworkIds:records.artworks.map(node=>node.id),textIds:records.textNodes.map(node=>node.id),videoIds:records.videoNodes.map(node=>node.id),...(records.directorNodes?.length?{directorIds:records.directorNodes.map(node=>node.id)}:{}),expectedTexts:records.textNodes,expectedArtworks:records.artworks.map(n=>({id:n.id,fields:artworkFields(n)}))};
+          retained.body={operationId:browserRandomUUID(),artworkIds:records.artworks.map(node=>node.id),textIds:records.textNodes.map(node=>node.id),videoIds:records.videoNodes.map(node=>node.id),...(records.directorNodes?.length?{directorIds:records.directorNodes.map(node=>node.id)}:{}),...(records.characterNodes?.length?{characterIds:records.characterNodes.map(node=>node.id)}:{}),expectedTexts:records.textNodes,expectedArtworks:records.artworks.map(n=>({id:n.id,fields:artworkFields(n)}))};
         }
         if(!retained.saved){const result=await post(scope,"/api/canvas/nodes/delete",retained.body);retained.saved=true;retained.receipt=result;retained.persisted=result.persisted!==false;}
         if(!scope.documentCurrent())throw new Error("节点已删除，请返回原账号同步");
@@ -80,6 +82,7 @@ export function createCanvasNodeOperations(){
         ports.history.acknowledge(scope,retained.action!,retained.persisted!==false,retained.receipt);
         const now=new Date().toISOString();ports.videos(retained.records!.videoNodes.map(node=>({...node,deletedAt:now,revision:node.revision+1})),scope.documentCurrent);
         if(retained.records!.directorNodes)ports.directors?.(retained.records!.directorNodes.map(node=>({...node,deletedAt:now,revision:node.revision+1})),scope.documentCurrent);
+        if(retained.records!.characterNodes)ports.characters?.(retained.records!.characterNodes.map(node=>({...node,deletedAt:now,revision:node.revision+1})),scope.documentCurrent);
         removals.delete(key);return true;
       }).catch(error=>{if(error instanceof NodeRequestError&&error.conflict)ports.history.conflict?.(scope,error.conflict);if(error instanceof NodeRequestError&&error.artworkConflict&&retained.action)ports.history.artworkConflict?.(scope,error.artworkConflict,retained.action);if(!retained.body||!retained.saved&&rejected(error))removals.delete(key);throw error;}).finally(()=>{retained.flight=undefined;});
       retained.flight=run;return run;
@@ -92,10 +95,11 @@ export function createCanvasNodeOperations(){
         assert();if(!retained.saved){const result=await post(atProject(scope,projectKey),"/api/canvas/nodes/delete",retained.body);retained.saved=true;retained.persisted=result.persisted!==false;}
         if(!scope.documentCurrent())throw new Error("项目已删除，请返回原账号同步");
         const nodes=ports.snapshot(),kind=projectKey.slice(0,projectKey.indexOf(":")),id=projectKey.slice(projectKey.indexOf(":")+1);
-        const records={artworks:nodes.artworks.filter(node=>kind==="batch"?node.batchId===id:node.groupId===id||node.id===id),textNodes:nodes.textNodes.filter(node=>node.projectKey===projectKey),videoNodes:nodes.videoNodes.filter(node=>node.projectKey===projectKey),...(nodes.directorNodes?{directorNodes:nodes.directorNodes.filter(node=>node.projectKey===projectKey)}:{})};
+        const records={artworks:nodes.artworks.filter(node=>kind==="batch"?node.batchId===id:node.groupId===id||node.id===id),textNodes:nodes.textNodes.filter(node=>node.projectKey===projectKey),videoNodes:nodes.videoNodes.filter(node=>node.projectKey===projectKey),...(nodes.directorNodes?{directorNodes:nodes.directorNodes.filter(node=>node.projectKey===projectKey)}:{}),...(nodes.characterNodes?{characterNodes:nodes.characterNodes.filter(node=>node.projectKey===projectKey)}:{})};
         const action=canvasDeletionAction(records);if(action)ports.history.acknowledge(atProject(scope,projectKey),action,retained.persisted!==false);
         const now=new Date().toISOString();ports.videos(records.videoNodes.map(node=>({...node,deletedAt:now,revision:node.revision+1})),scope.documentCurrent);
         if(records.directorNodes)ports.directors?.(records.directorNodes.map(node=>({...node,deletedAt:now,revision:node.revision+1})),scope.documentCurrent);
+        if(records.characterNodes)ports.characters?.(records.characterNodes.map(node=>({...node,deletedAt:now,revision:node.revision+1})),scope.documentCurrent);
         deletions.delete(key);
       }).catch(error=>{if(!retained.saved&&rejected(error))deletions.delete(key);throw error;}).finally(()=>{retained.flight=undefined;});
       retained.flight=run;return run;

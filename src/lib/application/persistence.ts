@@ -22,7 +22,7 @@ import {ensureImagegenQuotes,ensureImagegenBatches} from "../imagegen/storage-sc
 import {ensureImageBillingQuotes} from "../billing/image-quote-schema";
 import {ensureWorkbench} from "../reference-workbench/schema";
 import {ensureBiSchema} from "../bi/schema";
-import {ensureCanvasSettingsSchema,ensureWorkflowImportSchema,ensureVideoNodeSchema,ensureCanvasNodeCopySchema,ensureDirectorNodeSchema} from "../canvas/storage-schema";
+import {ensureCanvasSettingsSchema,ensureWorkflowImportSchema,ensureVideoNodeSchema,ensureCanvasNodeCopySchema,ensureDirectorNodeSchema,ensureCharacterNodeSchema} from "../canvas/storage-schema";
 import {ensureCompetitorSchema} from "../competitor/schema";
 import {ensurePackagingSchema} from "../packaging-strategy/schema";
 import {ensurePostprocessSchema} from "../media-postprocess-schema";
@@ -59,6 +59,7 @@ export async function initializeApplicationPersistence():Promise<string[]>{
  await ensureWorkflowImportSchema();steps.push("canvas-workflow-import");
  await ensureVideoNodeSchema();steps.push("canvas-video-nodes");
  await ensureDirectorNodeSchema();steps.push("canvas-director-nodes");
+ await ensureCharacterNodeSchema();steps.push("canvas-character-nodes");
  await ensureCanvasNodeCopySchema();steps.push("canvas-node-copy");
  await ensureCompetitorSchema();steps.push("competitor");
  await ensurePackagingSchema();steps.push("packaging");
