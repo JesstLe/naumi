@@ -69,7 +69,18 @@ class Release(shared.Release):
         ca=self.root/'origin-ca.pem';ca.chmod(0o644)
         name='naumi47-fleet-site-control-20261029'+('-bootstrap' if once else '')
         config={'Image':self.c['runtimeImage'],'User':'1000:1000','WorkingDir':'/runtime','Cmd':['node','fleet/connector.js']+(['--once'] if once else []),'Env':[k+'='+v for k,v in sorted(env.items())], 'Labels':{'naumi.release':self.c['releaseId']},'HostConfig':{'NetworkMode':'container:'+web['Id'],'Memory':192*1024**2,'MemorySwap':192*1024**2,'NanoCpus':250000000,'PidsLimit':64,'ReadonlyRootfs':True,'CapDrop':['ALL'],'SecurityOpt':['no-new-privileges:true'],'RestartPolicy':{'Name':'no' if once else 'unless-stopped'},'Tmpfs':{'/tmp':'rw,noexec,nosuid,size=16m,mode=1777'},'Mounts':[{'Type':'bind','Source':str(ca),'Target':'/run/fleet/origin-ca.pem','ReadOnly':True}]}}
-        cid=self.docker_api('/containers/create?name='+name,config)['Id'];self.tx.run(['docker','start',cid])
+        if not once:
+            # Stable Docker DNS survives Web restarts; do not pin a namespace
+            # that becomes stale when the Web process/container is recovered.
+            network=web['HostConfig']['NetworkMode'];require(network in web['NetworkSettings']['Networks'],'PRIMARY_NETWORK_REQUIRED')
+            for key in ['FLEET_APP_ORIGIN','FLEET_DESKTOP_ORIGIN','FLEET_ENTERPRISE_ORIGIN']:env[key]='http://naumi-app:3000'
+            config['Env']=[k+'='+v for k,v in sorted(env.items())];config['HostConfig']['NetworkMode']=network
+            config['NetworkingConfig']={'EndpointsConfig':{network:{'Aliases':[name]}}}
+        cid=self.docker_api('/containers/create?name='+name,config)['Id']
+        if not once:
+            for network in web['NetworkSettings']['Networks']:
+                if network!=web['HostConfig']['NetworkMode']:self.docker_api('/networks/'+network+'/connect',{'Container':cid})
+        self.tx.run(['docker','start',cid])
         if once:
             code=self.tx.run(['docker','wait',cid],timeout=90).decode().strip();row=self.tx.inspect(cid)
             logs=self.tx.run(['docker','logs',cid]).decode();self.tx.save('connector-bootstrap.json',{'exit':code,'log':logs,'identity':public_identity(row)})

@@ -131,7 +131,8 @@ class Release(base.Release):
         mounts.append({'Type':'bind','Source':str(state),'Target':'/release-state','ReadOnly':False});host['Mounts']=mounts
         startup.install_launcher(state,release_id=self.c['releaseId'],commit=self.c['commit'],version=self.c['buildVersion'],instance=name)
         config={k:copy.deepcopy(old['Config'][k]) for k in ['WorkingDir','User','ExposedPorts','Cmd','Healthcheck','StopSignal'] if old['Config'].get(k) not in (None,{},[])}
-        config.update(Image=self.c['image'],Env=[k+'='+v for k,v in sorted(e.items())],HostConfig=host,Entrypoint=['/release-state/launch.sh'],Labels={'naumi.release':self.c['releaseId'],'naumi.source':self.c['commit'],'naumi.target':self.c['target']},NetworkingConfig={'EndpointsConfig':{hc['NetworkMode']:{'Aliases':[name]}}})
+        aliases=[name]+(['naumi-app'] if self.c['target']=='47.105.59.142' else [])
+        config.update(Image=self.c['image'],Env=[k+'='+v for k,v in sorted(e.items())],HostConfig=host,Entrypoint=['/release-state/launch.sh'],Labels={'naumi.release':self.c['releaseId'],'naumi.source':self.c['commit'],'naumi.target':self.c['target']},NetworkingConfig={'EndpointsConfig':{hc['NetworkMode']:{'Aliases':aliases}}})
         cid=self.docker_api('/containers/create?name='+name,config)['Id']
         for network in old['NetworkSettings']['Networks']:
             if network!=hc['NetworkMode']:self.docker_api('/networks/'+network+'/connect',{'Container':cid,'EndpointConfig':{'Aliases':[name]}})
