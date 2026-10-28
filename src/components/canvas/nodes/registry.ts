@@ -1,5 +1,5 @@
-import {AudioCanvasNode} from "../audio/audio-node";
 "use client";
+import {AudioCanvasNode} from "../audio/audio-node";
 import {SceneCanvasNode} from "../scene/scene-node";
 import {CharacterCanvasNode} from "../character/character-node";
 import {DirectorCanvasNode} from "../director/director-node";

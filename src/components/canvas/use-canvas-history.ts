@@ -1,5 +1,5 @@
-import type {CanvasAudioNode} from "@/lib/canvas/audio-node-schema";
 "use client";
+import type {CanvasAudioNode} from "@/lib/canvas/audio-node-schema";
 import type {CanvasSceneNode} from "@/lib/canvas/scene-node-schema";
 import type {CanvasCharacterNode} from "@/lib/canvas/character-node-schema";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
