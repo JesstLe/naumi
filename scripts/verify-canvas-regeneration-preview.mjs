@@ -32,7 +32,12 @@ const bundle=await build({stdin:{contents:entry,resolveDir:repo,loader:'tsx'},ab
     b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='auth'?'export async function authHeader(){return {}}':'export function useI18n(){return {locale:"zh"}}',loader:'js'}));
     b.onResolve({filter:/^@\//},async a=>{for(const ext of ['.tsx','.ts']){const p=await source('src/'+a.path.slice(2)+ext);if(await exists(p))return{path:p};}throw new Error('Missing '+a.path)});
     b.onResolve({filter:/^\./},async a=>{if(!a.importer||!a.importer.startsWith(root)||root===repo)return;for(const ext of ['', '.tsx','.ts']){const local=path.resolve(path.dirname(a.importer),a.path+ext);if(await exists(local))return{path:local};const p=path.join(repo,path.relative(root,local));if(await exists(p))return{path:p};}});
-    b.onResolve({filter:/^(react(?:\/|$)|react-dom(?:\/|$))/},a=>({path:req.resolve(a.path)}));
+    b.onResolve({filter:/^(react(?:\/|$)|react-dom(?:\/|$))/},a=>{
+      // Match the existing browser fixture's actual DOM entry under a parent
+      // react-server condition. This changes fixture resolution, not product code.
+      const match=/^(react|react-dom)(?:\/(jsx-runtime|jsx-dev-runtime|client))?$/.exec(a.path);
+      return {path:match?path.join(path.dirname(req.resolve(match[1]+'/package.json')),(match[2]||'index')+'.js'):req.resolve(a.path)};
+    });
   }}]});
 const loaded=[];for(const p of Object.keys(bundle.metafile.inputs)){const full=path.resolve(repo,p);if(!p.includes('node_modules')&&await exists(full))loaded.push({path:full,sha256:hash(await fs.readFile(full))});}
 const js=bundle.outputFiles.find(f=>f.path.endsWith('.js')).text,css=bundle.outputFiles.find(f=>f.path.endsWith('.css'))?.text||'';
