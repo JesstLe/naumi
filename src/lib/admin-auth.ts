@@ -1,3 +1,4 @@
+import { enterpriseSiteIdentity } from '@/lib/site-control/identity';
 import "server-only";
 import { timingSafeEqual, createHmac } from "crypto";
 import { dbEnabled, getSetting, setSetting } from "@/lib/db";
@@ -124,6 +125,8 @@ export async function authenticateAdminPassword(password: string, now = Date.now
  * 所有 admin 接口用它替代裸 isAdminToken,兼容"官方云 Supabase"与"自托管本地口令"。
  */
 export async function requireAdmin(request: Request): Promise<boolean> {
+  // Dedicated-site owners are enterprise administrators, never platform operators.
+  if (enterpriseSiteIdentity()) return false;
   let access;
   try { access = await adminPasswordState(request); } catch { return false; }
   if (access.authenticated) return true;

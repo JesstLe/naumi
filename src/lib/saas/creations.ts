@@ -11,7 +11,7 @@ import {creationStatus,type CreationFilters,type CreationPage,type CreationSumma
 import {creationFailures,hasCreationFailure} from './creation-failures';
 import {creationAssetViewSql,creationAssetViewOrder} from './creation-asset-view';
 
-export type CreationReader={platform:true}|{platform:false;actor:TeamActor;tenantId:string};
+export type CreationReader={platform:true;boundTenantId?:string}|{platform:false;actor:TeamActor;tenantId:string};
 async function scoped<T>(reader:CreationReader,run:(tx:PoolClient,visible:string[]|null)=>Promise<T>){
  await ensureCreationSchema();
  if(!reader.platform)return enterpriseRead(reader.actor,reader.tenantId,(tx,s)=>run(tx,s.owner?null:[...s.visible]));
@@ -44,7 +44,7 @@ function summary(row:Record<string,any>):CreationSummary{return {id:row.id,title
 export function sourceLabel(kind:string){return ({'image:imagegen':'图像创作','image:generate':'图片生成','image:suite':'商品套图','image:aplus':'A+ 详情','video':'视频创作'} as Record<string,string>)[kind]||kind.replace(/^\/api\//,'')||'创作记录';}
 function where(reader:CreationReader,f:CreationFilters,visible:string[]|null){
  const values:unknown[]=[];const conditions=['c.parent_id IS NULL'];const add=(sql:string,v:unknown)=>{values.push(v);conditions.push(sql.replace('?',`$${values.length}`));};
- const tenant=reader.platform?f.tenantId:reader.tenantId;if(tenant)add('c.tenant_id=?',tenant);
+ const tenant=reader.platform?reader.boundTenantId||f.tenantId:reader.tenantId;if(tenant)add('c.tenant_id=?',tenant);
  if(!reader.platform&&visible)add('c.actor_email=ANY(?::text[])',visible);
  if(f.q)add("COALESCE(c.request_snapshot->>'text','') ILIKE ?",`%${f.q.replace(/[\\%_]/g,'\\$&')}%`);
  if(f.user)add('c.actor_email=?',f.user.toLowerCase());if(f.source)add('c.source_kind=?',f.source);
@@ -91,7 +91,8 @@ export async function listCreations(reader:CreationReader,f:CreationFilters):Pro
   return {items,pagination:{total,page:f.page,size:f.size},appliedFilters:f,generatedAt:new Date().toISOString(),scope:reader.platform?'platform':visible?'member':'tenant',availability:'available',summary:{total,activeMembers:aggregate.active_members,settledCredits:aggregate.charged??null,pending:aggregate.pending,failed:aggregate.failed,needsReview:aggregate.review},memberUsage};
 });}
 async function authorizedRecord(tx:PoolClient,reader:CreationReader,id:string,visible:string[]|null){
- const row=(await tx.query(`${await recordSelect(tx)} WHERE c.id=$1 ${reader.platform?'':'AND c.tenant_id=$2'}`,[id,...(reader.platform?[]:[reader.tenantId])])).rows[0];
+ const tenant=reader.platform?reader.boundTenantId:reader.tenantId;
+ const row=(await tx.query(`${await recordSelect(tx)} WHERE c.id=$1 ${tenant?'AND c.tenant_id=$2':''}`,[id,...(tenant?[tenant]:[])])).rows[0];
  if(!row||!reader.platform&&visible&&!visible.includes(row.actor_email))throw new TeamError('记录不存在或无权访问',404);return row;
 }
 const asset=(a:Record<string,any>):CreationAsset=>({id:a.id,direction:a.direction,role:a.role,...(Array.isArray(a.roles)?{roles:a.roles.filter((v:unknown)=>typeof v==='string')}:{}),position:a.position,...(Number.isInteger(a.input_position)?{inputPosition:a.input_position}:{}),...(a.execution_ref?{executionRef:a.execution_ref}:{}),variant:a.variant,mime:a.mime,bytes:a.byte_size===null?null:Number(a.byte_size),hash:a.hash,availability:a.availability,mediaType:a.media_type,...(a.text_content?{text:a.text_content}:{})});
@@ -139,5 +140,5 @@ export async function creationAsset(reader:CreationReader,id:string,assetId:stri
  if(url.startsWith('artwork:')){const artworkId=url.slice(8);if(artworkId.startsWith('asset-')){const {readImagegenInputAsset}=await import('@/lib/imagegen/input-assets');url=(await readImagegenInputAsset(artworkId,a.actor_email)).url;}
  else {const work=(await tx.query('SELECT image_url,video_url FROM app_artworks WHERE id=$1 AND email=$2 AND deleted_at IS NULL',[artworkId,a.actor_email])).rows[0];if(!work)throw new TeamError('素材已失效',404);url=a.media_type==='video'?work.video_url:work.image_url;}}
  const {isManagedImageUrl}=await import('@/lib/storage');if(!isManagedImageUrl(url)&&!url.startsWith('data:image/'))throw new TeamError('素材不在受控存储中',422);
- return {url,mediaType:a.media_type,mime:a.mime};
+ return {url,mediaType:a.media_type,mime:a.mime,direction:a.direction};
 });}

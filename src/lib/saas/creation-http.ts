@@ -2,10 +2,11 @@ import 'server-only';
 import {NextResponse} from 'next/server';
 import {tenantAuthorize} from './tenants';
 import {enterpriseAuthorize} from '@/lib/enterprise/access';
-import {teamJson,PRIVATE_HEADERS} from '@/lib/teams/access';
+import {teamJson} from '@/lib/teams/access';
 import {TeamError} from '@/lib/teams/server';
 import {creationFiltersSchema} from './creation-contracts';
 import {listCreations,creationDetail,creationAsset,type CreationReader} from './creations';
+import {streamManagedMedia} from '@/lib/enterprise/media-stream';
 import {enterpriseMediaResponse} from '@/lib/enterprise/media-response';
 import {z} from 'zod';
 import {listLegacyCreations,legacyCreationDetail,legacyCreationAsset} from './legacy-creations';
@@ -50,23 +51,3 @@ export async function creationAssetRoute(request:Request,id:string,assetId:strin
  if(query.get('playback')==='1'&&!grant){const url=new URL(request.url);url.searchParams.delete('playback');url.searchParams.set('mediaToken',reader.platform?await platformPlaybackToken(request,id,assetId):creationPlaybackToken(reader.actor.email,reader.tenantId,id,assetId));return teamJson({url:url.pathname+url.search});}
  return streamManagedMedia(request,media.url,media.mime||'application/octet-stream');
  }catch(e){return creationFailure(e);}}
-async function streamManagedMedia(request:Request,url:string,mime:string){
- const {storageKeyFromManagedUrl,storageDriver,fetchStoredObject,MEDIA_DIR}=await import('@/lib/storage');
- const key=storageKeyFromManagedUrl(url);if(!key)return teamJson({error:'素材不可用'},422);
- const headers=new Headers({...PRIVATE_HEADERS,'Content-Security-Policy':"default-src 'none'",'Content-Type':mime,'Accept-Ranges':'bytes'});
- if(storageDriver!=='local'){
-  const response=await fetchStoredObject(key,request.headers.get('range')||'');
-  for(const name of ['content-type','content-range','content-length','accept-ranges'])if(response.headers.has(name))headers.set(name,response.headers.get(name)!);
-  return new Response(response.body,{status:response.status,headers});
- }
- const path=await import('node:path'),fs=await import('node:fs'),fsp=await import('node:fs/promises'),{Readable}=await import('node:stream');
- const base=path.resolve(MEDIA_DIR),full=path.resolve(base,key);if(!full.startsWith(base+path.sep))return teamJson({error:'素材不可用'},404);
- try{const info=await fsp.stat(full);if(!info.isFile())throw new Error();
- let start=0,end=info.size-1;const raw=request.headers.get('range');
- if(raw){const m=/^bytes=(\d*)-(\d*)$/.exec(raw);if(!m||!m[1]&&!m[2])return new Response(null,{status:416,headers});
- if(!m[1])start=Math.max(0,info.size-Number(m[2]));else{start=Number(m[1]);if(m[2])end=Math.min(end,Number(m[2]));}
- if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||start>end||start>=info.size){headers.set('content-range',`bytes */${info.size}`);return new Response(null,{status:416,headers});}
- headers.set('content-range',`bytes ${start}-${end}/${info.size}`);}
- headers.set('content-length',String(end-start+1));return new Response(Readable.toWeb(fs.createReadStream(full,{start,end})) as ReadableStream,{status:raw?206:200,headers});
- }catch{return teamJson({error:'素材已失效'},404);}
-}

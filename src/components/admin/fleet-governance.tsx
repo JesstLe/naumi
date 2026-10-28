@@ -6,7 +6,7 @@ type Policy={instance_id:string;source_instance_id:string;enabled:boolean;versio
 type Plan={id:string;instance_id:string;state:string;version:number;local_day:string;manifest:{sourceCommit:string;buildVersion:number}};
 const button='inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50';
 const input='h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm';
-const caps=[['read','查看'],['users','用户状态'],['credits','积分'],['features','功能权限'],['release','发布策略']];
+const caps=[['read','查看'],['users','用户状态'],['credits','积分'],['features','功能权限'],['release','发布策略'],['creations','企业作品']];
 const states:Record<string,string>={planned:'待准备',held:'已暂停',preparing:'准备中',ready:'待验收',accepted:'已验收',failed:'失败',blocked:'待核实'};
 export function FleetGovernance({selected,instances,grants,root,onSaved}:{selected:string;instances:Instance[];grants:Grant[];root:boolean;onSaved:()=>Promise<void>}){
   const [error,setError]=useState(''),[busy,setBusy]=useState(false),[email,setEmail]=useState(''),[allowed,setAllowed]=useState(['read']),[expiry,setExpiry]=useState('');

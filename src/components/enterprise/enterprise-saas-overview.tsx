@@ -43,7 +43,7 @@ export function EnterpriseEntitlement({ snapshot, onView }: { snapshot: SaasSnap
   </article>;
 }
 
-export function EnterpriseSaasOverview({ snapshot, from, to, meta, metaError, onRetryMeta, onView, onCreation, refreshRevision = 0 }: {
+export function EnterpriseSaasOverview({ snapshot, from, to, meta, metaError, onRetryMeta, onView, onCreation, refreshRevision = 0, dedicated = false }: { dedicated?: boolean;
   refreshRevision?: number; snapshot: SaasSnapshot; from: string; to: string; meta: EnterpriseOverviewMeta | null; metaError: string; onRetryMeta: () => void;
   onView: (view: 'members' | 'roles' | 'records' | 'usage' | 'settings', filter?: { status?: string; email?: string }) => void;
   onCreation: (id: string) => void;
@@ -95,7 +95,7 @@ export function EnterpriseSaasOverview({ snapshot, from, to, meta, metaError, on
       </article>
       <aside className={styles.overviewAside}>
         <article className={styles.overviewCard}><header><h2>成员用量</h2><span className={styles.cardPeriod}>期间实扣积分</span></header>{error ? <p className={styles.hint}>用量暂不可读取</p> : usages.length ? <div className={styles.memberUsage}>{usages.map(row => <button key={row.email} onClick={() => onView('records', { email: row.email })}><span className={styles.avatar}><Users size={15} /></span><span title={row.email}>{row.name || row.email}</span><meter min={0} max={maxUsage} value={row.settledCredits} aria-label={`${row.name || row.email} 已结算积分`} /><strong>{number(row.settledCredits)}</strong></button>)}</div> : <div className={styles.smallEmpty}>{loading ? '读取中…' : '暂无已结算记录'}</div>}</article>
-        <EnterpriseEntitlement snapshot={snapshot} onView={() => onView('usage')} />
+        {!dedicated && <EnterpriseEntitlement snapshot={snapshot} onView={() => onView('usage')} />}
         <article className={styles.overviewCard}><header><h2>待处理</h2></header><div className={styles.todoList}><div><span className={`${styles.smallIcon} ${styles.iconRed}`}><AlertTriangle size={19} /></span><span>失败创作</span><strong>{summary?.failed ?? '—'}</strong><button onClick={() => onView('records', { status: 'failed' })}>查看</button></div><div><span className={`${styles.smallIcon} ${styles.iconOrange}`}><Clock3 size={19} /></span><span>创作待核查</span><strong>{summary?.needsReview ?? '—'}</strong><button onClick={() => onView('records', { status: 'needs_review' })}>查看</button></div></div></article>
       </aside>
     </div>

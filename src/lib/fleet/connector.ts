@@ -1,3 +1,6 @@
+import { siteCreations, siteCreationMedia } from '@/lib/site-control/creations';
+import { TeamError } from '@/lib/teams/server';
+import { ensureSitePolicySchema, readSitePolicy, applySitePolicyTx, SitePolicyError } from '@/lib/site-control/store';
 import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { getPool, getUser, adjustUserCredits } from '@/lib/db';
@@ -12,14 +15,27 @@ export async function applyFleetCommand(input: FleetCommand, localInstanceId: st
   const command = commandSchema.parse(input);
   if(command.instanceId!==localInstanceId || command.expiresAt<Date.now()) throw new Error('FLEET_WRONG_INSTANCE_OR_EXPIRED');
   const operation=operationSchema.parse(command.operation);
-  await ensureFleetSchema(); const fingerprint=digest(canonical({id:command.id,instanceId:command.instanceId,actor:command.actor,operation}));
+  await ensureFleetSchema();
+  if(operation.type.startsWith('site.policy.')) await ensureSitePolicySchema();
+  const fingerprint=digest(canonical({id:command.id,instanceId:command.instanceId,actor:command.actor,operation}));
   const tx=await getPool().connect();
   try {
     await tx.query('BEGIN'); await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))',['fleet:'+command.id]);
     const receipt=await tx.query('SELECT fingerprint,result FROM app_fleet_applied WHERE id=$1',[command.id]);
     if(receipt.rowCount) { if(receipt.rows[0].fingerprint!==fingerprint) throw new Error('FLEET_ID_CONFLICT'); await tx.query('COMMIT'); return resultSchema.parse(receipt.rows[0].result); }
     let result: FleetResult;
-    if(operation.type==='users.list') {
+    if(operation.type==='creations.list'||operation.type==='creations.media') {
+      try {result={status:'succeeded',data:operation.type==='creations.list'?await siteCreations(command,operation):await siteCreationMedia(command,operation.creationId,operation.assetId)};}
+      catch(error) {if(error instanceof SitePolicyError)result={status:'failed',code:'DENIED'};else if(error instanceof TeamError&&error.status<500)result={status:'failed',code:error.status===404?'NOT_FOUND':'DENIED'};else throw error;}
+    } else if(operation.type==='site.policy.get'||operation.type==='site.policy.set') {
+      try {
+        const policy=operation.type==='site.policy.get' ? await readSitePolicy(tx) : await applySitePolicyTx(tx,{id:command.id,actor:command.actor,policy:operation.policy,expectedRevision:operation.expectedRevision});
+        result={status:'succeeded',data:{sitePolicy:policy}};
+      } catch(error) {
+        if(error instanceof SitePolicyError && error.code!=='NOT_CONFIGURED') result={status:'failed',code:error.code};
+        else throw error;
+      }
+    } else if(operation.type==='users.list') {
       const query='%'+operation.search+'%';
       const users=await tx.query('SELECT email,name,banned,role,credits_total,credits_used FROM app_users WHERE email ILIKE $1 OR name ILIKE $1 ORDER BY email LIMIT 30 OFFSET $2',[query,(operation.page-1)*30]);
       const count=await tx.query('SELECT count(*)::int AS total FROM app_users WHERE email ILIKE $1 OR name ILIKE $1',[query]);
@@ -38,7 +54,7 @@ export async function applyFleetCommand(input: FleetCommand, localInstanceId: st
             await adjustUserCredits(operation.email,operation.delta,operation.reason,{id:command.id,actor:'fleet:'+command.instanceId+':'+command.actor,months:operation.months});
             result={status:'succeeded',data:{email:operation.email,applied:true,operationId:command.id}};
           } else {
-            const policy=operation.type==='features.get' ? await userFeaturePolicy(operation.email) : await saveFeaturePolicy('fleet:'+command.instanceId+':'+command.actor,{id:command.id,email:operation.email,mode:operation.mode,allowed:operation.allowed,expectedVersion:operation.expectedVersion});
+            const policy=operation.type==='features.get' ? await userFeaturePolicy(operation.email,{site:false}) : await saveFeaturePolicy('fleet:'+command.instanceId+':'+command.actor,{id:command.id,email:operation.email,mode:operation.mode,allowed:operation.allowed,expectedVersion:operation.expectedVersion});
             result={status:'succeeded',data:{email:operation.email,policy}};
           }
         } catch(error) {

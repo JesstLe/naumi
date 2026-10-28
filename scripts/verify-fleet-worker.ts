@@ -7,6 +7,7 @@ async function main() {
   try {
     if(mode==='seed'){await ensureSchema();await (await import('../src/lib/fleet/server')).ensureFleetSchema();await getOrCreateUser('staff@enterprise.test','员工');await getOrCreateUser('owner@enterprise.test','企业管理员');await setUserRole('owner@enterprise.test','admin');}
     else if(mode==='inspect')console.log(JSON.stringify({user:{...await getUser('staff@enterprise.test'),banned:(await getPool().query('SELECT banned FROM app_users WHERE email=$1',['staff@enterprise.test'])).rows[0].banned},policy:await userFeaturePolicy('staff@enterprise.test'),receipts:(await getPool().query('SELECT id,result FROM app_fleet_applied')).rows}));
+    else if(mode==='site')console.log(JSON.stringify(await (await import('../src/lib/site-control/store')).siteProfile()));
     else if(mode==='direct'){const command=JSON.parse(process.env.FLEET_TEST_COMMAND!);console.log(JSON.stringify(await applyFleetCommand(command,process.env.FLEET_INSTANCE_ID!)));}
     else console.log(JSON.stringify(await connectorTick({central:process.env.FLEET_CENTRAL_URL!,instanceId:process.env.FLEET_INSTANCE_ID!,token:process.env.FLEET_INSTANCE_TOKEN!,isolated:true,status:{source:'6c7c120',version:'fixture',storage:'s3',nas:'unknown',connector:1}})));
   } finally {await getPool().end();}

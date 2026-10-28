@@ -38,6 +38,7 @@ import {
   type SessionSummary,
 } from "@/components/home/workbench-sessions";
 import { useI18n } from "@/lib/i18n/locale-context";
+import { useSiteProfile } from "@/lib/site-control/client";
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { authHeader } from "@/lib/supabase";
@@ -280,6 +281,7 @@ function renderContent(
 }
 
 export function WorkbenchClient() {
+  const site = useSiteProfile();
   const { can, canPage } = useFeatureAccess();
   const { t, locale } = useI18n();
   const { user, ready, remaining } = useAuth();
@@ -413,8 +415,8 @@ export function WorkbenchClient() {
 
   const greeting = useMemo(() => {
     if (user?.name) return `${t(greet)}，${user.name}`;
-    return t("home.dash.greetGuest");
-  }, [user?.name, greet, t]);
+    return site.mode === 'enterprise' ? site.policy.brand : t("home.dash.greetGuest");
+  }, [user?.name, greet, t, site]);
 
   const statPills = [
     { label: L("今日生成", "Today"), value: `${stats.today.toLocaleString("en-US")}${L(" 张", "")}` },

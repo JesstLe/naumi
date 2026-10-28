@@ -53,5 +53,7 @@ export const resolveDatabaseActor: ResolveActor = async (tx, principal): Promise
       AND (m.expires_at IS NULL OR m.expires_at>now()) FOR SHARE OF m,a,t`,
   [principal.enterpriseId, principal.teamId, principal.subject]);
   const parsed = member.safeParse(result.rows[0]);
-  return parsed.success ? { ...principal, permissions: parsed.data.permissions, workKinds: parsed.data.work_kinds } : null;
+  if(!parsed.success)return null;
+  const permissions=principal.sourcePermissions===undefined?parsed.data.permissions:parsed.data.permissions.filter(value=>principal.sourcePermissions!.includes(value));
+  return permissions.length?{...principal,permissions,workKinds:permissions.includes('execute')?parsed.data.work_kinds:[]}:null;
 };

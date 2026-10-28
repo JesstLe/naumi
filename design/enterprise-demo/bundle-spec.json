@@ -178,7 +178,8 @@
     "excel-save-model.js",
     "excel-save-ui.js",
     "real-product-model.js",
-    "real-product-ui.js"
+    "real-product-ui.js",
+    "enterprise-site-ui.js"
   ],
   "workers": [
     {
