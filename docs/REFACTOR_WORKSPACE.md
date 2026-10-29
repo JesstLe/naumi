@@ -230,3 +230,8 @@ R7E封版：固定4980c018，实际Worker旧4组24→新4组34、原生同镜像
 ## 2026-10-29 R7H：占位与原编辑恢复展示
 
 从Canvas全局pendNodes/useState和editTaskStateRef收敛到按既有document scope.key隔离的pending-presentation，records是唯一节点数据，保留集合仅持ID；hook只订阅当前view，旧binding更新原scope。原任务/报价/attachment/history/账务不改。初次旧React7组28检查复现跨scope同ID覆盖，新React8组36检查纠正，并实际cutout/detail续接零额外生成/报价。全片最终固定回归/类型/SCC与四产物/副本回滚/远端以[R7H记录](changes/2026-10-29-refactor-r7h-pending-presentation.md)和DELIVERY为准；整体ACTIVE，未合main未部署。
+
+
+## 2026-10-29 R7I：次级生成应用编排
+
+Canvas编辑/详情/Comfy的任务、attachment、retained billing及timer组合归edit-run/detail-run/workflow-runs，原controller/request/receipt/history/billing保持；Context仅连接既有view/document/geometry/I/O，不另建框架。完整基线50/168与新50/172入口轨迹相同，三个组件函数私有factory8→0、timer2→0；最终类型/SCC/固定矩阵与真实控件、完整副本回滚及Git见[R7I记录](changes/2026-10-29-refactor-r7i-generation-applications.md)及DELIVERY。整体ACTIVE；本片完成为R7G同步后第2模块，不合main不部署。

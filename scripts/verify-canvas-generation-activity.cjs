@@ -45,7 +45,13 @@ async function main(){
  (function walk(n){if(ts.isFunctionDeclaration(n)&&n.name&&['runGen','generatePend','generateDetailSequence','landEditResult','runComfyWorkflow'].includes(n.name.text))callers[n.name.text]=n.getText(ast);ts.forEachChild(n,walk);})(ast);
  eq(Object.keys(callers).length,5,'all production paths found');
  for(const [name,body]of Object.entries(callers)){
-  eq(body.includes('createCanvasGenerationActivity')||/\b(?:view|generationPresentation)\.activity\(/.test(body),!baseline,name+' invokes the actual lifecycle owner');
+  const delegated={landEditResult:['runCanvasEdit','edit-run.ts'],generateDetailSequence:['runCanvasDetail','detail-run.ts'],runComfyWorkflow:['workflowRunsRef','workflow-runs.ts']}[name];
+  let implementation=body;
+  if(!baseline&&delegated&&fs.existsSync(path.join(root,'src/lib/canvas',delegated[1]))){
+    eq(body.includes(delegated[0]),true,name+' delegates actual application entry');
+    implementation=fs.readFileSync(path.join(root,'src/lib/canvas',delegated[1]),'utf8');
+  }
+  eq(implementation.includes('createCanvasGenerationActivity')||/\b(?:view|generationPresentation|ctx\.generation)\.activity\(/.test(implementation),!baseline,name+' invokes the actual lifecycle owner');
   if(!baseline){eq(/generationOperationRef\.current\.(add|delete)\(/.test(body),false,name+' does not privately mutate activity state');}
  }
  if(!baseline){

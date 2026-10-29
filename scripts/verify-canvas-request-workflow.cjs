@@ -71,7 +71,7 @@ async function workflows(){
  const fetch=async(url,init={})=>{if(url==='/api/artworks/position'){positions.push(JSON.parse(init.body));if(failPosition){failPosition=false;return Response.json({error:'position unavailable'},{status:503});}return Response.json({ok:true});}if(init.method==='POST')posts++;else gets++;return handler(url,init);};
  const scope={owner:'owner@fixture.test',workspace:'personal',project:'tree:fixture',isCurrent:()=>current,assertCurrent(){if(!current)throw Error('stale');}};
  const headers=async s=>{s.assertCurrent();return new Headers({'x-naumi-workspace':s.workspace,'x-naumi-project-context':s.project});};
- const load=loader(root,{'./image-task-scope':{canvasImageTaskHeaders:headers},'../browser-crypto':{browserRandomUUID:()=>crypto.randomUUID()}},{fetch});
+ const load=loader(root,{'./image-task-scope':{canvasImageTaskHeaders:headers},'../browser-crypto':{browserRandomUUID:()=>crypto.randomUUID()}},{fetch,window:{setInterval:()=>1,clearInterval:()=>{}}});
  const {createCanvasResultAttachment}=load('src/lib/canvas/result-attachment.ts'),{createCanvasComfyWorkflow,comfyRunReceiptKey}=load('src/lib/canvas/comfy-workflow.ts');
  const create=(key='base')=>createCanvasComfyWorkflow({sourceId:'source',payload:{workflowId:'workflow',texts:{positive:'fixture'},seeds:{seed:123},numerics:{}},receiptKey:key,storage,
   attach:createCanvasResultAttachment({layout:{kind:'offset',step:40},saveErrorText:'position failed',position:()=>({x:400,y:50}),merge:async(ids,isCurrent)=>{assert.equal(isCurrent(),true);return ids.map(id=>({id,image:'/media/'+id+'.png'}));},history:ids=>history.push(...ids)}),submitted:async id=>native.push(id),saving:()=>{}});
@@ -89,19 +89,27 @@ async function workflows(){
  // while UNKNOWN still keeps its original controller and performs GET only.
  const runs=new Map(),pend=[],compositionBodies=[];
  const presentation=fs.existsSync(path.join(root,'src/lib/canvas/generation-presentation.ts'))?load('src/lib/canvas/generation-presentation.ts').createCanvasGenerationPresentation().bind('fixture-original-view'):undefined;
- const composed=closure(root,'runComfyWorkflow',{...primitives,generationPresentation:presentation,...(fs.existsSync(path.join(root,'src/lib/canvas/generation-activity.ts'))?load('src/lib/canvas/generation-activity.ts'):{}),readOnly:false,user:{email:scope.owner},generationOperationRef:{current:new Set()},canvasAccountRef:{current:'account'},activeProjectRef:{current:{key:scope.project}},canvasContextEpochRef:{current:1},batchRunMountedRef:{current:true},
+ const compositionPorts={...primitives,generationPresentation:presentation,...(fs.existsSync(path.join(root,'src/lib/canvas/generation-activity.ts'))?load('src/lib/canvas/generation-activity.ts'):{}),readOnly:false,user:{email:scope.owner},generationOperationRef:{current:new Set()},canvasAccountRef:{current:'account'},activeProjectRef:{current:{key:scope.project}},canvasContextEpochRef:{current:1},batchRunMountedRef:{current:true},
   comfyRunsRef:{current:runs},captureCanvasTaskOwner:()=>({capture:()=>scope,isVisible:scope.isCurrent,workspace:scope.workspace}),comfyRunReceiptKey,createCanvasComfyWorkflow,createCanvasResultAttachment,
   rfRef:{current:null},flowNodeSize:()=>({width:300,height:300}),artworkNodeSize:()=>({width:300,height:300}),X_GAP:90,browserRandomUUID:()=>crypto.randomUUID(),localStorage:storage,
   taskDocumentRef:{current:{merge:async ids=>ids.map(id=>({id,image:'/media/'+id+'.png'})),history:()=>{}}},videoTaskStore:{refresh:async()=>{}},livePendingPosition:()=>({x:400,y:50}),
-  setPendNodes:fn=>{const next=fn(pend);pend.splice(0,pend.length,...next);},window:{setInterval:()=>1,clearInterval:()=>{}},flashTip:()=>{}});
+  setPendNodes:fn=>{const next=fn(pend);pend.splice(0,pend.length,...next);},window:{setInterval:()=>1,clearInterval:()=>{}},flashTip:()=>{}};
+ const hasRunOwner=fs.existsSync(path.join(root,'src/lib/canvas/workflow-runs.ts'));
+ if(hasRunOwner){
+  const pending=load('src/lib/canvas/pending-presentation.ts').createCanvasPendingPresentation().bind('fixture-original-view');
+  pending.subscribe(()=>pend.splice(0,pend.length,...pending.getSnapshot()));compositionPorts.pendingPresentation=pending;
+  compositionPorts.workflowRunsRef={current:load('src/lib/canvas/workflow-runs.ts').createCanvasWorkflowRuns()};
+  compositionPorts.canvasGenerationRunContext=closure(root,'canvasGenerationRunContext',compositionPorts);
+ }
+ const composed=closure(root,'runComfyWorkflow',compositionPorts),originalKey=comfyRunReceiptKey(scope,'source');
  const source={id:'source',canvasX:10,canvasY:20},initialPayload={workflowId:'before-error',texts:{},seeds:{},numerics:{}};
  handler=async(url,init)=>{compositionBodies.push(JSON.parse(init.body));return Response.json({error:'endpoint missing',accepted:false},{status:400});};
- await assert.rejects(composed(source,initialPayload),/endpoint missing/);checks++;check(runs.size,0);check(pend.length,0);
+ await assert.rejects(composed(source,initialPayload),/endpoint missing/);checks++;check(memory.has(originalKey),false);check(pend.length,0);
  handler=async(url,init)=>{compositionBodies.push(JSON.parse(init.body));return Response.json(output);};
- check((await composed(source,{...initialPayload,workflowId:'corrected-after-error'})).state,'completed');check(compositionBodies.map(body=>body.workflowId),['before-error','corrected-after-error']);check(runs.size,0);
- handler=async()=>{throw Error('response lost');};check((await composed(source,initialPayload)).state,'needs_review');check(runs.size,1);const compositionPosts=posts;
+ check((await composed(source,{...initialPayload,workflowId:'corrected-after-error'})).state,'completed');check(compositionBodies.map(body=>body.workflowId),['before-error','corrected-after-error']);check(memory.has(originalKey),false);
+ handler=async()=>{throw Error('response lost');};check((await composed(source,initialPayload)).state,'needs_review');check(memory.has(originalKey),true);const compositionPosts=posts;
  handler=async(url,init)=>{assert.equal(init.method,undefined);checks++;return Response.json({...output,state:'completed'});};
- check((await composed(source,{...initialPayload,workflowId:'must-not-replace-unknown'})).state,'completed');check(posts,compositionPosts);check(runs.size,0);pass('actual Canvas releases known-unaccepted input but retains and reads UNKNOWN original intent');
+ check((await composed(source,{...initialPayload,workflowId:'must-not-replace-unknown'})).state,'completed');check(posts,compositionPosts);check(memory.has(originalKey),false);pass('actual Canvas releases known-unaccepted input but retains and reads UNKNOWN original intent');
  const keys=[comfyRunReceiptKey(scope,'source'),comfyRunReceiptKey({...scope,owner:'other@fixture.test'},'source'),comfyRunReceiptKey({...scope,workspace:'tenant'},'source'),comfyRunReceiptKey({...scope,project:'tree:other'},'source')];check(new Set(keys).size,4);pass('browser receipts are partitioned by account, workspace, project and source');
  current=false;const stopped=create('stopped'),stoppedPosts=posts;check((await stopped.run(scope)).state,'stale');check(posts,stoppedPosts);check(memory.has('stopped'),false);pass('stale preparation never sends or persists a new operation');
 }
