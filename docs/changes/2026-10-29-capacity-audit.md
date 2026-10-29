@@ -410,3 +410,10 @@
 - **A55 / D37（既有P2、已复现待修）**：`workbench-client.tsx::removeSession`。操作：A删除历史，HTTP未完成时切B；症状：迟到失败写入B的错误态。真实按钮原/改均复现，待补齐异步归属并验证成功/失败/卸载/ABA。负责人同上。
 - 三项证据引用父线程已执行且未改断言的 `output/capacity-audit-wave2-20261029/workbench-parent/{BASELINE_INDEPENDENT,MODIFIED_INDEPENDENT_FINAL,ROLLBACK_INDEPENDENT}/RESULT.json`；修改版12通过/3失败、原/恢复7通过/8失败均exit1。本次只重开记录及当前源码定位，没有再次运行浏览器或宣称新修复。
 - 文档契约、相对链接、保留原文、Git差异与hash-guarded副本回滚证据放 `output/capacity-audit-wave2-20261029/ledger-refresh/`。只改本台账与产品总台账，不增加业务迭代/发布次数，不操作生产。
+
+### 2026-10-29 X6 / A12 适配器局部闭环与未归因报告保留
+
+- 固定子提交`e326374b`由父从main`c328f01c`普通合入；生产改动仅apimartImagesFetch的原task查询期限/退避/临时GET失败及失败下载body取消。头/体GET受剩余期限约束，等待裁剪到原预算；无进展2秒基数至8秒上限，状态/进度变化恢复快查；不扩大240秒上限、外层恢复预算或唯一生成POST。
+- 父实际25项在原版9失败、子候选1失败、父修全过。新增反例发现parseReceiptJson保留数值为字符串，子候选progress类型检查使退避复位失效；父只解析此调度提示，不改金额/回执/UNKNOWN，沿用A12。真实GET断连、回执ID错配、持续503和进度复位补查均有证据。
+- 五个模型的基线合成generate/edit/recover本来成功；原生Gemini/Seedream链路仍含上传→唯一POST→原task查询/下载→checkpoint→中断后恢复→私有媒体/用户作品→原报价一笔-6。模型/认证/backend为合成或本地模块，不是实际供应商与生产配置验收。**A56/X6线上“即梦/香蕉无结果”的原报告仍开放，不把A12局部修复当全部根因已解决。**
+- 异步核心53/格式8/冻结参数PG16/参数计划25/受理身份PG18/异步账务通过；旧Seedream脚本原/改仍默认png断言失败，保留而不改绿。父准备期Windows动态import路径失败及tsc1.5GiB堆exit134均留证，最终类型和副本回滚结果见父ignored`x6-parent/VERIFICATION.txt`及[模块记录](2026-10-29-capacity-x6-adapter.md)。上传、运行参数等原派任务继续独立，不据本次回执关闭其他条目。
