@@ -20,10 +20,26 @@ import { currentExecutionBundle, currentModelExecution, runLegacyModelExecution,
 import { withFrozenExecutionBundle } from "@/lib/model-config/execution";
 import { acceptedImageOperationIdentities, withAcceptedImageRead } from "@/lib/model-config/channel-availability";
 import { IMAGE_JOB_RELEASED_MESSAGE } from "./image-job-failure";
+import { ImageJobLeaseLostError, isImageJobLeaseLost, startImageJobHeartbeat } from "./image-job-lease";
 
-type Execution = { id: string; token: string; queue: Promise<unknown> };
+type Execution = { id: string; token: string; queue: Promise<unknown>; lease: ReturnType<typeof startImageJobHeartbeat> };
 const execution = new AsyncLocalStorage<Execution>();
 const uploaded = new WeakMap<Buffer, string>();
+
+function executionFor(id: string, required = false) {
+  const context = execution.getStore();
+  if (context && context.id !== id || required && !context) throw new ImageJobLeaseLostError();
+  context?.lease.assertActive();
+  return context;
+}
+
+async function assertPaidExecution(id: string) {
+  if (!dbEnabled) return;
+  const context = executionFor(id, true)!;
+  try { await repository.assertImageJobLease(id, context.token); }
+  catch (error) { if (isImageJobLeaseLost(error)) context.lease.lose(); throw error; }
+  context.lease.assertActive();
+}
 
 async function encode(value: unknown, id: string): Promise<unknown> {
   if (Buffer.isBuffer(value)) {
@@ -108,7 +124,10 @@ export class DurableImageJobs<T extends { status: string }> {
   }
   async set(id: string, snapshot: T) {
     if (!dbEnabled) { const row = this.memory.get(id); if (row) row.snapshot = snapshot; return; }
-    await repository.saveImageJob(id, await encode(snapshot, id), execution.getStore()?.token || null);
+    const context = executionFor(id);
+    const encoded = await encode(snapshot, id);
+    context?.lease.assertActive();
+    await repository.saveImageJob(id, encoded, context?.token || null);
   }
   async patch(id: string, patch: Partial<T>) {
     const context = execution.getStore();
@@ -124,7 +143,7 @@ export class DurableImageJobs<T extends { status: string }> {
     await next;
   }
   async settle(id: string, cost: number|BillingResult, reason: string) {
-    if (dbEnabled) await repository.settleImageJob(id, cost, reason, execution.getStore()?.token || null);
+    if (dbEnabled) await repository.settleImageJob(id, cost, reason, executionFor(id)?.token || null);
   }
   async settleResults(id:string,legacyCost:number,reason:string,result:BillingResult){
     if(!dbEnabled)return;
@@ -134,6 +153,9 @@ export class DurableImageJobs<T extends { status: string }> {
   /** A confirmed asynchronous task is queried by its frozen ID, not resubmitted.
    * Unknown acceptance is never converted into permission for another paid POST. */
   async handlePending(id: string, error: ImageOperationPending) {
+    // Idle administrative/recovery callers retain the null-token repository
+    // path; an expired or foreign execution is never treated as idle.
+    if (dbEnabled) executionFor(id);
     const saved = await this.get(id, false) as (T & Record<string, any>) | undefined;
     if (!saved || ["done", "error"].includes(saved.status)) return;
     if (error instanceof ImageOperationDeferred) {
@@ -158,6 +180,7 @@ export class DurableImageJobs<T extends { status: string }> {
   }
   /** Persist intent before paid work. Only a durable Router operation may replay. */
   async paidOperation<R>(id: string, model: string, operation: Parameters<typeof withImageOperation>[1], run: () => Promise<R>): Promise<R> {
+    if (dbEnabled) executionFor(id, true);
     if (dbEnabled) await assertMutableStagingTask(getPool(), "app_image_jobs", id);
     type Attempt = { model: string; replayable: boolean; gatewayIdentity?: string; attemptToken?: string; state: "queued" | "started" | "done" | "rejected"; result?: unknown;
       children?: Record<string, Attempt>; legacyIndexedRecovery?: boolean; failureStatus?: number };
@@ -197,7 +220,7 @@ export class DurableImageJobs<T extends { status: string }> {
     const canResume = (active: Attempt) => active.model === model &&
       (!!pinnedRecovery || active.children !== undefined || acceptedChildren.length > 0 || routerRecovery(active));
     if (previous?.state === "started" && !canResume(previous)) {
-      await repository.holdImageJobBilling(id);
+      await repository.holdImageJobBilling(id, executionFor(id)?.token || null);
       throw new ImageOperationPending(operation.id, new Error("上游提交需要人工核查"));
     }
     const legacyIndexedRecovery = previous?.legacyIndexedRecovery ||
@@ -258,10 +281,12 @@ export class DurableImageJobs<T extends { status: string }> {
       };
       await saveChild(child);
       try {
+        await assertPaidExecution(id);
         const result = await (identity ? withAcceptedImageRead(childOperation.id, childRun) : childRun());
         await saveChild({ ...child, state: "done", result: dbEnabled ? await encodeImageIndexResult(result, id) : result });
         return result;
       } catch (error) {
+        if (isImageJobLeaseLost(error)) throw error;
         if (error instanceof ImageOperationDeferred && !dispatchState.attempted && prior?.state !== "started") {
           await saveChild({ ...child, state: "queued" });
           throw error;
@@ -279,6 +304,7 @@ export class DurableImageJobs<T extends { status: string }> {
       }
     };
     try {
+      await assertPaidExecution(id);
       const runCheckpointed = () => withImageIndexCheckpoint(checkpoint, run);
       const readOnlyRoot = !!pinnedRecovery || previous?.state === "started" && !routerRecovery(previous) && (previous.children !== undefined || acceptedChildren.length > 0);
       const result = await withImageOperation(model, { ...operation, durable: true, dispatchState },
@@ -291,6 +317,7 @@ export class DurableImageJobs<T extends { status: string }> {
       });
       return result;
     } catch (error) {
+      if (isImageJobLeaseLost(error)) throw error;
       if (error instanceof ImageOperationDeferred && !dispatchState.attempted && previous?.state !== "started") {
         if (dbEnabled && execution.getStore()?.id !== id) throw new ImageOperationPending(operation.id,error);
         await update(current => {
@@ -330,7 +357,7 @@ export class DurableImageJobs<T extends { status: string }> {
         });
         throw error;
       }
-      await repository.holdImageJobBilling(id);
+      await repository.holdImageJobBilling(id, executionFor(id)?.token || null);
       throw error instanceof ImageOperationPending ? error : new ImageOperationPending(operation.id, error);
     }
   }
@@ -360,7 +387,7 @@ export class DurableImageJobs<T extends { status: string }> {
         console.error(`[image-job] ${id}: parent notification failed; retained for worker recovery`);
       }
     };
-    const executeClaimed = async (row: repository.ImageJobRow) => {
+    const executeClaimed = async (row: repository.ImageJobRow, claimedAt: number) => {
     const token = row.lease_token!;
     try { await bindBackgroundClaim(`${this.kind}:${id}`, token); }
     catch (error) {
@@ -369,14 +396,11 @@ export class DurableImageJobs<T extends { status: string }> {
       await repository.releaseImageJob(id, token).catch(() => {});
       throw error;
     }
-    const context: Execution = { id, token, queue: Promise.resolve() };
+    const context: Execution = { id, token, queue: Promise.resolve(), lease: startImageJobHeartbeat(() => repository.heartbeatImageJob(id, token), claimedAt) };
     let failed = false;
     await execution.run(context, async () => {
-      const heartbeat = setInterval(() => {
-        void repository.heartbeatImageJob(id, token).catch(() => { clearInterval(heartbeat); });
-      }, 25_000);
-      heartbeat.unref?.();
       try {
+        context.lease.assertActive();
         // Pre-upgrade jobs have no evidence that a paid request was never sent.
         if (row.snapshot.paidOperationVersion !== 1) {
           if (!(await repository.failUndeliveredImageJob(id, token, "legacy-unknown-submission")))
@@ -394,14 +418,18 @@ export class DurableImageJobs<T extends { status: string }> {
         failed = true;
         console.error(`[image-job] ${id}:`, error instanceof Error ? error.message : error);
         try {
+          // Losing ownership is not evidence of supplier failure. Leave the
+          // checkpoint, UNKNOWN and reservation to the next fenced recovery.
+          if (isImageJobLeaseLost(error)) { context.lease.lose(); return; }
+          context.lease.assertActive();
           if (error instanceof ImageOperationPending) await this.handlePending(id, error);
           else if (!(await repository.failUndeliveredImageJob(id, token, "image-worker-failed", taskFailureDiagnostic(error,"execute"))))
             await this.patch(id, { status: "error", error: "本次未取得图片，请重试", failureDiagnostic:taskFailureDiagnostic(error,"execute") } as unknown as Partial<T>);
         } catch (failure) { console.error(`[image-job] ${id}: unable to stop task`, failure instanceof Error ? failure.message : "unknown"); }
       }
       finally {
-        clearInterval(heartbeat);
         await context.queue.catch(() => {});
+        context.lease.stop();
         await repository.releaseImageJob(id, token).catch(() => {});
       }
     });
@@ -410,14 +438,16 @@ export class DurableImageJobs<T extends { status: string }> {
     notifyAfterRelease = this.kind === "generate" || this.kind === "imagegen" && !failed;
     };
     if(!releaseRuntimeEnabled()) {
+      const claimedAt = performance.now();
       const row=await repository.claimImageJob(id,this.kind);
-      if(row)void executeClaimed(row).then(notifyReleased).catch(console.error);
+      if(row)void executeClaimed(row, claimedAt).then(notifyReleased).catch(console.error);
       else await notifyReleased();
       return;
     }
     await detachBackgroundActivity("durable-image", `${this.kind}:${id}`, "claim", async () => {
+      const claimedAt = performance.now();
       const row=await repository.claimImageJob(id,this.kind);
-      if(row)await executeClaimed(row);
+      if(row)await executeClaimed(row, claimedAt);
     }, notifyReleased);
   }
 }

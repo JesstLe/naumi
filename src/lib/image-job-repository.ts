@@ -10,6 +10,8 @@ import type {BillingQuote,BillingResult,OperationInput} from "@/lib/billing/type
 import { IMAGE_JOB_RELEASED_MESSAGE, imageJobHasResults } from "./image-job-failure";
 import { lockWallet, syncBalanceTx } from "./billing/repository";
 import { assertMutableStagingTask, excludeImportedHistory, isImportedHistory } from "./staging-history";
+import type { PoolClient } from "pg";
+import { IMAGE_JOB_LEASE_MS, ImageJobLeaseLostError } from "./image-job-lease";
 const billingService=createBillingService();
 function billingOperation(row:{id:string;email:string;payload:{billingQuote:BillingQuote}},reason:string):OperationInput{return {id:row.id,email:row.email,quote:row.payload.billingQuote,reason,ledgerId:`led-image-${row.id}`,fingerprint:row.id};}
 
@@ -62,18 +64,44 @@ export async function claimImageJob(id: string, kind: ImageJobKind): Promise<Ima
   try {
     await tx.query("BEGIN");
     await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",["naumi-image-job-queue:"+kind]);
-    const {rows}=await tx.query(`UPDATE app_image_jobs SET lease_token=$3,lease_until=now()+interval '120 seconds'
-      WHERE id=$1 AND kind=$2 AND (lease_until IS NULL OR lease_until<now())
+    const {rows}=await tx.query(`UPDATE app_image_jobs SET lease_token=$3,lease_until=clock_timestamp()+$5*interval '1 millisecond'
+      WHERE id=$1 AND kind=$2 AND (lease_until IS NULL OR lease_until<clock_timestamp())
       AND snapshot->>'status' NOT IN ('done','error','needs_attention')
       AND (SELECT count(*) FROM app_image_jobs active WHERE active.kind=$2 AND active.lease_token IS NOT NULL
-        AND active.lease_until>now())<$4 RETURNING *`,[id,kind,randomUUID(),imageJobConcurrency(kind)]);
+        AND active.lease_until>now())<$4 RETURNING *`,[id,kind,randomUUID(),imageJobConcurrency(kind),IMAGE_JOB_LEASE_MS]);
     await tx.query("COMMIT");return rows[0]||null;
   }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
 }
 
 export async function heartbeatImageJob(id: string, token: string) {
-  const result = await getPool().query(`UPDATE app_image_jobs SET lease_until=now()+interval '120 seconds' WHERE id=$1 AND lease_token=$2 AND lease_until>now()`, [id, token]);
-  if (!result.rowCount) throw new Error("任务执行权已过期");
+  const tx = await getPool().connect();
+  try {
+    await tx.query("BEGIN");
+    await tx.query("SET LOCAL lock_timeout='2s'");
+    await tx.query("SET LOCAL statement_timeout='5s'");
+    await tx.query("SELECT id FROM app_image_jobs WHERE id=$1 FOR UPDATE", [id]);
+    await assertLeaseTx(tx, id, token);
+    await tx.query(`UPDATE app_image_jobs SET lease_until=clock_timestamp()+$3*interval '1 millisecond' WHERE id=$1 AND lease_token=$2`, [id, token, IMAGE_JOB_LEASE_MS]);
+    await tx.query("COMMIT");
+  } catch (error) { await tx.query("ROLLBACK"); throw error; }
+  finally { tx.release(); }
+}
+
+/** Call AFTER acquiring the row lock. now() is transaction-start time, and an
+ * UPDATE's predicate may run before a lock wait; neither fences a late writer.
+ * Null is reserved for truly idle edits, not takeover of an expired owner. */
+async function assertLeaseTx(tx: PoolClient, id: string, token: string | null) {
+  const result = await tx.query(`SELECT 1 FROM app_image_jobs WHERE id=$1 AND
+    (($2::text IS NOT NULL AND lease_token=$2 AND lease_until>clock_timestamp()) OR
+     ($2::text IS NULL AND lease_token IS NULL AND (lease_until IS NULL OR lease_until<clock_timestamp())))`, [id, token]);
+  if (!result.rowCount) throw new ImageJobLeaseLostError();
+}
+
+/** Last local preflight before paid work. Never holds a connection across I/O.
+ * External acceptance still uses the frozen operation ID/checkpoint protocol. */
+export async function assertImageJobLease(id: string, token: string) {
+  const result = await getPool().query("SELECT 1 FROM app_image_jobs WHERE id=$1 AND lease_token=$2 AND lease_until>clock_timestamp()", [id, token]);
+  if (!result.rowCount) throw new ImageJobLeaseLostError();
 }
 
 export async function saveImageJob(id: string, snapshot: unknown, token: string | null) {
@@ -81,17 +109,29 @@ export async function saveImageJob(id: string, snapshot: unknown, token: string 
   await assertMutableStagingTask(getPool(), "app_image_jobs", id);
   const tx=await getPool().connect();
   try {await tx.query("BEGIN");
-  const result = await tx.query(`UPDATE app_image_jobs SET snapshot=$2::jsonb,updated_at=now()
-    WHERE id=$1 AND (($3::text IS NOT NULL AND lease_token=$3 AND lease_until>now()) OR
-      ($3::text IS NULL AND (lease_until IS NULL OR lease_until<now())))`, [id, JSON.stringify(snapshot), token]);
-  if (!result.rowCount) throw new Error("任务正在处理，请稍后重试");
+  await tx.query("SELECT id FROM app_image_jobs WHERE id=$1 FOR UPDATE", [id]);
+  await assertLeaseTx(tx, id, token);
+  await tx.query(`UPDATE app_image_jobs SET snapshot=$2::jsonb,updated_at=now() WHERE id=$1`, [id, JSON.stringify(snapshot)]);
+  await assertLeaseTx(tx, id, token);
   await tx.query("COMMIT");}catch(e){await tx.query("ROLLBACK");throw e;}finally{tx.release();}
   // Supplier acceptance and the execution checkpoint survive an evidence outage.
   // Recovery reads this same source snapshot; this flag never schedules paid work.
   if(currentCreationContext()){
-    const evidence=await getPool().connect();try{await evidence.query("BEGIN");await recordImageStateTx(evidence,id,snapshot);await evidence.query("COMMIT");}
-    catch{await evidence.query("ROLLBACK");await getPool().query("UPDATE app_image_jobs SET snapshot=snapshot||'{\"creationEvidencePending\":true}'::jsonb WHERE id=$1",[id]);}
-    finally{evidence.release();}
+    const evidence=await getPool().connect();
+    try {
+      await evidence.query("BEGIN");
+      await evidence.query("SELECT id FROM app_image_jobs WHERE id=$1 FOR UPDATE", [id]);
+      await assertLeaseTx(evidence, id, token);
+      await evidence.query("SAVEPOINT image_state_evidence");
+      try { await recordImageStateTx(evidence,id,snapshot); }
+      catch {
+        await evidence.query("ROLLBACK TO SAVEPOINT image_state_evidence");
+        await evidence.query("UPDATE app_image_jobs SET snapshot=snapshot||'{\"creationEvidencePending\":true}'::jsonb WHERE id=$1", [id]);
+      }
+      await assertLeaseTx(evidence, id, token);
+      await evidence.query("COMMIT");
+    } catch { await evidence.query("ROLLBACK"); /* The authoritative checkpoint already committed. */ }
+    finally { evidence.release(); }
   }
 }
 
@@ -107,14 +147,14 @@ export async function settleImageJob(id: string, charged: number|BillingResult, 
     if (!row) throw new Error("任务不存在");
     email = row.email;
     if (!row.billing_settled) {
-      if (row.lease_token !== token || (token && new Date(row.lease_until).getTime() <= Date.now())) throw new Error("任务执行权已过期");
+      await assertLeaseTx(client, id, token);
       if(row.payload.billingQuote){
         if(typeof charged==="number")throw new Error("新任务结算必须包含实际结果");
         const op=billingOperation(row,reason);
         const reserved=await client.query("SELECT 1 FROM app_billing_operations WHERE id=$1",[id]);
         if(reserved.rowCount){
           const settled=await billingService.settleTx(client,op,charged);
-            if(charged.state==="unknown" || settled.state==="manual" || settled.state==="hold"){await client.query("COMMIT");return;}
+            if(charged.state==="unknown" || settled.state==="manual" || settled.state==="hold"){await assertLeaseTx(client,id,token);await client.query("COMMIT");return;}
         }else if(charged.state!=="failed")throw new Error("任务尚未完成计费预占");
       }else{
       if(typeof charged!=="number")throw new Error("旧任务须按已保存价格恢复结算");
@@ -127,6 +167,9 @@ export async function settleImageJob(id: string, charged: number|BillingResult, 
       }
       await client.query(`UPDATE app_image_jobs SET billing_settled=true WHERE id=$1`, [id]);
       await client.query(`DELETE FROM app_gen_reservations WHERE job_id=$1`, [id]);
+      // Wallet/operation locks may outlast the lease after the first check.
+      // Roll back the whole debit and reservation change, never just the flag.
+      await assertLeaseTx(client, id, token);
     }
     await client.query("COMMIT");
   } catch (error) { await client.query("ROLLBACK"); throw error; }
@@ -199,10 +242,19 @@ export async function dueImageJobs() {
 }
 
 /** Keep an uncertain paid domain job visible to billing reconciliation. */
-export async function holdImageJobBilling(id:string) {
+export async function holdImageJobBilling(id:string, token:string|null) {
   if(!dbEnabled)return;
   await assertMutableStagingTask(getPool(), "app_image_jobs", id);
-  await getPool().query("UPDATE app_billing_operations SET state=CASE WHEN quote->'tariff'->'settlement'->>'unknown'='manual' THEN 'manual' ELSE 'hold' END,updated_at=now() WHERE id=$1 AND state='reserved'",[id]);
+  const tx = await getPool().connect();
+  try {
+    await tx.query("BEGIN");
+    await tx.query("SELECT id FROM app_image_jobs WHERE id=$1 FOR UPDATE", [id]);
+    await assertLeaseTx(tx, id, token);
+    await tx.query("UPDATE app_billing_operations SET state=CASE WHEN quote->'tariff'->'settlement'->>'unknown'='manual' THEN 'manual' ELSE 'hold' END,updated_at=now() WHERE id=$1 AND state='reserved'",[id]);
+    await assertLeaseTx(tx, id, token);
+    await tx.query("COMMIT");
+  } catch(error) { await tx.query("ROLLBACK"); throw error; }
+  finally { tx.release(); }
 }
 
 /** Stop an undelivered operation without pretending its supplier cost is zero.
@@ -217,7 +269,7 @@ export async function failUndeliveredImageJob(id: string, token: string | null, 
     if (!row || row.billing_settled || ["done", "error"].includes(row.snapshot.status)) {
       await tx.query("COMMIT"); return false;
     }
-    if (row.lease_token !== token || token && new Date(row.lease_until).getTime() <= Date.now()) throw new Error("任务执行权已过期");
+    await assertLeaseTx(tx, id, token);
     if (imageJobHasResults(row.snapshot)) { await tx.query("COMMIT"); return false; }
     const hasSupplierLedger = (await tx.query("SELECT to_regclass('app_supplier_calls') IS NOT NULL AS present")).rows[0].present;
     if (hasSupplierLedger && (await tx.query("SELECT 1 FROM app_supplier_calls WHERE operation_id=$1 AND delivered>0 LIMIT 1", [id])).rowCount) {
@@ -239,6 +291,7 @@ export async function failUndeliveredImageJob(id: string, token: string | null, 
     const proof = { reasonCode, customerOutcome: "failed", supplierOutcome: "unknown", supplierCost: "pending", releasedCredits: released };
     await tx.query("INSERT INTO app_billing_reconciliations(id,operation_id,email,actor,request_fingerprint,reason,proof,result,charge) VALUES($1,$2,$3,'system:image-job', $4,'图片未交付，释放预占积分',$5,$6::jsonb,0)",
       [`image-release-${id}`, id, row.email, `image-release-${id}`, JSON.stringify(proof), JSON.stringify({ state: "unknown", ...proof })]);
+    await assertLeaseTx(tx, id, token);
     await tx.query(`UPDATE app_image_jobs SET snapshot=snapshot || $2::jsonb,billing_settled=true,reserved_cost=0,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1`,
       [id, JSON.stringify({ status: "error", error: IMAGE_JOB_RELEASED_MESSAGE, failureCode: reasonCode, ...(diagnostic?{failureDiagnostic:readTaskDiagnostic(diagnostic)}:{}), customerBilling: "released", supplierCostStatus: "pending", creditsReleased: released, stoppedAt: Date.now() })]);
     await tx.query("COMMIT"); return true;
