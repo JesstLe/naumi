@@ -52,3 +52,16 @@ b20b8630第二轮保留15 PASS/1 FAIL/114 NOT_RUN，upload-memory仍失败。进
 
 
 49bdd7b4第四轮保留50 PASS/1 FAIL/79 NOT_RUN：原activity结构断言仍要求runGen/generatePend自己含activity调用。现在沿真实组件→image-runs→既有activity验证，仍检查五条实际调用链和零私有busy写；没有恢复组件编排。为避免逐项旧夹具使全量反复提前结束，先集中预检16个受影响入口：15个通过、image-imports夹具缺新纯image-size依赖。该端口改为加载真实纯模块（不是伪造尺寸），原15场景63检查随后通过；其余activity/presentation/pending/secondary/native/history/text/import/workflow等15入口结果保留。下一次完整core独立同SHA执行，不跨这些报告拼绿。
+
+
+## 最终固定源验收
+
+完整核心固定 `ba45837ed39bae215f11a401438fd2d31a193d75`，源码摘要 `a4afce300632dad8f673ae4b2b68d0674612e4b748bfa9b23f5581b5c2e0fff8`：**130 PASS / 0 FAIL / 0 NOT_RUN，复用0，exit0**，执行前后commit/digest相同且工作树clean。不是将四次提前结束的报告或受影响预检拼成通过。
+
+其中包括APIMart原task/预算/结果恢复/单次账务25场景、上传39场景及真实Sharp解码、纯尺寸13456组原数值精确对照、primary57场景与12项真实text-document检查，以及原PG权限/历史/导入/回执/冻结报价/账务/Worker链。primary当前实际输出与完整e683 baseline的57组请求/结果/位置/history/提示/回执轨迹另做离线精确比较通过。
+
+实际Next两入口13检查绑定应用b20b8630；全部2075个src/services文件与核心ba45837e字节一致，Next副本实际文件也重新核对。此片没有新完整Linux镜像、同镜像runtime/产品browser或10万容量证明，R7M旧镜像不改标本片。完整tsc/lint exit0，保留39warnings；四类SCC0，原两个release fixture lib→app及billing client→toast边仍在。
+
+Canvas入口当前5369行；runGen/generatePend只连接交互与应用owner，不直接构造task/request或持久化text链接。它仍是大型组装入口，不以本片拆出函数或SCC0宣称整体重构完成。此片按两个业务模块计，主线同步后计数2；下一步继续文字到图片批次编排/布局/节点命名的变化传播，达到3模块或下一日刷新main后普通整合。
+
+原始5081文件hash、副本回滚、补丁字节回放、后续编辑保护、最终归档/远端和自有资源清理见本片四产物及DELIVERY。整体ACTIVE，完整main交付、远端有效绿灯、性能容量和历史媒体原生errno仍待；未合main未部署，47 HOLD。

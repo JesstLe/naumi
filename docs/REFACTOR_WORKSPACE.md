@@ -255,3 +255,5 @@ R7N真实push源码328d0c09已触发Actions run40880058058，但core在runner分
 ## 2026-10-29 R7O：主要图片生成应用归属
 
 普通接入main154a7f9f的10提交，保留轮询期限/进度/下载释放及上传解码有界输出。runGen/generatePend的task/request/activity与结果应用归image-runs，文本反向链接归既有text-document；组件不再直接构造2个task/2个request或持久化文字。完整基线57/114与新版57/130轨迹精确一致、text owner12检查、原image-task47/179通过；核心catalog扩为129，最终固定矩阵、类型/架构/实际控件、四产物/副本回滚/远端见[R7O模块记录](changes/2026-10-29-refactor-r7o-primary-generation.md)及DELIVERY。整体ACTIVE，未合main未部署，47 HOLD；远端账户问题和性能/容量/最终整版交付继续。
+
+R7O最终核心固定ba45837e：130PASS/0FAIL/0NOT_RUN、复用0、源码前后相同；当前2075应用文件与实际Next双入口13检查的b20源逐字节相同，原完整Linux镜像不改标。13456尺寸原值对照、57场景原/新请求结果轨迹、tsc/lint39warnings与四类SCC0通过；原layer边及历史媒体errno债务保留。组件5369行，三个private组合2/2/1已归应用/文本owner，完整重构仍ACTIVE；本片主线同步后业务模块计数2，最终四产物/副本回滚/远端/清理见DELIVERY。
