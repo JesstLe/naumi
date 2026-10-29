@@ -17,6 +17,7 @@ except ImportError:
     from release47_host import public_identity
 
 MAX_BYTES = 16 * 1024 * 1024
+PROOF_VERSION = 3  # Paid state and exact global ledger leaves are now evidence.
 
 
 def canonical(value):
@@ -82,7 +83,8 @@ FROZEN_FIELDS = ['payload', 'provider_snapshot', 'capability_snapshot', 'billing
                  'request_fingerprint', 'billing_request_fingerprint', 'frozen_nodes_enc', 'base_url',
                  'credential_ref', 'protocol', 'procurement', 'fx', 'model_version', 'billing_version', 'matched_rule_id',
                  'email', 'owner', 'user_email', 'wire_model', 'body', 'prompt', 'source_artwork_id',
-                 'video_references', 'source', 'source_id', 'idempotency_key', 'cost', 'size', 'seconds']
+                 'video_references', 'source', 'source_id', 'idempotency_key', 'cost', 'size', 'seconds', 'ledger_id',
+                 'protocol_version', 'nonacceptance_at', 'accepted_at']
 # Audited mutations: video/cancellation.ts, video/result-assets.ts, db.ts canvas
 # checkpoint/completion, model-config/{apimart-preset,reverse-hub-images}.ts.
 # Unknown/new parameter fields stay frozen; do not use an open-ended allow-list.
@@ -98,7 +100,7 @@ PROOF_FIELDS = ['id', 'batch_id', 'tick_id', 'call_id', 'output_index', 'run_id'
                 'lease_until', 'lease_token', 'lease_id', 'billing_settled', 'reserved_cost', 'cost_status', 'delta',
                 'upstream_id', 'upstream_video_id', 'provider_id', 'channel_id', 'account_id', 'task_id',
                 'request_id', 'child_operation_id', 'operation_id', 'attempt_id', 'parent_call_id',
-                'billing_unit_id', 'public_model_id', 'model', 'actual_model', 'supplier_ref_hash']
+                'billing_unit_id', 'public_model_id', 'model', 'actual_model', 'supplier_ref_hash', 'ledger_id']
 
 
 def sql_frozen():
@@ -153,18 +155,22 @@ def graph_projection_sql(reg):
     children="CASE WHEN jsonb_typeof(snapshot->'children')='object' THEN snapshot->'children' ELSE '{}'::jsonb END"
     snapshot=("jsonb_build_object('status',snapshot->'status','childJobIds',COALESCE((SELECT jsonb_agg(v->>'jobId') FROM jsonb_each("+children+")e(k,v) WHERE jsonb_typeof(v->'jobId')='string'),'[]'::jsonb),'operationIds',COALESCE((SELECT jsonb_agg(id) FROM (SELECT k AS id FROM jsonb_each("+paid+") e(k,v) UNION SELECT c.k FROM jsonb_each("+paid+") e(k,v) CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(v->'children')='object' THEN v->'children' ELSE '{}'::jsonb END)c(k,v))ids),'[]'::jsonb)) AS snapshot")
     payload="jsonb_build_object('callId',payload->'callId','operation',payload->'operation','context',jsonb_build_object('operationId',payload#>'{context,operationId}')) AS payload"
-    return f"SELECT string_agg(CASE WHEN attname='snapshot' THEN {literal(snapshot)} WHEN attname='payload' THEN {literal(payload)} ELSE quote_ident(attname) END,',' ORDER BY attnum) AS projection FROM pg_attribute WHERE attrelid=to_regclass({literal(reg)}) AND attnum>0 AND NOT attisdropped AND attname IN ({fields})"
+    # Ledger leaves are tied to original IDs, not just an additive table sum.
+    # They live in the already byte/row-bounded graph; only hashes leave SQL.
+    leaf = ",encode(sha256(convert_to(to_jsonb(t)::text,'UTF8')),'hex') AS \"_ledgerRowSha256\""
+    extra = ' || ' + literal(leaf) if reg.endswith('.app_ledger') else ''
+    return f"SELECT string_agg(CASE WHEN attname='snapshot' THEN {literal(snapshot)} WHEN attname='payload' THEN {literal(payload)} ELSE quote_ident(attname) END,',' ORDER BY attnum){extra} AS projection FROM pg_attribute WHERE attrelid=to_regclass({literal(reg)}) AND attnum>0 AND NOT attisdropped AND attname IN ({fields})"
 
 
 def paid_proof_sql():
     # Current durable-image-jobs stores indexed attempts exactly one level below
     # each paid root. Deeper/invalid evidence is explicitly unverified, not lost.
-    part="jsonb_build_object('model',v->'model','replayable',v->'replayable','gatewayIdentity',v->'gatewayIdentity')"
-    child="COALESCE((SELECT jsonb_object_agg(c.k,jsonb_build_object('model',c.v->'model','replayable',c.v->'replayable','gatewayIdentity',c.v->'gatewayIdentity','_unverified',jsonb_typeof(c.v)<>'object' OR c.v ? 'children')) FROM jsonb_each(CASE WHEN jsonb_typeof(v->'children')='object' THEN v->'children' ELSE '{}'::jsonb END)c(k,v)),'{}'::jsonb)"
+    part="jsonb_build_object('state',v->'state','model',v->'model','replayable',v->'replayable','gatewayIdentity',v->'gatewayIdentity')"
+    child="COALESCE((SELECT jsonb_object_agg(c.k,jsonb_build_object('state',c.v->'state','model',c.v->'model','replayable',c.v->'replayable','gatewayIdentity',c.v->'gatewayIdentity','_unverified',jsonb_typeof(c.v)<>'object' OR c.v ? 'children')) FROM jsonb_each(CASE WHEN jsonb_typeof(v->'children')='object' THEN v->'children' ELSE '{}'::jsonb END)c(k,v)),'{}'::jsonb)"
     paid="COALESCE((SELECT jsonb_object_agg(k,"+part+" || jsonb_build_object('children',"+child+",'_unverified',jsonb_typeof(v)<>'object' OR v ? 'children' AND jsonb_typeof(v->'children')<>'object')) FROM jsonb_each(CASE WHEN jsonb_typeof(snapshot->'paidOperations')='object' THEN snapshot->'paidOperations' ELSE '{}'::jsonb END)e(k,v)),'{}'::jsonb)"
     child_jobs="COALESCE((SELECT jsonb_object_agg(k,jsonb_build_object('jobId',v->'jobId')) FROM jsonb_each(CASE WHEN jsonb_typeof(snapshot->'children')='object' THEN snapshot->'children' ELSE '{}'::jsonb END)e(k,v) WHERE v ? 'jobId'),'{}'::jsonb)"
     invalid_child="EXISTS(SELECT 1 FROM jsonb_each(CASE WHEN jsonb_typeof(snapshot->'children')='object' THEN snapshot->'children' ELSE '{}'::jsonb END)e(k,v) WHERE jsonb_typeof(v)<>'object' OR v ? 'jobId' AND jsonb_typeof(v->'jobId')<>'string')"
-    return "jsonb_build_object('status',snapshot->'status','paidOperations',"+paid+",'children',"+child_jobs+",'_proofVersion',2,'_unverified',snapshot ? 'paidOperations' AND jsonb_typeof(snapshot->'paidOperations')<>'object' OR snapshot ? 'children' AND jsonb_typeof(snapshot->'children')<>'object' OR jsonb_typeof(snapshot) IS DISTINCT FROM 'object' OR "+invalid_child+") AS snapshot"
+    return "jsonb_build_object('status',snapshot->'status','paidOperations',"+paid+",'children',"+child_jobs+",'_proofVersion',"+str(PROOF_VERSION)+",'_unverified',snapshot ? 'paidOperations' AND jsonb_typeof(snapshot->'paidOperations')<>'object' OR snapshot ? 'children' AND jsonb_typeof(snapshot->'children')<>'object' OR jsonb_typeof(snapshot) IS DISTINCT FROM 'object' OR "+invalid_child+") AS snapshot"
 
 
 
@@ -338,7 +344,8 @@ def page_graph_sql(index, name, reg, key, budget, *, first=False):
     if name not in ['app_ledger', 'app_billing_operations']:
         return base
     leaf = "encode(sha256(convert_to(to_jsonb(t)::text,'UTF8')),'hex')"
-    hash_cte = f""", leaves AS MATERIALIZED (SELECT h FROM page_keys k CROSS JOIN LATERAL (SELECT {leaf} AS h FROM {reg} t WHERE :table_{index}_join_pk LIMIT 1) h),
+    leaves = "SELECT j->>'_ledgerRowSha256' AS h FROM page" if name == 'app_ledger' else f"SELECT h FROM page_keys k CROSS JOIN LATERAL (SELECT {leaf} AS h FROM {reg} t WHERE :table_{index}_join_pk LIMIT 1) h"
+    hash_cte = f""", leaves AS MATERIALIZED ({leaves}),
     sums AS (SELECT count(*) AS n,COALESCE(sum(('x'||substr(h,1,16))::bit(64)::bigint::numeric),0) AS a,
       COALESCE(sum(('x'||substr(h,17,16))::bit(64)::bigint::numeric),0) AS b FROM leaves),
     saved_summary AS MATERIALIZED (SELECT {save_setting('summary_'+str(index), f"jsonb_build_object('count',({setting('summary_'+str(index))}->>'count')::bigint+n,'sumA',(({setting('summary_'+str(index))}->>'sumA')::numeric+a)::text,'sumB',(({setting('summary_'+str(index))}->>'sumB')::numeric+b)::text,'algorithm','sha256-leaf-two-64bit-sums')")} FROM sums)"""
@@ -405,7 +412,7 @@ def build_sql(*, previous=None, schema='public', row_limit=1000, projection='ful
         raise ValueError('TRACKED_IDS_EXCEEDED')
     state={'ok':True,'reason':'','pages':0,'scanRows':0,'graphBytes':0,'proofBytes':0,'selectedRows':0}
     lines=[r'\set ON_ERROR_STOP on','BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;',
-      f"SET LOCAL lock_timeout='1000ms'; SET LOCAL statement_timeout='{statement_timeout_ms}ms'; SET LOCAL idle_in_transaction_session_timeout='5000ms';",
+      f"SET LOCAL lock_timeout='1000ms'; SET LOCAL statement_timeout='{min(statement_timeout_ms,b['seconds']*1000)}ms'; SET LOCAL idle_in_transaction_session_timeout='{min(5000,b['seconds']*1000)}ms';",
       "SET LOCAL search_path=pg_catalog; SET LOCAL standard_conforming_strings=on;",
       "SELECT jsonb_build_object('kind','begin','database',current_database(),'observedAt',transaction_timestamp(),'readOnly',current_setting('transaction_read_only'),'isolation',current_setting('transaction_isolation'),'snapshot',txid_current_snapshot()::text);",
       f"SELECT {save_setting('state',literal(json.dumps(state))+'::jsonb')} AS state \\gset initial_"]
@@ -414,7 +421,7 @@ def build_sql(*, previous=None, schema='public', row_limit=1000, projection='ful
     for i,(name,key) in enumerate(KEYS.items()):
         reg=schema+'.'+name
         scan_guard=f"{STATE} || CASE WHEN :table_{i}_scan_count+({STATE}->>'scanRows')::int>{b['scan_rows']} THEN '{{\"ok\":false,\"reason\":\"unknown-scan-budget\"}}'::jsonb ELSE '{{}}'::jsonb END"
-        lines += [f"SELECT {save_setting('graph_'+str(i),empty_array)} AS graph, {save_setting('rows_'+str(i),empty_array)} AS rows, {save_setting('selected_'+str(i),empty_array)} AS selected \\gset init_{i}_",
+        lines += [deadline_sql(b,statement_timeout_ms),f"SELECT {save_setting('graph_'+str(i),empty_array)} AS graph, {save_setting('rows_'+str(i),empty_array)} AS rows, {save_setting('selected_'+str(i),empty_array)} AS selected \\gset init_{i}_",
           f"SELECT to_regclass({literal(reg)}) IS NOT NULL AS exists \\gset table_{i}_",f'\\if :table_{i}_exists',
           catalog_sql(reg,key)+f' \\gset table_{i}_', f'\\if :table_{i}_key_verified',
           graph_projection_sql(reg)+f' \\gset table_{i}_']
@@ -429,7 +436,7 @@ def build_sql(*, previous=None, schema='public', row_limit=1000, projection='ful
         # \gexec itself only executes SQL; no generated psql meta commands.
         first=page_graph_sql(i,name,reg,key,b,first=True)
         more=page_graph_sql(i,name,reg,key,b)
-        lines += [first]
+        lines += [deadline_sql(b,statement_timeout_ms),first]
         lines += generated_pages(more,i,f'ceil(:table_{i}_scan_count::numeric/{b["page_rows"]})::int-1',b,statement_timeout_ms)
         lines += ['\\endif','\\endif']
     # Fixed point over bounded graph metadata, no arbitrary four-pass truncation.
@@ -461,7 +468,7 @@ def build_sql(*, previous=None, schema='public', row_limit=1000, projection='ful
     lines += [deadline_sql(b,statement_timeout_ms),closure]
     for i,(name,key) in enumerate(KEYS.items()):
         reg=schema+'.'+name
-        lines += [f'\\if :table_{i}_exists',f'\\if :table_{i}_key_verified',
+        lines += [deadline_sql(b,statement_timeout_ms),f'\\if :table_{i}_exists',f'\\if :table_{i}_key_verified',
                   f"SELECT {save_setting('proof_offset','0')} \\gset offset_{i}_"]
         proof=page_proof_sql(i,name,reg,key,projection,b,row_limit)
         lines += generated_pages(proof,i,f"ceil(jsonb_array_length({setting('selected_'+str(i))})::numeric/{b['page_rows']})::int",b,statement_timeout_ms)
@@ -469,13 +476,23 @@ def build_sql(*, previous=None, schema='public', row_limit=1000, projection='ful
     lines += [deadline_sql(b,statement_timeout_ms)]
     for i,(name,key) in enumerate(KEYS.items()):
         summary=setting('summary_'+str(i)) if name in ['app_ledger','app_billing_operations'] else 'null::jsonb'
+        global_ledger = f"COALESCE((SELECT jsonb_object_agg(j->>'id',j->>'_ledgerRowSha256') FROM jsonb_array_elements({setting('graph_'+str(i))}) e(j)),'{{}}'::jsonb)" if name=='app_ledger' else 'null::jsonb'
         active=SPECS.get(name,(None,'false'))[1]
-        lines += [f'\\if :table_{i}_exists',f'\\if :table_{i}_key_verified',
-          f"SELECT jsonb_build_object('kind','table','table',{literal(name)},'status',CASE WHEN ({STATE}->>'ok')::boolean THEN 'observed' ELSE {STATE}->>'reason' END,'rows',{setting('rows_'+str(i))},'selectedCount',jsonb_array_length({setting('selected_'+str(i))}),'activeCount',(SELECT count(*) FROM jsonb_array_elements({setting('graph_'+str(i))}) e(j) WHERE {active}),'allSummary',{summary});",
+        lines += [deadline_sql(b,statement_timeout_ms),f'\\if :table_{i}_exists',f'\\if :table_{i}_key_verified',
+          f"SELECT jsonb_build_object('kind','table','table',{literal(name)},'status',CASE WHEN ({STATE}->>'ok')::boolean THEN 'observed' ELSE {STATE}->>'reason' END,'rows',{setting('rows_'+str(i))},'selectedCount',jsonb_array_length({setting('selected_'+str(i))}),'activeCount',(SELECT count(*) FROM jsonb_array_elements({setting('graph_'+str(i))}) e(j) WHERE {active}),'allSummary',{summary},'globalLedger',{global_ledger});",
           '\\else',f"SELECT jsonb_build_object('kind','table','table',{literal(name)},'status','unknown-unverified-primary-key','rows','[]'::jsonb);",'\\endif',
           '\\else',f"SELECT jsonb_build_object('kind','table','table',{literal(name)},'status','unknown-table-missing','rows','[]'::jsonb);",'\\endif']
-    lines += [f"SELECT jsonb_build_object('kind','end','database',current_database(),'readOnly',current_setting('transaction_read_only'),'snapshot',txid_current_snapshot()::text,'coverage',{STATE},'elapsedMs',extract(epoch FROM clock_timestamp()-transaction_timestamp())*1000,'budget',{literal(json.dumps(b))}::jsonb);",'COMMIT;']
-    return ('\n'.join(lines)+'\n').encode()
+    lines += [deadline_sql(b,statement_timeout_ms),f"SELECT jsonb_build_object('kind','end','database',current_database(),'readOnly',current_setting('transaction_read_only'),'snapshot',txid_current_snapshot()::text,'coverage',{STATE},'elapsedMs',extract(epoch FROM clock_timestamp()-transaction_timestamp())*1000,'budget',{literal(json.dumps(b))}::jsonb);",'COMMIT;']
+    # Bound every emitted SQL statement after state initialization, including
+    # catalog/scan/result queries between pages. Never reuse a previous query's
+    # full allowance. Generated page batches carry the same guard per statement.
+    guarded=[]; initialized=False; guard=deadline_sql(b,statement_timeout_ms)
+    for line in lines:
+        if initialized and not line.startswith('\\') and line!='COMMIT;' and line!=guard:
+            if not guarded or guarded[-1]!=guard:guarded.append(guard)
+        guarded.append(line)
+        if '\\gset initial_' in line:initialized=True
+    return ('\n'.join(guarded)+'\n').encode()
 
 
 def generated_pages(query,index,count,budget,statement_timeout_ms):
@@ -485,7 +502,7 @@ def generated_pages(query,index,count,budget,statement_timeout_ms):
     value=' || '.join((":'"+p[1:]+"'" if p.startswith(':table_') else literal(p)) for p in parts if p)
     # PostgreSQL budgets every generated statement against transaction age.
     guard=f"SELECT jsonb_build_object('kind','budget','timeout',set_config('statement_timeout',greatest(1,least({statement_timeout_ms},{budget['seconds']*1000}-floor(extract(epoch FROM clock_timestamp()-transaction_timestamp())*1000)))::int::text,true));"
-    return [f"SELECT {literal(guard)} || {value} FROM generate_series(1,least({count},{budget['pages']})) WHERE ({STATE}->>'ok')::boolean \\gexec"]
+    return [deadline_sql(budget,statement_timeout_ms),f"SELECT {literal(guard)} || {value} FROM generate_series(1,least({count},{budget['pages']})) WHERE ({STATE}->>'ok')::boolean \\gexec"]
 
 
 def run_bytes(command, args, *, stdin=None, timeout=30):
@@ -517,6 +534,8 @@ def summarize(private, *, row_limit=1000):
             status='unknown-incomplete-rows'
         if name=='app_image_jobs' and any(unverified_image_proof(row) for row in rows if isinstance(row,dict)):
             status='unknown-image-proof'
+        if name=='app_ledger' and private.get('collection',{}).get('version')==PROOF_VERSION and ledger_leaves(item) is None:
+            status='unknown-ledger-proof'
         if private.get('collection',{}).get('status','complete')!='complete' and status=='observed':
             status='unknown-incomplete-collection'
         if valid and (len(rows) > row_limit or item.get('selectedCount', 0) > row_limit):
@@ -524,6 +543,7 @@ def summarize(private, *, row_limit=1000):
         identities = sorted(sha([name, row_key(row, key)]) for row in rows) if valid else []
         tables[name] = {'status': status, 'selectedCount': item.get('selectedCount'), 'activeCount': item.get('activeCount'),
                         'identityHashes': identities, 'rowsSha256': sha(rows), 'allProtectedSummary': item.get('allSummary'),
+                        'globalLedgerSha256': sha(item['globalLedger']) if isinstance(item.get('globalLedger'),dict) else None,
                         'frozenContextsSha256': sha([frozen(row) for row in rows]) if valid else None,
                         'supplierBindingsSha256': sha([supplier_bindings(row) for row in rows]) if valid else None}
     return {'schemaVersion': 1, 'kind': 'read-only-task-preservation-not-drain', 'databaseIdentitySha256': private.get('databaseIdentitySha256'),
@@ -533,18 +553,55 @@ def summarize(private, *, row_limit=1000):
 
 
 def unverified_image_proof(row):
-    snap=row.get('snapshot') or {}
+    snap=row.get('snapshot',{})
     if not isinstance(snap,dict):return True
-    if row.get('_preservationProof') and snap.get('_proofVersion')!=2:return True
+    if row.get('_preservationProof') and snap.get('_proofVersion')!=PROOF_VERSION:return True
     if snap.get('_unverified'):return True
     def invalid(parts,depth=0):
         if not isinstance(parts,dict) or depth>1:return True
         return any(not isinstance(v,dict) or v.get('_unverified') or
+                   (v.get('state') is not None and not isinstance(v['state'],str)) or
                    ('children' in v and invalid(v['children'],depth+1)) for v in parts.values())
     children=snap.get('children',{})
     if not isinstance(children,dict) or any(not isinstance(v,dict) or
         'jobId' in v and not isinstance(v['jobId'],str) for v in children.values()):return True
     return invalid(snap.get('paidOperations',{}))
+
+
+def ledger_leaves(table):
+    leaves,summary=table.get('globalLedger'),table.get('allSummary')
+    if not isinstance(leaves,dict) or not isinstance(summary,dict) or summary.get('count')!=len(leaves):
+        return None
+    return leaves if all(isinstance(k,str) and isinstance(v,str) and re.fullmatch('[a-f0-9]{64}',v) for k,v in leaves.items()) else None
+
+
+def paid_states(row):
+    snapshot=row.get('snapshot')
+    if not isinstance(snapshot,dict) or not isinstance(snapshot.get('paidOperations',{}),dict):return {}
+    result={}
+    def visit(parts,path=()):
+        for key,part in parts.items():
+            if not isinstance(part,dict):continue
+            result[json.dumps([*path,key],ensure_ascii=False)]=part.get('state')
+            if not path and isinstance(part.get('children'),dict):visit(part['children'],(*path,key))
+    visit(snapshot.get('paidOperations',{}))
+    return result
+
+
+def paid_transition_allowed(before,after):
+    if before==after:return True
+    # A first dispatch may defer started->queued without sending. The snapshot
+    # lacks durable nonacceptance evidence, so that transition is not proven here.
+    return isinstance(before,str) and isinstance(after,str) and after in {
+        'queued':{'started','done','rejected'}, 'started':{'done','rejected'},
+    }.get(before,set())
+
+
+def observed_state(row,field):
+    if field=='snapshot.status':
+        snapshot=row.get('snapshot')
+        return snapshot.get('status') if isinstance(snapshot,dict) else None
+    return row.get(field)
 
 
 def supplier_bindings(row):
@@ -650,7 +707,7 @@ def collect_task_snapshot(command, db_identity, private_save=None, *, previous=N
     private = {'kind': 'task-preservation-private-v1', 'databaseIdentitySha256': sha({'container': db_identity, 'database': database, 'schema': schema}),
                'observedAt': first.get('observedAt'), 'snapshot': first.get('snapshot'), 'rowLimit': row_limit,
                'rowProjection': projection, 'tables': tables,
-               'collection': {'version':2,'status':'complete' if last['coverage'].get('ok') else 'incomplete',
+               'collection': {'version':PROOF_VERSION,'status':'complete' if last['coverage'].get('ok') else 'incomplete',
                               'consistency':'bounded-repeatable-read','coverage':last['coverage'],
                               'elapsedMs':last.get('elapsedMs'),'budget':effective_budget,
                               'pageEvidence':[item for item in lines if item.get('kind')=='page']}}
@@ -672,7 +729,7 @@ def compare_task_snapshots(before, after):
     summaries = [summarize(value, row_limit=value.get('rowLimit', 1000)) for value in [before, after]]
     violations, unknown, additions, completions = [], [], 0, 0
     if any(value.get('collection') for value in [before,after]) and any(
-            value.get('collection',{}).get('version')!=2 or value.get('collection',{}).get('status')!='complete'
+            value.get('collection',{}).get('version')!=PROOF_VERSION or value.get('collection',{}).get('status')!='complete'
             for value in [before,after]):
         unknown.extend(KEYS)  # New coverage cannot be retroactively asserted for a legacy baseline.
     if before.get('databaseIdentitySha256') != after.get('databaseIdentitySha256'):
@@ -693,6 +750,14 @@ def compare_task_snapshots(before, after):
         if prior_summary and later_summary:
             if later_summary['count'] < prior_summary['count'] or name == 'app_ledger' and later_summary['count'] == prior_summary['count'] and later_summary != prior_summary:
                 violations.append({'table': name, 'reason': 'PROTECTED_GLOBAL_COUNT_OR_HASH_REGRESSION'})
+        if name=='app_ledger' and (prior_summary or later_summary or old.get('globalLedger') is not None or new.get('globalLedger') is not None):
+            old_leaves,new_leaves=ledger_leaves(old),ledger_leaves(new)
+            if old_leaves is None or new_leaves is None:
+                unknown.append(name)  # Counts, even growing counts, do not prove original rows.
+            else:
+                for identifier,digest in old_leaves.items():
+                    if new_leaves.get(identifier)!=digest:
+                        violations.append({'table':name,'identitySha256':sha([name,identifier]),'reason':'ORIGINAL_GLOBAL_LEDGER_ROW_CHANGED'})
         current = {row_key(row, key): row for row in new.get('rows', [])}
         original = {row_key(row, key): row for row in old.get('rows', [])}
         additions += len(set(current) - set(original))
@@ -711,14 +776,23 @@ def compare_task_snapshots(before, after):
                 violations.append({**ref, 'reason': 'FROZEN_CONTEXT_CHANGED'})
             if name == 'app_ledger' and row != latest:
                 violations.append({**ref, 'reason': 'ORIGINAL_LEDGER_ROW_CHANGED'})
+            old_paid,new_paid=paid_states(row),paid_states(latest)
+            for operation,state in old_paid.items():
+                # Missing operations already violate immutable bindings. Keep
+                # the existing audited completed-image exception narrow.
+                if operation in new_paid and not paid_transition_allowed(state,new_paid[operation]):
+                    violations.append({**ref,'reason':'PAID_STATE_TRANSITION_UNPROVEN','operationSha256':sha(operation)})
             for stamp in ['created_at', 'updated_at']:
                 if row.get(stamp) and latest.get(stamp) and latest[stamp] < row[stamp]:
                     violations.append({**ref, 'reason': 'ROW_TIMESTAMP_REGRESSION', 'field': stamp})
-            for mutable_state in ['state', 'status']:
-                if row.get(mutable_state) != latest.get(mutable_state):
-                    if row.get(mutable_state) in ['done', 'completed', 'succeeded', 'settled', 'released', 'cancelled']:
+            for mutable_state in ['state', 'status', 'phase', 'snapshot.status']:
+                prior_state,next_state=observed_state(row,mutable_state),observed_state(latest,mutable_state)
+                if prior_state != next_state:
+                    if prior_state=='unknown':
+                        violations.append({**ref,'reason':'UNKNOWN_STATE_TRANSITION_UNPROVEN','field':mutable_state})
+                    elif prior_state in ['done', 'completed', 'succeeded', 'settled', 'released', 'cancelled']:
                         violations.append({**ref, 'reason': 'TERMINAL_STATE_REGRESSION'})
-                    completions += 1
+                    else:completions += 1
     return {'schemaVersion': 1, 'noMissingJobs': not any(v['reason'] == 'PRESERVED_ROW_MISSING' for v in violations),
             'noOriginalSupplierMutation': not any(v['reason'] == 'ORIGINAL_SUPPLIER_BINDING_CHANGED' for v in violations),
             'preservationVerified': not violations and not unknown, 'violations': violations, 'unknownTables': sorted(set(unknown)),

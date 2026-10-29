@@ -41,9 +41,10 @@ class SnapshotTests(unittest.TestCase):
 
     def test_legacy_collection_cannot_be_recertified_by_new_complete_after(self):
         before=private();after=copy.deepcopy(before)
-        after['collection']={'version':2,'status':'complete'}
+        after['collection']={'version':m.PROOF_VERSION,'status':'complete'}
+        for value in [before,after]:value['tables']['app_ledger'].update(globalLedger={},allSummary={'count':0})
         self.assertFalse(m.compare_task_snapshots(before,after)['preservationVerified'])
-        before['collection']={'version':2,'status':'complete'}
+        before['collection']={'version':m.PROOF_VERSION,'status':'complete'}
         self.assertTrue(m.compare_task_snapshots(before,after)['preservationVerified'])
         before['collection']['status']='incomplete'
         self.assertFalse(m.compare_task_snapshots(before,after)['preservationVerified'])

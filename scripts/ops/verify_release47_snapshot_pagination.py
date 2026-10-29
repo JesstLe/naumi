@@ -35,6 +35,10 @@ class Fixture:
     def __init__(self, args):
         self.args=args;self.out=Path(args.output).resolve();self.out.mkdir(parents=True,exist_ok=True)
         self.owned=not args.fixture_id;self.calls=0;self.logs=[];self.passed=[];self.failed=[]
+        self.cid=None;self.identity=None;self.cleanup_errors=[];self.closed=False;self.ready=False
+
+    def start(self):
+        args=self.args
         self.m=load(Path(args.module).resolve());self.supports_budget='budget' in inspect.signature(self.m.collect_task_snapshot).parameters
         if self.owned:
             name='naumi-snapshot-fixture-'+uuid.uuid4().hex[:10]
@@ -51,10 +55,17 @@ class Fixture:
         assert env.get('POSTGRES_DB')=='snapshot_fixture' and env.get('POSTGRES_USER')=='fixture'
         self.identity=self.m.public_identity(row)
         self.pg=['docker','exec','-i',self.cid,'psql','-XqAt','-U','fixture','-d','snapshot_fixture','-v','ON_ERROR_STOP=1']
-        for _ in range(60):
-            if self.command(['docker','exec',self.cid,'pg_isready','-U','fixture','-d','snapshot_fixture']).returncode==0:break
+        ready=False
+        for _ in range(100):
+            # The initdb temporary server uses a socket, not the final TCP
+            # listener. An actual query also verifies the target DB exists.
+            probe=self.command(['docker','exec',self.cid,'psql','-h','127.0.0.1','-XqAt','-U','fixture','-d','snapshot_fixture','-v','ON_ERROR_STOP=1','-c','SELECT 1'],timeout=5)
+            if probe.returncode==0 and probe.stdout.strip()==b'1':ready=True;break
             time.sleep(.1)
+        if not ready:raise RuntimeError('FIXTURE_TARGET_DATABASE_NOT_READY')
+        self.ready=True
         self.schema='snapshot_'+uuid.uuid4().hex[:12]
+        return self
 
     def command(self,args,*,stdin=None,timeout=120):
         result=subprocess.run(args,input=stdin,capture_output=True,timeout=timeout,env=ENV)
@@ -332,23 +343,38 @@ class Fixture:
         self.check('current_pair_scope_only_release_activities',check)
 
     def close(self):
-        if hasattr(self,'schema'):
-            self.sql('DROP SCHEMA '+self.schema+' CASCADE;')
-        if self.owned:self.command(['docker','stop',self.cid]);self.command(['docker','rm',self.cid])
-        report={'phase':self.args.phase,'passed':self.passed,'failed':self.failed,'fixture':self.identity,
-                'envKeys':sorted(ENV),'commands':self.logs}
-        (self.out/'RESULT.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf8')
-        print(f"{self.args.phase} passed={len(self.passed)} failed={len(self.failed)} realPostgres=true productionActions=0",flush=True)
+        if self.closed:return
+        self.closed=True
+        def cleanup(name,action):
+            try:
+                result=action()
+                if hasattr(result,'returncode') and result.returncode!=0:
+                    raise RuntimeError(result.stderr.decode(errors='replace'))
+            except Exception as error:self.cleanup_errors.append({'name':name,'error':str(error)})
+        try:
+            if hasattr(self,'schema'):cleanup('drop-schema',lambda:self.sql('DROP SCHEMA '+self.schema+' CASCADE;'))
+        finally:
+            try:
+                # cid is the exact result of our own docker run. Never discover
+                # or bulk-stop fixtures, and never remove a borrowed container.
+                if self.owned and self.cid and len(self.cid)==64 and all(c in '0123456789abcdef' for c in self.cid):
+                    cleanup('stop',lambda:self.command(['docker','stop',self.cid]))
+                    cleanup('remove',lambda:self.command(['docker','rm','-v',self.cid]))
+            finally:
+                report={'phase':self.args.phase,'passed':self.passed,'failed':self.failed,'fixture':self.identity,
+                        'fixtureId':self.cid,'realPostgres':self.ready,'cleanupErrors':self.cleanup_errors,'envKeys':sorted(ENV),'commands':self.logs}
+                (self.out/'RESULT.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf8')
+                print(f"{self.args.phase} passed={len(self.passed)} failed={len(self.failed)} realPostgres={str(self.ready).lower()} productionActions=0",flush=True)
 
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--phase',required=True);p.add_argument('--output',required=True)
     p.add_argument('--module',default=str(Path(__file__).with_name('release47_task_snapshot.py')));p.add_argument('--fixture-id')
     args=p.parse_args();f=Fixture(args)
-    try:f.run()
+    try:f.start();f.run()
     except Exception as e:f.failed.append({'name':'runner','error':str(e)});print('RUNNER_ERROR '+str(e),flush=True)
     finally:f.close()
-    return 1 if f.failed else 0
+    return 1 if f.failed or f.cleanup_errors else 0
 
 
 if __name__=='__main__':sys.exit(main())
