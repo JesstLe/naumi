@@ -8,6 +8,7 @@
 
 - 工具准备的独立工作树：`C:/Users/13357/.t3/worktrees/naumi/t3-3a6f696b`；开工分支 `t3/3a6f696b`，提交时实际分支 `t3/capacity-runtime-settings`。开工 `git status --short` 为空，`git fetch origin main` 成功，HEAD 与 origin/main 均为上述基线。
 - 已完成本切片源码、局部验收、原始字节/哈希保存和独立副本回滚。由父任务串行整合；没有 push、合共享 main 或创建 PR。
+- **2026-10-30父增量：**固定子版与独立复核的问题已由父补修，当前结果见末尾“父复核闭环”。上面子任务交接状态及下方原始测试记录保留历史，不覆盖父最新结论。配置默认值与真实部署状态仍分别记录。
 - 只证明源码/本地模块行为，不证明上线、真实供应商吞吐、生产 RPS 或十万用户容量。47 发布决定不变；没有连接服务器、生产 DB、容器或供应商，没有重复执行 45 笔手术或清理 UNKNOWN。
 - 初始可用物理内存 `9,710,792 KiB`；后续只读观察为 `12,696,148 KiB`。测试依赖安装在本任务 `audit-artifacts/capacity-runtime-settings/tooling`，未安装/修改共享 node_modules。没有创建 PostgreSQL fixture；真实 PostgreSQL 锁/跨进程公平不在本轮通过项中。
 
@@ -125,3 +126,56 @@ MODIFIED_SOURCE_RETAINED=PASS ROLLBACK_RESTORED=PASS HASHGUARD_WRITES=0 ARTIFACT
 - A4 的 combined n 并发、Linux 真实媒体 drain/sandbox/内存预算、站点连接总量/峰值负载、真实 PG 锁与多实例公平仍需要独立验收；本切片不据常量推算容量，不调大默认值或降低画质。
 - 本轮未运行依赖 PG 的 `verify-video-coordination-pool.cjs` 和 X3 集成套件；coordination loader 已补两槽预算映射但不声称真实 PG 验收。默认 `databasePoolBudget` 返回形状已保持，未改其既有预算断言。parent-completion 的继承 loader 失败交对应模块继续处理，25 项仍未验收。
 - A9/A20 已由实际源码与本地调用断言纠正，不列为“新修复了管理员覆盖/三处配置”；总台账由父任务更新。
+
+## 2026-10-30 父复核闭环：停止栅栏、取消调用链与视频池代际
+
+### 基线与归属
+
+父main基线 `5072324ce9135857692469b36b5e4667321fc1e5`，包含已验收的A60；固定子提交 `7e5ece5fbf0aab7ff5e4a067219a2d91e457bb65` 在父分支普通合入点 `69bd23c504f92d460a26c1abacec86990251593b`。独立审查固定父基线611b7fee、候选相同，报告在 `t3-8405d852/audit-artifacts/capacity-runtime-review/REVIEW.md`。父没有把审查的通过项与2个新增P2/1个继承问题混写。
+
+### 父实际复现与修复
+
+1. **A6 stop完成后再扫描仍进入（新增P2）：**子版 `POST_STOP ... newScanResult=1`。增加独立持久 `state.stopped`，stop完成后不因清除stopping Promise而放开；只有明确start重启才清除。首次外置tick扫描仍可在未启动嵌入式timer时运行。`NAUMI_VIDEO_WORKER=0`下明确start只重开扫描资格、不启动timer；停止中start不抢跑。
+2. **A10扫描取消未到调用方（新增P2）：**真实worker/queue与原文AST提取的recovery调用链中，12项/默认4并发，子版stop后最终仍开始12项。父以本地扫描owner的AbortController，经 `recoverDurableImageJobs({signal?})` → local recovery → `dispatchImageQueue(...,undefined,options)` 传递；停止后开始数保持4，原4个send的Promise仍全部等待，原10秒HTTP signal不被本地abort替换。due等待、动态导入、batch和stored-delivery阶段之间均检查本地停止；已开始的phase自然排空，取消不作为未受理证明。
+3. **A8视频池结束后的旧代际引用（原/改共有）：**原版/子版真实PG均出现普通池已重建、视频仍是ended旧池/503，且子版新预算3而旧池max2。新增公共 `closeVideoCoordinationPool()`：不创建空池、跨bundle共享关闭Promise、等待借出锁归还，end成功后按引用校验清除旧pool/closing引用；失败保留原异常与closing fence，不分配替代池。持锁期间close不强断业务；下一完整代际video实际max3且可取得锁。期间新的锁checkout仍返回 `VIDEO_COORDINATION_UNAVAILABLE / 503`，不是正常busy。
+
+### 模块接口与生命周期边界
+
+- `video/worker.ts`只拥有嵌入式timer/controller和本地lane；durable-image recovery只接收小型可选signal，不依赖Web Request或release内部对象。实际send仍沿原鉴权、任务ID、独立timeout，原claim/paid/UNKNOWN/账务路径不变。
+- `video/coordination-pool.ts`拥有pool与关闭fence；连接基础设施继续单向提供冻结预算，不从db反向导入业务。正确teardown顺序是请求已排空 → video等专用池close → `closeDatabasePools()`；close不是普通业务请求或HMR操作。
+- 盘点确认：产品src当前只有layout调用start，没有本地stop或closeDatabasePools调用方。release control的drain只改变持久准入，仍允许已接受工作延续，**不是已排空Web teardown**。父没有把close挂到该route，没有新增信号监听器；外置scanner的shutdown是另一个进程，不关闭Web的池。
+- 本地stop只取消它拥有的扫描。若先有外置扫描、嵌入式随后加入同模块single-flight，stop等待它但不取消外部owner；测试仍派完原12项，明确不是“取消失败”。跨bundle两个recoveryScan及外置tick串行公平的既有边界仍开放，不宣称全进程总派发只有4，也不将并行观察当成付费重复执行。
+
+### 父集中验证
+
+所有命令由 `output/capacity-audit-wave2-20261029/runtime-parent-20261030/run.cjs` 用大小写无关环境白名单执行，保留SYSTEMROOT；无stdin、不加载.env。固定合成12项backlog与gate、真实模块、独占256MiB/1CPU PostgreSQL、随机回环口；TCP+SQL就绪，每阶段finally按完整ID和唯一label移除、自有匿名volume一并移除、端口关闭。调用链测试抽取实际两函数原文，不重写算法；due rows/HTTP/admission是明确fixture，不是生产供应商链路。
+
+- 原baseline：配置 `passed=5 failed=16`、exit1；Python `passed=0 failed=4`、exit1；父生命周期10项原行为对照、exit0。
+- 固定子候选：配置21/21、Python4/4通过；父10项如实复现stop后12项派发/再次扫描1次/旧视频池503，exit0代表反例复现，不代表符合修复要求。
+- 父修改及修改副本：配置21/21、Python4/4、父生命周期11项全部通过。覆盖未开始/已开始send、due等待、已开始batch、原response计数、同模块single-flight、外部owner不可被误取消、post-stop/restart、实际PG借出排空/共享关闭/重建预算与失败close fence。
+- 既有真实PG coordination：9组通过，包含实际media/workflow调用点、跨Node进程advisory lock、普通池读、故障/幂等释放。
+- combined既有91断言通过（注入fixture，非Linux sandbox）；release controls共27项、13执行通过/14 Windows跳过；A60实际模块/PG32项通过。
+- 父完整 `node --max-old-space-size=4096 node_modules/typescript/bin/tsc --noEmit --incremental false --pretty false` 集中一次，exit0，stdout/stderr空。独立review的依赖错配36条/exit2继续保留原记录，不改成review当时通过。
+- parent-completion原版/修改版仍同为 `UNMOCKED_IMPORT:src/lib/imagegen/dispatch.ts:../canvas/image-version-store`，25项未验收、exit1。父没有改业务或删除断言凑绿。
+- 父生命周期每阶段stderr有1行固定诊断 `[image-queue] worker dispatch failed; retained for next scan`，来自明确失败send；没有将其写成stderr为空。配置与专项Python的stderr为空。
+
+复跑命令（cwd为父工作树）：
+
+```powershell
+node output/capacity-audit-wave2-20261029/runtime-parent-20261030/run.cjs BASELINE
+node output/capacity-audit-wave2-20261029/runtime-parent-20261030/run.cjs CANDIDATE
+node output/capacity-audit-wave2-20261029/runtime-parent-20261030/run.cjs MODIFIED
+node output/capacity-audit-wave2-20261029/runtime-parent-20261030/run.cjs REGRESSIONS
+node output/capacity-audit-wave2-20261029/runtime-parent-20261030/run.cjs PG_EXISTING
+node output/capacity-audit-wave2-20261029/runtime-parent-20261030/run.cjs TSC
+node output/capacity-audit-wave2-20261029/runtime-parent-20261030/package.cjs
+node output/capacity-audit-wave2-20261029/runtime-parent-20261030/run.cjs COPY_MODIFIED
+D:/DEV/Git/bin/bash.exe output/capacity-audit-wave2-20261029/runtime-parent-20261030/ROLLBACK.sh output/capacity-audit-wave2-20261029/runtime-parent-20261030/ROLLBACK_COPY
+node output/capacity-audit-wave2-20261029/runtime-parent-20261030/run.cjs ROLLBACK
+```
+
+### 四产物与整合
+
+父证据独立放在 `output/capacity-audit-wave2-20261029/runtime-parent-20261030/`：`MODIFIED_FILE.tar`、`DIFF_FILE.patch`、`VERIFICATION.txt`、可执行 `ROLLBACK.sh`。本次完整20路径（原子提交16＋父新增生命周期验证/调用方/两台账），归档逐成员重开，与当前源码hash一致。仅独立副本回滚，恢复12原文件、移除8新增；baseline配置原16失败/Python原4失败及生命周期原行为再次出现，A60原修复仍在回滚基线中。later-edit、原payload损坏、真实source-root均先全量拒绝，exit73、WRITES=0；源码/修改归档保持修复。全部准确命令、输入、字面stdout/stderr、exit、原改hash及最终main/远端一致性在VERIFICATION/DELIVERY。
+
+本增量完成源码、父验证和串行main整合，未部署/SSH/生产写入。默认16/4/4/16、image4/8、video20s/3/2及媒体并发1、管理员false/0保持。Linux媒体sandbox、多实例公平/跨入口单飞、完整HTTP/真实认证、生产峰值、A59、A60其余链路、A62完整保留证明、旧UNKNOWN/CLEANUP_PENDING继续开放；本地通过不等于这些总项已完成。

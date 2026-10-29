@@ -11,7 +11,8 @@ import { videoCoordinationPoolLimit } from "../db/connection";
 // owner reserves all pools together; the compatible video default remains two.
 const poolKey = Symbol.for("naumi.video.coordination.pg.v1");
 const slotsKey = Symbol.for("naumi.video.coordination.slots.v1");
-const runtime = process as typeof process & { [poolKey]?: Pool };
+const closingKey = Symbol.for("naumi.video.coordination.closing.v1");
+const runtime = process as typeof process & { [poolKey]?: Pool; [closingKey]?: Promise<void> };
 
 /** Checkout rejected before a client or lock query existed. This is an explicit
  * infrastructure failure, not a busy slot and not ambiguous business execution. */
@@ -25,6 +26,7 @@ export class VideoCoordinationCheckoutError extends Error {
 }
 
 export function getVideoCoordinationPool(): Pool {
+  if (runtime[closingKey]) throw new Error("VIDEO_COORDINATION_POOL_CLOSING");
   if (!runtime[poolKey]) {
     const options = getPool().options;
     const pool = new Pool({
@@ -47,10 +49,26 @@ export function getVideoCoordinationPool(): Pool {
   return runtime[poolKey];
 }
 
+/** Explicit drained-Web/test teardown, before closeDatabasePools(). Never wire
+ * this to ordinary admission drain: accepted media/workflow work may still run.
+ * end() awaits borrowed clients; failed close stays fenced across bundles. */
+export function closeVideoCoordinationPool(): Promise<void> {
+  if (runtime[closingKey]) return runtime[closingKey];
+  const current = runtime[poolKey];
+  if (!current) return Promise.resolve();
+  const closing = Promise.resolve().then(() => current.end()).then(() => {
+    if (runtime[poolKey] === current) delete runtime[poolKey];
+    if (runtime[closingKey] === closing) delete runtime[closingKey];
+  });
+  runtime[closingKey] = closing;
+  return closing;
+}
+
 export async function acquireVideoCoordinationLock(key: string): Promise<{
   acquired: boolean;
   release: () => Promise<void>;
 }> {
+  if (runtime[closingKey]) throw new VideoCoordinationCheckoutError(key, new Error("VIDEO_COORDINATION_POOL_CLOSING"));
   const pool = getVideoCoordinationPool() as Pool & { [slotsKey]?: number };
   // Reserve synchronously across bundles before awaiting checkout. Busy polls
   // are read-only, not failed workflow claims: no SQL or supplier work started.

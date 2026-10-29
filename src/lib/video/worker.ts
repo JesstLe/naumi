@@ -15,6 +15,8 @@ type Lane = "video" | "image" | "reference" | "supplier-cost";
 type WorkerState = {
   scan?: Promise<number>;
   started?: boolean;
+  stopped?: boolean;
+  controller?: AbortController;
   timer?: ReturnType<typeof setTimeout>;
   initialTimer?: ReturnType<typeof setTimeout>;
   lanes: Partial<Record<Lane, Promise<void>>>;
@@ -34,7 +36,7 @@ async function recoverPhase(name: string, run: () => Promise<number>): Promise<n
 }
 
 export async function scanVideoWorkerOnce(): Promise<number> {
-  if (!dbEnabled || state.stopping) return 0;
+  if (!dbEnabled || state.stopping || state.stopped) return 0;
   if (state.scan) return state.scan;
   // Validate before the recovery catch: bad settings are not network jitter.
   const settings = videoWorkerSettings();
@@ -48,9 +50,14 @@ export async function scanVideoWorkerOnce(): Promise<number> {
 }
 
 export function startVideoWorker(): void {
-  if (process.env.NAUMI_VIDEO_WORKER === "0" || state.started || state.stopping) return;
+  if (state.started || state.stopping) return;
+  // An explicit restart also re-enables externally driven scans, without
+  // enabling an embedded timer when the deployment deliberately disables it.
+  if (process.env.NAUMI_VIDEO_WORKER === "0") { state.stopped = false; return; }
   const settings = videoWorkerSettings();
+  state.stopped = false;
   state.started = true;
+  const controller = state.controller = new AbortController();
   const lane = (name: Lane, run: () => Promise<unknown>) => {
     if (!state.started || state.lanes[name]) return;
     // Independent single-flight lanes: a slow image/reference promise must not
@@ -61,7 +68,7 @@ export function startVideoWorker(): void {
   };
   const cycle = () => {
     lane("video", scanVideoWorkerOnce);
-    lane("image", recoverDurableImageJobs);
+    lane("image", () => recoverDurableImageJobs({ signal: controller.signal }));
     lane("reference", () => import("../reference-workbench/service").then(m => m.recoverReferenceWorkbench()));
     lane("supplier-cost", scanSupplierCostsOnce);
   };
@@ -76,11 +83,16 @@ export function startVideoWorker(): void {
 export function stopVideoWorker(): Promise<void> {
   if (state.stopping) return state.stopping;
   state.started = false;
+  state.stopped = true;
+  // Cancel only this embedded scan's future dequeue/phase admissions. Accepted
+  // sends retain their original signal and Promise; stop still awaits them.
+  state.controller?.abort();
   if (state.timer) clearInterval(state.timer);
   if (state.initialTimer) clearTimeout(state.initialTimer);
   state.timer = undefined;
   state.initialTimer = undefined;
   state.stopping = Promise.allSettled([...Object.values(state.lanes), state.scan]).then(() => {}).finally(() => {
+    state.controller = undefined;
     state.stopping = undefined;
   });
   return state.stopping;
