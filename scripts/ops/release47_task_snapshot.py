@@ -18,6 +18,10 @@ except ImportError:
 
 MAX_BYTES = 16 * 1024 * 1024
 PROOF_VERSION = 3  # Paid state and exact global ledger leaves are now evidence.
+# Only the dedicated-site caller narrows release observations. Its separate
+# HistoricalEvidence guard protects excluded, unfinished historical observations.
+# Business task, supplier and ledger tables never use this source restriction.
+ACTIVITY_INSTANCE_SCOPE = ()
 
 
 def canonical(value):
@@ -206,7 +210,8 @@ def image_job_native_proof_projection_sql(reg):
 def proof_projection_sql(reg):
     if reg.rsplit('.', 1)[-1] == 'app_image_jobs':
         return image_job_native_proof_projection_sql(reg)
-    fields=','.join(literal(v) for v in sorted(set(PROOF_FIELDS+FROZEN_FIELDS+['parameters','plans','snapshot'])))
+    scope_fields=['instance_id'] if ACTIVITY_INSTANCE_SCOPE and reg.rsplit('.',1)[-1]=='app_release_activities' else []
+    fields=','.join(literal(v) for v in sorted(set(PROOF_FIELDS+FROZEN_FIELDS+['parameters','plans','snapshot']+scope_fields)))
     # The existing proof never retained output images or raw supplier receipts.
     # Project its exact paid binding fields before row JSON construction so those
     # large values are not copied into every proof-field lookup.
@@ -219,6 +224,10 @@ DEFAULT_BUDGET = {'page_rows': 128, 'scan_rows': 100000, 'selected_rows': 20000,
                   'pages': 2048, 'graph_bytes': 8 * 1024 * 1024,
                   'proof_bytes': 8 * 1024 * 1024, 'page_bytes': 1024 * 1024,
                   'seconds': 60, 'roots': 40000}
+# Defaults remain conservative; only an explicit, measured collection may use
+# the larger metadata graph/page envelope. Time, rows, proof/output and closure
+# bounds do not expand, and this does not change any business execution limit.
+MAX_BUDGET = {**DEFAULT_BUDGET, 'page_rows': 1024, 'graph_bytes': 32 * 1024 * 1024}
 STATE = "current_setting('naumi_snapshot.state')::jsonb"
 
 
@@ -228,7 +237,7 @@ def budgets(overrides=None):
         if not isinstance(overrides, dict) or set(overrides) - set(result):
             raise ValueError('UNKNOWN_SNAPSHOT_BUDGET')
         result.update(overrides)
-    if any(type(v) is not int or not 1 <= v <= DEFAULT_BUDGET[k] for k, v in result.items()):
+    if any(type(v) is not int or not 1 <= v <= MAX_BUDGET[k] for k, v in result.items()):
         raise ValueError('BOUNDED_GLOBAL_BUDGET_REQUIRED')
     return result
 
@@ -245,19 +254,37 @@ def key_fields(key):
     return key[10:].split(',') if key.startswith('composite:') else [key]
 
 
-def catalog_sql(reg, key):
+def native_scan_predicate(name, previous_ids=()):
+    if name not in ['app_release_activities','app_worker_tick_receipts'] or not ACTIVITY_INSTANCE_SCOPE:
+        return 'true'
+    if (not isinstance(ACTIVITY_INSTANCE_SCOPE, tuple) or len(ACTIVITY_INSTANCE_SCOPE) != 2 or
+            len(set(ACTIVITY_INSTANCE_SCOPE)) != 2 or any(
+                not isinstance(n, str) or not re.fullmatch('naumi47-web-[a-z0-9-]+', n)
+                for n in ACTIVITY_INSTANCE_SCOPE)):
+        raise ValueError('CURRENT_ACTIVITY_PAIR_REQUIRED')
+    key = 'id' if name=='app_release_activities' else 'tick_id'
+    prior = 't.'+key+' IN ('+','.join(literal(v) for v in previous_ids)+')' if previous_ids else 'false'
+    active = ("t.instance_id IN (" + ','.join(literal(n) for n in ACTIVITY_INSTANCE_SCOPE) +
+              ") AND COALESCE(t.state,'')<>'finished'") if name=='app_release_activities' else "COALESCE(t.phase,'')<>'completed'"
+    # These observation leaves have no graph links (incoming business edges).
+    # Original IDs remain native-key probes even after completion or relocation.
+    return '(('+active+') OR '+prior+')'
+
+
+def catalog_sql(reg, key, required_fields=()):
     """Use the real PK, including composite UUID/int keys, without text casts in WHERE.
 
     KEYS is the business identity (batch child operation), not necessarily the PK.
     Missing PK/identity columns stay unknown; never paginate an unverified heap.
     """
     cursor = setting('cursor')
-    required = ','.join(literal(v) for v in key_fields(key))
+    required_names = list(dict.fromkeys([*key_fields(key), *required_fields]))
+    required = ','.join(literal(v) for v in required_names)
     return f"""WITH cols AS (SELECT attname,attnum,atttypid,atttypmod FROM pg_attribute
       WHERE attrelid=to_regclass({literal(reg)}) AND attnum>0 AND NOT attisdropped),
     pk AS (SELECT a.*,k.n FROM pg_index i CROSS JOIN LATERAL unnest(i.indkey) WITH ORDINALITY k(attnum,n)
       JOIN cols a ON a.attnum=k.attnum WHERE i.indrelid=to_regclass({literal(reg)}) AND i.indisprimary AND i.indisvalid)
-    SELECT count(*)>0 AND (SELECT count(*) FROM cols WHERE attname IN ({required}))={len(key_fields(key))} AS key_verified,
+    SELECT count(*)>0 AND (SELECT count(*) FROM cols WHERE attname IN ({required}))={len(required_names)} AS key_verified,
       COALESCE(string_agg(quote_ident(attname),',' ORDER BY n),'id') AS pk,
       COALESCE(string_agg('t.'||quote_ident(attname),',' ORDER BY n),'t.id') AS order_pk,
       COALESCE(string_agg('t.'||quote_ident(attname)||' DESC',',' ORDER BY n),'t.id DESC') AS reverse_pk,
@@ -313,13 +340,14 @@ def page_state(budget):
     return f"{STATE} || CASE WHEN NOT ({STATE}->>'ok')::boolean THEN '{{}}'::jsonb WHEN extract(epoch FROM clock_timestamp()-transaction_timestamp())>={budget['seconds']} THEN '{{\"ok\":false,\"reason\":\"unknown-time-budget\"}}'::jsonb WHEN ({STATE}->>'pages')::int>={budget['pages']} THEN '{{\"ok\":false,\"reason\":\"unknown-page-budget\"}}'::jsonb ELSE '{{}}'::jsonb END"
 
 
-def page_graph_sql(index, name, reg, key, budget, *, first=False):
+def page_graph_sql(index, name, reg, key, budget, *, first=False, previous_ids=()):
     seek = 'true' if first else f':table_{index}_seek'
+    source_predicate = native_scan_predicate(name, previous_ids)
     # MATERIALIZED PK page comes before ANY snapshot/payload expression. No
     # all-table source/proof CTE and no timestamp/OFFSET pagination.
     base = f"""WITH s AS MATERIALIZED (SELECT {page_state(budget)} AS s),
     page_keys AS MATERIALIZED (SELECT :table_{index}_order_pk FROM {reg} t
-      WHERE {seek} AND (SELECT (s->>'ok')::boolean FROM s)
+      WHERE ({source_predicate}) AND {seek} AND (SELECT (s->>'ok')::boolean FROM s)
       ORDER BY :table_{index}_order_pk LIMIT {budget['page_rows']}),
     page AS MATERIALIZED (SELECT to_jsonb(t) AS j FROM page_keys k CROSS JOIN LATERAL
       (SELECT :table_{index}_projection FROM {reg} t WHERE :table_{index}_join_pk LIMIT 1) t),
@@ -359,6 +387,8 @@ def proof_row_sql(name, projection):
     result = f"COALESCE((SELECT jsonb_object_agg(k,j->k) FROM unnest(ARRAY[{fields}]::text[]) e(k) WHERE j ? k),'{{}}'::jsonb) || jsonb_build_object('_preservationProof',true,'_frozenDigest',encode(sha256(convert_to(({sql_frozen()})::text,'UTF8')),'hex'),'snapshot',jsonb_build_object('status',j#>'{{snapshot,status}}','paidOperations',COALESCE(j#>'{{snapshot,paidOperations}}','{{}}'::jsonb)))"
     if name == 'app_ledger':
         result += " || jsonb_build_object('_ledgerRowSha256',encode(sha256(convert_to(j::text,'UTF8')),'hex'))"
+    if name == 'app_release_activities' and ACTIVITY_INSTANCE_SCOPE:
+        result += " || jsonb_build_object('instance_id',j->'instance_id','_frozenDigest',encode(sha256(convert_to((("+sql_frozen()+") || jsonb_build_object('instance_id',j->'instance_id'))::text,'UTF8')),'hex'))"
     return result
 
 
@@ -420,22 +450,24 @@ def build_sql(*, previous=None, schema='public', row_limit=1000, projection='ful
     empty_summary="'{\"count\":0,\"sumA\":\"0\",\"sumB\":\"0\",\"algorithm\":\"sha256-leaf-two-64bit-sums\"}'::jsonb"
     for i,(name,key) in enumerate(KEYS.items()):
         reg=schema+'.'+name
+        source_predicate=native_scan_predicate(name,prior.get(name,[]))
+        source_fields=(('instance_id','state') if name=='app_release_activities' else ('phase',)) if name in ['app_release_activities','app_worker_tick_receipts'] and ACTIVITY_INSTANCE_SCOPE else ()
         scan_guard=f"{STATE} || CASE WHEN :table_{i}_scan_count+({STATE}->>'scanRows')::int>{b['scan_rows']} THEN '{{\"ok\":false,\"reason\":\"unknown-scan-budget\"}}'::jsonb ELSE '{{}}'::jsonb END"
         lines += [deadline_sql(b,statement_timeout_ms),f"SELECT {save_setting('graph_'+str(i),empty_array)} AS graph, {save_setting('rows_'+str(i),empty_array)} AS rows, {save_setting('selected_'+str(i),empty_array)} AS selected \\gset init_{i}_",
           f"SELECT to_regclass({literal(reg)}) IS NOT NULL AS exists \\gset table_{i}_",f'\\if :table_{i}_exists',
-          catalog_sql(reg,key)+f' \\gset table_{i}_', f'\\if :table_{i}_key_verified',
+          catalog_sql(reg,key,source_fields)+f' \\gset table_{i}_', f'\\if :table_{i}_key_verified',
           graph_projection_sql(reg)+f' \\gset table_{i}_']
         if projection=='proof' and name!='app_ledger':lines += [proof_projection_sql(reg)+f' \\gset table_{i}_']
         lines += [deadline_sql(b,statement_timeout_ms),
-          f"SELECT count(*) AS scan_count FROM (SELECT :table_{i}_order_pk FROM {reg} t WHERE ({STATE}->>'ok')::boolean ORDER BY :table_{i}_order_pk LIMIT {b['scan_rows']+1}) q \\gset table_{i}_",
+          f"SELECT count(*) AS scan_count FROM (SELECT :table_{i}_order_pk FROM {reg} t WHERE ({source_predicate}) AND ({STATE}->>'ok')::boolean ORDER BY :table_{i}_order_pk LIMIT {b['scan_rows']+1}) q \\gset table_{i}_",
           f"SELECT {save_setting('state',scan_guard)} \\gset scan_gate_{i}_",
           f"SELECT {save_setting('cursor',empty_array)} \\gset cursor_{i}_"]
         if name in ['app_ledger','app_billing_operations']:
             lines += [f"SELECT {save_setting('summary_'+str(i),empty_summary)} \\gset summary_{i}_"]
         # Render query templates with catalog fragments in psql, not SQL values.
         # \gexec itself only executes SQL; no generated psql meta commands.
-        first=page_graph_sql(i,name,reg,key,b,first=True)
-        more=page_graph_sql(i,name,reg,key,b)
+        first=page_graph_sql(i,name,reg,key,b,first=True,previous_ids=prior.get(name,[]))
+        more=page_graph_sql(i,name,reg,key,b,previous_ids=prior.get(name,[]))
         lines += [deadline_sql(b,statement_timeout_ms),first]
         lines += generated_pages(more,i,f'ceil(:table_{i}_scan_count::numeric/{b["page_rows"]})::int-1',b,statement_timeout_ms)
         lines += ['\\endif','\\endif']
