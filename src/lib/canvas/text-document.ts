@@ -133,6 +133,15 @@ export function createCanvasTextDocument(options:Options) {
       const pending=(state.queues.get(node.id)||Promise.resolve()).catch(()=>{}).then(()=>gate).then(run);state.queues.set(node.id,pending);
       return pending.finally(()=>{if(state.queues.get(node.id)===pending){state.queues.delete(node.id);state.scheduled.delete(node.id);}});
     };
+    /** Link delivered images into the latest text graph, not a submission-time
+     * snapshot. Existing draft/rebase/save queues remain the only write owner. */
+    const attachImageResults=async(sourceIds:string[],imageIds:string[])=>{
+      if(!writable||!scope.documentCurrent()||!sourceIds.length||!imageIds.length)return;
+      const ids=new Set(sourceIds),updated=state.snapshot.nodes.filter(node=>ids.has(node.id)).map(node=>({...node,targetIds:Array.from(new Set([...(node.targetIds??[]),...imageIds])),updatedAt:new Date().toISOString()}));
+      const links=new Map(updated.map(node=>[node.id,node.targetIds]));
+      set(nodes=>nodes.map(node=>links.has(node.id)?{...node,targetIds:Array.from(new Set([...(node.targetIds??[]),...links.get(node.id)!]))}:node));
+      await Promise.all(updated.map(save));
+    };
     const resolve=async(id:string,choice:"local"|"server")=>{
       if(!scope.documentCurrent()||!writable)return null;const conflict=state.snapshot.conflicts[id],baseline=state.bases.get(id),local=state.snapshot.nodes.find(n=>n.id===id);if(!conflict)return null;
       const conflicts={...state.snapshot.conflicts};delete conflicts[id];state.pending.delete(id);state.bases.delete(id);state.drafts.delete(id);
@@ -159,7 +168,7 @@ export function createCanvasTextDocument(options:Options) {
         publish(state,{nodes:mergeTextDrafts(Array.from(merged.values()),state.drafts.values()),phase:"ready",error:""});return true;
       } catch(error){if(scope.documentCurrent()&&version===state.loadVersion)publish(state,{phase:"error",error:error instanceof Error?error.message:"文字节点加载失败"});return false;}
     };
-    return {getSnapshot:()=>state.snapshot,subscribe:(listener:()=>void)=>{state.listeners.add(listener);return()=>{state.listeners.delete(listener);};},set,accept,save,load,
+    return {getSnapshot:()=>state.snapshot,subscribe:(listener:()=>void)=>{state.listeners.add(listener);return()=>{state.listeners.delete(listener);};},set,accept,save,load,attachImageResults,
       resolve,flush:()=>Promise.all(Array.from(state.queues.values())),retry:()=>Promise.all(Array.from(state.drafts.values(),save)),history};
   }
   return {bind,history};

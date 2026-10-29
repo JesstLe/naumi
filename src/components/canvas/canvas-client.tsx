@@ -30,7 +30,7 @@ import {useCharacterNodes} from "./character/use-character-nodes";
 import type {CanvasCharacterNode} from "@/lib/canvas/character-node-schema";
 import {characterInputIdentity,parseCharacterInputIdentity,type CharacterProject} from "@/lib/character/project";
 import {characterInputChoices} from "@/lib/character/canvas";
-import {executeCanvasImageCreation,generateCanvasAssistantImage,canvasBlankImagePrompt,canvasInheritedImagePrompt,CANVAS_IMAGE_REFERENCE_LIMIT as MAX_TOTAL_IMAGES,type CanvasImageCreationServices} from "@/lib/canvas/image-creation";
+import {executeCanvasImageCreation,generateCanvasAssistantImage,canvasInheritedImagePrompt,CANVAS_IMAGE_REFERENCE_LIMIT as MAX_TOTAL_IMAGES,type CanvasImageCreationServices} from "@/lib/canvas/image-creation";
 import {canvasNodeMenuItems} from "./node-menu-items";
 import {artworkFields} from "@/lib/canvas/artwork-write";
 import {CanvasArtworkConflicts} from "./artwork-conflicts";
@@ -109,9 +109,10 @@ import {createCanvasWorkflowRuns} from "@/lib/canvas/workflow-runs";
 import type {CanvasGenerationRunContext} from "@/lib/canvas/generation-run-context";
 import {useCanvasGenerationPresentation} from "./use-canvas-generation-presentation";
 import {useCanvasPendingPresentation} from "./use-canvas-pending-presentation";
-import {createCanvasImageTask,type CanvasGeneratedImage} from "@/lib/canvas/image-task-controller";
+import type {CanvasGeneratedImage} from "@/lib/canvas/image-task-controller";
+import {runCanvasDerivedImage,runCanvasBlankImage,type CanvasImageRunContext,type CanvasBlankImageOptions} from "@/lib/canvas/image-runs";
 import {captureCanvasImageTaskScope,captureCanvasTaskOwner} from "@/lib/canvas/image-task-scope";
-import {prepareCanvasImageTask,appendCanvasImageReferences,type CanvasImageGenerationOptions} from "@/lib/canvas/image-task-request";
+import {appendCanvasImageReferences,type CanvasImageGenerationOptions} from "@/lib/canvas/image-task-request";
 import {generateCanvasVideo} from "@/lib/video/canvas-submission";
 import {readVideoReceipt,clearVideoReceipt} from "@/lib/video/canvas-receipts";
 import {VideoSettingsDialog,type VideoNodeDraft} from "./video/settings-dialog";
@@ -157,7 +158,6 @@ import { selectionRunTargets } from "@/lib/canvas/selection-run";
 import { BatchSelectionToolbar } from "./batch-selection-toolbar";
 import { TextImageGenerationDialog } from "./text-image-generation-dialog";
 import { buildTextImageRequests, type TextImageMode } from "@/lib/canvas/text-image-inputs";
-import { generationPlaceholderSize, generationPositionForTask } from "@/lib/canvas/generation-feedback";
 import { CanvasAssistantPanel } from "./canvas-assistant-panel";
 import { useWorkflowPaste } from "./use-workflow-paste";
 import type { ImportedManifest } from "@/lib/canvas/workflow-clipboard";
@@ -1861,65 +1861,29 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     pendingPresentation.drag(id,position,saveReceipt);
   }
 
-  async function runGen(
-    source: Artwork,
-    prompt: string,
-    opts?: CanvasImageGenerationOptions
-  ): Promise<GeneratedResult[]> {
-    if (readOnly || !user || isNodeLocked(source.id)) return [];
-    const text = prompt.trim();
-    if (!text && !opts?.ratiogen) return []; // 改比例可无提示词(服务端用固定重构图指令)
-    const requestedCount = opts?.ratiogen ? 1 : Math.max(1, opts?.count ?? 1);
-    const operationKey = opts?.operationKey ?? `node:${source.id}`;
-    if (generationPresentation.busy(operationKey)) return [];
-    const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const sourceNode = rfRef.current?.getNode(source.id) ?? rfNodes.find((node) => node.id === source.id);
-    const view=generationPresentation;
-    const siblingTaskCount=view.siblingCount(source.id);
-    const sourceSize = flowNodeSize(sourceNode);
-    const previewSize = generationPlaceholderSize(opts?.ratio || source.ratio);
-    const preferredPosition = sourceNode
-      ? {
-          x: sourceNode.position.x + sourceSize.width + X_GAP,
-          y:
-            sourceNode.position.y +
-            (opts?.taskOffset ?? siblingTaskCount) * (previewSize.height + NODE_LABEL_H + 24),
-        }
-      : { x: 0, y: 0 };
-    const taskPosition=view.start({
-      id:taskId,operationKey,sourceId:source.id,replaceNode:opts?.replaceNode,
-      label:opts?.taskLabel||t("canvas.pending"),stage:"preparing",startedAt:Date.now(),previewSize,count:requestedCount,
-    },{preferred:opts?.replaceNode?sourceNode?.position||{x:source.canvasX||0,y:source.canvasY||0}:preferredPosition,
-      occupied:(rfRef.current?.getNodes()??rfNodes).map(node=>({...node.position,...flowNodeSize(node)})),reserve:!opts?.replaceNode});
-    setGenError(null);
-    const requestAccount=canvasAccountRef.current,requestProject=activeProjectRef.current?.key||null,requestEpoch=canvasContextEpochRef.current;
-    const scope=captureCanvasImageTaskScope(user.email,requestProject,()=>batchRunMountedRef.current&&requestAccount===canvasAccountRef.current&&requestProject===(activeProjectRef.current?.key||null)&&requestEpoch===canvasContextEpochRef.current&&(opts?.isCurrent?.()??true));
-    const task=createCanvasImageTask({scope,replacement:opts?.replaceNode?{nodeId:source.id,history:pushUndo}:undefined,
-      prepare:()=>prepareCanvasImageTask({kind:"derived",scope,operationKey,position:taskPosition,prompt:text,source,options:opts||{},models:imageModels,model:genModel,quality:genQuality,referenceInputs:opts?.referenceInputs}),
-      submit:async(form,isCurrent)=>privateFetch("/api/generate-image",{method:"POST",headers:await authHeader(),body:form,isCurrent}),
-      position:()=>view.position(taskId,taskPosition),
-      merge:mergeWorks,history:pushAddUndoMany,
-      stage:stage=>view.update(taskId,{stage,failure:undefined}),
-      user:value=>applyServerUser(value as Parameters<typeof applyServerUser>[0]),notice:flashTip,
-      errorText:t("canvas.genFail"),saveErrorText:t("canvas.saveFailed"),resultGap:NODE_LABEL_H+24,
-    });
-    const activity=view.activity({operationKey,canRetry:scope.isCurrent,
-      clear:()=>view.remove(taskId),
-      execute:async({retry,retain}):Promise<GeneratedResult[]>=>{
-        const result=await task.run();
-        if(result.status==="failed"){
-          retain();const message=generationFailureMessage(result.failure);
-          if(selectedIdRef.current===source.id)setGenError(message);else flashTip(`${source.title}：${message}`);
-          view.update(taskId,{failure:result.failure,onRetry:retry});
-          return [];
-        }
-        if(result.status==="stale"||result.status==="cancelled")return [];
-        if(selectedIdRef.current===source.id)setGenError(null);
-        if(result.images.length<requestedCount)flashTip(`请求 ${requestedCount} 张，已交付 ${result.images.length} 张`);
-        return result.images;
+  /** Canvas supplies the current scene, scoped stores and existing document I/O. */
+  function canvasImageRunContext(isCurrent?:()=>boolean):CanvasImageRunContext {
+    return {
+      capture:()=>{
+        const account=canvasAccountRef.current,project=activeProjectRef.current?.key||null,epoch=canvasContextEpochRef.current;
+        return captureCanvasImageTaskScope(user!.email,project,()=>batchRunMountedRef.current&&account===canvasAccountRef.current&&project===(activeProjectRef.current?.key||null)&&epoch===canvasContextEpochRef.current&&(isCurrent?.()??true));
       },
-    });
-    return await activity.run()??[];
+      generation:generationPresentation,pending:pendingPresentation,
+      geometry:{gap:X_GAP,artworkSize:artworkNodeSize,
+        source:art=>{const node=rfRef.current?.getNode(art.id)??rfNodes.find(item=>item.id===art.id);return{point:node?.position??{x:art.canvasX||0,y:art.canvasY||0},size:node?flowNodeSize(node):artworkNodeSize(art),inScene:!!node};},
+        occupied:()=>(rfRef.current?.getNodes()??rfNodes).map(node=>({...node.position,...flowNodeSize(node)})),position:livePendingPosition},
+      document:{merge:mergeWorks,history:pushAddUndoMany},replacementHistory:pushUndo,
+      attachTextImages:(ids,images)=>canvasTextDocument.attachImageResults(ids,images.map(image=>image.id)),
+      submit:async(form,current)=>privateFetch("/api/generate-image",{method:"POST",headers:await authHeader(),body:form,isCurrent:current}),
+      user:value=>applyServerUser(value as Parameters<typeof applyServerUser>[0]),notice:flashTip,clearError:()=>setGenError(null),
+      errorText:t("canvas.genFail"),saveErrorText:t("canvas.saveFailed"),pendingLabel:t("canvas.pending"),resultGap:NODE_LABEL_H+24,
+    };
+  }
+  async function runGen(source:Artwork,prompt:string,opts?:CanvasImageGenerationOptions):Promise<GeneratedResult[]> {
+    if(readOnly||!user||isNodeLocked(source.id))return [];
+    return runCanvasDerivedImage({source,prompt,options:opts,model:genModel,quality:genQuality,models:imageModels,
+      failed:failure=>{const message=generationFailureMessage(failure);if(selectedIdRef.current===source.id)setGenError(message);else flashTip(`${source.title}：${message}`);},
+      succeeded:()=>{if(selectedIdRef.current===source.id)setGenError(null);}},canvasImageRunContext(opts?.isCurrent));
   }
 
   // 抠图使用管理员配置的处理器；旧 fast/fine 不是图片模型的质量档位。
@@ -3254,103 +3218,22 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   function onPendRemove(id: string) { void runDelete([id]); }
   // 空白节点生成(文生图 / 合并多输入):用 dock 的提示词 + 输入图(若有)生成,填充本节点
-  async function generatePend(opts?: {
-    pend?: Pend;
-    prompt?: string;
-    ratio?: string;
-    forceStandard?: boolean;
-    referenceInputs?: CanvasImageReference[];
-    isCurrent?: () => boolean;
-  }): Promise<boolean> {
-    if (readOnly || !user) return false;
-    // 可传入指定的空白节点(拉线「生成衍生图」用,避免依赖尚未刷新的 state)
-    const pend = opts?.pend ?? pendNodes.find((p) => p.id === selectedPendId);
-    if (!pend || pend.generating || pend.uploading || pend.needsAttention) return false;
-    const text = (opts?.prompt ?? editPrompt).trim();
-    const inputArts = pend.inputs
-      .map((id) => active?.members.find((m) => m.id === id))
-      .filter(Boolean) as Artwork[];
-    const referenceInputs = opts?.referenceInputs || (!opts?.forceStandard && pend.id === selectedPendId ? composerReferences : undefined);
-    if(referenceInputs){
-      const issue=referenceManifestError(text,imageReferenceManifest(referenceInputs));
-      if(issue){setGenError(issue);return false;}
-      if(pend.inputs.some(id=>!id.startsWith("text-")&&!inputArts.some(art=>art.id===id&&art.image&&!art.videoUrl))){setGenError("已连接的参考图片尚未载入，请同步图片后重试");return false;}
-    }
-    const inputTextNodeIds = Array.from(
-      new Set(
-        [pend.parentId, ...pend.inputs].filter(
-          (id): id is string => Boolean(id?.startsWith("text-"))
-        )
-      )
-    );
-    const inputTextNodes = inputTextNodeIds
-      .map((id) => textNodes.find((node) => node.id === id))
-      .filter(Boolean) as CanvasTextNode[];
-    if (generationMode === "detail" && !opts?.forceStandard) {
-      if (!inputArts.length) {
-        flashTip(t("canvas.detailNeedRefs"));
-        return false;
-      }
-      await generateDetailSequence(inputArts[0], inputArts, text, [], pend, referenceInputs);
-      return false;
-    }
-    if (!text && !pend.inputs.length) {
-      flashTip(t("canvas.pendNeedPrompt"));
-      return false;
-    }
-    const operationKey = `pend:${pend.id}`;
-    if (generationPresentation.busy(operationKey)) return false;
-    // 没写提示词时:不再注入"生成一张电商商业图"这种会重绘/改风格的通用词
-    // (那会让输出莫名其妙变样,还被存成节点提示词)。改为沿用主输入图自身的
-    // 提示词(延续它的配方);没有则用"保持主体/构图/风格"的中性词。
-    const promptToUse =
-      canvasBlankImagePrompt(text,inputTextNodes,inputArts);
-    setGenError(null);
-    const generationSize = generationPlaceholderSize(opts?.ratio || genRatio);
-    const livePend = rfRef.current?.getNode(pend.id)?.position ?? pendNodesRef.current.find(node => node.id === pend.id) ?? pend;
-    const generationPosition = generationPositionForTask(livePend, livePend, generationSize, []);
-    setPendNodes((prev) =>
-      prev.map((p) => (p.id === pend.id ? { ...p, generationFailure: undefined, onGenerationRetry: undefined, generating: true, generationStage: "preparing", generationStartedAt: Date.now(),
-        ...generationPosition, generationSize, generationCount: normalizeCanvasCount(genCount) } : p))
-    );
-    const requestAccount=canvasAccountRef.current,requestProject=activeProjectRef.current?.key||null,requestEpoch=canvasContextEpochRef.current;
-    const scope=captureCanvasImageTaskScope(user.email,requestProject,()=>batchRunMountedRef.current&&requestAccount===canvasAccountRef.current&&requestProject===(activeProjectRef.current?.key||null)&&requestEpoch===canvasContextEpochRef.current&&(opts?.isCurrent?.()??true));
-    const task=createCanvasImageTask({scope,
-      prepare:()=>prepareCanvasImageTask({kind:"blank",scope,operationKey,position:generationPosition,prompt:promptToUse,ratio:opts?.ratio||genRatio,resolution:genResolution,style:genStyle,count:genCount,quality:genQuality,model:genModel,inputs:inputArts,referenceInputs,
-        textParentId:pend.parentId?.startsWith("text-")&&inputTextNodes.some(node=>node.id===pend.parentId)?pend.parentId:undefined}),
-      submit:async(form,isCurrent)=>privateFetch("/api/generate-image",{method:"POST",headers:await authHeader(),body:form,isCurrent}),
-      position:()=>livePendingPosition(pend.id,generationPosition),merge:mergeWorks,history:pushAddUndoMany,
-      attached:async(images)=>{
-        const newIds=images.map(image=>image.id);
-        if(!inputTextNodes.length)return;
-        // Merge generated links into today's text document, not the submission snapshot.
-        const inputIds=new Set(inputTextNodes.map(node=>node.id));
-        const updated=textNodesRef.current.filter(node=>inputIds.has(node.id)).map(node=>({...node,targetIds:Array.from(new Set([...(node.targetIds??[]),...newIds])),updatedAt:new Date().toISOString()}));
-        const links=new Map(updated.map(node=>[node.id,node.targetIds]));
-        const merge=(nodes:CanvasTextNode[])=>nodes.map(node=>links.has(node.id)?{...node,targetIds:Array.from(new Set([...(node.targetIds??[]),...links.get(node.id)!]))}:node);
-        textNodesRef.current=merge(textNodesRef.current);setTextNodes(merge);
-        await Promise.all(updated.map(node=>persistTextNode(node)));
+  async function generatePend(opts?:CanvasBlankImageOptions):Promise<boolean> {
+    if(readOnly||!user)return false;
+    const pend=opts?.pend??pendNodes.find(node=>node.id===selectedPendId);if(!pend)return false;
+    return runCanvasBlankImage({pend,prompt:opts?.prompt??editPrompt,
+      settings:{ratio:opts?.ratio||genRatio,resolution:genResolution,style:genStyle,count:genCount,quality:genQuality,model:genModel},
+      members:active?.members||[],textNodes,detail:generationMode==="detail"&&!opts?.forceStandard,
+      referenceInputs:opts?.referenceInputs||(!opts?.forceStandard&&pend.id===selectedPendId?composerReferences:undefined),
+      invalid:setGenError,needReferences:t("canvas.detailNeedRefs"),needPrompt:t("canvas.pendNeedPrompt"),
+      runDetail:(source,inputs,prompt,node,refs)=>generateDetailSequence(source,inputs,prompt,[],node,refs),
+      failed:failure=>{const message=generationFailureMessage(failure);if(selectedPendIdRef.current===pend.id)setGenError(message);else flashTip(`${pend.label}：${message}`);},
+      attached:images=>{
+        if(selectedPendIdRef.current===pend.id&&!activeKey)setPendingNode(images[0]?.id||null);
+        canvasHistory.consumePending(pend.id);
       },
-      stage:stage=>setPendNodes(nodes=>nodes.map(node=>node.id===pend.id?{...node,generating:true,generationStage:stage,generationFailure:undefined}:node)),
-      user:value=>applyServerUser(value as Parameters<typeof applyServerUser>[0]),notice:flashTip,
-      errorText:t("canvas.genFail"),saveErrorText:t("canvas.saveFailed"),resultGap:NODE_LABEL_H+24,
-    });
-    const activity=generationPresentation.activity({operationKey,canRetry:scope.isCurrent,
-      execute:async({retry}):Promise<boolean>=>{
-        const result=await task.run();
-        if(result.status==="stale")return false;
-        if(result.status==="cancelled"){setPendNodes(nodes=>nodes.map(node=>node.id===pend.id?{...node,generating:false,generationFailure:undefined}:node));return false;}
-        if(result.status==="failed"){
-          const message=generationFailureMessage(result.failure);
-          if(selectedPendIdRef.current===pend.id)setGenError(message);else flashTip(`${pend.label}：${message}`);
-          setPendNodes(nodes=>nodes.map(node=>node.id===pend.id?{...node,generating:false,generationFailure:result.failure,onGenerationRetry:retry}:node));return false;
-        }
-        if(selectedPendIdRef.current===pend.id&&!activeKey)setPendingNode(result.images[0]?.id||null);
-        canvasHistory.consumePending(pend.id);setPendNodes(nodes=>nodes.filter(node=>node.id!==pend.id));setSelectedPendId(id=>id===pend.id?null:id);if(selectedPendIdRef.current===pend.id)setGenError(null);
-        return result.status==="succeeded";
-      },
-    });
-    return await activity.run()??false;
+      completed:()=>{setSelectedPendId(id=>id===pend.id?null:id);if(selectedPendIdRef.current===pend.id)setGenError(null);},
+    },canvasImageRunContext(opts?.isCurrent));
   }
 
   // Placeholder import keeps its saved ID on sync failure; the shared import

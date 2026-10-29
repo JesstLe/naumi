@@ -37,6 +37,8 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='audio-ui')stageEnv.AUDIO_SOURCE_WAV=path.join(out,'audio-rules','original.wav');
    if(spec.id==='timeline-ui')stageEnv.TIMELINE_SOURCE_ASSETS=path.join(out,'timeline-rules');
    stageEnv.TIMELINE_APP_EVIDENCE=evidence;
+   if(spec.id==='primary-generation')stageEnv.PRIMARY_GENERATION_EVIDENCE=evidence;
+   if(spec.id==='apimart-polling-boundary')stageEnv.X6_OUT=evidence;
    if(spec.id==='native-documents')stageEnv.NATIVE_DOCUMENT_EVIDENCE=evidence;
    if(spec.id==='native-documents-pg')stageEnv.NATIVE_DOCUMENT_PG_EVIDENCE=evidence;
    if(spec.id==='reference-retention')stageEnv.REFERENCE_RETENTION_EVIDENCE=evidence;
