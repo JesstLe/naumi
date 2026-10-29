@@ -1,5 +1,31 @@
 [
   {
+    "version": "1793281629",
+    "title": {
+      "zh": "画布创作与稳定性更新",
+      "en": "Canvas creation and stability update"
+    },
+    "improvements": [],
+    "fixes": [
+      {
+        "zh": "修复部分画布工具的输入范围与历史切换问题，保留当前图片和参考图草稿。",
+        "en": "Fixed input scope and history switching in canvas tools while preserving the current image and reference drafts."
+      },
+      {
+        "zh": "修复工作台重新打开会话时的异常状态，减少切换会话后的旧内容干扰。",
+        "en": "Fixed session reopening states in the workspace and reduced stale updates after switching sessions."
+      },
+      {
+        "zh": "改善大图上传时的资源使用，保持原图和预览品质不变。",
+        "en": "Improved resource use during large-image uploads without reducing original or preview quality."
+      },
+      {
+        "zh": "改善图片任务遇到短暂连接异常时的等待与查询处理。",
+        "en": "Improved waiting and status checks when image tasks encounter brief connection errors."
+      }
+    ]
+  },
+  {
     "version": "1793204789",
     "title": {
       "zh": "团队使用体验优化",
