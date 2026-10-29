@@ -5,6 +5,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import {pathToFileURL} from "node:url";
 import sharp from "sharp";
+import type {PoolClient} from "pg";
 import {createModelFixture} from "./model-config-fixture";
 import {gaodingFixture,clipboardHtml} from "./fixtures/gaoding-clipboard";
 
@@ -61,6 +62,7 @@ async function main(){
     const invalid={...deletion,operationId:randomUUID(),timelineIds:['timeline-missing']};eq((await call(route,"/api/canvas/nodes/delete",invalid)).status,500);
     eq((await f.sql.query("SELECT deleted_at FROM app_canvas_audio_nodes WHERE email=$1",[email])).rows[0].deleted_at,null);
     const c={operationId:randomUUID(),ids:specs.map(([kind])=>nodes[kind].id)};const copied=await call(copy,"/api/canvas/nodes/copy",c);eq(copied.status,200);eq(!!copied.body.nativeNodes,!baseline);
+    eq((await call(copy,"/api/canvas/nodes/copy",c)).body,copied.body);
     if(!baseline){const id=copied.body.audioNodes[0].id;await f.sql.query("UPDATE app_canvas_audio_nodes SET title='edited copy',revision=8 WHERE email=$1 AND id=$2",[email,id]);const retry=await call(copy,"/api/canvas/nodes/copy",c);eq([retry.body.nativeNodes.audioNodes[0].title,retry.body.nativeNodes.audioNodes[0].revision],['edited copy',8]);}
     const project=await call(route,"/api/canvas/nodes/delete",{projectKey:copied.body.projectKey,operationId:randomUUID()});eq(project.status,200);eq(!!project.body.nativeNodes,!baseline);
     eq((await call(route,"/api/canvas/nodes/delete",deletion,other)).status,500);
@@ -104,7 +106,8 @@ async function main(){
       const countFiles=async(folder:string):Promise<number>=>{let total=0;for(const item of await fs.readdir(folder,{withFileTypes:true}).catch(()=>[])){total+=item.isDirectory()?await countFiles(path.join(folder,item.name)):1;}return total;};
       eq(await countFiles(path.join(media,'canvas-import-fills',operationId)),0);
       const ambiguous=await workflow.importCanvasWorkflow(email,{...input,operationId:randomUUID()}),unknownOp=randomUUID(),pool=db.getPool(),connect=pool.connect;let commits=0;
-      (pool as any).connect=async()=>{const client=await connect.call(pool),query=client.query;client.query=async function(...args:any[]){const result=await (query as any).apply(client,args);if(args[0]==='COMMIT'&&++commits===2)throw Error('fixture lost COMMIT acknowledgement');return result;};const release=client.release;client.release=function(...args:any[]){client.query=query;return (release as any).apply(client,args);};return client;};
+      const connectAsync=connect as () => Promise<PoolClient>;
+      (pool as any).connect=async()=>{const client=await connectAsync.call(pool),query=client.query;client.query=async function(...args:any[]){const result=await (query as any).apply(client,args);if(args[0]==='COMMIT'&&++commits===2)throw Error('fixture lost COMMIT acknowledgement');return result;};const release=client.release;client.release=function(...args:any[]){client.query=query;return (release as any).apply(client,args);};return client;};
       try{await assert.rejects(()=>workflow.fillWorkflowAsset(email,ambiguous.artworks[0].id,unknownOp,png),/lost COMMIT acknowledgement/);checks++;}finally{pool.connect=connect;}
       const receipt=await workflow.fillWorkflowAsset(email,ambiguous.artworks[0].id,unknownOp,png,{prepare:async()=>{throw Error('known COMMIT must not prepare');}});eq(await fs.readFile(path.join(media,receipt.node.image.slice(7))),png);eq(commits,2);
       console.log('GROUP=FILL_FAULTS PASS SQL_ROLLBACK=NO_PARTIAL COMMIT_ACK_LOST=ORIGINAL_RECEIPT BYTES_RETAINED=1');

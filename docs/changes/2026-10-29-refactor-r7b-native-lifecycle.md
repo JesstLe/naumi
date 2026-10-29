@@ -17,6 +17,6 @@
 
 ## 验证与未完成
 
-当前是实现中，首次完整 tsc 抓出三项异构集合类型关联问题，正在按真实类型修正，未降低 ts/lint 规则。完整模块完成后集中执行真实 handler/PG、客户端、原有 history/native-kind/企业站点回归；固定源码、构建与四产物以随后 VERIFICATION/DELIVERY 为准。
+本模块实现已完成，进入固定源码集中封版。第一轮 core98 在 f76acfd4 实际执行 54 PASS、1 FAIL、43 NOT_RUN：场景完整应用测试发现 copy 首次回执包含六种空数组、replay 省略未选 kind 的结构差异。共同 receipt owner 已统一空数组形态，不改 kind-specific payload/CAS。新增整包首次/replay 比较；真实 HTTP/PG 定向 66 检查通过，其中 SQL 失败无部分提交、真实 COMMIT 执行后丢 acknowledgement 保留已发布字节并读取原回执，账本与外网调用均不变。历史实际调用方 fixture 绑定真实 native-document adapter，67 场景/184 检查通过，没有手写替代业务实现。新 pg 验证器的 connect promise 重载类型同时修正，未删除 fault injection。此前类型/初始化失败日志及第一轮 core 失败原样保留；相邻主线 5 组实际运行 PASS、四项 SCC 均 0。完整最终 core、类型/lint、镜像和四产物以随后 VERIFICATION/DELIVERY 为准。
 
 整体完整镜像/应用级浏览器、性能/INP/容量及有效远端 required CI/最终退出仍待；R6Z MEDIA_STATE_WRITE_FAILED 根因仍 OPEN。六种 hook 本身账号/workspace 读取与 epoch 生命周期的进一步统一仍需验证，不能只凭本轮 typed adapter 宣称所有 native store 作用域已经闭合。47 HOLD、不发布、不合 main。

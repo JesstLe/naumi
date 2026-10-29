@@ -28,7 +28,10 @@ export async function ensureNativeNodeSchemas(ids?:CanvasNativeIds){
   for(const entry of CANVAS_NATIVE_NODE_KINDS)if(!ids||ids[entry.ids]?.length)await storage[entry.kind].ensure();
 }
 export async function readNativeNodeReceiptsTx(tx:PoolClient,actor:string,ids:CanvasNativeIds,lock=false):Promise<CanvasNativeRecords>{
-  const receipt:CanvasNativeRecords={};
+  // Keep the receipt wire shape stable between the initial commit and replay,
+  // including kinds with no selected records. The arrays are deltas, not a
+  // replacement of the corresponding document store.
+  const receipt:CanvasNativeRecords=Object.fromEntries(CANVAS_NATIVE_NODE_KINDS.map(({records})=>[records,[]]));
   for(const entry of CANVAS_NATIVE_NODE_KINDS){
     const requested=ids[entry.ids];if(!requested?.length)continue;
     const adapter=storage[entry.kind];
