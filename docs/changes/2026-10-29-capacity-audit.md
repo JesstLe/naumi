@@ -283,3 +283,14 @@
 - 仅副本回滚恢复原3源码hash、三个原问题，并删除副本新增3文件；后来编辑guard exit73且0写入。四产物与精确命令/input/stdout/stderr/exit在父ignored `output/capacity-audit-wave2-20261029/review-followups/`；文档 `2026-10-29-capacity-review-followups.md`。
 - 事实校正：此前并发派发第三个 release collector 的调用最终返回 `parent_not_active`，没有成功taskId，不能把“调用已提交”记成实际开工；本轮下一批重新实际派发并记录返回句柄。画布与X3两个review确已完成，两个代码切片修复后方可合主线。
 - 下一批：release任务快照有界读取、账务余额sum/长事务/BI保留、Agent会话SSE/Markdown/上传，独立职责分工。历史生产容量/完整生命周期、45笔手术与在线索引继续挂账。既有fixture与accepted-timeout波动未自动关闭。
+
+
+### 2026-10-29 普通业务连接生命周期父线程复核
+
+- 固定提交 `19f19d9d27b4ff5c54a36c40ebb6844719503c87` 已由父线程普通合入隔离分支，改动仅普通池连接监听、工作台事务封装及专属测试/文档。不是重复登记此前X3 tick/heartbeat修复。
+- **A26 / D11 普通业务池扩展切片**：物理connect事件安装一次Client error listener并处理Pool idle error，防止借出无查询、空闲、关闭中、执行中连接断开演变成Node未处理error退出；不提前release、不重试SQL、不调整业务池5或总预算。按坏物理连接WeakSet去重固定短日志，不输出参数/凭据。
+- **A27 工作台子项**：真实事务backend被终止后，原ROLLBACK断连异常覆盖原57P01；中间connection-only对照preserved=false，完整修改preserved=true且release(true)。正常成功/业务失败/SQL错误仍沿原同一事务，回滚成功复用健康连接。
+- 父线程本轮重跑真实PG/Node矩阵：基线/副本恢复各5个故障子进程exit1、4个正常exit0；修改9/9 exit0；connection-only中间对照另跑9组。正常20并发事务、100次callback、25次模块重载、迟到checkout、关闭围栏/下一代池均检查。测试只kill刚借出的本机fixture backend，无生产故障注入。
+- 父线程内存/Worker/v2/真实重启回归38/38，全项目tsc exit0。子任务依赖不齐导致的36项同基线诊断仍保留，父线程通过基于匹配React19的另一环境，不抹除原失败。未跑HTTP/浏览器/生产容量，不将这些列为通过。
+- 四产物及完整精确命令/输入/字面输出/exit位于父ignored `output/capacity-audit-wave2-20261029/runtime-parent/`。副本恢复2原hash/原故障；后来编辑guard exit73/WRITES=0。所有自有fixture已移除，源码与修改副本保持。
+- 本轮未连接或修改47，未部署；45笔手术和在线索引仍挂账。账务热路径与发布采集器由已派发独立任务继续；下一空位推进Agent会话/SSE和Markdown可达性，避免扩大本连接补丁。
