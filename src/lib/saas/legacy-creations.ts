@@ -25,7 +25,7 @@ export async function listLegacyCreations(f:CreationFilters,access?:LegacyReadSc
 type LegacyMedia={asset:CreationAsset;storageRef:string;actorEmail:string};
 export async function legacyCreationDetail(id:string,pages:{assetPage?:number;diagnostics?:boolean}={},access?:LegacyReadScope){
  const ref=parseId(id);if(access&&!access.allowedEmails.includes(ref.email))throw new TeamError('记录不存在或无权访问',404);
- await ensureBiSchema();const pool=access?.client||getPool();
+ if(!access)await ensureBiSchema();const pool=access?.client||getPool();
  // Table names come exclusively from the closed schema above; values stay bound.
  const row=(await pool.query(`SELECT * FROM ${ref.table} WHERE id=$1 AND email=$2`,[ref.id,ref.email])).rows[0];if(!row)throw new TeamError('记录不存在或无权访问',404);
  const request=row.payload?.plan?.request||row.payload?.p?.imagegen?.request;

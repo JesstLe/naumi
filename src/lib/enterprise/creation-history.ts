@@ -2,6 +2,7 @@ import 'server-only';
 import type {TeamActor} from '@/lib/teams/grants';
 import {TeamError} from '@/lib/teams/server';
 import {enterpriseRead} from './server';
+import {ensureBiSchema} from '@/lib/bi/repository';
 import {listLegacyCreations,legacyCreationDetail,legacyCreationAsset,type LegacyReadScope} from '@/lib/saas/legacy-creations';
 import {publicCreationParameters} from '@/lib/saas/creation-writer';
 import type {CreationFilters,CreationPage} from '@/lib/saas/creation-contracts';
@@ -9,6 +10,7 @@ import type {CreationFilters,CreationPage} from '@/lib/saas/creation-contracts';
 /** Same live hierarchy as member history, including the owner's own records.
  * Reading history does not change its original tenant/payer/asset ownership. */
 async function read<T>(actor:TeamActor,enterpriseId:string,run:(access:LegacyReadScope)=>Promise<T>){
+  await ensureBiSchema();
   return enterpriseRead({...actor,admin:false,consoleAdmin:false},enterpriseId,async(client,scope)=>{
     const allowed=new Set(scope.visible);if(scope.owner)allowed.add(scope.team.owner_email);
     return run({client,allowedEmails:[...allowed]});
