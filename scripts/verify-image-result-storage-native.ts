@@ -24,7 +24,7 @@ async function main(){
  const {DurableImageJobs}=await import('../src/lib/durable-image-jobs'),repo=await import('../src/lib/image-job-repository');
  const {storedDeliveryState,recoverStoredDelivery}=await import('../src/lib/imagegen/stored-delivery');
  const {USER_COOKIE,signUserSession}=await import('../src/lib/native-auth');
- const {GET:mediaGet}=await import('../src/app/media/[...path]/route'),{GET:jobGet}=await import('../src/app/api/generate-image/route');
+ const {GET:mediaGet}=await import('../src/app/media/[...path]/route'),{GET:jobGet,POST:jobPost}=await import('../src/app/api/generate-image/route');
  const owner='native-x5@fixture.test',other='other-x5@fixture.test';
  await db.getOrCreateUser(owner);await db.getOrCreateUser(other);await db.addCreditBatch(owner,100,{source:'admin',reason:'X5 local fixture'});await db.setSetting('multi_user_enabled','1');
  const png=await sharp({create:{width:512,height:512,channels:3,background:'#3985bc'}}).png({compressionLevel:0}).toBuffer();let posts=0;
@@ -52,6 +52,38 @@ async function main(){
   const image=JSON.parse(text).images[0],media=await mediaGet(request(image.url),{params:Promise.resolve({path:image.url.slice(7).split('/')})});assert.equal(media.status,200);assert.equal(sha(Buffer.from(await media.arrayBuffer())),sha(png));
   assert.equal((await jobGet(request('/api/generate-image?job='+id,other))).status,403);
   assert.equal((await mediaGet(request(image.url,other),{params:Promise.resolve({path:image.url.slice(7).split('/')})})).status,404);
+  // Real signed-cookie public input: a known A checkpoint must not enter B's
+  // durable payload via its style field. No supplier/fixture HTTP is submitted.
+  const {encodeImageJobResult,decodeImageJobValue}=await import('../src/lib/image-job-codec');
+  const stolen=(row!.snapshot.paidOperations as any)[id].result[0].url;
+  const hostile=new Request(origin+'/api/generate-image',{method:'POST',headers:{cookie:`${USER_COOKIE}=${signUserSession(other,Date.now())}`,'content-type':'application/json'},body:JSON.stringify({prompt:'fixture',style:stolen,model:'fixture'})});
+  const denied=await jobPost(hostile);assert.equal(denied.status,400);assert.deepEqual(await denied.json(),{error:'请求格式不正确'});assert.equal(posts,1);
+  await assert.rejects(()=>decodeImageJobValue({style:stolen}));
+  await assert.rejects(()=>decodeImageJobValue(stolen,'different-job'));
+  const hostileId='x5-hostile-payload-'+randomUUID();let hostileCallback=false;
+  await jobs.create(hostileId,other,{status:'pending',createdAt:Date.now()},{p:{style:stolen}},0,false);
+  await jobs.kick(hostileId,async()=>{hostileCallback=true;});
+  const hostileDeadline=Date.now()+15000;let hostileRow;
+  do{hostileRow=await repo.getImageJob(hostileId,'generate');if(hostileRow?.snapshot.status==='error'&&!hostileRow.lease_token)break;await sleep(20);}while(Date.now()<hostileDeadline);
+  assert.equal(hostileCallback,false);assert.equal(hostileRow!.snapshot.status,'error');assert.equal(hostileRow!.lease_token,null);
+  assert.equal((await db.getPool().query('SELECT count(*)::int n FROM app_artworks WHERE email=$1',[other])).rows[0].n,0);
+  console.log('NATIVE_MARKER_INPUT=400 CROSS_JOB=REJECTED PAYLOAD_KICK=REJECTED OTHER_ARTWORKS=0 SUPPLIER_DELTA=0');
+  for(const kind of ['final','root','required-missing'] as const){
+   const cid='x5-boundary-'+kind+'-'+randomUUID(),pid='x5-boundary-parent-'+randomUUID(),operation=randomUUID();
+   const result=await encodeImageJobResult([{url:'data:image/png;base64,'+png.toString('base64')}],cid);
+   const bad={$imageJobDataURL:'data:image/png;base64,',bytes:{$imageJobBuffer:'/media/image-job-inputs/absent-fixture.bin'}};
+   const snapshot={status:'error',createdAt:Date.now(),paidOperationVersion:1,...(kind==='final'?{images:[{url:'data:image/png;base64,'+png.toString('base64')}]}:{}),paidOperations:{root:{state:'done',attemptToken:'retained-'+cid,result:kind==='required-missing'?[{url:bad}]:result,children:{unused:{state:'done',result:[{url:bad}]}}}}};
+   await repo.createImageJob(cid,owner,'generate',snapshot,{p:{count:1,quality:'medium'},cost:0},0,false);
+   await repo.createImageJob(pid,owner,'imagegen',{status:'error',children:{generate:{jobId:cid}},result:{operationId:operation,jobId:pid,status:'failed',stage:'saving',artifacts:[],chargedCredits:0,warnings:[]}},{plan:{...plan,request:{...plan.request,operationId:operation}}},0,false);
+   if(kind==='required-missing')await assert.rejects(()=>recoverStoredDelivery(pid,owner));
+   else{
+    const restored=await recoverStoredDelivery(pid,owner);assert.equal(restored.complete,true);assert.equal(restored.artworkIds.length,1);
+    const output=(await db.getPool().query('SELECT image_url FROM app_artworks WHERE id=$1',restored.artworkIds)).rows[0];
+    const fetched=await mediaGet(request(output.image_url),{params:Promise.resolve({path:output.image_url.slice(7).split('/')})});assert.equal(fetched.status,200);assert.equal(sha(Buffer.from(await fetched.arrayBuffer())),sha(png));
+   }
+   assert.equal(posts,1);
+  }
+  console.log('NATIVE_SELECTED_DELIVERY=PASS FINAL_WITH_BAD_CHILD=1 ROOT_WITH_BAD_CHILD=1 REQUIRED_MISSING_REJECTED=1 SUPPLIER_DELTA=0');
   console.log(`NATIVE_RECOVERY=PASS SNAPSHOT_BYTES=${Buffer.byteLength(raw)} OBJECT_BYTES=${png.length} HTTP_POSTS=1 RECOVERY_POSTS=0 LEDGER=1 DELTA=-6 GET_BYTES=${Buffer.byteLength(text)} CROSS_OWNER_JOB=403 CROSS_OWNER_MEDIA=404`);
  }finally{
   await (await import('../src/lib/imagegen/coordination-pool')).closeImageCoordinationPool();await db.getPool().end();await admin.query('DROP SCHEMA '+schema+' CASCADE');await admin.end();await new Promise<void>(r=>server.close(()=>r()));

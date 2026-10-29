@@ -113,9 +113,12 @@ export async function writeImageJobResult(bytes: Buffer, key: string): Promise<"
   return storageDriver === "local" ? "local" : "managed";
 }
 
-export async function readImageJobResult(url: string, location: "local" | "managed", maxBytes: number): Promise<Buffer> {
+export async function readImageJobResult(url: string, location: "local" | "managed", maxBytes: number, jobId?: string): Promise<Buffer> {
   const key = storageKeyFromManagedUrl(url);
   if (!key?.startsWith("image-job-results/") || !["local", "managed"].includes(location)) throw new Error("图片任务对象引用非法");
+  // The mirror worker uses catalog-owned keys without a job ID. Result decoding
+  // supplies its job ID and must pass this check before any local/remote read.
+  if (jobId !== undefined && key.split("/")[1] !== createHash("sha256").update(jobId).digest("hex")) throw new Error("图片任务对象归属不匹配");
   return (location === "local" ? await readLocalMirror(key, maxBytes) : await readManagedObjectInternal(url, maxBytes)).bytes;
 }
 

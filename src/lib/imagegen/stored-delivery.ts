@@ -6,7 +6,7 @@ import { dbEnabled,getPool,listArtworksByIds,addArtworks,getImageJobChargedCredi
 import { uploadImage } from "../storage";
 import { readCanvasOutput } from "../canvas-image-input";
 import { inspectImagegenPixels } from "./postprocess";
-import { storedDeliveryCheckpoint } from "./delivery-checkpoint";
+import { selectStoredDeliveryCheckpoint } from "./delivery-checkpoint";
 import { plainGeneratedOutput } from "./receipt-policy";
 import { settleImageJob } from "../image-job-repository";
 import { assertMutableStagingTask, excludeImportedHistory } from "../staging-history";
@@ -66,8 +66,13 @@ export async function recoverStoredDelivery(parentId:string,owner:string){
   await assertMutableStagingTask(pool,"app_image_jobs",parent.id);await assertMutableStagingTask(pool,"app_image_jobs",child.id);
   if(child.lease_token||parent.lease_token)throw Error("原任务仍在收尾，请稍后检查");
   if(parent.snapshot.status==="done"&&child.snapshot.deliveryRecovery?.ids?.length)return {ok:true,complete:child.snapshot.deliveryRecovery.complete===true,artworkIds:child.snapshot.deliveryRecovery.ids};
-  const checkpoint=storedDeliveryCheckpoint(await decodeImageJobValue(child.snapshot));if(!checkpoint)throw Error("未找到完整的本地原始图片，不会重新生成");
-  if(!checkpoint.allDone)throw Error("仍有未确定的上游调用，仅保留已知原结果");
+  const selected=selectStoredDeliveryCheckpoint(child.snapshot);if(!selected)throw Error("未找到完整的本地原始图片，不会重新生成");
+  if(!selected.allDone)throw Error("仍有未确定的上游调用，仅保留已知原结果");
+  const checkpoint={...selected,images:await Promise.all(selected.images.map(async image=>{
+   const url=await decodeImageJobValue(image.url,child.id);
+   if(typeof url!=="string"||!(url.startsWith("data:image/")||url.startsWith("/media/")))throw Error("图片任务结果引用非法");
+   return {url,execution:image.execution};
+  }))};
   const plan=parent.payload.plan as ImagegenPlan,p=child.payload.p||{};
   const frozen=child.payload.modelExecutions?.image;
   const version=frozen?(await pool.query("SELECT config FROM app_model_config_versions WHERE version=$1 AND digest=$2",[frozen.modelVersion,frozen.modelDigest])).rows[0]:null;

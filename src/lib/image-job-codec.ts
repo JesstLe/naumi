@@ -29,14 +29,18 @@ export async function encodeImageJobValue(value: unknown, id: string): Promise<u
 
 /** Internal decode only. Polling/CAS must continue to use get(id, false). Old
  * inline strings and all three historical reference shapes remain readable. */
-export async function decodeImageJobValue(value: unknown): Promise<any> {
+export async function decodeImageJobValue(value: unknown, resultJobId?: string): Promise<any> {
   if (Buffer.isBuffer(value)) return value;
   if (object(value)) {
-    if ("$imageJobBase64" in value) return (await decodeImageJobValue(value.$imageJobBase64)).toString("base64");
-    if ("$imageJobDataURL" in value) return value.$imageJobDataURL + (await decodeImageJobValue(value.bytes)).toString("base64");
+    if ("$imageJobBase64" in value) return (await decodeImageJobValue(value.$imageJobBase64, resultJobId)).toString("base64");
+    if ("$imageJobDataURL" in value) return value.$imageJobDataURL + (await decodeImageJobValue(value.bytes, resultJobId)).toString("base64");
     if ("$imageJobBuffer" in value || "$imageJobInlineBuffer" in value) {
+      // Payload metadata is untrusted, including historically saved payloads.
+      // Only a caller holding the actual result job identity may read this store.
+      if ("$imageJobStorage" in value && (!resultJobId || typeof value.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(value.sha256)
+        || !Number.isSafeInteger(value.size) || value.size < 0 || value.size > MAX_BYTES)) throw new Error("图片任务结果引用缺少有效身份或校验信息");
       const bytes = "$imageJobInlineBuffer" in value ? Buffer.from(value.$imageJobInlineBuffer, "base64")
-        : value.$imageJobStorage ? await readImageJobResult(value.$imageJobBuffer, value.$imageJobStorage, MAX_BYTES)
+        : value.$imageJobStorage ? await readImageJobResult(value.$imageJobBuffer, value.$imageJobStorage, MAX_BYTES, resultJobId)
         : (await readManagedObject(String(value.$imageJobBuffer), MAX_BYTES)).bytes;
       if (value.sha256 && (bytes.length !== value.size || hash(bytes) !== value.sha256)) throw new Error("图片任务结果校验失败");
       if (!value.$imageJobStorage && typeof value.$imageJobBuffer === "string") uploadedInputs.set(bytes, value.$imageJobBuffer);
@@ -45,8 +49,8 @@ export async function decodeImageJobValue(value: unknown): Promise<any> {
     // Historical JSON Buffer snapshots from pre-codec writers.
     if (value.type === "Buffer" && Array.isArray(value.data) && value.data.every((n: unknown) => Number.isInteger(n) && Number(n) >= 0 && Number(n) <= 255)) return Buffer.from(value.data);
   }
-  if (Array.isArray(value)) return Promise.all(value.map(decodeImageJobValue));
-  if (object(value)) return Object.fromEntries(await Promise.all(Object.entries(value).map(async ([key, entry]) => [key, await decodeImageJobValue(entry)])));
+  if (Array.isArray(value)) return Promise.all(value.map(entry => decodeImageJobValue(entry, resultJobId)));
+  if (object(value)) return Object.fromEntries(await Promise.all(Object.entries(value).map(async ([key, entry]) => [key, await decodeImageJobValue(entry, resultJobId)])));
   return value;
 }
 

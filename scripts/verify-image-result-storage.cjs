@@ -181,7 +181,7 @@ async function main(){
    await repo.createImageJob('proof-child',owner,'generate',{...rootSaved,status:'error'},{},0,false);
    assert.equal((await proofFn('parent',owner)).available,true);assert.equal(await proofFn('parent','other@example.test'),null);
    const checkpoint=load('src/lib/imagegen/delivery-checkpoint.ts').storedDeliveryCheckpoint;
-   assert.ok(checkpoint(rootSaved)?.allDone);assert.equal(checkpoint(await codec.decodeImageJobValue(rootSaved)).images[0].url,dataURL);
+   assert.ok(checkpoint(rootSaved)?.allDone);assert.equal(checkpoint(await codec.decodeImageJobValue(rootSaved,'root-strings')).images[0].url,dataURL);
    await pool.query("UPDATE app_image_jobs SET snapshot=jsonb_set(snapshot,'{paidOperations,root-op,result}','[{\"url\":{\"$imageJobDataURL\":\"data:image/png;base64,\"}}]'::jsonb) WHERE id='proof-child'");assert.equal(await proofFn('parent',owner),null);
    console.log('DELIVERY_PROOF=PASS MALFORMED=REJECTED CROSS_OWNER=DENIED');
    // Existing S3 adapter against a local signed-HTTP fixture: remote success,

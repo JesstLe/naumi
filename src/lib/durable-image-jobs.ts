@@ -63,7 +63,7 @@ export class DurableImageJobs<T extends { status: string }> {
     if (!dbEnabled) return this.memory.get(id)?.snapshot;
     const row = await repository.getImageJob(id, this.kind);
     if (!row) return undefined;
-    return (hydrate ? await decode(row.snapshot) : row.snapshot) as T;
+    return (hydrate ? await decode(row.snapshot, id) : row.snapshot) as T;
   }
   async owner(id: string): Promise<string | undefined> {
     return dbEnabled ? (await repository.getImageJob(id, this.kind))?.email : this.memory.get(id)?.email;
@@ -146,7 +146,7 @@ export class DurableImageJobs<T extends { status: string }> {
     const saved = await this.get(id, false) as Snapshot | undefined;
     if (!saved || ["done", "error", "needs_attention"].includes(saved.status)) throw new Error("图片任务已结束或暂停，不能重新提交");
     const previous = saved?.paidOperations?.[operation.id];
-    if (previous?.state === "done") return (dbEnabled ? await decode(previous.result) : previous.result) as R;
+    if (previous?.state === "done") return (dbEnabled ? await decode(previous.result, id) : previous.result) as R;
     const indexedId = (unit: string) => unit.startsWith(`${operation.id}:image:`) && /^(0|[1-9]\d*)$/.test(unit.slice(operation.id.length + 7));
     const accepted = previous?.state === "started" && dbEnabled ? await acceptedImageOperationIdentities(getPool(),currentModelExecution("image"),id,operation.id) : {};
     const pinnedRecovery = accepted[operation.id];
@@ -194,7 +194,7 @@ export class DurableImageJobs<T extends { status: string }> {
       if (!root || root.attemptToken !== attempt.attemptToken) throw new ImageOperationPending(childOperation.id, new Error("image-index-root-checkpoint-changed"));
       const prior = root.children?.[childOperation.id];
       if (prior && prior.model !== childModel) throw new ImageOperationPending(childOperation.id, new Error("image-index-model-mismatch"));
-      if (prior?.state === "done") return (dbEnabled ? await decode(prior.result) : prior.result) as Child;
+      if (prior?.state === "done") return (dbEnabled ? await decode(prior.result, id) : prior.result) as Child;
       if (prior?.state === "rejected") {
         const rejected = new Error("image-index-original-rejection") as Error & { status?: number };
         rejected.status = prior.failureStatus;
@@ -353,7 +353,7 @@ export class DurableImageJobs<T extends { status: string }> {
             await this.patch(id, { status: "error", error: "本次未取得图片，请重试" } as unknown as Partial<T>);
           return;
         }
-        const payload = await decode(row.payload) as Record<string, unknown>, snapshot = await decode(row.snapshot) as T;
+        const payload = await decode(row.payload) as Record<string, unknown>, snapshot = await decode(row.snapshot, id) as T;
         if((snapshot as Record<string,unknown>).queueState){delete (snapshot as Record<string,unknown>).queueState;await this.set(id,snapshot);}
         const resume = () => withFrozenCreation(payload.creationScope as CreationContext|undefined,()=>withBiModelContext(row.email,this.kind,id,async()=>run(payload,snapshot)));
         if (payload.modelExecutions) await withFrozenExecutionBundle(payload.modelExecutions as ExecutionBundle, resume);
