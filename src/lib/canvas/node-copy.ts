@@ -1,3 +1,6 @@
+import {withTransaction} from "@/platform/db/transaction";
+import {readNativeNodeReceiptsTx} from "./native-node-lifecycle";
+import {canvasNativeIds} from "./native-node-records";
 import {ensureTimelineNodeSchema} from "./storage-schema";
 import {listTimelineNodes,saveTimelineNodeTx} from "./timeline-node-repository";
 import {validateTimelineProject,validateTimelineAdoption} from "./timeline-project-validation";
@@ -45,9 +48,16 @@ function stableUuid(seed:string){const bytes=createHash("sha256").update(seed).d
 export async function copyCanvasNodes(actorRaw:string,raw:CanvasNodeCopyInput):Promise<CopyResult>{
   const actor=actorRaw.toLowerCase(),input=nodeCopyRequest.parse(raw);await ensureSchema();await ensureVideoNodeSchema();await ensureDirectorNodeSchema();await ensureCharacterNodeSchema();await ensureSceneNodeSchema();await ensureAudioNodeSchema();await ensureTimelineNodeSchema();
   const pool=getPool();await ensureCanvasNodeCopySchema();
+  const currentCopyReceipt=async(result:CopyResult)=>{
+    return withTransaction(pool,async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[actor]);
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${actor}`]);
+      return {...result,nativeNodes:await readNativeNodeReceiptsTx(client,actor,canvasNativeIds({videoNodes:result.nodes,...result}))};
+    });
+  };
   const digest=createHash("sha256").update(canonicalConfig(input)).digest("hex");
   const previous=(await pool.query("SELECT input_digest,result FROM app_canvas_node_copies WHERE email=$1 AND operation_id=$2",[actor,input.operationId])).rows[0];
-  if(previous){if(previous.input_digest!==digest)throw new ModelConfigError("NODE_OPERATION_CONFLICT","复制操作编号已用于另一请求",409);return previous.result;}
+  if(previous){if(previous.input_digest!==digest)throw new ModelConfigError("NODE_OPERATION_CONFLICT","复制操作编号已用于另一请求",409);return currentCopyReceipt(previous.result);}
   const [artworks,textNodes,videoNodes,directorRecords,characterRecords,sceneRecords,audioRecords,timelineRecords]=await Promise.all([listArtworksByIds(actor,input.ids),listCanvasTextNodes(actor),listVideoNodes(actor),listDirectorNodes(actor),listCharacterNodes(actor),listSceneNodes(actor),listAudioNodes(actor),listTimelineNodes(actor)]);
   const wanted=new Set(input.ids),texts=textNodes.filter(node=>wanted.has(node.id)),videos=videoNodes.filter(node=>wanted.has(node.id)),directors=directorRecords.filter(node=>wanted.has(node.id)),characters=characterRecords.filter(node=>wanted.has(node.id)),scenes=sceneRecords.filter(node=>wanted.has(node.id)),audios=audioRecords.filter(node=>wanted.has(node.id)),timelines=timelineRecords.filter(node=>wanted.has(node.id));
   const kinds=new Map([...artworks.map(node=>[node.id,"art"] as const),...texts.map(node=>[node.id,"text"] as const),...videos.map(node=>[node.id,"vnode"] as const),...directors.map(node=>[node.id,"director"] as const),...characters.map(node=>[node.id,"character"] as const),...scenes.map(node=>[node.id,"scene"] as const),...audios.map(node=>[node.id,"audio"] as const),...timelines.map(node=>[node.id,"timeline"] as const)]);
@@ -68,7 +78,7 @@ export async function copyCanvasNodes(actorRaw:string,raw:CanvasNodeCopyInput):P
   try{
     await client.query("BEGIN");await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[actor]);await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${actor}`]);
     const saved=(await client.query("SELECT input_digest,result FROM app_canvas_node_copies WHERE email=$1 AND operation_id=$2",[actor,input.operationId])).rows[0];
-    if(saved){if(saved.input_digest!==digest)throw new ModelConfigError("NODE_OPERATION_CONFLICT","复制操作编号已用于另一请求",409);await client.query("COMMIT");return saved.result;}
+    if(saved){if(saved.input_digest!==digest)throw new ModelConfigError("NODE_OPERATION_CONFLICT","复制操作编号已用于另一请求",409);const nativeNodes=await readNativeNodeReceiptsTx(client,actor,canvasNativeIds({videoNodes:saved.result.nodes,...saved.result}));await client.query("COMMIT");return {...saved.result,nativeNodes};}
     await client.query("INSERT INTO app_canvas_video_projects(email,project_key) VALUES($1,$2) ON CONFLICT DO NOTHING",[actor,key]);
     const [kind,projectId]=[key.slice(0,key.indexOf(":")),key.slice(key.indexOf(":")+1)];
     const artworkIds:string[]=[],copiedTexts:CanvasTextNodeRecord[]=[],nodes:CanvasVideoNode[]=[],directorNodes:CanvasDirectorNode[]=[],characterNodes:CanvasCharacterNode[]=[],sceneNodes:CanvasSceneNode[]=[],audioNodes:CanvasAudioNode[]=[],timelineNodes:CanvasTimelineNode[]=[];
@@ -139,7 +149,7 @@ export async function copyCanvasNodes(actorRaw:string,raw:CanvasNodeCopyInput):P
     }
     // Copy shared properties only when that table already exists; do not initialize unrelated edit tables.
     if(!input.singleArtwork&&(await client.query("SELECT to_regclass('app_canvas_node_settings') AS name")).rows[0].name){for(const [oldId,newId] of mapping)await client.query("INSERT INTO app_canvas_node_settings(email,node_id,kind,settings) SELECT email,$3,kind,settings FROM app_canvas_node_settings WHERE email=$1 AND node_id=$2 ON CONFLICT(email,node_id) DO NOTHING",[actor,oldId,newId]);}
-    const result:CopyResult={artworkIds,textNodes:copiedTexts,nodes,...(directorNodes.length?{directorNodes}:{}),...(characterNodes.length?{characterNodes}:{}),...(sceneNodes.length?{sceneNodes}:{}),...(audioNodes.length?{audioNodes}:{}),...(timelineNodes.length?{timelineNodes}:{}),idMap:Object.fromEntries(mapping),projectKey:key};
+    const result:CopyResult={nativeNodes:{videoNodes:nodes,directorNodes,characterNodes,sceneNodes,audioNodes,timelineNodes},artworkIds,textNodes:copiedTexts,nodes,...(directorNodes.length?{directorNodes}:{}),...(characterNodes.length?{characterNodes}:{}),...(sceneNodes.length?{sceneNodes}:{}),...(audioNodes.length?{audioNodes}:{}),...(timelineNodes.length?{timelineNodes}:{}),idMap:Object.fromEntries(mapping),projectKey:key};
     await client.query("INSERT INTO app_canvas_node_copies(email,operation_id,input_digest,result) VALUES($1,$2,$3,$4::jsonb)",[actor,input.operationId,digest,JSON.stringify(result)]);await client.query("COMMIT");return result;
   }catch(error){await client.query("ROLLBACK");throw error;}finally{client.release();}
 }

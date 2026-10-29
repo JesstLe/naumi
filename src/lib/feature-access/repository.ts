@@ -1,3 +1,5 @@
+import {siteProfile} from '../site-control/store';
+import {intersectSitePolicy} from '../site-control/contracts';
 import "server-only";
 import {createHash} from "node:crypto";
 import {dbEnabled,getPool} from "@/platform/db/pool";
@@ -19,11 +21,12 @@ export function policyFromRow(row?: Record<string, any>): AccessPolicy {
   if (!["default", "custom"].includes(row.mode) || !Array.isArray(row.allowed) || row.allowed.some((id: unknown) => typeof id !== "string" || !ALL_FEATURE_IDS.includes(id))) throw new FeatureAccessError("权限配置异常", 503);
   return { mode: row.mode, allowed: row.mode === "default" ? ALL_FEATURE_IDS : row.allowed, version: Number(row.version) };
 }
-export async function userFeaturePolicy(email: string): Promise<AccessPolicy> {
+export async function userFeaturePolicy(email: string,options:{site?:boolean}={}): Promise<AccessPolicy> {
   if (!dbEnabled) return { ...DEFAULT_POLICY };
   await ensureFeatureAccessSchema();
   const result = await getPool().query("SELECT mode,allowed,version FROM app_feature_access WHERE email=$1", [email.trim().toLowerCase()]);
-  return policyFromRow(result.rows[0]);
+  const policy=policyFromRow(result.rows[0]);if(options.site===false)return policy;
+  const site=await siteProfile();return site.mode==='enterprise'?intersectSitePolicy(policy,site.policy):policy;
 }
 export async function featureAccessUsers(search: string, page = 1) {
   await ensureFeatureAccessSchema();

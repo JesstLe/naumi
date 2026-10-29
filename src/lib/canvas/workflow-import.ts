@@ -1,8 +1,10 @@
+import {currentCreationContext} from "../saas/creation-scope";
+import {ensureCreationSchema} from "../saas/creation-schema";
 import {ensureWorkflowImportSchema} from "@/lib/canvas/storage-schema";
 export {ensureWorkflowImportSchema};
 import "server-only";
 import {createHash,randomUUID} from "node:crypto";
-import {z} from "zod";
+import type {z} from "zod";
 import type {PoolClient} from "pg";
 import {withTransaction} from "@/platform/db/transaction";
 import {assertCreationProjectInput,bindActualCreationProject} from "../saas/creation-access";
@@ -11,7 +13,6 @@ import {workflowImportRequest,type WorkflowImportResult} from "./workflow-import
 export {workflowImportRequest,type WorkflowImportResult} from "./workflow-import-contract";
 export {prepareWorkflowPixels} from "./workflow-import-media";
 import {getPool} from "@/platform/db/pool";
-import {listArtworksByIds} from "@/lib/artworks/repository";
 import {type ArtworkRecord} from "@/lib/artworks/types";
 import {type CanvasTextNodeRecord} from "@/lib/canvas/text-node-repository";
 
@@ -20,11 +21,14 @@ import {defaultNodeSettings} from "@/lib/canvas/node-settings";
 import {readWorkflowClipboard,type ImportedManifest} from "@/lib/canvas/workflow-clipboard";
 import { uploadImage } from "@/lib/media-upload";
 import { deleteImageByUrl } from "@/lib/object-storage/runtime";
-import {editCanvasPixels} from "@/lib/canvas-local-image-edit";
 
 export async function listWorkflowManifests(email: string) {
   await ensureWorkflowImportSchema();
-  const { rows } = await getPool().query("SELECT result->'manifest' AS manifest FROM app_canvas_workflow_imports WHERE email=$1 ORDER BY created_at DESC LIMIT 1000", [email]);
+  await ensureCreationSchema();const scope=currentCreationContext();
+  const { rows } = await getPool().query(`SELECT i.result->'manifest' AS manifest FROM app_canvas_workflow_imports i
+    LEFT JOIN app_creation_contexts c ON c.actor_email=i.email AND c.context_kind='project' AND c.context_id=i.project_key
+    WHERE i.email=$1 AND ($2::text IS NULL OR COALESCE(c.scope_kind,'personal')=$2 AND c.tenant_id IS NOT DISTINCT FROM $3::uuid)
+    ORDER BY i.created_at DESC LIMIT 1000`,[email.toLowerCase(),scope?.scopeKind||null,scope?.tenantId||null]);
   return rows.map(row => row.manifest as ImportedManifest);
 }
 
@@ -192,40 +196,4 @@ export async function importCanvasWorkflow(email: string, input: z.infer<typeof 
   }
 }
 
-/** Fill an imported placeholder in place. Identity, layout and every relation stay intact.
- * Both pixel versions remain stored; history can swap only these owner-bound snapshots. */
-export async function fillWorkflowAsset(email: string, id: string, operationId: string, bytes: Buffer) {
-  z.string().uuid().parse(operationId);
-  if (!id || id.length > 200) throw new Error("节点编号不正确");
-  await ensureWorkflowImportSchema();
-  const fingerprint = createHash("sha256").update(id).update(bytes).digest("hex");
-  const client = await getPool().connect(); let uploaded: string | null = null, committed = false;
-  try {
-    await client.query("BEGIN");
-    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [email]);
-    const prior = await client.query("SELECT fingerprint,node_id FROM app_canvas_workflow_asset_ops WHERE email=$1 AND id=$2", [email, operationId]);
-    if (prior.rows.length) {
-      if (fingerprint && prior.rows[0].fingerprint !== fingerprint) throw new Error("补图编号已使用");
-    } else {
-      const { rows } = await client.query("SELECT * FROM app_artworks WHERE email=$1 AND id=$2 AND deleted_at IS NULL FOR UPDATE", [email, id]);
-      const row = rows[0];
-      if (!row || row.source_url !== "workflow-placeholder") throw new Error("待补图片不存在或无权访问");
-      const locked = await client.query("SELECT settings->>'locked' AS locked FROM app_canvas_node_settings WHERE email=$1 AND node_id=$2", [email,id]);
-      if (locked.rows[0]?.locked === "true") throw new Error("请先解锁节点");
-      const pixels = await editCanvasPixels(bytes);
-      if (pixels.bytes.length > 12*1024*1024) throw new Error("图片超过12MB");
-      uploaded = await uploadImage(pixels.bytes,"image/png",`canvas-import-fills/${operationId}/${id}.png`);
-      const origin = await client.query("SELECT result->'manifest'->'decorations' AS decorations FROM app_canvas_workflow_imports WHERE email=$1 AND operation_id=$2", [email, row.creation_provenance.ref]);
-      const decoration = (origin.rows[0]?.decorations || []).some((d: { id: string }) => d.id === id);
-      const before = { image: row.image_url, source: row.source_url, width: row.image_width, height: row.image_height };
-      const after = { image: uploaded, source: decoration ? "workflow-decoration" : "workflow-import", width: pixels.width, height: pixels.height };
-      await client.query("UPDATE app_artworks SET image_url=$3,source_url=$4,image_width=$5,image_height=$6 WHERE email=$1 AND id=$2", [email,id,after.image,after.source,after.width,after.height]);
-      await client.query("INSERT INTO app_canvas_workflow_asset_ops(email,id,node_id,fingerprint,before_asset,after_asset) VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb)", [email,operationId,id,fingerprint,JSON.stringify(before),JSON.stringify(after)]);
-    }
-    await client.query("COMMIT"); committed = true;
-    const node = (await listArtworksByIds(email, [id]))[0];
-    if (!node) throw new Error("节点已删除，请刷新画布");
-    return { node, assetOperationId: operationId };
-  } catch (error) { if (!committed) { await client.query("ROLLBACK"); if (uploaded) await deleteImageByUrl(uploaded).catch(() => { console.warn("STORAGE_CLEANUP_PENDING operation=workflow-import"); }); } throw error; }
-  finally { client.release(); }
-}
+export {fillWorkflowAsset} from "./workflow-asset-fill";

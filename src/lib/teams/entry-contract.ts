@@ -8,7 +8,7 @@ export type TeamEntryDiscovery = {
   expiresAt: string | null;
   startsAt: string | null;
   status: EntryStatus;
-  href: '/enterprise' | '/team';
+  href: '/enterprise' | '/team' | '/admin';
 };
 
 const labels: Record<EntryStatus | 'loading' | 'error', [string, string]> = {
@@ -28,7 +28,7 @@ export function parseEntryDiscovery(value: unknown): TeamEntryDiscovery {
   if (!v || typeof v.allowed !== 'boolean' || typeof v.enterprise !== 'boolean' ||
     typeof v.canManageTeams !== 'boolean' || !Object.hasOwn(labels, v.status) ||
     ['loading', 'error'].includes(v.status) || !date(v.startsAt) || !date(v.expiresAt) ||
-    !['/enterprise', '/team'].includes(v.href) || v.allowed !== (v.status === 'active')) {
+    !['/enterprise', '/team', '/admin'].includes(v.href) || v.allowed !== (v.status === 'active')) {
     throw new Error('Invalid entry discovery');
   }
   return v;

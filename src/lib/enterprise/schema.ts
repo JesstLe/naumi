@@ -15,6 +15,7 @@ export async function ensureEnterpriseSchema() {
       name text NOT NULL CHECK(length(name) BETWEEN 1 AND 60), level integer NOT NULL CHECK(level BETWEEN 1 AND 998),
       manage_members boolean NOT NULL DEFAULT false, view_records boolean NOT NULL DEFAULT false,
       version integer NOT NULL DEFAULT 0, PRIMARY KEY(enterprise_id,id));
+    ALTER TABLE app_enterprise_roles ADD COLUMN IF NOT EXISTS workflow_permissions jsonb NOT NULL DEFAULT '["request","execute"]';
     CREATE TABLE IF NOT EXISTS app_enterprise_members(
       enterprise_id uuid NOT NULL REFERENCES app_enterprise_settings(team_id), email text NOT NULL REFERENCES app_users(email),
       supervisor_email text NOT NULL REFERENCES app_users(email), role_id uuid,

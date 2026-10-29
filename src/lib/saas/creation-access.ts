@@ -1,3 +1,4 @@
+import {enterpriseSiteIdentity} from "../site-control/identity";
 import 'server-only';
 import type {PoolClient} from 'pg';
 import {getPool,dbEnabled} from '@/platform/db/pool';
@@ -58,7 +59,7 @@ export async function bindActualCreationProject(email:string,id:string,options:{
    if(context.tenantId){const policy=options.receipt?undefined:await userFeaturePolicy(email);await enterpriseCreationRead(email,context.tenantId,async(_tx,s)=>{if(!options.receipt)assertCreationFeature(s.entitlement.featurePolicy,context.sourcePath||'/api/video/generate','POST',undefined,policy);});}
   }
  }else if(!options.newRoot){
-  if(context.tenantId)throw new TeamError('现有项目归属未记录，请在企业空间新建项目',409);
+  if(context.tenantId){if(enterpriseSiteIdentity()&&!context.workspaceExplicit&&!context.creationId){context.scopeKind='personal';context.tenantId=null;}else throw new TeamError('现有项目归属未记录，请在企业空间新建项目',409);}
   // Physical ownership was checked above. Uploaded-image, text and video
   // personal canvases all keep the same project before and after first output.
   // Receipt reads authorize that project without creating a binding row.
@@ -85,7 +86,9 @@ export async function bindCreationMedia(email:string,reference:string) {
 }
 /** A receipt-aware entry must call this only when accepting genuinely new work. */
 export async function assertCurrentCreationFeature(path:string,method='POST'){
- const context=currentCreationContext();if(!dbEnabled||!context?.tenantId)return;
+ const context=currentCreationContext();if(!dbEnabled||!context)return;
  const accountPolicy=await userFeaturePolicy(context.actorEmail);
+ assertCreationFeature({},path,method,undefined,accountPolicy);
+ if(!context.tenantId)return;
  await enterpriseCreationRead(context.actorEmail,context.tenantId,async(_tx,s)=>assertCreationFeature(s.entitlement.featurePolicy,path,method,undefined,accountPolicy));
 }

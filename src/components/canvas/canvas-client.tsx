@@ -1,4 +1,7 @@
 "use client";
+import {useCanvasWorkflowDocument} from "./use-canvas-workflow-document";
+import {canvasNativeDocuments} from "@/lib/canvas/native-document-lifecycle";
+import {canvasHistoryInsertionView} from "@/lib/canvas/history-model";
 import {useCanvasTemplateImports} from "./use-canvas-template-imports";
 import {createCanvasTimelineActions} from "@/lib/canvas/timeline-actions";
 import {useTimelineNodes} from "./timeline/use-timeline-nodes";
@@ -729,11 +732,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     try{await templateImports.apply(templateId);}
     catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.genFail"));}
   }
+  const nativeDocuments=canvasNativeDocuments({videoNodes:videoNodesStore,directorNodes:directorNodesStore,characterNodes:characterNodesStore,sceneNodes:sceneNodesStore,audioNodes:audioNodesStore,timelineNodes:timelineNodesStore});
   const canvasHistory = useCanvasHistory({
     account: canvasAccountRef.current, project: activeKey, readOnly,
     artworkDocument:canvasArtworkDocument.history, works: setWorks, textDocument: canvasTextDocument.history, settings: applyHistorySettings, selectedText: setSelectedTextId,
-    flush:()=>Promise.all([videoNodesStore.flush(),directorNodesStore.flush(),characterNodesStore.flush(),sceneNodesStore.flush(),audioNodesStore.flush(),timelineNodesStore.flush()]),
-    video: videoNodesStore.getNode,director:directorNodesStore.getNode,character:characterNodesStore.getNode,scene:sceneNodesStore.getNode,audio:audioNodesStore.getNode,timeline:timelineNodesStore.getNode,artwork:id=>canvasArtworkDocument.getSnapshot().nodes?.find(node=>node.id===id), refresh:()=>Promise.all([videoNodesStore.refresh(),directorNodesStore.refresh(),characterNodesStore.refresh(),sceneNodesStore.refresh(),audioNodesStore.refresh(),timelineNodesStore.refresh()]),
+    native:nativeDocuments,flush:nativeDocuments.flush,
+    video: videoNodesStore.getNode,director:directorNodesStore.getNode,character:characterNodesStore.getNode,scene:sceneNodesStore.getNode,audio:audioNodesStore.getNode,timeline:timelineNodesStore.getNode,artwork:id=>canvasArtworkDocument.getSnapshot().nodes?.find(node=>node.id===id), refresh:nativeDocuments.refresh,
     pending: applyPendingLinkHistory, applied: onHistoryApplied, warning: flashTip,
   });
   const {undoStack,redoStack,pushUndo,historyBusyRef,historySaving,setHistorySaving,historyCurrent} = canvasHistory;
@@ -750,28 +754,21 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const promptMining=textTasks.busy("reverse"),assistBusy=textTasks.busy("assist");
   const canvasNodeOperations=useCanvasNodeOperations(canvasHistory.scope,{
     writable:()=>!!user&&!readOnly,
-    snapshot:()=>({artworks:canvasArtworkDocument.getSnapshot().nodes||[],textNodes:canvasTextDocument.getSnapshot().nodes,videoNodes:videoNodesStore.allNodes.filter(node=>!node.deletedAt).map(node=>videoNodesStore.getNode(node.id)||node),directorNodes:directorNodesStore.allNodes.filter(node=>!node.deletedAt).map(node=>directorNodesStore.getNode(node.id)||node),characterNodes:characterNodesStore.allNodes.filter(node=>!node.deletedAt).map(node=>characterNodesStore.getNode(node.id)||node),sceneNodes:sceneNodesStore.allNodes.filter(node=>!node.deletedAt).map(node=>sceneNodesStore.getNode(node.id)||node),audioNodes:audioNodesStore.allNodes.filter(node=>!node.deletedAt).map(node=>audioNodesStore.getNode(node.id)||node),timelineNodes:timelineNodesStore.allNodes.filter(node=>!node.deletedAt).map(node=>timelineNodesStore.getNode(node.id)||node)}),
+    native:nativeDocuments,
+    snapshot:()=>({artworks:canvasArtworkDocument.getSnapshot().nodes||[],textNodes:canvasTextDocument.getSnapshot().nodes,videoNodes:[],...nativeDocuments.snapshot()}),
     history:canvasHistory,artworks:ids=>canvasArtworkDocument.merge(ids),videos:videoNodesStore.accept,directors:directorNodesStore.accept,characters:characterNodesStore.accept,scenes:sceneNodesStore.accept,audios:audioNodesStore.accept,timelines:timelineNodesStore.accept,
   });
-  const [workflowManifests, setWorkflowManifests] = useState<ImportedManifest[]>([]);
+  const workflowDocument=useCanvasWorkflowDocument(canvasArtworkDocument.scope,targetEmail||user?.email||"",{writable:()=>!!user&&!readOnly,merge:canvasArtworkDocument.merge,history:canvasHistory});
+  const workflowManifests=workflowDocument.manifests;
+  useEffect(()=>{if(workflowDocument.error)flashTip(workflowDocument.error);},[workflowDocument.error]);
   const workflowCallbacksRef = useRef({ replace: requestReplace, select: selectWorkflowGroup });
   workflowCallbacksRef.current = { replace: requestReplace, select: selectWorkflowGroup };
-  useEffect(() => {
-    const email = targetEmail || user?.email;
-    setWorkflowManifests([]);
-    if (!email) return;
-    let cancelled = false;const scope=canvasArtworkDocument.scope;
-    void canvasDocumentFetch({...scope,project:null},`/api/canvas/workflow-import?email=${encodeURIComponent(email)}`).then(response => response.json()).then(data => {
-      if (!cancelled && scope.documentCurrent() && Array.isArray(data.manifests)) setWorkflowManifests(current => Array.from(new Map([...data.manifests, ...current].map(m => [m.operationId, m])).values()));
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [targetEmail, user?.email,canvasArtworkDocument.scope.workspace]);
   const workflowPaste = useWorkflowPaste({scope:canvasArtworkDocument.scope,writable:()=>!!user&&!readOnly&&!browsing,viewCurrent:importViewCurrent,
     onCommitted: (result,scope,present) => {
       const artworks = result.artworks as Artwork[];
       canvasArtworkDocument.accept(artworks);
       canvasTextDocument.accept(result.textNodes);
-      setWorkflowManifests(current => scope.documentCurrent()?[...current.filter(m => m.operationId !== result.operationId), result.manifest]:current);
+      workflowDocument.accept(result.manifest);
       setNodeSettings(current=>scope.documentCurrent()?{...current,...result.settings}:current);
       canvasHistory.record({...scope,project:result.projectKey,key:JSON.stringify([scope.account,scope.workspace,result.projectKey])},{kind:"workflow-add",artworks,textNodes:result.textNodes});
       if(!present)return;
@@ -2597,41 +2594,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   function onHistoryApplied({action:act,undo}: HistoryCommit) {
     if(act.kind==="image-version"){const node=canvasArtworkDocument.getSnapshot().nodes?.find(node=>node.id===act.id);if(node)imageDraft.seed(act.id,{prompt:inheritableImagePrompt(node.prompt)});}
-    if(act.kind==="mixed-add"){
-      if(undo&&(active?.members.length||0)===act.artworks.length&&(active?.textNodes.length||0)===act.textNodes.length&&(active?.videoNodes?.length||0)===act.videoNodes.length&&(active?.directorNodes?.length||0)===(act.directorNodes?.length||0)&&(active?.characterNodes?.length||0)===(act.characterNodes?.length||0)&&(active?.sceneNodes?.length||0)===(act.sceneNodes?.length||0)&&(active?.audioNodes?.length||0)===(act.audioNodes?.length||0)&&(active?.timelineNodes?.length||0)===(act.timelineNodes?.length||0))setCreatingNew(true);
-      if(!undo){setCreatingNew(false);setActiveKey(act.projectKey);setBrowsing(false);}
-    }
-    if(act.kind==="audio-add"){
-      if(undo&&!active?.members.length&&!active?.textNodes.length&&!active?.videoNodes?.length&&!active?.directorNodes?.length&&!active?.characterNodes?.length&&!active?.sceneNodes?.length&&(active?.audioNodes||[]).every(node=>act.records.some(record=>record.id===node.id)))setCreatingNew(true);
-      if(!undo){setCreatingNew(false);if(act.records[0]){setActiveKey(act.records[0].projectKey);setBrowsing(false);}}
-    }
-    if(act.kind==="timeline-add"){
-      if(undo&&!active?.audioNodes?.length&&!active?.members.length&&!active?.textNodes.length&&!active?.videoNodes?.length&&!active?.directorNodes?.length&&!active?.characterNodes?.length&&!active?.sceneNodes?.length&&(active?.timelineNodes||[]).every(node=>act.records.some(record=>record.id===node.id)))setCreatingNew(true);
-      if(!undo){setCreatingNew(false);if(act.records[0]){setActiveKey(act.records[0].projectKey);setBrowsing(false);}}
-    }
-    if(act.kind==="scene-add"){
-      if(undo&&!active?.audioNodes?.length&&!active?.timelineNodes?.length&&!active?.members.length&&!active?.textNodes.length&&!active?.videoNodes?.length&&!active?.directorNodes?.length&&!active?.characterNodes?.length&&(active?.sceneNodes||[]).every(node=>act.records.some(record=>record.id===node.id)))setCreatingNew(true);
-      if(!undo){setCreatingNew(false);if(act.records[0]){setActiveKey(act.records[0].projectKey);setBrowsing(false);}}
-    }
-    if(act.kind==="character-add"){
-      if(undo&&!active?.audioNodes?.length&&!active?.timelineNodes?.length&&!active?.members.length&&!active?.textNodes.length&&!active?.videoNodes?.length&&!active?.directorNodes?.length&&!active?.sceneNodes?.length&&(active?.characterNodes||[]).every(node=>act.records.some(record=>record.id===node.id)))setCreatingNew(true);
-      if(!undo){setCreatingNew(false);if(act.records[0]){setActiveKey(act.records[0].projectKey);setBrowsing(false);}}
-    }
-    if(act.kind==="director-add"){
-      if(undo&&!active?.audioNodes?.length&&!active?.timelineNodes?.length&&!active?.members.length&&!active?.textNodes.length&&!active?.videoNodes?.length&&!active?.characterNodes?.length&&!active?.sceneNodes?.length&&(active?.directorNodes||[]).every(node=>act.records.some(record=>record.id===node.id)))setCreatingNew(true);
-      if(!undo){setCreatingNew(false);setActiveKey(act.records[0]?.projectKey||null);setBrowsing(false);}
-    }
-    if(act.kind==="video-add"){
-      if(undo&&!active?.audioNodes?.length&&!active?.timelineNodes?.length&&!active?.members.length&&!active?.textNodes.length&&!active?.directorNodes?.length&&!active?.characterNodes?.length&&!active?.sceneNodes?.length&&(active?.videoNodes||[]).every(node=>act.records.some(record=>record.id===node.id)))setCreatingNew(true);
-      if(!undo){setCreatingNew(false);setActiveKey(act.records[0]?.projectKey||null);setBrowsing(false);}
-    }
-    if (act.kind === "workflow-add") {
-      // Undoing the first import leaves an editable empty project, so redo stays
-      // reachable instead of the project-disappearance effect sending it to the grid.
-      if (undo && act.artworks.every(n=>active?.members.some(m=>m.id===n.id)) && (active?.members.length || 0) === act.artworks.length
-        && (active?.textNodes.length || 0) === act.textNodes.length && !active?.videoNodes?.length && !active?.directorNodes?.length && !active?.characterNodes?.length && !active?.sceneNodes?.length && !active?.audioNodes?.length&&!active?.timelineNodes?.length) setCreatingNew(true);
-      if (!undo) { setCreatingNew(false); setActiveKey(act.textNodes[0]?.projectKey || `tree:${act.artworks[0]?.groupId || act.artworks[0]?.id}`); setBrowsing(false); }
-    }
+    const insertion=canvasHistoryInsertionView(act,undo,active);
+    if(insertion){if(undo&&insertion.empty)setCreatingNew(true);if(!undo){setCreatingNew(false);setActiveKey(insertion.project);setBrowsing(false);}}
+
   }
 
   function loadImageVersions(nodeId:string){return loadCanvasImageVersions(canvasHistory.scope,nodeId);}
@@ -2672,6 +2637,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   async function saveLocalImageEdit(artwork: Artwork, crop?: CanvasCrop, file?: File) {
     if(!user || readOnly || !nodeSettingsReady || isNodeLocked(artwork.id) || localEditBusyRef.current)return;
     if(file && (file.size>12*1024*1024 || !["image/png","image/jpeg","image/webp"].includes(file.type))){flashTip(L("请选择12MB以内的PNG、JPEG或WebP","Choose a PNG, JPEG or WebP up to 12MB"));return;}
+    if(artwork.source==="workflow-placeholder"&&file){
+      const scope=canvasArtworkDocument.scope;localEditBusyRef.current=true;setLocalEditBusy(true);
+      try{await workflowDocument.fill(artwork,file);if(scope.viewCurrent())flashTip("图片已补齐");}
+      catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:"补图失败，请重试");}
+      finally{localEditBusyRef.current=false;if(scope.documentCurrent())setLocalEditBusy(false);if(replaceInputRef.current)replaceInputRef.current.value="";}
+      return;
+    }
     localEditBusyRef.current=true;setLocalEditBusy(true);
     try{
       const fingerprint=JSON.stringify({id:artwork.id,crop,file:file?{name:file.name,size:file.size,lastModified:file.lastModified}:null});
@@ -2680,15 +2652,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       let body:BodyInit;let headers:Record<string,string>|undefined;
       if(file){const fd=new FormData();fd.set("image",file);fd.set("id",artwork.id);fd.set("operationId",operationId);body=fd;}
       else{headers={"content-type":"application/json"};body=JSON.stringify({mode:"crop",id:artwork.id,operationId,crop});}
-      const filling = artwork.source === "workflow-placeholder" && Boolean(file);
-      const response=await privateFetchRaw(filling ? "/api/canvas/workflow-import/asset" : "/api/canvas/local-image-edit",{method:"POST",headers,body,signal:AbortSignal.timeout(60000)});
+      const response=await privateFetchRaw("/api/canvas/local-image-edit",{method:"POST",headers,body,signal:AbortSignal.timeout(60000)});
       const data=await expectJsonOk(response,L("图片编辑失败","Image edit failed"));
-      if (filling) {
-        const node = data.node as Artwork;
-        setWorks(current=>current?.map(item=>item.id===node.id ? node : item) ?? current);
-        pushUndo({kind:"workflow-fill",id:node.id,assetOperationId:data.assetOperationId,from:artwork,to:node});
-        localEditAttempt.current=null; flashTip("图片已补齐"); return;
-      }
       if(!data.id)throw new Error(t("canvas.genFail"));
       const fresh=await mergeWorks([data.id]);pushAddUndo(data.id,fresh);
       pendingNodeRef.current=data.id;setSelectedId(data.id);setSelectedTextId(null);setCropArtwork(null);localEditAttempt.current=null;

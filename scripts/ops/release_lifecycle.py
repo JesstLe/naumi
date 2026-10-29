@@ -433,7 +433,7 @@ def record_failed_observation(folder, action, p, revision, reason):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['check', 'begin', *STAGES, 'status', 'publish47-nas', 'publish47-saas', 'publish47-video-family', 'abort47-video-family', 'bind47-capacity', 'publish47-imagegen-simplify', 'publish47-no-user'])
+    parser.add_argument('action', choices=['check', 'begin', *STAGES, 'status', 'publish-site-control', 'publish47-nas', 'publish47-saas', 'publish47-video-family', 'abort47-video-family', 'bind47-capacity', 'publish47-imagegen-simplify', 'publish47-no-user'])
     parser.add_argument('--config', type=pathlib.Path)
     parser.add_argument('--review', type=pathlib.Path)
     parser.add_argument('--apply', action='store_true')
@@ -446,6 +446,11 @@ def main(argv=None):
     p = None
     state_verified = False
     try:
+        if a.action == 'publish-site-control':
+            require(os.name == 'posix' and a.config is not None and not a.apply and a.review is None, 'LIVE_SITE_CONTROL_CONFIG_REQUIRED')
+            from release_site_control import main as publish_site_control
+            publish_site_control(a.config)
+            return 0
         require(a.action == 'abort47-video-family' or a.review is None and a.apply is False,
                 'ABORT_REVIEW_AND_APPLY_ONLY_FOR_ABORT_ACTION')
         if a.action == 'abort47-video-family':

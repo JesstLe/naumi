@@ -1,3 +1,4 @@
+import {CANVAS_NATIVE_NODE_KINDS,canvasNativeVisibility,canvasNativeNodes,type CanvasNativeRecords} from "./native-node-records";
 import type {CanvasTimelineNode} from "./timeline-node-schema";
 import type {CanvasAudioNode} from "./audio-node-schema";
 import type {CanvasSceneNode} from "./scene-node-schema";
@@ -112,6 +113,22 @@ export function canvasHistoryProject(action: CanvasHistoryAction) {
     : action.kind === "add" && action.records[0] ? `tree:${action.records[0].groupId || action.records[0].parentId || action.records[0].id}` : null;
 }
 
+/** View-only transition for every existing insertion kind. The graph documents
+ * and history still own data/undo. A single-kind undo never blanks a project
+ * that contains another kind (e.g. audio plus timeline). */
+export function canvasHistoryInsertionView(action:CanvasHistoryAction,undo:boolean,active:({members:Artwork[];textNodes:CanvasTextNode[]}&CanvasNativeRecords)|null){
+  let records:{artworks:Artwork[];textNodes:CanvasTextNode[]}&CanvasNativeRecords;
+  if(action.kind==="mixed-add"||action.kind==="workflow-add")records=action;
+  else if(action.kind==="add")records={artworks:action.records,textNodes:[]};
+  else if(action.kind==="text-add")records={artworks:[],textNodes:action.records};
+  else{const entry=CANVAS_NATIVE_NODE_KINDS.find(({kind})=>action.kind===kind+"-add");if(!entry||!("records" in action))return null;records={artworks:[],textNodes:[],[entry.records]:action.records};}
+  const project=canvasHistoryProject(action)||null;
+  if(!undo)return {empty:false,project};
+  const inserted=new Set([...records.artworks,...records.textNodes,...canvasNativeNodes(records)].map(node=>node.id));
+  const live=[...(active?.members||[]),...(active?.textNodes||[]),...canvasNativeNodes(active||{})];
+  return {empty:!!active&&live.length===inserted.size&&live.every(node=>inserted.has(node.id)),project};
+}
+
 /** Pure command compiler. Revisions are read after pending writes drain, once per
  * attempt. Retries use the controller's frozen body, not a fresh revision. */
 export function compileCanvasHistory(action: CanvasHistoryAction, undo: boolean,
@@ -159,7 +176,7 @@ export function compileCanvasHistory(action: CanvasHistoryAction, undo: boolean,
     case "mixed-delete": case "workflow-add": case "mixed-add": {
       const visible = action.kind === "mixed-delete" ? undo : !undo;
       visibility(action.artworks,visible); texts(action.textNodes,visible);
-      if (action.kind !== "workflow-add") {videos(action.videoNodes || [],visible);(action.directorNodes||[]).forEach(node=>operations.push({type:"director-visibility",id:node.id,visible}));(action.characterNodes||[]).forEach(node=>operations.push({type:"character-visibility",id:node.id,visible}));(action.sceneNodes||[]).forEach(node=>operations.push({type:"scene-visibility",id:node.id,visible}));(action.audioNodes||[]).forEach(node=>operations.push({type:"audio-visibility",id:node.id,visible}));(action.timelineNodes||[]).forEach(node=>operations.push({type:"timeline-visibility",id:node.id,visible}));} break;
+      if(action.kind!=="workflow-add")operations.push(...canvasNativeVisibility(action,visible)); break;
     }
     case "delete": case "add": visibility(action.records,action.kind === "delete" ? undo : !undo); break;
     case "text-delete": case "text-add": texts(action.records,action.kind === "text-delete" ? undo : !undo); break;
@@ -188,7 +205,7 @@ export function reduceHistoryArtworks(current: Artwork[] | null, operations: Can
       next = op.visible && record ? [...(next || []).filter(node => node.id !== op.id),record]
         : !op.visible ? next?.filter(node => node.id !== op.id) ?? next : next;
     } else if (op.type === "workflow-asset" && action.kind === "workflow-fill") {
-      next = next?.map(node => node.id === op.id ? action[undo?"from":"to"] : node) ?? next;
+      next = next?.map(node => node.id===op.id?{...node,...Object.fromEntries(["image","source","width","height"].map(key=>[key,action[undo?"from":"to"][key as "image"|"source"|"width"|"height"]]))}:node) ?? next;
     } else if ("id" in op) next = next?.map(node => {
       if (node.id !== op.id) return node;
       switch (op.type) {

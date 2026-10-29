@@ -10,10 +10,10 @@ import type { EnterpriseSnapshot } from "@/lib/enterprise/contracts";
 import styles from "@/components/admin/bi/dashboard.module.css";
 import local from "./enterprise-artworks.module.css";
 
-type Filter = { from: string; to: string; email: string; q: string; accountType: string; status: string };
-const initialFilter = (email: string): Filter => {
+type Filter = { from: string; to: string; email: string; q: string; accountType: string; status: string;period:''|'all' };
+const initialFilter = (email: string,allDates=false): Filter => {
   const to = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
-  return { from: new Date(Date.parse(`${to}T00:00:00Z`) - 29 * 86400_000).toISOString().slice(0, 10), to, email, q: "", accountType: "", status: "" };
+  return { from:allDates?'':new Date(Date.parse(`${to}T00:00:00Z`) - 29 * 86400_000).toISOString().slice(0, 10), to:allDates?'':to, email, q: "", accountType: "", status: "",period:allDates?'all':'' };
 };
 async function getRecords(url: string, signal: AbortSignal): Promise<BiResponse> {
   const response = await fetch(url, { cache: "no-store", headers: await authHeader(), signal });
@@ -29,15 +29,15 @@ function RecordImage({ src, alt, full = false }: { src: string; alt: string; ful
   }, [src]);
   return image?.source === src ? <CachedImage src={image.url} alt={alt} className={full ? styles.preview : undefined} /> : <span className={styles.muted}>{failed === src ? "图片暂不可读取" : "加载中…"}</span>;
 }
-export function EnterpriseArtworks({ snapshot, initialEmail = "" }: { snapshot: EnterpriseSnapshot; initialEmail?: string }) {
+export function EnterpriseArtworks({ snapshot, initialEmail = "",dedicated=false }: { snapshot: EnterpriseSnapshot; initialEmail?: string;dedicated?:boolean }) {
   const enterpriseId = snapshot.enterprise.id;
   // Membership/role changes invalidate the displayed records and open detail immediately.
   const scopeKey = JSON.stringify([enterpriseId, snapshot.actor, snapshot.enterprise.authorized_until, snapshot.members.map(m => [m.email, m.supervisor_email, m.role_id, m.version]), snapshot.roles]);
-  return <ArtworkScope key={scopeKey} snapshot={snapshot} initialEmail={initialEmail} />;
+  return <ArtworkScope key={scopeKey} snapshot={snapshot} initialEmail={initialEmail} dedicated={dedicated}/>;
 }
-function ArtworkScope({ snapshot, initialEmail }: { snapshot: EnterpriseSnapshot; initialEmail: string }) {
+function ArtworkScope({ snapshot, initialEmail,dedicated }: { snapshot: EnterpriseSnapshot; initialEmail: string;dedicated:boolean }) {
   const enterpriseId = snapshot.enterprise.id;
-  const [draft, setDraft] = useState(() => initialFilter(initialEmail)), [filter, setFilter] = useState(() => initialFilter(initialEmail));
+  const [draft, setDraft] = useState(() => initialFilter(initialEmail,dedicated)), [filter, setFilter] = useState(() => initialFilter(initialEmail,dedicated));
   const [page, setPage] = useState(1), [reload, setReload] = useState(0), [busy, setBusy] = useState(true), [error, setError] = useState("");
   const [data, setData] = useState<{ key: string; body: BiResponse } | null>(null), [selected, setSelected] = useState<BiRow | null>(null), [exporting, setExporting] = useState(false);
   const close = useRef<HTMLButtonElement>(null), alive = useRef(true), detailRequest = useRef<AbortController | null>(null), exportRequest = useRef<AbortController | null>(null);
@@ -81,11 +81,12 @@ function ArtworkScope({ snapshot, initialEmail }: { snapshot: EnterpriseSnapshot
     <div className={local.content}>
       <header className={styles.header}><h1>图片与操作内容</h1><button className={styles.button} disabled={busy} onClick={() => setReload(n => n + 1)}><RefreshCw size={15} />刷新</button></header>
       <form className={styles.filters} onSubmit={e => { e.preventDefault(); setFilter({ ...draft }); setPage(1); }}>
-        <label>开始日期<input aria-label="开始日期" type="date" required value={draft.from} onChange={e => setDraft({ ...draft, from: e.target.value })} /></label>
-        <label>结束日期<input aria-label="结束日期" type="date" required value={draft.to} onChange={e => setDraft({ ...draft, to: e.target.value })} /></label>
+        <label>开始日期<input aria-label="开始日期" type="date" required={draft.period!=='all'} value={draft.from} onChange={e => setDraft({ ...draft, from:e.target.value,period:'' })} /></label>
+        <label>结束日期<input aria-label="结束日期" type="date" required={draft.period!=='all'} value={draft.to} onChange={e => setDraft({ ...draft, to:e.target.value,period:'' })} /></label>
+        <button type="button" className={styles.button} aria-pressed={draft.period==='all'} onClick={()=>{const next={...draft,period:'all' as const,from:'',to:''};setDraft(next);setFilter(next);setPage(1);}}>全部日期</button>
         <label>成员<select aria-label="选择成员" value={draft.email} onChange={e => setDraft({ ...draft, email: e.target.value })}><option value="">全部成员</option>{snapshot.members.map(m => <option key={m.email} value={m.email}>{m.name || m.email}</option>)}</select></label>
-        <label>账户类型<select aria-label="账户类型" value={draft.accountType} onChange={e => setDraft({ ...draft, accountType: e.target.value })}><option value="">全部类型</option><option value="personal">个人</option><option value="enterprise">企业</option><option value="unknown">未登记</option></select></label>
-        <label className={styles.search}>搜索账户<input aria-label="搜索账户" placeholder="姓名、邮箱、企业名称" value={draft.q} maxLength={100} onChange={e => setDraft({ ...draft, q: e.target.value })} /></label>
+        {!dedicated&&<label>账户类型<select aria-label="账户类型" value={draft.accountType} onChange={e => setDraft({ ...draft, accountType: e.target.value })}><option value="">全部类型</option><option value="personal">个人</option><option value="enterprise">企业</option><option value="unknown">未登记</option></select></label>}
+        <label className={styles.search}>搜索成员<input aria-label="搜索账户" placeholder={dedicated?'姓名、账号':'姓名、邮箱、企业名称'} value={draft.q} maxLength={100} onChange={e => setDraft({ ...draft, q: e.target.value })} /></label>
         <label>记录筛选<select aria-label="记录筛选" value={draft.status} onChange={e => setDraft({ ...draft, status: e.target.value })}><option value="">正常作品</option><option value="deleted">回收站</option><option value="all">全部记录</option></select></label>
         <button className={`${styles.primary} ${local.query}`} disabled={busy}><Search size={15} />查询</button>
       </form>

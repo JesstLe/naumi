@@ -1,22 +1,18 @@
-import type {CanvasTimelineNode} from "./timeline-node-schema";
-import type {CanvasAudioNode} from "./audio-node-schema";
-import type {CanvasSceneNode} from "./scene-node-schema";
-import type {CanvasCharacterNode} from "./character-node-schema";
+import {filterCanvasNativeRecords,canvasNativeNodes,type CanvasNativeRecords} from "./native-node-records";
 import type {Artwork} from "../mock-data";
-import type {CanvasDirectorNode} from "./director-node-schema";
 import type {CanvasVideoNode} from "./video-node-schema";
 import {CANVAS_TEXT_DEFAULT_HEIGHT,CANVAS_TEXT_DEFAULT_WIDTH,type CanvasTextNode} from "./text-document-model";
 import type {CanvasHistoryAction} from "./history-model";
 import {browserRandomUUID} from "../browser-crypto";
 
-export type CanvasNodeRecords={artworks:Artwork[];textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];timelineNodes?:CanvasTimelineNode[]};
+export type CanvasNodeRecords={artworks:Artwork[];textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[]}&Omit<CanvasNativeRecords,"videoNodes">;
 export function canvasDeleteRecords(ids:string[],nodes:CanvasNodeRecords):CanvasNodeRecords{
   const selected=new Set(ids.filter(id=>!id.startsWith("pend-")&&!id.startsWith("task-")));
-  return {artworks:nodes.artworks.filter(node=>selected.has(node.id)),textNodes:nodes.textNodes.filter(node=>selected.has(node.id)),videoNodes:nodes.videoNodes.filter(node=>selected.has(node.id)),...(nodes.directorNodes?{directorNodes:nodes.directorNodes.filter(node=>selected.has(node.id))}:{}),...(nodes.characterNodes?{characterNodes:nodes.characterNodes.filter(node=>selected.has(node.id))}:{}),...(nodes.sceneNodes?{sceneNodes:nodes.sceneNodes.filter(node=>selected.has(node.id))}:{}),...(nodes.audioNodes?{audioNodes:nodes.audioNodes.filter(node=>selected.has(node.id))}:{}),...(nodes.timelineNodes?{timelineNodes:nodes.timelineNodes.filter(node=>selected.has(node.id))}:{})};
+  return {artworks:nodes.artworks.filter(node=>selected.has(node.id)),textNodes:nodes.textNodes.filter(node=>selected.has(node.id)),videoNodes:[],...filterCanvasNativeRecords(nodes,node=>selected.has(node.id))};
 }
 export function canvasDeletionAction(records:CanvasNodeRecords):CanvasHistoryAction|null{
-  const {artworks,textNodes,videoNodes}=records;if(!artworks.length&&!textNodes.length&&!videoNodes.length&&!records.directorNodes?.length&&!records.characterNodes?.length&&!records.sceneNodes?.length&&!records.audioNodes?.length&&!records.timelineNodes?.length)return null;
-  if(records.timelineNodes?.length||records.audioNodes?.length||records.sceneNodes?.length||records.characterNodes?.length||records.directorNodes?.length||videoNodes.length||artworks.length&&textNodes.length)return {kind:"mixed-delete",...records};
+  const {artworks,textNodes,videoNodes}=records;if(!artworks.length&&!textNodes.length&&!canvasNativeNodes(records).length)return null;
+  if(canvasNativeNodes(records).length||artworks.length&&textNodes.length)return {kind:"mixed-delete",...records};
   return artworks.length?{kind:"delete",records:artworks}:{kind:"text-delete",records:textNodes};
 }
 export function newCanvasText(input:{x:number;y:number;viewport:{x:number;y:number;zoom:number};project:string|null;forceNewProject?:boolean;title:string;prompt?:string;sourceIds?:string[]}):CanvasTextNode{

@@ -1,3 +1,4 @@
+import {isCanvasNativeOperation,type CanvasNativeRecords} from "./native-node-records";
 import type {CanvasTimelineNode} from "./timeline-node-schema";
 import type {CanvasAudioNode} from "./audio-node-schema";
 import type {Artwork} from "../mock-data";
@@ -11,7 +12,7 @@ import { canvasHistoryProject, canvasHistoryScope, compileCanvasHistory, type Ca
 import { CanvasHistoryRequestError, postCanvasHistory, type CanvasHistoryScope } from "./history-scope";
 
 type Attempt = { undo: boolean; operationId: string; operations: CanvasHistoryOperation[] };
-export type HistoryCommit = {artworkNodes?:import("./artwork-write").CanvasArtworkReceipt[];artworkIds?:string[];action: CanvasHistoryAction; undo: boolean; operations: CanvasHistoryOperation[]; persisted: boolean; initial?:boolean;textNodes?:import("./text-document-model").CanvasTextNode[]};
+export type HistoryCommit = {nativeNodes?:CanvasNativeRecords;artworkNodes?:import("./artwork-write").CanvasArtworkReceipt[];artworkIds?:string[];action: CanvasHistoryAction; undo: boolean; operations: CanvasHistoryOperation[]; persisted: boolean; initial?:boolean;textNodes?:import("./text-document-model").CanvasTextNode[]};
 type Services = {
   changed: () => void; readOnly: () => boolean;
   flush: () => Promise<unknown>; video: (id: string) => CanvasVideoNode | undefined;director?:(id:string)=>CanvasDirectorNode|undefined;character?:(id:string)=>CanvasCharacterNode|undefined;scene?:(id:string)=>CanvasSceneNode|undefined;artwork?:(id:string)=>Artwork|undefined;audio?:(id:string)=>CanvasAudioNode|undefined;timeline?:(id:string)=>CanvasTimelineNode|undefined;
@@ -62,7 +63,7 @@ export function createCanvasHistoryController(services: Services) {
         let response;
         try{response=await postCanvasHistory(scope,{operationId:attempt.operationId,operations:attempt.operations});}
         catch(error){if(error instanceof CanvasHistoryRequestError&&error.conflict){attempts.delete(action);services.conflict?.(scope,error.conflict);}if(error instanceof CanvasHistoryRequestError&&error.artworkConflict){attempts.delete(action);services.artworkConflict?.(scope,error.artworkConflict,action,reverse);}throw error;}
-        const value = {action,undo:reverse,operations:attempt.operations,artworkNodes:response.artworkNodes,artworkIds:response.artworkIds,persisted:response.persisted,textNodes:response.textNodes};
+        const value = {action,undo:reverse,operations:attempt.operations,nativeNodes:response.nativeNodes,artworkNodes:response.artworkNodes,artworkIds:response.artworkIds,persisted:response.persisted,textNodes:response.textNodes};
         attempts.delete(action);delete action.artworkBases;
         // A scoped document owner can acknowledge its own durable drafts after
         // navigation. UI adapters still guard all current-view React writes.
@@ -71,7 +72,7 @@ export function createCanvasHistoryController(services: Services) {
         return value;
       });
       if (scope.documentCurrent()) {
-        if (value.operations.some(op => op.type.startsWith("video-")||op.type.startsWith("director-")||op.type.startsWith("character-")||op.type.startsWith("scene-")||op.type.startsWith("audio-")||op.type.startsWith("timeline-"))) {
+        if (!value.nativeNodes && value.operations.some(isCanvasNativeOperation)) {
           try { await services.refresh(); }
           catch { if (scope.viewCurrent()) services.warning("修改已保存，视频显示待同步"); }
         }

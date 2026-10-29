@@ -1,3 +1,4 @@
+import {filterCanvasNativeRecords,canvasNativeIds,type CanvasNativeRecords} from "./native-node-records";
 import type {CanvasTimelineNode} from "./timeline-node-schema";
 import type {CanvasAudioNode} from "./audio-node-schema";
 import type {CanvasSceneNode} from "./scene-node-schema";
@@ -15,9 +16,10 @@ import type {CanvasVideoNode} from "./video-node-schema";
 
 type CopyIntent=Omit<CanvasNodeCopyInput,"operationId">;
 type Ports={
+  native?:{accept:(records:CanvasNativeRecords,current:()=>boolean)=>void;refresh:()=>Promise<unknown>};
   writable:()=>boolean;snapshot:()=>CanvasNodeRecords;
   history:{artworkConflict?:(scope:CanvasDocumentScope,value:CanvasArtworkConflict,action:CanvasHistoryAction)=>void;conflict?:(scope:CanvasDocumentScope,value:TextDocumentConflict)=>void;transaction<T>(scope:CanvasDocumentScope,work:()=>Promise<T>):Promise<T>;
-    acknowledge(scope:CanvasDocumentScope,action:CanvasHistoryAction,persisted:boolean,receipt?:{artworkNodes?:CanvasArtworkReceipt[];artworkIds?:string[]}):void;record(scope:CanvasDocumentScope,action:CanvasHistoryAction):void};
+    acknowledge(scope:CanvasDocumentScope,action:CanvasHistoryAction,persisted:boolean,receipt?:{artworkNodes?:CanvasArtworkReceipt[];artworkIds?:string[];nativeNodes?:CanvasNativeRecords}):void;record(scope:CanvasDocumentScope,action:CanvasHistoryAction):void};
   artworks:(ids:string[])=>Promise<Artwork[]>;
   videos:(nodes:CanvasVideoNode[],current:()=>boolean)=>void;
   directors?:(nodes:CanvasDirectorNode[],current:()=>boolean)=>void;
@@ -26,6 +28,12 @@ type Ports={
   timelines?:(nodes:CanvasTimelineNode[],current:()=>boolean)=>void;
   scenes?:(nodes:CanvasSceneNode[],current:()=>boolean)=>void;
 };
+async function acceptNative(ports:Ports,receipt:CanvasNativeRecords|undefined,legacy:CanvasNativeRecords,current:()=>boolean){
+  if(!current())return;
+  if(ports.native){if(receipt)ports.native.accept(receipt,current);else await ports.native.refresh();return;}
+  const records=receipt||legacy;
+  if(records.videoNodes)ports.videos(records.videoNodes,current);if(records.directorNodes)ports.directors?.(records.directorNodes,current);if(records.characterNodes)ports.characters?.(records.characterNodes,current);if(records.sceneNodes)ports.scenes?.(records.sceneNodes,current);if(records.audioNodes)ports.audios?.(records.audioNodes,current);if(records.timelineNodes)ports.timelines?.(records.timelineNodes,current);
+}
 class NodeRequestError extends Error{constructor(message:string,readonly status:number,readonly conflict?:TextDocumentConflict,readonly artworkConflict?:CanvasArtworkConflict){super(message);}}
 async function post(scope:CanvasDocumentScope,url:string,body:unknown){
   const response=await canvasDocumentFetch(scope,url,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body),signal:AbortSignal.timeout(20_000)},true);
@@ -40,8 +48,8 @@ const atProject=(scope:CanvasDocumentScope,project:string|null):CanvasDocumentSc
  * receipts. Known copied records resume reads, never copy them a second time. */
 export function createCanvasNodeOperations(){
   type CopyAttempt={body:CanvasNodeCopyInput;result?:CanvasNodeCopyResult;action?:CanvasHistoryAction;recorded?:boolean;flight?:Promise<CanvasNodeCopyResult>};
-  const copies=new Map<string,CopyAttempt>(),deletions=new Map<string,{body:{projectKey:string;operationId:string};saved?:boolean;receipt?:{artworkNodes?:CanvasArtworkReceipt[];artworkIds?:string[]};persisted?:boolean;flight?:Promise<void>}>();
-  type Removal={body?:{operationId:string;artworkIds:string[];textIds:string[];videoIds:string[];directorIds?:string[];characterIds?:string[];sceneIds?:string[];audioIds?:string[];timelineIds?:string[];expectedTexts?:import("./text-document-model").CanvasTextNode[];expectedArtworks?:Array<{id:string;fields:import("./artwork-write").CanvasArtworkFields}>};records?:CanvasNodeRecords;action?:CanvasHistoryAction;recorded?:boolean;saved?:boolean;receipt?:{artworkNodes?:CanvasArtworkReceipt[];artworkIds?:string[]};persisted?:boolean;flight?:Promise<boolean>};
+  const copies=new Map<string,CopyAttempt>(),deletions=new Map<string,{body:{projectKey:string;operationId:string};saved?:boolean;receipt?:{artworkNodes?:CanvasArtworkReceipt[];artworkIds?:string[];nativeNodes?:CanvasNativeRecords};persisted?:boolean;flight?:Promise<void>}>();
+  type Removal={body?:{operationId:string;artworkIds:string[];textIds:string[];videoIds:string[];directorIds?:string[];characterIds?:string[];sceneIds?:string[];audioIds?:string[];timelineIds?:string[];expectedTexts?:import("./text-document-model").CanvasTextNode[];expectedArtworks?:Array<{id:string;fields:import("./artwork-write").CanvasArtworkFields}>};records?:CanvasNodeRecords;action?:CanvasHistoryAction;recorded?:boolean;saved?:boolean;receipt?:{artworkNodes?:CanvasArtworkReceipt[];artworkIds?:string[];nativeNodes?:CanvasNativeRecords};persisted?:boolean;flight?:Promise<boolean>};
   const removals=new Map<string,Removal>();
   function bind(scope:CanvasDocumentScope,ports:Ports){
     const assert=()=>{scope.assertView();if(!ports.writable())throw new Error("当前画布为只读");};
@@ -66,7 +74,8 @@ export function createCanvasNodeOperations(){
         const target=atProject(scope,result.projectKey);
         // Record the durable mutation before any optional presentation refresh.
         if(!retained.recorded){ports.history.record(target,retained.action);retained.recorded=true;}
-        ports.history.acknowledge(target,retained.action,true);ports.videos(result.nodes,scope.documentCurrent);if(result.directorNodes)ports.directors?.(result.directorNodes,scope.documentCurrent);if(result.characterNodes)ports.characters?.(result.characterNodes,scope.documentCurrent);if(result.sceneNodes)ports.scenes?.(result.sceneNodes,scope.documentCurrent);if(result.audioNodes)ports.audios?.(result.audioNodes,scope.documentCurrent);if(result.timelineNodes)ports.timelines?.(result.timelineNodes,scope.documentCurrent);
+        ports.history.acknowledge(target,retained.action,true);
+        await acceptNative(ports,result.nativeNodes,{videoNodes:result.nodes,...result},scope.documentCurrent);
         copies.delete(key);return result;
       }).catch(error=>{if(!retained.result&&rejected(error))copies.delete(key);throw error;}).finally(()=>{retained.flight=undefined;});
       retained.flight=run;return run;
@@ -80,18 +89,14 @@ export function createCanvasNodeOperations(){
           const records=canvasDeleteRecords(ids,ports.snapshot()),action=canvasDeletionAction(records);
           if(!action){removals.delete(key);return false;}
           retained.records=records;retained.action=action;
-          retained.body={operationId:browserRandomUUID(),artworkIds:records.artworks.map(node=>node.id),textIds:records.textNodes.map(node=>node.id),videoIds:records.videoNodes.map(node=>node.id),...(records.directorNodes?.length?{directorIds:records.directorNodes.map(node=>node.id)}:{}),...(records.characterNodes?.length?{characterIds:records.characterNodes.map(node=>node.id)}:{}),...(records.sceneNodes?.length?{sceneIds:records.sceneNodes.map(node=>node.id)}:{}),...(records.audioNodes?.length?{audioIds:records.audioNodes.map(node=>node.id)}:{}),...(records.timelineNodes?.length?{timelineIds:records.timelineNodes.map(node=>node.id)}:{}),expectedTexts:records.textNodes,expectedArtworks:records.artworks.map(n=>({id:n.id,fields:artworkFields(n)}))};
+          retained.body={operationId:browserRandomUUID(),artworkIds:records.artworks.map(node=>node.id),textIds:records.textNodes.map(node=>node.id),videoIds:[],...canvasNativeIds(records),expectedTexts:records.textNodes,expectedArtworks:records.artworks.map(n=>({id:n.id,fields:artworkFields(n)}))};
         }
         if(!retained.saved){const result=await post(scope,"/api/canvas/nodes/delete",retained.body);retained.saved=true;retained.receipt=result;retained.persisted=result.persisted!==false;}
         if(!scope.documentCurrent())throw new Error("节点已删除，请返回原账号同步");
         if(!retained.recorded){ports.history.record(scope,retained.action!);retained.recorded=true;}
         ports.history.acknowledge(scope,retained.action!,retained.persisted!==false,retained.receipt);
-        const now=new Date().toISOString();ports.videos(retained.records!.videoNodes.map(node=>({...node,deletedAt:now,revision:node.revision+1})),scope.documentCurrent);
-        if(retained.records!.directorNodes)ports.directors?.(retained.records!.directorNodes.map(node=>({...node,deletedAt:now,revision:node.revision+1})),scope.documentCurrent);
-        if(retained.records!.characterNodes)ports.characters?.(retained.records!.characterNodes.map(node=>({...node,deletedAt:now,revision:node.revision+1})),scope.documentCurrent);
-        if(retained.records!.sceneNodes)ports.scenes?.(retained.records!.sceneNodes.map(node=>({...node,deletedAt:now,revision:node.revision+1})),scope.documentCurrent);
-        if(retained.records!.audioNodes)ports.audios?.(retained.records!.audioNodes.map(node=>({...node,deletedAt:now,revision:node.revision+1})),scope.documentCurrent);
-        if(retained.records!.timelineNodes)ports.timelines?.(retained.records!.timelineNodes.map(node=>({...node,deletedAt:now,revision:node.revision+1})),scope.documentCurrent);
+        const now=new Date().toISOString(),legacy=Object.fromEntries(Object.entries(filterCanvasNativeRecords(retained.records!,()=>true)).map(([key,nodes])=>[key,nodes.map(node=>({...node,deletedAt:now,revision:node.revision+1}))])) as CanvasNativeRecords;
+        await acceptNative(ports,retained.receipt?.nativeNodes,legacy,scope.documentCurrent);
         removals.delete(key);return true;
       }).catch(error=>{if(error instanceof NodeRequestError&&error.conflict)ports.history.conflict?.(scope,error.conflict);if(error instanceof NodeRequestError&&error.artworkConflict&&retained.action)ports.history.artworkConflict?.(scope,error.artworkConflict,retained.action);if(!retained.body||!retained.saved&&rejected(error))removals.delete(key);throw error;}).finally(()=>{retained.flight=undefined;});
       retained.flight=run;return run;
@@ -101,17 +106,13 @@ export function createCanvasNodeOperations(){
       if(!attempt){attempt={body:{projectKey,operationId:browserRandomUUID()}};deletions.set(key,attempt);}
       if(attempt.flight)return attempt.flight;const retained=attempt;
       const run=ports.history.transaction(scope,async()=>{
-        assert();if(!retained.saved){const result=await post(atProject(scope,projectKey),"/api/canvas/nodes/delete",retained.body);retained.saved=true;retained.persisted=result.persisted!==false;}
+        assert();if(!retained.saved){const result=await post(atProject(scope,projectKey),"/api/canvas/nodes/delete",retained.body);retained.saved=true;retained.persisted=result.persisted!==false;retained.receipt=result;}
         if(!scope.documentCurrent())throw new Error("项目已删除，请返回原账号同步");
         const nodes=ports.snapshot(),kind=projectKey.slice(0,projectKey.indexOf(":")),id=projectKey.slice(projectKey.indexOf(":")+1);
-        const records={artworks:nodes.artworks.filter(node=>kind==="batch"?node.batchId===id:node.groupId===id||node.id===id),textNodes:nodes.textNodes.filter(node=>node.projectKey===projectKey),videoNodes:nodes.videoNodes.filter(node=>node.projectKey===projectKey),...(nodes.directorNodes?{directorNodes:nodes.directorNodes.filter(node=>node.projectKey===projectKey)}:{}),...(nodes.characterNodes?{characterNodes:nodes.characterNodes.filter(node=>node.projectKey===projectKey)}:{}),...(nodes.sceneNodes?{sceneNodes:nodes.sceneNodes.filter(node=>node.projectKey===projectKey)}:{}),...(nodes.audioNodes?{audioNodes:nodes.audioNodes.filter(node=>node.projectKey===projectKey)}:{}),...(nodes.timelineNodes?{timelineNodes:nodes.timelineNodes.filter(node=>node.projectKey===projectKey)}:{})};
+        const records={artworks:nodes.artworks.filter(node=>kind==="batch"?node.batchId===id:node.groupId===id||node.id===id),textNodes:nodes.textNodes.filter(node=>node.projectKey===projectKey),videoNodes:[],...filterCanvasNativeRecords(nodes,node=>node.projectKey===projectKey)};
         const action=canvasDeletionAction(records);if(action)ports.history.acknowledge(atProject(scope,projectKey),action,retained.persisted!==false);
-        const now=new Date().toISOString();ports.videos(records.videoNodes.map(node=>({...node,deletedAt:now,revision:node.revision+1})),scope.documentCurrent);
-        if(records.directorNodes)ports.directors?.(records.directorNodes.map(node=>({...node,deletedAt:now,revision:node.revision+1})),scope.documentCurrent);
-        if(records.characterNodes)ports.characters?.(records.characterNodes.map(node=>({...node,deletedAt:now,revision:node.revision+1})),scope.documentCurrent);
-        if(records.sceneNodes)ports.scenes?.(records.sceneNodes.map(node=>({...node,deletedAt:now,revision:node.revision+1})),scope.documentCurrent);
-        if(records.audioNodes)ports.audios?.(records.audioNodes.map(node=>({...node,deletedAt:now,revision:node.revision+1})),scope.documentCurrent);
-        if(records.timelineNodes)ports.timelines?.(records.timelineNodes.map(node=>({...node,deletedAt:now,revision:node.revision+1})),scope.documentCurrent);
+        const now=new Date().toISOString(),legacy=Object.fromEntries(Object.entries(filterCanvasNativeRecords(records,()=>true)).map(([key,nodes])=>[key,nodes.map(node=>({...node,deletedAt:now,revision:node.revision+1}))])) as CanvasNativeRecords;
+        await acceptNative(ports,retained.receipt?.nativeNodes,legacy,scope.documentCurrent);
         deletions.delete(key);
       }).catch(error=>{if(!retained.saved&&rejected(error))deletions.delete(key);throw error;}).finally(()=>{retained.flight=undefined;});
       retained.flight=run;return run;

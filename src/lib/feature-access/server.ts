@@ -6,16 +6,21 @@ import {FeatureAccessError,userFeaturePolicy} from "./repository";
 export {FeatureAccessError,ensureFeatureAccessSchema,policyFromRow,userFeaturePolicy,featureAccessUsers,validatePolicyCommand,saveFeaturePolicy} from "./repository";
 export type {PolicyCommand} from "./repository";
 
-export async function requestFeaturePolicy(request: Request) {
+export async function requestFeaturePolicy(request: Request,options:{site?:boolean}={}) {
   const email = await resolveUserEmail(request);
   const admin = await requireAdmin(request);
   if (admin) return { email, admin: true, policy: { ...DEFAULT_POLICY } };
-  return { email, admin: false, policy: email ? await userFeaturePolicy(email) : null };
+  return { email, admin: false, policy: email ? await userFeaturePolicy(email,options) : null };
 }
 export async function featureRequestGate(request: Request): Promise<Response | null> {
   const url = new URL(request.url), requirement = requestRequirement(url.pathname, request.method);
   if (!requirement || !dbEnabled) return null;
-  const { email, admin, policy } = await requestFeaturePolicy(request);
+  const path=url.pathname.startsWith('/desktop/api/')?url.pathname.slice('/desktop'.length):url.pathname;
+  const management=(path==='/api/enterprise'||path.startsWith('/api/enterprise/'))&&!path.startsWith('/api/enterprise/workflow');
+  const receiptAware=['/api/imagegen','/api/generate-image','/api/imagegen/cancel','/api/canvas/image-versions'].includes(path)
+    || /^\/api\/imagegen\/batches\/[^/]+(?:\/download)?$/.test(path)||/^\/api\/canvas\/timeline-nodes\/[^/]+\/render$/.test(path);
+  const enforceSite=!management&&!receiptAware&&(request.method!=='GET'&&request.method!=='HEAD'||!path.startsWith('/api/'));
+  const { email, admin, policy } = await requestFeaturePolicy(request,{site:enforceSite});
   if (admin) return null;
   const canonicalPath = url.pathname.startsWith("/desktop/api/") ? url.pathname.slice("/desktop".length) : url.pathname;
   const api = canonicalPath.startsWith("/api/");

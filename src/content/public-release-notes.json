@@ -1,5 +1,38 @@
 [
   {
+    "version": "1793204789",
+    "title": {
+      "zh": "团队使用体验优化",
+      "en": "Team experience improvements"
+    },
+    "improvements": [],
+    "fixes": [
+      {
+        "zh": "优化功能未开放时的页面反馈，减少无效请求与错误提示。",
+        "en": "Improve feedback for unavailable features and avoid unnecessary requests and errors."
+      }
+    ]
+  },
+  {
+    "version": "1793200513",
+    "title": {
+      "zh": "协作交付体验更新",
+      "en": "Collaboration and delivery update"
+    },
+    "improvements": [
+      {
+        "zh": "协作空间支持提需、分工、交付与验收，进度和附件统一留存。",
+        "en": "Track requests, assignments, deliveries, reviews and attachments in one workspace."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "优化成员权限和页面入口的一致性，减少无权限页面造成的中断。",
+        "en": "Keep member permissions and navigation consistent to reduce interruptions."
+      }
+    ]
+  },
+  {
     "version": "1793187130",
     "title": {
       "zh": "大图查看与稳定性修复",

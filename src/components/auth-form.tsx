@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { useAuth, type SessionUser } from "@/lib/auth-context";
 import { supabaseEnabled } from "@/lib/auth-mode";
 import { BRAND } from "@/lib/brand";
+import { useSiteProfile } from '@/lib/site-control/client';
 import { OPERATOR_EMAIL } from "@/lib/operator";
 
 function PageShell({
@@ -156,6 +157,7 @@ export function AuthForm({
   noRedirect?: boolean;
   onSwitchMode?: (m: "sign-in" | "sign-up") => void;
 }) {
+  const site=useSiteProfile(),dedicated=site.mode==='enterprise';
   const router = useRouter();
   const params = useSearchParams();
   const { signIn, signUp, multiUser, applyServerUser } = useAuth();
@@ -184,8 +186,8 @@ export function AuthForm({
   //  · pwMode = 单用户自托管(无 Supabase + 已设管理员密码)—— 一个密码进用户+后台。
   //  · legacy = 其它(旧 mock 邮箱登录)。
   const multiMode = multiUser;
-  const isSignUp = mode === "sign-up";
-  const pwMode = !multiUser && !supabaseEnabled && localAvailable === true;
+  const isSignUp = !dedicated && mode === "sign-up";
+  const pwMode = !dedicated && !multiUser && !supabaseEnabled && localAvailable === true;
   // 原生多用户注册:是否需要邮箱验证码(站长配了 SMTP 即需要,与官方站一致)
   const [emailCodeRequired, setEmailCodeRequired] = useState(false);
   const [code, setCode] = useState("");
@@ -200,6 +202,7 @@ export function AuthForm({
   }
 
   useEffect(() => {
+    if(dedicated){setLocalAvailable(false);return;}
     let cancelled = false;
     (async () => {
       try {
@@ -387,7 +390,7 @@ export function AuthForm({
 
   // 标题/副标题(premium-auth 的 Welcome Back / Create Account 层级)。
   const title = isSignUp ? "创建账号" : "欢迎回来";
-  const subtitle = isSignUp
+  const subtitle = dedicated ? site.policy.brand : isSignUp
     ? `注册你的 ${BRAND} 账号,注册即送积分`
     : pwMode
       ? "输入管理员密码登录"
@@ -451,7 +454,7 @@ export function AuthForm({
   }
 
   // 是否显示 登录/注册 分段 tab(可切换注册的场景)。
-  const showTabs = multiMode;
+  const showTabs = multiMode && !dedicated;
   // 需要昵称的旧注册路径(非多用户)。
   const legacyNameField = isSignUp && !multiMode;
 
@@ -620,7 +623,7 @@ export function AuthForm({
           用安装向导里设置的管理员密码登录。到后台「登录与支付」开启多用户后,用户可用邮箱注册和登录。
         </p>
       ) : (
-        !showTabs && (
+        !dedicated && !showTabs && (
           <p className="text-center text-sm text-muted-foreground">
             {isSignUp ? "已有账号？" : "还没有账号？"}{" "}
             {onSwitchMode ? (

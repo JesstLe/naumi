@@ -13,5 +13,5 @@ export async function postCanvasHistory(scope: CanvasHistoryScope, body: unknown
   const data = await response.json().catch(() => null);
   if (!response.ok) throw new CanvasHistoryRequestError(data?.error || "画布保存失败，请重试",response.status,data?.code==="CANVAS_TEXT_CONFLICT"?{id:data.id,fields:data.fields,current:data.current}:undefined,data?.code==="CANVAS_ARTWORK_CONFLICT"?{id:data.id,fields:data.fields,current:data.current}:undefined);
   if (!data?.ok) throw new Error("画布保存结果待核实，请重试原操作");
-  return {artworkNodes:Array.isArray(data.artworkNodes)?data.artworkNodes as import("./artwork-write").CanvasArtworkReceipt[]:undefined,artworkIds:Array.isArray(data.artworkIds)?data.artworkIds as string[]:undefined,persisted: data.persisted !== false,textNodes:Array.isArray(data.textNodes)?data.textNodes as import("./text-document-model").CanvasTextNode[]:undefined};
+  return {nativeNodes:data.nativeNodes as import("./native-node-records").CanvasNativeRecords|undefined,artworkNodes:Array.isArray(data.artworkNodes)?data.artworkNodes as import("./artwork-write").CanvasArtworkReceipt[]:undefined,artworkIds:Array.isArray(data.artworkIds)?data.artworkIds as string[]:undefined,persisted: data.persisted !== false,textNodes:Array.isArray(data.textNodes)?data.textNodes as import("./text-document-model").CanvasTextNode[]:undefined};
 }

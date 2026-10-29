@@ -39,7 +39,7 @@ try{
 
 
 def context(release_id, commit, version, instance):
-    require(re.fullmatch('canvas-video-fusion-[A-Za-z0-9_.-]+', release_id or '') and
+    require(re.fullmatch('(?:canvas-video-fusion-[A-Za-z0-9_.-]+|release103-refactor-[a-z0-9-]+|release(?:47|103)-site-control-[a-z0-9-]+)', release_id or '') and
             re.fullmatch('[a-f0-9]{40}', commit or '') and re.fullmatch('[0-9]{10,13}', str(version)) and
             re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]{0,95}', instance or ''), 'FIXED_RUNTIME_RECOVERY_CONTEXT_REQUIRED')
     return {'schemaVersion': 1, 'releaseId': release_id, 'instanceId': instance, 'commit': commit, 'buildVersion': str(version)}

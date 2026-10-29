@@ -1,4 +1,5 @@
 import 'server-only';
+import type {PoolClient} from 'pg';
 import {z} from 'zod';
 import {getPool} from "@/platform/db/pool";
 import {queryBi} from "@/lib/bi/repository";
@@ -11,20 +12,22 @@ import { TeamError } from "@/lib/teams/errors";
 import {legacyCreationFailures,hasCreationFailure} from './creation-failures';
 const source=z.object({table:z.enum(['app_image_jobs','app_canvas_image_tasks','app_video_tasks','app_artworks']),id:z.string().min(1).max(240),email:z.string().min(1).max(254)});
 type Source=z.infer<typeof source>;
+export type LegacyReadScope={client:PoolClient;allowedEmails:readonly string[]};
 export function legacyCreationId(value:Source){return `legacy-${Buffer.from(JSON.stringify(value)).toString('base64url')}`;}
 function parseId(id:string){try{if(id.length>1600||!id.startsWith('legacy-'))throw new Error();return source.parse(JSON.parse(Buffer.from(id.slice(7),'base64url').toString()));}catch{throw new TeamError('记录不存在或无权访问',404);}}
 const item=(r:Record<string,any>):CreationSummary=>({id:legacyCreationId({table:r.source_table,id:r.id,email:r.email}),title:r.content?.slice(0,120)||r.kind||'历史创作',actorEmail:r.email,actorName:r.email,tenantId:null,scopeKind:'legacy_unconfirmed',sourceKind:r.kind,status:creationStatus(r.status),acceptedAt:new Date(r.created_at).toISOString(),settledCredits:r.has_ledger_charge?Number(r.billed_credits):null,thumbnailAssetId:null,completeness:'not_recorded'});
-export async function listLegacyCreations(f:CreationFilters):Promise<CreationPage>{
+export async function listLegacyCreations(f:CreationFilters,access?:LegacyReadScope):Promise<CreationPage>{
  const p=new URLSearchParams({section:'operations',page:String(f.page),size:String(f.size),email:f.user,q:f.q});if(f.from)p.set('from',f.from);if(f.to)p.set('to',f.to);if(f.status)p.set('status',`creation:${f.status}`);
  const query=parseBiQuery(p);if(f.period==='all'){query.start='-infinity';query.end='infinity';}
-  const rows=await queryBi(query),items=rows.rows.map(item);
-  const failures=await legacyCreationFailures(getPool(),items.filter(i=>hasCreationFailure(i.status)).map(i=>{const r=parseId(i.id);return {root:i.id,table_name:r.table,id:r.id,email:r.email};}));
+  const rows=await queryBi(query,access),items=rows.rows.map(item);
+  const failures=access?new Map():await legacyCreationFailures(getPool(),items.filter(i=>hasCreationFailure(i.status)).map(i=>{const r=parseId(i.id);return {root:i.id,table_name:r.table,id:r.id,email:r.email};}));
   for(const i of items)if(failures.has(i.id))i.failure=failures.get(i.id);
   return {items,pagination:{total:rows.total,page:rows.page,size:rows.size},appliedFilters:f,generatedAt:rows.generatedAt,scope:'platform',availability:'available',summary:{total:rows.total,activeMembers:0,settledCredits:null,pending:0,failed:0,needsReview:0},memberUsage:[]};
 }
 type LegacyMedia={asset:CreationAsset;storageRef:string;actorEmail:string};
-export async function legacyCreationDetail(id:string,pages:{assetPage?:number;diagnostics?:boolean}={}){
- const ref=parseId(id);await ensureBiSchema();const pool=getPool();
+export async function legacyCreationDetail(id:string,pages:{assetPage?:number;diagnostics?:boolean}={},access?:LegacyReadScope){
+ const ref=parseId(id);if(access&&!access.allowedEmails.includes(ref.email))throw new TeamError('记录不存在或无权访问',404);
+ await ensureBiSchema();const pool=access?.client||getPool();
  // Table names come exclusively from the closed schema above; values stay bound.
  const row=(await pool.query(`SELECT * FROM ${ref.table} WHERE id=$1 AND email=$2`,[ref.id,ref.email])).rows[0];if(!row)throw new TeamError('记录不存在或无权访问',404);
  const request=row.payload?.plan?.request||row.payload?.p?.imagegen?.request;
@@ -48,18 +51,18 @@ export async function legacyCreationDetail(id:string,pages:{assetPage?:number;di
  const ledger=ledgerId?(await pool.query("SELECT -sum(delta)::int AS charged FROM app_ledger WHERE email=$1 AND id=$2 AND kind='consume'",[ref.email,ledgerId])).rows[0]?.charged:null;
  const charged=billing&&['settled','released'].includes(billing.state)?Number(billing.charged_credits):ledger!==null&&ledger!==undefined?Number(ledger):row.metered===false?0:null;
  const detail:CreationDetail={...root,settledCredits:charged,evidencePending:false,request:{state:typeof text==='string'?'recorded':'not_recorded',text:typeof text==='string'?text:null},parameters:{state:request?.parameters?'recorded':'not_recorded',values:request?.parameters||{}},model:{state:'not_recorded',label:null},assets:media.map(m=>m.asset),events:[],children:[],assetPagination:{page,size,total:inputCount+outputTotal},eventPagination:{page:1,size:24,total:0},childPagination:{page:1,size:24,total:0},billing:{payerAccountId:billing||ledger!==null?ref.email:null,source:'历史实际账户',quoted:Number.isSafeInteger(billing?.quote?.requestedCredits)?billing.quote.requestedCredits:null,reserved:null,charged,released:null,refunded:null,state:billing?.state||'not_recorded',operations:billing?[{id:billing.id,state:billing.state,charged}]:[]},technical:{sourceTable:ref.table,sourceId:ref.id,scope:'历史企业归属未确认',originalStatus:row.snapshot?.status||row.status}};
-  if(pages.diagnostics!==false&&hasCreationFailure(root.status))detail.failure=(await legacyCreationFailures(pool,[{root:id,table_name:ref.table,id:ref.id,email:ref.email}])).get(id);
+  if(!access&&pages.diagnostics!==false&&hasCreationFailure(root.status))detail.failure=(await legacyCreationFailures(getPool(),[{root:id,table_name:ref.table,id:ref.id,email:ref.email}])).get(id);
   return {detail,media};
 }
-export async function legacyCreationAsset(id:string,assetId:string){const {media}=await legacyCreationDetail(id,{diagnostics:false});let m=media.find(m=>m.asset.id===assetId);
- if(!m&&/^legacy-media-\d+$/.test(assetId)){const index=Number(assetId.slice(13));m=(await legacyCreationDetail(id,{assetPage:Math.floor(index/24)+1,diagnostics:false})).media.find(m=>m.asset.id===assetId);}
+export async function legacyCreationAsset(id:string,assetId:string,access?:LegacyReadScope){const pool=access?.client||getPool();const {media}=await legacyCreationDetail(id,{diagnostics:false},access);let m=media.find(m=>m.asset.id===assetId);
+ if(!m&&/^legacy-media-\d+$/.test(assetId)){const index=Number(assetId.slice(13));m=(await legacyCreationDetail(id,{assetPage:Math.floor(index/24)+1,diagnostics:false},access)).media.find(m=>m.asset.id===assetId);}
  if(!m&&assetId.startsWith('legacy-artwork-')){
   const ref=parseId(id),artworkId=Buffer.from(assetId.slice(15),'base64url').toString();if(artworkId.length>240)throw new TeamError('素材不存在',404);
-  const row=(await getPool().query(`SELECT * FROM ${ref.table} WHERE id=$1 AND email=$2`,[ref.id,ref.email])).rows[0];if(!row)throw new TeamError('素材不存在',404);
-  const found=(await getPool().query(`SELECT id,video_url FROM app_artworks WHERE id=$1 AND email=$2 AND ($3='app_artworks' AND id=$4 OR $3<>'app_artworks' AND (batch_id=$4 OR batch_id='b-'||$4 OR creation_provenance->>'ref'=$4 OR $3='app_canvas_image_tasks' AND id=$5))`,[artworkId,ref.email,ref.table,ref.id,row.result_artwork_id||''])).rows[0];
+  const row=(await pool.query(`SELECT * FROM ${ref.table} WHERE id=$1 AND email=$2`,[ref.id,ref.email])).rows[0];if(!row)throw new TeamError('素材不存在',404);
+  const found=(await pool.query(`SELECT id,video_url FROM app_artworks WHERE id=$1 AND email=$2 AND ($3='app_artworks' AND id=$4 OR $3<>'app_artworks' AND (batch_id=$4 OR batch_id='b-'||$4 OR creation_provenance->>'ref'=$4 OR $3='app_canvas_image_tasks' AND id=$5))`,[artworkId,ref.email,ref.table,ref.id,row.result_artwork_id||''])).rows[0];
   if(found)m={asset:{id:assetId,direction:'output',role:'result',position:0,variant:'original',mime:null,bytes:null,hash:null,availability:'recorded',mediaType:found.video_url?'video':'image'},storageRef:`artwork:${found.id}`,actorEmail:ref.email};
  }
  if(!m)throw new TeamError('素材不存在',404);let url=m.storageRef;
- if(url.startsWith('artwork:')){const artwork=url.slice(8);if(artwork.startsWith('asset-')){url=(await(await import('@/lib/imagegen/input-assets')).readImagegenInputAsset(artwork,m.actorEmail)).url;}else{const row=(await getPool().query('SELECT image_url,video_url FROM app_artworks WHERE id=$1 AND email=$2 AND deleted_at IS NULL',[artwork,m.actorEmail])).rows[0];if(!row)throw new TeamError('素材已失效',404);url=m.asset.mediaType==='video'?row.video_url:row.image_url;}}
+ if(url.startsWith('artwork:')){const artwork=url.slice(8);if(artwork.startsWith('asset-')){url=(await(await import('@/lib/imagegen/input-assets')).readImagegenInputAsset(artwork,m.actorEmail)).url;}else{const row=(await pool.query('SELECT image_url,video_url FROM app_artworks WHERE id=$1 AND email=$2 AND deleted_at IS NULL',[artwork,m.actorEmail])).rows[0];if(!row)throw new TeamError('素材已失效',404);url=m.asset.mediaType==='video'?row.video_url:row.image_url;}}
  if(!isManagedImageUrl(url)&&!url.startsWith('data:image/'))throw new TeamError('素材不在受控存储中',422);return {url,mediaType:m.asset.mediaType,mime:m.asset.mime};
 }

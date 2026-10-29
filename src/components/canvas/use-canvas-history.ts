@@ -15,6 +15,7 @@ import { createCanvasHistoryController, type HistoryCommit } from "@/lib/canvas/
 import { reduceHistoryArtworks, reduceHistorySettings, type CanvasHistoryAction } from "@/lib/canvas/history-model";
 
 type Input = {
+  native?:{accept:(receipt:import("@/lib/canvas/native-node-records").CanvasNativeRecords,current:()=>boolean)=>void};
   account: string; project: string | null; readOnly: boolean;
   artworkDocument?:import("@/lib/canvas/artwork-document").CanvasArtworkHistoryPort;
   works: Dispatch<SetStateAction<Artwork[] | null>>; textDocument: CanvasTextHistoryPort;
@@ -47,6 +48,7 @@ export function useCanvasHistory(input: Input) {
     pending: (scope,action,undo) => { scope.assertView(); latest.current.pending(action,undo); },
     commit: (scope,value) => {
       const {action,undo,operations,persisted} = value;
+      if(value.nativeNodes)latest.current.native?.accept(value.nativeNodes,scope.documentCurrent);
       latest.current.textDocument.applyHistory(scope,operations,value.textNodes);
       // Check in deferred React updater bodies too, not just before enqueueing.
       if(latest.current.artworkDocument)latest.current.artworkDocument.applyHistory(scope,value);else latest.current.works(nodes => scope.documentCurrent() ? reduceHistoryArtworks(nodes,operations,action,undo) : nodes);
