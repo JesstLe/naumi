@@ -56,10 +56,25 @@ export function createWorkerTickReceiptStore(pool: Pool) {
     const pending=pool.connect();
     const client=await Promise.race([pending.then(client=>{if(expired){client.release();throw new WorkerTickReceiptError("WORKER_TICK_DATABASE_TIMEOUT",503);}return client;}),
       new Promise<never>((_,reject)=>{timer=setTimeout(()=>{expired=true;reject(new WorkerTickReceiptError("WORKER_TICK_DATABASE_TIMEOUT",503));},3000);})]).finally(()=>clearTimeout(timer));
+    let discard = false;
+    let connectionError: Error | undefined;
+    // Checked-out clients no longer have pg-pool's idle error listener. A socket
+    // failure between query callbacks must fail this operation, not the process.
+    const onError = (error: Error) => { connectionError = error; discard = true; };
+    client.on("error", onError);
     try {
       await client.query("BEGIN"); await client.query("SET LOCAL lock_timeout='500ms'; SET LOCAL statement_timeout='3000ms'; SET LOCAL idle_in_transaction_session_timeout='5000ms'");
-      const result = await run(client); await client.query("COMMIT"); return result;
-    } catch (error) { await client.query("ROLLBACK").catch(() => undefined); throw error; } finally { client.release(); }
+      const result = await run(client);
+      if (connectionError) throw connectionError;
+      await client.query("COMMIT"); return result;
+    } catch (error) {
+      // A failed rollback does not prove the session is clean (e.g. wire timeout).
+      // Preserve the original failure and retire this connection rather than pool it.
+      if (!connectionError) await client.query("ROLLBACK").catch(() => { discard = true; });
+      throw error;
+    } finally {
+      try { client.release(discard); } finally { client.removeListener("error", onError); }
+    }
   }
   async function schema() {
     ready ||= bounded(async client => { await client.query(`CREATE TABLE IF NOT EXISTS app_worker_tick_receipts (
