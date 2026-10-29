@@ -431,3 +431,10 @@
 - **A62 / D41：发布观察历史的筛选未前推至原生分页，真实规模令保留采集失效。** 当前 caller 已限定 old/new instance seed，但百万行 activity 仍先参与 scan；当前 pair 118169 条中未 finished 仅2。全图此前还会包含已 completed 的 tick 叶节点，真实 tick 表约46397行。现场只读采集在60s截止正确 fail-closed、无完整证明；不是生产业务写入失败，也没有错误放行。
 - 本轮窄修复正在把无闭包入边的观察叶节点原生活动态/原ID筛选前推，同时保持原实例历史 exact-hash、业务表全范围、原任务ID终态追踪与 UNKNOWN 规则；默认预算、60s和scan100000不放宽。默认与明确审阅的page/graph资源上限分离将以真实规模和本地PG验证留证。
 - 此条在真实复测完成前保持进行中；A15、运行配置review、A53–55、A59–61及其他容量/生产验收开放项不因本次发布准备关闭。
+
+
+### 2026-10-29 23:47 发布实况与后续
+- **47已切至b79c8c39 / 1793281629**，Web/Worker同固定镜像，公网version200、原生账号/DB/历史/3页Chromium通过，Worker真实tick complete200。恢复器已指新pair并在释放锁后执行成功。
+- 旧Worker已停；旧Web的2个UNKNOWN观察原样保留且无入口，`DEPLOYED_CLEANUP_PENDING`，不是全局COMPLETE。完整快照图闭包超时与存储probe `DURABLE_LOCAL_BYTES` 继续开放；未清UNKNOWN/未重放/未回灌。详见[本次增量](2026-10-29-release47-capacity-batch-r2.md)。
+- A62/D41范围修复已普通合main778fcf75，新增真实PG27、旧37和单元21+skip通过，父四产物与副本回滚完成；生产完整闭包性能仍未闭环，不能按本地通过划掉整个条目。
+- A15收到固定652f4b07，尚未合main/上线；父独立只读审查REQUEST_CHANGES，发现每进程每分钟仅回收64桶导致持续不同key积压，需父修正后PG集中验收。运行配置7e5ece5f仍待独立整合验收，不混本次镜像。
