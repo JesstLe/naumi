@@ -190,6 +190,9 @@ function resources(connectionString) {
     }
     const api = execute(helperSource, 'real-video-coordination-pool.cjs', {}, {
       'server-only': {}, 'node:process': runtime, pg: { Pool: ObservedPool }, '../db': { getPool: () => business },
+      // This fixture deliberately exercises the compatible two-slot layout;
+      // configurable/frozen aggregate budgets have their own runtime suite.
+      '../db/connection': { videoCoordinationPoolLimit: () => 2 },
     });
     return { ...api, control, runtime };
   }

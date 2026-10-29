@@ -400,8 +400,8 @@ export class DurableImageJobs<T extends { status: string }> {
 }
 
 /** Dispatch recoverable work through the existing authenticated worker channel. */
-async function recoverDurableImageJobsLocal(): Promise<number> {
-  if (!dbEnabled) return 0;
+async function recoverDurableImageJobsLocal(options: { signal?: AbortSignal } = {}): Promise<number> {
+  if (!dbEnabled || options.signal?.aborted) return 0;
   const jobs = await repository.dueImageJobs();
   const origin = process.env.INTERNAL_APP_ORIGIN || "http://127.0.0.1:3000";
   const count = await dispatchImageQueue(jobs,async job=>{
@@ -410,18 +410,24 @@ async function recoverDurableImageJobsLocal(): Promise<number> {
       "content-type": "application/json", "x-video-worker-secret": process.env.VIDEO_WORKER_SECRET || "",
     }, body: JSON.stringify({ workerJobId: job.id }), signal: AbortSignal.timeout(10_000) });
     return result.ok;
-  },()=>console.error("[image-queue] worker dispatch failed; retained for next scan"));
+  },()=>console.error("[image-queue] worker dispatch failed; retained for next scan"), undefined, options);
+  if (options.signal?.aborted) return count;
   const {recoverImagegenBatches}=await import("./imagegen/batch");
+  if (options.signal?.aborted) return count;
   const {recoverStoredDeliveries}=await import("./imagegen/stored-delivery");
-  return count+await recoverImagegenBatches()+await recoverStoredDeliveries();
+  if (options.signal?.aborted) return count;
+  const batches = await recoverImagegenBatches();
+  if (options.signal?.aborted) return count + batches;
+  return count+batches+await recoverStoredDeliveries();
 }
 
 let recoveryScan:Promise<number>|undefined;
-export async function recoverDurableImageJobs():Promise<number> {
+export async function recoverDurableImageJobs(options: { signal?: AbortSignal } = {}):Promise<number> {
+  if (options.signal?.aborted) return 0;
   // A scan is a new coordinator observation, not the identity of a paid job.
   // Keep an earlier failed scan UNKNOWN, but do not let its fixed key disable
   // every future tick. Each child's original claim/UNKNOWN checks still apply.
   if(!recoveryScan)recoveryScan=withBackgroundActivity("durable-image", `recovery-dispatch-scan:${randomUUID()}`, "claim",
-    () => recoverDurableImageJobsLocal(), () => 0).finally(()=>{recoveryScan=undefined;});
+    () => recoverDurableImageJobsLocal(options), () => 0).finally(()=>{recoveryScan=undefined;});
   return recoveryScan;
 }
