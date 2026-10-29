@@ -10,7 +10,7 @@ import { authorizeVideoProject } from "../canvas/project-access";
 import { videoNodeIdSchema } from "../canvas/video-node-schema";
 import { videoProjectKeySchema } from "../canvas/project-key";
 import {ModelConfigError} from "../model-config/types";
-import {adaptiveCanvasImageSize} from "../mock-data";
+import {adaptiveCanvasImageSize} from "../canvas/image-size";
 
 export const videoScriptAssetSchema=z.strictObject({
   operationId:z.uuid(),projectKey:videoProjectKeySchema,title:z.string().trim().min(1).max(200),

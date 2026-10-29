@@ -1,6 +1,7 @@
 "use client";
 import {prepareImageUploads,uploadFormData} from "../client-image-upload";
-import {adaptiveCanvasImageSize,type Artwork} from "../mock-data";
+import type {Artwork} from "../mock-data";
+import {adaptiveCanvasImageSize} from "./image-size";
 import {NODE_W,NODE_H,NODE_LABEL_H} from "./node-geometry";
 import {placeGenerationPreview} from "./generation-feedback";
 import {synchronizeCanvasArtworks} from "./input-references";

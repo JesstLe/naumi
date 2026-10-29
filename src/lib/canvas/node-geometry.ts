@@ -1,5 +1,6 @@
 import type {Node} from "@xyflow/react";
-import {adaptiveCanvasImageSize,type Artwork} from "../mock-data";
+import type {Artwork} from "../mock-data";
+import {adaptiveCanvasImageSize} from "./image-size";
 import {imageAspectDisplaySize} from "./input-references";
 import {CANVAS_TEXT_DEFAULT_WIDTH as TEXT_NODE_DEFAULT_W,CANVAS_TEXT_DEFAULT_HEIGHT as TEXT_NODE_DEFAULT_H} from "./text-document-model";
 export const NODE_W=320,NODE_H=236,NODE_LABEL_H=36,PORT_Y=136;

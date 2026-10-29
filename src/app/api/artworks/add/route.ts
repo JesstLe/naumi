@@ -9,7 +9,7 @@ import {setArtworkPosition} from "@/lib/canvas/artwork-repository";
 import { provenanceEntry } from "@/lib/artwork-provenance";
 import { uploadImage } from "@/lib/media-upload";
 import { authenticatedEmail } from "@/lib/request-auth";
-import { adaptiveCanvasImageSize } from "@/lib/mock-data";
+import { adaptiveCanvasImageSize } from "@/lib/canvas/image-size";
 import {ORIGINAL_IMAGE_MAX_BYTES} from "@/lib/image-upload-policy";
 import {originalImageMetadata,browserPreviewsFromForm,saveCanvasOriginal} from "@/lib/canvas-original-upload";
 import {readImagegenBody} from "@/lib/imagegen/body";

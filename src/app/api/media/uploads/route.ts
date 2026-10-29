@@ -13,7 +13,7 @@ import {setArtworkPosition} from "@/lib/canvas/artwork-repository";
 import { privateMedia, storageDriver, remoteMediaAccess, presignStoredObject } from "@/lib/object-storage/runtime";
 import { readManagedObject } from "@/lib/object-storage/managed-read";
 import { uploadImage } from "@/lib/media-upload";
-import {adaptiveCanvasImageSize} from '@/lib/mock-data';
+import {adaptiveCanvasImageSize} from '@/lib/canvas/image-size';
 import {ORIGINAL_IMAGE_MAX_BYTES,ORIGINAL_IMAGE_MAX_PIXELS} from '@/lib/image-upload-policy';
 import {validateUploadImageDecode} from '@/lib/upload-image-validation';
 import {browserPreviewsFromForm,saveCanvasOriginal,type BrowserPreviews} from '@/lib/canvas-original-upload';

@@ -20,7 +20,7 @@ import { storageKeyFromManagedUrl } from "../object-storage/runtime";
 import type {OrderedInput} from "../video/references";
 import {ownedVideoWorkflowSource} from "../video/workflow-source";
 import {verifiedOwnedMedia} from "../video/media-inspection";
-import {adaptiveCanvasImageSize} from "../mock-data";
+import {adaptiveCanvasImageSize} from "./image-size";
 import {ModelConfigError} from "../model-config/types";
 import {authorizeVideoReferences} from "../video/reference-materialization";
 import { videoNodeWriteSchema, videoNodeConfigSchema, type CanvasVideoNode, type VideoNodeWrite } from "./video-node-schema";

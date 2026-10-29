@@ -32,3 +32,12 @@ R7I已将edit/detail/Comfy编排移出React；runGen/generatePend仍直接组合
 
 
 类型检查首轮保留一条Promise返回类型不匹配：原generateDetailSequence实际为Promise<unknown>而新port误写Promise<void>。按调用方只await、不消费返回值的事实修正port为Promise<unknown>，无运行改动；随后完整tsc与lint均exit0，原39条warnings保留。
+
+
+## 整片回归发现并消除的运行时耦合
+
+44b0708f首轮完整core保留14 PASS/1 FAIL/114 NOT_RUN。新增upload-memory入口真实加载上传route时，从adaptiveCanvasImageSize穿透mock-data.ts加载UI图标，触发lucide CJS/ESM错误；没有把lucide/mock-data加进测试mock绕过。
+
+尺寸算法与三个常量原封不动收敛到纯 `canvas/image-size.ts`，8个实际运行时调用方（上传、作品导入、图像导入/本地编辑、节点几何、视频复制/脚本素材）迁移到该owner；mock-data保留兼容re-export，不复制第二套产品规则。新数值verifier使用测试专属的原e683函数四声明快照，覆盖原数字边界和网格，并检查8条真实导入及纯模块零依赖；该快照不被产品导入。加入原catalog后总数为**130**（不是129）。
+
+原生首次页面未就绪：跨盘E依赖junction使Next无法解析实际存在的Geist字体文件，随后manifest缺失。首轮日志/源码副本与缓存原样保留；改为另一份新C盘字节副本，使用同一lockfile SHA0890e236的已有C盘本地依赖，不改布局/字体/供应商代码，不删除或覆盖首轮失败现场。最终原生是否通过以独立命令结果为准。

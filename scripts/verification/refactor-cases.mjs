@@ -16,6 +16,7 @@ export const refactorCases=[
  node('media-state-lifecycle','runtime','scripts/verify-media-state-lifecycle.mjs','MEDIA_STATE_LIFECYCLE=PASS'),
  node('media-codec-threads','foundation','scripts/verify-media-codec-threads.mjs','MEDIA_CODEC_THREADS=PASS MODE=MODIFIED'),
  node('primary-generation','canvas','scripts/verify-canvas-primary-generation.cjs','CANVAS_PRIMARY_GENERATION=PASS'),
+ node('image-size','canvas','scripts/verify-canvas-image-size.cjs','CANVAS_IMAGE_SIZE=PASS'),
  ts('apimart-polling-boundary','generation','scripts/verify-capacity-x6-adapter.ts','X6_ADAPTER=PASS'),
  node('upload-memory-inputs','foundation','scripts/verify-upload-image-memory.cjs','FIXTURES=PASS',['.','modified','generate']),
  node('upload-memory','foundation','scripts/verify-upload-image-memory.cjs','SUITE=PASS MODE=modified'),

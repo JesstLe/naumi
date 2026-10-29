@@ -4,7 +4,7 @@ import {z} from "zod";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "../persistence/schema";
 import {addArtworksTx} from "../artworks/writer";
-import {adaptiveCanvasImageSize} from "../mock-data";
+import {adaptiveCanvasImageSize} from "./image-size";
 import {provenanceEntry} from "../artwork-provenance";
 import {privateMedia,storageKeyFromManagedUrl} from "../object-storage/runtime";
 import {canReadMedia} from "../media-assets";
