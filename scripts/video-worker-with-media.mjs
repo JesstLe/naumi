@@ -25,7 +25,14 @@ export function combinedWorkerPlan(env=process.env,{platform=process.platform,ui
   assert(Number(env.MEDIA_WORKER_CONCURRENCY||1)===1,'COMBINED_WORKER_SINGLE_MEDIA_JOB_REQUIRED');
   assert(path.posix.isAbsolute(env.NAUMI_WORKER_STATE_FILE||''),'ABSOLUTE_SCANNER_STATE_REQUIRED');
   assert(path.posix.resolve(env.MEDIA_JOB_DIR||'/scratch')==='/scratch','COMBINED_WORKER_SCRATCH_REQUIRED');
-  const common={PATH:env.PATH||'/usr/local/bin:/usr/bin:/bin',LANG:env.LANG||'C.UTF-8',NODE_ENV:'production',SOURCE_COMMIT:env.SOURCE_COMMIT,...(env.TZ?{TZ:env.TZ}:{})};
+  if(env.VIDEO_WORKER_INTERVAL_MS!==undefined)assert(/^[1-9]\d*$/.test(env.VIDEO_WORKER_INTERVAL_MS)&&Number(env.VIDEO_WORKER_INTERVAL_MS)>=5000&&Number(env.VIDEO_WORKER_INTERVAL_MS)<=2147483647,'INVALID_WORKER_INTERVAL');
+  // These two process-start limits were applied only to the supervisor before
+  // child allowlisting dropped them. Keep the reviewed bounded profile (2),
+  // without copying arbitrary NODE_OPTIONS/preloads or Web/DB credentials.
+  const bounded=env.NAUMI_NATIVE_MEMORY_PROFILE==='bounded';
+  if(bounded)assert(env.UV_THREADPOOL_SIZE==='2'&&env.MALLOC_ARENA_MAX==='2','COMBINED_WORKER_BOUNDED_RUNTIME_REQUIRED');
+  const common={PATH:env.PATH||'/usr/local/bin:/usr/bin:/bin',LANG:env.LANG||'C.UTF-8',NODE_ENV:'production',SOURCE_COMMIT:env.SOURCE_COMMIT,...(env.TZ?{TZ:env.TZ}:{}),
+    ...(bounded?{UV_THREADPOOL_SIZE:'2',MALLOC_ARENA_MAX:'2'}:{})};
   const scannerEnv={...common,HOME:'/home/nextjs',TMPDIR:'/tmp',NAUMI_WORKER_RELEASE_CONTROL:'1',NAUMI_WORKER_CONTROL_PORT:'3003',NAUMI_WORKER_PARENT_START:'1',
     NAUMI_WORKER_STATE_FILE:env.NAUMI_WORKER_STATE_FILE,NAUMI_WORKER_START_PAUSED:env.NAUMI_WORKER_START_PAUSED||'1',
     NAUMI_INSTANCE_ID:env.NAUMI_INSTANCE_ID||'',NAUMI_WORKER_TARGET_INSTANCE_ID:env.NAUMI_WORKER_TARGET_INSTANCE_ID||'',

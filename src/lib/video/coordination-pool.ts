@@ -2,11 +2,13 @@ import "server-only";
 import process from "node:process";
 import { Pool, type PoolClient } from "pg";
 import { getPool } from "../db";
+import { videoCoordinationPoolLimit } from "../db/connection";
 
-// Media polling and workflow resumption share at most two session-lock clients
+// Media polling and workflow resumption share a budgeted session-lock pool
 // per Node process, including separately bundled copies of this module. Web and
 // Worker processes have independent pools; PostgreSQL still arbitrates the same
-// advisory keys across them. Business SQL stays on getPool() (max=5).
+// advisory keys across them. Business SQL stays on getPool(). The connection
+// owner reserves all pools together; the compatible video default remains two.
 const poolKey = Symbol.for("naumi.video.coordination.pg.v1");
 const slotsKey = Symbol.for("naumi.video.coordination.slots.v1");
 const runtime = process as typeof process & { [poolKey]?: Pool };
@@ -31,7 +33,7 @@ export function getVideoCoordinationPool(): Pool {
       // original SSL object as well, including any non-enumerable private key.
       password: options.password,
       ssl: options.ssl,
-      max: 2,
+      max: videoCoordinationPoolLimit(),
       min: 0,
       connectionTimeoutMillis: 5_000,
       idleTimeoutMillis: 10_000,
@@ -52,8 +54,9 @@ export async function acquireVideoCoordinationLock(key: string): Promise<{
   const pool = getVideoCoordinationPool() as Pool & { [slotsKey]?: number };
   // Reserve synchronously across bundles before awaiting checkout. Busy polls
   // are read-only, not failed workflow claims: no SQL or supplier work started.
-  // Never queue behind two holders that may await long-running supplier I/O.
-  if ((pool[slotsKey] || 0) >= 2) return { acquired: false, release: async () => {} };
+  // Never queue behind holders that may await long-running supplier I/O. Read
+  // the instantiated pool, not a mutable environment value on every claim.
+  if ((pool[slotsKey] || 0) >= pool.options.max!) return { acquired: false, release: async () => {} };
   pool[slotsKey] = (pool[slotsKey] || 0) + 1;
   const releaseSlot = () => { pool[slotsKey] = (pool[slotsKey] || 1) - 1; };
   let client: PoolClient;
