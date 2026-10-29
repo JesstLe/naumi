@@ -24,9 +24,16 @@ import {SupplierAdapterResponseError,adapterFailureEvidence,recordSupplierAdapte
  * explicit new non-preset frozen fallback exists. No resolution is guessed. */
 export function apimartExecutionParameters(scope: ModelExecutionScope, body:Record<string,any>, quote?:Pick<import("../billing/types").BillingQuote,"requestedParameters"|"effectiveParameters">, operation?:ReturnType<typeof currentImageOperationParameters>) {
   const p=scope.imagePreset;
+  const planned = !p && scope.frozen.imageParameterPlanVersion === 1;
   const requested={...(scope.frozen.requestedParameters || {quality:scope.frozen.facts?.quality||String(body.quality||"medium"),resolution:scope.frozen.facts?.requestedResolution||scope.frozen.facts?.resolution||"1K",ratio:scope.frozen.facts?.ratio||"1:1"}),...quote?.requestedParameters};
   if(!p&&scope.frozen.requestedParameters&&scope.frozen.facts?.requestedResolution)requested.resolution=scope.frozen.facts.requestedResolution;
-  if(!p&&operation?.quality&&scope.capabilities.qualities.includes(operation.quality as never))requested.quality=operation.quality;
+  // Versioned plans translate admitted semantic input exactly once. Both the
+  // legacy route's operation quality and quote.effectiveParameters may already
+  // contain wire values (including another valid semantic ID, e.g. medium).
+  // A new business stage supplies its own frozen facts; aliases are never
+  // interpreted as a new stage selection here. Unversioned tasks stay legacy.
+  if (planned) requested.quality = scope.frozen.facts?.quality || requested.quality;
+  else if(!p&&operation?.quality&&scope.capabilities.qualities.includes(operation.quality as never))requested.quality=operation.quality;
   if(operation?.ratio)requested.ratio=operation.ratio;
   if(operation?.resolution)requested.resolution=operation.resolution;
   if(!p&&quote?.effectiveParameters){
@@ -34,7 +41,7 @@ export function apimartExecutionParameters(scope: ModelExecutionScope, body:Reco
     requested.ratio=quote.effectiveParameters.ratio;
     // Billing may use a wire alias (hd) or auto to mean omitted quality.
     // The adapter still needs a declared semantic choice for policyQuality().
-    if(scope.capabilities.qualities.includes(quote.effectiveParameters.quality as never))requested.quality=quote.effectiveParameters.quality;
+    if(!planned&&scope.capabilities.qualities.includes(quote.effectiveParameters.quality as never))requested.quality=quote.effectiveParameters.quality;
   }
   // New preset delivery fallback is explicit; old prompt-only preset requests
   // had no differing effective tier and retain their historical precedence.

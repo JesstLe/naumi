@@ -31,3 +31,25 @@
 ## 同步与计数
 
 功能模块计数0；开工已fetch main，固定c328f01c。文档修改不计功能迭代/发布。共享根AGENTS其他人重写未带入本分支。
+
+## 首模块实际实现与集中验证
+
+- 新版非preset APIMart构参只用冻结阶段semantic quality；operation与quote.effective中的wire别名不再反喂。既有resolution/ratio顺序、成本preset和无版本标记的旧任务保持。
+- 同一问题还出现在clients.ts进入真实transport前调用的image-plan-runtime默认选择；已一并使用冻结facts，避免medium→low在适配器前因raw low不在显示选项而失败。业务阶段明确selected或新的冻结阶段上下文仍可编译。
+- 产品范围仅 `apimart-preset.ts` 与 `image-plan-runtime.ts`，13新增/3删除。
+- 定向真实模块57项/15case通过；真实本地PG→plan→child→实际SDK→APIMart异步HTTP→2048²落盘→账务52项通过。high原4K报价/预扣/结算12、实际wire medium；medium报价/结算8、实际wire low；两原ID恢复新增POST0。测试供应商仅loopback，外部调用0。
+- 原文件完整链路26项复现high实际wire low而报价仍12。两源原始SHA保存在output/BASELINE.json。
+- 既有异步适配器、参数计划PG及全量tsc通过。旧成本preset套件line62期待报价确认拦截，但本分支基线c328也同样失败；原失败和基线失败保留，不归因本补丁。对照副本只调整该已过时断言后再测其后续成本/账务路径，结果另入证据。
+
+## 新增用户授权：配置与真实验收
+
+用户要求把47所有供应商执行配置复制至103；47仅只读导出，103按本站凭据加密、版本化发布。供应商/模型/通道映射按源，103用户、作品、媒体、余额、账本、历史任务与客户计价保持，默认/业务定价依赖逐项对照。
+
+用户最后明确取消本轮103出图预算上限；真实调用仍围绕本轮端到端验收逐笔记录，不启动自动收费巡检，不重放已接受/未知任务。原2张/1USD上限已被此最新指令覆盖。
+
+## 现场预检（2026-10-29）
+
+- 103只读：Web/组合Worker source ca65f973/build1793200513，同image73a91f94…，Web13106，canonical200；约5.8GiB MemAvailable/51GiB磁盘可用，观察时无目标部署锁holder。
+- 47只读配置：v152，9providers/95upstreams/50publics/0pools，无在途publication；当前供应商地址均公共HTTPS。加密导出引用9凭据及94个配置模型metadata，源数据库写入0/供应商0。
+- 103只读模型v112/billing8；本机Docker数据盘可用不足10GiB，构建改为103受限独立构建器，实际执行前仍复核容量与锁，不清理他人缓存。
+- 以上只读预检不是部署或配置发布成功。固定构建、目标配置发布、103全链路真实验收继续进行。
