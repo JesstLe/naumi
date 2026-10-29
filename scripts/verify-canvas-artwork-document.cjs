@@ -18,7 +18,7 @@ function setup(built){
  const module={exports:{}};
  const c={__ports:ports,module,exports:module.exports,console,Error,Map,Set,WeakMap,Promise,Headers,Response,Request,AbortSignal,URLSearchParams,Date,Blob,structuredClone,setTimeout,clearTimeout,
   window:{location:{search:''}},localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
-  canvasAccountRef:{current:state.account},worksRef:{current:state.nodes},pendingNodeRef:{current:null},restoredRef:{current:false},deepFocusRef:{current:false},
+  canvasAccountRef:{current:state.account},worksRef:{current:state.nodes},pendingNodeRef:{current:null},setPendingNode:()=>{},restoredRef:{current:false},deepFocusRef:{current:false},
   ready:true,authenticatedEmail:state.owner,setWorks:f=>{state.nodes=typeof f==='function'?f(state.nodes):f;},setNames:()=>{},setTargetEmail:()=>{},setReadOnly:()=>{},setPinnedNode:()=>{},setActiveKey:()=>{},setBrowsing:()=>{},
   setSidebarOpen:()=>{},setTrashOpen:()=>{},setTrashItems:f=>state.trashItems=typeof f==='function'?f(state.trashItems):f,setTrashBusy:v=>state.trashBusy=v,
   t:k=>k,flashTip:s=>state.notices.push(s),authHeader:()=>ports.auth(),expectJsonOk:async r=>{const b=await r.json();if(!r.ok)throw Error(b.error);return b;}

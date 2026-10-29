@@ -16,7 +16,7 @@ async function main(){
   const events=[],mock=mockPool(events,fail);let value,error;try{value=await run(mock.pool,async tx=>{ok(tx===mock.client);events.push('action');if(fail==='action'||fail==='ROLLBACK')throw mock.error;return {answer:42};});}catch(e){error=e;}
   const expected=fail==='connect'?['connect']:fail==='BEGIN'?['connect','BEGIN','ROLLBACK','release']:fail==='action'||fail==='ROLLBACK'?['connect','BEGIN','action','ROLLBACK','release']:fail==='COMMIT'?['connect','BEGIN','action','COMMIT','ROLLBACK','release']:['connect','BEGIN','action','COMMIT','release'];eq(events,expected);if(fail==='none')eq(value,{answer:42});else ok(error===mock.error);cases++;
  }
- {const events=[],mock=mockPool(events,'ROLLBACK'),original=new Error('distinct action failure');await assert.rejects(run(mock.pool,async()=>{throw original;}),e=>e===mock.error&&e!==original);checks++;eq(events,['connect','BEGIN','ROLLBACK','release']);cases++;}
+ {const events=[],mock=mockPool(events,'ROLLBACK'),original=new Error('distinct action failure');await assert.rejects(run(mock.pool,async()=>{throw original;}),e=>baseline?e===mock.error&&e!==original:e===original);checks++;eq(events,['connect','BEGIN','ROLLBACK','release']);cases++;}
  // Both existing domain wrappers must retain initialization and local policy,
  // while only the mechanical checkout/transaction/release moves to platform.
  for(const [file,name,schema,timeout] of [['src/lib/saas/creation-writer.ts','creationTransaction','ensureCreationSchema',false],['src/lib/saas/tenants.ts','transaction','ensureTenantSchema',true]])for(const failed of [false,true]){

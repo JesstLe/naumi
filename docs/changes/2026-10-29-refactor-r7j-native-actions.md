@@ -59,3 +59,5 @@ R7H/R7I/R7J 达到三模块同步点；从 d274d588 普通 merge origin/main，�
 真实 Next 控件暴露两处原先观察端口未覆盖的问题：retained submission 首次 quote 没带原 project（同一任务 POST 带 project），已把请求冻结 headers 的 workspace/project 传给已有 BillingProvider.quote，重试仍原 quote/operation。新空项目上传作品已合并但仅赋 navigation ref，原 effect 可能已经消费本次作品更新，画面停在空项目；导航 target 改为现有组件单一 state，effect 明确订阅该 target，不增加任务/第二份作品状态。真实错误与截图保留。
 
 混选调试曾观测原 Shift 事件为 true 而选择变为单选；原脚本相同源码有成功和失败，暂不归因为删除逻辑。Flow 的 modifier key 数组固定引用，避免每次编辑器 render 重装 held-key listener；最终需同时保留持键连续点击和每次 modifier 点击的原断言，不以一次偶然通过关闭。此处不修改供应商、钱包、任务提交规则。
+
+固定 b24c8f2d 的后三组真实 Next 控件已通过：node history8、upload/reverse7、reported tools8（6产物＋OCR）；原始失败保留。最终同SHA全组、真实PG、类型/架构与封包回滚继续集中执行。platform primitive 旧断言原本期待 rollback 错盖 action 错，现依 main 修复改为要求保留原 error，不改事务次数、SQL顺序或余额断言。
