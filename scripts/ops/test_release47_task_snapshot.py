@@ -20,13 +20,16 @@ class SnapshotTests(unittest.TestCase):
     def test_graph_is_evaluated_once_and_bounded_without_temp_writes(self):
         sql = m.build_sql().decode()
         self.assertEqual(sql.count('FROM (:roots_query) graph'), 0)
-        self.assertIn('LIMIT 8001', sql)
+        self.assertIn('page_keys AS MATERIALIZED', sql)
+        self.assertIn('LIMIT 128', sql)
         self.assertIn('unknown-root-limit', sql)
         self.assertIn("SET LOCAL statement_timeout='5000ms'", sql)
-        self.assertIn('expanded AS MATERIALIZED', sql)
-        self.assertIn("SELECT prefix||value", sql)
-        self.assertNotIn("OR EXISTS(SELECT 1 FROM", sql)
+        self.assertIn('WITH RECURSIVE source AS MATERIALIZED', sql)
+        self.assertIn('unknown-scan-budget', sql)
+        self.assertIn('unknown-page-budget', sql)
         self.assertNotIn('CREATE TEMP', sql)
+        self.assertNotIn('OFFSET ', sql)
+        self.assertNotIn('range(4)', sql)
 
     def test_sql_is_one_repeatable_read_read_only_transaction_with_bounded_timeouts(self):
         sql = m.build_sql().decode()
@@ -35,6 +38,15 @@ class SnapshotTests(unittest.TestCase):
         self.assertNotRegex(sql, r'(?i)\b(INSERT|UPDATE|DELETE|TRUNCATE|CREATE|DROP|ALTER|COPY)\b')
         self.assertEqual(sql.count('BEGIN '), 1); self.assertEqual(sql.count('COMMIT;'), 1)
         self.assertIn('to_regclass', sql)
+
+    def test_legacy_collection_cannot_be_recertified_by_new_complete_after(self):
+        before=private();after=copy.deepcopy(before)
+        after['collection']={'version':2,'status':'complete'}
+        self.assertFalse(m.compare_task_snapshots(before,after)['preservationVerified'])
+        before['collection']={'version':2,'status':'complete'}
+        self.assertTrue(m.compare_task_snapshots(before,after)['preservationVerified'])
+        before['collection']['status']='incomplete'
+        self.assertFalse(m.compare_task_snapshots(before,after)['preservationVerified'])
 
     def test_table_missing_is_unknown_not_zero_or_drain(self):
         data = private(); data['tables']['app_video_tasks']['status'] = 'unknown-table-missing'
