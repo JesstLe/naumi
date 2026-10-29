@@ -25,6 +25,7 @@ import {isCanvasImageVersion,type CanvasImageAttachment,type CanvasImageVersion,
 import {frameRatio} from "@/lib/imagegen/frame-ratio";
 import {ImageVersionControl} from "./image-version-control";
 import { canvasFocusViewport } from "@/lib/canvas/upload-visibility";
+import { runReversePromptBatch } from "@/lib/canvas/reverse-prompt-batch";
 import { stableArtworkPositions, canvasNodePosition, readPlacementCache, type CanvasPoint } from "@/lib/canvas/stable-placement";
 import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
 import { smartLayout } from "@/lib/canvas/smart-layout";
@@ -506,6 +507,7 @@ type CanvasTextNode = {
   prompt: string;
   content: string;
   status: "idle" | "generating" | "completed" | "failed";
+  error?: string;
   canvasX: number;
   canvasY: number;
   createdAt: string;
@@ -854,6 +856,7 @@ function TextCanvasNode({ data, selected }: NodeProps) {
     prompt: string;
     content: string;
     status: CanvasTextNode["status"];
+    error?: string;
     sourceRefs?: Array<{ id: string; title: string }>;
     selected?: boolean;
     lightCanvas?: boolean;
@@ -932,6 +935,11 @@ function TextCanvasNode({ data, selected }: NodeProps) {
         {d.status === "generating" ? (
           <div className="canvas-ui-muted flex h-[108px] items-center justify-center gap-2">
             <Loader2 className="h-4 w-4 animate-spin text-[#6366f1]" /> 正在生成文字…
+          </div>
+        ) : d.status === "failed" ? (
+          <div role="alert" className="flex min-h-[108px] flex-col justify-center gap-2 text-amber-800">
+            <span className="font-medium">文字生成失败</span>
+            <p className="whitespace-pre-wrap break-words">{d.error || "本次未取得文字结果，请重新选择原图反推"}</p>
           </div>
         ) : editableBody ? (
           <textarea
@@ -1791,6 +1799,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [generationTasks, setGenerationTasks] = useState<
     CanvasGenerationTask[]
   >([]);
+  const generationTasksRef = useRef(generationTasks); generationTasksRef.current = generationTasks;
   // 自由拖动是默认；用户主动开启磁铁时才吸附网格。全局整理仅由手动动作触发。
   const [showMinimap, setShowMinimap] = useState(false);
   const [snapGrid, setSnapGrid] = useState(false);
@@ -2029,6 +2038,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // Session-local task ownership survives project switches; unknown paid work is
   // never discarded or restarted merely because its original view is hidden.
   const editTaskStateRef = useRef(new Map<string, { account: string; project: string | null; node: Pend }>());
+  const hiddenLocalNodeIdsRef = useRef(new Set<string>());
   const [canvasImageTaskRefreshKey, setCanvasImageTaskRefreshKey] = useState(0);
   const settledCanvasVideoTaskRef = useRef(new Set<string>());
   const failedCanvasVideoTaskRef = useRef(new Set<string>());
@@ -2387,6 +2397,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     | {kind:"video-result";id:string;from:string|null;to:string|null}
     | {kind:"video-add";records:CanvasVideoNode[]}
 
+    | { kind: "pending-add"; records: Pend[] }
+    | { kind: "local-delete"; pendingNodes: Pend[]; generationTasks: CanvasGenerationTask[] }
     | { kind: "pending-link"; id: string; from: Pick<Pend, "inputs" | "parentId" | "linked">; to: Pick<Pend, "inputs" | "parentId" | "linked"> }
     | { kind: "workflow-add"; artworks: Artwork[]; textNodes: CanvasTextNode[] }
     | {kind:"mixed-add";artworks:Artwork[];textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];timelineNodes?:CanvasTimelineNode[];projectKey:string}
@@ -2414,6 +2426,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         kind: "mixed-delete";
         artworks: Artwork[];
         textNodes: CanvasTextNode[];
+        pendingNodes?: Pend[];
+        generationTasks?: CanvasGenerationTask[];
         videoNodes?:CanvasVideoNode[];
         directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];timelineNodes?:CanvasTimelineNode[];
       }
@@ -2456,6 +2470,21 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setUndoStack(stack => [...stack.filter(item => historyScopesRef.current.get(item) !== scope).slice(-450), ...stack.filter(item => historyScopesRef.current.get(item) === scope).slice(-49), action]);
     setRedoStack(stack => stack.filter(item => historyScopesRef.current.get(item) !== scope));
   }, [historyScope, activeKey, historyAccount]);
+  function consumePendingNodeHistory(id: string) {
+    // An uploaded/generated result replaces this local slot. Its initial add
+    // and link edits must not resurrect an empty slot alongside the result.
+    const prune = (stack: UndoAct[]) => stack.flatMap(action => {
+      if (action.kind === "pending-link" && action.id === id) return [];
+      if (action.kind !== "pending-add" || !action.records.some(node => node.id === id)) return [action];
+      const records = action.records.filter(node => node.id !== id);
+      if (!records.length) return [];
+      const retained: UndoAct = { ...action, records };
+      const scope = historyScopesRef.current.get(action);
+      if (scope) historyScopesRef.current.set(retained, scope);
+      return [retained];
+    });
+    setUndoStack(prune); setRedoStack(prune);
+  }
   const [workflowManifests, setWorkflowManifests] = useState<ImportedManifest[]>([]);
   const workflowCallbacksRef = useRef({ replace: requestReplace, select: selectWorkflowGroup });
   workflowCallbacksRef.current = { replace: requestReplace, select: selectWorkflowGroup };
@@ -2513,6 +2542,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [linking, setLinking] = useState(false);
   // 竞品链路:反推中/帮写中标记、产品图选择器、生成图片模式菜单
   const [promptMining, setPromptMining] = useState(false);
+  const reversePromptLockRef = useRef(false);
   const [batchRunBusy, setBatchRunBusy] = useState(false);
   const batchRunLockRef = useRef(false);
   const batchRunMountedRef = useRef(true);
@@ -2907,6 +2937,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     openPendingNodeWithoutSelectionRef.current = false;
     if (proj) {
       setActiveKey(proj.key);
+      setCreatingNew(false);
       setSelectedId(openWithoutSelection ? null : node);
       // 只有后台深链进入才自动聚焦;日常新建/上传/生成不动画布
       if (deepFocusRef.current) {
@@ -3011,7 +3042,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   function restoreEditTasks() {
     const account = canvasAccountRef.current, project = activeProjectRef.current?.key || null;
     const restored = Array.from(editTaskStateRef.current.values())
-      .filter(task => !readOnly && task.account === account && task.project === project).map(task => task.node);
+      .filter(task => !readOnly && task.account === account && task.project === project && !hiddenLocalNodeIdsRef.current.has(task.node.id)).map(task => task.node);
     setPendNodes(nodes => [...nodes.filter(node => !editTaskStateRef.current.has(node.id)), ...restored]);
   }
   useEffect(() => {
@@ -3785,7 +3816,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           data: { id: task.id, pending: true, label: task.failure ? generationFailureTitle(task.failure, locale === "en") : task.label, lightCanvas, ...previewSize,
             generationStage: task.stage, generationStartedAt: task.startedAt,
             generationCount: task.count, generationCompleted: task.completed, generationFailure: task.failure, onGenerationRetry: task.onRetry },
-          selectable: false,
+          selectable: !!task.failure,
           draggable: true,
         },
       ];
@@ -3797,8 +3828,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           sourceHandle: "out",
           target: task.id,
           targetHandle: "in",
-          type: "default",
-          animated: !task.failure,
+          type: "comet",
+          data: { lit: !task.failure, dim: false },
+          animated: false,
           selectable: false,
         },
       ];
@@ -3949,6 +3981,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           prompt: textNode.prompt,
           content: textNode.content,
           status: textNode.status,
+          error: textNode.error,
           sourceRefs: [...sourceRefs, ...productRefs].map((reference) => ({
             id: reference.id,
             title: reference.title,
@@ -4116,7 +4149,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           Math.round((n.data as { height?: number }).height ?? 0)
         }:${(n.data as { canvasGroupId?: string }).canvasGroupId ?? ""}:${
           (n.data as { status?: string }).status ?? ""
-        }:${String((n.data as { label?: string }).label ?? "")}:${String(
+        }:${(n.data as { error?: string }).error ?? ""}:${n.selectable}:${String((n.data as { label?: string }).label ?? "")}:${String(
           (n.data as { content?: string }).content ?? ""
         ).length}:${(n.data as { lightCanvas?: boolean }).lightCanvas ? 1 : 0}:${((n.data as { sourceRefs?: Array<{ id: string }> }).sourceRefs ?? [])
           .map((reference) => reference.id)
@@ -6105,6 +6138,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       resultsLoaded = true;
       if (terminalMessage) { pushAddUndoMany(ids, fresh); throw new Error(terminalMessage); }
       if (pend) {
+        consumePendingNodeHistory(pend.id);
         setPendNodes((current) => current.filter((node) => node.id !== pend.id));
         setSelectedPendId((current) => (current === pend.id ? null : current));
       }
@@ -6242,37 +6276,86 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   // 真正执行删除(确认后)。文字节点与作品必须分流到各自 API，
   // 混合选择仍只记一条 undo，避免用户需要撤销两次才能恢复。
+  const nodeDeleteAttemptRef = useRef(new Map<string, { operationId: string; body: string }>());
+  const nodeDeletingRef = useRef(false);
+  function historyFailureMessage(error: unknown) {
+    return error instanceof Error && (error.name === "TimeoutError" || /signal timed out|request timed out/i.test(error.message))
+      ? L("保存响应超时，修改仍保留；请重试原操作", "Save response timed out. Your changes are retained; retry the same action")
+      : error instanceof Error ? error.message : t("canvas.genFail");
+  }
+  function deletableCanvasIds(ids: string[]) {
+    return [...new Set(ids.filter(Boolean))].filter(id => {
+      // Queued reverse-prompt slots already belong to a batch. Removing them
+      // here is not cancellation and would let a later result recreate them.
+      if (textNodesRef.current.find(node => node.id === id)?.status === "generating") return false;
+      const pending = pendNodesRef.current.find(node => node.id === id);
+      if (pending) return !pending.generating && !pending.uploading && !pending.needsAttention;
+      const task = generationTasksRef.current.find(node => node.id === id);
+      if (task) return !!task.failure && !task.replaceNode;
+      return !id.startsWith("pend-") && !id.startsWith("task-");
+    });
+  }
+  function applyLocalNodeVisibility(pending: Pend[], tasks: CanvasGenerationTask[], visible: boolean) {
+    const ids = new Set([...pending, ...tasks].map(node => node.id));
+    if (!visible) {
+      if (pendNodesRef.current.some(node => ids.has(node.id) && (node.generating || node.uploading || node.needsAttention)) ||
+          generationTasksRef.current.some(task => ids.has(task.id) && !task.failure)) throw new Error(L("节点正在执行，请稍后再删除", "Node is running; try again after it finishes"));
+      // Remove the preview only. Accepted-task receipts and editTaskState stay intact.
+      for (const id of ids) hiddenLocalNodeIdsRef.current.add(id);
+      setPendNodes(current => current.filter(node => !ids.has(node.id)));
+      setGenerationTasks(current => current.filter(node => !ids.has(node.id)));
+      setSelectedPendId(current => current && ids.has(current) ? null : current);
+      setSelectedId(current => current && ids.has(current) ? null : current);
+      setMultiSel(current => current.filter(id => !ids.has(id)));
+      for (const task of tasks) { delete generationTaskPosRef.current[task.id]; delete generationTaskSizeRef.current[task.id]; }
+    } else {
+      for (const id of ids) hiddenLocalNodeIdsRef.current.delete(id);
+      setPendNodes(current => [...current, ...pending.filter(node => !current.some(item => item.id === node.id))]);
+      setGenerationTasks(current => [...current, ...tasks.filter(node => !current.some(item => item.id === node.id))]);
+    }
+  }
   async function runDelete(ids: string[]) {
-    if (!user || readOnly) return;const account=canvasAccountRef.current;
+    if (!user || readOnly || nodeDeletingRef.current || historyBusyRef.current) return;
+    const account=canvasAccountRef.current, workspace=currentWorkspace(), workspaceRevision=currentWorkspaceRevision(), scope=historyScope;
     if (!nodeSettingsReady || ids.some(isNodeLocked)) { flashTip(L("请先解锁选中的节点","Unlock selected nodes first")); return; }
-    const uniqueIds = Array.from(
-      new Set(
-        ids.filter(
-          (id) => id && !id.startsWith("pend-") && !id.startsWith("task-")
-        )
-      )
-    );
+    const uniqueIds = deletableCanvasIds(ids);
     if (!uniqueIds.length) return;
     const deleting = new Set(uniqueIds);
+    let pendingRecords = pendNodesRef.current.filter(node => deleting.has(node.id)).map(node => ({ ...node, inputs: [...node.inputs] }));
+    let taskRecords = generationTasksRef.current.filter(node => deleting.has(node.id)).map(node => ({ ...node, position: generationTaskPosRef.current[node.id] ?? node.position }));
     const artworkRecords = (works ?? []).filter((work) => deleting.has(work.id));
     const textRecords = textNodes.filter((node) => deleting.has(node.id));
     const videoRecords=videoNodesStore.nodes.filter(node=>deleting.has(node.id)),directorRecords=directorNodesStore.nodes.filter(node=>deleting.has(node.id)),characterRecords=characterNodesStore.nodes.filter(node=>deleting.has(node.id)),sceneRecords=sceneNodesStore.nodes.filter(node=>deleting.has(node.id)),audioRecords=audioNodesStore.nodes.filter(node=>deleting.has(node.id)),timelineRecords=timelineNodesStore.nodes.filter(node=>deleting.has(node.id));
     const artworkIds = artworkRecords.map((record) => record.id);
     const textIds = textRecords.map((record) => record.id);
     const videoIds=videoRecords.map(node=>node.id),directorIds=directorRecords.map(node=>node.id),characterIds=characterRecords.map(node=>node.id),sceneIds=sceneRecords.map(node=>node.id),audioIds=audioRecords.map(node=>node.id),timelineIds=timelineRecords.map(node=>node.id);
-    if (!artworkIds.length && !textIds.length&&!videoIds.length&&!directorIds.length&&!characterIds.length&&!sceneIds.length&&!audioIds.length&&!timelineIds.length) return;
-    setSelectedId(null);
-    setSelectedTextId(null);
-    setSelectedPendId(null);
+    const persisted = artworkIds.length || textIds.length || videoIds.length || directorIds.length || characterIds.length || sceneIds.length || audioIds.length || timelineIds.length;
+    if (!persisted && !pendingRecords.length && !taskRecords.length) return;
+    nodeDeletingRef.current=true;setHistorySaving(true);
     try {
+      if (persisted) {
+      const requestKey=JSON.stringify([scope,workspace,[...uniqueIds].sort()]);
+      let attempt=nodeDeleteAttemptRef.current.get(requestKey);
+      if(!attempt){const operationId=browserRandomUUID();attempt={operationId,body:JSON.stringify({artworkIds,textIds,videoIds,directorIds,characterIds,sceneIds,audioIds,timelineIds,operationId})};nodeDeleteAttemptRef.current.set(requestKey,attempt);}
+      await Promise.all(Array.from(textSaveQueuesRef.current.values()));
+      if(account!==canvasAccountRef.current||workspaceRevision!==currentWorkspaceRevision()||scope!==historyScopeRef.current)return;
       const response = await privateFetchRaw("/api/canvas/nodes/delete", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ artworkIds, textIds,videoIds,directorIds,characterIds,sceneIds,audioIds,timelineIds,operationId:browserRandomUUID() }),
+        headers: { "content-type": "application/json", "x-naumi-workspace": workspace, ...(activeKey?{"x-naumi-project-context":activeKey}:{}) },
+        body: attempt.body,
+        signal: AbortSignal.timeout(20_000),
       });
-      await expectJsonOk(response, t("canvas.genFail"));if(account!==canvasAccountRef.current)return;
-
-      if(videoRecords.length||directorRecords.length||characterRecords.length||sceneRecords.length||audioRecords.length||timelineRecords.length){pushUndo({kind:"mixed-delete",artworks:artworkRecords,textNodes:textRecords,videoNodes:videoRecords,directorNodes:directorRecords,characterNodes:characterRecords,sceneNodes:sceneRecords,audioNodes:audioRecords,timelineNodes:timelineRecords});await videoNodesStore.refresh();await directorNodesStore.refresh();await characterNodesStore.refresh();await sceneNodesStore.refresh();await audioNodesStore.refresh();await timelineNodesStore.refresh();}
+      await expectJsonOk(response, t("canvas.genFail"));
+      nodeDeleteAttemptRef.current.delete(requestKey);
+      if(account!==canvasAccountRef.current||workspaceRevision!==currentWorkspaceRevision()||scope!==historyScopeRef.current)return;
+      }
+      const stillDeletable = new Set(deletableCanvasIds([...deleting]));
+      // A user may start a local task while the persisted deletion is awaiting
+      // its ACK. Keep that newly-running preview and its accepted-task state.
+      for (const node of [...pendingRecords, ...taskRecords]) if (!stillDeletable.has(node.id)) deleting.delete(node.id);
+      pendingRecords=pendingRecords.filter(node=>stillDeletable.has(node.id));taskRecords=taskRecords.filter(node=>stillDeletable.has(node.id));
+      if (!persisted) pushUndo({ kind: "local-delete", pendingNodes: pendingRecords, generationTasks: taskRecords });
+      else if(pendingRecords.length||taskRecords.length||videoRecords.length||directorRecords.length||characterRecords.length||sceneRecords.length||audioRecords.length||timelineRecords.length){pushUndo({kind:"mixed-delete",artworks:artworkRecords,textNodes:textRecords,pendingNodes:pendingRecords,generationTasks:taskRecords,videoNodes:videoRecords,directorNodes:directorRecords,characterNodes:characterRecords,sceneNodes:sceneRecords,audioNodes:audioRecords,timelineNodes:timelineRecords});}
       else if (artworkRecords.length && textRecords.length) {
         pushUndo({
           kind: "mixed-delete",
@@ -6284,7 +6367,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       } else if (textRecords.length) {
         pushUndo({ kind: "text-delete", records: textRecords });
       }
-
+      applyLocalNodeVisibility(pendingRecords, taskRecords, false);
+      setSelectedId(null); setSelectedTextId(null); setSelectedPendId(null);
       removeWorksLocal(artworkIds);
       if (textIds.length) {
         setTextNodes((current) =>
@@ -6292,8 +6376,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         );
       }
       setMultiSel((current) => current.filter((id) => !deleting.has(id)));
+      if(videoRecords.length||directorRecords.length||characterRecords.length||sceneRecords.length||audioRecords.length||timelineRecords.length){await videoNodesStore.refresh();await directorNodesStore.refresh();await characterNodesStore.refresh();await sceneNodesStore.refresh();await audioNodesStore.refresh();await timelineNodesStore.refresh();}
 
-      // 只有当前项目的媒体与文字节点都被删空时才退回项目网格。
+      // 删除到空画布时仍保留当前项目的撤销入口。
       const activeProjectKey = active?.key ?? activeKey;
       const remainingArtwork =
         active?.members.some((member) => !deleting.has(member.id)) ?? false;
@@ -6304,14 +6389,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           )
         : false;
       const remainingVideo=videoNodesStore.nodes.some(node=>node.projectKey===activeProjectKey&&!deleting.has(node.id));
-      if (activeProjectKey && !remainingArtwork && !remainingText&&!remainingVideo&&!directorNodesStore.nodes.some(node=>node.projectKey===activeProjectKey&&!deleting.has(node.id))&&!characterNodesStore.nodes.some(node=>node.projectKey===activeProjectKey&&!deleting.has(node.id))&&!sceneNodesStore.nodes.some(node=>node.projectKey===activeProjectKey&&!deleting.has(node.id))&&!audioNodesStore.nodes.some(node=>node.projectKey===activeProjectKey&&!deleting.has(node.id))&&!timelineNodesStore.nodes.some(node=>node.projectKey===activeProjectKey&&!deleting.has(node.id))) {
-        setActiveKey(null);
-        setCreatingNew(false);
-        setBrowsing(true);
+      if (activeProjectKey && !remainingArtwork && !remainingText&&!remainingVideo&&!pendNodesRef.current.some(node=>!deleting.has(node.id))&&!directorNodesStore.nodes.some(node=>node.projectKey===activeProjectKey&&!deleting.has(node.id))&&!characterNodesStore.nodes.some(node=>node.projectKey===activeProjectKey&&!deleting.has(node.id))&&!sceneNodesStore.nodes.some(node=>node.projectKey===activeProjectKey&&!deleting.has(node.id))&&!audioNodesStore.nodes.some(node=>node.projectKey===activeProjectKey&&!deleting.has(node.id))&&!timelineNodesStore.nodes.some(node=>node.projectKey===activeProjectKey&&!deleting.has(node.id))) {
+        // Keep this empty project and its undo scope reachable, rather than
+        // navigating away before the user can restore a mixed deletion.
+        setCreatingNew(true);
       }
     } catch (e) {
-      flashTip(e instanceof Error ? e.message : t("canvas.genFail"));
-    }
+      flashTip(historyFailureMessage(e));
+    } finally { nodeDeletingRef.current=false;setHistorySaving(false); }
   }
 
   // A history step is persisted atomically before any local state or stack changes.
@@ -6322,6 +6407,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const account=canvasAccountRef.current,workspace=currentWorkspace(),workspaceRevision=currentWorkspaceRevision();
     const assertCurrentHistory = () => { if (workspaceRevision!==currentWorkspaceRevision()||historyScope !== historyScopeRef.current) throw new Error("项目已切换，请在当前项目重新操作"); };
     assertCurrentHistory();
+    if (act.kind === "pending-add" || act.kind === "local-delete") {
+      const pending = act.kind === "pending-add" ? act.records : act.pendingNodes;
+      const tasks = act.kind === "pending-add" ? [] : act.generationTasks;
+      applyLocalNodeVisibility(pending, tasks, act.kind === "pending-add" ? !undo : undo);
+      return;
+    }
     if (act.kind === "pending-link") {
       const pending = pendNodesRef.current.find(node => node.id === act.id);
       if (!pending || pending.generating || pending.uploading) throw new Error(L("节点已开始生成或已移除", "Node is generating or no longer exists"));
@@ -6441,6 +6532,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     // Data belongs to the authenticated account and may finish in the background;
     // only project-navigation/selection effects are suppressed after a switch.
     if (historyScope !== historyScopeRef.current) return;
+    if (act.kind === "mixed-delete") applyLocalNodeVisibility(act.pendingNodes || [], act.generationTasks || [], undo);
+    if (act.kind === "add") {
+      const ids = new Set(act.records.map(record => record.id));
+      if (undo && active?.members.every(node => ids.has(node.id)) && !(active.textNodes?.length || active.videoNodes?.length || active.directorNodes?.length || active.characterNodes?.length || active.sceneNodes?.length || active.audioNodes?.length || active.timelineNodes?.length)) setCreatingNew(true);
+      if (!undo) {
+        setCreatingNew(false); setBrowsing(false);
+        setActiveKey(activeKey || `tree:${act.records[0]?.groupId || act.records[0]?.parentId || act.records[0]?.id}`);
+      }
+    }
     if(act.kind==="mixed-add"){
       if(undo&&(active?.members.length||0)===act.artworks.length&&(active?.textNodes.length||0)===act.textNodes.length&&(active?.videoNodes?.length||0)===act.videoNodes.length&&(active?.directorNodes?.length||0)===(act.directorNodes?.length||0)&&(active?.characterNodes?.length||0)===(act.characterNodes?.length||0)&&(active?.sceneNodes?.length||0)===(act.sceneNodes?.length||0)&&(active?.audioNodes?.length||0)===(act.audioNodes?.length||0)&&(active?.timelineNodes?.length||0)===(act.timelineNodes?.length||0))setCreatingNew(true);
       if(!undo){setCreatingNew(false);setActiveKey(act.projectKey);setBrowsing(false);}
@@ -6502,7 +6602,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       await applyHistory(act,true);
       setUndoStack(stack=>stack.filter(item=>item!==act));
       setRedoStack(stack=>[...stack,act]);
-    } catch (error) { flashTip(error instanceof Error ? error.message : t("canvas.genFail")); }
+    } catch (error) { flashTip(historyFailureMessage(error)); }
     finally { historyBusyRef.current=false; setHistorySaving(false); }
   }
   async function doRedo() {
@@ -6514,7 +6614,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       await applyHistory(act,false);
       setRedoStack(stack=>stack.filter(item=>item!==act));
       setUndoStack(stack=>[...stack,act]);
-    } catch (error) { flashTip(error instanceof Error ? error.message : t("canvas.genFail")); }
+    } catch (error) { flashTip(historyFailureMessage(error)); }
     finally { historyBusyRef.current=false; setHistorySaving(false); }
   }
 
@@ -6593,10 +6693,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   // 批量删除选中的多个节点(框选 + Del)
   function batchDelete(ids: string[]) {
-    if (readOnly || !user || !active) return;
-    const real = ids.filter(
-      (id) => !id.startsWith("pend-") && !id.startsWith("task-")
-    );
+    if (readOnly || !user) return;
+    const real = deletableCanvasIds(ids);
     if (!real.length) return;
     setConfirmModal({
       title: t("canvas.deleteNodeTitle"),
@@ -6607,6 +6705,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   // 删除当前选中节点(供面板按钮 / Delete 键)
   async function deleteSelected() {
+    if (selectedPendId) { batchDelete([selectedPendId]); return; }
+    if (selectedId?.startsWith("task-")) { batchDelete([selectedId]); return; }
     if(selectedId&&(videoNodesStore.getNode(selectedId)||directorNodesStore.getNode(selectedId)||characterNodesStore.getNode(selectedId)||sceneNodesStore.getNode(selectedId)||audioNodesStore.getNode(selectedId)||timelineNodesStore.getNode(selectedId))){batchDelete([selectedId]);return;}
     if (selected) await deleteTree(selected.id);
   }
@@ -7147,17 +7247,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   ) {
     e.preventDefault();
     e.stopPropagation();
-    if (node.id.startsWith("task-")) return;
+    if (node.id.startsWith("task-") && !generationTasksRef.current.find(task => task.id === node.id)?.failure) return;
     setSelectedEdge(null);
     setRfEdges(current => current.map(edge => edge.selected ? { ...edge, selected: false } : edge));
     setSpawnMenu(null);
     const p = relPoint(e);
-    if(node.id.startsWith("text-")&&multiSel.length>1&&multiSel.includes(node.id)){setCtxMenu({x:p.x,y:p.y,cx:e.clientX,cy:e.clientY,nodeId:node.id});return;}
-    if (node.id.startsWith("text-") || node.id.startsWith("pend-")) {
+    if(multiSel.length>1&&multiSel.includes(node.id)){setCtxMenu({x:p.x,y:p.y,cx:e.clientX,cy:e.clientY,nodeId:node.id});return;}
+    if (node.id.startsWith("text-") || node.id.startsWith("pend-") || node.id.startsWith("task-")) {
       setSelectedId(null); setMultiSel([]);
       setRfNodes(current => current.map(item => item.selected ? { ...item, selected: false } : item));
       setSelectedPendId(node.id.startsWith("pend-") ? node.id : null);
       setSelectedTextId(node.id.startsWith("text-") ? node.id : null);
+      if (node.id.startsWith("task-")) setSelectedId(node.id);
       setCtxMenu({ x: p.x, y: p.y, cx: e.clientX, cy: e.clientY, nodeId: node.id });
       return;
     }
@@ -7399,6 +7500,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const id = ++importSeqRef.current;
     const email = user.email;
     const uploadAccount = canvasAccountRef.current;
+    const uploadWorkspace = currentWorkspace(), uploadWorkspaceRevision = currentWorkspaceRevision();
+    const sameUploadOwner = () => canvasAccountRef.current === uploadAccount && currentWorkspace() === uploadWorkspace && currentWorkspaceRevision() === uploadWorkspaceRevision;
     const failures: { name: string; message: string }[] = [];
     const valid = picked.filter(file => {
       const supported = /^(image\/png|image\/jpeg|image\/webp)$/.test(file.type) ||
@@ -7420,6 +7523,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       uploadBytes: valid.reduce((sum, file) => sum + file.size, 0), uploadedBytes: 0,
     }]);
     const run = async () => {
+      if (!sameUploadOwner()) {
+        setImageImports(current => current.map(batch => batch.id === id ? { ...batch, finished: true, phase: "done",
+          errors: [...batch.errors, { name: t("canvas.importSync"), message: "账号或工作空间已切换，未提交图片上传" }] } : batch));
+        return [];
+      }
       if(options&&!options.isCurrent()){
         setImageImports(current=>current.map(batch=>batch.id===id?{...batch,finished:true,phase:"done"}:batch));
         return [];
@@ -7489,6 +7597,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         const selected = prepared[index];
         let error = "";
         try {
+          if (!sameUploadOwner()) throw new Error("账号或工作空间已切换，未提交图片上传");
           if(options&&!options.isCurrent())throw new Error(locale==='en'?'Conversation changed; upload cancelled.':'对话已切换，已取消尚未开始的上传。');
           if(selected.error)throw new Error(selected.error);
           const fd = new FormData();
@@ -7506,7 +7615,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               setImageImports(current => current.map(batch => batch.id === id ? {
                 ...batch, uploadedBytes: Math.round(loaded.reduce((sum, value) => sum + value, 0)),
               } : batch));
-            }, 120_000, options ? () => {if(!options.isCurrent())throw new Error("对话已切换，已取消尚未开始的上传。");} : undefined
+            }, 120_000, () => {
+              if (!sameUploadOwner()) throw new Error("账号或工作空间已切换，未提交图片上传");
+              if (options && !options.isCurrent()) throw new Error("对话已切换，已取消尚未开始的上传。");
+            }
           );
           if (!d?.id) throw new Error(d?.error || t("canvas.importFailed"));
           ids[index] = d.id;
@@ -7532,12 +7644,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       setImageImports(current => current.map(batch => batch.id === id ? { ...batch, nodeIds: added, phase: "sync" } : batch));
       if (added.length && (!options || options.isCurrent())) {
         // Background uploads must not drag the user back after they switch projects.
-        if (importScopeRef.current === scope && !options?.assistant) {
+        const fresh = await synchronizeCanvasArtworks(added, () => mergeWorks(added, sameUploadOwner), sameUploadOwner);
+        // Publish the navigation target only after its artwork is in state. An
+        // unrelated project refresh must not consume it while GET is in flight.
+        if (sameUploadOwner() && importScopeRef.current === scope && !options?.assistant) {
           openPendingNodeWithoutSelectionRef.current = true;
           pendingNodeRef.current = added[0];
+          setWorks(current => sameUploadOwner() ? current ? [...current] : fresh : current);
         }
-        const fresh = await synchronizeCanvasArtworks(added, () => mergeWorks(added), () => canvasAccountRef.current === uploadAccount);
-        if (importScopeRef.current === scope) pushAddUndoMany(added, fresh);
+        if (sameUploadOwner() && importScopeRef.current === scope) pushAddUndoMany(added, fresh);
       }
       setImageImports(current => current.map(batch => batch.id === id ? {
         ...batch, finished: true, phase: "done", uploadedBytes: batch.uploadBytes, nodeIds: added,
@@ -7692,6 +7807,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       inputs: linked && parentId ? [parentId] : [],
     };
     setPendNodes((prev) => [...prev, pend]);
+    pushUndo({ kind: "pending-add", records: [pend] });
     setGenerationMode("standard");
     // 选中新空白节点 → 自动出生成 dock(图3:加节点即可直接写提示词生成)
     setSelectedId(null);
@@ -7729,6 +7845,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       inputs,
     };
     setPendNodes((current) => [...current, pend]);
+    pushUndo({ kind: "pending-add", records: [pend] });
     clearCanvasSelection(true);
     setSelectedId(null);
     setSelectedPendId(id);
@@ -7805,13 +7922,22 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const unsavedTextRef=useRef(new Map<string,CanvasTextNode>());
   const textSaveQueuesRef=useRef(new Map<string,Promise<unknown>>());
   const [unsavedTextCount,setUnsavedTextCount]=useState(0);
-  async function persistTextNode(node: CanvasTextNode) {
+  async function persistTextNode(node: CanvasTextNode, context?: { workspace: string; isCurrent: () => boolean }) {
     if (!user || readOnly) return node;
+    if (context && !context.isCurrent()) return null;
     unsavedTextRef.current.set(node.id,node);
+    const stale = () => {
+      if (!context || context.isCurrent()) return false;
+      if (unsavedTextRef.current.get(node.id) === node) unsavedTextRef.current.delete(node.id);
+      setUnsavedTextCount(unsavedTextRef.current.size);
+      return true;
+    };
     const save=async()=> {
       try {
-        const response=await privateFetchRaw("/api/canvas/text-nodes",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(node),signal:AbortSignal.timeout(20_000)});
+        if (stale()) return null;
+        const response=await privateFetchRaw("/api/canvas/text-nodes",{method:"POST",headers:{"content-type":"application/json",...(context ? {"x-naumi-workspace":context.workspace,"x-naumi-project-context":node.projectKey} : {})},body:JSON.stringify(node),signal:AbortSignal.timeout(20_000)});
         const data=await expectJsonOk(response,t("canvas.genFail"));
+        if (stale()) return null;
         if(unsavedTextRef.current.get(node.id)===node) {
           unsavedTextRef.current.delete(node.id);
           if(data?.node) setTextNodes(current=>current.map(item=>item.id===node.id && item.updatedAt===node.updatedAt ? data.node as CanvasTextNode : item));
@@ -7819,6 +7945,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         setUnsavedTextCount(unsavedTextRef.current.size);
         return data?.node || node;
       } catch(error) {
+        if (stale()) return null;
         setUnsavedTextCount(unsavedTextRef.current.size);
         flashTip(t("canvas.saveFailed") + (error instanceof Error ? `：${error.message}` : ""));
         return null;
@@ -8082,9 +8209,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   // 批量反推:每张竞品图右侧生成一个"逆向提示词"文字节点(2 路并发,失败节点保留可重试)
   async function reversePromptsForSelection(arts: Artwork[]) {
-    if (readOnly || !user || !activeKey || promptMining || !arts.length) return;
+    if (readOnly || !user || !activeKey || promptMining || reversePromptLockRef.current || !arts.length) return;
+    reversePromptLockRef.current = true;
     setPromptMining(true);
     setCtxMenu(null);
+    const account = canvasAccountRef.current, project = activeKey, epoch = canvasContextEpochRef.current;
+    const workspace = currentWorkspace(), workspaceRevision = currentWorkspaceRevision();
+    const sameOwner = () => account === canvasAccountRef.current && workspace === currentWorkspace() && workspaceRevision === currentWorkspaceRevision();
+    const canStart = () => sameOwner() && epoch === canvasContextEpochRef.current && project === activeProjectRef.current?.key;
     try {
       const positions = new Map(
         (rfRef.current?.getNodes() ?? []).map((node) => [
@@ -8096,12 +8228,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           },
         ])
       );
-      const queue = [...arts];
-      let done = 0;
-      const worker = async () => {
-        while (queue.length) {
-          const art = queue.shift();
-          if (!art) break;
+      const unique = [...new Map(arts.map(art => [art.id, art])).values()];
+      const entries = unique.map(art => {
           const pos = positions.get(art.id) ?? {
             x: art.canvasX ?? 0,
             y: art.canvasY ?? 0,
@@ -8111,7 +8239,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           const now = new Date().toISOString();
           const node: CanvasTextNode = {
             id,
-            projectKey: activeKey,
+            projectKey: project,
             title: t("canvas.reverseTitle"),
             prompt: "",
             content: "",
@@ -8126,10 +8254,19 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             targetIds: [],
             productIds: [],
           };
-          setTextNodes((current) => [...current, node]);
-          try {
+          return { art, node };
+      });
+      // All selected inputs appear once, before either concurrent request starts.
+      setTextNodes(current => [...current, ...entries.map(entry => entry.node)]);
+      const settledNodes: CanvasTextNode[] = [];
+      const result = await runReversePromptBatch(entries, {
+          canStart,
+          failureMessage: t("canvas.reverseFail"),
+          cancelledMessage: L("画布已切换，此图片尚未提交反推", "Canvas changed before this image was submitted"),
+          request: async ({ art }) => {
             const response = await privateFetch("/api/canvas/text-generate", {
               method: "POST",
+              isCurrent: canStart,
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
                 mode: "reverse",
@@ -8138,42 +8275,36 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               }),
             });
             const data = await readJsonSafe(response);
-            if (!response.ok || !data?.text) {
+            if (!response.ok) {
               throw new Error(data?.error || t("canvas.reverseFail"));
             }
-            const completed: CanvasTextNode = {
+            return data?.text;
+          },
+          settle: async outcome => {
+            if (!sameOwner()) return false;
+            const node = outcome.input.node;
+            const settled: CanvasTextNode = {
               ...node,
-              content: String(data.text),
-              status: "completed",
+              content: outcome.status === "completed" ? outcome.text : "",
+              status: outcome.status,
+              error: outcome.status === "failed" ? outcome.error.slice(0, 2000) : "",
               updatedAt: new Date().toISOString(),
             };
-            setTextNodes((current) =>
-              current.map((item) => (item.id === id ? completed : item))
-            );
-            void persistTextNode(completed);
-            pushUndo({ kind: "text-add", records: [completed] }); // 反推节点可撤销
-          } catch (error) {
-            const failed: CanvasTextNode = {
-              ...node,
-              status: "failed",
-              updatedAt: new Date().toISOString(),
-            };
-            setTextNodes((current) =>
-              current.map((item) => (item.id === id ? failed : item))
-            );
-            void persistTextNode(failed);
-            flashTip(
-              `${art.title || t("canvas.imageNode")}：${
-                error instanceof Error ? error.message : t("canvas.reverseFail")
-              }`
-            );
-          }
-          done++;
-        }
-      };
-      await Promise.all([worker(), worker()]);
-      flashTip(fmt(t("canvas.reverseDone"), { n: done }));
+            setTextNodes(current => current.map(item => item.id === node.id ? settled : item));
+            settledNodes.push(settled);
+            return !!await persistTextNode(settled, { workspace, isCurrent: sameOwner });
+          },
+      });
+      if (sameOwner()) {
+        const byId = new Map(settledNodes.map(node => [node.id, node]));
+        pushUndo({ kind: "text-add", records: entries.map(entry => byId.get(entry.node.id)!).filter(Boolean) });
+      }
+      if (canStart()) {
+        flashTip(L(`反推完成：成功 ${result.succeeded}，失败 ${result.failed}${result.saved < result.total ? `，${result.total - result.saved} 项尚未保存` : ""}`,
+          `Reverse complete: ${result.succeeded} succeeded, ${result.failed} failed${result.saved < result.total ? `, ${result.total - result.saved} not saved` : ""}`));
+      }
     } finally {
+      reversePromptLockRef.current = false;
       setPromptMining(false);
     }
   }
@@ -8443,21 +8574,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     openHistoryPicker(c.x, c.y);
   }
   function onPendUpload(id: string) {
+    const receipt = pendUploadReceiptsRef.current.get(id);
+    if (receipt) { void synchronizePendUpload(id, receipt); return; }
     pendUploadTargetRef.current = id;
     pendUploadRef.current?.click();
   }
   function onPendRemove(id: string) {
-    const retained = editTaskStateRef.current.get(id);
-    if (retained) {
-      if (retained.account !== canvasAccountRef.current || retained.project !== (activeProjectRef.current?.key || null)) return;
-      if (retained.node.generating) {
-        flashTip("正在执行操作，请稍后再删除");
-        return;
-      }
-      editTaskStateRef.current.delete(id);
-    }
-    setPendNodes((prev) => prev.filter((p) => p.id !== id));
-    setSelectedPendId((cur) => (cur === id ? null : cur));
+    void runDelete([id]);
   }
   // 空白节点生成(文生图 / 合并多输入):用 dock 的提示词 + 输入图(若有)生成,填充本节点
   async function generatePend(opts?: {
@@ -8655,6 +8778,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if (!current()) return false;
       assertGenerationResultsPresent(newIds, fresh);
       if(jobId&&receiptComplete&&newIds.every(id=>fresh.some(art=>art.id===id&&!!art.image)))completeCanvasImagegen(jobId,{owner:requestOwner,project:requestProject||"workspace",workspace:requestWorkspace});
+      consumePendingNodeHistory(pend.id);
       setPendNodes((prev) => prev.filter((p) => p.id !== pend.id));
 
       setSelectedPendId((current) => (current === pend.id ? null : current));
@@ -8693,6 +8817,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           if(!current())return;
           const fresh=await mergeWorks(resultIds,current);if(!current())return;assertGenerationResultsPresent(resultIds,fresh);
           if(jobId&&receiptComplete&&resultIds.every(id=>fresh.some(art=>art.id===id&&!!art.image)))completeCanvasImagegen(jobId,{owner:requestOwner,project:requestProject||"workspace",workspace:requestWorkspace});
+          consumePendingNodeHistory(pend.id); pushAddUndoMany(resultIds, fresh);
           setPendNodes(nodes=>nodes.filter(node=>node.id!==pend.id));setSelectedPendId(id=>id===pend.id?null:id);setGenError(null);
         } : () => generatePend({pend:{...pend,generating:false,generationFailure:undefined},prompt:text,referenceInputs}) } : p));
       return false;
@@ -8701,6 +8826,30 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
   }
   // 占位节点里选了图片 → 带进度上传 → 完成后移除占位、刷新出真节点
+  type PendUploadReceipt = { artworkId: string; account: string; workspace: string; revision: number; scope: typeof importScopeRef.current };
+  const pendUploadReceiptsRef = useRef(new Map<string, PendUploadReceipt>());
+  async function synchronizePendUpload(pendId: string, receipt: PendUploadReceipt) {
+    const current = () => receipt.account === canvasAccountRef.current && receipt.workspace === currentWorkspace() && receipt.revision === currentWorkspaceRevision();
+    if (!current()) return;
+    setPendNodes(nodes => nodes.map(node => node.id === pendId ? { ...node, uploading: true } : node));
+    try {
+      const fresh = await synchronizeCanvasArtworks([receipt.artworkId], () => mergeWorks([receipt.artworkId], current), current);
+      if (!current()) return;
+      if (importScopeRef.current === receipt.scope) {
+        consumePendingNodeHistory(pendId);
+        setPendNodes(nodes => nodes.filter(node => node.id !== pendId));
+        setSelectedPendId(id => id === pendId ? null : id);
+        pendingNodeRef.current = receipt.artworkId;
+        setWorks(items => current() ? items ? [...items] : fresh : items);
+        pushAddUndo(receipt.artworkId, fresh);
+      }
+      pendUploadReceiptsRef.current.delete(pendId);
+    } catch {
+      if (!current()) return;
+      setPendNodes(nodes => nodes.map(node => node.id === pendId ? { ...node, uploading: false, progress: 100 } : node));
+      setGenError("图片已保存，画布尚未同步；再次点击上传将同步原图，无需重新上传");
+    }
+  }
   async function doUploadPend(files: FileList | null) {
     const pendId = pendUploadTargetRef.current;
     pendUploadTargetRef.current = null;
@@ -8711,6 +8860,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (!pendId || !file || !user) return;
     const pend = pendNodes.find((p) => p.id === pendId);
     if (!pend) return;
+    const retained = pendUploadReceiptsRef.current.get(pendId);
+    if (retained) { await synchronizePendUpload(pendId, retained); return; }
+    const receipt: PendUploadReceipt = { artworkId: "", account: canvasAccountRef.current, workspace: currentWorkspace(), revision: currentWorkspaceRevision(), scope: importScopeRef.current };
+    const currentUploadOwner = () => receipt.account === canvasAccountRef.current && receipt.workspace === currentWorkspace() && receipt.revision === currentWorkspaceRevision();
     const info = `${file.name} · ${Math.round(file.size / 1024)}KB`;
     setPendNodes((prev) =>
       prev.map((p) =>
@@ -8734,13 +8887,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     fd.append("y", String(Math.round(pend.y)));
     try {
       const body = await uploadFormData<{ id?: string; error?: string }>("/api/artworks/add", fd,
-        (sent, total) => setPendNodes(prev => prev.map(p => p.id === pendId ? { ...p, progress: total ? sent / total * 100 : 0 } : p)));
+        (sent, total) => { if(currentUploadOwner())setPendNodes(prev => prev.map(p => p.id === pendId ? { ...p, progress: total ? sent / total * 100 : 0 } : p)); },
+        120_000, () => { if(!currentUploadOwner())throw new Error("账号或工作空间已切换，未提交图片上传"); });
       if (!body.id) throw new Error(body.error || t("canvas.genFail"));
-      setPendNodes(prev => prev.filter(p => p.id !== pendId));
-      setSelectedPendId(cur => cur === pendId ? null : cur);
-      pendingNodeRef.current = body.id;
-      void mergeWorks([body.id]).then(fresh => pushAddUndo(body.id!, fresh));
+      receipt.artworkId = body.id;
+      pendUploadReceiptsRef.current.set(pendId, receipt);
+      await synchronizePendUpload(pendId, receipt);
     } catch (error) {
+      if (!currentUploadOwner()) return;
       setGenError(error instanceof Error ? error.message : t("canvas.genFail"));
       setPendNodes(prev => prev.map(p => p.id === pendId ? { ...p, uploading: false } : p));
     }
@@ -9007,7 +9161,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         if (!browsing && key === "backspace" && !e.isComposing && tag !== "SELECT" && !isEditableClipboardTarget(el)) e.preventDefault();
         return;
       }
-      if (historyBusyRef.current || cuttingEdgesRef.current.size > 0) {
+      if (historyBusyRef.current || nodeDeletingRef.current || cuttingEdgesRef.current.size > 0) {
         // Let unrelated browser shortcuts and viewport actions pass through.
         if ((mod && (key === "z" || key === "y")) || key === "delete" || key === "backspace") { e.preventDefault(); return; }
       }
@@ -9121,9 +9275,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           return;
         }
         if (selectedGenerating) return;
-        const realSel = multiSel.filter(
-          (id) => !id.startsWith("pend-") && !id.startsWith("task-")
-        );
+        const realSel = deletableCanvasIds(multiSel);
         if (realSel.length >= 1) {
           e.preventDefault();
           void runDelete(realSel);
@@ -9133,6 +9285,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         } else if (selectedTextId) {
           e.preventDefault();
           void removeTextNode(selectedTextId);
+        } else if (selectedPendId) {
+          e.preventDefault();
+          void runDelete([selectedPendId]);
         }
         return;
       }
@@ -9149,6 +9304,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     readOnly,
     selectedId,
     selectedTextId,
+    selectedPendId,
     selectedGenerating,
     multiSel,
     selectedEdge,
@@ -9857,9 +10013,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               }}
               onNodeClick={(event, node) => {
                 if (canvasTool === "hand") return;
-                if (node.id.startsWith("task-")) return;
+                if (node.id.startsWith("task-") && !generationTasksRef.current.find(task => task.id === node.id)?.failure) return;
                 setSelectedEdge(null);
                 setRfEdges(current => current.map(edge => edge.selected ? { ...edge, selected: false } : edge));
+                if (event.ctrlKey || event.metaKey || event.shiftKey) {
+                  setSelectedId(null); setSelectedPendId(null); setSelectedTextId(null); return;
+                }
                 if (node.id.startsWith("pend-")) {
                   // 选中空白节点 → 出文生图/合并 dock
                   setSelectedId(null);
@@ -10582,7 +10741,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   </button>
                   <button
                     type="button"
-                    onClick={() => batchDelete(selectedBatchIds)}
+                    onClick={() => batchDelete(multiSel)}
                     className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#d24b45] transition-colors hover:bg-[#fff0ef]"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -10928,13 +11087,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 : null;
               const textNode = textNodes.find(item => item.id === ctxMenu.nodeId && item.projectKey === activeKey);
               const pendNode = pendNodes.find(item => item.id === ctxMenu.nodeId);
+              const failedTask = generationTasks.find(item => item.id === ctxMenu.nodeId && item.failure && !item.replaceNode);
               const videoNode=videoNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey);
               const directorNode=directorNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey);
               const characterNode=characterNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey);
               const sceneNode=sceneNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey);
               const timelineNode=timelineNodesStore.nodes.find(node=>node.id===ctxMenu.nodeId&&node.projectKey===activeKey)||null;
               const audioNode=audioNodesStore.nodes.find(node=>node.id===ctxMenu.nodeId&&node.projectKey===activeKey)||null;
-              if (ctxMenu.nodeId && !node && !textNode && !pendNode&&!videoNode&&!directorNode&&!characterNode&&!sceneNode&&!audioNode&&!timelineNode) return null;
+              if (ctxMenu.nodeId && !node && !textNode && !pendNode && !failedTask&&!videoNode&&!directorNode&&!characterNode&&!sceneNode&&!audioNode&&!timelineNode) return null;
               const mutationDisabled = readOnly || !nodeSettingsReady || historySaving || directorNodesStore.saving || characterNodesStore.saving || sceneNodesStore.saving || (audioNodesStore.saving||timelineNodesStore.saving) || Boolean(ctxMenu.nodeId && isNodeLocked(ctxMenu.nodeId));
               const Sep = () => <div className="canvas-ui-divider my-1 h-px" />;
               const batchContextSelection = Boolean(
@@ -10944,7 +11104,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               );
               const menu = (
                 <ContextMenuSurface x={ctxMenu.cx} y={ctxMenu.cy} light={lightCanvas} onClose={() => setCtxMenu(null)}>
-                    {node && batchContextSelection ? (
+                    {ctxMenu.nodeId && multiSel.length > 1 && multiSel.includes(ctxMenu.nodeId) && !batchContextSelection ? (
+                      <><p className="canvas-ui-muted px-3 py-2 text-xs font-semibold">{L(`已选择 ${multiSel.length} 个节点`,`${multiSel.length} nodes selected`)}</p>
+                        <Item label={t("canvas.delete")} disabled={mutationDisabled} danger onClick={() => batchDelete(multiSel)} /></>
+                    ) : failedTask ? (
+                      <Item label={t("canvas.delete")} disabled={mutationDisabled} danger onClick={() => batchDelete([failedTask.id])} />
+                    ) : node && batchContextSelection ? (
                       /* 已选图片组内右键：保留整组选择并直接提供批量对象操作。 */
                       <>
                         <p
@@ -11016,7 +11181,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                           label={t("canvas.delete")}
                           disabled={readOnly}
                           danger
-                          onClick={() => batchDelete(selectedBatchIds)}
+                          onClick={() => batchDelete(multiSel)}
                         />
                       </>
                     ) : characterNode ? (

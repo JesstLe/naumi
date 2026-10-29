@@ -50,7 +50,11 @@ export class FrameRatioChoiceRequired extends Error {
 
 /** Resolve once before quoting/freezing; never reinterpret an already accepted plan. */
 export function automaticFrameRatio(request: ImagegenRequest, inputs: FrameInput[], operation: Intent["operation"], useCase?: string): string | undefined {
-  if (operation === "postprocess" || operation === "cutout" || request.parameters.width || request.parameters.height || request.parameters.ratio && request.parameters.ratio !== "auto" || !inputs.length) return;
+  if (operation === "postprocess" || operation === "cutout" || request.parameters.width || request.parameters.height || request.parameters.ratio && request.parameters.ratio !== "auto") return;
+  // Text-only creation has no reference frame. Freeze the same square default
+  // as its canvas placeholder before channel admission; "auto" is a UI choice,
+  // not an aspect ratio to send to a supplier's enumerated ratio contract.
+  if (!inputs.length) return operation === "generate" ? "1:1" : undefined;
   if (frameCandidates(inputs,useCase,request.frameSourceId,request.framePolicy).some(input=>!frameRatio(input as FrameSize))) throw new Error("参考素材的画幅读取失败，请重新上传图片。");
   const source = defaultFrameSource(inputs, useCase, request.frameSourceId, request.framePolicy);
   if (!source) throw new FrameRatioChoiceRequired();

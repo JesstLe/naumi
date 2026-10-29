@@ -97,6 +97,7 @@ export async function POST(request: Request) {
     title: String(body.title || "文字生成").trim() || "文字生成",
     prompt: String(body.prompt || ""),
     content: String(body.content || ""),
+    error: body.status === "failed" ? String(body.error || "").slice(0, 2000) : "",
     status:
       body.status === "generating" || body.status === "failed" || body.status === "idle"
         ? body.status

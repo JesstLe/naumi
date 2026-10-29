@@ -216,6 +216,7 @@ async function ensureSchema(): Promise<void> {
         ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS source_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
         ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS target_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
         ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS product_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
+        ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS error_message text NOT NULL DEFAULT '';
         ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS canvas_width double precision NOT NULL DEFAULT 300;
         ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS canvas_height double precision NOT NULL DEFAULT 176;
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'user';
@@ -2368,6 +2369,7 @@ export type CanvasTextNodeRecord = {
   prompt: string;
   content: string;
   status: "idle" | "generating" | "completed" | "failed";
+  error?: string;
   canvasX: number;
   canvasY: number;
   width: number;
@@ -2387,6 +2389,7 @@ function mapCanvasTextNode(row: Record<string, unknown>): CanvasTextNodeRecord {
     title: String(row.title || "文字生成"),
     prompt: String(row.prompt || ""),
     content: String(row.content || ""),
+    error: String(row.error_message || ""),
     status:
       status === "idle" || status === "generating" || status === "failed"
         ? status
@@ -2408,7 +2411,7 @@ export async function listCanvasTextNodes(
 ): Promise<CanvasTextNodeRecord[]> {
   await ensureSchema();
   const { rows } = await getPool().query(
-    `SELECT id, project_key, title, prompt, content, status, canvas_x, canvas_y,
+    `SELECT id, project_key, title, prompt, content, status, error_message, canvas_x, canvas_y,
             canvas_width, canvas_height,
             created_at, updated_at, source_ids, target_ids, product_ids
        FROM app_canvas_text_nodes
@@ -2430,14 +2433,15 @@ export async function upsertCanvasTextNode(
     : "completed";
   const { rows } = await getPool().query(
     `INSERT INTO app_canvas_text_nodes
-       (id, email, project_key, title, prompt, content, status, canvas_x, canvas_y, canvas_width, canvas_height, created_at, updated_at, source_ids, target_ids, product_ids)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE($12::timestamptz, now()),now(),$13::jsonb,$14::jsonb,$15::jsonb)
+       (id, email, project_key, title, prompt, content, status, canvas_x, canvas_y, canvas_width, canvas_height, created_at, updated_at, source_ids, target_ids, product_ids, error_message)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE($12::timestamptz, now()),now(),$13::jsonb,$14::jsonb,$15::jsonb,$16)
      ON CONFLICT (id) DO UPDATE SET
        project_key = EXCLUDED.project_key,
        title = EXCLUDED.title,
        prompt = EXCLUDED.prompt,
        content = EXCLUDED.content,
        status = EXCLUDED.status,
+       error_message = EXCLUDED.error_message,
        canvas_x = EXCLUDED.canvas_x,
        canvas_y = EXCLUDED.canvas_y,
        canvas_width = EXCLUDED.canvas_width,
@@ -2447,7 +2451,7 @@ export async function upsertCanvasTextNode(
        product_ids = EXCLUDED.product_ids,
        updated_at = now()
      WHERE app_canvas_text_nodes.email = EXCLUDED.email
-     RETURNING id, project_key, title, prompt, content, status, canvas_x, canvas_y,
+     RETURNING id, project_key, title, prompt, content, status, error_message, canvas_x, canvas_y,
                canvas_width, canvas_height,
                created_at, updated_at, source_ids, target_ids, product_ids`,
     [
@@ -2466,6 +2470,7 @@ export async function upsertCanvasTextNode(
       JSON.stringify(node.sourceIds ?? []),
       JSON.stringify(node.targetIds ?? []),
       JSON.stringify(node.productIds ?? []),
+      status === "failed" ? String(node.error || "").slice(0, 2000) : "",
     ]
   );
   if (!rows[0]) throw new Error("文字节点不存在或无权修改");
