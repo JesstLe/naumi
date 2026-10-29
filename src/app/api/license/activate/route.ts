@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { dbEnabled, activateLicense } from "@/lib/db";
 import { clientIp } from "@/lib/ip";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit-http";
 
 // Pro 自托管实例调用:{ key, host } → 校验 License + 绑定该部署 host + 设备数上限。
 // 返回 { ok, tier, expiresAt, deviceLimit, activatedDevices }。实例据此解锁 Pro 能力,
@@ -17,7 +17,9 @@ export async function POST(request: Request) {
     );
   }
   const ip = clientIp(request);
-  if (!rateLimit(`license-activate:${ip}`, 60, 600_000)) {
+  const rateLimitResult = await checkRateLimit(`license-activate:${ip}`, 60, 600_000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) {
     return NextResponse.json(
       { ok: false, error: "请求过于频繁" },
       { status: 429 }

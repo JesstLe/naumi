@@ -3,7 +3,7 @@ import { multiUserEnabled } from "@/lib/native-auth";
 import { userExists } from "@/lib/db";
 import { sendMail, smtpConfigured } from "@/lib/mailer";
 import { issueEmailCode } from "@/lib/email-code";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit-http";
 import { clientIp } from "@/lib/ip";
 import { BRAND } from "@/lib/brand";
 
@@ -25,7 +25,9 @@ export async function POST(req: Request) {
   }
   const ip = clientIp(req) || "0.0.0.0";
   // 限流:同 IP 10 分钟 5 次;同邮箱 60 秒 1 次(防轰炸别人的邮箱)。
-  if (!rateLimit(`sendcode:ip:${ip}`, 5, 10 * 60 * 1000)) {
+  const rateLimitResult = await checkRateLimit(`sendcode:ip:${ip}`, 5, 10 * 60 * 1000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) {
     return NextResponse.json({ error: "操作过于频繁,请稍后再试" }, { status: 429 });
   }
   let body: { email?: string };
@@ -38,7 +40,9 @@ export async function POST(req: Request) {
   if (!EMAIL_RE.test(email)) {
     return NextResponse.json({ error: "邮箱格式不正确" }, { status: 400 });
   }
-  if (!rateLimit(`sendcode:mail:${email}`, 1, 60 * 1000)) {
+  const rateLimitResult2 = await checkRateLimit(`sendcode:mail:${email}`, 1, 60 * 1000);
+  if (rateLimitResult2 instanceof Response) return rateLimitResult2;
+  if (!rateLimitResult2) {
     return NextResponse.json({ error: "发送太频繁,请 60 秒后再试" }, { status: 429 });
   }
   if (await userExists(email)) {

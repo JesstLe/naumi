@@ -8,7 +8,7 @@ export const dynamic="force-dynamic";
 async function guard(request:Request) {
   if (!await requireAdmin(request) || !(await adminPasswordState(request)).authenticated) return null;
   const email=await resolveUserEmail(request)||"local-admin";
-  return rateLimit(`team-access:${email}:${clientIp(request)}`,120,60_000) ? { email,admin:true,consoleAdmin:true } : null;
+  return (await rateLimit(`team-access:${email}:${clientIp(request)}`,120,60_000)) ? { email,admin:true,consoleAdmin:true } : null;
 }
 export async function GET(request:Request) {
   try {

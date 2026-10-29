@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { fillWorkflowAsset } from "@/lib/canvas-workflow-import";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit-http";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const email = await authenticatedEmail(request);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
-  if (!rateLimit(`workflow-fill:${email}`,20,60000)) return NextResponse.json({error:"补图过于频繁，请稍后重试"},{status:429});
+  const rateLimitResult = await checkRateLimit(`workflow-fill:${email}`,20,60000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) return NextResponse.json({error:"补图过于频繁，请稍后重试"},{status:429});
   try {
     const reader = request.body?.getReader();
     if (!reader) return NextResponse.json({error:"请选择图片"},{status:400});
