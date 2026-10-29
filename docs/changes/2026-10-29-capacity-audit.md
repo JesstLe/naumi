@@ -271,3 +271,15 @@
 - **X3 v2 独立审查**：固定 `5d8d116b` 真实PG/HTTP与34个Worker回归、18组协议矩阵、91组合fixture通过，复核发现1项P2：negative物理accepted_at被两处既有健康查询当“已受理”。该提交尚未整合，先修默认v1旧schema兼容的读取投影；不可排除全部phase=unknown。报告在独立 review 的 `output/capacity-x3-review/REVIEW.md`，不把默认未启用协议写成上线。
 - 并行已实际派发：X3 v2独立review、画布保存 `613cf62b` 独立review、发布 task snapshot 固定主键有界采集实现。总台账编号仍由父线程分配。47线上不动；45笔surgery/在线索引、账务sum/事务长度、运行时连接生命周期、Agent/SSE/视频上传、前端其他保存与传输继续排队。
 - X5后续上线前仍需：本站实际存储/共享媒体边界与兼容reader回滚，历史数据迁移/孤儿保留另切片；本次合主线不代表这些已验收。
+
+
+### 2026-10-29 X3 v2 与画布保存独立复核收尾
+
+- X3 v2 `5d8d116b` 与画布保存 `613cf62b` 已普通合入父任务隔离分支，独立审查提出3项问题，父线程直接修复并集中验证。协议v1仍默认，47本轮不改、不重新发布。
+- **A35 / D17：negative tombstone被健康查询误记为受理活动。** enterprise/admin两处读取先查询pg_attribute列能力，再只看nonacceptance_at为空的记录；避免整行to_jsonb读取result JSON，兼容尚未惰性迁移的v1 schema。原running/completed/accepted-unknown都保留；negative-only显示0/null，混合真实unknown显示1。真实独占PG四类基线/修改/回滚验证通过，tombstone不删、扫描0。
+- **A36 / D18：配置409后的位置200误删配置草稿。** queue成功ACK只确认本意图；新的明确保存覆盖旧拒绝意图全部写字段时才替代，x/y不代替config/inputs，uncertain不删。实际Hook+设置/拖动调用+原未保存提示JSX+Chromium/HTTP复现修前dirty0/草稿删除/flush成功，修后dirty1/草稿保留/flush拒绝，刷新后仍可恢复；显式完整配置重存后正确清除。
+- **A37 / D19：首节点永久409使其他节点的显式重试饿死。** retryPending按节点隔离，A失败保留其顺序与CAS但继续B，最终汇报失败；两次按钮原请求A,A，修后A,B,A，B恢复、A保留dirty，无后台新增重试。
+- 父线程集中验证：画布边界8组（包括明确替代、nonce、A/B/A、预算、账号空间ABA、StrictMode/卸载）、原生PG/HTTP/Hook23组；X3协议真实PG/实际route18组，扫描10/合成付费callback10、真实供应商0；Worker34/34；全项目tsc exit0。模拟auth/service与真实PG仓储层级分开，不冒称完整生产浏览器验收。
+- 仅副本回滚恢复原3源码hash、三个原问题，并删除副本新增3文件；后来编辑guard exit73且0写入。四产物与精确命令/input/stdout/stderr/exit在父ignored `output/capacity-audit-wave2-20261029/review-followups/`；文档 `2026-10-29-capacity-review-followups.md`。
+- 事实校正：此前并发派发第三个 release collector 的调用最终返回 `parent_not_active`，没有成功taskId，不能把“调用已提交”记成实际开工；本轮下一批重新实际派发并记录返回句柄。画布与X3两个review确已完成，两个代码切片修复后方可合主线。
+- 下一批：release任务快照有界读取、账务余额sum/长事务/BI保留、Agent会话SSE/Markdown/上传，独立职责分工。历史生产容量/完整生命周期、45笔手术与在线索引继续挂账。既有fixture与accepted-timeout波动未自动关闭。
