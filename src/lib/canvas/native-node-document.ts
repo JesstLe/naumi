@@ -147,7 +147,7 @@ export function createCanvasNativeNodeDocument<K extends CanvasNativeKind>(kind:
     }
     const read=async(path:string)=>{const data=await request(path,{cache:"no-store"});if(!current())throw new Error("画布账号或工作空间已切换");return data;};
     return {getSnapshot:()=>state.snapshot,subscribe:(fn:()=>void)=>{state.listeners.add(fn);return()=>{state.listeners.delete(fn);};},refresh,save,command,read,activate,
-      accept:(nodes:N[],isCurrent:()=>boolean)=>{if(current()&&isCurrent())merge(state,nodes);},getNode:(id:string)=>state.snapshot.nodes.find(value=>value.id===id),flush:async(id?:string)=>kind==="video"?videoWrites().flush(id):Promise.all([...state.queues.values()]),retryPending:()=>kind==="video"?videoWrites().retryPending():Promise.resolve()};
+      accept:(nodes:N[],isCurrent:()=>boolean)=>{if(current()&&isCurrent())merge(state,nodes);},getNode:(id:string)=>state.snapshot.nodes.find(value=>value.id===id),flush:async(id?:string)=>kind==="video"?videoWrites().flush(id):Promise.all([...state.queues.values()]),retryPending:async()=>kind==="video"?videoWrites().retryPending():Promise.resolve()};
   }
   return {bind};
 }

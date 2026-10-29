@@ -18,11 +18,11 @@
 
 新保存队列在旧写已经提交但回执丢失时，后到的**未显式提供revision**的新编辑仍取旧缓存revision，恢复旧回执后会与自己刚恢复的写冲突。现在先恢复原body/nonce的回执，再让新隐式revision编辑接续该回执revision；用户明确提供的expectedRevision绝不静默改写。原真实六kind回归及真实HTTP/PG保存回归覆盖该反例。
 
-跨realm异常原message不再被通用保存失败覆盖；HTTP/JSON/网络分类及原operation保持。flush以Promise拒绝返回，不在公开异步接口中同步抛错。
+跨realm异常原message不再被通用保存失败覆盖；HTTP/JSON/网络分类及原operation保持。flush/retryPending均以Promise拒绝返回，不在公开异步接口中同步抛错。
 
 ## 验证与证据层级
 
-- 新实际owner A/B：旧3组8检查复现A-B-A塌缩、配置冲突草稿丢失、错误revision被当ACK；新3组8检查全部纠正。输入是完整基线而非替代owner。
+- 新实际owner A/B：旧3组8检查复现A-B-A塌缩、配置冲突草稿丢失、错误revision被当ACK；新4组11检查全部纠正，且read-only retry以Promise拒绝/POST0。输入是完整基线而非替代owner。
 - 当前真实React六hook：68组106检查通过；真实six-kind owner→实际HTTP handler→隔离PG：6组146检查通过，原账本不变。
 - 主线真实React/HTTP/PG保存23项通过；真实caller/alert边界8项通过（冲突草稿、非相关position ACK、独立节点恢复、nonce、账号/workspace ABA、StrictMode/卸载）。这是fixture认证/HTTP链，不冒称完整产品浏览器或线上。
 - Worker原测试及新nonacceptance单元41项通过；v2真实PG/实际route授权/真实进程18用例通过（合成scan9/付费供应商0），原v1 UNKNOWN不会被新协议升级。

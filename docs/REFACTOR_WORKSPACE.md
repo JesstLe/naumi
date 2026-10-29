@@ -224,4 +224,4 @@ R7E封版：固定4980c018，实际Worker旧4组24→新4组34、原生同镜像
 
 ## R7G：主线修复归属整合（2026-10-29）
 
-固定main3b6a5279的12提交按既有owner整合，11处冲突未恢复旧storage/durable-job/Canvas/scan单体。X5结果codec/storage、视频持久保存队列与六kind文档、HTTP v2 nonacceptance与direct Worker分别保留职责；修正旧ACK丢失后新隐式revision与自身冲突，显式revision不改。新owner A/B3/8、真实six-hook68/106、six-kind HTTP/PG6/146、视频PG23/caller8、Worker41+真实协议18、原结果native一次-6及边界11/healthPG4通过，最终固定矩阵/类型/SCC/四产物与回滚见[R7G记录](changes/2026-10-29-refactor-r7g-owner-integration.md)。整体ACTIVE，不合main不部署；pending/edit占位/恢复尚未迁移，继续此边界与性能/容量、远端CI和最终退出。
+固定main3b6a5279的12提交按既有owner整合，11处冲突未恢复旧storage/durable-job/Canvas/scan单体。X5结果codec/storage、视频持久保存队列与六kind文档、HTTP v2 nonacceptance与direct Worker分别保留职责；修正旧ACK丢失后新隐式revision与自身冲突，显式revision不改。新owner旧3/8→新4/11、真实six-hook68/106、six-kind HTTP/PG6/146、视频PG23/caller8、Worker41+真实协议18、原结果native一次-6及边界11/healthPG4通过，最终固定矩阵/类型/SCC/四产物与回滚见[R7G记录](changes/2026-10-29-refactor-r7g-owner-integration.md)。整体ACTIVE，不合main不部署；pending/edit占位/恢复尚未迁移，继续此边界与性能/容量、远端CI和最终退出。
