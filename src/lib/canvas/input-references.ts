@@ -1,15 +1,16 @@
 import type { Artwork } from "../mock-data";
 import {isCanvasImageVersion} from "./image-versions";
 
-/** Regenerate the selected node from its incoming inputs, not from its output.
+/** In-place output placement is independent from image inputs. The current
+ * image is the default edit target; connected inputs remain visible references.
  * A canvas-add parent can be a project anchor rather than a visual input. */
 export function canvasRegenerationReferences(selected:Artwork|null,members:Artwork[]):Artwork[]{
   if(!selected)return [];
   const ids=[...new Set([...(selected.source!=="canvas-add"&&selected.parentId?[selected.parentId]:[]),...(selected.parentIds||[])])].filter(id=>id!==selected.id);
-  if(ids.length>16)throw new Error("一次最多使用16张参考图，请移除多余连线");
+  if(ids.length+1>16)throw new Error("一次最多使用16张图片，请移除多余连线");
   const refs=ids.map(id=>members.find(art=>art.id===id));
   if(refs.some(ref=>!ref||!ref.image||ref.videoUrl||isCanvasImageVersion(ref)))throw new Error("原始参考图片尚未载入，请先同步图片或移除无效连线");
-  return refs as Artwork[];
+  return [selected,...refs as Artwork[]];
 }
 
 /** Explicit incoming links are inputs; a hidden project parent is not. Never

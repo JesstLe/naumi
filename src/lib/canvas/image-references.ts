@@ -20,12 +20,17 @@ export function readImageReferenceBindings(value: unknown): ImageReferenceBindin
 }
 
 /** Keep removed slots as tombstones: a prompt's 图2 must never become another image. */
-export function resolveCanvasImageReferences(candidates: ImageReferenceCandidate[], saved: ImageReferenceBinding[] = []) {
-  const bindings = saved.map(binding => ({ ...binding }));
+export function resolveCanvasImageReferences(candidates: ImageReferenceCandidate[], saved: ImageReferenceBinding[] = [], defaultEditTarget?: string) {
+  let bindings = saved.map(binding => ({ ...binding }));
+  // Older standard-node drafts never contained their current image. Introduce
+  // that image as the default target once, without renumbering existing refs or
+  // overwriting any later explicit role choice (including reference-only use).
+  const introduceTarget=!!defaultEditTarget&&candidates.some(candidate=>candidate.key===defaultEditTarget)&&!bindings.some(binding=>binding.key===defaultEditTarget);
   let next = Math.max(0, ...bindings.map(binding => binding.number)) + 1;
   for (const candidate of candidates) if (!bindings.some(binding => binding.key === candidate.key)) {
     bindings.push({ key: candidate.key, number: next++, role: bindings.length ? "reference" : "edit-target" });
   }
+  if(introduceTarget)bindings=changeImageReferenceRole(bindings,defaultEditTarget!,"edit-target");
   const references = candidates.map(candidate => ({ ...candidate, ...bindings.find(binding => binding.key === candidate.key)! }))
     .sort((a, b) => Number(b.role === "edit-target") - Number(a.role === "edit-target") || a.number - b.number);
   return { bindings, references };

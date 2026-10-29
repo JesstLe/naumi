@@ -89,6 +89,7 @@ import {ProjectBrowserSurface,ProjectCover} from './project-browser-surface';
 import { classifyGenerationFailure, generationFailureMessage, generationFailureTitle, assertGenerationResultsPresent, type GenerationFailure } from '@/lib/canvas/generation-failure';
 import { ImagegenHttpError, ImagegenPreparationCancelled } from '@/lib/imagegen/http';
 import { useImageNodeDraft } from './use-image-node-draft';
+import {useImageReferenceDraft} from './use-image-reference-draft';
 import { ImageReferenceComposer } from './image-reference-composer';
 import { resolveCanvasImageReferences, changeImageReferenceRole, imageReferenceManifest, inheritableImagePrompt, type CanvasImageReference, type ImageReferenceCandidate } from '@/lib/canvas/image-references';
 import { canvasReferenceManifestSchema, compileReferenceInstructions, referenceManifestError } from '@/lib/imagegen/reference-labels';
@@ -1769,7 +1770,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 是否已做过"刷新恢复上次项目"的初始化(避免初始挂载误清本地保存)
   const restoredRef = useRef(false);
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  const frameChoice=useCanvasFrameChoice(imageDraftScope(user?.email,targetEmail,activeKey));
+  const frameChoice=useCanvasFrameChoice(imageDraftScope(user?.email,targetEmail,activeKey,currentWorkspace()));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedPendId, setSelectedPendId] = useState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
@@ -1781,7 +1782,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const imageDraftNodeId = selectedPendId || selectedId;
   const imageDraftArtwork = selectedPendId ? undefined : works?.find(art => art.id === selectedId);
   const imageDraft = useImageNodeDraft(
-    imageDraftScope(user?.email, targetEmail, activeKey), imageDraftNodeId,
+    imageDraftScope(user?.email, targetEmail, activeKey,currentWorkspace()), imageDraftNodeId,
     { prompt: inheritableImagePrompt(imageDraftArtwork?.prompt), ratio: "auto" }, readOnly
   );
   const { prompt: editPrompt, setPrompt: setEditPrompt, ratio: genRatio, setRatio: setGenRatio } = imageDraft;
@@ -1861,11 +1862,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [editPrompt]);
   // 追加参考图(与节点图一起参与图生图)
-  const [extraFiles, setExtraFiles] = useState<File[]>([]);
-  const extraReferenceKeys = useRef(new WeakMap<File,string>());
-  const extraReferenceOwner = useRef<string | null>(null);
-  const [extraPreviews, setExtraPreviews] = useState<string[]>([]);
-  const extraPreviewUrls = useRef(extraPreviews); extraPreviewUrls.current = extraPreviews;
+  const referenceDraft=useImageReferenceDraft(imageDraft.key,user?.email?JSON.stringify([user.email.toLowerCase(),(targetEmail||user.email).toLowerCase()]):null,readOnly);
+  const extraFiles=referenceDraft.files;
   const extraInputRef = useRef<HTMLInputElement>(null);
   // 节点剪贴板(复制/粘贴节点)+ 上传作根节点的文件 input
   const nodeClipRef = useRef<Artwork | null>(null);
@@ -2574,37 +2572,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     onConfirm: () => void;
   } | null>(null);
 
-  useEffect(() => {
-    return () => extraPreviewUrls.current.forEach((u) => URL.revokeObjectURL(u));
-  }, []);
-
   function pickExtra(list: FileList | null) {
     if (!list) return;
     const room = MAX_TOTAL_IMAGES - visibleDockRefs.length - extraFiles.length;
     if (room <= 0) return;
-    const nf: File[] = [];
-    const np: string[] = [];
-    for (const f of Array.from(list)) {
-      if (nf.length >= room) break;
-      if (!/^image\/(png|jpe?g|webp)$/.test(f.type)) continue;
-      if (f.size > MAX_UPLOAD) continue;
-      nf.push(f);
-      extraReferenceKeys.current.set(f, `upload:${browserRandomUUID()}`);
-      np.push(URL.createObjectURL(f));
-    }
-    if (nf.length === 0) return;
-    extraReferenceOwner.current = imageDraft.key;
-    setExtraFiles((prev) => [...prev, ...nf]);
-    setExtraPreviews((prev) => [...prev, ...np]);
+    const files=Array.from(list).filter(file=>/^image\/(png|jpe?g|webp)$/.test(file.type)&&file.size<=MAX_UPLOAD).slice(0,room);
+    if (!files.length) return;
+    referenceDraft.add(files);
     if (extraInputRef.current) extraInputRef.current.value = "";
-  }
-  function removeExtra(i: number) {
-    setExtraPreviews((prev) => {
-      const u = prev[i];
-      if (u) URL.revokeObjectURL(u);
-      return prev.filter((_, j) => j !== i);
-    });
-    setExtraFiles((prev) => prev.filter((_, j) => j !== i));
   }
 
   useEffect(() => {
@@ -3036,7 +3011,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         );
         imageDraft.seed(pend.id, { prompt: t(
           key === "detail" ? "canvas.workflowDetailPrompt" : key === "views" ? "canvas.workflowViewsPrompt" : "canvas.workflowHeroPrompt"
-        ) }, imageDraftScope(user?.email, targetEmail, null));
+        ) }, imageDraftScope(user?.email, targetEmail, null,currentWorkspace()));
         wantFocusPendPrompt.current = true;
       }, 0);
     });
@@ -3665,18 +3640,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     ) || (!!selectedId && pendNodes.some(node => node.generating && !node.generationFailure && node.parentId === selectedId));
   const selectedGenerationFailure = generationTasks.find(task => task.failure && task.sourceId === selectedId)?.failure
     || pendNodes.find(node => node.generationFailure && node.parentId === selectedId)?.generationFailure;
-  // Regeneration uses incoming references, not its own output. Explicit tools keep their edit target.
+  // Updating this node still uses its current image as the default edit target.
   const dockReferenceState = useMemo(() => {
     try { return { references: generationMode==="standard"?canvasRegenerationReferences(selected, active?.members ?? []):canvasGenerationReferences(selected, active?.members ?? []), error: "" }; }
     catch(error) { return { references: [], error: error instanceof Error ? error.message : "参考图尚未同步" }; }
   }, [selected, active?.members,generationMode]);
   const dockRefs = dockReferenceState.references;
-  // 用户可在 dock 里"×"掉自动引用图(改用自己上传的);hiddenRefIds 随选中切换清空
-  const [hiddenRefIds, setHiddenRefIds] = useState<string[]>([]);
-  const hiddenReferenceOwner = useRef<string | null>(null);
+  // Explicit removals belong to this node draft too; hiding the composer does not restore them.
+  const hiddenRefIds=imageDraft.hiddenReferenceIds;
   const visibleDockRefs = useMemo(
-    () => dockRefs.filter((r) => hiddenReferenceOwner.current !== imageDraft.key || !hiddenRefIds.includes(r.id)),
-    [dockRefs, hiddenRefIds, imageDraft.key]
+    () => dockRefs.filter((r) => !hiddenRefIds?.includes(r.id)),
+    [dockRefs, hiddenRefIds]
   );
   const selectedPend = useMemo(
     () => pendNodes.find((p) => p.id === selectedPendId) ?? null,
@@ -3759,12 +3733,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const imageReferenceState = useMemo(() => {
     const arts = selectedPend ? pendInputArts : visibleDockRefs;
     const candidates: ImageReferenceCandidate[] = arts.map(art => ({ key: `node:${art.id}`, sourceNodeId: art.id, title: art.title || L("图片节点", "Image node"), url: art.image }));
-    if (!selectedPend && extraReferenceOwner.current === imageDraft.key) extraFiles.forEach((file, index) => {
-      const key = extraReferenceKeys.current.get(file);
-      if (key) candidates.push({ key, title: file.name, url: extraPreviews[index] || "", file });
-    });
-    return resolveCanvasImageReferences(candidates, imageDraft.referenceBindings);
-  }, [selectedPend, pendInputArts, visibleDockRefs, extraFiles, extraPreviews, imageDraft.referenceBindings, imageDraft.key]);
+    if (!selectedPend) for(const upload of referenceDraft.uploads)candidates.push({key:upload.key,title:upload.file.name,url:upload.url,file:upload.file});
+    return resolveCanvasImageReferences(candidates, imageDraft.referenceBindings,!selectedPend&&generationMode==="standard"&&selected?`node:${selected.id}`:undefined);
+  }, [selectedPend, pendInputArts, visibleDockRefs, referenceDraft.uploads, imageDraft.referenceBindings, generationMode, selected]);
   const composerReferences = imageReferenceState.references;
   useEffect(() => {
     if (JSON.stringify(imageReferenceState.bindings) !== JSON.stringify(imageDraft.referenceBindings || [])) imageDraft.setReferenceBindings(imageReferenceState.bindings);
@@ -3772,8 +3743,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const referenceError = referenceManifestError(editPrompt, imageReferenceManifest(composerReferences));
   function removeComposerReference(ref: CanvasImageReference) {
     if (selectedPend) setPendNodes(nodes => nodes.map(node => node.id === selectedPend.id ? { ...node, inputs: node.inputs.filter(id => id !== ref.sourceNodeId) } : node));
-    else if (ref.file) removeExtra(extraFiles.indexOf(ref.file));
-    else if (ref.sourceNodeId) { hiddenReferenceOwner.current=imageDraft.key; setHiddenRefIds(ids => [...ids, ref.sourceNodeId!]); }
+    else if (ref.file) referenceDraft.remove(ref.key);
+    else if (ref.sourceNodeId) imageDraft.setHiddenReferenceIds([...(hiddenRefIds||[]),ref.sourceNodeId]);
   }
   function locateComposerReference(id: string) {
     void rfRef.current?.fitView({ nodes: [{ id }], padding: 0.8, duration: 240, maxZoom: 1 });
@@ -4502,9 +4473,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (selected?.id) setGenerationMode("standard");
     setRatioMenuOpen(false);
     setGenError(null);
-    setExtraFiles([]);
-    setExtraPreviews(urls => { urls.forEach(url => URL.revokeObjectURL(url)); return []; });
-    setHiddenRefIds([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageDraft.key, selected?.id, selectedPendId, activeKey, readOnly]);
 
@@ -12076,6 +12044,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     {composerReferences.length < MAX_TOTAL_IMAGES && <button type="button" onClick={()=>extraInputRef.current?.click()}
                       title={t("canvas.toolbar.addReference")} aria-label={t("canvas.toolbar.addReference")}
                       className={cn("canvas-ui-action flex flex-none items-center justify-center rounded-[10px] border border-dashed border-[var(--canvas-ui-border)] hover:!border-[#6366f1]/60",composerReferences.length?"h-[68px] w-12":"h-8 gap-1.5 px-2.5 text-xs")}><Upload className="h-4 w-4" />{!composerReferences.length&&L("参考图","Reference")}</button>}
+                    {!!hiddenRefIds?.some(id=>dockRefs.some(ref=>ref.id===id))&&<button type="button" onClick={()=>imageDraft.setHiddenReferenceIds([])} disabled={dockRefs.length+extraFiles.length>MAX_TOTAL_IMAGES} className="canvas-ui-action h-8 rounded-lg border border-[var(--canvas-ui-border)] px-2 text-xs disabled:opacity-40">{L("恢复节点参考","Restore node references")}</button>}
                   </>}
                 </ImageReferenceComposer>
                 {genError && (
