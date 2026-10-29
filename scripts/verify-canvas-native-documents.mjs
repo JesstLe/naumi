@@ -68,6 +68,10 @@ try{
     await reset();h=window.h;const stable=h.stores[kind].allNodes,readCount=h.state.reads.length;h.change({project:'tree:Q'});await new Promise(r=>setTimeout(r,10));eq(window.h.stores[kind].allNodes===stable,true,kind+' project retains document');eq(h.state.reads.length,readCount,kind+' project does not reload all nodes');groups++;
    }
   }
+  for(const kind of ['audio','timeline']){
+   await reset();const h=window.h,before=h.state.reads.length;await h.stores[kind].render(kind,0,'render-conflict').catch(()=>{});await new Promise(r=>setTimeout(r,20));
+   eq(h.state.reads.length-before,1,kind+' command409 keeps original refresh');eq(h.state.posts.length,1,kind+' conflict never resubmits');groups++;
+  }
   return {status:baseline?'BASELINE_REPRODUCED':'PASS',groups,checks,kinds:6,observations,actualReact:true,actualHooks:true,authAndHttpPorts:true,paidCalls:0};
  },{kinds,baseline});
  assert.deepEqual(errors,[]);await page.screenshot({path:path.join(out,'native-documents.png')});await fs.writeFile(path.join(out,'RESULT.json'),JSON.stringify({...result,errors,sourceRoot:root},null,2)+'\n');

@@ -18,3 +18,7 @@
 ### 准备阶段失败记录
 
 新增PG夹具首次把operation表名猜成*_node_ops，真实表名是video_node_operations与其他kind的*_operations；后续企业夹具补authorized_until、尊重成员email单归属（测试账号拥有企业A并作为企业B成员），entitlement补updated_by。各次失败均走finally删除自有schema/关闭池，日志保留。实际发现GET未绑定workspace导致仅做浏览器分桶仍会拉回所有workspace节点，已连实际12读入口一起修正，而不是用窄fixture宣称隔离完成。新建根project仍由原node事务attest，客户端新根仅放body、不提前用header绑定。
+
+## 收尾定向修正
+
+固定b4144269的core101/101、完整同镜像runtime177/产品双浏览器37均实际通过。补充实际hook对照又捕获到迁移遗漏：audio/timeline的render409原本会刷新原文档，合并command后漏掉。已在共同command入口恢复409只读刷新，原错误与原operation继续向调用方保留、不重复POST；补两个真实hook断言。最终源码仅这一个生产文件和对应verifier变更，按受影响模块集中复测，不因该小修再次跑整个重型core；b414完整结果与最终定向源码/镜像结果严格分层，最终以SOURCE_BINDING/VERIFICATION为准。

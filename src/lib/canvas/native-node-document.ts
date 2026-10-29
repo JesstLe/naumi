@@ -103,9 +103,11 @@ export function createCanvasNativeNodeDocument<K extends CanvasNativeKind>(kind:
       state.queues.set(id,promise);state.flights.set(fingerprint,{current:writeCurrent,promise});return promise;
     };
     async function command<T extends {node:N}>(id:string,suffix:string,body:Record<string,unknown>):Promise<T>{
-      assertWrite();const data=await request(`${url}/${encodeURIComponent(id)}/${suffix}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)},state.snapshot.nodes.find(value=>value.id===id)?.projectKey||scope.project);
-      if(!node(data?.node,id))throw new Error(`${label}回执待核实，请检查原操作`);
-      merge(state,[data.node]);if(!current())throw new Error(`${label}操作已受理，请返回原账号和工作空间同步`);return data as T;
+      assertWrite();try{
+        const data=await request(`${url}/${encodeURIComponent(id)}/${suffix}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)},state.snapshot.nodes.find(value=>value.id===id)?.projectKey||scope.project);
+        if(!node(data?.node,id))throw new Error(`${label}回执待核实，请检查原操作`);
+        merge(state,[data.node]);if(!current())throw new Error(`${label}操作已受理，请返回原账号和工作空间同步`);return data as T;
+      }catch(cause){if(cause instanceof NativeNodeClientError&&cause.status===409&&current())void refresh().catch(()=>{});throw cause;}
     }
     const read=async(path:string)=>{const data=await request(path,{cache:"no-store"});if(!current())throw new Error("画布账号或工作空间已切换");return data;};
     return {getSnapshot:()=>state.snapshot,subscribe:(fn:()=>void)=>{state.listeners.add(fn);return()=>{state.listeners.delete(fn);};},refresh,save,command,read,
