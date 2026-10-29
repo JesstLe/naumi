@@ -80,7 +80,9 @@ const inRange = (alias: string) =>
 const values = (q: BiQuery) => [q.start, q.end, q.email, q.q, q.accountType];
 const imageOperationStatus = "COALESCE(j.snapshot#>>'{result,status}',j.snapshot->>'status','unknown')";
 const normalizedOperationStatus = (value:string) => `CASE WHEN ${value} IN ('done','completed','success') THEN 'succeeded' WHEN ${value} IN ('error','rejected') THEN 'failed' WHEN ${value} IN ('pending','reviewing') THEN 'queued' WHEN ${value} IN ('processing','generating') THEN 'running' WHEN ${value} IN ('queued','running','succeeded','partial','failed','cancel_requested','cancelled','needs_review') THEN ${value} ELSE 'needs_review' END`;
-const operationSql = (selected = false) => `SELECT 'app_image_jobs'::text AS source_table,EXISTS(SELECT 1 FROM app_ledger WHERE email=j.email AND id='led-image-'||j.id AND kind='consume') AS has_ledger_charge,j.id,j.email,j.kind,j.created_at,j.updated_at,
+// Only page keys enter this projection. In particular, UNION ALL + an outer
+// LIMIT can otherwise evaluate JSON and correlated billing for every candidate.
+const operationPageSource = `SELECT 'app_image_jobs'::text AS source_table,EXISTS(SELECT 1 FROM app_ledger WHERE email=j.email AND id='led-image-'||j.id AND kind='consume') AS has_ledger_charge,j.id,j.email,j.kind,j.created_at,j.updated_at,
   ${imageOperationStatus} AS status,COALESCE(j.snapshot#>>'{result,stage}',j.snapshot->>'stage','') AS stage,
   COALESCE(j.payload->'p'->>'userPrompt',j.payload->'p'->>'prompt',j.payload->>'extra',j.snapshot->>'extra','') AS content,
   COALESCE(j.payload->'p'->>'model',j.payload->>'model',j.snapshot->>'model','') AS requested_model,
@@ -89,22 +91,22 @@ const operationSql = (selected = false) => `SELECT 'app_image_jobs'::text AS sou
   COALESCE((SELECT -sum(l.delta) FROM app_ledger l WHERE l.email=j.email AND l.id='led-image-'||j.id),0) AS billed_credits,
   CASE WHEN j.billing_settled THEN 0 ELSE j.reserved_cost END AS reserved_credits,j.billing_settled AS settled,
   COALESCE(j.snapshot#>>'{result,error,message}',j.snapshot->>'error','') AS error
- FROM app_image_jobs j ${selected ? "JOIN selected k ON k.source_table='app_image_jobs' AND k.id=j.id AND k.email=j.email" : ""}
+ FROM app_image_jobs j JOIN selected k ON k.source_table='app_image_jobs' AND k.id=j.id AND k.email=j.email
  UNION ALL SELECT 'app_canvas_image_tasks',EXISTS(SELECT 1 FROM app_ledger WHERE email=c.email AND id='led-canvas-image-'||c.id AND kind='consume'),c.id,c.email,'canvas-'||c.kind,c.created_at,c.updated_at,c.status,'' AS stage,
   COALESCE(c.parameters->>'newText',c.parameters->>'prompt','') AS content,'' AS requested_model,
   COALESCE(c.parameters->'qualityAudit'->>'requested','') AS requested_quality,
   COALESCE(c.parameters->>'billingResolution','') AS resolution,c.cost,
   COALESCE((SELECT -sum(l.delta) FROM app_ledger l WHERE l.email=c.email AND l.id='led-canvas-image-'||c.id),0),
   COALESCE((SELECT r.cost FROM app_gen_reservations r WHERE r.job_id=c.id AND r.email=c.email),0),
-  c.status='completed' OR c.credits_refunded,COALESCE(c.error,'') FROM app_canvas_image_tasks c ${selected ? "JOIN selected k ON k.source_table='app_canvas_image_tasks' AND k.id=c.id AND k.email=c.email" : ""}
+  c.status='completed' OR c.credits_refunded,COALESCE(c.error,'') FROM app_canvas_image_tasks c JOIN selected k ON k.source_table='app_canvas_image_tasks' AND k.id=c.id AND k.email=c.email
  UNION ALL SELECT 'app_video_tasks',EXISTS(SELECT 1 FROM app_ledger WHERE email=v.email AND id='led-video-'||v.id AND kind='consume'),v.id,v.email,'video',v.created_at,v.updated_at,v.status,'' AS stage,v.prompt,v.model,'' AS requested_quality,
   v.size,v.cost,COALESCE((SELECT -sum(l.delta) FROM app_ledger l WHERE l.email=v.email AND l.id='led-video-'||v.id),0),
   COALESCE((SELECT r.cost FROM app_gen_reservations r WHERE r.job_id=v.id AND r.email=v.email),0),
-  v.status='completed' OR v.credits_refunded,v.error FROM app_video_tasks v ${selected ? "JOIN selected k ON k.source_table='app_video_tasks' AND k.id=v.id AND k.email=v.email" : ""}`;
+  v.status='completed' OR v.credits_refunded,v.error FROM app_video_tasks v JOIN selected k ON k.source_table='app_video_tasks' AND k.id=v.id AND k.email=v.email`;
 
-const operationSource = operationSql();
-
-/** Keys are cheap; expand JSON and billing only for the selected page. */
+/** Expand display JSON and billing only for the selected page. A nonempty image
+ * status filter still reads snapshot before paging; it needs an indexed state
+ * projection to avoid that work, not an early LIMIT that drops matching rows. */
 function operationKeys(authorizedEmployees = false) {
   const status = (value: string, review: string) => `($6::text='' OR ${value}=$6 OR ($6 LIKE 'creation:%' AND ${normalizedOperationStatus(value)}=substring($6 from 10)) OR ($6='review' AND (${review})))`;
   return `SELECT 'app_image_jobs'::text AS source_table,j.id,j.email,j.created_at
@@ -117,7 +119,6 @@ function operationKeys(authorizedEmployees = false) {
     FROM app_video_tasks v WHERE ${accountFilter("v.email", authorizedEmployees, 7)} AND ${inRange("v")}
       AND ${status("v.status", "v.status='needs_attention' OR v.error LIKE '%核查%'")}`;
 }
-const operationPageSource = operationSql(true);
 
 const artworkFilter = (scoped: boolean) => `${accountFilter("a.email", scoped)} AND (${inRange("a")} OR $7::text<>'') AND ($7::text='' OR a.id=$7) AND (($6::text='' AND a.deleted_at IS NULL) OR ($6='deleted' AND a.deleted_at IS NOT NULL) OR $6='all')`;
 const userFilter = () => `${accountFilter("u.email")} AND ($6::text='' OR CASE WHEN u.banned THEN 'banned' ELSE 'active' END=$6)`;
@@ -128,8 +129,9 @@ const conversationKeys = () => `SELECT s.id,s.email,'agent'::text AS source,s.up
   FROM app_agent_sessions s WHERE ${accountFilter("s.email")} AND s.updated_at >= $1::timestamptz AND s.updated_at < $2::timestamptz AND ($6::text='' OR $6='agent')
   UNION ALL SELECT s.id,s.email,'genchat',s.updated_at
   FROM app_genchat_sessions s WHERE ${accountFilter("s.email")} AND s.updated_at >= $1::timestamptz AND s.updated_at < $2::timestamptz AND ($6::text='' OR $6='genchat')`;
-// Counts use small state-predicate indexes; no historical snapshot/paid-operation
-// JSON is fetched on the read path. See scripts/ops/admin-query-indexes.ts.
+// These predicates match the optional failed/review partial indexes. Without
+// those indexes (or when PG chooses another plan), state counts can detoast
+// candidate snapshots. No raw JSON is returned. See scripts/ops/admin-query-indexes.ts.
 const failedImage = `snapshot->>'status' IN ('error','failed')`;
 const reviewImage = `snapshot->>'status'='needs_attention' OR snapshot->>'stage' IN ('checking','reviewing') OR snapshot->>'error' LIKE '%核查%'`;
 const operationSummary = `SELECT count(*)::int AS tasks,
@@ -146,13 +148,22 @@ const operationSummary = `SELECT count(*)::int AS tasks,
 /** Narrow enterprise port: reuses operation SQL but does NOT widen the artworks-only scoped BI API. */
 export async function queryEnterpriseOperations(q:BiQuery,access:{client:PoolClient;allowedEmails:readonly string[]},exact?:{kind:'image-job'|'canvas-task'|'video-task';id:string}):Promise<BiResponse>{
   if(q.section!=='operations')throw new Error('Enterprise operation query required');
-  const source=`SELECT source_table,has_ledger_charge,id,email,kind,created_at,status,content,quoted_credits,billed_credits,reserved_credits,settled
-    FROM (${operationSource}) t WHERE email=ANY($5::text[]) AND (($6::text<>'' AND id=$6 AND source_table=$7) OR ($6='' AND created_at >= $1::timestamptz AND created_at < $2::timestamptz))
-      AND ($3::text='' OR email=$3) AND ($4::text='' OR status=$4)`;
+  // Keep the existing exact-record/date, raw-status and authorization semantics.
+  // Both count and page use these same keys on the caller's authorization snapshot.
+  // An exact ID bypasses the date window, never the source or allowed-email gate.
+  const keys = ([['app_image_jobs','j',imageOperationStatus],['app_canvas_image_tasks','c','c.status'],['app_video_tasks','v','v.status']] as const)
+    .map(([table,alias,status]) => `SELECT '${table}'::text AS source_table,${alias}.id,${alias}.email,${alias}.created_at
+      FROM ${table} ${alias} WHERE ${alias}.email=ANY($5::text[])
+        AND (($6::text<>'' AND ${alias}.id=$6 AND '${table}'=$7) OR ($6='' AND ${inRange(alias)}))
+        AND ($3::text='' OR ${alias}.email=$3) AND ($4::text='' OR ${status}=$4)`)
+    .join(' UNION ALL ');
   const tables={'image-job':'app_image_jobs','canvas-task':'app_canvas_image_tasks','video-task':'app_video_tasks'};
   const params=[q.start,q.end,q.email,q.status,access.allowedEmails,exact?.id??'',exact?tables[exact.kind]:''];
-  const total=Number((await access.client.query(`SELECT count(*)::int AS n FROM (${source}) s`,params)).rows[0].n);
-  const rows=(await access.client.query(`${source} ORDER BY created_at DESC,source_table,id LIMIT $8 OFFSET $9`,[...params,q.size,(q.page-1)*q.size])).rows;
+  const total=Number((await access.client.query(`SELECT count(*)::int AS n FROM (${keys}) s`,params)).rows[0].n);
+  const rows=(await access.client.query(`WITH selected AS MATERIALIZED (
+      SELECT * FROM (${keys}) k ORDER BY created_at DESC,source_table,id LIMIT $8 OFFSET $9)
+    SELECT source_table,has_ledger_charge,id,email,kind,created_at,status,content,quoted_credits,billed_credits,reserved_credits,settled
+    FROM (${operationPageSource}) t ORDER BY created_at DESC,source_table,id`,[...params,q.size,(q.page-1)*q.size])).rows;
   return {section:'operations',rows:normalize(rows),total,page:q.page,size:q.size,generatedAt:new Date().toISOString(),query:{from:q.from,to:q.to}};
 }
 function normalize(rows: Record<string, unknown>[]): BiRow[] {
@@ -265,7 +276,7 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
         ORDER BY a.created_at DESC,a.id DESC LIMIT $${filterBinds.length + 1} OFFSET $${filterBinds.length + 2})`;
       break;
     case "operations":
-      source = `SELECT t.* FROM (${operationSource}) t WHERE ${accountFilter("t.email")} AND ${inRange("t")} AND ($6::text='' OR t.status=$6 OR ($6='review' AND (t.status='needs_attention' OR t.stage='checking' OR t.stage='reviewing' OR t.error LIKE '%核查%')))`;
+      // Count/page are built from operationKeys below; never expand an unpaged source.
       break;
     case "models":
       source = `SELECT c.id,c.job_id,c.email,c.requested_quality,c.executed_quality,c.upstream,c.images,c.billed_credits,c.reason,c.created_at,c.billing_config_version,c.cost_currency,c.cost_amount_micros::text,c.cost_source,c.cost_actual,
