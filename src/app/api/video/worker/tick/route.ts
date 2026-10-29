@@ -3,17 +3,19 @@ import {scanApplicationWorkerOnce as scan} from "@/lib/worker/scan";
 
 import { imageWorkerAuthorized } from "@/lib/worker/authorization";
 import {applicationTasksRunHere} from "@/lib/application/task-execution";
-import { dbEnabled, getPool } from "@/platform/db/pool";
+import { dbEnabled, getWorkerTickPool } from "@/platform/db/pool";
 import { createWorkerTickReceiptStore, runReceiptedWorkerTick, tickIdentity, workerTickWebIdentity, WorkerTickReceiptError, type WorkerTickReceiptStore } from "@/lib/release-runtime/worker-tick-receipts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-let receiptStore: WorkerTickReceiptStore | undefined;
+let receiptStore: { pool: ReturnType<typeof getWorkerTickPool>; store: WorkerTickReceiptStore } | undefined;
 function store() {
   if (!dbEnabled) throw new WorkerTickReceiptError("DURABLE_TICK_RECEIPTS_REQUIRE_DATABASE",503);
-  return receiptStore ||= createWorkerTickReceiptStore(getPool());
+  const pool = getWorkerTickPool();
+  if (receiptStore?.pool !== pool) receiptStore = { pool, store: createWorkerTickReceiptStore(pool) };
+  return receiptStore.store;
 }
 const headers = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
 function failure(error: unknown) {
