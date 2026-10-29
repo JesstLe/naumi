@@ -37,6 +37,7 @@ const textFields = z.object({
 });
 const textNode = textFields.extend({ id, prompt: z.string().max(4000), projectKey: id, canvasX: coordinate, canvasY: coordinate,
   status: z.enum(["idle", "generating", "completed", "failed"]), createdAt: z.string().datetime(),
+  error: z.string().max(2000).optional(),
 });
 export const videoHistoryFields=videoNodeWriteSchema.omit({id:true,projectKey:true,expectedRevision:true,operationId:true,deleted:true});
 export const directorHistoryFields=directorNodeWriteSchema.omit({id:true,projectKey:true,expectedRevision:true,operationId:true,deleted:true});
@@ -182,12 +183,12 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
       }
       if (op.type === "text-restore") {
         const n = op.node;
-        const result = await client.query(`INSERT INTO app_canvas_text_nodes(id,email,project_key,title,prompt,content,status,canvas_x,canvas_y,canvas_width,canvas_height,created_at,source_ids,target_ids,product_ids)
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb,$15::jsonb)
+        const result = await client.query(`INSERT INTO app_canvas_text_nodes(id,email,project_key,title,prompt,content,status,canvas_x,canvas_y,canvas_width,canvas_height,created_at,source_ids,target_ids,product_ids,error_message)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb,$15::jsonb,$16)
           ON CONFLICT(id) DO UPDATE SET project_key=EXCLUDED.project_key,title=EXCLUDED.title,prompt=EXCLUDED.prompt,content=EXCLUDED.content,status=EXCLUDED.status,
           canvas_x=EXCLUDED.canvas_x,canvas_y=EXCLUDED.canvas_y,canvas_width=EXCLUDED.canvas_width,canvas_height=EXCLUDED.canvas_height,
-          source_ids=EXCLUDED.source_ids,target_ids=EXCLUDED.target_ids,product_ids=EXCLUDED.product_ids,updated_at=now()
-          WHERE app_canvas_text_nodes.email=EXCLUDED.email`, [n.id,email,n.projectKey,n.title,n.prompt,n.content,n.status,n.canvasX,n.canvasY,n.width,n.height,n.createdAt,JSON.stringify(n.sourceIds),JSON.stringify(n.targetIds),JSON.stringify(n.productIds)]);
+          source_ids=EXCLUDED.source_ids,target_ids=EXCLUDED.target_ids,product_ids=EXCLUDED.product_ids,error_message=EXCLUDED.error_message,updated_at=now()
+          WHERE app_canvas_text_nodes.email=EXCLUDED.email`, [n.id,email,n.projectKey,n.title,n.prompt,n.content,n.status,n.canvasX,n.canvasY,n.width,n.height,n.createdAt,JSON.stringify(n.sourceIds),JSON.stringify(n.targetIds),JSON.stringify(n.productIds),n.status==='failed'?n.error||'':'']);
         if (!result.rowCount) throw new Error("文字节点不存在或无权修改");
         continue;
       }

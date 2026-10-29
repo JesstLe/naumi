@@ -181,7 +181,9 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     if (scope.capabilities.vision) bundle.vision = bundle.text;
     else if (parsed.references || (Array.isArray(parsed.body.sourceIds) && parsed.body.sourceIds.length) || parsed.body.anchorId) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选功能模型不支持图片输入", 400);
   }
-  if (!bundle.vision && purpose.vision && (snapshot.config.bindings[purpose.vision] || purpose.primary === "vision" && feature && snapshot.config.business?.[feature])) bundle.vision = await executor.resolve({ ...(purpose.primary === "vision" ? { feature, requestedModelId: requestedTextModelId } : {}), binding: purpose.vision, snapshot, billing });
+  // A visible, explicitly selected OCR model does not require an additional
+  // legacy default binding. resolve still enforces vision capability/tool scope.
+  if (!bundle.vision && purpose.vision && (snapshot.config.bindings[purpose.vision] || purpose.primary === "vision" && (requestedTextModelId || featureDefaultModel(snapshot.config, feature, purpose.vision)))) bundle.vision = await executor.resolve({ ...(purpose.primary === "vision" ? { feature, requestedModelId: requestedTextModelId } : {}), binding: purpose.vision, snapshot, billing });
   if (purpose.primary === "vision" && !bundle.vision || purpose.primary === "text" && !bundle.text || purpose.primary === "video" && !bundle.video) throw new ModelConfigError("MODEL_UNAVAILABLE", "当前用途没有可用模型绑定，请联系管理员配置", 503);
   if (new URL(request.url).pathname === "/api/agent" && parsed.references > 0) {
     if (!bundle.vision) throw new ModelConfigError("MODEL_INCOMPATIBLE", "Agent 视觉用途尚未配置，请联系管理员", 400);
