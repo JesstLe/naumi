@@ -39,9 +39,11 @@ async function main(){
      if(queryMode==='hang-body'){res.writeHead(200);res.write('{"data":');}return;
     }
     if(queryMode==='poll-503'&&t.gets===1){res.statusCode=503;return res.end(JSON.stringify({error:{code:'unavailable'}}))}
+    if(queryMode==='poll-reset'&&t.gets===1)return req.socket.destroy();
+    if(queryMode==='poll-503-repeat'){res.statusCode=503;return res.end(JSON.stringify({error:{code:'unavailable'}}))}
     if(queryMode==='poll-400'){res.statusCode=400;return res.end(JSON.stringify({error:{code:'invalid_request'}}))}
-    const pending=['running','load'].includes(queryMode);
-    return res.end(JSON.stringify({data:{id,model:t.prompt==='model-differs'?'reported-model':t.model,status:t.prompt==='task-failed'?'failed':pending?'processing':'completed',cost:'0.01',result:{images:[{url:t.prompt==='partial'?[origin+'/media/ok',origin+'/media/bad']:[origin+'/media/ok']}]}}}));
+    const pending=['running','load','progress-load'].includes(queryMode);
+    return res.end(JSON.stringify({data:{id:queryMode==='mismatch'?'another_task':id,...(queryMode==='progress-load'?{progress:t.gets<3?0:1}:{}),model:t.prompt==='model-differs'?'reported-model':t.model,status:t.prompt==='task-failed'?'failed':pending?'processing':'completed',cost:'0.01',result:{images:[{url:t.prompt==='partial'?[origin+'/media/ok',origin+'/media/bad']:[origin+'/media/ok']}]}}}));
    }
    assert.equal(url.pathname,'/v1/images/generations');
    const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));const b=JSON.parse(Buffer.concat(chunks).toString());
@@ -166,6 +168,26 @@ async function main(){
   await check('abort_during_wait_no_extra_query_or_listener',async()=>{
    queryMode='running';abort=new AbortController();const old=c.setTimeout;c.setTimeout=(fn:()=>void,ms:number)=>{setTimeout(()=>abort?.abort(new Error('fixture-cancel')),1);return old(fn,ms)};
    try{await assert.rejects(()=>run(scope(),'abort-wait','synthetic',0,1,500),gateway.ImageOperationPending);assert.ok(seenSignal);assert.equal(getEventListeners(seenSignal!,'abort').length,0);assert.equal(tasks.get((await row('abort-wait')).task_id).gets,1)}finally{c.setTimeout=old}
+  });
+
+  await check('parent_progress_growth_resets_backoff_without_new_POST',async()=>{
+   queryMode='progress-load';virtual=true;now=0;waits.length=0;const before=posts.length;
+   await assert.rejects(()=>run(scope('gemini-3-pro-image-preview',15000),'parent-progress','synthetic',0,1,null),gateway.ImageOperationPending);
+   console.log('PARENT_PROGRESS waits='+JSON.stringify(waits));assert.ok(waits[2]<waits[1]);assert.equal(now,15000);assert.equal(posts.length,before+1);
+  });
+  await check('parent_repeated_503_stays_inside_original_budget_and_task',async()=>{
+   queryMode='poll-503-repeat';virtual=true;now=0;waits.length=0;const before=posts.length;
+   await assert.rejects(()=>run(scope('seedream-5-0-pro',6000),'parent-503','synthetic',0,1,null),gateway.ImageOperationPending);
+   const saved=await row('parent-503');assert.equal(now,6000);assert.ok(tasks.get(saved.task_id).gets>=2);assert.equal(posts.length,before+1);assert.equal(saved.amount_micros,null);assert.ok(saved.parameters.requestHash);
+  });
+  await check('parent_real_GET_socket_reset_retries_same_task_only',async()=>{
+   queryMode='poll-reset';const before=posts.length;
+   assert.equal((await run(scope(),'parent-reset')).status,200);const saved=await row('parent-reset');assert.equal(posts.length,before+1);assert.equal(tasks.get(saved.task_id).gets,2);
+  });
+  await check('parent_mismatched_receipt_never_authorizes_repost_or_retry',async()=>{
+   queryMode='mismatch';const before=posts.length;
+   await assert.rejects(()=>run(scope(),'parent-mismatch'),gateway.ImageOperationPending);let saved=await row('parent-mismatch');assert.equal(tasks.get(saved.task_id).gets,1);assert.ok(saved.parameters.requestHash);assert.equal(saved.parameters.acceptedOutputs,undefined);
+   await assert.rejects(()=>run(scope(),'parent-mismatch'),gateway.ImageOperationPending);saved=await row('parent-mismatch');assert.equal(posts.length,before+1);assert.equal(tasks.get(saved.task_id).gets,2);
   });
  }finally{await db.getPool().end();await f.cleanup()}
  const failed=reports.filter(r=>!r.pass).length,result={sourcePath,sourceSha256:createHash('sha256').update(source).digest('hex'),reports,failed,posts:posts.length,queries:gets.length,uploads,downloads,realSupplierCalls:0};

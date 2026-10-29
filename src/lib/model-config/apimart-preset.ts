@@ -163,7 +163,12 @@ export function apimartImagesFetch(scope: ModelExecutionScope, options: Validati
           await waitForPoll();continue;
         }
         const receipt=apimartTask(raw,taskId!);
-        const progress=typeof raw.data?.progress==="number"&&Number.isFinite(raw.data.progress)?raw.data.progress:undefined;
+        // parseReceiptJson deliberately preserves numeric lexemes as strings
+        // for money. Interpret only this scheduling hint, not accounting data.
+        const rawProgress=raw.data?.progress;
+        const progressNumber=typeof rawProgress==="number"?rawProgress:
+          typeof rawProgress==="string"&&rawProgress.trim()!==""?Number(rawProgress):NaN;
+        const progress=Number.isFinite(progressNumber)&&progressNumber>=0?progressNumber:undefined;
         if(receipt.state!==lastState||progress!==undefined&&(lastProgress===undefined||progress>lastProgress))unchangedPolls=0;
         lastState=receipt.state;if(progress!==undefined)lastProgress=progress;
         if(receipt.amountMicros==null&&receipt.usage&&procurement?.basis==="tokens") {
