@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { competitorActor, competitorError, normalizeUpload, analyzeCompetitor, WorkspaceError } from "@/lib/competitor-server";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit-http";
 import { requestedTextModel } from "@/lib/text-models";
 import { withBiRequest } from "@/lib/bi/model-observer";
 
@@ -11,7 +11,9 @@ export const maxDuration = 120;
 async function handlePost(request: Request) {
   try {
     const email = await competitorActor(request);
-    if (!rateLimit(`replicate-analyze:${email}`, 30, 600_000)) throw new WorkspaceError("分析过于频繁，请稍后重试", 429);
+    const rateLimitResult = await checkRateLimit(`replicate-analyze:${email}`, 30, 600_000);
+    if (rateLimitResult instanceof Response) return rateLimitResult;
+    if (!rateLimitResult) throw new WorkspaceError("分析过于频繁，请稍后重试", 429);
     const form = await request.formData().catch(() => null);
     const file = form?.get("ref");
     if (!(file instanceof File)) throw new WorkspaceError("请上传一张爆款参考图");

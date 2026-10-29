@@ -9,7 +9,7 @@ import { getTitleSystem } from "@/lib/prompt-config";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { dbEnabled, addArtworks } from "@/lib/db";
 import { storageEnabled, uploadImage } from "@/lib/storage";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit-http";
 import { clientIp } from "@/lib/ip";
 import { safeError } from "@/lib/api-error";
 import { requestedTextModel } from "@/lib/text-models";
@@ -32,7 +32,9 @@ async function handleObservedPost(req: Request) {
     email = tokenEmail;
   }
   const ip = clientIp(req) || "0.0.0.0";
-  if (!rateLimit(`title:${ip}`, 40, 10 * 60 * 1000)) {
+  const rateLimitResult = await checkRateLimit(`title:${ip}`, 40, 10 * 60 * 1000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) {
     return NextResponse.json({ error: "操作过于频繁,请稍后再试" }, { status: 429 });
   }
 
