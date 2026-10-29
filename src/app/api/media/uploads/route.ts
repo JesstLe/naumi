@@ -7,7 +7,8 @@ import {ensureMediaSchema,getMediaAsset} from '@/lib/media-assets';
 import {getPool,addArtworks,listArtworksByIds,setArtworkPosition} from '@/lib/db';
 import {privateMedia,storageDriver,remoteMediaAccess,presignStoredObject,readManagedObject,uploadImage} from '@/lib/storage';
 import {adaptiveCanvasImageSize} from '@/lib/mock-data';
-import {ORIGINAL_IMAGE_MAX_BYTES} from '@/lib/image-upload-policy';
+import {ORIGINAL_IMAGE_MAX_BYTES,ORIGINAL_IMAGE_MAX_PIXELS} from '@/lib/image-upload-policy';
+import {validateUploadImageDecode} from '@/lib/upload-image-validation';
 import {browserPreviewsFromForm,saveCanvasOriginal,type BrowserPreviews} from '@/lib/canvas-original-upload';
 import {readImagegenBody} from '@/lib/imagegen/body';
 
@@ -53,12 +54,12 @@ export async function POST(request:Request) {
   if(!asset){
     const data=await readManagedObject(`/media/${row.staging_key}`,ORIGINAL_IMAGE_MAX_BYTES);
     if(data.size!==row.bytes)return NextResponse.json({error:'实际文件大小与申请不一致'},{status:422,headers});
-    const actual=await sharp(data.bytes,{limitInputPixels:64_000_000,failOn:'error'}).metadata();
+    const actual=await sharp(data.bytes,{limitInputPixels:ORIGINAL_IMAGE_MAX_PIXELS,failOn:'error'}).metadata();
     const mime=({png:'image/png',jpeg:'image/jpeg',webp:'image/webp',gif:'image/gif',avif:'image/avif',heif:'image/avif'} as Record<string,string>)[actual.format||''];
     if(mime!==row.content_type || !actual.width || !actual.height) return NextResponse.json({error:'实际图片格式无效'},{status:422,headers});
     if(!previews){
      if(data.bytes.length>12*1024*1024)return NextResponse.json({error:'大图请通过画布上传，浏览器会自动准备预览'},{status:422,headers});
-     await sharp(data.bytes,{limitInputPixels:64_000_000,failOn:'error'}).raw().toBuffer();
+     await validateUploadImageDecode(data.bytes);
     }
     key=`canvas-uploads/${row.id}-${createHash('sha256').update(data.bytes).digest('hex').slice(0,24)}.${actual.format}`;
     if(previews)await saveCanvasOriginal(data.bytes,key,email,previews);else await uploadImage(data.bytes,mime,key,undefined,email);
