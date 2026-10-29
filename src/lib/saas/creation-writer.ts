@@ -167,7 +167,10 @@ export async function recordAgentToolEvidence(id:string|undefined,email:string,e
 }
 export async function withCreationOperation<T>(kind:string,sourceId:string,email:string,payload:unknown,run:()=>Promise<T>,outputs:(result:T)=>{artworkIds?:string[];text?:string} = ()=>({})) {
  const scope=currentCreationContext();if(!scope||!dbEnabled)return run();
- const id=await startCreation(kind,sourceId,email,payload);
+ // The existing claim owns concurrent acceptance of one source identity. Each
+ // caller still runs the domain's original receipt-aware operation; a unique
+ // creation-record race must not reject an otherwise idempotent import.
+ const {id}=await claimCreation(kind,sourceId,email,payload);
  return withFrozenCreation({...scope,creationId:id||scope.creationId},async()=>{
   try{const result=await run();await finishCreation(id||undefined,email,'succeeded',outputs(result));return result;}
   catch(error){await finishCreation(id||undefined,email,'needs_review',{summary:'执行未完成，请按原业务来源核查，不自动重放'});throw error;}

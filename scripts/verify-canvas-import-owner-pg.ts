@@ -35,6 +35,7 @@ async function main(){
     eq((await post({...template,src:{...template.src,title:"changed"}})).status,baseline?200:409);
     if(!baseline){
       const concurrent={...template,operationId:randomUUID()};const replies=await Promise.all(Array.from({length:5},()=>post(concurrent)));
+      if(replies.some(r=>r.status!==200))console.error("IMPORT_CONCURRENT_REPLIES="+JSON.stringify(replies));
       eq(replies.map(r=>r.status),[200,200,200,200,200]);eq(new Set(replies.map(r=>r.body.id)).size,1);
       eq((await f.sql.query("SELECT count(*)::int AS n FROM app_canvas_node_copies WHERE email=$1 AND operation_id=$2",[email,concurrent.operationId])).rows[0].n,1);
       await f.sql.query("UPDATE app_artworks SET title='edited',canvas_x=999 WHERE email=$1 AND id=$2",[email,a.body.id]);

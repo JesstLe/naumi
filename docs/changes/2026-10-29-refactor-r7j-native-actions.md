@@ -42,3 +42,11 @@ R7H/R7I/R7J 达到三模块同步点；从 d274d588 普通 merge origin/main，�
 本次类型检查首次除已知 R7J generic 类型外，还暴露自动合并遗漏 featureDefaultModel import，已经补回 policy owner。第一次 local-history 新夹具漏 process.env，只补夹具环境。上述失败原日志保留，不改写为成功。
 
 截至本记录：工作中间矩阵 native12、history67、nodeops19、text任务/图片导入、secondary50 已通过；text failure 真实PG10项通过；TypeScript exit0。最终同SHA矩阵、控件、完整产物与副本回滚见 VERIFICATION.txt，未运行项不提前填 PASS。该 merge 为 incoming main 到独立重构分支，不是重构合回 main；47 HOLD 不变。
+
+### 集中PG暴露的同operation并发受理
+
+固定85278f07的35项受影响矩阵在22PASS后发现import-owner-pg：五个相同 operation 并发HTTP响应为200/503/503/503/503。原始日志和新增逐响应诊断保留。实际调用链为withCreationOperation先startCreation，创建记录在导入owner的回执锁之前发生，竞争唯一source identity；不是模板重复插入或导入owner丢回执。
+
+仅将withCreationOperation的受理入口由startCreation换为既有claimCreation。复用现有creation-accept identity锁、同事务scope核对和原creation记录，随后仍执行原领域receipt-aware操作；不另加表、任务、用户确认或任意重放。修正后真实原HTTP/PG63项全部通过（包括五并发同ID、owner/scope负例、导入故障回滚、准备不持事务及bulk61/100/200）；该结果不是生产验收。
+
+另一次浏览器启动在创建page之前因系统页面文件不足退出，保留失败证据，未将其当产品逻辑缺陷；重启后同SHA恢复运行，已通过此前浏览器入口。最终固定版本统一重验，不把不同SHA和恢复记录混合为一个全绿报告。
