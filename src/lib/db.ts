@@ -7,10 +7,12 @@ import {ensureCreationSchema} from '@/lib/saas/creation-schema';
 import type {ProductReceipt} from "@/lib/payments";
 import {signupGrantTx,administrativeGrantInput} from "@/lib/billing/entitlements";
 import {withBillingTransaction} from "@/lib/billing/service";
+import {debitTx} from "@/lib/billing/repository";
 import {reserveTaskBillingTx,settleTaskBillingTx,videoRequestFingerprint,canvasRequestFingerprint} from "@/lib/billing/task-operation";
 import {BillingError} from "@/lib/billing/types";
 import "server-only";
-import { Pool, type PoolClient } from "pg";
+import type { PoolClient } from "pg";
+import { getPool } from "@/lib/db/connection";
 import { excludeImportedHistory, isImportedHistory } from "./staging-history";
 import { applyBillingSchema,markBillingSchemaReady } from "@/lib/billing/schema";
 import {withSchemaInitialization} from "./schema-initialization";
@@ -34,31 +36,10 @@ import { RETIRED_BUSINESS_PROJECTS, isRetiredBusinessProject } from "./retired-b
 
 export const dbEnabled = (process.env.DATABASE_URL ?? "").trim().length > 0;
 
-let pool: Pool | null = null;
 let schemaReady: Promise<void> | null = null;
 
 // Shared transactional infrastructure for durable generation jobs.
 export { getPool, ensureSchema, deductPrincipalFIFO, refreshBalance, creditMeteringEnabled, expireDueBatches };
-
-function getPool(): Pool {
-  if (!pool) {
-    const connectionString = process.env.DATABASE_URL;
-    const cs = connectionString || "";
-    // 本地 / Docker 内网 / 显式 sslmode=disable → 不启用 SSL:自建或 compose 自带的
-    // Postgres 默认不支持 SSL(host 常见为 db / localhost / 127.* / 私有网段 / 容器名)。
-    // 只有远程托管库(如 Supabase 公网域名)才保留 SSL。
-    const noSsl =
-      /sslmode=disable/.test(cs) ||
-      /@(localhost|127\.0\.0\.1|db|postgres|nv-postgres|host\.docker\.internal)[:/]/.test(cs) ||
-      /@(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(cs);
-    pool = new Pool({
-      connectionString,
-      ssl: noSsl ? false : { rejectUnauthorized: false },
-      max: 5,
-    });
-  }
-  return pool;
-}
 
 async function ensureSchema(): Promise<void> {
   if(process.env.FLEET_PORTAL_ONLY==='1'||process.env.NAUMI_AUTH_LOGIN_ONLY==='1'){
@@ -235,6 +216,7 @@ async function ensureSchema(): Promise<void> {
         ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS source_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
         ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS target_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
         ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS product_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
+        ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS error_message text NOT NULL DEFAULT '';
         ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS canvas_width double precision NOT NULL DEFAULT 300;
         ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS canvas_height double precision NOT NULL DEFAULT 176;
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'user';
@@ -720,25 +702,15 @@ async function deductPrincipalFIFO(
   // batch. Mixing the legacy FIFO path with user-first settlement otherwise
   // forms a user/batch lock cycle under concurrent completion.
   await client.query("SELECT email FROM app_users WHERE email=$1 FOR UPDATE",[email]);
-  const { rows } = await client.query(
-    `SELECT id, remaining FROM app_credit_batches
-      WHERE email = $1 AND expires_at > now() AND remaining > 0
-      ORDER BY expires_at ASC, created_at ASC
-      FOR UPDATE`,
-    [email]
-  );
-  let need = n;
-  for (const b of rows as { id: string; remaining: number }[]) {
-    if (need <= 0) break;
-    const take = Math.min(b.remaining, need);
-    await client.query(
-      `UPDATE app_credit_batches SET remaining = remaining - $2 WHERE id = $1`,
-      [b.id, take]
-    );
-    need -= take;
+  try {
+    await debitTx(client, email, n, "expires-first");
+  } catch (error) {
+    // Preserve the legacy public error while sharing the transactional debit.
+    if (error instanceof BillingError && error.code === "INSUFFICIENT_CREDITS")
+      throw new BillingError("INSUFFICIENT_CREDITS","可用积分不足或已到期",402);
+    throw error;
   }
-  if(need>0)throw new BillingError("INSUFFICIENT_CREDITS","可用积分不足或已到期",402);
-  return n - need;
+  return n;
 }
 
 /** 新建积分批次(充值/赠送/迁移/后台)+ 写 +流水 + 同步余额。 */
@@ -2397,6 +2369,7 @@ export type CanvasTextNodeRecord = {
   prompt: string;
   content: string;
   status: "idle" | "generating" | "completed" | "failed";
+  error?: string;
   canvasX: number;
   canvasY: number;
   width: number;
@@ -2416,6 +2389,7 @@ function mapCanvasTextNode(row: Record<string, unknown>): CanvasTextNodeRecord {
     title: String(row.title || "文字生成"),
     prompt: String(row.prompt || ""),
     content: String(row.content || ""),
+    error: String(row.error_message || ""),
     status:
       status === "idle" || status === "generating" || status === "failed"
         ? status
@@ -2437,7 +2411,7 @@ export async function listCanvasTextNodes(
 ): Promise<CanvasTextNodeRecord[]> {
   await ensureSchema();
   const { rows } = await getPool().query(
-    `SELECT id, project_key, title, prompt, content, status, canvas_x, canvas_y,
+    `SELECT id, project_key, title, prompt, content, status, error_message, canvas_x, canvas_y,
             canvas_width, canvas_height,
             created_at, updated_at, source_ids, target_ids, product_ids
        FROM app_canvas_text_nodes
@@ -2459,14 +2433,15 @@ export async function upsertCanvasTextNode(
     : "completed";
   const { rows } = await getPool().query(
     `INSERT INTO app_canvas_text_nodes
-       (id, email, project_key, title, prompt, content, status, canvas_x, canvas_y, canvas_width, canvas_height, created_at, updated_at, source_ids, target_ids, product_ids)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE($12::timestamptz, now()),now(),$13::jsonb,$14::jsonb,$15::jsonb)
+       (id, email, project_key, title, prompt, content, status, canvas_x, canvas_y, canvas_width, canvas_height, created_at, updated_at, source_ids, target_ids, product_ids, error_message)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE($12::timestamptz, now()),now(),$13::jsonb,$14::jsonb,$15::jsonb,$16)
      ON CONFLICT (id) DO UPDATE SET
        project_key = EXCLUDED.project_key,
        title = EXCLUDED.title,
        prompt = EXCLUDED.prompt,
        content = EXCLUDED.content,
        status = EXCLUDED.status,
+       error_message = EXCLUDED.error_message,
        canvas_x = EXCLUDED.canvas_x,
        canvas_y = EXCLUDED.canvas_y,
        canvas_width = EXCLUDED.canvas_width,
@@ -2476,7 +2451,7 @@ export async function upsertCanvasTextNode(
        product_ids = EXCLUDED.product_ids,
        updated_at = now()
      WHERE app_canvas_text_nodes.email = EXCLUDED.email
-     RETURNING id, project_key, title, prompt, content, status, canvas_x, canvas_y,
+     RETURNING id, project_key, title, prompt, content, status, error_message, canvas_x, canvas_y,
                canvas_width, canvas_height,
                created_at, updated_at, source_ids, target_ids, product_ids`,
     [
@@ -2495,6 +2470,7 @@ export async function upsertCanvasTextNode(
       JSON.stringify(node.sourceIds ?? []),
       JSON.stringify(node.targetIds ?? []),
       JSON.stringify(node.productIds ?? []),
+      status === "failed" ? String(node.error || "").slice(0, 2000) : "",
     ]
   );
   if (!rows[0]) throw new Error("文字节点不存在或无权修改");
@@ -5166,6 +5142,7 @@ export async function claimVideoTaskPoll(
             last_polled_at = now(),
             updated_at = now()
       WHERE email = $1 AND id = $2 AND status IN ('queued','processing')
+        AND (next_poll_at IS NULL OR next_poll_at <= now())
         AND (poll_lock_until IS NULL OR poll_lock_until < now())`,
     [email.toLowerCase(), id, Math.max(15, Math.trunc(leaseSeconds))]
   );
@@ -5593,7 +5570,10 @@ export async function scheduleVideoTaskRetry(
   await ensureSchema();
   const { rows } = await getPool().query<{ poll_attempts: number }>(
     `UPDATE app_video_tasks
-        SET next_poll_at = now() + ($3 || ' seconds')::interval,
+        SET next_poll_at = CASE
+              WHEN cancellation_requested_at > last_polled_at THEN now()
+              ELSE now() + ($3 || ' seconds')::interval
+            END,
             poll_attempts = CASE
               WHEN $6 AND result_observed_at IS NULL THEN 1
               WHEN $7 THEN 1

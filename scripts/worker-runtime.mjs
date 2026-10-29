@@ -1,6 +1,6 @@
 // Server-only worker lifecycle. A drained tick loop is NOT proof that App jobs,
 // supplier operations, Agent sessions or database leases have drained.
-import {createHash, randomUUID, timingSafeEqual} from 'node:crypto';
+import {createHash, createHmac, randomUUID, timingSafeEqual} from 'node:crypto';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs/promises';
@@ -62,9 +62,11 @@ export function fileStateStore(filename) {
 
 export class WorkerRuntime {
   constructor({origin,secret,instanceId,commit,store=null,startPaused=false,fetchImpl=fetch,
-    targetInstanceId=process.env.NAUMI_WORKER_TARGET_INSTANCE_ID,timeoutMs=300000,stopOnUncertain=true,clock=()=>new Date().toISOString(),log=()=>{}}) {
+    targetInstanceId=process.env.NAUMI_WORKER_TARGET_INSTANCE_ID,tickProtocol=Number(process.env.NAUMI_WORKER_TICK_PROTOCOL||1),timeoutMs=300000,stopOnUncertain=true,clock=()=>new Date().toISOString(),log=()=>{}}) {
     assert(typeof secret==='string'&&secret.trim().length>=32,'WORKER_SECRET_REQUIRED',400);
     assert(Number.isInteger(timeoutMs)&&timeoutMs>0,'INVALID_TICK_TIMEOUT',400);
+    assert([1,2].includes(tickProtocol)&&!(tickProtocol===2&&!store),'INVALID_TICK_PROTOCOL',400);
+    this.tickProtocol=tickProtocol;this.proofInFlight=false;
     this.origin=workerOrigin(origin);this.secret=secret;this.instanceId=instanceId;this.commit=commit;this.targetInstanceId=targetInstanceId;
     this.store=store;this.fetch=fetchImpl;this.timeoutMs=timeoutMs;this.stopOnUncertain=!!store||stopOnUncertain;
     this.clock=clock;this.log=log;this.bootId=randomUUID();this.activePromise=null;this.timer=null;
@@ -84,8 +86,9 @@ export class WorkerRuntime {
           typeof saved.uncertain==='boolean'&&saved.operations&&typeof saved.operations==='object'&&
           !Array.isArray(saved.operations),'CORRUPT_WORKER_STATE');
         assert(saved.lastTick===null||saved.lastTick&&uuid(saved.lastTick.id)&&
-          ['dispatched','complete','rejected','unknown'].includes(saved.lastTick.phase),'CORRUPT_WORKER_TICK');
+          ['preparing','dispatched','complete','rejected','unknown','not_accepted'].includes(saved.lastTick.phase),'CORRUPT_WORKER_TICK');
         this.state=saved;
+        if(saved.lastTick?.phase==='preparing'){saved.lastTick.phase='unknown';saved.lastTick.reason='CAPABILITY_DISCOVERY_INTERRUPTED';saved.paused=true;saved.uncertain=true;}
         if(saved.lastTick?.phase==='dispatched'&&!saved.paused&&saved.lastTick.controlRevision===saved.revision)
           saved.lastTick.autoRecoveryRevision=saved.revision;
         if(['dispatched','unknown'].includes(saved.lastTick?.phase)) {this.state.paused=true;this.state.uncertain=true;this.state.lastTick.phase='unknown';}
@@ -108,33 +111,46 @@ export class WorkerRuntime {
       targetInstanceId:this.targetInstanceId,
       phase:this.fault||this.state.uncertain?'UNKNOWN':this.state.paused?(this.activePromise?'DRAINING':'QUIESCENT'):(this.activePromise?'RUNNING':'IDLE'),
       activeTicks:this.activePromise?1:0,unresolvedTicks:this.state.uncertain?1:0,
-      automaticRecoveryEligible:this.state.paused&&this.state.uncertain&&this.state.lastTick?.autoRecoveryRevision===this.state.revision,
+      automaticRecoveryEligible:this.state.lastTick?.protocolVersion!==2&&this.state.paused&&this.state.uncertain&&this.state.lastTick?.autoRecoveryRevision===this.state.revision,
       tickDrainComplete:this.initialized&&!!this.store&&this.state.paused&&!this.activePromise&&
         !['dispatched','unknown'].includes(this.state.lastTick?.phase)&&!this.state.uncertain&&!this.fault,
-      durableControl:!!this.store,durableTickReceipts:!!this.store,receiptProtocol:this.store?1:null,lastTick:this.state.lastTick?{...this.state.lastTick}:null,
+      durableControl:!!this.store,durableTickReceipts:!!this.store,receiptProtocol:this.store?this.tickProtocol:null,lastTick:this.state.lastTick?{...this.state.lastTick}:null,
       activeTickAgeMs:this.activePromise&&this.state.lastTick?Math.max(0,Date.parse(this.clock())-Date.parse(this.state.lastTick.startedAt)):0,
       // Intentionally unknown: no unsafe translation of HTTP tick counts into jobs.
       workerLeases:null,acceptedTasks:null,agentSessions:null,controlFault:this.fault};
   }
   control(input) {
-    const result=this.controlQueue.then(()=>this.applyControl(input));
+    if(['prove-nonacceptance','reconcile-nonacceptance'].includes(input?.action))return this.proveNonacceptance(input);
+    return this.enqueueControl(()=>this.applyControl(input));
+  }
+  /** @template T @param {() => T | Promise<T>} action @returns {Promise<T>} */
+  enqueueControl(action) {
+    const result=this.controlQueue.then(action);
     this.controlQueue=result.catch(()=>{});return result;
   }
-  async applyControl(input) {
+  validateControl(input) {
     assert(this.initialized,'WORKER_NOT_INITIALIZED');
     assert(this.store,'DURABLE_CONTROL_NOT_ENABLED',503);
-    assert(input&&['drain','resume','reconcile'].includes(input.action)&&uuid(input.operationId)&&uuid(input.bootId)&&
+    assert(input&&['drain','resume','reconcile','prove-nonacceptance','reconcile-nonacceptance'].includes(input.action)&&uuid(input.operationId)&&uuid(input.bootId)&&
       Number.isSafeInteger(input.expectedRevision)&&input.expectedRevision>=0,'INVALID_WORKER_CONTROL',400);
-    assert(input.action!=='reconcile'||uuid(input.tickId),'INVALID_WORKER_RECONCILE',400);
-    const fingerprint=hash({action:input.action,bootId:input.bootId,expectedRevision:input.expectedRevision,...(input.action==='reconcile'?{tickId:input.tickId}:{})});
+    assert(!['reconcile','prove-nonacceptance','reconcile-nonacceptance'].includes(input.action)||uuid(input.tickId),'INVALID_WORKER_RECONCILE',400);
+    const fingerprint=hash({action:input.action,bootId:input.bootId,expectedRevision:input.expectedRevision,...(['reconcile','prove-nonacceptance','reconcile-nonacceptance'].includes(input.action)?{tickId:input.tickId}:{})});
     assert(!this.fault,'WORKER_CONTROL_FAULT',503);
     const prior=this.state.operations[input.operationId];
-    if(prior) {assert(prior.fingerprint===fingerprint,'WORKER_OPERATION_CONFLICT');return {duplicate:true,receipt:prior,state:this.snapshot()};}
+    if(prior) {assert(prior.fingerprint===fingerprint,'WORKER_OPERATION_CONFLICT');return {prior,fingerprint};}
+    for(const attempt of [...(this.state.lastTick?.nonacceptanceAttempts||[]),...(this.state.lastTick?.nonacceptanceReadAttempts||[])])
+      if(attempt.operationId===input.operationId)assert(attempt.fingerprint===fingerprint,'WORKER_OPERATION_CONFLICT');
     assert(!this.stopping||input.action==='drain','WORKER_STOPPING');
     assert(input.bootId===this.bootId,'WORKER_BOOT_CHANGED');
     assert(input.expectedRevision===this.state.revision,'WORKER_REVISION_CONFLICT');
     assert(input.action!=='resume'||!this.state.uncertain&&!['dispatched','unknown'].includes(this.state.lastTick?.phase),'UNRESOLVED_TICK_BLOCKS_RESUME');
     assert(Object.keys(this.state.operations).length<4096,'WORKER_OPERATION_LOG_FULL');
+    return {prior:null,fingerprint};
+  }
+  async applyControl(input) {
+    assert(['drain','resume','reconcile'].includes(input?.action),'INVALID_WORKER_CONTROL',400);
+    const {prior,fingerprint}=this.validateControl(input);
+    if(prior)return {duplicate:true,receipt:prior,state:this.snapshot()};
     if(input.action==='reconcile')return this.reconcile(input,fingerprint);
     this.state.paused=input.action==='drain';this.state.revision++;
     const receipt={fingerprint,action:input.action,revision:this.state.revision,bootId:this.bootId,at:this.clock()};
@@ -142,11 +158,13 @@ export class WorkerRuntime {
     await this.persist();return {duplicate:false,receipt,state:this.snapshot()};
   }
   tickHeaders(tick) {
-    return {'x-video-worker-secret':this.secret,'x-naumi-worker-tick-id':tick.id,
+    return {...(tick.protocolVersion===2?{'x-naumi-worker-v2-auth':createHmac('sha256',this.secret).update('naumi-worker-tick-v2').digest('hex'),
+      'x-naumi-worker-tick-protocol':'2','x-naumi-worker-target-boot-id':tick.targetWebBootId,'x-naumi-worker-target-commit':tick.targetWebCommit}:{'x-video-worker-secret':this.secret}),
+      'x-naumi-worker-tick-id':tick.id,
       'x-naumi-worker-instance-id':tick.workerInstanceId,'x-naumi-worker-boot-id':tick.workerBootId,
       'x-naumi-worker-commit':tick.workerCommit,'x-naumi-worker-target-instance-id':tick.targetWebInstanceId};
   }
-  async receiptResponse(response,tick) {
+  async boundedResponse(response) {
     assert(response.ok,'TICK_RECEIPT_HTTP_ERROR');
     let data;
     if(response.body?.getReader) {
@@ -154,11 +172,20 @@ export class WorkerRuntime {
       try {for(;;){const part=await reader.read();if(part.done)break;length+=part.value.byteLength;assert(length<=16384,'TICK_RECEIPT_TOO_LARGE');chunks.push(part.value);}data=JSON.parse(Buffer.concat(chunks).toString('utf8'));}
       finally {await reader.cancel().catch(()=>{});}
     } else data=await response.json();
-    const r=data?.receipt,server=data?.server;
+    return data;
+  }
+  async receiptResponse(response,tick,{negative=false,readOnly=false}={}) {
+    const data=await this.boundedResponse(response),r=data?.receipt,server=data?.server;
     assert(server?.instanceId===tick.targetWebInstanceId&&server.commit===tick.workerCommit&&uuid(server.bootId),'TICK_SERVER_IDENTITY_MISMATCH');
-    assert(r?.schemaVersion===1&&r.tickId===tick.id&&r.worker?.instanceId===tick.workerInstanceId&&
+    assert(r?.schemaVersion===(tick.protocolVersion===2?2:1)&&r.tickId===tick.id&&r.worker?.instanceId===tick.workerInstanceId&&
       r.worker.bootId===tick.workerBootId&&r.worker.commit===tick.workerCommit&&r.web?.instanceId===tick.targetWebInstanceId&&
       r.web.commit===tick.workerCommit&&uuid(r.web.bootId),'TICK_RECEIPT_IDENTITY_MISMATCH');
+    if(tick.protocolVersion===2)assert((readOnly||server.bootId===tick.targetWebBootId)&&r.web.bootId===tick.targetWebBootId&&r.web.commit===tick.targetWebCommit,'TICK_PROTOCOL_BOOT_MISMATCH');
+    if(negative){
+      assert(tick.protocolVersion===2&&data.ok===true&&r.phase==='not_accepted'&&r.acceptedAt===null&&r.completedAt===null&&r.result===null&&
+        typeof r.nonacceptanceAt==='string'&&Number.isFinite(Date.parse(r.nonacceptanceAt)),'TICK_NONACCEPTANCE_UNVERIFIED');
+      return {receipt:r,server};
+    }
     assert(data.ok===true&&r.phase==='completed'&&r.result?.ok===true&&
       Number.isFinite(Date.parse(r.acceptedAt))&&Number.isFinite(Date.parse(r.completedAt))&&Date.parse(r.completedAt)>=Date.parse(r.acceptedAt),'TICK_NOT_DURABLY_COMPLETED');
     return {receipt:r,server,result:r.result};
@@ -170,7 +197,7 @@ export class WorkerRuntime {
     assert(uuid(tick.workerBootId)&&tick.workerInstanceId===this.instanceId&&tick.workerCommit===this.commit&&tick.targetWebInstanceId===this.targetInstanceId,'WORKER_TICK_ORIGINAL_IDENTITY_MISSING');
     // Never POST during reconciliation. Missing/running/unknown/unreachable/mismatched evidence leaves state unchanged.
     let verified;
-    try {verified=await this.receiptResponse(await this.fetch(`${this.origin}/api/video/worker/tick?tickId=${tick.id}`,{method:'GET',headers:this.tickHeaders(tick),signal:AbortSignal.timeout(Math.min(this.timeoutMs,10000))}),tick);}
+    try {verified=await this.receiptResponse(await this.fetch(`${this.origin}${this.tickPath(tick)}?tickId=${tick.id}`,{method:'GET',redirect:'error',headers:this.tickHeaders(tick),signal:AbortSignal.timeout(Math.min(this.timeoutMs,10000))}),tick,{readOnly:true});}
     catch {throw new WorkerControlError('WORKER_TICK_RECONCILE_UNVERIFIED');}
     assert(input.expectedRevision===this.state.revision,'WORKER_REVISION_CONFLICT');
     tick.phase='complete';tick.finishedAt=verified.receipt.completedAt;
@@ -182,6 +209,55 @@ export class WorkerRuntime {
     this.state.operations[input.operationId]=receipt;
     await this.persist();return {duplicate:false,receipt,state:this.snapshot()};
   }
+  tickPath(tick) { return tick.protocolVersion===2?'/api/video/worker/tick/v2':'/api/video/worker/tick'; }
+  async beginNonacceptance(input,fingerprint) {
+    assert(!this.activePromise,'WORKER_TICK_STILL_ACTIVE');
+    assert(!this.proofInFlight,'WORKER_PROOF_IN_FLIGHT');
+    const tick=this.state.lastTick;
+    assert(this.state.paused&&this.state.uncertain&&tick?.phase==='unknown'&&tick.id===input.tickId,'WORKER_TICK_NOT_UNRESOLVED');
+    assert(tick.protocolVersion===2&&uuid(tick.workerBootId)&&tick.workerInstanceId===this.instanceId&&tick.workerCommit===this.commit&&
+      tick.targetWebInstanceId===this.targetInstanceId&&uuid(tick.targetWebBootId)&&tick.targetWebCommit===this.commit,'WORKER_TICK_FENCE_NOT_SUPPORTED');
+    const attemptField=input.action==='prove-nonacceptance'?'nonacceptanceAttempts':'nonacceptanceReadAttempts';
+    const attempts=tick[attemptField]||[];
+    for(const prior of attempts)if(prior.operationId===input.operationId)assert(prior.fingerprint===fingerprint,'WORKER_OPERATION_CONFLICT');
+    assert(attempts.length<3,'WORKER_PROOF_BUDGET_EXHAUSTED');
+    // Count durable attempts BEFORE HTTP, including crashes and lost responses.
+    // Controls release their queue during HTTP: a concurrent manual drain wins CAS.
+    this.proofInFlight=true;
+    tick[attemptField]=[...attempts,{operationId:input.operationId,fingerprint,at:this.clock(),timeoutMs:4000}];
+    try{await this.persist();}catch(error){this.proofInFlight=false;throw error;}
+    return {proofTick:structuredClone(tick),fingerprint};
+  }
+  async proveNonacceptance(input) {
+    const intent=await this.enqueueControl(async()=>{
+      const {prior,fingerprint}=this.validateControl(input);
+      if(prior)return {duplicate:true,receipt:prior,state:this.snapshot()};
+      return this.beginNonacceptance(input,fingerprint);
+    });
+    if('duplicate' in intent)return intent; // durable duplicate operation, no HTTP
+    try {
+      let verified;
+      try {
+        const tick=intent.proofTick;
+        verified=await this.receiptResponse(await this.fetch(`${this.origin}${this.tickPath(tick)}${input.action==='prove-nonacceptance'?'?action=prove-not-accepted':'?tickId='+tick.id}`,
+          {method:input.action==='prove-nonacceptance'?'POST':'GET',headers:this.tickHeaders(tick),redirect:'error',signal:AbortSignal.timeout(Math.min(this.timeoutMs,4000))}),tick,{negative:true,readOnly:input.action==='reconcile-nonacceptance'});
+      }catch{throw new WorkerControlError('WORKER_TICK_NONACCEPTANCE_UNVERIFIED');}
+      return await this.enqueueControl(async()=>{
+        assert(!this.fault,'WORKER_CONTROL_FAULT',503);assert(!this.stopping,'WORKER_STOPPING');
+        assert(input.bootId===this.bootId,'WORKER_BOOT_CHANGED');
+        assert(input.expectedRevision===this.state.revision,'WORKER_REVISION_CONFLICT');
+        const tick=this.state.lastTick;
+        assert(tick?.id===input.tickId&&tick.phase==='unknown'&&this.state.paused&&this.state.uncertain,'WORKER_TICK_NOT_UNRESOLVED');
+        const originalUnknown=structuredClone(tick);
+        tick.phase='not_accepted';tick.nonacceptanceAt=verified.receipt.nonacceptanceAt;tick.serverReceiptSha256=hash(verified.receipt);
+        this.state.uncertain=false;this.state.paused=true;this.state.revision++;
+        const receipt={fingerprint:intent.fingerprint,action:input.action,tickId:tick.id,revision:this.state.revision,bootId:this.bootId,
+          originalUnknown,serverReceipt:verified.receipt,serverReceiptSha256:tick.serverReceiptSha256,at:this.clock()};
+        this.state.operations[input.operationId]=receipt;
+        await this.persist();return {duplicate:false,receipt,state:this.snapshot()};
+      });
+    }finally{this.proofInFlight=false;}
+  }
   tick() {
     assert(this.initialized,'WORKER_NOT_INITIALIZED');
     if(this.state.paused||this.fault||this.activePromise||this.state.uncertain)return Promise.resolve({skipped:true});
@@ -191,17 +267,25 @@ export class WorkerRuntime {
   }
   async dispatch() {
     if(this.state.paused||this.fault)return {skipped:true};
-    const tick={id:randomUUID(),phase:'dispatched',startedAt:this.clock(),controlRevision:this.state.revision,...(this.store?{
-      workerBootId:this.bootId,workerInstanceId:this.instanceId,workerCommit:this.commit,targetWebInstanceId:this.targetInstanceId}: {})};this.state.lastTick=tick;
+    const tick={id:randomUUID(),phase:this.tickProtocol===2?'preparing':'dispatched',startedAt:this.clock(),controlRevision:this.state.revision,...(this.store?{
+      ...(this.tickProtocol===2?{protocolVersion:2}:{}),workerBootId:this.bootId,workerInstanceId:this.instanceId,workerCommit:this.commit,targetWebInstanceId:this.targetInstanceId}: {})};this.state.lastTick=tick;
     // Persist intent before network dispatch: a crash cannot look like clean drain.
     try {await this.persist();}catch {return {error:'WORKER_STATE_WRITE_FAILED'};}
     let dispatched=false;
     try {
+      if(tick.protocolVersion===2) {
+        const capability=await this.boundedResponse(await this.fetch(`${this.origin}${this.tickPath(tick)}?action=capability`,
+          {method:'GET',headers:{'x-naumi-worker-v2-auth':createHmac('sha256',this.secret).update('naumi-worker-tick-v2').digest('hex')},redirect:'error',signal:AbortSignal.timeout(Math.min(this.timeoutMs,4000))}));
+        assert(capability?.ok===true&&capability.protocolVersion===2&&capability.endpoint===this.tickPath(tick)&&capability.fence==='receipt-primary-key-v2'&&
+          capability.server?.instanceId===this.targetInstanceId&&capability.server.commit===this.commit&&uuid(capability.server.bootId)&&capability.server.bootSource==='preload','TICK_CAPABILITY_UNVERIFIED');
+        tick.targetWebBootId=capability.server.bootId;tick.targetWebCommit=capability.server.commit;tick.phase='dispatched';
+        await this.persist();
+      }
       // A concurrent drain may have won while the intent was being persisted.
       if(this.state.paused) {tick.phase='rejected';tick.reason='PAUSED_BEFORE_DISPATCH';await this.persist();return {skipped:true};}
       dispatched=true;
-      const response=await this.fetch(`${this.origin}/api/video/worker/tick`,{
-        method:'POST',headers:this.store?this.tickHeaders(tick):{'x-video-worker-secret':this.secret},signal:AbortSignal.timeout(this.timeoutMs)});
+      const response=await this.fetch(`${this.origin}${this.tickPath(tick)}${tick.protocolVersion===2?'?action=accept':''}`,{
+        method:'POST',redirect:'error',headers:this.store?this.tickHeaders(tick):{'x-video-worker-secret':this.secret},signal:AbortSignal.timeout(this.timeoutMs)});
       tick.httpStatus=response.status;
       if(!this.store&&[401,403].includes(response.status)) {
         tick.phase='rejected';tick.httpStatus=response.status;await this.persist();return {rejected:true};
@@ -217,15 +301,17 @@ export class WorkerRuntime {
       if(data.processed)this.log(`[video-worker] processed=${data.processed} at=${data.at}`);
       return data;
     } catch (error) {
-      tick.phase=dispatched?'unknown':'rejected';tick.finishedAt=this.clock();
+      tick.phase=dispatched||tick.protocolVersion===2?'unknown':'rejected';tick.finishedAt=this.clock();
       tick.failure=tickFailure(error);tick.durationMs=Math.max(0,Date.parse(tick.finishedAt)-Date.parse(tick.startedAt));
+      if(!dispatched&&tick.protocolVersion===2){this.state.paused=true;this.state.uncertain=true;}
       if(dispatched&&this.stopOnUncertain) {
         // A manual drain during the HTTP call wins over automatic recovery.
         if(!this.state.paused&&tick.controlRevision===this.state.revision)tick.autoRecoveryRevision=this.state.revision;
         this.state.uncertain=true;this.state.paused=true;
       }
       try {await this.persist();}catch {/* snapshot retains the control fault */}
-      this.log('[video-worker] TICK_OUTCOME_UNKNOWN '+JSON.stringify({tickId:tick.id,httpStatus:tick.httpStatus,durationMs:tick.durationMs,...tick.failure}));return {error:'TICK_OUTCOME_UNKNOWN'};
+      const outcome=dispatched?'TICK_OUTCOME_UNKNOWN':'TICK_NOT_DISPATCHED';
+      this.log('[video-worker] '+outcome+' '+JSON.stringify({tickId:tick.id,httpStatus:tick.httpStatus,durationMs:tick.durationMs,...tick.failure}));return {error:outcome};
     }
   }
   start(intervalMs=15000) {

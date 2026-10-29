@@ -12,6 +12,10 @@ export function parseEnterpriseArtworks(params: URLSearchParams) {
   const format = z.enum(["json", "csv"]).parse(params.get("format") || "json");
   if (params.has("section") && params.get("section") !== "artworks") throw new Error("仅支持图片与操作内容");
   const query = parseBiQuery(new URLSearchParams({ ...Object.fromEntries(params), section: "artworks" }));
+  if(params.get('period')==='all'){
+    if(params.get('from')||params.get('to'))throw new Error('全部日期不能同时指定日期范围');
+    query.start='-infinity';query.end='infinity';query.from='';query.to='';
+  }
   if (!["", "all", "deleted"].includes(query.status)) throw new Error("记录筛选无效");
   return { enterpriseId, format, query };
 }

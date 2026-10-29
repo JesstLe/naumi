@@ -29,7 +29,7 @@ export function combinedWorkerPlan(env=process.env,{platform=process.platform,ui
   const scannerEnv={...common,HOME:'/home/nextjs',TMPDIR:'/tmp',NAUMI_WORKER_RELEASE_CONTROL:'1',NAUMI_WORKER_CONTROL_PORT:'3003',NAUMI_WORKER_PARENT_START:'1',
     NAUMI_WORKER_STATE_FILE:env.NAUMI_WORKER_STATE_FILE,NAUMI_WORKER_START_PAUSED:env.NAUMI_WORKER_START_PAUSED||'1',
     NAUMI_INSTANCE_ID:env.NAUMI_INSTANCE_ID||'',NAUMI_WORKER_TARGET_INSTANCE_ID:env.NAUMI_WORKER_TARGET_INSTANCE_ID||'',
-    NAUMI_APP_ORIGIN:env.NAUMI_APP_ORIGIN||'',VIDEO_WORKER_SECRET:env.VIDEO_WORKER_SECRET,
+    NAUMI_WORKER_TICK_PROTOCOL:env.NAUMI_WORKER_TICK_PROTOCOL||'1',NAUMI_APP_ORIGIN:env.NAUMI_APP_ORIGIN||'',VIDEO_WORKER_SECRET:env.VIDEO_WORKER_SECRET,
     ...(env.BUILD_VERSION?{BUILD_VERSION:env.BUILD_VERSION}:{}),...(env.VIDEO_WORKER_INTERVAL_MS?{VIDEO_WORKER_INTERVAL_MS:env.VIDEO_WORKER_INTERVAL_MS}:{})};
   const mediaEnv={...common,HOME:'/',TMPDIR:'/tmp',MEDIA_JOB_DIR:'/scratch',MEDIA_WORKER_SECRET:env.MEDIA_WORKER_SECRET,
     MEDIA_WORKER_HOST:'0.0.0.0',MEDIA_WORKER_PORT:'3002',MEDIA_WORKER_CONCURRENCY:'1',MEDIA_WORKER_START_PAUSED:env.MEDIA_WORKER_START_PAUSED==='0'?'0':'1'};
@@ -79,7 +79,7 @@ export function createCombinedWorkerControl({scannerRequest,mediaRequest,plan,sc
       const reply=await scannerRequest('POST','/control',body);
       if(reply.status!==200)return reply;
       const value=reply.data,state=verifiedScannerState(value?.state,plan),receipt=value?.receipt;
-      assert(['resume','drain','reconcile'].includes(input.action)&&receipt?.action===input.action&&integer(receipt.revision)&&receipt.revision===state.revision,'SCANNER_CONTROL_ACK_REQUIRED');
+      assert(['resume','drain','reconcile','prove-nonacceptance','reconcile-nonacceptance'].includes(input.action)&&receipt?.action===input.action&&integer(receipt.revision)&&receipt.revision===state.revision,'SCANNER_CONTROL_ACK_REQUIRED');
       const action=input.action==='resume'?'resume':'drain',draining=action==='drain';
       assert(state.paused===draining&&!(action==='resume'&&state.phase==='UNKNOWN'),'SCANNER_CONTROL_ADVANCED');
       assert(!isStopping(),'COMBINED_WORKER_STOPPING');

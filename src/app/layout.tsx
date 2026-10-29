@@ -1,3 +1,5 @@
+import { siteProfile } from '@/lib/site-control/store';
+import { SiteProfileProvider } from '@/lib/site-control/client';
 
 import { FeatureAccessProvider } from "@/lib/feature-access/client";
 import type { Metadata } from "next";
@@ -41,7 +43,7 @@ import { SiteVersion } from "@/components/site-version";
 // 主题防闪烁:绘制前读取 localStorage('theme') 给 <html> 加 .dark
 const THEME_INIT = `(function(){try{if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark');}catch(e){}})();`;
 
-export const metadata: Metadata = {
+const platformMetadata: Metadata = {
   title: `${BRAND}- AI创作平台`,
   description:
     `${BRAND} 是一款面向电商营销的 B2B 生产力工具，帮品牌与卖家高效产出电商主图、Banner、场景图与详情页视觉。`,
@@ -57,6 +59,11 @@ export const metadata: Metadata = {
   // 浏览器 tab 图标 — 走 BRAND_FAVICON (方形小图);未设则 fallback 到 BRAND_LOGO
   icons: { icon: BRAND_FAVICON, shortcut: BRAND_FAVICON, apple: BRAND_FAVICON },
 };
+
+export async function generateMetadata(): Promise<Metadata> {
+  const site = await siteProfile();
+  return site.mode === 'enterprise' ? { title: site.policy.brand, description: `${site.policy.brand}创作协作系统`, robots: { index: false, follow: false } } : platformMetadata;
+}
 
 export default async function RootLayout({
   children,
@@ -78,6 +85,7 @@ export default async function RootLayout({
     publicCommerceEnabled && (await getPaymentStatus()).enabled;
   // 运行时品牌(白标):DB site_name/brand_logo 覆盖 → env 默认兜底;DB 无覆盖时与现状一致。
   const brand = await getRuntimeBrand();
+  const site = await siteProfile();
   return (
     <html lang={locale === "en" ? "en" : "zh-CN"} className={GeistSans.variable}>
       <head>
@@ -92,11 +100,11 @@ export default async function RootLayout({
             official={officialSite}
           >
           <BrandProvider
-            name={brand.name}
+            name={site.mode === 'enterprise' ? site.policy.brand : brand.name}
             logo={brand.logo}
             logoHasText={brand.logoHasText}
           >
-          <AuthProvider>
+          <SiteProfileProvider value={site}><AuthProvider>
             <FeatureAccessProvider><BillingProvider><TextModelProvider><ImageQualityProvider>
             <AuthModalProvider>
               <RechargeModalProvider>
@@ -112,7 +120,7 @@ export default async function RootLayout({
               </RechargeModalProvider>
             </AuthModalProvider>
             </ImageQualityProvider></TextModelProvider></BillingProvider></FeatureAccessProvider>
-          </AuthProvider>
+          </AuthProvider></SiteProfileProvider>
           </BrandProvider>
           </PaymentProvider>
         </LocaleProvider>

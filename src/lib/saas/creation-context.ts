@@ -1,3 +1,4 @@
+import { enterpriseSiteIdentity } from '@/lib/site-control/identity';
 import 'server-only';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {randomUUID,createHmac,timingSafeEqual} from 'node:crypto';
@@ -69,7 +70,10 @@ export async function bindActualCreationProject(email:string,id:string,options:{
    if(context.tenantId){const policy=options.receipt?undefined:await userFeaturePolicy(email);await enterpriseCreationRead(email,context.tenantId,async(_tx,s)=>{if(!options.receipt)assertCreationFeature(s.entitlement.featurePolicy,context.sourcePath||'/api/video/generate','POST',undefined,policy);});}
   }
  }else if(!options.newRoot){
-  if(context.tenantId)throw new TeamError('现有项目归属未记录，请在企业空间新建项目',409);
+  if(context.tenantId){
+   if(enterpriseSiteIdentity()&&!context.workspaceExplicit&&!context.creationId){context.scopeKind='personal';context.tenantId=null;}
+   else throw new TeamError('现有项目归属未记录，请在企业空间新建项目',409);
+  }
   // Physical ownership was checked above. Uploaded-image, text and video
   // personal canvases all keep the same project before and after first output.
   // Receipt reads authorize that project without creating a binding row.
@@ -118,7 +122,10 @@ export async function withCreationRequest<T extends Response>(request:Request,em
  if(request.headers.get('content-type')?.includes('application/json'))body=await boundedSummary(request);
  const parent=request.headers.get('x-naumi-project-context')||body?.projectKey||body?.sessionId;
  const old=parent?(await getPool().query("SELECT scope_kind,tenant_id FROM app_creation_contexts WHERE actor_email=$1 AND context_kind='project' AND context_id=$2",[email.toLowerCase(),parent])).rows[0]:null;
- const selected=request.headers.get('x-naumi-workspace')||(old?.scope_kind==='tenant'?old.tenant_id:'personal');
+ const site = enterpriseSiteIdentity();
+ // Dedicated sites default new work to the bound company. Proven old scope wins,
+ // including old clients that still send a personal workspace header.
+ const selected=site ? (old ? old.scope_kind==='tenant'?old.tenant_id:'personal' : site.enterpriseId) : request.headers.get('x-naumi-workspace')||(old?.scope_kind==='tenant'?old.tenant_id:'personal');
  let tenantId:string|null=null;
  if(selected!=='personal'){
   const parsed=z.string().uuid().safeParse(selected);if(!parsed.success)throw new TeamError('工作空间参数无效',400);
@@ -130,10 +137,10 @@ export async function withCreationRequest<T extends Response>(request:Request,em
    return s.team.id;
   });
  }
- const context:CreationContext={actorEmail:email.toLowerCase(),scopeKind:tenantId?'tenant':'personal',tenantId,sourcePath:new URL(request.url).pathname,workspaceExplicit:request.headers.has('x-naumi-workspace')};
+ const context:CreationContext={actorEmail:email.toLowerCase(),scopeKind:tenantId?'tenant':'personal',tenantId,sourcePath:new URL(request.url).pathname,workspaceExplicit:!site&&request.headers.has('x-naumi-workspace')};
  if(parent){if(parent.length>240||!/^[a-zA-Z0-9_:.\-]+$/.test(parent))throw new TeamError('项目上下文无效',400);
   if(old&&(old.scope_kind!==context.scopeKind||old.tenant_id!==tenantId))throw new TeamError('当前项目的工作空间已固定，请新建项目',409);
-  if(!old&&!request.headers.has('x-naumi-project-context')&&!body?.projectKey){const existing=(await getPool().query(`SELECT 1 FROM app_agent_sessions WHERE id=$1 AND email=$2 UNION ALL SELECT 1 FROM app_project_names WHERE key=$1 AND email=$2 LIMIT 1`,[parent,context.actorEmail])).rows[0];if(existing&&tenantId)throw new TeamError('现有项目归属未记录，请在企业空间新建项目',409);}
+  if(!old&&!request.headers.has('x-naumi-project-context')&&!body?.projectKey){const existing=(await getPool().query(`SELECT 1 FROM app_agent_sessions WHERE id=$1 AND email=$2 UNION ALL SELECT 1 FROM app_project_names WHERE key=$1 AND email=$2 LIMIT 1`,[parent,context.actorEmail])).rows[0];if(existing&&tenantId){if(site){context.scopeKind='personal';context.tenantId=null;}else throw new TeamError('现有项目归属未记录，请在企业空间新建项目',409);}}
   context.parentContext=parent;
  }
  if(body){
@@ -164,7 +171,9 @@ export async function withCreationRoute(request:Request,run:()=>Promise<Response
 export const withCreationReceiptRoute=(request:Request,run:()=>Promise<Response>)=>withCreationRoute(request,run,{receipt:true});
 /** A receipt-aware entry must call this only when accepting genuinely new work. */
 export async function assertCurrentCreationFeature(path:string,method='POST'){
- const context=currentCreationContext();if(!dbEnabled||!context?.tenantId)return;
+ const context=currentCreationContext();if(!dbEnabled||!context)return;
  const accountPolicy=await userFeaturePolicy(context.actorEmail);
+ assertCreationFeature({},path,method,undefined,accountPolicy);
+ if(!context.tenantId)return;
  await enterpriseCreationRead(context.actorEmail,context.tenantId,async(_tx,s)=>assertCreationFeature(s.entitlement.featurePolicy,path,method,undefined,accountPolicy));
 }

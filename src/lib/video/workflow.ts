@@ -1,4 +1,5 @@
-import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
+import { bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
+import { withVideoCoordinationActivity } from "./coordination-activity";
 import "server-only";
 import {creationTransaction} from "../saas/creation-writer";
 import {assertWorkflowCreationScope,runWorkflowCreation,bindWorkflowCreationProject,validateWorkflowCreationInputs,acceptWorkflowCreationTx,updateWorkflowCreationTx} from "./workflow-creation";
@@ -201,7 +202,7 @@ export async function cancelVideoWorkflow(actor:string,runId:string){
 export {ensureWorkflowSchema as ensureVideoWorkflowSchema};
 
 export async function resumeVideoWorkflow(runId:string,actor?:string) {
-  return withBackgroundActivity("video-workflow", runId, "claim", () => resumeVideoWorkflowLocal(runId,actor), async () => {
+  return withVideoCoordinationActivity("video-workflow", runId, "claim", `video-workflow:${runId}`, () => resumeVideoWorkflowLocal(runId,actor), async () => {
     await ensureWorkflowSchema();
     const run=(await getPool().query("SELECT email FROM app_video_workflow_runs WHERE id=$1",[runId])).rows[0];
     if(!run||actor&&run.email!==actor)throw new ModelConfigError("WORKFLOW_UNAVAILABLE","工作流不存在",404);

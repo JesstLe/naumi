@@ -52,10 +52,24 @@ async function main() {
     await service.enqueueCommand('admin@central.test',instanceId,randomUUID(),{type:'users.ban',email:'owner@enterprise.test',banned:true,expectedBanned:false});assert.equal((await worker()).state,'failed');
     const featureId=randomUUID();await service.enqueueCommand('admin@central.test',instanceId,featureId,{type:'features.set',email:'staff@enterprise.test',mode:'custom',allowed:['canvas','works'],expectedVersion:0});assert.equal((await worker()).state,'succeeded');assert.deepEqual((await worker('inspect')).policy.allowed,['canvas','works']);
     await service.enqueueCommand('admin@central.test',instanceId,randomUUID(),{type:'features.set',email:'staff@enterprise.test',mode:'custom',allowed:[],expectedVersion:0});assert.equal((await worker()).state,'failed');
+    // Signed central publication -> separate enterprise DB -> persisted ACK.
+    // Lost acknowledgements must not increment the policy revision twice.
+    const enterpriseId=randomUUID(),dedicated={NAUMI_ENTERPRISE_DEPLOYMENT_MODE:'dedicated',NAUMI_ENTERPRISE_SOURCE_INSTANCE_ID:'fleet-site-fixture',NAUMI_ENTERPRISE_ALLOWED_IDS:enterpriseId};
+    const sitePolicy={enterpriseId,sourceInstanceId:dedicated.NAUMI_ENTERPRISE_SOURCE_INSTANCE_ID,brand:'Fixture Company',enabledFeatures:['team','canvas'],workspaceModules:['requirements','tasks']};
+    const siteId=randomUUID();await service.enqueueCommand('admin@central.test',instanceId,siteId,{type:'site.policy.set',policy:sitePolicy,expectedRevision:0});
+    dropAck=true;ackDropped=false;await worker('tick',dedicated,1);assert(ackDropped);
+    assert.equal((await worker('site',dedicated)).policy.revision,1);
+    await db.getPool().query("UPDATE app_fleet_commands SET leased_until=now()-interval '1 second' WHERE id=$1",[siteId]);dropAck=false;
+    assert.equal((await worker('tick',dedicated)).state,'succeeded');assert.equal((await worker('site',dedicated)).policy.revision,1);
+    const centralResult=(await service.fleetSnapshot()).commands.find(c=>c.id===siteId);assert.equal(centralResult.result.data.sitePolicy.revision,1);
+    await service.enqueueCommand('admin@central.test',instanceId,randomUUID(),{type:'site.policy.set',policy:sitePolicy,expectedRevision:0});assert.equal((await worker('tick',dedicated)).state,'failed');
+    await service.enqueueCommand('admin@central.test',instanceId,randomUUID(),{type:'site.policy.set',policy:{...sitePolicy,enterpriseId:randomUUID()},expectedRevision:1});assert.equal((await worker('tick',dedicated)).state,'failed');
+    await service.enqueueCommand('admin@central.test',instanceId,randomUUID(),{type:'site.policy.set',policy:{...sitePolicy,enabledFeatures:['team']},expectedRevision:1});assert.equal((await worker('tick',dedicated)).state,'succeeded');
+    assert.deepEqual((await worker('site',dedicated)).policy.enabledFeatures,['team']);
     await service.changeInstance('admin@central.test',instanceId,'revoke');assert.equal((await rawPoll({...pollBody,nonce:randomUUID()})).status,401);
     await service.changeInstance('admin@central.test',instanceId,'enable');const rotated=await service.changeInstance('admin@central.test',instanceId,'rotate');assert.equal((await rawPoll({...pollBody,nonce:randomUUID()})).status,401);assert.equal((await rawPoll({...pollBody,nonce:randomUUID()},rotated.token!)).status,200);
     snapshot=await service.fleetSnapshot();assert.ok(snapshot.audit.some(a=>a.action==='rotate'));assert.ok(snapshot.commands.some(c=>c.id===creditId&&c.state==='succeeded'));
-    console.log('FLEET_E2E=PASS TWO_DATABASES=1 REAL_HTTP=1 AUTH=1 CROSS_INSTANCE_DENIED=1 SIGNATURE=1 REPLAY_DENIED=1 CREDIT_RETRY_ONCE=1 BAN=1 FEATURES_CAS=1 ROTATION=1 AUDIT=1 MODEL_CALLS=0 PRODUCTION_WRITES=0');
+    console.log('FLEET_E2E=PASS TWO_DATABASES=1 REAL_HTTP=1 AUTH=1 CROSS_INSTANCE_DENIED=1 SIGNATURE=1 REPLAY_DENIED=1 CREDIT_RETRY_ONCE=1 BAN=1 FEATURES_CAS=1 SITE_POLICY_CAS=1 SITE_BINDING=1 SITE_LOST_ACK_ONCE=1 ROTATION=1 AUDIT=1 MODEL_CALLS=0 PRODUCTION_WRITES=0');
   } finally {await new Promise<void>(resolve=>server.close(()=>resolve()));await cluster.query('DROP DATABASE '+enterpriseName+' WITH (FORCE)');await cluster.end();await db.getPool().end();}
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

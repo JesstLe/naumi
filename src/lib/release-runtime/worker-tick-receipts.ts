@@ -8,11 +8,12 @@ export const TICK_HEADERS = {
   targetWebInstanceId: "x-naumi-worker-target-instance-id",
 } as const;
 export type TickIdentity = { tickId: string; workerInstanceId: string; workerBootId: string; workerCommit: string; targetWebInstanceId: string };
+export type FencedTickIdentity = TickIdentity & { protocolVersion: 2; targetWebBootId: string; targetWebCommit: string };
 export type TickWebIdentity = { instanceId: string; bootId: string; commit: string; bootSource?: "preload" | "process-fallback" };
 export type WorkerTickReceipt = {
-  schemaVersion: 1; tickId: string; worker: { instanceId: string; bootId: string; commit: string };
-  web: TickWebIdentity; phase: "running" | "completed" | "unknown";
-  acceptedAt: string; completedAt: string | null; result: Record<string, unknown> | null;
+  schemaVersion: 1 | 2; tickId: string; worker: { instanceId: string; bootId: string; commit: string };
+  web: TickWebIdentity; phase: "running" | "completed" | "unknown" | "not_accepted";
+  acceptedAt: string | null; nonacceptanceAt?: string; completedAt: string | null; result: Record<string, unknown> | null;
 };
 export class WorkerTickReceiptError extends Error {
   constructor(public code: string, public status = 409) { super(code); }
@@ -41,9 +42,10 @@ function checkTarget(input: TickIdentity, web: TickWebIdentity) {
   requireValue(web.instanceId === input.targetWebInstanceId && web.commit === input.workerCommit && uuid(web.bootId), "WORKER_TICK_WEB_IDENTITY_MISMATCH", 409);
 }
 function fromRow(row: any): WorkerTickReceipt {
-  return { schemaVersion: 1, tickId: row.tick_id, worker: { instanceId: row.worker_instance_id, bootId: row.worker_boot_id, commit: row.worker_commit },
-    web: { instanceId: row.web_instance_id, bootId: row.web_boot_id, commit: row.web_commit }, phase: row.phase,
-    acceptedAt: new Date(row.accepted_at).toISOString(), completedAt: row.completed_at ? new Date(row.completed_at).toISOString() : null, result: row.result };
+  return { schemaVersion: row.protocol_version === 2 ? 2 : 1, tickId: row.tick_id, worker: { instanceId: row.worker_instance_id, bootId: row.worker_boot_id, commit: row.worker_commit },
+    web: { instanceId: row.web_instance_id, bootId: row.web_boot_id, commit: row.web_commit }, phase: row.nonacceptance_at ? "not_accepted" : row.phase,
+    ...(row.nonacceptance_at ? {nonacceptanceAt:new Date(row.nonacceptance_at).toISOString()} : {}),
+    acceptedAt: row.nonacceptance_at ? null : new Date(row.accepted_at).toISOString(), completedAt: row.completed_at ? new Date(row.completed_at).toISOString() : null, result: row.result };
 }
 function checkOwner(row: any, input: TickIdentity) {
   requireValue(row.worker_instance_id === input.workerInstanceId && row.worker_boot_id === input.workerBootId && row.worker_commit === input.workerCommit && row.web_instance_id === input.targetWebInstanceId && row.web_commit === input.workerCommit, "WORKER_TICK_IDENTITY_CONFLICT", 409);
@@ -56,10 +58,25 @@ export function createWorkerTickReceiptStore(pool: Pool) {
     const pending=pool.connect();
     const client=await Promise.race([pending.then(client=>{if(expired){client.release();throw new WorkerTickReceiptError("WORKER_TICK_DATABASE_TIMEOUT",503);}return client;}),
       new Promise<never>((_,reject)=>{timer=setTimeout(()=>{expired=true;reject(new WorkerTickReceiptError("WORKER_TICK_DATABASE_TIMEOUT",503));},3000);})]).finally(()=>clearTimeout(timer));
+    let discard = false;
+    let connectionError: Error | undefined;
+    // Checked-out clients no longer have pg-pool's idle error listener. A socket
+    // failure between query callbacks must fail this operation, not the process.
+    const onError = (error: Error) => { connectionError = error; discard = true; };
+    client.on("error", onError);
     try {
-      await client.query("BEGIN"); await client.query("SET LOCAL lock_timeout='500ms'; SET LOCAL statement_timeout='3000ms'; SET LOCAL idle_in_transaction_session_timeout='5000ms'");
-      const result = await run(client); await client.query("COMMIT"); return result;
-    } catch (error) { await client.query("ROLLBACK").catch(() => undefined); throw error; } finally { client.release(); }
+      await client.query("BEGIN"); await client.query("SET LOCAL lock_timeout='500ms'; SET LOCAL statement_timeout='3000ms'; SET LOCAL idle_in_transaction_session_timeout='5000ms'; SET LOCAL synchronous_commit=on");
+      const result = await run(client);
+      if (connectionError) throw connectionError;
+      await client.query("COMMIT"); return result;
+    } catch (error) {
+      // A failed rollback does not prove the session is clean (e.g. wire timeout).
+      // Preserve the original failure and retire this connection rather than pool it.
+      if (!connectionError) await client.query("ROLLBACK").catch(() => { discard = true; });
+      throw error;
+    } finally {
+      try { client.release(discard); } finally { client.removeListener("error", onError); }
+    }
   }
   async function schema() {
     ready ||= bounded(async client => { await client.query(`CREATE TABLE IF NOT EXISTS app_worker_tick_receipts (
@@ -71,7 +88,58 @@ export function createWorkerTickReceiptStore(pool: Pool) {
     )`); }).catch(error => { ready = undefined; throw error; });
     await ready;
   }
+  let protocolReady: Promise<void> | undefined;
+  async function protocolSchema() {
+    await schema();
+    // Additive: the old CHECK stays intact. A negative receipt is an immutable
+    // legacy 'unknown' sentinel, so a delayed old accept sees a duplicate too.
+    protocolReady ||= bounded(async client => { await client.query(`ALTER TABLE app_worker_tick_receipts
+      ADD COLUMN IF NOT EXISTS protocol_version integer NOT NULL DEFAULT 1,
+      ADD COLUMN IF NOT EXISTS nonacceptance_at timestamptz`); }).catch(error => { protocolReady=undefined; throw error; });
+    await protocolReady;
+  }
+  function fencedTarget(input: FencedTickIdentity, web: TickWebIdentity) {
+    checkTarget(input,web);
+    requireValue(input.protocolVersion===2 && uuid(input.targetWebBootId) && input.targetWebBootId===web.bootId &&
+      input.targetWebCommit===web.commit && web.bootSource==="preload", "WORKER_TICK_PROTOCOL_TARGET_MISMATCH",409);
+  }
+  function fencedOwner(row: any, input: FencedTickIdentity) {
+    checkOwner(row,input);
+    requireValue(row.protocol_version===2 && row.web_boot_id===input.targetWebBootId && row.web_commit===input.targetWebCommit,
+      "WORKER_TICK_PROTOCOL_IDENTITY_CONFLICT",409);
+  }
+  async function decide(input: FencedTickIdentity, web: TickWebIdentity, negative: boolean) {
+    fencedTarget(input,web); await protocolSchema();
+    return bounded(async client => {
+      // This unique-index conflict is the fence, also shared by legacy INSERT.
+      // No read-absence claim and no UPDATE from accepted/unknown to negative.
+      // Both winners COMMIT in bounded() before callers may scan or reply.
+      const inserted=await client.query(`INSERT INTO app_worker_tick_receipts
+        (tick_id,worker_instance_id,worker_boot_id,worker_commit,web_instance_id,web_boot_id,web_commit,phase,protocol_version,nonacceptance_at)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,2,CASE WHEN $9 THEN clock_timestamp() ELSE NULL END)
+        ON CONFLICT(tick_id) DO NOTHING RETURNING *`,
+        [input.tickId,input.workerInstanceId,input.workerBootId,input.workerCommit,web.instanceId,web.bootId,web.commit,negative?"unknown":"running",negative]);
+      const row=inserted.rows[0] || (await client.query("SELECT * FROM app_worker_tick_receipts WHERE tick_id=$1",[input.tickId])).rows[0];
+      requireValue(row,"WORKER_TICK_RECEIPT_MISSING",503); fencedOwner(row,input);
+      if(negative) requireValue(row.nonacceptance_at && row.phase==="unknown", "WORKER_TICK_ALREADY_ACCEPTED",409);
+      return {accepted:!negative && !!inserted.rowCount,receipt:fromRow(row)};
+    });
+  }
   return {
+    acceptFenced: (input: FencedTickIdentity,web: TickWebIdentity) => decide(input,web,false),
+    async proveNotAccepted(input: FencedTickIdentity,web: TickWebIdentity) { return (await decide(input,web,true)).receipt; },
+    async readFenced(input: FencedTickIdentity,web: TickWebIdentity) {
+      // A restarted Web may READ the original boot's durable row, never create
+      // a new negative for that boot. fencedOwner still pins the stored identity.
+      checkTarget(input,web);
+      requireValue(input.protocolVersion===2 && uuid(input.targetWebBootId) && input.targetWebCommit===web.commit && web.bootSource==="preload",
+        "WORKER_TICK_PROTOCOL_TARGET_MISMATCH",409);
+      // Deliberately no schema initialization from GET.
+      return bounded(async client => {
+        const row=(await client.query("SELECT * FROM app_worker_tick_receipts WHERE tick_id=$1",[input.tickId])).rows[0];
+        requireValue(row,"WORKER_TICK_RECEIPT_NOT_FOUND",404); fencedOwner(row,input); return fromRow(row);
+      });
+    },
     async accept(input: TickIdentity, web: TickWebIdentity) {
       checkTarget(input, web); await schema();
       return bounded(async client => {
@@ -113,5 +181,13 @@ export async function runReceiptedWorkerTick(store: WorkerTickReceiptStore, inpu
   const accepted = await store.accept(input,web);
   if (!accepted.accepted) return { duplicate:true, receipt:accepted.receipt };
   try { const result = await scan(); const receipt = await store.complete(input,web,result); return { duplicate:false, receipt }; }
+  catch(error) { await store.unknown(input,web).catch(()=>undefined); throw error; }
+}
+
+/** v2 has its own URL. Never submit or retry it on a v1/legacy scan endpoint. */
+export async function runFencedWorkerTick(store: WorkerTickReceiptStore, input: FencedTickIdentity, web: TickWebIdentity, scan: () => Promise<Record<string, unknown>>) {
+  const accepted=await store.acceptFenced(input,web);
+  if(!accepted.accepted) return {duplicate:true,receipt:accepted.receipt};
+  try { const result=await scan(); return {duplicate:false,receipt:await store.complete(input,web,result)}; }
   catch(error) { await store.unknown(input,web).catch(()=>undefined); throw error; }
 }

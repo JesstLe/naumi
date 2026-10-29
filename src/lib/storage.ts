@@ -95,6 +95,33 @@ export async function writeStoredObject(bytes: Uint8Array, contentType: string, 
   }
 }
 
+/** Internal paid checkpoints never use a public bucket/CDN. On a legacy public
+ * remote configuration keep these objects on this site's existing local store.
+ * The persisted location survives a later storage configuration change. */
+export async function writeImageJobResult(bytes: Buffer, key: string): Promise<"local" | "managed"> {
+  const normalized = safeKey(key);
+  if (!normalized.startsWith("image-job-results/")) throw new Error("图片任务对象路径非法");
+  if (storageDriver !== "local" && !privateMedia) {
+    await local.put(normalized, bytes, "application/octet-stream", "private, no-store");
+    return "local";
+  }
+  const result = await writeStoredObject(bytes, "application/octet-stream", normalized);
+  const { registerMediaAsset } = await import("./media-assets");
+  // Keep the existing mirror retry catalog, without thumbnails or a public link.
+  // Registration failure is surfaced to the codec's durable inline fallback.
+  await registerMediaAsset(normalized, bytes, "application/octet-stream", result.remoteReady, undefined, false);
+  return storageDriver === "local" ? "local" : "managed";
+}
+
+export async function readImageJobResult(url: string, location: "local" | "managed", maxBytes: number, jobId?: string): Promise<Buffer> {
+  const key = storageKeyFromManagedUrl(url);
+  if (!key?.startsWith("image-job-results/") || !["local", "managed"].includes(location)) throw new Error("图片任务对象引用非法");
+  // The mirror worker uses catalog-owned keys without a job ID. Result decoding
+  // supplies its job ID and must pass this check before any local/remote read.
+  if (jobId !== undefined && key.split("/")[1] !== createHash("sha256").update(jobId).digest("hex")) throw new Error("图片任务对象归属不匹配");
+  return (location === "local" ? await readLocalMirror(key, maxBytes) : await readManagedObjectInternal(url, maxBytes)).bytes;
+}
+
 /** Recovery uploads the original immutable bytes, bypassing deferred delivery.
  * Never calls a model, creates a generation identity, or touches billing. */
 export async function mirrorStoredObject(bytes:Uint8Array,contentType:string,key:string){
@@ -140,6 +167,14 @@ export async function readManagedObject(
   url: string,
   maxBytes = Number.POSITIVE_INFINITY
 ): Promise<{ bytes: Buffer; contentType: string; size: number }> {
+  if (storageKeyFromManagedUrl(url)?.toLowerCase().startsWith("image-job-results/")) throw new Error("图片任务结果仅供内部恢复读取");
+  return readManagedObjectInternal(url, maxBytes);
+}
+
+async function readManagedObjectInternal(
+  url: string,
+  maxBytes = Number.POSITIVE_INFINITY
+): Promise<{ bytes: Buffer; contentType: string; size: number }> {
   const key = storageKeyFromManagedUrl(url);
   if (!key) throw new Error("对象地址不属于当前存储");
   if (storageDriver !== "local") {
@@ -166,16 +201,25 @@ export async function readManagedObject(
     let response: Response | null = null, remoteError: unknown = null;
     try { response = await fetchStoredObject(key); } catch (error) { remoteError = error; }
     if (response && response.ok) {
-      const declared = Number(response.headers.get("content-length") || 0);
-      if (declared > maxBytes) throw new Error("对象超过大小限制");
-      const reader = response.body?.getReader(), chunks: Uint8Array[] = []; let size = 0;
-      if (!reader) throw new Error("对象内容为空");
-      try { for (;;) { const next = await reader.read(); if (next.done) break; size += next.value.byteLength;
-        if (size > maxBytes) throw new Error("对象超过大小限制"); chunks.push(next.value); } }
-      finally { await reader.cancel().catch(() => {}); }
-      const bytes = Buffer.concat(chunks);
-      return { bytes, contentType: response.headers.get("content-type") || "application/octet-stream", size: bytes.byteLength };
+      let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+      try {
+        const declared = Number(response.headers.get("content-length") || 0);
+        if (declared > maxBytes) throw new Error("对象超过大小限制");
+        reader = response.body?.getReader();
+        const chunks: Uint8Array[] = []; let size = 0;
+        if (!reader) throw new Error("对象内容为空");
+        for (;;) { const next = await reader.read(); if (next.done) break; size += next.value.byteLength;
+          if (size > maxBytes) throw new Error("对象超过大小限制"); chunks.push(next.value); }
+        const bytes = Buffer.concat(chunks);
+        return { bytes, contentType: response.headers.get("content-type") || "application/octet-stream", size: bytes.byteLength };
+      } finally {
+        // Header rejection happens before getReader(). It must release the
+        // socket too, not leave megabytes queued in every hop of the NAS tunnel.
+        if (reader) { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+        else await response.body?.cancel().catch(() => {});
+      }
     }
+    await response?.body?.cancel().catch(() => {});
     try {
       return await readLocalMirror(key, maxBytes);
     } catch (localError) {

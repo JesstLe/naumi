@@ -1,4 +1,5 @@
 import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
+import { withVideoCoordinationActivity } from "./coordination-activity";
 import "server-only";
 import {verifiedOwnedMedia,type FrozenMediaInput} from "./media-inspection";
 export {verifiedOwnedMedia} from "./media-inspection";
@@ -266,5 +267,5 @@ export async function recoverMediaJobs(limit=4){if(!mediaWorkerConfigured())retu
 
 export async function getMediaJob(actorRaw:string,id:string,process=true) {
   if(!process)return getMediaJobLocal(actorRaw,id,false);
-  return withBackgroundActivity("media-job", `${id}:poll-settle`, "continuation", () => getMediaJobLocal(actorRaw,id,true), () => getMediaJobLocal(actorRaw,id,false));
+  return withVideoCoordinationActivity("media-job", `${id}:poll-settle`, "continuation", `media-job:${id}`, () => getMediaJobLocal(actorRaw,id,true), () => getMediaJobLocal(actorRaw,id,false));
 }

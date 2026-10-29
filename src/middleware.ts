@@ -1,7 +1,10 @@
+import { enterpriseSiteIdentity } from '@/lib/site-control/identity';
+import { enterpriseAdminLocation, enterpriseRequestUrl } from '@/lib/site-control/enterprise-navigation';
 import { NextResponse, type NextRequest } from "next/server";
 import { featureRequestGate, ACCESS_HEADERS, accessJson } from "@/lib/feature-access/server";
 import { requestRequirement } from "@/lib/feature-access/catalog";
 import { timingSafeEqual } from "node:crypto";
+import { tickProtocolAuthorized, TICK_PROTOCOL_PATH } from "@/lib/release-runtime/worker-tick-protocol";
 import { workerSecret } from "@/lib/settings-secret";
 import { releaseControlAuthorized } from "@/lib/release-runtime/identity";
 import { CONTINUATION_HEADER, verifyAgentContinuation } from "@/lib/release-runtime/accepted-context";
@@ -20,10 +23,25 @@ export async function middleware(req: NextRequest) {
     const allowed=path==='/admin/deployments'||['/api/version','/api/health','/api/admin/fleet','/api/admin/fleet/status','/api/admin/fleet/releases','/api/fleet/poll','/api/fleet/ack','/api/fleet/releases/poll','/api/fleet/releases/ack'].includes(path);
     if(!allowed)return accessJson({error:'Not found'},404);
   }
+  const dedicated = enterpriseSiteIdentity();
+  const path = req.nextUrl.pathname;
+  if (dedicated) {
+    if (path.startsWith('/api/admin/') || path === '/api/admin' || path === '/setup' || path.startsWith('/api/setup') || path==='/api/auth' || path.startsWith('/api/auth/register') || ['/pricing','/buy','/sign-up'].includes(path)) return accessJson({error:'Not found'},404);
+    if (path.startsWith('/admin/')) {
+      // Node middleware's internal URL may use localhost. Preserve the request
+      // authority so the redirect retains the browser's host-scoped cookie.
+      const origin=enterpriseRequestUrl(req.url,req.headers.get('host'),req.headers.get('x-forwarded-proto'));
+      return NextResponse.redirect(new URL(enterpriseAdminLocation(path,req.nextUrl.searchParams),origin),{status:307,headers:ACCESS_HEADERS});
+    }
+    if (path === '/' || path === '/enterprise/workflow') {
+      const target=enterpriseRequestUrl(req.url,req.headers.get('host'),req.headers.get('x-forwarded-proto'));target.pathname=path==='/'?'/dashboard':'/enterprise';
+      return NextResponse.redirect(target,{status:307,headers:ACCESS_HEADERS});
+    }
+  }
   const headers = new Headers(req.headers);
   headers.set("x-pathname", req.nextUrl.pathname);
-  if(req.nextUrl.pathname==='/enterprise/workflow'&&!await resolveUserEmail(req)){
-    const login=req.nextUrl.clone();login.pathname='/sign-in';login.search='?redirect=%2Fenterprise%2Fworkflow';
+  if((['/enterprise/workflow','/enterprise/workspace'].includes(path)||dedicated&&['/enterprise','/admin'].includes(path))&&!await resolveUserEmail(req)){
+    const login=enterpriseRequestUrl(req.url,req.headers.get('host'),req.headers.get('x-forwarded-proto'));login.pathname='/sign-in';login.search='?redirect='+encodeURIComponent(path);
     return NextResponse.redirect(login,{status:307,headers:ACCESS_HEADERS});
   }
   let protectedRoute;
@@ -33,7 +51,7 @@ export async function middleware(req: NextRequest) {
     try {
       // Existing signed worker recovery completes already accepted/charged jobs.
       // This is NOT an ordinary-user or model-controlled header bypass.
-      let worker = false;
+      let worker = req.nextUrl.pathname===TICK_PROTOCOL_PATH && ["GET","POST"].includes(req.method) && tickProtocolAuthorized(req);
       const workerReceiptRead = req.method === "GET" && req.nextUrl.pathname === "/api/video/worker/tick" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(req.nextUrl.searchParams.get("tickId") || "");
       if (req.headers.has("x-video-worker-secret") && (workerReceiptRead || req.method === "GET" && req.nextUrl.pathname === "/api/video/worker/drain-status" || req.method === "POST" && (["/api/generate-image", "/api/imagegen", "/api/suite", "/api/aplus", "/api/video/worker/tick"].includes(req.nextUrl.pathname)||/^\/api\/imagegen\/batches\/[a-f0-9-]{36}$/i.test(req.nextUrl.pathname)))) {
         const configured = Buffer.from(workerSecret()), supplied = Buffer.from(req.headers.get("x-video-worker-secret") || "");
@@ -52,6 +70,12 @@ export async function middleware(req: NextRequest) {
   if(req.headers.has(CONTINUATION_HEADER)) {
     try { await verifyAgentContinuation(req,await resolveUserEmail(req),false); }
     catch(error){return releaseError(error);}
+  }
+  if(dedicated&&path==='/enterprise') {
+    // Keep the render destination separate from the legacy URL, which redirects
+    // to /enterprise. Next may run middleware again after an internal rewrite.
+    const target=req.nextUrl.clone();target.pathname='/enterprise/workspace';
+    return NextResponse.rewrite(target,{request:{headers},headers:ACCESS_HEADERS});
   }
   return NextResponse.next({ request: { headers }, ...(protectedRoute ? { headers: ACCESS_HEADERS } : {}) });
 }

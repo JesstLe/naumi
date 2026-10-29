@@ -47,13 +47,16 @@ export async function GET(
   if (
     !segs.length ||
     segs.some(
-      (s) => s === ".." || s.includes("\0") || s.includes("/") || s.includes("\\")
+      (s) => s === "." || s === ".." || s.includes("\0") || s.includes("/") || s.includes("\\")
     )
   ) {
     return new Response("Bad request", { status: 400 });
   }
 
   let rel = segs.join("/"),registeredContentType:string|undefined,remoteVersion:string|undefined,remoteFailure=false,remoteReadable=false,remoteMissing=false,verifiedMirror=false;
+  // This namespace contains internal paid checkpoints, even on legacy public
+  // media configurations. Deliver only the final, separately authorized artwork.
+  if(rel.toLowerCase().startsWith("image-job-results/")) return new Response("Not found", {status:404,headers:{"cache-control":"no-store"}});
   if (privateMedia) {
     try {
       const owner=await authenticatedEmail(request);
@@ -84,8 +87,8 @@ export async function GET(
   if (!verifiedMirror && storageDriver !== "local" && (!privateMedia || remoteReadable && (remoteMediaAccess === "proxy" || /\.(m3u8|mpd)$/i.test(rel)))) {
     try {
       const upstream = await fetchStoredObject(rel, request.headers.get("range") || "",request.signal);
-      if (privateMedia && upstream.status === 404) { remoteMissing=true;throw new Error("remote missing; try mirror"); }
-      if (privateMedia && !upstream.ok && upstream.status !== 416) throw new Error("remote unavailable; try mirror");
+      if (privateMedia && upstream.status === 404) { await upstream.body?.cancel().catch(()=>{});remoteMissing=true;throw new Error("remote missing; try mirror"); }
+      if (privateMedia && !upstream.ok && upstream.status !== 416) { await upstream.body?.cancel().catch(()=>{});throw new Error("remote unavailable; try mirror"); }
       const headers = new Headers();
       for (const name of [
         "accept-ranges",

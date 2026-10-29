@@ -93,10 +93,47 @@ async function main() {
   assert.notEqual(managedImageSource(thumb, "http://fixture.test"), managedImageSource(full, "http://fixture.test"));
   response = await imageCacheManifest(request(owner, "../media/cache-manifest", {}, "POST", { sources: [thumb, full] }), false); const manifest = await response.json(); assert.equal(response.status, 200, JSON.stringify(manifest)); assert.notEqual(manifest.results[thumb].version, manifest.results[full].version); assert(manifest.results[full].fetchUrl.includes('full=1')); fs.writeFileSync(out+"/cache-manifest.json",JSON.stringify(manifest,null,2));
   console.log("MEDIA=PASS OWNED_THUMB=480 OWNED_FULL=1024 CROSS_ENTERPRISE=403 ID_SUBSTITUTION=404 CACHE_VARIANTS=DISTINCT");
+  // Restored history uses the same live hierarchy for list/detail/media, including
+  // records older than the UI's previous default date window.
+  for(const [i,email] of accounts.entries())await pool.query(`INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,metered,created_at) VALUES($1,$2,'generate',$3,$4,false,'2020-01-01T00:00:00Z')`,['fixture-'+i,email,JSON.stringify({status:email===intern?'error':email===lead?'pending':'done'}),JSON.stringify({plan:{request:{prompt:'历史生成',parameters:{quality:'high',apiKey:'NEVER_EXPOSE_INTERNAL'}}}})]);
+  const history=await import('../src/lib/saas/creation-http');
+  const {legacyCreationId}=await import('../src/lib/saas/legacy-creations');
+  const historyRequest=(email:string,extra:Record<string,string>={})=>new Request('http://fixture.test/api/enterprise/creations?'+new URLSearchParams({tenantId:root,source:'legacy',period:'all',...extra}),{headers:{cookie:email?`nv_user=${native.signUserSession(email,Date.now())}`:''}});
+  let hr:Response=await history.creationListRoute(historyRequest(owner),true),hd=await hr.json();assert.equal(hr.status,200,JSON.stringify(hd));assert.equal(hd.pagination.total,expected.length+1);assert(hd.items.some((r:any)=>r.status==='failed'));assert(hd.items.some((r:any)=>r.status==='queued'));assert(hd.items.some((r:any)=>r.status==='succeeded'));assert(!hd.items.some((r:any)=>r.actorEmail===outsider));
+  hr=await history.creationListRoute(historyRequest(owner,{status:'failed'}),true);hd=await hr.json();assert.equal(hd.items.length,1);assert.equal(hd.items[0].actorEmail,intern);
+  assert.equal((await history.creationListRoute(historyRequest(owner,{user:outsider}),true)).status,403);
+  assert.equal((await history.creationListRoute(historyRequest(''),true)).status,401);
+  const taskId=legacyCreationId({table:'app_image_jobs',id:'fixture-'+accounts.indexOf(member),email:member});
+  hr=await history.creationDetailRoute(historyRequest(owner),taskId,true);hd=await hr.json();assert.equal(hr.status,200,JSON.stringify(hd));assert.equal(hd.parameters.values.quality,'high');assert(!JSON.stringify(hd).includes('NEVER_EXPOSE_INTERNAL'));assert(!hd.technical);assert.equal(hd.assets.length,1);
+  hr=await history.creationAssetRoute(historyRequest(owner),taskId,hd.assets[0].id,true);assert.equal(hr.status,200);assert.equal((await sharp(Buffer.from(await hr.arrayBuffer())).metadata()).width,480);
+  const foreignTask=legacyCreationId({table:'app_image_jobs',id:'fixture-'+accounts.indexOf(outsider),email:outsider});
+  assert.equal((await history.creationDetailRoute(historyRequest(owner),foreignTask,true)).status,404);
+  const allQuery=parseEnterpriseArtworks(new URLSearchParams({enterpriseId:root,period:'all'})).query;
+  assert.equal((await enterpriseArtworks({email:owner,admin:false},root,allQuery)).total,expected.length+1);
+  const health=await import('../src/app/api/enterprise/health/route');
+  const healthResult=await health.GET(request(owner,'health'));assert.equal(healthResult.status,200);const healthBody=await healthResult.json();assert.equal(healthBody.tasks.queued,1);assert(!JSON.stringify(healthBody).includes('provider'));assert.equal((await health.GET(request(owner,'health',{enterpriseId:foreign}))).status,403);assert.equal((await health.GET(request(member,'health'))).status,403);
+  console.log('HISTORY_HEALTH=PASS ALL_DATES STATUS_FILTER DETAILS MEDIA SCOPE NO_PLATFORM_FIELDS');
+  // Dedicated native admin and the owner have equal site scope, without merging identities.
+  Object.assign(process.env,{NAUMI_ENTERPRISE_DEPLOYMENT_MODE:'dedicated',NAUMI_ENTERPRISE_SOURCE_INSTANCE_ID:'history-fixture-site',NAUMI_ENTERPRISE_ALLOWED_IDS:root});
+  const nativeAdmin={email:adminEmail,admin:false,consoleAdmin:false};
+  assert.deepEqual((await erp.enterpriseList(nativeAdmin)).map(t=>t.id),[root]);
+  const adminSnapshot=await erp.enterpriseSnapshot(nativeAdmin,root);
+  assert.equal(adminSnapshot.actor.owner,true);
+  response=await history.creationListRoute(historyRequest(adminEmail,{source:'legacy'}),true);data=await response.json();assert.equal(response.status,200);const adminIds=data.items.map((r:any)=>r.id).sort();
+  response=await history.creationListRoute(historyRequest(owner,{source:'legacy'}),true);data=await response.json();assert.deepEqual(data.items.map((r:any)=>r.id).sort(),adminIds);
+  await assert.rejects(()=>erp.enterpriseSnapshot(nativeAdmin,foreign));
+  const {requireAdmin}=await import('../src/lib/admin-auth');assert.equal(await requireAdmin(historyRequest(adminEmail)),false);
+  await pool.query("UPDATE app_users SET banned=true WHERE email=$1",[adminEmail]);
+  response=await history.creationListRoute(historyRequest(adminEmail,{source:'legacy'}),true);assert.equal(response.status,401);
+  await pool.query("UPDATE app_users SET banned=false WHERE email=$1",[adminEmail]);
+  delete process.env.NAUMI_ENTERPRISE_DEPLOYMENT_MODE;delete process.env.NAUMI_ENTERPRISE_SOURCE_INSTANCE_ID;delete process.env.NAUMI_ENTERPRISE_ALLOWED_IDS;
+  console.log('DUAL_ADMIN=PASS SEPARATE_IDENTITIES SAME_SITE_SCOPE CROSS_SITE_DENIED NO_PLATFORM_GRANT BAN_REVOKES');
+
   // Live revocation applies even when the client retains old enterprise/member IDs.
   await pool.query("UPDATE app_enterprise_members SET supervisor_email=$3 WHERE enterprise_id=$1 AND email=$2", [root, intern, director]);
   assert.equal((await read(lead, { email: intern })).status, 403);
   assert.equal((await media.GET(request(lead, "media", { email: intern, id: "art-deleted" }))).status, 403);
+  assert.equal((await history.creationListRoute(historyRequest(lead,{user:intern}),true)).status,403);
   await pool.query("UPDATE app_enterprise_members SET supervisor_email=$3 WHERE enterprise_id=$1 AND email=$2", [root, intern, lead]);
   await pool.query("UPDATE app_team_access_grants SET enabled=false WHERE email=$1", [owner]);
   for (const params of [{}, { format: "csv" }] as Record<string,string>[]) assert.equal((await read(owner, params)).status, 403);

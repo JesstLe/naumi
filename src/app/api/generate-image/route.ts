@@ -6,6 +6,7 @@ import { exactImageRequestSize, imageRatioValidationPolicy, ExactImageSizeError 
 import { imageRatioWarning, imageOutputNotice } from "@/lib/imagegen/output-advisory";
 import { storedImageReview, IMAGE_REVIEW_MESSAGE } from "@/lib/image-job-review";
 import { storedDeliveryCheckpoint } from "@/lib/imagegen/delivery-checkpoint";
+import { createImageDeliveryBytes, type ImageDeliveryBytes } from "@/lib/imagegen/delivery-bytes";
 import { imageFailureEvidence, imageFailureFrames } from "@/lib/imagegen/failure-evidence";
 import { unsupportedReverseHubRatio, REVERSE_HUB_RATIO_MESSAGE } from "@/lib/imagegen/ratio-support";
 import {currentImagegenStep,withImagegenStep} from "@/lib/imagegen/context";
@@ -495,27 +496,27 @@ async function normalizeForEdit(buf: Buffer): Promise<Buffer> {
 
 // 比例只指导上游构图；默认逐字节保留完整画面，不裁切、不补边。
 // 仅显式像素尺寸允许 contain 适配，绝不使用 cover/attention 丢弃内容。
-async function enforceOutputShape(images: GeneratedImage[], p: GenParams): Promise<GeneratedImage[]> {
+async function enforceOutputShape(images: GeneratedImage[], p: GenParams, delivery?: ImageDeliveryBytes): Promise<GeneratedImage[]> {
   if (!(p.targetWidth > 0 && p.targetHeight > 0)) return images;
   return Promise.all(images.map(async image => {
-    const decoded = dataUrlToBytes(image.url);
+    const decoded = delivery ? delivery.read(image.url) : dataUrlToBytes(image.url);
     if (!decoded) return image;
-    const output = await preserveGeneratedFrame(Buffer.from(decoded.bytes), p);
-    return { ...image, url: `data:image/png;base64,${output.toString("base64")}` };
+    const output = await preserveGeneratedFrame(Buffer.from(decoded.bytes.buffer, decoded.bytes.byteOffset, decoded.bytes.byteLength), p);
+    return { ...image, url: delivery ? delivery.encode(output, "image/png") : `data:image/png;base64,${output.toString("base64")}` };
   }));
 }
 
-async function attachImageDimensions(images: GeneratedImage[]): Promise<GeneratedImage[]> {
+async function attachImageDimensions(images: GeneratedImage[], delivery?: ImageDeliveryBytes): Promise<GeneratedImage[]> {
   let sharp: typeof import("sharp");
   try {
     const mod = (await import("sharp")) as unknown as { default?: typeof import("sharp") } & typeof import("sharp");
     sharp = mod.default ?? mod;
   } catch { return images; }
   return Promise.all(images.map(async (image) => {
-    const decoded = dataUrlToBytes(image.url);
+    const decoded = delivery ? delivery.read(image.url) : dataUrlToBytes(image.url);
     if (!decoded) return image;
     try {
-      const meta = await sharp(Buffer.from(decoded.bytes)).metadata();
+      const meta = await sharp(Buffer.from(decoded.bytes.buffer, decoded.bytes.byteOffset, decoded.bytes.byteLength)).metadata();
       const width = meta.orientation && meta.orientation >= 5 ? meta.height : meta.width;
       const height = meta.orientation && meta.orientation >= 5 ? meta.width : meta.height;
       const divisor = (a: number, b: number): number => b ? divisor(b, a % b) : a;
@@ -531,7 +532,8 @@ async function attachImageDimensions(images: GeneratedImage[]): Promise<Generate
 // or anything fails, we keep the original image so generation never breaks.
 async function upscaleImages(
   images: GeneratedImage[],
-  resolution: string
+  resolution: string,
+  delivery?: ImageDeliveryBytes
 ): Promise<GeneratedImage[]> {
   const target = resolutionLongSide(resolution);
   if (!target) return images; // 1K / unknown -> native size
@@ -548,10 +550,10 @@ async function upscaleImages(
   }
   return Promise.all(
     images.map(async (image) => {
-      const decoded = dataUrlToBytes(image.url);
+      const decoded = delivery ? delivery.read(image.url) : dataUrlToBytes(image.url);
       if (!decoded) return image; // url-based result -> can't resize here
       try {
-        const input = Buffer.from(decoded.bytes);
+        const input = Buffer.from(decoded.bytes.buffer, decoded.bytes.byteOffset, decoded.bytes.byteLength);
         const meta = await sharp(input).metadata();
         const longSide = Math.max(meta.width ?? 0, meta.height ?? 0);
         if (!longSide || longSide >= target) return image;
@@ -567,7 +569,7 @@ async function upscaleImages(
           .toBuffer();
         return {
           ...image,
-          url: `data:image/png;base64,${out.toString("base64")}`,
+          url: delivery ? delivery.encode(out, "image/png") : `data:image/png;base64,${out.toString("base64")}`,
         };
       } catch (e) {
         console.error(
@@ -581,12 +583,13 @@ async function upscaleImages(
 }
 
 async function persistToStorage(
-  images: GeneratedImage[]
+  images: GeneratedImage[],
+  delivery?: ImageDeliveryBytes
 ): Promise<GeneratedImage[]> {
   if (!storageEnabled) return images;
   return Promise.all(
     images.map(async (image) => {
-      const decoded = dataUrlToBytes(image.url);
+      const decoded = delivery ? delivery.read(image.url) : dataUrlToBytes(image.url);
       if (!decoded) return image;
       try {
         const ext = decoded.contentType.split("/")[1] ?? "png";
@@ -602,7 +605,7 @@ async function persistToStorage(
           e instanceof Error ? e.message : e
         );
         return image;
-      }
+      } finally { delivery?.release(image.url); }
     })
   );
 }
@@ -675,6 +678,13 @@ async function parseParams(request: Request): Promise<GenParams | null> {
     };
   }
   const j = (await request.json()) as Partial<GenParams>;
+  if (!j || typeof j !== "object" || Array.isArray(j)) throw new Error("请求格式不正确");
+  // Never persist user JSON objects into textual fields: they can impersonate
+  // the internal checkpoint representation when a durable payload is resumed.
+  for (const key of ["prompt","userPrompt","category","ratio","resolution","style","quality","email","parentId","templateId","templateImage","templatePrompt","origin","entry","projectGroupId","model"] as const) {
+    if (j[key] != null && typeof j[key] !== "string") throw new Error("请求格式不正确");
+  }
+  if (j.parentIds != null && (!Array.isArray(j.parentIds) || !j.parentIds.every(id => typeof id === "string"))) throw new Error("请求格式不正确");
   return {
     prompt: (j.prompt ?? "").trim(),
     billingVersion:j.billingVersion,billingCredits:j.billingCredits,
@@ -805,39 +815,44 @@ async function runJob(
       } }));
     }
     deliveryStage = "output-processing";
+    const deliveryBytes = createImageDeliveryBytes(dataUrlToBytes);
+    try {
     const scope = currentModelExecution("image"), post = scope?.businessOption?.postprocess;
     const ratioPolicy = scope ? imageRatioValidationPolicy(scope.supplierRouting ? scope.supplierRouting.targets.map(target => target.scope.connection) : [scope.connection]) : undefined;
     let nativeRatioChecked = false;
-    if(p.transparent){for(const image of images){const raw=dataUrlToBytes(image.url);const pixels=await inspectImagegenPixels(raw?Buffer.from(raw.bytes):(await readManagedObject(image.url,64*1024*1024)).bytes);if(!pixels.transparentPixels||!pixels.visiblePixels)imagegenOutputError="模型未返回有效透明主体；已生成原图保留，实际生成积分已结算，请调整透明能力配置";}}
+    if(p.transparent){for(const image of images){const raw=deliveryBytes.read(image.url);const pixels=await inspectImagegenPixels(raw?raw.bytes:(await readManagedObject(image.url,64*1024*1024)).bytes);if(!pixels.transparentPixels||!pixels.visiblePixels)imagegenOutputError="模型未返回有效透明主体；已生成原图保留，实际生成积分已结算，请调整透明能力配置";}}
     if(imagegenOutputError){await JOBS.patch(jobId,{imagegenOutputError});}
     else if (post?.enabled) {
       images = await Promise.all(images.map(async (image,index) => {
-        const decoded = dataUrlToBytes(image.url);
-        const bytes = decoded ? Buffer.from(decoded.bytes) : (await readManagedObject(image.url,64*1024*1024)).bytes;
+        const decoded = deliveryBytes.read(image.url);
+        const bytes = decoded ? decoded.bytes : (await readManagedObject(image.url,64*1024*1024)).bytes;
         const result = await runPostprocess({ id: `${jobId}:postprocess:${index}`, parentId:jobId, email:p.email, modelVersion:scope!.frozen.modelVersion, bytes, policy:post });
         return { ...image,url:result.url,width:result.width,height:result.height,processingKind:result.kind,postprocessStatus:result.status };
       }));
     } else {
-    images = await enforceOutputShape(images, p);
+    images = await enforceOutputShape(images, p, deliveryBytes);
+    deliveryBytes.retain(images.map(image => image.url));
     if (!scope?.imagePreset && !(p.targetWidth > 0 && p.targetHeight > 0)) {
       // Validate the supplier's native grid before an existing, administrator-
       // permitted local upscale. Its rounding cell must not be measured in 4K
       // pixels, and no crop/reshape is introduced to satisfy this validation.
       if (ratioPolicy && p.ratioContractVersion && p.origin === "canvas") {
-        images = await attachImageDimensions(images);
+        images = await attachImageDimensions(images, deliveryBytes);
         imagegenOutputWarning ||= images.map(image => imageRatioWarning(p.ratio, image, ratioPolicy)).find(Boolean);
         nativeRatioChecked = true;
       }
-      if(scope?.frozen.imageParameterPlanVersion!==1)images = await upscaleImages(images, p.resolution);
+      if(scope?.frozen.imageParameterPlanVersion!==1)images = await upscaleImages(images, p.resolution, deliveryBytes);
     }
     }
-    images = await attachImageDimensions(images);
+    deliveryBytes.retain(images.map(image => image.url));
+    images = await attachImageDimensions(images, deliveryBytes);
     if (!nativeRatioChecked && p.ratioContractVersion && p.origin === "canvas" && !(p.targetWidth > 0 && p.targetHeight > 0)) {
       imagegenOutputWarning ||= images.map(image => imageRatioWarning(p.ratio, image, ratioPolicy)).find(Boolean);
     }
     images = images.map((image, index) => ({ ...image, id: `art-${jobId}-${index}` }));
     deliveryStage = "storage";
-    images = await persistToStorage(images);
+    images = await persistToStorage(images, deliveryBytes);
+    } finally { deliveryBytes.clear(); }
     // Keep quality notices with the original result without rejecting delivery.
     // Recovery must not re-POST a paid image to chase a preferred ratio.
     deliveryStage = "image-checkpoint";

@@ -5,11 +5,12 @@ import { managedImageSource, publicImageSource, type BrowserImageDescriptor } fr
 import { VerifiedImageContentPool, verifiedImageContentKey } from './browser-image-content';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
+import { currentWorkspaceRevision, WORKSPACE_SELECTION } from './saas/workspace-client';
 
 const NAME='naumi-image-bytes-v1', STORE='images', META='metadata';
 const MAX_BYTES=128*1024*1024, MAX_IMAGE=MAX_BYTES, MAX_ITEMS=400, MAX_AGE=7*86400000;
 type Row={id:string;account:string;source:string;version:string;blob:Blob;at:number;created:number;bytes:number};
-type Lease={url:string;release:()=>void;networkComplete?:()=>void};
+type Lease={url:string;release:()=>void;networkComplete?:()=>void;markDecoded?:()=>void;source?:string};
 export type BrowserImageReadOptions={networkQueue?:'canvas'};
 const canvasByteQueue=new MediaLoadQueue(6);
 export function acquireCanvasImageByteSlot(signal?:AbortSignal){return acquireMediaSlot(canvasByteQueue,signal);}
@@ -19,8 +20,37 @@ let database:Promise<IDBDatabase|null>|undefined;
 const pending=new Map<string,{promise:Promise<Blob>;controller:AbortController;users:number}>();
 const verifiedContent=new VerifiedImageContentPool();
 const objects=new Set<string>();
-const displayed=new Map<symbol,{url:string;source:string;owner:string}>();
-function trackDisplayed(url:string,source:string,owner:string){const key=Symbol();displayed.set(key,{url,source,owner});return()=>displayed.delete(key);}
+type DisplayedImage={url:string;source:string;owner:string;generation:number;workspace:number;decoded:boolean;retain:()=>Lease};
+const displayed=new Map<symbol,DisplayedImage>();
+const previewAsset=(source:string)=>source.startsWith('/media/')?source.split('?')[0]:source;
+function invalidateDisplayedImage(source:string,owner:string){
+  const affected=new Set<string>();
+  for(const[key,item]of displayed)if(item.owner===owner&&previewAsset(item.source)===previewAsset(source)){
+    affected.add(item.source);displayed.delete(key);if(objects.delete(item.url))URL.revokeObjectURL(item.url);
+  }
+  // Only a live frame causes an event; a denied cold request must not self-retry.
+  for(const source of affected)window.dispatchEvent(new CustomEvent('naumi:image-cache-invalidated',{detail:{source}}));
+}
+// Share only currently displayed, decoded pixels, not an unbounded image history.
+// Each viewer holds a lease so unmounting the canvas cannot revoke its preview.
+function trackDisplayed(url:string,source:string,owner:string,dispose:()=>void):Lease{
+  const key=Symbol();let users=0;
+  const item:DisplayedImage={url,source,owner,generation:epoch,workspace:currentWorkspaceRevision(),decoded:false,retain:()=>{
+    users++;let released=false;
+    return{url,source,markDecoded:()=>{if(!released&&displayed.get(key)===item)item.decoded=true;},release:()=>{
+      if(released)return;released=true;if(--users===0){displayed.delete(key);dispose();}
+    }};
+  }};
+  displayed.set(key,item);return item.retain();
+}
+/** A first-frame handoff only. The receiver still authorizes its requested URL.
+ * Team/enterprise resource queries are exact; only /media quality variants share. */
+export function borrowActiveBrowserImage(raw:string):Lease|null{
+  const source=imageCacheSource(raw);if(!source)return null;
+  const owner=publicImageSource(source)?'public':account;
+  const eligible=[...displayed.values()].filter(item=>item.decoded&&item.owner===owner&&valid(owner,item.generation)&&item.workspace===currentWorkspaceRevision()&&previewAsset(item.source)===previewAsset(source));
+  return (eligible.find(item=>item.source===source)||eligible[0])?.retain()||null;
+}
 let focusCheck:{generation:number;promise:Promise<void>}|undefined;
 const batches=new Map<string, {resolve:(value:BrowserImageDescriptor|null)=>void;reject:(error:Error)=>void}[]>();
 let batchTimer:ReturnType<typeof setTimeout>|undefined;
@@ -137,8 +167,7 @@ function revalidateDisplayedImages(){
         if(!valid(owner,generation)||info)return;
         // A confirmed per-resource denial removes only that resource. New
         // leases acquired after this check began must still pass the manifest.
-        for(const [key,item]of displayed)if(item.owner===owner&&item.source===source){displayed.delete(key);if(objects.delete(item.url))URL.revokeObjectURL(item.url);}
-        window.dispatchEvent(new CustomEvent('naumi:image-cache-invalidated',{detail:{source}}));
+        invalidateDisplayedImage(source,owner);
       }catch(error){
         if(valid(owner,generation)&&error instanceof ImageCacheDenied)clearBrowserImages();
         // Offline, timeout, rate limit and 5xx are not proof of lost access.
@@ -159,6 +188,7 @@ function installImageObserver(){if(installed||typeof window==='undefined')return
   try{channel=new BroadcastChannel(NAME);channel.onmessage=e=>{if(e.data?.logout===account)clearBrowserImages();};}catch{}
   window.addEventListener('storage',e=>{if(e.key===NAME+':logout'&&e.newValue?.startsWith(account+':')&&account)clearBrowserImages();});
   window.addEventListener('focus',revalidateDisplayedImages);
+  window.addEventListener(WORKSPACE_SELECTION,reset);
 }
 function descriptor(source:string,owner:string,generation:number):Promise<BrowserImageDescriptor|null>{
   return new Promise((resolve,reject)=>{const key=owner+'\n'+generation+'\n'+source;const waiters=batches.get(key)||[];waiters.push({resolve,reject});batches.set(key,waiters);
@@ -192,7 +222,7 @@ async function flushDescriptors(){
 async function imageBlob(source:string,signal?:AbortSignal,options?:BrowserImageReadOptions):Promise<{blob:Blob;owner:string;generation:number}>{
   const owner=publicImageSource(source)?'public':account,generation=epoch;if(!owner)throw new ImageCacheDenied('登录状态尚未验证');
   const info=await timedImageStage("authorization",()=>descriptor(source,owner,generation));if(signal?.aborted||!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
-  if(!info)throw new ImageCacheDenied('素材尚未授权或不支持缓存');
+  if(!info){invalidateDisplayedImage(source,owner);throw new ImageCacheDenied('素材尚未授权或不支持缓存');}
   if(info.bytes>MAX_IMAGE)throw new ImageNotCacheable(info.fetchUrl);
   const id=JSON.stringify([owner,info.source,info.version]);
   const contentKey=verifiedImageContentKey(info,owner,generation);
@@ -241,8 +271,9 @@ export async function acquireBrowserImage(raw:string,signal?:AbortSignal,options
     if(error instanceof ImageCacheDenied||signal?.aborted||!valid(owner,generation))throw error;
     if(error instanceof ImageNotCacheable){const releaseSlot=await byteSlot(options,signal),url=error.freshUrl;
       if(signal?.aborted||!valid(owner,generation)){releaseSlot();throw new ImageCacheDenied('素材显示已取消');}
-      const untrack=trackDisplayed(url,source,owner);
-      return{url,release:()=>{untrack();releaseSlot();},networkComplete:releaseSlot};}
+      // Direct, non-Blob URLs can expire; they are never offered as active previews.
+      const lease=trackDisplayed(url,source,owner,releaseSlot);
+      return{url,source,release:lease.release,networkComplete:releaseSlot};}
     // Descriptor/storage outages fall back to the authenticated media endpoint,
     // explicitly bypassing HTTP cache. Never reuse a previous account's pixels.
     const releaseSlot=await byteSlot(options,signal);
@@ -256,8 +287,8 @@ export async function acquireBrowserImage(raw:string,signal?:AbortSignal,options
     }finally{releaseSlot();}
   }
   if(signal?.aborted||!valid(result.owner,result.generation))throw new ImageCacheDenied('素材显示已取消');
-  const url=URL.createObjectURL(result.blob);objects.add(url);const untrack=trackDisplayed(url,source,result.owner);let released=false;
-  return{url,release:()=>{if(!released){released=true;untrack();if(objects.delete(url))URL.revokeObjectURL(url);}}};
+  const url=URL.createObjectURL(result.blob);objects.add(url);
+  return trackDisplayed(url,source,result.owner,()=>{if(objects.delete(url))URL.revokeObjectURL(url);});
 }
 export async function cachedImageBlob(raw:string){const source=imageCacheSource(raw);if(!source)throw new Error('非托管图片');return(await imageBlob(source)).blob;}
 /** Editing/import needs original bytes, not a thumbnail or a fresh model call. */

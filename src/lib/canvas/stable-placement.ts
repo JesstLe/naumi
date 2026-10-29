@@ -1,4 +1,4 @@
-import { placeGenerationPreview } from "./generation-feedback";
+import { createPlacementSpace } from "./placement-space";
 
 export type CanvasPoint = { x: number; y: number };
 type PlacementNode = { id: string; parentId?: string | null; source?: string | null; canvasX?: number | null; canvasY?: number | null; width: number; height: number };
@@ -11,8 +11,9 @@ export function stableArtworkPositions(nodes: PlacementNode[], cache: Map<string
     if (typeof node.canvasX === "number" && typeof node.canvasY === "number" && Number.isFinite(node.canvasX) && Number.isFinite(node.canvasY)) cache.set(node.id, { x: node.canvasX, y: node.canvasY });
     else if (!validPoint(cache.get(node.id))) cache.delete(node.id);
   }
-  const occupied = nodes.filter(node => cache.has(node.id)).map(node => ({ ...cache.get(node.id)!, width: node.width, height: node.height }));
   const pending = nodes.filter(node => !cache.has(node.id));
+  if (!pending.length) return cache;
+  const space = createPlacementSpace(nodes.filter(node => cache.has(node.id)).map(node => ({ ...cache.get(node.id)!, width: node.width, height: node.height })));
   while (pending.length) {
     let index = pending.findIndex(node => !node.parentId || node.source === "canvas-add" || !byId.has(node.parentId) || cache.has(node.parentId));
     if (index < 0) index = 0;
@@ -20,8 +21,8 @@ export function stableArtworkPositions(nodes: PlacementNode[], cache: Map<string
     const parent = node.source !== "canvas-add" && node.parentId ? byId.get(node.parentId) : undefined;
     const anchor = parent && cache.get(parent.id);
     const preferred = parent && anchor ? { x: anchor.x + parent.width + 96, y: anchor.y } : { x: 0, y: 0 };
-    const position = placeGenerationPreview(preferred, node, occupied);
-    cache.set(node.id, position); occupied.push({ ...position, width: node.width, height: node.height });
+    const position = space.place(preferred, node);
+    cache.set(node.id, position); space.add({ ...position, width: node.width, height: node.height });
   }
   return cache;
 }

@@ -25,6 +25,11 @@ test('source-bound workspace identity: signed server claims, explicit mappings, 
   await assert.rejects(bindings.workspaces(identity),/SOURCE_IDENTITY_NOT_BOUND/);
   await bindings.configure(p,{...common,type:'enterprise'});await bindings.configure(p,{...common,type:'identity',sourceSubject:identity.sourceSubject,subject:'employee'});
   const spaces=await bindings.workspaces(identity);assert.equal(spaces.teams.length,2);assert.deepEqual(spaces.teams.find(t=>t.teamId===teamId)?.permissions,['execute']);
+  assert.deepEqual((await verifier(auth(token({sourcePermissions:['execute']}))))?.sourcePermissions,['execute']);
+  const restricted=await bindings.workspaces({...identity,sourcePermissions:['execute']});
+  assert.deepEqual(restricted.teams.map(t=>t.teamId),[teamId]);
+  assert.deepEqual((await bindings.workspaces({...identity,sourcePermissions:[]})).teams,[]);
+  await assert.rejects(bindings.principal({...identity,teamId,sourcePermissions:['review']}),/MEMBERSHIP_REQUIRED/);
   assert.equal((await bindings.principal({...identity,teamId})).subject,'employee');await assert.rejects(bindings.principal({...identity,teamId:randomUUID()}),/MEMBERSHIP_REQUIRED/);
   await assert.rejects(bindings.workspaces({...identity,sourceInstance:'naumi-b'}),/SOURCE_IDENTITY_NOT_BOUND/);await assert.rejects(bindings.workspaces({...identity,sourceEnterprise:randomUUID()}),/SOURCE_IDENTITY_NOT_BOUND/);
   await assert.rejects(bindings.configure({...p,subject:'employee'},{...common,type:'enterprise',expectedVersion:1,enabled:false}),/FORBIDDEN/);
@@ -45,4 +50,28 @@ test('source-bound workspace identity: signed server claims, explicit mappings, 
   await bindings.configure(p,{...common,type:'enterprise',expectedVersion:1,enabled:false});await assert.rejects(bindings.workspaces(identity),/SOURCE_IDENTITY_NOT_BOUND/);
   console.log('SOURCE_IDENTITY_PASS: explicit_binding=1 signed_claims=1 ordinary_employee=1 team_role_union=0 namespace_isolation=1 version_conflict=1 revocation_business_tx=1 raw_token_exposed=0 workspaces_http=200 anonymous=401 revoked=403');
  }finally{if(server){server.closeAllConnections();await new Promise<void>(r=>server!.close(()=>r()));}await pool.end();}
+});
+
+
+test('dedicated native membership enrolls only signed current members and preserves revocations',{skip:!url},async()=>{
+ const pool=new pg.Pool({connectionString:url});
+ try {
+  const files=(await import('node:fs/promises')).readdir;
+  for(const file of (await files(new URL('../migrations/',import.meta.url))).filter(f=>/^\d{3}-.*\.sql$/.test(f)).sort()){const version=Number(file.slice(0,3));if(!(await pool.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=$1',[version])).rowCount)await pool.query(await readFile(new URL('../migrations/'+file,import.meta.url),'utf8'));}
+  const enterpriseId=randomUUID(),teamId=randomUUID(),sourceEnterprise=randomUUID(),sourceInstance='native-test';
+  await pool.query('INSERT INTO enterprise_workflow.teams(enterprise_id,team_id,name) VALUES($1,$2,$3)',[enterpriseId,teamId,'Native team']);
+  await pool.query('INSERT INTO enterprise_workflow.source_enterprises(source_instance,source_enterprise,enterprise_id) VALUES($1,$2,$3)',[sourceInstance,sourceEnterprise,enterpriseId]);
+  const store=new SourceIdentityStore(pool,()=>true,[{enterpriseId,nativeTeamId:teamId,sourceEnterprise,sourceInstance}]);
+  const claim={sourceInstance,sourceEnterprise,sourceSubject:'new@fixture.invalid',sourceName:'New employee',sourcePermissions:['request','execute'] as const};
+  await assert.rejects(store.workspaces({sourceInstance,sourceEnterprise,sourceSubject:claim.sourceSubject}),/NATIVE_MEMBERSHIP_ASSERTION_REQUIRED/);
+  const [a,b]=await Promise.all([store.workspaces({...claim,sourcePermissions:[...claim.sourcePermissions]}),store.workspaces({...claim,sourcePermissions:[...claim.sourcePermissions]})]);
+  assert.equal(a.subject,b.subject);assert.deepEqual(a.teams[0].permissions,['request','execute']);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM enterprise_workflow.identity_binding_audit WHERE enterprise_id=$1',[enterpriseId])).rows[0].n,1);
+  assert.deepEqual((await store.workspaces({...claim,sourcePermissions:['review']})).teams[0].permissions,['review']);
+  await pool.query('UPDATE enterprise_workflow.accounts SET enabled=false WHERE enterprise_id=$1 AND subject=$2',[enterpriseId,a.subject]);
+  await assert.rejects(store.workspaces({...claim,sourcePermissions:['manage']}),/SOURCE_IDENTITY_NOT_BOUND/);
+  await assert.rejects(store.workspaces({...claim,sourcePermissions:[],sourceSubject:'empty@fixture.invalid'}),/NATIVE_MEMBERSHIP_ASSERTION_REQUIRED/);
+  await assert.rejects(store.workspaces({...claim,sourcePermissions:['manage'],sourceEnterprise:randomUUID()}),/SOURCE_IDENTITY_NOT_BOUND/);
+  console.log('NATIVE_ENROLLMENT_PASS: concurrent_once=1 missing_assertion_denied=1 native_role_caps=1 local_suspension_preserved=1 foreign_binding_denied=1');
+ }finally{await pool.end();}
 });
