@@ -78,6 +78,8 @@ type RecoveryOwner = {
   previousUnavailable: boolean;
 };
 
+type AttachmentUploadOwner = { scope: RecoveryScope; generation: number; controller: AbortController };
+
 type RecentWork = {
   id: string;
   image: string;
@@ -345,6 +347,39 @@ export function WorkbenchClient() {
   const fileRef = useRef<HTMLInputElement>(null);
   // 图片 URL → 作品 id 缓存(送画布/再生成的深链依据);上传响应直接登记,其余懒反查
   const artworkIdRef = useRef<Record<string, string>>({});
+  const attachmentGenerationRef = useRef(0);
+  const attachmentUploadsRef = useRef(new Set<AttachmentUploadOwner>());
+
+  function ownsAccount(scope: RecoveryScope | null): scope is RecoveryScope {
+    return Boolean(scope?.active && recoveryScopeRef.current === scope);
+  }
+
+  function resetAttachmentUploads(updateState = true) {
+    attachmentGenerationRef.current += 1;
+    for (const owner of attachmentUploadsRef.current) owner.controller.abort();
+    attachmentUploadsRef.current.clear();
+    if (updateState) setUploading(false);
+  }
+
+  function beginAttachmentUpload(): AttachmentUploadOwner | null {
+    const scope = recoveryScopeRef.current;
+    if (!ownsAccount(scope)) return null;
+    const owner = { scope, generation: attachmentGenerationRef.current, controller: new AbortController() };
+    attachmentUploadsRef.current.add(owner);
+    setUploading(true);
+    return owner;
+  }
+
+  function ownsAttachmentUpload(owner: AttachmentUploadOwner) {
+    return ownsAccount(owner.scope) && owner.generation === attachmentGenerationRef.current &&
+      attachmentUploadsRef.current.has(owner) && !owner.controller.signal.aborted;
+  }
+
+  function finishAttachmentUpload(owner: AttachmentUploadOwner) {
+    const current = ownsAttachmentUpload(owner);
+    attachmentUploadsRef.current.delete(owner);
+    if (current) setUploading(attachmentUploadsRef.current.size > 0);
+  }
 
   function cancelRecovery() {
     sessionLoadRef.current += 1;
@@ -366,6 +401,7 @@ export function WorkbenchClient() {
       sessionIdRef.current = "";
       setMessages([]);
       setAttachments([]);
+      artworkIdRef.current = {};
       setInput("");
       setInterject("");
       setActiveTitle("");
@@ -375,6 +411,14 @@ export function WorkbenchClient() {
       setRecoveryUnavailable(false);
       setComposerSubmitting(false);
       setComposerError(null);
+      if (previous.account) {
+        setComposerText("");
+        setComposerFiles([]);
+        setComposerPreviews(previews => {
+          previews.forEach(url => URL.revokeObjectURL(url));
+          return [];
+        });
+      }
       setUploading(false);
       setBusy(false);
       setRunning(false);
@@ -382,6 +426,7 @@ export function WorkbenchClient() {
     }
     return () => {
       scope.active = false;
+      resetAttachmentUploads(false);
       cancelRecovery();
       // Detach the UI handle without aborting the older SSE's server task.
       streamAbortRef.current = null;
@@ -634,6 +679,7 @@ export function WorkbenchClient() {
     const previousUnavailable = recoveryUnavailable || Boolean(existing?.previousUnavailable) || Boolean(
       existing?.installed && existing.id === sessionIdRef.current && existing.phase !== "settled"
     );
+    resetAttachmentUploads();
     cancelRecovery();
     const owner: RecoveryOwner = {
       id, generation: sessionLoadRef.current, scope, controller: new AbortController(),
@@ -736,81 +782,113 @@ export function WorkbenchClient() {
 
   async function renameSession(id: string, title: string): Promise<boolean> {
     const clean = title.trim().replace(/\s+/g, " ");
-    if (!clean) return false;
-    const response = await fetch("/api/agent/session", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", ...(await authHeader()) },
-      body: JSON.stringify({ id, title: clean }),
-    });
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      setError(data.error || "会话重命名失败");
+    const scope = recoveryScopeRef.current;
+    if (!clean || !ownsAccount(scope)) return false;
+    try {
+      const headers = await authHeader();
+      if (!ownsAccount(scope)) return false;
+      const response = await fetch("/api/agent/session", {
+        method: "PATCH", headers: { "Content-Type": "application/json", ...headers },
+        body: JSON.stringify({ id, title: clean }),
+      });
+      if (!ownsAccount(scope)) {
+        await response.body?.cancel().catch(() => {});
+        return false;
+      }
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        if (ownsAccount(scope)) setError(data.error || "会话重命名失败");
+        return false;
+      }
+      await response.body?.cancel().catch(() => {});
+      if (!ownsAccount(scope)) return false;
+      setSessions(previous => ownsAccount(scope) ? previous.map(session =>
+        session.id === id ? { ...session, title: clean } : session) : previous);
+      if (id === sessionIdRef.current) setActiveTitle(clean);
+      return true;
+    } catch {
+      if (ownsAccount(scope)) setError("会话重命名失败");
       return false;
     }
-    setSessions((previous) =>
-      previous.map((session) =>
-        session.id === id ? { ...session, title: clean } : session
-      )
-    );
-    if (id === sessionIdRef.current) setActiveTitle(clean);
-    return true;
   }
 
   async function removeSession(id: string) {
-    const response = await fetch(
-      `/api/agent/session?id=${encodeURIComponent(id)}`,
-      { method: "DELETE", headers: await authHeader() }
-    );
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      setError(data.error || "会话删除失败");
-      return;
+    const scope = recoveryScopeRef.current;
+    if (!ownsAccount(scope)) return;
+    try {
+      const headers = await authHeader();
+      if (!ownsAccount(scope)) return;
+      const response = await fetch(`/api/agent/session?id=${encodeURIComponent(id)}`, { method: "DELETE", headers });
+      if (!ownsAccount(scope)) {
+        await response.body?.cancel().catch(() => {});
+        return;
+      }
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        if (ownsAccount(scope)) setError(data.error || "会话删除失败");
+        return;
+      }
+      await response.body?.cancel().catch(() => {});
+      if (!ownsAccount(scope)) return;
+      setSessions(previous => ownsAccount(scope) ? previous.filter(session => session.id !== id) : previous);
+      if (id === sessionIdRef.current) newConversation();
+    } catch {
+      if (ownsAccount(scope)) setError("会话删除失败");
     }
-    setSessions((previous) => previous.filter((session) => session.id !== id));
-    if (id === sessionIdRef.current) newConversation();
   }
 
-  /** 上传单张参考图 → 站内 URL;失败返回 null 不阻塞主消息。 */
-  async function uploadOne(f: File): Promise<string | null> {
+  /** Upload transport belongs to this attachment view, not to a background task. */
+  async function uploadOne(f: File, owner: AttachmentUploadOwner): Promise<string | null> {
+    if (!ownsAttachmentUpload(owner)) return null;
     if (toolImageError(f,MAX_UPLOAD)) {setError("请选择12MB以内的PNG / JPG / WebP图片");return null;}
     try {
       const fd = new FormData();
       fd.append("image", f);
       fd.append("title", "Agent 上传");
       fd.append("entry", "agent");
+      const headers = await authHeader();
+      if (!ownsAttachmentUpload(owner)) return null;
       const res = await fetch("/api/artworks/add", {
-        method: "POST",
-        headers: await authHeader(),
-        body: fd,
+        method: "POST", headers, body: fd, signal: owner.controller.signal,
       });
+      if (!ownsAttachmentUpload(owner)) {
+        await res.body?.cancel().catch(() => {});
+        return null;
+      }
       const d = await res.json();
+      if (!ownsAttachmentUpload(owner)) return null;
       if (!res.ok) throw new Error(d.error || "图片上传失败，请重试");
       const url = d?.artwork?.image || d?.image || d?.url;
       const id = d?.artwork?.id || d?.id || null;
       if (url && id) artworkIdRef.current[imageKey(url)] = id;
       return url || null;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "图片上传失败，请重试");
+      if (ownsAttachmentUpload(owner)) setError(caught instanceof Error ? caught.message : "图片上传失败，请重试");
       return null;
     }
   }
 
+  async function uploadAttachments(files: File[]) {
+    const owner = beginAttachmentUpload();
+    if (!owner) return;
+    try {
+      const urls: string[] = [];
+      for (const file of files) {
+        const url = await uploadOne(file, owner);
+        if (!ownsAttachmentUpload(owner)) return;
+        if (url) urls.push(url);
+      }
+      if (urls.length) setAttachments(previous => ownsAccount(owner.scope) &&
+        owner.generation === attachmentGenerationRef.current ? [...previous, ...urls] : previous);
+    } finally {
+      finishAttachmentUpload(owner);
+    }
+  }
+
   // 对话输入框 Ctrl+V 截图 → 上传为附件(带 [商品图] 上下文)
-  const onChatPaste = useClipboardImagePaste(async (imgs) => {
-    if (!user) {
-      openAuth("sign-in");
-      return;
-    }
-    setUploading(true);
-    const urls: string[] = [];
-    for (const f of imgs) {
-      const u = await uploadOne(f);
-      if (u) urls.push(u);
-    }
-    setUploading(false);
-    if (urls.length) {
-      setAttachments((prev) => [...prev, ...urls]);
-    }
+  const onChatPaste = useClipboardImagePaste((imgs) => {
+    if (!user) { openAuth("sign-in"); return; }
+    void uploadAttachments(imgs);
   });
 
   async function send(text?: string, attachmentUrls?: string[], onAccepted?: () => void) {
@@ -1085,6 +1163,7 @@ export function WorkbenchClient() {
 
   function newConversation() {
     if (running && !recoveryRef.current) return;
+    resetAttachmentUploads();
     cancelRecovery();
     setSessionLoadingId("");
     setRecoveryUnavailable(false);
@@ -1174,12 +1253,14 @@ export function WorkbenchClient() {
     const current = () => scope?.active && recoveryScopeRef.current === scope && sessionLoadRef.current === generation;
     setComposerError(null);
     setComposerSubmitting(true);
+    let uploadOwner: AttachmentUploadOwner | null = null;
     try {
       const urls: string[] = [];
       if (composerFiles.length) {
-        setUploading(true);
+        uploadOwner = beginAttachmentUpload();
+        if (!uploadOwner) return;
         for (const f of composerFiles) {
-          const u = await uploadOne(f);
+          const u = await uploadOne(f, uploadOwner);
           if (!current()) return;
           if (!u) {
             setComposerError(L("参考图上传失败，请重试", "Reference upload failed; retry"));
@@ -1187,7 +1268,8 @@ export function WorkbenchClient() {
           }
           urls.push(u);
         }
-        setUploading(false);
+        finishAttachmentUpload(uploadOwner);
+        uploadOwner = null;
       }
       if (!current()) return;
       let accepted = false;
@@ -1202,8 +1284,8 @@ export function WorkbenchClient() {
       });
       if (!accepted && current()) setComposerError("暂未发送，请稍后重试");
     } finally {
+      if (uploadOwner) finishAttachmentUpload(uploadOwner);
       if (scope?.active && recoveryScopeRef.current === scope) {
-        setUploading(false);
         setComposerSubmitting(false);
       }
     }
@@ -1409,14 +1491,7 @@ export function WorkbenchClient() {
                       const files = Array.from(e.target.files ?? []);
                       e.target.value = "";
                       if (!files.length) return;
-                      setUploading(true);
-                      const urls: string[] = [];
-                      for (const f of files) {
-                        const u = await uploadOne(f);
-                        if (u) urls.push(u);
-                      }
-                      setUploading(false);
-                      if (urls.length) setAttachments((prev) => [...prev, ...urls]);
+                      await uploadAttachments(files);
                     }}
                   />
                   <button
@@ -1458,6 +1533,7 @@ export function WorkbenchClient() {
 
         {/* 历史会话抽屉(面板内右侧浮层) */}
         <WorkbenchSessions
+          key={user?.email || ""}
           open={can("agent") && sessionsOpen}
           onClose={() => setSessionsOpen(false)}
           sessions={sessions}
@@ -1748,6 +1824,7 @@ export function WorkbenchClient() {
 
       {/* 历史会话抽屉(门户右侧浮层;载入后自动切入对话态) */}
       <WorkbenchSessions
+          key={user?.email || ""}
         open={can("agent") && sessionsOpen}
         onClose={() => setSessionsOpen(false)}
         sessions={sessions}
