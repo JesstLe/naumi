@@ -23,3 +23,10 @@
 - 编辑管线 `EDIT_PIPELINE=PASS CASES=8 LOCAL_SUPPLIER_CALLS=3 REAL_SUPPLIER_CALLS=0 SETTLED_OPERATIONS=4`。覆盖三入口、幂等回执、已保存供应商结果恢复、不重复扣费，原图保持。
 - 上轮浏览器验收中断，HTTP 200 不作为 UI 验收证据。2026-10-29 用户要求本次合并；同步最新 main 后再集中验证与记录交付。
 - 47 HOLD 保持；无生产写入或真实供应商调用。
+
+## 2026-10-29 收尾验收
+- 修复提交 `76301f2d`；在任务分支整合最新 main 后，像素 9 项、报价输入合同 9 项、真实编辑管线 8 项、旧直连 4 项再次通过，全量 TypeScript exit 0。
+- 旧 `verify-canvas-image-tasks.mjs` 静态检查仍在 Route 搜索恢复函数，主线已迁移到 `worker/tick-scan`。只将测试更新为同时验证 Route 委托与实际 scan 调用，未修改 Worker 逻辑；复测 exit 0。
+- 实际 Next Canvas 浏览器已打开并检查三张节点图片解码尺寸；基线和修复后圆形渲染正确对应各自原始像素。新增无参考图节点输入文字、默认自适应提交、回执落图通过；API 账号/结果为本地 fixture，参数 admission/compiler 使用实际模块，不作为生产供应商效果证据。
+- 独立 PostgreSQL/本地异步 HTTP 供应商的纯文生图实际管线，`TEXT_ONLY_PIPELINE=PASS INPUTS=0 RATIO=1:1 HTTP_STATUS=200 ARTWORKS=1 SETTLED_OPERATIONS=1 REPLAY_POSTS=0 LOCAL_SUPPLIER_CALLS=1 REAL_SUPPLIER_CALLS=0`。
+- 源码包、差异、基线/修改/副本回退字面回执及最终 main SHA 见 `E:/Workspace/naumi/output/canvas-edit-aspect-20261028/VERIFICATION.txt`。Git 合入与生产发布分开记录。
