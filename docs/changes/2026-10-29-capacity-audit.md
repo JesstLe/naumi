@@ -313,3 +313,11 @@
 - 父真实会话修复58项、会话控制/账号/项目隔离、network15、Harness104、stream-intent356、timeline29、tool-trace25、activity及全项目tsc均exit0。旧Harness-runtime原/改仍`ROUTER_UNAVAILABLE/not_submitted`失败；保留原日志和首次父gate清理观测竞态，未绕旧断言。
 - 四产物与精确命令/输入/输出/exit位于父ignored `output/capacity-audit-wave2-20261029/agent-parent/`；副本恢复2原hash、移除1新helper、原行为复现，later-edit guard73/0写入。父PG55490停止且端口关闭，源码保持修改。详见模块文档父验收节。
 - 长会话持久化/RSS、事件裁剪游标、前端恢复轮询卸载及画布流仍待独立切片。release collector `2cd03246`已交付待父复核，BI用户管理在独立任务验证中。47无SSH/部署，45笔手术/在线索引/accepted-timeout历史波动均未关闭。
+
+### 2026-10-29 BI 用户编辑父线程闭环
+
+- **A41 / D23：BI非积分编辑也锁并传回全部活积分批次。** 固定实现 `8b969fb8cd42c367309d85c7416c9ed6407e3517` 只修改`manageBiUser`：非零delta才窄SUM，profile/ban/role/reset-password/create0不再读取批次；原owner锁、同Tx、nonce/actor/HMAC、版本CAS、last-admin/自身保护、双审计和既有FIFO前缀扣减保持。非积分审计原本没有余额字段，不是删除审计换性能。
+- 独立review普通merge `18b45047`，无新增可复现阻断项。真实PG三版各21组、额外各6组、原生BI与tsc通过；父重开报告/原trace/断言并核对源码hash一致。额外6组是review证据，非父复跑；包含合成金额与reservation边界、原now()保持和成功trace的单backend再断言，不计为新事故。
+- 父从main `2f2c57e0` 普通整合，业务源码未再改。父独占55523实际原/改/修改副本/回滚各21/21 exit0，原生`BI_MANAGEMENT=PASS`、全项目tsc exit0。四非积分动作原返回10000行/尾锁55P03，修改批次SQL0/尾锁FREE，owner锁始终55P03；积分动作调用方SUM仅返回1行，仍有底层扫描和20条总SQL，不宣称O(1)或所有延迟改善。
+- 副本回滚恢复原单文件hash及原返回/尾锁，later-edit guard73/0写入；修复源码保持。父四产物及完整命令/输入/输出/exit在ignored `output/capacity-audit-wave2-20261029/bi-mutation-parent/`；独立模块文档补父验收。父fixture停止、55523关闭，review55517已移除。
+- 全局管理advisory锁、重复聚合/expire、BI审计保留和其他回滚连接边界仍未修复。发布collector等待独立review，工作台Agent客户端恢复轮询卸载为下一源码候选。47无SSH/部署，45笔手术/在线索引/UNKNOWN与历史波动仍挂账。
