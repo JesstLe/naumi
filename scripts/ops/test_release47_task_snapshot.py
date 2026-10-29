@@ -220,7 +220,7 @@ class PostgresFixture(unittest.TestCase):
         self.assertEqual(identity['name'], container)
         env = dict(v.split('=', 1) for v in inspect['Config']['Env'] if '=' in v)
         env.setdefault('POSTGRES_USER', 'postgres')
-        self.assertEqual(env['POSTGRES_DB'], 'naumi_packaging')
+        self.assertEqual(env['POSTGRES_DB'], os.environ.get('NAUMI_TASK_SNAPSHOT_TEST_DATABASE','naumi_packaging'))
         def sql(value):
             result = run(['docker', 'exec', '-i', identity['id'], 'psql', '-X', '-qAt', '--no-password', '-U', env['POSTGRES_USER'], '-d', env['POSTGRES_DB'], '-v', 'ON_ERROR_STOP=1'], stdin=value.encode())
             self.assertEqual(result.returncode, 0, result.stderr.decode()); return result.stdout

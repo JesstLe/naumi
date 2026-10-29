@@ -6,11 +6,12 @@ class ProjectionEquivalence(unittest.TestCase):
     def test_full_and_proof_preserve_exact_selected_content(self):
         source=subprocess.check_output(['git','show','888f5e2f:scripts/ops/release47_task_snapshot.py']).decode()
         baseline=types.ModuleType('snapshot_projection_baseline');sys.modules[baseline.__name__]=baseline;exec(compile(source,'baseline.py','exec'),baseline.__dict__)
-        container='naumi-bi-perf-20261021';identity=current.public_identity(json.loads(subprocess.check_output(['docker','inspect',container]))[0])
+        container=os.environ.get('NAUMI_TASK_SNAPSHOT_TEST_CONTAINER','naumi-bi-perf-20261021');inspect=json.loads(subprocess.check_output(['docker','inspect',container]))[0];identity=current.public_identity(inspect)
+        env=dict(v.split('=',1) for v in inspect['Config']['Env'] if '=' in v);user=env.get('POSTGRES_USER','postgres');database=env['POSTGRES_DB']
         schema='projection_'+uuid.uuid4().hex
         def command(args,stdin=None,timeout=120):return subprocess.run(args,input=stdin,capture_output=True,timeout=timeout)
         def sql(q):
-            r=command(['docker','exec','-i',container,'psql','-XqAt','-U','postgres','-d','bi_fixture','-v','ON_ERROR_STOP=1'],stdin=q.encode());self.assertEqual(r.returncode,0,r.stderr.decode())
+            r=command(['docker','exec','-i',container,'psql','-XqAt','-U',user,'-d',database,'-v','ON_ERROR_STOP=1'],stdin=q.encode());self.assertEqual(r.returncode,0,r.stderr.decode())
         try:
             sql(f"""CREATE SCHEMA {schema};CREATE TABLE {schema}.app_image_jobs(id text primary key,email text,kind text,snapshot jsonb,payload jsonb,plans jsonb,parameters jsonb,cost int);
                 INSERT INTO {schema}.app_image_jobs VALUES('job','fixture@test','generate',jsonb_build_object('status','pending','paidOperations',jsonb_build_object('op',jsonb_build_object('model','wire','gatewayIdentity','identity','replayable',false,'unrelatedReceipt',repeat('x',200000))),'images',repeat('z',200000)),jsonb_build_object('p',jsonb_build_object('model','raw','ref','private-reference'),'callId','call'), '[{{"state":"waiting","prompt":"preserve"}}]', '{{"billingResolution":"4K","upstreamStarted":true}}',12);

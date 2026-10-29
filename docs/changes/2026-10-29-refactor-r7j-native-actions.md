@@ -61,3 +61,5 @@ R7H/R7I/R7J 达到三模块同步点；从 d274d588 普通 merge origin/main，�
 混选调试曾观测原 Shift 事件为 true 而选择变为单选；原脚本相同源码有成功和失败，暂不归因为删除逻辑。Flow 的 modifier key 数组固定引用，避免每次编辑器 render 重装 held-key listener；最终需同时保留持键连续点击和每次 modifier 点击的原断言，不以一次偶然通过关闭。此处不修改供应商、钱包、任务提交规则。
 
 固定 b24c8f2d 的后三组真实 Next 控件已通过：node history8、upload/reverse7、reported tools8（6产物＋OCR）；原始失败保留。最终同SHA全组、真实PG、类型/架构与封包回滚继续集中执行。platform primitive 旧断言原本期待 rollback 错盖 action 错，现依 main 修复改为要求保留原 error，不改事务次数、SQL顺序或余额断言。
+
+完整 core120 首轮在 native-save-review 发现旧夹具仅摘录 patchVideoNode，未组装已迁出的 videoNodeActions；修正为绑定真实 actions＋同一 hook/scope/history，未更改23项业务断言或产品。37项受影响矩阵已同1ba32292全部通过；完整类型、lint、Worker包及四类SCC0通过。incoming15项通过，ops硬编码历史容器已停止导致单独失败，改为本任务隔离夹具绑定复验，不启动他人容器。

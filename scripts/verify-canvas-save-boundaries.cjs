@@ -23,13 +23,13 @@ function resetData(){nodes=new Map(['vnode-a','vnode-b'].map(id=>[id,seed(id)]))
 function remote(id,patch){const n=nodes.get(id);nodes.set(id,{...n,...patch,revision:n.revision+1});}
 function json(res,status,data){res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(data));}
 async function main(){
- const bundle=await build({stdin:{contents:`import React,{useRef,useSyncExternalStore} from 'react';import {createCanvasDocumentContext} from './src/lib/canvas/document-scope';window.__fixtureActor='a@example.test';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useVideoNodes} from ${JSON.stringify(hook.replaceAll('\\','/'))};import {selectWorkspace,currentWorkspaceRevision,WORKSPACE_SELECTION} from './src/lib/saas/workspace-client';
+ const bundle=await build({stdin:{contents:`import React,{useRef,useSyncExternalStore} from 'react';import {createCanvasDocumentContext} from './src/lib/canvas/document-scope';import {createCanvasVideoNodeActions} from './src/lib/canvas/video-node-actions';window.__fixtureActor='a@example.test';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useVideoNodes} from ${JSON.stringify(hook.replaceAll('\\','/'))};import {selectWorkspace,currentWorkspaceRevision,WORKSPACE_SELECTION} from './src/lib/saas/workspace-client';
  let options={email:'a@example.test',readOnly:false};
  const authHeader=async()=>({'x-fixture-actor':options.email});
  ${extract('privateFetchRaw')}
  const root=createRoot(document.getElementById('root'));window.undo=[];window.tip='';window.switchWorkspace=selectWorkspace;
  function App(){window.__fixtureActor=options.email;useSyncExternalStore(cb=>{window.addEventListener(WORKSPACE_SELECTION,cb);return()=>window.removeEventListener(WORKSPACE_SELECTION,cb)},currentWorkspaceRevision,()=>0);const ctx=useRef(createCanvasDocumentContext()),scope=ctx.current.render(options.email,'tree:review');const videoNodesStore=useVideoNodes({...options,scope,request:privateFetchRaw});window.store=videoNodesStore;
- const pushUndo=x=>window.undo.push(x);${extract('patchVideoNode')}
+ const pushUndo=x=>window.undo.push(x);const videoNodeActions=createCanvasVideoNodeActions().bind(scope,{store:videoNodesStore,history:pushUndo});${extract('patchVideoNode')}
  ${extract('saveVideoDraft')}window.patchVideoNode=patchVideoNode;window.saveVideoDraft=saveVideoDraft;
  const canvasTextDocument={retry:async()=>{}},unsavedTextCount=0,unsavedTextRef={current:new Map()},persistTextNode=async n=>n,t=k=>k,flashTip=s=>{window.tip=s;};
  return <><output data-testid="nodes">{JSON.stringify(videoNodesStore.nodes)}</output>${alert}</>;}
