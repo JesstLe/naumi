@@ -2,17 +2,22 @@ import "server-only";
 import type { PoolClient } from "pg";
 import { taskFailureDiagnostic } from "./imagegen/task-diagnostics";
 
-type CleanupStage = "claim-release" | "lease-release" | "execute" | "failure-stop" | "parent-notify" |
-  "checkpoint-evidence" | "checkpoint-rollback" | "evidence-rollback" | "failure-rollback" | "client-release";
+const cleanupStages = ["claim-release", "lease-release", "execute", "failure-stop", "parent-notify",
+  "checkpoint-evidence", "checkpoint-rollback", "evidence-rollback", "failure-rollback", "client-release"] as const;
+type CleanupStage = typeof cleanupStages[number];
 // Only missing PG cleanup codes supplement the existing task diagnostic vocabulary.
 // Never accept arbitrary five-character strings or expose a job/account/token key.
 const cleanupSqlStates = new Set(["08000", "08001", "08003", "08004", "08006", "22012", "25P02", "55P03", "57014", "57P02", "57P03"]);
-const reported = new Map<CleanupStage, { at: number; suppressed: number }>();
+const diagnosticKey = Symbol.for("naumi.image-job.cleanup-diagnostics.v1");
+type DiagnosticWindow = Map<CleanupStage, { at: number; suppressed: number }>;
+const processState = process as typeof process & { [diagnosticKey]?: DiagnosticWindow };
+const reported = processState[diagnosticKey] ||= new Map();
 
 /** One short line per fixed stage per minute/process, not per job or poll.
  * Diagnostics have no authority over admission, billing, retries or results. */
 export function reportImageJobCleanupFailure(stage: CleanupStage, error: unknown): void {
   try {
+    if (!cleanupStages.includes(stage)) return;
     const now = performance.now(), previous = reported.get(stage);
     if (previous && now - previous.at < 60_000) {
       previous.suppressed = Math.min(previous.suppressed + 1, 2_147_483_647);

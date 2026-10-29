@@ -240,7 +240,10 @@ export async function attachBillingCreationTx(tx:PoolClient,id:string,email:stri
   const model=currentModelExecution(currentExecutionBundle()?.primary);if(model?.frontendModel?.label)await tx.query("UPDATE app_creation_records SET model_snapshot=$2::jsonb WHERE id=$1 AND model_snapshot->>'state'='not_recorded'",[record,JSON.stringify({state:'recorded',label:model.frontendModel.label,configVersion:model.frozen.modelVersion})]);
  }
 }
-export async function recordImageStateTx(tx:PoolClient,jobId:string,snapshot:unknown){
+/** True only when at least one linked creation was projected in this transaction.
+ * Callers may clear their new pending marker atomically with these writes,
+ * never earlier debt; both become authoritative only on transaction commit. */
+export async function recordImageStateTx(tx:PoolClient,jobId:string,snapshot:unknown):Promise<boolean>{
  const rows=(await tx.query("SELECT c.id,c.actor_email FROM app_creation_records c JOIN app_creation_links l ON l.creation_id=c.id WHERE l.target_id=$1 AND l.target_type LIKE 'image:%'",[jobId])).rows;
  const s=obj(snapshot),result=obj(s.result),shots=Array.isArray(s.shots)?s.shots:[];
  const terminalShots=shots.length&&['done','error','completed','failed'].includes(String(s.status));
@@ -255,6 +258,7 @@ export async function recordImageStateTx(tx:PoolClient,jobId:string,snapshot:unk
    await addCreationAssetTx(tx,row.id,row.actor_email,{id:`ca-${key(row.id,'output',target)}`,direction:'output',role:'result',position:i,storageRef:`artwork:${target}`});
   }}
  }
+ return rows.length>0;
 }
 
 /** Admin-only execution facts; no prompt, credential, media URL or raw supplier body. */

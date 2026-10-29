@@ -11,7 +11,7 @@ const net = require('node:net');
 const { Pool } = require('pg'), esbuild = require('esbuild');
 const root = path.resolve(__dirname, '..'), source = path.resolve(process.argv[2] || root);
 const mode = process.argv[3] || 'modified';
-assert(['baseline', 'modified'].includes(mode));
+assert(['baseline', 'candidate', 'modified'].includes(mode));
 const baseline = mode === 'baseline', label = 'a60-' + randomUUID();
 const docker = args => execFileSync('docker', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 let container, fixturePort, pool, control, refused, checks = 0, clock = 0, timerId = 0;
@@ -19,12 +19,14 @@ const timers = new Map(), logs = [], metrics = { releases: 0, connections: 0, re
 let creation = false, evidenceFault = false, checkoutFault = false, bindFault, rollbackFault = false;
 let primaryFault, primaryArmed = false, primaryObserved, killBeforeRollback = false, lastClient;
 let faultPoint = 'SELECT * FROM app_image_jobs WHERE id=$1 FOR UPDATE';
+let nativeEvidence = false, inheritedPending = false, afterCheckpoint;
 const capture = (...items) => logs.push(items.map(String).join(' '));
 const rawConsole = { error: capture, warn: capture, log: capture };
 const stages = name => logs.filter(line => line.includes('stage=' + name + ' '));
 function clearFaults() {
   clock += 60001; logs.length = 0; creation = evidenceFault = checkoutFault = rollbackFault = primaryArmed = killBeforeRollback = false;
   bindFault = primaryFault = primaryObserved = undefined;
+  nativeEvidence = inheritedPending = false; afterCheckpoint = undefined;
   faultPoint = 'SELECT * FROM app_image_jobs WHERE id=$1 FOR UPDATE';
 }
 const db = {
@@ -66,7 +68,9 @@ const db = {
             // session aborted, not known-clean. Never fake the PG error/result.
             return c.query('SELECT 1/0');
           }
-          return c.query(sql, values);
+          const result = await c.query(sql, values);
+          if (sql === 'COMMIT' && afterCheckpoint) { const hook = afterCheckpoint; afterCheckpoint = undefined; await hook(); }
+          return result;
         },
       };
     },
@@ -74,17 +78,27 @@ const db = {
 };
 const mocks = {
   db,
-  'saas/creation-context': { currentCreationContext: () => creation ? {} : undefined, withFrozenCreation: (_c, fn) => fn() },
+  'saas/creation-context': { currentCreationContext: () => creation ? { evidencePending: inheritedPending } : undefined, withFrozenCreation: (_c, fn) => fn() },
   'saas/creation-writer': {
     acceptCreationTx: async () => null, creationLinkTx: async () => {}, attachBillingCreationTx: async () => {},
-    recordImageStateTx: async tx => { if (evidenceFault) await tx.query('SELECT 1/0'); },
+    recordImageStateTx: async (tx, id, snapshot) => {
+      if (evidenceFault === true) await tx.query('SELECT 1/0');
+      const recorded = nativeEvidence ? await load('src/lib/saas/creation-writer.ts').recordImageStateTx(tx, id, snapshot) : undefined;
+      if (evidenceFault === 'after-write') await tx.query('SELECT 1/0');
+      return recorded;
+    },
+    publicCreationParameters: value => load('src/lib/saas/creation-writer.ts').publicCreationParameters(value),
   },
+  'billing/schema': { ensureBillingSchema: async () => {} },
+  'teams/server': { TeamError: class TeamError extends Error { constructor(message, status) { super(message); this.status = status; } } },
+  'enterprise/server': { enterpriseRead: async () => { throw Error('unexpected tenant boundary'); } },
+  'bi/call-scope': { currentObservedCallId: () => undefined },
   'release-runtime/background-activity': {
     withBackgroundActivity: (_a, _b, _c, fn) => fn(), detachBackgroundActivity: (_a, _b, _c, fn) => fn(),
     bindBackgroundClaim: async () => { if (bindFault !== undefined) throw bindFault; },
   },
   'release-runtime/identity': { releaseRuntimeEnabled: () => true },
-  storage: new Proxy({}, { get: () => async () => { throw Error('unexpected storage access'); } }),
+  storage: new Proxy({ isManagedImageUrl: url => url.startsWith('/media/') }, { get: (target, key) => target[key] || (async () => { throw Error('unexpected storage access'); }) }),
   'settings-secret': { workerSecret: () => 'fixture' },
   settings: { getOpenAISettings: async () => ({ apiKey: 'fixture' }) },
   'openai-base': { getOpenAIBaseUrl: async () => 'http://fixture.invalid' },
@@ -104,7 +118,7 @@ function load(relative) {
   if (cache.has(relative)) return cache.get(relative).exports;
   const selected = path.join(source, relative), file = fs.existsSync(selected) ? selected : path.join(root, relative);
   const module = { exports: {} }; cache.set(relative, module);
-  const code = esbuild.transformSync(fs.readFileSync(file, 'utf8'), { loader: 'ts', format: 'cjs', target: 'node20' }).code;
+  const code = esbuild.transformSync(fs.readFileSync(file, 'utf8'), { loader: 'ts', format: 'cjs', target: 'node20', supported: { 'dynamic-import': false } }).code;
   const req = spec => {
     if (spec === 'server-only') return {};
     let p;
@@ -324,6 +338,126 @@ async function main() {
         assert(logs.every(x => !/PRIVATE|fixture@example|PRIVATE_NONCE/.test(x))); assert(logs.every(x => x.length < 180));
       });
     }
+    // Parent integration: actual creation writer/schema/detail/asset readers.
+    // Auth/storage transport and admission remain fixtures; no provider replay.
+    await control.query(`ALTER TABLE app_users ADD COLUMN name text;
+      CREATE TABLE app_artworks(id text PRIMARY KEY,email text,image_url text,video_url text,canvas_image_version jsonb,deleted_at timestamptz);
+      CREATE TABLE app_video_tasks(id text PRIMARY KEY,email text,parameters jsonb,status text);
+      CREATE TABLE app_canvas_image_tasks(id text PRIMARY KEY,email text,parameters jsonb,result_artwork_id text);
+      CREATE TABLE app_billing_api_cost_reviews(operation_id text,status text,refund_credits int);`);
+    await load('src/lib/saas/creation-schema.ts').ensureCreationSchema();
+    const reader = load('src/lib/saas/creations.ts');
+    const fixed = mode === 'modified';
+    async function linked(id) {
+      await create(id);
+      await control.query("INSERT INTO app_creation_records(id,actor_email,scope_kind,source_kind,source_id) VALUES($1,'fixture@example.test','personal','image:suite',$1)", [id]);
+      await control.query("INSERT INTO app_creation_links(creation_id,actor_email,target_type,target_id) VALUES($1,'fixture@example.test','image:suite',$1)", [id]);
+      await control.query("INSERT INTO app_artworks(id,email,image_url) VALUES($1,'fixture@example.test',$2)", ['work-' + id, '/media/' + id + '.png']);
+      const r = await repo.claimImageJob(id, 'suite');
+      return { r, snapshot: { ...r.snapshot, status: 'done', images: [{ artworkId: 'work-' + id }] } };
+    }
+    await step('parent: checkout outage retains actual history assets and pending evidence', async () => {
+      const id = 'history-outage', { r, snapshot } = await linked(id), before = await invariant(id);
+      creation = nativeEvidence = true; checkoutFault = metrics.connections;
+      const saved = await outcome(() => repo.saveImageJob(id, snapshot, r.lease_token));
+      assert.equal(saved.threw, baseline); checkoutFault = false;
+      const detail = await reader.creationDetail({ platform: true }, id);
+      assert.equal(detail.status, 'succeeded'); assert.equal(detail.evidencePending, fixed);
+      assert.equal(detail.assets.length, fixed ? 1 : 0);
+      if (fixed) assert.equal((await reader.creationAsset({ platform: true }, id, detail.assets[0].id)).url, '/media/' + id + '.png');
+      assert.equal(await invariant(id), before);
+      console.log(`HISTORY_CHECKOUT_OUTAGE status=${detail.status} pending=${detail.evidencePending} assets=${detail.assets.length} REPLAY=0`);
+    });
+    await step('parent: successful native writer persists output and clears only new pending marker', async () => {
+      const id = 'history-success', { r, snapshot } = await linked(id), before = await invariant(id);
+      creation = nativeEvidence = true; await repo.saveImageJob(id, snapshot, r.lease_token);
+      const detail = await reader.creationDetail({ platform: true }, id);
+      assert.equal(detail.assets.length, 1); assert.equal(detail.evidencePending, false);
+      assert.equal((await row(id)).snapshot.creationEvidencePending, undefined);
+      assert.equal((await reader.creationAsset({ platform: true }, id, detail.assets[0].id)).url, '/media/' + id + '.png');
+      assert.equal(await invariant(id), before);
+      const denied = await outcome(() => reader.creationAsset({ platform: true, boundTenantId: '00000000-0000-0000-0000-000000000099' }, id, detail.assets[0].id));
+      assert.equal(denied.error.status, 404);
+      console.log('HISTORY_SUCCESS assets=1 pending=false BOUND_TENANT_MISMATCH=404');
+    });
+    await step('parent: evidence SQL failure preserves fallback and no partial secondary writes', async () => {
+      const id = 'history-sql', { r, snapshot } = await linked(id);
+      creation = nativeEvidence = evidenceFault = true; await repo.saveImageJob(id, snapshot, r.lease_token);
+      const detail = await reader.creationDetail({ platform: true }, id);
+      assert.equal(detail.evidencePending, true); assert.equal(detail.assets.length, 1);
+      assert.equal((await control.query('SELECT count(*)::int n FROM app_creation_assets WHERE creation_id=$1', [id])).rows[0].n, 0);
+    });
+    await step('parent: native evidence writes roll back atomically to their savepoint', async () => {
+      const id = 'history-partial-write', { r, snapshot } = await linked(id);
+      creation = nativeEvidence = true; evidenceFault = 'after-write';
+      await repo.saveImageJob(id, snapshot, r.lease_token);
+      const detail = await reader.creationDetail({ platform: true }, id);
+      assert.equal(detail.evidencePending, true); assert.equal(detail.assets.length, 1);
+      assert.equal((await control.query('SELECT count(*)::int n FROM app_creation_assets WHERE creation_id=$1', [id])).rows[0].n, 0);
+      assert.equal((await control.query('SELECT count(*)::int n FROM app_creation_events WHERE creation_id=$1', [id])).rows[0].n, 0);
+      assert.equal((await control.query('SELECT status FROM app_creation_records WHERE id=$1', [id])).rows[0].status, 'queued');
+    });
+    await step('parent: evidence COMMIT rejection retains durable pending and original checkpoint', async () => {
+      const id = 'history-commit', { r, snapshot } = await linked(id), before = await invariant(id);
+      creation = nativeEvidence = true;
+      afterCheckpoint = async () => { primaryArmed = true; primaryFault = 'sql'; faultPoint = 'COMMIT'; };
+      await repo.saveImageJob(id, snapshot, r.lease_token);
+      const detail = await reader.creationDetail({ platform: true }, id);
+      assert.equal(detail.assets.length, fixed ? 1 : 0); assert.equal(detail.evidencePending, fixed);
+      assert.equal((await control.query('SELECT count(*)::int n FROM app_creation_assets WHERE creation_id=$1', [id])).rows[0].n, 0);
+      assert.equal(await invariant(id), before);
+    });
+    await step('parent: lease loss after checkpoint never projects evidence or clears pending', async () => {
+      const id = 'history-lease', { r, snapshot } = await linked(id), before = await invariant(id);
+      creation = nativeEvidence = true;
+      afterCheckpoint = async () => { await control.query("UPDATE app_image_jobs SET lease_token='next-owner',lease_until=clock_timestamp()+interval '1 minute' WHERE id=$1", [id]); };
+      await repo.saveImageJob(id, snapshot, r.lease_token);
+      const detail = await reader.creationDetail({ platform: true }, id);
+      assert.equal(detail.assets.length, fixed ? 1 : 0); assert.equal(detail.evidencePending, fixed);
+      assert.equal((await row(id)).lease_token, 'next-owner'); assert.equal(await invariant(id), before);
+      assert.equal((await control.query('SELECT count(*)::int n FROM app_creation_assets WHERE creation_id=$1', [id])).rows[0].n, 0);
+    });
+    for (const inherited of ['context', 'snapshot']) await step('parent: earlier pending ' + inherited + ' remains unresolved after native evidence success', async () => {
+      const id = 'history-pending-' + inherited, { r, snapshot } = await linked(id);
+      creation = nativeEvidence = true; inheritedPending = inherited === 'context';
+      if (inherited === 'snapshot') snapshot.creationEvidencePending = true;
+      await repo.saveImageJob(id, snapshot, r.lease_token);
+      const detail = await reader.creationDetail({ platform: true }, id);
+      assert.equal(detail.assets.length, 1); assert.equal(detail.evidencePending, true);
+    });
+    await step('parent: older postcommit evidence does not overwrite newer checkpoint evidence', async () => {
+      const id = 'history-race', { r, snapshot } = await linked(id);
+      const newer = { ...snapshot, status: 'running', stage: 'newer-checkpoint', creationEvidencePending: true };
+      creation = nativeEvidence = true;
+      afterCheckpoint = async () => {
+        await control.query('UPDATE app_image_jobs SET snapshot=$2::jsonb WHERE id=$1', [id, JSON.stringify(newer)]);
+        await control.query("UPDATE app_creation_records SET status='running' WHERE id=$1", [id]);
+      };
+      await repo.saveImageJob(id, snapshot, r.lease_token);
+      assert.deepEqual((await row(id)).snapshot, newer);
+      const evidenceStatus = (await control.query('SELECT status FROM app_creation_records WHERE id=$1', [id])).rows[0].status;
+      assert.equal(evidenceStatus, fixed ? 'running' : 'succeeded');
+      console.log(`HISTORY_RACE new_snapshot=retained evidence_status=${evidenceStatus}`);
+    });
+    await step('parent: missing creation link is not proof of evidence completion', async () => {
+      const id = 'history-no-link'; await create(id); const r = await repo.claimImageJob(id, 'suite');
+      creation = nativeEvidence = true; await repo.saveImageJob(id, { ...r.snapshot, receipt: 'committed' }, r.lease_token);
+      assert.equal((await row(id)).snapshot.creationEvidencePending === true, fixed);
+    });
+    if (!baseline) await step('parent: diagnostics share fixed stage budget across module copies', async () => {
+      const first = load('src/lib/image-job-cleanup.ts'); cache.delete('src/lib/image-job-cleanup.ts');
+      const second = load('src/lib/image-job-cleanup.ts');
+      first.reportImageJobCleanupFailure('lease-release', { code: '55P03' });
+      second.reportImageJobCleanupFailure('lease-release', { code: '55P03' });
+      assert.equal(stages('lease-release').length, fixed ? 1 : 2);
+      console.log(`DIAGNOSTIC_MODULE_COPIES=2 FIRST_REPORTS=${stages('lease-release').length}`);
+      if (fixed) {
+        clock += 60001; second.reportImageJobCleanupFailure('lease-release', { code: '55P03' });
+        assert(stages('lease-release')[1].includes('suppressed=1'));
+        const previous = logs.length; for (let n = 0; n < 1000; n++) second.reportImageJobCleanupFailure('unregistered-' + n, {});
+        assert.equal(logs.length, previous);
+      }
+    });
     assert.equal(metrics.connections, metrics.returned); assert.equal(pool.waitingCount, 0); assert.equal(pool.totalCount, pool.idleCount);
     console.log(`A60_${mode.toUpperCase()}=PASS CASES=${checks} REAL_PG=1 CHECKED_OUT=0 TIMERS=0 SUPPLIER_CALLS=0`);
   } finally {
