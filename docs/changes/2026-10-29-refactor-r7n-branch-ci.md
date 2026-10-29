@@ -22,3 +22,14 @@
 ## 状态与下一步
 
 整体重构ACTIVE。此分支超48小时因用户明确要求独立目录持续整体重构；未合回main、未部署，47 HOLD。本片fetch到origin/main `956b7238fa375e992e0ac594c47cdba5c9d95f50`，比已整合主线新增6提交，另列后续产品整合，不混入本片CI差异。Canvas剩余应用编排与变化传播、同机同数据同构建INP/混合容量、最终整版main交付和历史MEDIA_STATE_WRITE_FAILED根因仍待完成。
+
+
+## 实际远端结果（2026-10-29）
+
+触发源码 `328d0c0980d35878846e5d3be0b16a8bdd10eba9` 正常push后，GitHub已真实创建 [Core refactor regression #40880058058](https://github.com/JesstLe/naumi/actions/runs/40880058058)，event=push，精确head/branch/workflow全部匹配。只有该回归workflow，没有触发Docker镜像发布。证明分支选择入口已经生效，但远端回归**未执行**：core job `123468866209` 在3秒内failure，runner_id=0、steps=[]。
+
+原始failure annotation：
+
+> The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings
+
+因此本片状态是**分支触发修复并已验证，远端全量仍受账户问题阻断**，不是远端core125通过，也不是产品回归失败。保存run/job/check/annotations全部原始JSON，不重复rerun、不改费用或仓库公开性，不用静态PASS替代这条失败。有效远端绿灯、required protection仍未完成；历史403与此次明确账户失败分别保留。

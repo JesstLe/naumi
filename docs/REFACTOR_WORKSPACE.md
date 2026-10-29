@@ -248,3 +248,5 @@ Canvas编辑/详情/Comfy的任务、attachment、retained billing及timer组合
 ## 2026-10-29 R7N：有效分支CI入口
 
 现有核心workflow的push仅main导致重构分支不触发；本片只添加精确当前分支，保留main-only镜像发布和同SHA核心/报告。旧配置用新断言准确exit1，新runner12组172检查exit0，2072应用文件原hash保持；远端真实run、四产物/副本回滚和最终状态见[R7N模块记录](changes/2026-10-29-refactor-r7n-branch-ci.md)与本片DELIVERY，不把静态wiring当远端通过。整体ACTIVE，未合main未部署，47 HOLD；新main956b7238的6提交留后续产品整合，继续Canvas/性能容量与最终整版交付。
+
+R7N真实push源码328d0c09已触发Actions run40880058058，但core在runner分配前因GitHub付款/支出上限注释failure，steps0；分支入口已生效、远端core未执行，不能记成全绿。精确run/job/注释与后续副本回滚见本片DELIVERY；不重复rerun或变更账户费用。
