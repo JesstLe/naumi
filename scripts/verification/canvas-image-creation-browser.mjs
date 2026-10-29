@@ -39,7 +39,7 @@ export async function verifyCanvasImageCreationBrowser({page,expect,out,snapshot
  const retryBefore=await snapshot(),retryStats=await stats(),originalNode=retryBefore.artworks.find(row=>row.id==='r6c-root');
  await expect(dock.getByTestId('generation-submit-action')).toContainText('重新生成');await dock.getByTestId('generation-submit-action').click();
  const retried=await done(retryBefore,1),version=fresh(retried,retryBefore)[0],current=retried.artworks.find(row=>row.id==='r6c-root');
- assert.equal(version.source_url,'canvas-node-version');assert.equal(current.canvas_image_version.id,version.id);assert.equal(current.image_url,originalNode.image_url);assert.equal(current.canvas_x,originalNode.canvas_x);assert.equal(current.canvas_y,originalNode.canvas_y);assert.equal((await stats()).calls-retryStats.calls,1);assert.equal((await stats()).edits,retryStats.edits);
+ assert.equal(version.source_url,'canvas-node-version');assert.equal(current.canvas_image_version.id,version.id);assert.equal(current.image_url,originalNode.image_url);assert.equal(current.canvas_x,originalNode.canvas_x);assert.equal(current.canvas_y,originalNode.canvas_y);assert.equal((await stats()).calls,retryStats.calls);assert.equal((await stats()).edits-retryStats.edits,1);
  stages.push({kind:'regenerate',artwork:version,ledger:retried.ledger});
  pass('ordinary primary action keeps original node/media/geometry and saves one hidden output version at the original price');
  const versionStats=await stats(),versionLedger=(await snapshot()).ledger;
@@ -57,11 +57,11 @@ export async function verifyCanvasImageCreationBrowser({page,expect,out,snapshot
 
  const beforeReload=await snapshot(),statsBeforeReload=await stats();await page.reload({waitUntil:'domcontentloaded'});await page.locator('.react-flow__node[data-id="r6c-root"]').waitFor();
  const after=await snapshot();assert.deepEqual(after.ledger,beforeReload.ledger);
- const finalStats=await stats();assert.deepEqual(finalStats,statsBeforeReload);assert.equal(finalStats.edits-originalStats.edits,4);assert.equal(finalStats.calls-originalStats.calls,1);
+ const finalStats=await stats();assert.deepEqual(finalStats,statsBeforeReload);assert.equal(finalStats.edits-originalStats.edits,5);assert.equal(finalStats.calls,originalStats.calls);
  assert.equal(fresh(after,original).length,5);assert.equal(after.ledger.n-original.ledger.n,5);assert.equal(after.ledger.amount-original.ledger.amount,30);
  await page.screenshot({path:path.join(out,'creative-modes-product.png')});
  pass('reload retains all five creative-mode outputs with no additional supplier call or debit');
- await writeFile(path.join(out,'RESULT.json'),JSON.stringify({status:'PASS',checks,stages,actualProduct:true,realPG:true,routeMocks:0,addedArtworks:5,addedConsumes:5,addedCredits:30,addedGenerationPosts:1,addedEditPosts:4},null,2)+'\n');
+ await writeFile(path.join(out,'RESULT.json'),JSON.stringify({status:'PASS',checks,stages,actualProduct:true,realPG:true,routeMocks:0,addedArtworks:5,addedConsumes:5,addedCredits:30,addedGenerationPosts:0,addedEditPosts:5},null,2)+'\n');
  console.log('CANVAS_CREATION_PRODUCT=PASS CHECKS=6 THREE_VIEWS=3 SAME_NODE_VERSION=1 VERSION_UNDO_REDO=1 SHEET=1 REAL_PG=1 ORIGINAL_TASKS=1 ADDED_ARTWORKS=5 ADDED_CONSUMES=5 ADDED_CREDITS=30 ROUTE_MOCKS=0');
  return checks;
 }
