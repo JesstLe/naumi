@@ -13,6 +13,8 @@ import { supplierMetadataSchema } from '../../src/lib/supplier-models/types';
 import { ensureSupplierVideoSchema, recordSupplierVideoDefinition } from '../../src/lib/supplier-models/video-access';
 import { videoDefinitionSchema, videoWireProfileSchema } from '../../src/lib/video/capability-schema';
 import { managedVideoDefinition } from '../../src/lib/video/model-definition';
+import { validateBillingConfig } from '../../src/lib/billing/rules/schema';
+import type { ConfigSnapshot } from '../../src/lib/billing/types';
 
 type Admin = Awaited<ReturnType<typeof import('../../src/lib/model-config/server').getModelAdministration>>;
 type Credential = { providerId: string; sourceCredentialRef: string; plain: string };
@@ -21,7 +23,7 @@ export type CopyPayload = { operationId: string; rollbackOperationId: string; ac
   metadata: { providerId: string; modelId: string; label?: string; metadata: unknown }[];
   videoDefinitions?: { providerId: string; modelId: string; definition: unknown; profile?: unknown; sourceUrl: string }[];
   sourceVideoFrozen?: { upstreamId: string; value: { definition: unknown; profile?: unknown; sourceRevision?: unknown } }[];
-  expected: { modelVersion: number; modelDigest: string; billingVersion: number; billingDigest: string };
+  expected: { modelVersion: number; modelDigest: string; billingVersion: number; billingDigest: string; billingRawDigest: string };
   approvedConflictDigest?: string; approvedLocalEndpointsDigest?: string; approvedMetadataDigest?: string;
   reconcilePublication?: boolean;
 };
@@ -31,6 +33,20 @@ const uuid = (s: string) => /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.tes
 const key = (r: any) => `${r.providerId}\t${r.modelId}`;
 const data = (r: any) => supplierMetadataSchema.parse(r.metadata);
 const read = (path: string) => JSON.parse(readFileSync(path, 'utf8'));
+/** Match the real billing repository read path, including newly added defaults.
+ * This is a pure read projection; the original immutable stored config stays raw. */
+export function normalizeCopy103Billing(raw: { version: unknown; config: unknown }): ConfigSnapshot {
+  const version = Number(raw?.version);
+  gate(Number.isSafeInteger(version) && version > 0, 'BILLING_VERSION_INVALID');
+  return { version, config: validateBillingConfig(raw.config) };
+}
+async function assertRawBilling(a: Admin, expected: CopyPayload['expected'], normalized: ConfigSnapshot) {
+  const row = (await a.pool.query('SELECT version,config FROM app_billing_config_versions WHERE version=$1', [expected.billingVersion])).rows[0];
+  gate(row, 'BILLING_RAW_VERSION_MISSING');
+  const raw = { version: Number(row.version), config: row.config };
+  gate(typeof expected.billingRawDigest === 'string' && digest(raw) === expected.billingRawDigest, 'BILLING_RAW_CAS_HOLD');
+  gate(digest(normalizeCopy103Billing(raw)) === digest(normalized), 'BILLING_NORMALIZATION_HOLD');
+}
 function save(root: string, value: any, secrets: string[]) {
   const bytes = JSON.stringify(value, null, 2) + '\n';
   gate(!secrets.some(secret => secret && bytes.includes(secret)), 'PLAINTEXT_IN_JOURNAL_HOLD');
@@ -90,6 +106,7 @@ async function baseline(a: Admin, expected: CopyPayload['expected']) {
   const model = await a.repo.current(), billing = await a.billing.current();
   gate(model.version === expected.modelVersion && model.digest === expected.modelDigest, 'MODEL_CAS_HOLD');
   gate(billing.version === expected.billingVersion && digest(billing) === expected.billingDigest, 'BILLING_CAS_HOLD');
+  await assertRawBilling(a, expected, billing);
   return { model, billing };
 }
 async function metadataPlan(a: Admin, input: CopyPayload) {
@@ -198,7 +215,7 @@ export async function runSupplierCopy103(mode: 'PLAN' | 'APPLY' | 'VERIFY' | 'RO
       const plan = normalizedPlan(input, model.config, placeholderRefs, a.trustedOrigins);
       compileRouterProjection({ ...model, config: plan.config }, billing, { trustedOrigins: a.trustedOrigins });
       const metadata = await metadataPlan(a, input), videos = await videoReview(a, input, plan.config);
-      state = { schemaVersion: 1, manifest, phase: 'PLANNED_PENDING_CREDENTIAL_REFS', baseline: model, billingDigest: digest(billing),
+      state = { schemaVersion: 1, manifest, phase: 'PLANNED_PENDING_CREDENTIAL_REFS', baseline: model, billingDigest: digest(billing), billingRawDigest: input.expected.billingRawDigest,
         semanticPlan: plan, metadata, videoReview: videos, priorFrozenVideoHash: await frozenHash(a, model.version) };
       save(root, state, secrets);
     }
@@ -213,6 +230,8 @@ export async function runSupplierCopy103(mode: 'PLAN' | 'APPLY' | 'VERIFY' | 'RO
     // Current billing is append-only; holding SHARE blocks concurrent tariff INSERT.
     await billingGuard.query('BEGIN'); await billingGuard.query('LOCK TABLE app_billing_config_versions IN SHARE MODE');
     const bill = await a.billing.current(); gate(bill.version === input.expected.billingVersion && digest(bill) === state.billingDigest, 'BILLING_CAS_HOLD');
+    gate(state.billingRawDigest === input.expected.billingRawDigest, 'BILLING_RAW_REVIEW_HOLD');
+    await assertRawBilling(a, input.expected, bill);
     if (mode === 'APPLY') {
       if (!state.applyRequest) await baseline(a, input.expected);
       gate(!state.semanticPlan.conflicts.length || input.approvedConflictDigest === digest(state.semanticPlan.conflicts), 'CONFLICT_REVIEW_REQUIRED');

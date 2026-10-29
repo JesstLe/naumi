@@ -6,15 +6,20 @@ import { join, resolve, sep } from 'node:path';
 import { createRequire } from 'node:module';
 import { createModelFixture } from './model-config-fixture';
 import { fixtureConfig } from './billing-unit-fixture';
+import { validateBillingConfig } from '../src/lib/billing/rules/schema';
+import { CANVAS_FREE_DEFAULTS } from '../src/lib/billing/canvas-defaults';
 import { createModelRuntime } from '../src/lib/model-config/runtime';
 import { ingestSupplierDirectory, saveSupplierModel } from '../src/lib/supplier-models/repository';
 import { unknownSupplierMetadata } from '../src/lib/supplier-models/types';
 import { recordSupplierVideoDefinition } from '../src/lib/supplier-models/video-access';
 import { managedVideoDefinition } from '../src/lib/video/model-definition';
 import { digest } from './lib/apib-activation.mjs';
-import { runSupplierCopy103 as sourceRun, type CopyPayload } from './ops/supplier-copy103';
-const runSupplierCopy103: typeof sourceRun = process.env.SUPPLIER_COPY103_OPERATOR_BUNDLE
-  ? createRequire(import.meta.url)(resolve(process.env.SUPPLIER_COPY103_OPERATOR_BUNDLE)).runSupplierCopy103 : sourceRun;
+import { runSupplierCopy103 as sourceRun, normalizeCopy103Billing as sourceNormalize, type CopyPayload } from './ops/supplier-copy103';
+const operator = process.env.SUPPLIER_COPY103_OPERATOR_BUNDLE
+  ? createRequire(resolve(process.cwd(), 'package.json'))(resolve(process.env.SUPPLIER_COPY103_OPERATOR_BUNDLE))
+  : { runSupplierCopy103: sourceRun, normalizeCopy103Billing: sourceNormalize };
+const runSupplierCopy103: typeof sourceRun = operator.runSupplierCopy103;
+const normalizeCopy103Billing: typeof sourceNormalize = operator.normalizeCopy103Billing;
 function removeFixture(path: string) {
   const absolute = resolve(path), prefix = resolve(tmpdir()) + sep + 'naumi-supplier-copy103-';
   assert(absolute.startsWith(prefix) && absolute.length > prefix.length);
@@ -35,8 +40,17 @@ async function main() {
     f.config.business = { 'image.generate': { enabled: true, defaultModelId: 'image-a', options: [{ modelId: 'image-a', enabled: true, sort: 2, unit: 'image', pricing: { mode: 'cny-fixed', amountMicros: '120000', creditsPerCnyMicros: '100000000', rounding: 'ceil' } }] } };
     const before = await f.repo.current();
     await f.sql.query('CREATE TABLE app_billing_config_versions(version bigint PRIMARY KEY,config jsonb NOT NULL)');
-    await f.sql.query('INSERT INTO app_billing_config_versions VALUES(8,$1::jsonb)', [JSON.stringify(fixtureConfig())]);
-    const billing = { current: async () => { const row = (await f.sql.query('SELECT * FROM app_billing_config_versions ORDER BY version DESC LIMIT 1')).rows[0]; return { version: Number(row.version), config: row.config }; } };
+    const historicalRaw: any = fixtureConfig();
+    for (const feature of Object.keys(CANVAS_FREE_DEFAULTS)) delete historicalRaw.features[feature];
+    await f.sql.query('INSERT INTO app_billing_config_versions VALUES(8,$1::jsonb)', [JSON.stringify(historicalRaw)]);
+    const readRawBilling = async () => { const row = (await f.sql.query('SELECT * FROM app_billing_config_versions ORDER BY version DESC LIMIT 1')).rows[0]; return { version: Number(row.version), config: row.config }; };
+    // Match the real repository, independently of the operator's exported bridge.
+    const billing = { current: async () => { const row = await readRawBilling(); return { version: row.version, config: validateBillingConfig(row.config) }; } };
+    const originalRawBilling = await readRawBilling(), originalRawHash = digest(originalRawBilling);
+    eq(digest(await billing.current()) === originalRawHash, false);
+    eq(normalizeCopy103Billing(originalRawBilling), await billing.current());
+    eq(digest(originalRawBilling), originalRawHash);
+    eq(Object.keys(CANVAS_FREE_DEFAULTS).every(id => !Object.hasOwn(originalRawBilling.config.features, id)), true);
     let routerDigest = '', prepares = 0, activations = 0, loseNextActivationReceipt = false;
     const applied = new Map<string, any>();
     const router: any = {
@@ -62,7 +76,7 @@ async function main() {
       credentials: source.providers.map((p, i) => ({ providerId: p.id, sourceCredentialRef: p.credentialRef!, plain: i ? sourceKey2 : sourceKey1 })),
       metadata: [{ providerId: 'p1', modelId: 'wire-image-one', metadata: sourceMetadata }, { providerId: 'p1', modelId: 'source-only-wire', metadata: sourceMetadata }],
       videoDefinitions: [{ providerId: 'pv', modelId: 'fixture-video', definition: { supportsNegativePrompt: true }, profile: 'openai-videos', sourceUrl: 'https://supplier.example/docs/video' }],
-      expected: { modelVersion: before.version, modelDigest: before.digest, billingVersion: bill.version, billingDigest: digest(bill) } };
+      expected: { modelVersion: before.version, modelDigest: before.digest, billingVersion: bill.version, billingDigest: digest(bill), billingRawDigest: originalRawHash } };
     const computedVideo = managedVideoDefinition(source.upstreamModels.find(u => u.id === 'uv')!, source.providers.find(p => p.id === 'pv')!, {
       ...input.videoDefinitions![0], sourceRevision: { id: randomUUID(), revision: 3, sourceUrl: input.videoDefinitions![0].sourceUrl, collectedAt: '2026-10-29T00:00:00.000Z' }
     } as any);
@@ -86,6 +100,13 @@ async function main() {
     await assert.rejects(runSupplierCopy103('APPLY', root, a, input, null, true), /BILLING_CAS_HOLD/); checks++;
     eq(Number((await f.sql.query('SELECT count(*) FROM app_model_credentials')).rows[0].count), credentialCount);
     await f.sql.query('DELETE FROM app_billing_config_versions WHERE version=9');
+    // A raw rewrite adding explicit defaults has exactly the same normalized
+    // tariff but must still fail the reviewed raw CAS before credential imports.
+    await f.sql.query('UPDATE app_billing_config_versions SET config=$1::jsonb WHERE version=8', [JSON.stringify(bill.config)]);
+    eq(digest(await billing.current()), digest(bill));
+    await assert.rejects(runSupplierCopy103('APPLY', root, a, input, null, true), /BILLING_RAW_CAS_HOLD/); checks++;
+    eq(Number((await f.sql.query('SELECT count(*) FROM app_model_credentials')).rows[0].count), credentialCount);
+    await f.sql.query('UPDATE app_billing_config_versions SET config=$1::jsonb WHERE version=8', [JSON.stringify(originalRawBilling.config)]);
     const apply: any = await runSupplierCopy103('APPLY', root, a, input, null, true);
     eq(apply.publication.id, input.operationId); eq(apply.publication.phase, 'applied'); eq(apply.credentialImports, 2);
     const verified: any = await runSupplierCopy103('VERIFY', root, a, input, null, true);
@@ -151,7 +172,8 @@ async function main() {
       await runSupplierCopy103('ROLLBACK', unknownRoot, a, unknown, null, true);
       eq(digest(await billing.current()), digest(bill)); eq(supplierCalls, 0);
     } finally { removeFixture(unknownRoot); }
-    console.log(`SUPPLIER_COPY103_PG=PASS CHECKS=${checks} CREDENTIALS_ENCRYPTED=2 FIXED_UUID_REPLAY=PASS SELECTIVE_ROLLBACK=PASS BILLING_UNCHANGED=PASS OLD_VIDEO_FROZEN=PASS SUPPLIER_CALLS=${supplierCalls}`);
+    eq(await readRawBilling(), originalRawBilling);
+    console.log(`SUPPLIER_COPY103_PG=PASS CHECKS=${checks} CREDENTIALS_ENCRYPTED=2 FIXED_UUID_REPLAY=PASS SELECTIVE_ROLLBACK=PASS BILLING_UNCHANGED=PASS BILLING_RAW_UNCHANGED=PASS BILLING_NORMALIZED=PASS OLD_VIDEO_FROZEN=PASS SUPPLIER_CALLS=${supplierCalls}`);
   } finally { await f.cleanup(); removeFixture(root); }
 }
 main().catch(error => { console.error('SUPPLIER_COPY103_PG_FAIL', error?.code || error?.name, error?.message); process.exitCode = 1; });
