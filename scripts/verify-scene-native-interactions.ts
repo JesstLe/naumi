@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {dragCanvasNode} from "./verification/canvas-node-drag";
+import {dragCanvasConnection} from "./verification/canvas-connection-drag";
 import {spawnSync} from "node:child_process";
 import {createHash, randomUUID} from "node:crypto";
 import {writeFile} from "node:fs/promises";
@@ -163,8 +164,9 @@ export async function verifySceneInteractions(h: Awaited<ReturnType<typeof creat
     const renderCredits=await h.creditState("a");
     await page.goto(`${h.baseUrl}/canvas?node=${directorId}`,{waitUntil:"domcontentloaded"});
     const directorCard=page.locator(`.react-flow__node[data-id="${directorId}"]`);
-    await directorCard.getByTestId("director-canvas-node").waitFor();await page.getByRole("button",{name:"适应视图",exact:true}).click();
-    await card.locator('.react-flow__handle.source[data-handleid="out"]').dragTo(directorCard.locator('.react-flow__handle.target[data-handleid="in"]'));
+    await directorCard.getByTestId("director-canvas-node").waitFor();
+    await page.getByRole("button",{name:"适应视图",exact:true}).click();
+    await dragCanvasConnection(page,card.locator('.react-flow__handle.source[data-handleid="out"]'),directorCard.locator('.react-flow__handle.target[data-handleid="in"]'),path.join(out,'scene-director-connection.json'));
     await expect.poll(async()=>(await getDirector()).project.sceneReference?.stateId).toBe("base");
     let applied=await getDirector();assert.equal(applied.project.backgroundProjection,"image");assert.deepEqual(applied.project.cameras,directorProject.cameras);assert.deepEqual(applied.project.entities,directorProject.entities);
     await directorCard.getByRole("button",{name:"打开3D导演台",exact:true}).first().click();const directorEditor=page.getByTestId("director-editor"),canvas=directorEditor.locator('canvas[data-director-renderer="webgl"]');
