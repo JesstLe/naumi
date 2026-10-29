@@ -343,3 +343,5 @@ R6U固定验收 `511ade12`：core63/63全部新执行、角色共享owner39/规�
 ## 2026-10-29 R7D：生成活动与容量主线接入
 
 普通整合 main `c63ceb13` 的 9 提交，3 处冲突按现有 owner 处理：平台池、图片持久任务运行时与统一 worker scan，不恢复旧单体。Canvas 五条生成路径的 busy/retry/retain/finally 归小型 `generation-activity`；原任务、报价、交付、文档和账务系统保持。旧同步准备失败遗留 3 个 busy key，新版实际入口不再遗留；集中验证与最终固定源见 [R7D模块记录](../changes/2026-10-29-refactor-r7d-generation-activity.md)。整体 ACTIVE，未合main未部署，47 HOLD；剩余 Canvas 视图/回调、性能/INP/容量、有效远端 required CI 与最终整合退出继续，历史 MEDIA_STATE_WRITE_FAILED 根因仍 OPEN_NOT_REPRODUCED。
+
+R7D最终：应用18a15ab0、完整镜像/产品37PASS，集中回归同SHA汇总102PASS+1OPEN（scene应用ECONNRESET及seed媒体状态写失败，非103全绿），其余46项新执行、不重跑已过56。旧/新真实生成活动37/115→38/134、X1/X2/X3PG通过；tsc/lint37warnings、四SCC0。媒体状态原根因OPEN，实际24次native探测未复现；远端main未保护/required端点403证据保留。整体ACTIVE，不合main不部署；四产物与副本回滚/Git/清理以R7D DELIVERY为准。

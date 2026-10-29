@@ -40,3 +40,13 @@ Canvas 的图片、空白节点、详情批次、同步编辑和 Comfy 工作流
 heartbeat-connection 的 baseline 分支原本专测 X2 提交之后/父补丁之前的借出 Client crash；R7C 更早版本走 pool.query，不具有该触发点，所以首次错误选择源后 child timeout 的结果保留为 INVALID_PRE_X2_SOURCE，不将其写成产品故障。原 R7C 失租/续租差异由完整 X2 A/B 覆盖，父补丁真实连接回归只对已整合实现执行。
 
 旧 generation-concurrency 静态脚本先因长期过时的空白匹配断言失败；日志原样保留，不把它冒充新的运行时并发验收。本轮并发、原 task retry、不同节点及 UNKNOWN 由实际五入口的新 verifier 和原 task-boundaries 覆盖。该静态债务另记，未改业务来满足正则。
+
+## 最终本地整合验收与开放项
+
+- 固定应用源码 `18a15ab03d9f6e1a7dab733dd4206268191e231c`；完整生产 Dockerfile 镜像 `sha256:38b0f6a8a97074ddf4d583eae95b3a1c5421d652c49727e924b5b0ef5b28dc61` 的 Web+同版本 Worker 包通过；该镜像实际产品双浏览器 **37 项**通过，真实 HTTP/PG/Worker/作品/账本，浏览器 route mocks0、确认弹窗0。支付供应商调用0。原程序同镜像，不用运行源码替换镜像内应用。
+- core 首轮 PG 使用 trust 认证，导致故意错密码用例没有按约拒绝且留下借出的控制连接；仅终止本线程该测试子进程，改本自有库 fixture 角色为实际 SCRAM。第一失败报告6PASS/1FAIL/96未运行保留。固定源码重跑完成56PASS后场景应用 `ECONNRESET`，该场景重跑又在 seed 的媒体探测中出现 `MEDIA_STATE_WRITE_FAILED`。两次cleanup均通过，未改测试断言或重复供应商生产请求。
+- 为避免重复已过的56项，后续46项通过原 runner 单独新执行，**按同一固定SHA/完整字节digest汇总102PASS、1项OPEN失败、未运行0，完整core仍未通过**。两份报告和逐log hash保留，不把102项汇总冒充一次103/103通过。完整同镜像 runtime177 本轮未执行，R7C旧177不移作新source证据。
+- Windows实际媒体Worker+真实FFprobe的24个独立任务追加观察全部完成，native fs write/rename/rm观察器未捕获异常，源文件hash保持。它只说明这24次没有复现，**历史根因仍OPEN**，不能把另一症状、短样本通过或简单重试当修复。
+- 全项目 tsc与lint exit0；lint37条warnings保留。静态/runtime/emitted-static/emitted-all SCC均0；已有fixture route反向import与UI toast依赖继续列在架构报告，不以零环等同完整分层结束。
+- 真实GitHub只读观察：main `protected=false`；required-status-checks端点返回HTTP403。工作流存在不等于远端强制门禁，未改仓库设置。最新main `e18780188d02ac92c901b8cf5648b4554aef14e8` 另有8提交，未混入已测试18a源码；下一轮整合其已验证线性解析与像素流水线，避免封版期间循环重建。
+- 完整源码归档、byte-exact patch、执行与失败字面日志、独立副本hash回滚与恢复旧行为、远端最终SHA统一见本轮 ignored `DELIVERY.json`/`VERIFICATION.txt`。应用源码与文档收尾SHA分层，整体ACTIVE，不合main、不部署，47 HOLD。
