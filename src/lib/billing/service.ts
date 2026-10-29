@@ -9,6 +9,7 @@ import { operationApiCost } from "./api-cost-ledger";
 import { assertMutableStagingTask, isImportedHistory } from "../staging-history";
 export async function withBillingTransaction<T>(pool: Pool, action: (tx: Tx) => Promise<T>): Promise<T> {
     const tx = await pool.connect();
+    let discard = false;
     try {
         await tx.query("BEGIN");
         const result = await action(tx);
@@ -16,11 +17,20 @@ export async function withBillingTransaction<T>(pool: Pool, action: (tx: Tx) => 
         return result;
     }
     catch (error) {
-        await tx.query("ROLLBACK");
+        try {
+            await tx.query("ROLLBACK");
+        }
+        catch {
+            // The session is not known clean, even if pg still considers it queryable.
+            discard = true;
+        }
+        // Cleanup cannot establish whether an unacknowledged COMMIT took effect.
+        // Preserve the original failure; never replay the action or change its holds.
         throw error;
     }
     finally {
-        tx.release();
+        // pg also evicts disconnected/non-queryable clients on normal release.
+        tx.release(discard);
     }
 }
 function identity(id: string, email: string, ledgerId: string) {

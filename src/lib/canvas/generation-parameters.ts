@@ -1,3 +1,5 @@
+import {frameRatio} from "../imagegen/frame-ratio";
+
 /** New canvas submissions only. Never mutate artwork metadata or frozen jobs. */
 export const CANVAS_RATIO_OPTIONS = [
   { id: "auto", w: 0, h: 0 },
@@ -19,6 +21,13 @@ export function normalizeCanvasRatio(value: unknown): string {
 /** Syntax only. The published model/adapter owns actual ratio admission. */
 export function validCanvasRatio(value: unknown): value is string {
   return typeof value === "string" && /^[1-9]\d{0,5}:[1-9]\d{0,5}$/.test(value);
+}
+/** These edits keep their source frame; expansion and new image generation do not. */
+export function canvasSourceFrameEdit(path: string) {
+  return ["/api/canvas/annotate", "/api/canvas/text-edit", "/api/canvas/image-tasks"].includes(path);
+}
+export function canvasSourceFrameRatio(image: {width?:number|null;height?:number|null;ratio?:string|null}) {
+  return frameRatio({width:image.width||0,height:image.height||0}) || (validCanvasRatio(image.ratio) ? image.ratio : "auto");
 }
 export function normalizeCanvasResolution(value: unknown): string {
   return value === "5K" ? "4K" : (CANVAS_RESOLUTIONS as readonly unknown[]).includes(value) ? String(value) : "1K";

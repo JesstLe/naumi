@@ -333,3 +333,20 @@
 - collection/image proof能力为v3；旧v1/v2或缺完整原集合的证据不回填、不追认。父37矩阵原/恢复17pass20fail，修复37pass；真实PG15定向组及10单元、原snapshot21pass1skip、normal37/enterprise4/completed-image4回归通过。保留性反例控制器PASS只代表符合各版预期，不等于旧版保护健全。
 - 并行验证遇Windows1455资源不足与GBK终端异常，原失败/SQL/清理错误保留。仅核验并补清理本任务完整ID，串行复测；四产物/原改hash/副本回滚恢复2原文件移除3新增验证文件、later-edit73/0写入均在父ignored`release-snapshot-parent/`。修复源码保持，所有自有PG收尾移除，未操作其他容器。
 - 此次是源码/本地真实PG/Python门禁fixture，不是生产容量或完整蓝绿验收。47下一发布须真实重采v3基线；45手术/在线索引/UNKNOWN/CLEANUP_PENDING/accepted-timeout旧波动保持。工作台客户端恢复轮询任务继续独立推进。
+
+### 2026-10-29 A27 账务事务清理子项
+
+- 固定实现`8f5a3606c2408f656434f448e81c5cc1eaa5741e`由父从main`cb1d2f49`普通整合。仅`withBillingTransaction`的ROLLBACK失败分支保留原抛出值、标记discard并finally恰好一次release；同一client上的BEGIN/action/COMMIT、健康复用和无自动replay保持。沿用**A27账务子项**，不重复计普通池listener或pg已有死连接淘汰。
+- 父独占PG55527四轮串行：原/恢复14场景8pass6fail（exit1），修改/修改副本14pass（exit0），六项是同一清理问题的边界断言。修改48checkout/48release、active release0；24并发8成功16预期业务/SQL失败、峰值5。父只读源码/relay复核与父实际PG结果分层。
+- 真实TCP relay吞COMMIT回包：服务器已提交和约束拒绝两例分别durable1/0，客户端均未知，action1次、原异常对象保持。另real-commit+adapter-ack拒绝seam证明后续ROLLBACK成功也不构成未提交证明；没有新增UNKNOWN状态机、重扣、重发或清hold。queryable但未清洁的ROLLBACK失败是显式SQL dispatch seam，不报告为生产自然SQL错误。
+- 父原生rules/wallet/X2与全项目tsc均exit0；X2单operation一笔-6、UNKNOWN留hold、原租约fencing保持。五行固定断连日志无敏感参数；非Error sentinel直接验证成功回滚路径，不夸大矩阵覆盖。
+- 父四产物与完整命令/input/literal/exit在ignored`billing-tx-parent/`；副本恢复1原hash及原六项失败、later-edit73/0写入，修复源码保持。四个父自有PG完整ID均移除、55527关闭，55432原连接未触碰。47无SSH/部署，其他事务调用方、45手术/在线索引/UNKNOWN和历史债继续挂账；工作台review仍待回执。
+
+### 2026-10-29 工作台恢复轮询及独立复核修正
+
+- **A50 / D32：客户端恢复观察在卸载/账号切换后继续GET，迟到续体覆盖会话与busy。** 固定子实现`dd93e342`从父main`9ab916c1`普通合入，单owner覆盖history→live→poll→final history，账号/会话代际、AbortController、timer/listener和已有发送/保存/插话边界统一清理。8次重挂原24请求/8timer残留，最终16请求/0timer/0listener；是本地场景，不推断全站/RSS硬上界。
+- **A51 / D33（新增P2）：未载入目标历史失败误挡门户/原已settled会话并吞输入。** 父增加owner.installed/previousUnavailable；失败目标不占用当前会话围栏，但原unknown跨失败目标仍保留。门户只在send已本地安装原提示到消息后清草稿；被拦入口保留输入并给可见反馈，不把本地接纳当服务端receipt。
+- **A52 / D34（新增P2）：cached user的ready=false→true被误判换号，清掉已受理SSE UI。** scope按真实email稳定；ready失效只清只读观察并保留当前未知，真实换号/ABA/卸载仍失效旧scope。显式/URL发送均保持原sessionId、结果及原身份保存。顺带修复既有匿名未ready URL先消费问题，不另凑新增回归。
+- 父原29断言保留并补10场景：原版/恢复各39项7pass32fail、子候选30pass9fail，父修/修改副本39pass0fail。独立15项未改断言：原/恢复7pass8fail、候选8pass7fail、父修12pass3fail；剩余chat upload/rename/remove迟到跨账号问题两版均有，继续挂账，不伪称独立套件全绿。完整tsc exit0、stdout/stderr空。
+- 证据为实际React19/WorkbenchClient/WorkbenchSessions、Chromium、原生timer与loopback HTTP；auth/backend/非相关UI为fixture，无PG/付费调用/完整Next/生产验收。恢复自身PUT/POST0；39矩阵12次mock PUT/10次POST均为显式发送/保存测试。显式stop一次DELETE、后端仍running时新显式发送409保持；脱离旧SSE只drain、不新发取消或重放。
+- 父四产物、原改hash、所有原始stdout/stderr/exit位于ignored`workbench-parent/`；copy-only恢复1原文件、移除2新增文件、原32及独立8项失败集合恢复；后来编辑与真实源码目标guard均73/0写入，源码/修改快照仍为父修。细节见模块父验收节。47无SSH/部署，45手术、在线索引、UNKNOWN/CLEANUP_PENDING/accepted-timeout与长流/RSS仍保留。
