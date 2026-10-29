@@ -1,3 +1,5 @@
+import {withCreationReceiptRoute} from "@/lib/saas/creation-context";
+import {filterCreationProjects} from "@/lib/saas/creation-access";
 import { NextResponse } from "next/server";
 import { authenticatedEmail, authorizedTargetEmail } from "@/lib/request-auth";
 import { sameSiteBiMutation } from "@/lib/bi/access";
@@ -8,11 +10,11 @@ import { characterFailure } from "../response";
 
 export const runtime = "nodejs", dynamic = "force-dynamic";
 type Context = { params: Promise<{ id: string }> };
-export async function GET(request: Request, context: Context) {
+async function readNativeNodes(request: Request, context: Context) {
   const actor = await authorizedTargetEmail(request, new URL(request.url).searchParams.get("email"), true);
   if (!actor) return NextResponse.json({ error: "未登录或无权访问" }, { status: 401 });
   try {
-    const node = await getCharacterNode(actor, (await context.params).id);
+    const found = await getCharacterNode(actor, (await context.params).id);const node=found?(await filterCreationProjects(actor,[found]))[0]:null;
     return NextResponse.json(node ? { node } : { error: "角色不存在" }, { status: node ? 200 : 404, headers: { "cache-control": "private, no-store" } });
   } catch (error) { return characterFailure(error); }
 }
@@ -29,3 +31,5 @@ export async function PATCH(request: Request, context: Context) {
     } catch (error) { return characterFailure(error); }
   });
 }
+
+export function GET(request:Request,context:{params:Promise<{id:string}>}){return withCreationReceiptRoute(request,()=>readNativeNodes(request,context));}

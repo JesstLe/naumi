@@ -37,6 +37,8 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='audio-ui')stageEnv.AUDIO_SOURCE_WAV=path.join(out,'audio-rules','original.wav');
    if(spec.id==='timeline-ui')stageEnv.TIMELINE_SOURCE_ASSETS=path.join(out,'timeline-rules');
    stageEnv.TIMELINE_APP_EVIDENCE=evidence;
+   if(spec.id==='native-documents')stageEnv.NATIVE_DOCUMENT_EVIDENCE=evidence;
+   if(spec.id==='native-documents-pg')stageEnv.NATIVE_DOCUMENT_PG_EVIDENCE=evidence;
    if(spec.id==='dataurl-delivery')stageEnv.DATAURL_PNG=path.join(out,'dataurl-decoder','fixture-1536x2048.png');
    let literal='';const child=spawn(row.command[0],row.command.slice(1),{cwd:root,env:stageEnv,windowsHide:true,stdio:['ignore','pipe','pipe']});const completion=new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',(code,signal)=>resolve({code,signal}));});row.pid=child.pid;const log=chunk=>{literal+=chunk.toString('utf8');process.stdout.write(chunk);};child.stdout.on('data',log);child.stderr.on('data',log);const result=await completion;await write();
    await fs.appendFile(row.log,literal+'\nEXIT='+result.code+' SIGNAL='+result.signal+'\n');row.exit=result.code;row.signal=result.signal;row.finishedAt=new Date().toISOString();row.logSha256=hash(await fs.readFile(row.log));row.marker=spec.expect?literal.includes(spec.expect):true;row.status=result.code===0&&row.marker?'PASS':'FAIL';await write();const afterCase=await sourceIdentity(root);if(afterCase.digest!==identity.digest||afterCase.commit!==identity.commit)throw Error('SOURCE_CHANGED_DURING_VERIFICATION');if(row.status==='FAIL')break;

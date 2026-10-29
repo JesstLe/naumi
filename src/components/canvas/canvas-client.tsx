@@ -604,23 +604,23 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [videoHistoryId,setVideoHistoryId]=useState<string|null>(null);
   const videoResultAttempts=useRef(new Map<string,Extract<UndoAct,{kind:"video-result"}>>());
   const [videoMedia,setVideoMedia]=useState<{id:string;projectKey:string;initial:VideoPlayerAction}|null>(null);
-  const videoNodesStore=useVideoNodes({email:targetEmail||user?.email,readOnly,request:privateFetchRaw});
-  const directorNodesStore=useDirectorNodes({email:targetEmail||user?.email,readOnly,request:privateFetchRaw});
+  const videoNodesStore=useVideoNodes({email:targetEmail||user?.email,readOnly,scope:canvasArtworkDocument.scope});
+  const directorNodesStore=useDirectorNodes({email:targetEmail||user?.email,readOnly,scope:canvasArtworkDocument.scope});
   const [directorEditorId,setDirectorEditorId]=useState<string|null>(null);
   useEffect(()=>{if(directorNodesStore.error)flashTip(directorNodesStore.error);},[directorNodesStore.error]);
   const directorCreating=useRef(false);
-  const characterNodesStore=useCharacterNodes({email:targetEmail||user?.email,readOnly,request:privateFetchRaw});
+  const characterNodesStore=useCharacterNodes({email:targetEmail||user?.email,readOnly,scope:canvasArtworkDocument.scope});
   const [characterEditorId,setCharacterEditorId]=useState<string|null>(null),characterCreating=useRef(false);
   useEffect(()=>{if(characterNodesStore.error)flashTip(characterNodesStore.error);},[characterNodesStore.error]);
-  const audioNodesStore=useAudioNodes({email:targetEmail||user?.email,readOnly,request:privateFetchRaw});
+  const audioNodesStore=useAudioNodes({email:targetEmail||user?.email,readOnly,scope:canvasArtworkDocument.scope});
   const [audioEditorId,setAudioEditorId]=useState<string|null>(null);
   const [audioActionsOwner]=useState(createCanvasAudioActions);
   useEffect(()=>{if(audioNodesStore.error)flashTip(audioNodesStore.error);},[audioNodesStore.error]);
-  const timelineNodesStore=useTimelineNodes({email:targetEmail||user?.email,readOnly,request:privateFetchRaw});
+  const timelineNodesStore=useTimelineNodes({email:targetEmail||user?.email,readOnly,scope:canvasArtworkDocument.scope});
   const [timelineEditorId,setTimelineEditorId]=useState<string|null>(null);
   const [timelineActionsOwner]=useState(createCanvasTimelineActions);
   useEffect(()=>{if(timelineNodesStore.error)flashTip(timelineNodesStore.error);},[timelineNodesStore.error]);
-  const sceneNodesStore=useSceneNodes({email:targetEmail||user?.email,readOnly,request:privateFetchRaw});
+  const sceneNodesStore=useSceneNodes({email:targetEmail||user?.email,readOnly,scope:canvasArtworkDocument.scope});
   const [sceneEditorId,setSceneEditorId]=useState<string|null>(null),sceneCreating=useRef(false);
   useEffect(()=>{if(sceneNodesStore.error)flashTip(sceneNodesStore.error);},[sceneNodesStore.error]);
   const directorOutputAttempts=useRef(new WeakMap<File,{artworkId?:string;operationId:string;expectedRevision?:number;position?:{x:number;y:number};positionOperationId?:string;addedToHistory?:boolean}>());
@@ -756,7 +756,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     writable:()=>!!user&&!readOnly,
     native:nativeDocuments,
     snapshot:()=>({artworks:canvasArtworkDocument.getSnapshot().nodes||[],textNodes:canvasTextDocument.getSnapshot().nodes,videoNodes:[],...nativeDocuments.snapshot()}),
-    history:canvasHistory,artworks:ids=>canvasArtworkDocument.merge(ids),videos:videoNodesStore.accept,directors:directorNodesStore.accept,characters:characterNodesStore.accept,scenes:sceneNodesStore.accept,audios:audioNodesStore.accept,timelines:timelineNodesStore.accept,
+    history:canvasHistory,artworks:ids=>canvasArtworkDocument.merge(ids),
   });
   const workflowDocument=useCanvasWorkflowDocument(canvasArtworkDocument.scope,targetEmail||user?.email||"",{writable:()=>!!user&&!readOnly,merge:canvasArtworkDocument.merge,history:canvasHistory});
   const workflowManifests=workflowDocument.manifests;

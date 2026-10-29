@@ -76,6 +76,16 @@ export async function assertCreationProjectInput(email:string,id:string,tx?:Pick
  if(row?.scope_kind==='tenant'&&row.tenant_id!==context.tenantId)throw new TeamError('不能直接引用其他企业的素材',403);
  if(sameScope&&((row?.scope_kind||'personal')!==context.scopeKind||(row?.tenant_id||null)!==context.tenantId))throw new TeamError('图片节点与当前工作空间不符',403);
 }
+/** Batched read projection of the existing same-scope project rule. Missing
+ * historical bindings remain personal; this function never binds or migrates. */
+export async function filterCreationProjects<T extends {projectKey:string}>(email:string,records:T[]):Promise<T[]>{
+ const context=currentCreationContext();if(!dbEnabled||!context||!records.length)return records;
+ await ensureCreationSchema();
+ const rows=(await getPool().query(`SELECT p.id FROM unnest($1::text[]) AS p(id)
+   LEFT JOIN app_creation_contexts c ON c.actor_email=$2 AND c.context_kind='project' AND c.context_id=p.id
+   WHERE COALESCE(c.scope_kind,'personal')=$3 AND c.tenant_id IS NOT DISTINCT FROM $4::uuid`,[[...new Set(records.map(row=>row.projectKey))],email.toLowerCase(),context.scopeKind,context.tenantId])).rows;
+ const visible=new Set(rows.map(row=>String(row.id)));return records.filter(row=>visible.has(row.projectKey));
+}
 export async function bindCreationMedia(email:string,reference:string) {
  const scope=currentCreationContext();if(!dbEnabled||!scope)return;
  if(scope.actorEmail!==email.toLowerCase())throw new TeamError('素材操作者不一致',403);

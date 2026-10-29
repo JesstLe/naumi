@@ -1,8 +1,4 @@
 import {filterCanvasNativeRecords,canvasNativeIds,type CanvasNativeRecords} from "./native-node-records";
-import type {CanvasTimelineNode} from "./timeline-node-schema";
-import type {CanvasAudioNode} from "./audio-node-schema";
-import type {CanvasSceneNode} from "./scene-node-schema";
-import type {CanvasCharacterNode} from "./character-node-schema";
 import {artworkFields,type CanvasArtworkConflict,type CanvasArtworkReceipt} from "./artwork-write";
 import type {TextDocumentConflict} from "./text-document";
 import {browserRandomUUID} from "../browser-crypto";
@@ -11,29 +7,21 @@ import {canvasDocumentFetch,type CanvasDocumentScope} from "./document-scope";
 import {canvasHistoryScope,type CanvasHistoryAction} from "./history-model";
 import {canvasDeleteRecords,canvasDeletionAction,type CanvasNodeRecords} from "./node-commands";
 import type {CanvasNodeCopyInput,CanvasNodeCopyResult} from "./node-copy-contract";
-import type {CanvasDirectorNode} from "./director-node-schema";
-import type {CanvasVideoNode} from "./video-node-schema";
 
 type CopyIntent=Omit<CanvasNodeCopyInput,"operationId">;
 type Ports={
-  native?:{accept:(records:CanvasNativeRecords,current:()=>boolean)=>void;refresh:()=>Promise<unknown>};
+  native:{accept:(records:CanvasNativeRecords,current:()=>boolean)=>void;refresh:()=>Promise<unknown>};
   writable:()=>boolean;snapshot:()=>CanvasNodeRecords;
   history:{artworkConflict?:(scope:CanvasDocumentScope,value:CanvasArtworkConflict,action:CanvasHistoryAction)=>void;conflict?:(scope:CanvasDocumentScope,value:TextDocumentConflict)=>void;transaction<T>(scope:CanvasDocumentScope,work:()=>Promise<T>):Promise<T>;
     acknowledge(scope:CanvasDocumentScope,action:CanvasHistoryAction,persisted:boolean,receipt?:{artworkNodes?:CanvasArtworkReceipt[];artworkIds?:string[];nativeNodes?:CanvasNativeRecords}):void;record(scope:CanvasDocumentScope,action:CanvasHistoryAction):void};
   artworks:(ids:string[])=>Promise<Artwork[]>;
-  videos:(nodes:CanvasVideoNode[],current:()=>boolean)=>void;
-  directors?:(nodes:CanvasDirectorNode[],current:()=>boolean)=>void;
-  characters?:(nodes:CanvasCharacterNode[],current:()=>boolean)=>void;
-  audios?:(nodes:CanvasAudioNode[],current:()=>boolean)=>void;
-  timelines?:(nodes:CanvasTimelineNode[],current:()=>boolean)=>void;
-  scenes?:(nodes:CanvasSceneNode[],current:()=>boolean)=>void;
+
 };
-async function acceptNative(ports:Ports,receipt:CanvasNativeRecords|undefined,legacy:CanvasNativeRecords,current:()=>boolean){
+async function acceptNative(ports:Ports,receipt:CanvasNativeRecords|undefined,current:()=>boolean){
   if(!current())return;
-  if(ports.native){if(receipt)ports.native.accept(receipt,current);else await ports.native.refresh();return;}
-  const records=receipt||legacy;
-  if(records.videoNodes)ports.videos(records.videoNodes,current);if(records.directorNodes)ports.directors?.(records.directorNodes,current);if(records.characterNodes)ports.characters?.(records.characterNodes,current);if(records.sceneNodes)ports.scenes?.(records.sceneNodes,current);if(records.audioNodes)ports.audios?.(records.audioNodes,current);if(records.timelineNodes)ports.timelines?.(records.timelineNodes,current);
+  if(receipt)ports.native.accept(receipt,current);else await ports.native.refresh();
 }
+
 class NodeRequestError extends Error{constructor(message:string,readonly status:number,readonly conflict?:TextDocumentConflict,readonly artworkConflict?:CanvasArtworkConflict){super(message);}}
 async function post(scope:CanvasDocumentScope,url:string,body:unknown){
   const response=await canvasDocumentFetch(scope,url,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body),signal:AbortSignal.timeout(20_000)},true);
@@ -75,7 +63,7 @@ export function createCanvasNodeOperations(){
         // Record the durable mutation before any optional presentation refresh.
         if(!retained.recorded){ports.history.record(target,retained.action);retained.recorded=true;}
         ports.history.acknowledge(target,retained.action,true);
-        await acceptNative(ports,result.nativeNodes,{videoNodes:result.nodes,...result},scope.documentCurrent);
+        await acceptNative(ports,result.nativeNodes,scope.documentCurrent);
         copies.delete(key);return result;
       }).catch(error=>{if(!retained.result&&rejected(error))copies.delete(key);throw error;}).finally(()=>{retained.flight=undefined;});
       retained.flight=run;return run;
@@ -95,8 +83,7 @@ export function createCanvasNodeOperations(){
         if(!scope.documentCurrent())throw new Error("节点已删除，请返回原账号同步");
         if(!retained.recorded){ports.history.record(scope,retained.action!);retained.recorded=true;}
         ports.history.acknowledge(scope,retained.action!,retained.persisted!==false,retained.receipt);
-        const now=new Date().toISOString(),legacy=Object.fromEntries(Object.entries(filterCanvasNativeRecords(retained.records!,()=>true)).map(([key,nodes])=>[key,nodes.map(node=>({...node,deletedAt:now,revision:node.revision+1}))])) as CanvasNativeRecords;
-        await acceptNative(ports,retained.receipt?.nativeNodes,legacy,scope.documentCurrent);
+        await acceptNative(ports,retained.receipt?.nativeNodes,scope.documentCurrent);
         removals.delete(key);return true;
       }).catch(error=>{if(error instanceof NodeRequestError&&error.conflict)ports.history.conflict?.(scope,error.conflict);if(error instanceof NodeRequestError&&error.artworkConflict&&retained.action)ports.history.artworkConflict?.(scope,error.artworkConflict,retained.action);if(!retained.body||!retained.saved&&rejected(error))removals.delete(key);throw error;}).finally(()=>{retained.flight=undefined;});
       retained.flight=run;return run;
@@ -111,8 +98,7 @@ export function createCanvasNodeOperations(){
         const nodes=ports.snapshot(),kind=projectKey.slice(0,projectKey.indexOf(":")),id=projectKey.slice(projectKey.indexOf(":")+1);
         const records={artworks:nodes.artworks.filter(node=>kind==="batch"?node.batchId===id:node.groupId===id||node.id===id),textNodes:nodes.textNodes.filter(node=>node.projectKey===projectKey),videoNodes:[],...filterCanvasNativeRecords(nodes,node=>node.projectKey===projectKey)};
         const action=canvasDeletionAction(records);if(action)ports.history.acknowledge(atProject(scope,projectKey),action,retained.persisted!==false);
-        const now=new Date().toISOString(),legacy=Object.fromEntries(Object.entries(filterCanvasNativeRecords(records,()=>true)).map(([key,nodes])=>[key,nodes.map(node=>({...node,deletedAt:now,revision:node.revision+1}))])) as CanvasNativeRecords;
-        await acceptNative(ports,retained.receipt?.nativeNodes,legacy,scope.documentCurrent);
+        await acceptNative(ports,retained.receipt?.nativeNodes,scope.documentCurrent);
         deletions.delete(key);
       }).catch(error=>{if(!retained.saved&&rejected(error))deletions.delete(key);throw error;}).finally(()=>{retained.flight=undefined;});
       retained.flight=run;return run;

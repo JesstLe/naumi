@@ -1,3 +1,4 @@
+import {withCreationReceiptRoute} from "@/lib/saas/creation-context";
 import { NextResponse } from "next/server";
 import { authenticatedEmail, authorizedTargetEmail } from "@/lib/request-auth";
 import { sameSiteBiMutation } from "@/lib/bi/access";
@@ -27,4 +28,4 @@ export async function POST(request: Request) {
   });
 }
 
-export function GET(request:Request){return withCreationRoute(request,()=>readNodes(request));}
+export function GET(request:Request){return withCreationReceiptRoute(request,()=>readNodes(request));}

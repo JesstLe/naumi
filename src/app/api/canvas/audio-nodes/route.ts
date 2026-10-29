@@ -1,3 +1,5 @@
+import {withCreationReceiptRoute} from "@/lib/saas/creation-context";
+import {filterCreationProjects} from "@/lib/saas/creation-access";
 import { NextResponse } from "next/server";
 import { authenticatedEmail, authorizedTargetEmail } from "@/lib/request-auth";
 import { sameSiteBiMutation } from "@/lib/bi/access";
@@ -7,12 +9,12 @@ import { listAudioNodes, saveAudioNode } from "@/lib/canvas/audio-node-service";
 import { audioFailure } from "./response";
 
 export const runtime = "nodejs", dynamic = "force-dynamic";
-export async function GET(request: Request) {
+async function readNativeNodes(request: Request) {
   const url = new URL(request.url);
   const actor = await authorizedTargetEmail(request, url.searchParams.get("email"), true);
   if (!actor) return NextResponse.json({ error: "未登录或无权访问" }, { status: 401 });
   try {
-    return NextResponse.json({ nodes: await listAudioNodes(actor, url.searchParams.get("includeDeleted") === "1") }, { headers: { "cache-control": "private, no-store" } });
+    return NextResponse.json({ nodes: await filterCreationProjects(actor,await listAudioNodes(actor, url.searchParams.get("includeDeleted") === "1")) }, { headers: { "cache-control": "private, no-store" } });
   } catch (error) { return audioFailure(error); }
 }
 export async function POST(request: Request) {
@@ -26,3 +28,5 @@ export async function POST(request: Request) {
     } catch (error) { return audioFailure(error); }
   });
 }
+
+export function GET(request:Request){return withCreationReceiptRoute(request,()=>readNativeNodes(request));}

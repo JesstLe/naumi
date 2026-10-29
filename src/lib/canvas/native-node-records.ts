@@ -32,3 +32,17 @@ export function canvasNativeVisibility(records:CanvasNativeRecords,visible:boole
   return CANVAS_NATIVE_NODE_KINDS.flatMap(({kind,records:key})=>(records[key]||[]).map(node=>({type:`${kind}-visibility` as `${CanvasNativeKind}-visibility`,id:node.id,visible})));
 }
 export const isCanvasNativeOperation=(operation:{type:string})=>CANVAS_NATIVE_NODE_KINDS.some(({kind})=>operation.type.startsWith(kind+"-"));
+
+/** Full public snapshot equality includes same-revision task/status updates. */
+export function sameCanvasNativeSnapshot(a:unknown,b:unknown):boolean{
+  if(Object.is(a,b))return true;
+  if(!a||!b||typeof a!=="object"||typeof b!=="object")return false;
+  if(Array.isArray(a)||Array.isArray(b))return Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&a.every((value,index)=>sameCanvasNativeSnapshot(value,b[index]));
+  const left=a as Record<string,unknown>,right=b as Record<string,unknown>,keys=Object.keys(left);
+  return keys.length===Object.keys(right).length&&keys.every(key=>Object.prototype.hasOwnProperty.call(right,key)&&sameCanvasNativeSnapshot(left[key],right[key]));
+}
+export function mergeCanvasNativeSnapshots<N extends {id:string;revision:number}>(previous:N[],incoming:N[]):N[]{
+  const nodes=new Map(previous.map(node=>[node.id,node]));let changed=false;
+  for(const node of incoming){const old=nodes.get(node.id);if(old&&node.revision<old.revision)continue;if(!old||!sameCanvasNativeSnapshot(old,node)){nodes.set(node.id,node);changed=true;}}
+  return changed?[...nodes.values()]:previous;
+}
