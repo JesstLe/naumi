@@ -8,6 +8,7 @@ import {writeImageJobResult,readImageJobResult} from "./image-jobs/result-storag
 const MAX_BYTES = 64 * 1024 * 1024;
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const uploadedInputs = new WeakMap<Buffer, string>();
+const inputWrites = new Map<string, Promise<string>>();
 type ObjectValue = Record<string, any>;
 const object = (value: unknown): value is ObjectValue => !!value && typeof value === "object" && !Buffer.isBuffer(value);
 const reference = (value: unknown) => object(value) && ["$imageJobBuffer", "$imageJobBase64", "$imageJobDataURL", "$imageJobInlineBuffer"].some(key => key in value);
@@ -19,7 +20,14 @@ export async function encodeImageJobValue(value: unknown, id: string): Promise<u
     const key = `image-job-inputs/${id}/${hash(value)}.bin`;
     let url = uploadedInputs.get(value);
     if (!url?.endsWith(`/${key}`)) {
-      url = await uploadImage(value, "application/octet-stream", key);
+      let write = inputWrites.get(key);
+      if (!write) {
+        write = uploadImage(value, "application/octet-stream", key);
+        inputWrites.set(key, write);
+        const current = write;
+        void write.finally(() => { if (inputWrites.get(key) === current) inputWrites.delete(key); }).catch(() => {});
+      }
+      url = await write;
       uploadedInputs.set(value, url);
     }
     return { $imageJobBuffer: url };

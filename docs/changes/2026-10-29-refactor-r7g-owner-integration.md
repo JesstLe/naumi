@@ -39,3 +39,7 @@
 <span style="color:#b91c1c">分支超过48小时：用户要求独立整体重构，完整版本退出条件尚未满足，继续候选分支而非把阶段验证冒充整版上线。</span>
 
 完整基线归档、四产物、精确hash/原始输出/退出码、独立副本回滚及远端SHA以output/refactor-r7g-20261029/DELIVERY.json和VERIFICATION.txt为准。整体ACTIVE；下一步继续pending/edit占位及显式恢复的状态归属、INP/容量、有效远端CI和最终main整合退出。历史媒体原生errno根因保持OPEN。
+
+## 固定回归新增真实输入写入冲突
+
+66045e61固定矩阵22PASS+1FAIL+4NOT_RUN，direct媒体入口的同任务同hash输入并行写入同名对象，真实Windows rename返回EPERM；原日志完整保留。图片codec仅以Buffer弱引用缓存**已完成URL**，不能合并尚未完成的写入。本轮增加按job/key仅存活到settled的inflight promise，重复引用或相同内容副本共用原存储写；失败删除flight，显式续存仍用原key。不添加任务/供应商重试，不把该具体EPERM视为此前媒体state历史根因已经关闭。新增确定存储端口反例独立覆盖旧3次冲突→新1次、job隔离与失败续存；完整受影响矩阵和终版SHA以DELIVERY为准。

@@ -9,6 +9,7 @@ export const refactorCases=[
  node('worker-nonacceptance-unit','runtime','scripts/test-worker-nonacceptance.mjs','# fail 0',['--test-runner']),
  node('tick-negative-health','runtime','scripts/verify-tick-health-negative.cjs','TICK_HEALTH_MODIFIED=PASS'),
  node('x5-result-native','generation','scripts/verify-image-result-storage-native.cjs','NATIVE_RECOVERY=PASS'),
+ node('image-input-write-owner','generation','scripts/verify-image-job-input-writes.cjs','IMAGE_JOB_INPUT_WRITES=PASS'),
  node('x5-result-boundaries','generation','scripts/verify-x5-boundaries.cjs','X5_BOUNDARIES_MODIFIED=PASS'),
  node('native-save-review','canvas','scripts/verify-canvas-save-boundaries.cjs','REVIEW_RESULT=PASS'),
  node('native-save-transport','canvas','scripts/verify-canvas-save-transport.cjs','RESULT=PASS PASS=23 FAIL=0'),
