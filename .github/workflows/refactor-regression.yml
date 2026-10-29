@@ -1,7 +1,7 @@
 name: Core refactor regression
 on:
   push:
-    branches: [main]
+    branches: [main, codex/core-refactor-20261024]
     paths: ['src/**', 'services/**', 'scripts/**', 'package*.json', 'Dockerfile', '.dockerignore', 'next.config.*', 'tsconfig*.json', 'docs/apimart-image25-pricing-20261008.json', '.github/workflows/**']
   pull_request:
     paths: ['src/**', 'services/**', 'scripts/**', 'package*.json', 'Dockerfile', '.dockerignore', 'next.config.*', 'tsconfig*.json', 'docs/apimart-image25-pricing-20261008.json', '.github/workflows/**']
