@@ -2,7 +2,7 @@
 
 ## 1. 模块、基线与边界
 
-- 基线：`be0dcb9be6c283583d40827e6ee1487f2fee3068`；当前工具准备的独立 worktree / `t3/bi-user-mutation-audit`。开工工作树干净，已 `git fetch origin main`。本切片不自行分配 A/D 编号，由父线程串行整合。
+- 基线：`be0dcb9be6c283583d40827e6ee1487f2fee3068`；原实现 worktree / `t3/bi-user-mutation-audit`。开工工作树干净，已 `git fetch origin main`。固定实现提交 `8b969fb8cd42c367309d85c7416c9ed6407e3517` 已经独立审查及父整合验收，登记 **A41 / D23**，纳入本次主线整合；未部署。原实施记录保留，父验收见末节。
 - 业务修改仅 `src/lib/bi/user-management.ts`，新增专属验证脚本及本文档。没有修改 `db.ts`、billing repository/service、连接池、Worker、画布、Agent 或发布采集器。
 - 账务 FIFO 前缀扣减 `7e148a6542a35902adc72d727b3574f685dc80ca` 保持。这里只解除上层 BI 调用方的冗余全批次锁，不退回逐批 SQL。
 - 本次是源码及真实隔离 PG / 实际模块、route 验证；没有服务器连接、部署、生产读写、供应商调用或生产容量结论。45 笔手术、在线索引继续留给父线程；不改总 ledger/main。
@@ -94,3 +94,22 @@ node scripts/verify-capacity-bi-user-mutation.cjs --mode types
 ```
 
 未完成：父线程独立复核、分配编号、串行合并；生产容量、全局 BI 管理锁、重复余额聚合/expire、访问日志保留、事务故障后连接回收等继续保留原待办。不把局部通过计为完整容量达标或发布。最终 task-only commit 由交接回执提供；本分支不 push/merge main/建 PR。
+
+## 6. 独立审查与父线程整合验收（2026-10-29）
+
+独立审查在父 main `2f2c57e096c548657ee00244eb0e27b29a97d14e` 上普通合入固定提交，review 合并为 `18b450471e8fd24a022aa7098518343f5010e152`。结论为无新增可复现产品缺陷、无阻断整合项。父线程核对 review `MODIFIED_FILE`、固定 Git blob 与父业务文件逐字节一致；业务补丁未再修改。
+
+独立 review 证据：`C:/Users/13357/.t3/worktrees/naumi/t3-7fdb0f25/output/review-bi-user-mutation-20261029/REVIEW.md`。review 自有 PG55517 已停止并移除。除三版各21组及原生BI/type回归外，三版各6组补充检查均exit0：零创建审计、SUM宽化、原有镜像溢出原子回滚、真实owner锁等待后的余额与合成reservation可见性、事务跨到期原语义，以及已记录成功trace的单backend/锁序断言。父已重开原日志及断言，不将review6组写成父重新执行或六项新增缺陷；第六组是trace再断言，预留12是fixture直接构造。
+
+父线程独占 PostgreSQL `naumi-bi-mutation-parent-20261029 / 127.0.0.1:55523`，不复用原实现55497或review55517。测试副本只改源码root、模块解析、fixture端口与observer标识，原断言保留，差异记录在父证据目录。
+
+- BASELINE / MODIFIED / 修改副本 / ROLLBACK：父实际执行各21/21，exit0。baseline/rollback的PASS指原语义及原容量缺口符合对照，不代表全批次锁不存在。
+- 四类非积分动作：原/恢复仍12条SQL、调用方返回10000行、尾批次NOWAIT55P03；修改11条SQL、调用方批次SQL/返回行0、尾锁FREE。owner NOWAIT三版一直55P03。
+- +6/-6/-600：原/恢复调用方返回10000行，修改SUM返回1行；保留20条总SQL、原审计金额、同Tx和既有FIFO前缀扣减。这里没有全局管理锁或重复SUM/expire优化。
+- 父实际原生`verify-bi-management.ts`输出`BI_MANAGEMENT=PASS`、exit0；全项目TypeScript stdout/stderr为空、exit0。实际route函数、签名会话、SQL和事务通过，不是浏览器/生产端到端。
+- 固定副本恢复原SHA256 `35b69f69b23a8b606896cb328ae5113ada78b0f61988756560f29d1aeeeb7fce`；原返回行数与尾锁行为恢复。后来编辑guard exit73、零写入；源码和MODIFIED_FILE保持修改SHA256 `d36b129d7a64420ba2b3c657196caabffee314c754dc88d25cfaf354794d8c8a`。
+- 父自有容器已核验label后停止、状态exited，55523已关闭；未连接47或执行生产操作。
+
+父四产物已重开：`output/capacity-audit-wave2-20261029/bi-mutation-parent/MODIFIED_FILE`、`DIFF_FILE.patch`、`VERIFICATION.txt`、可执行`ROLLBACK.sh`。完整command/input/stdout/stderr/exit、hash、trace及独立review证据索引保留。
+
+全局管理advisory锁、重复SUM/expire、访问日志保留、其他连接回收及生产容量继续挂账。发布采集器另在独立复核；后续Agent客户端恢复轮询/卸载另切片，不扩大本管理补丁。45笔手术、在线索引和历史UNKNOWN状态保持。
