@@ -303,3 +303,13 @@
 - 父原生 wallet、balance-refresh、recovery、billing rules 均exit0；X2实际仓储/账务租约回归exit0，同operation一笔-6、失租不扣、UNKNOWN留hold。父React19.3全项目tsc exit0；子React18 import失败及36诊断保留。补充大于int32的窗口累计与事务跨到期原/改/恢复三版均通过，不宣称改变钱包镜像上限或旧now()语义。
 - 仅副本恢复2原hash/原性能预算失败；later-edit guard73/0写入，源码和MODIFIED_FILE保持修复。四产物及原生命令/输入/输出/exit在父ignored `output/capacity-audit-wave2-20261029/billing-parent/`，独立模块文档第7节补父验收。父容器停止、端口关闭。
 - **未完成仍明确保留**：重复expire/refresh扫描（5次请求仍25SQL）、BI访问日志保留、完整生产容量；源码另发现BI用户管理调用方仍全活批次加锁，即非积分动作也走，待定向复现，不计新实测编号。release collector与Agent流任务继续独立推进。47无SSH/生产操作，新增main修复未部署；45笔手术、在线索引和accepted-timeout历史波动未关闭。
+
+### 2026-10-29 Agent SSE / Markdown 父线程复核闭环
+
+- **A39 / D21：工作台SSE取消过早释放running、持久化期间漏abort、初始化及enqueue异常资源清理缺口。** 固定子提交 `fbe30f4e9dd378602f905eb2d5a018ae76c3f482` 保留running到原prompt/runtime收尾；transport立即清理、GET只读、已受理持久工具不删除或重放。两个700ms interval合成一个pump，原780000ms期限不变；旧两个轮询不等于每tick都发心跳。
+- **A40 / D22：Harness.publicText图片Markdown替换重复扫描。** 同原媒体白名单/输出上限下改为两次单向扫描，inline→reference顺序保持。父12,009差分通过；192KiB未闭合起点样本原/恢复3秒超时，修改原字节保持。这是合成函数/HTTP/runtime证据，不是生产RPS。
+- 父同步main `3ea76ef6`保留并行画布修复后普通整合。额外首帧enqueue故障seam复现子版清理后仍建timer并启动prompt，父加closed提前退出。此同步start边界尚未证明普通网络可达，作为A39初始化鲁棒性覆盖，不新增事故编号。
+- 父route/Harness/local HTTP集中20项：原/恢复8失败exit1，子版1新增边界失败，父修改/修改副本0失败exit0。真实PG/runtime6项：原/恢复2项接纳断言失败，修改全过。新增真实PG行锁阻塞creation结果写入，模型已agent_end仍持running；取消后修改PUT409，解除锁原结果succeeded，modelStarts1，无付费调用。不是重复执行/双扣费证明。
+- 父真实会话修复58项、会话控制/账号/项目隔离、network15、Harness104、stream-intent356、timeline29、tool-trace25、activity及全项目tsc均exit0。旧Harness-runtime原/改仍`ROUTER_UNAVAILABLE/not_submitted`失败；保留原日志和首次父gate清理观测竞态，未绕旧断言。
+- 四产物与精确命令/输入/输出/exit位于父ignored `output/capacity-audit-wave2-20261029/agent-parent/`；副本恢复2原hash、移除1新helper、原行为复现，later-edit guard73/0写入。父PG55490停止且端口关闭，源码保持修改。详见模块文档父验收节。
+- 长会话持久化/RSS、事件裁剪游标、前端恢复轮询卸载及画布流仍待独立切片。release collector `2cd03246`已交付待父复核，BI用户管理在独立任务验证中。47无SSH/部署，45笔手术/在线索引/accepted-timeout历史波动均未关闭。
