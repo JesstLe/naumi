@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter,useSearchParams } from "next/navigation";
 import { AdminCenterShell } from "@/components/admin/center-shell";
 import {microsToDecimal} from "@/lib/billing/decimal";
 import { ModelChain } from "./model-chain";
@@ -55,6 +55,9 @@ type Filter = {
   q: string;
   accountType: string;
   status: string;
+  period: string;
+  id: string;
+  source: string;
 };
 type Column = {
   key: string;
@@ -195,6 +198,8 @@ const names: Record<string, string> = {
   personal: "个人",
   enterprise: "企业",
   unknown: "未登记",
+  'enterprise-membership': '实际企业成员关系',
+  'manual-profile': '运营登记',
   purchase: "充值",
   consume: "消费",
   grant: "赠送",
@@ -313,7 +318,7 @@ function display(value: unknown, format?: Column["format"]) {
   if (format === "quality") return qualityNames[String(value)] || String(value);
   return String(value);
 }
-function initialFilter(): Filter {
+function initialFilter(params?:URLSearchParams): Filter {
   const today = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
   return {
     from: new Date(Date.parse(`${today}T00:00:00Z`) - 29 * 86400_000)
@@ -324,6 +329,10 @@ function initialFilter(): Filter {
     q: "",
     accountType: "",
     status: "",
+    period: 'range',
+    id: '',
+    source: '',
+    ...Object.fromEntries(['from','to','email','q','accountType','status','period','id','source'].filter(key=>params?.has(key)).map(key=>[key,params!.get(key)!])),
   };
 }
 const descriptions: Record<BiSection, string> = {
@@ -334,7 +343,7 @@ const descriptions: Record<BiSection, string> = {
   overview:
     "以已落账流水核对用量，按北京时间自然日统计。当前余额与期间用量分开展示。",
   users:
-    "所有已注册账户。类型与约定折扣由管理员登记；实际扣费仍使用全站统一价目。",
+    "实际企业归属与账号资料；期间用量按筛选日期统计。",
   operations:
     "持久化业务任务：生图、套图、A+、画布改字与视频。其他工具的成功操作可在作品和流水中查看。",
   ledger:
@@ -397,9 +406,10 @@ const statuses: Partial<Record<BiSection, [string, string][]>> = {
 
 export function BiDashboard({ initialSection = "overview", embedded = false }: { initialSection?: BiSection; embedded?:boolean }) {
   const router = useRouter();
+  const searchParams=useSearchParams(),searchKey=searchParams.toString();
   const [section, setSection] = useState<BiSection>(initialSection);
-  const [draft, setDraft] = useState<Filter>(initialFilter);
-  const [filter, setFilter] = useState<Filter>(initialFilter);
+  const [draft, setDraft] = useState<Filter>(()=>initialFilter(new URLSearchParams(searchKey)));
+  const [filter, setFilter] = useState<Filter>(()=>initialFilter(new URLSearchParams(searchKey)));
   const [page, setPage] = useState(1);
   const [reload, setReload] = useState(0);
   const [data, setData] = useState<BiResponse | null>(null);
@@ -413,14 +423,15 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
   const closeRef = useRef<HTMLButtonElement>(null);
   const navigatedSection = useRef(initialSection);
   useEffect(() => {
-    if (navigatedSection.current === initialSection) return;
     navigatedSection.current = initialSection;
     setSection(initialSection);
     setPage(1);
     setSelected(null);
-    setFilter(f => ({ ...f, status: "" }));
-    setDraft(f => ({ ...f, status: "" }));
-  }, [initialSection]);
+    const incoming=initialFilter(new URLSearchParams(searchKey));
+    if(initialSection==='overview')incoming.period='range';
+    setFilter(incoming);
+    setDraft(incoming);
+  }, [initialSection,searchKey]);
   useEffect(() => {
     const controller = new AbortController();
     setBusy(true);
@@ -460,18 +471,20 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
   }, [selected]);
   function navigate(next: BiSection, day?: string) {
     navigatedSection.current = next;
-    router.push(`/admin/center?section=${next}`, { scroll: false });
+    const nextFilter={...filter,status:'',id:'',source:'',...(next==='overview'?{period:'range'}:{}),...(day?{from:day,to:day,period:'range',status:next==='orders'?'paid':''}:{})};
+    router.push(`/admin/center?${new URLSearchParams({...nextFilter,section:next})}`, { scroll: false });
     setSection(next);
     setPage(1);
     setSelected(null);
-    setFilter((f) => ({ ...f, status: "" }));
-    setDraft((f) => ({ ...f, status: "" }));
+    setFilter(nextFilter);
+    setDraft(nextFilter);
     if (day) {
       const value = {
         ...filter,
         from: day,
         to: day,
         status: next === "orders" ? "paid" : "",
+        period:'range',id:'',source:'',
       };
       setDraft(value);
       setFilter(value);
@@ -479,8 +492,8 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
   }
   function account(email: string, next: BiSection) {
     navigatedSection.current = next;
-    router.push(`/admin/center?section=${next}`, { scroll: false });
-    const value = { ...filter, email, status: "" };
+    const value = { ...filter, email,q:'',accountType:'',status: "",id:'',source:'' };
+    router.push(`/admin/center?${new URLSearchParams({...value,section:next})}`, { scroll: false });
     setDraft(value);
     setFilter(value);
     setSection(next);
@@ -514,7 +527,7 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
     );
     const a = document.createElement("a");
     a.href = url;
-    a.download = `naumi-bi-${section}-${filter.from}-${filter.to}-page${page}.csv`;
+    a.download = `naumi-bi-${section}-${filter.period==='all'?'all-history':`${filter.from}-${filter.to}`}-page${page}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -552,16 +565,19 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
           onSubmit={(event) => {
             event.preventDefault();
             setFilter({ ...draft });
+            router.replace(`/admin/center?${new URLSearchParams({...draft,section})}`,{scroll:false});
             setPage(1);
             setSelected(null);
           }}
         >
+          {section!=='overview'&&<label>历史范围<select aria-label="历史范围" value={draft.period} onChange={e=>setDraft(f=>({...f,period:e.target.value}))}><option value="range">指定日期</option><option value="all">全部历史</option></select></label>}
           <label>
             开始日期
             <input
               aria-label="开始日期"
               type="date"
               required
+              disabled={draft.period==='all'}
               value={draft.from}
               onChange={(e) =>
                 setDraft((f) => ({ ...f, from: e.target.value }))
@@ -574,6 +590,7 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
               aria-label="结束日期"
               type="date"
               required
+              disabled={draft.period==='all'}
               value={draft.to}
               onChange={(e) => setDraft((f) => ({ ...f, to: e.target.value }))}
             />
@@ -623,6 +640,7 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
               </select>
             </label>
           )}
+          {section==='operations'&&<label>任务编号<input aria-label="任务编号" value={draft.id} placeholder="精确查询，不受日期限制" maxLength={240} onChange={e=>setDraft(f=>({...f,id:e.target.value}))}/></label>}
           <button className={styles.primary} type="submit">
             <Search size={16} />
             查询
@@ -630,7 +648,7 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
         </form>
         <div className={styles.scope}>
           <span>
-            统计日期：{filter.from} 至 {filter.to} · 北京时间
+            {filter.period==='all'?'全部历史（分页读取）':`统计日期：${filter.from} 至 ${filter.to} · 北京时间`}
           </span>
           {filter.email && (
             <button
@@ -639,6 +657,7 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
                 const f = { ...filter, email: "" };
                 setFilter(f);
                 setDraft(f);
+                router.replace(`/admin/center?${new URLSearchParams({...f,section})}`,{scroll:false});
                 setPage(1);
               }}
             >
@@ -702,7 +721,7 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
                 </thead>
                 <tbody>
                   {data.rows.map((row, i) => (
-                    <tr key={String(row.id || row.email || i)}>
+                    <tr key={`${row.source_table||''}:${row.email||''}:${row.id||i}`}>
                       {section === "artworks" && (
                         <td>
                           <ArtworkMedia row={row} onOpen={() => setSelected({ section, row })} />
@@ -846,6 +865,7 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
               <div className={styles.drill}>
                 <p>{String(selected.row.email)}</p>
                 <div>
+                  <a href={`/admin/usage?${new URLSearchParams({email:String(selected.row.email),from:filter.from,to:filter.to})}`}>用量统计</a>
                   {["operations","artworks","calls"].includes(selected.section)&&selected.row.id&&<a href={`/admin/creations/resolve?${new URLSearchParams({type:selected.section==="artworks"?"artwork":selected.section==="calls"?"model-call":({app_image_jobs:"image-job",app_canvas_image_tasks:"canvas-task",app_video_tasks:"video-task"} as Record<string,string>)[String(selected.row.source_table)]||"image-job",id:String(selected.row.id),email:String(selected.row.email)})}`}>创作全链路</a>}
                   <button
                     onClick={() => account(String(selected.row.email), "users")}
@@ -914,6 +934,7 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
                   };
                   setFilter(value);
                   setDraft(value);
+                  router.replace(`/admin/center?${new URLSearchParams({...value,section:'users'})}`,{scroll:false});
                   setPage(1);
                   setSelected(null);
                   setReload((x) => x + 1);
@@ -982,6 +1003,9 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
                     received_cents: "期间实际收款（元）",
                     purchased_credits: "期间已支付购入积分",
                     profile_updated_at: "资料更新时间",
+                    organization_source: '归属来源',
+                    registered_account_type: '运营登记类型',
+                    registered_company: '运营登记企业',
                     stage: "任务阶段",
                     error: "错误记录",
                     reserved_credits: "任务预留记录",
@@ -1003,7 +1027,7 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
                                     "role",
                                     "status",
                                     "state",
-                                    "category",
+                                    "category",'organization_source','registered_account_type',
                                   ].includes(key)
                                 ? "status"
                                 : key.endsWith("_at")
@@ -1278,8 +1302,8 @@ function Overview({
 }
 
 function ProfileEditor({ row, onSaved }: { row: BiRow; onSaved: () => void }) {
-  const [type, setType] = useState(String(row.account_type || "unknown"));
-  const [company, setCompany] = useState(String(row.company || ""));
+  const [type, setType] = useState(String(row.registered_account_type || "unknown"));
+  const [company, setCompany] = useState(String(row.registered_company || ""));
   const [percent, setPercent] = useState(
     row.agreed_pay_percent === null ? "" : String(row.agreed_pay_percent),
   );
@@ -1315,8 +1339,7 @@ function ProfileEditor({ row, onSaved }: { row: BiRow; onSaved: () => void }) {
     <form className={styles.profile} onSubmit={save}>
       <h3>账户运营资料</h3>
       <p>
-        当前实际扣费：全站统一质量 ×
-        尺寸价。下方约定折扣仅登记资料，尚未接入扣费。
+        此处只维护运营标签；企业成员归属在组织管理中修改，登记折扣不改变实际扣费。
       </p>
       <label>
         账户类型

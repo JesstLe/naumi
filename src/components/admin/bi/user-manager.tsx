@@ -2,6 +2,7 @@
 import { useRef, useState } from "react";
 import type { BiRow } from "@/lib/bi/contracts";
 import styles from "./dashboard.module.css";
+import {loginIdentifierToEmail} from '@/lib/account-identity';
 type Command = Record<string, string | number | boolean>;
 const labels: Record<string, string> = {
   create: "创建账户",
@@ -56,7 +57,7 @@ export function UserManager({
     setError("");
     const cmd: Command = {
       id: crypto.randomUUID(),
-      email: email.trim().toLowerCase(),
+      email: loginIdentifierToEmail(email),
       action,
       reason,
     };
@@ -97,7 +98,7 @@ export function UserManager({
       const json = await res.json();
       setUncertain(json.uncertain === true);
       if (!res.ok) throw new Error(json.error || "操作未提交");
-      onSaved(email);
+      onSaved(String(review.email));
     } catch (e) {
       if (e instanceof TypeError || e instanceof SyntaxError) {
         setUncertain(true);
@@ -209,9 +210,9 @@ export function UserManager({
               </select>
             </label>
           ) : (
-            field("新用户邮箱", email, setEmail, {
+            field("登录账号（邮箱或花名）", email, setEmail, {
               required: true,
-              type: "email",
+              type: "text",
               maxLength: 254,
             })
           )}

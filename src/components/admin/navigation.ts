@@ -1,9 +1,10 @@
 import {BarChart3,Building2,HeartPulse,ImageIcon,Layers,ShieldCheck,Users,Wallet} from 'lucide-react';
 import type {BiSection} from '@/lib/bi/contracts';
-export type AdminSection=BiSection|'billing'|'pricing'|'settings'|'model-config'|'model-health'|'model-management'|'teams'|'team-access'|'feature-access'|'deployments'|'tenants'|'creations'|'supplier-balances'|'health';
+export type AdminSection=BiSection|'usage'|'billing'|'pricing'|'settings'|'model-config'|'model-health'|'model-management'|'teams'|'team-access'|'feature-access'|'deployments'|'tenants'|'creations'|'supplier-balances'|'health';
 export type AdminLink={label:string;href:string};
 export const adminEntries:{id:AdminSection;label:string;icon:typeof Users;href:string}[]=[
 {id:'overview',label:'运营概览',icon:BarChart3,href:'/admin/center'},
+{id:'usage',label:'用户用量',icon:BarChart3,href:'/admin/usage'},
 {id:'tenants',label:'租户管理',icon:Building2,href:'/admin/tenants'},
 {id:'users',label:'用户管理',icon:Users,href:'/admin/center?section=users'},
 {id:'creations',label:'创作记录',icon:ImageIcon,href:'/admin/creations'},

@@ -16,6 +16,7 @@ import {
 } from "@/lib/db";
 import { readCanvasImage } from "@/lib/canvas-image-input";
 import { editImage } from "@/lib/image-edit";
+import {canvasEditedImage} from "@/lib/canvas/edited-image-output";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { safeError } from "@/lib/api-error";
 
@@ -108,9 +109,11 @@ async function handleObservedPost(request: Request) {
       mask,
       prompt,
       size: editSize(width, height),
+      sourceFrame: {width,height},
       quality,
     });
-    const edited = await sharp(editedRaw).resize(width, height, { fit: "fill" }).png().toBuffer();
+    const result = await canvasEditedImage(editedRaw);
+    const edited = result.bytes;
     const id = `txtedit-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     let url = `data:image/png;base64,${edited.toString("base64")}`;
     if (storageEnabled) {
@@ -125,18 +128,18 @@ async function handleObservedPost(request: Request) {
       image: url,
       gradient: artwork.gradient || "from-slate-100 to-sky-100",
       style: artwork.style ?? null,
-      ratio: artwork.ratio ?? null,
+      ratio: result.ratio,
       resolution: artwork.resolution ?? "1K",
       source: artwork.image,
       parentId: artwork.id,
       parentIds: [],
       origin: "canvas",
-      width,
-      height,
+      width: result.width,
+      height: result.height,
     }], `txtedit-${Date.now()}`);
     await settleToolImage(email, cost, "画布在线改字", quality, id, artwork.resolution || "1K");
     const user = await getUser(email).catch(() => null);
-    return NextResponse.json({ ok: true, id, width, height, user, cost, quality });
+    return NextResponse.json({ ok: true, id, width:result.width, height:result.height, user, cost, quality });
   } catch (error) {
     if (reserved && cost > 0) await refundCredits(email, cost).catch(() => {});
     return NextResponse.json(

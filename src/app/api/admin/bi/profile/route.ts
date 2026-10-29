@@ -2,15 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { biAuthorize, biJson, sameSiteBiMutation } from "@/lib/bi/access";
 import { updateBiProfile } from "@/lib/bi/repository";
+import {accountIdentifierSchema} from '@/lib/account-identity-schema';
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const profile = z
   .object({
-    email: z
-      .string()
-      .email()
-      .max(254)
-      .transform((x) => x.toLowerCase()),
+    email: accountIdentifierSchema,
     accountType: z.enum(["unknown", "personal", "enterprise"]),
     company: z.string().trim().max(200),
     agreedPayPercent: z

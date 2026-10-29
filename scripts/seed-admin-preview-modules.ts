@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import {getPool,ensureSchema} from '../src/lib/db';
+import {ensureModelSchema} from '../src/lib/model-config/schema';
+import {createCredentialStore} from '../src/lib/model-config/credentials';
+import {createModelRepository} from '../src/lib/model-config/repository';
+import {fixtureModelConfig} from './model-config-unit-fixture';
+import {ensureReleaseSchema,releasePool} from '../src/lib/release-runtime/store';
+import {createWorkerTickReceiptStore} from '../src/lib/release-runtime/worker-tick-receipts';
+(async()=>{assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');assert.equal(new URL(process.env.DATABASE_URL!).hostname,'127.0.0.1');await ensureSchema();const pool=getPool();await ensureModelSchema(pool);const origin='http://127.0.0.1:55141',creds=createCredentialStore(pool);if(!(await pool.query('SELECT 1 FROM app_model_config_state')).rowCount){const c=await creds.importPlain({providerId:'p1',plain:'local-preview-only-not-a-production-key',actor:'local-preview'});const config=fixtureModelConfig(origin+'/v1',c.id);config.providers[0].name='本地验证供应商';const repo=createModelRepository({pool,initialize:async()=>config,trustedOrigins:[origin]});await repo.current();}await ensureReleaseSchema();const store=createWorkerTickReceiptStore(pool),commit='a'.repeat(40),tick={tickId:randomUUID(),workerInstanceId:'preview-worker',workerBootId:randomUUID(),workerCommit:commit,targetWebInstanceId:'preview-web'},web={instanceId:'preview-web',bootId:randomUUID(),commit};await store.accept(tick,web);await store.complete(tick,web,{ok:true,fixture:true});await releasePool().end();await pool.end();console.log('PREVIEW_ALL_MODULE_SCHEMAS=PASS LOCAL_MODEL=1 SYNTHETIC_TICK=1 SUPPLIER_CALLS=0')})().catch(e=>{console.error(e);process.exit(1)});
