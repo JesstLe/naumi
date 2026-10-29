@@ -333,3 +333,11 @@
 - collection/image proof能力为v3；旧v1/v2或缺完整原集合的证据不回填、不追认。父37矩阵原/恢复17pass20fail，修复37pass；真实PG15定向组及10单元、原snapshot21pass1skip、normal37/enterprise4/completed-image4回归通过。保留性反例控制器PASS只代表符合各版预期，不等于旧版保护健全。
 - 并行验证遇Windows1455资源不足与GBK终端异常，原失败/SQL/清理错误保留。仅核验并补清理本任务完整ID，串行复测；四产物/原改hash/副本回滚恢复2原文件移除3新增验证文件、later-edit73/0写入均在父ignored`release-snapshot-parent/`。修复源码保持，所有自有PG收尾移除，未操作其他容器。
 - 此次是源码/本地真实PG/Python门禁fixture，不是生产容量或完整蓝绿验收。47下一发布须真实重采v3基线；45手术/在线索引/UNKNOWN/CLEANUP_PENDING/accepted-timeout旧波动保持。工作台客户端恢复轮询任务继续独立推进。
+
+### 2026-10-29 A27 账务事务清理子项
+
+- 固定实现`8f5a3606c2408f656434f448e81c5cc1eaa5741e`由父从main`cb1d2f49`普通整合。仅`withBillingTransaction`的ROLLBACK失败分支保留原抛出值、标记discard并finally恰好一次release；同一client上的BEGIN/action/COMMIT、健康复用和无自动replay保持。沿用**A27账务子项**，不重复计普通池listener或pg已有死连接淘汰。
+- 父独占PG55527四轮串行：原/恢复14场景8pass6fail（exit1），修改/修改副本14pass（exit0），六项是同一清理问题的边界断言。修改48checkout/48release、active release0；24并发8成功16预期业务/SQL失败、峰值5。父只读源码/relay复核与父实际PG结果分层。
+- 真实TCP relay吞COMMIT回包：服务器已提交和约束拒绝两例分别durable1/0，客户端均未知，action1次、原异常对象保持。另real-commit+adapter-ack拒绝seam证明后续ROLLBACK成功也不构成未提交证明；没有新增UNKNOWN状态机、重扣、重发或清hold。queryable但未清洁的ROLLBACK失败是显式SQL dispatch seam，不报告为生产自然SQL错误。
+- 父原生rules/wallet/X2与全项目tsc均exit0；X2单operation一笔-6、UNKNOWN留hold、原租约fencing保持。五行固定断连日志无敏感参数；非Error sentinel直接验证成功回滚路径，不夸大矩阵覆盖。
+- 父四产物与完整命令/input/literal/exit在ignored`billing-tx-parent/`；副本恢复1原hash及原六项失败、later-edit73/0写入，修复源码保持。四个父自有PG完整ID均移除、55527关闭，55432原连接未触碰。47无SSH/部署，其他事务调用方、45手术/在线索引/UNKNOWN和历史债继续挂账；工作台review仍待回执。
