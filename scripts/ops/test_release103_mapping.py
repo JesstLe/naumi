@@ -22,6 +22,7 @@ def row(name, identifier, commit='c' * 40, image='sha256:' + 'd' * 64):
 def config():
     old = {'web': row('naumi103-web-old-release', '1'), 'worker': row('naumi103-worker-old-release', '2')}
     return {'target': mapping.TARGET, 'authorization': mapping.AUTHORIZATION, 'branch': mapping.BRANCH,
+            'taskActivityScope': 'nonfinished-and-prior',
             'releaseMode': 'BLUE_GREEN', 'releaseId': 'release103-mapping-20261029-r1',
             'evidenceRoot': '/opt/naumi-staging/evidence/release103-mapping-20261029-r1',
             'commit': 'a' * 40, 'oldCommit': 'c' * 40, 'image': 'sha256:' + 'b' * 64,
@@ -44,6 +45,7 @@ class ValidationTests(unittest.TestCase):
     def test_reject_other_site_branch_authorization_and_mode(self):
         cases = [('target', v) for v in ['47.105.59.142', '120.27.162.85', '101.133.166.67', '179.236.104.112']]
         cases += [('branch', 'main'), ('authorization', mapping.shared.AUTHORIZATION), ('releaseMode', 'STOP_OLD_REPLACE')]
+        cases += [('taskActivityScope', 'all'), ('taskActivityScope', None), ('abortedPredecessor', 'release47-mapping-fixture')]
         for key, value in cases:
             c = config(); c[key] = value
             with self.subTest(key=key, value=value), self.assertRaises(Hold):
@@ -106,6 +108,7 @@ class InitializationTests(unittest.TestCase):
         self.addCleanup(patch.stopall)
         patch.object(mapping.shared, 'CANON', self.path).start()
         patch.object(mapping.base, 'CANON', self.path).start()
+        patch.object(mapping.shared, 'EVIDENCE_ROOT', pathlib.Path(self.temp.name)).start()
         self.store()
 
     def store(self):
@@ -155,6 +158,55 @@ class InitializationTests(unittest.TestCase):
         self.rows.append(stopped)
         with self.assertRaisesRegex(Hold, 'CANDIDATE_NAME_ALREADY_EXISTS'):
             mapping.Release(self.tx, self.c)
+
+    def aborted(self):
+        rid='release103-mapping-20261029-r2'
+        folder=pathlib.Path(self.temp.name)/rid;folder.mkdir()
+        raw=self.path.read_bytes()
+        original=copy.deepcopy(self.c);original.update(releaseId=rid,canonicalSha256=sha(raw),canonicalRevision=200)
+        (folder/'canonical-before.private.json').write_bytes(raw)
+        (folder/'release-config.private.json').write_text(json.dumps(original),encoding='utf8')
+        self.state['siteControlReleases'][rid]={'releaseId':rid,'phase':'ABORTED','candidatesRetained':False,
+          'gatewaySwitched':False,'gatewayObservedSha256':self.c['nginxSha256'],'operations':{'database-backup':{'phase':'ACKNOWLEDGED'}}}
+        self.state['activeSiteControlReleaseId']=rid;self.state['revision']=205
+        self.c.update(abortedPredecessor=rid,canonicalRevision=205)
+        self.store();return rid,folder
+
+    def test_explicit_pristine_abort_backtracks_original_complete_without_rewriting_history(self):
+        rid,_=self.aborted();before=self.path.read_bytes();aborted=copy.deepcopy(self.state['siteControlReleases'][rid])
+        r=mapping.Release(self.tx,self.c)
+        self.assertEqual(self.path.read_bytes(),before)
+        self.assertEqual(r.state['siteControlReleases'][rid],aborted)
+        self.assertEqual(r.record['predecessorReleaseId'],'prior')
+        self.assertEqual(r.record['abortedPredecessor'],rid)
+        self.tx.save.assert_not_called()
+
+    def test_abort_is_never_automatically_skipped(self):
+        self.aborted();del self.c['abortedPredecessor']
+        with self.assertRaisesRegex(Hold,'PREDECESSOR_NOT_COMPLETE'):mapping.Release(self.tx,self.c)
+
+    def test_abort_unknown_candidate_switch_or_different_record_rejected(self):
+        rid,_=self.aborted();original=copy.deepcopy(self.state['siteControlReleases'][rid])
+        for mutation in [{'phase':'UNKNOWN'},{'candidatesRetained':True},{'gatewaySwitched':True},
+                         {'new':{'web':{'id':'x'}}},{'operations':{'database-backup':{'phase':'UNKNOWN'}}},
+                         {'operations':{'web-create':{'phase':'ACKNOWLEDGED'}}},{'gatewayObservedSha256':'a'*64}]:
+            with self.subTest(mutation=mutation):
+                self.state['siteControlReleases'][rid]={**original,**mutation};self.store()
+                with self.assertRaisesRegex(Hold,'ABORTED_PREDECESSOR_NOT_PRISTINE|SITE_ROLLOUT_OPERATION_UNKNOWN'):mapping.Release(self.tx,self.c)
+
+    def test_another_aborted_unknown_operation_is_not_accepted(self):
+        self.aborted()
+        self.state['siteControlReleases']['other-aborted']={'phase':'ABORTED','operations':{'attempt':{'phase':'UNKNOWN'}}};self.store()
+        with self.assertRaisesRegex(Hold,'SITE_ROLLOUT_OPERATION_UNKNOWN'):mapping.Release(self.tx,self.c)
+
+    def test_abort_preimage_cas_and_historical_complete_identity_must_match(self):
+        _,folder=self.aborted()
+        original=(folder/'canonical-before.private.json').read_bytes()
+        (folder/'canonical-before.private.json').write_bytes(original+b' ')
+        with self.assertRaisesRegex(Hold,'ABORTED_PREDECESSOR_BASELINE_CHANGED'):mapping.Release(self.tx,self.c)
+        (folder/'canonical-before.private.json').write_bytes(original)
+        self.state['siteControlReleases']['prior']['commit']='e'*40;self.store()
+        with self.assertRaisesRegex(Hold,'ABORTED_PREDECESSOR_HISTORY_CHANGED'):mapping.Release(self.tx,self.c)
 
 
 class LifecycleTests(unittest.TestCase):
@@ -307,6 +359,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(r.events, ['proof-worker-barrier', 'proof-worker-resume', 'activate-persistent-startup'])
         self.assertEqual(collect.call_args.kwargs['previous'], {})
         self.assertEqual(collect.call_args.kwargs['projection'], 'proof')
+        self.assertEqual(collect.call_args.kwargs['activity_scope'],'nonfinished-and-prior')
         self.assertEqual(urlopen.call_args.args[0].full_url, 'http://127.0.0.1/api/version')
         self.assertEqual(urlopen.call_args.args[0].get_header('Host'), mapping.TARGET)
         r.router_binding.assert_called_once_with(live=True)

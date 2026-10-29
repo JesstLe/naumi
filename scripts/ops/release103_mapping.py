@@ -30,6 +30,9 @@ def validate(c):
             'EXPLICIT_103_MAPPING_AUTHORIZATION_REQUIRED')
     require(c.get('branch') == BRANCH and c.get('releaseMode') == 'BLUE_GREEN',
             'ISOLATED_MAPPING_BRANCH_REQUIRED')
+    require(c.get('taskActivityScope') == 'nonfinished-and-prior', 'EXPLICIT_103_TASK_ACTIVITY_SCOPE_REQUIRED')
+    require(c.get('abortedPredecessor') is None or re.fullmatch(r'release103-mapping-[a-z0-9-]{6,50}', c['abortedPredecessor']),
+            'EXPLICIT_ABORTED_MAPPING_PREDECESSOR_REQUIRED')
     require(re.fullmatch(r'release103-mapping-[a-z0-9-]{6,50}', c.get('releaseId', '')),
             'MAPPING_RELEASE_ID_REQUIRED')
     require(c.get('evidenceRoot') == '/opt/naumi-staging/evidence/' + c['releaseId'],
@@ -167,7 +170,8 @@ class Release(shared.Release):
                   'TASK_PROOF_BARRIER', 120)
         after = tasks.collect_task_snapshot(self.tx.run, public_identity(self.db), self.tx.save,
                     previous=self.task_before.private, projection='proof', row_limit=5000,
-                    allow_absent_tables=tasks.ADDITIVE_TABLES, statement_timeout_ms=15000)
+                    allow_absent_tables=tasks.ADDITIVE_TABLES, statement_timeout_ms=15000,
+                    activity_scope=self.c.get('taskActivityScope','all'))
         proof = tasks.compare_task_snapshots(self.task_before, after)
         self.tx.save('task-preservation.json', proof)
         require(proof['preservationVerified'], 'TASK_PRESERVATION_FAILED')
