@@ -8,7 +8,17 @@ function visit(n){
  if(ts.isVariableDeclaration(n)&&['FAITHFUL_REGEN_PROMPT','VIEW_CONSISTENCY_RULES','MAX_TOTAL_IMAGES'].includes(n.name.getText(ast))){let s=n;while(!ts.isVariableStatement(s))s=s.parent;constants.push(s.getText(ast));}
  if(ts.isVariableDeclaration(n)&&n.name.getText(ast)==='promptToUse')blank=n.initializer.getText(ast);
  ts.forEachChild(n,visit);
-}visit(ast);const primary=fns.generateSelectedImage?'generateSelectedImage':'generateChild',hasRedo=!!fns.retrySelected;assert.ok(blank&&fns[primary]&&fns.genFromAssistant);assert.equal(!!fns.generateSplitViews,baseline);
+}visit(ast);
+// Primary task composition now lives in image-runs. Read its real prompt
+// initializer rather than requiring the retired local variable in Canvas.
+let blankSource='canvas-client';
+if(!blank&&fs.existsSync(path.join(root,'src/lib/canvas/image-runs.ts'))){
+ const owner=read('src/lib/canvas/image-runs.ts'),ownerAst=ts.createSourceFile('image-runs.ts',owner,99,true);
+ const fn=ownerAst.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='runCanvasBlankImage');assert.ok(fn);
+ const initializers=[];(function visit(n){if(ts.isVariableDeclaration(n)&&n.name.getText(ownerAst)==='prompt'&&n.initializer&&ts.isCallExpression(n.initializer)&&n.initializer.expression.getText(ownerAst)==='canvasBlankImagePrompt')initializers.push(n.initializer.getText(ownerAst));ts.forEachChild(n,visit);})(fn);
+ assert.equal(initializers.length,1,'blank application must use the original prompt owner exactly once');blank=initializers[0];blankSource='canvas/image-runs';
+}
+const primary=fns.generateSelectedImage?'generateSelectedImage':'generateChild',hasRedo=!!fns.retrySelected;assert.ok(blank&&fns[primary]&&fns.genFromAssistant);assert.equal(!!fns.generateSplitViews,baseline);
 const transpile=text=>ts.transpileModule(text,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
 async function bundled(){
  const entry=['export * from "./src/lib/canvas/image-references";','export * from "./src/lib/canvas/image-task-scope";',...(!baseline?['export * from "./src/lib/canvas/image-creation";']:[])].join('\n');
@@ -37,7 +47,7 @@ function fixture(code,options={}){
  };
  c.renameGeneratedArtwork=async(id,title)=>{c.renames.push([id,title]);if(options.hold==='rename'&&!used){used=true;entered.resolve();await release.promise;}};
  c.generateDetailSequence=async(...values)=>{c.details.push(await plain(values));};c.setGenError=error=>{c.errors.push(error);};
- vm.runInContext(transpile(constants.join('\n')+'\n'+Object.values(fns).join('\n')+`\nfunction blankPrompt(text,inputTextNodes,inputArts){return ${blank};}\nglobalThis.entries={generateChild:${primary},${hasRedo?'retrySelected,':''}genFromAssistant,blankPrompt};`),c);
+ vm.runInContext(transpile(constants.join('\n')+'\n'+Object.values(fns).join('\n')+`\nfunction blankPrompt(text,inputTextNodes,inputArts){const texts=inputTextNodes,inputs=inputArts;return ${blank};}\nglobalThis.entries={generateChild:${primary},${hasRedo?'retrySelected,':''}genFromAssistant,blankPrompt};`),c);
  const snapshot=async()=>({calls:await plain(c.calls),renames:await plain(c.renames),details:await plain(c.details),errors:await plain(c.errors)});
  const run=async(kind='dock')=>{await (kind==='retry'?c.entries.retrySelected():kind==='assistant'?c.entries.genFromAssistant(c.editPrompt):c.entries.generateChild());await Promise.all(c.pending);await Promise.resolve();return snapshot();};
  return {c,source,parent,ref,file,run,snapshot,entered:entered.promise,release:release.resolve,switch(kind){
@@ -79,7 +89,7 @@ async function main(){
  }
  for(const action of hasRedo?['dock','retry']:['dock']){const f=fixture(code,{hold:'generate'});f.c.generationMode='triptych';const work=f.run(action);await f.entered;f.switch('project');f.release();const result=await work;eq(result.renames.length,baseline?1:0,'stale final title '+action);races.push({kind:'final-title-'+action,renames:result.renames.length});}
  const priorPath=arg('--baseline-report');if(priorPath){const prior=JSON.parse(fs.readFileSync(priorPath,'utf8'));eq(JSON.parse(JSON.stringify(common)),prior.common,'all original creative instructions/options/file bytes/order/lineage');}
- const report={status:'PASS',mode:baseline?'BASELINE':'MODIFIED',checks,common,races,primary,retiredRedo:!hasRedo,scope:'ACTUAL_CANVAS_ADAPTERS_AND_APPLICATION_WITH_TASK_PORTS',supplier:0,network:0,pg:false};
+ const report={status:'PASS',mode:baseline?'BASELINE':'MODIFIED',checks,common,races,primary,blankSource,retiredRedo:!hasRedo,scope:'ACTUAL_CANVAS_ADAPTERS_AND_APPLICATION_WITH_TASK_PORTS',supplier:0,network:0,pg:false};
  fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify(report,null,2)+'\n');
  console.log(`CANVAS_IMAGE_CREATION=PASS MODE=${report.mode} CHECKS=${checks} COMMON_CASES=${common.length} RACES=${races.length} CREATIVE_BODY=${baseline?'INLINE':'OWNED'} ORIGINAL_FILE_BYTES=RETAINED STALE_FOLLOWUPS=${baseline?12:0} SELECTION_CONTINUES=1 TASK_OWNER=REUSED NETWORK=0 SUPPLIER=0`);
 }

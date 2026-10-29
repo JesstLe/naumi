@@ -46,3 +46,6 @@ R7I已将edit/detail/Comfy编排移出React；runGen/generatePend仍直接组合
 b20b8630第二轮保留15 PASS/1 FAIL/114 NOT_RUN，upload-memory仍失败。进一步沿实际import链确认：主线夹具只mock旧db facade，未覆盖本分支既有platform/persistence/artwork I/O owners，导致真实writer/schema越过夹具边界。只把同一批原SQL/账号/作品I/O端口映射到这五个现有owner；没有mock图像算法、媒体校验、存储或上传route，也未修改任何原39项断言。定向上传suite随后39/39、native queue/process0、network0通过。纯尺寸模块的8条UI目录耦合已独立消除；它不是此次夹具失败的全部原因。
 
 实际Next控件在完整字节副本、同lockfile C盘本地依赖中通过：空白节点5检查（原prompt/operation、保存失败原结果续接、零额外生成POST、原图/坐标保持、回执完成清理），原位图片8检查（实际A/B/上传U像素、选择/关闭/失败保留、原节点revision、原版本undo/redo、布局连线保持），pageerror0、paid supplier0。两组应用源码绑定b20b8630；后续仅夹具/doc变化，与全部2075应用文件逐字节一致的桥接单独留存，不冒充新完整镜像验收。
+
+
+595ec997第三轮保留44 PASS/1 FAIL/85 NOT_RUN。image-regeneration调用的旧creation verifier把promptToUse私有变量必须留在Canvas当作前置条件，而R7O已将同一真实initializer移到image-runs。夹具现在从实际runCanvasBlankImage AST读取该initializer，依旧执行原提示词owner及五类blank输入，不恢复组件内编排、不复制提示词规则。原creation39检查（26共通场景/8竞态）与原regeneration断言定向通过；全部原创作字节/顺序/血缘、分视图及stale约束保留。后续新完整矩阵单独留存。
