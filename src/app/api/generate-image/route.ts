@@ -678,6 +678,13 @@ async function parseParams(request: Request): Promise<GenParams | null> {
     };
   }
   const j = (await request.json()) as Partial<GenParams>;
+  if (!j || typeof j !== "object" || Array.isArray(j)) throw new Error("请求格式不正确");
+  // Never persist user JSON objects into textual fields: they can impersonate
+  // the internal checkpoint representation when a durable payload is resumed.
+  for (const key of ["prompt","userPrompt","category","ratio","resolution","style","quality","email","parentId","templateId","templateImage","templatePrompt","origin","entry","projectGroupId","model"] as const) {
+    if (j[key] != null && typeof j[key] !== "string") throw new Error("请求格式不正确");
+  }
+  if (j.parentIds != null && (!Array.isArray(j.parentIds) || !j.parentIds.every(id => typeof id === "string"))) throw new Error("请求格式不正确");
   return {
     prompt: (j.prompt ?? "").trim(),
     billingVersion:j.billingVersion,billingCredits:j.billingCredits,
