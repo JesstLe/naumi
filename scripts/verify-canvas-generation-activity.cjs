@@ -45,7 +45,7 @@ async function main(){
  (function walk(n){if(ts.isFunctionDeclaration(n)&&n.name&&['runGen','generatePend','generateDetailSequence','landEditResult','runComfyWorkflow'].includes(n.name.text))callers[n.name.text]=n.getText(ast);ts.forEachChild(n,walk);})(ast);
  eq(Object.keys(callers).length,5,'all production paths found');
  for(const [name,body]of Object.entries(callers)){
-  const delegated={landEditResult:['runCanvasEdit','edit-run.ts'],generateDetailSequence:['runCanvasDetail','detail-run.ts'],runComfyWorkflow:['workflowRunsRef','workflow-runs.ts']}[name];
+  const delegated={runGen:['runCanvasDerivedImage','image-runs.ts'],generatePend:['runCanvasBlankImage','image-runs.ts'],landEditResult:['runCanvasEdit','edit-run.ts'],generateDetailSequence:['runCanvasDetail','detail-run.ts'],runComfyWorkflow:['workflowRunsRef','workflow-runs.ts']}[name];
   let implementation=body;
   if(!baseline&&delegated&&fs.existsSync(path.join(root,'src/lib/canvas',delegated[1]))){
     eq(body.includes(delegated[0]),true,name+' delegates actual application entry');

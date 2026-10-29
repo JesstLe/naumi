@@ -49,3 +49,6 @@ b20b8630第二轮保留15 PASS/1 FAIL/114 NOT_RUN，upload-memory仍失败。进
 
 
 595ec997第三轮保留44 PASS/1 FAIL/85 NOT_RUN。image-regeneration调用的旧creation verifier把promptToUse私有变量必须留在Canvas当作前置条件，而R7O已将同一真实initializer移到image-runs。夹具现在从实际runCanvasBlankImage AST读取该initializer，依旧执行原提示词owner及五类blank输入，不恢复组件内编排、不复制提示词规则。原creation39检查（26共通场景/8竞态）与原regeneration断言定向通过；全部原创作字节/顺序/血缘、分视图及stale约束保留。后续新完整矩阵单独留存。
+
+
+49bdd7b4第四轮保留50 PASS/1 FAIL/79 NOT_RUN：原activity结构断言仍要求runGen/generatePend自己含activity调用。现在沿真实组件→image-runs→既有activity验证，仍检查五条实际调用链和零私有busy写；没有恢复组件编排。为避免逐项旧夹具使全量反复提前结束，先集中预检16个受影响入口：15个通过、image-imports夹具缺新纯image-size依赖。该端口改为加载真实纯模块（不是伪造尺寸），原15场景63检查随后通过；其余activity/presentation/pending/secondary/native/history/text/import/workflow等15入口结果保留。下一次完整core独立同SHA执行，不跨这些报告拼绿。
