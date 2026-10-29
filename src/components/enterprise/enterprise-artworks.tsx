@@ -13,7 +13,11 @@ import local from "./enterprise-artworks.module.css";
 type Filter = { from: string; to: string; email: string; q: string; accountType: string; status: string;period:''|'all' };
 const initialFilter = (email: string,allDates=false): Filter => {
   const to = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
-  return { from:allDates?'':new Date(Date.parse(`${to}T00:00:00Z`) - 29 * 86400_000).toISOString().slice(0, 10), to:allDates?'':to, email, q: "", accountType: "", status: "",period:allDates?'all':'' };
+  const query=typeof window==='undefined'?new URLSearchParams():new URLSearchParams(window.location.search);
+  const fromQuery=query.get('from')||'',toQuery=query.get('to')||'';
+  const valid=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
+  const explicitDates=valid(fromQuery)&&valid(toQuery)&&fromQuery<=toQuery&&Date.parse(toQuery)-Date.parse(fromQuery)<=365*86400000;
+  return { from:explicitDates?fromQuery:allDates?'':new Date(Date.parse(`${to}T00:00:00Z`) - 29 * 86400_000).toISOString().slice(0, 10), to:explicitDates?toQuery:allDates?'':to, email, q: "", accountType: "", status: "",period:explicitDates?'':allDates?'all':'' };
 };
 async function getRecords(url: string, signal: AbortSignal): Promise<BiResponse> {
   const response = await fetch(url, { cache: "no-store", headers: await authHeader(), signal });
