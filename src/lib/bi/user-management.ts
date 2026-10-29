@@ -141,16 +141,20 @@ export async function manageBiUser(command: UserCommand, actor: string) {
                     throw new ManagementError("不能撤销最后一个有效管理员", 403);
             }
         }
-        const batches = (await client.query("SELECT id,remaining FROM app_credit_batches WHERE email=$1 AND remaining>0 AND expires_at>now() ORDER BY expires_at,created_at,id FOR UPDATE", [command.email])).rows;
-        const principal = batches.reduce((s, r) => s + Number(r.remaining), 0), available = Math.max(0, principal - user.credits_used);
         const delta = command.action === "adjust"
             ? command.delta
             : command.action === "create"
                 ? command.initialCredits
                 : 0;
         let expiry: string | null = null;
+        let available = 0;
         const ledgerId = delta ? "led-bi-" + command.id : null;
         if (delta) {
+            // Only credit changes include balances in the audit. The owner row
+            // is already locked in this transaction; do not lock/transfer every
+            // live batch before adjustTx performs its own funded-prefix debit.
+            const principal = Number((await client.query("SELECT COALESCE(sum(remaining),0) AS amount FROM app_credit_batches WHERE email=$1 AND remaining>0 AND expires_at>now()", [command.email])).rows[0].amount);
+            available = Math.max(0, principal - user.credits_used);
             const policy = "months" in command && command.months !== undefined ? { unit: "months" as const, value: command.months } : snapshot.config.credits.admin;
             if (delta > 0)
                 expiry = expiryFrom(new Date(), policy).toISOString();
