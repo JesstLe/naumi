@@ -17,9 +17,11 @@ export async function enterpriseHealth(actor:TeamActor,id:string){
       count(*) FILTER(WHERE created_at>now()-interval '1 hour' AND status IN ('done','completed','succeeded','success'))::int succeeded,
       count(*) FILTER(WHERE created_at>now()-interval '1 hour' AND status IN ('failed','error','rejected'))::int failed,
       min(created_at) FILTER(WHERE status IN ('queued','pending','processing','running','generating')) oldest FROM tasks`,[emails]);
-    const exists=await tx.query("SELECT to_regclass('app_worker_tick_receipts') IS NOT NULL AS present");
+    const exists=await tx.query("SELECT to_regclass('app_worker_tick_receipts') IS NOT NULL AS present, EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('app_worker_tick_receipts') AND attname='nonacceptance_at' AND NOT attisdropped) AS has_negative");
     let worker:{lastAcceptedAt:string|null;recentTicks:number;state:'observed'|'not_recorded'}={lastAcceptedAt:null,recentTicks:0,state:'not_recorded'};
-    if(exists.rows[0].present){const {rows:[row]}=await tx.query("SELECT max(accepted_at) last, count(*) FILTER(WHERE accepted_at>now()-interval '5 minutes')::int n FROM app_worker_tick_receipts");worker={lastAcceptedAt:row.last?.toISOString()||null,recentTicks:row.n,state:row.last?'observed':'not_recorded'};}
+    // Capability lookup supports v1 without converting the whole receipt row
+    // (including its result JSON) merely to check one optional timestamp column.
+    if(exists.rows[0].present){const {rows:[row]}=await tx.query("SELECT max(accepted_at) last, count(*) FILTER(WHERE accepted_at>now()-interval '5 minutes')::int n FROM app_worker_tick_receipts"+(exists.rows[0].has_negative?" WHERE nonacceptance_at IS NULL":""));worker={lastAcceptedAt:row.last?.toISOString()||null,recentTicks:row.n,state:row.last?'observed':'not_recorded'};}
     return {observedAt:new Date().toISOString(),database:'available' as const,worker,tasks,scope:scope.owner?'all_members' as const:'subordinates' as const};
   });
 }

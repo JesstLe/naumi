@@ -5,6 +5,12 @@ import {sameVideoSnapshot} from '../video/polling-state';
 type Patch = Partial<Omit<VideoNodeWrite, 'id' | 'operationId'>>;
 type Attempt = {body: string; url: string; method: string; revision: number; projectKey?: string};
 type Entry = {journalId: string; patch: Patch; attempt?: Attempt; baseRevision: number; uncertain?: boolean; promise: Promise<CanvasVideoNode>};
+// The repository replaces each provided top-level field (including config and
+// inputs). A new explicit save supersedes a rejected edit only if it writes all
+// of that edit's fields; a position ACK says nothing about a configuration draft.
+const coversEdit = (next: Patch, previous: Patch) => Object.keys(previous)
+  .filter(key => key !== 'expectedRevision' && previous[key as keyof Patch] !== undefined)
+  .every(key => Object.hasOwn(next, key) && next[key as keyof Patch] !== undefined);
 export class VideoNodeClientError extends Error {
   constructor(message: string, public status: number, public code?: string) { super(message); }
 }
@@ -125,11 +131,17 @@ export class VideoNodeSaveQueue {
       try {
         const node = await this.send(id, entry.attempt);
         this.assertCurrent();
-        this.failed.delete(id);
+        if (this.failed.get(id) === entry) this.failed.delete(id);
         this.options.accept(node);
+        const records = this.pending.get(id) || [];
+        const superseded = records.slice(0, records.indexOf(entry)).filter(old =>
+          old.uncertain === false && coversEdit(entry.patch, old.patch));
         this.removePending(id, entry);
-        if (previous && previous !== entry && previous.uncertain === false) this.removePending(id, previous);
-        this.options.changed(this.failed.size ? new Error('视频节点仍有未保存的修改，请重试') : null);
+        for (const old of superseded) {
+          this.removePending(id, old);
+          if (this.failed.get(id) === old) this.failed.delete(id);
+        }
+        this.options.changed(this.pending.size ? new Error('视频节点仍有未保存的修改，请重试') : null);
         return node;
       } catch (cause) {
         const error = cause instanceof Error ? cause : new Error('视频节点保存失败');
@@ -202,12 +214,21 @@ export class VideoNodeSaveQueue {
   }
   async retryPending() {
     // Explicit user recovery, not a background retry loop. Preserve original CAS.
+    let firstFailure: unknown;
     for (const [id, entries] of [...this.pending]) {
       for (const entry of [...entries]) {
         if (!(this.pending.get(id) || []).includes(entry)) continue;
-        await this.save(id, entry.patch, entry);
+        try { await this.save(id, entry.patch, entry); }
+        catch (error) {
+          this.assertCurrent();
+          firstFailure ??= error;
+          // Preserve order for this node, but a permanent conflict on it must
+          // not prevent another node from recovering after a transient outage.
+          break;
+        }
       }
     }
+    if (firstFailure) throw firstFailure;
   }
   dispose() { this.lifetime.abort(); }
 }
