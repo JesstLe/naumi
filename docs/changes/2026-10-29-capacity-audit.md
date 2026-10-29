@@ -247,3 +247,14 @@
 - 原测试加载器 `verify-image-postaccept-diagnostics.cjs` 缺少 `../model-config/local-image-rejection`，子任务在基线和修改版均exit1；保留QA后续，不用补桩伪装通过。Hub ledger为内存fixture，不冒称真实PG事务。
 - 视频 `auxiliaryMediaBytes` 的8MiB直接输入RangeError，仅作后续可达性核验：公开schema上限512KiB且该范围正常，未证明线上可达；Agent harness相似Markdown替换作为Agent/前端传输后续候选。
 - 本次未改imagegen/sharp、durable存储、供应商调用/计价/fencing。X5和图片管线仍在各自任务中；首个空位转向X3可靠未受理证明缺口。本次功能同步计数1/3；47 HOLD持续，生产动作0。
+
+
+### 2026-10-29 图片处理首切片：复用已解码RGBA
+
+- **A31 / D14：imagegen后处理初检的中间PNG往返及chroma重复解码原输入。** 固定提交 `01618bcfc58c32110c497bdb3c06e334f2582481`，仅postprocess/pixels/chroma与专属验证。复用独占规范化RGBA进行chroma和初始透明检查；原alpha上限在已有matte循环捕获，仅边缘处理时分配。普通不缩图成功路径观测从decode4/encode2/metadata3变为2/1/2；chroma不缩图5/2/4变为2/1/2；实际缩图保持3/2/2。计数是实际sharp pipeline调用，不是libvips内部缓存后的codec调用量。
+- **否决反例保留**：子任务首版全raw缩图虽像素相同，却在12MP独立进程样本中出现RSS回退。最终真实缩图保留一次无损中间PNG，仅移除不必要初检解码；不调低质量/像素限额、不改全局concurrency/cache。`BENCHMARK-first-raw.json`、最终30个独立进程样本及RAW-RSS-PROBES均已父线程重开；这些仍是子任务本地量化，不冒充父线程重新做了30次测量或生产容量。
+- 父线程重跑41个场景：27个成功输出编码字节/RGBA/尺寸/透明事实等价，14个拒绝保持相同错误；基线预算27项不满足（exit1），修改预算全过（exit0），独立副本回滚恢复原3文件hash和27项重复转换（exit1）。最终实际编码输出仍重新解码验收，保留全透明/透明像素消失/JPEG背景/EXIF/ICC/动画/坏图及资源上限约定。
+- 实际调用方transformImage(imagegen/resize)、localEditSchema、mask→postprocess及原后处理/contract/intent回归通过；全项目TypeScript通过。没有PG/HTTP/对象存储端到端或完整Next构建，不把像素纯函数验证扩成全链路交付结论。
+- 父线程初次Python启动器按大小写过滤Windows环境变量，漏保留SYSTEMROOT，Node启动阶段CSPRNG断言退出134；改为环境变量名大小写无关白名单后正常执行，原记录保留 `INITIAL_WINDOWS_ENV_FAILURE.txt`。业务代码未为该启动器问题改动。
+- 证据：当前worktree ignored `output/capacity-audit-wave2-20261029/review-image/`，含四产物及父线程精确命令/输入/stdout/stderr/exit。外部函数签名和返回字段不变；未动X5存储/付费checkpoint、授权和fencing。
+- 未完成：mask/input-assets及跨交付边界重复读取、媒体并发与整站峰值仍待独立验证。X5和X3未受理证明继续各自推进，下一可用槽开始前端画布保存/传输审计。功能同步计数2/3；47 HOLD持续，生产动作0。
