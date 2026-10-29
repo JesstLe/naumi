@@ -237,3 +237,13 @@
 既有失败保留：企业集成401≠404已在X1原版/修改版复现，未改鉴权断言；X2扩展review在A+ redo及5个race后遇PUBLISH_STALE_DRAFT_BASE，整套未通过。X3子任务React18缺依赖的全项目类型检查失败保留，父线程使用匹配React19依赖后的组合源码tsc通过，二者不是同一环境结论。
 
 接口与后续：X5复用kick/get(id,false)/set/patch/paidOperation/settle，不改operation、attemptToken或收费身份；holdImageJobBilling(id,token)为唯一既有签名变化。接续X4大base64线性解析、X5现有storage外置图片、sharp图片处理；X1剩余状态投影、X3未受理协议、两套扩展fixture及其他领域仍排队。完整Next生产构建与线上验收未执行，47 HOLD/无SSH保持，45笔手术和在线索引仍仅挂账。三个功能模块已到同步点，合主线前再次fetch并记录最终固定SHA到本地计划。
+
+
+### 2026-10-29 X4：大字符串解析结论校正与真实修复
+
+- **C3 / D3 / X4校正**：指定的两处 supplier/reverse-hub Base64 字符类在Node24.19、1/8/44MiB有效串/尾部非法/Unicode空白及真实4,202,552字符PNG转换中未复现爆栈。保留原文件及格式契约，不将“类似正则”当已证实RangeError。
+- **A30 / D13：New API畸形Markdown图片起始符导致二次方扫描。** 实际 `new-api-image.ts::extractImageUrl` 的全局Markdown正则反复从未闭合 `![` 开始扫描；原函数1MiB样本子进程5秒超时，真实本地HTTP→原响应转换10秒超时。改为单向扫描并保留最后完整Markdown图片优先、最后裸URL次之、嵌套与空白兼容，裸URL路径不再物化全量match数组。固定提交 `238e45d99cd2857eb3e7ded14075ba67c0de2db8`，父线程已普通merge并复核。
+- 父线程独立复测：12,066组原兼容性、46组Base64、66组真实本地HTTP/像素均通过；另加150,000组固定种子169029差分对照通过。基线与回滚各3组超时（exit1），修改版0失败（exit0），PNG原字节和实际RGB像素一致。实际脚本、输出及hash在父worktree ignored `output/capacity-audit-wave2-20261029/review-x4/VERIFICATION.txt`；四产物已重开，源码仍为修改版。
+- 原测试加载器 `verify-image-postaccept-diagnostics.cjs` 缺少 `../model-config/local-image-rejection`，子任务在基线和修改版均exit1；保留QA后续，不用补桩伪装通过。Hub ledger为内存fixture，不冒称真实PG事务。
+- 视频 `auxiliaryMediaBytes` 的8MiB直接输入RangeError，仅作后续可达性核验：公开schema上限512KiB且该范围正常，未证明线上可达；Agent harness相似Markdown替换作为Agent/前端传输后续候选。
+- 本次未改imagegen/sharp、durable存储、供应商调用/计价/fencing。X5和图片管线仍在各自任务中；首个空位转向X3可靠未受理证明缺口。本次功能同步计数1/3；47 HOLD持续，生产动作0。

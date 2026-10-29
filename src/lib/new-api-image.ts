@@ -79,12 +79,35 @@ function collectStreamContent(raw: string) {
 }
 
 function extractImageUrl(content: string) {
-  const markdown = Array.from(
-    content.matchAll(/!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g)
-  );
-  if (markdown.length) return markdown.at(-1)?.[1] || "";
-  const urls = Array.from(content.matchAll(/https?:\/\/[^\s)]+/g));
-  return urls.at(-1)?.[0] || "";
+  // Keep the last complete Markdown image ahead of bare URLs, as before.
+  // Retrying [^\]]* from each unmatched ![ is quadratic on supplier text.
+  // A single forward pass tracks the first opener and an optional URL. Track
+  // nested openers too: a failed outer URL may contain a valid inner image.
+  let label = false, urlStart = -1, bodyStart = -1, lastStart = -1, lastEnd = -1;
+  const whitespace = /\s/; // One code unit only; preserves ECMAScript whitespace.
+  for (let i = 0; i < content.length; i++) {
+    const c = content[i];
+    if (urlStart >= 0 && (c === ")" || whitespace.test(c))) {
+      if (c === ")" && i > bodyStart) {
+        lastStart = urlStart; lastEnd = i;
+        label = false; // The complete outer match consumes nested openers.
+      }
+      urlStart = -1;
+    }
+    if (c === "!" && content[i + 1] === "[") label = true;
+    if (c !== "]" || !label) continue;
+    label = false;
+    if (urlStart >= 0 || content[i + 1] !== "(") continue;
+    const start = i + 2;
+    const prefix = content.startsWith("https://", start) ? 8 : content.startsWith("http://", start) ? 7 : 0;
+    if (prefix) { urlStart = start; bodyStart = start + prefix; }
+  }
+  if (lastStart >= 0) return content.slice(lastStart, lastEnd);
+  // This simple URL character class scans linearly; retain only the last match
+  // rather than materializing every URL/match object in a supplier response.
+  let last = "";
+  for (const match of content.matchAll(/https?:\/\/[^\s)]+/g)) last = match[0];
+  return last;
 }
 
 export async function generateNewApiImage(input: {
