@@ -52,3 +52,7 @@
 - NAS真实新上传/Range/清理验收、最后业务任务全图保留对比尚未执行。原始数据库备份1,349,370,594字节pg_restore list可读；恢复supervisor已指向当前pair，旧批量改写UNKNOWN的watchdog inactive/disabled。真实新Worker正在扫描不等于所有历史任务已恢复。
 - 当前唯一已切流应用源仍43d46949；本地连接池死锁修复尚未上线。磁盘85%、约10.30GiB可用，备份/近期恢复材料均保留；没有删除任何试图核验但未满足条件的旧包。
 - 本轮最终状态：`CLEANUP_PENDING_USER_HOLD`。不创建另一候选、不自动解锁HOLD、不重新切换。工作区20项旧修改hash保持，证据在本机ignored `output/release47-peak-20261029-r1/remote/`。
+
+## 本地根因修复交接
+
+已普通合入远端main的功能修复为 `eb1290b70b4e10c04a90e487e82d27bc93927782`；真实PG同池5连接互等复现/修正、企业历史/图片/权限回归、tsc及副本回滚通过。修复未再发布，用户要求保持现场不切换；GLM继续处理。任务分支清理不改变这一HOLD，不能把main新SHA当线上版本。

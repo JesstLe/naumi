@@ -31,3 +31,12 @@
 - 这是本地修复；用户明确“GLM仍在处理，先别切换”，本线程不构建/投放第二候选、不触碰运行容器或服务器业务数据。
 - 首轮发布仍 `CLEANUP_PENDING`，原UNKNOWN与异常证据保留；本地PASS不替代生产验收。后续由同站唯一负责人基于固定main提交协调发布，重新验收后台并发读取＋生成结算、Worker真实completed回执、NAS与任务保留。
 - 未将连接池调大作为修复，也未对所有事务机械加新框架。仍保留独立的长事务/连接池等待可观测性改进需求。
+
+## 本地最终验收与交接
+
+- 功能固定提交 `eb1290b70b4e10c04a90e487e82d27bc93927782` 已普通合入并推送origin/main；只改上述三处产品源码、一个并发回归及本轮文档。未合重构或历史回滚分支。
+- 类型检查 `node node_modules/typescript/bin/tsc --noEmit --incremental false` exit0；真实PG并发原/新两组均按预期exit0，原版互等/新版不互等。企业图片/历史/双管理员/撤权与saas作用域集中回归均exit0。
+- 独立标记副本回滚恢复三份原始源码hash，重新跑真实PG后重现 `completedWhileAllFiveClientsHeld=false`、`poolWaiters=1`。`MODIFIED_FILE.tar` hash未变，未在生产执行回滚。
+- 四产物：本机ignored `output/enterprise-history-pool-20261029/{MODIFIED_FILE.tar,DIFF_FILE.patch,VERIFICATION.txt,ROLLBACK.sh}`；回滚脚本仅允许该目录的标记副本且要求全部修改后hash匹配，遇后续编辑不覆盖。
+- 用户09:53明确确认GLM仍在处理、先别切换。本任务09:54结束原持锁事务，三个部署锁逐个实际核验FREE。源代码已合主线不代表已上线，停止操作前线上仍43d46949/1793236756。
+- 首轮发布/现场证据见 `2026-10-29-peak-main-release.md` 与本机 `output/release47-peak-20261029-r1/remote/HANDOFF_STATUS.json`，状态保留 `CLEANUP_PENDING_USER_HOLD`。后续若GLM改变站点，以新现场为准，不延用此快照。
