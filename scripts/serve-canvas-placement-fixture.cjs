@@ -116,6 +116,7 @@ const server=http.createServer(async(req,res)=>{
     if(op.type==='position'){const n=op.text?t:a;if(n){n.canvasX=op.x;n.canvasY=op.y}}
     if(a&&op.type==='visibility')a.deletedAt=op.visible?null:now;
     if(a&&op.type==='rename')a.title=op.title;
+    if(a&&op.type==='art-dimensions'){a.canvasWidth=op.width;a.canvasHeight=op.height}
     if(a&&op.type==='parent'){
      const parents=new Set(a.parentIds||[]);if(op.add){parents.add(op.parentId);a.parentId??=op.parentId;}else{parents.delete(op.parentId);if(a.source!=='canvas-add'&&a.parentId===op.parentId)a.parentId=null;}a.parentIds=[...parents];
     }

@@ -27,3 +27,7 @@
 四产物、原文件 SHA、完整源副本回滚、恢复后旧行为、补丁回放及远端 SHA 在同目录封存。原工作树保留重构实现；不合 main、不部署，整体目标 ACTIVE。main 的更新另记，不把追赶主线替代本切片，也不将历史 MEDIA_STATE_WRITE_FAILED 原生 errno 根因标关闭。
 
 后续继续减少 Canvas 业务回调/外围组装的变化传播范围、同场景 INP/容量、有效远端 required CI 及完整版本最终 main 整合退出。
+
+## 浏览器夹具的具体修正
+
+23个受影响入口与原位7项/编辑恢复5项通过后，完整交互最后的UNKNOWN回执用例失败：期望1次原移动，额外观察到2次尺寸写入。日志显示旧placement夹具漏实现已有art-dimensions历史操作，刷新后同一尺寸修复反复入队并消耗了“下一次丢回执”注入。仅补齐fixture的canvasWidth/canvasHeight持久语义，不改产品代码或放宽计数。初次代理API就绪早于Next监听造成ECONNREFUSED的零控件运行另存；补为等待真实Next health。实际通过数字和源码分层仍以最终VERIFICATION为准。
