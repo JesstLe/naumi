@@ -6,7 +6,7 @@ import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 
-const root=process.cwd(),out=path.resolve('output/a15'),base='956b7238fa375e992e0ac594c47cdba5c9d95f50';
+const root=process.cwd(),out=path.resolve('output/a15'),base=process.argv[2]||'956b7238fa375e992e0ac594c47cdba5c9d95f50';
 const keep=new Set(['PATH','SYSTEMROOT','WINDIR','COMSPEC','TEMP','TMP','USERPROFILE','APPDATA','LOCALAPPDATA','PATHEXT']);
 const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>keep.has(k.toUpperCase())));
 const exec=(cmd,args,options={})=>execFileSync(cmd,args,{windowsHide:true,env,maxBuffer:32*1024*1024,...options});

@@ -9,7 +9,9 @@ import { build } from 'esbuild';
 import ts from 'typescript';
 import pg from 'pg';
 
-const root = process.cwd(), out = path.resolve('output/a15');
+const option = name => { const at=process.argv.indexOf(name); return at<0?undefined:process.argv[at+1]; };
+const root = process.cwd(), out = path.resolve(option('--out') || 'output/a15');
+const storeSource = option('--store-source');
 fs.mkdirSync(out, { recursive: true });
 const keep = new Set(['PATH','SYSTEMROOT','WINDIR','COMSPEC','TEMP','TMP','USERPROFILE','APPDATA','LOCALAPPDATA','PATHEXT']);
 const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => keep.has(k.toUpperCase())));
@@ -27,6 +29,7 @@ const log = text => console.log(text);
 const routeFiles = new Set(['auth/forgot','admin/login','agent','canvas/workflow-import/asset'].map(p => path.resolve('src/app/api/' + p + '/route.ts')));
 const constants = { dbEnabled: 'true', supabaseEnabled: 'false', ADMIN_COOKIE: '"a15-admin"', SESSION_TTL_MS: '60000', MODEL_ID: '"fixture"' };
 const routeMocks = { name: 'route-fixture-io', setup(b) {
+  if(storeSource)b.onLoad({filter:/rate-limit-store\.ts$/}, args => path.resolve(args.path)===path.resolve('src/lib/rate-limit-store.ts') ? {contents:fs.readFileSync(storeSource,'utf8'),loader:'ts'} : undefined);
   b.onResolve({ filter: /^server-only$/ }, () => ({ path: 'empty', namespace: 'empty' }));
   b.onLoad({ filter: /.*/, namespace: 'empty' }, () => ({ contents: '' }));
   b.onResolve({ filter: /^@\// }, args => {
@@ -224,6 +227,70 @@ try {
   returned=await rpc(a,{op:'stats'}); assert.equal(returned.waiting,0); assert.equal(returned.total,returned.idle);
   assert.equal(Number((await sql.query("SELECT count(*) FROM pg_stat_activity WHERE application_name='a15-worker' AND state='idle in transaction'")).rows[0].count),0);
   log('MODIFIED CLEANUP expired=5000 remaining=4936 deleted=64 index=app_rate_limit_expiry seq_scan=0 locked_first64_deleted=0 connections_returned=PASS');
+
+  // Continuous distinct short-lived keys must not outgrow the sweep scheduler.
+  // The DB clock and both independent workers are real; no sleep/window race.
+  await sql.query('TRUNCATE a15.app_rate_limit_buckets');
+  const steady=spawnWorker(workerEnv),samples=[];
+  for(let minute=0;minute<10;minute++){
+    const now=4000000+minute*60001;await setTime(now);
+    const values=await rpc(steady,{op:'calls',calls:Array.from({length:200},(_,i)=>({key:`steady-${minute}-${i}`,limit:1,window:1000}))});
+    assert.ok(values.every(v=>v===true));
+    const sample=(await sql.query('SELECT count(*)::int AS total,count(*) FILTER(WHERE expires_at<$1)::int AS expired FROM a15.app_rate_limit_buckets',[now])).rows[0];samples.push({minute,...sample});
+  }
+  await stopWorker(steady);fs.writeFileSync(path.join(out,'CLEANUP_STEADY_ARRIVAL.json'),JSON.stringify(samples,null,2));
+  log(`MODIFIED CLEANUP_STEADY minutes=10 new_keys_per_minute=200 total=${samples.at(-1).total} expired=${samples.at(-1).expired}`);
+  assert.equal(samples.at(-1).total,200,'expired bucket backlog must not grow with steady arrivals');
+  assert.equal(samples.at(-1).expired,0);
+
+  // A real cleanup statement error rolls the admission back, releases its
+  // client and leaves sweeping eligible on this same process after recovery.
+  await sql.query('TRUNCATE a15.app_rate_limit_buckets');await setTime(6000000);
+  await sql.query(`INSERT INTO a15.app_rate_limit_buckets SELECT md5('retry-expired-'||g)||md5('retry-expired-'||g),ARRAY[1::bigint],1,2 FROM generate_series(1,128)g;
+    CREATE FUNCTION a15.reject_cleanup() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture cleanup rejected'; END $$;
+    CREATE TRIGGER reject_cleanup BEFORE DELETE ON a15.app_rate_limit_buckets FOR EACH STATEMENT EXECUTE FUNCTION a15.reject_cleanup()`);
+  const recovering=spawnWorker(workerEnv);
+  assert.equal((await rpc(recovering,{op:'check',key:'cleanup-retry',limit:1,window:1000})).status,503);
+  assert.equal(Number((await sql.query('SELECT count(*) FROM a15.app_rate_limit_buckets')).rows[0].count),128);
+  await sql.query('DROP TRIGGER reject_cleanup ON a15.app_rate_limit_buckets');
+  assert.deepEqual(await calls(recovering,'cleanup-retry',1,1000),[true]);
+  assert.equal(Number((await sql.query('SELECT count(*) FROM a15.app_rate_limit_buckets WHERE expires_at=2')).rows[0].count),64);
+  assert.deepEqual(await calls(recovering,'cleanup-retry-next',1,1000),[true]);
+  assert.equal(Number((await sql.query('SELECT count(*) FROM a15.app_rate_limit_buckets WHERE expires_at=2')).rows[0].count),0);
+  await stopWorker(recovering);
+  log('MODIFIED CLEANUP_FAILURE real_pg_error=503 transaction_rollback=PASS same_process_retry=PASS subsequent_batch=PASS');
+
+  await sql.query('TRUNCATE a15.app_rate_limit_buckets');await setTime(6500000);
+  await sql.query(`INSERT INTO a15.app_rate_limit_buckets SELECT md5('commit-expired-'||g)||md5('commit-expired-'||g),ARRAY[1::bigint],1,2 FROM generate_series(1,128)g;
+    CREATE FUNCTION a15.reject_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.key_hash='${digest('cleanup-commit-retry')}' THEN RAISE EXCEPTION 'fixture commit rejected'; END IF; RETURN NULL; END $$;
+    CREATE CONSTRAINT TRIGGER reject_commit AFTER INSERT ON a15.app_rate_limit_buckets DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION a15.reject_commit()`);
+  const commitRetry=spawnWorker(workerEnv);
+  assert.equal((await rpc(commitRetry,{op:'check',key:'cleanup-commit-retry',limit:1,window:1000})).status,503);
+  assert.equal(Number((await sql.query('SELECT count(*) FROM a15.app_rate_limit_buckets')).rows[0].count),128);
+  await sql.query('DROP TRIGGER reject_commit ON a15.app_rate_limit_buckets');
+  assert.deepEqual(await calls(commitRetry,'cleanup-commit-retry',1,1000),[true]);
+  assert.equal(Number((await sql.query('SELECT count(*) FROM a15.app_rate_limit_buckets WHERE expires_at=2')).rows[0].count),64);
+  await stopWorker(commitRetry);log('MODIFIED CLEANUP_COMMIT_FAILURE rollback=PASS same_process_retry=PASS cooldown_not_published=PASS');
+
+  // Concurrent requests share one sweep claim through COMMIT. The trigger
+  // records committed deletion batches while delaying each sweep slightly.
+  await sql.query('TRUNCATE a15.app_rate_limit_buckets');await setTime(7000000);
+  await sql.query(`INSERT INTO a15.app_rate_limit_buckets SELECT md5('parallel-expired-'||g)||md5('parallel-expired-'||g),ARRAY[1::bigint],1,2 FROM generate_series(1,320)g;
+    CREATE TABLE a15.cleanup_batches(id bigserial PRIMARY KEY,n integer,started_at timestamptz,finished_at timestamptz);
+    CREATE FUNCTION a15.record_cleanup() RETURNS trigger LANGUAGE plpgsql AS $$ DECLARE batch_id bigint; BEGIN INSERT INTO a15.cleanup_batches(n,started_at) SELECT count(*),pg_catalog.clock_timestamp() FROM old_rows RETURNING id INTO batch_id; PERFORM pg_sleep(0.03); UPDATE a15.cleanup_batches SET finished_at=pg_catalog.clock_timestamp() WHERE id=batch_id; RETURN NULL; END $$;
+    CREATE TRIGGER record_cleanup AFTER DELETE ON a15.app_rate_limit_buckets REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION a15.record_cleanup()`);
+  const parallelCleaner=spawnWorker(workerEnv);
+  const cleanResults=await rpc(parallelCleaner,{op:'calls',concurrency:5,calls:Array.from({length:40},(_,i)=>({key:'parallel-clean-'+i,limit:1,window:1000}))});
+  assert.ok(cleanResults.every(v=>v===true));
+  // Continue at most a fixed number of separate requests, not an unbounded
+  // loop inside one production admission, if all concurrent calls beat COMMIT.
+  for(let i=0;i<6;i++)await calls(parallelCleaner,'drain-clean-'+i,1,1000);
+  assert.equal(Number((await sql.query('SELECT count(*) FROM a15.app_rate_limit_buckets WHERE expires_at=2')).rows[0].count),0);
+  const batches=(await sql.query('SELECT n FROM a15.cleanup_batches')).rows.map(v=>v.n);assert.ok(batches.every(n=>n>=0&&n<=64));assert.equal(batches.reduce((n,v)=>n+v,0),320);
+  assert.equal(Number((await sql.query('SELECT count(*) FROM a15.cleanup_batches a JOIN a15.cleanup_batches b ON a.id<b.id AND a.started_at<b.finished_at AND b.started_at<a.finished_at')).rows[0].count),0);
+  const cleanerStats=await rpc(parallelCleaner,{op:'stats'});assert.equal(cleanerStats.waiting,0);assert.equal(cleanerStats.total,cleanerStats.idle);
+  await stopWorker(parallelCleaner);await sql.query('DROP TRIGGER record_cleanup ON a15.app_rate_limit_buckets');
+  log(`MODIFIED CLEANUP_CONCURRENT requests=46 deleted=320 max_batch=${Math.max(...batches)} overlap=0 clients_returned=PASS`);
   for(const child of children){assert.doesNotMatch(child.errors,/fixture@example\.test|192\.0\.2\.1|postgresql:|SELECT |UPDATE /);}
   log('MODIFIED PASS supplier_calls=0 production_connections=0 new_pools=0');
 } finally {

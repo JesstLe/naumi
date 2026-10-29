@@ -30,11 +30,14 @@ DELETE FROM app_rate_limit_buckets WHERE ctid = ANY(ARRAY(SELECT tid FROM unlock
 const storeKey = Symbol.for('naumi.rate-limit.store.v1');
 type StoreState = {
   schemas: WeakMap<Pool, Promise<void>>; pending: WeakMap<Pool, number>; sweptAt: WeakMap<Pool, number>;
+  sweeping?: WeakSet<Pool>;
 };
 const storeHolder = process as typeof process & { [storeKey]?: StoreState };
-const { schemas, pending, sweptAt } = storeHolder[storeKey] ||= {
+const storeState: StoreState = storeHolder[storeKey] ||= {
   schemas: new WeakMap<Pool, Promise<void>>(), pending: new WeakMap<Pool, number>(), sweptAt: new WeakMap<Pool, number>(),
 };
+const { schemas, pending, sweptAt } = storeState;
+const sweeping = storeState.sweeping ||= new WeakSet<Pool>();
 
 /** pg Pool has no per-checkout cancellation. Bound both caller wait and the
  * number of unresolved checkouts; a late client is returned without any SQL.
@@ -98,7 +101,9 @@ async function ensureSchema(pool: Pool): Promise<void> {
 
 export async function consumePostgresRateLimit(pool: Pool, digest: string, limit: number, windowMs: number): Promise<boolean> {
   await ensureSchema(pool);
-  return transaction(pool, async client => {
+  const cleanup: { claim?: { now: number; full: boolean } } = {};
+  try {
+    const result = await transaction(pool, async client => {
     // ON CONFLICT locks the existing row before RETURNING evaluates the DB
     // clock. Concurrent calls cannot base admission on a pre-lock timestamp.
     const { rows: [bucket] } = await client.query<{ hits: string[]; window_ms: string; now: string }>(`
@@ -111,12 +116,25 @@ export async function consumePostgresRateLimit(pool: Pool, digest: string, limit
     if (allowed) hits.push(now);
     await client.query('UPDATE app_rate_limit_buckets SET hits=$2::bigint[], window_ms=$3, expires_at=$4 WHERE key_hash=$1',
       [digest, hits, retention, hits[hits.length - 1] + retention]);
-    // At most one indexed batch per process/pool per minute, including denied
-    // requests. SKIP LOCKED avoids waiting behind another active key.
-    if (now - (sweptAt.get(pool) ?? -Infinity) >= 60_000) {
-      sweptAt.set(pool, now);
-      await client.query(RATE_LIMIT_CLEANUP_SQL, [now]);
+    // One bounded batch per admission, at most one in flight per pool. A full
+    // batch leaves cleanup due for a later request; only an incomplete batch
+    // earns the idle cooldown. Never loop over the backlog in one request.
+    if (!sweeping.has(pool) && now - (sweptAt.get(pool) ?? -Infinity) >= 60_000) {
+      sweeping.add(pool);
+      cleanup.claim = { now, full: false };
+      const deleted = await client.query(RATE_LIMIT_CLEANUP_SQL, [now]);
+      cleanup.claim.full = deleted.rowCount === 64;
     }
     return allowed;
-  });
+    });
+    // Publish cooldown only after COMMIT. A failed cleanup/transaction remains
+    // eligible; concurrent requests cannot adopt an uncommitted sweep result.
+    if (cleanup.claim) {
+      if (cleanup.claim.full) sweptAt.delete(pool);
+      else sweptAt.set(pool, cleanup.claim.now);
+    }
+    return result;
+  } finally {
+    if (cleanup.claim) sweeping.delete(pool);
+  }
 }

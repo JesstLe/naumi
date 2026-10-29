@@ -54,7 +54,7 @@ BASELINE FIXED_CLOCK input=100000:long/1/600000,161001:short/1/60000,161001:long
 
 - checkout 最多等待 1000ms；由于 `pg.Pool` 没有单次取消接口，迟到连接只归还、不执行 SQL。每进程最多 64 个未解决 checkout 是基础设施排队上界，溢出/超时为 503，**不是新增每用户配额**。不修改共享池配置。
 - 独立短事务设置 statement_timeout=1500ms、lock_timeout=1000ms；事务总期限 2500ms，包含 BEGIN/COMMIT/线缆不响应。失败销毁本次 client，服务端回滚未提交事务，不把 aborted/in-flight client 放回池。COMMIT 回执丢失可能保守消耗一次命中，但业务不开始、准入不自动重试。
-- 每进程/既有池每分钟至多清理一批 64 个候选；先由 `(expires_at,key_hash)` 索引限定候选，再用单 SQL 内部 ctid 点取锁/删除和 `SKIP LOCKED`。ctid 不持久化、不跨请求使用；并发变化的候选留待下次。
+- 初版每进程/既有池每分钟至多清理一批 64 个候选（已由下方2026-10-30父修替代）；先由 `(expires_at,key_hash)` 索引限定候选，再用单 SQL 内部 ctid 点取锁/删除和 `SKIP LOCKED`。ctid 不持久化、不跨请求使用；并发变化的候选留待下次。
 - 初版“索引取 64 后按 key JOIN/IN 删除”在真实 `EXPLAIN ANALYZE` 中被优化为两次 Seq Scan，已修正为上述候选 + TID 访问。最终 10000 行样本 plan 没有 Seq Scan；前 64 个候选全锁住时删除 0，不为了凑够 64 向后扫全表。
 - 没有流量时不启动常驻清理计时器，历史 hash 桶可能留至后续有界清理；这是保留，不是重新放行。负载/索引/积压仍应在后续实际站点验收中测量。
 
@@ -128,3 +128,24 @@ BASELINE FIXED_CLOCK input=100000:long/1/600000,161001:short/1/60000,161001:long
 - 首次从旧 Map 切到 PG 无法导入所有旧内存命中；窗口扩大、secret 轮换也有历史/状态域过渡。按真实部署前提验收，不把新实例或回退旧镜像说成瞬间无缝承接旧额度。
 - 尚未进行真实站点蓝绿、真实认证会话、完整 Next 多实例、业务峰值容量、生产 PG 执行计划/锁/连接池压力验证。47 HOLD 保留，45 笔外部报告完成待证、UNKNOWN/历史清理债保持父台账原状态。
 - 未发现必须在本切片扩写的 auth/billing 事务缺口；此变更不更改受理状态、供应商重放、账务或 SSE 生命周期。后续性能/运营问题继续按独立事实与编号处理。
+
+
+## 2026-10-30 父线程纠正与集中验收
+
+父基线 `1ff8f39a0b2069b2f49e282efe1cbdfeb6e662de`，普通合入固定子提交 `652f4b07` 后修正独立审查P2。父只追加修改 `rate-limit-store.ts` 的回收调度及专属验证脚本，没有改原key/limit/window、82个准入gate、业务池配置或付费链路。
+
+### 实现与事务边界
+- `sweeping` 使用与既有state同一process级共享对象中的WeakSet，每pool至多一个回收占用者；一次准入至多一条64候选SQL，不在单请求循环扫积压。
+- 删除满64的批次在COMMIT成功后保持due，让后续请求继续一批；未满才进入原60秒闲置冷却。没有流量不建常驻timer。
+- 清理结果只有在COMMIT后发布；清理SQL或COMMIT失败，回收仍可重试，finally释放占用者。原异常/503与连接销毁协议保持。
+
+### 本轮实际验证
+- 原Map固定副本：两个真实Node进程准入10/原限额5；长短窗 `[true,true,true]`，exit0表示反例复现。
+- 父新增真实PG持续到达矩阵：10步×200新key，1秒窗口，每步DB时钟+60001ms。原子候选最终1424桶/过期1224，exit1；父修改最终200桶/过期0，exit0。这里是本地固定到达fixture，不是生产吞吐或业务限额建议。
+- 真实PG清理trigger报错、延迟constraint在COMMIT报错均整笔回滚，原进程下一次准入继续清理；并发46请求累计删除320，每批最大64、真实SQL区间重叠0，clients归还。
+- 原完整真实PG/route矩阵同时重跑：两Node共享5/5、200请求37准入163拒绝、窗口边界、重启、锁超时、checkout、线缆黑洞/断连、auth/admin/agent/canvas 200/429/503、CSRF/401、SSE和业务无副作用均通过。普通连接握手黑洞及生产WAL/池压力仍是原集成待证范围，没有把它们写成实测通过。
+- 82调用AST与参数/await核验通过，246 gate分支通过。全项目 `node --max-old-space-size=4096 node_modules/typescript/bin/tsc --noEmit --incremental false` exit0、stdout/stderr为空；同时覆盖本轮工作台组件修改，没有另跑第二遍全类型检查。
+- 父只在隔离fixture测试A15；**线上仍为b79c8c39，本切片没有上线**。新旧Map/PG混跑不具备统一额度保证，发布时仍需整站同版收敛。
+
+精确命令与记录：`output/capacity-audit-wave2-20261029/a15-parent-20261030/{NATIVE_COMMANDS.json,REGRESSION_COMMANDS.json,VERIFICATION.txt}`；75文件回滚、全量预检和原Map行为复验在 `output/a15/`，源快照ZIP与DIFF保持父修改。
+父首次误用baseline脚本默认root跑到当前修改源码，长窗断言如实失败；改为固定原Git对象的独立副本后复跑，初始日志保留，未改变断言。自有两轮PG完整ID均清理，后续副本回滚及资源总核在证据中追加。
