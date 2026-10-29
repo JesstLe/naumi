@@ -1,7 +1,7 @@
 # 账务事务生命周期：原异常与连接归还
 
 日期：2026-10-29。父基线：`cb1d2f4932e402a75511485173027ed049ed342e`。
-本实现切片由父线程统一分配 A/D 编号；本文不自行登记事故编号。
+固定实现 `8f5a3606c2408f656434f448e81c5cc1eaa5741e` 已完成父源码复核与真实隔离验收，归入 **A27 账务事务子项**，不把六个失败场景新增为六个事故。纳入本次主线整合，未部署；原子任务记录保留，父证据见末节。
 
 ## 1. 模块与职责、实际调用
 
@@ -93,3 +93,21 @@
 副本回滚须恢复该 hash 和六项原失败；原 checkout 与 MODIFIED_FILE 保持修复。后来编辑 guard 用末项文件变更验证全量预检，前项源文件零部分写入。四产物均重开核验，不把脚本存在当作已执行。
 
 交付为本任务分支固定 task-only commit，由父线程审查并串行整合；无 push/main merge/PR、SSH、生产DB/容器/Worker/入口/部署操作。47上一轮部署保持；45手术/在线索引仅挂账。完整 Next 构建、线上验收、其他仓储事务 catch、账务长事务/重复扫描均未纳入本切片。
+
+## 7. 父线程复核与集中验收（2026-10-29）
+
+父从 main `cb1d2f4932e402a75511485173027ed049ed342e` 普通合入固定提交。源码补丁未再修改。独立只读证据清点核对了实际pg-pool淘汰逻辑、relay的C/E/Z消息顺序、错误对象identity与六项基线失败；与父现场复测分别记录，未把只读清点当作又跑一次PG。
+
+父测试副本仅替换脚本root、fixture端口 **55527** 和X2入口的同端口副本，原断言不变；未复用或操作55432已有连接。每轮最多一个256MiB/1CPU自有PG，四轮串行，所有资源都按完整ID核验移除。
+
+- BASELINE与ROLLBACK：14场景中8通过/6失败，exit1，失败名称逐项一致；是原清理缺口复现，不是fixture启动失败。
+- MODIFIED与修改副本：14/14、exit0；修改版48checkout/48release，活动action内release0，24混合并发8成功/16预期失败、峰值5。基线47checkout是seam断言提前失败而少一次健康复借，不报告为连接泄漏。
+- COMMIT真实TCP丢回包：观察端分别durable1/0、action均1、原transport error保持；`clientOutcome=UNKNOWN`只是测试对不可知结果的说明，不是包装器新增业务状态。合成hold表不替代真实账务回归。
+- rollback SQL dispatch与COMMIT ack拒绝均为显式seam；非Error sentinel直接实测为成功ROLLBACK路径，失败ROLLBACK时保持原值由源码同一throw分支支持，不冒称另有专用实测。
+- 父原生billing rules、wallet、X2全部exit0；X2实际单operation一笔-6、UNKNOWN留hold、失租/锁等待/钱包等待fencing保持。父完整tsc stdout/stderr为空、exit0。
+- 生命周期stderr每轮五行既有`[database] connection lost`；无凭据、URL或大参数。原普通池listener与pg自动淘汰不算本次新增能力。
+- 副本恢复单文件原SHA256，原六项失败重新出现；later-edit guard exit73/0写入。父源码、修改副本和MODIFIED_FILE仍为修改hash。55527收尾已关闭。
+
+父证据根：`output/capacity-audit-wave2-20261029/billing-tx-parent/`。四产物`MODIFIED_FILE / DIFF_FILE.patch / VERIFICATION.txt / ROLLBACK.sh`均已重新打开；包含原/改hash、准确argv、stdin、合成输入、字面stdout/stderr/exit、各轮完整CASE/原生回归及fixture ID。copy-only回滚不操作数据库、业务状态或生产。
+
+其他仓储catch、余额重复扫描、COMMIT未知后的具体业务人工核对仍未由本补丁统一解决。工作台恢复切片仍待独立review，未混入本次main账务验收。47无SSH/部署；45笔手术、在线索引、UNKNOWN及历史波动保持。
