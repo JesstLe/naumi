@@ -8,8 +8,12 @@ const compile=text=>ts.transpileModule(text,{compilerOptions:{target:9,module:1}
 const billingSource=fs.readFileSync(path.join(root,'src/lib/billing/client.tsx'),'utf8'),billingAst=ts.createSourceFile('client.tsx',billingSource,99,true,4),callbacks={};
 (function walk(n){if(ts.isVariableDeclaration(n)&&['submit','quoteAndSubmit'].includes(n.name.getText(billingAst))&&n.initializer)callbacks[n.name.getText(billingAst)]=n.initializer.getText(billingAst);ts.forEachChild(n,walk);})(billingAst);
 const plain=value=>JSON.parse(JSON.stringify(value));let checks=0;const eq=(actual,expected,label)=>{assert.deepEqual(plain(actual),plain(expected),label);checks++;};
-const modules=[...(fs.existsSync(path.join(root,'src/lib/canvas/node-geometry.ts'))?['canvas/node-geometry']:[]),'mock-data','canvas/input-references','imagegen/http','canvas/generation-failure','canvas/generation-feedback','canvas/generation-parameters','canvas/image-task-request','canvas/image-task-scope','canvas/image-references','imagegen/reference-labels','billing/client-intent',...(!baseline?['billing/client-submission','canvas/edit-task','canvas/detail-task-controller','canvas/detail-task-request','canvas/result-attachment']:[])];
+const modules=[...(fs.existsSync(path.join(root,'src/lib/canvas/creation-request.ts'))?['canvas/creation-request']:[]),...(fs.existsSync(path.join(root,'src/lib/canvas/generation-activity.ts'))?['canvas/generation-activity']:[]),...(fs.existsSync(path.join(root,'src/lib/canvas/node-geometry.ts'))?['canvas/node-geometry']:[]),'mock-data','canvas/input-references','imagegen/http','canvas/generation-failure','canvas/generation-feedback','canvas/generation-parameters','canvas/image-task-request','canvas/image-task-scope','canvas/image-references','imagegen/reference-labels','billing/client-intent',...(!baseline?['billing/client-submission','canvas/edit-task','canvas/detail-task-controller','canvas/detail-task-request','canvas/result-attachment']:[])];
 async function bundle(){return (await build({stdin:{contents:modules.map(m=>`export * from './src/lib/${m}';`).join('\n'),resolveDir:root,loader:'ts'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'ports',setup(b){
+ b.onResolve({filter:/model-config\/selection-policy$/},()=>({path:'model',namespace:'request-port'}));
+ b.onResolve({filter:/model-config\/feature-client$/},()=>({path:'feature',namespace:'request-port'}));
+ b.onResolve({filter:/imagegen\/canvas-client$/},()=>({path:'imagegen',namespace:'request-port'}));
+ b.onLoad({filter:/.*/,namespace:'request-port'},a=>({loader:'js',contents:a.path==='model'?'export const adminConfiguredFeature=(...a)=>__requestPorts.adminConfiguredFeature(...a);':a.path==='feature'?'export const featureModelManaged=(...a)=>__requestPorts.featureModelManaged(...a);export const chosenFeatureModel=(...a)=>__requestPorts.chosenFeatureModel(...a);':'export const resolveCanvasDetailFrame=(...a)=>__requestPorts.resolveCanvasDetailFrame(...a);export const resolveCanvasLegacyFrame=(...a)=>__requestPorts.resolveCanvasLegacyFrame(...a);export const submitCanvasImagegen=(...a)=>__requestPorts.submitCanvasImagegen(...a);'}));
  b.onResolve({filter:/supabase$/},()=>({path:'auth',namespace:'fixture'}));b.onResolve({filter:/browser-image-cache$/},()=>({path:'image',namespace:'fixture'}));b.onResolve({filter:/saas\/workspace-client$/},()=>({path:'workspace',namespace:'fixture'}));
  b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='auth'?'export const authHeader=()=>__ports.auth();':a.path==='image'?'export const readBrowserImage=(...args)=>__ports.image(...args);':'export const currentWorkspace=()=>__ports.workspace;export const currentWorkspaceRevision=()=>__ports.revision;',loader:'js'}));
  }}]})).outputFiles[0].text;}
@@ -26,7 +30,7 @@ function setup(kind,scenario,built){
   rfRef:{current:{getNode:()=>({position:{x:100,y:200}}),getNodes:()=>[]}},flowNodeSize:()=>({width:320,height:320}),X_GAP:40,NODE_W:320,NODE_LABEL_H:36,MAX_GENERATION_COUNT:8,MAX_TOTAL_IMAGES:6,DETAIL_MODULE_ORDER:['hero','selling','scene','angles','ingredients','usage','specs','assurance'],
   t:k=>k,fmt:(s,vars)=>s+JSON.stringify(vars),flashTip:s=>state.notices.push(s),setGenError:s=>{state.error=s},setExpandOpen(){},canFeature:()=>true,isNodeLocked:()=>false,cutoutCatalog:{available:true},cutoutCatalogError:null,
   browserRandomUUID:()=>`12345678-1234-4234-a234-${String(++state.uuid).padStart(12,'0')}`,authHeader:ports.auth,currentWorkspace:()=>ports.workspace,readBrowserImage:ports.image,
-  adminConfiguredFeature:()=>true,featureModelManaged:()=>false,chosenFeatureModel:()=>undefined,frameChoice:{chooseFrame:()=>{}},resolveCanvasDetailFrame:async()=>{state.frames++;if(scenario==='cancelled')throw new c.ImagegenPreparationCancelled();},
+  adminConfiguredFeature:()=>true,featureModelManaged:()=>false,chosenFeatureModel:()=>undefined,frameChoice:{chooseFrame:()=>{}},resolveCanvasLegacyFrame:async()=>{},resolveCanvasDetailFrame:async()=>{state.frames++;if(scenario==='cancelled')throw new c.ImagegenPreparationCancelled();},
   readJsonSafe:r=>r.json(),expectJsonOk:async(r,fallback)=>{const data=await r.json();if(!r.ok)throw Error(data.error||fallback);return data;},applyServerUser:()=>{state.user++},
   reserveGenerationPosition:(id,pos)=>{c.generationTaskPosRef.current[id]=pos;return pos},livePendingPosition:(id,fallback)=>c.pendNodes.find(n=>n.id===id)||fallback,
   pushAddUndoMany:ids=>state.history.push([...ids]),pushAddUndo:id=>state.history.push([id]),
@@ -59,6 +63,7 @@ function setup(kind,scenario,built){
  };
  c.privateFetchRaw=(url,init)=>c.fetch(url,init);
  c.getQuote=async facts=>{state.quotes++;return {...facts,credits:state.retried?99:3,version:state.retried?2:1,reserveCredits:3};};
+ c.__requestPorts=Object.fromEntries(['adminConfiguredFeature','featureModelManaged','chosenFeatureModel','resolveCanvasDetailFrame','resolveCanvasLegacyFrame','submitCanvasImagegen'].map(name=>[name,c[name]]));
  vm.createContext(c);vm.runInContext(built,c);Object.assign(c,module.exports);c.appendComposerReferences=c.appendCanvasImageReferences;
  vm.runInContext(compile(`const submit=${callbacks.submit};const quoteAndSubmit=${callbacks.quoteAndSubmit};globalThis.billing={quote:getQuote,submit,quoteAndSubmit};`),c);
  vm.runInContext(compile(names.map(n=>functions[n]||'').join('\n')),c);
@@ -69,7 +74,8 @@ function setup(kind,scenario,built){
  const restore=()=>{c.activeProjectRef.current={key:'tree:source'};c.canvasContextEpochRef.current++;c.batchRunMountedRef.current=true;c.restoreEditTasks();};
  return {c,state,run,retry,restore,ports};
 }
-(async()=>{
+module.exports={bundle,setup,root};
+if(require.main===module)(async()=>{
  const built=await bundle(),rows=[];
  const scenarios=['done','reference-fails','rejected','submit-unknown','identity-collision','pending','position-fails','sync-missing','project-switch','project-aba','unmounted','auth-aba'];
  for(const kind of ['detail','detail-blank','cutout','expand','annotate'])for(const scenario of [...scenarios,...(kind.startsWith('detail')?['poll-fails','poll-malformed','metadata-fails','partial','short-done','terminal','roles','cancelled']:[])]){

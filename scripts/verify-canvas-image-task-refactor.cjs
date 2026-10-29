@@ -1,15 +1,15 @@
 // Real Canvas function bodies + actual new controller/request/scope modules.
 // Browser transport/document ports are local fixtures; no product DB or suppliers.
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict'),ts=require('typescript'),{build}=require('esbuild');
-const root=process.cwd(),baseline=process.argv.includes('--baseline'),out=path.resolve(process.env.R3_EVIDENCE||'output/refactor-r3a-20261024');fs.mkdirSync(out,{recursive:true});
-const source=fs.readFileSync('src/components/canvas/canvas-client.tsx','utf8'),ast=ts.createSourceFile('canvas.tsx',source,99,true,4),fns={};
+const root=path.resolve(process.env.CANVAS_IMAGE_SOURCE_ROOT||process.cwd()),baseline=process.argv.includes('--baseline'),out=path.resolve(process.env.R3_EVIDENCE||'output/refactor-r3a-20261024');fs.mkdirSync(out,{recursive:true});
+const source=fs.readFileSync(path.join(root,'src/components/canvas/canvas-client.tsx'),'utf8'),ast=ts.createSourceFile('canvas.tsx',source,99,true,4),fns={};
 function walk(node){if(ts.isFunctionDeclaration(node)&&['runGen','generatePend','appendComposerReferences'].includes(node.name?.text))fns[node.name.text]=node.getText(ast);ts.forEachChild(node,walk);}walk(ast);
 const declarations=ts.transpileModule(Object.values(fns).join('\n'),{compilerOptions:{target:9,module:1}}).outputText;
-const shared=fs.existsSync('src/lib/canvas/image-task-controller.ts');assert.equal(shared,!baseline,'mode must match whole source tree');
+const shared=fs.existsSync(path.join(root,'src/lib/canvas/image-task-controller.ts'));assert.equal(shared,!baseline,'mode must match whole source tree');
 let checks=0;const eq=(a,b,label)=>{assert.deepEqual(a,b,label);checks++;};
 const plain=x=>JSON.parse(JSON.stringify(x));
 async function bundle(){
- const entry=['export * from "./src/lib/imagegen/http";','export * from "./src/lib/canvas/generation-failure";','export * from "./src/lib/canvas/generation-feedback";','export * from "./src/lib/canvas/generation-parameters";','export * from "./src/lib/imagegen/output-advisory";','export * from "./src/lib/imagegen/client-recovery";','export * from "./src/lib/canvas/image-references";','export * from "./src/lib/imagegen/reference-labels";',...(shared?['export * from "./src/lib/canvas/image-task-controller";',...(fs.existsSync('src/lib/canvas/image-creation.ts')?['export * from "./src/lib/canvas/image-creation";']:[]),'export * from "./src/lib/canvas/image-task-request";','export * from "./src/lib/canvas/image-task-scope";']:[])].join('\n');
+ const entry=[...(fs.existsSync(path.join(root,'src/lib/canvas/generation-activity.ts'))?['export * from "./src/lib/canvas/generation-activity";']:[]),'export * from "./src/lib/imagegen/http";','export * from "./src/lib/canvas/generation-failure";','export * from "./src/lib/canvas/generation-feedback";','export * from "./src/lib/canvas/generation-parameters";','export * from "./src/lib/imagegen/output-advisory";','export * from "./src/lib/imagegen/client-recovery";','export * from "./src/lib/canvas/image-references";','export * from "./src/lib/imagegen/reference-labels";',...(shared?['export * from "./src/lib/canvas/image-task-controller";',...(fs.existsSync(path.join(root,'src/lib/canvas/image-creation.ts'))?['export * from "./src/lib/canvas/image-creation";']:[]),'export * from "./src/lib/canvas/image-task-request";','export * from "./src/lib/canvas/image-task-scope";']:[])].join('\n');
  return (await build({stdin:{contents:entry,resolveDir:root,loader:'ts'},bundle:true,write:false,platform:'node',format:'cjs',plugins:[{name:'local-browser-ports',setup(b){
   b.onResolve({filter:/supabase$/},()=>({path:'auth',namespace:'fixture'}));
   b.onResolve({filter:/browser-image-cache$/},()=>({path:'image',namespace:'fixture'}));
@@ -70,7 +70,8 @@ function setup(kind,scenario,built){
  vm.runInContext(declarations+'\nglobalThis.entry={runGen,generatePend};',c);
  return {c,state,src,pend,run:()=>kind==='derived'?c.entry.runGen(src,'fixture prompt',{ratio:'3:4',count:2,resolution:'2K',style:'default',...(variations[scenario]||{})}):c.entry.generatePend({referenceInputs:variations[scenario]?.referenceInputs}),retry:()=>{const item=kind==='derived'?c.generationTasks[0]:c.pendNodes[0];return kind==='derived'?item?.onRetry:item?.onGenerationRetry;}};
 }
-(async()=>{
+module.exports={bundle,setup,root};
+if(require.main===module)(async()=>{
  const built=await bundle(),report=[];
  for(const kind of ['derived','blank'])for(const scenario of ['done','partial','reference-fails','cancelled','poll-transient','position-fails','sync-missing','workspace-aba','switch-project','unmounted','prepare-rejected','submit-unknown','terminal-failed','partial-error','needs-review','stored-recovery','malformed-query','ratio-warning','base-file','ref-urls','explicit-roles','transparent','ratiogen']){
   const f=setup(kind,scenario,built),{c,state}=f;await f.run();

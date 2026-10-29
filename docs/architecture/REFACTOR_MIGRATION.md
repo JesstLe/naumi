@@ -338,3 +338,8 @@ R6U固定验收 `511ade12`：core63/63全部新执行、角色共享owner39/规�
 模板链路从 CanvasClient 移交 `canvas/template-imports`，服务端 JSON 插入归 `canvas/artwork-import`，React 只绑定现有 document/history/navigation 端口。原 op 与 node-copy receipt 是创建/恢复身份；已知 ID 只读、未知先读 receipt，同 op 输入冲突和已撤销不复活。整批 workflow 的像素准备归独立 media owner，**网络/解码/上传不占数据库事务**；publication 重新检查 owner/scope/目标/胜出 receipt 并一次提交，输家只清自己的随机 key。旧 facade 只供已有实际调用者迁移，未另建任务、账务或 undo 系统。
 
 固定 `b3dc22e7` 的 43 个受影响入口全部实际运行通过（新 PG63、新客户端14组50、旧PG31/旧客户端2组5、原history67/184、node PG32、浏览器组件17等），完整 tsc/lint通过，四类 SCC0。catalog94→96 是注册证据，不是远端 enforcement；本轮没有新完整镜像和完整产品浏览器验收，沿用 R6Z 的验收仅作历史，不为 R7A 代验。媒体状态写失败仍 OPEN。此切片四产物和副本回滚以 R7A DELIVERY 为准，整体重构目标仍 ACTIVE。下一步优先完成原生 kind 生命周期统一传播与 workflow fill/manifest 读取的原 owner 边界，而非开启下一轮纯主线追赶。
+
+
+## 2026-10-29 R7D：生成活动与容量主线接入
+
+普通整合 main `c63ceb13` 的 9 提交，3 处冲突按现有 owner 处理：平台池、图片持久任务运行时与统一 worker scan，不恢复旧单体。Canvas 五条生成路径的 busy/retry/retain/finally 归小型 `generation-activity`；原任务、报价、交付、文档和账务系统保持。旧同步准备失败遗留 3 个 busy key，新版实际入口不再遗留；集中验证与最终固定源见 [R7D模块记录](../changes/2026-10-29-refactor-r7d-generation-activity.md)。整体 ACTIVE，未合main未部署，47 HOLD；剩余 Canvas 视图/回调、性能/INP/容量、有效远端 required CI 与最终整合退出继续，历史 MEDIA_STATE_WRITE_FAILED 根因仍 OPEN_NOT_REPRODUCED。

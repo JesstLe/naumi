@@ -36,6 +36,8 @@ export const refactorCases=[
  node('image-version-integration','canvas','scripts/verify-canvas-image-version-integration.cjs','IMAGE_VERSION_INTEGRATION=PASS'),
  ts('image-version-pg','canvas','scripts/verify-canvas-image-versions.ts','IMAGE_VERSIONS=PASS'),
  ts('image-version-pipeline','canvas','scripts/verify-canvas-regeneration-pipeline.ts','PIPELINE=PASS'),
+ node('generation-activity','canvas','scripts/verify-canvas-generation-activity.cjs','CANVAS_GENERATION_ACTIVITY=PASS'),
+ node('task-boundaries','canvas','scripts/verify-canvas-task-boundaries.cjs','CANVAS_TASK_BOUNDARIES=PASS'),
  node('image-creation','canvas','scripts/verify-canvas-image-creation.cjs','CANVAS_IMAGE_CREATION=PASS'),
  node('request-workflow','canvas','scripts/verify-canvas-request-workflow.cjs','CANVAS_REQUEST_WORKFLOW=PASS MODE=MODIFIED'),
  node('video-submission','canvas','scripts/verify-canvas-video-submission.cjs','CANVAS_VIDEO_SUBMISSION=PASS MODE=MODIFIED'),

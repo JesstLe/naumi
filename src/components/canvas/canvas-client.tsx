@@ -102,6 +102,7 @@ import {createCanvasResultAttachment} from "@/lib/canvas/result-attachment";
 import {createCanvasEditTask,type CanvasEditRequest} from "@/lib/canvas/edit-task";
 import {createCanvasDetailTask} from "@/lib/canvas/detail-task-controller";
 import {prepareCanvasDetailTask} from "@/lib/canvas/detail-task-request";
+import {createCanvasGenerationActivity} from "@/lib/canvas/generation-activity";
 import {createCanvasImageTask,type CanvasGeneratedImage} from "@/lib/canvas/image-task-controller";
 import {captureCanvasImageTaskScope,captureCanvasTaskOwner} from "@/lib/canvas/image-task-scope";
 import {prepareCanvasImageTask,appendCanvasImageReferences,type CanvasImageGenerationOptions} from "@/lib/canvas/image-task-request";
@@ -1893,7 +1894,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const requestedCount = opts?.ratiogen ? 1 : Math.max(1, opts?.count ?? 1);
     const operationKey = opts?.operationKey ?? `node:${source.id}`;
     if (generationOperationRef.current.has(operationKey)) return [];
-    generationOperationRef.current.add(operationKey);
     const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const sourceNode = rfRef.current?.getNode(source.id) ?? rfNodes.find((node) => node.id === source.id);
     const siblingTaskCount = generationTasks.filter(
@@ -1937,12 +1937,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       user:value=>applyServerUser(value as Parameters<typeof applyServerUser>[0]),notice:flashTip,
       errorText:t("canvas.genFail"),saveErrorText:t("canvas.saveFailed"),resultGap:NODE_LABEL_H+24,
     });
-    const execute=async():Promise<GeneratedResult[]>=>{
-      let retained=false;
-      try{
+    const activity=createCanvasGenerationActivity({operations:generationOperationRef.current,operationKey,canRetry:scope.isCurrent,
+      clear:()=>{delete generationTaskPosRef.current[taskId];delete generationTaskSizeRef.current[taskId];setGenerationTasks(tasks=>tasks.filter(item=>item.id!==taskId));},
+      execute:async({retry,retain}):Promise<GeneratedResult[]>=>{
         const result=await task.run();
         if(result.status==="failed"){
-          retained=true;const message=generationFailureMessage(result.failure);
+          retain();const message=generationFailureMessage(result.failure);
           if(selectedIdRef.current===source.id)setGenError(message);else flashTip(`${source.title}：${message}`);
           setGenerationTasks(tasks=>tasks.map(item=>item.id===taskId?{...item,failure:result.failure,onRetry:retry}:item));
           return [];
@@ -1951,16 +1951,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         if(selectedIdRef.current===source.id)setGenError(null);
         if(result.images.length<requestedCount)flashTip(`请求 ${requestedCount} 张，已交付 ${result.images.length} 张`);
         return result.images;
-      }finally{
-        generationOperationRef.current.delete(operationKey);
-        if(!retained){delete generationTaskPosRef.current[taskId];delete generationTaskSizeRef.current[taskId];setGenerationTasks(tasks=>tasks.filter(item=>item.id!==taskId));}
-      }
-    };
-    const retry=()=>{
-      if(!scope.isCurrent()||generationOperationRef.current.has(operationKey))return;
-      generationOperationRef.current.add(operationKey);return execute();
-    };
-    return execute();
+      },
+    });
+    return await activity.run()??[];
   }
 
   // 抠图使用管理员配置的处理器；旧 fast/fine 不是图片模型的质量档位。
@@ -2033,23 +2026,26 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         merge:(ids,current)=>taskDocumentRef.current.merge(ids,current),history:(ids,arts)=>taskDocumentRef.current.history(ids,arts)}),
       user:value=>applyServerUser(value as Parameters<typeof applyServerUser>[0]),saving:()=>update({generationStage:"saving"},owner.isVisible()),errorText:`${label}未完成，请检查原操作`,
     });
-    const execute=async():Promise<boolean>=>{
-      if(!owner.isVisible()||generationOperationRef.current.has(operationKey)||!editTaskStateRef.current.has(pendingId))return false;
-      const scope=owner.capture();generationOperationRef.current.add(operationKey);
+    if(!owner.isVisible()||!editTaskStateRef.current.has(pendingId))return false;
+    const activity=createCanvasGenerationActivity({operations:generationOperationRef.current,operationKey,
+      canRetry:()=>owner.isVisible()&&editTaskStateRef.current.has(pendingId),
+      execute:async({retry}):Promise<boolean>=>{
+      const scope=owner.capture();
       update({generating:true,generationFailure:undefined,onGenerationRetry:undefined},true);
       const timer=window.setInterval(()=>{const progress=editTaskStateRef.current.get(pendingId)?.node.progress||8;update({progress:Math.min(92,progress+Math.max(1,Math.round((96-progress)/9)))},scope.isCurrent());},900);
       try{
         const result=await task.run(scope);
         if(result.status==="failed"||result.status==="stale"){
-          update({generating:false,generationFailure:result.failure,onGenerationRetry:execute},owner.isVisible());
+          update({generating:false,generationFailure:result.failure,onGenerationRetry:retry},owner.isVisible());
           if(scope.isCurrent())flashTip(generationFailureMessage(result.failure));return false;
         }
         editTaskStateRef.current.delete(pendingId);
         if(scope.isCurrent()){setPendNodes(nodes=>nodes.filter(node=>node.id!==pendingId));if(result.status==="succeeded")flashTip(`${label}完成，结果已载入画布`);}
         return result.status==="succeeded";
-      }finally{window.clearInterval(timer);generationOperationRef.current.delete(operationKey);}
-    };
-    return execute();
+      }finally{window.clearInterval(timer);}
+      },
+    });
+    return await activity.run()??false;
   }
 
   async function openVideoNodeFromSelection(blank=false, at?: { x: number; y: number }){
@@ -2248,7 +2244,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       retained={task,owner,node};comfyRunsRef.current.set(key,retained);
     }
     const {task,node}=retained,scope=retained.owner.capture();scope.assertCurrent();
-    generationOperationRef.current.add(operationKey);
+    const activity=createCanvasGenerationActivity({operations:generationOperationRef.current,operationKey,canRetry:scope.isCurrent,
+      execute:async()=>{
     setPendNodes(nodes=>[...nodes.filter(item=>item.id!==node.id),{...node,generating:true}]);
     const timer=window.setInterval(()=>{if(scope.isCurrent())setPendNodes(nodes=>nodes.map(item=>item.id===node.id?{...item,progress:Math.min(92,item.progress+Math.max(1,Math.round((96-item.progress)/9)))}:item));},1200);
     try{
@@ -2260,9 +2257,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       return result;
     }finally{
       if(task.finished&&comfyRunsRef.current.get(key)?.task===task)comfyRunsRef.current.delete(key);
-      window.clearInterval(timer);generationOperationRef.current.delete(operationKey);
+      window.clearInterval(timer);
       if(scope.isCurrent())setPendNodes(nodes=>nodes.filter(item=>item.id!==node.id));
     }
+      },
+    });
+    // The synchronous preflight above preserves the original explicit busy error.
+    return (await activity.run())!;
   }
 
   async function submitAnnotations(formData: FormData) {
@@ -2360,7 +2361,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (!user || readOnly) return;
     const operationKey = pend ? `pend:${pend.id}` : `node:${source.id}`;
     if (generationOperationRef.current.has(operationKey)) return;
-    generationOperationRef.current.add(operationKey);
     const owner=captureCanvasTaskOwner(user.email,()=>({account:canvasAccountRef.current,project:activeProjectRef.current?.key||null,epoch:canvasContextEpochRef.current,mounted:batchRunMountedRef.current}));
     const count = Math.max(1, Math.min(MAX_GENERATION_COUNT, genCount || 1));
     const sourceNode = rfRef.current?.getNode(source.id);
@@ -2413,12 +2413,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         updatePending({generating:true,generationStage:stage,generationFailure:undefined},true);
       },user:value=>applyServerUser(value as Parameters<typeof applyServerUser>[0]),errorText:t("canvas.genFail"),expectedCount:count,
     });
-    const execute=async()=>{
-      const scope=owner.capture();let retain=false;
-      try{
+    const activity=createCanvasGenerationActivity({operations:generationOperationRef.current,operationKey,canRetry:owner.isVisible,
+      clear:()=>{delete generationTaskPosRef.current[taskId];delete generationTaskSizeRef.current[taskId];setGenerationTasks(tasks=>tasks.filter(item=>item.id!==taskId));},
+      execute:async({retry,retain})=>{
+        const scope=owner.capture();
         const result=await task.run(scope);
         if(result.status==="failed"||result.status==="stale"){
-          retain=true;
+          retain();
           setGenerationTasks(tasks=>pend?tasks.filter(item=>item.id!==taskId):tasks.map(item=>item.id===taskId?{...item,failure:result.failure,onRetry:retry}:item));
           updatePending({generating:false,generationFailure:result.failure,onGenerationRetry:retry},owner.isVisible());
           if(scope.isCurrent()){
@@ -2433,13 +2434,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           if(result.status==="succeeded"){setPendNodes(nodes=>nodes.filter(node=>node.id!==pend.id));setSelectedPendId(id=>id===pend.id?null:id);}
           else setPendNodes(nodes=>nodes.map(node=>node.id===pend.id?{...node,generating:false}:node));
         }
-      }finally{
-        generationOperationRef.current.delete(operationKey);
-        if(!retain){delete generationTaskPosRef.current[taskId];delete generationTaskSizeRef.current[taskId];setGenerationTasks(tasks=>tasks.filter(item=>item.id!==taskId));}
-      }
-    };
-    const retry=()=>{if(!owner.isVisible()||generationOperationRef.current.has(operationKey))return;generationOperationRef.current.add(operationKey);return execute();};
-    return execute();
+      },
+    });
+    return activity.run();
   }
 
   // 顶部图像工具条:6 个一键动作(预设提示词,各自衍生一个子节点)
@@ -3597,7 +3594,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
     const operationKey = `pend:${pend.id}`;
     if (generationOperationRef.current.has(operationKey)) return false;
-    generationOperationRef.current.add(operationKey);
     // 没写提示词时:不再注入"生成一张电商商业图"这种会重绘/改风格的通用词
     // (那会让输出莫名其妙变样,还被存成节点提示词)。改为沿用主输入图自身的
     // 提示词(延续它的配方);没有则用"保持主体/构图/风格"的中性词。
@@ -3633,8 +3629,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       user:value=>applyServerUser(value as Parameters<typeof applyServerUser>[0]),notice:flashTip,
       errorText:t("canvas.genFail"),saveErrorText:t("canvas.saveFailed"),resultGap:NODE_LABEL_H+24,
     });
-    const execute=async():Promise<boolean>=>{
-      try{
+    const activity=createCanvasGenerationActivity({operations:generationOperationRef.current,operationKey,canRetry:scope.isCurrent,
+      execute:async({retry}):Promise<boolean>=>{
         const result=await task.run();
         if(result.status==="stale")return false;
         if(result.status==="cancelled"){setPendNodes(nodes=>nodes.map(node=>node.id===pend.id?{...node,generating:false,generationFailure:undefined}:node));return false;}
@@ -3646,13 +3642,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         if(selectedPendIdRef.current===pend.id&&!activeKey)pendingNodeRef.current=result.images[0]?.id||null;
         setPendNodes(nodes=>nodes.filter(node=>node.id!==pend.id));setSelectedPendId(id=>id===pend.id?null:id);if(selectedPendIdRef.current===pend.id)setGenError(null);
         return result.status==="succeeded";
-      }finally{generationOperationRef.current.delete(operationKey);}
-    };
-    const retry=()=>{
-      if(!scope.isCurrent()||generationOperationRef.current.has(operationKey))return;
-      generationOperationRef.current.add(operationKey);return execute();
-    };
-    return execute();
+      },
+    });
+    return await activity.run()??false;
   }
 
   // Placeholder import keeps its saved ID on sync failure; the shared import

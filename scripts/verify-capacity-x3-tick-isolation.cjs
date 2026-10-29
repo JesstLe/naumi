@@ -106,7 +106,7 @@ async function main() {
       console.log('ACTIVE_DISCONNECT childExit='+result.status+' handled='+!baseline);
     });
     await check('bundle-singleton',async()=>{
-      const other=load('src/lib/db/connection.ts');extraPool=other.getPool();assert.equal(extraPool===business,!baseline);
+      const other=load('src/lib/db/connection.ts');extraPool=other.getPool();assert.equal(extraPool===business,!baseline||fs.existsSync(path.join(root,'src/platform/db/pool.ts')));
       console.log('BUNDLE_SINGLETON shared='+(extraPool===business));
       if(extraPool!==business){await extraPool.end();extraPool=undefined;}
     });

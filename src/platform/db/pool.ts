@@ -88,7 +88,7 @@ export function closeDatabasePools(): Promise<void> {
 }
 
 /** Importing the pool owner never initializes schema or connects. */
-export const dbEnabled=(process.env.DATABASE_URL??" ").trim().length>0;
+export const dbEnabled=(process.env.DATABASE_URL??"").trim().length>0;
 
 /** Lightweight connectivity probe used by /api/health. */
 export async function pingDb(): Promise<{ ok: boolean; error?: string }> {

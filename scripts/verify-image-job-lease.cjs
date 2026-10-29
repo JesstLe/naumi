@@ -112,6 +112,7 @@ function load(file) {
   const req = spec => {
     if (spec === 'server-only') return {};
     if(spec==='@/platform/db/pool')return db;
+    if(spec.startsWith('@/platform/'))return load(path.join(source,'src',spec.slice(2)+'.ts'));
     if(spec==='@/lib/persistence/schema')return {ensureSchema:db.ensureSchema};
     if(spec==='@/lib/saas/creation-scope')return noCreation;
     if(spec==='@/lib/media-upload')return mocks.storage;
@@ -136,7 +137,7 @@ function load(file) {
 }
 const repo = load(path.join(source, 'src/lib/image-job-repository.ts'));
 const { DurableImageJobs } = load(path.join(source,fs.existsSync(path.join(source,'src/lib/image-jobs/runtime.ts'))?'src/lib/image-jobs/runtime.ts':'src/lib/durable-image-jobs.ts'));
-const gateway = load(path.join(root, 'src/lib/image-gateway.ts'));
+const gateway = load(path.join(source,'src/lib/image-gateway.ts'));
 const jobs = new DurableImageJobs('suite');
 const q = { schemaVersion: 1, engineVersion: 1, configVersion: 1, facts: { feature: 'image.generate', quantity: 1, quality: 'medium', resolution: '1K', metered: true, byok: false },
   tariff: { enabled: true, unit: 'image', pricing: { mode: 'fixed', credits: 6 }, settlement: { unknown: 'hold', qualityBasis: 'requested', successBasis: 'successful-units', failureBps: 0, byokBps: 10000, reserveBps: 10000 } },
@@ -145,14 +146,14 @@ const okResult = { state: 'succeeded', items: [{ id: 'image', state: 'succeeded'
 async function create(id, snapshot = {}) { await repo.createImageJob(id, 'fixture@example.test', 'suite', { status: 'pending', paidOperationVersion: 1, createdAt: Date.now(), ...snapshot }, {}, 6, true, q); }
 async function expire(id) { await control.query("UPDATE app_image_jobs SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1", [id]); }
 async function row(id) { return (await pool.query('SELECT * FROM app_image_jobs WHERE id=$1', [id])).rows[0]; }
-async function blocked(fn) { try { await fn(); return false; } catch { return true; } }
+async function blocked(fn) { try { await fn(); return false; } catch(error) { if(process.env.NAUMI_X2_FIXTURE_DIAGNOSTIC==="1")console.error("FIXTURE_BLOCK",error); return true; } }
 const observations = {};
 async function main() {
   await control.query(`
     DROP SCHEMA public CASCADE; CREATE SCHEMA public;
     CREATE TABLE app_users(email text PRIMARY KEY,credits_used int NOT NULL DEFAULT 0,credits_total int NOT NULL DEFAULT 100);
     CREATE TABLE app_credit_batches(id text PRIMARY KEY,email text,amount int,remaining int,expired bool DEFAULT false,created_at timestamptz DEFAULT now(),expires_at timestamptz);
-    CREATE TABLE app_ledger(id text PRIMARY KEY,email text,delta int,reason text,kind text);
+    CREATE TABLE app_ledger(id text PRIMARY KEY,email text,delta int,reason text,kind text,created_at timestamptz DEFAULT now());
     CREATE TABLE app_gen_reservations(job_id text PRIMARY KEY,email text,cost int);
     CREATE TABLE app_billing_operations(id text PRIMARY KEY,email text,feature text,quote jsonb,request_fingerprint text,state text,ledger_id text UNIQUE,reserved_credits int DEFAULT 0,charged_credits int DEFAULT 0,settlement_result jsonb,result_response jsonb,updated_at timestamptz DEFAULT now());
     CREATE TABLE app_billing_reconciliations(id text PRIMARY KEY,operation_id text,email text,actor text,request_fingerprint text,reason text,proof text,result jsonb,charge int);
