@@ -9,14 +9,10 @@ import {ensureBiSchema} from "@/lib/bi/schema";
 import {getBillingRuntime} from "@/lib/billing/runtime";
 import { expiryFrom } from "@/lib/billing/rules/schema";
 import { BillingError } from "@/lib/billing/types";
+import {accountIdentifierSchema} from '@/lib/account-identity-schema';
 const base = {
     id: z.string().uuid(),
-    email: z
-        .string()
-        .trim()
-        .email()
-        .max(254)
-        .transform((x) => x.toLowerCase()),
+    email: accountIdentifierSchema,
     reason: z.string().trim().min(3).max(500),
 };
 const version = { expectedVersion: z.number().int().nonnegative() };
@@ -163,7 +159,7 @@ export async function manageBiUser(command: UserCommand, actor: string) {
                 ledgerId: ledgerId!, actor, fingerprint, debitOrder: snapshot.config.credits.debitOrder, ...(expiry ? { expiresAt: expiry } : {}) });
         }
         if (command.action === "profile")
-            await client.query("UPDATE app_users SET name=$2,phone=$3,note=$4 WHERE email=$1", [command.email, command.name, command.phone, command.note]);
+            await client.query("UPDATE app_users SET name=$2,phone=NULLIF($3,''),note=$4 WHERE email=$1", [command.email, command.name, command.phone, command.note]);
         if (command.action === "ban")
             await client.query("UPDATE app_users SET banned=$2,auth_revoked_before=CASE WHEN $2 THEN now() ELSE auth_revoked_before END WHERE email=$1", [command.email, command.banned]);
         if (command.action === "role")

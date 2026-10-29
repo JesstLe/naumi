@@ -1,12 +1,13 @@
 import { normalizeCanvasRatio } from './generation-parameters';
 import { readImageReferenceBindings, type ImageReferenceBinding } from './image-references';
 
-export type ImageNodeDraft = { prompt: string; ratio: string; referenceBindings?: ImageReferenceBinding[] };
+export type ImageNodeDraft = { prompt: string; ratio: string; referenceBindings?: ImageReferenceBinding[];hiddenReferenceIds?:string[] };
 export type ImageNodeDraftPatch = Partial<ImageNodeDraft>;
 type DraftStorage = Pick<Storage, 'getItem' | 'setItem'>;
 
-export function imageDraftScope(actor: string | undefined, owner: string | null | undefined, project: string | null) {
-  return actor ? JSON.stringify([actor.toLowerCase(), (owner || actor).toLowerCase(), project]) : null;
+export function imageDraftScope(actor: string | undefined, owner: string | null | undefined, project: string | null,workspace='personal') {
+  // Keep personal draft keys compatible while separating enterprise workspaces.
+  return actor ? JSON.stringify([actor.toLowerCase(), (owner || actor).toLowerCase(), project,...workspace!=='personal'?[workspace]:[]]) : null;
 }
 
 export function imageDraftKey(scope: string | null, nodeId: string | null) {
@@ -32,6 +33,7 @@ export class ImageNodeDraftStore {
         if (typeof value.prompt === 'string') draft.prompt = value.prompt;
         if (typeof value.ratio === 'string' && normalizeCanvasRatio(value.ratio) === value.ratio) draft.ratio = value.ratio;
         if (Array.isArray(value.referenceBindings)) draft.referenceBindings = readImageReferenceBindings(value.referenceBindings);
+        if(Array.isArray(value.hiddenReferenceIds))draft.hiddenReferenceIds=[...new Set(value.hiddenReferenceIds.filter((id):id is string=>typeof id==='string'&&id.length>0&&id.length<=160))];
       }
     } catch { /* Malformed or unavailable browser storage does not block editing. */ }
     this.drafts.set(key, draft);

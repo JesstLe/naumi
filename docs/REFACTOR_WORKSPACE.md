@@ -1,3 +1,5 @@
+2026-10-29 R7L：普通整合主线e9ef9ff6的51路径增量；Canvas引用上传/当前图编辑语义接原draft与共享composer，BI企业依赖迁schema，新用量/成员直接依赖pool、billing runtime和error叶模块，不恢复单体。一次19组集中验收全部通过，124核心入口库存不冒充全跑；完整Next页面8组通过（像素/引用保留/原位版本undo-redo/390px），跨盘字体与缺canonical回执的两次fixture失败保留；固定merge/回滚以本轮DELIVERY为准。R7K完整镜像/core120证据仍绑定b207不重标。整体ACTIVE，独立分支持续重构尚未合main、未部署，47 HOLD。见[R7L记录](changes/2026-10-29-refactor-r7l-main-integration.md)。
+
 2026-10-29 R7K：继续整体集成验收，R7J场景到导演连线定位为显式fit尚未完成时的手势准备竞争；原生手柄3缩放均真实可连，完整原实现加只读轨迹通过。只收敛verification手势稳定条件，不改生产节点/任务规则；旧运维PG测试按真实PK与v3证据升级语义修正。最终全core、Linux完整Web/Worker与产品、回滚/远端以本轮DELIVERY为准，整体ACTIVE，未合回main未部署，47 HOLD。见[R7K记录](changes/2026-10-29-refactor-r7k-integration-acceptance.md)。
 
 2026-10-29 R7J：角色/场景/导演/视频原生操作从 Canvas 移交 native actions，导演同 File 跨账号尝试隔离，晚到视频创建不抢回旧项目。按三模块周期普通整合 main cb1d2f49：五冲突按 history/presentation/text/import/wallet/platform owner 迁入，保留空白/失败节点历史、逐项反推错误持久化、FIFO prefix 和借出PG错误处理，不恢复单体。完整 source-bound 验收/副本回滚/远端状态见本轮 DELIVERY 与 VERIFICATION；该条不预报整版完成。整体ACTIVE，独立重构用户持续授权，未合回main，未部署，47 HOLD。见[R7J记录](changes/2026-10-29-refactor-r7j-native-actions.md)。

@@ -15,6 +15,8 @@ export type BiSection = (typeof BI_SECTIONS)[number];
 export type BiRow = Record<string, string | number | boolean | null>;
 export type BiQuery = {
   recordId?: string;
+  recordSource?: string;
+  period?: 'range'|'all';
   section: BiSection;
   from: string;
   to: string;
@@ -90,11 +92,13 @@ export function parseBiQuery(
         .slice(0, 10),
   );
   const days = (Date.parse(to) - Date.parse(from)) / 86400_000;
-  if (days < 0 || days > 365)
-    throw new Error("请选择不超过 366 天的有效日期范围");
   const section = params.get("section") || "overview";
   if (!(BI_SECTIONS as readonly string[]).includes(section))
     throw new Error("数据分类无效");
+  const period=params.get('period')==='all'&&section!=='overview'?'all':'range';
+  if(period==='range'&&(days<0||days>365))throw new Error("请选择不超过 366 天的有效日期范围");
+  const recordSource=section==='operations'?(params.get('source')||''):'';
+  if(!['','app_image_jobs','app_canvas_image_tasks','app_video_tasks'].includes(recordSource))throw new Error('任务来源无效');
   const accountType = params.get("accountType") || "";
   if (!["", "personal", "enterprise", "unknown"].includes(accountType))
     throw new Error("账户类型无效");
@@ -107,11 +111,13 @@ export function parseBiQuery(
   };
   return {
     recordId: (params.get("id") || "").trim().slice(0, 240),
+    recordSource,
+    period,
     section: section as BiSection,
     from,
     to,
-    start: `${from}T00:00:00+08:00`,
-    end: `${new Date(Date.parse(`${to}T00:00:00Z`) + 86400_000).toISOString().slice(0, 10)}T00:00:00+08:00`,
+    start: period==='all'?'-infinity':`${from}T00:00:00+08:00`,
+    end: period==='all'?'infinity':`${new Date(Date.parse(`${to}T00:00:00Z`) + 86400_000).toISOString().slice(0, 10)}T00:00:00+08:00`,
     email: (params.get("email") || "").trim().toLowerCase().slice(0, 254),
     q: (params.get("q") || "").trim().slice(0, 100),
     accountType,

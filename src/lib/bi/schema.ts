@@ -3,12 +3,14 @@ import {databaseSchemaReadiness} from "@/platform/db/schema-readiness";
 import {ensureSchema} from "@/lib/persistence/schema";
 import {getPool} from "@/platform/db/pool";
 import {ensureSupplierSchema} from "@/lib/supplier-cost/schema";
+import {ensureEnterpriseSchema} from "@/lib/enterprise/schema";
 
 export async function ensureBiSchema() {
  const state=databaseSchemaReadiness(getPool(),"bi");
   if (!state.pending)
     state.pending = (async () => {
       await ensureSchema();
+      await ensureEnterpriseSchema();
       await getPool()
         .query(`CREATE TABLE IF NOT EXISTS app_bi_account_profiles (
       email text PRIMARY KEY REFERENCES app_users(email) ON DELETE CASCADE,

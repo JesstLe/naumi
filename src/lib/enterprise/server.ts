@@ -1,4 +1,5 @@
 import {administeredSite,siteAdministrators} from './site-administrator';
+import {enterpriseSiteIdentity} from '@/lib/site-control/identity';
 import {workflowPermissionsSchema,DEFAULT_WORKFLOW_PERMISSIONS} from './workflow-permissions';
 import {ensureEnterpriseSchema} from "@/lib/enterprise/schema";
 export {ensureEnterpriseSchema};
@@ -117,7 +118,7 @@ export async function enterpriseList(actor:TeamActor,allowSelf=false):Promise<En
   });
 }
 async function memberRows(tx:PoolClient,s:Scope):Promise<EnterpriseMember[]> {
-  const rows=(await tx.query(`SELECT m.email,u.name,m.supervisor_email,m.role_id,m.employment,m.version,m.membership_status,m.membership_expires_at,m.joined_at,m.left_at,u.management_version,u.banned,u.account_expires_at,
+  const rows=(await tx.query(`SELECT m.email,u.name,u.role AS account_role,CASE WHEN $4::boolean THEN u.phone ELSE NULL END AS phone,CASE WHEN $4::boolean THEN u.note ELSE NULL END AS note,m.supervisor_email,m.role_id,m.employment,m.version,m.membership_status,m.membership_expires_at,m.joined_at,m.left_at,u.management_version,u.banned,u.account_expires_at,
     COALESCE(r.name,'员工') AS role_name,COALESCE(r.level,999)::int AS level,
     CASE WHEN m.email=ANY($3::text[]) THEN GREATEST(0,COALESCE(b.principal,0)-u.credits_used)::int ELSE NULL END AS available,
     CASE WHEN m.email=ANY($3::text[]) THEN COALESCE(l.consumed,0)::int ELSE NULL END AS consumed,
@@ -127,8 +128,8 @@ async function memberRows(tx:PoolClient,s:Scope):Promise<EnterpriseMember[]> {
     LEFT JOIN LATERAL(SELECT sum(remaining) AS principal FROM app_credit_batches WHERE email=u.email AND expires_at>now() AND remaining>0)b ON true
     LEFT JOIN LATERAL(SELECT -sum(delta) AS consumed FROM app_ledger WHERE email=u.email AND kind='consume' AND delta<0)l ON true
     LEFT JOIN LATERAL(SELECT count(*) AS n FROM app_artworks WHERE email=u.email AND deleted_at IS NULL)a ON true
-    WHERE m.enterprise_id=$1 AND m.email=ANY($2::text[]) ORDER BY COALESCE(r.level,999),u.name,u.email`,[s.team.id,s.manageMembers?[...s.manageable]:[...s.visible],s.viewRecords?[...s.visible]:[]])).rows;
-  return rows.map(m=>({...m,canManage:s.manageMembers&&m.email!==s.team.owner_email&&m.email!==undefined&&m.level>s.level}));
+    WHERE m.enterprise_id=$1 AND m.email=ANY($2::text[]) ORDER BY COALESCE(r.level,999),u.name,u.email`,[s.team.id,s.manageMembers?[...s.manageable]:[...s.visible],s.viewRecords?[...s.visible]:[],s.owner&&enterpriseSiteIdentity()?.enterpriseId===s.team.id])).rows;
+  return rows.map(m=>({...m,canManage:m.account_role==='user'&&s.manageMembers&&m.email!==s.team.owner_email&&m.email!==undefined&&m.level>s.level}));
 }
 export async function enterpriseSnapshot(actor:TeamActor,id:string):Promise<EnterpriseSnapshot> {
   return transaction(async tx=>{const s=await scope(tx,actor,id);const members=await memberRows(tx,s);
@@ -140,6 +141,7 @@ const common={id:z.string().uuid(),enterpriseId:z.string().uuid()};
 const target={...common,email:z.string().trim().min(1).max(254).transform(s=>s.toLowerCase()),expectedVersion:z.number().int().nonnegative(),expectedUserVersion:z.number().int().nonnegative()};
 const instant=z.string().datetime({offset:true});
 export const enterpriseCommandSchema=z.discriminatedUnion('action',[
+  z.object({...common,action:z.literal('delete-role'),roleId:z.string().uuid(),expectedVersion:z.number().int().nonnegative()}).strict(),
   z.object({...common,action:z.literal('role'),roleId:z.string().uuid(),expectedVersion:z.number().int().nonnegative().nullable(),name:z.string().trim().min(1).max(60),level:z.number().int().min(1).max(998),manageMembers:z.boolean(),viewRecords:z.boolean(),workflowPermissions:workflowPermissionsSchema.optional()}).strict(),
   z.object({...target,action:z.literal('organization'),roleId:z.string().uuid().nullable(),supervisorEmail:z.string().trim().min(1).max(254).transform(s=>s.toLowerCase()),employment:z.enum(['permanent','intern']),expiresAt:instant.nullable()}).strict(),
   z.object({...target,action:z.literal('expiry'),expiresAt:instant.nullable()}).strict(),
@@ -153,15 +155,22 @@ export async function mutateEnterprise(actor:TeamActor,command:z.infer<typeof en
     await tx.query("SELECT pg_advisory_xact_lock(hashtext('naumi-team-management'))");
     const s=await scope(tx,actor,command.enterpriseId);
     if(!s.manageMembers)throw new TeamError('当前岗位没有成员管理权限');
-    if((command.action==='role'||command.action==='organization')&&!s.owner)throw new TeamError('岗位与组织关系由企业老板设置');
-    if(command.action!=='role'){
+    if((command.action==='role'||command.action==='delete-role'||command.action==='organization')&&!s.owner)throw new TeamError('岗位与组织关系由企业老板设置');
+    if(command.action!=='role'&&command.action!=='delete-role'){
       const m=s.nodes.find(n=>n.email===command.email),role=s.roles.find(r=>r.id===m?.role_id),level=role?.level??999;
       if(!m||!s.manageable.has(m.email)||m.email===actor.email||level<=s.level)throw new TeamError('仅可管理本企业范围内的下级');
     }
     const previous=(await tx.query('SELECT actor,fingerprint,result FROM app_enterprise_audit WHERE id=$1',[command.id])).rows[0];
     if(previous){if(previous.actor!==actor.email||previous.fingerprint!==fingerprint)throw new TeamError('操作编号已用于其他请求',409);return {...previous.result,replayed:true}}
     let changes:unknown={};
-    if(command.action==='role'){
+    if(command.action==='delete-role'){
+      const old=s.roles.find(r=>r.id===command.roleId);
+      if(!old)throw new TeamError('岗位不存在',404);
+      if(old.version!==command.expectedVersion)throw new TeamError('岗位已更新，请刷新后重试',409);
+      if(s.nodes.some(n=>n.role_id===command.roleId))throw new TeamError('岗位仍有成员引用，请先调整成员岗位',409);
+      await tx.query('DELETE FROM app_enterprise_roles WHERE enterprise_id=$1 AND id=$2 AND version=$3',[command.enterpriseId,command.roleId,command.expectedVersion]);
+      changes={before:old,after:null};
+    }else if(command.action==='role'){
       const old=s.roles.find(r=>r.id===command.roleId);
       if((old?.version??null)!==command.expectedVersion)throw new TeamError('岗位已更新，请刷新后重试',409);
       const next={id:command.roleId,name:command.name,level:command.level,manage_members:command.manageMembers,view_records:command.viewRecords,workflow_permissions:command.workflowPermissions??old?.workflow_permissions??DEFAULT_WORKFLOW_PERMISSIONS,version:(old?.version??-1)+1};
@@ -263,4 +272,15 @@ export async function activateEnterprise(actor:TeamActor,teamId:string,directorE
     await tx.query(`INSERT INTO app_enterprise_audit(id,enterprise_id,actor,action,fingerprint,result) VALUES($1,$2,$3,'activate','',$4::jsonb)`,[randomUUID(),teamId,actor.email,JSON.stringify(result)]);
     return result;
   });
+}
+
+/** Narrow owner-management transaction; authorization and writes share one snapshot. */
+export async function enterpriseManageTransaction<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>):Promise<T>{
+ return transaction(async tx=>{
+  await tx.query("SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='15s'");
+  await tx.query("SELECT pg_advisory_xact_lock(hashtext('naumi-team-management'))");
+  const current=await scope(tx,actor,id);
+  if(!current.owner||!current.manageMembers)throw new TeamError('仅企业负责人或本站管理员可维护成员账号',403);
+  return run(tx,current);
+ });
 }

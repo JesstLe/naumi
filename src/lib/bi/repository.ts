@@ -34,10 +34,16 @@ export async function logBiAccess(
 const scopeSql = () => `WITH query_window AS (SELECT $1::timestamptz AS starts, $2::timestamptz AS ends,
   $3::text AS email,$4::text AS keyword,$5::text AS account_type)`;
 const scope = scopeSql();
+// Current membership enriches the account directory only; it does not rewrite
+// the enterprise attribution of any historical task or monetary event.
+const enterpriseNames=(email:string)=>`(SELECT string_agg(DISTINCT directory_team.name,'、' ORDER BY directory_team.name)
+  FROM app_account_teams directory_team JOIN app_enterprise_settings directory_settings ON directory_settings.team_id=directory_team.id
+  WHERE directory_team.owner_email=${email} OR EXISTS(SELECT 1 FROM app_enterprise_members directory_member WHERE directory_member.enterprise_id=directory_team.id AND directory_member.email=${email}))`;
+const effectiveAccountType=(email:string)=>`CASE WHEN ${enterpriseNames(email)} IS NOT NULL THEN 'enterprise' ELSE COALESCE((SELECT filter_profile.account_type FROM app_bi_account_profiles filter_profile WHERE filter_profile.email=${email}),'unknown') END`;
 const accountFilter = (email: string, authorizedEmployees = false, scopeBind = 8) => `
   (${email} IS NOT NULL AND ($3::text='' OR ${email}=$3)
-  AND ($4::text='' OR position(lower($4) in lower(${email}||' '||COALESCE((SELECT filter_user.name FROM app_users filter_user WHERE filter_user.email=${email}),'')||' '||COALESCE((SELECT filter_profile.company FROM app_bi_account_profiles filter_profile WHERE filter_profile.email=${email}),'')))>0)
-  AND ($5::text='' OR COALESCE((SELECT filter_profile.account_type FROM app_bi_account_profiles filter_profile WHERE filter_profile.email=${email}),'unknown')=$5)
+  AND ($4::text='' OR position(lower($4) in lower(${email}||' '||COALESCE((SELECT filter_user.name FROM app_users filter_user WHERE filter_user.email=${email}),'')||' '||COALESCE(${enterpriseNames(email)},(SELECT filter_profile.company FROM app_bi_account_profiles filter_profile WHERE filter_profile.email=${email}),'')))>0)
+  AND ($5::text='' OR ${effectiveAccountType(email)}=$5)
   ${authorizedEmployees ? `AND ${email}=ANY($${scopeBind}::text[])` : ''})`;
 const inRange = (alias: string) =>
   `${alias}.created_at >= $1::timestamptz AND ${alias}.created_at < $2::timestamptz`;
@@ -74,13 +80,13 @@ const operationPageSource = `SELECT 'app_image_jobs'::text AS source_table,EXIST
 function operationKeys(authorizedEmployees = false) {
   const status = (value: string, review: string) => `($6::text='' OR ${value}=$6 OR ($6 LIKE 'creation:%' AND ${normalizedOperationStatus(value)}=substring($6 from 10)) OR ($6='review' AND (${review})))`;
   return `SELECT 'app_image_jobs'::text AS source_table,j.id,j.email,j.created_at
-    FROM app_image_jobs j WHERE ${accountFilter("j.email", authorizedEmployees, 7)} AND ${inRange("j")}
+    FROM app_image_jobs j WHERE ${accountFilter("j.email", authorizedEmployees, 9)} AND (${inRange("j")} OR $7::text<>'') AND ($7='' OR j.id=$7) AND ($8::text='' OR $8='app_image_jobs')
       AND ${status(imageOperationStatus, "j.snapshot->>'status'='needs_attention' OR j.snapshot->>'stage' IN ('checking','reviewing') OR j.snapshot->>'error' LIKE '%核查%'")}
     UNION ALL SELECT 'app_canvas_image_tasks',c.id,c.email,c.created_at
-    FROM app_canvas_image_tasks c WHERE ${accountFilter("c.email", authorizedEmployees, 7)} AND ${inRange("c")}
+    FROM app_canvas_image_tasks c WHERE ${accountFilter("c.email", authorizedEmployees, 9)} AND (${inRange("c")} OR $7::text<>'') AND ($7='' OR c.id=$7) AND ($8::text='' OR $8='app_canvas_image_tasks')
       AND ${status("c.status", "c.status='needs_attention' OR c.error LIKE '%核查%'")}
     UNION ALL SELECT 'app_video_tasks',v.id,v.email,v.created_at
-    FROM app_video_tasks v WHERE ${accountFilter("v.email", authorizedEmployees, 7)} AND ${inRange("v")}
+    FROM app_video_tasks v WHERE ${accountFilter("v.email", authorizedEmployees, 9)} AND (${inRange("v")} OR $7::text<>'') AND ($7='' OR v.id=$7) AND ($8::text='' OR $8='app_video_tasks')
       AND ${status("v.status", "v.status='needs_attention' OR v.error LIKE '%核查%'")}`;
 }
 
@@ -157,6 +163,7 @@ async function snapshot<T>(
   const client = await getPool().connect();
   try {
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    await client.query("SET LOCAL statement_timeout='20s'; SET LOCAL lock_timeout='5s'");
     const result = await run(client);
     await client.query("COMMIT");
     return result;
@@ -188,7 +195,7 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
     result.overview = await snapshot((client) => overview(q, client));
     return result;
   }
-  const filterBinds = [...values(q), q.status, ...(q.section === "artworks" ? [q.recordId || ""] : []), ...(access ? [access.allowedEmails] : [])];
+  const filterBinds = [...values(q), q.status, ...(q.section === "artworks" ? [q.recordId || ""] : []), ...(q.section==='operations'?[q.recordId||'',q.recordSource||'']:[]), ...(access ? [access.allowedEmails] : [])];
   const scopedSql = scope;
   const binds = [...filterBinds, q.size, (q.page - 1) * q.size];
   let source = "";
@@ -200,7 +207,9 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
       break;
     case "users":
       source = `SELECT u.email,u.name,u.phone,u.role,u.plan,u.banned,u.joined_at,u.last_login_at,u.last_ip,u.note,u.management_version,
-      COALESCE(p.account_type,'unknown') AS account_type,COALESCE(p.company,'') AS company,p.agreed_pay_percent,
+      CASE WHEN membership.company IS NOT NULL THEN 'enterprise' ELSE COALESCE(p.account_type,'unknown') END AS account_type,COALESCE(membership.company,p.company,'') AS company,p.agreed_pay_percent,
+      CASE WHEN membership.company IS NOT NULL THEN 'enterprise-membership' ELSE 'manual-profile' END AS organization_source,
+      COALESCE(p.account_type,'unknown') AS registered_account_type,COALESCE(p.company,'') AS registered_company,
       COALESCE(p.note,'') AS profile_note,p.updated_at AS profile_updated_at,
       COALESCE(b.principal,0)::float8 AS principal,u.credits_used AS reserved,
       GREATEST(0,COALESCE(b.principal,0)-u.credits_used)::float8 AS available,
@@ -209,6 +218,7 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
       COALESCE(a.artworks,0)::int AS artworks,COALESCE(o.received,0)::float8 AS received_cents,
       COALESCE(o.purchased_credits,0)::float8 AS purchased_credits
       FROM app_users u JOIN selected k ON k.email=u.email LEFT JOIN app_bi_account_profiles p ON p.email=u.email
+      LEFT JOIN LATERAL (SELECT ${enterpriseNames('u.email')} AS company) membership ON true
       LEFT JOIN LATERAL (SELECT sum(remaining) AS principal,sum(remaining) FILTER(WHERE expires_at<now()+interval '30 days') AS expiring FROM app_credit_batches WHERE email=u.email AND expires_at>now() AND remaining>0) b ON true
       LEFT JOIN user_usage l ON l.email=u.email
       LEFT JOIN LATERAL (SELECT count(*) AS artworks FROM app_artworks a WHERE a.email=u.email AND a.deleted_at IS NULL AND ${inRange("a")}) a ON true
@@ -320,7 +330,7 @@ async function overview(q: BiQuery, pool: PoolClient): Promise<BiOverview> {
   const params = values(q);
   const results = [
     await pool.query(
-      `${scope} SELECT count(*)::int AS accounts,count(*) FILTER(WHERE p.account_type='enterprise')::int AS enterprises,
+      `${scope} SELECT count(*)::int AS accounts,count(*) FILTER(WHERE ${effectiveAccountType("u.email")}='enterprise')::int AS enterprises,
       COALESCE(sum(u.credits_used),0)::float8 AS reserved FROM app_users u LEFT JOIN app_bi_account_profiles p ON p.email=u.email WHERE ${accountFilter("u.email")}`,
       params,
     ),

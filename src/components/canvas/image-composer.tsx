@@ -18,13 +18,14 @@ export type CanvasImageComposerProps={
   pending:boolean;title?:string;readOnly?:boolean;optimizationDisabled?:boolean;style?:CSSProperties;dockRef:RefObject<HTMLDivElement|null>;onDismiss:()=>void;
   referenceEditor:Omit<ComponentProps<typeof ImageReferenceComposer>,"children"> & {identity:string|null};
   upload?:{inputRef:RefObject<HTMLInputElement|null>;available:boolean;onFiles:(files:FileList|null)=>unknown};
+  restoreReferences?:{disabled:boolean;onRestore:()=>void};
   controls:Omit<CanvasImageGenerationControlsProps,"pending">;
   imageActions?:{style:string;marked:boolean;onStyle:(value:string)=>void;onMark:()=>unknown;onFocus:()=>void};
   generation:Omit<ComponentProps<typeof GenerationSubmitAction>,"english">;error?:string|null;
 };
 /** Existing and blank image nodes share one draft/reference/control presentation.
  * No task, billing or document state is created here. */
-export function CanvasImageComposer({versions,pending,title,readOnly=false,optimizationDisabled=false,style,dockRef,onDismiss,referenceEditor,upload,controls,imageActions,generation,error}:CanvasImageComposerProps){
+export function CanvasImageComposer({versions,pending,title,readOnly=false,optimizationDisabled=false,style,dockRef,onDismiss,referenceEditor,upload,restoreReferences,controls,imageActions,generation,error}:CanvasImageComposerProps){
   const {locale,t}=useI18n(),L=(zh:string,en:string)=>locale==="en"?en:zh;
   const {identity,...references}=referenceEditor;
   return <CanvasComposerShell data-testid={pending?"pending-node-dock":"image-node-dock"} ref={dockRef}
@@ -37,6 +38,7 @@ export function CanvasImageComposer({versions,pending,title,readOnly=false,optim
           {upload.available&&<button type="button" onClick={()=>upload.inputRef.current?.click()} title={t("canvas.toolbar.addReference")} aria-label={t("canvas.toolbar.addReference")}
             className={cn("canvas-ui-action flex flex-none items-center justify-center rounded-[10px] border border-dashed border-[var(--canvas-ui-border)] hover:!border-[#6366f1]/60",references.references.length?"h-[68px] w-12":"h-8 gap-1.5 px-2.5 text-xs")}><Upload className="h-4 w-4"/>{!references.references.length&&L("参考图","Reference")}</button>}
         </>}
+        {!readOnly&&restoreReferences&&<button type="button" onClick={restoreReferences.onRestore} disabled={restoreReferences.disabled} className="canvas-ui-action h-8 rounded-lg border border-[var(--canvas-ui-border)] px-2 text-xs disabled:opacity-40">{L("恢复节点参考","Restore node references")}</button>}
       </ImageReferenceComposer>
       {error&&<p className="pb-1 text-xs font-medium text-red-400">{error}</p>}
     </div>
