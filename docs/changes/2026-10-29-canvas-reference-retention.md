@@ -41,3 +41,10 @@
 - 本机E盘可用不足10GiB，完整Next验收缓存放本任务C盘目录（启动前约60GiB可用），未删除其他目录。跨盘缓存解析需要完整NODE_PATH；初轮环境日志保留。Next自动修改的本任务tsconfig已恢复原字节，不提交生成配置。
 - 完整UI驱动初轮把页面上5个同accept文件框都当作目标，后限定到实际图片composer；另一次在尚未执行undo时错误期待history POST，改为实际点undo/redo并验证CAS及版本，原失败保留。
 - 旧冻结报价fixture缺主线新增consumePendingNodeHistory回调；修改前原始main同样69场景后失败，仅补fixture回调，不改业务历史/报价规则，现138场景全部通过。
+
+### 最新主线整合复验与交付
+
+- 开工基线 `9ab916c1d84e589391a5a50a03c0b471fae84d60` 原始源码包保持原SHA不变；功能提交 `0de245f5` 普通整合最新 `origin/main b00b1005f33b1dde7b9f49419ff84e6d031c40e4`，整合提交 `b1dd812a887a875c0cf3af2961794f72dd60af8f`。其间其他主线模块不列作本任务改动。
+- 整合后的11组集中检查全部exit 0：完整 `tsc --noEmit --incremental false`；本轮核心39；原图片引用；节点草稿55；冻结报价138组1208断言；自动报价7；编辑比例合约9；比例选择13；作用域历史12；结果落点5；变更生产代码lint。lint为0 errors、10条原Canvas既有hook warnings，新hook无warning。精确命令、原样输出在证据目录 `integrated-final/records.json`。
+- 交付四件套为证据目录 `delivery-final/MODIFIED_FILE.zip`、`DIFF_FILE.patch`、`VERIFICATION.txt`、`ROLLBACK.sh`。补丁仅含本任务13路径，以整合前的 `b00b1005` 为回滚基线，保留主线新比例与其他模块；原始开工包另行保留。上传文件状态属于当前会话内存，绑定的编号/用途与显式隐藏归节点草稿，账务和结果版本模块不迁移。
+- 回滚只在另一源码副本验收，逐文件SHA防止覆盖后来编辑，不接触数据库/媒体/任务。准确的正向补丁、后续编辑拦截、回滚命令/结果和最终远端main SHA统一见 `delivery-final/VERIFICATION.txt` 与证据根 `git-delivery.json`；未执行服务器发布。
