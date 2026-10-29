@@ -283,3 +283,53 @@
 - 仅副本回滚恢复原3源码hash、三个原问题，并删除副本新增3文件；后来编辑guard exit73且0写入。四产物与精确命令/input/stdout/stderr/exit在父ignored `output/capacity-audit-wave2-20261029/review-followups/`；文档 `2026-10-29-capacity-review-followups.md`。
 - 事实校正：此前并发派发第三个 release collector 的调用最终返回 `parent_not_active`，没有成功taskId，不能把“调用已提交”记成实际开工；本轮下一批重新实际派发并记录返回句柄。画布与X3两个review确已完成，两个代码切片修复后方可合主线。
 - 下一批：release任务快照有界读取、账务余额sum/长事务/BI保留、Agent会话SSE/Markdown/上传，独立职责分工。历史生产容量/完整生命周期、45笔手术与在线索引继续挂账。既有fixture与accepted-timeout波动未自动关闭。
+
+
+### 2026-10-29 普通业务连接生命周期父线程复核
+
+- 固定提交 `19f19d9d27b4ff5c54a36c40ebb6844719503c87` 已由父线程普通合入隔离分支，改动仅普通池连接监听、工作台事务封装及专属测试/文档。不是重复登记此前X3 tick/heartbeat修复。
+- **A26 / D11 普通业务池扩展切片**：物理connect事件安装一次Client error listener并处理Pool idle error，防止借出无查询、空闲、关闭中、执行中连接断开演变成Node未处理error退出；不提前release、不重试SQL、不调整业务池5或总预算。按坏物理连接WeakSet去重固定短日志，不输出参数/凭据。
+- **A27 工作台子项**：真实事务backend被终止后，原ROLLBACK断连异常覆盖原57P01；中间connection-only对照preserved=false，完整修改preserved=true且release(true)。正常成功/业务失败/SQL错误仍沿原同一事务，回滚成功复用健康连接。
+- 父线程本轮重跑真实PG/Node矩阵：基线/副本恢复各5个故障子进程exit1、4个正常exit0；修改9/9 exit0；connection-only中间对照另跑9组。正常20并发事务、100次callback、25次模块重载、迟到checkout、关闭围栏/下一代池均检查。测试只kill刚借出的本机fixture backend，无生产故障注入。
+- 父线程内存/Worker/v2/真实重启回归38/38，全项目tsc exit0。子任务依赖不齐导致的36项同基线诊断仍保留，父线程通过基于匹配React19的另一环境，不抹除原失败。未跑HTTP/浏览器/生产容量，不将这些列为通过。
+- 四产物及完整精确命令/输入/字面输出/exit位于父ignored `output/capacity-audit-wave2-20261029/runtime-parent/`。副本恢复2原hash/原故障；后来编辑guard exit73/WRITES=0。所有自有fixture已移除，源码与修改副本保持。
+- 本轮未连接或修改47，未部署；45笔手术和在线索引仍挂账。账务热路径与发布采集器由已派发独立任务继续；下一空位推进Agent会话/SSE和Markdown可达性，避免扩大本连接补丁。
+
+### 2026-10-29 账务 FIFO 热路径父线程闭环
+
+- **A38 / D20：小额扣减先锁/传回 owner 全部活批次，跨批次逐条 UPDATE。** 固定子提交 `7e148a6542a35902adc72d727b3574f685dc80ca`；现代 `debitTx` 和兼容 `deductPrincipalFIFO` 共享原事务内的 FIFO 前缀 UPDATE，保留 owner-first 锁、冻结报价、operation/ledger 幂等、部分成功/BYOK、UNKNOWN hold、租约失效整笔回滚。没有扩大连接池或新增索引/余额缓存。
+- 父线程从 `9aaf16af` 普通整合并核对全部运行时批次写入，五个兼容入口均在同一事务先锁 owner；未发现新依赖环。现代 FIFO 排序保持，legacy 相同到期/创建时间新增确定 `id` tie-breaker，旧并列顺序原本未定义。人工导入/测试脚本的直接写入不计为正常运行时路径，本轮不执行它们。
+- 父独占 PG（55489）原/改/修改副本/回滚各语义11/11。1万活批次扣6：原返回1万行、无关尾锁55P03；修改聚合返回1行、尾锁空闲。跨60批次扣600的扣减SQL为61→1。仍扫描/排序 owner 活候选，不是O(1)，同owner完整事务中位耗时没有全面改善，未推断生产吞吐。
+- 父原生 wallet、balance-refresh、recovery、billing rules 均exit0；X2实际仓储/账务租约回归exit0，同operation一笔-6、失租不扣、UNKNOWN留hold。父React19.3全项目tsc exit0；子React18 import失败及36诊断保留。补充大于int32的窗口累计与事务跨到期原/改/恢复三版均通过，不宣称改变钱包镜像上限或旧now()语义。
+- 仅副本恢复2原hash/原性能预算失败；later-edit guard73/0写入，源码和MODIFIED_FILE保持修复。四产物及原生命令/输入/输出/exit在父ignored `output/capacity-audit-wave2-20261029/billing-parent/`，独立模块文档第7节补父验收。父容器停止、端口关闭。
+- **未完成仍明确保留**：重复expire/refresh扫描（5次请求仍25SQL）、BI访问日志保留、完整生产容量；源码另发现BI用户管理调用方仍全活批次加锁，即非积分动作也走，待定向复现，不计新实测编号。release collector与Agent流任务继续独立推进。47无SSH/生产操作，新增main修复未部署；45笔手术、在线索引和accepted-timeout历史波动未关闭。
+
+### 2026-10-29 Agent SSE / Markdown 父线程复核闭环
+
+- **A39 / D21：工作台SSE取消过早释放running、持久化期间漏abort、初始化及enqueue异常资源清理缺口。** 固定子提交 `fbe30f4e9dd378602f905eb2d5a018ae76c3f482` 保留running到原prompt/runtime收尾；transport立即清理、GET只读、已受理持久工具不删除或重放。两个700ms interval合成一个pump，原780000ms期限不变；旧两个轮询不等于每tick都发心跳。
+- **A40 / D22：Harness.publicText图片Markdown替换重复扫描。** 同原媒体白名单/输出上限下改为两次单向扫描，inline→reference顺序保持。父12,009差分通过；192KiB未闭合起点样本原/恢复3秒超时，修改原字节保持。这是合成函数/HTTP/runtime证据，不是生产RPS。
+- 父同步main `3ea76ef6`保留并行画布修复后普通整合。额外首帧enqueue故障seam复现子版清理后仍建timer并启动prompt，父加closed提前退出。此同步start边界尚未证明普通网络可达，作为A39初始化鲁棒性覆盖，不新增事故编号。
+- 父route/Harness/local HTTP集中20项：原/恢复8失败exit1，子版1新增边界失败，父修改/修改副本0失败exit0。真实PG/runtime6项：原/恢复2项接纳断言失败，修改全过。新增真实PG行锁阻塞creation结果写入，模型已agent_end仍持running；取消后修改PUT409，解除锁原结果succeeded，modelStarts1，无付费调用。不是重复执行/双扣费证明。
+- 父真实会话修复58项、会话控制/账号/项目隔离、network15、Harness104、stream-intent356、timeline29、tool-trace25、activity及全项目tsc均exit0。旧Harness-runtime原/改仍`ROUTER_UNAVAILABLE/not_submitted`失败；保留原日志和首次父gate清理观测竞态，未绕旧断言。
+- 四产物与精确命令/输入/输出/exit位于父ignored `output/capacity-audit-wave2-20261029/agent-parent/`；副本恢复2原hash、移除1新helper、原行为复现，later-edit guard73/0写入。父PG55490停止且端口关闭，源码保持修改。详见模块文档父验收节。
+- 长会话持久化/RSS、事件裁剪游标、前端恢复轮询卸载及画布流仍待独立切片。release collector `2cd03246`已交付待父复核，BI用户管理在独立任务验证中。47无SSH/部署，45笔手术/在线索引/accepted-timeout历史波动均未关闭。
+
+### 2026-10-29 BI 用户编辑父线程闭环
+
+- **A41 / D23：BI非积分编辑也锁并传回全部活积分批次。** 固定实现 `8b969fb8cd42c367309d85c7416c9ed6407e3517` 只修改`manageBiUser`：非零delta才窄SUM，profile/ban/role/reset-password/create0不再读取批次；原owner锁、同Tx、nonce/actor/HMAC、版本CAS、last-admin/自身保护、双审计和既有FIFO前缀扣减保持。非积分审计原本没有余额字段，不是删除审计换性能。
+- 独立review普通merge `18b45047`，无新增可复现阻断项。真实PG三版各21组、额外各6组、原生BI与tsc通过；父重开报告/原trace/断言并核对源码hash一致。额外6组是review证据，非父复跑；包含合成金额与reservation边界、原now()保持和成功trace的单backend再断言，不计为新事故。
+- 父从main `2f2c57e0` 普通整合，业务源码未再改。父独占55523实际原/改/修改副本/回滚各21/21 exit0，原生`BI_MANAGEMENT=PASS`、全项目tsc exit0。四非积分动作原返回10000行/尾锁55P03，修改批次SQL0/尾锁FREE，owner锁始终55P03；积分动作调用方SUM仅返回1行，仍有底层扫描和20条总SQL，不宣称O(1)或所有延迟改善。
+- 副本回滚恢复原单文件hash及原返回/尾锁，later-edit guard73/0写入；修复源码保持。父四产物及完整命令/输入/输出/exit在ignored `output/capacity-audit-wave2-20261029/bi-mutation-parent/`；独立模块文档补父验收。父fixture停止、55523关闭，review55517已移除。
+- 全局管理advisory锁、重复聚合/expire、BI审计保留和其他回滚连接边界仍未修复。发布collector等待独立review，工作台Agent客户端恢复轮询卸载为下一源码候选。47无SSH/部署，45笔手术/在线索引/UNKNOWN与历史波动仍挂账。
+
+### 2026-10-29 发布采集器独立审查与父修复
+
+- 固定子提交`2cd03246`在父基线main`2c2d194e`普通整合；独立审查REQUEST_CHANGES的2项新增P2与5项既有缺口均由父直接处理，未放宽COMPLETE/历史保护门禁，47无操作。
+- **A42 / D24：原采集器全表snapshot先投影、闭包遗漏和原绑定不足。** 原生PK先限页，再小图/选中proof；有界固定点包含终态child、反向父、十层supplier链、原ID与batch绑定。父EXPLAIN保留258行原物化与32行新页对照。
+- **A43 / D25：新增总期限实现复用旧statement额度。** 每SQL/生成页前重算剩余时间，初始timeout也受总限；2s预算受控1.5+1.6s延迟，子版约3.343s、修复约2.125s后psql3拒绝并留false证据（含本机Docker开销）。不宣传精确进程硬实时。
+- **A44 / D26：新增fixture冷启动/清理异常丢RESULT且漏停PG。** 显式start受finally管理、TCP目标库SELECT1就绪；drop/stop/rm独立尝试，原错与清理错分开留存。实际PG除零清理故障仍移除自有容器，启动/stop异常另有单元覆盖。
+- **A45 / D27（既有P1）**：paid root/child状态未留证导致started→queued被忽略；v3留state并按小表核推进，缺未派发/恢复证据的回退不追认。**A46 / D28（既有P1）**：冻结billing ledger_id进入原行证据，避免换指针仍通过。
+- **A47 / D29（既有P2）**：未选历史ledger变更被新增数量掩盖；私有有界原ID→行SHA256逐原集合验证，纯新增仍允许，修改/删除加新增拒绝，公网仅指纹。**A48 / D30（既有P2）**：UNKNOWN state/phase无消解证据变终态拒绝，tick negative/accepted原字段冻结，历史exact-hash不变。**A49 / D31（既有P2）**：full模式falsey非object不再转空object。
+- collection/image proof能力为v3；旧v1/v2或缺完整原集合的证据不回填、不追认。父37矩阵原/恢复17pass20fail，修复37pass；真实PG15定向组及10单元、原snapshot21pass1skip、normal37/enterprise4/completed-image4回归通过。保留性反例控制器PASS只代表符合各版预期，不等于旧版保护健全。
+- 并行验证遇Windows1455资源不足与GBK终端异常，原失败/SQL/清理错误保留。仅核验并补清理本任务完整ID，串行复测；四产物/原改hash/副本回滚恢复2原文件移除3新增验证文件、later-edit73/0写入均在父ignored`release-snapshot-parent/`。修复源码保持，所有自有PG收尾移除，未操作其他容器。
+- 此次是源码/本地真实PG/Python门禁fixture，不是生产容量或完整蓝绿验收。47下一发布须真实重采v3基线；45手术/在线索引/UNKNOWN/CLEANUP_PENDING/accepted-timeout旧波动保持。工作台客户端恢复轮询任务继续独立推进。

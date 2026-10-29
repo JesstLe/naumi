@@ -137,18 +137,43 @@ async function handlePut(request: Request) {
     if((error as {code?:string}).code==='AGENT_SESSION_CONFLICT')return NextResponse.json({error:'会话已在其他连接更新，请重新打开；已有任务不会重新执行',code:'AGENT_SESSION_CONFLICT',sessionId},{status:409});
     throw error;
   }
+  // The request may disconnect while its initial CAS save is in flight.
+  // An abort listener added afterwards will not observe that earlier abort.
+  if (request.signal.aborted) {
+    session.running = false;
+    return harnessErrorResponse(new HarnessError("RUN_INACTIVE", 409));
+  }
 
   const encoder = new TextEncoder();
-  let cancelStream = () => {
-    session.agent.abort();
-    session.running = false;
-  };
+  let cancelStream = () => {};
   const onRequestAbort = () => cancelStream();
-  request.signal.addEventListener("abort", onRequestAbort, { once: true });
 
   const stream = new ReadableStream({
     start(controller) {
       let closed = false;
+      let pump: ReturnType<typeof setInterval> | undefined;
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      const onDelta = (text: string) => send("delta", { text });
+      const cleanup = () => {
+        clearInterval(pump);
+        clearTimeout(timeout);
+        if (session.onDelta === onDelta) session.onDelta = undefined;
+        request.signal.removeEventListener("abort", onRequestAbort);
+      };
+      const close = () => {
+        closed = true;
+        cleanup();
+        try { controller.close(); } catch { /* already cancelled */ }
+      };
+      cancelStream = () => {
+        if (closed) return;
+        close();
+        appendSessionEvent(session,"error",{code:"ABORTED",message:"任务已停止，可从历史继续"});
+        // Cancel this conversation's orchestration, not accepted durable tools.
+        // Retain admission ownership until prompt() and its evidence settle.
+        session.agent.abort();
+        void persistAgentSession(session).catch(()=>undefined);
+      };
       const send = (event: string, data: unknown) => {
         if (closed) return;
         try {
@@ -156,30 +181,30 @@ async function handlePut(request: Request) {
             encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
           );
         } catch {
-          closed = true;
+          cancelStream();
         }
       };
       let cursor = eventCursor;
+      request.signal.addEventListener("abort", onRequestAbort, { once: true });
       send("open", { sessionId });
+      // An initial enqueue failure already cancelled transport. Do not install
+      // fresh resources or start a prompt after that cleanup has run.
+      if (closed) {
+        session.running = false;
+        void persistAgentSession(session).catch(()=>undefined);
+        return;
+      }
       // 注册流式回调:assistant 文本增量绕过 events 轮询,直写 SSE(毫秒级到达)
-      session.onDelta = (text) => send("delta", { text });
+      session.onDelta = onDelta;
 
-      const pushEvents = setInterval(() => {
+      // One pump owns event delivery and completion. Neither idle check emits
+      // a heartbeat; do not count 700ms polling ticks as wire events.
+      const flush = () => {
+        if (closed) return;
         for (; cursor < session.events.length; cursor++) {
           const e = session.events[cursor];
           send(e.type, e.data);
         }
-      }, 700);
-
-      const cleanup = () => {
-        clearInterval(pushEvents);
-        clearInterval(doneCheck);
-        clearTimeout(timeout);
-        session.onDelta = undefined;
-        request.signal.removeEventListener("abort", onRequestAbort);
-      };
-
-      const doneCheck = setInterval(() => {
         if (!session.running && cursor >= session.events.length) {
           const lastAssistant = [...session.agent.state.messages]
             .reverse()
@@ -201,34 +226,16 @@ async function handlePut(request: Request) {
             turns: session.agent.state.messages.length,
           });
           void persistAgentSession(session).catch(()=>undefined);
-          cleanup();
-          closed = true;
-          try {
-            controller.close();
-          } catch {
-            /* already closed */
-          }
-        }
-      }, 700);
-
-      const timeout = setTimeout(() => session.agent.abort(), 780_000);
-      cancelStream = () => {
-        if (closed) return;
-        appendSessionEvent(session,"error",{code:"ABORTED",message:"任务已停止，可从历史继续"});
-        session.agent.abort();
-        session.running = false;
-        void persistAgentSession(session).catch(()=>undefined);
-        cleanup();
-        closed = true;
-        try {
-          controller.close();
-        } catch {
-          /* already closed */
+          close();
         }
       };
-      primeAgentSystemPrompt(session, message);
-      session.agent
-        .prompt(message, visionImages.length ? visionImages : undefined)
+      pump = setInterval(flush, 700);
+
+      timeout = setTimeout(() => session.agent.abort(), 780_000);
+      void (async () => {
+        primeAgentSystemPrompt(session, message);
+        await session.agent.prompt(message, visionImages.length ? visionImages : undefined);
+      })()
         .catch((e) => {
           // 发图被拒:证伪该模型的视觉能力并提示重发(不做同会话自动重试,避免状态污染)
           if (visionImages.length && markVisionUnsupported(modelId, e)) {
@@ -245,6 +252,7 @@ async function handlePut(request: Request) {
           clearTimeout(timeout);
           session.running = false;
           void persistAgentSession(session).catch(()=>undefined);
+          flush();
         });
     },
     cancel() {

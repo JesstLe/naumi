@@ -12,6 +12,7 @@ import type { CanvasHistoryOperation } from "./history-contract";
 import { changeCanvasParent } from "./parent-link";
 
 import type { CanvasTextNode } from "./text-document-model";
+import type {CanvasPendingNode,CanvasGenerationTask} from "./scene-types";
 export type { CanvasTextNode } from "./text-document-model";
 
 export type TextPatchFields = Pick<
@@ -51,6 +52,8 @@ export type CanvasHistoryAction = (
   | {kind:"video-add";records:CanvasVideoNode[]}
 
   | { kind: "pending-link"; id: string; from: { inputs: string[]; parentId: string | null; linked: boolean }; to: { inputs: string[]; parentId: string | null; linked: boolean } }
+  | { kind:"pending-add";records:CanvasPendingNode[];projectKey?:string|null }
+  | { kind:"local-delete";pendingNodes:CanvasPendingNode[];generationTasks:CanvasGenerationTask[] }
   | { kind: "workflow-add"; artworks: Artwork[]; textNodes: CanvasTextNode[] }
   | {kind:"mixed-add";artworks:Artwork[];textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];timelineNodes?:CanvasTimelineNode[];projectKey:string}
   | { kind: "workflow-fill"; id: string; assetOperationId: string; from: Artwork; to: Artwork }
@@ -75,6 +78,7 @@ export type CanvasHistoryAction = (
   | { kind: "delete"; records: Artwork[] }
   | {
       kind: "mixed-delete";
+      pendingNodes?:CanvasPendingNode[];generationTasks?:CanvasGenerationTask[];
       artworks: Artwork[];
       textNodes: CanvasTextNode[];
       videoNodes?:CanvasVideoNode[];
@@ -107,7 +111,7 @@ export function canvasHistoryScope(account: string, workspace: string, project: 
 
 /** First insertion creates its project; the originating callback owns late work. */
 export function canvasHistoryProject(action: CanvasHistoryAction) {
-  return action.kind === "mixed-add" ? action.projectKey
+  return action.kind === "mixed-add" || action.kind === "pending-add" ? action.projectKey
     : action.kind === "video-add" || action.kind === "director-add" || action.kind === "character-add" || action.kind === "scene-add" || action.kind === "audio-add" || action.kind === "timeline-add" || action.kind === "text-add" ? action.records[0]?.projectKey
     : action.kind === "workflow-add" ? action.textNodes[0]?.projectKey || (action.artworks[0] ? `tree:${action.artworks[0].groupId || action.artworks[0].id}` : null)
     : action.kind === "add" && action.records[0] ? `tree:${action.records[0].groupId || action.records[0].parentId || action.records[0].id}` : null;
@@ -156,7 +160,7 @@ export function compileCanvasHistory(action: CanvasHistoryAction, undo: boolean,
       if(current.image!==before.image||(current.canvasImageVersionId||"initial")!==before.versionId)throw new Error("节点版本已改变，请从历史版本重新选择");
       operations.push({type:"image-version",id:action.id,versionId:action[side].versionId,expectedImage:current.image,expectedRevision:current.canvasImageRevision||0});break;
     }
-    case "pending-link": break;
+    case "pending-link":case "pending-add":case "local-delete": break;
     case "audio-patch":audioPatch(action.id,action[side]);break;
     case "timeline-patch":timelinePatch(action.id,action[side]);break;
     case "audio-add":action.records.forEach(node=>operations.push({type:"audio-visibility",id:node.id,visible:!undo}));break;

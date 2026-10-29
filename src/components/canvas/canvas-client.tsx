@@ -1,4 +1,6 @@
 "use client";
+import {canvasHistoryFailureMessage} from '@/lib/canvas/history-scope';
+import {canvasDeletableIds,applyCanvasLocalHistory,type CanvasLocalHistoryAction} from '@/lib/canvas/node-commands';
 import {useCanvasWorkflowDocument} from "./use-canvas-workflow-document";
 import {canvasNativeDocuments} from "@/lib/canvas/native-document-lifecycle";
 import {canvasHistoryInsertionView} from "@/lib/canvas/history-model";
@@ -748,13 +750,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     document:canvasTextDocument,
     submit:(request,submission,scope)=>privateFetch("/api/canvas/text-generate",{method:"POST",headers:{"content-type":"application/json","x-naumi-billing-intent-slot":request.node.id,...(request.operationId?{"x-naumi-billing-operation-id":request.operationId}:{})},body:JSON.stringify(request.payload),submission,isCurrent:scope.viewCurrent}),
     history:node=>canvasHistory.record({...canvasHistory.scope,project:node.projectKey,key:JSON.stringify([canvasHistory.scope.account,canvasHistory.scope.workspace,node.projectKey])},{kind:"text-add",records:[node]}),
+    historyBatch:records=>canvasHistory.record({...canvasHistory.scope,project:records[0]?.projectKey||canvasHistory.scope.project,key:JSON.stringify([canvasHistory.scope.account,canvasHistory.scope.workspace,records[0]?.projectKey||canvasHistory.scope.project])},{kind:"text-add",records}),
     model:setTextModel,errorText:t("canvas.textGenerateFail"),
   });
   const promptMining=textTasks.busy("reverse"),assistBusy=textTasks.busy("assist");
   const canvasNodeOperations=useCanvasNodeOperations(canvasHistory.scope,{
     writable:()=>!!user&&!readOnly,
     native:nativeDocuments,
-    snapshot:()=>({artworks:canvasArtworkDocument.getSnapshot().nodes||[],textNodes:canvasTextDocument.getSnapshot().nodes,videoNodes:[],...nativeDocuments.snapshot()}),
+    snapshot:()=>({artworks:canvasArtworkDocument.getSnapshot().nodes||[],textNodes:canvasTextDocument.getSnapshot().nodes,videoNodes:[],...nativeDocuments.snapshot(),pendingNodes:pendingPresentation.getSnapshot(),generationTasks:[...generationPresentation.getSnapshot().tasks]}),
     history:canvasHistory,artworks:ids=>canvasArtworkDocument.merge(ids),
   });
   const workflowDocument=useCanvasWorkflowDocument(canvasArtworkDocument.scope,targetEmail||user?.email||"",{writable:()=>!!user&&!readOnly,merge:canvasArtworkDocument.merge,history:canvasHistory});
@@ -955,6 +958,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     openPendingNodeWithoutSelectionRef.current = false;
     if (proj) {
       setActiveKey(proj.key);
+      setCreatingNew(false);
       setSelectedId(openWithoutSelection ? null : node);
       // 只有后台深链进入才自动聚焦;日常新建/上传/生成不动画布
       if (deepFocusRef.current) {
@@ -2175,7 +2179,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     return runCanvasDetail({request:{source,references:referenceArts,uploads:uploadedRefs,referenceInputs,feedback,model:genModel,ratio:genRatio,count,maxReferences:MAX_TOTAL_IMAGES,missingReferences:t("canvas.detailNeedRefs")},pending:pend,
       label:done=>fmt(t("canvas.detailProgress"),{done,total:count}),errorText:t("canvas.genFail"),saveErrorText:t("canvas.saveFailed"),
       failed:failure=>{const message=generationFailureMessage(failure);if(pend?selectedPendIdRef.current===pend.id:selectedIdRef.current===source.id)setGenError(message);else flashTip(`${source.title}：${message}`);},
-      attached:id=>setSelectedPendId(current=>current===id?null:current),
+      attached:id=>{canvasHistory.consumePending(id);setSelectedPendId(current=>current===id?null:current);},
     },canvasGenerationRunContext());
   }
 
@@ -2290,7 +2294,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 真正执行删除(确认后)。文字节点与作品必须分流到各自 API，
   // 混合选择仍只记一条 undo，避免用户需要撤销两次才能恢复。
   async function runDelete(ids:string[]) {
-    if(!user||readOnly)return;
+    if(!user||readOnly||historyBusyRef.current)return;
     if(!nodeSettingsReady||ids.some(isNodeLocked)){flashTip(L("请先解锁选中的节点","Unlock selected nodes first"));return;}
     const scope=canvasHistory.scope;
     try {
@@ -2298,9 +2302,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       canvasSelection.patch({selectedId:null,selectedTextId:null,selectedPendId:null,multiSel:multiSel.filter(id=>!ids.includes(id))});
       const members=active?.members||[],texts=canvasTextDocument.getSnapshot().nodes;
       if(activeKey&&!members.some(node=>!ids.includes(node.id))&&!texts.some(node=>node.projectKey===activeKey)&&!videoNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!directorNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!characterNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!sceneNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!audioNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!timelineNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))){
-        setActiveKey(null);setCreatingNew(false);setBrowsing(true);
+        setCreatingNew(true);
       }
-    }catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.genFail"));}
+    }catch(error){if(scope.viewCurrent())flashTip(canvasHistoryFailureMessage(error,t("canvas.genFail")));}
   }
 
   // History controller owns request identity, commit, refresh and stacks.
@@ -2319,10 +2323,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   function doUndo() { if((directorNodesStore.saving||characterNodesStore.saving||sceneNodesStore.saving||audioNodesStore.saving||timelineNodesStore.saving))return Promise.resolve();return canvasHistory.doUndo(); }
   function doRedo() { if((directorNodesStore.saving||characterNodesStore.saving||sceneNodesStore.saving||audioNodesStore.saving||timelineNodesStore.saving))return Promise.resolve();return canvasHistory.doRedo(); }
-  function applyPendingLinkHistory(act: Extract<UndoAct,{kind:"pending-link"}>, undo: boolean) {
-    const pending = pendNodesRef.current.find(node => node.id === act.id);
-    if (!pending || pending.generating || pending.uploading) throw new Error(L("节点已开始生成或已移除", "Node is generating or no longer exists"));
-    setPendNodes(current => current.map(node => node.id === act.id ? {...node,...act[undo?"from":"to"]} : node));
+  function applyPendingLinkHistory(act:CanvasLocalHistoryAction,undo:boolean,checkOnly=false,scope=canvasHistory.scope){
+    const hidden=applyCanvasLocalHistory(act,undo,{pending:pendingPresentation.atScope(scope),generation:generationPresentation.atScope(scope)},checkOnly);
+    if(!checkOnly&&scope.viewCurrent()&&hidden.length){const ids=new Set(hidden);canvasSelection.patch({selectedId:selectedId&&ids.has(selectedId)?null:selectedId,selectedPendId:selectedPendId&&ids.has(selectedPendId)?null:selectedPendId,multiSel:multiSel.filter(id=>!ids.has(id))});}
   }
   function applyHistorySettings(update: (current: Record<string,CanvasNodeSettings>) => Record<string,CanvasNodeSettings>, persisted: boolean) {
     const next = update(nodeSettingsRef.current);
@@ -2411,10 +2414,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   // 批量删除选中的多个节点(框选 + Del)
   function batchDelete(ids: string[]) {
-    if (readOnly || !user || !active) return;
-    const real = ids.filter(
-      (id) => !id.startsWith("pend-") && !id.startsWith("task-")
-    );
+    if (readOnly || !user) return;
+    const real = canvasDeletableIds(ids,{textNodes:canvasTextDocument.getSnapshot().nodes,pendingNodes:pendingPresentation.getSnapshot(),generationTasks:[...generationPresentation.getSnapshot().tasks]});
     if (!real.length) return;
     setConfirmModal({
       title: t("canvas.deleteNodeTitle"),
@@ -2425,6 +2426,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   // 删除当前选中节点(供面板按钮 / Delete 键)
   async function deleteSelected() {
+    if(selectedPendId){batchDelete([selectedPendId]);return;}
+    if(selectedId?.startsWith("task-")){batchDelete([selectedId]);return;}
     if(selectedId&&(videoNodesStore.getNode(selectedId)||directorNodesStore.getNode(selectedId)||characterNodesStore.getNode(selectedId)||sceneNodesStore.getNode(selectedId)||audioNodesStore.getNode(selectedId)||timelineNodesStore.getNode(selectedId))){batchDelete([selectedId]);return;}
     if (selected) await deleteTree(selected.id);
   }
@@ -2642,17 +2645,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   ) {
     e.preventDefault();
     e.stopPropagation();
-    if (node.id.startsWith("task-")) return;
+    if (node.id.startsWith("task-")&&!generationPresentation.getSnapshot().tasks.find(task=>task.id===node.id)?.failure) return;
     setSelectedEdge(null);
     setRfEdges(current => current.map(edge => edge.selected ? { ...edge, selected: false } : edge));
     setSpawnMenu(null);
     const p = relPoint(e);
-    if(node.id.startsWith("text-")&&multiSel.length>1&&multiSel.includes(node.id)){setCtxMenu({x:p.x,y:p.y,cx:e.clientX,cy:e.clientY,nodeId:node.id});return;}
-    if (node.id.startsWith("text-") || node.id.startsWith("pend-")) {
+    if(multiSel.length>1&&multiSel.includes(node.id)){setCtxMenu({x:p.x,y:p.y,cx:e.clientX,cy:e.clientY,nodeId:node.id});return;}
+    if (node.id.startsWith("text-") || node.id.startsWith("pend-") || node.id.startsWith("task-")) {
       setSelectedId(null); setMultiSel([]);
       setRfNodes(current => current.map(item => item.selected ? { ...item, selected: false } : item));
       setSelectedPendId(node.id.startsWith("pend-") ? node.id : null);
       setSelectedTextId(node.id.startsWith("text-") ? node.id : null);
+      if(node.id.startsWith("task-"))setSelectedId(node.id);
       setCtxMenu({ x: p.x, y: p.y, cx: e.clientX, cy: e.clientY, nodeId: node.id });
       return;
     }
@@ -2862,6 +2866,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       inputs: linked && parentId ? [parentId] : [],
     };
     setPendNodes((prev) => [...prev, pend]);
+    pushUndo({kind:"pending-add",records:[pend],projectKey:activeKey});
     setGenerationMode("standard");
     // 选中新空白节点 → 自动出生成 dock(图3:加节点即可直接写提示词生成)
     setSelectedId(null);
@@ -2899,6 +2904,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       inputs,
     };
     setPendNodes((current) => [...current, pend]);
+    pushUndo({kind:"pending-add",records:[pend],projectKey:activeKey});
     clearCanvasSelection(true);
     setSelectedId(null);
     setSelectedPendId(id);
@@ -3106,7 +3112,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   async function reversePromptsForSelection(arts:Artwork[]){
     if(readOnly||!user||!activeKey||promptMining||!arts.length)return;
     setCtxMenu(null);const scope=canvasTextDocument.scope,live=new Map((rfRef.current?.getNodes()||[]).map(node=>[node.id,node]));
-    const requests=arts.map(source=>{const node=live.get(source.id);return derivedTextTask({mode:"reverse",source,project:activeKey,title:t("canvas.reverseTitle"),productTitle:t("canvas.productNode"),gap:X_GAP,
+    const requests=[...new Map(arts.map(source=>[source.id,source])).values()].map(source=>{const node=live.get(source.id);return derivedTextTask({mode:"reverse",source,project:activeKey,title:t("canvas.reverseTitle"),productTitle:t("canvas.productNode"),gap:X_GAP,
       position:{x:node?.position.x??source.canvasX??0,y:node?.position.y??source.canvasY??0,width:node?flowNodeSize(node).width:NODE_W}});});
     const result=await textTasks.batch("reverse",requests);
     if(scope.viewCurrent())flashTip(result.failed?L(`反推：成功 ${result.succeeded}，失败 ${result.failed}`,`Reverse prompts: ${result.succeeded} succeeded, ${result.failed} failed`):fmt(t("canvas.reverseDone"),{n:result.succeeded}));
@@ -3271,13 +3277,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     openHistoryPicker(c.x, c.y);
   }
   function onPendUpload(id: string) {
+    const context=user?canvasImportContext():null,saved=context?imageImportOwner.pendingBatch(id,context):null;
+    if(saved?.nodeIds?.length){void retryImportSynchronization(saved.id);return;}
     pendUploadTargetRef.current = id;
     pendUploadRef.current?.click();
   }
-  function onPendRemove(id: string) {
-    if(pendingPresentation.remove(id)==="busy") { flashTip("正在执行操作，请稍后再删除");return; }
-    setSelectedPendId((cur) => (cur === id ? null : cur));
-  }
+  function onPendRemove(id: string) { void runDelete([id]); }
   // 空白节点生成(文生图 / 合并多输入):用 dock 的提示词 + 输入图(若有)生成,填充本节点
   async function generatePend(opts?: {
     pend?: Pend;
@@ -3371,7 +3376,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           setPendNodes(nodes=>nodes.map(node=>node.id===pend.id?{...node,generating:false,generationFailure:result.failure,onGenerationRetry:retry}:node));return false;
         }
         if(selectedPendIdRef.current===pend.id&&!activeKey)pendingNodeRef.current=result.images[0]?.id||null;
-        setPendNodes(nodes=>nodes.filter(node=>node.id!==pend.id));setSelectedPendId(id=>id===pend.id?null:id);if(selectedPendIdRef.current===pend.id)setGenError(null);
+        canvasHistory.consumePending(pend.id);setPendNodes(nodes=>nodes.filter(node=>node.id!==pend.id));setSelectedPendId(id=>id===pend.id?null:id);if(selectedPendIdRef.current===pend.id)setGenError(null);
         return result.status==="succeeded";
       },
     });
@@ -3391,7 +3396,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     try{
       await imageImportOwner.uploadPending(file,{pendingId:pendId,parentId:pend.inputs?.[0]||activeRootId(),linked:!!pend.inputs?.length,x:pend.x,y:pend.y},context,{
         progress:progress=>{if(scope.viewCurrent())setPendNodes(nodes=>nodes.map(node=>node.id===pendId?{...node,progress}:node));},
-        attached:id=>{setPendNodes(nodes=>nodes.filter(node=>node.id!==pendId));setSelectedPendId(current=>current===pendId?null:current);pendingNodeRef.current=id;},
+        attached:id=>{canvasHistory.consumePending(pendId);setPendNodes(nodes=>nodes.filter(node=>node.id!==pendId));setSelectedPendId(current=>current===pendId?null:current);pendingNodeRef.current=id;},
       });
     }catch(error){if(scope.viewCurrent()){
       setGenError(error instanceof Error?error.message:t("canvas.genFail"));
@@ -3522,7 +3527,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
   }
   useCanvasKeyboard({state:()=>({readOnly,browsing,blocked:canvasShortcutLayerOpen,busy:historyBusyRef.current||cuttingEdgesRef.current.size>0,tool:canvasTool,
-    selectedId,selectedTextId,selectedEdge:!!selectedEdge,selectedGenerating,multiSel,
+    selectedId,selectedTextId,selectedPendId,selectedEdge:!!selectedEdge,selectedGenerating,multiSel,
     mediaCopyIntent:clipboard.hasMediaIntent()}),perform:performCanvasShortcut});
 
 
@@ -3819,7 +3824,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 setViewport(previous => canvasZoomState(previous, vp));
               }}
               onNodeClick={(event,node)=>{
-                if(canvasTool==="hand"||node.id.startsWith("task-"))return;
+                if(canvasTool==="hand"||node.id.startsWith("task-")&&!generationPresentation.getSnapshot().tasks.find(task=>task.id===node.id)?.failure)return;
                 const art=active?.members.find(item=>item.id===node.id),group=art?.canvasGroupId?active?.members.filter(item=>item.canvasGroupId===art.canvasGroupId).map(item=>item.id)||[]:[];
                 const patch=canvasNodeClick(node.id,event.ctrlKey||event.metaKey||event.shiftKey,group);canvasSelection.patch(patch);
                 setRfEdges(current=>current.map(edge=>edge.selected?{...edge,selected:false}:edge));
@@ -4179,7 +4184,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   </button>
                   <button
                     type="button"
-                    onClick={() => batchDelete(selectedBatchIds)}
+                    onClick={() => batchDelete(multiSel)}
                     className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#d24b45] transition-colors hover:bg-[#fff0ef]"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -4324,13 +4329,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 : null;
               const textNode = textNodes.find(item => item.id === ctxMenu.nodeId && item.projectKey === activeKey);
               const pendNode = pendNodes.find(item => item.id === ctxMenu.nodeId);
+              const failedTask = generationTasks.find(task=>task.id===ctxMenu.nodeId&&task.failure&&!task.replaceNode);
               const videoNode=videoNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey);
               const directorNode=directorNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey);
               const sceneNode=sceneNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey);
               const audioNode=audioNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey)||null;
               const timelineNode=timelineNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey)||null;
               const characterNode=characterNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey);
-              if (ctxMenu.nodeId && !node && !textNode && !pendNode&&!videoNode&&!directorNode&&!characterNode&&!sceneNode&&!audioNode&&!timelineNode) return null;
+              if (ctxMenu.nodeId && !node && !textNode && !pendNode&&!failedTask&&!videoNode&&!directorNode&&!characterNode&&!sceneNode&&!audioNode&&!timelineNode) return null;
               const mutationDisabled = readOnly || !nodeSettingsReady || historySaving || (directorNodesStore.saving||characterNodesStore.saving||sceneNodesStore.saving||audioNodesStore.saving||timelineNodesStore.saving) || Boolean(ctxMenu.nodeId && isNodeLocked(ctxMenu.nodeId));
               const Sep = () => <div className="canvas-ui-divider my-1 h-px" />;
               const batchContextSelection = Boolean(
@@ -4340,7 +4346,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               );
               const menu = (
                 <ContextMenuSurface x={ctxMenu.cx} y={ctxMenu.cy} light={lightCanvas} onClose={() => setCtxMenu(null)}>
-                    {node && batchContextSelection ? (
+                    {ctxMenu.nodeId&&multiSel.length>1&&multiSel.includes(ctxMenu.nodeId)&&!batchContextSelection ? (
+                      <Item label={t("canvas.delete")} disabled={mutationDisabled} danger onClick={()=>batchDelete(multiSel)}/>
+                    ) : failedTask ? (
+                      <Item label={t("canvas.delete")} disabled={mutationDisabled} danger onClick={()=>batchDelete([failedTask.id])}/>
+                    ) : node && batchContextSelection ? (
                       /* 已选图片组内右键：保留整组选择并直接提供批量对象操作。 */
                       <>
                         <p
@@ -4412,7 +4422,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                           label={t("canvas.delete")}
                           disabled={readOnly}
                           danger
-                          onClick={() => batchDelete(selectedBatchIds)}
+                          onClick={() => batchDelete(multiSel)}
                         />
                       </>
                     ) : characterNode ? (

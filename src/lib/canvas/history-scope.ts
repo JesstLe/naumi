@@ -1,6 +1,11 @@
 import { canvasDocumentFetch, type CanvasDocumentScope } from "./document-scope";
 export type CanvasHistoryScope = CanvasDocumentScope;
 
+export function canvasHistoryFailureMessage(error:unknown,fallback="画布保存失败"){
+  return error instanceof Error&&(error.name==="TimeoutError"||/signal timed out|request timed out/i.test(error.message))
+    ?"保存响应超时，修改仍保留；请重试原操作":error instanceof Error?error.message:fallback;
+}
+
 export class CanvasHistoryRequestError extends Error {
   constructor(message: string, readonly status: number,readonly conflict?:{id:string;fields:string[];current:import("./text-document-model").CanvasTextNode|null},readonly artworkConflict?:import("./artwork-write").CanvasArtworkConflict) { super(message); }
 }

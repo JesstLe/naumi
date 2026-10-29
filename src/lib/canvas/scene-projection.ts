@@ -188,7 +188,7 @@ export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];
           data: { id: task.id, pending: true, label: task.failure ? generationFailureTitle(task.failure, locale === "en") : task.label, lightCanvas, ...previewSize,
             generationStage: task.stage, generationStartedAt: task.startedAt,
             generationCount: task.count, generationCompleted: task.completed, generationFailure: task.failure, onGenerationRetry: task.onRetry } satisfies CanvasArtNodeData,
-          selectable: false,
+          selectable: !!task.failure,
           draggable: true,
         });
       baseEdges.push({
@@ -197,8 +197,9 @@ export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];
           sourceHandle: "out",
           target: task.id,
           targetHandle: "in",
-          type: "default",
-          animated: !task.failure,
+          type: "comet",
+          data: { lit: !task.failure, dim: false },
+          animated: false,
           selectable: false,
         });
     }
@@ -346,6 +347,7 @@ export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];
           prompt: textNode.prompt,
           content: textNode.content,
           status: textNode.status,
+          error: textNode.error,
           sourceRefs: [...sourceRefs, ...productRefs].map((reference) => ({
             id: reference.id,
             title: reference.title,

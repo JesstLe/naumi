@@ -10,5 +10,5 @@ export function useCanvasGenerationPresentation(scope:CanvasDocumentScope){
   if(!store.current)store.current=createCanvasGenerationPresentation();
   const owner=store.current,view=useMemo(()=>owner.bind(scope.key),[owner,scope.key]);
   const snapshot=useSyncExternalStore(view.subscribe,view.getSnapshot,()=>EMPTY_GENERATION_PRESENTATION);
-  return {...view,...snapshot};
+  return {...view,atScope:(target:CanvasDocumentScope)=>owner.bind(target.key),...snapshot};
 }

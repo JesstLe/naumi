@@ -73,19 +73,32 @@ export function createCanvasNodeOperations(){
       if(!attempt){attempt={};removals.set(key,attempt);}if(attempt.flight)return attempt.flight;const retained=attempt;
       const run=ports.history.transaction(scope,async()=>{
         assert();
-        if(!retained.body){
+        if(!retained.records){
           const records=canvasDeleteRecords(ids,ports.snapshot()),action=canvasDeletionAction(records);
           if(!action){removals.delete(key);return false;}
           retained.records=records;retained.action=action;
-          retained.body={operationId:browserRandomUUID(),artworkIds:records.artworks.map(node=>node.id),textIds:records.textNodes.map(node=>node.id),videoIds:[],...canvasNativeIds(records),expectedTexts:records.textNodes,expectedArtworks:records.artworks.map(n=>({id:n.id,fields:artworkFields(n)}))};
+          if(records.artworks.length||records.textNodes.length||Object.values(canvasNativeIds(records)).some(values=>values.length))
+            retained.body={operationId:browserRandomUUID(),artworkIds:records.artworks.map(node=>node.id),textIds:records.textNodes.map(node=>node.id),videoIds:[],...canvasNativeIds(records),expectedTexts:records.textNodes,expectedArtworks:records.artworks.map(n=>({id:n.id,fields:artworkFields(n)}))};
         }
-        if(!retained.saved){const result=await post(scope,"/api/canvas/nodes/delete",retained.body);retained.saved=true;retained.receipt=result;retained.persisted=result.persisted!==false;}
+        if(!retained.saved){
+          if(retained.body){const result=await post(scope,"/api/canvas/nodes/delete",retained.body);retained.receipt=result;retained.persisted=result.persisted!==false;}
+          else retained.persisted=false;
+          retained.saved=true;
+        }
         if(!scope.documentCurrent())throw new Error("节点已删除，请返回原账号同步");
-        if(!retained.recorded){ports.history.record(scope,retained.action!);retained.recorded=true;}
+        if(!retained.recorded){
+          // A local slot may have started work while a durable ACK was in
+          // flight. Freeze only previews still deletable, never cancel work.
+          const local=canvasDeleteRecords([...(retained.records!.pendingNodes||[]),...(retained.records!.generationTasks||[])].map(node=>node.id),ports.snapshot());
+          retained.records={...retained.records!,...(retained.records!.pendingNodes?{pendingNodes:local.pendingNodes||[]}:{}),...(retained.records!.generationTasks?{generationTasks:local.generationTasks||[]}:{} )};
+          retained.action=canvasDeletionAction(retained.records)||undefined;
+          if(!retained.action){removals.delete(key);return false;}
+          ports.history.record(scope,retained.action);retained.recorded=true;
+        }
         ports.history.acknowledge(scope,retained.action!,retained.persisted!==false,retained.receipt);
-        await acceptNative(ports,retained.receipt?.nativeNodes,scope.documentCurrent);
+        if(retained.body)await acceptNative(ports,retained.receipt?.nativeNodes,scope.documentCurrent);
         removals.delete(key);return true;
-      }).catch(error=>{if(error instanceof NodeRequestError&&error.conflict)ports.history.conflict?.(scope,error.conflict);if(error instanceof NodeRequestError&&error.artworkConflict&&retained.action)ports.history.artworkConflict?.(scope,error.artworkConflict,retained.action);if(!retained.body||!retained.saved&&rejected(error))removals.delete(key);throw error;}).finally(()=>{retained.flight=undefined;});
+      }).catch(error=>{if(error instanceof NodeRequestError&&error.conflict)ports.history.conflict?.(scope,error.conflict);if(error instanceof NodeRequestError&&error.artworkConflict&&retained.action)ports.history.artworkConflict?.(scope,error.artworkConflict,retained.action);if(!retained.records||!retained.saved&&rejected(error))removals.delete(key);throw error;}).finally(()=>{retained.flight=undefined;});
       retained.flight=run;return run;
     };
     const removeProject=(projectKey:string):Promise<void>=>{

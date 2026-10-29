@@ -11,7 +11,7 @@ let checks=0,cases=0;const eq=(a,b,m)=>{assert.deepEqual(plain(a),plain(b),m);ch
 const wait=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return {promise,resolve,reject};};
 async function test(name,run){await run();cases++;console.log('CASE='+name+' PASS');}
 async function bundle(){
- const entries=['src/lib/canvas/node-settings.ts',...(baseline?[]:['src/components/canvas/use-canvas-history.ts','src/lib/canvas/history-model.ts','src/lib/canvas/history-scope.ts','src/lib/canvas/history-contract.ts',...(fs.existsSync(path.join(root,'src/lib/canvas/native-document-lifecycle.ts'))?['src/lib/canvas/native-document-lifecycle.ts']:[]),...(textOwner?['src/lib/canvas/text-document.ts','src/lib/canvas/document-scope.ts']:[])])];
+ const entries=['src/lib/canvas/node-settings.ts',...(baseline?[]:['src/components/canvas/use-canvas-history.ts','src/lib/canvas/history-model.ts','src/lib/canvas/history-scope.ts','src/lib/canvas/history-contract.ts','src/lib/canvas/node-commands.ts','src/lib/canvas/pending-presentation.ts','src/lib/canvas/generation-presentation.ts',...(fs.existsSync(path.join(root,'src/lib/canvas/native-document-lifecycle.ts'))?['src/lib/canvas/native-document-lifecycle.ts']:[]),...(textOwner?['src/lib/canvas/text-document.ts','src/lib/canvas/document-scope.ts']:[])])];
  return (await build({stdin:{contents:entries.map(e=>'export * from '+JSON.stringify(path.join(root,e))+';').join('\n'),resolveDir:root,loader:'ts'},bundle:true,write:false,platform:'node',format:'cjs',plugins:[{name:'fixture-ports',setup(b){
   b.onResolve({filter:/^react$/},()=>({path:'react',namespace:'fixture'}));b.onResolve({filter:/supabase$/},()=>({path:'auth',namespace:'fixture'}));b.onResolve({filter:/saas\/workspace-client$/},()=>({path:'scope',namespace:'fixture'}));
   b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='react'?'export const useRef=(...a)=>__hooks.ref(...a),useState=(...a)=>__hooks.state(...a),useEffect=(...a)=>__hooks.effect(...a),useCallback=f=>f,useSyncExternalStore=()=>0;':a.path==='auth'?'export const authHeader=()=>__ports.auth();':'export const currentWorkspace=()=>__ports.workspace,currentWorkspaceRevision=()=>__ports.revision,WORKSPACE_SELECTION="workspace";',loader:'js'}));
@@ -47,6 +47,11 @@ function setup(built){
  c.audioNodesStore={saving:false,getNode:()=>undefined,flush:async()=>{},refresh:async()=>{}};
  c.timelineNodesStore={saving:false,getNode:()=>undefined,flush:async()=>{},refresh:async()=>{}};
  vm.createContext(c);vm.runInContext(built,c);Object.assign(c,projectedModule.exports);
+ if(!baseline&&c.createCanvasPendingPresentation){
+  const p=c.createCanvasPendingPresentation().bind('fixture'),g=c.createCanvasGenerationPresentation().bind('fixture');p.set(state.pending);
+  Object.defineProperty(state,'pending',{get:p.getSnapshot,set:p.set});c.pendingPresentation={...p,atScope:()=>p};c.generationPresentation={...g,atScope:()=>g};c.canvasSelection={patch(){}};
+ }
+
  // Bind the production adapter used by the extracted actual Canvas caller;
  // keep the original six document ports and their flush/refresh observations.
  if(c.canvasNativeDocuments)c.nativeDocuments=c.canvasNativeDocuments({videoNodes:c.videoNodesStore,directorNodes:c.directorNodesStore,characterNodes:c.characterNodesStore,sceneNodes:c.sceneNodesStore,audioNodes:c.audioNodesStore,timelineNodes:c.timelineNodesStore});

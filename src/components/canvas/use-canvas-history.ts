@@ -13,6 +13,7 @@ import { createCanvasDocumentContext } from "@/lib/canvas/document-scope";
 import type { CanvasTextHistoryPort } from "@/lib/canvas/text-document";
 import { createCanvasHistoryController, type HistoryCommit } from "@/lib/canvas/history-controller";
 import { reduceHistoryArtworks, reduceHistorySettings, type CanvasHistoryAction } from "@/lib/canvas/history-model";
+import type {CanvasLocalHistoryAction} from "@/lib/canvas/node-commands";
 
 type Input = {
   native?:{accept:(receipt:import("@/lib/canvas/native-node-records").CanvasNativeRecords,current:()=>boolean)=>void};
@@ -22,7 +23,7 @@ type Input = {
   settings: (update: (current: Record<string,CanvasNodeSettings>) => Record<string,CanvasNodeSettings>, persisted: boolean) => void;
   selectedText: Dispatch<SetStateAction<string | null>>;
   flush: () => Promise<unknown>; video: (id: string) => CanvasVideoNode | undefined;director?:(id:string)=>CanvasDirectorNode|undefined;character?:(id:string)=>CanvasCharacterNode|undefined;scene?:(id:string)=>CanvasSceneNode|undefined;artwork?:(id:string)=>Artwork|undefined;audio?:(id:string)=>CanvasAudioNode|undefined;timeline?:(id:string)=>CanvasTimelineNode|undefined; refresh: () => Promise<unknown>;
-  pending: (action: Extract<CanvasHistoryAction,{kind:"pending-link"}>, undo: boolean) => void;
+  pending: (action:CanvasLocalHistoryAction,undo:boolean,checkOnly?:boolean,scope?:import("@/lib/canvas/document-scope").CanvasDocumentScope)=>void;
   applied: (value: HistoryCommit) => void; warning: (message: string) => void;
 };
 const subscribeWorkspace = (notify: () => void) => { window.addEventListener(WORKSPACE_SELECTION,notify); return () => window.removeEventListener(WORKSPACE_SELECTION,notify); };
@@ -45,9 +46,10 @@ export function useCanvasHistory(input: Input) {
     warning: message => latest.current.warning(message),
     conflict:(scope,value)=>latest.current.textDocument.conflict?.(scope,value),
     artworkConflict:(scope,value,action,undo)=>latest.current.artworkDocument?.conflict(scope,value,action,undo),
-    pending: (scope,action,undo) => { scope.assertView(); latest.current.pending(action,undo); },
+    pending: (scope,action,undo,checkOnly) => { scope.assertView(); latest.current.pending(action,undo,checkOnly,scope); },
     commit: (scope,value) => {
       const {action,undo,operations,persisted} = value;
+      if(scope.documentCurrent()&&(action.kind==="mixed-delete"||value.initial&&(action.kind==="pending-add"||action.kind==="local-delete")))latest.current.pending(action,undo,false,scope);
       if(value.nativeNodes)latest.current.native?.accept(value.nativeNodes,scope.documentCurrent);
       latest.current.textDocument.applyHistory(scope,operations,value.textNodes);
       // Check in deferred React updater bodies too, not just before enqueueing.
@@ -65,6 +67,7 @@ export function useCanvasHistory(input: Input) {
   const pushUndo = useCallback((action: CanvasHistoryAction) => owner.push(scope,action),[owner,scope]);
   const lists = owner.list(scope);
   return {scope,artworkConflict:(target:typeof scope,value:import("@/lib/canvas/artwork-write").CanvasArtworkConflict,action:CanvasHistoryAction)=>latest.current.artworkDocument?.conflict(target,value,action,false),conflict:(target:typeof scope,value:import("@/lib/canvas/text-document").TextDocumentConflict)=>latest.current.textDocument.conflict?.(target,value),record:(target:typeof scope,action:CanvasHistoryAction)=>owner.push(target,action),transaction:owner.transaction,acknowledge:owner.acknowledge,
+    consumePending:(id:string)=>owner.consumePending(scope,id),
     discard:owner.discard,submit:(target:typeof scope,prepare:()=>CanvasHistoryAction|null,record=true)=>owner.submit(target,prepare,record),undoStack:lists.undo,redoStack:lists.redo,pushUndo,historySaving:owner.busy.current,historyBusyRef:owner.busy,
     setHistorySaving:owner.setBusy,applyHistory:(action: CanvasHistoryAction,undo: boolean,revision?:number) => owner.apply(scope,action,undo,revision),
     doUndo:() => owner.step(scope,true),doRedo:() => owner.step(scope,false),historyCurrent:scope.viewCurrent};

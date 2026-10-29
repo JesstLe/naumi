@@ -92,6 +92,11 @@ export function TextCanvasNode({ data, selected }: NodeProps) {
           <div className="canvas-ui-muted flex h-[108px] items-center justify-center gap-2">
             <Loader2 className="h-4 w-4 animate-spin text-[#6366f1]" /> 正在生成文字…
           </div>
+        ) : d.status === "failed" ? (
+          <div role="alert" className="flex min-h-[108px] flex-col justify-center gap-2 text-amber-800">
+            <span className="font-medium">文字生成失败</span>
+            <p className="whitespace-pre-wrap break-words">{d.error || "本次未取得文字结果，请重新选择原图反推"}</p>
+          </div>
         ) : editableBody ? (
           <textarea
             aria-label="编辑生成文本"

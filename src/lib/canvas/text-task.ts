@@ -9,6 +9,7 @@ export type CanvasTextTaskPorts={
   submit:(request:CanvasTextTaskRequest,submission:RetainedBillingSubmission,scope:CanvasDocumentScope)=>Promise<Response>;
   document:{getSnapshot:()=>{nodes:CanvasTextNode[]};set:(update:(nodes:CanvasTextNode[])=>CanvasTextNode[])=>void;save:(node:CanvasTextNode)=>Promise<CanvasTextNode|null>};
   history:(node:CanvasTextNode)=>void;model:(value:string)=>void;changed:()=>void;errorText:string;
+  historyBatch?:(nodes:CanvasTextNode[])=>void;
 };
 /** One paid text intent and one known answer. Saving or resuming never re-quotes
  * or regenerates a known answer; browser scope controls new submission, while
@@ -26,10 +27,10 @@ export function createCanvasTextTask(original:CanvasTextTaskRequest){
     try{
       scope.assertView();publish(ports,{busy:true,phase:result?"saving":"submitting",error:""});
       if(!inserted){
-        pending={...request.node,status:"generating",updatedAt:new Date().toISOString()};
+        pending={...request.node,status:"generating",error:"",updatedAt:new Date().toISOString()};
         if(!request.created&&!live())throw new Error("文字节点已移除");
         document.set(nodes=>request.created&&!nodes.some(node=>node.id===pending!.id)?[...nodes,pending!]:nodes.map(node=>node.id===pending!.id?{...node,...pending}:node));inserted=true;
-      }else if(scope.documentCurrent())document.set(nodes=>nodes.map(node=>node.id===request.node.id?{...node,status:"generating"}:node));
+      }else if(scope.documentCurrent())document.set(nodes=>nodes.map(node=>node.id===request.node.id?{...node,status:"generating",error:""}:node));
       if(!result){
         const response=await ports.submit(request,submission,scope),data=await response.json().catch(()=>null);
         if(response.ok&&typeof data?.text==="string"&&data.text.trim())result={text:data.text,model:typeof data.model==="string"?data.model:undefined};
@@ -39,7 +40,7 @@ export function createCanvasTextTask(original:CanvasTextTaskRequest){
       if(!scope.documentCurrent())throw new Error("文字已生成，请返回原账号保存");
       const current=live();if(!current)throw new Error("文字已生成，原节点已移除");
       const completed={...pending!,content:request.productTitle?withTextProduct(result.text,request.productTitle):result.text,status:"completed" as const,updatedAt:new Date().toISOString()};
-      const next={...rebaseText(completed,pending,current),status:"completed" as const};
+      const next={...rebaseText(completed,pending,current),status:"completed" as const,error:""};
       document.set(nodes=>nodes.map(node=>node.id===next.id?next:node));
       const saved=await document.save(next);if(!saved)throw new Error("文字已生成，保存失败，请重试保存");
       if(scope.documentCurrent()&&request.created&&!recorded){ports.history(saved);recorded=true;}
@@ -48,7 +49,8 @@ export function createCanvasTextTask(original:CanvasTextTaskRequest){
     }catch(error){
       const message=error instanceof Error?error.message:ports.errorText;
       if(scope.documentCurrent()&&live()&&!result){
-        const failed={...live()!,status:"failed" as const,updatedAt:new Date().toISOString()};document.set(nodes=>nodes.map(node=>node.id===failed.id?failed:node));await document.save(failed);
+        const failed={...live()!,status:"failed" as const,error:message.slice(0,2000),updatedAt:new Date().toISOString()};document.set(nodes=>nodes.map(node=>node.id===failed.id?failed:node));
+        try{await document.save(failed);}catch{/* The document retains its unsaved draft; keep the original execution failure. */}
       }
       publish(ports,{phase:rejected?"rejected":"retry",error:message});return false;
     }finally{publish(ports,{busy:false});}

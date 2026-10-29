@@ -4,6 +4,7 @@ import type {Artwork} from '../mock-data';
 import type {VideoInputChoice} from '../video/input-choice';
 import type {CanvasDocumentScope} from './document-scope';
 import {createCanvasNativeEdits,type NativeEditPorts} from './native-edit-commands';
+import type {NativeNodePatch} from './native-node-document';
 import {placeGenerationPreview} from './generation-feedback';
 
 type Kind='character'|'scene';
@@ -25,10 +26,14 @@ export function createCanvasReferenceAssetActions<K extends Kind>(kind:K){
     const editable=(id:string)=>{scope.assertView();const node=ports.store.getNode(id);if(!node||!ports.writable()||ports.locked(id))throw new Error(ports.uneditable);return node;};
     const commands=edits.bind(scope,ports);
     return {...commands,
-      create:(at:{x:number;y:number})=>commands.create(at,()=>{
-        if(kind==='character'){const character=newCharacterProject(label('角色','Character'));return {title:character.name,character} as Parameters<typeof ports.store.save>[1];}
-        const scene=newSceneProject(label('场景','Scene'));return {title:scene.name,scene} as Parameters<typeof ports.store.save>[1];
-      }),
+      create:(at:{x:number;y:number})=>{
+        // Only the selected domain factory runs (and allocates IDs).
+        const fields:{[P in Kind]:()=>NativeNodePatch<P>}={
+          character:()=>{const character=newCharacterProject(label('角色','Character'));return {title:character.name,character};},
+          scene:()=>{const scene=newSceneProject(label('场景','Scene'));return {title:scene.name,scene};},
+        };
+        return commands.create(at,fields[kind]);
+      },
       async upload(id:string,files:File[]){
         const node=editable(id),choices=await ports.upload(files,node.projectKey);scope.assertView();
         const fresh=await ports.merge(choices.map(choice=>choice.nodeId));scope.assertView();

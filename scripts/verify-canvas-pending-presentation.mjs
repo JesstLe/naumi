@@ -11,6 +11,7 @@ await fs.mkdir(out,{recursive:true});const file='src/components/canvas/canvas-cl
 if(baseline)assert.equal(declarations.length,2);else {assert.equal(declarations.length,0);assert.doesNotMatch(source,/editTaskStateRef/);}
 const p=s=>s.replaceAll('\\','/');
 const fixture=`import React,{useRef,useState} from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';
+${baseline?'':`import {applyCanvasLocalHistory} from '${p(path.join(root,'src/lib/canvas/node-commands'))}';`}
 ${baseline?'':`import {useCanvasPendingPresentation} from '${p(path.join(root,'src/components/canvas/use-canvas-pending-presentation'))}';`}
 let current={account:'A',project:'tree:A',workspace:'personal'},renders=0,sequence=0;window.__workspace='personal';const root=createRoot(document.getElementById('root'));
 function Harness(){const [version,render]=useState(0),[readOnly,setReadOnly]=useState(false);renders++;
@@ -21,6 +22,7 @@ ${baseline?declarations.join('\n'):`const pendingPresentation=useCanvasPendingPr
 const pendNodesRef=useRef(pendNodes);pendNodesRef.current=pendNodes;
 ${fns.restoreEditTasks}
 ${fns.rememberGenerationDrag}
+${baseline?'':`const runDelete=ids=>{try{applyCanvasLocalHistory({kind:'local-delete',pendingNodes:pendingPresentation.getSnapshot().filter(n=>ids.includes(n.id)),generationTasks:[]},false,{pending:pendingPresentation,generation:{getSnapshot:()=>({tasks:[]}),visibility(){}}});}catch{}};`}
 ${fns.onPendRemove}
 const view=${baseline?`{getSnapshot:()=>pendNodes,get:id=>editTaskStateRef.current.get(id)?.node,seed(node){editTaskStateRef.current.set(node.id,{account:current.account,workspace:current.workspace,project:current.project,node});setPendNodes(nodes=>[...nodes.filter(item=>item.id!==node.id),node]);},update(id,patch){const saved=editTaskStateRef.current.get(id);if(saved)editTaskStateRef.current.set(id,{...saved,node:{...saved.node,...patch}});restoreEditTasks();},clearTransient:()=>setPendNodes([]),retain:node=>view.seed(node),release:id=>editTaskStateRef.current.delete(id)}`:`{...pendingPresentation,seed:pendingPresentation.retain}`};
 window.h={view,nodes:pendNodes,version,renders,selected,flush:fn=>flushSync(fn),restore:()=>flushSync(restoreEditTasks),drag:(id,pos,commit)=>flushSync(()=>rememberGenerationDrag(id,pos,commit)),remove:id=>flushSync(()=>onPendRemove(id)),readonly:value=>flushSync(()=>setReadOnly(value)),change:patch=>{Object.assign(current,patch);window.__workspace=current.workspace;flushSync(()=>render(v=>v+1));}};

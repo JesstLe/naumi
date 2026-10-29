@@ -36,6 +36,7 @@ export type QuoteInput = {
     providerId?: string;
     ratio?: string;
 };
+type QuoteScope = { workspace: string; projectContext?: string };
 export type PublicCatalog = {
     version: number;
     features: Record<FeatureId, {
@@ -117,17 +118,24 @@ export function BillingProvider({ children }: {
     useEffect(() => { if (ready)
         void refresh(); }, [ready, user?.email, refresh]);
     useEffect(()=>{const changed=()=>{cache.current.clear();setQuoteRevision(value=>value+1);};const modelsChanged=()=>{changed();void refresh();};window.addEventListener(FEATURE_MODEL_SELECTION,changed);window.addEventListener(MODEL_CATALOG_REFRESH,modelsChanged);window.addEventListener(WORKSPACE_SELECTION,modelsChanged);return()=>{window.removeEventListener(FEATURE_MODEL_SELECTION,changed);window.removeEventListener(MODEL_CATALOG_REFRESH,modelsChanged);window.removeEventListener(WORKSPACE_SELECTION,modelsChanged);};},[refresh]);
-    const getQuote = useCallback((rawInput: QuoteInput) => {
+    const getQuote = useCallback((rawInput: QuoteInput, requestScope?: QuoteScope) => {
         const input = { ...rawInput, modelId: rawInput.modelId || chosenFeatureModel(rawInput.feature) };
+        // A dedicated site's old personal canvas can differ from the default
+        // workspace. Quote the same authorized project as the eventual POST.
+        const scope = requestScope ?? { workspace: currentWorkspace() };
         const owner=user?.email,actorRevision=actor.current.revision,workspaceRevision=currentWorkspaceRevision();
-        const isCurrent=()=>owner===actor.current.email&&actorRevision===actor.current.revision&&workspaceRevision===currentWorkspaceRevision();
-        const key = JSON.stringify([owner,actorRevision,workspaceRevision,catalog?.version,quoteRevision,input]);
+        const isCurrent=()=>owner===actor.current.email&&actorRevision===actor.current.revision&&workspaceRevision===currentWorkspaceRevision()&&scope.workspace===currentWorkspace();
+        const key = JSON.stringify([owner,actorRevision,workspaceRevision,catalog?.version,quoteRevision,input,scope]);
         let promise = cache.current.get(key);
         if (promise)
             return promise;
-        promise = (async () => { const {canvas,...facts}=input,headers=await authHeader();
+        promise = (async () => { const {canvas,...facts}=input,headers=new Headers(await authHeader());
             if(!isCurrent())throw new Error("创作空间已切换");
-            const res = await fetch("/api/billing/quote", { method: "POST", headers: { "content-type": "application/json", ...headers,...(canvas?{"x-naumi-canvas":"1"}:{}) }, body: JSON.stringify(facts) }), data = await res.json();
+            headers.set("content-type", "application/json");
+            headers.set("x-naumi-workspace", scope.workspace);
+            if (scope.projectContext) headers.set("x-naumi-project-context", scope.projectContext);
+            if (canvas) headers.set("x-naumi-canvas", "1");
+            const res = await fetch("/api/billing/quote", { method: "POST", headers, body: JSON.stringify(facts) }), data = await res.json();
             if(!isCurrent())throw new Error("创作空间已切换");
             if (!res.ok) throw new Error(data.error || "报价暂不可用");
             if(!Number.isSafeInteger(data.credits)||data.credits<0)throw new Error("报价金额无效");
@@ -187,7 +195,11 @@ export function BillingProvider({ children }: {
     }, [refresh,user?.email,toast]);
     const quoteAndSubmit = useCallback(async (url: string, init: RequestInit, input: QuoteInput, beforeSubmit?: () => void) => {
         beforeSubmit?.();
-        const q = await getQuote(input);
+        const headers = new Headers(init.headers);
+        // Carry only creation scope, never credentials, execution tokens or an
+        // earlier quote into the quote cache/request. Auth is resolved freshly.
+        const q = await getQuote(input, { workspace: headers.get("x-naumi-workspace") || currentWorkspace(),
+            projectContext: headers.get("x-naumi-project-context") || undefined });
         beforeSubmit?.();
         // The freshly obtained server quote is authoritative, not a separate
         // catalogue version that may have changed during the same click.

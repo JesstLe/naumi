@@ -201,6 +201,7 @@ export async function ensureSchema(): Promise<void> {
         ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS source_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
         ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS target_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
         ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS product_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
+        ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS error_message text NOT NULL DEFAULT '';
         ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS canvas_width double precision NOT NULL DEFAULT 300;
         ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS canvas_height double precision NOT NULL DEFAULT 176;
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'user';

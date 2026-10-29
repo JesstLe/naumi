@@ -52,6 +52,14 @@ export function createCanvasGenerationPresentation(){
         tasks=[...tasks,{...task,position}];publish();return position;
       },
       update,
+      visibility(records:CanvasGenerationTask[],visible:boolean){
+        const ids=new Set(records.map(task=>task.id));
+        if(visible){
+          for(const task of records){positions[task.id]??=task.position;sizes[task.id]??=task.previewSize??generationPlaceholderSize('auto');}
+          tasks=[...tasks,...records.filter(task=>!tasks.some(live=>live.id===task.id))];
+        }else{for(const id of ids)forget(id);tasks=tasks.filter(task=>!ids.has(task.id));}
+        if(records.length)publish();
+      },
       hide(id:string){if(!tasks.some(task=>task.id===id))return;tasks=tasks.filter(task=>task.id!==id);publish();},
       remove(id:string){forget(id);const next=tasks.filter(task=>task.id!==id);if(next.length!==tasks.length){tasks=next;publish();}},
       drag(id:string,position:CanvasPoint,commit=false){

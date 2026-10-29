@@ -1,5 +1,5 @@
 import 'server-only';
-import { Pool, type PoolConfig } from 'pg';
+import { Pool, type PoolClient, type PoolConfig } from 'pg';
 
 // Process-wide, including separate Next bundles and development module reloads.
 // Only connection infrastructure lives here; business transactions keep getPool().
@@ -62,6 +62,16 @@ function pool(kind: 'business' | 'tick'): Pool {
     if (kind === 'tick') {
       // pg removes the failed idle connection first. Never log connection details.
       created.on('error', () => console.error('[worker-tick] idle database connection lost'));
+    } else {
+      // A borrowed connection no longer has pg's idle-client listener. Observe
+      // physical clients once, without retrying or releasing a borrower's tx.
+      const reported=new WeakSet<PoolClient>();
+      const report=(_error:Error,client:PoolClient)=>{
+        if(reported.has(client))return;
+        reported.add(client);console.error('[database] connection lost');
+      };
+      created.on('connect',client=>client.on('error',error=>report(error,client)));
+      created.on('error',report);
     }
     pools[kind] = created;
   }

@@ -10,5 +10,5 @@ export function useCanvasPendingPresentation(scope:CanvasDocumentScope,readOnly=
   if(!store.current)store.current=createCanvasPendingPresentation();
   const owner=store.current,view=useMemo(()=>owner.bind(scope.key),[owner,scope.key]);
   const nodes=useSyncExternalStore(view.subscribe,view.getSnapshot,()=>EMPTY_PENDING_PRESENTATION);
-  return {...view,nodes:readOnly?EMPTY_PENDING_PRESENTATION:nodes};
+  return {...view,atScope:(target:CanvasDocumentScope)=>owner.bind(target.key),nodes:readOnly?EMPTY_PENDING_PRESENTATION:nodes};
 }

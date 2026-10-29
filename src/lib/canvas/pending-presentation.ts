@@ -13,7 +13,7 @@ export const EMPTY_PENDING_PRESENTATION:CanvasPendingNode[]=[];
 export function createCanvasPendingPresentation(){
   const buckets=new Map<string,ReturnType<typeof bucket>>();
   function bucket(){
-    const records=new Map<string,CanvasPendingNode>(),retained=new Set<string>(),listeners=new Set<()=>void>();
+    const records=new Map<string,CanvasPendingNode>(),retained=new Set<string>(),hidden=new Set<string>(),listeners=new Set<()=>void>();
     let order:string[]=[],snapshot:CanvasPendingNode[]=[];
     const current=()=>order.map(id=>records.get(id)!);
     const publish=()=>{snapshot=current();for(const listener of listeners)listener();};
@@ -21,13 +21,13 @@ export function createCanvasPendingPresentation(){
       const next=typeof change==='function'?change(current()):change;
       if(next===snapshot)return;
       const ids=new Set(next.map(node=>node.id));
-      for(const id of records.keys())if(!ids.has(id)&&!retained.has(id))records.delete(id);
+      for(const id of records.keys())if(!ids.has(id)&&!retained.has(id)&&!hidden.has(id))records.delete(id);
       for(const node of next)records.set(node.id,node);
-      order=next.map(node=>node.id);publish();
+      order=next.filter(node=>!hidden.has(node.id)).map(node=>node.id);publish();
     };
     const retain=(node:CanvasPendingNode)=>{
       retained.add(node.id);records.set(node.id,node);
-      if(!order.includes(node.id))order=[...order,node.id];publish();
+      if(!hidden.has(node.id)&&!order.includes(node.id))order=[...order,node.id];publish();
     };
     return {
       getSnapshot:()=>snapshot,
@@ -49,15 +49,22 @@ export function createCanvasPendingPresentation(){
       update(id:string,patch:Partial<CanvasPendingNode>){
         const saved=records.get(id);if(saved&&retained.has(id))retain({...saved,...patch,id:saved.id});
       },
-      release(id:string){retained.delete(id);if(!order.includes(id))records.delete(id);},
-      restore(visible=true){order=[...order.filter(id=>!retained.has(id)),...(visible?[...retained]:[])];publish();},
+      release(id:string){retained.delete(id);if(!order.includes(id)&&!hidden.has(id))records.delete(id);},
+      visibility(nodes:CanvasPendingNode[],visible:boolean){
+        for(const node of nodes){
+          if(visible){hidden.delete(node.id);if(!records.has(node.id))records.set(node.id,node);if(!order.includes(node.id))order=[...order,node.id];}
+          else{hidden.add(node.id);if(!records.has(node.id))records.set(node.id,node);order=order.filter(id=>id!==node.id);}
+        }
+        if(nodes.length)publish();
+      },
+      restore(visible=true){order=[...order.filter(id=>!retained.has(id)&&!hidden.has(id)),...(visible?[...retained].filter(id=>!hidden.has(id)):[])];publish();},
       clearTransient(){
-        for(const id of records.keys())if(!retained.has(id))records.delete(id);
-        order=[...retained];publish();
+        for(const id of records.keys())if(!retained.has(id)&&!hidden.has(id))records.delete(id);
+        order=[...retained].filter(id=>!hidden.has(id));publish();
       },
       remove(id:string):'busy'|'removed'{
         if(retained.has(id)&&records.get(id)?.generating)return 'busy';
-        retained.delete(id);records.delete(id);order=order.filter(key=>key!==id);publish();return 'removed';
+        hidden.delete(id);retained.delete(id);records.delete(id);order=order.filter(key=>key!==id);publish();return 'removed';
       },
       drag(id:string,position:CanvasPoint,commit=false){
         const node=records.get(id);if(!node)return;

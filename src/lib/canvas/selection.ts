@@ -10,9 +10,9 @@ export function patchCanvasSelection(state:CanvasSelection,patch:Partial<CanvasS
   return (Object.keys(next) as Array<keyof CanvasSelection>).every(key=>next[key]===state[key])?state:next;
 }
 export function canvasNodeClick(id:string,modified:boolean,group:string[]=[]):Partial<CanvasSelection>{
+  if(modified)return {...focus,selectedEdge:null};
   if(id.startsWith("pend-"))return {...focus,selectedPendId:id,selectedEdge:null};
   if(id.startsWith("text-"))return {...focus,selectedTextId:id,selectedEdge:null};
-  if(modified)return {...focus,selectedEdge:null};
   return group.length>1?{...focus,selectedEdge:null,multiSel:group}:{...focus,selectedEdge:null,selectedId:id};
 }
 export function canvasFlowSelection(state:CanvasSelection,nodes:Array<{id:string;type?:string}>,edges:CanvasSelectedEdge[]):CanvasSelection{

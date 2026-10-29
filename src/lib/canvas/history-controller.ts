@@ -9,7 +9,8 @@ import type {CanvasDirectorNode} from "./director-node-schema";
 import type { CanvasVideoNode } from "./video-node-schema";
 import type { CanvasHistoryOperation } from "./history-contract";
 import { canvasHistoryProject, canvasHistoryScope, compileCanvasHistory, type CanvasHistoryAction } from "./history-model";
-import { CanvasHistoryRequestError, postCanvasHistory, type CanvasHistoryScope } from "./history-scope";
+import { canvasHistoryFailureMessage,CanvasHistoryRequestError, postCanvasHistory, type CanvasHistoryScope } from "./history-scope";
+import type {CanvasLocalHistoryAction} from "./node-commands";
 
 type Attempt = { undo: boolean; operationId: string; operations: CanvasHistoryOperation[] };
 export type HistoryCommit = {nativeNodes?:CanvasNativeRecords;artworkNodes?:import("./artwork-write").CanvasArtworkReceipt[];artworkIds?:string[];action: CanvasHistoryAction; undo: boolean; operations: CanvasHistoryOperation[]; persisted: boolean; initial?:boolean;textNodes?:import("./text-document-model").CanvasTextNode[]};
@@ -18,7 +19,7 @@ type Services = {
   flush: () => Promise<unknown>; video: (id: string) => CanvasVideoNode | undefined;director?:(id:string)=>CanvasDirectorNode|undefined;character?:(id:string)=>CanvasCharacterNode|undefined;scene?:(id:string)=>CanvasSceneNode|undefined;artwork?:(id:string)=>Artwork|undefined;audio?:(id:string)=>CanvasAudioNode|undefined;timeline?:(id:string)=>CanvasTimelineNode|undefined;
   transaction: <T>(scope:CanvasHistoryScope,work:()=>Promise<T>)=>Promise<T>;
   commit: (scope: CanvasHistoryScope, value: HistoryCommit) => void;
-  pending: (scope: CanvasHistoryScope, action: Extract<CanvasHistoryAction,{kind:"pending-link"}>, undo: boolean) => void;
+  pending: (scope: CanvasHistoryScope, action: CanvasLocalHistoryAction, undo: boolean,checkOnly?:boolean) => void;
   conflict?:(scope:CanvasHistoryScope,value:NonNullable<CanvasHistoryRequestError["conflict"]>)=>void;
   artworkConflict?:(scope:CanvasHistoryScope,value:NonNullable<CanvasHistoryRequestError["artworkConflict"]>,action:CanvasHistoryAction,undo:boolean)=>void;
   refresh: () => Promise<unknown>; warning: (message: string) => void;
@@ -47,11 +48,12 @@ export function createCanvasHistoryController(services: Services) {
     if (running) return running.undo === reverse ? running.promise : Promise.reject(new Error("原画布操作仍在保存"));
     const execute = async () => {
       scope.assertView(); if (services.readOnly()) throw new Error("当前画布为只读");
-      if (action.kind === "pending-link") {
-        services.pending(scope,action,reverse); return {action,undo:reverse,operations:[],persisted:false};
+      if (action.kind === "pending-link"||action.kind==="pending-add"||action.kind==="local-delete") {
+        services.pending(scope,action,reverse);const value={action,undo:reverse,operations:[],persisted:false};services.commit(scope,value);return value;
       }
       const value = await services.transaction(scope,async()=>{
         await services.flush(); scope.assertView();
+        if(action.kind==="mixed-delete"&&!attempts.has(action))services.pending(scope,action,reverse,true);
         // Replay before inspecting current nodes: a successful response may have
         // been lost, while the server revision/result has already advanced.
         let attempt = attempts.get(action);
@@ -132,9 +134,19 @@ export function createCanvasHistoryController(services: Services) {
         if (reverse) { undo = undo.filter(a => a !== action); redo = [...redo,action]; }
         else { redo = redo.filter(a => a !== action); undo = [...undo,action]; }
       });
-    } catch (error) { if (scope.viewCurrent()) services.warning(error instanceof Error ? error.message : "画布保存失败"); }
+    } catch (error) { if (scope.viewCurrent()) services.warning(canvasHistoryFailureMessage(error)); }
     finally { setBusy(false); }
   };
   const discard=(action:CanvasHistoryAction)=>{undo=undo.filter(a=>a!==action);redo=redo.filter(a=>a!==action);attempts.delete(action);services.changed();};
-  return {discard,list,push,apply,submit,transaction,acknowledge,step,busy,setBusy};
+  const consumePending=(scope:CanvasHistoryScope,id:string)=>{
+    const prune=(stack:CanvasHistoryAction[])=>stack.flatMap(action=>{
+      if(scopes.get(action)!==scope.key)return [action];
+      if(action.kind==="pending-link"&&action.id===id)return [];
+      if(action.kind!=="pending-add"||!action.records.some(node=>node.id===id))return [action];
+      const records=action.records.filter(node=>node.id!==id);if(!records.length)return [];
+      const next={...action,records};scopes.set(next,scope.key);return [next];
+    });
+    undo=prune(undo);redo=prune(redo);services.changed();
+  };
+  return {consumePending,discard,list,push,apply,submit,transaction,acknowledge,step,busy,setBusy};
 }

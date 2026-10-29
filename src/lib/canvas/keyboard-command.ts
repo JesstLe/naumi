@@ -3,6 +3,7 @@ import type {CanvasPrimaryTool} from "./view-controls";
 export type CanvasKeyboardState={
   readOnly:boolean;browsing:boolean;blocked:boolean;busy:boolean;tool:CanvasPrimaryTool;
   selectedId:string|null;selectedTextId:string|null;selectedEdge:boolean;selectedGenerating:boolean;multiSel:string[];mediaCopyIntent:boolean;
+  selectedPendId?:string|null;
 };
 export type CanvasKeyboardInput=CanvasKeyboardState&{
   key:string;code:string;mod:boolean;alt:boolean;shift:boolean;repeat:boolean;composing:boolean;defaultPrevented:boolean;tag:string;editable:boolean;
@@ -36,8 +37,8 @@ export function canvasKeyboardCommand(input:CanvasKeyboardInput):CanvasKeyboardD
     if(s.readOnly||s.repeat)return {prevent};
     if(s.selectedEdge)return {prevent:true,action:{kind:"cut-edge"}};
     if(s.selectedGenerating)return {prevent};
-    const real=s.multiSel.filter(id=>!id.startsWith("pend-")&&!id.startsWith("task-"));
-    if(real.length)return {prevent:true,action:{kind:"remove",ids:real}};
+    if(s.multiSel.length)return {prevent:true,action:{kind:"remove",ids:[...new Set(s.multiSel)]}};
+    if(s.selectedPendId)return {prevent:true,action:{kind:"remove",ids:[s.selectedPendId]}};
     if(s.selectedId)return {prevent:true,action:{kind:"remove",ids:[s.selectedId]}};
     if(s.selectedTextId)return {prevent:true,action:{kind:"remove-text",id:s.selectedTextId}};
     return {prevent};

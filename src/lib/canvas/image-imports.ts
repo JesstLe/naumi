@@ -21,7 +21,7 @@ export type CanvasImageImportContext={
   reveal:(id:string)=>void;t:(key:string)=>string;locale:string;
 };
 type Scope={rootId:string|null;queue:Promise<void>;rects:{x:number;y:number;width:number;height:number;owner:number;index:number}[]};
-type SavedImport={context:CanvasImageImportContext;scope:Scope;historyRecorded:boolean;pendingId?:string;attached?:()=>void};
+type SavedImport={context:CanvasImageImportContext;scope:Scope;historyRecorded:boolean;pendingId?:string;attached?:()=>void;reveal?:boolean};
 const newScope=():Scope=>({rootId:null,queue:Promise.resolve(),rects:[]});
 const EMPTY:CanvasImageImportBatch[]=[];
 
@@ -66,7 +66,12 @@ export function createCanvasImageImports(){
     resync.add(id);update(id,{finished:false,phase:"sync"});
     try{
       const rows=await synchronizeCanvasArtworks(batch.nodeIds,()=>context.merge(batch.nodeIds!),()=>context.documentCurrent()&&extra());
-      if((importScopeRef.current===record.scope||context.viewCurrent()&&context.project===record.context.project)&&!record.historyRecorded){context.history(batch.nodeIds,rows);record.historyRecorded=true;record.attached?.();}
+      if((importScopeRef.current===record.scope||context.viewCurrent()&&context.project===record.context.project)&&!record.historyRecorded){
+        context.history(batch.nodeIds,rows);record.historyRecorded=true;record.attached?.();
+        // Artwork reads complete before publishing a navigation target. An
+        // unrelated project refresh must not consume an ID absent from state.
+        if(record.reveal&&context.viewCurrent())context.reveal(batch.nodeIds[0]);
+      }
       update(id,{finished:true,phase:"done",errors:batch.errors.filter(error=>error.name!==context.t("canvas.importSync"))});
       return rows;
     }catch(error){update(id,{finished:true,phase:"sync"});throw error;}
@@ -75,7 +80,7 @@ export function createCanvasImageImports(){
   function upload(picked:File[],ctx:CanvasImportPoint,context:CanvasImageImportContext,options?:{assistant:boolean;isCurrent:()=>boolean}):Promise<string[]>{
     if(!picked.length||!context.documentCurrent())return Promise.resolve([]);
     const {t,locale}=context,scope=captureScope(context);if(ctx.parentId)scope.rootId=ctx.parentId;
-    const id=++sequence,email=context.owner;saved.set(id,{context,scope,historyRecorded:false});
+    const id=++sequence,email=context.owner;saved.set(id,{context,scope,historyRecorded:false,reveal:!options?.assistant});
     const failures: { name: string; message: string }[] = [];
     const valid = picked.filter(file => {
       const supported = /^(image\/png|image\/jpeg|image\/webp)$/.test(file.type) ||
@@ -191,7 +196,6 @@ export function createCanvasImageImports(){
       scope.rects = scope.rects.filter((rect) => rect.owner !== id || !!ids[rect.index]);
       setImageImports(current => current.map(batch => batch.id === id ? { ...batch, nodeIds: added, phase: "sync" } : batch));
       if(added.length){
-        if(importScopeRef.current===scope&&!options?.assistant&&context.documentCurrent())context.reveal(added[0]);
         await synchronize(id,context,options?.isCurrent);
       }
       setImageImports(current => current.map(batch => batch.id === id ? {

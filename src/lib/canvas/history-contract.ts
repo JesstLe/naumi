@@ -17,6 +17,7 @@ const textFields = z.object({
 });
 const textNode = textFields.extend({ id, prompt: z.string().max(4000), projectKey: id, canvasX: coordinate, canvasY: coordinate,
   status: z.enum(["idle", "generating", "completed", "failed"]), createdAt: z.string().datetime(),
+  error: z.string().max(2000).optional(),
 });
 export const canvasTextSnapshotSchema=textNode.extend({updatedAt:z.string().datetime().optional()});
 export const videoHistoryFields=videoNodeWriteSchema.omit({id:true,projectKey:true,expectedRevision:true,operationId:true,deleted:true});

@@ -1,6 +1,6 @@
 export type CanvasTextNode = {
   id:string;projectKey:string;title:string;prompt:string;content:string;
-  status:"idle"|"generating"|"completed"|"failed";canvasX:number;canvasY:number;
+  status:"idle"|"generating"|"completed"|"failed";error?:string;canvasX:number;canvasY:number;
   createdAt:string;updatedAt:string;width:number;height:number;
   sourceIds:string[];targetIds:string[];productIds?:string[];
 };

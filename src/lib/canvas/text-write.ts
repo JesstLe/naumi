@@ -1,7 +1,7 @@
 import {mergeCanvasFields} from "./field-write";
 /** Field-level three-way write shared by autosave and history. No database,
  * clocks, UI, generation or wallet policy. Unchanged fields keep remote values. */
-export const CANVAS_TEXT_WRITE_FIELDS=["projectKey","title","prompt","content","status","canvasX","canvasY","width","height","sourceIds","targetIds","productIds"] as const;
+export const CANVAS_TEXT_WRITE_FIELDS=["projectKey","title","prompt","content","status","error","canvasX","canvasY","width","height","sourceIds","targetIds","productIds"] as const;
 export type CanvasTextWriteField=typeof CANVAS_TEXT_WRITE_FIELDS[number];
 export class CanvasTextWriteConflict<T=unknown> extends Error{
  readonly code="CANVAS_TEXT_CONFLICT";
