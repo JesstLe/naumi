@@ -3,7 +3,7 @@ import { z } from "zod";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { dbEnabled } from "@/lib/db";
 import { featureRequestGate, ACCESS_HEADERS } from "@/lib/feature-access/server";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit-http";
 import { commandSchema, packagingMessages, parsePackagingResult, PackagingError } from "@/lib/packaging-strategy/contract";
 import { beginPackagingCommand, finishPackagingCommand, getPackagingProject, listPackagingProjects } from "@/lib/packaging-strategy/server";
 import { withBiRequest, withBiModelContext, observeOpenAI } from "@/lib/bi/model-observer";
@@ -57,7 +57,9 @@ export async function POST(request: Request) {
     const email = await actor(request); if (typeof email !== "string") return email;
     const command = await boundedCommand(request);
     if (command.action !== "save" && !command.projectId) throw new PackagingError("请先保存简报再生成策略");
-    if (!rateLimit(`packaging:${email}`, command.action === "save" ? 60 : 20, 600000)) return json({error: "操作频繁，请稍后重试"}, 429);
+    const rateLimitResult = await checkRateLimit(`packaging:${email}`, command.action === "save" ? 60 : 20, 600000);
+    if (rateLimitResult instanceof Response) return rateLimitResult;
+    if (!rateLimitResult) return json({error: "操作频繁，请稍后重试"}, 429);
     if (command.action !== "save" && !command.brief.brand) throw new PackagingError("请先填写品牌与产品");
     // Save never resolves an upstream model; generation uses the same platform
     // text.generate binding and telemetry as the site's other text tools.

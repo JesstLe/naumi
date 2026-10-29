@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { dbEnabled, getAgentSession } from "@/lib/db";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit-http";
 import { SkillError, conversationSkillDraft, validateSkillSelection } from "@/lib/image-skills/catalog";
 import { listImageSkills, saveImageSkill, archiveImageSkill, imageSkillEnterprise } from "@/lib/image-skills/server";
 export const runtime = "nodejs";
@@ -11,7 +11,9 @@ async function handle(request: Request) {
     const email = dbEnabled ? await authenticatedEmail(request) : null;
     if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
     if (request.method === "GET") return NextResponse.json({ skills: await listImageSkills(email), enterprise: await imageSkillEnterprise(email) }, { headers: { "Cache-Control": "private, no-store" } });
-    if (!rateLimit(`image-skills:${email}`, 60, 600000)) return NextResponse.json({ error: "操作频繁，请稍后重试" }, { status: 429 });
+    const rateLimitResult = await checkRateLimit(`image-skills:${email}`, 60, 600000);
+    if (rateLimitResult instanceof Response) return rateLimitResult;
+    if (!rateLimitResult) return NextResponse.json({ error: "操作频繁，请稍后重试" }, { status: 429 });
     // Bound bytes as well as fields; a chunked request cannot bypass Content-Length checks.
     const reader = request.body?.getReader(); let raw = ""; let size = 0;
     if (!reader) throw new SkillError("缺少技能内容");

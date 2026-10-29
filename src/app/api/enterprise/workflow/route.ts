@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { workflowBridgeConfig,workflowIdentityToken,workflowSourceIdentity,workflowDiscovery } from '@/lib/enterprise/workflow-identity';
 import { teamJson,teamFailure } from '@/lib/teams/access';
 import { IntegrationError } from '@/lib/enterprise/integration/policy';
-import { rateLimit } from '@/lib/rate-limit';
+import { checkRateLimit } from "@/lib/rate-limit-http";
 export const runtime='nodejs';export const dynamic='force-dynamic';
 const scope={enterpriseId:z.string().uuid(),teamId:z.string().uuid()};
 const query=z.discriminatedUnion('action',[
@@ -39,9 +39,13 @@ const query=z.discriminatedUnion('action',[
 export async function GET(request:Request){
  const parsed=query.safeParse(Object.fromEntries(new URL(request.url).searchParams));if(!parsed.success)return teamJson({error:'工作区参数无效'},400);
  try{
-  if(parsed.data.action==='discovery'){const data=await workflowDiscovery(request);if(!rateLimit('workflow-discovery:'+data.viewer.email,30,60_000))return teamJson({error:'请求过于频繁'},429);return teamJson(data);}
+  if(parsed.data.action==='discovery'){const data=await workflowDiscovery(request);const rateLimitResult = await checkRateLimit('workflow-discovery:'+data.viewer.email,30,60_000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) return teamJson({error:'请求过于频繁'},429);return teamJson(data);}
   const identity=await workflowSourceIdentity(request,parsed.data.enterpriseId);
-  if(!rateLimit('workflow-identity:'+JSON.stringify(identity),60,60_000))return teamJson({error:'请求过于频繁'},429);
+  const rateLimitResult2 = await checkRateLimit('workflow-identity:'+JSON.stringify(identity),60,60_000);
+  if (rateLimitResult2 instanceof Response) return rateLimitResult2;
+  if (!rateLimitResult2) return teamJson({error:'请求过于频繁'},429);
   const config=workflowBridgeConfig();let response:Response;const q=parsed.data,path=q.action==='worksheet'||q.action==='worksheet-audit'?'/v1/imports/'+q.action+'?'+new URLSearchParams({source:q.source,...(q.before?{before:String(q.before)}:{})}):q.action==='handover-candidates'?'/v1/handover-candidates?page='+String(q.page||1):q.action==='availability-members'?'/v1/availability/members?'+new URLSearchParams({query:q.query||'',page:String(q.page||1)}):q.action==='availability'?'/v1/availability?'+new URLSearchParams({subject:q.subject}):q.action==='availability-history'?'/v1/availability/history?'+new URLSearchParams({subject:q.subject,page:String(q.page||1)}):q.action==='dashboard'?'/v1/dashboard?'+new URLSearchParams({scope:q.scope||'all',queue:q.queue||'all',todoPage:String(q.todoPage||1)}):q.action==='calendar'?'/v1/calendar':q.action==='calendar-history'?'/v1/calendar/history?page='+String(q.page||1):q.action==='batch-list'?'/v1/batches?page='+String(q.page||1):q.action==='batch-get'?'/v1/batch?id='+q.id:q.action==='imports-context'?'/v1/imports/context':q.action==='imports-rows'?'/v1/imports/rows?source='+q.source:q.action==='batch-receipts'?'/v1/batch-receipts':q.action==='history'?'/v1/orders/'+q.id+'/history?before='+q.before:q.action==='schedule'?'/v1/teams/'+q.teamId+'/scheduling':q.action==='schedule-audit'?'/v1/teams/'+q.teamId+'/scheduling/audit':q.action==='personal'?'/v1/teams/'+q.teamId+'/scheduling/personal/'+q.viewId:q.action==='week'?'/v1/week?'+new URLSearchParams({start:q.start,assignee:q.assignee||''}):q.action==='facts'?'/v1/facts?page='+String(q.page||1):q.action==='context'?'/v1/identity/workspaces':q.action==='people'?'/v1/people?source='+q.sourceHash:q.action==='orders'?'/v1/orders?'+new URLSearchParams({query:q.query||'',status:q.status||'',page:String(q.page||1)}):q.action==='order'?'/v1/orders/'+q.id+'/detail':q.action==='tasks'?'/v1/tasks?'+new URLSearchParams({query:q.query||'',status:q.status||'',scope:q.scope||'all',assignee:q.assignee||'',page:String(q.page||1)}):q.action==='assignees'?'/v1/assignees?'+new URLSearchParams({query:q.query||'',kind:q.kind||'',page:String(q.page||1)}):'/v1/people/audit';
   try{response=await fetch(config.origin+path,{headers:{authorization:'Bearer '+workflowIdentityToken(identity,config,'teamId' in q?q.teamId:undefined),Accept:'application/json'},cache:'no-store',redirect:'error',signal:AbortSignal.any([request.signal,AbortSignal.timeout(q.action==='dashboard'?15000:5000)])});}catch{return teamJson({error:'WORKFLOW_SERVICE_UNAVAILABLE'},503);}
   if(!response.ok&&q.action==='context')return teamJson({error:response.status===403?'WORKFLOW_IDENTITY_NOT_BOUND_OR_REVOKED':'WORKFLOW_SERVICE_UNAVAILABLE'},response.status===403?403:503);
@@ -56,7 +60,9 @@ export async function POST(request:Request){
  if(!workflowSameOrigin(request))return teamJson({error:'ORIGIN_REQUIRED'},403);
  if(!request.headers.get('content-type')?.startsWith('application/json'))return teamJson({error:'JSON_REQUIRED'},415);
  try{
-  const identity=await workflowSourceIdentity(request,q.data.enterpriseId);if(!rateLimit('workflow-write:'+JSON.stringify(identity),60,60_000))return teamJson({error:'请求过于频繁'},429);
+  const identity=await workflowSourceIdentity(request,q.data.enterpriseId);const rateLimitResult3 = await checkRateLimit('workflow-write:'+JSON.stringify(identity),60,60_000);
+  if (rateLimitResult3 instanceof Response) return rateLimitResult3;
+  if (!rateLimitResult3) return teamJson({error:'请求过于频繁'},429);
   const chunks:Uint8Array[]=[];let size=0;const reader=request.body?.getReader();if(reader)for(;;){const next=await reader.read();if(next.done)break;size+=next.value.byteLength;if(size>(q.data.action==='worksheet-upload'?6*1024*1024:128*1024)){await reader.cancel();return teamJson({error:'BODY_TOO_LARGE'},413);}chunks.push(next.value);}const text=Buffer.concat(chunks).toString('utf8');try{JSON.parse(text);}catch{return teamJson({error:'INVALID_JSON'},400);}
   if(q.data.action==='command'){const command=JSON.parse(text);await assertWorkflowSiteAccess(request,typeof command?.action?.type==='string'?command.action.type:'invalid');}
   if(['imports-resolve','worksheet-command','worksheet-upload'].includes(q.data.action)&&!q.data.source)return teamJson({error:'INVALID_SOURCE'},400);

@@ -5,7 +5,7 @@ import {
   adminPasswordState,
   authenticateAdminPassword,
 } from "@/lib/admin-auth";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit-http";
 import { clientIp } from "@/lib/ip";
 import { supabaseEnabled } from "@/lib/auth-mode";
 import { activeNativeUserEmail } from "@/lib/native-auth";
@@ -53,7 +53,9 @@ export async function POST(req: Request) {
   }
   const ip = clientIp(req) || "0.0.0.0";
   // 防爆破:每 IP 10 分钟最多 10 次尝试。
-  if (!rateLimit(`admin-login:${ip}`, 10, 10 * 60 * 1000)) {
+  const rateLimitResult = await checkRateLimit(`admin-login:${ip}`, 10, 10 * 60 * 1000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) {
     return NextResponse.json(
       { error: "尝试过于频繁,请稍后再试" },
       { status: 429 }
