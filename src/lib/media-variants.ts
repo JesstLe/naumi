@@ -1,8 +1,9 @@
 import 'server-only';
 import sharp from 'sharp';
+import {ORIGINAL_IMAGE_MAX_PIXELS} from './image-upload-policy';
 
 export async function makeMediaVariants(bytes: Buffer) {
-  const image = sharp(bytes, { limitInputPixels: 64_000_000, failOn: 'error' }).rotate();
+  const image = sharp(bytes, { limitInputPixels: ORIGINAL_IMAGE_MAX_PIXELS, failOn: 'error' }).rotate();
   const decoded = await image.clone().raw().toBuffer({ resolveWithObject: true });
   const {width,height} = decoded.info;
   const base = () => sharp(decoded.data, {raw:decoded.info});
