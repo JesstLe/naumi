@@ -74,6 +74,8 @@ type RecoveryOwner = {
   scope: RecoveryScope;
   controller: AbortController;
   phase: "loading" | "observing" | "settled" | "unavailable";
+  installed: boolean;
+  previousUnavailable: boolean;
 };
 
 type RecentWork = {
@@ -354,7 +356,9 @@ export function WorkbenchClient() {
   // Layout cleanup fences continuations before a newly committed account can
   // interact. A fresh scope also distinguishes account A -> B -> A/StrictMode.
   useLayoutEffect(() => {
-    const account = ready ? user?.email || "" : "";
+    // Cached identity can already own an accepted send while auth hydrates.
+    // Readiness is not an account change.
+    const account = user?.email || "";
     const previous = recoveryScopeRef.current;
     const scope: RecoveryScope = { account, active: true };
     recoveryScopeRef.current = scope;
@@ -369,6 +373,9 @@ export function WorkbenchClient() {
       setSessionsLoading(false);
       setSessionLoadingId("");
       setRecoveryUnavailable(false);
+      setComposerSubmitting(false);
+      setComposerError(null);
+      setUploading(false);
       setBusy(false);
       setRunning(false);
       setError(null);
@@ -381,7 +388,23 @@ export function WorkbenchClient() {
       sessionListAbortRef.current?.abort();
       sessionListAbortRef.current = null;
     };
-  }, [ready, user?.email]);
+  }, [user?.email]);
+
+  useLayoutEffect(() => {
+    if (ready) return;
+    const owner = recoveryRef.current;
+    if (owner) {
+      recoveryFailed(owner);
+      cancelRecovery();
+      setSessionLoadingId("");
+      setMessages(previous => previous.map(m => m.pending ? { ...m, pending: false } : m));
+    }
+    sessionListAbortRef.current?.abort();
+    sessionListAbortRef.current = null;
+    setSessionsLoading(false);
+    // Readiness loss detaches read-only observation, not an accepted SSE run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
 
   function ownsRecovery(owner: RecoveryOwner) {
     return owner.scope.active && recoveryScopeRef.current === owner.scope &&
@@ -418,6 +441,16 @@ export function WorkbenchClient() {
 
   function recoveryFailed(owner: RecoveryOwner) {
     if (!ownsRecovery(owner)) return;
+    if (!owner.installed) {
+      // This target was never installed. Keep any uncertainty of the displayed
+      // session, but do not make an unrelated failed read its send fence.
+      setSessionLoadingId("");
+      cancelRecovery();
+      setRecoveryUnavailable(owner.previousUnavailable);
+      setError("历史会话读取失败，请重试");
+      if (!sessionIdRef.current) setComposerError("历史会话读取失败，请重试");
+      return;
+    }
     owner.phase = "unavailable";
     // Release client busy, not the backend task. Sending remains fenced until
     // an explicit read-only reopen succeeds or the user leaves this session.
@@ -548,7 +581,7 @@ export function WorkbenchClient() {
 
   async function refreshSessions() {
     const scope = recoveryScopeRef.current;
-    if (!scope?.active || !scope.account) return;
+    if (!ready || !scope?.active || !scope.account) return;
     sessionListAbortRef.current?.abort();
     const controller = new AbortController();
     sessionListAbortRef.current = controller;
@@ -597,12 +630,18 @@ export function WorkbenchClient() {
       return;
     }
     const scope = recoveryScopeRef.current;
-    if (!scope?.active || !scope.account) return;
+    if (!ready || !scope?.active || !scope.account) return;
+    const previousUnavailable = recoveryUnavailable || Boolean(existing?.previousUnavailable) || Boolean(
+      existing?.installed && existing.id === sessionIdRef.current && existing.phase !== "settled"
+    );
     cancelRecovery();
-    const owner: RecoveryOwner = { id, generation: sessionLoadRef.current, scope, controller: new AbortController(), phase: "loading" };
+    const owner: RecoveryOwner = {
+      id, generation: sessionLoadRef.current, scope, controller: new AbortController(),
+      phase: "loading", installed: false, previousUnavailable,
+    };
     recoveryRef.current = owner;
     setSessionLoadingId(id);
-    setRecoveryUnavailable(false);
+    setRecoveryUnavailable(previousUnavailable);
     setBusy(false);
     setRunning(false);
     setError(null);
@@ -615,6 +654,9 @@ export function WorkbenchClient() {
         (data.session?.steps ?? []) as SavedStep[]
       );
       sessionIdRef.current = id;
+      owner.installed = true;
+      owner.previousUnavailable = false;
+      setRecoveryUnavailable(false);
       setActiveTitle(
         ((data.session?.title as string) || "").slice(0, 60) || "历史会话"
       );
@@ -771,7 +813,7 @@ export function WorkbenchClient() {
     }
   });
 
-  async function send(text?: string, attachmentUrls?: string[]) {
+  async function send(text?: string, attachmentUrls?: string[], onAccepted?: () => void) {
     if (!can("agent")) return;
     const content = (text ?? input).trim();
     if (!content || busy || uploading || recoveryUnavailable ||
@@ -812,6 +854,9 @@ export function WorkbenchClient() {
     setAttachments([]);
     setBusy(true);
     setRunning(true);
+    // The prompt is now retained in the conversation. A rejected entry must not
+    // consume its caller's draft (this is local admission, not a server receipt).
+    onAccepted?.();
 
     const controller = new AbortController();
     let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
@@ -1057,7 +1102,7 @@ export function WorkbenchClient() {
 
   // ?prompt= 进入(旧 /brain 链接):清参数后自动首发,跳过门户空态
   useEffect(() => {
-    if (bootstrapRef.current) return;
+    if (bootstrapRef.current || (!ready && !user)) return;
     const prompt = (params.get("prompt") || "").trim();
     if (!prompt) return;
     let active = true;
@@ -1066,12 +1111,18 @@ export function WorkbenchClient() {
     queueMicrotask(() => {
       if (!active || bootstrapRef.current) return;
       bootstrapRef.current = true;
-      window.history.replaceState(null, "", window.location.pathname);
-      void send(prompt);
+      const scope = recoveryScopeRef.current;
+      let accepted = false;
+      void send(prompt, undefined, () => {
+        accepted = true;
+        window.history.replaceState(null, "", window.location.pathname);
+      }).finally(() => {
+        if (!accepted && recoveryScopeRef.current === scope) bootstrapRef.current = false;
+      });
     });
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params]);
+  }, [params, ready, user?.email]);
 
   // ── 门户交互 ──
 
@@ -1118,6 +1169,9 @@ export function WorkbenchClient() {
     if (!can("agent")) return;
     const text = composerText.trim();
     if (!text || composerSubmitting || busy) return;
+    const scope = recoveryScopeRef.current;
+    const generation = sessionLoadRef.current;
+    const current = () => scope?.active && recoveryScopeRef.current === scope && sessionLoadRef.current === generation;
     setComposerError(null);
     setComposerSubmitting(true);
     try {
@@ -1126,6 +1180,7 @@ export function WorkbenchClient() {
         setUploading(true);
         for (const f of composerFiles) {
           const u = await uploadOne(f);
+          if (!current()) return;
           if (!u) {
             setComposerError(L("参考图上传失败，请重试", "Reference upload failed; retry"));
             return;
@@ -1134,16 +1189,23 @@ export function WorkbenchClient() {
         }
         setUploading(false);
       }
-      setComposerText("");
-      setComposerFiles([]);
-      setComposerPreviews((prev) => {
-        prev.forEach((u) => URL.revokeObjectURL(u));
-        return [];
+      if (!current()) return;
+      let accepted = false;
+      await send(text, urls, () => {
+        accepted = true;
+        setComposerText("");
+        setComposerFiles([]);
+        setComposerPreviews((prev) => {
+          prev.forEach((u) => URL.revokeObjectURL(u));
+          return [];
+        });
       });
-      await send(text, urls);
+      if (!accepted && current()) setComposerError("暂未发送，请稍后重试");
     } finally {
-      setUploading(false);
-      setComposerSubmitting(false);
+      if (scope?.active && recoveryScopeRef.current === scope) {
+        setUploading(false);
+        setComposerSubmitting(false);
+      }
     }
   }
 

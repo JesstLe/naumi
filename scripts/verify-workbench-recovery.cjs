@@ -17,7 +17,7 @@ fs.mkdirSync(out, { recursive: true });
 assert.match(req('react').version, /^19\./);
 assert.equal(req('react').version, req('react-dom').version);
 const evidence = { tier: 'Actual React19 WorkbenchClient + Chromium + real timers/loopback HTTP; auth/backend/unrelated UI fixtures', source, react: req('react').version, checks: [], failures: [], observations: [], requests: [] };
-let browser, server, context, page, origin;
+let browser, browserServer, server, context, page, origin;
 let currentCase='';
 const explicitSendCases=new Set(['existing explicit SSE send and save retain exact identity and payload','old SSE completion cannot overwrite recovered account or save as new actor','deferred save authorization cannot use the newly selected account','StrictMode bootstrap prompt submits once without being lost']);
 let requests = [], plans = [], holds = new Map(), count = new Map();
@@ -27,13 +27,13 @@ const summaries = ['A','B'].map(id=>({id,title:id,createdAt:'2026-10-29T00:00:00
 function json(res, status, data) { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(data)); }
 function plan(kind, id, nth, action) { plans.push({ kind, id, nth, ...action }); }
 async function snapshot() { return page.evaluate(() => ({ ...window.w.state(), resources: window.metrics() })); }
-async function reset(strict = false) {
+async function reset(strict = false, options = {}) {
   if (context) { evidence.requests.push(...requests); await context.close(); }
   for (const resolve of holds.values()) resolve();
   holds = new Map(); requests = []; plans = []; count = new Map();
-  context = await browser.newContext(); page = await context.newPage();
+  context = await browser.newContext(); page = await context.newPage();page.setDefaultTimeout(5000);
   await page.goto(origin);
-  await page.evaluate(s => window.mount(s), strict);
+  await page.evaluate(({strict,options})=>{window.authReady=options.ready??true;if('actor' in options)window.actor=options.actor;if(options.prompt)window.history.replaceState(null,'','/?prompt='+encodeURIComponent(options.prompt));window.mount(strict)}, {strict,options});
   await page.waitForFunction(() => window.w);
 }
 async function call(name, arg) { await page.evaluate(({ name, arg }) => { void window.w[name](arg); }, { name, arg }); }
@@ -59,7 +59,7 @@ function observe(name, value) { evidence.observations.push({ name, ...value }); 
 async function main() {
   const stubs = `import React from 'react';
 const identities=new Map();const identity=()=>{if(!window.actor)return null;if(!identities.has(window.actor))identities.set(window.actor,{email:window.actor,name:window.actor});return identities.get(window.actor)};
-export const useAuth=()=>{const [,r]=React.useState(0);React.useEffect(()=>{window.authRender=()=>r(x=>x+1);return()=>{window.authRender=null}},[]);return {user:identity(),ready:true,remaining:100}};
+export const useAuth=()=>{const [,r]=React.useState(0);React.useEffect(()=>{window.authRender=()=>r(x=>x+1);return()=>{window.authRender=null}},[]);return {user:identity(),ready:window.authReady,remaining:100}};
 export const authHeader=async()=>{const actor=window.actor;if(window.authGate)await window.authGate;return {'x-fixture-actor':actor||'guest'}};
 export const useFeatureAccess=()=>({can:()=>true,canPage:()=>true});export const FeatureVisible=({children})=>children;
 export const useSiteProfile=()=>({mode:'personal',policy:{brand:'fixture'}});
@@ -73,10 +73,10 @@ export const Check=()=>null,MessageSquare=()=>null,Pencil=()=>null,Trash2=()=>nu
 export default function Link({children,...p}){return <a {...p}>{children}</a>}`;
   const instrument = `
   window.w={loadSession,stopRun,newConversation,send,refreshSessions,
-    state:()=>({messages,busy,running,error,sessionLoadingId,sessionId:sessionIdRef.current,sessions,${fs.readFileSync(source,'utf8').includes('recoveryUnavailable') ? 'recoveryUnavailable,' : ''}})};
+    state:()=>({messages,busy,running,error,sessionLoadingId,sessionId:sessionIdRef.current,sessions,composerText,composerError,composerSubmitting,attachments,${fs.readFileSync(source,'utf8').includes('recoveryUnavailable') ? 'recoveryUnavailable,' : ''}})};
 `;
   const bundle = await build({ stdin: { contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {WorkbenchClient} from ${JSON.stringify(source.replaceAll('\\','/'))};
-window.actor='a@example.test';const root=createRoot(document.getElementById('root'));window.mount=(strict=false)=>flushSync(()=>root.render(strict?<React.StrictMode><WorkbenchClient/></React.StrictMode>:<WorkbenchClient/>));window.detach=()=>flushSync(()=>root.render(null));window.account=a=>{window.actor=a;flushSync(()=>window.authRender?.())};
+window.actor='a@example.test';window.authReady=true;const root=createRoot(document.getElementById('root'));window.mount=(strict=false)=>flushSync(()=>root.render(strict?<React.StrictMode><WorkbenchClient/></React.StrictMode>:<WorkbenchClient/>));window.detach=()=>flushSync(()=>root.render(null));window.setAuthReady=v=>{window.authReady=v;flushSync(()=>window.authRender?.())};window.account=a=>{window.actor=a;flushSync(()=>window.authRender?.())};
 const timers=new Map(),listeners=new Map(),nativeSet=window.setTimeout.bind(window),nativeClear=window.clearTimeout.bind(window);let peakTimers=0,peakListeners=0;
 window.setTimeout=(fn,ms,...args)=>{let id=nativeSet(()=>{timers.delete(id);fn(...args)},ms);if(ms===1200){timers.set(id,ms);peakTimers=Math.max(peakTimers,timers.size)}return id};window.clearTimeout=id=>{timers.delete(id);nativeClear(id)};
 const add=AbortSignal.prototype.addEventListener,remove=AbortSignal.prototype.removeEventListener;
@@ -120,7 +120,7 @@ window.metrics=()=>({timers:timers.size,peakTimers,listeners:[...listeners.value
     json(s,200,action.data || (kind==='history' ? sessions(id) : kind==='list' ? {sessions:summaries} : {running:true,total:nth,events:[]}));
   });
   await new Promise(r=>server.listen(0,'127.0.0.1',r)); origin='http://127.0.0.1:'+server.address().port;
-  browser=await chromium.launch({headless:true});
+  browserServer=await chromium.launchServer({headless:true});evidence.resources={nodePid:process.pid,browserPid:browserServer.process().pid,httpPort:server.address().port};browser=await chromium.connect(browserServer.wsEndpoint());
 
   await check('unmount cancels polling timer and GET',async()=>{await reset();await call('loadSession','A');await until(()=>window.w.state().running);await page.evaluate(()=>window.detach());const before=requests.length;await delay(1450);const s=await snapshot();observe('unmount',{before,after:requests.length,...s.resources});assert.equal(requests.length,before);assert.equal(s.resources.timers,0);assert.equal(s.resources.listeners,0)});
   await check('account ABA cannot continue old observer',async()=>{await reset();await call('loadSession','A');await until(()=>window.w.state().running);await page.evaluate(()=>window.account('b@example.test'));await page.evaluate(()=>window.account('a@example.test'));const before=requests.length;await delay(1450);const s=await snapshot();observe('accountABA',{before,after:requests.length,sessionId:s.sessionId});assert.equal(requests.length,before);assert.equal(s.sessionId,'');assert.equal(s.messages.length,0)});
@@ -153,11 +153,92 @@ window.metrics=()=>({timers:timers.size,peakTimers,listeners:[...listeners.value
   await check('existing explicit SSE send and save retain exact identity and payload',async()=>{await reset();plan('send','',1,{sse:'send-end'});await call('send','exact prompt [商品图] /media/reference.png');await waitRequest('send','');await until(()=>window.w.state().sessionId==='LIVE');await release('send-end');await waitRequest('save','');await until(()=>!window.w.state().busy);assert.equal(requests.filter(r=>r.kind==='send').length,1);assert.equal(requests.filter(r=>r.kind==='save').length,1);assert.equal(JSON.parse(requests.find(r=>r.kind==='send').input).message,'exact prompt [商品图] /media/reference.png');assert.equal(JSON.parse(requests.find(r=>r.kind==='save').input).id,'LIVE');assert.equal(requests.find(r=>r.kind==='save').actor,'a@example.test');evidence.explicitMockSend=(evidence.explicitMockSend||0)+1});
   await check('old SSE completion cannot overwrite recovered account or save as new actor',async()=>{await reset();plan('send','',1,{sse:'late-send'});await call('send','explicit original');await waitRequest('send','');await until(()=>window.w.state().sessionId==='LIVE');await page.evaluate(()=>window.account('b@example.test'));plan('live','B',1,{data:{running:false,total:0,events:[]}});await call('loadSession','B');await until(()=>window.w.state().sessionId==='B'&&!window.w.state().sessionLoadingId);await release('late-send');await delay(100);const s=await snapshot();assert.equal(s.messages.at(-1).content,'history-B');assert.equal(requests.filter(r=>r.kind==='save').length,0);assert.equal(requests.filter(r=>r.kind==='send').length,1);assert.equal(requests.filter(r=>r.method==='DELETE').length,0);evidence.explicitMockSend=(evidence.explicitMockSend||0)+1});
   await check('deferred save authorization cannot use the newly selected account',async()=>{await reset();plan('send','',1,{sse:'save-auth'});await call('send','original');await waitRequest('send','');await until(()=>window.w.state().sessionId==='LIVE');await page.evaluate(()=>window.holdAuth());await release('save-auth');await until(()=>window.w.state().messages.at(-1)?.content==='original final');await page.evaluate(()=>window.account('b@example.test'));await page.evaluate(()=>window.releaseAuth());await delay(100);assert.equal(requests.filter(r=>r.kind==='save').length,0);evidence.explicitMockSend=(evidence.explicitMockSend||0)+1});
+  async function closeDrawer() {
+    const button=page.getByRole('button',{name:'关闭',exact:true});
+    if(await button.count()) await button.click();
+  }
+  async function sendUi(text) {
+    const dashboard=page.getByTestId('dashboard-textarea');
+    const portal=await dashboard.count();
+    await (portal?dashboard:page.getByTestId('chat-textarea')).fill(text);
+    await page.getByRole('button',{name:portal?'home.dash.composeSend':'发送',exact:true}).click();
+  }
+  async function parentCheck(name,fn) {
+    explicitSendCases.add(name);
+    return check(name,fn);
+  }
+  await parentCheck('parent initial history failure shows error and allows independent portal send',async()=>{
+    await reset();plan('history','A',1,{status:503});await openUi('A');
+    await until(()=>!window.w.state().sessionLoadingId);await closeDrawer();
+    const failed=await snapshot();assert.ok(failed.composerError);assert.equal(failed.recoveryUnavailable,false);
+    assert.equal(await page.getByText(failed.composerError,{exact:true}).count(),1);
+    plan('send','',1,{sse:'portal'});await sendUi('new independent prompt');await waitRequest('send','');
+    assert.equal(JSON.parse(requests.find(r=>r.kind==='send').input).sessionId,undefined);
+    await release('portal');await until(()=>!window.w.state().busy);
+  });
+  await parentCheck('parent initial pending history rejects send without consuming draft',async()=>{
+    await reset();plan('history','A',1,{hold:'pending',status:503});await openUi('A');await waitRequest('history','A');await closeDrawer();
+    await sendUi('keep this draft');await delay(60);
+    assert.equal(requests.filter(r=>r.kind==='send').length,0);assert.equal((await snapshot()).composerText,'keep this draft');
+    await release('pending');await until(()=>!window.w.state().sessionLoadingId);
+  });
+  await parentCheck('parent settled A remains sendable after unrelated B history failure',async()=>{
+    await reset();plan('live','A',1,{data:{running:false,total:0,events:[]}});await openUi('A');await until(()=>window.w.state().sessionId==='A'&&!window.w.state().sessionLoadingId);
+    plan('history','B',1,{status:404});await openUi('B');await until(()=>!window.w.state().sessionLoadingId);await closeDrawer();
+    plan('send','',1,{sse:'settled'});await sendUi('still A');await waitRequest('send','');
+    assert.equal(JSON.parse(requests.find(r=>r.kind==='send').input).sessionId,'A');await release('settled');await until(()=>!window.w.state().busy);
+  });
+  await parentCheck('parent unknown A stays fenced after failed B and failed reopen of A',async()=>{
+    await reset();plan('live','A',1,{status:503});await openUi('A');await until(()=>!window.w.state().sessionLoadingId);
+    assert.equal((await snapshot()).recoveryUnavailable,true);
+    plan('history','B',1,{status:404});await openUi('B');await until(()=>!window.w.state().sessionLoadingId);await closeDrawer();
+    await call('send','must stay fenced');await delay(40);assert.equal((await snapshot()).recoveryUnavailable,true);
+    plan('history','A',2,{status:503});await openUi('A');await until(()=>!window.w.state().sessionLoadingId);await closeDrawer();
+    await call('send','still fenced');await delay(40);assert.equal(requests.filter(r=>r.kind==='send').length,0);
+    plan('live','A',2,{data:{running:false,total:0,events:[]}});await openUi('A');await until(()=>!window.w.state().sessionLoadingId);await closeDrawer();
+    plan('send','',1,{sse:'known'});await sendUi('explicit after successful GET');await waitRequest('send','');await release('known');await until(()=>!window.w.state().busy);
+    assert.equal(requests.filter(r=>r.method==='DELETE').length,0);
+  });
+  await parentCheck('parent settled same-session reread failure retains prior known state',async()=>{
+    await reset();plan('live','A',1,{data:{running:false,total:0,events:[]}});await openUi('A');await until(()=>!window.w.state().sessionLoadingId);
+    plan('history','A',2,{status:503});await openUi('A');await until(()=>!window.w.state().sessionLoadingId);await closeDrawer();
+    plan('send','',1,{sse:'same'});await sendUi('same A');await waitRequest('send','');assert.equal(JSON.parse(requests.find(r=>r.kind==='send').input).sessionId,'A');await release('same');await until(()=>!window.w.state().busy);
+  });
+  await parentCheck('parent cached account explicit accepted send survives readiness',async()=>{
+    await reset(false,{ready:false});plan('send','',1,{sse:'cached'});await sendUi('cached explicit');await until(()=>window.w.state().sessionId==='LIVE');
+    await page.evaluate(()=>window.setAuthReady(true));await release('cached');await waitRequest('save','');await until(()=>!window.w.state().busy);
+    assert.equal((await snapshot()).messages.at(-1).content,'original final');assert.equal((await snapshot()).sessionId,'LIVE');assert.equal(requests.filter(r=>r.kind==='send').length,1);
+  });
+  await parentCheck('parent cached URL StrictMode send survives readiness once',async()=>{
+    await reset();await page.evaluate(()=>window.detach());plan('send','',1,{sse:'url'});
+    await page.evaluate(()=>{window.authReady=false;window.history.replaceState(null,'','/?prompt=cached-url');window.mount(true)});await until(()=>window.w.state().sessionId==='LIVE');
+    await page.evaluate(()=>window.setAuthReady(true));await release('url');await waitRequest('save','');await until(()=>!window.w.state().busy);
+    assert.equal((await snapshot()).messages.at(-1).content,'original final');assert.equal(requests.filter(r=>r.kind==='send').length,1);assert.ok(!page.url().includes('prompt='));
+  });
+  await parentCheck('parent anonymous pending URL waits for identity hydration once',async()=>{
+    await reset(true,{ready:false,actor:null,prompt:'anonymous-url'});await delay(40);
+    assert.equal(requests.filter(r=>r.kind==='send').length,0);assert.ok(page.url().includes('prompt='));plan('send','',1,{sse:'hydrate'});
+    await page.evaluate(()=>{window.account('a@example.test');window.setAuthReady(true)});await waitRequest('send','');await release('hydrate');await waitRequest('save','');await until(()=>!window.w.state().busy);
+    assert.equal(requests.filter(r=>r.kind==='send').length,1);assert.equal(JSON.parse(requests.find(r=>r.kind==='send').input).message,'anonymous-url');
+  });
+  await parentCheck('parent anonymous not-ready explicit draft remains until manual send',async()=>{
+    await reset(false,{ready:false,actor:null});await sendUi('anonymous draft');await delay(50);
+    assert.equal((await snapshot()).composerText,'anonymous draft');assert.equal(requests.filter(r=>r.kind==='send').length,0);
+    await page.evaluate(()=>{window.account('a@example.test');window.setAuthReady(true)});plan('send','',1,{sse:'manual'});await sendUi('anonymous draft');await waitRequest('send','');await release('manual');await until(()=>!window.w.state().busy);
+  });
+  await parentCheck('parent readiness loss detaches observer but preserves installed uncertainty',async()=>{
+    await reset();await openUi('A');await until(()=>window.w.state().running);
+    await page.evaluate(()=>window.setAuthReady(false));await page.evaluate(()=>window.setAuthReady(true));const before=requests.length;await delay(1300);
+    const s=await snapshot();assert.equal(requests.length,before);assert.equal(s.sessionId,'A');assert.equal(s.recoveryUnavailable,true);assert.equal(s.resources.timers,0);assert.equal(s.resources.listeners,0);
+    await call('send','not replayed');await delay(50);assert.equal(requests.filter(r=>r.method!=='GET').length,0);
+  });
+
 }
 main().catch(e=>{evidence.failures.push({name:'runner',error:e.stack});console.error(e.stack)}).finally(async()=>{
   for(const release of holds.values())release();
   if(context){evidence.requests.push(...requests);await context.close()}
   if(browser)await browser.close();
+  if(browserServer)await browserServer.close();
   if(server){server.closeAllConnections();await new Promise(r=>server.close(r))}
   evidence.closed={browser:true,http:true};
   fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify(evidence,null,2));

@@ -10,7 +10,7 @@
 
 - `loadSession → recoveryJson → pollRecoveredRun → final history → refreshSessions` 只拥有**客户端只读 observer**；既有 GET URL/sessionId/since/authHeader 保持。任务、工具确认、账务及持久状态仍归原服务端，observer 清理不发 DELETE/POST/PUT。
 - `RecoveryOwner` 是单个组件的 `id + generation + account scope + AbortController + phase`。`loading / observing / settled / unavailable` 区分客户端观察状态；`recoveryUnavailable=true` 明确表示后台状态未确认，不把 `busy=false / running=false` 的 UI 释放当后台完成。
-- `cancelRecovery` 同步失效 owner 并仅 abort 恢复 GET / 清理 1200ms timer。`useLayoutEffect` 在卸载、账号/ready 变化及 StrictMode cleanup 时使旧 scope 永久失效；A→B→A 不复活原 owner。
+- `cancelRecovery` 同步失效 owner 并仅 abort 恢复 GET / 清理 1200ms timer。最终父修版在卸载、真实账号变化及 StrictMode cleanup 时使旧 scope 永久失效；同账号 ready 完成不失效已受理 SSE，ready 失效只摘除恢复读取。A→B→A 不复活原 owner。
 - `recoveryJson` 在 authHeader、fetch、json 的 await 边界检查 owner；拒绝响应 body 取消，使用 `cache:no-store`。`recoveryDelay` 使用真实 timer，并在到期/abort 时同时清 timer 和 abort listener，不留悬挂 Promise。
 - 列表刷新有独立的单请求 controller 和相同 account scope，不以开抽屉取消运行 observer，不让旧账号列表覆盖新账号。
 - 恢复观察期间允许切历史/新对话，只解除观察，不停止后台。直接发起的 SSE 执行仍保持原忙态切换约束。显式停止仍沿原 DELETE + 当前 SSE abort 路径，不把 observer 卸载改成取消任务。
@@ -68,7 +68,7 @@ node node_modules/typescript/bin/tsc --noEmit --incremental false
 
 ## 未完成项与下一步
 
-- 父任务独立复核、统一编号、串行整合；本提交未发布。
+- 原实现已完成独立复核，两个新增 P2 由父修复，见下一节；本切片未发布。
 - 生产多实例/认证、完整页面样式与真实媒体/供应商、账号共享浏览器跨tab切换、真实运行时 history404/进程重启后的状态对齐，仍需对应集成验收。
 - SSE read drain 的原服务端取消语义保持，没有把只读 observer 的有界资源结论扩大到所有流；长会话持久化/RSS、事件数组裁剪游标、画布另一套流继续另切片。
 - 原模拟进度、提示词/媒体/工具确认、后台任务身份未作为缺陷修改；没有扩大到 canvas-client/db/billing/runtime/SSE route/release collector。
@@ -82,3 +82,28 @@ node node_modules/typescript/bin/tsc --noEmit --incremental false
 检查账号scope+owner代际在auth/fetch/json/final/save边界，stop仅保留原显式协议。
 重开四产物并在副本测试hashguard和原缺口恢复；不修改父树/总ledger/47。
 ```
+
+## 父线程独立审查修正与验收（2026-10-29）
+
+父基线 main `9ab916c1d84e589391a5a50a03c0b471fae84d60`，普通合入固定实现 `dd93e342f0274b0aa4d9a7d4cd5d87a9725be29a` 后修正独立 review 的两个 P2。review 原报告、脚本和 fixedSHA 原始字节已复制到父证据目录，旧失败记录保留。
+
+### 修改字段及职责
+
+1. `RecoveryOwner.installed / previousUnavailable` 区分目标历史尚未载入和当前会话的已知/未知状态。首次 GET 失败不让目标 owner 误挡空态或已 settled 的原会话；若原会话未知，读取另一目标失败仍保留原围栏。仅成功安装目标历史才转移状态归属，live/final 失败继续 unavailable。
+2. `RecoveryScope.account` 取真实 `user.email`，不以 ready=false 伪造空账号。AuthProvider 实际先安装缓存用户再等待配置/会话、最后 setReady(true)；这不是换号。同账号 readiness 完成保留原 SSE 身份、消息、sessionId 和保存；真正换号/ABA/卸载仍使旧 scope 失效。
+3. readiness 失效清理只读观察和列表请求，已安装会话保留未知标志；不 abort 已受理 SSE、不发 DELETE、不自动恢复任务。缓存用户仍沿原 send/authHeader/服务端鉴权，不新增认证兜底。
+4. `send` 增加内部 `onAccepted` 回调，含义是**客户端已把原提示存入消息并接纳此次发送**，不是服务端受理回执。门户及 URL 仅在该点消费草稿/参数；被入口围栏挡下时输入保留并有可见反馈。门户上传后的续体校验 scope/generation，不以新账号发旧提示。
+5. 同一接纳边界顺带修复既有匿名 ready=false URL prompt 先消费问题：等身份初始化再发，一次性/StrictMode语义保持。这是review单列的既有问题，不另算第三个新增回归。
+
+### 父集中验证
+
+实际 React/ReactDOM19 + 完整 WorkbenchClient/WorkbenchSessions + Chromium/native timers + loopback HTTP。认证、后端、无关组件仍为 fixture；没有真实 PG、完整 Next 页面、真实供应商或线上容量结论。
+
+- 原29项断言保持，增加10项真实按钮/接纳/历史切换测试；父修版 **39/39**。新增包括未安装目标失败、待加载时保留输入、settled A→失败B后直接发A、unknown A→失败B→失败重开A仍围栏、已settled同ID读取失败、cached显式/URL发送、匿名URL/手动输入、readiness失效只清观察。
+- 同一39矩阵原基线 **7通过/32失败，exit1**；子候选 **30通过/9失败，exit1**。其中原29在子候选仍全过；新增失败反映原来遗漏的边界，不按断言数量申报独立事故。
+- 未改断言的独立15项：原基线 **7通过/8失败**，子候选 **8通过/7失败**，父修版 **12通过/3失败**，均原样保留 exit1。父修版 R1/R2/R4 及匿名URL R3通过。
+- 三个仍失败项为原版也存在的 chat upload/rename/remove 跨账号迟到续体；不据本切片宣称全部客户端账号边界闭环，不将fixture媒体回包推断为真实媒体越权。
+- 原提示、引用、history、SSE工具轨迹及保存身份保持；显式停止一次DELETE、随后显式发送仍受后端409约束。GET恢复自身PUT/POST为0；39矩阵12次mock PUT、10次POST为明确测试发送/保存，不是付费调用。
+- 副本回滚、完整tsc和资源最终记录以同目录 `VERIFICATION.txt` 为准；原实现本身的回滚记录不是父回滚证明。
+
+父证据目录：`output/capacity-audit-wave2-20261029/workbench-parent/`。四产物为 `MODIFIED_FILE`（三路径ZIP）、`DIFF_FILE.patch`、`VERIFICATION.txt`、`ROLLBACK.sh`；回滚只接受该目录下标记副本，先校验所有原/改hash再写，恢复一个原文件并移除两个新增文件。主源码与修改快照保持父修版。总台账独立记录 A50–A52 / D32–D34，未操作47、45笔手术、在线索引或UNKNOWN。
