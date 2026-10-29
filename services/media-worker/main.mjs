@@ -1,9 +1,9 @@
 import http from 'node:http';
 import {createHash,timingSafeEqual,randomUUID} from 'node:crypto';
-import {mkdir,writeFile,readFile,lstat,readdir,rm,rename,open} from 'node:fs/promises';
-import {constants as fsConstants} from 'node:fs';
+import {mkdir,readFile,lstat,readdir,rm} from 'node:fs/promises';
 import path from 'node:path';
 import {MediaEngine,MEDIA_LIMITS,mediaJobDirectory} from './engine.mjs';
+import {createMediaStateStore} from './state-store.mjs';
 
 const secret=process.env.MEDIA_WORKER_SECRET||'';
 if(secret.length<32)throw new Error('MEDIA_WORKER_SECRET_REQUIRED');
@@ -15,28 +15,8 @@ const concurrency=Number(process.env.MEDIA_WORKER_CONCURRENCY||MEDIA_LIMITS.conc
 if(!Number.isInteger(concurrency)||concurrency<1||concurrency>MEDIA_LIMITS.concurrency)throw new Error('INVALID_MEDIA_WORKER_CONCURRENCY');
 const jobs=new Map(),locks=new Map();let running=0,draining=process.env.MEDIA_WORKER_START_PAUSED==='1',stopping=false;
 const terminal=status=>['completed','failed','cancelled'].includes(status);
-await mkdir(root,{recursive:true,mode:0o700});
-const retiredRoot=path.join(root,'.retired');await mkdir(retiredRoot,{recursive:true,mode:0o700});
-async function atomicJson(file,value){const temporary=`${file}.${randomUUID()}.tmp`;try{await writeFile(temporary,JSON.stringify(value),{mode:0o600});await rename(temporary,file);}finally{await rm(temporary,{force:true});}}
-async function retiredState(id){
-  mediaJobDirectory(root,id);let handle;
-  try{
-    const directory=await lstat(retiredRoot);if(!directory.isDirectory()||directory.isSymbolicLink())return null;
-    const file=path.join(retiredRoot,`${id}.json`),before=await lstat(file);
-    if(!before.isFile()||before.isSymbolicLink()||before.size<1||before.size>1024)return null;
-    handle=await open(file,fsConstants.O_RDONLY|(fsConstants.O_NOFOLLOW||0));
-    const after=await handle.stat();if(!after.isFile()||before.dev!==after.dev||before.ino!==after.ino||after.size!==before.size)return null;
-    const buffer=Buffer.alloc(1025),{bytesRead}=await handle.read(buffer,0,buffer.length,0);if(bytesRead!==after.size)return null;
-    const receipt=JSON.parse(buffer.subarray(0,bytesRead).toString('utf8'));
-    if(!receipt||receipt.id!==id||!terminal(receipt.status)||typeof receipt.retiredAt!=='string'||receipt.acknowledged!==undefined&&typeof receipt.acknowledged!=='boolean')return null;
-    const at=Date.parse(receipt.retiredAt);if(!Number.isFinite(at)||new Date(at).toISOString()!==receipt.retiredAt||at>Date.now())return null;
-    return receipt;
-  }catch{return null;}finally{await handle?.close().catch(()=>{});}
-}
-// A cancellation fences late POSTs immediately, but is not an App settlement
-// acknowledgment. Keep its terminal view available until PATCH acknowledges it.
-async function retire(id,status,acknowledged=true){await atomicJson(path.join(retiredRoot,`${id}.json`),{id,status,acknowledged,retiredAt:new Date().toISOString()});}
-async function acknowledgedRetirement(id){const receipt=await retiredState(id);return receipt&&receipt.acknowledged!==false?receipt:null;}
+const state=createMediaStateStore(root);await state.initialize();
+const {save:persist,read:savedState,retired:retiredState,retire,acknowledged:acknowledgedRetirement}=state;
 if(!fixture){
   const id=randomUUID(),directory=mediaJobDirectory(root,id);await mkdir(path.join(directory,'inputs'),{recursive:true,mode:0o700});
   try{await engine.run(id,{action:'ffmpeg',inputs:[],outputs:[],args:['-version']});}
@@ -45,8 +25,6 @@ if(!fixture){
 const authorized=request=>timingSafeEqual(expected,createHash('sha256').update(String(request.headers.authorization||'')).digest());
 const send=(response,status,body)=>{response.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});response.end(JSON.stringify(body));};
 async function bodyOf(request){let size=0;const chunks=[];for await(const chunk of request){size+=chunk.length;if(size>MEDIA_LIMITS.requestBytes)throw new Error('REQUEST_TOO_LARGE');chunks.push(chunk);}return JSON.parse(Buffer.concat(chunks).toString());}
-async function persist(job){await atomicJson(path.join(mediaJobDirectory(root,job.id),'worker-state.json'),job.view);}
-async function savedState(id){return readFile(path.join(mediaJobDirectory(root,id),'worker-state.json'),'utf8').then(JSON.parse).catch(()=>null);}
 async function removeJob(id){
   const directory=mediaJobDirectory(root,id),info=await lstat(directory).catch(()=>null);
   if(info&&(!info.isDirectory()||info.isSymbolicLink()))throw new Error('INVALID_JOB_DIRECTORY');
@@ -83,9 +61,16 @@ async function dispatch(){
   running++;job.view.status='processing';
   try{await persist(job);}catch{running--;job.view.status='failed';job.view.error='MEDIA_STATE_WRITE_FAILED';job.view.finishedAt=new Date().toISOString();void dispatch();return;}
   void engine.run(job.id,job.request,seconds=>{job.view.processedSeconds=seconds;},job.controller.signal)
-    .then(result=>{job.view={...job.view,status:job.controller.signal.aborted?'cancelled':'completed',...(job.controller.signal.aborted?{}:{result}),finishedAt:new Date().toISOString()};})
-    .catch(error=>{job.view={...job.view,status:job.controller.signal.aborted?'cancelled':'failed',error:String(error?.message||'MEDIA_PROCESS_FAILED').slice(0,2200),finishedAt:new Date().toISOString()};})
-    .finally(async()=>{await persist(job).catch(()=>{});running--;void dispatch();});
+    .then(result=>({...job.view,status:job.controller.signal.aborted?'cancelled':'completed',...(job.controller.signal.aborted?{}:{result}),finishedAt:new Date().toISOString()}))
+    .catch(error=>({...job.view,status:job.controller.signal.aborted?'cancelled':'failed',error:String(error?.message||'MEDIA_PROCESS_FAILED').slice(0,2200),finishedAt:new Date().toISOString()}))
+    .then(view=>withJobLock(job.id,async()=>{
+      // GET/PATCH share this lock: an App cannot acknowledge/remove the result
+      // directory while the terminal snapshot is still being renamed into it.
+      // Keep known output available on storage failure, as before; the store
+      // reports the actual failed native step/code without rerunning the engine.
+      await persist({id:job.id,view}).catch(()=>{});job.view=view;
+    }))
+    .finally(()=>{running--;void dispatch();});
   void dispatch();
 }
 const server=http.createServer(async(request,response)=>{
@@ -115,7 +100,8 @@ const server=http.createServer(async(request,response)=>{
         if(draining){send(response,429,{error:'MEDIA_WORKER_DRAINING'});return;}
         const counts=capacity();if(counts.running+counts.queued>=MEDIA_LIMITS.queue||counts.terminal>=8){send(response,429,{error:'MEDIA_QUEUE_FULL'});return;}
         job={id,request:requestBody,digest,controller:new AbortController(),view:{owner:'naumi-media-worker',id,digest,inspection:requestBody.inspectOnly===true,status:'queued',processedSeconds:0,createdAt:new Date().toISOString()}};
-        jobs.set(id,job);await persist(job);send(response,202,job.view);void dispatch();return;
+        // Publish acceptance only after its original queued snapshot is durable.
+        await persist(job);jobs.set(id,job);send(response,202,job.view);void dispatch();return;
       }
       const saved=job?job.view:await savedState(id);
       if(request.method==='GET'){
@@ -157,11 +143,7 @@ async function collectInspectors(){
   }
   // HTTP requests cannot remain alive for more than one minute. Keep retirement
   // receipts for a full day, including across worker restarts.
-  for(const entry of await readdir(retiredRoot,{withFileTypes:true})){
-    if(!entry.isFile()||!/^([0-9a-f-]{36})\.json$/.test(entry.name))continue;
-    const id=entry.name.slice(0,-5),receipt=await retiredState(id);
-    if(receipt&&Date.now()-Date.parse(receipt.retiredAt)>86400000)await rm(path.join(retiredRoot,entry.name),{force:true});
-  }
+  await state.collectExpiredRetirements();
 }
 const collector=setInterval(()=>void collectInspectors().catch(()=>{}),60000);collector.unref();
 server.requestTimeout=60000;server.headersTimeout=15000;

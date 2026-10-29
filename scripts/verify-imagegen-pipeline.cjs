@@ -150,7 +150,7 @@ async function main() {
     pos += 12 + length;
   }
   check((await sharp(corrupt).metadata()).width === 96, 'corrupt fixture still has readable metadata');
-  await rejected('corrupt-pixels', corrupt, { output: { format: 'png' } }, /pngload/);
+  await rejected('corrupt-pixels', corrupt, { output: { format: 'png' } }, /pngload|vipspng: libpng read error/);
   const overPixels = Buffer.from(small); overPixels.writeUInt32BE(40_000_001, 16); overPixels.writeUInt32BE(1, 20); overPixels.writeUInt32BE(crc32(overPixels.subarray(12, 29)), 29);
   await rejected('over-pixels', overPixels, { output: { format: 'png' } }, /pixel limit|像素/);
   await rejected('over-output-bytes', Buffer.alloc(64 * 1024 * 1024 + 1), { output: { format: 'png' } }, /64MiB/);

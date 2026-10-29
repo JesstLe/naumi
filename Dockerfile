@@ -87,6 +87,7 @@ COPY --from=build --chown=nextjs:nodejs /app/scripts/release-http-observer.cjs .
 COPY --from=build --chown=nextjs:nodejs /app/scripts/runtime-memory.cjs ./scripts/runtime-memory.cjs
 COPY --from=build --chown=nextjs:nodejs /app/scripts/video-media-worker.mjs ./scripts/video-media-worker.mjs
 COPY --from=build --chown=nextjs:nodejs /app/services/media-worker/main.mjs ./services/media-worker/main.mjs
+COPY --from=build --chown=nextjs:nodejs /app/services/media-worker/state-store.mjs ./services/media-worker/state-store.mjs
 COPY --from=build --chown=nextjs:nodejs /app/services/media-worker/engine.mjs ./services/media-worker/engine.mjs
 COPY --from=build --chown=nextjs:nodejs /app/src/modules/media/contract.mjs ./src/modules/media/contract.mjs
 COPY --from=build --chown=nextjs:nodejs /app/src/modules/media/bundle.mjs ./src/modules/media/bundle.mjs

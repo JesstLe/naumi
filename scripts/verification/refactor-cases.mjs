@@ -6,6 +6,7 @@ const node=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:false,
 export const refactorCases=[
  node('dependencies','foundation','scripts/verify-dependency-compatibility.mjs','DEPENDENCY_COMPATIBILITY=PASS'),
  node('source-identity','foundation','scripts/verify-refactor-source-identity.mjs','REFACTOR_SOURCE_IDENTITY=PASS'),
+ node('media-state-lifecycle','runtime','scripts/verify-media-state-lifecycle.mjs','MEDIA_STATE_LIFECYCLE=PASS'),
  node('media-codec-threads','foundation','scripts/verify-media-codec-threads.mjs','MEDIA_CODEC_THREADS=PASS MODE=MODIFIED'),
  node('image-stability','canvas','scripts/verify-canvas-image-stability.mjs','MODIFIED=PASS'),
  node('delivery-byte-owner','generation','scripts/verify-image-delivery-byte-owner.cjs','IMAGE_DELIVERY_BYTES=MODIFIED'),
