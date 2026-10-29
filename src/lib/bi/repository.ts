@@ -161,7 +161,9 @@ async function snapshot<T>(
  * This path is artworks-only; it never grants enterprise users other BI sections. */
 export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowedEmails: readonly string[] }): Promise<BiResponse> {
   if (access && !["artworks", "operations"].includes(q.section)) throw new Error("Scoped BI supports artworks and operations only");
-  await ensureBiSchema();
+  // Scoped callers initialize schema before opening their authorization transaction.
+  // Never acquire a second pool connection while holding that transaction.
+  if (!access) await ensureBiSchema();
   const result: BiResponse = {
     section: q.section,
     rows: [],
@@ -294,7 +296,7 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
     const ids = result.rows.map(row => String(q.section === "models" ? row.job_id : row.id));
     const emails = result.rows.map(row => String(row.email));
     const pairs = [...new Map(ids.map((id,i) => [emails[i]+"\u0000"+id,{id,email:emails[i]}])).values()];
-    const evidence = await getPool().query(MODEL_CALL_EVIDENCE_SQL, [pairs.map(p=>p.id),pairs.map(p=>p.email),q.section === "calls"]);
+    const evidence = await (access?.client ?? getPool()).query(MODEL_CALL_EVIDENCE_SQL, [pairs.map(p=>p.id),pairs.map(p=>p.email),q.section === "calls"]);
     result.rows = result.rows.map((row,i) => {
       const calls = (evidence.rows as ModelCallEvidence[]).filter(call => call.email === emails[i] && call.root_id === ids[i] && (q.section !== "calls" || call.id === row.id));
       return { ...row, ...modelChainPresentation(calls), model_evidence_scope: q.section === "calls" ? "本次调用" : "任务内调用汇总" };
