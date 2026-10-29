@@ -47,20 +47,23 @@ export async function syncBalanceTx(tx: Tx, email: string) {
     await tx.query("UPDATE app_users SET credits_total=(SELECT COALESCE(sum(remaining),0) FROM app_credit_batches WHERE email=$1 AND expires_at>now() AND remaining>0) WHERE email=$1", [email]);
 }
 export async function debitTx(tx: Tx, email: string, n: number, order: "expires-first" | "created-first") {
+    if (n <= 0) return;
+    // The caller holds the owner row lock (lockWallet or legacy FIFO). Select
+    // the exact funded prefix, not every live batch FOR UPDATE: a small debit
+    // must not lock/transfer the owner's entire history of live grants. Keep
+    // the debit in this transaction; a shortfall still throws and rolls it back.
     const sorting = order === "created-first" ? "created_at,id" : "expires_at,created_at,id";
-    const { rows } = await tx.query<{
-        id: string;
-        remaining: number;
-    }>(`SELECT id,remaining FROM app_credit_batches WHERE email=$1 AND expires_at>now() AND remaining>0 ORDER BY ${sorting} FOR UPDATE`, [email]);
-    let need = n;
-    for (const row of rows) {
-        if (need <= 0)
-            break;
-        const take = Math.min(Number(row.remaining), need);
-        await tx.query("UPDATE app_credit_batches SET remaining=remaining-$2 WHERE id=$1", [row.id, take]);
-        need -= take;
-    }
-    if (need > 0)
+    const { rows } = await tx.query<{ amount: string }>(`WITH ordered AS (
+      SELECT id,remaining,
+        SUM(remaining) OVER (ORDER BY ${sorting} ROWS UNBOUNDED PRECEDING)-remaining AS consumed_before
+      FROM app_credit_batches WHERE email=$1 AND expires_at>now() AND remaining>0
+    ), debited AS (
+      UPDATE app_credit_batches b
+      SET remaining=b.remaining-LEAST(o.remaining,$2::bigint-o.consumed_before)
+      FROM ordered o WHERE b.id=o.id AND o.consumed_before<$2
+      RETURNING LEAST(o.remaining,$2::bigint-o.consumed_before) AS taken
+    ) SELECT COALESCE(SUM(taken),0) AS amount FROM debited`, [email, n]);
+    if (Number(rows[0]?.amount ?? 0) < n)
         throw new BillingError("INSUFFICIENT_CREDITS", "可用积分不足或已到期，请补充积分后恢复任务", 402);
 }
 export async function reserveTx(tx: Tx, email: string, id: string, n: number) {

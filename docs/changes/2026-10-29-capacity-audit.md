@@ -283,3 +283,23 @@
 - 仅副本回滚恢复原3源码hash、三个原问题，并删除副本新增3文件；后来编辑guard exit73且0写入。四产物与精确命令/input/stdout/stderr/exit在父ignored `output/capacity-audit-wave2-20261029/review-followups/`；文档 `2026-10-29-capacity-review-followups.md`。
 - 事实校正：此前并发派发第三个 release collector 的调用最终返回 `parent_not_active`，没有成功taskId，不能把“调用已提交”记成实际开工；本轮下一批重新实际派发并记录返回句柄。画布与X3两个review确已完成，两个代码切片修复后方可合主线。
 - 下一批：release任务快照有界读取、账务余额sum/长事务/BI保留、Agent会话SSE/Markdown/上传，独立职责分工。历史生产容量/完整生命周期、45笔手术与在线索引继续挂账。既有fixture与accepted-timeout波动未自动关闭。
+
+
+### 2026-10-29 普通业务连接生命周期父线程复核
+
+- 固定提交 `19f19d9d27b4ff5c54a36c40ebb6844719503c87` 已由父线程普通合入隔离分支，改动仅普通池连接监听、工作台事务封装及专属测试/文档。不是重复登记此前X3 tick/heartbeat修复。
+- **A26 / D11 普通业务池扩展切片**：物理connect事件安装一次Client error listener并处理Pool idle error，防止借出无查询、空闲、关闭中、执行中连接断开演变成Node未处理error退出；不提前release、不重试SQL、不调整业务池5或总预算。按坏物理连接WeakSet去重固定短日志，不输出参数/凭据。
+- **A27 工作台子项**：真实事务backend被终止后，原ROLLBACK断连异常覆盖原57P01；中间connection-only对照preserved=false，完整修改preserved=true且release(true)。正常成功/业务失败/SQL错误仍沿原同一事务，回滚成功复用健康连接。
+- 父线程本轮重跑真实PG/Node矩阵：基线/副本恢复各5个故障子进程exit1、4个正常exit0；修改9/9 exit0；connection-only中间对照另跑9组。正常20并发事务、100次callback、25次模块重载、迟到checkout、关闭围栏/下一代池均检查。测试只kill刚借出的本机fixture backend，无生产故障注入。
+- 父线程内存/Worker/v2/真实重启回归38/38，全项目tsc exit0。子任务依赖不齐导致的36项同基线诊断仍保留，父线程通过基于匹配React19的另一环境，不抹除原失败。未跑HTTP/浏览器/生产容量，不将这些列为通过。
+- 四产物及完整精确命令/输入/字面输出/exit位于父ignored `output/capacity-audit-wave2-20261029/runtime-parent/`。副本恢复2原hash/原故障；后来编辑guard exit73/WRITES=0。所有自有fixture已移除，源码与修改副本保持。
+- 本轮未连接或修改47，未部署；45笔手术和在线索引仍挂账。账务热路径与发布采集器由已派发独立任务继续；下一空位推进Agent会话/SSE和Markdown可达性，避免扩大本连接补丁。
+
+### 2026-10-29 账务 FIFO 热路径父线程闭环
+
+- **A38 / D20：小额扣减先锁/传回 owner 全部活批次，跨批次逐条 UPDATE。** 固定子提交 `7e148a6542a35902adc72d727b3574f685dc80ca`；现代 `debitTx` 和兼容 `deductPrincipalFIFO` 共享原事务内的 FIFO 前缀 UPDATE，保留 owner-first 锁、冻结报价、operation/ledger 幂等、部分成功/BYOK、UNKNOWN hold、租约失效整笔回滚。没有扩大连接池或新增索引/余额缓存。
+- 父线程从 `9aaf16af` 普通整合并核对全部运行时批次写入，五个兼容入口均在同一事务先锁 owner；未发现新依赖环。现代 FIFO 排序保持，legacy 相同到期/创建时间新增确定 `id` tie-breaker，旧并列顺序原本未定义。人工导入/测试脚本的直接写入不计为正常运行时路径，本轮不执行它们。
+- 父独占 PG（55489）原/改/修改副本/回滚各语义11/11。1万活批次扣6：原返回1万行、无关尾锁55P03；修改聚合返回1行、尾锁空闲。跨60批次扣600的扣减SQL为61→1。仍扫描/排序 owner 活候选，不是O(1)，同owner完整事务中位耗时没有全面改善，未推断生产吞吐。
+- 父原生 wallet、balance-refresh、recovery、billing rules 均exit0；X2实际仓储/账务租约回归exit0，同operation一笔-6、失租不扣、UNKNOWN留hold。父React19.3全项目tsc exit0；子React18 import失败及36诊断保留。补充大于int32的窗口累计与事务跨到期原/改/恢复三版均通过，不宣称改变钱包镜像上限或旧now()语义。
+- 仅副本恢复2原hash/原性能预算失败；later-edit guard73/0写入，源码和MODIFIED_FILE保持修复。四产物及原生命令/输入/输出/exit在父ignored `output/capacity-audit-wave2-20261029/billing-parent/`，独立模块文档第7节补父验收。父容器停止、端口关闭。
+- **未完成仍明确保留**：重复expire/refresh扫描（5次请求仍25SQL）、BI访问日志保留、完整生产容量；源码另发现BI用户管理调用方仍全活批次加锁，即非积分动作也走，待定向复现，不计新实测编号。release collector与Agent流任务继续独立推进。47无SSH/生产操作，新增main修复未部署；45笔手术、在线索引和accepted-timeout历史波动未关闭。

@@ -7,6 +7,7 @@ import {ensureCreationSchema} from '@/lib/saas/creation-schema';
 import type {ProductReceipt} from "@/lib/payments";
 import {signupGrantTx,administrativeGrantInput} from "@/lib/billing/entitlements";
 import {withBillingTransaction} from "@/lib/billing/service";
+import {debitTx} from "@/lib/billing/repository";
 import {reserveTaskBillingTx,settleTaskBillingTx,videoRequestFingerprint,canvasRequestFingerprint} from "@/lib/billing/task-operation";
 import {BillingError} from "@/lib/billing/types";
 import "server-only";
@@ -701,25 +702,15 @@ async function deductPrincipalFIFO(
   // batch. Mixing the legacy FIFO path with user-first settlement otherwise
   // forms a user/batch lock cycle under concurrent completion.
   await client.query("SELECT email FROM app_users WHERE email=$1 FOR UPDATE",[email]);
-  const { rows } = await client.query(
-    `SELECT id, remaining FROM app_credit_batches
-      WHERE email = $1 AND expires_at > now() AND remaining > 0
-      ORDER BY expires_at ASC, created_at ASC
-      FOR UPDATE`,
-    [email]
-  );
-  let need = n;
-  for (const b of rows as { id: string; remaining: number }[]) {
-    if (need <= 0) break;
-    const take = Math.min(b.remaining, need);
-    await client.query(
-      `UPDATE app_credit_batches SET remaining = remaining - $2 WHERE id = $1`,
-      [b.id, take]
-    );
-    need -= take;
+  try {
+    await debitTx(client, email, n, "expires-first");
+  } catch (error) {
+    // Preserve the legacy public error while sharing the transactional debit.
+    if (error instanceof BillingError && error.code === "INSUFFICIENT_CREDITS")
+      throw new BillingError("INSUFFICIENT_CREDITS","可用积分不足或已到期",402);
+    throw error;
   }
-  if(need>0)throw new BillingError("INSUFFICIENT_CREDITS","可用积分不足或已到期",402);
-  return n - need;
+  return n;
 }
 
 /** 新建积分批次(充值/赠送/迁移/后台)+ 写 +流水 + 同步余额。 */
