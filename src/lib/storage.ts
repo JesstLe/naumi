@@ -95,6 +95,30 @@ export async function writeStoredObject(bytes: Uint8Array, contentType: string, 
   }
 }
 
+/** Internal paid checkpoints never use a public bucket/CDN. On a legacy public
+ * remote configuration keep these objects on this site's existing local store.
+ * The persisted location survives a later storage configuration change. */
+export async function writeImageJobResult(bytes: Buffer, key: string): Promise<"local" | "managed"> {
+  const normalized = safeKey(key);
+  if (!normalized.startsWith("image-job-results/")) throw new Error("图片任务对象路径非法");
+  if (storageDriver !== "local" && !privateMedia) {
+    await local.put(normalized, bytes, "application/octet-stream", "private, no-store");
+    return "local";
+  }
+  const result = await writeStoredObject(bytes, "application/octet-stream", normalized);
+  const { registerMediaAsset } = await import("./media-assets");
+  // Keep the existing mirror retry catalog, without thumbnails or a public link.
+  // Registration failure is surfaced to the codec's durable inline fallback.
+  await registerMediaAsset(normalized, bytes, "application/octet-stream", result.remoteReady, undefined, false);
+  return storageDriver === "local" ? "local" : "managed";
+}
+
+export async function readImageJobResult(url: string, location: "local" | "managed", maxBytes: number): Promise<Buffer> {
+  const key = storageKeyFromManagedUrl(url);
+  if (!key?.startsWith("image-job-results/") || !["local", "managed"].includes(location)) throw new Error("图片任务对象引用非法");
+  return (location === "local" ? await readLocalMirror(key, maxBytes) : await readManagedObjectInternal(url, maxBytes)).bytes;
+}
+
 /** Recovery uploads the original immutable bytes, bypassing deferred delivery.
  * Never calls a model, creates a generation identity, or touches billing. */
 export async function mirrorStoredObject(bytes:Uint8Array,contentType:string,key:string){
@@ -137,6 +161,14 @@ export async function fetchStoredObject(key: string, range = "", signal?:AbortSi
 }
 
 export async function readManagedObject(
+  url: string,
+  maxBytes = Number.POSITIVE_INFINITY
+): Promise<{ bytes: Buffer; contentType: string; size: number }> {
+  if (storageKeyFromManagedUrl(url)?.toLowerCase().startsWith("image-job-results/")) throw new Error("图片任务结果仅供内部恢复读取");
+  return readManagedObjectInternal(url, maxBytes);
+}
+
+async function readManagedObjectInternal(
   url: string,
   maxBytes = Number.POSITIVE_INFINITY
 ): Promise<{ bytes: Buffer; contentType: string; size: number }> {

@@ -3,7 +3,7 @@ import 'server-only';
 import {createHash,randomUUID} from 'node:crypto';
 import {dbEnabled, getPool, ensureSchema} from './db';
 import {currentBiContext} from './bi/model-observer';
-import {readManagedObject, readPendingStoredObject, writeStoredObject, mirrorStoredObject, privateMedia, storageDriver} from './storage';
+import {readManagedObject, readImageJobResult, readPendingStoredObject, writeStoredObject, mirrorStoredObject, privateMedia, storageDriver} from './storage';
 import {makeMediaVariants} from './media-variants';
 import type {PoolClient} from 'pg';
 
@@ -51,6 +51,8 @@ export async function getMediaAssets(keys:string[]):Promise<Map<string,MediaAsse
  return new Map(rows.map(row=>[String(row.key),row as MediaAsset]));
 }
 export async function canReadMedia(key:string, owner:string|null) {
+  // Paid checkpoints are server-internal, not user-facing artworks or inputs.
+  if(key.toLowerCase().startsWith('image-job-results/')) return false;
   if(publicKey(key)) return true;
   if(!dbEnabled) return false;
   const asset=await getMediaAsset(key);
@@ -137,7 +139,10 @@ async function recoverMediaMirrorsLocal(limit=2) {
         catch(error) {
           if((error as NodeJS.ErrnoException)?.code!=='ENOENT')throw error;
           // Legacy catalog imports can reference an existing remote original.
-          saved=await readManagedObject(`/media/${row.key}`,250*1024*1024);
+          if(row.key.startsWith('image-job-results/')) {
+            const bytes=await readImageJobResult(`/media/${row.key}`,'managed',64*1024*1024);
+            saved={bytes,size:bytes.length,contentType:row.content_type};
+          } else saved=await readManagedObject(`/media/${row.key}`,250*1024*1024);
         }
         if(saved.size!==Number(row.bytes)||createHash('sha256').update(saved.bytes).digest('hex')!==row.sha256)
           throw new Error('待补传素材校验失败');

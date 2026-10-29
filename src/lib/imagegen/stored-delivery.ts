@@ -17,6 +17,7 @@ import { selectedImagePreset } from "../model-config/image-preset";
 import { finishStoredImage } from "./finish-stored-image";
 import { imageCoordinationPool } from "./coordination-pool";
 import { imageFailureEvidence, imageFailureFrames } from "./failure-evidence";
+import { decodeImageJobValue } from "../image-job-codec";
 
 async function deliverySource(parentId:string,owner:string){
  const parent=(await getPool().query("SELECT * FROM app_image_jobs WHERE id=$1 AND email=$2 AND kind='imagegen'",[parentId,owner.toLowerCase()])).rows[0];
@@ -37,7 +38,10 @@ export async function storedDeliveryState(parentId:string,owner:string):Promise<
    UNION ALL SELECT a.value->'result' FROM jsonb_each(COALESCE(snapshot->'paidOperations','{}'::jsonb)) a WHERE a.value->>'state'='done'
   ) candidates WHERE jsonb_array_length(CASE WHEN jsonb_typeof(images)='array' THEN images ELSE '[]'::jsonb END) BETWEEN 1 AND 4
     AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(images)='array' THEN images ELSE '[]'::jsonb END) i
-      WHERE COALESCE(i->>'url','') !~ '^(data:image/|/media/)')) AS proof
+      WHERE NOT (COALESCE(i->>'url','') ~ '^(data:image/|/media/)'
+        OR (COALESCE(i->'url'->>'$imageJobDataURL','') LIKE 'data:image/%'
+          AND (COALESCE(i->'url'->'bytes'->>'$imageJobBuffer','') LIKE '/media/%'
+            OR COALESCE(jsonb_typeof(i->'url'->'bytes'->'$imageJobInlineBuffer')='string',false)))))) AS proof
   FROM app_image_jobs WHERE id=$1 AND email=$2 AND kind='generate' AND snapshot->>'status' IN ('done','error','needs_attention')`,[children[0].jobId,owner.toLowerCase()])).rows[0];
  const recovered=row?.recovered;
  if(Array.isArray(recovered?.ids)&&recovered.ids.length>0&&recovered.ids.length<=4&&recovered.ids.every((id:unknown)=>typeof id==="string"))return {available:false,ids:recovered.ids,complete:recovered.complete===true};
@@ -62,7 +66,7 @@ export async function recoverStoredDelivery(parentId:string,owner:string){
   await assertMutableStagingTask(pool,"app_image_jobs",parent.id);await assertMutableStagingTask(pool,"app_image_jobs",child.id);
   if(child.lease_token||parent.lease_token)throw Error("原任务仍在收尾，请稍后检查");
   if(parent.snapshot.status==="done"&&child.snapshot.deliveryRecovery?.ids?.length)return {ok:true,complete:child.snapshot.deliveryRecovery.complete===true,artworkIds:child.snapshot.deliveryRecovery.ids};
-  const checkpoint=storedDeliveryCheckpoint(child.snapshot);if(!checkpoint)throw Error("未找到完整的本地原始图片，不会重新生成");
+  const checkpoint=storedDeliveryCheckpoint(await decodeImageJobValue(child.snapshot));if(!checkpoint)throw Error("未找到完整的本地原始图片，不会重新生成");
   if(!checkpoint.allDone)throw Error("仍有未确定的上游调用，仅保留已知原结果");
   const plan=parent.payload.plan as ImagegenPlan,p=child.payload.p||{};
   const frozen=child.payload.modelExecutions?.image;
