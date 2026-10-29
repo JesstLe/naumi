@@ -2,7 +2,7 @@ import "server-only";
 import { randomUUID, createHash } from "node:crypto";
 import { Check } from "typebox/value";
 import type { TSchema } from "typebox";
-import { agentMediaUrl } from "./media-policy";
+import { sanitizeAgentMarkdownImages } from "./markdown-images";
 import { publicOutputBoundary } from "./public-output";
 
 /** Authority is server-owned. Model/user/Skill/tool text never supplies these fields. */
@@ -175,8 +175,7 @@ export class AgentHarness {
     for (const secret of this.secrets) result = result.split(secret).join("[已隐藏]");
     result = result.replace(/\b(?:sk-(?:proj-)?[A-Za-z0-9_-]{16,}|Bearer\s+[A-Za-z0-9._~-]{16,})\b/gi, "[已隐藏]")
       .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?(?:-----END [^-]*PRIVATE KEY-----|$)/g, "[已隐藏]");
-    result = result.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (full, alt: string, url: string) => agentMediaUrl(url, process.env.INTERNAL_APP_ORIGIN) ? full : `[${alt || "图片"}]`)
-      .replace(/!\[([^\]]*)\]\[[^\]]*\]/g, (_full,alt:string)=>`[${alt||"图片"}]`);
+    result = sanitizeAgentMarkdownImages(result);
     if (protectInstructions && [...this.protectedLines].some(line => result.includes(line))) { this.log("OUTPUT_BLOCKED"); return "内部执行规则不公开。请继续描述你的创作需求。"; }
     return result;
   }
