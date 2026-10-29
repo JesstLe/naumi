@@ -5,7 +5,7 @@
 - 工具分配的独立 worktree：`C:/Users/13357/.t3/worktrees/naumi/t3-215951ed`，分支 `t3/agent-stream-lifecycle-audit`。未另建 checkout、未再委派。
 - 基线及开工 fetch 后 `origin/main`：`9aaf16af7bd1c23395ca4d443c62e7daedcb85c9`。普通连接修复 `19f19d9d27b4ff5c54a36c40ebb6844719503c87` 是该基线祖先，保持原样。
 - 本次只有本地源码、固定输入、独占本地 HTTP/PG/Node fixture；无供应商调用或线上操作。47 的 `e1878018 / 1793247893` 是任务给定状态，本次没有远程核验或改变；45 笔历史手术、在线索引仍由父任务挂账。
-- 本文不分配总台账编号。交付固定 commit 后由父线程审查/整合，不 push、merge main 或创建 PR。
+- 原子任务不分配总台账编号且未推送。父线程已复核固定提交 `fbe30f4e9dd378602f905eb2d5a018ae76c3f482`，登记 **A39 / D21（SSE 生命周期）**、**A40 / D22（Markdown 重复扫描）**，纳入本次主线整合；未部署。父补丁与验收见文末。
 
 ## 调研与协议判断
 
@@ -125,3 +125,23 @@ src/lib/agent/harness.ts 625fc9c6c0f61c160a27a99d794babd1e2fb1bcf72931b9f0ab2723
 区分合成callback、真实runtime启动数和实际收费：不得把admission窗口写成重复扣款。
 重开VERIFICATION与四产物；随后由父线程统一编号、普通整合，47本轮不动。
 ```
+
+## 父线程复核、补丁与集中验收（2026-10-29）
+
+父线程先同步最新 main `3ea76ef6daa831b883e8523d4be8dba66851b7a8`，保留并行完成的画布修复，再普通 merge 本切片。独立源码清点确认 `agent_end` 本来就不清 running；正常 prompt 包装器在执行记录/结果收尾后才释放运行态。GET 不重放、DELETE 仅 abort、已有 CAS/账号隔离/原工具状态保持。本次没有修改 runtime、账务或画布入口。
+
+**父补丁只有首帧失败的初始化保护**：`send("open")` 若已使 transport closed，立即退出 start，不再安装 callback/interval/timeout，不启动 prompt，并保存释放后的状态。实际 route + 原生 ReadableStream 的 controller 故障 seam 确定性复现子提交仍 `promptCalls=1 / timers=2 / callback=true`，父补丁为 `0 / 0 / false`。原生 start 同步执行、普通消费者尚未取得 controller，因此此处是初始化清理鲁棒性，不单列为已证明普通网络可达的生产事故。
+
+父线程完整证据目录：`output/capacity-audit-wave2-20261029/agent-parent/`。
+
+- 新增上述首帧边界后，专属 route/Harness/local HTTP 验证共 **20 项**：BASELINE/ROLLBACK 均8项不满足、exit1；原子提交仅父新增边界1项不满足；父修改/修改副本20项通过、exit0。192KiB合成输入基线/恢复仍3秒超时，修改保持原字节；12,009组差分一致。
+- 真实 PG/runtime 原4项扩为 **6项**。父新增真实 `app_creation_records FOR UPDATE` 行锁，等模型已经发 `agent_end`、PG实际观测到执行结果写入等待，再取消SSE并再次PUT。基线/恢复接纳200，修改拒绝409，模型启动数均1；释放锁后原结果实际写入`succeeded`。这是“执行证据尚未收尾时的接纳窗口”，不是证明重复供应商执行或双扣费。
+- 真实PG基线/恢复最终各2项admission断言不满足（exit1），修改6项通过（exit0）。首次父测试把旧版`running=false`当作清理结束，过早读到queued；父测试改为等待实际原结果状态再收尾，原日志以`prior-*`保留，没有修改业务断言掩盖原问题。
+- 真实会话修复58项、账号/项目/入口隔离、网络15项，以及Harness104、流式原文356、timeline29、tool-trace25、activity回归全部exit0；父全项目TypeScript exit0。
+- 旧`verify-agent-harness-runtime.ts`父环境原/改仍同样因`ROUTER_UNAVAILABLE/not_submitted`而exit1。保留此失败，不调整Router/账务去凑绿。测试均无真实供应商请求。
+- 父真实PG明确关闭 release runtime（`NAUMI_RELEASE_RUNTIME=0`）。有release activity时runtime还会等待toolResultsPending、保存会话及结束activity；无activity时不额外走该等待，后续getOrCreateSession仍等待persistPending。本次PG证明实际creation结果收尾，不冒称已覆盖生产release-activity/多实例全链路。
+- 副本回滚恢复2原文件hash、移除新增Markdown helper；源码及修改快照保持。后来编辑guard exit73、零写入；恢复后原8项及真实PG2项失败重现。独占父PG `naumi-agent-parent-20261029 / 55490`停止，端口关闭；HTTP/子进程已结束。
+
+四产物：`MODIFIED_FILE.zip`、`DIFF_FILE.patch`、`VERIFICATION.txt`、可执行`ROLLBACK.sh`。完整原/改hash、每条原生命令、输入、stdout/stderr/exit及恢复状态均已记录并重开；父回滚仅限证据目录中的固定`rollback-copy`。
+
+下一步仍为长会话持久化/RSS、事件裁剪游标、客户端恢复轮询卸载、画布另一套流；发布collector固定`2cd03246`单独排队复核，不混入本次Agent验证。47本轮无SSH/发布，45笔手术和在线索引保留。

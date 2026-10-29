@@ -145,6 +145,28 @@ async function routeTests(file, f) {
     check(timers.size === 0 && !brokenSession.onDelta && brokenSession.aborts === 1, 'enqueue-error-releases-immediately', { ...counts(), aborts: brokenSession.aborts, callback: !!brokenSession.onDelta });
     brokenSession.settle(new Error('producer settled')); await microtasks(); await tick();
 
+    // Transport failure can occur on the initial open frame as well. Cleanup
+    // before resource installation must prevent installing a new producer later.
+    const firstRequest = request('ag-open-enqueue');
+    global.ReadableStream = class extends NativeStream {
+      constructor(source, strategy) {
+        super({ ...source, start(controller) {
+          controller.error(new Error('fixture first-frame transport failure'));
+          return source.start?.(controller);
+        } }, strategy);
+      }
+    };
+    let firstResponse;
+    try { firstResponse = await api.PUT(firstRequest); } finally { global.ReadableStream = NativeStream; }
+    await firstResponse.text().catch(() => {});
+    const firstSession = state('ag-open-enqueue');
+    check(firstSession.calls === 0 && !firstSession.running && timers.size === 0 && !firstSession.onDelta && getEventListeners(firstRequest.signal, 'abort').length === 0,
+      'initial-enqueue-failure-does-not-start-producer', { promptCalls: firstSession.calls, running: firstSession.running, ...counts(), callback: !!firstSession.onDelta, listeners: getEventListeners(firstRequest.signal, 'abort').length });
+    if (firstSession.calls) { firstSession.settle(new Error('first-frame producer fixture cleanup')); await microtasks(); }
+    // Baseline/child comparison intentionally exposes the leak; remove only
+    // this test's scheduler entries so it does not contaminate subsequent cases.
+    timers.clear(); firstSession.onDelta = undefined;
+
     f.primeError = true; let setupResponse, setupError;
     try { setupResponse = await api.PUT(request('ag-setup-error')); } catch (error) { setupError = error.message; }
     await microtasks(); await tick();

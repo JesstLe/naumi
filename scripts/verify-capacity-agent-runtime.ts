@@ -60,6 +60,55 @@ async function main() {
     const delta = frames.filter(frame => frame.type === "delta").map(frame => frame.data.text).join("");
     const final = frames.find(frame => frame.type === "final")?.data.reply;
     check(delta === text && final === text && (stored?.messages as any[])?.at(-1)?.content === text, "actual-runtime-markdown-to-SSE-and-persistence", { inputBytes: text.length, wireBytes: Buffer.byteLength(wire), deltaBytes: delta.length, finalBytes: final?.length, elapsedMs, persisted: (stored?.messages as any[])?.at(-1)?.content === text });
+
+    // Model completion is not execution completion. A real row lock holds the
+    // creation outcome write after agent_end, without replacing runtime logic.
+    const gateId = "ag-" + randomUUID(); ids.push(gateId);
+    const gated = await runtime.getOrCreateSession(email, gateId, [], { cookie, authorization: "" }, "fixture-text");
+    gated.creationScope = { actorEmail: email, scopeKind: "personal", tenantId: null };
+    let gateStarts = 0, emitDone: (() => void) | undefined;
+    gated.agent.streamFunction = model => {
+      gateStarts++;
+      const stream = createAssistantMessageEventStream();
+      const message: any = { role: "assistant", api: model.api, provider: "fixture", model: model.id, content: [{ type: "text", text: "evidence gate response" }], stopReason: "stop", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+      stream.push({ type: "start", partial: message });
+      emitDone = () => stream.push({ type: "done", reason: "stop", message });
+      return stream;
+    };
+    const gateResponse = await put(gateId); assert.equal(gateResponse.status, 200);
+    await waitFor(() => gateStarts === 1);
+    const pool = db.getPool(), holder = await pool.connect(); let locked = false;
+    try {
+      await holder.query("BEGIN"); locked = true;
+      const record = (await holder.query("SELECT id FROM app_creation_records WHERE actor_email=$1 AND source_kind='agent-turn' AND source_id=$2 FOR UPDATE", [email, gateId + ":" + gated.turnId])).rows[0];
+      assert.ok(record, "Actual runtime must create the evidence row before model completion");
+      emitDone!();
+      await waitFor(() => !gated.agent.state.isStreaming && gated.events.some(event => event.type === "agent_end"));
+      let writing = false; const until = Date.now() + 10000;
+      while (!writing && Date.now() < until) {
+        writing = !!(await pool.query("SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%app_creation_records%' AND query LIKE '%FOR UPDATE%'")).rowCount;
+        if (!writing) await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      assert.ok(writing, "Observe actual PostgreSQL evidence-row wait, not just a timer");
+      const runningBeforeCancel = gated.running;
+      await gateResponse.body!.cancel();
+      const gateRetry = await put(gateId);
+      check(runningBeforeCancel && gated.running && gateRetry.status === 409 && gateStarts === 1,
+        "model-ended-evidence-lock-retains-admission", { modelEnded: !gated.agent.state.isStreaming, evidenceLockWait: writing, runningBeforeCancel, runningAfterCancel: gated.running, retryStatus: gateRetry.status, modelStarts: gateStarts });
+      if (gateRetry.status === 200) await gateRetry.body!.cancel();
+      await holder.query("COMMIT"); locked = false;
+      // Baseline exposes idle too early, so idle alone is not a cleanup oracle.
+      // Wait for the original DB outcome before ending this comparison fixture.
+      let outcome: { status: string } | undefined; const finishUntil = Date.now() + 10000;
+      do {
+        outcome = (await pool.query("SELECT status FROM app_creation_records WHERE id=$1", [record.id])).rows[0];
+        if (outcome?.status !== "queued") break;
+        await new Promise(resolve => setTimeout(resolve, 10));
+      } while (Date.now() < finishUntil);
+      await waitFor(() => !gated.running && !gated.agent.state.isStreaming);
+      await runtime.persistAgentSession(gated);
+      check(outcome?.status === "succeeded" && !gated.onDelta, "evidence-lock-release-completes-original-outcome", { status: outcome?.status, callback: !!gated.onDelta });
+    } finally { if (locked) await holder.query("ROLLBACK"); holder.release(); }
     check(network === 0, "no-provider-requests", { network });
   } finally {
     for (const end of release) end();

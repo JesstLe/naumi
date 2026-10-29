@@ -187,6 +187,13 @@ async function handlePut(request: Request) {
       let cursor = eventCursor;
       request.signal.addEventListener("abort", onRequestAbort, { once: true });
       send("open", { sessionId });
+      // An initial enqueue failure already cancelled transport. Do not install
+      // fresh resources or start a prompt after that cleanup has run.
+      if (closed) {
+        session.running = false;
+        void persistAgentSession(session).catch(()=>undefined);
+        return;
+      }
       // 注册流式回调:assistant 文本增量绕过 events 轮询,直写 SSE(毫秒级到达)
       session.onDelta = onDelta;
 
