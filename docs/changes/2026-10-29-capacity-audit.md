@@ -321,3 +321,15 @@
 - 父从main `2f2c57e0` 普通整合，业务源码未再改。父独占55523实际原/改/修改副本/回滚各21/21 exit0，原生`BI_MANAGEMENT=PASS`、全项目tsc exit0。四非积分动作原返回10000行/尾锁55P03，修改批次SQL0/尾锁FREE，owner锁始终55P03；积分动作调用方SUM仅返回1行，仍有底层扫描和20条总SQL，不宣称O(1)或所有延迟改善。
 - 副本回滚恢复原单文件hash及原返回/尾锁，later-edit guard73/0写入；修复源码保持。父四产物及完整命令/输入/输出/exit在ignored `output/capacity-audit-wave2-20261029/bi-mutation-parent/`；独立模块文档补父验收。父fixture停止、55523关闭，review55517已移除。
 - 全局管理advisory锁、重复聚合/expire、BI审计保留和其他回滚连接边界仍未修复。发布collector等待独立review，工作台Agent客户端恢复轮询卸载为下一源码候选。47无SSH/部署，45笔手术/在线索引/UNKNOWN与历史波动仍挂账。
+
+### 2026-10-29 发布采集器独立审查与父修复
+
+- 固定子提交`2cd03246`在父基线main`2c2d194e`普通整合；独立审查REQUEST_CHANGES的2项新增P2与5项既有缺口均由父直接处理，未放宽COMPLETE/历史保护门禁，47无操作。
+- **A42 / D24：原采集器全表snapshot先投影、闭包遗漏和原绑定不足。** 原生PK先限页，再小图/选中proof；有界固定点包含终态child、反向父、十层supplier链、原ID与batch绑定。父EXPLAIN保留258行原物化与32行新页对照。
+- **A43 / D25：新增总期限实现复用旧statement额度。** 每SQL/生成页前重算剩余时间，初始timeout也受总限；2s预算受控1.5+1.6s延迟，子版约3.343s、修复约2.125s后psql3拒绝并留false证据（含本机Docker开销）。不宣传精确进程硬实时。
+- **A44 / D26：新增fixture冷启动/清理异常丢RESULT且漏停PG。** 显式start受finally管理、TCP目标库SELECT1就绪；drop/stop/rm独立尝试，原错与清理错分开留存。实际PG除零清理故障仍移除自有容器，启动/stop异常另有单元覆盖。
+- **A45 / D27（既有P1）**：paid root/child状态未留证导致started→queued被忽略；v3留state并按小表核推进，缺未派发/恢复证据的回退不追认。**A46 / D28（既有P1）**：冻结billing ledger_id进入原行证据，避免换指针仍通过。
+- **A47 / D29（既有P2）**：未选历史ledger变更被新增数量掩盖；私有有界原ID→行SHA256逐原集合验证，纯新增仍允许，修改/删除加新增拒绝，公网仅指纹。**A48 / D30（既有P2）**：UNKNOWN state/phase无消解证据变终态拒绝，tick negative/accepted原字段冻结，历史exact-hash不变。**A49 / D31（既有P2）**：full模式falsey非object不再转空object。
+- collection/image proof能力为v3；旧v1/v2或缺完整原集合的证据不回填、不追认。父37矩阵原/恢复17pass20fail，修复37pass；真实PG15定向组及10单元、原snapshot21pass1skip、normal37/enterprise4/completed-image4回归通过。保留性反例控制器PASS只代表符合各版预期，不等于旧版保护健全。
+- 并行验证遇Windows1455资源不足与GBK终端异常，原失败/SQL/清理错误保留。仅核验并补清理本任务完整ID，串行复测；四产物/原改hash/副本回滚恢复2原文件移除3新增验证文件、later-edit73/0写入均在父ignored`release-snapshot-parent/`。修复源码保持，所有自有PG收尾移除，未操作其他容器。
+- 此次是源码/本地真实PG/Python门禁fixture，不是生产容量或完整蓝绿验收。47下一发布须真实重采v3基线；45手术/在线索引/UNKNOWN/CLEANUP_PENDING/accepted-timeout旧波动保持。工作台客户端恢复轮询任务继续独立推进。
