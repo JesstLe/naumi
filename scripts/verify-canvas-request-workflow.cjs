@@ -11,11 +11,11 @@ function loader(r,overrides,globals={}){const cache=new Map();const load=file=>{
 const primitives={FormData,File,Blob,Headers,Request,Response,URL,Buffer,console,Date,Math,Promise,Set,Map,Array,Object,JSON,Error,encodeURIComponent,setTimeout,clearTimeout,structuredClone};
 const byteSnapshot=async body=>body instanceof FormData?await Promise.all([...body].map(async([key,value])=>[key,typeof value==='string'?value:{name:value.name,type:value.type,sha:crypto.createHash('sha256').update(Buffer.from(await value.arrayBuffer())).digest('hex')}] )):body;
 async function requestCase(r,isOld,spec){
- let current=true,epoch=1,workspace='personal',revision=1,quoteCount=0;const calls=[],frames=[];
+ let current=true,epoch=1,workspace='personal',revision=1,quoteCount=0;const calls=[],frames=[],quoteScopes=[];
  const params=loader(r,{})('src/lib/canvas/generation-parameters.ts'),http=loader(r,{})('src/lib/imagegen/http.ts');
  const normalize=loader(r,{'zod':require('zod')})('src/lib/imagegen/reference-labels.ts');
  const record=async(kind,url,init,facts)=>{calls.push({kind,url,method:init.method,headers:Object.fromEntries(new Headers(init.headers)),body:await byteSnapshot(init.body),facts});return Response.json({ok:true});};
- const billing={quote:async facts=>(quoteCount++,{version:1,credits:quoteCount===1?12:99,reserveCredits:12,feature:facts.feature,quantity:facts.quantity}),submit:async(url,init,quote,onIdentity)=>{onIdentity?.('original-task-id');return record('submit',url,init,quote);},quoteAndSubmit:async(url,init,facts,before)=>{before?.();return record('quoteAndSubmit',url,init,facts);}};
+ const billing={quote:async (facts,scope)=>(quoteScopes.push(scope),quoteCount++,{version:1,credits:quoteCount===1?12:99,reserveCredits:12,feature:facts.feature,quantity:facts.quantity}),submit:async(url,init,quote,onIdentity)=>{onIdentity?.('original-task-id');return record('submit',url,init,quote);},quoteAndSubmit:async(url,init,facts,before)=>{before?.();return record('quoteAndSubmit',url,init,facts);}};
  const authHeader=async()=>{if(spec.stale){epoch++;current=false;if(spec.stale==='workspace-aba')revision+=2;}return {authorization:'Bearer fixture-auth','x-naumi-workspace':workspace};};
  const chooseFrame=async()=>null,frame=async(form,choose,isCurrent)=>{frames.push(form.get('format')?'detail':'legacy');if(!isCurrent())throw new http.ImagegenPreparationCancelled();if(spec.frame)form.set('ratio',spec.frame);};
  const imagegen={resolveCanvasDetailFrame:frame,resolveCanvasLegacyFrame:frame,submitCanvasImagegen:async(form,source,notice,scope)=>{calls.push({kind:'imagegen',source,owner:scope.owner,project:scope.project,body:await byteSnapshot(form),current:scope.isCurrent()});return Response.json({jobId:'fixture'});}};
@@ -34,7 +34,7 @@ async function requestCase(r,isOld,spec){
   fn=(u,i)=>api.submitCanvasCreationRequest(u,i,{scope,authenticated:!spec.guest,sourceId:'source',sources:active.members,model:'chosen-model',quality:'high',toolQualities:globals.canvasToolQualities},{billing,request:globals.privateFetchRaw,chooseFrame,notice:()=>{}});
  }
  let error;
- try{await fn(spec.url,init);if(spec.retained){await fn(spec.url,{...init,body:JSON.stringify({artworkId:'source',prompt:'changed after first attempt',quality:'max'})});check(quoteCount,1);check(calls[0].body,calls[1].body);check(calls[1].headers['x-naumi-billing-operation-id'],'original-task-id');check(calls[1].facts.credits,12);}}catch(e){error={message:e.message,status:e.status,accepted:e.accepted};}
+ try{await fn(spec.url,init);if(spec.retained){if(!isOld)check(quoteScopes,[{workspace:'personal',projectContext:'tree:fixture'}],'retained quote scope');await fn(spec.url,{...init,body:JSON.stringify({artworkId:'source',prompt:'changed after first attempt',quality:'max'})});check(quoteCount,1);check(calls[0].body,calls[1].body);check(calls[1].headers['x-naumi-billing-operation-id'],'original-task-id');check(calls[1].facts.credits,12);}}catch(e){error={message:e.message,status:e.status,accepted:e.accepted};}
  return {calls,frames,error};
 }
 async function requests(){
@@ -52,7 +52,7 @@ async function requests(){
   {url:'/api/canvas/expand',managed:true,body:{artworkId:'source',model:'ignored'}},
   {url:'/api/generate-image',form:true,fields:[['prompt','recipe'],['userPrompt','redo'],['ratio','1:1'],['canvasReferences','[]'],['image','FILE']]},
  ];
- for(const [i,spec] of specs.entries()){const a=await requestCase(oldRoot,true,spec),b=await requestCase(root,baseline,spec);check(b,a,'request '+i+' '+spec.url);pass('original request '+i+' '+spec.url);}
+ for(const [i,spec] of specs.entries()){const a=await requestCase(oldRoot,true,spec),b=await requestCase(root,baseline,spec);if(!baseline&&['/api/canvas/annotate','/api/canvas/text-edit','/api/canvas/image-tasks'].includes(spec.url)){for(const call of a.calls){call.facts.ratio='auto';call.body=JSON.stringify({...JSON.parse(call.body),ratio:'auto'});}}check(b,a,'request '+i+' '+spec.url);pass('original request '+i+' '+spec.url);}
  for(const stale of ['account','workspace-aba']){const spec={url:'/api/canvas/expand',body:{artworkId:'source'},stale};const a=await requestCase(oldRoot,true,spec),b=await requestCase(root,baseline,spec);check(a.calls.length,1,'old late request observed');check(b.calls.length,baseline?1:0);if(!baseline)check(b.error?.accepted,false);pass(stale+' at auth boundary');}
 }
 function oldComfy(r,env){

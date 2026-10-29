@@ -5,6 +5,7 @@ import type {Pool,PoolClient} from "pg";
  * No schema, retry, advisory lock, billing or other domain policy is implicit. */
 export async function withTransaction<T>(pool: Pool, action: (tx: PoolClient) => Promise<T>): Promise<T> {
     const tx = await pool.connect();
+    let discard = false;
     try {
         await tx.query("BEGIN");
         const result = await action(tx);
@@ -12,10 +13,12 @@ export async function withTransaction<T>(pool: Pool, action: (tx: PoolClient) =>
         return result;
     }
     catch (error) {
-        await tx.query("ROLLBACK");
+        try { await tx.query("ROLLBACK"); }
+        catch { discard = true; }
+        // A lost COMMIT is still unknown: preserve the original error and never replay.
         throw error;
     }
     finally {
-        tx.release();
+        tx.release(discard);
     }
 }

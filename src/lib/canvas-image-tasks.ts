@@ -27,6 +27,8 @@ import {creditsMeteringOn} from "@/lib/billing/metering";
 import {multiUserEnabled} from "@/lib/accounts/mode";
 import { readCanvasImage } from "@/lib/canvas-image-input";
 import { editImage } from "@/lib/image-edit";
+import {canvasEditedImage} from "@/lib/canvas/edited-image-output";
+import {canvasSourceFrameRatio} from "@/lib/canvas/generation-parameters";
 import { storageEnabled } from "@/lib/object-storage/runtime";
 import { uploadImage } from "@/lib/media-upload";
 import { safeError } from "@/lib/api-error";
@@ -100,11 +102,11 @@ export async function enqueueTextEditTask(email: string, raw: Partial<TextEditTa
   const artwork = (await listArtworksByIds(email, [input.artworkId]))[0];
   if (!artwork) throw new Error("图片不存在或无权访问");
   if (!currentModelExecution("image") && await modelConfigurationEnabled()) {
-    const effective = new Request("http://localhost/api/canvas/image-tasks", { method: "POST", headers: { ...(request ? Object.fromEntries(request.headers.entries()) : {}), "content-type": "application/json" }, body: JSON.stringify({ ...raw, artworkId: artwork.id, resolution: artwork.resolution || "1K",ratio:artwork.ratio||"1:1" }) });
+    const effective = new Request("http://localhost/api/canvas/image-tasks", { method: "POST", headers: { ...(request ? Object.fromEntries(request.headers.entries()) : {}), "content-type": "application/json" }, body: JSON.stringify({ ...raw, artworkId: artwork.id, resolution: artwork.resolution || "1K",ratio:canvasSourceFrameRatio(artwork) }) });
     return withModelRequest(effective, () => enqueueTextEditTask(email, raw, request));
   }
   const quality = resolveConfiguredImageQuality(input.quality);
-  const billingQuote=await quoteForActor(email,{feature:"canvas.image",quantity:1,quality:quality.requested||"medium",resolution:artwork.resolution||"1K"});
+  const billingQuote=await quoteForActor(email,{feature:"canvas.image",quantity:1,quality:quality.requested||"medium",resolution:artwork.resolution||"1K",ratio:canvasSourceFrameRatio(artwork)});
   if(request)assertQuotedVersion(requestQuoteConfirmation(request,raw as {billingVersion?:unknown;billingCredits?:unknown}),billingQuote);
   const cost = billingQuote.requestedCredits;
   const operationId = String(input.operationId || "").trim();
@@ -180,7 +182,7 @@ async function renderTextEdit(task: CanvasImageTaskRow): Promise<string> {
       if (!await recoverableAPIMartImageOperation(getPool(),currentModelExecution("image"),unit))
         throw new ImageOperationPending(task.id, new Error("上游提交需要核查"));
     }
-    editedRaw = await withBiModelContext(task.email,"canvas-text-edit",task.id,()=>editImage({ operationId: task.id, legacyOperationId: !task.parameters.qualityAudit, images: [original], mask, prompt, size: editSize(width, height), quality }));
+    editedRaw = await withBiModelContext(task.email,"canvas-text-edit",task.id,()=>editImage({ operationId: task.id, legacyOperationId: !task.parameters.qualityAudit, images: [original], mask, prompt, size: editSize(width, height), sourceFrame:{width,height}, quality }));
     const checkpoint = storageEnabled
       ? await uploadImage(new Uint8Array(editedRaw), "image/png", `canvas-text-edits/${task.id}-provider.png`, undefined, task.email)
       : `data:image/png;base64,${editedRaw.toString("base64")}`;
@@ -189,7 +191,10 @@ async function renderTextEdit(task: CanvasImageTaskRow): Promise<string> {
   await updateCanvasImageTaskProgress(task.id, 82);
   const scope = currentModelExecution("image"), post = scope?.businessOption?.postprocess;
   const processed = post?.enabled ? await runPostprocess({ id: `${task.id}:postprocess`,parentId:task.id,email:task.email,modelVersion:scope!.frozen.modelVersion,bytes:editedRaw,policy:post }) : null;
-  const edited = processed ? (await readCanvasImage(processed.url, requestOrigin, task.email)).buffer : await sharp(editedRaw).resize(width, height, { fit: "fill" }).png().toBuffer();
+  // Explicit published postprocessing remains frozen. Never add another stretch
+  // afterwards, and never persist the old source dimensions onto a new image.
+  const result = await canvasEditedImage(processed ? (await readCanvasImage(processed.url, requestOrigin, task.email)).buffer : editedRaw);
+  const edited = result.bytes;
   const artworkId = `txtedit-${task.id}`;
   let url = `data:image/png;base64,${edited.toString("base64")}`;
   if (storageEnabled) url = await uploadImage(new Uint8Array(edited), "image/png", `canvas-text-edits/${artworkId}.png`, undefined, task.email);
@@ -203,15 +208,15 @@ async function renderTextEdit(task: CanvasImageTaskRow): Promise<string> {
     image: url,
     gradient: artwork.gradient || "from-slate-100 to-sky-100",
     style: artwork.style ?? null,
-    ratio: artwork.ratio ?? null,
+    ratio: result.ratio,
     resolution: artwork.resolution ?? "1K",
     source: artwork.image,
     parentId: artwork.id,
     parentIds: [],
     groupId: artwork.groupId || undefined,
     origin: "canvas",
-    width: processed?.width || width,
-    height: processed?.height || height,
+    width: result.width,
+    height: result.height,
     processingKind: processed?.kind || "base",
     postprocessStatus: processed?.status || "succeeded",
   }], `txtedit-${task.id}`);

@@ -26,7 +26,8 @@ export function createRetainedBillingSubmission(){
     async submit(client:Client,url:string,init:RequestInit,facts:QuoteInput,current:()=>void){
       current();
       if(!prepared){
-        const quote=await client.quote(facts);current();
+        const headers=new Headers(init.headers),workspace=headers.get("x-naumi-workspace");
+        const quote=await client.quote(facts,workspace?{workspace,projectContext:headers.get("x-naumi-project-context")||undefined}:undefined);current();
         prepared={url,quote,init:{method:init.method,credentials:init.credentials,cache:init.cache,headers:new Headers(init.headers),body:copyBody(init.body)}};
       }
       return retry(client,current);

@@ -50,3 +50,12 @@ R7H/R7I/R7J 达到三模块同步点；从 d274d588 普通 merge origin/main，�
 仅将withCreationOperation的受理入口由startCreation换为既有claimCreation。复用现有creation-accept identity锁、同事务scope核对和原creation记录，随后仍执行原领域receipt-aware操作；不另加表、任务、用户确认或任意重放。修正后真实原HTTP/PG63项全部通过（包括五并发同ID、owner/scope负例、导入故障回滚、准备不持事务及bulk61/100/200）；该结果不是生产验收。
 
 另一次浏览器启动在创建page之前因系统页面文件不足退出，保留失败证据，未将其当产品逻辑缺陷；重启后同SHA恢复运行，已通过此前浏览器入口。最终固定版本统一重验，不把不同SHA和恢复记录混合为一个全绿报告。
+
+
+### 继续验收与第二次主线刷新
+
+2026-10-29 再次普通整合 main a5fe1c672323bffdb01baff66f5e3b69c1da3085。六个冲突三方全文保存在 MAIN_REFRESH_CONFLICTS。保留媒体/数据库 facade，源帧报价迁入 creation-request；原像素/尺寸落库修复直接复用 edited-image-output；billing rollback 保原错/discard坏连接迁入唯一 platform/db/transaction，service 仍是兼容导出。工作台只读恢复自动合并，独立原用例复验。
+
+真实 Next 控件暴露两处原先观察端口未覆盖的问题：retained submission 首次 quote 没带原 project（同一任务 POST 带 project），已把请求冻结 headers 的 workspace/project 传给已有 BillingProvider.quote，重试仍原 quote/operation。新空项目上传作品已合并但仅赋 navigation ref，原 effect 可能已经消费本次作品更新，画面停在空项目；导航 target 改为现有组件单一 state，effect 明确订阅该 target，不增加任务/第二份作品状态。真实错误与截图保留。
+
+混选调试曾观测原 Shift 事件为 true 而选择变为单选；原脚本相同源码有成功和失败，暂不归因为删除逻辑。Flow 的 modifier key 数组固定引用，避免每次编辑器 render 重装 held-key listener；最终需同时保留持键连续点击和每次 modifier 点击的原断言，不以一次偶然通过关闭。此处不修改供应商、钱包、任务提交规则。

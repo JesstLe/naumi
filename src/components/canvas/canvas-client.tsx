@@ -319,6 +319,9 @@ type ImageModelOption = { id: string; label: string; supportsEdit: boolean; gene
 
 // 画布助手上下文:锚定节点 + 上游祖先(BFS 近者优先),最多 5 张(与后端 MAX_CONTEXT_IMAGES 对齐)
 // 构造展示节点与血缘连线；渲染不重新整理已有坐标。
+const CANVAS_MULTI_SELECTION_KEYS = ["Control", "Meta", "Shift"];
+const CANVAS_ZOOM_KEYS = ["Control", "Meta"];
+
 export function CanvasClient({ initialProject, desktopAppearance = false }: { initialProject?: string; desktopAppearance?: boolean } = {}) {
   const { can: canFeature } = useFeatureAccess();
   const billing=useBilling();
@@ -374,7 +377,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(!nodeSettingsReady || !user || readOnly)return;
     try{localStorage.setItem(`naumi:node-settings:${user.email.toLowerCase()}`,JSON.stringify(nodeSettings));}catch{/* best effort */}
   },[nodeSettings,nodeSettingsReady,user,readOnly]);
-  const pendingNodeRef = useRef<string | null>(null);
+  const [pendingNode,setPendingNode] = useState<string | null>(null);
   // 文件拖入完成后只打开对应项目，不自动弹出节点功能；用户点击图片后再显示。
   const openPendingNodeWithoutSelectionRef = useRef(false);
   // 通过 ?node= 深链进入的节点 id(如 AI 抠图「送画布」):即使它是单张一次性作品
@@ -855,7 +858,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const target = emailParam || authenticatedEmail;
     const ro =
       !!emailParam && emailParam.toLowerCase() !== authenticatedEmail.toLowerCase();
-    pendingNodeRef.current = sp.get("node");
+    setPendingNode(sp.get("node"));
     if (sp.get("node")) {
       setPinnedNode(sp.get("node")); // 让该节点所在项目即使单张也显示在列表/可直达
       setBrowsing(false); // 深链直达某节点 → 跳过网格落地页
@@ -949,11 +952,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   // ?node=<作品id>:跳到该图所在项目并选中聚焦(管理员从后台点图进来时)
   useEffect(() => {
-    const node = pendingNodeRef.current;
+    const node = pendingNode;
     if (!node || projects.length === 0) return;
     const proj = projects.find((p) => p.members.some((m) => m.id === node)||p.videoNodes?.some(item=>item.id===node)||p.directorNodes?.some(item=>item.id===node)||p.characterNodes?.some(item=>item.id===node)||p.sceneNodes?.some(item=>item.id===node)||p.audioNodes?.some(item=>item.id===node)||p.timelineNodes?.some(item=>item.id===node)||p.textNodes?.some(item=>item.id===node));
     if(!proj&&(!videoNodesStore.ready||!directorNodesStore.ready||!characterNodesStore.ready||!sceneNodesStore.ready||!audioNodesStore.ready||!timelineNodesStore.ready||!textNodesReady||works===null))return;
-    pendingNodeRef.current = null;
+    setPendingNode(null);
     const openWithoutSelection = openPendingNodeWithoutSelectionRef.current;
     openPendingNodeWithoutSelectionRef.current = false;
     if (proj) {
@@ -967,7 +970,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       }
       setBrowsing(false); // 新建/上传/深链 → 直接进入该项目画布,不停在网格
     }
-  }, [projects,videoNodesStore.ready,directorNodesStore.ready,characterNodesStore.ready,sceneNodesStore.ready,audioNodesStore.ready,timelineNodesStore.ready,textNodesReady,works,setSelectedId]);
+  }, [pendingNode,projects,videoNodesStore.ready,directorNodesStore.ready,characterNodesStore.ready,sceneNodesStore.ready,audioNodesStore.ready,timelineNodesStore.ready,textNodesReady,works,setSelectedId]);
 
   // Optional desktop deep link; the original /canvas defaults are unchanged.
   const desktopProjectOpened = useRef<string | null>(null);
@@ -2396,7 +2399,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const data=await expectJsonOk(response,L("图片编辑失败","Image edit failed"));
       if(!data.id)throw new Error(t("canvas.genFail"));
       const fresh=await mergeWorks([data.id]);pushAddUndo(data.id,fresh);
-      pendingNodeRef.current=data.id;setSelectedId(data.id);setSelectedTextId(null);setCropArtwork(null);localEditAttempt.current=null;
+      setPendingNode(data.id);setSelectedId(data.id);setSelectedTextId(null);setCropArtwork(null);localEditAttempt.current=null;
       flashTip(L("新版本已保存，原图保留","New version saved; original kept"));
     }catch(error){flashTip(error instanceof Error?error.message:t("canvas.genFail"));}
     finally{localEditBusyRef.current=false;setLocalEditBusy(false);if(replaceInputRef.current)replaceInputRef.current.value="";}
@@ -2786,7 +2789,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       documentCurrent:scope.documentCurrent,viewCurrent:scope.viewCurrent,
       rects:()=>((scope.viewCurrent()?rfRef.current?.getNodes():undefined)??rfNodes).map(node=>({...node.position,...flowNodeSize(node)})),
       merge:ids=>mergeWorks(ids),history:pushAddUndoMany,
-      reveal:id=>{openPendingNodeWithoutSelectionRef.current=true;pendingNodeRef.current=id;},t,locale};
+      reveal:id=>{openPendingNodeWithoutSelectionRef.current=true;setPendingNode(id);},t,locale};
   }
   function uploadRoot(files:FileList|File[]|null,options?:{assistant:boolean;isCurrent:()=>boolean}):Promise<string[]> {
     const picked=Array.from(files??[]);
@@ -3375,7 +3378,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           if(selectedPendIdRef.current===pend.id)setGenError(message);else flashTip(`${pend.label}：${message}`);
           setPendNodes(nodes=>nodes.map(node=>node.id===pend.id?{...node,generating:false,generationFailure:result.failure,onGenerationRetry:retry}:node));return false;
         }
-        if(selectedPendIdRef.current===pend.id&&!activeKey)pendingNodeRef.current=result.images[0]?.id||null;
+        if(selectedPendIdRef.current===pend.id&&!activeKey)setPendingNode(result.images[0]?.id||null);
         canvasHistory.consumePending(pend.id);setPendNodes(nodes=>nodes.filter(node=>node.id!==pend.id));setSelectedPendId(id=>id===pend.id?null:id);if(selectedPendIdRef.current===pend.id)setGenError(null);
         return result.status==="succeeded";
       },
@@ -3396,7 +3399,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     try{
       await imageImportOwner.uploadPending(file,{pendingId:pendId,parentId:pend.inputs?.[0]||activeRootId(),linked:!!pend.inputs?.length,x:pend.x,y:pend.y},context,{
         progress:progress=>{if(scope.viewCurrent())setPendNodes(nodes=>nodes.map(node=>node.id===pendId?{...node,progress}:node));},
-        attached:id=>{canvasHistory.consumePending(pendId);setPendNodes(nodes=>nodes.filter(node=>node.id!==pendId));setSelectedPendId(current=>current===pendId?null:current);pendingNodeRef.current=id;},
+        attached:id=>{canvasHistory.consumePending(pendId);setPendNodes(nodes=>nodes.filter(node=>node.id!==pendId));setSelectedPendId(current=>current===pendId?null:current);setPendingNode(id);},
       });
     }catch(error){if(scope.viewCurrent()){
       setGenError(error instanceof Error?error.message:t("canvas.genFail"));
@@ -3911,12 +3914,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               selectionOnDrag={canvasTool !== "hand"}
               selectionMode={SelectionMode.Partial}
               selectionKeyCode={canvasTool === "hand" ? null : "Shift"}
-              multiSelectionKeyCode={["Control", "Meta", "Shift"]}
+              multiSelectionKeyCode={CANVAS_MULTI_SELECTION_KEYS}
               panActivationKeyCode="Space"
               panOnScroll
               zoomOnScroll={false}
               zoomOnPinch
-              zoomActivationKeyCode={["Control", "Meta"]}
+              zoomActivationKeyCode={CANVAS_ZOOM_KEYS}
               snapToGrid={snapGrid}
               snapGrid={[16, 16]}
               onlyRenderVisibleElements={shouldVirtualizeCanvas(rfNodes.length, rfEdges.length)}

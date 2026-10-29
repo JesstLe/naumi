@@ -8,13 +8,13 @@ import {chosenFeatureModel,featureModelManaged} from "../model-config/feature-cl
 import {submitCanvasImagegen,resolveCanvasDetailFrame,resolveCanvasLegacyFrame,type CanvasFrameChoice} from "../imagegen/canvas-client";
 import {canvasReferenceManifestSchema,compileReferenceInstructions} from "../imagegen/reference-labels";
 import {ImagegenHttpError,ImagegenPreparationCancelled} from "../imagegen/http";
-import {normalizeCanvasRatio,normalizeCanvasResolution,normalizeCanvasCount,normalizeCanvasQuality} from "./generation-parameters";
+import {normalizeCanvasRatio,normalizeCanvasResolution,normalizeCanvasCount,normalizeCanvasQuality,canvasSourceFrameEdit,canvasSourceFrameRatio} from "./generation-parameters";
 import type {CanvasImageTaskScope} from "./image-task-scope";
 
 export type CanvasCreationRequestInit=RequestInit&{isCurrent?:()=>boolean;submission?:RetainedBillingSubmission};
 export type CanvasCreationRequestContext={
   scope:CanvasImageTaskScope;authenticated:boolean;sourceId?:string;
-  sources:readonly Pick<Artwork,"id"|"resolution">[];
+  sources:readonly Pick<Artwork,"id"|"resolution"|"width"|"height"|"ratio">[];
   model:string;quality:string;toolQualities:Readonly<Partial<Record<FeatureId,string>>>;
 };
 type Services={
@@ -67,6 +67,10 @@ export async function submitCanvasCreationRequest(input:RequestInfo|URL,initial:
     else init={...init,body:JSON.stringify(body)};
   }
   const source=context.sources.find(art=>art.id===body.artworkId);
+  if(source&&canvasSourceFrameEdit(path)){
+    body.ratio=canvasSourceFrameRatio(source);
+    if(form)form.set("ratio",body.ratio);else init={...init,body:JSON.stringify(body)};
+  }
   const quantity=path==="/api/aplus"?Math.max(1,form?.getAll("module").length||body.modules?.length||1):path==="/api/suite"?(body.structure==="custom"?JSON.parse(String(body.shots||"[]")).length:13):Number(body.count||1);
   for(const [key,value] of Object.entries(await authHeader()))headers.set(key,value);assertCurrent();
   headers.set("x-naumi-workspace",scope.workspace);if(scope.project!=="workspace")headers.set("x-naumi-project-context",scope.project);else headers.delete("x-naumi-project-context");

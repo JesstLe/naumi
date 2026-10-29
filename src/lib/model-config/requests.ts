@@ -12,6 +12,7 @@ import {prepareImageOperation} from "./image-preparation";
 import {validatePreparedImage} from "./prepared-image-contract";
 import type { ModelBinding } from "./bindings";
 import { acceptedModelVersions } from "./accepted-context";
+import {canvasSourceFrameEdit,canvasSourceFrameRatio} from "../canvas/generation-parameters";
 
 import {modelConfigurationEnabled} from "./availability";
 export {modelConfigurationEnabled} from "./availability";
@@ -62,7 +63,7 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
   const [managed, parsed] = await Promise.all([modelConfigurationEnabled(), requestFacts(request)]);
   assertPlatformImageSelection(parsed.body.model, parsed.body.modelId, request.headers.get("x-naumi-feature-model"));
   if (!managed) return run();
-  if (domainPath === "/api/canvas/expand" && typeof parsed.body.artworkId === "string") {
+  if ((domainPath === "/api/canvas/expand" || canvasSourceFrameEdit(domainPath)) && typeof parsed.body.artworkId === "string") {
     // Expand inherits the owned artwork's resolution in its handler. Freeze
     // that same selection before channel admission and price confirmation.
     const {resolveUserEmail} = await import("../admin-auth");
@@ -70,7 +71,10 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     if (email) {
       const {listArtworksByIds} = await import("@/lib/artworks/repository");
       const artwork = (await listArtworksByIds(email, [parsed.body.artworkId]))[0];
-      if (artwork) parsed.body.resolution = artwork.resolution || "1K";
+      if (artwork) {
+        parsed.body.resolution = artwork.resolution || "1K";
+        if(canvasSourceFrameEdit(domainPath))parsed.body.ratio = canvasSourceFrameRatio(artwork);
+      }
     }
   }
   return runModelOperation({path:domainPath,body:parsed.body,references:parsed.references,

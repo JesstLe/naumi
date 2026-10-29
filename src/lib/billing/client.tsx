@@ -72,7 +72,7 @@ type Client = {
     loading: boolean;
     error: string | null;
     refresh: () => Promise<void>;
-    quote: (input: QuoteInput) => Promise<PublicQuote>;
+    quote: (input: QuoteInput, requestScope?: QuoteScope) => Promise<PublicQuote>;
     submit: (url: string, init: RequestInit, displayed: PublicQuote | null, onIdentity?: (id: string) => void) => Promise<Response>;
     quoteAndSubmit: (url: string, init: RequestInit, input: QuoteInput, beforeSubmit?: () => void) => Promise<Response>;
 };
