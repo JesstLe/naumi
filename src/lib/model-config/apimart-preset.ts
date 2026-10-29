@@ -138,10 +138,46 @@ export function apimartImagesFetch(scope: ModelExecutionScope, options: Validati
         await ledger.enqueue(`task:${row.id}`,"task",{callId:row.id},accountId);
       }
       const deadline=Date.now()+Math.min(240000,c.timeoutMs);
+      // Poll only the original task. Back off when it makes no progress, but
+      // never extend this invocation's existing query/recovery budget.
+      let unchangedPolls=0,lastState:string|undefined,lastProgress:number|undefined;
+      const waitForPoll=async()=>{
+        const remaining=deadline-Date.now();if(remaining<=0)return;
+        const delay=overrides?.pollMs??Math.round(Math.min(8000,2000*2**Math.min(unchangedPolls++,2))*(0.8+0.2*Math.random()));
+        await new Promise<void>((resolve,reject)=>{
+          const finish=()=>{request.signal.removeEventListener("abort",abort);resolve();};
+          const timer=setTimeout(finish,Math.min(delay,remaining));
+          const abort=()=>{clearTimeout(timer);request.signal.removeEventListener("abort",abort);reject(request.signal.reason);};
+          request.signal.addEventListener("abort",abort,{once:true});if(request.signal.aborted)abort();
+        });
+      };
       while(Date.now()<deadline) {
         request.signal.throwIfAborted();
         adapterStage="poll";
-        const raw=await json(`/v1/tasks/${encodeURIComponent(taskId!)}`,{signal:request.signal}),receipt=apimartTask(raw,taskId!);
+        let raw:any;
+        try{
+          // A loop deadline alone does not bound a stalled response header or
+          // body. Cancel the same GET at the remaining deadline, not a new one.
+          raw=await json(`/v1/tasks/${encodeURIComponent(taskId!)}`,{signal:AbortSignal.any([request.signal,AbortSignal.timeout(Math.max(1,deadline-Date.now()))]),cache:"no-store"});
+        }catch(error){
+          const code=(error as {code?:string;cause?:{code?:string}})?.code||(error as {cause?:{code?:string}})?.cause?.code;
+          const transient=error instanceof SupplierAdapterResponseError
+            ? [408,429,500,502,503,504].includes(error.status)
+            : ["ECONNRESET","ETIMEDOUT","EPIPE","UND_ERR_SOCKET","ERR_STREAM_PREMATURE_CLOSE","UND_ERR_CONNECT_TIMEOUT"].includes(code||"");
+          if(!transient||request.signal.aborted||Date.now()>=deadline)throw error;
+          try{await recordSupplierAdapterFailure(ledger.pool,row.id,adapterFailureEvidence(error,"poll"),false);}
+          catch{console.error("[apimart-adapter] diagnostic-write-failed",{callId:row.id,stage:"poll"});}
+          await waitForPoll();continue;
+        }
+        const receipt=apimartTask(raw,taskId!);
+        // parseReceiptJson deliberately preserves numeric lexemes as strings
+        // for money. Interpret only this scheduling hint, not accounting data.
+        const rawProgress=raw.data?.progress;
+        const progressNumber=typeof rawProgress==="number"?rawProgress:
+          typeof rawProgress==="string"&&rawProgress.trim()!==""?Number(rawProgress):NaN;
+        const progress=Number.isFinite(progressNumber)&&progressNumber>=0?progressNumber:undefined;
+        if(receipt.state!==lastState||progress!==undefined&&(lastProgress===undefined||progress>lastProgress))unchangedPolls=0;
+        lastState=receipt.state;if(progress!==undefined)lastProgress=progress;
         if(receipt.amountMicros==null&&receipt.usage&&procurement?.basis==="tokens") {
           const estimate=genericReceipt({status:receipt.state,usage:receipt.usage},receipt.state,procurement);
           if(estimate.amountMicros!=null)Object.assign(receipt,{amountMicros:estimate.amountMicros,currency:estimate.currency,status:"estimated",source:"usage-price-snapshot"});
@@ -163,8 +199,8 @@ export function apimartImagesFetch(scope: ModelExecutionScope, options: Validati
             const fetchMedia=overrides?.media||modelEndpointFetch(parsed.origin,options);
             let bytes:Buffer|undefined;
             for(let attempt=0;attempt<2;attempt++)try{
-              const response=await fetchMedia(url,{signal:AbortSignal.any([request.signal,AbortSignal.timeout(30000)]),redirect:"error"});
-              if(!response.ok)throw new Error("APIMart image download failed");
+              const response=await fetchMedia(url,{signal:AbortSignal.any([request.signal,AbortSignal.timeout(30000)]),redirect:"error",cache:"no-store"});
+              if(!response.ok){await response.body?.cancel();throw new Error("APIMart image download failed");}
               bytes=Buffer.from(await readBoundedBytes(response,32*1024*1024));break;
             }catch(error){if(attempt===1||request.signal.aborted)throw error;}
             if(!bytes)throw new Error("APIMart image download empty");
@@ -191,7 +227,7 @@ export function apimartImagesFetch(scope: ModelExecutionScope, options: Validati
           if(Buffer.byteLength(payload,"utf8")>48*1024*1024)throw new Error("receipt too large");
           return validatedChannelImageResponse(new Response(payload,{headers:{"content-type":"application/json"}}));
         }
-        await new Promise<void>((resolve,reject)=>{const timer=setTimeout(()=>{request.signal.removeEventListener("abort",abort);resolve();},overrides?.pollMs??2000);const abort=()=>{clearTimeout(timer);reject(request.signal.reason);};request.signal.addEventListener("abort",abort,{once:true});if(request.signal.aborted)abort();});
+        await waitForPoll();
       }
       throw new ImageOperationPending(unit,new Error("APIMart任务仍在处理中"));
     }catch(error){
