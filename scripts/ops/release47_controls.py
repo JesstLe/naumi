@@ -23,7 +23,7 @@ COMBINED_WORKER_TMPFS = {
 WORKER_SETTINGS = {'NAUMI_APP_ORIGIN', 'VIDEO_WORKER_SECRET', 'SOURCE_COMMIT', 'BUILD_VERSION',
     'NAUMI_INSTANCE_ID', 'NAUMI_WORKER_TARGET_INSTANCE_ID', 'NAUMI_WORKER_RELEASE_CONTROL',
     'NAUMI_WORKER_START_PAUSED', 'NAUMI_WORKER_CONTROL_PORT', 'NAUMI_WORKER_STATE_FILE',
-    'NAUMI_VIDEO_WORKER', 'NODE_OPTIONS'}
+    'NAUMI_VIDEO_WORKER', 'VIDEO_WORKER_INTERVAL_MS', 'NODE_OPTIONS'}
 COMBINED_WORKER_SETTINGS = {'NAUMI_MEDIA_WORKER', 'MEDIA_WORKER_ORIGIN', 'MEDIA_WORKER_SECRET',
     'MEDIA_JOB_DIR', 'MEDIA_WORKER_HOST', 'MEDIA_WORKER_PORT', 'MEDIA_WORKER_START_PAUSED',
     'MEDIA_WORKER_CONCURRENCY', 'NODE_ENV', 'NAUMI_NATIVE_MEMORY_PROFILE', 'MALLOC_ARENA_MAX', 'UV_THREADPOOL_SIZE'}
@@ -32,6 +32,16 @@ BOUNDED_WORKER_RUNTIME = {
     'NAUMI_NATIVE_MEMORY_PROFILE': 'bounded', 'MALLOC_ARENA_MAX': '2', 'UV_THREADPOOL_SIZE': '2'}
 IMAGE_ENVIRONMENT = {'PATH', 'NODE_VERSION', 'YARN_VERSION', 'NODE_ENV', 'NEXT_TELEMETRY_DISABLED',
     'PORT', 'HOSTNAME', 'MEDIA_DIR'}
+
+
+def worker_interval_settings(env):
+    """Only the tick caller's existing cadence knob; never copy arbitrary env."""
+    value = env.get('VIDEO_WORKER_INTERVAL_MS')
+    if value is None:
+        return {}
+    require(isinstance(value, str) and re.fullmatch(r'[1-9][0-9]{0,9}', value) is not None and
+            5000 <= int(value) <= 2147483647, 'INVALID_WORKER_INTERVAL')
+    return {'VIDEO_WORKER_INTERVAL_MS': value}
 
 
 APP_REMOTE = r"""
@@ -172,6 +182,9 @@ def _validate_combined_worker(row, web_row, *, reviewed_runtime_memory=None):
         'NAUMI_WORKER_CONTROL_PORT': '3001', 'NAUMI_WORKER_STATE_FILE': '/release-state/worker.json',
         'NAUMI_VIDEO_WORKER': '0', 'NODE_OPTIONS': '--max-old-space-size=64', 'NODE_ENV': 'production',
         'MEDIA_WORKER_ORIGIN': web_env['MEDIA_WORKER_ORIGIN'], 'MEDIA_WORKER_SECRET': web_env['MEDIA_WORKER_SECRET']}
+    expected.update(worker_interval_settings(web_env))
+    require(env.get('VIDEO_WORKER_INTERVAL_MS') == web_env.get('VIDEO_WORKER_INTERVAL_MS'),
+            'COMBINED_WORKER_INTERVAL_CHANGED')
     bounded = env.get('NODE_OPTIONS') == BOUNDED_WORKER_RUNTIME['NODE_OPTIONS']
     require(reviewed_runtime_memory is None or bounded is reviewed_runtime_memory,
             'COMBINED_WORKER_RUNTIME_MEMORY_LAYOUT_CHANGED')
@@ -222,6 +235,7 @@ def clone_worker(tx, web, *, name, memory_mib, cpu, state_dir, reviewed_combined
             (memory_mib == 1024 and cpu == 1 if reviewed_combined_media else 96 <= memory_mib <= 512 and 0 < cpu <= 1),
             'BOUNDED_WORKER_RESOURCES_REQUIRED')
     require(len(env.get('VIDEO_WORKER_SECRET', '').strip()) >= 32, 'WORKER_SECRET_REQUIRED')
+    interval_settings = worker_interval_settings(env)
     scratch = _combined_media_binding(row, name) if reviewed_combined_media else None
     state = pathlib.Path(state_dir)
     require(state.is_absolute() and not state.is_symlink() and state.resolve().is_relative_to(
@@ -238,6 +252,7 @@ def clone_worker(tx, web, *, name, memory_mib, cpu, state_dir, reviewed_combined
                 'NAUMI_WORKER_START_PAUSED': '1', 'NAUMI_WORKER_CONTROL_PORT': '3001',
                 'NAUMI_WORKER_STATE_FILE': '/release-state/worker.json', 'NAUMI_VIDEO_WORKER': '0',
                 'NODE_OPTIONS': '--max-old-space-size=' + str(max(48, memory_mib - 64))}
+    settings.update(interval_settings)
     if reviewed_combined_media:
         settings.update(NAUMI_MEDIA_WORKER='1', MEDIA_WORKER_ORIGIN=env['MEDIA_WORKER_ORIGIN'],
             MEDIA_WORKER_SECRET=env['MEDIA_WORKER_SECRET'], MEDIA_JOB_DIR='/scratch',

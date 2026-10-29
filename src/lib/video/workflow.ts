@@ -168,7 +168,12 @@ async function resumeVideoWorkflowLocal(runId:string,actor?:string){
 export async function recoverVideoWorkflows(limit=2){
   await ensureWorkflowSchema();const runs=(await getPool().query(`SELECT r.id FROM app_video_workflow_runs r WHERE EXISTS (
     SELECT 1 FROM app_video_workflow_run_nodes n WHERE n.run_id=r.id AND n.status IN ('pending','processing')) ORDER BY r.updated_at LIMIT $1`,[Math.max(1,Math.min(10,limit))])).rows;
-  for(const run of runs)await resumeVideoWorkflow(run.id);return runs.length;
+  let processed=0;
+  for(const run of runs){
+    try{await resumeVideoWorkflow(run.id);processed++;}
+    catch{console.error("[video-worker] workflow recovery failed; retained for next scan");}
+  }
+  return processed;
 }
 
 export async function confirmVideoWorkflowNode(actor:string,runId:string,nodeId:string,confirmation:{version:number;credits:number}){
