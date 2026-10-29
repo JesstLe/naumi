@@ -237,3 +237,24 @@
 既有失败保留：企业集成401≠404已在X1原版/修改版复现，未改鉴权断言；X2扩展review在A+ redo及5个race后遇PUBLISH_STALE_DRAFT_BASE，整套未通过。X3子任务React18缺依赖的全项目类型检查失败保留，父线程使用匹配React19依赖后的组合源码tsc通过，二者不是同一环境结论。
 
 接口与后续：X5复用kick/get(id,false)/set/patch/paidOperation/settle，不改operation、attemptToken或收费身份；holdImageJobBilling(id,token)为唯一既有签名变化。接续X4大base64线性解析、X5现有storage外置图片、sharp图片处理；X1剩余状态投影、X3未受理协议、两套扩展fixture及其他领域仍排队。完整Next生产构建与线上验收未执行，47 HOLD/无SSH保持，45笔手术和在线索引仍仅挂账。三个功能模块已到同步点，合主线前再次fetch并记录最终固定SHA到本地计划。
+
+
+### 2026-10-29 X4：大字符串解析结论校正与真实修复
+
+- **C3 / D3 / X4校正**：指定的两处 supplier/reverse-hub Base64 字符类在Node24.19、1/8/44MiB有效串/尾部非法/Unicode空白及真实4,202,552字符PNG转换中未复现爆栈。保留原文件及格式契约，不将“类似正则”当已证实RangeError。
+- **A30 / D13：New API畸形Markdown图片起始符导致二次方扫描。** 实际 `new-api-image.ts::extractImageUrl` 的全局Markdown正则反复从未闭合 `![` 开始扫描；原函数1MiB样本子进程5秒超时，真实本地HTTP→原响应转换10秒超时。改为单向扫描并保留最后完整Markdown图片优先、最后裸URL次之、嵌套与空白兼容，裸URL路径不再物化全量match数组。固定提交 `238e45d99cd2857eb3e7ded14075ba67c0de2db8`，父线程已普通merge并复核。
+- 父线程独立复测：12,066组原兼容性、46组Base64、66组真实本地HTTP/像素均通过；另加150,000组固定种子169029差分对照通过。基线与回滚各3组超时（exit1），修改版0失败（exit0），PNG原字节和实际RGB像素一致。实际脚本、输出及hash在父worktree ignored `output/capacity-audit-wave2-20261029/review-x4/VERIFICATION.txt`；四产物已重开，源码仍为修改版。
+- 原测试加载器 `verify-image-postaccept-diagnostics.cjs` 缺少 `../model-config/local-image-rejection`，子任务在基线和修改版均exit1；保留QA后续，不用补桩伪装通过。Hub ledger为内存fixture，不冒称真实PG事务。
+- 视频 `auxiliaryMediaBytes` 的8MiB直接输入RangeError，仅作后续可达性核验：公开schema上限512KiB且该范围正常，未证明线上可达；Agent harness相似Markdown替换作为Agent/前端传输后续候选。
+- 本次未改imagegen/sharp、durable存储、供应商调用/计价/fencing。X5和图片管线仍在各自任务中；首个空位转向X3可靠未受理证明缺口。本次功能同步计数1/3；47 HOLD持续，生产动作0。
+
+
+### 2026-10-29 图片处理首切片：复用已解码RGBA
+
+- **A31 / D14：imagegen后处理初检的中间PNG往返及chroma重复解码原输入。** 固定提交 `01618bcfc58c32110c497bdb3c06e334f2582481`，仅postprocess/pixels/chroma与专属验证。复用独占规范化RGBA进行chroma和初始透明检查；原alpha上限在已有matte循环捕获，仅边缘处理时分配。普通不缩图成功路径观测从decode4/encode2/metadata3变为2/1/2；chroma不缩图5/2/4变为2/1/2；实际缩图保持3/2/2。计数是实际sharp pipeline调用，不是libvips内部缓存后的codec调用量。
+- **否决反例保留**：子任务首版全raw缩图虽像素相同，却在12MP独立进程样本中出现RSS回退。最终真实缩图保留一次无损中间PNG，仅移除不必要初检解码；不调低质量/像素限额、不改全局concurrency/cache。`BENCHMARK-first-raw.json`、最终30个独立进程样本及RAW-RSS-PROBES均已父线程重开；这些仍是子任务本地量化，不冒充父线程重新做了30次测量或生产容量。
+- 父线程重跑41个场景：27个成功输出编码字节/RGBA/尺寸/透明事实等价，14个拒绝保持相同错误；基线预算27项不满足（exit1），修改预算全过（exit0），独立副本回滚恢复原3文件hash和27项重复转换（exit1）。最终实际编码输出仍重新解码验收，保留全透明/透明像素消失/JPEG背景/EXIF/ICC/动画/坏图及资源上限约定。
+- 实际调用方transformImage(imagegen/resize)、localEditSchema、mask→postprocess及原后处理/contract/intent回归通过；全项目TypeScript通过。没有PG/HTTP/对象存储端到端或完整Next构建，不把像素纯函数验证扩成全链路交付结论。
+- 父线程初次Python启动器按大小写过滤Windows环境变量，漏保留SYSTEMROOT，Node启动阶段CSPRNG断言退出134；改为环境变量名大小写无关白名单后正常执行，原记录保留 `INITIAL_WINDOWS_ENV_FAILURE.txt`。业务代码未为该启动器问题改动。
+- 证据：当前worktree ignored `output/capacity-audit-wave2-20261029/review-image/`，含四产物及父线程精确命令/输入/stdout/stderr/exit。外部函数签名和返回字段不变；未动X5存储/付费checkpoint、授权和fencing。
+- 未完成：mask/input-assets及跨交付边界重复读取、媒体并发与整站峰值仍待独立验证。X5和X3未受理证明继续各自推进，下一可用槽开始前端画布保存/传输审计。功能同步计数2/3；47 HOLD持续，生产动作0。
