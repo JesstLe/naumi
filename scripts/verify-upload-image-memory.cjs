@@ -162,6 +162,14 @@ function fixture() {
       },
     })},
   };
+  // This worktree already split the original db facade into its real I/O owners.
+  // Keep exactly the same synthetic SQL/auth/artwork transport boundary; do not
+  // load the old monolith (and UI catalog) or stub image decoding/storage rules.
+  mock['src/platform/db/pool'] = {dbEnabled: true, getPool: () => pool};
+  mock['src/lib/persistence/schema'] = {ensureSchema: async () => {}};
+  mock['src/lib/artworks/repository'] = {listArtworksByIds: mock['src/lib/db'].listArtworksByIds};
+  mock['src/lib/artworks/writer'] = {addArtworks: mock['src/lib/db'].addArtworks};
+  mock['src/lib/canvas/artwork-repository'] = {setArtworkPosition: mock['src/lib/db'].setArtworkPosition};
   const cache = new Map();
   const context = vm.createContext({console, Buffer, URL, Request, Response, Headers, FormData, File, ReadableStream,
     AbortController, AbortSignal, DOMException, setTimeout, clearTimeout, setInterval, clearInterval,
