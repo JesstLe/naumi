@@ -1,5 +1,54 @@
 # 模型映射 103 独立验证线：单次参数翻译
 
+## 当前交付状态（2026-10-30）
+
+**首模块已在103完成真实端到端闭环；分支持续隔离，不合main，不推广47。** 本次不是整个映射平台或全部模型的验收。
+
+### 程序与配置
+
+- 运行应用 source `26ecb4f62f6f73c6917fe93d840b6e3630a756d9` / build `1793281509` / Web+Worker同image `sha256:f00f1ae321858a09549ff5ef56c1c528a26f7819baea3d29bcfff0e04d86ca39`。
+- 原事务 `release103-mapping-20261029-r3` 于北京时间2026-10-29 23:57:53 COMPLETE；旧Web/Worker停止且restart=no，新pair正常，最终7运行容器、canonical revision252、两锁已释放。运维后继版本 `ae3eeac5` 与运行应用版本分别记录，没有为运维脚本重建应用镜像。
+- 47供应商来源固定v152/digest `51f8a49f6cc4e73415c703175e466b9e4f2633f5a6033d9f9d6aef264659e884`；仅源站只读，无跨站用户、作品、媒体、余额、账本、任务复制，也不是持续同步。
+- 103供应商publication `41f9fddc-a312-4a12-835e-ab27a8757847`，v112→113，phase原值`applied`。纳入全部9供应商/95上游/50公模，9凭据经103密钥新UUID重加密、94条来源metadata；保留target-only后总计19providers/120upstreams/61publics/4pools。63视频冻结definition/profile逐条与来源一致，不等于付费视频交付通过。
+- 临时QA追加2条为v114/publication `f4e52522-8b69-4973-a0d9-6d2c0f212b59`；验收后选择性移除2条为v115/publication `c52a0e16-6c40-4084-a856-da5c31ad32d2`，phase原值`applied`。最终v115配置digest `02ae77b2978c9d8312d46f5be33efca04e2b3249efee6ccecf436232c5480460` 与供应商复制后的v113完全相同；历史v114/任务/凭据留存。
+- billing8原始配置完整对照不变，客户默认、售价保留；供应商来源启用/禁用按47快照复制，不把所有登记项自动启用。收费巡检显式维持关闭，policy revision2/enabled=false/dailyMaxCalls=0。
+
+### 真实收费验收（不是fixture）
+
+| 入口与原选 | 实际供应商参数 | 实际输出 | 原报价/结算 | 供应商回执USD |
+|---|---|---|---|---|
+| API QA high / 4K / 1:1 | medium / 2k | 2048×2048 PNG | 16 / 16 | 0.021136 |
+| API QA medium / 4K / 1:1 | low / 2k | 2048×2048 PNG | 12 / 12 | 0.009850 |
+| 真实画布现有gpt-image-2，medium / 2K / 1:1 | medium / 2k | 2048×2048 PNG | 8 / 8 | 0.021112 |
+
+共3次新增生成、3张成功、3笔扣费36积分，供应商**回执**费用合计0.052098 USD（不是另行核过账户账单）。用户本轮无预算上限，但没有启动自动收费巡检。
+
+- 前两例经真实Nginx入口、plan、持久父子任务、旧generate route、APIMart SDK、供应商、R2、原图下载/解码及账本；每例有唯一供应商task ID、parameterPlan.wire/effective、原始用户选择和冻结报价。
+- 质量映射high→medium / medium→low各执行一次；原4K价格保留，实际2K如实记录。新版`parameterPlan.effective`为实际档位权威；旧`quote.effectiveParameters.resolution`在该显式映射样本仍保留计价原选4K，不能拿它冒充wire或实际像素。
+- 临时QA公模移除后，前两例继续用原operationId取回/重复应用回执，供应商调用记录与task ID、账本精确相同，新增调用记录0、新增扣费0，剩余预占0。没有做供应商网络抓包，不把DB记录数当独立物理POST计数。
+- 第三例真实UI选GPT-Image-2.5/标准/2K/1:1，前台显示8积分，plan/submit各1次；同作品主节点图片可见、naturalWidth/Height2048，刷新恢复新增提交0。其实际前端兼容轮询入口是`/api/generate-image`，父任务与作品均留存。
+
+### 真实失败/修正记录
+
+- r2在创建候选前因历史活动整表扫描预算ABORTED；实查101453条均finished。只对103加入nonfinished-and-prior精确采集，保留全部unknown/旧boot/原受保护ID，未删除历史、未提高预算；真实PG大样本及超预算负向通过，其他站默认SQL字节保持。
+- r3首次真实before marker转交晚于600秒等待，停在CLEANUP_PENDING，未切流。沿原r3、原候选、原备份与原task snapshot一次性核对续跑，无重建候选/任务重放。执行runner为ad916…；后发修订未被误记为已执行。旧gatewaySwitched/candidatesRetained历史字段在实际COMPLETE后独立核网关ACK/哈希及旧新实例，再CAS校正事实并保留原回执/前像；canonical252。
+- 旧页面跨切流真实保存HTTP200，但全对象hash断言因main新增空error字段失败；56个原节点仅去除这一新增空字段后，全部原hash相同；原旧document保存回执保留，新页面精确读回通过，非伪造旧页面重跑。
+- 目录自动发现被发布浏览器测试主动阻断，模型管理页面显示Failed to fetch；配置GET与页面hydration通过不当作供应商目录刷新通过。本轮未改该UI或扫完整供应商目录。
+- 第三例首次只读打开一度显示图片暂未加载，后续同图及刷新均正常，实际307→签名R2→200。保留这次观察，未据此认定持续产品缺陷。刷新后图编辑栏是下一次编辑的自适应/1K/6默认配方，不冒充历史配方UI还原验收。
+- Node24 fetch忽略Host造成首个未提交plan403；改测试隧道为native HTTP保留真实103 Host/Origin，不改服务CSRF。该失败submitAttempts=0；生成未知受理没有重提。
+- standalone缺zod/React server条件入口，运维bundle改为打入纯JS依赖、普通Node执行；billing原始快照与runtime默认补齐不同则分别绑定raw/normalized双CAS。均保留原失败UUID，无其publication，不降低原价保护。
+
+### 证据与保留边界
+
+本地 `output/model-mapping103-20261029/`：`FINAL_ACCEPTANCE.json`、`FINAL_SNAPSHOT.json`、`PUBLIC_DIRECT_FINAL.json`、三个`*-final.sidecar.private.json`、`REPLAY_VERIFICATION.json`、`ui-e2e-existing/VERIFICATION.txt`；`source-proof/`和`ops-proof/`均有四件与真实Bash独立副本回退。
+
+远端 `/opt/naumi-staging/evidence/release103-mapping-20261029-r3/`、`supplier-copy103-41f9fddc-a312-4a12-835e-ab27a8757847/`、`qa-mapping103-f4e52522-8b69-4973-a0d9-6d2c0f212b59/`、`mapping103-final-20261030/`。源码/本地PG/真实程序发布/配置publication/真实付费/UI证据分层保存。
+
+未逐一收费验收95个来源模型；视频、成本preset及无version历史任务没有被真实付费重放，后两类保留本地回归证据。预览嵌套参数、direct/unverified引用数门禁、后台重复入口等后续模块未捆绑改造。本分支保留，main只可单向合入，测试通过不解除隔离。
+
+---
+
+
 ## 固定边界
 
 - 用户指定独立分支 `codex/model-mapping-103-20261029`；基线 `c328f01c5a1854bce271fa53e64d324986df9329`。
