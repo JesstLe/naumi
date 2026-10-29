@@ -1,6 +1,6 @@
 # 账务/积分热路径增量审计：FIFO 精确扣减前缀
 
-日期：2026-10-29。状态：**独立分支源码修复 + 本轮真实隔离 PostgreSQL 验证；未整合、未推送、未发布**。A/D 编号交由父线程统一分配。
+日期：2026-10-29。原子任务交付状态为独立分支完成；父线程现已完成源码复核、真实隔离 PostgreSQL 与原生回归，纳入本次主线整合，登记 **A38 / D20**。**未部署**；父线程证据及未完成边界见第 7 节，原子任务失败记录继续保留。
 
 ## 1. 基线与职责边界
 
@@ -198,3 +198,24 @@ docker run -d --name naumi-billing-hotpaths-94f72f4f --label naumi.fixture=billi
 本次实现与迁移状态：两个真实扣减入口共用 set-based 前缀 UPDATE；没有任务仓储扩权、没有迁移/索引/缓存/业务限额。
 
 未完成项与下一步：父线程复核后串行整合；在匹配项目依赖环境补原生 wallet/refresh 与完整 tsc。过期历史重复查询、会话镜像写放大、BI 审计保留、其他钱包借出连接生命周期继续独立审计。不能以本轮 prefix 优化关闭全体账务容量、生产容量或已有总台账事项。
+
+## 7. 父线程复核与集中验收（2026-10-29）
+
+父工作树基线为 `9aaf16af7bd1c23395ca4d443c62e7daedcb85c9`，以普通 merge 纳入固定子提交 `7e148a6542a35902adc72d727b3574f685dc80ca`，业务源码未额外修改。独立源码清点核对全部运行时批次写入及调用链：现代 settle/adjust、返还 grant 先锁 owner；五个兼容扣减入口都由 `deductPrincipalFIFO` 在原事务先锁 owner。默认 READ COMMITTED 下，新 CTE 位于 owner 锁之后的另一条语句，读取锁后快照。没有发现此次新增 import 环或绕 owner 锁改 `remaining` 的运行时路径。
+
+明确兼容边界：现代两种排序不变；旧兼容 FIFO 的到期/创建时间顺序保持，原相同时间的未定义并列顺序新增 `id` tie-breaker。`now()` 仍采用事务开始时间，未将跨到期长事务的旧语义写成本轮修复。`expireDueBatches` 的独立调用只更新 `expired`，不更新余额/期限；人工导入回滚、smoke 脚本绕锁写批次属于另外的运维边界，本轮没有执行。
+
+父线程创建独占容器 `naumi-billing-parent-20261029`，端口 `127.0.0.1:55489`，使用公开合成 fixture 身份。验证副本仅替换测试脚本的源码 root / fixture 端口，保留原业务断言，不读取生产环境文件。
+
+- BASELINE / MODIFIED / modified-copy / ROLLBACK：每次账务语义 **11/11**；基线/恢复性能预算 exit1（1 万行、尾锁被占、61 SQL），修改/修改副本 exit0（聚合返回 1 行、尾锁可得、1 SQL）。完整 service 耗时保留原测量，不承诺同 owner 的所有结算场景均提速。
+- 原生 `verify-billing-wallet.ts`、`verify-billing-review.ts balance-refresh`、`verify-billing-review.ts recovery`、`verify-billing-rules.ts`：均 exit0，实际应用 import、真实 schema/事务；恢复中的 supplier 是 fixture，并非真实付费供应商。
+- 原 `verify-image-job-lease.cjs` 的父 fixture 副本：`X2_MODIFIED=PASS`、exit0，保留失租拒绝、钱包锁等待后期限复检、UNKNOWN hold、同 operation 8 路一笔 -6 等断言；非重新执行 280 秒墙钟测试。
+- 父环境 React **19.3.0**，全项目 `tsc --noEmit --incremental false` exit0/无诊断。子环境 React18 导致的原生 import 失败及 36 项类型诊断保留，不改写其历史结果。
+- 额外实际 PG 边界在原/改/恢复三版均通过：两批次累计 `4294967294`、最大单次扣减 `2147483647`，两种顺序正确；这是 repository 算术边界，不宣称 int32 钱包镜像支持该累计余额。真实 `pg_sleep` 越过批次到期时间，三版均维持事务时间语义。
+- 仅独立副本回滚，恢复两份原 hash及原性能行为；源码/修改副本保持。后来编辑 guard exit73、零写入；回滚脚本可执行。父 fixture 收尾停止并核验端口关闭。
+
+父证据目录：`C:/Users/13357/.t3/worktrees/naumi/codex-capacity-audit-wave2-20261029/output/capacity-audit-wave2-20261029/billing-parent/`。
+
+四产物：`MODIFIED_FILE.zip`、`DIFF_FILE.patch`、`VERIFICATION.txt`、`ROLLBACK.sh`；完整命令、stdin、合成输入、stdout/stderr、退出码及原/改 hash 均已记录并重开。`run.py` 统一复现 BASELINE / MODIFIED / COPY / ROLLBACK 与原生回归；`run-edges.py` 复现三版额外边界。
+
+**下一切片候选**：`bi/user-management.ts:144` 在 owner 锁后仍将全部活批次 `FOR UPDATE` 传回，即使 profile/ban/role/reset-password 等非积分编辑也执行。它不破坏新扣减的 owner 串行前提，但本轮扣减优化没有消除此调用方负载；仅源码发现，待独立 PG 复现。重复过期扫描、BI 审计保留仍未修复。47 无 SSH/部署，45 笔手术、在线索引和已知 accepted-timeout 波动继续挂账。
