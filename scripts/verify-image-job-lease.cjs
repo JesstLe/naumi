@@ -63,7 +63,10 @@ const db = {
     async connect() {
       const c = await rawConnect();
       let broken = false; const onError = () => { broken = true; }; c.on('error', onError);
-      return { release: () => { c.removeListener('error', onError); c.release(broken); }, async query(sql, args) {
+      return {
+        on: (event, listener) => c.on(event, listener),
+        removeListener: (event, listener) => c.removeListener(event, listener),
+        release: discard => { c.removeListener('error', onError); c.release(broken || !!discard); }, async query(sql, args) {
         if (isRenew(sql)) {
           renewalAttempts++;
           if (renewalFaults-- > 0) { broken = true; await control.query('SELECT pg_terminate_backend($1)', [c.processID]); }

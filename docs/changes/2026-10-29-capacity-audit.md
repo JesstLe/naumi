@@ -208,3 +208,32 @@
 验证及状态：本次仅台账原字节复制、追加内容/差异和副本回滚校验；业务修复、隔离 PG/并发验收和固定提交尚待子任务返回，不计功能迭代或线上完成。每项交付 baseline/modified/rollback 的命令、输入、实际输出与退出码，并保留 MODIFIED_FILE、DIFF_FILE、VERIFICATION.txt、可执行 ROLLBACK.sh。
 
 未完成项与下一步：实际启动 X1/X2/X3 后记录真实任务句柄；回传后审查并串行整合，接续 X4/X5 与图片管线。47 用户 HOLD 持续：本轮先无 SSH；不部署、切流、重启、业务写、清 UNKNOWN、付费调用或生产故障注入；45 笔手术和 created_at 在线索引仅挂账。GLM 仍在处理现场。
+
+
+### 2026-10-29 第二棒首批整合：X1 / X2 / X3 与父线程复核
+
+模块与职责：父线程串行普通 merge 固定提交 X1 `074533f5255d623b210362c71d240d651816d6f0`、X3 `547de0b85040962ba4858e62f69b5b8de31990cc`、X2 `c7b050e4d63548fd80587ea1a95989b30860ea5c`。下述为本地隔离复核，不是线上容量或部署结论。用户已明确排除全部 Opus 模型；X1 的两次 Opus 尝试保留失败/取消证据，实际功能交付来自 Codex。
+
+#### 已证实并修复的切片（总项不自动关闭）
+
+- **A25 / D1 / X1 子项**：企业 `queryEnterpriseOperations` 先展开 UNION 的 JSON/账务再分页，现改为保留授权/日期/原状态语义的窄键筛页、MATERIALIZED 页屏障及当页投影。父线程实际 PG 复测 362 条授权候选/每页 7 条：无状态筛选账务聚合 362→7，shared block accesses 9,925→876；数值是同一隔离合成样本的执行计划累计访问，不是生产 RSS、唯一页或容量上限。45 组语义检查、撤权/总数/MVCC、跨源同 ID 与父子物理行均保留。管理 `queryBi(operations)` 基线本来已有窄键分页；源码只定义 4 个 app_bi_jobs_* 索引（3 partial+1 expression），线上“7个”未实测。状态摘要/非空状态筛选/anomaly 的 detoast 前置仍开放。
+- **A3 / A16 / D8 / X2 子项**：120s 租约和25s正常心跳保持，单次错误后用单飞1/2/4/8s有界退避；本地期限不可逆失效，迟到成功不复活。取行锁后以 PG clock_timestamp 验证，钱包等待后的结算在同一事务复检。root/child paid入口、hold/evidence均保留token与checkpoint fencing。父线程复测真实PG并发及实际应用HTTP/route/计费通过；8路同operation结算仍为1笔6积分，不把风险写成已证明同operation双扣费。子任务280秒实际时钟续租证据已重开检查，父线程不重复记作新的280秒实测。
+- **A1 / A23 / A2 / D2 / X3 子项**：只有一个普通池工厂；进程Symbol单例与同代配置冻结，业务池默认5不变，tick回执专池默认2。预算15是每Node进程5+2+其他池8的源码预算，不是生产余量。父线程复测业务池饱和时tick GET/read/accept/complete通过，迟到checkout基线已释放而非本轮新增修复；503/404/timeout仍保持UNKNOWN。可靠未受理凭据及有界恢复协议继续开放。
+
+#### 父线程新编号与修复
+
+- **A26 / D11：借出连接断开触发未处理 error，Node 退出。** X3 的 tick连接已修；父线程进一步发现X2故障包装器替真实Client绑定了error listener，不能证明真实心跳路径存活。直接使用真实普通池Client，只终止本机测试刚借出的backend，已提交X2版进程exit1（Unhandled 'error' event）；补上 heartbeatImageJob 借出期间监听、坏连接销毁及保留原错误，修改版exit0且下一次真实续租成功。新增 `scripts/verify-image-heartbeat-connection.cjs` 无测试监听掩盖该缺陷。副本恢复原hash后再次重现exit1。普通业务仓储其他借出路径不在本切片，继续运行时审计，不声称全库断连已闭环。
+- **A27：ROLLBACK失败仍归还不确定会话。** tick切片受控复现后release(true)；父线程心跳补丁同样只在确认回滚成功时普通归还。原错误保留，不把回滚失败降为正常busy。
+- **A28 / D12：行锁/钱包锁等待越过租约，旧时间判断让旧owner继续提交。** X2的锁后及提交前复检在原事务中回滚扣减/ledger/预占/settled，父线程真实PG复核通过；不等同已发生生产双扣费。
+- **A29：无owner或intent后失租仍进入执行回调、旧owner hold/evidence回写。** X2新增执行上下文/DB preflight与回写fencing，父线程复测对应回调0次。preflight和外部HTTP不是原子事务，已进入外部调用仍以原operation/accepted/unknown协议核对，不提供exactly-once承诺。
+
+#### 集中验证与证据
+
+父线程证据均在当前worktree ignored `output/capacity-audit-wave2-20261029/`：
+- `review-x1-x3/integration/VERIFICATION.txt`：X1 BASELINE/MODIFIED/ROLLBACK各45组；X3基线/回滚14组、修改19组；原回执59项、scoped pool7项、WorkerRuntime25+真实进程1项；全项目TypeScript exit0（使用项目React19.3依赖），四文件copy-only回滚恢复原行为。
+- `review-x2/PARENT_VERIFICATION.json`：X2基线/修改/恢复、原生终态4项、真实本地HTTP/route/计费并发、全项目TypeScript；原始子任务四产物及280秒日志另存副本。
+- `parent-heartbeat/VERIFICATION.txt`：父线程新缺口BASELINE/修改/副本回滚/恢复、真实Client断连后下一次续租及租约回归；产物MODIFIED_FILE、DIFF_FILE、可执行ROLLBACK.sh均重开。
+
+既有失败保留：企业集成401≠404已在X1原版/修改版复现，未改鉴权断言；X2扩展review在A+ redo及5个race后遇PUBLISH_STALE_DRAFT_BASE，整套未通过。X3子任务React18缺依赖的全项目类型检查失败保留，父线程使用匹配React19依赖后的组合源码tsc通过，二者不是同一环境结论。
+
+接口与后续：X5复用kick/get(id,false)/set/patch/paidOperation/settle，不改operation、attemptToken或收费身份；holdImageJobBilling(id,token)为唯一既有签名变化。接续X4大base64线性解析、X5现有storage外置图片、sharp图片处理；X1剩余状态投影、X3未受理协议、两套扩展fixture及其他领域仍排队。完整Next生产构建与线上验收未执行，47 HOLD/无SSH保持，45笔手术和在线索引仍仅挂账。三个功能模块已到同步点，合主线前再次fetch并记录最终固定SHA到本地计划。

@@ -75,6 +75,12 @@ export async function claimImageJob(id: string, kind: ImageJobKind): Promise<Ima
 
 export async function heartbeatImageJob(id: string, token: string) {
   const tx = await getPool().connect();
+  let disconnected: Error | undefined;
+  let discard = false;
+  const onError = (error: Error) => { disconnected = error; discard = true; };
+  // pg-pool removes its idle listener while a client is checked out. Contain
+  // socket errors here so the lease scheduler can retry instead of Node exiting.
+  tx.on("error", onError);
   try {
     await tx.query("BEGIN");
     await tx.query("SET LOCAL lock_timeout='2s'");
@@ -82,9 +88,14 @@ export async function heartbeatImageJob(id: string, token: string) {
     await tx.query("SELECT id FROM app_image_jobs WHERE id=$1 FOR UPDATE", [id]);
     await assertLeaseTx(tx, id, token);
     await tx.query(`UPDATE app_image_jobs SET lease_until=clock_timestamp()+$3*interval '1 millisecond' WHERE id=$1 AND lease_token=$2`, [id, token, IMAGE_JOB_LEASE_MS]);
+    if (disconnected) throw disconnected;
     await tx.query("COMMIT");
-  } catch (error) { await tx.query("ROLLBACK"); throw error; }
-  finally { tx.release(); }
+  } catch (error) {
+    if (!disconnected) await tx.query("ROLLBACK").catch(() => { discard = true; });
+    throw error;
+  } finally {
+    try { tx.release(discard); } finally { tx.removeListener("error", onError); }
+  }
 }
 
 /** Call AFTER acquiring the row lock. now() is transaction-start time, and an

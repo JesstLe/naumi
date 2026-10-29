@@ -119,3 +119,10 @@ node --conditions=react-server --import=tsx scripts/verify-image-concurrency-con
 - A3/A16、D8 更新为“本轮隔离实测并修复，待父线程整合；未部署”，把“一次异常直接双扣费”改为“心跳永久中断、失租后回调/锁等待提交窗口；已有 checkpoint/账务唯一性防线保留”。
 - 对行锁等待使用旧时间、钱包锁越期提交、旧 owner hold/evidence 回写分别按父线程编号规则入 A/D；触发→症状→原因→修复证据见上表。
 - X5 可依上述接口接入；X3 继续接管 checkout/控制面池隔离；扩展 review fixture、生产验收和 45 笔手术维持未完成状态，不与本轮离线通过混写。
+
+
+## 父线程复核补充：真实借出心跳连接断开（2026-10-29）
+
+父线程直接运行真实 pool Client，发现上述续租测试的db包装器绑定error listener而真实心跳未绑定。对当前已提交X2实现的本机测试backend断开，进程因未处理Client error退出1。新增 `verify-image-heartbeat-connection.cjs` 独立子进程验收，不在测试替生产绑定listener；heartbeatImageJob自身监听借出期间错误、保留首个异常、跳过坏连接无意义ROLLBACK、对回滚失败/断连release(true)，最后移除局部监听。修改版进程exit0，坏连接数0，下一次续租成功。副本还原再次出现exit1，租约和账务回归保持。此补丁不改变重试/租约时长、收费或供应商协议。
+
+父线程命令：`node scripts/verify-image-heartbeat-connection.cjs <repository-source> baseline|modified`；显式 `NAUMI_X2_TEST_DATABASE_URL` 同上本地55432库，随机schema，仅终止本fixture借出的backend。四产物与字面输出在父worktree ignored `output/capacity-audit-wave2-20261029/parent-heartbeat/`。普通仓储其他借出Client处理仍是后续运行时审计项。
