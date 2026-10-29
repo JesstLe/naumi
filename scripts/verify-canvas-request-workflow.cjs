@@ -88,7 +88,8 @@ async function workflows(){
  // Actual Canvas composition: a pre-accept error releases the retained task,
  // while UNKNOWN still keeps its original controller and performs GET only.
  const runs=new Map(),pend=[],compositionBodies=[];
- const composed=closure(root,'runComfyWorkflow',{...primitives,...(fs.existsSync(path.join(root,'src/lib/canvas/generation-activity.ts'))?load('src/lib/canvas/generation-activity.ts'):{}),readOnly:false,user:{email:scope.owner},generationOperationRef:{current:new Set()},canvasAccountRef:{current:'account'},activeProjectRef:{current:{key:scope.project}},canvasContextEpochRef:{current:1},batchRunMountedRef:{current:true},
+ const presentation=fs.existsSync(path.join(root,'src/lib/canvas/generation-presentation.ts'))?load('src/lib/canvas/generation-presentation.ts').createCanvasGenerationPresentation().bind('fixture-original-view'):undefined;
+ const composed=closure(root,'runComfyWorkflow',{...primitives,generationPresentation:presentation,...(fs.existsSync(path.join(root,'src/lib/canvas/generation-activity.ts'))?load('src/lib/canvas/generation-activity.ts'):{}),readOnly:false,user:{email:scope.owner},generationOperationRef:{current:new Set()},canvasAccountRef:{current:'account'},activeProjectRef:{current:{key:scope.project}},canvasContextEpochRef:{current:1},batchRunMountedRef:{current:true},
   comfyRunsRef:{current:runs},captureCanvasTaskOwner:()=>({capture:()=>scope,isVisible:scope.isCurrent,workspace:scope.workspace}),comfyRunReceiptKey,createCanvasComfyWorkflow,createCanvasResultAttachment,
   rfRef:{current:null},flowNodeSize:()=>({width:300,height:300}),artworkNodeSize:()=>({width:300,height:300}),X_GAP:90,browserRandomUUID:()=>crypto.randomUUID(),localStorage:storage,
   taskDocumentRef:{current:{merge:async ids=>ids.map(id=>({id,image:'/media/'+id+'.png'})),history:()=>{}}},videoTaskStore:{refresh:async()=>{}},livePendingPosition:()=>({x:400,y:50}),

@@ -15,7 +15,7 @@ async function main(){
  for(const kind of ['derived','blank','detail']){
   const setup=()=>kind==='detail'?detail.setup('detail','done',db):image.setup(kind,'done',ib);
   const f=setup();
-  if(kind==='blank')f.c.generationPositionForTask=fail;else f.c.reserveGenerationPosition=fail;
+  if(f.c.generationPresentation&&kind!=='blank')f.c.generationPresentation={...f.c.generationPresentation,start:fail};else if(kind==='blank')f.c.generationPositionForTask=fail;else f.c.reserveGenerationPosition=fail;
   await assert.rejects(f.run(),/fixture-view-preparation/);checks++;
   eq(f.c.generationOperationRef.current.size,baseline?1:0,kind+' setup exception does not strand a busy key');
   eq(f.state.post??f.state.posts,0,kind+' setup exception never submits');
@@ -45,7 +45,7 @@ async function main(){
  (function walk(n){if(ts.isFunctionDeclaration(n)&&n.name&&['runGen','generatePend','generateDetailSequence','landEditResult','runComfyWorkflow'].includes(n.name.text))callers[n.name.text]=n.getText(ast);ts.forEachChild(n,walk);})(ast);
  eq(Object.keys(callers).length,5,'all production paths found');
  for(const [name,body]of Object.entries(callers)){
-  eq(body.includes('createCanvasGenerationActivity'),!baseline,name+' invokes the actual lifecycle owner');
+  eq(body.includes('createCanvasGenerationActivity')||/\b(?:view|generationPresentation)\.activity\(/.test(body),!baseline,name+' invokes the actual lifecycle owner');
   if(!baseline){eq(/generationOperationRef\.current\.(add|delete)\(/.test(body),false,name+' does not privately mutate activity state');}
  }
  if(!baseline){

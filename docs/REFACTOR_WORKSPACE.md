@@ -215,3 +215,8 @@ R7D最终：应用18a15ab0、完整镜像/产品37PASS，集中回归同SHA汇�
 普通整合main e1878018的8提交；媒体快照/原子写/退休回执归独立state-store，先持久化再受理、终态写入沿原job lock与确认清理同步，原错误与脱敏errno并存。实际Worker旧4/24→新4/34；主线Sharp像素41/409及线性解析HTTP66通过，未知/付费任务不重放。最终固定镜像/场景/回滚/Git证据见[R7E记录](changes/2026-10-29-refactor-r7e-media-state.md)；MEDIA_STATE_WRITE_FAILED历史根因仍OPEN，整体ACTIVE，未合main未部署。
 
 R7E封版：固定4980c018，实际Worker旧4组24→新4组34、原生同镜像HTTP40/产品双browser37、受影响18入口18PASS/0失败/0未运行，scene完整应用本轮exit0。历史原生errno未捕获仍OPEN；本轮未重跑完整core104/runtime177，不跨SHA拼绿。四产物/4943原hash副本回滚/远端/清理见DELIVERY；整体ACTIVE继续剩余Canvas状态/回调职责、性能/INP/容量、有效远端CI及最终main整合。
+
+
+## 2026-10-29 R7F：Canvas生成展示状态归属
+
+生成task card、失败卡、busy/占位坐标尺寸归generation-presentation，按既有account/workspace/project scope.key隔离；异步调用捕获原binding，React只订阅当前view。原task/报价/回执/history/账务owner不改。完整基线6/39复现foreign task/busy/layout→新版8/46均0；原图片47/179、详情/编辑74/369、activity38/134、request/workflow39/88与scene/interaction/placement/progress通过。当前完整Next三个控件命令7+5+12通过，真实供应商0；未把分层fixture扩为生产/完整core105验收。Canvas5778→5734，2035其它产品hash保持；最终tsc/lint/SCC、四产物/副本回滚和远端见[R7F模块记录](changes/2026-10-29-refactor-r7f-generation-presentation.md)及DELIVERY。整体ACTIVE，继续pending/edit占位恢复归属、性能/INP/容量、有效远端CI与最终整合；不合main、不部署。历史媒体原生errno仍OPEN。

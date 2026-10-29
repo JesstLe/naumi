@@ -30,7 +30,7 @@ import {canvasNodeMenuItems} from "./node-menu-items";
 import {artworkFields} from "@/lib/canvas/artwork-write";
 import {CanvasArtworkConflicts} from "./artwork-conflicts";
 import { NODE_W, NODE_H, NODE_LABEL_H, IMAGE_NODE_MIN_W, IMAGE_NODE_MIN_H, IMAGE_NODE_MAX_W, IMAGE_NODE_MAX_H, TEXT_NODE_MIN_W, TEXT_NODE_MIN_H, TEXT_NODE_MAX_W, TEXT_NODE_MAX_H, estimateTextNodeHeight, artworkNodeSize, flowNodeSize } from "@/lib/canvas/node-geometry";
-import type {CanvasPendingNode as Pend,CanvasGenerationTask} from "@/lib/canvas/scene-types";
+import type {CanvasPendingNode as Pend} from "@/lib/canvas/scene-types";
 import { layoutGraph, projectCanvasScene } from "@/lib/canvas/scene-projection";
 import {PendContext} from "./nodes/pending-node";
 import {TextNodeContext} from "./nodes/text-node";
@@ -102,7 +102,7 @@ import {createCanvasResultAttachment} from "@/lib/canvas/result-attachment";
 import {createCanvasEditTask,type CanvasEditRequest} from "@/lib/canvas/edit-task";
 import {createCanvasDetailTask} from "@/lib/canvas/detail-task-controller";
 import {prepareCanvasDetailTask} from "@/lib/canvas/detail-task-request";
-import {createCanvasGenerationActivity} from "@/lib/canvas/generation-activity";
+import {useCanvasGenerationPresentation} from "./use-canvas-generation-presentation";
 import {createCanvasImageTask,type CanvasGeneratedImage} from "@/lib/canvas/image-task-controller";
 import {captureCanvasImageTaskScope,captureCanvasTaskOwner} from "@/lib/canvas/image-task-scope";
 import {prepareCanvasImageTask,appendCanvasImageReferences,type CanvasImageGenerationOptions} from "@/lib/canvas/image-task-request";
@@ -375,12 +375,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 通过 ?node= 深链进入的节点 id(如 AI 抠图「送画布」):即使它是单张一次性作品
   // (按常规规则不算项目),也让它所在项目在列表里显示出来,否则深链会落到空项目列表。
   const [pinnedNode, setPinnedNode] = useState<string | null>(null);
-  // 每个任务各自保存占位节点位置；允许多个互不依赖的节点同时生成和拖动。
-  const generationTaskPosRef = useRef<
-    Record<string, { x: number; y: number }>
-  >({});
-  const generationOperationRef = useRef(new Set<string>());
-  const generationTaskSizeRef = useRef<Record<string, { width: number; height: number }>>({});
   // 仅"后台深链 ?node="进入时才自动平移聚焦;日常新建/上传/生成节点都不动画布
   const deepFocusRef = useRef(false);
   // 是否已做过"刷新恢复上次项目"的初始化(避免初始挂载误清本地保存)
@@ -388,6 +382,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const canvasArtworkDocument = useCanvasArtworkDocument({account:canvasAccountRef.current,actor:user?.email||"",owner:targetEmail||user?.email||"",
     project:activeKey,enabled:ready&&!!user&&!!targetEmail,readOnly});
+  const generationPresentation=useCanvasGenerationPresentation(canvasArtworkDocument.scope);
+  const generationTasks=generationPresentation.tasks;
   const {nodes:works,set:setWorks} = canvasArtworkDocument;
   worksRef.current=works;
   const projectCatalog=useCanvasProjectCatalog({scope:canvasArtworkDocument.scope,ready:ready&&!!targetEmail,actor:user?.email||"",target:targetEmail||"",readOnly,notice:flashTip,failure:t("canvas.genFail")});
@@ -419,9 +415,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [genCount, setGenCount] = useState(1);
   const [generationMode, setGenerationMode] =
     useState<GenerationMode>("standard");
-  const [generationTasks, setGenerationTasks] = useState<
-    CanvasGenerationTask[]
-  >([]);
   // 自由拖动是默认；用户主动开启磁铁时才吸附网格。全局整理仅由手动动作触发。
   const [genError, setGenError] = useState<string | null>(null);
   const [zipping, setZipping] = useState(false);
@@ -1575,11 +1568,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   // 生成中:在选中节点下方临时插入"生成中"占位节点;
   // 选中时:整条血缘链路点亮(蓝色流光),其余节点/连线变暗。
-  const {displayNodes,displayEdges}=useMemo(()=>projectCanvasScene({nodes,edges,active,activeKey,generationTasks:generationTasks.filter(task=>canvasArtworkDocument.scope.viewCurrent()&&(task.isVisible?.()??true)),taskPositions:generationTaskPosRef.current,
+  const {displayNodes,displayEdges}=useMemo(()=>projectCanvasScene({nodes,edges,active,activeKey,generationTasks:generationTasks.filter(task=>canvasArtworkDocument.scope.viewCurrent()&&(task.isVisible?.()??true)),taskPositions:generationPresentation.positions,
     pendNodes,textNodes,videoNodes:videoNodesStore.nodes,directorNodes:directorNodesStore.nodes,characterNodes:characterNodesStore.nodes,sceneNodes:sceneNodesStore.nodes,audioNodes:audioNodesStore.nodes,timelineNodes:timelineNodesStore.nodes,videoTasks:videoTaskStore.tasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,
     locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutAvailable:!!cutoutCatalog&&!cutoutCatalogError&&cutoutCatalog.available!==false,
-    operations:generationOperationRef.current,workflowManifests,actions:sceneActions}),
-    [nodes,edges,active,activeKey,generationTasks,pendNodes,textNodes,videoNodesStore.nodes,directorNodesStore.nodes,characterNodesStore.nodes,sceneNodesStore.nodes,audioNodesStore.nodes,timelineNodesStore.nodes,videoTaskStore.tasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,
+    operations:generationPresentation.operations,workflowManifests,actions:sceneActions}),
+    [nodes,edges,active,activeKey,generationTasks,generationPresentation.positions,generationPresentation.operations,pendNodes,textNodes,videoNodesStore.nodes,directorNodesStore.nodes,characterNodesStore.nodes,sceneNodesStore.nodes,audioNodesStore.nodes,timelineNodesStore.nodes,videoTaskStore.tasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,
       locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutCatalog,cutoutCatalogError,workflowManifests,sceneActions,canvasArtworkDocument.scope]);
   const {rfNodes,setRfNodes,onNodesChange,rfEdges,setRfEdges,onEdgesChange,holdPositions}=useCanvasScene(displayNodes,displayEdges,canvasArtworkDocument.scope);
   useEffect(()=>{
@@ -1859,25 +1852,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
 
   // 生成核心:以某节点为底图(图生图)+ 提示词 → 新图作为其子节点。
-  function reserveGenerationPosition(taskId: string, preferred: CanvasPoint, size: {width:number;height:number}, existing?: CanvasPoint) {
-    const occupied = (rfRef.current?.getNodes() ?? rfNodes).map(node => ({ ...node.position, ...flowNodeSize(node) }));
-    for (const [id, position] of Object.entries(generationTaskPosRef.current)) {
-      occupied.push({ ...position, ...(generationTaskSizeRef.current[id] ?? generationPlaceholderSize("auto")) });
-    }
-    const position = generationPositionForTask(existing, preferred, size, occupied);
-    generationTaskSizeRef.current[taskId] = size;
-    generationTaskPosRef.current[taskId] = position;
-    return position;
-  }
-
   function livePendingPosition(id: string, fallback: CanvasPoint): CanvasPoint {
     const pending = pendNodesRef.current.find(node => node.id === id);
     return rfRef.current?.getNode(id)?.position ?? (pending ? {x:pending.x,y:pending.y} : fallback);
   }
 
   function rememberGenerationDrag(id: string, position: CanvasPoint, saveReceipt = false, operationKey?: string) {
-    const task = generationTasks.find(task => task.id === id);
-    if (id.startsWith("task-")) generationTaskPosRef.current[id] = { ...position };
+    if (id.startsWith("task-")) generationPresentation.drag(id,position,saveReceipt);
     else if (id.startsWith("pend-")) pendNodesRef.current = pendNodesRef.current.map(node => node.id === id ? { ...node, ...position } : node);
     const retained = editTaskStateRef.current.get(id);
     if (retained) editTaskStateRef.current.set(id, { ...retained, node: { ...retained.node, ...position } });
@@ -1893,12 +1874,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (!text && !opts?.ratiogen) return []; // 改比例可无提示词(服务端用固定重构图指令)
     const requestedCount = opts?.ratiogen ? 1 : Math.max(1, opts?.count ?? 1);
     const operationKey = opts?.operationKey ?? `node:${source.id}`;
-    if (generationOperationRef.current.has(operationKey)) return [];
+    if (generationPresentation.busy(operationKey)) return [];
     const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const sourceNode = rfRef.current?.getNode(source.id) ?? rfNodes.find((node) => node.id === source.id);
-    const siblingTaskCount = generationTasks.filter(
-      (task) => task.sourceId === source.id
-    ).length;
+    const view=generationPresentation;
+    const siblingTaskCount=view.siblingCount(source.id);
     const sourceSize = flowNodeSize(sourceNode);
     const previewSize = generationPlaceholderSize(opts?.ratio || source.ratio);
     const preferredPosition = sourceNode
@@ -1909,42 +1889,31 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             (opts?.taskOffset ?? siblingTaskCount) * (previewSize.height + NODE_LABEL_H + 24),
         }
       : { x: 0, y: 0 };
-    const replacedFailures = generationTasks.filter(task => task.operationKey === operationKey && task.failure);
-    const lastFailure = replacedFailures[replacedFailures.length - 1];
-    const retryPosition = lastFailure ? generationTaskPosRef.current[lastFailure.id] || lastFailure.position : undefined;
-    for (const failed of replacedFailures) { delete generationTaskPosRef.current[failed.id]; delete generationTaskSizeRef.current[failed.id]; }
-    const taskPosition = opts?.replaceNode ? sourceNode?.position||{x:source.canvasX||0,y:source.canvasY||0} : reserveGenerationPosition(taskId, preferredPosition, previewSize, retryPosition);
-    setGenerationTasks((current) => [
-      ...current.filter(task => !(task.operationKey === operationKey && task.failure)),
-      {
-        id: taskId,
-        operationKey,
-        sourceId: source.id,replaceNode:opts?.replaceNode,
-        label: opts?.taskLabel || t("canvas.pending"),
-        stage: "preparing", startedAt: Date.now(), previewSize, count: requestedCount,
-        position: taskPosition,
-      },
-    ]);
+    const taskPosition=view.start({
+      id:taskId,operationKey,sourceId:source.id,replaceNode:opts?.replaceNode,
+      label:opts?.taskLabel||t("canvas.pending"),stage:"preparing",startedAt:Date.now(),previewSize,count:requestedCount,
+    },{preferred:opts?.replaceNode?sourceNode?.position||{x:source.canvasX||0,y:source.canvasY||0}:preferredPosition,
+      occupied:(rfRef.current?.getNodes()??rfNodes).map(node=>({...node.position,...flowNodeSize(node)})),reserve:!opts?.replaceNode});
     setGenError(null);
     const requestAccount=canvasAccountRef.current,requestProject=activeProjectRef.current?.key||null,requestEpoch=canvasContextEpochRef.current;
     const scope=captureCanvasImageTaskScope(user.email,requestProject,()=>batchRunMountedRef.current&&requestAccount===canvasAccountRef.current&&requestProject===(activeProjectRef.current?.key||null)&&requestEpoch===canvasContextEpochRef.current&&(opts?.isCurrent?.()??true));
     const task=createCanvasImageTask({scope,replacement:opts?.replaceNode?{nodeId:source.id,history:pushUndo}:undefined,
       prepare:()=>prepareCanvasImageTask({kind:"derived",scope,operationKey,position:taskPosition,prompt:text,source,options:opts||{},models:imageModels,model:genModel,quality:genQuality,referenceInputs:opts?.referenceInputs}),
       submit:async(form,isCurrent)=>privateFetch("/api/generate-image",{method:"POST",headers:await authHeader(),body:form,isCurrent}),
-      position:()=>generationTaskPosRef.current[taskId]??taskPosition,
+      position:()=>view.position(taskId,taskPosition),
       merge:mergeWorks,history:pushAddUndoMany,
-      stage:stage=>setGenerationTasks(tasks=>tasks.map(item=>item.id===taskId?{...item,stage,failure:undefined}:item)),
+      stage:stage=>view.update(taskId,{stage,failure:undefined}),
       user:value=>applyServerUser(value as Parameters<typeof applyServerUser>[0]),notice:flashTip,
       errorText:t("canvas.genFail"),saveErrorText:t("canvas.saveFailed"),resultGap:NODE_LABEL_H+24,
     });
-    const activity=createCanvasGenerationActivity({operations:generationOperationRef.current,operationKey,canRetry:scope.isCurrent,
-      clear:()=>{delete generationTaskPosRef.current[taskId];delete generationTaskSizeRef.current[taskId];setGenerationTasks(tasks=>tasks.filter(item=>item.id!==taskId));},
+    const activity=view.activity({operationKey,canRetry:scope.isCurrent,
+      clear:()=>view.remove(taskId),
       execute:async({retry,retain}):Promise<GeneratedResult[]>=>{
         const result=await task.run();
         if(result.status==="failed"){
           retain();const message=generationFailureMessage(result.failure);
           if(selectedIdRef.current===source.id)setGenError(message);else flashTip(`${source.title}：${message}`);
-          setGenerationTasks(tasks=>tasks.map(item=>item.id===taskId?{...item,failure:result.failure,onRetry:retry}:item));
+          view.update(taskId,{failure:result.failure,onRetry:retry});
           return [];
         }
         if(result.status==="stale"||result.status==="cancelled")return [];
@@ -1997,7 +1966,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   async function landEditResult(source: Artwork, request: CanvasEditRequest, label: string): Promise<boolean> {
     if (readOnly || !user) return false;
     const operationKey=`node:${source.id}`;
-    if(generationOperationRef.current.has(operationKey))return false;
+    if(generationPresentation.busy(operationKey))return false;
     const account=canvasAccountRef.current,project=activeProjectRef.current?.key||null;
     const owner=captureCanvasTaskOwner(user.email,()=>({account:canvasAccountRef.current,project:activeProjectRef.current?.key||null,epoch:canvasContextEpochRef.current,mounted:batchRunMountedRef.current}));
     const sourceNode=rfRef.current?.getNode(source.id),sourceSize=sourceNode?flowNodeSize(sourceNode):artworkNodeSize(source);
@@ -2027,7 +1996,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       user:value=>applyServerUser(value as Parameters<typeof applyServerUser>[0]),saving:()=>update({generationStage:"saving"},owner.isVisible()),errorText:`${label}未完成，请检查原操作`,
     });
     if(!owner.isVisible()||!editTaskStateRef.current.has(pendingId))return false;
-    const activity=createCanvasGenerationActivity({operations:generationOperationRef.current,operationKey,
+    const activity=generationPresentation.activity({operationKey,
       canRetry:()=>owner.isVisible()&&editTaskStateRef.current.has(pendingId),
       execute:async({retry}):Promise<boolean>=>{
       const scope=owner.capture();
@@ -2225,7 +2194,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   async function runComfyWorkflow(source:Artwork,payload:ComfyRunPayload):Promise<ComfyRunResult>{
     if(readOnly||!user)throw new Error("只读画布不能执行工作流");
     const operationKey=`node:${source.id}`;
-    if(generationOperationRef.current.has(operationKey))throw new Error("当前节点已有任务在进行");
+    if(generationPresentation.busy(operationKey))throw new Error("当前节点已有任务在进行");
     const owner=captureCanvasTaskOwner(user.email,()=>({account:canvasAccountRef.current,project:activeProjectRef.current?.key||null,epoch:canvasContextEpochRef.current,mounted:batchRunMountedRef.current}));
     const key=comfyRunReceiptKey(owner.capture(),source.id);
     let retained=comfyRunsRef.current.get(key);
@@ -2244,7 +2213,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       retained={task,owner,node};comfyRunsRef.current.set(key,retained);
     }
     const {task,node}=retained,scope=retained.owner.capture();scope.assertCurrent();
-    const activity=createCanvasGenerationActivity({operations:generationOperationRef.current,operationKey,canRetry:scope.isCurrent,
+    const activity=generationPresentation.activity({operationKey,canRetry:scope.isCurrent,
       execute:async()=>{
     setPendNodes(nodes=>[...nodes.filter(item=>item.id!==node.id),{...node,generating:true}]);
     const timer=window.setInterval(()=>{if(scope.isCurrent())setPendNodes(nodes=>nodes.map(item=>item.id===node.id?{...item,progress:Math.min(92,item.progress+Math.max(1,Math.round((96-item.progress)/9)))}:item));},1200);
@@ -2359,8 +2328,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     referenceInputs?: CanvasImageReference[]
   ) {
     if (!user || readOnly) return;
+    const view=generationPresentation;
     const operationKey = pend ? `pend:${pend.id}` : `node:${source.id}`;
-    if (generationOperationRef.current.has(operationKey)) return;
+    if (generationPresentation.busy(operationKey)) return;
     const owner=captureCanvasTaskOwner(user.email,()=>({account:canvasAccountRef.current,project:activeProjectRef.current?.key||null,epoch:canvasContextEpochRef.current,mounted:batchRunMountedRef.current}));
     const count = Math.max(1, Math.min(MAX_GENERATION_COUNT, genCount || 1));
     const sourceNode = rfRef.current?.getNode(source.id);
@@ -2371,22 +2341,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         ? { x: sourceNode.position.x + sourceSize.width + X_GAP, y: sourceNode.position.y }
         : { x: 0, y: 0 };
     const taskId = `task-detail-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const replacedFailures = generationTasks.filter(task => task.operationKey === operationKey && task.failure);
-    const previous = replacedFailures[replacedFailures.length - 1];
-    const retryPosition = previous ? generationTaskPosRef.current[previous.id] || previous.position : undefined;
-    for (const failed of replacedFailures) { delete generationTaskPosRef.current[failed.id]; delete generationTaskSizeRef.current[failed.id]; }
-    const reservedPosition = reserveGenerationPosition(taskId, basePosition, generationPlaceholderSize(genRatio), pend ? basePosition : retryPosition);
-    setGenerationTasks((current) => [
-      ...current.filter(task => !replacedFailures.some(failed => failed.id === task.id)),
-      {
-        id: taskId,isVisible:owner.isVisible,
-        operationKey,
-        sourceId: source.id,
-        label: fmt(t("canvas.detailProgress"), { done: 0, total: count }),
-        stage: "preparing", startedAt: Date.now(), previewSize: generationPlaceholderSize(genRatio), count, completed: 0,
-        position: reservedPosition,
-      },
-    ]);
+    const reservedPosition=view.start({id:taskId,isVisible:owner.isVisible,operationKey,sourceId:source.id,
+      label:fmt(t("canvas.detailProgress"),{done:0,total:count}),stage:"preparing",startedAt:Date.now(),
+      previewSize:generationPlaceholderSize(genRatio),count,completed:0,
+    },{preferred:basePosition,existing:pend?basePosition:undefined,
+      occupied:(rfRef.current?.getNodes()??rfNodes).map(node=>({...node.position,...flowNodeSize(node)}))});
     if (pend) {
       setPendNodes((current) =>
         current.map((node) => (node.id === pend.id ? { ...node, generating: true, generationFailure: undefined, onGenerationRetry: undefined } : node))
@@ -2405,22 +2364,22 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const task=createCanvasDetailTask({
       prepare:scope=>prepareCanvasDetailTask({source,references:referenceArts,uploads:uploadedRefs,referenceInputs,feedback,model:genModel,ratio:genRatio,count,maxReferences:MAX_TOTAL_IMAGES,missingReferences:t("canvas.detailNeedRefs")},scope),
       submit:(form,scope)=>privateFetch("/api/aplus",{method:"POST",body:form,isCurrent:scope.isCurrent,submission}),
-      attach:createCanvasResultAttachment({position:()=>pend?livePendingPosition(pend.id,reservedPosition):generationTaskPosRef.current[taskId]??reservedPosition,
+      attach:createCanvasResultAttachment({position:()=>pend?livePendingPosition(pend.id,reservedPosition):view.position(taskId,reservedPosition),
         layout:{kind:"detail",gap:24,height:art=>artworkNodeSize(art).height},saveErrorText:t("canvas.saveFailed"),
         merge:(ids,current)=>taskDocumentRef.current.merge(ids,current),history:(ids,arts)=>taskDocumentRef.current.history(ids,arts)}),
       progress:(stage,done)=>{
-        setGenerationTasks(tasks=>tasks.map(item=>item.id===taskId?{...item,stage,completed:done,label:fmt(t("canvas.detailProgress"),{done,total:count}),failure:undefined}:item));
+        view.update(taskId,{stage,completed:done,label:fmt(t("canvas.detailProgress"),{done,total:count}),failure:undefined});
         updatePending({generating:true,generationStage:stage,generationFailure:undefined},true);
       },user:value=>applyServerUser(value as Parameters<typeof applyServerUser>[0]),errorText:t("canvas.genFail"),expectedCount:count,
     });
-    const activity=createCanvasGenerationActivity({operations:generationOperationRef.current,operationKey,canRetry:owner.isVisible,
-      clear:()=>{delete generationTaskPosRef.current[taskId];delete generationTaskSizeRef.current[taskId];setGenerationTasks(tasks=>tasks.filter(item=>item.id!==taskId));},
+    const activity=view.activity({operationKey,canRetry:owner.isVisible,
+      clear:()=>view.remove(taskId),
       execute:async({retry,retain})=>{
         const scope=owner.capture();
         const result=await task.run(scope);
         if(result.status==="failed"||result.status==="stale"){
           retain();
-          setGenerationTasks(tasks=>pend?tasks.filter(item=>item.id!==taskId):tasks.map(item=>item.id===taskId?{...item,failure:result.failure,onRetry:retry}:item));
+          if(pend)view.hide(taskId);else view.update(taskId,{failure:result.failure,onRetry:retry});
           updatePending({generating:false,generationFailure:result.failure,onGenerationRetry:retry},owner.isVisible());
           if(scope.isCurrent()){
             const message=generationFailureMessage(result.failure);
@@ -3378,11 +3337,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const positions = new Map((rfRef.current?.getNodes() ?? []).map(node => [node.id, node.position]));
     const busyIds = new Set(generationTasks.filter(task => !task.failure).map(task => task.sourceId));
     const point = (id: string, x = 0, y = 0) => positions.get(id) || { x, y };
-    const busy = (id: string) => busyIds.has(id) || generationOperationRef.current.has(`node:${id}`) || generationOperationRef.current.has(`retry:${id}`) || pendNodesRef.current.some(node => node.generating && node.operationKey === `node:${id}`);
+    const busy = (id: string) => busyIds.has(id) || generationPresentation.busy(`node:${id}`) || generationPresentation.busy(`retry:${id}`) || pendNodesRef.current.some(node => node.generating && node.operationKey === `node:${id}`);
     return selectionRunTargets(ids, [
       ...(activeProjectRef.current?.members || []).filter(art => selectedIds.has(art.id)).map(art => ({ id: art.id, kind: "image" as const, ...point(art.id, art.canvasX ?? 0, art.canvasY ?? 0), locked: isNodeLocked(art.id), busy: busy(art.id), runnable: canFeature("generate") && art.status === "completed" && !art.videoUrl && art.category !== "audio" && art.category !== "media" && !["workflow-decoration", "workflow-placeholder"].includes(art.source || "") && hasRenderableImage(art.image) })),
-      ...textNodesRef.current.filter(node => selectedIds.has(node.id) && node.projectKey === activeKey).map(node => ({ id: node.id, kind: "text" as const, ...point(node.id, node.canvasX, node.canvasY), locked: isNodeLocked(node.id), busy: node.status === "generating" || generationOperationRef.current.has(`text:${node.id}`), runnable: !!(node.content || node.prompt).trim() })),
-      ...pendNodesRef.current.filter(node => selectedIds.has(node.id)).map(node => ({ id: node.id, kind: "pending" as const, ...point(node.id, node.x, node.y), busy: node.generating || node.uploading || node.needsAttention || generationOperationRef.current.has(`pend:${node.id}`), runnable: canFeature("generate") && !node.taskId && node.inputs.some(id => activeProjectRef.current?.members.some(art => art.id === id && hasRenderableImage(art.image) && !art.videoUrl) || textNodesRef.current.some(text => text.id === id && text.projectKey === activeKey && text.status !== "generating" && !!(text.content || text.prompt).trim())) })),
+      ...textNodesRef.current.filter(node => selectedIds.has(node.id) && node.projectKey === activeKey).map(node => ({ id: node.id, kind: "text" as const, ...point(node.id, node.canvasX, node.canvasY), locked: isNodeLocked(node.id), busy: node.status === "generating" || generationPresentation.busy(`text:${node.id}`), runnable: !!(node.content || node.prompt).trim() })),
+      ...pendNodesRef.current.filter(node => selectedIds.has(node.id)).map(node => ({ id: node.id, kind: "pending" as const, ...point(node.id, node.x, node.y), busy: node.generating || node.uploading || node.needsAttention || generationPresentation.busy(`pend:${node.id}`), runnable: canFeature("generate") && !node.taskId && node.inputs.some(id => activeProjectRef.current?.members.some(art => art.id === id && hasRenderableImage(art.image) && !art.videoUrl) || textNodesRef.current.some(text => text.id === id && text.projectKey === activeKey && text.status !== "generating" && !!(text.content || text.prompt).trim())) })),
     ]);
   }
 
@@ -3593,7 +3552,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       return false;
     }
     const operationKey = `pend:${pend.id}`;
-    if (generationOperationRef.current.has(operationKey)) return false;
+    if (generationPresentation.busy(operationKey)) return false;
     // 没写提示词时:不再注入"生成一张电商商业图"这种会重绘/改风格的通用词
     // (那会让输出莫名其妙变样,还被存成节点提示词)。改为沿用主输入图自身的
     // 提示词(延续它的配方);没有则用"保持主体/构图/风格"的中性词。
@@ -3629,7 +3588,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       user:value=>applyServerUser(value as Parameters<typeof applyServerUser>[0]),notice:flashTip,
       errorText:t("canvas.genFail"),saveErrorText:t("canvas.saveFailed"),resultGap:NODE_LABEL_H+24,
     });
-    const activity=createCanvasGenerationActivity({operations:generationOperationRef.current,operationKey,canRetry:scope.isCurrent,
+    const activity=generationPresentation.activity({operationKey,canRetry:scope.isCurrent,
       execute:async({retry}):Promise<boolean>=>{
         const result=await task.run();
         if(result.status==="stale")return false;
@@ -3703,10 +3662,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     locked:id=>readOnly||!user||isNodeLocked(id),warning:flashTip,
     local:(id,point,finished)=>{
       rememberGenerationDrag(id,point,finished);if(!finished)return;
-      if(id.startsWith("task-")){
-        generationTaskPosRef.current[id]={...point};
-        setGenerationTasks(current=>current.map(task=>task.id===id?{...task,position:{...point}}:task));
-      }else if(id.startsWith("pend-"))setPendNodes(current=>current.map(node=>node.id===id?{...node,x:point.x,y:point.y}:node));
+      if(id.startsWith("pend-"))setPendNodes(current=>current.map(node=>node.id===id?{...node,x:point.x,y:point.y}:node));
     },
     commit:(moves,scope)=>canvasHistory.submit(scope,()=>{const action=compileCanvasMove(moves,id=>{
       const audio=audioNodesStore.getNode(id);if(audio)return {x:audio.x,y:audio.y};

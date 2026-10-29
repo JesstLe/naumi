@@ -8,7 +8,7 @@ const compile=text=>ts.transpileModule(text,{compilerOptions:{target:9,module:1}
 const billingSource=fs.readFileSync(path.join(root,'src/lib/billing/client.tsx'),'utf8'),billingAst=ts.createSourceFile('client.tsx',billingSource,99,true,4),callbacks={};
 (function walk(n){if(ts.isVariableDeclaration(n)&&['submit','quoteAndSubmit'].includes(n.name.getText(billingAst))&&n.initializer)callbacks[n.name.getText(billingAst)]=n.initializer.getText(billingAst);ts.forEachChild(n,walk);})(billingAst);
 const plain=value=>JSON.parse(JSON.stringify(value));let checks=0;const eq=(actual,expected,label)=>{assert.deepEqual(plain(actual),plain(expected),label);checks++;};
-const modules=[...(fs.existsSync(path.join(root,'src/lib/canvas/creation-request.ts'))?['canvas/creation-request']:[]),...(fs.existsSync(path.join(root,'src/lib/canvas/generation-activity.ts'))?['canvas/generation-activity']:[]),...(fs.existsSync(path.join(root,'src/lib/canvas/node-geometry.ts'))?['canvas/node-geometry']:[]),'mock-data','canvas/input-references','imagegen/http','canvas/generation-failure','canvas/generation-feedback','canvas/generation-parameters','canvas/image-task-request','canvas/image-task-scope','canvas/image-references','imagegen/reference-labels','billing/client-intent',...(!baseline?['billing/client-submission','canvas/edit-task','canvas/detail-task-controller','canvas/detail-task-request','canvas/result-attachment']:[])];
+const modules=[...(fs.existsSync(path.join(root,'src/lib/canvas/generation-presentation.ts'))?['canvas/generation-presentation']:[]),...(fs.existsSync(path.join(root,'src/lib/canvas/creation-request.ts'))?['canvas/creation-request']:[]),...(fs.existsSync(path.join(root,'src/lib/canvas/generation-activity.ts'))?['canvas/generation-activity']:[]),...(fs.existsSync(path.join(root,'src/lib/canvas/node-geometry.ts'))?['canvas/node-geometry']:[]),'mock-data','canvas/input-references','imagegen/http','canvas/generation-failure','canvas/generation-feedback','canvas/generation-parameters','canvas/image-task-request','canvas/image-task-scope','canvas/image-references','imagegen/reference-labels','billing/client-intent',...(!baseline?['billing/client-submission','canvas/edit-task','canvas/detail-task-controller','canvas/detail-task-request','canvas/result-attachment']:[])];
 async function bundle(){return (await build({stdin:{contents:modules.map(m=>`export * from './src/lib/${m}';`).join('\n'),resolveDir:root,loader:'ts'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'ports',setup(b){
  b.onResolve({filter:/model-config\/selection-policy$/},()=>({path:'model',namespace:'request-port'}));
  b.onResolve({filter:/model-config\/feature-client$/},()=>({path:'feature',namespace:'request-port'}));
@@ -65,6 +65,7 @@ function setup(kind,scenario,built){
  c.getQuote=async facts=>{state.quotes++;return {...facts,credits:state.retried?99:3,version:state.retried?2:1,reserveCredits:3};};
  c.__requestPorts=Object.fromEntries(['adminConfiguredFeature','featureModelManaged','chosenFeatureModel','resolveCanvasDetailFrame','resolveCanvasLegacyFrame','submitCanvasImagegen'].map(name=>[name,c[name]]));
  vm.createContext(c);vm.runInContext(built,c);Object.assign(c,module.exports);c.appendComposerReferences=c.appendCanvasImageReferences;
+ const presentation=require('./verification/canvas-generation-presentation-fixture.cjs').bindGenerationPresentation(c,module.exports,()=>ports.workspace);
  vm.runInContext(compile(`const submit=${callbacks.submit};const quoteAndSubmit=${callbacks.quoteAndSubmit};globalThis.billing={quote:getQuote,submit,quoteAndSubmit};`),c);
  vm.runInContext(compile(names.map(n=>functions[n]||'').join('\n')),c);
  const extra=[new File(['uploaded bytes'],'uploaded.webp',{type:'image/webp'})];
@@ -72,7 +73,7 @@ function setup(kind,scenario,built){
  const run=()=>kind.startsWith('detail')?c.generateDetailSequence(art,[art,other],'detail brief',extra,kind==='detail-blank'?pend:undefined,refs):kind==='cutout'?c.runCutout(art):kind==='expand'?c.onExpand('3:4'):c.submitAnnotations((()=>{const f=new FormData();f.set('artworkId',art.id);f.set('image',extra[0]);f.set('instructions','annotate brief');return f;})());
  const retry=()=>kind==='detail'?c.generationTasks[0]?.onRetry:c.pendNodes[0]?.onGenerationRetry;
  const restore=()=>{c.activeProjectRef.current={key:'tree:source'};c.canvasContextEpochRef.current++;c.batchRunMountedRef.current=true;c.restoreEditTasks();};
- return {c,state,run,retry,restore,ports};
+ return {c,state,run,retry,restore,ports,presentation};
 }
 module.exports={bundle,setup,root};
 if(require.main===module)(async()=>{

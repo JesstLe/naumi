@@ -11,6 +11,7 @@ type GenerationActivity<T> = {
     retain: () => void;
   }) => Promise<T>;
   clear?: () => void;
+  changed?: () => void;
 };
 
 /** Construct after synchronous view preparation, before the first asynchronous
@@ -23,10 +24,12 @@ export function createCanvasGenerationActivity<T>(input: GenerationActivity<T>) 
     input.operations.add(input.operationKey);
     let retained = false;
     try {
+      input.changed?.();
       return await input.execute({ retry, retain: () => { retained = true; } });
     } finally {
       input.operations.delete(input.operationKey);
-      if (!retained) input.clear?.();
+      try { if (!retained) input.clear?.(); }
+      finally { input.changed?.(); }
     }
   };
   return { run };
