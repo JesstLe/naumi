@@ -1,3 +1,5 @@
+2026-10-29 R7M：共享composer窄屏参数占满整行、动作不截断，图片sheet复用360px舒适高度，短屏原生滚动保留正文；仅两生产owner改动，Canvas入口/任务/报价/版本/账务不改。5视口实际命中/滚轮/模式比例数量提示词及390px单次原提交、A/B/U像素与版本undo-redo通过；58场景SSR原HTML同，几何2490旧精确+150窄屏新边界。125核心入口与最终固定完整候选/副本回滚以本轮DELIVERY为准；整体ACTIVE，未合main未部署，47 HOLD。见[R7M记录](changes/2026-10-29-refactor-r7m-composer-responsive.md)。
+
 2026-10-29 R7L：普通整合主线e9ef9ff6的51路径增量；Canvas引用上传/当前图编辑语义接原draft与共享composer，BI企业依赖迁schema，新用量/成员直接依赖pool、billing runtime和error叶模块，不恢复单体。一次19组集中验收全部通过，124核心入口库存不冒充全跑；完整Next页面8组通过（像素/引用保留/原位版本undo-redo/390px边界）；截图人工复核发现390px创作栏控件裁切仍OPEN，跨盘字体与缺canonical回执的两次fixture失败保留；固定merge/回滚以本轮DELIVERY为准。R7K完整镜像/core120证据仍绑定b207不重标。整体ACTIVE，独立分支持续重构尚未合main、未部署，47 HOLD。见[R7L记录](changes/2026-10-29-refactor-r7l-main-integration.md)。
 
 2026-10-29 R7K：继续整体集成验收，R7J场景到导演连线定位为显式fit尚未完成时的手势准备竞争；原生手柄3缩放均真实可连，完整原实现加只读轨迹通过。只收敛verification手势稳定条件，不改生产节点/任务规则；旧运维PG测试按真实PK与v3证据升级语义修正。最终全core、Linux完整Web/Worker与产品、回滚/远端以本轮DELIVERY为准，整体ACTIVE，未合回main未部署，47 HOLD。见[R7K记录](changes/2026-10-29-refactor-r7k-integration-acceptance.md)。

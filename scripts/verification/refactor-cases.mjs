@@ -44,6 +44,7 @@ export const refactorCases=[
  ts('image-parameter-plan-pg','generation','scripts/verify-image-parameter-plan-pg.ts','IMAGE_PARAMETER_PLAN_PG=PASS'),
  node('prompt-optimizer','canvas','scripts/verify-canvas-prompt-optimizer.cjs','MODIFIED_API=PASS'),
  node('image-regeneration','canvas','scripts/verify-canvas-regeneration.cjs','MODIFIED=PASS'),
+ {id:'dock-geometry',group:'canvas',file:'scripts/verify-canvas-dock-performance.ts',args:[],expect:'DOCK_GEOMETRY=PASS',pg:false,tsx:true},
  node('reference-retention','canvas','scripts/verify-canvas-reference-retention.cjs','MODIFIED_REFERENCE_RETENTION=PASS',['MODIFIED','.']),
  node('image-version-integration','canvas','scripts/verify-canvas-image-version-integration.cjs','IMAGE_VERSION_INTEGRATION=PASS'),
  ts('image-version-pg','canvas','scripts/verify-canvas-image-versions.ts','IMAGE_VERSIONS=PASS'),

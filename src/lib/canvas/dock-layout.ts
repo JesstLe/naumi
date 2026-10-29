@@ -33,7 +33,7 @@ export function canvasAnchorCenter(nodeScreen:NodeScreen|undefined,canvasSize:Ca
     }
     return cx;
 }
-export function preferredCanvasDock(nodeScreen:NodeScreen|undefined,canvasSize:CanvasSize,dockWidth:number,overlaySafeArea:SafeArea,selectedTextId:string|null,nodeTitleHeight=0):DockPlacement|undefined {
+export function preferredCanvasDock(nodeScreen:NodeScreen|undefined,canvasSize:CanvasSize,dockWidth:number,overlaySafeArea:SafeArea,selectedTextId:string|null,nodeTitleHeight=0,readOnly=false):DockPlacement|undefined {
  const anchorCenterX=canvasAnchorCenter(nodeScreen,canvasSize,dockWidth,overlaySafeArea);
  if(!nodeScreen||anchorCenterX==null)return undefined;
     const ch = canvasSize.height;
@@ -59,8 +59,14 @@ export function preferredCanvasDock(nodeScreen:NodeScreen|undefined,canvasSize:C
     const nodeToolbarReserve = 70;
     const aboveBottom = nodeScreen.top - nodeToolbarReserve - nodeTitleHeight;
     const aboveSpace = Math.max(0, aboveBottom - safeTop);
-    const preferredHeight = selectedTextId ? 360 : 310;
-    const minimumComfort = selectedTextId
+    const narrowImage = !readOnly && !selectedTextId && canvasSize.width > 0 && canvasSize.width < 480;
+    const preferredHeight = selectedTextId || narrowImage ? 360 : 310;
+    // A narrow image footer has its own action row. Do not select a 220px
+    // gap that leaves only the header/footer and clips the editable body;
+    // use the existing bottom-sheet placement when neither side fits.
+    const minimumComfort = narrowImage
+      ? preferredHeight
+      : selectedTextId
       ? canvasSize.width < 480
         ? 240
         : 218
@@ -125,7 +131,7 @@ export function preferredCanvasToolbar(nodeScreen:NodeScreen|undefined,canvasSiz
 export function canvasDockLayout(input:{nodeScreen:NodeScreen|undefined;canvasSize:CanvasSize;dockMetrics:DockMetrics;selectedTextId:string|null;textComposerExpanded:boolean;readOnly:boolean;nodeTitleHeight?:number}) {
  const {nodeScreen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,readOnly}=input;
  const overlaySafeArea=canvasOverlaySafeArea(canvasSize),dockWidth=canvasDockWidth(canvasSize,overlaySafeArea);
- const dock=preferredCanvasDock(nodeScreen,canvasSize,dockWidth,overlaySafeArea,selectedTextId,input.nodeTitleHeight),toolbar=preferredCanvasToolbar(nodeScreen,canvasSize,overlaySafeArea,dockMetrics,input.nodeTitleHeight);
+ const dock=preferredCanvasDock(nodeScreen,canvasSize,dockWidth,overlaySafeArea,selectedTextId,input.nodeTitleHeight,readOnly),toolbar=preferredCanvasToolbar(nodeScreen,canvasSize,overlaySafeArea,dockMetrics,input.nodeTitleHeight);
  if(!dock||!toolbar||!canvasSize.height||readOnly)return {dock,toolbar};
  return separateCanvasDocks({dock:textComposerExpanded&&selectedTextId?{...dock,top:overlaySafeArea.top,maxHeight:canvasSize.height-overlaySafeArea.bottom-overlaySafeArea.top}:dock,toolbar,
  dockHeight:textComposerExpanded&&selectedTextId?canvasSize.height-overlaySafeArea.bottom-overlaySafeArea.top:dockMetrics.dockHeight||(selectedTextId?360:310),toolbarHeight:dockMetrics.toolbarHeight,safeTop:overlaySafeArea.top,safeBottom:canvasSize.height-overlaySafeArea.bottom});

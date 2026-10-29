@@ -45,9 +45,18 @@
 .actions button:disabled { cursor: not-allowed; opacity: .45; }
 .actions button:last-child svg { width: 17px; height: 17px; }
 @container (max-width: 480px) {
-  .footer { gap: 6px; padding: 9px 10px; }
-  .controls { gap: 5px; }
+  /* Controls must wrap across the whole composer, not the narrow space left
+     beside history/submit. Keep actions in their own always-visible row. */
+  .footer { flex-wrap: wrap; align-items: center; gap: 8px 5px; padding: 9px 10px; }
+  .controls { display: contents; }
+  .controls > * { flex-shrink: 0; }
   .controls button:not([role="menuitem"]), .controls > label { font-size: 11px; }
-  .actions { gap: 5px; }
+  .actions { margin-left: auto; max-width: 100%; gap: 5px; }
   .shell [data-composer-body] { padding-right: 12px; padding-left: 12px; }
+}
+@media (max-height: 600px) {
+  /* A short/keyboard-sized viewport cannot show every control at once.
+     Scroll the actual composer instead of clipping its submit row. */
+  .shell { overflow-y: auto; overscroll-behavior: contain; }
+  .shell [data-composer-body] { min-height: 64px; flex-shrink: 0; }
 }
