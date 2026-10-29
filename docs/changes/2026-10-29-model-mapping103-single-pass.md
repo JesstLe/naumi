@@ -53,3 +53,14 @@
 - 47只读配置：v152，9providers/95upstreams/50publics/0pools，无在途publication；当前供应商地址均公共HTTPS。加密导出引用9凭据及94个配置模型metadata，源数据库写入0/供应商0。
 - 103只读模型v112/billing8；本机Docker数据盘可用不足10GiB，构建改为103受限独立构建器，实际执行前仍复核容量与锁，不清理他人缓存。
 - 以上只读预检不是部署或配置发布成功。固定构建、目标配置发布、103全链路真实验收继续进行。
+
+## 集中收口与固定候选
+
+- 已普通合入 main `154a7f9fc4a13726fd6b666c0d959edb6ea01c30`，含 X6 原任务有界轮询与上传解码内存修复；本分支没有反向合 main。
+- 固定应用构建源码 `26ecb4f62f6f73c6917fe93d840b6e3630a756d9`；源码产品仍仅两个文件最小修复。合并后57单次翻译、52真实PG全链、53异步、25 X6、16计划PG、28复制纯函数、30发布门禁及全量tsc通过。
+- 原成本preset测试两项旧期望（报价二次确认/旧草稿直接再发布）与当前main不符。仓库测试保留；output副本仅对齐两项现行规则，实际成本、预扣、结算、冻结、原ID恢复及发布回退全通过，不将原套件写成全绿。
+- 基于合入main的原文件复现、修改态全链、真实Bash独立副本回退及旧行为复现均exit0，四件位于 `output/model-mapping103-20261029/source-proof/`；正式源码保持修改态。
+- 供应商复制纯候选154delta：source152的9providers/95upstreams/50publics全部覆盖；103旧有专用条目保留，候选19providers/120upstreams/61publics/4pools。16项同ID公模target变化逐项列审，保留目标reverse-hub服务地址。1368组旧公模客户报价对照无差异。
+- 源47追加只读采样：v152同digest，引用video definitions为0、当前版本冻结video defaults63条；凭据9与metadata94均安全封装。103 CLI以官方凭据/metadata/repo/runtime API做独立版本化publication，65项真实PG与最终bundle通过；未执行服务器配置导入。
+- 真实端测QA候选仅103新增独立alias/upstream，high→medium/medium→low，4K实际2K。103 billing8默认组真实报价 high4K=16、medium4K=12；不以隔离fixture12分规则覆盖本站价。原选、原报价与实际wire分别验收。
+- 首构建尝试发现103缺buildx CLI，发生在创建builder前；旧Web/Worker及网关保持。受限构建改为任务目录内校验官方checksum的独立CLI，不全局安装、不改Docker服务；构建仍不是部署。
