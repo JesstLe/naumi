@@ -424,3 +424,10 @@
 - 父实际Sharp/route/storage/asset编排，原/改各39项，原图/thumbnail/preview SHA/尺寸/响应逐项保持，只有validationBytes不同。父PNG/WebP三并发各原改一次（四个独立进程），每组三次完整上传的raw输出1,536,000,000→768,000,009bytes；采样RSS下降但PNG耗时增加，保留全部结果，不外推生产容量。子36进程原始测量仅作为子证据，未重复认领。
 - A58仅将同一原图验证/变体的64M常量收敛到已有policy；40M处理、64Mi Agent读取及64MiB字节预算保留职责，不通过缩小规格或改品质掩盖开销。未添加猜测阈值的并发门禁。
 - 父完整tsc exit0、stdout/stderr空；副本恢复2原源码/移除新增helper及任务文件，原39项和原raw行为恢复，later-edit/source-root guard拒绝且0写入。准确命令/输入/输出/exit及四产物见ignored`upload-parent/`和[模块记录](2026-10-29-capacity-upload-memory.md)。无真实PG/生产/供应商调用；运行参数固定`7e5ece5f`尚待独立复核，不混作本项通过。
+
+
+### 2026-10-29 47 发布窗口新增真实规模核查
+- 用户本轮明确要求更新线上，并确认“现在没人用，允许直接切”；本轮只针对已确认47，先固定 main `b79c8c39` / BUILD_VERSION `1793281629` 完成 Linux 构建和镜像 smoke；实际切流状态见 [本轮发布记录](2026-10-29-release47-capacity-batch-r2.md)。不把 main 合并当上线。
+- **A62 / D41：发布观察历史的筛选未前推至原生分页，真实规模令保留采集失效。** 当前 caller 已限定 old/new instance seed，但百万行 activity 仍先参与 scan；当前 pair 118169 条中未 finished 仅2。全图此前还会包含已 completed 的 tick 叶节点，真实 tick 表约46397行。现场只读采集在60s截止正确 fail-closed、无完整证明；不是生产业务写入失败，也没有错误放行。
+- 本轮窄修复正在把无闭包入边的观察叶节点原生活动态/原ID筛选前推，同时保持原实例历史 exact-hash、业务表全范围、原任务ID终态追踪与 UNKNOWN 规则；默认预算、60s和scan100000不放宽。默认与明确审阅的page/graph资源上限分离将以真实规模和本地PG验证留证。
+- 此条在真实复测完成前保持进行中；A15、运行配置review、A53–55、A59–61及其他容量/生产验收开放项不因本次发布准备关闭。

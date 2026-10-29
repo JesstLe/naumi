@@ -17,10 +17,14 @@ SOURCE='naumi47-tdh'
 
 def current_activity_collector(names):
     """Bound live-slot observations; HistoricalEvidence covers excluded rows."""
-    require(len(names)==2 and all(re.fullmatch('naumi47-web-[a-z0-9-]+',n) for n in names),'CURRENT_PAIR_REQUIRED')
+    require(len(names)==2 and len(set(names))==2 and all(re.fullmatch('naumi47-web-[a-z0-9-]+',n) for n in names),'CURRENT_PAIR_REQUIRED')
     spec=importlib.util.spec_from_file_location('_site47_current_tasks',tasks.__file__)
     module=importlib.util.module_from_spec(spec);sys.modules[spec.name]=module;spec.loader.exec_module(module)
     module.SPECS=dict(module.SPECS);module.GRAPH_FIELDS=[*module.GRAPH_FIELDS,'instance_id']
+    # Scope before native-key counting/paging, not only the later graph seed.
+    # Exclude terminal observation leaves only when not tracked by previous IDs.
+    # Original IDs remain eligible after completion or an instance change.
+    module.ACTIVITY_INSTANCE_SCOPE=tuple(names)
     key,predicate=module.SPECS['app_release_activities']
     module.SPECS['app_release_activities']=(key,'('+predicate+") AND j->>'instance_id' IN ("+','.join(module.literal(n) for n in names)+')')
     return module
