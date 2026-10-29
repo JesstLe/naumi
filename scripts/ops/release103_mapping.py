@@ -108,6 +108,11 @@ class Release(shared.Release):
                    for row in [web, worker]]
         require(len(scratch[0]) == 1 and scratch[0] == scratch[1], 'OLD_COMBINED_SCRATCH_CHANGED')
         super().prepare()
+        # The collector intentionally returns incomplete coverage as evidence.
+        # Reject that baseline before creating a candidate, not after cutover.
+        coverage = tasks.compare_task_snapshots(self.task_before, self.task_before)
+        self.tx.save('task-baseline-coverage.json', coverage)
+        require(coverage['preservationVerified'], 'TASK_BASELINE_COVERAGE_INCOMPLETE')
 
     def drain(self, group=None):
         result = super().drain(group)
@@ -116,6 +121,7 @@ class Release(shared.Release):
         return result
 
     def switch(self):
+        self.wait(lambda: self.marker('browser-before.json'), 'CANDIDATE_BROWSER', 600)
         self.op('pause-old-worker', lambda _: self.worker(self.old['worker'], 'drain'))
         self.worker_paused = True
         self.wait(lambda: (lambda s: s['paused'] and s['activeTicks'] == s['unresolvedTicks'] == 0 and
@@ -153,6 +159,7 @@ class Release(shared.Release):
     def finish(self):
         self.wait(lambda: fresh_tick(self.worker(self.new['worker'], 'status'), self.c['commit'],
                   self.resumed_at), 'NEW_WORKER_RECEIPT', 120)
+        self.wait(lambda: self.marker('browser-after.json'), 'PUBLIC_BROWSER', 600)
         self.acceptance()
         self.op('proof-worker-barrier', lambda _: self.worker(self.new['worker'], 'drain'))
         self.wait(lambda: (lambda s: s['paused'] and s['activeTicks'] == s['unresolvedTicks'] == 0 and

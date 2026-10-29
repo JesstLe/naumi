@@ -177,7 +177,12 @@ class LifecycleTests(unittest.TestCase):
         r.op = op
         r.phase = lambda phase, **facts: r.record.update(phase=phase, **facts)
         r.worker = Mock(return_value={'paused': True, 'activeTicks': 0, 'unresolvedTicks': 0})
-        r.wait = lambda fn, *args, **kwargs: fn()
+        r.marker = Mock(return_value={'passed': True})
+        def wait(fn, label, *args, **kwargs):
+            value = fn()
+            mapping.require(value, 'WAIT_' + label)
+            return value
+        r.wait = wait
         r.drain = Mock(return_value={'drained': True})
         r.gateway = Mock(return_value={'afterDumpSha256': 'f' * 64})
         r.retire = Mock(return_value={})
@@ -191,6 +196,7 @@ class LifecycleTests(unittest.TestCase):
                                    'retire-worker', 'retire-web', 'cold-media-receipt-handoff', 'resume-new-worker'])
         self.assertTrue(r.switched and r.old_stopped)
         self.assertEqual(r.record['phase'], 'PUBLIC_ACCEPTANCE')
+        r.marker.assert_called_once_with('browser-before.json')
         r.tx.run.assert_called_once_with(['ss', '-Htn', 'state', 'established', '( sport = :13106 or dport = :13106 )'])
 
     @patch.object(mapping.controls, 'control_app')
@@ -221,6 +227,12 @@ class LifecycleTests(unittest.TestCase):
         r = self.release(); r.tx.run.return_value = b'ESTAB'
         with self.assertRaisesRegex(Hold, 'OLD_HTTP_CONNECTIONS_ACTIVE'): r.switch()
         r.retire.assert_not_called(); r.handoff_media.assert_not_called()
+
+    def test_candidate_browser_missing_prevents_switch(self):
+        r = self.release(); r.marker.return_value = False
+        with self.assertRaisesRegex(Hold, 'WAIT_CANDIDATE_BROWSER'): r.switch()
+        self.assertEqual(r.events, [])
+        r.gateway.assert_not_called()
 
     def test_pre_switch_known_original_gateway_only_resumes_original_worker(self):
         r = self.release(); r.worker_paused = True; r.tx.run.return_value = b'old gateway'
@@ -291,12 +303,19 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(r.record['phase'], 'COMPLETE')
         self.assertTrue(r.record['taskPreservationVerified'])
         self.assertTrue(r.record['legacyHistoricalUncertaintyRetained'])
+        r.marker.assert_called_once_with('browser-after.json')
         self.assertEqual(r.events, ['proof-worker-barrier', 'proof-worker-resume', 'activate-persistent-startup'])
         self.assertEqual(collect.call_args.kwargs['previous'], {})
         self.assertEqual(collect.call_args.kwargs['projection'], 'proof')
         self.assertEqual(urlopen.call_args.args[0].full_url, 'http://127.0.0.1/api/version')
         self.assertEqual(urlopen.call_args.args[0].get_header('Host'), mapping.TARGET)
         r.router_binding.assert_called_once_with(live=True)
+
+    def test_public_browser_missing_prevents_completion(self):
+        r, _, _ = self.finish_fixture(); r.marker.return_value = False
+        with self.assertRaisesRegex(Hold, 'WAIT_PUBLIC_BROWSER'): r.finish()
+        self.assertEqual(r.events, [])
+        self.assertNotEqual(r.record['phase'], 'COMPLETE')
 
     @patch.object(mapping.tasks, 'compare_task_snapshots', return_value={'preservationVerified': False})
     @patch.object(mapping.tasks, 'collect_task_snapshot')
@@ -331,6 +350,26 @@ class LifecycleTests(unittest.TestCase):
         r = self.release(); r.memory = Mock(return_value={})
         with self.assertRaisesRegex(Hold, 'IMAGE_ARCHIVE_CHANGED'): r.prepare()
         prepare.assert_not_called()
+
+    @patch.object(mapping.tasks, 'compare_task_snapshots')
+    @patch.object(mapping.shared.Release, 'prepare')
+    @patch.object(mapping.shutil, 'disk_usage', return_value=SimpleNamespace(free=20 * 1024**3))
+    @patch.object(mapping, 'file_sha', return_value='e' * 64)
+    def test_incomplete_original_task_coverage_rejected_before_candidates(self, file_sha, disk, prepare, compare):
+        r = self.release(); r.memory = Mock(return_value={}); r.task_before = SimpleNamespace(private={})
+        for role, limit in [('web', 1536), ('worker', 1024)]:
+            r.old[role]['HostConfig']['Memory'] = limit * 1024**2
+            r.old[role]['Mounts'] = [{'Source': '/fixture/scratch', 'Destination': '/scratch'}]
+        r.old['web']['HostConfig']['PortBindings'] = {'3000/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '13106'}]}
+        r.old['web']['Config']['Env'].append('INTERNAL_APP_ORIGIN=http://127.0.0.1:3000')
+        r.old['worker']['Config']['Env'].append('NAUMI_APP_ORIGIN=http://' + r.c['oldNames']['web'] + ':3000')
+        compare.return_value = {'preservationVerified': False, 'unknownTables': ['app_image_jobs']}
+        with self.assertRaisesRegex(Hold, 'TASK_BASELINE_COVERAGE_INCOMPLETE'): r.prepare()
+        prepare.assert_called_once(); compare.assert_called_once_with(r.task_before, r.task_before)
+        r.tx.save.assert_called_with('task-baseline-coverage.json', compare.return_value)
+        self.assertEqual(r.events, [])
+        compare.return_value = {'preservationVerified': True, 'unknownTables': []}
+        r.prepare()
 
 
 class FreshTickTests(unittest.TestCase):
