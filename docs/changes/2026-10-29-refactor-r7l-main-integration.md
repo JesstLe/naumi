@@ -43,6 +43,10 @@
 
 原依赖已复制进独占C盘fixture，完整Next页面正常加载；当前图/上传/切换/重复/失败与显式删除恢复六组原生检查通过，随后undo/redo暴露旧HTTP fixture只返回ok/persisted、不返回当前服务端已有的canonical artworkNodes，导致文档保持原revision而第二次动作不发出。fixture已按真实history合同补完整node/version/revision回执与operation幂等，仍要求两次真实undo/redo POST、同几何/同连线，不改产品history或放宽断言。两次原失败日志均保留。补正后完整页面8组原生验收全部通过：实测A/B/U输入像素、关闭/切换/重复/失败保留、显式移除与恢复、原版本undo/redo、同几何与连线、390px和页面异常0。权威2072个src/services文件在前后及隔离副本中逐字节相同；清理与完整字面结果统一见本片 `DELIVERY.json` / `VERIFICATION.txt`，不以此文预报结果，不改字体/节点/产品逻辑来跑绿。
 
+### 截图人工复核保留的移动端问题
+
+完整页面原生用例的390px断言只覆盖composer存在及document无横向溢出，不等于整屏操作可达。实际打开desktop/mobile截图后确认：PC引用/撤销链完整；390px图片创作栏的footer控件出现竖排与裁切，生成动作可达性尚未验收。此布局项保持OPEN，下一切片处理共享composer响应式布局，不能用8组PASS抹去视觉问题。
+
 ## 产物与未完成项
 
 完整源码包、字节补丁、5045基线hash的独立副本回滚、后来编辑拦截与恢复后旧行为，以及固定merge SHA/远端核验，以本片四产物和 `DELIVERY.json` 为准；工作区保留整合后源码。
