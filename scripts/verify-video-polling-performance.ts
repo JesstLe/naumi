@@ -20,7 +20,10 @@ assert.equal(sameVideoSnapshot({ a: null }, { a: undefined }), false);
 assert.equal(sameVideoSnapshot({ a: false, b: 0 }, { b: 0, a: false }), true);
 assert.equal(sameVideoSnapshot(node.config.references, [...node.config.references!].reverse()), false);
 const nodesHook = readFileSync('src/components/canvas/video/use-video-nodes.ts', 'utf8');
-assert.match(nodesHook, /if\(actorRef.current!==actor\|\|epochRef.current!==epoch\)return/);
+// Identity now includes read-only and workspace epochs. Actual late response /
+// unmount / owner-switch behavior is exercised by verify-canvas-save-transport.cjs.
+assert.match(nodesHook, /identity.current.epoch===epoch&&currentWorkspaceRevision\(\)===workspaceRevision/);
+assert.match(nodesHook, /if\(!current\(\)\)return/);
 assert.match(nodesHook, /setTimeout\(run,6000\)/);
 const tasksHook = readFileSync('src/components/canvas/video/use-video-tasks.ts', 'utf8');
 assert.match(tasksHook, /contextRef.current!==context/); assert.match(tasksHook, /setTimeout\(run,4000\)/);

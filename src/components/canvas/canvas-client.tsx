@@ -5263,7 +5263,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setSelectedId(id);setSelectedPendId(null);setSelectedTextId(null);setMultiSel([]);setPropertiesOpen(false);setVideoDockAdvancedId(null);
   }
   async function patchVideoNode(id:string,patch:VideoPatchFields&{expectedRevision?:number}){
-    await videoNodesStore.flush();const before=videoNodesStore.getNode(id);if(!before)throw new Error("视频节点不存在");
+    await videoNodesStore.flush(id);const before=videoNodesStore.getNode(id);if(!before)throw new Error("视频节点不存在");
     const {expectedRevision,...fields}=patch,from:VideoPatchFields={};for(const key of Object.keys(fields) as Array<keyof VideoPatchFields>)Object.assign(from,{[key]:structuredClone(before[key])});
     const result=await videoNodesStore.save(id,{...fields,expectedRevision:expectedRevision??before.revision});
     if(JSON.stringify(from)!==JSON.stringify(fields))pushUndo({kind:"video-patch",id,from,to:fields});return result;
@@ -9337,9 +9337,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
         return current()&&ids.every(id=>fresh.some(art=>art.id===id&&!!art.image));
       }}/>}
-      {unsavedTextCount>0 && <div role="alert" className="fixed bottom-6 left-1/2 z-[200] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-amber-500 bg-background px-4 py-3 text-sm shadow-lg">
-        <span>{t("canvas.unsavedChanges")} ({unsavedTextCount})</span>
-        <button className="font-semibold underline" onClick={()=>void Promise.all(Array.from(unsavedTextRef.current.values()).map(node=>persistTextNode(node)))}>{t("canvas.retrySave")}</button>
+      {(unsavedTextCount>0||videoNodesStore.unsavedCount>0) && <div role="alert" className="fixed bottom-6 left-1/2 z-[200] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-amber-500 bg-background px-4 py-3 text-sm shadow-lg">
+        <span>{videoNodesStore.error||t("canvas.unsavedChanges")} ({unsavedTextCount+videoNodesStore.unsavedCount})</span>
+        <button className="font-semibold underline" onClick={()=>void Promise.all([videoNodesStore.retryPending(),...Array.from(unsavedTextRef.current.values()).map(node=>persistTextNode(node))]).catch(error=>flashTip(error instanceof Error?error.message:t("canvas.saveFailed")))}>{t("canvas.retrySave")}</button>
       </div>}
       {historySaving && <div className="fixed inset-0 z-[190] cursor-wait" aria-label={t("canvas.savingChanges")}>
         <div role="status" className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-lg bg-background px-4 py-3 text-sm shadow-lg">{t("canvas.savingChanges")}</div>
