@@ -220,3 +220,8 @@ R7E封版：固定4980c018，实际Worker旧4组24→新4组34、原生同镜像
 ## 2026-10-29 R7F：Canvas生成展示状态归属
 
 生成task card、失败卡、busy/占位坐标尺寸归generation-presentation，按既有account/workspace/project scope.key隔离；异步调用捕获原binding，React只订阅当前view。原task/报价/回执/history/账务owner不改。完整基线6/39复现foreign task/busy/layout→新版8/46均0；原图片47/179、详情/编辑74/369、activity38/134、request/workflow39/88与scene/interaction/placement/progress通过。当前完整Next三个控件命令7+5+12通过，真实供应商0；未把分层fixture扩为生产/完整core105验收。Canvas5778→5734，2035其它产品hash保持；最终tsc/lint/SCC、四产物/副本回滚和远端见[R7F模块记录](changes/2026-10-29-refactor-r7f-generation-presentation.md)及DELIVERY。整体ACTIVE，继续pending/edit占位恢复归属、性能/INP/容量、有效远端CI与最终整合；不合main、不部署。历史媒体原生errno仍OPEN。
+
+
+## R7G：主线修复归属整合（2026-10-29）
+
+固定main3b6a5279的12提交按既有owner整合，11处冲突未恢复旧storage/durable-job/Canvas/scan单体。X5结果codec/storage、视频持久保存队列与六kind文档、HTTP v2 nonacceptance与direct Worker分别保留职责；修正旧ACK丢失后新隐式revision与自身冲突，显式revision不改。新owner A/B3/8、真实six-hook68/106、six-kind HTTP/PG6/146、视频PG23/caller8、Worker41+真实协议18、原结果native一次-6及边界11/healthPG4通过，最终固定矩阵/类型/SCC/四产物与回滚见[R7G记录](changes/2026-10-29-refactor-r7g-owner-integration.md)。整体ACTIVE，不合main不部署；pending/edit占位/恢复尚未迁移，继续此边界与性能/容量、远端CI和最终退出。

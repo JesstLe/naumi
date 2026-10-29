@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { featureRequestGate, ACCESS_HEADERS, accessJson } from "@/lib/feature-access/server";
 import { requestRequirement } from "@/lib/feature-access/catalog";
 import { timingSafeEqual } from "node:crypto";
+import { tickProtocolAuthorized, TICK_PROTOCOL_PATH } from "@/lib/release-runtime/worker-tick-protocol";
 import { workerSecret } from "@/lib/settings-secret";
 import { releaseControlAuthorized } from "@/lib/release-runtime/identity";
 import { CONTINUATION_HEADER, verifyAgentContinuation } from "@/lib/release-runtime/accepted-context";
@@ -50,7 +51,7 @@ export async function middleware(req: NextRequest) {
     try {
       // Existing signed worker recovery completes already accepted/charged jobs.
       // This is NOT an ordinary-user or model-controlled header bypass.
-      let worker = false;
+      let worker = req.nextUrl.pathname===TICK_PROTOCOL_PATH && ["GET","POST"].includes(req.method) && tickProtocolAuthorized(req);
       const workerReceiptRead = req.method === "GET" && req.nextUrl.pathname === "/api/video/worker/tick" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(req.nextUrl.searchParams.get("tickId") || "");
       if (req.headers.has("x-video-worker-secret") && (workerReceiptRead || req.method === "GET" && req.nextUrl.pathname === "/api/video/worker/drain-status" || req.method === "POST" && (["/api/generate-image", "/api/imagegen", "/api/suite", "/api/aplus", "/api/video/worker/tick"].includes(req.nextUrl.pathname)||/^\/api\/imagegen\/batches\/[a-f0-9-]{36}$/i.test(req.nextUrl.pathname)))) {
         const configured = Buffer.from(workerSecret()), supplied = Buffer.from(req.headers.get("x-video-worker-secret") || "");

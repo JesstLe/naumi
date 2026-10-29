@@ -258,3 +258,28 @@
 - 父线程初次Python启动器按大小写过滤Windows环境变量，漏保留SYSTEMROOT，Node启动阶段CSPRNG断言退出134；改为环境变量名大小写无关白名单后正常执行，原记录保留 `INITIAL_WINDOWS_ENV_FAILURE.txt`。业务代码未为该启动器问题改动。
 - 证据：当前worktree ignored `output/capacity-audit-wave2-20261029/review-image/`，含四产物及父线程精确命令/输入/stdout/stderr/exit。外部函数签名和返回字段不变；未动X5存储/付费checkpoint、授权和fencing。
 - 未完成：mask/input-assets及跨交付边界重复读取、媒体并发与整站峰值仍待独立验证。X5和X3未受理证明继续各自推进，下一可用槽开始前端画布保存/传输审计。功能同步计数2/3；47 HOLD持续，生产动作0。
+
+
+### 2026-10-29 发布后续办：运行版本与 X5 审查修复
+
+- **状态校正**：上一节“47 HOLD/未部署”是当时状态。用户随后明确腾出发布窗口并授权终止旧阻塞实例；47 已运行 `e1878018 / 1793247893`，含 X1/X2/X3 控制池/父心跳补丁/X4/图片处理。公开入口、NAS、权限及真实 tick 已验收，三锁释放。历史 scoped `CLEANUP_PENDING` 未伪造完成，完整记录见 `2026-10-29-release47-capacity-e1878018.md`。本次继续审计没有生产操作，不连续发布。
+- **A32 / B1/B2 / D15 / X5**：Buffer/child 原已有外置，真正缺口为 root 汇总 data URL/base64 重入 snapshot。X5 `36909cfb` 复用本站 storage，结果引用携带位置/hash/大小，失败保留 inline，无悬空引用；不强制 R2 或公开直链。真实隔离样本 1,182,147-byte PNG：root JSON 从 3,152,658→910，root+child 4,729,715→2,609，原字节/像素不变；这是 JSON 字节数，不是生产 TOAST/RSS/吞吐。
+- **A33 / X5 P1（已修未部署）**：用户对象型 style 可保留新内部 marker，payload 解码读取另一已知 job checkpoint。父修 `4040c679` 给 result decode 绑定真实 job；payload 无结果权限，storage I/O 前核对 key job hash，新 marker 强制 hash/size；JSON 文字字段及 parentIds 真类型校验。原版确定性复现读取 1 次，修复读 0 次；原生签名 Cookie POST 400，实际历史恶意 payload create/kick 回调0、另一账号作品0。未声称未知 key 可枚举。
+- **A34 / D16 / X5 P2（已修未部署）**：已存在完整最终图/root，但无关坏 child 引用使整体 snapshot decode 提前失败。父修先纯选择 checkpoint、保留原 allDone/UNKNOWN 规则，再仅 hydrate 必要 URL；真实 PG/媒体恢复 final/root 两例通过，必要引用缺失仍失败、供应商增量0。
+- X5 同次集中验证：原存储及本地 S3、native HTTP/PG/授权/结算、并发 route 以及终态4项、全项目 TypeScript通过。此前 accepted-timeout 波动本轮同原断言通过，原失败日志继续留存，根因未闭环。旧 postaccept loader 缺 image-plan-runtime、delivery-retry error≠done 均在修前/修改版复现，不能称这些套件全绿。
+- X5 新四产物与原/改/回滚精确命令输出位于父 worktree ignored `output/capacity-audit-wave2-20261029/x5-boundaries/`；独立文档 `2026-10-29-capacity-x5-boundaries.md`。副本回滚恢复原 hash/两个缺陷，后来编辑 guard exit73且0写入，修改源码保持；本地55435 fixture已停止。
+- **X3 v2 独立审查**：固定 `5d8d116b` 真实PG/HTTP与34个Worker回归、18组协议矩阵、91组合fixture通过，复核发现1项P2：negative物理accepted_at被两处既有健康查询当“已受理”。该提交尚未整合，先修默认v1旧schema兼容的读取投影；不可排除全部phase=unknown。报告在独立 review 的 `output/capacity-x3-review/REVIEW.md`，不把默认未启用协议写成上线。
+- 并行已实际派发：X3 v2独立review、画布保存 `613cf62b` 独立review、发布 task snapshot 固定主键有界采集实现。总台账编号仍由父线程分配。47线上不动；45笔surgery/在线索引、账务sum/事务长度、运行时连接生命周期、Agent/SSE/视频上传、前端其他保存与传输继续排队。
+- X5后续上线前仍需：本站实际存储/共享媒体边界与兼容reader回滚，历史数据迁移/孤儿保留另切片；本次合主线不代表这些已验收。
+
+
+### 2026-10-29 X3 v2 与画布保存独立复核收尾
+
+- X3 v2 `5d8d116b` 与画布保存 `613cf62b` 已普通合入父任务隔离分支，独立审查提出3项问题，父线程直接修复并集中验证。协议v1仍默认，47本轮不改、不重新发布。
+- **A35 / D17：negative tombstone被健康查询误记为受理活动。** enterprise/admin两处读取先查询pg_attribute列能力，再只看nonacceptance_at为空的记录；避免整行to_jsonb读取result JSON，兼容尚未惰性迁移的v1 schema。原running/completed/accepted-unknown都保留；negative-only显示0/null，混合真实unknown显示1。真实独占PG四类基线/修改/回滚验证通过，tombstone不删、扫描0。
+- **A36 / D18：配置409后的位置200误删配置草稿。** queue成功ACK只确认本意图；新的明确保存覆盖旧拒绝意图全部写字段时才替代，x/y不代替config/inputs，uncertain不删。实际Hook+设置/拖动调用+原未保存提示JSX+Chromium/HTTP复现修前dirty0/草稿删除/flush成功，修后dirty1/草稿保留/flush拒绝，刷新后仍可恢复；显式完整配置重存后正确清除。
+- **A37 / D19：首节点永久409使其他节点的显式重试饿死。** retryPending按节点隔离，A失败保留其顺序与CAS但继续B，最终汇报失败；两次按钮原请求A,A，修后A,B,A，B恢复、A保留dirty，无后台新增重试。
+- 父线程集中验证：画布边界8组（包括明确替代、nonce、A/B/A、预算、账号空间ABA、StrictMode/卸载）、原生PG/HTTP/Hook23组；X3协议真实PG/实际route18组，扫描10/合成付费callback10、真实供应商0；Worker34/34；全项目tsc exit0。模拟auth/service与真实PG仓储层级分开，不冒称完整生产浏览器验收。
+- 仅副本回滚恢复原3源码hash、三个原问题，并删除副本新增3文件；后来编辑guard exit73且0写入。四产物与精确命令/input/stdout/stderr/exit在父ignored `output/capacity-audit-wave2-20261029/review-followups/`；文档 `2026-10-29-capacity-review-followups.md`。
+- 事实校正：此前并发派发第三个 release collector 的调用最终返回 `parent_not_active`，没有成功taskId，不能把“调用已提交”记成实际开工；本轮下一批重新实际派发并记录返回句柄。画布与X3两个review确已完成，两个代码切片修复后方可合主线。
+- 下一批：release任务快照有界读取、账务余额sum/长事务/BI保留、Agent会话SSE/Markdown/上传，独立职责分工。历史生产容量/完整生命周期、45笔手术与在线索引继续挂账。既有fixture与accepted-timeout波动未自动关闭。

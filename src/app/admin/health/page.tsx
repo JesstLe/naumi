@@ -17,6 +17,7 @@ const num = (v: unknown) => Number(v ?? 0);
 
 export default async function AdminHealthPage() {
   await requireAdminPage("/admin/health");
+  const hasNegative = num((await q(`SELECT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('app_worker_tick_receipts') AND attname='nonacceptance_at' AND NOT attisdropped)::int has_negative`))[0]?.has_negative) === 1;
   const [queue, parents, unknown, ticks, scans, supplier, config] = await Promise.all([
     q(`SELECT count(*)::int n, round(extract(epoch FROM (now()-min(created_at)))/60)::int oldest_min
        FROM app_image_jobs WHERE kind='generate' AND snapshot->>'status'='pending' AND snapshot->>'queueState'='execution'`),
@@ -24,7 +25,7 @@ export default async function AdminHealthPage() {
        FROM app_image_jobs WHERE kind='imagegen' AND snapshot->>'status'='pending'`),
     q(`SELECT count(*) FILTER(WHERE state='unknown')::int unknown_n, count(*) FILTER(WHERE state='active' AND heartbeat_at<now()-interval '10 minutes')::int stale_n
        FROM app_release_activities WHERE work_scope='durable-image' AND activity_kind='accepted-work' AND state IN('active','unknown')`),
-    q(`SELECT count(*)::int n, max(accepted_at) last_at FROM app_worker_tick_receipts WHERE accepted_at>now()-interval '5 minutes'`),
+    q(`SELECT count(*)::int n, max(accepted_at) last_at FROM app_worker_tick_receipts WHERE accepted_at>now()-interval '5 minutes'${hasNegative ? ' AND nonacceptance_at IS NULL' : ''}`),
     q(`SELECT count(*)::int n FROM app_release_activities WHERE admission_key LIKE 'recovery-dispatch-scan%' AND started_at>now()-interval '5 minutes'`),
     q(`SELECT provider_id, state, count(*)::int n FROM app_supplier_calls WHERE started_at>now()-interval '1 hour' GROUP BY 1,2 ORDER BY 1,2`),
     q(`SELECT version, config->'providers' providers FROM app_model_config_versions ORDER BY version DESC LIMIT 1`),

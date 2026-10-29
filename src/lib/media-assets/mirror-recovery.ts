@@ -3,7 +3,7 @@ import {createHash,randomUUID} from "node:crypto";
 import {dbEnabled,getPool} from "@/platform/db/pool";
 import {ensureMediaSchema} from "../media-assets-schema";
 import {withBackgroundActivity,bindBackgroundClaim} from "../release-runtime/background-activity";
-import {readManagedObject} from "../object-storage/managed-read";
+import {readManagedObject,readManagedObjectInternal} from "../object-storage/managed-read";
 import {readPendingStoredObject,mirrorStoredObject,privateMedia,storageDriver} from "../object-storage/runtime";
 
 // Only retry saving bytes, never repeat a model request or touch billing.
@@ -25,7 +25,10 @@ async function recoverMediaMirrorsLocal(limit=2) {
         catch(error) {
           if((error as NodeJS.ErrnoException)?.code!=='ENOENT')throw error;
           // Legacy catalog imports can reference an existing remote original.
-          saved=await readManagedObject(`/media/${row.key}`,250*1024*1024);
+          if(row.key.startsWith("image-job-results/")){
+            const {bytes}=await readManagedObjectInternal(`/media/${row.key}`,64*1024*1024);
+            saved={bytes,size:bytes.length,contentType:row.content_type};
+          }else saved=await readManagedObject(`/media/${row.key}`,250*1024*1024);
         }
         if(saved.size!==Number(row.bytes)||createHash('sha256').update(saved.bytes).digest('hex')!==row.sha256)
           throw new Error('待补传素材校验失败');

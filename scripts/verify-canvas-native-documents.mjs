@@ -32,12 +32,12 @@ function Harness(){const [version,render]=useState(0),context=useRef(createCanva
  window.h={...view,stores,state,record,key,workspace:currentWorkspace,revision:currentWorkspaceRevision,change:patch=>{Object.assign(view,patch);flushSync(()=>render(n=>n+1));},select:id=>{selectWorkspace(id);flushSync(()=>render(n=>n+1));},unmount:()=>flushSync(()=>root.render(null))};
  return <main><b>Native documents</b><span>{version}</span>{kinds.map(kind=><section key={kind} data-kind={kind}><strong>{kind}</strong><output>{JSON.stringify(stores[kind].allNodes)}</output><em>{stores[kind].error}</em></section>)}</main>;
 }
-window.reset=()=>{state.db.clear();state.receipts.clear();state.posts=[];state.reads=[];state.auth=async()=>{};state.read=async()=>{};state.afterPost=async()=>{};state.readError=false;view={actor:'a',owner:'a',project:'tree:P',readOnly:false};selectWorkspace('personal');flushSync(()=>root.render(<Harness key={++sequence}/>));};window.reset();`;
+window.reset=()=>{sessionStorage.clear();state.db.clear();state.receipts.clear();state.posts=[];state.reads=[];state.auth=async()=>{};state.read=async()=>{};state.afterPost=async()=>{};state.readError=false;view={actor:'a',owner:'a',project:'tree:P',readOnly:false};selectWorkspace('personal');flushSync(()=>root.render(<Harness key={++sequence}/>));};window.reset();`;
 await fs.writeFile(path.join(out,'fixture.tsx'),fixture);
 const built=await build({stdin:{contents:fixture,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,platform:'browser',format:'iife',nodePaths:[path.resolve('node_modules')],tsconfig:path.join(root,'tsconfig.json'),define:{'process.env.NODE_ENV':'"development"'},plugins:[{name:'only-auth-port',setup(b){b.onResolve({filter:/supabase$/},()=>({path:'auth',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const authHeader=()=>window.__auth();',loader:'js'}));}}]});
 const server=createServer((req,res)=>{res.setHeader('content-type',req.url==='/app.js'?'text/javascript':'text/html');res.end(req.url==='/app.js'?built.outputFiles[0].contents:'<!doctype html><html><head><meta charset="utf-8"><style>body{font:14px system-ui;color:#172033;background:white;margin:24px}section{padding:12px;border-bottom:1px solid #ddd}output{display:block;max-width:100%;overflow:auto}em{color:#b33}</style></head><body><div id="root"></div><script src="/app.js"></script></body></html>');});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));let browser;const errors=[];
 try{
- browser=await chromium.launch({channel:'msedge',headless:true});const page=await browser.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto('http://127.0.0.1:'+server.address().port);
+ browser=await chromium.launch({channel:'msedge',headless:true});const page=await browser.newPage();page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.text().startsWith('NATIVE_PHASE='))console.log(m.text());});await page.goto('http://127.0.0.1:'+server.address().port);
  const result=await page.evaluate(async({kinds,baseline})=>{
   let checks=0,groups=0;const observations=[];
   const eq=(a,b,label)=>{if(JSON.stringify(a)!==JSON.stringify(b))throw Error(label+' actual='+JSON.stringify(a)+' expected='+JSON.stringify(b));checks++;};
@@ -45,26 +45,26 @@ try{
   const gate=()=>{let release,enter;const promise=new Promise(r=>release=r),entered=new Promise(r=>enter=r);return {release,enter,promise,entered};};
   const reset=async()=>{window.reset();await wait(()=>kinds.every(kind=>window.h.stores[kind].ready));};
   for(const kind of kinds){
-   await reset();let h=window.h;h.select('tenant');await new Promise(r=>setTimeout(r,30));eq(window.h.stores[kind].allNodes[0].marker,baseline?'personal':'tenant',kind+' workspace bucket');
+   console.log('NATIVE_PHASE='+kind+' START');await reset();let h=window.h;h.select('tenant');await new Promise(r=>setTimeout(r,30));eq(window.h.stores[kind].allNodes[0].marker,baseline?'personal':'tenant',kind+' workspace bucket');
    observations.push({kind,workspaceSeparated:!baseline});groups++;
    for(const change of ['workspace','actor','readonly','unmount']){
     await reset();h=window.h;const g=gate();h.state.auth=async()=>{g.enter();await g.promise;};const save=h.stores[kind].save(kind,{title:'late-auth'}).catch(e=>String(e));await g.entered;
     if(change==='workspace'){h.select('tenant');window.h.select('personal');}else if(change==='actor'){h.change({actor:'b'});window.h.change({actor:'a'});}else if(change==='readonly'){h.change({readOnly:true});window.h.change({readOnly:false});}else h.unmount();
     g.release();await save;eq(h.state.posts.length,baseline?1:0,kind+' auth '+change+' stops stale POST');groups++;
    }
-   await reset();h=window.h;let once=true;h.state.afterPost=async()=>{if(once){once=false;throw Error('committed response lost');}};
+   console.log('NATIVE_PHASE='+kind+' LOST');await reset();h=window.h;let lost=kind==='video'&&!baseline?3:1;h.state.afterPost=async()=>{if(lost-->0)throw Error('committed response lost');};
    await h.stores[kind].save(kind,{title:'lost'}).catch(()=>{});await window.h.stores[kind].refresh();await window.h.stores[kind].save(kind,{title:'lost'});
    eq(h.state.receipts.size,baseline?2:1,kind+' unknown original operation');eq(h.state.posts[0].body.operationId===h.state.posts[1].body.operationId,!baseline,kind+' exact operation replay');groups++;
    if(!baseline){
-    await reset();h=window.h;let first=true;h.state.afterPost=async()=>{if(first){first=false;throw Error('lost first');}};
+    console.log('NATIVE_PHASE='+kind+' NEXT_AFTER_LOST');await reset();h=window.h;let first=kind==='video'?3:1;h.state.afterPost=async()=>{if(first-->0)throw Error('lost first');};
     await h.stores[kind].save(kind,{title:'first'}).catch(()=>{});await window.h.stores[kind].save(kind,{title:'second'});
-    eq(h.state.posts.map(p=>p.body.expectedRevision),[1,1,2],kind+' settle prior before next');eq(h.state.posts[0].body,h.state.posts[1].body,kind+' frozen original body');eq(h.state.receipts.size,2,kind+' exactly two intended writes');groups++;
+    eq(h.state.posts.map(p=>p.body.expectedRevision),kind==='video'?[1,1,1,1,2]:[1,1,2],kind+' settle prior before next');eq(h.state.posts[0].body,h.state.posts[1].body,kind+' frozen original body');eq(h.state.receipts.size,2,kind+' exactly two intended writes');groups++;
     await reset();h=window.h;const g=gate();h.state.read=async k=>{if(k===kind){g.enter();await g.promise;}};const oldRead=h.stores[kind].refresh();await g.entered;h.state.read=async()=>{};
     const server=h.state.db.get(h.key(kind,'personal','a'));server.marker='newer-read';await window.h.stores[kind].refresh();g.release();await oldRead;
     eq(window.h.stores[kind].allNodes[0].marker,'newer-read',kind+' newer read wins');groups++;
     await reset();h=window.h;const before=h.stores[kind].allNodes;await h.stores[kind].refresh();eq(window.h.stores[kind].allNodes===before,true,kind+' unchanged array reference');
     h.state.readError=true;await window.h.stores[kind].refresh().catch(()=>{});eq(window.h.stores[kind].error,'read unavailable',kind+' read error visible');eq(window.h.stores[kind].allNodes.length,1,kind+' failure retains nodes');groups++;
-    await reset();h=window.h;const hold=gate();h.state.afterPost=async()=>{hold.enter();await hold.promise;};const one=h.stores[kind].save(kind,{title:'dedup'}),two=h.stores[kind].save(kind,{title:'dedup'});await hold.entered;eq(h.state.posts.length,1,kind+' in-flight dedup');hold.release();await Promise.all([one,two]);groups++;
+    console.log('NATIVE_PHASE='+kind+' DEDUP');await reset();h=window.h;const hold=gate();h.state.afterPost=async()=>{hold.enter();await hold.promise;};const one=h.stores[kind].save(kind,{title:'dedup'}),two=h.stores[kind].save(kind,{title:'dedup'});await hold.entered;eq(h.state.posts.length,1,kind+' in-flight dedup');hold.release();await Promise.all([one,two]);groups++;
     await reset();h=window.h;const stable=h.stores[kind].allNodes,readCount=h.state.reads.length;h.change({project:'tree:Q'});await new Promise(r=>setTimeout(r,10));eq(window.h.stores[kind].allNodes===stable,true,kind+' project retains document');eq(h.state.reads.length,readCount,kind+' project does not reload all nodes');groups++;
    }
   }

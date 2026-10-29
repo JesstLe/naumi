@@ -25,7 +25,7 @@ export const CACHE_CONTROL = "public, max-age=31536000, immutable";
 
 export const backend = createObjectStorage(config);
 
-const local = createObjectStorage({ ...config, driver: "local", enabled: true });
+export const local = createObjectStorage({ ...config, driver: "local", enabled: true });
 
 export const safeKey = safeStorageKey;
 

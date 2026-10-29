@@ -24,6 +24,7 @@ assert.match(nodesHook, /useCanvasNativeNodeDocument\("video",input,makeError\)/
 const nativeHook = readFileSync('src/components/canvas/use-canvas-native-node-document.ts', 'utf8');
 assert.match(nativeHook, /input.scope.documentCurrent\(\)/);
 assert.match(nativeHook, /setTimeout\(load,6000\)/);
+// The shared native document owns account/workspace/read-only epochs.
 const tasksHook = readFileSync('src/components/canvas/video/use-video-tasks.ts', 'utf8');
 assert.match(tasksHook, /contextRef.current!==context/); assert.match(tasksHook, /setTimeout\(run,4000\)/);
 assert.match(tasksHook, /onCompletedRef.current\(task,projectKey\)/);

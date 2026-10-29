@@ -5,6 +5,12 @@ export async function readManagedObject(
   url: string,
   maxBytes = Number.POSITIVE_INFINITY
 ): Promise<{ bytes: Buffer; contentType: string; size: number }> {
+  if (storageKeyFromManagedUrl(url)?.toLowerCase().startsWith("image-job-results/")) throw new Error("图片任务结果仅供内部恢复读取");
+  return readManagedObjectInternal(url,maxBytes);
+}
+
+/** Internal storage reader; caller must authorize paid checkpoint identity. */
+export async function readManagedObjectInternal(url:string,maxBytes=Number.POSITIVE_INFINITY):Promise<{bytes:Buffer;contentType:string;size:number}>{
   const key = storageKeyFromManagedUrl(url);
   if (!key) throw new Error("对象地址不属于当前存储");
   if (storageDriver !== "local") {

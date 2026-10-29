@@ -3,3 +3,4 @@ export { storageDriver, storageEnabled, privateMedia, remoteMediaAccess, deferre
 export {readManagedObject} from "./object-storage/managed-read";
 export {uploadImage} from "./media-upload";
 export {hasVerifiedStoredMirror} from "./object-storage/runtime";
+export {writeImageJobResult,readImageJobResult} from "./image-jobs/result-storage";

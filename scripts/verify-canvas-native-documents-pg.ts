@@ -34,21 +34,21 @@ async function main(){
    console.log('BASELINE_PROJECTION=OWNED_TWELVE_NATIVE_ROUTES COMMON_OWNER_AND_DEPENDENCIES=CURRENT');
   }else for(const kind of kinds)routes[kind]={base:await import(pathToFileURL(path.resolve(`src/app/api/canvas/${kind}-nodes/route.ts`)).href),item:await import(pathToFileURL(path.resolve(`src/app/api/canvas/${kind}-nodes/[id]/route.ts`)).href)};
   const ledger=async()=>(await f.sql.query('SELECT count(*)::int AS n,coalesce(sum(delta),0)::int AS amount FROM app_ledger')).rows[0],before=await ledger();
-  const state={workspace:'personal',revision:0,posts:[] as any[],lose:false};
+  const state={workspace:'personal',revision:0,posts:[] as any[],lose:0};
   const ports={workspace:()=>state.workspace,revision:()=>state.revision,headers:()=>headers};
   const entry=`export {createCanvasNativeNodeDocument,NativeNodeClientError} from './src/lib/canvas/native-node-document';export {createCanvasDocumentContext} from './src/lib/canvas/document-scope';`;
   const code=(await build({stdin:{contents:entry,resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,platform:'node',format:'cjs',plugins:[{name:'auth-ports',setup(b){b.onResolve({filter:/supabase$/},()=>({path:'auth',namespace:'fixture'}));b.onResolve({filter:/saas\/workspace-client$/},()=>({path:'scope',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='auth'?'export const authHeader=async()=>__ports.headers();':'export const currentWorkspace=()=>__ports.workspace(),currentWorkspaceRevision=()=>__ports.revision();',loader:'js'}));}}]})).outputFiles[0].text;
-  const module={exports:{}},context=vm.createContext({module,exports:module.exports,__ports:ports,console,URL,Headers,Request,Response,AbortSignal,structuredClone,crypto:globalThis.crypto,fetch:async(url:string,init:RequestInit={})=>{
+  const module={exports:{}},context=vm.createContext({module,exports:module.exports,__ports:ports,console,URL,Headers,Request,Response,AbortSignal,AbortController,setTimeout,clearTimeout,structuredClone,crypto:globalThis.crypto,fetch:async(url:string,init:RequestInit={})=>{
    const request=new Request('http://localhost'+url,{...init,headers:{...Object.fromEntries(new Headers(init.headers)),origin:'http://localhost'}}),u=new URL(request.url),kind=u.pathname.split('/')[3].replace(/-nodes$/,''),id=u.pathname.split('/')[4];
    const method=init.method||'GET';if(method!=='GET')state.posts.push({kind,body:JSON.parse(String(init.body)),method,url,workspace:request.headers.get('x-naumi-workspace')});
    const response=await(id?routes[kind].item[method](request,{params:Promise.resolve({id})}):routes[kind].base[method](request));
-   if(state.lose&&method!=='GET'&&response.ok){state.lose=false;throw Error('fixture committed response lost');}return response;
+   if(state.lose>0&&method!=='GET'&&response.ok){state.lose--;throw Error('fixture committed response lost');}return response;
   }});vm.runInContext(code,context);const api=module.exports as any;
   for(const kind of kinds){
    const owner=api.createCanvasNativeNodeDocument(kind,(message:string,status:number,code?:string)=>new api.NativeNodeClientError(message,status,code)),scopeContext=api.createCanvasDocumentContext(),scope=scopeContext.render(email,project),document=owner.bind(scope,email,false),id=`${kind}-scope-${randomUUID()}`;
    const created=await document.save(id,{projectKey:project,title:kind,x:11,y:22});eq(created.revision,1);await document.refresh();eq(document.getNode(id).title,kind);
-   state.lose=true;const a=state.posts.length;await assert.rejects(document.save(id,{title:'first'}),/response lost/);checks++;await document.refresh();await document.save(id,{title:'second'});
-   const own=state.posts.slice(a);eq(own.map(p=>p.body.expectedRevision),[1,1,2]);eq(own[0].body,own[1].body);eq(document.getNode(id).revision,3);eq(document.getNode(id).title,'second');
+   state.lose=kind==='video'?3:1;const a=state.posts.length;await assert.rejects(document.save(id,{title:'first'}),/response lost/);checks++;await document.refresh();await document.save(id,{title:'second'});
+   const own=state.posts.slice(a);eq(own.map(p=>p.body.expectedRevision),kind==='video'?[1,1,1,1,2]:[1,1,2]);eq(own[0].body,own[1].body);eq(document.getNode(id).revision,3);eq(document.getNode(id).title,'second');
    const operations=kind==='video'?'app_canvas_video_node_operations':`app_canvas_${kind}_operations`;
    const count=await f.sql.query(`SELECT count(*)::int AS n FROM ${operations} WHERE email=$1`,[email]);eq(count.rows[0].n,3);
    const h=await import('../src/app/api/canvas/history/route');const removal=await h.POST(new Request('http://localhost/api/canvas/history',{method:'POST',headers:{...headers,origin:'http://localhost','content-type':'application/json','x-naumi-workspace':'personal'},body:JSON.stringify({operationId:randomUUID(),operations:[{type:`${kind}-visibility`,id,visible:false}]})}));eq(removal.status,200);const receipt=await removal.json();document.accept(receipt.nativeNodes[`${kind}Nodes`],()=>true);eq(!!document.getNode(id).deletedAt,true);await document.refresh();eq(!!document.getNode(id).deletedAt,true);

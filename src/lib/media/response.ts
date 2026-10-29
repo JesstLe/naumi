@@ -43,13 +43,14 @@ export async function serveMedia(request:Request,segs:string[]) {
   if (
     !segs.length ||
     segs.some(
-      (s) => s === ".." || s.includes("\0") || s.includes("/") || s.includes("\\")
+      (s) => s === "." || s === ".." || s.includes("\0") || s.includes("/") || s.includes("\\")
     )
   ) {
     return new Response("Bad request", { status: 400 });
   }
 
   let rel = segs.join("/"),registeredContentType:string|undefined,remoteVersion:string|undefined,remoteFailure=false,remoteReadable=false,remoteMissing=false,verifiedMirror=false;
+  if(rel.toLowerCase().startsWith("image-job-results/"))return new Response("Not found",{status:404,headers:{"cache-control":"no-store"}});
   if (privateMedia) {
     try {
       const owner=await authenticatedEmail(request);
