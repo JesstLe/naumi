@@ -7,7 +7,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, timingSafeEqual, randomUUID } from "node:crypto";
 import { dbEnabled, getPool } from "@/lib/db";
 import { assertMutableStagingTask } from "./staging-history";
-import { uploadImage, readManagedObject } from "@/lib/storage";
+import { encodeImageJobValue as encode, decodeImageJobValue as decode, encodeImageJobResult as encodeImageIndexResult, encodeImageJobSnapshot } from "./image-job-codec";
 import { workerSecret } from "@/lib/settings-secret";
 import * as repository from "@/lib/image-job-repository";
 import { ImageOperationPending, ImageOperationDeferred, isImageGatewayModel, withImageOperation, withImageIndexCheckpoint, type ImageIndexCheckpoint } from "@/lib/image-gateway";
@@ -24,7 +24,6 @@ import { ImageJobLeaseLostError, isImageJobLeaseLost, startImageJobHeartbeat } f
 
 type Execution = { id: string; token: string; queue: Promise<unknown>; lease: ReturnType<typeof startImageJobHeartbeat> };
 const execution = new AsyncLocalStorage<Execution>();
-const uploaded = new WeakMap<Buffer, string>();
 
 function executionFor(id: string, required = false) {
   const context = execution.getStore();
@@ -39,59 +38,6 @@ async function assertPaidExecution(id: string) {
   try { await repository.assertImageJobLease(id, context.token); }
   catch (error) { if (isImageJobLeaseLost(error)) context.lease.lose(); throw error; }
   context.lease.assertActive();
-}
-
-async function encode(value: unknown, id: string): Promise<unknown> {
-  if (Buffer.isBuffer(value)) {
-    let url = uploaded.get(value);
-    if (!url) {
-      const hash = createHash("sha256").update(value).digest("hex");
-      url = await uploadImage(value, "application/octet-stream", `image-job-inputs/${id}/${hash}.bin`);
-      uploaded.set(value, url);
-    }
-    return { $imageJobBuffer: url };
-  }
-  if (Array.isArray(value)) return Promise.all(value.map((entry) => encode(entry, id)));
-  if (value && typeof value === "object") {
-    return Object.fromEntries(await Promise.all(Object.entries(value).map(async ([key, entry]) => [key, await encode(entry, id)])));
-  }
-  return value;
-}
-
-async function decode(value: unknown): Promise<unknown> {
-  if (value && typeof value === "object" && "$imageJobBase64" in value)
-    return ((await decode((value as Record<string, unknown>).$imageJobBase64)) as Buffer).toString("base64");
-  if (value && typeof value === "object" && "$imageJobDataURL" in value) {
-    const stored = value as { $imageJobDataURL: string; bytes: unknown };
-    return stored.$imageJobDataURL + ((await decode(stored.bytes)) as Buffer).toString("base64");
-  }
-  if (value && typeof value === "object" && "$imageJobBuffer" in value) {
-    const url = String((value as Record<string, unknown>).$imageJobBuffer);
-    const buffer = (await readManagedObject(url, 64 * 1024 * 1024)).bytes;
-    uploaded.set(buffer, url);
-    return buffer;
-  }
-  if (Array.isArray(value)) return Promise.all(value.map(decode));
-  if (value && typeof value === "object") return Object.fromEntries(await Promise.all(Object.entries(value).map(async ([key, entry]) => [key, await decode(entry)])));
-  return value;
-}
-
-/** Child checkpoints keep pixels in managed storage, not a second DB copy of
- * the root's data URLs. The normal snapshot decoder restores the SDK shape. */
-async function encodeImageIndexResult(value: unknown, id: string): Promise<unknown> {
-  if (Array.isArray(value)) return Promise.all(value.map(entry => encodeImageIndexResult(entry, id)));
-  if (value && typeof value === "object" && !Buffer.isBuffer(value)) {
-    return Object.fromEntries(await Promise.all(Object.entries(value).map(async ([key, entry]) => {
-      if (key === "b64_json" && typeof entry === "string")
-        return [key, { $imageJobBase64: await encode(Buffer.from(entry, "base64"), id) }];
-      if (key === "url" && typeof entry === "string" && /^data:image\/[^;,]+;base64,/.test(entry)) {
-        const comma = entry.indexOf(",");
-        return [key, { $imageJobDataURL: entry.slice(0, comma + 1), bytes: await encode(Buffer.from(entry.slice(comma + 1), "base64"), id) }];
-      }
-      return [key, await encodeImageIndexResult(entry, id)];
-    })));
-  }
-  return value;
 }
 
 export function imageWorkerAuthorized(request: Request): boolean {
@@ -111,7 +57,7 @@ export class DurableImageJobs<T extends { status: string }> {
     if (models && payload && typeof payload === "object") payload = { ...payload, modelExecutions: structuredClone(models) };
     snapshot = { ...snapshot, paidOperationVersion: 1,...(this.kind==="generate"?{queueState:"execution"}:{}) };
     if (!dbEnabled) { this.memory.set(id, { snapshot, payload, email }); return; }
-    await repository.createImageJob(id, email, this.kind, await encode(snapshot, id), await encode(payload, id), cost, reserve,billingQuote);
+    await repository.createImageJob(id, email, this.kind, await encodeImageJobSnapshot(snapshot, id), await encode(payload, id), cost, reserve,billingQuote);
   }
   async get(id: string, hydrate = true): Promise<T | undefined> {
     if (!dbEnabled) return this.memory.get(id)?.snapshot;
@@ -125,7 +71,7 @@ export class DurableImageJobs<T extends { status: string }> {
   async set(id: string, snapshot: T) {
     if (!dbEnabled) { const row = this.memory.get(id); if (row) row.snapshot = snapshot; return; }
     const context = executionFor(id);
-    const encoded = await encode(snapshot, id);
+    const encoded = await encodeImageJobSnapshot(snapshot, id);
     context?.lease.assertActive();
     await repository.saveImageJob(id, encoded, context?.token || null);
   }

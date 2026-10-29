@@ -47,13 +47,16 @@ export async function GET(
   if (
     !segs.length ||
     segs.some(
-      (s) => s === ".." || s.includes("\0") || s.includes("/") || s.includes("\\")
+      (s) => s === "." || s === ".." || s.includes("\0") || s.includes("/") || s.includes("\\")
     )
   ) {
     return new Response("Bad request", { status: 400 });
   }
 
   let rel = segs.join("/"),registeredContentType:string|undefined,remoteVersion:string|undefined,remoteFailure=false,remoteReadable=false,remoteMissing=false,verifiedMirror=false;
+  // This namespace contains internal paid checkpoints, even on legacy public
+  // media configurations. Deliver only the final, separately authorized artwork.
+  if(rel.toLowerCase().startsWith("image-job-results/")) return new Response("Not found", {status:404,headers:{"cache-control":"no-store"}});
   if (privateMedia) {
     try {
       const owner=await authenticatedEmail(request);
