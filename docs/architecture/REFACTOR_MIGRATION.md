@@ -1,5 +1,10 @@
 ## 2026-10-30 当前模块：R7T
 
+## 2026-10-30 最新：R7V 视频任务跟随检查点（整体ACTIVE）
+
+视频恢复编排归canvas/video-task-follow；第三模块后普通整合main bbc8f784六提交，两冲突保留scope缓存隔离和新存储/提示语义。固定c496e36d的156原条目已覆盖，153有通过证据、时间线/场景/角色三项Windows完整原生门禁OPEN，**不是完整core PASS**。新完整Linux镜像及同镜像真实双browser37/PG/Worker/180秒通过；独立Next视频恢复8检查通过。type/lint37warnings与4类SCC0。原full-core门槛未降低，新的Linux runtime177未运行；四产物/回滚/版本以R7V DELIVERY为准。未合main未部署，47 HOLD；后续先闭合三个原生门禁，再继续剩余职责/性能容量与最终整合。历史阶段数据保留原SHA。
+
+
 浮动层render/live共用projectOverlay与原纯几何；Refs/observer测量、最小pan移出Canvas，文档/history/任务/账务仍原owner。原31轨迹EXACT、b58固定19项受影响PASS（subset exit2）、实际Next9+响应式5、tsc/lint37warnings与四SCC0通过。observer同ID换文档反例关闭，本地端口EACCES与verifier时序失败原样保留。整体ACTIVE，未合main/未发布，47 HOLD；全151与新Linux未在本片重复。见[R7T记录](../changes/2026-10-30-refactor-r7t-overlay-ownership.md)和DELIVERY。下文R7S完整150/同镜像177+52+37仍属于其原版本。
 
 ## 2026-10-30 当前整版检查点：R7S

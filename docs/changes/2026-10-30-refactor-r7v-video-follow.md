@@ -34,3 +34,15 @@
 同固定应用完整Next实页8检查已通过：原task ID恢复占位，scope headers、needs_attention原卡更新、cancelled收起且零定位、完成后原结果initialize1/merge1并渲染、重复查询不重生成/不重定位、mobile390无页面溢出、pageerror/external/paid0。其API为loopback fixture，结果节点fixture使用已有作品图片，未做真实视频解码/生产PG验收；2100应用文件逐hash相同，15430/15431端口已关闭。
 
 第二轮cf6bb316：31PASS后parent-completion的25用例均在执行前遇到严格fixture loader的UNMOCKED_IMPORT output-advisory→notice-visibility；既有loader没有登记新纯叶依赖，不是25个产品账务失败。仅增加加载实际notice-visibility模块的精确映射，供应商/结算throwing sentinel不变。core-fixed原失败与PG清理记录保留。
+
+## 最终检查点：模块通过，整体门禁保持OPEN
+
+固定应用/验证c496e36d（全部src/services与原生8检查、完整Linux构建逐hash一致）。完整156原条目均实际执行过，同SHA/digest证据并集153PASS、3OPEN；这不是单次完整core PASS。原runner多次fail-fast保留：29/1旧提示预期、31/1严格loader、92/1 Windows端口EACCES、98/1时间线传输、107/1场景、110/1角色；后续同SHA/env/命令/日志hash验证复用明确登记，补跑其余43项43PASS/0失败/0未跑（PARTIAL/exit2）。`CONSOLIDATED_CORE.json`为证据索引，不伪装required CI全绿；未跑条目0，OPEN三个仍有原始失败。
+
+- OPEN timeline-native-canvas：Windows Next dev在测试清理前退出，控制GET出现ECONNRESET/ECONNREFUSED；独立观察记录launcher exit0，未证明内部退出根因。实际时间线application/matrix/真实FFmpeg已通过，不替代该完整UI门禁。
+- OPEN scene-application、character-application：原真实UI节点/标题等待超时，诊断与原日志保留，不把历史R7S通过冒认本轮通过。宿主另观察到committed99,301,576,704B/limit108,740,050,944B及一次WMI内存不足；是环境证据，不是已证明唯一根因。其他任务进程未操作。
+- 完整生产Dockerfile候选`sha256:40cf71614aeed3a9b81d71a1b7e994c74faa2ce8c2ed488114b5c64fe00a8042`构建/封装通过；同镜像真实Web/Worker/PG、双browser37通过，浏览器路由/鉴权替换0，180秒混合读取，最终7笔42积分均为隔离fixture。所有容器/内部网络清理及Worker POSIX drain exit0。
+- 未绕过full-core PASS门槛启动新的Linux媒体runtime177；R7S177只保留原版本证据。实际Next视频恢复8检查/PG/HTTP各层分开登记。
+- tsc/lint exit0，37既有warnings，4类SCC0。原/新跟随21→22检查、14共同轨迹EXACT。候选目录5200文件；四产物/副本回滚与远端以本轮DELIVERY为准。整体ACTIVE、未合main未部署、47 HOLD。
+
+下一步优先收敛上述原生进程/环境生命周期并恢复严格完整门禁，再继续selection和billing→toast职责边界；不以153通过结束整体重构。
