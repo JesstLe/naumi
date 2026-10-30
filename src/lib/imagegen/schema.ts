@@ -27,6 +27,9 @@ export const imagegenRequestSchema=z.strictObject({
   inputs:z.array(z.strictObject({artworkId:resourceId,role:z.enum(["edit-target","reference","insert","style","mask"]),reference:referenceLabelSchema.optional(),originalArtworkId:resourceId.optional(),inputVariant:z.enum(['original','processed']).optional()})).max(32).default([]),
   frameSourceId:resourceId.optional(),
   framePolicy:z.literal("all-inputs").optional(),
+  // The browser may resolve original (not optimized upload) dimensions while
+  // retaining the user's automatic choice. Absent on historical requests.
+  ratioMode:z.literal("automatic").optional(),
   parameters:z.strictObject({quality:resourceId.optional(),resolution:resourceId.optional(),ratio:z.union([z.literal("auto"),z.string().regex(/^[1-9]\d{0,5}:[1-9]\d{0,5}$/)]).optional(),
     width:z.number().int().min(64).max(8192).optional(),height:z.number().int().min(64).max(8192).optional(),
     inputFidelity:resourceId.optional(),moderation:resourceId.optional()}).default({}),

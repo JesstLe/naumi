@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {acceptsAPIMartRatio} from './apimart-image-policy';
 import {ModelConfigError,type UpstreamModel} from './types';
 import {policyQuality} from './quality-policy';
 import {mapResolution,RESOLUTION_FIELDS} from './resolution-policy';
@@ -32,8 +33,9 @@ export function compileImageParameterPlan(source:Pick<UpstreamModel,'id'|'model'
  // With no manual mapping the existing protocol default remains unchanged.
  let resolution:string|undefined,expectedPixels:{width:number;height:number}|undefined;
  const adapter=map.apimartImages;
- const pixels=adapter&&!adapter.ratios.includes(requested.ratio)?exactRatioPixels(requested.ratio,context.publicModelId):undefined;
- if(adapter&&!adapter.ratios.includes(requested.ratio)&&!pixels)fail('未配置此比例的发送方式：'+requested.ratio);
+ const pixels=adapter&&!acceptsAPIMartRatio(adapter,requested.ratio)?exactRatioPixels(requested.ratio,context.publicModelId):undefined;
+ if(adapter&&!acceptsAPIMartRatio(adapter,requested.ratio)&&!pixels)fail('未配置此比例的发送方式：'+requested.ratio);
+ if(adapter&&requested.ratio==='auto'&&adapter.automaticRatio?.enabled&&!map.resolutionPolicy?.ratioField)fail('自适应画幅缺少比例发送字段');
  if(pixels){
   RESOLUTION_FIELDS.forEach(f=>clear.add(f));
   const field=map.resolutionPolicy?.ratioField&&map.resolutionPolicy.ratioField!==map.resolutionPolicy.field?map.resolutionPolicy.ratioField:'size';
