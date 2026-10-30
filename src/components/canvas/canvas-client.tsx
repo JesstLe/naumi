@@ -1,4 +1,6 @@
 "use client";
+import type {NodePreferenceChange} from "@/lib/canvas/node-preferences";
+import {useCanvasNodePreferences} from "./use-canvas-node-preferences";
 import {useCanvasTextEditing} from "./use-canvas-text-editing";
 import {useCanvasProjectNavigation} from "./use-canvas-project-navigation";
 import {canvasHistoryFailureMessage} from '@/lib/canvas/history-scope';
@@ -172,7 +174,7 @@ import { CanvasAgentToggle } from "./canvas-agent-toggle";
 import { CanvasAgentOrb } from "./canvas-agent-orb";
 import { useOrbCompanion } from "../naumi-orb/use-orb-companion";
 import { useCanvasAssistantDisclosure } from "@/lib/canvas/assistant-disclosure";
-import { defaultNodeSettings, validNodeSettings, type CanvasNodeSettings, type CanvasCrop } from "@/lib/canvas/node-settings";
+import { defaultNodeSettings, type CanvasNodeSettings, type CanvasCrop } from "@/lib/canvas/node-settings";
 const DEFAULT_CANVAS_SETTINGS = defaultNodeSettings();
 
 import {
@@ -356,34 +358,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   })});
   const {navigation:projectNavigation,targetEmail,readOnly,activeKey,browsing,creatingNew,pinnedNode,pendingNode}=projectView;
   const canvasAccountRef=useRef("");canvasAccountRef.current=JSON.stringify([user?.email?.toLowerCase(),targetEmail?.toLowerCase()]);
-  const [nodeSettings, setNodeSettings] = useState<Record<string, CanvasNodeSettings>>({});
-  const nodeSettingsRef = useRef(nodeSettings); nodeSettingsRef.current = nodeSettings;
-  const [nodeSettingsReady, setNodeSettingsReady] = useState(false);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
   const replaceInputRef = useRef<HTMLInputElement>(null);
   const L = (zh: string, en: string) => locale === "en" ? en : zh;
-  const settingsFor = (id: string) => nodeSettingsRef.current[id] || DEFAULT_CANVAS_SETTINGS;
-  const isNodeLocked = (id: string) => settingsFor(id).locked;
-
-  useEffect(() => {
-    if (!ready || !user) return;
-    const email=(targetEmail || user.email).toLowerCase();
-    let stopped=false;setNodeSettingsReady(false);setNodeSettings({});
-    void privateFetchRaw(`/api/canvas/node-settings?email=${encodeURIComponent(email)}`).then(async response=>{
-      const data=await expectJsonOk(response,"节点属性读取失败");if(stopped)return;
-      const raw=data.persisted ? data.settings : JSON.parse(localStorage.getItem(`naumi:node-settings:${email}`) || '{}');
-      setNodeSettings(Object.fromEntries(Object.entries(raw || {}).map(([id,value])=>[id,validNodeSettings(value)])));
-      setNodeSettingsReady(true);
-    }).catch(()=>{if(!stopped)flashTip(L("节点属性读取失败，请刷新重试","Properties failed to load. Refresh to retry."));});
-    return ()=>{stopped=true;};
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[ready,user?.email,targetEmail]);
-  useEffect(()=>{
-    if(!nodeSettingsReady || !user || readOnly)return;
-    try{localStorage.setItem(`naumi:node-settings:${user.email.toLowerCase()}`,JSON.stringify(nodeSettings));}catch{/* best effort */}
-  },[nodeSettings,nodeSettingsReady,user,readOnly]);
   const canvasArtworkDocument = useCanvasArtworkDocument({account:canvasAccountRef.current,actor:user?.email||"",owner:targetEmail||user?.email||"",
     project:activeKey,enabled:ready&&!!user&&!!targetEmail,readOnly});
+  const nodePreferences=useCanvasNodePreferences(canvasArtworkDocument.scope,{owner:targetEmail||user?.email||"",enabled:ready&&!!user,
+    notice:flashTip,failed:L("节点属性读取失败，请刷新重试","Properties failed to load. Refresh to retry.")});
+  const nodeSettings=nodePreferences.settings,nodeSettingsReady=nodePreferences.ready,settingsFor=nodePreferences.get,isNodeLocked=nodePreferences.locked;
   const generationPresentation=useCanvasGenerationPresentation(canvasArtworkDocument.scope);
   const generationTasks=generationPresentation.tasks;
   const {nodes:works,set:setWorks} = canvasArtworkDocument;
@@ -757,7 +739,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       canvasArtworkDocument.accept(artworks);
       canvasTextDocument.accept(result.textNodes);
       workflowDocument.accept(result.manifest);
-      setNodeSettings(current=>scope.documentCurrent()?{...current,...result.settings}:current);
+      if(scope.documentCurrent())nodePreferences.accept(result.settings);
       canvasHistory.record({...scope,project:result.projectKey,key:JSON.stringify([scope.account,scope.workspace,result.projectKey])},{kind:"workflow-add",artworks,textNodes:result.textNodes});
       if(!present)return;
       projectNavigation.open(result.projectKey); setSelectedId(null); setSelectedTextId(null);
@@ -926,7 +908,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     id: string,
     bounds: { x: number; y: number; width: number; height: number }
   ) => {
-    if (readOnly || nodeSettingsRef.current[id]?.locked) return;
+    if (readOnly || isNodeLocked(id)) return;
     const x = Math.round(bounds.x);
     const y = Math.round(bounds.y);
     const width = Math.round(bounds.width);
@@ -944,10 +926,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if(prev.canvasX===x&&prev.canvasY===y&&prev.canvasWidth===width&&prev.canvasHeight===height)return null;
       return {kind:"art-size",id,from:{x:prev.canvasX??x,y:prev.canvasY??y,width:prev.canvasWidth??width,height:prev.canvasHeight??height},to:{x,y,width,height},artworkBases:{[id]:artworkFields(prev)}};
     }).catch(error=>{if(scope.viewCurrent())warning(error instanceof Error?error.message:failed());});
-  }, [user, readOnly]);
+  }, [user, readOnly, isNodeLocked]);
 
   const onArtworkCanvasRatioRepair = useCallback((id: string, width: number, height: number) => {
-    if (readOnly || nodeSettingsRef.current[id]?.locked) return;
+    if (readOnly || isNodeLocked(id)) return;
     const nextWidth = Math.round(width);
     const nextHeight = Math.round(height);
     if (
@@ -960,24 +942,24 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(!user)return;const {history:historyOwner,document,warning,failed}=artworkCommandsRef.current,scope=historyOwner.scope,prev=document.getSnapshot().nodes?.find(art=>art.id===id);if(!prev)return;
     if(prev.canvasWidth===nextWidth&&prev.canvasHeight===nextHeight)return;
     void historyOwner.submit(scope,()=>({kind:"art-dimensions",id,from:{width:prev.canvasWidth??nextWidth,height:prev.canvasHeight??nextHeight},to:{width:nextWidth,height:nextHeight},artworkBases:{[id]:artworkFields(prev)}}),false).catch(error=>{if(scope.viewCurrent())warning(error instanceof Error?error.message:failed());});
-  }, [user, readOnly]);
+  }, [user, readOnly, isNodeLocked]);
 
   const requestNodeRename = useCallback((id: string, label: string) => {
-    if(readOnly || nodeSettingsRef.current[id]?.locked)return;
+    if(readOnly || isNodeLocked(id))return;
     if (readOnly) return;
     setSelectedId(id);
     setSelectedPendId(null);
     setSelectedTextId(null);
     setNodeRenameValue(label);
     setRenamingNodeId(id);
-  }, [readOnly,setSelectedId,setSelectedPendId,setSelectedTextId]);
+  }, [readOnly,isNodeLocked,setSelectedId,setSelectedPendId,setSelectedTextId]);
 
   const extractVideoToCanvas = useCallback((id:string,action:VideoPlayerAction)=>{
-    if(readOnly||!user||nodeSettingsRef.current[id]?.locked)return;
+    if(readOnly||!user||isNodeLocked(id))return;
     const source=worksRef.current?.find(item=>item.id===id),node=videoNodesStore.getNode(id),project=activeProjectRef.current?.key;
     if(!project||!source?.videoUrl&&!node?.displayResultId&&!node?.lastResultId)return;
     setVideoMedia({id,projectKey:project,initial:action});
-  },[readOnly,user,videoNodesStore.getNode]);
+  },[readOnly,user,isNodeLocked,videoNodesStore.getNode]);
 
   const sceneActions=useCanvasSceneActions({
     dimensions:onNodeDimensions,resize:onArtworkCanvasResize,ratioRepair:onArtworkCanvasRatioRepair,rename:requestNodeRename,
@@ -1738,11 +1720,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const hidden=applyCanvasLocalHistory(act,undo,{pending:pendingPresentation.atScope(scope),generation:generationPresentation.atScope(scope)},checkOnly);
     if(!checkOnly&&scope.viewCurrent()&&hidden.length){const ids=new Set(hidden);canvasSelection.patch({selectedId:selectedId&&ids.has(selectedId)?null:selectedId,selectedPendId:selectedPendId&&ids.has(selectedPendId)?null:selectedPendId,multiSel:multiSel.filter(id=>!ids.has(id))});}
   }
-  function applyHistorySettings(update: (current: Record<string,CanvasNodeSettings>) => Record<string,CanvasNodeSettings>, persisted: boolean) {
-    const next = update(nodeSettingsRef.current);
-    nodeSettingsRef.current = next; setNodeSettings(next);
-    if (!persisted && user) localStorage.setItem(`naumi:node-settings:${user.email.toLowerCase()}`,JSON.stringify(next));
-  }
+  function applyHistorySettings(update:(current:Record<string,CanvasNodeSettings>)=>Record<string,CanvasNodeSettings>,persisted:boolean){nodePreferences.apply(update,persisted);}
   function onHistoryApplied({action:act,undo}: HistoryCommit) {
     if(act.kind==="image-version"){const node=canvasArtworkDocument.getSnapshot().nodes?.find(node=>node.id===act.id);if(node)imageDraft.seed(act.id,{prompt:inheritableImagePrompt(node.prompt)});}
     const insertion=canvasHistoryInsertionView(act,undo,active);
@@ -1758,27 +1736,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   function openProperties() {
     suspendAssistant();imageTextEditor.close();setPropertiesOpen(true);
   }
-  async function commitNodeSettings(id: string, to: CanvasNodeSettings) {
-    if (!user || readOnly || !nodeSettingsReady || historyBusyRef.current) return false;
-    const from=settingsFor(id);
-    if(JSON.stringify(from)===JSON.stringify(to))return true;
-    historyBusyRef.current=true;setHistorySaving(true);
-    try {
-      const act: UndoAct = {kind:"node-settings",id,text:id.startsWith("text-"),video:!!videoNodesStore.getNode(id),director:!!directorNodesStore.getNode(id),character:!!characterNodesStore.getNode(id),scene:!!sceneNodesStore.getNode(id),audio:!!audioNodesStore.getNode(id),timeline:!!timelineNodesStore.getNode(id),from,to};
-      await applyHistory(act,false); pushUndo(act); return true;
-    } catch(error){flashTip(error instanceof Error?error.message:t("canvas.saveFailed"));return false;}
-    finally {historyBusyRef.current=false;setHistorySaving(false);}
+  async function commitNodeSettings(id:string,to:NodePreferenceChange){
+    return nodePreferences.commit(id,to,{writable:()=>!!user&&!readOnly,kinds:nativeDocuments.settingsKinds,history:canvasHistory,notice:flashTip,failed:t("canvas.saveFailed")});
   }
   function nodeManagementItems(id: string) {
     const settings=settingsFor(id),disabled=readOnly || !nodeSettingsReady || historySaving;
-    const orders=Object.values(nodeSettings).map(item=>item.order);
     return [
       {id:"lock-node",icon:settings.locked?Unlock:Lock,label:settings.locked?L("解锁节点","Unlock node"):L("锁定节点","Lock node"),disabled,
-        onSelect:()=>void commitNodeSettings(id,{...settings,locked:!settings.locked})},
+        onSelect:()=>void commitNodeSettings(id,"toggle-lock")},
       {id:"front-node",icon:ArrowUpToLine,label:L("置于顶层","Bring to front"),disabled:disabled||settings.locked,
-        onSelect:()=>void commitNodeSettings(id,{...settings,order:Math.min(100000,Math.max(0,...orders)+1)})},
+        onSelect:()=>void commitNodeSettings(id,"front")},
       {id:"back-node",icon:ArrowDownToLine,label:L("置于底层","Send to back"),disabled:disabled||settings.locked,
-        onSelect:()=>void commitNodeSettings(id,{...settings,order:Math.max(-100000,Math.min(0,...orders)-1)})},
+        onSelect:()=>void commitNodeSettings(id,"back")},
     ];
   }
   function canvasLocalEditContext():CanvasLocalImageEditPorts {

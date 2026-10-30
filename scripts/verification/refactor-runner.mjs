@@ -50,6 +50,8 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='canvas-render-isolation')stageEnv.CANVAS_RENDER_ISOLATION_EVIDENCE=evidence;
    if(spec.id==='canvas-downloads')stageEnv.CANVAS_DOWNLOAD_EVIDENCE=evidence;
    if(spec.id==='canvas-download-browser')stageEnv.CANVAS_DOWNLOAD_BROWSER_EVIDENCE=evidence;
+   if(spec.id==='canvas-node-preferences')stageEnv.NODE_PREFERENCES_EVIDENCE=evidence;
+   if(spec.id==='canvas-node-preferences-dom')stageEnv.NODE_PREFERENCES_DOM_EVIDENCE=evidence;
    if(['canvas-node-renderers','canvas-scene-reconciliation'].includes(spec.id))stageEnv.SCENE_EVIDENCE=evidence;
    if(spec.id==='canvas-text-editing-pg')stageEnv.CANVAS_TEXT_EDITING_PG_EVIDENCE=evidence;
    if(spec.id==='canvas-project-navigation')stageEnv.CANVAS_PROJECT_NAVIGATION_EVIDENCE=evidence;

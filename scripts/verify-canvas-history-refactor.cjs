@@ -11,7 +11,7 @@ let checks=0,cases=0;const eq=(a,b,m)=>{assert.deepEqual(plain(a),plain(b),m);ch
 const wait=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return {promise,resolve,reject};};
 async function test(name,run){await run();cases++;console.log('CASE='+name+' PASS');}
 async function bundle(){
- const entries=['src/lib/canvas/node-settings.ts',...(baseline?[]:['src/components/canvas/use-canvas-history.ts','src/lib/canvas/history-model.ts','src/lib/canvas/history-scope.ts','src/lib/canvas/history-contract.ts','src/lib/canvas/node-commands.ts','src/lib/canvas/pending-presentation.ts','src/lib/canvas/generation-presentation.ts',...(fs.existsSync(path.join(root,'src/lib/canvas/native-document-lifecycle.ts'))?['src/lib/canvas/native-document-lifecycle.ts']:[]),...(textOwner?['src/lib/canvas/text-document.ts','src/lib/canvas/document-scope.ts']:[])])];
+ const entries=['src/lib/canvas/node-settings.ts',...(baseline?[]:['src/lib/canvas/node-preferences.ts','src/components/canvas/use-canvas-history.ts','src/lib/canvas/history-model.ts','src/lib/canvas/history-scope.ts','src/lib/canvas/history-contract.ts','src/lib/canvas/node-commands.ts','src/lib/canvas/pending-presentation.ts','src/lib/canvas/generation-presentation.ts',...(fs.existsSync(path.join(root,'src/lib/canvas/native-document-lifecycle.ts'))?['src/lib/canvas/native-document-lifecycle.ts']:[]),...(textOwner?['src/lib/canvas/text-document.ts','src/lib/canvas/document-scope.ts']:[])])];
  return (await build({stdin:{contents:entries.map(e=>'export * from '+JSON.stringify(path.join(root,e))+';').join('\n'),resolveDir:root,loader:'ts'},bundle:true,write:false,platform:'node',format:'cjs',plugins:[{name:'fixture-ports',setup(b){
   b.onResolve({filter:/^react$/},()=>({path:'react',namespace:'fixture'}));b.onResolve({filter:/supabase$/},()=>({path:'auth',namespace:'fixture'}));b.onResolve({filter:/saas\/workspace-client$/},()=>({path:'scope',namespace:'fixture'}));
   b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='react'?'export const useRef=(...a)=>__hooks.ref(...a),useState=(...a)=>__hooks.state(...a),useEffect=(...a)=>__hooks.effect(...a),useCallback=f=>f,useSyncExternalStore=()=>0;':a.path==='auth'?'export const authHeader=()=>__ports.auth();':'export const currentWorkspace=()=>__ports.workspace,currentWorkspaceRevision=()=>__ports.revision,WORKSPACE_SELECTION="workspace";',loader:'js'}));
@@ -59,6 +59,14 @@ function setup(built){
  // pushUndo is a useCallback invocation. Keep its original initializer, with a
  // fixture useCallback, rather than maintaining a handwritten copy of its body.
  c.useCallback=f=>f;
+ if(!baseline&&c.createCanvasNodePreferences){
+  const preferenceScope={account:state.account,workspace:'personal',project:state.project,key:'fixture',documentCurrent:()=>true,viewCurrent:()=>true,assertView(){}};
+  const preferences=c.createCanvasNodePreferences().bind(preferenceScope,state.account,{read:async()=>({persisted:true,settings:{}}),local:{read:()=>({}),write(){}},notice:m=>state.notices.push(m),failed:'fixture'});
+  const preferenceCommit=preferences.commit;preferences.commit=async(id,to,ports)=>{await preferences.load();return preferenceCommit(id,to,ports);};
+  const apply=preferences.apply;preferences.apply=(update,persisted)=>{apply(update,persisted);state.settings=preferences.getSnapshot().settings;c.nodeSettingsRef.current=state.settings;};
+  c.nodePreferences=preferences;c.nativeDocuments.settingsKinds=id=>Object.fromEntries(['video','director','character','scene','audio','timeline'].map(kind=>[kind,!!c[kind+'NodesStore'].getNode(id)]));
+ }
+
  const declarations=baseline?`const historyAccount=canvasAccountRef.current,historyScope=JSON.stringify([historyAccount,activeKey||"workspace"]);historyScopeRef.current=historyScope;const textPatchOf=${decl.textPatchOf};const pushUndo=${decl.pushUndo};const undoStack=historyUndo.filter(a=>historyScopesRef.current.get(a)===historyScope),redoStack=historyRedo.filter(a=>historyScopesRef.current.get(a)===historyScope);`
  : `const canvasHistory=${decl.canvasHistory};const {undoStack,redoStack,pushUndo,historyBusyRef,historySaving,setHistorySaving,historyCurrent}=canvasHistory;`;
  vm.runInContext(compile(`globalThis.__render=function(activeKey,user,readOnly,historyUndo,historyRedo){const active={key:activeKey,members:[],textNodes:[],videoNodes:[]};${names.map(n=>fn[n]).join('\n')}\n${declarations}\nreturn {applyHistory,doUndo,doRedo,pushUndo,commitNodeSettings,selectVideoResult,${fn.saveManyNodePositions?'saveManyNodePositions':'canvasHistory'},undoStack,redoStack};};`),c);

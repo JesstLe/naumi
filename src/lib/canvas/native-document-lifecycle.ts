@@ -8,6 +8,7 @@ export type CanvasNativeDocuments={
  * accepted for committed deletion/restore, never local revision+1 guesses. */
 export function canvasNativeDocuments(stores:CanvasNativeDocuments){
   return {
+    settingsKinds:(id:string)=>Object.fromEntries(CANVAS_NATIVE_NODE_KINDS.map(({kind,records})=>[kind,!!stores[records].getNode(id)])) as Record<typeof CANVAS_NATIVE_NODE_KINDS[number]['kind'],boolean>,
     snapshot:():CanvasNativeRecords=>Object.fromEntries(CANVAS_NATIVE_NODE_KINDS.map(({records})=>[records,stores[records].allNodes.filter(node=>!node.deletedAt).map(node=>stores[records].getNode(node.id)||node)])) as CanvasNativeRecords,
     flush:()=>Promise.all(CANVAS_NATIVE_NODE_KINDS.map(({records})=>stores[records].flush())),
     refresh:()=>Promise.all(CANVAS_NATIVE_NODE_KINDS.map(({records})=>stores[records].refresh())),

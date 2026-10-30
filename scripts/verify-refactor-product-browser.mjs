@@ -6,6 +6,7 @@ import {readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
+import {verifyCanvasNodePreferencesBrowser} from './verification/canvas-node-preferences-browser.mjs';
 import {verifyCanvasInputControls} from './verification/canvas-input-controls-browser.mjs';
 import {verifyCanvasClipboardBrowser} from './verification/canvas-clipboard-browser.mjs';
 import {verifyCanvasImageCreationBrowser} from './verification/canvas-image-creation-browser.mjs';
@@ -26,7 +27,7 @@ for(const page of [pa,pb]){
  page.on('response',r=>{const u=new URL(r.url());if(u.pathname.startsWith('/api/'))responses.push({path:u.pathname,status:r.status()});});
 }
 const helper=async action=>{const result=await exec('docker',['exec','--env','NODE_OPTIONS=','--env','NODE_PATH=/app/node_modules','--env','NAUMI_RELEASE_RUNTIME=0',worker,'node','/evidence/fixture.cjs','--browser-helper','--action',action],{encoding:'utf8',maxBuffer:4*1024*1024,windowsHide:true});return JSON.parse(result.stdout.trim().split('\n').at(-1));};
-const snapshot=()=>helper('snapshot'),stats=()=>helper('stats'),row=async id=>(await snapshot()).artworks.find(n=>n.id===id),textrow=async()=>(await snapshot()).texts.find(n=>n.id==='r6c-text');
+const snapshot=()=>helper('snapshot'),stats=()=>helper('stats'),row=async id=>(await snapshot()).artworks.find(n=>n.id===id),textrow=async()=>(await snapshot()).texts.find(n=>n.id==='text-r6c');
 async function login(context){await context.addCookies([{name:'naumi_locale',value:'zh',url:base}]);const r=await context.request.post(base+'/api/auth/login',{data:{email:input.owner,password:input.password}});assert.equal(r.status(),200,await r.text());}
 async function open(p){await p.goto(base+'/canvas',{waitUntil:'domcontentloaded'});const card=p.getByTitle('R6C full-image canvas',{exact:true});await expect.poll(async()=>await node(p).isVisible()||await card.isVisible(),{timeout:90000}).toBe(true);if(!await node(p).isVisible())await card.click();await expect(node(p)).toBeVisible({timeout:90000});const close=p.getByRole('button',{name:'收起助手',exact:true});if(await close.isVisible())await close.click();}
 async function close(p){const c=p.getByRole('button',{name:'关闭创作栏',exact:true});if(await c.isVisible())await c.click();}
@@ -38,7 +39,7 @@ try{
  await rename(pa,'R6C browser A');await expect.poll(async()=>(await row('r6c-root')).title).toBe('R6C browser A');await rename(pb,'R6C browser B retained');
  const conflict=pb.getByTestId('canvas-artwork-conflict');await expect(conflict).toBeVisible();await conflict.getByText('查看两份修改',{exact:true}).click();await expect(conflict).toContainText('R6C browser A');await expect(conflict).toContainText('R6C browser B retained');await conflict.getByRole('button',{name:'保留本页修改',exact:true}).click();await expect.poll(async()=>(await row('r6c-root')).title).toBe('R6C browser B retained');pass('full-image browser rename conflict retains two versions and explicitly resolves through real PG history');
  await close(pb);const toolbar=pb.getByTestId('canvas-main-toolbar');await toolbar.locator('[data-tool="undo"]').click();await expect.poll(async()=>(await row('r6c-root')).title).toBe('R6C browser A');await toolbar.locator('[data-tool="redo"]').click();await expect.poll(async()=>(await row('r6c-root')).title).toBe('R6C browser B retained');pass('full-image conflict resolution remains one real undo/redo action');
- const text=p=>node(p,'r6c-text').getByRole('textbox',{name:'编辑生成文本',exact:true});
+ const text=p=>node(p,'text-r6c').getByRole('textbox',{name:'编辑生成文本',exact:true});
  await text(pa).fill('R6C A text persisted');await text(pa).press('Tab');await expect.poll(async()=>(await textrow()).content).toBe('R6C A text persisted');await text(pb).fill('R6C B local text');await text(pb).press('Tab');
  const tc=pb.getByTestId('canvas-text-conflict');await expect(tc).toBeVisible();await expect(text(pb)).toHaveValue('R6C B local text');await tc.getByText('查看两份内容',{exact:true}).click();await expect(tc).toContainText('R6C A text persisted');await tc.getByRole('button',{name:'使用服务器版本',exact:true}).click();await expect(text(pb)).toHaveValue('R6C A text persisted');pass('actual packaged text UI keeps local draft on conflict and accepts canonical server content');
  await close(pb);await toolbar.locator('[data-tool="image-node"]').click();const pending=pb.getByTestId('pending-node-dock');await expect(pending).toBeVisible();await pending.locator('textarea').fill('R6C blank node full-image generation');
@@ -63,6 +64,7 @@ try{
  checks.push(...await verifyCanvasComfyBrowser({page:pb,expect,out:path.join(out,'comfy'),snapshot,stats,open,requests}));
  checks.push(...await verifyCanvasProjectNavigationBrowser({page:pb,expect,out:path.join(out,'project-navigation'),snapshot,stats,open}));
  checks.push(...await verifyCanvasTextEditingBrowser({page:pb,expect,out:path.join(out,'text-editing'),snapshot,stats,open}));
+ checks.push(...await verifyCanvasNodePreferencesBrowser({page:pb,expect,out:path.join(out,'node-preferences'),snapshot,preferences:()=>helper('preferences'),stats,open,requests}));
  checks.push(...await verifyCanvasStitchBrowser({page:pb,expect,out:path.join(out,'stitch'),snapshot,stats,open,requests}));
  checks.push(...await verifyCanvasLargeDownloadBrowser({page:pb,expect,out:path.join(out,'downloads-large'),snapshot,stats,seed:()=>helper('download-project')}));
  await helper('drain');await expect.poll(async()=>(await helper('status')).tickDrainComplete).toBe(true);assert.equal(dialogs.length,0);assert.deepEqual(errors,[]);assert.equal(requests.filter(r=>['/api/artworks/rename','/api/artworks/mark','/api/artworks/canvas-size','/api/canvas/groups'].includes(r.path)).length,0);

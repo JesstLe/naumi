@@ -23,7 +23,7 @@ async function main(){
    const workflow={"1":{class_type:"LoadImage",inputs:{image:"original.png"}},"2":{class_type:"CLIPTextEncode",inputs:{text:"R6Q native workflow"}},"3":{class_type:"SaveImage",inputs:{images:["1",0]}}};
    await saveComfyEndpoint(input.owner,{name:'R6Q isolated endpoint',baseUrl:'http://provider:3300',apiKey:'fixture-comfy-local-only',activate:true});
    await saveComfyWorkflow(input.owner,{name:'R6Q original workflow',apiJson:workflow,inputs:extractWorkflowInputs(workflow),required:['LoadImage','CLIPTextEncode','SaveImage']});
-   await upsertCanvasTextNode(input.owner,{id:'r6c-text',projectKey:'tree:r6c',title:'R6C text',prompt:'',content:'R6C original text',status:'completed',canvasX:0,canvasY:380,width:300,height:176,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),sourceIds:[],targetIds:[],productIds:[]});
+   await upsertCanvasTextNode(input.owner,{id:'text-r6c',projectKey:'tree:r6c',title:'R6C text',prompt:'',content:'R6C original text',status:'completed',canvasX:0,canvasY:380,width:300,height:176,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),sourceIds:[],targetIds:[],productIds:[]});
    console.log('REFACTOR_BROWSER_SETUP=PASS NATIVE_PROJECT=1 ARTWORKS=2 TEXT=1 HTTP_BRIDGE=0');return;
   }
   const input=JSON.parse(await readFile('/evidence/SETUP.json','utf8')),action=arg('--action');
@@ -33,6 +33,16 @@ async function main(){
    await addArtworks(input.owner,ids.map((id,i)=>({id,title:`Download ${i+1}`,category:'main',prompt:'Original download fixture',status:'completed',image:url,gradient:'',groupId:'r8f-download',origin:'canvas',source:'canvas-add',width:1024,height:1024})));
    await setProjectName(input.owner,'tree:r8f-download','R8F 31 original downloads');
    console.log(JSON.stringify({ids,url,project:'tree:r8f-download',title:'R8F 31 original downloads'}));return;
+  }
+  if(action==='preferences'){
+   const tx=await sql.connect();
+   try{
+    await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    const rows=(await tx.query('SELECT node_id,kind,settings FROM app_canvas_node_settings WHERE email=$1 ORDER BY node_id',[input.owner])).rows;
+    const historyOperations=(await tx.query('SELECT count(*)::int n FROM app_canvas_history_ops WHERE email=$1',[input.owner])).rows[0].n;
+    await tx.query('COMMIT');console.log(JSON.stringify({settings:Object.fromEntries(rows.map(row=>[row.node_id,row.settings])),kinds:Object.fromEntries(rows.map(row=>[row.node_id,row.kind])),historyOperations}));return;
+   }catch(error){await tx.query('ROLLBACK').catch(()=>{});throw error;}
+   finally{tx.release();}
   }
   if(action==='snapshot'){
    // This fresh observer process must not invoke lazy schema initialization

@@ -4,8 +4,8 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 export async function verifyCanvasTextEditingBrowser({page,expect,out,snapshot,stats,open}){
  await mkdir(out,{recursive:true});const checks=[],pass=name=>{checks.push(name);console.log('PASS '+name)},original=await snapshot(),beforeStats=await stats();
- await open(page);const node=page.locator('.react-flow__node[data-id="r6c-text"]'),field=node.getByRole('textbox',{name:'编辑生成文本',exact:true}),toolbar=page.getByTestId('canvas-main-toolbar'),undo=toolbar.locator('[data-tool="undo"]'),redo=toolbar.locator('[data-tool="redo"]');
- const record=async()=>(await snapshot()).texts.find(n=>n.id==='r6c-text'),before=await record();
+ await open(page);const node=page.locator('.react-flow__node[data-id="text-r6c"]'),field=node.getByRole('textbox',{name:'编辑生成文本',exact:true}),toolbar=page.getByTestId('canvas-main-toolbar'),undo=toolbar.locator('[data-tool="undo"]'),redo=toolbar.locator('[data-tool="redo"]');
+ const record=async()=>(await snapshot()).texts.find(n=>n.id==='text-r6c'),before=await record();
  await field.fill('R8A intentional text edit');await field.press('Tab');await expect.poll(async()=>(await record()).content).toBe('R8A intentional text edit');pass('actual controlled textarea commits focus-time edit through original PG document queue');
  await undo.click();await expect.poll(async()=>(await record()).content).toBe(before.content);await redo.click();await expect.poll(async()=>(await record()).content).toBe('R8A intentional text edit');pass('one shared undo/redo restores exact focus-time content without another task');
  await node.hover();const expand=node.getByTitle('放大查看',{exact:true});await expand.click();await expect(node.getByTitle('还原大小',{exact:true})).toBeVisible();const expanded=await record();assert.equal(expanded.width,before.width);assert.equal(expanded.height,before.height);await node.getByTitle('还原大小',{exact:true}).click();pass('expansion remains local presentation and never saves enlarged document bounds');

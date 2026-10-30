@@ -44,6 +44,7 @@ function setup(built,storageMap=new Map()){
  if(c.canvasNativeDocuments)c.nativeDocuments=c.canvasNativeDocuments(Object.fromEntries(['video','director','character','scene','audio','timeline'].map(kind=>[kind+'Nodes',c[kind+'NodesStore']])));
 
  const owner=baseline?null:c.createCanvasTextDocument({storage:()=>storage,notice:(_s,m)=>state.notices.push(m)}),context=baseline?null:c.createCanvasDocumentContext();
+ c.nodePreferences={apply:(update,persisted)=>{const next=update(c.nodeSettingsRef.current);c.nodeSettingsRef.current=next;c.setNodeSettings(next);}};
  const names=['privateFetchRaw','persistTextNode','applyHistory','doUndo','doRedo','applyPendingLinkHistory','applyHistorySettings','onHistoryApplied','runProjectDelete'];
  vm.runInContext(compile(`globalThis.__render=function(user,readOnly,activeKey,canvasTextDocument){const active={key:activeKey,members:[],textNodes:[],videoNodes:[]};${names.map(n=>fn[n]).join('\n')}const canvasHistory=${decl.canvasHistory};${decl.canvasNodeOperations?`const canvasNodeOperations=${decl.canvasNodeOperations};`:''}const {undoStack,redoStack,pushUndo,historyBusyRef,historySaving,setHistorySaving,historyCurrent}=canvasHistory;return {persistTextNode,applyHistory,doUndo,doRedo,pushUndo,canvasHistory,runProjectDelete};};globalThis.__loadLegacy=${loadEffect};`),c);
  let binding,scope;
