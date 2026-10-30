@@ -270,3 +270,6 @@ R7P收尾：固定应用60734e08已推独立分支；原56/183、新58/204与54�
 ## 2026-10-30 R7Q：本地图像编辑应用归属
 
 原cda247b2基线5101原hash保留。裁剪/替换菜单、意图/busy/原请求及结果续交归local-image-edits；组件只剩DOM输入和窄上下文，像素/SQL仍归原canvas-local-image-edit，作品/history/placeholder补图归原owner。原14/33与新共同10组轨迹精确一致，真实PG15/实际Next6/原像素/主要图片57及文字58保持；浏览器Back时旧activeKey保留导致modal挡列表的真实边界，已接既有importView身份消除。当前catalog134的受影响矩阵、四产物/完整回滚及远端以本片DELIVERY为准，不冒称全134或关闭R7P scene门禁。开工fetch主线4038b061，待下一功能片按三模块周期整合，本片计数2；整体ACTIVE，未合main未部署，47 HOLD。见[R7Q模块记录](changes/2026-10-30-refactor-r7q-local-image-edits.md)。
+
+
+R7Q固定应用8d28fd0：原14/33、新23/69与10共同轨迹EXACT，实际Next6/真实PG15、19项同SHA受影响矩阵全过；subset语义exit2/PARTIAL，不等于134全核心通过。PG临时拒连与两条精确日志复用均留证；真实浏览器返回项目列表的crop遮罩问题已复用既有视图身份修复。5284行、类型/lint39warnings及四SCC0，四产物/原5101hash副本回滚与清理见DELIVERY。下片先接main4038的24提交，不将fetch冒充merge，整体ACTIVE/47 HOLD不变。
