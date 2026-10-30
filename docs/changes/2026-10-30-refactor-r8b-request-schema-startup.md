@@ -39,3 +39,18 @@ R8A 文档中 lint 37 的汇总是抄写差异：其最终原始 LINT_FINAL.log 
 完整旧版最终 8-part 73 检查复现，新版 8-part 76 检查通过；共享及 dedicated 的 columns/constraints/indexes 完整 schema 摘要分别逐项相同。新增实际Web startup 独立bundle共享同report，四个真实Pool并发首启由旧3个23505→新0；原价/历史计费版本缓存只在原Pool内复用，新Pool不继承旧版本。完整tsc exit0、lint exit0、四类SCC0，runner12组214检查通过。
 
 第3模块普通fetch/merge main 已执行，main仍e2f56255，没有新增提交，返回Already up to date；模块计数3→0。当前准备固定源码后跑完整167 core以及完整Linux同镜像候选（不是将阶段日志跨源码拼成全量通过）。新测试只给原既有分布式限流脚本增加独占证据目录、给站点脚本增加已有隔离fixture命名支持；没有替换原业务断言。
+
+## 最终固定候选验收
+
+固定应用/完整验收源码 `d9d03576b238360e712bd745c2bb1ebb592a67c6`。限流沿原 store 初始化，dedicated 企业站的 site-policy DDL 归轻量 schema owner，两个准备步骤接原显式 Web startup；原 startup/策略就绪和计费配置/装配缓存按实际 Pool 隔离。已有 43 个 owner 顺序与 SQL、限流消费/清理及策略 CAS/绑定/计费 initialize 正文保持。共享平台不创建站点表，sidecar/无 DB 不迁移，Fleet/release/Worker 独立角色不越界。
+
+真实 PG 旧 8 组 73 检查复现→新 8 组 76 检查通过；首次限流及企业策略 DDL 1→0，两个独立 route bundle DDL 2→0，四个 Pool 并发建表旧 3 个23505→新0，已关闭 Pool 的42P01/配置缓存串代闭合；真实DDL失败改在启动暴露并可重试。共享/企业完整 schema columns/constraints/indexes 分别相同。
+
+**完整 core167/167 全部重新执行，0失败/0未运行/0复用**；原分布式限流、站点策略、持久化均纳入同 SHA 目录。新完整生产 Dockerfile 同 Web/Worker 镜像：Linux runtime177/原生媒体与实际产品双 browser50 均通过，原 frozen price/UNKNOWN/单次扣款/原图与历史保持。额外原 Web startup53、registry99 通过；旧 Compose verifier 对已上线 direct Worker 仍断言无 DB 的历史错误已在完整原树复现，改为验证当前 direct/shared DB 及旧HTTP relay的实际角色，14检查通过，产品 Compose 字节未改。
+
+8 个原 src/services 文件改变、1 个新 schema owner，其余 2099 个原产品文件 hash 保持；四类SCC0，类型/lint通过。R8A历史文档的37条warning是抄写差异，原日志及DELIVERY实际38；本片按原始日志计数。最终封版仅补验收脚本/文档，应用源码与镜像逐hash一致；完整包/5226原hash副本回滚及远端以 R8B DELIVERY/VERIFICATION 为准。
+
+第三模块普通 fetch/merge main `e2f56255` 无新提交，计数3→0。整体仍 ACTIVE，未合 main、未部署，47 HOLD；当前完整退出审计见 `docs/architecture/REFACTOR_EXIT_AUDIT.md`，保留剩余Canvas组合/同机性能与容量/有效CI/最终main整合，不用本片通过替代整版交付。
+
+
+第一轮完整core因编排传错fixture数据库名停在cutout-before-setup（43PASS/1FAIL/123NOT_RUN）；保留全部失败日志，修正自有PG目标名后完整167从零运行，不复用早一轮日志。旧Compose断言的baseline/modified两次exit1同样保留，修正的是验证脚本而非Worker或配置。
