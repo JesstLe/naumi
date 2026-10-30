@@ -26,3 +26,10 @@
 ## 后续与未完成
 
 本轮继续完整固定候选。历史Windows dev提前退出、性能容量、远端required CI支付/限额、最终普通合main与整版退出不随模块通过消失。四产物、基线/修改/独立副本回滚、later-edit零写入和source桥接以output/refactor-r7y-20261030/DELIVERY.json为准。供应商/服务器/生产数据操作0。
+
+
+### 首次完整core的验证脚手架闭环
+
+首次固定dcca528a完整core在13 PASS后，被新增缓存效率第10例阻断，原REPORT为FAIL/13PASS/1FAIL/146NOT_RUN。原版同probe也出现同一控制项失败，不属于新增产品回归。实际Edge/IndexedDB诊断显示所谓“已等双store持久化”之后仍只存在A的记录；异步predicate的Promise被waitForFunction视为真值，未等实际boolean。改成expect.poll等待page.evaluate返回的boolean，确实核对B的bytes与metadata后才reload；原版13项中仅预期5缺陷（exit1），新版本13/13（exit0）。此修正仅验证脚本，不改缓存产品、不降低“刷新后零额外下载”断言；失败日志与临时诊断保留。
+
+同盘完整Git副本初始raw CRLF与index stat口径导致status列134项而git diff为0；仅在自有副本对tracked index重新规范化后确认cached diff0、raw bytes逐hash不变、Git clean，不用assume-unchanged。一次Windows全路径参数Win206及显式ignored路径尝试均在准备期退出，改用仅tracked update；产品目录没有受此变更。
