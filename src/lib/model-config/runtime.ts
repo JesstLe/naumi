@@ -21,6 +21,7 @@ import { DISPLAY_QUALITIES, selectedImagePreset, presetPublicId, effectiveImageP
 import { featureDefaultModel, modelAllowedForFeature } from "./tool-scope";
 import {modelCreditView} from "./management-pricing";
 import {qualityPresentation,policyQuality} from "./quality-policy";
+import {imageRequestAdmission} from '../imagegen/request-admission';
 
 export type RoutingSimulation = { eligible: { upstreamId: string; providerId: string; rank: number }[]; excluded: { upstreamId: string; codes: string[] }[]; modelVersion: number; billingVersion: number };
 type Dependencies = ValidationOptions & { pool: Pool; repo: ModelConfigRepository; credentials: ReturnType<typeof createCredentialStore>; router: RouterControl; billing: () => Promise<ConfigSnapshot>; billingByVersion?: (version: number) => Promise<ConfigSnapshot> };
@@ -43,7 +44,7 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
   const models = config.publicModels.filter(m => m.enabled && m.visible && m.modality === modality && modelAllowedForFeature(m,feature) && (!compatible || compatible.includes(m.id)) && (!configuredIds || configuredIds.includes(m.id))).sort((a,b) => configuredIds ? configuredIds.indexOf(a.id)-configuredIds.indexOf(b.id) : 0).map(m => {
     const ids = publicUpstreamIds(config,m);
     const upstreams = config.upstreamModels.filter(u => ids.includes(u.id) && u.enabled && config.providers.some(p => p.id === u.providerId && p.enabled));
-    const referenceChannels=upstreams.filter(u=>u.capabilities.edit&&config.providers.some(p=>p.id===u.providerId&&!!p.credentialRef));
+    const referenceChannels=upstreams.filter(u=>u.capabilities.edit&&publishedImagegenCapabilities(u.capabilities).edit?.state==='supported'&&config.providers.some(p=>p.id===u.providerId&&!!p.credentialRef));
     const references={maxReferenceImages:referenceChannels.length?Math.max(...referenceChannels.map(u=>u.capabilities.maxReferenceImages)):0,referenceLimitVerified:referenceChannels.length>0&&referenceChannels.every(u=>u.capabilities.verified)};
     const option = f?.options.find(o => o.modelId === m.id);
     const adapterRatios = upstreams.map(u => config.providers.find(p => p.id === u.providerId)?.options?.imageRatios).find(Boolean)
@@ -51,7 +52,7 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
         ? upstreams.find(u => isSeedreamWire(u.model) && config.providers.find(p => p.id === u.providerId)?.protocol === "apimart-images")?.parameterMap.apimartImages?.ratios
         : undefined);
     if (preset?.aliases.some(a => a.id === m.id)) return { id:m.id,label:m.label,modality:m.modality,supportsEdit:true,supportsVision:false,...references,qualities:[...DISPLAY_QUALITIES],nativeResolutions:preset.resolutions,generationParameters:{ratios:preset.ratios,resolutions:m.displayResolutions || preset.resolutions,combinations:Object.keys(preset.outputDimensions || {})},qualitySupported:true };
-    return { id: m.id, label: m.label, modality: m.modality, supportsEdit: upstreams.some(u => u.capabilities.edit), supportsVision: upstreams.some(u => u.capabilities.vision), ...references, qualities: option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), ...qualityPresentation(upstreams), nativeResolutions: option?.parameters?.resolutions || Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))), generationParameters: m.displayResolutions || adapterRatios || option?.parameters ? {ratios:adapterRatios || option?.parameters?.ratios,resolutions:m.displayResolutions || option?.parameters?.resolutions} : undefined, qualitySupported: upstreams.some(u => u.capabilities.qualities.length > 0) };
+    return { id: m.id, label: m.label, modality: m.modality, supportsEdit: referenceChannels.length>0, supportsVision: upstreams.some(u => u.capabilities.vision), ...references, qualities: option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), ...qualityPresentation(upstreams), nativeResolutions: option?.parameters?.resolutions || Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))), generationParameters: m.displayResolutions || adapterRatios || option?.parameters ? {ratios:adapterRatios || option?.parameters?.ratios,resolutions:m.displayResolutions || option?.parameters?.resolutions} : undefined, qualitySupported: upstreams.some(u => u.capabilities.qualities.length > 0) };
   });
   if(!models.some(m=>m.id===defaultModelId))defaultModelId=models[0]?.id;
   const publishedModels = !includeAll && adminConfiguredFeature(feature) ? models.filter(m => m.id === defaultModelId) : models;
@@ -115,6 +116,7 @@ export function simulateModel(snapshot: ModelSnapshot, billing: ConfigSnapshot, 
     if (pool && (options.imageParameterPlanVersion===0||!u.parameterMap.resolutionPolicy) && requestedPixels > maxPixels) codes.push("PIXEL_LIMIT");
     if ((c.verified || model.supplierRouting && c.maxReferenceImages > 0) && facts.references > c.maxReferenceImages) codes.push("REFERENCE_LIMIT");
     if(options.imageParameterPlanVersion!==0&&(u.parameterMap.qualityPolicy||u.parameterMap.resolutionPolicy||u.parameterMap.apimartImages))try{compileImageParameterPlan(u,imagePlanSelection(facts),{publicModelId:model.id,protocol:p.protocol,modelVersion:snapshot.version,adapter:p.options?.imageAdapter});}catch(error){codes.push(error instanceof ModelConfigError?error.code:'IMAGE_MAPPING_INVALID');}
+    if(options.imageParameterPlanVersion!==0&&u.parameterMap.apimartImages&&imageRequestAdmission(facts.ratio||'1:1',model.id,!!model.supplierRouting,u,p.options?.imageAdapter).includes('ADAPTER_RATIO_UNSUPPORTED'))codes.push('IMAGEGEN_RATIO_UNSUPPORTED');
     const money = monetaryCost(modelCostRate(billing, u, facts.quality, facts.resolution, facts.needsEdit ? "edit" : "generate"));
     costs.set(id, money ? { ...money, amountMicros: (BigInt(money.amountMicros) * BigInt(money.unit === "task" ? 1 : facts.quantity ?? 1)).toString() } : null);
     if (pool?.strategy === "lowest-cost" && !money) codes.push("COST_UNRECORDED");

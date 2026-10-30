@@ -1,0 +1,644 @@
+{
+  "schemaVersion": 1,
+  "providers": [
+    {
+      "id": "apib-image",
+      "name": "Fixture",
+      "protocol": "apimart-images",
+      "baseUrl": "https://fixture.invalid/v1",
+      "credentialRef": "11111111-1111-4111-8111-111111111111",
+      "enabled": true,
+      "timeoutMs": 5000,
+      "maxConcurrent": 4
+    }
+  ],
+  "upstreamModels": [
+    {
+      "id": "apib:gemini-3-pro-image-preview",
+      "label": "gemini-3-pro-image-preview",
+      "model": "gemini-3-pro-image-preview",
+      "enabled": true,
+      "modality": "image",
+      "providerId": "apib-image",
+      "capabilities": {
+        "edit": true,
+        "vision": false,
+        "generate": true,
+        "imagegen": {
+          "edit": {
+            "state": "supported",
+            "source": "v152 published edit declaration; diagnostic fixture",
+            "checkedAt": "2026-10-20"
+          }
+        },
+        "verified": false,
+        "qualities": [],
+        "qualityRank": 3,
+        "transparent": false,
+        "textAccuracy": false,
+        "preserveIdentity": false,
+        "expectedLatencyMs": 30000,
+        "nativeResolutions": [],
+        "maxReferenceImages": 1
+      },
+      "parameterMap": {
+        "apimartImages": {
+          "ratios": [
+            "1:1",
+            "3:2",
+            "2:3",
+            "4:3",
+            "3:4",
+            "5:4",
+            "4:5",
+            "16:9",
+            "9:16",
+            "2:1",
+            "1:2",
+            "21:9"
+          ],
+          "maxOutputs": 4,
+          "supportsMask": true,
+          "schemaVersion": 1,
+          "outputDimensions": {
+            "1K:1:1": {
+              "width": 1024,
+              "height": 1024
+            },
+            "1K:1:2": {
+              "width": 1024,
+              "height": 2048
+            },
+            "1K:2:1": {
+              "width": 2048,
+              "height": 1024
+            },
+            "1K:2:3": {
+              "width": 1024,
+              "height": 1536
+            },
+            "1K:3:2": {
+              "width": 1536,
+              "height": 1024
+            },
+            "1K:3:4": {
+              "width": 768,
+              "height": 1024
+            },
+            "1K:4:3": {
+              "width": 1024,
+              "height": 768
+            },
+            "1K:4:5": {
+              "width": 1024,
+              "height": 1280
+            },
+            "1K:5:4": {
+              "width": 1280,
+              "height": 1024
+            },
+            "2K:1:1": {
+              "width": 2048,
+              "height": 2048
+            },
+            "2K:1:2": {
+              "width": 1344,
+              "height": 2688
+            },
+            "2K:2:1": {
+              "width": 2688,
+              "height": 1344
+            },
+            "2K:2:3": {
+              "width": 1360,
+              "height": 2048
+            },
+            "2K:3:2": {
+              "width": 2048,
+              "height": 1360
+            },
+            "2K:3:4": {
+              "width": 1536,
+              "height": 2048
+            },
+            "2K:4:3": {
+              "width": 2048,
+              "height": 1536
+            },
+            "2K:4:5": {
+              "width": 2048,
+              "height": 2560
+            },
+            "2K:5:4": {
+              "width": 2560,
+              "height": 2048
+            },
+            "4K:1:1": {
+              "width": 2880,
+              "height": 2880
+            },
+            "4K:1:2": {
+              "width": 1920,
+              "height": 3840
+            },
+            "4K:2:1": {
+              "width": 3840,
+              "height": 1920
+            },
+            "4K:2:3": {
+              "width": 2336,
+              "height": 3520
+            },
+            "4K:3:2": {
+              "width": 3520,
+              "height": 2336
+            },
+            "4K:3:4": {
+              "width": 2480,
+              "height": 3312
+            },
+            "4K:4:3": {
+              "width": 3312,
+              "height": 2480
+            },
+            "4K:4:5": {
+              "width": 2576,
+              "height": 3216
+            },
+            "4K:5:4": {
+              "width": 3216,
+              "height": 2576
+            },
+            "1K:16:9": {
+              "width": 1536,
+              "height": 864
+            },
+            "1K:21:9": {
+              "width": 2016,
+              "height": 864
+            },
+            "1K:9:16": {
+              "width": 864,
+              "height": 1536
+            },
+            "2K:16:9": {
+              "width": 2048,
+              "height": 1152
+            },
+            "2K:21:9": {
+              "width": 2688,
+              "height": 1152
+            },
+            "2K:9:16": {
+              "width": 1152,
+              "height": 2048
+            },
+            "4K:16:9": {
+              "width": 3840,
+              "height": 2160
+            },
+            "4K:21:9": {
+              "width": 3840,
+              "height": 1648
+            },
+            "4K:9:16": {
+              "width": 2160,
+              "height": 3840
+            }
+          }
+        },
+        "qualityPolicy": {
+          "mode": "map",
+          "choices": [
+            {
+              "id": "low",
+              "label": "低",
+              "value": "low"
+            },
+            {
+              "id": "medium",
+              "label": "标准",
+              "value": "medium"
+            },
+            {
+              "id": "high",
+              "label": "高",
+              "value": "high"
+            },
+            {
+              "id": "xhigh",
+              "label": "超高",
+              "value": "xhigh"
+            },
+            {
+              "id": "max",
+              "label": "最高",
+              "value": "max"
+            }
+          ]
+        },
+        "resolutionPolicy": {
+          "mode": "map",
+          "field": "resolution",
+          "values": {
+            "1K": "1k",
+            "2K": "2k",
+            "4K": "4k"
+          },
+          "ratioField": "size"
+        }
+      }
+    },
+    {
+      "id": "apib:gemini-3.1-flash-image-preview",
+      "label": "gemini-3.1-flash-image-preview",
+      "model": "gemini-3.1-flash-image-preview",
+      "enabled": true,
+      "modality": "image",
+      "providerId": "apib-image",
+      "capabilities": {
+        "edit": true,
+        "vision": false,
+        "generate": true,
+        "verified": false,
+        "qualities": [],
+        "qualityRank": 3,
+        "transparent": false,
+        "textAccuracy": false,
+        "preserveIdentity": false,
+        "expectedLatencyMs": 30000,
+        "nativeResolutions": [],
+        "maxReferenceImages": 1
+      },
+      "parameterMap": {
+        "apimartImages": {
+          "ratios": [
+            "1:1",
+            "3:2",
+            "2:3",
+            "4:3",
+            "3:4",
+            "5:4",
+            "4:5",
+            "16:9",
+            "9:16",
+            "2:1",
+            "1:2",
+            "21:9"
+          ],
+          "maxOutputs": 4,
+          "supportsMask": true,
+          "schemaVersion": 1,
+          "outputDimensions": {
+            "1K:1:1": {
+              "width": 1024,
+              "height": 1024
+            },
+            "1K:1:2": {
+              "width": 1024,
+              "height": 2048
+            },
+            "1K:2:1": {
+              "width": 2048,
+              "height": 1024
+            },
+            "1K:2:3": {
+              "width": 1024,
+              "height": 1536
+            },
+            "1K:3:2": {
+              "width": 1536,
+              "height": 1024
+            },
+            "1K:3:4": {
+              "width": 768,
+              "height": 1024
+            },
+            "1K:4:3": {
+              "width": 1024,
+              "height": 768
+            },
+            "1K:4:5": {
+              "width": 1024,
+              "height": 1280
+            },
+            "1K:5:4": {
+              "width": 1280,
+              "height": 1024
+            },
+            "2K:1:1": {
+              "width": 2048,
+              "height": 2048
+            },
+            "2K:1:2": {
+              "width": 1344,
+              "height": 2688
+            },
+            "2K:2:1": {
+              "width": 2688,
+              "height": 1344
+            },
+            "2K:2:3": {
+              "width": 1360,
+              "height": 2048
+            },
+            "2K:3:2": {
+              "width": 2048,
+              "height": 1360
+            },
+            "2K:3:4": {
+              "width": 1536,
+              "height": 2048
+            },
+            "2K:4:3": {
+              "width": 2048,
+              "height": 1536
+            },
+            "2K:4:5": {
+              "width": 2048,
+              "height": 2560
+            },
+            "2K:5:4": {
+              "width": 2560,
+              "height": 2048
+            },
+            "4K:1:1": {
+              "width": 2880,
+              "height": 2880
+            },
+            "4K:1:2": {
+              "width": 1920,
+              "height": 3840
+            },
+            "4K:2:1": {
+              "width": 3840,
+              "height": 1920
+            },
+            "4K:2:3": {
+              "width": 2336,
+              "height": 3520
+            },
+            "4K:3:2": {
+              "width": 3520,
+              "height": 2336
+            },
+            "4K:3:4": {
+              "width": 2480,
+              "height": 3312
+            },
+            "4K:4:3": {
+              "width": 3312,
+              "height": 2480
+            },
+            "4K:4:5": {
+              "width": 2576,
+              "height": 3216
+            },
+            "4K:5:4": {
+              "width": 3216,
+              "height": 2576
+            },
+            "1K:16:9": {
+              "width": 1536,
+              "height": 864
+            },
+            "1K:21:9": {
+              "width": 2016,
+              "height": 864
+            },
+            "1K:9:16": {
+              "width": 864,
+              "height": 1536
+            },
+            "2K:16:9": {
+              "width": 2048,
+              "height": 1152
+            },
+            "2K:21:9": {
+              "width": 2688,
+              "height": 1152
+            },
+            "2K:9:16": {
+              "width": 1152,
+              "height": 2048
+            },
+            "4K:16:9": {
+              "width": 3840,
+              "height": 2160
+            },
+            "4K:21:9": {
+              "width": 3840,
+              "height": 1648
+            },
+            "4K:9:16": {
+              "width": 2160,
+              "height": 3840
+            }
+          }
+        },
+        "qualityPolicy": {
+          "mode": "map",
+          "choices": [
+            {
+              "id": "low",
+              "label": "低",
+              "value": "low"
+            },
+            {
+              "id": "medium",
+              "label": "标准",
+              "value": "medium"
+            },
+            {
+              "id": "high",
+              "label": "高",
+              "value": "high"
+            },
+            {
+              "id": "xhigh",
+              "label": "超高",
+              "value": "xhigh"
+            },
+            {
+              "id": "max",
+              "label": "最高",
+              "value": "max"
+            }
+          ]
+        },
+        "resolutionPolicy": {
+          "mode": "map",
+          "field": "resolution",
+          "values": {
+            "1K": "1k",
+            "2K": "2k",
+            "4K": "4k"
+          },
+          "ratioField": "size"
+        }
+      }
+    },
+    {
+      "id": "apib:seedream-5-0-pro",
+      "label": "seedream-5-0-pro",
+      "model": "seedream-5-0-pro",
+      "enabled": true,
+      "modality": "image",
+      "providerId": "apib-image",
+      "capabilities": {
+        "edit": true,
+        "vision": false,
+        "generate": true,
+        "imagegen": {
+          "edit": {
+            "state": "supported",
+            "source": "v152 published edit declaration; diagnostic fixture",
+            "checkedAt": "2026-10-20"
+          }
+        },
+        "verified": false,
+        "qualities": [
+          "medium"
+        ],
+        "qualityRank": 1,
+        "transparent": false,
+        "textAccuracy": false,
+        "preserveIdentity": false,
+        "expectedLatencyMs": 0,
+        "nativeResolutions": [
+          "1K",
+          "2K"
+        ],
+        "maxReferenceImages": 10
+      },
+      "parameterMap": {
+        "apimartImages": {
+          "ratios": [
+            "21:9",
+            "3:2",
+            "4:3",
+            "1:1",
+            "3:4",
+            "2:3"
+          ],
+          "maxOutputs": 1,
+          "supportsMask": false,
+          "schemaVersion": 1,
+          "outputDimensions": {
+            "1K:1:1": {
+              "width": 1024,
+              "height": 1024
+            },
+            "1K:2:3": {
+              "width": 832,
+              "height": 1248
+            },
+            "1K:3:2": {
+              "width": 1248,
+              "height": 832
+            },
+            "1K:3:4": {
+              "width": 864,
+              "height": 1152
+            },
+            "1K:4:3": {
+              "width": 1152,
+              "height": 864
+            },
+            "2K:1:1": {
+              "width": 2048,
+              "height": 2048
+            },
+            "2K:2:3": {
+              "width": 1664,
+              "height": 2496
+            },
+            "2K:3:2": {
+              "width": 2496,
+              "height": 1664
+            },
+            "2K:3:4": {
+              "width": 1728,
+              "height": 2304
+            },
+            "2K:4:3": {
+              "width": 2304,
+              "height": 1728
+            },
+            "1K:21:9": {
+              "width": 1568,
+              "height": 672
+            },
+            "2K:21:9": {
+              "width": 3024,
+              "height": 1296
+            }
+          }
+        },
+        "qualityPolicy": {
+          "mode": "omit",
+          "choices": [
+            {
+              "id": "medium",
+              "label": "标准"
+            }
+          ],
+          "evidence": {
+            "source": "docs/providers/evidence/apib-seedream-20261020/seedream-5-0-pro.md; no quality field in the model request contract; align standard UI without inventing a wire tier",
+            "status": "documented",
+            "checkedAt": "2026-10-20"
+          }
+        },
+        "resolutionPolicy": {
+          "mode": "map",
+          "field": "resolution",
+          "values": {
+            "1K": "1K",
+            "2K": "2K"
+          },
+          "ratioField": "size"
+        }
+      }
+    }
+  ],
+  "publicModels": [
+    {
+      "id": "jimeng-image-5.0-pro",
+      "label": "jimeng-image-5.0-pro",
+      "modality": "image",
+      "enabled": true,
+      "visible": true,
+      "target": {
+        "type": "upstream",
+        "id": "apib:seedream-5-0-pro"
+      }
+    },
+    {
+      "id": "gemini-3.0-pro-image-portrait",
+      "label": "gemini-3.0-pro-image-portrait",
+      "modality": "image",
+      "enabled": true,
+      "visible": true,
+      "target": {
+        "type": "upstream",
+        "id": "apib:gemini-3-pro-image-preview"
+      }
+    },
+    {
+      "id": "gemini-3.1-flash-image-portrait",
+      "label": "gemini-3.1-flash-image-portrait",
+      "modality": "image",
+      "enabled": true,
+      "visible": true,
+      "target": {
+        "type": "upstream",
+        "id": "apib:gemini-3.1-flash-image-preview"
+      }
+    }
+  ],
+  "pools": [],
+  "bindings": {
+    "image.generate": "jimeng-image-5.0-pro",
+    "image.edit": "jimeng-image-5.0-pro"
+  }
+}

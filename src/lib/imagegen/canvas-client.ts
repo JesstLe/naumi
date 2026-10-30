@@ -94,6 +94,7 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
  // genuinely ambiguous mixed ratios ask once instead of guessing.
  const frameInputs:FrameInput[]=inputs.map(input=>{const asset=assets.find(candidate=>candidate.artworkId===input.artworkId);return asset?{...input,width:asset.width,height:asset.height}:input;});
  const intent=resolveImagegenIntent(request);
+ if(!request.parameters.ratio||request.parameters.ratio==='auto')request.ratioMode='automatic';
  try {
   const ratio=automaticFrameRatio(request,frameInputs,intent.operation,intent.useCase);
   if(ratio)request.parameters.ratio=ratio;
@@ -111,7 +112,7 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
  }
  }
  assertCurrent();const plan=await previewImagegen(request,context);assertCurrent();const stages=plan.steps.map(s=>s.operation==="cutout"?"抠图":s.operation==="edit"?"编辑":"生成").join(" → ");
- if(plan.requestedParameters?.resolution)onPlan?.(plan.warnings.join("\n"));
+ if(plan.requestedParameters?.resolution||plan.automaticFrame)onPlan?.(plan.warnings.join("\n"));
  if(plan.intent.background==="transparent")onPlan?.(`已识别：透明背景 · ${stages} · ${plan.totalCredits} 积分`);
  const submit=async(latest:typeof plan)=>{
   assertCurrent();

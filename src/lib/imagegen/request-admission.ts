@@ -1,9 +1,10 @@
 import { exactImageRequestSize, exactRatioPixels, ExactImageSizeError } from "./request-size";
 import { unsupportedReverseHubRatio } from "./ratio-support";
+import {acceptsAPIMartRatio} from "../model-config/apimart-image-policy";
 
 type RouteSource = {
   model: string;
-  parameterMap: { apimartImages?: { ratios: readonly string[] } };
+  parameterMap: { apimartImages?: { ratios: readonly string[];automaticRatio?:{enabled:boolean} } };
 };
 
 /** New requests only. Mirrors the pre-SDK family wire-size gate and the
@@ -24,7 +25,7 @@ export function imageRequestAdmission(
     if (!(error instanceof ExactImageSizeError)) throw error;
     codes.push("EXACT_RATIO_UNSUPPORTED");
   }
-  if (source.parameterMap.apimartImages && !source.parameterMap.apimartImages.ratios.includes(ratio)
+  if (source.parameterMap.apimartImages && !acceptsAPIMartRatio(source.parameterMap.apimartImages,ratio)
     // Follow-reference ratios outside the named list are delivered as native
     // 16-grid pixel sizes when the exact-size contract covers the model
     // (apib probed 2026-10-27), so only reject when no pixels can be sized.

@@ -120,7 +120,9 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     const featureDefault = featureDefaultModel(snapshot.config,mainFeature,purpose.image);
     const configuredModelId = quotedImage?.facts.modelId || explicitModelId || featureDefault || snapshot.config.bindings[purpose.image];
     const outputResolution = quotedImage?.effectiveParameters?.resolution || quotedImage?.requestedParameters?.resolution || quotedImage?.facts.resolution || (Number(parsed.body.targetWidth) > 0 && Number(parsed.body.targetHeight) > 0 ? resolutionForLongSide(Math.max(Number(parsed.body.targetWidth), Number(parsed.body.targetHeight))) : String(parsed.body.resolution || "1K"));
-    const ratio = quotedImage?.facts.ratio || (/^\d+:\d+$/.test(String(parsed.body.ratio||parsed.body.size||"")) ? String(parsed.body.ratio||parsed.body.size) : Number(parsed.body.targetWidth)>0&&Number(parsed.body.targetHeight)>0 ? imageRatio(Number(parsed.body.targetWidth),Number(parsed.body.targetHeight)) : "1:1");
+    // The internal imagegen step already owns a frozen frame, including a
+    // published native-auto contract. Do not turn that auto into square here.
+    const ratio = currentImagegenStep()?.request.parameters.ratio || quotedImage?.facts.ratio || (/^\d+:\d+$/.test(String(parsed.body.ratio||parsed.body.size||"")) ? String(parsed.body.ratio||parsed.body.size) : Number(parsed.body.targetWidth)>0&&Number(parsed.body.targetHeight)>0 ? imageRatio(Number(parsed.body.targetWidth),Number(parsed.body.targetHeight)) : "1:1");
     const routedModelId = routeImageModel(
       configuredModelId,
       ratio,
