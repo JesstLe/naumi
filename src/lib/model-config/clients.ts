@@ -20,11 +20,13 @@ import {mapResolution,RESOLUTION_FIELDS} from "./resolution-policy";
 import {policyQuality} from "./quality-policy";
 import { reverseHubImageFetch } from "./reverse-hub-images";
 import { healthObservedFetch } from "../model-health/observe";
+import { chatCompletionResponseFetch } from "./chat-completion-response";
 const managedClients = new WeakSet<OpenAI>();
 export const isManagedModelClient = (client: OpenAI) => managedClients.has(client);
 
 export function executionFetch(scope: ModelExecutionScope, options: ValidationOptions = {}): typeof fetch {
-  const transport=healthObservedFetch(scope,executionTransport(scope,options),options);
+  const rawTransport=healthObservedFetch(scope,executionTransport(scope,options),options);
+  const transport=scope.frozen.modality === "text" ? chatCompletionResponseFetch(rawTransport) : rawTransport;
   if(scope.supplierRouting||scope.frozen.modality!=='image'||scope.frozen.imageParameterPlanVersion!==1)return transport;
   return async(input,init)=>{const request=new Request(input,init);if(request.method==='POST'){
     const plan=executionImageParameterPlan(scope);if(plan)try{const {recordImageParameterPlan}=await import('../saas/creation-writer');await recordImageParameterPlan(plan);}catch{/* Diagnostic failure never authorizes another generation. */}
@@ -163,7 +165,7 @@ export async function managedImageEditFetch(baseUrl: string, apiKey: string, for
 
 /** The explicit factory redirects each resource to its frozen modality; legacy/BYOK callers retain their own connection. */
 export function modelAwareOpenAI(options: ConstructorParameters<typeof OpenAI>[0], managed = true): OpenAI {
-  const legacy = new OpenAI({ ...options, maxRetries:0,fetch: supplierCostFetch(options?.fetch || fetch, { providerId: managed ? "legacy-openai" : "byok", apiKey: typeof options?.apiKey==='string' ? options.apiKey : undefined, baseUrl: options?.baseURL || "https://api.openai.com/v1", protocol: "openai-compatible" }) });
+  const legacy = new OpenAI({ ...options, maxRetries:0,fetch: chatCompletionResponseFetch(supplierCostFetch(options?.fetch || fetch, { providerId: managed ? "legacy-openai" : "byok", apiKey: typeof options?.apiKey==='string' ? options.apiKey : undefined, baseUrl: options?.baseURL || "https://api.openai.com/v1", protocol: "openai-compatible" })) });
   if (!managed) return legacy;
   managedClients.add(legacy);
   const clients = new WeakMap<ModelExecutionScope, OpenAI>();

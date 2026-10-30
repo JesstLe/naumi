@@ -30,6 +30,38 @@ function loadCatalog(feature: FeatureId) {
 }
 const canvasSelections=new Map<string,string>();
 function canvasKind(feature:FeatureId){return feature.startsWith("canvas.")?(["canvas.image","canvas.expand","canvas.text-edit","canvas.annotate"].includes(feature)?"image":"text"):undefined;}
+function acceptCatalog(feature: FeatureId, data: FeatureCatalog) {
+  const previousVersion = catalogs.get(feature)?.version;
+  catalogs.set(feature, data);
+  if (data.managed) rememberModelCatalogVersion(data.version);
+  if (adminConfiguredFeature(feature)) {
+    selections.delete(feature);
+    try { localStorage.removeItem(`naumi:model:${feature}`); } catch {}
+    return "";
+  }
+  const kind = canvasKind(feature);
+  if (kind) try { const saved = localStorage.getItem(`naumi:model:canvas:${kind}`); if (saved) canvasSelections.set(kind, saved); } catch {}
+  let saved = (kind ? canvasSelections.get(kind) : undefined) || selections.get(feature);
+  try { saved ||= localStorage.getItem(`naumi:model:${feature}`) || undefined; } catch {}
+  const id = data.models.find(model => imageModelDisplayId(model.id) === imageModelDisplayId(saved || ""))?.id
+    || data.models.find(model => model.id === data.defaultModelId)?.id || data.models[0]?.id || "";
+  if (id) selections.set(feature, id); else selections.delete(feature);
+  if (previousVersion && previousVersion !== data.version) window.dispatchEvent(new Event(EVENT));
+  return id;
+}
+
+/** A click can precede the selector's first effect (OCR opens and submits at once).
+ * Resolve the same published catalog and selection before requesting its quote. */
+export async function ensureFeatureModelSelection(feature: FeatureId): Promise<string | undefined> {
+  let catalog = catalogs.get(feature);
+  if (!catalog) { catalog = await loadCatalog(feature); acceptCatalog(feature, catalog); window.dispatchEvent(new Event(EVENT)); }
+  if (!catalog.managed || adminConfiguredFeature(feature)) return undefined;
+  const selected = chosenFeatureModel(feature);
+  if (catalog.available === false || catalog.supported === false || !selected || !catalog.models.some(model => model.id === selected)) {
+    throw new Error("当前功能没有启用模型，请联系管理员配置");
+  }
+  return selected;
+}
 export function chosenFeatureModel(feature: FeatureId) {
  if(adminConfiguredFeature(feature))return undefined;
  const catalog=catalogs.get(feature),kind=canvasKind(feature),group=kind?canvasSelections.get(kind):undefined;
@@ -54,21 +86,8 @@ export function useFeatureModels(feature: FeatureId) {
       try {
         const data = await loadCatalog(feature);
         if (cancelled) return;
-        const previousVersion = catalogs.get(feature)?.version;
-        catalogs.set(feature, data); setCatalog(data); setError(null);
-        if (data.managed) rememberModelCatalogVersion(data.version);
-        if (previousVersion && previousVersion !== data.version) window.dispatchEvent(new Event(EVENT));
-        if (adminConfiguredFeature(feature)) {
-          selections.delete(feature);
-          try { localStorage.removeItem(`naumi:model:${feature}`); } catch {}
-          setSelected("");
-          return;
-        }
-        const kind=canvasKind(feature);if(kind)try{const group=localStorage.getItem(`naumi:model:canvas:${kind}`);if(group)canvasSelections.set(kind,group);}catch{}
-        let saved = (kind?canvasSelections.get(kind):undefined) || selections.get(feature); try { saved ||= localStorage.getItem(`naumi:model:${feature}`) || undefined; } catch {}
-        const id = data.models.find(m => imageModelDisplayId(m.id) === imageModelDisplayId(saved || ""))?.id || data.defaultModelId || data.models[0]?.id;
-        if (id) selections.set(feature, id); else selections.delete(feature);
-        setSelected(id || "");
+        const id = acceptCatalog(feature, data);
+        setCatalog(data); setError(null); setSelected(id);
       } catch (e) { if (!cancelled) { setError(e instanceof Error ? e.message : "读取失败"); setCatalog(null); catalogs.delete(feature); } }
     };
     const changed = () => setSelected((adminConfiguredFeature(feature) ? undefined : chosenFeatureModel(feature)) || "");
