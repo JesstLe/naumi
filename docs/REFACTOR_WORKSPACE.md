@@ -1,3 +1,7 @@
+## 2026-10-30 最新 R7X：选择归属已实施，整体继续
+
+固定应用ca694d87：selection owner复用文档scope，页面4968→4879，16共同事件轨迹EXACT、原20→新31检查；16受影响入口同SHA通过（subset PARTIAL/exit2），类型/lint37warning/四SCC0。完整5206源码实际Next交互12+node11+导航6通过；同项目重开原2个旧多选的真实反例已改为0，原复制/UNKNOWN/undo保持。其余2098原产品hash不变；完整包/5202原hash副本回滚与Git见R7X DELIVERY。整体ACTIVE，当前2/3模块，后续主线同步与完整候选；全158/历史dev退出根因/性能容量/有效远端CI/最终整版验收尚未闭合，未合main未部署，47 HOLD。下文历史阶段按原SHA保留。
+
 2026-10-29 R7M：共享composer窄屏参数占满整行、动作不截断，图片sheet复用360px舒适高度，短屏原生滚动保留正文；仅两生产owner改动，Canvas入口/任务/报价/版本/账务不改。5视口实际命中/滚轮/模式比例数量提示词及390px单次原提交、A/B/U像素与版本undo-redo通过；58场景SSR原HTML同，几何2490旧精确+150窄屏新边界。125核心入口与最终固定完整候选/副本回滚以本轮DELIVERY为准；整体ACTIVE，未合main未部署，47 HOLD。见[R7M记录](changes/2026-10-29-refactor-r7m-composer-responsive.md)。
 
 ## 2026-10-30 最新：R7V 视频任务跟随检查点（整体ACTIVE）
