@@ -41,7 +41,14 @@ export async function verifyCanvasDownloadBrowser({page,expect,out,snapshot,stat
 }
 
 export async function verifyCanvasLargeDownloadBrowser({page,expect,out,snapshot,stats,seed}){
-  await mkdir(out,{recursive:true});const input=await seed(),before=await snapshot(),supplier=await stats();
+  await mkdir(out,{recursive:true});const input=await seed();
+  // Seeding from the isolated PG observer is intentionally outside Web. Publish
+  // its project name through the real browser mutation path so the existing
+  // account metadata cache receives its ordinary invalidation, not injected UI.
+  const status=await page.evaluate(async input=>{
+    const response=await fetch('/api/projects',{method:'POST',headers:{'content-type':'application/json','x-naumi-workspace':'personal'},body:JSON.stringify({key:input.project,name:input.title})});return response.status;
+  },input);assert.equal(status,200);
+  const before=await snapshot(),supplier=await stats();
   await page.reload({waitUntil:'domcontentloaded'});await page.getByTestId('canvas-project-chrome').locator('button').first().click();
   await page.locator('aside').getByRole('button',{name:'全部项目',exact:true}).click();
   await page.getByTestId('canvas-project-browser').getByTitle(input.title,{exact:true}).click();
