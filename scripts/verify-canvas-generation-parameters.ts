@@ -68,7 +68,7 @@ async function main() {
   assert.equal(await canvasParameterError(new Request("http://fixture.test/api/generate-image", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ origin: "toolbox", resolution: "5K" }) })), null);
   assert.doesNotMatch(client, /customDimensionsForRatio|setCustomWidth|setCustomHeight|targetWidth", String|5K\)/);
   assert.match(client, /body.resolution = normalizeCanvasResolution/); assert.match(client, /body.ratio = normalizeCanvasRatio/);
-  assert.match(client, /body.quality = normalizeCanvasQuality/); assert.match(client, /: \(\) => runGen\(source,prompt,opts\)/); // retry retains captured parameters and the same central boundary
+  assert.match(client, /body.quality = normalizeCanvasQuality/); assert.match(client, /: \(\) => runGen\(source,prompt,\{\.\.\.opts,placement\}\)/); // retry retains captured parameters and the same central boundary
   assert.match(client, /const requestedRatio = normalizeCanvasRatio/g);
   assert.match(read("src/lib/model-config/requests.ts"), /canvasRequest && effectivePreset/);
   console.log("MODIFIED=PASS ENUM_COMBINATIONS=480 RAW_JSON_MULTIPART_REJECTIONS=90 ACTUAL_ROUTES=5 LEGACY_REDO_BATCH=NORMALIZED QUALITY_QUOTE_EXECUTION=CONSISTENT FROZEN_HISTORY=UNCHANGED PROVIDER_CALLS=0");

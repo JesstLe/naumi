@@ -76,7 +76,7 @@ async function visionOcr(buffer: Buffer, width: number, height: number, model: s
   // OCR belongs to the image workflow: prefer the configured OpenAI-compatible
   // image gateway. The agent gateway can be independently unavailable (for
   // example, a mainland host timing out against it), so it is only a fallback.
-  const apiKey = settings.apiKey || process.env.AGENT_API_KEY;
+  const apiKey = settings.apiKey || process.env.AGENT_API_KEY || (currentModelExecution("vision") ? "managed-canvas-ocr" : "");
   if (!apiKey) throw new Error("OCR 服务和视觉模型均未配置");
   const client = observeOpenAI(modelAwareOpenAI({
     apiKey,

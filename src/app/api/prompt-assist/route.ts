@@ -19,6 +19,7 @@ import { requestedTextModel } from "@/lib/text-models";
 import { modelConfigurationEnabled } from "@/lib/model-config/requests";
 import { VIDEO_PROMPT_OPTIMIZE_SYSTEM, validateVideoOptimizedPrompt } from "@/lib/video/prompt-assist";
 import { CANVAS_PROMPT_LIMIT, isCanvasPromptTool, canvasPromptOptimizationSystem, validateCanvasOptimizedPrompt } from "@/lib/canvas/prompt-optimization";
+import { canvasAnswerText, canvasTextFailure } from "@/lib/canvas-text-output";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -154,16 +155,19 @@ async function handleObservedPost(req: Request) {
       temperature: 0.8,
       max_tokens: video || canvas ? 12000 : 500,
     }, video || canvas ? { signal: req.signal, timeout: 90000, maxRetries: 0 } : undefined);
-    const prompt = (resp.choices[0]?.message?.content ?? "").trim();
+    const choice = resp.choices?.[0];
+    const prompt = canvasAnswerText(choice?.message?.content).trim();
+    const failure = canvasTextFailure(choice);
+    if (failure.code === "TEXT_OUTPUT_IMAGE" || failure.code === "TEXT_OUTPUT_REFUSED" || failure.code === "TEXT_OUTPUT_LIMIT") return NextResponse.json(failure, { status: 502 });
     if (!prompt) {
-      return NextResponse.json({ error: "没生成出来,请重试" }, { status: 502 });
+      return NextResponse.json(failure, { status: 502 });
     }
     if (video) {
-      try { validateVideoOptimizedPrompt(idea, prompt, resp.choices[0]?.finish_reason); }
+      try { validateVideoOptimizedPrompt(idea, prompt, choice?.finish_reason); }
       catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "优化结果不可用，原文已保留" }, { status: 502 }); }
     }
     if (canvas) {
-      try { validateCanvasOptimizedPrompt(idea, prompt, resp.choices[0]?.finish_reason); }
+      try { validateCanvasOptimizedPrompt(idea, prompt, choice?.finish_reason); }
       catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "优化结果不完整，原文已保留" }, { status: 502 }); }
     }
     return NextResponse.json({ prompt });
