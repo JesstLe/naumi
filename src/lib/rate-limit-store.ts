@@ -87,7 +87,9 @@ async function transaction<T>(pool: Pool, run: (client: PoolClient) => Promise<T
   }
 }
 
-async function ensureSchema(pool: Pool): Promise<void> {
+/** Explicit Web startup and the compatibility first-use path share the same
+ * pool-bound promise and the original bounded transaction/deadline contract. */
+export async function ensurePostgresRateLimitSchema(pool: Pool): Promise<void> {
   let ready = schemas.get(pool);
   if (!ready) {
     ready = transaction(pool, async client => {
@@ -100,7 +102,7 @@ async function ensureSchema(pool: Pool): Promise<void> {
 }
 
 export async function consumePostgresRateLimit(pool: Pool, digest: string, limit: number, windowMs: number): Promise<boolean> {
-  await ensureSchema(pool);
+  await ensurePostgresRateLimitSchema(pool);
   const cleanup: { claim?: { now: number; full: boolean } } = {};
   try {
     const result = await transaction(pool, async client => {

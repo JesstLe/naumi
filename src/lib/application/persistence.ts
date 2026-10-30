@@ -27,6 +27,9 @@ import {ensureCompetitorSchema} from "../competitor/schema";
 import {ensurePackagingSchema} from "../packaging-strategy/schema";
 import {ensurePostprocessSchema} from "../media-postprocess-schema";
 import {ensureVideoAssetSchema,ensureMediaInspectionSchema,ensureMediaJobSchema,ensureVideoScriptSchema,ensureVideoReferenceUploadSchema,ensureVideoWorkflowSchema,ensureVideoBatchSchema} from "../video/storage-schema";
+import {ensurePostgresRateLimitSchema} from '../rate-limit-store';
+import {ensureSitePolicySchema} from '../site-control/schema';
+import {enterpriseSiteIdentity} from '../site-control/identity';
 
 /** Web persistence composition, not a runtime/service registry. Each owner keeps
  * its SQL, transaction and retry contract. No scanner, discovery or paid work. */
@@ -75,5 +78,9 @@ export async function initializeApplicationPersistence():Promise<string[]>{
  await ensureVideoScriptSchema();steps.push("script-assets");
  await ensureVideoWorkflowSchema();steps.push("video-workflows");
  await ensureVideoBatchSchema();steps.push("video-canvas-batches");
+ await ensurePostgresRateLimitSchema(pool);steps.push("rate-limit");
+ if(enterpriseSiteIdentity()){
+  await ensureSitePolicySchema();steps.push("site-policy");
+ }
  return steps;
 }

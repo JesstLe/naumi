@@ -54,6 +54,8 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='canvas-theme-panels')stageEnv.CANVAS_THEME_PANELS_EVIDENCE=evidence;
    if(spec.id==='canvas-theme-matrix')stageEnv.CANVAS_THEME_MATRIX_EVIDENCE=evidence;
    if(spec.id==='schema-bootstrap-client')stageEnv.SCHEMA_BOOTSTRAP_EVIDENCE=evidence;
+   if(spec.id==='request-schema-startup')stageEnv.REQUEST_SCHEMA_STARTUP_EVIDENCE=evidence;
+   if(spec.id==='distributed-rate-limit')stageEnv.DISTRIBUTED_RATE_LIMIT_EVIDENCE=evidence;
    if(spec.id==='parent-completion')stageEnv.IMAGEGEN_PARENT_COMPLETION_EVIDENCE=evidence;
    if(spec.id==='cutout-receipt')stageEnv.CUTOUT_RECEIPT_EVIDENCE=evidence;
    if(spec.id==='canvas-fanout-owners')stageEnv.CANVAS_FANOUT_OWNERS_EVIDENCE=evidence;

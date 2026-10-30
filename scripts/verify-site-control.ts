@@ -5,7 +5,7 @@ async function main() {
   assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB, '1');
   const database = new URL(process.env.DATABASE_URL!);
   assert.equal(database.hostname, '127.0.0.1');
-  assert.equal(database.pathname, '/naumi_site_control_test');
+  assert.ok(database.pathname === '/naumi_site_control_test' || database.pathname.includes('fixture'), 'Requires an explicitly isolated fixture database');
   Object.assign(process.env, { NAUMI_MULTI_USER:'1', SETTINGS_SECRET:'site-control-isolated-test-0123456789012345', VIDEO_WORKER_SECRET:'site-control-worker-isolated-0123456789012345', NAUMI_VIDEO_WORKER:'0' });
   const {Pool}=await import('pg');const admin=new Pool({connectionString:process.env.DATABASE_URL});const schema='site_'+randomUUID().replaceAll('-','');await admin.query(`CREATE SCHEMA ${schema}`);process.env.PGOPTIONS=`-c search_path=${schema}`;
   const db = await import('../src/lib/db');

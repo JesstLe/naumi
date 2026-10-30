@@ -4,12 +4,14 @@ import {ensureSchema} from "@/lib/persistence/schema";
 import seed from "./bootstrap.json";
 import {createConfigRuntime} from "./catalog";
 import {BillingError,type BillingConfig} from "./types";
+import type {Pool} from 'pg';
 
-let configuration:ReturnType<typeof createConfigRuntime>|undefined;
+const configurations=new WeakMap<Pool,ReturnType<typeof createConfigRuntime>>();
 /** Configuration lifecycle only; startup does not construct wallet/task services. */
 export function getBillingConfiguration(){
  if(!dbEnabled)throw new BillingError("CONFIG_UNAVAILABLE","未配置数据库，计费管理暂不可用",503);
- return configuration??(configuration=createConfigRuntime({ pool: getPool(), ensureSchema, initialize: async (tx) => {
+ const pool=getPool(),existing=configurations.get(pool);if(existing)return existing;
+ const configuration=createConfigRuntime({ pool, ensureSchema, initialize: async (tx) => {
                 const config = structuredClone(seed) as BillingConfig;
                 const settings = (await tx.query<{
                     k: string;
@@ -27,5 +29,6 @@ export function getBillingConfiguration(){
                 if (Number.isSafeInteger(video) && video > 0 && video <= 2147483647)
                     config.features["video.generate"].pricing = { mode: "fixed", credits: video };
                 return config;
-            } }));
+            } });
+ configurations.set(pool,configuration);return configuration;
 }

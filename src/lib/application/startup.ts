@@ -1,10 +1,10 @@
 import "server-only";
-import {dbEnabled} from "@/platform/db/pool";
+import {dbEnabled,getPool} from "@/platform/db/pool";
+import {databaseSchemaReadiness} from '@/platform/db/schema-readiness';
 import type {ModelRegistryStartup} from "../model-config/startup";
 import {applicationTasksRunHere} from "./task-execution";
 
 export type WebStartupReport={mode:"application"|"no-database"|"sidecar";steps:string[];modelRegistry?:ModelRegistryStartup};
-let initializing:Promise<WebStartupReport>|undefined;
 
 /** Application composition only. Domain owners retain their transactions,
  * schema readiness and compatibility behavior. No discovery or task execution. */
@@ -18,6 +18,9 @@ export function initializeWebApplication():Promise<WebStartupReport>{
   applicationTasksRunHere();
   if(!dbEnabled)return Promise.resolve({mode:"no-database",steps:[]});
   if(process.env.FLEET_PORTAL_ONLY==="1"||process.env.NAUMI_AUTH_LOGIN_ONLY==="1")return Promise.resolve({mode:"sidecar",steps:[]});
-  if(!initializing)initializing=initialize().catch(error=>{initializing=undefined;throw error;});
-  return initializing;
+  // The actual pool is the lifecycle identity, not this bundle's module cache.
+  // A drained/closed generation must not lend its readiness to a new database.
+  const state=databaseSchemaReadiness<WebStartupReport>(getPool(),'application-startup');
+  if(!state.pending)state.pending=initialize().catch(error=>{state.pending=undefined;throw error;});
+  return state.pending;
 }

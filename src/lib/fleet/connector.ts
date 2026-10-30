@@ -1,6 +1,7 @@
 import { siteCreations, siteCreationMedia } from '@/lib/site-control/creations';
 import { TeamError } from '@/lib/teams/server';
-import { ensureSitePolicySchema, readSitePolicy, applySitePolicyTx, SitePolicyError } from '@/lib/site-control/store';
+import { readSitePolicy, applySitePolicyTx, SitePolicyError } from '@/lib/site-control/store';
+import {ensureSitePolicySchema} from '@/lib/site-control/schema';
 import 'server-only';
 import { randomUUID } from 'node:crypto';
 import {adjustUserCredits} from "@/lib/billing/grants";

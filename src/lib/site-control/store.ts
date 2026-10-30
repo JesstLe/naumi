@@ -3,25 +3,12 @@ import type { PoolClient } from 'pg';
 import { getPool } from '@/lib/db/connection';
 import { enterpriseSiteIdentity } from './identity';
 import { sitePolicyInputSchema, sitePolicySchema, type SitePolicy, type SitePolicyInput, type SiteProfile } from './contracts';
+import {ensureSitePolicySchema} from './schema';
+// Existing integrations may still import this named initializer from the store.
+export {ensureSitePolicySchema} from './schema';
 
 export class SitePolicyError extends Error {
   constructor(readonly code: 'CONFLICT' | 'DENIED' | 'NOT_CONFIGURED') { super(code); }
-}
-let ready: Promise<void> | undefined;
-export async function ensureSitePolicySchema() {
-  if (!ready) ready = getPool().query(`
-    CREATE TABLE IF NOT EXISTS app_site_media_audit (
-      id bigserial PRIMARY KEY, command_id uuid NOT NULL, actor text NOT NULL,
-      creation_id text NOT NULL, asset_id text NOT NULL, original boolean NOT NULL,
-      created_at timestamptz NOT NULL DEFAULT now());
-    CREATE TABLE IF NOT EXISTS app_site_policy (
-      singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
-      policy jsonb NOT NULL, updated_by text NOT NULL, command_id uuid NOT NULL UNIQUE);
-    CREATE TABLE IF NOT EXISTS app_site_policy_audit (
-      command_id uuid PRIMARY KEY, actor text NOT NULL, before_policy jsonb,
-      after_policy jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
-  `).then(() => {}).catch(error => { ready = undefined; throw error; });
-  await ready;
 }
 function assertBinding(policy: SitePolicyInput) {
   const identity = enterpriseSiteIdentity();

@@ -7,7 +7,7 @@ import { teamJson, PRIVATE_HEADERS } from '@/lib/teams/access';
 import { dataUrlToBytes } from '@/lib/storage';
 import { enterpriseSiteIdentity } from './identity';
 import { readSiteMediaGrant } from './media-grant';
-import { ensureSitePolicySchema } from './store';
+import { ensureSitePolicySchema } from './schema';
 
 export async function fleetMediaResponse(request: Request) {
   const grant = readSiteMediaGrant(new URL(request.url).searchParams.get('grant') || '');

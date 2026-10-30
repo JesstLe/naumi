@@ -8,14 +8,16 @@ import {createBillingService} from "./service";
 import {BillingError,type BillingConfig,type ConfigSnapshot} from "./types";
 import {supabaseEnabled} from "../auth-mode";
 import {multiUserEnabled} from "@/lib/accounts/mode";
-import type {PoolClient} from "pg";
+import type {Pool,PoolClient} from "pg";
 
-let runtime: ReturnType<typeof assemble> | undefined;
+const runtimes=new WeakMap<Pool,ReturnType<typeof assemble>>();
 function assemble(){return {service:createBillingService(),config:getBillingConfiguration()};}
 export async function getBillingRuntime() {
     if (!dbEnabled)
         throw new BillingError("CONFIG_UNAVAILABLE", "未配置数据库，计费管理暂不可用", 503);
-    return runtime ?? (runtime = assemble());
+    const pool=getPool();let runtime=runtimes.get(pool);
+    if(!runtime){runtime=assemble();runtimes.set(pool,runtime);}
+    return runtime;
 }
 export async function billingSnapshot():Promise<ConfigSnapshot> {
     if(dbEnabled)return (await getBillingRuntime()).config.current();
