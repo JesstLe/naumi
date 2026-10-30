@@ -988,8 +988,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setCreatingNew(true);
     setBrowsing(false);
     setActiveKey(null);
-    setSelectedId(null);
-    setSelectedTextId(null);
+    canvasSelection.reset();
     pendingPresentation.clearTransient();
     setSidebarOpen(false);
   }
@@ -1030,8 +1029,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     imageTextEditor.close();
     resetImportScope();
     setActiveKey(key);
-    setSelectedId(null);
-    setSelectedTextId(null);
+    canvasSelection.reset();
     pendingPresentation.clearTransient();
     setCreatingNew(false);
     setBrowsing(false);
@@ -1047,8 +1045,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     imageTextEditor.close();
     resetImportScope();
     setBrowsing(true);
-    setSelectedId(null);
-    setSelectedTextId(null);
+    canvasSelection.reset();
     setCreatingNew(false);
     pendingPresentation.clearTransient();
     setSidebarOpen(false);
