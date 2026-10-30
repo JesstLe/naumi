@@ -1,3 +1,15 @@
+## 2026-10-31 R8G：节点偏好、浏览器读取与共享历史分责
+
+固定应用源码 `156b53ec87e123b1971ae030f7f0d0bb075adef9`，完整生产Dockerfile同Web/Worker镜像 `sha256:d4b084077482f49e85799e83ab085475c38c2b96c6080af7c86d17331278ec5c`。Canvas遗留节点锁定、层级、文字样式的读取/ready/error/回执投影/保存意图，迁入canvas/node-preferences应用owner；GET/localStorage归node-preferences-browser，React订阅归use-canvas-node-preferences。页面仅组装当前对象、翻译/图标和事件；锁定/层级计算用typed intent在原UNKNOWN恢复后读取最新设置。六种native kind复用原CANVAS_NATIVE_NODE_KINDS，不建通用插件器。只改2个原产品文件+3个新职责文件，其他2116原src/services哈希保持；钱包/任务/冻结价/媒体像素链未改。
+
+原实际Effect/函数+原document/history controller16项→新版25项；真实React DOM原/新各6项：慢GET覆盖已确认属性1→0、workspace旧锁1→0、属性lostACK身份2→1，原UNKNOWN请求体逐字保持。新增typed lock/front/back、±100000边界、not-ready/只读/shared busy、账号/workspace ABA、慢读merge与删除、local key隔离。写入全部复用原history.submit/串行恢复/undo，不新增API/队列/表；lostACK身份为属性写，不冒称重复付费缺陷。跨项目偏好共享、原project回执可完成，迟到账号/workspace不得跨身份写；GET失败保持not-ready，非空成功。
+
+19受影响入口同SHA/digest全部新执行PASS（含原history67/184、text-document21/58），subset PARTIAL/exit2，不当完整178绿。类型exit0、lintexit0/既有38warning、固定源4类SCC0；2条release fixture lib→app与dist/worker构建产物1条未解析边单列，非生产层倒置。旧node-editing静态gate的arrange内联断言在原80e也失败；现检查真实arrange owner和页面locked连接，原始日志保留，不当产品缺陷。
+
+完整固定镜像真实双browser 68 项通过。新增原生属性面板暂存、应用样式、共享undo/redo、锁/解锁、前/后层级及刷新读回；9笔原history操作/9个原operation，原PG node-settings与实际textarea CSS/Flow z-index一致，另开属性写接口0、供应商新增0/扣款新增0。文字fixture改为实际text-前缀，不修改产品类型推断。原60项流程保留（登录/冲突/任务/账务/剪贴板/导航/拼接/完整31图ZIP）；原图/文字/任务/fixture7笔42积分在属性流程前后完全一致。180秒混合读取不等于持续混合生成容量；上游仅隔离fixture，不称真实供应商/私有R2验收。POSIX排空/自有栈清理通过。
+
+原5257rawhash、完整5264源码、字节patch、副本原16+6行为回滚及later-edit零写入按本轮DELIVERY/VERIFICATION为准。最后文档/验收夹具如有变化用hash bridge逐项登记；src/services与已验镜像保持字节一致。整体ACTIVE，未合main未部署，47 HOLD；主线同步后第2/3模块。**分支超过48h仍未整版退出：Canvas Shell剩余组合、持续混合生成/入队容量、有效CI及最终main整合/生产验收仍待，不将切片完成当完整版本。**
+
 ## 2026-10-31 R8F：下载意图、原图字节与页面编排分责
 
 固定应用源码 `c5eba60c2757310161d1c189db3f2979a8264a1e`，完整生产Dockerfile同Web/Worker镜像 `sha256:ff9698636e425e65b36a36530b1eec675cf65106127bf28e2bd83fe65780bdf3`。原页面的下载状态、ZIP准入、异步反馈和DOM取字节拆为canvas/downloads应用owner、download-browser浏览器适配和use-canvas-downloads订阅；媒体URL/名称归纯media/download-href，不再反向依赖播放器。页面只组装原项目/选中集合、翻译和事件，4564→4501行不是验收目标，真实写入/状态责任迁移才是。4个原产品文件改变、4个新职责文件，其他2110原src/services哈希不变；钱包/报价/任务/UNKNOWN/原媒体授权未改。
@@ -58,17 +70,17 @@
 
 第三模块普通 fetch/merge main `e2f56255` 无新提交，计数3→0。整体仍 ACTIVE，未合 main、未部署，47 HOLD；当前完整退出审计见 `docs/architecture/REFACTOR_EXIT_AUDIT.md`，保留剩余Canvas组合/同机性能与容量/有效CI/最终main整合，不用本片通过替代整版交付。
 
-# 整体重构退出审计（R8F 当前候选）
+# 整体重构退出审计（R8G 当前候选）
 
-本页按原 R0–R6 与量化退出要求核对，而非把已完成切片重新定义为全部目标。固定应用源码以最新 R8F DELIVERY 为准；R8E性能只归其原source；R8D性能/媒体仅归其原source；R8B167/177与R8C34/54仍只归历史源，原始验收要求见 REFACTOR_MIGRATION.md 第 2/4/5/6 节；历史切片的日志只证明对应 SHA，不给最新源码代验。
+本页按原 R0–R6 与量化退出要求核对，而非把已完成切片重新定义为全部目标。固定应用源码以最新 R8G DELIVERY 为准；R8F下载证据按原source；R8E性能只归其原source；R8D性能/媒体仅归其原source；R8B167/177与R8C34/54仍只归历史源，原始验收要求见 REFACTOR_MIGRATION.md 第 2/4/5/6 节；历史切片的日志只证明对应 SHA，不给最新源码代验。
 
 | 原要求 | 当前归属 / 权威证据入口 | 当前判定及还需什么 |
 |---|---|---|
-| R0 已有质量/Canvas定价修复不倒退 | 原整合历史 + `image-price`/`canvas-image-task`/参数与prepare真实回归 | R8B历史固定167/50；R8F受影响13及完整实际产品browser/下载已验，不当当前全175通过 |
-| R1A typed图片/抠图用例，各HTTP/Agent/workbench入口共用 | `imagegen/execute-image-step`、准备/同步计费/route adapter；AST运行图 | 结构已实施；R8B历史167+177+50；当前R8F受影响13与完整实际产品/原图下载已验，R8E五轮只归其原source，最终整版main验收仍待 |
+| R0 已有质量/Canvas定价修复不倒退 | 原整合历史 + `image-price`/`canvas-image-task`/参数与prepare真实回归 | R8B历史固定167/50；R8G受影响19及完整实际产品browser/属性已验，不当当前全178通过 |
+| R1A typed图片/抠图用例，各HTTP/Agent/workbench入口共用 | `imagegen/execute-image-step`、准备/同步计费/route adapter；AST运行图 | 结构已实施；R8B历史167+177+50；当前R8G受影响19与完整实际产品/属性/原图下载已验，R8E五轮只归其原source，最终整版main验收仍待 |
 | R1B 同operation单一prepared与原冻结价 | `imagegen/preparation`、quote/dispatch与3套pricing回归 | 原价/明确取消/不足余额/UNKNOWN必须仍通过，配置缓存不跨Pool |
 | R2 生成与原结果续交共享交付 | shared delivery/checkpoint/settlement，delivery/resilience/parent cases | 历史供应商403与原始两笔丢失窗口不因fixture PASS自动关闭；项目历史case单独保留 |
-| R3 Canvas文档/任务/渲染/交互分责 | document/history、image/task/text/selection/navigation/editing等owner；实际双browser | 已有主链分责；拼接完整链已迁真实owner，下载真实owner已迁，页面4501行仍有Shell/多种编辑器与面板组合，尚非最终Shell组织形态；不按行数强拆纯事件adapter |
+| R3 Canvas文档/任务/渲染/交互分责 | document/history、image/task/text/selection/navigation/editing等owner；实际双browser | 已有主链分责；拼接完整链已迁真实owner，下载真实owner已迁，节点偏好真实owner已迁，页面4470行仍有Shell/多种编辑器与面板组合，尚非最终Shell组织形态；不按行数强拆纯事件adapter |
 | R4A Pool/Tx无业务依赖，数据owner有唯一写入 | `platform/db`，db兼容面；SCC与依赖扫描、PG事务矩阵 | 纯平台结构已落地；兼容出口只为真实脚本调用保留，不算平行writer |
 | R4B 无业务请求新建schema或管理bootstrap | Web显式persistence/startup，各schema owner与published read；R8B冷PG/跨bundle | 本轮补限流与dedicated site；必须保留角色限定及失败重试；不能外推所有进程/历史规模升级均完成 |
 | R5 同版本独立Worker、单任务owner、协议/排空 | 固定完整Dockerfile/Worker manifest/shared scan，runtime与native媒体gate | 应用结构已实施；完整同镜像运行验收与混合资源对照是不同层级 |
