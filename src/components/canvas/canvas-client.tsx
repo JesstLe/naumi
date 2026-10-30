@@ -1,4 +1,5 @@
 "use client";
+import {readCanvasGenerationReceipt} from "@/lib/canvas/generation-receipt";
 import { updateAssistantTimeline, restoreAssistantTimeline, type AssistantTimelineTurn } from "@/lib/canvas/assistant-timeline";
 import { CachedImage } from "@/components/cached-image";
 import { browserImageArchive } from '@/lib/browser-image-archive';
@@ -4827,11 +4828,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         const pollHeaders = new Headers(await authHeader());pollHeaders.set('x-naumi-workspace',requestWorkspace);
         if(requestProject&&requestProject!=="workspace")pollHeaders.set('x-naumi-project-context',requestProject);else pollHeaders.delete('x-naumi-project-context');
         if (!current()) return [];
-        const pr = await fetch(
-          `/api/generate-image?job=${encodeURIComponent(jobId)}`,
-          { cache: "no-store", headers: pollHeaders }
-        );
-        const pj = await readJsonSafe(pr);
+        const receipt = await readCanvasGenerationReceipt(jobId, pollHeaders);
+        if (!receipt) continue;
+        const {response:pr,data:pj} = receipt;
         if (!current()) return [];
         if (pr.ok && pj.user) applyServerUser(pj.user);
         if (!pr.ok) throw new Error(pj.error || t("canvas.genFail"));
@@ -4925,7 +4924,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           if(!current())return;
           if(opts?.replaceNode){
             const headers=new Headers(await authHeader());if(!current())return;headers.set("x-naumi-workspace",requestWorkspace);if(requestProject)headers.set("x-naumi-project-context",requestProject);
-            const receipt=await fetch(`/api/generate-image?job=${encodeURIComponent(jobId!)}`,{headers,cache:"no-store"});const data=await readJsonSafe(receipt);
+            const result=await readCanvasGenerationReceipt(jobId!,headers);if(!result)throw new Error("原任务回执读取暂时失败，请稍后检查");const {response:receipt,data}=result;
             if(!current())return;
             if(!receipt.ok||!data.canvasAttachment||data.canvasAttachment.nodeId!==source.id)throw new Error("原任务结果已保留，节点版本尚未同步，请稍后检查");
             attachment=data.canvasAttachment;
@@ -8747,11 +8746,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         const pollHeaders = new Headers(await authHeader());pollHeaders.set('x-naumi-workspace',requestWorkspace);
         if(requestProject&&requestProject!=="workspace")pollHeaders.set('x-naumi-project-context',requestProject);else pollHeaders.delete('x-naumi-project-context');
         if (!current()) return false;
-        const pr = await fetch(
-          `/api/generate-image?job=${encodeURIComponent(jobId)}`,
-          { cache: "no-store", headers: pollHeaders }
-        );
-        const pj = await readJsonSafe(pr);
+        const receipt = await readCanvasGenerationReceipt(jobId, pollHeaders);
+        if (!receipt) continue;
+        const {response:pr,data:pj} = receipt;
         if (!current()) return false;
         if (pr.ok && pj.user) applyServerUser(pj.user);
         if (!pr.ok) throw new Error(pj.error || t("canvas.genFail"));

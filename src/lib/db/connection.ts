@@ -72,7 +72,11 @@ function pool(kind: 'business' | 'tick'): Pool {
         // Bounds apply from BEGIN (before SET LOCAL) and to a stalled wire reply.
         statement_timeout: 3000, query_timeout: 4000,
         allowExitOnIdle: true,
-      } : {}),
+      } : {
+        // pg bounds both queued checkout and initial connection establishment.
+        // Its recognizable timeout error propagates; never retry transactions.
+        connectionTimeoutMillis: 12000,
+      }),
     });
     if (kind === 'tick') {
       // pg removes the failed idle connection first. Never log connection details.
