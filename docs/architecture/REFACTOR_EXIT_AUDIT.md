@@ -1,3 +1,13 @@
+## 2026-10-31 R8D：实际性能基线与媒体规格单一归属
+
+固定应用/本地验收源码 `3e90ff3595e2b347fcf907121cd64103aa635169`，同完整生产镜像Web/Worker包 `sha256:a650b2b5471c26f05e5451f2df43b0ada719c889d481fdf0170afe0747286472`。真实320节点校准抓到公开本地媒体manifest选择缩略图但response读取原图的409，已收敛`media/representation`，私有源先授权、清单与字节共用key/asset；不删cacheVersion、不交错账号、不降低图像质量。实际handler+文件+Sharp原38复现2个409→新44检查0，私有401/404和过期409保留；新完整镜像公开模式冷暖2页＋60读取/30准备实际通过，HTTP错误0、付费POST0、供应商0/消费0。
+
+复用原benchmark补真实登录/PG/HTTP模式，原受控API模式保留。重构前4478应用/原锁固定镜像与候选在同机、相同320节点/12图、1440×1000、4倍CPU、5Mbps/80ms下5轮交替、每栈3页，10个隔离栈；每侧15页、150准备、300读取，输入原图hash完全相同。两侧统一私有本地模式，公开模式409另作原/新真实反例，不把已知错误回退耗时塞进性能基线。visualReadyMs p95 7319.65→8231.40；labSessionInpMs p95 2544.00→2328.00；prepareMs p95 19.76→17.58；readMs p95 19.14→20.62；rssPeakMiB p95 381.52→417.46；eventLoopP95Ms p95 10.51→10.52。超过原建议10%调查阈值的指标：{"visualReadyMs": 12.46, "coldVisualReadyMs": 12.46, "warmVisualReadyMs": 29.15, "interactionLatencyMs": 12.5}；保留为真实剩余项，不靠调阈值宣称整版退出。
+
+82项锁记录差异单列，因此结果是整体候选对照、不是纯架构因果归因。实验室EventTiming不等于真实用户field INP；20ms RSS与kernel终身VmHWM分别记录；15页/5冷样本不能当生产尾延迟或10万活跃用户容量。旧镜像恢复经过网络/类型投影失败，最终回到原锁，完整类型/build通过，无产品补丁或跳过门禁；每次准备失败及清理保留。8个受影响入口全部新执行PASS，subset为PARTIAL/exit2，不冒充完整170；类型/lint既有38warning、四SCC0。
+
+原5240hash与完整5247源码/字节patch/独立副本恢复旧38检查和2个409、later-edit零写入及远端以R8D DELIVERY/VERIFICATION为准。仅2个既有产品文件改变，1个新规格owner，其余原产品文件hash保持；未改钱包、任务、冻结合同、Canvas组件或业务限额。整体ACTIVE，未合main未部署，47 HOLD；本片是主线同步后2/3模块。剩余Canvas下载/呈现、INP/退化调查、入队/长时混合容量、有效CI、最终main整合与生产验收继续。
+
 ## 2026-10-30 R8C：长图拼接意图、像素与原子发布
 
 固定应用/受影响验收源码 `290b3772c9722cd46e9860c1385581fa5619def9`。原route里的像素与写库拆为stitch-pixels/stitch应用owner，Canvas请求/原意图/只读恢复归stitch-run和窄hook；原作品document/history/node-copy回执继续唯一归属，未建新表、任务或计费引擎。原接口无operationId的POST仍兼容，当前控件在POST前保存原operation；未知只GET、已知结果只同步原ID，scope隔离迟到选择/提示。
@@ -20,14 +30,14 @@
 
 第三模块普通 fetch/merge main `e2f56255` 无新提交，计数3→0。整体仍 ACTIVE，未合 main、未部署，47 HOLD；当前完整退出审计见 `docs/architecture/REFACTOR_EXIT_AUDIT.md`，保留剩余Canvas组合/同机性能与容量/有效CI/最终main整合，不用本片通过替代整版交付。
 
-# 整体重构退出审计（R8C 当前候选）
+# 整体重构退出审计（R8D 当前候选）
 
-本页按原 R0–R6 与量化退出要求核对，而非把已完成切片重新定义为全部目标。固定应用源码以 R8B DELIVERY 为准，原始验收要求见 REFACTOR_MIGRATION.md 第 2/4/5/6 节；历史切片的日志只证明对应 SHA，不给最新源码代验。
+本页按原 R0–R6 与量化退出要求核对，而非把已完成切片重新定义为全部目标。固定应用源码以最新 R8D DELIVERY 为准；R8B167/177与R8C34/54仍只归历史源，原始验收要求见 REFACTOR_MIGRATION.md 第 2/4/5/6 节；历史切片的日志只证明对应 SHA，不给最新源码代验。
 
 | 原要求 | 当前归属 / 权威证据入口 | 当前判定及还需什么 |
 |---|---|---|
-| R0 已有质量/Canvas定价修复不倒退 | 原整合历史 + `image-price`/`canvas-image-task`/参数与prepare真实回归 | 本片固定core167与同镜像browser50通过；不按历史截图推断 |
-| R1A typed图片/抠图用例，各HTTP/Agent/workbench入口共用 | `imagegen/execute-image-step`、准备/同步计费/route adapter；AST运行图 | 结构已实施；本片固定core167+runtime177+browser50通过；最终整版main验收仍待 |
+| R0 已有质量/Canvas定价修复不倒退 | 原整合历史 + `image-price`/`canvas-image-task`/参数与prepare真实回归 | R8B历史固定167/50；R8D只完成受影响8、实际媒体/性能链，不当当前全170通过 |
+| R1A typed图片/抠图用例，各HTTP/Agent/workbench入口共用 | `imagegen/execute-image-step`、准备/同步计费/route adapter；AST运行图 | 结构已实施；R8B历史167+177+50；当前R8D只作受影响8与媒体/性能验收，最终整版main验收仍待 |
 | R1B 同operation单一prepared与原冻结价 | `imagegen/preparation`、quote/dispatch与3套pricing回归 | 原价/明确取消/不足余额/UNKNOWN必须仍通过，配置缓存不跨Pool |
 | R2 生成与原结果续交共享交付 | shared delivery/checkpoint/settlement，delivery/resilience/parent cases | 历史供应商403与原始两笔丢失窗口不因fixture PASS自动关闭；项目历史case单独保留 |
 | R3 Canvas文档/任务/渲染/交互分责 | document/history、image/task/text/selection/navigation/editing等owner；实际双browser | 已有主链分责；拼接完整链已迁真实owner，页面仍4564行并有下载等组合，尚非最终Shell组织形态；不按行数强拆纯事件adapter |
@@ -37,7 +47,7 @@
 | R6 外围管理/工作台/测试资产与旧路径退出 | admin owner、workbench单源、core catalogue/runner；源码边界 | 历史成熟切片保留；需继续剩余Canvas组合与真实兼容caller退出审计，不以新增文件数当结论 |
 | 生产lib→app反向调用为0；SCC为0 | `scripts/architecture/analyze.cjs`，静态/运行/emitted图 | 两条release fixture反向边单列，不当生产依赖；最终固定源重新扫描 |
 | 用户业务参数改动局部传播 | 此轮限流消费/DDL SQL/计费initialize AST保持；修改8个既有产品文件+1新schema owner | 当前是一个后端生命周期切片；后续质量别名/codec变更仍应在相应owner与调用adapter收敛 |
-| 同机UI/server p95、RSS、事件循环与INP对照 | 复用现有benchmark-ui-performance、benchmark-imagegen-pipeline、Canvas probe；原建议无超过10%回退 | **未完成**：相同机器、固定规模/媒体、冷暖及足够重复样本；180秒读取不是容量或INP证明 |
+| 同机UI/server p95、RSS、事件循环与INP对照 | 复用现有benchmark-ui-performance、benchmark-imagegen-pipeline、Canvas probe；原建议无超过10%回退 | **已有本地基线，尚未整体通过**：R8D相同机器320节点/12图，5轮交替共30页、300准备/600读取，RSS/事件循环/EventTiming；10%超差按真实报告待查，仍缺入队/持续混合与field INP；180秒读取不当容量证明 |
 | 100k+活跃用户容量模型 | PRODUCT_READINESS_100K，实际到达率/并发/规格/资源余量 | **未完成**：DAU不是并发；需要持久热态混合生成/保存/媒体负载与限额依据，不抬池/降质量凑通过 |
 | required CI实际执行且同SHA | GitHub workflow/run/check annotations，非仅YAML | **未完成**：账户支付/额度长期阻止runner启动；本地通过与远端未执行分别记录 |
 | 完整重构版本main普通整合 | 固定origin/main、普通merge、最终全版验收；不强推共享main | **未完成**：目前只是独立候选分支，尚未合回main；超过48h原因见各模块记录 |
