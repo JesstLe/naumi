@@ -6,6 +6,7 @@ import {readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
+import {verifyCanvasArtworkPickerBrowser} from './verification/canvas-artwork-picker-browser.mjs';
 import {verifyCanvasNodePreferencesBrowser} from './verification/canvas-node-preferences-browser.mjs';
 import {verifyCanvasInputControls} from './verification/canvas-input-controls-browser.mjs';
 import {verifyCanvasClipboardBrowser} from './verification/canvas-clipboard-browser.mjs';
@@ -66,6 +67,7 @@ try{
  checks.push(...await verifyCanvasTextEditingBrowser({page:pb,expect,out:path.join(out,'text-editing'),snapshot,stats,open}));
  checks.push(...await verifyCanvasNodePreferencesBrowser({page:pb,expect,out:path.join(out,'node-preferences'),snapshot,preferences:()=>helper('preferences'),stats,open,requests}));
  checks.push(...await verifyCanvasStitchBrowser({page:pb,expect,out:path.join(out,'stitch'),snapshot,stats,open,requests}));
+ checks.push(...await verifyCanvasArtworkPickerBrowser({page:pb,expect,out:path.join(out,'artwork-picker'),snapshot,copies:()=>helper('copies'),stats,requests}));
  checks.push(...await verifyCanvasLargeDownloadBrowser({page:pb,expect,out:path.join(out,'downloads-large'),snapshot,stats,seed:()=>helper('download-project')}));
  await helper('drain');await expect.poll(async()=>(await helper('status')).tickDrainComplete).toBe(true);assert.equal(dialogs.length,0);assert.deepEqual(errors,[]);assert.equal(requests.filter(r=>['/api/artworks/rename','/api/artworks/mark','/api/artworks/canvas-size','/api/canvas/groups'].includes(r.path)).length,0);
  const final=await snapshot(),report={status:'PASS',checks,source:'fixed image recorded by parent INPUT.json',actualFullProduct:true,actualBrowser:true,browser:'msedge-headless',routeMocks:0,authProvidersReplaced:0,checksCount:checks.length,errors,dialogs,requests,responses,samples,soakSeconds:(performance.now()-soakStart)/1000,iterations,final,fixture:await stats(),capacityClaim:false};

@@ -1,4 +1,6 @@
 "use client";
+import {CanvasArtworkPicker} from "./artwork-picker";
+import {useCanvasArtworkPicker} from "./use-canvas-artwork-picker";
 import type {NodePreferenceChange} from "@/lib/canvas/node-preferences";
 import {useCanvasNodePreferences} from "./use-canvas-node-preferences";
 import {useCanvasTextEditing} from "./use-canvas-text-editing";
@@ -516,25 +518,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setGenModel(model);
     window.localStorage.setItem("naumi:canvas-image-model", model);
   }
-  // 从生成历史选择:打开作品选择器(记下落点)
-  const [historyPicker, setHistoryPicker] = useState<{ x: number; y: number } | null>(
-    null
-  );
-  const historyAddingRef = useRef(false);
-  const [historyAddingId, setHistoryAddingId] = useState<string | null>(null);
-  const [historyPickerError, setHistoryPickerError] = useState<string | null>(null);
-  const [historyVisibleCount, setHistoryVisibleCount] = useState(60);
-  useEffect(() => {
-    if (!historyPicker) return;
-    const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !historyAddingRef.current) {
-        event.preventDefault();
-        setHistoryPicker(null);
-      }
-    };
-    document.addEventListener("keydown", close);
-    return () => document.removeEventListener("keydown", close);
-  }, [historyPicker]);
   // 「全部项目」网格里每张卡片的「...」菜单(重命名/删除)当前展开的是哪个项目
   // 回收站(软删除的作品):打开状态 + 列表 + 操作中
   const [trashOpen, setTrashOpen] = useState(false);
@@ -710,6 +693,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     pending: applyPendingLinkHistory, applied: onHistoryApplied, warning: flashTip,
   });
   const {undoStack,redoStack,pushUndo,historyBusyRef,historySaving,setHistorySaving,historyCurrent} = canvasHistory;
+  const artworkPicker=useCanvasArtworkPicker(canvasHistory.scope,works,()=>({writable:()=>!!user&&!readOnly,project:()=>active?.key,
+    viewport:()=>rfRef.current?.getViewport()??viewportRef.current,size:{width:NODE_W,height:NODE_H},
+    copy:canvasNodeOperations.copy,applied:result=>selectCopiedNodes(result,true),failed:L("添加失败，请重试","Could not add this artwork. Please try again.") }));
+  const historyPicker=artworkPicker.point;
   const templateImports=useCanvasTemplateImports(canvasArtworkDocument.scope,{
     writable:()=>!!user&&!readOnly,viewCurrent:importViewCurrent,merge:ids=>canvasArtworkDocument.merge(ids),history:canvasHistory,
     open:(id,projectKey)=>{resetImportScope();workspacePages.close();projectNavigation.open(projectKey);canvasSelection.selectInProject(projectKey,{selectedId:id,selectedTextId:null,selectedPendId:null});},
@@ -2034,27 +2021,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     uploadCtxRef.current = { parentId, x: wx, y: wy };
     rootUploadRef.current?.click();
   }
-  // 从生成历史选择:在画布某点打开作品选择器
-  function openHistoryPicker(screenX: number, screenY: number) {
-    if (readOnly || historyAddingRef.current) return;
-    const viewport = rfRef.current?.getViewport() ?? viewportRef.current;
-    const z = viewport.zoom || 1;
-    const wx = (screenX - viewport.x) / z - NODE_W / 2;
-    const wy = (screenY - viewport.y) / z - NODE_H / 2;
-    setHistoryPickerError(null);
-    setHistoryVisibleCount(60);
-    setHistoryPicker({ x: wx, y: wy });
-  }
-  // 选中历史作品 → 作为节点加入当前项目(落在记下的点)
-  async function addFromHistory(a:Artwork) {
-    if(readOnly||!user||!historyPicker||historyAddingRef.current)return;
-    historyAddingRef.current=true;setHistoryAddingId(a.id);setHistoryPickerError(null);const scope=canvasHistory.scope;
-    try {
-      const result=await canvasNodeOperations.copy({ids:[a.id],projectKey:active?.key,singleArtwork:{x:Math.round(historyPicker.x),y:Math.round(historyPicker.y)}},"history");
-      if(scope.viewCurrent()){selectCopiedNodes(result,true);setHistoryPicker(null);}
-    }catch(error){if(scope.viewCurrent())setHistoryPickerError(error instanceof Error?error.message:L("添加失败，请重试","Could not add this artwork. Please try again."));}
-    finally{historyAddingRef.current=false;if(scope.viewCurrent())setHistoryAddingId(null);}
-  }
+  // Canvas captures the screen point; the picker owns its scoped copy intent.
+  function openHistoryPicker(screenX:number,screenY:number){artworkPicker.open({x:screenX,y:screenY});}
   // 在画布某屏幕点新建一个空白占位节点(linked=拉线建的,连源节点)
   function addPendAtScreen(
     screenX: number,
@@ -4323,82 +4291,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       {editingDirector&&createPortal(<DirectorEditor key={`${canvasAccountRef.current}:${activeKey}:${editingDirector.id}`} node={editingDirector} scenes={sceneNodesStore.nodes.filter(node=>node.projectKey===activeKey)} draftScope={JSON.stringify([user?.email,targetEmail,activeKey])} english={locale==='en'} readOnly={readOnly||!nodeSettingsReady||isNodeLocked(editingDirector.id)} images={videoInputChoices.filter(choice=>choice.kind==='image'&&choice.available).map(choice=>({id:choice.nodeId,title:choice.title,url:choice.value}))} onSave={(project,revision)=>patchDirectorNode(editingDirector.id,{project,title:project.name,expectedRevision:revision})} onOutput={(file,kind,revision)=>sendDirectorOutput(editingDirector.id,file,kind,revision)} onClose={()=>setDirectorEditorId(null)}/>,document.body)}
       {videoHistoryId&&videoNodesStore.nodes.find(node=>node.id===videoHistoryId&&node.projectKey===activeKey)&&<VideoHistoryPicker key={`${user?.email}:${targetEmail}:${activeKey}:${videoHistoryId}`} email={targetEmail||user?.email} projectKey={activeKey} node={videoNodesStore.getNode(videoHistoryId)} projects={projects.map(project=>({key:project.key,name:project.name}))} assets={videoAssetStore.assets} canLoadMoreAssets={!!videoAssetStore.nextCursor} onLoadMoreAssets={videoAssetStore.loadMore} request={privateFetchRaw} light={lightCanvas} readOnly={readOnly||isNodeLocked(videoHistoryId)} onClose={()=>setVideoHistoryId(null)} onSelectResult={(id,revision)=>selectVideoResult(videoHistoryId,id,revision)} onReuseSettings={async snapshot=>{const node=videoNodesStore.getNode(videoHistoryId),account=canvasAccountRef.current,epoch=canvasContextEpochRef.current;if(!node||readOnly||isNodeLocked(node.id))throw new Error("无法修改视频设置");const draft=videoHistoryDraft(snapshot);await mergeWorks(draft.choices.filter(choice=>choice.kind!=="text").map(choice=>choice.nodeId));if(account!==canvasAccountRef.current||epoch!==canvasContextEpochRef.current)throw new Error("账号或项目已切换");await saveVideoDraft(node.id,{title:node.title,config:draft.config,inputs:draft.inputs,expectedRevision:node.revision});if(account!==canvasAccountRef.current||epoch!==canvasContextEpochRef.current)return;setVideoHistoryId(null);openVideoEditor(node.id);}} onSent={async result=>{await mergeWorks([result.artworkId,...(result.artworkIds||[]),...(result.inputArtworkIds||[])]);await videoNodesStore.refresh();await videoAssetStore.refresh();}} onRetried={async()=>{await videoNodesStore.refresh();await videoTaskStore.refresh();await refreshCredits();}} onProcess={(id,action)=>{const account=canvasAccountRef.current;void mergeWorks([id]).then(()=>{if(account===canvasAccountRef.current)extractVideoToCanvas(id,action);}).catch(error=>flashTip(error instanceof Error?error.message:"媒体加载失败"));}}/>}
       {/* 从生成历史选择:作品选择器 */}
-      {historyPicker && (
-        <div
-          data-testid="canvas-history-picker"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-4"
-          onClick={() => { if (!historyAddingRef.current) setHistoryPicker(null); }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="canvas-history-picker-title"
-            aria-busy={Boolean(historyAddingId)}
-            className={cn(lightCanvas ? "canvas-ui-light" : "canvas-ui-dark", "canvas-ui-surface-solid flex max-h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border shadow-2xl")}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex flex-none items-center justify-between border-b border-border px-4 py-3">
-              <span id="canvas-history-picker-title" className="text-sm font-semibold">
-                {t("canvas.fromHistory")}
-              </span>
-              <button
-                type="button"
-                aria-label={t("canvas.close")}
-                disabled={Boolean(historyAddingId)}
-                onClick={() => setHistoryPicker(null)}
-                className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            {historyPickerError && <p role="alert" className="canvas-ui-warning mx-4 mt-3 rounded-lg px-3 py-2 text-sm">{historyPickerError}</p>}
-            <div className="min-h-0 flex-1 overflow-y-auto p-4">
-              {(() => {
-                const available = (works ?? [])
-                  .filter(
-                    (w) =>
-                      w.status === "completed" && hasRenderableImage(w.image) &&
-                      !["workflow-decoration", "workflow-placeholder"].includes(w.source || "")
-                  );
-                const items = available.slice(0, historyVisibleCount);
-                if (items.length === 0)
-                  return (
-                    <p className="py-10 text-center text-sm text-muted-foreground">
-                      {t("canvas.empty")}
-                    </p>
-                  );
-                // 瀑布流:每张图按原始比例排列,不裁切、不变形,高低错落
-                return (
-                  <><div className="columns-3 gap-3 [column-fill:_balance] sm:columns-5">
-                    {items.map((w) => (
-                      <button
-                        key={w.id}
-                        type="button"
-                        data-history-artwork-id={w.id}
-                        disabled={Boolean(historyAddingId)}
-                        onClick={() => void addFromHistory(w)}
-                        title={w.title}
-                        className="canvas-ui-section group relative mb-3 block w-full break-inside-avoid overflow-hidden rounded-xl border transition-all hover:-translate-y-0.5 hover:border-primary/50 disabled:cursor-wait disabled:opacity-60"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <CachedImage
-                          src={cdnUrl(w.image)}
-                          alt={w.title}
-                          loading="lazy"
-                          className="block w-full"
-                        />
-                        {historyAddingId === w.id && <span className="absolute inset-0 flex items-center justify-center bg-[var(--canvas-ui-mask)]"><Loader2 aria-label={locale === "en" ? "Adding artwork" : "正在添加"} className="h-5 w-5 animate-spin text-primary" /></span>}
-                      </button>
-                    ))}
-                  </div>
-                    {available.length > historyVisibleCount && <button type="button" disabled={Boolean(historyAddingId)} onClick={() => setHistoryVisibleCount(count => count + 60)} className="canvas-ui-control mx-auto mt-3 block rounded-lg border px-4 py-2 text-sm disabled:opacity-50">{locale === "en" ? "Load more" : "加载更多"}</button>}
-                  </>
-                );
-              })()}
-            </div>
-          </div>
-        </div>
-      )}
+      {historyPicker && <CanvasArtworkPicker items={artworkPicker.items} addingId={artworkPicker.addingId} error={artworkPicker.error}
+        hasMore={artworkPicker.hasMore} light={lightCanvas} locale={locale} t={t} onClose={artworkPicker.close} onMore={artworkPicker.more} onPick={artworkPicker.pick}/>}
 
       {/* 复制成功提示 */}
       {copyTip && (

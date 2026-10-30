@@ -50,6 +50,9 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='canvas-render-isolation')stageEnv.CANVAS_RENDER_ISOLATION_EVIDENCE=evidence;
    if(spec.id==='canvas-downloads')stageEnv.CANVAS_DOWNLOAD_EVIDENCE=evidence;
    if(spec.id==='canvas-download-browser')stageEnv.CANVAS_DOWNLOAD_BROWSER_EVIDENCE=evidence;
+   if(spec.id==='canvas-node-operations-client')stageEnv.NODE_OP_EVIDENCE=evidence;
+   if(spec.id==='canvas-artwork-picker')stageEnv.ARTWORK_PICKER_EVIDENCE=evidence;
+   if(spec.id==='canvas-artwork-picker-dom')stageEnv.ARTWORK_PICKER_DOM_EVIDENCE=evidence;
    if(spec.id==='canvas-node-preferences')stageEnv.NODE_PREFERENCES_EVIDENCE=evidence;
    if(spec.id==='canvas-node-preferences-dom')stageEnv.NODE_PREFERENCES_DOM_EVIDENCE=evidence;
    if(['canvas-node-renderers','canvas-scene-reconciliation'].includes(spec.id))stageEnv.SCENE_EVIDENCE=evidence;

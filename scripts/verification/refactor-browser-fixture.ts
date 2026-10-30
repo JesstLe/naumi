@@ -34,6 +34,15 @@ async function main(){
    await setProjectName(input.owner,'tree:r8f-download','R8F 31 original downloads');
    console.log(JSON.stringify({ids,url,project:'tree:r8f-download',title:'R8F 31 original downloads'}));return;
   }
+  if(action==='copies'){
+   const tx=await sql.connect();
+   try{
+    await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    const rows=(await tx.query('SELECT operation_id,result FROM app_canvas_node_copies WHERE email=$1 ORDER BY operation_id',[input.owner])).rows;
+    await tx.query('COMMIT');console.log(JSON.stringify(rows));return;
+   }catch(error){await tx.query('ROLLBACK').catch(()=>{});throw error;}
+   finally{tx.release();}
+  }
   if(action==='preferences'){
    const tx=await sql.connect();
    try{
