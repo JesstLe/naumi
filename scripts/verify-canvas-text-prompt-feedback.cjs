@@ -108,4 +108,3 @@ async function main(){
  }finally{global.fetch=previousFetch;server.closeAllConnections();await new Promise(r=>server.close(r));}
 }
 main().catch(error=>{fs.writeFileSync(path.join(out,'ERROR.json'),JSON.stringify({error:error.stack,checks,loaded:[...loaded]},null,2));console.error(error);process.exitCode=1});
-
