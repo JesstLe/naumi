@@ -68,7 +68,7 @@ function originalBusinessBillingSnapshot(snapshot: ConfigSnapshot, models: Model
 export function businessBillingSnapshot(snapshot:ConfigSnapshot,models:ModelSnapshot,facts:BillingFacts){
   return applyCreditOverride(snapshot,originalBusinessBillingSnapshot(snapshot,models,facts),facts);
 }
-export async function freezeBusinessQuote(request: Request, snapshot: ConfigSnapshot, facts: BillingFacts, create: (s: ConfigSnapshot, f: BillingFacts) => BillingQuote, options:{allowResolutionFallback?:boolean;effectiveResolution?:string;deferImageFrame?:boolean}={}) {
+export async function freezeBusinessQuote(request: Request, snapshot: ConfigSnapshot, facts: BillingFacts, create: (s: ConfigSnapshot, f: BillingFacts) => BillingQuote, options:{allowResolutionFallback?:boolean;effectiveResolution?:string;effectiveRatio?:string;deferImageFrame?:boolean}={}) {
   if (facts.byok || !await modelConfigurationEnabled()) return create(snapshot, facts);
   const admin = await getModelAdministration();
   const version = currentExecutionBundle()?.modelVersion || currentModelExecution()?.frozen.modelVersion;
@@ -124,13 +124,17 @@ export async function freezeBusinessQuote(request: Request, snapshot: ConfigSnap
     q.legacyCompatible = false;
   }
   // Freeze administrator mappings alongside the unchanged customer tariff.
+  if(options.effectiveRatio&&options.effectiveRatio!==facts.ratio){
+    q.requestedParameters={quality:originalFacts.quality,resolution:originalResolution,ratio:originalFacts.ratio||'1:1'};
+    q.effectiveParameters={...(q.effectiveParameters||q.requestedParameters),resolution:choice.effective,ratio:options.effectiveRatio};q.legacyCompatible=false;
+  }
   // Saved quotes return before this function, so historical quotes are not upgraded.
   if(!deferredFrame&&model?.modality==='image'&&model.target.type==='upstream'&&(!scope||scope.frozen.imageParameterPlanVersion===1)){
     q.imageParameterPlanVersion=1;q.imageParameterPlans={};
     for(const id of publicUpstreamIds(models.config,model)){
       const u=models.config.upstreamModels.find(u=>u.id===id),p=models.config.providers.find(p=>p.id===u?.providerId);
       if(!u?.enabled||!p?.enabled)continue;
-      try{q.imageParameterPlans[id]=compileImageParameterPlan(u,imagePlanSelection({...facts,resolution:choice.effective}),{publicModelId:model.id,protocol:p.protocol,modelVersion:models.version,adapter:p.options?.imageAdapter});}
+      try{q.imageParameterPlans[id]=compileImageParameterPlan(u,imagePlanSelection({...facts,resolution:choice.effective,ratio:options.effectiveRatio||facts.ratio}),{publicModelId:model.id,protocol:p.protocol,modelVersion:models.version,adapter:p.options?.imageAdapter});}
       catch(error){if(!model.supplierRouting)throw error;}
     }
     if(!Object.keys(q.imageParameterPlans).length)throw new ModelConfigError('IMAGE_MAPPING_INVALID','没有完整的图片参数映射',422);

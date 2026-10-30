@@ -26,6 +26,9 @@ export function apimartExecutionParameters(scope: ModelExecutionScope, body:Reco
   const p=scope.imagePreset;
   const requested={...(scope.frozen.requestedParameters || {quality:scope.frozen.facts?.quality||String(body.quality||"medium"),resolution:scope.frozen.facts?.requestedResolution||scope.frozen.facts?.resolution||"1K",ratio:scope.frozen.facts?.ratio||"1:1"}),...quote?.requestedParameters};
   if(!p&&scope.frozen.requestedParameters&&scope.frozen.facts?.requestedResolution)requested.resolution=scope.frozen.facts.requestedResolution;
+  // New plans retain the user's target separately from the executable ratio.
+  // Recovery without a live quote/operation still uses that frozen wire choice.
+  if(!p&&scope.frozen.imageParameterPlanVersion===1&&scope.frozen.facts?.ratio&&Object.values(scope.frozen.imageParameterPlans||{}).some(plan=>plan.wireModel===scope.connection.wireModel&&plan.protocol===scope.connection.protocol&&(!scope.channelGuard?.upstreamId||plan.upstreamId===scope.channelGuard.upstreamId)&&plan.requested.ratio===scope.frozen.facts!.ratio))requested.ratio=scope.frozen.facts.ratio;
   if(!p&&operation?.quality&&scope.capabilities.qualities.includes(operation.quality as never))requested.quality=operation.quality;
   if(operation?.ratio)requested.ratio=operation.ratio;
   if(operation?.resolution)requested.resolution=operation.resolution;
