@@ -24,3 +24,8 @@
 旧CLI真实执行 `--suite mixed` 返回argparse exit2、尚无该模式；这是**验证覆盖缺失**，不是产品旧容量缺陷复现。命令/输出在output/refactor-r8j-20261031/BASELINE_MODE.log。实现完成后集中执行driver合同、类型、smoke、calibration及原runner回归；尚未执行的结果不写成已通过。
 
 本轮是本地受控图像/图片FFmpeg混合样本，不等于生产7天业务到达率、所有视频/音频规格、30分钟2倍峰值、24小时长稳、租户公平或10万活跃用户容量。建议SLO保留为建议，不修改阈值凑通过。有效远端CI、main整合、生产验收和47HOLD继续分开。
+
+
+### 首轮smoke准备失败及修正
+
+首次真实smoke在负载开始前，独立load容器访问Worker控制口`worker:3001`被ECONNREFUSED；该口有意只绑定localhost。未开放控制端口或修改生产绑定，改由既有Docker orchestration通过worker内localhost执行原resume/drain。自有栈已完整清理。观测还确认Next会改进程标题，不能按argv0=“node”筛选；改查/proc/exe，并采Worker全部Node子进程的RSS/VmHWM。Worker原子进程环境白名单会移除任意NODE_OPTIONS，保持不变：event-loop仅覆盖Web和控制父进程，执行子进程以/proc/cgroup观测，缺口明示，不向子进程强塞preload，也不给FFmpeg发SIGUSR2。

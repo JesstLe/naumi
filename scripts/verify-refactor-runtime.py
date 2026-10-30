@@ -175,10 +175,12 @@ fs.writeFileSync(out+'/FIXTURE_SOURCE.json',JSON.stringify({hashes:Object.fromEn
     if mixed:
         # The load generator has its own container/CPU/memory. Its sampling and
         # final image decoding never count as the Web/Worker's Node RSS.
+        control_probe = """const action=process.argv[1],headers={'x-video-worker-secret':process.env.VIDEO_WORKER_SECRET};const s=await(await fetch('http://127.0.0.1:3001/status',{headers})).json();const r=await fetch('http://127.0.0.1:3001/control',{method:'POST',headers:{...headers,'content-type':'application/json'},body:JSON.stringify({action,operationId:crypto.randomUUID(),bootId:s.bootId,expectedRevision:s.revision})});if(!r.ok)throw Error(await r.text());console.log(await r.text());"""
+        run(['docker', 'exec', '--env', 'NODE_OPTIONS=', names['worker'], 'node', '--input-type=module', '-e', control_probe, 'resume'], 'MIXED_RESUME')
         load_env = {**common, 'NODE_OPTIONS': '', 'NODE_PATH': '/app/node_modules', 'NAUMI_RELEASE_RUNTIME': '0', 'NAUMI_MIXED_PROFILE': args.mixed_profile}
         start('load', image, load_env, ['node', '/evidence/fixture.cjs', '--mixed-helper'], ['--read-only', '--memory', '512m', '--cpus', '1', '--tmpfs', '/tmp:rw,size=32m'] + shared)
         resources = []
-        signal_probe = """const fs=require('node:fs'),rows=[];for(const p of fs.readdirSync('/proc').filter(v=>Number.isInteger(Number(v))&&Number(v)>0)){try{const args=fs.readFileSync('/proc/'+p+'/cmdline','utf8').split(String.fromCharCode(0));if(args[0].split('/').at(-1)!=='node')continue;const env=fs.readFileSync('/proc/'+p+'/environ','utf8');if(env.includes('PERFORMANCE_OBSERVER_DIR=/evidence/observe-')){process.kill(Number(p),'SIGUSR2');rows.push({pid:Number(p),command:args.join(' ')});}}catch{}}console.log(JSON.stringify({processes:rows,cgroup:{current:fs.readFileSync('/sys/fs/cgroup/memory.current','utf8').trim(),peak:fs.readFileSync('/sys/fs/cgroup/memory.peak','utf8').trim(),max:fs.readFileSync('/sys/fs/cgroup/memory.max','utf8').trim()}}));"""
+        signal_probe = """const fs=require('node:fs'),rows=[];for(const p of fs.readdirSync('/proc').filter(v=>Number.isInteger(Number(v))&&Number(v)>0)){try{const args=fs.readFileSync('/proc/'+p+'/cmdline','utf8').split(String.fromCharCode(0));let exe;try{exe=fs.readlinkSync('/proc/'+p+'/exe')}catch{exe=args[0]}if(exe.split('/').at(-1)!=='node')continue;const lines=fs.readFileSync('/proc/'+p+'/status','utf8').split(String.fromCharCode(10)),bytes=k=>Number((lines.find(l=>l.startsWith(k+':'))||':0').split(':')[1].trim().split(' ').filter(Boolean)[0])*1024;let sampled=false;try{const env=fs.readFileSync('/proc/'+p+'/environ','utf8');if(env.includes('PERFORMANCE_OBSERVER_DIR=/evidence/observe-')){process.kill(Number(p),'SIGUSR2');sampled=true;}}catch{}rows.push({pid:Number(p),command:args.join(' '),rssBytes:bytes('VmRSS'),kernelLifetimePeakRssBytes:bytes('VmHWM'),eventLoopObserved:sampled});}catch{}}console.log(JSON.stringify({processes:rows,cgroup:{current:fs.readFileSync('/sys/fs/cgroup/memory.current','utf8').trim(),peak:fs.readFileSync('/sys/fs/cgroup/memory.peak','utf8').trim(),max:fs.readFileSync('/sys/fs/cgroup/memory.max','utf8').trim()}}));"""
         while True:
             state = inspect(names['load'])['State']
             progress = json.loads((out / 'MIXED_PROGRESS.json').read_text(encoding='utf8')) if (out / 'MIXED_PROGRESS.json').exists() else {'phase': 'starting'}
@@ -197,11 +199,15 @@ fs.writeFileSync(out+'/FIXTURE_SOURCE.json',JSON.stringify({hashes:Object.fromEn
             resources.append(row); write('RESOURCE_SAMPLES.json', resources)
             if not state['Running']: break
             time.sleep(max(.1, load_plan['observationSeconds'] - 1))
+        run(['docker', 'exec', '--env', 'NODE_OPTIONS=', names['worker'], 'node', '--input-type=module', '-e', control_probe, 'drain'], 'MIXED_DRAIN')
         p = run(['docker', 'logs', names['load']], 'MIXED')
         assert state['ExitCode'] == 0, p.stdout + p.stderr
         marker = 'REFACTOR_MIXED=MEASURED'
         report = json.loads((out / 'MIXED_RESULT.json').read_text(encoding='utf8'))
         assert report['businessInvariants'] == 'PASS' and not report['capacityClaim']
+        assert any(r['roles']['web'].get('reports') for r in resources), 'WEB_EVENTLOOP_OBSERVER_MISSING'
+        assert any(len(r['roles']['worker'].get('processes', [])) >= 3 for r in resources), 'WORKER_CHILD_RSS_COVERAGE_MISSING'
+        write('OBSERVER_COVERAGE.json', {'status': 'PASS', 'webEventLoop': True, 'workerControlParentEventLoop': True, 'workerChildrenRssAndCgroup': True, 'workerExecutorEventLoop': False, 'workerChildPreloadWhitelistUnchanged': True, 'nativeProcessesSignalled': False})
     elif args.suite == 'browser':
         port = inspect(names['web'])['NetworkSettings']['Ports']['3000/tcp'][0]['HostPort']
         p = run(['node', 'scripts/verify-refactor-product-browser.mjs', '--base', 'http://127.0.0.1:' + port, '--worker', names['worker'], '--out', str(out), '--soak-seconds', str(args.soak_seconds)], 'BROWSER')
