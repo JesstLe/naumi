@@ -31,3 +31,16 @@
 实际旧Canvas函数8组22检查→新拼接owner12组33检查；实际旧PG/route/Sharp29检查→新54检查通过。覆盖原位置/谱系、同operation并发一张、原像素尺寸、位置故障整笔回滚、source在像素完成后删除时不发布、真实COMMIT已提交但ACK丢失只查原receipt且原字节可读、输家/rollback自己的随机文件清理、跨owner无回执、跨project拒绝、旧无operation POST和2–12上限。suite batch的两张独立group旧误拒已复现，新产物保留原batch，不落到另一个tree。
 
 原route的真实pixel语句AST与新像素owner对照12组36检查：EXIF JPEG、alpha白底、不同横纵比/最大宽度/12图顺序等最终PNG逐字节相同。全项目类型/lint已通过（原38warnings），四类SCC0；初次新verifier误解GET响应壳、初次新owner字符串类型收窄错误均保留原日志，不抹为PASS。稍后新增的unknown日志与输入权限前置仍属于固定源码验收对象，最终集中受影响回归与实际控件按固定SHA执行。
+
+## 最终固定候选
+
+固定应用/受影响验收源码 `290b3772c9722cd46e9860c1385581fa5619def9`。原route里的像素与写库拆为stitch-pixels/stitch应用owner，Canvas请求/原意图/只读恢复归stitch-run和窄hook；原作品document/history/node-copy回执继续唯一归属，未建新表、任务或计费引擎。原接口无operationId的POST仍兼容，当前控件在POST前保存原operation；未知只GET、已知结果只同步原ID，scope隔离迟到选择/提示。
+
+实际旧Canvas8组22检查→新12组33检查；原route/真实PG/Sharp29→新54检查。旧同operation重复/并发创建2→新1，位置失败遗留作品1→新整笔0，源图在像素准备后删除不发布；真实已提交COMMIT丢ACK保留可能胜出字节并按receipt恢复，输家只清自己的随机文件。12组原route像素语句AST对照PNG逐字节同，普通谱系/位置不变；新记录真实输出尺寸，suite batch产物留在原batch。
+
+34个受影响入口同SHA/digest全部PASS，subset仍PARTIAL/exit2，不冒充完整169；新完整生产Dockerfile同Web/Worker镜像的实际产品双browser54检查通过，其中4项是原生多选/拼接、原receipt+PNG、共享undo/redo和刷新，拼接POST1/供应商新增0/消费新增0。固定类型/lint38warnings/四SCC0，2106个原产品文件hash不变；Canvas4586→4564行。上一片完整167/runtime177仍归R8B原source，不给本片代验。
+
+最终只补文档和新浏览器验证器：首轮原50检查已过，但固定坐标点被先前Comfy产物遮住；第二轮原50检查也已过，但新verifier误用了不存在的select工具名，实际为move；第三轮命中实际move工具，但原第二图被已完成的Comfy产物完全覆盖，同样未发送拼接POST。三轮原失败与清理证据全部保留；最终使用真实move工具、根图普通点击及同项目实际露出的已有图片原生Shift多选，请求URL由当前页面转换为绝对地址，不force、不注入选择/修改应用。最终完整5240文件包/5230原hash副本回滚/远端状态见R8C DELIVERY与VERIFICATION。整体ACTIVE，未合main未部署，47 HOLD；同步后1/3。后续优先补原退出要求中的同机性能/INP/容量，同时继续剩余Canvas组合与最终普通main整合，不能用文件拆分或历史PASS替代整版交付。
+
+
+当前新浏览器54只以最终BROWSER_RESULT/CLEANUP为准；三次50后定位失败、类型初次2错误、GET壳fixture误断言均保留原文件。复制回滚必须恢复5230原hash及旧client22/PG29行为，真实工作树保持新实现。
