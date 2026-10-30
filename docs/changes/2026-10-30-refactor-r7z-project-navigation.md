@@ -23,3 +23,12 @@
 原版25检查/20共同轨迹复现exit1，新版30检查/20共同轨迹EXACT/四反例关闭exit0；真实browser back、刷新scope账号/workspace ABA、旧frame取消及storage全异常均覆盖。实际native-actions12/38、primary57/129、local-edits23/68、history67/184、local-node-history16、node-operations19/59通过；完整类型及lint通过。首轮架构在新增文件未进入tracked inventory时仅作准备扫描，最终必须包括新增owner/hook全部边后再核查，不拿未解析的扫描当SCC通过。
 
 现已把完整产品浏览器新增导航七项接进既有runner：catalogue/back/refresh/new/workflow draft及原PG/账本不变；尚待新固定镜像执行。这里没有另建浏览器框架。
+
+## 最终集中验收
+
+固定应用/验证d62025d44a1d009a0471993483eed66c554eedf8，Canvas项目导航/URL与刷新恢复/浏览器历史/延迟工作流初始化归scoped owner，页面4880→4713行；20共同轨迹EXACT，原25检查复现四反例→新30通过。21受影响入口同source/digest通过（subset PARTIAL/exit2，不冒充全161），完整生产镜像同Web/Worker/真实PG双browser44检查通过，新导航7检查未增加任务/供应商/消费。类型/lint37warnings、四SCC0，2102原src/services hash保持；5214原hash副本回滚与完整四产物/远端见R7Z DELIVERY。整体ACTIVE，同步后1/3，未合main未部署，47 HOLD；R7Y全160/runtime177属于其原版本，当前完整161和历史dev根因/DDL/容量/有效CI/最终main整合仍待。
+
+
+完整镜像实际产品浏览器44检查=原37+导航7；原PG节点、任务、回执、7笔42积分和供应商统计在catalogue/back/reload/new/workflow准备前后完全相同。新建只生成临时draft，未调用paid submit。Worker POSIX排空exit0；自有Web/Worker/fixture供应商/PG tmpfs及网络已finally删除。
+
+最终补四份文档及已实际执行的browser helper可访问名修正（新建项目→创建新项目）；全部应用/其它测试文件hash与固定源码一致。副本回滚必须在封版package中恢复5214原hash与旧25检查/四反例；later-edit必须在任何写入前拒绝。正式回执由ROLLBACK_RESULT、VERIFICATION和DELIVERY给出。上一片R7Y完整160不反写为本片161通过。
