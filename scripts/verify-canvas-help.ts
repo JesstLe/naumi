@@ -25,8 +25,8 @@ for (const guide of canvasHelpGuides) {
   check(Boolean(helpText(guide.description, true) && helpText(guide.description, false)));
   check(guide.description.zh.length < 45);
 }
-for (const literal of ['key === "v"', 'key === "m"', 'key === "h"', 'e.code === "KeyT"', 'key === "z"', 'key === "y"', 'key === "0"', 'key === "c"', 'e.key === "Delete"', 'e.key === "Backspace"', 'panActivationKeyCode="Space"', 'selectionKeyCode={boxSelectMode ? null : "Shift"}', 'zoomActivationKeyCode={["Control", "Meta"]}']) check(client.includes(literal));
+for (const literal of ['key === "v"', 'key === "m"', 'key === "h"', 'e.code === "KeyT"', 'key === "z"', 'key === "y"', 'key === "0"', 'key === "c"', 'e.key === "Delete"', 'e.key === "Backspace"', 'panActivationKeyCode="Space"', 'selectionKeyCode={canvasTool === "hand" ? null : "Shift"}', 'zoomActivationKeyCode={["Control", "Meta"]}']) check(client.includes(literal));
 check(client.includes('<CanvasHelpDialog isMac={isMac} english={locale === "en"}'));
 check(!client.includes('t("canvas.help4")'));
-for (const literal of ['aria-modal="true"', 'data-canvas-hotkeys-blocked="true"', 'event.key === "Escape"', 'event.key !== "Tab"', 'previous?.isConnected', 'bg-white', 'overflow-y-auto', 'role="status"', 'aria-pressed={platform === value}']) check(dialog.includes(literal));
+for (const literal of ['aria-modal="true"', 'data-canvas-hotkeys-blocked="true"', 'event.key === "Escape"', 'event.key !== "Tab"', 'previous?.isConnected', 'canvas-ui-surface-solid', 'useSurfaceAppearance() ?? "light"', 'surfaceAppearanceClass(appearance)', 'overflow-y-auto', 'role="status"', 'aria-pressed={platform === value}']) check(dialog.includes(literal));
 console.log(`CANVAS_HELP_CONTRACT=PASS checks=${checks}`);

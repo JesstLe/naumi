@@ -29,6 +29,7 @@ import { runReversePromptBatch } from "@/lib/canvas/reverse-prompt-batch";
 import { stableArtworkPositions, canvasNodePosition, readPlacementCache, type CanvasPoint } from "@/lib/canvas/stable-placement";
 import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
 import { smartLayout } from "@/lib/canvas/smart-layout";
+import { SurfaceAppearanceProvider } from "@/components/ui/surface-appearance";
 import { CanvasComposerShell, CanvasComposerFooter, CanvasComposerOptions } from "./composer-shell";
 import { CanvasPromptOptimizer } from "./prompt-optimizer";
 import { CanvasParameterPopover } from "./parameter-popover";
@@ -943,7 +944,7 @@ function TextCanvasNode({ data, selected }: NodeProps) {
             <Loader2 className="h-4 w-4 animate-spin text-[#6366f1]" /> 正在生成文字…
           </div>
         ) : d.status === "failed" ? (
-          <div role="alert" className="flex min-h-[108px] flex-col justify-center gap-2 text-amber-800">
+          <div role="alert" className="flex min-h-[108px] flex-col justify-center gap-2 canvas-ui-warning-text">
             <span className="font-medium">文字生成失败</span>
             <p className="whitespace-pre-wrap break-words">{d.error || "本次未取得文字结果，请重试"}</p>
           </div>
@@ -1414,19 +1415,19 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
               className="block h-full w-full object-contain"
               style={d.workflowPresentation ? { transform: `rotate(${d.workflowPresentation.rotation}deg) scaleX(${d.workflowPresentation.flipX ? -1 : 1})`, opacity: d.workflowPresentation.opacity } : undefined}
             />
-            {d.missingAsset && <div data-testid="workflow-missing-asset" className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-50/80 text-slate-500">
-              <ImagePlus className="h-8 w-8 text-slate-400" />
+            {d.missingAsset && <div data-testid="workflow-missing-asset" className="absolute inset-0 flex flex-col items-center justify-center gap-3 canvas-ui-section">
+              <ImagePlus className="h-8 w-8 canvas-ui-muted" />
               <span className="text-sm font-medium">待补图片</span>
-              {!d.readOnly && <button type="button" className="nodrag nopan rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+              {!d.readOnly && <button type="button" className="nodrag nopan canvas-ui-control rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-40"
                 disabled={d.settings?.locked} onClick={event=>{event.stopPropagation();d.onFill?.();}}>补充图片</button>}
             </div>}
-            {d.regenerationFailure&&<div role="alert" className="absolute bottom-2 left-2 z-10 rounded-lg bg-red-50 px-2 py-1 text-xs font-medium text-red-600">重新生成未完成</div>}
-            {d.regenerating && <div data-testid="regeneration-progress" className="absolute inset-0 z-10 bg-[var(--canvas-ui-surface,#fff)]" style={{ containerType: "size" }}>
+            {d.regenerationFailure&&<div role="alert" className="absolute bottom-2 left-2 z-10 rounded-lg canvas-ui-warning px-2 py-1 text-xs font-medium">重新生成未完成</div>}
+            {d.regenerating && <div data-testid="regeneration-progress" className="absolute inset-0 z-10 bg-[var(--canvas-ui-panel-solid)]" style={{ containerType: "size" }}>
               <GenerationPlaceholder stage={d.generationStage} startedAt={d.generationStartedAt} count={d.generationCount} completed={d.generationCompleted} />
             </div>}
             {selected && !d.regenerating && canNodeFeature("cutout") && !d.readOnly && !d.missingAsset && d.onCutout && <button type="button" data-testid="canvas-image-quick-cutout"
               aria-label="去背景，保留主体" title="去背景，保留主体" disabled={d.cutoutBusy || d.cutoutBlocked || d.settings?.locked}
-              className="nodrag nopan absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white/95 px-2 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+              className="nodrag nopan canvas-ui-control absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-[11px] font-medium shadow-sm disabled:opacity-50"
               onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();d.onCutout?.(d.id);}}>
               {d.cutoutBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> : <Scissors className="h-3.5 w-3.5"/>}去背景</button>}
             {selected && d.rootLabel && (
@@ -2540,14 +2541,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [canvasTool, setCanvasTool] = useState<CanvasPrimaryTool>("move");
   const boxSelectMode = canvasTool === "marquee";
   // 画布默认亮色；仅显式保存 dark 时使用暗色，保留用户本地选择。
-  const [lightCanvas, setLightCanvas] = useState(() => {
-    if (desktopAppearance) return true;
-    try {
-      return typeof window === "undefined" || localStorage.getItem("nv:canvas:bg") !== "dark";
-    } catch {
-      return true;
-    }
-  });
+  const [lightCanvas, setLightCanvas] = useState(true);
+  // Hydrate the same initial tree as the server, then restore the local choice
+  // before the hydrated UI paints. Never change the independent site theme.
+  useLayoutEffect(() => {
+    try { setLightCanvas(desktopAppearance || localStorage.getItem("nv:canvas:bg") !== "dark"); }
+    catch { setLightCanvas(true); }
+  }, [desktopAppearance]);
   // 拉线中:图片节点端口全部显形(canvas-linking),目标的前 + 不再隐形盲抓
   const [linking, setLinking] = useState(false);
   // 竞品链路:反推中/帮写中标记、产品图选择器、生成图片模式菜单
@@ -9543,6 +9543,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const recoveryAccount=canvasAccountRef.current,recoveryEpoch=canvasContextEpochRef.current;
   const recoveryCurrent=()=>recoveryAccount===canvasAccountRef.current&&recoveryEpoch===canvasContextEpochRef.current&&recoveryScope.workspace===currentWorkspace()&&recoveryScope.project===(activeProjectRef.current?.key||"workspace");
   return (
+    <SurfaceAppearanceProvider value={lightCanvas ? "light" : "dark"}>
     <PendContext.Provider value={{ onUpload: onPendUpload, onRemove: onPendRemove }}>
     <TextNodeContext.Provider
       value={{
@@ -10878,35 +10879,35 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           )}
 
           {fileDragOver && (
-            <div className="pointer-events-none absolute inset-3 z-50 flex items-center justify-center border-2 border-dashed border-sky-400 bg-sky-50/90" data-testid="canvas-drop-hint">
-              <div className="flex items-center gap-3 text-sm font-medium text-slate-700">
+            <div className="pointer-events-none absolute inset-3 z-50 flex items-center justify-center border-2 border-dashed canvas-ui-section border-[var(--canvas-ui-accent)]" data-testid="canvas-drop-hint">
+              <div className="flex items-center gap-3 text-sm font-medium canvas-ui-text">
                 <Upload className="h-5 w-5" />{t("canvas.importDropHint")}
               </div>
             </div>
           )}
           {imageImports.some(batch => batch.owner === user?.email.toLowerCase()) && (
-            <div className="absolute right-3 top-[108px] z-40 max-h-[40%] w-80 max-w-[calc(100%-24px)] overflow-y-auto rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm md:top-16" data-testid="canvas-import-status" aria-live="polite">
+            <div className="absolute right-3 top-[108px] z-40 max-h-[40%] w-80 max-w-[calc(100%-24px)] overflow-y-auto rounded-lg canvas-ui-surface-solid border canvas-ui-text shadow-sm md:top-16" data-testid="canvas-import-status" aria-live="polite">
               {imageImports.filter(batch => batch.owner === user?.email.toLowerCase()).map(batch => (
-                <div key={batch.id} className="border-b border-slate-100 p-3 last:border-0">
+                <div key={batch.id} className="border-b border-[var(--canvas-ui-border)] p-3 last:border-0">
                   <div className="flex items-center gap-2 text-xs font-medium">
                     {!batch.finished && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                     <span className="flex-1">{batch.phase === "sync" ? (locale === "en" ? "Syncing canvas" : "等待画布同步") : batch.finished ? t("canvas.importDone") : t("canvas.importBusy")} {batch.done} / {batch.total} · {t("canvas.importSuccess")} {batch.success}{batch.errors.length ? ` · ${t("canvas.importErrors")} ${batch.errors.length}` : ""}</span>
-                    {batch.finished && <button type="button" aria-label={t("canvas.importDismiss")} className="p-1 hover:bg-slate-100" onClick={() => setImageImports(current => current.filter(item => item.id !== batch.id))}><X className="h-3.5 w-3.5" /></button>}
+                    {batch.finished && <button type="button" aria-label={t("canvas.importDismiss")} className="p-1 canvas-ui-action" onClick={() => setImageImports(current => current.filter(item => item.id !== batch.id))}><X className="h-3.5 w-3.5" /></button>}
                   </div>
                   {!batch.finished && (
                     <div className="mt-2">
-                      <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-1.5 overflow-hidden rounded-full bg-[var(--canvas-ui-soft)]">
                         <div className="h-full rounded-full bg-sky-500 transition-[width] duration-200" style={{ width: `${batch.phase === "optimizing" ? 8 : Math.min(100, batch.uploadBytes ? batch.uploadedBytes / batch.uploadBytes * 100 : 0)}%` }} />
                       </div>
-                      <div className="mt-1 flex justify-between text-[11px] text-slate-500">
+                      <div className="mt-1 flex justify-between text-[11px] canvas-ui-muted">
                         <span>{batch.phase === "optimizing" ? t("canvas.importOptimizing") : `${Math.round(batch.uploadBytes ? batch.uploadedBytes / batch.uploadBytes * 100 : 0)}%`}</span>
                         <span>{batch.uploadBytes < batch.originalBytes ? `${bytesLabel(batch.originalBytes)} → ${bytesLabel(batch.uploadBytes)}` : bytesLabel(batch.uploadBytes)}</span>
                       </div>
                     </div>
                   )}
-                  {batch.finished && batch.phase === "sync" && batch.owner === user?.email.toLowerCase() && <button type="button" data-testid="canvas-import-resync" className="mt-2 rounded-md px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50" onClick={() => void retryImportSynchronization(batch.id)}>{locale === "en" ? "Sync saved images" : "同步图片"}</button>}
+                  {batch.finished && batch.phase === "sync" && batch.owner === user?.email.toLowerCase() && <button type="button" data-testid="canvas-import-resync" className="mt-2 rounded-md px-2 py-1 text-xs font-medium canvas-ui-control" onClick={() => void retryImportSynchronization(batch.id)}>{locale === "en" ? "Sync saved images" : "同步图片"}</button>}
                   {batch.finished && batch.nodeIds?.some(id => active?.members.some(member => member.id === id)) && (
-                    <button type="button" data-testid="canvas-import-locate" className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50"
+                    <button type="button" data-testid="canvas-import-locate" className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium canvas-ui-control"
                       onClick={() => {
                         const id = batch.nodeIds?.find(id => active?.members.some(member => member.id === id));
                         if (id) { setSelectedId(null); setSelectedTextId(null); setSelectedPendId(null); setFocusId(id); }
@@ -10915,7 +10916,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     </button>
                   )}
                   {batch.errors.length > 0 && (
-                    <ul className="mt-2 space-y-1 text-xs text-red-600">
+                    <ul className="mt-2 space-y-1 text-xs canvas-ui-error">
                       {batch.errors.map((error, index) => <li key={index} className="break-words">{error.name}：{error.message}</li>)}
                     </ul>
                   )}
@@ -12173,7 +12174,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   {modelControl(false)}
                   <DarkSelect
                     dir="up"
-                    light={true}
+                    light={lightCanvas}
                     value={generationMode}
                     options={[
                       { value: "standard", label: t("canvas.modeStandard") },
@@ -12206,7 +12207,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     <ImageCountControl
                       value={genCount}
                       onChange={setGenCount}
-                      light={true}
+                      light={lightCanvas}
                     />
                   ) : (
                     <span className="canvas-ui-control inline-flex h-8 items-center gap-1.5 rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold">
@@ -12220,7 +12221,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     onOptimize={(prompt, signal) => optimizeCanvasPrompt("canvas-image", prompt, signal)} onApply={setEditPrompt}/>
                   <CanvasComposerOptions label={L("更多图片参数", "More image settings")}><DarkSelect
                         dir="up"
-                        light={true}
+                        light={lightCanvas}
                         value={genStyle}
                         options={GENERATION_STYLES.map((s) => ({
                           value: s,
@@ -12301,7 +12302,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 {modelControl(false)}
                 <DarkSelect
                   dir="up"
-                  light={true}
+                  light={lightCanvas}
                   value={generationMode === "detail" ? "detail" : "standard"}
                   options={[
                     { value: "standard", label: t("canvas.modeStandard") },
@@ -12327,7 +12328,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 <ImageCountControl
                   value={genCount}
                   onChange={setGenCount}
-                  light={true}
+                  light={lightCanvas}
                 />
                 <CanvasPromptOptimizer contextKey={imageDraft.key} prompt={editPrompt} disabled={readOnly || !nodeSettingsReady || selectedPendGenerating || isNodeLocked(selectedPend.id)} english={locale === "en"}
                   onOptimize={(prompt, signal) => optimizeCanvasPrompt("canvas-image", prompt, signal)} onApply={setEditPrompt}/>
@@ -12577,10 +12578,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 </div>
               )}
               {textError && (
-                <p className="px-12 pb-2 text-xs font-medium text-red-400">{textError}</p>
+                <p className="canvas-ui-error px-12 pb-2 text-xs font-medium">{textError}</p>
               )}
               <CanvasComposerFooter testId="text-node-dock-footer" controls={<>
-                <TextModelSelect feature="canvas.text-generate" compact dark={false} direction="up" />
+                <TextModelSelect feature="canvas.text-generate" compact dark={!lightCanvas} direction="up" />
                 <CanvasPromptOptimizer contextKey={JSON.stringify([user?.email, targetEmail, activeKey, selectedText.id])} prompt={textPrompt}
                   disabled={readOnly || !nodeSettingsReady || selectedText.status === "generating" || assistBusy || isNodeLocked(selectedText.id)} english={locale === "en"}
                   onOptimize={(prompt, signal) => optimizeCanvasPrompt("canvas-text", prompt, signal)} onApply={setTextPrompt}/>
@@ -12865,7 +12866,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             aria-modal="true"
             aria-labelledby="canvas-history-picker-title"
             aria-busy={Boolean(historyAddingId)}
-            className="canvas-ui-light flex max-h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-2xl"
+            className={cn(lightCanvas ? "canvas-ui-light" : "canvas-ui-dark", "canvas-ui-surface-solid flex max-h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border shadow-2xl")}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex flex-none items-center justify-between border-b border-border px-4 py-3">
@@ -12882,7 +12883,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 <X className="h-4 w-4" />
               </button>
             </div>
-            {historyPickerError && <p role="alert" className="mx-4 mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{historyPickerError}</p>}
+            {historyPickerError && <p role="alert" className="canvas-ui-warning mx-4 mt-3 rounded-lg px-3 py-2 text-sm">{historyPickerError}</p>}
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               {(() => {
                 const available = (works ?? [])
@@ -12909,7 +12910,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         disabled={Boolean(historyAddingId)}
                         onClick={() => void addFromHistory(w)}
                         title={w.title}
-                        className="group relative mb-3 block w-full break-inside-avoid overflow-hidden rounded-xl border border-slate-200 bg-slate-50 transition-all hover:-translate-y-0.5 hover:border-primary/50 disabled:cursor-wait disabled:opacity-60"
+                        className="canvas-ui-section group relative mb-3 block w-full break-inside-avoid overflow-hidden rounded-xl border transition-all hover:-translate-y-0.5 hover:border-primary/50 disabled:cursor-wait disabled:opacity-60"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <CachedImage
@@ -12918,11 +12919,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                           loading="lazy"
                           className="block w-full"
                         />
-                        {historyAddingId === w.id && <span className="absolute inset-0 flex items-center justify-center bg-white/60"><Loader2 aria-label={locale === "en" ? "Adding artwork" : "正在添加"} className="h-5 w-5 animate-spin text-primary" /></span>}
+                        {historyAddingId === w.id && <span className="absolute inset-0 flex items-center justify-center bg-[var(--canvas-ui-mask)]"><Loader2 aria-label={locale === "en" ? "Adding artwork" : "正在添加"} className="h-5 w-5 animate-spin text-primary" /></span>}
                       </button>
                     ))}
                   </div>
-                    {available.length > historyVisibleCount && <button type="button" disabled={Boolean(historyAddingId)} onClick={() => setHistoryVisibleCount(count => count + 60)} className="mx-auto mt-3 block rounded-lg border border-slate-200 px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50">{locale === "en" ? "Load more" : "加载更多"}</button>}
+                    {available.length > historyVisibleCount && <button type="button" disabled={Boolean(historyAddingId)} onClick={() => setHistoryVisibleCount(count => count + 60)} className="canvas-ui-control mx-auto mt-3 block rounded-lg border px-4 py-2 text-sm disabled:opacity-50">{locale === "en" ? "Load more" : "加载更多"}</button>}
                   </>
                 );
               })()}
@@ -13157,5 +13158,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     </div>
     </TextNodeContext.Provider>
     </PendContext.Provider>
+    </SurfaceAppearanceProvider>
   );
 }

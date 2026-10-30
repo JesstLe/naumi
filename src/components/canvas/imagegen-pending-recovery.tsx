@@ -1,6 +1,7 @@
 "use client";
 
 import {useEffect,useRef,useState} from 'react';
+import {useSurfaceAppearance,surfaceAppearanceClass} from '../ui/surface-appearance';
 import type {CanvasImageAttachment} from "@/lib/canvas/image-versions";
 import {pollImagegen} from '@/lib/imagegen/client';
 import {completeCanvasImagegen,listPendingAttempts,pendingAttemptKey,updateCanvasImagegenPlacement,type ImagegenPendingAttempt} from '@/lib/imagegen/client-recovery';
@@ -22,6 +23,7 @@ export function ImagegenPendingRecovery(props:ImagegenPendingRecoveryProps){
 }
 
 function ScopedRecovery({owner,workspace,project,isCurrent,onAttach}:ImagegenPendingRecoveryProps){
+ const appearance=useSurfaceAppearance();
  const [attempts,setAttempts]=useState<ImagegenPendingAttempt[]>([]);
  const [open,setOpen]=useState(false);
  const [states,setStates]=useState<Record<string,{busy:boolean;message:string}>>({});
@@ -74,17 +76,17 @@ function ScopedRecovery({owner,workspace,project,isCurrent,onAttach}:ImagegenPen
  }
 
  if(!attempts.length)return null;
- return <aside aria-label="图像任务恢复" className="absolute bottom-4 left-4 z-30 w-80 max-w-[calc(100vw_-_2rem)] text-xs text-slate-700">
-  <button type="button" aria-expanded={open} onClick={()=>setOpen(value=>!value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-slate-400">待恢复任务 {attempts.length}</button>
-  {open&&<ul aria-label="待恢复原任务" className="mt-2 max-h-64 space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-white p-3 shadow-md">
+ return <aside aria-label="图像任务恢复" className={`absolute bottom-4 left-4 z-30 w-80 max-w-[calc(100vw_-_2rem)] text-xs canvas-ui-text ${surfaceAppearanceClass(appearance||"light")}`}>
+  <button type="button" aria-expanded={open} onClick={()=>setOpen(value=>!value)} className="canvas-ui-control rounded-lg border px-3 py-2 shadow-sm focus-visible:outline focus-visible:outline-2">待恢复任务 {attempts.length}</button>
+  {open&&<ul aria-label="待恢复原任务" className="canvas-ui-surface canvas-ui-surface-solid mt-2 max-h-64 space-y-2 overflow-y-auto rounded-xl border p-3 shadow-md">
    {attempts.map((attempt,index)=>{
     const key=pendingAttemptKey(attempt.owner,attempt.workspace,attempt.project,attempt.actionKey),state=states[key];
-    return <li key={key} className="min-w-0 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+    return <li key={key} className="canvas-ui-border min-w-0 border-b pb-2 last:border-0 last:pb-0">
      <div className="flex items-center justify-between gap-3">
       <span title={attempt.operationId}>原任务 {index+1} · {attempt.operationId.slice(-8)}</span>
-      <button type="button" aria-label={`检查原任务 ${attempt.operationId}`} disabled={state?.busy} onClick={()=>check(attempt)} className="shrink-0 rounded-md border border-slate-200 bg-white px-2 py-1 hover:bg-slate-50 disabled:opacity-50">{state?.busy?'检查中…':'检查原任务'}</button>
+      <button type="button" aria-label={`检查原任务 ${attempt.operationId}`} disabled={state?.busy} onClick={()=>check(attempt)} className="canvas-ui-control shrink-0 rounded-md border px-2 py-1 disabled:opacity-50">{state?.busy?'检查中…':'检查原任务'}</button>
      </div>
-     <p role="status" className="mt-1 break-words text-slate-500">{state?.message||(attempt.accepted==='unknown'?'受理状态待确认':'已受理，待恢复')}</p>
+     <p role="status" className="canvas-ui-muted mt-1 break-words">{state?.message||(attempt.accepted==='unknown'?'受理状态待确认':'已受理，待恢复')}</p>
     </li>;
    })}
   </ul>}

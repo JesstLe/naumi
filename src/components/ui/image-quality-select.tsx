@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { qualityMenuPosition, nextQualityOption } from "./image-quality-select-layout";
+import { useSurfaceAppearance, surfaceAppearanceClass } from "./surface-appearance";
 
 type Option = { value: string; label: ReactNode; disabled?: boolean };
 
@@ -19,6 +20,7 @@ export function ImageQualitySelect({ value, options, onChange, disabled, compact
   label: string;
   title?: string;
 }) {
+  const appearance = useSurfaceAppearance();
   const id = useId();
   const button = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -28,7 +30,7 @@ export function ImageQualitySelect({ value, options, onChange, disabled, compact
   const [active, setActive] = useState(-1);
   const open = menu !== null && !disabled;
   const selected = options.find(option => option.value === value);
-  const useCanvasStyle = canvas || compact;
+  const useCanvasStyle = !!appearance || canvas || compact;
 
   function close() { setMenu(null); }
   function show(direction: 1 | -1 = 1) {
@@ -95,12 +97,12 @@ export function ImageQualitySelect({ value, options, onChange, disabled, compact
       className={cn("inline-flex min-w-0 items-center justify-between gap-2 border text-left font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
         compact ? "h-8 max-w-40 rounded-[9px] px-2.5 py-0 text-[12.5px] font-semibold" : "w-full rounded-lg px-3 py-2 text-sm",
         useCanvasStyle ? "canvas-ui-control" : "border-c-border bg-c-card text-c-text hover:border-c-text3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary",
-        open && "ring-1 ring-primary/30")}>
+        surfaceAppearanceClass(appearance), open && "ring-1 ring-primary/30")}>
       <span className="min-w-0 truncate">{selected?.label ?? value}</span>
       <ChevronDown className={cn("h-3 w-3 shrink-0 opacity-60 transition-transform", open && "rotate-180")} />
     </button>
     {open && menu && createPortal(
-      <div data-canvas-hotkeys-blocked="true" className={cn("fixed inset-0 z-[300]", useCanvasStyle && theme,lightTool&&"tool-popover")}
+      <div data-canvas-hotkeys-blocked="true" className={cn("fixed inset-0 z-[300]", useCanvasStyle && (surfaceAppearanceClass(appearance) || theme),!appearance&&lightTool&&"tool-popover")}
         onPointerDown={event => { event.stopPropagation(); close(); }}>
         <div ref={panel} id={id} role="listbox" aria-label={label}
           data-testid="image-quality-menu" style={menu}

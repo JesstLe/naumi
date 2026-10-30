@@ -8,12 +8,14 @@ import {useI18n} from "@/lib/i18n/locale-context";
 import {useAuth} from "@/lib/auth-context";
 import {useFeatureAccess} from "@/lib/feature-access/client";
 import {featureExecutionBlock, featureExecutionMessage} from "@/lib/model-config/feature-availability";
+import {useSurfaceAppearance} from "@/components/ui/surface-appearance";
 export function FeatureModelSelect({ feature, disabled = false }: { feature: FeatureId; disabled?: boolean }) {
+  const appearance=useSurfaceAppearance();
   const { catalog, selected, setSelected, error } = useFeatureModels(feature);
   const {locale}=useI18n();
   const {ready:authReady}=useAuth(),{ready:accessReady}=useFeatureAccess();
   const blocked = featureExecutionBlock(catalog, error);
-  if (blocked) return <p role={error ? "alert" : "status"} className={error ? "text-xs text-red-700" : "text-xs text-c-text2"}>{featureExecutionMessage(blocked, locale)}</p>;
+  if (blocked) return <p role={error ? "alert" : "status"} className={error ? appearance?"canvas-ui-error text-xs":"text-xs text-red-700" : appearance?"canvas-ui-muted text-xs":"text-xs text-c-text2"}>{featureExecutionMessage(blocked, locale)}</p>;
   if (adminConfiguredFeature(feature)) return null;
   if (!catalog?.managed || catalog.supported === false) return null;
   const label=locale==="en"?"Model":"执行模型";
