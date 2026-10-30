@@ -19,7 +19,7 @@ export const TextNodeContext = createContext<TextNodeCtx | null>(null);
 
 export function TextCanvasNode({ data, selected }: NodeProps) {
   const ctx = useContext(TextNodeContext);
-  const editInitialContent = useRef<string | undefined>(undefined);
+  const editSession=useRef<{id:string;initial:string;draft:string;change:TextNodeCtx['onContentChange'];commit:TextNodeCtx['onContentCommit']}|null>(null);
   const d = data as CanvasTextNodeData;
   const active = selected || d.selected;
   const body = d.content || d.prompt;
@@ -103,12 +103,9 @@ export function TextCanvasNode({ data, selected }: NodeProps) {
             readOnly={d.readOnly || d.settings?.locked}
             style={nodeTextStyle(d.settings || DEFAULT_CANVAS_SETTINGS)}
             value={d.content}
-            onChange={(event) => ctx?.onContentChange(d.__id, event.target.value)}
-            onFocus={() => { editInitialContent.current = d.content; }}
-            onBlur={(event) => {
-              ctx?.onContentCommit(d.__id, event.currentTarget.value, editInitialContent.current);
-              editInitialContent.current = undefined;
-            }}
+            onChange={(event)=>{const value=event.target.value,session=editSession.current;if(session){session.draft=value;session.change(session.id,value);}else ctx?.onContentChange(d.__id,value);}}
+            onFocus={()=>{if(ctx)editSession.current={id:d.__id,initial:d.content,draft:d.content,change:ctx.onContentChange,commit:ctx.onContentCommit};}}
+            onBlur={(event)=>{const session=editSession.current;editSession.current=null;if(session)session.commit(session.id,session.draft,session.initial);else ctx?.onContentCommit(d.__id,event.currentTarget.value);}}
             onPointerDown={(event) => event.stopPropagation()}
             className={cn(!d.settings?.text.color && "canvas-ui-text", "nodrag nowheel h-full min-h-[96px] w-full resize-none overflow-auto border-0 bg-transparent p-0 text-[12px] leading-[1.65] outline-none")}
           />

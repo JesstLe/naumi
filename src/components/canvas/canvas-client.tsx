@@ -1,4 +1,5 @@
 "use client";
+import {useCanvasTextEditing} from "./use-canvas-text-editing";
 import {useCanvasProjectNavigation} from "./use-canvas-project-navigation";
 import {canvasHistoryFailureMessage} from '@/lib/canvas/history-scope';
 import {canvasDeletableIds,applyCanvasLocalHistory,type CanvasLocalHistoryAction} from '@/lib/canvas/node-commands';
@@ -35,7 +36,7 @@ import {executeCanvasImageCreation,generateCanvasAssistantImage,canvasInheritedI
 import {canvasNodeMenuItems} from "./node-menu-items";
 import {artworkFields} from "@/lib/canvas/artwork-write";
 import {CanvasArtworkConflicts} from "./artwork-conflicts";
-import { NODE_W, NODE_H, NODE_LABEL_H, IMAGE_NODE_MIN_W, IMAGE_NODE_MIN_H, IMAGE_NODE_MAX_W, IMAGE_NODE_MAX_H, TEXT_NODE_MIN_W, TEXT_NODE_MIN_H, TEXT_NODE_MAX_W, TEXT_NODE_MAX_H, estimateTextNodeHeight, artworkNodeSize, flowNodeSize } from "@/lib/canvas/node-geometry";
+import { NODE_W, NODE_H, NODE_LABEL_H, IMAGE_NODE_MIN_W, IMAGE_NODE_MIN_H, IMAGE_NODE_MAX_W, IMAGE_NODE_MAX_H, artworkNodeSize, flowNodeSize } from "@/lib/canvas/node-geometry";
 import type {CanvasPendingNode as Pend} from "@/lib/canvas/scene-types";
 import { layoutGraph, projectCanvasScene } from "@/lib/canvas/scene-projection";
 import {PendContext} from "./nodes/pending-node";
@@ -96,7 +97,6 @@ import { useCanvasHistory } from "./use-canvas-history";
 import { textPatchOf, type CanvasTextNode, type VideoPatchFields, type DirectorPatchFields, type CharacterPatchFields, type ScenePatchFields, type CanvasHistoryAction as UndoAct } from "@/lib/canvas/history-model";
 import type { HistoryCommit } from "@/lib/canvas/history-controller";
 import { CanvasHistoryRequestError } from "@/lib/canvas/history-scope";
-import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
 import {arrangeCanvasDocument} from "@/lib/canvas/arrange";
 import { SurfaceAppearanceProvider } from "@/components/ui/surface-appearance";
 import {submitCanvasCreationRequest,type CanvasCreationRequestInit} from "@/lib/canvas/creation-request";
@@ -576,7 +576,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const textNodesRef = useRef(textNodes); textNodesRef.current = textNodes;
   const [textPrompt, setTextPrompt] = useState("");
   // 文字节点一键放大/还原只改变当前画布视图，不写回节点尺寸；刷新后仍使用用户保存的原尺寸。
-  const [expandedTextIds, setExpandedTextIds] = useState<Set<string>>(new Set());
   const [textComposerExpanded, setTextComposerExpanded] = useState(false);
   const [textComposerMenuOpen,setTextComposerMenuOpen]=useState(false);
   const imageTextEditor=useCanvasImageTextEditor(canvasArtworkDocument.scope);
@@ -801,36 +800,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   useEffect(() => {
     if (ready && !user) openAuth("sign-in");
   }, [ready, user, openAuth]);
-
-  // 文字节点内容自适应高度:内容/引用/宽度变化时按估算调高(阈值 28px 防抖)。
-  // 签名机制保证手动拖拽的尺寸不被覆盖 —— 只有内容真的变了才重新自适应;
-  // 一键放大中的节点跳过自适应,避免把撑大的视野又缩回去。
-  const fittedTextNodesRef = useRef(new Map<string, string>());
-  useEffect(() => {
-    if (!textNodesReady || readOnly) return;
-    const updates: CanvasTextNode[] = [];
-    for (const node of textNodes) {
-      // A pasted frame has an intentional layout. Text scrolls inside it until
-      // the user explicitly resizes it; never auto-fit an imported frame.
-      if (node.id.startsWith("text-import-")) continue;
-      if (nodeSettingsRef.current[node.id]?.locked) continue;
-      const sig = `${node.content.length}|${node.prompt.length}|${node.sourceIds?.length ?? 0}|${node.productIds?.length ?? 0}|${node.width}`;
-      if (fittedTextNodesRef.current.get(node.id) === sig) continue;
-      fittedTextNodesRef.current.set(node.id, sig);
-      const fit = estimateTextNodeHeight(node);
-      if (Math.abs(fit - node.height) < 28) continue;
-      updates.push({
-        ...node,
-        height: fit,
-        updatedAt: new Date().toISOString(),
-      });
-    }
-    if (!updates.length) return;
-    const byId = new Map(updates.map((n) => [n.id, n]));
-    setTextNodes((cur) => cur.map((n) => byId.get(n.id) ?? n));
-    updates.forEach((n) => void persistTextNode(n));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textNodes, textNodesReady, readOnly]);
 
   // 从收银台返回(支付完成/取消)→ 自动重开会员弹窗,并清掉 URL 上的标记
   useEffect(() => {
@@ -1261,6 +1230,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   // 生成中:在选中节点下方临时插入"生成中"占位节点;
   // 选中时:整条血缘链路点亮(蓝色流光),其余节点/连线变暗。
+  const textEditing=useCanvasTextEditing(canvasTextDocument.scope,()=>({writable:()=>!!user&&!readOnly,locked:isNodeLocked,document:canvasTextDocument,history:canvasHistory}),textNodesReady,textNodes);
+  const expandedTextIds=textEditing.expanded;
+
   const {displayNodes,displayEdges}=useMemo(()=>projectCanvasScene({nodes,edges,active,activeKey,generationTasks:generationTasks.filter(task=>canvasArtworkDocument.scope.viewCurrent()&&(task.isVisible?.()??true)),taskPositions:generationPresentation.positions,
     pendNodes,textNodes,videoNodes:videoNodesStore.nodes,directorNodes:directorNodesStore.nodes,characterNodes:characterNodesStore.nodes,sceneNodes:sceneNodesStore.nodes,audioNodes:audioNodesStore.nodes,timelineNodes:timelineNodesStore.nodes,videoTasks:videoTaskStore.tasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,
     locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutAvailable:!!cutoutCatalog&&!cutoutCatalogError&&cutoutCatalog.available!==false,
@@ -1294,33 +1266,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const director=directorNodesStore.getNode(id);if(director){if(director.title!==name)try{await patchDirectorNode(id,{title:name,project:{...director.project,name}});}catch(error){flashTip(error instanceof Error?error.message:t("canvas.genFail"));}return;}
     const videoNode=videoNodesStore.getNode(id);
     if(videoNode){if(videoNode.title!==name)try{await patchVideoNode(id,{title:name});}catch(error){flashTip(error instanceof Error?error.message:t("canvas.genFail"));}return;}
-    const textNode = textNodes.find((node) => node.id === id);
-    if (textNode) {
-      if (textNode.title === name) return;
-      const updated = {
-        ...textNode,
-        title: name,
-        updatedAt: new Date().toISOString(),
-      };
-      pushUndo({
-        kind: "text-patch",
-        id,
-        from: textPatchOf(textNode),
-        to: textPatchOf(updated),
-      });
-      setTextNodes((current) =>
-        current.map((node) => (node.id === id ? updated : node))
-      );
-      try {
-        await persistTextNode(updated);
-      } catch (error) {
-        setTextNodes((current) =>
-          current.map((node) => (node.id === id ? textNode : node))
-        );
-        flashTip(error instanceof Error ? error.message : t("canvas.genFail"));
-      }
-      return;
-    }
+    if(canvasTextDocument.getSnapshot().nodes.some(node=>node.id===id)){await textEditing.rename(id,name);return;}
     const scope=canvasHistory.scope;
     try{await canvasHistory.submit(scope,()=>{const cur=canvasArtworkDocument.getSnapshot().nodes?.find(w=>w.id===id);return cur&&cur.title!==name?{kind:"rename",id,from:cur.title,to:name}:null;});}
     catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.genFail"));}
@@ -2366,48 +2312,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   async function updateTextReference(textNodeId:string,sourceId:string,add:boolean) {
     return submitCanvasLink({source:sourceId,target:textNodeId,add});
   }
-  function resizeTextNode(
-    id: string,
-    bounds: { x: number; y: number; width: number; height: number }
-  ) {
-    if (readOnly || isNodeLocked(id)) return;
-    const current = textNodes.find((node) => node.id === id);
-    if (!current) return;
-    const updated: CanvasTextNode = {
-      ...current,
-      canvasX: Number.isFinite(bounds.x) ? bounds.x : current.canvasX,
-      canvasY: Number.isFinite(bounds.y) ? bounds.y : current.canvasY,
-      width: Math.round(
-        Math.min(TEXT_NODE_MAX_W, Math.max(TEXT_NODE_MIN_W, bounds.width))
-      ),
-      height: Math.round(
-        Math.min(id.startsWith("text-import-") ? 100000 : TEXT_NODE_MAX_H, Math.max(TEXT_NODE_MIN_H, bounds.height))
-      ),
-      updatedAt: new Date().toISOString(),
-    };
-    if (updated.width !== current.width || updated.height !== current.height) {
-      pushUndo({
-        kind: "text-patch",
-        id,
-        from: textPatchOf(current),
-        to: textPatchOf(updated),
-      });
-    }
-    setTextNodes((nodes) =>
-      nodes.map((node) => (node.id === updated.id ? updated : node))
-    );
-    void persistTextNode(updated);
-  }
-  // 一键放大/还原文字节点：仅切换展示尺寸，不污染持久化尺寸。
-  function toggleTextNodeExpand(id: string) {
-    if (readOnly) return;
-    setExpandedTextIds((previous) => {
-      const next = new Set(previous);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
+  function resizeTextNode(id:string,bounds:{x:number;y:number;width:number;height:number}){textEditing.resize(id,bounds);}
+  function toggleTextNodeExpand(id:string){textEditing.toggle(id);}
   function addTextNodeAtScreen(
     screenX: number,
     screenY: number,
@@ -2439,41 +2345,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     await runDelete([id]);
   }
 
-  function changeTextNodeContent(id: string, content: string) {
-    if(readOnly || isNodeLocked(id))return;
-    setTextNodes((current) =>
-      current.map((node) =>
-        node.id === id
-          ? { ...node, content: content.slice(0, 12000), updatedAt: new Date().toISOString() }
-          : node
-      )
-    );
-  }
-
-  function commitTextNodeContent(id: string, content: string, initialContent?: string) {
-    if(readOnly || isNodeLocked(id))return;
-    const node = textNodes.find((item) => item.id === id);
-    if (node) {
-      const updated = {
-        ...node,
-        content: content.slice(0, 12000),
-        updatedAt: new Date().toISOString(),
-      };
-      // onChange already updates controlled state. Preserve the focus-time text
-      // instead of mistaking the latest draft for the undo baseline on blur.
-      const patch = canvasTextEditPatch(textPatchOf(node), updated.content, initialContent);
-      if (patch) {
-        pushUndo({
-          kind: "text-patch",
-          id,
-          from: patch.from,
-          to: patch.to,
-        });
-      }
-      setTextNodes((current) => current.map((item) => (item.id === id ? updated : item)));
-      void persistTextNode(updated);
-    }
-  }
+  function changeTextNodeContent(id:string,content:string){textEditing.change(id,content);}
+  function commitTextNodeContent(id:string,content:string,initialContent?:string){textEditing.commit(id,content,initialContent);}
   async function generateTextNode(options?:{node:CanvasTextNode;prompt:string;silent?:boolean}):Promise<boolean>{
     const target=options?.node??selectedText,prompt=(options?.prompt??textPrompt).trim();
     if(!target||readOnly||!nodeSettingsReady||isNodeLocked(target.id)||textTasks.state(target.id).busy)return false;

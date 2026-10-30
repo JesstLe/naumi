@@ -1,0 +1,17 @@
+/** Actual full-product textarea/edit/expand/resize -> original HTTP and PG. */
+import assert from 'node:assert/strict';
+import {mkdir,writeFile} from 'node:fs/promises';
+import path from 'node:path';
+export async function verifyCanvasTextEditingBrowser({page,expect,out,snapshot,stats,open}){
+ await mkdir(out,{recursive:true});const checks=[],pass=name=>{checks.push(name);console.log('PASS '+name)},original=await snapshot(),beforeStats=await stats();
+ await open(page);const node=page.locator('.react-flow__node[data-id="r6c-text"]'),field=node.getByRole('textbox',{name:'编辑生成文本',exact:true}),toolbar=page.getByTestId('canvas-main-toolbar'),undo=toolbar.locator('[data-tool="undo"]'),redo=toolbar.locator('[data-tool="redo"]');
+ const record=async()=>(await snapshot()).texts.find(n=>n.id==='r6c-text'),before=await record();
+ await field.fill('R8A intentional text edit');await field.press('Tab');await expect.poll(async()=>(await record()).content).toBe('R8A intentional text edit');pass('actual controlled textarea commits focus-time edit through original PG document queue');
+ await undo.click();await expect.poll(async()=>(await record()).content).toBe(before.content);await redo.click();await expect.poll(async()=>(await record()).content).toBe('R8A intentional text edit');pass('one shared undo/redo restores exact focus-time content without another task');
+ await node.hover();const expand=node.getByTitle('放大查看',{exact:true});await expand.click();await expect(node.getByTitle('还原大小',{exact:true})).toBeVisible();const expanded=await record();assert.equal(expanded.width,before.width);assert.equal(expanded.height,before.height);await node.getByTitle('还原大小',{exact:true}).click();pass('expansion remains local presentation and never saves enlarged document bounds');
+ await field.fill('x'.repeat(400));await field.press('Tab');await expect.poll(async()=>(await record()).content).toBe('x'.repeat(400));const height=(await record()).height;
+ await field.fill('x\n'.repeat(200));await field.press('Tab');await expect.poll(async()=>(await record()).content).toBe('x\n'.repeat(200));await expect.poll(async()=>(await record()).height).toBe(1200);assert.ok(height<1200);pass('equal-length multiline content triggers actual auto-height update instead of stale length cache');
+ await field.fill(before.content);await field.press('Tab');await expect.poll(async()=>(await record()).content).toBe(before.content);await expect.poll(async()=>(await record()).height).toBe(before.height);await page.reload({waitUntil:'domcontentloaded'});await expect(field).toHaveValue(before.content);pass('ordinary text and its fitted dimensions persist and restore after full product refresh');
+ const final=await snapshot();assert.deepEqual(final.ledger,original.ledger);assert.deepEqual(final.artworks,original.artworks);assert.deepEqual(final.jobs,original.jobs);assert.deepEqual(await stats(),beforeStats);assert.deepEqual((await record()).sourceIds,before.sourceIds);assert.deepEqual((await record()).targetIds,before.targetIds);pass('manual editing preserves image bytes,original task receipts,references and all seven debit records');
+ await page.screenshot({path:path.join(out,'text-editing-full-product.png')});await writeFile(path.join(out,'RESULT.json'),JSON.stringify({status:'PASS',checks,actualFullProduct:true,realPG:true,routeMocks:0,supplierAdded:0,consumeAdded:0},null,2)+'\n');console.log('CANVAS_TEXT_EDITING_BROWSER=PASS CHECKS='+checks.length+' REAL_PG=1 ORIGINAL_HTTP=1 TASK_ADDED=0 CONSUME_ADDED=0 SUPPLIER_ADDED=0');return checks;
+}

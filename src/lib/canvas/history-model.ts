@@ -91,6 +91,7 @@ export type CanvasHistoryAction = (
   // 血缘连线增删(undo/redo 应用反向)
   | { kind: "parent"; targetId: string; parentId: string; added: boolean }
   // 文字节点字段级快照(内容/引用/产品绑定/尺寸):undo 应用 from,redo 应用 to
+  | {kind:"text-size";id:string;from:{x:number;y:number;fields:TextPatchFields};to:{x:number;y:number;fields:TextPatchFields}}
   | { kind: "text-patch"; id: string; from: TextPatchFields; to: TextPatchFields }
   | { kind: "text-patch-many"; changes: Array<{id:string;from:TextPatchFields;to:TextPatchFields}> }
   // 节点重命名
@@ -185,6 +186,11 @@ export function compileCanvasHistory(action: CanvasHistoryAction, undo: boolean,
     case "delete": case "add": visibility(action.records,action.kind === "delete" ? undo : !undo); break;
     case "text-delete": case "text-add": texts(action.records,action.kind === "text-delete" ? undo : !undo); break;
     case "parent": operations.push({type:"parent",id:action.targetId,parentId:action.parentId,add:undo?!action.added:action.added}); break;
+    case "text-size": {
+      const next=action[side],before=action[undo?"to":"from"];
+      if(next.x!==before.x||next.y!==before.y)position(action.id,next,true,{x:before.x,y:before.y});
+      if(JSON.stringify(next.fields)!==JSON.stringify(before.fields))operations.push({type:"text-patch",id:action.id,fields:next.fields,expected:before.fields});break;
+    }
     case "text-patch": operations.push({type:"text-patch",id:action.id,fields:action[side],expected:action[undo?"to":"from"]}); break;
     case "text-patch-many": action.changes.forEach(change=>operations.push({type:"text-patch",id:change.id,fields:change[side],expected:change[undo?"to":"from"]})); break;
     case "art-dimensions": operations.push({type:"art-dimensions",id:action.id,...action[side],expectedArtwork:expected(action.id,{canvasWidth:action[undo?"to":"from"].width,canvasHeight:action[undo?"to":"from"].height})});break;
