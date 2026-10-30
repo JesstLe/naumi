@@ -5,8 +5,8 @@ import { Readable } from "node:stream";
 import path from "path";
 import { fetchStoredObject, MEDIA_DIR, storageDriver, privateMedia, remoteMediaAccess, presignStoredObject,hasVerifiedStoredMirror } from "@/lib/object-storage/runtime";
 import {authenticatedEmail} from "@/lib/request-auth";
-import { canReadMedia, importLegacyMedia, ensureMediaVariants } from "@/lib/media-assets";
-import { getMediaAsset } from "@/lib/media-assets-reader";
+import { canReadMedia } from "@/lib/media-assets";
+import {resolveMediaRepresentation} from './representation';
 
 // 本地磁盘存储的图片对外伺服(STORAGE_DRIVER=local 时用)。
 // R2/OSS 部署下图片走绝对 CDN URL,不会打到这里 —— 此路由留着无害。
@@ -51,27 +51,24 @@ export async function serveMedia(request:Request,segs:string[]) {
 
   let rel = segs.join("/"),registeredContentType:string|undefined,remoteVersion:string|undefined,remoteFailure=false,remoteReadable=false,remoteMissing=false,verifiedMirror=false;
   if(rel.toLowerCase().startsWith("image-job-results/"))return new Response("Not found",{status:404,headers:{"cache-control":"no-store"}});
-  if (privateMedia) {
+  const variant=new URL(request.url).searchParams.get('variant');
+  // Manifest and byte response must select the same representation even in
+  // public-local mode. Private sources still authorize BEFORE reading metadata.
+  if (privateMedia || variant==='thumbnail' || variant==='preview') {
     try {
-      const owner=await authenticatedEmail(request);
-      if(!await canReadMedia(rel,owner)) return new Response("Not found",{status:owner?404:401,headers:{"cache-control":"no-store"}});
-      let asset=await getMediaAsset(rel);
-      const variant=new URL(request.url).searchParams.get("variant");
-      if(variant==='thumbnail'||variant==='preview') {
-        asset ||= await importLegacyMedia(rel,owner||undefined);
-        if(asset) asset=await ensureMediaVariants(rel).catch(()=>asset);
-        const key=variant==='thumbnail'?asset?.thumbnail_key:asset?.preview_key;
-        if(key) {rel=key;asset=await getMediaAsset(key);}
-      }
+      const owner=privateMedia?await authenticatedEmail(request):null;
+      if(privateMedia&&!await canReadMedia(rel,owner)) return new Response("Not found",{status:owner?404:401,headers:{"cache-control":"no-store"}});
+      const representation=await resolveMediaRepresentation(rel,variant,{owner:owner||undefined});
+      rel=representation.key;const {asset}=representation;
       registeredContentType=asset?.content_type;
       remoteReadable=!!asset?.remote_ready;
       remoteVersion=storageDriver!=="local"&&asset?.remote_ready ? asset.sha256 : undefined;
       const requestedVersion=new URL(request.url).searchParams.get("cacheVersion");
       if(remoteVersion&&requestedVersion&&requestedVersion!==remoteVersion)return new Response("Media changed",{status:409,headers:{"cache-control":"no-store"}});
-      verifiedMirror=await hasVerifiedStoredMirror(rel,asset);
+      verifiedMirror=privateMedia&&await hasVerifiedStoredMirror(rel,asset);
       // Keep manifest URLs on the authenticated App origin so their relative
       // segment/key references resolve through the same per-file authorization.
-      if(remoteMediaAccess==='redirect'&&asset?.remote_ready && storageDriver!=='local'&&!/\.(m3u8|mpd)$/i.test(rel)) {
+      if(privateMedia&&remoteMediaAccess==='redirect'&&asset?.remote_ready && storageDriver!=='local'&&!/\.(m3u8|mpd)$/i.test(rel)) {
         const filename=new URL(request.url).searchParams.get('download') || undefined;
         return new Response(null,{status:307,headers:{location:await presignStoredObject('GET',rel,300,undefined,filename),
           'cache-control':filename?'private, no-store':'private, max-age=240','vary':'Cookie, Authorization','referrer-policy':'no-referrer'}});

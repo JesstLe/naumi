@@ -18,6 +18,7 @@ export const refactorCases=[
  {id:'canvas-smart-layout',group:'canvas',file:'scripts/verify-canvas-smart-layout.ts',args:[],expect:'MODIFIED=PASS MIXED_NODES=',pg:false,tsx:true},
  node('browser-cache-resilience','foundation','scripts/verify-browser-cache-resilience.cjs','BROWSER_CACHE_RESILIENCE=PASS'),
  node('browser-cache-efficiency','foundation','scripts/verify-browser-cache-efficiency.cjs','BROWSER_CACHE_EFFICIENCY=PASS'),
+ node('media-representation','foundation','scripts/verify-media-representation.cjs','MEDIA_REPRESENTATION=PASS'),
  node('enterprise-pool-deadlock','foundation','scripts/verify-enterprise-pool-deadlock.cjs','ENTERPRISE_POOL_DEADLOCK_FIX=PASS'),
  node('image-notice-visibility','canvas','scripts/verify-image-notice-visibility.cjs','IMAGE_NOTICE_VISIBILITY=PASS'),
  node('billing-presentation','pricing','scripts/verify-billing-presentation-boundary.cjs','BILLING_PRESENTATION=PASS'),

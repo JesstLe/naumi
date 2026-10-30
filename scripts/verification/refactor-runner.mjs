@@ -45,6 +45,7 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='canvas-text-editing')stageEnv.CANVAS_TEXT_EDITING_EVIDENCE=evidence;
    if(spec.id==='canvas-stitch')stageEnv.CANVAS_STITCH_EVIDENCE=evidence;
    if(spec.id==='canvas-stitch-pg')stageEnv.CANVAS_STITCH_PG_EVIDENCE=evidence;
+   if(spec.id==='media-representation')stageEnv.MEDIA_REPRESENTATION_EVIDENCE=evidence;
    if(spec.id==='canvas-text-editing-dom')stageEnv.CANVAS_TEXT_EDITING_DOM_EVIDENCE=evidence;
    if(spec.id==='canvas-text-editing-pg')stageEnv.CANVAS_TEXT_EDITING_PG_EVIDENCE=evidence;
    if(spec.id==='canvas-project-navigation')stageEnv.CANVAS_PROJECT_NAVIGATION_EVIDENCE=evidence;

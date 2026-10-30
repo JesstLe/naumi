@@ -6,6 +6,13 @@ import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {chromium} from '@playwright/test';
 
+// Existing controlled-API benchmark remains available unchanged. The explicit
+// full-image mode uses real login/PG/HTTP and shares its media/gesture workload.
+if(process.argv.includes('--base')){
+ const {benchmarkPackagedPerformance}=await import('./verification/refactor-performance-browser.mjs');
+ await benchmarkPackagedPerformance();process.exit(0);
+}
+
 const mode=process.argv[2]||'baseline',dist=process.env.PERF_DIST||`.next-performance-${mode}`;
 const out=path.resolve('output/performance-20261012'),media=path.join(out,'media');
 await mkdir(media,{recursive:true});

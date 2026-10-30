@@ -1,0 +1,34 @@
+/** Actual manifest + byte response, real files/Sharp/streams. Only persistence,
+ * session and storage configuration ports are fixtures; no handler is replaced. */
+const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict'),crypto=require('node:crypto'),sharp=require('sharp'),{build}=require('esbuild');
+const arg=k=>{const i=process.argv.indexOf(k);return i<0?undefined:process.argv[i+1];},root=path.resolve(arg('--source-root')||'.'),out=path.resolve(arg('--out')||process.env.MEDIA_REPRESENTATION_EVIDENCE||'output/media-representation'),baseline=process.argv.includes('--baseline');
+fs.mkdirSync(out,{recursive:true});const media=fs.mkdtempSync(path.join(out,'media-')),hash=b=>crypto.createHash('sha256').update(b).digest('hex');
+async function load(privateMedia,assets){
+ const state={privateMedia,assets,media,reads:0,auth:0,variants:0};
+ const fixture=`const s=globalThis.__ports;export const MEDIA_DIR=s.media,storageDriver='local',privateMedia=s.privateMedia,remoteMediaAccess='proxy';export const fetchStoredObject=()=>{throw Error('REMOTE_UNEXPECTED')},presignStoredObject=()=>{throw Error('REMOTE_UNEXPECTED')},hasVerifiedStoredMirror=async()=>false;export const authenticatedEmail=async r=>{s.auth++;return r.headers.get('x-owner')};export const sameSiteBillingMutation=()=>true;export const canReadMedia=async(k,o)=>!!o&&s.assets[k]?.owner===o;export const getMediaAsset=async k=>{s.reads++;return s.assets[k]||null};export const getMediaAssets=async keys=>new Map(keys.filter(k=>s.assets[k]).map(k=>[k,s.assets[k]]));export const importLegacyMedia=async()=>null;export const ensureMediaVariants=async k=>{s.variants++;return s.assets[k]};export const checkRateLimit=async()=>true;export const clientIp=()=> 'fixture';export const mediaCacheVersion=async()=>undefined;export const teamAuthorize=async()=>new Response('',{status:403}),enterpriseAuthorize=teamAuthorize;export const teamArtwork=()=>{throw Error('TEAM_UNEXPECTED')},enterpriseArtwork=teamArtwork;`;
+ const ports=/^(?:@\/lib\/(?:request-auth|billing\/access|media-assets(?:-reader)?|object-storage\/runtime|rate-limit-http|ip|media-cache-version|teams\/(?:access|server)|enterprise\/(?:access|server)))$/;
+ const result=await build({stdin:{contents:`export {imageCacheManifest} from './src/lib/browser-image-manifest';export {serveMedia} from './src/lib/media/response';`,resolveDir:root,loader:'ts'},tsconfig:path.join(root,'tsconfig.json'),bundle:true,write:false,platform:'node',format:'cjs',plugins:[{name:'ports',setup(b){b.onResolve({filter:/^server-only$/},()=>({path:'empty',namespace:'fixture'}));b.onResolve({filter:ports},()=>({path:'ports',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:args.path==='empty'?'':fixture,loader:'js'}));}}]});
+ const module={exports:{}},context={module,exports:module.exports,require,Buffer,console,Request,Response,Headers,URL,AbortSignal,ReadableStream,Uint8Array,TextDecoder,__ports:state};vm.createContext(context);vm.runInContext(result.outputFiles[0].text,context);return{...module.exports,state};
+}
+(async()=>{
+ const png=await sharp({create:{width:128,height:96,channels:4,background:{r:30,g:90,b:210,alpha:.7}}}).png().toBuffer(),thumb=await sharp(png).resize(32).webp().toBuffer(),preview=await sharp(png).resize(64).webp().toBuffer(),bytes={'original.png':png,'thumb.webp':thumb,'preview.webp':preview};
+ const assets={};for(const[key,value]of Object.entries(bytes)){fs.writeFileSync(path.join(media,key),value);assets[key]={key,owner:'owner@fixture.test',public:false,remote_ready:false,content_type:key.endsWith('.png')?'image/png':'image/webp',sha256:hash(value),bytes:value.length,thumbnail_key:null,preview_key:null};}assets['original.png'].thumbnail_key='thumb.webp';assets['original.png'].preview_key='preview.webp';
+ let checks=0,regressions=0;const rows=[];
+ for(const privateMode of [false,true]){
+  const actual=await load(privateMode,assets);
+  for(const variant of [null,'thumbnail','preview']){
+   const source='/media/original.png'+(variant?'?variant='+variant:''),request=new Request('http://fixture.test/api/media/image-cache',{method:'POST',headers:{'content-type':'application/json','x-owner':'owner@fixture.test'},body:JSON.stringify({sources:[source]})});
+   const manifest=await actual.imageCacheManifest(request,false);assert.equal(manifest.status,200);checks++;const descriptor=(await manifest.json()).results[source];assert.ok(descriptor);checks++;
+   const response=await actual.serveMedia(new Request('http://fixture.test'+descriptor.fetchUrl,{headers:{'x-owner':'owner@fixture.test'}}),['original.png']);
+   if(baseline&&!privateMode&&variant){assert.equal(response.status,409);regressions++;checks++;rows.push({privateMode,variant,status:response.status,regression:'MANIFEST_VARIANT_VS_ORIGINAL_BYTES'});continue;}
+   assert.equal(response.status,200);const expected=variant==='thumbnail'?thumb:variant==='preview'?preview:png;assert.equal(response.headers.get('content-type'),descriptor.contentType);assert.equal(hash(Buffer.from(await response.arrayBuffer())),hash(expected));checks+=3;
+   const stale=new URL('http://fixture.test'+descriptor.fetchUrl);stale.searchParams.set('cacheVersion','stale');assert.equal((await actual.serveMedia(new Request(stale,{headers:{'x-owner':'owner@fixture.test'}}),['original.png'])).status,409);checks++;
+   rows.push({privateMode,variant,status:200,sha256:hash(expected),stale:409});
+  }
+  if(privateMode){for(const owner of ['', 'foreign@fixture.test']){const reads=actual.state.reads;const denied=await actual.serveMedia(new Request('http://fixture.test/media/original.png?variant=thumbnail',{headers:owner?{'x-owner':owner}:{}}),['original.png']);assert.equal(denied.status,owner?404:401);assert.equal(actual.state.reads,reads);checks+=2;}}
+  assert.equal((await actual.serveMedia(new Request('http://fixture.test/media/a'),['..','secret'])).status,400);checks++;
+  assert.equal((await actual.serveMedia(new Request('http://fixture.test/media/image-job-results/a'),['image-job-results','a'])).status,404);checks++;
+ }
+ fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify({status:baseline?'REPRODUCED':'PASS',sourceRoot:root,checks,regressions,rows,realFiles:true,realSharp:true,actualHandlers:true,persistence:'fixture ports',supplier:0},null,2)+'\n');
+ console.log('MEDIA_REPRESENTATION='+(baseline?'REPRODUCED':'PASS')+' CHECKS='+checks+' PUBLIC_VARIANT_409='+regressions+' PRIVATE_ACL=RETAINED STALE_VERSION=409 FILE_BYTES=EXACT SUPPLIER=0');
+})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>{const resolved=path.resolve(media);assert(resolved.startsWith(path.resolve(out)+path.sep));for(const file of fs.readdirSync(media)){assert(!file.includes(path.sep));fs.unlinkSync(path.join(media,file));}fs.rmdirSync(media);});
