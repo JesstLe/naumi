@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { dbEnabled } from "@/platform/db/pool";
 import {deleteComfyEndpoint, listComfyEndpoints, saveComfyEndpoint} from "@/lib/comfyui/repository";
 import { authenticatedEmail } from "@/lib/request-auth";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit-http";
 import { clientIp } from "@/lib/ip";
 import {
   assertComfyEndpointAllowed,
@@ -42,7 +42,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const email = await actor(request);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
-  if (!rateLimit(`comfyui-ep:${clientIp(request) || "0.0.0.0"}`, 30, 10 * 60 * 1000)) {
+  const rateLimitResult = await checkRateLimit(`comfyui-ep:${clientIp(request) || "0.0.0.0"}`, 30, 10 * 60 * 1000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) {
     return NextResponse.json({ error: "操作过于频繁，请稍后再试" }, { status: 429 });
   }
   const body = (await request.json().catch(() => null)) as

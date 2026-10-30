@@ -3,6 +3,7 @@ import {taskFailureDiagnostic} from "../imagegen/task-diagnostics";
 import { withBackgroundActivity, detachBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import { releaseRuntimeEnabled } from "@/lib/release-runtime/identity";
 import "server-only";
+import {reportImageJobCleanupFailure} from "../image-job-cleanup";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
 import { dbEnabled, getPool } from "@/platform/db/pool";
@@ -319,10 +320,10 @@ export class DurableImageJobs<T extends { status: string }> {
       const kind = this.kind as "generate" | "imagegen";
       try {
         await execution.exit(()=>released(id,kind));
-      } catch {
+      } catch (error) {
         // Notification must not reverse a saved child result. The existing
         // durable worker scan remains the fallback after an unavailable wake.
-        console.error(`[image-job] ${id}: parent notification failed; retained for worker recovery`);
+        reportImageJobCleanupFailure("parent-notify",error);
       }
     };
     const executeClaimed = async (row: repository.ImageJobRow,claimedAt:number) => {
@@ -331,7 +332,7 @@ export class DurableImageJobs<T extends { status: string }> {
     catch (error) {
       // No user execution has started; release only our new lease. Keep the
       // original accepted/unknown paid checkpoints and release activity error.
-      await repository.releaseImageJob(id, token).catch(() => {});
+      await repository.releaseImageJob(id, token).catch(failure=>reportImageJobCleanupFailure("claim-release",failure));
       throw error;
     }
     const context: Execution = { id, token, queue: Promise.resolve(),lease:startImageJobHeartbeat(()=>repository.heartbeatImageJob(id,token),claimedAt),onReleased:released };
@@ -354,7 +355,7 @@ export class DurableImageJobs<T extends { status: string }> {
       }
       catch (error) {
         failed = true;
-        console.error(`[image-job] ${id}:`, error instanceof Error ? error.message : error);
+        reportImageJobCleanupFailure("execute",error);
         try {
           // Lost ownership leaves UNKNOWN, checkpoints and reservations intact.
           if(isImageJobLeaseLost(error)){context.lease.lose();return;}
@@ -362,12 +363,12 @@ export class DurableImageJobs<T extends { status: string }> {
           if (error instanceof ImageOperationPending) await this.handlePending(id, error);
           else if (!(await repository.failUndeliveredImageJob(id, token, "image-worker-failed",taskFailureDiagnostic(error,"execute"))))
             await this.patch(id, { status: "error", error: "本次未取得图片，请重试",failureDiagnostic:taskFailureDiagnostic(error,"execute") } as unknown as Partial<T>);
-        } catch (failure) { console.error(`[image-job] ${id}: unable to stop task`, failure instanceof Error ? failure.message : "unknown"); }
+        } catch (failure) { reportImageJobCleanupFailure("failure-stop",failure); }
       }
       finally {
         await context.queue.catch(() => {});
         context.lease.stop();
-        await repository.releaseImageJob(id, token).catch(() => {});
+        await repository.releaseImageJob(id, token).catch(failure=>reportImageJobCleanupFailure("lease-release",failure));
       }
     });
     // Recheck both sides of the lost-wake race, but do not hot-loop a failed

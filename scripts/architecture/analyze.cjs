@@ -3,7 +3,7 @@ const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_pro
 const root=process.cwd(),out=path.resolve(process.argv[2]||'output/architecture-review-20261024');
 const ts=require(process.env.TYPESCRIPT_PATH||'typescript');
 const git=(...a)=>cp.execFileSync('git',a,{cwd:root,encoding:'utf8',maxBuffer:40*1024*1024});
-const tracked=git('ls-files','-z').split('\0').filter(Boolean),set=new Set(tracked);
+const tracked=[...new Set(git('ls-files','-z').split('\0').filter(Boolean))],set=new Set(tracked);
 const code=tracked.filter(f=>/\.(?:ts|tsx|js|jsx|mjs|cjs)$/.test(f)&&!f.endsWith('.d.ts'));
 const posix=s=>s.replace(/\\/g,'/');
 function group(f){

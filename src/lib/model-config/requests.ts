@@ -118,8 +118,8 @@ async function runModelOperation<T>(input:ModelOperationInput,run:()=>Promise<T>
       const expected=input.path==="/api/cutout"?"image.cutout":input.path==="/api/generate-image"?(input.references>0?"image.edit":"image.generate"):purpose.image;
       if(input.preparedImage.binding!==expected)throw new ModelConfigError("EXECUTION_MISMATCH","准备方案与输入用途不一致",503);
     }
-    const prepared=input.preparedImage?validatePreparedImage(input.preparedImage,snapshot,billing,mainFeature,input.preparedImage.binding):prepareImageOperation({...input,feature:mainFeature,binding:purpose.image,accepted:!!accepted,advanced:currentImagegenStep()},snapshot,billing);
     const advanced=currentImagegenStep();
+    const prepared=input.preparedImage?validatePreparedImage(input.preparedImage,snapshot,billing,mainFeature,input.preparedImage.binding):prepareImageOperation({...input,feature:mainFeature,binding:purpose.image,accepted:!!accepted,advanced,...(advanced?{resolvedFrame:{ratio:advanced.request.parameters.ratio,preserveModelIdentity:!!advanced.billing}}:{})},snapshot,billing);
     bundle.image=await executor.resolve({imageParameterPlanVersion:advanced?.billing?.quote.imageParameterPlanVersion??quotedImage?.imageParameterPlanVersion??(accepted?0:1),imageParameterPlans:advanced?.billing?.quote.imageParameterPlans??quotedImage?.imageParameterPlans,preparedImage:prepared,feature:mainFeature,binding:prepared.binding,requestedModelId:prepared.modelId,snapshot,billing,scopeSystem:parsed.body.origin==="canvas"?"canvas":undefined});
   }
 

@@ -4,7 +4,7 @@ import { bearer, emailFromToken } from '@/lib/supabase-admin';
 import { activeNativeUserEmail } from '@/lib/native-auth';
 import { supabaseEnabled } from '@/lib/auth-mode';
 import { dbEnabled } from "@/platform/db/pool";
-import { rateLimit } from '@/lib/rate-limit';
+import {checkRateLimit} from '@/lib/rate-limit-http';
 import { clientIp } from '@/lib/ip';
 import { teamJson } from '@/lib/teams/access';
 import {userFeaturePolicy} from "@/lib/feature-access/repository";
@@ -18,6 +18,8 @@ export async function enterpriseAuthorize(request:Request) {
   if(!dbEnabled)return teamJson({error:'数据库未配置'},503);
   if(!allows(await userFeaturePolicy(email,{site:false}),'team'))return teamJson({error:'企业管理功能尚未授权'},403);
   const actor={email,admin:false,consoleAdmin:false};
-  if(!rateLimit(`enterprise:${actor.email}:${clientIp(request)}`,240,60_000))return teamJson({error:'操作过于频繁'},429);
+  const rateLimitResult = await checkRateLimit(`enterprise:${actor.email}:${clientIp(request)}`,240,60_000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) return teamJson({error:'操作过于频繁'},429);
   return actor;
 }

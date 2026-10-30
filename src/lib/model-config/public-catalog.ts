@@ -1,4 +1,5 @@
 import "server-only";
+import {publishedImagegenCapabilities} from "../imagegen/capabilities";
 import { compatiblePublicModels, FEATURE_BINDINGS, featureDefaultModel, modelAllowedForFeature } from "./feature-model-policy";
 import {isSeedreamWire} from "./seedream-preflight";
 import {adminConfiguredFeature} from "./selection-policy";
@@ -27,7 +28,7 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
   const models = config.publicModels.filter(m => m.enabled && m.visible && m.modality === modality && modelAllowedForFeature(m,feature) && (!compatible || compatible.includes(m.id)) && (!configuredIds || configuredIds.includes(m.id))).sort((a,b) => configuredIds ? configuredIds.indexOf(a.id)-configuredIds.indexOf(b.id) : 0).map(m => {
     const ids = publicUpstreamIds(config,m);
     const upstreams = config.upstreamModels.filter(u => ids.includes(u.id) && u.enabled && config.providers.some(p => p.id === u.providerId && p.enabled));
-    const referenceChannels=upstreams.filter(u=>u.capabilities.edit&&config.providers.some(p=>p.id===u.providerId&&!!p.credentialRef));
+    const referenceChannels=upstreams.filter(u=>u.capabilities.edit&&publishedImagegenCapabilities(u.capabilities).edit?.state==="supported"&&config.providers.some(p=>p.id===u.providerId&&!!p.credentialRef));
     const references={maxReferenceImages:referenceChannels.length?Math.max(...referenceChannels.map(u=>u.capabilities.maxReferenceImages)):0,referenceLimitVerified:referenceChannels.length>0&&referenceChannels.every(u=>u.capabilities.verified)};
     const option = f?.options.find(o => o.modelId === m.id);
     const adapterRatios = upstreams.map(u => config.providers.find(p => p.id === u.providerId)?.options?.imageRatios).find(Boolean)
@@ -35,7 +36,7 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
         ? upstreams.find(u => isSeedreamWire(u.model) && config.providers.find(p => p.id === u.providerId)?.protocol === "apimart-images")?.parameterMap.apimartImages?.ratios
         : undefined);
     if (preset?.aliases.some(a => a.id === m.id)) return { id:m.id,label:m.label,modality:m.modality,supportsEdit:true,supportsVision:false,...references,qualities:[...DISPLAY_QUALITIES],nativeResolutions:preset.resolutions,generationParameters:{ratios:preset.ratios,resolutions:m.displayResolutions || preset.resolutions,combinations:Object.keys(preset.outputDimensions || {})},qualitySupported:true };
-    return { id: m.id, label: m.label, modality: m.modality, supportsEdit: upstreams.some(u => u.capabilities.edit), supportsVision: upstreams.some(u => u.capabilities.vision), ...references, qualities: option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), ...qualityPresentation(upstreams), nativeResolutions: option?.parameters?.resolutions || Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))), generationParameters: m.displayResolutions || adapterRatios || option?.parameters ? {ratios:adapterRatios || option?.parameters?.ratios,resolutions:m.displayResolutions || option?.parameters?.resolutions} : undefined, qualitySupported: upstreams.some(u => u.capabilities.qualities.length > 0) };
+    return { id: m.id, label: m.label, modality: m.modality, supportsEdit: referenceChannels.length>0, supportsVision: upstreams.some(u => u.capabilities.vision), ...references, qualities: option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), ...qualityPresentation(upstreams), nativeResolutions: option?.parameters?.resolutions || Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))), generationParameters: m.displayResolutions || adapterRatios || option?.parameters ? {ratios:adapterRatios || option?.parameters?.ratios,resolutions:m.displayResolutions || option?.parameters?.resolutions} : undefined, qualitySupported: upstreams.some(u => u.capabilities.qualities.length > 0) };
   });
   if(!models.some(m=>m.id===defaultModelId))defaultModelId=models[0]?.id;
   const publishedModels = !includeAll && adminConfiguredFeature(feature) ? models.filter(m => m.id === defaultModelId) : models;

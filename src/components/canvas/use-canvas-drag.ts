@@ -15,10 +15,7 @@ type Input={scope:CanvasDocumentScope;selected:string[];nodes:Node[];artworks:Ar
 export function useCanvasDrag(input:Input){
   const latest=useRef(input);useLayoutEffect(()=>{latest.current=input;});
   const owner=useRef<ReturnType<typeof createCanvasDragController>|null>(null);
-  if(!owner.current)owner.current=createCanvasDragController({
-    snapshot:()=>latest.current,locked:id=>latest.current.locked(id),local:(...args)=>latest.current.local(...args),
-    positions:(points,scope)=>latest.current.setNodes(nodes=>scope.viewCurrent()?nodes.map(node=>{const point=points.get(node.id);return point?{...node,position:point}:node;}):nodes),
-    commit:async(moves,scope)=>{
+  const commit:Input["commit"]=async(moves,scope)=>{
       const captured=latest.current,release=captured.hold(new Map(moves.map(move=>[move.id,move.to])),scope);
       try{await captured.commit(moves,scope);}
       catch(error){
@@ -27,7 +24,11 @@ export function useCanvasDrag(input:Input){
           captured.warning(error instanceof Error?error.message:"画布保存失败");
         }
       }finally{release();}
-    },
+    };
+  if(!owner.current)owner.current=createCanvasDragController({
+    snapshot:()=>latest.current,locked:id=>latest.current.locked(id),local:(...args)=>latest.current.local(...args),
+    positions:(points,scope)=>latest.current.setNodes(nodes=>scope.viewCurrent()?nodes.map(node=>{const point=points.get(node.id);return point?{...node,position:point}:node;}):nodes),
+    commit:(moves,scope)=>commit(moves,scope),
   });
-  return owner.current;
+  return {...owner.current,commitMoves:(moves:CanvasNodeMove[])=>commit(moves,latest.current.scope)};
 }

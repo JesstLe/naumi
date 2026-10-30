@@ -24,7 +24,7 @@ export function createCanvasDragController(input:Services){
   let gesture:{scope:CanvasDocumentScope;anchor?:string;starts:Map<string,CanvasPoint>;group:boolean}|undefined;
   const begin=(nodes:Node[],anchor?:Node)=>{
     const s=input.snapshot(),art=s.artworks.find(art=>art.id===anchor?.id),members=art?.canvasGroupId?s.artworks.filter(item=>item.canvasGroupId===art.canvasGroupId):[];
-    const group=members.length>1&&s.selected.length===members.length&&members.every(item=>s.selected.includes(item.id));
+    const group=members.length>1;
     const current=new Map(s.nodes.map(node=>[node.id,node.position]));
     const chosen=group?members.map(art=>({id:art.id,position:current.get(art.id)||{x:art.canvasX||0,y:art.canvasY||0}})):nodes.length?nodes:anchor?[anchor]:[];
     gesture={scope:s.scope,anchor:anchor?.id,group,starts:new Map(chosen.filter(node=>!input.locked(node.id)).map(node=>[node.id,{...node.position}]))};

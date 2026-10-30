@@ -9,7 +9,7 @@ import { authenticatedEmail } from "../request-auth";
 import {dbEnabled, getPool} from "@/platform/db/pool";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {type ArtworkRecord} from "@/lib/artworks/types";
-import { rateLimit } from "../rate-limit";
+import {checkRateLimit} from "../rate-limit-http";
 import { currentModelExecution } from "../model-config/context";
 import { getModelAdministration } from "../model-config/server";
 import {configuredToolCost, completeSynchronousStream, failSynchronousStream} from "@/lib/billing/synchronous-operation";
@@ -46,7 +46,9 @@ async function vision(artwork: ArtworkRecord, origin: string, cookie: string) {
 async function runCanvasAgentLocal(request: Request) {
   const email = await authenticatedEmail(request);
   if (!dbEnabled || !email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
-  if (!rateLimit(`canvas-agent:${email}`, 40, 600000)) return NextResponse.json({ error: "请求过于频繁，请稍后重试" }, { status: 429 });
+  const rateLimitResult = await checkRateLimit(`canvas-agent:${email}`, 40, 600000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) return NextResponse.json({ error: "请求过于频繁，请稍后重试" }, { status: 429 });
   const body = record(await readHarnessBody(request));
   const continueText = body.continueText === true;
   if (continueText && typeof body.continueFromTurnId !== "string") return NextResponse.json({ error: "请从中断回复继续" }, { status: 400 });

@@ -1,35 +1,63 @@
-import "server-only";
+import 'server-only';
+import { createHmac } from 'node:crypto';
+import { getPool } from '@/platform/db/pool';
+import { settingsSecret } from './settings-secret';
+import { consumePostgresRateLimit } from './rate-limit-store';
 
-// ---------------------------------------------------------------------------
-// 极简内存版按-IP 滑动窗口限流。单 pm2 fork 实例内有效(与生图 JOBS 同模式)。
-// 防止有人脚本化刷生图/套图接口烧 token。非分布式,够用;要更强可换 Redis。
-// ---------------------------------------------------------------------------
+type Bucket = { hits: number[]; windowMs: number };
+const stateKey = Symbol.for('naumi.rate-limit.v1');
+type State = { buckets: Map<string, Bucket>; sweep?: IterableIterator<[string, Bucket]>; loggedAt?: number };
+const holder = process as typeof process & { [stateKey]?: State };
+const state: State = holder[stateKey] ||= { buckets: new Map<string, Bucket>() };
 
-type Bucket = { hits: number[]; };
-const store = new Map<string, Bucket>();
-let lastSweep = 0;
+export class RateLimitUnavailableError extends Error {
+  readonly code = 'RATE_LIMIT_UNAVAILABLE';
+  constructor() { super('请求频率校验暂不可用，请稍后重试'); }
+}
 
-/**
- * 返回 true=放行, false=超限。
- * @param key   维度键(如 `gen:1.2.3.4`)
- * @param limit 窗口内最大次数
- * @param windowMs 窗口毫秒
+/** Local-only fallback when DATABASE_URL is absent, never on a database error.
+ * Hits exactly at now-windowMs still count, as in the original sliding window.
+ * Keys share history even when limits differ. Retain the longest window seen
+ * for that live key, so a shorter call/sweep cannot erase a longer window.
  */
-export function rateLimit(key: string, limit: number, windowMs: number): boolean {
+function consumeLocal(key: string, limit: number, windowMs: number): boolean {
   const now = Date.now();
-  // 周期性清理过期桶,避免内存无限增长
-  if (now - lastSweep > 60_000) {
-    lastSweep = now;
-    for (const [k, b] of Array.from(store.entries())) {
-      if (!b.hits.length || now - b.hits[b.hits.length - 1] > windowMs) store.delete(k);
-    }
+  state.sweep ||= state.buckets.entries();
+  for (let i = 0; i < 64; i++) {
+    const item = state.sweep.next();
+    if (item.done) { state.sweep = undefined; break; }
+    const [id, bucket] = item.value;
+    if (!bucket.hits.length || bucket.hits[bucket.hits.length - 1] + bucket.windowMs < now) state.buckets.delete(id);
   }
-  let b = store.get(key);
-  if (!b) { b = { hits: [] }; store.set(key, b); }
-  // 丢弃窗口外的命中
-  const cutoff = now - windowMs;
-  while (b.hits.length && b.hits[0] < cutoff) b.hits.shift();
-  if (b.hits.length >= limit) return false;
-  b.hits.push(now);
+  const bucket = state.buckets.get(key) || { hits: [], windowMs };
+  bucket.windowMs = Math.max(bucket.windowMs, windowMs);
+  bucket.hits = bucket.hits.filter(hit => hit >= now - bucket.windowMs);
+  state.buckets.set(key, bucket);
+  if (bucket.hits.filter(hit => hit >= now - windowMs).length >= limit) return false;
+  bucket.hits.push(now);
   return true;
+}
+
+/** true=admitted, false=quota exhausted; infrastructure failure rejects with
+ * RateLimitUnavailableError. Every caller must await, and map failure to 503.
+ * A repeated admitted call is another hit; this is not a business/idempotency
+ * receipt and must not retry or replay accepted supplier/paid operations.
+ */
+export async function rateLimit(key: string, limit: number, windowMs: number): Promise<boolean> {
+  if (!Number.isSafeInteger(limit) || limit < 1 || !Number.isSafeInteger(windowMs) || windowMs < 1) {
+    throw new RangeError('INVALID_RATE_LIMIT_PARAMETERS');
+  }
+  if (!(process.env.DATABASE_URL || '').trim()) return consumeLocal(key, limit, windowMs);
+  try {
+    const digest = createHmac('sha256', settingsSecret()).update('rate-limit:v1:').update(key).digest('hex');
+    return await consumePostgresRateLimit(getPool(), digest, limit, windowMs);
+  } catch {
+    const now = Date.now();
+    if (state.loggedAt === undefined || now - state.loggedAt >= 30_000) {
+      state.loggedAt = now;
+      // Do not log key, IP, email, SQL, error message or connection credentials.
+      console.error('[rate-limit] shared store unavailable');
+    }
+    throw new RateLimitUnavailableError();
+  }
 }

@@ -7,7 +7,7 @@ import { canReadMedia, ensureMediaVariants, importLegacyMedia } from "@/lib/medi
 import { getMediaAsset, getMediaAssets } from "@/lib/media-assets-reader";
 import { MEDIA_DIR, privateMedia, storageDriver, remoteMediaAccess, presignStoredObject } from "@/lib/object-storage/runtime";
 import { managedImageSource, publicImageSource, type BrowserImageDescriptor } from '@/lib/browser-image-source';
-import { rateLimit } from '@/lib/rate-limit';
+import { checkRateLimit } from "@/lib/rate-limit-http";
 import {clientIp} from '@/lib/ip';
 import {mediaCacheVersion} from '@/lib/media-cache-version';
 import {teamAuthorize} from '@/lib/teams/access';
@@ -22,7 +22,9 @@ export async function imageCacheManifest(request:Request,publicOnly:boolean){
     if (!sameSiteBillingMutation(request)) return Response.json({error:'请求来源无效'}, {status:403,headers});
     const account = publicOnly?'public':await authenticatedEmail(request);
     if (!account) return Response.json({error:'请先登录'}, {status:401,headers});
-    if (!rateLimit('image-cache:'+(publicOnly?'public:'+clientIp(request):account), 240, 60000)) return Response.json({error:'操作频繁'}, {status:429,headers});
+    const rateLimitResult = await checkRateLimit('image-cache:'+(publicOnly?'public:'+clientIp(request):account), 240, 60000);
+    if (rateLimitResult instanceof Response) return rateLimitResult;
+    if (!rateLimitResult) return Response.json({error:'操作频繁'}, {status:429,headers});
     const reader=request.body?.getReader(); if(!reader) return Response.json({error:'参数无效'},{status:400,headers});
     const chunks:Uint8Array[]=[];let size=0;
     for(;;){const part=await reader.read();if(part.done)break;size+=part.value.length;if(size>16384){await reader.cancel();return Response.json({error:'参数过大'},{status:413,headers});}chunks.push(part.value);}

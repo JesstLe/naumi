@@ -3,7 +3,7 @@ import { dbEnabled } from "@/platform/db/pool";
 import { sameSiteBillingMutation } from "@/lib/billing/access";
 import {accessJson} from "@/lib/feature-access/server";
 import {FeatureAccessError,featureAccessUsers,saveFeaturePolicy,validatePolicyCommand} from "@/lib/feature-access/repository";
-import { rateLimit } from "@/lib/rate-limit";
+import {checkRateLimit} from "@/lib/rate-limit-http";
 export const runtime = "nodejs", dynamic = "force-dynamic";
 async function guard(request: Request) {
   if (!await requireAdmin(request)) return accessJson({ error: "需要管理员身份" }, 403);
@@ -24,7 +24,9 @@ export async function POST(request: Request) {
     const blocked = await guard(request); if (blocked) return blocked;
     if (!sameSiteBillingMutation(request)) return accessJson({ error: "请求来源无效" }, 403);
     const actor = await resolveUserEmail(request) || "local-admin";
-    if (!rateLimit(`feature-access:${actor}`, 60, 60000)) return accessJson({ error: "操作频繁，请稍后重试" }, 429);
+    const rateLimitResult = await checkRateLimit(`feature-access:${actor}`, 60, 60000);
+    if (rateLimitResult instanceof Response) return rateLimitResult;
+    if (!rateLimitResult) return accessJson({ error: "操作频繁，请稍后重试" }, 429);
     const reader = request.body?.getReader(); if (!reader) return accessJson({ error: "请求体无效" }, 400);
     const chunks: Uint8Array[] = []; let size = 0;
     for (;;) { const part = await reader.read(); if (part.done) break; size += part.value.byteLength; if (size > 16384) { await reader.cancel(); return accessJson({ error: "请求体过大" }, 413); } chunks.push(part.value); }

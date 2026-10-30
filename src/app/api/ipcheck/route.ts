@@ -14,7 +14,7 @@ import {dbEnabled} from "@/platform/db/pool";
 import {getUser} from "@/lib/accounts/session";
 import {isBanned} from "@/lib/accounts/repository";
 import { clientIp } from "@/lib/ip";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit-http";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
@@ -33,8 +33,9 @@ const SYS =
 
 async function handleObservedPost(req: Request) {
   const ip = clientIp(req);
-  if (!rateLimit(`ipcheck:${ip}`, 40, 600_000))
-    return NextResponse.json({ error: "请求过于频繁,请稍后再试" }, { status: 429 });
+  const rateLimitResult = await checkRateLimit(`ipcheck:${ip}`, 40, 600_000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) return NextResponse.json({ error: "请求过于频繁,请稍后再试" }, { status: 429 });
 
   let email = "";
   let imageDataUrl: string | null = null;

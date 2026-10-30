@@ -189,7 +189,7 @@ function resources(connectionString) {
       }
     }
     const api = execute(helperSource, 'real-video-coordination-pool.cjs', {}, {
-      'server-only': {}, 'node:process': runtime, pg: { Pool: ObservedPool }, '@/platform/db/pool': { getPool: () => business },
+      'server-only': {}, 'node:process': runtime, pg: { Pool: ObservedPool }, '@/platform/db/pool': { getPool: () => business, videoCoordinationPoolLimit: () => 2 },
     });
     return { ...api, control, runtime };
   }

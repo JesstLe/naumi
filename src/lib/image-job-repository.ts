@@ -16,6 +16,7 @@ import { lockWallet, syncBalanceTx } from "./billing/repository";
 import { assertMutableStagingTask, excludeImportedHistory, isImportedHistory } from "./staging-history";
 import type { PoolClient } from "pg";
 import { IMAGE_JOB_LEASE_MS, ImageJobLeaseLostError } from "./image-job-lease";
+import { imageJobCleanupClient, reportImageJobCleanupFailure } from "./image-job-cleanup";
 const billingService=createBillingService();
 function billingOperation(row:{id:string;email:string;payload:{billingQuote:BillingQuote}},reason:string):OperationInput{return {id:row.id,email:row.email,quote:row.payload.billingQuote,reason,ledgerId:`led-image-${row.id}`,fingerprint:row.id};}
 
@@ -120,33 +121,53 @@ export async function assertImageJobLease(id: string, token: string) {
 }
 
 export async function saveImageJob(id: string, snapshot: unknown, token: string | null) {
-  if(currentCreationContext()?.evidencePending)snapshot={...(snapshot as Record<string,unknown>),creationEvidencePending:true};
+  const creation = currentCreationContext();
+  // Persist the fallback before optional checkout, not after the connection has
+  // already failed. Earlier admission/source evidence debt is not ours to clear.
+  const earlierPending = creation?.evidencePending || (snapshot as Record<string, unknown> | null)?.creationEvidencePending === true;
+  if (creation) snapshot = { ...(snapshot as Record<string, unknown>), creationEvidencePending: true };
+  const savedSnapshot = JSON.stringify(snapshot);
   await assertMutableStagingTask(getPool(), "app_image_jobs", id);
   const tx=await getPool().connect();
+  const cleanup = imageJobCleanupClient(tx);
   try {await tx.query("BEGIN");
   await tx.query("SELECT id FROM app_image_jobs WHERE id=$1 FOR UPDATE", [id]);
   await assertLeaseTx(tx, id, token);
-  await tx.query(`UPDATE app_image_jobs SET snapshot=$2::jsonb,updated_at=now() WHERE id=$1`, [id, JSON.stringify(snapshot)]);
+  await tx.query(`UPDATE app_image_jobs SET snapshot=$2::jsonb,updated_at=now() WHERE id=$1`, [id, savedSnapshot]);
   await assertLeaseTx(tx, id, token);
-  await tx.query("COMMIT");}catch(e){await tx.query("ROLLBACK");throw e;}finally{tx.release();}
+  await tx.query("COMMIT");}catch(e){await cleanup.rollback("checkpoint-rollback");throw e;}finally{cleanup.release();}
   // Supplier acceptance and the execution checkpoint survive an evidence outage.
   // Recovery reads this same source snapshot; this flag never schedules paid work.
-  if(currentCreationContext()){
-    const evidence=await getPool().connect();
+  if(creation){
+    let evidenceCleanup: ReturnType<typeof imageJobCleanupClient> | undefined;
     try {
+      // Checkout is optional too: the authoritative checkpoint already committed.
+      const evidence=await getPool().connect();
+      evidenceCleanup = imageJobCleanupClient(evidence);
       await evidence.query("BEGIN");
-      await evidence.query("SELECT id FROM app_image_jobs WHERE id=$1 FOR UPDATE", [id]);
+      const current = await evidence.query("SELECT id FROM app_image_jobs WHERE id=$1 AND snapshot=$2::jsonb FOR UPDATE", [id, savedSnapshot]);
+      // Another checkpoint owns its own evidence. Do not downgrade it with this
+      // older projection, even when both saves have the same valid lease token.
+      if (!current.rowCount) { await evidence.query("COMMIT"); return; }
       await assertLeaseTx(evidence, id, token);
       await evidence.query("SAVEPOINT image_state_evidence");
-      try { await recordImageStateTx(evidence,id,snapshot); }
-      catch {
+      try {
+        const recorded = await recordImageStateTx(evidence,id,snapshot);
+        if (recorded && !earlierPending) {
+          await evidence.query("UPDATE app_image_jobs SET snapshot=snapshot-'creationEvidencePending' WHERE id=$1 AND snapshot=$2::jsonb", [id, savedSnapshot]);
+        }
+      }
+      catch (error) {
+        reportImageJobCleanupFailure("checkpoint-evidence", error);
         await evidence.query("ROLLBACK TO SAVEPOINT image_state_evidence");
-        await evidence.query("UPDATE app_image_jobs SET snapshot=snapshot||'{\"creationEvidencePending\":true}'::jsonb WHERE id=$1", [id]);
+        // The main checkpoint already carries the durable fallback marker.
       }
       await assertLeaseTx(evidence, id, token);
       await evidence.query("COMMIT");
-    } catch { await evidence.query("ROLLBACK"); /* The authoritative checkpoint already committed. */ }
-    finally { evidence.release(); }
+    } catch (error) {
+      reportImageJobCleanupFailure("checkpoint-evidence", error);
+      await evidenceCleanup?.rollback("evidence-rollback");
+    } finally { evidenceCleanup?.release(); }
   }
 }
 
@@ -278,6 +299,7 @@ export async function holdImageJobBilling(id:string, token:string|null) {
 export async function failUndeliveredImageJob(id: string, token: string | null, reasonCode: string, diagnostic?:TaskFailureDiagnostic) {
   await assertMutableStagingTask(getPool(), "app_image_jobs", id);
   const tx = await getPool().connect();
+  const cleanup = imageJobCleanupClient(tx);
   try {
     await tx.query("BEGIN");
     const row = (await tx.query("SELECT * FROM app_image_jobs WHERE id=$1 FOR UPDATE", [id])).rows[0];
@@ -310,6 +332,6 @@ export async function failUndeliveredImageJob(id: string, token: string | null, 
     await tx.query(`UPDATE app_image_jobs SET snapshot=snapshot || $2::jsonb,billing_settled=true,reserved_cost=0,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1`,
       [id, JSON.stringify({ status: "error", error: IMAGE_JOB_RELEASED_MESSAGE, failureCode: reasonCode, ...(diagnostic?{failureDiagnostic:readTaskDiagnostic(diagnostic)}:{}), customerBilling: "released", supplierCostStatus: "pending", creditsReleased: released, stoppedAt: Date.now() })]);
     await tx.query("COMMIT"); return true;
-  } catch (error) { await tx.query("ROLLBACK"); throw error; }
-  finally { tx.release(); }
+  } catch (error) { await cleanup.rollback("failure-rollback"); throw error; }
+  finally { cleanup.release(); }
 }

@@ -16,7 +16,7 @@ import type {Intent} from "../imagegen/types";
 import type {PreparedImageOperation} from "./prepared-image-contract";
 export type {PreparedImageOperation} from "./prepared-image-contract";
 
-export type ImagePreparationInput={path:string;body:Record<string,any>;references:number;featureModel?:string|null;quality?:string|null;quote?:BillingQuote;feature?:string;binding:ModelBinding;accepted?:boolean;allowResolutionFallback?:boolean;advanced?:{intent:Intent;requestedParameters?:ImageParameters;eligibleUpstreamIds?:string[]}};
+export type ImagePreparationInput={path:string;body:Record<string,any>;references:number;featureModel?:string|null;quality?:string|null;quote?:BillingQuote;feature?:string;binding:ModelBinding;accepted?:boolean;allowResolutionFallback?:boolean;resolvedFrame?:{ratio?:string;preserveModelIdentity?:boolean};advanced?:{intent:Intent;requestedParameters?:ImageParameters;eligibleUpstreamIds?:string[]}};
 function imageRatio(width:number,height:number){const gcd=(a:number,b:number):number=>b?gcd(b,a%b):a;const g=gcd(Math.round(width),Math.round(height));return `${Math.round(width)/g}:${Math.round(height)/g}`;}
 
 /** The authoritative parameter preparation used at preview or by legacy unprepared requests. */
@@ -28,8 +28,8 @@ export function prepareImageOperation(input:ImagePreparationInput,snapshot:Model
     const featureDefault = featureDefaultModel(snapshot.config,mainFeature,purpose.image);
     const configuredModelId = quotedImage?.facts.modelId || explicitModelId || featureDefault || snapshot.config.bindings[purpose.image];
     const outputResolution = quotedImage?.effectiveParameters?.resolution || quotedImage?.requestedParameters?.resolution || quotedImage?.facts.resolution || (Number(parsed.body.targetWidth) > 0 && Number(parsed.body.targetHeight) > 0 ? resolutionForLongSide(Math.max(Number(parsed.body.targetWidth), Number(parsed.body.targetHeight))) : String(parsed.body.resolution || "1K"));
-    const ratio = quotedImage?.facts.ratio || (/^\d+:\d+$/.test(String(parsed.body.ratio||parsed.body.size||"")) ? String(parsed.body.ratio||parsed.body.size) : Number(parsed.body.targetWidth)>0&&Number(parsed.body.targetHeight)>0 ? imageRatio(Number(parsed.body.targetWidth),Number(parsed.body.targetHeight)) : "1:1");
-    const routedModelId = routeImageModel(
+    const ratio = input.resolvedFrame?.ratio || quotedImage?.facts.ratio || (/^\d+:\d+$/.test(String(parsed.body.ratio||parsed.body.size||"")) ? String(parsed.body.ratio||parsed.body.size) : Number(parsed.body.targetWidth)>0&&Number(parsed.body.targetHeight)>0 ? imageRatio(Number(parsed.body.targetWidth),Number(parsed.body.targetHeight)) : "1:1");
+    const routedModelId = input.resolvedFrame?.preserveModelIdentity ? configuredModelId : routeImageModel(
       configuredModelId,
       ratio,
       snapshot.config.publicModels.filter(model => model.enabled && model.modality === "image"),

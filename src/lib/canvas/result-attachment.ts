@@ -7,7 +7,7 @@ import type {CanvasImageAttachment} from "./image-versions";
 import type {CanvasHistoryAction} from "./history-model";
 
 export type CanvasResultImage={id:string;url?:string;width?:number;height?:number};
-type Layout={kind:"pixels";gap:number}|{kind:"detail";gap:number;height:(art:Artwork)=>number}|{kind:"single"}|{kind:"offset";step:number};
+type Layout={kind:"pixels";gap:number}|{kind:"detail";gap:number;height:(art:Artwork)=>number}|{kind:"single"}|{kind:"offset";step:number}|{kind:"fanout";point:(id:string)=>CanvasPoint|undefined};
 type Services={
   position:()=>CanvasPoint|undefined;layout:Layout;saveErrorText:string;
   merge:(ids:string[],current:()=>boolean)=>Promise<Artwork[]>;
@@ -30,10 +30,12 @@ export function createCanvasResultAttachment(input:Services){
     }
     let y=point?.y??0;
     for(const [index,image] of images.entries()){
-      if(!placed.has(image.id)&&point){
+      const target=input.layout.kind==="fanout"?input.layout.point(image.id):point;
+      if(input.layout.kind==="fanout"&&!target)throw new Error("生成结果缺少原位置记录，请检查原任务");
+      if(!placed.has(image.id)&&target){
         const headers=await canvasImageTaskHeaders(scope);headers.set("content-type","application/json");scope.assertCurrent();
         const offset=input.layout.kind==="offset"?index*input.layout.step:0;
-        const body={mode:"initialize",...(input.layout.kind==="single"||input.layout.kind==="offset"?{}:{email:scope.owner}),id:image.id,x:Math.round(point.x+offset),y:Math.round(y+offset)};
+        const body={mode:"initialize",...(input.layout.kind==="single"||input.layout.kind==="offset"?{}:{email:scope.owner}),id:image.id,x:Math.round(target.x+offset),y:Math.round((input.layout.kind==="fanout"?target.y:y)+offset)};
         const response=await fetch("/api/artworks/position",{method:"POST",headers,body:JSON.stringify(body)});
         await readImagegenResponse(response,input.saveErrorText);placed.add(image.id);scope.assertCurrent();
       }

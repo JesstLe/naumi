@@ -19,7 +19,7 @@ async function requestCase(r,isOld,spec){
  const authHeader=async()=>{if(spec.stale){epoch++;current=false;if(spec.stale==='workspace-aba')revision+=2;}return {authorization:'Bearer fixture-auth','x-naumi-workspace':workspace};};
  const chooseFrame=async()=>null,frame=async(form,choose,isCurrent)=>{frames.push(form.get('format')?'detail':'legacy');if(!isCurrent())throw new http.ImagegenPreparationCancelled();if(spec.frame)form.set('ratio',spec.frame);};
  const imagegen={resolveCanvasDetailFrame:frame,resolveCanvasLegacyFrame:frame,submitCanvasImagegen:async(form,source,notice,scope)=>{calls.push({kind:'imagegen',source,owner:scope.owner,project:scope.project,body:await byteSnapshot(form),current:scope.isCurrent()});return Response.json({jobId:'fixture'});}};
- const model={adminConfiguredFeature:()=>!!spec.admin},feature={featureModelManaged:()=>!!spec.managed,chosenFeatureModel:()=> 'managed-model'};
+ const model={adminConfiguredFeature:()=>!!spec.admin},feature={ensureFeatureModelSelection:async()=> 'managed-model',featureModelManaged:()=>!!spec.managed,chosenFeatureModel:()=> 'managed-model'};
  const active={key:'tree:fixture',members:[{id:'source',resolution:'4K'}]},project={current:{key:active.key}},account={current:'fixture-account'},contextEpoch={current:1};
  const form=spec.form?new FormData():null;for(const [key,value] of spec.fields||[])form.append(key,value==='FILE'?new File([new Uint8Array([1,2,3,4])],'ref.png',{type:'image/png'}):value);
  const init={method:spec.method||'POST',headers:{'x-custom':'preserved'},body:form||JSON.stringify(spec.body||{})};

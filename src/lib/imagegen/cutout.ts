@@ -2,7 +2,7 @@ import "server-only";
 import {currentImagegenStep} from "./context";
 import {currentModelExecution} from "../model-config/context";
 import {inspectImagegenPixels} from "./postprocess";
-import {currentSynchronousBilling,configuredToolCost,synchronousChargedCredits} from "../billing/synchronous-operation";
+import {checkpointSynchronousResult,currentSynchronousBilling,configuredToolCost,synchronousChargedCredits} from "../billing/synchronous-operation";
 import {reserveCredits, refundCredits} from "@/lib/billing/legacy-credit-reservation";
 import {addLedgerEntry} from "@/lib/billing/legacy-ledger";
 import {dbEnabled} from "@/platform/db/pool";
@@ -136,7 +136,6 @@ export async function executeCutout(input:CutoutInput,context:{actor:()=>Promise
 
     let user: Awaited<ReturnType<typeof getUser>> = null;
     if (useDb) {
-      try {
         await addArtworks(
           input.email,
           [
@@ -158,12 +157,7 @@ export async function executeCutout(input:CutoutInput,context:{actor:()=>Promise
           ],
           `cut-${Date.now()}`
         );
-      } catch (e) {
-        console.error(
-          "[cutout] addArtworks failed:",
-          e instanceof Error ? e.message : e
-        );
-      }
+      await checkpointSynchronousResult({ok:true,id,url,creditsUsed:cost});
       if (cost > 0) {
         await addLedgerEntry(input.email, -cost, "抠图 · 发丝级").catch(
           () => {}

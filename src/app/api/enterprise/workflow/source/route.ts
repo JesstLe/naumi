@@ -20,7 +20,7 @@ const query=z.discriminatedUnion('action',[
  z.strictObject({action:z.literal('media'),...scope,kind:z.literal('artwork'),id:sourceRefSchema.shape.id}),
 ]);
 async function prepare(request:Request,q:z.infer<typeof query>){
- const identity=await workflowSourceIdentity(request,q.enterpriseId);if(!rateLimit('workflow-source:'+JSON.stringify(identity),60,60000))throw new IntegrationError('SOURCE_RATE_LIMIT',429);
+ const identity=await workflowSourceIdentity(request,q.enterpriseId);if(!(await rateLimit('workflow-source:'+JSON.stringify(identity),60,60000)))throw new IntegrationError('SOURCE_RATE_LIMIT',429);
  const config=workflowBridgeConfig(),token=workflowIdentityToken(identity,config,q.teamId);let response:Response;
  try{response=await fetch(config.origin+'/v1/orders/'+q.orderId,{headers:{authorization:'Bearer '+token},cache:'no-store',redirect:'error',signal:AbortSignal.timeout(5000)});}catch{throw new IntegrationError('WORKFLOW_SERVICE_UNAVAILABLE');}
  if(!response.ok)throw new IntegrationError(response.status===404?'TASK_NOT_FOUND':'WORKFLOW_SCOPE_REQUIRED',response.status);

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { dbEnabled } from "@/platform/db/pool";
-import { rateLimit } from "@/lib/rate-limit";
+import {checkRateLimit} from "@/lib/rate-limit-http";
 import { SkillError } from "@/lib/image-skills/catalog";
 import { parseSkillImport, SKILL_IMPORT_MAX_REQUEST_BYTES } from "@/lib/image-skills/import";
 import { importImageSkill } from "@/lib/image-skills/server";
@@ -12,7 +12,9 @@ export async function POST(request: Request) {
   try {
     const email = dbEnabled ? await authenticatedEmail(request) : null;
     if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
-    if (!rateLimit(`image-skills-import:${email}`, 30, 600000)) return NextResponse.json({ error: "操作频繁，请稍后重试" }, { status: 429 });
+    const rateLimitResult = await checkRateLimit(`image-skills-import:${email}`, 30, 600000);
+    if (rateLimitResult instanceof Response) return rateLimitResult;
+    if (!rateLimitResult) return NextResponse.json({ error: "操作频繁，请稍后重试" }, { status: 429 });
     const contentType = request.headers.get("content-type") || "";
     if (!/^multipart\/form-data\s*;/i.test(contentType)) throw new SkillError("请使用文件上传导入 Skill");
     const length = Number(request.headers.get("content-length"));

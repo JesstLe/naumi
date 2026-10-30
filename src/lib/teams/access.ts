@@ -2,7 +2,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { requireAdmin, resolveUserEmail, adminPasswordState } from "@/lib/admin-auth";
 import { dbEnabled } from "@/platform/db/pool";
-import { rateLimit } from "@/lib/rate-limit";
+import {checkRateLimit,rateLimitFailureResponse} from "@/lib/rate-limit-http";
 import { clientIp } from "@/lib/ip";
 import { teamEntryAccess } from "./grants";
 import { TeamError } from "./errors";
@@ -23,7 +23,9 @@ export async function teamAuthorize(request: Request, adminOnly = false) {
   }
   if (adminOnly && !admin) return teamJson({ error: "需要站点管理员" }, 403);
   const actor = { email: email || "local-admin", admin, consoleAdmin: consoleVerified };
-  if (!rateLimit(`team:${actor.email}:${clientIp(request)}`, 120, 60_000)) return teamJson({ error: "操作过于频繁" }, 429);
+  const rateLimitResult = await checkRateLimit(`team:${actor.email}:${clientIp(request)}`, 120, 60_000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) return teamJson({ error: "操作过于频繁" }, 429);
   return actor;
 }
 export function teamMutationOrigin(request: Request) {
@@ -36,5 +38,7 @@ export function teamMutationOrigin(request: Request) {
   } catch { return false; }
 }
 export function teamFailure(error: unknown) {
+  const unavailable = rateLimitFailureResponse(error);
+  if (unavailable) return unavailable;
   return error instanceof TeamError ? teamJson({ error: error.message }, error.status) : teamJson({ error: "操作结果暂未确认，请刷新后使用同一请求重试", uncertain: true }, 500);
 }

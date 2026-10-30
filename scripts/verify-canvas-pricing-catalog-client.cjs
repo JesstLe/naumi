@@ -348,7 +348,7 @@ async function modifiedClient() {
     const variants = [{ modelId: 'model-b' }, { quality: 'high' }, { resolution: '4K' }, { ratio: '16:9' }, { quantity: 4 }];
     for (const variant of variants) { const pending = h.value.quote({ ...input, ...variant }); assert.notStrictEqual(pending, first); await pending; }
     h.setModel('model-c'); await h.value.quote(input); eq(h.quoteCalls().length, 7);
-    const call = h.quoteCalls()[0]; eq(call.init.headers['x-naumi-canvas'], '1');
+    const call = h.quoteCalls()[0]; eq(new Headers(call.init.headers).get('x-naumi-canvas'), '1');
     const facts = JSON.parse(call.init.body); eq(facts.canvas, undefined); eq(facts.modelId, 'model-a');
     eq(JSON.parse(h.quoteCalls()[5].init.body).quantity, 4);
   });

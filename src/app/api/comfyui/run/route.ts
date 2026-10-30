@@ -3,7 +3,7 @@ import {withCreationRoute,withCreationReceiptRoute} from "@/lib/saas/creation-co
 import {authenticatedEmail} from "@/lib/request-auth";
 import {dbEnabled} from "@/platform/db/pool";
 import {clientIp} from "@/lib/ip";
-import {rateLimit} from "@/lib/rate-limit";
+import {checkRateLimit} from "@/lib/rate-limit-http";
 import {sameSiteBiMutation} from "@/lib/bi/access";
 import {safeError} from "@/lib/api-error";
 import {executeComfyRun} from "@/lib/comfyui/run";
@@ -18,7 +18,9 @@ async function handlePost(request:Request){
   const email=await authenticatedEmail(request);
   if(dbEnabled&&!email)return NextResponse.json({error:"请先登录",accepted:false},{status:401});
   if(!sameSiteBiMutation(request))return NextResponse.json({error:"不允许跨站执行",accepted:false},{status:403});
-  if(!rateLimit(`comfyui-run:${clientIp(request)||"0.0.0.0"}`,10,10*60*1000))return NextResponse.json({error:"工作流执行过于频繁，请稍后再试",accepted:false},{status:429});
+  const rateLimitResult=await checkRateLimit(`comfyui-run:${clientIp(request)||"0.0.0.0"}`,10,10*60*1000);
+  if(rateLimitResult instanceof Response)return rateLimitResult;
+  if(!rateLimitResult)return NextResponse.json({error:"工作流执行过于频繁，请稍后再试",accepted:false},{status:429});
   const body=await request.json().catch(()=>null) as ComfyRunInput|null;
   if(!email)return NextResponse.json({error:"请选择工作流",accepted:false},{status:400});
   const result=await executeComfyRun(email,body,{origin:request.url,canvas:request.headers.get("x-naumi-canvas")==="1",operationId:request.headers.get("x-naumi-billing-operation-id")});

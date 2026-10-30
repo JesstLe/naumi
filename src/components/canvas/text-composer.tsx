@@ -25,18 +25,19 @@ export type CanvasTextComposerProps={
   optimization?:{contextKey:string|null;disabled:boolean};
   task:{state:CanvasTextTaskState;retryable:boolean;onGenerate:()=>unknown};
   layout:{dockRef:RefObject<HTMLDivElement|null>;style?:DockPlacement;safeArea:SafeArea;canvasSize:CanvasSize;expanded:boolean;onExpandedChange:Dispatch<SetStateAction<boolean>>};
-  onDismiss:()=>void;onReference:(id:string,enabled:boolean)=>unknown;onMenuOpenChange:(open:boolean)=>void;
+  focusRevision?:number;onDismiss:()=>void;onReference:(id:string,enabled:boolean)=>unknown;onMenuOpenChange:(open:boolean)=>void;
   assist:{busy:boolean;onPickProduct:()=>void};image:{disabled:boolean;onGenerate:()=>void};
 };
 /** Owns only composer presentation. Draft, document and paid task remain with
  * their existing owners; callbacks do not create a second execution path. */
-export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,draft,optimization,task,layout,onDismiss,onReference,onMenuOpenChange,assist,image}:CanvasTextComposerProps){
+export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,draft,optimization,task,layout,focusRevision,onDismiss,onReference,onMenuOpenChange,assist,image}:CanvasTextComposerProps){
   const {locale,t}=useI18n(),L=(zh:string,en:string)=>locale==="en"?en:zh;
   const {prompt:textPrompt,onChange:setTextPrompt}=draft;
   const {dockRef:textComposerDockRef,style:dockStyle,safeArea:overlaySafeArea,canvasSize,expanded:textComposerExpanded,onExpandedChange:setTextComposerExpanded}=layout;
   const assistBusy=assist.busy;
   const [textComposerManuallySized,setTextComposerManuallySized]=useState(false);
   const textComposerBodyRef=useRef<HTMLDivElement>(null),textPromptRef=useRef<HTMLTextAreaElement>(null);
+  useEffect(()=>{if(focusRevision)textPromptRef.current?.focus();},[focusRevision]);
   const [textReferenceMenuOpen,setTextReferenceMenuOpen]=useState(false);
   const [mentionState,setMentionState]=useState<{query:string;start:number}|null>(null);
   useLayoutEffect(()=>{onMenuOpenChange(textReferenceMenuOpen||!!mentionState);return()=>onMenuOpenChange(false);},[textReferenceMenuOpen,mentionState,onMenuOpenChange]);
@@ -335,25 +336,6 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
                   disabled={!optimization || optimization.disabled || task.state.busy || selectedText.status === "generating" || assistBusy} english={locale === "en"}
                   onOptimize={(prompt, signal) => optimizeCanvasPrompt("canvas-text", prompt, signal)} onApply={setTextPrompt}/>
 
-                <button
-                  type="button"
-                  disabled={assistBusy}
-                  onClick={() => assist.onPickProduct()}
-                  title={t("canvas.assistWriteHint")}
-                  className={cn(
-                    "flex h-9 items-center gap-1.5 rounded-[9px] border px-3 text-[11px] font-semibold transition-colors disabled:opacity-45",
-                    lightCanvas
-                      ? "border-[#d8dde4] bg-white text-[#46505e] hover:border-[#aeb7c3] hover:bg-[#f2f4f6] hover:text-[#20242c]"
-                      : "border-[#343842] text-[#d5d8df] hover:bg-[#24272f] hover:text-white"
-                  )}
-                >
-                  {assistBusy ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <PenLine className="h-3.5 w-3.5" />
-                  )}
-                  {t("canvas.assistWrite")}
-                </button>
                 <FeatureVisible feature="generate"><button
                   type="button"
                   disabled={image.disabled}

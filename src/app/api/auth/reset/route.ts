@@ -3,7 +3,7 @@ import {verifyResetToken} from "@/lib/native-auth";
 import {multiUserEnabled} from "@/lib/accounts/mode";
 import {userExists, setUserPassword} from "@/lib/accounts/repository";
 import { hashPassword } from "@/lib/pw";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit-http";
 import { clientIp } from "@/lib/ip";
 
 export const runtime = "nodejs";
@@ -15,7 +15,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "本站未开放" }, { status: 403 });
   }
   const ip = clientIp(req) || "0.0.0.0";
-  if (!rateLimit(`reset:${ip}`, 10, 10 * 60 * 1000)) {
+  const rateLimitResult = await checkRateLimit(`reset:${ip}`, 10, 10 * 60 * 1000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) {
     return NextResponse.json({ error: "操作过于频繁,请稍后再试" }, { status: 429 });
   }
   let body: { token?: string; password?: string };

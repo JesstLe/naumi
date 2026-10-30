@@ -95,7 +95,7 @@ export function TextCanvasNode({ data, selected }: NodeProps) {
         ) : d.status === "failed" ? (
           <div role="alert" className="flex min-h-[108px] flex-col justify-center gap-2 text-amber-800">
             <span className="font-medium">文字生成失败</span>
-            <p className="whitespace-pre-wrap break-words">{d.error || "本次未取得文字结果，请重新选择原图反推"}</p>
+            <p className="whitespace-pre-wrap break-words">{d.error || "本次未取得文字结果，请重试"}</p>
           </div>
         ) : editableBody ? (
           <textarea

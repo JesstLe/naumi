@@ -17,7 +17,7 @@ import {prepareOriginalCreationInput} from "../saas/creation-writer";
 import { TeamError } from "../teams/errors";
 import {withSynchronousOperation,type SynchronousResult} from "./synchronous-operation";
 // Existing tools keep this compatibility export; no second billing implementation.
-export {currentSynchronousBilling,recordBillingUsage,markBillingUpstream,exposeAbandonedBillingOperations,synchronousCost,settleSynchronous,configuredToolCost,synchronousChargedCredits,completeSynchronousStream,failSynchronousStream} from "./synchronous-operation";
+export {checkpointSynchronousResult,currentSynchronousBilling,recordBillingUsage,markBillingUpstream,exposeAbandonedBillingOperations,synchronousCost,settleSynchronous,configuredToolCost,synchronousChargedCredits,completeSynchronousStream,failSynchronousStream} from "./synchronous-operation";
 
 export async function billingRequestIdentity(request: Request) {
     const copy = request.clone(), entries: unknown[] = [];

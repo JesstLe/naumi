@@ -1,3 +1,4 @@
+import {canvasGenerationDestination} from "./generation-fanout";
 import type {Artwork} from "../mock-data";
 import type {CanvasTextNode} from "./text-document-model";
 import {inheritableImagePrompt,type CanvasImageReference} from "./image-references";
@@ -50,8 +51,9 @@ export async function executeCanvasImageCreation(input:CanvasImageCreationInput,
     await splitViews(input,services);return;
   }
   const uploadAsBase=!input.references.length&&input.files.length>0;
+  const destination=canvasGenerationDestination(parameters.count);
   await services.generate(source,feedback||canvasInheritedImagePrompt(source.prompt),{
-    ...parameters,replaceNode:true,parentId:source.id,parentIds:input.references.filter(ref=>ref.id!==source.id).map(ref=>ref.id),
+    ...parameters,...destination,parentId:source.id,parentIds:input.references.filter(ref=>ref.id!==source.id).map(ref=>ref.id),
     baseFile:uploadAsBase?input.files[0]:undefined,extra:uploadAsBase?input.files.slice(1):input.files,
     refUrls:uploadAsBase?[]:input.references.map(ref=>ref.image),userPrompt:feedback||canvasInheritedImagePrompt(source.prompt),referenceInputs,isCurrent:services.isCurrent,
   });

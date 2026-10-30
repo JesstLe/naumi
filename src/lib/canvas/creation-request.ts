@@ -4,7 +4,7 @@ import type {useBilling} from "../billing/client";
 import type {RetainedBillingSubmission} from "../billing/client-submission";
 import {authHeader} from "../supabase";
 import {adminConfiguredFeature} from "../model-config/selection-policy";
-import {chosenFeatureModel,featureModelManaged} from "../model-config/feature-client";
+import {chosenFeatureModel,featureModelManaged,ensureFeatureModelSelection} from "../model-config/feature-client";
 import {submitCanvasImagegen,resolveCanvasDetailFrame,resolveCanvasLegacyFrame,type CanvasFrameChoice} from "../imagegen/canvas-client";
 import {canvasReferenceManifestSchema,compileReferenceInstructions} from "../imagegen/reference-labels";
 import {ImagegenHttpError,ImagegenPreparationCancelled} from "../imagegen/http";
@@ -42,6 +42,7 @@ export async function submitCanvasCreationRequest(input:RequestInfo|URL,initial:
   if(init.submission?.ready){const auth=await authHeader();assertCurrent();return init.submission.retry(services.billing,assertCurrent,auth);}
   const path=String(input).split("?")[0],feature=FEATURES[path];
   if(init.method!=="POST"||!feature)return services.request(input,init);
+  if(path==="/api/canvas/ocr"){await ensureFeatureModelSelection("canvas.ocr");assertCurrent();}
   const form=init.body instanceof FormData?init.body:null;
   if(path==="/api/aplus"&&form){await resolveCanvasDetailFrame(form,services.chooseFrame,isCurrent);assertCurrent();}
   const body:Record<string,any>=form?Object.fromEntries(Array.from(form.entries()).filter(entry=>typeof entry[1]==="string")):typeof init.body==="string"?JSON.parse(init.body):{};

@@ -1,5 +1,6 @@
 import {compileImageParameterPlan,imagePlanSelection,configuredImageCapabilities} from './image-parameter-plan';
 import "server-only";
+import {imageRequestAdmission} from "../imagegen/request-admission";
 import type {ConfigSnapshot} from "../billing/types";
 import {missingImagegenCapabilities,publishedImagegenCapabilities} from "../imagegen/capabilities";
 import {publicUpstreamIds} from "./channel-policy";
@@ -62,6 +63,7 @@ export function simulateModel(snapshot: ModelSnapshot, billing: ConfigSnapshot, 
     if (pool && (options.imageParameterPlanVersion===0||!u.parameterMap.resolutionPolicy) && requestedPixels > maxPixels) codes.push("PIXEL_LIMIT");
     if ((c.verified || model.supplierRouting && c.maxReferenceImages > 0) && facts.references > c.maxReferenceImages) codes.push("REFERENCE_LIMIT");
     if(options.imageParameterPlanVersion!==0&&(u.parameterMap.qualityPolicy||u.parameterMap.resolutionPolicy||u.parameterMap.apimartImages))try{compileImageParameterPlan(u,imagePlanSelection(facts),{publicModelId:model.id,protocol:p.protocol,modelVersion:snapshot.version,adapter:p.options?.imageAdapter});}catch(error){codes.push(error instanceof ModelConfigError?error.code:'IMAGE_MAPPING_INVALID');}
+    if(options.imageParameterPlanVersion!==0&&u.parameterMap.apimartImages&&imageRequestAdmission(facts.ratio||"1:1",model.id,!!model.supplierRouting,u,p.options?.imageAdapter).includes("ADAPTER_RATIO_UNSUPPORTED"))codes.push("IMAGEGEN_RATIO_UNSUPPORTED");
     const money = monetaryCost(modelCostRate(billing, u, facts.quality, facts.resolution, facts.needsEdit ? "edit" : "generate"));
     costs.set(id, money ? { ...money, amountMicros: (BigInt(money.amountMicros) * BigInt(money.unit === "task" ? 1 : facts.quantity ?? 1)).toString() } : null);
     if (pool?.strategy === "lowest-cost" && !money) codes.push("COST_UNRECORDED");

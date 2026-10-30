@@ -123,6 +123,7 @@ export type CanvasPendingNode = {
 
 export type CanvasGenerationTask = {
   replaceNode?:boolean;
+  slotIndex?:number;
   isVisible?: () => boolean;
   failure?: GenerationFailure;
   onRetry?: () => unknown;

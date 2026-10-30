@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin, resolveUserEmail } from "@/lib/admin-auth";
 import { dbEnabled } from "@/platform/db/pool";
 import { clientIp } from "@/lib/ip";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit-http";
 
 export const BI_PRIVATE_HEADERS = {
   "Cache-Control": "private, no-store, max-age=0",
@@ -22,8 +22,9 @@ export async function biAuthorize(
   if (!dbEnabled)
     return biJson({ error: "未配置数据库，无法读取 BI 数据" }, 503);
   const actor = (await resolveUserEmail(request)) || "local-admin";
-  if (!rateLimit(`bi:${actor}:${clientIp(request)}`, 240, 60_000))
-    return biJson({ error: "查询过于频繁，请稍后重试" }, 429);
+  const rateLimitResult = await checkRateLimit(`bi:${actor}:${clientIp(request)}`, 240, 60_000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) return biJson({ error: "查询过于频繁，请稍后重试" }, 429);
   return { actor };
 }
 export function sameSiteBiMutation(request: Request) {

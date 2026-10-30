@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import {validateLicense} from "@/lib/licensing/repository";
 import {listTemplatesPaged} from "@/lib/templates/repository";
 import {dbEnabled} from "@/platform/db/pool";
-import { rateLimit } from "@/lib/rate-limit";
+import {checkRateLimit} from "@/lib/rate-limit-http";
 import { clientIp } from "@/lib/ip";
 
 export const runtime = "nodejs";
@@ -17,7 +17,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "服务暂不可用" }, { status: 503 });
   }
   const ip = clientIp(req) || "0.0.0.0";
-  if (!rateLimit(`tpl-export:${ip}`, 240, 10 * 60 * 1000)) {
+  const rateLimitResult = await checkRateLimit(`tpl-export:${ip}`, 240, 10 * 60 * 1000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) {
     return NextResponse.json({ error: "请求过于频繁" }, { status: 429 });
   }
   let body: { key?: string; page?: number; pageSize?: number };

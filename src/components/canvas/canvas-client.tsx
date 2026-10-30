@@ -21,7 +21,7 @@ import type {AudioPatchFields} from "@/lib/canvas/history-model";
 import type {PublicMediaJob} from "@/lib/video/media-job-schema";
 import {loadCanvasImageVersions} from "@/lib/canvas/image-version-client";
 import type {CanvasImageVersion,CanvasImageVersionList} from "@/lib/canvas/image-versions";
-import {createCanvasImageVersionAttachment} from "@/lib/canvas/result-attachment";
+import {createCanvasResultAttachment,createCanvasImageVersionAttachment} from "@/lib/canvas/result-attachment";
 import {useSceneNodes} from "./scene/use-scene-nodes";
 import {sceneInputIdentity,sceneStateWithReferences,sceneDirectorSnapshot,type SceneProject} from "@/lib/scene/project";
 import {applySceneDirectorSnapshot} from "@/lib/scene/director";
@@ -101,6 +101,7 @@ import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
 import { smartLayout } from "@/lib/canvas/smart-layout";
 import {submitCanvasCreationRequest,type CanvasCreationRequestInit} from "@/lib/canvas/creation-request";
 import {ImagegenPendingRecovery} from "./imagegen-pending-recovery";
+import {updateCanvasImagegenPlacement} from "@/lib/imagegen/client-recovery";
 import {FrameRatioDialog,useCanvasFrameChoice} from "./frame-ratio-dialog";
 import type {CanvasEditRequest} from "@/lib/canvas/edit-task";
 import {runCanvasEdit} from "@/lib/canvas/edit-run";
@@ -142,6 +143,7 @@ import { resolveCanvasImageReferences, changeImageReferenceRole, imageReferenceM
 import { referenceManifestError } from '@/lib/imagegen/reference-labels';
 import { imageDraftScope } from '@/lib/canvas/image-node-drafts';
 import { CanvasRenderLayerGuard } from './canvas-render-layer-guard';
+import { CanvasGroupLayer } from "./group-layer";
 import { CanvasEdgeHoverHint, type CanvasEdgeHoverHandle } from './canvas-edge-hover-hint';
 import { canvasZoomState } from '@/lib/canvas/viewport-state';
 import {CANVAS_MIN_ZOOM,CANVAS_MAX_ZOOM} from "@/lib/canvas/view-controls";
@@ -197,7 +199,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { X, Pencil, MoreHorizontal, Crop, SlidersHorizontal, Lock, Unlock, ArrowUpToLine, ArrowDownToLine, Loader2, Sparkles, Download, Trash2, Upload, RotateCcw, RotateCw, Scissors, Sun, Moon, Type, Rotate3d, Wand2, Image as ImageIcon, ChevronDown, Home, LayoutGrid, Plus, Maximize, Maximize2, ChevronLeft, Map as MapIcon, Magnet, Clock, Keyboard, ShoppingBag, Crown, Zap, MapPin, BoxSelect, Combine, GalleryVerticalEnd, ScanSearch, Video, PenLine, Play, MessageSquareText, Workflow, MousePointer2, Hand, ImagePlus, Copy, Focus, type LucideIcon } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
-import {currentWorkspace} from '@/lib/saas/workspace-client';
+import {currentWorkspace,currentWorkspaceRevision} from '@/lib/saas/workspace-client';
 import { useAuth } from "@/lib/auth-context";
 import { useCanvasCredits } from "./use-canvas-credits";
 import { useAuthModal } from "@/lib/auth-modal-context";
@@ -1849,7 +1851,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
 
   function rememberGenerationDrag(id: string, position: CanvasPoint, saveReceipt = false, operationKey?: string) {
-    if (id.startsWith("task-")) generationPresentation.drag(id,position,saveReceipt);
+    if (id.startsWith("task-")) {
+      generationPresentation.drag(id,position,saveReceipt);
+      const task=generationPresentation.getSnapshot().tasks.find(task=>task.id===id);
+      if(saveReceipt&&task?.slotIndex!==undefined&&user)try{
+        updateCanvasImagegenPlacement(recoveryScope,`node:${task.operationKey}`,placement=>({...placement,slots:placement.slots.map((slot,index)=>index===task.slotIndex?{...slot,...position}:slot)}));
+      }catch{flashTip(L("位置尚未保存，原任务已保留","Position not saved; original task retained"));}
+    }
     pendingPresentation.drag(id,position,saveReceipt);
   }
 
@@ -1886,6 +1894,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     return landEditResult(source,{kind:"cutout",source},"抠图");
   }
 
+  const [textComposerFocusRevision,setTextComposerFocusRevision]=useState(0);
   function canvasImageCreationServices():CanvasImageCreationServices {
     const scope=captureCanvasTaskOwner(user?.email||"",()=>({account:canvasAccountRef.current,project:activeProjectRef.current?.key||null,epoch:canvasContextEpochRef.current,mounted:batchRunMountedRef.current})).capture();
     return {isCurrent:scope.isCurrent,generate:runGen,rename:renameGeneratedArtwork,
@@ -3151,27 +3160,19 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     },canvasImageRunContext(opts?.isCurrent));
   }
 
-  // Placeholder import keeps its saved ID on sync failure; the shared import
-  // status resumes reads rather than asking the user to upload the file again.
+  // Snapshot the live FileList before clearing its input; the importer owns
+  // decoding, queued placeholders, root order, upload receipts and read-only retry.
   async function doUploadPend(files:FileList|null){
     const pendId=pendUploadTargetRef.current;pendUploadTargetRef.current=null;
-    const file=files?.length?files[0]:null;
-    if(pendUploadRef.current)pendUploadRef.current.value="";
-    if(!pendId||!file||!user||readOnly)return;
-    const pend=pendNodes.find(node=>node.id===pendId);if(!pend)return;
+    const picked=Array.from(files??[]);if(pendUploadRef.current)pendUploadRef.current.value="";
+    if(!pendId||!picked.length||!user||readOnly)return;
     const context=canvasImportContext(),scope=canvasArtworkDocument.scope;
-    setPendNodes(nodes=>nodes.map(node=>node.id===pendId?{...node,uploading:true,progress:0,generationFailure:undefined,fileInfo:`${file.name} · ${Math.round(file.size/1024)}KB`}:node));
-    try{
-      await imageImportOwner.uploadPending(file,{pendingId:pendId,parentId:pend.inputs?.[0]||activeRootId(),linked:!!pend.inputs?.length,x:pend.x,y:pend.y},context,{
-        progress:progress=>{if(scope.viewCurrent())setPendNodes(nodes=>nodes.map(node=>node.id===pendId?{...node,progress}:node));},
-        attached:id=>{canvasHistory.consumePending(pendId);setPendNodes(nodes=>nodes.filter(node=>node.id!==pendId));setSelectedPendId(current=>current===pendId?null:current);setPendingNode(id);},
-      });
-    }catch(error){if(scope.viewCurrent()){
-      setGenError(error instanceof Error?error.message:t("canvas.genFail"));
-      const saved=imageImportOwner.pendingBatch(pendId,context);
-      setPendNodes(nodes=>nodes.map(node=>node.id===pendId?{...node,uploading:false,
-        ...(saved?.nodeIds?.length?{generationFailure:{kind:"sync" as const,message:"图片已保存，画布尚未同步；点击重试读取原结果，无需重新上传"},onGenerationRetry:()=>retryImportSynchronization(saved.id)}:{})}:node));
-    }}
+    try{await imageImportOwner.uploadPendingFiles(picked,pendId,activeRootId(),context,{
+      pending:pendingPresentation,newId:()=>`pend-${Date.now()}-${pendSeqRef.current++}`,
+      history:records=>pushUndo({kind:"pending-add",records}),
+      attached:(id)=>{canvasHistory.consumePending(id);if(scope.viewCurrent())setSelectedPendId(current=>current===id?null:current);},
+      error:message=>{if(scope.viewCurrent())setGenError(message);},
+    });}catch(error){if(scope.viewCurrent())setGenError(error instanceof Error?error.message:t("canvas.genFail"));}
   }
   function showCopyTip() {
     setCopyTip(true);
@@ -3382,9 +3383,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       "flex h-dvh min-h-[100svh] flex-col overflow-hidden bg-background text-foreground",
       lightCanvas ? "canvas-ui-light" : "dark canvas-ui-dark"
     )}>
-      {!readOnly&&<ImagegenPendingRecovery {...recoveryScope} isCurrent={recoveryCurrent} onAttach={async(ids,isMounted,attachment)=>{
+      {!readOnly&&<ImagegenPendingRecovery {...recoveryScope} isCurrent={recoveryCurrent} onAttach={async(ids,isMounted,attachment,placement)=>{
         const current=()=>recoveryCurrent()&&isMounted();if(!current())return false;
-        const fresh=attachment?await createCanvasImageVersionAttachment({nodeId:attachment.nodeId,merge:mergeWorks})({isCurrent:current,assertCurrent:()=>{if(!current())throw new Error("画布已切换");}},attachment):await mergeWorks(ids,current);if(!current())return false;
+        const scope=captureCanvasImageTaskScope(user!.email,activeProjectRef.current?.key||null,current);
+        const fresh=attachment?await createCanvasImageVersionAttachment({nodeId:attachment.nodeId,merge:mergeWorks})(scope,attachment):placement?
+          await createCanvasResultAttachment({position:()=>placement.slots[0],layout:{kind:"fanout",point:id=>placement.slots.find(slot=>slot.artworkId===id)},saveErrorText:t("canvas.saveFailed"),merge:mergeWorks,history:()=>{}})(scope,ids.map(id=>({id}))):await mergeWorks(ids,current);if(!current())return false;
         assertGenerationResultsPresent(ids,fresh);
         // A queued React updater is not delivery. Observe the committed canvas
         // after one frame; a suspended/stale render retains its original receipt.
@@ -3413,7 +3416,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       {/* 占位节点上传用的隐藏 input */}
       <input
         ref={pendUploadRef}
+        data-testid="canvas-pending-upload-input"
         type="file"
+        multiple
         accept="image/png,image/jpeg,image/webp"
         className="hidden"
         onChange={(e) => doUploadPend(e.target.files)}
@@ -3691,6 +3696,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             >
               <CanvasPerformanceProbe />
               <CanvasRenderLayerGuard />
+              <CanvasGroupLayer key={`groups:${canvasArtworkDocument.scope.key}:${currentWorkspaceRevision()}`} nodes={rfNodes}
+                disabled={canvasTool === "hand" || historySaving || !nodeSettingsReady} readOnly={readOnly} snap={snapGrid} english={locale === "en"}
+                onSelect={applyArtworkSelection}
+                onPreview={moves => { const positions = new Map(moves.map(move => [move.id, move.to])); setRfNodes(current => current.map(node => positions.has(node.id) ? { ...node, position: positions.get(node.id)! } : node)); }}
+                onCommit={moves => { void canvasDrag.commitMoves(moves); }} />
               {showMinimap && (
                 <MiniMap
                   pannable
@@ -4724,9 +4734,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               <button
                 type="button"
                 disabled={assistBusy || !nodeSettingsReady || isNodeLocked(selectedText.id)}
-                onClick={() => setProductPicker({ textNodeIds: [selectedText.id] })}
-                aria-label={t("canvas.toolbar.productCopy")}
-                title={t("canvas.assistWriteHint")}
+                onClick={() => setTextComposerFocusRevision(value=>value+1)}
+                aria-label={L("文字创作", "Write text")}
+                title={L("文字创作", "Write text")}
                 className="canvas-ui-action flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-40"
               >
                 {assistBusy ? (
@@ -4734,7 +4744,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 ) : (
                   <PenLine className="h-4 w-4" />
                 )}
-                {t("canvas.toolbar.productCopy")}
+                {L("文字创作", "Write text")}
               </button>
               <FeatureVisible feature="generate"><button
                 type="button"
@@ -4796,7 +4806,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 <Trash2 className="h-4 w-4" />
               </button>
               <CanvasActionMenu iconOnly label={L("更多节点操作","More node actions")} light={lightCanvas}
-                items={[...nodeManagementItems(selectedText.id),{id:"properties",icon:SlidersHorizontal,label:L("属性设置","Properties"),onSelect:openProperties}]} />
+                items={[{id:"product-copy",icon:PenLine,label:t("canvas.toolbar.productCopy"),disabled:assistBusy||!selectedText.content.trim(),onSelect:()=>setProductPicker({textNodeIds:[selectedText.id]})},...nodeManagementItems(selectedText.id),{id:"properties",icon:SlidersHorizontal,label:L("属性设置","Properties"),onSelect:openProperties}]} />
             </div>
           )}
           {/* 标注编辑弹窗：提交即关闭，landEditResult 在画布占位节点中后台继续落地。 */}
@@ -4892,7 +4902,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               controls={imageComposerControls} error={genError}
               imageActions={{style:genStyle,onStyle:setGenStyle,marked:!!selected.marked,onMark:toggleNodeMark,onFocus:()=>setFocusId(selected.id)}}
               versions={{contextKey:`${canvasHistory.scope.key}:${selected.id}`,revision:selected.canvasImageRevision||0,disabled:readOnly||historySaving||isNodeLocked(selected.id),english:locale==="en",load:()=>loadImageVersions(selected.id),onSelect:(version,from)=>selectImageVersion(selected.id,version,from)}}
-              generation={{actionLabel:generationMode==="standard"?L("重新生成","Regenerate"):undefined,generating:selectedGenerating,failure:selectedGenerationFailure,onGenerate:selectedGenerationFailure&&selectedGenerationRetry?selectedGenerationRetry:generateSelectedImage}}/>
+              generation={{ariaLabel:L("生成","Generate"),generating:selectedGenerating,failure:selectedGenerationFailure,onGenerate:selectedGenerationFailure&&selectedGenerationRetry?selectedGenerationRetry:generateSelectedImage}}/>
           )}
           {canFeature("generate") && selectedPend && !readOnly && (
             <CanvasImageComposer key={`pdock-${imageDraft.key||selectedPend.id}`} pending dockRef={panelRef} style={dockStyle} optimizationDisabled={!nodeSettingsReady||isNodeLocked(selectedPend.id)}
@@ -4901,7 +4911,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               generation={{generating:selectedPendGenerating,failure:selectedPend.generationFailure,onGenerate:selectedPend.generationFailure&&selectedPend.onGenerationRetry?selectedPend.onGenerationRetry:()=>generatePend()}}/>
           )}
           {selectedText && selectedTextBatchNodes.length <= 1 && !readOnly && !propertiesOpen && !isNodeLocked(selectedText.id) && (
-            <CanvasTextComposer key={`tdock-${selectedText.id}`} node={selectedText} members={active?.members??[]} light={lightCanvas} optimization={{contextKey:JSON.stringify([user?.email,targetEmail,activeKey,selectedText.id]),disabled:readOnly||!nodeSettingsReady||isNodeLocked(selectedText.id)}}
+            <CanvasTextComposer focusRevision={textComposerFocusRevision} key={`tdock-${selectedText.id}`} node={selectedText} members={active?.members??[]} light={lightCanvas} optimization={{contextKey:JSON.stringify([user?.email,targetEmail,activeKey,selectedText.id]),disabled:readOnly||!nodeSettingsReady||isNodeLocked(selectedText.id)}}
               draft={{prompt:textPrompt,onChange:setTextPrompt}} task={{state:textTasks.state(selectedText.id),retryable:textTasks.retryable(selectedText.id),onGenerate:()=>generateTextNode()}}
               layout={{dockRef:textComposerDockRef,style:dockStyle,safeArea:overlaySafeArea,canvasSize,expanded:textComposerExpanded,onExpandedChange:setTextComposerExpanded}}
               onDismiss={()=>setSelectedTextId(null)} onReference={(id,enabled)=>updateTextReference(selectedText.id,id,enabled)} onMenuOpenChange={setTextComposerMenuOpen}

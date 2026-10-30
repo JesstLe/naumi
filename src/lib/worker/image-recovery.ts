@@ -19,18 +19,23 @@ async function resumeImageJob(job:Pick<ImageJobRow,"id"|"kind">){
  return true;
 }
 
-async function recoverDurableImageJobsLocal():Promise<number>{
- if(!dbEnabled)return 0;
+async function recoverDurableImageJobsLocal(options:{signal?:AbortSignal}={}):Promise<number>{
+ if(!dbEnabled||options.signal?.aborted)return 0;
  const jobs=await dueImageJobs();
- const count=await dispatchImageQueue(jobs,resumeImageJob,()=>console.error("[image-queue] worker dispatch failed; retained for next scan"));
+ const count=await dispatchImageQueue(jobs,resumeImageJob,()=>console.error("[image-queue] worker dispatch failed; retained for next scan"),undefined,options);
+ if(options.signal?.aborted)return count;
  const {recoverImagegenBatches}=await import("../imagegen/batch");
+ if(options.signal?.aborted)return count;
  const {recoverStoredDeliveries}=await import("../imagegen/stored-delivery");
- return count+await recoverImagegenBatches()+await recoverStoredDeliveries();
+ if(options.signal?.aborted)return count;
+ const batches=await recoverImagegenBatches();
+ if(options.signal?.aborted)return count+batches;
+ return count+batches+await recoverStoredDeliveries();
 }
 
 let recoveryScan:Promise<number>|undefined;
-export async function recoverDurableImageJobs():Promise<number>{
- if(await deferApplicationTask())return 0;
- if(!recoveryScan)recoveryScan=withBackgroundActivity("durable-image",`recovery-dispatch-scan:${randomUUID()}`,"claim",()=>recoverDurableImageJobsLocal(),()=>0).finally(()=>{recoveryScan=undefined;});
+export async function recoverDurableImageJobs(options:{signal?:AbortSignal}={}):Promise<number>{
+ if(options.signal?.aborted||await deferApplicationTask())return 0;
+ if(!recoveryScan)recoveryScan=withBackgroundActivity("durable-image",`recovery-dispatch-scan:${randomUUID()}`,"claim",()=>recoverDurableImageJobsLocal(options),()=>0).finally(()=>{recoveryScan=undefined;});
  return recoveryScan;
 }

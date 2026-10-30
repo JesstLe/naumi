@@ -1,4 +1,7 @@
 "use client";
+import type {PreparedUpload} from "../client-image-upload";
+import type {CanvasPendingNode} from "./scene-types";
+import type {createCanvasPendingPresentation} from "./pending-presentation";
 import {prepareImageUploads,uploadFormData} from "../client-image-upload";
 import type {Artwork} from "../mock-data";
 import {adaptiveCanvasImageSize} from "./image-size";
@@ -211,7 +214,7 @@ export function createCanvasImageImports(){
       return [];
     });scope.queue=result.then(()=>{});return result;
   }
-  async function runPending(file:File,point:CanvasImportPoint&{linked:boolean;pendingId:string},context:CanvasImageImportContext,callbacks:{progress:(percent:number)=>void;attached:(id:string)=>void}){
+  async function runPending(file:File,point:CanvasImportPoint&{linked:boolean;pendingId:string},context:CanvasImageImportContext,callbacks:{progress:(percent:number)=>void;attached:(id:string)=>void},preparedInput?:PreparedUpload){
     const previous=pendingBatch(point.pendingId,context);
     if(previous?.nodeIds?.length){await synchronize(previous.id,context);return previous.nodeIds[0];}
     if(!context.documentCurrent())throw Error("账号或工作空间已切换");
@@ -219,9 +222,9 @@ export function createCanvasImageImports(){
     saved.set(id,{context,scope,historyRecorded:false,pendingId:point.pendingId});
     setImageImports(rows=>[...rows.filter(batch=>!batch.finished||batch.errors.length>0),{id,owner:email.toLowerCase(),workspace:context.workspace,project:context.project,total:1,done:0,success:0,finished:false,errors:[],phase:"uploading",originalBytes:file.size,uploadBytes:file.size,uploadedBytes:0}]);
     try{
-      const [prepared]=await prepareImageUploads([file],1,{preserveOriginal:true});
+      const prepared=preparedInput||(await prepareImageUploads([file],1,{preserveOriginal:true}))[0];
       if(prepared.error)throw Error(prepared.error);
-      const response=await saveCanvasImportImage(prepared.file,{email,parentId:point.parentId,linked:point.linked,x:Math.round(point.x),y:Math.round(point.y)},context,(sent,total)=>{
+      const response=await saveCanvasImportImage(prepared.file,{email,title:file.name,parentId:point.parentId,linked:point.linked,x:Math.round(point.x),y:Math.round(point.y)},context,(sent,total)=>{
         update(id,{uploadedBytes:total?Math.round(sent/total*file.size):0});
         if(importScopeRef.current===scope&&context.documentCurrent())callbacks.progress(total?sent/total*100:0);
       });
@@ -243,6 +246,60 @@ export function createCanvasImageImports(){
     const existing=pendingRuns.get(key);if(existing)return existing;
     const promise=runPending(...args).finally(()=>{if(pendingRuns.get(key)===promise)pendingRuns.delete(key);});pendingRuns.set(key,promise);return promise;
   }
-  return {getSnapshot,subscribe,upload,uploadPending,pendingBatch,synchronize,reset,dismiss};
+  /** Placeholder batches reuse the importer and each saved receipt. The first
+   * successful save establishes a shared root before concurrent followers. */
+  async function uploadPendingFiles(picked:File[],pendingId:string,parentId:string|null,context:CanvasImageImportContext,ports:{
+    pending:ReturnType<ReturnType<typeof createCanvasPendingPresentation>["bind"]>;
+    newId:()=>string;history:(nodes:CanvasPendingNode[])=>void;attached:(pendingId:string,artworkId:string)=>void;error:(message:string)=>void;
+  }){
+    const pend=ports.pending.get(pendingId),previous=pendingBatch(pendingId,context);
+    if(previous?.nodeIds?.length){await synchronize(previous.id,context);return;}
+    if(!picked.length||!pend||pend.uploading||pend.generating||!context.viewCurrent())return;
+    const current=context.viewCurrent;let queued=[pend];
+    ports.pending.set(nodes=>nodes.map(node=>node.id===pendingId?{...node,uploading:true,progress:0}:node));
+    try{
+      const prepared=await prepareImageUploads(picked,1,{preserveOriginal:true});if(!current())return;
+      const valid=prepared.filter(item=>!item.error),errors=prepared.filter(item=>item.error);
+      if(errors.length)ports.error(errors.map(item=>`${item.file.name}：${item.error}`).join("；"));
+      if(!valid.length)return;
+      let x=pend.x;
+      queued=valid.map((item,index)=>{
+        const size=adaptiveCanvasImageSize(item.width,item.height),node={...pend,id:index?ports.newId():pendingId,label:index?item.file.name:pend.label,
+          x,y:pend.y,uploading:true,progress:0,generationFailure:undefined,onGenerationRetry:undefined,fileInfo:`${item.file.name} · ${Math.round(item.file.size/1024)}KB`};
+        x+=size.width+X_GAP;return node;
+      });
+      ports.pending.set(nodes=>[...nodes.filter(node=>node.id!==pendingId),...queued]);
+      if(queued.length>1)ports.history(queued.slice(1));
+      const root={id:pend.inputs[0]||parentId};let next=0;const uploaded:string[]=[];
+      const run=async(index:number)=>{
+        const node=queued[index],item=valid[index];
+        try{
+          const id=await uploadPending(item.file,{pendingId:node.id,parentId:root.id,linked:!!pend.inputs.length,x:node.x,y:node.y},context,{
+            progress:progress=>{if(current())ports.pending.set(nodes=>nodes.map(n=>n.id===node.id?{...n,progress}:n));},
+            attached:id=>{ports.pending.set(nodes=>nodes.filter(n=>n.id!==node.id));ports.attached(node.id,id);},
+          },item);
+          uploaded[index]=id;if(!root.id)root.id=id;
+        }catch(error){
+          const retained=pendingBatch(node.id,context);
+          if(retained?.nodeIds?.[0]){uploaded[index]=retained.nodeIds[0];if(!root.id)root.id=retained.nodeIds[0];}
+          if(current()){
+            ports.error(error instanceof Error?error.message:context.t("canvas.importFailed"));
+            ports.pending.set(nodes=>nodes.map(n=>n.id===node.id?{...n,uploading:false,...(retained?.nodeIds?.length?{
+              generationFailure:{kind:"sync" as const,message:"图片已保存，画布尚未同步；点击重试读取原结果，无需重新上传"},
+              onGenerationRetry:()=>synchronize(retained.id,context),
+            }:{})}:n));
+          }
+        }
+      };
+      while(!root.id&&next<queued.length&&current())await run(next++);
+      await Promise.all(Array.from({length:Math.min(2,queued.length-next)},async()=>{while(next<queued.length&&current())await run(next++);}));
+      const first=uploaded.find(Boolean);
+      if(first&&current()&&!queued.some(node=>pendingBatch(node.id,context)?.phase==="sync"))context.reveal(first);
+    }finally{
+      const ids=new Set(queued.map(node=>node.id));
+      ports.pending.set(nodes=>nodes.map(node=>ids.has(node.id)?{...node,uploading:false}:node));
+    }
+  }
+  return {getSnapshot,subscribe,upload,uploadPending,uploadPendingFiles,pendingBatch,synchronize,reset,dismiss};
 }
 export const EMPTY_CANVAS_IMAGE_IMPORTS=EMPTY;

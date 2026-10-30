@@ -7,6 +7,7 @@ import { selectedImagePreset } from "./image-preset";
 import {simulateModel} from "@/lib/model-config/simulation";
 import { imageRequestAdmission } from "../imagegen/request-admission";
 import { exactRatioPixels } from "../imagegen/request-size";
+import {acceptsAPIMartRatio} from "./apimart-image-policy";
 
 export const IMAGE_RESOLUTION_TIERS = ["1K", "2K", "4K"] as const;
 export type ImageResolutionTier = typeof IMAGE_RESOLUTION_TIERS[number];
@@ -21,7 +22,7 @@ export function upstreamResolutionTiers(upstream: UpstreamModel, ratio?: string)
     ? Object.keys(map.resolutionPolicy.values).filter(k => !!map.resolutionPolicy!.values[k as ImageResolutionTier])
     : Array.from(new Set([...upstream.capabilities.nativeResolutions, ...Object.keys(map.resolution || {})]));
   if (map.apimartImages && ratio && ratio !== "auto") {
-    if (!map.apimartImages.ratios.includes(ratio)) {
+    if (!acceptsAPIMartRatio(map.apimartImages,ratio)) {
       // A follow-reference ratio outside the named list still rides the
       // gpt-image exact-size contract as native 16-grid pixels (apib probed
       // 2026-10-27), so the declared tiers stay available for it.

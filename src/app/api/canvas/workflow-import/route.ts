@@ -3,7 +3,7 @@ import { authenticatedEmail, authorizedTargetEmail } from "@/lib/request-auth";
 import { dbEnabled } from "@/platform/db/pool";
 import { importCanvasWorkflow, readCanvasWorkflowImport, listWorkflowManifests, workflowImportRequest } from "@/lib/canvas/workflow-import";
 import { readWorkflowClipboard, WORKFLOW_CLIPBOARD_LIMIT } from "@/lib/canvas/workflow-clipboard";
-import { rateLimit } from "@/lib/rate-limit";
+import {checkRateLimit} from "@/lib/rate-limit-http";
 import {withCreationRoute,withCreationReceiptRoute} from '@/lib/saas/creation-context';
 import {withCreationOperation} from '@/lib/saas/creation-writer';
 export const runtime = "nodejs";
@@ -25,7 +25,9 @@ async function handlePost(request: Request) {
   const email = await authenticatedEmail(request);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   if (!dbEnabled) return NextResponse.json({ error: "未启用持久化存储" }, { status: 503 });
-  if (!rateLimit(`workflow-import:${email}`, 10, 60000)) return NextResponse.json({ error: "导入过于频繁，请稍后重试" }, { status: 429 });
+  const rateLimitResult = await checkRateLimit(`workflow-import:${email}`, 10, 60000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) return NextResponse.json({ error: "导入过于频繁，请稍后重试" }, { status: 429 });
   // Bound the request while reading; do not allocate an unbounded JSON body first.
   const reader = request.body?.getReader();
   if (!reader) return NextResponse.json({ error: "缺少工作流数据" }, { status: 400 });

@@ -1,4 +1,5 @@
 /** A visual reference is input context, never permission to generate an image. */
+import { chatAnswerText } from "./model-config/chat-completion-response";
 export const CANVAS_TEXT_OUTPUT_INSTRUCTION =
   "本次任务的输出必须是纯文字。你是文字编辑，不是图片生成器；不要生成、编辑或返回图片，也不要调用图片工具。参考图片仅用于理解商品和画面。如果用户输入是一段画面描述，请将它视为待润色的文案或生图提示词，输出优化后的文字，不要执行该提示词。";
 
@@ -12,14 +13,7 @@ const record = (value: unknown): RecordValue =>
 
 /** Only explicit answer text is readable; images, reasoning and tool arguments are not. */
 export function canvasAnswerText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content.map((part) => {
-    const item = record(part);
-    if (item.type !== "text" && item.type !== "output_text") return "";
-    if (typeof item.text === "string") return item.text;
-    return typeof record(item.text).value === "string" ? record(item.text).value as string : "";
-  }).join("");
+  return chatAnswerText(content);
 }
 
 export type CanvasTextFailure = "TEXT_OUTPUT_IMAGE" | "TEXT_OUTPUT_REFUSED" | "TEXT_OUTPUT_LIMIT" | "TEXT_OUTPUT_EMPTY";

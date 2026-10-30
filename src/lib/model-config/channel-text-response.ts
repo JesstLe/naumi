@@ -1,12 +1,13 @@
 import {readBounded} from "../supplier-cost/io";
 import {ModelConfigError} from "./types";
+import {chatAnswerText} from "./chat-completion-response";
 
 const invalid=()=>new ModelConfigError("SUPPLIER_TEXT_INVALID","供应通道未返回有效文字或工具调用",502);
-const output=(m:any)=>typeof m?.content==="string"&&!!m.content.trim() || typeof m?.refusal==="string"&&!!m.refusal.trim() || Array.isArray(m?.tool_calls)&&m.tool_calls.length>0 || !!m?.function_call;
+const output=(m:any)=>!!chatAnswerText(m?.content).trim() || typeof m?.refusal==="string"&&!!m.refusal.trim() || Array.isArray(m?.tool_calls)&&m.tool_calls.length>0 || !!m?.function_call;
 
 /** Buffer only the prelude. A failed attempt cannot leak tokens before fallback. */
 export async function prepareChannelText(response:Response,onFinish:(success:boolean,usage?:unknown,cancelled?:boolean)=>Promise<void>,signal?:AbortSignal) {
- if(!response.headers.get("content-type")?.includes("text/event-stream")){
+ if(!/text\/event-stream/i.test(response.headers.get("content-type") || "")){
   const raw=await readBounded(response,4*1024*1024);let data:any;try{data=JSON.parse(raw);}catch{throw invalid();}
   if(data.error||!Array.isArray(data.choices)||!data.choices.some((c:any)=>output(c.message)))throw invalid();
   const headers=new Headers(response.headers);headers.delete("content-length");headers.set("content-type","application/json");

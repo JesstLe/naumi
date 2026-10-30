@@ -5,7 +5,7 @@ import {getUser} from "@/lib/accounts/session";
 import {authenticatedEmail} from "@/lib/request-auth";
 import {sameSiteBiMutation} from "@/lib/bi/access";
 import {clientIp} from "@/lib/ip";
-import {rateLimit} from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit-http";
 import {readBounded} from "@/lib/supplier-cost/io";
 import {createVideoGeneration} from "@/lib/video/creation";
 import {type CreateVideoInput} from "@/lib/video/submission-types";
@@ -18,7 +18,9 @@ export const runtime="nodejs",dynamic="force-dynamic",maxDuration=120;
 async function handlePost(request:Request){
   const email=await authenticatedEmail(request);if(!email)return NextResponse.json({error:"请先登录"},{status:401});
   if(!sameSiteBiMutation(request))return NextResponse.json({error:"不允许跨站生成"},{status:403});
-  if(!rateLimit(`video-gen:${email}:${clientIp(request)||"0.0.0.0"}`,30,10*60*1000))return NextResponse.json({error:"视频生成过于频繁，请稍后再试"},{status:429});
+  const rateLimitResult = await checkRateLimit(`video-gen:${email}:${clientIp(request)||"0.0.0.0"}`,30,10*60*1000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) return NextResponse.json({error:"视频生成过于频繁，请稍后再试"},{status:429});
   try{
     const body=JSON.parse(await readBounded(new Response(request.body),1024*1024));
     if(!body||typeof body!=="object"||Array.isArray(body))return NextResponse.json({error:"视频请求无效"},{status:422});

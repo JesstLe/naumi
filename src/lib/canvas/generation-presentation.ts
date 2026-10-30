@@ -51,6 +51,15 @@ export function createCanvasGenerationPresentation(){
         if(placement.reserve!==false){positions[task.id]=position;sizes[task.id]=size;}
         tasks=[...tasks,{...task,position}];publish();return position;
       },
+      /** One operation may expose several destinations; none owns a paid request. */
+      startGroup(records:Array<TaskDraft&{position:CanvasPoint}>){
+        const operationKeys=new Set(records.map(record=>record.operationKey));
+        const replaced=tasks.filter(task=>task.failure&&operationKeys.has(task.operationKey));
+        for(const task of replaced)forget(task.id);
+        const ids=new Set(replaced.map(task=>task.id));tasks=tasks.filter(task=>!ids.has(task.id));
+        for(const task of records){positions[task.id]={...task.position};sizes[task.id]=task.previewSize??generationPlaceholderSize('auto');}
+        tasks=[...tasks,...records];if(records.length||replaced.length)publish();
+      },
       update,
       visibility(records:CanvasGenerationTask[],visible:boolean){
         const ids=new Set(records.map(task=>task.id));

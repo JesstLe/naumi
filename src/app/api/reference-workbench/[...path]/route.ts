@@ -6,7 +6,7 @@ import {isBanned} from "@/lib/accounts/repository";
 import {sameSiteBillingMutation,PRIVATE_HEADERS} from "@/lib/billing/access";
 import {userFeaturePolicy} from "@/lib/feature-access/repository";
 import {allows} from "@/lib/feature-access/catalog";
-import {rateLimit} from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit-http";
 import {streamImagegenZip,imagegenFilename} from "@/lib/imagegen/zip";
 import {cancelImagegenBatch} from "@/lib/imagegen/batch";
 import {defaults,settings,classify,LABELS,imageUrl,WorkbenchError,type Asset,type Project} from "@/lib/reference-workbench/contract";
@@ -51,7 +51,11 @@ async function handler(request:Request){
   // Limit before JSON parsing; original native media limits are enforced again.
   if(Number(request.headers.get("content-length"))>90*1024*1024)return json({error:"请求内容过大"},413);
   let body:any;try{body=await request.json();}catch{const failure=workbenchFailure(new ZodError([]),stage,action);return json(failure.body,400);}if(!body||typeof body!=="object"||Array.isArray(body))throw new WorkbenchError("请求格式无效");
-  if(action==="quote"){if(typeof body.action!=="string"||!body.body||typeof body.body!=="object"||Array.isArray(body.body))throw new WorkbenchError("报价请求格式无效");if(["workbench/infer-prompts","chat-image/send"].includes(body.action)&&!rateLimit(`ref-quote:${owner}`,40,600000))return json({error:"请求过于频繁"},429);return json(await preview(owner,String(body.action||""),body.body||{}));}
+  if(action==="quote"){if(typeof body.action!=="string"||!body.body||typeof body.body!=="object"||Array.isArray(body.body))throw new WorkbenchError("报价请求格式无效");if (["workbench/infer-prompts","chat-image/send"].includes(body.action)) {
+    const rateLimitResult = await checkRateLimit(`ref-quote:${owner}`,40,600000);
+    if (rateLimitResult instanceof Response) return rateLimitResult;
+    if (!rateLimitResult) return json({error:"请求过于频繁"},429);
+  }return json(await preview(owner,String(body.action||""),body.body||{}));}
   if(["workbench/start","workbench/infer-prompts","workbench/edit","single/start","chat-image/send","chat-image/confirm"].includes(action))return json(await accept(owner,action,body));
   if(action==="settings"){const keys=["single_quality","single_resolution","single_ratio","single_count","chat_task_mode","chat_ratio_mode"];const old=await document<any>(owner,"settings","default").catch(()=>({}));for(const k of keys)if(Object.hasOwn(body,k))old[k]=body[k];settings({quality:old.single_quality||"high",resolution:old.single_resolution||"2k",ratio:old.single_ratio||"1:1",count:old.single_count||1,task_mode:old.chat_task_mode||"confirm",ratio_mode:old.chat_ratio_mode||"smart"});await putDocument(owner,"settings","default",old);return json({ok:true});}
   if(action==="chat-image/new"){const id=randomUUID();await putDocument(owner,"chat",id,{title:"新对话",messages:[]});return json(await chatState(owner,id));}

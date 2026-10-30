@@ -11,6 +11,9 @@ import type {CanvasImageTaskScope} from './image-task-scope';
 import {generationPlaceholderSize,generationPositionForTask} from './generation-feedback';
 import type {GenerationFailure} from './generation-failure';
 import {normalizeCanvasCount} from './generation-parameters';
+import {adaptiveCanvasImageSize} from './image-size';
+import {canvasFanoutSlots,bindCanvasFanoutResults} from './generation-fanout';
+import {readPendingAttempt,pendingAttemptKey,updateCanvasImagegenPlacement} from '../imagegen/client-recovery';
 import type {CanvasGenerationRunContext} from './generation-run-context';
 
 type Task=Parameters<typeof createCanvasImageTask>[0];
@@ -30,26 +33,56 @@ export type CanvasBlankImageOptions={pend?:CanvasPendingNode;prompt?:string;rati
 export async function runCanvasDerivedImage(input:{source:Artwork;prompt:string;options?:CanvasImageGenerationOptions;
   model:string;quality:string;models:CanvasImageModelOption[];failed:(failure:GenerationFailure)=>void;succeeded:()=>void;
 },ctx:CanvasImageRunContext):Promise<CanvasGeneratedImage[]>{
-  const {source,options:opts}=input,text=input.prompt.trim();
+  const {source}=input,text=input.prompt.trim();let opts=input.options;
   if(!text&&!opts?.ratiogen)return [];
-  const count=opts?.ratiogen?1:Math.max(1,opts?.count??1),operationKey=opts?.operationKey??`node:${source.id}`,view=ctx.generation;
+  const operationKey=opts?.operationKey??`node:${source.id}`,view=ctx.generation;
   if(view.busy(operationKey))return [];
-  const taskId=`task-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,anchor=ctx.geometry.source(source),previewSize=generationPlaceholderSize(opts?.ratio||source.ratio);
+  const scope=ctx.capture();let retainedAttempt=false;
+  if(!opts?.ratiogen&&typeof sessionStorage!=="undefined")try{
+    const pending=readPendingAttempt(pendingAttemptKey(scope.owner,scope.workspace,scope.project,`node:${operationKey}`));
+    if(pending){retainedAttempt=true;opts={...opts,count:pending.request.variants,ratio:pending.request.parameters?.ratio,
+      replaceNode:!!pending.request.canvasTarget,fanout:!pending.request.canvasTarget&&pending.request.variants>1,placement:pending.placement||opts?.placement};}
+  }catch(error){input.failed({kind:"uncertain",message:error instanceof Error?error.message:ctx.errorText});return [];}
+  const count=opts?.ratiogen?1:normalizeCanvasCount(opts?.count),fanout=!!opts?.fanout&&count>1;
+  const taskId=`task-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,anchor=ctx.geometry.source(source),frame=generationPlaceholderSize(!opts?.ratio||opts.ratio==="auto"?source.ratio:opts.ratio);
+  const previewSize=fanout?adaptiveCanvasImageSize(frame.width,frame.height):frame;
   const preferred=anchor.inScene?{x:anchor.point.x+anchor.size.width+ctx.geometry.gap,y:anchor.point.y+(opts?.taskOffset??view.siblingCount(source.id))*(previewSize.height+ctx.resultGap)}:{x:0,y:0};
-  const position=view.start({id:taskId,operationKey,sourceId:source.id,replaceNode:opts?.replaceNode,label:opts?.taskLabel||ctx.pendingLabel,stage:'preparing',startedAt:Date.now(),previewSize,count},
+  const snapshot=view.getSnapshot();
+  let placement=fanout?opts?.placement||canvasFanoutSlots(source.id,count,preferred,previewSize,[...ctx.geometry.occupied(),
+    ...snapshot.tasks.filter(task=>!(task.operationKey===operationKey&&task.failure)).map(task=>({...view.position(task.id,task.position),...(task.previewSize||previewSize)}))]):undefined;
+  const taskIds=placement?placement.slots.map((_,index)=>`${taskId}-slot-${index}`):[taskId];
+  const position=placement?.slots[0]||view.start({id:taskId,operationKey,sourceId:source.id,replaceNode:opts?.replaceNode,label:opts?.taskLabel||ctx.pendingLabel,stage:'preparing',startedAt:Date.now(),previewSize,count},
     {preferred:opts?.replaceNode?anchor.point:preferred,occupied:ctx.geometry.occupied(),reserve:!opts?.replaceNode});
-  ctx.clearError();const scope=ctx.capture();
+  if(placement)view.startGroup(placement.slots.flatMap((slot,index)=>slot.artworkId?[]:[{id:taskIds[index],operationKey,sourceId:source.id,slotIndex:index,
+    label:opts?.taskLabel||ctx.pendingLabel,stage:'preparing' as const,startedAt:Date.now()+index,previewSize,count:1,position:{x:slot.x,y:slot.y}}]));
+  const synchronizePlacement=(images?:CanvasGeneratedImage[])=>{
+    if(!placement)return;
+    const moved={...placement,slots:placement.slots.map((slot,index)=>({...slot,...view.position(taskIds[index],slot)}))};
+    const bound=images?bindCanvasFanoutResults(moved,images.map(image=>image.id)):moved;
+    placement=updateCanvasImagegenPlacement(scope,`node:${operationKey}`,previous=>{
+      const next={...previous,slots:previous.slots.map((slot,index)=>({...slot,x:bound.slots[index].x,y:bound.slots[index].y}))};
+      return images?bindCanvasFanoutResults(next,images.map(image=>image.id)):next;
+    })||bound;
+  };
+  ctx.clearError();
   const task=createCanvasImageTask({scope,replacement:opts?.replaceNode?{nodeId:source.id,history:ctx.replacementHistory}:undefined,
-    prepare:()=>prepareCanvasImageTask({kind:'derived',scope,operationKey,position,prompt:text,source,options:opts||{},models:input.models,model:input.model,quality:input.quality,referenceInputs:opts?.referenceInputs}),
+    ...(placement?{fanout:{count,bind:synchronizePlacement,point:(id:string)=>placement?.slots.find(slot=>slot.artworkId===id)}}:{}),
+    prepare:()=>prepareCanvasImageTask({kind:'derived',scope,operationKey,position,prompt:text,source,options:{...opts,placement},models:input.models,model:input.model,quality:input.quality,referenceInputs:opts?.referenceInputs,retainedAttempt}),
     submit:ctx.submit,position:()=>view.position(taskId,position),...ctx.document,
-    stage:stage=>view.update(taskId,{stage,failure:undefined}),user:ctx.user,notice:ctx.notice,errorText:ctx.errorText,saveErrorText:ctx.saveErrorText,resultGap:ctx.resultGap,
+    stage:stage=>{if(stage==='generating')synchronizePlacement();for(const id of taskIds)view.update(id,{stage,failure:undefined});},user:ctx.user,notice:ctx.notice,errorText:ctx.errorText,saveErrorText:ctx.saveErrorText,resultGap:ctx.resultGap,
   });
-  const activity=view.activity({operationKey,canRetry:scope.isCurrent,clear:()=>view.remove(taskId),
+  const activity=view.activity({operationKey,canRetry:scope.isCurrent,clear:()=>taskIds.forEach(id=>view.remove(id)),
     execute:async({retry,retain}):Promise<CanvasGeneratedImage[]>=>{
       const result=await task.run();
-      if(result.status==='failed'){retain();input.failed(result.failure);view.update(taskId,{failure:result.failure,onRetry:retry});return [];}
+      if(result.status==='failed'){retain();input.failed(result.failure);for(const id of taskIds)view.update(id,{failure:result.failure,onRetry:retry});return [];}
       if(result.status==='stale'||result.status==='cancelled')return [];
-      input.succeeded();if(result.images.length<count)ctx.notice(`请求 ${count} 张，已交付 ${result.images.length} 张`);return result.images;
+      input.succeeded();
+      if(placement&&result.status==='partial'){
+        retain();const failure={kind:'failed' as const,message:'这张图片未完成，已生成图片已保留',jobId:result.jobId};
+        placement.slots.forEach((slot,index)=>{if(slot.artworkId)view.remove(taskIds[index]);else view.update(taskIds[index],{failure,onRetry:retry});});
+      }
+      if(result.images.length<count)ctx.notice(`请求 ${count} 张，已交付 ${result.images.length} 张；积分以实际结算记录为准`);
+      return result.images;
     },
   });
   return await activity.run()??[];

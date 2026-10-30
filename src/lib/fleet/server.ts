@@ -8,6 +8,7 @@ import { sameSiteBillingMutation, PRIVATE_HEADERS } from '@/lib/billing/access';
 import { digest, canonical, signCommand, operationSchema, pollSchema, ackSchema, commandCapability, type FleetOperation, type FleetActor } from './contracts';
 import type { PoolClient } from 'pg';
 import { rateLimit } from '@/lib/rate-limit';
+import { checkRateLimit, rateLimitFailureResponse } from "@/lib/rate-limit-http";
 import { clientIp } from '@/lib/ip';
 
 export class FleetError extends Error { constructor(message: string, readonly status = 400) { super(message); } }
@@ -16,13 +17,17 @@ export async function fleetAdmin(request: Request, mutation = false):Promise<Fle
   if (process.env.FLEET_CONTROL_ENABLED !== '1') return fleetJson({ error: '中央控制台未启用' }, 404);
   if (!await requireAdmin(request)) return fleetJson({ error: '需要总后台管理员身份' }, 403);
   if (mutation && !sameSiteBillingMutation(request)) return fleetJson({ error: '请求来源无效' }, 403);
-  if (!rateLimit('fleet-admin:'+(clientIp(request)||'local'), 120, 60000)) return fleetJson({error:'请求过于频繁'},429);
+  const rateLimitResult = await checkRateLimit('fleet-admin:'+(clientIp(request)||'local'), 120, 60000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) return fleetJson({error:'请求过于频繁'},429);
   return { actor: await resolveUserEmail(request) || 'local-admin', root:true };
 }
 export async function fleetOperator(request:Request,mutation=false):Promise<FleetActor|Response> {
   if(process.env.FLEET_CONTROL_ENABLED!=='1')return fleetJson({error:'中央控制台未启用'},404);
   if(mutation&&!sameSiteBillingMutation(request))return fleetJson({error:'请求来源无效'},403);
-  if(!rateLimit('fleet-op:'+(clientIp(request)||'local'),180,60000))return fleetJson({error:'请求过于频繁'},429);
+  const rateLimitResult2 = await checkRateLimit('fleet-op:'+(clientIp(request)||'local'),180,60000);
+  if (rateLimitResult2 instanceof Response) return rateLimitResult2;
+  if (!rateLimitResult2) return fleetJson({error:'请求过于频繁'},429);
   if(await requireAdmin(request))return {actor:await resolveUserEmail(request)||'local-admin',root:true};
   const actor=await resolveUserEmail(request);if(!actor)return fleetJson({error:'需要登录'},401);
   await ensureFleetSchema();const grants=await getPool().query("SELECT 1 FROM app_fleet_grants WHERE email=$1 AND allowed ? 'read' AND (expires_at IS NULL OR expires_at>now()) LIMIT 1",[actor]);
@@ -42,6 +47,8 @@ export async function limitedJson(request: Request, limit = 48000): Promise<unkn
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new FleetError('请求格式无效'); }
 }
 export function fleetFailure(error: unknown) {
+  const unavailable = rateLimitFailureResponse(error);
+  if (unavailable) return unavailable;
   if (error instanceof FleetError) return fleetJson({ error: error.message }, error.status);
   if (error instanceof z.ZodError) return fleetJson({ error: '参数无效' }, 400);
   return fleetJson({ error: '管理服务暂时不可用' }, 503);
@@ -131,7 +138,7 @@ export async function enqueueCommand(actor: string, instanceId: string, id: stri
 }
 export async function connectorExchange(request: Request, ack = false) {
   if(process.env.FLEET_CONTROL_ENABLED!=='1') throw new FleetError('实例连接未启用',404);
-  if(!rateLimit('fleet-connect-ip:'+(clientIp(request)||'local'),600,60000))throw new FleetError('连接过于频繁',429);
+  if(!(await rateLimit('fleet-connect-ip:'+(clientIp(request)||'local'),600,60000)))throw new FleetError('连接过于频繁',429);
   // A reverse proxy must terminate verified TLS. Loopback HTTP is test-only.
   const url = new URL(request.url);
   if(url.protocol!=='https:' && request.headers.get('x-forwarded-proto')!=='https' && !(process.env.FLEET_ISOLATED_TEST==='1' && ['127.0.0.1','localhost'].includes(url.hostname))) throw new FleetError('需要HTTPS',400);

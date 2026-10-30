@@ -1,5 +1,10 @@
 # Naumi 重构方案：模块化单体，收敛执行路径
 
+## 2026-10-30 当前：R7R 主线行为 owner 整合
+
+固定接入 main `d4dcea3a`（26提交），将fanout/多文件导入/文本反馈/自动画幅/共享限流/Worker停止及抠图回执行为迁入既有owner，不恢复旧大页面。原生Next20检查、主要图片57共同轨迹、真实PG关键链已通过；同固定SHA受影响51项聚合、四产物和副本回滚以本片DELIVERY为准。完整core143/最终Linux/scene门禁和整版验收仍未全部闭合。**整体ACTIVE，长分支超过48小时待普通整合main；当前未合main未部署，47 HOLD。** 详见[R7R模块记录](changes/2026-10-30-refactor-r7r-main-owner-integration.md)。以下旧阶段统计保留其原证据时间，不代表当前版本。
+
+
 日期：2026-10-24（固定基线设计）；2026-10-27状态：**整体迁移实施中，已推进R6L项目目录/命名会话；最新固定应用core32、完整Linux同镜像运行125、产品双浏览器9组及实际Next-PG项目控件11通过，完整重构版本尚未完成。**
 
 R6D—R6L已进一步统一作品兼容writer、工作台环境资产、管理设置/模型/供应商资料owner、测试生命周期及依赖字节边界；Canvas主组件7132→6524行，原项目聚合规则保留并关闭命名竞态。最近普通整合main固定`8e412abe`（merge`6ef35a8a`），incoming诊断接实际执行owner；emitted静态/全导入SCC仍0。单模块、同镜像运行及本地浏览器证据不替代最终整体交付/容量/生产验收；冷Windows dev首次加载SyntaxError根因仍未证明。详见[R6L记录](changes/2026-10-27-canvas-project-catalog-r6l.md)。

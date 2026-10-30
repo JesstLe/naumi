@@ -479,6 +479,11 @@ def build_sql(*, previous=None, schema='public', row_limit=1000, projection='ful
         sources.append(f"SELECT {i} AS t,j FROM jsonb_array_elements({setting('graph_'+str(i))}) e(j)")
         nodes.append(f"SELECT {i} AS t,{sql_key(key)} AS key,'row:{i}:'||({sql_key(key)}) AS vertex,({active}) OR {sql_key(key)} IN ({prior_sql}) AS seed,{graph_links(name)} AS links,{graph_out(key)} AS outgoing FROM source WHERE t={i}")
     root_cap=min(b['roots'],row_limit*8)
+    # Scalar, uncorrelated ID maps are evaluated once. A join of chosen back to
+    # source made PostgreSQL repeatedly scan the entire selected set for every
+    # historical image row. Membership preserves that existential check, including
+    # duplicate IDs; an explicit NULL child remains missing, never silently valid.
+    # Only already row/byte-bounded graph IDs enter these maps, not snapshot bodies.
     closure=f"""WITH RECURSIVE source AS MATERIALIZED ({' UNION ALL '.join(sources)}),
     nodes AS MATERIALIZED ({' UNION ALL '.join(nodes)}),
     edges AS MATERIALIZED (SELECT 'root:'||v AS a,vertex AS z FROM nodes CROSS JOIN LATERAL jsonb_array_elements_text(links) x(v) WHERE v IS NOT NULL AND v<>''
@@ -488,9 +493,12 @@ def build_sql(*, previous=None, schema='public', row_limit=1000, projection='ful
     chosen AS MATERIALIZED (SELECT n.t,n.key FROM nodes n JOIN bounded w ON n.vertex=w.v),
     stats AS (SELECT (SELECT count(*) FROM bounded WHERE v LIKE 'root:%') AS roots,(SELECT count(*) FROM chosen) AS chosen),
     checked AS (SELECT CASE WHEN NOT ({STATE}->>'ok')::boolean THEN {STATE}->>'reason'
-      WHEN EXISTS(SELECT 1 FROM chosen c JOIN source d ON d.t=c.t AND {sql_key('id')}=c.key
+      WHEN EXISTS(SELECT 1 FROM source d
         CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(d.j#>'{{snapshot,childJobIds}}','[]'::jsonb)) x(id)
-        WHERE c.t=0 AND NOT EXISTS(SELECT 1 FROM nodes target WHERE target.t=0 AND target.key=x.id)) THEN 'unknown-child-missing'
+        WHERE d.t=0 AND COALESCE((SELECT jsonb_object_agg(key,true) FROM chosen
+          WHERE t=0 AND key IS NOT NULL),'{{}}'::jsonb) ? (d.j->>'id')
+          AND (x.id IS NULL OR NOT COALESCE((SELECT jsonb_object_agg(key,true) FROM nodes
+            WHERE t=0 AND key IS NOT NULL),'{{}}'::jsonb) ? x.id)) THEN 'unknown-child-missing'
       WHEN roots>{root_cap} THEN 'unknown-root-limit' WHEN chosen>{b['selected_rows']} THEN 'unknown-selected-budget'
       WHEN EXISTS(SELECT 1 FROM chosen GROUP BY t HAVING count(*)>{row_limit}) THEN 'unknown-row-limit'
       WHEN (SELECT count(*) FROM bounded)>{root_cap+b['selected_rows']} THEN 'unknown-closure-limit' ELSE '' END AS reason,stats.* FROM stats),

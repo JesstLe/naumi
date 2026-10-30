@@ -40,7 +40,9 @@ export async function submitGenerationCore(plan:ImagegenPlan,key:string,owner:st
  const namedTarget=inputs.find(i=>i.role==="edit-target")?.reference?.sourceNodeId;
  const source=lineage.find(w=>w.id===(target?.artworkId||namedTarget||plan.request.sourceNodeId));
  const request:ImagegenRequest={...plan.request,parameters:{...plan.request.parameters,...(step.parameters.resolution?{resolution:step.parameters.resolution as "1K"|"2K"|"4K"}:{})},output:{...plan.request.output,background:intent.background||undefined}};
- const fields:Record<string,string>={prompt:compileImagegenPrompt(request,intent,plan.skillInstructions),userPrompt:request.prompt,model:step.modelId||"",origin:request.entry==="canvas"?"canvas":"",entry:"imagegen",quality:request.parameters.quality||"medium",resolution:request.parameters.resolution||"1K",ratio:request.parameters.ratio||"1:1",count:String(request.variants),transparent:intent.background==="transparent"?"1":"0",parentId:inputs.find(i=>i.role==="edit-target")?.artworkId||""};
+ const frameInstructions=plan.frameChoice?.method==='provider-auto'?`画幅跟随${plan.frameChoice.source==='reference'?'所选参考图':'用户选择'}的 ${plan.frameChoice.target}，完整保留主体，不裁切或拉伸。`:undefined;
+ const prompt=[compileImagegenPrompt(request,intent,plan.skillInstructions),frameInstructions].filter(Boolean).join("\n\n");
+ const fields:Record<string,string>={prompt,userPrompt:request.prompt,model:step.modelId||"",origin:request.entry==="canvas"?"canvas":"",entry:"imagegen",quality:request.parameters.quality||"medium",resolution:request.parameters.resolution||"1K",ratio:request.parameters.ratio||"1:1",count:String(request.variants),transparent:intent.background==="transparent"?"1":"0",parentId:inputs.find(i=>i.role==="edit-target")?.artworkId||""};
  if(step.modelId===undefined)delete fields.model;
  if(request.parameters.width)fields.targetWidth=String(request.parameters.width);
  if(request.parameters.height)fields.targetHeight=String(request.parameters.height);

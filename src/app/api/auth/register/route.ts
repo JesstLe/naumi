@@ -4,7 +4,7 @@ import {multiUserEnabled} from "@/lib/accounts/mode";
 import {userExists, setUserPassword} from "@/lib/accounts/repository";
 import {getOrCreateUser} from "@/lib/accounts/session";
 import { hashPassword } from "@/lib/pw";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit-http";
 import { clientIp } from "@/lib/ip";
 import { smtpConfigured } from "@/lib/mailer";
 import { verifyEmailCode } from "@/lib/email-code";
@@ -20,7 +20,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "本站未开放注册" }, { status: 403 });
   }
   const ip = clientIp(req) || "0.0.0.0";
-  if (!rateLimit(`register:${ip}`, 10, 10 * 60 * 1000)) {
+  const rateLimitResult = await checkRateLimit(`register:${ip}`, 10, 10 * 60 * 1000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) {
     return NextResponse.json({ error: "操作过于频繁,请稍后再试" }, { status: 429 });
   }
   let body: {

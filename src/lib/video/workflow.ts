@@ -177,7 +177,12 @@ export async function recoverVideoWorkflows(limit=2){
     }
     return admitted;
   }
-  for(const run of runs)await resumeVideoWorkflow(run.id);return runs.length;
+  let processed=0;
+  for(const run of runs){
+    try{await resumeVideoWorkflow(run.id);processed++;}
+    catch{console.error("[video-worker] workflow recovery failed; retained for next scan");}
+  }
+  return processed;
 }
 
 export async function confirmVideoWorkflowNode(actor:string,runId:string,nodeId:string,confirmation:{version:number;credits:number}){

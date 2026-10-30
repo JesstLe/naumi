@@ -9,6 +9,7 @@ import type {ValidationOptions} from "./schema";
 import {ModelConfigError} from "./types";
 import {appendImageGatewayFields} from "../image-gateway";
 import {supplierCostFetch} from "../supplier-cost/collect";
+import {chatCompletionResponseFetch} from "./chat-completion-response";
 
 export function executionOpenAI(scope: ModelExecutionScope, options: ValidationOptions = {}) {
   const { connection } = scope;
@@ -26,7 +27,7 @@ export async function managedImageEditFetch(baseUrl: string, apiKey: string, for
 }
 
 export function modelAwareOpenAI(options: ConstructorParameters<typeof OpenAI>[0], managed = true): OpenAI {
-  const legacy = new OpenAI({ ...options, maxRetries:0,fetch: supplierCostFetch(options?.fetch || fetch, { providerId: managed ? "legacy-openai" : "byok", apiKey: typeof options?.apiKey==='string' ? options.apiKey : undefined, baseUrl: options?.baseURL || "https://api.openai.com/v1", protocol: "openai-compatible" }) });
+  const legacy = new OpenAI({ ...options, maxRetries:0,fetch: chatCompletionResponseFetch(supplierCostFetch(options?.fetch || fetch, { providerId: managed ? "legacy-openai" : "byok", apiKey: typeof options?.apiKey==='string' ? options.apiKey : undefined, baseUrl: options?.baseURL || "https://api.openai.com/v1", protocol: "openai-compatible" })) });
   if (!managed) return legacy;
   markManagedModelClient(legacy);
   const clients = new WeakMap<ModelExecutionScope, OpenAI>();
