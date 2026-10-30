@@ -36,3 +36,8 @@
 原图片链20/20交付、412读/103保存实际完成，媒体POST返回422 INVALID_MEDIA_STREAM且零媒体账务，整轮仍exit1。public模式的底层uploadImage本就不登记mime资产，fixture仅写对象却未沿原registerMediaAsset登记，真实媒体入口正确拒绝未核验类型；补原asset登记，不改产品护栏。billing操作表同时有setup的signup/admin零价操作，验收改为保存前态并验证其逐行不变，仅按新业务操作增量与consume核对，不删除前态冒充空表。
 
 原生媒体Web→Worker依赖既有共享scratch目录，mixed原先只沿基础runtime组件样本的独立tmpfs，未提供Web侧共享准备区。mixed模式改为自有output/scratch bind同时挂Web/Worker，保留原750MiB可用空间检查，不降低预算或修改生产路径；内存/CPU/池/供应商并发不改。Worker控制仍loopback-only。
+
+
+### 第三轮smoke：交付已完成，纠正账务观测字段
+
+20张图片和1个原生媒体均实际完成，媒体HTTP202、FFmpeg512×512PNG落盘与公开回执均已取得；整轮仍exit1。checker错误要求已结算image job的历史reserved_cost=0，而生产语义保留原授权金额；真正可用余额占用在app_billing_operations.reserved_credits、legacy reservation与wallet credits_used中。改为检查原billing operation settled/charged=6/reserved=0、legacy reservation空、wallet占用0，不改生产字段。fixture默认video.process tariff.enabled=false，仅改pricing仍为0；显式启用本轮隔离fixture的2积分本地媒体价并在setup调用真实mediaBillingQuote断言后才启动负载，生产后台价格不变。原失败与清理记录保留。
