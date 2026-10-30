@@ -41,8 +41,11 @@ if (baseline) {
   assert.equal(mod.exports.imageOutputWarningText(["a".repeat(5000)]).length,240);
   assert.ok(route.includes("imagegenOutputWarning"));assert.ok(parent.includes("warnings"));
   const canvas = readFileSync("src/components/canvas/canvas-client.tsx","utf8");
-  assert.ok(canvas.includes("imageOutputWarningText(pj.warnings)"));
-  assert.equal(canvas.split("imageOutputWarningText(pj.warnings)").length-1,2,"existing and pending-node generation both filter warnings");
+  if(canvas.includes("runCanvasDerivedImage(")){
+    const controller=readFileSync("src/lib/canvas/image-task-controller.ts","utf8");
+    assert.ok(canvas.includes("runCanvasBlankImage("));assert.ok(controller.includes("imageOutputWarningText(body.warnings)"));
+    assert.ok(controller.includes("if(warning)input.notice(warning)"),"both Canvas applications use the real shared formatter");
+  }else assert.equal(canvas.split("imageOutputWarningText(pj.warnings)").length-1,2,"legacy existing and pending-node generation both filter warnings");
   console.log("MODIFIED=PASS RATIO_DEVIATIONS=5 INTERNAL_DIAGNOSTICS=RETAINED USER_RATIO_NOTICE=HIDDEN ORIGINAL_BYTES_AND_DIMENSIONS=UNCHANGED REAL_ERRORS=RETAINED HISTORICAL_PROJECTION=READ_ONLY BILLING=UNCHANGED CANVAS_NOTICE=FILTERED");
 }
 console.log("PRODUCTION_WRITES=0 REAL_SUPPLIER_CALLS=0 AUTO_RETRIES=0");

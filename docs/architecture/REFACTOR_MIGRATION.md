@@ -385,3 +385,8 @@ Canvas编辑/详情/Comfy的任务、attachment、retained billing及timer组合
 ## 2026-10-30 R7U：整理布局用例边界
 
 布局投影和flush→原history事务/单步undo→延迟Fit编排归 `canvas/arrange`，Canvas只连接既有文档/Flow/view-controls端口。smartLayout与八类节点规则不变；Fit绑定原scope及导航revision，后来的缩放/拖动/整理退休旧Fit。没有新HTTP写入、任务或账务owner。基线5184文件已保存，16共同轨迹精确对齐；最终集中/原生/回滚以[R7U记录](../changes/2026-10-30-refactor-r7u-arrange-application.md)和DELIVERY为准。整体ACTIVE，未合main未部署；最新main6提交已记录，R7S同步后第2模块，下一模块后统一整合。分支持续超过48小时：保留独立重构候选按用户整体交付要求推进，最终main退出仍未完成；不把独立分支push称整版交付。
+
+
+## 2026-10-30 R7V：视频任务跟随归属及第三模块同步
+
+Canvas视频GET/占位/结果initialize与merge/积分刷新/定时跟随归 `canvas/video-task-follow`，按现有document scope隔离、React只管订阅生命周期，不另建任务或结算。cancelled终态收起原占位，未知状态保留；readOnly/账号/workspace/project退休后无新副作用。原/新21→22检查、14共同轨迹相同（受控HTTP/auth/React effect端口，非生产）。第三模块后普通整合main bbc8f784的6提交，2冲突保留workspace cache与新存储owner/通知可见性，模块计数归零。集中core156与完整Next/PG及四产物见[R7V记录](../changes/2026-10-30-refactor-r7v-video-follow.md)和DELIVERY；整体ACTIVE、未合main未部署。**独立整体候选分支超过48小时仍未合主线：用户要求整体重构版本，最终main整合验收仍未达到，不以模块push代替退出。**

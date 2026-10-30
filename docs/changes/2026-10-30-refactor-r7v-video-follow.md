@@ -20,3 +20,9 @@
 原effect21检查/新版22检查，14共同轨迹EXACT；用实际document-scope及pending owner，React effect生命周期、auth/HTTP/timer受控。旧readOnly不停止follow、旧cancelled占位不退出、退休后的延迟pending updater仍添加节点；新版修正。workspace/target切换的新会话只处理原scope，auth await后旧scope无网络调用；不是线上越权事故或账务变化证明。首轮零付费生成POST。
 
 下一步第三模块同步主线，再固定源码集中验证、完整Next真实恢复/cancelled链和副本回滚。未知任务不重提，账户余额/退款仍归原账务。
+
+## 第三模块主线同步
+
+模块提交c9d468ba后普通merge main bbc8f784（6提交），生成3e11e593；2冲突：browser-data-cache同时保留既有workspace/revision分区与BrowserCacheStorage、output-advisory测试跟随真实共享controller而非旧单体两个字符串。incoming notice脚本原AST夹具随新owner迁移到原image-task fixture，56原语义断言全通过；未恢复旧页面生成逻辑。browser-cache及notice两项接入既有registry（154→156），证据目录env沿原runner端口，命令不改写。当前无merge状态；main同步模块计数3→0。
+
+首轮合并后tsc exit0；实际缓存Edge/IDB、完整core156/真实PG/实际Next跟随恢复待集中。主线当前6提交全部在候选，候选未合回main、未部署。

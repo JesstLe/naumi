@@ -12,7 +12,7 @@ const { chromium } = require('@playwright/test');
 const args = process.argv.slice(2);
 const arg = (key, fallback) => args.includes(key) ? args[args.indexOf(key) + 1] : fallback;
 const sourceRoot = path.resolve(arg('--source-root', path.join(__dirname, '..')));
-const outputRoot = path.resolve(arg('--output-root', 'output/browser-cache-resilience'));
+const outputRoot = path.resolve(arg('--output-root', process.env.BROWSER_CACHE_RESILIENCE_EVIDENCE||'output/browser-cache-resilience'));
 const baseline = args.includes('--baseline');
 const dependencies = path.resolve(__dirname, '../node_modules');
 const owner = 'cache-owner@fixture.test';
