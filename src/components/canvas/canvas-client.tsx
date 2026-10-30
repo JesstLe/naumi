@@ -56,7 +56,6 @@ import {generalTextTask,derivedTextTask,stripTextMentions as stripMentionLines,w
 import {useCanvasSelectionRun} from "./use-canvas-selection-run";
 import {newCanvasText} from "@/lib/canvas/node-commands";
 import {useCanvasDrag} from "./use-canvas-drag";
-import {canvasNodeClick,canvasFlowSelection,canvasSelectionIds} from "@/lib/canvas/selection";
 import {compileCanvasLink,canvasLinkMediaSource,type CanvasLinkIntent} from "@/lib/canvas/link-command";
 import {compileCanvasMove} from "@/lib/canvas/drag-controller";
 
@@ -400,7 +399,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const projectCatalog=useCanvasProjectCatalog({scope:canvasArtworkDocument.scope,ready:ready&&!!targetEmail,actor:user?.email||"",target:targetEmail||"",readOnly,notice:flashTip,failure:t("canvas.genFail")});
 
   const frameChoice=useCanvasFrameChoice(imageDraftScope(user?.email,targetEmail,activeKey,currentWorkspace()));
-  const canvasSelection=useCanvasSelection();
+  const canvasSelection=useCanvasSelection(canvasArtworkDocument.scope,()=>({
+    catalogue:()=>({project:activeKey,artworks:active?.members||[],text:textNodesRef.current,video:videoNodesStore.nodes,director:directorNodesStore.nodes,character:characterNodesStore.nodes,scene:sceneNodesStore.nodes,audio:audioNodesStore.nodes,timeline:timelineNodesStore.nodes}),
+    tool:()=>canvasTool,taskFailed:id=>!!generationPresentation.getSnapshot().tasks.find(task=>task.id===id)?.failure,nodes:()=>rfNodes,
+    nodesSelection:select=>setRfNodes(current=>current.map(node=>{const selected=select(node.id,!!node.selected);return !!node.selected===selected?node:{...node,selected};})),
+    edgesSelection:select=>setRfEdges(current=>current.map(edge=>{const selected=select(edge.id,!!edge.selected);return !!edge.selected===selected?edge:{...edge,selected};})),
+    leaveBox:()=>viewControls.selectTool("move"),timer:{set:(run,delay)=>window.setTimeout(run,delay),clear:token=>window.clearTimeout(token as number)},
+  }));
   const {selectedId,setSelectedId,selectedPendId,setSelectedPendId,selectedTextId,setSelectedTextId,selectedEdge,setSelectedEdge,multiSel,setMultiSel}=canvasSelection;
   const selectedIdRef = useRef<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -474,7 +479,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const extraFiles=referenceDraft.files;
   const extraInputRef = useRef<HTMLInputElement>(null);
   // 节点剪贴板(复制/粘贴节点)+ 上传作根节点的文件 input
-  const pendingNodeSelectionRef=useRef<{ids:string[];projectKey:string;owner:string}|null>(null);
   const [copyTip, setCopyTip] = useState(false);
   const rootUploadRef = useRef<HTMLInputElement>(null);
   // 空白右键「上传图片/添加节点」时记下落点(画布坐标)与挂靠的当前项目根,供 uploadRoot 用
@@ -737,7 +741,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const {undoStack,redoStack,pushUndo,historyBusyRef,historySaving,setHistorySaving,historyCurrent} = canvasHistory;
   const templateImports=useCanvasTemplateImports(canvasArtworkDocument.scope,{
     writable:()=>!!user&&!readOnly,viewCurrent:importViewCurrent,merge:ids=>canvasArtworkDocument.merge(ids),history:canvasHistory,
-    open:(id,projectKey)=>{resetImportScope();workspacePages.close();setBrowsing(false);setCreatingNew(false);setActiveKey(projectKey);setSelectedId(id);setSelectedTextId(null);},
+    open:(id,projectKey)=>{resetImportScope();workspacePages.close();setBrowsing(false);setCreatingNew(false);setActiveKey(projectKey);canvasSelection.selectInProject(projectKey,{selectedId:id,selectedTextId:null,selectedPendId:null});},
   });
   const textTasks=useCanvasTextTasks(canvasTextDocument.scope,{
     document:canvasTextDocument,
@@ -922,7 +926,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (proj) {
       setActiveKey(proj.key);
       setCreatingNew(false);
-      setSelectedId(openWithoutSelection ? null : node);
+      canvasSelection.selectInProject(proj.key,{selectedId:openWithoutSelection?null:node,selectedTextId:null,selectedPendId:null});
       // 只有后台深链进入才自动聚焦;日常新建/上传/生成不动画布
       if (deepFocusRef.current) {
         setFocusId(node);
@@ -1227,7 +1231,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const box=canvasAreaRef.current?.getBoundingClientRect(),point=rfRef.current?.screenToFlowPosition({x:at.x+(box?.left||0),y:at.y+(box?.top||0)})||{x:0,y:0};
     return {projectKey:!browsing&&!creatingNew&&activeKey?activeKey:`tree:${id}`,...point};
   }
-  function revealNativeNode(node:{id:string;projectKey:string},open:(id:string)=>void){setActiveKey(node.projectKey);setCreatingNew(false);setBrowsing(false);open(node.id);}
+  function revealNativeNode(node:{id:string;projectKey:string},open:(id:string)=>void){canvasSelection.selectInProject(node.projectKey,{selectedId:node.id,selectedTextId:null,selectedPendId:null,multiSel:[]});setActiveKey(node.projectKey);setCreatingNew(false);setBrowsing(false);open(node.id);}
   function nativeReferenceDraft(input:{x:number;y:number;width:number;height:number;prompt:string;referenceArtworkIds:string[]}){
     const center=centerScreen(),pending=addPendAtScreen(center.x,center.y,null,false),{referenceArtworkIds:ids}=input;
     pendingPresentation.set(nodes=>nodes.map(node=>node.id===pending.id?{...node,x:input.x,y:input.y,inputs:ids,parentId:ids[0]||null,linked:ids.length>0}:node));
@@ -1246,7 +1250,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     position:async(operationId,id,point)=>{const response=await canvasDocumentFetch(canvasArtworkDocument.scope,"/api/canvas/history",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operationId,operations:[{type:"position",id,text:false,...point}]})},true);return expectJsonOk(response,L("输出位置保存失败","Output position save failed"));}});
   const videoNodeActions=videoNodeActionsOwner.bind(canvasHistory.scope,{english:locale==="en",writable:()=>!!user&&!readOnly,allowed:()=>canFeature("video"),catalog:()=>videoCreationCatalogRef.current,
     location:(at,id)=>({...nativeNodeLocation(at,id),projectKey:active?.key||`tree:${id}`}),store:videoNodesStore,history:pushUndo,busy:setVideoNodeCreateBusy,notice:flashTip,
-    created:node=>{setCreatingNew(false);setActiveKey(node.projectKey);setBrowsing(false);openVideoEditor(node.id);}});
+    created:node=>revealNativeNode(node,openVideoEditor)});
   useEffect(()=>{setVideoNodeCreateBusy(videoNodeActionsOwner.isCreating(canvasHistory.scope.key));},[videoNodeActionsOwner,canvasHistory.scope.key]);
   const audioActions=audioActionsOwner.bind(canvasHistory.scope,{
     english:locale==="en",writable:()=>!!user&&!readOnly,settingsReady:()=>nodeSettingsReady,locked:isNodeLocked,store:audioNodesStore,
@@ -1431,56 +1435,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     [nodes,edges,active,activeKey,generationTasks,generationPresentation.positions,generationPresentation.operations,pendNodes,textNodes,videoNodesStore.nodes,directorNodesStore.nodes,characterNodesStore.nodes,sceneNodesStore.nodes,audioNodesStore.nodes,timelineNodesStore.nodes,videoTaskStore.tasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,
       locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutCatalog,cutoutCatalogError,workflowManifests,sceneActions,canvasArtworkDocument.scope]);
   const {rfNodes,setRfNodes,onNodesChange,rfEdges,setRfEdges,onEdgesChange,holdPositions}=useCanvasScene(displayNodes,displayEdges,canvasArtworkDocument.scope);
-  useEffect(()=>{
-    const pending=pendingNodeSelectionRef.current;if(!pending)return;
-    if(pending.owner!==user?.email.toLowerCase()){pendingNodeSelectionRef.current=null;return;}
-    if(pending.projectKey!==activeKey||!pending.ids.every(id=>rfNodes.some(node=>node.id===id)))return;
-    pendingNodeSelectionRef.current=null;const ids=new Set(pending.ids);setRfNodes(current=>current.map(node=>({...node,selected:ids.has(node.id)})));
-  },[rfNodes,activeKey,user?.email,setRfNodes]);
+  useEffect(()=>{canvasSelection.project();},[rfNodes,canvasSelection.project]);
 
-  function selectWorkflowGroup(ids: string[]) {
-    setSelectedId(null); setSelectedTextId(null); setSelectedPendId(null);
-    setRfNodes(current => current.map(node => ({ ...node, selected: ids.includes(node.id) })));
-    setMultiSel(ids);
-  }
-  function clearCanvasSelection(exitBoxMode = false) {
-    setMultiSel([]);
-    setSelectedEdge(null);
-    setRfEdges(current => current.map(edge => edge.selected ? { ...edge, selected: false } : edge));
-    setRfNodes((current) =>
-      current.map((node) => (node.selected ? { ...node, selected: false } : node))
-    );
-    if (exitBoxMode) viewControls.selectTool("move");
-  }
-
-  useEffect(() => {
-    setSelectedEdge(null);
-    setRfEdges(current => current.map(edge => edge.selected ? { ...edge, selected: false } : edge));
-  }, [activeKey, user?.email, setRfEdges, setSelectedEdge]);
-
-  function applyArtworkSelection(ids: string[]) {
-    const kinds=new Map<string,"art"|"text"|"video"|"director"|"character"|"scene"|"audio"|"timeline">([
-      ...(active?.members||[]).map(node=>[node.id,"art"] as const),
-      ...videoNodesStore.nodes.filter(node=>node.projectKey===activeKey).map(node=>[node.id,"video"] as const),
-      ...directorNodesStore.nodes.filter(node=>node.projectKey===activeKey).map(node=>[node.id,"director"] as const),
-      ...characterNodesStore.nodes.filter(node=>node.projectKey===activeKey).map(node=>[node.id,"character"] as const),
-      ...sceneNodesStore.nodes.filter(node=>node.projectKey===activeKey).map(node=>[node.id,"scene"] as const),
-      ...audioNodesStore.nodes.filter(node=>node.projectKey===activeKey).map(node=>[node.id,"audio"] as const),
-      ...timelineNodesStore.nodes.filter(node=>node.projectKey===activeKey).map(node=>[node.id,"timeline"] as const),
-      ...textNodesRef.current.filter(node=>node.projectKey===activeKey).map(node=>[node.id,"text"] as const),
-    ]);
-    const patch=canvasSelectionIds(ids,kinds),valid=new Set(patch.multiSel);
-    canvasSelection.patch(patch);
-    setRfEdges(current=>current.map(edge=>edge.selected?{...edge,selected:false}:edge));
-    setRfNodes(current=>current.map(node=>({...node,selected:valid.has(node.id)})));
-  }
-
-  function toggleArtworkBatchSelection(nodeId: string, base = multiSel) {
-    const next = new Set(base);
-    if (next.has(nodeId)) next.delete(nodeId);
-    else next.add(nodeId);
-    applyArtworkSelection(Array.from(next));
-  }
+  function selectWorkflowGroup(ids:string[]){canvasSelection.group(ids);}
+  function clearCanvasSelection(exitBoxMode=false){canvasSelection.clear(exitBoxMode);}
+  function applyArtworkSelection(ids:string[]){canvasSelection.selectIds(ids);}
+  function toggleArtworkBatchSelection(nodeId:string,base?:string[]){canvasSelection.toggle(nodeId,base);}
 
   const {nodeScreen,dockStyle,topbarStyle,overlaySafeArea,panelRef,textComposerDockRef,nodeToolbarRef,nodeRenamePositionRef,updateLiveViewport}=useCanvasOverlayLayout({
     flow:rfRef,viewport:viewportRef,nodes:rfNodes,size:canvasSize,selection:{selectedId,selectedPendId,selectedTextId},contextMenuOpen:!!ctxMenu,
@@ -1817,7 +1777,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         if(!response.ok)throw Error("剧本资产已保存，画布文字读取暂不可用");const snapshot=await response.json();
         if(isCurrent())canvasTextDocument.accept(((snapshot.nodes||[]) as CanvasTextNode[]).filter(node=>ids.has(node.id)&&node.projectKey===scope.project).map(node=>({...node,width:node.width||TEXT_NODE_DEFAULT_W,height:node.height||TEXT_NODE_DEFAULT_H,sourceIds:node.sourceIds||[],targetIds:node.targetIds||[],productIds:node.productIds||[]})));
       },
-      revealVideo:async(result,isCurrent)=>{if(activeProjectRef.current?.key||!isCurrent())return;await videoNodesStore.refresh();if(isCurrent()){setCreatingNew(false);setBrowsing(false);setActiveKey(result.key);setSelectedId(result.nodeId);}},
+      revealVideo:async(result,isCurrent)=>{if(activeProjectRef.current?.key||!isCurrent())return;await videoNodesStore.refresh();if(isCurrent()){setCreatingNew(false);setBrowsing(false);setActiveKey(result.key);canvasSelection.selectInProject(result.key,{selectedId:result.nodeId,selectedTextId:null,selectedPendId:null});}},
     };
   }
   function currentAssistantReferences(){return assistantSession.refs(canvasAssistantContext());}
@@ -2297,29 +2257,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   ) {
     e.preventDefault();
     e.stopPropagation();
-    if (node.id.startsWith("task-")&&!generationPresentation.getSnapshot().tasks.find(task=>task.id===node.id)?.failure) return;
-    setSelectedEdge(null);
-    setRfEdges(current => current.map(edge => edge.selected ? { ...edge, selected: false } : edge));
+    const base=canvasSelection.context(node.id,e.ctrlKey||e.metaKey);if(!base)return;
     setSpawnMenu(null);
     const p = relPoint(e);
-    if(multiSel.length>1&&multiSel.includes(node.id)){setCtxMenu({x:p.x,y:p.y,cx:e.clientX,cy:e.clientY,nodeId:node.id});return;}
-    if (node.id.startsWith("text-") || node.id.startsWith("pend-") || node.id.startsWith("task-")) {
-      setSelectedId(null); setMultiSel([]);
-      setRfNodes(current => current.map(item => item.selected ? { ...item, selected: false } : item));
-      setSelectedPendId(node.id.startsWith("pend-") ? node.id : null);
-      setSelectedTextId(node.id.startsWith("text-") ? node.id : null);
-      if(node.id.startsWith("task-"))setSelectedId(node.id);
-      setCtxMenu({ x: p.x, y: p.y, cx: e.clientX, cy: e.clientY, nodeId: node.id });
-      return;
-    }
-    contextSelectionBaseRef.current = [...multiSel];
-    const modified = e.ctrlKey || e.metaKey;
-    if (modified) {
-      toggleArtworkBatchSelection(node.id);
-    } else if (multiSel.length < 2 || !multiSel.includes(node.id)) {
-      // 普通右键未选节点遵循桌面习惯：先成为唯一选中对象。
-      applyArtworkSelection([node.id]);
-    }
+    if(!node.id.startsWith("text-")&&!node.id.startsWith("pend-")&&!node.id.startsWith("task-"))contextSelectionBaseRef.current=[...base];
     setCtxMenu({ x: p.x, y: p.y, cx: e.clientX, cy: e.clientY, nodeId: node.id });
   }
   function onPaneContextMenu(e: ReactMouseEvent | MouseEvent) {
@@ -2652,9 +2593,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setActiveKey(projectKey);
     setCreatingNew(false);
     setBrowsing(false);
-    setSelectedId(null);
-    setSelectedPendId(null);
-    setSelectedTextId(id);
+    canvasSelection.selectInProject(projectKey,{selectedId:null,selectedPendId:null,selectedTextId:id});
     setTextPrompt(options?.prompt || "");
     focusEditableCanvasArea({
       x: node.canvasX,
@@ -2885,9 +2824,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const {hasClip}=clipboard;
   function selectCopiedNodes(result:{idMap:Record<string,string>;projectKey:string},focusSingle=false) {
     const ids=Object.values(result.idMap);setCreatingNew(false);setActiveKey(result.projectKey);setBrowsing(false);
-    canvasSelection.patch({selectedId:focusSingle&&ids.length===1?ids[0]:null,selectedTextId:null,selectedPendId:null,multiSel:ids});
-    const selection={ids,projectKey:result.projectKey,owner:user!.email.toLowerCase()};pendingNodeSelectionRef.current=selection;
-    window.setTimeout(()=>{if(pendingNodeSelectionRef.current===selection)pendingNodeSelectionRef.current=null;},1500);
+    canvasSelection.copied(result.projectKey,ids,focusSingle);
   }
   async function duplicateCanvasNodes(ids:string[]) {
     if(!user||readOnly)return;const scope=canvasHistory.scope;
@@ -3268,13 +3205,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 updateLiveViewport(vp);
                 setViewport(previous => canvasZoomState(previous, vp));
               }}
-              onNodeClick={(event,node)=>{
-                if(canvasTool==="hand"||node.id.startsWith("task-")&&!generationPresentation.getSnapshot().tasks.find(task=>task.id===node.id)?.failure)return;
-                const art=active?.members.find(item=>item.id===node.id),group=art?.canvasGroupId?active?.members.filter(item=>item.canvasGroupId===art.canvasGroupId).map(item=>item.id)||[]:[];
-                const patch=canvasNodeClick(node.id,event.ctrlKey||event.metaKey||event.shiftKey,group);canvasSelection.patch(patch);
-                setRfEdges(current=>current.map(edge=>edge.selected?{...edge,selected:false}:edge));
-                if(patch.multiSel){const ids=new Set(patch.multiSel);setRfNodes(current=>current.map(item=>({...item,selected:ids.has(item.id)})));}
-              }}
+              onNodeClick={canvasSelection.nodeClick}
               onNodeDoubleClick={(_, node) => {
                 if(characterNodesStore.nodes.some(item=>item.id===node.id)){openCharacterEditor(node.id);return;}
                 if(audioNodesStore.nodes.some(item=>item.id===node.id)){openAudioEditor(node.id);return;}
@@ -3287,16 +3218,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               }}
               // 连线交互:悬停出剪刀提示可剪断;点击=选中(RF 原生连线选择),
               // 选中后按 Delete/Backspace 才真正剪断,防止点一下误删。
-              onEdgeClick={(_, edge) => {
-                if (canvasTool === "hand" || edge.selectable === false) return;
-                setSelectedId(null);
-                setSelectedTextId(null);
-                setSelectedPendId(null);
-                setMultiSel([]);
-                setRfNodes(current => current.map(node => node.selected ? { ...node, selected: false } : node));
-                setSelectedEdge({ id: edge.id, source: edge.source, target: edge.target });
-                setRfEdges(current => current.map(item => ({ ...item, selected: item.id === edge.id })));
-              }}
+              onEdgeClick={(_,edge)=>canvasSelection.edgeClick(edge)}
               onEdgeMouseMove={
                 readOnly
                   ? undefined
@@ -3313,10 +3235,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               }
               onEdgeMouseLeave={readOnly ? undefined : () => edgeHoverHintRef.current?.clear()}
               onPaneClick={() => {
-                setSelectedId(null);
-                setSelectedPendId(null);
-                setSelectedTextId(null);
-                clearCanvasSelection();
+                canvasSelection.reset();
                 setCtxMenu(null);
                 edgeHoverHintRef.current?.clear();
               }}
@@ -3327,13 +3246,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               }}
               onNodeContextMenu={onNodeContextMenu}
               onPaneContextMenu={onPaneContextMenu}
-              onSelectionChange={({nodes,edges})=>canvasSelection.update(state=>canvasFlowSelection(state,nodes,edges))}
-              onSelectionStart={() => {
-                setSelectedId(null);
-                setSelectedPendId(null);
-                setSelectedTextId(null);
-                setCtxMenu(null);
-              }}
+              onSelectionChange={({nodes,edges})=>canvasSelection.flowSelection(nodes,edges)}
+              onSelectionStart={()=>{canvasSelection.clearFocus();setCtxMenu(null);}}
               onNodeDragStart={(_,node,nodes)=>canvasDrag.start(node,nodes)}
               onNodeDrag={(_,node)=>canvasDrag.move(node)}
               onNodeDragStop={(_,node,nodes)=>void canvasDrag.finish(node,nodes)}

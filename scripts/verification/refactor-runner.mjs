@@ -41,6 +41,7 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='image-notice-visibility')stageEnv.IMAGE_NOTICE_VISIBILITY_EVIDENCE=evidence;
    if(spec.id==='billing-presentation')stageEnv.BILLING_PRESENTATION_EVIDENCE=evidence;
    if(spec.id==='canvas-video-follow')stageEnv.CANVAS_VIDEO_FOLLOW_EVIDENCE=evidence;
+   if(spec.id==='canvas-selection-owner')stageEnv.CANVAS_SELECTION_OWNER_EVIDENCE=evidence;
    if(spec.id==='canvas-arrange')stageEnv.CANVAS_ARRANGE_EVIDENCE=evidence;
    if(spec.id==='canvas-overlay-owner')stageEnv.CANVAS_OVERLAY_OWNER_EVIDENCE=evidence;
    if(spec.id==='canvas-viewport-owner')stageEnv.CANVAS_VIEWPORT_OWNER_EVIDENCE=evidence;

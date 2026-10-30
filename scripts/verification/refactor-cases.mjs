@@ -20,6 +20,7 @@ export const refactorCases=[
  node('image-notice-visibility','canvas','scripts/verify-image-notice-visibility.cjs','IMAGE_NOTICE_VISIBILITY=PASS'),
  node('billing-presentation','pricing','scripts/verify-billing-presentation-boundary.cjs','BILLING_PRESENTATION=PASS'),
  node('canvas-video-follow','canvas','scripts/verify-canvas-video-follow.cjs','CANVAS_VIDEO_FOLLOW=PASS'),
+ node('canvas-selection-owner','canvas','scripts/verify-canvas-selection-owner.cjs','CANVAS_SELECTION_OWNER=PASS'),
  node('canvas-arrange','canvas','scripts/verify-canvas-arrange.cjs','CANVAS_ARRANGE=PASS'),
  node('canvas-overlay-owner','canvas','scripts/verify-canvas-overlay-owner.cjs','CANVAS_OVERLAY_OWNER=PASS'),
  node('canvas-viewport-owner','canvas','scripts/verify-canvas-viewport-owner.cjs','CANVAS_VIEWPORT_OWNER=PASS'),
