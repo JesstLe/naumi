@@ -7,10 +7,10 @@ async function free(p){await new Promise((resolve,reject)=>{const s=net.createSe
 (async()=>{
  fs.mkdirSync(out,{recursive:true});await free(port);await free(port+1);
  const app=spawn(process.execPath,['scripts/serve-canvas-regeneration-fixture.cjs'],{env:{...process.env,CANVAS_REGEN_PORT:String(port)},windowsHide:true,stdio:['ignore','pipe','pipe']}),log=fs.createWriteStream(path.join(out,'runtime.log'));app.stdout.pipe(log);app.stderr.pipe(log);
- let browser,page,arts,release,hold=true,rejectNext=false;const commands=[],receipts=new Map(),checks=[],errors=[],external=[],paid=[];
+ let browser,page,arts,release,hold=true,rejectNext=false;const observations=[],commands=[],receipts=new Map(),checks=[],errors=[],external=[],paid=[];
  const pass=n=>{checks.push(n);console.log('PASS '+n)};
  try{
-  browser=await chromium.launch({headless:true});const context=await browser.newContext({viewport:{width:1440,height:1000}});page=await context.newPage();page.setDefaultTimeout(45000);page.on('pageerror',e=>errors.push(e.message));
+  browser=await chromium.launch({headless:true});const context=await browser.newContext({viewport:{width:1440,height:1000}});page=await context.newPage();page.setDefaultTimeout(45000);page.on('pageerror',e=>errors.push(e.message));page.on('framenavigated',f=>{if(f===page.mainFrame())observations.push({event:'navigation',url:f.url(),time:Date.now()})});
   await context.route('**/*',async route=>{
    const req=route.request(),u=new URL(req.url());if(!['127.0.0.1','localhost'].includes(u.hostname)&&!['data:','blob:'].includes(u.protocol)){external.push(u.origin);return route.abort()}
    const json=(body,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(body)});
@@ -31,10 +31,15 @@ async function free(p){await new Promise((resolve,reject)=>{const s=net.createSe
   const toolbar=page.getByTestId('canvas-view-toolbar'),tidy=toolbar.getByRole('button',{name:'整理画布',exact:true});await expect(tidy).toBeEnabled();
   const positions=()=>page.locator('.react-flow__node').evaluateAll(nodes=>Object.fromEntries(nodes.map(n=>[n.dataset.id,n.style.transform])));
   const zoom=()=>page.locator('.react-flow__viewport').evaluate(n=>new DOMMatrixReadOnly(getComputedStyle(n).transform).a);
+  page.on('requestfailed',r=>observations.push({event:'requestfailed',url:r.url(),failure:r.failure()}));
   const initial=await positions();await tidy.click();await expect.poll(()=>commands.length).toBe(1);assert(commands[0].operations.length>=1&&commands[0].operations.length<=2);assert.deepEqual(await positions(),initial);await expect(tidy).toBeDisabled();pass('REAL_TIDY_SINGLE_ATOMIC_POST_NO_LOCAL_MOVE_BEFORE_RECEIPT');
-  await toolbar.locator('button[aria-expanded]').click();await toolbar.getByRole('button',{name:'缩放至50%',exact:true}).click();await expect.poll(zoom).toBeCloseTo(.5,4);hold=false;release();await expect(tidy).toBeEnabled();await expect.poll(async()=>JSON.stringify(await positions())).not.toBe(JSON.stringify(initial));
-  await page.waitForTimeout(800);assert(Math.abs((await zoom())-.5)<1e-4);pass('MANUAL_50_PERCENT_DURING_PENDING_SAVE_RETAINS_LATEST_INTENT');
-  const arranged=await positions();for(const op of commands[0].operations)assert.equal(arranged[op.id],`translate(${op.x}px,${op.y}px)`);pass('ACTUAL_FLOW_POSITIONS_MATCH_CANONICAL_HISTORY_RECEIPT');
+  // The existing history-saving overlay deliberately blocks pointer navigation.
+  // Do not force-click through it or hold the HTTP response beyond its20s timeout.
+  let blocked=false;try{await toolbar.locator('button[aria-expanded]').click({trial:true,timeout:250})}catch{blocked=true}assert(blocked);pass('EXISTING_SAVING_OVERLAY_BLOCKS_POINTER_WITHOUT_FORCE');
+  hold=false;release();await expect(tidy).toBeEnabled();await expect.poll(async()=>JSON.stringify(await positions())).not.toBe(JSON.stringify(initial));
+  await toolbar.locator('button[aria-expanded]').click();await toolbar.getByRole('button',{name:'缩放至50%',exact:true}).click();await expect.poll(zoom).toBeCloseTo(.5,4);
+  await page.waitForTimeout(800);assert(Math.abs((await zoom())-.5)<1e-4);pass('MANUAL_50_PERCENT_AFTER_SAVE_RETAINS_LATEST_INTENT');
+  const arranged=await positions();for(const op of commands[0].operations)assert.equal(arranged[op.id],`translate(${op.x}px, ${op.y}px)`);pass('ACTUAL_FLOW_POSITIONS_MATCH_CANONICAL_HISTORY_RECEIPT');
   await page.locator('button[data-tool=undo]').click();await expect.poll(()=>commands.length).toBe(2);await expect.poll(async()=>JSON.stringify(await positions())).toBe(JSON.stringify(initial));pass('ONE_UNDO_RESTORES_BOTH_NODES');
   await page.locator('button[data-tool=redo]').click();await expect.poll(()=>commands.length).toBe(3);await expect.poll(async()=>JSON.stringify(await positions())).toBe(JSON.stringify(arranged));assert.equal(new Set(commands.map(c=>c.operationId)).size,3);pass('ONE_REDO_RESTORES_LAYOUT_SEPARATE_HISTORY_IDENTITIES');
   await tidy.click();await expect(tidy).toBeEnabled();await page.waitForTimeout(700);assert.equal(commands.length,3);pass('REPEATED_ARRANGE_IS_STABLE_NO_EXTRA_POST');
@@ -43,6 +48,6 @@ async function free(p){await new Promise((resolve,reject)=>{const s=net.createSe
   assert.deepEqual(errors,[]);assert.deepEqual(external,[]);assert.deepEqual(paid,[]);pass('ZERO_PAGEERROR_EXTERNAL_OR_PAID_POST');
   const literal=`CANVAS_ARRANGE_NATIVE=PASS CHECKS=${checks.length} FULL_NEXT_REACTFLOW=1 HISTORY_POSTS=${commands.length} MANUAL_ZOOM=PRESERVED PAID_POSTS=0`;
   fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify({status:'PASS',checks,commands,initial,arranged,manualZoom:.5,pageErrors:errors,external,paid,ports:[port,port+1],literal,scope:'Actual complete Next/ReactFlow controls and original history owner; loopback HTTP fixtures, no PG or supplier.'},null,2));console.log(literal);
- }catch(e){fs.writeFileSync(path.join(out,'FAILURE.json'),JSON.stringify({error:e.stack,checks,commands,errors,external,paid,body:await page?.locator('body').innerText().catch(()=>null)},null,2));throw e}
+ }catch(e){fs.writeFileSync(path.join(out,'FAILURE.json'),JSON.stringify({error:e.stack,checks,commands,errors,external,paid,receipts:[...receipts.values()],observations,arts,body:await page?.locator('body').innerText().catch(()=>null)},null,2));throw e}
  finally{release?.();await browser?.close();if(app.exitCode===null&&app.signalCode===null){if(process.platform==='win32'){const q=spawnSync('taskkill',['/pid',String(app.pid),'/t','/f'],{windowsHide:true,encoding:'utf8'});fs.writeFileSync(path.join(out,'fixture-stop.log'),q.stdout+q.stderr)}else app.kill('SIGTERM')}log.end()}
 })().catch(e=>{console.error(e);process.exitCode=1});
