@@ -12,6 +12,7 @@ import {canvasReferenceManifestSchema,referenceManifestError} from "./reference-
 import {currentWorkspace} from '../saas/workspace-client';
 import {canvasImagegenActionKey,pendingAttemptKey,readPendingAttempt,savePendingAttempt,withPendingAttempt,type ImagegenPendingAttempt} from './client-recovery';
 import {readCanvasFanoutPlacement} from "../canvas/generation-fanout";
+import {userVisibleImageWarnings} from "./notice-visibility";
 export {completeCanvasImagegen} from './client-recovery';
 export type CanvasFrameChoice={artworkId:string;url:string;label:string;width:number;height:number;ratio:string};
 /** The specialized/redo route quotes the same resolved frame it submits.
@@ -112,9 +113,8 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
   request.parameters.ratio=choice.ratio;
  }
  }
- assertCurrent();const plan=await previewImagegen(request,context);assertCurrent();const stages=plan.steps.map(s=>s.operation==="cutout"?"抠图":s.operation==="edit"?"编辑":"生成").join(" → ");
- if(plan.requestedParameters?.resolution||plan.frameChoice||plan.automaticFrame)onPlan?.(plan.warnings.join("\n"));
- if(plan.intent.background==="transparent")onPlan?.(`已识别：透明背景 · ${stages} · ${plan.totalCredits} 积分`);
+ assertCurrent();const plan=await previewImagegen(request,context);assertCurrent();
+ if(plan.requestedParameters?.resolution||plan.frameChoice||plan.automaticFrame){const notice=userVisibleImageWarnings(plan.warnings).join("\n");if(notice)onPlan?.(notice);}
  const placement=form.has("imagegenPlacement")?readCanvasFanoutPlacement(JSON.parse(String(form.get("imagegenPlacement"))),request.sourceNodeId,request.variants):undefined;
  if(form.has("imagegenPlacement")&&(!placement||request.canvasTarget))throw new Error("生成位置记录与本次请求不一致");
  const submit=async(latest:typeof plan)=>{
@@ -133,7 +133,7 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
   if(!(error instanceof ImagegenHttpError&&error.status===409&&error.code==="IMAGEGEN_PLAN_CHANGED"&&error.accepted===false))throw error;
   submitting=false;
   assertCurrent();const latest=await previewImagegen(request,context);assertCurrent();
-  if(latest.requestedParameters?.resolution)onPlan?.(latest.warnings.join("\n"));
+  if(latest.requestedParameters?.resolution){const notice=userVisibleImageWarnings(latest.warnings).join("\n");if(notice)onPlan?.(notice);}
   assertCurrent();result=await submit(latest);
  }
  assertCurrent();

@@ -101,7 +101,16 @@ export const CachedImage = forwardRef<HTMLImageElement, Props>(function CachedIm
       candidate = managed ? await acquireBrowserImage(src, controller.signal, { networkQueue }) :
         { url: src, release: await acquireCanvasImageByteSlot(controller.signal) };
       if (controller.signal.aborted) { candidate.release(); return; }
-      await decodeImage(candidate.url, props.crossOrigin, controller.signal);
+      try { await decodeImage(candidate.url, props.crossOrigin, controller.signal); }
+      catch (error) {
+        candidate.release(); candidate = undefined;
+        if (!managed || controller.signal.aborted) throw error;
+        // One fresh, authorized read repairs a corrupt local entry. Do not
+        // clear drafts/session data, reuse a denied frame, or retry in a loop.
+        candidate = await acquireBrowserImage(src, controller.signal, { networkQueue, bypassCache: true });
+        if (controller.signal.aborted) { candidate.release(); return; }
+        await decodeImage(candidate.url, props.crossOrigin, controller.signal);
+      }
       candidate.networkComplete?.();
       if (!managed) candidate.release(); // native byte slot is done after decode
       if (controller.signal.aborted) { candidate.release(); return; }

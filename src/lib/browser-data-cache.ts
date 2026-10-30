@@ -2,6 +2,7 @@
 
 import { authHeader } from "@/lib/supabase";
 import { currentWorkspace, currentWorkspaceRevision } from "@/lib/saas/workspace-client";
+import { BrowserCacheStorage } from "./browser-cache-storage";
 
 // Explicit private metadata cache, NOT an HTTP/auth/payment cache.
 const DB = "naumi-business-cache-v1";
@@ -15,30 +16,16 @@ export type AccountSnapshot<T> = { artworks: T[]; stats?: { today: number; total
 const memory = new Map<string, Snapshot>();
 const inflight = new Map<string, Promise<unknown>>();
 let active = "", epoch = 0, installed = false;
-let dbPromise: Promise<IDBDatabase | null> | undefined;
+const storage = new BrowserCacheStorage(DB, 1, db => { db.createObjectStore(STORE, { keyPath: "id" }); });
 let channel: BroadcastChannel | undefined;
 const normalize = (email: string) => email.trim().toLowerCase();
 const revKey = (email: string) => `naumi:cache-revision:${email}`;
 function revision(email: string) { try { return localStorage.getItem(revKey(email)) || "0"; } catch { return String(epoch); } }
 function valid(email: string, token: number, rev: string) { return active === email && epoch === token && revision(email) === rev; }
-function openDB(): Promise<IDBDatabase | null> {
-  if (!dbPromise) dbPromise = new Promise(resolve => {
-    try {
-      const request = indexedDB.open(DB, 1);
-      const timeout = setTimeout(() => resolve(null), 1500);
-      request.onupgradeneeded = () => request.result.createObjectStore(STORE, { keyPath: "id" });
-      request.onerror = request.onblocked = () => { clearTimeout(timeout); resolve(null); };
-      request.onsuccess = () => { clearTimeout(timeout); request.result.onversionchange = () => request.result.close(); resolve(request.result); };
-    } catch { resolve(null); }
-  });
-  return dbPromise;
-}
 async function read(id: string): Promise<Snapshot | undefined> {
   if (memory.has(id)) return memory.get(id);
-  const db = await openDB();
-  if (!db) return;
-  return new Promise(resolve => {
-    try { const tx = db.transaction(STORE), req = tx.objectStore(STORE).get(id); req.onsuccess = () => resolve(req.result); req.onerror = () => resolve(undefined); tx.onabort = () => resolve(undefined); } catch { resolve(undefined); }
+  return storage.run<Snapshot | undefined>(STORE, "readonly", undefined, (tx, result) => {
+    const req = tx.objectStore(STORE).get(id); req.onsuccess = () => result(req.result);
   });
 }
 async function write(record: Snapshot, token: number) {
@@ -49,11 +36,9 @@ async function write(record: Snapshot, token: number) {
     bytes += row.bytes;
     if (bytes > MAX_BYTES || i >= MAX_RECORDS) memory.delete(key);
   }
-  const db = await openDB();
-  if (!db || !valid(record.account, token, record.revision)) return;
-  await new Promise<void>(resolve => {
-    try {
-      const tx = db.transaction(STORE, "readwrite"), store = tx.objectStore(STORE);
+  if (!valid(record.account, token, record.revision)) return;
+  await storage.run<void>(STORE, "readwrite", undefined, tx => {
+      const store = tx.objectStore(STORE);
       const req = store.getAll();
       req.onsuccess = () => {
         try {
@@ -63,10 +48,8 @@ async function write(record: Snapshot, token: number) {
           let total = 0;
           rows.forEach((row, i) => { total += row.bytes; if (i >= MAX_RECORDS || total > MAX_BYTES || Date.now() - row.at > STALE_MS) store.delete(row.id); });
           store.put(record);
-        } catch { resolve(); /* quota/unavailable storage does not fail the live read */ }
+        } catch { tx.abort(); /* optional storage never fails the live read */ }
       };
-      tx.oncomplete = tx.onerror = tx.onabort = () => resolve();
-    } catch { resolve(); }
   });
 }
 function clearMemory() { epoch++; memory.clear(); inflight.clear(); }
@@ -76,11 +59,9 @@ export function invalidateBrowserData(email = active, logout = false) {
   try { localStorage.setItem(revKey(email), rev); } catch { /* memory epoch still guards */ }
   if (email === active) { clearMemory(); if (logout) active = ""; }
   channel?.postMessage({ account: email, logout });
-  void openDB().then(db => {
-    if (!db) return;
-    try { const tx = db.transaction(STORE, "readwrite"), store = tx.objectStore(STORE), req = store.getAll();
-      req.onsuccess = () => { for (const row of req.result as Snapshot[]) if (row.account === email && row.revision !== revision(email)) store.delete(row.id); };
-    } catch { /* storage unavailable */ }
+  void storage.run<void>(STORE, "readwrite", undefined, tx => {
+    const store = tx.objectStore(STORE), req = store.getAll();
+    req.onsuccess = () => { for (const row of req.result as Snapshot[]) if (row.account === email && row.revision !== revision(email)) store.delete(row.id); };
   });
 }
 // Call only after a server-verified session, never from optimistic localStorage user state.
@@ -152,7 +133,7 @@ export async function loadAccountSnapshot<T>(email: string, query = "", onStale?
     const unsettled = value.artworks.some(row => ["pending", "processing", "generating", "running", "queued"].includes(String((row as { status?: string })?.status)));
     if (allowed && !unsettled && valid(account, token, rev) && current()) {
       const bytes = new Blob([JSON.stringify(value)]).size;
-      await write({ id, account, revision: rev, at: Date.now(), bytes, value }, token);
+      void write({ id, account, revision: rev, at: Date.now(), bytes, value }, token);
     }
     // Never deliver a pre-mutation/account-switch response into a new render.
     if (allowed && !valid(account, token, rev)) throw new Error("Account snapshot superseded");
