@@ -71,5 +71,7 @@ export function CanvasNativeEditors({sessions,legacyDraftScope,nodes,commands,in
     images={resolvedInputs.filter(choice=>choice.kind==='image'&&choice.available).map(choice=>({id:choice.nodeId,title:choice.title,url:choice.value}))}
     onSave={guard(director,(value,revision)=>commands.director.patch(director.id,{project:value,title:value.name,expectedRevision:revision}))}
     onOutput={guard(director,(file,kind,revision)=>commands.director.output(director.id,file,kind,revision))}/>);
-  return panels.length?createPortal(panels,document.body):null;
+  // Keep the original independent portals: existing panels retain their DOM
+  // position when another kind opens; the most recently opened panel is on top.
+  return panels.map(panel=>createPortal(panel,document.body,panel.key));
 }

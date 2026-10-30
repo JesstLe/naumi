@@ -44,3 +44,10 @@
 ## 最终组合审阅
 
 5d684199的41个受影响入口全部新执行PASS，subset仍PARTIAL/exit2（完整catalog183，非整版全绿）；同固定完整镜像产品92项通过，新编辑器18项/6次原POST、CAS/history及空白新项目导航意图通过。原图库选择/31图ZIP/7笔42积分fixture保持。最后源码自审发现多个独立面板同时打开时，应保留原portal叠放顺序character→timeline→audio→scene→director，而非开发时书写顺序。最终组件已恢复原顺序，DOM新增同时打开的真实顺序断言；此为真实组合语义，不增加单面板业务限制。最终source将重新固定，集中回归/镜像以本轮sealed证据为准，不拿5d结果拼接为最终源码绿。
+
+
+### 实际portal行为纠正与最终验证范围
+
+baseline DOM新增并发面板顺序检查实际exit1：原多个独立createPortal的DOM叠放按**打开先后**，而不是JSX书写顺序。不得以静态源码顺序替代实际React行为。组合组件最终保留每个面板独立keyed portal，close/reopen后正确在最上层；没有加入“只许一个面板”的业务限额。baseline夹具也按实际原JSX位置提取，但验收以真实DOM打开/关闭/重开顺序为准。原失败日志保留。
+
+最终只修新呈现组合及其baseline verifier，原动作/文档/HTTP/账务代码未变。2a0053a5的41受影响入口（含五种具体真实应用/PG/WebGL/FFmpeg）与92完整产品已通过；最终source重新执行19个直接受影响入口和同固定完整镜像92产品检查。两层source与逐文件哈希分别登记，不把旧41冒充最终源码的新41，避免为纯portal修正第三次重复整套底层应用矩阵。
