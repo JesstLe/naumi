@@ -10,6 +10,16 @@ export function verifiedImageContentKey(info: BrowserImageDescriptor, owner: str
   return JSON.stringify([owner, generation, info.version, info.bytes, info.contentType]);
 }
 
+/** Non-hash versions identify only this freshly authorized source, never other
+ * images with the same mtime/preview version. Share the existing bounded byte
+ * budget, rather than adding a second unbounded image cache. */
+export function authorizedImageSourceKey(info: BrowserImageDescriptor, owner: string, generation: number) {
+  if (info.account !== owner || !info.source || !info.version ||
+      !Number.isSafeInteger(info.bytes) || info.bytes < 0 ||
+      !/^image\/(png|jpeg|webp|avif|gif)$/.test(info.contentType)) return null;
+  return JSON.stringify(['source', owner, generation, info.source, info.version, info.bytes, info.contentType]);
+}
+
 type Flight = { source: string; controller: AbortController; users: number; promise: Promise<Blob> };
 
 /** Small, account/epoch-partitioned, verified byte LRU. Sharing a transfer must
@@ -20,6 +30,17 @@ export class VerifiedImageContentPool {
   private flights = new Map<string, Flight>();
   private bytes = 0;
   constructor(private maxBytes = 32 * 1024 * 1024, private maxItems = 400) {}
+
+  peek(key: string) {
+    const blob = this.ready.get(key);
+    if (blob) { this.ready.delete(key); this.ready.set(key, blob); }
+    return blob;
+  }
+
+  forget(key: string) {
+    const blob = this.ready.get(key);
+    if (blob) { this.bytes -= blob.size; this.ready.delete(key); }
+  }
 
   remember(key: string, blob: Blob) {
     if (!blob.size || blob.size > this.maxBytes) return;
@@ -39,8 +60,8 @@ export class VerifiedImageContentPool {
 
   async acquire(key: string, source: string, loadVerified: (signal: AbortSignal) => Promise<Blob>, signal: AbortSignal) {
     if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
-    const cached = this.ready.get(key);
-    if (cached) { this.ready.delete(key); this.ready.set(key, cached); return cached; }
+    const cached = this.peek(key);
+    if (cached) return cached;
     let flight = this.flights.get(key);
     if (!flight || flight.controller.signal.aborted) {
       const controller = new AbortController();
