@@ -395,3 +395,8 @@ Canvas编辑/详情/Comfy的任务、attachment、retained billing及timer组合
 ## 2026-10-30 R7V：视频任务跟随归属及第三模块同步
 
 Canvas视频GET/占位/结果initialize与merge/积分刷新/定时跟随归 `canvas/video-task-follow`，按现有document scope隔离、React只管订阅生命周期，不另建任务或结算。cancelled终态收起原占位，未知状态保留；readOnly/账号/workspace/project退休后无新副作用。原/新21→22检查、14共同轨迹相同（受控HTTP/auth/React effect端口，非生产）。第三模块后普通整合main bbc8f784的6提交，2冲突保留workspace cache与新存储owner/通知可见性，模块计数归零。集中core156与完整Next/PG及四产物见[R7V记录](../changes/2026-10-30-refactor-r7v-video-follow.md)和DELIVERY；整体ACTIVE、未合main未部署。**独立整体候选分支超过48小时仍未合主线：用户要求整体重构版本，最终main整合验收仍未达到，不以模块push代替退出。**
+
+
+## 2026-10-30 R7W：账务展示依赖减法
+
+Billing客户端删除仅用于已获准隐藏的分辨率信息提示的Toast组件依赖，不增通知总线、不改RootLayout顺序；原报价、原operation、余额/UNKNOWN及回执owner保持。实际React DOM读取原provider顺序，原8→新9检查、6共同轨迹精确一致，billing→components边1→0。完整5200文件基线与原生child observer诊断已保存，同盘依赖原timeline通过不等于历史退出根因已闭合；集中验收/完整副本回滚及Git以[R7W记录](../changes/2026-10-30-refactor-r7w-billing-presentation.md)与DELIVERY为准。同步后第1模块，整体ACTIVE、未合main未部署，47 HOLD。

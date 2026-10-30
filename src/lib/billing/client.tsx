@@ -1,5 +1,4 @@
 "use client";
-import { useToast } from "@/components/ui/toast";
 import { invalidateBrowserData } from "@/lib/browser-data-cache";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { authHeader } from "@/lib/supabase";
@@ -80,7 +79,6 @@ const Context = createContext<Client | null>(null);
 export function BillingProvider({ children }: {
     children: ReactNode;
 }) {
-    const {toast}=useToast();
     const { user, ready } = useAuth(), [catalog, setCatalog] = useState<PublicCatalog | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState<string | null>(null);
     const cache = useRef(new Map<string, Promise<PublicQuote>>()), epoch = useRef(0);
     const actor = useRef({email:user?.email,revision:0});
@@ -163,8 +161,6 @@ export function BillingProvider({ children }: {
         headers.set("x-naumi-billing-operation-id",id);
         const clearIntent=()=>{if(intents.current.get(key)===id)intents.current.delete(key);try{if(localStorage.getItem(key)===id)localStorage.removeItem(key);}catch{}};
         onIdentity?.(id);
-        if(displayed.requestedParameters?.resolution && displayed.effectiveParameters?.resolution && displayed.requestedParameters.resolution!==displayed.effectiveParameters.resolution)
-            toast(`${displayed.requestedParameters.resolution}已自动调整为${displayed.effectiveParameters.resolution}，实际生成档位已调整，报价保持不变`,"info");
         // Maintenance TTL never replaces this intent's server-owned price.
         // Send the original quote and operation to the receipt-first path.
         const post=()=>{
@@ -192,7 +188,7 @@ export function BillingProvider({ children }: {
             await refresh();
         if (response.status === 409 && data?.code === "MODEL_CHANGED") window.dispatchEvent(new Event(MODEL_CATALOG_REFRESH));
         return response;
-    }, [refresh,user?.email,toast]);
+    }, [refresh,user?.email]);
     const quoteAndSubmit = useCallback(async (url: string, init: RequestInit, input: QuoteInput, beforeSubmit?: () => void) => {
         beforeSubmit?.();
         const headers = new Headers(init.headers);
