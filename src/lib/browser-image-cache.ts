@@ -3,7 +3,7 @@ import { authHeader } from './supabase';
 import { BrowserCacheStorage } from './browser-cache-storage';
 import { MediaLoadQueue, acquireMediaSlot } from './canvas/media-loading';
 import { managedImageSource, publicImageSource, type BrowserImageDescriptor } from './browser-image-source';
-import { VerifiedImageContentPool, verifiedImageContentKey } from './browser-image-content';
+import { VerifiedImageContentPool, verifiedImageContentKey, authorizedImageSourceKey } from './browser-image-content';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
 import { currentWorkspaceRevision, WORKSPACE_SELECTION } from './saas/workspace-client';
@@ -24,6 +24,10 @@ const storage=new BrowserCacheStorage(NAME,2,(db,tx)=>{
 });
 const pending=new Map<string,{promise:Promise<Blob>;controller:AbortController;users:number}>();
 const verifiedContent=new VerifiedImageContentPool();
+// A content-hash hit may belong to another URL. Only skip the disk path after
+// this exact source has used it, so first visits still persist their own entry.
+const warmSources=new Set<string>();
+function rememberSource(id:string){warmSources.delete(id);warmSources.add(id);if(warmSources.size>MAX_ITEMS)warmSources.delete(warmSources.values().next().value!);}
 const objects=new Set<string>();
 type DisplayedImage={url:string;source:string;owner:string;generation:number;workspace:number;decoded:boolean;retain:()=>Lease};
 const displayed=new Map<symbol,DisplayedImage>();
@@ -148,7 +152,7 @@ function discard(id:string){return storage.run<void>([STORE,META],'readwrite',un
  tx.objectStore(STORE).delete(id);tx.objectStore(META).delete(id);
 });}
 
-function reset(){epoch++;verifiedContent.clear();for(const request of pending.values())request.controller.abort();pending.clear();for(const url of objects)URL.revokeObjectURL(url);objects.clear();displayed.clear();window.dispatchEvent(new Event('naumi:image-cache-session'));}
+function reset(){epoch++;verifiedContent.clear();warmSources.clear();for(const request of pending.values())request.controller.abort();pending.clear();for(const url of objects)URL.revokeObjectURL(url);objects.clear();displayed.clear();window.dispatchEvent(new Event('naumi:image-cache-session'));}
 // Focus is not an identity change. Keep the decoded pixels while the existing
 // authenticated manifest checks permission; never download image bytes here.
 function revalidateDisplayedImages(){
@@ -223,6 +227,14 @@ async function imageBlob(source:string,signal?:AbortSignal,options?:BrowserImage
   if(info.bytes>MAX_IMAGE)throw new ImageNotCacheable(info.fetchUrl);
   const id=JSON.stringify([owner,info.source,info.version]);
   const contentKey=verifiedImageContentKey(info,owner,generation);
+  const byteKey=contentKey||authorizedImageSourceKey(info,owner,generation);
+  // Authorization above is always fresh. A same-source hot entry avoids IDB
+  // reads/hash work and bridges nonblocking persistence, including local:mtime
+  // and generated previews without pretending their versions are content hashes.
+  if(byteKey){
+    if(options?.bypassCache)verifiedContent.forget(byteKey);
+    else {const hot=verifiedContent.peek(byteKey);if(hot&&warmSources.has(id)){rememberSource(id);return{blob:hot,owner,generation};}}
+  }
   const pendingKey=options?.bypassCache?'reload:'+id:id;
   let task=pending.get(pendingKey);if(!task||task.controller.signal.aborted){const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),60000);const promise=(async()=>{
     if(options?.bypassCache)void discard(id);
@@ -233,7 +245,7 @@ async function imageBlob(source:string,signal?:AbortSignal,options?:BrowserImage
       let verified=false;
       try{verified=!contentKey||bytesToHex(sha256(new Uint8Array(await cached.blob.arrayBuffer())))===info.version;}catch{/* unreadable local bytes are a cache miss */}
       if(!verified)void discard(id);
-      if(verified){void touch(cached,generation);if(contentKey&&valid(owner,generation)&&!controller.signal.aborted)verifiedContent.remember(contentKey,cached.blob);return cached.blob;}
+      if(verified){void touch(cached,generation);if(byteKey&&valid(owner,generation)&&!controller.signal.aborted){verifiedContent.remember(byteKey,cached.blob);rememberSource(id);}return cached.blob;}
     }
     if(!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
     const download=async(downloadSignal:AbortSignal)=>{
@@ -253,8 +265,9 @@ async function imageBlob(source:string,signal?:AbortSignal,options?:BrowserImage
     return blob;
     }finally{releaseSlot();}
     };
-    const blob=contentKey&&!options?.bypassCache?await verifiedContent.acquire(contentKey,source,download,controller.signal):await download(controller.signal);
+    const blob=byteKey&&!options?.bypassCache?await verifiedContent.acquire(byteKey,source,download,controller.signal):await download(controller.signal);
     if(controller.signal.aborted||!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
+    if(byteKey){verifiedContent.remember(byteKey,blob);rememberSource(id);}
     void timedImageStage("idbStore",()=>store({id,account:owner,source:info.source,version:info.version,blob,bytes:blob.size,at:Date.now(),created:Date.now()},generation));
     return blob;
   })();task={promise,controller,users:0};pending.set(pendingKey,task);const captured=task;void promise.finally(()=>{clearTimeout(timeout);if(pending.get(pendingKey)===captured)pending.delete(pendingKey);}).catch(()=>{});}

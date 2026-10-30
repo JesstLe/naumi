@@ -1,3 +1,4 @@
+import {readCanvasGenerationReceipt} from "./generation-receipt";
 import type {CanvasImageAttachment} from "./image-versions";
 import type {CanvasHistoryAction} from "./history-model";
 import type {Artwork} from "../mock-data";
@@ -57,7 +58,7 @@ export function createCanvasImageTask(input:Services){
     try{
       guard();
       if(images.length&&!refreshPartial){
-        if(versionAttachment&&!canvasAttachment&&jobId){const headers=await canvasImageTaskHeaders(scope);guard();const response=await fetch(`/api/generate-image?job=${encodeURIComponent(jobId)}`,{cache:"no-store",headers}),body=await readBody(response);guard();if(!response.ok)throw new Error(body.error||input.errorText);canvasAttachment=body.canvasAttachment;}
+        if(versionAttachment&&!canvasAttachment&&jobId){const headers=await canvasImageTaskHeaders(scope);guard();const receipt=await readCanvasGenerationReceipt(jobId,headers);guard();if(!receipt)throw new Error("原任务回执读取暂时失败，请稍后检查");const {response,data:body}=receipt;if(!response.ok)throw new Error(body.error||input.errorText);canvasAttachment=body.canvasAttachment;}
         return await attach();
       }
       if(!jobId){
@@ -71,8 +72,8 @@ export function createCanvasImageTask(input:Services){
       for(;;){
         await new Promise(resolve=>setTimeout(resolve,2500));guard();if(Date.now()>deadline)throw new Error(input.errorText);
         const headers=await canvasImageTaskHeaders(scope);guard();
-        const response=await fetch(`/api/generate-image?job=${encodeURIComponent(jobId)}`,{cache:"no-store",headers});
-        const body=await readBody(response);guard();if(!response.ok)throw new Error(body.error||input.errorText);
+        const receipt=await readCanvasGenerationReceipt(jobId,headers);guard();if(!receipt)continue;
+        const {response,data:body}=receipt;if(!response.ok)throw new Error(body.error||input.errorText);
         if(body.user)input.user(body.user);
         if(body.status==="done"||body.status==="error"){
           canvasAttachment=body.canvasAttachment;

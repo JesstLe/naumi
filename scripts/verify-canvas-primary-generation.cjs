@@ -12,7 +12,8 @@ const fixture=require('./verify-canvas-image-task-refactor.cjs'),plain=v=>JSON.p
  const record=(kind,scenario,f)=>({kind,scenario,post:f.state.post,polls:f.state.polls,forms:f.state.forms,positions:f.state.positions,history:f.state.history,notices:f.state.notices,error:f.state.error??null,remainingReceipts:f.state.storage.size});
  for(const kind of ['derived','blank'])for(const scenario of scenarios){
   const f=fixture.setup(kind,scenario,built);await f.run();
-  if(['poll-transient','position-fails','sync-missing'].includes(scenario)){assert.equal(typeof f.retry(),'function');checks++;f.state.retried=true;await Promise.all([f.retry()(),f.retry()()]);eq(f.state.post,1,'known task/result retry never submits again');eq(f.state.history.length,1,'one result attachment after concurrent retry');}
+  if(scenario==='poll-transient'&&fixture.boundedReceipt){eq(f.state.post,1,'bounded GET continuation has one original submission');eq(f.state.polls,2,'transient followed by same-job GET');eq(f.state.history.length,1,'one attachment');}
+  if(['poll-transient','position-fails','sync-missing'].includes(scenario)&&!(scenario==='poll-transient'&&fixture.boundedReceipt)){assert.equal(typeof f.retry(),'function');checks++;f.state.retried=true;await Promise.all([f.retry()(),f.retry()()]);eq(f.state.post,1,'known task/result retry never submits again');eq(f.state.history.length,1,'one result attachment after concurrent retry');}
   if(scenario==='reference-fails')eq(f.state.post,0,'failed references never submit');
   if(['cancelled','switch-project','unmounted','workspace-aba'].includes(scenario)){eq(f.state.history.length,0,'cancel/stale has no history');eq(f.state.positions.length,0,'cancel/stale has no placement');}
   if(scenario==='submit-unknown')eq(f.state.post,1,'unknown has no automatic repost');

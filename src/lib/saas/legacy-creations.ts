@@ -10,6 +10,7 @@ import { isManagedImageUrl } from "@/lib/object-storage/runtime";
 import {creationStatus,type CreationDetail,type CreationFilters,type CreationPage,type CreationSummary,type CreationAsset} from './creation-contracts';
 import { TeamError } from "@/lib/teams/errors";
 import {legacyCreationFailures,hasCreationFailure} from './creation-failures';
+import {readImagegenInputAssetReference} from '@/lib/imagegen/input-asset-reference';
 const source=z.object({table:z.enum(['app_image_jobs','app_canvas_image_tasks','app_video_tasks','app_artworks']),id:z.string().min(1).max(240),email:z.string().min(1).max(254)});
 type Source=z.infer<typeof source>;
 export type LegacyReadScope={client:PoolClient;allowedEmails:readonly string[]};
@@ -63,6 +64,8 @@ export async function legacyCreationAsset(id:string,assetId:string,access?:Legac
   if(found)m={asset:{id:assetId,direction:'output',role:'result',position:0,variant:'original',mime:null,bytes:null,hash:null,availability:'recorded',mediaType:found.video_url?'video':'image'},storageRef:`artwork:${found.id}`,actorEmail:ref.email};
  }
  if(!m)throw new TeamError('素材不存在',404);let url=m.storageRef;
- if(url.startsWith('artwork:')){const artwork=url.slice(8);if(artwork.startsWith('asset-')){url=(await(await import('@/lib/imagegen/input-assets')).readImagegenInputAsset(artwork,m.actorEmail)).url;}else{const row=(await pool.query('SELECT image_url,video_url FROM app_artworks WHERE id=$1 AND email=$2 AND deleted_at IS NULL',[artwork,m.actorEmail])).rows[0];if(!row)throw new TeamError('素材已失效',404);url=m.asset.mediaType==='video'?row.video_url:row.image_url;}}
+ // Only resolve owned metadata here. The HTTP media renderer reads bytes after
+ // enterpriseRead has committed and released its authorization locks/client.
+ if(url.startsWith('artwork:')){const artwork=url.slice(8);if(artwork.startsWith('asset-')){url=(await readImagegenInputAssetReference(artwork,m.actorEmail,access?.client)).url;}else{const row=(await pool.query('SELECT image_url,video_url FROM app_artworks WHERE id=$1 AND email=$2 AND deleted_at IS NULL',[artwork,m.actorEmail])).rows[0];if(!row)throw new TeamError('素材已失效',404);url=m.asset.mediaType==='video'?row.video_url:row.image_url;}}
  if(!isManagedImageUrl(url)&&!url.startsWith('data:image/'))throw new TeamError('素材不在受控存储中',422);return {url,mediaType:m.asset.mediaType,mime:m.asset.mime};
 }

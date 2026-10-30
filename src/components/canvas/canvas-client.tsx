@@ -407,6 +407,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     leaveBox:()=>viewControls.selectTool("move"),timer:{set:(run,delay)=>window.setTimeout(run,delay),clear:token=>window.clearTimeout(token as number)},
   }));
   const {selectedId,setSelectedId,selectedPendId,setSelectedPendId,selectedTextId,setSelectedTextId,selectedEdge,setSelectedEdge,multiSel,setMultiSel}=canvasSelection;
+  const {selectInProject:selectCanvasProject,project:projectCanvasSelection}=canvasSelection;
   const selectedIdRef = useRef<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const imageDraftNodeId = selectedPendId || selectedId;
@@ -926,7 +927,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (proj) {
       setActiveKey(proj.key);
       setCreatingNew(false);
-      canvasSelection.selectInProject(proj.key,{selectedId:openWithoutSelection?null:node,selectedTextId:null,selectedPendId:null});
+      selectCanvasProject(proj.key,{selectedId:openWithoutSelection?null:node,selectedTextId:null,selectedPendId:null});
       // 只有后台深链进入才自动聚焦;日常新建/上传/生成不动画布
       if (deepFocusRef.current) {
         setFocusId(node);
@@ -934,7 +935,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       }
       setBrowsing(false); // 新建/上传/深链 → 直接进入该项目画布,不停在网格
     }
-  }, [pendingNode,projects,videoNodesStore.ready,directorNodesStore.ready,characterNodesStore.ready,sceneNodesStore.ready,audioNodesStore.ready,timelineNodesStore.ready,textNodesReady,works,setSelectedId]);
+  }, [pendingNode,projects,videoNodesStore.ready,directorNodesStore.ready,characterNodesStore.ready,sceneNodesStore.ready,audioNodesStore.ready,timelineNodesStore.ready,textNodesReady,works,selectCanvasProject]);
 
   // Optional desktop deep link; the original /canvas defaults are unchanged.
   const desktopProjectOpened = useRef<string | null>(null);
@@ -1432,7 +1433,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     [nodes,edges,active,activeKey,generationTasks,generationPresentation.positions,generationPresentation.operations,pendNodes,textNodes,videoNodesStore.nodes,directorNodesStore.nodes,characterNodesStore.nodes,sceneNodesStore.nodes,audioNodesStore.nodes,timelineNodesStore.nodes,videoTaskStore.tasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,
       locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutCatalog,cutoutCatalogError,workflowManifests,sceneActions,canvasArtworkDocument.scope]);
   const {rfNodes,setRfNodes,onNodesChange,rfEdges,setRfEdges,onEdgesChange,holdPositions}=useCanvasScene(displayNodes,displayEdges,canvasArtworkDocument.scope);
-  useEffect(()=>{canvasSelection.project();},[rfNodes,canvasSelection.project]);
+  useEffect(()=>{projectCanvasSelection();},[rfNodes,projectCanvasSelection]);
 
   function selectWorkflowGroup(ids:string[]){canvasSelection.group(ids);}
   function clearCanvasSelection(exitBoxMode=false){canvasSelection.clear(exitBoxMode);}

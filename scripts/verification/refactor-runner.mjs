@@ -38,6 +38,7 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='timeline-ui')stageEnv.TIMELINE_SOURCE_ASSETS=path.join(out,'timeline-rules');
    stageEnv.TIMELINE_APP_EVIDENCE=evidence;
    if(spec.id==='browser-cache-resilience')stageEnv.BROWSER_CACHE_RESILIENCE_EVIDENCE=evidence;
+   if(spec.id==='browser-cache-efficiency')stageEnv.BROWSER_CACHE_EFFICIENCY_EVIDENCE=evidence;
    if(spec.id==='image-notice-visibility')stageEnv.IMAGE_NOTICE_VISIBILITY_EVIDENCE=evidence;
    if(spec.id==='billing-presentation')stageEnv.BILLING_PRESENTATION_EVIDENCE=evidence;
    if(spec.id==='canvas-video-follow')stageEnv.CANVAS_VIDEO_FOLLOW_EVIDENCE=evidence;

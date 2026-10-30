@@ -5,6 +5,7 @@ const root=path.resolve(process.env.CANVAS_IMAGE_SOURCE_ROOT||process.cwd()),bas
 const source=fs.readFileSync(path.join(root,'src/components/canvas/canvas-client.tsx'),'utf8'),ast=ts.createSourceFile('canvas.tsx',source,99,true,4),fns={};
 function walk(node){if(ts.isFunctionDeclaration(node)&&['runGen','generatePend','canvasImageRunContext','appendComposerReferences'].includes(node.name?.text))fns[node.name.text]=node.getText(ast);ts.forEachChild(node,walk);}walk(ast);
 const declarations=ts.transpileModule(Object.values(fns).join('\n'),{compilerOptions:{target:9,module:1}}).outputText;
+const boundedReceipt=fs.existsSync(path.join(root,'src/lib/canvas/generation-receipt.ts'));
 const shared=fs.existsSync(path.join(root,'src/lib/canvas/image-task-controller.ts'));assert.equal(shared,!baseline,'mode must match whole source tree');
 let checks=0;const eq=(a,b,label)=>{assert.deepEqual(a,b,label);checks++;};
 const plain=x=>JSON.parse(JSON.stringify(x));
@@ -30,8 +31,8 @@ function setup(kind,scenario,built){
  const operation='12345678-1234-4234-a234-123456789012',jobId='imagegen-'+operation;
  const ports={workspace:'personal',revision:0,async auth(){state.authCalls++;if(scenario==='workspace-aba'&&state.authCalls===2){ports.workspace='tenant-B';ports.revision++;ports.workspace='personal';ports.revision++;}return {'x-naumi-workspace':'wrong-current','x-naumi-project-context':'tree:wrong'};},async read(){if(scenario==='reference-fails')throw Error('reference failed');return new Blob(['fixture pixels'],{type:'image/png'});}};
  const module={exports:{}};
- const c={canvasHistory:{consumePending(){}},canvasTextDocument:{async attachImageResults(){}},pushUndo:()=>{},artworkNodeSize:()=>({width:320,height:320}),__ports:ports,console,Buffer,Date:class extends Date{static now(){return state.clock;}},Math,Promise,Set,Map,Response,Request,Headers,AbortSignal,FormData,File,Blob,URL,crypto:globalThis.crypto,TextEncoder,encodeURIComponent,structuredClone,
-  setTimeout:f=>{state.clock+=2500;queueMicrotask(f);return 1},clearTimeout(){},module,exports:module.exports,require,
+ const c={canvasHistory:{consumePending(){}},canvasTextDocument:{async attachImageResults(){}},pushUndo:()=>{},artworkNodeSize:()=>({width:320,height:320}),__ports:ports,console,Buffer,Date:class extends Date{static now(){return state.clock;}},Math,Promise,Set,Map,Response,Request,Headers,AbortSignal,AbortController,FormData,File,Blob,URL,crypto:globalThis.crypto,TextEncoder,encodeURIComponent,structuredClone,
+  setTimeout:(f,ms)=>{if(ms===30000)return setTimeout(f,10);state.clock+=2500;queueMicrotask(f);return 1},clearTimeout:token=>{if(typeof token!=='number')clearTimeout(token);},module,exports:module.exports,require,
   sessionStorage:{getItem:k=>state.storage.get(k)||null,setItem:(k,v)=>state.storage.set(k,v),removeItem:k=>state.storage.delete(k),get length(){return state.storage.size},key:i=>Array.from(state.storage.keys())[i]},
   composerReferences:undefined,readOnly:false,user:{email:'fixture@example.test'},t:k=>k,genQuality:'medium',genCount:2,genRatio:'3:4',genStyle:'default',genResolution:'2K',genModel:'fixture',imageModels:[],generationMode:'standard',editPrompt:'fixture prompt',textNodes:[],pendNodes:[pend],generationTasks:[],rfNodes:[],works:[src],worksRef:{current:[src]},active:{key:'tree:source',members:[src]},activeKey:'tree:source',targetEmail:null,
   canvasAccountRef:{current:'fixture-account'},canvasContextEpochRef:{current:0},batchRunMountedRef:{current:true},activeProjectRef:{current:{key:'tree:source'}},selectedIdRef:{current:'source'},selectedPendId:'pend-A',selectedPendIdRef:{current:'pend-A'},pendingNodeRef:{current:null},setPendingNode:()=>{},generationOperationRef:{current:new Set()},generationTaskPosRef:{current:{}},generationTaskSizeRef:{current:{}},editTaskStateRef:{current:new Map()},pendNodesRef:{current:[pend]},textNodesRef:{current:[]},rfRef:{current:{getNode:id=>({id,position:{x:500,y:200},data:{}}),getNodes:()=>[]}},
@@ -48,7 +49,7 @@ function setup(kind,scenario,built){
   if(scenario==='malformed-query')return new Response('<html>502</html>',{status:502});
   if(scenario==='partial-error')return Response.json({status:'error',operationStatus:'failed',error:'partial fixture',images:results});
   if(scenario==='needs-review'||scenario==='stored-recovery')return Response.json({status:'error',operationStatus:'needs_attention',reviewRequired:true,error:'fixture review'});
-  if(scenario==='poll-transient'&&!state.retried)throw Error('fixture network failure');
+  if(scenario==='poll-transient'&&state.polls===1&&!state.retried)throw Error('fixture network failure');
   if(scenario==='switch-project'){c.activeProjectRef.current={key:'tree:B'};c.canvasContextEpochRef.current++;}
   if(scenario==='unmounted')c.batchRunMountedRef.current=false;
   if(scenario==='terminal-failed')return Response.json({status:'error',operationStatus:'failed',error:'fixture terminal failure'});
@@ -71,7 +72,7 @@ function setup(kind,scenario,built){
  vm.runInContext(declarations+'\nglobalThis.entry={runGen,generatePend};',c);
  return {c,state,src,pend,presentation,run:()=>kind==='derived'?c.entry.runGen(src,'fixture prompt',{ratio:'3:4',count:2,resolution:'2K',style:'default',...(variations[scenario]||{})}):c.entry.generatePend({referenceInputs:variations[scenario]?.referenceInputs}),retry:()=>{const item=kind==='derived'?c.generationTasks[0]:c.pendNodes[0];return kind==='derived'?item?.onRetry:item?.onGenerationRetry;}};
 }
-module.exports={bundle,setup,root};
+module.exports={bundle,setup,root,boundedReceipt};
 if(require.main===module)(async()=>{
  const built=await bundle(),report=[];
  for(const kind of ['derived','blank'])for(const scenario of ['done','partial','reference-fails','cancelled','poll-transient','position-fails','sync-missing','workspace-aba','switch-project','unmounted','prepare-rejected','submit-unknown','terminal-failed','partial-error','needs-review','stored-recovery','malformed-query','ratio-warning','base-file','ref-urls','explicit-roles','transparent','ratiogen']){
@@ -83,7 +84,8 @@ if(require.main===module)(async()=>{
    eq(state.post,1,'one submit');eq(state.positions.length,2,'all outputs placed');eq(plain(state.history),[kind==='blank'&&baseline?['result-1']:['result-1','result-2']],'one undo includes the full batch');
    eq(state.storage.size,scenario==='partial'&&!baseline?1:0,'only complete delivery clears receipt');
   }
-  if(['poll-transient','position-fails','sync-missing'].includes(scenario)){
+  if(scenario==='poll-transient'&&boundedReceipt){eq(state.post,1,'transient GET never rePOST');eq(state.polls,2,'one bounded GET retry');eq(state.history.length,1,'automatic GET continuation attaches once');}
+  if(['poll-transient','position-fails','sync-missing'].includes(scenario)&&!(scenario==='poll-transient'&&boundedReceipt)){
    assert.equal(typeof f.retry(),'function');checks++;state.retried=true;await f.retry()();
    eq(state.post,scenario==='poll-transient'&&baseline?2:1,'known job retry bypasses submit adapter');
    eq(state.positions.filter(p=>p.id==='result-1').length>0,true,'retry persists first coordinate');
