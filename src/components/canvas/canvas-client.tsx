@@ -165,6 +165,7 @@ import type {TextImageMode} from "@/lib/canvas/text-image-inputs";
 import type {CanvasTextImageContext} from "@/lib/canvas/text-image-runs";
 import {useCanvasTextImages} from "./use-canvas-text-images";
 import {useCanvasLocalImageEdits} from "./use-canvas-local-image-edits";
+import {useCanvasStitch} from "./use-canvas-stitch";
 import type {CanvasLocalImageEditPorts} from "@/lib/canvas/local-image-edits";
 import { CanvasAssistantPanel } from "./canvas-assistant-panel";
 import { useWorkflowPaste } from "./use-workflow-paste";
@@ -428,7 +429,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 自由拖动是默认；用户主动开启磁铁时才吸附网格。全局整理仅由手动动作触发。
   const [genError, setGenError] = useState<string | null>(null);
   const [zipping, setZipping] = useState(false);
-  const [stitching, setStitching] = useState(false);
+
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(
     null
   );
@@ -776,6 +777,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   useEffect(() => { batchRunMountedRef.current = true; return () => { batchRunMountedRef.current = false; }; }, []);
   const [productPicker, setProductPicker] = useState<{ textNodeIds: string[] } | null>(null);
   const localEdits=useCanvasLocalImageEdits(canvasArtworkDocument.scope);
+  const stitch=useCanvasStitch(canvasArtworkDocument.scope),stitching=stitch.busy;
   const {crop:cropArtwork,busy:localEditBusy}=localEdits;
   const textImages=useCanvasTextImages(canvasArtworkDocument.scope);
   const {menu:genImageMenu,submitting:textImageSubmitting}=textImages;
@@ -1899,42 +1901,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.groupFail"));}
   }
 
-  async function stitchBatchSelection() {
-    if (!user || readOnly || stitching || selectedBatchArts.length < 2) return;
-    const selectedNodes = (rfRef.current?.getNodes() ?? []).filter((node) =>
-      selectedBatchIds.includes(node.id)
-    );
-    const x = selectedNodes.length
-      ? Math.max(...selectedNodes.map((node) => node.position.x + flowNodeSize(node).width)) + X_GAP
-      : 0;
-    const y = selectedNodes.length
-      ? Math.min(...selectedNodes.map((node) => node.position.y))
-      : 0;
-    setStitching(true);
-    try {
-      const response = await privateFetchRaw("/api/canvas/stitch", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          ids: selectedBatchIds,
-          title: fmt(t("canvas.longImageTitle"), { n: selectedBatchIds.length }),
-          x,
-          y,
-        }),
-      });
-      const result = await expectJsonOk(response, t("canvas.stitchFail"));
-      const id = String(result?.id || "");
-      if (!id) throw new Error(t("canvas.stitchFail"));
-      clearCanvasSelection(true);
-      const fresh = await mergeWorks([id]);
-      pushAddUndo(id, fresh);
-      setSelectedId(id);
-      flashTip(t("canvas.stitchDone"));
-    } catch (error) {
-      flashTip(error instanceof Error ? error.message : t("canvas.stitchFail"));
-    } finally {
-      setStitching(false);
-    }
+  async function stitchBatchSelection(){
+    if(!user||readOnly||selectedBatchArts.length<2)return;
+    const scope=canvasArtworkDocument.scope,epoch=canvasContextEpochRef.current;
+    const selectedNodes=(rfRef.current?.getNodes()??[]).filter(node=>selectedBatchIds.includes(node.id));
+    const x=selectedNodes.length?Math.max(...selectedNodes.map(node=>node.position.x+flowNodeSize(node).width))+X_GAP:0;
+    const y=selectedNodes.length?Math.min(...selectedNodes.map(node=>node.position.y)):0;
+    await stitch.run({ids:selectedBatchIds,title:fmt(t("canvas.longImageTitle"),{n:selectedBatchIds.length}),x,y},{
+      writable:()=>!!user&&!readOnly,current:()=>batchRunMountedRef.current&&epoch===canvasContextEpochRef.current,
+      merge:canvasArtworkDocument.merge,history:canvasHistory,
+      applied:id=>{clearCanvasSelection(true);setSelectedId(id);},notice:flashTip,
+      messages:{failed:t("canvas.stitchFail"),done:t("canvas.stitchDone"),unknown:L("原拼接结果待同步，请稍后检查","The original stitch is awaiting sync. Check again shortly"),missing:L("拼接已保存，结果尚未同步，请重试读取","The stitch was saved; retry to sync its result")},
+    });
   }
 
   // 拉线建节点(5b):+端口拖出 → onConnectStart 记源；落到图片节点建立生成输入，
