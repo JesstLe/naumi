@@ -23,3 +23,19 @@ TextCanvasNode捕获focus时的id、draft与回调；导航后的blur只完成�
 真实隔离PG17检查通过：原editor/document/history→原handler→PG，左上尺寸与坐标一次undo/redo、其它tab新内容保留、位置冲突整笔回滚（尺寸无部分写）、lost ACK重复原operation/body读canonical均通过；消费/供应商0。原history67/184、text-document21/58、完整类型/lint37warnings、包含新增模块的四SCC0。所有schema/连接/fixture HTTP和本模块PG容器已清理。
 
 上述模块命令运行时尚未commit，记录HEAD仅为父提交而非完整脏树版本；后续固定源码sourceIdentity将严格绑定，不能把当前模块log中的父SHA当已固定验收。
+
+## 最终固定候选
+
+固定应用/验证源码 `eb2c5a9b614f711645a42bb2ba23842468bb0a7b`。内容、失焦提交、改名、尺寸、适高和展开状态归 `text-editing`；原 `text-document` 保存队列与 `history` 冲突/事务仍是唯一归属。实际 textarea 捕获焦点时的 id/draft/callback，跨项目 blur 提交原文档，跨账号不写入。
+
+8 条正常命令/保存/历史轨迹 EXACT；5 个旧编辑反例及两类 DOM 重绑定问题闭环。真实隔离 PG 编辑 17 检查覆盖位置+尺寸一次原子 undo/redo、远端内容保留、冲突整笔回滚和 lost ACK 原 operation/body 续查。26 个受影响入口均 PASS（subset 为 PARTIAL/exit 2，不是当前 164 项全量通过）。固定完整 Web/Worker 同镜像实际产品 browser 50 检查通过，其中新增文字编辑 6 项；无新增文字编辑任务/消费/供应商调用。类型检查、lint（37 个既有 warning）通过，四类 SCC 均为 0。
+
+Canvas 页面 4713→4586 行；2105 个原 src/services 文件中 2102 个 hash 保持，另有 2 个新编辑 owner 文件。完整 5226 文件包、5219 原始文件 hash 的独立副本回滚、later-edit 零写入及远端状态以本片 DELIVERY/VERIFICATION 为准。
+
+整体重构 ACTIVE；同步后模块计数 2/3。未合 main、未部署，47 HOLD。历史 R7Y 全 160/runtime 177 仍只归历史固定源码；当前本片不冒充完整 164 验收，冷 DDL/历史 dev 根因、性能容量、有效 CI 与最终整版验收仍待。
+
+完整镜像实际 Next/ReactFlow、原 handler/PG/Worker、两登录 browser：50 检查 = 原 44 + 手动文字 6。真实 textarea 输入、共享 undo/redo、展开不落持久尺寸、同长度换行适高、刷新恢复与原图/任务/引用/7 笔 42 积分/供应商统计保持通过。Worker POSIX 排空 exit 0，finally 已删除自有容器、网络与 PG tmpfs。
+
+最终只补四份文档，其余逐 hash 与固定验证源码一致。原 5219 文件完整 hash、旧函数 8 检查/5 反例和原 DOM 4 检查复现，以及字节 diff/later-edit 零写入，须由 package 实跑后记录在 ROLLBACK_RESULT/VERIFICATION/DELIVERY。
+
+<span style="color:red">长分支超过 48 小时仍未合 main：这是用户指定的独立整版重构线，整体仍 ACTIVE。剩余 Canvas 职责、完整版本/容量/有效 CI 尚未完成，本片通过不表示整版已验收或已合主线。持续普通整合 main，最终完成整版门槛后普通合并。</span>

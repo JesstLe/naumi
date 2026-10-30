@@ -1,3 +1,13 @@
+## 2026-10-30 R8A：文字手动编辑与原焦点会话归属
+
+固定应用/验证源码 `eb2c5a9b614f711645a42bb2ba23842468bb0a7b`。内容、失焦提交、改名、尺寸、适高和展开状态归 `text-editing`；原 `text-document` 保存队列与 `history` 冲突/事务仍是唯一归属。实际 textarea 捕获焦点时的 id/draft/callback，跨项目 blur 提交原文档，跨账号不写入。
+
+8 条正常命令/保存/历史轨迹 EXACT；5 个旧编辑反例及两类 DOM 重绑定问题闭环。真实隔离 PG 编辑 17 检查覆盖位置+尺寸一次原子 undo/redo、远端内容保留、冲突整笔回滚和 lost ACK 原 operation/body 续查。26 个受影响入口均 PASS（subset 为 PARTIAL/exit 2，不是当前 164 项全量通过）。固定完整 Web/Worker 同镜像实际产品 browser 50 检查通过，其中新增文字编辑 6 项；无新增文字编辑任务/消费/供应商调用。类型检查、lint（37 个既有 warning）通过，四类 SCC 均为 0。
+
+Canvas 页面 4713→4586 行；2105 个原 src/services 文件中 2102 个 hash 保持，另有 2 个新编辑 owner 文件。完整 5226 文件包、5219 原始文件 hash 的独立副本回滚、later-edit 零写入及远端状态以本片 DELIVERY/VERIFICATION 为准。
+
+整体重构 ACTIVE；同步后模块计数 2/3。未合 main、未部署，47 HOLD。历史 R7Y 全 160/runtime 177 仍只归历史固定源码；当前本片不冒充完整 164 验收，冷 DDL/历史 dev 根因、性能容量、有效 CI 与最终整版验收仍待。
+
 ## 2026-10-30 R7Z：项目导航会话归属
 
 固定应用/验证d62025d44a1d009a0471993483eed66c554eedf8，Canvas项目导航/URL与刷新恢复/浏览器历史/延迟工作流初始化归scoped owner，页面4880→4713行；20共同轨迹EXACT，原25检查复现四反例→新30通过。21受影响入口同source/digest通过（subset PARTIAL/exit2，不冒充全161），完整生产镜像同Web/Worker/真实PG双browser44检查通过，新导航7检查未增加任务/供应商/消费。类型/lint37warnings、四SCC0，2102原src/services hash保持；5214原hash副本回滚与完整四产物/远端见R7Z DELIVERY。整体ACTIVE，同步后1/3，未合main未部署，47 HOLD；R7Y全160/runtime177属于其原版本，当前完整161和历史dev根因/DDL/容量/有效CI/最终main整合仍待。
