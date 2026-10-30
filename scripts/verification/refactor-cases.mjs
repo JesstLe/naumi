@@ -16,6 +16,7 @@ export const refactorCases=[
  node('media-state-lifecycle','runtime','scripts/verify-media-state-lifecycle.mjs','MEDIA_STATE_LIFECYCLE=PASS'),
  node('media-codec-threads','foundation','scripts/verify-media-codec-threads.mjs','MEDIA_CODEC_THREADS=PASS MODE=MODIFIED'),
  {id:'canvas-smart-layout',group:'canvas',file:'scripts/verify-canvas-smart-layout.ts',args:[],expect:'MODIFIED=PASS MIXED_NODES=',pg:false,tsx:true},
+ node('canvas-video-follow','canvas','scripts/verify-canvas-video-follow.cjs','CANVAS_VIDEO_FOLLOW=PASS'),
  node('canvas-arrange','canvas','scripts/verify-canvas-arrange.cjs','CANVAS_ARRANGE=PASS'),
  node('canvas-overlay-owner','canvas','scripts/verify-canvas-overlay-owner.cjs','CANVAS_OVERLAY_OWNER=PASS'),
  node('canvas-viewport-owner','canvas','scripts/verify-canvas-viewport-owner.cjs','CANVAS_VIEWPORT_OWNER=PASS'),

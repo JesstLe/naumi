@@ -110,6 +110,7 @@ import {createCanvasWorkflowRuns} from "@/lib/canvas/workflow-runs";
 import type {CanvasGenerationRunContext} from "@/lib/canvas/generation-run-context";
 import {useCanvasGenerationPresentation} from "./use-canvas-generation-presentation";
 import {useCanvasPendingPresentation} from "./use-canvas-pending-presentation";
+import {useCanvasVideoTaskFollow} from "./use-canvas-video-task-follow";
 import type {CanvasGeneratedImage} from "@/lib/canvas/image-task-controller";
 import {runCanvasDerivedImage,runCanvasBlankImage,type CanvasImageRunContext,type CanvasBlankImageOptions} from "@/lib/canvas/image-runs";
 import {captureCanvasImageTaskScope,captureCanvasTaskOwner} from "@/lib/canvas/image-task-scope";
@@ -570,8 +571,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const taskDocumentRef=useRef({merge:mergeWorks,history:pushAddUndoMany});
   taskDocumentRef.current={merge:mergeWorks,history:pushAddUndoMany};
   const [canvasImageTaskRefreshKey, setCanvasImageTaskRefreshKey] = useState(0);
-  const settledCanvasVideoTaskRef = useRef(new Set<string>());
-  const failedCanvasVideoTaskRef = useRef(new Set<string>());
   const pendSeqRef = useRef(1);
   const canvasTextDocument = useCanvasTextDocument({account:canvasAccountRef.current,actor:user?.email||"",owner:targetEmail||user?.email||"",
     project:activeKey,enabled:ready&&!!user&&!!targetEmail,readOnly,notice:flashTip});
@@ -1301,145 +1300,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     [active, selectedId]
   );
 
-  // 页面刷新/关闭后恢复画布视频任务：运行中恢复占位节点，后台完成后自动并回作品树。
-  useEffect(() => {
-    if (!user || !active) return;
-    const projectKey = active.key;
-    let stopped = false;
-    let timer: number | null = null;
-    const sync = async () => {
-      try {
-        const project = activeProjectRef.current;
-        if (!project || project.key !== projectKey) return;
-        const sourceIds = project.members.map((item) => item.id);
-        const sourceIdChunks = Array.from(
-          { length: Math.max(1, Math.ceil(sourceIds.length / 80)) },
-          (_, index) => sourceIds.slice(index * 80, index * 80 + 80)
-        );
-        const responses = await Promise.all(sourceIdChunks.map((chunk) =>
-          privateFetchRaw(`/api/video/tasks?source=canvas&limit=500&sourceIds=${encodeURIComponent(chunk.join(","))}`)
-        ));
-        if (stopped) return;
-        if (responses.some((response) => !response.ok)) throw new Error("视频任务查询失败");
-        const payloads = await Promise.all(responses.map((response) => readJsonSafe(response)));
-        if (stopped) return;
-        const currentProject = activeProjectRef.current;
-        if (!currentProject || currentProject.key !== projectKey) return;
-        const tasks = payloads.flatMap((data) => Array.isArray(data?.tasks) ? data.tasks : []) as Array<{
-          id: string; source?: string; sourceId?: string; status: string; progress?: number; artworkId?: string; prompt?: string; error?: string;
-        }>;
-        const memberIds = new Set(currentProject.members.map((item) => item.id));
-        const relevant = tasks.filter((task) => task.source === "canvas" && task.sourceId && memberIds.has(task.sourceId));
-        if (stopped) return;
-        const runningIds = new Set(relevant.filter((task) => task.status === "processing" || task.status === "queued").map((task) => task.id));
-        const attentionIds = new Set(relevant.filter((task) => task.status === "needs_attention").map((task) => task.id));
-        const terminalIds = new Set(relevant.filter((task) => task.status === "completed" || task.status === "failed").map((task) => task.id));
-        setPendNodes((items) => {
-          const progressByTask = new Map(relevant.filter((task) => runningIds.has(task.id)).map((task) => [task.id, Math.max(5, Math.min(95, Number(task.progress || 0)))]));
-          const kept = items
-            .filter((item) => item.taskKind !== "video" || !item.taskId || !terminalIds.has(item.taskId))
-            .map((item) => {
-              if (item.taskKind !== "video" || !item.taskId) return item;
-              if (attentionIds.has(item.taskId)) {
-                return {
-                  ...item,
-                  label: t("canvas.videoNeedsAttention"),
-                  generating: false,
-                  progress: 0,
-                  needsAttention: true,
-                  attentionTitle: t("canvas.videoNeedsAttention"),
-                  attentionHint: t("canvas.videoNeedsAttentionHint"),
-                  attentionAction: t("canvas.videoOpenTasks"),
-                  attentionHref: "/video",
-                };
-              }
-              return progressByTask.has(item.taskId)
-                ? {
-                    ...item,
-                    progress: progressByTask.get(item.taskId) as number,
-                    generating: true,
-                    needsAttention: false,
-                  }
-                : item;
-            });
-          const known = new Set(kept.filter((item) => item.taskKind === "video").map((item) => item.taskId).filter(Boolean));
-          for (const task of relevant) {
-            if ((!runningIds.has(task.id) && !attentionIds.has(task.id)) || known.has(task.id)) continue;
-            const source = currentProject.members.find((item) => item.id === task.sourceId);
-            const sourceNode = source ? rfRef.current?.getNode(source.id) : null;
-            const size = sourceNode && source ? flowNodeSize(sourceNode) : source ? artworkNodeSize(source) : { width: NODE_W, height: NODE_H };
-            kept.push({
-              id: `pend-video-task-${task.id}`,
-              taskId: task.id,
-              taskKind: "video",
-              x: (sourceNode?.position.x ?? source?.canvasX ?? 0) + size.width + X_GAP,
-              y: sourceNode?.position.y ?? source?.canvasY ?? 0,
-              parentId: task.sourceId || null,
-              linked: true,
-              label: attentionIds.has(task.id)
-                ? t("canvas.videoNeedsAttention")
-                : task.prompt ? `视频生成中 · ${task.prompt.slice(0, 18)}` : "视频生成中",
-              uploading: false,
-              progress: attentionIds.has(task.id) ? 0 : Math.max(5, Math.min(95, Number(task.progress || 0))),
-              inputs: task.sourceId ? [task.sourceId] : [],
-              generating: !attentionIds.has(task.id),
-              needsAttention: attentionIds.has(task.id),
-              attentionTitle: t("canvas.videoNeedsAttention"),
-              attentionHint: t("canvas.videoNeedsAttentionHint"),
-              attentionAction: t("canvas.videoOpenTasks"),
-              attentionHref: "/video",
-            });
-          }
-          return kept;
-        });
-        const completed = relevant.filter((task) =>
-          task.status === "completed" &&
-          task.artworkId &&
-          !memberIds.has(task.artworkId) &&
-          !settledCanvasVideoTaskRef.current.has(task.id)
-        );
-        for (const task of completed) {
-          if (stopped) return;
-          const source = currentProject.members.find((item) => item.id === task.sourceId);
-          const sourceNode = source ? rfRef.current?.getNode(source.id) : null;
-          const size = sourceNode && source ? flowNodeSize(sourceNode) : source ? artworkNodeSize(source) : { width: NODE_W, height: NODE_H };
-          const positionResponse = await privateFetchRaw("/api/artworks/position", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ mode: "initialize",
-              id: task.artworkId,
-              x: Math.round((sourceNode?.position.x ?? source?.canvasX ?? 0) + size.width + X_GAP),
-              y: Math.round(sourceNode?.position.y ?? source?.canvasY ?? 0),
-            }),
-          });
-          if (stopped) return;
-          if (!positionResponse.ok) throw new Error("视频结果定位失败");
-          const fresh = await mergeWorks([task.artworkId as string]);
-          if (stopped) return;
-          if (fresh.some((item) => item.id === task.artworkId)) {
-            settledCanvasVideoTaskRef.current.add(task.id);
-            await refreshCredits();
-            if (stopped) return;
-          }
-        }
-        for (const task of relevant) {
-          if (task.status !== "failed" || failedCanvasVideoTaskRef.current.has(task.id)) continue;
-          failedCanvasVideoTaskRef.current.add(task.id);
-          await refreshCredits();
-          if (stopped) return;
-          flashTip(task.error || "视频生成失败，积分已退回");
-        }
-        if (!stopped) timer = window.setTimeout(sync, runningIds.size ? 8000 : 15000);
-      } catch {
-        if (!stopped) timer = window.setTimeout(sync, 12000);
-      }
-    };
-    void sync();
-    return () => {
-      stopped = true;
-      if (timer != null) window.clearTimeout(timer);
-    };
-  }, [user?.email, active?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Follow existing durable videos; this page does not own another polling/task system.
+  useCanvasVideoTaskFollow(canvasArtworkDocument.scope,!!user&&!!active&&!readOnly,{
+    project:()=>activeProjectRef.current,request:(url,init)=>canvasDocumentFetch(canvasArtworkDocument.scope,url,init,true),pending:pendingPresentation,
+    position:source=>{const node=source?rfRef.current?.getNode(source.id):null,size=node&&source?flowNodeSize(node):source?artworkNodeSize(source):{width:NODE_W,height:NODE_H};return{x:(node?.position.x??source?.canvasX??0)+size.width+X_GAP,y:node?.position.y??source?.canvasY??0};},
+    merge:mergeWorks,credits:refreshCredits,notice:flashTip,
+    messages:{attention:t("canvas.videoNeedsAttention"),attentionHint:t("canvas.videoNeedsAttentionHint"),openTasks:t("canvas.videoOpenTasks")},
+    timer:{set:(run,delay)=>window.setTimeout(run,delay),clear:id=>window.clearTimeout(id as number)},
+  });
 
   // The owner observes the existing durable tasks; opening/closing OCR does not restart its task identity.
   useEffect(()=>{
