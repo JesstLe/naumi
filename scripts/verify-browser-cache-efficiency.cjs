@@ -272,14 +272,18 @@ async function main() {
           request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
         });
         try { return await new Promise(resolve => {
-          const tx = db.transaction('images'), request = tx.objectStore('images').get(JSON.stringify([owner, source, version]));
-          request.onsuccess = () => resolve(!!request.result?.blob); request.onerror = () => resolve(false);
+          const tx = db.transaction(['images','metadata']), id=JSON.stringify([owner, source, version]);
+          const request = tx.objectStore('images').get(id), metadata=tx.objectStore('metadata').get(id);
+          tx.oncomplete = () => resolve(!!request.result?.blob && metadata.result?.bytes === request.result.blob.size);
+          tx.onerror = tx.onabort = () => resolve(false);
         }); } finally { db.close(); }
       }, { owner, source: source2, version: digest });
-      await f.page.reload(); await f.page.waitForFunction(() => window.fixtureReady);
-      await f.page.evaluate(owner => window.fixture.images.activateBrowserImages(owner), owner);
-      const decoded = await image(f, source2);
-      assert.equal(decoded.width, 32); assert.equal(f.calls.media, 1); assert.equal(f.calls.manifest, 3);
+      for(let round=0;round<3;round++){
+        await f.page.reload(); await f.page.waitForFunction(() => window.fixtureReady);
+        await f.page.evaluate(owner => window.fixture.images.activateBrowserImages(owner), owner);
+        const decoded = await image(f, source2);
+        assert.equal(decoded.width, 32); assert.equal(f.calls.media, 1, 'persisted B reload '+round); assert.equal(f.calls.manifest, 3+round);
+      }
       return { calls: f.calls, sourceBPersisted: true, reloadExtraDownloads: 0 };
     } finally { await f.close(); }
   });

@@ -57,3 +57,8 @@ BROWSER_CACHE_EFFICIENCY=PASS CASES=12 FAILED=0 OLD_DEFECTS=0 CONTROL_FAILURES=0
 父按窄审边界补了有界warmSources标记，首次访问同SHA另一来源B仍保留其磁盘路径。新增 `SHA_NEW_SOURCE_PERSISTS_BEFORE_RELOAD_WITHOUT_EXTRA_DOWNLOAD`：真实读取A/B仅1次媒体传输，等B真实IDB条目出现后reload只开B，仍无新增媒体传输。该项在bbc8旧基线也通过，不以新增功能当旧缺陷。
 
 最终脚本为13项，新增正控后baseline-v2 REPRODUCED/5旧缺口/8正控/exit1，modified-v2 PASS13/exit0。前述12项报告及hash为历史轮次，保留不覆盖；最终逐源码hash见 tests/modified-v2/RESULT.json，精确命令与字面stdout/exit见 FINAL_TEST_EXECUTIONS.json。后续副本回滚使用同一13项runner。
+
+
+## 副本验收发现与测试边界收紧
+
+首轮副本封存的来源B刷新正控出现一次额外下载，封存中止，原报告保留在seal-tests/modified。原测试只在images单行get成功时就导航，没有等待核验事务完成及metadata配套记录。最终检查改为images+metadata同一只读事务complete后才导航，并连续刷新3次，仍断言媒体总数1，不放宽0新增传输要求。诊断中出现的失败/通过均保留于tests/copy-diagnostic*；不将该不稳定观察直接认定新的产品缺陷。产品字节未为此改变。最终封存使用此更完整的持久化完成条件。
