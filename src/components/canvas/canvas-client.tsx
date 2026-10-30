@@ -97,7 +97,7 @@ import { textPatchOf, type CanvasTextNode, type VideoPatchFields, type DirectorP
 import type { HistoryCommit } from "@/lib/canvas/history-controller";
 import { CanvasHistoryRequestError } from "@/lib/canvas/history-scope";
 import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
-import { smartLayout } from "@/lib/canvas/smart-layout";
+import {arrangeCanvasDocument} from "@/lib/canvas/arrange";
 import { SurfaceAppearanceProvider } from "@/components/ui/surface-appearance";
 import {submitCanvasCreationRequest,type CanvasCreationRequestInit} from "@/lib/canvas/creation-request";
 import {ImagegenPendingRecovery} from "./imagegen-pending-recovery";
@@ -2460,61 +2460,19 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const p = relPoint(e);
     setCtxMenu({ x: p.x, y: p.y, cx: e.clientX, cy: e.clientY });
   }
-  // 全部图文参与布局；锁定/运行节点作为障碍。一个事务、一个撤销步骤。
+  // Layout owns preparation/fit; history remains the single transaction/undo owner.
   async function tidyLayout() {
-    if (!active || readOnly || !user || !nodeSettingsReady || !textNodesReady || historyBusyRef.current) return;
-    setCtxMenu(null);
-    historyBusyRef.current = true;
-    setHistorySaving(true);
-    try {
-      await canvasTextDocument.flush();
-      if (canvasTextDocument.getSnapshot().unsaved) throw new Error(L("请先保存未保存的文字节点", "Save pending text changes first"));
-      const currentNodes = (rfRef.current?.getNodes() ?? rfNodes).filter(node => node.type !== "workflowGroup");
-      const currentEdges = rfRef.current?.getEdges() ?? rfEdges;
-      const artworkIds = new Set(active.members.map(member => member.id));
-      const textIds = new Set(active.textNodes.map(node => node.id));
-      const mobileIds = new Set([...artworkIds, ...textIds,...(active.videoNodes||[]).map(node=>node.id),...(active.directorNodes||[]).map(node=>node.id),...(active.characterNodes||[]).map(node=>node.id),...(active.sceneNodes||[]).map(node=>node.id),...(active.audioNodes||[]).map(node=>node.id),...(active.timelineNodes||[]).map(node=>node.id)]);
-      const input = currentNodes.map(node => ({
-        id: node.id, ...flowNodeSize(node), x: node.position.x, y: node.position.y,
-        fixed: !mobileIds.has(node.id) || isNodeLocked(node.id),
-        group: (node.data as { canvasGroupId?: string | null }).canvasGroupId,
-      }));
-      const positions = smartLayout(input, currentEdges);
-      const moves = input.filter(node => !node.fixed).flatMap(node => {
-        const to = positions.get(node.id)!;
-        const from = { x: node.x, y: node.y };
-        return to.x === from.x && to.y === from.y ? [] : [{ id: node.id, from, to }];
-      });
-      if (moves.length > 400) throw new Error(L("本次整理最多支持400个移动节点", "Arrange up to 400 movable nodes at a time"));
-      if (moves.length) {
-        const act: UndoAct = { kind: "move-many", moves };
-        // applyHistory persists atomically BEFORE moving local nodes; failed saves leave the canvas intact.
-        await applyHistory(act, false);
-        pushUndo(act);
-      }
-      if (!historyCurrent()) return;
-      let frames = 0;
-      const fitArrangedView = () => {
-        if (!historyCurrent()) return;
-        const instance = rfRef.current;
-        const liveNodes = instance?.getNodes() ?? [];
-        const readyToFit = liveNodes.length > 0 && moves.every(move => {
-          const live = liveNodes.find(node => node.id === move.id);
-          return live?.position.x === move.to.x && live?.position.y === move.to.y;
-        });
-        if (instance && readyToFit) {
-          void instance.fitView({ nodes: Array.from(mobileIds, id => ({ id })), duration: 500, padding: 0.18, maxZoom: 1 });
-        } else if (++frames < 60) {
-          requestAnimationFrame(fitArrangedView);
-        }
-      };
-      requestAnimationFrame(fitArrangedView);
-    } catch (error) {
-      flashTip(error instanceof Error ? error.message : t("canvas.saveFailed"));
-    } finally {
-      historyBusyRef.current = false;
-      setHistorySaving(false);
-    }
+    await arrangeCanvasDocument(canvasHistory.scope,{
+      available:()=>!!active&&!readOnly&&!!user&&nodeSettingsReady&&textNodesReady,
+      closeMenu:()=>setCtxMenu(null),text:canvasTextDocument,
+      history:{busy:historyBusyRef,setBusy:setHistorySaving,apply:action=>applyHistory(action,false),record:pushUndo},
+      scene:()=>({nodes:rfRef.current?.getNodes()??rfNodes,edges:rfRef.current?.getEdges()??rfEdges,locked:isNodeLocked,
+        movableIds:active?[active.members,active.textNodes,active.videoNodes||[],active.directorNodes||[],active.characterNodes||[],active.sceneNodes||[],active.audioNodes||[],active.timelineNodes||[]].flatMap(nodes=>nodes.map(node=>node.id)):[]}),
+      view:{begin:()=>{viewControls.cancelFocus();return viewControls.navigationRevision.current;},revision:()=>viewControls.navigationRevision.current,
+        nodes:()=>rfRef.current?.getNodes()??[],frame:run=>{requestAnimationFrame(run);},
+        fit:ids=>{void rfRef.current?.fitView({nodes:ids.map(id=>({id})),duration:500,padding:0.18,maxZoom:1});}},
+      notice:flashTip,messages:{unsaved:L("请先保存未保存的文字节点","Save pending text changes first"),tooMany:L("本次整理最多支持400个移动节点","Arrange up to 400 movable nodes at a time"),failed:t("canvas.saveFailed")},
+    });
   }
 
   // 下载单张图

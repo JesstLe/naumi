@@ -380,3 +380,8 @@ R7E封版：固定4980c018，实际Worker旧4组24→新4组34、原生同镜像
 ## 2026-10-29 R7I：次级生成应用编排
 
 Canvas编辑/详情/Comfy的任务、attachment、retained billing及timer组合归edit-run/detail-run/workflow-runs，原controller/request/receipt/history/billing保持；Context仅连接既有view/document/geometry/I/O，不另建框架。完整基线50/168与新50/172入口轨迹相同，三个组件函数私有factory8→0、timer2→0；最终类型/SCC/固定矩阵与真实控件、完整副本回滚及Git见[R7I记录](../changes/2026-10-29-refactor-r7i-generation-applications.md)及DELIVERY。整体ACTIVE；本片完成为R7G同步后第2模块，不合main不部署。
+
+
+## 2026-10-30 R7U：整理布局用例边界
+
+布局投影和flush→原history事务/单步undo→延迟Fit编排归 `canvas/arrange`，Canvas只连接既有文档/Flow/view-controls端口。smartLayout与八类节点规则不变；Fit绑定原scope及导航revision，后来的缩放/拖动/整理退休旧Fit。没有新HTTP写入、任务或账务owner。基线5184文件已保存，16共同轨迹精确对齐；最终集中/原生/回滚以[R7U记录](../changes/2026-10-30-refactor-r7u-arrange-application.md)和DELIVERY为准。整体ACTIVE，未合main未部署；最新main6提交已记录，R7S同步后第2模块，下一模块后统一整合。分支持续超过48小时：保留独立重构候选按用户整体交付要求推进，最终main退出仍未完成；不把独立分支push称整版交付。

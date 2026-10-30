@@ -290,3 +290,8 @@ R7P收尾：固定应用60734e08已推独立分支；原56/183、新58/204与54�
 
 
 R7Q固定应用8d28fd0：原14/33、新23/69与10共同轨迹EXACT，实际Next6/真实PG15、19项同SHA受影响矩阵全过；subset语义exit2/PARTIAL，不等于134全核心通过。PG临时拒连与两条精确日志复用均留证；真实浏览器返回项目列表的crop遮罩问题已复用既有视图身份修复。5284行、类型/lint39warnings及四SCC0，四产物/原5101hash副本回滚与清理见DELIVERY。下片先接main4038的24提交，不将fetch冒充merge，整体ACTIVE/47 HOLD不变。
+
+
+## 2026-10-30 R7U：整理布局用例边界
+
+布局投影和flush→原history事务/单步undo→延迟Fit编排归 `canvas/arrange`，Canvas只连接既有文档/Flow/view-controls端口。smartLayout与八类节点规则不变；Fit绑定原scope及导航revision，后来的缩放/拖动/整理退休旧Fit。没有新HTTP写入、任务或账务owner。基线5184文件已保存，16共同轨迹精确对齐；最终集中/原生/回滚以[R7U记录](changes/2026-10-30-refactor-r7u-arrange-application.md)和DELIVERY为准。整体ACTIVE，未合main未部署；最新main6提交已记录，R7S同步后第2模块，下一模块后统一整合。分支持续超过48小时：保留独立重构候选按用户整体交付要求推进，最终main退出仍未完成；不把独立分支push称整版交付。

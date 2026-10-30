@@ -344,3 +344,8 @@ R1B结构职责已迁移，跨域SCC仍60，后续R4负责DB和配置的运行�
 ## 16. R3A Canvas图片任务（2026-10-24续）
 
 runGen/generatePend共用typed输入准备、捕获scope和本地controller。主组件移除两套submit/poll/place/receipt，dock和placeholder均恢复同一任务；正常UI未重写。Canvas仍12130行，document/history/persistence、详情/同步编辑任务、renderer/interaction尚待R3B/R3C，不能以本切片宣称Canvas已完全分域。实际对照和浏览器结果见 [R3A记录](changes/2026-10-24-canvas-image-task-r3a.md)。
+
+
+## 2026-10-30 R7U：整理布局用例边界
+
+布局投影和flush→原history事务/单步undo→延迟Fit编排归 `canvas/arrange`，Canvas只连接既有文档/Flow/view-controls端口。smartLayout与八类节点规则不变；Fit绑定原scope及导航revision，后来的缩放/拖动/整理退休旧Fit。没有新HTTP写入、任务或账务owner。基线5184文件已保存，16共同轨迹精确对齐；最终集中/原生/回滚以[R7U记录](changes/2026-10-30-refactor-r7u-arrange-application.md)和DELIVERY为准。整体ACTIVE，未合main未部署；最新main6提交已记录，R7S同步后第2模块，下一模块后统一整合。分支持续超过48小时：保留独立重构候选按用户整体交付要求推进，最终main退出仍未完成；不把独立分支push称整版交付。
