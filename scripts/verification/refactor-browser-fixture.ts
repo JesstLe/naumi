@@ -7,7 +7,7 @@ import sharp from 'sharp';
 import {getPool} from '../../src/platform/db/pool';
 import {uploadImage} from '../../src/lib/media-upload';
 import {addArtworks} from '../../src/lib/artworks/writer';
-import {upsertCanvasTextNode,listCanvasTextNodes} from '../../src/lib/canvas/text-node-repository';
+import {upsertCanvasTextNode,mapCanvasTextNode} from '../../src/lib/canvas/text-node-repository';
 import {setProjectName} from '../../src/lib/canvas/project-repository';
 import {saveComfyEndpoint,saveComfyWorkflow} from '../../src/lib/comfyui/repository';
 import {extractWorkflowInputs} from '../../src/lib/comfyui/workflow';
@@ -28,11 +28,19 @@ async function main(){
   }
   const input=JSON.parse(await readFile('/evidence/SETUP.json','utf8')),action=arg('--action');
   if(action==='snapshot'){
-   const artworks=(await sql.query('SELECT id,title,image_url,source_url,canvas_image_revision,canvas_image_version,parent_id,parent_ids,prompt,ratio,resolution,canvas_x,canvas_y,canvas_width,canvas_height,marked,deleted_at FROM app_artworks WHERE email=$1 ORDER BY id',[input.owner])).rows;
-   const texts=await listCanvasTextNodes(input.owner);
-   const ledger=(await sql.query("SELECT count(*)::int n,COALESCE(-sum(delta),0)::int amount FROM app_ledger WHERE email=$1 AND kind='consume'",[input.owner])).rows[0];
-   const jobs=(await sql.query('SELECT id,kind,snapshot,payload->\'plan\'->\'request\'->>\'operationId\' AS operation_id FROM app_image_jobs WHERE email=$1',[input.owner])).rows;
-   console.log(JSON.stringify({artworks,texts,ledger,jobs}));return;
+   // This fresh observer process must not invoke lazy schema initialization
+   // while Web/Worker are running. Setup owns DDL. A read-only repeatable-read
+   // transaction both enforces that boundary and gives one coherent snapshot.
+   const tx=await sql.connect();
+   try{
+    await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    const artworks=(await tx.query('SELECT id,title,image_url,source_url,canvas_image_revision,canvas_image_version,parent_id,parent_ids,prompt,ratio,resolution,canvas_x,canvas_y,canvas_width,canvas_height,marked,deleted_at FROM app_artworks WHERE email=$1 ORDER BY id',[input.owner])).rows;
+    const texts=(await tx.query('SELECT id,project_key,title,prompt,content,status,error_message,canvas_x,canvas_y,canvas_width,canvas_height,created_at,updated_at,source_ids,target_ids,product_ids FROM app_canvas_text_nodes WHERE email=$1 ORDER BY updated_at DESC LIMIT 1000',[input.owner.toLowerCase()])).rows.map(mapCanvasTextNode);
+    const ledger=(await tx.query("SELECT count(*)::int n,COALESCE(-sum(delta),0)::int amount FROM app_ledger WHERE email=$1 AND kind='consume'",[input.owner])).rows[0];
+    const jobs=(await tx.query("SELECT id,kind,snapshot,payload->'plan'->'request'->>'operationId' AS operation_id FROM app_image_jobs WHERE email=$1",[input.owner])).rows;
+    await tx.query('COMMIT');console.log(JSON.stringify({artworks,texts,ledger,jobs}));return;
+   }catch(error){await tx.query('ROLLBACK').catch(()=>{});throw error;}
+   finally{tx.release();}
   }
   if(action==='resume'||action==='drain'){
    const headers={'x-video-worker-secret':process.env.VIDEO_WORKER_SECRET!};const sr=await fetch('http://127.0.0.1:3001/status',{headers});if(!sr.ok)throw Error('CONTROL_UNAVAILABLE');const state=await sr.json();

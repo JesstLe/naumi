@@ -8,7 +8,7 @@ const names=['nativeNodeLocation','revealNativeNode','nativeReferenceDraft','ope
 const compile=code=>ts.transpileModule(code,{compilerOptions:{module:1,target:9}}).outputText;
 async function bundle(){const files=['character/project','scene/project','director/project','video/client-settings','canvas/generation-feedback',...(!baseline?['canvas/reference-asset-actions','canvas/director-actions','canvas/video-node-actions']:[])];return (await build({stdin:{contents:files.map(f=>`export * from './src/lib/${f}';`).join('\n'),resolveDir:root,loader:'ts'},platform:'node',format:'cjs',bundle:true,write:false,plugins:[{name:'uuid-only',setup(b){b.onResolve({filter:/browser-crypto$/},()=>({path:'uuid',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({loader:'js',contents:'export const browserRandomUUID=()=>__uuid();'}));}}]})).outputFiles[0].text;}
 function setup(code){
- let serial=0;const uuid=()=>`12345678-1234-4234-a234-${String(++serial).padStart(12,'0')}`,m={exports:{}},nodes=new Map(),state={actor:'A',workspace:'personal',project:'tree:A',epoch:1,mounted:true,saved:[],history:[],reveal:[],notices:[],uploads:[],merges:[],drafts:[],attached:[],positions:[],refresh:0,loading:false,readonly:false,locked:false,failPosition:false,conflict:false};
+ let serial=0;const uuid=()=>`12345678-1234-4234-a234-${String(++serial).padStart(12,'0')}`,m={exports:{}},nodes=new Map(),state={actor:'A',workspace:'personal',project:'tree:A',epoch:1,mounted:true,saved:[],history:[],reveal:[],notices:[],selectionRequests:[],uploads:[],merges:[],drafts:[],attached:[],positions:[],refresh:0,loading:false,readonly:false,locked:false,failPosition:false,conflict:false};
  const definition={modelId:'video',providerId:'provider',definition:{modes:['text','single_image','reference'],durationResolutionMap:[{durations:[5],resolutions:['720p']}],aspectRatios:['16:9'],sources:{}}};
  const scope=()=>{const actor=state.actor,workspace=state.workspace,project=state.project,epoch=state.epoch;return {account:actor,workspace,project,key:JSON.stringify([actor,workspace,project]),documentCurrent:()=>state.mounted&&actor===state.actor&&workspace===state.workspace,viewCurrent:()=>state.mounted&&actor===state.actor&&workspace===state.workspace&&epoch===state.epoch,assertView(){if(!this.viewCurrent())throw Error('fixture stale view');}};};
  const c={module:m,exports:m.exports,require,console,Buffer,FormData,File,Blob,Headers,Response,Request,URL,Promise,Error,Map,Set,WeakMap,structuredClone,JSON,Date,Math,crypto:{randomUUID:uuid},__uuid:uuid,
@@ -36,6 +36,9 @@ function setup(code){
  }
  vm.createContext(c);vm.runInContext(code,c);Object.assign(c,m.exports);c.browserRandomUUID=uuid;
  vm.runInContext(compile(names.filter(n=>functions[n]).map(n=>functions[n]).join('\n')),c);
+ // Selection is a separate view-owner port. Record its navigation request,
+ // just as the legacy setter port above; selection rules have their own suite.
+ c.canvasSelection={selectInProject:(project,patch)=>{assert.equal(project,state.project);state.selectionRequests.push({project,patch});}};
  if(!baseline){c.characterActionsOwner=c.createCanvasReferenceAssetActions('character');c.sceneActionsOwner=c.createCanvasReferenceAssetActions('scene');c.directorActionsOwner=c.createCanvasDirectorActions();c.videoNodeActionsOwner=c.createCanvasVideoNodeActions();}
  function render(){c.canvasHistory={scope:scope()};c.canvasArtworkDocument={scope:c.canvasHistory.scope};c.active={key:state.project};c.activeKey=state.project;if(!baseline)vm.runInContext(compile('(()=>{'+bindings.join('\n')+';Object.assign(globalThis,{referenceAssetPorts,characterActions,sceneNodeActions,directorActions,videoNodeActions});})();'),c);}
  render();return {c,state,nodes,change,render};
@@ -45,7 +48,7 @@ const plain=v=>JSON.parse(JSON.stringify(v));
  for(const kind of ['character','scene','director','video']){
   const f=setup(code),create=()=>kind==='video'?f.c.openVideoNodeFromSelection(false,{x:10,y:20}):f.c['create'+kind[0].toUpperCase()+kind.slice(1)+'Node']({x:10,y:20});
   await create();eq(f.state.saved.length,1,kind+' one native write');eq(f.state.history.length,1,kind+' one history');eq(f.state.reveal.length,2,kind+' original view reveal');
-  const id=f.state.saved[0].id;await f.c['patch'+kind[0].toUpperCase()+kind.slice(1)+'Node'](id,{title:'edited',expectedRevision:3});eq(f.state.saved[1].patch.expectedRevision,3,kind+' explicit CAS');
+  const id=f.state.saved[0].id;if(!baseline&&source.includes('canvasSelection.selectInProject'))eq(f.state.selectionRequests,[{project:'tree:A',patch:{selectedId:id,selectedTextId:null,selectedPendId:null,multiSel:[]}}],kind+' delegates destination selection to view owner');await f.c['patch'+kind[0].toUpperCase()+kind.slice(1)+'Node'](id,{title:'edited',expectedRevision:3});eq(f.state.saved[1].patch.expectedRevision,3,kind+' explicit CAS');
   rows.push({kind,scenario:'create-patch',saved:f.state.saved,history:f.state.history,reveal:f.state.reveal});
   const late=setup(code);late.state.onSave=async()=>late.change({project:'tree:B'});await (kind==='video'?late.c.openVideoNodeFromSelection(true,{x:10,y:20}):late.c['create'+kind[0].toUpperCase()+kind.slice(1)+'Node']({x:10,y:20}));
   eq(late.state.reveal.length,baseline&&kind==='video'?2:0,kind+' no late navigation');rows.push({kind,scenario:'late-project',reveal:late.state.reveal.length});

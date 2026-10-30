@@ -38,3 +38,7 @@
 ### 第二轮核心 fixture 合同迁移
 
 固定6fe9f19完整core在28 PASS后由fanout旧fixture中“第一次GET网络异常应留失败卡”断言中止（0!=3）；当前原job自动GET后成功，产品行为正确。将fanout/activity同类用例改为断言同job两次GET、paid POST1、attachment1；UNKNOWN POST仍保留原失败卡与明确恢复。version与placement VM原来没暴露浏览器AbortController，实际失败message已取证为`AbortController is not defined`，补标准浏览器全局并区分30秒期限与2.5秒轮询timer，不替换产品helper。定向fanout15/version9/placement6与activity通过，原失败日志保留。最终完整core必须在新固定SHA全部实跑，不拼接旧28项称PASS。
+
+### 第三轮完整验收阻塞定位
+
+固定e9832131完整core为84 PASS /1 FAIL /75 NOT_RUN，native-actions旧VM缺少R7X的canvasSelection.selectInProject端口，原生节点已保存而reveal抛错；补齐被调用的独立view-owner观察端口，不恢复页面选择实现。完整生产镜像构建PASS；完整产品浏览器已通过生成/扣费/冲突/重载/180秒混合读/剪贴板/创作模式，随后快照辅助进程触发40P01。DB原日志确认新起observer调用listCanvasTextNodes触发ensureSchema，ALTER与运行Worker形成锁环；observer改为只读REPEATABLE READ事务和既有纯mapper，DDL只在setup中运行，没有修改产品SQL或添加事务重试。最终全core与同镜像浏览器仍需新固定SHA实跑，旧失败材料保留。一般冷进程兼容DDL是否仍需整体迁移不因observer修正而关闭。
