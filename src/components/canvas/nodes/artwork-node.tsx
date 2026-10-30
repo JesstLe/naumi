@@ -1,5 +1,5 @@
 "use client";
-import {useEffect,useRef,useState} from "react";
+import {memo,useEffect,useRef,useState} from "react";
 import {Handle,NodeResizer,Position,type NodeProps} from "@xyflow/react";
 import {MapPin,Lock,Combine,ImagePlus,Loader2,Scissors} from "lucide-react";
 import {cn,formatDate} from "@/lib/utils";
@@ -13,7 +13,12 @@ function VideoNodeSurface({url,selected,kind,onExtract}:{url:string;selected:boo
   return <VideoPlayer url={url} selected={selected} kind={kind} compact onProcess={onExtract}/>;
 }
 
-export function ArtNode({ data, selected, id: nodeId }: NodeProps) {
+/** Flow's global tool/connection flags belong to its wrapper and controls.
+ * Pixel/content rendering consumes only its actual data, selection and ID. */
+export function ArtNode({data,selected,id}:NodeProps){
+  return <ArtworkContent data={data} selected={selected} id={id}/>;
+}
+const ArtworkContent=memo(function ArtworkContent({ data, selected, id: nodeId }: Pick<NodeProps,'data'|'selected'|'id'>) {
   const d = data as CanvasArtNodeData;
   const { can: canNodeFeature } = useFeatureAccess();
   const imageWidth = d.width && d.width > 0 ? Math.round(d.width) : undefined;
@@ -223,4 +228,4 @@ export function ArtNode({ data, selected, id: nodeId }: NodeProps) {
       )}
     </div>
   );
-}
+});

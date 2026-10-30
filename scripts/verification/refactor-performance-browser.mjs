@@ -12,8 +12,8 @@ const exec=promisify(execFile),distribution=values=>{
  return{count:sorted.length,min:sorted[0],p50:percentile(.5),p95:percentile(.95),max:sorted.at(-1)};
 };
 export async function benchmarkPackagedPerformance(){
- const arg=key=>{const i=process.argv.indexOf(key);return i<0?undefined:process.argv[i+1];},base=arg('--base'),container=arg('--container'),out=path.resolve(arg('--out')),mode=arg('--mode'),repeats=Number(arg('--repeats')||4);
- assert.equal(new URL(base).hostname,'127.0.0.1');assert.match(container,/^refactor-r8d-[a-f0-9]+-web$/);assert.ok(['baseline','modified'].includes(mode));assert.ok(repeats>=2&&repeats<=10);
+ const arg=key=>{const i=process.argv.indexOf(key);return i<0?undefined:process.argv[i+1];},base=arg('--base'),container=arg('--container'),out=path.resolve(arg('--out')),mode=arg('--mode'),repeats=Number(arg('--repeats')||4),profiling=process.argv.includes('--profile');
+ assert.equal(new URL(base).hostname,'127.0.0.1');assert.match(container,/^refactor-(?:r8d|perf)-[a-f0-9]+-web$/);assert.ok(['baseline','modified'].includes(mode));assert.ok(repeats>=2&&repeats<=10);
  await mkdir(out,{recursive:true});const setup=JSON.parse(await readFile(path.join(out,'SETUP.json'),'utf8')),expect=rawExpect.configure({timeout:90000}),browser=await chromium.launch({channel:'msedge',headless:true}),errors=[],httpErrors=[],writes=[],samples=[],api=[];
  const flushServer=async()=>{
   let previous=-1;try{previous=JSON.parse(await readFile(path.join(out,'SERVER.json'),'utf8')).generation;}catch{}
@@ -53,14 +53,22 @@ export async function benchmarkPackagedPerformance(){
    // The existing scene virtualizes above300 nodes; do not disable that product
    // behavior to make the measurement look comparable. PG owns the fixed320.
    const renderedNodes=await page.locator('.react-flow__node').count();assert.ok(renderedNodes>0&&renderedNodes<=320);
+   const profilePhase=async(name,run)=>{
+    if(!profiling||repeat!==0)return run();
+    await cdp.send('Profiler.enable');await cdp.send('Profiler.setSamplingInterval',{interval:1000});await cdp.send('Profiler.start');
+    await page.evaluate(()=>{window.__r8d.mutations={total:0,nodes:0,text:0,images:0};window.__r8d.observer=new MutationObserver(entries=>{for(const entry of entries){window.__r8d.mutations.total++;const target=entry.target.nodeType===1?entry.target:entry.target.parentElement;if(target?.closest('.react-flow__node'))window.__r8d.mutations.nodes++;if(target?.closest('textarea'))window.__r8d.mutations.text++;if(target?.closest('img'))window.__r8d.mutations.images++;}});window.__r8d.observer.observe(document.querySelector('.react-flow'),{subtree:true,attributes:true,childList:true,characterData:true});});
+    const began=performance.now();await run();const elapsedMs=performance.now()-began;
+    const mutations=await page.evaluate(()=>{window.__r8d.observer.disconnect();return window.__r8d.mutations;}),{profile}=await cdp.send('Profiler.stop');
+    await writeFile(path.join(out,`profile-${name}.json`),JSON.stringify({name,elapsedMs,mutations,profile},null,2)+'\n');console.log('PROFILE_PHASE='+name+' MS='+elapsedMs.toFixed(1)+' MUTATIONS='+JSON.stringify(mutations));
+   };
    const interactionsStarted=await page.evaluate(()=>performance.now());
-   for(let n=0;n<8;n++)for(const tool of ['hand','move']){await tools.locator(`[data-tool="${tool}"]`).click();await expect(tools.locator(`[data-tool="${tool}"]`)).toHaveAttribute('aria-pressed','true');}
-   for(let n=0;n<4;n++)for(const name of ['小地图','网格吸附']){
+   await profilePhase('tools',async()=>{for(let n=0;n<8;n++)for(const tool of ['hand','move']){await tools.locator(`[data-tool="${tool}"]`).click();await expect(tools.locator(`[data-tool="${tool}"]`)).toHaveAttribute('aria-pressed','true');}});
+   await profilePhase('view',async()=>{for(let n=0;n<4;n++)for(const name of ['小地图','网格吸附']){
     const button=view.getByRole('button',{name,exact:true});await button.click();await expect(button).toHaveAttribute('aria-pressed','true');await button.click();await expect(button).toHaveAttribute('aria-pressed','false');
-   }
+   }});
    await tools.locator('[data-tool="hand"]').click();const beforeTransform=await page.locator('.react-flow__viewport').getAttribute('style'),before=await cdp.send('Performance.getMetrics');
    await page.evaluate(()=>{window.__r8d.frames=[];window.__r8d.pan=true;let last=performance.now();const tick=at=>{window.__r8d.frames.push(at-last);last=at;if(window.__r8d.pan)requestAnimationFrame(tick);};requestAnimationFrame(tick);});
-   await page.mouse.move(1080,700);await page.mouse.down();await page.mouse.move(700,700,{steps:60});await page.mouse.up();
+   await profilePhase('pan',async()=>{await page.mouse.move(1080,700);await page.mouse.down();await page.mouse.move(700,700,{steps:60});await page.mouse.up();});
    assert.notEqual(await page.locator('.react-flow__viewport').getAttribute('style'),beforeTransform,'actual hand gesture pans instead of dragging a document');
    const after=await cdp.send('Performance.getMetrics');await page.evaluate(()=>{window.__r8d.pan=false;return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
    const data=await page.evaluate(()=>({events:window.__r8d.events,longTasks:window.__r8d.longTasks,frames:window.__r8d.frames,resources:performance.getEntriesByType('resource').map(e=>({path:new URL(e.name).pathname,transferSize:e.transferSize,encodedBodySize:e.encodedBodySize})),heap:performance.memory?{used:performance.memory.usedJSHeapSize,total:performance.memory.totalJSHeapSize}:null,navigation:performance.getEntriesByType('navigation')[0].toJSON()}));

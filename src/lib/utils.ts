@@ -5,19 +5,37 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// Reuse ICU setup, never formatted user values. Local component checks retire
+// a captured default timezone if the browser/Node timezone changes at runtime.
+let dateFormatter: Intl.DateTimeFormat | undefined;
+let timeFormatter: Intl.DateTimeFormat | undefined;
 export function formatDate(input: string | number | Date, withTime = false) {
   const date = new Date(input);
-  const d = date.toLocaleDateString("zh-CN", {
+  dateFormatter ||= new Intl.DateTimeFormat("zh-CN", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   });
+  // Date#toLocale* returns this literal rather than Intl#format's RangeError.
+  if (!Number.isFinite(date.getTime())) return withTime ? "Invalid Date Invalid Date" : "Invalid Date";
+  let d = dateFormatter.format(date);
+  const localDay = `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`;
+  if (d !== localDay) {
+    dateFormatter = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
+    d = dateFormatter.format(date);
+  }
   if (!withTime) return d;
-  const tm = date.toLocaleTimeString("zh-CN", {
+  timeFormatter ||= new Intl.DateTimeFormat("zh-CN", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
   });
+  let tm = timeFormatter.format(date);
+  const localTime = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  if (tm !== localTime) {
+    timeFormatter = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+    tm = timeFormatter.format(date);
+  }
   return `${d} ${tm}`;
 }
 
