@@ -41,3 +41,25 @@
 ### 第三轮smoke：交付已完成，纠正账务观测字段
 
 20张图片和1个原生媒体均实际完成，媒体HTTP202、FFmpeg512×512PNG落盘与公开回执均已取得；整轮仍exit1。checker错误要求已结算image job的历史reserved_cost=0，而生产语义保留原授权金额；真正可用余额占用在app_billing_operations.reserved_credits、legacy reservation与wallet credits_used中。改为检查原billing operation settled/charged=6/reserved=0、legacy reservation空、wallet占用0，不改生产字段。fixture默认video.process tariff.enabled=false，仅改pricing仍为0；显式启用本轮隔离fixture的2积分本地媒体价并在setup调用真实mediaBillingQuote断言后才启动负载，生产后台价格不变。原失败与清理记录保留。
+
+
+## 本片最终结论（R8J）
+
+R8I固定应用 `c146956e66f3bef0442a60cc38ceeb893abb8a93` / 同完整Web、Worker镜像 `sha256:85a6a68afb93c074c6a7e7aa90733b0e5492c2d658fdb207cd29716d343332e1`。本片仅增加验证/离线分析与文档，所有src/services保持原始字节；未更改产品通道并发、模型/价格、真实余额、任务、供应商、图像质量或业务限制。
+
+### 实际450秒结果
+
+- 实际165张图片、12个原生图片FFmpeg任务、1800读取、450次真实画布保存；165张逐张校验原operation、父子任务/owner、原价6积分、供应商调用一次、PNG实际像素与可读作品。12个媒体实际HTTP→PG→FFmpeg→512×512字节/输出回执，原价2积分。
+- 177笔consume/1014积分，原setup账务逐行保持，最终live reserve、legacy reservation与wallet在途占用均0，未完成父任务0；UNKNOWN不换编号重POST。非图像/音频/视频规格未扩成已验收。
+- steady180秒以0.25图/秒进入45张并全交付：受理p95 22.78ms，读取6.35ms，保存13.24ms，原GET轮询观察端到端p95 4028ms。surge60秒以2图/秒进入120张并最终全交付：受理p95 30.96ms，读取6.43ms，保存10.56ms，端到端p95 70022ms/max94015ms。
+- 突发执行等待最高48、未完成父任务最高52；停止新图后在398.022秒采到归零，即约68.022秒排空，采样间隔约2秒，不当精确完成时刻。积压区间合成HTTP槽占用约77.05%，但unfinished parent不等于dispatch-ready；先定位现有调度/lease/provider等待，不据此直接认定唯一瓶颈或增大并发。
+- 不能把局部建议SLO全未超标误作用户等待已解决：建议阈值主要覆盖受理/读/保存/供应商返回后发布，并未给端到端70秒定义通过门槛。保留1次原operation GET404：发生在对应POST返回前，之后同编号成功；它不是未受理证明，未触发生成重提。
+- Web/Worker运行中cgroup current采样峰值403.46/547.14MiB，内核终身峰值412.27/627.22MiB；各1536MiB/2CPU不变。采样进程本身从离线产品进程列表排除，原始记录不改。eventloop是76个单窗口p95的分布而非合并总体p95；包括启动和最终校验窗口，Web曾观察到1904.21ms max，未冒称load-only或生产尾延迟。Worker executor未注入preload，保持原环境白名单，只有父控制进程eventloop和全部真实子进程RSS/cgroup覆盖。
+
+### 证据口径修正与集中验证
+
+原450秒的`INPUT.json`把mixed网络标为internal，但EVENTS实际创建的是无宿主端口的普通自有bridge。原文件、命令与测量不重写；`CALIBRATION_NETWORK_CORRECTION.json`记录此误标，不能将该轮冒称内核禁止外连。最终驱动改为仅browser使用普通bridge，runtime/mixed均`--internal`。定向103秒最终smoke实际internal bridge，20张图+1个FFmpeg任务全交付、21笔/122积分、原像素/账务/零重提/排空通过，自有容器、network与PG tmpfs已清理。450秒数字仍只归原450秒运行，不拼成网络修正后的重测。
+
+离线报告唯一拥有raw读取、去重、分位/cohort、资源与排空分析；缺样本、缺内存、缺供应商slot信息不显示0成功。新增合同11组通过；原runner、自有生产源/镜像逐hash桥接及原provider默认模式真实HTTP回归集中执行。默认provider6组验证hold/release/原PNG像素、edits、Comfy、404与计数，固定镜像`--network none`，不启动新供应商实现。原runtime全套尝试因同源full-core timeline向量缺失在负载前exit1，保留原门禁，不用subset/旧SHA伪造PASS；本片full runtime/完整core仍NOT_RUN。最终类型/lint、执行命令与四产物/独立副本回滚以VERIFICATION/DELIVERY为准。
+
+所有失败准备/账务字段误读、网络记录错误、默认runtime缺向量均保留。450秒不是30分钟过载、24小时长稳、七天生产到达率、租户公平或10万活跃容量；真实供应商与私有R2验收未由fixture代替。下一步继续Canvas Shell剩余组合收敛，并基于现有调度归属定位突发等待；最终同固定源码完整core/runtime、有效CI、main整版整合/生产验收仍待。整体ACTIVE、未合main未部署，47 HOLD。**分支超过48h因用户要求独立整体候选，整版退出未满足；本片封版不等于完整重构结束。**

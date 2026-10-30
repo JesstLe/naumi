@@ -112,7 +112,7 @@ fs.writeFileSync(out+'/FIXTURE_SOURCE.json',JSON.stringify({hashes:Object.fromEn
     # Docker's internal bridge suppresses host port publication. Browser suite
     # uses an owned ordinary bridge with only Web published on loopback; PG,
     # provider and Worker ports remain unpublished, all credentials synthetic.
-    run(['docker', 'network', 'create', *(['--internal'] if args.suite == 'runtime' else []), '--label', 'naumi.task=' + task, network], 'NETWORK')
+    run(['docker', 'network', 'create', *(['--internal'] if args.suite != 'browser' else []), '--label', 'naumi.task=' + task, network], 'NETWORK')
     network_owned = True
     db = start('db', 'postgres:16-alpine', {'POSTGRES_USER': 'fixture', 'POSTGRES_PASSWORD': 'fixture-local-only', 'POSTGRES_DB': 'naumi_runtime_fixture_r6b'}, extra=['--memory', '384m', '--tmpfs', '/var/lib/postgresql/data:rw,size=256m'])
     deadline = time.monotonic() + 40

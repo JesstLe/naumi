@@ -435,3 +435,12 @@ R7W固定应用4b8fc715：相关11项同source/digest实际PASS（首轮专项PG
 ## 2026-10-30 R7X：选择状态与交互归属（整体 ACTIVE）
 
 Canvas 选择快照、节点/边/Flow/右键/group/clear/IDs/toggle 及复制等待投影归 selection-controller，React hook 绑定已有 CanvasDocumentScope。项目/账号/workspace ABA 的旧选择与迟到 setter 反例已复现；显式导航保留目标焦点，不新建文档、任务、账务或网络写入。模块同步后第2片，集中验收及完整副本回滚以 R7X DELIVERY 为准；历史原生退出原因和最终整版验收继续，未合main未部署，47 HOLD。
+
+
+## 2026-10-31 R8J：完整镜像持续混合负载证据
+
+复用R8I c146956e完整同Web/Worker镜像，src/services变化0，不把验证脚本当产品模块改造。原450秒时钟负载165图/12原生图片FFmpeg/1800读/450保存，实际177笔1014积分、每operation一次POST、逐图原字节像素/父子/原价/账务通过，末尾未完成/预占0。突发未完成峰值52、执行等待48、端到端p95约70秒，停止进入后约68秒采样排空；接口快不代表交付快。77%合成HTTP槽占用仅调度诊断，不证明每个parent已可派发，不以加限额或调大并发代替定位。
+
+原450秒网络internal误标已独立更正，原raw/日志不重写；最终驱动及103秒smoke实际internal、20图1媒体/21笔122积分全通过，不能借最终smoke宣称450秒网络修正已重测。原provider默认实际HTTP6组在同固定镜像network none通过。离线报告排除临时采样进程、去重observer窗口，缺样本保持未知；一次在POST返回前的GET404用原编号恢复，没有重POST。原runtime全套因匹配full-core timeline向量缺失在业务负载前失败，门禁未放宽，完整core/runtime NOT_RUN。
+
+具体源码/命令/原始失败/四产物与5278原hash独立副本回滚以[R8J记录](changes/2026-10-31-refactor-r8j-mixed-load.md)及DELIVERY为准。这里只校准2个隔离个人账号、1K/2K与图片FFmpeg，非生产/全部视频音频/长稳/租户公平/10万容量。整体ACTIVE，继续Canvas Shell剩余组合、端到端等待诊断、有效CI和最终main/生产退出；未合main未部署、47 HOLD。**独立候选超过48h仍按用户整体交付推进，不以切片完成冒充整版完成。**
