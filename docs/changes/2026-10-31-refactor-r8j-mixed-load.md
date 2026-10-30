@@ -29,3 +29,10 @@
 ### 首轮smoke准备失败及修正
 
 首次真实smoke在负载开始前，独立load容器访问Worker控制口`worker:3001`被ECONNREFUSED；该口有意只绑定localhost。未开放控制端口或修改生产绑定，改由既有Docker orchestration通过worker内localhost执行原resume/drain。自有栈已完整清理。观测还确认Next会改进程标题，不能按argv0=“node”筛选；改查/proc/exe，并采Worker全部Node子进程的RSS/VmHWM。Worker原子进程环境白名单会移除任意NODE_OPTIONS，保持不变：event-loop仅覆盖Web和控制父进程，执行子进程以/proc/cgroup观测，缺口明示，不向子进程强塞preload，也不给FFmpeg发SIGUSR2。
+
+
+### 第二轮smoke的真实反例
+
+原图片链20/20交付、412读/103保存实际完成，媒体POST返回422 INVALID_MEDIA_STREAM且零媒体账务，整轮仍exit1。public模式的底层uploadImage本就不登记mime资产，fixture仅写对象却未沿原registerMediaAsset登记，真实媒体入口正确拒绝未核验类型；补原asset登记，不改产品护栏。billing操作表同时有setup的signup/admin零价操作，验收改为保存前态并验证其逐行不变，仅按新业务操作增量与consume核对，不删除前态冒充空表。
+
+原生媒体Web→Worker依赖既有共享scratch目录，mixed原先只沿基础runtime组件样本的独立tmpfs，未提供Web侧共享准备区。mixed模式改为自有output/scratch bind同时挂Web/Worker，保留原750MiB可用空间检查，不降低预算或修改生产路径；内存/CPU/池/供应商并发不改。Worker控制仍loopback-only。

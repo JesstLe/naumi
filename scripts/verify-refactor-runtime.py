@@ -129,6 +129,7 @@ fs.writeFileSync(out+'/FIXTURE_SOURCE.json',JSON.stringify({hashes:Object.fromEn
         assert load_plan['schemaVersion'] == 1 and args.mixed_profile in load_plan['profiles']
         write('LOAD_PLAN.json', load_plan)
         for role in ['web', 'worker']: (out / ('observe-' + role)).mkdir()
+        (out / 'scratch').mkdir()
         (out / 'resource-samples').mkdir()
 
 
@@ -151,6 +152,8 @@ fs.writeFileSync(out+'/FIXTURE_SOURCE.json',JSON.stringify({hashes:Object.fromEn
               'MEDIA_WORKER_SECRET': 'r6b-media-fixture-only-secret-20261026', 'MEDIA_WORKER_ORIGIN': 'http://worker:3002',
               'SOURCE_COMMIT': identity['commit'], 'R6B_IMAGE_ID': image}
     shared = mount(out, '/evidence') + mount(out / 'media', '/fixture-media')
+    scratch_mount = mount(out / 'scratch', '/scratch') if mixed else []
+    if mixed: common['MEDIA_JOB_DIR'] = '/scratch'
     provider = start('provider', image, ({'NAUMI_MIXED_PROVIDER': '1', 'NAUMI_MIXED_DELAY_MS': str(load_plan['supplier']['delayMs'])} if mixed else {}), ['node', '/verification/provider.mjs'], ['--read-only', '--memory', '192m', '--tmpfs', '/data:rw,size=8m'] + mount(root / 'scripts/verification/refactor-runtime-provider.mjs', '/verification/provider.mjs', True))
     wait('provider', "fetch('http://127.0.0.1:3300/fixture/stats').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))")
     helper_args = ['--mixed-helper'] if mixed else ['--browser-helper'] if args.suite == 'browser' else []
@@ -163,11 +166,11 @@ fs.writeFileSync(out+'/FIXTURE_SOURCE.json',JSON.stringify({hashes:Object.fromEn
     if mixed:
         web_env.update({'NODE_OPTIONS': web_env['NODE_OPTIONS'] + ' --require=/performance-observer.cjs', 'NODE_PATH': '/app/node_modules', 'PERFORMANCE_OBSERVER_DIR': '/evidence/observe-web', 'PERFORMANCE_OBSERVER_PROCESS_FILES': '1'})
     web_extra = ['-p', '127.0.0.1::3000'] if args.suite == 'browser' else []
-    start('web', image, web_env, extra=['--memory', '1536m', '--cpus', '2', '--read-only', '--tmpfs', '/tmp:rw,size=128m,mode=1777', '--tmpfs', '/data:rw,size=32m,mode=777'] + shared + web_extra + observer_mount)
+    start('web', image, web_env, extra=['--memory', '1536m', '--cpus', '2', '--read-only', '--tmpfs', '/tmp:rw,size=128m,mode=1777', '--tmpfs', '/data:rw,size=32m,mode=777'] + shared + web_extra + observer_mount + scratch_mount)
     wait('web', "fetch('http://127.0.0.1:3000/api/health').then(async r=>{const b=await r.json();process.exit(r.ok&&b.db.ok?0:1)}).catch(()=>process.exit(1))")
     worker_env = {**common, 'NAUMI_INSTANCE_ID': 'r6b-worker', 'NAUMI_WORKER_EXECUTION': 'direct', 'NAUMI_WORKER_RELEASE_CONTROL': '1', 'NAUMI_WORKER_STATE_FILE': '/release-state/worker.json', 'NAUMI_WORKER_START_PAUSED': '1', 'NAUMI_APP_ORIGIN': 'http://web:3000', 'NAUMI_WORKER_CONTROL_PORT': '3001', 'NAUMI_MEDIA_WORKER': '1', 'MEDIA_JOB_DIR': '/scratch', 'MEDIA_WORKER_ORIGIN': 'http://127.0.0.1:3002', 'VIDEO_WORKER_INTERVAL_MS': '5000'}
     if mixed: worker_env.update({'NODE_OPTIONS': '--require=/performance-observer.cjs', 'NODE_PATH': '/app/node_modules', 'PERFORMANCE_OBSERVER_DIR': '/evidence/observe-worker', 'PERFORMANCE_OBSERVER_PROCESS_FILES': '1'})
-    start('worker', image, worker_env, ['node', 'scripts/video-worker-with-media.mjs'], ['--user', '0', '--memory', '1536m', '--cpus', '2', '--read-only', '--tmpfs', '/tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777', '--tmpfs', '/tmp/naumi-media-sandbox:rw,exec,nosuid,nodev,size=2g,mode=755', '--tmpfs', '/data:rw,size=32m,mode=777', '--tmpfs', '/scratch:rw,size=192m,mode=700'] + shared + mount(out / 'state', '/release-state') + observer_mount)
+    start('worker', image, worker_env, ['node', 'scripts/video-worker-with-media.mjs'], ['--user', '0', '--memory', '1536m', '--cpus', '2', '--read-only', '--tmpfs', '/tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777', '--tmpfs', '/tmp/naumi-media-sandbox:rw,exec,nosuid,nodev,size=2g,mode=755', '--tmpfs', '/data:rw,size=32m,mode=777', ] + ([] if mixed else ['--tmpfs', '/scratch:rw,size=192m,mode=700']) + scratch_mount + shared + mount(out / 'state', '/release-state') + observer_mount)
     wait('worker', "fetch('http://127.0.0.1:3001/status',{headers:{'x-video-worker-secret':process.env.VIDEO_WORKER_SECRET}}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))")
     before = {role: inspect(names[role]) for role in ['web', 'worker']}
     assert all(v['Image'] == image for v in before.values())
