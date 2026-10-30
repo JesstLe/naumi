@@ -113,7 +113,7 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
  }
  }
  assertCurrent();const plan=await previewImagegen(request,context);assertCurrent();const stages=plan.steps.map(s=>s.operation==="cutout"?"抠图":s.operation==="edit"?"编辑":"生成").join(" → ");
- if(plan.requestedParameters?.resolution||plan.automaticFrame)onPlan?.(plan.warnings.join("\n"));
+ if(plan.requestedParameters?.resolution||plan.frameChoice||plan.automaticFrame)onPlan?.(plan.warnings.join("\n"));
  if(plan.intent.background==="transparent")onPlan?.(`已识别：透明背景 · ${stages} · ${plan.totalCredits} 积分`);
  const placement=form.has("imagegenPlacement")?readCanvasFanoutPlacement(JSON.parse(String(form.get("imagegenPlacement"))),request.sourceNodeId,request.variants):undefined;
  if(form.has("imagegenPlacement")&&(!placement||request.canvasTarget))throw new Error("生成位置记录与本次请求不一致");

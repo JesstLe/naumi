@@ -123,7 +123,9 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     // The internal imagegen step already owns a frozen frame, including a
     // published native-auto contract. Do not turn that auto into square here.
     const ratio = currentImagegenStep()?.request.parameters.ratio || quotedImage?.facts.ratio || (/^\d+:\d+$/.test(String(parsed.body.ratio||parsed.body.size||"")) ? String(parsed.body.ratio||parsed.body.size) : Number(parsed.body.targetWidth)>0&&Number(parsed.body.targetHeight)>0 ? imageRatio(Number(parsed.body.targetWidth),Number(parsed.body.targetHeight)) : "1:1");
-    const routedModelId = routeImageModel(
+    // A signed imagegen step has already selected/quoted its public identity.
+    // A nearest ratio must not choose a different directional alias on execution.
+    const routedModelId = currentImagegenStep()?.billing ? configuredModelId : routeImageModel(
       configuredModelId,
       ratio,
       snapshot.config.publicModels.filter(model => model.enabled && model.modality === "image"),

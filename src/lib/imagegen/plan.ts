@@ -12,8 +12,7 @@ import { ImagegenPlanError } from "./plan-error";
 import { ExactImageSizeError } from "./request-size";
 import {getModelAdministration} from "../model-config/server";
 import {selectedImagePreset} from "../model-config/image-preset";
-import {publicUpstreamIds} from "../model-config/channel-policy";
-import {selectedBusinessOption} from "../model-config/business";
+import {resolveImageFrame,type ImageFrameChoice} from "../model-config/frame-fallback";
 import {simulateModel} from "../model-config/runtime";
 import {assertToolScope,featureDefaultModel} from "../model-config/tool-scope";
 import {MAX_GENERATION_DIMENSION,resolutionForLongSide} from "../mock-data";
@@ -71,26 +70,13 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
  const requestedResolution=request.parameters.resolution||"1K";
  const facts=(requirements:Intent):ModelFacts=>({task:"product",quality:request.parameters.quality||"medium",resolution:request.parameters.resolution||"1K",requestedResolution:request.parameters.resolution||"1K",ratio:request.parameters.ratio||"1:1",needsEdit:request.inputs.some(i=>i.role!=="mask"),needsMask:request.inputs.some(i=>i.role==="mask"),preserveIdentity:request.inputs.length>0,needsText:false,nativeResolution:false,references:request.inputs.filter(i=>i.role!=="mask").length,quantity:request.variants,inputLength:request.prompt.length,imagegenRequirements:requirements});
  const options={trustedOrigins:(process.env.MODEL_CONFIG_TRUSTED_ORIGINS||"").split(/[\s,]+/).filter(Boolean)};
- // First prefer an executable exact reference frame. Only a NEW automatic
- // request may use explicitly published native auto; explicit ratios/pixels,
- // masks, cutout and historical re-planning keep their original contract.
- let automaticFrame:ImagegenPlan['automaticFrame'];
- const selected=models.config.publicModels.find(m=>m.id===id)!;
- const featureRatios=selectedBusinessOption(models.config,feature,id)?.parameters?.ratios;
- const autoConfigured=selected.target.type==='upstream'&&(!featureRatios?.length||featureRatios.includes('auto'))&&publicUpstreamIds(models.config,selected).some(upstreamId=>models.config.upstreamModels.find(u=>u.id===upstreamId)?.parameterMap.apimartImages?.automaticRatio?.enabled);
- if(autoConfigured&&automaticRequested&&inputs.length&&!maskedTarget&&!request.parameters.width&&!versions&&['generate','edit'].includes(intent.operation)){
-  const exactFacts=facts(intent),exactResolution=resolveImageResolution(models.config,id,requestedResolution,feature,request.parameters.ratio,{snapshot:models,billing,facts:exactFacts,options});
-  const exact=simulateModel(models,billing,id,exactResolution.changed?resolutionFacts(exactFacts,exactResolution.effective):exactFacts,options);
-  const admitted=exact.eligible.some(c=>{const u=models.config.upstreamModels.find(u=>u.id===c.upstreamId)!;const p=models.config.providers.find(p=>p.id===u.providerId);return !imageRequestAdmission(request.parameters.ratio||'1:1',id,!!selected.supplierRouting,u,p?.options?.imageAdapter).length;});
-  if(!admitted){
-   const autoFacts={...facts(intent),ratio:'auto'};
-   const autoResolution=resolveImageResolution(models.config,id,requestedResolution,feature,'auto',{snapshot:models,billing,facts:autoFacts,options});
-   const auto=simulateModel(models,billing,id,autoResolution.changed?resolutionFacts(autoFacts,autoResolution.effective):autoFacts,options);
-   if(auto.eligible.some(c=>models.config.upstreamModels.find(u=>u.id===c.upstreamId)?.parameterMap.apimartImages?.automaticRatio?.enabled)){
-    automaticFrame={mode:'provider-auto',sourceRatio:request.parameters.ratio||'1:1'};
-    request.parameters.ratio='auto';intent.requirements=intent.requirements.map(r=>r.name==='ratio'?{...r,value:'auto'}:r);
-   }
-  }
+ // User choice first; automatic means the selected reference frame. Enum
+ // mismatch is handled by nearest supported geometry BEFORE quote/freeze.
+ const targetRatio=request.parameters.ratio||'1:1';let frameChoice:ImageFrameChoice|undefined;
+ if(!maskedTarget&&!request.parameters.width&&!versions&&['generate','edit'].includes(intent.operation)){
+  const frameIntent=intent.background==='transparent'?{...intent,background:null,requirements:intent.requirements.filter(r=>r.name!=='background')}:intent;
+  const choice=resolveImageFrame(models.config,id,targetRatio,feature,{snapshot:models,billing,facts:facts(frameIntent),options});
+  if(choice.method){frameChoice={target:targetRatio,effective:choice.effective,source:automaticRequested&&inputs.length?'reference':'explicit',method:choice.method};request.parameters.ratio=choice.effective;intent.requirements=intent.requirements.map(r=>r.name==='ratio'?{...r,value:choice.effective}:r);}
  }
  const resolutionIntent=intent.background==="transparent"?{...intent,background:null,requirements:intent.requirements.filter(r=>r.name!=="background")}:intent;
  const resolutionChoice = request.parameters.width || request.parameters.height || versions ? undefined : resolveImageResolution(models.config,id,request.parameters.resolution||"1K",feature,request.parameters.ratio,{snapshot:models,billing,facts:facts(resolutionIntent),options});
@@ -100,7 +86,7 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
  }
  const simulate=(modelId:string,requirements:Intent)=>simulateModel(models,billing,modelId,requirements.operation==="cutout"?{...facts(requirements),needsEdit:true,references:1,quantity:1}:facts(requirements),options);
  const steps:ImagegenPlan["steps"]=[],warnings:string[]=maskedTarget?["模型编辑后按蒙版合成，未选区保留原图；原生成版本也会保留。"]:[];
- if(automaticFrame)warnings.push('本次使用模型自适应画幅，参考图保持完整；结果以实际生成尺寸为准。');
+ if(frameChoice)warnings.push(frameChoice.method==='nearest'?`本次按最接近${frameChoice.source==='reference'?'参考图':'所选'}画幅的 ${frameChoice.effective} 生成`:'本次自适应跟随参考画幅，结果保留完整画面');
  if(resolutionChoice?.changed)warnings.push(resolutionFallbackMessage(resolutionChoice));
  const selectedImagePresetForPlan=(modelId:string)=>selectedImagePreset(models.config,feature,modelId);
  const append=async(key:string,operation:Intent["operation"],modelId:string,requirements:Intent,featureId:"image.generate"|"canvas.image"|"tool.cutout")=>{
@@ -115,7 +101,7 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
   candidates.eligible=candidates.eligible.filter(candidate=>{
    const source=models.config.upstreamModels.find(u=>u.id===candidate.upstreamId)!;
    const provider=models.config.providers.find(p=>p.id===source.providerId);
-   if(automaticFrame&&!source.parameterMap.apimartImages?.automaticRatio?.enabled){candidates.excluded.push({upstreamId:candidate.upstreamId,codes:['IMAGEGEN_RATIO_UNSUPPORTED']});return false;}
+   if(frameChoice?.method==='provider-auto'&&!source.parameterMap.apimartImages?.automaticRatio?.enabled){candidates.excluded.push({upstreamId:candidate.upstreamId,codes:['IMAGEGEN_RATIO_UNSUPPORTED']});return false;}
    if(!versions && !selectedImagePresetForPlan(modelId) && !request.parameters.width && !upstreamAcceptsResolution(source,stageFacts.resolution,stageFacts.ratio)) {candidates.excluded.push({upstreamId:candidate.upstreamId,codes:["RESOLUTION_UNSUPPORTED"]});return false;}
    const codes=imageRequestAdmission(request.parameters.ratio||"1:1",modelId,!!selected.supplierRouting,source,provider?.options?.imageAdapter);
    if(codes.includes("REVERSE_HUB_RATIO_UNSUPPORTED"))hubRatioRejected=true;
@@ -145,7 +131,7 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
   if(model.target.type==="pool"&&!model.supplierRouting&&(request.parameters.inputFidelity!==undefined||request.parameters.moderation!==undefined||request.parameters.width!==undefined||request.output.compressionMode==="native"&&request.output.compression!==undefined))throw new ImagegenPlanError("外部Router尚未开放这些原生参数的发送，请选择已发布参数映射的直连供应通道");
   assertToolScope(models.config,featureId,modelId);
   if(model.target.type!=="upstream"&&!model.supplierRouting&&candidates.excluded.length)throw new ImagegenPlanError("当前聚合通道尚不能限制高级参数候选，请管理员维护全部候选能力");
-  const q=await runExecutionBundle({frozen:{modelVersion:models.version,billingVersion:billing.version},billing},()=>quoteForActor(owner,{feature:featureId,quantity:operation==="cutout"?1:request.variants,modelId,quality:request.parameters.quality||"medium",resolution:requestedResolution,ratio:request.parameters.ratio||"1:1"},{effectiveResolution:stageFacts.resolution}));
+  const q=await runExecutionBundle({frozen:{modelVersion:models.version,billingVersion:billing.version},billing},()=>quoteForActor(owner,{feature:featureId,quantity:operation==="cutout"?1:request.variants,modelId,quality:request.parameters.quality||"medium",resolution:requestedResolution,ratio:targetRatio},{effectiveResolution:stageFacts.resolution,...frameChoice?{effectiveRatio:request.parameters.ratio}:{}}));
   if(q.imageParameterPlanVersion===1)q.imageParameterPlans=Object.fromEntries(candidates.eligible.map(c=>{const u=models.config.upstreamModels.find(u=>u.id===c.upstreamId)!,p=models.config.providers.find(p=>p.id===u.providerId)!;return [u.id,compileImageParameterPlan(u,imagePlanSelection({...stageFacts,requestedResolution:stageFacts.resolution},{...request,output:{...request.output,background:requirements.background||undefined}}),{publicModelId:modelId,protocol:p.protocol,modelVersion:models.version,adapter:p.options?.imageAdapter})];}));
   if(stageResolution?.changed)warnings.push(resolutionFallbackMessage(stageResolution));
   steps.push({key,operation,modelId,eligibleUpstreamIds:candidates.eligible.map(c=>c.upstreamId),parameters:{quality:request.parameters.quality||"medium",resolution:stageFacts.resolution,ratio:request.parameters.ratio||"1:1"},credits:q.tariff.pricing.mode==="api-cost-plus"?q.authorizedCredits:q.requestedCredits,billingQuote:q});
@@ -162,6 +148,6 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
   for(let i=0;i<request.variants;i++)await append(`cutout-${i}`,"cutout",cutout,{...intent,operation:"cutout"},"tool.cutout");
   warnings.push("所选模型先生成，再通过后台指定的抠图模型生成透明图；两步积分已合计，原图保留。");
  }else await append("generate",intent.operation,id,intent,feature);
- return {imageParameterPlanVersion:1,...automaticFrame?{automaticFrame}:{},...((resolutionChoice?.changed||steps.some(s=>s.parameters.resolution!==requestedResolution))?{requestedParameters:{quality:request.parameters.quality||"medium",resolution:requestedResolution,ratio:request.parameters.ratio||"1:1"}}:{}),channelContractVersion:1,ratioContractVersion:2,request,intent,fingerprint,modelVersion:models.version,billingVersion:billing.version,skillInstructions:skill?.instructions,steps,totalCredits:steps.reduce((n,s)=>n+s.credits,0),confirmationRequired:false,warnings};
+ return {imageParameterPlanVersion:1,...frameChoice?{frameChoice}:{},...((frameChoice||resolutionChoice?.changed||steps.some(s=>s.parameters.resolution!==requestedResolution))?{requestedParameters:{quality:request.parameters.quality||"medium",resolution:requestedResolution,ratio:targetRatio}}:{}),channelContractVersion:1,ratioContractVersion:2,request,intent,fingerprint,modelVersion:models.version,billingVersion:billing.version,skillInstructions:skill?.instructions,steps,totalCredits:steps.reduce((n,s)=>n+s.credits,0),confirmationRequired:false,warnings};
 }
 
