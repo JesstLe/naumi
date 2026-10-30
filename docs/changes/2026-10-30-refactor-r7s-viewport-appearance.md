@@ -30,3 +30,7 @@
 最终四件为同目录MODIFIED_FILE.tar、byte-exact DIFF_FILE.patch、VERIFICATION.txt、可执行ROLLBACK.sh；副本回滚前完整hash guard，恢复原5161哈希并重现旧视口竞争，开发树保留新版。精确命令/输入/输出/退出码和完整验收由DELIVERY登记。
 
 仍需最终完整Linux同镜像、全产品混合负载/容量、其余热点与普通main最终整合；既有层反向边不因本片新增context被算作消失。原scene基线通过与本片固定源通过分别留证；不承诺全环境偶发问题永不重现。整体ACTIVE，47 HOLD。
+
+## 首次完整core保留的夹具缺口
+
+固定3f9b030f首次core39 PASS/1 FAIL/110 NOT_RUN，video-performance真实PG协调用例的旧pool port未声明`videoCoordinationPoolLimit`而TypeError。只补原两槽边界port，保留并发恰好两槽/认证故障/slot释放等断言，不改生产连接预算。后续完整最终core重新固定SHA，原失败报告不覆盖；只含verifier/doc变化时，完整应用镜像沿逐文件hash绑定原应用源码，不冒称镜像重建于后续提交。

@@ -20,7 +20,7 @@ async function coordination(){
  function instance(badPassword=false){
   const u=new URL(url.href);if(badPassword)u.password='deliberately-wrong-test-password';const controls={fault:false,errors:[],queries:0},runtime={},created=[];
   class ObservedPool extends Pool{constructor(options){super(options);created.push(this)}async connect(){if(controls.fault){controls.fault=false;const e=Object.assign(Error('fixture reset'),{code:'ECONNRESET'});controls.errors.push(e.code);throw e}try{return await super.connect()}catch(e){controls.errors.push(e.code);throw e}}}
-  const api=load(read('src/lib/video/coordination-pool.ts'),{}, {'server-only':{},'node:process':runtime,pg:{Pool:ObservedPool},'../db':{getPool:()=>({options:{connectionString:u.href,ssl:false}})},'@/platform/db/pool':{getPool:()=>({options:{connectionString:u.href,ssl:false}})}});
+  const api=load(read('src/lib/video/coordination-pool.ts'),{}, {'server-only':{},'node:process':runtime,pg:{Pool:ObservedPool},'../db':{getPool:()=>({options:{connectionString:u.href,ssl:false}})},'@/platform/db/pool':{getPool:()=>({options:{connectionString:u.href,ssl:false}}),videoCoordinationPoolLimit:()=>2}});
   const item={...api,controls,created};instances.push(item);return item;
  }
  try{
