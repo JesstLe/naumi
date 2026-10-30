@@ -1,5 +1,6 @@
 'use client';
 import { authHeader } from './supabase';
+import { BrowserCacheStorage } from './browser-cache-storage';
 import { MediaLoadQueue, acquireMediaSlot } from './canvas/media-loading';
 import { managedImageSource, publicImageSource, type BrowserImageDescriptor } from './browser-image-source';
 import { VerifiedImageContentPool, verifiedImageContentKey } from './browser-image-content';
@@ -11,12 +12,16 @@ const NAME='naumi-image-bytes-v1', STORE='images', META='metadata';
 const MAX_BYTES=128*1024*1024, MAX_IMAGE=MAX_BYTES, MAX_ITEMS=400, MAX_AGE=7*86400000;
 type Row={id:string;account:string;source:string;version:string;blob:Blob;at:number;created:number;bytes:number};
 type Lease={url:string;release:()=>void;networkComplete?:()=>void;markDecoded?:()=>void;source?:string};
-export type BrowserImageReadOptions={networkQueue?:'canvas'};
+export type BrowserImageReadOptions={networkQueue?:'canvas';/** One authenticated reload after a local decode failure. */bypassCache?:boolean};
 const canvasByteQueue=new MediaLoadQueue(6);
 export function acquireCanvasImageByteSlot(signal?:AbortSignal){return acquireMediaSlot(canvasByteQueue,signal);}
 const byteSlot=(options?:BrowserImageReadOptions,signal?:AbortSignal)=>options?.networkQueue==='canvas'?acquireMediaSlot(canvasByteQueue,signal):Promise.resolve(()=>{});
 let account='',epoch=0,installed=false,localOnly=false;
-let database:Promise<IDBDatabase|null>|undefined;
+const storage=new BrowserCacheStorage(NAME,2,(db,tx)=>{
+  if(!db.objectStoreNames.contains(STORE))db.createObjectStore(STORE,{keyPath:'id'});
+  else tx?.objectStore(STORE).clear();
+  if(!db.objectStoreNames.contains(META))db.createObjectStore(META,{keyPath:'id'});
+});
 const pending=new Map<string,{promise:Promise<Blob>;controller:AbortController;users:number}>();
 const verifiedContent=new VerifiedImageContentPool();
 const objects=new Set<string>();
@@ -74,17 +79,6 @@ const probeOn=process.env.NEXT_PUBLIC_CANVAS_PERF_PROBE==='1';
 async function timedImageStage<T>(name:string,run:()=>Promise<T>):Promise<T>{
  if(!probeOn)return run();const start=performance.now();try{return await run();}finally{const ms=performance.now()-start,s=imageProbe[name]||{count:0,ms:0,maxMs:0};s.count++;s.ms+=ms;s.maxMs=Math.max(s.maxMs,ms);imageProbe[name]=s;}
 }
-function openDB():Promise<IDBDatabase|null>{
-  if(!database)database=new Promise(resolve=>{
-    try{
-      let finished=false;const request=indexedDB.open(NAME,2);
-      const timer=setTimeout(()=>{finished=true;resolve(null);},1500);
-      request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains(STORE))request.result.createObjectStore(STORE,{keyPath:'id'});else request.transaction?.objectStore(STORE).clear();if(!request.result.objectStoreNames.contains(META))request.result.createObjectStore(META,{keyPath:'id'});};
-      request.onerror=request.onblocked=()=>{clearTimeout(timer);finished=true;resolve(null);};
-      request.onsuccess=()=>{clearTimeout(timer);if(finished){request.result.close();return;}request.result.onversionchange=()=>{request.result.close();database=undefined;};resolve(request.result);};
-    }catch{resolve(null);}
-  });return database;
-}
 // One bounded readonly transaction per ready batch. Opening one transaction per
 // node serializes IndexedDB scheduling even though all blobs are already local.
 const readBatch=new Map<string,Array<(row:Row|undefined)=>void>>();
@@ -94,18 +88,17 @@ function read(id:string):Promise<Row|undefined>{return new Promise(resolve=>{
  readTimer??=setTimeout(()=>{readTimer=undefined;void flushImageReads();},4);
 });}
 async function flushImageReads(){
- const queued=[...readBatch.entries()];readBatch.clear();const db=await openDB();
- if(!db){for(const[,ws]of queued)for(const done of ws)done(undefined);return;}
+ const queued=[...readBatch.entries()];readBatch.clear();
  for(let offset=0;offset<queued.length;offset+=64){const group=queued.slice(offset,offset+64);
- await new Promise<void>(resolve=>{let finished=false;
- const finish=(rows:Map<string,Row>)=>{if(finished)return;finished=true;for(const[id,ws]of group)for(const done of ws)done(rows.get(id));resolve();};
- try{const tx=db.transaction([STORE,META]),rows=new Map<string,Row>();
+ const rows=await storage.run<Map<string,Row>>([STORE,META],'readonly',new Map(),(tx,result)=>{
+ const collected=new Map<string,Row>();result(collected);
  for(const[id]of group){const r=tx.objectStore(STORE).get(id),m=tx.objectStore(META).get(id);
- const collect=()=>{if(r.readyState==='done'&&m.readyState==='done'&&r.result&&m.result)rows.set(id,{...m.result,blob:r.result.blob});};r.onsuccess=collect;m.onsuccess=collect;}
- tx.oncomplete=()=>finish(rows);tx.onerror=tx.onabort=()=>finish(new Map());
- }catch{finish(new Map());}});
+ const collect=()=>{if(r.readyState==='done'&&m.readyState==='done'&&r.result&&m.result)collected.set(id,{...m.result,blob:r.result.blob});};r.onsuccess=collect;m.onsuccess=collect;}
+ });
+ for(const[id,waiters]of group)for(const done of waiters)done(rows.get(id));
  }
 }
+
 type StoreRequest={row:Row;generation:number;done:()=>void};
 const storeBatch:StoreRequest[]=[];let storeTimer:ReturnType<typeof setTimeout>|undefined;
 function store(row:Row,generation:number):Promise<void>{return new Promise(done=>{
@@ -113,10 +106,10 @@ function store(row:Row,generation:number):Promise<void>{return new Promise(done=
  storeTimer??=setTimeout(()=>{storeTimer=undefined;void flushImageStores();},16);
 });}
 async function flushImageStores(){
- const queued=storeBatch.splice(0);const db=await openDB();if(!db){queued.forEach(r=>r.done());return;}
+ const queued=storeBatch.splice(0);
  for(let offset=0;offset<queued.length;offset+=64){const group=queued.slice(offset,offset+64);
- await new Promise<void>(resolve=>{let finished=false;const finish=()=>{if(finished)return;finished=true;group.forEach(r=>r.done());resolve();};
- try{const tx=db.transaction([STORE,META],'readwrite'),images=tx.objectStore(STORE),meta=tx.objectStore(META),all=meta.getAll();
+ await storage.run<void>([STORE,META],'readwrite',undefined,tx=>{
+ const images=tx.objectStore(STORE),meta=tx.objectStore(META),all=meta.getAll();
  all.onsuccess=()=>{try{
  const accepted=group.filter(r=>valid(r.row.account,r.generation));
  const rows=new Map((all.result as Row[]).map(r=>[r.id,r]));
@@ -127,8 +120,7 @@ async function flushImageStores(){
  for(const r of all.result as Row[])if(!retain.has(r.id)){images.delete(r.id);meta.delete(r.id);}
  for(const{row}of accepted){if(!retain.has(row.id))continue;const{blob,...metadata}=row;images.put({id:row.id,blob});meta.put(metadata);}
  }catch{tx.abort();}};
- tx.oncomplete=tx.onerror=tx.onabort=finish;
- }catch{finish();}});
+ });group.forEach(r=>r.done());
  }
 }
 /** Cache hits only update LRU metadata. Rewriting an unchanged Blob serializes
@@ -140,17 +132,22 @@ async function touch(row:Row,generation:number){
  touchTimer??=setTimeout(()=>{touchTimer=undefined;void flushImageTouches();},16);
 }
 async function flushImageTouches(){
- const queued=[...touches.values()];touches.clear();const db=await openDB();if(!db)return;
+ const queued=[...touches.values()];touches.clear();
  for(let offset=0;offset<queued.length;offset+=64){const group=queued.slice(offset,offset+64);
- await new Promise<void>(resolve=>{try{const tx=db.transaction(META,'readwrite'),meta=tx.objectStore(META);
+ await storage.run<void>(META,'readwrite',undefined,tx=>{const meta=tx.objectStore(META);
  for(const{row,generation}of group){if(!valid(row.account,generation))continue;const r=meta.get(row.id);
  r.onsuccess=()=>{if(valid(row.account,generation)&&r.result)meta.put({...r.result,at:Date.now()});};}
- tx.oncomplete=tx.onerror=tx.onabort=()=>resolve();}catch{resolve();}});
+ });
  }
 }
-async function purge(owner:string){const db=await openDB();if(!db)return;
-  await new Promise<void>(resolve=>{try{const tx=db.transaction([STORE,META],'readwrite'),s=tx.objectStore(STORE),meta=tx.objectStore(META),r=meta.getAll();r.onsuccess=()=>{for(const row of r.result as Row[])if(row.account===owner){s.delete(row.id);meta.delete(row.id);}};tx.oncomplete=tx.onerror=tx.onabort=()=>resolve();}catch{resolve();}});
+async function purge(owner:string){
+ await storage.run<void>([STORE,META],'readwrite',undefined,tx=>{const s=tx.objectStore(STORE),meta=tx.objectStore(META),r=meta.getAll();
+ r.onsuccess=()=>{for(const row of r.result as Row[])if(row.account===owner){s.delete(row.id);meta.delete(row.id);}};});
 }
+function discard(id:string){return storage.run<void>([STORE,META],'readwrite',undefined,tx=>{
+ tx.objectStore(STORE).delete(id);tx.objectStore(META).delete(id);
+});}
+
 function reset(){epoch++;verifiedContent.clear();for(const request of pending.values())request.controller.abort();pending.clear();for(const url of objects)URL.revokeObjectURL(url);objects.clear();displayed.clear();window.dispatchEvent(new Event('naumi:image-cache-session'));}
 // Focus is not an identity change. Keep the decoded pixels while the existing
 // authenticated manifest checks permission; never download image bytes here.
@@ -226,12 +223,16 @@ async function imageBlob(source:string,signal?:AbortSignal,options?:BrowserImage
   if(info.bytes>MAX_IMAGE)throw new ImageNotCacheable(info.fetchUrl);
   const id=JSON.stringify([owner,info.source,info.version]);
   const contentKey=verifiedImageContentKey(info,owner,generation);
-  let task=pending.get(id);if(!task){const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),60000);const promise=(async()=>{
-    const cached=await timedImageStage("idbRead",()=>read(id));
-    if(cached&&cached.account===owner&&cached.blob instanceof Blob&&cached.bytes===cached.blob.size&&Date.now()-cached.created<MAX_AGE){
+  const pendingKey=options?.bypassCache?'reload:'+id:id;
+  let task=pending.get(pendingKey);if(!task||task.controller.signal.aborted){const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),60000);const promise=(async()=>{
+    if(options?.bypassCache)void discard(id);
+    const cached=options?.bypassCache?undefined:await timedImageStage("idbRead",()=>read(id));
+    if(cached&&cached.account===owner&&cached.blob instanceof Blob&&cached.bytes===cached.blob.size&&(info.bytes===0||cached.blob.size===info.bytes)&&Date.now()-cached.created<MAX_AGE){
       // A source-keyed disk hit may be shared only after its actual digest and
       // length match this freshly authorized descriptor. Never trust IDB alone.
-      const verified=!contentKey||cached.blob.size===info.bytes&&bytesToHex(sha256(new Uint8Array(await cached.blob.arrayBuffer())))===info.version;
+      let verified=false;
+      try{verified=!contentKey||bytesToHex(sha256(new Uint8Array(await cached.blob.arrayBuffer())))===info.version;}catch{/* unreadable local bytes are a cache miss */}
+      if(!verified)void discard(id);
       if(verified){void touch(cached,generation);if(contentKey&&valid(owner,generation)&&!controller.signal.aborted)verifiedContent.remember(contentKey,cached.blob);return cached.blob;}
     }
     if(!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
@@ -252,13 +253,13 @@ async function imageBlob(source:string,signal?:AbortSignal,options?:BrowserImage
     return blob;
     }finally{releaseSlot();}
     };
-    const blob=contentKey?await verifiedContent.acquire(contentKey,source,download,controller.signal):await download(controller.signal);
+    const blob=contentKey&&!options?.bypassCache?await verifiedContent.acquire(contentKey,source,download,controller.signal):await download(controller.signal);
     if(controller.signal.aborted||!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
-    await timedImageStage("idbStore",()=>store({id,account:owner,source:info.source,version:info.version,blob,bytes:blob.size,at:Date.now(),created:Date.now()},generation));
+    void timedImageStage("idbStore",()=>store({id,account:owner,source:info.source,version:info.version,blob,bytes:blob.size,at:Date.now(),created:Date.now()},generation));
     return blob;
-  })();task={promise,controller,users:0};pending.set(id,task);const captured=task;void promise.finally(()=>{clearTimeout(timeout);if(pending.get(id)===captured)pending.delete(id);}).catch(()=>{});}
+  })();task={promise,controller,users:0};pending.set(pendingKey,task);const captured=task;void promise.finally(()=>{clearTimeout(timeout);if(pending.get(pendingKey)===captured)pending.delete(pendingKey);}).catch(()=>{});}
   const current=task;current.users++;let released=false;
-  const leave=()=>{if(released)return;released=true;current.users--;if(!current.users&&pending.get(id)===current)current.controller.abort();};
+  const leave=()=>{if(released)return;released=true;current.users--;if(!current.users&&pending.get(pendingKey)===current)current.controller.abort();};
   signal?.addEventListener('abort',leave,{once:true});
   try{const blob=await current.promise;if(signal?.aborted||!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');return{blob,owner,generation};}
   finally{signal?.removeEventListener('abort',leave);leave();}
