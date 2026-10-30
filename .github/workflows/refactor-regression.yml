@@ -43,12 +43,24 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Install pinned Playwright test browsers
         run: npx --no-install playwright install --with-deps chromium msedge
+      - name: Prepare receipt fixture database
+        run: |
+          node --input-type=module - <<'NODE'
+          import pg from 'pg';
+          const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+          await client.connect();
+          try { await client.query('CREATE DATABASE canvas_feedback_fixture'); }
+          finally { await client.end(); }
+          NODE
+        env:
+          DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/refactor_fixture
       - name: Verify orchestration and workflow wiring
         run: node scripts/verify-refactor-runner.mjs
       - name: Run source-bound core regression
         run: node scripts/verify-refactor.mjs --expected-sha "${{ inputs.source_commit || github.sha }}" --out output/refactor-ci
         env:
           DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/refactor_fixture
+          CANVAS_FEEDBACK_TEST_DATABASE: postgres://fixture:isolated-fixture@127.0.0.1:5432/canvas_feedback_fixture
           NAUMI_VERIFY_ISOLATED_DB: '1'
           SETTINGS_SECRET: refactor-ci-fixture-only-not-production-20261026
           NODE_OPTIONS: --conditions=react-server

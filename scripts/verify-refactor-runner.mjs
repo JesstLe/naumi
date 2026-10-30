@@ -9,6 +9,12 @@ const ci=yaml.load(await fs.readFile(ciFile,'utf8'));
 eq(ci.on.push.branches,['main','codex/core-refactor-20261024'],'ACTIVE_REFACTOR_BRANCH_PUSH_NOT_CONFIGURED');
 eq(oldWorkflow.on.push.branches,['main']);
 eq(ci.permissions,{contents:'read'});
+const receiptSetup=ci.jobs.core.steps.find(s=>s.name==='Prepare receipt fixture database'),coreStep=ci.jobs.core.steps.find(s=>s.name==='Run source-bound core regression');
+assert.ok(receiptSetup?.run.includes("CREATE DATABASE canvas_feedback_fixture"));checks++;
+eq(receiptSetup.env.DATABASE_URL,coreStep.env.DATABASE_URL,'RECEIPT_DB_SETUP_MUST_USE_SAME_ISOLATED_SERVICE');
+const receiptUrl=new URL(coreStep.env.CANVAS_FEEDBACK_TEST_DATABASE);eq(receiptUrl.hostname,'127.0.0.1');eq(receiptUrl.pathname,'/canvas_feedback_fixture');
+assert.ok(ci.jobs.core.steps.indexOf(receiptSetup)<ci.jobs.core.steps.indexOf(coreStep));checks++;
+
 eq(ci.jobs.core.if,"github.repository == 'JesstLe/naumi'");
 eq(ci.jobs.core.steps.find(s=>s.name==='Run source-bound core regression').run,'node scripts/verify-refactor.mjs --expected-sha "${{ inputs.source_commit || github.sha }}" --out output/refactor-ci');
 eq(ci.jobs.core.steps.find(s=>s.uses==='actions/upload-artifact@v4').with.name,'refactor-core-${{ inputs.source_commit || github.sha }}');
