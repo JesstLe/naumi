@@ -39,6 +39,20 @@ export class TextImageInputError extends Error {
 
 const MAX_PROMPT_LENGTH = 6_000;
 
+/** Menu inventory, not request validation: stale image links remain countable
+ * so the existing text-only option can ignore them explicitly. */
+export function countTextImageReferences(input:{projectKey:string;nodes:readonly TextImageSource[];textNodeIds:readonly string[];selectedImageIds:readonly string[]}):number{
+  const byId=new Map(input.nodes.filter(node=>node.projectKey===input.projectKey).map(node=>[node.id,node]));
+  const images=new Set(input.selectedImageIds),visited=new Set<string>(),queue=[...input.textNodeIds];
+  for(let index=0;index<queue.length;index++){
+    const id=queue[index];if(visited.has(id))continue;visited.add(id);
+    const node=byId.get(id);if(!node)continue;
+    for(const source of node.sourceIds||[]){if(byId.has(source))queue.push(source);else if(!source.startsWith('text-'))images.add(source);}
+    for(const product of node.productIds||[])images.add(product);
+  }
+  return images.size;
+}
+
 // Keep the legacy product modes byte-for-byte compatible with canvas-client.
 const REPLICATE_GUARD =
   "\n产品必须完全取自第一张参考图（产品白底图），包装、品牌、文字保持不变；其余参考图仅作构图与风格参考，严禁照搬其中的竞品标识、品牌名与文案。";

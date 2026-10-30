@@ -7,6 +7,10 @@ const art={id:'placement-root',title:'主图',category:'main',prompt:'保留主�
 const arts=[art,{...art,id:'placement-second',title:'邻近图片',parentId:art.id,canvasX:620,canvasY:150}];
 const historyMode=process.env.CANVAS_FIXTURE_HISTORY==='1';
 const texts=historyMode?[{id:'text-history',projectKey:'tree:placement-root',title:'历史文字',prompt:'',content:'原始文字',status:'completed',canvasX:100,canvasY:650,width:380,height:260,sourceIds:[],targetIds:[],productIds:[],createdAt:now,updatedAt:now}]:[];
+// Opt-in text-image UI inventory; all other existing fixture modes stay exact.
+if(process.env.CANVAS_FIXTURE_TEXT_IMAGES==='1')texts.push(
+ {...texts[0],id:'text-history-2',title:'第二段文字',content:'第二段文字',canvasX:650,canvasY:650,sourceIds:[],targetIds:[],productIds:[]},
+ {...texts[0],id:'text-project-b',projectKey:'tree:text-project-b',title:'文字项目B',content:'B项目的提示词',canvasX:100,canvasY:100,sourceIds:[],targetIds:[],productIds:[]});
 const initialArts=structuredClone(arts),initialTexts=structuredClone(texts);
 const model={id:'gpt-image-2',label:'GPT Image 2',modality:'image',supportsEdit:true,qualities:['low','medium','high'],qualitySupported:true,nativeResolutions:['1K'],generationParameters:{ratios:['auto','1:1','3:4'],resolutions:['1K']}};
 const state={submissions:[],positions:[],history:[],jobs:{},paidCalls:0,apiErrors:[],failNextPosition:false,failNextHistory:false,textSaves:[],historyApplied:[],failTextSaves:false,failTextRead:false,failArtworkAccount:false,failArtworkIds:false,accountReads:0,artworkIdReads:[]};

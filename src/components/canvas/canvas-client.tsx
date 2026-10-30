@@ -157,7 +157,9 @@ import { ContextMenuSurface, ContextMenuSubmenu, ContextMenuItem as Item } from 
 import { selectionRunTargets } from "@/lib/canvas/selection-run";
 import { BatchSelectionToolbar } from "./batch-selection-toolbar";
 import { TextImageGenerationDialog } from "./text-image-generation-dialog";
-import { buildTextImageRequests, type TextImageMode } from "@/lib/canvas/text-image-inputs";
+import type {TextImageMode} from "@/lib/canvas/text-image-inputs";
+import type {CanvasTextImageContext} from "@/lib/canvas/text-image-runs";
+import {useCanvasTextImages} from "./use-canvas-text-images";
 import { CanvasAssistantPanel } from "./canvas-assistant-panel";
 import { useWorkflowPaste } from "./use-workflow-paste";
 import type { ImportedManifest } from "@/lib/canvas/workflow-clipboard";
@@ -791,17 +793,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const batchRunMountedRef = useRef(true);
   useEffect(() => { batchRunMountedRef.current = true; return () => { batchRunMountedRef.current = false; }; }, []);
   const [productPicker, setProductPicker] = useState<{ textNodeIds: string[] } | null>(null);
-  const [genImageMenu, setGenImageMenu] = useState<{
-    textNodeIds: string[]; imageIds: string[]; drafts: Record<string, string>;
-    account: string; project: string; workspace: string; epoch: number; revision: number;
-  } | null>(null);
-  const textImageContextKey = JSON.stringify([canvasAccountRef.current, activeKey, currentWorkspace()]);
-  const textImageContextRef = useRef({key: textImageContextKey, revision: 0});
-  if (textImageContextRef.current.key !== textImageContextKey) {
-    textImageContextRef.current = {key: textImageContextKey, revision: textImageContextRef.current.revision + 1};
-  }
-  const textImageSubmittingRef = useRef(false);
-  const [textImageSubmitting, setTextImageSubmitting] = useState(false);
+  const textImages=useCanvasTextImages(canvasArtworkDocument.scope);
+  const {menu:genImageMenu,submitting:textImageSubmitting}=textImages;
   // 居中确认弹框(替代浏览器原生 confirm,贴合站点配色)
   const [confirmModal, setConfirmModal] = useState<{
     title: string;
@@ -3122,87 +3115,28 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
 
   // Text is a universal image prompt; product recipes remain explicit optional modes.
-  function textImageScopeCurrent(menu: NonNullable<typeof genImageMenu>) {
-    return batchRunMountedRef.current && !readOnly && !!user &&
-      menu.account === canvasAccountRef.current && menu.project === activeProjectRef.current?.key &&
-      menu.workspace === currentWorkspace() && menu.epoch === canvasContextEpochRef.current && menu.revision === textImageContextRef.current.revision;
+  function canvasTextImageContext():CanvasTextImageContext {
+    const scope=canvasArtworkDocument.scope,epoch=canvasContextEpochRef.current;
+    return {scope,current:()=>batchRunMountedRef.current&&scope.account===canvasAccountRef.current&&scope.project===(activeProjectRef.current?.key||null)&&epoch===canvasContextEpochRef.current,writable:()=>!readOnly&&!!user,canGenerate:canFeature("generate"),ready:nodeSettingsReady,
+      project:()=>activeProjectRef.current,texts:()=>canvasTextDocument.getSnapshot().nodes,locked:isNodeLocked,draft:{id:selectedTextId,text:textPrompt},
+      positions:()=>new Map((rfRef.current?.getNodes()||[]).map(node=>[node.id,node.position])),nextSequence:()=>pendSeqRef.current++,
+      gap:X_GAP,textWidth:TEXT_NODE_DEFAULT_W,imageLabel:t("canvas.imageNode"),maxImages:MAX_TOTAL_IMAGES,pending:setPendNodes,generate:generatePend,
+      lockedNotice:()=>flashTip(L("引用的文字节点已锁定","A referenced text node is locked")),
+      error:error=>{
+        const code=(error as {code?:string})?.code,messages:Record<string,string>={
+          EMPTY_TEXT:L("先输入提示词或填写文字节点内容","Enter a prompt or add text content first"),
+          TEXT_BUSY:L("引用的文字仍在生成，请完成后再试","Referenced text is still generating"),
+          MISSING_PRODUCT:t("canvas.textNoProduct"),MISSING_REFERENCE:L("引用图片已失效，请重新选择或移除连线","A reference is unavailable; select it again or remove its link"),
+          TOO_MANY_IMAGES:L(`一次最多使用 ${MAX_TOTAL_IMAGES} 张参考图片，请减少引用`,`Use at most ${MAX_TOTAL_IMAGES} reference images`),
+          PROMPT_TOO_LONG:L("组合提示词超过 6000 字，请精简或选择逐条创作","Combined prompt exceeds 6,000 characters; shorten it or create separately"),
+        };
+        flashTip(messages[code||""]||(error instanceof Error?error.message:t("canvas.genFail")));
+      },
+    };
   }
-  function openTextImageMenu(textNodeIds: string[], imageIds: string[] = []) {
-    const project = activeProjectRef.current;
-    if (!user || readOnly || !project || !canFeature("generate") || !nodeSettingsReady || textImageSubmittingRef.current) return;
-    const ids = Array.from(new Set(textNodeIds)).filter(id => textNodesRef.current.some(node => node.id === id && node.projectKey === project.key));
-    if (!ids.length || ids.some(id => isNodeLocked(id) || textNodesRef.current.find(node => node.id === id)?.status === "generating")) return;
-    setGenImageMenu({textNodeIds: ids, imageIds: Array.from(new Set(imageIds)),
-      drafts: selectedTextId && ids.includes(selectedTextId) ? {[selectedTextId]: textPrompt} : {},
-      account: canvasAccountRef.current, project: project.key, workspace: currentWorkspace(), epoch: canvasContextEpochRef.current, revision: textImageContextRef.current.revision});
-  }
-  function textImageRequests(menu: NonNullable<typeof genImageMenu>, mode: TextImageMode, options: {combine: boolean; useReferences: boolean}) {
-    const project = activeProjectRef.current;
-    if (!project || !textImageScopeCurrent(menu)) return [];
-    return buildTextImageRequests({projectKey: project.key, nodes: textNodesRef.current, textNodeIds: menu.textNodeIds,
-      imageIds: project.members.filter(art => !art.videoUrl && !["workflow-decoration", "workflow-placeholder"].includes(art.source || "") && hasRenderableImage(art.image)).map(art => art.id),
-      selectedImageIds: menu.imageIds, drafts: menu.drafts, mode, combine: options.combine, useReferences: options.useReferences, maxImages: MAX_TOTAL_IMAGES});
-  }
-  function textImageReferenceCount(menu: NonNullable<typeof genImageMenu>) {
-    const project = activeProjectRef.current;
-    if (!project || !textImageScopeCurrent(menu)) return 0;
-    const byId = new Map(textNodesRef.current.filter(node => node.projectKey === menu.project).map(node => [node.id, node]));
-    const images = new Set(menu.imageIds), visited = new Set<string>(), queue = [...menu.textNodeIds];
-    for (let index = 0; index < queue.length; index++) {
-      const id = queue[index]; if (visited.has(id)) continue; visited.add(id);
-      const node = byId.get(id); if (!node) continue;
-      for (const source of node.sourceIds || []) {
-        if (byId.has(source)) queue.push(source);
-        else if (!source.startsWith("text-")) images.add(source);
-      }
-      for (const product of node.productIds || []) images.add(product);
-    }
-    return images.size;
-  }
-  async function generateImagesFromTextNodes(mode: TextImageMode, options: {combine: boolean; useReferences: boolean}) {
-    const menu = genImageMenu;
-    if (!menu || !textImageScopeCurrent(menu) || !canFeature("generate") || !nodeSettingsReady || textImageSubmittingRef.current) return;
-    const current = () => textImageScopeCurrent(menu);
-    textImageSubmittingRef.current = true; setTextImageSubmitting(true);
-    try {
-      const requests = textImageRequests(menu, mode, options);
-      if (!requests.length) return;
-      if (requests.some(request => request.textNodeIds.some(isNodeLocked))) {setGenImageMenu(null);flashTip(L("引用的文字节点已锁定", "A referenced text node is locked"));return;}
-      // Validate every input before adding any placeholders or starting a billable request.
-      setGenImageMenu(null);
-      const graph = rfRef.current?.getNodes() || [];
-      for (const request of requests) {
-        if (!current()) return;
-        const node = textNodesRef.current.find(item => item.id === request.anchorTextId && item.projectKey === menu.project);
-        if (!node) return;
-        const position = graph.find(item => item.id === node.id)?.position || {x: node.canvasX, y: node.canvasY};
-        const seq = pendSeqRef.current++;
-        const pend: Pend = {id: `pend-${Date.now()}-${seq}`, x: Math.round(position.x + (node.width || TEXT_NODE_DEFAULT_W) + X_GAP),
-          y: Math.round(position.y), parentId: request.imageIds[0] || node.id, linked: true,
-          label: `${t("canvas.imageNode")} ${seq}`, uploading: false, progress: 0,
-          inputs: [...request.imageIds, ...request.textNodeIds]};
-        setPendNodes(previous => current() ? [...previous, pend] : previous);
-        const succeeded = await generatePend({pend, prompt: request.prompt, forceStandard: true, isCurrent: current});
-        // A cancellation, pending/unknown receipt or failure never starts the next purchase.
-        if (!succeeded || !current()) return;
-      }
-    } catch (error) {
-      if (!current()) return;
-      setGenImageMenu(null);
-      const code = (error as {code?: string})?.code;
-      const messages: Record<string, string> = {
-        EMPTY_TEXT: L("先输入提示词或填写文字节点内容", "Enter a prompt or add text content first"),
-        TEXT_BUSY: L("引用的文字仍在生成，请完成后再试", "Referenced text is still generating"),
-        MISSING_PRODUCT: t("canvas.textNoProduct"),
-        MISSING_REFERENCE: L("引用图片已失效，请重新选择或移除连线", "A reference is unavailable; select it again or remove its link"),
-        TOO_MANY_IMAGES: L(`一次最多使用 ${MAX_TOTAL_IMAGES} 张参考图片，请减少引用`, `Use at most ${MAX_TOTAL_IMAGES} reference images`),
-        PROMPT_TOO_LONG: L("组合提示词超过 6000 字，请精简或选择逐条创作", "Combined prompt exceeds 6,000 characters; shorten it or create separately"),
-      };
-      flashTip(messages[code || ""] || (error instanceof Error ? error.message : t("canvas.genFail")));
-    } finally {
-      textImageSubmittingRef.current = false;
-      if (batchRunMountedRef.current) setTextImageSubmitting(false);
-    }
+  function openTextImageMenu(textNodeIds:string[],imageIds:string[]=[]){textImages.open(textNodeIds,imageIds,canvasTextImageContext());}
+  async function generateImagesFromTextNodes(mode:TextImageMode,options:{combine:boolean;useReferences:boolean}){
+    await textImages.run(mode,options,canvasTextImageContext());
   }
   // 底部工具条:从生成历史选择(画布中心)
   function toolHistory() {
@@ -5114,10 +5048,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         </div>
       )}
       {/* Universal text-to-image; specialized product modes are optional. */}
-      {canFeature("generate") && genImageMenu && textImageScopeCurrent(genImageMenu) && (
-        <TextImageGenerationDialog textCount={genImageMenu.textNodeIds.length} referenceCount={textImageReferenceCount(genImageMenu)}
+      {canFeature("generate") && genImageMenu && textImages.isCurrent(genImageMenu,canvasTextImageContext()) && (
+        <TextImageGenerationDialog textCount={genImageMenu.textNodeIds.length} referenceCount={textImages.referenceCount(canvasTextImageContext())}
           locale={locale === "en" ? "en" : "zh"} busy={textImageSubmitting}
-          onClose={() => setGenImageMenu(null)} onGenerate={(mode, options) => void generateImagesFromTextNodes(mode, options)} />
+          onClose={textImages.close} onGenerate={(mode, options) => void generateImagesFromTextNodes(mode, options)} />
       )}
       {/* 回收站:已删除作品(保留 180 天,可恢复 / 彻底删除) */}
       {trashOpen && (

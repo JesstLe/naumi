@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   buildTextImageRequests,
+  countTextImageReferences,
   TextImageInputError,
   type TextImageInputErrorCode,
   type TextImageRequest,
@@ -289,6 +290,23 @@ test("purity: frozen input remains unchanged and results are independent", () =>
   const first = buildTextImageRequests(value); first[0].imageIds.push("mutated-result");
   const second = buildTextImageRequests(value);
   assert.equal(JSON.stringify(value), before); assert.deepEqual(second[0].imageIds, ["r"]);
+});
+
+test("reference inventory: cyclic upstream traversal and deduplication", () => {
+  assert.equal(countTextImageReferences({projectKey:PROJECT,nodes:[text("a","",{sourceIds:["b","image","text-missing"],productIds:["product"]}),text("b","",{sourceIds:["a","image"]})],textNodeIds:["a"],selectedImageIds:["selected","selected"]}),3);
+});
+test("reference inventory: foreign texts do not expose their products", () => {
+  assert.equal(countTextImageReferences({projectKey:PROJECT,nodes:[text("text-foreign","secret",{projectKey:"other",productIds:["foreign-product"]})],textNodeIds:["text-foreign"],selectedImageIds:[]}),0);
+});
+test("reference inventory: empty and oversize text still counts stale references", () => {
+  assert.equal(countTextImageReferences({projectKey:PROJECT,nodes:[text("a","".padEnd(7000,"x"),{sourceIds:["gone-image"]})],textNodeIds:["a"],selectedImageIds:["gone-selected"]}),2);
+});
+test("reference inventory: no selected text preserves selected image count", () => {
+  assert.equal(countTextImageReferences({projectKey:PROJECT,nodes:[],textNodeIds:[],selectedImageIds:["a","a","b"]}),2);
+});
+test("reference inventory: input arrays remain unchanged", () => {
+  const value={projectKey:PROJECT,nodes:[text("a","",{sourceIds:["b","image"]}),text("b","",{productIds:["product"]})],textNodeIds:["a"],selectedImageIds:["image"]};
+  const before=JSON.stringify(value);assert.equal(countTextImageReferences(value),2);assert.equal(JSON.stringify(value),before);
 });
 
 let failures = 0;
