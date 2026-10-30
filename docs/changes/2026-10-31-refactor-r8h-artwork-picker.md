@@ -29,3 +29,15 @@
 完整同镜像产品第二轮74项通过，新增历史选择器6项含1次POST/真实PG原回执、原像素、同ID undo/redo、刷新；第一轮在既有ZIP原图GET socket hang up（21项通过、pageerror0/Web无OOM），原日志和清理PASS保留，传输根因OPEN不因复验成功关闭。截图检查发现拍在CachedImage完成前，补原生冷启动隔离镜像可视验收：2张原图均实际授权cache/Blob解码1024×1024、无deny/pageerror，截图已打开检查。仅验收截图等待实际decode，不改产品图片或guard。
 
 上述修改均为验收/CI接线，src/services与原已验镜像hash全一致；现在重新固定完整源码进行最终core和完整镜像/产品验收，不把不同SHA结果拼成单SHA全绿。
+
+## 固定候选最终记录
+
+固定应用源码 `c8f76e93cb0fecf0449f481c21d0c320fa4381b1`，完整生产Dockerfile同Web/Worker镜像 `sha256:3019f6edfa9dffb0fd15ba67dcb7e6b030c1e71ba04e7b39bf29eed2c9661c78`。原页面历史作品选择器的open/point、busy/error、分页/元数据过滤、复制等待与结果选择迁入canvas/artwork-picker；React hook只订阅，CanvasArtworkPicker保留原视图/文案/CachedImage/Escape，Canvas只捕获屏幕点与组装既有copy/selection。只改1个原产品文件+3个新职责文件，其他2120原src/services哈希保持；页面4470→4364行不是验收目标，真实状态/流程归属才是。无新的图库fetch/DB/API/复制系统，原node-operations/history继续唯一拥有operation/body、已知ID恢复、事务和undo；原父子/素材授权/钱包/任务/冻结报价均不改。
+
+原实际页面函数13项→新owner19项；真实React原/新各7项，3类project/account/workspace切换原保留旧弹窗/坐标3→新0。原复制wire、坐标取整、原60/加载更多60、busy/Escape、失败必须显式点击重试、原UNKNOWN身份和已知ID只读恢复保持。新增ABA拒绝旧callback、旧finally不清空替代busy，原共享undo一次语义通过。原node-operations19用例59检查保留，旧inline-wiring断言改跟真实hook/copy端口，不恢复已退休页面函数。
+
+初始1aba的18受影响入口全新执行PASS（subset PARTIAL/exit2）单列；最终固定源码c8f重新完整catalog181全新执行、0reuse，实际结果status=PASS passed=181 failed=0 notRun=0 completeCore=True，不跨SHA拼绿，原逐项日志/PG清理均保留。类型exit0、lintexit0/既有38warning、固定源4类SCC0；2条release fixture lib→app及1条dist/worker生成边单列。DOM测试的copy/auth/workspace/image是明确端口，规则测试实际node-operations/history，不当真实PG；完整产品另验。
+
+完整固定镜像真实双browser 74 项通过，原68项保留。新增真实history控件/Escape、实际tile复制、原PG copy receipt、原parent/坐标/图片字节、共享同IDundo/redo与刷新恢复：copy POST=1，原operation绑定原source/result/project，无新收费。原图/文字/任务/fixture7笔42积分在选择器流程前后保持。复制最终undo后保留原回执，不删除server历史冒充清理；31张原图ZIP仍逐字节完整。上游为本地隔离fixture，非真实供应商/私有R2/10万容量证明；180秒混合读取不是持续混合生成容量。POSIX排空与自有容器/网络/tmpfsPG清理通过。
+
+第三模块普通fetch/merge main `e2f562556ea6e71370619686e1fc8d4c634ef5e7`，新增待合0，实际Already up to date；计数2→3→0。原5264rawhash、完整5271源码、字节patch、副本原13+7行为回滚及later-edit零写入以本轮DELIVERY/VERIFICATION为准。初始fixture VM Error跨realm、esbuild虚拟图片resolveDir和React commit等待问题及原失败输出均保留；修fixture不放宽业务断言。原首轮core父fixture secret长度错误导致34PASS/1setup失败/146未运行，原日志及自有PG清理保留；57续跑至114后暴露R8G已退休inline audio/timeline kind静态接线，保留行为断言跟随实际native registry；CI补专用receipt DB与env并实际执行YAML代码/冷PG读回。最终重新固定完整源码/镜像并181全新执行，不拼接旧SHA或仅改数字。后续整轮使用现有CI fixture配置，不改产品门槛。首轮完整产品在既有ZIP原图GET处socket hang up，pageerror0、Web无OOM，清理通过；本轮后续原镜像整轮复验不抹去该传输根因OPEN，未改下载测试或加入自动重试。整体ACTIVE，未合main未部署，47 HOLD。**候选分支超过48h原因仍为完整退出未达成：剩余Canvas Shell/编辑器组合、持续混合生成/入队容量、有效CI、最终main整合及生产验收。**
