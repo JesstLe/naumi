@@ -318,7 +318,7 @@ function fixture({runtime = true} = {}) {
       './identity': identity, './accepted-context': {currentAcceptedParent: () => undefined}, './store': store,
     },
     'src/lib/imagegen/creation-scope.ts': {'@/lib/saas/creation-scope': () => load('src/lib/saas/creation-scope.ts')},
-    'src/lib/imagegen/output-advisory.ts': {'./request-size': {imageRatioMismatch: fail('unused-ratio-comparison')}},
+    'src/lib/imagegen/output-advisory.ts': {'./request-size': {imageRatioMismatch: fail('unused-ratio-comparison')}, './notice-visibility': () => load('src/lib/imagegen/notice-visibility.ts')},
     'src/lib/imagegen/dispatch.ts': {
       '@/lib/image-jobs/runtime': () => load('src/lib/image-jobs/runtime.ts'), '@/platform/db/pool': db,
       '../canvas-image-input': {readCanvasOutput: async url => {
