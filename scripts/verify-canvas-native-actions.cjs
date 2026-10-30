@@ -38,6 +38,7 @@ function setup(code){
  vm.runInContext(compile(names.filter(n=>functions[n]).map(n=>functions[n]).join('\n')),c);
  // Selection is a separate view-owner port. Record its navigation request,
  // just as the legacy setter port above; selection rules have their own suite.
+ c.projectNavigation={open:key=>state.reveal.push(['project',key])};
  c.canvasSelection={selectInProject:(project,patch)=>{assert.equal(project,state.project);state.selectionRequests.push({project,patch});}};
  if(!baseline){c.characterActionsOwner=c.createCanvasReferenceAssetActions('character');c.sceneActionsOwner=c.createCanvasReferenceAssetActions('scene');c.directorActionsOwner=c.createCanvasDirectorActions();c.videoNodeActionsOwner=c.createCanvasVideoNodeActions();}
  function render(){c.canvasHistory={scope:scope()};c.canvasArtworkDocument={scope:c.canvasHistory.scope};c.active={key:state.project};c.activeKey=state.project;if(!baseline)vm.runInContext(compile('(()=>{'+bindings.join('\n')+';Object.assign(globalThis,{referenceAssetPorts,characterActions,sceneNodeActions,directorActions,videoNodeActions});})();'),c);}

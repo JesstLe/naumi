@@ -32,7 +32,7 @@ function setup(built){
   expectJsonOk:async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error);return data;},t:k=>k,L:s=>s,
   flashTip:s=>state.notices.push(s),setHistorySaving:()=>{},setUnsavedTextCount:()=>{},setSelectedTextId:()=>{},setNodeSettings:v=>{state.settings=v;},
   setWorks:f=>{if(state.deferredWorks)state.deferredWorks.push(f);else state.works=f(state.works);},setTextNodes:f=>{if(state.deferredTexts)state.deferredTexts.push(f);else {state.texts=f(state.texts);c.textNodesRef.current=state.texts;}},setPendNodes:f=>{state.pending=f(state.pending);c.pendNodesRef.current=state.pending;},
-  setCreatingNew:()=>state.views++,setActiveKey:()=>state.views++,setBrowsing:()=>state.views++,setUndoStack:f=>state.undo=f(state.undo),setRedoStack:f=>state.redo=f(state.redo),
+  projectNavigation:{empty:()=>state.views++,open:()=>state.views+=3},setCreatingNew:()=>state.views++,setActiveKey:()=>state.views++,setBrowsing:()=>state.views++,setUndoStack:f=>state.undo=f(state.undo),setRedoStack:f=>state.redo=f(state.redo),
   settingsFor:()=>projectedModule.exports.defaultNodeSettings(),isNodeLocked:()=>false,mergeWorks:async()=>{},setRfNodes:f=>{state.rf=f(state.rf||[]);},
  };
  state.videos=[video()];c.videoNodesStore={getNode:id=>state.videos.find(n=>n.id===id),flush:async()=>{state.flushed++;await state.flush();},refresh:async()=>{state.refreshes++;await state.refresh();}};

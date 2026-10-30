@@ -1,4 +1,5 @@
 "use client";
+import {useCanvasProjectNavigation} from "./use-canvas-project-navigation";
 import {canvasHistoryFailureMessage} from '@/lib/canvas/history-scope';
 import {canvasDeletableIds,applyCanvasLocalHistory,type CanvasLocalHistoryAction} from '@/lib/canvas/node-commands';
 import {useCanvasWorkflowDocument} from "./use-canvas-workflow-document";
@@ -350,8 +351,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const dimensionSyncRef = useRef(new Set<string>());
   const artworkPlacementRef = useRef({ scope: "", positions: new Map<string, CanvasPoint>() });
   // 管理员看指定用户:?email=<用户> → 只读查看该用户画布;?node=<作品id> → 预选中那张
-  const [targetEmail, setTargetEmail] = useState<string | null>(null);
-  const [readOnly, setReadOnly] = useState(false);
+  const projectView=useCanvasProjectNavigation({ready,email:user?.email,ports:()=>({
+    select:(project,id)=>selectCanvasProject(project,{selectedId:id,selectedTextId:null,selectedPendId:null}),
+    focus:setFocusId,missing:()=>canvasSelection.patch({selectedId:null}),back:doBackToBrowser,
+  })});
+  const {navigation:projectNavigation,targetEmail,readOnly,activeKey,browsing,creatingNew,pinnedNode,pendingNode}=projectView;
   const canvasAccountRef=useRef("");canvasAccountRef.current=JSON.stringify([user?.email?.toLowerCase(),targetEmail?.toLowerCase()]);
   const [nodeSettings, setNodeSettings] = useState<Record<string, CanvasNodeSettings>>({});
   const nodeSettingsRef = useRef(nodeSettings); nodeSettingsRef.current = nodeSettings;
@@ -379,17 +383,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(!nodeSettingsReady || !user || readOnly)return;
     try{localStorage.setItem(`naumi:node-settings:${user.email.toLowerCase()}`,JSON.stringify(nodeSettings));}catch{/* best effort */}
   },[nodeSettings,nodeSettingsReady,user,readOnly]);
-  const [pendingNode,setPendingNode] = useState<string | null>(null);
-  // 文件拖入完成后只打开对应项目，不自动弹出节点功能；用户点击图片后再显示。
-  const openPendingNodeWithoutSelectionRef = useRef(false);
-  // 通过 ?node= 深链进入的节点 id(如 AI 抠图「送画布」):即使它是单张一次性作品
-  // (按常规规则不算项目),也让它所在项目在列表里显示出来,否则深链会落到空项目列表。
-  const [pinnedNode, setPinnedNode] = useState<string | null>(null);
-  // 仅"后台深链 ?node="进入时才自动平移聚焦;日常新建/上传/生成节点都不动画布
-  const deepFocusRef = useRef(false);
-  // 是否已做过"刷新恢复上次项目"的初始化(避免初始挂载误清本地保存)
-  const restoredRef = useRef(false);
-  const [activeKey, setActiveKey] = useState<string | null>(null);
   const canvasArtworkDocument = useCanvasArtworkDocument({account:canvasAccountRef.current,actor:user?.email||"",owner:targetEmail||user?.email||"",
     project:activeKey,enabled:ready&&!!user&&!!targetEmail,readOnly});
   const generationPresentation=useCanvasGenerationPresentation(canvasArtworkDocument.scope);
@@ -665,16 +658,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 选中的空白节点(显示文生图/合并 dock)
   const selectedPendIdRef = useRef(selectedPendId); selectedPendIdRef.current = selectedPendId;
   // 新建项目:进入空白画布(无任何节点),右键添加节点/上传第一张图后即成新项目并切过去
-  const [creatingNew, setCreatingNew] = useState(false);
   // 项目网格落地页(Figma 式):进画布先看项目卡片,点卡片才进入该项目的画布
-  const [browsing, setBrowsing] = useState(true);
   const viewControls=useCanvasViewControls({flow:rfRef,area:canvasAreaRef,zoom:viewport.zoom,zoomLabel:t("canvas.toolbar.zoom"),desktopAppearance,enabled:ready&&!!user,
     contextKey:canvasArtworkDocument.scope.key,browsing,onNavigate:()=>setFocusId(null),onMarquee:()=>{setSelectedId(null);setSelectedPendId(null);setSelectedTextId(null);clearCanvasSelection();}});
   const {tool:canvasTool,showMinimap,snapGrid,lightCanvas,isMac,modifierKey,zoomMenuOpen}=viewControls;
   const boxSelectMode=canvasTool==="marquee";
-  // 浏览器后退支持:进做图页(browsing=false)时往历史压一条,使「后退」先回项目页而非离开 /canvas。
-  const editorPushedRef = useRef(false);
-  const browsingRef = useRef(true);
   // 余额独立于作品快照缓存；同一 hook 覆盖项目列表与编辑器右上角。
   // 先从当前URL解析只读目标，不等待作品effect设置targetEmail，避免首帧串号和切号旧目标请求。
   const creditsTargetEmail = ready && typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("email") : null;
@@ -742,7 +730,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const {undoStack,redoStack,pushUndo,historyBusyRef,historySaving,setHistorySaving,historyCurrent} = canvasHistory;
   const templateImports=useCanvasTemplateImports(canvasArtworkDocument.scope,{
     writable:()=>!!user&&!readOnly,viewCurrent:importViewCurrent,merge:ids=>canvasArtworkDocument.merge(ids),history:canvasHistory,
-    open:(id,projectKey)=>{resetImportScope();workspacePages.close();setBrowsing(false);setCreatingNew(false);setActiveKey(projectKey);canvasSelection.selectInProject(projectKey,{selectedId:id,selectedTextId:null,selectedPendId:null});},
+    open:(id,projectKey)=>{resetImportScope();workspacePages.close();projectNavigation.open(projectKey);canvasSelection.selectInProject(projectKey,{selectedId:id,selectedTextId:null,selectedPendId:null});},
   });
   const textTasks=useCanvasTextTasks(canvasTextDocument.scope,{
     document:canvasTextDocument,
@@ -772,7 +760,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       setNodeSettings(current=>scope.documentCurrent()?{...current,...result.settings}:current);
       canvasHistory.record({...scope,project:result.projectKey,key:JSON.stringify([scope.account,scope.workspace,result.projectKey])},{kind:"workflow-add",artworks,textNodes:result.textNodes});
       if(!present)return;
-      setCreatingNew(false); setActiveKey(result.projectKey); setSelectedId(null); setSelectedTextId(null);
+      projectNavigation.open(result.projectKey); setSelectedId(null); setSelectedTextId(null);
       const missingAssets = artworks.filter(n => n.source === "workflow-placeholder").length;
       flashTip(missingAssets ? `工作流已导入，${missingAssets} 张图片待补齐` : result.missingReferences ? `工作流已导入，${result.missingReferences} 个外部引用未包含在选择中` : "工作流已导入");
       const ids = [...artworks.map(n => n.id), ...result.textNodes.map(n => n.id)];
@@ -813,37 +801,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   useEffect(() => {
     if (ready && !user) openAuth("sign-in");
   }, [ready, user, openAuth]);
-
-  // 余额轮询会回写新的 user 对象；仅账号变化才重载画布，避免覆盖正在编辑的内容。
-  const authenticatedEmail = user?.email;
-  useEffect(() => {
-    if (!ready || !authenticatedEmail) return;
-    const sp = new URLSearchParams(window.location.search);
-    const emailParam = sp.get("email");
-    const target = emailParam || authenticatedEmail;
-    const ro =
-      !!emailParam && emailParam.toLowerCase() !== authenticatedEmail.toLowerCase();
-    setPendingNode(sp.get("node"));
-    if (sp.get("node")) {
-      setPinnedNode(sp.get("node")); // 让该节点所在项目即使单张也显示在列表/可直达
-      setBrowsing(false); // 深链直达某节点 → 跳过网格落地页
-      deepFocusRef.current = true; // 深链才允许自动聚焦
-    } else {
-      // 刷新恢复:加载数据前就先决定停在上次的项目画布,避免网格一闪而过
-      try {
-        const last = localStorage.getItem("nv:canvas:last");
-        if (last) {
-          setActiveKey(last);
-          setBrowsing(false);
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-    restoredRef.current = true;
-    setTargetEmail(target);
-    setReadOnly(ro);
-  }, [ready, authenticatedEmail]);
 
   // 文字节点内容自适应高度:内容/引用/宽度变化时按估算调高(阈值 28px 防抖)。
   // 签名机制保证手动拖拽的尺寸不被覆盖 —— 只有内容真的变了才重新自适应;
@@ -899,65 +856,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const projects=useMemo(()=>canvasProjects({works,names:projectCatalog.names,t,readOnly,pinnedNode,textNodes,videoNodes:videoNodesStore.nodes,directorNodes:directorNodesStore.nodes,characterNodes:characterNodesStore.nodes,sceneNodes:sceneNodesStore.nodes,audioNodes:audioNodesStore.nodes,timelineNodes:timelineNodesStore.nodes}),[works,projectCatalog.names,t,readOnly,pinnedNode,textNodes,videoNodesStore.nodes,directorNodesStore.nodes,characterNodesStore.nodes,sceneNodesStore.nodes,audioNodesStore.nodes,timelineNodesStore.nodes]);
   const projectMonths=useMemo(()=>canvasProjectMonths(projects,typeof navigator!=="undefined"&&navigator.language?navigator.language:"zh-CN"),[projects]);
 
-  // 打开中的项目消失了(被删 / 根节点变化导致 key 变)→ 回到项目网格,而非自动弹别的项目
-  useEffect(() => {
-    if (creatingNew || browsing) return;
-    if (works === null || !textNodesReady || !videoNodesStore.ready || !directorNodesStore.ready || !characterNodesStore.ready || !sceneNodesStore.ready || !audioNodesStore.ready||!timelineNodesStore.ready) return; // 等待混合节点，保留刷新后的纯导演/文字/视频项目。
-    if (activeKey && !projects.some((p) => p.key === activeKey)) {
-      setBrowsing(true);
-      setActiveKey(null);
-      setSelectedId(null);
-      try {
-        localStorage.removeItem("nv:canvas:last");
-      } catch {
-        /* ignore */
-      }
-    }
-  }, [projects, activeKey, creatingNew, browsing, works,textNodesReady,videoNodesStore.ready,directorNodesStore.ready,characterNodesStore.ready,sceneNodesStore.ready,audioNodesStore.ready,timelineNodesStore.ready,setSelectedId]);
-
-  // ?node=<作品id>:跳到该图所在项目并选中聚焦(管理员从后台点图进来时)
-  useEffect(() => {
-    const node = pendingNode;
-    if (!node || projects.length === 0) return;
-    const proj = projects.find((p) => p.members.some((m) => m.id === node)||p.videoNodes?.some(item=>item.id===node)||p.directorNodes?.some(item=>item.id===node)||p.characterNodes?.some(item=>item.id===node)||p.sceneNodes?.some(item=>item.id===node)||p.audioNodes?.some(item=>item.id===node)||p.timelineNodes?.some(item=>item.id===node)||p.textNodes?.some(item=>item.id===node));
-    if(!proj&&(!videoNodesStore.ready||!directorNodesStore.ready||!characterNodesStore.ready||!sceneNodesStore.ready||!audioNodesStore.ready||!timelineNodesStore.ready||!textNodesReady||works===null))return;
-    setPendingNode(null);
-    const openWithoutSelection = openPendingNodeWithoutSelectionRef.current;
-    openPendingNodeWithoutSelectionRef.current = false;
-    if (proj) {
-      setActiveKey(proj.key);
-      setCreatingNew(false);
-      selectCanvasProject(proj.key,{selectedId:openWithoutSelection?null:node,selectedTextId:null,selectedPendId:null});
-      // 只有后台深链进入才自动聚焦;日常新建/上传/生成不动画布
-      if (deepFocusRef.current) {
-        setFocusId(node);
-        deepFocusRef.current = false;
-      }
-      setBrowsing(false); // 新建/上传/深链 → 直接进入该项目画布,不停在网格
-    }
-  }, [pendingNode,projects,videoNodesStore.ready,directorNodesStore.ready,characterNodesStore.ready,sceneNodesStore.ready,audioNodesStore.ready,timelineNodesStore.ready,textNodesReady,works,selectCanvasProject]);
-
-  // Optional desktop deep link; the original /canvas defaults are unchanged.
-  const desktopProjectOpened = useRef<string | null>(null);
-  useEffect(() => {
-    if (!initialProject || desktopProjectOpened.current === initialProject) return;
-    const project = projects.find(p => p.key === initialProject);
-    if (!project) return;
-    desktopProjectOpened.current = initialProject;
-    setCreatingNew(false); setActiveKey(project.key); setBrowsing(false);
-  }, [initialProject, projects]);
-
-  // 同步当前打开的项目到本地(供刷新恢复);只写不清,清除交给返回/删除路径,
-  // 避免初始挂载时(browsing=true)误清掉上次保存的项目。
-  useEffect(() => {
-    if (!restoredRef.current) return;
-    try {
-      if (!browsing && activeKey)
-        localStorage.setItem("nv:canvas:last", activeKey);
-    } catch {
-      /* ignore */
-    }
-  }, [browsing, activeKey]);
+  useEffect(()=>{
+    projectNavigation.reconcile(projects,works!==null&&textNodesReady&&videoNodesStore.ready&&directorNodesStore.ready&&characterNodesStore.ready&&sceneNodesStore.ready&&audioNodesStore.ready&&timelineNodesStore.ready,initialProject);
+  },[projectNavigation,projects,works,textNodesReady,videoNodesStore.ready,directorNodesStore.ready,characterNodesStore.ready,sceneNodesStore.ready,audioNodesStore.ready,timelineNodesStore.ready,initialProject,pendingNode]);
 
   const active = useMemo(
     () => projects.find((p) => p.key === activeKey) ?? null,
@@ -986,40 +887,24 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   function startNewProject() {
     imageTextEditor.close();
     resetImportScope();
-    setCreatingNew(true);
-    setBrowsing(false);
-    setActiveKey(null);
+    projectNavigation.start();
     canvasSelection.reset();
     pendingPresentation.clearTransient();
     setSidebarOpen(false);
   }
   function startWorkflow(key: CanvasWorkflowKey) {
     startNewProject();
-    window.requestAnimationFrame(() => {
-      window.setTimeout(() => {
-        const center = centerScreen();
-        if (key === "copy") {
-          addTextNodeAtScreen(center.x, center.y, {
-            forceNewProject: true,
-            title: t("canvas.workflowCopy"),
-            prompt: t("canvas.workflowCopyPrompt"),
-          });
-          return;
-        }
-        const pend = addPendAtScreen(center.x, center.y, null, false);
-        setGenerationMode(
-          key === "detail" ? "detail" : key === "views" ? "triptych" : "standard"
-        );
-        imageDraft.seed(pend.id, { prompt: t(
-          key === "detail" ? "canvas.workflowDetailPrompt" : key === "views" ? "canvas.workflowViewsPrompt" : "canvas.workflowHeroPrompt"
-        ) }, imageDraftScope(user?.email, targetEmail, null,currentWorkspace()));
-        wantFocusPendPrompt.current = true;
-      }, 0);
+    projectNavigation.deferStarter(()=>{
+      const center=centerScreen();
+      if(key==="copy"){
+        addTextNodeAtScreen(center.x,center.y,{forceNewProject:true,title:t("canvas.workflowCopy"),prompt:t("canvas.workflowCopyPrompt")});return;
+      }
+      const pend=addPendAtScreen(center.x,center.y,null,false);
+      setGenerationMode(key==="detail"?"detail":key==="views"?"triptych":"standard");
+      imageDraft.seed(pend.id,{prompt:t(key==="detail"?"canvas.workflowDetailPrompt":key==="views"?"canvas.workflowViewsPrompt":"canvas.workflowHeroPrompt")},imageDraftScope(user?.email,targetEmail,null,currentWorkspace()));
+      wantFocusPendPrompt.current=true;
     });
   }
-  useEffect(() => {
-    if (active) setCreatingNew(false);
-  }, [active]);
   function restoreEditTasks() { pendingPresentation.restore(!readOnly); }
   useEffect(() => {
     if (!browsing) restoreEditTasks();
@@ -1029,73 +914,23 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   function openProject(key: string) {
     imageTextEditor.close();
     resetImportScope();
-    setActiveKey(key);
+    projectNavigation.open(key);
     canvasSelection.reset();
     pendingPresentation.clearTransient();
-    setCreatingNew(false);
-    setBrowsing(false);
     setSidebarOpen(false);
-    try {
-      localStorage.setItem("nv:canvas:last", key);
-    } catch {
-      /* ignore */
-    }
   }
   // 返回项目网格落地页(实际状态切换)
   function doBackToBrowser() {
     imageTextEditor.close();
     resetImportScope();
-    setBrowsing(true);
+    projectNavigation.browse();
     canvasSelection.reset();
-    setCreatingNew(false);
     pendingPresentation.clearTransient();
     setSidebarOpen(false);
-    try {
-      localStorage.removeItem("nv:canvas:last");
-    } catch {
-      /* ignore */
-    }
   }
   // 「全部项目」按钮:若进做图页时压过历史,用浏览器后退消费掉它(popstate 里完成回项目页),
   // 保持历史栈一致;否则直接切回网格。
-  function backToBrowser() {
-    if (editorPushedRef.current && typeof window !== "undefined") {
-      window.history.back();
-      return;
-    }
-    doBackToBrowser();
-  }
-
-  // popstate 回调只挂一次,闭包里读不到最新 browsing,用 ref 同步。
-  useEffect(() => {
-    browsingRef.current = browsing;
-  }, [browsing]);
-
-  // 进做图页(browsing=false)→ 往历史压一条同 URL 记录,使浏览器「后退」先回项目页;
-  // 回到项目页(browsing=true)→ 复位标记。
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!browsing && !editorPushedRef.current) {
-      editorPushedRef.current = true;
-      window.history.pushState({ nvCanvasEditor: true }, "");
-    } else if (browsing) {
-      editorPushedRef.current = false;
-    }
-  }, [browsing]);
-
-  // 后退键:在做图页 → 回项目页(消费掉上面压的记录,停在 /canvas);
-  // 已在项目页 → 不拦截,让浏览器正常退回进画布前的上一页。
-  useEffect(() => {
-    const onPop = () => {
-      if (!browsingRef.current) {
-        editorPushedRef.current = false;
-        doBackToBrowser();
-      }
-    };
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  function backToBrowser(){projectNavigation.back();}
 
   const onNodeDimensions = useCallback((id: string, width: number, height: number) => {
     const w = Math.round(width);
@@ -1229,7 +1064,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const box=canvasAreaRef.current?.getBoundingClientRect(),point=rfRef.current?.screenToFlowPosition({x:at.x+(box?.left||0),y:at.y+(box?.top||0)})||{x:0,y:0};
     return {projectKey:!browsing&&!creatingNew&&activeKey?activeKey:`tree:${id}`,...point};
   }
-  function revealNativeNode(node:{id:string;projectKey:string},open:(id:string)=>void){canvasSelection.selectInProject(node.projectKey,{selectedId:node.id,selectedTextId:null,selectedPendId:null,multiSel:[]});setActiveKey(node.projectKey);setCreatingNew(false);setBrowsing(false);open(node.id);}
+  function revealNativeNode(node:{id:string;projectKey:string},open:(id:string)=>void){canvasSelection.selectInProject(node.projectKey,{selectedId:node.id,selectedTextId:null,selectedPendId:null,multiSel:[]});projectNavigation.open(node.projectKey);open(node.id);}
   function nativeReferenceDraft(input:{x:number;y:number;width:number;height:number;prompt:string;referenceArtworkIds:string[]}){
     const center=centerScreen(),pending=addPendAtScreen(center.x,center.y,null,false),{referenceArtworkIds:ids}=input;
     pendingPresentation.set(nodes=>nodes.map(node=>node.id===pending.id?{...node,x:input.x,y:input.y,inputs:ids,parentId:ids[0]||null,linked:ids.length>0}:node));
@@ -1775,7 +1610,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         if(!response.ok)throw Error("剧本资产已保存，画布文字读取暂不可用");const snapshot=await response.json();
         if(isCurrent())canvasTextDocument.accept(((snapshot.nodes||[]) as CanvasTextNode[]).filter(node=>ids.has(node.id)&&node.projectKey===scope.project).map(node=>({...node,width:node.width||TEXT_NODE_DEFAULT_W,height:node.height||TEXT_NODE_DEFAULT_H,sourceIds:node.sourceIds||[],targetIds:node.targetIds||[],productIds:node.productIds||[]})));
       },
-      revealVideo:async(result,isCurrent)=>{if(activeProjectRef.current?.key||!isCurrent())return;await videoNodesStore.refresh();if(isCurrent()){setCreatingNew(false);setBrowsing(false);setActiveKey(result.key);canvasSelection.selectInProject(result.key,{selectedId:result.nodeId,selectedTextId:null,selectedPendId:null});}},
+      revealVideo:async(result,isCurrent)=>{if(activeProjectRef.current?.key||!isCurrent())return;await videoNodesStore.refresh();if(isCurrent()){projectNavigation.open(result.key);canvasSelection.selectInProject(result.key,{selectedId:result.nodeId,selectedTextId:null,selectedPendId:null});}},
     };
   }
   function currentAssistantReferences(){return assistantSession.refs(canvasAssistantContext());}
@@ -1930,7 +1765,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       canvasSelection.patch({selectedId:null,selectedTextId:null,selectedPendId:null,multiSel:multiSel.filter(id=>!ids.includes(id))});
       const members=active?.members||[],texts=canvasTextDocument.getSnapshot().nodes;
       if(activeKey&&!members.some(node=>!ids.includes(node.id))&&!texts.some(node=>node.projectKey===activeKey)&&!videoNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!directorNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!characterNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!sceneNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!audioNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!timelineNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))){
-        setCreatingNew(true);
+        projectNavigation.empty();
       }
     }catch(error){if(scope.viewCurrent())flashTip(canvasHistoryFailureMessage(error,t("canvas.genFail")));}
   }
@@ -1963,7 +1798,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   function onHistoryApplied({action:act,undo}: HistoryCommit) {
     if(act.kind==="image-version"){const node=canvasArtworkDocument.getSnapshot().nodes?.find(node=>node.id===act.id);if(node)imageDraft.seed(act.id,{prompt:inheritableImagePrompt(node.prompt)});}
     const insertion=canvasHistoryInsertionView(act,undo,active);
-    if(insertion){if(undo&&insertion.empty)setCreatingNew(true);if(!undo){setCreatingNew(false);setActiveKey(insertion.project);setBrowsing(false);}}
+    if(insertion){if(undo&&insertion.empty)projectNavigation.empty();if(!undo){projectNavigation.open(insertion.project);}}
 
   }
 
@@ -2003,7 +1838,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     return {writable:()=>!!user&&!readOnly,ready:nodeSettingsReady,locked:isNodeLocked,
       viewCurrent:()=>batchRunMountedRef.current&&account===canvasAccountRef.current&&epoch===canvasContextEpochRef.current&&scope.viewCurrent()&&importViewCurrent(),
       merge:ids=>canvasArtworkDocument.merge(ids),history:canvasHistory,fill:(art,file)=>workflowDocument.fill(art,file),
-      applied:id=>{setPendingNode(id);setSelectedId(id);setSelectedTextId(null);},notice:flashTip,
+      applied:id=>{projectNavigation.requestNode(id);setSelectedId(id);setSelectedTextId(null);},notice:flashTip,
       messages:{invalidFile:L("请选择12MB以内的PNG、JPEG或WebP","Choose a PNG, JPEG or WebP up to 12MB"),failed:L("图片编辑失败","Image edit failed"),
         filled:"图片已补齐",fillFailed:"补图失败，请重试",saved:L("新版本已保存，原图保留","New version saved; original kept"),
         unknown:L("原编辑结果待同步，请稍后重试","The original edit is awaiting sync. Try again shortly"),missing:L("编辑已保存，结果尚未同步，请重试","The edit was saved; retry to sync its result")},
@@ -2059,7 +1894,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       await canvasNodeOperations.removeProject(p.key);
       if(!scope.documentCurrent())return;
       if(scope.documentCurrent())projectCatalog.remove(p.key);
-      if(scope.viewCurrent()&&p.key===activeKey){setActiveKey(null);canvasSelection.patch({selectedId:null,selectedTextId:null,selectedPendId:null});setCreatingNew(false);setBrowsing(true);}
+      if(scope.viewCurrent()&&p.key===activeKey){projectNavigation.browse(true);canvasSelection.patch({selectedId:null,selectedTextId:null,selectedPendId:null});}
     }catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.genFail"));}
   }
 
@@ -2335,7 +2170,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       documentCurrent:scope.documentCurrent,viewCurrent:scope.viewCurrent,
       rects:()=>((scope.viewCurrent()?rfRef.current?.getNodes():undefined)??rfNodes).map(node=>({...node.position,...flowNodeSize(node)})),
       merge:ids=>mergeWorks(ids),history:pushAddUndoMany,
-      reveal:id=>{openPendingNodeWithoutSelectionRef.current=true;setPendingNode(id);},t,locale};
+      reveal:id=>{projectNavigation.requestNode(id,false);},t,locale};
   }
   function uploadRoot(files:FileList|File[]|null,options?:{assistant:boolean;isCurrent:()=>boolean}):Promise<string[]> {
     const picked=Array.from(files??[]);
@@ -2588,9 +2423,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       project:active?.key||activeKey,title:options?.title||t("canvas.textGenerate")});
     const {id,projectKey}=node;
     setTextNodes((current) => [...current, node]);
-    setActiveKey(projectKey);
-    setCreatingNew(false);
-    setBrowsing(false);
+    projectNavigation.open(projectKey);
     canvasSelection.selectInProject(projectKey,{selectedId:null,selectedPendId:null,selectedTextId:id});
     setTextPrompt(options?.prompt || "");
     focusEditableCanvasArea({
@@ -2783,7 +2616,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       runDetail:(source,inputs,prompt,node,refs)=>generateDetailSequence(source,inputs,prompt,[],node,refs),
       failed:failure=>{const message=generationFailureMessage(failure);if(selectedPendIdRef.current===pend.id)setGenError(message);else flashTip(`${pend.label}：${message}`);},
       attached:images=>{
-        if(selectedPendIdRef.current===pend.id&&!activeKey)setPendingNode(images[0]?.id||null);
+        if(selectedPendIdRef.current===pend.id&&!activeKey)projectNavigation.requestNode(images[0]?.id||null);
         canvasHistory.consumePending(pend.id);
       },
       completed:()=>{setSelectedPendId(id=>id===pend.id?null:id);if(selectedPendIdRef.current===pend.id)setGenError(null);},
@@ -2821,7 +2654,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   });
   const {hasClip}=clipboard;
   function selectCopiedNodes(result:{idMap:Record<string,string>;projectKey:string},focusSingle=false) {
-    const ids=Object.values(result.idMap);setCreatingNew(false);setActiveKey(result.projectKey);setBrowsing(false);
+    const ids=Object.values(result.idMap);projectNavigation.open(result.projectKey);
     canvasSelection.copied(result.projectKey,ids,focusSingle);
   }
   async function duplicateCanvasNodes(ids:string[]) {
