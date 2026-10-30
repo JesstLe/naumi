@@ -24,12 +24,17 @@ import {SupplierAdapterResponseError,adapterFailureEvidence,recordSupplierAdapte
  * explicit new non-preset frozen fallback exists. No resolution is guessed. */
 export function apimartExecutionParameters(scope: ModelExecutionScope, body:Record<string,any>, quote?:Pick<import("../billing/types").BillingQuote,"requestedParameters"|"effectiveParameters">, operation?:ReturnType<typeof currentImageOperationParameters>) {
   const p=scope.imagePreset;
+  const planned = !p && scope.frozen.imageParameterPlanVersion === 1;
   const requested={...(scope.frozen.requestedParameters || {quality:scope.frozen.facts?.quality||String(body.quality||"medium"),resolution:scope.frozen.facts?.requestedResolution||scope.frozen.facts?.resolution||"1K",ratio:scope.frozen.facts?.ratio||"1:1"}),...quote?.requestedParameters};
   if(!p&&scope.frozen.requestedParameters&&scope.frozen.facts?.requestedResolution)requested.resolution=scope.frozen.facts.requestedResolution;
   // New plans retain the user's target separately from the executable ratio.
   // Recovery without a live quote/operation still uses that frozen wire choice.
   if(!p&&scope.frozen.imageParameterPlanVersion===1&&scope.frozen.facts?.ratio&&Object.values(scope.frozen.imageParameterPlans||{}).some(plan=>plan.wireModel===scope.connection.wireModel&&plan.protocol===scope.connection.protocol&&(!scope.channelGuard?.upstreamId||plan.upstreamId===scope.channelGuard.upstreamId)&&plan.requested.ratio===scope.frozen.facts!.ratio))requested.ratio=scope.frozen.facts.ratio;
-  if(!p&&operation?.quality&&scope.capabilities.qualities.includes(operation.quality as never))requested.quality=operation.quality;
+  // Versioned plans translate admitted semantic input exactly once. Operation
+  // and quote effective quality may already be wire values, including another
+  // semantic ID (high -> medium -> low). Keep the frozen stage authoritative.
+  if(planned)requested.quality=scope.frozen.facts?.quality||requested.quality;
+  else if(!p&&operation?.quality&&scope.capabilities.qualities.includes(operation.quality as never))requested.quality=operation.quality;
   if(operation?.ratio)requested.ratio=operation.ratio;
   if(operation?.resolution)requested.resolution=operation.resolution;
   if(!p&&quote?.effectiveParameters){
@@ -37,7 +42,7 @@ export function apimartExecutionParameters(scope: ModelExecutionScope, body:Reco
     requested.ratio=quote.effectiveParameters.ratio;
     // Billing may use a wire alias (hd) or auto to mean omitted quality.
     // The adapter still needs a declared semantic choice for policyQuality().
-    if(scope.capabilities.qualities.includes(quote.effectiveParameters.quality as never))requested.quality=quote.effectiveParameters.quality;
+    if(!planned&&scope.capabilities.qualities.includes(quote.effectiveParameters.quality as never))requested.quality=quote.effectiveParameters.quality;
   }
   // New preset delivery fallback is explicit; old prompt-only preset requests
   // had no differing effective tier and retain their historical precedence.
