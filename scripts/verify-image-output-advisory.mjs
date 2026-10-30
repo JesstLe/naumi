@@ -37,12 +37,12 @@ if (baseline) {
   for(const status of ["pending","needs_attention","cancelled"]) assert.equal(presentImagegenOutput({...result,status},true).status,status);
   assert.equal(presentImagegenOutput({...result,artifacts:[]},true).status,"failed");
   assert.equal(presentImagegenOutput(result,false).status,"failed","do not bypass other stages");
-  const warn = mod.exports.imageOutputWarningText([notice.warning,notice.warning]);assert.equal(warn,notice.warning);
+  const warn = mod.exports.imageOutputWarningText([notice.warning,notice.warning]);assert.equal(warn,undefined,"ratio diagnostics are retained internally but not shown to users");
   assert.equal(mod.exports.imageOutputWarningText(["a".repeat(5000)]).length,240);
   assert.ok(route.includes("imagegenOutputWarning"));assert.ok(parent.includes("warnings"));
   const canvas = readFileSync("src/components/canvas/canvas-client.tsx","utf8");
   assert.ok(canvas.includes("imageOutputWarningText(pj.warnings)"));
-  assert.ok(canvas.includes("imageOutputWarningText(result.warnings)"));
-  console.log("MODIFIED=PASS RATIO_DEVIATIONS=5 DELIVERED_WITH_WARNING ORIGINAL_BYTES_AND_DIMENSIONS=UNCHANGED REAL_ERRORS=RETAINED HISTORICAL_PROJECTION=READ_ONLY BILLING=UNCHANGED CANVAS_NOTICE=CONNECTED");
+  assert.equal((canvas.match(/imageOutputWarningText\(pj\.warnings\)/g)||[]).length,2);
+  console.log("MODIFIED=PASS RATIO_DEVIATIONS=5 INTERNAL_DIAGNOSTICS=RETAINED USER_RATIO_NOTICE=HIDDEN ORIGINAL_BYTES_AND_DIMENSIONS=UNCHANGED REAL_ERRORS=RETAINED HISTORICAL_PROJECTION=READ_ONLY BILLING=UNCHANGED CANVAS_NOTICE=FILTERED");
 }
 console.log("PRODUCTION_WRITES=0 REAL_SUPPLIER_CALLS=0 AUTO_RETRIES=0");

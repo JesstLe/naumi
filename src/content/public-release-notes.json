@@ -1,5 +1,19 @@
 [
   {
+    "version": "1793339880",
+    "title": {
+      "zh": "图片生成提示优化",
+      "en": "Image generation notifications"
+    },
+    "improvements": [
+      {
+        "zh": "精简图片生成中的说明提示，保留结果恢复、异常与必要状态反馈。",
+        "en": "Reduced informational notices during image generation while retaining recovery, error and essential status feedback."
+      }
+    ],
+    "fixes": []
+  },
+  {
     "version": "1793330285",
     "title": {
       "zh": "图片生成体验修复",
