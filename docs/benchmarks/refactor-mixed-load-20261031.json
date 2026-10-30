@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "name": "R8J mixed image creation,document writes,media reads and native processing",
+  "actors": 2,
+  "fixtureCreditsPerActor": 10000,
+  "supplier": {
+    "concurrency": 4,
+    "delayMs": 3000,
+    "imageSizes": [
+      1024,
+      2048
+    ],
+    "twoKFraction": 0.25
+  },
+  "readRps": 4,
+  "saveRps": 1,
+  "pollSeconds": 2,
+  "observationSeconds": 5,
+  "requestTimeoutMs": 20000,
+  "profiles": {
+    "calibration": [
+      {
+        "id": "warmup",
+        "seconds": 30,
+        "imageRps": 0,
+        "mediaRps": 0
+      },
+      {
+        "id": "control",
+        "seconds": 60,
+        "imageRps": 0,
+        "mediaRps": 0
+      },
+      {
+        "id": "steady",
+        "seconds": 180,
+        "imageRps": 0.25,
+        "mediaRps": 0.05
+      },
+      {
+        "id": "surge",
+        "seconds": 60,
+        "imageRps": 2,
+        "mediaRps": 0.05
+      },
+      {
+        "id": "recovery",
+        "seconds": 120,
+        "imageRps": 0,
+        "mediaRps": 0
+      }
+    ],
+    "smoke": [
+      {
+        "id": "warmup",
+        "seconds": 5,
+        "imageRps": 0,
+        "mediaRps": 0
+      },
+      {
+        "id": "control",
+        "seconds": 10,
+        "imageRps": 0,
+        "mediaRps": 0
+      },
+      {
+        "id": "steady",
+        "seconds": 20,
+        "imageRps": 0.2,
+        "mediaRps": 0.05
+      },
+      {
+        "id": "surge",
+        "seconds": 8,
+        "imageRps": 2,
+        "mediaRps": 0
+      },
+      {
+        "id": "recovery",
+        "seconds": 60,
+        "imageRps": 0,
+        "mediaRps": 0
+      }
+    ]
+  },
+  "suggestedSlo": {
+    "acceptP95Ms": 1000,
+    "acceptP99Ms": 2000,
+    "readP95Ms": 1000,
+    "saveP95Ms": 1000,
+    "postSupplierDeliveryP95Ms": 5000
+  },
+  "limitsAreBenchmarkInputsNotProductChanges": true,
+  "capacityClaim": false
+}

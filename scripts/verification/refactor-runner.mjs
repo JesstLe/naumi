@@ -51,6 +51,7 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='canvas-downloads')stageEnv.CANVAS_DOWNLOAD_EVIDENCE=evidence;
    if(spec.id==='canvas-download-browser')stageEnv.CANVAS_DOWNLOAD_BROWSER_EVIDENCE=evidence;
    if(spec.id==='canvas-node-operations-client')stageEnv.NODE_OP_EVIDENCE=evidence;
+   if(spec.id==='mixed-load-driver')stageEnv.MIXED_LOAD_EVIDENCE=evidence;
    if(spec.id==='canvas-native-editor-session')stageEnv.NATIVE_EDITOR_EVIDENCE=evidence;
    if(spec.id==='canvas-native-editors-dom')stageEnv.NATIVE_EDITOR_DOM_EVIDENCE=evidence;
    if(spec.id==='canvas-artwork-picker')stageEnv.ARTWORK_PICKER_EVIDENCE=evidence;

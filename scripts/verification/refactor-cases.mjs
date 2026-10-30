@@ -4,6 +4,7 @@ import path from "node:path";
 const ts=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:true,tsx:true});
 const node=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:false,tsx:false});
 export const refactorCases=[
+ node('mixed-load-driver','foundation','scripts/verify-refactor-mixed.mjs','REFACTOR_MIXED_DRIVER=PASS'),
  node('dependencies','foundation','scripts/verify-dependency-compatibility.mjs','DEPENDENCY_COMPATIBILITY=PASS'),
  node('source-identity','foundation','scripts/verify-refactor-source-identity.mjs','REFACTOR_SOURCE_IDENTITY=PASS'),
  node('worker-nonacceptance-unit','runtime','scripts/test-worker-nonacceptance.mjs','# fail 0',['--test-runner']),

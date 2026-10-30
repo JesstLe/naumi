@@ -25,7 +25,8 @@ if(directory){
   const memory=process.memoryUsage(),usage=process.cpuUsage(cpu);let kernelPeakRssBytes;
   try{kernelPeakRssBytes=Number(fs.readFileSync('/proc/self/status','utf8').match(/^VmHWM:\s+(\d+)/m)[1])*1024;}catch{}
   const report={generation:generation++,elapsedMs:performance.now()-started,pid:process.pid,rssBytes:memory.rss,sampledPeakRssBytes:Math.max(rss,memory.rss),kernelLifetimePeakRssBytes:kernelPeakRssBytes,cpu:usage,eventLoop:{count:histogram.count,minMs:histogram.min/1e6,maxMs:histogram.max/1e6,p50Ms:histogram.percentile(50)/1e6,p95Ms:histogram.percentile(95)/1e6,p99Ms:histogram.percentile(99)/1e6},requests,queries};
-  const temporary=directory+'/SERVER.json.tmp';fs.writeFileSync(temporary,JSON.stringify(report));fs.renameSync(temporary,directory+'/SERVER.json');
+  const file=directory+(process.env.PERFORMANCE_OBSERVER_PROCESS_FILES==='1'?'/SERVER-'+process.pid+'.json':'/SERVER.json');
+  const temporary=file+'.tmp';fs.writeFileSync(temporary,JSON.stringify(report));fs.renameSync(temporary,file);
   started=performance.now();cpu=process.cpuUsage();rss=memory.rss;requests=[];queries=[];histogram.reset();
  });
  console.log('PERFORMANCE_OBSERVER=INSTALLED PID='+process.pid+' TRANSPORT=UNCHANGED QUERY=UNCHANGED');

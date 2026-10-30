@@ -28,7 +28,7 @@ async function request(url:string,body?:unknown,cookie?:string){
  const value=await response.json();events.push({path:new URL(url).pathname,status:response.status,ms:Math.round(performance.now()-begin)});return {status:response.status,body:value};
 }
 async function until<T>(read:()=>Promise<T>,accept:(v:T)=>boolean,label:string,timeout=90000){const end=Date.now()+timeout;let value:T|undefined;while(Date.now()<end){value=await read();if(accept(value))return value;await sleep(100);}throw Error(label+' TIMEOUT '+JSON.stringify(value));}
-export async function setup(){
+export async function setup(options:{retained?:boolean}={}){
  const cred=await createCredentialStore(sql).importPlain({providerId:'p1',plain:'fixture-r6b-provider-only',actor:'fixture'});
  const config=fixtureModelConfig(provider+'/v1',cred.id);
  // Existing retained-job fixture predates the public image-a name. Preserve
@@ -37,7 +37,7 @@ export async function setup(){
  config.upstreamModels[0].capabilities.preserveIdentity=true;
  config.upstreamModels[0].parameterMap={resolutionPolicy:{mode:'map',field:'resolution',ratioField:'aspect_ratio',values:{'1K':'1K','2K':'2K'}}};
  await createModelRepository({pool:sql,initialize:async()=>config,trustedOrigins:[provider]}).current();
- await initializeApplicationPersistence();const retained=await seed();
+ await initializeApplicationPersistence();const retained=options.retained===false?null:await seed();
  const owner='runtime-owner@fixture.test',other='runtime-other@fixture.test',poor='runtime-poor@fixture.test',password='fixture-login-only-20261026';
  for(const email of [owner,other,poor]){
   await getOrCreateUser(email);await sql.query('DELETE FROM app_ledger WHERE email=$1',[email]);await sql.query('DELETE FROM app_credit_batches WHERE email=$1',[email]);await sql.query('UPDATE app_users SET credits_total=0,credits_used=0,password_hash=$2 WHERE email=$1',[email,hashPassword(password)]);
@@ -178,4 +178,4 @@ async function run(){
  console.log(`REFACTOR_RUNTIME=PASS CHECKS=${checks} FULL_IMAGE=1 WEB_WORKER_SAME_IMAGE=1 REAL_LOGIN=1 HTTP_SUBMIT=1 WORKER_DIRECT=1 FIXTURE_POSTS=4 USER_CONSUME=4 USER_CREDITS=57 RETAINED_CONSUME=3 RETAINED_CREDITS=18 ORIGINAL_PRICE=6_CURRENT17 UNKNOWN_REPLAY=0 CANCELLED_POSTS=0 WEB_LIVE_DURING_WORK=1 CANVAS_CAS=ART_AND_TEXT WORKBENCH=2 NATIVE_FFMPEG=1 DRAIN=COMPLETE EXTERNAL=0 DEPLOY=0`);
 }
 async function main(){assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');assert.equal(new URL(process.env.DATABASE_URL!).hostname,'db');assert.match(process.env.PGOPTIONS||'',/search_path=r6b_[0-9a-f]+$/);try{if(process.argv.includes('--setup'))await setup();else await run();}finally{await sql.end();}}
-if(!process.argv.includes('--browser-helper'))main().catch(async error=>{await writeFile(out+'/RUNTIME_FAILURE.json',JSON.stringify({error:String(error),stack:error.stack,checks,events},null,2)+'\n').catch(()=>{});console.error(error);process.exitCode=1;});
+if(!process.argv.includes('--browser-helper')&&!process.argv.includes('--mixed-helper'))main().catch(async error=>{await writeFile(out+'/RUNTIME_FAILURE.json',JSON.stringify({error:String(error),stack:error.stack,checks,events},null,2)+'\n').catch(()=>{});console.error(error);process.exitCode=1;});
