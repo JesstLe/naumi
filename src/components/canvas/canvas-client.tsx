@@ -68,8 +68,7 @@ import type {CanvasImageTextContext,CanvasOcrSegment as OcrSegment} from "@/lib/
 import {canvasDocumentFetch,canvasDocumentHeaders} from "@/lib/canvas/document-scope";
 import type {CanvasAssistantContext} from "@/lib/canvas/assistant-session";
 import { CachedImage } from "@/components/cached-image";
-import { browserImageArchive } from '@/lib/browser-image-archive';
-import { cachedImageBlob, imageCacheSource, ImageCacheDenied } from '@/lib/browser-image-cache';
+import {useCanvasDownloads} from './use-canvas-downloads';
 import { useFeatureAccess, FeatureVisible } from "@/lib/feature-access/client";
 
 
@@ -81,7 +80,6 @@ import type {FeatureId} from "@/lib/billing/types";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 import { copyText } from "@/lib/clipboard";
-import { createImageDownloadName } from "@/lib/download";
 import { CANVAS_RATIO_OPTIONS, CANVAS_MAX_COUNT, normalizeCanvasRatio, normalizeCanvasResolution, normalizeCanvasCount, normalizeCanvasQuality, canvasModelParameters } from "@/lib/canvas/generation-parameters";
 import {useCanvasOverlayLayout} from "./use-canvas-overlay-layout";
 import {canvasProjects,canvasProjectMonths,type CanvasProject as Project,type CanvasWorkflowKey} from "@/lib/canvas/project-catalog";
@@ -125,7 +123,7 @@ import {useVideoNodes} from "./video/use-video-nodes";
 import {useDirectorNodes,DirectorClientError} from "./director/use-director-nodes";
 import type {DirectorProject} from "@/lib/director/project";
 import {useVideoTasks} from "./video/use-video-tasks";
-import { mediaDownloadHref, type VideoPlayerAction } from "./video/player";
+import { type VideoPlayerAction } from "./video/player";
 import {MediaActionsDialog,type MediaInputChoice} from "./video/media-actions";
 import {useMediaJobs} from "./video/use-media-jobs";
 import {videoHistoryDraft} from "@/lib/video/client-history";
@@ -428,7 +426,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     useState<GenerationMode>("standard");
   // 自由拖动是默认；用户主动开启磁铁时才吸附网格。全局整理仅由手动动作触发。
   const [genError, setGenError] = useState<string | null>(null);
-  const [zipping, setZipping] = useState(false);
+  const downloads=useCanvasDownloads(canvasArtworkDocument.scope,{notice:flashTip,
+    imageFailed:L("下载失败，请重试","Download failed. Please try again."),archiveFailed:L("打包下载失败，请重试","Download failed. Please try again.")});
+  const zipping=downloads.zipping;
 
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(
     null
@@ -1846,44 +1846,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.genFail"));}
   }
 
-  async function downloadZip(members: Artwork[], filename: string) {
-    if (zipping) return;
-    setZipping(true);
-    try {
-      const items = members
-        .filter((m) => hasRenderableImage(m.image))
-        .slice(0, 30)
-        .map((m, i) => ({ url: m.image, name: m.title || `img-${i + 1}` }));
-      if (!items.length) return;
-      const blob = await browserImageArchive(items);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${filename || "project"}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch {
-      flashTip(locale === "en" ? "Download failed. Please try again." : "打包下载失败，请重试");
-    } finally {
-      setZipping(false);
-    }
-  }
-
-  // 把当前项目所有图打包下载 ZIP(复用套图下载接口)
-  async function downloadProject() {
-    if (!active) return;
-    await downloadZip(active.members, active.name || "project");
-  }
-
-  async function downloadBatchSelection() {
-    if (!active || selectedBatchArts.length < 2) return;
-    await downloadZip(
-      selectedBatchArts,
-      `${active.name || "project"}-已选-${selectedBatchArts.length}张`
-    );
-  }
+  async function downloadProject(){if(active)await downloads.archive(active.members,active.name||"project");}
+  async function downloadBatchSelection(){if(active&&selectedBatchArts.length>=2)await downloads.archive(selectedBatchArts,`${active.name||"project"}-已选-${selectedBatchArts.length}张`);}
 
   async function markBatchSelection(){
     if(!user||readOnly||selectedBatchArts.length<2)return;const scope=canvasHistory.scope,ids=new Set(selectedBatchIds),marked=!selectedBatchAllMarked;
@@ -2039,33 +2003,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         fit:ids=>{void rfRef.current?.fitView({nodes:ids.map(id=>({id})),duration:500,padding:0.18,maxZoom:1});}},
       notice:flashTip,messages:{unsaved:L("请先保存未保存的文字节点","Save pending text changes first"),tooMany:L("本次整理最多支持400个移动节点","Arrange up to 400 movable nodes at a time"),failed:t("canvas.saveFailed")},
     });
-  }
-
-  // 下载单张图
-  function downloadVideo(url:string){const link=document.createElement('a');link.href=mediaDownloadHref(url);link.download='video.mp4';document.body.appendChild(link);link.click();link.remove();}
-  async function downloadOne(image: string) {
-    try {
-      const filename = createImageDownloadName();
-      let blob: Blob;
-      try {
-        if(!imageCacheSource(image))throw new Error('native download');
-        blob=await cachedImageBlob(image);
-      } catch(error) {
-        if(error instanceof ImageCacheDenied)throw error;
-        const r=await fetch(`/api/download?u=${encodeURIComponent(image)}&n=${encodeURIComponent(filename)}`);
-        if(!r.ok)throw new Error();blob=await r.blob();
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch {
-      flashTip(locale === "en" ? "Download failed. Please try again." : "下载失败，请重试");
-    }
   }
 
   // 当前项目的根 id(用于把手动加的节点归到当前项目,而非自成新项目)
@@ -3562,7 +3499,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         <Item
                           label={t("canvas.ctxDownload")}
                           onClick={() =>
-                            void downloadOne(node.image)
+                            void downloads.image(node.image)
                           }
                         />
                         {!readOnly && canFeature("generate") && (
@@ -3697,14 +3634,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             onHistory={()=>setVideoHistoryId(selectedVideo.id)}
             onRename={()=>{setNodeRenameValue(selectedVideo.title);setRenamingNodeId(selectedVideo.id);}}
             onCopy={()=>clipboard.copySelection([selectedVideo.id])} onDuplicate={()=>void duplicateCanvasNodes([selectedVideo.id])}
-            onDownload={()=>{const result=videoInputChoices.find(choice=>choice.nodeId===selectedVideo.id&&choice.available);if(result)downloadVideo(result.value);}}
+            onDownload={()=>{const result=videoInputChoices.find(choice=>choice.nodeId===selectedVideo.id&&choice.available);if(result)downloads.video(result.value);}}
             onDelete={()=>batchDelete([selectedVideo.id])} onProperties={openProperties} management={nodeManagementItems(selectedVideo.id)}/>}
           {selected?.videoUrl&&selectedBatchArts.length<=1&&multiSel.length<=1&&!propertiesOpen&&topbarStyle&&<VideoNodeToolbar
             ref={nodeToolbarRef} style={{left:topbarStyle.left,top:topbarStyle.top}} light={lightCanvas}
             readOnly={readOnly} locked={isNodeLocked(selected.id)} busy={!nodeSettingsReady||historySaving} hasResult hasHistory={false}
             settingsLabel={L("视频处理","Video tools")} onSettings={()=>extractVideoToCanvas(selected.id,{action:'trim'})} onHistory={()=>{}}
             onRename={()=>{setNodeRenameValue(selected.title);setRenamingNodeId(selected.id);}}
-            onCopy={()=>clipboard.copySelection([selected.id])} onDuplicate={()=>void duplicateArt(selected)} onDownload={()=>downloadVideo(selected.videoUrl!)}
+            onCopy={()=>clipboard.copySelection([selected.id])} onDuplicate={()=>void duplicateArt(selected)} onDownload={()=>downloads.video(selected.videoUrl!)}
             onDelete={()=>void deleteTree(selected.id)} onProperties={openProperties} management={nodeManagementItems(selected.id)}/>}
           {/* 顶部图像工具条：统一使用16px Lucide线性图标，颜色继承画布主题。 */}
           {((selected&&!selected.videoUrl) || selectedPend) &&
@@ -3957,7 +3894,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 aria-label={t("canvas.toolbar.downloadImage")}
                 disabled={!selected}
                 onClick={() =>
-                  selected && void downloadOne(selected.image)
+                  selected && void downloads.image(selected.image)
                 }
                 className="canvas-ui-action flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-[16px] leading-none transition-colors disabled:opacity-40"
               >

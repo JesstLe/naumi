@@ -27,6 +27,13 @@ async function main(){
    console.log('REFACTOR_BROWSER_SETUP=PASS NATIVE_PROJECT=1 ARTWORKS=2 TEXT=1 HTTP_BRIDGE=0');return;
   }
   const input=JSON.parse(await readFile('/evidence/SETUP.json','utf8')),action=arg('--action');
+  if(action==='download-project'){
+   const url=(await sql.query('SELECT image_url FROM app_artworks WHERE email=$1 AND id=$2',[input.owner,'r6c-root'])).rows[0].image_url;
+   const ids=Array.from({length:31},(_,i)=>`r8f-download-${String(i).padStart(2,'0')}`);
+   await addArtworks(input.owner,ids.map((id,i)=>({id,title:`Download ${i+1}`,category:'main',prompt:'Original download fixture',status:'completed',image:url,gradient:'',groupId:'r8f-download',origin:'canvas',source:'canvas-add',width:1024,height:1024})));
+   await setProjectName(input.owner,'tree:r8f-download','R8F 31 original downloads');
+   console.log(JSON.stringify({ids,url,project:'tree:r8f-download',title:'R8F 31 original downloads'}));return;
+  }
   if(action==='snapshot'){
    // This fresh observer process must not invoke lazy schema initialization
    // while Web/Worker are running. Setup owns DDL. A read-only repeatable-read

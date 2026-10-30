@@ -6,14 +6,8 @@ import { Download, Maximize2, Minimize2, Pause, Play, Volume2, VolumeX, X } from
 import { isTopVideoDialog } from "./dialog-stack";
 import type {VideoPlayerAction} from "@/lib/video/player-actions";
 export type {VideoPlayerAction} from "@/lib/video/player-actions";
-export function mediaDownloadHref(url: string, name = "video.mp4") { return `/api/download?u=${encodeURIComponent(url)}&n=${encodeURIComponent(name.replace(/[^\w.\-]+/g, "_").slice(0, 160) || "video.mp4")}`; }
-export function mediaDownloadName(url: string, fallback = "video.mp4") { try {
-    const name = decodeURIComponent(new URL(url, "http://media.local").pathname.split("/").pop() || "");
-    return /\.[A-Za-z0-9]{1,8}$/.test(name) ? name : fallback;
-}
-catch {
-    return fallback;
-} }
+import {mediaDownloadHref,mediaDownloadName} from '@/lib/media/download-href';
+export {mediaDownloadHref,mediaDownloadName} from '@/lib/media/download-href';
 function timeLabel(value: number) { const seconds = Math.max(0, Number.isFinite(value) ? value : 0), minutes = Math.floor(seconds / 60); return `${minutes}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`; }
 export function VideoPlayer({ url, title = "视频", kind = "video", selected = true, compact = false, onProcess, canProcess = true, downloadName, allowExpand = true }: {
     url: string;

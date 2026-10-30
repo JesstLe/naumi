@@ -304,7 +304,7 @@ export async function acquireBrowserImage(raw:string,signal?:AbortSignal,options
   const url=URL.createObjectURL(result.blob);objects.add(url);
   return trackDisplayed(url,source,result.owner,()=>{if(objects.delete(url))URL.revokeObjectURL(url);});
 }
-export async function cachedImageBlob(raw:string){const source=imageCacheSource(raw);if(!source)throw new Error('非托管图片');return(await imageBlob(source)).blob;}
+export async function cachedImageBlob(raw:string,signal?:AbortSignal){const source=imageCacheSource(raw);if(!source)throw new Error('非托管图片');return(await imageBlob(source,signal)).blob;}
 /** Editing/import needs original bytes, not a thumbnail or a fresh model call. */
 export async function readBrowserImage(raw:string,signal?:AbortSignal):Promise<Blob>{
   if(raw.startsWith('data:')||raw.startsWith('blob:'))return(await fetch(raw,{signal})).blob();
