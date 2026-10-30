@@ -262,3 +262,6 @@ R7O最终核心固定ba45837e：130PASS/0FAIL/0NOT_RUN、复用0、源码前后�
 ## 2026-10-30 R7P：文字生图应用归属
 
 普通接入main1ff8f39a，合并检查点4d5bafc0。菜单、按既有document scope隔离的busy、全批验证后串行应用归text-image-runs；组件保留五UI薄入口，文字规则与实际图片任务/报价/UNKNOWN/续交/history/账务保持原owner。完整原56/183、新58/204、54共同轨迹精确一致，纯规则72、实际Next页面8与主线真实PG26通过，tsc/lint0、39 warnings。核心catalog132的完整同SHA执行、四类架构、完整四产物/字节patch/副本回滚及远端状态见本轮DELIVERY；整体ACTIVE，未合main未部署，47 HOLD。见[R7P模块记录](changes/2026-10-30-refactor-r7p-text-image-runs.md)。本日主线同步后业务模块计数1。
+
+
+R7P收尾：固定应用60734e08已推独立分支；原56/183、新58/204与54共同轨迹、纯规则72、实际Next8、tsc/lint0与四SCC0保持。整版核心为同SHA聚合131PASS/1FAIL/0NOT_RUN，**不是全绿**：scene原生fit/deep-link准备及后续本地ECONNRESET两次非零保留，余47项原runner同源通过；中断后只复用3条精确日志。完整四产物/原5093hash副本回滚/远端账户阻塞/cleanup见R7P DELIVERY。场景门禁OPEN、整体ACTIVE，未合main未部署；完整Linux最终候选及其余热点继续。

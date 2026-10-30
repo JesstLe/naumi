@@ -33,6 +33,14 @@
 
 历史 `verify-canvas-text-image-integration.cjs` 把 2026-10-23 的五个私有函数和 FormData 字面写法当结构契约；R7O 后共享图片执行已迁移，这些结构断言不再代表当前业务边界。本片新 verifier 以实际 Canvas 薄入口和整个 owner 模块为对象，仍需保留全部输入、作用域、停止及不重购断言，不为旧私有函数恢复耦合。
 
-## 剩余
+## 固定版本收尾与仍开放项
 
-完成集中验证、源码版本固定、完整四产物和逐字节 patch、副本旧行为恢复及 later-edit 零写入检查，更新整体交接。完整项目的其余热点、最终整版构建/验收与 main 整合继续按整体台账推进，不把本片完成写成全项目重构完毕。
+- 应用固定 `60734e087129830961f126bbf36d5a0be88e70fa` 已推独立分支；末次文档提交只补本段及整体索引，应用/脚本与该固定源码逐字节相同。原始输入副本5093文件保持，最终19路径差异包含正常接入main的7路径，不把它们认领为R7P新产品实现。
+- **完整核心仍为 PARTIAL：同SHA聚合131 PASS / 1 FAIL / 0 NOT_RUN，不是全绿。** 第一轮84/1/47；既有scene-application在执行拖拽前因deep-link/fit竞争导致源手柄y34被顶部遮挡。原脚本与R7O字节相同。相同SHA续验通过了连线、图片/全景导演及混合事务，但在最后冻结后副本POST遇到本地ECONNRESET。没有自动重放该未知POST，没有删断言或修改产品连线。两次exit1与cleanup原样保留，该整版门禁OPEN。
+- 被其早停挡住的47项用原catalog和同一source-bound runner继续；中途T3进程重启，确认原runner/子进程不存在、两loopback端口关闭后，只停止该次确切label/name/ID容器并删除自有env。3个已完成PASS经原日志SHA校验复用；其余44项重执行。最后47项均PASS，该分组仍exit2/PARTIAL，不冒称解除scene门禁。
+- 架构四类SCC均0；原lib→app两条fixture边和billing client→toast一条保留。Canvas为5303行，菜单/串行状态的变化归属集中，不以行数充当整体完成度。
+- 实际Next UI的2077个应用文件与固定应用字节相同。最终B项目菜单截图已打开核读；一份合并菜单截图存在既有HTTP fixture缺失workflow-group读合同的提示，不据此宣称工作流分组验收通过。
+- 远端Actions `https://github.com/JesstLe/naumi/actions/runs/40988364577` 绑定607源码，runner0/steps0，账户支付/支出限制；本地结果不改写为远端CI通过。
+- 四产物、完整原字节patch、副本回滚、原56场景恢复及later-edit零写入检查以同目录VERIFICATION/DELIVERY为准。源码工作树保留新版。R7P没有重建完整Linux镜像，旧R7M镜像不改标成新版本。
+
+整体重构保持ACTIVE，未合main、未部署，47 HOLD。下一片优先核对本地图像crop/replace意图与结果应用归属，继续Canvas视图组装及最终整版构建/性能验收；scene门禁与required CI真实阻塞继续记录，未被本片局部通过关闭。
