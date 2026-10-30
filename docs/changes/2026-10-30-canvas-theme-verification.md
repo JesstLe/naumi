@@ -49,7 +49,7 @@ CANVAS_THEME_MATRIX=REPRODUCED COMBINATIONS=4 CHECKS=97 VIOLATIONS=36 FULL_NEXT=
 CANVAS_THEME_MATRIX=PASS COMBINATIONS=4 CHECKS=97 VIOLATIONS=0 FULL_NEXT=YES SUPPLIER_CALLS=0 EXIT=0
 ```
 
-实际baseline exit1为预期复现；modified exit0。开始/结束产品hash一致，无运行中版本漂移；每个四组合都刷新核对原应用/画布偏好，没有fixture强制light；console hydration0、pageerror0、外部网络0。modified-final截图已打开：暗色优化、分组、生成中、浅色文字等；截图是实际完整Next，不是CSS示意稿。
+实际baseline exit1为预期复现；modified exit0。开始/结束产品hash一致，无运行中版本漂移；每个四组合都刷新核对原应用/画布偏好，没有fixture强制light；修改版 console hydration0、pageerror0、外部网络0；旧基线另记录5条hydration诊断，不将其写成0。sourceHashes包含18个存在的源码文件与1个不存在的历史预留路径（null），不把预留路径计为已加载模块。modified-final截图已打开：暗色优化、分组、生成中、浅色文字等；截图是实际完整Next，不是CSS示意稿。
 
 最终主要对比度：原位生成标题14.17:1；暗文字失败10.50:1；组标题选中10.94:1、非选中12.69:1；浅色文字模型按钮4.85:1（详见RESULT JSON实际值）。全部已测可读性条件≥4.5。脚本在opacity disabled状态不宣称普通正文对比，需要正常可读信息已逐项单测。
 
