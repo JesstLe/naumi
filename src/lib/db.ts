@@ -563,7 +563,7 @@ async function ensureSchema(): Promise<void> {
       // app_user_image_providers 旧结构迁移:主键曾是 email(一人一供应商的单一槽位)。
       // 检测到旧主键时把数据搬进多供应商新结构(先搬后删,不丢数据),旧配置成为
       // 「默认供应商」并保持原 enabled 作为激活态。
-      const providerPk = await getPool().query<{ column_name: string }>(
+      const providerPk = await schemaDb.query<{ column_name: string }>(
         `SELECT column_name FROM information_schema.table_constraints tc
            JOIN information_schema.key_column_usage kcu
              ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
