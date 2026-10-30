@@ -10,7 +10,7 @@ async function main(){
   b.onLoad({filter:/.*/,namespace:'ports'},a=>({contents:a.path==='auth'?'export const authHeader=async()=>({});':a.path==='pixels'?'export const readBrowserImage=url=>__io.read(url);':'export const currentWorkspace=()=>"personal";export const currentWorkspaceRevision=()=>0;',loader:'js'}));
  }}]});
  const io={reads:[],async read(url){io.reads.push(url);return new Blob(['fixture pixels'],{type:'image/png'});}},module={exports:{}},calls=[];
- const c={module,exports:module.exports,require,process:{env:{}},console,__io:io,File,Blob,FormData,Headers,Response,Request,URL,AbortSignal,TextEncoder,TextDecoder,Buffer,crypto:globalThis.crypto,structuredClone,Date,Math,Set,Map,Promise,setTimeout:f=>{queueMicrotask(f);return 1;},clearTimeout(){}};
+ const c={module,exports:module.exports,require,process:{env:{}},console,__io:io,File,Blob,FormData,Headers,Response,Request,URL,AbortSignal,AbortController,TextEncoder,TextDecoder,Buffer,crypto:globalThis.crypto,structuredClone,Date,Math,Set,Map,Promise,setTimeout:(f,ms)=>{if(ms===30000)return setTimeout(f,10);queueMicrotask(f);return 1;},clearTimeout:token=>{if(typeof token!=="number")clearTimeout(token)}};
  vm.createContext(c);vm.runInContext(built.outputFiles[0].text,c);const api=module.exports;
  const source={id:'source',image:'/media/old.png',title:'source',prompt:'original recipe',category:'main',width:1024,height:768,canvasX:160,canvasY:90,canvasWidth:300,canvasHeight:225,canvasImageRevision:3,canvasImageVersionId:'v3'};
  let current=true;const scope={owner:'fixture@example.test',workspace:'personal',project:'tree:source',isCurrent:()=>current,assertCurrent(){if(!current)throw Error('stale-view');}};

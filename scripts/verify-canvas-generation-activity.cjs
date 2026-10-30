@@ -24,7 +24,8 @@ async function main(){
  for(const kind of ['derived','blank'])for(const scenario of ['done','poll-transient','position-fails','sync-missing','partial','submit-unknown','workspace-aba']){
   const f=image.setup(kind,scenario,ib);await f.run();
   eq(f.c.generationOperationRef.current.size,0,kind+' releases after '+scenario);
-  if(['poll-transient','position-fails','sync-missing'].includes(scenario)){
+  if(scenario==='poll-transient'&&image.boundedReceipt){eq(f.state.post,1,'automatic GET retry keeps original paid intent');eq(f.state.polls,2,'same job after one transient GET');eq(f.state.history.length,1,'one completed attachment');}
+  if(['poll-transient','position-fails','sync-missing'].includes(scenario)&&!(scenario==='poll-transient'&&image.boundedReceipt)){
    const retry=f.retry();eq(typeof retry,'function','retained original task retry');f.state.retried=true;
    await Promise.all([retry(),retry()]);eq(f.state.post,1,'concurrent retry never re-enters paid submit');
    eq(f.state.history.length,1,'result attachment commits history once');eq(f.c.generationOperationRef.current.size,0,'retry releases');

@@ -33,3 +33,8 @@
 首次固定dcca528a完整core在13 PASS后，被新增缓存效率第10例阻断，原REPORT为FAIL/13PASS/1FAIL/146NOT_RUN。原版同probe也出现同一控制项失败，不属于新增产品回归。实际Edge/IndexedDB诊断显示所谓“已等双store持久化”之后仍只存在A的记录；异步predicate的Promise被waitForFunction视为真值，未等实际boolean。改成expect.poll等待page.evaluate返回的boolean，确实核对B的bytes与metadata后才reload；原版13项中仅预期5缺陷（exit1），新版本13/13（exit0）。此修正仅验证脚本，不改缓存产品、不降低“刷新后零额外下载”断言；失败日志与临时诊断保留。
 
 同盘完整Git副本初始raw CRLF与index stat口径导致status列134项而git diff为0；仅在自有副本对tracked index重新规范化后确认cached diff0、raw bytes逐hash不变、Git clean，不用assume-unchanged。一次Windows全路径参数Win206及显式ignored路径尝试均在准备期退出，改用仅tracked update；产品目录没有受此变更。
+
+
+### 第二轮核心 fixture 合同迁移
+
+固定6fe9f19完整core在28 PASS后由fanout旧fixture中“第一次GET网络异常应留失败卡”断言中止（0!=3）；当前原job自动GET后成功，产品行为正确。将fanout/activity同类用例改为断言同job两次GET、paid POST1、attachment1；UNKNOWN POST仍保留原失败卡与明确恢复。version与placement VM原来没暴露浏览器AbortController，实际失败message已取证为`AbortController is not defined`，补标准浏览器全局并区分30秒期限与2.5秒轮询timer，不替换产品helper。定向fanout15/version9/placement6与activity通过，原失败日志保留。最终完整core必须在新固定SHA全部实跑，不拼接旧28项称PASS。

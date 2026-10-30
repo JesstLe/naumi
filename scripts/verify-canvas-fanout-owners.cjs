@@ -50,7 +50,8 @@ async function generation(built,scenario){
  const visible=snapshots.find(s=>s.length===3);assert.ok(visible,'three visible destinations before submission');assert.ok(visible.every(t=>t.count===1&&!t.replaceNode));eq(new Set(visible.map(t=>t.position.x)).size,3);eq(new Set(visible.map(t=>t.position.y)).size,1);
  eq(JSON.stringify(f.src),original,'source pixels/version/position unchanged');eq(paid,1,'one frozen paid request');
  if(scenario==='stale'){eq(state.history.length,0);eq(state.positions.length,0);assert.ok(state.storage.has(key));return;}
- if(scenario==='unknown'||scenario==='poll-failure'){
+ if(scenario==='poll-failure'&&fixture.boundedReceipt){eq(reads,2,'same-job GET continues after transient transport failure');eq(state.history.length,1,'one automatic original-result attachment');eq(paid,1);}
+ else if(scenario==='unknown'||scenario==='poll-failure'){
   eq(c.generationTasks.length,3);eq(state.history.length,0);assert.ok(c.generationTasks.every(t=>t.failure));assert.ok(state.storage.has(key));
   await Promise.all([c.generationTasks[0].onRetry(),c.generationTasks[0].onRetry()]);eq(paid,1);eq(state.history.length,1);
  }else if(scenario==='position-failure'||scenario==='merge-failure'){
