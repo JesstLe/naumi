@@ -42,3 +42,14 @@
 ### 第三轮完整验收阻塞定位
 
 固定e9832131完整core为84 PASS /1 FAIL /75 NOT_RUN，native-actions旧VM缺少R7X的canvasSelection.selectInProject端口，原生节点已保存而reveal抛错；补齐被调用的独立view-owner观察端口，不恢复页面选择实现。完整生产镜像构建PASS；完整产品浏览器已通过生成/扣费/冲突/重载/180秒混合读/剪贴板/创作模式，随后快照辅助进程触发40P01。DB原日志确认新起observer调用listCanvasTextNodes触发ensureSchema，ALTER与运行Worker形成锁环；observer改为只读REPEATABLE READ事务和既有纯mapper，DDL只在setup中运行，没有修改产品SQL或添加事务重试。最终全core与同镜像浏览器仍需新固定SHA实跑，旧失败材料保留。一般冷进程兼容DDL是否仍需整体迁移不因observer修正而关闭。
+
+## 最终固定候选与证据层级
+
+固定应用/验证00b7e815a361105cf6604769ee4eeeb7dd625cac：普通接入main e2f56255五提交，缓存、企业素材事务和回执读取修复均归既有owner，未恢复第二套Canvas轮询或DB池。完整core160/160从零执行（日志复用0）、同固定生产镜像Linux runtime177与双browser37通过；真实PG/原HTTP/Worker、原价/单次扣款/UNKNOWN/取消及媒体链覆盖，供应商是隔离fixture，不是容量或线上验收。类型exit0、lint37warnings、四类SCC0；2092个原src/services文件hash保持。四产物/5206原hash副本回滚及推送以R7Y DELIVERY为准。整体ACTIVE，主线同步计数0/3，未合main未部署，47 HOLD。历史Windows dev退出根因、一般冷进程DDL、性能容量、有效required CI及最终整版退出仍待。R7X真实lint39与旧文档37口径差异已明确保留。
+
+- 完整core：同盘clean Git副本5214完整原字节，source/digest与E:目录、生产镜像一致；160 PASS /0 FAIL /0 NOT_RUN，无resume或并集。原失败轮分别13、28、84 PASS后中止，日志保持原FAIL。额外76项定向诊断全部通过，但仍记PARTIAL，不替代最终完整160。
+- 产品browser：完整Web/Worker同镜像、双独立登录context、37检查，原价格每笔6积分，7笔consume/42积分；180秒混合读取16轮，报告soakSeconds含后续创作/Comfy阶段。无浏览器路由mock、确认弹窗/页面错误均0；observer改为只读事务后DB死锁0，Worker POSIX排空exit0。
+- Linux runtime：严格完整core同SHA/digest门禁后执行，177检查，用户4笔57积分、历史原任务3笔18积分，完整冻结原报价与current17分离、取消0POST、UNKNOWN0重放；原生FFmpeg媒体沿现有验收。runtime和browser自有容器/网络/PG tmpfs全部finally清理。
+- 最终封版仅修改本记录及3个总文档；应用/测试源码和所有其它hash与上述验证固定源完全相同，source bridge逐文件校验。四产物包括完整可还原源码与byte-exact binary diff，不只是增量零散文件。
+- 原始完整5206hash、独立副本later-edit零写入、文件与行为回滚在package阶段强制验证；正式结果以ROLLBACK_RESULT/VERIFICATION/DELIVERY为准，未执行前不推断通过。一般运行期DDL仍需生命周期迁移，不把快照helper改正冒充全局问题关闭。
+- 重构长分支超过48小时仍未合main：用户要求独立目录持续整体重构；当前是可验收候选而非最终整版，保留普通整合与最终验收，不以重复main大缝合或上线冒充交付。

@@ -1,6 +1,6 @@
-## 2026-10-30 R7Y：主线 owner 整合与完整候选进行中
+## 2026-10-30 R7Y：主线 owner 整合与完整候选本地验收
 
-固定main e2f56255五提交普通整合；缓存需求驱动恢复/授权热字节、企业事务内素材元数据、platform池12秒借出期限与既有image controller30秒GET接到真实owner，三冲突不恢复旧Canvas/DB实现。原价/任务/UNKNOWN/单次扣款和scope保留。全核心/完整Linux同镜像以R7Y DELIVERY为准，未执行即未验收；整体ACTIVE，计数第三模块后归零，未合main未部署，47 HOLD。历史R7X lint实测39而非文档37，本片用稳定命令引用关闭两条新增依赖warning，旧日志不改。
+固定应用/验证00b7e815a361105cf6604769ee4eeeb7dd625cac：普通接入main e2f56255五提交，缓存、企业素材事务和回执读取修复均归既有owner，未恢复第二套Canvas轮询或DB池。完整core160/160从零执行（日志复用0）、同固定生产镜像Linux runtime177与双browser37通过；真实PG/原HTTP/Worker、原价/单次扣款/UNKNOWN/取消及媒体链覆盖，供应商是隔离fixture，不是容量或线上验收。类型exit0、lint37warnings、四类SCC0；2092个原src/services文件hash保持。四产物/5206原hash副本回滚及推送以R7Y DELIVERY为准。整体ACTIVE，主线同步计数0/3，未合main未部署，47 HOLD。历史Windows dev退出根因、一般冷进程DDL、性能容量、有效required CI及最终整版退出仍待。R7X真实lint39与旧文档37口径差异已明确保留。
 
 ## 2026-10-30 最新 R7X：选择归属已实施，整体继续
 
