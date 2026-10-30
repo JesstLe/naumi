@@ -265,3 +265,8 @@ R7O最终核心固定ba45837e：130PASS/0FAIL/0NOT_RUN、复用0、源码前后�
 
 
 R7P收尾：固定应用60734e08已推独立分支；原56/183、新58/204与54共同轨迹、纯规则72、实际Next8、tsc/lint0与四SCC0保持。整版核心为同SHA聚合131PASS/1FAIL/0NOT_RUN，**不是全绿**：scene原生fit/deep-link准备及后续本地ECONNRESET两次非零保留，余47项原runner同源通过；中断后只复用3条精确日志。完整四产物/原5093hash副本回滚/远端账户阻塞/cleanup见R7P DELIVERY。场景门禁OPEN、整体ACTIVE，未合main未部署；完整Linux最终候选及其余热点继续。
+
+
+## 2026-10-30 R7Q：本地图像编辑应用归属
+
+原cda247b2基线5101原hash保留。裁剪/替换菜单、意图/busy/原请求及结果续交归local-image-edits；组件只剩DOM输入和窄上下文，像素/SQL仍归原canvas-local-image-edit，作品/history/placeholder补图归原owner。原14/33与新共同10组轨迹精确一致，真实PG15/实际Next6/原像素/主要图片57及文字58保持；浏览器Back时旧activeKey保留导致modal挡列表的真实边界，已接既有importView身份消除。当前catalog134的受影响矩阵、四产物/完整回滚及远端以本片DELIVERY为准，不冒称全134或关闭R7P scene门禁。开工fetch主线4038b061，待下一功能片按三模块周期整合，本片计数2；整体ACTIVE，未合main未部署，47 HOLD。见[R7Q模块记录](changes/2026-10-30-refactor-r7q-local-image-edits.md)。

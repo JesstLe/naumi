@@ -39,6 +39,8 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    stageEnv.TIMELINE_APP_EVIDENCE=evidence;
    if(spec.id==='primary-generation')stageEnv.PRIMARY_GENERATION_EVIDENCE=evidence;
    if(spec.id==='text-image-runs')stageEnv.TEXT_IMAGE_RUN_EVIDENCE=evidence;
+   if(spec.id==='local-image-edits')stageEnv.LOCAL_IMAGE_EDIT_EVIDENCE=evidence;
+   if(spec.id==='local-image-edits-pg')stageEnv.LOCAL_IMAGE_EDIT_PG_EVIDENCE=evidence;
    if(spec.id==='image-size')stageEnv.CANVAS_SIZE_EVIDENCE=evidence;
    if(spec.id==='apimart-polling-boundary')stageEnv.X6_OUT=evidence;
    if(spec.id==='native-documents')stageEnv.NATIVE_DOCUMENT_EVIDENCE=evidence;

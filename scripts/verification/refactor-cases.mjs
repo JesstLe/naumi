@@ -17,6 +17,8 @@ export const refactorCases=[
  node('media-codec-threads','foundation','scripts/verify-media-codec-threads.mjs','MEDIA_CODEC_THREADS=PASS MODE=MODIFIED'),
  node('primary-generation','canvas','scripts/verify-canvas-primary-generation.cjs','CANVAS_PRIMARY_GENERATION=PASS'),
  node('text-image-runs','canvas','scripts/verify-canvas-text-image-runs.cjs','CANVAS_TEXT_IMAGE_RUNS=PASS'),
+ node('local-image-edits','canvas','scripts/verify-canvas-local-image-edits.cjs','CANVAS_LOCAL_IMAGE_EDITS=PASS'),
+ ts('local-image-edits-pg','canvas','scripts/verify-canvas-local-image-edits-pg.ts','CANVAS_LOCAL_IMAGE_EDITS_PG=PASS'),
  {id:'text-image-inputs',group:'canvas',file:'scripts/verify-canvas-text-image-inputs.ts',args:[],expect:'TEXT_IMAGE_INPUTS=PASS',pg:false,tsx:true},
  node('image-size','canvas','scripts/verify-canvas-image-size.cjs','CANVAS_IMAGE_SIZE=PASS'),
  ts('apimart-polling-boundary','generation','scripts/verify-capacity-x6-adapter.ts','X6_ADAPTER=PASS'),

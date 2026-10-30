@@ -5,7 +5,7 @@ import ts from 'typescript';
 const root=path.resolve(process.argv[2]||'.'),read=p=>fs.readFileSync(path.join(root,p),'utf8');
 const client=read('src/components/canvas/canvas-client.tsx');
 const projection=read('src/lib/canvas/scene-projection.ts'),textRenderer=read('src/components/canvas/nodes/text-node.tsx');
-const presentation=client+projection+textRenderer;
+const presentation=client+projection+textRenderer+read('src/lib/canvas/local-image-edits.ts');
 if(process.argv.includes('--baseline')){
   assert.ok(!client.includes('NodePropertiesPanel') && !client.includes('ImageCropDialog'));
   console.log('NODE_EDIT_BASELINE=PASS TEXT_STYLE=FIXED_12PX NODE_LOCK_LAYER=ABSENT LOCAL_CROP_REPLACE=ABSENT');process.exit(0);

@@ -11,6 +11,7 @@ import {ensureCanvasSettingsSchema} from "@/lib/canvas/storage-schema";
 
 import { cropSchema, pixelCrop, type CanvasCrop } from "@/lib/canvas/node-settings";
 import { adaptiveCanvasImageSize } from "@/lib/canvas/image-size";
+import {canvasLocalImageEditResultId} from './canvas/local-image-edit-id';
 import {imagegenOutputSchema,imagegenChromaSchema} from "./imagegen/schema";
 import {processImagegenPixels} from "./imagegen/postprocess";
 
@@ -49,7 +50,7 @@ export async function saveCanvasLocalEdit(email: string, value: z.infer<typeof l
   const generatedOutput = input.mode !== "replace" || provenance?.generatedOutput === true;
   const edited = input.mode==="process"?await processImagegenPixels(bytes,input):await editCanvasPixels(bytes,input.mode === "crop" ? input.crop : undefined,generatedOutput);
   if (edited.bytes.length > IMAGEGEN_OUTPUT_MAX_BYTES) throw new Error("编辑结果超出64MiB处理限制");
-  const id = `art-local-${input.operationId}`;
+  const id = canvasLocalImageEditResultId(input.operationId);
   const mime="mime" in edited&&typeof edited.mime==="string"?edited.mime:"image/png",extension=mime==="image/jpeg"?"jpg":mime==="image/webp"?"webp":"png";
   const transparentPixels="transparentPixels" in edited&&typeof edited.transparentPixels==="number"?edited.transparentPixels:undefined;
   const totalPixels="totalPixels" in edited&&typeof edited.totalPixels==="number"?edited.totalPixels:undefined;

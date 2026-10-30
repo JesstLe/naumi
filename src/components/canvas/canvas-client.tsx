@@ -160,6 +160,8 @@ import { TextImageGenerationDialog } from "./text-image-generation-dialog";
 import type {TextImageMode} from "@/lib/canvas/text-image-inputs";
 import type {CanvasTextImageContext} from "@/lib/canvas/text-image-runs";
 import {useCanvasTextImages} from "./use-canvas-text-images";
+import {useCanvasLocalImageEdits} from "./use-canvas-local-image-edits";
+import type {CanvasLocalImageEditPorts} from "@/lib/canvas/local-image-edits";
 import { CanvasAssistantPanel } from "./canvas-assistant-panel";
 import { useWorkflowPaste } from "./use-workflow-paste";
 import type { ImportedManifest } from "@/lib/canvas/workflow-clipboard";
@@ -353,12 +355,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const nodeSettingsRef = useRef(nodeSettings); nodeSettingsRef.current = nodeSettings;
   const [nodeSettingsReady, setNodeSettingsReady] = useState(false);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
-  const [cropArtwork, setCropArtwork] = useState<Artwork | null>(null);
-  const [localEditBusy, setLocalEditBusy] = useState(false);
-  const localEditBusyRef = useRef(false);
   const replaceInputRef = useRef<HTMLInputElement>(null);
-  const replaceTargetRef = useRef<Artwork | null>(null);
-  const localEditAttempt = useRef<{fingerprint:string;id:string}|null>(null);
   const L = (zh: string, en: string) => locale === "en" ? en : zh;
   const settingsFor = (id: string) => nodeSettingsRef.current[id] || DEFAULT_CANVAS_SETTINGS;
   const isNodeLocked = (id: string) => settingsFor(id).locked;
@@ -793,6 +790,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const batchRunMountedRef = useRef(true);
   useEffect(() => { batchRunMountedRef.current = true; return () => { batchRunMountedRef.current = false; }; }, []);
   const [productPicker, setProductPicker] = useState<{ textNodeIds: string[] } | null>(null);
+  const localEdits=useCanvasLocalImageEdits(canvasArtworkDocument.scope);
+  const {crop:cropArtwork,busy:localEditBusy}=localEdits;
   const textImages=useCanvasTextImages(canvasArtworkDocument.scope);
   const {menu:genImageMenu,submitting:textImageSubmitting}=textImages;
   // 居中确认弹框(替代浏览器原生 confirm,贴合站点配色)
@@ -2297,37 +2296,19 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         onSelect:()=>void commitNodeSettings(id,{...settings,order:Math.max(-100000,Math.min(0,...orders)-1)})},
     ];
   }
-  function requestReplace(artwork: Artwork) {
-    if(readOnly || isNodeLocked(artwork.id) || localEditBusyRef.current)return;
-    replaceTargetRef.current=artwork;replaceInputRef.current?.click();
+  function canvasLocalEditContext():CanvasLocalImageEditPorts {
+    const account=canvasAccountRef.current,epoch=canvasContextEpochRef.current,scope=canvasArtworkDocument.scope;
+    return {writable:()=>!!user&&!readOnly,ready:nodeSettingsReady,locked:isNodeLocked,
+      viewCurrent:()=>batchRunMountedRef.current&&account===canvasAccountRef.current&&epoch===canvasContextEpochRef.current&&scope.viewCurrent()&&importViewCurrent(),
+      merge:ids=>canvasArtworkDocument.merge(ids),history:canvasHistory,fill:(art,file)=>workflowDocument.fill(art,file),
+      applied:id=>{setPendingNode(id);setSelectedId(id);setSelectedTextId(null);},notice:flashTip,
+      messages:{invalidFile:L("请选择12MB以内的PNG、JPEG或WebP","Choose a PNG, JPEG or WebP up to 12MB"),failed:L("图片编辑失败","Image edit failed"),
+        filled:"图片已补齐",fillFailed:"补图失败，请重试",saved:L("新版本已保存，原图保留","New version saved; original kept"),
+        unknown:L("原编辑结果待同步，请稍后重试","The original edit is awaiting sync. Try again shortly"),missing:L("编辑已保存，结果尚未同步，请重试","The edit was saved; retry to sync its result")},
+    };
   }
-  async function saveLocalImageEdit(artwork: Artwork, crop?: CanvasCrop, file?: File) {
-    if(!user || readOnly || !nodeSettingsReady || isNodeLocked(artwork.id) || localEditBusyRef.current)return;
-    if(file && (file.size>12*1024*1024 || !["image/png","image/jpeg","image/webp"].includes(file.type))){flashTip(L("请选择12MB以内的PNG、JPEG或WebP","Choose a PNG, JPEG or WebP up to 12MB"));return;}
-    if(artwork.source==="workflow-placeholder"&&file){
-      const scope=canvasArtworkDocument.scope;localEditBusyRef.current=true;setLocalEditBusy(true);
-      try{await workflowDocument.fill(artwork,file);if(scope.viewCurrent())flashTip("图片已补齐");}
-      catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:"补图失败，请重试");}
-      finally{localEditBusyRef.current=false;if(scope.documentCurrent())setLocalEditBusy(false);if(replaceInputRef.current)replaceInputRef.current.value="";}
-      return;
-    }
-    localEditBusyRef.current=true;setLocalEditBusy(true);
-    try{
-      const fingerprint=JSON.stringify({id:artwork.id,crop,file:file?{name:file.name,size:file.size,lastModified:file.lastModified}:null});
-      if(localEditAttempt.current?.fingerprint!==fingerprint)localEditAttempt.current={fingerprint,id:browserRandomUUID()};
-      const operationId=localEditAttempt.current!.id;
-      let body:BodyInit;let headers:Record<string,string>|undefined;
-      if(file){const fd=new FormData();fd.set("image",file);fd.set("id",artwork.id);fd.set("operationId",operationId);body=fd;}
-      else{headers={"content-type":"application/json"};body=JSON.stringify({mode:"crop",id:artwork.id,operationId,crop});}
-      const response=await privateFetchRaw("/api/canvas/local-image-edit",{method:"POST",headers,body,signal:AbortSignal.timeout(60000)});
-      const data=await expectJsonOk(response,L("图片编辑失败","Image edit failed"));
-      if(!data.id)throw new Error(t("canvas.genFail"));
-      const fresh=await mergeWorks([data.id]);pushAddUndo(data.id,fresh);
-      setPendingNode(data.id);setSelectedId(data.id);setSelectedTextId(null);setCropArtwork(null);localEditAttempt.current=null;
-      flashTip(L("新版本已保存，原图保留","New version saved; original kept"));
-    }catch(error){flashTip(error instanceof Error?error.message:t("canvas.genFail"));}
-    finally{localEditBusyRef.current=false;setLocalEditBusy(false);if(replaceInputRef.current)replaceInputRef.current.value="";}
-  }
+  function requestReplace(artwork:Artwork){if(localEdits.requestReplacement(artwork,canvasLocalEditContext()))replaceInputRef.current?.click();}
+  async function saveLocalImageEdit(artwork:Artwork,crop?:CanvasCrop,file?:File){await localEdits.execute(artwork,crop,file,canvasLocalEditContext());}
   // 添加节点后记一笔可撤销(从刚刷新的列表取完整记录)
   function pushAddUndo(newId: string | null, fresh: Artwork[]) {
     if (!newId) return;
@@ -4685,7 +4666,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               {selected && <>
               {!selected.videoUrl && <>
                 <button type="button" aria-label={L("裁剪图片","Crop image")} title={L("裁剪为新版本","Crop to a new version")}
-                  disabled={localEditBusy || !nodeSettingsReady || isNodeLocked(selected.id)} onClick={()=>setCropArtwork(selected)}
+                  disabled={localEditBusy || !nodeSettingsReady || isNodeLocked(selected.id)} onClick={()=>localEdits.openCrop(selected,canvasLocalEditContext())}
                   className="canvas-ui-action flex h-[34px] items-center gap-1.5 whitespace-nowrap rounded-[9px] px-2.5 text-[13px] font-semibold disabled:opacity-40"><Crop className="h-4 w-4" />{L("裁剪","Crop")}</button>
                 <button type="button" aria-label={L("替换图片","Replace image")} title={L("替换为新版本","Replace with a new version")}
                   disabled={localEditBusy || !nodeSettingsReady || isNodeLocked(selected.id)} onClick={()=>requestReplace(selected)}
@@ -4939,11 +4920,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           imageEditable={!selectedVideo&&!selectedDirector&&!selectedCharacter&&!selectedScene&&!selectedAudio&&!selectedTimeline&&!selected?.videoUrl}
           imageSize={selected?.width && selected?.height ? {width:selected.width,height:selected.height} : undefined}
           onSave={settings=>commitNodeSettings((selectedText || selected || selectedVideo || selectedDirector || selectedCharacter || selectedScene || selectedAudio || selectedTimeline)!.id,settings)} onClose={()=>setPropertiesOpen(false)}
-          onCrop={()=>selected && setCropArtwork(selected)} onReplace={()=>selected && requestReplace(selected)} />}
+          onCrop={()=>selected && localEdits.openCrop(selected,canvasLocalEditContext())} onReplace={()=>selected && requestReplace(selected)} />}
         {cropArtwork && <ImageCropDialog image={cdnUrl(cropArtwork.image)} title={cropArtwork.title} light={lightCanvas} english={locale==='en'} busy={localEditBusy}
-          onApply={crop=>saveLocalImageEdit(cropArtwork,crop)} onClose={()=>{if(!localEditBusyRef.current)setCropArtwork(null);}} />}
+          onApply={crop=>saveLocalImageEdit(cropArtwork,crop)} onClose={localEdits.close} />}
         <input ref={replaceInputRef} data-testid="canvas-replace-image-input" type="file" accept="image/png,image/jpeg,image/webp" className="hidden"
-          onChange={event=>{const file=event.target.files?.[0],target=replaceTargetRef.current;if(file && target)void saveLocalImageEdit(target,undefined,file);}} />
+          onChange={event=>{const file=event.currentTarget.files?.[0];event.currentTarget.value="";if(file)void localEdits.replace(file);}} />
         {/* 助手作为画布的并列侧栏：桌面让出空间，窄屏浮层；OCR仍互斥。 */}
         {!browsing && !readOnly && canFeature("agent") && (() => {
           const anchor = active?.members.find(artwork => artwork.id === assistantArtworkId);
