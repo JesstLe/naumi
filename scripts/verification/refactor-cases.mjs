@@ -15,6 +15,7 @@ export const refactorCases=[
  node('native-save-transport','canvas','scripts/verify-canvas-save-transport.cjs','RESULT=PASS PASS=23 FAIL=0'),
  node('media-state-lifecycle','runtime','scripts/verify-media-state-lifecycle.mjs','MEDIA_STATE_LIFECYCLE=PASS'),
  node('media-codec-threads','foundation','scripts/verify-media-codec-threads.mjs','MEDIA_CODEC_THREADS=PASS MODE=MODIFIED'),
+ node('canvas-overlay-owner','canvas','scripts/verify-canvas-overlay-owner.cjs','CANVAS_OVERLAY_OWNER=PASS'),
  node('canvas-viewport-owner','canvas','scripts/verify-canvas-viewport-owner.cjs','CANVAS_VIEWPORT_OWNER=PASS'),
  node('canvas-theme-controls','canvas','scripts/verify-canvas-theme-controls.cjs','CANVAS_THEME_CONTROLS=PASS'),
  node('canvas-theme-panels','canvas','scripts/verify-canvas-theme-panels.cjs','CANVAS_THEME_PANELS=PASS'),

@@ -136,3 +136,39 @@ export function canvasDockLayout(input:{nodeScreen:NodeScreen|undefined;canvasSi
  return separateCanvasDocks({dock:textComposerExpanded&&selectedTextId?{...dock,top:overlaySafeArea.top,maxHeight:canvasSize.height-overlaySafeArea.bottom-overlaySafeArea.top}:dock,toolbar,
  dockHeight:textComposerExpanded&&selectedTextId?canvasSize.height-overlaySafeArea.bottom-overlaySafeArea.top:dockMetrics.dockHeight||(selectedTextId?360:310),toolbarHeight:dockMetrics.toolbarHeight,safeTop:overlaySafeArea.top,safeBottom:canvasSize.height-overlaySafeArea.bottom});
 }
+
+export type CanvasOverlayViewport={x:number;y:number;zoom:number};
+export type CanvasOverlayNode={x:number;y:number;width:number;height:number};
+
+/** Render/live-transform geometry share the same anchor; no DOM or Flow state. */
+export function canvasOverlayNodeScreen(node:CanvasOverlayNode|undefined,viewport:CanvasOverlayViewport):NodeScreen|undefined{
+ if(!node)return;
+ const z=viewport.zoom||1,left=node.x*z+viewport.x,top=node.y*z+viewport.y;
+ return {left,top,bottom:top+node.height*z,cx:left+node.width*z/2};
+}
+
+/** Minimal pan after selection/area changes. Never changes zoom or node data.
+ * The view hook decides when to run; pure geometry cannot initiate navigation. */
+export function canvasAnchorViewport(input:{node:CanvasOverlayNode|undefined;viewport:CanvasOverlayViewport;size:CanvasSize;safeArea:SafeArea;selectedText:boolean;titleHeight:number}):CanvasOverlayViewport|undefined{
+ const {node,viewport:current,size:canvasSize,safeArea:overlaySafeArea,selectedText,titleHeight}=input;
+ if(!node||!canvasSize.width||!canvasSize.height)return;
+ const left=node.x*current.zoom+current.x,top=node.y*current.zoom+current.y;
+ const right=left+node.width*current.zoom,bottom=top+node.height*current.zoom;
+ const safeLeft=overlaySafeArea.left,safeRight=canvasSize.width-overlaySafeArea.right,defaultSafeTop=overlaySafeArea.top+58;
+ // The view toolbar occupies only the left224px, not the complete canvas width.
+ const nodeIntersectsViewToolbar=left<=224&&right>=overlaySafeArea.left;
+ const safeBottom=canvasSize.height-(nodeIntersectsViewToolbar?overlaySafeArea.bottom:overlaySafeArea.right);
+ const estimatedDockHeight=selectedText?(canvasSize.width<480?240:218):220;
+ const stackedSafeTop=overlaySafeArea.top+estimatedDockHeight+70+titleHeight;
+ let dx=0,dy=0;
+ const visibleWidth=safeRight-safeLeft,nodeWidth=right-left,nodeHeight=bottom-top;
+ const safeTop=safeBottom-stackedSafeTop>=nodeHeight?stackedSafeTop:defaultSafeTop,visibleHeight=safeBottom-safeTop;
+ if(nodeWidth>visibleWidth)dx=safeLeft+(visibleWidth-nodeWidth)/2-left;
+ else if(left<safeLeft)dx=safeLeft-left;
+ else if(right>safeRight)dx=safeRight-right;
+ if(nodeHeight>visibleHeight)dy=safeTop+(visibleHeight-nodeHeight)/2-top;
+ else if(top<safeTop)dy=safeTop-top;
+ else if(bottom>safeBottom)dy=safeBottom-bottom;
+ if(Math.abs(dx)<1&&Math.abs(dy)<1)return;
+ return {x:current.x+dx,y:current.y+dy,zoom:current.zoom};
+}

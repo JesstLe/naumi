@@ -82,7 +82,7 @@ import { ImageQualityControl } from "@/components/image-quality-control";
 import { copyText } from "@/lib/clipboard";
 import { createImageDownloadName } from "@/lib/download";
 import { CANVAS_RATIO_OPTIONS, CANVAS_MAX_COUNT, normalizeCanvasRatio, normalizeCanvasResolution, normalizeCanvasCount, normalizeCanvasQuality, canvasModelParameters } from "@/lib/canvas/generation-parameters";
-import { canvasDockLayout, canvasOverlaySafeArea, type NodeScreen } from "@/lib/canvas/dock-layout";
+import {useCanvasOverlayLayout} from "./use-canvas-overlay-layout";
 import {canvasProjects,canvasProjectMonths,type CanvasProject as Project,type CanvasWorkflowKey} from "@/lib/canvas/project-catalog";
 import {useCanvasProjectCatalog} from "./use-canvas-project-catalog";
 import {CanvasProjectBrowser} from "./project-browser";
@@ -178,7 +178,6 @@ const DEFAULT_CANVAS_SETTINGS = defaultNodeSettings();
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -441,8 +440,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
   const viewportRef = useRef(viewport);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
-  const previousCanvasSizeRef = useRef({ width: 0, height: 0 });
-  const previousViewportAnchorRef = useRef<string | null>(null);
   // 拉线建节点(5b):从 +端口拉出 → 记源节点;落空白弹「新建节点」菜单
   const spawnSourceRef = useRef<string | null>(null);
   const connectedRef = useRef(false);
@@ -459,11 +456,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     cy: number;
     nodeId?: string;
   } | null>(null);
-  // 生成器面板停靠在选中节点正下方(不再可拖);panelRef 仍用于测量
-  const panelRef = useRef<HTMLDivElement | null>(null);
-  const nodeToolbarRef = useRef<HTMLDivElement | null>(null);
-  const nodeRenamePositionRef = useRef<HTMLDivElement | null>(null);
-  const [dockMetrics, setDockMetrics] = useState({ dockHeight: 0, toolbarHeight: 50, toolbarWidth: 0 });
   // 底部 dock 提示词框:随内容自适应长高。显式写入最小高度，避免 macOS
   // Chromium/Safari 在 flex + max-height 组合下把 textarea 压缩成约两行。
   const promptAreaRef = useRef<HTMLTextAreaElement>(null);
@@ -589,7 +581,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 文字节点一键放大/还原只改变当前画布视图，不写回节点尺寸；刷新后仍使用用户保存的原尺寸。
   const [expandedTextIds, setExpandedTextIds] = useState<Set<string>>(new Set());
   const [textComposerExpanded, setTextComposerExpanded] = useState(false);
-  const textComposerDockRef = useRef<HTMLDivElement>(null);
   const [textComposerMenuOpen,setTextComposerMenuOpen]=useState(false);
   const imageTextEditor=useCanvasImageTextEditor(canvasArtworkDocument.scope);
   const {artworkId:ocrArtworkId}=imageTextEditor.state;
@@ -1623,136 +1614,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     applyArtworkSelection(Array.from(next));
   }
 
-  // Geometry is shared by render and live gestures; docks follow every transform without rerendering the editor.
-  function selectedNodeScreen(vp: {x:number;y:number;zoom:number}):NodeScreen|undefined {
-    const anchorId=selectedId??selectedPendId??selectedTextId;
-    const node=anchorId?rfNodes.find(n=>n.id===anchorId):undefined;
-    if(!node)return undefined;
-    const z=vp.zoom||1,size=flowNodeSize(node),left=node.position.x*z+vp.x,top=node.position.y*z+vp.y;
-    return {left,top,bottom:top+size.height*z,cx:left+size.width*z/2};
-  }
-  const nodeScreen=selectedNodeScreen(viewportRef.current);
-  const overlaySafeArea=useMemo(()=>canvasOverlaySafeArea(canvasSize),[canvasSize.width]);
-  const {dock:dockStyle,toolbar:topbarStyle}=canvasDockLayout({nodeScreen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,readOnly,nodeTitleHeight:selectedVideo||selected?.videoUrl?38:0});
-
-  // 窗口缩放、分屏、旋转或切换选中节点时，React Flow 会保留旧 viewport，可能让
-  // 新锚点留在安全区外。尺寸或锚点变化时做最小平移；拖动同一节点不会触发，
-  // 因而不改变缩放、不修改持久化坐标，也不和正常拖动竞争。
-  useEffect(() => {
-    // 右键菜单按点击位置固定；自动锚点平移不应立即关闭刚打开的菜单。
-    if (ctxMenu) return;
-    const anchorId = selectedId ?? selectedPendId ?? selectedTextId;
-    const previous = previousCanvasSizeRef.current;
-    const previousAnchor = previousViewportAnchorRef.current;
-    previousCanvasSizeRef.current = canvasSize;
-    previousViewportAnchorRef.current = anchorId;
-    const canvasChanged =
-      Math.abs(previous.width - canvasSize.width) >= 1 ||
-      Math.abs(previous.height - canvasSize.height) >= 1;
-    const anchorChanged = previousAnchor !== anchorId;
-    if (
-      !canvasSize.width ||
-      !canvasSize.height ||
-      (!canvasChanged && !anchorChanged)
-    ) {
-      return;
-    }
-    const instance = rfRef.current;
-    const selectedNode = anchorId ? rfNodes.find((node) => node.id === anchorId) : null;
-    if (!instance || !selectedNode) return;
-
-    const current = instance.getViewport();
-    const size = flowNodeSize(selectedNode);
-    const left = selectedNode.position.x * current.zoom + current.x;
-    const top = selectedNode.position.y * current.zoom + current.y;
-    const right = left + size.width * current.zoom;
-    const bottom = top + size.height * current.zoom;
-    const safeLeft = overlaySafeArea.left;
-    const safeRight = canvasSize.width - overlaySafeArea.right;
-    const defaultSafeTop = overlaySafeArea.top + 58;
-    // 左下工具条只占画布左侧约 224px。节点本身不与它横向相交时，无需无条件
-    // 扣掉 72px；否则低高度窗口会把节点过度上推，令上置 Dock 覆盖工具条和节点。
-    const nodeIntersectsViewToolbar = left <= 224 && right >= overlaySafeArea.left;
-    const safeBottom =
-      canvasSize.height -
-      (nodeIntersectsViewToolbar ? overlaySafeArea.bottom : overlaySafeArea.right);
-    const estimatedDockHeight = selectedTextId
-      ? canvasSize.width < 480
-        ? 240
-        : 218
-      : 220;
-    const stackedSafeTop = overlaySafeArea.top + estimatedDockHeight + 70 + (selectedVideo ? 38 : 0);
-
-    let dx = 0;
-    let dy = 0;
-    const visibleWidth = safeRight - safeLeft;
-    const nodeWidth = right - left;
-    const nodeHeight = bottom - top;
-    const safeTop =
-      safeBottom - stackedSafeTop >= nodeHeight ? stackedSafeTop : defaultSafeTop;
-    const visibleHeight = safeBottom - safeTop;
-    if (nodeWidth > visibleWidth) {
-      dx = safeLeft + (visibleWidth - nodeWidth) / 2 - left;
-    } else if (left < safeLeft) {
-      dx = safeLeft - left;
-    } else if (right > safeRight) {
-      dx = safeRight - right;
-    }
-    if (nodeHeight > visibleHeight) {
-      dy = safeTop + (visibleHeight - nodeHeight) / 2 - top;
-    } else if (top < safeTop) {
-      dy = safeTop - top;
-    } else if (bottom > safeBottom) {
-      dy = safeBottom - bottom;
-    }
-    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
-    void instance.setViewport(
-      { x: current.x + dx, y: current.y + dy, zoom: current.zoom },
-      { duration: 180 }
-    );
-  }, [
-    canvasSize,
-    overlaySafeArea,
-    rfNodes,
-    selectedId,
-    selectedPendId,
-    selectedTextId,
-    ctxMenu,
-  ]);
-
-  // scrollbars, zoom and selection changes all share the same collision resolver.
-  const docksReady = !!dockStyle && !!topbarStyle;
-  useLayoutEffect(() => {
-    if (!docksReady) return;
-    const dock = selectedTextId ? textComposerDockRef.current : panelRef.current;
-    const toolbar = nodeToolbarRef.current;
-    if (!dock || !toolbar) return;
-    const measure = () => setDockMetrics((previous) => {
-      const next = { dockHeight: dock.offsetHeight, toolbarHeight: toolbar.offsetHeight, toolbarWidth: toolbar.offsetWidth };
-      return previous.dockHeight === next.dockHeight && previous.toolbarHeight === next.toolbarHeight && previous.toolbarWidth === next.toolbarWidth ? previous : next;
-    });
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(dock);
-    observer.observe(toolbar);
-    return () => observer.disconnect();
-  }, [docksReady, canvasSize.width, canvasSize.height, selectedId, selectedPendId, selectedTextId, selectedBatchArts.length, selectedTextBatchNodes.length, readOnly, browsing, textComposerExpanded]);
-
-  function updateLiveViewport(vp:{x:number;y:number;zoom:number}) {
-    viewControls.syncZoom(vp.zoom);
-    const screen=selectedNodeScreen(vp);
-    if(!screen)return;
-    const layout=canvasDockLayout({nodeScreen:screen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,readOnly,nodeTitleHeight:selectedVideo||selected?.videoUrl?38:0});
-    const dock=selectedTextId?textComposerDockRef.current:panelRef.current;
-    if(dock&&layout.dock){
-      if(!(textComposerExpanded&&selectedTextId))dock.style.left=layout.dock.left+'px';
-      dock.style.top=layout.dock.top+'px';
-      dock.style.maxHeight=layout.dock.maxHeight==null?'':layout.dock.maxHeight+'px';
-      if(selectedTextId)dock.style.minHeight=Math.min(218,layout.dock.maxHeight??218)+'px';
-    }
-    if(nodeToolbarRef.current&&layout.toolbar){nodeToolbarRef.current.style.left=layout.toolbar.left+'px';nodeToolbarRef.current.style.top=layout.toolbar.top+'px';}
-    if(nodeRenamePositionRef.current){nodeRenamePositionRef.current.style.left=screen.cx+'px';nodeRenamePositionRef.current.style.top=Math.max(8,screen.top-40)+'px';}
-  }
+  const {nodeScreen,dockStyle,topbarStyle,overlaySafeArea,panelRef,textComposerDockRef,nodeToolbarRef,nodeRenamePositionRef,updateLiveViewport}=useCanvasOverlayLayout({
+    flow:rfRef,viewport:viewportRef,nodes:rfNodes,size:canvasSize,selection:{selectedId,selectedPendId,selectedTextId},contextMenuOpen:!!ctxMenu,
+    textComposerExpanded,readOnly,nodeTitleHeight:selectedVideo||selected?.videoUrl?38:0,anchorTitleHeight:selectedVideo?38:0,
+    measurementKey:JSON.stringify([selectedBatchArts.length,selectedTextBatchNodes.length,browsing]),
+    contextKey:JSON.stringify([canvasArtworkDocument.scope.key,canvasContextEpochRef.current]),syncZoom:viewControls.syncZoom});
 
   // 重命名节点:本地改标题 + 落库(节点标签 = 作品 title)
   async function saveNodeRename() {
