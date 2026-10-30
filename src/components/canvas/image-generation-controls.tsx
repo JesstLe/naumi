@@ -103,13 +103,13 @@ export function CanvasImageGenerationControls({pending,light:lightCanvas,model,m
   return <>
     <CanvasModelSelect value={model.value} label={t("canvas.dockModel")} placeholder={model.placeholder}
       testId="canvas-generation-model" onChange={model.onChange} options={model.options}/>
-    <CanvasSelect dir="up" light value={displayedMode} options={modes.map(value=>({value,label:t(fullLabel[value])}))}
+    <CanvasSelect dir="up" light={lightCanvas} value={displayedMode} options={modes.map(value=>({value,label:t(fullLabel[value])}))}
       onPick={value=>onMode(value as CanvasGenerationMode)}
       triggerClass="canvas-ui-control flex h-8 cursor-pointer items-center gap-1.5 rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold disabled:opacity-45"
       trigger={<>{displayedMode==="detail"?<GalleryVerticalEnd className="h-3.5 w-3.5"/>:pending?<Sparkles className="h-3.5 w-3.5"/>:<Rotate3d className="h-3.5 w-3.5"/>}{t(shortLabel[displayedMode])}</>}/>
     {ratioControl}{ratioMenu}
     <ImageQualityControl compact feature="canvas.image" modelId={model.value} resolution={resolution} ratio={mode==="triptych"?"16:9":ratio} quantity={quantity}/>
-    {pending||mode==="standard"||mode==="detail"?<ImageCountControl value={count} onChange={onCount} light/>:
+    {pending||mode==="standard"||mode==="detail"?<ImageCountControl value={count} onChange={onCount} light={lightCanvas}/>:
       <span className="canvas-ui-control inline-flex h-8 items-center gap-1.5 rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold">
         <ImageIcon aria-hidden="true" className="h-3.5 w-3.5 shrink-0"/>{t(mode==="split"?"canvas.viewNodesCount":"canvas.viewSheetCount")}
       </span>}

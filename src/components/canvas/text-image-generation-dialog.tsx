@@ -1,5 +1,7 @@
 "use client";
 
+import { useSurfaceAppearance, surfaceAppearanceClass } from "@/components/ui/surface-appearance";
+
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Image as ImageIcon, Loader2, ScanSearch, X } from "lucide-react";
@@ -17,6 +19,7 @@ export type TextImageGenerationDialogProps = {
 export function TextImageGenerationDialog({
   textCount, referenceCount, busy = false, onGenerate, onClose, locale = "zh",
 }: TextImageGenerationDialogProps) {
+  const appearance = useSurfaceAppearance() ?? "light";
   const id = useId();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -65,7 +68,7 @@ export function TextImageGenerationDialog({
       aria-busy={busy}
       data-testid="text-image-generation-dialog"
       data-canvas-hotkeys-blocked="true"
-      className="canvas-ui-light canvas-ui-surface canvas-ui-surface-solid m-auto max-h-[calc(100dvh-24px)] w-[calc(100%_-_24px)] max-w-[400px] overflow-y-auto overscroll-contain rounded-[20px] border bg-white p-0 text-slate-800 shadow-xl backdrop:bg-slate-500/20"
+      className={`${surfaceAppearanceClass(appearance)} canvas-ui-surface canvas-ui-surface-solid m-auto max-h-[calc(100dvh-24px)] w-[calc(100%_-_24px)] max-w-[400px] overflow-y-auto overscroll-contain rounded-[20px] border p-0 shadow-xl backdrop:bg-[var(--canvas-ui-mask)]`}
       onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}
       onPointerDown={event => {
         event.stopPropagation();
@@ -127,28 +130,28 @@ export function TextImageGenerationDialog({
         {textCount > 1 && <div role="group" aria-label={L("创作方式", "Creation mode")} className="canvas-ui-section grid grid-cols-2 gap-1 rounded-xl border p-1">
           {([true, false] as const).map(value => <button key={String(value)} type="button" disabled={busy} aria-pressed={combine === value}
             onClick={() => setCombine(value)}
-            className={`h-9 rounded-lg text-[13px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#aeb8c5] disabled:cursor-not-allowed disabled:opacity-50 ${combine === value ? "bg-white text-[#252a33] shadow-sm" : "canvas-ui-action"}`}>
+            className={`h-9 rounded-lg text-[13px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--canvas-ui-accent)] disabled:cursor-not-allowed disabled:opacity-50 ${combine === value ? "bg-[var(--canvas-ui-panel-solid)] text-[var(--canvas-ui-text)] shadow-sm" : "canvas-ui-action"}`}>
             {value ? L("合并创作", "Create together") : L("逐条创作", "Create separately")}
           </button>)}
         </div>}
 
         {hasReferences ? <label className={`flex w-fit items-center gap-2 text-[13px] ${busy ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
           <input type="checkbox" checked={useReferences} disabled={busy} onChange={event => setUseReferences(event.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 accent-[#252a33] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#aeb8c5]" />
+            className="h-4 w-4 rounded border-[var(--canvas-ui-border-strong)] accent-[var(--canvas-ui-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--canvas-ui-accent)]" />
           {L("使用参考图", "Use reference images")}
         </label> : <span className="canvas-ui-section inline-flex items-center rounded-md px-2 py-1 text-[11px] font-medium">
           {L("纯文字", "Text only")}
         </span>}
 
         <button ref={generateRef} type="button" disabled={busy} onClick={() => generate("general")}
-          className="canvas-ui-primary flex h-10 w-full items-center justify-center gap-2 rounded-xl text-[13px] font-semibold transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#aeb8c5] disabled:cursor-not-allowed disabled:opacity-50">
+          className="canvas-ui-primary flex h-10 w-full items-center justify-center gap-2 rounded-xl text-[13px] font-semibold transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--canvas-ui-accent)] disabled:cursor-not-allowed disabled:opacity-50">
           {busy ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <ImageIcon className="h-4 w-4" aria-hidden="true" />}
           {L("生成图片", "Generate images")}
         </button>
 
         <details className="group border-t border-[var(--canvas-ui-border)] pt-3">
           <summary aria-disabled={busy} tabIndex={busy ? -1 : 0} onClick={event => { if (busy) event.preventDefault(); }}
-            className={`canvas-ui-muted flex list-none items-center justify-between gap-2 rounded-md py-1 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#aeb8c5] [&::-webkit-details-marker]:hidden ${busy ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
+            className={`canvas-ui-muted flex list-none items-center justify-between gap-2 rounded-md py-1 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--canvas-ui-accent)] [&::-webkit-details-marker]:hidden ${busy ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
             {L("商品图模式", "Product image modes")}
             <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180 motion-reduce:transition-none" aria-hidden="true" />
           </summary>

@@ -37,6 +37,11 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='audio-ui')stageEnv.AUDIO_SOURCE_WAV=path.join(out,'audio-rules','original.wav');
    if(spec.id==='timeline-ui')stageEnv.TIMELINE_SOURCE_ASSETS=path.join(out,'timeline-rules');
    stageEnv.TIMELINE_APP_EVIDENCE=evidence;
+   if(spec.id==='canvas-viewport-owner')stageEnv.CANVAS_VIEWPORT_OWNER_EVIDENCE=evidence;
+   if(spec.id==='canvas-theme-controls')stageEnv.CANVAS_THEME_CONTROLS_EVIDENCE=evidence;
+   if(spec.id==='canvas-theme-panels')stageEnv.CANVAS_THEME_PANELS_EVIDENCE=evidence;
+   if(spec.id==='canvas-theme-matrix')stageEnv.CANVAS_THEME_MATRIX_EVIDENCE=evidence;
+   if(spec.id==='schema-bootstrap-client')stageEnv.SCHEMA_BOOTSTRAP_EVIDENCE=evidence;
    if(spec.id==='parent-completion')stageEnv.IMAGEGEN_PARENT_COMPLETION_EVIDENCE=evidence;
    if(spec.id==='cutout-receipt')stageEnv.CUTOUT_RECEIPT_EVIDENCE=evidence;
    if(spec.id==='canvas-fanout-owners')stageEnv.CANVAS_FANOUT_OWNERS_EVIDENCE=evidence;

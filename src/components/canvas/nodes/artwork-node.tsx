@@ -161,19 +161,19 @@ export function ArtNode({ data, selected, id: nodeId }: NodeProps) {
               className="block h-full w-full object-contain"
               style={d.workflowPresentation ? { transform: `rotate(${d.workflowPresentation.rotation}deg) scaleX(${d.workflowPresentation.flipX ? -1 : 1})`, opacity: d.workflowPresentation.opacity } : undefined}
             />
-            {d.missingAsset && <div data-testid="workflow-missing-asset" className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-50/80 text-slate-500">
-              <ImagePlus className="h-8 w-8 text-slate-400" />
+            {d.missingAsset && <div data-testid="workflow-missing-asset" className="absolute inset-0 flex flex-col items-center justify-center gap-3 canvas-ui-section">
+              <ImagePlus className="h-8 w-8 canvas-ui-muted" />
               <span className="text-sm font-medium">待补图片</span>
-              {!d.readOnly && <button type="button" className="nodrag nopan rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+              {!d.readOnly && <button type="button" className="nodrag nopan canvas-ui-control rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-40"
                 disabled={d.settings?.locked} onClick={event=>{event.stopPropagation();d.onFill?.(d.id);}}>补充图片</button>}
             </div>}
-            {d.regenerationFailure&&<div role="alert" className="absolute bottom-2 left-2 z-10 rounded-lg bg-red-50 px-2 py-1 text-xs font-medium text-red-600">重新生成未完成</div>}
-            {d.regenerating && <div data-testid="regeneration-progress" className="absolute inset-0 z-10 bg-[var(--canvas-ui-surface,#fff)]" style={{ containerType: "size" }}>
+            {d.regenerationFailure&&<div role="alert" className="absolute bottom-2 left-2 z-10 rounded-lg canvas-ui-warning px-2 py-1 text-xs font-medium">重新生成未完成</div>}
+            {d.regenerating && <div data-testid="regeneration-progress" className="absolute inset-0 z-10 bg-[var(--canvas-ui-panel-solid)]" style={{ containerType: "size" }}>
               <GenerationPlaceholder stage={d.generationStage} startedAt={d.generationStartedAt} count={d.generationCount} completed={d.generationCompleted} />
             </div>}
             {selected && !d.regenerating && canNodeFeature("cutout") && !d.readOnly && !d.missingAsset && d.onCutout && <button type="button" data-testid="canvas-image-quick-cutout"
               aria-label="去背景，保留主体" title="去背景，保留主体" disabled={d.cutoutBusy || d.cutoutBlocked || d.settings?.locked}
-              className="nodrag nopan absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white/95 px-2 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+              className="nodrag nopan canvas-ui-control absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-[11px] font-medium shadow-sm disabled:opacity-50"
               onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();d.onCutout?.(d.id);}}>
               {d.cutoutBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> : <Scissors className="h-3.5 w-3.5"/>}去背景</button>}
             {selected && d.rootLabel && (

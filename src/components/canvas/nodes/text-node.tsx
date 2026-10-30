@@ -93,7 +93,7 @@ export function TextCanvasNode({ data, selected }: NodeProps) {
             <Loader2 className="h-4 w-4 animate-spin text-[#6366f1]" /> 正在生成文字…
           </div>
         ) : d.status === "failed" ? (
-          <div role="alert" className="flex min-h-[108px] flex-col justify-center gap-2 text-amber-800">
+          <div role="alert" className="flex min-h-[108px] flex-col justify-center gap-2 canvas-ui-warning-text">
             <span className="font-medium">文字生成失败</span>
             <p className="whitespace-pre-wrap break-words">{d.error || "本次未取得文字结果，请重试"}</p>
           </div>

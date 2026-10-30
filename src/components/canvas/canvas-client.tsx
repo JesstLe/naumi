@@ -88,7 +88,6 @@ import {useCanvasProjectCatalog} from "./use-canvas-project-catalog";
 import {CanvasProjectBrowser} from "./project-browser";
 import {CanvasProjectMenu,CanvasProjectTitle} from "./project-chrome";
 import { canvasGenerationReferences,canvasRegenerationReferences, explicitCanvasParent } from "@/lib/canvas/input-references";
-import { canvasFocusViewport } from "@/lib/canvas/upload-visibility";
 import { readPlacementCache, type CanvasPoint } from "@/lib/canvas/stable-placement";
 import { useCanvasTextDocument } from "./use-canvas-text-document";
 import {CanvasTextConflicts} from "./text-conflicts";
@@ -99,6 +98,7 @@ import type { HistoryCommit } from "@/lib/canvas/history-controller";
 import { CanvasHistoryRequestError } from "@/lib/canvas/history-scope";
 import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
 import { smartLayout } from "@/lib/canvas/smart-layout";
+import { SurfaceAppearanceProvider } from "@/components/ui/surface-appearance";
 import {submitCanvasCreationRequest,type CanvasCreationRequestInit} from "@/lib/canvas/creation-request";
 import {ImagegenPendingRecovery} from "./imagegen-pending-recovery";
 import {updateCanvasImagegenPlacement} from "@/lib/imagegen/client-recovery";
@@ -148,6 +148,7 @@ import { CanvasEdgeHoverHint, type CanvasEdgeHoverHandle } from './canvas-edge-h
 import { canvasZoomState } from '@/lib/canvas/viewport-state';
 import {CANVAS_MIN_ZOOM,CANVAS_MAX_ZOOM} from "@/lib/canvas/view-controls";
 import {useCanvasViewControls} from "./use-canvas-view-controls";
+import {useCanvasViewportFocus} from "./use-canvas-viewport-focus";
 import {CanvasViewToolbar} from "./view-toolbar";
 import {CanvasToolButtons} from "./tool-buttons";
 import {useCanvasKeyboard} from "./use-canvas-keyboard";
@@ -673,7 +674,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 项目网格落地页(Figma 式):进画布先看项目卡片,点卡片才进入该项目的画布
   const [browsing, setBrowsing] = useState(true);
   const viewControls=useCanvasViewControls({flow:rfRef,area:canvasAreaRef,zoom:viewport.zoom,zoomLabel:t("canvas.toolbar.zoom"),desktopAppearance,enabled:ready&&!!user,
-    contextKey:canvasArtworkDocument.scope.key,browsing,onMarquee:()=>{setSelectedId(null);setSelectedPendId(null);setSelectedTextId(null);clearCanvasSelection();}});
+    contextKey:canvasArtworkDocument.scope.key,browsing,onNavigate:()=>setFocusId(null),onMarquee:()=>{setSelectedId(null);setSelectedPendId(null);setSelectedTextId(null);clearCanvasSelection();}});
   const {tool:canvasTool,showMinimap,snapGrid,lightCanvas,isMac,modifierKey,zoomMenuOpen}=viewControls;
   const boxSelectMode=canvasTool==="marquee";
   // 浏览器后退支持:进做图页(browsing=false)时往历史压一条,使「后退」先回项目页而非离开 /canvas。
@@ -3221,30 +3222,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     });if(action)action.artworkBases=Object.fromEntries(moves.flatMap(move=>{const node=canvasArtworkDocument.getSnapshot().nodes?.find(n=>n.id===move.id);return node?[[node.id,artworkFields(node)]]:[]}));return action;}),
   });
 
-  // Explicit node focus / deep links move the view, never the nodes.
-  // fitView queues until *all* nodes initialize; a large virtualized project can
-  // leave that queue pending. Focus a known node directly, independent of offscreen DOM.
-  useEffect(() => {
-    if (!focusId || !flowReady) return;
-    const node = rfNodes.find(item => item.id === focusId);
-    if (!node) return;
-    let cancelled = false;
-    let frame = requestAnimationFrame(() => {
-      frame = requestAnimationFrame(() => {
-        if (cancelled) return;
-        const instance = rfRef.current;
-        if (!instance) return;
-        const live = instance.getNode(focusId) ?? node;
-        const size = flowNodeSize(live);
-        const target = canvasFocusViewport({ ...live.position, ...size }, canvasSize, overlaySafeArea, CANVAS_MIN_ZOOM);
-        if (!target) return;
-        void instance.setViewport(target, { duration: 280 }).then(ok => {
-          if (ok && !cancelled) setFocusId(current => current === focusId ? null : current);
-        });
-      });
-    });
-    return () => { cancelled = true; cancelAnimationFrame(frame); };
-  }, [focusId, flowReady, rfNodes, canvasSize, overlaySafeArea]);
+  useCanvasViewportFocus({id:focusId,enabled:!!flowReady,flow:rfRef,nodes:rfNodes,size:canvasSize,insets:overlaySafeArea,
+    minZoom:CANVAS_MIN_ZOOM,contextKey:JSON.stringify([canvasArtworkDocument.scope.key,canvasContextEpochRef.current]),navigationRevision:viewControls.navigationRevision,onComplete:setFocusId});
 
   // 画布全局快捷键只在画布本体接管。弹窗、遮罩、确认框、侧边编辑器或菜单
   // 打开时必须完全让出键盘，避免用户在账户/帮助等上层界面操作时误删底层节点。
@@ -3368,6 +3347,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const recoveryAccount=canvasAccountRef.current,recoveryEpoch=canvasContextEpochRef.current;
   const recoveryCurrent=()=>recoveryAccount===canvasAccountRef.current&&recoveryEpoch===canvasContextEpochRef.current&&recoveryScope.workspace===currentWorkspace()&&recoveryScope.project===(activeProjectRef.current?.key||"workspace");
   return (
+    <SurfaceAppearanceProvider value={lightCanvas ? "light" : "dark"}>
     <PendContext.Provider value={{ onUpload: onPendUpload, onRemove: onPendRemove }}>
     <TextNodeContext.Provider
       value={{
@@ -3648,7 +3628,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 setCtxMenu(null);
                 edgeHoverHintRef.current?.clear();
               }}
-              onMoveStart={() => {
+              onMoveStart={event => {
+                if(event)viewControls.cancelFocus();
                 if (spawnMenu) setSpawnMenu(null);
                 // 菜单遮罩处理用户点击关闭；程序化视口动画不应取消右键菜单。
               }}
@@ -4013,8 +3994,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           )}
 
           {fileDragOver && (
-            <div className="pointer-events-none absolute inset-3 z-50 flex items-center justify-center border-2 border-dashed border-sky-400 bg-sky-50/90" data-testid="canvas-drop-hint">
-              <div className="flex items-center gap-3 text-sm font-medium text-slate-700">
+            <div className="pointer-events-none absolute inset-3 z-50 flex items-center justify-center border-2 border-dashed canvas-ui-section border-[var(--canvas-ui-accent)]" data-testid="canvas-drop-hint">
+              <div className="flex items-center gap-3 text-sm font-medium canvas-ui-text">
                 <Upload className="h-5 w-5" />{t("canvas.importDropHint")}
               </div>
             </div>
@@ -5159,7 +5140,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             aria-modal="true"
             aria-labelledby="canvas-history-picker-title"
             aria-busy={Boolean(historyAddingId)}
-            className="canvas-ui-light flex max-h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-2xl"
+            className={cn(lightCanvas ? "canvas-ui-light" : "canvas-ui-dark", "canvas-ui-surface-solid flex max-h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border shadow-2xl")}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex flex-none items-center justify-between border-b border-border px-4 py-3">
@@ -5176,7 +5157,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 <X className="h-4 w-4" />
               </button>
             </div>
-            {historyPickerError && <p role="alert" className="mx-4 mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{historyPickerError}</p>}
+            {historyPickerError && <p role="alert" className="canvas-ui-warning mx-4 mt-3 rounded-lg px-3 py-2 text-sm">{historyPickerError}</p>}
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               {(() => {
                 const available = (works ?? [])
@@ -5203,7 +5184,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         disabled={Boolean(historyAddingId)}
                         onClick={() => void addFromHistory(w)}
                         title={w.title}
-                        className="group relative mb-3 block w-full break-inside-avoid overflow-hidden rounded-xl border border-slate-200 bg-slate-50 transition-all hover:-translate-y-0.5 hover:border-primary/50 disabled:cursor-wait disabled:opacity-60"
+                        className="canvas-ui-section group relative mb-3 block w-full break-inside-avoid overflow-hidden rounded-xl border transition-all hover:-translate-y-0.5 hover:border-primary/50 disabled:cursor-wait disabled:opacity-60"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <CachedImage
@@ -5212,11 +5193,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                           loading="lazy"
                           className="block w-full"
                         />
-                        {historyAddingId === w.id && <span className="absolute inset-0 flex items-center justify-center bg-white/60"><Loader2 aria-label={locale === "en" ? "Adding artwork" : "正在添加"} className="h-5 w-5 animate-spin text-primary" /></span>}
+                        {historyAddingId === w.id && <span className="absolute inset-0 flex items-center justify-center bg-[var(--canvas-ui-mask)]"><Loader2 aria-label={locale === "en" ? "Adding artwork" : "正在添加"} className="h-5 w-5 animate-spin text-primary" /></span>}
                       </button>
                     ))}
                   </div>
-                    {available.length > historyVisibleCount && <button type="button" disabled={Boolean(historyAddingId)} onClick={() => setHistoryVisibleCount(count => count + 60)} className="mx-auto mt-3 block rounded-lg border border-slate-200 px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50">{locale === "en" ? "Load more" : "加载更多"}</button>}
+                    {available.length > historyVisibleCount && <button type="button" disabled={Boolean(historyAddingId)} onClick={() => setHistoryVisibleCount(count => count + 60)} className="canvas-ui-control mx-auto mt-3 block rounded-lg border px-4 py-2 text-sm disabled:opacity-50">{locale === "en" ? "Load more" : "加载更多"}</button>}
                   </>
                 );
               })()}
@@ -5290,5 +5271,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     </div>
     </TextNodeContext.Provider>
     </PendContext.Provider>
+    </SurfaceAppearanceProvider>
   );
 }

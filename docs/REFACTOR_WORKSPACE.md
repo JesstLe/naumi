@@ -1,5 +1,9 @@
 2026-10-29 R7M：共享composer窄屏参数占满整行、动作不截断，图片sheet复用360px舒适高度，短屏原生滚动保留正文；仅两生产owner改动，Canvas入口/任务/报价/版本/账务不改。5视口实际命中/滚轮/模式比例数量提示词及390px单次原提交、A/B/U像素与版本undo-redo通过；58场景SSR原HTML同，几何2490旧精确+150窄屏新边界。125核心入口与最终固定完整候选/副本回滚以本轮DELIVERY为准；整体ACTIVE，未合main未部署，47 HOLD。见[R7M记录](changes/2026-10-29-refactor-r7m-composer-responsive.md)。
 
+## 2026-10-30 当前：R7S 视口与外观 owner
+
+接入main1754的17提交，主题迁入既有节点/控件；定位视口从页面迁入窄hook，与手动Fit/zoom/pan共用navigation归属。原scene在完整c433副本已实际通过；独立时序反例原7组复现、新15组通过。最终core150/完整产物/远端见本片DELIVERY，不以局部代整体。**整体ACTIVE，未合main未部署，47 HOLD。** 见[R7S记录](changes/2026-10-30-refactor-r7s-viewport-appearance.md)。下方旧阶段统计保留其时间。
+
 ## 2026-10-30 当前：R7R 主线行为 owner 整合
 
 固定接入 main `d4dcea3a`（26提交），将fanout/多文件导入/文本反馈/自动画幅/共享限流/Worker停止及抠图回执行为迁入既有owner，不恢复旧大页面。原生Next20检查、主要图片57共同轨迹、真实PG关键链已通过；同固定SHA受影响51项聚合、四产物和副本回滚以本片DELIVERY为准。完整core143/最终Linux/scene门禁和整版验收仍未全部闭合。**整体ACTIVE，长分支超过48小时待普通整合main；当前未合main未部署，47 HOLD。** 详见[R7R模块记录](changes/2026-10-30-refactor-r7r-main-owner-integration.md)。以下旧阶段统计保留其原证据时间，不代表当前版本。

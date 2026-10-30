@@ -40,7 +40,8 @@ import { SiteVersion } from "@/components/site-version";
 // 站点字体:Geist(拉丁/数字,Vercel)+ 系统中文栈(见 tailwind sans),数字 tabular-nums。
 // 中文不走网页字体(CJK 字体包数 MB,拖慢加载),用系统 PingFang/YaHei。
 
-// 主题防闪烁:绘制前读取 localStorage('theme') 给 <html> 加 .dark
+// 主题防闪烁:绘制前读取 localStorage('theme') 给 <html> 加 .dark。
+// Only html may differ from SSR for this pre-paint class; descendants hydrate normally.
 const THEME_INIT = `(function(){try{if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark');}catch(e){}})();`;
 
 const platformMetadata: Metadata = {
@@ -87,7 +88,7 @@ export default async function RootLayout({
   const brand = await getRuntimeBrand();
   const site = await siteProfile();
   return (
-    <html lang={locale === "en" ? "en" : "zh-CN"} className={GeistSans.variable}>
+    <html lang={locale === "en" ? "en" : "zh-CN"} className={GeistSans.variable} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
       </head>

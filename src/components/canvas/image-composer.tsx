@@ -48,7 +48,7 @@ export function CanvasImageComposer({versions,pending,title,readOnly=false,optim
       {imageActions&&(
                   <CanvasComposerOptions label={L("更多图片参数", "More image settings")}><CanvasSelect
                         dir="up"
-                        light={true}
+                        light={controls.light}
                         value={imageActions.style}
                         options={GENERATION_STYLES.map((s) => ({
                           value: s,

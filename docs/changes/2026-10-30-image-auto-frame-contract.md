@@ -7,7 +7,7 @@
 首版 `b2fad3c3` / main `82a7aa73` 只允许自动输入使用native-auto，并仍拒绝显式不支持的比例，未完全落实这条规则。该版本只合main，没有部署/配置发布；本节记录向前修正，不把首版称最终解决。
 
 - 新增所属模块 `model-config/frame-fallback.ts`：优先原目标比例；枚举不支持时按 `abs(log(candidateAspect/targetAspect))` 排序，从当前已发布、启用且满足编辑/质量/分辨率的通道中选最近值。旧Reverse Hub使用同一距离定义。最后才使用明确发布的native-auto；fallback只在新计划发生，无新供应商POST。
-- 原图941×1672自动→目标941:1672→最近9:16；显式16:9不被竖版参考图覆盖；显式9:21→Gemini已有1:2、当前Seedream候选9:16。精确可执行比例始终优先。原生auto末选也附带原参考/用户目标画幅，不让模型无目标自由选。
+- 原图941×1672自动→目标941:1672→最近9:16；显式16:9不被竖版参考图覆盖；本地候选曾将显式9:21映射到Gemini旧表1:2；103真实端测发现Flash目录与型号文档不符，后续v117已移除其1:2/2:1，Flash显式9:21最终映射9:16并真实出图。精确可执行比例始终优先。原生auto末选也附带原参考/用户目标画幅，不让模型无目标自由选。
 - `frameChoice`保存target/effective/source/method。报价保留原target与原选档，`effectiveRatio`单独编译实际wire；绑定、恢复、适配器按已冻结的有效值，不重新读取今天的比例列表。没有裁剪、拉伸或为比例差异重发收费请求。
 - 蒙版需要原像素坐标、显式像素及已接受任务仍保留各自合同；它们不是普通比例选择的字符串回退。
 - 父主矩阵修正版41项通过；首版82a在同一候选配置下23通过/18不满足新契约，exit1。18为断言差异，不是18个生产缺陷。实际冻结/报价/提交接线专项31项通过，实际执行`freezeBusinessQuote`与原生billing quote，不只返回手写报价；历史82a的native-auto成功与3065的原始拦截分别记录。
@@ -48,7 +48,7 @@
 - 普通公开模型目录的编辑能力与计划使用同一已发布能力口径；未知编辑和比例错误分别返回 `IMAGEGEN_EDIT_UNSUPPORTED` / `IMAGEGEN_RATIO_UNSUPPORTED`，不公开供应商排除详情。
 - `repair-x6-automatic-parameters-policy.ts` 生成精确三个APIB来源的窄配置候选：三项auto声明、Flash缺失edit声明、Seedream已识别六比例历史HOLD的两个比例与四个尺寸。保留人工false/unsupported/unknown、禁用、verified=false、参考数量、quality/价格/路由等其余字段。
 - 选择性配置逆变换 `rollbackX6AutomaticParameters()` 先完整检查所有改动字段，再返回副本；后续无关label保持，后续同字段修改拒绝覆盖。
-- `scripts/ops/repair-x6-automatic-parameters.ts` 提供 PLAN/APPLY；发布复用 draft revision / expectedVersion / router publication，原publish ID在APPLY开始前落盘，unknown只核对同ID，不再次发布。该操作入口本轮**没有对生产执行**。
+- `scripts/ops/repair-x6-automatic-parameters.ts` 提供 PLAN/APPLY；发布复用 draft revision / expectedVersion / router publication，原publish ID在APPLY开始前落盘，unknown只核对同ID，不再次发布。初始源码阶段未执行；同日后续在103实际完成v115→116，另补Flash目录v116→117，见最终发布记录。
 
 ## 集中验证与证据层级
 
@@ -70,3 +70,8 @@
 **源码/本地验证、main整合、程序部署、模型配置发布、真实付费出图是五个不同状态。** 本轮没有线上改配置、部署、付费调用或重放历史任务。修正版也对旧客户端传来的数值比例作最近可用比例解析；新页面额外保留“参考图/显式”来源标记。精确自定义Seedream像素合同、其他工具旧专用入口和所有线上历史X6报告不在本次“已通过”结论中。
 
 证据目录：`output/capacity-audit-wave2-20261029/x6-auto-fix-20261030/`。MODIFIED_FILE保留修改；ROLLBACK只恢复有marker的独立副本。
+
+
+## 同日103实际发布补记
+
+固定程序98611762/1793330285、配置v117已上线103；即梦auto→9:16、香蕉Pro显式16:9、香蕉2显式9:21→9:16均取得真实图片及单笔-6，三笔成功幂等检查无新增供应商/账本。Flash首次旧1:2提交400且supplier未知仍保留；视觉上Flash包装蓝色细节未全部改红。此前fixture结果不覆盖此线上差异。完整版本、费用、输出hash、锁释放与未完成项见[103直接更新验收](2026-10-30-release103-frame.md)。

@@ -1,5 +1,19 @@
 [
   {
+    "version": "1793330285",
+    "title": {
+      "zh": "图片生成体验修复",
+      "en": "Image generation fixes"
+    },
+    "improvements": [],
+    "fixes": [
+      {
+        "zh": "修复参考图自适应及指定画幅被误拦的问题，优先使用目标画幅并匹配可用比例。",
+        "en": "Fixed incorrect aspect-ratio rejections when editing reference images or choosing an output frame."
+      }
+    ]
+  },
+  {
     "version": "1793281629",
     "title": {
       "zh": "画布创作与稳定性更新",

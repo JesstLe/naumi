@@ -328,10 +328,10 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
                 </div>
               )}
               {task.state.error && (
-                <p className="px-12 pb-2 text-xs font-medium text-red-400">{task.state.error}</p>
+                <p className="canvas-ui-error px-12 pb-2 text-xs font-medium">{task.state.error}</p>
               )}
               <CanvasComposerFooter testId="text-node-dock-footer" controls={<>
-                <TextModelSelect feature="canvas.text-generate" compact dark={false} direction="up" />
+                <TextModelSelect feature="canvas.text-generate" compact dark={!lightCanvas} direction="up" />
                 <CanvasPromptOptimizer contextKey={optimization?.contextKey??null} prompt={textPrompt}
                   disabled={!optimization || optimization.disabled || task.state.busy || selectedText.status === "generating" || assistBusy} english={locale === "en"}
                   onOptimize={(prompt, signal) => optimizeCanvasPrompt("canvas-text", prompt, signal)} onApply={setTextPrompt}/>
