@@ -1,6 +1,7 @@
 import {acceptedModelVersions} from "../model-config/accepted-context";
 import {getModelAdministration} from "../model-config/server";
 import { settlementFor } from "./quote";
+import { cutoutReceiptCheckpoint, isCutoutReceiptCheckpoint, readSettledCutoutReceipt } from "./cutout-receipt";
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { withArtworkCreation } from "@/lib/artwork-provenance-context";
@@ -101,7 +102,7 @@ export async function withBillingRequest(request: Request, feature: FeatureId, a
             return billingJson({ error: "账号已被封禁" }, 403);
         await ensureSchema();
         const id = `tool-${operationIdFor(request)}`, identity = await billingRequestIdentity(request);
-        const previous = (await getPool().query("SELECT email,feature,quote,state,result_response,request_fingerprint FROM app_billing_operations WHERE id=$1", [id])).rows[0];
+        const previous = (await getPool().query("SELECT email,feature,quote,state,result_response,request_fingerprint,charged_credits FROM app_billing_operations WHERE id=$1", [id])).rows[0];
         if (previous) {
             const creation=currentCreationContext();
             if(creation){const old=(await getPool().query(`SELECT DISTINCT c.scope_kind,c.tenant_id FROM app_creation_records c LEFT JOIN app_creation_links l ON l.creation_id=c.id
@@ -111,6 +112,11 @@ export async function withBillingRequest(request: Request, feature: FeatureId, a
             const expected = fingerprint({ email: email.toLowerCase(), quote: previous.quote, ledgerId: `led-${id}`, fingerprint: identity.hash });
             if (previous.email !== email.toLowerCase() || previous.feature !== feature || previous.request_fingerprint !== expected)
                 throw new BillingError("OPERATION_CONFLICT", "该操作编号已用于不同请求", 409);
+            if (feature === "tool.cutout" && previous.state === "settled" && (!previous.result_response || isCutoutReceiptCheckpoint(previous.result_response))) {
+                const recovered = await readSettledCutoutReceipt(getPool(), { id, email, chargedCredits: Number(previous.charged_credits), checkpoint: previous.result_response });
+                if (recovered) return billingJson(recovered);
+                return billingJson({ error: "原抠图结果尚未恢复，请保留原任务稍后查询", code: "OPERATION_PENDING", operationId: id }, 409);
+            }
             if (previous.result_response && previous.state === "settled") {
                 if (feature === "canvas.assistant") {
                     if (Array.isArray(previous.result_response.agentFrames)) {
@@ -147,8 +153,7 @@ export async function withBillingRequest(request: Request, feature: FeatureId, a
             const payload = await response.clone().json().catch(() => null);
             if (context.operation) {
                 // Keep the paid output before any final wallet transaction can fail.
-                if (response.ok && payload && JSON.stringify(payload).length < 262144)
-                    await getPool().query("UPDATE app_billing_operations SET result_response=$2::jsonb WHERE id=$1", [id, JSON.stringify(payload)]);
+                if (response.ok && payload) await checkpointSynchronousResult(payload);
                 try {
                 if (response.ok && !payload?.jobId && context.charge === undefined)
                     await settleSynchronous("工具完成");
@@ -173,6 +178,15 @@ export async function withBillingRequest(request: Request, feature: FeatureId, a
         if(error instanceof TeamError)return billingJson({error:error.message},error.status);
         return billingErrorResponse(error);
     }
+}
+/** Persist a recoverable response before a route performs its early settlement. */
+export async function checkpointSynchronousResult(payload: unknown) {
+    const context = storage.getStore();
+    if (!context?.operation) return;
+    const value = context.feature === "tool.cutout" ? cutoutReceiptCheckpoint(payload) || payload : payload;
+    const serialized = JSON.stringify(value);
+    if (serialized && serialized.length < 262144)
+        await getPool().query("UPDATE app_billing_operations SET result_response=$2::jsonb WHERE id=$1 AND email=$3", [context.id, serialized, context.email]);
 }
 /** Expired request ownership never permits a supplier resubmission or a refund. */
 export async function exposeAbandonedBillingOperations() {

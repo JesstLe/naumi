@@ -4,7 +4,7 @@ import {inspectImagegenPixels} from "@/lib/imagegen/postprocess";
 import {currentSynchronousBilling} from "@/lib/billing/synchronous";
 import { supplierCostFetch } from "@/lib/supplier-cost/collect";
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
-import {withBillingRequest,configuredToolCost,synchronousChargedCredits,markBillingUpstream} from "@/lib/billing/synchronous";
+import {withBillingRequest,configuredToolCost,synchronousChargedCredits,markBillingUpstream,checkpointSynchronousResult} from "@/lib/billing/synchronous";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { NextResponse } from "next/server";
 import OpenAI, { toFile } from "openai";
@@ -387,7 +387,6 @@ async function handleObservedPost(request: Request) {
 
     let user: Awaited<ReturnType<typeof getUser>> = null;
     if (useDb) {
-      try {
         await addArtworks(
           input.email,
           [
@@ -409,12 +408,9 @@ async function handleObservedPost(request: Request) {
           ],
           `cut-${Date.now()}`
         );
-      } catch (e) {
-        console.error(
-          "[cutout] addArtworks failed:",
-          e instanceof Error ? e.message : e
-        );
-      }
+      // The artwork and compact response exist before any wallet settlement.
+      // A large inline PNG must not silently lose its replay receipt.
+      await checkpointSynchronousResult({ ok: true, id, url, creditsUsed: cost });
       if (cost > 0) {
         await addLedgerEntry(input.email, -cost, "抠图 · 发丝级").catch(
           () => {}

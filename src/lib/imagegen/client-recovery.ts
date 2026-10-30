@@ -3,9 +3,10 @@ import {browserSha256Hex} from '../browser-crypto';
 import {ImagegenHttpError} from './http';
 import type {ImagegenClientContext} from './client';
 import type {ImagegenRequest} from './types';
+import {readCanvasFanoutPlacement,type CanvasFanoutPlacement} from '../canvas/generation-fanout';
 
 const prefix='naumi:imagegen-pending:v1:';
-export type ImagegenPendingAttempt={version:1;owner:string;workspace:string;project:string;actionKey:string;operationId:string;quoteId?:string;request:ImagegenRequest;authorizedCredits:number;confirmationRequired:boolean;accepted:'unknown'|'unaccepted'|'accepted';jobId?:string;context:Omit<ImagegenClientContext,'isCurrent'>};
+export type ImagegenPendingAttempt={version:1;owner:string;workspace:string;project:string;actionKey:string;operationId:string;quoteId?:string;request:ImagegenRequest;authorizedCredits:number;confirmationRequired:boolean;accepted:'unknown'|'unaccepted'|'accepted';jobId?:string;context:Omit<ImagegenClientContext,'isCurrent'>;placement?:CanvasFanoutPlacement};
 const inFlight=new Map<string,Promise<Response>>();
 const storage=()=>{if(typeof sessionStorage==='undefined')throw new Error('浏览器未保存本次任务凭据，请启用会话存储后重试');return sessionStorage};
 export function pendingAttemptKey(owner:string,workspace:string,project:string,actionKey:string){return prefix+JSON.stringify([owner.toLowerCase(),workspace,project,actionKey]);}
@@ -13,6 +14,7 @@ export function readPendingAttempt(key:string):ImagegenPendingAttempt|null{
  const raw=storage().getItem(key);if(raw===null)return null;
  try{const value=JSON.parse(raw) as ImagegenPendingAttempt;
   if(value.version!==1||!value.request||value.request.operationId!==value.operationId||pendingAttemptKey(value.owner,value.workspace,value.project,value.actionKey)!==key||!Number.isFinite(value.authorizedCredits)||value.jobId!==undefined&&value.jobId!==`imagegen-${value.operationId}`||!['unknown','unaccepted','accepted'].includes(value.accepted)||value.context.workspace!==value.workspace||(value.context.projectContext||'workspace')!==value.project)throw Error();
+  if(value.placement&&!readCanvasFanoutPlacement(value.placement,value.request.sourceNodeId,value.request.variants))throw Error();
   return value;
  }catch{throw new ImagegenHttpError('本次任务凭据读取异常，请保留当前会话并稍后核查',0);}
 }
@@ -49,7 +51,7 @@ export async function canvasImagegenActionKey(form:FormData,sourceNodeId?:string
  const node=String(form.get('imagegenNodeId')||'');if(node)return `node:${node}`;
  const entries:unknown[]=[];
  for(const [key,value] of form.entries()){
-  if(['imagegenNodeX','imagegenNodeY','email'].includes(key))continue;
+  if(['imagegenNodeX','imagegenNodeY','imagegenPlacement','email'].includes(key))continue;
   entries.push([key,typeof value==='string'?value:{name:value.name,type:value.type,size:value.size,sha256:await browserSha256Hex(new Uint8Array(await value.arrayBuffer()))}]);
  }
  return `content:${await browserSha256Hex(new TextEncoder().encode(JSON.stringify([sourceNodeId||'',entries])))}`;
@@ -66,4 +68,15 @@ export function completeCanvasImagegen(jobId:string,scope:{owner:string;project:
   if(attempt&&attempt.owner===scope.owner.toLowerCase()&&attempt.workspace===scope.workspace&&attempt.project===scope.project&&`imagegen-${attempt.operationId}`===jobId&&target.getItem(key)===JSON.stringify(attempt))target.removeItem(key);
  }
  }catch{/* Delivery already succeeded. Keep the receipt; never fail attachment. */}
+}
+
+/** Only update presentation metadata on the exact existing scoped receipt. */
+export function updateCanvasImagegenPlacement(scope:{owner:string;workspace:string;project:string},actionKey:string,
+  update:(placement:CanvasFanoutPlacement)=>CanvasFanoutPlacement) {
+ const key=pendingAttemptKey(scope.owner,scope.workspace,scope.project,actionKey),pending=readPendingAttempt(key);
+ if(!pending?.placement)return;
+ const placement=readCanvasFanoutPlacement(update(pending.placement),pending.request.sourceNodeId,pending.request.variants);
+ if(!placement)throw new Error("生成位置记录无效，原任务已保留");
+ savePendingAttempt(key,{...pending,placement});
+ return placement;
 }

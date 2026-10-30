@@ -11,6 +11,7 @@ import {browserImageHeader} from "../browser-reference-image";
 import {canvasReferenceManifestSchema,referenceManifestError} from "./reference-labels";
 import {currentWorkspace} from '../saas/workspace-client';
 import {canvasImagegenActionKey,pendingAttemptKey,readPendingAttempt,savePendingAttempt,withPendingAttempt,type ImagegenPendingAttempt} from './client-recovery';
+import {readCanvasFanoutPlacement} from "../canvas/generation-fanout";
 export {completeCanvasImagegen} from './client-recovery';
 export type CanvasFrameChoice={artworkId:string;url:string;label:string;width:number;height:number;ratio:string};
 /** The specialized/redo route quotes the same resolved frame it submits.
@@ -113,9 +114,11 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
  assertCurrent();const plan=await previewImagegen(request,context);assertCurrent();const stages=plan.steps.map(s=>s.operation==="cutout"?"抠图":s.operation==="edit"?"编辑":"生成").join(" → ");
  if(plan.requestedParameters?.resolution)onPlan?.(plan.warnings.join("\n"));
  if(plan.intent.background==="transparent")onPlan?.(`已识别：透明背景 · ${stages} · ${plan.totalCredits} 积分`);
+ const placement=form.has("imagegenPlacement")?readCanvasFanoutPlacement(JSON.parse(String(form.get("imagegenPlacement"))),request.sourceNodeId,request.variants):undefined;
+ if(form.has("imagegenPlacement")&&(!placement||request.canvasTarget))throw new Error("生成位置记录与本次请求不一致");
  const submit=async(latest:typeof plan)=>{
   assertCurrent();
-  pending={version:1,owner:scope.owner.toLowerCase(),workspace,project:scope.project,actionKey,operationId:request.operationId,quoteId:latest.quote?.id,request,authorizedCredits:latest.totalCredits,confirmationRequired:latest.confirmationRequired,accepted:'unknown',context:{workspace,...capturedHeaders?{headers:capturedHeaders}:{},...scope.project!=='workspace'?{projectContext:scope.project}:{}}};
+  pending={version:1,owner:scope.owner.toLowerCase(),workspace,project:scope.project,actionKey,operationId:request.operationId,quoteId:latest.quote?.id,request,authorizedCredits:latest.totalCredits,confirmationRequired:latest.confirmationRequired,...placement?{placement}:{},accepted:'unknown',context:{workspace,...capturedHeaders?{headers:capturedHeaders}:{},...scope.project!=='workspace'?{projectContext:scope.project}:{}}};
   // Durable, scoped identity exists before authentication and the paid POST.
   savePendingAttempt(key,pending);submitting=true;
   try{return await startImagegen(request,{billingVersion:latest.billingVersion,modelVersion:latest.modelVersion,credits:latest.totalCredits,confirmed:true,quoteId:latest.quote?.id},context);}
