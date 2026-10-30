@@ -36,3 +36,15 @@
 - 新增geometry仅从页面搬出规则并由模块复用；`projectOverlay`是render/live共用的唯一组装点。原viewport、document、history与账务未迁移。
 
 实际完整Next/ReactFlow原参考链9检查与5个响应式视口通过，真实控件操作/输入像素/原版本及undo-redo/失败重试保持。初次完成后消除新hook新增的依赖warning并移除页面退役import；最终同源native另存记录，不把初测哈希改写成最终源。
+
+## 最终固定源码结果
+
+应用/验证`b58df21aacc66075da58c049951309e9acb9f85b`：原31共同轨迹EXACT，固定19项受影响入口全部通过、0失败/0未运行/0日志复用；subset语义PARTIAL/exit2。当前inventory151不等于全151已跑，上轮R7S的完整150/同镜像177+52+37不改标本片。
+
+tsc/lint exit0，37条既有warning，四类SCC0；原2条fixture lib→app与1条toast lib→UI、生成worker路径未解析边保留。Canvas5276→5142行只作定位，不作为完成标准；最终native绑定2095个src/services文件逐hash给证，不靠行数推性能。
+
+最终实际完整Next/ReactFlow：参考/关闭A-B-A/重复/失败/显式移除恢复/原像素/原目标版本/undo-redo/几何连线9项，真实控件5视口（390×844/320×740/390×568/844×390/1440×1000）通过，clip0/force0/pageerror0/paid0。只模拟HTTP/media，不冒充真实PG账务验收。原生自有服务器已停止。
+
+最终原生首次因Next子进程绑定53771 EACCES退出，原proxy继续等待至就绪超时；非产品失败。确认进程终止后给原native verifier增加显式CANVAS_REFERENCE_PORT控制（默认行为不变），用15410/15411完成同源验证。重试wrapper最初错拿旧snapshot作hash guard，零写入失败，改以已保存最终snapshot核对；三次材料均保留。最终归档只追加已实测的端口支持与文档，src/services及其余源码与固定验证保持；桥接清单不冒充新核心SHA。
+
+整体继续ACTIVE：余下文档/选择/整理布局应用编排、toast层边界、有效远端CI（上轮已证实账户付款/支出导致0steps）、受控性能/容量与最终main整合未闭合。本片没有新完整Linux镜像/全151核心/生产或供应商操作，47 HOLD。

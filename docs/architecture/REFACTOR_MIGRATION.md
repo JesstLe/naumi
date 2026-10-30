@@ -1,3 +1,7 @@
+## 2026-10-30 当前模块：R7T
+
+浮动层render/live共用projectOverlay与原纯几何；Refs/observer测量、最小pan移出Canvas，文档/history/任务/账务仍原owner。原31轨迹EXACT、b58固定19项受影响PASS（subset exit2）、实际Next9+响应式5、tsc/lint37warnings与四SCC0通过。observer同ID换文档反例关闭，本地端口EACCES与verifier时序失败原样保留。整体ACTIVE，未合main/未发布，47 HOLD；全151与新Linux未在本片重复。见[R7T记录](../changes/2026-10-30-refactor-r7t-overlay-ownership.md)和DELIVERY。下文R7S完整150/同镜像177+52+37仍属于其原版本。
+
 ## 2026-10-30 当前整版检查点：R7S
 
 固定接main1754的17提交，主题传递归既有组件，深链/节点定位归`useCanvasViewportFocus`并与view-controls手动导航共用revision。单图原位、多图fanout断言分离，未回退产品。应用/验证4c4f8e29：完整core150/150全新执行、四类SCC0、完整Linux同镜像runtime177/原生媒体52/双browser37通过；原scene门禁本地关闭。整体ACTIVE，Canvas剩余职责/有效远端CI/交互准备开销与容量/最终main整合仍未全部退出。最终包/副本回滚/远端以R7S DELIVERY为准；未合main未部署，47 HOLD。见[R7S模块记录](../changes/2026-10-30-refactor-r7s-viewport-appearance.md)。下方各阶段保留历史来源，不当作当前完成状态。

@@ -1,5 +1,9 @@
 2026-10-29 R7M：共享composer窄屏参数占满整行、动作不截断，图片sheet复用360px舒适高度，短屏原生滚动保留正文；仅两生产owner改动，Canvas入口/任务/报价/版本/账务不改。5视口实际命中/滚轮/模式比例数量提示词及390px单次原提交、A/B/U像素与版本undo-redo通过；58场景SSR原HTML同，几何2490旧精确+150窄屏新边界。125核心入口与最终固定完整候选/副本回滚以本轮DELIVERY为准；整体ACTIVE，未合main未部署，47 HOLD。见[R7M记录](changes/2026-10-29-refactor-r7m-composer-responsive.md)。
 
+## 2026-10-30 当前：R7T 浮动层布局归属
+
+原页面131行测量/锚点最小pan/live跟随归useCanvasOverlayLayout，纯几何归原dock-layout；同ID文档替换重绑observer，旧callback不污染新dock。固定b58df21a原31共同轨迹EXACT、19项受影响入口全部通过（PARTIAL/exit2）、实际Next9检查+5响应式视口通过；2095应用文件逐hash绑定，类型/lint37warnings、四SCC0。新完整Linux/全151未跑，上一轮完整结果不改标。完整包/回滚/远端见R7T DELIVERY，整体ACTIVE、未合main未部署、47 HOLD。见[R7T记录](changes/2026-10-30-refactor-r7t-overlay-ownership.md)。
+
 ### R7S最终本地验收
 
 固定应用/验证4c4f8e29完整core150/150（零日志复用）、同固定完整Linux镜像runtime177/原生媒体52/产品双browser37通过；scene/character/director原生门禁通过。视口旧7组竞争复现→新15通过，主题全Next97检查/0违例。最终归档只补已执行browser可访问名断言及文档，应用字节不变；完整四产物/回滚/远端见R7S DELIVERY。整体ACTIVE，继续剩余Canvas职责/远端CI/性能容量和最终main普通整合，未部署，47 HOLD。
