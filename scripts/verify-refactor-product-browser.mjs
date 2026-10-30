@@ -1,3 +1,4 @@
+import {verifyCanvasNativeEditorsBrowser} from './verification/canvas-native-editors-browser.mjs';
 /** Actual full-product browser + real image Worker. No mocked browser routes,
  * no injected auth provider, no DOM fixture, no replacement API handlers. */
 import {chromium,expect as rawExpect} from '@playwright/test';
@@ -68,6 +69,7 @@ try{
  checks.push(...await verifyCanvasNodePreferencesBrowser({page:pb,expect,out:path.join(out,'node-preferences'),snapshot,preferences:()=>helper('preferences'),stats,open,requests}));
  checks.push(...await verifyCanvasStitchBrowser({page:pb,expect,out:path.join(out,'stitch'),snapshot,stats,open,requests}));
  checks.push(...await verifyCanvasArtworkPickerBrowser({page:pb,expect,out:path.join(out,'artwork-picker'),snapshot,copies:()=>helper('copies'),stats,requests}));
+ checks.push(...await verifyCanvasNativeEditorsBrowser({page:pb,expect,out:path.join(out,'native-editors'),snapshot,native:()=>helper('native-editors'),stats,open,requests}));
  checks.push(...await verifyCanvasLargeDownloadBrowser({page:pb,expect,out:path.join(out,'downloads-large'),snapshot,stats,seed:()=>helper('download-project')}));
  await helper('drain');await expect.poll(async()=>(await helper('status')).tickDrainComplete).toBe(true);assert.equal(dialogs.length,0);assert.deepEqual(errors,[]);assert.equal(requests.filter(r=>['/api/artworks/rename','/api/artworks/mark','/api/artworks/canvas-size','/api/canvas/groups'].includes(r.path)).length,0);
  const final=await snapshot(),report={status:'PASS',checks,source:'fixed image recorded by parent INPUT.json',actualFullProduct:true,actualBrowser:true,browser:'msedge-headless',routeMocks:0,authProvidersReplaced:0,checksCount:checks.length,errors,dialogs,requests,responses,samples,soakSeconds:(performance.now()-soakStart)/1000,iterations,final,fixture:await stats(),capacityClaim:false};

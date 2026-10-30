@@ -53,6 +53,16 @@ async function main(){
    }catch(error){await tx.query('ROLLBACK').catch(()=>{});throw error;}
    finally{tx.release();}
   }
+  if(action==='native-editors'){
+   const tx=await sql.connect();
+   try{
+    await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');const result:Record<string,unknown>={};
+    for(const kind of ['character','scene','director','audio','timeline'] as const)
+     result[kind]=(await tx.query(`SELECT * FROM app_canvas_${kind}_nodes WHERE email=$1 ORDER BY id`,[input.owner.toLowerCase()])).rows;
+    await tx.query('COMMIT');console.log(JSON.stringify(result));return;
+   }catch(error){await tx.query('ROLLBACK').catch(()=>{});throw error;}
+   finally{tx.release();}
+  }
   if(action==='snapshot'){
    // This fresh observer process must not invoke lazy schema initialization
    // while Web/Worker are running. Setup owns DDL. A read-only repeatable-read

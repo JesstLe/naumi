@@ -1,4 +1,6 @@
 "use client";
+import {useCanvasNativeEditors} from "./use-canvas-native-editors";
+import {CanvasNativeEditors} from "./native-editors";
 import {CanvasArtworkPicker} from "./artwork-picker";
 import {useCanvasArtworkPicker} from "./use-canvas-artwork-picker";
 import type {NodePreferenceChange} from "@/lib/canvas/node-preferences";
@@ -24,17 +26,16 @@ import {useAudioNodes,useAudioResultAdoption} from "./audio/use-audio-nodes";
 import {audioInputChoices} from "@/lib/audio/canvas";
 import type {CanvasAudioNode} from "@/lib/canvas/audio-node-schema";
 import type {AudioPatchFields} from "@/lib/canvas/history-model";
-import type {PublicMediaJob} from "@/lib/video/media-job-schema";
 import {loadCanvasImageVersions} from "@/lib/canvas/image-version-client";
 import type {CanvasImageVersion,CanvasImageVersionList} from "@/lib/canvas/image-versions";
 import {createCanvasResultAttachment,createCanvasImageVersionAttachment} from "@/lib/canvas/result-attachment";
 import {useSceneNodes} from "./scene/use-scene-nodes";
-import {sceneInputIdentity,sceneStateWithReferences,sceneDirectorSnapshot,type SceneProject} from "@/lib/scene/project";
+import {sceneInputIdentity,sceneStateWithReferences,sceneDirectorSnapshot} from "@/lib/scene/project";
 import {applySceneDirectorSnapshot} from "@/lib/scene/director";
 import {sceneInputChoices} from "@/lib/scene/canvas";
 import {useCharacterNodes} from "./character/use-character-nodes";
 import type {CanvasCharacterNode} from "@/lib/canvas/character-node-schema";
-import {characterInputIdentity,parseCharacterInputIdentity,type CharacterProject} from "@/lib/character/project";
+import {characterInputIdentity,parseCharacterInputIdentity} from "@/lib/character/project";
 import {characterInputChoices} from "@/lib/character/canvas";
 import {executeCanvasImageCreation,generateCanvasAssistantImage,canvasInheritedImagePrompt,CANVAS_IMAGE_REFERENCE_LIMIT as MAX_TOTAL_IMAGES,type CanvasImageCreationServices} from "@/lib/canvas/image-creation";
 import {canvasNodeMenuItems} from "./node-menu-items";
@@ -125,7 +126,6 @@ import {VideoResultDock} from "./video/result-dock";
 import {useVideoCatalog} from "./video/use-video-catalog";
 import {useVideoNodes} from "./video/use-video-nodes";
 import {useDirectorNodes,DirectorClientError} from "./director/use-director-nodes";
-import type {DirectorProject} from "@/lib/director/project";
 import {useVideoTasks} from "./video/use-video-tasks";
 import { type VideoPlayerAction } from "./video/player";
 import {MediaActionsDialog,type MediaInputChoice} from "./video/media-actions";
@@ -217,11 +217,6 @@ import { BRAND, BRAND_CANVAS_LOGO } from "@/lib/brand";
 const panelLoading = () => <div role="status" className="p-4 text-sm text-slate-500">加载中…</div>;
 const AssistantRichText = dynamic(() => import("./assistant-richtext").then(module => module.AssistantRichText), { ssr: false, loading: panelLoading });
 const ImageCropDialog = dynamic(() => import("./image-crop-dialog").then(module => module.ImageCropDialog), { ssr: false, loading: panelLoading });
-const CharacterEditor = dynamic(() => import("./character/character-editor").then(module => module.CharacterEditor), { ssr: false, loading: panelLoading });
-const AudioEditor = dynamic(() => import("./audio/audio-editor").then(module => module.AudioEditor), {ssr:false,loading:panelLoading});
-const TimelineEditor = dynamic(() => import("./timeline/timeline-editor").then(module => module.TimelineEditor), {ssr:false,loading:panelLoading});
-const SceneEditor = dynamic(() => import("./scene/scene-editor").then(module => module.SceneEditor), { ssr: false, loading: panelLoading });
-const DirectorEditor = dynamic(() => import("./director/director-editor").then(module => module.DirectorEditor), { ssr: false, loading: panelLoading });
 const NodePropertiesPanel = dynamic(() => import("./node-properties-panel").then(module => module.NodePropertiesPanel), { ssr: false, loading: panelLoading });
 const AnnotateEditorModal = dynamic(() => import("./annotate-editor").then(module => module.AnnotateEditorModal), { ssr: false, loading: panelLoading });
 const CanvasComfyDialog = dynamic(() => import("./canvas-comfy-dialog").then(module => module.CanvasComfyDialog), { ssr: false, loading: panelLoading });
@@ -561,23 +556,21 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [videoMedia,setVideoMedia]=useState<{id:string;projectKey:string;initial:VideoPlayerAction}|null>(null);
   const videoNodesStore=useVideoNodes({email:targetEmail||user?.email,readOnly,scope:canvasArtworkDocument.scope});
   const directorNodesStore=useDirectorNodes({email:targetEmail||user?.email,readOnly,scope:canvasArtworkDocument.scope});
-  const [directorEditorId,setDirectorEditorId]=useState<string|null>(null);
   useEffect(()=>{if(directorNodesStore.error)flashTip(directorNodesStore.error);},[directorNodesStore.error]);
   const [directorActionsOwner]=useState(createCanvasDirectorActions);
   const characterNodesStore=useCharacterNodes({email:targetEmail||user?.email,readOnly,scope:canvasArtworkDocument.scope});
-  const [characterEditorId,setCharacterEditorId]=useState<string|null>(null);
   const [characterActionsOwner]=useState(()=>createCanvasReferenceAssetActions("character"));
   useEffect(()=>{if(characterNodesStore.error)flashTip(characterNodesStore.error);},[characterNodesStore.error]);
   const audioNodesStore=useAudioNodes({email:targetEmail||user?.email,readOnly,scope:canvasArtworkDocument.scope});
-  const [audioEditorId,setAudioEditorId]=useState<string|null>(null);
   const [audioActionsOwner]=useState(createCanvasAudioActions);
   useEffect(()=>{if(audioNodesStore.error)flashTip(audioNodesStore.error);},[audioNodesStore.error]);
   const timelineNodesStore=useTimelineNodes({email:targetEmail||user?.email,readOnly,scope:canvasArtworkDocument.scope});
-  const [timelineEditorId,setTimelineEditorId]=useState<string|null>(null);
   const [timelineActionsOwner]=useState(createCanvasTimelineActions);
   useEffect(()=>{if(timelineNodesStore.error)flashTip(timelineNodesStore.error);},[timelineNodesStore.error]);
   const sceneNodesStore=useSceneNodes({email:targetEmail||user?.email,readOnly,scope:canvasArtworkDocument.scope});
-  const [sceneEditorId,setSceneEditorId]=useState<string|null>(null);
+  const nativeEditors=useCanvasNativeEditors(canvasArtworkDocument.scope,{
+    character:characterNodesStore,scene:sceneNodesStore,director:directorNodesStore,audio:audioNodesStore,timeline:timelineNodesStore,
+  },(project,id)=>{canvasSelection.selectInProject(project,{selectedId:id,selectedTextId:null,selectedPendId:null,multiSel:[]});setPropertiesOpen(false);});
   const [sceneActionsOwner]=useState(()=>createCanvasReferenceAssetActions("scene"));
   useEffect(()=>{if(sceneNodesStore.error)flashTip(sceneNodesStore.error);},[sceneNodesStore.error]);
   const videoAssetStore=useVideoAssets({email:targetEmail||user?.email,readOnly,request:privateFetchRaw});
@@ -807,11 +800,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const activeProjectRef = useRef(active);
   activeProjectRef.current = active;
   const canvasContextEpochRef = useRef(0);
-  useEffect(()=>{if(directorEditorId&&!directorNodesStore.nodes.some(node=>node.id===directorEditorId&&node.projectKey===activeKey))setDirectorEditorId(null);},[directorEditorId,directorNodesStore.nodes,activeKey,targetEmail,user?.email]);
-  useEffect(()=>{if(characterEditorId&&!characterNodesStore.nodes.some(node=>node.id===characterEditorId&&node.projectKey===activeKey))setCharacterEditorId(null);},[characterEditorId,characterNodesStore.nodes,activeKey,targetEmail,user?.email]);
-  useEffect(()=>{if(audioEditorId&&!audioNodesStore.nodes.some(node=>node.id===audioEditorId&&node.projectKey===activeKey))setAudioEditorId(null);},[audioEditorId,audioNodesStore.nodes,activeKey,targetEmail,user?.email]);
-  useEffect(()=>{if(timelineEditorId&&!timelineNodesStore.nodes.some(node=>node.id===timelineEditorId&&node.projectKey===activeKey))setTimelineEditorId(null);},[timelineEditorId,timelineNodesStore.nodes,activeKey,targetEmail,user?.email]);
-  useEffect(()=>{if(sceneEditorId&&!sceneNodesStore.nodes.some(node=>node.id===sceneEditorId&&node.projectKey===activeKey))setSceneEditorId(null);},[sceneEditorId,sceneNodesStore.nodes,activeKey,targetEmail,user?.email]);
   const previousCanvasContextRef = useRef({ key: activeKey, email: user?.email || "" });
   useEffect(() => {
     activeProjectRef.current = active;
@@ -1004,7 +992,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const box=canvasAreaRef.current?.getBoundingClientRect(),point=rfRef.current?.screenToFlowPosition({x:at.x+(box?.left||0),y:at.y+(box?.top||0)})||{x:0,y:0};
     return {projectKey:!browsing&&!creatingNew&&activeKey?activeKey:`tree:${id}`,...point};
   }
-  function revealNativeNode(node:{id:string;projectKey:string},open:(id:string)=>void){canvasSelection.selectInProject(node.projectKey,{selectedId:node.id,selectedTextId:null,selectedPendId:null,multiSel:[]});projectNavigation.open(node.projectKey);open(node.id);}
+  function revealNativeNode(node:{id:string;projectKey:string},open:(id:string,project?:string)=>void){canvasSelection.selectInProject(node.projectKey,{selectedId:node.id,selectedTextId:null,selectedPendId:null,multiSel:[]});open(node.id,node.projectKey);projectNavigation.open(node.projectKey);}
   function nativeReferenceDraft(input:{x:number;y:number;width:number;height:number;prompt:string;referenceArtworkIds:string[]}){
     const center=centerScreen(),pending=addPendAtScreen(center.x,center.y,null,false),{referenceArtworkIds:ids}=input;
     pendingPresentation.set(nodes=>nodes.map(node=>node.id===pending.id?{...node,x:input.x,y:input.y,inputs:ids,parentId:ids[0]||null,linked:ids.length>0}:node));
@@ -1061,15 +1049,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     void (async()=>{for(let offset=0;offset<ids.length;offset+=100){if(account!==canvasAccountRef.current||epoch!==canvasContextEpochRef.current)return;await mergeWorks(ids.slice(offset,offset+100));}})().catch(()=>{});
   },[user?.email,targetEmail,activeKey,readOnly,works,videoNodesStore.nodes,directorNodesStore.nodes,characterNodesStore.nodes,sceneNodesStore.nodes,audioNodesStore.nodes,timelineNodesStore.nodes,visualReferenceIds]);
   const selectedScene=sceneNodesStore.nodes.find(node=>node.id===selectedId&&node.projectKey===activeKey)||null;
-  const editingScene=sceneNodesStore.nodes.find(node=>node.id===sceneEditorId&&node.projectKey===activeKey)||null;
   const selectedAudio=audioNodesStore.nodes.find(node=>node.id===selectedId&&node.projectKey===activeKey)||null;
   const selectedTimeline=timelineNodesStore.nodes.find(node=>node.id===selectedId&&node.projectKey===activeKey)||null;
-  const editingAudio=audioNodesStore.nodes.find(node=>node.id===audioEditorId&&node.projectKey===activeKey)||null;
-  const editingTimeline=timelineNodesStore.nodes.find(node=>node.id===timelineEditorId&&node.projectKey===activeKey)||null;
   const selectedCharacter=characterNodesStore.nodes.find(node=>node.id===selectedId&&node.projectKey===activeKey)||null;
-  const editingCharacter=characterNodesStore.nodes.find(node=>node.id===characterEditorId&&node.projectKey===activeKey)||null;
   const selectedDirector=directorNodesStore.nodes.find(node=>node.id===selectedId&&node.projectKey===activeKey)||null;
-  const editingDirector=directorNodesStore.nodes.find(node=>node.id===directorEditorId&&node.projectKey===activeKey)||null;
   const selectedVideo=videoNodesStore.nodes.find(node=>node.id===selectedId&&node.projectKey===activeKey&&!node.deletedAt)||null;
   const mixedNativeSelection=multiSel.length>1&&(multiSel.some(id=>videoNodesStore.getNode(id)||directorNodesStore.getNode(id)||characterNodesStore.getNode(id)||sceneNodesStore.getNode(id)||audioNodesStore.getNode(id)||timelineNodesStore.getNode(id))||multiSel.some(id=>textNodesRef.current.some(node=>node.id===id))&&multiSel.some(id=>!textNodesRef.current.some(node=>node.id===id)));
   const selected = useMemo(
@@ -1399,32 +1382,21 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   function patchVideoNode(id:string,patch:VideoPatchFields&{expectedRevision?:number}){return videoNodeActions.patch(id,patch);}
   async function saveVideoDraft(id:string,draft:VideoNodeDraft){return patchVideoNode(id,{title:draft.title,config:draft.config,inputs:draft.inputs,expectedRevision:draft.expectedRevision});}
-  function openCharacterEditor(id:string){setCharacterEditorId(id);setSelectedId(id);setSelectedTextId(null);setSelectedPendId(null);setMultiSel([]);setPropertiesOpen(false);}
+  function openCharacterEditor(id:string,project?:string){return nativeEditors.open("character",id,project);}
   function createCharacterNode(at:{x:number;y:number}){if(readOnly||!user)return;return characterActions.create(at).catch(error=>flashTip(error instanceof Error?error.message:L("角色创建失败","Character creation failed")));}
   function patchCharacterNode(id:string,patch:CharacterPatchFields&{expectedRevision?:number}){return characterActions.patch(id,patch);}
-  function uploadCharacterReferences(id:string,files:File[]){return characterActions.upload(id,files);}
-  function generateCharacterReference(id:string,character:CharacterProject,appearanceId:string){return characterActions.reference(id,character,appearanceId);}
-  function openAudioEditor(id:string){setAudioEditorId(id);setSelectedId(id);setSelectedTextId(null);setSelectedPendId(null);setMultiSel([]);setPropertiesOpen(false);}
-  function openTimelineEditor(id:string){setTimelineEditorId(id);setSelectedId(id);setSelectedTextId(null);setSelectedPendId(null);setMultiSel([]);setPropertiesOpen(false);}
+  function openAudioEditor(id:string,project?:string){return nativeEditors.open("audio",id,project);}
+  function openTimelineEditor(id:string,project?:string){return nativeEditors.open("timeline",id,project);}
   function createTimelineNode(at:{x:number;y:number}){return timelineActions.create(at).catch(error=>{flashTip(error instanceof Error?error.message:L("多轨创建失败","Multitrack creation failed"));});}
   function patchTimelineNode(id:string,patch:TimelinePatchFields&{expectedRevision?:number}){return timelineActions.patch(id,patch);}
-  function uploadTimelineSources(id:string,files:File[]){return timelineActions.upload(id,files);}
-  function renderTimelineEdit(id:string,revision:number){return timelineActions.render(id,revision);}
-  function adoptTimelineResult(id:string,job:PublicMediaJob){return timelineActions.adopt(id,job);}
   function createAudioNode(at:{x:number;y:number}){return audioActions.create(at).catch(error=>{flashTip(error instanceof Error?error.message:L("音频创建失败","Audio creation failed"));});}
   function patchAudioNode(id:string,patch:AudioPatchFields&{expectedRevision?:number},resultAdoption=false){return audioActions.patch(id,patch,resultAdoption);}
-  function uploadAudioSource(id:string,files:File[]){return audioActions.upload(id,files);}
-  function renderAudioEdit(id:string,revision:number){return audioActions.render(id,revision);}
-  function adoptAudioResult(id:string,job:PublicMediaJob){return audioActions.adopt(id,job);}
-  function openSceneEditor(id:string){setSceneEditorId(id);setSelectedId(id);setSelectedTextId(null);setSelectedPendId(null);setMultiSel([]);setPropertiesOpen(false);}
+  function openSceneEditor(id:string,project?:string){return nativeEditors.open("scene",id,project);}
   function createSceneNode(at:{x:number;y:number}){if(readOnly||!user)return;return sceneNodeActions.create(at).catch(error=>flashTip(error instanceof Error?error.message:L("场景创建失败","Scene creation failed")));}
   function patchSceneNode(id:string,patch:ScenePatchFields&{expectedRevision?:number}){return sceneNodeActions.patch(id,patch);}
-  function uploadSceneReferences(id:string,files:File[]){return sceneNodeActions.upload(id,files);}
-  function generateSceneReference(id:string,scene:SceneProject,stateId:string){return sceneNodeActions.reference(id,scene,stateId);}
-  function openDirectorEditor(id:string){setDirectorEditorId(id);setSelectedId(id);setSelectedTextId(null);setSelectedPendId(null);setMultiSel([]);setPropertiesOpen(false);}
+  function openDirectorEditor(id:string,project?:string){return nativeEditors.open("director",id,project);}
   function createDirectorNode(at:{x:number;y:number}){if(readOnly||!user)return;return directorActions.create(at).catch(error=>flashTip(error instanceof Error?error.message:L("导演节点创建失败","Director node creation failed")));}
   function patchDirectorNode(id:string,patch:DirectorPatchFields&{expectedRevision?:number}){return directorActions.patch(id,patch);}
-  function sendDirectorOutput(id:string,file:File,kind:"image"|"video",expectedRevision:number){return directorActions.output(id,file,kind,expectedRevision);}
   async function generateVideoDraft(id:string,draft:VideoNodeDraft,quote:PublicQuote|null,onPersisted?: (revision:number)=>void,count=1){
     if(!user||readOnly)throw new Error("无法修改此画布");
     const scope=canvasHistory.scope;
@@ -2431,6 +2403,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       expandOpen ||
         !!videoHistoryId ||
       !!videoMedia ||
+      nativeEditors.openCount > 0 ||
       spawnMenu ||
       ctxMenu ||
       addMenuOpen ||
@@ -4284,11 +4257,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       )}
 
       {videoMedia&&videoMedia.projectKey===activeKey&&<MediaActionsDialog key={`${user?.email}:${videoMedia.projectKey}:${videoMedia.id}`} initial={videoMedia.initial} sourceId={videoMedia.id} projectKey={videoMedia.projectKey} choices={videoInputChoices.filter(choice=>choice.available&&choice.kind!=="text").map(choice=>({id:choice.nodeId,title:choice.title,kind:choice.kind as MediaInputChoice["kind"],url:choice.value}))} light={lightCanvas} readOnly={readOnly||isNodeLocked(videoMedia.id)} jobs={mediaJobStore.jobs} historyError={mediaJobStore.error} canLoadMore={!!mediaJobStore.nextCursor} onLoadMore={mediaJobStore.loadMore} onQuote={mediaJobStore.estimate} onSubmit={mediaJobStore.submit} onCancel={mediaJobStore.cancel} onClose={()=>setVideoMedia(null)}/>}
-      {editingCharacter&&createPortal(<CharacterEditor key={`${canvasAccountRef.current}:${activeKey}:${editingCharacter.id}`} node={editingCharacter} images={baseVideoInputChoices.filter(choice=>choice.kind==='image')} draftScope={JSON.stringify([user?.email,targetEmail,activeKey])} english={locale==='en'} readOnly={readOnly||!nodeSettingsReady||isNodeLocked(editingCharacter.id)} onSave={(character,revision)=>patchCharacterNode(editingCharacter.id,{character,title:character.name,expectedRevision:revision})} onUpload={files=>uploadCharacterReferences(editingCharacter.id,files)} onGenerate={(character,appearanceId)=>generateCharacterReference(editingCharacter.id,character,appearanceId)} onClose={()=>setCharacterEditorId(null)}/>,document.body)}
-      {editingTimeline&&createPortal(<TimelineEditor key={`${canvasAccountRef.current}:${activeKey}:${editingTimeline.id}`} node={editingTimeline} choices={baseVideoInputChoices.filter(choice=>choice.kind!=="text")} jobs={mediaJobStore.jobs} draftScope={canvasHistory.scope.key} english={locale==='en'} readOnly={readOnly||!nodeSettingsReady||isNodeLocked(editingTimeline.id)} onSave={(timeline,revision)=>patchTimelineNode(editingTimeline.id,{timeline,expectedRevision:revision})} onInspect={ids=>timelineNodesStore.inspect(editingTimeline.id,ids)} onUpload={files=>uploadTimelineSources(editingTimeline.id,files)} onRender={revision=>renderTimelineEdit(editingTimeline.id,revision)} onCancel={mediaJobStore.cancel} onAdopt={job=>adoptTimelineResult(editingTimeline.id,job)} onQuote={()=>mediaJobStore.estimate("ffmpeg")} onClose={()=>setTimelineEditorId(null)}/>,document.body)}
-      {editingAudio&&createPortal(<AudioEditor key={`${canvasAccountRef.current}:${activeKey}:${editingAudio.id}`} node={editingAudio} sources={baseVideoInputChoices.filter(choice=>choice.kind==='audio')} jobs={mediaJobStore.jobs} draftScope={JSON.stringify([user?.email,targetEmail,activeKey])} english={locale==='en'} readOnly={readOnly||!nodeSettingsReady||isNodeLocked(editingAudio.id)} onSave={(audio,revision)=>patchAudioNode(editingAudio.id,{audio,expectedRevision:revision})} onUpload={files=>uploadAudioSource(editingAudio.id,files)} onRender={revision=>renderAudioEdit(editingAudio.id,revision)} onCancel={mediaJobStore.cancel} onAdopt={job=>adoptAudioResult(editingAudio.id,job)} onQuote={()=>mediaJobStore.estimate("ffmpeg")} onClose={()=>setAudioEditorId(null)}/>,document.body)}
-      {editingScene&&createPortal(<SceneEditor key={`${canvasAccountRef.current}:${activeKey}:${editingScene.id}`} node={editingScene} images={baseVideoInputChoices.filter(choice=>choice.kind==='image')} draftScope={JSON.stringify([user?.email,targetEmail,activeKey])} english={locale==='en'} readOnly={readOnly||!nodeSettingsReady||isNodeLocked(editingScene.id)} onSave={(scene,revision)=>patchSceneNode(editingScene.id,{scene,title:scene.name,expectedRevision:revision})} onUpload={files=>uploadSceneReferences(editingScene.id,files)} onGenerate={(scene,stateId)=>generateSceneReference(editingScene.id,scene,stateId)} onClose={()=>setSceneEditorId(null)}/>,document.body)}
-      {editingDirector&&createPortal(<DirectorEditor key={`${canvasAccountRef.current}:${activeKey}:${editingDirector.id}`} node={editingDirector} scenes={sceneNodesStore.nodes.filter(node=>node.projectKey===activeKey)} draftScope={JSON.stringify([user?.email,targetEmail,activeKey])} english={locale==='en'} readOnly={readOnly||!nodeSettingsReady||isNodeLocked(editingDirector.id)} images={videoInputChoices.filter(choice=>choice.kind==='image'&&choice.available).map(choice=>({id:choice.nodeId,title:choice.title,url:choice.value}))} onSave={(project,revision)=>patchDirectorNode(editingDirector.id,{project,title:project.name,expectedRevision:revision})} onOutput={(file,kind,revision)=>sendDirectorOutput(editingDirector.id,file,kind,revision)} onClose={()=>setDirectorEditorId(null)}/>,document.body)}
+      <CanvasNativeEditors sessions={nativeEditors.sessions} legacyDraftScope={JSON.stringify([user?.email,targetEmail,activeKey])}
+        nodes={{characterNodes:characterNodesStore.nodes,sceneNodes:sceneNodesStore.nodes,directorNodes:directorNodesStore.nodes,audioNodes:audioNodesStore.nodes,timelineNodes:timelineNodesStore.nodes}}
+        commands={{character:characterActions,scene:sceneNodeActions,director:directorActions,audio:audioActions,timeline:timelineActions}}
+        inputs={baseVideoInputChoices} resolvedInputs={videoInputChoices} media={mediaJobStore} inspectTimeline={timelineNodesStore.inspect}
+        english={locale==='en'} readOnly={readOnly} settingsReady={nodeSettingsReady} locked={isNodeLocked}/>
       {videoHistoryId&&videoNodesStore.nodes.find(node=>node.id===videoHistoryId&&node.projectKey===activeKey)&&<VideoHistoryPicker key={`${user?.email}:${targetEmail}:${activeKey}:${videoHistoryId}`} email={targetEmail||user?.email} projectKey={activeKey} node={videoNodesStore.getNode(videoHistoryId)} projects={projects.map(project=>({key:project.key,name:project.name}))} assets={videoAssetStore.assets} canLoadMoreAssets={!!videoAssetStore.nextCursor} onLoadMoreAssets={videoAssetStore.loadMore} request={privateFetchRaw} light={lightCanvas} readOnly={readOnly||isNodeLocked(videoHistoryId)} onClose={()=>setVideoHistoryId(null)} onSelectResult={(id,revision)=>selectVideoResult(videoHistoryId,id,revision)} onReuseSettings={async snapshot=>{const node=videoNodesStore.getNode(videoHistoryId),account=canvasAccountRef.current,epoch=canvasContextEpochRef.current;if(!node||readOnly||isNodeLocked(node.id))throw new Error("无法修改视频设置");const draft=videoHistoryDraft(snapshot);await mergeWorks(draft.choices.filter(choice=>choice.kind!=="text").map(choice=>choice.nodeId));if(account!==canvasAccountRef.current||epoch!==canvasContextEpochRef.current)throw new Error("账号或项目已切换");await saveVideoDraft(node.id,{title:node.title,config:draft.config,inputs:draft.inputs,expectedRevision:node.revision});if(account!==canvasAccountRef.current||epoch!==canvasContextEpochRef.current)return;setVideoHistoryId(null);openVideoEditor(node.id);}} onSent={async result=>{await mergeWorks([result.artworkId,...(result.artworkIds||[]),...(result.inputArtworkIds||[])]);await videoNodesStore.refresh();await videoAssetStore.refresh();}} onRetried={async()=>{await videoNodesStore.refresh();await videoTaskStore.refresh();await refreshCredits();}} onProcess={(id,action)=>{const account=canvasAccountRef.current;void mergeWorks([id]).then(()=>{if(account===canvasAccountRef.current)extractVideoToCanvas(id,action);}).catch(error=>flashTip(error instanceof Error?error.message:"媒体加载失败"));}}/>}
       {/* 从生成历史选择:作品选择器 */}
       {historyPicker && <CanvasArtworkPicker items={artworkPicker.items} addingId={artworkPicker.addingId} error={artworkPicker.error}
