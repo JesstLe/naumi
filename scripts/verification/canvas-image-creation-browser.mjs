@@ -37,7 +37,7 @@ export async function verifyCanvasImageCreationBrowser({page,expect,out,snapshot
 
  await select();await mode('普通生成');await dock.getByRole('textbox',{name:'节点提示词',exact:true}).fill('R6W 橙色小熊站在窗台，柔和光照');
  const retryBefore=await snapshot(),retryStats=await stats(),originalNode=retryBefore.artworks.find(row=>row.id==='r6c-root');
- await expect(dock.getByTestId('generation-submit-action')).toContainText('重新生成');await dock.getByTestId('generation-submit-action').click();
+ await expect(dock.getByTestId('generation-submit-action')).toHaveAccessibleName('生成');await dock.getByTestId('generation-submit-action').click();
  const retried=await done(retryBefore,1),version=fresh(retried,retryBefore)[0],current=retried.artworks.find(row=>row.id==='r6c-root');
  assert.equal(version.source_url,'canvas-node-version');assert.equal(current.canvas_image_version.id,version.id);assert.equal(current.image_url,originalNode.image_url);assert.equal(current.canvas_x,originalNode.canvas_x);assert.equal(current.canvas_y,originalNode.canvas_y);assert.equal((await stats()).calls,retryStats.calls);assert.equal((await stats()).edits-retryStats.edits,1);
  stages.push({kind:'regenerate',artwork:version,ledger:retried.ledger});
