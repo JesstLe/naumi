@@ -39,3 +39,8 @@
 首轮同源受影响回归2 PASS / 1 FAIL / 38 NOT_RUN，失败是既有 native-actions VM 仍调用已退休页面包装函数，未提供真实 nativeEditors focus owner。fixture 改为抽取实际 hook 的 focus 端口并执行真实会话 owner；已迁出的上传/reference/output直接测试原 concrete command，真实组合另由DOM与完整镜像覆盖。保留所有原写入/共享history/CAS/reference断言。节点创建的view流程显式先保存会话/选择意图，再导航，避免将导航后的旧scope当当前；与旧记录仅视图dispatch先后不同，数据/账务/写入语义不变。一次对照因视图顺序严格字节比较失败已留存，比较仍保留实际payload/history/reference全量一致，单次目标选择/导航分别校验，不把有意变更的view顺序冒称原字节相同。
 
 受影响回归不成功时未继续拼接绿结果，首次PG及包装错误日志和自有清理保留。固定完整应用镜像e508的构建PASS只归该源；后续验收接线会另记source bridge，最终src/services必须和被验镜像逐哈希一致。
+
+
+## 最终组合审阅
+
+5d684199的41个受影响入口全部新执行PASS，subset仍PARTIAL/exit2（完整catalog183，非整版全绿）；同固定完整镜像产品92项通过，新编辑器18项/6次原POST、CAS/history及空白新项目导航意图通过。原图库选择/31图ZIP/7笔42积分fixture保持。最后源码自审发现多个独立面板同时打开时，应保留原portal叠放顺序character→timeline→audio→scene→director，而非开发时书写顺序。最终组件已恢复原顺序，DOM新增同时打开的真实顺序断言；此为真实组合语义，不增加单面板业务限制。最终source将重新固定，集中回归/镜像以本轮sealed证据为准，不拿5d结果拼接为最终源码绿。

@@ -49,6 +49,17 @@ export function CanvasNativeEditors({sessions,legacyDraftScope,nodes,commands,in
     onSave={guard(character,(value,revision)=>commands.character.patch(character.id,{character:value,title:value.name,expectedRevision:revision}))}
     onUpload={guard(character,files=>commands.character.upload(character.id,files))}
     onGenerate={guard(character,(value,appearance)=>commands.character.reference(character.id,value,appearance))}/>);
+  const timeline=sessions.timeline,nodeTimeline=timeline&&nodes.timelineNodes.find(node=>node.id===timeline.id&&node.projectKey===timeline.scope.project&&!node.deletedAt);
+  if(timeline&&timeline.current()&&nodeTimeline)panels.push(<TimelineEditor key={timeline.key} {...common(timeline)} node={nodeTimeline} choices={inputs.filter(choice=>choice.kind!=='text')} jobs={media.jobs}
+    onSave={guard(timeline,(value,revision)=>commands.timeline.patch(timeline.id,{timeline:value,expectedRevision:revision}))}
+    onInspect={guard(timeline,ids=>inspectTimeline(timeline.id,ids))} onUpload={guard(timeline,files=>commands.timeline.upload(timeline.id,files))}
+    onRender={guard(timeline,revision=>commands.timeline.render(timeline.id,revision))} onCancel={guard(timeline,media.cancel)}
+    onAdopt={guard(timeline,job=>commands.timeline.adopt(timeline.id,job))} onQuote={guard(timeline,()=>media.estimate('ffmpeg'))}/>);
+  const audio=sessions.audio,nodeAudio=audio&&nodes.audioNodes.find(node=>node.id===audio.id&&node.projectKey===audio.scope.project&&!node.deletedAt);
+  if(audio&&audio.current()&&nodeAudio)panels.push(<AudioEditor key={audio.key} {...common(audio)} node={nodeAudio} sources={inputs.filter(choice=>choice.kind==='audio')} jobs={media.jobs}
+    onSave={guard(audio,(value,revision)=>commands.audio.patch(audio.id,{audio:value,expectedRevision:revision}))}
+    onUpload={guard(audio,files=>commands.audio.upload(audio.id,files))} onRender={guard(audio,revision=>commands.audio.render(audio.id,revision))}
+    onCancel={guard(audio,media.cancel)} onAdopt={guard(audio,job=>commands.audio.adopt(audio.id,job))} onQuote={guard(audio,()=>media.estimate('ffmpeg'))}/>);
   const scene=sessions.scene,nodeScene=scene&&nodes.sceneNodes.find(node=>node.id===scene.id&&node.projectKey===scene.scope.project&&!node.deletedAt);
   if(scene&&scene.current()&&nodeScene)panels.push(<SceneEditor key={scene.key} {...common(scene)} node={nodeScene} images={images}
     onSave={guard(scene,(value,revision)=>commands.scene.patch(scene.id,{scene:value,title:value.name,expectedRevision:revision}))}
@@ -60,16 +71,5 @@ export function CanvasNativeEditors({sessions,legacyDraftScope,nodes,commands,in
     images={resolvedInputs.filter(choice=>choice.kind==='image'&&choice.available).map(choice=>({id:choice.nodeId,title:choice.title,url:choice.value}))}
     onSave={guard(director,(value,revision)=>commands.director.patch(director.id,{project:value,title:value.name,expectedRevision:revision}))}
     onOutput={guard(director,(file,kind,revision)=>commands.director.output(director.id,file,kind,revision))}/>);
-  const audio=sessions.audio,nodeAudio=audio&&nodes.audioNodes.find(node=>node.id===audio.id&&node.projectKey===audio.scope.project&&!node.deletedAt);
-  if(audio&&audio.current()&&nodeAudio)panels.push(<AudioEditor key={audio.key} {...common(audio)} node={nodeAudio} sources={inputs.filter(choice=>choice.kind==='audio')} jobs={media.jobs}
-    onSave={guard(audio,(value,revision)=>commands.audio.patch(audio.id,{audio:value,expectedRevision:revision}))}
-    onUpload={guard(audio,files=>commands.audio.upload(audio.id,files))} onRender={guard(audio,revision=>commands.audio.render(audio.id,revision))}
-    onCancel={guard(audio,media.cancel)} onAdopt={guard(audio,job=>commands.audio.adopt(audio.id,job))} onQuote={guard(audio,()=>media.estimate('ffmpeg'))}/>);
-  const timeline=sessions.timeline,nodeTimeline=timeline&&nodes.timelineNodes.find(node=>node.id===timeline.id&&node.projectKey===timeline.scope.project&&!node.deletedAt);
-  if(timeline&&timeline.current()&&nodeTimeline)panels.push(<TimelineEditor key={timeline.key} {...common(timeline)} node={nodeTimeline} choices={inputs.filter(choice=>choice.kind!=='text')} jobs={media.jobs}
-    onSave={guard(timeline,(value,revision)=>commands.timeline.patch(timeline.id,{timeline:value,expectedRevision:revision}))}
-    onInspect={guard(timeline,ids=>inspectTimeline(timeline.id,ids))} onUpload={guard(timeline,files=>commands.timeline.upload(timeline.id,files))}
-    onRender={guard(timeline,revision=>commands.timeline.render(timeline.id,revision))} onCancel={guard(timeline,media.cancel)}
-    onAdopt={guard(timeline,job=>commands.timeline.adopt(timeline.id,job))} onQuote={guard(timeline,()=>media.estimate('ffmpeg'))}/>);
   return panels.length?createPortal(panels,document.body):null;
 }
