@@ -27,3 +27,5 @@
 - 完整镜像、真实产品浏览器、五轮指标和独立副本回滚尚待本轮执行，不以夹具通过代替。
 
 模块公共接口不变：ArtNode仍接受原NodeProps；formatDate原输入/输出与默认本地时区语义不变。data/selection/context归原scene/domain与权限owner，内容层只消费稳定输入；没有自定义不完整比较器、用户数据缓存、业务限额或参数降级。
+
+集中runner首次在SSR入口遇到强制react-server条件与react-dom/server不兼容，实际首项11检查已通过；原日志保留为affected。case增加显式clientReact运行角色，仅SSR用例不继承RSC条件，未改变产品或测试断言。
