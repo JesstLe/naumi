@@ -992,7 +992,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const box=canvasAreaRef.current?.getBoundingClientRect(),point=rfRef.current?.screenToFlowPosition({x:at.x+(box?.left||0),y:at.y+(box?.top||0)})||{x:0,y:0};
     return {projectKey:!browsing&&!creatingNew&&activeKey?activeKey:`tree:${id}`,...point};
   }
-  function revealNativeNode(node:{id:string;projectKey:string},open:(id:string,project?:string)=>void){canvasSelection.selectInProject(node.projectKey,{selectedId:node.id,selectedTextId:null,selectedPendId:null,multiSel:[]});open(node.id,node.projectKey);projectNavigation.open(node.projectKey);}
+  function revealNativeNode(node:{id:string;projectKey:string},open:(id:string,project?:string)=>void){open(node.id,node.projectKey);projectNavigation.open(node.projectKey);}
   function nativeReferenceDraft(input:{x:number;y:number;width:number;height:number;prompt:string;referenceArtworkIds:string[]}){
     const center=centerScreen(),pending=addPendAtScreen(center.x,center.y,null,false),{referenceArtworkIds:ids}=input;
     pendingPresentation.set(nodes=>nodes.map(node=>node.id===pending.id?{...node,x:input.x,y:input.y,inputs:ids,parentId:ids[0]||null,linked:ids.length>0}:node));
@@ -1377,8 +1377,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     try{await videoNodeActions.create({at:at??centerScreen(),blank,prompt:selected?.prompt||"",choices:videoInputChoices.filter(choice=>ids.has(choice.nodeId))});}
     catch(error){flashTip(error instanceof Error?error.message:"新增视频节点失败");}
   }
-  function openVideoEditor(id:string){
-    setSelectedId(id);setSelectedPendId(null);setSelectedTextId(null);setMultiSel([]);setPropertiesOpen(false);setVideoDockAdvancedId(null);
+  function openVideoEditor(id:string,project=canvasHistory.scope.project){
+    canvasSelection.selectInProject(project,{selectedId:id,selectedTextId:null,selectedPendId:null,multiSel:[]});setPropertiesOpen(false);setVideoDockAdvancedId(null);
   }
   function patchVideoNode(id:string,patch:VideoPatchFields&{expectedRevision?:number}){return videoNodeActions.patch(id,patch);}
   async function saveVideoDraft(id:string,draft:VideoNodeDraft){return patchVideoNode(id,{title:draft.title,config:draft.config,inputs:draft.inputs,expectedRevision:draft.expectedRevision});}
