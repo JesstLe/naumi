@@ -61,7 +61,7 @@ function fixture(code,options={}){
 async function main(){
  fs.mkdirSync(out,{recursive:true});const code=await bundled(),common=[],races=[];
  const cases=[
-  ['standard-prompt',()=>{}],['standard-source-recipe',f=>{f.c.editPrompt='';}],['standard-numbered-recipe-neutral-default',f=>{f.c.editPrompt='';f.source.prompt='上一轮【图1】引用';}],
+  ['standard-prompt',()=>{}],['standard-single-image',f=>{f.c.genCount=1;}],['standard-source-recipe',f=>{f.c.editPrompt='';}],['standard-numbered-recipe-neutral-default',f=>{f.c.editPrompt='';f.source.prompt='上一轮【图1】引用';}],
   ['standard-file-as-base',f=>{f.c.visibleDockRefs=[];f.c.extraFiles=[f.file,new File(['other'],'other.png',{type:'image/png'})];f.c.composerReferences=[{...f.ref,key:'upload',sourceNodeId:undefined,file:f.file,url:'',role:'style'}];}],
   ['standard-multiple-visible-references-and-upload',f=>{f.c.visibleDockRefs=[f.source,f.parent];f.c.extraFiles=[f.file];f.c.composerReferences=[f.ref,{...f.ref,key:'node:parent',sourceNodeId:'parent',url:f.parent.image,role:'style',number:7},{...f.ref,key:'upload',sourceNodeId:undefined,file:f.file,url:'',role:'reference',number:12}];}],
   ['dock-reference-error-first',f=>{f.c.dockReferenceState.error='原引用错误';f.c.referenceError='第二错误';}],['reference-error',f=>{f.c.referenceError='引用未就绪';}],

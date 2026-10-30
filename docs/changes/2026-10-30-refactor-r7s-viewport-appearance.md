@@ -34,3 +34,5 @@
 ## 首次完整core保留的夹具缺口
 
 固定3f9b030f首次core39 PASS/1 FAIL/110 NOT_RUN，video-performance真实PG协调用例的旧pool port未声明`videoCoordinationPoolLimit`而TypeError。只补原两槽边界port，保留并发恰好两槽/认证故障/slot释放等断言，不改生产连接预算。后续完整最终core重新固定SHA，原失败报告不覆盖；只含verifier/doc变化时，完整应用镜像沿逐文件hash绑定原应用源码，不冒称镜像重建于后续提交。
+
+第二次完整core固定6d8c3232为64 PASS/1 FAIL/85 NOT_RUN：旧image-regeneration wrapper把count2也断言为原位替换，和R7R已验收fanout合同冲突。verifier增加count1正例并分别要求单图原位/多图派生，继续检查原prompt、血缘和无额外供应商；未恢复旧产品行为。原输出保留，最终完整core另跑。
