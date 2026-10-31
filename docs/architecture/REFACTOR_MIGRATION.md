@@ -250,8 +250,12 @@
 
 ## R8Z 入口归属
 
-[R8Z actor/权益决定](../changes/2026-11-01-refactor-r8z-ingress-ownership.md)：HTTP入口显式传递已认证actor；当前权益检查返回绑定actor的本次决定，领域用例只复用同actor结果，跨actor/no-context仍读自己的权限。没有全局/跨请求缓存，旧callback与no-DB适配保留。
+[R8Z actor/权益决定](../changes/2026-11-01-refactor-r8z-ingress-ownership.md)：HTTP入口显式传递已认证actor；当前权益检查返回绑定actor的本次决定，领域用例只复用同actor结果，跨actor/no-context仍读自己的权限。没有全局/跨请求缓存，旧callback与no-DB适配保留。 权益新增返回值为可选actor-bound决定，旧调用者继续忽略；新消费者遇undefined走既有账号权益读取。入口callback的null/undefined区分已确定匿名与未解析状态，不依赖跨版本共享内存。
 
 ## 历史入口
 
 [收敛前的完整迁移流水](https://github.com/JesstLe/naumi/blob/82729161200f166fe587b98bceb756a44999840c/docs/architecture/REFACTOR_MIGRATION.md)保留。文档类改动不增加产品模块计数；后续代码每完成三模块普通同步主线，仍遵从 AGENTS。
+
+## 尚待迁移的同类入口
+
+静态AST盘点59个creation/receipt wrapper调用，本轮只有图片plan入口消费新actor参数；另有7个零参callback经本地handler直接认证的迁移候选（主图片提交/回执、取消、输入、批次回执/下载）。这不是运行事故证明，也不是已完成迁移；下一模块逐入口保留来源、身份、scope、UNKNOWN和原回执协议迁移验证。详见本轮INGRESS_MIGRATION_INVENTORY.json。
