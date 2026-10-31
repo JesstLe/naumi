@@ -10,7 +10,7 @@ import { artworkRows, mergeArtworkFields, sortCanvasArtworks } from "./artwork-d
 
 export type ArtworkDocumentSnapshot={conflicts:Record<string,ArtworkDocumentConflict>;nodes:Artwork[]|null;phase:"idle"|"loading"|"ready"|"error";error:string;trash:Artwork[]|null;trashError:string;trashBusy:boolean};
 export const EMPTY_ARTWORK_DOCUMENT:ArtworkDocumentSnapshot={conflicts:{},nodes:null,phase:"idle",error:"",trash:null,trashError:"",trashBusy:false};
-type Bucket={snapshot:ArtworkDocumentSnapshot;listeners:Set<()=>void>;revision:number;changes:Map<string,number>;deleted:Set<string>;read:number;rowReads:Map<string,number>;statusRead:number;lastIds?:string[];trashRead:number;frame?:Map<string,Artwork>};
+type Bucket={snapshot:ArtworkDocumentSnapshot;listeners:Set<()=>void>;revision:number;changes:Map<string,number>;deleted:Set<string>;dimensionSync:Set<string>;read:number;rowReads:Map<string,number>;statusRead:number;lastIds?:string[];trashRead:number;frame?:Map<string,Artwork>};
 const documentKey=(scope:CanvasDocumentScope)=>JSON.stringify([scope.account,scope.workspace]);
 class ArtworkReadError extends Error{constructor(message:string,readonly status?:number){super(message);}}
 const denied=(error:unknown)=>!!error&&typeof error==="object"&&"status" in error&&[401,403].includes(Number(error.status));
@@ -33,7 +33,7 @@ export function createCanvasArtworkDocument(){
   };
   function bind(scope:CanvasDocumentScope,owner:string,writable:boolean){
     const key=documentKey(scope);let b=buckets.get(key);
-    if(!b){b={snapshot:EMPTY_ARTWORK_DOCUMENT,listeners:new Set(),revision:0,changes:new Map(),deleted:new Set(),read:0,rowReads:new Map(),statusRead:0,trashRead:0};buckets.set(key,b);}
+    if(!b){b={snapshot:EMPTY_ARTWORK_DOCUMENT,listeners:new Set(),revision:0,changes:new Map(),deleted:new Set(),dimensionSync:new Set(),read:0,rowReads:new Map(),statusRead:0,trashRead:0};buckets.set(key,b);}
     const state=b,current=(extra:()=>boolean=()=>true)=>scope.documentCurrent()&&extra();
     const update=(change:Artwork[]|null|((nodes:Artwork[]|null)=>Artwork[]|null))=>{
       if(!current())return;const previous=state.snapshot.nodes,next=typeof change==="function"?change(previous):change;
@@ -43,6 +43,21 @@ export function createCanvasArtworkDocument(){
       publish(state,{nodes:next});
     };
     const accept=(nodes:Artwork[])=>update(current=>sortCanvasArtworks(new Map([...(current||[]).map(n=>[n.id,n] as const),...nodes.map(n=>[n.id,n] as const)]).values()));
+    /** Image decode metadata is document-owned, not a layout/history command.
+     * A failed write allows the next observation; it never schedules a retry. */
+    const recordDimensions=async(id:string,width:number,height:number):Promise<void>=>{
+      const w=Math.round(width),h=Math.round(height);
+      if(!current()||!id||!Number.isFinite(w)||!Number.isFinite(h)||w<1||h<1||w>8192||h>8192)return;
+      update(nodes=>nodes?.map(art=>art.id===id&&(art.width!==w||art.height!==h)?{...art,width:w,height:h}:art)??nodes);
+      if(!owner||!writable||state.dimensionSync.has(id))return;
+      state.dimensionSync.add(id);
+      try{
+        const response=await canvasDocumentFetch(scope,"/api/artworks/dimensions",{
+          method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id,width:w,height:h}),
+        });
+        if(!response.ok)state.dimensionSync.delete(id);
+      }catch{state.dimensionSync.delete(id);}
+    };
     const remove=(ids:string[])=>{if(!current())return [];const wanted=new Set(ids);update(nodes=>(nodes||[]).filter(n=>!wanted.has(n.id)));for(const id of wanted){state.deleted.add(id);state.changes.set(id,++state.revision);}return state.snapshot.nodes||[];};
     const applyRead=(rows:Artwork[],before:Map<string,Artwork>,revision:number,ticket:number,full:boolean)=>{
       const live=new Map((state.snapshot.nodes||[]).map(n=>[n.id,n])),next=full?new Map<string,Artwork>():new Map(live);
@@ -116,7 +131,7 @@ export function createCanvasArtworkDocument(){
       const conflicts={...state.snapshot.conflicts};delete conflicts[id];const nodes=(state.snapshot.nodes||[]).filter(n=>n.id!==id);if(conflict.current?.visible)nodes.push(conflict.current.node);update(sortCanvasArtworks(nodes));publish(state,{conflicts});return null;
     };
     const clearConflict=(id:string)=>{const conflicts={...state.snapshot.conflicts};delete conflicts[id];publish(state,{conflicts});};
-    return {resolveConflict,clearConflict,history,getSnapshot:()=>state.snapshot,subscribe:(fn:()=>void)=>{state.listeners.add(fn);return()=>{state.listeners.delete(fn);};},set:update,accept,remove,
+    return {resolveConflict,clearConflict,history,getSnapshot:()=>state.snapshot,subscribe:(fn:()=>void)=>{state.listeners.add(fn);return()=>{state.listeners.delete(fn);};},set:update,accept,remove,recordDimensions,
       merge:(ids:string[],extra?:()=>boolean)=>read(ids,extra),refresh:(extra?:()=>boolean)=>read(undefined,extra),load:()=>read(undefined,undefined,true),retry:()=>read(state.lastIds),loadTrash,trashAction};
   }
   return {bind};

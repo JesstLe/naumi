@@ -50,6 +50,7 @@ import {canvasNodeTypes,canvasEdgeTypes} from "./nodes/registry";
 import {useCanvasSceneActions} from "./use-canvas-scene-actions";
 import {useCanvasScene} from "./use-canvas-scene";
 import {useCanvasSelection} from "./use-canvas-selection";
+import {optimizeCanvasVideoPrompt} from "@/lib/canvas/prompt-optimizer-client";
 import {useCanvasNodeOperations} from "./use-canvas-node-operations";
 import {useCanvasClipboard} from "./use-canvas-clipboard";
 import {useCanvasTextTasks} from "./use-canvas-text-tasks";
@@ -343,7 +344,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const { commerceVisible } = usePaymentConfig();
   // works 的同步镜像:供 useCallback(如缩放撤销记录)读取最新值而不重挂回调
   const worksRef = useRef<Artwork[] | null>(null);
-  const dimensionSyncRef = useRef(new Set<string>());
   const artworkPlacementRef = useRef({ scope: "", positions: new Map<string, CanvasPoint>() });
   // 管理员看指定用户:?email=<用户> → 只读查看该用户画布;?node=<作品id> → 预选中那张
   const projectView=useCanvasProjectNavigation({ready,email:user?.email,ports:()=>({
@@ -362,7 +362,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const nodeSettings=nodePreferences.settings,nodeSettingsReady=nodePreferences.ready,settingsFor=nodePreferences.get,isNodeLocked=nodePreferences.locked;
   const generationPresentation=useCanvasGenerationPresentation(canvasArtworkDocument.scope);
   const generationTasks=generationPresentation.tasks;
-  const {nodes:works,set:setWorks} = canvasArtworkDocument;
+  const {nodes:works,set:setWorks,recordDimensions:onNodeDimensions} = canvasArtworkDocument;
   worksRef.current=works;
   const projectCatalog=useCanvasProjectCatalog({scope:canvasArtworkDocument.scope,ready:ready&&!!targetEmail,actor:user?.email||"",target:targetEmail||"",readOnly,notice:flashTip,failure:t("canvas.genFail")});
 
@@ -810,24 +810,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 「全部项目」按钮:若进做图页时压过历史,用浏览器后退消费掉它(popstate 里完成回项目页),
   // 保持历史栈一致;否则直接切回网格。
   function backToBrowser(){projectNavigation.back();}
-
-  const onNodeDimensions = useCallback((id: string, width: number, height: number) => {
-    const w = Math.round(width);
-    const h = Math.round(height);
-    if (!id || w < 1 || h < 1 || w > 8192 || h > 8192) return;
-    setWorks((current) => current?.map((art) =>
-      art.id === id && (art.width !== w || art.height !== h)
-        ? { ...art, width: w, height: h }
-        : art
-    ) ?? current);
-    if (!user || readOnly || dimensionSyncRef.current.has(id)) return;
-    dimensionSyncRef.current.add(id);
-    void privateFetchRaw("/api/artworks/dimensions", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id, width: w, height: h }),
-    }).catch(() => dimensionSyncRef.current.delete(id));
-  }, [user, readOnly, setWorks]);
 
   const artworkCommandsRef=useRef({history:canvasHistory,document:canvasArtworkDocument,warning:flashTip,failed:()=>t("canvas.genFail")});artworkCommandsRef.current={history:canvasHistory,document:canvasArtworkDocument,warning:flashTip,failed:()=>t("canvas.genFail")};
   const onArtworkCanvasResize = useCallback((
@@ -3844,7 +3826,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             email={targetEmail||user?.email} models={videoCatalog} catalogLoading={videoModelCatalog.loading} catalogError={videoModelCatalog.error} onRetryCatalog={videoModelCatalog.refresh}
             choices={videoInputChoices} light={lightCanvas} readOnly={readOnly||!nodeSettingsReady||isNodeLocked(selectedVideo.id)} onClose={()=>{setVideoDockAdvancedId(null);setSelectedId(null);}}
             onSave={draft=>saveVideoDraft(selectedVideo.id,draft)} onGenerate={(draft,quote,onPersisted,count)=>generateVideoDraft(selectedVideo.id,draft,quote,onPersisted,count)}
-            onOptimize={async(prompt,signal)=>{const response=await privateFetchRaw('/api/prompt-assist',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({idea:prompt,mode:'optimize',tool:'canvas-video'}),signal});const data=await readJsonSafe(response);if(!response.ok||typeof data?.prompt!=='string')throw new Error(data?.error||'提示词优化失败，原文已保留');return data.prompt;}}
+            onOptimize={(prompt,signal)=>optimizeCanvasVideoPrompt(privateFetchRaw,prompt,signal)}
             onImport={async files=>{try{const choices=await videoAssetStore.upload(files,selectedVideo.projectKey);await mergeWorks(choices.map(choice=>choice.nodeId));return choices;}catch(cause){if(cause instanceof VideoAssetImportError&&cause.choices.length)await mergeWorks(cause.choices.map(choice=>choice.nodeId));throw cause;}}}
             onLoadMoreAssets={videoAssetStore.loadMore} canLoadMoreAssets={!!videoAssetStore.nextCursor}/>}
           {/* 底部生成器(配方):选中节点正下方居中,横向 dock(原型 dock) */}

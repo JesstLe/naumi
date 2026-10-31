@@ -84,6 +84,9 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='canvas-fanout-receipt')stageEnv.CANVAS_FANOUT_RECEIPT_EVIDENCE=evidence;
    if(spec.id==='image-auto-frame')stageEnv.IMAGE_AUTO_FRAME_EVIDENCE=evidence;
    if(spec.id==='canvas-text-prompt-feedback')stageEnv.CANVAS_TEXT_PROMPT_EVIDENCE=evidence;
+   if(spec.id==='canvas-io-boundaries')stageEnv.CANVAS_IO_EVIDENCE=evidence;
+   if(spec.id==='canvas-artwork-document')stageEnv.ARTWORK_EVIDENCE=evidence;
+   if(spec.id==='prompt-optimizer')stageEnv.CANVAS_PROMPT_EVIDENCE=evidence;
    if(spec.id==='primary-generation')stageEnv.PRIMARY_GENERATION_EVIDENCE=evidence;
    if(spec.id==='text-image-runs')stageEnv.TEXT_IMAGE_RUN_EVIDENCE=evidence;
    if(spec.id==='local-image-edits')stageEnv.LOCAL_IMAGE_EDIT_EVIDENCE=evidence;
