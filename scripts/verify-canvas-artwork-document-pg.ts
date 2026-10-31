@@ -23,7 +23,7 @@ async function main(){
   };
   const bundle=await build({stdin:{contents:'export * from "./src/lib/canvas/artwork-document"; export * from "./src/lib/canvas/document-scope";',resolveDir:process.cwd(),loader:"ts"},bundle:true,write:false,platform:"node",format:"cjs",plugins:[{name:"auth",setup(b){b.onResolve({filter:/supabase$/},()=>({path:"auth",namespace:"fixture"}));b.onLoad({filter:/.*/,namespace:"fixture"},()=>({contents:'export const authHeader=()=>({cookie:__cookie});',loader:"js"}));}}]});
   const module={exports:{}} as {exports:typeof import("../src/lib/canvas/artwork-document")&typeof import("../src/lib/canvas/document-scope")};
-  const cache=new Map<string,string>(),context=vm.createContext({module,exports:module.exports,__cookie:cookie,fetch,console,Map,Set,Headers,Request,Response,AbortSignal,Blob,URL,structuredClone,setTimeout,clearTimeout,localStorage:{getItem:(k:string)=>cache.get(k)||null,setItem:(k:string,v:string)=>cache.set(k,v)}});vm.runInContext(bundle.outputFiles[0].text,context);
+  const cache=new Map<string,string>(),context=vm.createContext({module,exports:module.exports,__cookie:cookie,fetch,console,Map,Set,Headers,Request,Response,AbortSignal,Blob,URL,structuredClone,setTimeout,clearTimeout,performance,localStorage:{getItem:(k:string)=>cache.get(k)||null,setItem:(k:string,v:string)=>cache.set(k,v)}});vm.runInContext(bundle.outputFiles[0].text,context);
   const api=module.exports,scope=api.createCanvasDocumentContext().render(owner,"tree:A"),document=api.createCanvasArtworkDocument().bind(scope,owner,true);
   eq((await document.load()).map(n=>n.id),["a"]);eq(document.getSnapshot().phase,"ready");
   await document.recordDimensions("a",400.6,200.2);

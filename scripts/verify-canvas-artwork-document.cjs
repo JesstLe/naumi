@@ -16,7 +16,7 @@ function setup(built){
  const state={nodes:[art()],rows:[art()],trash:[],requests:[],notices:[],owner:'a@test',account:'a@test',project:'tree:A',readOnly:false,auth:async()=>{},respond:async()=>{},accountStatus:200,getStatus:200,trashStatus:200,malformed:false};
  const storage=new Map(),ports={workspace:'personal',revision:0,async auth(){await state.auth();return {authorization:state.account,'x-naumi-workspace':ports.workspace,'x-naumi-project-context':'wrong'};}};
  const module={exports:{}};
- const c={__ports:ports,module,exports:module.exports,console,Error,Map,Set,WeakMap,Promise,Headers,Response,Request,AbortSignal,URLSearchParams,Date,Blob,structuredClone,setTimeout,clearTimeout,
+ const c={__ports:ports,module,exports:module.exports,console,Error,Map,Set,WeakMap,Promise,Headers,Response,Request,AbortSignal,URLSearchParams,Date,Blob,structuredClone,setTimeout,clearTimeout,performance,
   window:{location:{search:''}},localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
   canvasAccountRef:{current:state.account},worksRef:{current:state.nodes},pendingNodeRef:{current:null},setPendingNode:()=>{},restoredRef:{current:false},deepFocusRef:{current:false},
   ready:true,authenticatedEmail:state.owner,setWorks:f=>{state.nodes=typeof f==='function'?f(state.nodes):f;},setNames:()=>{},setTargetEmail:()=>{},setReadOnly:()=>{},setPinnedNode:()=>{},setActiveKey:()=>{},setBrowsing:()=>{},
