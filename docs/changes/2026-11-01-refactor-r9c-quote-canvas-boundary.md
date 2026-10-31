@@ -25,3 +25,9 @@
 迁移现存APImart验证调用方同时修复已过时的Agent跨轮确认断言，改为验证已有的足额直接准备和真实typed工具执行；没有恢复旧护栏。该fixture媒体改为独占临时目录，fetch只允许自身loopback，结束关闭连接/schema/HTTP及自有媒体，不触碰历史固定目录。
 
 受影响集中回归和独立副本回滚继续，以本轮结果更新。完整App/Worker最后验收仍归R8Z，不作为当前212通过。整体目标ACTIVE；main未合、部署0、47HOLD。
+
+## 重启续接：辅助验证修正
+
+- 原 `canvas-background-task-recovery-contract.mjs` 在完整eb65基线和d35均因查找已迁出的内联effect而失败；保留原日志，不把产品恢复逻辑搬回组件。兼容CLI现在复用视频跟随、视频提交、OCR编辑、pending展示四个现存执行验证；任务operationId/原子创建保留窄AST检查，明确它本身不是PG验收。
+- `verify-model-execution.ts` 的旧fixture重复使用同一actor的v1草稿发布到v2，两边同样被 `PUBLISH_STALE_DRAFT_BASE` 拒绝。后续发布使用独立actor基于current创建草稿，并新增旧草稿仍拒绝的断言；没有加acceptStaleBase，也没有修改产品发布检查。
+- 本节记录代码准备，修正后的实际运行、固定源码与交付证据另行补录；旧AFFECTED_REPORT的FAIL和所有原始失败输出保留。
