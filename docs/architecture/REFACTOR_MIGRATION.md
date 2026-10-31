@@ -1,10 +1,14 @@
-# 当前迁移：R8N共享目录
+# 当前迁移切片：R8O 调度与释放唤醒
 
-应用/完整验收源码 `ba4805e0959af0d00e1a655200b314a134fcc131`；本地完整core191、同固定镜像runtime177/产品双browser92通过。旧feature-client的Map/HTTP/选择/局部hook目录副本退出，现为真实调用方兼容入口；唯一目录owner/浏览器适配已接现有AuthProvider、quality配置及Canvas模型投影。
+应用与镜像源码 `46056b43880772a89da37d72e9b7b4ee9b5f9437`。同源码192目录：191 PASS / 1 FAIL / 0 NOT_RUN，**不标完整core通过**；完整同Web/Worker镜像与实际双浏览器92通过；runtime177被原完整core状态门槛阻止，业务检查尚未执行。原144项的源码、命令、日志SHA逐项保持；原47项独立新执行全部通过（subset runner PARTIAL / exit2），场景失败原记录保留。
 
-其他2126原产品raw哈希、Canvas页面原字节保持。实现、接口、测试边界和剩余项以[R8N模块记录](../changes/2026-10-31-refactor-r8n-feature-catalog.md)及output/refactor-r8n-20261031/DELIVERY.json为准。整体ACTIVE，未合main未部署，47 HOLD；同步后2/3。
+接口：image-jobs/scheduling唯一拥有claim/due/release及SQL；image-job-repository仅向真实旧调用方重导出同函数；runtime与worker直接依赖owner。work-signal是原schema-scoped PG通知叶子，provider只在DELETE实际释放token后通知，失败不反转删除；原LISTEN、周期扫描与角色策略保持。原付费检查点、心跳fencing、保存和账务事务仍归原具体owner。
 
-**独立候选超过48h：用户要求完整重构版本，剩余Shell/等待诊断/持续混合与生产容量/有效CI/最终main整版验收仍待。**
+同负载与预算的450秒原/新对照：每侧165图、12原生媒体、1800读、450保存、177笔1014积分；原像素/字节/单次POST及末尾预占归零通过。整体端到端p95（秒）67.536 → 45.021，surge p95（秒）69.564 → 50.019；冷却且有余量的左采样区间累计（秒）52.001 → 0.000，time-ready且有余量（秒）30.002 → 7.999。这些是一次本地对照，不是每用户等待、全部候选可路由或10万容量证明。
+
+完整结果以R8O模块记录、output/refactor-r8o-20261031/VERIFICATION.txt和CORE_COVERAGE.json为准。同步计数0/3，场景输出回归OPEN，不复用旧source通过代验。
+
+**🔴 候选分支超过48h：用户要求持续交付完整重构版本，仍保留独立worktree。剩余Canvas Shell、场景原生回归、持续/生产容量、有效CI、最终main整版整合及生产验收尚待；整体ACTIVE，未合回main、未部署、47 HOLD。**
 
 ## 以下为历史固定源记录
 
