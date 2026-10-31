@@ -4,6 +4,7 @@ import path from "node:path";
 const ts=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:true,tsx:true});
 const node=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:false,tsx:false});
 export const refactorCases=[
+ node('native-fixture-lifecycle','runtime','scripts/verify-native-fixture-lifecycle.cjs','NATIVE_FIXTURE_LIFECYCLE=PASS'),
  node('mixed-load-driver','foundation','scripts/verify-refactor-mixed.mjs','REFACTOR_MIXED_DRIVER=PASS'),
  {id:'image-scheduling-pg',group:'runtime',file:'scripts/verify-image-scheduling-pg.cjs',args:[],expect:'IMAGE_SCHEDULING_PG=PASS',pg:true,tsx:false},
  node('dependencies','foundation','scripts/verify-dependency-compatibility.mjs','DEPENDENCY_COMPATIBILITY=PASS'),

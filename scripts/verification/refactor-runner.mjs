@@ -53,6 +53,8 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='canvas-node-operations-client')stageEnv.NODE_OP_EVIDENCE=evidence;
    if(spec.id==='canvas-node-creation')stageEnv.NODE_CREATION_EVIDENCE=evidence;
    if(spec.id==='mixed-load-driver')stageEnv.MIXED_LOAD_EVIDENCE=evidence;
+   if(spec.id==='native-fixture-lifecycle')stageEnv.NATIVE_FIXTURE_EVIDENCE=evidence;
+   if(spec.id==='image-scheduling-pg')stageEnv.IMAGE_SCHEDULING_EVIDENCE=evidence;
    if(spec.id==='canvas-native-editor-session')stageEnv.NATIVE_EDITOR_EVIDENCE=evidence;
    if(spec.id==='canvas-native-editors-dom')stageEnv.NATIVE_EDITOR_DOM_EVIDENCE=evidence;
    if(spec.id==='canvas-artwork-picker')stageEnv.ARTWORK_PICKER_EVIDENCE=evidence;

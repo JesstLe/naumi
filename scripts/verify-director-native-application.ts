@@ -10,6 +10,7 @@ import {newDirectorProject,directorProjectSchema,directorProjectFingerprint} fro
 import {createVideoFixture, CAP_RICH} from "./video-fusion/harness";
 import {prepareVideoAssets} from "./video-fusion/assets.mjs";
 import {generateCanvasVideo} from "../src/lib/video/canvas-submission";
+import {prewarmNativeWriteRoutes} from './verification/native-route-readiness';
 const expect=originalExpect.configure({timeout:30000});
 
 /** Real Next/API/transactions/worker/storage/billing; disposable PostgreSQL and simulated upstreams only. */
@@ -69,7 +70,7 @@ async function main() {
     const restore=await h.request<any>("a","POST","/api/canvas/history",{operationId:randomUUID(),operations:[{type:"director-visibility",id:copy.id,visible:true},...copied.body.artworkIds.map((id:string)=>({type:"visibility",id,visible:true}))]});assert.equal(restore.status,200,JSON.stringify(restore.body));assert.equal((await h.request("a","GET",`/api/canvas/director-nodes/${copy.id}`)).status,200);
     const freeBefore=await h.creditState("a");
     const warm=[];for(const url of ['/api/account','/api/projects','/api/canvas/text-nodes','/api/canvas/director-nodes?includeDeleted=1','/api/canvas/node-settings','/api/video/assets?limit=30','/api/config','/api/canvas/video-nodes','/api/video/tasks','/api/canvas/image-tasks','/api/video/media-jobs','/api/canvas/workflow-import','/api/models?feature=canvas.image','/api/video/catalog','/api/feature-access','/api/enterprise','/api/auth/session','/api/version']){const response=await h.request<any>('a','GET',url);warm.push({url,status:response.status});assert.equal(response.status,200,JSON.stringify({url,status:response.status,body:response.body}));}await writeFile(path.join(out,'prewarm.json'),JSON.stringify(warm,null,2));
-    for(const url of ['/api/video/references',`/api/canvas/director-nodes/${id}/outputs`,`/api/canvas/video-nodes/prewarm/generate`]){const response=await h.request('a','GET',url);assert.equal(response.status,405);}await h.request('a','GET',h.refs.image.url);await h.request('a','POST','/api/media/image-cache',{});
+    const writeRoutes=await prewarmNativeWriteRoutes(h,['/api/video/references',`/api/canvas/director-nodes/${id}/outputs`,`/api/canvas/video-nodes/prewarm/generate`]);await writeFile(path.join(out,'native-write-route-prewarm.json'),JSON.stringify(writeRoutes,null,2));await h.request('a','GET',h.refs.image.url);await h.request('a','POST','/api/media/image-cache',{});
     // Finish the real dev compilation and download its actual entry assets
     // before starting the browser's fixed webpack chunk-load timer. No routes
     // are mocked and no failed browser navigation is silently retried.

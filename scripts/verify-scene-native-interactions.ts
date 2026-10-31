@@ -9,6 +9,7 @@ import {chromium, expect as playwrightExpect, type Page} from "@playwright/test"
 import {newDirectorProject} from "../src/lib/director/project";
 import {sceneInputIdentity} from "../src/lib/scene/project";
 import type {createVideoFixture} from "./video-fusion/harness";
+import {prewarmNativeWriteRoutes} from './verification/native-route-readiness';
 
 const expect = playwrightExpect.configure({timeout: 60000});
 
@@ -25,6 +26,8 @@ export async function verifySceneInteractions(h: Awaited<ReturnType<typeof creat
       assert.equal(response.status, 200, JSON.stringify({url, body: response.body}));
     }
     await writeFile(path.join(out, "ui-prewarm.json"), JSON.stringify(warm, null, 2));
+    const writeRoutes=await prewarmNativeWriteRoutes(h,['/api/video/references','/api/canvas/director-nodes/prewarm/outputs','/api/canvas/video-nodes/prewarm/generate']);
+    await writeFile(path.join(out,'native-write-route-prewarm.json'),JSON.stringify(writeRoutes,null,2));
     // Original director/character readiness: read real HTML and static bytes before browser timers.
     const htmlResponse=await fetch(`${h.baseUrl}/canvas?node=${existingVideoId}`,{headers:{cookie:h.cookies.a},signal:AbortSignal.timeout(180000)});assert.equal(htmlResponse.status,200);
     const html=await htmlResponse.text(),entryAssets=[...new Set(Array.from(html.matchAll(/(?:src|href)="([^"<>]+)"/g),match=>match[1].replaceAll('&amp;','&')).filter(url=>url.startsWith('/_next/static/')&&!url.includes('.woff')))];

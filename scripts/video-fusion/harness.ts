@@ -9,6 +9,7 @@ import { createVideoSupplier } from "./supplier.mjs";
 import { createFixtureObjects } from "./objects.mjs";
 import type {VideoWireProfile} from "../../src/lib/video/capability-schema";
 import type {VideoModelDefinition} from "../../src/lib/video/capability-schema";
+import {stopFixtureChild as stopChild} from './process-lifecycle';
 
 export {CAP_RICH} from "./profiles";
 type Account="a"|"b";
@@ -16,14 +17,6 @@ type FixtureRef={id:string;url:string;storageKey:string;durationSeconds:number;h
 type Seed={accounts:Record<Account,string>;cookies:Record<Account,string>;refs:Record<"image"|"lastImage"|"video"|"silentVideo"|"audio",FixtureRef>;byocWorkflowId:string};
 const root=path.resolve(__dirname,"../..");
 async function freePort(){const server=createServer();await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));const port=(server.address() as {port:number}).port;await new Promise<void>(resolve=>server.close(()=>resolve()));return port;}
-async function stopChild(child:ChildProcess|undefined){
-  if(!child||child.exitCode!==null)return;
-  if(process.platform==="win32"&&child.pid){
-    await new Promise<void>(resolve=>{const stop=spawn("taskkill.exe",["/PID",String(child.pid),"/T","/F"],{windowsHide:true,stdio:"ignore"});stop.once("error",()=>resolve());stop.once("exit",()=>resolve());});return;
-  }
-  child.kill("SIGTERM");
-  await new Promise<void>(resolve=>{const timer=setTimeout(()=>{child.kill("SIGKILL");resolve();},5000);child.once("exit",()=>{clearTimeout(timer);resolve();});});
-}
 function cleanEnv(){const env:NodeJS.ProcessEnv={NODE_ENV:"development"};for(const key of ["PATH","Path","SystemRoot","WINDIR","TEMP","TMP","LOCALAPPDATA","APPDATA","HOME","USERPROFILE"]){if(process.env[key])env[key]=process.env[key];}return env;}
 function privateChild(args:string[],env:NodeJS.ProcessEnv):Promise<string>{return new Promise((resolve,reject)=>{
   const child=spawn(process.execPath,args,{cwd:root,env,windowsHide:true,stdio:["ignore","pipe","pipe"]});let out="",error="";

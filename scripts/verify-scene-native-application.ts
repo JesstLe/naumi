@@ -10,6 +10,7 @@ import { newSceneProject, sceneInputIdentity } from "../src/lib/scene/project";
 import { createVideoFixture, CAP_RICH } from "./video-fusion/harness";
 import { verifySceneInteractions } from "./verify-scene-native-interactions";
 import { prepareVideoAssets } from "./video-fusion/assets.mjs";
+import {fixtureCommandOutput} from './video-fusion/process-lifecycle';
 
 /** Real local app/DB/task/worker/media/billing. Suppliers are isolated fixtures, not paid providers. */
 async function main() {
@@ -139,9 +140,12 @@ async function main() {
     await writeFile(path.join(out, "result.json"), JSON.stringify({ realApp: true, realPostgres: true, realWorkerStorageBilling: true, sceneRevisionOneWinner: true, crossAccount404: true, forgedClientDefinitionIgnored: true, expandedReferenceOrderStable: true, sceneAndStateIdentityFrozen: true, laterEditLeavesOldTaskUnchanged: true, twoNodesReuseSameScene: true, savedReplayAfterDependencyDeletion: true, acceptedTaskReplayAfterSceneDeletion: true, missingSceneNoCharge: true, privateOutputHash: true, simulatedSupplierCreates: 5, paidCalls: 0, uiTested: true, menuEnabled: true, interactions, taskIds: [first.task.id, second.task.id] }, null, 2));
     console.log("SCENE_APPLICATION=PASS REAL_APP_DB_WORKER_STORAGE_BILLING=PASS REVISION=ONE_WINNER CROSS_ACCOUNT=404 SERVER_SCENE=TRUSTED EXPANDED_ORDER=STABLE SNAPSHOTS=IMMUTABLE TWO_NODE_REUSE=PASS REPLAY_AFTER_DELETE=PASS MISSING_SCENE=NO_CHARGE MEDIA_HASH=PASS UI_CREATE_UPLOAD_STATES_DRAG_LOCK_COPY_DELETE_UNDO_REDO=PASS HANDLE_AND_MENTION=PASS MIXED_HISTORY=ATOMIC WORKFLOW_FROZEN_AFTER_EDIT_DELETE=PASS SIMULATED_CREATES=5 PAID_CALLS=0 PAGE_ERRORS=0");
   } catch (error) {
+    console.error('SCENE_PRIMARY_FAILURE',error);
     if (container) {
-      const logs = spawnSync("docker", ["logs", container], { encoding: "utf8", windowsHide: true });
-      await writeFile(path.join(out, "postgres-failure.log"), logs.stdout + logs.stderr);
+      try {
+        const logs = spawnSync("docker", ["logs", container], { encoding: "utf8", windowsHide: true });
+        await writeFile(path.join(out, "postgres-failure.log"), fixtureCommandOutput(logs));
+      } catch(diagnosticError) {console.error('SCENE_DIAGNOSTIC_FAILURE',diagnosticError);}
     }
     throw error;
   } finally {

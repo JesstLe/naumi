@@ -1,0 +1,34 @@
+# R8P：原生验证准备与进程生命周期
+
+## 基线与调研
+
+独立工作区 `E:/Workspace/naumi-refactor-20261024`，分支 `codex/core-refactor-20261024`；基线 `5116d7e8a272f25e77d27c281f6878225a8ad131`，5306个原raw哈希、完整归档和副本保留。刷新main仍为e2f56255。上一轮为有效进展：调度writer与三处等待行为已实现，实际同预算负载/副本回滚和远端提交已完成；整体仍ACTIVE。
+
+R8O完整目录实际191PASS/1FAIL，失败是scene组合内首次director outputs请求的Next开发服务器Jest worker500；第一轮还有sharp分页文件不足/V8内存失败。原log/case/source保持，不把其余通过拼为完整core绿。原runtime177因完整core门槛在业务检查前退出，门槛不改。
+
+静态调用顺序核对发现，已经通过的director完整应用在Canvas/WebGL前通过GET405准备references、director outputs和video generate三条仅写接口；scene只准备了读取接口和HTML/静态资产，在重型UI已驻留时才首次触发outputs编译。该区别提出了可控的准备顺序假设，不提前声称所有500只由内存造成。
+
+另两处确定的fixture缺陷：scene失败收集将缺失的spawnSync streams相加为NaN，再传writeFile掩盖原异常；共享stopChild在taskkill启动错误/非零时仍resolve，曾使cleanup报告PASS但自有Next仍运行。
+
+## 模块、接口与状态归属
+
+- `scripts/verification/native-route-readiness.ts` 只拥有现有仅写路由的GET405准备。scene和director调用同一实现；原读取/HTML/资产准备仍保留。它不上传、渲染或发生成POST，405仍是硬断言，不重试失败。
+- `scripts/video-fusion/process-lifecycle.ts` 只拥有本fixture创建的ChildProcess退出收据与spawnSync文本诊断。Windows沿原taskkill /T /F，POSIX沿原TERM再KILL；信号/命令成功不等于观察到子进程退出，失败不再返回假cleanup成功。
+- 原harness继续拥有App/Worker/media/router及PG/supplier整体生命周期，不建立进程管理平台。scene原始失败先输出，补充日志失败不替换原异常。
+- 本片不改任何src/services、API产品实现、场景内容、输出数量、WebGL/媒体字节、钱包、原operation/UNKNOWN或并发资源预算。
+
+## 验证设计
+
+新增verifier执行实际scene准备函数至明确browser-context边界，并执行原director准备块/新共享函数；browser/HTTP/fetch为显式端口，不冒充整应用。它对照原19条读取、原director3条GET405、命令/诊断失败、正常POSIX与已退出进程，以及修改后真实自有子进程退出。原实现缺准备/假停止/掩盖原错误按预期复现；修改与回滚结果以实际日志为准。
+
+集中控制结果：原12项复现缺准备1、假停止2、原异常被遮盖2；修改17项为0/0/0，正常读取/原director准备/正常命令与POSIX行为EXACT，真实自有子进程退出后才返回。首轮VM端口缺少原生AbortSignal而exit1，修正端口后使用新标签/输出重跑，失败日志保留；不是产品失败。core catalogue新增1项到193，并为该项和已有image-scheduling-pg显式传递自有证据目录，不再把默认输出误归到其他轮次。
+
+准备与生命周期完整模块完成后集中验证；完整scene/API/PG/WebGL与所有原业务断言沿原入口执行，类型与全量core不与本任务重型镜像构建并行。只有完整core实际通过后才重新执行原runtime177，不构造假PASS父报告或放宽该guard。
+
+## 当前未完成
+
+实现后待集中baseline/modified控制、真实完整core、同固定镜像runtime/产品及副本回滚。准备顺序假设尚待实际结果；旧R8O失败记录不删除。整体目标ACTIVE，分支未合回main、未部署，47 HOLD。超过48小时的独立候选仍为完整版本工作区，剩余Shell/持续与生产容量/有效CI/最终main整版验收保持未完成。
+
+## 集中预检
+
+完整类型exit0，5086个实际compiler/config/依赖输入raw哈希在检查前后相同；lint exit0，既有warning保留。全部2136个src/services原文件raw哈希保持。本片是验证资产修正，不新增产品功能迭代；完整193目录、原生场景实际输出和同镜像runtime仍待本轮实际结果，不提前写通过。
