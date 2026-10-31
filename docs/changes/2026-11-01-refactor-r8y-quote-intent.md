@@ -54,7 +54,7 @@
 
 性能条件：3e90原完整镜像对当前f0b完整镜像，全部源码/依赖lock/实际Node24.22.2、React19.3.0、Next15.5.28和glibc2.36核对一致；5轮10栈交替顺序，每侧15页面/150prepare/300read，320节点/12张相同1024px图片、private1、同Edge/4xCPU/5Mbps/80ms。结论：**OPEN: prepareMs**。所有实际交互耗时与session估计分开；无真实供应调用/付费提交/生产容量声明。旧R8X +17.98%观测与API-only未复现继续保留，不把本轮报价一致性修复称作旧性能根因修复。
 
-最终类型输入复核曾发现Next lint生成的next-env.d.ts增加routes声明；原5090输入/哈希与首次文档收尾拒绝日志保留。按实际生成文件重新捕获类型输入并单独tsc验证，不恢复旧声明、不放宽hash守卫、不改产品。最终类型输入数量见上方与TYPE_INPUTS_FINAL。
+最终类型输入复核曾发现Next lint生成的next-env.d.ts更新routes类型引用（.next-theme-matrix→.next）；原5090输入/哈希与首次文档收尾拒绝日志保留。按实际生成文件重新捕获类型输入并单独tsc验证，不恢复旧声明、不放宽hash守卫、不改产品。最终类型输入数量见上方与TYPE_INPUTS_FINAL。
 
 ## 源码交付与回退合同
 
