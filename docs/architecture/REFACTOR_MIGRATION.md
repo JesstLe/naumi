@@ -244,6 +244,10 @@
 
 - [2026-11-01-refactor-r8y-quote-intent.md](../changes/2026-11-01-refactor-r8y-quote-intent.md)
 
+## R8Y 合同更新
+
+报价意图保存、原预览读取与公开投影统一归quote owner；新确定性quote ID只用于新合同，历史随机ID和子任务ID不改。已有主键冲突胜出，不引入新表/事务锁。完整core208与同镜像runtime/browser已执行；具体源、边界、性能未完成项见R8Y记录与当前快照，不把本模块完成写成全项目完成。
+
 ## 历史入口
 
 [收敛前的完整迁移流水](https://github.com/JesstLe/naumi/blob/82729161200f166fe587b98bceb756a44999840c/docs/architecture/REFACTOR_MIGRATION.md)保留。文档类改动不增加产品模块计数；后续代码每完成三模块普通同步主线，仍遵从 AGENTS。
