@@ -36,3 +36,6 @@
 最终完整 TypeScript `--noEmit --incremental false` exit 0；lint exit 0、38 条既有 warning。原 27 组节点创建全轨迹 EXACT，原 viewport 15 项、arrange 25 项及输入参数 3,925 矩阵保持；专用视图规则 18 正常组/36 检查、迟到写入 0；实际 React 15 项通过。最初类型检查发现 waiting 闭包未显式收窄可选 binding，保留原 exit 2，补明确存在性判断后再集中通过，没有忽略类型诊断。
 
 实际 fetch origin/main 为 `e2f562556ea6e71370619686e1fc8d4c634ef5e7`，普通 `git merge --no-edit origin/main` 输出 `Already up to date.`、exit 0；本片 2→3→同步归零。候选分支未合回 main。
+
+
+首轮固定5fb6完整core为38PASS/1FAIL/149NOT_RUN，project-navigation旧夹具在深链时缺少页面新focusCanvasNode端口；实际pageerror明确ReferenceError。只向夹具提供viewControls.focusNode记录端口并编译实际页面薄adapter，不恢复旧产品state，不删原八类深链/选择/账号/工作空间断言。原报告、exit1及自有PG清理保留。5fb6完整镜像真实产品双browser92检查通过（原31图ZIP字节、7笔42积分fixture、POSIX排空及自有栈清理），仅归5fb6固定源；最终更正后的完整core/镜像/产品均重新绑定源码，不拼接旧通过。
