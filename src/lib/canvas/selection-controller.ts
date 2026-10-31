@@ -1,9 +1,7 @@
 import type {CanvasDocumentScope} from './document-scope';
-import {EMPTY_CANVAS_SELECTION,patchCanvasSelection,canvasNodeClick,canvasFlowSelection,canvasSelectionIds,type CanvasSelection,type CanvasSelectedEdge} from './selection';
+import {EMPTY_CANVAS_SELECTION,patchCanvasSelection,canvasNodeClick,canvasFlowSelection,canvasSelectionIds,canvasSelectableNodeKinds,type CanvasSelection,type CanvasSelectedEdge,type CanvasSelectionCatalogue} from './selection';
+export type {CanvasSelectionCatalogue} from './selection';
 
-type Kind='art'|'text'|'video'|'director'|'character'|'scene'|'audio'|'timeline';
-type Native={id:string;projectKey:string;deletedAt?:string|null};
-export type CanvasSelectionCatalogue={project:string|null;artworks:readonly {id:string;canvasGroupId?:string|null}[];text:readonly Native[];video:readonly Native[];director:readonly Native[];character:readonly Native[];scene:readonly Native[];audio:readonly Native[];timeline:readonly Native[]};
 export type CanvasSelectionPorts={
   catalogue:()=>CanvasSelectionCatalogue;tool:()=>string;taskFailed:(id:string)=>boolean;
   nodes:()=>readonly {id:string}[];
@@ -27,12 +25,7 @@ export function createCanvasSelectionController(ports:()=>CanvasSelectionPorts){
     const cancelProjection=()=>{pending=undefined;if(timer!==undefined){ports().timer.clear(timer);timer=undefined;}};
     const nodes=(select:(id:string)=>boolean)=>{if(live())ports().nodesSelection((id,selected)=>live()?select(id):selected);};
     const edges=(select:(id:string)=>boolean)=>{if(live())ports().edgesSelection((id,selected)=>live()?select(id):selected);};
-    const kinds=()=>{
-      const catalogue=ports().catalogue(),result=new Map<string,Kind>(catalogue.artworks.map(node=>[node.id,'art']));
-      for(const kind of ['video','director','character','scene','audio','timeline','text'] as const)
-        for(const node of catalogue[kind])if(node.projectKey===catalogue.project)result.set(node.id,kind);
-      return result;
-    };
+    const kinds=()=>canvasSelectableNodeKinds(ports().catalogue());
     const field=<K extends keyof CanvasSelection>(key:K)=>(change:Change<CanvasSelection[K]>)=>{
       if(live())patch({[key]:typeof change==='function'?(change as (previous:CanvasSelection[K])=>CanvasSelection[K])(snapshot[key]):change});
     };

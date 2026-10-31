@@ -50,6 +50,7 @@ import {canvasNodeTypes,canvasEdgeTypes} from "./nodes/registry";
 import {useCanvasSceneActions} from "./use-canvas-scene-actions";
 import {useCanvasScene} from "./use-canvas-scene";
 import {useCanvasSelection} from "./use-canvas-selection";
+import {canvasSelectionTargets,canvasContextTargets,canvasSelectionProperties} from "@/lib/canvas/selection-projection";
 import {optimizeCanvasVideoPrompt} from "@/lib/canvas/prompt-optimizer-client";
 import {useCanvasNodeOperations} from "./use-canvas-node-operations";
 import {useCanvasClipboard} from "./use-canvas-clipboard";
@@ -981,17 +982,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(!ids.length)return;
     void (async()=>{for(let offset=0;offset<ids.length;offset+=100){if(account!==canvasAccountRef.current||epoch!==canvasContextEpochRef.current)return;await mergeWorks(ids.slice(offset,offset+100));}})().catch(()=>{});
   },[user?.email,targetEmail,activeKey,readOnly,works,videoNodesStore.nodes,directorNodesStore.nodes,characterNodesStore.nodes,sceneNodesStore.nodes,audioNodesStore.nodes,timelineNodesStore.nodes,visualReferenceIds]);
-  const selectedScene=sceneNodesStore.nodes.find(node=>node.id===selectedId&&node.projectKey===activeKey)||null;
-  const selectedAudio=audioNodesStore.nodes.find(node=>node.id===selectedId&&node.projectKey===activeKey)||null;
-  const selectedTimeline=timelineNodesStore.nodes.find(node=>node.id===selectedId&&node.projectKey===activeKey)||null;
-  const selectedCharacter=characterNodesStore.nodes.find(node=>node.id===selectedId&&node.projectKey===activeKey)||null;
-  const selectedDirector=directorNodesStore.nodes.find(node=>node.id===selectedId&&node.projectKey===activeKey)||null;
-  const selectedVideo=videoNodesStore.nodes.find(node=>node.id===selectedId&&node.projectKey===activeKey&&!node.deletedAt)||null;
+  const selectionCatalogue=useMemo(()=>({project:activeKey,artworks:active?.members||[],text:textNodes,pending:pendNodes,
+    video:videoNodesStore.nodes,director:directorNodesStore.nodes,character:characterNodesStore.nodes,scene:sceneNodesStore.nodes,audio:audioNodesStore.nodes,timeline:timelineNodesStore.nodes}),
+    [activeKey,active?.members,textNodes,pendNodes,videoNodesStore.nodes,directorNodesStore.nodes,characterNodesStore.nodes,sceneNodesStore.nodes,audioNodesStore.nodes,timelineNodesStore.nodes]);
+  const selectionTargets=useMemo(()=>canvasSelectionTargets(selectionCatalogue,{selectedId,selectedTextId,selectedPendId}),[selectionCatalogue,selectedId,selectedTextId,selectedPendId]);
+  const {artwork:selected,text:selectedText,pending:selectedPend,video:selectedVideo,director:selectedDirector,character:selectedCharacter,scene:selectedScene,audio:selectedAudio,timeline:selectedTimeline}=selectionTargets;
+  const selectedProperties=canvasSelectionProperties(selectionTargets);
   const mixedNativeSelection=multiSel.length>1&&(multiSel.some(id=>videoNodesStore.getNode(id)||directorNodesStore.getNode(id)||characterNodesStore.getNode(id)||sceneNodesStore.getNode(id)||audioNodesStore.getNode(id)||timelineNodesStore.getNode(id))||multiSel.some(id=>textNodesRef.current.some(node=>node.id===id))&&multiSel.some(id=>!textNodesRef.current.some(node=>node.id===id)));
-  const selected = useMemo(
-    () => active?.members.find((a) => a.id === selectedId) ?? null,
-    [active, selectedId]
-  );
 
   // Follow existing durable videos; this page does not own another polling/task system.
   useCanvasVideoTaskFollow(canvasArtworkDocument.scope,!!user&&!!active&&!readOnly,{
@@ -1069,14 +1066,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const visibleDockRefs = useMemo(
     () => dockRefs.filter((r) => !hiddenRefIds?.includes(r.id)),
     [dockRefs, hiddenRefIds]
-  );
-  const selectedPend = useMemo(
-    () => pendNodes.find((p) => p.id === selectedPendId) ?? null,
-    [pendNodes, selectedPendId]
-  );
-  const selectedText = useMemo(
-    () => textNodes.find((node) => node.id === selectedTextId) ?? null,
-    [textNodes, selectedTextId]
   );
   // Prompt remains the input to the existing task owner; resize and picker
   // state belong to the selected text composer, not the canvas document.
@@ -3043,18 +3032,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           {/* 右键菜单(5c):节点 / 空白 */}
           {ctxMenu &&
             (() => {
-              const node = ctxMenu.nodeId
-                ? active?.members.find((m) => m.id === ctxMenu.nodeId)
-                : null;
-              const textNode = textNodes.find(item => item.id === ctxMenu.nodeId && item.projectKey === activeKey);
-              const pendNode = pendNodes.find(item => item.id === ctxMenu.nodeId);
+              const {artwork:node,text:textNode,pending:pendNode,video:videoNode,director:directorNode,character:characterNode,scene:sceneNode,audio:audioNode,timeline:timelineNode}=canvasContextTargets(selectionCatalogue,ctxMenu.nodeId);
               const failedTask = generationTasks.find(task=>task.id===ctxMenu.nodeId&&task.failure&&!task.replaceNode);
-              const videoNode=videoNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey);
-              const directorNode=directorNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey);
-              const sceneNode=sceneNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey);
-              const audioNode=audioNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey)||null;
-              const timelineNode=timelineNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey)||null;
-              const characterNode=characterNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey);
               if (ctxMenu.nodeId && !node && !textNode && !pendNode&&!failedTask&&!videoNode&&!directorNode&&!characterNode&&!sceneNode&&!audioNode&&!timelineNode) return null;
               const mutationDisabled = readOnly || !nodeSettingsReady || historySaving || (directorNodesStore.saving||characterNodesStore.saving||sceneNodesStore.saving||audioNodesStore.saving||timelineNodesStore.saving) || Boolean(ctxMenu.nodeId && isNodeLocked(ctxMenu.nodeId));
               const Sep = () => <div className="canvas-ui-divider my-1 h-px" />;
@@ -3863,14 +3842,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             busy={assistantBusy} outcome={assistantOutcome} steps={assistantSteps} responding={assistantResponding} open={assistantVisible} companion={orbCompanion} onCue={orbCue}
             english={locale === "en"} onActivate={toggleAssistant} light={lightCanvas} />}
         </div>
-        {propertiesOpen && !browsing && (selectedText || selected || selectedVideo || selectedDirector || selectedCharacter || selectedScene || selectedAudio || selectedTimeline) && <NodePropertiesPanel
-          key={(selectedText || selected || selectedVideo || selectedDirector || selectedCharacter || selectedScene || selectedAudio || selectedTimeline)!.id} title={(selectedText || selected || selectedVideo || selectedDirector || selectedCharacter || selectedScene || selectedAudio || selectedTimeline)!.title} kind={selectedText ? "text" : "image"}
-          settings={nodeSettings[(selectedText || selected || selectedVideo || selectedDirector || selectedCharacter || selectedScene || selectedAudio || selectedTimeline)!.id] || DEFAULT_CANVAS_SETTINGS} light={lightCanvas} english={locale==='en'} busy={historySaving || localEditBusy} readOnly={readOnly || !nodeSettingsReady}
-          content={selectedText?.content || selectedText?.prompt}
-          displaySize={selectedText ? {width:selectedText.width,height:selectedText.height} : selectedVideo?{width:selectedVideo.width,height:selectedVideo.height}:selectedDirector?{width:selectedDirector.width,height:selectedDirector.height}:selectedCharacter?{width:selectedCharacter.width,height:selectedCharacter.height}:selectedScene?{width:selectedScene.width,height:selectedScene.height}:selectedTimeline?{width:selectedTimeline.width,height:selectedTimeline.height}:selectedAudio?{width:selectedAudio.width,height:selectedAudio.height}:artworkNodeSize(selected!)}
-          imageEditable={!selectedVideo&&!selectedDirector&&!selectedCharacter&&!selectedScene&&!selectedAudio&&!selectedTimeline&&!selected?.videoUrl}
-          imageSize={selected?.width && selected?.height ? {width:selected.width,height:selected.height} : undefined}
-          onSave={settings=>commitNodeSettings((selectedText || selected || selectedVideo || selectedDirector || selectedCharacter || selectedScene || selectedAudio || selectedTimeline)!.id,settings)} onClose={()=>setPropertiesOpen(false)}
+        {propertiesOpen && !browsing && selectedProperties && <NodePropertiesPanel
+          key={selectedProperties.id} title={selectedProperties.title} kind={selectedProperties.kind}
+          settings={nodeSettings[selectedProperties.id] || DEFAULT_CANVAS_SETTINGS} light={lightCanvas} english={locale==='en'} busy={historySaving || localEditBusy} readOnly={readOnly || !nodeSettingsReady}
+          content={selectedProperties.content} displaySize={selectedProperties.displaySize}
+          imageEditable={selectedProperties.imageEditable} imageSize={selectedProperties.imageSize}
+          onSave={settings=>commitNodeSettings(selectedProperties.id,settings)} onClose={()=>setPropertiesOpen(false)}
           onCrop={()=>selected && localEdits.openCrop(selected,canvasLocalEditContext())} onReplace={()=>selected && requestReplace(selected)} />}
         {cropArtwork && <ImageCropDialog image={cdnUrl(cropArtwork.image)} title={cropArtwork.title} light={lightCanvas} english={locale==='en'} busy={localEditBusy}
           onApply={crop=>saveLocalImageEdit(cropArtwork,crop)} onClose={localEdits.close} />}
