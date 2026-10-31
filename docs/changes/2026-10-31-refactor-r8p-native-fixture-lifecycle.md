@@ -38,3 +38,19 @@ R8O完整目录实际191PASS/1FAIL，失败是scene组合内首次director outpu
 固定cafa8050的193目录到129PASS后，audio未知ACK重启矩阵暴露了本轮进程owner的过早失败：taskkill255提示某个后代已退休，原root退出事件可能晚于命令close。本轮不把非零当停止或仍运行的证据，统一在原有5秒边界内观察root退出后决定。所有具体PID随后核验已不存在，原native/core PG均清理；原失败日志与未执行63项保留。新增partial-tree延迟退出控制，未改音频/UNKNOWN/重启业务断言，不增加时限或资源。后续固定新source完整重跑，不跨SHA拼接129项。
 
 修正后的控制为原13项/6个异常观测（缺准备1、假停止3、掩盖原异常2）对修改18项/0异常，正常合同EXACT；完整类型与lint再次exit0，当前5053实际输入raw SHA已固定。接下来只接受新固定source的完整193实测，不复用先前129项。
+
+## 当前交付与明确未完成
+
+当前候选源码 `a98e313bd8441035f2d43d4eac66eca9e2aeffd8`。验证资产的两个窄owner及真实调用方已实现，原13控制/修改18控制与正常合同对照通过；**整版原生GUI验收仍OPEN：当前raw报告135PASS/1FAIL/57NOT_RUN，fullCorePass=false**。失败项在本机提交内存耗尽后中止，不写成业务通过。
+
+本片只改验证资产。scene/director复用GET405路由准备；process-lifecycle观察真实root退出，而不以taskkill成功或失败推断状态；缺失spawnSync streams转为文本，诊断失败保留原异常。全部2136个原src/services raw SHA保持，没有修改产品入口、UI、钱包、任务、UNKNOWN或资源预算。
+
+实际验证分层保留：cafa8050首版core129PASS/1FAIL/63NOT_RUN，在audio未知ACK重启矩阵暴露taskkill255/后代已退休时root退出事件的竞态；修正后a98e313b完整目录继续至135PASS，音频/时间线API矩阵已通过，timeline-native-canvas只读GET发生ECONNRESET。一次同source/digest/env的续跑核验复用135条原日志，未使用cafa129或R8O191冒充当前通过；该次已完成真实时间线导出/采用，随后Next连续ERR_MEMORY_ALLOCATION_FAILED/Jest异常，最低观测可用提交内存116300KiB。原始runtime、进程树与隔离PG快照保留；只终止确证自有的异常App及未收尾case进程树，按精确ID/源码owner清理其tmpfs PG和临时fixture凭据，其他线程/系统分页文件未动。该次中止仍为FAIL，后续57项未运行。
+
+本轮未构建新镜像、未执行新的runtime177或产品browser92；原完整core门槛保持，不伪造PASS父报告、不放宽断言或用历史绿灯覆盖。R8O镜像/450秒/产品92继续只归原source；本片只证明产品raw字节不变，不冒认新的容量、生产或全应用验收。
+
+最终类型exit0，5087个实际compiler/config/依赖输入重新固定；原2个.Next生成route type漂移单列，旧输入/类型结果保留，所有原生进程结束后重新完整类型检查，不改产品或配置。lintexit0、原warning保留。原13控制复现缺准备1/假停止3/原异常被遮盖2，修改18控制为0/0/0，原19读取/director3GET405/POSIX/正常日志EXACT；实际自有子进程退出已运行。
+
+**🔴 独立候选超过48h：用户要求持续完整重构，工作区保留。整体ACTIVE，未合回main、未部署、47 HOLD；验证资产不计产品功能迭代，main刷新仍e2f56255、计数0/3。原生整版验证待资源窗口；继续推进Canvas两处直接I/O与菜单/属性选择投影，持续/生产容量、有效CI、最终main整版与生产验收尚待。**
+
+源码归档、字节补丁、独立副本原13控制恢复与5306原raw SHA回滚，以最终VERIFICATION/ROLLBACK_RESULT为准。准备顺序对完整scene的假设仍待实际整版运行，不把控制端口通过当原Scene整链闭合。

@@ -1,14 +1,18 @@
-# 当前迁移切片：R8O 调度与释放唤醒
+# 当前迁移切片：R8P 原生准备与进程收据
 
-应用与镜像源码 `46056b43880772a89da37d72e9b7b4ee9b5f9437`。同源码192目录：191 PASS / 1 FAIL / 0 NOT_RUN，**不标完整core通过**；完整同Web/Worker镜像与实际双浏览器92通过；runtime177被原完整core状态门槛阻止，业务检查尚未执行。原144项的源码、命令、日志SHA逐项保持；原47项独立新执行全部通过（subset runner PARTIAL / exit2），场景失败原记录保留。
+当前候选源码 `a98e313bd8441035f2d43d4eac66eca9e2aeffd8`。验证资产的两个窄owner及真实调用方已实现，原13控制/修改18控制与正常合同对照通过；**整版原生GUI验收仍OPEN：当前raw报告135PASS/1FAIL/57NOT_RUN，fullCorePass=false**。失败项在本机提交内存耗尽后中止，不写成业务通过。
 
-接口：image-jobs/scheduling唯一拥有claim/due/release及SQL；image-job-repository仅向真实旧调用方重导出同函数；runtime与worker直接依赖owner。work-signal是原schema-scoped PG通知叶子，provider只在DELETE实际释放token后通知，失败不反转删除；原LISTEN、周期扫描与角色策略保持。原付费检查点、心跳fencing、保存和账务事务仍归原具体owner。
+本片只改验证资产。scene/director复用GET405路由准备；process-lifecycle观察真实root退出，而不以taskkill成功或失败推断状态；缺失spawnSync streams转为文本，诊断失败保留原异常。全部2136个原src/services raw SHA保持，没有修改产品入口、UI、钱包、任务、UNKNOWN或资源预算。
 
-同负载与预算的450秒原/新对照：每侧165图、12原生媒体、1800读、450保存、177笔1014积分；原像素/字节/单次POST及末尾预占归零通过。整体端到端p95（秒）67.536 → 45.021，surge p95（秒）69.564 → 50.019；冷却且有余量的左采样区间累计（秒）52.001 → 0.000，time-ready且有余量（秒）30.002 → 7.999。这些是一次本地对照，不是每用户等待、全部候选可路由或10万容量证明。
+实际验证分层保留：cafa8050首版core129PASS/1FAIL/63NOT_RUN，在audio未知ACK重启矩阵暴露taskkill255/后代已退休时root退出事件的竞态；修正后a98e313b完整目录继续至135PASS，音频/时间线API矩阵已通过，timeline-native-canvas只读GET发生ECONNRESET。一次同source/digest/env的续跑核验复用135条原日志，未使用cafa129或R8O191冒充当前通过；该次已完成真实时间线导出/采用，随后Next连续ERR_MEMORY_ALLOCATION_FAILED/Jest异常，最低观测可用提交内存116300KiB。原始runtime、进程树与隔离PG快照保留；只终止确证自有的异常App及未收尾case进程树，按精确ID/源码owner清理其tmpfs PG和临时fixture凭据，其他线程/系统分页文件未动。该次中止仍为FAIL，后续57项未运行。
 
-完整结果以R8O模块记录、output/refactor-r8o-20261031/VERIFICATION.txt和CORE_COVERAGE.json为准。同步计数0/3，场景输出回归OPEN，不复用旧source通过代验。
+本轮未构建新镜像、未执行新的runtime177或产品browser92；原完整core门槛保持，不伪造PASS父报告、不放宽断言或用历史绿灯覆盖。R8O镜像/450秒/产品92继续只归原source；本片只证明产品raw字节不变，不冒认新的容量、生产或全应用验收。
 
-**🔴 候选分支超过48h：用户要求持续交付完整重构版本，仍保留独立worktree。剩余Canvas Shell、场景原生回归、持续/生产容量、有效CI、最终main整版整合及生产验收尚待；整体ACTIVE，未合回main、未部署、47 HOLD。**
+最终类型exit0，5087个实际compiler/config/依赖输入重新固定；原2个.Next生成route type漂移单列，旧输入/类型结果保留，所有原生进程结束后重新完整类型检查，不改产品或配置。lintexit0、原warning保留。原13控制复现缺准备1/假停止3/原异常被遮盖2，修改18控制为0/0/0，原19读取/director3GET405/POSIX/正常日志EXACT；实际自有子进程退出已运行。
+
+**🔴 独立候选超过48h：用户要求持续完整重构，工作区保留。整体ACTIVE，未合回main、未部署、47 HOLD；验证资产不计产品功能迭代，main刷新仍e2f56255、计数0/3。原生整版验证待资源窗口；继续推进Canvas两处直接I/O与菜单/属性选择投影，持续/生产容量、有效CI、最终main整版与生产验收尚待。**
+
+详见output/refactor-r8p-20261031/VERIFICATION.txt及DELIVERY.json。
 
 ## 以下为历史固定源记录
 
