@@ -444,3 +444,10 @@ Canvas 选择快照、节点/边/Flow/右键/group/clear/IDs/toggle 及复制等
 原450秒网络internal误标已独立更正，原raw/日志不重写；最终驱动及103秒smoke实际internal、20图1媒体/21笔122积分全通过，不能借最终smoke宣称450秒网络修正已重测。原provider默认实际HTTP6组在同固定镜像network none通过。离线报告排除临时采样进程、去重observer窗口，缺样本保持未知；一次在POST返回前的GET404用原编号恢复，没有重POST。原runtime全套因匹配full-core timeline向量缺失在业务负载前失败，门禁未放宽，完整core/runtime NOT_RUN。
 
 具体源码/命令/原始失败/四产物与5278原hash独立副本回滚以[R8J记录](changes/2026-10-31-refactor-r8j-mixed-load.md)及DELIVERY为准。这里只校准2个隔离个人账号、1K/2K与图片FFmpeg，非生产/全部视频音频/长稳/租户公平/10万容量。整体ACTIVE，继续Canvas Shell剩余组合、端到端等待诊断、有效CI和最终main/生产退出；未合main未部署、47 HOLD。**独立候选超过48h仍按用户整体交付推进，不以切片完成冒充整版完成。**
+
+
+## 2026-10-31 R8K：节点创建用例归属
+
+固定应用`47b2b334ca7da470c10cc53cf3c2144fa7fd7806`，完整同Web/Worker镜像`sha256:747392c370798bed7a2a9f1eabad1145bee989b55ce0e8713f787977d2b618e3`。空白/连线图片、多参考图片、文字的坐标/创建/history/呈现/save编排归canvas/node-creation，八类入口继续原concrete actions；页面只连接原文档/待执行展示/历史和React呈现。不建第二套任务/存储/钱包；一原产品文件+一新应用模块，2126原产品hash保持、161其他函数正文不变。
+
+原/新27创建场景全轨迹EXACT。最终同SHA完整core186全新通过/0复用，原Linux runtime177、实际双browser92及31图原ZIP字节通过；类型0/lint38warning/四类SCC0。初次109/1/75、第二次78/1/107原失败及修正原因保留，最终不是跨轮拼绿。所有最终产品bytes与固定镜像一致，末次仅doc-only bridge；四产物/原5285hash副本回滚/Git与清理见[R8K记录](changes/2026-10-31-refactor-r8k-node-creation.md)及DELIVERY。整体ACTIVE、未合main未部署、47 HOLD；同步后2/3。生产容量、真实剩余Canvas组合、有效CI、最终main/生产退出仍未完成。

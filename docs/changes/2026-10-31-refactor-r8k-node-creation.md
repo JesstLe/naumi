@@ -33,3 +33,18 @@ pending数据继续归pending-presentation，文字数据/持久化归text-docum
 集中core首轮在4e8bb178为109PASS/1FAIL/75NOT_RUN，shared-history VM缺少实际pendingNodeCreationPorts编译，不是undo规则被删；修正后原16条history断言保留。旧node-entry-models首次适配的CommonJS module变量冲突已修；原baseline同时复现其旧静态selector检查，验证器现在沿真实CanvasImageComposer→CanvasImageGenerationControls→CanvasModelSelect，不恢复旧inline组件。该独立旧验证器纳入统一catalog，目录185→186。原失败、baseline、输出副本验证和PG清理均留证，产品两文件不随夹具修正改变。
 
 第二次全core在c72c0672为78PASS/1FAIL/107NOT_RUN；admin-shell旧夹具在setState尚未commit时立即读count得到旧10而非1。夹具App用layoutEffect回执实际committed revision，navigate等待同一revision，原导航/数量/权限/键盘断言不变；无sleep或产品后台改动。初次4e原92产品已通过，仍只归其固定源；最终全量将重新固定，不跨SHA拼绿。
+
+
+## R8K本片封版证据
+
+固定应用/完整验收源码`47b2b334ca7da470c10cc53cf3c2144fa7fd7806`，生产Dockerfile同Web/Worker镜像`sha256:747392c370798bed7a2a9f1eabad1145bee989b55ce0e8713f787977d2b618e3`。最终完整core186/186全部新执行，0失败/0未运行/0复用；原整栈runtime177检查、真实产品双browser92检查均在同source/image通过，不跨SHA拼绿。原runtime的full-core timeline向量门禁实际满足，不再沿用R8J的NOT_RUN缺口。各自POSIX drain和自有PG/容器/网络清理通过。
+
+只改变CanvasClient一个既有产品文件，新增node-creation一个应用模块，其余2126原src/services逐hash保持。页面4个原创建入口变为窄adapter，另161个原函数正文保持；原共享pending序号、文档/历史/选择/draft/导航/focus/保存顺序保持，原27场景对照EXACT。原16条共享undo/redo及原任务/报价/钱包/UNKNOWN回归在完整目录保留。页面4257行不是验收目标；规则归属和变化传播范围才是。
+
+最终类型配置及全部2570个TS/TSX/配置输入与已执行tsc输入逐hash一致，tsc exit0；lint exit0/38既有warning；固定源静态/全import/emitted静态/emitted全图SCC均0。两条release fixture反向边和dist生成未解析边单列，不将它们冒充新生产倒置。
+
+初次4e的109/1/75、c72的78/1/107及其清理材料原样保留；两次旧完整产品92通过也仅归各自source，不充当最终47的替代。最终47重新执行全目录、完整镜像、原runtime及92产品；验证器修正未改变任何产品代码。Canvas与node-creation两产品文件自4e以来逐hash相同。
+
+原5285rawhash、完整源码/字节patch、副本旧27创建轨迹回滚与later-edit零写入，以本轮DELIVERY/VERIFICATION为准。最终封版只更新模块/架构/迁移/退出文档；archiveSource与上述验收Source之间逐项doc-only bridge，不把文档提交冒充新应用构建。
+
+R8J容量/排空数字仍只归原c146固定源，本轮未重复450秒负载；历史ZIP socket hang up原始根因仍OPEN，当前31图ZIP逐字节通过不替其关闭。整体ACTIVE，继续真实剩余Canvas参数/视图组合归属、调度等待诊断、生产业务容量、有效CI与最终main/生产退出。未合main未部署，47 HOLD；同步后第2/3产品模块。**独立候选超过48h按用户整体交付要求保留，完整退出尚未满足。**

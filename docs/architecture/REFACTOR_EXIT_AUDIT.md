@@ -1,3 +1,37 @@
+# 整体重构退出审计（R8K 当前候选）
+
+本页按原 R0–R6 与量化退出要求核对，而非把已完成切片重新定义为全部目标。固定应用源码以最新 R8H DELIVERY 为准；R8G属性证据归原source；R8F下载证据按原source；R8E性能只归其原source；R8D性能/媒体仅归其原source；R8B167/177与R8C34/54仍只归历史源，原始验收要求见 REFACTOR_MIGRATION.md 第 2/4/5/6 节；历史切片的日志只证明对应 SHA，不给最新源码代验。
+
+| 原要求 | 当前归属 / 权威证据入口 | 当前判定及还需什么 |
+|---|---|---|
+| R0 已有质量/Canvas定价修复不倒退 | 原整合历史及image-price/canvas-image-task/prepare回归 | R8K完整186、同固定应用runtime177/产品92通过，原价/钱包/UNKNOWN保留；不代表生产上线或所有历史事故闭合 |
+| R1A typed图片/抠图用例，各HTTP/Agent/workbench共用 | imagegen用例、准备/同步计费/route adapter；AST运行图 | 结构已实施；R8K完整186及同镜像runtime177/产品92新执行；最终main固定全版仍待 |
+| R1B 同operation单一prepared与原冻结价 | `imagegen/preparation`、quote/dispatch与3套pricing回归 | 原价/明确取消/不足余额/UNKNOWN必须仍通过，配置缓存不跨Pool |
+| R2 生成与原结果续交共享交付 | shared delivery/checkpoint/settlement，delivery/resilience/parent cases | 历史供应商403与原始两笔丢失窗口不因fixture PASS自动关闭；项目历史case单独保留 |
+| R3 Canvas文档/任务/渲染/交互分责 | 原document/history/task/selection/navigation与新native-editor-session/组合 | 创建用例新增node-creation；原下载/偏好/图库/原生编辑会话已迁。4257行不作目标；剩余参数/视图/Shell组合需按职责和变化传播审查，不机械逐行拆JSX |
+| R4A Pool/Tx无业务依赖，数据owner有唯一写入 | `platform/db`，db兼容面；SCC与依赖扫描、PG事务矩阵 | 纯平台结构已落地；兼容出口只为真实脚本调用保留，不算平行writer |
+| R4B 无业务请求新建schema或管理bootstrap | Web显式persistence/startup及schema owner、published read | R8B生命周期修复归历史源，本轮没有改schema；后续所有进程/历史规模升级仍须各自证明 |
+| R5 同版本独立Worker、单任务owner、协议/排空 | 固定完整Dockerfile/Worker manifest/shared scan，runtime与native媒体gate | 结构已实施；R8K完整同source/image runtime177/双browser92及排空通过；R8J450秒混合样本与生产容量仍单列 |
+| R6 外围管理/工作台/测试资产与旧路径退出 | admin owner、workbench单源、core catalogue/runner；源码边界 | 历史成熟切片保留；需继续剩余Canvas组合与真实兼容caller退出审计，不以新增文件数当结论 |
+| 生产lib→app反向调用为0；SCC为0 | `scripts/architecture/analyze.cjs`，静态/运行/emitted图 | 两条release fixture反向边单列，不当生产依赖；最终固定源重新扫描 |
+| 用户业务参数改动局部传播 | 本轮只改既有CanvasClient+3新职责文件，2123原产品哈希保持 | 本片只改1个原产品文件+1个创建应用模块，2126原产品hash/161其他函数正文保持；原27创建字段/history/save轨迹EXACT |
+| 同机UI/server p95、RSS、事件循环与INP对照 | 复用现有benchmark-ui-performance、benchmark-imagegen-pipeline、Canvas probe；原建议无超过10%回退 | **已补同锁五轮，整体仍未退出**：R8E相同机器320节点/12图、同Node/React/Next/lock，5轮10栈30页/300准备600读取；指标与原10%阈值按本轮PERFORMANCE_COMPARISON，仍缺入队/持续混合与fieldINP；180秒读取不当容量证明 |
+| 100k+活跃用户容量模型 | PRODUCT_READINESS_100K，实际到达率/并发/规格/资源余量 | 未完成：已有R8J450秒2账号受控混合生成/保存/媒体样本；生产到达率、长稳、租户公平及真实资源/规格模型仍待，不将DAU当并发 |
+| required CI实际执行且同SHA | GitHub workflow/run/check annotations，非仅YAML | 未完成：本地完整186与Linux实际产品证明不等于远端requiredCI；本轮REMOTE_CI按实际run记录，不继承旧账户状态当实时结论 |
+| 完整重构版本main普通整合 | 固定origin/main、普通merge、最终全版验收；不强推共享main | **未完成**：目前只是独立候选分支，尚未合回main；超过48h原因见各模块记录 |
+| 部署与生产功能验收 | 实际在线source/image、明确目标与发布锁/原任务保护 | **未完成且本轮不执行**；47 HOLD；代码/候选/本地通过不等于上线 |
+
+## 下一步真实工作
+
+1. 继续Canvas剩余Shell与面板/事件组合的真实职责归属，不引入平行任务/保存框架，不机械拆纯事件adapter。
+2. 补原退出要求中的持久热态混合生成、保存与媒体入队/队列容量；用实际到达率/规格/资源余量校准10万活跃目标，不抬池或降质量凑过关。
+3. 原ZIP传输socket失败保持OPEN，等待同身份可定位证据，不添加付费POST重试或删下载断言。
+4. 有效required CI、最终固定main普通整合与整版验收、生产发布分别给证据，47 HOLD保持，不以候选通过冒充上线。
+
+## 历史固定源记录
+
+以下记录只归各自固定源，不覆盖上方当前退出判定。
+
 ## 2026-10-31 R8I：原生编辑会话、独立portal与页面组合分责
 
 固定应用源码 `c146956e66f3bef0442a60cc38ceeb893abb8a93`，完整生产Dockerfile同Web/Worker镜像 `sha256:85a6a68afb93c074c6a7e7aa90733b0e5492c2d658fdb207cd29716d343332e1`。角色、场景、导演台、音频、时间线五套编辑器ID/清理Effect/portal与回调从Canvas大页面迁到纯native-editor-session owner、React订阅hook与CanvasNativeEditors组合。只改1个既有产品文件+3个新职责文件，其他2123原src/services哈希保持；Canvas4337行并非验收目标。保存/CAS、上传、引用、渲染/采用、原operation/UNKNOWN、钱包及共享history仍归原具体owner，不建第二套任务或保存系统。
@@ -94,37 +128,6 @@
 
 第三模块普通 fetch/merge main `e2f56255` 无新提交，计数3→0。整体仍 ACTIVE，未合 main、未部署，47 HOLD；当前完整退出审计见 `docs/architecture/REFACTOR_EXIT_AUDIT.md`，保留剩余Canvas组合/同机性能与容量/有效CI/最终main整合，不用本片通过替代整版交付。
 
-# 整体重构退出审计（R8I 当前候选）
-
-本页按原 R0–R6 与量化退出要求核对，而非把已完成切片重新定义为全部目标。固定应用源码以最新 R8H DELIVERY 为准；R8G属性证据归原source；R8F下载证据按原source；R8E性能只归其原source；R8D性能/媒体仅归其原source；R8B167/177与R8C34/54仍只归历史源，原始验收要求见 REFACTOR_MIGRATION.md 第 2/4/5/6 节；历史切片的日志只证明对应 SHA，不给最新源码代验。
-
-| 原要求 | 当前归属 / 权威证据入口 | 当前判定及还需什么 |
-|---|---|---|
-| R0 已有质量/Canvas定价修复不倒退 | 原整合历史及image-price/canvas-image-task/prepare回归 | R8H完整181只归原source；R8I最终19直接入口/92完整产品新执行，旧41仅按2a0053a5与源码bridge登记，不外推全183 |
-| R1A typed图片/抠图用例，各HTTP/Agent/workbench共用 | imagegen用例、准备/同步计费/route adapter；AST运行图 | 结构已实施，原owner字节不变；最新19/92及四类SCC新执行，整版main固定全量仍待 |
-| R1B 同operation单一prepared与原冻结价 | `imagegen/preparation`、quote/dispatch与3套pricing回归 | 原价/明确取消/不足余额/UNKNOWN必须仍通过，配置缓存不跨Pool |
-| R2 生成与原结果续交共享交付 | shared delivery/checkpoint/settlement，delivery/resilience/parent cases | 历史供应商403与原始两笔丢失窗口不因fixture PASS自动关闭；项目历史case单独保留 |
-| R3 Canvas文档/任务/渲染/交互分责 | 原document/history/task/selection/navigation与新native-editor-session/组合 | 下载/偏好/图库选择/五原生编辑会话与独立portal已迁；页面4337行仍有其他Shell/面板组装，按职责/变化传播验收而非逐行拆JSX |
-| R4A Pool/Tx无业务依赖，数据owner有唯一写入 | `platform/db`，db兼容面；SCC与依赖扫描、PG事务矩阵 | 纯平台结构已落地；兼容出口只为真实脚本调用保留，不算平行writer |
-| R4B 无业务请求新建schema或管理bootstrap | Web显式persistence/startup及schema owner、published read | R8B生命周期修复归历史源，本轮没有改schema；后续所有进程/历史规模升级仍须各自证明 |
-| R5 同版本独立Worker、单任务owner、协议/排空 | 固定完整Dockerfile/Worker manifest/shared scan，runtime与native媒体gate | 应用结构已实施；完整同镜像运行验收与混合资源对照是不同层级 |
-| R6 外围管理/工作台/测试资产与旧路径退出 | admin owner、workbench单源、core catalogue/runner；源码边界 | 历史成熟切片保留；需继续剩余Canvas组合与真实兼容caller退出审计，不以新增文件数当结论 |
-| 生产lib→app反向调用为0；SCC为0 | `scripts/architecture/analyze.cjs`，静态/运行/emitted图 | 两条release fixture反向边单列，不当生产依赖；最终固定源重新扫描 |
-| 用户业务参数改动局部传播 | 本轮只改既有CanvasClient+3新职责文件，2123原产品哈希保持 | 编辑会话与面板组合变化收敛到专属owner/hook/view，原动作/HTTP/账务不变；质量/codec规则仍由其原模块拥有 |
-| 同机UI/server p95、RSS、事件循环与INP对照 | 复用现有benchmark-ui-performance、benchmark-imagegen-pipeline、Canvas probe；原建议无超过10%回退 | **已补同锁五轮，整体仍未退出**：R8E相同机器320节点/12图、同Node/React/Next/lock，5轮10栈30页/300准备600读取；指标与原10%阈值按本轮PERFORMANCE_COMPARISON，仍缺入队/持续混合与fieldINP；180秒读取不当容量证明 |
-| 100k+活跃用户容量模型 | PRODUCT_READINESS_100K，实际到达率/并发/规格/资源余量 | **未完成**：DAU不是并发；需要持久热态混合生成/保存/媒体负载与限额依据，不抬池/降质量凑通过 |
-| required CI实际执行且同SHA | GitHub workflow/run/check annotations，非仅YAML | **未完成**：账户支付/额度长期阻止runner启动；本地通过与远端未执行分别记录 |
-| 完整重构版本main普通整合 | 固定origin/main、普通merge、最终全版验收；不强推共享main | **未完成**：目前只是独立候选分支，尚未合回main；超过48h原因见各模块记录 |
-| 部署与生产功能验收 | 实际在线source/image、明确目标与发布锁/原任务保护 | **未完成且本轮不执行**；47 HOLD；代码/候选/本地通过不等于上线 |
-
-## 下一步真实工作
-
-1. 继续Canvas剩余Shell与面板/事件组合的真实职责归属，不引入平行任务/保存框架，不机械拆纯事件adapter。
-2. 补原退出要求中的持久热态混合生成、保存与媒体入队/队列容量；用实际到达率/规格/资源余量校准10万活跃目标，不抬池或降质量凑过关。
-3. 原ZIP传输socket失败保持OPEN，等待同身份可定位证据，不添加付费POST重试或删下载断言。
-4. 有效required CI、最终固定main普通整合与整版验收、生产发布分别给证据，47 HOLD保持，不以候选通过冒充上线。
-
-
 ## 2026-10-31 R8J：完整镜像持续混合负载证据
 
 复用R8I c146956e完整同Web/Worker镜像，src/services变化0，不把验证脚本当产品模块改造。原450秒时钟负载165图/12原生图片FFmpeg/1800读/450保存，实际177笔1014积分、每operation一次POST、逐图原字节像素/父子/原价/账务通过，末尾未完成/预占0。突发未完成峰值52、执行等待48、端到端p95约70秒，停止进入后约68秒采样排空；接口快不代表交付快。77%合成HTTP槽占用仅调度诊断，不证明每个parent已可派发，不以加限额或调大并发代替定位。
@@ -132,3 +135,10 @@
 原450秒网络internal误标已独立更正，原raw/日志不重写；最终驱动及103秒smoke实际internal、20图1媒体/21笔122积分全通过，不能借最终smoke宣称450秒网络修正已重测。原provider默认实际HTTP6组在同固定镜像network none通过。离线报告排除临时采样进程、去重observer窗口，缺样本保持未知；一次在POST返回前的GET404用原编号恢复，没有重POST。原runtime全套因匹配full-core timeline向量缺失在业务负载前失败，门禁未放宽，完整core/runtime NOT_RUN。
 
 具体源码/命令/原始失败/四产物与5278原hash独立副本回滚以[R8J记录](../changes/2026-10-31-refactor-r8j-mixed-load.md)及DELIVERY为准。这里只校准2个隔离个人账号、1K/2K与图片FFmpeg，非生产/全部视频音频/长稳/租户公平/10万容量。整体ACTIVE，继续Canvas Shell剩余组合、端到端等待诊断、有效CI和最终main/生产退出；未合main未部署、47 HOLD。**独立候选超过48h仍按用户整体交付推进，不以切片完成冒充整版完成。**
+
+
+## 2026-10-31 R8K：节点创建用例归属
+
+固定应用`47b2b334ca7da470c10cc53cf3c2144fa7fd7806`，完整同Web/Worker镜像`sha256:747392c370798bed7a2a9f1eabad1145bee989b55ce0e8713f787977d2b618e3`。空白/连线图片、多参考图片、文字的坐标/创建/history/呈现/save编排归canvas/node-creation，八类入口继续原concrete actions；页面只连接原文档/待执行展示/历史和React呈现。不建第二套任务/存储/钱包；一原产品文件+一新应用模块，2126原产品hash保持、161其他函数正文不变。
+
+原/新27创建场景全轨迹EXACT。最终同SHA完整core186全新通过/0复用，原Linux runtime177、实际双browser92及31图原ZIP字节通过；类型0/lint38warning/四类SCC0。初次109/1/75、第二次78/1/107原失败及修正原因保留，最终不是跨轮拼绿。所有最终产品bytes与固定镜像一致，末次仅doc-only bridge；四产物/原5285hash副本回滚/Git与清理见[R8K记录](../changes/2026-10-31-refactor-r8k-node-creation.md)及DELIVERY。整体ACTIVE、未合main未部署、47 HOLD；同步后2/3。生产容量、真实剩余Canvas组合、有效CI、最终main/生产退出仍未完成。
