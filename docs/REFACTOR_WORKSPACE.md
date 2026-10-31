@@ -451,3 +451,14 @@ Canvas 选择快照、节点/边/Flow/右键/group/clear/IDs/toggle 及复制等
 固定应用`47b2b334ca7da470c10cc53cf3c2144fa7fd7806`，完整同Web/Worker镜像`sha256:747392c370798bed7a2a9f1eabad1145bee989b55ce0e8713f787977d2b618e3`。空白/连线图片、多参考图片、文字的坐标/创建/history/呈现/save编排归canvas/node-creation，八类入口继续原concrete actions；页面只连接原文档/待执行展示/历史和React呈现。不建第二套任务/存储/钱包；一原产品文件+一新应用模块，2126原产品hash保持、161其他函数正文不变。
 
 原/新27创建场景全轨迹EXACT。最终同SHA完整core186全新通过/0复用，原Linux runtime177、实际双browser92及31图原ZIP字节通过；类型0/lint38warning/四类SCC0。初次109/1/75、第二次78/1/107原失败及修正原因保留，最终不是跨轮拼绿。所有最终产品bytes与固定镜像一致，末次仅doc-only bridge；四产物/原5285hash副本回滚/Git与清理见[R8K记录](changes/2026-10-31-refactor-r8k-node-creation.md)及DELIVERY。整体ACTIVE、未合main未部署、47 HOLD；同步后2/3。生产容量、真实剩余Canvas组合、有效CI、最终main/生产退出仍未完成。
+
+
+## 2026-10-31 R8L：视图导航意图封版（整体 ACTIVE）
+
+固定应用/完整验收源码 `53cb03c3532302358838f219ae329a827e9144a0`，生产 Dockerfile 同 Web/Worker 镜像 `sha256:c0428ac91598223f7de52af70491defe4b4d6a2ffa1ab9503957682e4b021b40`。区域聚焦、工作流导入 Fit、显式节点定位和手动导航复用唯一 navigationRevision；view-navigation 纯 owner 只拥有视图意图、scope 与 frame/timer，页面仅组装。旧区域/导入迟到写入 9→0，18 组正常几何及文档/history轨迹 EXACT；实际 React 19 项（含实际project-navigation即时/迟到目录正例），切换项目/账号/workspace 不继承旧定位 ID，同 ID 再次定位及旧 ACK 不清新请求。文字新项目仅允许紧接着的一次目标交接。原动画 320/240/280ms 与节点创建/save顺序保持，不新增任务、钱包、网络或文档 owner。
+
+7 个既有产品文件+1 个新 owner，其他 2121 原 src/services 哈希保持，页面 165 个其他原函数正文按Git规范LF归一后相同（原始raw哈希另存，不混写为原始字节完全相等）。原 27 组节点创建全轨迹、viewport15/arrange25和输入矩阵保持；类型 exit0（全部 2570 个 TS/TSX/package/config 输入逐hash bridge）、lint exit0/38既有warning、四类SCC0。最终同SHA/digest完整 core188 全新执行，0失败/0未运行/0复用；原完整 Linux runtime177 与真实产品双browser92在同 source/image通过，原31图ZIP字节保持，POSIX drain与自有PG/容器/网络清理通过。隔离供应商/PG不当生产上游或10万容量证明，180秒混合读不等于持续混合生成容量。
+
+初次 core `5fb6a84f` 为38PASS/1FAIL/149NOT_RUN：project-navigation夹具仍只声明旧 setFocusId，实际页面已向原 navigation hook 传 focusCanvasNode，深链触发 ReferenceError。只补记录视图port，原八类节点深链/选择/导航/账号及workspace断言不变；最终重新固定并188全新执行，不跨SHA拼绿。532中间完整core188/browser92曾通过但未覆盖实际深链组合，新正例暴露0次定位的回归；明确目标project ticket修正后19项通过，再重新固定并完整验收，不借旧绿灯。5fb6与532旧完整镜像/browser只归各自源，初始部分编辑、DOM重复声明、节点视图反例及TS收窄错误原日志全部保留。
+
+本片第3模块普通同步 main `e2f562556ea6e71370619686e1fc8d4c634ef5e7`，输出 Already up to date、exit0，计数2→3→0。候选未合main未部署，47 HOLD；原5288rawhash、完整源码/字节patch、副本恢复18正常轨迹及9旧迟到写入、later-edit零写入与四产物以本轮DELIVERY/VERIFICATION为准，最终封版仅doc-only bridge。**独立候选超过48h：用户要求完整重构版本，最终退出尚未达到。**剩余Canvas参数/Shell组合、R8J调度等待诊断、持续混合业务/生产容量、有效远端CI与最终main/生产验收继续；R8J测量不借给本片，历史ZIP socket hang up根因仍OPEN。
