@@ -1,6 +1,7 @@
 /**
  * Isolated PostgreSQL + original HTTP-handler regression, not supplier acceptance.
- * Run: tsx --conditions react-server scripts/verify-imagegen-frozen-quote-pg.ts [--baseline]
+ * Current protocol: tsx --conditions react-server scripts/verify-imagegen-frozen-quote-pg.ts --simplify
+ * Historical confirmation protocol remains available without --simplify.
  * Requires NAUMI_VERIFY_ISOLATED_DB=1 and a 127.0.0.1 DATABASE_URL.
  * The only HTTP supplier is a loopback server creating real PNG bytes with sharp.
  */
@@ -201,7 +202,7 @@ async function main(){
       const raw={...r4,confirmation:{confirmed:true,billingVersion:999999,modelVersion:999999,credits:0}};
       const accepted=await post("submit",raw);
       if(baseline){assert.equal(accepted.response.status,409,JSON.stringify(accepted.body));assert.equal(accepted.body.code,"IMAGEGEN_PLAN_CHANGED");await assertUntouched();console.log("SIMPLIFY_BASELINE=REPRODUCED RAW_STALE_HEADERS_409=1 PARENTS=0 SUPPLIER_POSTS=0 CHARGES=0");return;}
-      const result=await waitResult(r4,accepted);await inspectGenerated(r4,p4,result);
+      const result=await waitResult(r4,accepted),initialGenerated=await inspectGenerated(r4,p4,result);
       const replayCalls=wires.length;assert.equal((await post("submit",raw)).body.jobId,result.jobId);assert.equal(wires.length,replayCalls);
       const batchAccepted=await post("submit",{...rBatch,confirmation:{confirmed:true,billingVersion:999999,modelVersion:999999,credits:0}});
       assert.equal(batchAccepted.response.status,200,JSON.stringify(batchAccepted.body));
@@ -237,7 +238,7 @@ async function main(){
       const {quoteForRequest}=await import("../src/lib/billing/server"),implicitBound=await quoteForRequest(new Request(f.origin+"/api/canvas/expand",{headers:implicitHeaders}),{feature:"canvas.image",quantity:1,ratio:"3:2"});
       assert.equal(implicitBound.facts.ratio,"3:2");assert.equal(implicitBound.requestedParameters!.ratio,"3:2");assert.equal(implicitBound.effectiveParameters!.ratio,"3:2");assert.equal(implicitBound.requestedCredits,12);assert.equal((await pool.query("SELECT quote#>>'{facts,ratio}' ratio FROM app_image_billing_quotes WHERE id=$1",[implicitQuoteId])).rows[0].ratio,null,"original stored quote never changes");
       const currentModels=await admin.repo.current(),maximum2k=structuredClone(currentModels.config);maximum2k.upstreamModels[0].capabilities.nativeResolutions=["1K","2K"];maximum2k.upstreamModels[0].parameterMap={resolutionPolicy:{mode:"map",field:"size",values:{"1K":"1024x1024","2K":"2048x2048"}}};maximum2k.publicModels[0].displayResolutions=["1K","2K"];
-      const fallbackDraft=await admin.repo.draft("fixture"),fallbackSaved=await admin.repo.saveDraft({id:fallbackDraft.id,expectedRevision:fallbackDraft.revision,config:maximum2k,actor:"fixture"});const fallbackPublication=await admin.repo.stage({id:randomUUID(),draftId:fallbackSaved.id,expectedRevision:fallbackSaved.revision,expectedVersion:currentModels.version,actor:"fixture",reason:"generic frozen effective tier"});await admin.repo.markApplied(fallbackPublication.id,fallbackPublication.digest);
+      const fallbackActor="fixture-resolution-fallback",fallbackDraft=await admin.repo.draft(fallbackActor),fallbackSaved=await admin.repo.saveDraft({id:fallbackDraft.id,expectedRevision:fallbackDraft.revision,config:maximum2k,actor:fallbackActor});const fallbackPublication=await admin.repo.stage({id:randomUUID(),draftId:fallbackSaved.id,expectedRevision:fallbackSaved.revision,expectedVersion:currentModels.version,actor:fallbackActor,reason:"generic frozen effective tier"});await admin.repo.markApplied(fallbackPublication.id,fallbackPublication.digest);
       const fallbackQuoteApi=await import("../src/app/api/billing/quote/route");const fallbackPreviewResponse=await fallbackQuoteApi.POST(new Request(f.origin+"/api/billing/quote",{method:"POST",headers:headers(),body:JSON.stringify(genericPreview!.selection)})),fallbackPreview=await fallbackPreviewResponse.json();assert.equal(fallbackPreviewResponse.status,200,JSON.stringify(fallbackPreview));assert.equal(fallbackPreview.credits,14);assert.equal(fallbackPreview.requestedParameters.resolution,"4K");assert.equal(fallbackPreview.effectiveParameters.resolution,"2K");
       const fallbackHeaders=headers();fallbackHeaders.set("x-naumi-image-quote",fallbackPreview.quote.id);fallbackHeaders.set("x-naumi-billing-operation-id",randomUUID());
       const fallbackAccepted=await legacyApi.POST(new Request(f.origin+"/api/generate-image",{method:"POST",headers:fallbackHeaders,body:JSON.stringify(legacyBody)})),fallbackJob=await fallbackAccepted.json();assert.equal(fallbackAccepted.status,200,JSON.stringify(fallbackJob));
@@ -251,10 +252,21 @@ async function main(){
       let expiredDelivery:Record<string,any>={};for(let i=0;i<600;i++){await wait(80);const response=await legacyApi.GET(new Request(f.origin+"/api/generate-image?job="+expiredJob,{headers:headers()}));expiredDelivery=await response.json();if(["done","error"].includes(expiredDelivery.status))break;}
       assert.equal(expiredDelivery.status,"done","expired-quote accept delivers at its frozen price");assert.equal(expiredDelivery.creditsUsed,12);
       const rawExpiredBatch=await post("submit",{...expiredBatchRequest,confirmation:{confirmed:true,credits:24}});assert.equal(rawExpiredBatch.response.status,200,JSON.stringify(rawExpiredBatch.body));
-      const expiredSaved=(await pool.query("SELECT charged_credits FROM app_billing_operations WHERE id=$1",[rawExpired.body.jobId||rawExpired.body.result?.jobId])).rows[0];
-      assert.equal(expiredSaved?Number(expiredSaved.charged_credits):12,12,"expired submit settles at frozen 12, not current 14");
+      const rawExpiredResult=await waitResult(rExpired,rawExpired),expiredGenerated=await inspectGenerated(rExpired,pExpired,rawExpiredResult);
+      assert.equal(Number(expiredGenerated.billing.charged_credits),12,"expired submit actually settles its child at frozen 12, not current 14");
+      const expiredBatchSaved=(await pool.query("SELECT plan FROM app_imagegen_batches WHERE id=$1",[expiredBatchRequest.operationId])).rows[0];
+      assert.equal(expiredBatchPreview.totalCredits,28,"this batch was previewed after the real publication to 14 per image");
+      assert.equal(expiredBatchSaved.plan.totalCredits,expiredBatchPreview.totalCredits,"maintenance-expired batch keeps its own saved total, not the client claim of24");
       const fallbackBill=(await pool.query("SELECT quote,charged_credits FROM app_billing_operations WHERE id=$1",[fallbackJob.jobId])).rows[0];assert.equal(Number(fallbackBill.charged_credits),14);assert.equal(fallbackBill.quote.requestedParameters.resolution,"4K");assert.equal(fallbackBill.quote.effectiveParameters.resolution,"2K");
-      console.log("SIMPLIFY_MODIFIED=PASS RAW_OLD_CLIENT_SAVED_PLAN=12 GENERIC_QUOTE_FROZEN=12 STALE_MODEL_BILLING_VERSIONS_IGNORED=1 CLIENT_ZERO_NOT_TRUSTED=1 FOREIGN_DENIED=1 COUNT_TAMPER_DENIED=1 GENERIC_EXPIRED_RECEIPT_FIRST=1 GENERIC_EXPIRED_NEW_NOT_ACCEPTED=1 RAW_EXPIRED_SINGLE_BATCH_NOT_REPRICED=1 GENERIC_4K_TO_2K_FROZEN_PRICE=14 LEGACY_UNQUOTED_RATIO_ALLOWED=1 TEXT_VIDEO_GUARDS_RETAINED=1 SUPPLIER_POSTS=3 LEDGERS=3 CHARGED=38 EXTERNAL_CALLS=0");return;
+      const finalCounts=await counts(),totals=(await pool.query("SELECT count(*)::int n,COALESCE(-sum(delta),0)::int charged FROM app_ledger WHERE email=$1 AND kind='consume'",[owner])).rows[0];
+      const expectedBillIds=[initialGenerated.billing.id,started.jobId,fallbackJob.jobId,expiredGenerated.billing.id,expiredJob];
+      const settled=(await pool.query("SELECT id,state,charged_credits FROM app_billing_operations WHERE id=ANY($1::text[])",[expectedBillIds])).rows;
+      assert.equal(new Set(expectedBillIds).size,5);assert.equal(settled.length,5);assert.ok(settled.every(row=>row.state==='settled'));assert.equal(settled.reduce((sum,row)=>sum+Number(row.charged_credits),0),62);
+      assert.equal(finalCounts.ledgers,5);assert.deepEqual(totals,{n:5,charged:62});assert.equal(wires.length,5);assert.equal(finalCounts.reservations,0);assert.deepEqual(blockedUrls,[]);
+      // This mode validates batch acceptance/frozen plans, not their worker delivery.
+      const queued=(await pool.query("SELECT count(*)::int n FROM app_imagegen_batch_items WHERE batch_id=ANY($1::uuid[]) AND state='queued'",[[rBatch.operationId,expiredBatchRequest.operationId]])).rows[0].n;assert.equal(queued,4);
+      console.log(`SIMPLIFY_MODIFIED=PASS RAW_OLD_CLIENT_SAVED_PLAN=12 GENERIC_QUOTE_FROZEN=12 STALE_MODEL_BILLING_VERSIONS_IGNORED=1 CLIENT_ZERO_NOT_TRUSTED=1 FOREIGN_DENIED=1 COUNT_TAMPER_DENIED=1 GENERIC_EXPIRED_RECEIPT_FIRST=1 GENERIC_EXPIRED_NEW_FROZEN_ACCEPTED=1 RAW_EXPIRED_SINGLE_BATCH_NOT_REPRICED=1 GENERIC_4K_TO_2K_FROZEN_PRICE=14 LEGACY_UNQUOTED_RATIO_ALLOWED=1 TEXT_VIDEO_GUARDS_RETAINED=1 SUPPLIER_POSTS=${wires.length} LEDGERS=${totals.n} CHARGED=${totals.charged} QUEUED_BATCH_ITEMS=${queued} EXPIRED_BATCH_FROZEN=${expiredBatchPreview.totalCredits} EXTERNAL_CALLS=${blockedUrls.length}`);
+      console.log(JSON.stringify({protocol:'simplify',counts:finalCounts,totals,supplierPosts:wires.length,queuedBatchItems:queued,batchDeliveryExecuted:false,settledOperationIds:expectedBillIds}));return;
     }
 
     const oldModels=await admin.repo.byVersion(p4.modelVersion),oldBilling=await admin.billing.byVersion(p4.billingVersion);

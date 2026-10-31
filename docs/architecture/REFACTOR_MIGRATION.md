@@ -242,6 +242,8 @@
 - [2026-10-31-refactor-r8w-fixed-native-acceptance.md](../changes/2026-10-31-refactor-r8w-fixed-native-acceptance.md)
 - [2026-10-31-refactor-r8x-current-performance.md](../changes/2026-10-31-refactor-r8x-current-performance.md)
 
+- [2026-11-01-refactor-r8y-quote-intent.md](../changes/2026-11-01-refactor-r8y-quote-intent.md)
+
 ## 历史入口
 
 [收敛前的完整迁移流水](https://github.com/JesstLe/naumi/blob/82729161200f166fe587b98bceb756a44999840c/docs/architecture/REFACTOR_MIGRATION.md)保留。文档类改动不增加产品模块计数；后续代码每完成三模块普通同步主线，仍遵从 AGENTS。

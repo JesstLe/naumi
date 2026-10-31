@@ -172,6 +172,8 @@ export const refactorCases=[
  ts('comfy-run-pg','canvas','scripts/verify-comfy-run-pg.ts','COMFY_RUN_PG=PASS MODE=MODIFIED'),
  node('image-task','canvas','scripts/verify-canvas-image-task-refactor.cjs','CANVAS_IMAGE_TASK_REFACTOR=PASS'),
  ts('preparation','generation','scripts/verify-image-preparation-refactor.ts','IMAGE_PREPARATION_REFACTOR=PASS'),
+ ts('quote-intent','pricing','scripts/verify-imagegen-quote-intent.ts','IMAGEGEN_QUOTE_INTENT=PASS MODE=MODIFIED'),
+ ts('frozen-quote-pg','pricing','scripts/verify-imagegen-frozen-quote-pg.ts','SIMPLIFY_MODIFIED=PASS',['--simplify']),
  ts('delivery','generation','scripts/verify-image-delivery-continuation.ts','IMAGE_DELIVERY_CONTINUATION=PASS'),
  ts('completed-parent','generation','scripts/verify-completed-parent-entry-pg.ts','COMPLETED_PARENT_ENTRY=PASS'),
  ts('wallet','pricing','scripts/verify-billing-wallet.ts','PASS wallet reserve/settle/release'),

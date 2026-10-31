@@ -2,7 +2,7 @@ import {ensureImagegenQuotes} from "@/lib/imagegen/storage-schema";
 export {ensureImagegenQuotes};
 
 import "server-only";
-import {randomUUID} from "node:crypto";
+import {imagegenQuoteId} from "./operation-id";
 import {dbEnabled,getPool} from "@/platform/db/pool";
 
 import {imagegenCreationScopeKey,assertAcceptedImagegenCreationScope,ImagegenScopeError} from "./creation-scope";
@@ -42,39 +42,69 @@ export function publicImagegenPlan(plan:ImagegenPlan):ImagegenPlan {
  if(visible.children)visible.children=visible.children.map(child=>({...child,plan:publicImagegenPlan(child.plan)}));
  return visible;
 }
+function publicQuote(row:QuoteRow):ImagegenPlan {
+ return {...publicImagegenPlan(row.plan),quote:{id:row.id,expiresAt:new Date(row.expires_at).toISOString()}};
+}
+function assertStoredQuote(row:QuoteRow|undefined,owner:string,operationId:string):asserts row is QuoteRow {
+ if(!row||row.owner!==owner.toLowerCase()||row.operation_id!==operationId||row.fingerprint!==imagegenFingerprint(row.request)||row.plan.fingerprint!==row.fingerprint)throw new ImagegenQuoteError();
+}
+/** The quote owner loads the original candidate and checks its current scope. */
+async function latestQuoteRow(request:ImagegenRequest,owner:string):Promise<QuoteRow|undefined>{
+ const fingerprint=imagegenFingerprint(request),context=imagegenCreationScopeKey(owner),contexts=[context,JSON.stringify(["personal",null,null])];
+ const row:QuoteRow|undefined=dbEnabled?(await getPool().query("SELECT * FROM app_imagegen_quotes WHERE owner=$1 AND operation_id=$2 AND fingerprint=$3 AND context_key=ANY($4::text[]) ORDER BY created_at DESC,id DESC LIMIT 1",[owner.toLowerCase(),request.operationId,fingerprint,contexts])).rows[0]:[...memory.values()].reverse().find(q=>q.owner===owner.toLowerCase()&&q.operation_id===request.operationId&&q.fingerprint===fingerprint&&contexts.includes(q.context_key));
+ return row&&await matchesQuoteScope(row,owner)?row:undefined;
+}
 /** Preview persistence is not an accepted generation, wallet reservation or supplier call. */
 export async function issueImagegenQuote(raw:ImagegenRequest,owner:string,plan:ImagegenPlan):Promise<ImagegenPlan>{
- const request=imagegenRequestSchema.parse(raw),fingerprint=imagegenFingerprint(request);
- if(plan.fingerprint!==fingerprint)throw new ImagegenQuoteError();
+ const request=imagegenRequestSchema.parse(raw),fingerprint=imagegenFingerprint(request),frozenPlan=structuredClone(plan);
+ if(frozenPlan.fingerprint!==fingerprint)throw new ImagegenQuoteError();
  await ensureImagegenQuotes();
- // Re-previewing the same operation is still the original intent, not consent
- // to current prices. TTL is maintenance metadata, not permission to reprice.
- const existing=await latestImagegenQuote(request,owner);
- if(existing){const saved=await readImagegenQuote(existing,owner,request.operationId);return {...publicImagegenPlan(saved.plan),quote:{id:saved.id,expiresAt:new Date(saved.expires_at).toISOString()}};}
- const row:QuoteRow={id:randomUUID(),owner:owner.toLowerCase(),operation_id:request.operationId,fingerprint,context_key:imagegenCreationScopeKey(owner),request,plan,expires_at:new Date(Date.now()+IMAGEGEN_QUOTE_TTL_MS)};
- if(dbEnabled){const saved=(await getPool().query("INSERT INTO app_imagegen_quotes(id,owner,operation_id,fingerprint,context_key,request,plan,expires_at) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,now()+interval '15 minutes') RETURNING expires_at",[row.id,row.owner,row.operation_id,row.fingerprint,row.context_key,JSON.stringify(request),JSON.stringify(plan)])).rows[0];row.expires_at=saved.expires_at;}
- else memory.set(row.id,structuredClone(row));
- return {...publicImagegenPlan(plan),quote:{id:row.id,expiresAt:new Date(row.expires_at).toISOString()}};
+ const existing=await latestQuoteRow(request,owner);
+ if(existing){assertStoredQuote(existing,owner,request.operationId);return publicQuote(existing);}
+ const contextKey=imagegenCreationScopeKey(owner);
+ const row:QuoteRow={id:imagegenQuoteId(request.operationId,owner,fingerprint,contextKey),owner:owner.toLowerCase(),operation_id:request.operationId,fingerprint,context_key:contextKey,request,plan:frozenPlan,expires_at:new Date(Date.now()+IMAGEGEN_QUOTE_TTL_MS)};
+ if(dbEnabled){
+  // The existing primary key arbitrates concurrent previews atomically. No
+  // extra transaction/lock, schema, writer, or current-price overwrite exists.
+  const inserted=(await getPool().query("INSERT INTO app_imagegen_quotes(id,owner,operation_id,fingerprint,context_key,request,plan,expires_at) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,now()+interval '15 minutes') ON CONFLICT(id) DO NOTHING RETURNING expires_at",[row.id,row.owner,row.operation_id,row.fingerprint,row.context_key,JSON.stringify(request),JSON.stringify(frozenPlan)])).rows[0];
+  if(inserted){row.expires_at=inserted.expires_at;return publicQuote(row);}
+ }else if(!memory.has(row.id)){
+  // Check and insert without an await; a concurrent caller reads this winner.
+  memory.set(row.id,structuredClone(row));return publicQuote(row);
+ }
+ // Conflict may mean a lost preview ACK, not a new purchase or permission to
+ // replace its plan. Validate the winner by full stored identity, not ID alone.
+ const winner=await readImagegenQuote(row.id,owner,request.operationId);
+ if(winner.fingerprint!==fingerprint)throw new ImagegenQuoteError();
+ return publicQuote(winner);
 }
 /** The original intent keeps its saved price/plan beyond maintenance TTL. */
 export async function readImagegenQuote(id:string,owner:string,operationId:string){
  assertImagegenQuoteReference(id,operationId);
  await ensureImagegenQuotes();
  const row:QuoteRow|undefined=dbEnabled?(await getPool().query("SELECT *,expires_at<=now() AS expired FROM app_imagegen_quotes WHERE id=$1 AND owner=$2 AND operation_id=$3",[id,owner.toLowerCase(),operationId])).rows[0]:memory.get(id);
- if(!row||row.owner!==owner.toLowerCase()||row.operation_id!==operationId||!await matchesQuoteScope(row,owner)||row.fingerprint!==imagegenFingerprint(row.request)||row.plan.fingerprint!==row.fingerprint)throw new ImagegenQuoteError();
+ assertStoredQuote(row,owner,operationId);
+ if(!await matchesQuoteScope(row,owner))throw new ImagegenQuoteError();
  return structuredClone(row);
 }
 /** Old pages ignore quote.id, but their preview still created a server quote.
  * Resolve that original request directly; never compare its browser versions
  * or claimed amount to current configuration. */
 export async function latestImagegenQuote(request:ImagegenRequest,owner:string){
- await ensureImagegenQuotes();const fingerprint=imagegenFingerprint(request),context=imagegenCreationScopeKey(owner);
- const contexts=[context,JSON.stringify(["personal",null,null])];
- const row:QuoteRow|undefined=dbEnabled?(await getPool().query("SELECT * FROM app_imagegen_quotes WHERE owner=$1 AND operation_id=$2 AND fingerprint=$3 AND context_key=ANY($4::text[]) ORDER BY created_at DESC,id DESC LIMIT 1",[owner.toLowerCase(),request.operationId,fingerprint,contexts])).rows[0]:[...memory.values()].reverse().find(q=>q.owner===owner.toLowerCase()&&q.operation_id===request.operationId&&q.fingerprint===fingerprint&&contexts.includes(q.context_key));
- return row&&await matchesQuoteScope(row,owner)?row.id:undefined;
+ await ensureImagegenQuotes();return (await latestQuoteRow(request,owner))?.id;
+}
+/** Existing-intent preview owns row loading, current access and public metadata.
+ * It does not query current models/prices or delegate errors to a new planner. */
+export async function readOriginalImagegenQuote(request:ImagegenRequest,owner:string):Promise<ImagegenPlan|undefined>{
+ await ensureImagegenQuotes();const row=await latestQuoteRow(request,owner);if(!row)return undefined;
+ assertStoredQuote(row,owner,request.operationId);
+ const saved=structuredClone(row);await authorizedFrozenPlan(saved,request,owner,{});return publicQuote(saved);
 }
 export async function frozenImagegenQuote(request:ImagegenRequest,owner:string,confirmation:ImagegenSubmissionConfirmation){
  const row=await readImagegenQuote(confirmation.quoteId!,owner,request.operationId);
+ return authorizedFrozenPlan(row,request,owner,confirmation);
+}
+async function authorizedFrozenPlan(row:QuoteRow,request:ImagegenRequest,owner:string,confirmation:ImagegenSubmissionConfirmation){
  if(row.fingerprint!==imagegenFingerprint(request))throw new ImagegenQuoteError();
  if(confirmation.confirmed===false)throw new Error("已取消提交");
  await assertCurrentCreationFeature("/api/imagegen");

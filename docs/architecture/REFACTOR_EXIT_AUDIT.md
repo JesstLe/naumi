@@ -1,9 +1,10 @@
 # 整体退出审计
 
-当前应用/完整验收源码：`82729161200f166fe587b98bceb756a44999840c`。本轮仅文档收敛与固定镜像测量；最终归档提交另见 R8X `DELIVERY.json`。**wholeGoal=ACTIVE；mainMerged=false；deployed=false；47 HOLD。**
+最近完整应用验收源码：`82729161200f166fe587b98bceb756a44999840c`。当前R8Y已修改报价owner，完整208与新固定镜像验收尚待；下表旧完整通过只归827，不拼成当前通过。R8X原配对prepare超差仍OPEN。**wholeGoal=ACTIVE；mainMerged=false；deployed=false；47 HOLD。**
 
 | 整体要求 | 当前证据 | 判定 |
 |---|---|---|
+| R8Y新报价owner完整候选 | 原/新19用例50检查、当前原价入口5笔62 fixture积分通过；208注册 | **OPEN：固定新源完整core/runtime/browser/性能待验** |
 | 规则唯一归属、模块依赖单向 | R8W 当前图：四类 SCC=0，生产 lib→app=0，runtime→scripts=0；2 条 release fixture 与1 条 dist 边单列 | 结构检查通过；不独立代替行为验收 |
 | 原价/任务/权限/取消/UNKNOWN | 同固定源完整 core 206 PASS / 0 FAIL / 0 NOT_RUN / 0 reuse | 当前完整本地门禁 PASS；不是历史生产事故全部关闭 |
 | 原生完整业务链 | 7 个原生入口在同源固定 Linux SDK 运行；完整 App/Worker 字节一致 | PASS；不再借用旧 Windows 局部结果 |

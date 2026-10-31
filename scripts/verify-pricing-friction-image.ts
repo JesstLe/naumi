@@ -30,8 +30,8 @@ const same=(a:unknown,b:unknown,label:string)=>check(JSON.parse(JSON.stringify(a
 const record=(name:string,detail?:unknown)=>{const row={case:name,result:'PASS',...(detail===undefined?{}:{detail})};cases.push(row);console.log(JSON.stringify(row))};
 const owner='pricing-image@example.test';
 const creation={currentCreationContext:()=>context,assertCurrentCreationFeature:async()=>{if(!featureAllowed)throw Error('feature revoked')},frozenCreationScope:(value:any,email:string)=>{if(value==null)return undefined;if(value.actorEmail!==email.toLowerCase()||!['personal','tenant'].includes(value.scopeKind)||(value.scopeKind==='tenant')!==(typeof value.tenantId==='string'))throw Error('invalid scope');return value;}};
-function load(relative:string,deps:Record<string,any>={},globals:Record<string,any>={}){
- const filename=source(relative),output=ts.transpileModule(readFileSync(filename,'utf8'),{fileName:filename,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;
+function load(relative:string,deps:Record<string,any>={},globals:Record<string,any>={},currentDependency=false){
+ const filename=currentDependency?path.join(root,relative):source(relative),output=ts.transpileModule(readFileSync(filename,'utf8'),{fileName:filename,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;
  const projected={exports:{} as any},require=createRequire(path.join(root,relative));
  const imports=(id:string)=>id==='server-only'?{}:Object.hasOwn(deps,id)?deps[id]:require(id);
  vm.runInNewContext(output,{module:projected,exports:projected.exports,require:imports,Error,Buffer,console,structuredClone,Date,URL,Response,Request,Headers,FormData,Blob,File,TextEncoder,TextDecoder,Uint8Array,TransformStream,AbortSignal,DOMException,crypto:webcrypto,setTimeout,clearTimeout,process:{env:{}},...globals},{filename});return projected.exports;
@@ -115,7 +115,8 @@ async function serverTests(){
   price=60;costPlus=false;multistep=false;
   const batchRepo=await import('../src/lib/imagegen/batch-repository');
   let quoteInputAllowed=true;
-  const quotes=load('src/lib/imagegen/quotes.ts',{'../db':db,'./creation-scope':scope,'../saas/creation-context':creation,'./plan':plan,'./schema':{imagegenRequestSchema},'./inputs':{readImagegenInputs:async()=>{inputReads++;if(!quoteInputAllowed)throw Error('fixture input access denied')}},...policy});
+  const quoteDependencies={'../db':db,'./creation-scope':scope,'../saas/creation-context':creation,'./plan':plan,'./schema':{imagegenRequestSchema},'./inputs':{readImagegenInputs:async()=>{inputReads++;if(!quoteInputAllowed)throw Error('fixture input access denied')}},...policy};
+  const quotes=load('src/lib/imagegen/quotes.ts',quoteDependencies);
   const batch=load('src/lib/imagegen/batch.ts',{'@/lib/release-runtime/background-activity':{},'../saas/creation-context':creation,'../saas/creation-writer':{},'../saas/creation-schema':{},'../db':db,'./coordination-pool':{imageCoordinationPool:()=>pool},'./plan':plan,'./quotes':quotes,'./dispatch':{},'./batch-repository':batchRepo,'./creation-scope':scope,...policy});
   const r=request({mode:'batch',batch:{items:[{key:'front',name:'Front',prompt:'Draw front'},{key:'back',name:'Back',prompt:'Draw back'}],concurrency:1,maxAttempts:1}}),p=await batch.planImagegenBatch(r,owner);
   check([p.totalCredits,p.confirmationRequired],[120,baseline],'batch aggregate no 100-credit manual check');record('batch_aggregate_100',{credits:p.totalCredits,confirmationRequired:p.confirmationRequired});
@@ -128,11 +129,13 @@ async function serverTests(){
   if(baseline)await assert.rejects(quotes.frozenImagegenQuote(fresh,owner,{quoteId:freshQuote.quote.id}),{code:'IMAGEGEN_PLAN_CHANGED'});else check((await quotes.frozenImagegenQuote(fresh,owner,{quoteId:freshQuote.quote.id})).totalCredits,150,'missing confirmation not cancellation');
   await assert.rejects(quotes.frozenImagegenQuote(fresh,owner,{quoteId:freshQuote.quote.id,confirmed:false}),baseline?{code:'IMAGEGEN_PLAN_CHANGED'}:/已取消提交/);record('pg_missing_confirmation_vs_explicit_cancel');
   // The current plan route is a parent dependency, NOT a sixth OWNED_FIVE projection.
-  // Use a live quote and confirmed:true inside that route for legacy-helper compatibility.
+  // Its row-loading/public-preview owner is also a current parent dependency.
+  // Historical OWNED_FIVE quote assertions above stay projected, not rewritten.
+  const planHttpQuotes=baseline?load('src/lib/imagegen/quotes.ts',quoteDependencies,{},true):quotes;
   price=6;const routeRequest=request({inputs:[{artworkId:'owned-reference',role:'reference'}]}),routePlan=await plan.planImagegen(routeRequest,owner),routeQuote=await quotes.issueImagegenQuote(routeRequest,owner,routePlan);
   const routeBatchRequest=request({mode:'batch',batch:r.batch}),routeBatchQuote=await quotes.issueImagegenQuote(routeBatchRequest,owner,await batch.planImagegenBatch(routeBatchRequest,owner));price=150;
   let currentPlannerCalls=0,currentBatchPlannerCalls=0,plannerPoison=false;
-  const planHttp=load('src/app/api/imagegen/plan/route.ts',{'@/lib/admin-auth':{resolveUserEmail:async()=>owner},'@/lib/billing/access':{sameSiteBillingMutation:()=>true},'@/lib/imagegen/schema':{imagegenRequestSchema},'@/lib/imagegen/plan':{planImagegen:async(req:any,email:string)=>{currentPlannerCalls++;if(plannerPoison)throw Error('fixture current planner poison');return plan.planImagegen(req,email)}},'@/lib/imagegen/batch':{planImagegenBatch:async(req:any,email:string)=>{currentBatchPlannerCalls++;if(plannerPoison)throw Error('fixture current planner poison');return batch.planImagegenBatch(req,email)}},'@/lib/imagegen/quotes':quotes,'@/lib/saas/creation-context':{withCreationRoute:async(_r:any,run:any)=>run()}});
+  const planHttp=load('src/app/api/imagegen/plan/route.ts',{'@/lib/admin-auth':{resolveUserEmail:async()=>owner},'@/lib/billing/access':{sameSiteBillingMutation:()=>true},'@/lib/imagegen/schema':{imagegenRequestSchema},'@/lib/imagegen/plan':{planImagegen:async(req:any,email:string)=>{currentPlannerCalls++;if(plannerPoison)throw Error('fixture current planner poison');return plan.planImagegen(req,email)}},'@/lib/imagegen/batch':{planImagegenBatch:async(req:any,email:string)=>{currentBatchPlannerCalls++;if(plannerPoison)throw Error('fixture current planner poison');return batch.planImagegenBatch(req,email)}},'@/lib/imagegen/quotes':planHttpQuotes,'@/lib/saas/creation-context':{withCreationRoute:async(_r:any,run:any)=>run()}});
   const planPost=async(body:any)=>{const response=await planHttp.POST(new Request('http://fixture/api/imagegen/plan',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}));return {status:response.status,body:await response.json(),cache:response.headers.get('cache-control')}};
   const selected=models.config.publicModels[0],beforeVisibility={enabled:selected.enabled,visible:selected.visible};
   for(const state of ['disabled','hidden','planner-poison']){
