@@ -65,7 +65,7 @@ export type CanvasTextCreationPorts={
  writable:boolean;project:string|null;defaultTitle:string;viewport:()=>Viewport;
  append:(node:CanvasTextNode)=>void;
  activate:(node:CanvasTextNode,prompt:string)=>void;
- focus:(area:Area)=>void;
+ focus:(area:Area,project:string)=>void;
  history:(action:TextHistory)=>void;
  save:(node:CanvasTextNode)=>Promise<unknown>;
 };
@@ -75,7 +75,7 @@ export function createCanvasTextAtScreen(point:Point,options:CanvasTextCreationO
  ports.append(node);
  ports.activate(node,options?.prompt||'');
  // Preserve the original focus rectangle independently of document dimensions.
- ports.focus({x:node.canvasX,y:node.canvasY,width:300,height:176});
+ ports.focus({x:node.canvasX,y:node.canvasY,width:300,height:176},node.projectKey);
  ports.history({kind:'text-add',records:[node]});
  void ports.save(node);
  return node;

@@ -6,13 +6,13 @@ import {canvasFocusViewport} from "@/lib/canvas/upload-visibility";
 
 type Options={id:string|null;enabled:boolean;flow:RefObject<ReactFlowInstance|null>;nodes:Node[];
   size:{width:number;height:number};insets:{top:number;right:number;bottom:number;left:number};minZoom:number;
-  contextKey:string;navigationRevision:RefObject<number>;onComplete:Dispatch<SetStateAction<string|null>>};
+  contextKey:string;requestRevision?:number;navigationRevision:RefObject<number>;onComplete:Dispatch<SetStateAction<string|null>>};
 
 /** Deep links and explicit focus move only the view. A later manual navigation
  * owns the viewport, even while this effect still has queued animation frames. */
 export function useCanvasViewportFocus(options:Options){
   const latest=useRef(options);latest.current=options;
-  const {id,enabled,flow,nodes,size,insets,minZoom,contextKey,navigationRevision}=options;
+  const {id,enabled,flow,nodes,size,insets,minZoom,contextKey,navigationRevision,requestRevision}=options;
   useEffect(()=>{
     if(!id||!enabled)return;
     const node=nodes.find(item=>item.id===id);if(!node)return;
@@ -25,5 +25,5 @@ export function useCanvasViewportFocus(options:Options){
       void instance.setViewport(target,{duration:280}).then(ok=>{if(ok&&current())latest.current.onComplete(value=>value===id?null:value);});
     });});
     return()=>{cancelled=true;cancelAnimationFrame(frame);};
-  },[id,enabled,flow,nodes,size,insets,minZoom,contextKey,navigationRevision]);
+  },[id,enabled,flow,nodes,size,insets,minZoom,contextKey,navigationRevision,requestRevision]);
 }

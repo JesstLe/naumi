@@ -351,7 +351,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 管理员看指定用户:?email=<用户> → 只读查看该用户画布;?node=<作品id> → 预选中那张
   const projectView=useCanvasProjectNavigation({ready,email:user?.email,ports:()=>({
     select:(project,id)=>selectCanvasProject(project,{selectedId:id,selectedTextId:null,selectedPendId:null}),
-    focus:setFocusId,missing:()=>canvasSelection.patch({selectedId:null}),back:doBackToBrowser,
+    focus:focusCanvasNode,missing:()=>canvasSelection.patch({selectedId:null}),back:doBackToBrowser,
   })});
   const {navigation:projectNavigation,targetEmail,readOnly,activeKey,browsing,creatingNew,pinnedNode,pendingNode}=projectView;
   const canvasAccountRef=useRef("");canvasAccountRef.current=JSON.stringify([user?.email?.toLowerCase(),targetEmail?.toLowerCase()]);
@@ -412,7 +412,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(
     null
   );
-  const [focusId, setFocusId] = useState<string | null>(null);
   const [flowReady, setFlowReady] = useState(0);
   const rfRef = useRef<ReactFlowInstance | null>(null);
   const canvasAreaRef = useRef<HTMLDivElement | null>(null);
@@ -618,7 +617,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 新建项目:进入空白画布(无任何节点),右键添加节点/上传第一张图后即成新项目并切过去
   // 项目网格落地页(Figma 式):进画布先看项目卡片,点卡片才进入该项目的画布
   const viewControls=useCanvasViewControls({flow:rfRef,area:canvasAreaRef,zoom:viewport.zoom,zoomLabel:t("canvas.toolbar.zoom"),desktopAppearance,enabled:ready&&!!user,
-    contextKey:canvasArtworkDocument.scope.key,browsing,onNavigate:()=>setFocusId(null),onMarquee:()=>{setSelectedId(null);setSelectedPendId(null);setSelectedTextId(null);clearCanvasSelection();}});
+    contextKey:canvasArtworkDocument.scope.key,scope:canvasArtworkDocument.scope,browsing,onMarquee:()=>{setSelectedId(null);setSelectedPendId(null);setSelectedTextId(null);clearCanvasSelection();}});
   const {tool:canvasTool,showMinimap,snapGrid,lightCanvas,isMac,modifierKey,zoomMenuOpen}=viewControls;
   const boxSelectMode=canvasTool==="marquee";
   // 余额独立于作品快照缓存；同一 hook 覆盖项目列表与编辑器右上角。
@@ -722,12 +721,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if(scope.documentCurrent())nodePreferences.accept(result.settings);
       canvasHistory.record({...scope,project:result.projectKey,key:JSON.stringify([scope.account,scope.workspace,result.projectKey])},{kind:"workflow-add",artworks,textNodes:result.textNodes});
       if(!present)return;
+      const view=viewControls.capture(scope);
       projectNavigation.open(result.projectKey); setSelectedId(null); setSelectedTextId(null);
       const missingAssets = artworks.filter(n => n.source === "workflow-placeholder").length;
       flashTip(missingAssets ? `工作流已导入，${missingAssets} 张图片待补齐` : result.missingReferences ? `工作流已导入，${result.missingReferences} 个外部引用未包含在选择中` : "工作流已导入");
       const ids = [...artworks.map(n => n.id), ...result.textNodes.map(n => n.id)];
-      const expectedViewEpoch=canvasContextEpochRef.current+(scope.project===result.projectKey?0:1);
-      window.requestAnimationFrame(() => window.requestAnimationFrame(() => {if(scope.documentCurrent()&&canvasContextEpochRef.current===expectedViewEpoch&&activeProjectRef.current?.key===result.projectKey)void rfRef.current?.fitView({ nodes: ids.map(id => ({ id })), padding: 0.2, duration: 240, maxZoom: 1 });}));
+      view.fitNodes(ids,result.projectKey);
     } });
   // 右键未选节点会先按桌面习惯单选；若用户随后点“加入批量选择”，
   // 仍可恢复右键前的选择集合并把当前节点加入其中。
@@ -2026,38 +2025,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       y: (box?.clientHeight ?? 400) / 2,
     };
   }
-  function focusEditableCanvasArea(area: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  }) {
-    window.requestAnimationFrame(() => {
-      window.setTimeout(() => {
-        const instance = rfRef.current;
-        const canvas = canvasAreaRef.current;
-        if (!instance || !canvas) return;
-        const current = instance.getViewport();
-        const targetZoom = Math.max(
-          current.zoom,
-          Math.min(1, Math.max(0.75, 240 / area.width, 160 / area.height))
-        );
-        const screenLeft = area.x * current.zoom + current.x;
-        const screenTop = area.y * current.zoom + current.y;
-        const outside =
-          screenLeft + area.width * current.zoom < 40 ||
-          screenTop + area.height * current.zoom < 40 ||
-          screenLeft > canvas.clientWidth - 40 ||
-          screenTop > canvas.clientHeight - 80;
-        if (!outside && current.zoom >= targetZoom * 0.95) return;
-        void instance.setCenter(
-          area.x + area.width / 2,
-          area.y + area.height / 2,
-          { zoom: targetZoom, duration: 320 }
-        );
-      }, 0);
-    });
+  function focusEditableCanvasArea(area:{x:number;y:number;width:number;height:number}){
+    viewControls.capture(canvasArtworkDocument.scope).area(area);
   }
+  function focusCanvasNode(id:string){viewControls.focusNode(id);}
   function createCanvasNode(kind:CanvasCreatableNodeKind,point=centerScreen()){
     dispatchCanvasNodeCreation(kind,point,{readOnly,canVideo:()=>canFeature("video"),actions:{
       timeline:createTimelineNode,audio:createAudioNode,scene:createSceneNode,character:createCharacterNode,director:createDirectorNode,
@@ -2077,8 +2048,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   function resizeTextNode(id:string,bounds:{x:number;y:number;width:number;height:number}){textEditing.resize(id,bounds);}
   function toggleTextNodeExpand(id:string){textEditing.toggle(id);}
   function textNodeCreationPorts():CanvasTextCreationPorts {
+    const view=viewControls.capture(canvasArtworkDocument.scope);
     return {writable:!readOnly&&!!user,project:active?.key||activeKey,defaultTitle:t("canvas.textGenerate"),viewport:()=>rfRef.current?.getViewport()??viewportRef.current,
-      append:node=>setTextNodes(current=>[...current,node]),history:pushUndo,save:persistTextNode,focus:focusEditableCanvasArea,
+      append:node=>setTextNodes(current=>[...current,node]),history:pushUndo,save:persistTextNode,focus:(area,project)=>{view.area(area,project);},
       activate:(node,prompt)=>{projectNavigation.open(node.projectKey);canvasSelection.selectInProject(node.projectKey,{selectedId:null,selectedPendId:null,selectedTextId:node.id});setTextPrompt(prompt);},
     };
   }
@@ -2299,8 +2271,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     });if(action)action.artworkBases=Object.fromEntries(moves.flatMap(move=>{const node=canvasArtworkDocument.getSnapshot().nodes?.find(n=>n.id===move.id);return node?[[node.id,artworkFields(node)]]:[]}));return action;}),
   });
 
-  useCanvasViewportFocus({id:focusId,enabled:!!flowReady,flow:rfRef,nodes:rfNodes,size:canvasSize,insets:overlaySafeArea,
-    minZoom:CANVAS_MIN_ZOOM,contextKey:JSON.stringify([canvasArtworkDocument.scope.key,canvasContextEpochRef.current]),navigationRevision:viewControls.navigationRevision,onComplete:setFocusId});
+  useCanvasViewportFocus({id:viewControls.nodeFocus.id,requestRevision:viewControls.nodeFocus.revision,enabled:!!flowReady,flow:rfRef,nodes:rfNodes,size:canvasSize,insets:overlaySafeArea,
+    minZoom:CANVAS_MIN_ZOOM,contextKey:JSON.stringify([canvasArtworkDocument.scope.key,canvasContextEpochRef.current]),navigationRevision:viewControls.navigationRevision,onComplete:viewControls.completeNodeFocus});
 
   // 画布全局快捷键只在画布本体接管。弹窗、遮罩、确认框、侧边编辑器或菜单
   // 打开时必须完全让出键盘，避免用户在账户/帮助等上层界面操作时误删底层节点。
@@ -3057,7 +3029,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           )}
           <CanvasImageImportStatus batches={imageImports} owner={user?.email||""} active={active} locale={locale} t={t}
             onDismiss={imageImportOwner.dismiss} onSynchronize={id=>void retryImportSynchronization(id)}
-            onLocate={id=>{setSelectedId(null);setSelectedTextId(null);setSelectedPendId(null);setFocusId(id);}} />
+            onLocate={id=>{setSelectedId(null);setSelectedTextId(null);setSelectedPendId(null);focusCanvasNode(id);}} />
 
           {/* 新建项目空白画布:引导文案(右键即可加节点) */}
           {creatingNew && !active && pendNodes.length === 0 && (
@@ -3337,7 +3309,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                             label={t("canvas.ctxGenerate")}
                             onClick={() => {
                               setSelectedId(node.id);
-                              setFocusId(node.id);
+                              focusCanvasNode(node.id);
                             }}
                           />
                         )}
@@ -3811,7 +3783,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               </button>
               <button
                 type="button"
-                onClick={() => setFocusId(selectedText.id)}
+                onClick={() => focusCanvasNode(selectedText.id)}
                 aria-label={t("canvas.toolbar.focusNode")}
                 title={t("canvas.toolbar.focusNode")}
                 className="canvas-ui-action flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] text-[15px] transition-colors"
@@ -3936,7 +3908,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               upload={{inputRef:extraInputRef,available:composerReferences.length<MAX_TOTAL_IMAGES,onFiles:pickExtra}}
               restoreReferences={hiddenRefIds?.some(id=>dockRefs.some(ref=>ref.id===id))?{disabled:dockRefs.length+extraFiles.length>MAX_TOTAL_IMAGES,onRestore:()=>imageDraft.setHiddenReferenceIds([])}:undefined}
               controls={imageComposerControls} error={genError}
-              imageActions={{style:genStyle,onStyle:setGenStyle,marked:!!selected.marked,onMark:toggleNodeMark,onFocus:()=>setFocusId(selected.id)}}
+              imageActions={{style:genStyle,onStyle:setGenStyle,marked:!!selected.marked,onMark:toggleNodeMark,onFocus:()=>focusCanvasNode(selected.id)}}
               versions={{contextKey:`${canvasHistory.scope.key}:${selected.id}`,revision:selected.canvasImageRevision||0,disabled:readOnly||historySaving||isNodeLocked(selected.id),english:locale==="en",load:()=>loadImageVersions(selected.id),onSelect:(version,from)=>selectImageVersion(selected.id,version,from)}}
               generation={{ariaLabel:L("生成","Generate"),generating:selectedGenerating,failure:selectedGenerationFailure,onGenerate:selectedGenerationFailure&&selectedGenerationRetry?selectedGenerationRetry:generateSelectedImage}}/>
           )}

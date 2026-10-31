@@ -37,6 +37,10 @@ function fixture(code,options={}){
  c.imageDraft={seed:(...v)=>record('seed',...v)};
  c.wantFocusPendPrompt={current:false};
  c.focusEditableCanvasArea=area=>{views.push(plain(area));record('focus',area);};
+ // Node creation records its existing presentation port. The real view owner
+ // and cross-project scheduling are exercised by view-navigation unit/DOM.
+ c.canvasArtworkDocument={scope:{project:c.activeKey}};
+ c.viewControls={capture:()=>({area:c.focusEditableCanvasArea})};
  c.projectNavigation={open:key=>record('navigate',key)};
  c.canvasSelection={selectInProject:(...v)=>record('selectProject',...v)};
  c.persistTextNode=node=>{record('saveText',node);return Promise.resolve();};
