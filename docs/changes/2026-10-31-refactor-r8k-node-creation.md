@@ -31,3 +31,5 @@ pending数据继续归pending-presentation，文字数据/持久化归text-docum
 
 
 集中core首轮在4e8bb178为109PASS/1FAIL/75NOT_RUN，shared-history VM缺少实际pendingNodeCreationPorts编译，不是undo规则被删；修正后原16条history断言保留。旧node-entry-models首次适配的CommonJS module变量冲突已修；原baseline同时复现其旧静态selector检查，验证器现在沿真实CanvasImageComposer→CanvasImageGenerationControls→CanvasModelSelect，不恢复旧inline组件。该独立旧验证器纳入统一catalog，目录185→186。原失败、baseline、输出副本验证和PG清理均留证，产品两文件不随夹具修正改变。
+
+第二次全core在c72c0672为78PASS/1FAIL/107NOT_RUN；admin-shell旧夹具在setState尚未commit时立即读count得到旧10而非1。夹具App用layoutEffect回执实际committed revision，navigate等待同一revision，原导航/数量/权限/键盘断言不变；无sleep或产品后台改动。初次4e原92产品已通过，仍只归其固定源；最终全量将重新固定，不跨SHA拼绿。
