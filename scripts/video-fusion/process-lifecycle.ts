@@ -28,9 +28,12 @@ async function stopWindowsTree(pid:number):Promise<void>{
 export async function stopFixtureChild(child:ChildProcess|undefined):Promise<void>{
  if(!child||exited(child))return;
  if(process.platform==='win32'&&child.pid){
+  let commandFailure:unknown;
   try{await stopWindowsTree(child.pid);}
-  catch(error){if(!exited(child))throw new Error(`Fixture child ${child.pid} did not stop`,{cause:error});}
-  if(!await waitForExit(child,5000))throw new Error(`Fixture child ${child.pid} has no exit receipt`);
+  catch(error){commandFailure=error;}
+  // taskkill can partly succeed while reporting an already-retired descendant.
+  // Neither its success nor its failure establishes the root process state.
+  if(!await waitForExit(child,5000))throw new Error(`Fixture child ${child.pid} has no exit receipt`,{cause:commandFailure});
   return;
  }
  child.kill('SIGTERM');

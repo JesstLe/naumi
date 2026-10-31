@@ -21,7 +21,7 @@ R8O完整目录实际191PASS/1FAIL，失败是scene组合内首次director outpu
 
 新增verifier执行实际scene准备函数至明确browser-context边界，并执行原director准备块/新共享函数；browser/HTTP/fetch为显式端口，不冒充整应用。它对照原19条读取、原director3条GET405、命令/诊断失败、正常POSIX与已退出进程，以及修改后真实自有子进程退出。原实现缺准备/假停止/掩盖原错误按预期复现；修改与回滚结果以实际日志为准。
 
-集中控制结果：原12项复现缺准备1、假停止2、原异常被遮盖2；修改17项为0/0/0，正常读取/原director准备/正常命令与POSIX行为EXACT，真实自有子进程退出后才返回。首轮VM端口缺少原生AbortSignal而exit1，修正端口后使用新标签/输出重跑，失败日志保留；不是产品失败。core catalogue新增1项到193，并为该项和已有image-scheduling-pg显式传递自有证据目录，不再把默认输出误归到其他轮次。
+首次集中控制结果：原12项复现缺准备1、假停止2、原异常被遮盖2；修改17项为0/0/0，正常读取/原director准备/正常命令与POSIX行为EXACT，真实自有子进程退出后才返回。首轮VM端口缺少原生AbortSignal而exit1，修正端口后使用新标签/输出重跑，失败日志保留；不是产品失败。core catalogue新增1项到193，并为该项和已有image-scheduling-pg显式传递自有证据目录，不再把默认输出误归到其他轮次。
 
 准备与生命周期完整模块完成后集中验证；完整scene/API/PG/WebGL与所有原业务断言沿原入口执行，类型与全量core不与本任务重型镜像构建并行。只有完整core实际通过后才重新执行原runtime177，不构造假PASS父报告或放宽该guard。
 
@@ -32,3 +32,9 @@ R8O完整目录实际191PASS/1FAIL，失败是scene组合内首次director outpu
 ## 集中预检
 
 完整类型exit0，5086个实际compiler/config/依赖输入raw哈希在检查前后相同；lint exit0，既有warning保留。全部2136个src/services原文件raw哈希保持。本片是验证资产修正，不新增产品功能迭代；完整193目录、原生场景实际输出和同镜像runtime仍待本轮实际结果，不提前写通过。
+
+## 首轮完整core的具体修正
+
+固定cafa8050的193目录到129PASS后，audio未知ACK重启矩阵暴露了本轮进程owner的过早失败：taskkill255提示某个后代已退休，原root退出事件可能晚于命令close。本轮不把非零当停止或仍运行的证据，统一在原有5秒边界内观察root退出后决定。所有具体PID随后核验已不存在，原native/core PG均清理；原失败日志与未执行63项保留。新增partial-tree延迟退出控制，未改音频/UNKNOWN/重启业务断言，不增加时限或资源。后续固定新source完整重跑，不跨SHA拼接129项。
+
+修正后的控制为原13项/6个异常观测（缺准备1、假停止3、掩盖原异常2）对修改18项/0异常，正常合同EXACT；完整类型与lint再次exit0，当前5053实际输入raw SHA已固定。接下来只接受新固定source的完整193实测，不复用先前129项。

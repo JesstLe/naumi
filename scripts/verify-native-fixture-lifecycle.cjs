@@ -54,6 +54,9 @@ async function main(){
   const lib=loadProcess('win32',spawnPort);let error;try{await(baseline?lib.stop(child):lib.stopFixtureChild(child))}catch(e){error=e}
   issues['stopFalseSuccess_'+mode]=error?0:1;check('active child '+mode+' does not get a false cleanup receipt',baseline?!error:!!error);
  }
+ const partialChild=fakeChild(),partialLib=loadProcess('win32',()=>{const command=new EventEmitter();command.stderr=new EventEmitter();command.kill=()=>true;queueMicrotask(()=>{command.emit('exit',255);command.emit('close',255);setTimeout(()=>{partialChild.exitCode=0;partialChild.emit('exit',0,null)},20)});return command});
+ await(baseline?partialLib.stop(partialChild):partialLib.stopFixtureChild(partialChild));issues.stopBeforePartialTreeExit=partialChild.exitCode===null?1:0;
+ check('partial tree command result waits for authoritative root exit',baseline?partialChild.exitCode===null:partialChild.exitCode===0);
  const exitedChild=fakeChild();exitedChild.exitCode=0;let spawnCalls=0;const exitedLib=loadProcess('win32',()=>{spawnCalls++;throw Error('must not spawn')});await(baseline?exitedLib.stop(exitedChild):exitedLib.stopFixtureChild(exitedChild));normal.alreadyExitedSpawns=spawnCalls;check('already exited owner is not signalled again',spawnCalls===0);
  const linuxChild=fakeChild(),linuxLib=loadProcess('linux',()=>{throw Error('Linux must not taskkill')});await(baseline?linuxLib.stop(linuxChild):linuxLib.stopFixtureChild(linuxChild));normal.linuxSignals=linuxChild.signals;check('normal POSIX child retains TERM and observed exit',JSON.stringify(linuxChild.signals)==='["SIGTERM"]');
  const failureAst=ast(app),failure=find(failureAst,n=>ts.isCatchClause(n)&&n.block.getText(failureAst).includes('postgres-failure.log'));assert.ok(failure);
@@ -75,9 +78,9 @@ async function main(){
   }finally{if(child.exitCode===null&&child.signalCode===null)await realLib.stopFixtureChild(child);}
  }
  let comparison='CAPTURED';if(value('--compare')){const old=JSON.parse(await fs.readFile(value('--compare'),'utf8'));assert.deepEqual(normal,old.normal);comparison='EXACT'}
- assert.equal(Object.values(issues).reduce((a,b)=>a+b,0),baseline?5:0);
+ assert.equal(Object.values(issues).reduce((a,b)=>a+b,0),baseline?6:0);
  const report={status:baseline?'BASELINE_REPRODUCED':'PASS',checks,issues,normal,comparison,loaded,sourceRoot:source,realChildExit,explicitPorts:['browser-context boundary','read-only HTTP/fetch','process-spawn failure controls'],fullAppAcceptance:false,realPG:false,supplierPosts:0,externalRequests:0};
  await fs.writeFile(path.join(out,'RESULT.json'),JSON.stringify(report,null,2)+'\n');
- console.log(`NATIVE_FIXTURE_LIFECYCLE=${report.status} CHECKS=${checks.length} READINESS_MISSING=${issues.sceneMissingWriteReadiness} FALSE_STOP=${issues['stopFalseSuccess_spawn-error']+issues['stopFalseSuccess_nonzero']} PRIMARY_MASKED=${issues.primaryMasked_false+issues.primaryMasked_true} NORMAL=${comparison} REAL_CHILD_EXIT=${Number(realChildExit)} PG=0 SUPPLIER_POSTS=0`);
+ console.log(`NATIVE_FIXTURE_LIFECYCLE=${report.status} CHECKS=${checks.length} READINESS_MISSING=${issues.sceneMissingWriteReadiness} FALSE_STOP=${issues['stopFalseSuccess_spawn-error']+issues['stopFalseSuccess_nonzero']+issues.stopBeforePartialTreeExit} PRIMARY_MASKED=${issues.primaryMasked_false+issues.primaryMasked_true} NORMAL=${comparison} REAL_CHILD_EXIT=${Number(realChildExit)} PG=0 SUPPLIER_POSTS=0`);
 }
 main().catch(error=>{console.error(error);process.exitCode=1});
