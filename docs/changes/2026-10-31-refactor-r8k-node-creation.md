@@ -28,3 +28,6 @@ pending数据继续归pending-presentation，文字数据/持久化归text-docum
 继续剩余Canvas Shell组合、端到端调度等待诊断、有效CI、最终完整main整合和生产验收；R8J测量仍只归原c146完整镜像，不冒用为本轮测量。整体ACTIVE、未合main未部署、47 HOLD。**分支超过48h因用户要求独立整体候选，完整退出尚未满足；本片不替代整版交付。**
 
 既有local-node-history、node-entry-models、node-operations验证器跟随实际页面→创建用例→原document/history链，不恢复已迁出的内联规则；原undo/redo、原请求/回执与参数断言保留。
+
+
+集中core首轮在4e8bb178为109PASS/1FAIL/75NOT_RUN，shared-history VM缺少实际pendingNodeCreationPorts编译，不是undo规则被删；修正后原16条history断言保留。旧node-entry-models首次适配的CommonJS module变量冲突已修；原baseline同时复现其旧静态selector检查，验证器现在沿真实CanvasImageComposer→CanvasImageGenerationControls→CanvasModelSelect，不恢复旧inline组件。该独立旧验证器纳入统一catalog，目录185→186。原失败、baseline、输出副本验证和PG清理均留证，产品两文件不随夹具修正改变。

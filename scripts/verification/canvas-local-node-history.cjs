@@ -36,7 +36,7 @@ exports.run=async function(root,out){
   for(const kind of ['video','director','character','scene','audio','timeline'])c[kind+'NodesStore']={nodes:[],saving:0,getNode:()=>undefined};
   for(const [name,get]of Object.entries({pendNodes:()=>p.getSnapshot(),pendNodesRef:()=>({current:p.getSnapshot()}),generationTasks:()=>g.getSnapshot().tasks,multiSel:()=>state.multi,selectedId:()=>state.selectedId,selectedPendId:()=>state.selectedPendId,undoStack:()=>history.list(scope).undo,redoStack:()=>history.list(scope).redo}))Object.defineProperty(c,name,{get});
   c.fetch=async(url,init)=>{state.requests.push({url,body:JSON.parse(init.body),headers:Object.fromEntries(new Headers(init.headers))});return state.response();};
-  const names=['runDelete','batchDelete','onPendRemove','addPendAtScreen','applyHistory','doUndo','doRedo'];
+  const names=['runDelete','batchDelete','onPendRemove','pendingNodeCreationPorts','addPendAtScreen','applyHistory','doUndo','doRedo'].filter(name=>fn[name]);
   vm.runInContext(ts.transpileModule(names.map(n=>fn[n]).join('\n'),{compilerOptions:{target:9,module:1}}).outputText,c);
   return {state,c,p,g,scope,context,history,ops,snapshot};
  }

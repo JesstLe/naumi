@@ -118,6 +118,7 @@ export const refactorCases=[
  node('text-tasks','canvas','scripts/verify-canvas-text-tasks.cjs','CANVAS_TEXT_TASKS=PASS'),
  node('image-imports','canvas','scripts/verify-canvas-image-imports.cjs','CANVAS_IMAGE_IMPORTS=PASS'),
  node('task-boundaries','canvas','scripts/verify-canvas-task-boundaries.cjs','CANVAS_TASK_BOUNDARIES=PASS'),
+ node('canvas-node-entry-models','canvas','scripts/verify-canvas-node-entry-models.cjs','MODIFIED=PASS'),
  node('canvas-node-creation','canvas','scripts/verify-canvas-node-creation.cjs','CANVAS_NODE_CREATION=PASS'),
  node('image-creation','canvas','scripts/verify-canvas-image-creation.cjs','CANVAS_IMAGE_CREATION=PASS'),
  node('request-workflow','canvas','scripts/verify-canvas-request-workflow.cjs','CANVAS_REQUEST_WORKFLOW=PASS MODE=MODIFIED'),
