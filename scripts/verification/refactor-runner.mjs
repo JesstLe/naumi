@@ -66,6 +66,9 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='canvas-project-navigation')stageEnv.CANVAS_PROJECT_NAVIGATION_EVIDENCE=evidence;
    if(spec.id==='canvas-selection-owner')stageEnv.CANVAS_SELECTION_OWNER_EVIDENCE=evidence;
    if(spec.id==='canvas-selection-projection')stageEnv.SELECTION_PROJECTION_EVIDENCE=evidence;
+   if(spec.id==='saved-text-results')stageEnv.SAVED_TEXT_EVIDENCE=evidence;
+   if(spec.id==='canvas-assistant-session')stageEnv.ASSISTANT_SESSION_EVIDENCE=evidence;
+   if(spec.id==='text-document')stageEnv.TEXT_EVIDENCE=evidence;
    if(spec.id==='canvas-arrange')stageEnv.CANVAS_ARRANGE_EVIDENCE=evidence;
    if(spec.id==='canvas-overlay-owner')stageEnv.CANVAS_OVERLAY_OWNER_EVIDENCE=evidence;
    if(spec.id==='canvas-viewport-owner')stageEnv.CANVAS_VIEWPORT_OWNER_EVIDENCE=evidence;

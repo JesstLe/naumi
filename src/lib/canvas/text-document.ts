@@ -104,6 +104,22 @@ export function createCanvasTextDocument(options:Options) {
       for(const node of nodes){state.confirmed.set(node.id,node);state.deleted.delete(node.id);written(state,node.id);if(sameText(node,state.drafts.get(node.id)))state.drafts.delete(node.id);}
       publish(state,{nodes:mergeTextDrafts(mergeTextDrafts(state.snapshot.nodes,nodes),state.drafts.values())});
     };
+    /** Read already-saved tool results into this graph, never execute the tool.
+     * Reuse the document's normalizer, drafts and per-ID write fence. A later
+     * local/history/save result wins over a snapshot that began before it. */
+    const refreshSaved=async(nodes:readonly Pick<CanvasTextNode,"id"|"projectKey">[],signal:AbortSignal,isCurrent:()=>boolean):Promise<void>=>{
+      const ids=new Set(nodes.filter(node=>node.projectKey===scope.project).map(node=>node.id));
+      const current=()=>scope.viewCurrent()&&isCurrent();
+      if(!ids.size||!owner||!current())return;
+      const writes=state.writes;
+      const response=await canvasDocumentFetch(scope,`/api/canvas/text-nodes?email=${encodeURIComponent(owner)}`,{signal},true);
+      if(!response.ok)throw new Error("剧本资产已保存，画布文字读取暂不可用");
+      const snapshot=await response.json();
+      if(!current())return;
+      const rows=snapshot.nodes||[];
+      if(!Array.isArray(rows))throw new Error("文字节点响应格式异常");
+      accept(normalizeTextNodes(rows).filter(node=>ids.has(node.id)&&node.projectKey===scope.project&&(state.written.get(node.id)||0)<=writes));
+    };
     const save=(requested:CanvasTextNode):Promise<CanvasTextNode|null>=>{
       if(!writable||!scope.documentCurrent()||state.snapshot.conflicts[requested.id])return Promise.resolve(null);
       readCache(state);
@@ -168,7 +184,7 @@ export function createCanvasTextDocument(options:Options) {
         publish(state,{nodes:mergeTextDrafts(Array.from(merged.values()),state.drafts.values()),phase:"ready",error:""});return true;
       } catch(error){if(scope.documentCurrent()&&version===state.loadVersion)publish(state,{phase:"error",error:error instanceof Error?error.message:"文字节点加载失败"});return false;}
     };
-    return {getSnapshot:()=>state.snapshot,subscribe:(listener:()=>void)=>{state.listeners.add(listener);return()=>{state.listeners.delete(listener);};},set,accept,save,load,attachImageResults,
+    return {getSnapshot:()=>state.snapshot,subscribe:(listener:()=>void)=>{state.listeners.add(listener);return()=>{state.listeners.delete(listener);};},set,accept,save,load,attachImageResults,refreshSaved,
       resolve,flush:()=>Promise.all(Array.from(state.queues.values())),retry:()=>Promise.all(Array.from(state.drafts.values(),save)),history};
   }
   return {bind,history};
