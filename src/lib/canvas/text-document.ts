@@ -118,7 +118,8 @@ export function createCanvasTextDocument(options:Options) {
       if(!current())return;
       const rows=snapshot.nodes||[];
       if(!Array.isArray(rows))throw new Error("文字节点响应格式异常");
-      accept(normalizeTextNodes(rows).filter(node=>ids.has(node.id)&&node.projectKey===scope.project&&(state.written.get(node.id)||0)<=writes));
+      const incoming=rows.filter(node=>node&&ids.has(node.id)&&node.projectKey===scope.project&&(state.written.get(node.id)||0)<=writes);
+      accept(normalizeTextNodes(incoming));
     };
     const save=(requested:CanvasTextNode):Promise<CanvasTextNode|null>=>{
       if(!writable||!scope.documentCurrent()||state.snapshot.conflicts[requested.id])return Promise.resolve(null);
