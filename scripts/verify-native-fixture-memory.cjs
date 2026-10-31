@@ -1,0 +1,40 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),crypto=require('node:crypto'),os=require('node:os');
+const {spawn}=require('node:child_process'),ts=require('typescript');
+const args=process.argv.slice(2),arg=(k,d)=>args.includes(k)?args[args.indexOf(k)+1]:d,baseline=args.includes('--baseline'),root=process.cwd(),source=path.resolve(arg('--source-root','.')),out=path.resolve(arg('--out',process.env.NATIVE_MEMORY_EVIDENCE||'output/native-fixture-memory'));
+const text=fs.readFileSync(path.join(source,'scripts/video-fusion/harness.ts'),'utf8').replace(/\r\n/g,'\n'),nextFile=path.join(root,'node_modules/next/dist/cli/next-dev.js'),nextText=fs.readFileSync(nextFile,'utf8'),utils=require(path.join(root,'node_modules/next/dist/server/lib/utils.js'));
+const parse=s=>ts.createSourceFile('source.ts',s,99,true),find=(n,p)=>{if(p(n))return n;let result;ts.forEachChild(n,c=>{if(!result)result=find(c,p)});return result;};
+const sf=parse(text),app=find(sf,n=>ts.isVariableDeclaration(n)&&n.name.getText(sf)==='appEnv'),clean=find(sf,n=>ts.isFunctionDeclaration(n)&&n.name?.text==='cleanEnv');assert.ok(app&&clean);
+const nf=parse(nextText),limit=find(nf,n=>ts.isVariableStatement(n)&&n.getText(nf).startsWith('let maxOldSpaceSize =')),override=find(nf,n=>ts.isIfStatement(n)&&n.expression.getText(nf).includes('!maxOldSpaceSize && !process.env.NEXT_DISABLE_MEM_OVERRIDE'));assert.ok(limit&&override);
+const evaluate=(code,extra)=>{const m={exports:{}};vm.runInNewContext(ts.transpileModule(code,{compilerOptions:{target:9,module:1}}).outputText,{module:m,exports:m.exports,process,...extra});return m.exports;};
+const appProjection=evaluate('export '+clean.getText(sf)+'\nexport function app(env,builtRoot,builtCommit,builtVersion,appPort){return '+app.initializer.getText(sf)+';}',{});
+const nextProjection=evaluate('export function policy(){const nodeOptions=_utils.getParsedNodeOptionsWithoutInspect();'+limit.getText(nf)+override.getText(nf)+';return {options:nodeOptions,maxOldSpaceMiB:Number(maxOldSpaceSize),formatted:_utils.formatNodeOptions(nodeOptions)};}',{_utils:utils,_os:{default:os}});
+const withOptions=(options,work)=>{const original=process.env.NODE_OPTIONS,disabled=process.env.NEXT_DISABLE_MEM_OVERRIDE;try{if(options===undefined)delete process.env.NODE_OPTIONS;else process.env.NODE_OPTIONS=options;delete process.env.NEXT_DISABLE_MEM_OVERRIDE;return work();}finally{if(original===undefined)delete process.env.NODE_OPTIONS;else process.env.NODE_OPTIONS=original;if(disabled===undefined)delete process.env.NEXT_DISABLE_MEM_OVERRIDE;else process.env.NEXT_DISABLE_MEM_OVERRIDE=disabled;}};
+const policy=(env,physical)=>withOptions(env.NODE_OPTIONS,()=>{const original=os.totalmem;try{os.totalmem=()=>physical;return nextProjection.policy();}finally{os.totalmem=original;}});
+const digest=s=>crypto.createHash('sha256').update(s).digest('hex'),normal=[];let cases=0,checks=0;
+const plain=v=>v===undefined?undefined:JSON.parse(JSON.stringify(v));
+const eq=(a,b,m)=>{assert.deepEqual(plain(a),plain(b),m);checks++;},ok=(v,m)=>{assert.ok(v,m);checks++;};
+async function test(name,work){normal.push([name,await work()]);cases++;console.log('PASS '+name);}
+async function main(){
+ fs.mkdirSync(out,{recursive:true});
+ let env;await test('clean-environment-does-not-inherit-parent-flags',()=>{env=withOptions('--max-old-space-size=49152 --inspect=127.0.0.1:9229',()=>appProjection.cleanEnv());eq(env.NODE_OPTIONS,undefined);eq(env.NODE_ENV,'development');return {parentFlagsInherited:false};});
+ // cleanEnv's exported declaration is unchanged; only the actual dev appEnv
+ // initializer gains the budget. No route,request,timeout or cleanup is patched.
+ env={...env,DATABASE_URL:'postgresql://fixture:fixture@127.0.0.1:65432/fixture',NAUMI_VERIFY_ISOLATED_DB:'1',SETTINGS_SECRET:'synthetic-only'};
+ const dev=appProjection.app(env,undefined,undefined,undefined,12345);
+ await test('dev-environment-preserves-all-nonbudget-fields',()=>{const {NODE_OPTIONS,...fields}=dev;eq(fields,env);eq(NODE_OPTIONS,baseline?undefined:'--max-old-space-size=3072');return {unchangedFields:fields};});
+ for(const mode of ['candidate','rollback'])await test('fixed-production-environment-'+mode,()=>{const commit=(mode==='candidate'?'a':'b').repeat(40),version='1793430000',value=appProjection.app(env,mode==='candidate'?'/fixed-app':'/rollback-app',commit,version,12345);eq(value,{...env,NODE_ENV:'production',HOSTNAME:'127.0.0.1',PORT:'12345',USER_IMAGE_PROVIDER_ALLOW_PRIVATE_NETWORK:'true',SOURCE_COMMIT:commit,BUILD_VERSION:version});eq(value.NODE_OPTIONS,undefined);return value;});
+ const profiles=[];
+ for(const physical of [8*1024**3,64*1024**3,os.totalmem()])await test('actual-next-policy-'+physical,()=>{const value=policy(dev,physical),expected=baseline?Math.floor(Math.floor(physical/1024/1024)*.5):3072;eq(value.maxOldSpaceMiB,expected);profiles.push({physicalBytes:physical,effectiveOldSpaceMiB:value.maxOldSpaceMiB,formatted:value.formatted});return {actualNextPolicyExecuted:true};});
+ // Use the explicit8GiB hardware control for the baseline receipt,not a32GiB
+ // heap limit on this already-busy host. The child only reads v8 metadata.
+ const applied=policy(dev,8*1024**3),token=crypto.randomUUID(),childEnv={};for(const k of ['PATH','Path','SystemRoot','WINDIR','TEMP','TMP'])if(process.env[k])childEnv[k]=process.env[k];childEnv.NODE_OPTIONS=applied.formatted;
+ let childReceipt;
+ await test('real-owned-node-heap-limit-and-exit-receipt',async()=>{const child=spawn(process.execPath,['-e',`process.send({token:${JSON.stringify(token)},heap:require('node:v8').getHeapStatistics().heap_size_limit})`],{env:childEnv,windowsHide:true,stdio:['ignore','ignore','pipe','ipc']});let error='';child.stderr.on('data',c=>error+=c);const exited=new Promise((resolve,reject)=>{child.once('error',reject);child.once('exit',(code,signal)=>resolve({code,signal}));});childReceipt=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('OWN_HEAP_RECEIPT_TIMEOUT')),10000);child.once('message',value=>{clearTimeout(timer);resolve(value)});child.once('error',e=>{clearTimeout(timer);reject(e)});});eq(childReceipt.token,token);ok(childReceipt.heap>=applied.maxOldSpaceMiB*1024**2&&childReceipt.heap<(applied.maxOldSpaceMiB+256)*1024**2);const exit=await exited;eq(exit,{code:0,signal:null},error);return {ownedReceipt:true,exit};});
+ const canonical=text.replace(app.initializer.getText(sf),'<APP_ENV>').replace('      // Next dev otherwise overrides the heap to half the host\'s physical RAM,\n      // not the commit budget available to this isolated functional fixture.\n','');
+ const unchangedHarnessSha256=digest(canonical);let comparison='CAPTURED';if(arg('--compare')){const old=JSON.parse(fs.readFileSync(arg('--compare'),'utf8'));eq(normal,old.normal,'all original nonbudget behavior exact');eq(unchangedHarnessSha256,old.unchangedHarnessSha256,'entire remaining harness body exact');comparison='EXACT';}
+ const result={status:baseline?'BASELINE_REPRODUCED':'PASS',cases,checks,comparison,normal,profiles,actualHarness:true,actualNextDevPolicy:true,realOwnedNodeExit:true,childHeapLimitBytes:childReceipt.heap,unchangedHarnessSha256,inputs:{harness:digest(text),nextDev:digest(nextText),nextUtils:digest(fs.readFileSync(path.join(root,'node_modules/next/dist/server/lib/utils.js')))},simulatedHardwareForChildBytes:8*1024**3,fullAppAcceptance:false,physicalMemoryOrCapacityBenchmark:false,pg:0,supplierPosts:0};fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify(result,null,2)+'\n');
+ console.log(`NATIVE_FIXTURE_MEMORY=${result.status} CASES=${cases} CHECKS=${checks} NORMAL=${comparison} DEV_8G_POLICY_MB=${profiles[0].effectiveOldSpaceMiB} DEV_64G_POLICY_MB=${profiles[1].effectiveOldSpaceMiB} FIXED_ENV=EXACT REAL_CHILD_EXIT=1 PG=0 SUPPLIER_POSTS=0`);
+}
+// The actual module exposes only app/cleanEnv projections,not new product ports.
+main().catch(error=>{console.error(error);process.exitCode=1;});
