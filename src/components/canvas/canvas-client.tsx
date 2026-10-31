@@ -85,7 +85,7 @@ import type {FeatureId} from "@/lib/billing/types";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 import { copyText } from "@/lib/clipboard";
-import { CANVAS_RATIO_OPTIONS, CANVAS_MAX_COUNT, normalizeCanvasRatio, normalizeCanvasResolution, normalizeCanvasCount, normalizeCanvasQuality, canvasModelParameters } from "@/lib/canvas/generation-parameters";
+import { CANVAS_RATIO_OPTIONS, CANVAS_MAX_COUNT, normalizeCanvasCount, normalizeCanvasQuality } from "@/lib/canvas/generation-parameters";
 import {useCanvasOverlayLayout} from "./use-canvas-overlay-layout";
 import {canvasProjects,canvasProjectMonths,type CanvasProject as Project,type CanvasWorkflowKey} from "@/lib/canvas/project-catalog";
 import {useCanvasProjectCatalog} from "./use-canvas-project-catalog";
@@ -141,6 +141,7 @@ import { CanvasPerformanceProbe, recordCanvasNativeMove } from "./canvas-perform
 import { generationFailureMessage, assertGenerationResultsPresent } from '@/lib/canvas/generation-failure';
 import { ImagegenPreparationCancelled } from '@/lib/imagegen/http';
 import { useImageNodeDraft } from './use-image-node-draft';
+import {useCanvasImageModel} from './use-canvas-image-model';
 import {useImageReferenceDraft} from './use-image-reference-draft';
 import { resolveCanvasImageReferences, changeImageReferenceRole, imageReferenceManifest, inheritableImagePrompt, type CanvasImageReference, type ImageReferenceCandidate } from '@/lib/canvas/image-references';
 import { referenceManifestError } from '@/lib/imagegen/reference-labels';
@@ -236,9 +237,6 @@ import {
   type Artwork,
   GENERATION_STYLES,
 } from "@/lib/mock-data";
-import {
-  compactImageModelOptions,
-} from "@/lib/image-model-routing";
 
 import { adminConfiguredFeature } from "@/lib/model-config/selection-policy";
 import { chosenFeatureModel, useFeatureModels } from "@/lib/model-config/feature-client";
@@ -318,7 +316,6 @@ async function expectJsonOk(res: Response, fallback: string): Promise<any> {
 
 // 画布生成器:比例选项(对齐参考站图1 的网格)。w/h 只用于画小图标;
 // 实际出图尺寸由后端 sizeFor 按方向(横/竖/方)映射到 gpt-image 支持的尺寸。
-type ImageModelOption = { id: string; label: string; supportsEdit: boolean; generationParameters?: { ratios?: string[]; resolutions?: string[]; combinations?: string[] } };
 
 // 占位节点(空白/上传中)动作上下文:让 React Flow 内的节点能调用主组件的上传
 // 计算当前选中节点的整条血缘链路:上溯所有祖先 + 下延所有衍生(含自身)
@@ -388,16 +385,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     { prompt: inheritableImagePrompt(imageDraftArtwork?.prompt), ratio: "auto" }, readOnly
   );
   const { prompt: editPrompt, setPrompt: setEditPrompt, ratio: genRatio, setRatio: setGenRatio } = imageDraft;
-  const [genModel, setGenModel] = useState("");
-  const { quality: genQuality, imageCost, modelConfig } = useImageQuality("canvas.image", genModel);
+  const {model:genModel,models:imageModels,quality:genQuality,error:canvasImageCatalogError,resolution:genResolution,setResolution:setGenResolution,pick:pickGenerationModel,parameters:generationParameters}=
+    useCanvasImageModel({draftKey:imageDraft.key,ratio:genRatio,setRatio:setGenRatio});
   const expandQuality = useImageQuality("canvas.expand").quality;
   const textEditQuality = useImageQuality("canvas.text-edit").quality;
   const annotateQuality = useImageQuality("canvas.annotate").quality;
   const canvasToolQualities: Partial<Record<FeatureId,string>> = {"canvas.expand":expandQuality,"canvas.text-edit":textEditQuality,"canvas.annotate":annotateQuality};
   const { catalog: cutoutCatalog, error: cutoutCatalogError } = useFeatureModels("tool.cutout");
-  const { catalog: canvasImageCatalog, selected: canvasImageModel, setSelected: setCanvasImageModel, error: canvasImageCatalogError } = useFeatureModels("canvas.image");
-  const [imageModels, setImageModels] = useState<ImageModelOption[]>([]);
-  const [genResolution, setGenResolution] = useState("1K"); // 默认 1K
   const [imageComposerMenuOpen,setImageComposerMenuOpen]=useState(false);
   const [genStyle, setGenStyle] = useState(GENERATION_STYLES[0]);
   const [genCount, setGenCount] = useState(1);
@@ -470,48 +464,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setFileDragOver(false);
   }
 
-  useEffect(() => {
-        if (canvasImageCatalog?.managed) {
-          const options = canvasImageCatalog.models;
-          setImageModels(options);
-          setGenModel(options.find(item => item.id === canvasImageModel)?.id || canvasImageCatalog.defaultModelId || options[0]?.id || "");
-          return;
-        }
-        // Never briefly expose the unrestricted generation list while a managed canvas loads.
-        if (canvasImageCatalog?.managed !== false && modelConfig?.modelVersion) {
-          setImageModels([]); setGenModel(""); return;
-        }
-        const config = modelConfig;
-        if (!config) return;
-        const options = Array.isArray(config.imageModels)
-          ? config.imageModels.filter((item) => item?.id && item?.label)
-          : [];
-        const fallback = config.defaultImageModel || options[0]?.id || "";
-        const saved = window.localStorage.getItem("naumi:canvas-image-model") || "";
-        const normalized = options.length
-          ? compactImageModelOptions(options, [fallback, saved])
-          : fallback
-            ? [{ id: fallback, label: fallback, supportsEdit: fallback.startsWith("gpt-image") }]
-            : [];
-        setImageModels(normalized);
-        setGenModel((current) => {
-          if (normalized.some((item) => item.id === current)) return current;
-          if (normalized.some((item) => item.id === saved)) return saved;
-          return normalized.find((item) => item.id === fallback)?.id || normalized[0]?.id || "";
-        });
-  }, [modelConfig, canvasImageCatalog, canvasImageModel]);
-
-  useEffect(() => {
-    const parameters = canvasModelParameters(imageModels.find(m => m.id === genModel)?.generationParameters);
-    setGenRatio(current => parameters.ratios.includes(normalizeCanvasRatio(current)) ? normalizeCanvasRatio(current) : "auto");
-    setGenResolution(current => parameters.resolutions.includes(normalizeCanvasResolution(current)) ? normalizeCanvasResolution(current) : parameters.resolutions[0] || "1K");
-  }, [genModel, imageModels, imageDraft.key, genRatio]);
-
-  function pickGenerationModel(model: string) {
-    if (canvasImageCatalog?.managed) { setCanvasImageModel(model); return; }
-    setGenModel(model);
-    window.localStorage.setItem("naumi:canvas-image-model", model);
-  }
   // 「全部项目」网格里每张卡片的「...」菜单(重命名/删除)当前展开的是哪个项目
   // 回收站(软删除的作品):打开状态 + 列表 + 操作中
   const [trashOpen, setTrashOpen] = useState(false);
@@ -2379,7 +2331,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   const loading = persistMode === "server" && works === null && canvasArtworkDocument.phase !== "error";
 
-  const generationParameters=canvasModelParameters(imageModels.find(model=>model.id===genModel)?.generationParameters);
   const imageComposerControls:CanvasImageComposerProps["controls"]={
     light:lightCanvas,model:{value:genModel,placeholder:imageModels.find(model=>model.id===genModel)?.label||(canvasImageCatalogError?"模型加载失败":"模型加载中"),
       options:imageModels.map(model=>({value:model.id,modelId:model.id,label:model.label,...(!model.supportsEdit?{note:t("canvas.modelTextOnly")}: {})})),onChange:pickGenerationModel},
