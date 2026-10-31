@@ -262,6 +262,8 @@
 
 [R9B记录](../changes/2026-11-01-refactor-r9b-legacy-generation-ingress.md)：既有intent/BI callback、model/quote适配与领域actor/quote port显式传递服务端身份；undefined保留旧认证、null不借用其他身份。MAC/expiry/owner/scope/输入指纹/冻结价及原任务职责仍在原owner，不共享身份缓存。实际原生HTTP/PG原/新38场景79检查覆盖4～7→1、health0、原价6/当前17、余额不足、原receipt、丢ACK待核查和同编号并发一任务，正常投影EXACT。最后完整应用证据仍是R8Z，当前211整版仍待后续固定验收。
 
+固定b796验证源pricing12/12通过，runner保持部分目录PARTIAL/exit2；5092类型输入/tsc exit0、lint exit0、四SCC0。独立副本原5335raw hash/38场景79检查恢复，later-edit零写；归档仅4文档桥接。本轮同步计数1，不写main、不发布。公共billing/quote与canvas/image-tasks仍有间接身份解析，不以本地AST直接候选0作为全站闭合。
+
 ## 历史入口
 
 [收敛前的完整迁移流水](https://github.com/JesstLe/naumi/blob/82729161200f166fe587b98bceb756a44999840c/docs/architecture/REFACTOR_MIGRATION.md)保留。文档类改动不增加产品模块计数；后续代码每完成三模块普通同步主线，仍遵从 AGENTS。

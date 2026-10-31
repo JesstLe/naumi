@@ -4,7 +4,9 @@
 
 [R9B 模块](changes/2026-11-01-refactor-r9b-legacy-generation-ingress.md)将历史generate-image的intent、BI、model、opaque quote、signed versions和领域actor/quote port贯穿同一个服务端身份。完整1efb基线5335raw文件与修改版实际native HMAC/HTTP/PG各38场景79检查，正常结果投影EXACT；旧提交4～7次认证、父轮询2次，修改后均1次，health仍0次（不含middleware）。保留原价6/当前17、真实预占和余额不足、丢失ACK后503→原intent409待核查、同编号并发一任务；没有新表、价格确认或跨请求缓存。
 
-7个产品文件完成显式参数迁移；全项目5092实际类型输入/tsc exit0、lint exit0。集中受影响回归与副本封装继续执行；最后完整应用验收仍是R8Z，不把本模块通过扩展为完整211目录或当前App/Worker通过。
+固定验证源`b7963e41025fd2e1bdccf7f99a705d11e9128684`：7个产品文件完成显式参数迁移，其他2134原src/services raw hash一致；pricing12/12全部执行通过、0失败/未运行/复用，runner仍PARTIAL/exit2（非完整211，其余199未本轮执行）；5092实际类型输入/tsc exit0、lint exit0/37既有warning、四类SCC0。独立副本恢复5335原始raw hash及原38/79行为，later-edit首写前拒绝/零写。归档与该验证源之间仅4文档变化，产品/验证资产字节一致；最终补丁与四产物见本轮DELIVERY。
+
+本轮为上次主线同步后第1模块，开工fetch确认origin/main仍e2f56255且已包含；没有新main待整合、没有写/推main。最后完整应用验收仍是R8Z，不把本模块通过扩展为完整211目录或当前App/Worker通过。
 
 ## 上一模块：R9A 图片入口身份归属
 
@@ -67,4 +69,4 @@ R9A固定验证源码 `9a52ba65b77e729ea724fceff66283c5f020e678`：pricing 11/11
 
 ## 入口迁移边界
 
-R8Z/R9A直接候选已由R9B历史轮询迁移收口；相同本地AST方法的59个creation/receipt wrapper现在9个消费actor、本地直接认证候选0。该盘点不覆盖所有跨文件适配，不能证明全部59个入口只认证一次。R9B还贯穿了不在该wrapper统计中的历史POST完整链；其余quote/canvas/领域适配继续按实际原生HTTP/PG证据核查，不按静态数字自动关闭。
+R8Z/R9A直接候选已由R9B历史轮询迁移收口；相同本地AST方法的59个creation/receipt wrapper现在9个消费actor、本地直接认证候选0。该盘点不覆盖所有跨文件适配，不能证明全部59个入口只认证一次。后续已定位公共`/api/billing/quote`（creation→quote/issue owner）与`/api/canvas/image-tasks`（creation→intent→authenticatedEmail/领域）仍存在间接身份解析；继续实际原生HTTP/PG对照，不按静态数字自动关闭。当前211完整固定验收、有效CI、最终main/生产门槛仍独立保留。
