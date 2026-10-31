@@ -1,12 +1,12 @@
-# 当前整体候选：R8R 选择目录与视图投影；整版验收 OPEN
+# 当前架构增量：R8S 文字结果文档归属
 
-应用/定向验收源码 `a944440e67dc19b0137eedfa3961dfb1bf5f7d31`。原selection.ts拥有布局无关目录kind规则，新增纯selection-projection集中focus/context/属性目标；controller不依赖属性尺寸逻辑，状态、文档与任务仍归原owner。3个原产品文件改变、1个纯产品文件新增，其他2133原src/services raw SHA保持。
+应用/定向验收源码 `8e8c73d7695c605c654853924305d65e49c2fa9f`；独立候选，整体ACTIVE，未合回main、未部署，47 HOLD。
 
-84组实际原页面/菜单/属性SSR与回调参数trace EXACT；18个受影响入口全新执行通过，原runner为subset PARTIAL/exit2，**不是完整197通过**。真实selection DOM30检查、完整类型/lintexit0、5088类型输入hash稳定；167个其他Canvas命名函数、原菜单视图/动作与selection生命周期保持。四类SCC0，既有2个release fixture反向边/1个dist生成边保留。
+页面只绑定已保存文字身份；既有text-document复用canonical normalizer、草稿和per-ID written fence。正常读取与原SSE相同，迟到快照不回滚后来的confirmed/history/delete。先筛目标再规范化；2000无关行字段读取0，初版4000的失败原样留证，不当容量数据。
 
-详见[本片模块记录](changes/2026-10-31-refactor-r8r-selection-projection.md)和`output/refactor-r8r-20261031/VERIFICATION.txt`。助手文字结果刷新仍含页面级snapshot读取/筛选/默认字段，下一步复用text-document owner；其余薄HTTP/DOM组装不按行数机械拆分。完整当前候选core/镜像/runtime/产品浏览器、持续容量、有效CI及最终main验收继续OPEN，R8P历史135/1/57不跨source借用。
+仅2个原产品文件改变，其他2135原产品raw SHA保持；166个其他Canvas函数、17个其他assistant context字段及6个旧文档算法保持。四类SCC0；生产lib→app/platform DB→业务/生产→旧db facade均0。enterprise workflow尚有1条runtime/CLI→scripts业务归属边，2条test边与原始3边全部单列；不把静态图当完整运行解耦证明。
 
-**🔴 独立分支超过48h：用户要求完整重构版本，完整退出仍未达到。整体ACTIVE，工作树保留；main刷新e2f56255，产品模块计数2/3，未合main、未部署，47 HOLD。**
+本片详见[R8S模块记录](changes/2026-10-31-refactor-r8s-saved-text-results.md)；上一片[R8R模块记录](changes/2026-10-31-refactor-r8r-selection-projection.md)。当前状态只记摘要，详细实施/失败/命令回归所属模块与证据，不再向四份overview复制整篇流水。
 
 ## 历史固定源记录：R8Q 及更早
 

@@ -1,12 +1,14 @@
-# 当前整体候选：R8R 选择目录与视图投影；整版验收 OPEN
+# 当前候选：R8S 已保存文字结果，整体退出 OPEN
 
-应用/定向验收源码 `a944440e67dc19b0137eedfa3961dfb1bf5f7d31`。原selection.ts拥有布局无关目录kind规则，新增纯selection-projection集中focus/context/属性目标；controller不依赖属性尺寸逻辑，状态、文档与任务仍归原owner。3个原产品文件改变、1个纯产品文件新增，其他2133原src/services raw SHA保持。
+应用/定向验收源码 `8e8c73d7695c605c654853924305d65e49c2fa9f`；独立候选，整体ACTIVE，未合回main、未部署，47 HOLD。
 
-84组实际原页面/菜单/属性SSR与回调参数trace EXACT；18个受影响入口全新执行通过，原runner为subset PARTIAL/exit2，**不是完整197通过**。真实selection DOM30检查、完整类型/lintexit0、5088类型输入hash稳定；167个其他Canvas命名函数、原菜单视图/动作与selection生命周期保持。四类SCC0，既有2个release fixture反向边/1个dist生成边保留。
+`text-document.refreshSaved`已接管原页面快照读取、规范化和草稿合入；只GET原结果、不重执行工具。33用例/26正常trace EXACT，15个受影响入口全新通过（subset PARTIAL/exit2，非完整199）；真实PG21/60含5个新刷新用例。完整类型/lintexit0，5088类型输入hash稳定。
 
-详见[本片模块记录](changes/2026-10-31-refactor-r8r-selection-projection.md)和`output/refactor-r8r-20261031/VERIFICATION.txt`。助手文字结果刷新仍含页面级snapshot读取/筛选/默认字段，下一步复用text-document owner；其余薄HTTP/DOM组装不按行数机械拆分。完整当前候选core/镜像/runtime/产品浏览器、持续容量、有效CI及最终main验收继续OPEN，R8P历史135/1/57不跨source借用。
+第三模块同步main实际Already up to date，main仍e2f56255，计数2→3→0。完整源码/字节patch/原5315hash独立回滚以本片四产物为准。
 
-**🔴 独立分支超过48h：用户要求完整重构版本，完整退出仍未达到。整体ACTIVE，工作树保留；main刷新e2f56255，产品模块计数2/3，未合main、未部署，47 HOLD。**
+**🔴 分支超过48h：完整候选验收尚未退出，按用户持续整体重构要求保留工作树。** 下一片审查enterprise workflow runtime/CLI→scripts源审计导入；完整core/镜像/runtime/产品浏览器、有效CI、同机性能及最终main验收继续。
+
+本片详见[R8S模块记录](changes/2026-10-31-refactor-r8s-saved-text-results.md)；上一片[R8R模块记录](changes/2026-10-31-refactor-r8r-selection-projection.md)。当前状态只记摘要，详细实施/失败/命令回归所属模块与证据，不再向四份overview复制整篇流水。
 
 ## 历史固定源记录：R8Q 及更早
 
