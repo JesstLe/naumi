@@ -17,3 +17,9 @@
 本轮集中执行原/新内存与原HTTP控制、原失败的完整时间线浏览器链；通过后才固定源码并发起新的完整205项回归。baseline、modified、独立副本rollback、失败尝试与原始日志保存在本轮证据目录，不拼接历史144/145和单独59项。该预算是开发测试工具配置，不是生产内存需求、10万活跃容量或持续长稳结论。
 
 整体重构仍ACTIVE；当前固定Web/Worker镜像、运行态、产品浏览器、同机性能/持续混合负载、有效CI和最终main整合按真实结果推进，47 HOLD。本轮属于验证基础设施，不增加产品功能模块计数。
+
+## 定向实测
+
+实际4GiB基线内存9cases16checks；6GiB修改9cases18checks、normal EXACT、fixed生产环境EXACT。实际HTTP23cases87checks通过，原写入/UNKNOWN/原90秒期限保持。原完整时间线浏览器链exit0，导入编辑保存、真实预览/输出像素、采用历史、handle/命名引用视频和副本删除撤销重做全部通过；媒体费3积分、模拟供应商创建1次、付费调用0。完整原namespace日志通过timelineNodeId及mediaJobId双身份核对保存，本次Next内存重启警告实际计数0；不外推长稳或容量。原App/Worker/PG/router/pool和凭据清理PASS；全项目类型检查exit0。
+
+一次辅助日志取证错误使用仅含末100条记录的runtime.log解析namespace，没有找到ID；原子断言停止该取证，未修改产品或实际测试结果。外层PowerShell缺失即时exit检查，仍完成了合法TSC和提交，随后因未生成ignored driver而未启动完整core。这次准备失败保留，后续改用子命令显式检查，不冒充完整门禁已经执行。
