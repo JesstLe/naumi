@@ -367,6 +367,14 @@ function fixture({runtime = true} = {}) {
   dependencies['src/lib/imagegen/dispatch.ts']['./task-diagnostics']=()=>load('src/lib/imagegen/task-diagnostics.ts');
   dependencies['src/lib/imagegen/dispatch.ts']['./delivery-billing']=()=>load('src/lib/imagegen/delivery-billing.ts');
   dependencies['src/lib/imagegen/delivery-billing.ts']={'@/platform/db/pool':db};
+  // Follow the scheduling owner,not the retired repository function bodies.
+  dependencies['src/lib/image-job-repository.ts']['./image-jobs/scheduling']=()=>load('src/lib/image-jobs/scheduling.ts');
+  dependencies['src/lib/image-jobs/runtime.ts']['./scheduling']=()=>load('src/lib/image-jobs/scheduling.ts');
+  dependencies['src/lib/image-jobs/scheduling.ts']={
+    '@/platform/db/pool':db,'@/lib/persistence/schema':{ensureSchema:async()=>{}},
+    '../image-job-queue':()=>load('src/lib/image-job-queue.ts'),'../image-job-lease':()=>load('src/lib/image-job-lease.ts'),
+    '../staging-history':dependencies['src/lib/image-job-repository.ts']['@/lib/staging-history'],
+  };
   dependencies['src/lib/image-jobs/runtime.ts']['../image-job-codec']=()=>load('src/lib/image-job-codec.ts');
   dependencies['src/lib/image-jobs/runtime.ts']['../image-job-lease']=()=>load('src/lib/image-job-lease.ts');
   dependencies['src/lib/image-job-codec.ts']={

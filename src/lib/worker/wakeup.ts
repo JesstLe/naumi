@@ -1,7 +1,7 @@
 import "server-only";
 import {Client} from "pg";
 import {getPool} from "@/platform/db/pool";
-import {APPLICATION_WORK_CHANNEL} from "../application/task-execution";
+import {APPLICATION_WORK_CHANNEL} from "../application/work-signal";
 
 /** One dedicated LISTEN connection, not a query-pool checkout or a queue.
  * Search-path schema scopes hints from isolated installations sharing a DB.

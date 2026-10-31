@@ -26,3 +26,28 @@ export function slope(rows,value){
 export function summarizeMixed(events,phases){
  return Object.fromEntries(phases.map(phase=>[phase.id,Object.fromEntries(['plan','accept','receipt','read','save','media-accept','media-receipt'].map(kind=>{const rows=events.filter(e=>e.phase===phase.id&&e.kind===kind);return[kind,{...distribution(rows.map(r=>r.ms)),requests:rows.length,errors:rows.filter(r=>r.error||r.status>=400).length,arrivalLatenessMs:distribution(rows.map(r=>r.lateMs))}]}))]));
 }
+
+/** Read-only DB observations,not a replacement for the production claim query.
+ * Time-ready does not assert channel eligibility or permission to send. */
+export function imageQueueObservation(rows,dbClock,providers,laneCapacity){
+ const now=new Date(dbClock).getTime();if(!Number.isFinite(now)||!Array.isArray(providers)||!Number.isInteger(laneCapacity)||laneCapacity<1)throw Error('INVALID_QUEUE_OBSERVATION');
+ const generate=rows.filter(row=>row.kind==='generate'),active=row=>!!row.lease_token&&new Date(row.lease_until).getTime()>now;
+ const unsent=row=>row.status==='pending'&&row.queue_state==='execution'&&String(row.paid_version)==='1'&&row.unresolved_submission===false;
+ const queued=generate.filter(unsent),activeGenerate=generate.filter(active).length;
+ const capacity=providers.length?providers.reduce((n,row)=>n+Number(row.max_concurrent),0):null,occupied=providers.length?providers.reduce((n,row)=>n+Number(row.in_flight),0):null;
+ if(capacity!==null&&(!Number.isFinite(capacity)||!Number.isFinite(occupied)||capacity<0||occupied<0))throw Error('INVALID_PROVIDER_OCCUPANCY');
+ const cooling=queued.filter(row=>!row.lease_token&&new Date(row.lease_until).getTime()>now).length;
+ const timeReady=queued.filter(row=>!active(row)&&(!row.lease_until||new Date(row.lease_until).getTime()<=now)).length;
+ const free=capacity===null?null:Math.max(0,capacity-occupied),room=activeGenerate<laneCapacity;
+ return{dbClock:new Date(now).toISOString(),generateLaneCapacity:laneCapacity,activeGenerate,knownUnsent:queued.length,coolingKnownUnsent:cooling,timeReadyKnownUnsent:timeReady,activeProviderLeases:occupied,providerCapacity:capacity,freeProviderSlots:free,coolingWhileSlotsFree:free===null?null:room&&free>0&&cooling>0,timeReadyWhileSlotsFree:free===null?null:room&&free>0&&timeReady>0,caveat:'One DB snapshot;time-ready does not establish channel eligibility;lease occupancy is not supplier HTTP or hardware utilization'};
+}
+export function summarizeQueueWaitSamples(samples){
+ let observedMs=0,coolingMs=0,timeReadyMs=0,missing=0;
+ for(let i=0;i+1<samples.length;i++){
+  const a=samples[i],b=samples[i+1],d=a.queueObservation,ms=b.atMs-a.atMs;
+  if(!d||d.freeProviderSlots===null){missing++;continue;}
+  if(!Number.isFinite(ms)||ms<0)throw Error('INVALID_QUEUE_SAMPLE_ORDER');
+  observedMs+=ms;if(d.coolingWhileSlotsFree)coolingMs+=ms;if(d.timeReadyWhileSlotsFree)timeReadyMs+=ms;
+ }
+ return{observedSeconds:observedMs?observedMs/1000:null,coolingWhileSlotsFreeSeconds:observedMs?coolingMs/1000:null,timeReadyWhileSlotsFreeSeconds:observedMs?timeReadyMs/1000:null,missingIntervals:missing,caveat:'Left-sample intervals,not exact scheduling delay or proof all time-ready tasks are dispatchable;missing historical fields remain unknown'};
+}

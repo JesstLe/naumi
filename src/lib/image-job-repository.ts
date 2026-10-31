@@ -3,7 +3,6 @@ import {readTaskDiagnostic,type TaskFailureDiagnostic} from "./imagegen/task-dia
 import {acceptCreationTx,recordImageStateTx,creationLinkTx} from "./saas/creation-writer";
 import "server-only";
 import { randomUUID } from "node:crypto";
-import {IMAGE_JOB_KINDS,imageJobConcurrency} from "./image-job-queue";
 import {dbEnabled,getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
 import {deductPrincipalFIFO} from "@/lib/billing/wallet-balance";
@@ -13,15 +12,18 @@ import {createBillingService} from "@/lib/billing/service";
 import type {BillingQuote,BillingResult,OperationInput} from "@/lib/billing/types";
 import { IMAGE_JOB_RELEASED_MESSAGE, imageJobHasResults } from "./image-job-failure";
 import { lockWallet, syncBalanceTx } from "./billing/repository";
-import { assertMutableStagingTask, excludeImportedHistory, isImportedHistory } from "./staging-history";
+import { assertMutableStagingTask } from "./staging-history";
 import type { PoolClient } from "pg";
 import { IMAGE_JOB_LEASE_MS, ImageJobLeaseLostError } from "./image-job-lease";
 import { imageJobCleanupClient, reportImageJobCleanupFailure } from "./image-job-cleanup";
 const billingService=createBillingService();
 function billingOperation(row:{id:string;email:string;payload:{billingQuote:BillingQuote}},reason:string):OperationInput{return {id:row.id,email:row.email,quote:row.payload.billingQuote,reason,ledgerId:`led-image-${row.id}`,fingerprint:row.id};}
 
-export type ImageJobKind = "generate" | "suite" | "aplus" | "imagegen";
-export type ImageJobRow = { id: string; email: string; kind: ImageJobKind; snapshot: Record<string, unknown>; payload: Record<string, unknown>; lease_token: string | null; billing_settled: boolean };
+import type {ImageJobKind,ImageJobRow} from './image-jobs/types';
+export type {ImageJobKind,ImageJobRow} from './image-jobs/types';
+// Existing scripts retain this API;these are the same scheduling functions,not
+// another implementation or writer.
+export {claimImageJob,releaseImageJob,dueImageJobs} from './image-jobs/scheduling';
 
 export async function createImageJob(id: string, email: string, kind: ImageJobKind, snapshot: unknown, payload: unknown, cost: number, reserve: boolean, billingQuote?:BillingQuote) {
   await ensureSchema();
@@ -60,22 +62,6 @@ export async function listActiveImageJobs(email: string, kind: ImageJobKind) {
   const { rows } = await getPool().query(`SELECT id,snapshot->>'status' AS status FROM app_image_jobs
     WHERE email=$1 AND kind=$2 AND snapshot->>'status' NOT IN ('done','error','needs_attention') ORDER BY created_at DESC LIMIT 30`, [email.toLowerCase(), kind]);
   return rows;
-}
-
-export async function claimImageJob(id: string, kind: ImageJobKind): Promise<ImageJobRow | null> {
-  await ensureSchema();
-  if (await isImportedHistory(getPool(), "app_image_jobs", id)) return null;
-  const tx=await getPool().connect();
-  try {
-    await tx.query("BEGIN");
-    await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",["naumi-image-job-queue:"+kind]);
-    const {rows}=await tx.query(`UPDATE app_image_jobs SET lease_token=$3,lease_until=clock_timestamp()+$5*interval '1 millisecond'
-      WHERE id=$1 AND kind=$2 AND (lease_until IS NULL OR lease_until<clock_timestamp())
-      AND snapshot->>'status' NOT IN ('done','error','needs_attention')
-      AND (SELECT count(*) FROM app_image_jobs active WHERE active.kind=$2 AND active.lease_token IS NOT NULL
-        AND active.lease_until>now())<$4 RETURNING *`,[id,kind,randomUUID(),imageJobConcurrency(kind),IMAGE_JOB_LEASE_MS]);
-    await tx.query("COMMIT");return rows[0]||null;
-  }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
 }
 
 export async function heartbeatImageJob(id: string, token: string) {
@@ -256,25 +242,6 @@ export async function reviewImageSource(id: string, index: number, redo: boolean
     return updated;
   } catch(error) {await client.query("ROLLBACK");throw error;}
   finally {client.release();}
-}
-
-export async function releaseImageJob(id: string, token: string) {
-  await getPool().query(`UPDATE app_image_jobs SET lease_token=NULL,updated_at=now(),
-    lease_until=CASE WHEN snapshot->>'status'='pending' THEN now()+interval '10 seconds' ELSE NULL END
-    WHERE id=$1 AND lease_token=$2`, [id,token]);
-}
-
-export async function dueImageJobs() {
-  await ensureSchema();
-  const { rows } = await getPool().query(`WITH waiting AS (SELECT id,kind,updated_at,
-    row_number() OVER(PARTITION BY kind ORDER BY updated_at,id) AS lane_rank FROM app_image_jobs WHERE (lease_until IS NULL OR lease_until<now())
-    AND (snapshot->>'status'='pending' OR (kind='imagegen' AND snapshot->>'status'='running') OR snapshot->'sources' @> '[{"status":"redoing"}]'::jsonb)
-    ${excludeImportedHistory("app_image_jobs")}), budgets AS (SELECT * FROM unnest($1::text[],$2::int[]) v(kind,capacity)),
-    active AS (SELECT kind,count(*)::int n FROM app_image_jobs WHERE lease_token IS NOT NULL AND lease_until>now() GROUP BY kind)
-    SELECT w.id,w.kind FROM waiting w JOIN budgets b ON b.kind=w.kind LEFT JOIN active a ON a.kind=w.kind
-    WHERE w.lane_rank<=LEAST(32,GREATEST(0,b.capacity-COALESCE(a.n,0))) ORDER BY w.lane_rank,w.updated_at,w.id`,
-    [IMAGE_JOB_KINDS,IMAGE_JOB_KINDS.map(imageJobConcurrency)]);
-  return rows as {id:string;kind:ImageJobKind}[];
 }
 
 /** Keep an uncertain paid domain job visible to billing reconciliation. */

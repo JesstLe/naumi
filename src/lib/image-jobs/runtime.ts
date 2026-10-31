@@ -10,6 +10,8 @@ import { dbEnabled, getPool } from "@/platform/db/pool";
 import { assertMutableStagingTask } from "@/lib/staging-history";
 import {encodeImageJobValue as encode,decodeImageJobValue as decode,encodeImageJobResult as encodeImageIndexResult,encodeImageJobSnapshot} from "../image-job-codec";
 import * as repository from "@/lib/image-job-repository";
+import {claimImageJob,releaseImageJob} from "./scheduling";
+import type {ImageJobRow} from "./types";
 import { ImageOperationPending, ImageOperationDeferred, isImageGatewayModel, withImageOperation, withImageIndexCheckpoint, type ImageIndexCheckpoint } from "@/lib/image-gateway";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
@@ -326,13 +328,13 @@ export class DurableImageJobs<T extends { status: string }> {
         reportImageJobCleanupFailure("parent-notify",error);
       }
     };
-    const executeClaimed = async (row: repository.ImageJobRow,claimedAt:number) => {
+    const executeClaimed = async (row: ImageJobRow,claimedAt:number) => {
     const token = row.lease_token!;
     try { await bindBackgroundClaim(`${this.kind}:${id}`, token); }
     catch (error) {
       // No user execution has started; release only our new lease. Keep the
       // original accepted/unknown paid checkpoints and release activity error.
-      await repository.releaseImageJob(id, token).catch(failure=>reportImageJobCleanupFailure("claim-release",failure));
+      await releaseImageJob(id, token).catch(failure=>reportImageJobCleanupFailure("claim-release",failure));
       throw error;
     }
     const context: Execution = { id, token, queue: Promise.resolve(),lease:startImageJobHeartbeat(()=>repository.heartbeatImageJob(id,token),claimedAt),onReleased:released };
@@ -368,7 +370,7 @@ export class DurableImageJobs<T extends { status: string }> {
       finally {
         await context.queue.catch(() => {});
         context.lease.stop();
-        await repository.releaseImageJob(id, token).catch(failure=>reportImageJobCleanupFailure("lease-release",failure));
+        await releaseImageJob(id, token).catch(failure=>reportImageJobCleanupFailure("lease-release",failure));
       }
     });
     // Recheck both sides of the lost-wake race, but do not hot-loop a failed
@@ -377,14 +379,14 @@ export class DurableImageJobs<T extends { status: string }> {
     };
     if(!releaseRuntimeEnabled()) {
       const claimedAt=performance.now();
-      const row=await repository.claimImageJob(id,this.kind);
+      const row=await claimImageJob(id,this.kind);
       if(row)void trackBackgroundWork(executeClaimed(row,claimedAt).then(notifyReleased)).catch(console.error);
       else await notifyReleased();
       return;
     }
     await detachBackgroundActivity("durable-image", `${this.kind}:${id}`, "claim", async () => {
       const claimedAt=performance.now();
-      const row=await repository.claimImageJob(id,this.kind);
+      const row=await claimImageJob(id,this.kind);
       if(row)await executeClaimed(row,claimedAt);
     }, notifyReleased);
   }

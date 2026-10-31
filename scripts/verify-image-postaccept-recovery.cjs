@@ -185,6 +185,8 @@ function fixture(name, count = 1) {
   const passthrough = (_context, run) => run();
   mock('src/platform/db/pool.ts', { dbEnabled: true, getPool: () => sql });
   mock('src/lib/image-job-repository.ts', repository);
+  // Same external scheduling port for this paid-checkpoint test;real scheduling SQL has its own PG matrix.
+  mock('src/lib/image-jobs/scheduling.ts', repository);
   mock('src/lib/staging-history.ts', { assertMutableStagingTask: async () => {} });
   mock('src/lib/storage.ts', {
     async uploadImage(bytes, _mime, key) { const url = `/media/${key}`; f.assets.set(url, Buffer.from(bytes)); return url; },

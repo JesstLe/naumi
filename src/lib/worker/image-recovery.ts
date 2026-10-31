@@ -1,7 +1,8 @@
 import "server-only";
 import {randomUUID} from "node:crypto";
 import {dbEnabled} from "@/platform/db/pool";
-import {dueImageJobs,type ImageJobRow} from "../image-job-repository";
+import {dueImageJobs} from "../image-jobs/scheduling";
+import type {ImageJobRow} from "../image-jobs/types";
 import {dispatchImageQueue} from "../image-job-queue";
 import {withBackgroundActivity} from "../release-runtime/background-activity";
 import {deferApplicationTask} from "../application/task-execution";

@@ -223,7 +223,7 @@ async function main() {
     vm.runInNewContext(code, context); assert.equal(await context.exports.recoverVideoWorkflows(3), 2); assert.deepEqual(visited, ['a', 'b', 'c']);
   });
   await test('image-lane-fairness-and-paid-lease-guards-remain-in-source', async () => {
-    const repository = read('src/lib/image-job-repository.ts');
+    const repository = read(fs.existsSync(path.join(root,'src/lib/image-jobs/scheduling.ts'))?'src/lib/image-jobs/scheduling.ts':'src/lib/image-job-repository.ts');
     assert.match(repository, /row_number\(\) OVER\(PARTITION BY kind ORDER BY updated_at,id\)/);
     assert.match(repository, /ORDER BY w\.lane_rank,w\.updated_at,w\.id/);
     assert.match(repository, /b\.capacity-COALESCE\(a\.n,0\)/);

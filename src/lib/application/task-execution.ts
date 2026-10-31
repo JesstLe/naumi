@@ -1,7 +1,8 @@
 import "server-only";
 import {dbEnabled,getPool} from "@/platform/db/pool";
+import {notifyApplicationWork} from './work-signal';
+export {APPLICATION_WORK_CHANNEL} from './work-signal';
 
-export const APPLICATION_WORK_CHANNEL="naumi_application_work";
 /** Deployment role, never a request parameter or a new business permission.
  * Existing single-process installations stay local until both roles migrate. */
 export function applicationTasksRunHere():boolean{
@@ -18,7 +19,6 @@ export async function deferApplicationTask():Promise<boolean>{
  await wakeApplicationWorker();return true;
 }
 export async function wakeApplicationWorker():Promise<void>{
- const query={text:"SELECT pg_notify($1,current_schema())",values:[APPLICATION_WORK_CHANNEL],query_timeout:1000};
- try{await getPool().query(query);}
+ try{await notifyApplicationWork(getPool());}
  catch{console.error("[application-worker] wakeup unavailable; saved task retained for periodic scan");}
 }
