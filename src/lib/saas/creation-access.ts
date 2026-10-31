@@ -95,10 +95,14 @@ export async function bindCreationMedia(email:string,reference:string) {
  if(old?.scope_kind==='tenant'&&old.tenant_id!==scope.tenantId)throw new TeamError('不能引用其他企业的素材',403);
 }
 /** A receipt-aware entry must call this only when accepting genuinely new work. */
-export async function assertCurrentCreationFeature(path:string,method='POST'){
+export type CreationFeatureDecision={readonly actorEmail:string;readonly policy:AccessPolicy};
+/** One current check, with an actor-bound result for this application call only.
+ * Callers with another actor or no ingress context still read their own policy.
+ * Nothing is cached in the scope store or across requests. */
+export async function assertCurrentCreationFeature(path:string,method='POST'):Promise<CreationFeatureDecision|undefined>{
  const context=currentCreationContext();if(!dbEnabled||!context)return;
  const accountPolicy=await userFeaturePolicy(context.actorEmail);
  assertCreationFeature({},path,method,undefined,accountPolicy);
- if(!context.tenantId)return;
- await enterpriseCreationRead(context.actorEmail,context.tenantId,async(_tx,s)=>assertCreationFeature(s.entitlement.featurePolicy,path,method,undefined,accountPolicy));
+ if(context.tenantId)await enterpriseCreationRead(context.actorEmail,context.tenantId,async(_tx,s)=>assertCreationFeature(s.entitlement.featurePolicy,path,method,undefined,accountPolicy));
+ return {actorEmail:context.actorEmail,policy:accountPolicy};
 }

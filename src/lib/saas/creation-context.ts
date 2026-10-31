@@ -76,10 +76,12 @@ export async function withCreationRequest<T extends Response>(request:Request,em
  });
 }
 /** Non-model local/import routes share scope validation without selecting models. */
-export async function withCreationRoute(request:Request,run:()=>Promise<Response>,options:{receipt?:boolean}={}):Promise<Response>{
+/** The callback receives a server-authenticated actor, or null for known
+ * anonymous. Undefined preserves the no-DB unresolved-authentication adapter. */
+export async function withCreationRoute(request:Request,run:(authenticatedActor?:string|null)=>Promise<Response>,options:{receipt?:boolean}={}):Promise<Response>{
  if(!dbEnabled)return run();
- const {resolveUserEmail}=await import('@/lib/admin-auth');const email=await resolveUserEmail(request);if(!email)return run();
- try{return await withCreationRequest(request,email,run,options);}catch(error){if(error instanceof TeamError)return Response.json({error:error.message},{status:error.status,headers:{'cache-control':'private, no-store'}});throw error;}
+ const {resolveUserEmail}=await import('@/lib/admin-auth');const email=await resolveUserEmail(request);if(!email)return run(null);
+ try{return await withCreationRequest(request,email,()=>run(email),options);}catch(error){if(error instanceof TeamError)return Response.json({error:error.message},{status:error.status,headers:{'cache-control':'private, no-store'}});throw error;}
 }
 /** Existing-operation reads still authorize membership and project scope, but a
  * revoked new-creation capability must not hide an already accepted receipt. */

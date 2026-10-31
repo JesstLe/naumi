@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前R8Z候选（完整验证尚待）
+
+本轮5个产品文件收敛入口actor与本次权益决定：实际原生认证/HTTP/PG20用例33检查原/新均执行，入口auth/policy2/2→1/1，跨actor和无context读取、下一请求封禁/撤权保持。当前代码已不同于下表f0b；209注册与新镜像/core/runtime/browser/原5轮性能尚待，不借旧208代验。详见[R8Z模块记录](changes/2026-11-01-refactor-r8z-ingress-ownership.md)。
+
 ## 当前候选与完整验收
 
 | 字段 | 值 |

@@ -107,10 +107,10 @@ export async function frozenImagegenQuote(request:ImagegenRequest,owner:string,c
 async function authorizedFrozenPlan(row:QuoteRow,request:ImagegenRequest,owner:string,confirmation:ImagegenSubmissionConfirmation){
  if(row.fingerprint!==imagegenFingerprint(request))throw new ImagegenQuoteError();
  if(confirmation.confirmed===false)throw new Error("已取消提交");
- await assertCurrentCreationFeature("/api/imagegen");
+ const featureAccess=await assertCurrentCreationFeature("/api/imagegen");
  // Only current authorization and owned input access are rechecked. No current
  // model/billing lookup, repricing or second plan is allowed on this branch.
- const plan=row.plan,access=await userFeaturePolicy(owner),imageAllowed=["generate","batchshot","variations","fuse"].some(id=>allows(access,id));
+ const plan=row.plan,access=featureAccess?.actorEmail===owner.toLowerCase()?featureAccess.policy:await userFeaturePolicy(owner),imageAllowed=["generate","batchshot","variations","fuse"].some(id=>allows(access,id));
  if(plan.request.entry==="canvas"&&!allows(access,"canvas")||plan.request.entry==="agent"&&!allows(access,"agent")||plan.intent.operation!=="postprocess"&&!imageAllowed||plan.intent.operation==="postprocess"&&!["canvas","works","generate"].some(id=>allows(access,id))||plan.request.mode==="batch"&&!allows(access,"batchshot")||plan.steps.some(s=>s.operation==="cutout")&&!allows(access,"cutout"))throw new FeatureAccessError("此图像功能尚未授权");
  await readImagegenInputs(plan.request,owner);
  return plan;

@@ -8,9 +8,9 @@ import {readImagegenJson} from "@/lib/imagegen/body";
 import {issueImagegenQuote,readOriginalImagegenQuote} from "@/lib/imagegen/quotes";
 import {withCreationRoute} from "@/lib/saas/creation-context";
 export const runtime="nodejs";
-async function handlePost(request:Request){
+async function handlePost(request:Request,authenticatedActor?:string|null){
  if(!sameSiteBillingMutation(request))return Response.json({error:"请求来源无效"},{status:403});
- const owner=await resolveUserEmail(request);if(!owner)return Response.json({error:"请先登录"},{status:401});
+ const owner=authenticatedActor===undefined?await resolveUserEmail(request):authenticatedActor;if(!owner)return Response.json({error:"请先登录"},{status:401});
  try{
   const parsed=imagegenRequestSchema.parse(await readImagegenJson(request)),saved=await readOriginalImagegenQuote(parsed,owner);
   // The quote owner validates the original contract once, without current repricing.
@@ -20,4 +20,4 @@ async function handlePost(request:Request){
  }
  catch(error){return Response.json({error:error instanceof Error?error.message:"无法预览计划",...(error instanceof ImagegenPlanError?{code:error.code}:{})},{status:error instanceof ImagegenPlanError?error.status:400});}
 }
-export async function POST(request:Request){return withCreationRoute(request,()=>handlePost(request));}
+export async function POST(request:Request){return withCreationRoute(request,authenticatedActor=>handlePost(request,authenticatedActor));}

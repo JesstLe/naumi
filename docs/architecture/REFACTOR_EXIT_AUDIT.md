@@ -1,6 +1,8 @@
 # 整体退出审计
 
-当前完整应用验收源码：`f0b30bc5e240e4e00118beb45c307bb0603bc047`。本轮完整固定App/SDK、core208、runtime177、产品浏览器92与450秒混合校验全部实际重跑，不复用旧147或旧827绿灯。**wholeGoal=ACTIVE；mainMerged=false；deployed=false；47 HOLD。**
+当前R8Z已修改5个产品文件：实际PG/原生认证/HTTP20用例33检查通过，入口认证与权益读取收敛；新完整209与镜像/运行/浏览器/性能仍待。下表既有完整结果只归f0b，不拼成当前候选通过。
+
+最近完整应用验收源码：`f0b30bc5e240e4e00118beb45c307bb0603bc047`。本轮完整固定App/SDK、core208、runtime177、产品浏览器92与450秒混合校验全部实际重跑，不复用旧147或旧827绿灯。**wholeGoal=ACTIVE；mainMerged=false；deployed=false；47 HOLD。**
 
 | 整体要求 | 当前证据 | 判定 |
 |---|---|---|

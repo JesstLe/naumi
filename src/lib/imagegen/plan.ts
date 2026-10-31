@@ -33,12 +33,12 @@ import {allows} from "../feature-access/catalog";
 import {assertCurrentCreationFeature} from "@/lib/saas/creation-access";
 export function imagegenFingerprint(request:ImagegenRequest){return createHash("sha256").update(JSON.stringify(imagegenRequestSchema.parse(request))).digest("hex");}
 export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{modelVersion:number;billingVersion:number}):Promise<ImagegenPlan>{
- await assertCurrentCreationFeature("/api/imagegen");
+ const featureAccess=await assertCurrentCreationFeature("/api/imagegen");
  const request=imagegenRequestSchema.parse(raw),skill=await resolveImageSkill(owner,request.skill),intent=resolveImagegenIntent({...request,useCase:request.useCase||skill?.useCase});
  const automaticRequested=request.ratioMode==='automatic'||!request.parameters.ratio||request.parameters.ratio==='auto';
  if(intent.conflicts.length)throw new ImagegenPlanError(intent.conflicts.join("；"));
  await assertCanvasRegeneration(owner,request);
- const access=await userFeaturePolicy(owner),imageAllowed=["generate","batchshot","variations","fuse"].some(id=>allows(access,id));
+ const access=featureAccess?.actorEmail===owner.toLowerCase()?featureAccess.policy:await userFeaturePolicy(owner),imageAllowed=["generate","batchshot","variations","fuse"].some(id=>allows(access,id));
  if(request.entry==="canvas"&&!allows(access,"canvas")||request.entry==="agent"&&!allows(access,"agent")||intent.operation!=="postprocess"&&!imageAllowed||intent.operation==="postprocess"&&!["canvas","works","generate"].some(id=>allows(access,id)))throw new FeatureAccessError("此图像功能尚未授权");
  if(intent.operation==="cutout"&&!allows(access,"cutout"))throw new FeatureAccessError("抠图功能尚未授权");
  if(request.output.format==="jpeg"&&(intent.background==="transparent"||!request.output.flattenColor))throw new ImagegenPlanError("JPEG不保留透明度，请选择PNG/WebP，或明确不透明背景和扁平化颜色");
