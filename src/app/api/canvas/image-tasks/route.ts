@@ -8,19 +8,23 @@ import { enqueueTextEditTask, listCanvasImageTasks, publicCanvasImageTask } from
 import { safeError } from "@/lib/api-error";
 import {billingErrorResponse} from "@/lib/billing/request";
 import {BillingError} from "@/lib/billing/types";
+import {withModelRequest} from "@/lib/model-config/requests";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function createSubmission(request: Request) {
-  const email = await authenticatedEmail(request);
+async function createSubmission(request: Request,authenticatedActor?:string|null) {
+  const email = authenticatedActor===undefined?await authenticatedEmail(request):authenticatedActor?.trim().toLowerCase()||null;
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   try {
     const body = await request.json();
     if (String(body?.kind || "text-edit") !== "text-edit") {
       return NextResponse.json({ error: "暂不支持该图片编辑任务" }, { status: 400 });
     }
-    const task = await enqueueTextEditTask(email, { ...body, quality: body.quality ?? request.headers.get("x-naumi-image-quality") ?? "medium" },request);
+    const task = await enqueueTextEditTask(email, { ...body, quality: body.quality ?? request.headers.get("x-naumi-image-quality") ?? "medium" },(modelBody,run)=>{
+      const effective=new Request("http://localhost/api/canvas/image-tasks",{method:"POST",headers:{...Object.fromEntries(request.headers.entries()),"content-type":"application/json"},body:JSON.stringify(modelBody)});
+      return withModelRequest(effective,run,email);
+    });
     return NextResponse.json({ ok: true, taskId: task.id, task: publicCanvasImageTask(task) }, { status: 202 });
   } catch (error) {
     if(error instanceof BillingError)return billingErrorResponse(error);
@@ -44,4 +48,4 @@ export async function GET(request: Request) {
   return NextResponse.json({ ok: true, tasks: tasks.map(publicCanvasImageTask) });
 }
 
-export async function POST(request:Request){const invalid = await canvasParameterError(request); if (invalid) return invalid; return withCreationRoute(request,()=>withBillingIntent(request,()=>createSubmission(request)));}
+export async function POST(request:Request){const invalid = await canvasParameterError(request); if (invalid) return invalid; return withCreationRoute(request,actor=>withBillingIntent(request,owner=>createSubmission(request,owner),actor));}

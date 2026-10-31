@@ -1,6 +1,14 @@
 # 重构工作区：当前交付快照
 
-## 当前推进：R9B 历史生成入口
+## 当前推进：R9C 报价与 Canvas 编辑边界
+
+[R9C模块](changes/2026-11-01-refactor-r9c-quote-canvas-boundary.md)把公共报价/报价保存、Canvas入口/intent/模型准备的身份统一到已认证actor；编辑任务用例不再接收或构造Request，HTTP/header/模型适配由入口承担，headless复用既有withModelOperation。保留输入校验→来源归属→模型准备→真实报价/预占顺序，没有新增确认/限额/缓存/schema。
+
+完整eb65基线5337raw文件与修改版实际原生HTTP/PG/Worker对照29场景59检查、正常投影EXACT：旧报价/编辑认证2～6次→1，headless0/列表1保持。真实lease领取、回环供应商1POST、私有结果像素读回、原价6/current17后只consume1/charge6，原任务重放、丢ACK和并发不重买。现有Request第三参验证调用方已迁到真实HTTP/领取路径，未保留Request重载。
+
+5093实际类型输入/tsc exit0、lint exit0；受影响集中回归与封装继续。该模块及后续目录212整版状态以本轮DELIVERY为准，不复用R8Z完整App/Worker结果。
+
+## 上一模块：R9B 历史生成入口
 
 [R9B 模块](changes/2026-11-01-refactor-r9b-legacy-generation-ingress.md)将历史generate-image的intent、BI、model、opaque quote、signed versions和领域actor/quote port贯穿同一个服务端身份。完整1efb基线5335raw文件与修改版实际native HMAC/HTTP/PG各38场景79检查，正常结果投影EXACT；旧提交4～7次认证、父轮询2次，修改后均1次，health仍0次（不含middleware）。保留原价6/当前17、真实预占和余额不足、丢失ACK后503→原intent409待核查、同编号并发一任务；没有新表、价格确认或跨请求缓存。
 
@@ -69,4 +77,4 @@ R9A固定验证源码 `9a52ba65b77e729ea724fceff66283c5f020e678`：pricing 11/11
 
 ## 入口迁移边界
 
-R8Z/R9A直接候选已由R9B历史轮询迁移收口；相同本地AST方法的59个creation/receipt wrapper现在9个消费actor、本地直接认证候选0。该盘点不覆盖所有跨文件适配，不能证明全部59个入口只认证一次。后续已定位公共`/api/billing/quote`（creation→quote/issue owner）与`/api/canvas/image-tasks`（creation→intent→authenticatedEmail/领域）仍存在间接身份解析；继续实际原生HTTP/PG对照，不按静态数字自动关闭。当前211完整固定验收、有效CI、最终main/生产门槛仍独立保留。
+R8Z/R9A直接候选由R9B历史轮询迁移收口；R9C继续迁移公共billing quote与canvas/image-tasks的间接链，并移除编辑用例Request边界。局部AST/调用链不是全站闭合；其他跨文件适配、当前212完整固定验收、有效CI、最终main/生产门槛仍独立保留。

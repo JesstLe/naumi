@@ -6,10 +6,9 @@ import {withFrozenCreation,frozenCreationScope,currentCreationContext} from "@/l
 import {creationTransaction,addCreationAssetTx} from './saas/creation-writer';
 import { currentModelExecution, currentExecutionBundle, runLegacyModelExecution, type ExecutionBundle } from "@/lib/model-config/context";
 import { withFrozenExecutionBundle } from "@/lib/model-config/execution";
-import {withModelRequest} from "@/lib/model-config/requests";
+import {withModelOperation} from "@/lib/model-config/requests";
 import {modelConfigurationEnabled} from "@/lib/model-config/availability";
 import {quoteForActor} from "@/lib/billing/quotation";
-import {assertQuotedVersion,requestQuoteConfirmation} from "@/lib/billing/request";
 import { resolveImageQuality, type ResolvedImageQuality } from "@/lib/image-quality";
 import { imageQualityCost, auditSettledImage } from "@/lib/image-quality-request";
 
@@ -95,19 +94,22 @@ function editSize(width: number, height: number) {
   return ratio > 1.2 ? "1536x1024" as const : ratio < 0.83 ? "1024x1536" as const : "1024x1024" as const;
 }
 
-export async function enqueueTextEditTask(email: string, raw: Partial<TextEditTaskInput>,request?:Request): Promise<CanvasImageTaskRow> {
+/** The caller may prepare the owned operation using its ingress adapter. No HTTP
+ * object enters the task use case; headless callers use the existing typed model API. */
+export type TextEditModelPreparation=<T>(body:Record<string,unknown>,run:()=>Promise<T>)=>Promise<T>;
+export async function enqueueTextEditTask(email: string, raw: Partial<TextEditTaskInput>,prepareModel?:TextEditModelPreparation): Promise<CanvasImageTaskRow> {
   if (!dbEnabled) throw new Error("后台图片任务需要数据库支持");
   const input = normalizedInput(raw);
   validateInput(input);
   const artwork = (await listArtworksByIds(email, [input.artworkId]))[0];
   if (!artwork) throw new Error("图片不存在或无权访问");
   if (!currentModelExecution("image") && await modelConfigurationEnabled()) {
-    const effective = new Request("http://localhost/api/canvas/image-tasks", { method: "POST", headers: { ...(request ? Object.fromEntries(request.headers.entries()) : {}), "content-type": "application/json" }, body: JSON.stringify({ ...raw, artworkId: artwork.id, resolution: artwork.resolution || "1K",ratio:canvasSourceFrameRatio(artwork) }) });
-    return withModelRequest(effective, () => enqueueTextEditTask(email, raw, request));
+    const body={...raw,artworkId:artwork.id,resolution:artwork.resolution||"1K",ratio:canvasSourceFrameRatio(artwork)};
+    const run=()=>enqueueTextEditTask(email,raw,prepareModel);
+    return prepareModel?prepareModel(body,run):withModelOperation({path:"/api/canvas/image-tasks",body,references:1},run);
   }
   const quality = resolveConfiguredImageQuality(input.quality);
   const billingQuote=await quoteForActor(email,{feature:"canvas.image",quantity:1,quality:quality.requested||"medium",resolution:artwork.resolution||"1K",ratio:canvasSourceFrameRatio(artwork)});
-  if(request)assertQuotedVersion(requestQuoteConfirmation(request,raw as {billingVersion?:unknown;billingCredits?:unknown}),billingQuote);
   const cost = billingQuote.requestedCredits;
   const operationId = String(input.operationId || "").trim();
   const id = operationId

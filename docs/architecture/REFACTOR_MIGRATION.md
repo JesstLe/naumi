@@ -264,6 +264,10 @@
 
 固定b796验证源pricing12/12通过，runner保持部分目录PARTIAL/exit2；5092类型输入/tsc exit0、lint exit0、四SCC0。独立副本原5335raw hash/38场景79检查恢复，later-edit零写；归档仅4文档桥接。本轮同步计数1，不写main、不发布。公共billing/quote与canvas/image-tasks仍有间接身份解析，不以本地AST直接候选0作为全站闭合。
 
+## R9C 公共报价与编辑用例
+
+[R9C记录](../changes/2026-11-01-refactor-r9c-quote-canvas-boundary.md)：quote准备/issue和intent复用入口actor；Canvas HTTP层组装原模型Request适配，任务用例仅接受actor、输入、typed准备port，headless使用withModelOperation；不再接收/构造Request或解析无效价格回显。输入/来源检查仍先于模型/quote读取，原Tx/lease/frozen/结果/账务owner保持。实际原/新29场景59检查含Worker领取、回环PNG/private像素读回、原价6/current17后consume1/charge6、原receipt/丢ACK/并发；正常投影EXACT。现存Request调用方与旧确认断言按当前协议迁移，不恢复已经删除的Agent门槛。
+
 ## 历史入口
 
 [收敛前的完整迁移流水](https://github.com/JesstLe/naumi/blob/82729161200f166fe587b98bceb756a44999840c/docs/architecture/REFACTOR_MIGRATION.md)保留。文档类改动不增加产品模块计数；后续代码每完成三模块普通同步主线，仍遵从 AGENTS。

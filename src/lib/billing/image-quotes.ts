@@ -15,9 +15,9 @@ type Row={id:string;owner:string;scope_key:string;quote:BillingQuote;expires_at:
 function scopeKey(){const c=currentCreationContext();return JSON.stringify([c?.scopeKind||"personal",c?.tenantId||null]);}
 
 /** Only opaque IDs leave the server; complete tariffs and cost facts remain private. */
-export async function issueImageBillingQuote(request:Request,quote:BillingQuote){
+export async function issueImageBillingQuote(request:Request,quote:BillingQuote,authenticatedActor?:string|null){
   if(!imageBillingFeature(quote.facts.feature)||!dbEnabled)return undefined;
-  const owner=await resolveUserEmail(request);if(!owner)throw new BillingError("INVALID_RESULT","请先登录",401);
+  const owner=authenticatedActor===undefined?await resolveUserEmail(request):authenticatedActor;if(!owner)throw new BillingError("INVALID_RESULT","请先登录",401);
   await ensureImageBillingQuotes();
   const row:Row={id:randomUUID(),owner:owner.toLowerCase(),scope_key:scopeKey(),quote:structuredClone(quote),expires_at:new Date(Date.now()+900000)};
   await getPool().query("INSERT INTO app_image_billing_quotes(id,owner,scope_key,quote,expires_at) VALUES($1,$2,$3,$4::jsonb,now()+interval '15 minutes')",[row.id,row.owner,row.scope_key,JSON.stringify(row.quote)]);

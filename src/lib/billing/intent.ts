@@ -29,13 +29,14 @@ export async function saveSubmissionReceipt(operationId:string,status:number,bod
 /** Durable submission receipt prevents a lost HTTP response creating a second job.
  * A crash without a receipt stays pending; existing domain recovery owns the task.
  */
-export async function withBillingIntent(request: Request, action: (authenticatedActor?:string|null) => Promise<Response>): Promise<Response> {
-    if (!dbEnabled || !request.headers.has("x-naumi-billing-operation-id") || imageWorkerAuthorized(request))
-        return action();
+export async function withBillingIntent(request: Request, action: (authenticatedActor?:string|null) => Promise<Response>, authenticatedActor?:string|null): Promise<Response> {
+    if (!dbEnabled) return action();
+    if (!request.headers.has("x-naumi-billing-operation-id") || imageWorkerAuthorized(request))
+        return action(authenticatedActor);
     if (!sameSiteBillingMutation(request))
         return billingJson({ error: "请求来源无效" }, 403);
     try {
-        const email = await resolveUserEmail(request);
+        const email = authenticatedActor===undefined?await resolveUserEmail(request):authenticatedActor;
         if (!email)
             return billingJson({ error: "请先登录" }, 401);
         await ensureSchema();

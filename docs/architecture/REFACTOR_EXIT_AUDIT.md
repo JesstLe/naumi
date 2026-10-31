@@ -1,5 +1,7 @@
 # 整体退出审计
 
+R9C当前推进：公共报价/Canvas编辑实际native HTTP/PG/Worker原/新29场景59检查，正常投影EXACT。用例Request依赖已移除，实际Request调用方迁移；原顺序/归属/冻结价/lease/像素/单次结算/原intent保持。5093类型输入/tsc、lint exit0；受影响集中回归及封装继续。最后完整应用证据仍是R8Z，不作当前212目录/镜像通过。
+
 R9B固定验证源b796：实际历史generate-image提交/轮询完整身份链原/新/回滚38场景79检查，旧4～7次/父2次认证→1次、health0，正常投影EXACT。pricing12/12执行通过但runner仍PARTIAL/exit2，未执行其余199项；5092类型输入/tsc exit0、lint exit0/37warning、四类SCC0；副本原5335raw hash与later-edit零写已核验。归档仅4文档桥接，不冒称归档SHA新执行。以下完整应用证据仍是R8Z历史固定源，不作为当前211目录或App/Worker通过。整体目标ACTIVE。
 
 最近完整应用验收源码（R8Z）：f7441ed0f9ae077f5d3f6fafb0f7c70b6d585567。完整App/SDK、core209、runtime177、产品浏览器92与450秒混合均为同固定源实际重跑，未复用旧208绿灯。R9A 的其余7路及BI身份归属在固定验证源9a52ba65完成39场景/90检查A/B、pricing11/11（PARTIAL/exit2，非完整210目录）、5091类型输入/tsc与lint exit0、四类SCC0、独立副本回滚5333原始哈希/原39/90行为与later-edit零写；原R8Z整版数字不作为R9A完整应用通过。**wholeGoal=ACTIVE；mainMerged=false；deployed=false；47 HOLD。**
@@ -27,4 +29,4 @@ R9B固定验证源b796：实际历史generate-image提交/轮询完整身份链�
 
 ## 入口迁移边界
 
-R9B迁移历史`/api/generate-image`轮询及其POST的intent/BI/model/quote身份链；相同本地AST方法59个wrapper中actor消费者8→9、本地直接认证候选1→0。公共billing quote与canvas image-tasks的跨文件identity链已定位为后续工作；不得宣称全部59个入口已唯一认证。R9A第三模块曾刷新并普通整合最新main（已包含、源码未变，计数3→0）；R9B为同步后第1模块，这不等于分支已合main。
+R9B迁移历史generate-image；R9C迁移公共quote与canvas编辑入口，任务用例通过typed准备port而非Request工作。不得把这些切片或本地AST候选0宣称为全部入口已唯一认证。R9A完成第三模块主线同步，R9B为其后第1模块、R9C为第2模块；下一功能模块后按规则再刷新/整合，这不是分支已合main。
