@@ -1,6 +1,6 @@
 # 整体退出审计
 
-当前完整应用验收源码：f7441ed0f9ae077f5d3f6fafb0f7c70b6d585567。完整App/SDK、core209、runtime177、产品浏览器92与450秒混合均为同固定源实际重跑，未复用旧208绿灯。**wholeGoal=ACTIVE；mainMerged=false；deployed=false；47 HOLD。**
+最近完整应用验收源码（R8Z）：f7441ed0f9ae077f5d3f6fafb0f7c70b6d585567。完整App/SDK、core209、runtime177、产品浏览器92与450秒混合均为同固定源实际重跑，未复用旧208绿灯。R9A 的其余 7 路身份归属已实际完成 39 场景/90 检查 A/B，集中回归/封装继续执行；R8Z 整版数字不作为 R9A 完整应用通过。**wholeGoal=ACTIVE；mainMerged=false；deployed=false；47 HOLD。**
 
 | 要求 | 当前证据 | 判定 |
 |---|---|---|
@@ -23,6 +23,6 @@
 
 本轮汇总门槛满足不代表每轮都变快：对照基线跨期p95有明显漂移，paired第2轮p50仍回退；p50沿原driver nearest-rank估计。不能把汇总约49%的降幅归因为本次改动的确定收益。逐轮原值/旧原始观测与归因不确定性均保留在PAIRED_VARIANCE_ASSESSMENT.json。
 
-## 尚待迁移的同类入口
+## 入口迁移边界
 
-静态AST盘点59个creation/receipt wrapper调用，本轮只有图片plan入口消费新actor参数；另有7个零参callback经本地handler直接认证的迁移候选（主图片提交/回执、取消、输入、批次回执/下载）。这不是运行事故证明，也不是已完成迁移；下一模块逐入口保留来源、身份、scope、UNKNOWN和原回执协议迁移验证。详见本轮INGRESS_MIGRATION_INVENTORY.json。
+R8Z 的 59 个 creation/receipt wrapper 调用含 plan 的 actor 消费者和 7 处直接 handler 认证候选。R9A 已迁移这 7 处，并将主提交的 BI 重复认证一并收敛；实际领域 HTTP 路径由 2/3 次变为各 1 次。其余入口的间接 BI/领域适配继续按调用链盘点；不得宣称全部 59 个入口已经迁移或全部认证读取只有一次。

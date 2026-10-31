@@ -15,9 +15,14 @@ import {withBiContext} from "./context";
 export async function withBiRequest<T extends Response>(
   request: Request,
   run: () => Promise<T>,
+  authenticatedActor?: string | null,
 ) {
+  // Only an owning server ingress supplies this value. Null is known anonymous;
+  // undefined keeps legacy callers' authentication (and no-DB behavior) intact.
   const email = dbEnabled
-    ? await resolveUserEmail(request).catch(() => null)
+    ? authenticatedActor === undefined
+      ? await resolveUserEmail(request).catch(() => null)
+      : authenticatedActor
     : null;
   if (!email) {
     if(request.headers.has(CONTINUATION_HEADER))return releaseError(new ReleaseRuntimeError("AGENT_CONTINUATION_FORGED",403)) as T;

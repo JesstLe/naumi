@@ -1,6 +1,10 @@
 # 重构工作区：当前交付快照
 
-## 当前候选与完整验收
+## 当前推进：R9A 图片入口身份归属
+
+[R9A 模块](changes/2026-11-01-refactor-r9a-image-ingress-routes.md)已迁移其余 5 个图片路由文件的 7 个处理器，并把主提交 BI 包装的身份来源统一到入口。完整 fe9d 基线与修改版实际 HTTP/native cookie/PG 对照各 39 场景、90 检查，正常响应/授权/原字节投影 EXACT；认证 SQL 从 `2/3/2/2/2/2/2` 变为 `1/1/1/1/1/1/1`。该计数不含 middleware。7 个产品文件变更，不改领域/钱包/供应商/schema。集中 pricing 回归与最终封装继续执行；最后完整应用/镜像证据仍是下列 R8Z，不复用为 R9A 完整验收。
+
+## 最近完整应用验收（R8Z）
 
 | 字段 | 值 |
 |---|---|
@@ -51,6 +55,6 @@
 
 本轮汇总门槛满足不代表每轮都变快：对照基线跨期p95有明显漂移，paired第2轮p50仍回退；p50沿原driver nearest-rank估计。不能把汇总约49%的降幅归因为本次改动的确定收益。逐轮原值/旧原始观测与归因不确定性均保留在PAIRED_VARIANCE_ASSESSMENT.json。
 
-## 尚待迁移的同类入口
+## 入口迁移边界
 
-静态AST盘点59个creation/receipt wrapper调用，本轮只有图片plan入口消费新actor参数；另有7个零参callback经本地handler直接认证的迁移候选（主图片提交/回执、取消、输入、批次回执/下载）。这不是运行事故证明，也不是已完成迁移；下一模块逐入口保留来源、身份、scope、UNKNOWN和原回执协议迁移验证。详见本轮INGRESS_MIGRATION_INVENTORY.json。
+R8Z 静态 AST 的 59 个 creation/receipt wrapper 调用中，图片 plan 先消费 actor，另 7 处直接 handler 认证由 R9A 完成迁移。其余入口的间接 BI/领域适配仍需按实际调用链盘点，不把这 7 处完成扩大为全部入口认证已唯一归属。状态、源与回滚见各模块 DELIVERY，不把静态清单当作线上事故归因。
