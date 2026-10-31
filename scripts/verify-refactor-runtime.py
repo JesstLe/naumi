@@ -6,6 +6,7 @@ manifest. Only new acceptance code is mounted; no runtime source is replaced.
 """
 from pathlib import Path
 import argparse, hashlib, json, subprocess, sys, time, uuid, shutil
+from verification.runtime_vectors import verified_timeline_vectors
 
 sys.stdout.reconfigure(encoding='utf8')
 root = Path.cwd().resolve()
@@ -99,6 +100,10 @@ try:
     for name, expected in identity['hashes'].items():
         if name.startswith(('src/', 'services/')) or name in ['scripts/direct-worker-pg-fixture.ts', 'scripts/model-config-unit-fixture.ts']:
             assert hashlib.sha256((root / name).read_bytes()).hexdigest() == expected, 'SOURCE_CHANGED ' + name
+    if args.suite == 'runtime':
+        vector_root = Path(args.timeline_vectors).resolve() if args.timeline_vectors else Path(args.image_manifest).resolve().parent.parent / 'core' / 'timeline-rules'
+        vector_proof = verified_timeline_vectors(vector_root, identity)
+        write('TIMELINE_VECTOR_INPUT.json', vector_proof)
     compile_js = """import {build} from 'esbuild';import fs from 'node:fs';import path from 'node:path';import {createHash} from 'node:crypto';
 const out=process.argv[1],entry=process.argv[2];const result=await build({entryPoints:[entry],outfile:out+'/fixture.cjs',bundle:true,metafile:true,platform:'node',target:'node24',format:'cjs',external:['pg','sharp'],alias:{'server-only':path.resolve('scripts/fleet-server-only.cjs')}});
 fs.writeFileSync(out+'/FIXTURE_SOURCE.json',JSON.stringify({hashes:Object.fromEntries(Object.keys(result.metafile.inputs).map(f=>[f,createHash('sha256').update(fs.readFileSync(f)).digest('hex')]))},null,2)+'\\n');console.log('RUNTIME_FIXTURE_COMPILE=PASS INPUTS='+Object.keys(result.metafile.inputs).length);"""
@@ -134,14 +139,10 @@ fs.writeFileSync(out+'/FIXTURE_SOURCE.json',JSON.stringify({hashes:Object.fromEn
 
 
     if args.suite == 'runtime':
-        vector_root = Path(args.timeline_vectors).resolve() if args.timeline_vectors else Path(args.image_manifest).resolve().parent.parent / 'core' / 'timeline-rules'
-        core = json.loads((vector_root.parent / 'REPORT.json').read_text(encoding='utf8'))
-        assert core['status'] == 'PASS' and core['source']['commit'] == identity['commit'] and core['source']['digest'] == identity['digest'], 'TIMELINE_VECTORS_SOURCE_MISMATCH'
-        vector = json.loads((vector_root / 'result.json').read_text(encoding='utf8'))
-        assert vector['realFfmpeg'] and vector['existingEngineVirtualCommand'], 'TIMELINE_CORE_VECTORS_REQUIRED'
         timeline_inputs = out / 'timeline-inputs'; timeline_inputs.mkdir()
-        for filename in ['result.json', 'red.mp4', 'blue.mp4', 'music.wav', 'green.png']:
+        for filename, expected in vector_proof['fileHashes'].items():
             shutil.copyfile(vector_root / filename, timeline_inputs / filename)
+            assert hashlib.sha256((timeline_inputs / filename).read_bytes()).hexdigest() == expected, 'TIMELINE_VECTOR_CHANGED ' + filename
 
     common = {'DATABASE_URL': 'postgresql://fixture:fixture-local-only@db:5432/naumi_runtime_fixture_r6b?sslmode=disable', 'PGOPTIONS': '-c search_path=' + schema,
               'NAUMI_VERIFY_ISOLATED_DB': '1', 'SETTINGS_SECRET': 'r6b-isolated-settings-fixture-only-20261026', 'MODEL_CONFIG_ENVELOPE_SECRET': 'r6b-isolated-envelope-fixture-only',

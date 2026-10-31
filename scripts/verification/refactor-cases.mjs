@@ -213,6 +213,7 @@ export const refactorCases=[
  ts('worker-media','runtime','scripts/verify-worker-media-integration-pg.ts','WORKER_MEDIA_INTEGRATION=PASS MODE=MODIFIED'),
  ts('worker-receipts','runtime','scripts/verify-worker-tick-receipts.ts','WORKER_TICK_RECEIPTS=PASS'),
  {id:'recovery-supervisor',group:'runtime',file:'scripts/ops/test_release47_recovery_supervisor.py',args:['-v'],expect:'OK',pg:false,python:true},
+ {id:'runtime-vector-contract',group:'runtime',file:'scripts/verify-refactor-runtime-vector-contract.py',args:[],expect:'RUNTIME_VECTOR_CONTRACT=PASS',pg:false,python:true},
  node('direct-worker-unit','runtime','scripts/verify-direct-worker-runtime.mjs','# fail 0',['--test-runner']),
  node('worker-unit','runtime','scripts/test-worker-runtime.mjs','# fail 0',['--test-runner']),
  node('worker-process','runtime','scripts/verify-worker-handoff.mjs','WORKER_HANDOFF_PROCESS=PASS'),
