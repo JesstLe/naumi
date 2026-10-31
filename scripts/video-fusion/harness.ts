@@ -204,10 +204,22 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
         if(!url.startsWith("/")||url.startsWith("//"))throw new Error("Fixture requests must stay in the fixture app");
         // Inspection/control HTTP must not inherit an idle socket from the App
         // process deliberately killed by restart tests. Browser traffic and the
-        // real unknown-acceptance requests keep their original transport. Each
-        // call below is still exactly one request: never retry a POST here.
+        // real unknown-acceptance requests keep their original transport. Only
+        // read-side transport failures may retry the same actor/URL/deadline.
+        // HTTP errors and every mutating method remain exactly one request.
         let response:Response;
-        try{response=await fetch(baseUrl+url,{method,headers:{connection:"close",cookie:seed.cookies[account],...(body!==undefined?{"content-type":"application/json"}:{}),"x-naumi-billing-operation-id":String((body as {idempotencyKey?:string})?.idempotencyKey||randomUUID())},...(body!==undefined?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(90_000)});}
+        try{
+          const init={method,headers:{connection:"close",cookie:seed.cookies[account],...(body!==undefined?{"content-type":"application/json"}:{}),"x-naumi-billing-operation-id":String((body as {idempotencyKey?:string})?.idempotencyKey||randomUUID())},...(body!==undefined?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(90_000)};
+          for(let attempt=0;;attempt++){
+            try{init.signal.throwIfAborted();response=await fetch(baseUrl+url,init);break;}
+            catch(error){
+              const code=(error as {cause?:{code?:string}})?.cause?.code;
+              if(method!=="GET"||init.signal.aborted||attempt>=4||!['ECONNRESET','ECONNREFUSED','EPIPE','UND_ERR_SOCKET'].includes(code||''))throw error;
+              logs.push(`fixture-control: GET ${url} transport ${code}; retry same read ${attempt+1}`);
+              await new Promise(resolve=>setTimeout(resolve,250*(attempt+1)));
+            }
+          }
+        }
         catch(error){logs.push(`fixture-control: ${method} ${url} transport failed: ${String(error)}`);throw new Error(`Fixture HTTP ${method} ${url} transport failed`,{cause:error});}
         const type=response.headers.get("content-type")||"";
         const data=type.includes("application/json")?await response.json():await response.arrayBuffer();

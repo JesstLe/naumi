@@ -6,6 +6,7 @@ const node=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:false,
 export const refactorCases=[
  node('native-fixture-lifecycle','runtime','scripts/verify-native-fixture-lifecycle.cjs','NATIVE_FIXTURE_LIFECYCLE=PASS'),
  node('native-fixture-memory','runtime','scripts/verify-native-fixture-memory.cjs','NATIVE_FIXTURE_MEMORY=PASS'),
+ node('native-fixture-http','runtime','scripts/verify-native-fixture-http.cjs','NATIVE_FIXTURE_HTTP=PASS'),
  node('mixed-load-driver','foundation','scripts/verify-refactor-mixed.mjs','REFACTOR_MIXED_DRIVER=PASS'),
  {id:'image-scheduling-pg',group:'runtime',file:'scripts/verify-image-scheduling-pg.cjs',args:[],expect:'IMAGE_SCHEDULING_PG=PASS',pg:true,tsx:false},
  node('dependencies','foundation','scripts/verify-dependency-compatibility.mjs','DEPENDENCY_COMPATIBILITY=PASS'),

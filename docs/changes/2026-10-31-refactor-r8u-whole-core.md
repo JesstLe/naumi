@@ -23,3 +23,13 @@
 首轮固定f4f7ca1d：144PASS/1FAIL/59NOT_RUN、exit1；timeline-native-canvas在真实浏览器reload时报ERR_CONNECTION_REFUSED。实际runtime日志明确记录Next内存阈值重启；原Next trace给出heapSizeLimit=3422552064、heapUsed=2746542288，超过实际框架80%阈值。这是本轮3GiB预算过小造成的引入问题，不归为旧harness故障或业务通过。原报告、日志、trace和cleanup全部保留。
 
 4GiB校准保留实际Next重启保护，覆盖该观测负载，不移除用例、放宽业务断言、增加超时或重放供应商请求。新增控制执行实际Next重启判断表达式，确认原3GiB观测会触发、4GiB真实Node堆回执有余量；固定生产fixture环境仍EXACT。先定向执行原失败timeline完整浏览器链，再进行新的完整core。控制不替代真实链路，更不当生产容量验收。
+
+## 第二轮结果与读取端修正
+
+19d660ea的4GiB定向timeline真实浏览器链通过，但runtime仍有1条Next dev重启警告，不能说零重启。完整第二轮仍144PASS/1FAIL/59NOT_RUN，失败点推进到Graph lifecycle；浏览器pageErrors为空，检测端`expect.poll`回调中的原timeline列表GET因ECONNRESET立即抛出，未等到开发服务重启完成。两轮均保留FAIL，不把定向通过当整体关闭，不再继续加堆预算。
+
+现有harness.request承担检测端HTTP边界，浏览器和真实unknown-acceptance请求不变。只对GET的ECONNRESET/ECONNREFUSED/EPIPE/UND_ERR_SOCKET，最多5次重读；使用同一个账号、URL、headers、operation ID及原90秒AbortSignal，总期限不增长。POST/PATCH/DELETE始终一次；HTTP400/402/403/404/409/429/500/503、非网络异常、JSON/响应体读取错误保持可见，不重试或伪造未受理。期限到达、持续失败仍抛出原错误，不创建新任务或重新生成。
+
+该修正针对检测端在真实Next dev重启期间读取持久状态的生命周期，不修改产品执行语义。新增实际方法投影对照，保留所有原业务/浏览器断言。内存控制的整段harness一致性检查现在明确排除两个有意改动的owner（appEnv与单独验收的HTTP方法），不继续声称HTTP方法逐字节不变。
+
+记录层问题也如实保留：首轮聚合stdout被第二轮ignored driver复用日志名覆盖，首轮145条原用例日志/REPORT/Next trace/cleanup/原命令均已逐hash保留；第二轮完整聚合已在实际进程退出后移到CORE_FINAL.log并修正命名。最初只按ParentPID遍历误纳入旧Docker进程的只读快照已标无效，不曾发信号或修改资源；所有后续归属核查要求创建时间关系。辅助元数据曾错误要求零Next警告，实际改记1条；首份类型输入清单未保存即被后续采集替换，原TSC日志保留，不作旧输入hash桥接。当前真实失败与这些记录问题分开，不据此洗绿。
