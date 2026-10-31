@@ -126,7 +126,7 @@ async function parseParams(request: Request): Promise<GenParams | null> {
   };
 }
 
-async function handleObservedPost(request: Request) {
+async function handleObservedPost(request: Request, authenticatedActor?:string|null) {
   if(imageWorkerAuthorized(request)){
     const body=await request.json();
     if(typeof body.workerJobId!=="string")return NextResponse.json({error:"无效任务"},{status:400});
@@ -136,39 +136,40 @@ async function handleObservedPost(request: Request) {
   try{input=await parseParams(request);}catch{return NextResponse.json({error:"请求格式不正确"},{status:400});}
   if(!input)return NextResponse.json({error:"请求格式不正确"},{status:400});
   const result=await submitGeneration(input,{
-    actor:()=>dbEnabled?resolveUserEmail(request):Promise.resolve(null),
+    actor:()=>dbEnabled?(authenticatedActor===undefined?resolveUserEmail(request):Promise.resolve(authenticatedActor)):Promise.resolve(null),
     ip:clientIp(request),featureModel:request.headers.get("x-naumi-feature-model"),
-    quote:(facts,options)=>quoteForRequest(request,facts,undefined,options),
+    quote:(facts,options)=>quoteForRequest(request,facts,undefined,options,authenticatedActor),
   });
   return NextResponse.json(result.body,{status:result.status});
 }
 
-async function handleGet(request:Request){
+async function handleGet(request:Request,authenticatedActor?:string|null){
   const params=new URL(request.url).searchParams;
-  const result=await readGeneration({active:params.has("active"),jobId:params.get("job"),actor:()=>resolveUserEmail(request)});
+  const result=await readGeneration({active:params.has("active"),jobId:params.get("job"),actor:()=>authenticatedActor===undefined?resolveUserEmail(request):Promise.resolve(authenticatedActor)});
   return NextResponse.json(result.body,{status:result.status,headers:result.headers});
 }
 
 export async function GET(request:Request){
   if(new URL(request.url).searchParams.get("job")?.startsWith("imagegen-")){
     const {withCreationReceiptRoute}=await import("@/lib/saas/creation-context");
-    return withCreationReceiptRoute(request,()=>handleGet(request));
+    return withCreationReceiptRoute(request,actor=>handleGet(request,actor));
   }
   return handleGet(request);
 }
 
-async function createSubmission(request: Request) {
-  return withBiRequest(request, () => handleObservedPost(request));
+async function createSubmission(request: Request,authenticatedActor?:string|null) {
+  return withBiRequest(request, actor => handleObservedPost(request,actor), authenticatedActor);
 }
 
 export async function POST(request:Request){
   const invalid = currentImagegenStep()?null:await canvasParameterError(request); if (invalid) return invalid;
   // Keep the original fingerprint for idempotent receipts. Only a new accepted action
   // resolves its frame, before withBiRequest freezes the model/price facts.
-  return withBillingIntent(request,async()=>{
+  return withBillingIntent(request,async authenticatedActor=>{
     if (currentImagegenStep() || imageWorkerAuthorized(request)) return createSubmission(request);
-    if (dbEnabled && !await resolveUserEmail(request)) return NextResponse.json({error:"请先登录后再生成"},{status:401});
-    try { return createSubmission(await normalizeLegacyFrameRequest(request)); }
+    const actor=authenticatedActor===undefined?(dbEnabled?await resolveUserEmail(request):null):authenticatedActor;
+    if (dbEnabled && !actor) return NextResponse.json({error:"请先登录后再生成"},{status:401});
+    try { return createSubmission(await normalizeLegacyFrameRequest(request),actor); }
     catch (error) { if(error instanceof LegacyFrameError)return NextResponse.json({error:error.message,code:"REFERENCE_FRAME_INVALID"},{status:400});throw error; }
   });
 }

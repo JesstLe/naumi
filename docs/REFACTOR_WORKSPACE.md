@@ -1,10 +1,16 @@
 # 重构工作区：当前交付快照
 
-## 当前推进：R9A 图片入口身份归属
+## 当前推进：R9B 历史生成入口
+
+[R9B 模块](changes/2026-11-01-refactor-r9b-legacy-generation-ingress.md)将历史generate-image的intent、BI、model、opaque quote、signed versions和领域actor/quote port贯穿同一个服务端身份。完整1efb基线5335raw文件与修改版实际native HMAC/HTTP/PG各38场景79检查，正常结果投影EXACT；旧提交4～7次认证、父轮询2次，修改后均1次，health仍0次（不含middleware）。保留原价6/当前17、真实预占和余额不足、丢失ACK后503→原intent409待核查、同编号并发一任务；没有新表、价格确认或跨请求缓存。
+
+7个产品文件完成显式参数迁移；全项目5092实际类型输入/tsc exit0、lint exit0。集中受影响回归与副本封装继续执行；最后完整应用验收仍是R8Z，不把本模块通过扩展为完整211目录或当前App/Worker通过。
+
+## 上一模块：R9A 图片入口身份归属
 
 [R9A 模块](changes/2026-11-01-refactor-r9a-image-ingress-routes.md)已迁移其余 5 个图片路由文件的 7 个处理器，并把主提交 BI 包装的身份来源统一到入口。完整 fe9d 基线与修改版实际 HTTP/native cookie/PG 对照各 39 场景、90 检查，正常响应/授权/原字节投影 EXACT；认证 SQL 从 `2/3/2/2/2/2/2` 变为 `1/1/1/1/1/1/1`。该计数不含 middleware。7 个产品文件变更，其他 2134 个原 src/services 文件 raw hash 不变，不改领域/钱包/供应商/schema。
 
-本模块固定验证源码 `9a52ba65b77e729ea724fceff66283c5f020e678`：pricing 11/11 脚本通过、0失败、0未运行、0复用；runner 因部分目录返回 **PARTIAL/exit2**。目录现有210项，其余199项没有在本轮重新执行。全项目5091实际类型输入一致/tsc exit0、lint exit0/37既有warning、四类SCC=0。独立副本恢复5333原始哈希及39/90原行为，later-edit首写前拒绝/零写。最终归档源码与本固定验证源之间仅文档更新，见本轮DELIVERY/source bridge；下列R8Z完整应用/镜像证据不作为R9A完整验收。
+R9A固定验证源码 `9a52ba65b77e729ea724fceff66283c5f020e678`：pricing 11/11 脚本通过、0失败、0未运行、0复用；runner 因部分目录返回 **PARTIAL/exit2**。R9A时目录210项，其他199项未在该轮重新执行。该轮5091实际类型输入一致/tsc exit0、lint exit0/37既有warning、四类SCC=0。独立副本恢复5333原始哈希及39/90原行为，later-edit首写前拒绝/零写。归档1efb与该验证源仅文档更新；不是R9B源码执行结果。
 
 第三功能模块后已刷新 origin/main `e2f562556ea6e71370619686e1fc8d4c634ef5e7` 并执行普通整合（已包含，源码不变），modulesSinceSync 3→0；没有修改或推送 main。当前封装与实际命令归 `output/refactor-r9a-20261101`。
 
@@ -61,4 +67,4 @@
 
 ## 入口迁移边界
 
-R8Z 静态 AST 的 59 个 creation/receipt wrapper 调用中，图片 plan 先消费 actor，另 7 处直接 handler 认证由 R9A 完成迁移。R9A 扩展盘点含本地函数/动态 import：actor消费者1→8、本地认证候选8→1，剩余 `/api/generate-image` 历史imagegen轮询适配；其他跨文件 BI/领域身份适配仍待核查。两次盘点方法不同，不把迁移7处扩大为全部59个入口认证已唯一归属，也不把静态清单当线上事故归因。
+R8Z/R9A直接候选已由R9B历史轮询迁移收口；相同本地AST方法的59个creation/receipt wrapper现在9个消费actor、本地直接认证候选0。该盘点不覆盖所有跨文件适配，不能证明全部59个入口只认证一次。R9B还贯穿了不在该wrapper统计中的历史POST完整链；其余quote/canvas/领域适配继续按实际原生HTTP/PG证据核查，不按静态数字自动关闭。

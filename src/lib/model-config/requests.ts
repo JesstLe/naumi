@@ -51,7 +51,7 @@ function purposeFor(path: string): { image?: ModelBinding; text?: ModelBinding; 
   if (path.includes("suite") || path.includes("aplus")) return { image: "image.generate", text: "text.generate", vision: "vision.reference", primary: "image" };
   return { image: path.includes("cutout") ? "image.cutout" : path.includes("generate-image") ? "image.generate" : "image.edit", primary: "image" };
 }
-export async function withModelRequest<T>(request: Request, run: () => Promise<T>): Promise<T> {
+export async function withModelRequest<T>(request: Request, run: () => Promise<T>, authenticatedActor?:string|null): Promise<T> {
   const domainPath=new URL(request.url).pathname;
   // Imagegen owns nested parameters, input authorization, planning and frozen
   // execution. A generic image scope here reads top-level defaults (1K/1:1)
@@ -67,7 +67,7 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     // Expand inherits the owned artwork's resolution in its handler. Freeze
     // that same selection before channel admission and price confirmation.
     const {resolveUserEmail} = await import("../admin-auth");
-    const email = await resolveUserEmail(request);
+    const email = authenticatedActor===undefined?await resolveUserEmail(request):authenticatedActor;
     if (email) {
       const {listArtworksByIds} = await import("@/lib/artworks/repository");
       const artwork = (await listArtworksByIds(email, [parsed.body.artworkId]))[0];
@@ -79,7 +79,7 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
   }
   return runModelOperation({path:domainPath,body:parsed.body,references:parsed.references,
     featureModel:request.headers.get("x-naumi-feature-model"),quality:request.headers.get("x-naumi-image-quality"),textModel:request.headers.get("x-naumi-text-model"),
-    quote:await imageBillingQuoteForRequest(request),versions:await acceptedModelVersions(request)},run);
+    quote:await imageBillingQuoteForRequest(request,authenticatedActor),versions:await acceptedModelVersions(request,authenticatedActor)},run);
 }
 
 /** Trusted operation facts, already authenticated by the owning entry. Never accepts HTTP-supplied snapshots. */

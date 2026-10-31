@@ -175,6 +175,7 @@ export const refactorCases=[
  ts('quote-intent','pricing','scripts/verify-imagegen-quote-intent.ts','IMAGEGEN_QUOTE_INTENT=PASS MODE=MODIFIED'),
  ts('image-ingress','pricing','scripts/verify-imagegen-ingress-ownership.ts','IMAGEGEN_INGRESS_OWNERSHIP=PASS'),
  ts('image-ingress-routes','pricing','scripts/verify-imagegen-ingress-routes.ts','IMAGEGEN_INGRESS_ROUTES=PASS'),
+ ts('legacy-generation-ingress','pricing','scripts/verify-legacy-generation-ingress.ts','LEGACY_GENERATION_INGRESS=PASS'),
  ts('frozen-quote-pg','pricing','scripts/verify-imagegen-frozen-quote-pg.ts','SIMPLIFY_MODIFIED=PASS',['--simplify']),
  ts('delivery','generation','scripts/verify-image-delivery-continuation.ts','IMAGE_DELIVERY_CONTINUATION=PASS'),
  ts('completed-parent','generation','scripts/verify-completed-parent-entry-pg.ts','COMPLETED_PARENT_ENTRY=PASS'),

@@ -31,14 +31,17 @@ export async function quoteForRequest(request: Request, input: Partial<BillingFa
     feature: BillingFacts["feature"];
     quantity: number;
     ratio?: string;
-},frozenSnapshot?:ConfigSnapshot,options?:{allowResolutionFallback?:boolean;deferImageFrame?:boolean}) {
+},frozenSnapshot?:ConfigSnapshot,options?:{allowResolutionFallback?:boolean;deferImageFrame?:boolean},authenticatedActor?:string|null) {
+    // The owning HTTP ingress may pass its server-authenticated actor. This is
+    // call-local, never read from client data or cached across requests.
+    const actor=()=>authenticatedActor===undefined?resolveUserEmail(request):Promise.resolve(authenticatedActor);
     // Only an in-process, server-owned imagegen step can supply this quote.
     // Keep the complete tariff/facts used at preview, not just its version or
     // credits: metering and recharge changes must not reprice an accepted plan.
     if(currentImagegenStep()?.billing){
-        return quoteForImagegenStep(await resolveUserEmail(request),request.headers.get("x-naumi-billing-operation-id"),Number(request.headers.get("x-naumi-billing-version")),input)!;
+        return quoteForImagegenStep(await actor(),request.headers.get("x-naumi-billing-operation-id"),Number(request.headers.get("x-naumi-billing-version")),input)!;
     }
-    const browserQuote=await imageBillingQuoteForRequest(request);
+    const browserQuote=await imageBillingQuoteForRequest(request,authenticatedActor);
     if(browserQuote){
         assertImageBillingSelection(browserQuote,input);
         // Old estimates did not select a frame. Resolve that missing input from
@@ -53,5 +56,5 @@ export async function quoteForRequest(request: Request, input: Partial<BillingFa
         return browserQuote;
     }
     const snapshot = frozenSnapshot??currentModelBillingSnapshot()??await billingSnapshot();
-    return prepareActorQuote(requestSelection(request,dbEnabled?await resolveUserEmail(request):null),input,snapshot,options);
+    return prepareActorQuote(requestSelection(request,dbEnabled?await actor():null),input,snapshot,options);
 }

@@ -29,7 +29,7 @@ export async function saveSubmissionReceipt(operationId:string,status:number,bod
 /** Durable submission receipt prevents a lost HTTP response creating a second job.
  * A crash without a receipt stays pending; existing domain recovery owns the task.
  */
-export async function withBillingIntent(request: Request, action: () => Promise<Response>): Promise<Response> {
+export async function withBillingIntent(request: Request, action: (authenticatedActor?:string|null) => Promise<Response>): Promise<Response> {
     if (!dbEnabled || !request.headers.has("x-naumi-billing-operation-id") || imageWorkerAuthorized(request))
         return action();
     if (!sameSiteBillingMutation(request))
@@ -42,7 +42,7 @@ export async function withBillingIntent(request: Request, action: () => Promise<
         const operationId=operationIdFor(request),path=new URL(request.url).pathname,identity=await billingRequestIdentity(request);
         const previous=await claimSubmission({operationId,email,path,hash:identity.hash});
         if(previous)return billingJson(previous.body,previous.status);
-        const response = await action(), body = await response.clone().json().catch(() => null);
+        const response = await action(email), body = await response.clone().json().catch(() => null);
         await saveSubmissionReceipt(operationId,response.status,body);
         return response;
     }

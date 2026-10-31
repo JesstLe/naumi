@@ -24,11 +24,11 @@ export async function issueImageBillingQuote(request:Request,quote:BillingQuote)
   return {id:row.id,expiresAt:new Date(row.expires_at).toISOString()};
 }
 /** This is an owner/scope-bound server quote, not a client version/amount assertion. */
-export async function imageBillingQuoteForRequest(request:Request):Promise<BillingQuote|undefined>{
+export async function imageBillingQuoteForRequest(request:Request,authenticatedActor?:string|null):Promise<BillingQuote|undefined>{
   const id=request.headers.get("x-naumi-image-quote");if(!id)return undefined;
   const invalid=()=>new ModelConfigError("IMAGE_QUOTE_INVALID","本次报价凭据与账号或工作空间不符",400);
   if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id))throw invalid();
-  const owner=await resolveUserEmail(request);if(!owner)throw invalid();await ensureImageBillingQuotes();
+  const owner=authenticatedActor===undefined?await resolveUserEmail(request):authenticatedActor;if(!owner)throw invalid();await ensureImageBillingQuotes();
   const row:Row|undefined=dbEnabled?(await getPool().query("SELECT *,expires_at<=now() expired FROM app_image_billing_quotes WHERE id=$1 AND owner=$2",[id,owner.toLowerCase()])).rows[0]:undefined;
   if(!row||row.owner!==owner.toLowerCase()||row.scope_key!==scopeKey()||!imageBillingFeature(row.quote.facts.feature))throw invalid();
   // This opaque, owner-bound record freezes a price for the same input. Its
