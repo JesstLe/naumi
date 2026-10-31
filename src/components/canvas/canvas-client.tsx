@@ -2028,7 +2028,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   function focusEditableCanvasArea(area:{x:number;y:number;width:number;height:number}){
     viewControls.capture(canvasArtworkDocument.scope).area(area);
   }
-  function focusCanvasNode(id:string){viewControls.focusNode(id);}
+  function focusCanvasNode(id:string,project?:string){viewControls.focusNode(id,project);}
   function createCanvasNode(kind:CanvasCreatableNodeKind,point=centerScreen()){
     dispatchCanvasNodeCreation(kind,point,{readOnly,canVideo:()=>canFeature("video"),actions:{
       timeline:createTimelineNode,audio:createAudioNode,scene:createSceneNode,character:createCharacterNode,director:createDirectorNode,

@@ -9,7 +9,7 @@ type Options={flow:RefObject<ReactFlowInstance|null>;area:RefObject<HTMLElement|
 
 export function useCanvasViewControls(options:Options){
   const latest=useRef(options);latest.current=options;
-  const [nodeFocus,setNodeFocus]=useState<{id:string|null;revision:number}>({id:null,revision:0});
+  const [nodeFocus,setNodeFocus]=useState<{id:string|null;revision:number;request?:{current:()=>boolean}}>({id:null,revision:0});
   function clearNodeFocus(){setNodeFocus(current=>current.id===null?current:{...current,id:null});latest.current.onNavigate?.();}
   const navigation=useRef<ReturnType<typeof createCanvasViewNavigation>|null>(null);
   if(!navigation.current)navigation.current=createCanvasViewNavigation({
@@ -21,10 +21,15 @@ export function useCanvasViewControls(options:Options){
   const navigationRevision=owner.navigationRevision;
   // A view replacement must not re-run an old ID against a same-ID node in the
   // new view. Keep the request's revision rather than adopting the latest one.
-  const currentNodeFocus=nodeFocus.revision===navigationRevision.current&&!options.browsing&&(!options.scope||options.scope.viewCurrent())?nodeFocus:{...nodeFocus,id:null};
+  const currentNodeFocus={id:(nodeFocus.request?nodeFocus.request.current():nodeFocus.revision===navigationRevision.current)&&!options.browsing&&(!options.scope||options.scope.viewCurrent())?nodeFocus.id:null,revision:nodeFocus.revision};
   useEffect(()=>{owner.mount();return()=>owner.dispose();},[owner]);
   function cancelFocus(){owner.cancel();clearNodeFocus();}
-  function focusNode(id:string){cancelFocus();setNodeFocus({id,revision:navigationRevision.current});}
+  function focusNode(id:string,project?:string|null){
+    const scope=latest.current.scope;
+    if(!scope){cancelFocus();setNodeFocus({id,revision:navigationRevision.current});return;}
+    const request=owner.capture(scope).nodeFocus(project===undefined?scope.project:project);
+    if(request)setNodeFocus({id,revision:request.revision,request});
+  }
   function completeNodeFocus(update:string|null|((id:string|null)=>string|null)){setNodeFocus(current=>{const id=typeof update==="function"?update(current.id):update;return id===current.id?current:{...current,id};});}
   const [tool,setTool]=useState<CanvasPrimaryTool>("move"),[showMinimap,setShowMinimap]=useState(false),[snapGrid,setSnapGrid]=useState(false);
   const [lightCanvas,setLightCanvas]=useState(true);

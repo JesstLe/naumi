@@ -8,7 +8,7 @@
 
 ## 公共接口、依赖方向、状态归属
 
-- `canvas/view-navigation` 是纯调度 owner：复用一个 `navigationRevision`，拥有视图绑定、至多一个待执行 frame/timer 意图及其取消。公开 `bind`、`capture(scope).area/fitNodes`、`cancel`、`mount/dispose`；不拥有节点、历史、任务或账务。
+- `canvas/view-navigation` 是纯调度 owner：复用一个 `navigationRevision`，拥有视图绑定、至多一个待执行 frame/timer 意图及其取消。公开 `bind`、`capture(scope).area/fitNodes/nodeFocus`、`cancel`、`mount/dispose`；不拥有节点、历史、任务或账务。
 - 捕获对象使用实际 `CanvasDocumentScope` 身份。原意图只能交给紧接着的一次指定目标项目；手动导航、其他中间视图、项目 ABA、账号/工作空间变化或卸载会退休它。文档写入仍由原 document/history owner 完成，视图退休不回滚已完成的文档。
 - `canvas/view-controls` 只拥有原区域可见性/中心/缩放纯几何；不降低既有 zoom，不加规格档位或业务限制。
 - `use-canvas-view-controls` 连接浏览器时钟、Flow 和 React 生命周期，拥有显式节点定位状态与请求 revision；视图替换不把旧 ID 重新解释为新意图。`use-canvas-viewport-focus` 保留原几何、双 RAF 和 280ms 动画，只接收新增请求 revision。
@@ -39,3 +39,14 @@
 
 
 首轮固定5fb6完整core为38PASS/1FAIL/149NOT_RUN，project-navigation旧夹具在深链时缺少页面新focusCanvasNode端口；实际pageerror明确ReferenceError。只向夹具提供viewControls.focusNode记录端口并编译实际页面薄adapter，不恢复旧产品state，不删原八类深链/选择/账号/工作空间断言。原报告、exit1及自有PG清理保留。5fb6完整镜像真实产品双browser92检查通过（原31图ZIP字节、7笔42积分fixture、POSIX排空及自有栈清理），仅归5fb6固定源；最终更正后的完整core/镜像/产品均重新绑定源码，不拼接旧通过。
+
+
+## 正向深链交接修正（不借旧绿灯封版）
+
+53236002完整core188及同镜像双browser92均通过，但补入实际project-navigation hook+view-controls+document scope的组合正例后，真实复现新目标项目定位丢失。原因是原navigation controller先select/focus再open，节点定位不能只以“当前view revision相等”判定；该绿灯没有覆盖这一正向跨项目交接，不能作为最终退出。
+
+显式定位现在由同一个纯view owner签发目标项目ticket，节点ID仍归React hook；project-navigation只向现有focus port附带它已解析出的目标project，不改select/open/浏览器history顺序或文档。正常当前项目定位、新链接首次/迟到目录导航可交给紧接着的目标view；手动导航、别的view/ABA、账号/workspace变化仍退休ticket。区域/Fit继续原不在浏览态调度规则，没有另造epoch/store/事件总线或延迟重试。
+
+独立当前源码投影先验证19项实际React组合：保留15项旧断言，新增实际导航hook的即时/迟到目录正例和目标采纳前manual/中间view反例，全部通过。投影结果只归投影；应用到工作区后会重新固定、完整类型/core/同镜像runtime/browser，不借532的188/92替代新源码验收。旧完整报告与失败deep-link-repro保留。
+
+实际工作区完整模块预检已通过：全TypeScript exit0、lint38既有warning/exit0、正常18组/36检查精确对照且迟到写入0、19项实际React组合（含实际navigation hook）和原30项project-navigation全部通过。随后固定新源码执行全新188与同镜像runtime/browser，先前532的绿灯保留但不复用。

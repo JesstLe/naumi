@@ -4,7 +4,7 @@ export type CanvasProjectView={activeKey:string|null;browsing:boolean;creatingNe
 type Pending={id:string;select:boolean;focus:boolean};
 type Ports={
  current:()=>boolean;storage:Pick<Storage,'getItem'|'setItem'|'removeItem'>;
- push:()=>void;back:()=>void;select:(project:string,id:string|null)=>void;focus:(id:string)=>void;missing:()=>void;
+ push:()=>void;back:()=>void;select:(project:string,id:string|null)=>void;focus:(id:string,project:string)=>void;missing:()=>void;
  schedule:(run:()=>void)=>()=>void;
 };
 const legacy='nv:canvas:last',claim='nv:canvas:last:scope:v1';
@@ -45,7 +45,7 @@ export function createCanvasProjectNavigation(identity:string,ports:Ports){
    if(!pending&&!state.creatingNew&&!state.browsing&&loaded&&state.activeKey&&!projects.some(p=>p.key===state.activeKey)){browse(true);ports.missing();}
    if(pending){
     const intent=pending,project=projects.find(p=>p.members.some(n=>n.id===intent.id)||p.textNodes.some(n=>n.id===intent.id)||[p.videoNodes,p.directorNodes,p.characterNodes,p.sceneNodes,p.audioNodes,p.timelineNodes].some(nodes=>nodes?.some(n=>n.id===intent.id)));
-    if(project){ports.select(project.key,intent.select?intent.id:null);if(intent.focus)ports.focus(intent.id);open(project.key);}
+    if(project){ports.select(project.key,intent.select?intent.id:null);if(intent.focus)ports.focus(intent.id,project.key);open(project.key);}
     else if(loaded){pending=undefined;publish({pendingNode:null});}
    }
    if(initialProject&&desktop!==initialProject&&projects.some(p=>p.key===initialProject)){desktop=initialProject;open(initialProject);}
