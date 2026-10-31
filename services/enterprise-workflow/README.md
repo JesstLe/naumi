@@ -1,5 +1,7 @@
 # Enterprise Workflow Runtime 0.2
 
+源站接入公共模块位于 `src/source-onboarding`：审计与复核计划由服务拥有，runtime和现有operator CLI依赖该模块，不反向import脚本实现。接口、原只读事务及迁移验收见 [R8T模块记录](../../docs/changes/2026-10-31-refactor-r8t-enterprise-source-onboarding.md)。
+
 Web接线预检新增`composition-plan`/`composition-check --config RUNTIME_JSON --web-config WEB_JSON`；输入模板`web-composition.example.json`，配置与真实HTTP验收见[Web组合文档](../../docs/enterprise/web-composition-g15c.md)。规范公共入口使用`NAUMI_ENTERPRISE_PUBLIC_ORIGIN`，代理保留正确Host；预检不等于真实员工登录完成。
 
 当前运行入口、初始化和连续更新准备见 [G15运行PRD](../../docs/enterprise/runtime-g15.md)；需求/任务/交付/排期/绩效/归属/通知模块已经实现，但实际公司源身份、工作流独立数据库与生产发布仍需配置验收。

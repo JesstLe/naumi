@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
-import {sourceSite,SourceAuditError} from './enterprise-source-audit.mjs';
+import {sourceSite,SourceAuditError} from './audit.mjs';
 const uuid=z.string().uuid().transform(v=>v.toLowerCase()),label=z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,79}$/),hash=z.string().regex(/^[a-f0-9]{64}$/),text=z.string().trim().min(1).max(100).refine(s=>!/[\u0000-\u001f\u007f]/.test(s));
 const account=z.string().max(254).regex(/^[^\s@\u0000-\u001f\u007f]+@[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$/).refine(s=>s===s.trim().toLowerCase());
 const requestSchema=z.strictObject({version:z.literal(1),commandId:uuid,reason:text,target:z.strictObject({enterpriseId:uuid,sourceInstance:label,sourceEnterprise:uuid}),teams:z.array(z.strictObject({teamId:uuid,name:text})).min(1).max(20),people:z.array(z.strictObject({sourceSubject:account,alias:text,realName:text,workflowSubject:label,personId:uuid,expectedVersion:z.number().int().nonnegative(),teamId:uuid,permissions:z.array(z.enum(['request','dispatch','execute','review','manage'])).min(1).max(5),workKinds:z.array(z.enum(['design','artwork'])).max(2),confirmed:z.literal(true)})).min(1).max(100)});

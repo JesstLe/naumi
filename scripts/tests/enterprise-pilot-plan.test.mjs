@@ -5,7 +5,7 @@ import {mkdtemp,writeFile,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
-import {preparePilot} from '../lib/enterprise-pilot-plan.mjs';
+import {preparePilot} from '../../services/enterprise-workflow/src/source-onboarding/pilot-plan.mjs';
 const site={version:1,adminUrl:'https://pilot.example/admin',enterpriseId:randomUUID(),expectedEnterpriseName:'合成企业'},teamId=randomUUID(),observedAt=new Date().toISOString(),snapshotSha256='a'.repeat(64),sourceSubject='设计甲@username.naumi.local';
 const summary={version:1,adminUrl:site.adminUrl,enterpriseId:site.enterpriseId,enterpriseName:site.expectedEnterpriseName,sourceReadOnly:true,sourceWrites:0,enterpriseEnabled:true,ownerGrantActive:true,snapshotSha256,observedAt,accountCount:2,sourceInstanceId:null,bridge:{}},roster={version:1,site,sourceInstanceId:null,snapshotSha256,observedAt,rows:[{sourceSubject,alias:'设计甲',accountAvailable:true},{sourceSubject:'same-alias@test.invalid',alias:'设计甲',accountAvailable:true}]};
 const request={version:1,commandId:randomUUID(),reason:'用户逐项确认',target:{enterpriseId:randomUUID(),sourceEnterprise:site.enterpriseId,sourceInstance:'pilot-proposed-source'},teams:[{teamId,name:'设计'}],people:[{sourceSubject,alias:'设计甲',realName:'合成真名',workflowSubject:'pilot-designer',personId:randomUUID(),expectedVersion:0,teamId,permissions:['dispatch','execute','review'],workKinds:['design'],confirmed:true}]};

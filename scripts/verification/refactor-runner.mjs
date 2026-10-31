@@ -69,6 +69,12 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='saved-text-results')stageEnv.SAVED_TEXT_EVIDENCE=evidence;
    if(spec.id==='canvas-assistant-session')stageEnv.ASSISTANT_SESSION_EVIDENCE=evidence;
    if(spec.id==='text-document')stageEnv.TEXT_EVIDENCE=evidence;
+   if(spec.id==='enterprise-source-onboarding')stageEnv.SOURCE_ONBOARDING_EVIDENCE=evidence;
+   if(spec.id==='enterprise-source-audit')stageEnv.SOURCE_AUDIT_EVIDENCE=evidence;
+   if(spec.id==='enterprise-workflow-runtime')stageEnv.NAUMI_RUNTIME_EVIDENCE_DIR=evidence;
+   if(['enterprise-source-audit','enterprise-pilot-plan','enterprise-workflow-runtime'].includes(spec.id)){
+    const temp=path.join(evidence,'temp');await fs.mkdir(temp);stageEnv.TEMP=temp;stageEnv.TMP=temp;
+   }
    if(spec.id==='canvas-arrange')stageEnv.CANVAS_ARRANGE_EVIDENCE=evidence;
    if(spec.id==='canvas-overlay-owner')stageEnv.CANVAS_OVERLAY_OWNER_EVIDENCE=evidence;
    if(spec.id==='canvas-viewport-owner')stageEnv.CANVAS_VIEWPORT_OWNER_EVIDENCE=evidence;

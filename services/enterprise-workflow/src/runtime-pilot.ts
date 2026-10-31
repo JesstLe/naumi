@@ -1,6 +1,6 @@
 import type {Pool} from 'pg';
 import {z} from 'zod';
-import {inspectSource,sourceSite,SourceAuditError} from '../../../scripts/lib/enterprise-source-audit.mjs';
+import {inspectSource,sourceSite,SourceAuditError} from './source-onboarding/audit.mjs';
 import {provisionSchema,provisionPlan,provisionApply} from './runtime-provision';
 import {databaseIdentity,protectedFile,requireRuntime,RuntimeError,type RuntimeConfig,type RuntimeBundle} from './runtime-config';
 import {runtimePool} from './runtime-database';
