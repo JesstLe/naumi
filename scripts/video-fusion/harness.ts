@@ -109,7 +109,7 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
       // BYOC endpoint uses the existing explicit private-network opt-in.
       // Next dev otherwise overrides the heap to half the host's physical RAM,
       // not the commit budget available to this isolated functional fixture.
-      const appEnv:NodeJS.ProcessEnv=builtRoot?{...env,NODE_ENV:"production",HOSTNAME:"127.0.0.1",PORT:String(appPort),USER_IMAGE_PROVIDER_ALLOW_PRIVATE_NETWORK:"true",SOURCE_COMMIT:builtCommit!,BUILD_VERSION:builtVersion!}:{...env,NODE_OPTIONS:"--max-old-space-size=4096"};
+      const appEnv:NodeJS.ProcessEnv=builtRoot?{...env,NODE_ENV:"production",HOSTNAME:"127.0.0.1",PORT:String(appPort),USER_IMAGE_PROVIDER_ALLOW_PRIVATE_NETWORK:"true",SOURCE_COMMIT:builtCommit!,BUILD_VERSION:builtVersion!}:{...env,NODE_OPTIONS:"--max-old-space-size=6144"};
       app=spawn(process.execPath,builtRoot?[path.join(builtRoot,"server.js")]:["node_modules/next/dist/bin/next","dev","--hostname","127.0.0.1","--port",String(appPort)],{cwd:builtRoot||root,env:appEnv,windowsHide:true,stdio:["ignore","pipe","pipe"]});capture("app",app);
       const deadline=Date.now()+120_000;let ready=false;
       while(Date.now()<deadline){
