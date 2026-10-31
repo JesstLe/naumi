@@ -1,3 +1,13 @@
+# 当前整体候选：R8N
+
+应用/完整验收源码 `ba4805e0959af0d00e1a655200b314a134fcc131`；本地完整core191、同固定镜像runtime177/产品双browser92通过。独立worktree/原分支持续推进；本片统一共享目录读状态与身份生命周期，未新建缓存/任务系统。
+
+其他2126原产品raw哈希、Canvas页面原字节保持。实现、接口、测试边界和剩余项以[R8N模块记录](changes/2026-10-31-refactor-r8n-feature-catalog.md)及output/refactor-r8n-20261031/DELIVERY.json为准。整体ACTIVE，未合main未部署，47 HOLD；同步后2/3。
+
+**独立候选超过48h：用户要求完整重构版本，剩余Shell/等待诊断/持续混合与生产容量/有效CI/最终main整版验收仍待。**
+
+## 以下为历史固定源记录
+
 ## 2026-10-31 R8I：原生编辑会话、独立portal与页面组合分责
 
 固定应用源码 `c146956e66f3bef0442a60cc38ceeb893abb8a93`，完整生产Dockerfile同Web/Worker镜像 `sha256:85a6a68afb93c074c6a7e7aa90733b0e5492c2d658fdb207cd29716d343332e1`。角色、场景、导演台、音频、时间线五套编辑器ID/清理Effect/portal与回调从Canvas大页面迁到纯native-editor-session owner、React订阅hook与CanvasNativeEditors组合。只改1个既有产品文件+3个新职责文件，其他2123原src/services哈希保持；Canvas4337行并非验收目标。保存/CAS、上传、引用、渲染/采用、原operation/UNKNOWN、钱包及共享history仍归原具体owner，不建第二套任务或保存系统。

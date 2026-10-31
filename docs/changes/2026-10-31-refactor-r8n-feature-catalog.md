@@ -36,3 +36,13 @@
 最终扩大原/新实际 React 组合到 20 项，原始副本复现 15 处生命周期异常，新版同组异常为 0；四组完整正常目录/选择/元数据快照 EXACT。真实 AuthProvider、workspace、ImageQualityProvider 和 Canvas model hook 均执行；HTTP/auth/billing/browser-cache 为明确读端口，不冒充生产。未新增付费 POST。
 
 全项目类型 exit0，lint exit0。初次依赖图在尚未 git add 的新文件上有未解析边，不能用它冒充完整图；固定 tracked 源后重扫。原文本反馈验证器的实际 feature-client 直接调用补齐新的 document EventTarget 读端口，OCR 合流/空目录语义断言不改；原 Canvas model DOM fixture 补同一账号/workspace scope 端口，原 12 项/正常快照与规格断言不改。
+
+## 2026-10-31 R8N：共享目录生命周期封版
+
+应用/完整验收源码 `ba4805e0959af0d00e1a655200b314a134fcc131`，同 Web/Worker 完整镜像 `sha256:16435032a7dc3025001c8fb3b41ef5b74b95270eac71ab25859cfdd66fc8de3a`。本片完整 core **191/191 全新执行**，0 fail/0 notRun/0 reuse，scope=core、status=PASS、exit0；不是子集，也不借用 R8L/R8M 的结果。固定镜像 Linux runtime **177** 与真实双浏览器产品 **92** 全部通过，原 31 图 ZIP 字节、原 operation/冻结价/账务与七笔 42 积分 fixture 保持；POSIX drain exit0，各自 PG/容器/网络清理 PASS。原公开 GET 路由/账务/供应商代码未改，fixture 上游不当生产或10万容量证明，180秒混合读取不当长稳混合生成容量。
+
+最终实际 React/AuthProvider/workspace/quality/Canvas 20项：旧15处生命周期异常→新0；四组完整正常目录/选择/元数据快照EXACT。logout、同邮箱/账号/workspace ABA、auth等待、HTTP/JSON/配置迟到、旧回调、替代inflight、click-before-effect合流均覆盖。普通匿名目录仍沿原公开入口，不新增登录门槛。原Canvas模型117规则及12DOM、原定价/任务恢复矩阵均包含在上述完整core中。 并行TSC虽然exit0，但捕获tsconfig输入与core起点/恢复后原字节不同，首次hash bridge未接受；原输入和观测保留，等core结束后重新固定全部输入执行TSC_SEALED并逐hash确认，不改原配置或把旧exit0冒充最终绑定。
+
+只改5个既有产品文件、新增2个职责文件，其他2126原src/services逐raw SHA保持；Canvas大页面本身逐字节未改，server routes/钱包/任务/媒体/平台/服务端代码原hash保持。类型exit0，完整TS/config输入逐hash绑定；lint exit0且变更模块无warning；固定tracked源四类SCC0，两条release fixture反向边与一条dist生成边单列。初次未tracked分析不冒充完整图。首轮浏览器fixture process.env缺失失败原样保留；旧OCR fixture只补document EventTarget，新旧业务断言不放宽。
+
+原5297raw哈希、完整5301源码、字节补丁、副本恢复全部原哈希/20项旧行为及15旧异常、later-edit首次写入前零覆盖，以本轮DELIVERY/VERIFICATION实测为准；不改真实源码换行来凑补丁。封版仅5文档桥接，不重跑已验产品。模块同步后2/3；main未合回、未部署、47 HOLD，整体ACTIVE。剩余Canvas Shell、R8J等待诊断、持续混合/生产容量、有效CI与最终main整版验收继续；原ZIP socket根因仍OPEN。
