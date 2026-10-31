@@ -6,7 +6,7 @@
 
 完整eb65基线5337raw文件与修改版实际原生HTTP/PG/Worker对照29场景59检查、正常投影EXACT：旧报价/编辑认证2～6次→1，headless0/列表1保持。真实lease领取、回环供应商1POST、私有结果像素读回、原价6/current17后只consume1/charge6，原任务重放、丢ACK和并发不重买。现有Request第三参验证调用方已迁到真实HTTP/领取路径，未保留Request重载。
 
-5093实际类型输入/tsc exit0、lint exit0；受影响集中回归与封装继续。该模块及后续目录212整版状态以本轮DELIVERY为准，不复用R8Z完整App/Worker结果。
+固定产品验证源d35：pricing13/13与APImart实际入口通过；runner仅选pricing，仍PARTIAL/exit2，非完整212。ff6f21f3修正旧辅助fixture后，视频跟随21、视频提交30场景121检查、OCR22场景79检查、pending实际React/调用方8组36检查通过；真实PG model-execution包含headless Canvas/Worker/轮换/未知不重买通过。最终lint exit0/37既有warning、非增量tsc exit0、四类SCC0。类型证据准确口径是5089个编译器列出输入+4配置绑定=5093，保留原计数记录。产品及pricing/APImart输入在d35与ff6间raw一致；没有把旧执行重标成新SHA。四产物、最终副本回滚与推送状态见output/refactor-r9c-20261101/DELIVERY.json及VERIFICATION.txt；完整212/App/Worker当前整版仍待执行。
 
 ## 上一模块：R9B 历史生成入口
 

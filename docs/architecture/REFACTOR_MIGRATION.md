@@ -275,3 +275,7 @@
 ## 尚待迁移的同类入口
 
 静态AST盘点59个creation/receipt wrapper调用，本轮只有图片plan入口消费新actor参数；另有7个零参callback经本地handler直接认证的迁移候选（主图片提交/回执、取消、输入、批次回执/下载）。这不是运行事故证明，也不是已完成迁移；下一模块逐入口保留来源、身份、scope、UNKNOWN和原回执协议迁移验证。详见本轮INGRESS_MIGRATION_INVENTORY.json。
+
+### R9C 验证资产迁移
+
+旧background contract不再要求恢复逻辑内联到Canvas组件；CLI复用现有video-follow、video-submission、image-text-editor、pending-presentation验证。任务身份/原子创建仍有AST检查，真实PG/Worker与账务证明由R9C实际入口脚本承担，不混写为同一种验收。旧model-execution验证调用方以独立当前草稿完成每轮发布，明确旧草稿仍拒绝，不使用acceptStaleBase换绿。OCR定位断言使用现有initialize语义。原失败日志、修正后固定源和输入字节桥接见R9C目录；源码/报告/有效CI/整版/主线/生产各自记录。

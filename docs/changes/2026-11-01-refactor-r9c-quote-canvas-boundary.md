@@ -24,7 +24,7 @@
 
 迁移现存APImart验证调用方同时修复已过时的Agent跨轮确认断言，改为验证已有的足额直接准备和真实typed工具执行；没有恢复旧护栏。该fixture媒体改为独占临时目录，fetch只允许自身loopback，结束关闭连接/schema/HTTP及自有媒体，不触碰历史固定目录。
 
-受影响集中回归和独立副本回滚继续，以本轮结果更新。完整App/Worker最后验收仍归R8Z，不作为当前212通过。整体目标ACTIVE；main未合、部署0、47HOLD。
+受影响集中回归最终结果见下节。独立副本回滚、封装与远端状态以本轮VERIFICATION.txt和DELIVERY.json逐项实测为准。完整App/Worker最后验收仍归R8Z，不作为当前212通过。整体目标ACTIVE；main未合、部署0、47HOLD。
 
 ## 重启续接：辅助验证修正
 
@@ -33,3 +33,22 @@
 - 本节记录代码准备，修正后的实际运行、固定源码与交付证据另行补录；旧AFFECTED_REPORT的FAIL和所有原始失败输出保留。
 
 辅助执行继续暴露两个旧fixture假设：OCR编辑验证未预期现有result-attachment的 `mode:initialize`；model-execution fixture只映射high，却在后段请求默认medium。前者在完整eb65脚本/产品上同样复现（原exit1保留），现按原baseline/当前owner区别断言；后者实际已完成headless Canvas处理后才失败，现补齐fixture声明的low/medium映射，保留high→hd。没有改产品参数编译或结果定位规则。初次续接失败日志保留，最终定向复测使用新目录不覆盖。
+
+## 固定源码集中结果
+
+- d35ca593：原/新29场景59检查；pricing13/13、0失败/未运行/复用，runner因选组PARTIAL/exit2；APImart真实HTTP/PG/claim/typed Agent入口PASS。
+- ff6f21f3：辅助恢复4套均PASS（video-follow21检查；video-submission30场景121检查；OCR22场景79检查；pending实际React/2调用方8组36检查）；真实PG model-execution PASS，headless任务完成、冻结凭据、旧草稿拒绝与未知不重提均实际检查。旧AFFECTED_REPORT/REMAINING_REPORT的FAIL不改写。
+- ff6f21f3：lint exit0（37既有warning）、tsc --noEmit --incremental false exit0、四类SCC0。编译器原始清单实际5089输入，额外4配置绑定后5093；原5093口径包含配置，修正见TYPE_INPUT_COUNT_CORRECTION.json，不把它当新增产品/类型错误。
+- 从d35到ff6仅3个辅助脚本和本模块文档变化，全部产品、pricing verifier/catalog及APImart验证资产raw hash保持。后续封版只允许4模块文档桥接，不将旧日志冒称为新commit重跑。
+- 完整eb65源码5337文件→当前5339文件，5个产品文件变化；其他2136个原src/services文件保持raw一致。完整当前212、固定App/Worker、有效远端CI、最终main与生产验收仍独立待办；最近main刷新e2f56255已包含。R9C是上次同步后第2功能模块，下个功能模块完成后同步计数达到3。
+
+## 可复用调用合同
+
+```ts
+// Headless caller: typed model preparation, no HTTP Request dependency.
+await enqueueTextEditTask(actor, input);
+// HTTP adapter: preserves original headers/quote/signature in its own closure.
+await enqueueTextEditTask(actor, input, (body, run) => prepareHttpModel(body, run));
+```
+
+模型执行上下文、任务/账务数据和transaction仍归各自既有owner；准备port只承担入口适配，既不拥有钱包也不创建另一套调度。

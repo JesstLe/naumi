@@ -1,6 +1,6 @@
 # 整体退出审计
 
-R9C当前推进：公共报价/Canvas编辑实际native HTTP/PG/Worker原/新29场景59检查，正常投影EXACT。用例Request依赖已移除，实际Request调用方迁移；原顺序/归属/冻结价/lease/像素/单次结算/原intent保持。5093类型输入/tsc、lint exit0；受影响集中回归及封装继续。最后完整应用证据仍是R8Z，不作当前212目录/镜像通过。
+R9C当前推进：公共报价/Canvas编辑实际native HTTP/PG/Worker原/新29场景59检查，正常投影EXACT。用例Request依赖已移除，实际Request调用方迁移；原顺序/归属/冻结价/lease/像素/单次结算/原intent保持。最终ff6f21f3的lint/非增量tsc exit0，5089编译器输入+4配置绑定=5093；四类SCC0。d35实际pricing13/13、APImart通过；旧辅助恢复CLI已迁到4个真实owner回归，真实PG model-execution的headless/Worker/轮换通过。原辅助失败与计数修正留证，不恢复旧内联逻辑或放宽产品检查。最终封装/回滚/远端状态见本轮DELIVERY；最后完整应用证据仍是R8Z，不作当前212目录/镜像通过。
 
 R9B固定验证源b796：实际历史generate-image提交/轮询完整身份链原/新/回滚38场景79检查，旧4～7次/父2次认证→1次、health0，正常投影EXACT。pricing12/12执行通过但runner仍PARTIAL/exit2，未执行其余199项；5092类型输入/tsc exit0、lint exit0/37warning、四类SCC0；副本原5335raw hash与later-edit零写已核验。归档仅4文档桥接，不冒称归档SHA新执行。以下完整应用证据仍是R8Z历史固定源，不作为当前211目录或App/Worker通过。整体目标ACTIVE。
 
@@ -9,7 +9,7 @@ R9B固定验证源b796：实际历史generate-image提交/轮询完整身份链�
 | 要求 | 当前证据 | 判定 |
 |---|---|---|
 | 入口认证/权益规则唯一归属 | R8Z plan20/33；R9A实际native cookie/7个handler/BI/PG39/90，2/3→1，正常/授权/字节投影EXACT | 本模块PASS；其余历史/间接入口继续迁移，无跨请求权限缓存 |
-| 报价/任务/权限/取消/UNKNOWN | 同固定源core209/0/0/0reuse，原价/显式false/任务恢复按case边界验证 | 当前完整本地PASS，历史事故独立保留 |
+| 报价/任务/权限/取消/UNKNOWN | R8Z固定源core209历史PASS；R9C原/新29场景59检查及pricing13已执行 | 当前212整版待重跑，历史事故独立保留 |
 | 模块依赖方向 | 当前四类SCC=0；生产lib→app0、runtime→scripts0；2release fixture与1dist例外单列 | 结构PASS，不替代行为验收 |
 | 原生业务链 | 七个入口同源固定Linux SDK，完整App/Worker字节EXACT | PASS |
 | 完整运行与产品页面 | 同镜像runtime177，双context浏览器92/180秒，routeMocks0 | PASS，隔离上游不代表真实供应商质量 |
