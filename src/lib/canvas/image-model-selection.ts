@@ -1,4 +1,4 @@
-import type {FeatureCatalog} from '../model-config/feature-client';
+import type {FeatureCatalog} from '../model-config/feature-catalog';
 import type {PublicImageConfiguration,PublicImageModel} from '../model-config/public-client';
 import {compactImageModelOptions} from '../image-model-routing';
 import {normalizeCanvasRatio,normalizeCanvasResolution,type canvasModelParameters} from './generation-parameters';

@@ -1,101 +1,28 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
-import { MODEL_CATALOG_REFRESH, rememberModelCatalogVersion } from "./public-client";
-import type { FeatureId } from "../billing/rules/registry";
-import { compactImageModelOptions, imageModelDisplayId } from "../image-model-routing";
-import { authHeader } from "../supabase";
-import { adminConfiguredFeature } from "./selection-policy";
-export type FeatureCatalog = { managed: boolean; supported?: boolean; available?: boolean; feature: FeatureId; version?: number; defaultModelId?: string; models: { id: string; label: string;creditHint?:string; modality: string; supportsEdit: boolean; qualities?: string[]; qualityLabels?: Record<string,string>; nativeResolutions?: string[]; generationParameters?: {ratios?:string[];resolutions?:string[];combinations?:string[]} }[] };
-const catalogs = new Map<FeatureId, FeatureCatalog>(), selections = new Map<FeatureId, string>();
-export const FEATURE_MODEL_SELECTION = "naumi:feature-model-selected";
-const EVENT = FEATURE_MODEL_SELECTION;
-const RELOAD = "naumi:feature-model-reload";
-const inflight = new Map<FeatureId, Promise<FeatureCatalog>>();
-function loadCatalog(feature: FeatureId) {
-  let promise = inflight.get(feature);
-  if (!promise) {
-    promise = (async () => {
-      const res = await fetch(`/api/models?feature=${encodeURIComponent(feature)}`, { cache: "no-store", headers: await authHeader() }), data = await res.json();
-      if (!res.ok) throw new Error(data.error || "模型列表加载失败");
-      if (data.models?.some((m: { modality: string }) => m.modality === "image")) {
-        data.models = compactImageModelOptions(data.models, [data.defaultModelId].filter(Boolean));
-        data.defaultModelId = data.models.find((m: { id: string }) => imageModelDisplayId(m.id) === imageModelDisplayId(data.defaultModelId || ""))?.id || data.models[0]?.id;
-      }
-      return data as FeatureCatalog;
-    })();
-    inflight.set(feature,promise);
-    promise.finally(() => inflight.delete(feature)).catch(() => {});
-  }
-  return promise;
-}
-const canvasSelections=new Map<string,string>();
-function canvasKind(feature:FeatureId){return feature.startsWith("canvas.")?(["canvas.image","canvas.expand","canvas.text-edit","canvas.annotate"].includes(feature)?"image":"text"):undefined;}
-function acceptCatalog(feature: FeatureId, data: FeatureCatalog) {
-  const previousVersion = catalogs.get(feature)?.version;
-  catalogs.set(feature, data);
-  if (data.managed) rememberModelCatalogVersion(data.version);
-  if (adminConfiguredFeature(feature)) {
-    selections.delete(feature);
-    try { localStorage.removeItem(`naumi:model:${feature}`); } catch {}
-    return "";
-  }
-  const kind = canvasKind(feature);
-  if (kind) try { const saved = localStorage.getItem(`naumi:model:canvas:${kind}`); if (saved) canvasSelections.set(kind, saved); } catch {}
-  let saved = (kind ? canvasSelections.get(kind) : undefined) || selections.get(feature);
-  try { saved ||= localStorage.getItem(`naumi:model:${feature}`) || undefined; } catch {}
-  const id = data.models.find(model => imageModelDisplayId(model.id) === imageModelDisplayId(saved || ""))?.id
-    || data.models.find(model => model.id === data.defaultModelId)?.id || data.models[0]?.id || "";
-  if (id) selections.set(feature, id); else selections.delete(feature);
-  if (previousVersion && previousVersion !== data.version) window.dispatchEvent(new Event(EVENT));
-  return id;
-}
+import {useCallback,useEffect,useSyncExternalStore} from 'react';
+import type {FeatureId} from '../billing/rules/registry';
+import {EMPTY_FEATURE_CATALOG} from './feature-catalog';
+import {activeFeatureCatalog,currentFeatureCatalogScope} from './feature-catalog-browser';
+export type {FeatureCatalog} from './feature-catalog';
+export {FEATURE_MODEL_SELECTION} from './feature-catalog-browser';
+export {currentFeatureCatalogScope} from './feature-catalog-browser';
 
-/** A click can precede the selector's first effect (OCR opens and submits at once).
- * Resolve the same published catalog and selection before requesting its quote. */
-export async function ensureFeatureModelSelection(feature: FeatureId): Promise<string | undefined> {
-  let catalog = catalogs.get(feature);
-  if (!catalog) { catalog = await loadCatalog(feature); acceptCatalog(feature, catalog); window.dispatchEvent(new Event(EVENT)); }
-  if (!catalog.managed || adminConfiguredFeature(feature)) return undefined;
-  const selected = chosenFeatureModel(feature);
-  if (catalog.available === false || catalog.supported === false || !selected || !catalog.models.some(model => model.id === selected)) {
-    throw new Error("当前功能没有启用模型，请联系管理员配置");
-  }
-  return selected;
+/** Existing public entrypoints all use the same identity-bound owner. */
+export const ensureFeatureModelSelection=(feature:FeatureId)=>activeFeatureCatalog().ensure(feature);
+export const chosenFeatureModel=(feature:FeatureId)=>activeFeatureCatalog().chosen(feature);
+export const featureModelManaged=(feature:FeatureId)=>activeFeatureCatalog().managed(feature);
+export const selectFeatureModel=(feature:FeatureId,id:string)=>activeFeatureCatalog().select(feature,id);
+export function useFeatureCatalogScope(){
+ return useSyncExternalStore(activeFeatureCatalog().subscribeScope,currentFeatureCatalogScope,()=> 'server');
 }
-export function chosenFeatureModel(feature: FeatureId) {
- if(adminConfiguredFeature(feature))return undefined;
- const catalog=catalogs.get(feature),kind=canvasKind(feature),group=kind?canvasSelections.get(kind):undefined;
- const shared=group&&catalog?.models.find(m=>imageModelDisplayId(m.id)===imageModelDisplayId(group));
- return shared?shared.id:selections.get(feature) || catalog?.defaultModelId;
-}
-export function featureModelManaged(feature: FeatureId) { return catalogs.get(feature)?.managed === true; }
-export function selectFeatureModel(feature: FeatureId, id: string) {
-  if (adminConfiguredFeature(feature)) return;
-  if (!catalogs.get(feature)?.models.some(m => m.id === id)) return;
-  selections.set(feature, id);
-  const kind=canvasKind(feature);if(kind){canvasSelections.set(kind,id);try{localStorage.setItem(`naumi:model:canvas:${kind}`,id);}catch{}}
-  try { localStorage.setItem(`naumi:model:${feature}`, id); } catch {}
-  window.dispatchEvent(new Event(EVENT));
-}
-export function useFeatureModels(feature: FeatureId) {
-  const [catalog, setCatalog] = useState<FeatureCatalog | null>(catalogs.get(feature) || null), [selected, setSelected] = useState(chosenFeatureModel(feature) || ""), [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      setError(null);
-      try {
-        const data = await loadCatalog(feature);
-        if (cancelled) return;
-        const id = acceptCatalog(feature, data);
-        setCatalog(data); setError(null); setSelected(id);
-      } catch (e) { if (!cancelled) { setError(e instanceof Error ? e.message : "读取失败"); setCatalog(null); catalogs.delete(feature); } }
-    };
-    const changed = () => setSelected((adminConfiguredFeature(feature) ? undefined : chosenFeatureModel(feature)) || "");
-    const retry = (event: Event) => { if ((event as CustomEvent<FeatureId>).detail === feature) void load(); };
-    const visible = () => { if (document.visibilityState === "visible") void load(); };
-    void load(); window.addEventListener(MODEL_CATALOG_REFRESH, load); window.addEventListener(EVENT, changed); window.addEventListener(RELOAD, retry);
-    window.addEventListener("focus", load); document.addEventListener("visibilitychange", visible);
-    return () => { cancelled = true; window.removeEventListener(MODEL_CATALOG_REFRESH, load); window.removeEventListener(EVENT, changed); window.removeEventListener(RELOAD, retry); window.removeEventListener("focus", load); document.removeEventListener("visibilitychange", visible); };
-  }, [feature]);
-  return { catalog, selected, error, reload: useCallback(() => window.dispatchEvent(new CustomEvent(RELOAD, { detail: feature })), [feature]), setSelected: useCallback((id: string) => selectFeatureModel(feature, id), [feature]) };
+export function useFeatureModels(feature:FeatureId){
+ const scope=useFeatureCatalogScope();
+ const subscribe=useCallback((listener:()=>void)=>activeFeatureCatalog().subscribe(feature,listener),[feature]);
+ const getSnapshot=useCallback(()=>activeFeatureCatalog().snapshot(feature),[feature]);
+ const snapshot=useSyncExternalStore(subscribe,getSnapshot,()=>EMPTY_FEATURE_CATALOG);
+ useEffect(()=>{void activeFeatureCatalog().load(feature,scope).catch(()=>{});},[feature,scope]);
+ return{...snapshot,
+  reload:useCallback(()=>{void activeFeatureCatalog().load(feature,scope).catch(()=>{});},[feature,scope]),
+  setSelected:useCallback((id:string)=>activeFeatureCatalog().select(feature,id,scope),[feature,scope]),
+ };
 }
