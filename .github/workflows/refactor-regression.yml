@@ -56,8 +56,12 @@ jobs:
           DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/refactor_fixture
       - name: Verify orchestration and workflow wiring
         run: node scripts/verify-refactor-runner.mjs
+      - name: Build fixed full application for native acceptance
+        run: node scripts/verify-refactor-image.mjs --expected-sha "${{ inputs.source_commit || github.sha }}" --out output/refactor-ci-image
+      - name: Prepare isolated native application SDK
+        run: python -X utf8 scripts/verify-native-application.py prepare --image-manifest output/refactor-ci-image/BUILD_RESULT.json --out output/refactor-ci-native-sdk
       - name: Run source-bound core regression
-        run: node scripts/verify-refactor.mjs --expected-sha "${{ inputs.source_commit || github.sha }}" --out output/refactor-ci
+        run: node scripts/verify-refactor.mjs --expected-sha "${{ inputs.source_commit || github.sha }}" --out output/refactor-ci --native-sdk-manifest output/refactor-ci-native-sdk/SDK_RESULT.json
         env:
           DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/refactor_fixture
           CANVAS_FEEDBACK_TEST_DATABASE: postgres://fixture:isolated-fixture@127.0.0.1:5432/canvas_feedback_fixture
@@ -69,5 +73,8 @@ jobs:
         if: always()
         with:
           name: refactor-core-${{ inputs.source_commit || github.sha }}
-          path: output/refactor-ci/
+          path: |
+            output/refactor-ci/
+            output/refactor-ci-image/
+            output/refactor-ci-native-sdk/SDK_RESULT.json
           if-no-files-found: error

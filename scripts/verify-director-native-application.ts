@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {connectNativeParentDatabase} from "./video-fusion/native-parent-database";
 import {randomBytes, randomUUID, createHash} from "node:crypto";
 import {spawnSync} from "node:child_process";
 import {createServer} from "node:http";
@@ -32,6 +33,9 @@ async function main() {
     send(404,{});
   }catch{res.writeHead(500);res.end();}});
   try {
+    const parentDatabase=await connectNativeParentDatabase();
+    let databaseUrl:string;
+    if(parentDatabase){pool=parentDatabase.pool;databaseUrl=parentDatabase.url;}else{
     container=docker(["run","--detach","--rm","--name",name,"--label",`naumi.task=${owner}`,"--memory","768m","--cpus","2","--tmpfs","/var/lib/postgresql/data","--publish","127.0.0.1::5432","--env-file",envFile,"postgres:16-alpine"]);
     // The image's temporary initialization server can answer its Unix socket
     // before the final TCP postmaster exists. Our actual clients use TCP.
@@ -43,8 +47,9 @@ async function main() {
     }
     await writeFile(path.join(out,"postgres-readiness.json"),JSON.stringify({transport:"TCP",ready,samples:readiness},null,2));assert.ok(ready);
     const port=Number(docker(["port",container,"5432/tcp"]).split(":").at(-1));
-    const databaseUrl=`postgresql://postgres:${password}@127.0.0.1:${port}/${database}`;pool=new Pool({connectionString:databaseUrl,max:2});
+    databaseUrl=`postgresql://postgres:${password}@127.0.0.1:${port}/${database}`;pool=new Pool({connectionString:databaseUrl,max:2});
     await pool.query("CREATE TABLE public.naumi_video_fixture_guard(owner text NOT NULL)");await pool.query("INSERT INTO public.naumi_video_fixture_guard VALUES($1)",["canvas-video-fusion-20261013"]);
+    }
     await new Promise<void>(r=>router.listen(0,"127.0.0.1",r));listening=true;
     const address=router.address() as {port:number};
     process.env.NAUMI_VERIFY_ISOLATED_DB="1";process.env.VIDEO_FIXTURE_DATABASE_URL=databaseUrl;
