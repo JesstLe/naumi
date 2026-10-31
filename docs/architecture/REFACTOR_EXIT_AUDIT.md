@@ -1,3 +1,15 @@
+# 当前整体候选：R8Q Canvas I/O 分责；整版验收 OPEN
+
+应用/定向验收源码 `00a94230a9e1746a3d0d88b834b7bdcc6f06ce0d`。Canvas 尺寸回写迁入**既有** artwork-document，视频提示词 wire/响应迁入**既有** prompt-optimizer-client；页面只绑定事件。仅3个原产品文件变化，无新增产品模块文件，其他2133个原src/services raw SHA保持。任务、冻结报价、钱包、UNKNOWN和供应商链未改。
+
+本片原/新33用例对照，26组正常trace EXACT，原7个异常夹具观测归零；真实文档/handler/PG23检查通过。同固定source的10个受影响入口全部新执行PASS，runner为subset PARTIAL/exit2，**不代表完整196通过**。完整类型/lintexit0、5087实际类型输入hash保持。副本回滚与原始行为恢复、四产物以本片证据目录为准。
+
+详见[本片模块记录](../changes/2026-10-31-refactor-r8q-canvas-io-boundaries.md)与`output/refactor-r8q-20261031/VERIFICATION.txt`。R8P控制/资源清理已交付，但原整版135PASS/1FAIL/57NOT_RUN仍是其历史source的未通过结果；本片未运行新镜像/runtime177/browser92，不用历史绿灯代验。下一项审查是context-menu/properties共享selection投影；持续容量、有效CI、最终main整版验收继续开放。
+
+**🔴 候选分支超过48h：用户要求完整重构版本，完整退出尚未达到。整体ACTIVE，原工作树保留；main刷新仍e2f56255，产品模块计数1/3，未合main、未部署，47 HOLD。**
+
+## 历史固定源记录：R8P 及更早
+
 # 整体重构退出审计（R8P 当前候选）
 
 当前候选源码 `a98e313bd8441035f2d43d4eac66eca9e2aeffd8`。验证资产的两个窄owner及真实调用方已实现，原13控制/修改18控制与正常合同对照通过；**整版原生GUI验收仍OPEN：当前raw报告135PASS/1FAIL/57NOT_RUN，fullCorePass=false**。失败项在本机提交内存耗尽后中止，不写成业务通过。

@@ -23,3 +23,15 @@ Canvas 的剩余两处直接网络细节分别是图片 decode 后尺寸回写�
 完成本业务切片后集中执行原实现/新实现对照、现有作品文档与提示词回归、完整类型和定向 lint；结果及副本回滚以同目录 `VERIFICATION.txt` 为准，执行前不预填通过数字。
 
 R8P 整版 core 135 PASS / 1 FAIL / 57 NOT_RUN 仍 OPEN；本切片不替代 full core / runtime / 原生 GUI 或生产验收，不重复启动上一轮内存耗尽的完整测试。整体 ACTIVE，未合 main、未部署，47 HOLD。菜单/属性面板的重复 selection 投影继续列为下一具体审查项。
+
+## 集中验证结果
+
+固定应用/定向验收源码 `00a94230a9e1746a3d0d88b834b7bdcc6f06ce0d`。原实现33用例/82检查，修改33用例/89检查，26组正常元数据/视频/图片/文字优化trace逐项EXACT；7个异常观测在本地明确端口归零（跨账号/工作空间抑制2、HTTP失败标记不释放1、NaN编码为null1、认证等待后的ABA/卸载迟到POST3）。这是可执行夹具观察，不是生产故障率。
+
+实际文档owner→原dimensions/account/get/trash handler→隔离PG共23检查，尺寸取整写入、同文档去重、只读仅本地投影、外账号metadata不变、匿名401均通过。原作品文档26用例49检查、主图片生成57用例129检查及原UNKNOWN一次POST/恢复链、原场景30用例103检查、原prompt API27检查和真实SDK/route19检查，以及作品字段/20并发/18 writer矩阵，均在10个受影响入口集中执行。原runner结果PARTIAL/exit2，10PASS/0FAIL/0NOT_RUN/0reuse；catalog196只是注册总数，不是全196已执行。
+
+完整类型exit0，5087个实际compiler/config/dependency输入前后逐raw SHA相同；lintexit0，既有warning保留。仅改变3个原产品文件、无新增产品文件，其他2133个原src/services raw SHA保持。baseline e5d89345，当前main仍e2f56255；计数0→本产品模块1/3，未合main、未部署、47 HOLD。
+
+首次受影响回归3PASS/1FAIL/6NOT_RUN，旧作品文档VM缺`performance`，已对完整原始副本复现相同exit1；仅向两份既有VM提供真实单调时钟，不替换cache或改业务断言，随后固定新source集中执行10项。原失败日志、基线复现及自有PG清理保留。没有把该旧夹具故障写成产品回归通过。
+
+回滚及归档以本片VERIFICATION/MANIFEST/ROLLBACK_RESULT为准。整体退出继续OPEN；R8P历史135/1/57不跨source当当前通过，本片未建新镜像、未运行runtime177或产品browser92。
