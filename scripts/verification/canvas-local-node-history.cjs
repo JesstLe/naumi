@@ -5,7 +5,7 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),asse
 exports.run=async function(root,out){
  const file=path.join(root,'src/components/canvas/canvas-client.tsx'),source=fs.readFileSync(file,'utf8'),ast=ts.createSourceFile(file,source,99,true,4),fn={};
  (function walk(n){if(ts.isFunctionDeclaration(n)&&n.name)fn[n.name.text]=n.getText(ast);ts.forEachChild(n,walk);})(ast);
- const files=['history-model','history-scope','history-controller','node-operations','node-commands','pending-presentation','generation-presentation','keyboard-command','scene-projection','document-scope'];
+ const files=['history-model','history-scope','history-controller','node-operations','node-commands','pending-presentation','generation-presentation','keyboard-command','scene-projection','document-scope',...(fs.existsSync(path.join(root,'src/lib/canvas/node-creation.ts'))?['node-creation']:[])];
  const code=(await build({stdin:{contents:files.map(f=>`export * from './src/lib/canvas/${f}';`).join('\n'),resolveDir:root,loader:'ts'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'ports',setup(b){
   b.onResolve({filter:/supabase$/},()=>({path:'auth',namespace:'ports'}));b.onResolve({filter:/saas\/workspace-client$/},()=>({path:'workspace',namespace:'ports'}));
   b.onLoad({filter:/.*/,namespace:'ports'},a=>({contents:a.path==='auth'?'export const authHeader=async()=>({});':'export const currentWorkspace=()=>"personal",currentWorkspaceRevision=()=>0;'}));

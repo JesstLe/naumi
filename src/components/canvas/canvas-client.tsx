@@ -61,7 +61,7 @@ import {CanvasTextComposer} from "./text-composer";
 import type {CanvasGenerationMode as GenerationMode} from "./image-generation-controls";
 import {generalTextTask,derivedTextTask,stripTextMentions as stripMentionLines,withTextProduct as withProductMention} from "@/lib/canvas/text-task-request";
 import {useCanvasSelectionRun} from "./use-canvas-selection-run";
-import {newCanvasText} from "@/lib/canvas/node-commands";
+import {createCanvasPendingAtScreen,createCanvasMultiReferenceNode,createCanvasTextAtScreen,dispatchCanvasNodeCreation,type CanvasCreatableNodeKind,type CanvasPendingCreationPorts,type CanvasTextCreationPorts,type CanvasTextCreationOptions} from "@/lib/canvas/node-creation";
 import {useCanvasDrag} from "./use-canvas-drag";
 import {compileCanvasLink,canvasLinkMediaSource,type CanvasLinkIntent} from "@/lib/canvas/link-command";
 import {compileCanvasMove} from "@/lib/canvas/drag-controller";
@@ -1996,80 +1996,23 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // Canvas captures the screen point; the picker owns its scoped copy intent.
   function openHistoryPicker(screenX:number,screenY:number){artworkPicker.open({x:screenX,y:screenY});}
   // 在画布某屏幕点新建一个空白占位节点(linked=拉线建的,连源节点)
-  function addPendAtScreen(
-    screenX: number,
-    screenY: number,
-    parentId: string | null,
-    linked: boolean
-  ): Pend {
-    const viewport = rfRef.current?.getViewport() ?? viewportRef.current;
-    const z = viewport.zoom || 1;
-    const wx = (screenX - viewport.x) / z - NODE_W / 2;
-    const wy = (screenY - viewport.y) / z - NODE_H / 2;
-    const seq = pendSeqRef.current++;
-    const id = `pend-${Date.now()}-${seq}`;
-    const pend: Pend = {
-      id,
-      x: wx,
-      y: wy,
-      parentId,
-      linked,
-      label: `${t("canvas.imageNode")} ${seq}`,
-      uploading: false,
-      progress: 0,
-      inputs: linked && parentId ? [parentId] : [],
+  function pendingNodeCreationPorts():CanvasPendingCreationPorts {
+    return {project:activeKey,viewport:()=>rfRef.current?.getViewport()??viewportRef.current,nextSequence:()=>pendSeqRef.current++,now:()=>Date.now(),imageLabel:t("canvas.imageNode"),
+      append:node=>setPendNodes(current=>[...current,node]),history:pushUndo,focus:focusEditableCanvasArea,
+      activate:(node,multiple)=>{
+        if(multiple){clearCanvasSelection(true);setSelectedId(null);setSelectedPendId(node.id);imageDraft.seed(node.id,{prompt:"",ratio:"auto"});setGenerationMode("standard");setGenCount(1);wantFocusPendPrompt.current=true;}
+        else{setGenerationMode("standard");setSelectedId(null);setSelectedTextId(null);setSelectedPendId(node.id);}
+      },
     };
-    setPendNodes((prev) => [...prev, pend]);
-    pushUndo({kind:"pending-add",records:[pend],projectKey:activeKey});
-    setGenerationMode("standard");
-    // 选中新空白节点 → 自动出生成 dock(图3:加节点即可直接写提示词生成)
-    setSelectedId(null);
-    setSelectedTextId(null);
-    setSelectedPendId(id);
-    focusEditableCanvasArea({ x: wx, y: wy, width: NODE_W, height: NODE_H });
-    return pend;
   }
-  // 将框选图片作为同一个新节点的多输入。新节点沿用现有生成 Dock，用户可继续
-  // 写提示词、选比例/数量后生成；本站单次最多提交 16 张参考图；执行通道按已发布能力筛选。
-  function createMergeNodeFromSelection() {
-    if (readOnly || selectedBatchArts.length < 2) return;
-    const inputs = selectedBatchIds.slice(0, MAX_TOTAL_IMAGES);
-    const selectedNodes = (rfRef.current?.getNodes() ?? []).filter((node) =>
-      inputs.includes(node.id)
-    );
-    const seq = pendSeqRef.current++;
-    const id = `pend-${Date.now()}-${seq}`;
-    const maxX = selectedNodes.length
-      ? Math.max(...selectedNodes.map((node) => node.position.x + flowNodeSize(node).width))
-      : 0;
-    const avgY = selectedNodes.length
-      ? selectedNodes.reduce((sum, node) => sum + node.position.y, 0) /
-        selectedNodes.length
-      : 0;
-    const pend: Pend = {
-      id,
-      x: maxX + X_GAP,
-      y: avgY,
-      parentId: inputs[0] ?? null,
-      linked: true,
-      label: `${t("canvas.imageNode")} ${seq}`,
-      uploading: false,
-      progress: 0,
-      inputs,
-    };
-    setPendNodes((current) => [...current, pend]);
-    pushUndo({kind:"pending-add",records:[pend],projectKey:activeKey});
-    clearCanvasSelection(true);
-    setSelectedId(null);
-    setSelectedPendId(id);
-    imageDraft.seed(id, { prompt: "", ratio: "auto" });
-    setGenerationMode("standard");
-    setGenCount(1);
-    wantFocusPendPrompt.current = true;
-    focusEditableCanvasArea({ x: pend.x, y: pend.y, width: NODE_W, height: NODE_H });
-    if (selectedBatchIds.length > MAX_TOTAL_IMAGES) {
-      flashTip(fmt(t("canvas.batchGenerateLimit"), { n: MAX_TOTAL_IMAGES }));
-    }
+  function addPendAtScreen(screenX:number,screenY:number,parentId:string|null,linked:boolean):Pend {
+    return createCanvasPendingAtScreen({x:screenX,y:screenY},parentId,linked,pendingNodeCreationPorts());
+  }
+  function createMergeNodeFromSelection(){
+    createCanvasMultiReferenceNode({ids:selectedBatchIds,artworkCount:selectedBatchArts.length,readOnly,limit:MAX_TOTAL_IMAGES,gap:X_GAP,
+      nodes:ids=>(rfRef.current?.getNodes()??[]).filter(node=>ids.includes(node.id)).map(node=>({...node.position,width:flowNodeSize(node).width})),
+      referenceLimit:()=>flashTip(fmt(t("canvas.batchGenerateLimit"),{n:MAX_TOTAL_IMAGES})),
+    },pendingNodeCreationPorts());
   }
   function flashTip(m: string) {
     setTipMsg(m);
@@ -2115,16 +2058,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       }, 0);
     });
   }
-  function createCanvasNode(kind: "text" | "image" | "video" | "director" | "character" | "scene" | "audio" | "timeline", point = centerScreen()) {
-    if (readOnly) return;
-    if (kind === "timeline") void createTimelineNode(point);
-    else if (kind === "audio") void createAudioNode(point);
-    else if (kind === "scene") void createSceneNode(point);
-    else if (kind === "character") void createCharacterNode(point);
-    else if (kind === "director") void createDirectorNode(point);
-    else if (kind === "text") addTextNodeAtScreen(point.x, point.y);
-    else if (kind === "image") addPendAtScreen(point.x, point.y, null, false);
-    else if (canFeature("video")) void openVideoNodeFromSelection(true, point);
+  function createCanvasNode(kind:CanvasCreatableNodeKind,point=centerScreen()){
+    dispatchCanvasNodeCreation(kind,point,{readOnly,canVideo:()=>canFeature("video"),actions:{
+      timeline:createTimelineNode,audio:createAudioNode,scene:createSceneNode,character:createCharacterNode,director:createDirectorNode,
+      text:at=>addTextNodeAtScreen(at.x,at.y),image:at=>addPendAtScreen(at.x,at.y,null,false),video:at=>openVideoNodeFromSelection(true,at),
+    }});
   }
   // 底部工具条:＋ 添加空白节点(画布中心)
   function toolAddNode() {
@@ -2138,32 +2076,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   function resizeTextNode(id:string,bounds:{x:number;y:number;width:number;height:number}){textEditing.resize(id,bounds);}
   function toggleTextNodeExpand(id:string){textEditing.toggle(id);}
-  function addTextNodeAtScreen(
-    screenX: number,
-    screenY: number,
-    options?: {
-      forceNewProject?: boolean;
-      title?: string;
-      prompt?: string;
-      sourceIds?: string[];
-    }
-  ) {
-    if (readOnly || !user) return;
-    const node=newCanvasText({...options,x:screenX,y:screenY,viewport:rfRef.current?.getViewport()??viewportRef.current,
-      project:active?.key||activeKey,title:options?.title||t("canvas.textGenerate")});
-    const {id,projectKey}=node;
-    setTextNodes((current) => [...current, node]);
-    projectNavigation.open(projectKey);
-    canvasSelection.selectInProject(projectKey,{selectedId:null,selectedPendId:null,selectedTextId:id});
-    setTextPrompt(options?.prompt || "");
-    focusEditableCanvasArea({
-      x: node.canvasX,
-      y: node.canvasY,
-      width: 300,
-      height: 176,
-    });
-    pushUndo({ kind: "text-add", records: [node] });
-    void persistTextNode(node);
+  function textNodeCreationPorts():CanvasTextCreationPorts {
+    return {writable:!readOnly&&!!user,project:active?.key||activeKey,defaultTitle:t("canvas.textGenerate"),viewport:()=>rfRef.current?.getViewport()??viewportRef.current,
+      append:node=>setTextNodes(current=>[...current,node]),history:pushUndo,save:persistTextNode,focus:focusEditableCanvasArea,
+      activate:(node,prompt)=>{projectNavigation.open(node.projectKey);canvasSelection.selectInProject(node.projectKey,{selectedId:null,selectedPendId:null,selectedTextId:node.id});setTextPrompt(prompt);},
+    };
+  }
+  function addTextNodeAtScreen(screenX:number,screenY:number,options?:CanvasTextCreationOptions){
+    createCanvasTextAtScreen({x:screenX,y:screenY},options,textNodeCreationPorts());
   }
   async function removeTextNode(id: string) {
     await runDelete([id]);
