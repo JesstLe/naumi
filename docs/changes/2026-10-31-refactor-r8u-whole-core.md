@@ -33,3 +33,11 @@
 该修正针对检测端在真实Next dev重启期间读取持久状态的生命周期，不修改产品执行语义。新增实际方法投影对照，保留所有原业务/浏览器断言。内存控制的整段harness一致性检查现在明确排除两个有意改动的owner（appEnv与单独验收的HTTP方法），不继续声称HTTP方法逐字节不变。
 
 记录层问题也如实保留：首轮聚合stdout被第二轮ignored driver复用日志名覆盖，首轮145条原用例日志/REPORT/Next trace/cleanup/原命令均已逐hash保留；第二轮完整聚合已在实际进程退出后移到CORE_FINAL.log并修正命名。最初只按ParentPID遍历误纳入旧Docker进程的只读快照已标无效，不曾发信号或修改资源；所有后续归属核查要求创建时间关系。辅助元数据曾错误要求零Next警告，实际改记1条；首份类型输入清单未保存即被后续采集替换，原TSC日志保留，不作旧输入hash桥接。当前真实失败与这些记录问题分开，不据此洗绿。
+
+## 修正后的局部完整链与未到达项
+
+0ef41562的原timeline完整浏览器链（同原断言、真实App/PG/media/原引用/历史）已通过；不把保留日志中没有重读记录说成真实故障已注入。单独验证原完整门禁未到达的59项，同source全部新执行59PASS/0FAIL/0NOT_RUN、subset PARTIAL/exit2，非完整core。包括真实scene/character/director全App、原wallet/pricing/delivery、video sources、PG并发及Worker恢复，所有生产断言保持。该59项不与前两轮144拼接成当前完整通过。
+
+HTTP方法最终23用例：原81检查/修改87检查、正常轨迹EXACT；包含实际Node fetch与真实loopback TCP断连。GET首次断连，原1次失败→新2次恢复；写入ACK丢失仍UNKNOWN、POST1次/服务端写1次、只GET原operation回执确认；持续读取失败仍最多5次后抛错、403可见、server已关闭。该loopback存储是明确控制，不冒充真实客户余额验收；真实账务来自上述既有PG脚本。内存策略9用例，原16/修改18检查，实际Next策略和真实自有Node回执通过；固定生产env EXACT。
+
+当前代码仅改测试harness的两个职责（dev heap预算和检测端只读HTTP生命周期）及对应验证登记，没有产品src/services变更。下一次门禁包含原203项及两个新增必跑控制，共205项，必须同固定源码全新执行；完整core、固定Web/Worker镜像、runtime/browser、有效CI、性能容量、最终main验收继续OPEN。本轮基础设施修正不增加产品模块计数；已主动同步main后计数0。

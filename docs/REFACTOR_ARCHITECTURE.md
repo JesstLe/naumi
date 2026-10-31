@@ -1,12 +1,14 @@
-# 当前架构增量：R8T 企业接入业务内聚
+# 当前架构增量：R8U 验证边界与只读生命周期
 
-应用/定向接受源码 `d4c7b8d912ec981653462b3785228108ea7ab799`；独立候选，整体ACTIVE，未合回main、未部署，47 HOLD。
+修正代码基线 `0ef4156215a7599ef8e57b7fb54c185a252ce109`；独立候选，整体ACTIVE，未合回main、未部署，47 HOLD。
 
-services/enterprise-workflow/src/source-onboarding拥有audit与pure pilot-plan及原声明；runtime/CLI→模块，CLI继续承担参数、文件权限、pool和输出组装。原算法/只读事务/错误身份/快照指纹保持，原provision仍拥有target事务与幂等。旧scripts/lib实现移除，无重复facade。
+产品依赖归属延续R8T：source-onboarding内聚，生产lib→app、platformDB→业务、生产旧db facade消费者、runtime/tests→scripts均0，四类SCC0（当前实际图及后续桥接核对）。R8U只改测试harness，不改产品src/services。
 
-原runtime→scripts1条、tests→scripts2条均清零；生产lib→app、DB基础层→业务、生产旧db facade消费者仍0，四类SCC0。两个release fixture路由边与一个dist未解析边继续单列。结构图不替代整版行为/动态依赖验收。
+检测端GET恢复属于原harness.request；同actor/URL/headers/operation/deadline，不引入任务系统。POST/PATCH/DELETE不自动重提，HTTP错误/解码错误不转成功；浏览器实际流量与unknown-acceptance路径原样。4GiB只为dev App，不改固定生产环境，不删除Next重启保护。
 
-本片详见[R8T模块记录](changes/2026-10-31-refactor-r8t-enterprise-source-onboarding.md)；上一片[R8S模块记录](changes/2026-10-31-refactor-r8s-saved-text-results.md)。当前只维护摘要，详细过程/失败/命令回归所属模块。
+原9个内存控制明确把HTTP owner排除出其余harness一致性断言，由独立HTTP23用例实际方法/真实TCP验收；不将测试端修正当产品长稳或容量证明。完整门禁两次144/1/59保留，修正后timeline和59项局部通过仍不等于完整205。
+
+详见[R8U模块记录](changes/2026-10-31-refactor-r8u-whole-core.md)；上一片[R8T模块记录](changes/2026-10-31-refactor-r8t-enterprise-source-onboarding.md)。当前只维护摘要，原失败/完整命令回归所属模块与证据。
 
 ## 历史固定源记录：R8Q 及更早
 

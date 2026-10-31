@@ -1,14 +1,14 @@
-# 当前候选：R8T 企业源站接入归属，整版退出 OPEN
+# 当前候选：R8U 整版门禁修正，完整退出 OPEN
 
-应用/定向接受源码 `d4c7b8d912ec981653462b3785228108ea7ab799`；独立候选，整体ACTIVE，未合回main、未部署，47 HOLD。
+修正代码基线 `0ef4156215a7599ef8e57b7fb54c185a252ce109`；独立候选，整体ACTIVE，未合回main、未部署，47 HOLD。
 
-企业source-onboarding已集中原审计/复核计划；runtime和operator CLI依赖模块，不反向依赖scripts。原/新34组trace与算法/六个消费者正文EXACT；真实PG/CLI13项、pilot-plan3项及独立企业runtime45检查通过。6个受影响入口全新PASS（subset PARTIAL/exit2，不是完整203）。根/服务类型和lint exit0。
+两轮完整目录均144PASS/1FAIL/59NOT_RUN，原始失败未洗绿。定位Next dev按物理内存设置超大heap，以及开发态内存重启导致检测端GET瞬断。现有夹具明确4GiB、仅同身份GET在原90s内有限重读，所有变更请求仍一次。
 
-计数1/3；main已普通同步且仍e2f56255。完整归档/字节patch/原5317hash副本回滚以本片四产物为准。
+修正后原timeline真实浏览器链通过；原未到达59项全部新执行PASS（subset PARTIAL/exit2），不与旧144拼接。HTTP23/87含实际TCP丢ACK只原回执；内存9/18含实际Next和自有Node。下一次完整目录205，所有原203项保留；当前还未取得完整205PASS或新Naumi镜像。
 
-**🔴 分支超过48h：按用户持续整体重构要求保留候选；完整退出尚未达到。** 下一步当前固定source完整core203及实际失败修复，再推进固定Web/Worker镜像、整版runtime/browser、同机性能和最终main验收；不继续机械拆Canvas。
+**🔴 分支超过48h：用户持续整体重构，完整退出未达到，候选保留。** 先同源码完整门禁，再固定Web/Worker/runtime/browser、性能/CI及最终main。测试基础设施不增加产品迭代，main已主动同步后计数0；不为拆文件继续机械提取。
 
-本片详见[R8T模块记录](changes/2026-10-31-refactor-r8t-enterprise-source-onboarding.md)；上一片[R8S模块记录](changes/2026-10-31-refactor-r8s-saved-text-results.md)。当前只维护摘要，详细过程/失败/命令回归所属模块。
+详见[R8U模块记录](changes/2026-10-31-refactor-r8u-whole-core.md)；上一片[R8T模块记录](changes/2026-10-31-refactor-r8t-enterprise-source-onboarding.md)。当前只维护摘要，原失败/完整命令回归所属模块与证据。
 
 ## 历史固定源记录：R8Q 及更早
 

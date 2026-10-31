@@ -1,12 +1,12 @@
-# 当前迁移：R8T 接入模块完成，转向整版验收
+# 当前迁移：R8U 先修真实验收阻塞，再整版验证
 
-应用/定向接受源码 `d4c7b8d912ec981653462b3785228108ea7ab799`；独立候选，整体ACTIVE，未合回main、未部署，47 HOLD。
+修正代码基线 `0ef4156215a7599ef8e57b7fb54c185a252ce109`；独立候选，整体ACTIVE，未合回main、未部署，47 HOLD。
 
-原scripts/lib四个审计/计划实现与声明迁入企业服务source-onboarding，六个实际runtime/CLI/tests消费者同时迁移；两个算法及消费者正文除import外EXACT。原CLI命令、产物和准确账号复核不变，未复制实现或引入新框架。
+没有新增产品职责迁移。原harness的开发heap与检测端只读生命周期修正完成，原mutating请求、原90s预算、账号/URL/operation保持。实际HTTP23/87与内存9/18通过；原timeline完整浏览器及原未到达59项新执行通过。
 
-6个受影响入口全新PASS，catalog203；真实PG/CLI及重新打包的企业服务45检查通过。模块计数1/3、main仍e2f56255；root5088类型输入rawhash保持。完整Naumi Web/Worker/core203/runtime177/browser92、有效CI/性能及最终main验收尚未退出。
+原203项全部保留，新增两个必跑控制后共205；完整205、固定NaumiWeb/Worker镜像、runtime177/browser92、性能容量/有效CI/最终main仍OPEN。两轮144/1/59不删，第二轮完整日志CORE_FINAL.log；首轮聚合日志覆盖事故以145条原entrylog哈希、REPORT/trace/cleanup保存事实，不伪造旧聚合。
 
-本片详见[R8T模块记录](../changes/2026-10-31-refactor-r8t-enterprise-source-onboarding.md)；上一片[R8S模块记录](../changes/2026-10-31-refactor-r8s-saved-text-results.md)。当前只维护摘要，详细过程/失败/命令回归所属模块。
+详见[R8U模块记录](../changes/2026-10-31-refactor-r8u-whole-core.md)；上一片[R8T模块记录](../changes/2026-10-31-refactor-r8t-enterprise-source-onboarding.md)。当前只维护摘要，原失败/完整命令回归所属模块与证据。
 
 ## 历史固定源记录：R8Q 及更早
 

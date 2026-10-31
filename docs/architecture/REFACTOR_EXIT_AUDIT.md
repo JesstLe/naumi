@@ -1,20 +1,19 @@
-# 整体退出审计：R8T，整体未完成
+# 整体退出审计：R8U，未完成
 
-应用/定向接受源码 `d4c7b8d912ec981653462b3785228108ea7ab799`；独立候选，整体ACTIVE，未合回main、未部署，47 HOLD。
+修正代码基线 `0ef4156215a7599ef8e57b7fb54c185a252ce109`；独立候选，整体ACTIVE，未合回main、未部署，47 HOLD。
 
 | 要求 | 当前权威证据 | 状态 |
 |---|---|---|
-| 生产业务不反向import路由 | 当前图0；2条release fixture单列 | 结构通过，整版行为待验 |
-| DB基础层不依赖业务、已迁消费者不穿旧db | 当前图均0，compat facade仍为实际CLI/tests保留 | 结构通过 |
-| 运行代码脱离scripts | 原runtime1/test2→当前全部0；实际runtime bundle和原PG/CLI验收 | 本结构债务关闭 |
-| 无导入环 | 四类SCC均0；原dist未解析边单列 | 结构通过，不替代HTTP/SQL动态边 |
-| Canvas文档/任务职责 | 本轮root src1838文件raw SHA保持；原模块证据分别归档 | 整版产品浏览器待验 |
-| 当前同source完整候选 | 本片6个入口新执行，catalog203；企业独立服务45检查 | OPEN，不是完整Naumi Web/Worker验收 |
-| 性能、有效CI、最终main | 独立服务64请求错误0不是100k容量；main仅同步流入候选 | OPEN，未合回main/部署 |
+| 产品依赖方向/无导入环 | R8T/R8U当前图：生产逆向边0、四类SCC0；fixture/distedges单列 | 结构通过，不代行为 |
+| 当前完整核心门禁 | 先后两次144PASS/1FAIL/59NOT_RUN | FAIL历史保留，修正后的完整205待验 |
+| 验收基础设施修正 | 仅devheap4GiB；原身份/期限GET有限恢复；writes一次 | HTTP23/87、内存9/18及实际timeline通过 |
+| 原未执行的59项 | 同0ef41562新执行59PASS/0FAIL/0NOT_RUN | subset PARTIAL/exit2，不拼旧144 |
+| 当前固定镜像/runtime/browser | 企业服务45项为独立证据，非完整Naumi新镜像 | OPEN |
+| 性能、有效CI、最终main | 本机commit/Nexttrace为诊断，不是持续容量 | OPEN；未合main/部署，47HOLD |
 
-完整事实见`output/refactor-r8t-20261031/WHOLE_EXIT_REQUIREMENTS.json`。结构归属清理后，下一步当前整版core203和实际失败修复，不以更多机械提取替代完整退出。历史R8P135/1/57、旧镜像和产品浏览器不跨source代验；分支超过48h的原因仍为完整退出未达成。
+源代码与测试记录/准备问题分别保存。原3GiB预算触发80%重启是本轮引入问题；4GiB单次通过不是零重启保证。只读探针的ParentPID复用与首轮聚合日志覆盖均如实注明；不让记录错误掩盖业务失败，也不把局部成功当全项目完成。
 
-本片详见[R8T模块记录](../changes/2026-10-31-refactor-r8t-enterprise-source-onboarding.md)；上一片[R8S模块记录](../changes/2026-10-31-refactor-r8s-saved-text-results.md)。当前只维护摘要，详细过程/失败/命令回归所属模块。
+详见[R8U模块记录](../changes/2026-10-31-refactor-r8u-whole-core.md)；上一片[R8T模块记录](../changes/2026-10-31-refactor-r8t-enterprise-source-onboarding.md)。当前只维护摘要，原失败/完整命令回归所属模块与证据。
 
 ## 历史固定源记录：R8Q 及更早
 
