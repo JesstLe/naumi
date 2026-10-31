@@ -66,7 +66,7 @@ async function main() {
       await assert.rejects(capacity.acquire({ providerId: "shared-account-b", baseUrl: `${f.origin}/another-protocol`, maxConcurrent: 4, timeoutMs: 5000 }), (e: any) => e.code === "PROVIDER_BUSY", "Duplicating a supplier account under another provider ID cannot bypass its concurrency limit");
       assert.equal((await providerCapacitySummary(f.sql, sharedConfig))["shared-account-b"].inFlight, 1);
     } finally { await sharedLease.release(); }
-    f.config.upstreamModels[0].parameterMap = { quality: { high: "hd" }, resolution: { "2K": "2048x2048" } };
+    f.config.upstreamModels[0].parameterMap = { quality: { low: "standard", medium: "standard", high: "hd" }, resolution: { "2K": "2048x2048" } };
     f.config.upstreamModels[0].capabilities.preserveIdentity = true;
     f.config.upstreamModels[0].capabilities.textAccuracy = true;
     const textKey = await f.credentials.importPlain({ providerId: "text-provider", plain: "fixture-text-account", actor: "fixture" });
@@ -343,7 +343,7 @@ async function main() {
     const retainedLease = await capacity.acquire({ providerId: "p1", baseUrl: `${f.origin}/v1`, maxConcurrent: 4, timeoutMs: 5000 });
     try { await assert.rejects(capacity.acquire({ providerId: "p1", baseUrl: `${f.origin}/v1`, maxConcurrent: 4, timeoutMs: 5000 }), (e: any) => e.code === "PROVIDER_BUSY", "An old task must observe a newly published lower limit before any new-version supplier call"); }
     finally { await retainedLease.release(); }
-    console.log("PASS frozen image/text/video execution, durable credential rotation and replay, private public catalogs, compressed responses and zero uncertain paid retries");
+    console.log("PASS frozen image/text/video execution, durable credential rotation and replay, private public catalogs, compressed responses and zero uncertain paid retries CURRENT_DRAFTS=PASS STALE_DRAFT_REJECTED=PASS HEADLESS_CANVAS=PASS");
   } finally { await globalDb?.getPool().end(); await f.cleanup(); await rm(mediaDirectory, { recursive: true, force: true }); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

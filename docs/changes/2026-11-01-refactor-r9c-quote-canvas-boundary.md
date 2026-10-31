@@ -31,3 +31,5 @@
 - 原 `canvas-background-task-recovery-contract.mjs` 在完整eb65基线和d35均因查找已迁出的内联effect而失败；保留原日志，不把产品恢复逻辑搬回组件。兼容CLI现在复用视频跟随、视频提交、OCR编辑、pending展示四个现存执行验证；任务operationId/原子创建保留窄AST检查，明确它本身不是PG验收。
 - `verify-model-execution.ts` 的旧fixture重复使用同一actor的v1草稿发布到v2，两边同样被 `PUBLISH_STALE_DRAFT_BASE` 拒绝。后续发布使用独立actor基于current创建草稿，并新增旧草稿仍拒绝的断言；没有加acceptStaleBase，也没有修改产品发布检查。
 - 本节记录代码准备，修正后的实际运行、固定源码与交付证据另行补录；旧AFFECTED_REPORT的FAIL和所有原始失败输出保留。
+
+辅助执行继续暴露两个旧fixture假设：OCR编辑验证未预期现有result-attachment的 `mode:initialize`；model-execution fixture只映射high，却在后段请求默认medium。前者在完整eb65脚本/产品上同样复现（原exit1保留），现按原baseline/当前owner区别断言；后者实际已完成headless Canvas处理后才失败，现补齐fixture声明的low/medium映射，保留high→hd。没有改产品参数编译或结果定位规则。初次续接失败日志保留，最终定向复测使用新目录不覆盖。
