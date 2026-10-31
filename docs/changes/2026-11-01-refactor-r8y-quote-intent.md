@@ -29,3 +29,8 @@
 原价--simplify实入口/真实PG已通过：5笔真实结算、62 fixture积分、5次loopback PNG供应商POST、预占归零；另2个已受理batch仅验证冻结计划，4个item保持queued，未冒充其交付。初次调用未带--simplify进入历史确认协议而失败，保留原日志。当前协议另在原4d完整副本复现旧fixture同actor复用v1草稿、向v2发布被正确拒绝；仅使用新fixture actor创建当前基线草稿，未改生产stale draft保护。旧脚本硬编码3笔/38积分、expired-not-accepted及缺失账单默认12的假证据已改成真实5笔/62积分读回和明确接受状态。新增断言最初误把发布后预览的批次28写成24，失败保留；最终绑定原server preview28，不信客户端宣称24。
 
 实际命令、literal、exit及未完成项以本轮证据为准；完整固定源码208/runtime/browser/性能尚待执行。实际命令、literal、exit、全量hash、copy-only回滚及四产物以本轮VERIFICATION/DELIVERY为准。整体ACTIVE，PR8仍draft，未合main/未部署，47 HOLD。生产容量、历史事故与有效CI继续独立保留。
+
+
+## 首轮固定候选完整门禁
+
+`beea691909356bad1a4506f6576d873b9c275dd6`完整App/SDK构建与字节核对通过；首次core208实际147PASS/1FAIL/60NOT_RUN，fullCorePass=false。失败`scope-receipt`为窄VM夹具未绑定新增纯`operation-id`叶模块，原日志/报告保留；只补实际叶模块加载，不扩展默认import放行，不改23个receipt业务断言。定向23PASS后重新固定验证源码，完整门禁重新执行，不拼接147；runtime/browser/mixed在首轮门槛失败后没有启动。父PG已按精确ID/标签清理。
