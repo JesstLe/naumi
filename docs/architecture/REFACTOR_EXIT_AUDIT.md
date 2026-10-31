@@ -1,20 +1,20 @@
-# 整体退出审计：R8S，未完成
+# 整体退出审计：R8T，整体未完成
 
-应用/定向验收源码 `8e8c73d7695c605c654853924305d65e49c2fa9f`；独立候选，整体ACTIVE，未合回main、未部署，47 HOLD。
+应用/定向接受源码 `d4c7b8d912ec981653462b3785228108ea7ab799`；独立候选，整体ACTIVE，未合回main、未部署，47 HOLD。
 
 | 要求 | 当前权威证据 | 状态 |
 |---|---|---|
-| 生产业务不反向import路由 | 当前AST/编译图：0；2条release fixture另记 | 结构检查通过，整版行为待验 |
-| DB基础层不依赖业务、已迁消费者不穿旧db | 当前图：platform DB业务边0，生产db facade消费者0 | 结构检查通过；compat facade为实际CLI/tests保留 |
-| 运行代码脱离scripts | enterprise runtime-pilot仍有1条；另2条test边，原始3边保留 | OPEN，下一真实owner迁移项 |
-| 无模块导入环 | 语法/编译后静态/全部四类SCC0 | 结构证据，不替代HTTP/SQL/动态边 |
-| Canvas文档/任务职责 | saved text已有33用例、15定向入口、真实PG；旧写算法保持 | 本切片通过，整版浏览器待验 |
-| 同固定源码完整候选 | 当前catalog199，本片仅15新执行；未建新镜像/runtime177/browser92 | OPEN |
-| 性能、有效CI、最终main | 范围控制非p95容量；main同步仅流入候选 | OPEN，未合回main/部署 |
+| 生产业务不反向import路由 | 当前图0；2条release fixture单列 | 结构通过，整版行为待验 |
+| DB基础层不依赖业务、已迁消费者不穿旧db | 当前图均0，compat facade仍为实际CLI/tests保留 | 结构通过 |
+| 运行代码脱离scripts | 原runtime1/test2→当前全部0；实际runtime bundle和原PG/CLI验收 | 本结构债务关闭 |
+| 无导入环 | 四类SCC均0；原dist未解析边单列 | 结构通过，不替代HTTP/SQL动态边 |
+| Canvas文档/任务职责 | 本轮root src1838文件raw SHA保持；原模块证据分别归档 | 整版产品浏览器待验 |
+| 当前同source完整候选 | 本片6个入口新执行，catalog203；企业独立服务45检查 | OPEN，不是完整Naumi Web/Worker验收 |
+| 性能、有效CI、最终main | 独立服务64请求错误0不是100k容量；main仅同步流入候选 | OPEN，未合回main/部署 |
 
-完整逐项事实保存在`output/refactor-r8s-20261031/WHOLE_EXIT_REQUIREMENTS.json`。不将历史source的135/1/57或旧镜像/产品浏览器结果借作当前通过。分支超过48h的原因仍为完整退出未达成。
+完整事实见`output/refactor-r8t-20261031/WHOLE_EXIT_REQUIREMENTS.json`。结构归属清理后，下一步当前整版core203和实际失败修复，不以更多机械提取替代完整退出。历史R8P135/1/57、旧镜像和产品浏览器不跨source代验；分支超过48h的原因仍为完整退出未达成。
 
-本片详见[R8S模块记录](../changes/2026-10-31-refactor-r8s-saved-text-results.md)；上一片[R8R模块记录](../changes/2026-10-31-refactor-r8r-selection-projection.md)。当前状态只记摘要，详细实施/失败/命令回归所属模块与证据，不再向四份overview复制整篇流水。
+本片详见[R8T模块记录](../changes/2026-10-31-refactor-r8t-enterprise-source-onboarding.md)；上一片[R8S模块记录](../changes/2026-10-31-refactor-r8s-saved-text-results.md)。当前只维护摘要，详细过程/失败/命令回归所属模块。
 
 ## 历史固定源记录：R8Q 及更早
 

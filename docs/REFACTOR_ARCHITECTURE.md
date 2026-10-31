@@ -1,12 +1,12 @@
-# 当前架构增量：R8S 文字结果文档归属
+# 当前架构增量：R8T 企业接入业务内聚
 
-应用/定向验收源码 `8e8c73d7695c605c654853924305d65e49c2fa9f`；独立候选，整体ACTIVE，未合回main、未部署，47 HOLD。
+应用/定向接受源码 `d4c7b8d912ec981653462b3785228108ea7ab799`；独立候选，整体ACTIVE，未合回main、未部署，47 HOLD。
 
-页面只绑定已保存文字身份；既有text-document复用canonical normalizer、草稿和per-ID written fence。正常读取与原SSE相同，迟到快照不回滚后来的confirmed/history/delete。先筛目标再规范化；2000无关行字段读取0，初版4000的失败原样留证，不当容量数据。
+services/enterprise-workflow/src/source-onboarding拥有audit与pure pilot-plan及原声明；runtime/CLI→模块，CLI继续承担参数、文件权限、pool和输出组装。原算法/只读事务/错误身份/快照指纹保持，原provision仍拥有target事务与幂等。旧scripts/lib实现移除，无重复facade。
 
-仅2个原产品文件改变，其他2135原产品raw SHA保持；166个其他Canvas函数、17个其他assistant context字段及6个旧文档算法保持。四类SCC0；生产lib→app/platform DB→业务/生产→旧db facade均0。enterprise workflow尚有1条runtime/CLI→scripts业务归属边，2条test边与原始3边全部单列；不把静态图当完整运行解耦证明。
+原runtime→scripts1条、tests→scripts2条均清零；生产lib→app、DB基础层→业务、生产旧db facade消费者仍0，四类SCC0。两个release fixture路由边与一个dist未解析边继续单列。结构图不替代整版行为/动态依赖验收。
 
-本片详见[R8S模块记录](changes/2026-10-31-refactor-r8s-saved-text-results.md)；上一片[R8R模块记录](changes/2026-10-31-refactor-r8r-selection-projection.md)。当前状态只记摘要，详细实施/失败/命令回归所属模块与证据，不再向四份overview复制整篇流水。
+本片详见[R8T模块记录](changes/2026-10-31-refactor-r8t-enterprise-source-onboarding.md)；上一片[R8S模块记录](changes/2026-10-31-refactor-r8s-saved-text-results.md)。当前只维护摘要，详细过程/失败/命令回归所属模块。
 
 ## 历史固定源记录：R8Q 及更早
 

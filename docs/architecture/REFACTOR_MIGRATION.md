@@ -1,12 +1,12 @@
-# 当前迁移：R8S 完成，第三模块主线同步
+# 当前迁移：R8T 接入模块完成，转向整版验收
 
-应用/定向验收源码 `8e8c73d7695c605c654853924305d65e49c2fa9f`；独立候选，整体ACTIVE，未合回main、未部署，47 HOLD。
+应用/定向接受源码 `d4c7b8d912ec981653462b3785228108ea7ab799`；独立候选，整体ACTIVE，未合回main、未部署，47 HOLD。
 
-已迁移页面的助手文字快照读取/筛选/默认值，统一由原text-document.refreshSaved执行。原/新33用例、最终15受影响入口与真实PG21/60通过；subset PARTIAL/exit2不是完整199通过。首轮正常化范围问题已单独复现修正，最终source全新验收。
+原scripts/lib四个审计/计划实现与声明迁入企业服务source-onboarding，六个实际runtime/CLI/tests消费者同时迁移；两个算法及消费者正文除import外EXACT。原CLI命令、产物和准确账号复核不变，未复制实现或引入新框架。
 
-main两次刷新、普通merge均实际Already up to date，incoming e2f56255；产品模块计数2→3→0。旧raw5315回滚与后续编辑保护、完整归档以R8S证据为准。下一项是enterprise source-audit在runtime/CLI与operator之间的正确owner，沿现有调用者及隔离服务构建验收，不另起框架。
+6个受影响入口全新PASS，catalog203；真实PG/CLI及重新打包的企业服务45检查通过。模块计数1/3、main仍e2f56255；root5088类型输入rawhash保持。完整Naumi Web/Worker/core203/runtime177/browser92、有效CI/性能及最终main验收尚未退出。
 
-本片详见[R8S模块记录](../changes/2026-10-31-refactor-r8s-saved-text-results.md)；上一片[R8R模块记录](../changes/2026-10-31-refactor-r8r-selection-projection.md)。当前状态只记摘要，详细实施/失败/命令回归所属模块与证据，不再向四份overview复制整篇流水。
+本片详见[R8T模块记录](../changes/2026-10-31-refactor-r8t-enterprise-source-onboarding.md)；上一片[R8S模块记录](../changes/2026-10-31-refactor-r8s-saved-text-results.md)。当前只维护摘要，详细过程/失败/命令回归所属模块。
 
 ## 历史固定源记录：R8Q 及更早
 

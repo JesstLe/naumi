@@ -1,14 +1,14 @@
-# 当前候选：R8S 已保存文字结果，整体退出 OPEN
+# 当前候选：R8T 企业源站接入归属，整版退出 OPEN
 
-应用/定向验收源码 `8e8c73d7695c605c654853924305d65e49c2fa9f`；独立候选，整体ACTIVE，未合回main、未部署，47 HOLD。
+应用/定向接受源码 `d4c7b8d912ec981653462b3785228108ea7ab799`；独立候选，整体ACTIVE，未合回main、未部署，47 HOLD。
 
-`text-document.refreshSaved`已接管原页面快照读取、规范化和草稿合入；只GET原结果、不重执行工具。33用例/26正常trace EXACT，15个受影响入口全新通过（subset PARTIAL/exit2，非完整199）；真实PG21/60含5个新刷新用例。完整类型/lintexit0，5088类型输入hash稳定。
+企业source-onboarding已集中原审计/复核计划；runtime和operator CLI依赖模块，不反向依赖scripts。原/新34组trace与算法/六个消费者正文EXACT；真实PG/CLI13项、pilot-plan3项及独立企业runtime45检查通过。6个受影响入口全新PASS（subset PARTIAL/exit2，不是完整203）。根/服务类型和lint exit0。
 
-第三模块同步main实际Already up to date，main仍e2f56255，计数2→3→0。完整源码/字节patch/原5315hash独立回滚以本片四产物为准。
+计数1/3；main已普通同步且仍e2f56255。完整归档/字节patch/原5317hash副本回滚以本片四产物为准。
 
-**🔴 分支超过48h：完整候选验收尚未退出，按用户持续整体重构要求保留工作树。** 下一片审查enterprise workflow runtime/CLI→scripts源审计导入；完整core/镜像/runtime/产品浏览器、有效CI、同机性能及最终main验收继续。
+**🔴 分支超过48h：按用户持续整体重构要求保留候选；完整退出尚未达到。** 下一步当前固定source完整core203及实际失败修复，再推进固定Web/Worker镜像、整版runtime/browser、同机性能和最终main验收；不继续机械拆Canvas。
 
-本片详见[R8S模块记录](changes/2026-10-31-refactor-r8s-saved-text-results.md)；上一片[R8R模块记录](changes/2026-10-31-refactor-r8r-selection-projection.md)。当前状态只记摘要，详细实施/失败/命令回归所属模块与证据，不再向四份overview复制整篇流水。
+本片详见[R8T模块记录](changes/2026-10-31-refactor-r8t-enterprise-source-onboarding.md)；上一片[R8S模块记录](changes/2026-10-31-refactor-r8s-saved-text-results.md)。当前只维护摘要，详细过程/失败/命令回归所属模块。
 
 ## 历史固定源记录：R8Q 及更早
 
