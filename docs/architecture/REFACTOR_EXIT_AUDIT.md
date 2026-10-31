@@ -1,10 +1,10 @@
 # 整体退出审计
 
-最近完整应用验收源码（R8Z）：f7441ed0f9ae077f5d3f6fafb0f7c70b6d585567。完整App/SDK、core209、runtime177、产品浏览器92与450秒混合均为同固定源实际重跑，未复用旧208绿灯。R9A 的其余 7 路身份归属已实际完成 39 场景/90 检查 A/B，集中回归/封装继续执行；R8Z 整版数字不作为 R9A 完整应用通过。**wholeGoal=ACTIVE；mainMerged=false；deployed=false；47 HOLD。**
+最近完整应用验收源码（R8Z）：f7441ed0f9ae077f5d3f6fafb0f7c70b6d585567。完整App/SDK、core209、runtime177、产品浏览器92与450秒混合均为同固定源实际重跑，未复用旧208绿灯。R9A 的其余7路及BI身份归属在固定验证源9a52ba65完成39场景/90检查A/B、pricing11/11（PARTIAL/exit2，非完整210目录）、5091类型输入/tsc与lint exit0、四类SCC0、独立副本回滚5333原始哈希/原39/90行为与later-edit零写；原R8Z整版数字不作为R9A完整应用通过。**wholeGoal=ACTIVE；mainMerged=false；deployed=false；47 HOLD。**
 
 | 要求 | 当前证据 | 判定 |
 |---|---|---|
-| 入口认证/权益规则唯一归属 | 实际native cookie/HTTP/PG/planner/quote20用例33检查，入口内2/2→1/1，跨actor/无context/下一调用与请求重新校验 | 本轮PASS；无跨请求权限缓存 |
+| 入口认证/权益规则唯一归属 | R8Z plan20/33；R9A实际native cookie/7个handler/BI/PG39/90，2/3→1，正常/授权/字节投影EXACT | 本模块PASS；其余历史/间接入口继续迁移，无跨请求权限缓存 |
 | 报价/任务/权限/取消/UNKNOWN | 同固定源core209/0/0/0reuse，原价/显式false/任务恢复按case边界验证 | 当前完整本地PASS，历史事故独立保留 |
 | 模块依赖方向 | 当前四类SCC=0；生产lib→app0、runtime→scripts0；2release fixture与1dist例外单列 | 结构PASS，不替代行为验收 |
 | 原生业务链 | 七个入口同源固定Linux SDK，完整App/Worker字节EXACT | PASS |
@@ -25,4 +25,4 @@
 
 ## 入口迁移边界
 
-R8Z 的 59 个 creation/receipt wrapper 调用含 plan 的 actor 消费者和 7 处直接 handler 认证候选。R9A 已迁移这 7 处，并将主提交的 BI 重复认证一并收敛；实际领域 HTTP 路径由 2/3 次变为各 1 次。其余入口的间接 BI/领域适配继续按调用链盘点；不得宣称全部 59 个入口已经迁移或全部认证读取只有一次。
+R8Z 的59个wrapper含plan消费者和7处直接handler认证候选。R9A已迁移这7处与主提交BI；扩展本地调用链/动态import盘点显示actor消费者1→8、本地认证候选8→1，剩余为历史`/api/generate-image`轮询适配。其余跨文件BI/领域适配继续核查；不得宣称全部59个入口已唯一认证。第三模块已刷新并普通整合最新main（已包含、源码未变，计数3→0）；这不等于分支已合main。

@@ -2,7 +2,11 @@
 
 ## 当前推进：R9A 图片入口身份归属
 
-[R9A 模块](changes/2026-11-01-refactor-r9a-image-ingress-routes.md)已迁移其余 5 个图片路由文件的 7 个处理器，并把主提交 BI 包装的身份来源统一到入口。完整 fe9d 基线与修改版实际 HTTP/native cookie/PG 对照各 39 场景、90 检查，正常响应/授权/原字节投影 EXACT；认证 SQL 从 `2/3/2/2/2/2/2` 变为 `1/1/1/1/1/1/1`。该计数不含 middleware。7 个产品文件变更，不改领域/钱包/供应商/schema。集中 pricing 回归与最终封装继续执行；最后完整应用/镜像证据仍是下列 R8Z，不复用为 R9A 完整验收。
+[R9A 模块](changes/2026-11-01-refactor-r9a-image-ingress-routes.md)已迁移其余 5 个图片路由文件的 7 个处理器，并把主提交 BI 包装的身份来源统一到入口。完整 fe9d 基线与修改版实际 HTTP/native cookie/PG 对照各 39 场景、90 检查，正常响应/授权/原字节投影 EXACT；认证 SQL 从 `2/3/2/2/2/2/2` 变为 `1/1/1/1/1/1/1`。该计数不含 middleware。7 个产品文件变更，其他 2134 个原 src/services 文件 raw hash 不变，不改领域/钱包/供应商/schema。
+
+本模块固定验证源码 `9a52ba65b77e729ea724fceff66283c5f020e678`：pricing 11/11 脚本通过、0失败、0未运行、0复用；runner 因部分目录返回 **PARTIAL/exit2**。目录现有210项，其余199项没有在本轮重新执行。全项目5091实际类型输入一致/tsc exit0、lint exit0/37既有warning、四类SCC=0。独立副本恢复5333原始哈希及39/90原行为，later-edit首写前拒绝/零写。最终归档源码与本固定验证源之间仅文档更新，见本轮DELIVERY/source bridge；下列R8Z完整应用/镜像证据不作为R9A完整验收。
+
+第三功能模块后已刷新 origin/main `e2f562556ea6e71370619686e1fc8d4c634ef5e7` 并执行普通整合（已包含，源码不变），modulesSinceSync 3→0；没有修改或推送 main。当前封装与实际命令归 `output/refactor-r9a-20261101`。
 
 ## 最近完整应用验收（R8Z）
 
@@ -57,4 +61,4 @@
 
 ## 入口迁移边界
 
-R8Z 静态 AST 的 59 个 creation/receipt wrapper 调用中，图片 plan 先消费 actor，另 7 处直接 handler 认证由 R9A 完成迁移。其余入口的间接 BI/领域适配仍需按实际调用链盘点，不把这 7 处完成扩大为全部入口认证已唯一归属。状态、源与回滚见各模块 DELIVERY，不把静态清单当作线上事故归因。
+R8Z 静态 AST 的 59 个 creation/receipt wrapper 调用中，图片 plan 先消费 actor，另 7 处直接 handler 认证由 R9A 完成迁移。R9A 扩展盘点含本地函数/动态 import：actor消费者1→8、本地认证候选8→1，剩余 `/api/generate-image` 历史imagegen轮询适配；其他跨文件 BI/领域身份适配仍待核查。两次盘点方法不同，不把迁移7处扩大为全部59个入口认证已唯一归属，也不把静态清单当线上事故归因。

@@ -24,7 +24,11 @@
 
 修改版首次实际执行 **39 场景/90 检查 PASS**，认证读取 `1/1/1/1/1/1/1`，全部正常响应/授权/字节投影与原版 EXACT。两轮各自 PG/随机 schema、连接、本地 HTTP 与临时媒体均已清理。全项目 lint exit0（37 既有 warning），tsc `--noEmit --incremental false` exit0；顺序为 lint→最终类型输入捕获→tsc。
 
-当前实际类型输入为 5091（5087 compiler source 与 4 个未变的配置文件），原字节已核对。受影响组集中回归、提交/同步与独立副本回滚尚待本轮执行；后续更新本节。
+当前实际类型输入为 5091（5087 compiler source 与 4 个未变的配置文件），原字节已核对。固定验证源 `9a52ba65b77e729ea724fceff66283c5f020e678` 的 pricing 组11个脚本全部执行通过、0失败、0未运行、0复用；runner 对部分目录如实返回 `PARTIAL / exit 2`，不是完整210目录通过。四类 SCC 为0，2个release fixture和1个dist例外保留。原/新与回滚三次39/90实际对照的正常响应/授权/原字节投影 EXACT。
+
+副本回滚恢复11个原文件、移除2个新增文件、全部5333原始raw hash；实际原生HTTP/PG恢复认证2/3次旧行为。later-edit守卫在首写前exit1，副本零写。源码与验证资产保持新版。第三功能模块已刷新main `e2f562556ea6e71370619686e1fc8d4c634ef5e7` 并普通整合（已包含，源9a52未变），计数3→0；未写/推main。归档文档提交与9a52之间仅4个文档变化，产品/验证资产raw source bridge与最终四产物以 `output/refactor-r9a-20261101/VERIFICATION.txt`、`DELIVERY.json` 为准。
+
+封装准备的两次失败原样记入 `FAILED_ATTEMPTS.json`：产品统计最初误计仅src而未包含既定services范围；git mode清单最初未禁用非ASCII路径引用。均修正证据脚本，未改产品或放宽行为断言。
 
 本轮补充了调用链 AST 盘点（含本地函数与动态 import 的 wrapper），不是原 R8Z 仅列直接 handler 的同一统计：59 个 wrapper 中 actor 消费者 1→8，直接本地认证候选 8→1；剩余为 `/api/generate-image` 的历史 imagegen 轮询适配。其他跨文件 BI/领域身份适配仍待后续模块核查；不把局部候选为零/迁移 7 处写成全部入口已唯一认证。
 

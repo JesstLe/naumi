@@ -256,6 +256,8 @@
 
 [R9A 记录](../changes/2026-11-01-refactor-r9a-image-ingress-routes.md)：其余 5 个图片路由文件的 7 个 handler 显式消费入口 actor；creation/receipt callback 共用同一类型。BI 入口接受可选的服务端认证结果，省略仍执行旧认证，null 不再重试另一身份，no-DB 行为保持。原生 cookie/实际 HTTP/PG 的完整原/新 39 场景/90 检查证明直接调用链 2/3→1、正常轨迹 EXACT；该数字不含 middleware，终态 ZIP 数据明确为 fixture，不是供应商交付证明。全局原任务/取消/UNKNOWN 与钱包规则仍由原模块拥有，没有 schema/价格/供应商修改。
 
+固定9a52验证源的pricing11/11执行通过，runner保留部分目录PARTIAL/exit2，不称完整210通过；全项目5091类型输入一致/tsc exit0、lint exit0、四类SCC0。独立副本原5333raw hash/原39场景90检查恢复，later-edit首写前拒绝。第三模块刷新并普通整合main（已包含，无源码变化，计数3→0）。完整应用最后证据仍归R8Z；历史generate-image轮询及跨文件身份适配为后续实际代码任务。
+
 ## 历史入口
 
 [收敛前的完整迁移流水](https://github.com/JesstLe/naumi/blob/82729161200f166fe587b98bceb756a44999840c/docs/architecture/REFACTOR_MIGRATION.md)保留。文档类改动不增加产品模块计数；后续代码每完成三模块普通同步主线，仍遵从 AGENTS。
