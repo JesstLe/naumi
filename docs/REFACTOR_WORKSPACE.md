@@ -2,7 +2,7 @@
 
 ## 当前推进：R10B 供应拒绝证据归属
 
-[R10B](changes/2026-11-02-refactor-r10b-supplier-rejection-ownership.md)真实PG／租约／handler复现无证明403被标NOT_ACCEPTED、批次自动购买第二次。模型执行owner在原usage保存逐图身份，纯政策与只读接口核对完整明确未收费证据，父任务只消费结论；不加确认或等待。原七场景复现、新七PASS，无证明批次POST2→1，明确未收费仍2→2；正常6积分／socket未知／客户释放保持。15纯政策、原parent25／首checkpoint5／quota／runner20-368已通过；完整镜像及实际UI组合按R10B最终证据，不将224登记当全跑。整体ACTIVE，当前CI／剩余矩阵／语义审阅及合main继续，本线程部署0。
+[R10B](changes/2026-11-02-refactor-r10b-supplier-rejection-ownership.md)真实PG／租约／handler复现无证明403被标NOT_ACCEPTED、批次自动购买第二次。模型执行owner在原usage保存逐图身份，纯政策与只读接口核对完整明确未收费证据，父任务只消费结论；不加确认或等待。原七场景复现、新七PASS，无证明批次POST2→1，明确未收费仍2→2；正常6积分／socket未知／客户释放保持。15纯政策、原parent25／首checkpoint5／quota／runner20-368已通过；固定d579完整镜像已构建，原96＋新6实际102PASS／8consume48积分；原顺序generation21/21子命令exit0，顶层按局部scope返回PARTIAL／exit2，不将224登记当全跑。整体ACTIVE，当前CI／剩余矩阵／语义审阅及合main继续，本线程部署0。
 
 
 ## 最新整合：R10A 保留当前 main

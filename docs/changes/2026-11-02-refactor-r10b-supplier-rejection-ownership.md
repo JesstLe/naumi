@@ -26,7 +26,7 @@
 
 ## 固定完整应用与浏览器
 
-扩展已有full-image provider、fixture trace与独立浏览器case，而非新增测试运行系统。三个实际Canvas操作覆盖403无证明、明确未收费和实际socket丢失，读取真实UI使用的`/api/generate-image?job=原父ID`，同case核对原父回执、可见错误、账务、供应trace，再重载确认零付费重提。browser fixture显式启用单通道priority，原普通生成／编辑断言保持；原始用例加新六项预计102，最终实际结果才记为完成。
+扩展已有full-image provider、fixture trace与独立浏览器case，而非新增测试运行系统。三个实际Canvas操作覆盖403无证明、明确未收费和实际socket丢失，读取真实UI使用的`/api/generate-image?job=原父ID`，同case核对原父回执、可见错误、账务、供应trace，再重载确认零付费重提。browser fixture显式启用单通道priority，原普通生成／编辑断言保持；原始96项加新六项单次实际 **102 PASS／8 consume／48积分／exit0**；三个失败case各一供应POST、客户consume0，真实可见错误与原GET／账务／阶段／reload同case闭合。
 
 基线使用原61ef完整镜像（原2149产品字节与474相同）和新增验收fixture，三个新case／六检查实际PASS，仅执行选择用例，不冒称又执行原96项。最终候选固定镜像、完整组合、类型、四产物与回滚结果以VERIFICATION／DELIVERY封版为准。
 
@@ -39,3 +39,13 @@
 M03／M04只推进本轮具体真实PG／供应socket场景和对应页面维度，远端对象PUT、其他故障及整体语义耦合审阅仍需完成；224目录登记不等于整版已执行通过。整体ACTIVE，候选未合main，本线程未部署。最终SHA／固定image source、baseline→modified→copy rollback及后续编辑零写见本轮产物。
 
 固定完整镜像已实际构建：应用源`d579379549ed1fab5c405f0ef81544a23cf1d7e2`，5398文件，image`sha256:05fc8097b2cb9aa5700bade89ef6489c2ec2b1018c818bfb8212de70e3c29b1f`，Web/Worker/media包探测通过。原generation整组首次在scope-receipt的自定义loader漏登记新只读依赖处FAIL，12PASS/1FAIL/8NOT_RUN保留；该receipt-only夹具登记为禁止调用的sentinel，原23条业务断言不变。后续完整重验独立输出，不拼接成一轮通过。
+
+## 最终本机收敛
+
+- 完整generation组在`923cc385bfb1c3d022a8af310511ee8c54a2c2a4`原顺序单次21/21 PASS、0FAIL、0NOT_RUN、0reuse；顶层报告按“只选generation而非全部core”的既有合同返回PARTIAL／exit2，全部21子命令均exit0。没有修改runner的退出语义或将它写成完整224通过。
+- 全项目非增量tsc／定向lint最终exit0，5108编译器输入及4配置完整hash绑定。原四个关键verifier中285个断言调用AST（仅规范CRLF）保留；一个quota usage断言按完整现有合同精确扩展，断言删除0。
+- 应用固定image仍源d5793795；后续923cc385只改receipt-only夹具接线及本文，最终证据文档提交不改产品字节。浏览器fixture／provider／checker与实际执行绑定；没有把镜像源改标为后续文档源。
+- 自有full-image容器／network／PG tmpfs cleanup已PASS。独立PG待副本回退验证后按CID／label／无其他连接核对清理，最终状态归VERIFICATION。
+- 最终完整源码、原始字节patch、首写前完整hashguard回滚及恢复后旧七场景行为，以本轮四产物和DELIVERY为准；工作区保留新版。后续编辑不匹配零写入，禁止回滚实际工作区。
+
+本轮具体M03/M04阶段及页面证据已推进；没有证明真实供应商额度／付费质量，也未关闭远端对象PUT与已付费同任务交付的剩余故障矩阵、全部语义耦合审阅、当前224同源CI或最终候选合main。整体ACTIVE。分支已超48小时，原因是整体退出和有效同源CI仍未闭合；本线程不执行发布。
