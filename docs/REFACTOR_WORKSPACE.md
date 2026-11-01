@@ -1,5 +1,14 @@
 # 重构工作区：当前交付快照
 
+## 当前收敛：R9Z 同一付费任务断网恢复与验收运行器
+
+[R9Z记录](changes/2026-11-02-refactor-r9z-paid-disconnect-acceptance.md)：完整固定61ef生产镜像的 Web＋Worker＋真实PG＋双浏览器，原92项加新增4项单次 **96 PASS**；8笔消费／48积分。真实Canvas点击→原scope pending→一次held供应POST→浏览器offline→后台原图／作品／单次6积分→联网点击“检查原任务”→相同回执／字节／pending退休→再次重载零新增。无route mock／seed done／额外付费重提；浏览器offline仿真不代替物理断网、服务器故障或供应UNKNOWN。
+
+经典原生UI共享runner现在在切换sourcecopy前绑定Router输入所属根目录；真实PG旧路径复现`Fixture Router build failed`，与旧61ef Image annotation相符。相对／绝对路径及准备页面的真实子进程122检查通过；完整business真实Go／PG／页面重验已exit0，价格75、工具目录、Canvas文字目录、移动端及非管理员404通过，供应商POST0；回滚以R9Z VERIFICATION/DELIVERY为准。保留原30秒导航和120秒fixture启动预算，不为绿灯扩时。产品2149文件raw不变；原166断言AST文本保留、lint／非增量tsc0。
+
+旧61ef Core实际执行93edc006 SUCCESS，GitHub API核实两者tree相同；旧Image仍FAIL，不能标作新head已绿。整体ACTIVE，M03/M04/M06等剩余矩阵、完整语义耦合审阅、当前CI及候选合main继续；**分支超48小时，退出证据未闭合**。未发布，47HOLD。
+
+
 ## 当前整合：R9Y 同步最新 main
 
 [R9Y记录](changes/2026-11-01-refactor-r9y-main-sync.md)：收尾fetch发现main推进到67bbcddf，已在独立分支普通merge并保留原5个文件；无冲突，不改main、不执行发布/退役。旧公开目录32条、新33条及原完整合同通过；incoming扫描证明27个unittest通过。R9W首结果修复与R9X11模型组保持原source证据，不重标成整合头完整223PASS。最终源/类型/副本回滚以本轮DELIVERY为准；整体ACTIVE，部署0，47HOLD。

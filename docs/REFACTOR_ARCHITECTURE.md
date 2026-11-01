@@ -1,5 +1,10 @@
 # 架构与职责：模块化单体
 
+## R9Z 验收边界
+
+[R9Z](changes/2026-11-02-refactor-r9z-paid-disconnect-acceptance.md)把真实浏览器断网链作为原产品浏览器编排的单一内聚case；追踪沿原fixture窄端口以owner绑定读取同一原任务／账本／原图，释放SQL后解码，不让浏览器或验收脚本接管产品状态。原生UI共享runner在调用边界解析Router来源并在现有startup预算准备当前真实Canvas，子进程仍只消费明确输入，页面业务期限不变。本轮产品层零改动。
+
+
 当前版本和运行结果只在 [工作区快照](REFACTOR_WORKSPACE.md) 与 [退出审计](architecture/REFACTOR_EXIT_AUDIT.md) 维护；本文拥有稳定设计、数据归属和依赖方向。
 
 ## 当前实现的职责入口

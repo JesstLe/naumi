@@ -1,5 +1,10 @@
 # 迁移合同与模块记录索引
 
+## R9Z 同任务断网恢复与原生验收输入
+
+[R9Z](../changes/2026-11-02-refactor-r9z-paid-disconnect-acceptance.md)新增独立浏览器case，原主入口只编排；持久状态和付费身份仍归原产品owner。真实四项断网链与原92项合跑96PASS／8consume／48积分，原166断言不删改。经典Go输入只在共享runner绑定原调用根目录，不改十二个wrapper及原business断言；实际原生和副本行为按最终VERIFICATION/DELIVERY。无生产模块迁移，本轮是退出证据补齐，不以文件增长当架构完成。
+
+
 ## R9X 草稿冲突的验证输入
 
 [R9X](../changes/2026-11-01-refactor-r9x-model-draft-verification.md)只更新原模型整模块fixture，独立验证旧tab修订与外来旧base；原11项顺序通过，不为旧脚本改回产品CAS。完整223与main仍分层验收。

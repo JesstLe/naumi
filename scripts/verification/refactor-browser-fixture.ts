@@ -3,6 +3,8 @@
 import {setup} from './refactor-runtime-fixture';
 import {readFile,writeFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
+import {createHash} from 'node:crypto';
+import {decodeImageJobValue} from '../../src/lib/image-job-codec';
 import sharp from 'sharp';
 import {getPool} from '../../src/platform/db/pool';
 import {uploadImage} from '../../src/lib/media-upload';
@@ -27,6 +29,39 @@ async function main(){
    console.log('REFACTOR_BROWSER_SETUP=PASS NATIVE_PROJECT=1 ARTWORKS=2 TEXT=1 HTTP_BRIDGE=0');return;
   }
   const input=JSON.parse(await readFile('/evidence/SETUP.json','utf8')),action=arg('--action');
+  if(action==='paid-trace'){
+   const operation=arg('--operation-id');
+   if(!operation||!/^[a-f0-9-]{36}$/.test(operation))throw Error('PAID_TRACE_OPERATION_REQUIRED');
+   const tx=await sql.connect();let captured:any;
+   try{
+    await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    const parent=(await tx.query("SELECT id,email,snapshot,payload FROM app_image_jobs WHERE id=$1 AND email=$2 AND kind='imagegen'",['imagegen-'+operation,input.owner])).rows[0];
+    if(!parent)throw Error('PAID_TRACE_PARENT_NOT_OWNED');
+    const childId=parent.snapshot.children?.generate?.jobId;
+    if(typeof childId!=='string')throw Error('PAID_TRACE_CHILD_MISSING');
+    const child=(await tx.query("SELECT id,email,snapshot,lease_token FROM app_image_jobs WHERE id=$1 AND email=$2 AND kind='generate'",[childId,input.owner])).rows[0];
+    if(!child)throw Error('PAID_TRACE_CHILD_NOT_OWNED');
+    const billing=(await tx.query('SELECT id,email,state,reserved_credits,charged_credits FROM app_billing_operations WHERE id=$1 AND email=$2',[childId,input.owner])).rows;
+    const ledger=(await tx.query("SELECT id,email,delta FROM app_ledger WHERE id=$1 AND email=$2 AND kind='consume'",['led-image-'+childId,input.owner])).rows;
+    const images=child.snapshot.images||[],ids=images.map((image:any)=>image.id);
+    const artworks=(await tx.query('SELECT id,email,image_url FROM app_artworks WHERE id=ANY($1::text[]) AND email=$2',[ids,input.owner])).rows;
+    const supplier=(await tx.query('SELECT id,operation_id,billing_unit_id,state,delivered FROM app_supplier_calls WHERE operation_id=$1',[childId])).rows;
+    await tx.query('COMMIT');
+    captured={parent,child,billing,ledger,artworks,supplier};
+   }catch(error){await tx.query('ROLLBACK').catch(()=>{});throw error;}
+   finally{tx.release();}
+   // Hydrate only this owned job's selected paid result, after releasing SQL.
+   const paid=captured.child.snapshot.paidOperations?.[captured.child.id];
+   const original=paid?.state==='done'?await decodeImageJobValue(paid.result,captured.child.id):[];
+   const originalHashes=(Array.isArray(original)?original:[]).map((image:any)=>{
+    if(typeof image.url!=='string'||!image.url.startsWith('data:image/'))throw Error('PAID_TRACE_EXPECTED_INLINE_RESULT');
+    return createHash('sha256').update(Buffer.from(image.url.slice(image.url.indexOf(',')+1),'base64')).digest('hex');
+   });
+   console.log(JSON.stringify({operationId:operation,owner:input.owner,
+    parent:{id:captured.parent.id,status:captured.parent.snapshot.status,receipt:captured.parent.snapshot.result,quotedCredits:captured.parent.payload.plan.totalCredits},
+    child:{id:captured.child.id,status:captured.child.snapshot.status,leased:!!captured.child.lease_token,originalHashes},
+    billing:captured.billing,ledger:captured.ledger,artworks:captured.artworks,supplier:captured.supplier}));return;
+  }
   if(action==='download-project'){
    const url=(await sql.query('SELECT image_url FROM app_artworks WHERE email=$1 AND id=$2',[input.owner,'r6c-root'])).rows[0].image_url;
    const ids=Array.from({length:31},(_,i)=>`r8f-download-${String(i).padStart(2,'0')}`);

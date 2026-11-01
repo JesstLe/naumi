@@ -1,5 +1,8 @@
 # 整体退出审计
 
+- R9Z：[真实同任务断网链](../changes/2026-11-02-refactor-r9z-paid-disconnect-acceptance.md)。固定完整61ef Web/Worker＋真实PG／双context单次96PASS、8consume／48积分。新增4项确实从Canvas受理原identity后离线，Worker交付、原图SHA／原账本／原scope恢复／第二次reload全部核对；M09推进这个精确维度，不一并关闭物理掉线／UNKNOWN／M03/M04/M06。原166断言、2149产品文件raw保持，完整business与回滚归R9Z最终DELIVERY。旧61ef Core实际执行93edc006 SUCCESS，tree同2239f511；Image FAIL的经典fixture相对Router路径已本机复现。新headCI、完整语义审阅及合main继续，整体ACTIVE、部署0、47HOLD。
+
+
 - R9Y：[最新主线同步](../changes/2026-11-01-refactor-r9y-main-sync.md)。origin/main真实推进67bbcddf；独立分支普通merge保留5incoming文件，无冲突。公开目录32→33及完整合同、27个scan策略单测实际PASS；生成/模型/钱包代码与df997b40 raw保持。此为将main合入候选，不是候选已合main/已发布；新头完整223/CI及剩余故障矩阵继续。
 
 - R9X：[发布草稿验收](../changes/2026-11-01-refactor-r9x-model-draft-verification.md)。完整基线真实PG复现execution旧错误码预期exit1；夹具分开发布者旧revision与另一actor旧base，两个拒绝分支均严格保留。原顺序11模型命令单次全exit0，产品2149文件raw不变；旧b24Image失败/日志EOF不改写，新head完整223/CI/main继续。
