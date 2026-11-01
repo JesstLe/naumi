@@ -45,7 +45,7 @@ window.reset=ready=>{flushSync(()=>mount.render(<App key={++serial} serial={seri
             return route.continue(); external.push(route.request().url()); return route.abort(); });
         await page.goto('http://127.0.0.1:' + (server.address() as any).port);
         await page.waitForFunction(() => !!(window as any).ui?.state.flow);
-        const reset = async (ready: boolean) => { await page.evaluate(ready => (window as any).reset(ready), ready); await page.waitForFunction(() => !!(window as any).ui.state.flow); await page.getByTestId('drag-title').waitFor(); };
+        const reset = async (ready: boolean) => { await page.evaluate((ready: boolean) => (window as any).reset(ready), ready); await page.waitForFunction(() => !!(window as any).ui.state.flow); await page.getByTestId('drag-title').waitFor(); };
         const state = () => page.evaluate(() => { const s = (window as any).ui.state; return { commits: s.commits, starts: s.starts, stops: s.stops, ready: s.ready, position: s.flow.getNode('ready-node').position }; });
         const normal = async () => { await reset(true); await page.locator('.react-flow__node.draggable').waitFor(); const title = page.getByTestId('drag-title'); if (baseline)
             await legacy(page, title, assert, async () => { });

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import ts from 'typescript';
 const root = resolve(process.argv[2] || '.'), read = (file: string) => readFileSync(resolve(root, file), 'utf8');
 let checks = 0;
-function parsed(source: string) { const sf = ts.createSourceFile('contract.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX); assert.equal(sf.parseDiagnostics.length, 0, 'source must parse'); return sf; }
+function parsed(source: string) { const diagnostics = ts.transpileModule(source, { fileName: 'contract.tsx', reportDiagnostics: true, compilerOptions: { target: ts.ScriptTarget.Latest, jsx: ts.JsxEmit.Preserve } }).diagnostics; assert.equal(diagnostics?.length ?? 0, 0, 'source must parse'); return ts.createSourceFile('contract.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX); }
 function collect(scope: ts.Node, test: (node: ts.Node) => boolean) { const rows: ts.Node[] = []; const visit = (node: ts.Node) => { if (test(node))
     rows.push(node); ts.forEachChild(node, visit); }; visit(scope); return rows; }
 function noFeeConfirmation(source: string) { const sf = parsed(source); assert.equal(collect(sf, node => ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.expression.getText(sf) === 'window' && node.expression.name.text === 'confirm').length, 0, 'creation billing must not request a second fee confirmation'); }

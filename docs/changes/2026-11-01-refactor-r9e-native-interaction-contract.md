@@ -22,3 +22,7 @@
 ## 重复CI执行归属
 
 已读取新head964的真实run元数据，两个Core refactor regression分别由push与pull_request触发，source完全相同。重构分支改由现有PR完整回归，保留main push、workflow_call的精确source、手动入口、全部路径和完整215测试/发布依赖；不再每次feature更新重复构建并执行同一Core。既有runner自测同步验证这些触发与同源发布条件，image gateway的独立业务覆盖未删。当前两个旧Core运行仅作历史证据，未人为标绿。
+
+## 集中验证续接
+
+e689d0da 的 lint exit0；非增量 tsc exit2，实际诊断为 SourceFile 未公开 parseDiagnostics 以及 fixture evaluate 回调缺少 boolean 类型。保留原 TSC.log / MODULE_RESULTS.json，语法诊断改用 TypeScript 公开 transpileModule API，回调显式标注 boolean；不改产品源码、断言或用例等待时间。不重跑已通过 lint，修正后固定新源码继续类型、runner、原/新手势及直接生成合同验证。原/新结果、完整215及App运行验收以最终固定源码记录为准。
