@@ -20,7 +20,7 @@ export function createModelRuntime(deps: Dependencies) {
   const ready = async () => ensureModelRuntimeSchema(deps.pool);
   const billingVersion = async (version: number) => { const current = await deps.billing(); if (current.version === version) return current; if (deps.billingByVersion) return deps.billingByVersion(version); throw new ModelConfigError("CONFIG_UNAVAILABLE", "需要恢复原计费版本后核对发布", 503); };
   const {prepareExecution,validateExecutionProjection}=createExecutionProjectionService(deps);
-  const apply = async (publication: ModelPublication): Promise<ModelPublication> => {
+  const apply = async (publication: ModelPublication, publishedDraftId?: string): Promise<ModelPublication> => {
     if (publication.phase === "applied" || publication.phase === "failed") return publication;
     await ready();
     let meta = (await deps.pool.query("SELECT billing_version,router_digest,expected_router_digest FROM app_model_publications WHERE id=$1", [publication.id])).rows[0];
@@ -49,7 +49,7 @@ export function createModelRuntime(deps: Dependencies) {
         activationMayHaveStarted = true;
         await deps.router.activate(publication.id, meta.expected_router_digest, prepared.digest);
       }
-      await deps.repo.markApplied(publication.id, publication.digest);
+      await deps.repo.markApplied(publication.id, publication.digest, publishedDraftId);
       return deps.repo.publication(publication.id);
     } catch (error) {
       // Only an explicit preparation rejection proves that the version did not activate.
@@ -64,7 +64,10 @@ export function createModelRuntime(deps: Dependencies) {
     publicCatalog: async (modality: Modality, feature?: FeatureId, supplied?: ModelSnapshot) => modelCatalogWithPricing(supplied??await deps.repo.current(),modality,feature,feature?await deps.billing():undefined),
     prepareExecution,
     validateExecutionProjection,
-    publish: async (input: StageInput) => apply(await deps.repo.stage(input)),
+    publish: async (input: StageInput) => {
+      const stagedInput = { ...input };
+      return apply(await deps.repo.stage(stagedInput), stagedInput.draftId);
+    },
     restore: async (input: RestoreInput) => apply(await deps.repo.stageRestore(input)),
     async simulate(input: { draftId: string; actor: string; facts: ModelFacts; publicModelId: string }) {
       const draft = await deps.repo.draft(input.actor); if (draft.id !== input.draftId) throw new ModelConfigError("DRAFT_UNAVAILABLE", "草稿不可用", 404);

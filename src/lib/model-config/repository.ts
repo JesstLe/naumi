@@ -178,8 +178,8 @@ export function createModelRepository(deps: ValidationOptions & { pool: Pool; in
       await ensure(); const { rows } = await deps.pool.query("SELECT p.*,v.digest,v.actor,v.reason,v.created_at FROM app_model_publications p JOIN app_model_config_versions v ON p.version=v.version ORDER BY v.version DESC LIMIT $1", [limit]);
       return rows.map(row => ({ ...publication(row), actor: row.actor, reason: row.reason, createdAt: row.created_at.toISOString() }));
     },
-    async markApplied(id, digest) {
-      requireUUID(id); await ensure();
+    async markApplied(id, digest, publishedDraftId) {
+      requireUUID(id); if (publishedDraftId !== undefined) requireUUID(publishedDraftId); await ensure();
       return transaction(async tx => {
         const row = await selectPublication(tx, id);
         if (!row || row.digest !== digest) throw new ModelConfigError("DIGEST_MISMATCH", "发布摘要不一致", 409);
@@ -189,10 +189,10 @@ export function createModelRepository(deps: ValidationOptions & { pool: Pool; in
         if (!changed.rowCount) throw new ModelConfigError("CONFIG_CONFLICT", "配置已被更新，不能覆盖其他发布", 409);
         await tx.query("UPDATE app_model_publications SET phase='applied',error_code=NULL,updated_at=now() WHERE id=$1", [id]);
         const versionRow = (await tx.query("SELECT * FROM app_model_config_versions WHERE version=$1", [row.version])).rows[0];
-        // Continue only the publishing actor's still-identical working draft.
-        // Other admins and edits made while activation was in flight keep their
-        // original base and must resolve a genuine stale-base conflict.
-        const draftRow = (await tx.query("SELECT * FROM app_model_drafts WHERE actor=$1 FOR UPDATE", [versionRow.actor])).rows[0];
+        // Only publish owns a source draft. A historical restore never rebases
+        // one, even when its contents match the restored snapshot. The publish
+        // use case supplies the same draft ID validated by stage's fingerprint.
+        const draftRow = publishedDraftId === undefined ? undefined : (await tx.query("SELECT * FROM app_model_drafts WHERE id=$1 AND actor=$2 FOR UPDATE", [publishedDraftId,versionRow.actor])).rows[0];
         if (draftRow && Number(draftRow.based_on_version) < Number(versionRow.version)) {
           const draft = await readDraft(tx, draftRow);
           let matches = false;
