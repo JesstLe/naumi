@@ -1,6 +1,6 @@
 import {ZodError} from "zod";
-import {randomUUID,createHash} from "node:crypto";
-import {resolveUserEmail,requireAdmin} from "@/lib/admin-auth";
+import {createHash} from "node:crypto";
+import {resolveUserEmail} from "@/lib/admin-auth";
 import {dbEnabled, getPool} from "@/platform/db/pool";
 import {isBanned} from "@/lib/accounts/repository";
 import {sameSiteBillingMutation,PRIVATE_HEADERS} from "@/lib/billing/access";
@@ -8,10 +8,9 @@ import {userFeaturePolicy} from "@/lib/feature-access/repository";
 import {allows} from "@/lib/feature-access/catalog";
 import { checkRateLimit } from "@/lib/rate-limit-http";
 import {streamImagegenZip,imagegenFilename} from "@/lib/imagegen/zip";
-import {cancelImagegenBatch} from "@/lib/imagegen/batch";
-import {defaults,settings,classify,LABELS,imageUrl,WorkbenchError,type Asset,type Project} from "@/lib/reference-workbench/contract";
-import {document,documents,putDocument,operations,operation,transaction} from "@/lib/reference-workbench/repository";
-import {ensureWorkbench} from "@/lib/reference-workbench/schema";
+import {defaults,settings,WorkbenchError} from "@/lib/reference-workbench/contract";
+import {document,operations,operation} from "@/lib/reference-workbench/repository";
+import {saveWorkbenchSettings,createWorkbenchChat,changeWorkbenchChat,listWorkbenchTemplates,createWorkbenchTemplate,applyWorkbenchTemplate} from "@/lib/reference-workbench/documents";
 
 import {ownedAsset,imageBytes,uploadFolder,projectItems,preview,accept,singleState,chatState,synchronize,publicModels} from "@/lib/reference-workbench/service";
 
@@ -46,7 +45,7 @@ async function handler(request:Request){
    const ops=await operations(owner);for(const o of ops.slice(0,10))await synchronize(o);const fresh=await operations(owner),running=fresh.filter(o=>o.state!=="done"),latest=fresh[0],items=fresh.flatMap(o=>o.result.items||[]);
    return json({running:!!running.length,progress:{current:running.length?"运行中":"等待",product:latest?.body.workbench_root||"",size:latest?.plans[0]?.settings.resolution||"",ref:latest?.plans[0]?.ref||"",done:items.filter(i=>i.state==="succeeded").length,failed:items.filter(i=>["failed","needs_attention"].includes(i.state)).length,last_error:items.find(i=>i.result?.error)?.result?.error?.message||""},queue:{running:items.filter(i=>i.state==="submitted").length,waiting:items.filter(i=>i.state==="queued").length,global_limit:2,user_limit:2}});
   }
-  if(get&&action==="workbench/templates")return json({templates:(await documents<any>(owner,"template")).map(d=>({id:d.id,...d.payload}))});
+  if(get&&action==="workbench/templates")return json(await listWorkbenchTemplates(owner));
   if(get)return json({error:"接口不存在"},404);
   // Limit before JSON parsing; original native media limits are enforced again.
   if(Number(request.headers.get("content-length"))>90*1024*1024)return json({error:"请求内容过大"},413);
@@ -57,24 +56,11 @@ async function handler(request:Request){
     if (!rateLimitResult) return json({error:"请求过于频繁"},429);
   }return json(await preview(owner,String(body.action||""),body.body||{}));}
   if(["workbench/start","workbench/infer-prompts","workbench/edit","single/start","chat-image/send","chat-image/confirm"].includes(action))return json(await accept(owner,action,body));
-  if(action==="settings"){const keys=["single_quality","single_resolution","single_ratio","single_count","chat_task_mode","chat_ratio_mode"];const old=await document<any>(owner,"settings","default").catch(()=>({}));for(const k of keys)if(Object.hasOwn(body,k))old[k]=body[k];settings({quality:old.single_quality||"high",resolution:old.single_resolution||"2k",ratio:old.single_ratio||"1:1",count:old.single_count||1,task_mode:old.chat_task_mode||"confirm",ratio_mode:old.chat_ratio_mode||"smart"});await putDocument(owner,"settings","default",old);return json({ok:true});}
-  if(action==="chat-image/new"){const id=randomUUID();await putDocument(owner,"chat",id,{title:"新对话",messages:[]});return json(await chatState(owner,id));}
-  if(["chat-image/delete","chat-image/clear","chat-image/cancel"].includes(action)){
-   const sid=String(body.session_id||"");await transaction(`reference-chat:${sid}`,async tx=>{const chat=await document<any>(owner,"chat",sid,tx);
-    if(action.endsWith("cancel")){const m=chat.messages.find((m:any)=>m.id===body.message_id);if(!m||m.status!=="plan_pending")throw new WorkbenchError("计划已提交或不存在",409);m.status="cancelled";}
-    else{if(chat.messages.some((m:any)=>["thinking","queued","generating"].includes(m.status)))throw new WorkbenchError("请等待当前任务结束后再清理对话",409);chat.messages=[];}
-    if(action.endsWith("delete"))await tx.query("UPDATE app_reference_documents SET deleted=true,updated_at=now() WHERE owner=$1 AND kind='chat' AND id=$2",[owner,sid]);else await putDocument(owner,"chat",sid,chat,tx);
-   });return json(await chatState(owner,action.endsWith("delete")?"":sid));
-  }
-  if(action==="workbench/templates"){
-   const {items}=await projectItems(owner,String(body.workbench_root),settings(body.config)),it=items.find(i=>i.ref_path===body.ref_path),version=it?.versions.find((v:any)=>v.path===body.version_path);if(!it||!version)throw new WorkbenchError("历史版本不存在",404);
-   const chosen=(await operations(owner)).flatMap(o=>o.plans.map(t=>({o,t}))).find(({o,t})=>t.ref===it.ref_path&&(o.result.items||[]).some((i:any)=>i.key===t.key&&(i.result?.artifacts||[]).some((a:any)=>a.artworkId===version.path)));if(!chosen)throw new WorkbenchError("历史版本缺少冻结参数",409);
-   const ref=await ownedAsset(owner,it.ref_path),result=await ownedAsset(owner,version.path),id=randomUUID(),template={name:String(body.name||it.product+" "+version.label).slice(0,100),reference_path:ref.artworkId,result_path:result.artworkId,reference_url:imageUrl(ref.artworkId),result_url:imageUrl(result.artworkId),prompt:chosen.t.prompt,kind:it.kind,source_version:version.label,parameters:chosen.t.settings,created:Date.now()/1000};await putDocument(owner,"template",id,template);return json({ok:true,template:{id,...template}});
-  }
-  if(/^workbench\/templates\/[^/]+\/apply$/.test(action)){
-   const template=await document<any>(owner,"template",action.split("/")[2]),root=String(body.workbench_root),ref=await ownedAsset(owner,template.reference_path);const cloned={...ref,relative:`${LABELS[template.kind]}/模板-${action.split("/")[2]}.png`,prompt:template.prompt};
-   await transaction(`reference-project:${root}`,async tx=>{const p=await document<Project>(owner,"project",root,tx);if(!p.assets.some(a=>a.artworkId===cloned.artworkId))p.assets.push(cloned);await putDocument(owner,"project",root,p,tx);});return json({ok:true,ref_path:ref.artworkId,prompt:template.prompt,kind:template.kind,parameters:template.parameters});
-  }
+  if(action==="settings")return json(await saveWorkbenchSettings(owner,body));
+  if(action==="chat-image/new")return json(await createWorkbenchChat(owner));
+  if(["chat-image/delete","chat-image/clear","chat-image/cancel"].includes(action))return json(await changeWorkbenchChat(owner,{kind:action.slice("chat-image/".length) as "delete"|"clear"|"cancel",sessionId:String(body.session_id||""),messageId:body.message_id}));
+  if(action==="workbench/templates")return json(await createWorkbenchTemplate(owner,{root:String(body.workbench_root),config:body.config,referenceId:body.ref_path,versionId:body.version_path,name:body.name}));
+  if(/^workbench\/templates\/[^/]+\/apply$/.test(action))return json(await applyWorkbenchTemplate(owner,action.split("/")[2],String(body.workbench_root)));
   if(["images-zip","workbench/download-zip"].includes(action)){
    let paths:string[]=[];if(action==="images-zip")paths=body.paths;else{
     const {items}=await projectItems(owner,String(body.workbench_root),settings(body.config));for(const entry of body.items||[]){const it=items.find(i=>i.ref_path===entry.ref_path);if(!it)throw new WorkbenchError("图片不属于当前项目");if(body.include_original)paths.push(it.ref_path);if(body.include_generated){if(entry.version_path){if(!it.versions.some((v:any)=>v.path===entry.version_path))throw new WorkbenchError("历史版本不存在");paths.push(entry.version_path);}else if(it.versions.length)paths.push(it.versions.at(-1)!.path);}}

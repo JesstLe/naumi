@@ -29,7 +29,17 @@ function frozenQuoteSubmission(source: string) {
     assert.equal(versionReads.length, 0, 'current catalogue version must not block a server quote');
 }
 function hasCall(source: string, name: string) { const sf = parsed(source); return collect(sf, node => ts.isCallExpression(node) && node.expression.getText(sf) === name).length > 0; }
-function noAgentQuoteConsent(source: string) { const sf = parsed(source); assert.equal(collect(sf, node => ts.isPropertyAccessExpression(node) && ['pendingQuotes', 'userConfirmedQuote'].includes(node.name.text)).length, 0, 'cross-turn quote consent/quote pile must not return'); assert.ok(hasCall(source, 'getUser'), 'retain real account/balance lookup'); assert.ok(hasCall(source, 'quoteForRequest'), 'retain server quotation'); }
+function noAgentQuoteConsent(source: string) {
+    const sf=parsed(source);
+    assert.equal(collect(sf,node=>ts.isPropertyAccessExpression(node)&&['pendingQuotes','userConfirmedQuote'].includes(node.name.text)).length,0,'cross-turn quote consent/quote pile must not return');
+    assert.ok(hasCall(source,'getUser'),'retain real account/balance lookup');
+    const quote=importedName(sf,'./quotation','quoteForActor'),owner=sf.statements.filter(ts.isFunctionDeclaration).find(node=>node.name?.text==='agentQuote');assert.ok(owner,'retain Agent quotation owner');
+    const calls=collect(owner,node=>ts.isCallExpression(node)&&node.expression.getText(sf)===quote) as ts.CallExpression[];
+    assert.equal(calls.length,1,'one typed server quotation');
+    assert.equal(calls[0].arguments[0]?.getText(sf),'email','quote uses the authenticated actor');
+    assert.equal(calls[0].arguments[3]?.getText(sf),'snapshot','quote retains the original server snapshot');
+    assert.equal(collect(sf,node=>ts.isNewExpression(node)&&node.expression.getText(sf)==='Request').length,0,'Agent quotation must not synthesize HTTP authentication');
+}
 function importedName(sf:ts.SourceFile,module:string,name:string){
     const declarations=sf.statements.filter(ts.isImportDeclaration).filter(node=>ts.isStringLiteral(node.moduleSpecifier)&&node.moduleSpecifier.text===module);
     const names=declarations.flatMap(node=>{const bindings=node.importClause?.namedBindings;return bindings&&ts.isNamedImports(bindings)?bindings.elements.filter(item=>(item.propertyName?.text||item.name.text)===name).map(item=>item.name.text):[];});
@@ -137,6 +147,15 @@ try {
     checks++;
     assert.throws(() => noAgentQuoteConsent(agent + '\nconst consent=session.userConfirmedQuote;'));
     checks++;
+    noAgentQuoteConsent(agent.replace('import {quoteForActor}','import {quoteForActor as originalActorQuote}').replace('await quoteForActor(','await originalActorQuote('));checks++;
+    for(const changed of [
+        agent.replace('await quoteForActor(','await fabricatedQuote('),
+        agent.replace('from "./quotation"','from "./server"'),
+        agent.replace('quoteForActor(email,','quoteForActor(cred.cookie,'),
+        agent.replace('},undefined,snapshot)','})'),
+        agent.replace('    const quantity =','    new Request("http://internal");\n    const quantity ='),
+    ]){assert.throws(()=>noAgentQuoteConsent(changed));checks++;}
+
     console.log(`DIRECT_SUBMISSION=PASS STATIC_CHECKS=${checks} CANVAS=OWNED GENERATION=SESSION_OWNER TOOLBOX=PASS GENCHAT=PASS FROZEN_QUOTE=REUSED OPERATION_ID=RETAINED CREATION_FEE_CONFIRM=0`);
 }
 catch (error) {

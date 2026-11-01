@@ -16,6 +16,10 @@ export async function document<T>(owner:string,kind:string,id:string,tx?:PoolCli
  if(!row)throw new WorkbenchError("记录不存在或无权访问",404);return row.payload;
 }
 export async function putDocument(owner:string,kind:string,id:string,payload:unknown,tx?:PoolClient){await ensureWorkbench();await(tx||getPool()).query(`INSERT INTO app_reference_documents(owner,kind,id,payload) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT(owner,kind,id) DO UPDATE SET payload=excluded.payload,revision=app_reference_documents.revision+1,updated_at=now()`,[owner,kind,id,JSON.stringify(payload)]);}
+/** The caller owns the existing reference-chat lock and shared transaction. */
+export async function deleteChatDocumentTx(tx:PoolClient,owner:string,id:string){
+ await tx.query("UPDATE app_reference_documents SET deleted=true,updated_at=now() WHERE owner=$1 AND kind='chat' AND id=$2",[owner,id]);
+}
 export async function documents<T>(owner:string,kind:string,limit=100){await ensureWorkbench();return(await getPool().query<{id:string;payload:T;created_at:Date;updated_at:Date}>("SELECT id,payload,created_at,updated_at FROM app_reference_documents WHERE owner=$1 AND kind=$2 AND NOT deleted ORDER BY updated_at DESC LIMIT $3",[owner,kind,limit])).rows;}
 export async function transaction<T>(key:string,run:(tx:PoolClient)=>Promise<T>){
  await ensureWorkbench();const tx=await getPool().connect();let discard=false;

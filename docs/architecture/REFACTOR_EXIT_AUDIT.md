@@ -1,5 +1,15 @@
 # 整体退出审计
 
+## R10I 当前状态：命名 W1—W3 实施完成，整体退出仍 ACTIVE
+
+- W1账务/任务与W2媒体的修改产品raw逐项保持；W3实际PG/handler原64、新67通过，Agent去Request/cookie再认证且保留原价/余额，聊天锁、模板原参数/归属继续。新的source/原始hash及副本回滚以R10I DELIVERY为准。
+- 当前报价组17/17子命令全部通过，顶层PARTIAL/exit2是局部范围；最终非增量tsc0/5123输入、lint0、runner20/373、四类SCC0，不扩大成当前完整229通过。
+- 三项旧工作台脚本在完整21f基线同败：auto虚构授权价、low应拒绝、外部47跳转。原日志/断言保留，不能为了兼容旧测试恢复误拦；现有pricing-friction工作台13组实际PASS。
+- R04原命名A—E已由W1/W2/W3分别实现，仍需最终整体语义复核；现存text执行协议桥及route读取/下载聚合没有按文件名一概认定为迁移完成或新缺陷。
+- 剩余核心：M01/M02/M05—M08原矩阵同case页面列、当前完整229及固定Web/Worker/runtime/performance证据、有效当前CI后的main普通整合。原M03/M04/M09等旧同源证据保留绑定，不冒充新头整版。生产发布/真实云厂商/10万容量不自行新增为本次重构退出门槛；本线程未部署，47HOLD。
+
+以下各段保留对应固定source的历史审计，不将旧失败/旧在途状态替换为当前CI终态。
+
 - R10E：[管理员入口旧读取](../changes/2026-11-02-refactor-r10e-admin-entry-read-order.md)。原2152产品raw保持时，两种pre-cookie GET在POST成功后覆盖状态已复现；成功认证仅使同owner旧读取失效，不增加重试或放宽授权。远端billing-ui:299原30s的唯一根因继续OPEN；本机原UI15PASS/1FAIL在315disabled点击复现，新16/16PASS且不改原时限；入口62／壳层15／真实PG权限／tsc0，1产品hook改动；回退归最终DELIVERY，整体ACTIVE。
 
 - R10D：[远端对象PUT证据](../changes/2026-11-02-refactor-r10d-remote-put-evidence.md)。原产品六场景实际PASS，403/503/已存丢ACK/仅最终对象失败/远端和本地同时失败均一次供应、一笔6积分、原字节；六次进程重读及原补传不改原paid账本。产品修改0，新增原generation专项，固定99e原顺序23子命令全exit0／局部顶层PARTIAL/exit2，runner20/370、tsc/lint0；总226不当作全跑；真实页面、NAS策略和云基础设施仍分层，整体ACTIVE。

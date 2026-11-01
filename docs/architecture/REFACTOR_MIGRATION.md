@@ -1,5 +1,11 @@
 # 迁移合同与模块记录索引
 
+## R10G—R10I 当前命名迁移
+
+[R10G](../changes/2026-11-02-refactor-r10g-billing-task-ownership.md)、[R10H](../changes/2026-11-02-refactor-r10h-media-metadata-ownership.md)、[R10I](../changes/2026-11-02-refactor-r10i-protocol-application-ownership.md)对应原R10F W1/W2/W3。数据owner迁移不拆事务、不改原任务身份；metadata对象I/O在Tx外；工作台按可信owner调用明确用例；Agent不再创建报价Request。普通mutable素材、旧任务/模板/报价、显式内容取消和真实余额继续兼容。
+
+本轮原64/新67、原pricing17全部子命令、W1/W2产品raw保持均属具体证据。三个完整基线同败的旧工作台断言未计绿，当前229仅目录，不是本轮完整执行。剩余同case页面、最终固定整版与普通main整合仍按整体退出审计，不另增业务限制或通用框架。
+
 ## R10E 管理入口读写投影
 
 [R10E](../changes/2026-11-02-refactor-r10e-admin-entry-read-order.md)保留原入口owner，只补成功认证对旧读取的先后关系；真实React/HTTP原反例已经复现。不把hook状态当服务器授权，不迁移密码／角色检查，不因重构再造通用manager。原远端UI超时与此确定竞争分层验收。

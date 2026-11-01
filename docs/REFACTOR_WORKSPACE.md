@@ -1,5 +1,13 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：R10I 工作台文档用例与 Agent typed 报价
+
+[R10I](changes/2026-11-02-refactor-r10i-protocol-application-ownership.md)推进W3：settings/chat/template规则归reference-workbench/documents，HTTP入口仅对这些用例适配；软删除归repository，原聊天/项目锁与同Tx保持。Agent generic报价直接调用既有quoteForActor，不再用内存Request/cookie重新取身份；其他真实协议调用的session凭据保留。
+
+真实PG/实际handler原64检查、新67检查通过；Agent Request4→0、headless401→actor，正常原价3/current11冻结保持，聊天并发取消一胜、持锁后重读、模板原参数/归属/去重、零consume保持。原报价组17子命令全部通过，runner仍PARTIAL/exit2；原Agent58、图片25/74、工作台13组、W1账务35保持。最终tsc0/5123输入、lint0、runner20/373、四类SCC0。旧三个工作台脚本在完整基线同样失败，未计通过；具体合同和日志见模块记录，不恢复已删除的虚构auto授权、质量拒绝或外部跳转。
+
+命名W1/W2产品逐项raw保持，原审阅W1—W3已各自完成实现和定向验证；R04仍需最终整体语义复核，不能把SCC0或命名清单结束当全项目完成。本轮5420源码、13路径及四产物/副本回滚见output/refactor-r10i-20261102/DELIVERY.json。下一阶段集中补M01/M02/M05—M08同case页面证据、当前完整229/固定WebWorker/运行与性能验收，再依有效当前CI普通整合main；不新增真实云/10万容量为重构新门槛。整体ACTIVE、未合main/未部署、47HOLD；分支超48小时原因仍为上述整体退出未闭合。
+
 ## 当前推进：R10H 媒体元数据写入归属
 
 [R10H](changes/2026-11-02-refactor-r10h-media-metadata-ownership.md)推进W2：Canvas只准备/保存原图和浏览器预览，媒体writer拥有owner/digest注册与关联；video保有probe规则，经同Tx公共接口投影媒体尺寸。3处跨模块媒体写入→0，普通mutable注册仍保留原owner/摘要变化清预览语义，不机械重排模块内部SQL，不新增框架/业务护栏。

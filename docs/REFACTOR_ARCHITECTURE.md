@@ -1,5 +1,13 @@
 # 架构与职责：模块化单体
 
+## R10G—R10I：写入与应用 owner 收敛
+
+- [W1账务/任务](changes/2026-11-02-refactor-r10g-billing-task-ownership.md)：billing拥有钱包、hold和账单政策，任务owner拥有状态及原结果恢复，SaaS拥有证据写入；应用窄Tx编排，task→billing锁顺序及账务提交权威保持。
+- [W2媒体](changes/2026-11-02-refactor-r10h-media-metadata-ownership.md)：媒体writer拥有metadata/原图预览CAS，Canvas准备对象、video拥有probe；同Tx投影canonical尺寸，不把对象I/O放入短Tx。
+- [W3工作台/Agent](changes/2026-11-02-refactor-r10i-protocol-application-ownership.md)：工作台documents公开settings/chat/template用例，repository承担软删除；Agent直接消费quotation typed报价。两个独立业务owner不经通用manager汇合，HTTP凭据不充当内部报价actor。
+
+工作台documents依赖本模块service的素材/历史读取投影和repository；service不反向依赖documents。原聊天与项目锁、内容方案取消、模板冻结参数和原价保持。这里是命名职责闭合，既有工作台text执行协议桥及其他route读取/下载聚合没有被谎称全部消失；最终语义审阅与当前整版仍单列。
+
 ## R10C 自动下一次尝试的应用owner
 
 [R10C](changes/2026-11-02-refactor-r10c-historical-batch-retry.md)将原paid结构归集与原任务重试资格收拢到imagegen/retry-eligibility，复用model-config事实接口和原账务reader。dispatch与batch只消费，不穿透对方表或复制规则。证据读取在批次锁前，身份匹配与写入在原事务内；旧观察不能写入新child／attempt。不增通用框架、新确认或并行任务状态。
