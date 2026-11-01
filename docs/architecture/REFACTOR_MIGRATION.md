@@ -274,8 +274,12 @@
 
 ## 尚待迁移的同类入口
 
-静态AST盘点59个creation/receipt wrapper调用，本轮只有图片plan入口消费新actor参数；另有7个零参callback经本地handler直接认证的迁移候选（主图片提交/回执、取消、输入、批次回执/下载）。这不是运行事故证明，也不是已完成迁移；下一模块逐入口保留来源、身份、scope、UNKNOWN和原回执协议迁移验证。详见本轮INGRESS_MIGRATION_INVENTORY.json。
+R8Z的旧盘点只追踪本地resolveUserEmail，7候选数字属于历史方法，不能作为当前剩余数量。R9A/B/C已经迁移图片、历史生成、公共报价和编辑入口。R9D按named-import别名补充authenticatedEmail/authorizedTargetEmail后，在59个creation/receipt wrapper中得到48个零参数认证边界调用、31文件；这是静态迁移线索，不是实际重复SQL次数或事故归因。后续保留管理员目标读取、no-DB/null/undefined、来源、scope与原回执语义，按真实调用链验证；不因旧方法候选0宣称全站闭合。当前数据见output/refactor-r9d-20261101/INGRESS_OWNER_INVENTORY.json。
 
 ### R9C 验证资产迁移
 
 旧background contract不再要求恢复逻辑内联到Canvas组件；CLI复用现有video-follow、video-submission、image-text-editor、pending-presentation验证。任务身份/原子创建仍有AST检查，真实PG/Worker与账务证明由R9C实际入口脚本承担，不混写为同一种验收。旧model-execution验证调用方以独立当前草稿完成每轮发布，明确旧草稿仍拒绝，不使用acceptStaleBase换绿。OCR定位断言使用现有initialize语义。原失败日志、修正后固定源和输入字节桥接见R9C目录；源码/报告/有效CI/整版/主线/生产各自记录。
+
+## R9D 验证素材owner
+
+runtime的输入只依赖timeline-rules，不依赖所有无关UI用例通过。`verification.runtime_vectors.verified_timeline_vectors`核对与固定应用同源的owner PASS/exit0/marker、实际日志hash和5个文件hash；复制时再次核对。返回父report状态与completeCore原值，不作发布决定。runtime.py仍检查全部生产输入字节与固定镜像一致；生产代码未替换。19个状态合同检查加入目录后213项，当前完整213尚未执行。独立runtime177/browser92/450秒混合PASS不消除原core的timeline失败和theme首因OPEN。

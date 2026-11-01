@@ -1,32 +1,38 @@
 # 整体退出审计
 
-R9C当前推进：公共报价/Canvas编辑实际native HTTP/PG/Worker原/新29场景59检查，正常投影EXACT。用例Request依赖已移除，实际Request调用方迁移；原顺序/归属/冻结价/lease/像素/单次结算/原intent保持。最终ff6f21f3的lint/非增量tsc exit0，5089编译器输入+4配置绑定=5093；四类SCC0。d35实际pricing13/13、APImart通过；旧辅助恢复CLI已迁到4个真实owner回归，真实PG model-execution的headless/Worker/轮换通过。原辅助失败与计数修正留证，不恢复旧内联逻辑或放宽产品检查。最终封装/回滚/远端状态见本轮DELIVERY；最后完整应用证据仍是R8Z，不作当前212目录/镜像通过。
+## 当前固定版本与实际状态
 
-R9B固定验证源b796：实际历史generate-image提交/轮询完整身份链原/新/回滚38场景79检查，旧4～7次/父2次认证→1次、health0，正常投影EXACT。pricing12/12执行通过但runner仍PARTIAL/exit2，未执行其余199项；5092类型输入/tsc exit0、lint exit0/37warning、四类SCC0；副本原5335raw hash与later-edit零写已核验。归档仅4文档桥接，不冒称归档SHA新执行。以下完整应用证据仍是R8Z历史固定源，不作为当前211目录或App/Worker通过。整体目标ACTIVE。
+- 应用源码：`79705670c3f9c9a965656ffe268005642d7170f9`；完整Web/Worker镜像与原生SDK应用字节一致。
+- 验证职责修正与质量执行源码：`9a1e8b2aba3f024de705641c04dfd1549470d30f`；产品文件0改动，全部2141个src/services与固定应用raw hash一致。后续封版只允许模块文档桥接。
+- **wholeGoal=ACTIVE；完整core仍FAIL；当前213全套未执行；mainMerged=false；deployed=false；47HOLD。**
 
-最近完整应用验收源码（R8Z）：f7441ed0f9ae077f5d3f6fafb0f7c70b6d585567。完整App/SDK、core209、runtime177、产品浏览器92与450秒混合均为同固定源实际重跑，未复用旧208绿灯。R9A 的其余7路及BI身份归属在固定验证源9a52ba65完成39场景/90检查A/B、pricing11/11（PARTIAL/exit2，非完整210目录）、5091类型输入/tsc与lint exit0、四类SCC0、独立副本回滚5333原始哈希/原39/90行为与later-edit零写；原R8Z整版数字不作为R9A完整应用通过。**wholeGoal=ACTIVE；mainMerged=false；deployed=false；47 HOLD。**
-
-| 要求 | 当前证据 | 判定 |
+| 要求 | 当前权威证据 | 判定 |
 |---|---|---|
-| 入口认证/权益规则唯一归属 | R8Z plan20/33；R9A实际native cookie/7个handler/BI/PG39/90，2/3→1，正常/授权/字节投影EXACT | 本模块PASS；其余历史/间接入口继续迁移，无跨请求权限缓存 |
-| 报价/任务/权限/取消/UNKNOWN | R8Z固定源core209历史PASS；R9C原/新29场景59检查及pricing13已执行 | 当前212整版待重跑，历史事故独立保留 |
-| 模块依赖方向 | 当前四类SCC=0；生产lib→app0、runtime→scripts0；2release fixture与1dist例外单列 | 结构PASS，不替代行为验收 |
-| 原生业务链 | 七个入口同源固定Linux SDK，完整App/Worker字节EXACT | PASS |
-| 完整运行与产品页面 | 同镜像runtime177，双context浏览器92/180秒，routeMocks0 | PASS，隔离上游不代表真实供应商质量 |
-| 当前配对性能 | 原方法/同3e90固定基线，5轮/10栈，源码/lock/runtime实核一致，冷样本保留 | **本轮当前候选采样无超过原10%调查阈值的指标** |
-| 历史性能观测 | R8X827 +17.98%、R8Yf0b +10.57%原日志保留；诊断与验收分开 | 原观测与唯一根因未证实状态独立保留，不改阈值、不重写旧数据 |
-| 持续/生产容量与10万模型 | 同源450秒calibration业务不变量PASS；生产到达率/长稳/规格/公平性未等价证明 | OPEN，见[100k台账](../PRODUCT_READINESS_100K.md) |
-| 有效远端CI | 本次push后按实际head刷新；旧b4e步骤0账户付款/支出限制不是本候选CI证据 | OPEN，实际状态见本轮DELIVERY |
-| 最终main普通整合/固定版 | 独立分支，main刷新记录见本轮证据 | OPEN；候选push不等于main整合 |
-| 生产发布/线上验收 | 本轮无SSH/部署锁/生产操作，47 HOLD | 未执行，按明确发布任务独立验收 |
-| 历史供应商/结果持久化/ZIP socket | 原benchmark仍有OPEN/PARTIAL | 独立保留，不以本轮成功样本自动关闭 |
+| 完整回归与真实失败 | 原212：完整运行146PASS/1FAIL+原未到达65项全部PASS；source797、0reuse、所有日志hash复核 | 211PASS/1FAIL，非整版通过；新增合同后213全套待执行 |
+| 两项间歇问题 | theme首次重载等待超时，后续原参数97PASS；timeline原生拖动等待位置变化失败，旧R8ZSDK及当前只读观察原用例PASS | 原失败保留，首因OPEN，不以诊断PASS关闭 |
+| 素材/验证职责边界 | timeline-rules真实case已PASS且同源；新runtime_vectors检查owner、日志、5文件hash，父FAIL原样记录；19状态检查 | 本模块PASS；不决定完整core或发布 |
+| 真实Web/Worker业务链 | 同固定镜像runtime177：真实登录/HTTP/PG/Worker、冻结6/current17、结果/账务、UNKNOWN、取消、CAS、原生FFmpeg和排空 | 当前独立runtime PASS；不是供应商付费质量证明 |
+| 产品页面与持久状态 | 同镜像真实浏览器92，2context，routeMocks0，原接口/7次交付与42积分/保存冲突/undo/reload | 当前独立browser PASS，不覆盖失败的全部原生拖动时序 |
+| 混合业务运行 | 原450秒calibration、165图片/12媒体、177consume/1014积分、原字节与像素、每operation一次POST、父任务未完成0 | businessInvariants PASS；capacityClaim=false，非10万容量或生产SLO |
+| 类型与依赖方向 | 9a1 lint/非增量tsc exit0，5089编译器输入+4配置绑定；四类SCC0 | 当前结构/质量PASS，不替代行为验收 |
+| 入口归属与迁移范围 | R8Z/R9A/B/C实际身份与权益A/B、回执、原价及素材归属保持；当前别名AST59wrapper中48零参调用/31文件 | 静态候选非运行事故；不可因旧扫描候选0宣称全站闭合 |
+| 有效远端CI | 按本轮最终push head检查，见DELIVERY/REMOTE_STATUS | 独立OPEN；旧797 jobs3/steps0付款或支出限制不冒充新head结果 |
+| 最终main普通整合 | 独立分支，origin/main刷新与归属见本轮记录 | OPEN；实际core失败未闭合，不把候选push作为main整合 |
+| 生产发布/线上验收 | 本轮无SSH/部署锁/生产操作，47HOLD | 未执行；另按明确发布任务验收 |
+| 历史事故与持续容量 | 原供应商/持久化/ZIP socket OPEN/PARTIAL及100k台账保留 | 不以本轮成功样本自动关闭 |
 
-下一步：按真实超差继续定位；有效CI后main普通整合与固定版验收；容量/历史/生产分别闭环。仍有必需待办时整体保持ACTIVE。
-**分支超过48小时，原因仍为整体退出尚未达到。**
-[当前工作区](../REFACTOR_WORKSPACE.md) · [R8Z模块](../changes/2026-11-01-refactor-r8z-ingress-ownership.md) · [R8Y原观测](../changes/2026-11-01-refactor-r8y-quote-intent.md)
+## 下一步
 
-本轮汇总门槛满足不代表每轮都变快：对照基线跨期p95有明显漂移，paired第2轮p50仍回退；p50沿原driver nearest-rank估计。不能把汇总约49%的降幅归因为本次改动的确定收益。逐轮原值/旧原始观测与归因不确定性均保留在PAIRED_VARIANCE_ASSESSMENT.json。
+1. 给theme重载与timeline拖动补齐可重复的时序根因证据；没有证据前不提高超时、跳过断言或改父报告为PASS。
+2. 当前213全套同固定源码验收与有效CI；入口候选按真实调用链迁移/解释，不机械按剩余行数拆分。
+3. 最终普通main整合、固定版本交付；生产容量/供应商质量/历史事故与正式发布分别闭环。
 
-## 入口迁移边界
+**分支超过48小时，原因仍为整体退出未满足；本轮有实际失败而非仅等待计划。** 本轮验证职责修正不计新产品功能模块；自上次同步仍为2，下个功能模块达到3时同步最新主线。
 
-R9B迁移历史generate-image；R9C迁移公共quote与canvas编辑入口，任务用例通过typed准备port而非Request工作。不得把这些切片或本地AST候选0宣称为全部入口已唯一认证。R9A完成第三模块主线同步，R9B为其后第1模块、R9C为第2模块；下一功能模块后按规则再刷新/整合，这不是分支已合main。
+## 历史完整通过与性能边界
+
+最近全套完整通过仍归R8Z `f7441ed0f9ae077f5d3f6fafb0f7c70b6d585567`（core209/runtime177/browser92/450秒混合），不是当前213整版结果。R9A39/90、R9B38/79、R9C29/59是各自固定源的实际局部A/B与副本回滚，不扩大为完整应用通过。
+
+R8Z的原方法/3e90固定基线5轮10栈性能采样仅归其固定源；R8X +17.98%、R8Y +10.57%与未证实唯一根因状态、冷样本、跨期p95漂移及paired第2轮p50回退原样保留。R9D没有重跑配对性能，不能把旧候选收益重标成当前确定收益。当前450秒校准只证明所列业务不变量，生产到达率/长稳/规格/公平性仍见[100k台账](../PRODUCT_READINESS_100K.md)。
+
+[工作区](../REFACTOR_WORKSPACE.md) · [R9D](../changes/2026-11-01-refactor-r9d-current-acceptance.md) · [R8Z](../changes/2026-11-01-refactor-r8z-ingress-ownership.md) · [迁移合同](REFACTOR_MIGRATION.md)

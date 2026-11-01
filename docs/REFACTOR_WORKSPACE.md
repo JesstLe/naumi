@@ -1,6 +1,16 @@
 # 重构工作区：当前交付快照
 
-## 当前推进：R9C 报价与 Canvas 编辑边界
+## 当前推进：R9D 整版取证与验证依赖归属
+
+[R9D记录](changes/2026-11-01-refactor-r9d-current-acceptance.md)：完整应用固定79705670，Web/Worker同镜像与原生SDK应用字节一致。原212项全部到达：第二轮完整运行146PASS/1FAIL，未到达65项单独运行全部PASS，合计211PASS/1FAIL，未复用旧结果；**完整core仍FAIL**。首次theme重载超时后原参数97检查通过、timeline原生拖动失败后旧版与当前诊断通过，两项首因均OPEN，不用后续通过抹掉原失败。
+
+验证入口9a1e8b2a把timeline素材依赖收敛为已通过的生产者case、同源commit/digest、实际日志hash/marker与5个文件hash；父级FAIL及completeCore=false原样保留。新增19个状态合同检查，目录212→213，**完整213尚未运行**。没有修改产品文件，全部2141个src/services原始字节仍与应用镜像源码一致。
+
+本轮实际同镜像runtime177、产品浏览器92（routeMocks=0、真实登录/PG）、450秒混合校准通过；混合165图片+12媒体、177consume/1014积分、未知重放0、未完成父任务0，businessInvariants=PASS且capacityClaim=false。lint/非增量tsc exit0、5089编译器输入+4配置绑定、四类SCC0。它们分别证明自己的范围，不把独立验收PASS合成为corePASS。
+
+四产物、回滚、最终源码/验证代码桥接与新head远端状态见output/refactor-r9d-20261101/DELIVERY.json、VERIFICATION.txt。整体ACTIVE，main未合、部署0、47HOLD。下一步优先定位两项间歇性失败、完成当前213全套；入口别名盘点48个调用/31文件只作迁移线索，不作运行事故归因。本轮是验证职责修正，功能同步计数仍2，不因文档或验证资产变化虚增。
+
+## 上一模块：R9C 报价与 Canvas 编辑边界
 
 [R9C模块](changes/2026-11-01-refactor-r9c-quote-canvas-boundary.md)把公共报价/报价保存、Canvas入口/intent/模型准备的身份统一到已认证actor；编辑任务用例不再接收或构造Request，HTTP/header/模型适配由入口承担，headless复用既有withModelOperation。保留输入校验→来源归属→模型准备→真实报价/预占顺序，没有新增确认/限额/缓存/schema。
 
