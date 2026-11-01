@@ -1,5 +1,14 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：R10G 账务与任务写入归属
+
+[R10G](changes/2026-11-02-refactor-r10g-billing-task-ownership.md)完成R10F W1列出的legacy钱包/冻结hold/SaaS证据/费用补查与人工核对恢复链。真实PG基线24检查复现核对已扣款但投影失败503无恢复债务、费用与正常任务反向锁40P01；新35检查通过，五个任务文件跨账务表直接写候选30→0，四legacy原价/并发/lease/零价/余额保持。费用task→billing同Tx；核对后恢复标记与账务提交，原Worker后续仅恢复已存输出，不新增购买。
+
+原pricing16、generation23及billing18子命令分别完整通过（两个局部runner按合同PARTIAL/exit2）；supplier-cost/credit37/Canvas47/生命周期11及APIMart费用链通过。原parent25保持并跟随实际owner；原APIMart回显旧断言已由基线复现后纠正，未恢复确认。完整新源四类SCC0、非增量tsc/定向lint0，真实Worker打包和入口加载通过；原video媒体marker静态失败及未准备完整App的routes脚本失败均保留，不冒称整版绿。四产物与副本回滚归本轮DELIVERY。
+
+整体ACTIVE，W2媒体metadata、W3工作台/Agent及故障剩余证据继续；main未合、本线程未部署。分支超48小时，原因仍为整体退出与同源候选CI未闭合。
+
+
 ## 当前推进：R10F 整体语义退出审阅与账务UI就绪观察
 
 [R10F](changes/2026-11-02-refactor-r10f-exit-review-ui-readiness.md)固定3775全仓AST/SQL候选及实际owner审阅，20退出要求与九类故障五列已落盘；F01/F02/F03已迁移，不按Canvas行数继续机械拆分。明确W1账务/任务写入归属与原ID恢复、W2媒体metadata、W3工作台/Agent协议规则归位；下一产品切片优先完整W1。M02最小提交实际200，不是schema早拒绝，但精确余额语义/页面仍缺；M03/M04/M09已有同次真实页面，M05/M06后台实际通过，M07/M08seed paid done边界保留。

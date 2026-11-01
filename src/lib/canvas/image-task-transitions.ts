@@ -1,3 +1,4 @@
+import {reserveLegacyTaskTx,settleLegacyTaskTx,releaseLegacyCreditsTx,clearTaskReservationTx} from "@/lib/billing/task-settlement";
 import "server-only";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
@@ -6,7 +7,7 @@ import {acceptCreationTx,creationLinkTx} from "@/lib/saas/creation-writer";
 import {ensureCreationSchema} from "@/lib/saas/creation-schema";
 import {durableCreationOutcomeTx} from "@/lib/saas/creation-writer";
 import {creditMeteringEnabled} from "@/lib/billing/runtime";
-import {deductPrincipalFIFO,expireDueBatches,refreshBalance} from "@/lib/billing/wallet-balance";
+import {expireDueBatches,refreshBalance} from "@/lib/billing/wallet-balance";
 import {reserveTaskBillingTx,settleTaskBillingTx,canvasRequestFingerprint} from "@/lib/billing/task-operation";
 import {BillingError} from "@/lib/billing/types";
 import {mapCanvasImageTask,type CanvasImageTaskRow} from "./image-task-records";
@@ -45,22 +46,8 @@ export async function createCanvasImageTaskWithReservation(input: {
     }
     const scope=currentCreationContext(),parameters={...(input.parameters as Record<string,unknown>||{})};
     if(scope){const creation=await acceptCreationTx(client,'canvas-image',input.id,email,{sourceArtworkId:input.sourceArtworkId,prompt:String(parameters.newText||''),parameters});Object.assign(parameters,{creationScope:{...scope,creationId:creation}});if(creation&&input.billingQuote)await creationLinkTx(client,creation,email,'billing',input.id);if(creation&&!input.billingQuote&&input.cost===0)await creationLinkTx(client,creation,email,'no-charge',input.id,'explicit-no-charge');}
-    if(input.billingQuote){await reserveTaskBillingTx(client,input.id,email,input.billingQuote,`led-canvas-image-${input.id}`);}else if (input.metered && input.cost > 0) {
-      const reserved = await client.query(
-        `UPDATE app_users u
-            SET credits_used = credits_used + $2
-          WHERE u.email = $1
-            AND (SELECT COALESCE(SUM(remaining),0) FROM app_credit_batches b
-                  WHERE b.email = u.email AND b.expires_at > now() AND b.remaining > 0)
-                - u.credits_used >= $2`,
-        [email, input.cost]
-      );
-      if ((reserved.rowCount ?? 0) === 0) throw new Error("积分不足，请升级方案后重试");
-    }
-    if(!input.billingQuote)await client.query(
-      `INSERT INTO app_gen_reservations (job_id, email, cost) VALUES ($1, $2, $3)`,
-      [input.id, email, input.cost]
-    );
+    if(input.billingQuote)await reserveTaskBillingTx(client,input.id,email,input.billingQuote,`led-canvas-image-${input.id}`);
+    else await reserveLegacyTaskTx(client,{id:input.id,email,cost:input.cost,metered:input.metered,insufficientMessage:"积分不足，请升级方案后重试"});
     const created = await client.query(
       `INSERT INTO app_canvas_image_tasks
          (id, email, kind, source_artwork_id, parameters, cost,billing_quote,billing_request_fingerprint)
@@ -99,20 +86,7 @@ export async function completeCanvasImageTask(input: {
     if (!task) throw new Error("图片编辑任务不存在");
     let billingPending=false;
     if(task.billing_quote&&task.status!=="completed"){const settled=await settleTaskBillingTx(client,input.id,email,task.billing_quote,`led-canvas-image-${input.id}`,{state:"succeeded",items:[{id:input.id,state:"succeeded",executedQuality:task.parameters?.qualityAudit?.executed||task.billing_quote.facts.quality}]});billingPending=settled.state==="manual"||settled.state==="hold";}else if (!task.billing_quote&&task.status !== "completed" && meterOn && Number(task.cost) > 0) {
-      const ledgerId = `led-canvas-image-${input.id}`;
-      const seen = await client.query(`SELECT 1 FROM app_ledger WHERE id = $1`, [ledgerId]);
-      if (!(seen.rowCount ?? 0)) {
-        await deductPrincipalFIFO(client, email, Number(task.cost));
-        await client.query(
-          `UPDATE app_users SET credits_used = GREATEST(credits_used - $2, 0) WHERE email = $1`,
-          [email, Number(task.cost)]
-        );
-        await client.query(
-          `INSERT INTO app_ledger (id, email, delta, reason, kind)
-           VALUES ($1,$2,$3,'画布在线改字','consume')`,
-          [ledgerId, email, -Number(task.cost)]
-        );
-      }
+      await settleLegacyTaskTx(client,{email,charge:Number(task.cost),reservedCredits:Number(task.cost),ledgerId:`led-canvas-image-${input.id}`,reason:"画布在线改字",idempotency:"ledger"});
     }
     await client.query(
       `UPDATE app_canvas_image_tasks SET status = 'completed', progress = 100,
@@ -121,7 +95,7 @@ export async function completeCanvasImageTask(input: {
         WHERE email = $1 AND id = $2`,
       [email, input.id, input.resultArtworkId]
     );
-    if(!billingPending) await client.query(`DELETE FROM app_gen_reservations WHERE job_id = $1`, [input.id]);
+    if(!billingPending) await clearTaskReservationTx(client,input.id);
     await durableCreationOutcomeTx(client,'canvas-image',input.id,email,'succeeded',[input.resultArtworkId]);
     await client.query("COMMIT");
   } catch (error) {
@@ -149,10 +123,7 @@ export async function failCanvasImageTask(input: { id: string; email: string; er
     meterOn=task?.billing_quote?.facts.metered??await creditMeteringEnabled(client);
     if (!task) throw new Error("图片编辑任务不存在");
     if(task.billing_quote&&task.status!=="completed"){await settleTaskBillingTx(client,input.id,email,task.billing_quote,`led-canvas-image-${input.id}`,{state:"failed",items:[]});}else if (!task.billing_quote&&task.status !== "completed" && !task.credits_refunded && meterOn && Number(task.cost) > 0) {
-      await client.query(
-        `UPDATE app_users SET credits_used = GREATEST(credits_used - $2, 0) WHERE email = $1`,
-        [email, Number(task.cost)]
-      );
+      await releaseLegacyCreditsTx(client,email,Number(task.cost));
     }
     if (task.status !== "completed") {
       await client.query(
@@ -162,7 +133,7 @@ export async function failCanvasImageTask(input: { id: string; email: string; er
         [email, input.id, input.error.slice(0, 1000)]
       );
     }
-    await client.query(`DELETE FROM app_gen_reservations WHERE job_id = $1`, [input.id]);
+    await clearTaskReservationTx(client,input.id);
     await durableCreationOutcomeTx(client,'canvas-image',input.id,email,'failed');
     await client.query("COMMIT");
   } catch (error) {

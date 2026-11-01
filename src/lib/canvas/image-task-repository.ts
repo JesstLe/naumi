@@ -1,3 +1,6 @@
+import type {PoolClient} from "pg";
+import {withTransaction} from "@/platform/db/transaction";
+import {holdTaskBillingTx} from "../billing/task-settlement";
 import "server-only";
 import {getPool,dbEnabled} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
@@ -102,9 +105,10 @@ export async function saveCanvasImageTaskProviderResult(id: string, url: string,
 
 export async function holdCanvasImageTask(id: string, error: string): Promise<void> {
   await ensureSchema();
-  await getPool().query(`WITH held AS (UPDATE app_canvas_image_tasks SET status='needs_attention',error=$2,lease_until=NULL,
-    updated_at=now() WHERE id=$1 AND status IN ('queued','processing') RETURNING id)
-    UPDATE app_billing_operations SET state='manual',updated_at=now() WHERE id IN (SELECT id FROM held) AND state IN ('reserved','hold')`, [id,error]);
+  await withTransaction(getPool(),async tx=>{
+    const held=await tx.query("UPDATE app_canvas_image_tasks SET status='needs_attention',error=$2,lease_until=NULL,updated_at=now() WHERE id=$1 AND status IN ('queued','processing') RETURNING id",[id,error]);
+    if(held.rowCount)await holdTaskBillingTx(tx,id,"manual");
+  });
 }
 
 export async function retryCanvasImageTask(input: { id: string; email: string; error: string; delaySeconds?: number }): Promise<void> {
@@ -117,4 +121,9 @@ export async function retryCanvasImageTask(input: { id: string; email: string; e
     [input.email.toLowerCase(), input.id, input.error.slice(0, 1000), Math.max(2, input.delaySeconds ?? 8)]
   );
   await touchReservation(input.id).catch(() => {});
+}
+
+/** Resume only stored output processing, never authorize a supplier submission. */
+export async function requeueStoredCanvasImageTaskTx(tx:PoolClient,id:string,email:string){
+ await tx.query("UPDATE app_canvas_image_tasks SET status='queued',attempts=0,lease_until=NULL,error='',updated_at=now() WHERE id=$1 AND email=$2 AND status='needs_attention' AND parameters->>'upstreamResult' IS NOT NULL",[id,email]);
 }

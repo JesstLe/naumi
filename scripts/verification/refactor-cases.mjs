@@ -4,6 +4,7 @@ import path from "node:path";
 const ts=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:true,tsx:true});
 const node=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:false,tsx:false});
 export const refactorCases=[
+ ts('billing-task-ownership','pricing','scripts/verify-billing-task-ownership.ts','BILLING_TASK_OWNERSHIP=MODIFIED PASS'),
  node('native-fixture-lifecycle','runtime','scripts/verify-native-fixture-lifecycle.cjs','NATIVE_FIXTURE_LIFECYCLE=PASS'),
  node('native-fixture-memory','runtime','scripts/verify-native-fixture-memory.cjs','NATIVE_FIXTURE_MEMORY=PASS'),
  node('native-parent-database','runtime','scripts/verify-native-parent-database.cjs','NATIVE_PARENT_DATABASE=PASS'),

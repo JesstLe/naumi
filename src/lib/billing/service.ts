@@ -121,7 +121,7 @@ export async function refreshApiCostOperation(tx:Tx,id:string) {
     if(result.apiCost?.status==="pending") { await tx.query("UPDATE app_billing_operations SET updated_at=now() WHERE id=$1",[id]); return; }
     if(["manual","hold"].includes(row.state)) {
       const settled=await settleLocked(tx,row,result,"APIMart费用补查结算");
-      if(settled.state==="settled")await tx.query("UPDATE app_image_jobs SET billing_settled=true WHERE id=$1",[id]);
+      if(settled.state==="settled")return {id:row.id as string,email:row.email as string};
       return;
     }
     const reviewId=fingerprint({id,cost:result.apiCost});

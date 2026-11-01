@@ -395,6 +395,14 @@ function fixture({runtime = true} = {}) {
   dependencies['src/lib/image-job-repository.ts']['@/lib/saas/creation-scope']=()=>load('src/lib/saas/creation-scope.ts');
   dependencies['src/lib/image-job-repository.ts']['@/lib/persistence/schema']={ensureSchema:async()=>{}};
   dependencies['src/lib/image-job-repository.ts']['@/lib/billing/wallet-balance']={deductPrincipalFIFO:fail('wallet-deduct'),refreshBalance:fail('wallet-refresh'),expireDueBatches:fail('wallet-expire')};
+  // Follow the actual billing-owned implementation; unexpected paid effects
+  // remain throwing boundary sentinels, not replacements for task functions.
+  dependencies['src/lib/image-job-repository.ts']['@/lib/billing/task-settlement']=()=>load('src/lib/billing/task-settlement.ts');
+  dependencies['src/lib/billing/task-settlement.ts']={
+    './service':billing,
+    './wallet-balance':dependencies['src/lib/image-job-repository.ts']['@/lib/billing/wallet-balance'],
+    './repository':{lockWallet:fail('wallet-lock'),syncBalanceTx:fail('wallet-sync')},
+  };
   dependencies['src/lib/image-job-repository.ts']['@/lib/billing/runtime']={creditMeteringEnabled:async()=>true};
   dependencies['src/lib/image-job-repository.ts']['./image-job-failure']=()=>load('src/lib/image-job-failure.ts');
   dependencies['src/lib/image-job-repository.ts']['./staging-history']=dependencies['src/lib/image-job-repository.ts']['@/lib/staging-history'];

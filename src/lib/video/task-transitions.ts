@@ -1,3 +1,4 @@
+import {reserveLegacyTaskTx,settleLegacyTaskTx,releaseLegacyCreditsTx,clearTaskReservationTx} from "@/lib/billing/task-settlement";
 import "server-only";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
@@ -6,7 +7,7 @@ import {acceptCreationTx,creationLinkTx,captureCreationMediaTx,creationTransacti
 import {ensureCreationSchema} from "@/lib/saas/creation-schema";
 import {durableCreationOutcomeTx} from "@/lib/saas/creation-writer";
 import {creditMeteringEnabled} from "@/lib/billing/runtime";
-import {deductPrincipalFIFO,expireDueBatches,refreshBalance} from "@/lib/billing/wallet-balance";
+import {expireDueBatches,refreshBalance} from "@/lib/billing/wallet-balance";
 import {reserveTaskBillingTx,settleTaskBillingTx,videoRequestFingerprint} from "@/lib/billing/task-operation";
 import {BillingError} from "@/lib/billing/types";
 import type {PoolClient} from "pg";
@@ -80,24 +81,8 @@ export async function createVideoTaskWithReservation(input: {
       if(creation&&input.billingQuote)await creationLinkTx(client,creation,email,'billing',input.id);
       if(creation&&!input.billingQuote&&input.cost===0)await creationLinkTx(client,creation,email,'no-charge',input.id,'explicit-no-charge');
     }
-    if(input.billingQuote){await reserveTaskBillingTx(client,input.id,email,input.billingQuote,`led-video-${input.id}`);}else if (meterOn && input.cost > 0) {
-      const reserved = await client.query(
-        `UPDATE app_users u
-            SET credits_used = credits_used + $2
-          WHERE u.email = $1
-            AND (SELECT COALESCE(SUM(remaining),0) FROM app_credit_batches b
-                  WHERE b.email = u.email AND b.expires_at > now() AND b.remaining > 0)
-                - u.credits_used >= $2`,
-        [email, input.cost]
-      );
-      if ((reserved.rowCount ?? 0) === 0) {
-        throw new Error(`积分不足，本条视频需要 ${input.cost} 积分`);
-      }
-    }
-    if(!input.billingQuote)await client.query(
-      `INSERT INTO app_gen_reservations (job_id, email, cost) VALUES ($1,$2,$3)`,
-      [input.id, email, input.cost]
-    );
+    if(input.billingQuote)await reserveTaskBillingTx(client,input.id,email,input.billingQuote,`led-video-${input.id}`);
+    else await reserveLegacyTaskTx(client,{id:input.id,email,cost:input.cost,metered:meterOn,insufficientMessage:`积分不足，本条视频需要 ${input.cost} 积分`});
     const created = await client.query(
       `INSERT INTO app_video_tasks
          (id, email, upstream_id, model, prompt, size, seconds, status, cost, request_body,
@@ -248,7 +233,7 @@ export async function completeVideoTask(input: {
       ) {
         throw new Error("已完成视频任务的产物不可覆盖");
       }
-      await client.query(`DELETE FROM app_gen_reservations WHERE job_id = $1`, [input.id]);
+      await clearTaskReservationTx(client,input.id);
       await client.query("COMMIT");
       return;
     }
@@ -276,22 +261,7 @@ export async function completeVideoTask(input: {
     }
     if(task.parameters?.workflowRunId&&task.parameters?.workflowNodeId){const {completeWorkflowTaskTx}=await import("./workflow-links");await completeWorkflowTaskTx(client,email,task.parameters.workflowRunId,task.parameters.workflowNodeId,input.id,input.resultAssets);}
     if(task.billing_quote){await settleTaskBillingTx(client,input.id,email,task.billing_quote,`led-video-${input.id}`,{state:"succeeded",items:[{id:input.id,state:"succeeded",executedQuality:task.parameters?.qualityAudit?.executed||task.billing_quote.facts.quality}]});}else if (meterOn && Number(task.cost) > 0) {
-      const ledgerId = `led-video-${input.id}`;
-      const seen = await client.query(`SELECT 1 FROM app_ledger WHERE id = $1`, [ledgerId]);
-      if (!(seen.rowCount ?? 0)) {
-        await deductPrincipalFIFO(client, email, Number(task.cost));
-        await client.query(
-          `UPDATE app_users
-              SET credits_used = GREATEST(credits_used - $2, 0)
-            WHERE email = $1`,
-          [email, Number(task.cost)]
-        );
-        await client.query(
-          `INSERT INTO app_ledger (id, email, delta, reason, kind)
-           VALUES ($1,$2,$3,'视频生成','consume')`,
-          [ledgerId, email, -Number(task.cost)]
-        );
-      }
+      await settleLegacyTaskTx(client,{email,charge:Number(task.cost),reservedCredits:Number(task.cost),ledgerId:`led-video-${input.id}`,reason:"视频生成",idempotency:"ledger"});
     }
     await client.query(
       `UPDATE app_video_tasks SET
@@ -314,7 +284,7 @@ export async function completeVideoTask(input: {
          result_storage_key = EXCLUDED.result_storage_key, deleted_at = NULL`,
       [email, input.id, `vid-result-${input.id}`, input.artworkId, input.videoUrl, input.resultStorageKey || ""]
     );
-    await client.query(`DELETE FROM app_gen_reservations WHERE job_id = $1`, [input.id]);
+    await clearTaskReservationTx(client,input.id);
     if (typeof task.parameters?.nodeId === "string") {
       const { completeVideoNodeTx } = await import("@/lib/canvas/video-node-repository");
       await completeVideoNodeTx(client, email, task.parameters.nodeId, input.id, input.artworkId);
@@ -352,11 +322,7 @@ export async function failVideoTask(input: {
     if (!task) throw new Error("视频任务不存在");
     if(["completed","failed","cancelled"].includes(task.status)){await client.query("COMMIT");return;}
     if(task.billing_quote&&task.status!=="completed"){await settleTaskBillingTx(client,input.id,email,task.billing_quote,`led-video-${input.id}`,{state:"failed",items:[]});}else if (!task.billing_quote&&task.status !== "completed" && !task.credits_refunded && meterOn && Number(task.cost) > 0) {
-      await client.query(
-        `UPDATE app_users SET credits_used = GREATEST(credits_used - $2, 0)
-          WHERE email = $1`,
-        [email, Number(task.cost)]
-      );
+      await releaseLegacyCreditsTx(client,email,Number(task.cost));
     }
     if (task.status !== "completed") {
       await client.query(
@@ -367,7 +333,7 @@ export async function failVideoTask(input: {
         [email, input.id, input.error.slice(0, 1000)]
       );
     }
-    await client.query(`DELETE FROM app_gen_reservations WHERE job_id = $1`, [input.id]);
+    await clearTaskReservationTx(client,input.id);
     await durableCreationOutcomeTx(client,'video',input.id,email,'failed');
     await client.query("COMMIT");
   } catch (error) {
