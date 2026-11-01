@@ -4,9 +4,8 @@ import { downloadImage } from "@/lib/download";
 import { useFeatureAccess, FeatureVisible } from "@/lib/feature-access/client";
 
 import { agentMediaUrl } from "@/lib/agent/media-policy";
-import { createWorkbenchSession, type WorkbenchMessage as Msg, type WorkbenchAccountScope as RecoveryScope, type WorkbenchRecoveryContext, type WorkbenchSendContext } from "@/lib/agent/workbench-session";
+import { createWorkbenchSession, type WorkbenchMessage as Msg, type WorkbenchRecoveryContext, type WorkbenchSendContext, type WorkbenchCatalogContext, type WorkbenchAttachmentContext } from "@/lib/agent/workbench-session";
 import { loadAccountSnapshot, invalidateBrowserData } from "@/lib/browser-data-cache";
-import {toolImageError} from "@/lib/tool-ui";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -53,8 +52,6 @@ import { TemplatesClient } from "@/components/templates/templates-client";
 // 对话逻辑:PUT /api/agent SSE + steering + 会话持久化 + 历史会话抽屉(二期收编)。
 // ---------------------------------------------------------------------------
 
-type AttachmentUploadOwner = { scope: RecoveryScope; generation: number; controller: AbortController };
-
 type RecentWork = {
   id: string;
   image: string;
@@ -64,19 +61,8 @@ type RecentWork = {
   createdAt?: string;
 };
 
-const MAX_UPLOAD = 12 * 1024 * 1024;
 const MAX_REF_FILES = 6;
 const MAX_REF_BYTES = 12 * 1024 * 1024;
-
-/** URL 归一化:取路径末段做作品库匹配(CDN 域名/协议差异不影响)。 */
-function imageKey(url: string): string {
-  try {
-    const path = decodeURIComponent(new URL(url, "http://x").pathname);
-    return path.split("/").pop() || path;
-  } catch {
-    return url.split("?")[0].split("/").pop() || url;
-  }
-}
 
 type ImageLinkResolver = (url: string) => Promise<string | null>;
 
@@ -314,44 +300,12 @@ export function WorkbenchClient() {
   const [previewUrl, setPreviewUrl] = useState("");
   const sessionIdRef = useRef("");
   const [sessionRecovery] = useState(createWorkbenchSession);
-  const sessionListAbortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  // 图片 URL → 作品 id 缓存(送画布/再生成的深链依据);上传响应直接登记,其余懒反查
-  const artworkIdRef = useRef<Record<string, string>>({});
-  const attachmentGenerationRef = useRef(0);
-  const attachmentUploadsRef = useRef(new Set<AttachmentUploadOwner>());
-
-  function ownsAccount(scope: RecoveryScope | null): scope is RecoveryScope {
-    return sessionRecovery.ownsAccount(scope);
+  function attachmentContext(): WorkbenchAttachmentContext {
+    return { headers: authHeader, request: (input, init) => fetch(input, init), setBusy: setUploading, setError };
   }
-
-  function resetAttachmentUploads(updateState = true) {
-    attachmentGenerationRef.current += 1;
-    for (const owner of attachmentUploadsRef.current) owner.controller.abort();
-    attachmentUploadsRef.current.clear();
-    if (updateState) setUploading(false);
-  }
-
-  function beginAttachmentUpload(): AttachmentUploadOwner | null {
-    const scope = sessionRecovery.accountScope;
-    if (!ownsAccount(scope)) return null;
-    const owner = { scope, generation: attachmentGenerationRef.current, controller: new AbortController() };
-    attachmentUploadsRef.current.add(owner);
-    setUploading(true);
-    return owner;
-  }
-
-  function ownsAttachmentUpload(owner: AttachmentUploadOwner) {
-    return ownsAccount(owner.scope) && owner.generation === attachmentGenerationRef.current &&
-      attachmentUploadsRef.current.has(owner) && !owner.controller.signal.aborted;
-  }
-
-  function finishAttachmentUpload(owner: AttachmentUploadOwner) {
-    const current = ownsAttachmentUpload(owner);
-    attachmentUploadsRef.current.delete(owner);
-    if (current) setUploading(attachmentUploadsRef.current.size > 0);
-  }
+  function resetAttachmentUploads() { sessionRecovery.attachments.reset({ setBusy: setUploading }); }
 
   // Layout cleanup fences continuations before a newly committed account can
   // interact. A fresh scope also distinguishes account A -> B -> A/StrictMode.
@@ -364,7 +318,7 @@ export function WorkbenchClient() {
       sessionIdRef.current = "";
       setMessages([]);
       setAttachments([]);
-      artworkIdRef.current = {};
+      sessionRecovery.attachments.resetIndex();
       setInput("");
       setInterject("");
       setActiveTitle("");
@@ -389,19 +343,14 @@ export function WorkbenchClient() {
     }
     return () => {
       sessionRecovery.deactivateAccount(scope);
-      resetAttachmentUploads(false);
       sessionRecovery.cancel();
       // The application owner detaches the old stream without cancelling it.
-      sessionListAbortRef.current?.abort();
-      sessionListAbortRef.current = null;
     };
   }, [user?.email, sessionRecovery]);
 
   useLayoutEffect(() => {
     if (ready) return;
     sessionRecovery.readinessLost(recoveryContext());
-    sessionListAbortRef.current?.abort();
-    sessionListAbortRef.current = null;
     setSessionsLoading(false);
     // Readiness loss detaches read-only observation, not an accepted SSE run.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -416,26 +365,8 @@ export function WorkbenchClient() {
       installSession:id=>{sessionIdRef.current=id;}, resetAttachmentUploads, refreshSessions};
   }
 
-  /** 反查图片的作品 id:先查缓存,未命中拉一次作品库全量匹配并回填。 */
-  async function resolveArtworkId(url: string): Promise<string | null> {
-    const key = imageKey(url);
-    if (!key) return null;
-    if (artworkIdRef.current[key]) return artworkIdRef.current[key];
-    if (!user?.email) return null;
-    try {
-      const r = await fetch(
-        `/api/account?email=${encodeURIComponent(user.email)}`,
-        { headers: await authHeader() }
-      );
-      if (!r.ok) return null;
-      const d = await r.json();
-      for (const a of (d.artworks ?? []) as { id: string; image: string }[]) {
-        if (a.id && a.image) artworkIdRef.current[imageKey(a.image)] = a.id;
-      }
-    } catch {
-      return null;
-    }
-    return artworkIdRef.current[key] ?? null;
+  function resolveArtworkId(url: string): Promise<string | null> {
+    return sessionRecovery.attachments.resolveArtworkId(url, attachmentContext());
   }
 
   // 问候语随本地时段
@@ -460,7 +391,7 @@ export function WorkbenchClient() {
 
   // Summary key contains day bounds, so yesterday's counts cannot be reused.
   useEffect(() => {
-    setRecent(null); setStats({ today: 0, total: 0 }); artworkIdRef.current = {};
+    setRecent(null); setStats({ today: 0, total: 0 }); sessionRecovery.attachments.resetIndex();
     if (!ready || !user?.email) return;
     let cancelled = false;
     const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
@@ -476,7 +407,7 @@ export function WorkbenchClient() {
       if (!cancelled) { setRecent([]); setStats({ today: 0, total: 0 }); }
     });
     return () => { cancelled = true; };
-  }, [user?.email, ready]);
+  }, [user?.email, ready, sessionRecovery]);
 
   // 参考图预览的对象 URL:卸载时回收
   useEffect(() => {
@@ -512,38 +443,12 @@ export function WorkbenchClient() {
 
   // ── 对话核心 ──
 
-  async function refreshSessions() {
-    const scope = sessionRecovery.accountScope;
-    if (!ready || !scope?.active || !scope.account) return;
-    sessionListAbortRef.current?.abort();
-    const controller = new AbortController();
-    sessionListAbortRef.current = controller;
-    const current = () => scope.active && sessionRecovery.accountScope === scope &&
-      sessionListAbortRef.current === controller && !controller.signal.aborted;
-    setSessionsLoading(true);
-    try {
-      const headers = await authHeader();
-      if (!current()) return;
-      const response = await fetch("/api/agent/session", {
-        headers, signal: controller.signal, cache: "no-store",
-      });
-      if (!response.ok || !current()) {
-        await response.body?.cancel().catch(() => {});
-        if (current()) throw new Error("Session list read failed");
-        return;
-      }
-      const data = await response.json();
-      if (!current()) return;
-      setSessions((data.sessions ?? []) as SessionSummary[]);
-    } catch {
-      if (current()) setError("历史会话列表读取失败，请重试");
-    } finally {
-      if (current()) {
-        setSessionsLoading(false);
-        sessionListAbortRef.current = null;
-      }
-    }
+  function catalogContext(): WorkbenchCatalogContext {
+    return { ready, headers: authHeader, request: (input, init) => fetch(input, init),
+      setSessions, setLoading: setSessionsLoading, setError,
+      sessionId: () => sessionIdRef.current, setTitle: setActiveTitle, deletedCurrent: newConversation };
   }
+  function refreshSessions() { return sessionRecovery.catalog.refresh(catalogContext()); }
 
   // 打开抽屉时刷新列表;登录后也预拉一次
   useEffect(() => {
@@ -553,109 +458,12 @@ export function WorkbenchClient() {
 
   function loadSession(id: string) { return sessionRecovery.load(id,recoveryContext()); }
 
-  async function renameSession(id: string, title: string): Promise<boolean> {
-    const clean = title.trim().replace(/\s+/g, " ");
-    const scope = sessionRecovery.accountScope;
-    if (!clean || !ownsAccount(scope)) return false;
-    try {
-      const headers = await authHeader();
-      if (!ownsAccount(scope)) return false;
-      const response = await fetch("/api/agent/session", {
-        method: "PATCH", headers: { "Content-Type": "application/json", ...headers },
-        body: JSON.stringify({ id, title: clean }),
-      });
-      if (!ownsAccount(scope)) {
-        await response.body?.cancel().catch(() => {});
-        return false;
-      }
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        if (ownsAccount(scope)) setError(data.error || "会话重命名失败");
-        return false;
-      }
-      await response.body?.cancel().catch(() => {});
-      if (!ownsAccount(scope)) return false;
-      setSessions(previous => ownsAccount(scope) ? previous.map(session =>
-        session.id === id ? { ...session, title: clean } : session) : previous);
-      if (id === sessionIdRef.current) setActiveTitle(clean);
-      return true;
-    } catch {
-      if (ownsAccount(scope)) setError("会话重命名失败");
-      return false;
-    }
+  function renameSession(id: string, title: string): Promise<boolean> {
+    return sessionRecovery.catalog.rename(id, title, catalogContext());
   }
-
-  async function removeSession(id: string) {
-    const scope = sessionRecovery.accountScope;
-    if (!ownsAccount(scope)) return;
-    try {
-      const headers = await authHeader();
-      if (!ownsAccount(scope)) return;
-      const response = await fetch(`/api/agent/session?id=${encodeURIComponent(id)}`, { method: "DELETE", headers });
-      if (!ownsAccount(scope)) {
-        await response.body?.cancel().catch(() => {});
-        return;
-      }
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        if (ownsAccount(scope)) setError(data.error || "会话删除失败");
-        return;
-      }
-      await response.body?.cancel().catch(() => {});
-      if (!ownsAccount(scope)) return;
-      setSessions(previous => ownsAccount(scope) ? previous.filter(session => session.id !== id) : previous);
-      if (id === sessionIdRef.current) newConversation();
-    } catch {
-      if (ownsAccount(scope)) setError("会话删除失败");
-    }
-  }
-
-  /** Upload transport belongs to this attachment view, not to a background task. */
-  async function uploadOne(f: File, owner: AttachmentUploadOwner): Promise<string | null> {
-    if (!ownsAttachmentUpload(owner)) return null;
-    if (toolImageError(f,MAX_UPLOAD)) {setError("请选择12MB以内的PNG / JPG / WebP图片");return null;}
-    try {
-      const fd = new FormData();
-      fd.append("image", f);
-      fd.append("title", "Agent 上传");
-      fd.append("entry", "agent");
-      const headers = await authHeader();
-      if (!ownsAttachmentUpload(owner)) return null;
-      const res = await fetch("/api/artworks/add", {
-        method: "POST", headers, body: fd, signal: owner.controller.signal,
-      });
-      if (!ownsAttachmentUpload(owner)) {
-        await res.body?.cancel().catch(() => {});
-        return null;
-      }
-      const d = await res.json();
-      if (!ownsAttachmentUpload(owner)) return null;
-      if (!res.ok) throw new Error(d.error || "图片上传失败，请重试");
-      const url = d?.artwork?.image || d?.image || d?.url;
-      const id = d?.artwork?.id || d?.id || null;
-      if (url && id) artworkIdRef.current[imageKey(url)] = id;
-      return url || null;
-    } catch (caught) {
-      if (ownsAttachmentUpload(owner)) setError(caught instanceof Error ? caught.message : "图片上传失败，请重试");
-      return null;
-    }
-  }
-
-  async function uploadAttachments(files: File[]) {
-    const owner = beginAttachmentUpload();
-    if (!owner) return;
-    try {
-      const urls: string[] = [];
-      for (const file of files) {
-        const url = await uploadOne(file, owner);
-        if (!ownsAttachmentUpload(owner)) return;
-        if (url) urls.push(url);
-      }
-      if (urls.length) setAttachments(previous => ownsAccount(owner.scope) &&
-        owner.generation === attachmentGenerationRef.current ? [...previous, ...urls] : previous);
-    } finally {
-      finishAttachmentUpload(owner);
-    }
+  function removeSession(id: string) { return sessionRecovery.catalog.remove(id, catalogContext()); }
+  function uploadAttachments(files: File[]) {
+    return sessionRecovery.attachments.append(files, { ...attachmentContext(), setAttachments });
   }
 
   // 对话输入框 Ctrl+V 截图 → 上传为附件(带 [商品图] 上下文)
@@ -778,23 +586,16 @@ export function WorkbenchClient() {
     const current = () => scope?.active && sessionRecovery.accountScope === scope && sessionRecovery.generation === generation;
     setComposerError(null);
     setComposerSubmitting(true);
-    let uploadOwner: AttachmentUploadOwner | null = null;
     try {
       const urls: string[] = [];
       if (composerFiles.length) {
-        uploadOwner = beginAttachmentUpload();
-        if (!uploadOwner) return;
-        for (const f of composerFiles) {
-          const u = await uploadOne(f, uploadOwner);
-          if (!current()) return;
-          if (!u) {
-            setComposerError(L("参考图上传失败，请重试", "Reference upload failed; retry"));
-            return;
-          }
-          urls.push(u);
+        const uploaded = await sessionRecovery.attachments.upload(composerFiles, attachmentContext(), true);
+        if (!current() || !uploaded.current()) return;
+        if (!uploaded.complete) {
+          setComposerError(L("参考图上传失败，请重试", "Reference upload failed; retry"));
+          return;
         }
-        finishAttachmentUpload(uploadOwner);
-        uploadOwner = null;
+        urls.push(...uploaded.urls);
       }
       if (!current()) return;
       let accepted = false;
@@ -809,7 +610,6 @@ export function WorkbenchClient() {
       });
       if (!accepted && current()) setComposerError("暂未发送，请稍后重试");
     } finally {
-      if (uploadOwner) finishAttachmentUpload(uploadOwner);
       if (scope?.active && sessionRecovery.accountScope === scope) {
         setComposerSubmitting(false);
       }

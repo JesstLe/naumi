@@ -21,6 +21,7 @@ assert.match(req('react').version, /^19\./);
 assert.equal(req('react').version, req('react-dom').version);
 const evidence = { tier: 'Actual React19 WorkbenchClient + Chromium + real timers/loopback HTTP; auth/backend/unrelated UI fixtures', source, react: req('react').version, checks: [], failures: [], observations: [], requests: [] };
 evidence.recoveryOwner=recoveryOwner;
+evidence.applicationOwners=['workbench-session.ts','workbench-contract.ts','workbench-session-catalog.ts','workbench-attachments.ts'].filter(name=>fs.existsSync(path.join(sourceRoot,'src/lib/agent',name))).map(name=>({path:path.join(sourceRoot,'src/lib/agent',name),sha256:require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(sourceRoot,'src/lib/agent',name))).digest('hex')}));
 evidence.sourceSha256=require('node:crypto').createHash('sha256').update(fs.readFileSync(source)).digest('hex');
 let browser, browserServer, server, context, page, origin;
 let currentCase='';

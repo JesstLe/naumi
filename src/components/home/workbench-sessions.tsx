@@ -18,13 +18,8 @@ import { useI18n } from "@/lib/i18n/locale-context";
 // 按日期分组;列表/载入/重命名/删除。数据操作通过回调由 workbench-client 完成。
 // ---------------------------------------------------------------------------
 
-export type SessionSummary = {
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  messageCount: number;
-};
+import type { WorkbenchSessionSummary as SessionSummary } from "@/lib/agent/workbench-contract";
+export type { WorkbenchSessionSummary as SessionSummary } from "@/lib/agent/workbench-contract";
 
 function formatSessionTime(value: string) {
   const date = new Date(value);

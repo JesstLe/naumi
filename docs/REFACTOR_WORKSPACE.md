@@ -1,5 +1,11 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：R9T 首页会话目录与附件
+
+[R9T模块](changes/2026-11-01-refactor-r9t-workbench-catalog-attachments.md)将 F01 的列表观察/变更、上传批次和作品索引从页面迁到同一会话聚合的两个内聚子模块，共享原账号 scope；React 只保留投影/草稿。修改成功退休旧列表观察，作品反查在 auth/response/JSON await 后保持原账号/索引 revision，ready 波动不取消同账号有效上传或已受理 SSE。原 JSX 渲染字节、原 email、multipart/SSE/save 协议保持，没有新任务系统或复制列表。
+
+真实 React19/Chromium：完整旧版43场景37PASS/6FAIL，修改版43/43PASS；原恢复/发送47场景基线与修改版均47/47PASS。原34项保留，新增9项包含六个原反例及缓存/聊天部分成功/门户全部参考正例。auth/backend仍为fixture，不冒充同一真实付费断线 E2E。完整源码、质量、四产物与副本回滚见 R9T VERIFICATION/DELIVERY。F01本轮职责已迁移，F03与整体退出继续；main未合、部署0、47HOLD。
+
 ## 当前收敛：R9S 验收跟随生成会话owner
 
 [R9S模块](changes/2026-11-01-refactor-r9s-direct-submission-ownership.md)复现0454f164的Image早期静态检查失败：旧扫描器要求GenerateClient仍直接调用billing.submit。现核对实际named-import/会话返回值/原billing端口、adapter与facade的原quote和POST前guard，保留原Canvas、其他工具、GenChat、Agent、operation及无关删除确认条件；两别名正例和8个漏接/恢复积分confirm负例，完整原静态命令37检查PASS。产品2144文件逐字节不变，不把业务编排搬回页面或跳过generate覆盖。

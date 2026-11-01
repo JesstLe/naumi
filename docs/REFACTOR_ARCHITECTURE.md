@@ -15,7 +15,7 @@
 | Canvas 文档与任务 | `src/lib/canvas/` 的 document/history/image-runs/task owners | UI 不拥有钱包/供应商/持久化算法；原共享 undo/CAS 和账号归属保持 |
 | Canvas 交互投影 | `src/lib/canvas/selection-projection.ts`、`node-creation.ts`、`view-navigation.ts`、`native-editor-session.ts` | 纯决策/会话→React adapter→原具体文档；不为每个事件机械新增框架 |
 | Canvas 模型与目录 | `image-model-selection.ts`、`model-config/feature-catalog.ts` 及 browser adapter | 目录与参数规则唯一归属；feature/账号/项目生命周期不交叉污染 |
-| 首页 Agent 会话观察 | `src/lib/agent/workbench-session.ts` | owner 拥有账号 epoch、历史安装、运行 cursor/phase 和显式停止后的状态；React 仅提供 transport 与投影，不通过脱离观察取消或重买后台任务 |
+| 首页 Agent 会话 | `src/lib/agent/workbench-session.ts`，内聚子模块 `workbench-session-catalog.ts` / `workbench-attachments.ts` | 同一账号 scope 拥有恢复、发送/SSE、目录观察/变更和附件生命周期；纯合同不依赖 React，投影/草稿留在 UI；目录和索引失效不取消已受理后台任务 |
 | 媒体 | `src/modules/media/` + `services/media-worker/` | 纯合同与真实原生引擎分离；runtime 不导入 scripts |
 | 验收运行环境 | `scripts/video-fusion/native-parent-database.ts`、`scripts/verify-native-application.py` | 原业务案例保留；固定 SDK 与完整 App/Worker 字节一致；私有父 PG 归运行器清理 |
 

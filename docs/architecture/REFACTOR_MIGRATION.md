@@ -16,6 +16,10 @@
 
 “已迁移职责”不等于整项目完成；剩余门槛由退出审计逐项列出。Canvas 薄事件/DOM adapter 是否保留按职责判断，不按剩余行数继续机械拆分。
 
+## R9T 首页会话目录与附件
+
+[R9T](../changes/2026-11-01-refactor-r9t-workbench-catalog-attachments.md)将列表观察、rename/remove 和上传/作品索引迁入同一首页会话聚合的两个内聚子模块，共享原账号 scope，React 只投影列表/草稿。修改成功使旧列表 revision 失效；索引与上传分离失效，ready 波动不取消有效同账号上传。旧接口、原始 email 和 JSX 字节保持，原 34 场景及新增 9 场景集中验证；结果及证据层级见本轮交付记录。F03 与整体退出继续单列。
+
 ## R9R 旧生成页会话
 
 [R9R](../changes/2026-11-01-refactor-r9r-generation-session.md)由`createGenerationSession`的`bindAccount/generate/resume`统一拥有当前视图epoch、原job观察与结果投影；React hook只绑定原auth/billing/cache及multipart/GET协议。页面不再持有poll ref或付费提交协议。原11正常场景与7实际反例、新18场景及普通wire精确对照有实际浏览器记录；归一化账号只用于比较，不改原请求账号/intent指纹。真实付费断线trace不以此替代。上轮Core的父任务fixture只是补实际纯模块依赖，原25业务场景不删。F01/F03继续按真实职责推进。
@@ -36,7 +40,7 @@
 
 ## R9J 首页会话恢复与观察
 
-[R9J](../changes/2026-11-01-refactor-r9j-workbench-session-owner.md)将首页的恢复身份、历史安装、观察循环、UNKNOWN映射与原session显式停止迁到独立浏览器应用owner。后续[R9M](../changes/2026-11-01-refactor-r9m-workbench-send-owner.md)已经把发送/SSE迁到同一owner，并固定事件时的不可变工具步骤快照；React保留事件/transport/投影和草稿。原有实际React/Chromium浏览器模块保持业务断言并加入统一core；不把新增目录项当作已经执行。会话列表变更和上传生命周期仍按真实职责另列，不宣称首页所有职责已经退出组件。
+[R9J](../changes/2026-11-01-refactor-r9j-workbench-session-owner.md)将首页的恢复身份、历史安装、观察循环、UNKNOWN映射与原session显式停止迁到独立浏览器应用owner。后续[R9M](../changes/2026-11-01-refactor-r9m-workbench-send-owner.md)已经把发送/SSE迁到同一owner，并固定事件时的不可变工具步骤快照；React保留事件/transport/投影和草稿。原有实际React/Chromium浏览器模块保持业务断言并加入统一core；不把新增目录项当作已经执行。会话列表变更和上传生命周期随后由 R9T 迁移，结果见本轮交付记录；不把 R9J 当作全部首页职责验收。
 
 下列阶段表是原始工作包定义与长期合同，固定基线数字属于 2026-10-24，不是当前未完成数量；原先“第一轮推荐”已退出当前指令，全文在 Git 历史保留。
 

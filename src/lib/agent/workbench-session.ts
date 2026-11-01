@@ -1,14 +1,13 @@
 /** Browser application owner for one Agent conversation: account epochs,
  * history observation, explicit send/SSE/save and interjection. It never owns
  * the backend paid task. Detaching a view drains rather than cancels its run. */
-export type WorkbenchMessage = {
-  role: "user" | "assistant";
-  content: string;
-  steps?: { tool: string; summary: string }[];
-  pending?: boolean;
-};
+import type { WorkbenchMessage, WorkbenchAccountScope } from "./workbench-contract";
+import { createWorkbenchSessionCatalog } from "./workbench-session-catalog";
+import { createWorkbenchAttachments } from "./workbench-attachments";
+export type { WorkbenchMessage, WorkbenchAccountScope } from "./workbench-contract";
+export type { WorkbenchCatalogContext } from "./workbench-session-catalog";
+export type { WorkbenchAttachmentContext } from "./workbench-attachments";
 type SavedStep = { type?: string; tool?: string; summary?: string; items?: string[] };
-export type WorkbenchAccountScope = { readonly account: string; active: boolean };
 type Observation = {
   id: string;
   generation: number;
@@ -91,6 +90,9 @@ export function createWorkbenchSession() {
   function ownsAccount(scope: WorkbenchAccountScope | null): scope is WorkbenchAccountScope {
     return Boolean(scope?.active && accountScope === scope);
   }
+  const account = { current: () => accountScope, owns: ownsAccount };
+  const catalog = createWorkbenchSessionCatalog(account);
+  const attachments = createWorkbenchAttachments(account);
   function cancel() {
     generation += 1;
     const previous = observer;
@@ -234,6 +236,7 @@ export function createWorkbenchSession() {
     }
   }
   function readinessLost(context: WorkbenchRecoveryContext) {
+    catalog.cancel();
     const owner = observer;
     if (!owner) return;
     failed(owner, context);
@@ -511,14 +514,22 @@ export function createWorkbenchSession() {
     get accountScope() { return accountScope; },
     get generation() { return generation; },
     ownsAccount,
+    catalog, attachments,
     activateAccount(account: string) {
       const previous = accountScope;
+      if (previous?.active) {
+        previous.active = false;
+        catalog.cancel(); attachments.reset(); attachments.resetIndex();
+      }
       const scope: WorkbenchAccountScope = { account, active: true };
       accountScope = scope;
       return { previous, scope };
     },
     deactivateAccount(scope: WorkbenchAccountScope) {
       scope.active = false;
+      if (accountScope === scope) {
+        catalog.cancel(); attachments.reset(); attachments.resetIndex();
+      }
       // Clear only the UI handle; the old request keeps draining independently.
       if (explicitStream?.scope === scope) explicitStream = null;
     },

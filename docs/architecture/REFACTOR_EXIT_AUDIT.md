@@ -2,6 +2,8 @@
 
 ## 当前固定版本
 
+- R9T当前推进：[首页目录与附件](../changes/2026-11-01-refactor-r9t-workbench-catalog-attachments.md)。F01列表观察/变更及上传/索引生命周期已归同一会话聚合下的内聚子模块；实际旧43场景37PASS/6FAIL、新43PASS，原恢复/发送47场景原新均PASS。保留原34检查和原始email/JSX字节，ready不取消同账号上传或已受理SSE。证据是实际组件/Chromium与fixture后端，不代替同一真实付费断线链；F03、当前整版CI/main仍OPEN。最终源及回滚见本轮DELIVERY。
+
 - R9S收敛：[免重复确认的实际owner扫描](../changes/2026-11-01-refactor-r9s-direct-submission-ownership.md)。0454f164的Image在原静态generate归属断言FAIL，后续步骤SKIPPED；原实现本地复现同样错误。候选只更新原scanner跟随页面→hook→session→原billing端口及guard/quote，原其他条件保留、37静态正负检查PASS，产品2144文件raw不变。实际业务与新head完整CI仍分别验收，不将静态PASS当作已生成/已扣款。
 
 - R9R当前推进：[旧生成页会话](../changes/2026-11-01-refactor-r9r-generation-session.md)。F02提交/原job观察/结果投影已从组件迁移到单一owner；最终实际组件/Chromium原18场景11PASS7FAIL、新18PASS，原正常wire EXACT，原账号和实际intent指纹保留。auth/账务后端为fixture，真实同一付费断线trace仍OPEN；F01列表/上传与F03publication恢复是剩余应用owner，F02不再误列为完全未迁移。
