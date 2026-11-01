@@ -41,7 +41,9 @@ export async function runModelManagementUi(verificationFile,{root=process.cwd(),
     await fs.symlink(path.join(root,'node_modules'),path.join(source,'node_modules'),process.platform==='win32'?'junction':'dir');
     // The source copy already owns its cwd. Keep Next's cache path short on
     // Windows rather than nesting another full evidence path inside it.
-    const childEnv={...env,NEXT_DIST_DIR:'.next',NAUMI_MODEL_UI_RUN_ID:runId,NAUMI_MODEL_UI_PORT:String(port),NAUMI_MODEL_UI_BASE_URL:origin,NAUMI_MODEL_UI_SOURCE_MANIFEST:'output/model-ui-source.json'};
+    // The pinned Router checkout belongs to the caller, not the isolated Next
+    // source copy. Resolve its relative input before changing the child's cwd.
+    const childEnv={...env,...(env.NAUMI_VERIFY_ROUTER_SOURCE?{NAUMI_VERIFY_ROUTER_SOURCE:path.resolve(root,env.NAUMI_VERIFY_ROUTER_SOURCE)}:{}),NEXT_DIST_DIR:'.next',NAUMI_MODEL_UI_RUN_ID:runId,NAUMI_MODEL_UI_PORT:String(port),NAUMI_MODEL_UI_BASE_URL:origin,NAUMI_MODEL_UI_SOURCE_MANIFEST:'output/model-ui-source.json'};
     const spawnTs=(file,server=false,ipc=false)=>spawn(process.execPath,[...(server?['--conditions=react-server']:[]),'--import',loader,file],{cwd:source,env:childEnv,windowsHide:true,stdio:ipc?['ignore','inherit','inherit','ipc']:['ignore','inherit','inherit']});
     fixture=spawnTs(selected.fixture,true,true);fixtureDone=observed(fixture);
     const metadata=path.join(source,selected.metadata),started=Date.now();let ready=false;
