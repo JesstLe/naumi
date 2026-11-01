@@ -24,7 +24,7 @@ assert.ok(imageStep&&sdkStep&&ci.jobs.core.steps.indexOf(imageStep)<ci.jobs.core
 eq(imageStep.run,'node scripts/verify-refactor-image.mjs --expected-sha "${{ inputs.source_commit || github.sha }}" --out output/refactor-ci-image');
 eq(sdkStep.run,'python -X utf8 scripts/verify-native-application.py prepare --image-manifest output/refactor-ci-image/BUILD_RESULT.json --out output/refactor-ci-native-sdk');
 eq(ci.jobs.core.steps.find(s=>s.uses==='actions/upload-artifact@v4').with.name,'refactor-core-${{ inputs.source_commit || github.sha }}');
-eq(oldWorkflow.jobs.docker.needs,['resolve','regression']);eq(oldWorkflow.jobs.regression.uses,'./.github/workflows/refactor-regression.yml');eq(oldWorkflow.jobs.regression.with.source_commit,'${{ needs.resolve.outputs.sha }}');eq(ci.jobs.core.steps[0].with.ref,'${{ inputs.source_commit || github.sha }}');for(const type of ['push','pull_request'])for(const p of ['src/**','scripts/**','services/**','.github/workflows/**']){assert.ok(ci.on[type].paths.includes(p));checks++;}assert.ok(ci.jobs.core.steps.some(s=>s.if==='always()'&&s.uses==='actions/upload-artifact@v4'));checks++;cases++;
+eq(oldWorkflow.jobs.docker.needs,['resolve','regression']);eq(oldWorkflow.jobs.regression.uses,'./.github/workflows/refactor-regression.yml');eq(oldWorkflow.jobs.regression.with.source_commit,'${{ needs.resolve.outputs.sha }}');eq(ci.jobs.core.steps[0].with.ref,'${{ inputs.source_commit || github.sha }}');eq(ci.jobs.core.steps[0].with['fetch-depth'],0,'HISTORICAL_ORIGINAL_COMPARISONS_REQUIRE_ANCESTOR_OBJECTS');for(const type of ['push','pull_request'])for(const p of ['src/**','scripts/**','services/**','.github/workflows/**']){assert.ok(ci.on[type].paths.includes(p));checks++;}assert.ok(ci.jobs.core.steps.some(s=>s.if==='always()'&&s.uses==='actions/upload-artifact@v4'));checks++;cases++;
 const {runRefactorVerification,sourceIdentity}=await import(pathToFileURL(path.join(root,'scripts/verification/refactor-runner.mjs')).href),{refactorCases,selectRefactorCases}=await import(pathToFileURL(path.join(root,'scripts/verification/refactor-cases.mjs')).href);eq(new Set(refactorCases.map(c=>c.id)).size,refactorCases.length);for(const c of refactorCases){assert.ok(c.expect);await fs.stat(path.join(root,c.file));checks++;}assert.throws(()=>selectRefactorCases('missing'));checks++;cases++;
 const dir=await fs.mkdtemp(path.join(out,'fixture-')),git=(...a)=>execFileSync('git',a,{cwd:dir,encoding:'utf8',stdio:['ignore','pipe','pipe'],windowsHide:true}).trim();await fs.writeFile(path.join(dir,'.gitignore'),'output/\n');await fs.writeFile(path.join(dir,'ok.mjs'),"console.log('FIXTURE_OK');\n");await fs.writeFile(path.join(dir,'fail.mjs'),"console.log('FIXTURE_FAIL');process.exitCode=7;\n");await fs.writeFile(path.join(dir,'mutate.mjs'),"import fs from'node:fs';fs.writeFileSync('marker.txt','changed');console.log('FIXTURE_OK');\n");git('init');git('config','user.name','Fixture');git('config','user.email','fixture@example.test');git('add','.');git('commit','-m','fixture');const sha=git('rev-parse','HEAD');await fs.mkdir(path.join(dir,'output'));
 const spec=(id,file='ok.mjs',pg=false)=>({id,file,pg,group:'fixture',expect:'FIXTURE_OK'}),run=(name,selected,opts={})=>runRefactorVerification({root:dir,out:path.join(dir,'output',name),cases:selected,commandFor:c=>[process.execPath,c.file],expectedSha:sha,scope:'fixture',env:{...process.env,NAUMI_VERIFY_ISOLATED_DB:undefined,DATABASE_URL:undefined},...opts});
@@ -54,7 +54,10 @@ try{
  eq(buildStep.shell,'bash');assert.ok(!buildStep['continue-on-error']&&buildStep.run.includes('exit "$status"'));checks++;
  eq(buildStep.env,{NODE_OPTIONS:'--max-old-space-size=4096'},'BUILD_ONLY_HEAP_MATCHES_FIXED_APPLICATION');
  assert.ok(!gateway.jobs.verify.env?.NODE_OPTIONS,'BUILD_HEAP_MUST_NOT_CHANGE_RUNTIME_OR_OTHER_TEST_STEPS');checks++;
- assert.ok(gateway.jobs.verify.steps.some(s=>s.uses==='actions/upload-artifact@v4'&&s.if==='always()'&&s.with.path==='output/image-gateway-build/'));checks++;
+ const artifact=gateway.jobs.verify.steps.find(s=>s.uses==='actions/upload-artifact@v4'&&s.if==='always()');
+ for(const owned of ['output/image-gateway-build/','output/image-gateway-billing/']){assert.ok(artifact?.with.path.split(/\s+/).includes(owned));checks++;}
+ const billingStep=gateway.jobs.verify.steps.find(s=>s.name==='Configurable billing and transactional regressions');
+ eq(billingStep.run,'npm run verify:billing-all');eq(billingStep.env.BILLING_VERIFY_EVIDENCE,'output/image-gateway-billing');
  const bash=process.platform==='win32'?'D:/DEV/Git/bin/bash.exe':'bash';
  const fixture='npm(){ test "$*" = "run build" || return 9; test "$NODE_OPTIONS" = "--max-old-space-size=4096" || return 13; printf "fixture build 100%%\\n"; printf "fixture detail\\n" >&2; return "$NAUMI_FIXTURE_BUILD_EXIT"; }\n';
  for(const exit of [0,7]){
@@ -65,6 +68,23 @@ try{
   if(exit){assert.ok(child.stdout.includes('100%25%0Afixture detail'));checks++;}
   eq((await fs.readFile(path.join(dir,'output/image-gateway-build/SOURCE.txt'),'utf8')).trim(),sha);
   await fs.writeFile(path.join(out,'BUILD_CONTRACT_'+exit+'.json'),JSON.stringify({fixture:true,command:[bash,'-e','-o','pipefail','-c',buildStep.run],npmFixtureExit:exit,exit:child.status,stdout:child.stdout,stderr:child.stderr,literal},null,2)+'\n');cases++;
+ }
+ // Actual billing driver + explicit child port: fail fast and retain both raw
+ // streams, the original exit and untouched NOT_RUN cases; no PG acceptance.
+ await fs.mkdir(path.join(dir,'scripts'),{recursive:true});await fs.mkdir(path.join(dir,'node_modules/tsx/dist'),{recursive:true});
+ const billingNames=['baseline','rules','config','wallet','api','image-jobs','tools','async-tasks','entitlements','agent','facts','reconciliation','cost-audit','intents','coverage','canvas-extra','review','performance'];
+ for(const name of billingNames)await fs.writeFile(path.join(dir,'scripts/verify-billing-'+name+'.ts'),'// explicit driver fixture\n');
+ await fs.writeFile(path.join(dir,'node_modules/tsx/dist/cli.mjs'),`const name=process.argv.at(-1);console.log('BILLING_FIXTURE_STDOUT '+name);console.error('BILLING_FIXTURE_STDERR 100%');if(name.endsWith('api.ts'))process.exitCode=Number(process.env.BILLING_FIXTURE_EXIT||0);`);
+ const driver=path.join(dir,'scripts/verify-billing-all.mjs');await fs.copyFile(path.join(root,'scripts/verify-billing-all.mjs'),driver);
+ for(const exit of [0,7]){
+  const evidence=path.join(dir,'output/billing-driver-'+exit),child=spawnSync(process.execPath,[driver,'--out',evidence],{cwd:dir,env:{...process.env,NAUMI_VERIFY_ISOLATED_DB:'1',DATABASE_URL:'postgres://fixture:fixture@127.0.0.1:1/billing_fixture',GITHUB_ACTIONS:'true',BILLING_FIXTURE_EXIT:String(exit)},encoding:'utf8',windowsHide:true});
+  eq(child.status,exit);const report=JSON.parse(await fs.readFile(path.join(evidence,'REPORT.json'),'utf8'));eq(report.cases.map(row=>row.name),billingNames);
+  eq([report.passed,report.failed,report.notRun],exit?[4,1,13]:[18,0,0]);eq(report.status,exit?'FAIL':'PASS');
+  for(const row of report.cases.filter(row=>row.status!=='NOT_RUN')){
+   const stdout=await fs.readFile(row.stdout),stderr=await fs.readFile(row.stderr);eq(row.stdoutSha256,(await import('node:crypto')).createHash('sha256').update(stdout).digest('hex'));eq(row.stderrSha256,(await import('node:crypto')).createHash('sha256').update(stderr).digest('hex'));
+  }
+  if(exit){eq(report.cases[4].exit,7);assert.ok(child.stdout.includes('::error title=Billing regression failed::')&&child.stdout.includes('100%25'));checks++;}
+  await fs.writeFile(path.join(out,'BILLING_DRIVER_CONTRACT_'+exit+'.json'),JSON.stringify({fixture:true,exit:child.status,stdout:child.stdout,stderr:child.stderr,report},null,2)+'\n');cases++;
  }
  const result={status:'PASS',mode:'MODIFIED',cases,checks,actualChildren:true,workflow:'static parsed YAML',pushBranches:ci.on.push.branches,imagePushBranches:oldWorkflow.on.push.branches,remoteExecution:'NOT_PROVEN_BY_THIS_TEST',production:false,external:0};await fs.writeFile(path.join(out,'RESULT.json'),JSON.stringify(result,null,2)+'\n');console.log(`REFACTOR_RUNNER=PASS mode=MODIFIED cases=${cases} checks=${checks} ACTUAL_CHILDREN=1 FAIL_EXIT=RETAINED SOURCE_DRIFT=DETECTED WRONG_SHA=NO_RUN DIRTY=NO_PASS RESUME=EXACT_LOG WORKFLOW=STATIC FEATURE_TRIGGER=PR MAIN_PUSH=FULL IMAGE_PUSH=MAIN_ONLY NETWORK=0`);
 }finally{const resolved=path.resolve(dir);assert.ok(resolved.startsWith(path.resolve(out)+path.sep));await fs.rm(resolved,{recursive:true,force:true});}

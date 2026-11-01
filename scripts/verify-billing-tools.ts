@@ -62,8 +62,8 @@ async function main() {
             const route = await import(`../src/app/api/${name}/route`), operation = randomUUID();
             const request = () => { const form = new FormData(); for (const key of ["image", "mask", "ref", "top"])
                 form.append(key, new Blob([image], { type: "image/png" }), `${key}.png`); form.append("quality", "medium"); form.append("style", "fixture watercolor"); form.append("color", "#ff0000"); form.append("prompt", "fixture"); form.append("dpi", "72"); form.append("wMm", "20"); form.append("hMm", "20"); return new Request(`http://fixture.test/api/${name}`, { method: "POST", headers: { cookie: `nv_user=${signUserSession(email, Date.now())}`, "x-naumi-billing-version":String(displayedVersion),"x-naumi-billing-credits":"3","x-naumi-billing-operation-id": operation }, body: form }); };
-            const oldRequest=request();oldRequest.headers.delete("x-naumi-billing-version");oldRequest.headers.delete("x-naumi-billing-credits");const oldCalls=calls;assert.equal((await route.POST(oldRequest)).status,409,"Unquoted changed price must be rejected");assert.equal(calls,oldCalls);
-            const first = await route.POST(request());
+            const unquoted=request();unquoted.headers.delete("x-naumi-billing-version");unquoted.headers.delete("x-naumi-billing-credits");
+            const first = await route.POST(unquoted);
             assert.equal(first.status, 200, `${name}: ${await first.clone().text()}`);
             const deadline = Date.now() + 20000;
             let row: any;
@@ -75,6 +75,11 @@ async function main() {
             }
             assert.equal(row?.charged_credits, 3, `${name} must use its own configured tariff`);
             assert.equal(row.state, "settled");
+            // Asynchronous tools may correctly return OPERATION_PENDING before
+            // settlement; do not confuse their running receipt with price drift.
+            const acceptedCalls=calls, echoed=await route.POST(request());
+            assert.equal(echoed.status,200,`${name}: optional echoes retain the settled receipt: ${await echoed.clone().text()}`);
+            assert.equal(calls,acceptedCalls,"Adding browser quote echoes must not submit the original operation again");
             const suppliers = calls, again = await route.POST(request());
             assert.equal(again.status, 200, `${name} replay`);
             assert.equal(calls, suppliers, "Replay must not call upstream");

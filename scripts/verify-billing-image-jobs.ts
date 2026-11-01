@@ -9,9 +9,9 @@ async function main() {
     Object.assign(process.env, { NAUMI_MULTI_USER: "1", SETTINGS_SECRET: "fixture-billing-0123456789abcdef0123456789abcdef", VIDEO_WORKER_SECRET: "fixture-worker-0123456789abcdef0123456789abcdef", STORAGE_DRIVER: "local", MEDIA_DIR: path.resolve("output/billing-20261003/media"), OPENAI_API_KEY: "fixture", OPENAI_IMAGE_MODEL: "gpt-image-1", OPENAI_IMAGE_MODELS: "gpt-image-1", NAUMI_IMAGE_QUALITY_SUPPORTED: "1" });
     let release!: () => void;
     const hold = new Promise<void>(resolve => release = resolve);
-    let calls = 0;
+    let calls = 0;const wires:Record<string,unknown>[]=[];
     const image = await sharp({ create: { width: 1024, height: 1024, channels: 3, background: "white" } }).png().toBuffer();
-    const mock = createServer(async (req, res) => { for await (const _ of req) { } const index = calls++; await hold; res.setHeader("content-type", "application/json"); if (index === 1) {
+    const mock = createServer(async (req, res) => { let raw="";for await (const part of req)raw+=part;wires.push(JSON.parse(raw));const index = calls++; await hold; res.setHeader("content-type", "application/json"); if (index === 1) {
         res.writeHead(400);
         res.end(JSON.stringify({ error: { message: "fixture rejection" } }));
     }
@@ -26,25 +26,33 @@ async function main() {
     try {
         await db.getOrCreateUser(email);
         await db.addCreditBatch(email, 100, { source: "admin", reason: "fixture" });
-        const request = (version?: number, credits?: number) => new Request("http://fixture.test/api/generate-image", { method: "POST", headers: { cookie: `nv_user=${signUserSession(email, Date.now())}`, "content-type": "application/json", "x-real-ip": "127.0.0.222", ...(version === undefined ? {} : { "x-naumi-billing-version": String(version), "x-naumi-billing-credits": String(credits) }) }, body: JSON.stringify({ prompt: "fixture frozen tariff", model: "gpt-image-1", count: 2, quality: "high", resolution: "1K", ratio: "1:1" }) });
+        const operation=randomUUID();
+        const request = (version?: number, credits?: number) => new Request("http://fixture.test/api/generate-image", { method: "POST", headers: { cookie: `nv_user=${signUserSession(email, Date.now())}`, "content-type": "application/json", "x-real-ip": "127.0.0.222", "x-naumi-billing-operation-id":operation, ...(version === undefined ? {} : { "x-naumi-billing-version": String(version), "x-naumi-billing-credits": String(credits) }) }, body: JSON.stringify({ prompt: "fixture frozen tariff", model: "gpt-image-1", count: 2, quality: "high", resolution: "1K", ratio: "1:1" }) });
         const submit = await route.POST(request(initial.version, 20));
         assert.equal(submit.status, 200, await submit.clone().text());
         const { jobId } = await submit.json();
         const deadline = Date.now() + Math.min(300000,Math.max(20000,Number(process.env.NAUMI_VERIFY_TIMEOUT_MS)||20000));
-        while (calls < 2 && Date.now() < deadline)
+        // A leased job executes its image indices serially. Hold the first
+        // actual request, not a second request that cannot start before release.
+        while (calls < 1 && Date.now() < deadline)
             await new Promise(resolve => setTimeout(resolve, 25));
-        assert.equal(calls, 2);
+        assert.equal(calls, 1);
         const next = structuredClone(initial.config);
         next.features["image.generate"].pricing = { mode: "fixed", credits: 17 };
         next.switches.metering = "off";
         next.costs["*:*:high:1K"]={currency:"CNY",amountMicros:"9000000",unit:"image",source:"manual-estimate"};
         const changed = await config.publish({ id: randomUUID(), expectedVersion: initial.version, config: next, actor: "fixture", reason: "change while upstream blocked" });
-        assert.equal((await route.POST(request(initial.version, 20))).status, 409, "Stale displayed quote must reject before supplier");
+        const replay=await route.POST(request(initial.version,20));
+        assert.equal(replay.status,200,await replay.clone().text());
+        assert.equal((await replay.json()).jobId,jobId,"An accepted operation returns its original job despite a changed current price");
+        assert.equal(calls,1,"Receipt recovery must not dispatch another paid request");
         release();
         while (await db.getImageJobChargedCredits(jobId) === 0 && Date.now() < deadline)
             await new Promise(resolve => setTimeout(resolve, 25));
         assert.equal(await db.getImageJobChargedCredits(jobId), 10, "Old job keeps its original price even with metering off");
         assert.equal(calls, 2);
+        assert.deepEqual(wires.map(wire=>wire.n),[1,1],"Exactly the two original serial image indices execute");
+        assert.equal(Number((await db.getPool().query("SELECT count(*) AS n FROM app_ledger l JOIN app_billing_operations o ON o.ledger_id=l.id WHERE o.id=$1 AND o.email=$2",[jobId,email])).rows[0].n),1,"Partial delivery settles the original operation only once");
         let audits:any[]=[];while(Date.now()<deadline){audits=(await db.getPool().query("SELECT * FROM app_image_cost_audit WHERE job_id=$1",[jobId])).rows;if(audits.length)break;await new Promise(resolve=>setTimeout(resolve,25));}
         assert.equal(audits.length,1);assert.equal(Number(audits[0].billing_config_version),initial.version);assert.equal(audits[0].cost_currency,"credits");assert.equal(audits[0].cost_source,"legacy-credit-estimate");assert.equal(audits[0].cost_actual,false);assert.equal(audits[0].billed_credits,10);assert.equal(audits[0].cost_credits,10);
         const row = (await db.getPool().query("SELECT payload FROM app_image_jobs WHERE id=$1", [jobId])).rows[0];
@@ -57,7 +65,7 @@ async function main() {
         await repository.settleImageJob(reviewed, { state: "succeeded", items: [{ id: "review-one", state: "succeeded", executedQuality: "medium" }] }, "fixture review", null);
         assert.equal(await db.getImageJobChargedCredits(reviewed), 10);
         await config.publish({ id: randomUUID(), expectedVersion: changed.version, config: initial.config, actor: "fixture", reason: "fixture restore" });
-        console.log("PASS blocked real route freezes quote, partial charge and metering, stale version rejects without supplier call");
+        console.log("PASS blocked serial image route freezes quote, partial charge and metering; original receipt survives changed current price without supplier replay");
     }
     finally {
         release();

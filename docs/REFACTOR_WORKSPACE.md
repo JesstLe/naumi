@@ -1,6 +1,16 @@
 # 重构工作区：当前交付快照
 
-## 当前推进：R9G 远端验收执行输入
+## 当前推进：R9H 账务整模块与历史输入合同
+
+[R9H模块](changes/2026-11-01-refactor-r9h-billing-regression-contract.md)继续收敛最终整合，不叠加产品功能。5adb的远端Image完整构建已PASS，首次到达账务后FAIL；本地原顺序前4项PASS/API因夹具缺少真实报价所属账号而FAIL。原13项未到达用例以冻结源码、每项独立PG一次诊断，5FAIL/8PASS；该诊断不是完整gate通过。
+
+本轮恢复回归对现行合同的检查：真实账号/opaque报价归属及冻结、图片原operation/首张串行barrier/部分单次结算、工具与文字无需浏览器积分回显且无重放、Agent服务器报价/40次不累计确认/真实余额、静态扫描跟随实际owner而非兼容门面。首次修改版tryon结算前返回合法pending的失败保留；候选沿原等待结算后验证回执。最终原顺序18项单次PASS/0FAIL/0未到达，不拼接独立结果。
+
+Core5adb实际在admin-member-history-pg的历史Git对象缺失处FAIL；真实无历史对象Git+PG原版复现同样错误。该案例以原Git blob9325字节/sha256校验固定输入后，原19组真实API/PG检查PASS，原55条业务断言完整保留，仅加checksum断言；篡改夹具在连接DB前被拒绝。其他有意祖先比较的目录输入由Core checkout显式fetch-depth=0提供，refs已核对为当前祖先。全项目非增量tsc0；最终runner20场景360检查PASS，含18项账务driver的真实child0/7、原始双流、失败后13未运行及只读注释/always artifact。产品源码0改动，原2141字节保持；没有恢复积分误拦、增加业务限额或跳过测试。
+
+R9H副本回滚、原始失败、raw patch、最终source及新head远端状态以output/refactor-r9h-20261101的VERIFICATION/DELIVERY为准。旧9ba216及运行/混合验收不改标为本轮；最终main普通整合仍等待新head实际检查，整体ACTIVE、未部署、47HOLD。
+
+## 上一模块：R9G 远端验收执行输入
 
 [R9G模块](changes/2026-11-01-refactor-r9g-ci-execution-inputs.md)先收敛最终验收，不叠加新业务模块。R9F最终head804ce5af的两条远端CI均已实际FAIL：Image为V8约2GiB heap OOM；Core为主题矩阵在英文界面查找中文“优化预览”超时。后者已在同产品源码、明确en-US浏览器输入下复现，修正为真实zh-CN浏览器和naumi_locale=zh后，原97断言加语言断言共98检查PASS；未改产品翻译/布局、等待时限或重试次数。历史R9E重载停滞的唯一首因仍OPEN，不借此追溯关闭。
 

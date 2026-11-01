@@ -2,6 +2,8 @@
 
 ## 当前固定版本
 
+- R9H当前收敛：[账务与历史输入合同](../changes/2026-11-01-refactor-r9h-billing-regression-contract.md)。原顺序18项真实PG账务整模块单次PASS；无历史Git环境的原生管理员19组API/PG检查PASS，55条原业务assert完整保留且原始旧源字节pin；全项目tsc0、runner20/360。产品0改动，不把原9ba的216结果重标为本轮。
+
 - R9G正在收敛实际远端失败：[执行输入记录](../changes/2026-11-01-refactor-r9g-ci-execution-inputs.md)。804ce5af的Image/Core均FAIL，分别为V8 heap OOM及英文界面的中文定位器失败；后者已实际原/新对照，不能用新检查替代其余远端未到达业务用例。
 
 - 应用/验证执行源码：`9ba80e10ed5135e5eeb20cc4c57c93cfb090aa71`，当前216项单次完整PASS/0失败/0未运行/0复用；镜像/SDK及实际命令归本轮DELIVERY。
@@ -20,7 +22,7 @@
 | 类型与结构 | 元数据源292e非增量tsc0；5092编译器输入+4配置（应用源9ba计数5091）；lint0/37既有warning；四类SCC0 | 本轮PASS |
 | 历史间歇失败 | 当前原97主题用例及timeline链PASS；R9E主题重载和R9D拖动原FAIL留存 | 历史唯一根因OPEN，不归因为本轮16文件迁移 |
 | CI构建证据 | 原npm build/参数/exit保留；完整日志、source/tree、失败注释及always artifact；真实Bash0/7＋Node只读报告5场景18检查 | 接线PASS，不冒称旧build根因或新远端已通过 |
-| 有效远端CI | ba497及804ce5af的Core/Image均真实FAIL；804实际注释和R9G原/新对照独立留存 | 当前在修执行输入；仍需新head实际通过，不以本地绿灯替代 |
+| 有效远端CI | ba497/804及5adb两条均有实际FAIL；5adb的Image build已PASS后失败于账务，Core失败于历史Git对象输入，R9H分别实测修正 | 仍需R9H新head实际通过，不以本地整模块绿灯替代 |
 | 源码与回退 | 四产物/完整binary patch/原5344raw hash/副本行为与later-edit首写前零写 | 以本轮最终重开记录为准，实际工作树保留新版 |
 | main普通整合 | 第3产品模块后fetch及merge origin/main e2f56255已包含，计数3→0，未写main | 最终分支合main仍OPEN；分支已超过48小时 |
 | 生产与容量 | 当前未发布，47HOLD；历史供应商/持久化/传输及生产负载沿独立台账 | 不以本轮样本关闭或宣称10万容量 |
