@@ -48,7 +48,10 @@ async function startFixture(){
 (async () => {
   const runtime=await startFixture();
   const browser = await chromium.launch({ channel: 'msedge', headless: true });
-  const context = await browser.newContext({ viewport: { width: 1800, height: 1200 } });
+  // These accessibility assertions describe the Chinese UI, not the host OS.
+  // Use real browser/SSR locale inputs; do not replace the product translator.
+  const context = await browser.newContext({ viewport: { width: 1800, height: 1200 }, locale: 'zh-CN' });
+  await context.addCookies([{ name: 'naumi_locale', value: 'zh', url: base }]);
   const page = await context.newPage(); page.setDefaultTimeout(30000);
   const checks = [], errors = [], external = [], requests = [], groups = [], history = [], optimizations = [], textGenerations = [], textWrites = [];
   const rootId = 'regeneration-root', otherId = 'reference-neighbor', textId = 'text-feedback';
@@ -160,6 +163,7 @@ async function startFixture(){
   try {
     await context.addInitScript(()=>{if(!localStorage.getItem('nv:canvas:last'))localStorage.setItem('nv:canvas:last','tree:regeneration-root');});
     await page.goto(base+'/canvas',{waitUntil:'domcontentloaded',timeout:180000});await node(rootId).waitFor({timeout:120000});await node(textId).waitFor();
+    await expect(page.locator('html')).toHaveAttribute('lang','zh-CN');check('EXPLICIT_CHINESE_BROWSER_AND_SSR_LOCALE');
     await page.waitForFunction(()=>[...document.querySelectorAll('.react-flow__node img')].filter(i=>i.complete&&i.naturalWidth>0).length>=2);
     await capture('light','light');await capture('light','dark');await capture('dark','light');await capture('dark','dark');
     // Real first OCR action, with actual feature selector portal.

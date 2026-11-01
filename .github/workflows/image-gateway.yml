@@ -120,6 +120,9 @@ jobs:
           done
       - name: Build full application
         shell: bash
+        env:
+          # Match the already-required fixed application build; scope to build only.
+          NODE_OPTIONS: --max-old-space-size=4096
         run: |
           mkdir -p output/image-gateway-build
           git rev-parse HEAD > output/image-gateway-build/SOURCE.txt

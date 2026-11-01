@@ -1,6 +1,12 @@
 # 重构工作区：当前交付快照
 
-## 当前推进：R9F 五类原生节点身份归属
+## 当前推进：R9G 远端验收执行输入
+
+[R9G模块](changes/2026-11-01-refactor-r9g-ci-execution-inputs.md)先收敛最终验收，不叠加新业务模块。R9F最终head804ce5af的两条远端CI均已实际FAIL：Image为V8约2GiB heap OOM；Core为主题矩阵在英文界面查找中文“优化预览”超时。后者已在同产品源码、明确en-US浏览器输入下复现，修正为真实zh-CN浏览器和naumi_locale=zh后，原97断言加语言断言共98检查PASS；未改产品翻译/布局、等待时限或重试次数。历史R9E重载停滞的唯一首因仍OPEN，不借此追溯关闭。
+
+同一份5346文件冻结源码在相同隔离Linux下，显式2048MiB堆的真实npm build复现相同V8 OOM/exit1；唯一改为4096MiB后完整npm build/exit0，两次OOMKilled=false。候选只把Image构建步骤预算对齐已有固定Docker构建，不改生产Web/Worker或其他测试环境；原构建命令/退出码和全部后续业务检查保留。真实Bash环境/0与7退出及runner18场景300检查PASS。容器8GiB/2CPU仅为控制环境，不是生产容量；没有提高超时或修改Next来跳过类型/lint。最终逐文件桥接、副本回滚及新headCI归R9G交付，不能把旧9ba整版PASS重标为当前HEAD。
+
+## 上一模块：R9F 五类原生节点身份归属
 
 [R9F模块](changes/2026-11-01-refactor-r9f-native-node-ingress.md)：15个Route、25个处理器消费现成创建包装器的服务端actor；request-auth仍拥有身份规范化及管理员目标授权，undefined保留无DB解析、null代表已知匿名。普通入口原生账号认证SQL2→1，管理员跨账号只读3→2（独立requireAdmin保留），不设全局缓存，不改领域事务、CAS、任务/计费/素材规则。
 

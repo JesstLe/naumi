@@ -52,11 +52,13 @@ try{
  const buildStep=gateway.jobs.verify.steps.find(s=>s.name==='Build full application');
  assert.ok(buildStep?.run.includes('if npm run build > output/image-gateway-build/build.log 2>&1; then'));checks++;
  eq(buildStep.shell,'bash');assert.ok(!buildStep['continue-on-error']&&buildStep.run.includes('exit "$status"'));checks++;
+ eq(buildStep.env,{NODE_OPTIONS:'--max-old-space-size=4096'},'BUILD_ONLY_HEAP_MATCHES_FIXED_APPLICATION');
+ assert.ok(!gateway.jobs.verify.env?.NODE_OPTIONS,'BUILD_HEAP_MUST_NOT_CHANGE_RUNTIME_OR_OTHER_TEST_STEPS');checks++;
  assert.ok(gateway.jobs.verify.steps.some(s=>s.uses==='actions/upload-artifact@v4'&&s.if==='always()'&&s.with.path==='output/image-gateway-build/'));checks++;
  const bash=process.platform==='win32'?'D:/DEV/Git/bin/bash.exe':'bash';
- const fixture='npm(){ test "$*" = "run build" || return 9; printf "fixture build 100%%\\n"; printf "fixture detail\\n" >&2; return "$NAUMI_FIXTURE_BUILD_EXIT"; }\n';
+ const fixture='npm(){ test "$*" = "run build" || return 9; test "$NODE_OPTIONS" = "--max-old-space-size=4096" || return 13; printf "fixture build 100%%\\n"; printf "fixture detail\\n" >&2; return "$NAUMI_FIXTURE_BUILD_EXIT"; }\n';
  for(const exit of [0,7]){
-  const child=spawnSync(bash,['-e','-o','pipefail','-c',fixture+buildStep.run],{cwd:dir,env:{...process.env,NAUMI_FIXTURE_BUILD_EXIT:String(exit)},encoding:'utf8',windowsHide:true});
+  const child=spawnSync(bash,['-e','-o','pipefail','-c',fixture+buildStep.run],{cwd:dir,env:{...process.env,...buildStep.env,NAUMI_FIXTURE_BUILD_EXIT:String(exit)},encoding:'utf8',windowsHide:true});
   eq(child.status,exit);const literal=await fs.readFile(path.join(dir,'output/image-gateway-build/build.log'),'utf8');
   eq(literal,'fixture build 100%\nfixture detail\n');assert.ok(child.stdout.includes(literal));checks++;
   eq(child.stdout.includes('::error title=Full application build failed::'),exit!==0);
