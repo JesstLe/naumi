@@ -50,3 +50,7 @@
 原 runner 真子进程20场景370检查 PASS；全项目非增量 tsc 与定向 lint 均 exit0，5111编译器输入及4配置绑定。全部2152产品文件与原087／已构建db3a完整镜像raw一致，本轮没有重新构建或重新运行浏览器；旧102浏览器保持原 source 和原场景，不给本轮网络故障增加虚假的UI覆盖。
 
 generation执行源与后续最终文档提交分开绑定；原退出审计、模块迁移和当前工作区只补本轮索引。四产物、副本5401原始hash恢复、原六场景重新执行与自有PG清理按最终VERIFICATION／DELIVERY实际记录。
+
+## 当前远端失败保留
+
+收尾读取原087的Image run `41337432855` 已终态FAIL：完整build、账务事务及registered model执行阶段通过，Billing admin browser acceptance为15PASS/1FAIL；具体为 `scripts/billing-ui.spec.ts:299` 的 configured access password / deep links / logout，整个test超出原30000ms。GitHub annotations已保存；job日志与artifact下载分别遇到EOF／TLS EOF，尚未取得最后等待点，不能据此认定唯一根因或宣布偶发。原Core run `41337432857`仍在运行。没有为绿灯扩时、改断言或重跑该远端job；本轮23生成通过不能覆盖这条管理UI失败，后续优先沿原UI同条件复现。
