@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：R10E 管理员入口读取时序
+
+[R10E](changes/2026-11-02-refactor-r10e-admin-entry-read-order.md)真实原hook/React/HTTP复现相同账号旧GET200未登录或503，在密码POST成功后覆盖认证投影。原owner在成功POST后推进读取epoch，不新增请求／重放／跨账号状态；服务端授权保留。原087管理UI30s超时仍不冒认唯一根因，最终原UI、模块、PG、类型与回退按本轮DELIVERY。整体ACTIVE，未合main、本线程未部署。
+
 ## 当前推进：R10D 远端对象 PUT 同任务证据
 
 [R10D](changes/2026-11-02-refactor-r10d-remote-put-evidence.md)补 M06 的真实签名对象HTTP写失败，不用本地fs测试冒充网络边界。原087产品在六场景基线全部正确：一次供应／一笔6积分／原PNG／原GET done，独立进程恢复和原mirror补传保持；产品修改0，新专项沿原generation目录登记，总226／组23，固定99e原顺序23子命令单次全PASS（顶层局部PARTIAL/exit2）、runner20/370及非增量tsc/lint0。实际浏览器及云存储基础设施未在本轮验证；回退与同源CI归本轮DELIVERY，整体ACTIVE、未合main、未发布。

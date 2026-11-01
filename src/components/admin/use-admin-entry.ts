@@ -74,6 +74,9 @@ export function useAdminEntry(){
       const result=await response.json().catch(()=>null) as {ok?:boolean;error?:string}|null;
       if(!current())return;
       if(!response.ok||!result?.ok){setPassword({...form,busy:false,error:result?.error||"登录失败"});return;}
+      // An already-started read can still contain the pre-cookie state. The
+      // accepted password response supersedes it within this same entry owner.
+      serial.current++;
       setPassword({owner:identity,value:"",busy:false,error:null});setAccess({owner:identity,status:"ok",localAdmin:true});
     }catch{if(current())setPassword({...form,busy:false,error:"网络错误,请重试"});}
     finally{if(pending.current===identity)pending.current=null;}

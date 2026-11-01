@@ -1,5 +1,9 @@
 # 迁移合同与模块记录索引
 
+## R10E 管理入口读写投影
+
+[R10E](../changes/2026-11-02-refactor-r10e-admin-entry-read-order.md)保留原入口owner，只补成功认证对旧读取的先后关系；真实React/HTTP原反例已经复现。不把hook状态当服务器授权，不迁移密码／角色检查，不因重构再造通用manager。原远端UI超时与此确定竞争分层验收。
+
 ## R10D 同任务远端写故障
 
 [R10D](../changes/2026-11-02-refactor-r10d-remote-put-evidence.md)验证现有adapter→storage runtime→paid codec／交付→独立mirror职责闭环；原六场景已正确，故产品0修改，仅补原目录和证据端口，不另建通用存储框架。原GET、字节、账务及新进程恢复同case核对，不冒充实际页面或完整226通过。
