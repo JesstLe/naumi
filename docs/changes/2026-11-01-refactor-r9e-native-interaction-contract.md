@@ -26,3 +26,18 @@
 ## 集中验证续接
 
 e689d0da 的 lint exit0；非增量 tsc exit2，实际诊断为 SourceFile 未公开 parseDiagnostics 以及 fixture evaluate 回调缺少 boolean 类型。保留原 TSC.log / MODULE_RESULTS.json，语法诊断改用 TypeScript 公开 transpileModule API，回调显式标注 boolean；不改产品源码、断言或用例等待时间。不重跑已通过 lint，修正后固定新源码继续类型、runner、原/新手势及直接生成合同验证。原/新结果、完整215及App运行验收以最终固定源码记录为准。
+
+## 最终集中验收
+
+[R9E模块](changes/2026-11-01-refactor-r9e-native-interaction-contract.md)：timeline/director 的原生验证复用既有 `dragCanvasNode`，不再私有读取一次坐标就发手势；原持久化、撤销/重做、锁定、复制、删除、账务断言和等待时间保留。真实 ReactFlow/生产 drag owner 的四场景原/新对照为12/14检查，正常轨迹EXACT；当前同源完整应用中的 timeline 和 director 原生链均PASS。它们不证明历史单次失败的唯一根因。
+
+直接生成旧CI扫描器在同源复现 exit1（要求恢复已删除的报价版本误拦），现在核对 typed 创建owner、原服务器quote、scope/operation透传及无重复积分确认，27项静态正反检查PASS；不是实际钱包验收。feature Core回归仅由PR触发，main push与精确source workflow_call保留，runner16场景282检查PASS，不删除业务测试。
+
+当前验证/完整应用固定 `bb0ebce1ba489222901205db49ca3ae6592127ba`，Web/Worker同镜像与原生SDK应用字节一致。目录215项已全部到达：首批61PASS/1主题FAIL/153未到达，随后只执行153个原未到达项，全部PASS；**两批合计214PASS/1FAIL/0未运行，完整core仍FAIL，不能称单次215全绿**。没有复用旧case结果。主题重载40检查后节点等待超时，导航200、无pageerror，但截图及正文读取也超时；附加协议诊断未给出唯一首因，结束了其自有浏览器，原失败保留。没有提高超时、换浏览器或跳过断言。
+
+同固定镜像 runtime177、实际产品浏览器92（2context、routeMocks0）及450秒混合校准通过：165图片/12媒体，177consume/1014积分，付费重放0，未完成父任务0，capacityClaim=false。非增量tsc exit0，5090个编译器输入+4配置绑定，37个既有lint warning/exit0，四类SCC0。原e689两处脚本类型错误和诊断中断记录均保留。
+
+本轮产品源码改动0，全部2141个原src/services字节不变；完整源码5344文件，对照5342原文件。四产物、副本回滚及最终source/doc桥接见 `output/refactor-r9e-20261101/DELIVERY.json` / `VERIFICATION.txt`。**整体ACTIVE；main未合、部署0、47HOLD**。验证/文档不计产品模块，主线同步计数仍2；下一步是定位主题重载失败并完成真实同源整版退出，而非继续重复已通过批次。远端新head CI以最终DELIVERY快照为准。
+
+
+原命令、输入、字面输出、退出码、副本回滚与四产物均归本轮VERIFICATION；baseline不是业务正常的声明，旧direct扫描器exit1是已复现的过时验收合同。初始模块tsc exit2日志和唯一附加主题诊断exit2/自有浏览器结束记录保留。诊断只得到了3份导航HTML及加载事件，未形成有效trace或根因栈；不把它写成诊断通过。

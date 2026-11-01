@@ -16,6 +16,10 @@
 
 “已迁移职责”不等于整项目完成；剩余门槛由退出审计逐项列出。Canvas 薄事件/DOM adapter 是否保留按职责判断，不按剩余行数继续机械拆分。
 
+## R9E 验证接口职责
+
+[R9E](../changes/2026-11-01-refactor-r9e-native-interaction-contract.md)把原生手势准备职责归现成dragCanvasNode，保留真实鼠标与App/PG原断言；直接生成扫描器核对当前typed owner与冻结quote，而不是恢复已删除的积分确认。feature Core触发归PR、main push/精确source依赖保留。目录215项已全部到达，但两批214PASS/1主题FAIL仍不是完整core通过；产品源码0改动，不增加功能模块计数。后续入口、状态、钱包、幂等和UNKNOWN合同不变。
+
 ## 原始路线和验收合同
 
 下列阶段表是原始工作包定义与长期合同，固定基线数字属于 2026-10-24，不是当前未完成数量；原先“第一轮推荐”已退出当前指令，全文在 Git 历史保留。
