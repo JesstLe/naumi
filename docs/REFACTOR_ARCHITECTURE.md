@@ -1,5 +1,10 @@
 # 架构与职责：模块化单体
 
+## R10C 自动下一次尝试的应用owner
+
+[R10C](changes/2026-11-02-refactor-r10c-historical-batch-retry.md)将原paid结构归集与原任务重试资格收拢到imagegen/retry-eligibility，复用model-config事实接口和原账务reader。dispatch与batch只消费，不穿透对方表或复制规则。证据读取在批次锁前，身份匹配与写入在原事务内；旧观察不能写入新child／attempt。不增通用框架、新确认或并行任务状态。
+
+
 ## R10B 供应阶段与重试授权
 
 [R10B](changes/2026-11-02-refactor-r10b-supplier-rejection-ownership.md)把原HTTP诊断与再次购买证据分开：model-config拥有原阶段事实、逐unit纯判定和只读接口；imagegen只在原job归属内消费，不穿透阶段表、不复制钱包规则。NOT_ACCEPTED只表示已证明，失败与客户零扣款不充当证明；已有批次策略复用，不创建平行任务或事件框架。

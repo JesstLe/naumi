@@ -1,5 +1,8 @@
 # 整体退出审计
 
+- R10C：[历史回执与陈旧批次观察](../changes/2026-11-02-refactor-r10c-historical-batch-retry.md)。真实九条基线证明旧NOT_ACCEPTED标签可跳过新分类而自动购买，并发旧tick可3POST／账本12但批次6。应用owner只读核对原证据与账务，原批次事务匹配childID＋attempts；首次候选九条PASS、无证据1POST0consume、明确未收费正常6积分、并发2POST1consume。完整组／镜像／102浏览器及回退以R10C最终DELIVERY，不把225登记当全项目通过；整体ACTIVE、本线程未部署。
+
+
 - R10B：[拒绝证据归属](../changes/2026-11-02-refactor-r10b-supplier-rejection-ownership.md)。真实无证明403父NOT_ACCEPTED／批次2POST反例复现；模型owner记录原unit并公开只读证据，原七场景新PASS、无证明2→1，明确未收费2→2，正常6积分及真实socket丢失UNKNOWN／释放保持。原parent25／firstpaid5／quota及runner20-368通过；固定d579完整镜像实际102浏览器PASS、8consume48积分；原顺序generation21/21PASS，局部scope顶层PARTIAL/exit2。M03/M04具体维度推进不等于全部故障关闭；224登记不等于完整运行，整体ACTIVE／未合main／本线程部署0。
 
 

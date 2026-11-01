@@ -1,4 +1,4 @@
-import {readImageRejectionEvidence} from '../model-config/image-rejection-evidence';
+import {hasProvenImagegenRejection} from './retry-eligibility';
 import {attachCanvasImageVersions,assertCanvasRegeneration} from "../canvas/image-version-store";
 import {taskFailureDiagnostic,type TaskFailureDiagnostic} from "./task-diagnostics";
 import "server-only";
@@ -93,11 +93,7 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
      await update({status:"error"},{status:"failed",chargedCredits:billing.chargedCredits,billingStatus:billing.confirmed?"confirmed":"unavailable",error:{code:"CHILD_PENDING",message:row.snapshot.error||"本次未取得图片，请重试"}});return;
     }
     if(row.snapshot.status==="error"){
-     const attempts=Object.entries(row.snapshot.paidOperations||{}) as [string,{state:string;children?:Record<string,{state:string}>}][];
-     if(attempts.length&&attempts.every(([,attempt])=>attempt.state==="rejected"&&Object.values(attempt.children||{}).every(unit=>unit.state==="rejected"))){
-      const proven=await Promise.all(attempts.map(([operation,attempt])=>readImageRejectionEvidence(operation,Object.keys(attempt.children||{}).length?Object.keys(attempt.children!):[operation])));
-      if(proven.every(Boolean))throw new NotAccepted(row.snapshot.error||"供应商明确未受理");
-     }
+     if(await hasProvenImagegenRejection(row.snapshot.paidOperations))throw new NotAccepted(row.snapshot.error||"供应商明确未受理");
      throw new Error(row.snapshot.error||"生成失败");
     }
     if(row.snapshot.status!=="done"){await update({status:"pending"},{status:row.snapshot.queueState?"queued":"pending"});return;}
