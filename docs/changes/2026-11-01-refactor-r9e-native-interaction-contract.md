@@ -18,3 +18,7 @@
 第一次新fixture因tsx CJS不支持顶层await在任何资源启动前exit1，已包装main；第二次fixture误把原始鼠标delta当ReactFlow激活阈值后的节点delta，实际149/132而预期155/135，已按原用例合同验证一次手势、真实变化和精确编译回执，并使用生产compileCanvasMove保留持久化from。失败记录保留，未改变原生断言。
 
 基线反例4场景12检查、修改版4场景14检查通过，原正常轨迹完全一致。实际原生App/PG、整版、质量、回滚和最终源码绑定按后续集中结果更新；当前只有准备及定向证据。整体ACTIVE，main未整合，部署0，47HOLD。
+
+## 重复CI执行归属
+
+已读取新head964的真实run元数据，两个Core refactor regression分别由push与pull_request触发，source完全相同。重构分支改由现有PR完整回归，保留main push、workflow_call的精确source、手动入口、全部路径和完整215测试/发布依赖；不再每次feature更新重复构建并执行同一Core。既有runner自测同步验证这些触发与同源发布条件，image gateway的独立业务覆盖未删。当前两个旧Core运行仅作历史证据，未人为标绿。

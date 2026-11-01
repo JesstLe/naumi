@@ -4,9 +4,11 @@ const arg=name=>{const i=process.argv.indexOf(name);return i<0?undefined:process
 const oldWorkflow=yaml.load(await fs.readFile(path.join(root,'.github/workflows/docker.yml'),'utf8')),ciFile=path.join(root,'.github/workflows/refactor-regression.yml');
 if(baseline){eq(!!oldWorkflow.jobs.regression,false);eq(oldWorkflow.jobs.docker.needs,'resolve');eq(await fs.stat(ciFile).then(()=>true,()=>false),false);eq(await fs.stat(path.join(root,'scripts/verify-refactor.mjs')).then(()=>true,()=>false),false);console.log('REFACTOR_RUNNER=PASS mode=BASELINE cases=1 checks=4 BUILD_REQUIRES_CORE=0 SAME_SOURCE_REPORT=0 SOURCE=STATIC_WORKFLOW');process.exit(0);}
 const ci=yaml.load(await fs.readFile(ciFile,'utf8'));
-// Branch pushes must actually select this workflow before same-source checks help.
-// The image publisher remains main-only; this branch runs regression, not release.
-eq(ci.on.push.branches,['main','codex/core-refactor-20261024'],'ACTIVE_REFACTOR_BRANCH_PUSH_NOT_CONFIGURED');
+// One full feature-head regression through its PR, not duplicate push + PR builds.
+// Main push, reusable release checks and manual execution remain unchanged.
+eq(ci.on.push.branches,['main'],'MAIN_PUSH_REGRESSION_REQUIRED');
+assert.ok(ci.on.pull_request && ci.on.workflow_call && 'workflow_dispatch' in ci.on);checks++;
+eq(ci.on.workflow_call.inputs.source_commit.required,true,'REUSABLE_RELEASE_MUST_KEEP_EXACT_SOURCE');
 eq(oldWorkflow.on.push.branches,['main']);
 eq(ci.permissions,{contents:'read'});
 const receiptSetup=ci.jobs.core.steps.find(s=>s.name==='Prepare receipt fixture database'),coreStep=ci.jobs.core.steps.find(s=>s.name==='Run source-bound core regression');
@@ -44,5 +46,5 @@ try{
  await fs.writeFile(sdkFile,JSON.stringify(sdk));report=await run('native-sdk-valid',[native],{nativeSdkManifest:sdkFile,commandFor:c=>[process.execPath,c.file,'--out','placeholder']});eq(report.status,'PARTIAL');eq(report.passed,1);eq(report.cases[0].command.at(-1),path.join(dir,'output/native-sdk-valid/native'));assert.ok((await fs.readFile(report.cases[0].log,'utf8')).includes(JSON.stringify(report.cases[0].command)));checks++;cases++;
  await fs.writeFile(sdkFile,JSON.stringify({...sdk,sdkImageId:'changed-explicit-fixture-port'}));report=await run('native-sdk-resume-mismatch',[native],{nativeSdkManifest:sdkFile,commandFor:c=>[process.execPath,c.file,'--out','placeholder'],resume:path.join(dir,'output/native-sdk-valid/REPORT.json')});eq(report.error,'RESUME_SOURCE_MISMATCH');eq(report.notRun,1);cases++;
  eq((await sourceIdentity(dir)).commit,sha);eq(git('status','--porcelain'),'');
- const result={status:'PASS',mode:'MODIFIED',cases,checks,actualChildren:true,workflow:'static parsed YAML',pushBranches:ci.on.push.branches,imagePushBranches:oldWorkflow.on.push.branches,remoteExecution:'NOT_PROVEN_BY_THIS_TEST',production:false,external:0};await fs.writeFile(path.join(out,'RESULT.json'),JSON.stringify(result,null,2)+'\n');console.log(`REFACTOR_RUNNER=PASS mode=MODIFIED cases=${cases} checks=${checks} ACTUAL_CHILDREN=1 FAIL_EXIT=RETAINED SOURCE_DRIFT=DETECTED WRONG_SHA=NO_RUN DIRTY=NO_PASS RESUME=EXACT_LOG WORKFLOW=STATIC BRANCH_PUSH=CONFIGURED IMAGE_PUSH=MAIN_ONLY NETWORK=0`);
+ const result={status:'PASS',mode:'MODIFIED',cases,checks,actualChildren:true,workflow:'static parsed YAML',pushBranches:ci.on.push.branches,imagePushBranches:oldWorkflow.on.push.branches,remoteExecution:'NOT_PROVEN_BY_THIS_TEST',production:false,external:0};await fs.writeFile(path.join(out,'RESULT.json'),JSON.stringify(result,null,2)+'\n');console.log(`REFACTOR_RUNNER=PASS mode=MODIFIED cases=${cases} checks=${checks} ACTUAL_CHILDREN=1 FAIL_EXIT=RETAINED SOURCE_DRIFT=DETECTED WRONG_SHA=NO_RUN DIRTY=NO_PASS RESUME=EXACT_LOG WORKFLOW=STATIC FEATURE_TRIGGER=PR MAIN_PUSH=FULL IMAGE_PUSH=MAIN_ONLY NETWORK=0`);
 }finally{const resolved=path.resolve(dir);assert.ok(resolved.startsWith(path.resolve(out)+path.sep));await fs.rm(resolved,{recursive:true,force:true});}
