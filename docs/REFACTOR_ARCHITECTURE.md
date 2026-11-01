@@ -8,6 +8,7 @@
 |---|---|---|
 | 图片准备与冻结 | `src/lib/model-config/image-preparation.ts`；`src/lib/imagegen/plan.ts`、`quotes.ts` | 入口→准备/报价→保存合同；原 operation 恢复不按 current 重算 |
 | 图片执行与原图交付 | `src/lib/imagegen/adapters.ts`、`generation-submission.ts`、`cutout.ts` 等具体用例 | HTTP/Agent/workbench 调用同一业务实现，不反向调用 route |
+| 首次paid结果完成 | `image-jobs/runtime` 原lease/update owner | 已返回结果只做同token本地有限重存；COMMIT已提交读回不覆写，不重入供应；持续失败保留原intent/hold并标明保存阶段 |
 | 钱包与结算 | `src/lib/billing/` | 真实余额、预占、结算和回执由原 operation 绑定；消费只写一次 |
 | DB 与事务 | `src/platform/db/`；各域 repository/schema owner | Pool/Tx 不导入业务；拆模块不拆原共享事务，不在事务内另借连接 |
 | 配置读取与发布 | `src/lib/model-config/` 的 published read、execution services、administration | 执行消费冻结快照；公开目录不依赖管理连接或 default 可执行性 |

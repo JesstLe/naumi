@@ -1,5 +1,9 @@
 # 迁移合同与模块记录索引
 
+## R9W 首次paid结果检查点
+
+[R9W](../changes/2026-11-01-refactor-r9w-first-paid-result-checkpoint.md)把已返回结果的本地完成持久化留在原job owner：child/root共用同lease有限重存及同token已提交读回，不重调供应；持续失败准确分阶段保留hold/原intent。真实首写SQL和COMMIT ACK断点不再借用已有done恢复充当证据；其他故障、浏览器视觉和完整223分开验收。
+
 本文维护迁移方法、兼容条件与模块记录，不复制当前运行状态；当前源码、验收和下一步见 [工作区快照](../REFACTOR_WORKSPACE.md) 与 [退出审计](REFACTOR_EXIT_AUDIT.md)。
 
 ## 已迁移职责的核对入口

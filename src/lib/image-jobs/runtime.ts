@@ -48,6 +48,15 @@ async function assertPaidExecution(id:string) {
   context.lease.assertActive();
 }
 
+/** The supplier returned; only the local result checkpoint is unresolved. */
+class ImageResultCheckpointPending extends ImageOperationPending {
+  readonly code="IMAGE_RESULT_CHECKPOINT_PENDING";
+  constructor(operationId:string,cause:unknown){
+    super(operationId,cause);
+    this.message="图片结果保存未完成，请检查原任务";
+  }
+}
+
 export class DurableImageJobs<T extends { status: string }> {
   private memory = new Map<string, { snapshot: T; payload: unknown; email: string }>();
   constructor(readonly kind: repository.ImageJobKind,private readonly onReleased?:ImageJobReleased) {}
@@ -101,6 +110,12 @@ export class DurableImageJobs<T extends { status: string }> {
     if(dbEnabled)executionFor(id);
     const saved = await this.get(id, false) as (T & Record<string, any>) | undefined;
     if (!saved || ["done", "error"].includes(saved.status)) return;
+    if(error instanceof ImageResultCheckpointPending){
+      await repository.holdImageJobBilling(id,executionFor(id)?.token||null);
+      await this.patch(id,{status:"needs_attention",error:error.message,resultCheckpointPending:true,
+        failureDiagnostic:taskFailureDiagnostic(error,"paid-result-checkpoint")} as unknown as Partial<T>);
+      return;
+    }
     if (error instanceof ImageOperationDeferred) {
       // paidOperation already atomically restored this NEW, unsent attempt
       // under the job lease. Keep its reservation and use the existing 10s scan.
@@ -132,13 +147,28 @@ export class DurableImageJobs<T extends { status: string }> {
       const work = async () => {
         const current = await this.get(id, false) as Snapshot | undefined;
         if (!current) throw new Error("图片任务不存在");
-        await this.set(id, change(current));
+        const next=change(current);
+        if(next!==current)await this.set(id,next);
       };
       const context = execution.getStore();
       if (!context) return work();
       const next = context.queue.then(work);
       context.queue = next.catch(() => {});
       await next;
+    };
+    // The returned result stays in this leased invocation. Retry only its local
+    // checkpoint once, never run()/childRun(), and recheck ownership each time.
+    // A lost COMMIT acknowledgement is reconciled by the same attempt token in
+    // the completion transitions below; it does not overwrite an existing done.
+    const persistResult=async(save:()=>Promise<void>)=>{
+      for(let attempt=0;;attempt++){
+        await assertPaidExecution(id);
+        try{return await save();}
+        catch(error){
+          if(isImageJobLeaseLost(error)||error instanceof ImageOperationPending)throw error;
+          if(attempt===1)throw new ImageResultCheckpointPending(operation.id,error);
+        }
+      }
     };
     const saved = await this.get(id, false) as Snapshot | undefined;
     if (!saved || ["done", "error", "needs_attention"].includes(saved.status)) throw new Error("图片任务已结束或暂停，不能重新提交");
@@ -225,6 +255,7 @@ export class DurableImageJobs<T extends { status: string }> {
           const active = snapshot.paidOperations?.[operation.id];
           if (!active || active.attemptToken !== attempt.attemptToken) throw new ImageOperationPending(childOperation.id, new Error("image-index-root-checkpoint-changed"));
           const expected = childSaved ? child : prior, stored = active.children?.[childOperation.id];
+          if(value.state==="done"&&stored?.state==="done"&&stored.attemptToken===child.attemptToken&&stored.model===child.model)return snapshot;
           if (stored?.attemptToken !== expected?.attemptToken || stored?.state !== expected?.state)
             throw new ImageOperationPending(childOperation.id, new Error("image-index-checkpoint-changed"));
           return { ...snapshot, paidOperations: { ...snapshot.paidOperations, [operation.id]: {
@@ -237,7 +268,8 @@ export class DurableImageJobs<T extends { status: string }> {
       try {
         await assertPaidExecution(id);
         const result = await (identity ? withAcceptedImageRead(childOperation.id, childRun) : childRun());
-        await saveChild({ ...child, state: "done", result: dbEnabled ? await encodeImageIndexResult(result, id) : result });
+        const completed:Attempt={...child,state:"done",result:dbEnabled?await encodeImageIndexResult(result,id):result};
+        await persistResult(()=>saveChild(completed));
         return result;
       } catch (error) {
         if(isImageJobLeaseLost(error))throw error;
@@ -264,12 +296,13 @@ export class DurableImageJobs<T extends { status: string }> {
       const readOnlyRoot = !!pinnedRecovery || previous?.state === "started" && !routerRecovery(previous) && (previous.children !== undefined || acceptedChildren.length > 0);
       const result = await withImageOperation(model, { ...operation, durable: true, dispatchState },
         () => readOnlyRoot ? withAcceptedImageRead(operation.id, runCheckpointed) : runCheckpointed());
-      await update(current => {
+      await persistResult(()=>update(current => {
         const active = current.paidOperations?.[operation.id];
+        if(active&&active.attemptToken===attempt.attemptToken&&active.state==="done")return current;
         if (!active || active.attemptToken !== attempt.attemptToken || active.state !== "started")
           throw new ImageOperationPending(operation.id, new Error("image-root-checkpoint-changed"));
         return { ...current, paidOperations: { ...current.paidOperations, [operation.id]: { ...active, state: "done", result } } };
-      });
+      }));
       return result;
     } catch (error) {
       if(isImageJobLeaseLost(error))throw error;

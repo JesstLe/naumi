@@ -188,6 +188,7 @@ export const refactorCases=[
  {id:'direct-generation-contract',group:'pricing',file:'scripts/verify-direct-generation.ts',args:[],expect:'DIRECT_SUBMISSION=PASS',pg:false,tsx:true},
  ts('frozen-quote-pg','pricing','scripts/verify-imagegen-frozen-quote-pg.ts','SIMPLIFY_MODIFIED=PASS',['--simplify']),
  ts('delivery','generation','scripts/verify-image-delivery-continuation.ts','IMAGE_DELIVERY_CONTINUATION=PASS'),
+ ts('first-paid-checkpoint','generation','scripts/verify-first-paid-checkpoint.ts','FIRST_PAID_CHECKPOINT=PASS'),
  ts('completed-parent','generation','scripts/verify-completed-parent-entry-pg.ts','COMPLETED_PARENT_ENTRY=PASS'),
  ts('wallet','pricing','scripts/verify-billing-wallet.ts','PASS wallet reserve/settle/release'),
  ts('image-price','pricing','scripts/verify-pricing-friction-image.ts','MODIFIED=PASS',['--mode','modified']),

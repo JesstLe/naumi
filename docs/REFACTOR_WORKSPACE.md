@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：R9W 第一次供应原结果检查点
+
+[R9W模块](changes/2026-11-01-refactor-r9w-first-paid-result-checkpoint.md)以真实入口/PG/lease/回环供应返回，补M05原来未覆盖的首笔paid结果SQL断点。原五场景复现三种瞬时写入/COMMIT ACK故障都无交付且hold6；新五场景通过，同token本地保存最多再一次，不重放供应POST，原图SHA及单次6积分结算保持。持续写失败保留hold和原intent，提示保存未完成/检查原任务，诊断不再误归supplier-result。最终相关回归/类型/源码/副本回滚以本轮DELIVERY为准，不把HTTP提示当实际浏览器视觉验收；223目录未本地整跑。b24的Image实际在注册模型组FAIL，原blob日志EOF，唯一child原因仍OPEN；整体ACTIVE、main未合、部署0、47HOLD。
+
 ## 当前推进：R9V 经典发布与原生验收
 
 [R9V模块](changes/2026-11-01-refactor-r9v-classic-publication-lifecycle.md)先复现原business-ui的goto/reload load等待超时，保留本机OOM诊断；转到依赖锁一致的Linux当前源码Next dev后，完整业务入口通过，批量配置抓出同一发布者第二次正常发布被旧draft base拦住的真实产品缺陷。原事务只推进本人、内容仍等于确认发布版本的草稿base/revision；他人旧草稿、在途编辑和原回执保持。PG原16反例、新17检查及原admin/publication整模块通过，真实原生三入口均exit0：business75积分，batch三次发布及65/90积分，APIMart两次发布及8→10积分；移动端/非管理员/供应商POST0。实际源码桥接及副本回滚以本轮DELIVERY为准。

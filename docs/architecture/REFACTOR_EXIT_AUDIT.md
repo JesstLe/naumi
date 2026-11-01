@@ -1,5 +1,7 @@
 # 整体退出审计
 
+- R9W当前推进：[首次paid结果检查点](../changes/2026-11-01-refactor-r9w-first-paid-result-checkpoint.md)。真实入口/PG/lease/供应返回后首笔child/root snapshot失败和真实COMMIT丢ACK，原5场景复现、新5场景PASS；不seed done，不重放供应，原6积分/字节/GET提示同case核对。持续失败hold和未持久化风险保留；M05这几个精确场景推进，不一并关闭M03/M04/M06/M09。原相关回归、完整223及main仍分层验收，b24 Image在注册模型组实际FAIL/日志EOF，Core按实际刷新。
+
 ## 当前固定版本
 
 - R9V当前推进：[经典发布生命周期](../changes/2026-11-01-refactor-r9v-classic-publication-lifecycle.md)。真实Go/PG浏览器第二次发布明确PUBLISH_STALE_DRAFT_BASE；真实PG原16复现、新17通过，原事务只推进发布者未再改动的同摘要草稿，外来陈旧草稿/在途编辑/CAS/原回执保持。经典UI共享已有sourcecopy/IPC owner，受控子进程104检查通过；本机原load超时/OOM和远端59f billing-ui FAIL均留存，后者精确断言仍OPEN，不用Linux局部通过消除历史失败。本地三原生入口均exit0（真实Go/PG，移动端/非管理员，供应商POST0），batch旧定位和APIMart本地桥接origin的失败及修正分开留存；59f Core已SUCCESS、Image仍billing-ui FAIL，新head222目录/整版/main以本轮DELIVERY和后续固定证据为准。
