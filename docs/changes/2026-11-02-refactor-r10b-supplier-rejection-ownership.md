@@ -37,3 +37,5 @@
 首次浏览器verifier错等imagegen GET、且fixture尚未启用通道；第二次首case通过后独立案例沿用上次403冷却。修正验收协议／隔离输入，不放宽产品断言或导航期限，失败与资源cleanup不覆盖。
 
 M03／M04只推进本轮具体真实PG／供应socket场景和对应页面维度，远端对象PUT、其他故障及整体语义耦合审阅仍需完成；224目录登记不等于整版已执行通过。整体ACTIVE，候选未合main，本线程未部署。最终SHA／固定image source、baseline→modified→copy rollback及后续编辑零写见本轮产物。
+
+固定完整镜像已实际构建：应用源`d579379549ed1fab5c405f0ef81544a23cf1d7e2`，5398文件，image`sha256:05fc8097b2cb9aa5700bade89ef6489c2ec2b1018c818bfb8212de70e3c29b1f`，Web/Worker/media包探测通过。原generation整组首次在scope-receipt的自定义loader漏登记新只读依赖处FAIL，12PASS/1FAIL/8NOT_RUN保留；该receipt-only夹具登记为禁止调用的sentinel，原23条业务断言不变。后续完整重验独立输出，不拼接成一轮通过。

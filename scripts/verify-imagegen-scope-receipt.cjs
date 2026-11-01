@@ -22,7 +22,7 @@ function load(relative,dependencies={}){
  const forbidden=new Proxy({},{get:(_o,key)=>()=>{throw Error(`Receipt-only fixture unexpectedly executed ${String(key)} in ${relative}`);}});
  dependencies['@/lib/imagegen/storage-schema']||={ensureImagegenQuotes:async()=>{},ensureImagegenBatches:async()=>{}};
  dependencies['../application/task-execution']||={deferApplicationTask:async()=>false};
- for(const target of ['@/lib/artworks/repository','@/lib/artworks/writer','@/lib/release-runtime/background-activity','./delivery-billing'])if(!(target in dependencies))dependencies[target]=forbidden;
+ for(const target of ['@/lib/artworks/repository','@/lib/artworks/writer','@/lib/release-runtime/background-activity','./delivery-billing','../model-config/image-rejection-evidence'])if(!(target in dependencies))dependencies[target]=forbidden;
  const file=path.join(root,relative),source=fs.readFileSync(file,'utf8');
  const output=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
  const module={exports:{}};
