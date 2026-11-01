@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前收敛：R9X 发布草稿冲突验收
+
+[R9X模块](changes/2026-11-01-refactor-r9x-model-draft-verification.md)在完整b24/02ff源复现注册模型execution第209行错误预期：发布者旧revision先触发DRAFT_CONFLICT，不是别人的旧base。现分开保留两个严格负例，旧base仍要求PUBLISH_STALE_DRAFT_BASE；原顺序11命令单次全部exit0，产品2149文件与02ff完全相同，R9W首结果修复保持。远端b24失败组已确认，但blobEOF不冒认唯一child原因；新headCI/main/完整223/其余故障继续。完整源/回滚见本轮DELIVERY，整体ACTIVE、部署0、47HOLD。
+
 ## 当前推进：R9W 第一次供应原结果检查点
 
 [R9W模块](changes/2026-11-01-refactor-r9w-first-paid-result-checkpoint.md)以真实入口/PG/lease/回环供应返回，补M05原来未覆盖的首笔paid结果SQL断点。原五场景复现三种瞬时写入/COMMIT ACK故障都无交付且hold6；新五场景通过，同token本地保存最多再一次，不重放供应POST，原图SHA及单次6积分结算保持。持续写失败保留hold和原intent，提示保存未完成/检查原任务，诊断不再误归supplier-result。最终相关回归/类型/源码/副本回滚以本轮DELIVERY为准，不把HTTP提示当实际浏览器视觉验收；223目录未本地整跑。b24的Image实际在注册模型组FAIL，原blob日志EOF，唯一child原因仍OPEN；整体ACTIVE、main未合、部署0、47HOLD。

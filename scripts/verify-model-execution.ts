@@ -84,6 +84,7 @@ async function main() {
     f.config.upstreamModels.push({ ...structuredClone(f.config.upstreamModels.at(-1)!), id: "video-openai-u1", providerId: "video-openai" });
     f.config.publicModels.push({ id: "video-openai-a", label: "视频协议测试", modality: "video", enabled: true, visible: true, target: { type: "upstream", id: "video-openai-u1" } });
     const first = await f.repo.current();
+    const staleActor="fixture-unpublished-admin",staleDraft=await f.repo.draft(staleActor);
     const { publicModelCatalog } = await import("../src/lib/model-config/runtime");
     const hiddenConfig = structuredClone(first.config);
     hiddenConfig.upstreamModels.push({ ...structuredClone(hiddenConfig.upstreamModels[0]), id: "hidden-editor-wire", capabilities: { ...structuredClone(hiddenConfig.upstreamModels[0].capabilities), qualities: ["medium"] } });
@@ -204,9 +205,10 @@ async function main() {
     const beforeReplay = calls.length;
     assert.equal((await videoService.createVideoGeneration(email, input)).taskId, created.taskId);
     assert.equal(calls.length, beforeReplay, "Replaying an accepted durable intent cannot submit another paid task");
-    // A published actor keeps its draft. Each later publication starts from the
-    // current snapshot; do not bypass the stale-base check to rotate fixtures.
-    await assert.rejects(f.repo.stage({ id: randomUUID(), draftId: saved.id, expectedRevision: saved.revision, expectedVersion: second.version, reason: "旧草稿不能覆盖当前版本", actor: "fixture-admin" }), (error: any) => error.code === "PUBLISH_STALE_DRAFT_BASE");
+    // Publishing advances only that actor's unchanged draft and its CAS revision.
+    // An old tab revision and another actor's unpublished old base stay distinct.
+    await assert.rejects(f.repo.stage({ id: randomUUID(), draftId: saved.id, expectedRevision: saved.revision, expectedVersion: second.version, reason: "旧页面修订不能覆盖已发布草稿", actor: "fixture-admin" }), (error: any) => error.code === "DRAFT_CONFLICT");
+    await assert.rejects(f.repo.stage({ id: randomUUID(), draftId: staleDraft.id, expectedRevision: staleDraft.revision, expectedVersion: second.version, reason: "旧草稿不能覆盖当前版本", actor: staleActor }), (error: any) => error.code === "PUBLISH_STALE_DRAFT_BASE");
     const finalActor = "fixture-admin-video";
     const finalDraft = await f.repo.draft(finalActor);
     assert.equal(finalDraft.basedOnVersion, second.version);

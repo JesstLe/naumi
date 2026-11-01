@@ -272,3 +272,5 @@ DDL 从 `ensureSchema` 逐个迁到发布前、带版本记录的迁移。先验
 ## 历史入口
 
 [原调研、代码盘点和逐轮记录](https://github.com/JesstLe/naumi/blob/82729161200f166fe587b98bceb756a44999840c/docs/REFACTOR_ARCHITECTURE.md)保留在 Git；具体业务变更归各模块文档。本文不复制运行流水，不以文件数量、行数或 SCC 单独证明业务完成。
+
+R9X发布验收将旧tab revision与另一actor旧base分开建模；两者不是同一状态，夹具不能借取消产品CAS来消除断言失败。详见[记录](changes/2026-11-01-refactor-r9x-model-draft-verification.md)。
