@@ -15,7 +15,7 @@
 | Web/Worker | 同固定镜像runtime177，真实登录/HTTP/PG/原价/UNKNOWN/取消/FFmpeg/排空 | 本轮独立PASS |
 | 产品浏览器 | 同镜像92检查、2context、routeMocks0、原接口/PG及7交付42积分 | 本轮PASS，非生产付费质量 |
 | 混合运行 | 原450秒calibration，165图片/12媒体/177consume/1014积分，无付费重放或未完成父任务 | businessInvariantsPASS，capacityClaim=false |
-| 类型与结构 | 非增量tsc0；5092编译器输入+4配置；lint0/37既有warning；四类SCC0 | 本轮PASS |
+| 类型与结构 | 元数据源292e非增量tsc0；5092编译器输入+4配置（应用源9ba计数5091）；lint0/37既有warning；四类SCC0 | 本轮PASS |
 | 历史间歇失败 | 当前原97主题用例及timeline链PASS；R9E主题重载和R9D拖动原FAIL留存 | 历史唯一根因OPEN，不归因为本轮16文件迁移 |
 | CI构建证据 | 原npm build/参数/exit保留；完整日志、source/tree、失败注释及always artifact；真实Bash0/7＋Node只读报告5场景18检查 | 接线PASS，不冒称旧build根因或新远端已通过 |
 | 有效远端CI | ba497的Core/ Image均真实FAIL，Image在build；新head实际结果见DELIVERY/REMOTE_STATUS | 仍需新head实际通过；不沿用旧支付限制或拿本地绿灯替代 |

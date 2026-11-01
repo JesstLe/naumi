@@ -6,7 +6,7 @@
 
 原5344文件基线与修改版各98个实际HTTP/nativeHMAC/PG场景＋20个无DB Route场景（合计118场景244检查）、普通投影EXACT；包含角色撤销、并发账号隔离、并发CAS、原operation重放及20个无DB401。该SQL计数只属于入口内原生账号校验，不含middleware或管理员角色查询等其他SQL。原/新账务记录精确不变，供应商POST0。
 
-完整应用/整版执行源码 `9ba80e10ed5135e5eeb20cc4c57c93cfb090aa71`：**当前216项单次完整PASS、0FAIL、0NOT_RUN、0reuse**；同源完整Web/Worker与原生SDK应用字节EXACT，runtime177、真实产品浏览器92（routeMocks0）及450秒混合165图片/12媒体/177consume/1014fixture积分通过。capacityClaim=false；不是10万容量或真实供应商质量证明。非增量tsc0，5092编译器输入+4配置，lint0/37既有warning，四类SCC0。
+完整应用/整版执行源码 `9ba80e10ed5135e5eeb20cc4c57c93cfb090aa71`：**当前216项单次完整PASS、0FAIL、0NOT_RUN、0reuse**；同源完整Web/Worker与原生SDK应用字节EXACT，runtime177、真实产品浏览器92（routeMocks0）及450秒混合165图片/12媒体/177consume/1014fixture积分通过。capacityClaim=false；不是10万容量或真实供应商质量证明。元数据源292e的非增量tsc0，5092编译器输入+4配置（应用源9ba原计数5091保留），lint0/37既有warning，四类SCC0。
 
 元数据修正源 `292e24f5195e5d416121105a45cff1836a61930f`：完整回归后发现两个新用例虽断言通过，详细文件仍写全局默认目录；已按真实case时间/日志hash冻结原文件，改为runner原有每case端口注入，两个真实子进程（原生118场景244检查＋拖动4场景14检查）归属验证通过，普通投影EXACT，继承的旧路径未被写入。这一选择范围报告保持PARTIAL/exit2，不冒称新元数据源本地重跑了216；最终head整版由新CI放行。应用到元数据源只改3个验收路径/CI报告文件，全部2141产品字节仍与9ba镜像源相同。
 

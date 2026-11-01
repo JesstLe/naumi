@@ -30,7 +30,7 @@ Image gateway构建仍执行原npm命令与原参数，新增保存commit/工作
 
 ## 最终固定源码集中验收
 
-应用/验证源9ba80e10ed5135e5eeb20cc4c57c93cfb090aa71：原新98实际HTTP/PG＋20无DB Route（118场景244检查）、正常投影EXACT；当前216完整单次PASS，0失败/未运行/复用。同源App/SDK、runtime177、browser92/routeMocks0及450秒混合165/12/177/1014通过，capacityClaim=false。类型5092输入+4配置、非增量tsc0、lint0/37既有warning、四SCC0。
+应用/验证源9ba80e10ed5135e5eeb20cc4c57c93cfb090aa71：原新98实际HTTP/PG＋20无DB Route（118场景244检查）、正常投影EXACT；当前216完整单次PASS，0失败/未运行/复用。同源App/SDK、runtime177、browser92/routeMocks0及450秒混合165/12/177/1014通过，capacityClaim=false。元数据源292e类型5092输入+4配置、非增量tsc0（应用源9ba原计数5091保留）、lint0/37既有warning、四SCC0。
 
 普通认证SQL2→1、管理员跨账号3→2；计数不含middleware及其他SQL。角色撤销、并发账号隔离/单CAS胜出和20个无DB401通过，账务前后整组记录不变。源码16产品路径变更，其余2125原产品字节相同；原5344文件保留，当前5346。副本回滚、精确旧行为、完整补丁和四产物以最终VERIFICATION为准。
 
