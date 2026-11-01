@@ -120,6 +120,8 @@ test("publish preserves the user's frozen price, conflict draft and restore", as
         // Auto frame is deliberately display-only; select a real frame before
         // testing a persisted executable price, rather than inventing its ID.
         await u.goto("/generate?ratio=1%3A1");
+        // Wait for one control before checking its price; duplicate controls still fail.
+        await expect(u.getByTestId("billing-estimate")).toHaveCount(1);
         await expect(u.getByTestId("billing-estimate")).toContainText("6");
         await u.locator("textarea").first().fill("Retain this local test prompt");
         await expect(u.locator("textarea").first()).toHaveValue("Retain this local test prompt");

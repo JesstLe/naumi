@@ -1,5 +1,12 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：R10F 整体语义退出审阅与账务UI就绪观察
+
+[R10F](changes/2026-11-02-refactor-r10f-exit-review-ui-readiness.md)固定3775全仓AST/SQL候选及实际owner审阅，20退出要求与九类故障五列已落盘；F01/F02/F03已迁移，不按Canvas行数继续机械拆分。明确W1账务/任务写入归属与原ID恢复、W2媒体metadata、W3工作台/Agent协议规则归位；下一产品切片优先完整W1。M02最小提交实际200，不是schema早拒绝，但精确余额语义/页面仍缺；M03/M04/M09已有同次真实页面，M05/M06后台实际通过，M07/M08seed paid done边界保留。
+
+3775远端Image原16项15PASS/1FAIL，精确123行价格locator同时匹配2个控件；不是R10E密码问题。仅新增唯一控件就绪断言，原价格/PG/供应/单次结算断言及原预算保持；原16项完整生产UI单次16/16PASS、6/8/6原价合同及一POST/一consume保持；独立Chromium基线4case复现，新4case保持永久重复和错价拒绝。完整源与副本回滚归本轮DELIVERY。产品2152文件未改；整体ACTIVE、main未合、本线程未部署。
+
+
 ## 当前推进：R10E 管理员入口读取时序
 
 [R10E](changes/2026-11-02-refactor-r10e-admin-entry-read-order.md)真实原hook/React/HTTP复现相同账号旧GET200未登录或503，在密码POST成功后覆盖认证投影。原owner在成功POST后推进读取epoch，不新增请求／重放／跨账号状态；服务端授权保留。原087管理UI30s超时仍不冒认唯一根因，原完整UI旧15PASS/1FAIL已同源本机复现，新16/16PASS且原时限不变；入口62项、壳层15项、真实PG权限合同及非增量tsc0通过。原2条lint warning保留；回退按本轮DELIVERY。整体ACTIVE，未合main、本线程未部署。
