@@ -2,6 +2,8 @@
 
 ## 当前固定版本
 
+- R9S收敛：[免重复确认的实际owner扫描](../changes/2026-11-01-refactor-r9s-direct-submission-ownership.md)。0454f164的Image在原静态generate归属断言FAIL，后续步骤SKIPPED；原实现本地复现同样错误。候选只更新原scanner跟随页面→hook→session→原billing端口及guard/quote，原其他条件保留、37静态正负检查PASS，产品2144文件raw不变。实际业务与新head完整CI仍分别验收，不将静态PASS当作已生成/已扣款。
+
 - R9R当前推进：[旧生成页会话](../changes/2026-11-01-refactor-r9r-generation-session.md)。F02提交/原job观察/结果投影已从组件迁移到单一owner；最终实际组件/Chromium原18场景11PASS7FAIL、新18PASS，原正常wire EXACT，原账号和实际intent指纹保留。auth/账务后端为fixture，真实同一付费断线trace仍OPEN；F01列表/上传与F03publication恢复是剩余应用owner，F02不再误列为完全未迁移。
 
 - 最新固定旧head1e2df80c：Image完整远端SUCCESS；Core执行源为GitHub合并快照d70820f8，在parent-completion的纯依赖导入漏项FAIL。该错误已本地原样复现，加载真实质量模块后原25场景PASS；新head仍需完整CI，不把这一条修正写成Core已通过。

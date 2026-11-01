@@ -1,5 +1,11 @@
 # 重构工作区：当前交付快照
 
+## 当前收敛：R9S 验收跟随生成会话owner
+
+[R9S模块](changes/2026-11-01-refactor-r9s-direct-submission-ownership.md)复现0454f164的Image早期静态检查失败：旧扫描器要求GenerateClient仍直接调用billing.submit。现核对实际named-import/会话返回值/原billing端口、adapter与facade的原quote和POST前guard，保留原Canvas、其他工具、GenChat、Agent、operation及无关删除确认条件；两别名正例和8个漏接/恢复积分confirm负例，完整原静态命令37检查PASS。产品2144文件逐字节不变，不把业务编排搬回页面或跳过generate覆盖。
+
+0454f164的Image实际FAIL，后续build/业务均SKIPPED；不是沿用1e2df80c的整组SUCCESS。Core保持原固定源运行/终态，最终新head CI按R9S交付记录读取，不取消重启已知作业。R9R的18浏览器/父25/真实PG25-74为原固定源执行，当前产品字节桥接，不改标成新head整版。整体ACTIVE，main未合，部署0，47 HOLD。
+
 ## 当前推进：R9R 旧生成页会话owner
 
 [R9R模块](changes/2026-11-01-refactor-r9r-generation-session.md)把旧GenerateClient的提交、原job观察、结果投影收拢到同一应用owner；React adapter绑定原billing、auth与job cache。最终真实React19/Chromium18场景原11PASS/7FAIL、新18PASS，普通multipart/quote/文件hash投影EXACT；双击、账号切换、延迟updater、准备阶段退出、unmount、迟到active发现与503读取均有反例。账号比较与原请求账号分开，原email和实际clientIntentKey指纹保持；中间3cc88f19未单独push。后端报价/任务/账务不新建、不改价，不自动重放付费POST。这个浏览器模块的auth/账务后端仍是fixture，不当作真实付费断线全链路。
