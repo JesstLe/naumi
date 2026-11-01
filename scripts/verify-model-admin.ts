@@ -55,7 +55,13 @@ async function main() {
       assert.equal((await locked.json()).managementPath, "/admin/bi/models");
     }
     delete process.env.NAUMI_ROUTER_MANAGEMENT_URL;
-    assert.equal((await legacySettings.POST(request({ model: "old-model" }))).status, 503, "Missing management connection cannot unlock legacy writes");
+    const settingsBefore = (await db.getPool().query("SELECT k,v FROM app_settings ORDER BY k")).rows;
+    const managedWithoutConnection = await legacySettings.POST(request({ model: "old-model" }));
+    assert.equal(managedWithoutConnection.status, 409, "Published managed mode survives missing control-plane connectivity");
+    const managedResponse = await managedWithoutConnection.json();
+    assert.equal(managedResponse.code, "MODEL_CONFIG_MANAGED");
+    assert.equal(managedResponse.managementPath, "/admin/bi/models");
+    assert.deepEqual((await db.getPool().query("SELECT k,v FROM app_settings ORDER BY k")).rows, settingsBefore, "Missing management connection cannot unlock legacy writes");
     if (management !== undefined) process.env.NAUMI_ROUTER_MANAGEMENT_URL = management;
     const next = structuredClone(page.draft.config); next.publicModels[0].label = "后台测试名称";
     const saveBody = { id: page.draft.id, expectedRevision: page.draft.revision, config: next };
@@ -85,6 +91,7 @@ async function main() {
     const unavailable = createModelAdminHandler({ authorize: biAuthorize, administration: async () => { throw new Error(f.marker); } });
     const error = await unavailable(request(), "read"); assert.equal(error.status, 503); assert.ok(!(await error.text()).includes(f.marker));
     console.log("PASS actual admin/user/enterprise/forged/expired permissions, same-site mutations, bounded strict inputs, concurrent drafts, private RSA credentials and replay");
+    console.log("MODEL_ADMIN_LEGACY_LOCK=PASS PUBLISHED_MANAGED_WITHOUT_CONNECTION=409 CODE=MODEL_CONFIG_MANAGED SETTING_WRITES=0");
   } finally { await db.getPool().end(); await f.cleanup(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

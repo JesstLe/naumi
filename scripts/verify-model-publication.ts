@@ -135,12 +135,21 @@ async function main() {
     assert.deepEqual(await f.repo.draft(actor), draftBeforeRestore, "restoring never overwrites the actor's unsaved working draft");
     assert.equal((await f.sql.query("SELECT count(*)::int AS n FROM app_bi_access_log WHERE id=$1", [`model-publication:${restoreInput.id}`])).rows[0].n, 1);
     assert.equal(Number((await f.sql.query("SELECT billing_version FROM app_model_publications WHERE id=$1", [restoreInput.id])).rows[0].billing_version), 2, "retry retains the initial billing version despite a later cost publication");
-    const badDraft = await f.repo.draft(actor), badConfig = structuredClone(badDraft.config);
+    // The restore deliberately preserves the original actor's working draft.
+    // Prove its stale base stays rejected; the independent missing-cost edit
+    // must start at the restored current version,not bypass production CAS.
+    await assert.rejects(runtime.publish({ id: randomUUID(), draftId: draftBeforeRestore.id, expectedRevision: draftBeforeRestore.revision, expectedVersion: restored.version, reason: "旧草稿仍须拒绝", actor }),
+      (error: unknown) => error instanceof Error && "code" in error && error.code === "PUBLISH_STALE_DRAFT_BASE");
+    const costActor = "publication-cost-admin@example.test";
+    const badDraft = await f.repo.draft(costActor), badConfig = structuredClone(draftBeforeRestore.config);
+    assert.equal(badDraft.basedOnVersion, restored.version);
+    assert.equal(badConfig.publicModels[0].target.type, "pool", "Keep the original Router-cost rejection topology,not a valid direct route");
     badConfig.upstreamModels[0].costRef = "unknown-cost";
-    const badSaved = await f.repo.saveDraft({ id: badDraft.id, actor, expectedRevision: badDraft.revision, config: badConfig });
-    const rejected = await runtime.publish({ id: randomUUID(), draftId: badDraft.id, expectedRevision: badSaved.revision, expectedVersion: restored.version, reason: "成本缺项发布验收", actor });
+    const badSaved = await f.repo.saveDraft({ id: badDraft.id, actor: costActor, expectedRevision: badDraft.revision, config: badConfig });
+    const rejected = await runtime.publish({ id: randomUUID(), draftId: badDraft.id, expectedRevision: badSaved.revision, expectedVersion: restored.version, reason: "成本缺项发布验收", actor: costActor });
     assert.equal(rejected.phase, "failed", "local validation rejection is proven before activation and must not block all later publications");
     console.log("PASS unknown publication recovery, operation conflict, immutable model/billing projections, private catalog, cost currency conversion and zero paid simulation");
+    console.log("MODEL_PUBLICATION_DRAFT_CONTRACT=PASS OLD_DRAFT=REJECTED RESTORE_PRESERVES_DRAFT=1 FRESH_COST_EDIT=FAILED_BEFORE_ACTIVATION CAS_BYPASS=0");
   } finally { await f.cleanup(); await new Promise<void>(resolve => control.close(() => resolve())); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

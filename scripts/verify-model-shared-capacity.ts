@@ -41,8 +41,8 @@ async function main() {
     await f.repo.current();
     transport = modelEndpointFetch(`${f.origin}/v1`, { trustedOrigins: [f.origin] }, { providerId: "p1", maxConcurrent: 1, timeoutMs: 120000 });
     direct = await transport(`${f.origin}/v1/hold`);
-    // Publish a newer mixed-routing version with a larger configured limit.
-    // The retained direct task's stricter account budget must still apply.
+    // Publication owns the current account limit,including increases. Old
+    // frozen tasks share that budget;their old limit must not lower it again.
     f.config.providers[0].maxConcurrent = 4;
     f.config.pools.push({ id: "pool", modality: "image", candidates: ["u1"], strategy: "priority", rules: [] });
     f.config.publicModels.push({ id: "pool-image", label: "Pool", modality: "image", enabled: true, visible: true, target: { type: "pool", id: "pool" } });
@@ -65,6 +65,30 @@ async function main() {
     assert.equal((await routerCapacityHandler(request({ action: "acquire", modelVersion: snapshot.version, billingVersion: 1, digest: "0".repeat(64), providerId: "p1" }), dependencies)).status, 503);
     assert.equal(Number((await f.sql.query("SELECT count(*) FROM app_model_provider_leases")).rows[0].count), 1, "Unauthorized/tampered claims cannot change the held direct lease");
     acquire = body => routerCapacityHandler(new Request(`${f.origin}/api/internal/model-capacity`, { method: "POST", headers: { Authorization: `Bearer ${process.env.NAUMI_ROUTER_MANAGEMENT_TOKEN}` }, body: JSON.stringify(body) }), { pool: f.sql, repo: f.repo, runtime });
+    const claim = { action: "acquire", modelVersion: snapshot.version, billingVersion: 1, digest: projection.digest, providerId: "p1" };
+    const tokens: string[] = [];
+    for (let index=0;index<3;index++) {
+      const response=await acquire(claim);assert.equal(response.status,200);
+      tokens.push((await response.json()).token);
+    }
+    assert.equal(Number((await f.sql.query("SELECT count(*) FROM app_model_provider_leases")).rows[0].count),4,"Direct1+pool3 share the newly published4-slot account");
+    assert.equal((await acquire(claim)).status,429,"A fifth same-account claim must not be admitted");
+    for (const token of tokens) assert.equal((await acquire({action:"release",token})).status,200);
+    const secondDirect=await transport(`${f.origin}/v1/hold`);
+    try { assert.equal(Number((await f.sql.query("SELECT count(*) FROM app_model_provider_leases")).rows[0].count),2,"An old1-slot task uses current4-slot budget,not a permanent frozen cap"); }
+    finally { await secondDirect.body!.cancel(); }
+    // Keep the real pinned Go one-slot test intact. Lower the CURRENT account
+    // to1 while Go keeps the frozen4-slot projection,and prove shared denial,
+    // release,restart and lost-ACK behavior against the actual PostgreSQL gate.
+    f.config.providers[0].maxConcurrent=1;
+    const limitActor="fixture-current-limit", limitDraft=await f.repo.draft(limitActor);
+    assert.equal(limitDraft.basedOnVersion,snapshot.version);
+    const limitSaved=await f.repo.saveDraft({id:limitDraft.id,actor:limitActor,expectedRevision:limitDraft.revision,config:f.config});
+    const limitStaged=await f.repo.stage({id:randomUUID(),actor:limitActor,draftId:limitDraft.id,expectedRevision:limitSaved.revision,expectedVersion:snapshot.version,reason:"fixture current1-slot account with retained4-slot projection"});
+    await f.repo.markApplied(limitStaged.id,limitStaged.digest);
+    assert.equal(snapshot.config.providers[0].maxConcurrent,4,"Retain original frozen Router projection");
+    assert.equal(Number((await f.sql.query("SELECT max_concurrent FROM app_model_provider_budgets")).rows[0].max_concurrent),1);
+    assert.equal(Number((await f.sql.query("SELECT count(*) FROM app_model_provider_leases")).rows[0].count),1);
     const payload = join(folder, "projection.json");
     await writeFile(payload, JSON.stringify({ ...projection.payload, credentials: [control.seal(f.config.providers[0].credentialRef!, "p1", f.marker)] }));
     const child = spawn("go", ["test", "./internal/configuration", "-run", "^TestNaumiDirectAndPoolCapacity$", "-count=1", "-v"], { cwd: process.env.NAUMI_VERIFY_ROUTER_SOURCE, env: { ...process.env, NAUMI_VERIFY_CONFIG_PAYLOAD: payload, NAUMI_VERIFY_CAPACITY_URL: f.origin, NAUMI_VERIFY_SUPPLIER_ORIGIN: f.origin, MODEL_CONFIG_ENVELOPE_SECRET: secret } });
@@ -72,6 +96,7 @@ async function main() {
     const status = await new Promise<number | null>(resolve => child.on("close", resolve));
     assert.equal(status, 0, output);
     console.log("PASS actual Node direct streaming response and Go pool share one PostgreSQL account slot");
+    console.log("MODEL_SHARED_CURRENT_LIMIT=PASS PUBLISHED_INCREASE=4 DIRECT1_POOL3=4 FIFTH=429 OLD_TASK_USES_CURRENT=1 CURRENT_DECREASE=1 RETAINED_PROJECTION=4 PINNED_GO_UNCHANGED=1 UNKNOWN_REPLAY=0");
   } finally { await direct?.body?.cancel().catch(() => {}); await db.getPool().end(); await f.cleanup(); await rm(folder, { recursive: true, force: true }); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

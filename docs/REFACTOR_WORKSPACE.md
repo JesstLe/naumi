@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：R9N typed模型覆盖合同
+
+[R9N模块](changes/2026-11-01-refactor-r9n-typed-model-coverage.md)实际复现旧模型覆盖脚本要求headlessCanvas任务调用HTTP withModelRequest的exit1；现有用例已经沿typed withModelOperation。候选验证真实导入绑定/调用，保留SDK/HTTP/video原检查，并补别名、namespace、relative正例和4类漏检负例，不把HTTP塞回用例。原11条模型组集中结果与回滚按R9N DELIVERY；远端Image只有组失败证据，blob日志EOF，仍不认远端唯一child根因。
+
 ## 当前推进：R9M 首页发送/SSE会话 owner
 
 [R9M模块](changes/2026-11-01-refactor-r9m-workbench-send-owner.md)沿同一会话聚合迁移显式发送、SSE、原身份保存和插话；组件不再持有流句柄或解析协议。原73场景通过，新增8场景实际抓出计划事件延后更新导致工具步骤重复的原缺陷，失败留存；owner固定事件时的步骤快照，不放宽断言。当前实现、集中验证和副本回滚以R9M DELIVERY为准，不把此前R9L的运行中CI当本轮候选验证。
