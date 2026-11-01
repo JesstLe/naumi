@@ -30,42 +30,45 @@ test("management center unifies navigation, deep links, settings and legacy entr
     await page.context().addCookies([{ name: "nv_admin", value: fixture.adminCookie, domain: "127.0.0.1", path: "/" }, { name: "naumi_locale", value: "zh", domain: "127.0.0.1", path: "/" }]);
     await page.goto("/admin");
     await expect(page).toHaveURL(/\/admin\/center$/);
-    await expect(page.getByRole("heading", { name: "运营概览", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "平台总览", exact: true })).toBeVisible();
     const nav = page.getByRole("navigation", { name: "管理中心导航", exact: true });
-    await expect(nav.getByRole("link", { name: "数据概览", exact: true })).toHaveAttribute("aria-current", "page");
-    await nav.getByRole("link", { name: "用户与企业", exact: true }).click();
+    await expect(nav.getByRole("link", { name: "运营概览", exact: true })).toHaveAttribute("aria-current", "page");
+    await nav.getByRole("link", { name: "用户管理", exact: true }).click();
     await expect(page).toHaveURL(/section=users/);
     await expect(page.getByRole("heading", { name: "用户与企业", exact: true })).toBeVisible();
     await page.reload();
-    await expect(nav.getByRole("link", { name: "用户与企业", exact: true })).toHaveAttribute("aria-current", "page");
+    await expect(nav.getByRole("link", { name: "用户管理", exact: true })).toHaveAttribute("aria-current", "page");
     await page.getByRole("button", { name: "新增用户", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "记录详情", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "新增用户", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "关闭详情", exact: true }).click();
-    await nav.getByRole("link", { name: "模型价格表", exact: true }).click();
-    await page.getByRole("link", { name: "钱包与充值", exact: true }).click();
-    await expect(page.getByLabel("普通生图 · 标准单价（积分）")).toBeVisible();
-    await expect(nav.getByRole("link", { name: "模型价格表", exact: true })).toHaveAttribute("aria-current", "page");
+    await nav.getByRole("link", { name: "套餐与账务", exact: true }).click();
+    await page.getByRole("navigation",{name:"模块功能",exact:true}).getByRole("link",{name:"价格表",exact:true}).click();
+    await expect(page).toHaveURL(/\/admin\/billing\/price-table$/);
+    await page.getByRole("navigation",{name:"模块功能",exact:true}).getByRole("link", { name: "钱包与充值", exact: true }).click();
+    await expect(page.getByRole("button",{name:"充值套餐",exact:true})).toHaveAttribute("aria-pressed","true");
+    await expect(nav.getByRole("link", { name: "套餐与账务", exact: true })).toHaveAttribute("aria-current", "page");
     await page.screenshot({ path: "output/billing-20261003/management-center-desktop.png", fullPage: true });
-    await nav.getByRole("link", { name: "接口与站点设置", exact: true }).click();
+    await nav.getByRole("link", { name: "系统与审计", exact: true }).click();
     await expect(page.getByRole("heading", { name: "系统设置", exact: true })).toBeVisible();
     await expect(page).toHaveURL(/view=settings/);
-    await nav.getByRole("link", { name: "内部定价测算", exact: true }).click();
+    await nav.getByRole("link", { name: "套餐与账务", exact: true }).click();
+    await page.getByRole("navigation",{name:"模块功能",exact:true}).getByRole("link",{name:"定价测算",exact:true}).click();
     await expect(page.getByRole("heading", { name: "积分定价方案", exact: true })).toBeVisible();
     await page.goto("/admin/bi?section=orders");
     await expect(page.getByRole("heading", { name: "充值订单", exact: true })).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("button", { name: "展开管理导航", exact: true }).click();
-    await expect(nav.getByRole("link", { name: "充值订单", exact: true })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "套餐与账务", exact: true })).toBeVisible();
     await page.screenshot({ path: "output/billing-20261003/management-center-mobile-menu.png", fullPage: true });
-    await nav.getByRole("link", { name: "模型价格表", exact: true }).click();
-    await page.getByRole("link", { name: "钱包与充值", exact: true }).click();
+    await nav.getByRole("link", { name: "套餐与账务", exact: true }).click();
+    await page.getByRole("navigation",{name:"模块功能",exact:true}).getByRole("link", { name: "钱包与充值", exact: true }).click();
     await expect(page.getByRole("heading", { name: "计费管理", exact: true })).toBeVisible();
     await expect(nav).not.toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: "output/billing-20261003/management-center-mobile.png", fullPage: true });
     await page.goto("/admin/center?section=unknown");
-    await expect(page.getByRole("heading", { name: "运营概览", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "平台总览", exact: true })).toBeVisible();
 });
 
 test("management center pages reject anonymous and ordinary member sessions", async ({ page }) => {
@@ -84,7 +87,7 @@ test("billing administration simulates drafts and protects publishing", async ({
     if (!process.env.BILLING_UI_ADMIN_COOKIE)
         throw new Error("Isolated fixture admin cookie required");
     await page.context().addCookies([{ name: "nv_admin", value: process.env.BILLING_UI_ADMIN_COOKIE, domain: "127.0.0.1", path: "/" }]);
-    await page.goto("/admin/billing?section=wallet");
+    await page.goto("/admin/billing?section=prices");
     await page.getByLabel("普通生图 · 标准单价（积分）").fill("8");
     await page.getByText("详细报价试算（特殊条件与失败场景）", { exact: true }).click();
     await page.getByRole("button", { name: "模拟报价", exact: true }).click();
@@ -98,20 +101,25 @@ test("billing administration simulates drafts and protects publishing", async ({
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 test("anonymous visitors cannot access configuration", async ({ page }) => { await page.goto("/admin/billing?section=wallet"); await expect(page.getByRole("heading", { name: "计费管理", exact: true })).toHaveCount(0); expect((await page.request.get("/api/admin/billing")).status()).toBe(404); });
-test("publish, user stale price, conflict draft and restore", async ({ browser }) => {
+test("publish preserves the user's frozen price, conflict draft and restore", async ({ browser }) => {
     test.setTimeout(90000);
     const fixture = JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json", "utf8"));
     const admin = await browser.newContext(), member = await browser.newContext();
-    await admin.addCookies([{ name: "nv_admin", value: fixture.adminCookie, domain: "127.0.0.1", path: "/" }]);
+    await admin.addCookies([{ name: "nv_admin", value: fixture.adminCookie, domain: "127.0.0.1", path: "/" },{name:"naumi_locale",value:"zh",domain:"127.0.0.1",path:"/"}]);
     await member.addCookies([{ name: "nv_user", value: fixture.userCookie, domain: "127.0.0.1", path: "/" }]);
     await member.addCookies([{name:"naumi_locale",value:"zh",domain:"127.0.0.1",path:"/"}]);
-    const a = await admin.newPage(), u = await member.newPage();
+    const a = await admin.newPage(), u = await member.newPage(), pool=new Pool({connectionString:process.env.DATABASE_URL});
+    let submissions=0,confirmations=0;
+    u.on("request",request=>{if(new URL(request.url()).pathname==="/api/generate-image"&&request.method()==="POST")submissions++;});
+    u.on("dialog",dialog=>{confirmations++;void dialog.dismiss();});
     try {
-        await a.goto("/admin/billing?section=wallet");
+        await a.goto("/admin/billing?section=prices");
         const initial = await (await admin.request.get("/api/admin/billing")).json();
         await expect.poll(async()=> (await (await member.request.get("/api/auth/session")).json()).user?.email).toBe(fixture.email);
         expect((await member.request.get("/api/config")).status()).toBe(200);
-        await u.goto("/generate");
+        // Auto frame is deliberately display-only; select a real frame before
+        // testing a persisted executable price, rather than inventing its ID.
+        await u.goto("/generate?ratio=1%3A1");
         await expect(u.getByTestId("billing-estimate")).toContainText("6");
         await u.locator("textarea").first().fill("Retain this local test prompt");
         await expect(u.locator("textarea").first()).toHaveValue("Retain this local test prompt");
@@ -120,11 +128,30 @@ test("publish, user stale price, conflict draft and restore", async ({ browser }
         await a.getByRole("button", { name: "查看改动", exact: true }).click();
         await a.getByRole("button", { name: "发布配置", exact: true }).click();
         await expect(a.getByRole("status")).toContainText("已发布版本");
+        const published=await (await admin.request.get("/api/admin/billing")).json();expect(published.snapshot.config.features["image.generate"].pricing.quality.medium).toBe(8);
         const response = u.waitForResponse(r => r.url().includes("/api/generate-image") && r.request().method() === "POST");
         await u.getByTestId("billing-estimate").click();
-        expect((await response).status()).toBe(409);
+        const accepted=await response;
+        expect(accepted.status(),await accepted.text()).toBe(200);
+        const originalId=accepted.request().headers()["x-naumi-billing-operation-id"],quoteId=accepted.request().headers()["x-naumi-image-quote"],jobId=(await accepted.json()).jobId;
+        expect(originalId).toBeTruthy();expect(quoteId).toBeTruthy();expect(jobId).toBeTruthy();
+        const savedQuote=(await pool.query("SELECT owner,quote FROM app_image_billing_quotes WHERE id=$1",[quoteId])).rows[0];
+        expect(savedQuote.owner).toBe(fixture.email);expect(savedQuote.quote.requestedCredits).toBe(6);
+        await expect.poll(async()=> (await (await member.request.get(`/api/generate-image?job=${encodeURIComponent(jobId)}`)).json()).status).toBe("done");
+        const delivered=await (await member.request.get(`/api/generate-image?job=${encodeURIComponent(jobId)}`)).json();
+        expect(delivered.creditsUsed).toBe(6);expect(delivered.billingStatus).toBe("confirmed");expect(delivered.mock).toBe(false);expect(delivered.images).toHaveLength(1);
+        const job=(await pool.query("SELECT payload,billing_settled FROM app_image_jobs WHERE id=$1 AND email=$2",[jobId,fixture.email])).rows[0];
+        expect(job.billing_settled).toBe(true);expect(job.payload.billingQuote.requestedCredits).toBe(6);
+        expect((await pool.query("SELECT count(*)::int n,(-sum(delta))::int credits FROM app_ledger WHERE email=$1 AND kind='consume'",[fixture.email])).rows[0]).toEqual({n:1,credits:6});
+        expect((await pool.query("SELECT count(*)::int n FROM app_artworks WHERE email=$1 AND id=$2",[fixture.email,delivered.images[0].id])).rows[0].n).toBe(1);
+        const mediaResponse=await member.request.get(delivered.images[0].url);expect(mediaResponse.status()).toBe(200);const media=await mediaResponse.body();
+        expect(media.subarray(0,8)).toEqual(Buffer.from([137,80,78,71,13,10,26,10]));expect([media.readUInt32BE(16),media.readUInt32BE(20)]).toEqual([1024,1024]);
+        // Receipt reads, not another paid POST, observe this completed purchase.
+        expect(submissions).toBe(1);expect(confirmations).toBe(0);
+        const supplier=await (await member.request.get(process.env.BILLING_UI_PROVIDER_ORIGIN+"/fixture/stats")).json();expect(supplier.imagePosts).toBe(1);
+        writeFileSync("output/billing-20261003/ui-frozen-price.json",JSON.stringify({originalId,quoteId,jobId,originalCredits:6,currentCredits:8,chargedCredits:delivered.creditsUsed,billingSettled:job.billing_settled,consumeRows:1,browserPaidPosts:submissions,supplierImagePosts:supplier.imagePosts,nativeDialogs:confirmations,deliveredImage:{id:delivered.images[0].id,bytes:media.length,sha256:createHash("sha256").update(media).digest("hex"),width:1024,height:1024}},null,2));
         await expect(u.locator("textarea").first()).toHaveValue("Retain this local test prompt");
-        await expect(u.getByTestId("billing-estimate")).toContainText("8");
+        await expect(u.getByTestId("billing-estimate")).toContainText("6");
         // Concurrent publication must preserve this page's local draft.
         await a.getByLabel("普通生图 · 标准单价（积分）").fill("9");
         const latest = await (await admin.request.get("/api/admin/billing")).json(), external = structuredClone(latest.snapshot.config);
@@ -149,6 +176,7 @@ test("publish, user stale price, conflict draft and restore", async ({ browser }
     finally {
         await admin.close();
         await member.close();
+        await pool.end();
     }
 });
 test("configuration failure stays visible and cannot publish", async ({ page }) => {
@@ -167,7 +195,7 @@ test("uncertain submissions retain their identifier across explicit retries",asy
  await page.getByTestId("billing-estimate").click();await expect(page.getByText("fixture submission pending",{exact:true})).toBeVisible();await page.getByTestId("billing-estimate").click();await expect.poll(()=>ids.length).toBe(2);expect(ids[0]).toBeTruthy();expect(ids[1]).toBe(ids[0]);await expect(page.locator("textarea").first()).toHaveValue("Fixture retained intent");
 });
 test("administrators can change the customer billing unit",async({page})=>{
- const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_admin",value:fixture.adminCookie,domain:"127.0.0.1",path:"/"}]);await page.goto("/admin/billing?section=wallet");
+ const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_admin",value:fixture.adminCookie,domain:"127.0.0.1",path:"/"}]);await page.goto("/admin/billing?section=prices");
  await page.getByLabel("计费单位",{exact:true}).selectOption("task");await page.getByText("详细报价试算（特殊条件与失败场景）",{exact:true}).click();await page.getByLabel("模拟数量").fill("13");await page.getByRole("button",{name:"模拟报价",exact:true}).click();await expect(page.getByTestId("simulation-charge")).toHaveText("6 积分");
  await page.getByRole("button",{name:"查看改动",exact:true}).click();await expect(page.getByText(/单位：每张图片 → 每次任务/)).toBeVisible();
 });
@@ -191,7 +219,7 @@ test("canvas video retries preserve the domain and billing identities",async({pa
  let confirmations=0;page.on("dialog",dialog=>{confirmations++;void dialog.dismiss();});
  const attempts:any[]=[];await page.route("**/api/canvas/video-nodes/*/generate",route=>{attempts.push({id:route.request().headers()["x-naumi-billing-operation-id"],body:route.request().postDataJSON()});return route.fulfill({status:503,contentType:"application/json",body:JSON.stringify({error:"fixture lost canvas response",code:"OPERATION_PENDING"})});});
  await page.addInitScript((id)=>localStorage.setItem("nv:canvas:last",`tree:${id}`),fixture.artworkId);const account=await (await page.request.get(`/api/account?email=${encodeURIComponent(fixture.email)}`)).json();expect(account.artworks.some((a:any)=>a.id===fixture.artworkId)).toBeTruthy();await page.goto(`/canvas?node=${fixture.artworkId}`);await page.locator(`.react-flow__node[data-id="${fixture.artworkId}"]`).click();
- await page.getByRole("button",{name:"更多处理",exact:true}).click();await page.getByRole("menuitem",{name:/^生成视频/}).click();const dialog=page.getByRole("dialog",{name:"视频节点设置",exact:true});await expect(dialog).toBeVisible();await chooseVideoModel(page,dialog,"Fixture video");await dialog.getByLabel("视频描述",{exact:true}).fill("Canvas retained prompt");
+ await page.getByRole("button",{name:"更多处理",exact:true}).click();await page.getByRole("menuitem",{name:/^生成视频/}).click();const dialog=page.getByRole("region",{name:"视频节点设置",exact:true});await expect(dialog).toBeVisible();await chooseVideoModel(page,dialog,"Fixture video");await dialog.getByLabel("视频描述",{exact:true}).fill("Canvas retained prompt");
  for(let i=0;i<2;i++){const generate=dialog.getByRole("button",{name:/^生成视频/});await expect(generate).toBeEnabled();await generate.click();await expect.poll(()=>attempts.length).toBe(i+1);await expect(dialog.getByRole("alert")).toHaveText("fixture lost canvas response");}
  expect(attempts[1]).toEqual(attempts[0]);expect(attempts[0].id).toBeTruthy();expect(attempts[0].body.idempotencyKey).toMatch(/^[a-f0-9-]{36}$/);expect(confirmations).toBe(0);await expect(dialog.getByLabel("视频描述",{exact:true})).toHaveValue("Canvas retained prompt");
 });
@@ -222,7 +250,7 @@ test("canvas image plans and toolbox submit once without native fee dialogs",asy
 });
 
 test("business groups expose canvas prices, free controls and shared entries", async({page})=>{
- const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_admin",value:fixture.adminCookie,domain:"127.0.0.1",path:"/"}]);await page.goto("/admin/billing?section=wallet");
+ const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_admin",value:fixture.adminCookie,domain:"127.0.0.1",path:"/"}]);await page.goto("/admin/billing?section=prices");
  await expect(page.getByText("高级结算设置",{exact:true})).toBeVisible();await expect(page.getByLabel("失败收费比例（%）")).not.toBeVisible();
  await page.getByRole("button",{name:"画布",exact:true}).click();await page.getByRole("button",{name:"配置画布文字识别（OCR）",exact:true}).click();
  await expect(page.getByRole("heading",{name:"画布文字识别（OCR）",exact:true})).toBeVisible();await expect(page.getByTestId("business-example")).toContainText("扣 0 积分");
@@ -243,10 +271,29 @@ test("recharge prices use yuan and preserve exact stored fen",async({page})=>{
 
 test("canvas assistant retries keep streamed billing intent and original conversation",async({page})=>{
  const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_user",value:fixture.userCookie,domain:"127.0.0.1",path:"/"}]);await page.route("**/media/billing-ui-fixture.png",route=>route.fulfill({contentType:"image/png",body:Buffer.from(fixture.imageBase64,"base64")}));
- const attempts:any[]=[];await page.route("**/api/canvas/assistant",route=>{if(route.request().method()!=="POST")return route.continue();attempts.push({id:route.request().headers()["x-naumi-billing-operation-id"],body:route.request().postDataJSON()});return route.fulfill({contentType:"text/event-stream",body:attempts.length<3?'event: delta\ndata: {"text":"partial reply"}\n\nevent: error\ndata: {"error":"fixture stream interrupted"}\n\n':'event: delta\ndata: {"text":"complete reply"}\n\nevent: done\ndata: {"ok":true}\n\n'});});
+ const attempts:any[]=[];await page.route("**/api/canvas/assistant",route=>{if(route.request().method()!=="POST")return route.continue();attempts.push({id:route.request().headers()["x-naumi-billing-operation-id"],body:route.request().postDataJSON()});return route.fulfill({contentType:"text/event-stream",body:attempts.length<3?'event: error\ndata: {"error":"fixture stream interrupted"}\n\n':'event: delta\ndata: {"text":"complete reply"}\n\nevent: done\ndata: {"ok":true}\n\n'});});
  await page.addInitScript(id=>localStorage.setItem("nv:canvas:last",`tree:${id}`),fixture.artworkId);await page.goto(`/canvas?node=${fixture.artworkId}`);await page.locator(`.react-flow__node[data-id="${fixture.artworkId}"]`).click();await page.getByRole("button",{name:"图片助手",exact:true}).click();const panel=page.getByTestId("canvas-assistant-panel"),input=panel.getByTestId("canvas-assistant-input");await input.fill("Retain assistant conversation");
  for(let i=0;i<3;i++){await panel.getByRole("button",{name:"发送消息",exact:true}).click();await expect.poll(()=>attempts.length).toBe(i+1);if(i<2){await expect(panel.getByRole("alert")).toContainText("fixture stream interrupted");await expect(input).toHaveValue("Retain assistant conversation");}else{await expect(panel.getByText("complete reply",{exact:true})).toBeVisible();await expect(input).toHaveValue("");}}
  expect(attempts[1]).toEqual(attempts[0]);expect(attempts[2]).toEqual(attempts[0]);expect(attempts[0].id).toBeTruthy();
+});
+
+test("canvas assistant partial output recovers from original history without another paid POST",async({page})=>{
+ const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8")),sessionId=randomUUID();
+ await page.context().addCookies([{name:"nv_user",value:fixture.userCookie,domain:"127.0.0.1",path:"/"}]);
+ let posts=0,historyReads=0;
+ await page.route("**/api/canvas/assistant",route=>{if(route.request().method()!=="POST")return route.continue();posts++;return route.fulfill({contentType:"text/event-stream",body:`event: open\ndata: ${JSON.stringify({sessionId})}\n\nevent: delta\ndata: {"text":"partial retained answer"}\n\nevent: error\ndata: {"error":"fixture partial stream interrupted"}\n\n`});});
+ await page.route("**/api/canvas/assistant?**",route=>{
+  const id=new URL(route.request().url()).searchParams.get("id");
+  if(id){historyReads++;expect(id).toBe(sessionId);return route.fulfill({contentType:"application/json",body:JSON.stringify({session:{id:sessionId,anchorId:fixture.artworkId,referenceIds:[],running:false,status:"completed",steps:[],turns:[{id:"saved-user",role:"user",content:"Keep partial original request"},{id:"saved-answer",role:"assistant",content:"Original saved complete answer"}]}})});}
+  return route.fulfill({contentType:"application/json",body:JSON.stringify({sessions:[{id:sessionId,title:"Original partial conversation",anchorId:fixture.artworkId,updatedAt:new Date().toISOString()}]})});
+ });
+ await page.addInitScript(id=>localStorage.setItem("nv:canvas:last",`tree:${id}`),fixture.artworkId);await page.goto(`/canvas?node=${fixture.artworkId}`);await page.locator(`.react-flow__node[data-id="${fixture.artworkId}"]`).click();await page.getByRole("button",{name:"图片助手",exact:true}).click();
+ const panel=page.getByTestId("canvas-assistant-panel"),input=panel.getByTestId("canvas-assistant-input");
+ await input.fill("Keep partial original request");await panel.getByRole("button",{name:"发送消息",exact:true}).click();
+ await expect(panel.getByRole("alert")).toContainText("fixture partial stream interrupted");await expect(input).toHaveValue("");
+ await expect(panel.getByText("partial retained answer",{exact:true})).toBeVisible();await expect(panel.getByRole("button",{name:"重试",exact:true})).toBeDisabled();
+ await panel.getByRole("button",{name:"项目对话记录",exact:true}).click();await panel.getByTestId("canvas-assistant-history-item").filter({hasText:"Original partial conversation"}).click();
+ await expect(panel.getByText("Original saved complete answer",{exact:true})).toBeVisible();expect(historyReads).toBe(1);expect(posts).toBe(1);
 });
 
 test("configured access password gates email admins, deep links and logout", async ({ page }) => {
@@ -269,9 +316,11 @@ test("configured access password gates email admins, deep links and logout", asy
         await expect(page.getByText("密码错误", { exact: true })).toBeVisible();
         await input.fill(password); await page.getByRole("button", { name: "登录", exact: true }).click();
         await expect(page).toHaveURL(/\/admin\/billing$/); await page.getByRole("link", { name: "钱包与充值", exact: true }).click();
-    await expect(page.getByLabel("普通生图 · 标准单价（积分）")).toBeVisible();
+        await expect(page.getByRole("button",{name:"充值套餐",exact:true})).toHaveAttribute("aria-pressed","true");
+        await page.getByRole("button",{name:"业务收费",exact:true}).click();
+        await expect(page.getByLabel("普通生图 · 标准单价（积分）")).toBeVisible();
         const cookie = (await page.context().cookies()).find(c => c.name === "nv_admin")!; expect(cookie.httpOnly).toBe(true); expect(cookie.value).not.toBe(fixture.adminCookie);
-        await page.getByRole("navigation", { name: "管理中心导航", exact: true }).getByRole("link", { name: "接口与站点设置", exact: true }).click();
+        await page.getByRole("navigation", { name: "管理中心导航", exact: true }).getByRole("link", { name: "系统与审计", exact: true }).click();
         await expect(page.getByRole("heading", { name: "系统设置", exact: true })).toBeVisible();
         await page.getByRole("button", { name: "退出管理中心", exact: true }).click();
         await expect(page.getByRole("heading", { name: "管理中心访问验证", exact: true })).toBeVisible();
