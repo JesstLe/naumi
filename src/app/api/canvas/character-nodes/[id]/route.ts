@@ -10,8 +10,8 @@ import { characterFailure } from "../response";
 
 export const runtime = "nodejs", dynamic = "force-dynamic";
 type Context = { params: Promise<{ id: string }> };
-async function readNativeNodes(request: Request, context: Context) {
-  const actor = await authorizedTargetEmail(request, new URL(request.url).searchParams.get("email"), true);
+async function readNativeNodes(request: Request, context: Context, authenticatedActor?:string|null) {
+  const actor = await authorizedTargetEmail(request, new URL(request.url).searchParams.get("email"), true, authenticatedActor);
   if (!actor) return NextResponse.json({ error: "未登录或无权访问" }, { status: 401 });
   try {
     const found = await getCharacterNode(actor, (await context.params).id);const node=found?(await filterCreationProjects(actor,[found]))[0]:null;
@@ -19,8 +19,8 @@ async function readNativeNodes(request: Request, context: Context) {
   } catch (error) { return characterFailure(error); }
 }
 export async function PATCH(request: Request, context: Context) {
-  return withCreationRoute(request, async () => {
-    const actor = await authenticatedEmail(request);
+  return withCreationRoute(request, async (authenticatedActor) => {
+    const actor = await authenticatedEmail(request, authenticatedActor);
     if (!actor) return NextResponse.json({ error: "请先登录" }, { status: 401 });
     if (!sameSiteBiMutation(request)) return NextResponse.json({ error: "不允许跨站修改" }, { status: 403 });
     try {
@@ -32,4 +32,4 @@ export async function PATCH(request: Request, context: Context) {
   });
 }
 
-export function GET(request:Request,context:{params:Promise<{id:string}>}){return withCreationReceiptRoute(request,()=>readNativeNodes(request,context));}
+export function GET(request:Request,context:{params:Promise<{id:string}>}){return withCreationReceiptRoute(request,(authenticatedActor)=>readNativeNodes(request,context, authenticatedActor));}

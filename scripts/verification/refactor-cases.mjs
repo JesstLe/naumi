@@ -178,6 +178,7 @@ export const refactorCases=[
  ts('image-ingress-routes','pricing','scripts/verify-imagegen-ingress-routes.ts','IMAGEGEN_INGRESS_ROUTES=PASS'),
  ts('legacy-generation-ingress','pricing','scripts/verify-legacy-generation-ingress.ts','LEGACY_GENERATION_INGRESS=PASS'),
  ts('quote-canvas-edit-ingress','pricing','scripts/verify-quote-canvas-edit-ingress.ts','QUOTE_CANVAS_EDIT_INGRESS=PASS'),
+ ts('native-node-ingress','canvas','scripts/verify-native-node-ingress.ts','NATIVE_NODE_INGRESS=PASS'),
  {id:'direct-generation-contract',group:'pricing',file:'scripts/verify-direct-generation.ts',args:[],expect:'DIRECT_SUBMISSION=PASS',pg:false,tsx:true},
  ts('frozen-quote-pg','pricing','scripts/verify-imagegen-frozen-quote-pg.ts','SIMPLIFY_MODIFIED=PASS',['--simplify']),
  ts('delivery','generation','scripts/verify-image-delivery-continuation.ts','IMAGE_DELIVERY_CONTINUATION=PASS'),
