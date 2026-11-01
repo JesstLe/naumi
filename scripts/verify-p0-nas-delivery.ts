@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
-import {mkdtemp,rm,writeFile} from 'node:fs/promises';
+import {mkdtemp,mkdir,rm,stat,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {randomUUID,createHash} from 'node:crypto';
 import {Pool} from 'pg';
 import sharp from 'sharp';
+import {createMediaCapacityFixture} from './fixtures/media-capacity';
 
 async function main(){
  if(process.env.NAUMI_VERIFY_ISOLATED_DB!=='1'||new URL(process.env.DATABASE_URL||'http://invalid').hostname!=='127.0.0.1')throw Error('Isolated loopback PG required');
@@ -21,10 +22,15 @@ async function main(){
  const port=(server.address() as {port:number}).port;
  Object.assign(process.env,{PGOPTIONS:`-c search_path=${schema}`,MEDIA_DIR:dir,MEDIA_PRIVATE:'1',MEDIA_REMOTE_ACCESS:'proxy',STORAGE_DRIVER:'s3',S3_ENDPOINT:`http://127.0.0.1:${port}`,S3_BUCKET:'fixture',S3_REGION:'garage',S3_ACCESS_KEY_ID:'fixture',S3_SECRET_ACCESS_KEY:'fixture',SETTINGS_SECRET:'fixture-p0-private-account-isolation-secret',NAUMI_MULTI_USER:'1',NAUMI_NAS_DEFER_UPLOAD:'1',NAUMI_RELEASE_RUNTIME:'0'});
  const db=await import('../src/lib/db'),storage=await import('../src/lib/storage'),assets=await import('../src/lib/media-assets'),media=await import('../src/app/media/[...path]/route'),download=await import('../src/app/api/download/route'),native=await import('../src/lib/native-auth');
+ // The original time/PUT assertions exercise admitted local-first delivery.
+ // Physical free space after a full CI image build is a separate input.
+ const admittedBytes=8*1024**3,capacity=createMediaCapacityFixture(dir,admittedBytes);
+ let admittedElapsedMs=0,lowCapacityRemoteFirst=false;
  try{
   const owner='owner@p0.test';await db.getOrCreateUser(owner);await db.getOrCreateUser('other@p0.test');
   const bytes=await sharp({create:{width:2048,height:1024,channels:3,background:'orange'}}).png().toBuffer(),key='p0/'+randomUUID()+'.png';
   const start=Date.now(),url=await storage.uploadImage(bytes,'image/png',key,undefined,owner);
+  admittedElapsedMs=Date.now()-start;
   assert.ok(Date.now()-start<5000,'delivery is independent from stalled NAS');assert.equal(puts,0);assert.equal(gets,0);
   const asset=(await assets.getMediaAsset(key))!;assert.equal(asset.remote_ready,false);assert.ok(asset.preview_key&&asset.thumbnail_key);
   const get=(email=owner,range?:string)=>media.GET(new Request('http://fixture'+url,{headers:{cookie:'nv_user='+native.signUserSession(email,Date.now()),...(range?{range}:{})}}),{params:Promise.resolve({path:key.split('/')})});
@@ -43,6 +49,23 @@ async function main(){
   await writeFile(path.join(dir,key),Buffer.alloc(bytes.length,7));
   assert.deepEqual((await storage.readManagedObject(url,bytes.length)).bytes,bytes,'corrupt same-size local copy is not authoritative');assert.equal(gets,before+1);
   const controller=new AbortController();controller.abort();await assert.rejects(()=>storage.fetchStoredObject(key,'',controller.signal));
+  // A non-admitted object must not falsely acknowledge a local deferred write.
+  // Real HTTP is held until we observe the actual remote-first boundary.
+  const remoteKey='p0/'+randomUUID()+'-remote-first.png',beforeRemotePuts=puts;
+  capacity.setAvailableBytes(0);hold();
+  let remoteWrite:ReturnType<typeof storage.writeStoredObject>|undefined,timer:ReturnType<typeof setTimeout>|undefined;
+  try{
+   let acknowledged=false;
+   remoteWrite=storage.writeStoredObject(bytes,'image/png',remoteKey);
+   remoteWrite.then(()=>{acknowledged=true;},()=>{acknowledged=true;});
+   await Promise.race([atPut,remoteWrite.then(()=>{throw Error('Low capacity was incorrectly admitted locally');}),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error('Remote-first request did not reach its transport')),5000);})]);
+   assert.equal(acknowledged,false,'remote-first waits for its original remote acknowledgement');
+   assert.equal(puts,beforeRemotePuts+1);
+   await assert.rejects(()=>stat(path.join(dir,remoteKey)),(error:unknown)=>(error as NodeJS.ErrnoException).code==='ENOENT');
+   release();assert.equal((await remoteWrite).remoteReady,true);
+   const remote=await storage.fetchStoredObject(remoteKey);assert.equal(remote.status,200);assert.deepEqual(Buffer.from(await remote.arrayBuffer()),bytes);
+   lowCapacityRemoteFirst=true;
+  }finally{if(timer)clearTimeout(timer);release();await remoteWrite?.catch(()=>{});capacity.setAvailableBytes(admittedBytes);}
   // A completed old upload must not mark newer local bytes remote-ready.
   const hash=(b:Buffer)=>createHash('sha256').update(b).digest('hex');
   const changed=await sharp({create:{width:2048,height:1024,channels:3,background:'blue'}}).png().toBuffer();
@@ -79,6 +102,9 @@ async function main(){
    const result=await variantWork;assert.equal(result!.sha256,hash(changed));assert.equal(result!.thumbnail_key,null);assert.equal(result!.preview_key,null);
   }finally{await rowLock.query('ROLLBACK').catch(()=>{});rowLock.release();await variantWork?.catch(()=>{});}
   console.log('P0_NAS_DELIVERY PASS: actual PG + HTTP; immediate original/variants; owner ACL/media/download; range; fenced mirror/content/claim CAS; nonblocking variant lock; stale variant CAS; no network transaction; verified local read; corruption fallback; cancellation; supplier calls=0');
- }finally{release();server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));await db.getPool().end();await admin.query(`DROP SCHEMA ${schema} CASCADE`);await admin.end();assert.ok(path.resolve(dir).startsWith(path.resolve(tmpdir())+path.sep)&&path.basename(dir).startsWith('naumi-p0-media-'));await rm(dir,{recursive:true,force:true});}
+  const report={status:'PASS',admittedElapsedMs,originalDeadlineMs:5000,lowCapacityRemoteFirst,capacityRead:'EXPLICIT_FIXTURE',capacityObservations:capacity.observations(),actualPostgres:true,actualHttp:true,actualLocalFiles:true,actualSharp:true,supplierCalls:0};
+  const out=path.resolve(process.env.P0_NAS_EVIDENCE||'output/p0-nas-delivery');await mkdir(out,{recursive:true});await writeFile(path.join(out,'RESULT.json'),JSON.stringify(report,null,2)+'\n');
+  console.log(`NAS_CAPACITY_CONTRACT=PASS ADMITTED_MS=${admittedElapsedMs} ORIGINAL_LIMIT_MS=5000 LOW_CAPACITY_REMOTE_FIRST=${lowCapacityRemoteFirst} CAPACITY_READ=FIXTURE PG_HTTP_FILES_SHARP=ACTUAL`);
+ }finally{capacity.restore();release();server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));await db.getPool().end();await admin.query(`DROP SCHEMA ${schema} CASCADE`);await admin.end();assert.ok(path.resolve(dir).startsWith(path.resolve(tmpdir())+path.sep)&&path.basename(dir).startsWith('naumi-p0-media-'));await rm(dir,{recursive:true,force:true});}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

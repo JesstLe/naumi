@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：R9K NAS交付验收输入
+
+[R9K模块](changes/2026-11-01-refactor-r9k-nas-admission-fixture.md)处理旧3fa Core的nas-delivery失败。原测试真实本机容量通过；只改变自有MEDIA_DIR的容量读到0即可保持原5秒标准复现相同失败，实际NAS PUT约9秒超时。产品早已明确低容量合法remote-first；候选将已准入的即时交付和未准入的远端确认分别验证，保留全部原断言和实际PG/HTTP/文件/Sharp，容量读明确标为fixture。产品源码0改动，历史CI唯一根因不冒称关闭；最终集中执行、回滚、源码及远端状态以R9K DELIVERY为准。
+
 ## 当前推进：R9J 首页会话恢复与观察职责
 
 [R9J模块](changes/2026-11-01-refactor-r9j-workbench-session-owner.md)落实R9I只读退出审计确认的组件内应用编排，已将account scope/generation、历史安装、观察cursor/phase、UNKNOWN与原session显式停止迁到独立owner。原两套真实React/Chromium浏览器模块保留断言并接入统一core218目录。3fa完整5350原始文件已冻结，原新各39恢复＋34变更场景共73项通过；非增量tsc0、定向lint0。完整218尚未执行，回滚/最终提交以最终DELIVERY为准；当前3fa远端CI继续独立执行，不重启、不用dirty结果改标旧作业。完整发送SSE迁移仍OPEN，整体ACTIVE、未部署、47HOLD。
