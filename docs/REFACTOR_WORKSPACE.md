@@ -2,7 +2,7 @@
 
 ## 当前推进：R10D 远端对象 PUT 同任务证据
 
-[R10D](changes/2026-11-02-refactor-r10d-remote-put-evidence.md)补 M06 的真实签名对象HTTP写失败，不用本地fs测试冒充网络边界。原087产品在六场景基线全部正确：一次供应／一笔6积分／原PNG／原GET done，独立进程恢复和原mirror补传保持；产品修改0，新专项沿原generation目录登记，总226／组23。实际浏览器及云存储基础设施未在本轮验证；最终组、质量、回退与同源CI归本轮DELIVERY，整体ACTIVE、未合main、未发布。
+[R10D](changes/2026-11-02-refactor-r10d-remote-put-evidence.md)补 M06 的真实签名对象HTTP写失败，不用本地fs测试冒充网络边界。原087产品在六场景基线全部正确：一次供应／一笔6积分／原PNG／原GET done，独立进程恢复和原mirror补传保持；产品修改0，新专项沿原generation目录登记，总226／组23，固定99e原顺序23子命令单次全PASS（顶层局部PARTIAL/exit2）、runner20/370及非增量tsc/lint0。实际浏览器及云存储基础设施未在本轮验证；回退与同源CI归本轮DELIVERY，整体ACTIVE、未合main、未发布。
 
 ## 当前推进：R10C 历史批次回执与陈旧观察
 
