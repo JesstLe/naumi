@@ -66,6 +66,11 @@ async function startFixture(){
   const model = { id: 'gpt-image-2', label: '图片模型', modality: 'image', supportsEdit: true, qualities: ['medium'], nativeResolutions: ['1K'], generationParameters: { ratios: ['auto', '1:1', '3:4', '16:9'], resolutions: ['1K'] }, qualitySupported: true };
   const textModel = { id: 'published-text', label: '文字模型', modality: 'text', supportsVision: true };
   page.on('pageerror', e => errors.push(e.message));
+  const lifecycle=[];const observe=event=>{if(lifecycle.length<256)lifecycle.push({time:new Date().toISOString(),...event});};
+  page.on('crash',()=>observe({kind:'page-crash',url:page.url()}));
+  page.on('framenavigated',frame=>{if(frame===page.mainFrame())observe({kind:'navigation',url:frame.url()});});
+  page.on('requestfailed',request=>{const pathname=new URL(request.url()).pathname;if(request.isNavigationRequest()||pathname.startsWith('/_next/'))observe({kind:'request-failed',pathname,navigation:request.isNavigationRequest(),failure:request.failure()});});
+  page.on('response',response=>{if(response.request().isNavigationRequest())observe({kind:'navigation-response',url:response.url(),status:response.status(),contentType:response.headers()['content-type']});});
   const hydration=[];page.on('console',message=>{if(message.type()==='error'&&/hydrat|didn.t match|server rendered/i.test(message.text()))hydration.push(message.text());});
   const json = (route, value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
   await context.route('**/*', async route => {
@@ -179,6 +184,6 @@ async function startFixture(){
     const status=baseline?'REPRODUCED':violations.length?'FAIL':'PASS',exit=baseline?1:violations.length?2:0;
     const literal=`CANVAS_THEME_MATRIX=${status} COMBINATIONS=4 CHECKS=${checks.length} VIOLATIONS=${violations.length} FULL_NEXT=YES SUPPLIER_CALLS=0 EXIT=${exit}`;
     fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify({status,sourceRoot,baseline,checks,violations,contrasts,samples,failure,regeneration,group,errors,hydration,external,loaded,sourceAtStart,supplierCalls:0,productionWrites:0,literal},null,2));console.log(literal);process.exitCode=exit;
-  }catch(e){await page.screenshot({path:path.join(out,'failure.png')}).catch(()=>{});fs.writeFileSync(path.join(out,'ERROR.json'),JSON.stringify({error:e.stack,checks,violations,contrasts,samples,errors,external,body:await page.locator('body').innerText().catch(()=>'' )},null,2));throw e;}
-  finally{await browser.close();await runtime.stop();}
+  }catch(e){let screenshotError=null,bodyError=null;await page.screenshot({path:path.join(out,'failure.png')}).catch(error=>{screenshotError=String(error);});const body=await page.locator('body').innerText().catch(error=>{bodyError=String(error);return '';});fs.writeFileSync(path.join(out,'ERROR.json'),JSON.stringify({error:e.stack,checks,violations,contrasts,samples,errors,external,body,screenshotError,bodyError,lifecycle},null,2));throw e;}
+  finally{fs.writeFileSync(path.join(out,'BROWSER_LIFECYCLE.json'),JSON.stringify({fixturePid:runtime.pid,lifecycle,errors,hydration,originalTimeouts:true,gestureRetries:0},null,2));await browser.close();await runtime.stop();}
 })().catch(e=>{console.error(e);process.exitCode=2});
