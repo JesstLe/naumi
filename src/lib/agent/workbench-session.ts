@@ -1,6 +1,6 @@
-/** Browser application owner for observing an existing Agent session.
- * It owns observer identity, account epochs and read-only continuation, not the
- * backend task. Detaching observation never cancels or resubmits paid work. */
+/** Browser application owner for one Agent conversation: account epochs,
+ * history observation, explicit send/SSE/save and interjection. It never owns
+ * the backend paid task. Detaching a view drains rather than cancels its run. */
 export type WorkbenchMessage = {
   role: "user" | "assistant";
   content: string;
@@ -43,7 +43,28 @@ export type WorkbenchRecoveryContext = {
   installSession(id: string): void;
   resetAttachmentUploads(): void;
   refreshSessions(): Promise<void>;
-  abortExplicitStream(): void;
+};
+
+export type WorkbenchSendContext = Pick<WorkbenchRecoveryContext,
+  "ready" | "busy" | "unavailable" | "sessionId" | "request" | "setMessages" |
+  "setBusy" | "setRunning" | "setError" | "setInput" | "setAttachments" |
+  "installSession" | "refreshSessions"
+> & {
+  allowed: boolean;
+  authenticated: boolean;
+  uploading: boolean;
+  input: string;
+  attachments: string[];
+  messages: WorkbenchMessage[];
+  skill: { id: string; revision: number } | null;
+  headers(): Promise<Record<string, string>>;
+  requestSignIn(): void;
+  invalidateAccount(): void;
+};
+export type WorkbenchInterjectionContext = Pick<WorkbenchRecoveryContext, "sessionId" | "request"> & {
+  running: boolean;
+  headers(): Promise<Record<string, string>>;
+  clear(): void;
 };
 
 function restoreMessages(rawMessages: WorkbenchMessage[], savedSteps: SavedStep[]) {
@@ -61,10 +82,11 @@ function restoreMessages(rawMessages: WorkbenchMessage[], savedSteps: SavedStep[
   return restored;
 }
 
-export function createWorkbenchSessionRecovery() {
+export function createWorkbenchSession() {
   let accountScope: WorkbenchAccountScope | null = null;
   let generation = 0;
   let observer: Observation | null = null;
+  let explicitStream: { scope: WorkbenchAccountScope; controller: AbortController } | null = null;
 
   function ownsAccount(scope: WorkbenchAccountScope | null): scope is WorkbenchAccountScope {
     return Boolean(scope?.active && accountScope === scope);
@@ -232,7 +254,7 @@ export function createWorkbenchSessionRecovery() {
     if (!current()) return;
     const response = await context.request(`/api/agent?sessionId=${encodeURIComponent(id)}`, { method: "DELETE", headers }).catch(() => null);
     if (!current()) return;
-    if (!previous) context.abortExplicitStream();
+    if (!previous) explicitStream?.controller.abort();
     context.setRunning(false);
     context.setBusy(false);
     context.setMessages(messages => messages.map(message => message.pending ? { ...message, pending: false, ...(!previous ? { content: "(执行失败)" } : {}) } : message));
@@ -240,6 +262,251 @@ export function createWorkbenchSessionRecovery() {
     context.setUnavailable(!response?.ok);
     if (!response?.ok) context.setError("停止任务失败，请重试");
   }
+  function blocksSend() { return Boolean(observer && observer.phase !== "settled"); }
+
+  async function send(context: WorkbenchSendContext, text?: string, attachmentUrls?: string[], onAccepted?: () => void) {
+    if (!context.allowed) return;
+    const content = (text ?? context.input).trim();
+    if (!content || context.busy || context.uploading || context.unavailable ||
+        blocksSend()) return;
+    const scope = accountScope;
+    const entryGeneration = generation;
+    if (!scope?.active) return;
+    // 未登录:先确认登录态再弹登录框,避免发出去吃 401
+    if (!context.authenticated) {
+      if (!context.ready) return;
+      const session = await context.request("/api/auth/session")
+        .then((response) => response.json())
+        .catch(() => null);
+      if (!session?.user) {
+        context.requestSignIn();
+        return;
+      }
+    }
+    if (!scope.active || accountScope !== scope || entryGeneration !== generation) return;
+    cancel();
+    const runGeneration = generation;
+    const current = () => scope.active && accountScope === scope && generation === runGeneration;
+    let runSessionId = context.sessionId();
+    context.setError(null);
+    const urls = attachmentUrls ?? context.attachments;
+    const parts = [content, ...urls.map((u) => `[商品图] ${u}`)];
+    const userMsg: WorkbenchMessage = { role: "user", content: parts.join("\n") };
+    const history = context.messages
+      .filter((m) => !m.pending && m.content)
+      .map((m) => ({ role: m.role, content: m.content }));
+    const runSteps: { tool: string; summary: string }[] = [];
+    context.setMessages((prev) => [
+      ...prev,
+      userMsg,
+      { role: "assistant", content: "", pending: true },
+    ]);
+    context.setInput("");
+    context.setAttachments([]);
+    context.setBusy(true);
+    context.setRunning(true);
+    // The prompt is now retained in the conversation. A rejected entry must not
+    // consume its caller's draft (this is local admission, not a server receipt).
+    onAccepted?.();
+
+    const controller = new AbortController();
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+    try {
+      explicitStream = { scope, controller };
+      const headers = await context.headers();
+      if (!current()) return;
+      const res = await context.request("/api/agent", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...headers,
+        },
+        body: JSON.stringify({
+          message: userMsg.content,
+          skill: context.skill,
+          sessionId: runSessionId || undefined,
+          history,
+          // 视觉输入:服务端按模型自动判定,支持时随消息直喂模型
+          images: urls,
+        }),
+        signal: controller.signal,
+      });
+      if (!res.ok || !res.body) {
+        const d = await res.json().catch(() => ({}));
+        if (!current()) return;
+        throw new Error(d.error || "Agent 执行失败");
+      }
+      reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let reply = "";
+      let streamed = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        // Do not cancel this SSE from observer cleanup: cancellation has an
+        // existing server meaning. Detached sends drain without changing UI or
+        // saving with a different account/session's identity.
+        if (!current()) continue;
+        buf += decoder.decode(value, { stream: true });
+        const chunks = buf.split("\n\n");
+        buf = chunks.pop() ?? "";
+        for (const chunk of chunks) {
+          const evLine = chunk.split("\n").find((l) => l.startsWith("event: "));
+          const dataLine = chunk.split("\n").find((l) => l.startsWith("data: "));
+          if (!evLine || !dataLine) continue;
+          const type = evLine.slice(7).trim();
+          const data = JSON.parse(dataLine.slice(6)) as Record<string, unknown>;
+          if (type === "open" && typeof data.sessionId === "string") {
+            runSessionId = data.sessionId;
+            context.installSession(data.sessionId);
+          } else if (type === "delta") {
+            // 流式正文:逐段追加,工具状态文案不再覆盖已流出的内容
+            streamed += (data.text as string) || "";
+            context.setMessages((prev) => {
+              if (!current()) return prev;
+              const copy = [...prev];
+              const last = copy[copy.length - 1];
+              if (last?.pending) {
+                copy[copy.length - 1] = { ...last, content: streamed };
+              }
+              return copy;
+            });
+          } else if (type === "plan") {
+            const items = Array.isArray(data.items) ? data.items.map(String) : [];
+            runSteps.push({ tool: "任务计划", summary: items.join(" → ") });
+            // React may defer this update until a later tool_end has already
+            // extended runSteps. Project this event's snapshot, not that array.
+            const plannedSteps = [...runSteps];
+            context.setMessages((prev) => {
+              if (!current()) return prev;
+              const copy = [...prev];
+              const last = copy[copy.length - 1];
+              if (last?.pending) {
+                copy[copy.length - 1] = { ...last, steps: plannedSteps };
+              }
+              return copy;
+            });
+          } else if (type === "tool_start") {
+            context.setMessages((prev) => {
+              if (!current()) return prev;
+              const copy = [...prev];
+              const last = copy[copy.length - 1];
+              if (last?.pending && !streamed) {
+                copy[copy.length - 1] = {
+                  ...last,
+                  content: `🔧 正在调用 ${data.tool || "工具"}…`,
+                };
+              }
+              return copy;
+            });
+          } else if (type === "tool_end") {
+            context.invalidateAccount();
+            const step = {
+              tool: (data.tool as string) || "",
+              summary: (data.summary as string) || "执行完成",
+            };
+            runSteps.push(step);
+            context.setMessages((prev) => {
+              if (!current()) return prev;
+              const copy = [...prev];
+              const last = copy[copy.length - 1];
+              if (last?.pending) {
+                copy[copy.length - 1] = {
+                  ...last,
+                  ...(streamed
+                    ? {}
+                    : { content: `✓ ${step.tool} ${step.summary}` }),
+                  steps: [...(last.steps ?? []), step],
+                };
+              }
+              return copy;
+            });
+          } else if (type === "final") {
+            reply = (data.reply as string) || streamed;
+          } else if (type === "error") {
+            throw new Error((data.message as string) || "执行失败");
+          }
+        }
+      }
+      if (!current()) return;
+      context.setMessages((prev) => {
+        if (!current()) return prev;
+        const copy = [...prev];
+        const last = copy[copy.length - 1];
+        copy[copy.length - 1] = {
+          role: "assistant",
+          content: reply || "(无回复)",
+          steps: last?.steps ?? runSteps,
+        };
+        return copy;
+      });
+      // 持久化
+      const saveHeaders = await context.headers();
+      if (!current()) return;
+      void context.request("/api/agent/session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...saveHeaders,
+        },
+        body: JSON.stringify({
+          id: runSessionId,
+          title: content.slice(0, 40),
+          messages: [
+            ...history,
+            { role: "user", content: userMsg.content },
+            { role: "assistant", content: reply || "(无回复)" },
+          ],
+        }),
+      }).catch(() => {});
+    } catch (e) {
+      if (!current()) return;
+      if ((e as { name?: string })?.name !== "AbortError") {
+        context.setError(e instanceof Error ? e.message : "Agent 执行失败");
+      }
+      context.setMessages((prev) => {
+        if (!current()) return prev;
+        const copy = [...prev];
+        copy[copy.length - 1] = { role: "assistant", content: "(执行失败)" };
+        return copy;
+      });
+    } finally {
+      reader?.releaseLock();
+      if (explicitStream?.controller === controller) explicitStream = null;
+      if (current()) {
+        context.setBusy(false);
+        context.setRunning(false);
+        void context.refreshSessions();
+      }
+    }
+  }
+
+
+  async function interject(input: string, context: WorkbenchInterjectionContext) {
+    const text = input.trim();
+    if (!text || !context.running || !context.sessionId()) return;
+    const id = context.sessionId();
+    const scope = accountScope;
+    const runGeneration = generation;
+    const current = () => scope?.active && scope === accountScope && runGeneration === generation;
+    const headers = await context.headers();
+    if (!current()) return;
+    await context.request("/api/agent", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+      },
+      body: JSON.stringify({
+        sessionId: id,
+        message: text,
+      }),
+    }).catch(() => {});
+    if (current()) context.clear();
+  }
+
+
   return {
     get accountScope() { return accountScope; },
     get generation() { return generation; },
@@ -250,10 +517,14 @@ export function createWorkbenchSessionRecovery() {
       accountScope = scope;
       return { previous, scope };
     },
-    deactivateAccount(scope: WorkbenchAccountScope) { scope.active = false; },
+    deactivateAccount(scope: WorkbenchAccountScope) {
+      scope.active = false;
+      // Clear only the UI handle; the old request keeps draining independently.
+      if (explicitStream?.scope === scope) explicitStream = null;
+    },
     hasObserver: () => observer !== null,
-    blocksSend: () => Boolean(observer && observer.phase !== "settled"),
+    blocksSend,
     snapshot: () => observer ? { id: observer.id, generation: observer.generation, phase: observer.phase } : null,
-    cancel, load, readinessLost, stop,
+    cancel, load, readinessLost, stop, send, interject,
   };
 }

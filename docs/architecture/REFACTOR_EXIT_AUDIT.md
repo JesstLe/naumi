@@ -2,6 +2,8 @@
 
 ## 当前固定版本
 
+- R9M：[首页显式发送/SSE归属](../changes/2026-11-01-refactor-r9m-workbench-send-owner.md)。同一账号/generation owner接管PUT/SSE/save/PATCH及stream句柄；React保留投影和草稿。新增真实流组合场景复现原可变步骤数组被延后updater重复读取；不可变事件快照修复，不接受重复步骤。原73场景保留，原81中1失败与新版/回滚结果分别留证，仍须本轮最终固定源及整版CI。
+
 - R9L：[业务路由fixture生命周期](../changes/2026-11-01-refactor-r9l-routing-fixture-lifecycle.md)。原完整脚本实际在stale draft409后，自己的heldHTTP使finally悬挂；诊断只改清理即恢复真实异常。候选分开负责新编辑草稿、原请求终态与夹具清理，不动生产CAS/限流/报价；两种真实失败及原业务集中结果归DELIVERY，不把219目录新增当整版PASS。
 
 - R9K当前收敛：[NAS准入输入](../changes/2026-11-01-refactor-r9k-nas-admission-fixture.md)。旧3fa Core实际nas-delivery FAIL；已在原生产源码、真实时钟和自有PG/HTTP中，以显式低容量读复现相同5秒断言失败，正常容量原用例PASS。原测试未控制准入条件；候选分开验证admitted local-first和non-admitted remote-first，原37断言/5000ms不删除。最终执行与回滚归R9K DELIVERY，不把fixture容量读或本地通过当成历史CI磁盘证明。

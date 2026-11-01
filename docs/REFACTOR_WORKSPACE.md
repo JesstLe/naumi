@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：R9M 首页发送/SSE会话 owner
+
+[R9M模块](changes/2026-11-01-refactor-r9m-workbench-send-owner.md)沿同一会话聚合迁移显式发送、SSE、原身份保存和插话；组件不再持有流句柄或解析协议。原73场景通过，新增8场景实际抓出计划事件延后更新导致工具步骤重复的原缺陷，失败留存；owner固定事件时的步骤快照，不放宽断言。当前实现、集中验证和副本回滚以R9M DELIVERY为准，不把此前R9L的运行中CI当本轮候选验证。
+
 ## 当前推进：R9L 业务路由发布/失败清理
 
 [R9L模块](changes/2026-11-01-refactor-r9l-routing-fixture-lifecycle.md)直接复现了原business-routing悬挂：第二次发布因旧基线草稿409，finally又没有释放自有held请求，PG已清理却HTTP关闭永远等待。清理诊断副本取得真实PUBLISH_STALE_DRAFT_BASE，不归因为限流或DB连接不足。候选只修fixture：新发布使用当前基线草稿、等待同时观察提交终态、先排空原请求再关资源；补真实401及上游已到达失败的生命周期检查。原业务断言/生产源码/管理员CAS均保持，最终集中执行与回滚归R9L DELIVERY；新目录219完整验收仍单列。

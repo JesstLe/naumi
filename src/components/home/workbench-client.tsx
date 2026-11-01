@@ -4,7 +4,7 @@ import { downloadImage } from "@/lib/download";
 import { useFeatureAccess, FeatureVisible } from "@/lib/feature-access/client";
 
 import { agentMediaUrl } from "@/lib/agent/media-policy";
-import { createWorkbenchSessionRecovery, type WorkbenchMessage as Msg, type WorkbenchAccountScope as RecoveryScope, type WorkbenchRecoveryContext } from "@/lib/agent/workbench-session";
+import { createWorkbenchSession, type WorkbenchMessage as Msg, type WorkbenchAccountScope as RecoveryScope, type WorkbenchRecoveryContext, type WorkbenchSendContext } from "@/lib/agent/workbench-session";
 import { loadAccountSnapshot, invalidateBrowserData } from "@/lib/browser-data-cache";
 import {toolImageError} from "@/lib/tool-ui";
 
@@ -313,9 +313,8 @@ export function WorkbenchClient() {
   const [activeTitle, setActiveTitle] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
   const sessionIdRef = useRef("");
-  const [sessionRecovery] = useState(createWorkbenchSessionRecovery);
+  const [sessionRecovery] = useState(createWorkbenchSession);
   const sessionListAbortRef = useRef<AbortController | null>(null);
-  const streamAbortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   // 图片 URL → 作品 id 缓存(送画布/再生成的深链依据);上传响应直接登记,其余懒反查
@@ -392,8 +391,7 @@ export function WorkbenchClient() {
       sessionRecovery.deactivateAccount(scope);
       resetAttachmentUploads(false);
       sessionRecovery.cancel();
-      // Detach the UI handle without aborting the older SSE's server task.
-      streamAbortRef.current = null;
+      // The application owner detaches the old stream without cancelling it.
       sessionListAbortRef.current?.abort();
       sessionListAbortRef.current = null;
     };
@@ -415,8 +413,7 @@ export function WorkbenchClient() {
       setMessages, setBusy, setRunning, setLoadingId:setSessionLoadingId,
       setUnavailable:setRecoveryUnavailable, setError, setComposerError,
       setTitle:setActiveTitle, setInput, setAttachments, setSessionsOpen,
-      installSession:id=>{sessionIdRef.current=id;}, resetAttachmentUploads, refreshSessions,
-      abortExplicitStream:()=>streamAbortRef.current?.abort()};
+      installSession:id=>{sessionIdRef.current=id;}, resetAttachmentUploads, refreshSessions};
   }
 
   /** 反查图片的作品 id:先查缓存,未命中拉一次作品库全量匹配并回填。 */
@@ -667,244 +664,26 @@ export function WorkbenchClient() {
     void uploadAttachments(imgs);
   });
 
-  async function send(text?: string, attachmentUrls?: string[], onAccepted?: () => void) {
-    if (!can("agent")) return;
-    const content = (text ?? input).trim();
-    if (!content || busy || uploading || recoveryUnavailable ||
-        sessionRecovery.blocksSend()) return;
-    const scope = sessionRecovery.accountScope;
-    const entryGeneration = sessionRecovery.generation;
-    if (!scope?.active) return;
-    // 未登录:先确认登录态再弹登录框,避免发出去吃 401
-    if (!user) {
-      if (!ready) return;
-      const session = await fetch("/api/auth/session")
-        .then((response) => response.json())
-        .catch(() => null);
-      if (!session?.user) {
-        openAuth("sign-in");
-        return;
-      }
-    }
-    if (!scope.active || sessionRecovery.accountScope !== scope || entryGeneration !== sessionRecovery.generation) return;
-    sessionRecovery.cancel();
-    const generation = sessionRecovery.generation;
-    const current = () => scope.active && sessionRecovery.accountScope === scope && sessionRecovery.generation === generation;
-    let runSessionId = sessionIdRef.current;
-    setError(null);
-    const urls = attachmentUrls ?? attachments;
-    const parts = [content, ...urls.map((u) => `[商品图] ${u}`)];
-    const userMsg: Msg = { role: "user", content: parts.join("\n") };
-    const history = messages
-      .filter((m) => !m.pending && m.content)
-      .map((m) => ({ role: m.role, content: m.content }));
-    const runSteps: { tool: string; summary: string }[] = [];
-    setMessages((prev) => [
-      ...prev,
-      userMsg,
-      { role: "assistant", content: "", pending: true },
-    ]);
-    setInput("");
-    setAttachments([]);
-    setBusy(true);
-    setRunning(true);
-    // The prompt is now retained in the conversation. A rejected entry must not
-    // consume its caller's draft (this is local admission, not a server receipt).
-    onAccepted?.();
+  function sendContext(): WorkbenchSendContext {
+    return { ...recoveryContext(), headers: authHeader,
+      allowed: can("agent"), authenticated: Boolean(user), uploading,
+      input, attachments, messages,
+      skill: imageSkill ? { id: imageSkill.id, revision: imageSkill.revision } : null,
+      requestSignIn: () => openAuth("sign-in"),
+      invalidateAccount: () => invalidateBrowserData(user?.email) };
+  }
 
-    const controller = new AbortController();
-    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-    try {
-      streamAbortRef.current = controller;
-      const headers = await authHeader();
-      if (!current()) return;
-      const res = await fetch("/api/agent", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          ...headers,
-        },
-        body: JSON.stringify({
-          message: userMsg.content,
-          skill: imageSkill ? { id: imageSkill.id, revision: imageSkill.revision } : null,
-          sessionId: runSessionId || undefined,
-          history,
-          // 视觉输入:服务端按模型自动判定,支持时随消息直喂模型
-          images: urls,
-        }),
-        signal: controller.signal,
-      });
-      if (!res.ok || !res.body) {
-        const d = await res.json().catch(() => ({}));
-        if (!current()) return;
-        throw new Error(d.error || "Agent 执行失败");
-      }
-      reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      let reply = "";
-      let streamed = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        // Do not cancel this SSE from observer cleanup: cancellation has an
-        // existing server meaning. Detached sends drain without changing UI or
-        // saving with a different account/session's identity.
-        if (!current()) continue;
-        buf += decoder.decode(value, { stream: true });
-        const chunks = buf.split("\n\n");
-        buf = chunks.pop() ?? "";
-        for (const chunk of chunks) {
-          const evLine = chunk.split("\n").find((l) => l.startsWith("event: "));
-          const dataLine = chunk.split("\n").find((l) => l.startsWith("data: "));
-          if (!evLine || !dataLine) continue;
-          const type = evLine.slice(7).trim();
-          const data = JSON.parse(dataLine.slice(6)) as Record<string, unknown>;
-          if (type === "open" && typeof data.sessionId === "string") {
-            runSessionId = data.sessionId;
-            sessionIdRef.current = data.sessionId;
-          } else if (type === "delta") {
-            // 流式正文:逐段追加,工具状态文案不再覆盖已流出的内容
-            streamed += (data.text as string) || "";
-            setMessages((prev) => {
-              if (!current()) return prev;
-              const copy = [...prev];
-              const last = copy[copy.length - 1];
-              if (last?.pending) {
-                copy[copy.length - 1] = { ...last, content: streamed };
-              }
-              return copy;
-            });
-          } else if (type === "plan") {
-            const items = Array.isArray(data.items) ? data.items.map(String) : [];
-            runSteps.push({ tool: "任务计划", summary: items.join(" → ") });
-            setMessages((prev) => {
-              if (!current()) return prev;
-              const copy = [...prev];
-              const last = copy[copy.length - 1];
-              if (last?.pending) {
-                copy[copy.length - 1] = { ...last, steps: [...runSteps] };
-              }
-              return copy;
-            });
-          } else if (type === "tool_start") {
-            setMessages((prev) => {
-              if (!current()) return prev;
-              const copy = [...prev];
-              const last = copy[copy.length - 1];
-              if (last?.pending && !streamed) {
-                copy[copy.length - 1] = {
-                  ...last,
-                  content: `🔧 正在调用 ${data.tool || "工具"}…`,
-                };
-              }
-              return copy;
-            });
-          } else if (type === "tool_end") {
-            invalidateBrowserData(user?.email);
-            const step = {
-              tool: (data.tool as string) || "",
-              summary: (data.summary as string) || "执行完成",
-            };
-            runSteps.push(step);
-            setMessages((prev) => {
-              if (!current()) return prev;
-              const copy = [...prev];
-              const last = copy[copy.length - 1];
-              if (last?.pending) {
-                copy[copy.length - 1] = {
-                  ...last,
-                  ...(streamed
-                    ? {}
-                    : { content: `✓ ${step.tool} ${step.summary}` }),
-                  steps: [...(last.steps ?? []), step],
-                };
-              }
-              return copy;
-            });
-          } else if (type === "final") {
-            reply = (data.reply as string) || streamed;
-          } else if (type === "error") {
-            throw new Error((data.message as string) || "执行失败");
-          }
-        }
-      }
-      if (!current()) return;
-      setMessages((prev) => {
-        if (!current()) return prev;
-        const copy = [...prev];
-        const last = copy[copy.length - 1];
-        copy[copy.length - 1] = {
-          role: "assistant",
-          content: reply || "(无回复)",
-          steps: last?.steps ?? runSteps,
-        };
-        return copy;
-      });
-      // 持久化
-      const saveHeaders = await authHeader();
-      if (!current()) return;
-      void fetch("/api/agent/session", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...saveHeaders,
-        },
-        body: JSON.stringify({
-          id: runSessionId,
-          title: content.slice(0, 40),
-          messages: [
-            ...history,
-            { role: "user", content: userMsg.content },
-            { role: "assistant", content: reply || "(无回复)" },
-          ],
-        }),
-      }).catch(() => {});
-    } catch (e) {
-      if (!current()) return;
-      if ((e as { name?: string })?.name !== "AbortError") {
-        setError(e instanceof Error ? e.message : "Agent 执行失败");
-      }
-      setMessages((prev) => {
-        if (!current()) return prev;
-        const copy = [...prev];
-        copy[copy.length - 1] = { role: "assistant", content: "(执行失败)" };
-        return copy;
-      });
-    } finally {
-      reader?.releaseLock();
-      if (streamAbortRef.current === controller) streamAbortRef.current = null;
-      if (current()) {
-        setBusy(false);
-        setRunning(false);
-        void refreshSessions();
-      }
-    }
+  function send(text?: string, attachmentUrls?: string[], onAccepted?: () => void) {
+    return sessionRecovery.send(sendContext(), text, attachmentUrls, onAccepted);
   }
 
   function stopRun() { return sessionRecovery.stop(recoveryContext()); }
 
-  async function sendInterject() {
-    const text = interject.trim();
-    if (!text || !running || !sessionIdRef.current) return;
-    const id = sessionIdRef.current;
-    const scope = sessionRecovery.accountScope;
-    const generation = sessionRecovery.generation;
-    const current = () => scope?.active && scope === sessionRecovery.accountScope && generation === sessionRecovery.generation;
-    const headers = await authHeader();
-    if (!current()) return;
-    await fetch("/api/agent", {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        ...headers,
-      },
-      body: JSON.stringify({
-        sessionId: id,
-        message: text,
-      }),
-    }).catch(() => {});
-    if (current()) setInterject("");
+  function sendInterject() {
+    return sessionRecovery.interject(interject, {
+      running, sessionId: () => sessionIdRef.current, headers: authHeader,
+      request: (input, init) => fetch(input, init), clear: () => setInterject(""),
+    });
   }
 
   function newConversation() {

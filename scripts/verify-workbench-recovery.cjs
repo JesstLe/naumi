@@ -77,8 +77,8 @@ export const CachedImage=()=>null,Media=()=>null,SkillBook=()=>null,TextModelSel
 export const Check=()=>null,MessageSquare=()=>null,Pencil=()=>null,Trash2=()=>null;export const ArrowRight=()=>null,ArrowUp=()=>null,ArrowUpRight=()=>null,Bot=()=>null,History=()=>null,LayoutGrid=()=>null,Loader2=()=>null,MessageSquarePlus=()=>null,Network=()=>null,Plus=()=>null,Upload=()=>null,Wrench=()=>null,X=()=>null;
 export default function Link({children,...p}){return <a {...p}>{children}</a>}`;
   const instrument = `
-  window.w={loadSession,stopRun,newConversation,send,refreshSessions,
-    state:()=>({messages,busy,running,error,sessionLoadingId,sessionId:sessionIdRef.current,sessions,composerText,composerError,composerSubmitting,attachments,${fs.readFileSync(source,'utf8').includes('recoveryUnavailable') ? 'recoveryUnavailable,' : ''}})};
+  window.w={loadSession,stopRun,newConversation,send,refreshSessions,sendInterject,setInterject,setImageSkill,
+    state:()=>({messages,busy,running,error,interject,sessionLoadingId,sessionId:sessionIdRef.current,sessions,composerText,composerError,composerSubmitting,attachments,${fs.readFileSync(source,'utf8').includes('recoveryUnavailable') ? 'recoveryUnavailable,' : ''}})};
 `;
   const bundle = await build({ stdin: { contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {WorkbenchClient} from ${JSON.stringify(source.replaceAll('\\','/'))};
 window.actor='a@example.test';window.authReady=true;const root=createRoot(document.getElementById('root'));window.mount=(strict=false)=>flushSync(()=>root.render(strict?<React.StrictMode><WorkbenchClient/></React.StrictMode>:<WorkbenchClient/>));window.detach=()=>flushSync(()=>root.render(null));window.setAuthReady=v=>{window.authReady=v;flushSync(()=>window.authRender?.())};window.account=a=>{window.actor=a;flushSync(()=>window.authRender?.())};
@@ -100,7 +100,7 @@ window.metrics=()=>({timers:timers.size,peakTimers,listeners:[...listeners.value
     if (r.url === '/') { s.setHeader('content-type','text/html; charset=utf-8'); s.end('<meta charset="utf-8"><div id="root"></div><script src="/bundle.js"></script>'); return; }
     if (r.url === '/bundle.js') { s.setHeader('content-type','text/javascript; charset=utf-8'); s.end(bundle.outputFiles[0].contents); return; }
     const url = new URL(r.url, 'http://fixture');
-    const kind = r.method === 'DELETE' ? 'stop' : r.method === 'PUT' ? 'send' : r.method === 'POST' ? 'save' : url.pathname === '/api/agent/session' ? (url.searchParams.has('id') ? 'history' : 'list') : 'live';
+    const kind = r.method === 'DELETE' ? 'stop' : r.method === 'PUT' ? 'send' : r.method === 'POST' ? 'save' : r.method === 'PATCH' ? 'interject' : url.pathname === '/api/agent/session' ? (url.searchParams.has('id') ? 'history' : 'list') : 'live';
     const id = url.searchParams.get('id') || url.searchParams.get('sessionId') || '';
     const key = kind + ':' + id; const nth = (count.get(key) || 0) + 1; count.set(key, nth);
     const record={ scenario:currentCase, intentionalSendFixture:explicitSendCases.has(currentCase), method:r.method, kind,id,nth,actor:r.headers['x-fixture-actor'],since:url.searchParams.get('since'),responseBytes:0,closed:false };
@@ -111,8 +111,15 @@ window.metrics=()=>({timers:timers.size,peakTimers,listeners:[...listeners.value
     if (action.sse) {
       s.writeHead(200,{'content-type':'text/event-stream'});
       s.write('event: open\ndata: '+JSON.stringify({sessionId:'LIVE'})+'\n\n');
+      for(const frame of action.before||[])s.write(frame);
       await new Promise(resolve=>holds.set(action.sse,resolve));
-      if(!s.destroyed)s.end('event: final\ndata: '+JSON.stringify({reply:'original final'})+'\n\n');
+      if(!s.destroyed){
+        if(action.after){
+          const bytes=Buffer.from(action.after.join(''));let offset=0;
+          for(const size of action.fragments||[]){if(s.destroyed)break;s.write(bytes.subarray(offset,offset+size));offset+=size;await delay(15);}
+          if(!s.destroyed)s.end(bytes.subarray(offset));
+        }else s.end('event: final\ndata: '+JSON.stringify({reply:'original final'})+'\n\n');
+      }
       return;
     }
     if(action.bodyHold){s.writeHead(200,{'content-type':'application/json'});s.write('{"running":');await new Promise(resolve=>holds.set(action.bodyHold,resolve));if(!s.destroyed)s.end('true,"total":0,"events":[]}');return;}
@@ -236,6 +243,47 @@ window.metrics=()=>({timers:timers.size,peakTimers,listeners:[...listeners.value
     await page.evaluate(()=>window.setAuthReady(false));await page.evaluate(()=>window.setAuthReady(true));const before=requests.length;await delay(1300);
     const s=await snapshot();assert.equal(requests.length,before);assert.equal(s.sessionId,'A');assert.equal(s.recoveryUnavailable,true);assert.equal(s.resources.timers,0);assert.equal(s.resources.listeners,0);
     await call('send','not replayed');await delay(50);assert.equal(requests.filter(r=>r.method!=='GET').length,0);
+  });
+
+  const event=(type,data)=>'event: '+type+'\ndata: '+JSON.stringify(data)+'\n\n';
+  await parentCheck('send lifecycle preserves delta plan tools skill history images and original save',async()=>{
+    await reset();plan('live','A',1,{data:{running:false,total:0,events:[]}});await call('loadSession','A');await until(()=>!window.w.state().sessionLoadingId);
+    await page.evaluate(()=>window.w.setImageSkill({id:'fixture-skill',revision:7}));
+    plan('send','',1,{sse:'matrix',before:[event('plan',{items:['定位','生成']}),event('delta',{text:'正文已流出'}),event('tool_start',{tool:'image'}),event('tool_end',{tool:'image',summary:'已交付'})]});
+    await page.evaluate(()=>{void window.w.send('原提示',['/media/reference.png'])});await until(()=>window.w.state().messages.at(-1)?.steps?.length===2);
+    const interim=(await snapshot()).messages.at(-1);assert.equal(interim.content,'正文已流出');assert.deepEqual(interim.steps,[{tool:'任务计划',summary:'定位 → 生成'},{tool:'image',summary:'已交付'}]);
+    await release('matrix');await waitRequest('save','');await until(()=>!window.w.state().busy);
+    const send=JSON.parse(requests.find(r=>r.kind==='send').input),save=JSON.parse(requests.find(r=>r.kind==='save').input);
+    assert.deepEqual(send,{message:'原提示\n[商品图] /media/reference.png',skill:{id:'fixture-skill',revision:7},sessionId:'A',history:sessions('A').session.messages.map(m=>({role:m.role,content:m.content})),images:['/media/reference.png']});
+    assert.equal(save.id,'LIVE');assert.equal(save.title,'原提示');assert.deepEqual(save.messages,[...send.history,{role:'user',content:send.message},{role:'assistant',content:'original final'}]);
+    assert.equal(requests.filter(r=>r.kind==='send').length,1);assert.equal(requests.filter(r=>r.kind==='save').length,1);assert.equal((await snapshot()).messages.at(-1).pending,undefined);
+  });
+  await parentCheck('send lifecycle fragmented UTF8 events preserve final text',async()=>{
+    await reset();const frames=[event('delta',{text:'中文🙂'}),event('delta',{text:'后续'}),event('final',{reply:'最终中文🙂'})];const bytes=Buffer.from(frames.join(''));const cut=bytes.indexOf(Buffer.from('中'))+1;
+    plan('send','',1,{sse:'fragments',after:frames,fragments:[cut,1,2,7]});await call('send','分片');await until(()=>window.w.state().sessionId==='LIVE');await release('fragments');await waitRequest('save','');await until(()=>!window.w.state().busy);
+    assert.equal((await snapshot()).messages.at(-1).content,'最终中文🙂');assert.equal(JSON.parse(requests.find(r=>r.kind==='save').input).messages.at(-1).content,'最终中文🙂');assert.deepEqual((await snapshot()).resources.errors,[]);
+  });
+  for(const [name,action,expected]of [['HTTP',{status:503},'fixture-503'],['malformed SSE',{sse:'malformed',after:['event: delta\ndata: {invalid}\n\n']},null]]){
+    await parentCheck('send lifecycle '+name+' fails once without save or replay',async()=>{
+      await reset();plan('send','',1,action);await call('send','单次失败');await waitRequest('send','');if(action.sse)await release(action.sse);await until(()=>!window.w.state().busy);
+      const s=await snapshot();assert.ok(s.error);if(expected)assert.equal(s.error,expected);assert.equal(s.running,false);assert.equal(s.messages.at(-1).content,'(执行失败)');assert.equal(requests.filter(r=>r.kind==='send').length,1);assert.equal(requests.filter(r=>r.kind==='save').length,0);assert.equal(requests.filter(r=>r.method==='DELETE').length,0);assert.deepEqual(s.resources.errors,[]);
+    });
+  }
+  await parentCheck('send lifecycle explicit stop uses original DELETE and no save',async()=>{
+    await reset();plan('send','',1,{sse:'stopped'});await call('send','用户停止');await until(()=>window.w.state().sessionId==='LIVE');await call('stopRun');await until(()=>!window.w.state().busy);await release('stopped');await delay(80);
+    assert.equal(requests.filter(r=>r.kind==='stop').length,1);assert.equal(requests.find(r=>r.kind==='stop').id,'LIVE');assert.equal(requests.filter(r=>r.kind==='save').length,0);assert.equal(requests.filter(r=>r.kind==='send').length,1);assert.deepEqual((await snapshot()).resources.errors,[]);
+  });
+  await parentCheck('send lifecycle interjection retains original session and account',async()=>{
+    await reset();plan('send','',1,{sse:'interject'});await call('send','原请求');await until(()=>window.w.state().sessionId==='LIVE');await page.evaluate(()=>window.w.setInterject('加一条'));await call('sendInterject');await waitRequest('interject','');await until(()=>window.w.state().interject==='');
+    const row=requests.find(r=>r.kind==='interject');assert.equal(row.actor,'a@example.test');assert.deepEqual(JSON.parse(row.input),{sessionId:'LIVE',message:'加一条'});assert.equal(requests.filter(r=>r.kind==='send').length,1);await release('interject');await waitRequest('save','');await until(()=>!window.w.state().busy);
+  });
+  await parentCheck('send lifecycle account detach drains original transport without cancelling',async()=>{
+    await reset();plan('send','',1,{sse:'detached',after:[event('tool_end',{tool:'late',summary:'late-result'}),event('final',{reply:'old-result'})]});await call('send','原账号');await until(()=>window.w.state().sessionId==='LIVE');await page.evaluate(()=>window.account('b@example.test'));await delay(50);
+    assert.equal(requests.find(r=>r.kind==='send').closed,false);assert.equal(requests.filter(r=>r.method==='DELETE').length,0);await release('detached');await delay(80);assert.equal(requests.find(r=>r.kind==='send').closed,true);assert.equal((await snapshot()).messages.length,0);assert.equal(requests.filter(r=>r.kind==='save').length,0);assert.equal(requests.filter(r=>r.kind==='send').length,1);
+  });
+  await parentCheck('send lifecycle deferred submit auth cannot cross account scope',async()=>{
+    await reset();await page.evaluate(()=>window.holdAuth());await call('send','待授权');await until(()=>window.w.state().busy);await page.evaluate(()=>window.account('b@example.test'));await page.evaluate(()=>window.releaseAuth());await delay(80);
+    assert.equal(requests.filter(r=>r.kind==='send').length,0);assert.equal(requests.filter(r=>r.kind==='save').length,0);assert.equal((await snapshot()).messages.length,0);assert.equal((await snapshot()).busy,false);assert.deepEqual((await snapshot()).resources.errors,[]);
   });
 
 }
