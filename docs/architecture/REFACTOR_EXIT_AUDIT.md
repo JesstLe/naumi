@@ -2,6 +2,8 @@
 
 ## 当前固定版本
 
+- R9J当前实施：[首页会话恢复与观察](../changes/2026-11-01-refactor-r9j-workbench-session-owner.md)。独立owner已接入，原新实际浏览器各73场景、非增量tsc0与定向lint0；回滚及最终提交归DELIVERY，完整218未执行；完整发送SSE仍待后续迁移。本轮不把无环或此前216通过当作全项目完成，原3fa远端作业与当前dirty实施保持分层。
+
 - R9H当前收敛：[账务与历史输入合同](../changes/2026-11-01-refactor-r9h-billing-regression-contract.md)。原顺序18项真实PG账务整模块单次PASS；无历史Git环境的原生管理员19组API/PG检查PASS，55条原业务assert完整保留且原始旧源字节pin；全项目tsc0、runner20/360。产品0改动，不把原9ba的216结果重标为本轮。
 
 - R9G正在收敛实际远端失败：[执行输入记录](../changes/2026-11-01-refactor-r9g-ci-execution-inputs.md)。804ce5af的Image/Core均FAIL，分别为V8 heap OOM及英文界面的中文定位器失败；后者已实际原/新对照，不能用新检查替代其余远端未到达业务用例。

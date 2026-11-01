@@ -12,11 +12,16 @@ const { build } = req('esbuild');
 const { chromium } = req('playwright');
 const root = process.cwd();
 const source = path.resolve(process.argv[2] || 'src/components/home/workbench-client.tsx');
-const out = path.resolve(process.argv[3] || 'output/capacity-workbench-mutations-20261030/modified');
+const sourceRoot=path.resolve(path.dirname(source),'../../..');
+const ownerPath=path.join(sourceRoot,'src/lib/agent/workbench-session.ts');
+const recoveryOwner=fs.existsSync(ownerPath)?{path:ownerPath,sha256:require('node:crypto').createHash('sha256').update(fs.readFileSync(ownerPath)).digest('hex')}:null;
+const out = path.resolve(process.argv[3] || process.env.WORKBENCH_EVIDENCE || 'output/capacity-workbench-mutations-20261030/modified');
 fs.mkdirSync(out, { recursive: true });
 assert.match(req('react').version, /^19\./);
 assert.equal(req('react').version, req('react-dom').version);
 const evidence = { tier: 'Actual React19 WorkbenchClient + Chromium + real timers/loopback HTTP; auth/backend/unrelated UI fixtures', source, sourceSha256: require('node:crypto').createHash('sha256').update(fs.readFileSync(source)).digest('hex'), react: req('react').version, checks: [], failures: [], observations: [], requests: [] };
+evidence.recoveryOwner=recoveryOwner;
+evidence.sourceSha256=require('node:crypto').createHash('sha256').update(fs.readFileSync(source)).digest('hex');
 let browser, browserServer, server, context, page, origin;
 let currentCase='';
 const explicitSendCases=new Set(['existing explicit SSE send and save retain exact identity and payload','old SSE completion cannot overwrite recovered account or save as new actor','deferred save authorization cannot use the newly selected account','StrictMode bootstrap prompt submits once without being lost']);
@@ -73,7 +78,7 @@ export const Check=()=>null,MessageSquare=()=>null,Pencil=()=>null,Trash2=()=>nu
 export default function Link({children,...p}){return <a {...p}>{children}</a>}`;
   const instrument = `
   window.w={loadSession,stopRun,newConversation,send,refreshSessions,renameSession,removeSession,submitComposer,
-    state:()=>({messages,busy,running,error,activeTitle,composerFilesCount:composerFiles.length,composerPreviewsCount:composerPreviews.length,artworkCache:{...artworkIdRef.current},sessionLoadingId,sessionId:sessionIdRef.current,sessions,input,attachments,composerText,composerError,composerSubmitting,uploading,${fs.readFileSync(source,'utf8').includes('recoveryUnavailable') ? 'recoveryUnavailable,owner:recoveryRef.current?{id:recoveryRef.current.id,phase:recoveryRef.current.phase,generation:recoveryRef.current.generation}:null,' : ''}})};
+    state:()=>({messages,busy,running,error,activeTitle,composerFilesCount:composerFiles.length,composerPreviewsCount:composerPreviews.length,artworkCache:{...artworkIdRef.current},sessionLoadingId,sessionId:sessionIdRef.current,sessions,input,attachments,composerText,composerError,composerSubmitting,uploading,${fs.readFileSync(source,'utf8').includes('recoveryUnavailable') ? (recoveryOwner?'recoveryUnavailable,owner:sessionRecovery.snapshot(),':'recoveryUnavailable,owner:recoveryRef.current?{id:recoveryRef.current.id,phase:recoveryRef.current.phase,generation:recoveryRef.current.generation}:null,') : ''}})};
 `;
   const bundle = await build({ stdin: { contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {WorkbenchClient} from ${JSON.stringify(source.replaceAll('\\','/'))};
 window.actor='a@example.test';window.authReady=true;const root=createRoot(document.getElementById('root'));window.mount=(strict=false)=>flushSync(()=>root.render(strict?<React.StrictMode><WorkbenchClient/></React.StrictMode>:<WorkbenchClient/>));window.detach=()=>flushSync(()=>root.render(null));window.setAuthReady=v=>{window.authReady=v;flushSync(()=>window.authRender?.())};window.account=a=>{window.actor=a;flushSync(()=>window.authRender?.())};
@@ -88,7 +93,7 @@ window.holdJson=(match,method)=>{let release;const promise=new Promise(r=>releas
 window.holdAuth=()=>{window.authGate=new Promise(r=>window.releaseAuth=()=>{window.authGate=null;r()})};
 window.metrics=()=>({timers:timers.size,peakTimers,listeners:[...listeners.values()].reduce((n,s)=>n+s.size,0),peakListeners,activeFetch:active,peakFetch,jsonBytes:bytes,errors:window.errors});`, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, jsx: 'automatic', platform: 'browser', nodePaths: [deps], define: { 'process.env.NODE_ENV': '"development"' }, plugins: [{ name: 'fixture-boundaries', setup(b) {
     b.onLoad({ filter: /.*/ }, args => path.resolve(args.path)===source ? ({ contents: fs.readFileSync(args.path, 'utf8').replace('  // ── 对话态(沉浸式:', instrument + '\n  // ── 对话态(沉浸式:'), loader: 'tsx', resolveDir: path.dirname(args.path) }) : undefined);
-    b.onResolve({ filter: /^(@\/|next\/|lucide-react$)/ }, args => args.path === '@/lib/clipboard-images' ? ({path:path.join(root,'src/lib/clipboard-images.ts')}) : args.path === '@/components/home/workbench-sessions' ? ({path:path.join(root,'src/components/home/workbench-sessions.tsx')}) : ({ path: args.path, namespace: 'fixture' }));
+    b.onResolve({ filter: /^(@\/|next\/|lucide-react$)/ }, args => args.path === '@/lib/clipboard-images' ? ({path:path.join(root,'src/lib/clipboard-images.ts')}) : args.path === '@/lib/agent/workbench-session' ? ({path:ownerPath}) : args.path === '@/components/home/workbench-sessions' ? ({path:path.join(root,'src/components/home/workbench-sessions.tsx')}) : ({ path: args.path, namespace: 'fixture' }));
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: stubs, loader: 'tsx', resolveDir: root }));
   } }] });
   server = createServer(async (r, s) => {
@@ -185,5 +190,6 @@ main().catch(e=>{evidence.failures.push({name:'runner',error:e.stack});console.e
   evidence.closed={browser:true,http:true,httpListening:server?.listening};
   fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify(evidence,null,2));
   console.log(`WORKBENCH_MUTATIONS checks=${evidence.checks.length+evidence.failures.length} passed=${evidence.checks.length} failed=${evidence.failures.length} RECOVERY_PUT_POST=${evidence.requests.filter(r=>['PUT','POST'].includes(r.method)&&!r.intentionalSendFixture).length} EXPLICIT_MOCK_PUT=${evidence.requests.filter(r=>r.kind==='send').length} MOCK_SAVE_POST=${evidence.requests.filter(r=>r.kind==='save').length} PAID_SUPPLIER_REQUESTS=0 HTTP_CLOSED=true BROWSER_CLOSED=true`);
+  if(!evidence.failures.length)console.log('WORKBENCH_SESSION_MUTATIONS=PASS OWNER='+(recoveryOwner?'ACTUAL_APPLICATION':'ORIGINAL_COMPONENT'));
   process.exitCode=evidence.failures.length?1:0;
 });

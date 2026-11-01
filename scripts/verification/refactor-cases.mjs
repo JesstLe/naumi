@@ -10,6 +10,8 @@ export const refactorCases=[
  node('native-fixture-http','runtime','scripts/verify-native-fixture-http.cjs','NATIVE_FIXTURE_HTTP=PASS'),
  node('mixed-load-driver','foundation','scripts/verify-refactor-mixed.mjs','REFACTOR_MIXED_DRIVER=PASS'),
  {id:'image-scheduling-pg',group:'runtime',file:'scripts/verify-image-scheduling-pg.cjs',args:[],expect:'IMAGE_SCHEDULING_PG=PASS',pg:true,tsx:false},
+ node('workbench-session-recovery','runtime','scripts/verify-workbench-recovery.cjs','WORKBENCH_SESSION_RECOVERY=PASS'),
+ node('workbench-session-mutations','runtime','scripts/verify-workbench-mutation-ownership.cjs','WORKBENCH_SESSION_MUTATIONS=PASS'),
  node('dependencies','foundation','scripts/verify-dependency-compatibility.mjs','DEPENDENCY_COMPATIBILITY=PASS'),
  node('source-identity','foundation','scripts/verify-refactor-source-identity.mjs','REFACTOR_SOURCE_IDENTITY=PASS'),
  node('worker-nonacceptance-unit','runtime','scripts/test-worker-nonacceptance.mjs','# fail 0',['--test-runner']),

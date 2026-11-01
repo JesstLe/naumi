@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：R9J 首页会话恢复与观察职责
+
+[R9J模块](changes/2026-11-01-refactor-r9j-workbench-session-owner.md)落实R9I只读退出审计确认的组件内应用编排，已将account scope/generation、历史安装、观察cursor/phase、UNKNOWN与原session显式停止迁到独立owner。原两套真实React/Chromium浏览器模块保留断言并接入统一core218目录。3fa完整5350原始文件已冻结，原新各39恢复＋34变更场景共73项通过；非增量tsc0、定向lint0。完整218尚未执行，回滚/最终提交以最终DELIVERY为准；当前3fa远端CI继续独立执行，不重启、不用dirty结果改标旧作业。完整发送SSE迁移仍OPEN，整体ACTIVE、未部署、47HOLD。
+
 ## 当前推进：R9H 账务整模块与历史输入合同
 
 [R9H模块](changes/2026-11-01-refactor-r9h-billing-regression-contract.md)继续收敛最终整合，不叠加产品功能。5adb的远端Image完整构建已PASS，首次到达账务后FAIL；本地原顺序前4项PASS/API因夹具缺少真实报价所属账号而FAIL。原13项未到达用例以冻结源码、每项独立PG一次诊断，5FAIL/8PASS；该诊断不是完整gate通过。

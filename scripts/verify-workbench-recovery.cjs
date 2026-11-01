@@ -12,11 +12,16 @@ const { build } = req('esbuild');
 const { chromium } = req('playwright');
 const root = process.cwd();
 const source = path.resolve(process.argv[2] || 'src/components/home/workbench-client.tsx');
-const out = path.resolve(process.argv[3] || 'output/workbench-recovery-20261029/modified');
+const sourceRoot=path.resolve(path.dirname(source),'../../..');
+const ownerPath=path.join(sourceRoot,'src/lib/agent/workbench-session.ts');
+const recoveryOwner=fs.existsSync(ownerPath)?{path:ownerPath,sha256:require('node:crypto').createHash('sha256').update(fs.readFileSync(ownerPath)).digest('hex')}:null;
+const out = path.resolve(process.argv[3] || process.env.WORKBENCH_EVIDENCE || 'output/workbench-recovery-20261029/modified');
 fs.mkdirSync(out, { recursive: true });
 assert.match(req('react').version, /^19\./);
 assert.equal(req('react').version, req('react-dom').version);
 const evidence = { tier: 'Actual React19 WorkbenchClient + Chromium + real timers/loopback HTTP; auth/backend/unrelated UI fixtures', source, react: req('react').version, checks: [], failures: [], observations: [], requests: [] };
+evidence.recoveryOwner=recoveryOwner;
+evidence.sourceSha256=require('node:crypto').createHash('sha256').update(fs.readFileSync(source)).digest('hex');
 let browser, browserServer, server, context, page, origin;
 let currentCase='';
 const explicitSendCases=new Set(['existing explicit SSE send and save retain exact identity and payload','old SSE completion cannot overwrite recovered account or save as new actor','deferred save authorization cannot use the newly selected account','StrictMode bootstrap prompt submits once without being lost']);
@@ -88,7 +93,7 @@ window.holdJson=match=>{let release;const promise=new Promise(r=>release=r);wind
 window.holdAuth=()=>{window.authGate=new Promise(r=>window.releaseAuth=()=>{window.authGate=null;r()})};
 window.metrics=()=>({timers:timers.size,peakTimers,listeners:[...listeners.values()].reduce((n,s)=>n+s.size,0),peakListeners,activeFetch:active,peakFetch,jsonBytes:bytes,errors:window.errors});`, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, jsx: 'automatic', platform: 'browser', nodePaths: [deps], define: { 'process.env.NODE_ENV': '"development"' }, plugins: [{ name: 'fixture-boundaries', setup(b) {
     b.onLoad({ filter: /workbench-client\.tsx$/ }, args => ({ contents: fs.readFileSync(args.path, 'utf8').replace('  // ── 对话态(沉浸式:', instrument + '\n  // ── 对话态(沉浸式:'), loader: 'tsx', resolveDir: path.dirname(args.path) }));
-    b.onResolve({ filter: /^(@\/|next\/|lucide-react$)/ }, args => args.path === '@/components/home/workbench-sessions' ? ({path:path.join(root,'src/components/home/workbench-sessions.tsx')}) : ({ path: args.path, namespace: 'fixture' }));
+    b.onResolve({ filter: /^(@\/|next\/|lucide-react$)/ }, args => args.path === '@/lib/agent/workbench-session' ? ({path:ownerPath}) : args.path === '@/components/home/workbench-sessions' ? ({path:path.join(root,'src/components/home/workbench-sessions.tsx')}) : ({ path: args.path, namespace: 'fixture' }));
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: stubs, loader: 'tsx', resolveDir: root }));
   } }] });
   server = createServer(async (r, s) => {
@@ -243,5 +248,6 @@ main().catch(e=>{evidence.failures.push({name:'runner',error:e.stack});console.e
   evidence.closed={browser:true,http:true};
   fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify(evidence,null,2));
   console.log(`WORKBENCH_RECOVERY checks=${evidence.checks.length+evidence.failures.length} passed=${evidence.checks.length} failed=${evidence.failures.length} RECOVERY_PUT_POST=${evidence.requests.filter(r=>['PUT','POST'].includes(r.method)&&!r.intentionalSendFixture).length} EXPLICIT_MOCK_PUT=${evidence.requests.filter(r=>r.kind==='send').length} MOCK_SAVE_POST=${evidence.requests.filter(r=>r.kind==='save').length} PAID_SUPPLIER_REQUESTS=0 HTTP_CLOSED=true BROWSER_CLOSED=true`);
+  if(!evidence.failures.length)console.log('WORKBENCH_SESSION_RECOVERY=PASS OWNER='+(recoveryOwner?'ACTUAL_APPLICATION':'ORIGINAL_COMPONENT'));
   process.exitCode=evidence.failures.length?1:0;
 });
