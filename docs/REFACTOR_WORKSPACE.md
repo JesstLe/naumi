@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：R9L 业务路由发布/失败清理
+
+[R9L模块](changes/2026-11-01-refactor-r9l-routing-fixture-lifecycle.md)直接复现了原business-routing悬挂：第二次发布因旧基线草稿409，finally又没有释放自有held请求，PG已清理却HTTP关闭永远等待。清理诊断副本取得真实PUBLISH_STALE_DRAFT_BASE，不归因为限流或DB连接不足。候选只修fixture：新发布使用当前基线草稿、等待同时观察提交终态、先排空原请求再关资源；补真实401及上游已到达失败的生命周期检查。原业务断言/生产源码/管理员CAS均保持，最终集中执行与回滚归R9L DELIVERY；新目录219完整验收仍单列。
+
 ## 当前推进：R9K NAS交付验收输入
 
 [R9K模块](changes/2026-11-01-refactor-r9k-nas-admission-fixture.md)处理旧3fa Core的nas-delivery失败。原测试真实本机容量通过；只改变自有MEDIA_DIR的容量读到0即可保持原5秒标准复现相同失败，实际NAS PUT约9秒超时。产品早已明确低容量合法remote-first；候选将已准入的即时交付和未准入的远端确认分别验证，保留全部原断言和实际PG/HTTP/文件/Sharp，容量读明确标为fixture。产品源码0改动，历史CI唯一根因不冒称关闭；最终集中执行、回滚、源码及远端状态以R9K DELIVERY为准。

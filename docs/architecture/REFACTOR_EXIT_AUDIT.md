@@ -2,6 +2,8 @@
 
 ## 当前固定版本
 
+- R9L：[业务路由fixture生命周期](../changes/2026-11-01-refactor-r9l-routing-fixture-lifecycle.md)。原完整脚本实际在stale draft409后，自己的heldHTTP使finally悬挂；诊断只改清理即恢复真实异常。候选分开负责新编辑草稿、原请求终态与夹具清理，不动生产CAS/限流/报价；两种真实失败及原业务集中结果归DELIVERY，不把219目录新增当整版PASS。
+
 - R9K当前收敛：[NAS准入输入](../changes/2026-11-01-refactor-r9k-nas-admission-fixture.md)。旧3fa Core实际nas-delivery FAIL；已在原生产源码、真实时钟和自有PG/HTTP中，以显式低容量读复现相同5秒断言失败，正常容量原用例PASS。原测试未控制准入条件；候选分开验证admitted local-first和non-admitted remote-first，原37断言/5000ms不删除。最终执行与回滚归R9K DELIVERY，不把fixture容量读或本地通过当成历史CI磁盘证明。
 
 - R9J当前实施：[首页会话恢复与观察](../changes/2026-11-01-refactor-r9j-workbench-session-owner.md)。独立owner已接入，原新实际浏览器各73场景、非增量tsc0与定向lint0；回滚及最终提交归DELIVERY，完整218未执行；完整发送SSE仍待后续迁移。本轮不把无环或此前216通过当作全项目完成，原3fa远端作业与当前dirty实施保持分层。

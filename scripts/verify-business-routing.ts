@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join,resolve,sep,basename } from "node:path";
 import sharp from "sharp";
 import { createModelFixture } from "./model-config-fixture";
 
 async function main() {
+  let pendingText:Promise<Response>|undefined,pendingSupplierBefore:number|undefined,pendingSupplierDelta:number|undefined;
+  let rejectNextText=false;
   const calls: string[] = [], prepared = new Set<string>(), receipts = new Map<string,unknown>();
   let active = "", imageMode = "ok", noUsage = false, release: (()=>void)|undefined, entered: (()=>void)|undefined;
   const png=await sharp({create:{width:128,height:128,channels:3,background:"#ffffff"}}).png().toBuffer();
@@ -70,7 +72,17 @@ async function main() {
     config.business={"image.generate":{enabled:true,defaultModelId:"image-a",options:[{modelId:"image-a",enabled:true,sort:0,unit:"image",pricing:{mode:"cny-fixed",amountMicros:"500000",creditsPerCnyMicros:"100000000",rounding:"ceil"},routing:{enabled:true,defaultUpstreamId:"u1",maxAttempts:2,costCapCnyMicros:"800000",rules:[{id:"request-large",stage:"request",priority:100,when:{minInputLength:1000},targetUpstreamId:"u2"},{id:"confirmed-rejection",stage:"failure",priority:50,when:{status:[429]},targetUpstreamId:"u2"}]}}]},"canvas.text-generate":{enabled:true,defaultModelId:"text-public",options:[{modelId:"text-public",enabled:true,sort:0,unit:"task",pricing:{mode:"cny-fixed",amountMicros:"500000",creditsPerCnyMicros:"100000000",rounding:"ceil"}}]}};
     const billing=await getBillingRuntime(), b=await billing.config.current(),bc=structuredClone(b.config);bc.switches.metering="on";await billing.config.publish({id:randomUUID(),expectedVersion:b.version,config:bc,actor:adminEmail,reason:"fixture metering"});
     const management=await getModelAdministration();
-    const apply=async(c:typeof config)=>{const draft=await management.repo.draft(adminEmail),saved=await management.repo.saveDraft({id:draft.id,expectedRevision:draft.revision,config:c,actor:adminEmail}),current=await management.repo.current();const pub=await management.runtime.publish({id:randomUUID(),draftId:saved.id,expectedRevision:saved.revision,expectedVersion:current.version,actor:adminEmail,reason:"business fixture application"});assert.equal(pub.phase,"applied");return management.repo.current();};
+    let publications=0;
+    const apply=async(c:typeof config)=>{
+      const current=await management.repo.current();
+      // Each synthetic publication is a new edit, not an old operator draft.
+      // Preserve the first actor for the existing draft-persistence assertion.
+      const actor=publications++===0?adminEmail:`${adminEmail}:fixture:${randomUUID()}`;
+      const draft=await management.repo.draft(actor);assert.equal(draft.basedOnVersion,current.version);
+      const saved=await management.repo.saveDraft({id:draft.id,expectedRevision:draft.revision,config:c,actor});
+      const pub=await management.runtime.publish({id:randomUUID(),draftId:saved.id,expectedRevision:saved.revision,expectedVersion:current.version,actor,reason:"business fixture application"});
+      assert.equal(pub.phase,"applied");return management.repo.current();
+    };
     const first=await apply(config);
     assert.ok(active);assert.deepEqual((await management.repo.draft(adminEmail)).config.business,config.business);
     const catalog=await modelsApi.GET(request("/api/models?feature=canvas.text-generate"));assert.equal(catalog.status,200);const publicCatalog=await catalog.json();assert.deepEqual(publicCatalog.models.map((m:any)=>m.id),["text-public"]);assert.ok(!JSON.stringify(publicCatalog).includes("wire-text-private"));assert.ok(!JSON.stringify(publicCatalog).includes("fixture-private"));
@@ -104,11 +116,16 @@ async function main() {
       await assert.rejects(modelAwareOpenAI({apiKey:"unused"}).images.generate({model:"image-a",prompt:"fixture",n:1}));
     }));assert.equal(calls.length,budgetBefore+2);
     const textQuote=async()=>{const r=await quoteApi.POST(request("/api/billing/quote",{feature:"canvas.text-generate",quantity:1,modelId:"text-public"}));assert.equal(r.status,200,await r.clone().text());return r.json();};
-    const submitText=async(id:string)=>{const q=await textQuote();return textApi.POST(request("/api/canvas/text-generate",{prompt:"生成一句商品描述"},{"x-naumi-billing-operation-id":id,"x-naumi-billing-version":String(q.version),"x-naumi-billing-credits":String(q.credits),"x-naumi-model-version":String(q.modelVersion),"x-naumi-feature-model":"text-public"}));};
+    const submitText=async(id:string)=>{const q=await textQuote();const req=request("/api/canvas/text-generate",{prompt:"生成一句商品描述"},{"x-naumi-billing-operation-id":id,"x-naumi-billing-version":String(q.version),"x-naumi-billing-credits":String(q.credits),"x-naumi-model-version":String(q.modelVersion),"x-naumi-feature-model":"text-public"});if(rejectNextText){rejectNextText=false;req.headers.delete("cookie");}return textApi.POST(req);};
     assert.equal((await textQuote()).credits,50);
     const fixedId=randomUUID();assert.equal((await submitText(fixedId)).status,200);assert.equal(Number((await db.getPool().query("SELECT charged_credits FROM app_billing_operations WHERE id=$1",[`tool-${fixedId}`])).rows[0].charged_credits),50);
     const replayBefore=calls.length;assert.equal((await submitText(fixedId)).status,200);assert.equal(calls.length,replayBefore);
-    const pendingId=randomUUID(),started=new Promise<void>(resolve=>{entered=resolve;});const pending=submitText(pendingId);await started;
+    const pendingId=randomUUID(),started=new Promise<void>(resolve=>{entered=resolve;});
+    pendingSupplierBefore=calls.length;rejectNextText=process.argv.includes("--reject-before-start");
+    const pending=submitText(pendingId);pendingText=pending;
+    pending.then(()=>{pendingSupplierDelta=calls.length-pendingSupplierBefore!;},()=>{pendingSupplierDelta=calls.length-pendingSupplierBefore!;});
+    await Promise.race([started,pending.then(async response=>{throw Error(`BUSINESS_ROUTING_UPSTREAM_NOT_ENTERED status=${response.status} body=${(await response.clone().text()).slice(0,300)}`);})]);
+    if(process.argv.includes("--fail-after-start"))throw Error("ROUTING_FIXTURE_AFTER_START");
     const secondConfig=structuredClone(config);secondConfig.business!["canvas.text-generate"]!.options[0].pricing={mode:"usage",inputMicrosPerMillion:"2000000",outputMicrosPerMillion:"4000000",cachedInputMicrosPerMillion:"1000000",authorizationCnyMicros:"1000000",creditsPerCnyMicros:"100000000",rounding:"ceil"};
     const second=await apply(secondConfig);entered=undefined;release!();assert.equal((await pending).status,200);assert.equal(Number((await db.getPool().query("SELECT charged_credits,quote FROM app_billing_operations WHERE id=$1",[`tool-${pendingId}`])).rows[0].charged_credits),50,"In-flight keeps original fixed price");
     const usageId=randomUUID();const actual=await submitText(usageId);assert.equal(actual.status,200,await actual.clone().text());const settled=(await db.getPool().query("SELECT * FROM app_billing_operations WHERE id=$1",[`tool-${usageId}`])).rows[0];assert.equal(settled.state,"settled");assert.equal(Number(settled.charged_credits),1);assert.equal(settled.settlement_result.usage.inputTokens,1000);
@@ -138,6 +155,14 @@ async function main() {
     assert.ok(stages.some(s=>s.state==="rejected-not-charged"&&s.cost_cny_micros==="0"));assert.ok(stages.some(s=>s.state==="unknown"&&s.cost_cny_micros===null));
     console.log("STREAM_COST=1900micros COST_UNKNOWN=NOT_ZERO ARTWORK_METADATA=DB_REOPEN POOL_ROUTE_OFF=REJECTED UNDERSPEC_BILLING=HELD");
     console.log("BUSINESS_ROUTING=PASS ROUTE_OFF=PASS PRIORITY=PASS MAX_ATTEMPTS=PASS UNKNOWN_BILLING=HELD PARTIAL_USAGE=MANUAL OVER_AUTH=MANUAL PUBLIC_CATALOG=PASS DB_REOPEN=PASS PUBLISH=PASS FROZEN_PRICE=PASS FIXED_CHARGE=50 USAGE_CHARGE=1 MISSING_USAGE=MANUAL REPLAY=NO_DUPLICATE NON_ADMIN=404 CONFIRMED_FALLBACK=PASS UNKNOWN_RETRY=0 POSTPROCESS=256x192 POSTPROCESS_RECOVERY=NO_GENERATION ROLLBACK=PASS");
-  } finally {await db.getPool().end();await f.cleanup();await rm(media,{recursive:true,force:true});}
+  } finally {
+    // This fixture owns the held transport. Drain that original request while
+    // its DB/schema is still alive, before pool.end or server.close can wait.
+    entered=undefined;release?.();await pendingText?.catch(()=>{});
+    await db.getPool().end();await f.cleanup();
+    assert.ok(resolve(media).startsWith(resolve(tmpdir())+sep)&&basename(media).startsWith("naumi-business-routing-"));
+    await rm(media,{recursive:true,force:true});
+    console.log(`BUSINESS_ROUTING_CLEANUP=PASS PENDING_DRAINED=${pendingText?1:0} PENDING_SUPPLIER_CALLS=${pendingSupplierDelta??"NA"} POOLS_CLOSED=1 HTTP_CLOSED=1 TEMP_MEDIA_REMOVED=1`);
+  }
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});
