@@ -1,5 +1,10 @@
 # 迁移合同与模块记录索引
 
+## R10A 当前 main 整合
+
+[R10A](../changes/2026-11-02-refactor-r10a-current-main-sync.md)普通merge最新ca63c76f的四个ops／记录文件；不迁移产品owner。原22项和新增28项unit分别21／20实际通过、1／8跳过；原R9Z的96浏览器及真实Go/PG结果保留其执行绑定。最终完整source／回滚由R10A交付，不让同事发布证据覆盖本线程重构未部署状态。
+
+
 ## R9Z 同任务断网恢复与原生验收输入
 
 [R9Z](../changes/2026-11-02-refactor-r9z-paid-disconnect-acceptance.md)新增独立浏览器case，原主入口只编排；持久状态和付费身份仍归原产品owner。真实四项断网链与原92项合跑96PASS／8consume／48积分，原166断言不删改。经典Go输入只在共享runner绑定原调用根目录，不改十二个wrapper及原business断言；实际原生和副本行为按最终VERIFICATION/DELIVERY。无生产模块迁移，本轮是退出证据补齐，不以文件增长当架构完成。

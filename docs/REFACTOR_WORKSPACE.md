@@ -1,5 +1,10 @@
 # 重构工作区：当前交付快照
 
+## 最新整合：R10A 保留当前 main
+
+[R10A](changes/2026-11-02-refactor-r10a-current-main-sync.md)：R9Z封版后推送前fetch发现main推进ca63c76f，原推送未执行；普通合入四个ops／发布记录文件，无冲突。原task-snapshot22项（21通过／1跳过）在基线／新源一致；新增row-fingerprint28项（20通过／8跳过），不把跳过的真实PG／Docker项写成PASS。2149产品、1737既有scripts、5105编译器输入raw不变；R9Z真实96浏览器与Go/PG结果保持原执行source，不重标为新merge执行。保留同事已发布47主线的历史证据，本重构仍未部署／未合main；最终整合快照归R10A四产物。整体ACTIVE，当前CI和剩余矩阵继续。
+
+
 ## 当前收敛：R9Z 同一付费任务断网恢复与验收运行器
 
 [R9Z记录](changes/2026-11-02-refactor-r9z-paid-disconnect-acceptance.md)：完整固定61ef生产镜像的 Web＋Worker＋真实PG＋双浏览器，原92项加新增4项单次 **96 PASS**；8笔消费／48积分。真实Canvas点击→原scope pending→一次held供应POST→浏览器offline→后台原图／作品／单次6积分→联网点击“检查原任务”→相同回执／字节／pending退休→再次重载零新增。无route mock／seed done／额外付费重提；浏览器offline仿真不代替物理断网、服务器故障或供应UNKNOWN。

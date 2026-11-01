@@ -1,5 +1,10 @@
 # 架构与职责：模块化单体
 
+## R10A 发布取证工具整合
+
+[R10A](changes/2026-11-02-refactor-r10a-current-main-sync.md)仅保留main已有发布取证模块：有界只读逐行指纹不承担任务恢复或钱包写入，不将采集不完整当排空。原产品与所有既有验收scripts字节保持，职责边界未扩张；本轮不是新增产品服务或重复发布。
+
+
 ## R9Z 验收边界
 
 [R9Z](changes/2026-11-02-refactor-r9z-paid-disconnect-acceptance.md)把真实浏览器断网链作为原产品浏览器编排的单一内聚case；追踪沿原fixture窄端口以owner绑定读取同一原任务／账本／原图，释放SQL后解码，不让浏览器或验收脚本接管产品状态。原生UI共享runner在调用边界解析Router来源并在现有startup预算准备当前真实Canvas，子进程仍只消费明确输入，页面业务期限不变。本轮产品层零改动。
