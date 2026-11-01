@@ -13,6 +13,7 @@ export const refactorCases=[
  node('workbench-session-recovery','runtime','scripts/verify-workbench-recovery.cjs','WORKBENCH_SESSION_RECOVERY=PASS'),
  node('workbench-session-mutations','runtime','scripts/verify-workbench-mutation-ownership.cjs','WORKBENCH_SESSION_MUTATIONS=PASS'),
  {...node('legacy-generation-session','generation','scripts/verify-generation-session.cjs','GENERATION_SESSION=PASS'),clientReact:true},
+ {...node('model-management-session','foundation','scripts/verify-model-management-session.mjs','MODEL_MANAGEMENT_SESSION=PASS'),clientReact:true},
  {...node('business-routing-lifecycle','pricing','scripts/verify-business-routing-lifecycle.cjs','BUSINESS_ROUTING_LIFECYCLE=PASS'),pg:true},
  node('dependencies','foundation','scripts/verify-dependency-compatibility.mjs','DEPENDENCY_COMPATIBILITY=PASS'),
  node('source-identity','foundation','scripts/verify-refactor-source-identity.mjs','REFACTOR_SOURCE_IDENTITY=PASS'),

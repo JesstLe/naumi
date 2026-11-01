@@ -16,6 +16,10 @@
 
 “已迁移职责”不等于整项目完成；剩余门槛由退出审计逐项列出。Canvas 薄事件/DOM adapter 是否保留按职责判断，不按剩余行数继续机械拆分。
 
+## R9U 后台模型发布与回执
+
+[R9U](../changes/2026-11-01-refactor-r9u-management-publication-session.md)将 F03 快照/原publication/恢复及目录观察迁入纯应用owner和内聚只读子模块。React只绑定端口与投影；无消费者的旧目录hook退出。原id/完整body/版本、旧pending key和明确failed/unknown语义保持。实际hook原25项13PASS12FAIL、新25PASS；原UI33/35项、18HTML及20POST精确对照，server/CAS/PG不以浏览器fixture替代。
+
 ## R9T 首页会话目录与附件
 
 [R9T](../changes/2026-11-01-refactor-r9t-workbench-catalog-attachments.md)将列表观察、rename/remove 和上传/作品索引迁入同一首页会话聚合的两个内聚子模块，共享原账号 scope，React 只投影列表/草稿。修改成功使旧列表 revision 失效；索引与上传分离失效，ready 波动不取消有效同账号上传。旧接口、原始 email 和 JSX 字节保持，原 34 场景及新增 9 场景集中验证；结果及证据层级见本轮交付记录。F03 与整体退出继续单列。

@@ -1,9 +1,4 @@
-import type {ModelManagementState} from "@/lib/model-config/management";
-import type {CatalogEntry} from "@/lib/model-config/catalog-store";
-
-export type State = ModelManagementState & { catalogs: CatalogEntry[] };
-
-export type Operation = Record<string, unknown> & { action: string; id: string; expectedVersion: number };
+export type {ManagementState as State,ManagementOperation as Operation} from "@/lib/model-config/management-session-contract";
 
 // Retain the legacy key for persisted ambiguous publications.
 export const endpoint = "/api/admin/model-management", pendingKey = "naumi:admin:mvp:pending";

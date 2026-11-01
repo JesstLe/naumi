@@ -1,7 +1,7 @@
 const fs=require('node:fs'),assert=require('node:assert/strict'),ts=require('typescript'),cp=require('node:child_process');
 const input=process.argv[2]||'src/components/admin/model-management/model-management.tsx',mode=process.argv[3]||'modified';
 const source=fs.readFileSync(input,'utf8').replace(/\r\n/g,'\n');
-const {readManagement,functionMap}=require('./verification/model-management-source.cjs'),{modular,owners}=readManagement(input);
+const {readManagement,functionMap}=require('./verification/model-management-source.cjs'),{modular,owners,changedSessionFunctions}=readManagement(input);
 if(mode==='baseline') {
   assert(source.includes('className={styles.rowActions}'));
   assert(source.includes('{r.routes.map((route, index)'));
@@ -27,7 +27,7 @@ if(mode==='baseline') {
   const ast=text=>ts.createSourceFile('x.tsx',text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
   const functions=text=>{const map=new Map();const visit=n=>{if(ts.isFunctionDeclaration(n)&&n.name)map.set(n.name.text,n.getText().replace(/\s+/g,' '));ts.forEachChild(n,visit)};visit(ast(text));return map};
   const old=modular?functionMap(baseline):functions(baseline),now=modular?functionMap(owners):functions(source);
-  for(const [name,body] of old)if(!(modular?['ModelManagement','run']:['ModelManagement','ChannelsDialog']).includes(name))assert.equal(now.get(name),body,'unchanged function '+name);
+  for(const [name,body] of old)if(!(modular?['ModelManagement','run']:['ModelManagement','ChannelsDialog']).includes(name)&&!changedSessionFunctions.has(name))assert.equal(now.get(name),body,'unchanged function '+name);
   if(!modular)assert.equal(source.slice(source.indexOf('  async function run('),source.indexOf('  const rows =')),baseline.slice(baseline.indexOf('  async function run('),baseline.indexOf('  const rows =')));
   else {assert(owners.includes('result.publication.phase'));assert(owners.includes('naumi:admin:mvp:pending'));}
   console.log(`MODIFIED=PASS SUMMARY=COLLAPSED INACTIVE_ROUTES=DISCLOSED REAL_ACTIONS=PRESERVED OTHER_DIALOG_FUNCTIONS=UNCHANGED CHANNEL_EDITOR=REORGANIZED PUBLICATION=${modular?'SCOPED_OWNER':'UNCHANGED'}`);

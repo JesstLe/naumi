@@ -1,5 +1,11 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：R9U 后台模型发布与恢复
+
+[R9U模块](changes/2026-11-01-refactor-r9u-management-publication-session.md)把 F03 的快照、原publication回执、显式核对和目录观察从React hook迁入独立应用owner；React仅投影/端口，表单草稿和服务端CAS保持。只读观察可取消，已派发发布继续原请求；auth await后检查视图归属，提交体在await前冻结，清pending比较原完整字节，旧目录不覆盖新快照。旧有效key/body兼容，损坏存储不锁界面，不新增业务限额/确认。
+
+实际hook/client/React19/Chromium原25项13PASS12FAIL、新25PASS；原完整页面脚本基线33PASS、新35PASS，18HTML/20POST精确相同，原static14PASS。两个历史结构脚本的api正文断言原FAIL保留，改为跟随实际owner并保留其他17个helper/编辑器正文和通道/过滤/payload检查；新25项注册原core221目录。auth/API为fixture，不冒充PG、线上或同一付费断线E2E。质量与全源码副本回滚见R9U VERIFICATION/DELIVERY。F01/F02/F03这些已列应用职责已迁移，完整CI/main及整体退出继续；整体ACTIVE，部署0、47HOLD。
+
 ## 当前推进：R9T 首页会话目录与附件
 
 [R9T模块](changes/2026-11-01-refactor-r9t-workbench-catalog-attachments.md)将 F01 的列表观察/变更、上传批次和作品索引从页面迁到同一会话聚合的两个内聚子模块，共享原账号 scope；React 只保留投影/草稿。修改成功退休旧列表观察，作品反查在 auth/response/JSON await 后保持原账号/索引 revision，ready 波动不取消同账号有效上传或已受理 SSE。原 JSX 渲染字节、原 email、multipart/SSE/save 协议保持，没有新任务系统或复制列表。

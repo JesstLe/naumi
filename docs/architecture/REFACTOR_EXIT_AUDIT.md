@@ -2,6 +2,8 @@
 
 ## 当前固定版本
 
+- R9U当前推进：[后台发布会话](../changes/2026-11-01-refactor-r9u-management-publication-session.md)。F03快照/原publication恢复和只读目录已归纯应用owner，React仅投影/端口。实际hook原25项13PASS12FAIL、新25PASS；完整页面脚本原33PASS、新35PASS，18HTML/20POST精确一致。旧有效pending/原版本保持，scope只代表管理视图生命周期，不冒充账号授权；服务端CAS/价格/任务不变。F01/F02/F03已列职责迁移不等于全量语义耦合审阅或当前整版通过，最终源/回滚归本轮DELIVERY。
+
 - R9T当前推进：[首页目录与附件](../changes/2026-11-01-refactor-r9t-workbench-catalog-attachments.md)。F01列表观察/变更及上传/索引生命周期已归同一会话聚合下的内聚子模块；实际旧43场景37PASS/6FAIL、新43PASS，原恢复/发送47场景原新均PASS。保留原34检查和原始email/JSX字节，ready不取消同账号上传或已受理SSE。证据是实际组件/Chromium与fixture后端，不代替同一真实付费断线链；F03、当前整版CI/main仍OPEN。最终源及回滚见本轮DELIVERY。
 
 - R9S收敛：[免重复确认的实际owner扫描](../changes/2026-11-01-refactor-r9s-direct-submission-ownership.md)。0454f164的Image在原静态generate归属断言FAIL，后续步骤SKIPPED；原实现本地复现同样错误。候选只更新原scanner跟随页面→hook→session→原billing端口及guard/quote，原其他条件保留、37静态正负检查PASS，产品2144文件raw不变。实际业务与新head完整CI仍分别验收，不将静态PASS当作已生成/已扣款。

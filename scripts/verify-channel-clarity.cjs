@@ -1,7 +1,7 @@
 const fs=require('node:fs'),assert=require('node:assert/strict'),ts=require('typescript'),vm=require('node:vm'),cp=require('node:child_process');
 const file=process.argv[2]||'src/components/admin/model-management/model-management.tsx',mode=process.argv[3]||'modified';
 const source=fs.readFileSync(file,'utf8').replace(/\r\n/g,'\n');
-const {readManagement}=require('./verification/model-management-source.cjs'),{modular,owners}=readManagement(file);
+const {readManagement}=require('./verification/model-management-source.cjs'),{modular,owners,changedSessionFunctions}=readManagement(file);
 if(mode==='baseline'){
  assert(source.includes('disabled={mode==="priority"}'));
  assert(source.includes('{channels.map(c=>'));
@@ -16,7 +16,7 @@ if(mode==='baseline'){
  const ast=s=>ts.createSourceFile('x.tsx',s,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
  const functionMap=s=>{const m=new Map();const visit=n=>{if(ts.isFunctionDeclaration(n)&&n.name)m.set(n.name.text,n.getText().replace(/\s+/g,' '));ts.forEachChild(n,visit)};visit(ast(s));return m;};
  const old=modular?require('./verification/model-management-source.cjs').functionMap(original):functionMap(original),now=modular?require('./verification/model-management-source.cjs').functionMap(owners):functionMap(source);
- for(const [name,body]of old)if(!(modular?['ModelManagement','run']:['ChannelsDialog']).includes(name))assert.equal(now.get(name),body,'unchanged '+name);
+ for(const [name,body]of old)if(!(modular?['ModelManagement','run']:['ChannelsDialog']).includes(name)&&!changedSessionFunctions.has(name))assert.equal(now.get(name),body,'unchanged '+name);
  const setup=s=>s.slice(s.indexOf(' const [mode,setMode]'),s.indexOf(' return <Dialog title="供应通道与分流"'));
  assert.equal(setup(modular?owners:source),setup(original),'channel state, candidate compatibility filter and validation preserved');
  const load=p=>{const m={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(p,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{module:m,exports:m.exports});return m.exports};
