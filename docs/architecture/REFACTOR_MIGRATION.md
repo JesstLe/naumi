@@ -1,5 +1,29 @@
 # 迁移合同与模块记录索引
 
+## R10D 同任务远端写故障
+
+[R10D](../changes/2026-11-02-refactor-r10d-remote-put-evidence.md)验证现有adapter→storage runtime→paid codec／交付→独立mirror职责闭环；原六场景已正确，故产品0修改，仅补原目录和证据端口，不另建通用存储框架。原GET、字节、账务及新进程恢复同case核对，不冒充实际页面或完整226通过。
+
+## R10C 历史回执消费与事务身份
+
+[R10C](../changes/2026-11-02-refactor-r10c-historical-batch-retry.md)从新父任务内联分类迁移为生成模块共享的hasProvenImagegenRejection／canRetryImagegen。历史派生标签在消费时重新绑定原事实，批次原事务匹配child_operation_id／attempts后再更新；锁前读与锁内写分明，不拆原事务。九场景真实PG／供应／钱包及并发屏障实际反例与结果分别留存，整体退出仍单列。
+
+
+## R10B 供应拒绝证据接口
+
+[R10B](../changes/2026-11-02-refactor-r10b-supplier-rejection-ownership.md)沿原模型阶段owner补逐图身份、纯政策与只读证据接口，父任务从“rejected状态猜测”迁为明确证据消费。原任务／账务事务／paid identity／SDK wire不迁移；七个实际PG场景和15纯负例证明无证明批次不再自动购买，明确未收费正常重试保持。完整UI／镜像、回滚及当前CI分别绑定最终证据。
+
+
+## R10A 当前 main 整合
+
+[R10A](../changes/2026-11-02-refactor-r10a-current-main-sync.md)普通merge最新ca63c76f的四个ops／记录文件；不迁移产品owner。原22项和新增28项unit分别21／20实际通过、1／8跳过；原R9Z的96浏览器及真实Go/PG结果保留其执行绑定。最终完整source／回滚由R10A交付，不让同事发布证据覆盖本线程重构未部署状态。
+
+
+## R9Z 同任务断网恢复与原生验收输入
+
+[R9Z](../changes/2026-11-02-refactor-r9z-paid-disconnect-acceptance.md)新增独立浏览器case，原主入口只编排；持久状态和付费身份仍归原产品owner。真实四项断网链与原92项合跑96PASS／8consume／48积分，原166断言不删改。经典Go输入只在共享runner绑定原调用根目录，不改十二个wrapper及原business断言；实际原生和副本行为按最终VERIFICATION/DELIVERY。无生产模块迁移，本轮是退出证据补齐，不以文件增长当架构完成。
+
+
 ## R9X 草稿冲突的验证输入
 
 [R9X](../changes/2026-11-01-refactor-r9x-model-draft-verification.md)只更新原模型整模块fixture，独立验证旧tab修订与外来旧base；原11项顺序通过，不为旧脚本改回产品CAS。完整223与main仍分层验收。

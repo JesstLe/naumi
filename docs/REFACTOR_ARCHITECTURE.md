@@ -1,5 +1,25 @@
 # 架构与职责：模块化单体
 
+## R10C 自动下一次尝试的应用owner
+
+[R10C](changes/2026-11-02-refactor-r10c-historical-batch-retry.md)将原paid结构归集与原任务重试资格收拢到imagegen/retry-eligibility，复用model-config事实接口和原账务reader。dispatch与batch只消费，不穿透对方表或复制规则。证据读取在批次锁前，身份匹配与写入在原事务内；旧观察不能写入新child／attempt。不增通用框架、新确认或并行任务状态。
+
+
+## R10B 供应阶段与重试授权
+
+[R10B](changes/2026-11-02-refactor-r10b-supplier-rejection-ownership.md)把原HTTP诊断与再次购买证据分开：model-config拥有原阶段事实、逐unit纯判定和只读接口；imagegen只在原job归属内消费，不穿透阶段表、不复制钱包规则。NOT_ACCEPTED只表示已证明，失败与客户零扣款不充当证明；已有批次策略复用，不创建平行任务或事件框架。
+
+
+## R10A 发布取证工具整合
+
+[R10A](changes/2026-11-02-refactor-r10a-current-main-sync.md)仅保留main已有发布取证模块：有界只读逐行指纹不承担任务恢复或钱包写入，不将采集不完整当排空。原产品与所有既有验收scripts字节保持，职责边界未扩张；本轮不是新增产品服务或重复发布。
+
+
+## R9Z 验收边界
+
+[R9Z](changes/2026-11-02-refactor-r9z-paid-disconnect-acceptance.md)把真实浏览器断网链作为原产品浏览器编排的单一内聚case；追踪沿原fixture窄端口以owner绑定读取同一原任务／账本／原图，释放SQL后解码，不让浏览器或验收脚本接管产品状态。原生UI共享runner在调用边界解析Router来源并在现有startup预算准备当前真实Canvas，子进程仍只消费明确输入，页面业务期限不变。本轮产品层零改动。
+
+
 当前版本和运行结果只在 [工作区快照](REFACTOR_WORKSPACE.md) 与 [退出审计](architecture/REFACTOR_EXIT_AUDIT.md) 维护；本文拥有稳定设计、数据归属和依赖方向。
 
 ## 当前实现的职责入口

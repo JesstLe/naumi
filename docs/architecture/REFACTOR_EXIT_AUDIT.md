@@ -1,5 +1,19 @@
 # 整体退出审计
 
+- R10D：[远端对象PUT证据](../changes/2026-11-02-refactor-r10d-remote-put-evidence.md)。原产品六场景实际PASS，403/503/已存丢ACK/仅最终对象失败/远端和本地同时失败均一次供应、一笔6积分、原字节；六次进程重读及原补传不改原paid账本。产品修改0，新增原generation专项，固定99e原顺序23子命令全exit0／局部顶层PARTIAL/exit2，runner20/370、tsc/lint0；总226不当作全跑；真实页面、NAS策略和云基础设施仍分层，整体ACTIVE。
+
+- R10C：[历史回执与陈旧批次观察](../changes/2026-11-02-refactor-r10c-historical-batch-retry.md)。真实九条基线证明旧NOT_ACCEPTED标签可跳过新分类而自动购买，并发旧tick可3POST／账本12但批次6。应用owner只读核对原证据与账务，原批次事务匹配childID＋attempts；首次候选九条PASS、无证据1POST0consume、明确未收费正常6积分、并发2POST1consume。原顺序generation22子命令全部exit0、局部scope顶层PARTIAL/exit2；固定db3a完整镜像102浏览器PASS／8consume48积分，类型/lint0；回退以R10C最终DELIVERY，不把225登记当全项目通过；整体ACTIVE、本线程未部署。
+
+
+- R10B：[拒绝证据归属](../changes/2026-11-02-refactor-r10b-supplier-rejection-ownership.md)。真实无证明403父NOT_ACCEPTED／批次2POST反例复现；模型owner记录原unit并公开只读证据，原七场景新PASS、无证明2→1，明确未收费2→2，正常6积分及真实socket丢失UNKNOWN／释放保持。原parent25／firstpaid5／quota及runner20-368通过；固定d579完整镜像实际102浏览器PASS、8consume48积分；原顺序generation21/21PASS，局部scope顶层PARTIAL/exit2。M03/M04具体维度推进不等于全部故障关闭；224登记不等于完整运行，整体ACTIVE／未合main／本线程部署0。
+
+
+- R10A：[当前main整合](../changes/2026-11-02-refactor-r10a-current-main-sync.md)。R9Z封版后fetch发现ca63c76f，只新增四个ops／发布记录文件，普通merge无冲突；产品2149／原scripts1737／编译输入5105 raw保持。原22项21PASS1SKIP，新增28项20PASS8SKIP，未运行真实PG选项。R9Z96浏览器与Go/PG保持原source，最终merge未重标为同源整版执行；当前CI、剩余矩阵及候选合main继续。保留main独立47发布证据，本重构未发布，整体ACTIVE。
+
+
+- R9Z：[真实同任务断网链](../changes/2026-11-02-refactor-r9z-paid-disconnect-acceptance.md)。固定完整61ef Web/Worker＋真实PG／双context单次96PASS、8consume／48积分。新增4项确实从Canvas受理原identity后离线，Worker交付、原图SHA／原账本／原scope恢复／第二次reload全部核对；M09推进这个精确维度，不一并关闭物理掉线／UNKNOWN／M03/M04/M06。原166断言、2149产品文件raw保持，完整business与回滚归R9Z最终DELIVERY。旧61ef Core实际执行93edc006 SUCCESS，tree同2239f511；Image FAIL的经典fixture相对Router路径已本机复现。新headCI、完整语义审阅及合main继续，整体ACTIVE、部署0、47HOLD。
+
+
 - R9Y：[最新主线同步](../changes/2026-11-01-refactor-r9y-main-sync.md)。origin/main真实推进67bbcddf；独立分支普通merge保留5incoming文件，无冲突。公开目录32→33及完整合同、27个scan策略单测实际PASS；生成/模型/钱包代码与df997b40 raw保持。此为将main合入候选，不是候选已合main/已发布；新头完整223/CI及剩余故障矩阵继续。
 
 - R9X：[发布草稿验收](../changes/2026-11-01-refactor-r9x-model-draft-verification.md)。完整基线真实PG复现execution旧错误码预期exit1；夹具分开发布者旧revision与另一actor旧base，两个拒绝分支均严格保留。原顺序11模型命令单次全exit0，产品2149文件raw不变；旧b24Image失败/日志EOF不改写，新head完整223/CI/main继续。

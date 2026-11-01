@@ -1,5 +1,33 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：R10D 远端对象 PUT 同任务证据
+
+[R10D](changes/2026-11-02-refactor-r10d-remote-put-evidence.md)补 M06 的真实签名对象HTTP写失败，不用本地fs测试冒充网络边界。原087产品在六场景基线全部正确：一次供应／一笔6积分／原PNG／原GET done，独立进程恢复和原mirror补传保持；产品修改0，新专项沿原generation目录登记，总226／组23，固定99e原顺序23子命令单次全PASS（顶层局部PARTIAL/exit2）、runner20/370及非增量tsc/lint0。实际浏览器及云存储基础设施未在本轮验证；回退与同源CI归本轮DELIVERY，整体ACTIVE、未合main、未发布。
+
+## 当前推进：R10C 历史批次回执与陈旧观察
+
+[R10C](changes/2026-11-02-refactor-r10c-historical-batch-retry.md)真实旧派生NOT_ACCEPTED回执仍触发新购买；并发旧tick还能把原第二轮推进到第三轮，账本12而批次仅报6，九条基线已完整复现。生成应用owner现在共享明确证据归集／只读重试接口，批次在锁前读取、锁内匹配原childID＋attempts。首次候选九条PASS：无证据2POST→1，明确未收费仍正常2POST／6积分，并发3POST2consume→2POST1consume。原顺序generation22/22子命令已实际PASS，局部scope顶层PARTIAL/exit2；固定db3a完整镜像102浏览器PASS／8consume48积分、非增量tsc/lint0；四产物按本轮DELIVERY，225登记不当作全跑。整体ACTIVE、未合main、本线程部署0。
+
+
+## 当前推进：R10B 供应拒绝证据归属
+
+[R10B](changes/2026-11-02-refactor-r10b-supplier-rejection-ownership.md)真实PG／租约／handler复现无证明403被标NOT_ACCEPTED、批次自动购买第二次。模型执行owner在原usage保存逐图身份，纯政策与只读接口核对完整明确未收费证据，父任务只消费结论；不加确认或等待。原七场景复现、新七PASS，无证明批次POST2→1，明确未收费仍2→2；正常6积分／socket未知／客户释放保持。15纯政策、原parent25／首checkpoint5／quota／runner20-368已通过；固定d579完整镜像已构建，原96＋新6实际102PASS／8consume48积分；原顺序generation21/21子命令exit0，顶层按局部scope返回PARTIAL／exit2，不将224登记当全跑。整体ACTIVE，当前CI／剩余矩阵／语义审阅及合main继续，本线程部署0。
+
+
+## 最新整合：R10A 保留当前 main
+
+[R10A](changes/2026-11-02-refactor-r10a-current-main-sync.md)：R9Z封版后推送前fetch发现main推进ca63c76f，原推送未执行；普通合入四个ops／发布记录文件，无冲突。原task-snapshot22项（21通过／1跳过）在基线／新源一致；新增row-fingerprint28项（20通过／8跳过），不把跳过的真实PG／Docker项写成PASS。2149产品、1737既有scripts、5105编译器输入raw不变；R9Z真实96浏览器与Go/PG结果保持原执行source，不重标为新merge执行。保留同事已发布47主线的历史证据，本重构仍未部署／未合main；最终整合快照归R10A四产物。整体ACTIVE，当前CI和剩余矩阵继续。
+
+
+## 当前收敛：R9Z 同一付费任务断网恢复与验收运行器
+
+[R9Z记录](changes/2026-11-02-refactor-r9z-paid-disconnect-acceptance.md)：完整固定61ef生产镜像的 Web＋Worker＋真实PG＋双浏览器，原92项加新增4项单次 **96 PASS**；8笔消费／48积分。真实Canvas点击→原scope pending→一次held供应POST→浏览器offline→后台原图／作品／单次6积分→联网点击“检查原任务”→相同回执／字节／pending退休→再次重载零新增。无route mock／seed done／额外付费重提；浏览器offline仿真不代替物理断网、服务器故障或供应UNKNOWN。
+
+经典原生UI共享runner现在在切换sourcecopy前绑定Router输入所属根目录；真实PG旧路径复现`Fixture Router build failed`，与旧61ef Image annotation相符。相对／绝对路径及准备页面的真实子进程122检查通过；完整business真实Go／PG／页面重验已exit0，价格75、工具目录、Canvas文字目录、移动端及非管理员404通过，供应商POST0；回滚以R9Z VERIFICATION/DELIVERY为准。保留原30秒导航和120秒fixture启动预算，不为绿灯扩时。产品2149文件raw不变；原166断言AST文本保留、lint／非增量tsc0。
+
+旧61ef Core实际执行93edc006 SUCCESS，GitHub API核实两者tree相同；旧Image仍FAIL，不能标作新head已绿。整体ACTIVE，M03/M04/M06等剩余矩阵、完整语义耦合审阅、当前CI及候选合main继续；**分支超48小时，退出证据未闭合**。未发布，47HOLD。
+
+
 ## 当前整合：R9Y 同步最新 main
 
 [R9Y记录](changes/2026-11-01-refactor-r9y-main-sync.md)：收尾fetch发现main推进到67bbcddf，已在独立分支普通merge并保留原5个文件；无冲突，不改main、不执行发布/退役。旧公开目录32条、新33条及原完整合同通过；incoming扫描证明27个unittest通过。R9W首结果修复与R9X11模型组保持原source证据，不重标成整合头完整223PASS。最终源/类型/副本回滚以本轮DELIVERY为准；整体ACTIVE，部署0，47HOLD。

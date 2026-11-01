@@ -26,3 +26,26 @@
 - 原统一runner合同：20场景、367检查通过；两个MJS的Node语法检查、定向lint、diff-check均exit0。
 - 原2,149个产品文件raw SHA全部保持；只改变两个验收MJS并新增本文档。未重跑全项目TypeScript、完整Next构建或整版core，不借用旧通过冒充新头验收。
 - Go实验编译的是离线最小模块，不冒充完整pinned Router/Next/PG/浏览器。新头真实CI仍须独立完成。
+
+## PR #10 目标分支冲突整合（2026-11-02）
+
+### 基线与职责归属
+
+- 本轮原始 PR 头为 `525c06199b41af58e818ff447eb21a3ac171caed`，固定目标为 `c2ab04139e262214e457dfbc86542ff33f9d0555`（`codex/core-refactor-20261024`）。原始头已包含上文 Router 路径修复；本轮基线缺陷是两个 MJS 的内容冲突，不再把原始 Go ENOENT 当成本轮现象。
+- `git merge-tree --write-tree --messages <原始头> <固定目标>` 返回 exit1，实际普通 `git merge --no-commit <固定目标>` 同样在共享 runner 与正式回归脚本产生两处内容冲突。5,388 个原文件的 raw SHA 和完整原档另存于 `output/pr10-conflict-base-sync-20261102/`，未覆盖原任务证据。
+- 目标分支已独立包含相同 caller-root 解析，并新增 business-ui Canvas 准备。共享 runner 直接保留固定目标的完整字节，不复制第二套实现；调用方路径归属、原始 env 不写回、隔离 source copy、runId/IPC 所有权和清理合同继续保留。
+
+### 合并决策与迁移状态
+
+- 正式回归合并保留目标分支的 `routerSource`/`userCookie` metadata、相对/绝对路径 metadata 检查及 `/canvas` 准备与原 startup budget 检查。
+- 同时保留本 PR 两 profile × 相对/绝对路径四种实际文件读取场景，逐项检查外部 marker、子进程 cwd、绝对路径和调用方 env；不是只检查传入字符串。
+- 成功、checker7、setup 失败、超时、cleanup 失败、后续开发者编辑、外来 fixture 与外来端口全部保留。其余目标提交按正常 merge 整合；本轮相对固定目标只增强正式回归与本文档，没有另改产品源码。
+- 本 PR 不导入另一条 restore-context 修复，不把 Router 验收通过视为历史 restore 草稿合同已完成整合。
+
+### 验证、证据与后续
+
+本轮集中结果和完整命令流保存于 `output/pr10-conflict-base-sync-20261102/VERIFICATION.txt`。基线原始 owner128 与实际离线最小 Go 编译通过；合并版正式生命周期 **146 检查**、共享 runner **20 场景／370 检查**、两个 MJS 的 Node 语法、定向 eslint 及 worktree/index diff-check 全部 exit0。四种实际文件读取场景与 Canvas 原 startup budget 检查均保留。受控 child/IPC/HTTP 和离线最小 Go 不替代新头完整 Next/PG/浏览器 CI；本轮未执行全量 TypeScript、Next 构建或真实 PG 回归。
+
+四产物为 `MODIFIED_FILE.tar`、`DIFF_FILE.patch`、`VERIFICATION.txt`、可执行 `ROLLBACK.sh`，另存完整基线档、原始命令流和 SHA 清单。独立副本恢复、patch 字节精确重放、活动工作树拒绝和后续编辑零写入保护的实际结果以同目录最终报告为准，不提前把这些步骤记成通过。
+
+回滚只作用于显式独立源码副本，恢复本轮原始头的全部文件字节与原本已修好的 Router 行为；文件回滚不改写 Git 历史，原始两提交的图上冲突仍可复现。活动工作树保留合并版。普通提交/推送后等待既有 PR 检查通知，不把候选推送写成合main或生产发布；47 暂缓发布状态保持。
