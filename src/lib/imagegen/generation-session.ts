@@ -23,7 +23,7 @@ export type GenerationSessionContext={
   user(value:SessionUser):void;
   consume(credits:number):void;
 };
-type Scope={account:string;active:boolean;discoveryGeneration:number};
+type Scope={account:string;submitAccount:string;active:boolean;discoveryGeneration:number};
 type Observation={scope:Scope;generation:number;controller:AbortController;jobId:string|null};
 
 export function createGenerationSession(currentAccount:()=>string|undefined){
@@ -33,7 +33,7 @@ export function createGenerationSession(currentAccount:()=>string|undefined){
   function detach(){generation++;observation?.controller.abort();observation=null;}
   function bindAccount(email:string|undefined){
     detach();if(scope)scope.active=false;
-    const next={account:normalized(email),active:true,discoveryGeneration:generation};scope=next;
+    const next={account:normalized(email),submitAccount:email||"",active:true,discoveryGeneration:generation};scope=next;
     return ()=>{next.active=false;if(scope===next)detach();};
   }
   function begin(context:GenerationSessionContext){
@@ -101,7 +101,7 @@ export function createGenerationSession(currentAccount:()=>string|undefined){
     const frozen={...input,files:[...input.files],template:input.template?{...input.template}:null};
     await execute(owner,context,async()=>{
       const assertCurrent=()=>{if(!owns(owner))throw new DOMException("Generation view detached","AbortError");};
-      const {ok,data}=await context.submit(frozen,owner.scope.account,assertCurrent);
+      const {ok,data}=await context.submit(frozen,owner.scope.submitAccount,assertCurrent);
       if(!owns(owner))return;
       if(!ok)throw Error(data.error||context.messages.failed);
       if(!data.jobId)throw Error(context.messages.missingJob);

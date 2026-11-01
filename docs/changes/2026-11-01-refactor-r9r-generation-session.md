@@ -13,7 +13,9 @@
 
 新verifier运行实际GenerateClient、实际新hook/owner、React19、Chromium、loopback HTTP与原2500ms时钟；auth、报价/账务后端、供应商和无关UI明确是fixture，不冒充真实PG扣款或供应商付费链。
 
-固定基线17场景：10通过/7失败，exit1。修改版相同17场景：17通过/0失败，exit0。原正常multipart（提示词、参数、email、model、父作品优先、文件hash、quote、operation）投影一致；原模板、去重、权威钱包优先、本地无server-user兜底、明确拒绝/无job、terminal错误/403、原ID缓存和StrictMode恢复保留。
+最终固定基线18场景：11通过/7失败，exit1。修改版相同18场景：18通过/0失败，exit0。原正常multipart（提示词、参数、email、model、父作品优先、文件hash、quote、operation）投影一致；原模板、去重、权威钱包优先、本地无server-user兜底、明确拒绝/无job、terminal错误/403、原ID缓存和StrictMode恢复保留。
+
+收尾复核另外发现中间版把比较用的归一化账号直接写入请求。实际owner probe复现`A@Example.test → a@example.test` / exit1，未发送供应请求。现用`account`只比较、`submitAccount`保留绑定时原值；新增浏览器场景核对原请求email不变，并执行实际`clientIntentKey`验证两种账号输入的旧/新multipart指纹相同，exit0。中间版3cc88f19与原始失败均保留，未单独push，不把它作为最终版本。
 
 七项实际反例是：同一React更新前双击产生两个浏览器POST；账号切换后旧结果/钱包投影仍回写；延后执行的结果updater跨账号写入；billing准备期间退出账号仍派发未发送请求；unmount后仍处理旧回执；旧active列表在显式新任务完成后恢复旧任务；503直接结束观察且poll ref残留。没有据此声称线上发生重复扣费或所有历史出图失败均归因于这些反例。
 
@@ -31,8 +33,8 @@ verifier初始两轮因fixture漏登记真实纯依赖、Next浏览器环境没�
 
 集中非增量tsc exit0、受影响八个文件lint exit0；5096编译器输入与4配置绑定。原/新普通multipart/quote/文件hash投影EXACT，JSX展示块逐字节不变。
 
-同一个现有source-bound runner单次执行三个真实child：新生成会话17场景、父任务25场景、实际PG图片报价25场景74检查，3/3 PASS、0FAIL、0NOT_RUN。后者确认原6/当前150、原价单次结算、余额不足及UNKNOWN不重POST；属于单独实际服务端链，不冒充本组件fixture的真实付费trace。选择范围保持PARTIAL/child driver exit2、completeCore=false，其余217目录项未本轮重跑；PowerShell外层对该非零退出返回1，原值均保留。新浏览器详细报告实际落在runner的case目录，继承全局路径未使用。
+最终同一个现有source-bound runner单次执行三个真实child：新生成会话18场景、父任务25场景、实际PG图片报价25场景74检查，3/3 PASS、0FAIL、0NOT_RUN。后者确认原6/当前150、原价单次结算、余额不足及UNKNOWN不重POST；属于单独实际服务端链，不冒充本组件fixture的真实付费trace。最终三个child全部重新实际执行，不复用中间17场景结果。选择范围保持PARTIAL/child driver exit2、completeCore=false，其余217目录项未本轮重跑；PowerShell外层对该非零退出返回1，原值均保留。新浏览器详细报告实际落在runner的case目录，继承全局路径未使用。
 
-原始5362 raw hash、副本恢复后的原17/父25失败行为、修改版归档及最终SHA以本轮四产物和`output/refactor-r9r-20261101/VERIFICATION.txt`为准。模块组件边界通过不等于同一真实付费断线E2E；该退出要求仍OPEN，并继续沿原实际App/PG/Worker验收，不用mock HTTP换绿。
+原始5362 raw hash、副本恢复后的原18/父25失败行为、修改版归档及最终SHA以最终四产物和`output/refactor-r9r-final-20261101/VERIFICATION.txt`为准。`output/refactor-r9r-20261101/`保留中间17场景、准备失败及3cc88f19，不作为最终交付。模块组件边界通过不等于同一真实付费断线E2E；该退出要求仍OPEN，并继续沿原实际App/PG/Worker验收，不用mock HTTP换绿。
 
 F02提交/观察/投影职责已迁入；F01首页会话列表/上传、F03后台发布恢复继续推进。完整新head CI、最终main整合和部署分别验收；整体目标不收缩为本轮17项，main未合、未部署。**分支超过48小时，延迟原因是整版放行/main尚未闭合。**

@@ -107,6 +107,10 @@ window.holdBilling=()=>{window.billingGate=new Promise(resolve=>window.releaseBi
   await check('template lineage retained only without explicit parent',async()=>{
     await reset();await configure({setPrompt:'template',setTpl:{id:'tpl-original',image:png,prompt:'template prompt'}});await start();await terminal();const post=requests.find(x=>x.method==='POST');assert.equal(post.fields.templateId,'tpl-original');assert.equal(post.fields.templatePrompt,'template prompt');assert.equal('parentId'in post.fields,false);
   });
+  await check('identity comparison normalization never changes the original submission actor',async()=>{
+    await reset({actor:'A@Example.test'});await configure({setPrompt:'original actor'});await start();await terminal();
+    assert.equal(requests.find(x=>x.method==='POST').fields.email,'A@Example.test');assert.equal(postCount,1);
+  });
   await check('result merge retains old image and deduplicates the original artwork IDs',async()=>{
     await reset({plan:{images:[image('old'),image('new')]}});await configure({setImages:[image('old')],setPrompt:'merge'});await start();assert.deepEqual((await terminal()).images.map(x=>x.id),['old','new']);assert.equal(await page.evaluate(()=>sessionStorage.getItem('naumi:job:generate-image:a@example.test')),null);
   });

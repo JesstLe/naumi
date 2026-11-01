@@ -18,7 +18,7 @@
 
 ## R9R 旧生成页会话
 
-[R9R](../changes/2026-11-01-refactor-r9r-generation-session.md)由`createGenerationSession`的`bindAccount/generate/resume`统一拥有当前视图epoch、原job观察与结果投影；React hook只绑定原auth/billing/cache及multipart/GET协议。页面不再持有poll ref或付费提交协议。原10正常场景与7实际反例、新17场景及普通wire精确对照有实际浏览器记录；真实付费断线trace不以此替代。上轮Core的父任务fixture只是补实际纯模块依赖，原25业务场景不删。F01/F03继续按真实职责推进。
+[R9R](../changes/2026-11-01-refactor-r9r-generation-session.md)由`createGenerationSession`的`bindAccount/generate/resume`统一拥有当前视图epoch、原job观察与结果投影；React hook只绑定原auth/billing/cache及multipart/GET协议。页面不再持有poll ref或付费提交协议。原11正常场景与7实际反例、新18场景及普通wire精确对照有实际浏览器记录；归一化账号只用于比较，不改原请求账号/intent指纹。真实付费断线trace不以此替代。上轮Core的父任务fixture只是补实际纯模块依赖，原25业务场景不删。F01/F03继续按真实职责推进。
 
 ## R9E 验证接口职责
 

@@ -2,7 +2,7 @@
 
 ## 当前推进：R9R 旧生成页会话owner
 
-[R9R模块](changes/2026-11-01-refactor-r9r-generation-session.md)把旧GenerateClient的提交、原job观察、结果投影收拢到同一应用owner；React adapter绑定原billing、auth与job cache。原真实React19/Chromium17场景实际10PASS/7FAIL，新版17PASS，普通multipart/quote/文件hash投影EXACT；双击、账号切换、延迟updater、准备阶段退出、unmount、迟到active发现与503读取均有反例。后端报价/任务/账务不新建、不改价，不自动重放付费POST。这个浏览器模块的auth/账务后端仍是fixture，不当作真实付费断线全链路。
+[R9R模块](changes/2026-11-01-refactor-r9r-generation-session.md)把旧GenerateClient的提交、原job观察、结果投影收拢到同一应用owner；React adapter绑定原billing、auth与job cache。最终真实React19/Chromium18场景原11PASS/7FAIL、新18PASS，普通multipart/quote/文件hash投影EXACT；双击、账号切换、延迟updater、准备阶段退出、unmount、迟到active发现与503读取均有反例。账号比较与原请求账号分开，原email和实际clientIntentKey指纹保持；中间3cc88f19未单独push。后端报价/任务/账务不新建、不改价，不自动重放付费POST。这个浏览器模块的auth/账务后端仍是fixture，不当作真实付费断线全链路。
 
 1e2df80c远端Image完整SUCCESS；Core在父任务夹具25个未登记纯依赖导入处FAIL，实际执行GitHub合并快照d70820f8，不能与PR head混写。原父脚本本地同样复现，登记实际image-quality纯模块后原25项PASS、供应/结算写0。新verifier加入原目录220项及每case产物端口；集中质量、runner和5362原始raw副本回滚以本轮VERIFICATION/DELIVERY为准。F02的owner迁移不再是当前缺失项，F01列表/上传与F03后台恢复继续；真实同一付费断线trace和新head整版CI仍OPEN，整体ACTIVE、main未合、部署0、47 HOLD。
 
