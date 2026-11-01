@@ -41,17 +41,28 @@ export async function runModelManagementUi(verificationFile,{root=process.cwd(),
     await fs.symlink(path.join(root,'node_modules'),path.join(source,'node_modules'),process.platform==='win32'?'junction':'dir');
     // The source copy already owns its cwd. Keep Next's cache path short on
     // Windows rather than nesting another full evidence path inside it.
-    const childEnv={...env,NEXT_DIST_DIR:'.next',NAUMI_MODEL_UI_RUN_ID:runId,NAUMI_MODEL_UI_PORT:String(port),NAUMI_MODEL_UI_BASE_URL:origin,NAUMI_MODEL_UI_SOURCE_MANIFEST:'output/model-ui-source.json'};
+    // This input belongs to the invoking checkout, not the owned source copy's
+    // cwd. CI supplies a relative pinned Router path under the original root.
+    const childEnv={...env,...(env.NAUMI_VERIFY_ROUTER_SOURCE?{NAUMI_VERIFY_ROUTER_SOURCE:path.resolve(root,env.NAUMI_VERIFY_ROUTER_SOURCE)}:{}),NEXT_DIST_DIR:'.next',NAUMI_MODEL_UI_RUN_ID:runId,NAUMI_MODEL_UI_PORT:String(port),NAUMI_MODEL_UI_BASE_URL:origin,NAUMI_MODEL_UI_SOURCE_MANIFEST:'output/model-ui-source.json'};
     const spawnTs=(file,server=false,ipc=false)=>spawn(process.execPath,[...(server?['--conditions=react-server']:[]),'--import',loader,file],{cwd:source,env:childEnv,windowsHide:true,stdio:ipc?['ignore','inherit','inherit','ipc']:['ignore','inherit','inherit']});
     fixture=spawnTs(selected.fixture,true,true);fixtureDone=observed(fixture);
-    const metadata=path.join(source,selected.metadata),started=Date.now();let ready=false;
+    const metadata=path.join(source,selected.metadata),started=Date.now();let ready=false,readyMetadata;
     while(Date.now()-started<startupTimeoutMs){
       if(fixture.exitCode!==null||fixture.signalCode!==null)throw Error('Fixture exited during setup: '+JSON.stringify(await fixtureDone));
       let state;try{state=JSON.parse(await fs.readFile(metadata,'utf8'));}catch{}
-      if(state){if(state.runId!==runId)throw Error('MODEL_UI_METADATA_OWNER_MISMATCH');try{if((await fetch(origin+'/api/health',{signal:AbortSignal.timeout(2000)})).ok){ready=true;break;}}catch{}}
+      if(state){if(state.runId!==runId)throw Error('MODEL_UI_METADATA_OWNER_MISMATCH');try{if((await fetch(origin+'/api/health',{signal:AbortSignal.timeout(2000)})).ok){ready=true;readyMetadata=state;break;}}catch{}}
       await wait(pollMs);
     }
     if(!ready)throw Error('Fixture startup timed out');
+    if(profile==='model-config'&&verificationFile==='scripts/verify-business-ui.ts'){
+      // Next dev compiles Canvas on its first request. That is fixture startup,
+      // not the original browser navigation/price-control acceptance deadline.
+      // Keep it inside the EXISTING startup budget and use the owned real user.
+      if(typeof readyMetadata?.userCookie!=='string')throw Error('MODEL_UI_PREPARATION_USER_MISSING');
+      const begun=Date.now(),response=await fetch(origin+'/canvas',{headers:{cookie:'nv_user='+readyMetadata.userCookie},redirect:'manual',signal:AbortSignal.timeout(Math.max(1,startupTimeoutMs-(Date.now()-started)))});
+      await response.arrayBuffer();if(response.status!==200)throw Error('MODEL_UI_CANVAS_PREPARATION_FAILED:'+response.status);
+      result.preparedPages=[{path:'/canvas',status:response.status,ms:Date.now()-begun,startupBudgetMs:startupTimeoutMs}];
+    }
     checker=spawnTs(verificationFile);checkerDone=observed(checker);const checked=await checkerDone;result={...result,status:checked.exit===0?'PASS':'FAIL',exit:checked.exit,check:checked};
   }catch(error){result={...result,status:'FAIL',error:String(error),stack:error.stack};}
   finally{

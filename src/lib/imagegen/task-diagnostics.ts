@@ -3,7 +3,7 @@ import {imageFailureEvidence} from './failure-evidence';
 /** Bounded, non-secret execution evidence. This is never a retry or billing decision. */
 export const diagnosticStages = {
   execute:'任务执行', 'supplier-result':'获取供应结果', 'output-processing':'图片后处理',
-  storage:'保存图片文件', 'image-checkpoint':'保存图片检查点', artworks:'写入作品记录',
+  storage:'保存图片文件', 'paid-result-checkpoint':'保存供应原结果', 'image-checkpoint':'保存图片检查点', artworks:'写入作品记录',
   settlement:'积分结算', 'final-receipt':'保存最终回执', 'parent-finalize':'父任务汇总',
   recovery:'任务恢复', 'download-image':'下载原结果图片', 'decode-pixels':'解码原结果图片',
   'parse-response':'解析供应响应', 'read-response':'读取供应响应', unknown:'未确认',
@@ -27,6 +27,7 @@ export const taskReasonLabels = {
   IMAGE_CONTENT_REJECTED:'供应接口内容审核未通过', IMAGE_ACCESS_DENIED:'供应接口访问被拒绝',
   IMAGE_RATE_LIMITED:'供应接口触发限流', IMAGE_UPSTREAM_UNAVAILABLE:'供应接口暂时不可用',
   IMAGE_REQUEST_REJECTED:'供应接口拒绝了本次请求',
+  IMAGE_RESULT_CHECKPOINT_PENDING:'图片原结果保存尚未完成',
   'legacy-unknown-submission':'历史任务缺少供应受理检查点',
   creation_unknown:'视频创建受理结果尚未确认', poll_timeout:'查询供应结果超时',
   'workflow-blocked':'工作流节点被阻断',

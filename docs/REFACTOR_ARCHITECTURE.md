@@ -1,5 +1,25 @@
 # 架构与职责：模块化单体
 
+## R10C 自动下一次尝试的应用owner
+
+[R10C](changes/2026-11-02-refactor-r10c-historical-batch-retry.md)将原paid结构归集与原任务重试资格收拢到imagegen/retry-eligibility，复用model-config事实接口和原账务reader。dispatch与batch只消费，不穿透对方表或复制规则。证据读取在批次锁前，身份匹配与写入在原事务内；旧观察不能写入新child／attempt。不增通用框架、新确认或并行任务状态。
+
+
+## R10B 供应阶段与重试授权
+
+[R10B](changes/2026-11-02-refactor-r10b-supplier-rejection-ownership.md)把原HTTP诊断与再次购买证据分开：model-config拥有原阶段事实、逐unit纯判定和只读接口；imagegen只在原job归属内消费，不穿透阶段表、不复制钱包规则。NOT_ACCEPTED只表示已证明，失败与客户零扣款不充当证明；已有批次策略复用，不创建平行任务或事件框架。
+
+
+## R10A 发布取证工具整合
+
+[R10A](changes/2026-11-02-refactor-r10a-current-main-sync.md)仅保留main已有发布取证模块：有界只读逐行指纹不承担任务恢复或钱包写入，不将采集不完整当排空。原产品与所有既有验收scripts字节保持，职责边界未扩张；本轮不是新增产品服务或重复发布。
+
+
+## R9Z 验收边界
+
+[R9Z](changes/2026-11-02-refactor-r9z-paid-disconnect-acceptance.md)把真实浏览器断网链作为原产品浏览器编排的单一内聚case；追踪沿原fixture窄端口以owner绑定读取同一原任务／账本／原图，释放SQL后解码，不让浏览器或验收脚本接管产品状态。原生UI共享runner在调用边界解析Router来源并在现有startup预算准备当前真实Canvas，子进程仍只消费明确输入，页面业务期限不变。本轮产品层零改动。
+
+
 当前版本和运行结果只在 [工作区快照](REFACTOR_WORKSPACE.md) 与 [退出审计](architecture/REFACTOR_EXIT_AUDIT.md) 维护；本文拥有稳定设计、数据归属和依赖方向。
 
 ## 当前实现的职责入口
@@ -8,6 +28,7 @@
 |---|---|---|
 | 图片准备与冻结 | `src/lib/model-config/image-preparation.ts`；`src/lib/imagegen/plan.ts`、`quotes.ts` | 入口→准备/报价→保存合同；原 operation 恢复不按 current 重算 |
 | 图片执行与原图交付 | `src/lib/imagegen/adapters.ts`、`generation-submission.ts`、`cutout.ts` 等具体用例 | HTTP/Agent/workbench 调用同一业务实现，不反向调用 route |
+| 首次paid结果完成 | `image-jobs/runtime` 原lease/update owner | 已返回结果只做同token本地有限重存；COMMIT已提交读回不覆写，不重入供应；持续失败保留原intent/hold并标明保存阶段 |
 | 钱包与结算 | `src/lib/billing/` | 真实余额、预占、结算和回执由原 operation 绑定；消费只写一次 |
 | DB 与事务 | `src/platform/db/`；各域 repository/schema owner | Pool/Tx 不导入业务；拆模块不拆原共享事务，不在事务内另借连接 |
 | 配置读取与发布 | `src/lib/model-config/` 的 published read、execution services、administration | 执行消费冻结快照；公开目录不依赖管理连接或 default 可执行性 |
@@ -271,3 +292,5 @@ DDL 从 `ensureSchema` 逐个迁到发布前、带版本记录的迁移。先验
 ## 历史入口
 
 [原调研、代码盘点和逐轮记录](https://github.com/JesstLe/naumi/blob/82729161200f166fe587b98bceb756a44999840c/docs/REFACTOR_ARCHITECTURE.md)保留在 Git；具体业务变更归各模块文档。本文不复制运行流水，不以文件数量、行数或 SCC 单独证明业务完成。
+
+R9X发布验收将旧tab revision与另一actor旧base分开建模；两者不是同一状态，夹具不能借取消产品CAS来消除断言失败。详见[记录](changes/2026-11-01-refactor-r9x-model-draft-verification.md)。

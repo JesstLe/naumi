@@ -160,7 +160,11 @@ async function main() {
       [{provider_id: "p1", attempt: 1, status: 403, state: "failed-response"}]);
     assert.equal((await f.sql.query("SELECT upstream_id FROM app_model_channel_operations WHERE operation_key=$1", [quotaPin])).rows[0]?.upstream_id, primary.upstreamId, "A nondefinite 403 never clears the original operation pin");
     const quotaAudit = (await f.sql.query("SELECT usage,cost_status FROM app_model_execution_stages WHERE operation_id=$1", [quotaOperation])).rows[0];
-    assert.deepEqual(quotaAudit.usage, {upstreamFailure: {code: "IMAGE_ACCESS_DENIED", status: 403}});
+    assert.deepEqual(quotaAudit.usage, {
+      parameterPlan: {version:1,upstreamId:"u1",wireModel:"fixture-image-a",protocol:"openai-images",modelVersion:snapshot.version,
+        requested:{quality:"medium",resolution:"1K",ratio:"1:1"},effective:{ratio:"1:1"},wire:{},clear:[]},
+      imageOperationId:quotaOperation,upstreamFailure:{code:"IMAGE_ACCESS_DENIED",status:403},
+    });
     assert.equal(quotaAudit.cost_status, "unknown", "A customer-safe diagnosis does not prove supplier non-charge");
     if (changed) {
       assert.deepEqual(await health(), {failures: 1, last_status: 403, last_failure_kind: "auth", opened: true});

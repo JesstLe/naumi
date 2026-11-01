@@ -409,6 +409,9 @@ function fixture({runtime = true} = {}) {
   dependencies['src/lib/imagegen/creation-scope.ts']['@/lib/saas/creation-scope']=()=>load('src/lib/saas/creation-scope.ts');
   dependencies['src/lib/imagegen/dispatch.ts']['@/lib/artworks/repository']={listArtworksByIds:async(owner,ids)=>ids.map(id=>f.works.get(id)).filter(w=>w?.email===owner)};
   dependencies['src/lib/imagegen/dispatch.ts']['@/lib/artworks/writer']={addArtworks:fail('unexpected-artwork-write')};
+  dependencies['src/lib/imagegen/dispatch.ts']['./retry-eligibility']=()=>load('src/lib/imagegen/retry-eligibility.ts');
+  dependencies['src/lib/imagegen/retry-eligibility.ts']={'@/platform/db/pool':db,'../model-config/image-rejection-evidence':()=>load('src/lib/model-config/image-rejection-evidence.ts'),'../image-job-failure':()=>load('src/lib/image-job-failure.ts'),'./creation-scope':()=>load('src/lib/imagegen/creation-scope.ts'),'./delivery-billing':()=>load('src/lib/imagegen/delivery-billing.ts')};
+  dependencies['src/lib/model-config/image-rejection-evidence.ts']={'@/platform/db/pool':db,'./image-rejection-policy':()=>load('src/lib/model-config/image-rejection-policy.ts')};
   dependencies['src/lib/imagegen/dispatch.ts']['./delivery-billing']=()=>load('src/lib/imagegen/delivery-billing.ts');
   dependencies['src/lib/imagegen/delivery-billing.ts']={'@/platform/db/pool':db,'./operation-id':()=>load('src/lib/imagegen/operation-id.ts')};
 

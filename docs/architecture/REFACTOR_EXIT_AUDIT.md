@@ -1,5 +1,23 @@
 # 整体退出审计
 
+- R10C：[历史回执与陈旧批次观察](../changes/2026-11-02-refactor-r10c-historical-batch-retry.md)。真实九条基线证明旧NOT_ACCEPTED标签可跳过新分类而自动购买，并发旧tick可3POST／账本12但批次6。应用owner只读核对原证据与账务，原批次事务匹配childID＋attempts；首次候选九条PASS、无证据1POST0consume、明确未收费正常6积分、并发2POST1consume。原顺序generation22子命令全部exit0、局部scope顶层PARTIAL/exit2；固定db3a完整镜像102浏览器PASS／8consume48积分，类型/lint0；回退以R10C最终DELIVERY，不把225登记当全项目通过；整体ACTIVE、本线程未部署。
+
+
+- R10B：[拒绝证据归属](../changes/2026-11-02-refactor-r10b-supplier-rejection-ownership.md)。真实无证明403父NOT_ACCEPTED／批次2POST反例复现；模型owner记录原unit并公开只读证据，原七场景新PASS、无证明2→1，明确未收费2→2，正常6积分及真实socket丢失UNKNOWN／释放保持。原parent25／firstpaid5／quota及runner20-368通过；固定d579完整镜像实际102浏览器PASS、8consume48积分；原顺序generation21/21PASS，局部scope顶层PARTIAL/exit2。M03/M04具体维度推进不等于全部故障关闭；224登记不等于完整运行，整体ACTIVE／未合main／本线程部署0。
+
+
+- R10A：[当前main整合](../changes/2026-11-02-refactor-r10a-current-main-sync.md)。R9Z封版后fetch发现ca63c76f，只新增四个ops／发布记录文件，普通merge无冲突；产品2149／原scripts1737／编译输入5105 raw保持。原22项21PASS1SKIP，新增28项20PASS8SKIP，未运行真实PG选项。R9Z96浏览器与Go/PG保持原source，最终merge未重标为同源整版执行；当前CI、剩余矩阵及候选合main继续。保留main独立47发布证据，本重构未发布，整体ACTIVE。
+
+
+- R9Z：[真实同任务断网链](../changes/2026-11-02-refactor-r9z-paid-disconnect-acceptance.md)。固定完整61ef Web/Worker＋真实PG／双context单次96PASS、8consume／48积分。新增4项确实从Canvas受理原identity后离线，Worker交付、原图SHA／原账本／原scope恢复／第二次reload全部核对；M09推进这个精确维度，不一并关闭物理掉线／UNKNOWN／M03/M04/M06。原166断言、2149产品文件raw保持，完整business与回滚归R9Z最终DELIVERY。旧61ef Core实际执行93edc006 SUCCESS，tree同2239f511；Image FAIL的经典fixture相对Router路径已本机复现。新headCI、完整语义审阅及合main继续，整体ACTIVE、部署0、47HOLD。
+
+
+- R9Y：[最新主线同步](../changes/2026-11-01-refactor-r9y-main-sync.md)。origin/main真实推进67bbcddf；独立分支普通merge保留5incoming文件，无冲突。公开目录32→33及完整合同、27个scan策略单测实际PASS；生成/模型/钱包代码与df997b40 raw保持。此为将main合入候选，不是候选已合main/已发布；新头完整223/CI及剩余故障矩阵继续。
+
+- R9X：[发布草稿验收](../changes/2026-11-01-refactor-r9x-model-draft-verification.md)。完整基线真实PG复现execution旧错误码预期exit1；夹具分开发布者旧revision与另一actor旧base，两个拒绝分支均严格保留。原顺序11模型命令单次全exit0，产品2149文件raw不变；旧b24Image失败/日志EOF不改写，新head完整223/CI/main继续。
+
+- R9W当前推进：[首次paid结果检查点](../changes/2026-11-01-refactor-r9w-first-paid-result-checkpoint.md)。真实入口/PG/lease/供应返回后首笔child/root snapshot失败和真实COMMIT丢ACK，原5场景复现、新5场景PASS；不seed done，不重放供应，原6积分/字节/GET提示同case核对。持续失败hold和未持久化风险保留；M05这几个精确场景推进，不一并关闭M03/M04/M06/M09。原相关回归、完整223及main仍分层验收，b24 Image在注册模型组实际FAIL/日志EOF，Core按实际刷新。
+
 ## 当前固定版本
 
 - R9V当前推进：[经典发布生命周期](../changes/2026-11-01-refactor-r9v-classic-publication-lifecycle.md)。真实Go/PG浏览器第二次发布明确PUBLISH_STALE_DRAFT_BASE；真实PG原16复现、新17通过，原事务只推进发布者未再改动的同摘要草稿，外来陈旧草稿/在途编辑/CAS/原回执保持。经典UI共享已有sourcecopy/IPC owner，受控子进程104检查通过；本机原load超时/OOM和远端59f billing-ui FAIL均留存，后者精确断言仍OPEN，不用Linux局部通过消除历史失败。本地三原生入口均exit0（真实Go/PG，移动端/非管理员，供应商POST0），batch旧定位和APIMart本地桥接origin的失败及修正分开留存；59f Core已SUCCESS、Image仍billing-ui FAIL，新head222目录/整版/main以本轮DELIVERY和后续固定证据为准。

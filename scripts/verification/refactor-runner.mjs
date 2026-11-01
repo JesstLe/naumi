@@ -38,6 +38,9 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='legacy-generation-session')stageEnv.GENERATION_SESSION_EVIDENCE=evidence;
    if(spec.id==='model-management-session')stageEnv.MODEL_MANAGEMENT_SESSION_EVIDENCE=evidence;
    if(spec.id==='published-draft-continuation')stageEnv.MODEL_DRAFT_CONTINUATION_EVIDENCE=evidence;
+   if(spec.id==='first-paid-checkpoint')stageEnv.FIRST_PAID_CHECKPOINT_EVIDENCE=evidence;
+   if(spec.id==='imagegen-supplier-outcomes')stageEnv.IMAGEGEN_SUPPLIER_OUTCOME_EVIDENCE=evidence;
+   if(spec.id==='imagegen-batch-retry')stageEnv.IMAGEGEN_BATCH_RETRY_EVIDENCE=evidence;
    if(spec.id==='audio-ui')stageEnv.AUDIO_SOURCE_WAV=path.join(out,'audio-rules','original.wav');
    if(spec.id==='timeline-ui')stageEnv.TIMELINE_SOURCE_ASSETS=path.join(out,'timeline-rules');
    stageEnv.TIMELINE_APP_EVIDENCE=evidence;
