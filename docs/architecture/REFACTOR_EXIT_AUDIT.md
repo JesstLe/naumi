@@ -2,13 +2,17 @@
 
 ## 当前固定版本
 
+- R9R当前推进：[旧生成页会话](../changes/2026-11-01-refactor-r9r-generation-session.md)。F02提交/原job观察/结果投影已从组件迁移到单一owner；实际组件/Chromium原17场景10PASS7FAIL、新17PASS，原正常wire EXACT。auth/账务后端为fixture，真实同一付费断线trace仍OPEN；F01列表/上传与F03publication恢复是剩余应用owner，F02不再误列为完全未迁移。
+
+- 最新固定旧head1e2df80c：Image完整远端SUCCESS；Core执行源为GitHub合并快照d70820f8，在parent-completion的纯依赖导入漏项FAIL。该错误已本地原样复现，加载真实质量模块后原25场景PASS；新head仍需完整CI，不把这一条修正写成Core已通过。
+
 - 当前推进R9Q：[历史供应商兜底](../changes/2026-11-01-refactor-r9q-legacy-provider-fallback.md)。真实PG复现旧原子拒绝挡住平台兜底，修正为同root下独立attempt child；原价、真实租约和UNKNOWN不重放保持。fallback child已存/root未存的精确lease-lost断点已经实际恢复原字节/零额外供应POST；完整原顺序七条单次7/7 PASS、credit37场景、tsc/lint0，副本行为按R9Q最终DELIVERY验收，不拼接上轮5PASS/1FAIL，也不当作新head整版CI。
 
 - 上轮R9P网关实际本机PASS，副本恢复5360原始hash及旧失败，产品源码0修改。本地8980b122尚未单独push；远端最新e8156ee2的Core实际SUCCESS，Image在gateway处FAIL；其前build/账务/路由/模型/浏览器组实际PASS。新head仍需独立有效CI，既有watch不代表放行或审批。
 
 - 最新只读完整退出映射：`output/refactor-exit-e8156ee2-20261101/AUDIT.md`，20要求、9类故障×5维、219目录文件存在，结论仍PARTIAL。不能将已存paid-done恢复当首次paid-result持久化失败、无客户账务quota适配测试当客户余额验证、本地fs失败当远端对象PUT失败，或两条分开的UI/paid记录当同一付费断线链。
 
-- 剩余应用owner：F02旧生成页submit/poll/result投影优先，F01首页会话列表/上传生命周期，F03后台发布恢复。R9M已完成发送/SSE归属，旧R9J的“仍待迁移”是历史状态，不是当前债务。main protection/rulesets API已返回计划功能403，未变更仓库可见性/计划/权限，不宣称required checks已配置。
+- 在e8156ee2退出映射时，F02旧生成页submit/poll/result投影、F01首页会话列表/上传生命周期、F03后台发布恢复均为残余owner；R9R的F02迁移见顶部，不改写旧报告。R9M已完成发送/SSE归属，旧R9J的“仍待迁移”是历史状态。main protection/rulesets API已返回计划功能403，未变更仓库可见性/计划/权限，不宣称required checks已配置。
 
 以下R9N及更早版本条目和表格保存对应固定源的历史证据，不能当作R9Q的新头整版执行：
 

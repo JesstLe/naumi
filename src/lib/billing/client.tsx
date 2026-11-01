@@ -224,7 +224,7 @@ export function useBillingEstimate(input: QuoteInput, enabled=true) {
         return () => { cancelled = true; };
     }, [key, serializedInput, quoteRequest, email,enabled]);
     const current = result.key === key ? result.quote : null;
-    return { quote: current, cost: current?.credits ?? 0, loading: enabled&&!!user && !current && !result.error, error: enabled?result.error:null, submit: (url: string, init: RequestInit) => billing.submit(url, init, current) };
+    return { quote: current, cost: current?.credits ?? 0, loading: enabled&&!!user && !current && !result.error, error: enabled?result.error:null, submit: (url: string, init: RequestInit, beforeSubmit?:()=>void) => billing.submit(url, init, current, beforeSubmit) };
 }
 export function resolutionQuoteLabel(quote:PublicQuote|null) {
     return quote?.requestedParameters?.resolution && quote.effectiveParameters?.resolution && quote.requestedParameters.resolution!==quote.effectiveParameters.resolution ? ` · ${quote.requestedParameters.resolution}→${quote.effectiveParameters.resolution} · 报价不变` : "";

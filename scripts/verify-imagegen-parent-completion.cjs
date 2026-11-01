@@ -288,6 +288,7 @@ function fixture({runtime = true} = {}) {
       '@/lib/image-job-repository': () => load('src/lib/image-job-repository.ts'),
       '@/lib/image-gateway': {ImageOperationPending: Pending, ImageOperationDeferred: Deferred,
         isImageGatewayModel: () => false, withImageOperation: fail('supplier-paid-operation'), withImageIndexCheckpoint: fail('supplier-index')},
+      '@/lib/image-quality': () => load('src/lib/image-quality.ts'),
       './image-job-queue': () => load('src/lib/image-job-queue.ts'), '@/lib/settings': {getOpenAISettings: fail('supplier-settings')},
       '@/lib/openai-base': {getOpenAIBaseUrl: fail('supplier-origin')},
       '@/lib/bi/context': {withBiModelContext: async (_owner, _kind, _id, run) => run()},

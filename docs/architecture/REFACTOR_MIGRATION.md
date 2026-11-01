@@ -16,6 +16,10 @@
 
 “已迁移职责”不等于整项目完成；剩余门槛由退出审计逐项列出。Canvas 薄事件/DOM adapter 是否保留按职责判断，不按剩余行数继续机械拆分。
 
+## R9R 旧生成页会话
+
+[R9R](../changes/2026-11-01-refactor-r9r-generation-session.md)由`createGenerationSession`的`bindAccount/generate/resume`统一拥有当前视图epoch、原job观察与结果投影；React hook只绑定原auth/billing/cache及multipart/GET协议。页面不再持有poll ref或付费提交协议。原10正常场景与7实际反例、新17场景及普通wire精确对照有实际浏览器记录；真实付费断线trace不以此替代。上轮Core的父任务fixture只是补实际纯模块依赖，原25业务场景不删。F01/F03继续按真实职责推进。
+
 ## R9E 验证接口职责
 
 [R9E](../changes/2026-11-01-refactor-r9e-native-interaction-contract.md)把原生手势准备职责归现成dragCanvasNode，保留真实鼠标与App/PG原断言；直接生成扫描器核对当前typed owner与冻结quote，而不是恢复已删除的积分确认。feature Core触发归PR、main push/精确source依赖保留。目录215项已全部到达，但两批214PASS/1主题FAIL仍不是完整core通过；产品源码0改动，不增加功能模块计数。后续入口、状态、钱包、幂等和UNKNOWN合同不变。

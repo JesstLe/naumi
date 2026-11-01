@@ -43,8 +43,8 @@ import {
 import { useClipboardImagePaste } from "@/lib/clipboard-images";
 import type { GeneratedImage } from "@/lib/imagegen/generation-types";
 import { authHeader } from "@/lib/supabase";
-import { useImageJobResume } from "@/components/use-image-job-resume";
-import { useAuth, type SessionUser } from "@/lib/auth-context";
+import {useGenerationSession} from "./use-generation-session";
+import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -520,99 +520,17 @@ export function GenerateClient({
   const costPerImage=count?cost/count:0;
   const insufficient = !!user && remaining < cost;
 
-  async function generate() {
-    if (loading || sourceLoading) return;
-    // 未登录:直接弹登录/注册窗(优先于提示词等校验),登录后再生成。
-    if (!user) {
-      if (ready) openAuth("sign-up");
-      return;
-    }
-    if (!prompt.trim()) {
-      setError(t("gen.errPrompt"));
-      return;
-    }
-    if (remaining < cost) {
-      setError(
-        fmt(t("gen.errInsufficient"), {
-          r: remaining,
-          n: count,
-          c: cost,
-          res: resolution,
-          cp: costPerImage,
-        })
-      );
-      return;
-    }
-    setError(null);
-    setLoading(true);
-    try {
-      const fd = new FormData();
-      fd.append("prompt", prompt);
-      // 落库明确只存用户原始提示词(生图页 prompt 本就是用户输入框内容)
-      fd.append("userPrompt", prompt);
-      fd.append("category", category);
-      fd.append("ratio", ratio);
-      fd.append("resolution", resolution);
-      fd.append("quality", quality);
-      fd.append("style", style);
-      fd.append("count", String(count));
-      if (model) fd.append("model", model);
-      fd.append("email", user.email);
-      if (parentId) fd.append("parentId", parentId);
-      // 无显式父节点 + 来自模板「做同款」→ 传模板信息,服务端建/接"模板原图"根
-      else if (tpl) {
-        fd.append("templateId", tpl.id);
-        fd.append("templateImage", tpl.image);
-        fd.append("templatePrompt", tpl.prompt);
-      }
-      files.forEach((f) => fd.append("image", f));
-
-      // Kick off an async job (returns instantly), then poll for the result.
-      // Keeps every HTTP request short so slow generations never hit the CDN's
-      // ~100s proxy timeout.
-      const startRes = await billing.submit("/api/generate-image", {
-        method: "POST",
-        headers: await authHeader(),
-        body: fd,
-      });
-      const start = await startRes.json();
-      if (!startRes.ok) throw new Error(start.error ?? t("gen.errFail"));
-      const jobId: string | undefined = start.jobId;
-      if (!jobId) throw new Error(t("gen.errNoJob"));
-
-      rememberJob(jobId);
-      await receiveGeneration(jobId,cost);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("gen.errFailRetry"));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const generationPollingRef=useRef<string|null>(null);
-  const rememberJob=useImageJobResume("generate-image",user?.email,id=> {
-    if (generationPollingRef.current) return;
-    setLoading(true);
-    void receiveGeneration(id,0).catch(error=>setError(error instanceof Error ? error.message : t("gen.errFailRetry"))).finally(()=>setLoading(false));
-  });
-  useEffect(()=>()=> { generationPollingRef.current=null; },[]);
-  async function receiveGeneration(jobId: string, fallbackCost: number) {
-    generationPollingRef.current=jobId;
-    const deadline=Date.now()+30*60*1000;
-    while (generationPollingRef.current===jobId) {
-      const response=await fetch(`/api/generate-image?job=${encodeURIComponent(jobId)}`,{cache:"no-store",headers:await authHeader()});
-      const data=await response.json();
-      if(response.ok && data.user) applyServerUser(data.user);
-      if (!response.ok) { if(response.status===404 || response.status===403) rememberJob(null); throw new Error(data.error || t("gen.errFail")); }
-      if(data.status==="error") { rememberJob(null); throw new Error(data.error || t("gen.errFail")); }
-      if(data.status==="done") {
-        if(data.user) applyServerUser(data.user); else if(fallbackCost) consumeCredits(fallbackCost);
-        setImages(current=>[...current,...data.images.filter((image:GeneratedImage)=>!current.some(existing=>existing.id===image.id))]);
-        setShownRec(null); rememberJob(null); generationPollingRef.current=null; return;
-      }
-      if(Date.now()>deadline) { rememberJob(null); generationPollingRef.current=null; throw new Error(t("gen.errTimeout")); }
-      await new Promise(resolve=>setTimeout(resolve,2500));
-    }
+  const generation=useGenerationSession({account:user?.email,submit:billing.submit,
+    changedAccount:()=>{setImages([]);setShownRec(null);setLoading(false);setError(null);},
+    context:{ready,remaining,cost,signIn:()=>openAuth("sign-up"),
+      messages:{prompt:t("gen.errPrompt"),insufficient:fmt(t("gen.errInsufficient"),{r:remaining,n:count,c:cost,res:resolution,cp:costPerImage}),
+        failed:t("gen.errFail"),missingJob:t("gen.errNoJob"),retry:t("gen.errFailRetry"),timeout:t("gen.errTimeout")},
+      loading:(value,current)=>setLoading(previous=>current()?value:previous),
+      error:(value,current)=>setError(previous=>current()?value:previous),images:setImages,
+      delivered:current=>setShownRec(previous=>current()?null:previous),user:applyServerUser,consume:consumeCredits,
+    }});
+  function generate(){
+    return generation.generate({prompt,category,ratio,resolution,quality,style,count,model,parentId,template:tpl,files,sourceLoading});
   }
 
   return (
