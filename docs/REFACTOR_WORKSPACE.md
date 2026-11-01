@@ -2,7 +2,7 @@
 
 ## 当前推进：R10C 历史批次回执与陈旧观察
 
-[R10C](changes/2026-11-02-refactor-r10c-historical-batch-retry.md)真实旧派生NOT_ACCEPTED回执仍触发新购买；并发旧tick还能把原第二轮推进到第三轮，账本12而批次仅报6，九条基线已完整复现。生成应用owner现在共享明确证据归集／只读重试接口，批次在锁前读取、锁内匹配原childID＋attempts。首次候选九条PASS：无证据2POST→1，明确未收费仍正常2POST／6积分，并发3POST2consume→2POST1consume。最终完整generation／102浏览器／类型／四产物按本轮DELIVERY；225登记不当作全跑。整体ACTIVE、未合main、本线程部署0。
+[R10C](changes/2026-11-02-refactor-r10c-historical-batch-retry.md)真实旧派生NOT_ACCEPTED回执仍触发新购买；并发旧tick还能把原第二轮推进到第三轮，账本12而批次仅报6，九条基线已完整复现。生成应用owner现在共享明确证据归集／只读重试接口，批次在锁前读取、锁内匹配原childID＋attempts。首次候选九条PASS：无证据2POST→1，明确未收费仍正常2POST／6积分，并发3POST2consume→2POST1consume。原顺序generation22/22子命令已实际PASS，局部scope顶层PARTIAL/exit2；固定镜像／102浏览器／类型／四产物按本轮DELIVERY，225登记不当作全跑。整体ACTIVE、未合main、本线程部署0。
 
 
 ## 当前推进：R10B 供应拒绝证据归属

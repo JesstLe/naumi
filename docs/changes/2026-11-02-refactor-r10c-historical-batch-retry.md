@@ -36,3 +36,9 @@
 ## 整体退出
 
 本切片收敛R10B末尾的历史拒绝标签消费问题，以及同一owner内的陈旧观察事务漏洞；不等于其他故障矩阵／语义耦合审阅／当前同源225CI／候选合main已完成。整体ACTIVE，本线程部署0；分支超48小时的原因仍为整体退出和有效同源CI未闭合。main的独立47发布证据保持，不将本重构宣称已发布。
+
+## 原顺序生成组与夹具质量
+
+固定`6f38575b5ee804cd1a8f3bff88dc97df54db979e`的generation原顺序22子命令单次全部PASS／exit0、0FAIL、0NOT_RUN、0reuse；局部scope顶层仍PARTIAL／exit2，不修改退出合同或宣称完整225通过。新九场景中接口的其他owner／其他scope／缺失任务／非法attempt结构负例一并实际执行。
+
+定向lint发现旧scope-receipt夹具原有的局部变量名module违反Next lint规则；对099原始Git blob经stdin lint已复现同一问题。只把局部绑定改名loadedModule、保留VM的module属性及全部断言，不关闭规则。该更名发生在完整22运行之后，后续单独复验原23项，最终源码桥接与质量记录不将旧组执行源改标为新head。

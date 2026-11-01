@@ -25,10 +25,10 @@ function load(relative,dependencies={}){
  for(const target of ['@/lib/artworks/repository','@/lib/artworks/writer','@/lib/release-runtime/background-activity','./delivery-billing','../model-config/image-rejection-evidence','./retry-eligibility'])if(!(target in dependencies))dependencies[target]=forbidden;
  const file=path.join(root,relative),source=fs.readFileSync(file,'utf8');
  const output=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
- const module={exports:{}};
+ const loadedModule={exports:{}};
  const imports=id=>{if(id==='server-only')return {};if(id in dependencies)return dependencies[id];if(id==='../staging-history')return load('src/lib/staging-history.ts');if(id==='./operation-id')return load('src/lib/imagegen/operation-id.ts');if(id==='./task-diagnostics'||id==='../canvas/image-version-store')return new Proxy({},{get:()=>()=>{throw Error(`Receipt-only fixture unexpectedly executed ${id}`);}});if(id.startsWith('node:'))return require(id);throw Error(`Unmocked import ${id} in ${relative}`);};
- const sandbox={module,exports:module.exports,require:imports,structuredClone,Buffer,Response,Request,Headers,URL,Date,process:{env:{}},console,setTimeout,clearTimeout,AbortSignal};
- vm.runInNewContext(output,sandbox,{filename:file});return module.exports;
+ const sandbox={module:loadedModule,exports:loadedModule.exports,require:imports,structuredClone,Buffer,Response,Request,Headers,URL,Date,process:{env:{}},console,setTimeout,clearTimeout,AbortSignal};
+ vm.runInNewContext(output,sandbox,{filename:file});return loadedModule.exports;
 }
 const cases=[];function test(name,run){cases.push({name,run});}
 const scopeFile='src/lib/imagegen/creation-scope.ts';
