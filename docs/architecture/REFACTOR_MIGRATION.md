@@ -20,6 +20,10 @@
 
 [R9E](../changes/2026-11-01-refactor-r9e-native-interaction-contract.md)把原生手势准备职责归现成dragCanvasNode，保留真实鼠标与App/PG原断言；直接生成扫描器核对当前typed owner与冻结quote，而不是恢复已删除的积分确认。feature Core触发归PR、main push/精确source依赖保留。目录215项已全部到达，但两批214PASS/1主题FAIL仍不是完整core通过；产品源码0改动，不增加功能模块计数。后续入口、状态、钱包、幂等和UNKNOWN合同不变。
 
+## R9F 原生节点入口身份
+
+[R9F](../changes/2026-11-01-refactor-r9f-native-node-ingress.md)由原创建包装器向五类原生节点的25处理器传server actor；request-auth统一规范化与管理员目标授权。undefined保留未解析/无DB，null是已知匿名；requireAdmin、企业归属、素材、事务、CAS/幂等及原任务均沿原owner。不设跨请求身份缓存。原新98实际HTTP/PG＋20无DB Route（118/244）EXACT，应用源9ba完整216PASS，随后元数据源292e仅改产物端口/失败报告并另验2个真实子进程，选择范围仍PARTIAL/exit2；最终新head有效CI及main整合单列。
+
 ## 原始路线和验收合同
 
 下列阶段表是原始工作包定义与长期合同，固定基线数字属于 2026-10-24，不是当前未完成数量；原先“第一轮推荐”已退出当前指令，全文在 Git 历史保留。

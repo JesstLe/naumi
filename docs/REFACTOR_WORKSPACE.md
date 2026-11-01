@@ -1,6 +1,20 @@
 # 重构工作区：当前交付快照
 
-## 当前推进：R9E 原生交互复用与直接生成合同
+## 当前推进：R9F 五类原生节点身份归属
+
+[R9F模块](changes/2026-11-01-refactor-r9f-native-node-ingress.md)：15个Route、25个处理器消费现成创建包装器的服务端actor；request-auth仍拥有身份规范化及管理员目标授权，undefined保留无DB解析、null代表已知匿名。普通入口原生账号认证SQL2→1，管理员跨账号只读3→2（独立requireAdmin保留），不设全局缓存，不改领域事务、CAS、任务/计费/素材规则。
+
+原5344文件基线与修改版各98个实际HTTP/nativeHMAC/PG场景＋20个无DB Route场景（合计118场景244检查）、普通投影EXACT；包含角色撤销、并发账号隔离、并发CAS、原operation重放及20个无DB401。该SQL计数只属于入口内原生账号校验，不含middleware或管理员角色查询等其他SQL。原/新账务记录精确不变，供应商POST0。
+
+完整应用/整版执行源码 `9ba80e10ed5135e5eeb20cc4c57c93cfb090aa71`：**当前216项单次完整PASS、0FAIL、0NOT_RUN、0reuse**；同源完整Web/Worker与原生SDK应用字节EXACT，runtime177、真实产品浏览器92（routeMocks0）及450秒混合165图片/12媒体/177consume/1014fixture积分通过。capacityClaim=false；不是10万容量或真实供应商质量证明。非增量tsc0，5092编译器输入+4配置，lint0/37既有warning，四类SCC0。
+
+元数据修正源 `292e24f5195e5d416121105a45cff1836a61930f`：完整回归后发现两个新用例虽断言通过，详细文件仍写全局默认目录；已按真实case时间/日志hash冻结原文件，改为runner原有每case端口注入，两个真实子进程（原生118场景244检查＋拖动4场景14检查）归属验证通过，普通投影EXACT，继承的旧路径未被写入。这一选择范围报告保持PARTIAL/exit2，不冒称新元数据源本地重跑了216；最终head整版由新CI放行。应用到元数据源只改3个验收路径/CI报告文件，全部2141产品字节仍与9ba镜像源相同。
+
+本轮原97主题断言在有界诊断及当前完整core中通过；R9E原40检查后重载失败和R9D原timeline失败保留，历史唯一根因仍OPEN，不能归因为本轮身份迁移。旧head ba497的远端Core与Image均已实际FAIL；Image失败步骤为npm build，日志下载TLS失败，根因未读到。新增原构建命令/参数/exit保留、日志/commit/工作树列表/失败注释及always artifact；Core另以只读步骤把真实失败case/退出码/日志尾部发布到检查注释。真实Bash0/7及Node报告5场景18检查通过，不宣称旧CI已修复或新CI已通过。
+
+产品原16文件变更，其余2125个原src/services raw hash相同；5344→5346文件。四产物、当前完整补丁/副本回滚和最终4文档source桥接归output/refactor-r9f-20261101/DELIVERY.json与VERIFICATION.txt。第三产品模块后已刷新/普通整合origin/main e2f56255（已包含），同步计数3→0，没有写main。**整体ACTIVE、main未合、部署0、47HOLD**；下一步是读取新head实际CI结果并闭合失败后做最终普通main整合，不用本地PASS覆盖远端FAIL。
+
+## 上一模块：R9E 原生交互复用与直接生成合同
 
 [R9E模块](changes/2026-11-01-refactor-r9e-native-interaction-contract.md)：timeline/director 的原生验证复用既有 `dragCanvasNode`，不再私有读取一次坐标就发手势；原持久化、撤销/重做、锁定、复制、删除、账务断言和等待时间保留。真实 ReactFlow/生产 drag owner 的四场景原/新对照为12/14检查，正常轨迹EXACT；当前同源完整应用中的 timeline 和 director 原生链均PASS。它们不证明历史单次失败的唯一根因。
 
@@ -99,4 +113,4 @@ R9A固定验证源码 `9a52ba65b77e729ea724fceff66283c5f020e678`：pricing 11/11
 
 ## 入口迁移边界
 
-R8Z/R9A直接候选由R9B历史轮询迁移收口；R9C继续迁移公共billing quote与canvas/image-tasks的间接链，并移除编辑用例Request边界。局部AST/调用链不是全站闭合；其他跨文件适配、当前215完整固定验收、有效CI、最终main/生产门槛仍独立保留。
+R8Z/R9A直接候选由R9B历史轮询迁移收口；R9C继续迁移公共billing quote与canvas/image-tasks的间接链，并移除编辑用例Request边界。局部AST/调用链不是全站闭合；其他跨文件适配、当前216完整固定验收、有效CI、最终main/生产门槛仍独立保留。
