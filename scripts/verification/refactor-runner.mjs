@@ -38,6 +38,7 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='legacy-generation-session')stageEnv.GENERATION_SESSION_EVIDENCE=evidence;
    if(spec.id==='model-management-session')stageEnv.MODEL_MANAGEMENT_SESSION_EVIDENCE=evidence;
    if(spec.id==='published-draft-continuation')stageEnv.MODEL_DRAFT_CONTINUATION_EVIDENCE=evidence;
+   if(spec.id==='media-metadata-ownership')stageEnv.MEDIA_METADATA_EVIDENCE=evidence;
    if(spec.id==='billing-task-ownership')stageEnv.BILLING_TASK_OWNERSHIP_EVIDENCE=evidence;
    if(spec.id==='first-paid-checkpoint')stageEnv.FIRST_PAID_CHECKPOINT_EVIDENCE=evidence;
    if(spec.id==='imagegen-supplier-outcomes')stageEnv.IMAGEGEN_SUPPLIER_OUTCOME_EVIDENCE=evidence;

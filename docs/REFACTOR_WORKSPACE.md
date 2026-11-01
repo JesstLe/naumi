@@ -1,5 +1,15 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：R10H 媒体元数据写入归属
+
+[R10H](changes/2026-11-02-refactor-r10h-media-metadata-ownership.md)推进W2：Canvas只准备/保存原图和浏览器预览，媒体writer拥有owner/digest注册与关联；video保有probe规则，经同Tx公共接口投影媒体尺寸。3处跨模块媒体写入→0，普通mutable注册仍保留原owner/摘要变化清预览语义，不机械重排模块内部SQL，不新增框架/业务护栏。
+
+真实PG/Sharp/本地对象/实际media GET handler的原33检查复现probe部分提交、canonical尺寸分歧、原图关联0行假成功；新38检查通过，原字节/浏览器预览、caller rollback、旧摘要/v0升级、metadata contenders单owner保持。原图metadata同Tx，但对象字节不参与PG回滚；未做历史全库回填，不把metadata race冒称跨存储原子性。
+
+集中回归：原上传121、项目媒体归属33、私有媒体/预览、W1账务35及生成组23子命令通过（局部runner仍PARTIAL/exit2）。非增量tsc0/5121输入、lint0、runner20case/372check、四类SCC0；真实Worker2427输入构建/实际导出加载通过，非新完整App镜像。两个完整video-fusion媒体脚本因缺专属Router fixture URL在harness启动阶段exit1，未进入业务验收，原日志保留、不计通过。
+
+本轮完整新源5417，独立副本/四产物终态见output/refactor-r10h-20261102/DELIVERY.json。fetch后origin/main ca63c76f仍为本分支祖先；本轮未合main、未部署。整体ACTIVE，W3工作台/Agent职责、九类故障同case/页面证据、有效CI及最终整版继续，不能以W2局部完成代替整体交付。分支超48小时的未整合原因仍保留。
+
 ## 当前推进：R10G 账务与任务写入归属
 
 [R10G](changes/2026-11-02-refactor-r10g-billing-task-ownership.md)完成R10F W1列出的legacy钱包/冻结hold/SaaS证据/费用补查与人工核对恢复链。真实PG基线24检查复现核对已扣款但投影失败503无恢复债务、费用与正常任务反向锁40P01；新35检查通过，五个任务文件跨账务表直接写候选30→0，四legacy原价/并发/lease/零价/余额保持。费用task→billing同Tx；核对后恢复标记与账务提交，原Worker后续仅恢复已存输出，不新增购买。

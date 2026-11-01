@@ -1,3 +1,6 @@
+import {withTransaction} from "@/platform/db/transaction";
+import {registerMediaMetadata,assertOwnedMediaVersion as assertOwnedMediaVersionWith,registerOriginalWithPreviewsTx,type OriginalMediaSet} from "./media-assets/writer";
+export {registerOriginalWithPreviewsTx,updateMediaDimensionsTx,type OriginalMediaSet,type PreparedMediaMetadata} from "./media-assets/writer";
 import {ensureMediaSchema} from "@/lib/media-assets-schema";
 export {ensureMediaSchema};
 
@@ -48,12 +51,13 @@ export async function registerMediaAsset(key:string, raw:Uint8Array, contentType
   if(!dbEnabled) return;
   await ensureMediaSchema();
   const bytes=Buffer.from(raw), sha=createHash('sha256').update(bytes).digest('hex');
-  await getPool().query(`INSERT INTO app_media_assets(key,owner,public,driver,remote_ready,content_type,sha256,bytes)
-    VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(key) DO UPDATE SET
-    owner=COALESCE(app_media_assets.owner,EXCLUDED.owner),remote_ready=EXCLUDED.remote_ready,
-    thumbnail_key=CASE WHEN app_media_assets.sha256=EXCLUDED.sha256 THEN app_media_assets.thumbnail_key ELSE NULL END,
-    preview_key=CASE WHEN app_media_assets.sha256=EXCLUDED.sha256 THEN app_media_assets.preview_key ELSE NULL END,
-    sha256=EXCLUDED.sha256,bytes=EXCLUDED.bytes,content_type=EXCLUDED.content_type`,
-    [key,owner?.toLowerCase()||currentBiContext()?.email||null,publicKey(key),storageDriver,remoteReady,contentType,sha,bytes.length]);
+  await registerMediaMetadata(getPool(),{key,owner:owner?.toLowerCase()||currentBiContext()?.email||null,public:publicKey(key),driver:storageDriver,remoteReady,contentType,sha256:sha,bytes:bytes.length});
   if(prepareVariants&&/^image\/(png|jpe?g|webp|gif|avif)$/.test(contentType)) await ensureMediaVariants(key,bytes).catch(()=>{});
+}
+
+export async function assertOwnedMediaVersion(key:string,owner:string,sha256:string){
+ await ensureMediaSchema();await assertOwnedMediaVersionWith(getPool(),key,owner,sha256);
+}
+export async function registerOriginalWithPreviews(input:OriginalMediaSet){
+ await ensureMediaSchema();await withTransaction(getPool(),tx=>registerOriginalWithPreviewsTx(tx,input));
 }

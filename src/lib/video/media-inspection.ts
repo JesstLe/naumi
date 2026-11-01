@@ -8,7 +8,8 @@ import {createHash} from "node:crypto";
 
 import {getPool} from "@/platform/db/pool";
 import {listArtworksByIds} from "@/lib/artworks/repository";
-import { canReadMedia } from "../media-assets";
+import { canReadMedia,ensureMediaSchema,updateMediaDimensionsTx } from "../media-assets";
+import {withTransaction} from "@/platform/db/transaction";
 import { getMediaAsset,getMediaAssetTx } from "../media-assets-reader";
 import { readManagedObject } from "../object-storage/managed-read";
 import {ModelConfigError} from "../model-config/types";
@@ -32,9 +33,16 @@ export async function inspectedOwnedMediaTx(tx:PoolClient,actor:string,key:strin
   return {key,artworkId,sha256:asset.sha256,bytes:Number(asset.bytes),mimeType,extension:mediaExtension(mimeType),probe,groupId:art.group_id||null};
 }
 
+/** Probe cache belongs to video; asset dimensions belong to media. The caller
+ * owns this shared transaction, including rollback on a failed projection. */
+export async function recordMediaProbeTx(tx:PoolClient,key:string,sha256:string,probe:MediaProbe){
+ const written=await tx.query("INSERT INTO app_video_media_probes(storage_key,sha256,probe,decoder_version) VALUES($1,$2,$3::jsonb,1) ON CONFLICT(storage_key,sha256) DO UPDATE SET probe=EXCLUDED.probe,decoder_version=1 WHERE app_video_media_probes.decoder_version<1 RETURNING probe",[key,sha256,JSON.stringify(probe)]);
+ const canonical=(written.rows[0]||(await tx.query("SELECT probe FROM app_video_media_probes WHERE storage_key=$1 AND sha256=$2",[key,sha256])).rows[0]).probe as MediaProbe;
+ await updateMediaDimensionsTx(tx,key,sha256,canonical.width||null,canonical.height||null);
+}
 export async function recordMediaProbe(key:string,sha256:string,probe:MediaProbe){
-  await ensureMediaInspectionSchema();await getPool().query("INSERT INTO app_video_media_probes(storage_key,sha256,probe,decoder_version) VALUES($1,$2,$3::jsonb,1) ON CONFLICT(storage_key,sha256) DO UPDATE SET probe=EXCLUDED.probe,decoder_version=1 WHERE app_video_media_probes.decoder_version<1",[key,sha256,JSON.stringify(probe)]);
-  await getPool().query("UPDATE app_media_assets SET width=$3,height=$4 WHERE key=$1 AND sha256=$2",[key,sha256,probe.width||null,probe.height||null]);
+ await ensureMediaInspectionSchema();await ensureMediaSchema();
+ await withTransaction(getPool(),tx=>recordMediaProbeTx(tx,key,sha256,probe));
 }
 export async function verifiedOwnedMedia(actor:string,key:string,artworkId:string|null=null,expectedSha?:string):Promise<FrozenMediaInput>{
   if(!await canReadMedia(key,actor))throw new ModelConfigError("MEDIA_INPUT_UNAVAILABLE","媒体素材不存在或无权访问",404);
