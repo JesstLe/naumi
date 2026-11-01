@@ -1,5 +1,10 @@
 # 迁移合同与模块记录索引
 
+## R10B 供应拒绝证据接口
+
+[R10B](../changes/2026-11-02-refactor-r10b-supplier-rejection-ownership.md)沿原模型阶段owner补逐图身份、纯政策与只读证据接口，父任务从“rejected状态猜测”迁为明确证据消费。原任务／账务事务／paid identity／SDK wire不迁移；七个实际PG场景和15纯负例证明无证明批次不再自动购买，明确未收费正常重试保持。完整UI／镜像、回滚及当前CI分别绑定最终证据。
+
+
 ## R10A 当前 main 整合
 
 [R10A](../changes/2026-11-02-refactor-r10a-current-main-sync.md)普通merge最新ca63c76f的四个ops／记录文件；不迁移产品owner。原22项和新增28项unit分别21／20实际通过、1／8跳过；原R9Z的96浏览器及真实Go/PG结果保留其执行绑定。最终完整source／回滚由R10A交付，不让同事发布证据覆盖本线程重构未部署状态。

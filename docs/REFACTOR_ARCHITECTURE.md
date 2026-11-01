@@ -1,5 +1,10 @@
 # 架构与职责：模块化单体
 
+## R10B 供应阶段与重试授权
+
+[R10B](changes/2026-11-02-refactor-r10b-supplier-rejection-ownership.md)把原HTTP诊断与再次购买证据分开：model-config拥有原阶段事实、逐unit纯判定和只读接口；imagegen只在原job归属内消费，不穿透阶段表、不复制钱包规则。NOT_ACCEPTED只表示已证明，失败与客户零扣款不充当证明；已有批次策略复用，不创建平行任务或事件框架。
+
+
 ## R10A 发布取证工具整合
 
 [R10A](changes/2026-11-02-refactor-r10a-current-main-sync.md)仅保留main已有发布取证模块：有界只读逐行指纹不承担任务恢复或钱包写入，不将采集不完整当排空。原产品与所有既有验收scripts字节保持，职责边界未扩张；本轮不是新增产品服务或重复发布。

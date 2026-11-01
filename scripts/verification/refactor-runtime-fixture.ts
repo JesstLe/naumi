@@ -28,9 +28,10 @@ async function request(url:string,body?:unknown,cookie?:string){
  const value=await response.json();events.push({path:new URL(url).pathname,status:response.status,ms:Math.round(performance.now()-begin)});return {status:response.status,body:value};
 }
 async function until<T>(read:()=>Promise<T>,accept:(v:T)=>boolean,label:string,timeout=90000){const end=Date.now()+timeout;let value:T|undefined;while(Date.now()<end){value=await read();if(accept(value))return value;await sleep(100);}throw Error(label+' TIMEOUT '+JSON.stringify(value));}
-export async function setup(options:{retained?:boolean}={}){
+export async function setup(options:{retained?:boolean;supplierRouting?:boolean}={}){
  const cred=await createCredentialStore(sql).importPlain({providerId:'p1',plain:'fixture-r6b-provider-only',actor:'fixture'});
  const config=fixtureModelConfig(provider+'/v1',cred.id);
+ if(options.supplierRouting)config.publicModels[0].supplierRouting={mode:'priority',channels:[{upstreamId:'u1',enabled:true,priority:1,weight:1}]};
  // Existing retained-job fixture predates the public image-a name. Preserve
  // that accepted legacy ID in this fixture's catalog, not by rewriting jobs.
  config.publicModels.push({...config.publicModels[0],id:'gpt-image-2',label:'Retained fixture model'});

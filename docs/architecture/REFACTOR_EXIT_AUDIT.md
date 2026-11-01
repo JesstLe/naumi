@@ -1,5 +1,8 @@
 # 整体退出审计
 
+- R10B：[拒绝证据归属](../changes/2026-11-02-refactor-r10b-supplier-rejection-ownership.md)。真实无证明403父NOT_ACCEPTED／批次2POST反例复现；模型owner记录原unit并公开只读证据，原七场景新PASS、无证明2→1，明确未收费2→2，正常6积分及真实socket丢失UNKNOWN／释放保持。原parent25／firstpaid5／quota及runner20-368通过；固定完整镜像和实际页面维度按本轮DELIVERY。M03/M04具体维度推进不等于全部故障关闭；224登记不等于完整运行，整体ACTIVE／未合main／本线程部署0。
+
+
 - R10A：[当前main整合](../changes/2026-11-02-refactor-r10a-current-main-sync.md)。R9Z封版后fetch发现ca63c76f，只新增四个ops／发布记录文件，普通merge无冲突；产品2149／原scripts1737／编译输入5105 raw保持。原22项21PASS1SKIP，新增28项20PASS8SKIP，未运行真实PG选项。R9Z96浏览器与Go/PG保持原source，最终merge未重标为同源整版执行；当前CI、剩余矩阵及候选合main继续。保留main独立47发布证据，本重构未发布，整体ACTIVE。
 
 
