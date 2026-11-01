@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { randomUUID } from "node:crypto";
+import { randomUUID,createHash } from "node:crypto";
 import path from "node:path";
+import {mkdir,writeFile,readFile} from "node:fs/promises";
 import sharp from "sharp";
 import type { ImageJobKind, ImageJobRow } from "../src/lib/image-job-repository";
 
@@ -16,6 +17,7 @@ async function main() {
   process.env.OPENAI_IMAGE_MODEL = "naumi-image-auto";
   process.env.OPENAI_IMAGE_MODELS = "naumi-image-auto";
   process.env.OPENAI_IMAGE_QUALITY = "medium";
+  process.env.NAUMI_IMAGE_QUALITY_SUPPORTED = "1";
   const image = await sharp({ create: { width: 1024, height: 1024, channels: 3, background: "white" } }).png().toBuffer();
   const operations = new Map<string, string>();
   const wire: { id: string; quality: string; multipart: boolean; options: any }[] = [];
@@ -59,6 +61,8 @@ async function main() {
   const aplus = await import("../src/app/api/aplus/route");
   const stamp = randomUUID(), email = `gateway-${stamp}@example.test`;
   const sql = db.getPool();
+  const evidence=path.resolve(process.env.GATEWAY_VERIFY_EVIDENCE||"output/image-gateway-regression");await mkdir(evidence,{recursive:true});
+  const observations:Record<string,unknown>={source:process.env.GITHUB_SHA||null,verifierSha256:createHash("sha256").update(await readFile(process.argv[1])).digest("hex"),externalSupplierRequests:0};
   try {
     await db.getOrCreateUser(email, "Gateway fixture");
     await db.addCreditBatch(email, 100, { source: "admin", reason: "Fixture" });
@@ -71,12 +75,22 @@ async function main() {
       while (Date.now()<deadline) {
         const row=await repo.getImageJob(id,kind);
         if(row && predicate(row)) return row;
+        if(row?.snapshot.status==="error")throw new Error(`fixture terminal ${kind}: ${row.snapshot.error}`);
         await new Promise(resolve=>setTimeout(resolve,100));
       }
       throw new Error(`fixture timeout ${kind}`);
     }
-    const pending = await waitJob(jobId,"generate",row=>!!row.snapshot.error && row.lease_token===null);
-    assert.equal(pending.snapshot.status,"pending"); assert.equal(pending.billing_settled,false);
+    const unavailable = await waitJob(jobId,"generate",row=>!!row.snapshot.error && row.lease_token===null);
+    // Current customer policy ends an undelivered wait and releases only its
+    // reservation. It never proves that the supplier did not charge or lets a
+    // worker replay the old purchase. Do not restore obsolete indefinite holds.
+    assert.equal(unavailable.snapshot.status,"error");assert.equal(unavailable.billing_settled,true);
+    assert.equal(unavailable.snapshot.customerBilling,"released");assert.equal(unavailable.snapshot.supplierCostStatus,"pending");
+    assert.equal((unavailable.snapshot.paidOperations as Record<string,{state:string}>)[jobId].state,"started");
+    assert.equal((await sql.query("SELECT count(*)::int n FROM app_gen_reservations WHERE job_id=$1",[jobId])).rows[0].n,0);
+    assert.equal((await sql.query("SELECT count(*)::int n FROM app_ledger WHERE email=$1 AND kind='consume'",[email])).rows[0].n,0);
+    const release=(await sql.query("SELECT proof,result,charge FROM app_billing_reconciliations WHERE operation_id=$1 AND actor='system:image-job'",[jobId])).rows[0];
+    assert.equal(JSON.parse(release.proof).supplierOutcome,"unknown");assert.equal(release.result.supplierCost,"pending");assert.equal(release.charge,0);
     assert.equal(operations.size,2);
     holdSecond=false; process.env.OPENAI_IMAGE_QUALITY="high";
     const kick=async(route:{POST:(request:Request)=>Promise<Response>},id:string)=> {
@@ -85,10 +99,20 @@ async function main() {
       assert.equal(result.status,200,await result.clone().text());
     };
     await kick(generate,jobId);
-    const done=await waitJob(jobId,"generate",row=>row.snapshot.status==="done" && row.lease_token===null);
-    assert.ok(Array.isArray(done.snapshot.images)); assert.equal(done.snapshot.images.length,2); assert.equal(done.snapshot.creditsUsed,12); assert.equal(operations.size,2);
+    assert.equal(wire.length,2,"ending the customer wait never authorizes another old supplier POST");
+    assert.deepEqual((await repo.getImageJob(jobId,"generate"))!.snapshot.paidOperations,unavailable.snapshot.paidOperations);
+    observations.undelivered={jobId,status:"error",customerBilling:"released",supplierOutcome:"unknown",supplierCost:"pending",consumes:0,oldWorkerPosts:0};
+    console.log("GATEWAY_UNDELIVERED_OUTCOME=PASS STATUS=error CUSTOMER_BILLING=released SUPPLIER_COST=pending ORIGINAL_ATTEMPT=started CONSUMES=0 OLD_WORKER_POSTS=0");
+    // A new, explicit user purchase is a different operation. Keep the original
+    // failed receipt intact; exercise successful fan-out and completed replay.
+    const fresh=await generate.POST(new Request("http://fixture.test/api/generate-image",{method:"POST",headers,body:JSON.stringify({prompt:"fixture product",model:"naumi-image-auto",count:2,quality:"medium",resolution:"1K",ratio:"1:1"})}));
+    assert.equal(fresh.status,200,await fresh.clone().text());const freshId=(await fresh.json()).jobId;assert.notEqual(freshId,jobId);
+    const done=await waitJob(freshId,"generate",row=>row.snapshot.status==="done" && row.lease_token===null);
+    assert.ok(Array.isArray(done.snapshot.images)); assert.equal(done.snapshot.images.length,2); assert.equal(done.snapshot.creditsUsed,12); assert.equal(operations.size,4);
     assert.ok(wire.every(request=>request.quality==="medium"));
-    console.log("PASS generation: stable per-image IDs, uncertain outcome stays pending, frozen quality, recovery and one credit settlement");
+    await kick(generate,freshId);assert.equal(wire.length,4);assert.equal(await db.getImageJobChargedCredits(freshId),12);
+    observations.generation={jobId:freshId,images:2,credits:12,completedWorkerPosts:0};
+    console.log("PASS generation: stable per-image IDs, frozen quality, explicit new purchase and completed recovery with one credit settlement");
     const shot=(id:string)=>({id,label:"Fixture",role:"main",ratio:"1:1",prompt:"fixture label",status:"pending",gradient:""});
     const suiteId=`suite-${stamp}`;
     await new DurableImageJobs<any>("suite").create(suiteId,email,{status:"pending",shots:[shot(`${suiteId}:shot:0`)],done:0,total:1,createdAt:Date.now(),imageQuality:"medium"},{images:[{buf:image,type:"image/png"}],extra:"",platform:"taobao",email,model:"naumi-image-auto",cost:6,requested:[],textModel:"fixture"},6,true);
@@ -107,10 +131,16 @@ async function main() {
       const original = (await repo.getImageJob(originalId, kind))!;
       const id = `${kind}-quality-${stamp}`;
       const quality = {requested:tier,executed:tier,fallbackReason:null};
-      const snapshot = {...original.snapshot,status:"pending",shots:[shot(`${id}:shot:0`)],done:0,total:1,
-        cost:charge,imageQuality:tier,quality,renderingFinished:false};
-      await new DurableImageJobs<any>(kind).create(id,email,snapshot,{...original.payload,cost:charge},charge,true);
-      const callsBefore=wire.length;
+      assert.equal(original.billing_settled,true);
+      // A completed snapshot contains binary/checkpoint references owned by its
+      // original job. A distinct test purchase must start with raw fixture
+      // inputs, not clone another job's paid result pointers.
+      const common={status:"pending",shots:[shot(`${id}:shot:0`)],done:0,total:1,createdAt:Date.now(),cost:charge,imageQuality:tier,quality};
+      const snapshot=kind==="suite"?common:{...common,stage:"generating",sources:[{id:`${id}:source`,status:"approved",version:1}],sourceInputs:[{buf:image,type:"image/png"}],sourceBuffers:[image],sourceHistory:[[]],extra:"",platform:"amazon",lang:"zh",format:"1:1",modules:["main"],email,model:"naumi-image-auto",textModel:"fixture",useDb:true,generationStarted:true,reserved:true,parentId:"",parentIds:[],origin:""};
+      const payload=kind==="suite"?{images:[{buf:image,type:"image/png"}],extra:"",platform:"taobao",email,model:"naumi-image-auto",cost:charge,requested:[],textModel:"fixture"}:{};
+      assert.equal(Object.hasOwn(snapshot,"paidOperations"),false);
+      await new DurableImageJobs<any>(kind).create(id,email,snapshot,payload,charge,true);
+      const callsBefore:number=wire.length;
       await kick(route,id);
       const completed=await waitJob(id,kind,row=>row.snapshot.status==="done" && row.lease_token===null);
       assert.equal(completed.snapshot.creditsUsed,charge);
@@ -128,6 +158,8 @@ async function main() {
     const guardId = `guard-${stamp}`;
     await guardJobs.create(guardId,email,{status:"pending"},{},0,false);
     let paidCalls=0;
+    let guardFinished=false,guardFailure:unknown;
+    await guardJobs.kick(guardId,async()=>{try{
     await assert.rejects(guardJobs.paidOperation(guardId,"legacy-model",{id:guardId},async()=>{paidCalls++;throw new Error("connection lost");}),ImageOperationPending);
     await assert.rejects(guardJobs.paidOperation(guardId,"naumi-image-auto",{id:guardId},async()=>{paidCalls++;return "unexpected";}),ImageOperationPending);
     assert.equal(paidCalls,1);
@@ -138,6 +170,8 @@ async function main() {
     const value=await guardJobs.paidOperation(guardId,"legacy-model",{id:resultId},async()=>{paidCalls++;return image;});
     const cached=await new DurableImageJobs<any>("generate").paidOperation(guardId,"legacy-model",{id:resultId},async()=>{paidCalls++;return Buffer.from("unexpected");});
     assert.deepEqual(cached,value); assert.equal(paidCalls,2);
+    }catch(error){guardFailure=error;}finally{guardFinished=true;}});
+    await waitJob(guardId,"generate",row=>guardFinished&&row.lease_token===null);if(guardFailure)throw guardFailure;
     const canvasDb=await import("../src/lib/db");
     const {processCanvasImageTask,publicCanvasImageTask}=await import("../src/lib/canvas-image-tasks");
     const artId=`canvas-source-${stamp}`,canvasId=`canvas-task-${stamp}`;
@@ -162,7 +196,10 @@ async function main() {
     await waitJob(legacyId,"generate",row=>!!row.snapshot.error && row.lease_token===null);
     assert.equal(legacyRan,false);
     console.log("PASS upgrade: pre-ledger pending jobs cannot be automatically resubmitted");
+    observations.paidGuard={actualJobLease:true,paidCalls,unknownReposts:0,savedBytesReused:true};
+    await writeFile(path.join(evidence,"RESULT.json"),JSON.stringify({status:"PASS",...observations},null,2)+"\n");
     console.log("IMAGE_GATEWAY_RESULT=PASS");
-  } finally { await sql.end(); await new Promise<void>(resolve=>server.close(()=>resolve())); }
+  } catch(error){await writeFile(path.join(evidence,"FAILURE.json"),JSON.stringify({status:"FAIL",...observations,error:error instanceof Error?error.message:String(error)},null,2)+"\n");throw error;}
+  finally { await (await import("../src/lib/imagegen/coordination-pool")).closeImageCoordinationPool();await sql.end(); await new Promise<void>(resolve=>server.close(()=>resolve())); }
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
