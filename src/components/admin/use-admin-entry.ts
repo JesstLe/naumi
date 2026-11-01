@@ -29,7 +29,9 @@ export function useAdminEntry(){
   const [access,setAccess]=useState<Access>({owner:identity,status:"loading",localAdmin:false});
   const [password,setPassword]=useState<Password>({owner:identity,value:"",busy:false,error:null});
   const [retryKey,setRetryKey]=useState(0),pending=useRef<Owner|null>(null);
-  const view=access.owner===identity?access:{owner:identity,status:"loading" as const,localAdmin:false};
+  // Local access can be read immediately, but an editable password draft must
+  // belong to the settled auth owner rather than disappear during bootstrap.
+  const view=access.owner===identity&&(identity.ready||access.status!=="local-login")?access:{owner:identity,status:"loading" as const,localAdmin:false};
   const form=password.owner===identity?password:{owner:identity,value:"",busy:false,error:null};
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;serial.current++;};},[]);
   useEffect(()=>{

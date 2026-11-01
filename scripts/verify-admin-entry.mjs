@@ -7,7 +7,7 @@ await fs.mkdir(out,{recursive:true});let checks=0,server,browser,requests=[],err
 const eq=(a,b,m)=>{assert.deepEqual(a,b,m);checks++;},wait=async test=>{for(let n=0;n<300;n++){if(test())return;await new Promise(r=>setTimeout(r,10));}throw Error('ENTRY_FIXTURE_WAIT_TIMEOUT');};
 let state,held=[];
 const entry=`import React,{useState}from'react';import{createRoot}from'react-dom/client';import{AdminClient}from'./src/components/admin/admin-client';window.authOpened=[];window.navigation=[];window.sessionCalls=0;window.sessionWaiters=[];window.token='cloud-'+window.initial.email;window.holdSession=false;function App(){const[alive,set]=useState(true);window.fixtureMount=set;return alive?<AdminClient/>:null;}createRoot(document.getElementById('root')).render(<App/>);`;
-const auth=`import{useSyncExternalStore}from'react';let state={ready:true,user:window.initial.email?{email:window.initial.email}:null};const listeners=new Set();window.fixtureAccount=(email,ready=true)=>{state={ready,user:email?{email}:null};window.token='cloud-'+email;for(const f of listeners)f();};export const useAuth=()=>useSyncExternalStore(f=>{listeners.add(f);return()=>listeners.delete(f)},()=>state);`;
+const auth=`import{useSyncExternalStore}from'react';let state={ready:window.initial.ready??true,user:window.initial.email?{email:window.initial.email}:null};const listeners=new Set();window.fixtureAccount=(email,ready=true)=>{state={ready,user:email?{email}:null};window.token='cloud-'+email;for(const f of listeners)f();};export const useAuth=()=>useSyncExternalStore(f=>{listeners.add(f);return()=>listeners.delete(f)},()=>state);`;
 const supabase=`export const browserSupabase=()=>({auth:{getSession:async()=>{window.sessionCalls++;const token=window.token;if(window.holdSession)await new Promise(r=>window.sessionWaiters.push(r));return{data:{session:token?{access_token:token}:null}};}}});`;
 const navigation=`export const useSearchParams=()=>new URLSearchParams(location.search);const router={replace:href=>window.navigation.push(href)};export const useRouter=()=>router;`;
 try{
@@ -19,7 +19,7 @@ try{
  await fs.writeFile(path.join(out,'SOURCE_INPUTS.json'),JSON.stringify({root,control,inputs:Object.keys(bundle.metafile.inputs)},null,2)+'\n');
  server=createServer(async(req,res)=>{try{
   const u=new URL(req.url,'http://fixture');if(u.pathname==='/app.js'){res.setHeader('content-type','application/javascript');res.end(await fs.readFile(path.join(out,'app.js')));return;}
-  if(!u.pathname.startsWith('/api/')){res.setHeader('content-type','text/html;charset=utf-8');res.end('<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script>window.initial='+JSON.stringify({email:state.email})+'</script><script src="/app.js"></script></body></html>');return;}
+  if(!u.pathname.startsWith('/api/')){res.setHeader('content-type','text/html;charset=utf-8');res.end('<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script>window.initial='+JSON.stringify({email:state.email,ready:state.ready??true})+'</script><script src="/app.js"></script></body></html>');return;}
   const parts=[];for await(const c of req)parts.push(c);const raw=Buffer.concat(parts).toString();requests.push({url:u.pathname,method:req.method,authorization:req.headers.authorization||null,body:raw?JSON.parse(raw):null});
   const send=(status,value)=>{if(res.destroyed)return;res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value));};
   if(u.pathname==='/api/admin/login'){
@@ -76,6 +76,14 @@ try{
   p=await open({holdPost:true});await p.getByPlaceholder('后台访问密码').fill('accepted-password');await p.getByRole('button',{name:'登录',exact:true}).click();await wait(()=>held.length===1);const releasePost=held.shift();
   state.holdLogin=true;state.loginStatus=readStatus;await p.evaluate(()=>window.fixtureAccount('first@fixture.test'));await wait(()=>held.length===1);const releaseRead=held.shift();releasePost();await visible(p);releaseRead();await settle(p);
   const actual=await p.getByTestId('protected').count();passwordReadRaces.push({readStatus,visibleAfterLateRead:actual,postCount:requests.filter(r=>r.method==='POST').length});eq(actual,process.argv.includes('--access-race-baseline')?0:1,'pre-cookie read '+readStatus+' cannot override a later accepted password');eq(requests.filter(r=>r.method==='POST').length,1);eq(requests.filter(r=>r.url==='/api/admin/login'&&r.method==='GET').length,2);
+ }
+ // Do not offer an editable password form under a still-bootstrapping owner.
+ // The real AuthProvider starts with null/ready=false before cookie hydration.
+ if(!baseline&&!control){
+  p=await open({email:null,ready:false});await settle(p);const offered=await p.getByPlaceholder('后台访问密码').count();eq(offered,process.argv.includes('--access-race-baseline')?1:0,'bootstrap cannot offer a draft that identity hydration immediately clears');
+  if(process.argv.includes('--access-race-baseline'))await p.getByPlaceholder('后台访问密码').fill('lost-bootstrap-draft');
+  await p.evaluate(()=>window.fixtureAccount('first@fixture.test',true));await p.getByPlaceholder('后台访问密码').waitFor();eq(await p.getByPlaceholder('后台访问密码').inputValue(),'');await p.getByPlaceholder('后台访问密码').fill('stable-password');eq(await p.getByRole('button',{name:'登录',exact:true}).isEnabled(),true);
+  passwordReadRaces.push({bootstrapFormOffered:offered,identityHydrated:true,stableFormEnabled:true});
  }
  if(arg('--baseline-report')){const old=JSON.parse(await fs.readFile(arg('--baseline-report'),'utf8'));eq(snapshots,old.snapshots,'ordinary password/local/cloud markup is unchanged');}
  eq(errors,[]);eq(external,[]);

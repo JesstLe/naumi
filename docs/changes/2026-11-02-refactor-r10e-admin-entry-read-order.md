@@ -25,10 +25,18 @@
 
 ## 验证计划与实际记录
 
-原模块的52项既有检查保留，新增两个真实HTTP时序案例；未给旧 `--baseline`／control-entry模式强加新源合同。原标记、cache key、TTL、邮箱身份、POST body和普通HTML投影保持，最终计数和结果以本轮VERIFICATION／DELIVERY实际记录为准。
+原模块的50项既有检查保留，新增两个真实HTTP时序案例；未给旧 `--baseline`／control-entry模式强加新源合同。原标记、cache key、TTL、邮箱身份、POST body和普通HTML投影保持，最终计数和结果以本轮VERIFICATION／DELIVERY实际记录为准。
 
 本机原生产构建首轮因fixture未给构建进程配置合法 `VIDEO_WORKER_SECRET` 而退出1；保留原日志，补齐本机fixture输入，不关闭产品检查。原30s完整billing UI、管理入口模块、真实PG权限合同、全量类型／定向lint和copy-only回滚按最终记录分层，未执行结果不预填PASS。
 
 ## 未完成项
 
 整体ACTIVE。本竞争的确定修复不替代原远端测试最后等待点定位、当前完整226同源CI、全仓语义耦合审阅、剩余故障矩阵或最终合main。本线程未部署，47决定保持独立；后续如原30s管理UI仍失败，继续按实际失败点处理，不加时或削弱断言。
+
+## 原完整生产UI的实际失败点
+
+原5403源码副本经过真实生产构建后，原16个billing UI按原顺序单次运行，得到15PASS／1FAIL、exit1：同一 `configured access password` 用例在原315行第一次错误密码登录点击超出30000ms。原始pw:api记录填入后按钮持续disabled，页面snapshot显示空密码框；在此之前没有密码POST。该本地复现明确定位到可编辑表单在AuthProvider初始null/ready=false期间过早出现，随后cookie身份hydrate改变owner，刚输入的draft被清空。
+
+本地完整用例与远端失败名称／原时限一致，但远端原trace下载仍失败，不声称历史每次超时都只有这个原因。新增真实React/HTTP的初始null/ready=false→原账号ready场景独立复现上述表单清空。入口继续立即读取local access，只在原身份尚未就绪时暂不投影可编辑密码表单；服务器密码认证、本地已认证cookie、原访问检查及请求数不变，不增加人为等待时间或新的权限条件。
+
+第一轮成功生产构建保留Windows依赖junction导致的Next traced-copy EPERM warning；原页面实际从原源码构建产物与同锁本机依赖运行，不将它称为完整Docker打包验证。原本缺worker secret的构建exit1也保留。
