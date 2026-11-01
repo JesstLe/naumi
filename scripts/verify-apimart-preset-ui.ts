@@ -1,11 +1,13 @@
+import {observeAdminBrowser} from "./verification/admin-browser-diagnostics";
 import assert from "node:assert/strict";
 import { readFile,mkdir } from "node:fs/promises";
 import { chromium,expect } from "@playwright/test";
 async function main(){
  if(process.env.NAUMI_VERIFY_ISOLATED_DB!=="1")throw Error("isolated DB required");
- const origin="http://127.0.0.1:54980",f=JSON.parse(await readFile("output/model-ui-fixture.json","utf8"));
+ const origin=process.env.NAUMI_MODEL_UI_BASE_URL||"http://127.0.0.1:54980",f=JSON.parse(await readFile("output/model-ui-fixture.json","utf8"));
  const browser=await chromium.launch({channel:process.platform==="win32"?"msedge":undefined,headless:true});
  const admin=await browser.newContext({viewport:{width:1440,height:1000}}),user=await browser.newContext();
+ const diagnose=observeAdminBrowser([admin,user],"output/apimart-preset-20261007/failure");
  try{
   await admin.addCookies([{name:"naumi_locale",value:"zh",domain:"127.0.0.1",path:"/"}]);
   assert.equal((await admin.request.post(origin+"/api/admin/login",{data:{password:"ModelUiFixture2026!"}})).status(),200);
@@ -14,7 +16,7 @@ async function main(){
   config.providers[0].protocol="apimart-images";
   Object.assign(config.upstreamModels[0].capabilities,{qualities:["low","medium"],nativeResolutions:["1K","2K","4K"],preserveIdentity:true,textAccuracy:true});
   assert.equal((await admin.request.put(origin+"/api/admin/bi/model-config/draft",{data:{id:initial.draft.id,expectedRevision:initial.draft.revision,config}})).status(),200);
-  const page=await admin.newPage(),errors:string[]=[];page.setDefaultTimeout(60000);page.on("pageerror",e=>errors.push(e.message));page.on("response",async r=>{if(r.status()>=400 && r.url().includes("/api/admin/bi/model-config"))console.log("PUBLICATION_ERROR",r.status(),await r.text());});await page.goto(origin+"/admin/billing");await page.getByRole("button",{name:"APIMart 默认预设",exact:true}).click();
+  const page=await admin.newPage(),errors:string[]=[];page.setDefaultTimeout(60000);page.on("pageerror",e=>errors.push(e.message));page.on("response",async r=>{if(r.status()>=400 && r.url().includes("/api/admin/bi/model-config"))console.log("PUBLICATION_ERROR",r.status(),await r.text());});await page.goto(origin+"/admin/billing",{waitUntil:"domcontentloaded"});await page.getByRole("button",{name:"APIMart 默认预设",exact:true}).click();
   await page.getByRole("button",{name:"建立默认预设（倍率 1.5）",exact:true}).click();await page.getByTestId("apimart-default-preset").waitFor();
   await expect(page.getByLabel("售价倍率（1.5 = 加价 50%）")).toHaveValue("1.5");
   await page.getByLabel("实际 APIMart 模型",{exact:true}).selectOption("u1");
@@ -28,7 +30,7 @@ async function main(){
   await page.getByLabel("启用（应用后新请求生效）",{exact:true}).check();
   const publish=async(reason:string)=>{await page.getByRole("button",{name:"校验并预览发布差异",exact:true}).click();await page.getByRole("dialog").waitFor();await page.getByLabel("发布 / 恢复原因",{exact:true}).fill(reason);await page.getByRole("button",{name:"确认发布此草稿",exact:true}).click();await page.getByRole("dialog").waitFor({state:"hidden"});await expect(page.getByRole("status").filter({hasText:"已确认生效"})).toBeVisible();};
   await publish("isolated APIMart preset apply");const applied=await read();assert.equal(applied.snapshot.config.defaultImagePreset.factorBps,15000);
-  await page.reload();await page.getByRole("button",{name:"APIMart 默认预设",exact:true}).click();await expect(page.getByLabel("售价倍率（1.5 = 加价 50%）")).toHaveValue("1.5");
+  await page.reload({waitUntil:"domcontentloaded"});await page.getByRole("button",{name:"APIMart 默认预设",exact:true}).click();await expect(page.getByLabel("售价倍率（1.5 = 加价 50%）")).toHaveValue("1.5");
   await mkdir("output/apimart-preset-20261007",{recursive:true});await page.screenshot({path:"output/apimart-preset-20261007/admin-desktop.png",fullPage:true});
   await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:"output/apimart-preset-20261007/admin-mobile.png",fullPage:true});
   await user.addCookies([{name:"nv_user",value:f.userCookie,domain:"127.0.0.1",path:"/"},{name:"naumi_locale",value:"zh",domain:"127.0.0.1",path:"/"}]);
@@ -40,6 +42,6 @@ async function main(){
   assert.equal((await user.request.post(origin+"/api/admin/bi/model-config",{data:{}})).status(),404);
   const metrics=await (await fetch(f.controlOrigin+"/fixture/metrics")).json();assert.equal(metrics.generationRequests,0);assert.equal(errors.length,0,errors.join("\n"));
   console.log("APIMART_PRESET_BROWSER=PASS CREATE_EDIT_APPLY_RELOAD=PASS MARKUP_PRICE=8_TO_10 ESCROW=10 QUALITY_DISPLAY_MAX_EXECUTION_MEDIUM=PASS TOOL_CANVAS_PUBLIC_LIST=PASS MOBILE=PASS NON_ADMIN=404 REAL_GO_ROUTER_PUBLICATION=PASS REAL_PAID_API_CALLS=0");
- }finally{await admin.close();await user.close();await browser.close();}
+ }catch(error){await diagnose(error).catch(capture=>console.error("DIAGNOSTIC_CAPTURE_FAILED",capture));throw error;}finally{await admin.close();await user.close();await browser.close();}
 }
 main().catch(e=>{console.error(e);process.exitCode=1});

@@ -16,6 +16,10 @@
 
 “已迁移职责”不等于整项目完成；剩余门槛由退出审计逐项列出。Canvas 薄事件/DOM adapter 是否保留按职责判断，不按剩余行数继续机械拆分。
 
+## R9V 经典发布草稿与验收
+
+[R9V](../changes/2026-11-01-refactor-r9v-classic-publication-lifecycle.md)修复已确认发布后本人未改动草稿仍滞留旧base的正常第二次发布误拦；原事务内推进base/revision，外来旧草稿和在途修改保持。经典三个原生入口复用已有runner，保留真实Go/PG和原业务断言，诊断与本地Linux依赖层分别归属，不把环境变化或局部通过当完整222/生产通过。
+
 ## R9U 后台模型发布与回执
 
 [R9U](../changes/2026-11-01-refactor-r9u-management-publication-session.md)将 F03 快照/原publication/恢复及目录观察迁入纯应用owner和内聚只读子模块。React只绑定端口与投影；无消费者的旧目录hook退出。原id/完整body/版本、旧pending key和明确failed/unknown语义保持。实际hook原25项13PASS12FAIL、新25PASS；原UI33/35项、18HTML及20POST精确对照，server/CAS/PG不以浏览器fixture替代。

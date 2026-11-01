@@ -220,4 +220,9 @@ jobs:
             output/billing-20261003/ui-frozen-price.json
             output/billing-20261003/navigation-*.json
             output/billing-20261003/*.png
+            output/model-config-ui-fixture/runs/*/RUN.json
+            output/model-config-ui-fixture/runs/*/source/output/model-config-ui-fixture/CLEANUP.json
+            output/model-config-ui-fixture/runs/*/source/output/billing-routing-20261007/
+            output/model-config-ui-fixture/runs/*/source/output/model-batch-20261007/
+            output/model-config-ui-fixture/runs/*/source/output/apimart-preset-20261007/
           if-no-files-found: warn

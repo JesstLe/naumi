@@ -1,5 +1,11 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：R9V 经典发布与原生验收
+
+[R9V模块](changes/2026-11-01-refactor-r9v-classic-publication-lifecycle.md)先复现原business-ui的goto/reload load等待超时，保留本机OOM诊断；转到依赖锁一致的Linux当前源码Next dev后，完整业务入口通过，批量配置抓出同一发布者第二次正常发布被旧draft base拦住的真实产品缺陷。原事务只推进本人、内容仍等于确认发布版本的草稿base/revision；他人旧草稿、在途编辑和原回执保持。PG原16反例、新17检查及原admin/publication整模块通过，真实原生三入口均exit0：business75积分，batch三次发布及65/90积分，APIMart两次发布及8→10积分；移动端/非管理员/供应商POST0。实际源码桥接及副本回滚以本轮DELIVERY为准。
+
+三个经典wrapper复用原runner的第二profile，12个命令共享sourcecopy/IPC/随机端口；受控原wrapper3检查复现覆写后续编辑，新真实子进程104检查通过。原23/32/25业务断言不放宽，仅batch旧label改为实际「执行模型」combobox，新增失败DOM/网络/GitHub annotation及always产物。可选Linux执行只消费校验后的当前源码和同锁依赖，不启动旧应用，不当作固定App/Worker整版。APIMart本地Linux首轮origin误配已在fixture精确修正并复测；当前222目录、远端billing/browser失败、main及整体退出继续，整体ACTIVE，部署0、47HOLD。
+
 ## 当前推进：R9U 后台模型发布与恢复
 
 [R9U模块](changes/2026-11-01-refactor-r9u-management-publication-session.md)把 F03 的快照、原publication回执、显式核对和目录观察从React hook迁入独立应用owner；React仅投影/端口，表单草稿和服务端CAS保持。只读观察可取消，已派发发布继续原请求；auth await后检查视图归属，提交体在await前冻结，清pending比较原完整字节，旧目录不覆盖新快照。旧有效key/body兼容，损坏存储不锁界面，不新增业务限额/确认。

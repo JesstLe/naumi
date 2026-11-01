@@ -2,6 +2,8 @@
 
 ## 当前固定版本
 
+- R9V当前推进：[经典发布生命周期](../changes/2026-11-01-refactor-r9v-classic-publication-lifecycle.md)。真实Go/PG浏览器第二次发布明确PUBLISH_STALE_DRAFT_BASE；真实PG原16复现、新17通过，原事务只推进发布者未再改动的同摘要草稿，外来陈旧草稿/在途编辑/CAS/原回执保持。经典UI共享已有sourcecopy/IPC owner，受控子进程104检查通过；本机原load超时/OOM和远端59f billing-ui FAIL均留存，后者精确断言仍OPEN，不用Linux局部通过消除历史失败。本地三原生入口均exit0（真实Go/PG，移动端/非管理员，供应商POST0），batch旧定位和APIMart本地桥接origin的失败及修正分开留存；59f Core已SUCCESS、Image仍billing-ui FAIL，新head222目录/整版/main以本轮DELIVERY和后续固定证据为准。
+
 - R9U当前推进：[后台发布会话](../changes/2026-11-01-refactor-r9u-management-publication-session.md)。F03快照/原publication恢复和只读目录已归纯应用owner，React仅投影/端口。实际hook原25项13PASS12FAIL、新25PASS；完整页面脚本原33PASS、新35PASS，18HTML/20POST精确一致。旧有效pending/原版本保持，scope只代表管理视图生命周期，不冒充账号授权；服务端CAS/价格/任务不变。F01/F02/F03已列职责迁移不等于全量语义耦合审阅或当前整版通过，最终源/回滚归本轮DELIVERY。
 
 - R9T当前推进：[首页目录与附件](../changes/2026-11-01-refactor-r9t-workbench-catalog-attachments.md)。F01列表观察/变更及上传/索引生命周期已归同一会话聚合下的内聚子模块；实际旧43场景37PASS/6FAIL、新43PASS，原恢复/发送47场景原新均PASS。保留原34检查和原始email/JSX字节，ready不取消同账号上传或已受理SSE。证据是实际组件/Chromium与fixture后端，不代替同一真实付费断线链；F03、当前整版CI/main仍OPEN。最终源及回滚见本轮DELIVERY。

@@ -11,6 +11,7 @@
 | 钱包与结算 | `src/lib/billing/` | 真实余额、预占、结算和回执由原 operation 绑定；消费只写一次 |
 | DB 与事务 | `src/platform/db/`；各域 repository/schema owner | Pool/Tx 不导入业务；拆模块不拆原共享事务，不在事务内另借连接 |
 | 配置读取与发布 | `src/lib/model-config/` 的 published read、execution services、administration | 执行消费冻结快照；公开目录不依赖管理连接或 default 可执行性 |
+| 发布后工作草稿 | 原`repository.markApplied`事务 | 只推进发布者仍与确认版本完全相同的草稿base/revision；不覆盖在途编辑、不碰他人草稿、不以原回执重读推进历史状态 |
 | 后台发布视图 | `model-config/management-session.ts`、`management-provider-directory.ts`；React `use-model-management` adapter | owner 拥有快照/原发布回执/只读观察，依赖纯合同和窄端口；不接管服务端CAS、配置或表单草稿，已派发发布不因视图卸载重放 |
 | 调度与执行角色 | `src/lib/image-jobs/scheduling.ts`、`src/lib/application/work-signal.ts`、`src/lib/worker/` | 唯一 SQL/lease owner，同镜像 Worker；已受理/UNKNOWN 只恢复原任务 |
 | Canvas 文档与任务 | `src/lib/canvas/` 的 document/history/image-runs/task owners | UI 不拥有钱包/供应商/持久化算法；原共享 undo/CAS 和账号归属保持 |
@@ -19,6 +20,7 @@
 | 首页 Agent 会话 | `src/lib/agent/workbench-session.ts`，内聚子模块 `workbench-session-catalog.ts` / `workbench-attachments.ts` | 同一账号 scope 拥有恢复、发送/SSE、目录观察/变更和附件生命周期；纯合同不依赖 React，投影/草稿留在 UI；目录和索引失效不取消已受理后台任务 |
 | 媒体 | `src/modules/media/` + `services/media-worker/` | 纯合同与真实原生引擎分离；runtime 不导入 scripts |
 | 验收运行环境 | `scripts/video-fusion/native-parent-database.ts`、`scripts/verify-native-application.py` | 原业务案例保留；固定 SDK 与完整 App/Worker 字节一致；私有父 PG 归运行器清理 |
+| 模型原生UI验收 | `scripts/verification/model-management-ui-runner.mjs`，两个固定profile | 12个原入口复用source copy/IPC/端口/退出所有权；真实经典Go Router保留；可选Linux dev校验当前源码和依赖锁，不冒充固定生产镜像 |
 
 目录不是新的万能入口；跨模块只通过实际需要的窄接口。具体迁移调用方、兼容出口与退出条件见 [迁移台账](architecture/REFACTOR_MIGRATION.md)。
 

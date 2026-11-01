@@ -189,6 +189,16 @@ export function createModelRepository(deps: ValidationOptions & { pool: Pool; in
         if (!changed.rowCount) throw new ModelConfigError("CONFIG_CONFLICT", "配置已被更新，不能覆盖其他发布", 409);
         await tx.query("UPDATE app_model_publications SET phase='applied',error_code=NULL,updated_at=now() WHERE id=$1", [id]);
         const versionRow = (await tx.query("SELECT * FROM app_model_config_versions WHERE version=$1", [row.version])).rows[0];
+        // Continue only the publishing actor's still-identical working draft.
+        // Other admins and edits made while activation was in flight keep their
+        // original base and must resolve a genuine stale-base conflict.
+        const draftRow = (await tx.query("SELECT * FROM app_model_drafts WHERE actor=$1 FOR UPDATE", [versionRow.actor])).rows[0];
+        if (draftRow && Number(draftRow.based_on_version) < Number(versionRow.version)) {
+          const draft = await readDraft(tx, draftRow);
+          let matches = false;
+          try { matches = modelConfigDigest(validateModelConfig(draft.config, deps)) === versionRow.digest; } catch { /* Never overwrite or rebase an invalid/unpublished edit. */ }
+          if (matches) await tx.query("UPDATE app_model_drafts SET based_on_version=$2,revision=revision+1,updated_at=now() WHERE id=$1", [draftRow.id,versionRow.version]);
+        }
         await registerProviderCapacities(tx, versionRow.config);
         await freezeVideo(tx,snapshot(versionRow));
         await tx.query("INSERT INTO app_bi_access_log(id,actor,action,target_email,section) VALUES($1,$2,'model-config-publish','','models')", [`model-publication:${id}`,versionRow.actor]);
