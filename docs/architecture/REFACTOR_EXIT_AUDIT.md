@@ -1,5 +1,7 @@
 # 整体退出审计
 
+- R9Y：[最新主线同步](../changes/2026-11-01-refactor-r9y-main-sync.md)。origin/main真实推进67bbcddf；独立分支普通merge保留5incoming文件，无冲突。公开目录32→33及完整合同、27个scan策略单测实际PASS；生成/模型/钱包代码与df997b40 raw保持。此为将main合入候选，不是候选已合main/已发布；新头完整223/CI及剩余故障矩阵继续。
+
 - R9X：[发布草稿验收](../changes/2026-11-01-refactor-r9x-model-draft-verification.md)。完整基线真实PG复现execution旧错误码预期exit1；夹具分开发布者旧revision与另一actor旧base，两个拒绝分支均严格保留。原顺序11模型命令单次全exit0，产品2149文件raw不变；旧b24Image失败/日志EOF不改写，新head完整223/CI/main继续。
 
 - R9W当前推进：[首次paid结果检查点](../changes/2026-11-01-refactor-r9w-first-paid-result-checkpoint.md)。真实入口/PG/lease/供应返回后首笔child/root snapshot失败和真实COMMIT丢ACK，原5场景复现、新5场景PASS；不seed done，不重放供应，原6积分/字节/GET提示同case核对。持续失败hold和未持久化风险保留；M05这几个精确场景推进，不一并关闭M03/M04/M06/M09。原相关回归、完整223及main仍分层验收，b24 Image在注册模型组实际FAIL/日志EOF，Core按实际刷新。
