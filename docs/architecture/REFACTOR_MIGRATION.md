@@ -1,5 +1,9 @@
 # 迁移合同与模块记录索引
 
+## R10D 同任务远端写故障
+
+[R10D](../changes/2026-11-02-refactor-r10d-remote-put-evidence.md)验证现有adapter→storage runtime→paid codec／交付→独立mirror职责闭环；原六场景已正确，故产品0修改，仅补原目录和证据端口，不另建通用存储框架。原GET、字节、账务及新进程恢复同case核对，不冒充实际页面或完整226通过。
+
 ## R10C 历史回执消费与事务身份
 
 [R10C](../changes/2026-11-02-refactor-r10c-historical-batch-retry.md)从新父任务内联分类迁移为生成模块共享的hasProvenImagegenRejection／canRetryImagegen。历史派生标签在消费时重新绑定原事实，批次原事务匹配child_operation_id／attempts后再更新；锁前读与锁内写分明，不拆原事务。九场景真实PG／供应／钱包及并发屏障实际反例与结果分别留存，整体退出仍单列。

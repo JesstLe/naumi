@@ -191,6 +191,7 @@ export const refactorCases=[
  ts('first-paid-checkpoint','generation','scripts/verify-first-paid-checkpoint.ts','FIRST_PAID_CHECKPOINT=PASS'),
  ts('imagegen-supplier-outcomes','generation','scripts/verify-imagegen-supplier-outcomes.ts','IMAGEGEN_SUPPLIER_OUTCOMES=PASS'),
  ts('imagegen-batch-retry','generation','scripts/verify-imagegen-batch-retry-evidence.ts','IMAGEGEN_BATCH_RETRY=PASS'),
+ ts('imagegen-remote-put','generation','scripts/verify-imagegen-remote-put.ts','IMAGEGEN_REMOTE_PUT=PASS'),
  ts('completed-parent','generation','scripts/verify-completed-parent-entry-pg.ts','COMPLETED_PARENT_ENTRY=PASS'),
  ts('wallet','pricing','scripts/verify-billing-wallet.ts','PASS wallet reserve/settle/release'),
  ts('image-price','pricing','scripts/verify-pricing-friction-image.ts','MODIFIED=PASS',['--mode','modified']),

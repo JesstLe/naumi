@@ -1,5 +1,7 @@
 # 整体退出审计
 
+- R10D：[远端对象PUT证据](../changes/2026-11-02-refactor-r10d-remote-put-evidence.md)。原产品六场景实际PASS，403/503/已存丢ACK/仅最终对象失败/远端和本地同时失败均一次供应、一笔6积分、原字节；六次进程重读及原补传不改原paid账本。产品修改0，新增原generation专项，总226不当作全跑；真实页面、NAS策略和云基础设施仍分层，整体ACTIVE。
+
 - R10C：[历史回执与陈旧批次观察](../changes/2026-11-02-refactor-r10c-historical-batch-retry.md)。真实九条基线证明旧NOT_ACCEPTED标签可跳过新分类而自动购买，并发旧tick可3POST／账本12但批次6。应用owner只读核对原证据与账务，原批次事务匹配childID＋attempts；首次候选九条PASS、无证据1POST0consume、明确未收费正常6积分、并发2POST1consume。原顺序generation22子命令全部exit0、局部scope顶层PARTIAL/exit2；固定db3a完整镜像102浏览器PASS／8consume48积分，类型/lint0；回退以R10C最终DELIVERY，不把225登记当全项目通过；整体ACTIVE、本线程未部署。
 
 

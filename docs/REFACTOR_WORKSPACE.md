@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：R10D 远端对象 PUT 同任务证据
+
+[R10D](changes/2026-11-02-refactor-r10d-remote-put-evidence.md)补 M06 的真实签名对象HTTP写失败，不用本地fs测试冒充网络边界。原087产品在六场景基线全部正确：一次供应／一笔6积分／原PNG／原GET done，独立进程恢复和原mirror补传保持；产品修改0，新专项沿原generation目录登记，总226／组23。实际浏览器及云存储基础设施未在本轮验证；最终组、质量、回退与同源CI归本轮DELIVERY，整体ACTIVE、未合main、未发布。
+
 ## 当前推进：R10C 历史批次回执与陈旧观察
 
 [R10C](changes/2026-11-02-refactor-r10c-historical-batch-retry.md)真实旧派生NOT_ACCEPTED回执仍触发新购买；并发旧tick还能把原第二轮推进到第三轮，账本12而批次仅报6，九条基线已完整复现。生成应用owner现在共享明确证据归集／只读重试接口，批次在锁前读取、锁内匹配原childID＋attempts。首次候选九条PASS：无证据2POST→1，明确未收费仍正常2POST／6积分，并发3POST2consume→2POST1consume。原顺序generation22/22子命令已实际PASS，局部scope顶层PARTIAL/exit2；固定db3a完整镜像102浏览器PASS／8consume48积分、非增量tsc/lint0；四产物按本轮DELIVERY，225登记不当作全跑。整体ACTIVE、未合main、本线程部署0。
