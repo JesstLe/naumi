@@ -13,6 +13,7 @@ import * as repository from "@/lib/image-job-repository";
 import {claimImageJob,releaseImageJob} from "./scheduling";
 import type {ImageJobRow} from "./types";
 import { ImageOperationPending, ImageOperationDeferred, isImageGatewayModel, withImageOperation, withImageIndexCheckpoint, type ImageIndexCheckpoint } from "@/lib/image-gateway";
+import {isQualityUnsupportedError} from "@/lib/image-quality";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { withBiModelContext } from "@/lib/bi/context";
@@ -125,7 +126,7 @@ export class DurableImageJobs<T extends { status: string }> {
     if(dbEnabled)executionFor(id,true);
     if (dbEnabled) await assertMutableStagingTask(getPool(), "app_image_jobs", id);
     type Attempt = { model: string; replayable: boolean; gatewayIdentity?: string; attemptToken?: string; state: "queued" | "started" | "done" | "rejected"; result?: unknown;
-      children?: Record<string, Attempt>; legacyIndexedRecovery?: boolean; failureStatus?: number };
+      children?: Record<string, Attempt>; legacyIndexedRecovery?: boolean; failureStatus?: number; failureReason?: "quality-unsupported" };
     type Snapshot = T & { paidOperations?: Record<string, Attempt> };
     const update = async (change: (current: Snapshot) => Snapshot) => {
       const work = async () => {
@@ -143,7 +144,7 @@ export class DurableImageJobs<T extends { status: string }> {
     if (!saved || ["done", "error", "needs_attention"].includes(saved.status)) throw new Error("图片任务已结束或暂停，不能重新提交");
     const previous = saved?.paidOperations?.[operation.id];
     if (previous?.state === "done") return (dbEnabled ? await decode(previous.result,id) : previous.result) as R;
-    const indexedId = (unit: string) => unit.startsWith(`${operation.id}:image:`) && /^(0|[1-9]\d*)$/.test(unit.slice(operation.id.length + 7));
+    const indexedId = (unit: string) => unit.startsWith(`${operation.id}:image:`) && /^(0|[1-9]\d*)(:provider-fallback)?$/.test(unit.slice(operation.id.length + 7));
     const accepted = previous?.state === "started" && dbEnabled ? await acceptedImageOperationIdentities(getPool(),currentModelExecution("image"),id,operation.id) : {};
     const pinnedRecovery = accepted[operation.id];
     const acceptedChildren = Object.keys(accepted).filter(indexedId);
@@ -188,11 +189,22 @@ export class DurableImageJobs<T extends { status: string }> {
       const current = await this.get(id, false) as Snapshot | undefined;
       const root = current?.paidOperations?.[operation.id];
       if (!root || root.attemptToken !== attempt.attemptToken) throw new ImageOperationPending(childOperation.id, new Error("image-index-root-checkpoint-changed"));
+      if (childOperation.providerFallback) {
+        // Rejection belongs to an individual original attempt. One rejected
+        // sibling must never authorize replacement of an UNKNOWN or done image.
+        const count = operation.imageCount;
+        if (!Number.isSafeInteger(count) || !count || count < 1 ||
+          !Array.from({length:count}, (_, index) => root.children?.[`${operation.id}:image:${index}`])
+            .every(original => original?.model === model && original.state === "rejected" && original.failureStatus === 400 && original.failureReason === "quality-unsupported"))
+          throw new ImageOperationPending(childOperation.id, new Error("image-provider-fallback-original-rejection-unconfirmed"));
+      }
       const prior = root.children?.[childOperation.id];
       if (prior && prior.model !== childModel) throw new ImageOperationPending(childOperation.id, new Error("image-index-model-mismatch"));
       if (prior?.state === "done") return (dbEnabled ? await decode(prior.result,id) : prior.result) as Child;
       if (prior?.state === "rejected") {
-        const rejected = new Error("image-index-original-rejection") as Error & { status?: number };
+        // Persist a bounded classification, not the supplier's raw message.
+        // It lets recovery follow the same legacy fallback without re-POSTing.
+        const rejected = new Error(prior.failureReason === "quality-unsupported" ? "quality is not supported (original rejection)" : "image-index-original-rejection") as Error & { status?: number };
         rejected.status = prior.failureStatus;
         throw rejected;
       }
@@ -241,7 +253,8 @@ export class DurableImageJobs<T extends { status: string }> {
         }
         const status = (error as { status?: number } | null)?.status;
         if ([400, 401, 403, 404, 422, 429].includes(status || 0))
-          await saveChild({ ...child, state: "rejected", failureStatus: status });
+          await saveChild({ ...child, state: "rejected", failureStatus: status,
+            ...(isQualityUnsupportedError(error) ? {failureReason:"quality-unsupported" as const} : {}) });
         throw error instanceof ImageOperationPending || status != null ? error : new ImageOperationPending(childOperation.id, error);
       }
     };

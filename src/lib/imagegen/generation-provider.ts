@@ -106,7 +106,7 @@ export async function openaiImages(
     // A leased job is one execution unit. Images run in index order; different
     // jobs run concurrently under the DB lane and explicit provider budgets.
     for (let index = 0; index < p.count; index++) {
-      try { settled.push({status:"fulfilled",value:await withImageIndex(model,index,()=>worker(index))}); }
+      try { settled.push({status:"fulfilled",value:await withImageIndex(model,index,()=>worker(index),opts?.providerFallback)}); }
       catch(reason) { settled.push({status:"rejected",reason}); if(reason instanceof ImageOperationPending)break; }
     }
     const succeeded: UpstreamImage[] = [];
@@ -255,6 +255,25 @@ export async function openaiImages(
   }));
   if (images.length === 0) throw new Error("OpenAI 未返回图片");
   return images;
+}
+
+/** Only already-accepted legacy jobs use this provider policy. The durable
+ * root owns identity and settlement; each transport attempt owns a child. */
+export async function legacyUserOpenAIImages(
+  p:GenParams,
+  provider:{apiKey:string;model:string;baseUrl:string},
+  platform:{apiKey:string;model:string;cutoutModel:string},
+):Promise<GeneratedImage[]> {
+  try {
+    return await openaiImages(p,provider.apiKey,provider.model,provider.model,provider.baseUrl,
+      {auditUpstream:`byok:${provider.model}`});
+  } catch(error) {
+    if(!platform.apiKey || !platform.model || !isQualityUnsupportedError(error))throw error;
+    console.error("[gen-quality-fallback] accepted legacy provider rejected quality; using platform fallback");
+    return openaiImages({...p,quality:p.qualityDefault||resolveConfiguredImageQuality("").executed},
+      platform.apiKey,platform.model,platform.cutoutModel,undefined,
+      {auditUpstream:`default:${platform.model} (from byok:${provider.model})`,providerFallback:true});
+  }
 }
 
 export async function newApiFlowImages(

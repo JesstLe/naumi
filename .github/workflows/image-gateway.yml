@@ -212,6 +212,7 @@ jobs:
             output/image-gateway-build/
             output/image-gateway-billing/
             output/image-gateway-regression/*.json
+            output/credit-billing-regression/*.json
             output/billing-20261003/ui/
             output/billing-20261003/ui-results.json
             output/billing-20261003/ui-app.*.log

@@ -8,17 +8,15 @@ import {dbEnabled,getPool} from "@/platform/db/pool";
 import {PostprocessPending} from "@/lib/media-postprocess";
 import {currentModelExecution} from "@/lib/model-config/context";
 import {auditSettledImage} from "@/lib/image-quality-request";
-import {resolveConfiguredImageQuality} from "@/lib/model-config/image-quality";
 import {getUser} from "@/lib/accounts/session";
 import {safeError} from "@/lib/api-error";
 import {getOpenAISettings} from "@/lib/settings";
 import {getImageModelCatalog} from "@/lib/image-model-catalog";
 import {type ImageModelDescriptor} from "@/lib/image-model-catalog-types";
-import {isQualityUnsupportedError} from "@/lib/image-quality";
 import {ImageOperationPending} from "@/lib/image-gateway";
 import {assertUserImageBaseUrlAllowed, restoreUserImageProvider, upstreamUserImageModel} from "@/lib/user-image-provider";
 import type {GenParams,GeneratedImage} from "./generation-types";
-import {openaiImages,newApiFlowImages,mockImages} from "./generation-provider";
+import {openaiImages,legacyUserOpenAIImages,newApiFlowImages,mockImages} from "./generation-provider";
 import {JOBS} from "./generation-jobs";
 import {completeImageDelivery} from "./complete-image-delivery";
 export {JOBS} from "./generation-jobs";
@@ -50,32 +48,9 @@ export async function runJob(
         apiKey: userProvider.apiKey,
       }));
     } else if (imageModel.provider === "user-openai-images" && userProvider) {
-      // 质量参数回退:BYOK 上游报错不识别 quality(连默认档也不收)时,切换默认
-      // API(td key)+默认档重试一次,与老链路出图完全一致;计费不变。
-      images = await JOBS.paidOperation(jobId, userProvider.model, { id: jobId, managedGateway: false, resolution: p.resolution as "1K" | "2K" | "4K", quality: p.quality, preserveIdentity: p.images.length > 0 }, async () => {
-        try {
-          return await openaiImages(
-            p,
-            userProvider.apiKey,
-            userProvider.model,
-            userProvider.model,
-            userProvider.baseUrl,
-            { auditUpstream: `byok:${userProvider.model}` }
-          );
-        } catch (e) {
-          if (!apiKey || !defaultModel || !isQualityUnsupportedError(e)) throw e;
-          console.error(`[gen-quality-fallback] BYOK 不支持质量参数,回退默认 API: job=${jobId} provider=${userProvider.model}`);
-          // 使用提交时固化的默认档，成功结果中保留供应商回退信息。
-          return openaiImages(
-            { ...p, quality: p.qualityDefault || resolveConfiguredImageQuality("").executed },
-            apiKey,
-            defaultModel,
-            cutoutModel,
-            undefined,
-            { auditUpstream: `default:${defaultModel} (from byok:${userProvider.model})`, providerFallback: true }
-          );
-        }
-      });
+      images = await JOBS.paidOperation(jobId, userProvider.model, { id: jobId, managedGateway: false, imageCount:p.count,
+        resolution: p.resolution as "1K" | "2K" | "4K", quality: p.quality, preserveIdentity: p.images.length > 0 },
+        () => legacyUserOpenAIImages(p,userProvider,{apiKey,model:defaultModel,cutoutModel}));
     } else if (imageModel.provider === "new-api-flow" && !p.transparent) {
       images = await JOBS.paidOperation(jobId, "flow:" + imageModel.id, { id: jobId }, () => newApiFlowImages(p, imageModel.id));
     } else {

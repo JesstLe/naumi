@@ -2,6 +2,16 @@
 
 ## 当前固定版本
 
+- 当前推进R9Q：[历史供应商兜底](../changes/2026-11-01-refactor-r9q-legacy-provider-fallback.md)。真实PG复现旧原子拒绝挡住平台兜底，修正为同root下独立attempt child；原价、真实租约和UNKNOWN不重放保持。fallback child已存/root未存的精确lease-lost断点已经实际恢复原字节/零额外供应POST；完整原顺序七条单次7/7 PASS、credit37场景、tsc/lint0，副本行为按R9Q最终DELIVERY验收，不拼接上轮5PASS/1FAIL，也不当作新head整版CI。
+
+- 上轮R9P网关实际本机PASS，副本恢复5360原始hash及旧失败，产品源码0修改。本地8980b122尚未单独push；远端最新e8156ee2的Core实际SUCCESS，Image在gateway处FAIL；其前build/账务/路由/模型/浏览器组实际PASS。新head仍需独立有效CI，既有watch不代表放行或审批。
+
+- 最新只读完整退出映射：`output/refactor-exit-e8156ee2-20261101/AUDIT.md`，20要求、9类故障×5维、219目录文件存在，结论仍PARTIAL。不能将已存paid-done恢复当首次paid-result持久化失败、无客户账务quota适配测试当客户余额验证、本地fs失败当远端对象PUT失败，或两条分开的UI/paid记录当同一付费断线链。
+
+- 剩余应用owner：F02旧生成页submit/poll/result投影优先，F01首页会话列表/上传生命周期，F03后台发布恢复。R9M已完成发送/SSE归属，旧R9J的“仍待迁移”是历史状态，不是当前债务。main protection/rulesets API已返回计划功能403，未变更仓库可见性/计划/权限，不宣称required checks已配置。
+
+以下R9N及更早版本条目和表格保存对应固定源的历史证据，不能当作R9Q的新头整版执行：
+
 - R9N：[typed模型覆盖合同](../changes/2026-11-01-refactor-r9n-typed-model-coverage.md)。原脚本实际在headlessCanvas的HTTP调用名断言exit1，生产typed用例API保留。候选只修guard的依赖方向，按实际导入绑定校验、补8个正负例，原SDK/HTTP/video检查不删；完整注册模型组及远端CI分别验收。
 
 - R9M：[首页显式发送/SSE归属](../changes/2026-11-01-refactor-r9m-workbench-send-owner.md)。同一账号/generation owner接管PUT/SSE/save/PATCH及stream句柄；React保留投影和草稿。新增真实流组合场景复现原可变步骤数组被延后updater重复读取；不可变事件快照修复，不接受重复步骤。原73场景保留，原81中1失败与新版/回滚结果分别留证，仍须本轮最终固定源及整版CI。
@@ -10,7 +20,7 @@
 
 - R9K当前收敛：[NAS准入输入](../changes/2026-11-01-refactor-r9k-nas-admission-fixture.md)。旧3fa Core实际nas-delivery FAIL；已在原生产源码、真实时钟和自有PG/HTTP中，以显式低容量读复现相同5秒断言失败，正常容量原用例PASS。原测试未控制准入条件；候选分开验证admitted local-first和non-admitted remote-first，原37断言/5000ms不删除。最终执行与回滚归R9K DELIVERY，不把fixture容量读或本地通过当成历史CI磁盘证明。
 
-- R9J当前实施：[首页会话恢复与观察](../changes/2026-11-01-refactor-r9j-workbench-session-owner.md)。独立owner已接入，原新实际浏览器各73场景、非增量tsc0与定向lint0；回滚及最终提交归DELIVERY，完整218未执行；完整发送SSE仍待后续迁移。本轮不把无环或此前216通过当作全项目完成，原3fa远端作业与当前dirty实施保持分层。
+- R9J历史实施：[首页会话恢复与观察](../changes/2026-11-01-refactor-r9j-workbench-session-owner.md)。独立owner接入、原新实际浏览器各73场景、非增量tsc0与定向lint0。后续发送/SSE已由R9M迁移，最新整版和原3fa状态仍分别绑定对应source。
 
 - R9H当前收敛：[账务与历史输入合同](../changes/2026-11-01-refactor-r9h-billing-regression-contract.md)。原顺序18项真实PG账务整模块单次PASS；无历史Git环境的原生管理员19组API/PG检查PASS，55条原业务assert完整保留且原始旧源字节pin；全项目tsc0、runner20/360。产品0改动，不把原9ba的216结果重标为本轮。
 

@@ -1,5 +1,21 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：R9Q 历史供应商兜底的检查点兼容
+
+[R9Q模块](changes/2026-11-01-refactor-r9q-legacy-provider-fallback.md)在真实PG/原Worker链复现旧BYOK明确质量拒绝后，平台兜底复用原逐图拒绝身份而失败。供应商策略收拢到同一provider函数，兜底使用原root下的独立child，只有全部原图明确400质量拒绝才允许；UNKNOWN不授权重发，不开放已退役的新BYOK入口，不增加用户确认。
+
+最终七条原顺序fail-fast单次7/7 PASS，其中credit实际37场景、非loopback请求0；全项目非增量tsc0、定向lint0。实际租约在fallback child保存原字节后、root result保存前注入lease-lost，再观察原10秒cooldown后由新Worker交付相同原字节、额外供应POST0。原先过早resume导致fixture超时的失败保留；全源码副本回退及最终SHA分别见R9Q VERIFICATION/DELIVERY，不等于新head远端CI、main或部署通过。**分支超过48小时：延迟原因仍是有效同源CI/main未闭合。**
+
+## 上一模块：R9P 网关回归与供应未知合同
+
+[R9P模块](changes/2026-11-01-refactor-r9p-gateway-outcome-contract.md)在原生产源码下确认现行合同是未交付客户终止/释放、供应结果仍UNKNOWN/pending，不恢复旧用户等待护栏。网关保留旧Worker零重提、真实lease、原质量/两图单次结算/Canvas/历史恢复；本机完整原命令exit0，独立副本5360原始hash及原`error != pending`失败行为恢复，实际工作区保持新版。该模块产品源码0变更，本地提交8980b122，尚未单独推送。
+
+远端最后固定e8156ee2：Core terminal SUCCESS；Image完整build、账务、路由、模型组、R9O账务浏览器等通过后，在原gateway处FAIL。后六条单次诊断5PASS/credit FAIL不是完整gate通过；R9Q处理后续真实兼容失败，集中推送后读取新head，不将旧Core成功重标为新源码成功。整体ACTIVE，main未合，部署0，47 HOLD。
+
+## 上一模块：R9O 账务浏览器的冻结意图合同
+
+[R9O模块](changes/2026-11-01-refactor-r9o-billing-browser-contract.md)恢复实际浏览器对服务端报价/原operation合同的检查，不把已删除的积分确认加回产品；e8156ee2的该项远端检查已经实际通过，不等于该head的整个Image通过。
+
 ## 当前推进：R9N typed模型覆盖合同
 
 [R9N模块](changes/2026-11-01-refactor-r9n-typed-model-coverage.md)实际复现旧模型覆盖脚本要求headlessCanvas任务调用HTTP withModelRequest的exit1；现有用例已经沿typed withModelOperation。候选验证真实导入绑定/调用，保留SDK/HTTP/video原检查，并补别名、namespace、relative正例和4类漏检负例，不把HTTP塞回用例。原11条模型组集中结果与回滚按R9N DELIVERY；远端Image只有组失败证据，blob日志EOF，仍不认远端唯一child根因。
@@ -18,7 +34,7 @@
 
 ## 当前推进：R9J 首页会话恢复与观察职责
 
-[R9J模块](changes/2026-11-01-refactor-r9j-workbench-session-owner.md)落实R9I只读退出审计确认的组件内应用编排，已将account scope/generation、历史安装、观察cursor/phase、UNKNOWN与原session显式停止迁到独立owner。原两套真实React/Chromium浏览器模块保留断言并接入统一core218目录。3fa完整5350原始文件已冻结，原新各39恢复＋34变更场景共73项通过；非增量tsc0、定向lint0。完整218尚未执行，回滚/最终提交以最终DELIVERY为准；当前3fa远端CI继续独立执行，不重启、不用dirty结果改标旧作业。完整发送SSE迁移仍OPEN，整体ACTIVE、未部署、47HOLD。
+[R9J模块](changes/2026-11-01-refactor-r9j-workbench-session-owner.md)落实R9I只读退出审计确认的组件内应用编排，将account scope/generation、历史安装、观察cursor/phase、UNKNOWN与原session显式停止迁到独立owner。原两套真实React/Chromium浏览器模块保留断言并接入统一core218目录。3fa完整5350原始文件已冻结，原新各39恢复＋34变更场景共73项通过；非增量tsc0、定向lint0。上述是R9J当轮证据；后续发送/SSE已由R9M沿同一身份owner迁移，不再列为当前未迁移项。最新CI归本文顶部实际head，不改写历史3fa状态。整体ACTIVE、未部署、47HOLD。
 
 ## 当前推进：R9H 账务整模块与历史输入合同
 

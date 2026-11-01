@@ -26,9 +26,13 @@
 
 ## 原始路线和验收合同
 
+## R9Q 历史供应商兜底
+
+[R9Q](../changes/2026-11-01-refactor-r9q-legacy-provider-fallback.md)将历史BYOK的供应商策略归`generation-provider`，任务runtime只编排原任务/报价/交付。gateway产生不同尝试的child身份，durable runtime拥有逐图明确拒绝证据与写入；同一root继续拥有交付和结算。全部原child明确质量拒绝才准许平台兜底；已存fallback child由新租约读取原字节，不重放UNKNOWN或新增顶层交付root。新BYOK入口仍退役。实际断点及原顺序七条归本轮DELIVERY，局部结果不改标全项目。
+
 ## R9J 首页会话恢复与观察
 
-[R9J](../changes/2026-11-01-refactor-r9j-workbench-session-owner.md)将首页的恢复身份、历史安装、观察循环、UNKNOWN映射与原session显式停止迁到独立浏览器应用owner。React保留事件/transport/投影，发送与附件继续使用同一owner的account scope/generation。原有两套实际React/Chromium浏览器模块保留原业务断言并加入统一core；原新执行与回滚状态以模块记录为准，不把新增目录项当作已经通过。完整发送SSE编排仍待后续同一身份迁移，不宣称首页所有职责已经退出组件。
+[R9J](../changes/2026-11-01-refactor-r9j-workbench-session-owner.md)将首页的恢复身份、历史安装、观察循环、UNKNOWN映射与原session显式停止迁到独立浏览器应用owner。后续[R9M](../changes/2026-11-01-refactor-r9m-workbench-send-owner.md)已经把发送/SSE迁到同一owner，并固定事件时的不可变工具步骤快照；React保留事件/transport/投影和草稿。原有实际React/Chromium浏览器模块保持业务断言并加入统一core；不把新增目录项当作已经执行。会话列表变更和上传生命周期仍按真实职责另列，不宣称首页所有职责已经退出组件。
 
 下列阶段表是原始工作包定义与长期合同，固定基线数字属于 2026-10-24，不是当前未完成数量；原先“第一轮推荐”已退出当前指令，全文在 Git 历史保留。
 
