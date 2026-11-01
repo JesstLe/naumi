@@ -69,6 +69,22 @@ jobs:
           SETTINGS_SECRET: refactor-ci-fixture-only-not-production-20261026
           NODE_OPTIONS: --conditions=react-server
           GOMAXPROCS: '2'
+      - name: Publish exact core failure
+        if: failure()
+        run: |
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          const file='output/refactor-ci/REPORT.json';
+          if(!fs.existsSync(file)){console.log('Core report not created; inspect the preceding fixed build/SDK stage.');process.exit(0);}
+          const report=JSON.parse(fs.readFileSync(file,'utf8'));
+          const escaped=value=>String(value).replaceAll('%','%25').replaceAll('\r','%0D').replaceAll('\n','%0A');
+          const emit=text=>console.log('::error title=Core refactor case failed::'+escaped(text));
+          for(const row of report.cases.filter(row=>row.status==='FAIL')){
+            const tail=row.log&&fs.existsSync(row.log)?fs.readFileSync(row.log,'utf8').slice(-8000):'';
+            emit('source='+report.source?.commit+' case='+row.id+' exit='+row.exit+'\n'+(row.error||'')+'\n'+tail);
+          }
+          if(report.error)emit('source='+report.source?.commit+' runner='+report.error);
+          NODE
       - uses: actions/upload-artifact@v4
         if: always()
         with:

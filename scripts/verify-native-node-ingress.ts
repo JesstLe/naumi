@@ -11,7 +11,7 @@ import {build} from 'esbuild';
 import {createModelFixture} from './model-config-fixture';
 
 const arg=(name:string,fallback:string)=>{const i=process.argv.indexOf(name);return i<0?fallback:process.argv[i+1];};
-const root=path.resolve('.'),source=path.resolve(arg('--source-root','.')),out=path.resolve(arg('--out','output/native-node-ingress'));
+const root=path.resolve('.'),source=path.resolve(arg('--source-root','.')),out=path.resolve(arg('--out',process.env.NATIVE_NODE_INGRESS_EVIDENCE||'output/native-node-ingress'));
 const mode=arg('--mode','modified'),phase=arg('--phase','all'),baseline=mode==='baseline';
 assert.ok(['baseline','modified'].includes(mode)&&['all','pg','no-db'].includes(phase));
 assert.ok(out.startsWith(path.join(root,'output')+path.sep));mkdirSync(out,{recursive:true});
