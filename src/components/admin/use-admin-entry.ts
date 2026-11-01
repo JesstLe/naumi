@@ -29,7 +29,9 @@ export function useAdminEntry(){
   const [access,setAccess]=useState<Access>({owner:identity,status:"loading",localAdmin:false});
   const [password,setPassword]=useState<Password>({owner:identity,value:"",busy:false,error:null});
   const [retryKey,setRetryKey]=useState(0),pending=useRef<Owner|null>(null);
-  const view=access.owner===identity?access:{owner:identity,status:"loading" as const,localAdmin:false};
+  // Local access can be read immediately, but an editable password draft must
+  // belong to the settled auth owner rather than disappear during bootstrap.
+  const view=access.owner===identity&&(identity.ready||access.status!=="local-login")?access:{owner:identity,status:"loading" as const,localAdmin:false};
   const form=password.owner===identity?password:{owner:identity,value:"",busy:false,error:null};
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;serial.current++;};},[]);
   useEffect(()=>{
@@ -74,6 +76,9 @@ export function useAdminEntry(){
       const result=await response.json().catch(()=>null) as {ok?:boolean;error?:string}|null;
       if(!current())return;
       if(!response.ok||!result?.ok){setPassword({...form,busy:false,error:result?.error||"登录失败"});return;}
+      // An already-started read can still contain the pre-cookie state. The
+      // accepted password response supersedes it within this same entry owner.
+      serial.current++;
       setPassword({owner:identity,value:"",busy:false,error:null});setAccess({owner:identity,status:"ok",localAdmin:true});
     }catch{if(current())setPassword({...form,busy:false,error:"网络错误,请重试"});}
     finally{if(pending.current===identity)pending.current=null;}
