@@ -18,7 +18,7 @@ import { copyText } from "@/lib/clipboard";
 import { createImageDownloadName } from "@/lib/download";
 import { clipboardImageFiles } from "@/lib/canvas/clipboard-files";
 import { CANVAS_RATIO_OPTIONS, CANVAS_RESOLUTIONS, CANVAS_MAX_COUNT, normalizeCanvasRatio, normalizeCanvasResolution, normalizeCanvasCount, normalizeCanvasQuality, canvasModelParameters, canvasCombinationSupported, canvasSourceFrameEdit, canvasSourceFrameRatio } from "@/lib/canvas/generation-parameters";
-import { canvasDockLayout, canvasOverlaySafeArea, type NodeScreen } from "@/lib/canvas/dock-layout";
+import { canvasDockLayout, canvasImageTitleInset, canvasOverlaySafeArea, type NodeScreen } from "@/lib/canvas/dock-layout";
 import { createProjectRootResolver } from "@/lib/canvas/project-roots";
 import { knownCanvasNodeMeasurement } from "@/lib/canvas/node-measurement";
 import {canvasGenerationReferences,canvasRegenerationReferences,explicitCanvasParent,synchronizeCanvasArtworks,imageAspectDisplaySize} from "@/lib/canvas/input-references";
@@ -1869,7 +1869,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const panelRef = useRef<HTMLDivElement | null>(null);
   const nodeToolbarRef = useRef<HTMLDivElement | null>(null);
   const nodeRenamePositionRef = useRef<HTMLDivElement | null>(null);
-  const [dockMetrics, setDockMetrics] = useState({ dockHeight: 0, toolbarHeight: 50, toolbarWidth: 0 });
+  const [dockMetrics, setDockMetrics] = useState({ dockHeight: 0, toolbarHeight: 50, toolbarWidth: 0, dockMinimumHeight: 0 });
   // 底部 dock 提示词框:随内容自适应长高。显式写入最小高度，避免 macOS
   // Chromium/Safari 在 flex + max-height 组合下把 textarea 压缩成约两行。
   const promptAreaRef = useRef<HTMLTextAreaElement>(null);
@@ -4234,7 +4234,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   const nodeScreen=selectedNodeScreen(viewportRef.current);
   const overlaySafeArea=useMemo(()=>canvasOverlaySafeArea(canvasSize),[canvasSize.width]);
-  const {dock:dockStyle,toolbar:topbarStyle}=canvasDockLayout({nodeScreen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,readOnly,nodeTitleHeight:selectedVideo||selected?.videoUrl?38:0});
+  const protectImageNodeTitle=!!selected&&!selected.videoUrl;
+  const {dock:dockStyle,toolbar:topbarStyle}=canvasDockLayout({nodeScreen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,readOnly,
+    nodeTitleHeight:protectImageNodeTitle?canvasImageTitleInset(viewportRef.current.zoom):selectedVideo||selected?.videoUrl?38:0,protectNodeTitle:protectImageNodeTitle});
 
   // 窗口缩放、分屏、旋转或切换选中节点时，React Flow 会保留旧 viewport，可能让
   // 新锚点留在安全区外。尺寸或锚点变化时做最小平移；拖动同一节点不会触发，
@@ -4270,7 +4272,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const bottom = top + size.height * current.zoom;
     const safeLeft = overlaySafeArea.left;
     const safeRight = canvasSize.width - overlaySafeArea.right;
-    const defaultSafeTop = overlaySafeArea.top + 58;
+    const imageTitle=protectImageNodeTitle?canvasImageTitleInset(current.zoom):0;
+    const defaultSafeTop = overlaySafeArea.top + (protectImageNodeTitle ? dockMetrics.toolbarHeight + 12 + imageTitle : 58);
     // 左下工具条只占画布左侧约 224px。节点本身不与它横向相交时，无需无条件
     // 扣掉 72px；否则低高度窗口会把节点过度上推，令上置 Dock 覆盖工具条和节点。
     const nodeIntersectsViewToolbar = left <= 224 && right >= overlaySafeArea.left;
@@ -4282,7 +4285,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         ? 240
         : 218
       : 220;
-    const stackedSafeTop = overlaySafeArea.top + estimatedDockHeight + 70 + (selectedVideo ? 38 : 0);
+    const stackedSafeTop = protectImageNodeTitle
+      ? overlaySafeArea.top + Math.max(estimatedDockHeight,dockMetrics.dockMinimumHeight||(canvasSize.width<480?300:178)) + dockMetrics.toolbarHeight + 24 + imageTitle
+      : overlaySafeArea.top + estimatedDockHeight + 70 + (selectedVideo ? 38 : 0);
 
     let dx = 0;
     let dy = 0;
@@ -4328,14 +4333,19 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const dock = selectedTextId ? textComposerDockRef.current : panelRef.current;
     const toolbar = nodeToolbarRef.current;
     if (!dock || !toolbar) return;
+    const header=dock.querySelector<HTMLElement>('[data-composer-header]');
+    const footer=dock.querySelector<HTMLElement>('[data-composer-footer]');
     const measure = () => setDockMetrics((previous) => {
-      const next = { dockHeight: dock.offsetHeight, toolbarHeight: toolbar.offsetHeight, toolbarWidth: toolbar.offsetWidth };
-      return previous.dockHeight === next.dockHeight && previous.toolbarHeight === next.toolbarHeight && previous.toolbarWidth === next.toolbarWidth ? previous : next;
+      const next = { dockHeight: dock.offsetHeight, toolbarHeight: toolbar.offsetHeight, toolbarWidth: toolbar.offsetWidth,
+        dockMinimumHeight:(header?.offsetHeight||38)+(footer?.offsetHeight||90)+50 };
+      return previous.dockHeight === next.dockHeight && previous.toolbarHeight === next.toolbarHeight && previous.toolbarWidth === next.toolbarWidth && previous.dockMinimumHeight === next.dockMinimumHeight ? previous : next;
     });
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(dock);
     observer.observe(toolbar);
+    if(header)observer.observe(header);
+    if(footer)observer.observe(footer);
     return () => observer.disconnect();
   }, [docksReady, canvasSize.width, canvasSize.height, selectedId, selectedPendId, selectedTextId, selectedBatchArts.length, selectedTextBatchNodes.length, readOnly, browsing, textComposerExpanded]);
 
@@ -4346,7 +4356,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(zoomInputRef.current&&document.activeElement!==zoomInputRef.current)zoomInputRef.current.value=zoomPercentInput(vp.zoom);
     const screen=selectedNodeScreen(vp);
     if(!screen)return;
-    const layout=canvasDockLayout({nodeScreen:screen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,readOnly,nodeTitleHeight:selectedVideo||selected?.videoUrl?38:0});
+    const layout=canvasDockLayout({nodeScreen:screen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,readOnly,
+      nodeTitleHeight:protectImageNodeTitle?canvasImageTitleInset(vp.zoom):selectedVideo||selected?.videoUrl?38:0,protectNodeTitle:protectImageNodeTitle});
     const dock=selectedTextId?textComposerDockRef.current:panelRef.current;
     if(dock&&layout.dock){
       if(!(textComposerExpanded&&selectedTextId))dock.style.left=layout.dock.left+'px';

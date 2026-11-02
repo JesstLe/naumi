@@ -52,3 +52,14 @@
 原mapping发布器只认历史siteControl前任，未识别最新direct103事务；按真实oldCommit会阻断，禁止伪填旧commit或覆盖active指针。后继适配须显式绑定原direct最终证据、实际实例和CAS；前任历史partial排空不能被升级为完整证明，新事务仍独立做任务保护和蓝绿验收。
 
 本段是只读样本，不是锁预约或本次上线结论。程序构建/部署、真实付费端测、四产物副本回滚和最终SHA分别在收尾更新；不得把上述fixture通过写成103新功能已上线。
+
+
+## 最终103真实交付（2026-11-02）
+
+- 固定源码8868df04956add2062055a3a65a9737c6d3cc2e9/build1793584643，91页Linux构建、37静态资源网络隔离smoke通过。同Web/Worker image9a8a96931d161f6f7f615b58ff820ab4e98ffdde41e04dd7896e65dc950a069c。
+- 双锁完整事务release103-mapping-background-20261102-r1于北京时间10:16:37 phase COMPLETE；新Web9d6d9920/13108、新Workerfd3a4935，旧pixel-size pair已排空停止restart=no。原配置/任务保护通过，旧页跨切流真实保存200、新页准确读回；历史partial证据保留。
+- 真实前台生成两张1024×1024 PNG，A操作5937723c-83d4-4fd6-b412-eaddfbfe2b2d（APIB sunburst）、B操作fe2295e0-9123-4bd7-beb6-821de225d539（APIB flare）；各UI/冻结报价/预扣结算6积分，合12积分，两账本消费行，无编辑退款，最终预占0。供应商reported合0.021608USD，不当最终账户账单。
+- B点击前A应用回执仍queued；两条供应商生成时间实际重叠。此证明后台任务并行，不冒称B点击时A供应商已受理。原实际提示词分别冻结，第三份未提交草稿保留，刷新新增POST0。
+- 私有只读PG账务sidecar最初把supplier_calls.state期待为succeeded而实际completed，首断言失败保留；按真实schema修正验收断言后两任务逐ID核对通过，不改生产记录。
+- 17文件独立副本真Bash回滚恢复9原hash/删除8新增；恢复旧按钮全程busy及旧node receipt复用行为，正式文件保持修改。later-edit hash不符时零写。
+- 最终证据output/canvas-background-generation-20261102/FINAL_ACCEPTANCE.json、real103-r1、real-accounting/verified.summary.json、proof/四件；程序、配置、UI、供应商和钱包证据分层。用户后续提出dock遮挡像素标签，为独立增量，不再新增本模块收费测试。
