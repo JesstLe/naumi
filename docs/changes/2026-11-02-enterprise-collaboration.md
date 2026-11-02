@@ -113,3 +113,14 @@ collaborationFailure(error: unknown): Response;
 - [ ] 目标站版本/功能/旧槽排空/回滚材料验收。默认103；47维持现状，功能实现不自行解除47暂缓发布决定。
 
 接口/文档验证不是消息和权限测试。首次并行交付未到齐之前，保持“实施中”，不把契约、mock UI、HTTP200或Git提交当作上线。
+
+## 2026-11-02 第一模块交回：通讯后端
+
+- 固定实现 `b40cd63e2531bc13811dd45006f74b3260084249`，26 个新增任务文件；父合同与本记录保持作者基线。父集成分支普通 merge 后 `9a169cdafee22f6b14e9f67e424d5f0ff8cbdbbd`；尚未合共享 main、push 或发布。
+- 模块记录：[通讯后端](2026-11-02-enterprise-collaboration-server.md)。消息 clientId/fingerprint、成员 joined_seq/left_seq/read_seq、上传不可变块清单、企业有序 event_heads 为本次主要状态字段。
+- 作者集中真实 PG＋实际路由 HTTP：`COLLABORATION_RESULT cases=20 passed=20 failed=0 tier=LOCAL_PG_ACTUAL_ROUTES_HTTP suppliers=0`，exit0；`FIXTURE_CLEANUP=PASS remaining=0`。共享校验为明确 external-port fixture，父真实共享接线仍待复验。
+- 基线及副本回滚后均 `COLLABORATION_BASELINE=MISSING_FEATURE routes=0 implementation=0`，exit2，表示准确恢复原缺功能状态。回滚命令 exit0、删除26个新增路径；later-edit guard exit73、零写入。源实现保持修改状态。
+- 完整类型检查 exit2 的唯一作者报告缺项为尚未合入的 `@/lib/canvas-sharing/service`，未记为通过。完整 build、原版画布和 Desktop 浏览器联调未执行。
+- 父已复制并逐文件 hash 核对作者完整 ignored 证据到 `output/enterprise-collaboration-integration-20261102/server/`，重新读取四产物；保留作者失败迭代、fixture资源回执及 rollback 副本，不依赖未来清理子 worktree 后消失的路径。
+- 已向另两个原实现任务发送固定后端提交和实际分页/上传/SSE接口信息。首批通讯录100人、会话50条，界面须加载后续游标，不遗漏第101位成员。
+- 保留后续事项：源码独立复核、真实共享卡片联调、已上传文件引用回收策略、部署媒体挂载/代理 body 与 SSE idle限制核验；不将本地HTTP通过等同生产容量。
