@@ -1,5 +1,19 @@
 [
   {
+    "version": "1793582472",
+    "title": {
+      "zh": "画布图片尺寸显示",
+      "en": "Canvas image dimensions"
+    },
+    "improvements": [
+      {
+        "zh": "选中图片时，在右上角直接查看原图像素尺寸。",
+        "en": "View original pixel dimensions at the top right of selected images."
+      }
+    ],
+    "fixes": []
+  },
+  {
     "version": "1793544987",
     "title": {
       "zh": "画布创作与加载体验更新",

@@ -38,6 +38,7 @@ import {submitCanvasImagegen,resolveCanvasDetailFrame,resolveCanvasLegacyFrame,c
 import {ImagegenPendingRecovery} from "./imagegen-pending-recovery";
 import {FrameRatioDialog,useCanvasFrameChoice} from "./frame-ratio-dialog";
 import {imageOutputWarningText} from "@/lib/imagegen/output-advisory";
+import {ImagePixelSize} from "./image-pixel-size";
 import {VideoGenerationNode} from "./video/generation-node";
 import {generateCanvasVideoBatch,hasCanvasVideoBatch} from "@/lib/video/canvas-batch-client";
 import {VideoSettingsDialog,type VideoNodeDraft} from "./video/settings-dialog";
@@ -1279,6 +1280,11 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
   const [forceOriginal, setForceOriginal] = useState(false);
   const preview = !forceOriginal && !!d.intrinsicWidth && !!d.intrinsicHeight;
   const previousImage = useRef(d.image);
+  // Reuse original metadata or the current image's already-loaded dimensions.
+  // Node/viewport resizing never changes this value or requests the original.
+  const pixelSize = d.intrinsicWidth && d.intrinsicHeight
+    ? {width:d.intrinsicWidth,height:d.intrinsicHeight}
+    : previousImage.current === d.image ? naturalSize : null;
   useEffect(() => {
     if (previousImage.current === d.image) return;
     previousImage.current = d.image;
@@ -1339,6 +1345,7 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
 
       {/* 标题悬在图片上方(节点边界外):选中框/缩放框只框图片,不框标题。未选中时仅显示文件名,点击后显示标记/分组/版本。 */}
       <div className="art-title absolute -top-[38px] left-0 right-0 z-10 flex h-[30px] items-center gap-1.5 truncate pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold leading-none text-[#e2e6ed]">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
         <span
           className="nodrag min-w-0 flex-1 cursor-text truncate"
           title={`${d.label} · 双击编辑`}
@@ -1360,6 +1367,10 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
           <span className="art-version ml-auto flex-none rounded bg-white/10 px-1 text-[10px] font-semibold text-slate-200">
             v{d.version}
           </span>
+        )}
+        </div>
+        {selected && d.image && !d.pending && !d.videoUrl && !d.missingAsset && (
+          <ImagePixelSize width={pixelSize?.width} height={pixelSize?.height} />
         )}
       </div>
 
