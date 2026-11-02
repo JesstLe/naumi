@@ -3,7 +3,7 @@ import {createHash} from "node:crypto";
 import {listArtworksByIds} from "../db";
 import {canReadMedia,getMediaAsset,importLegacyMedia} from "../media-assets";
 import {storageKeyFromManagedUrl,readManagedObject,writeStoredObject,presignStoredObject,privateMedia,remoteMediaAccess} from "../storage";
-import {createVideoReferenceMediaUrl} from "./reference-media-token";
+import {createVideoReferenceMediaUrl,type VideoReferenceMediaAsset} from "./reference-media-token";
 import {VideoContractError} from "./contract";
 import {videoReferenceSchema} from "./references";
 import type {VideoGenerationRequest,VideoReference} from "./types";
@@ -11,12 +11,15 @@ import {verifiedOwnedMedia} from "./media-inspection";
 import {ModelConfigError} from "../model-config/types";
 
 function invalid(message:string):never{throw new VideoContractError("REFERENCE_UNAVAILABLE",message,["references"]);}
-/** Resolve every nested input against owned bytes. Never authorize a client-supplied URL by an unrelated artwork ID. */
-export async function authorizeVideoReferences(actor:string,request:VideoGenerationRequest):Promise<VideoGenerationRequest>{
+/** The decoded media kind and the original storage MIME have different jobs:
+ * an audio-only MP4 may be stored as video/mp4, while signing must still bind
+ * that original asset identity. Keep the latter private to this resolution. */
+async function resolveAuthorizedVideoReferences(actor:string,request:VideoGenerationRequest){
   const all=[...request.references,...(request.elements||[]).flatMap(item=>item.references)];
   const ids=[...new Set(all.map(item=>item.artworkId).filter((id):id is string=>!!id))];
   const artworks=new Map((ids.length?await listArtworksByIds(actor,ids):[]).map(item=>[item.id,item]));
   const identity=new Map<string,string>();
+  const storedAssets=new Map<string,VideoReferenceMediaAsset>();
   const resolve=async(raw:VideoReference):Promise<VideoReference>=>{
     const ref=videoReferenceSchema.parse(raw),art=ref.artworkId?artworks.get(ref.artworkId):undefined;
     if(ref.artworkId&&!art)invalid("素材不存在或无权访问");
@@ -31,25 +34,36 @@ export async function authorizeVideoReferences(actor:string,request:VideoGenerat
     const existing=identity.get(ref.id);
     if(existing&&existing!==key)invalid("同一引用身份对应不同素材");identity.set(ref.id,key);
     const asset=await getMediaAsset(key)||await importLegacyMedia(key,actor);
-    if(!asset||!asset.content_type.startsWith(ref.kind+"/"))invalid("素材真实类型与引用类型不一致");
+    if(!asset||!/^(?:image|video|audio)\//.test(asset.content_type))invalid("素材真实类型无法确认");
     let verified;
     try{verified=await verifiedOwnedMedia(actor,key,art?.id||null,ref.sha256);}catch(error){
       if(error instanceof ModelConfigError&&["MEDIA_INPUT_CHANGED","MEDIA_INPUT_UNAVAILABLE","INVALID_MEDIA_STREAM"].includes(error.code))invalid(error.message);throw error;
     }
+    if(!verified.mimeType.startsWith(ref.kind+"/"))invalid("素材真实类型与引用类型不一致");
+    if(asset.sha256!==verified.sha256||Number(asset.bytes)!==verified.bytes)invalid("素材版本与实际字节不一致");
+    if(ref.kind!=="image"&&(!Number.isFinite(verified.probe.durationSeconds)||verified.probe.durationSeconds<=0))invalid("参考媒体时长无法确认");
+    storedAssets.set(key,{key,sha256:asset.sha256,bytes:Number(asset.bytes),content_type:asset.content_type,owner:asset.owner,public:asset.public});
     return {...ref,url:`/media/${key}`,storageKey:key,mimeType:verified.mimeType,bytes:verified.bytes,sha256:verified.sha256,
       width:verified.probe.width||undefined,height:verified.probe.height||undefined,
       durationSeconds:ref.kind==="image"?undefined:verified.probe.durationSeconds};
   };
   const references:VideoReference[]=[];for(const ref of request.references)references.push(await resolve(ref));
   const elements=[];for(const element of request.elements||[]){const refs=[];for(const ref of element.references)refs.push(await resolve(ref));elements.push({...element,references:refs});}
-  return {...request,references,...(request.elements?{elements}:{})};
+  return {request:{...request,references,...(request.elements?{elements}:{})},storedAssets};
+}
+/** Resolve every nested input against owned bytes. Never authorize a client-supplied URL by an unrelated artwork ID. */
+export async function authorizeVideoReferences(actor:string,request:VideoGenerationRequest):Promise<VideoGenerationRequest>{
+  return (await resolveAuthorizedVideoReferences(actor,request)).request;
 }
 
 /** Signed addresses exist only in this submission copy; stable owned keys remain in the persisted request. */
 export async function materializeVideoReferences(actor:string,request:VideoGenerationRequest,options:{multipart?:boolean;inlineImages?:boolean}={}):Promise<VideoGenerationRequest>{
-  const authorized=await authorizeVideoReferences(actor,request),urls=new Map<string,string>();
+  const {request:authorized,storedAssets}=await resolveAuthorizedVideoReferences(actor,request),urls=new Map<string,string>();
   const materialize=async(ref:VideoReference)=>{
     const key=ref.storageKey!;
+    const asset=await getMediaAsset(key),expected=storedAssets.get(key);
+    if(!asset||!expected||asset.sha256!==expected.sha256||Number(asset.bytes)!==Number(expected.bytes)||asset.content_type!==expected.content_type||asset.owner!==expected.owner||asset.public!==expected.public)
+      invalid("素材版本无法核对，未生成外部访问签名");
     if(options.inlineImages&&ref.kind==="image"){
       const input=await readManagedObject(`/media/${key}`,12*1024*1024);
       if(ref.sha256&&createHash("sha256").update(input.bytes).digest("hex")!==ref.sha256)invalid("已冻结图片字节已改变");
@@ -59,15 +73,12 @@ export async function materializeVideoReferences(actor:string,request:VideoGener
     let url=urls.get(key);
     if(!url){
       if(privateMedia&&remoteMediaAccess==="proxy"){
-        const asset=await getMediaAsset(key);
-        if(!asset||asset.sha256!==ref.sha256||Number(asset.bytes)!==ref.bytes||asset.content_type!==ref.mimeType)invalid("素材版本无法核对，未生成外部访问签名");
         url=createVideoReferenceMediaUrl({key,sha256:asset.sha256,bytes:Number(asset.bytes),contentType:asset.content_type,owner:asset.owner,public:asset.public});
       }else if(privateMedia){
-        const asset=await getMediaAsset(key);
-        if(!asset?.remote_ready||asset.sha256!==ref.sha256){
+        if(!asset.remote_ready){
           const object=await readManagedObject(`/media/${key}`,250*1024*1024);
           if(ref.sha256&&createHash("sha256").update(object.bytes).digest("hex")!==ref.sha256)invalid("已冻结素材字节已改变");
-          const written=await writeStoredObject(object.bytes,ref.mimeType||object.contentType,key);
+          const written=await writeStoredObject(object.bytes,asset.content_type,key);
           if(!written.remoteReady)invalid("素材暂时无法提供给视频供应商，请稍后重试");
         }
         url=await presignStoredObject("GET",key,900);

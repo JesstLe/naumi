@@ -22,6 +22,7 @@ import type {VideoModelDefinition,VideoWireProfile} from "@/lib/video/capability
 import {VideoCapabilityEditor} from "../model-config/video-capability-editor";
 import {videoParametersSchema,type VideoParameters} from "@/lib/model-config/video-policy";
 
+import {VideoCapabilityUpgrade} from "./video-capability-upgrade";
 import {ImageMappingEditor} from "./image-mapping-editor";
 import {ImagegenRoutesEditor} from "./imagegen-routes-editor";
 
@@ -86,6 +87,7 @@ export function ModelManagement() {
   const [mappingRow,setMappingRow]=useState<ManagedModelRow|null>(null);
   const [parameters,setParameters]=useState<ManagedModelRow|null>(null);
   const [videoParameters,setVideoParameters]=useState<ManagedModelRow|null>(null);
+  const [videoUpgrade,setVideoUpgrade]=useState(false);
 
   const [advancedRow,setAdvancedRow]=useState<ManagedModelRow|null>(null);
   const [price,setPrice]=useState<ManagedModelRow|null>(null);
@@ -139,14 +141,14 @@ export function ModelManagement() {
     const returnRowId = operation.action === "register" ? register?.returnRowId : undefined;
     const returnChannelRowId = operation.action === "register" ? register?.returnChannelRowId : undefined;
     mutationGuard.current = true; setBusy(true); setError(""); setNotice(""); setPending(operation);
-    setRow(null); setRename(null); setConnect(false); setRegister(null);setAdvancedRow(null);
+    setVideoUpgrade(false); setRow(null); setRename(null); setConnect(false); setRegister(null);setAdvancedRow(null);
     try { sessionStorage.setItem(pendingKey, JSON.stringify(operation)); } catch {}
     try {
       const result = await api(operation);
       if (result.publication.phase !== "applied") { setScope(null);setPrice(null);setParameters(null);setMappingRow(null);setVideoParameters(null);setResolutionRow(null);setChannelRow(null);setSorting(false); setNotice("发布结果待核对。请点击“核对并继续”，系统会沿用同一操作，不重复创建发布。"); return; }
-      clearPending(); setRow(null); setScope(null);setPrice(null);setParameters(null);setMappingRow(null);setVideoParameters(null);setResolutionRow(null);setChannelRow(null);setSorting(false); setConnect(false); setRegister(null);
-      if(["pricing","parameters","video-parameters","resolutions","channels","order","scope","switch","rename"].includes(operation.action))window.dispatchEvent(new Event(MODEL_CATALOG_REFRESH));
-      setNotice(operation.action === "video-parameters" ? "视频能力已生效。" : operation.action === "channels" ? "供应通道已生效，新任务使用新策略，已接受任务保留原配置。" : operation.action === "resolutions" ? "分辨率显示与供应通道映射已生效。新任务使用新配置，已接受任务保留原参数。" : operation.action === "order" ? "模型排序已生效，前端各工具按此顺序展示可用模型。" : operation.action === "parameters" ? "显示档位与上游映射已生效。新请求使用新参数，已接受的任务保留原映射。" : operation.action === "pricing" ? "积分售价已生效。前端报价与实际扣费使用同一配置，已开始的任务保留原报价。" : operation.action === "scope" ? "工具范围已生效。新请求使用新范围，已经开始的任务保留原配置。" : operation.action === "rename" ? "显示名称已更新，前端刷新模型列表后生效。" : operation.action === "switch" ? "实际模型已切换。新请求使用新配置，已经开始的任务保留原模型。" : operation.action === "connect" ? "上游已接入，正在自动发现模型 ID。" : "模型已添加到可切换列表。");
+      clearPending(); setVideoUpgrade(false); setRow(null); setScope(null);setPrice(null);setParameters(null);setMappingRow(null);setVideoParameters(null);setResolutionRow(null);setChannelRow(null);setSorting(false); setConnect(false); setRegister(null);
+      if(["video-capability-upgrade","pricing","parameters","video-parameters","resolutions","channels","order","scope","switch","rename"].includes(operation.action))window.dispatchEvent(new Event(MODEL_CATALOG_REFRESH));
+      setNotice(operation.action === "video-capability-upgrade" ? "视频能力已更新。" : operation.action === "video-parameters" ? "视频能力已生效。" : operation.action === "channels" ? "供应通道已生效，新任务使用新策略，已接受任务保留原配置。" : operation.action === "resolutions" ? "分辨率显示与供应通道映射已生效。新任务使用新配置，已接受任务保留原参数。" : operation.action === "order" ? "模型排序已生效，前端各工具按此顺序展示可用模型。" : operation.action === "parameters" ? "显示档位与上游映射已生效。新请求使用新参数，已接受的任务保留原映射。" : operation.action === "pricing" ? "积分售价已生效。前端报价与实际扣费使用同一配置，已开始的任务保留原报价。" : operation.action === "scope" ? "工具范围已生效。新请求使用新范围，已经开始的任务保留原配置。" : operation.action === "rename" ? "显示名称已更新，前端刷新模型列表后生效。" : operation.action === "switch" ? "实际模型已切换。新请求使用新配置，已经开始的任务保留原模型。" : operation.action === "connect" ? "上游已接入，正在自动发现模型 ID。" : "模型已添加到可切换列表。");
       const refreshed = await load(true);
       if(operation.action==="imagegen-parameters"){window.dispatchEvent(new Event(MODEL_CATALOG_REFRESH));setNotice("图像高级能力与实际参数已发布，新任务使用新映射。");}
       if(returnRowId && refreshed) setRow(refreshed.rows.find(r=>r.id===returnRowId) || null);
@@ -173,7 +175,7 @@ export function ModelManagement() {
     {pending && <div className={styles.pending}><span>有一项发布结果需要核对，已保留操作编号。</span><button className={styles.primary} disabled={busy} onClick={() => void run(pending)}>{busy && <Loader2 size={16} className={styles.spin} />}核对并继续</button></div>}
     {state && !state.managed && <div className={styles.error}>当前实例未启用统一模型配置，下面是注册表中的模型。用户侧仍使用旧配置；请先在完整配置中心完成接入。</div>}
     {!state && loading ? <div className={styles.empty}><Loader2 className={styles.spin} />正在读取前端模型与真实路由…</div> : !state ? <div className={styles.empty}><Unplug /><h2>模型配置暂时无法读取</h2><p>检查数据库和 Router 管理连接后重试。</p><button className={styles.secondary} onClick={() => void load(true)}>重新读取</button></div> : tab === "models" ? <section id="models-panel" role="tabpanel" aria-labelledby="models-tab">
-      <div className={`${styles.toolbar} ${clarity.toolbar}`}><div className={styles.filters} aria-label="模型类型">{[["all", "全部"], ["image", "图片"], ["text", "文字"], ["video", "视频"]].map(([id, label]) => <button key={id} aria-pressed={filter === id} onClick={() => setFilter(id)}>{label}</button>)}</div><button className={styles.secondary} disabled={locked} onClick={()=>setSorting(true)}>调整排序</button><label className={styles.search}><Search size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索名称、模型 ID 或功能" aria-label="搜索模型" /></label></div>
+      <div className={`${styles.toolbar} ${clarity.toolbar}`}><div className={styles.filters} aria-label="模型类型">{[["all", "全部"], ["image", "图片"], ["text", "文字"], ["video", "视频"]].map(([id, label]) => <button key={id} aria-pressed={filter === id} onClick={() => setFilter(id)}>{label}</button>)}</div><button className={styles.secondary} disabled={locked} onClick={()=>setSorting(true)}>调整排序</button>{state.managed&&state.rows.some(row=>row.modality==="video")&&<button className={styles.secondary} disabled={locked} onClick={()=>{setError("");setVideoUpgrade(true);}}>更新视频能力</button>}<label className={styles.search}><Search size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索名称、模型 ID 或功能" aria-label="搜索模型" /></label></div>
       <div className={`${styles.mapping} ${clarity.mapping}`}><ModelMappingHeader />{rows.map(r => {
         const actions: MappingAction[] = [
           { label: "修改显示名称", group: "display", disabled: locked || !state.managed, onClick: () => setRename(r) },
@@ -204,6 +206,7 @@ export function ModelManagement() {
     {resolutionRow && <ResolutionsDialog row={resolutionRow} locked={locked} error={error} onClose={()=>setResolutionRow(null)} onSave={(resolutions,parameters)=>void run(operation("resolutions",{rowId:resolutionRow.id,resolutions,...(parameters!==undefined?{parameters}:{})}))}/>}
     {mappingRow && <Dialog title="图片参数映射" locked={locked} onClose={()=>setMappingRow(null)}><ImageMappingEditor row={mappingRow} locked={locked} error={error} onClose={()=>setMappingRow(null)} onSave={mapping=>{void run(operation('image-mapping',{rowId:mappingRow.id,mapping}));}}/></Dialog>}
     {parameters && <ParametersDialog row={state?.rows.find(r=>r.id===parameters.id) || parameters} locked={locked} error={error} onClose={()=>setParameters(null)} onSave={value=>void run(operation("parameters",{rowId:parameters.id,parameters:value}))}/>}
+    {videoUpgrade&&<VideoCapabilityUpgrade locked={locked} error={error} onClose={()=>setVideoUpgrade(false)} onApply={review=>void run({...operation("video-capability-upgrade",{reviewDigest:review.reviewDigest,publicIds:review.publicIds}),expectedVersion:review.version})}/>}
     {videoParameters && <VideoParametersDialog row={videoParameters} locked={locked} error={error} onClose={()=>setVideoParameters(null)} onSave={routes=>void run(operation("video-parameters",{rowId:videoParameters.id,routes}))}/>}
     {sorting && state && <OrderDialog rows={state.rows} locked={locked} error={error} onClose={()=>setSorting(false)} onSave={rowIds=>void run(operation("order",{rowIds}))} />}
     {scope && <ScopeDialog row={scope} locked={locked} error={error} onClose={()=>setScope(null)} onSave={(features,canvas)=>void run(operation("scope",{rowId:scope.id,features,...(canvas!==undefined?{canvas}:{})}))}/>}

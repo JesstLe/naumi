@@ -8,6 +8,7 @@ import {applyDisplayResolutions} from "./resolution-options";
 import {videoDefinitionSchema,videoWireProfileSchema} from "../video/capability-schema";
 import {applyVideoParameters,videoParametersSchema} from "./video-policy";
 import {freezeManagedVideoCapability} from "../video/frozen-capability";
+import {reviewVideoCapabilityUpgrade,applyReviewedVideoCapabilityUpgrade} from "./video-capability-review";
 import "server-only";
 import {channelHealthSummary} from "./channel-scheduler";
 import {providerCapacitySummary} from "./capacity";
@@ -41,6 +42,7 @@ const common = { id: z.uuid(), expectedVersion: z.number().int().positive() };
 const credits=z.number().int().min(0).max(2147483647);
 const creditPricing=z.discriminatedUnion("mode",[z.strictObject({mode:z.literal("matrix"),prices:z.record(z.enum(QUALITY_IDS),z.record(z.enum(RESOLUTION_IDS),credits.nullable()))}),z.strictObject({mode:z.literal("fixed"),credits}),z.strictObject({mode:z.literal("quality-resolution"),quality:z.record(z.enum(QUALITY_IDS),credits),resolutionExtra:z.record(z.enum(RESOLUTION_IDS),credits)})]);
 const input = z.discriminatedUnion("action", [
+  z.strictObject({action:z.literal("video-capability-upgrade"),...common,reviewDigest:z.string().regex(/^[a-f0-9]{64}$/),publicIds:z.array(identifier).min(1).max(100)}),
   z.strictObject({action:z.literal("video-parameters"),...common,rowId:identifier,routes:videoParametersSchema}),
   z.strictObject({action:z.literal("imagegen-parameters"),...common,rowId:identifier,routes:z.array(imagegenRoutePolicySchema).max(100).nullable()}),
   z.strictObject({action:z.literal("channels"),...common,rowId:identifier,policy:channelPolicySchema.nullable()}),
@@ -73,6 +75,8 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
     try {
       const admin = await deps.administration();
       const snapshot = await admin.repo.current();
+      if(request.method==="GET" && new URL(request.url).searchParams.get("view")==="video-capability-upgrade")
+        return biJson(reviewVideoCapabilityUpgrade(snapshot.config,snapshot.version));
       if(request.method==="GET" && new URL(request.url).searchParams.has("rowId")){
         const params=new URL(request.url).searchParams,rowId=identifier.parse(params.get("rowId")),feature=z.enum(FEATURE_IDS).parse(params.get("feature"));
         const row=rows(snapshot).find(r=>r.id===rowId);if(!row || !row.features.some(f=>f.id===feature))throw new ModelConfigError("MODEL_UNAVAILABLE","该模型未应用到此工具",400);
@@ -104,6 +108,8 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
         for(const row of modelRows)for(const route of row.qualityConfig?.routes || []){const d=defaults.get(route.upstreamId);route.metadataDefaults=d || null;if(!route.configured&&d?.available){route.mode=d.mode;route.values={...d.values};route.metadataRef={id:d.id,revision:d.revision};}else if(!route.configured){route.mode="omit";route.values={};}}
         return biJson({ version: snapshot.version,billingVersion:billing.version, managed, rows: modelRows.map(row=>({...row,pricing:managedModelPriceViews(billing,snapshot,row)})), candidates: managedModelCandidates(snapshot.config), channelHealth,providerCapacity,providers: snapshot.config.providers.map(p => ({ id: p.id, name: p.name, protocol: p.protocol, maxConcurrent:p.maxConcurrent, baseUrl: p.baseUrl, enabled: p.enabled, configured: !!p.credentialRef })), catalogs });}
       const body = input.parse(JSON.parse(await readBounded(new Response(request.body), 48000)));
+      if(body.action==="video-capability-upgrade"&&!await deps.managed())
+        throw new ModelConfigError("CONFIG_UNAVAILABLE","请先启用统一模型配置",409);
       if (body.action === "credential") {
         if (!!body.ciphertext === !!body.keyPlain || !/^mvp-[0-9a-f-]{36}$/i.test(body.providerId)) throw new ModelConfigError("INVALID_CREDENTIAL", "凭据参数无效");
         // Match the existing system settings' HTTP fallback, without retaining plaintext in operation drafts or browser storage.
@@ -138,7 +144,9 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
       let draft = await admin.repo.draft(actor);
       if (!previous && draft.revision === 1) {
         let config = structuredClone(snapshot.config);
-        if(body.action === "scope-compat") {
+        if(body.action === "video-capability-upgrade") {
+          config=applyReviewedVideoCapabilityUpgrade(config,snapshot.version,body.reviewDigest,body.publicIds).config;
+        } else if(body.action === "scope-compat") {
           // Deployment rollback expands the system grant before an older image
           // reads this config. Preserve ordinary tool scope and every price.
           for(const model of config.publicModels)if(model.toolScope?.systems?.includes("canvas")){
@@ -195,7 +203,7 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
         draft = await admin.repo.saveDraft({ id: draft.id, expectedRevision: draft.revision, config, actor });
       }
       staged = true;
-      const publication = await admin.runtime.publish({ id: body.id, draftId: draft.id, expectedRevision: draft.revision, expectedVersion: body.expectedVersion, actor, reason: `MVP ${body.action === "image-mapping" ? `图片参数映射 ${body.rowId}` : body.action === "video-parameters" ? `视频能力 ${body.rowId}` : body.action === "imagegen-parameters" ? `图像高级参数 ${body.rowId}` : body.action === "scope-compat" ? "回滚兼容：展开画布系统范围" : body.action === "order" ? "模型展示排序" : body.action === "channels" ? `供应通道 ${body.rowId}` : body.action === "resolutions" ? `分辨率选项 ${body.rowId}` : body.action === "parameters" ? `参数映射 ${body.rowId}` : body.action === "scope" ? `工具范围 ${body.rowId}` : body.action === "switch" ? `切换 ${body.rowId} → ${body.upstreamId}` : body.action === "rename" ? `改名 ${body.rowId} → ${body.label}` : body.action === "connect" ? `接入来源 ${body.name}` : `添加模型 ${body.model}`}` });
+      const publication = await admin.runtime.publish({ id: body.id, draftId: draft.id, expectedRevision: draft.revision, expectedVersion: body.expectedVersion, actor, reason: `MVP ${body.action === "video-capability-upgrade" ? "更新已核对的视频能力" : body.action === "image-mapping" ? `图片参数映射 ${body.rowId}` : body.action === "video-parameters" ? `视频能力 ${body.rowId}` : body.action === "imagegen-parameters" ? `图像高级参数 ${body.rowId}` : body.action === "scope-compat" ? "回滚兼容：展开画布系统范围" : body.action === "order" ? "模型展示排序" : body.action === "channels" ? `供应通道 ${body.rowId}` : body.action === "resolutions" ? `分辨率选项 ${body.rowId}` : body.action === "parameters" ? `参数映射 ${body.rowId}` : body.action === "scope" ? `工具范围 ${body.rowId}` : body.action === "switch" ? `切换 ${body.rowId} → ${body.upstreamId}` : body.action === "rename" ? `改名 ${body.rowId} → ${body.label}` : body.action === "connect" ? `接入来源 ${body.name}` : `添加模型 ${body.model}`}` });
       let discovery;
       if (body.action === "connect" && publication.phase === "applied") {
         const provider = (await admin.repo.current()).config.providers.find(p=>p.id===`mvp-${body.id}`);
