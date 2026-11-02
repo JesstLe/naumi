@@ -34,7 +34,11 @@ function assertInert(value: unknown, depth = 0) {
   if (Array.isArray(value)) { for (const item of value) assertInert(item, depth + 1); return; }
   if (!value || typeof value !== "object") return;
   for (const [key, item] of Object.entries(value)) {
-    if (/(?:token|secret|password|credential|authorization|api[_-]?key|nonce|quote|operation[_-]?id|task[_-]?id|job[_-]?id)/i.test(key))
+    const normalized = key.replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2").replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase().replace(/[^a-z0-9]+/g, "_");
+    // Token budgets are scalar generation parameters, not bearer credentials.
+    const tokenBudget = /^(?:max_tokens|max_output_tokens|max_completion_tokens|min_tokens|token_limit|token_budget)$/.test(normalized)
+      && typeof item === "number" && Number.isSafeInteger(item) && item >= 0;
+    if (!tokenBudget && /(?:^|_)(?:tokens?|access_?token|refresh_?token|secret|password|credentials?|authorization|api_?key|nonce|quote|operation_?id|task_?id|job_?id)(?:_|$)/.test(normalized))
       fail("SHARE_UNSUPPORTED_AUTHORITY", "内容含有不可转移的执行配置，请移除后分享", 422);
     assertInert(item, depth + 1);
   }
@@ -101,19 +105,50 @@ export function dependencies(node: FrozenNode): string[] {
     case "character": for (const a of d.character.appearances) for (const id of a.referenceArtworkIds) add(id); break;
     case "scene": for (const s of d.scene.states) for (const id of s.referenceArtworkIds) add(id); break;
     case "audio": add(d.audio.sourceArtworkId); add(d.completed_artwork); break;
-    case "timeline": for (const t of d.timeline.tracks) for (const c of t.clips) { add(c.artworkId); add(c.canvasSourceId); } add(d.completed_artwork); break;
+    // canvasSourceId is provenance, not the material consumed by native editing.
+    case "timeline": for (const t of d.timeline.tracks) for (const c of t.clips) add(c.artworkId); add(d.completed_artwork); break;
   }
   return [...new Set(out)];
 }
 /** Verify all three namespaces: the project, each object, and each underlying storage object. */
-async function assertCreationBoundary(tx: PoolClient, author: string, enterpriseId: string, projectKey: string, nodeIds: string[]) {
+async function assertCreationBoundary(tx: PoolClient, author: string, enterpriseId: string, projectKey: string | string[], nodeIds: string[]) {
+  const projectKeys = typeof projectKey === "string" ? [projectKey] : projectKey;
   const contexts = (await tx.query(`SELECT scope_kind,tenant_id FROM app_creation_contexts WHERE actor_email=$1 AND
-    ((context_kind='project' AND context_id=$2) OR (context_kind='media' AND context_id=ANY($3::text[]))) FOR SHARE`, [author, projectKey, nodeIds])).rows;
+    ((context_kind='project' AND context_id=ANY($2::text[])) OR (context_kind='media' AND context_id=ANY($3::text[]))) FOR SHARE`, [author, projectKeys, nodeIds])).rows;
   if (contexts.some(r => r.scope_kind === "legacy_unconfirmed" || r.tenant_id && r.tenant_id !== enterpriseId)) fail("SHARE_TENANT_MISMATCH", "所选内容不属于当前企业空间", 403);
   const foreign = (await tx.query(`SELECT 1 FROM app_creation_links l JOIN app_creation_records c ON c.id=l.creation_id
     WHERE l.target_id=ANY($1::text[]) AND l.target_type IN ('artwork','text-node','video-node','director-node','character-node','scene-node','audio-node','timeline-node') AND l.relation='output'
     AND (c.actor_email<>$2 OR c.scope_kind='legacy_unconfirmed' OR c.tenant_id IS NOT NULL AND c.tenant_id<>$3::uuid) LIMIT 1`, [nodeIds, author, enterpriseId])).rowCount;
   if (foreign) fail("SHARE_TENANT_MISMATCH", "所选内容的创作归属不一致", 403);
+}
+/** Project aliases are selectors, never evidence of ownership. Resolve physical
+ * grouping/legacy ancestry, including suite batches, before consulting contexts.
+ * Source rows are locked again after the recursive read; graph changes fail rather
+ * than using a stale canonical identity in either approval phase.
+ */
+async function artworkProjectKeysTx(tx: PoolClient, author: string, row: Row): Promise<string[]> {
+  const chain = (await tx.query(`WITH RECURSIVE ancestry AS (
+    SELECT id,parent_id,group_id,batch_id,ARRAY[id] AS seen,0 AS depth FROM app_artworks WHERE email=$1 AND id=$2 AND deleted_at IS NULL
+    UNION ALL SELECT p.id,p.parent_id,p.group_id,p.batch_id,a.seen||p.id,a.depth+1
+      FROM ancestry a JOIN app_artworks p ON p.id=a.parent_id AND p.email=$1 AND p.deleted_at IS NULL
+      WHERE a.depth<200 AND NOT p.id=ANY(a.seen)
+    ) SELECT * FROM ancestry ORDER BY depth`, [author, row.id])).rows;
+  if (!chain.length) fail("SHARE_SOURCE_CHANGED", "源作品已改变，请重新确认后批准");
+  const last = chain[chain.length - 1];
+  if (last.parent_id && (last.depth >= 200 || last.seen.includes(last.parent_id))) fail("SHARE_AMBIGUOUS_PROJECT", "作品项目关系异常，请先整理后分享", 422);
+  const locked = (await tx.query(`SELECT id,parent_id,group_id,batch_id FROM app_artworks
+    WHERE email=$1 AND id=ANY($2::text[]) AND deleted_at IS NULL ORDER BY id FOR SHARE`, [author, chain.map(r => r.id)])).rows;
+  const byId = new Map(locked.map(r => [r.id, r]));
+  if (chain.some(r => { const current = byId.get(r.id); return !current || ["parent_id", "group_id", "batch_id"].some(k => current[k] !== r[k]); }))
+    fail("SHARE_SOURCE_CHANGED", "源作品项目已改变，请重新确认后批准");
+  const keys = new Set<string>([`tree:${row.group_id || last.id}`]);
+  // Every physically recorded group/suite is authority evidence; a missing alias
+  // context must not hide an existing foreign tenant assignment.
+  for (const item of chain) {
+    if (item.group_id) keys.add(`tree:${item.group_id}`);
+    if (typeof item.batch_id === "string" && item.batch_id.startsWith("suite-")) keys.add(`batch:${item.batch_id}`);
+  }
+  return [...keys];
 }
 export function mediaUrls(node: FrozenNode): string[] {
   const d = node.data, urls: string[] = [], add = (v: unknown) => { if (typeof v === "string" && v) urls.push(v); };
@@ -154,16 +189,17 @@ export async function captureShareSnapshotTx(tx: PoolClient, author: string, ent
       // Only directly referenced, owned artwork dependencies may live outside the selected canvas.
       const row = (await tx.query("SELECT * FROM app_artworks WHERE email=$1 AND id=$2 AND deleted_at IS NULL FOR SHARE", [author, id])).rows[0];
       if (!row || source.nodeIds?.includes(id)) fail("SHARE_DEPENDENCY_UNAVAILABLE", "所选节点或依赖不可用，请将依赖加入当前画布", 422);
-      await assertCreationBoundary(tx, author, enterpriseId, `tree:${row.group_id || row.id}`, [id]);
       rawNode = { id, kind: "artwork", data: row, stamp: "" };
     }
     if (all.has(id)) {
       const locked = (await tx.query(`SELECT to_jsonb(n) AS data FROM ${nodeTables[rawNode.kind]} n WHERE email=$1 AND id=$2 FOR SHARE`, [author, id])).rows[0]?.data;
       if (!locked || fingerprint(locked) !== fingerprint(rawNode.data)) fail("SHARE_SOURCE_CHANGED", "源内容已改变，请重新确认后批准");
     }
+    if (rawNode.kind === "artwork") await assertCreationBoundary(tx, author, enterpriseId, await artworkProjectKeysTx(tx, author, rawNode.data), [id]);
     const node = prepareNode(rawNode.kind, rawNode.data);
     if (source.kind === "artwork") { node.data.parent_id = null; node.data.parent_ids = []; }
     if (node.kind === "artwork") {
+      if ((source.kind === "artwork" || source.nodeIds?.includes(id)) && node.data.source_marker === "canvas-node-version") node.data.source_marker = null;
       const versions = (await tx.query("SELECT version_id,asset FROM app_canvas_image_versions WHERE email=$1 AND node_id=$2 ORDER BY created_at,version_id LIMIT 201 FOR SHARE", [author, id])).rows;
       if (versions.length > 200) fail("SHARE_TOO_MANY_VERSIONS", "图片历史版本过多，请先整理后分享", 413);
       node.versions = versions.map(v => ({ id: String(v.version_id), asset: z.strictObject({ image: z.string(), prompt: z.string(), width: z.number().nullable(), height: z.number().nullable(), ratio: z.string().nullable(), resolution: z.string().nullable(), style: z.string().nullable() }).parse(v.asset) }));
