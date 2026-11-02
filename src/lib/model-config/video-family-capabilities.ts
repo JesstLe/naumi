@@ -1,10 +1,11 @@
 import documented from "./video-family-capabilities.json";
 import {MULTIMODAL_VIDEO_FAMILIES} from "./video-family-multimodal";
+import {STORYBOARD_VIDEO_FAMILIES} from "./video-family-storyboard";
 import type {VideoModelDefinition,VideoWireProfile} from "../video/capability-schema";
 
 /** Supported documented contract and successful smoke inputs are distinct. */
 export const DOCUMENTED_VIDEO_FAMILIES=documented.items.map(item=>{
-  const upgraded=MULTIMODAL_VIDEO_FAMILIES.find(candidate=>candidate.publicId===item.publicId&&candidate.providerId===item.providerId&&candidate.model===item.model);
+  const upgraded=[...STORYBOARD_VIDEO_FAMILIES,...MULTIMODAL_VIDEO_FAMILIES].find(candidate=>candidate.publicId===item.publicId&&candidate.providerId===item.providerId&&candidate.model===item.model);
   return upgraded??{...item,definition:item.definition as VideoModelDefinition,profile:item.profile as VideoWireProfile};
 });
 export function documentedVideoFamily(item:{providerId:string;model:string}){

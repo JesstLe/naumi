@@ -6,6 +6,7 @@ import {currentCreationContext,frozenCreationScope,withFrozenCreation,withoutCre
 import {acceptCreationTx,assertCreationInputsTx,assertCreationObjectRefs,captureCreationMediaTx,creationEvidenceTx,recordSourceOutcomeTx} from '../saas/creation-writer';
 import {ensureCreationSchema} from '../saas/creation-schema';
 import type {VideoWorkflowPlan} from './workflow-schema';
+import {workflowAssemblyStageStatus,workflowCreatedAssets} from './workflow-outcome';
 
 export function assertWorkflowCreationScope(value:unknown,actor:string){
  const saved=frozenCreationScope(value,actor),current=currentCreationContext();
@@ -19,6 +20,7 @@ export async function validateWorkflowCreationInputs(actor:string,plan:VideoWork
  const scope=currentCreationContext();if(!scope)return;
  const {authorizeNodeInputs}=await import('../canvas/video-node-service');
  for(const node of plan.nodes){
+  if(node.existingArtworkId){await assertCreationObjectRefs(actor,[node.existingArtworkId]);continue;}
   const references=[...(node.request.references||[]),...(node.request.elements||[]).flatMap(e=>e.references)];
   await assertCreationObjectRefs(actor,references.map(r=>r.artworkId).filter((id):id is string=>!!id));
   for(const input of node.request.orderedInputs||[])if(input.kind==='text'&&!input.nodeId.startsWith('inline:')){
@@ -32,7 +34,7 @@ export async function validateWorkflowCreationInputs(actor:string,plan:VideoWork
 export async function acceptWorkflowCreationTx(tx:PoolClient,actor:string,plan:VideoWorkflowPlan){
  const context=currentCreationContext();if(!context)return undefined;
  await ensureCreationSchema();
- const references=plan.nodes.flatMap(n=>[...(n.request.references||[]),...(n.request.elements||[]).flatMap(e=>e.references)]);
+ const references=plan.nodes.flatMap(n=>n.existingArtworkId?[{id:n.id,kind:'video' as const,role:'source_video' as const,artworkId:n.existingArtworkId}]:[...(n.request.references||[]),...(n.request.elements||[]).flatMap(e=>e.references)]);
  await assertCreationInputsTx(tx,actor,references.map(r=>r.artworkId).filter((id):id is string=>!!id),context);
  const root={...context,requestText:context.requestText||plan.nodes.map(n=>`${n.id}: ${n.request.prompt}`).join('\n').slice(0,50000)};
  const id=await acceptCreationTx(tx,'video-workflow',plan.id,actor,{inputs:references},root);
@@ -40,11 +42,15 @@ export async function acceptWorkflowCreationTx(tx:PoolClient,actor:string,plan:V
  return {...root,creationId:id||root.creationId};
 }
 export async function updateWorkflowCreationTx(tx:PoolClient,actor:string,runId:string){
- const rows=(await tx.query('SELECT status,result_assets FROM app_video_workflow_run_nodes WHERE run_id=$1',[runId])).rows;
- const run=(await tx.query('SELECT cancellation_requested_at FROM app_video_workflow_runs WHERE id=$1 AND email=$2',[runId,actor])).rows[0];
- const status=workflowCreationStatus(rows.map(r=>String(r.status)),!!run?.cancellation_requested_at);
- const ids=rows.flatMap(r=>Array.isArray(r.result_assets)?r.result_assets:[]).map(a=>a.artworkId).filter((id):id is string=>typeof id==='string');
- await creationEvidenceTx(tx,()=>recordSourceOutcomeTx(tx,'video-workflow',runId,actor,status,{artworkIds:ids,eventKey:`workflow:${status}`,summary:`制作链状态：${status}`}),()=>tx.query("UPDATE app_video_workflow_runs SET creation_evidence_pending=true WHERE id=$1",[runId]));
+ const run=(await tx.query('SELECT cancellation_requested_at,plan,assembly_state FROM app_video_workflow_runs WHERE id=$1 AND email=$2 FOR UPDATE',[runId,actor])).rows[0];
+ if(!run)return;
+ const rows=(await tx.query('SELECT node_id,status,result_assets FROM app_video_workflow_run_nodes WHERE run_id=$1',[runId])).rows;
+ const assembly=run?.plan?.assembly?run.assembly_state:null,statuses=rows.map(r=>String(r.status));
+ if(run?.plan?.assembly)statuses.push(workflowAssemblyStageStatus(assembly?.status));
+ const status=workflowCreationStatus(statuses,!!run?.cancellation_requested_at);
+ const ids=workflowCreatedAssets(run?.plan||{nodes:[]},rows,assembly).map(a=>a.artworkId).filter((id):id is string=>typeof id==='string');
+ const recorded=await creationEvidenceTx(tx,()=>recordSourceOutcomeTx(tx,'video-workflow',runId,actor,status,{artworkIds:ids,eventKey:`workflow:${status}`,summary:`制作链状态：${status}`}),()=>tx.query("UPDATE app_video_workflow_runs SET creation_evidence_pending=true WHERE id=$1",[runId]));
+ if(recorded)await tx.query("UPDATE app_video_workflow_runs SET creation_evidence_pending=false WHERE id=$1",[runId]);
 }
 export function workflowCreationStatus(statuses:string[],cancellationRequested=false){
  if(!statuses.length)return 'needs_review' as const;

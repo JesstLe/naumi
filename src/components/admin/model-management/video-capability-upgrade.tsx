@@ -28,8 +28,8 @@ export function VideoCapabilityUpgrade({locked,error,onClose,onApply}:{locked:bo
         <div className="mb-3 flex items-center justify-between text-sm"><span>{review.publicIds.length} 个模型待更新</span><span className="text-slate-500">配置 v{review.version}</span></div>
         {rows.length?<div className="max-h-96 space-y-3 overflow-y-auto">{rows.map(row=><section key={row.publicId} className="rounded-lg border border-slate-200 p-3">
           <div className="flex items-center justify-between gap-3 font-medium"><span>{row.label}</span><span className={row.status==="conflict"?"text-amber-700":"text-slate-600"}>{row.status==="conflict"?"保留人工配置":"待更新"}</span></div>
-          <p className="mt-2 text-sm text-slate-500">{row.beforeModes.map(mode=>modeNames[mode]||mode).join(" · ")||"未声明"}</p>
-          {row.status==="ready"?<p className="mt-1 text-sm text-slate-900">→ {row.afterModes.map(mode=>modeNames[mode]||mode).join(" · ")}</p>:<details className="mt-2 text-sm text-amber-700"><summary>查看差异</summary>{row.reason}</details>}
+          <p className="mt-2 text-sm text-slate-500">{[...row.beforeModes.map(mode=>modeNames[mode]||mode),...(row.beforeMultiShot?["分镜"]:[])].join(" · ")||"未声明"}</p>
+          {row.status==="ready"?<p className="mt-1 text-sm text-slate-900">→ {[...row.afterModes.map(mode=>modeNames[mode]||mode),...(row.afterMultiShot?["分镜"]:[])].join(" · ")}</p>:<details className="mt-2 text-sm text-amber-700"><summary>查看差异</summary>{row.reason}</details>}
         </section>)}</div>:<p role="status" className="text-sm text-slate-600">已配置模型的能力已是当前版本</p>}
       </>}
       {error&&<p role="alert" className={styles.error}>{error}</p>}

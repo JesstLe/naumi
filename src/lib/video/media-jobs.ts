@@ -89,7 +89,7 @@ function presetOutputs(request:MediaJobRequest):string[]{
   if(request.outputs.length)throw new ModelConfigError("INVALID_MEDIA_OUTPUTS","预设处理使用固定格式，请使用原生命令自定义输出",422);
   return request.action==="frame"?["frame.png"]:request.action==="extract_audio"?["audio.wav"]:request.action==="separate"?["silent.mp4","audio.wav"]:["video.mp4"];
 }
-export async function createMediaJob(actorRaw:string,raw:unknown){
+export async function createMediaJob(actorRaw:string,raw:unknown,frozenQuote?:BillingQuote,expectedInputs?:readonly {artworkId:string;sha256:string}[]){
   const actor=actorRaw.toLowerCase(),parsed=mediaJobRequestSchema.safeParse(raw);
   if(!parsed.success)throw new ModelConfigError("INVALID_MEDIA_JOB","媒体处理参数无效",422,parsed.error.issues.map(issue=>issue.path.join(".")));
   const request=parsed.data,{billingConfirmation:_confirmation,...intent}=request,hash=digest(intent);await ensureMediaJobSchema();
@@ -99,7 +99,8 @@ export async function createMediaJob(actorRaw:string,raw:unknown){
   const pending=(await getPool().query("SELECT count(*) AS total,count(*) FILTER(WHERE email=$1) AS own FROM app_video_media_jobs WHERE status IN ('queued','processing')",[actor])).rows[0];
   if(Number(pending.total)>=64||Number(pending.own)>=8)throw new ModelConfigError("MEDIA_QUEUE_FULL","媒体任务过多，请等待现有任务完成",429);
   if(request.projectKey)await authorizeVideoProject(actor,request.projectKey);
-  presetOutputs(request);const inputs=[];for(const id of request.inputs)inputs.push(await resolveInput(actor,id));
+  presetOutputs(request);const inputs:FrozenInput[]=[];for(const id of request.inputs)inputs.push(await resolveInput(actor,id));
+  if(expectedInputs&&(expectedInputs.length!==inputs.length||expectedInputs.some((expected,index)=>inputs[index].artworkId!==expected.artworkId||inputs[index].sha256!==expected.sha256)))throw new ModelConfigError("MEDIA_INPUT_CHANGED","已冻结镜头的素材身份或字节已改变",409);
   if(inputs.reduce((n,input)=>n+(input.bundleFiles?input.bundleFiles.reduce((size,file)=>size+file.bytes,0):input.bytes),0)>250*1024*1024)throw new ModelConfigError("MEDIA_INPUT_TOO_LARGE","媒体输入超过250MB限制",422);
   if(inputs.reduce((n,input)=>n+(input.bundleFiles?.length||1),0)>1000)throw new ModelConfigError("MEDIA_INPUT_TOO_MANY","媒体输入文件过多",422);
   const first=inputs[0]?.probe;
@@ -114,7 +115,7 @@ export async function createMediaJob(actorRaw:string,raw:unknown){
     if(!inputs.length&&!args.length)throw new Error("EMPTY_MEDIA_COMMAND");
     nativeMediaArgs(args,virtualInputs,virtualOutputs,request.action==="ffprobe"?"ffprobe":"ffmpeg",virtualAuxiliary);
   }catch{throw new ModelConfigError("INVALID_MEDIA_COMMAND","媒体处理参数或虚拟文件路径无效",422);}
-  const billingQuote=await mediaBillingQuote(actor,request.action);confirmMediaQuote(billingQuote,request.billingConfirmation);
+  const billingQuote=frozenQuote||await mediaBillingQuote(actor,request.action);confirmMediaQuote(billingQuote,request.billingConfirmation);
   const tx=await getPool().connect();let row:JobRow;
   try{await tx.query("BEGIN");await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`media:${actor}:${request.operationId}`]);
     const old=(await tx.query("SELECT * FROM app_video_media_jobs WHERE email=$1 AND operation_id=$2",[actor,request.operationId])).rows[0] as JobRow|undefined;
