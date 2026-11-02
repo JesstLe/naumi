@@ -67,6 +67,32 @@ export function displayVideoPrompt(prompt: string, inputs: readonly OrderedInput
   return projection(prompt, inputs, choices).value;
 }
 
+/** Inline editors keep wire text authoritative; names are a one-way projection. */
+export function videoPromptReferenceTokens(prompt: string, inputs: readonly OrderedInput[], choices: readonly ReferenceName[]) {
+  const names = videoReferenceNames(inputs, choices);
+  return mentions(prompt, inputs).map(mention => ({ ...mention, title: mention.input ? names.get(mention.input.id)! : "失效引用" }));
+}
+
+export function videoPromptDisplayOffset(prompt: string, inputs: readonly OrderedInput[], choices: readonly ReferenceName[], rawOffset: number) {
+  let delta = 0;
+  for (const span of projection(prompt, inputs, choices).spans) {
+    if (rawOffset <= span.start) break;
+    if (rawOffset < span.end) return span.displayEnd;
+    delta += span.displayEnd - span.displayStart - (span.end - span.start);
+  }
+  return rawOffset + delta;
+}
+
+export function videoPromptRawOffset(prompt: string, inputs: readonly OrderedInput[], choices: readonly ReferenceName[], displayOffset: number) {
+  let delta = 0;
+  for (const span of projection(prompt, inputs, choices).spans) {
+    if (displayOffset <= span.displayStart) break;
+    if (displayOffset < span.displayEnd) return span.end;
+    delta += span.end - span.start - (span.displayEnd - span.displayStart);
+  }
+  return Math.max(0, Math.min(prompt.length, displayOffset + delta));
+}
+
 /** UI-only names serialize back to the existing {{ref N}} format; provider payloads stay unchanged. */
 export function serializeVideoPrompt(value: string, inputs: readonly OrderedInput[], choices: readonly ReferenceName[]): string {
   const names = videoReferenceNames(inputs, choices), markers = new Map<string, string>();

@@ -10,6 +10,7 @@ import { sceneProjectSchema } from "../scene/project";
 import { audioProjectSchema } from "../audio/project";
 import { timelineProjectSchema } from "../timeline/project";
 import { timelineAdoptedSchema } from "../canvas/timeline-node-schema";
+import { imagePromptDocumentSchema, type ImagePromptDocument } from "../canvas/image-prompt-schema";
 import { nodeSettingsSchema } from "../canvas/node-settings";
 import { storageKeyFromManagedUrl } from "../storage";
 import type { MediaProbe } from "../video/media-job-schema";
@@ -21,7 +22,7 @@ export const nodeTables = {
   character: "app_canvas_character_nodes", scene: "app_canvas_scene_nodes", audio: "app_canvas_audio_nodes", timeline: "app_canvas_timeline_nodes",
 } as const;
 export type NodeKind = keyof typeof nodeTables;
-export type FrozenNode = { id: string; kind: NodeKind; data: Row; stamp: string; settings?: Row; versions?: Array<{ id: string; asset: Row }> };
+export type FrozenNode = { id: string; kind: NodeKind; data: Row; stamp: string; settings?: Row; imagePrompt?: ImagePromptDocument; versions?: Array<{ id: string; asset: Row }> };
 export type FrozenMedia = { key: string; sha256: string; bytes: number; mime: string; probe?: MediaProbe };
 export type ShareSnapshot = { format: 1; source: CanvasShareSource; title: string; nodes: FrozenNode[]; media: FrozenMedia[]; digest: string };
 const selectedFields = (row: Row, keys: string[]) => Object.fromEntries(keys.map(k => [k, row[k] ?? null]));
@@ -108,6 +109,7 @@ export function dependencies(node: FrozenNode): string[] {
     // canvasSourceId is provenance, not the material consumed by native editing.
     case "timeline": for (const t of d.timeline.tracks) for (const c of t.clips) add(c.artworkId); add(d.completed_artwork); break;
   }
+  if(node.imagePrompt)out.push(...node.imagePrompt.activeKeys.map(key=>key.slice(5)));
   return [...new Set(out)];
 }
 /** Verify all three namespaces: the project, each object, and each underlying storage object. */
@@ -197,6 +199,13 @@ export async function captureShareSnapshotTx(tx: PoolClient, author: string, ent
     }
     if (rawNode.kind === "artwork") await assertCreationBoundary(tx, author, enterpriseId, await artworkProjectKeysTx(tx, author, rawNode.data), [id]);
     const node = prepareNode(rawNode.kind, rawNode.data);
+    if(node.kind==="artwork"){
+      const saved=(await tx.query("SELECT document,scope_kind,tenant_id FROM app_canvas_image_prompts WHERE email=$1 AND node_id=$2 FOR SHARE",[author,id])).rows[0];
+      if(saved){
+        if(saved.scope_kind!=="tenant"||saved.tenant_id!==enterpriseId)fail("SHARE_TENANT_MISMATCH","提示词不属于当前企业空间",403);
+        node.imagePrompt=imagePromptDocumentSchema.parse(saved.document);
+      }
+    }
     if (source.kind === "artwork") { node.data.parent_id = null; node.data.parent_ids = []; }
     if (node.kind === "artwork") {
       if ((source.kind === "artwork" || source.nodeIds?.includes(id)) && node.data.source_marker === "canvas-node-version") node.data.source_marker = null;
@@ -209,6 +218,7 @@ export async function captureShareSnapshotTx(tx: PoolClient, author: string, ent
     if (settings) node.settings = nodeSettingsSchema.parse(settings.settings);
     nodes.set(id, node); if (nodes.size > 200) fail("SHARE_TOO_LARGE", "所选内容及依赖超过 200 个节点", 413);
     if (source.kind === "workflow") pending.push(...dependencies(node));
+    else if(node.imagePrompt)pending.push(...node.imagePrompt.activeKeys.map(key=>key.slice(5)));
   }
   await assertCreationBoundary(tx, author, enterpriseId, source.projectKey, [...nodes.keys()]);
   // Imported decorations have their own graph/layout contract; rejecting is preferable to silently dropping them.

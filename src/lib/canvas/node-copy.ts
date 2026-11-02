@@ -10,11 +10,14 @@ import {canonicalConfig} from "../model-config/repository";
 import {ensureDirectorNodeSchema,listDirectorNodes,saveDirectorNodeTx} from "./director-node-repository";
 import {authorizeDirectorInputs} from "./director-node-service";
 import type {CanvasDirectorNode} from "./director-node-schema";
-import {assertCreationProjectInput} from "../saas/creation-context";
+import {assertCreationProjectInput,currentCreationContext} from "../saas/creation-context";
 import {ensureCharacterNodeSchema,listCharacterNodes,saveCharacterNodeTx} from "./character-node-repository";
 import {authorizeCharacterImages,lockCharacterImagesTx} from "./character-references";
 import type {CanvasCharacterNode} from "./character-node-schema";
 import {parseCharacterInputIdentity,characterInputIdentity} from "../character/project";
+import {ensureImagePromptSchema,writeCopiedImagePromptTx} from "./image-prompt-repository";
+import {imagePromptDocumentSchema,remapImagePromptDocument} from "./image-prompt-schema";
+import {authorizeImagePromptNodeTx} from "./image-prompt-service";
 
 import {ensureSceneNodeSchema,listSceneNodes,saveSceneNodeTx} from "./scene-node-repository";
 import {authorizeSceneImages,lockSceneImagesTx} from "./scene-references";
@@ -30,12 +33,12 @@ import {validateTimelineProject,validateTimelineAdoption} from "./timeline-proje
 import type {CanvasTimelineNode} from "./timeline-node-schema";
 import type {TimelineProject} from "../timeline/project";
 
-export const nodeCopyRequest=z.strictObject({operationId:z.uuid(),ids:z.array(videoNodeIdSchema).min(1).max(200).refine(ids=>new Set(ids).size===ids.length,"节点身份重复"),projectKey:videoProjectKeySchema.optional()});
+export const nodeCopyRequest=z.strictObject({operationId:z.uuid(),ids:z.array(videoNodeIdSchema).min(1).max(200).refine(ids=>new Set(ids).size===ids.length,"节点身份重复"),projectKey:videoProjectKeySchema.optional(),detached:z.boolean().optional()}).refine(input=>!input.detached||input.ids.length===1,"独立复制仅支持单个图片节点");
 type CopyResult={artworkIds:string[];textNodes:CanvasTextNodeRecord[];nodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];timelineNodes?:CanvasTimelineNode[];idMap:Record<string,string>;projectKey:string};
 function stableUuid(seed:string){const bytes=createHash("sha256").update(seed).digest().subarray(0,16);bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;const h=bytes.toString("hex");return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;}
 /** Copies media identities and editable records together. No supplier requests, media writes, task replay or fees. */
 export async function copyCanvasNodes(actorRaw:string,raw:z.infer<typeof nodeCopyRequest>):Promise<CopyResult>{
-  const actor=actorRaw.toLowerCase(),input=nodeCopyRequest.parse(raw);await ensureSchema();await ensureVideoNodeSchema();await ensureDirectorNodeSchema();await ensureCharacterNodeSchema();await ensureSceneNodeSchema();await ensureAudioNodeSchema();await ensureTimelineNodeSchema();
+  const actor=actorRaw.toLowerCase(),input=nodeCopyRequest.parse(raw);await ensureSchema();await ensureVideoNodeSchema();await ensureDirectorNodeSchema();await ensureCharacterNodeSchema();await ensureSceneNodeSchema();await ensureAudioNodeSchema();await ensureTimelineNodeSchema();await ensureImagePromptSchema();
   const pool=getPool();await pool.query(`CREATE TABLE IF NOT EXISTS app_canvas_node_copies(email text NOT NULL,operation_id uuid NOT NULL,input_digest text NOT NULL,result jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,operation_id))`);
   const digest=createHash("sha256").update(canonicalConfig(input)).digest("hex");
   const previous=(await pool.query("SELECT input_digest,result FROM app_canvas_node_copies WHERE email=$1 AND operation_id=$2",[actor,input.operationId])).rows[0];
@@ -43,6 +46,7 @@ export async function copyCanvasNodes(actorRaw:string,raw:z.infer<typeof nodeCop
   const [artworks,textNodes,videoNodes,directorRecords,characterRecords,sceneRecords,audioRecords,timelineRecords]=await Promise.all([listArtworksByIds(actor,input.ids),listCanvasTextNodes(actor),listVideoNodes(actor),listDirectorNodes(actor),listCharacterNodes(actor),listSceneNodes(actor),listAudioNodes(actor),listTimelineNodes(actor)]);
   const wanted=new Set(input.ids),texts=textNodes.filter(node=>wanted.has(node.id)),videos=videoNodes.filter(node=>wanted.has(node.id)),directors=directorRecords.filter(node=>wanted.has(node.id)),characters=characterRecords.filter(node=>wanted.has(node.id)),scenes=sceneRecords.filter(node=>wanted.has(node.id)),audios=audioRecords.filter(node=>wanted.has(node.id)),timelines=timelineRecords.filter(node=>wanted.has(node.id));
   const kinds=new Map([...artworks.map(node=>[node.id,"art"] as const),...texts.map(node=>[node.id,"text"] as const),...videos.map(node=>[node.id,"vnode"] as const),...directors.map(node=>[node.id,"director"] as const),...characters.map(node=>[node.id,"character"] as const),...scenes.map(node=>[node.id,"scene"] as const),...audios.map(node=>[node.id,"audio"] as const),...timelines.map(node=>[node.id,"timeline"] as const)]);
+  if(input.detached&&kinds.get(input.ids[0])!=="art")throw new ModelConfigError("INVALID_NODE_COPY","独立复制仅支持图片节点",422);
   if(input.ids.some(id=>!kinds.has(id)))throw new ModelConfigError("CANVAS_NODE_UNAVAILABLE","复制节点不存在或无权访问",404);
   for(const node of videos)await authorizeNodeInputs(actor,{id:node.id,operationId:input.operationId,expectedRevision:node.revision,config:node.config,inputs:node.inputs});
   for(const node of directors){await assertCreationProjectInput(actor,node.projectKey);await authorizeDirectorInputs(actor,{project:node.project});}
@@ -68,10 +72,19 @@ export async function copyCanvasNodes(actorRaw:string,raw:z.infer<typeof nodeCop
       if(!current)throw new ModelConfigError("CANVAS_NODE_UNAVAILABLE","复制媒体已删除",409);
       const newId=mapping.get(node.id)!,sameProject=kind==="tree"?current.group_id===projectId:current.batch_id===projectId;
       const fields={id:newId,email:actor,group_id:kind==="tree"?projectId:newId,batch_id:kind==="batch"?projectId:null,canvas_group_id:null,
-        parent_id:current.parent_id&&(mapping.has(current.parent_id)||sameProject)?remap(current.parent_id):null,parent_ids:(current.parent_ids||[]).filter((id:string)=>mapping.has(id)||sameProject).map(remap),
+        ...(input.detached?{title:`${String(current.title||"图片")} 副本`}:{}),
+        parent_id:!input.detached&&current.parent_id&&(mapping.has(current.parent_id)||sameProject)?remap(current.parent_id):null,parent_ids:input.detached?[]:(current.parent_ids||[]).filter((id:string)=>mapping.has(id)||sameProject).map(remap),
         canvas_x:Number(current.canvas_x||0)+40,canvas_y:Number(current.canvas_y||0)+40,origin:"canvas",source_url:current.source_url,source:"canvas-add",deleted_at:null,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
       const result=await client.query("INSERT INTO app_artworks SELECT (jsonb_populate_record(NULL::app_artworks,to_jsonb(src)||$3::jsonb)).* FROM app_artworks src WHERE email=$1 AND id=$2 AND deleted_at IS NULL",[actor,node.id,JSON.stringify(fields)]);
       if(!result.rowCount)throw new Error("复制媒体失败");artworkIds.push(newId);
+      const prompt=(await client.query("SELECT project_key,document,scope_kind,tenant_id FROM app_canvas_image_prompts WHERE email=$1 AND node_id=$2 FOR SHARE",[actor,node.id])).rows[0];
+      if(prompt){
+        await authorizeImagePromptNodeTx(client,actor,prompt.project_key,node.id);
+        const scope=currentCreationContext();
+        if(!scope||prompt.scope_kind!==scope.scopeKind||prompt.tenant_id!==scope.tenantId)throw new ModelConfigError("IMAGE_PROMPT_SCOPE_MISMATCH","提示词不属于当前工作空间",403);
+        const document=remapImagePromptDocument(imagePromptDocumentSchema.parse(prompt.document),mapping,{preserveExternal:prompt.project_key===key,detached:input.detached});
+        await writeCopiedImagePromptTx(client,actor,newId,key,document,{scopeKind:prompt.scope_kind,tenantId:prompt.tenant_id});
+      }
     }
     for(const node of texts){
       const current=(await client.query("SELECT * FROM app_canvas_text_nodes WHERE email=$1 AND id=$2 FOR SHARE",[actor,node.id])).rows[0];if(!current)throw new ModelConfigError("CANVAS_NODE_UNAVAILABLE","复制文字已删除",409);

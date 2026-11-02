@@ -21,6 +21,7 @@ export function mentionedReferenceNumbers(prompt: string) {
 }
 
 export function referenceManifestError(prompt: string, refs: CanvasReferenceManifest): string | null {
+  if(prompt.includes('【失效引用】'))return '引用来源不在当前节点，请重新选择引用图片';
   if (refs.length > 16) return "最多可引用16张图片，请移除多余图片后重试";
   const numbers = new Set(refs.map(ref => ref.number));
   if (numbers.size !== refs.length) return "参考图编号重复，请重新选择图片";

@@ -93,19 +93,24 @@ export async function uploadFormData<T>(
   onProgress?: (loaded: number, total: number) => void,
   timeoutMs = 120_000,
   assertCurrent?: () => void,
+  transport?: { headers?: HeadersInit; request?: typeof fetch },
 ): Promise<T> {
-  const headers = await authHeader();
+  // A multi-stage owner must freeze its authentication/workspace before any
+  // asynchronous preparation. Existing callers retain their original behavior.
+  const headers = Object.fromEntries(new Headers(transport?.headers ?? await authHeader()).entries());
+  const request = transport?.request ?? fetch;
   assertCurrent?.();
   const file=form.get('image');
   const previews=file instanceof File?originalPreviews.get(file):undefined;
   if(previews){form.set('thumbnail',previews.thumbnail,'thumbnail.webp');form.set('preview',previews.preview,'preview.webp');}
   if(url==='/api/artworks/add' && file instanceof File) {
-    const pendingResponse=await fetch('/api/media/uploads',{method:'POST',headers:{...headers,'content-type':'application/json'},
+    const pendingResponse=await request('/api/media/uploads',{method:'POST',headers:{...headers,'content-type':'application/json'},
       body:JSON.stringify({action:'prepare',bytes:file.size,contentType:file.type||'image/png'})});
     const pending=await pendingResponse.json() as {enabled?:boolean;id?:string;putUrl?:string;contentType?:string;error?:string};
     assertCurrent?.();
     if(!pendingResponse.ok)throw new Error(pending.error||'上传申请失败');
     if(pending.enabled&&pending.id&&pending.putUrl) {
+      assertCurrent?.();
       await new Promise<void>((resolve,reject)=>{
         const xhr=new XMLHttpRequest();xhr.open('PUT',pending.putUrl!);xhr.timeout=timeoutMs;
         xhr.setRequestHeader('Content-Type',pending.contentType!);
@@ -122,9 +127,17 @@ export async function uploadFormData<T>(
           ...(x!==null&&Number.isFinite(Number(x))?{x:Number(x)}:{}),...(y!==null&&Number.isFinite(Number(y))?{y:Number(y)}:{})};
       const finish=new FormData();finish.set('payload',JSON.stringify(complete));
       if(previews){finish.set('thumbnail',previews.thumbnail,'thumbnail.webp');finish.set('preview',previews.preview,'preview.webp');}
-      const response=await fetch('/api/media/uploads',{method:'POST',headers:previews?headers:{...headers,'content-type':'application/json'},body:previews?finish:JSON.stringify(complete)});
+      assertCurrent?.();
+      const response=await request('/api/media/uploads',{method:'POST',headers:previews?headers:{...headers,'content-type':'application/json'},body:previews?finish:JSON.stringify(complete)});
       const data=await response.json();if(!response.ok)throw new Error(data.error||'素材保存失败');return data as T;
     }
+  }
+  if (transport?.request) {
+    assertCurrent?.();
+    const response = await request(url, { method: "POST", headers, body: form, signal: AbortSignal.timeout(timeoutMs) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(typeof data?.error === "string" ? data.error : `上传失败（${response.status}）`);
+    return data as T;
   }
   return new Promise<T>((resolve, reject) => {
     assertCurrent?.();
