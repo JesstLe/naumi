@@ -20,3 +20,12 @@
 - 将E2E修复固定提交与本次最新main串行整合；只提交本任务差异，保留同事改动。
 - 固定main候选、构建、目标站发布/版本/功能/旧槽资源/回滚材料验收。
 - 当前没有把本任务源码整合写成main已合或线上已完成。47既有发布决定不由本功能开发自动改变。
+
+## 最终浏览器回交与发布准备
+
+- E2E交接 `bd5b67a88fb4dc79f61bb9b24be946559ac07c36` 已普通合入任务分支；完整CanvasClient/ReactFlow＋真实口令登录＋真实双方服务/PG/private storage的16组浏览器通过（框架导航/图片为测试适配，非Next生产SSR）。全量未读和末页会话定向GET、作品深链、未存占位选择、同账号文字生成切项目保存已补齐。全文档见对应E2E模块记录。
+- 448个E2E证据文件共197638790字节已逐SHA归档到 `E:/Workspace/naumi-task-evidence/enterprise-collaboration-20261102/e2e/`；四产物重开。原现场保留。本机C盘13.3GiB可用且占用超过80%，新增大包/构建与验收证据转E盘（106.7GiB可用），不清共享Docker缓存、运行容器或他人依赖。
+- 合入E2E及当前main后全项目tsc再跑一次，stdout/stderr空、exit0。
+- 103只读现场确认当前实际版本 `0fcbbc8084b1c483cb66be541643142e90283da7` / build1793587166，Web/Worker来自独立 `codex/model-mapping-103-20261029`，canonical activeSiteControlReleaseId对应COMPLETE，revision339，双部署锁当前无持有。
+- 当前103包含未合main的后台并行生成/像素Dock修复，且该验证线AGENTS明确禁止反合main。不得用较旧主线制品覆盖掉在线增量；企业协作先合main，若发布103则仅main→103隔离线单向整合，遵循原103固定分支蓝绿特例。隔离线不推广47，不删除其worktree。
+- 新公开候选说明绑定BUILD_VERSION=1793594332，仅含同事聊天/文件/经批准独立画布/跨路由草稿与上传体验，无内部信息；本节不是已上线声明。线上认证、任务/账务、模型配置和蓝绿验收仍须刷新实测。
