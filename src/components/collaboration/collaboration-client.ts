@@ -2,7 +2,7 @@ import type {
   CanvasShare, CanvasShareChange, CanvasShareCreate, CanvasShareSource,
   CollaborationAttachment, CollaborationBootstrap, CollaborationConversation,
   CollaborationMember, CollaborationMessage, CollaborationOpen, CollaborationPage,
-  CollaborationSend, CollaborationShareIntent, CollaborationUpload,
+  CollaborationSend, CollaborationShareIntent, CollaborationUpload, CollaborationConversationPage, CollaborationConversationSnapshot,
 } from "@/lib/collaboration/contracts";
 import { aborted, attachmentPath, CollaborationError, errorText, isAbort, newOperationId, readEvents } from "./transport";
 
@@ -16,6 +16,7 @@ export type CollaborationState = {
   section: NonNullable<CollaborationOpen["section"]>; activeId: string | null;
   members: CollaborationMember[]; memberCursor: string | null; memberQuery: string;
   conversations: CollaborationConversation[]; conversationCursor: string | null;
+  unreadTotal?: number;
   messages: Record<string, MessagePage>; files: Record<string, MessagePage>;
   drafts: Record<string, Draft>; uploads: UploadTask[]; outbox: Outgoing[];
   shares: CanvasShare[]; shareCursors: Record<"received" | "sent", string | null>;
@@ -54,6 +55,7 @@ export class CollaborationClient {
   private historyPages = new Map<string, number>();
   private conversationSequence = 0;
   private conversationPages = 1;
+  private unreadSequence = 0;
   private operations = new Map<string, { id: string; payload: string }>();
   constructor(private headers: AuthHeaders) {}
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
@@ -62,7 +64,7 @@ export class CollaborationClient {
   get generation() { return this.epoch; }
   private update(patch: Partial<CollaborationState>) {
     this.state = { ...this.state, ...patch };
-    const available = this.state.status === "ready" && !!this.state.bootstrap?.enterpriseId, unread = this.state.conversations.reduce((n, c) => n + c.unread, 0);
+    const available = this.state.status === "ready" && !!this.state.bootstrap?.enterpriseId, unread = this.state.unreadTotal ?? this.state.conversations.reduce((n, c) => n + c.unread, 0);
     if (available !== this.entry.available || unread !== this.entry.unread) this.entry = { ...this.entry, available, unread };
     this.listeners.forEach(fn => fn());
   }
@@ -136,11 +138,12 @@ export class CollaborationClient {
       this.current(epoch);
       if (data.actorId !== this.state.account || !Array.isArray(data.enterprises) || !Array.isArray(data.members) || !Array.isArray(data.conversations) || !data.limits || !Number.isFinite(data.limits.chunkBytes)) throw new CollaborationError("通讯身份或数据异常，请重新登录");
       this.eventCursor = data.cursor;
-      this.update({ bootstrap: data, members: data.members, conversations: data.conversations, status: "ready" });
+      this.update({ bootstrap: data, members: data.members, conversations: data.conversations, unreadTotal: data.unreadTotal,
+        memberCursor: data.membersNextCursor ?? null, conversationCursor: data.conversationsNextCursor ?? null, status: "ready" });
       if (data.enterpriseId) {
         this.startPresence(); this.connect();
         // Bootstrap's cursor belongs to events, never use it as a members cursor.
-        await Promise.all([this.loadMembers(), this.loadConversations()]);
+        await Promise.all([data.membersNextCursor === undefined ? this.loadMembers() : undefined, data.conversationsNextCursor === undefined ? this.loadConversations() : undefined]);
       }
     } catch (error) { if (epoch === this.epoch && !isAbort(error)) this.update({ status: "error", error: errorText(error) }); }
   }
@@ -178,7 +181,8 @@ export class CollaborationClient {
   }
   async loadConversations(more = false) {
     const sequence = ++this.conversationSequence;
-    let data = await this.page<CollaborationConversation>("/conversations", { cursor: more ? this.state.conversationCursor || undefined : undefined });
+    const unreadSequence = ++this.unreadSequence;
+    let data: CollaborationConversationPage = await this.page<CollaborationConversation>("/conversations", { cursor: more ? this.state.conversationCursor || undefined : undefined });
     let items = data.items;
     if (!more) {
       // Reconcile only pages the user actually loaded, not the entire tenant.
@@ -195,7 +199,23 @@ export class CollaborationClient {
       // authenticated read denies them or the complete loaded range excludes them.
       items = merge(this.state.conversations, items);
     } else for (const old of this.state.conversations) if (!items.some(c => c.id === old.id)) this.forgetConversation(old.id);
-    this.update({ conversations: items, conversationCursor: data.nextCursor });
+    this.update({ conversations: items, conversationCursor: data.nextCursor, ...(unreadSequence === this.unreadSequence && data.unreadTotal !== undefined ? { unreadTotal: data.unreadTotal } : {}) });
+  }
+  /** SSE ids need not belong to any loaded page. Resolve only that authorized
+   * row; do not bootstrap or enumerate every conversation on an event. */
+  async loadConversation(id: string) {
+    const key = `conversation:${id}`, sequence = (this.requestsSequence.get(key) || 0) + 1;
+    this.requestsSequence.set(key, sequence); const unreadSequence = ++this.unreadSequence;
+    const data = await this.request<CollaborationConversationSnapshot>(`/conversations/${encodeURIComponent(id)}`);
+    if (this.requestsSequence.get(key) !== sequence) return;
+    if (data.conversation) this.update({ conversations: merge(this.state.conversations, [data.conversation]) });
+    else this.forgetConversation(id);
+    if (unreadSequence === this.unreadSequence && data.unreadTotal !== undefined) this.update({ unreadTotal: data.unreadTotal });
+  }
+  conversationTitle(conversation: CollaborationConversation) {
+    if (conversation.kind !== "direct") return conversation.title;
+    const peer = conversation.memberIds.find(id => id !== this.state.bootstrap?.actorId);
+    return this.state.members.find(m => m.id === peer)?.name || peer || "私聊";
   }
   private operation(key: string, payload: unknown) {
     const json = JSON.stringify(payload), previous = this.operations.get(key);
@@ -219,6 +239,7 @@ export class CollaborationClient {
     this.update({ messages, drafts, files, uploads: this.state.uploads.filter(u => u.conversationId !== id), outbox: this.state.outbox.filter(o => o.conversationId !== id), conversations: this.state.conversations.filter(c => c.id !== id), activeId: this.state.activeId === id ? null : this.state.activeId });
   }
   selectConversation(id: string) {
+    if (!this.state.conversations.some(c => c.id === id)) void this.loadConversation(id).catch(e => this.report(e));
     this.update({ activeId: id, section: "conversations" });
     if (!this.state.drafts[id]) {
       let draft = blankDraft();
@@ -415,7 +436,9 @@ export class CollaborationClient {
         await readEvents(response, controller.signal, async event => {
           this.current(epoch); if (this.seenEvents.has(event.id)) return;
           const reset = event.type === "reset";
-          if (reset || event.topics.includes("conversations")) await this.loadConversations();
+          if (reset || event.topics.includes("conversations") || event.topics.includes("messages")) {
+            if (!reset && event.conversationId) await this.loadConversation(event.conversationId); else await this.loadConversations();
+          }
           if (reset || event.topics.includes("members")) await this.loadMembers();
           if ((reset || event.topics.includes("messages")) && this.state.visible && this.state.section === "conversations" && this.state.activeId && (!event.conversationId || event.conversationId === this.state.activeId)) {
             await this.loadMessages(this.state.activeId);

@@ -12,7 +12,7 @@ export function CollaborationEntry({ className = "", label = false }: { classNam
 }
 
 /** Receives verified native project/node IDs from Canvas; no project inference. */
-export function CanvasCollaborationActions({ source, title, selection }: { source: CanvasShareSource | null; title?: string; selection?: CanvasShareSource | null }) {
+export function CanvasCollaborationActions({ source, title, selection, selectionPending = false }: { source: CanvasShareSource | null; title?: string; selection?: CanvasShareSource | null; selectionPending?: boolean }) {
   const { available, share } = useCollaboration();
   const { client, state } = useCollaborationState();
   const approval = state.approval;
@@ -22,7 +22,7 @@ export function CanvasCollaborationActions({ source, title, selection }: { sourc
     {source && available && <button type="button" className="co-entry" title="发送画布" aria-label="发送画布" onClick={() => share({ ...source, title })}><Share2 size={17} /></button>}
     {approval && source && available && <div className="co-approval-inline" data-canvas-hotkeys-blocked="true">
       <span>批准 {state.members.find(m => m.id === approval.requesterId)?.name || approval.requesterId} 的申请</span>
-      <button onClick={() => { if (chosen) client.share({ ...chosen, title }); client.open({ section: "requests" }); }}>选择{selection ? "所选节点" : "此画布"}</button>
+      <button disabled={selectionPending} title={selectionPending ? "请先保存所选节点" : undefined} onClick={() => { if (chosen && !selectionPending) client.share({ ...chosen, title }); client.open({ section: "requests" }); }}>选择{selection || selectionPending ? "所选节点" : "此画布"}</button>
       <button aria-label="取消选择来源" onClick={() => client.clearShare()}>取消</button>
     </div>}
   </>;

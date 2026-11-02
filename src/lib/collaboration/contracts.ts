@@ -13,6 +13,10 @@ export type CollaborationBootstrap = {
   enterpriseId: string | null; members: CollaborationMember[];
   conversations: CollaborationConversation[]; cursor: string | null;
   limits: { attachmentBytes: number; chunkBytes: number };
+  /** Account/enterprise aggregate, independent of the first conversation page. */
+  unreadTotal?: number;
+  membersNextCursor?: string | null;
+  conversationsNextCursor?: string | null;
 };
 export type CollaborationAttachment = {
   id: string; name: string; bytes: number; mime: string;
@@ -34,6 +38,9 @@ export type CollaborationConversation = {
   updatedAt: string;
 };
 export type CollaborationPage<T> = { items: T[]; nextCursor: string | null };
+export type CollaborationConversationPage = CollaborationPage<CollaborationConversation> & { unreadTotal?: number };
+/** A denied/left id is null, not a cached conversation with stale access. */
+export type CollaborationConversationSnapshot = { conversation: CollaborationConversation | null; unreadTotal?: number };
 export type CollaborationSend = {
   clientId: string; body: string; replyTo?: string;
   attachmentIds?: string[]; mentionIds?: string[]; shareId?: string;
