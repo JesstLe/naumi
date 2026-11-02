@@ -36,6 +36,7 @@ import { TextModelProvider } from "@/lib/text-model-context";
 import { ImageQualityProvider } from "@/lib/image-quality-context";
 import { BillingProvider } from "@/lib/billing/client";
 import { SiteVersion } from "@/components/site-version";
+import { CollaborationProvider } from "@/components/collaboration/collaboration-provider";
 
 // 站点字体:Geist(拉丁/数字,Vercel)+ 系统中文栈(见 tailwind sans),数字 tabular-nums。
 // 中文不走网页字体(CJK 字体包数 MB,拖慢加载),用系统 PingFang/YaHei。
@@ -110,6 +111,7 @@ export default async function RootLayout({
             <AuthModalProvider>
               <RechargeModalProvider>
                 <ToastProvider>
+                  <CollaborationProvider>
                   {authMode === "supabase" && <SessionBridge />}
                   <AppShell>{children}</AppShell>
                   <SiteVersion />
@@ -117,6 +119,7 @@ export default async function RootLayout({
                     <AuthModal />
                   </Suspense>
                   <RechargeModal />
+                  </CollaborationProvider>
                 </ToastProvider>
               </RechargeModalProvider>
             </AuthModalProvider>

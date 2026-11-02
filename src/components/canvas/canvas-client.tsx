@@ -1,4 +1,6 @@
 "use client";
+import { CanvasCollaborationActions } from "@/components/collaboration/collaboration-entry";
+import { useCollaboration } from "@/components/collaboration/collaboration-provider";
 import {readCanvasGenerationReceipt} from "@/lib/canvas/generation-receipt";
 import { updateAssistantTimeline, restoreAssistantTimeline, type AssistantTimelineTurn } from "@/lib/canvas/assistant-timeline";
 import { CachedImage } from "@/components/cached-image";
@@ -1662,6 +1664,7 @@ function layoutGraph(
 }
 
 export function CanvasClient({ initialProject, desktopAppearance = false }: { initialProject?: string; desktopAppearance?: boolean } = {}) {
+  const collaboration = useCollaboration();
   const { can: canFeature } = useFeatureAccess();
   const billing=useBilling();
   async function privateFetch(input:RequestInfo|URL,init:RequestInit & { isCurrent?: () => boolean }={}){
@@ -9548,6 +9551,22 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       : null;
 
   const recoveryScope={owner:user.email.toLowerCase(),workspace:currentWorkspace(),project:activeKey||"workspace"};
+  // Sharing consumes native saved IDs only. Pending generation placeholders are
+  // not a share source and opening chat never writes canvas selection/viewport.
+  const collaborationSource = !readOnly && !browsing && active ? { projectKey: active.key, kind: "workflow" as const } : null;
+  const collaborationNodeIds = new Set([
+    ...(active?.members.map(node => node.id) || []),
+    ...textNodes.filter(node => node.projectKey === active?.key).map(node => node.id),
+    ...[videoNodesStore, directorNodesStore, characterNodesStore, sceneNodesStore, audioNodesStore, timelineNodesStore].flatMap(store => store.nodes.filter(node => node.projectKey === active?.key).map(node => node.id)),
+  ]);
+  const collaborationSelected = [...new Set(multiSel.length ? multiSel : selectedBatchIds.length ? selectedBatchIds : [selectedId, selectedTextId].filter((id): id is string => !!id))];
+  const collaborationSelection = collaborationSource && collaborationSelected.length && collaborationSelected.every(id => collaborationNodeIds.has(id)) ? { ...collaborationSource, nodeIds: collaborationSelected } : null;
+  function shareCanvasNodes(ids?: string[]) {
+    if (!collaborationSource) return;
+    if (ids?.some(id => !collaborationNodeIds.has(id))) { flashTip("请先保存所选节点，再发送"); return; }
+    collaboration.share({ ...collaborationSource, ...(ids?.length ? { nodeIds: ids } : {}), kind: ids?.length === 1 && active?.members.some(node => node.id === ids[0]) ? "artwork" : "workflow", title: active?.name });
+    setCtxMenu(null);
+  }
   const recoveryAccount=canvasAccountRef.current,recoveryEpoch=canvasContextEpochRef.current;
   const recoveryCurrent=()=>recoveryAccount===canvasAccountRef.current&&recoveryEpoch===canvasContextEpochRef.current&&recoveryScope.workspace===currentWorkspace()&&recoveryScope.project===(activeProjectRef.current?.key||"workspace");
   return (
@@ -9604,7 +9623,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         onChange={(e) => doUploadPend(e.target.files)}
       />
       {/* 顶栏:仅项目网格落地页显示(进入项目后用全屏悬浮挂件,见下) */}
-      {browsing && (
+      {browsing && !desktopAppearance && (
         <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
           {/* 左上:画布专属 logo(回主页) */}
           <Link href="/" className="flex min-w-0 items-center gap-2">
@@ -9622,6 +9641,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           </Link>
           {/* 右上:与画布右上角一致(分享暂无项目,故只放 模板/会员/头像) */}
           <div className="flex flex-none items-center gap-2">
+            <CanvasCollaborationActions source={null} />
             <button
               type="button"
               onClick={() => openModal("templates")}
@@ -10479,11 +10499,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     className="flex flex-none items-center gap-1 rounded-lg px-1 pr-0.5 transition-colors hover:bg-white/5"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <CachedImage
+                    {desktopAppearance ? <LayoutGrid className="h-5 w-5 text-muted-foreground" /> : <CachedImage
                       src={BRAND_CANVAS_LOGO}
                       alt={BRAND}
                       className="h-7 w-auto max-w-[108px] flex-none rounded-lg object-contain sm:max-w-[140px]"
-                    />
+                    />}
                     <ChevronDown
                       className={cn(
                         "h-4 w-4 flex-none text-muted-foreground transition-transform",
@@ -10545,6 +10565,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
               {/* 右上:分享(下载)/ 模板库 / 会员特惠+积分 / 头像 */}
               <div data-testid="canvas-top-actions" style={{ top: canvasSize.width > 0 && canvasSize.width < 768 ? 60 : 12 }} className="absolute right-3 z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-1.5 overflow-visible">
+                <CanvasCollaborationActions source={collaborationSource} selection={collaborationSelection} title={active?.name} />
                 {!readOnly && canFeature("agent") && <CanvasAgentToggle open={assistantVisible} label={t("canvas.assistant.entry")} onClick={toggleAssistant} />}
                 {active && (
                   <button
@@ -10569,6 +10590,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 >
                   <ShoppingBag className="h-4 w-4" />
                 </button>
+                {!desktopAppearance && <>
                 {commerceVisible ? (
                   <button
                     type="button"
@@ -10614,6 +10636,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     />
                   )}
                 </div>
+                </>}
               </div>
 
               {/* 常用工具常驻底部，完整创建菜单与设置向上飞出。 */}
@@ -11199,6 +11222,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               );
               const menu = (
                 <ContextMenuSurface x={ctxMenu.cx} y={ctxMenu.cy} light={lightCanvas} onClose={() => setCtxMenu(null)}>
+                    {collaboration.available && collaborationSource && <>
+                      {ctxMenu.nodeId && collaborationNodeIds.has(ctxMenu.nodeId) && <Item label={collaborationSelected.length > 1 && collaborationSelected.includes(ctxMenu.nodeId) ? "发送所选节点给同事" : "发送作品给同事"} onClick={() => shareCanvasNodes(collaborationSelected.includes(ctxMenu.nodeId!) ? collaborationSelected : [ctxMenu.nodeId!])} />}
+                      <Item label="发送整个画布给同事" onClick={() => shareCanvasNodes()} />
+                      <Sep />
+                    </>}
                     {ctxMenu.nodeId && multiSel.length > 1 && multiSel.includes(ctxMenu.nodeId) && !batchContextSelection ? (
                       <><p className="canvas-ui-muted px-3 py-2 text-xs font-semibold">{L(`已选择 ${multiSel.length} 个节点`,`${multiSel.length} nodes selected`)}</p>
                         <Item label={t("canvas.delete")} disabled={mutationDisabled} danger onClick={() => batchDelete(multiSel)} /></>
