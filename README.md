@@ -247,6 +247,7 @@ GitHub [镜像工作流](.github/workflows/docker.yml) 可按固定源码生成�
 | 图片与展示 | [历史截图来源](docs/README_MEDIA.md) · [本次 README 核对记录](docs/changes/2026-10-17-readme-refresh.md) |
 | 部署与接手 | [发布手册](docs/RELEASE_RUNBOOK.md) · [生命周期门禁](docs/RELEASE_LIFECYCLE.md) · [协作说明](docs/AGENT_COLLABORATION.md) |
 | 用户更新说明 | [公开更新目录维护](docs/PUBLIC_RELEASE_NOTES.md) |
+| 项目学习与面试 | [分级面试手册](docs/interview-handbook/README.md) |
 
 历史实现文档与运行环境可能不同；冲突时按最新用户指令、当前源码和实际配置核对，不用旧验收替代新版本验收。
 
