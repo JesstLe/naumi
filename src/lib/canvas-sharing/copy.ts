@@ -89,7 +89,11 @@ export async function createShareCopyTx(tx: PoolClient, shareId: string, recipie
         await saveAudioNodeTx(tx, recipient, { ...base, audio: a }, key); break;
       }
       case "timeline": {
-        const p = d.timeline; for (const t of p.tracks) { t.id = newIdentity(`${shareId}:track:${node.id}:${t.id}`); for (const c of t.clips) { c.id = newIdentity(`${shareId}:clip:${node.id}:${c.id}`); c.artworkId = remap(c.artworkId); if (c.canvasSourceId) c.canvasSourceId = ref(c.canvasSourceId); } }
+        const p = d.timeline; for (const t of p.tracks) { t.id = newIdentity(`${shareId}:track:${node.id}:${t.id}`); for (const c of t.clips) {
+          c.id = newIdentity(`${shareId}:clip:${node.id}:${c.id}`); c.artworkId = remap(c.artworkId);
+          if (c.canvasSourceId && mapping.has(parseReference(c.canvasSourceId).id)) c.canvasSourceId = ref(c.canvasSourceId);
+          else delete c.canvasSourceId;
+        } }
         await saveTimelineNodeTx(tx, recipient, { ...base, timeline: p, adopted: null }, key); break;
       }
     }

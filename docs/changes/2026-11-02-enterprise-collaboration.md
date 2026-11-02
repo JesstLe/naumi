@@ -149,3 +149,17 @@ collaborationFailure(error: unknown): Response;
 - 修复后三模块真实HTTP集成仍10/10，通讯原20组集中回归通过。审查回归脚本首轮tsc出现target不支持 `1n`，已改为 `BigInt(1)`；产品改动没有该诊断，最终检查以typecheck-final日志为准。
 - 本切片四产物目录 `output/enterprise-collaboration-review-fixes-20261102/repair-artifacts/`，逐文件原/改hash、完整命令及literal输出、独立副本回滚和后改零写入记录均由对应artifacts脚本保存。恢复副本重新出现原3反例，源码保持修复。
 - 下一步：实际组件＋真实双方后端浏览器端测、共享快照/审批独立复核、固定生产构建及发布。当前只声明源码整合和已列本地验收，未声明全站容量或上线。
+
+## 2026-11-02 共享独立复核四项修复
+
+- 独立审查固定共享候选 `c7e1e88e`，验证树 `e8ff9d67bffb4ac7ed3ade3c68db9257b7d724ee`，确认 P1×1、P2×3。报告/HTTP_TRACE/VERIFICATION等20个直接证据文件已逐hash归档至 `output/canvas-sharing-review-fixes-20261102/independent-review/`；没有复制依赖目录或清理审查工作树。
+- P1：作品所属项目按实际group_id、suite batch及旧parent血缘解析并加锁复核，再检查规范项目/单对象/不可变creation-output证据；调用方传入tree:作品id不再绕过既有B企业归属，外部batch依赖同样拒绝。合法本企业别名继续可用，旧无group的外国祖先项目也被识别。
+- P2：执行授权字段按规范化单词识别，合法数值token预算（max_tokens等）保留；accessToken、APIKey、clientSecret、嵌套authorization、jobId五组仍422且无副本，不靠删除原凭据拒绝规则放行。
+- P2：多轨必需素材闭包以artworkId为准，历史canvasSourceId不再强制拉入已删除场景；若来源节点已纳入复制则remap，否则移除旧活连线，保留实际图片、剪辑参数和独立作品。
+- P2：单独分享或显式选择隐藏图片历史结果时去掉隐藏source marker，接收者实际CanvasClient项目聚合由0变1；作为父节点内部历史的两版本仍保留。只采用实际原Client计算函数提取，不把计算验证写成浏览器点击验收。
+- 父复用独立真实企业schema＋原生密码登录＋实际路由/仓库/存储反例，固化为 `scripts/verify-canvas-sharing-review-fixes.{mjs,ts}`。测试专用 `.d.ts` 只声明原CanvasClient项目计算端口；runner动态提取实际函数，未放产品stub。
+- BASELINE/ROLLBACK输出 `phase=BASELINE checks=12 failures=0 findings=4 real_scope=1 real_login=1 supplier_calls=0`，exit0含义是原4问题成功复现及健康对照通过；MODIFIED `phase=MODIFIED checks=12 failures=0 findings=4 real_scope=1 real_login=1 supplier_calls=0`、exit0含义是4个反例均按修复预期改变。详细响应和HTTP_TRACE留在各phase目录。
+- 实际变化：foreign alias/batch批准200→403，接收者不再收到TENANT_B提示词；max_tokens批准422→200并保留1024；来源场景已删的合法多轨422→200；隐藏历史结果批准后项目数0→1。源修改/并发单副本/COMMIT ACK未知保留committed媒体/成员停用/源删除后目标可读等健康对照保持。
+- 原23组共享native回归再次集中通过；全项目tsc实际exit0。首次搬移review harness的生成文件相对import深度错误发生在创建PG前，已修正为当前root路径并保留BASELINE失败日志，没有改生产代码凑通过。
+- 四产物与原始hash、精确命令/输入/literal输出/exit、独立副本回滚和后改零写入保护保存在 `output/canvas-sharing-review-fixes-20261102/repair-artifacts/`，入口 `node scripts/verify-canvas-sharing-review-fixes.artifacts.mjs`；源码保持修复版。
+- 真实浏览器联调仍由原并行任务推进，本轮没有额外新建审查或测试任务，没有部署或连接生产。
