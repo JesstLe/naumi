@@ -1,5 +1,32 @@
 [
   {
+    "version": "1793620641",
+    "title": {
+      "zh": "视频创作与分镜流程更新",
+      "en": "Video creation and storyboard workflow update"
+    },
+    "improvements": [
+      {
+        "zh": "优化视频创作模式选择，按当前可用能力展示选项。",
+        "en": "Improved video mode selection with options matching available capabilities."
+      },
+      {
+        "zh": "完善分镜编辑、顺序调整和已有视频复用流程。",
+        "en": "Improved storyboard editing, shot ordering and reuse of existing videos."
+      },
+      {
+        "zh": "完善最终成片合成，保留有声片段并兼容无声片段。",
+        "en": "Improved final assembly while preserving audio and supporting silent clips."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "修复部分合成失败后需要重复生成视频的问题，支持单独重试已确认失败的合成步骤。",
+        "en": "Fixed cases requiring videos to be regenerated after assembly failure; confirmed failed assembly can be retried separately."
+      }
+    ]
+  },
+  {
     "version": "1793592214",
     "title": {
       "zh": "画布工具与结果恢复优化",
