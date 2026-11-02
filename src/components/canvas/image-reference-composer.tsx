@@ -3,37 +3,45 @@
 import { useId, useRef, useState, type ReactNode, type RefObject } from "react";
 import { AtSign, LocateFixed, X } from "lucide-react";
 import { CachedImage } from "@/components/cached-image";
-import { Textarea } from "@/components/ui/textarea";
+import { InlineReferenceEditor, type InlineReferenceEditorHandle } from "./inline-reference-editor";
+import type { InlineReferenceToken } from "./inline-reference-dom";
 import { cdnThumb } from "@/lib/cdn";
-import { insertImageReference, type CanvasImageReference } from "@/lib/canvas/image-references";
+import { type CanvasImageReference } from "@/lib/canvas/image-references";
 import { referenceRoleLabels, type ReferenceRole } from "@/lib/imagegen/reference-labels";
 
 type Props = {
   references: CanvasImageReference[]; prompt: string; onPrompt: (prompt: string) => void;
   onRole: (key: string, role: ReferenceRole) => void; onRemove: (ref: CanvasImageReference) => void;
   onPreview: (ref: CanvasImageReference) => void; onLocate: (id: string) => void;
-  textareaRef: RefObject<HTMLTextAreaElement | null>; placeholder: string;
+  textareaRef: RefObject<HTMLDivElement | null>; placeholder: string;
   readOnly?: boolean; english?: boolean; error?: string | null; children?: ReactNode;
 };
 
 export function ImageReferenceComposer(props: Props) {
   const { references, prompt, onPrompt, textareaRef, english, readOnly } = props;
   const menuId = useId(), errorId = useId();
-  const composing = useRef(false);
+  const editor = useRef<InlineReferenceEditorHandle>(null);
   const [query, setQuery] = useState<string | null>(null), [active, setActive] = useState(0);
   const [caret, setCaret] = useState({ start: prompt.length, end: prompt.length });
   const options = references.filter(ref => query === "" || `${ref.number} ${ref.title}`.toLowerCase().includes((query || "").toLowerCase()));
-  function track(value: string, start: number, end: number) {
-    setCaret({ start, end });
-    const nextQuery=start === end ? value.slice(0, start).match(/@([^\s@【】]*)$/)?.[1] ?? null : null;
-    setQuery(composing.current ? null : nextQuery);
-    if(nextQuery!==query)setActive(0);
+  function track(value: string, start: number, end: number, composing: boolean) {
+    setCaret(old => old.start === start && old.end === end ? old : { start, end });
+    const nextQuery = !composing && start === end ? value.slice(0, start).match(/@([^\s@【】]*)$/)?.[1] ?? null : null;
+    setQuery(nextQuery); if (nextQuery !== query) setActive(0);
   }
   function insert(ref: CanvasImageReference) {
     if (readOnly) return;
-    const next = insertImageReference(prompt, ref.number, caret.start, caret.end);
-    onPrompt(next.prompt); setQuery(null); setCaret({ start: next.caret, end: next.caret });
-    requestAnimationFrame(() => { textareaRef.current?.focus(); textareaRef.current?.setSelectionRange(next.caret, next.caret); });
+    const before = prompt.slice(0, caret.start), match = before.match(/@[^\s@【】]*$/);
+    editor.current?.replace(`【图${ref.number}】`, { start: match ? caret.start - match[0].length : caret.start, end: caret.end });
+    setQuery(null);
+  }
+  function tokens(value: string): InlineReferenceToken[] {
+    return [...value.matchAll(/【图([1-9]\d{0,4})】|【失效引用】/g)].map(match => {
+      const reference = references.find(item => item.number === Number(match[1]));
+      return { start: match.index!, end: match.index! + match[0].length, raw: match[0], key: reference?.key || `missing:${match[0]}`,
+        title: reference?.title || (english ? "Missing reference" : "失效引用"), thumbnail: reference ? cdnThumb(reference.url, 64) : undefined,
+        detail: reference ? `${english ? "Img " : "图"}${reference.number}` : undefined, missing: !reference };
+    });
   }
   return <div className="min-w-0" data-testid="image-reference-composer">
     <div className="mb-3 flex max-h-48 flex-wrap gap-2 overflow-y-auto" aria-label={english ? "Input images" : "输入图片"}>
@@ -58,15 +66,12 @@ export function ImageReferenceComposer(props: Props) {
       {props.children}
     </div>
     <div className="relative">
-      <Textarea ref={textareaRef} aria-label="节点提示词" value={prompt} readOnly={readOnly} placeholder={readOnly ? "" : props.placeholder}
-        aria-describedby={props.error ? errorId : undefined} aria-invalid={!!props.error}
-        aria-controls={query !== null ? menuId : undefined} aria-expanded={query !== null} aria-autocomplete="list"
-        aria-activedescendant={query !== null && options.length ? `${menuId}-${Math.min(active, options.length - 1)}` : undefined}
-        onCompositionStart={() => { composing.current = true; setQuery(null); }}
-        onCompositionEnd={event => { composing.current = false; track(event.currentTarget.value, event.currentTarget.selectionStart, event.currentTarget.selectionEnd); }}
-        onChange={event => { onPrompt(event.target.value); if (!(event.nativeEvent as InputEvent).isComposing) track(event.target.value, event.target.selectionStart, event.target.selectionEnd); }}
-        onSelect={event => { const target = event.currentTarget; if(target.selectionStart!==caret.start||target.selectionEnd!==caret.end)track(target.value, target.selectionStart, target.selectionEnd); }}
-        onBlur={() => setQuery(null)}
+      <InlineReferenceEditor ref={editor} domRef={textareaRef} ariaLabel="节点提示词" value={prompt} onChange={onPrompt} tokens={tokens}
+        resolvePastedKey={key => { const item = references.find(ref => ref.key === key); return item ? `【图${item.number}】` : "【失效引用】"; }}
+        onReference={key => { const ref = references.find(item => item.key === key); if (ref) props.onPreview(ref); }}
+        readOnly={readOnly} placeholder={props.placeholder} ariaDescribedBy={props.error ? errorId : undefined} ariaInvalid={!!props.error}
+        menuId={query !== null ? menuId : undefined} activeOption={query !== null && options.length ? `${menuId}-${Math.min(active, options.length - 1)}` : undefined}
+        onSelection={(value, selection, composing) => track(value, selection.start, selection.end, composing)} onBlur={() => setQuery(null)}
         onKeyDown={event => {
           if (query === null || event.nativeEvent.isComposing) return;
           if (["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(event.key)) { event.preventDefault(); event.stopPropagation(); }
@@ -75,15 +80,15 @@ export function ImageReferenceComposer(props: Props) {
           else if (event.key === "ArrowUp") setActive(index => options.length ? (index + options.length - 1) % options.length : 0);
           else if (event.key === "Enter" && options.length) insert(options[Math.min(active, options.length - 1)]);
         }}
-        className="canvas-ui-text min-h-[112px] max-h-[220px] resize-none overflow-y-hidden border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed shadow-none placeholder:text-[var(--canvas-ui-muted)] focus-visible:ring-0" />
+        className="canvas-ui-text min-h-[112px] max-h-[220px] overflow-y-auto border-0 bg-transparent px-0 py-0.5 text-sm leading-7 shadow-none" />
       {query !== null && !readOnly && <div id={menuId} role="listbox" aria-label={english ? "Choose an image reference" : "选择图片引用"} className="canvas-ui-control mt-1 max-h-40 overflow-y-auto rounded-lg border p-1 shadow-sm">
         {options.map((ref, index) => <button key={ref.key} id={`${menuId}-${index}`} type="button" role="option" aria-selected={index === active} onMouseDown={event => event.preventDefault()} onClick={() => insert(ref)} className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs ${index === active ? "bg-indigo-500/10" : ""}`}>
-          <span className="shrink-0 font-medium">{english ? "Image " : "图"}{ref.number}</span><span className="truncate">{ref.title}</span><span className="ml-auto shrink-0 text-[10px] opacity-60">{referenceRoleLabels[ref.role][english ? "en" : "zh"]}</span>
+          <CachedImage src={cdnThumb(ref.url,64)} alt="" className="h-7 w-7 shrink-0 rounded object-cover"/><span className="truncate">{ref.title}</span><span className="shrink-0 text-[10px] opacity-60">{english ? "Img " : "图"}{ref.number}</span><span className="ml-auto shrink-0 text-[10px] opacity-60">{referenceRoleLabels[ref.role][english ? "en" : "zh"]}</span>
         </button>)}
         {!options.length && <span className="block p-2 text-xs opacity-60">{english ? "No matching image" : "没有匹配的图片"}</span>}
       </div>}
     </div>
-    {!!references.length && !readOnly && <button type="button" onMouseDown={event => event.preventDefault()} onClick={() => { setQuery(""); setActive(0); textareaRef.current?.focus(); }} className="canvas-ui-text mt-1 flex items-center gap-1 rounded px-1 py-1 text-xs opacity-70 hover:opacity-100"><AtSign size={13} />{english ? "Reference image" : "引用图片"}</button>}
+    {!!references.length && !readOnly && <button type="button" onMouseDown={event => event.preventDefault()} onClick={() => { editor.current?.replace("@"); setQuery(""); setActive(0); }} className="canvas-ui-text mt-1 flex items-center gap-1 rounded px-1 py-1 text-xs opacity-70 hover:opacity-100"><AtSign size={13} />{english ? "Reference image" : "引用图片"}</button>}
     {props.error && <p id={errorId} role="alert" className="py-1 text-xs text-red-500">{props.error}</p>}
   </div>;
 }

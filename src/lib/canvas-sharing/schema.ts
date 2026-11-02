@@ -9,6 +9,7 @@ import { ensureTimelineNodeSchema } from "../canvas/timeline-node-repository";
 import { ensureCanvasImageVersions } from "../canvas/image-version-store";
 import { ensureMediaSchema } from "../media-assets";
 import { ensureMediaInspectionSchema } from "../video/media-inspection";
+import { ensureImagePromptSchema } from "../canvas/image-prompt-repository";
 import { ensureCollaborationEventSchema } from "../enterprise/collaboration-events";
 
 let ready: Promise<void> | undefined;
@@ -16,6 +17,7 @@ let ready: Promise<void> | undefined;
 export async function ensureCanvasSharingSchema() {
   if (!ready) ready = (async () => {
     await ensureCollaborationEventSchema();
+    await ensureImagePromptSchema();
     for (const ensure of [ensureVideoNodeSchema, ensureDirectorNodeSchema, ensureCharacterNodeSchema, ensureSceneNodeSchema,
       ensureAudioNodeSchema, ensureTimelineNodeSchema, ensureCanvasImageVersions, ensureMediaSchema, ensureMediaInspectionSchema]) await ensure();
     await getPool().query(`

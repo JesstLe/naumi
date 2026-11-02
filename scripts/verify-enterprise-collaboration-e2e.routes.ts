@@ -1,3 +1,6 @@
+import * as imagePrompts from '../src/app/api/canvas/image-prompts/route';
+import * as imageReferenceUpload from '../src/app/api/canvas/image-reference-upload/route';
+import * as nodeCopy from '../src/app/api/canvas/nodes/copy/route';
 import * as assets from '../src/app/api/video/assets/route';
 import * as enterprise from '../src/app/api/enterprise/route';
 import * as jobs from '../src/app/api/video/media-jobs/route';
@@ -43,6 +46,9 @@ import * as route38 from '../src/app/api/video/tasks/route';
 import * as route39 from '../src/app/api/canvas/image-tasks/route';
 import * as route40 from '../src/app/media/[...path]/route';
 export const routes: Array<[RegExp, Record<string, any>, string[]]> = [
+[/^\/api\/canvas\/image-prompts$/,imagePrompts,[]],
+[/^\/api\/canvas\/image-reference-upload$/,imageReferenceUpload,[]],
+[/^\/api\/canvas\/nodes\/copy$/,nodeCopy,[]],
 [new RegExp('^/api/enterprise$'),enterprise,[]],
 [new RegExp('^/api/video/assets$'),assets,[]],
 [new RegExp('^/api/video/media-jobs$'),jobs,[]],

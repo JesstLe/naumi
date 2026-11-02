@@ -94,6 +94,9 @@ import {ProjectBrowserSurface,ProjectCover} from './project-browser-surface';
 import { classifyGenerationFailure, generationFailureMessage, generationFailureTitle, assertGenerationResultsPresent, type GenerationFailure } from '@/lib/canvas/generation-failure';
 import { ImagegenHttpError, ImagegenPreparationCancelled } from '@/lib/imagegen/http';
 import { useImageNodeDraft } from './use-image-node-draft';
+import { useImagePromptSync } from './use-image-prompt-sync';
+import type { ImagePromptDocument } from '@/lib/canvas/image-prompt-schema';
+import { uploadCanvasPromptReference } from '@/lib/canvas/persist-image-reference-upload';
 import {useImageReferenceDraft} from './use-image-reference-draft';
 import { ImageReferenceComposer } from './image-reference-composer';
 import { resolveCanvasImageReferences, changeImageReferenceRole, imageReferenceManifest, inheritableImagePrompt, type CanvasImageReference, type ImageReferenceCandidate } from '@/lib/canvas/image-references';
@@ -1884,7 +1887,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [dockMetrics, setDockMetrics] = useState({ dockHeight: 0, toolbarHeight: 50, toolbarWidth: 0 });
   // 底部 dock 提示词框:随内容自适应长高。显式写入最小高度，避免 macOS
   // Chromium/Safari 在 flex + max-height 组合下把 textarea 压缩成约两行。
-  const promptAreaRef = useRef<HTMLTextAreaElement>(null);
+  const promptAreaRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = promptAreaRef.current;
     if (!el) return;
@@ -1898,6 +1901,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const referenceDraft=useImageReferenceDraft(imageDraft.key,user?.email?JSON.stringify([user.email.toLowerCase(),(targetEmail||user.email).toLowerCase()]):null,readOnly);
   const extraFiles=referenceDraft.files;
   const extraInputRef = useRef<HTMLInputElement>(null);
+  const [referenceUploading, setReferenceUploading] = useState(false);
+  const referenceUploadLock = useRef(false);
   // 节点剪贴板(复制/粘贴节点)+ 上传作根节点的文件 input
   const nodeClipRef = useRef<Artwork | null>(null);
   const genericNodeClipRef=useRef<{marker:string;ids:string[];owner:string}|null>(null);
@@ -2209,7 +2214,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }, [activeKey, user?.email]);
   useEffect(() => () => { assistantRequestEpoch.current += 1; assistantController.current?.abort(); assistantUploadToken.current=null; }, []);
   // 拉线「生成衍生图」:建好空白节点后,把光标自动落进提示词框,引导用户写"改什么"
-  const pendPromptRef = useRef<HTMLTextAreaElement>(null);
+  const pendPromptRef = useRef<HTMLDivElement>(null);
   // 占位 dock 与已生成节点保持同一自适应视野。
   useEffect(() => {
     const el = pendPromptRef.current;
@@ -2604,14 +2609,35 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     onConfirm: () => void;
   } | null>(null);
 
-  function pickExtra(list: FileList | null) {
-    if (!list) return;
-    const room = MAX_TOTAL_IMAGES - visibleDockRefs.length - extraFiles.length;
+  async function pickExtra(list: FileList | null) {
+    if (!list || !selected || !activeKey || readOnly || referenceUploadLock.current) return;
+    const room = MAX_TOTAL_IMAGES - composerReferences.length;
     if (room <= 0) return;
     const files=Array.from(list).filter(file=>/^image\/(png|jpe?g|webp)$/.test(file.type)&&file.size<=MAX_UPLOAD).slice(0,room);
     if (!files.length) return;
-    referenceDraft.add(files);
     if (extraInputRef.current) extraInputRef.current.value = "";
+    if(!promptSync.persisted){referenceDraft.add(files);return;}
+    const owner=canvasAccountRef.current, ownerEpoch=canvasOwnerEpochRef.current.revision, workspace=currentWorkspace(), projectKey=activeKey, nodeId=selected.id;
+    const isCurrent=()=>owner===canvasAccountRef.current&&ownerEpoch===canvasOwnerEpochRef.current.revision&&workspace===currentWorkspace()&&projectKey===activeProjectRef.current?.key;
+    referenceUploadLock.current=true;setReferenceUploading(true);
+    const added=[...(imageDraft.additionalReferenceIds||[])];
+    try {
+      await promptSync.flush();
+      for (const file of files) {
+        if(!isCurrent())throw new Error('画布已切换，图片保留在原项目');
+        const sourceWorkspace=promptSync.workspace||workspace;
+        const uploaded=await uploadCanvasPromptReference(file,{parentId:nodeId,projectKey,workspace:sourceWorkspace,ownerScope:owner,isCurrent});
+        if(!isCurrent())return;
+        await mergeWorks([uploaded.id],isCurrent);
+        if(!isCurrent())return;
+        added.push(uploaded.id);
+        const saved=await promptSync.appendReference({workspace:sourceWorkspace,projectKey,nodeId},uploaded.id);
+        if(!isCurrent())return;
+        // Bind to the initiating node even if another node is now selected.
+        imageDraft.seed(nodeId,{additionalReferenceIds:[...new Set(added)],referenceBindings:saved.bindings});
+      }
+    } catch(error) { if(isCurrent())setGenError(error instanceof Error?error.message:'参考图片保存失败，请重试'); }
+    finally { referenceUploadLock.current=false;if(owner===canvasAccountRef.current)setReferenceUploading(false); }
   }
 
   useEffect(() => {
@@ -3774,18 +3800,43 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const imageReferenceState = useMemo(() => {
     const arts = selectedPend ? pendInputArts : visibleDockRefs;
     const candidates: ImageReferenceCandidate[] = arts.map(art => ({ key: `node:${art.id}`, sourceNodeId: art.id, title: art.title || L("图片节点", "Image node"), url: art.image }));
+    for(const id of imageDraft.additionalReferenceIds||[]){
+      if(imageDraft.hiddenReferenceIds?.includes(id)||candidates.some(ref=>ref.key===`node:${id}`))continue;
+      const art=works?.find(item=>item.id===id&&item.image&&!item.videoUrl);
+      if(art)candidates.push({key:`node:${id}`,sourceNodeId:id,title:art.title||L('图片节点','Image node'),url:art.image});
+    }
     if (!selectedPend) for(const upload of referenceDraft.uploads)candidates.push({key:upload.key,title:upload.file.name,url:upload.url,file:upload.file});
     return resolveCanvasImageReferences(candidates, imageDraft.referenceBindings,!selectedPend&&generationMode==="standard"&&selected?`node:${selected.id}`:undefined);
-  }, [selectedPend, pendInputArts, visibleDockRefs, referenceDraft.uploads, imageDraft.referenceBindings, generationMode, selected]);
+  }, [selectedPend, pendInputArts, visibleDockRefs, referenceDraft.uploads, imageDraft.referenceBindings, imageDraft.additionalReferenceIds, imageDraft.hiddenReferenceIds, works, generationMode, selected]);
   const composerReferences = imageReferenceState.references;
   useEffect(() => {
     if (JSON.stringify(imageReferenceState.bindings) !== JSON.stringify(imageDraft.referenceBindings || [])) imageDraft.setReferenceBindings(imageReferenceState.bindings);
   }, [imageDraft.key, imageReferenceState.bindings, imageDraft.referenceBindings]);
   const referenceError = referenceManifestError(editPrompt, imageReferenceManifest(composerReferences));
+  const imagePromptDocument:ImagePromptDocument={version:1,prompt:editPrompt,
+    bindings:imageReferenceState.bindings.filter(binding=>binding.key.startsWith('node:')),
+    activeKeys:composerReferences.filter(ref=>ref.key.startsWith('node:')).map(ref=>ref.key),
+    additionalKeys:(imageDraft.additionalReferenceIds||[]).map(id=>`node:${id}`).filter(key=>composerReferences.some(ref=>ref.key===key)),
+    hiddenReferenceIds:imageDraft.hiddenReferenceIds||[]};
+  const promptSync=useImagePromptSync({owner:canvasAccountRef.current,ownerRevision:canvasOwnerEpochRef.current.revision,address:!readOnly&&user&&activeKey&&!selectedPend&&selected?.image&&!selected.videoUrl?{workspace:currentWorkspace(),projectKey:activeKey,nodeId:selected.id}:null,
+    document:referenceDraft.uploads.length||selected&&isNodeLocked(selected.id)?null:imagePromptDocument,request:fetch,
+    hydrate:async document=>{
+      const owner=canvasAccountRef.current,epoch=canvasOwnerEpochRef.current.revision,nodeId=imageDraftNodeId;
+      const current=()=>owner===canvasAccountRef.current&&epoch===canvasOwnerEpochRef.current.revision;
+      const ids=(document.additionalKeys||[]).map(key=>key.slice(5));
+      if(ids.some(id=>!worksRef.current?.some(art=>art.id===id)))await mergeWorks(ids,current);
+      if(current()&&nodeId)imageDraft.seed(nodeId,{prompt:document.prompt,referenceBindings:document.bindings,hiddenReferenceIds:document.hiddenReferenceIds,additionalReferenceIds:ids});
+    }});
+  async function flushImagePrompts(){
+    const owner=canvasAccountRef.current,epoch=canvasContextEpochRef.current,workspace=currentWorkspace();
+    if(referenceUploadLock.current)throw new Error('参考图片正在保存，请稍后重试');
+    await promptSync.flush();
+    if(owner!==canvasAccountRef.current||epoch!==canvasContextEpochRef.current||workspace!==currentWorkspace())throw new Error('画布已切换，请在当前画布重新操作');
+  }
   function removeComposerReference(ref: CanvasImageReference) {
     if (selectedPend) setPendNodes(nodes => nodes.map(node => node.id === selectedPend.id ? { ...node, inputs: node.inputs.filter(id => id !== ref.sourceNodeId) } : node));
     else if (ref.file) referenceDraft.remove(ref.key);
-    else if (ref.sourceNodeId) imageDraft.setHiddenReferenceIds([...(hiddenRefIds||[]),ref.sourceNodeId]);
+    else if (ref.sourceNodeId) {imageDraft.setHiddenReferenceIds([...(hiddenRefIds||[]),ref.sourceNodeId]);imageDraft.setAdditionalReferenceIds((imageDraft.additionalReferenceIds||[]).filter(id=>id!==ref.sourceNodeId));}
   }
   function locateComposerReference(id: string) {
     void rfRef.current?.fitView({ nodes: [{ id }], padding: 0.8, duration: 240, maxZoom: 1 });
@@ -5012,6 +5063,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // One image updates in place; multi-image requests branch into independent children.
   async function generateSelectedImage() {
     if (!selected) return;
+    try{await flushImagePrompts();}catch(error){setGenError(error instanceof Error?error.message:'提示词尚未保存');return;}
     if (dockReferenceState.error) { setGenError(dockReferenceState.error); return; }
     if (referenceError) { setGenError(referenceError); return; }
     if (visibleDockRefs.length + extraFiles.length > MAX_TOTAL_IMAGES) { setGenError(`一次最多使用 ${MAX_TOTAL_IMAGES} 张图片，请移除多余引用`); return; }
@@ -7432,60 +7484,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   async function duplicateArt(a: Artwork) {
     if (readOnly || !user || duplicateBusyRef.current.has(a.id)) return;
     duplicateBusyRef.current.add(a.id);
-    const contextEpoch = canvasContextEpochRef.current;
-    const contextProjectKey = activeProjectRef.current?.key || null;
-    // 落点:源节点当前位置右下偏移
-    const sn = rfNodes.find((n) => n.id === a.id);
-    const sx = sn?.position.x ?? a.canvasX ?? 0;
-    const sy = sn?.position.y ?? a.canvasY ?? 0;
+    const epoch=canvasContextEpochRef.current,node=rfNodes.find(item=>item.id===a.id);
     try {
-      const r = await privateFetchRaw("/api/artworks/add", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          email: user.email,
-          parentId: activeRootId(), // 归当前项目(但 source=canvas-add 不画线)
-          x: Math.round(sx + 40),
-          y: Math.round(sy + artworkNodeSize(a).height + 30),
-          src: {
-            id: a.id,
-            image: a.image,
-            videoUrl: a.videoUrl ?? null,
-            title: `${a.title} 副本`,
-            category: a.category,
-            prompt: a.prompt,
-            style: a.style,
-            ratio: a.ratio,
-            resolution: a.resolution,
-            width: a.width,
-            height: a.height,
-            canvasWidth: a.canvasWidth,
-            canvasHeight: a.canvasHeight,
-          },
-        }),
-      });
-      const d = await readJsonSafe(r);
-      if (!r.ok || !d?.id) throw new Error(d?.error || t("canvas.genFail"));
-      const fresh = await mergeWorks(d?.id ? [d.id] : []);
-      if (!fresh.some(artwork => artwork.id === d.id)) {
-        if (pendingNodeRef.current === d.id) pendingNodeRef.current = null;
-        flashTip(locale === "en" ? "Node copied. Refresh the canvas to view it." : "节点已复制，请刷新画布查看");
-        return;
+      const result=await duplicateCanvasNodes([a.id], true),id=result?.idMap?.[a.id];
+      if(id&&epoch===canvasContextEpochRef.current){
+        saveNodePosition(id,Math.round((node?.position.x??a.canvasX??0)+40),Math.round((node?.position.y??a.canvasY??0)+artworkNodeSize(a).height+30));
+        setMultiSel([]);setSelectedId(id);
       }
-      if (contextEpoch === canvasContextEpochRef.current && (activeProjectRef.current?.key || null) === contextProjectKey) {
-        if (active) setSelectedId(d.id);
-        else {
-          pendingNodeRef.current = d.id;
-          setWorks(current => current ? [...current] : fresh);
-        }
-        pushAddUndo(d.id, fresh);
-      }
-    } catch {
-      flashTip(locale === "en" ? "Could not duplicate this node. Please try again." : "复制节点失败，请重试");
-    } finally {
-      duplicateBusyRef.current.delete(a.id);
     }
+    finally { duplicateBusyRef.current.delete(a.id); }
   }
+
   /**
    * 统一处理画布 paste：系统 image/* 永远优先导入；输入框纯文本交给浏览器；
    * 其余场景只有确认是本画布节点格式时才执行内部节点粘贴。
@@ -9103,15 +9112,16 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     let clip=genericNodeClipRef.current;try{if(!clip&&user)clip=JSON.parse(localStorage.getItem(`naumi:canvas-node-clipboard:${user.email.toLowerCase()}`)||"null");}catch{}
     return clip&&clip.owner===user?.email.toLowerCase()&&typeof clip.marker==="string"&&Array.isArray(clip.ids)&&clip.ids.length>0&&clip.ids.length<=200&&clip.ids.every(id=>typeof id==="string")&&(!marker||clip.marker===marker)?clip:null;
   }
-  async function duplicateCanvasNodes(ids:string[]){
+  async function duplicateCanvasNodes(ids:string[],detached=false){
     if(!user||readOnly)return;const epoch=canvasContextEpochRef.current,account=canvasAccountRef.current;
-    const projectKey=!browsing&&!creatingNew?active?.key:undefined,fingerprint=JSON.stringify([user.email,ids,projectKey]);let operationId=copyAttemptsRef.current.get(fingerprint);
+    const projectKey=!browsing&&!creatingNew?active?.key:undefined,fingerprint=JSON.stringify([user.email,ids,projectKey,detached]);let operationId=copyAttemptsRef.current.get(fingerprint);
     if(!operationId){operationId=browserRandomUUID();copyAttemptsRef.current.set(fingerprint,operationId);}
     try{
-      const response=await privateFetchRaw("/api/canvas/nodes/copy",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({ids,projectKey,operationId})});const data=await expectJsonOk(response,"复制节点失败");if(epoch!==canvasContextEpochRef.current||account!==canvasAccountRef.current)return;
+      await flushImagePrompts();if(epoch!==canvasContextEpochRef.current||account!==canvasAccountRef.current)return;
+      const response=await privateFetchRaw("/api/canvas/nodes/copy",{method:"POST",headers:{"content-type":"application/json","x-naumi-workspace":promptSync.workspace||currentWorkspace(),...(projectKey?{"x-naumi-project-context":projectKey}:{})},body:JSON.stringify({ids,projectKey,operationId,...(detached?{detached:true}:{})})});const data=await expectJsonOk(response,"复制节点失败");if(epoch!==canvasContextEpochRef.current||account!==canvasAccountRef.current)return;
       const fresh=await mergeWorks(data.artworkIds||[]);if(epoch!==canvasContextEpochRef.current||account!==canvasAccountRef.current)return;setTextNodes(current=>{const wanted=new Set((data.textNodes as CanvasTextNode[]).map(node=>node.id));return [...current.filter(node=>!wanted.has(node.id)),...data.textNodes];});await videoNodesStore.refresh();await directorNodesStore.refresh();await characterNodesStore.refresh();await sceneNodesStore.refresh();await audioNodesStore.refresh();await timelineNodesStore.refresh();if(epoch!==canvasContextEpochRef.current||account!==canvasAccountRef.current)return;
       pushUndo({kind:"mixed-add",artworks:fresh.filter(art=>(data.artworkIds||[]).includes(art.id)),textNodes:data.textNodes,videoNodes:data.nodes,directorNodes:data.directorNodes,characterNodes:data.characterNodes,sceneNodes:data.sceneNodes,audioNodes:data.audioNodes,timelineNodes:data.timelineNodes,projectKey:data.projectKey});
-      setCreatingNew(false);setActiveKey(data.projectKey);setBrowsing(false);setSelectedId(null);setSelectedTextId(null);setSelectedPendId(null);setMultiSel(Object.values(data.idMap));const selection={ids:Object.values(data.idMap) as string[],projectKey:String(data.projectKey),owner:user.email.toLowerCase()};pendingNodeSelectionRef.current=selection;window.setTimeout(()=>{if(pendingNodeSelectionRef.current===selection)pendingNodeSelectionRef.current=null;},1500);copyAttemptsRef.current.delete(fingerprint);
+      setCreatingNew(false);setActiveKey(data.projectKey);setBrowsing(false);setSelectedId(null);setSelectedTextId(null);setSelectedPendId(null);setMultiSel(Object.values(data.idMap));const selection={ids:Object.values(data.idMap) as string[],projectKey:String(data.projectKey),owner:user.email.toLowerCase()};pendingNodeSelectionRef.current=selection;window.setTimeout(()=>{if(pendingNodeSelectionRef.current===selection)pendingNodeSelectionRef.current=null;},1500);copyAttemptsRef.current.delete(fingerprint);return data;
     }catch(error){flashTip(error instanceof Error?error.message:"复制节点失败");}
   }
   async function pasteNode() {
@@ -9583,11 +9593,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const collaborationSelected = [...new Set(multiSel.length ? multiSel : selectedBatchIds.length ? selectedBatchIds : [selectedId, selectedTextId, selectedPendId].filter((id): id is string => !!id))];
   const collaborationSelectionPending = collaborationSelected.some(id => !collaborationNodeIds.has(id));
   const collaborationSelection = collaborationSource && collaborationSelected.length && collaborationSelected.every(id => collaborationNodeIds.has(id)) ? { ...collaborationSource, nodeIds: collaborationSelected } : null;
-  function shareCanvasNodes(ids?: string[]) {
+  async function shareCanvasNodes(ids?: string[]) {
     if (!collaborationSource) return;
     if (ids?.some(id => !collaborationNodeIds.has(id))) { flashTip("请先保存所选节点，再发送"); return; }
-    collaboration.share({ ...collaborationSource, ...(ids?.length ? { nodeIds: ids } : {}), kind: ids?.length === 1 && active?.members.some(node => node.id === ids[0]) ? "artwork" : "workflow", title: active?.name });
-    setCtxMenu(null);
+    const owner=canvasAccountRef.current,epoch=canvasContextEpochRef.current;
+    try{await flushImagePrompts();if(owner!==canvasAccountRef.current||epoch!==canvasContextEpochRef.current)return;
+      collaboration.share({ ...collaborationSource, ...(ids?.length ? { nodeIds: ids } : {}), kind: ids?.length === 1 && active?.members.some(node => node.id === ids[0]) ? "artwork" : "workflow", title: active?.name });
+      setCtxMenu(null);
+    }catch(error){flashTip(error instanceof Error?error.message:'提示词尚未保存');}
   }
   const recoveryAccount=canvasAccountRef.current,recoveryEpoch=canvasContextEpochRef.current;
   const recoveryCurrent=()=>recoveryAccount===canvasAccountRef.current&&recoveryEpoch===canvasContextEpochRef.current&&recoveryScope.workspace===currentWorkspace()&&recoveryScope.project===(activeProjectRef.current?.key||"workspace");
@@ -10587,7 +10600,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
               {/* 右上:分享(下载)/ 模板库 / 会员特惠+积分 / 头像 */}
               <div data-testid="canvas-top-actions" style={{ top: canvasSize.width > 0 && canvasSize.width < 768 ? 60 : 12 }} className="absolute right-3 z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-1.5 overflow-visible">
-                <CanvasCollaborationActions source={collaborationSource} selection={collaborationSelection} selectionPending={collaborationSelectionPending} title={active?.name} />
+                <CanvasCollaborationActions source={collaborationSource} selection={collaborationSelection} selectionPending={collaborationSelectionPending} title={active?.name} beforeShare={flushImagePrompts} onError={message=>flashTip(message)} />
                 {!readOnly && canFeature("agent") && <CanvasAgentToggle open={assistantVisible} label={t("canvas.assistant.entry")} onClick={toggleAssistant} />}
                 {active && (
                   <button
@@ -12209,16 +12222,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 <ImageReferenceComposer key={imageDraft.key || imageDraftNodeId} references={composerReferences} prompt={editPrompt} onPrompt={setEditPrompt}
                   onRole={(key,role)=>imageDraft.setReferenceBindings(changeImageReferenceRole(imageReferenceState.bindings,key,role))}
                   onRemove={removeComposerReference} onPreview={ref=>setLightbox({src:ref.url,alt:ref.title})}
-                  onLocate={locateComposerReference} english={locale === "en"} error={referenceError}
-                  textareaRef={promptAreaRef} readOnly={readOnly} placeholder={t("canvas.promptPlaceholder")}>
+                  onLocate={locateComposerReference} english={locale === "en"} error={referenceError||promptSync.error}
+                  textareaRef={promptAreaRef} readOnly={readOnly||!promptSync.ready||referenceUploading||isNodeLocked(selected.id)} placeholder={t("canvas.promptPlaceholder")}>
                   {!readOnly && <>
                     <input ref={extraInputRef} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={event=>pickExtra(event.target.files)} />
-                    {composerReferences.length < MAX_TOTAL_IMAGES && <button type="button" onClick={()=>extraInputRef.current?.click()}
+                    {composerReferences.length < MAX_TOTAL_IMAGES && <button type="button" disabled={!promptSync.ready||referenceUploading} onClick={()=>extraInputRef.current?.click()}
                       title={t("canvas.toolbar.addReference")} aria-label={t("canvas.toolbar.addReference")}
                       className={cn("canvas-ui-action flex flex-none items-center justify-center rounded-[10px] border border-dashed border-[var(--canvas-ui-border)] hover:!border-[#6366f1]/60",composerReferences.length?"h-[68px] w-12":"h-8 gap-1.5 px-2.5 text-xs")}><Upload className="h-4 w-4" />{!composerReferences.length&&L("参考图","Reference")}</button>}
                     {!!hiddenRefIds?.some(id=>dockRefs.some(ref=>ref.id===id))&&<button type="button" onClick={()=>imageDraft.setHiddenReferenceIds([])} disabled={dockRefs.length+extraFiles.length>MAX_TOTAL_IMAGES} className="canvas-ui-action h-8 rounded-lg border border-[var(--canvas-ui-border)] px-2 text-xs disabled:opacity-40">{L("恢复节点参考","Restore node references")}</button>}
                   </>}
                 </ImageReferenceComposer>
+                {promptSync.error&&<div className="flex gap-3 py-1 text-xs"><button type="button" onClick={promptSync.retry} className="text-indigo-600">重试保存</button><button type="button" onClick={()=>void promptSync.reloadSaved().catch(error=>setGenError(error instanceof Error?error.message:'读取失败'))} className="text-slate-500">使用已保存版本</button></div>}
                 {genError && (
                   <p className="pb-1 text-xs font-medium text-red-400">
                     {genError}
@@ -12348,7 +12362,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 <ImageReferenceComposer key={imageDraft.key || imageDraftNodeId} references={composerReferences} prompt={editPrompt} onPrompt={setEditPrompt}
                   onRole={(key,role)=>imageDraft.setReferenceBindings(changeImageReferenceRole(imageReferenceState.bindings,key,role))}
                   onRemove={removeComposerReference} onPreview={ref=>setLightbox({src:ref.url,alt:ref.title})}
-                  onLocate={locateComposerReference} english={locale === "en"} error={referenceError}
+                  onLocate={locateComposerReference} english={locale === "en"} error={referenceError||promptSync.error}
                   textareaRef={pendPromptRef} placeholder={t("canvas.pendPromptPlaceholder")} />
                 {genError && (
                   <p className="pb-1 text-xs font-medium text-red-400">
