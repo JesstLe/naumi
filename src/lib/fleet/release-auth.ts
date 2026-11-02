@@ -10,7 +10,7 @@ import {releaseResultSchema} from './release-wire';
 const schema=z.object({nonce:z.string().uuid(),timestamp:z.number().int(),result:releaseResultSchema.optional()}).strict();
 export async function authenticateRelease(request:Request){
   if(process.env.FLEET_CONTROL_ENABLED!=='1')throw new FleetError('实例连接未启用',404);
-  if(!rateLimit('fleet-release-ip:'+(clientIp(request)||'local'),120,60000))throw new FleetError('连接过于频繁',429);
+  if(!(await rateLimit('fleet-release-ip:'+(clientIp(request)||'local'),120,60000)))throw new FleetError('连接过于频繁',429);
   const url=new URL(request.url);if(url.protocol!=='https:'&&request.headers.get('x-forwarded-proto')!=='https'&&!(process.env.FLEET_ISOLATED_TEST==='1'&&['127.0.0.1','localhost'].includes(url.hostname)))throw new FleetError('需要HTTPS');
   const instanceId=z.string().uuid().parse(request.headers.get('x-naumi-instance')),token=request.headers.get('authorization')?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];if(!token)throw new FleetError('实例认证失败',401);
   await ensureFleetSchema();const tx=await getPool().connect();

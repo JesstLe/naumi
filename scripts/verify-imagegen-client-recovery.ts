@@ -8,9 +8,11 @@ try{globalThis.fetch=async(input,init)=>{const url=String(input);if(url.endsWith
  const f=new FormData();f.set('prompt','fixture');f.set('ratio','1:1');f.set('imagegenNodeId','node-A');
  await assert.rejects(submitCanvasImagegen(f,'source',undefined,{owner:'fixture@local.test',project:'P'}));
  await assert.rejects(submitCanvasImagegen(f,'source',undefined,{owner:'fixture@local.test',project:'P'}));
- assert.equal(posts,2);assert.equal(plans,2);assert.equal(gets,0);assert.notEqual(ids[0],ids[1]);assert.equal(storage.length,1,'old receipt ignored, no new receipt writes');
+ assert.equal(posts,1,'a lost acceptance reply must never authorize another paid POST');assert.equal(plans,1);assert.equal(gets,1,'retry checks the exact original operation');
+ const pending=[...storage.values.entries()].filter(([key])=>key.startsWith('naumi:imagegen-pending:v1:'));assert.equal(pending.length,1);
+ const saved=JSON.parse(pending[0][1]);assert.equal(saved.operationId,ids[0]);assert.equal(saved.request.operationId,ids[0]);assert.equal(saved.accepted,'unknown');assert.equal(storage.length,2,'legacy receipt untouched; new scoped receipt retained');
  globalThis.fetch=async()=>Response.json({error:'explicit rejection',accepted:false},{status:400});
  await assert.rejects(startImagegen(imagegenRequestSchema.parse({version:1,operationId:crypto.randomUUID(),entry:'canvas',mode:'generate',prompt:'x'})),(e:any)=>e instanceof ImagegenHttpError&&e.accepted===false);
- console.log('CLIENT_RETRY=PASS OLD_RECEIPT_IGNORED=1 AUTOMATIC_GETS=0 EXPLICIT_POSTS=2 DIFFERENT_IDS=1 RECEIPT_WRITES=0 SUPPLIER_CALLS=0');
+ console.log('CLIENT_RETRY=PASS LEGACY_RECEIPT_UNTOUCHED=1 ORIGINAL_GETS=1 PAID_POSTS=1 SAME_OPERATION=1 SCOPED_RECEIPT_RETAINED=1 SUPPLIER_CALLS=0');
 }finally{globalThis.fetch=original}}
 main().catch(e=>{console.error(e);process.exitCode=1});

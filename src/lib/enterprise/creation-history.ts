@@ -3,6 +3,7 @@ import type {TeamActor} from '@/lib/teams/grants';
 import {TeamError} from '@/lib/teams/server';
 import {enterpriseRead} from './server';
 import {ensureBiSchema} from '@/lib/bi/repository';
+import {ensureMediaSchema} from '@/lib/media-assets';
 import {listLegacyCreations,legacyCreationDetail,legacyCreationAsset,type LegacyReadScope} from '@/lib/saas/legacy-creations';
 import {publicCreationParameters} from '@/lib/saas/creation-writer';
 import type {CreationFilters,CreationPage} from '@/lib/saas/creation-contracts';
@@ -31,5 +32,8 @@ export async function enterpriseHistoryDetail(actor:TeamActor,id:string,creation
   });
 }
 export async function enterpriseHistoryAsset(actor:TeamActor,id:string,creationId:string,assetId:string){
+  // Schema initialization may borrow the business pool, so finish it before
+  // enterpriseRead reserves a connection and acquires authorization locks.
+  await ensureMediaSchema();
   return read(actor,id,access=>legacyCreationAsset(creationId,assetId,access));
 }

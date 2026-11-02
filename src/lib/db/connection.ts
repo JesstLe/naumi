@@ -10,6 +10,7 @@ type Pools = {
 };
 const holder = process as typeof process & { [key]?: Pools };
 const pools = holder[key] ||= {};
+const fixedOtherConnections = 2 + 4; // release + image coordination
 
 function positiveInteger(env: NodeJS.ProcessEnv, name: string, fallback: number) {
   const value = env[name];
@@ -21,14 +22,15 @@ function positiveInteger(env: NodeJS.ProcessEnv, name: string, fallback: number)
 }
 
 /** Per Node process, not per deployment or per container. Other current pools:
- * release=2, image coordination=4, video coordination=2. Reserve all three even
+ * release=2, image coordination=4, video coordination defaults to 2. Reserve all three even
  * when lazily unused. Additional processes/preload clients need a site budget;
  * this check deliberately does not pretend to know PostgreSQL's free capacity. */
 export function databasePoolBudget(env: NodeJS.ProcessEnv = process.env) {
   const business = positiveInteger(env, 'PGPOOL_MAX', 5);
   const tick = positiveInteger(env, 'NAUMI_TICK_POOL_MAX', 2);
   const budget = positiveInteger(env, 'NAUMI_DB_POOL_BUDGET', 15);
-  const other = 2 + 4 + 2;
+  const video = positiveInteger(env, 'NAUMI_VIDEO_COORDINATION_POOL_MAX', 2);
+  const other = fixedOtherConnections + video;
   const total = business + tick + other;
   if (total > budget) throw new Error('DATABASE_POOL_BUDGET_EXCEEDED');
   return { business, tick, other, total, budget };
@@ -43,12 +45,25 @@ function connectionOptions(): PoolConfig {
   return { connectionString, ssl: noSsl ? false : { rejectUnauthorized: false } };
 }
 
+function configuration() {
+  if (pools.closing) throw new Error('DATABASE_POOLS_CLOSING');
+  return pools.config ||= { options: connectionOptions(), budget: databasePoolBudget() };
+}
+
+/** Same frozen generation as the business/tick pools; late lazy construction or
+ * a second Next bundle cannot reserve a different video budget. */
+export function videoCoordinationPoolLimit(): number {
+  // Preserve the existing public budget shape and older HMR generations (other
+  // was eight). Never let undefined select pg's default ten on lazy creation.
+  return configuration().budget.other - fixedOtherConnections;
+}
+
 function pool(kind: 'business' | 'tick'): Pool {
   if (pools.closing) throw new Error('DATABASE_POOLS_CLOSING');
   if (!pools[kind]) {
     // Configuration is immutable for this pool generation, including HMR.
     // A later lazy tick pool must not silently connect to a different database.
-    const { options, budget } = pools.config ||= { options: connectionOptions(), budget: databasePoolBudget() };
+    const { options, budget } = configuration();
     const created = new Pool({
       ...options, max: budget[kind],
       ...(kind === 'tick' ? {
@@ -57,7 +72,11 @@ function pool(kind: 'business' | 'tick'): Pool {
         // Bounds apply from BEGIN (before SET LOCAL) and to a stalled wire reply.
         statement_timeout: 3000, query_timeout: 4000,
         allowExitOnIdle: true,
-      } : {}),
+      } : {
+        // pg bounds both queued checkout and initial connection establishment.
+        // Its recognizable timeout error propagates; never retry transactions.
+        connectionTimeoutMillis: 12000,
+      }),
     });
     if (kind === 'tick') {
       // pg removes the failed idle connection first. Never log connection details.

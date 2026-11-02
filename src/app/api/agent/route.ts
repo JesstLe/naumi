@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 import { withBiRequest } from "@/lib/bi/model-observer";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { dbEnabled } from "@/lib/db";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit-http";
 import { getOpenAISettings } from "@/lib/settings";
 import {
   appendSessionEvent,
@@ -74,7 +74,9 @@ async function handlePut(request: Request) {
   if (!message) {
     return NextResponse.json({ error: "请输入任务内容" }, { status: 400 });
   }
-  if (!rateLimit(`agent:${email}`, 20, 600_000)) {
+  const rateLimitResult = await checkRateLimit(`agent:${email}`, 20, 600_000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) {
     return NextResponse.json({ error: "请求过于频繁，请稍后再试" }, { status: 429 });
   }
   let imageSkill;
@@ -372,7 +374,9 @@ async function handlePost(request: Request) {
   if (!message) {
     return NextResponse.json({ error: "请输入任务内容" }, { status: 400 });
   }
-  if (!rateLimit(`agent:${email}`, 20, 600_000)) {
+  const rateLimitResult2 = await checkRateLimit(`agent:${email}`, 20, 600_000);
+  if (rateLimitResult2 instanceof Response) return rateLimitResult2;
+  if (!rateLimitResult2) {
     return NextResponse.json({ error: "请求过于频繁，请稍后再试" }, { status: 429 });
   }
   let imageSkill;

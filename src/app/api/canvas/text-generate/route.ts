@@ -7,7 +7,7 @@ import { dbEnabled, listArtworksByIds, type ArtworkRecord } from "@/lib/db";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit-http";
 import { clientIp } from "@/lib/ip";
 import { safeError } from "@/lib/api-error";
 import {
@@ -19,6 +19,7 @@ import { toVisionDataUrl } from "@/lib/vision-image";
 import { requestedTextModel } from "@/lib/text-models";
 import { withBillingRequest, configuredToolCost } from "@/lib/billing/synchronous";
 import { CANVAS_TEXT_OUTPUT_INSTRUCTION, canvasTextInput, canvasAnswerText, canvasTextFailure, reportCanvasTextFailure } from "@/lib/canvas-text-output";
+import { currentModelExecution } from "@/lib/model-config/context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -102,7 +103,9 @@ async function handleObservedPost(request: Request) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
   }
   const ip = clientIp(request) || "0.0.0.0";
-  if (!rateLimit(`canvas-text:${ip}`, 40, 10 * 60 * 1000)) {
+  const rateLimitResult = await checkRateLimit(`canvas-text:${ip}`, 40, 10 * 60 * 1000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) {
     return NextResponse.json({ error: "操作过于频繁，请稍后再试" }, { status: 429 });
   }
   let prompt = "";
@@ -152,7 +155,7 @@ async function handleObservedPost(request: Request) {
     process.env.OPENAI_TEXT_MODEL || process.env.AGENT_MODEL || "gpt-5.6-luna"
   );
   const settings = await getOpenAISettings();
-  const apiKey = process.env.AGENT_API_KEY || settings.apiKey;
+  const apiKey = process.env.AGENT_API_KEY || settings.apiKey || (currentModelExecution("text") || currentModelExecution("vision") ? "managed-canvas-text" : "");
   if (!apiKey) {
     return NextResponse.json({ error: "文字模型接口未配置" }, { status: 503 });
   }
@@ -249,7 +252,7 @@ async function handleObservedPost(request: Request) {
     const choice = response.choices?.[0];
     const text = canvasAnswerText(choice?.message?.content).trim();
     const failure = canvasTextFailure(choice);
-    if (!text || failure.code === "TEXT_OUTPUT_IMAGE" || failure.code === "TEXT_OUTPUT_REFUSED") {
+    if (!text || failure.code === "TEXT_OUTPUT_IMAGE" || failure.code === "TEXT_OUTPUT_REFUSED" || failure.code === "TEXT_OUTPUT_LIMIT") {
       reportCanvasTextFailure("text-generate", failure.code);
       return NextResponse.json(failure, { status: 502 });
     }

@@ -27,12 +27,13 @@ export function apimartExecutionParameters(scope: ModelExecutionScope, body:Reco
   const planned = !p && scope.frozen.imageParameterPlanVersion === 1;
   const requested={...(scope.frozen.requestedParameters || {quality:scope.frozen.facts?.quality||String(body.quality||"medium"),resolution:scope.frozen.facts?.requestedResolution||scope.frozen.facts?.resolution||"1K",ratio:scope.frozen.facts?.ratio||"1:1"}),...quote?.requestedParameters};
   if(!p&&scope.frozen.requestedParameters&&scope.frozen.facts?.requestedResolution)requested.resolution=scope.frozen.facts.requestedResolution;
-  // Versioned plans translate admitted semantic input exactly once. Both the
-  // legacy route's operation quality and quote.effectiveParameters may already
-  // contain wire values (including another valid semantic ID, e.g. medium).
-  // A new business stage supplies its own frozen facts; aliases are never
-  // interpreted as a new stage selection here. Unversioned tasks stay legacy.
-  if (planned) requested.quality = scope.frozen.facts?.quality || requested.quality;
+  // New plans retain the user's target separately from the executable ratio.
+  // Recovery without a live quote/operation still uses that frozen wire choice.
+  if(!p&&scope.frozen.imageParameterPlanVersion===1&&scope.frozen.facts?.ratio&&Object.values(scope.frozen.imageParameterPlans||{}).some(plan=>plan.wireModel===scope.connection.wireModel&&plan.protocol===scope.connection.protocol&&(!scope.channelGuard?.upstreamId||plan.upstreamId===scope.channelGuard.upstreamId)&&plan.requested.ratio===scope.frozen.facts!.ratio))requested.ratio=scope.frozen.facts.ratio;
+  // Versioned plans translate admitted semantic input exactly once. Operation
+  // and quote effective quality may already be wire values, including another
+  // semantic ID (high -> medium -> low). Keep the frozen stage authoritative.
+  if(planned)requested.quality=scope.frozen.facts?.quality||requested.quality;
   else if(!p&&operation?.quality&&scope.capabilities.qualities.includes(operation.quality as never))requested.quality=operation.quality;
   if(operation?.ratio)requested.ratio=operation.ratio;
   if(operation?.resolution)requested.resolution=operation.resolution;

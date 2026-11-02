@@ -352,6 +352,7 @@ function fixture({runtime = true} = {}) {
       if (specifier === 'node:async_hooks') return {AsyncLocalStorage: relative === 'src/lib/durable-image-jobs.ts' ? DurableALS : AsyncLocalStorage};
       if ((specifier==='./task-diagnostics' && relative==='src/lib/imagegen/dispatch.ts') || (specifier==='./imagegen/task-diagnostics' && ['src/lib/durable-image-jobs.ts','src/lib/image-job-repository.ts'].includes(relative))) return load('src/lib/imagegen/task-diagnostics.ts');
       if(relative==='src/lib/imagegen/task-diagnostics.ts' && specifier==='./failure-evidence')return load('src/lib/imagegen/failure-evidence.ts');
+      if(relative==='src/lib/image-job-queue.ts' && specifier==='./runtime/positive-integer')return load('src/lib/runtime/positive-integer.ts');
       const map = dependencies[relative] || {};
       if (!Object.hasOwn(map, specifier)) throw new FixtureBoundaryError(`UNMOCKED_IMPORT:${relative}:${specifier}`);
       return typeof map[specifier] === 'function' ? map[specifier]() : map[specifier];

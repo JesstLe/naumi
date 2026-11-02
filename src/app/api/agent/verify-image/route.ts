@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { dbEnabled } from "@/lib/db";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit-http";
 import { getOpenAISettings } from "@/lib/settings";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import { requestedTextModel } from "@/lib/text-models";
@@ -29,7 +29,9 @@ async function handleObservedPost(request: Request) {
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
   }
-  if (!rateLimit(`agent-vision:${email}`, 30, 600_000)) {
+  const rateLimitResult = await checkRateLimit(`agent-vision:${email}`, 30, 600_000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) {
     return NextResponse.json({ error: "视觉检查过于频繁，请稍后再试" }, { status: 429 });
   }
   const form = await request.formData().catch(() => null);

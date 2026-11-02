@@ -1,5 +1,6 @@
 import { imageRatioMismatch, type ImageRatioValidationPolicy } from "./request-size";
 import type { ImagegenResult } from "./types";
+import { userVisibleImageWarnings } from "./notice-visibility";
 
 /** Ratio accuracy is a quality notice, not proof that a paid image is absent. */
 export function imageRatioWarning(requested: string, image: { width?: number; height?: number; ratio?: string }, policy?: ImageRatioValidationPolicy): string | undefined {
@@ -34,7 +35,6 @@ export function presentImagegenOutput(result: ImagegenResult, singleGenerationSt
 
 /** A single compact non-error notice; old/malformed API values do not crash UI. */
 export function imageOutputWarningText(warnings: unknown): string | undefined {
-  if (!Array.isArray(warnings)) return;
-  const values = Array.from(new Set(warnings.filter((v): v is string => typeof v === "string" && !!v.trim()).slice(0, 3).map(v => v.slice(0, 240))));
+  const values = Array.from(new Set(userVisibleImageWarnings(warnings).slice(0, 3).map(v => v.slice(0, 240))));
   return values.length ? values.join("；") : undefined;
 }

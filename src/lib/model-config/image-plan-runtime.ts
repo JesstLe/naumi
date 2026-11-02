@@ -9,9 +9,8 @@ import {currentImageOperationParameters} from '../image-gateway';
 export function executionImageParameterPlan(scope:ModelExecutionScope,body:Record<string,any>={},selected?:{quality:string;resolution:string;ratio:string}):ImageParameterPlan|undefined{
  if(scope.frozen.imageParameterPlanVersion!==1)return;
  const operation=currentImageOperationParameters(),facts=scope.frozen.facts;
- // Legacy route operations may already carry a wire quality. New plan audits
- // and transports share the frozen stage's semantic quality; explicit selected
- // input is reserved for the adapter's already resolved semantic selection.
+ // Route operations may already contain a wire alias. Only the frozen stage
+ // owns semantic quality; selected is the adapter's resolved semantic input.
  const selection=imagePlanSelection(selected||{quality:facts?.quality||scope.frozen.requestedParameters?.quality||String(body.quality||'medium'),resolution:operation?.resolution||facts?.requestedResolution||facts?.resolution||'1K',ratio:operation?.ratio||facts?.ratio||'1:1'},currentImagegenStep()?.request);
  const saved=Object.values(scope.frozen.imageParameterPlans||{}).find(p=>p.wireModel===scope.connection.wireModel&&p.protocol===scope.connection.protocol&&(!scope.channelGuard?.upstreamId||p.upstreamId===scope.channelGuard.upstreamId));
  if(saved&&saved.requested.quality===selection.quality&&saved.requested.resolution===selection.resolution&&saved.requested.ratio===selection.ratio&&(!selection.advanced||JSON.stringify(saved.requested.advanced)===JSON.stringify(selection.advanced)))return structuredClone(saved);

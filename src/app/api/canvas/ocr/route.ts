@@ -14,7 +14,7 @@ import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import { clientIp } from "@/lib/ip";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit-http";
 import { safeError } from "@/lib/api-error";
 import { collectPaddleRows, normalizeOcrSegments, scaleOcrSegments } from "@/lib/canvas-ocr";
 import { withBillingRequest, configuredToolCost, markBillingUpstream } from "@/lib/billing/synchronous";
@@ -76,7 +76,7 @@ async function visionOcr(buffer: Buffer, width: number, height: number, model: s
   // OCR belongs to the image workflow: prefer the configured OpenAI-compatible
   // image gateway. The agent gateway can be independently unavailable (for
   // example, a mainland host timing out against it), so it is only a fallback.
-  const apiKey = settings.apiKey || process.env.AGENT_API_KEY;
+  const apiKey = settings.apiKey || process.env.AGENT_API_KEY || (currentModelExecution("vision") ? "managed-canvas-ocr" : "");
   if (!apiKey) throw new Error("OCR 服务和视觉模型均未配置");
   const client = observeOpenAI(modelAwareOpenAI({
     apiKey,
@@ -123,7 +123,9 @@ async function handleObservedPost(request: Request) {
   const startedAt = Date.now();
   const email = await authenticatedEmail(request);
   if (dbEnabled && !email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
-  if (!rateLimit(`canvas-ocr:${clientIp(request) || "0.0.0.0"}`, 30, 10 * 60 * 1000)) {
+  const rateLimitResult = await checkRateLimit(`canvas-ocr:${clientIp(request) || "0.0.0.0"}`, 30, 10 * 60 * 1000);
+  if (rateLimitResult instanceof Response) return rateLimitResult;
+  if (!rateLimitResult) {
     return NextResponse.json({ error: "OCR 操作过于频繁，请稍后再试" }, { status: 429 });
   }
   let artworkId = "";

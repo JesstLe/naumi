@@ -1,5 +1,128 @@
 [
   {
+    "version": "1793582472",
+    "title": {
+      "zh": "画布图片尺寸显示",
+      "en": "Canvas image dimensions"
+    },
+    "improvements": [
+      {
+        "zh": "选中图片时，在右上角直接查看原图像素尺寸。",
+        "en": "View original pixel dimensions at the top right of selected images."
+      }
+    ],
+    "fixes": []
+  },
+  {
+    "version": "1793544987",
+    "title": {
+      "zh": "画布创作与加载体验更新",
+      "en": "Canvas creation and loading improvements"
+    },
+    "improvements": [
+      {
+        "zh": "一次生成多张图片时，保留原图并创建独立结果节点与来源连线，方便对比和继续编辑。",
+        "en": "Generating multiple images now keeps the original and creates separate result nodes with source connections for comparison and further editing."
+      },
+      {
+        "zh": "图片成组后持续显示整体底板与边界，拖动组内图片或底板即可移动整组。",
+        "en": "Image groups retain a shared background and border. Drag a member image or the background to move the whole group."
+      },
+      {
+        "zh": "区分文字创作与图片反推入口，提示词优化支持预览、应用及取消后保留原输入。",
+        "en": "Text creation and image-to-prompt tools now have distinct actions. Prompt optimization supports preview, apply and cancel while preserving the original input."
+      },
+      {
+        "zh": "补齐画布工具栏、菜单、弹层及生成状态的亮暗主题显示，画布主题可独立切换。",
+        "en": "Canvas toolbars, menus, dialogs and generation states now follow the canvas light or dark theme independently of the surrounding pages."
+      },
+      {
+        "zh": "点击上传支持多选图片，切换节点时保留本次画布会话中的参考图草稿。",
+        "en": "The upload picker supports multiple images, and reference-image drafts are retained when switching nodes within the current canvas session."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "复用已加载的图片，减少反复打开项目封面和引用小图时的加载等待与闪白。",
+        "en": "Reuse images that are already loaded to reduce loading delays and flashes when reopening project covers and reference thumbnails."
+      },
+      {
+        "zh": "改善缓存异常时的图片与作品加载，避免缓存等待拖住已读取的结果，并对损坏图片进行单项重新读取。",
+        "en": "Improved image and artwork loading when cached data is unavailable, so cache waits do not hold up available results and damaged images can be fetched individually."
+      },
+      {
+        "zh": "减少已看过图片的重复读取，并在缓存恢复后重新利用本地保存的图片。",
+        "en": "Reduced repeated reads of recently viewed images and restored use of locally saved images after cache access recovers."
+      },
+      {
+        "zh": "修复部分生成结果查询长时间没有响应的问题，短暂连接异常后继续查询原任务。",
+        "en": "Fixed some generation-result checks waiting indefinitely, with subsequent checks continuing to follow the original task after brief connection errors."
+      },
+      {
+        "zh": "自适应画幅跟随参考图比例，指定画幅优先；遇到不支持的比例时匹配最接近的可用画幅。",
+        "en": "Adaptive framing follows the reference image, while an explicit frame takes priority. Unsupported ratios are matched to the nearest available frame."
+      },
+      {
+        "zh": "改善部分抠图结果的恢复显示，让已保存结果可继续从原操作读取。",
+        "en": "Improved recovery display for some background-removal results so saved outputs can be retrieved through the original operation."
+      }
+    ]
+  },
+  {
+    "version": "1793339880",
+    "title": {
+      "zh": "图片生成提示优化",
+      "en": "Image generation notifications"
+    },
+    "improvements": [
+      {
+        "zh": "精简图片生成中的说明提示，保留结果恢复、异常与必要状态反馈。",
+        "en": "Reduced informational notices during image generation while retaining recovery, error and essential status feedback."
+      }
+    ],
+    "fixes": []
+  },
+  {
+    "version": "1793330285",
+    "title": {
+      "zh": "图片生成体验修复",
+      "en": "Image generation fixes"
+    },
+    "improvements": [],
+    "fixes": [
+      {
+        "zh": "修复参考图自适应及指定画幅被误拦的问题，优先使用目标画幅并匹配可用比例。",
+        "en": "Fixed incorrect aspect-ratio rejections when editing reference images or choosing an output frame."
+      }
+    ]
+  },
+  {
+    "version": "1793281629",
+    "title": {
+      "zh": "画布创作与稳定性更新",
+      "en": "Canvas creation and stability update"
+    },
+    "improvements": [],
+    "fixes": [
+      {
+        "zh": "修复部分画布工具的输入范围与历史切换问题，保留当前图片和参考图草稿。",
+        "en": "Fixed input scope and history switching in canvas tools while preserving the current image and reference drafts."
+      },
+      {
+        "zh": "修复工作台重新打开会话时的异常状态，减少切换会话后的旧内容干扰。",
+        "en": "Fixed session reopening states in the workspace and reduced stale updates after switching sessions."
+      },
+      {
+        "zh": "改善大图上传时的资源使用，保持原图和预览品质不变。",
+        "en": "Improved resource use during large-image uploads without reducing original or preview quality."
+      },
+      {
+        "zh": "改善图片任务遇到短暂连接异常时的等待与查询处理。",
+        "en": "Improved waiting and status checks when image tasks encounter brief connection errors."
+      }
+    ]
+  },
+  {
     "version": "1793204789",
     "title": {
       "zh": "团队使用体验优化",

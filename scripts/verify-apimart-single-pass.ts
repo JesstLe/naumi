@@ -124,6 +124,20 @@ async function main() {
     equal(collision.result.upstream.resolution, '2k', 'explicit 4K map uses 2k');
     equal(collision.result.parameterPlan, initial.plan, 'same input uses the frozen plan');
 
+    const {executionImageParameterPlan} = await load('src/lib/model-config/image-plan-runtime.ts');
+    const directPlan = await withImageOperation('wire-image-one', {id:'single-pass-direct-runtime', ...high, quality:'medium'}, async()=>executionImageParameterPlan(initial.scope));
+    equal(directPlan, initial.plan, 'runtime without adapter selection uses frozen semantic quality');
+    cases++;
+
+    const frameValue=make({selected:{...high,ratio:'3:4'}});
+    frameValue.scope.frozen.requestedParameters={...high,ratio:'941:1672'};
+    frameValue.quote.requestedParameters={...high,ratio:'941:1672'};
+    const frame=await parameters('nearest frame and non-idempotent quality coexist',frameValue,{...high,quality:'medium',ratio:'941:1672'});
+    equal(frame.selected.quality,'high','nearest frame does not change semantic quality');
+    equal(frame.selected.ratio,'3:4','quote effective nearest frame remains authoritative');
+    equal(frame.result.upstream,{quality:'medium',resolution:'2k',size:'3:4'},'single-pass wire and effective frame both survive');
+    equal(frameValue.quote.requestedParameters.ratio,'941:1672','original reference target stays in quote audit');
+
     const noOperation = await parameters('no current operation', make());
     equal(noOperation.result.upstream.quality, 'medium', 'frozen selection also survives without operation');
 

@@ -154,7 +154,7 @@ export async function quoteForRequest(request: Request, input: Partial<BillingFa
     return freezeBusinessQuote(request, snapshot, await resolveBillingFacts(request, input, snapshot), compatibleQuote, options);
 }
 /** Trusted domain services have already authenticated and owner-checked this actor. */
-export async function quoteForActor(email:string,input:Partial<BillingFacts>&{feature:BillingFacts["feature"];quantity:number},options?:{effectiveResolution?:string}){
+export async function quoteForActor(email:string,input:Partial<BillingFacts>&{feature:BillingFacts["feature"];quantity:number},options?:{effectiveResolution?:string;effectiveRatio?:string}){
     const snapshot=currentModelBillingSnapshot()??await(await getBillingRuntime()).config.current();
     const request = new Request("http://internal/api/billing/quote");
     return freezeBusinessQuote(request,snapshot,await resolveBillingFacts(request,input,snapshot,email),compatibleQuote,options);
