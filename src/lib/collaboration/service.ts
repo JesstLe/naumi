@@ -7,7 +7,7 @@ import { ensureEnterpriseSchema } from '@/lib/enterprise/server';
 import { pinnedEnterpriseIds } from '@/lib/enterprise/integration/policy';
 import { withCollaborationScope, type CollaborationScope } from '@/lib/enterprise/collaboration-access';
 import { TeamError } from '@/lib/teams/server';
-import type { CollaborationAttachment, CollaborationBootstrap, CollaborationConversation, CollaborationMember, CollaborationMessage, CollaborationPage } from './contracts';
+import type { CollaborationAttachment, CollaborationBootstrap, CollaborationConversation, CollaborationConversationPage, CollaborationConversationSnapshot, CollaborationMember, CollaborationMessage, CollaborationPage } from './contracts';
 import { ensureCollaborationSchema } from './schema';
 import { changeSchema, collaborationLimits, createSchema, decodeCursor, encodeCursor, forwardSchema, hash, id, presenceSchema, presenceTtlMs, requireMembers, sendSchema, unique } from './validation';
 import { emitCollaborationEventTx, eventCursorTx } from './events';
@@ -76,7 +76,25 @@ export async function membersTx(tx: PoolClient, scope: CollaborationScope, q = '
   return { items: rows.slice(0, 100).map(r => ({ id: r.email, name: r.name || r.email, roleName: r.role_name, presence: r.presence })),
     nextCursor: rows.length > 100 ? encodeCursor(binding, rows[99].email) : null };
 }
-export async function conversationsTx(tx: PoolClient, scope: CollaborationScope, rawCursor?: string | null): Promise<CollaborationPage<CollaborationConversation>> {
+/** Uses actor membership + (conversation_id,seq) indexes, not tenant hydration.
+ * Never counts old membership history, own messages or withdrawn tombstones. */
+async function unreadTotalTx(tx: PoolClient, scope: CollaborationScope): Promise<number> {
+  const result = await tx.query(`SELECT count(*)::int AS n
+    FROM app_collab_members member JOIN app_collab_conversations c ON c.id=member.conversation_id
+    JOIN app_collab_messages message ON message.conversation_id=c.id
+      AND message.seq>GREATEST(member.joined_seq,member.read_seq)
+    WHERE member.actor_id=$1 AND member.left_seq IS NULL AND c.enterprise_id=$2
+      AND c.last_seq>GREATEST(member.joined_seq,member.read_seq)
+      AND message.sender_id<>$1 AND message.withdrawn_at IS NULL`, [scope.actorId, scope.enterpriseId]);
+  return result.rows[0].n;
+}
+export async function conversationSnapshotTx(tx: PoolClient, scope: CollaborationScope, conversationId: string): Promise<CollaborationConversationSnapshot> {
+  let conversation: CollaborationConversation | null = null;
+  try { conversation = await conversationWireTx(tx, scope, await conversationTx(tx, scope, conversationId)); }
+  catch (error) { if (!(error instanceof TeamError && error.status === 404)) throw error; }
+  return { conversation, unreadTotal: await unreadTotalTx(tx, scope) };
+}
+export async function conversationsTx(tx: PoolClient, scope: CollaborationScope, rawCursor?: string | null): Promise<CollaborationConversationPage> {
   const binding = `conversations:${scope.enterpriseId}:${scope.actorId}`, after = decodeCursor(rawCursor, binding);
   if (after) id.parse(after);
   // Stable identity pagination; UI sorts returned conversation activity without mutable-cursor skips.
@@ -84,7 +102,7 @@ export async function conversationsTx(tx: PoolClient, scope: CollaborationScope,
     WHERE c.enterprise_id=$1 AND m.actor_id=$2 AND m.left_seq IS NULL AND ($3::uuid IS NULL OR c.id<$3) ORDER BY c.id DESC LIMIT 51`, [scope.enterpriseId, scope.actorId, after])).rows;
   const items: CollaborationConversation[] = [];
   for (const row of rows.slice(0, 50)) items.push(await conversationWireTx(tx, scope, row));
-  return { items, nextCursor: rows.length > 50 ? encodeCursor(binding, rows[49].id) : null };
+  return { items, nextCursor: rows.length > 50 ? encodeCursor(binding, rows[49].id) : null, unreadTotal: await unreadTotalTx(tx, scope) };
 }
 export async function bootstrap(email: string, requested?: string | null): Promise<CollaborationBootstrap> {
   await ensureEnterpriseSchema(); await ensureCollaborationSchema();
@@ -101,11 +119,13 @@ export async function bootstrap(email: string, requested?: string | null): Promi
   }
   const enterpriseId = requested || enterprises[0]?.id || null;
   const base = { actorId, enterprises, enterpriseId, limits: collaborationLimits() };
-  if (!enterpriseId) return { ...base, members: [], conversations: [], cursor: null };
+  if (!enterpriseId) return { ...base, members: [], conversations: [], cursor: null, unreadTotal: 0, membersNextCursor: null, conversationsNextCursor: null };
   return collaborationScope(actorId, enterpriseId, async (tx, scope) => {
     // Read head first: all later arrivals remain replayable after the bootstrap reads.
     const cursor = await eventCursorTx(tx, scope);
-    return { ...base, members: (await membersTx(tx, scope)).items, conversations: (await conversationsTx(tx, scope)).items, cursor };
+    const members = await membersTx(tx, scope), conversations = await conversationsTx(tx, scope);
+    return { ...base, members: members.items, conversations: conversations.items, cursor, unreadTotal: conversations.unreadTotal,
+      membersNextCursor: members.nextCursor, conversationsNextCursor: conversations.nextCursor };
   });
 }
 async function operationTx(tx: PoolClient, scope: CollaborationScope, kind: string, clientId: string, fingerprint: string) {
