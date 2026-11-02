@@ -24,11 +24,13 @@ import { ToolShell } from "@/components/tools/tool-shell";
 import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
 import { GenLoader } from "@/components/gen-loader";
 import { TextModelSelect } from "@/components/ui/text-model-select";
+import { ensureFeatureModelSelection } from "@/lib/model-config/feature-client";
 
 const MAX_UPLOAD = 8 * 1024 * 1024;
 const ACCENT = "#F5A524";
 const TINT = "rgba(245,165,36,.12)";
 const ACC_SOFT = "rgba(245,165,36,.10)";
+const TITLE_MODEL_FEATURE = "canvas.text-generate";
 
 type Opt = { id: string; zh: string; en: string };
 const PLATFORMS: Opt[] = [
@@ -201,6 +203,11 @@ export function TitleGenClient() {
     setLoading(true);
     setTitles([]); setPoints([]); setCopied(null);
     try {
+      // The visible managed selector has its own default/selection. Do not use
+      // an unrelated stale global text preference when the user has not clicked it.
+      const selectedModel = await ensureFeatureModelSelection(TITLE_MODEL_FEATURE);
+      const headers = new Headers(await authHeader());
+      if (selectedModel) headers.set("x-naumi-feature-model", selectedModel);
       let res: Response;
       const common = {
         idea: idea.trim(),
@@ -215,13 +222,14 @@ export function TitleGenClient() {
         fd.append("image", file);
         res = await fetch("/api/title-gen", {
           method: "POST",
-          headers: await authHeader(),
+          headers,
           body: fd,
         });
       } else {
+        headers.set("Content-Type", "application/json");
         res = await fetch("/api/title-gen", {
           method: "POST",
-          headers: { "Content-Type": "application/json", ...(await authHeader()) },
+          headers,
           body: JSON.stringify({ ...common, count }),
         });
       }
@@ -285,7 +293,7 @@ export function TitleGenClient() {
           <>
             <div>
               <p className="mb-2 text-[12.5px] font-medium text-c-text2">{L("文字模型", "Text model")}</p>
-              <TextModelSelect />
+              <TextModelSelect feature={TITLE_MODEL_FEATURE} />
             </div>
             {/* 产品图(可选) */}
             <div>

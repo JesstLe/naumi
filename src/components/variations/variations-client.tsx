@@ -2,8 +2,9 @@
 import { readBrowserImage } from "@/lib/browser-image-cache";
 import { CachedImage } from "@/components/cached-image";
 import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
-import {toolImageError, validToolImages} from "@/lib/tool-ui";
+import {toolImageError} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
+import {useToolGenerationReceipt} from "@/lib/tool-generation-receipt";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 
@@ -14,11 +15,9 @@ import { useRouter } from "next/navigation";
 import { Copy, Plus, X, Download, ArrowRight, RefreshCw, Wand2, Sparkles } from "lucide-react";
 import { PromptAssistPopup } from "@/components/tools/prompt-assist-popup";
 import type { GeneratedImage } from "@/app/api/generate-image/route";
-import type { SessionUser } from "@/lib/auth-context";
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { useI18n } from "@/lib/i18n/locale-context";
-import { authHeader } from "@/lib/supabase";
 import { downloadImage } from "@/lib/download";
 import { cn } from "@/lib/utils";
 import { ToolShell } from "@/components/tools/tool-shell";
@@ -84,7 +83,7 @@ function similarityHint(v: number): string {
 type Slot = { id: string; file: File; url: string };
 
 export function VariationsClient() {
-  const { user, remaining, consumeCredits, applyServerUser } = useAuth();
+  const { user, remaining, applyServerUser } = useAuth();
   const { openAuth } = useAuthModal();
   const { locale } = useI18n();
   const router = useRouter();
@@ -97,8 +96,6 @@ export function VariationsClient() {
   const [prompt, setPrompt] = useState("");
   const [count, setCount] = useState(1);
   const [loading, setLoading] = useState(false);
-  const mounted = useRef(true);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<GeneratedImage[]>([]);
   // AI帮写/智能优化(贴按钮弹窗,全站统一)
@@ -116,8 +113,20 @@ export function VariationsClient() {
   }
 
   const { quality, imageCost } = useImageQuality();
-  const billing=useFeatureBilling("image.generate",{quantity:count,resolution:RESOLUTION});
+  // The image's real frame is resolved on submission. An auto preview is not an
+  // executable square quote; use the existing deferred-frame quote contract.
+  const billing=useFeatureBilling("image.generate",{quantity:count,resolution:RESOLUTION,ratio:"auto"});
   const cost=billing.cost;
+  const receipt=useToolGenerationReceipt({
+    tool:"variation",owner:user?.email,modelId:billing.quote?.modelId,locale,
+    draftKey:JSON.stringify([slot?.id,splitMode,similarity,prompt,count,quality]),canRestore:!slot,
+    restoreDraftKey:JSON.stringify([slot?.id,splitMode,similarity,prompt,count]),
+    onBusy:setLoading,onError:setError,onReset:()=>setResults([]),
+    onResult:data=>{
+      if(data.user)applyServerUser(data.user as Parameters<typeof applyServerUser>[0]);
+      setResults(data.images);
+    },
+  });
   const isCustom = splitMode === "custom";
 
   // 卸载时释放 objectURL
@@ -209,86 +218,38 @@ export function VariationsClient() {
       setError(L("自定义模式请填写裂变要求", "Describe your custom requirement"));
       return;
     }
-    if (remaining < cost) {
-      setError(
-        L(
-          `积分不足:本次需 ${cost},剩余 ${remaining}`,
-          `Not enough credits: need ${cost}, have ${remaining}`
-        )
-      );
-      return;
-    }
-    setError(null);
-    setLoading(true);
-    try {
-      const mode = SPLIT_MODES.find((m) => m.key === splitMode);
-      const finalPrompt = [
-        DEFAULT_VARY,
-        mode?.hint ?? "",
-        similarityHint(similarity),
-        prompt.trim(),
-      ]
-        .filter(Boolean)
-        .join(" ");
+    const mode = SPLIT_MODES.find((m) => m.key === splitMode);
+    const finalPrompt = [
+      DEFAULT_VARY,
+      mode?.hint ?? "",
+      similarityHint(similarity),
+      prompt.trim(),
+    ]
+      .filter(Boolean)
+      .join(" ");
 
-      const fd = new FormData();
-      fd.append("prompt", finalPrompt);
-      // 落库只存用户原始补充描述(可能为空),不存拼接的系统提示词
-      fd.append("userPrompt", prompt.trim());
-      fd.append("category", "variation");
-      // 比例/出图模式已从 UI 移除:比例走「自动」(跟随原图),模式固定标准档。
-      fd.append("ratio", "auto");
-      fd.append("resolution", RESOLUTION);
-      fd.append("quality", quality);
-      fd.append("count", String(count));
-      fd.append("email", user.email);
-      fd.append("image", slot.file);
+    const fd = new FormData();
+    fd.append("prompt", finalPrompt);
+    // 落库只存用户原始补充描述(可能为空),不存拼接的系统提示词
+    fd.append("userPrompt", prompt.trim());
+    fd.append("category", "variation");
+    // 比例/出图模式已从 UI 移除:比例走「自动」(跟随原图),模式固定标准档。
+    fd.append("ratio", "auto");
+    fd.append("resolution", RESOLUTION);
+    fd.append("quality", quality);
+    fd.append("count", String(count));
+    fd.append("email", user.email);
+    fd.append("image", slot.file);
 
-      const startRes = await billing.submit("/api/generate-image", {
-        method: "POST",
-        headers: await authHeader(),
-        body: fd,
-      });
-      const start = await startRes.json();
-      if (!startRes.ok) throw new Error(start.error ?? L("生成失败", "Failed"));
-      const jobId: string | undefined = start.jobId;
-      if (typeof jobId !== "string" || !jobId.trim()) throw new Error(L("任务创建失败,请重试", "Could not start job"));
-
-      const deadline = Date.now() + 6 * 60 * 1000;
-      let data: { images: GeneratedImage[]; user?: SessionUser | null } | null =
-        null;
-      while (!data) {
-        await new Promise((r) => setTimeout(r, 2500));
-        if (!mounted.current) return;
-        if (Date.now() > deadline)
-          throw new Error(L("生成超时,请重试", "Timed out, please retry"));
-        const sres = await fetch(
-          `/api/generate-image?job=${encodeURIComponent(jobId)}`,
-          { cache: "no-store", headers: await authHeader() }
-        );
-        const s = await sres.json();
-        if (!mounted.current) return;
-          if (!sres.ok) throw new Error(s.error || L("任务读取失败，请重试", "Could not read job; retry"));
-        if (sres.ok && s.user) applyServerUser(s.user);
-        if (s.status === "done") {
-          if (!validToolImages(s.images)) throw new Error(L("生成结果异常，请重试", "Invalid image result; retry"));
-          data = s;
-        }
-        else if (s.status === "error")
-          throw new Error(s.error ?? L("生成失败", "Failed"));
-      }
-
-      if (data.user) applyServerUser(data.user);
-      else consumeCredits(cost);
-      setResults(data.images);
-    } catch (e) {
-      if (!mounted.current) return;
-      setError(
-        e instanceof Error ? e.message : L("生成失败,请重试", "Failed, please retry")
-      );
-    } finally {
-      if (mounted.current) setLoading(false);
-    }
+    await receipt.submit(fd, headers => billing.submit("/api/generate-image", {
+      method: "POST", headers, body: fd,
+    }), () => {
+      if (remaining < cost) throw new Error(L(
+        `积分不足:本次需 ${cost},剩余 ${remaining}`,
+        `Not enough credits: need ${cost}, have ${remaining}`
+      ));
+      setResults([]);
+    });
   }
 
   // 选中态/未选态统一样式(accent 描边 + 浅底)。

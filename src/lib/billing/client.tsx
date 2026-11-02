@@ -6,6 +6,7 @@ import { authHeader } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import type { FeatureId } from "./types";
 import {clientIntentKey,frozenIntentBody} from "./client-intent";
+import {readBillingSubmissionResponse} from "./client-response";
 import { MODEL_CATALOG_REFRESH } from "../model-config/public-client";
 import { chosenFeatureModel, FEATURE_MODEL_SELECTION } from "../model-config/feature-client";
 import { browserRandomUUID } from "../browser-crypto";
@@ -172,7 +173,7 @@ export function BillingProvider({ children }: {
             onIdentity?.(id);
             return fetch(url, { ...frozenIntentBody(init,id), headers });
         };
-        const response=await post();
+        let response=await post();
         if (response.ok && response.body && response.headers.get("content-type")?.includes("text/event-stream")) {
             const decoder = new TextDecoder(); let buffer = "";
             const body = response.body.pipeThrough(new TransformStream<Uint8Array,Uint8Array>({ transform(chunk, controller) {
@@ -185,8 +186,14 @@ export function BillingProvider({ children }: {
             } }));
             return new Response(body,{status:response.status,headers:response.headers});
         }
-        const data=await response.clone().json().catch(()=>null);
-        if(data&&data.code!=="OPERATION_PENDING"&&data.code!=="OPERATION_CONFLICT"&&(response.ok||response.status<500&&!displayed.quote))clearIntent();
+        const receipt=await readBillingSubmissionResponse(response,id,undefined,url);
+        response=receipt.response;
+        const data=receipt.data;
+        const terminalFailure = data.terminal === true && data.status === "failed" && data.operationId === `tool-${id}` &&
+            Number.isSafeInteger(data.chargedCredits) && Number(data.chargedCredits) >= 0;
+        // Only an identity-bound terminal server receipt releases this local
+        // intent. A future explicit click may start anew; never auto-resubmit.
+        if(terminalFailure || data.code!=="OPERATION_PENDING"&&data.code!=="OPERATION_CONFLICT"&&(response.ok||response.status<500&&!displayed.quote))clearIntent();
         if (response.status === 409 && data?.code === "PRICE_CHANGED")
             await refresh();
         if (response.status === 409 && data?.code === "MODEL_CHANGED") window.dispatchEvent(new Event(MODEL_CATALOG_REFRESH));
