@@ -1,27 +1,5 @@
 [
   {
-    "version": "1793594332",
-    "title": {
-      "zh": "同事聊天与画布协作",
-      "en": "Team messaging and canvas collaboration"
-    },
-    "improvements": [
-      {
-        "zh": "在画布中与同事聊天，查看在线状态并传递图片、文件和压缩包。",
-        "en": "Chat with teammates on the canvas, see who is online, and share images, files and archives."
-      },
-      {
-        "zh": "申请复用同事的画布，经批准后获得独立可编辑的副本。",
-        "en": "Request to reuse a teammate’s canvas and receive an independent editable copy after approval."
-      },
-      {
-        "zh": "切换画布或工作空间时保留聊天草稿与当前上传进度。",
-        "en": "Keep chat drafts and ongoing uploads when switching canvases or workspaces."
-      }
-    ],
-    "fixes": []
-  },
-  {
     "version": "1793592214",
     "title": {
       "zh": "画布工具与结果恢复优化",
