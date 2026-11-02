@@ -11,7 +11,9 @@ export function DesktopTransport(){
   const scoped:typeof fetch=(input,init)=>{
    const url=new URL(input instanceof Request ? input.url : String(input),window.location.href);
    const desktop=location.pathname==="/desktop" || location.pathname.startsWith("/desktop/");
-   if(desktop && url.origin===location.origin && url.pathname.startsWith("/api/")){
+   // Collaboration has one root lifetime and one authenticated API across both
+   // shells; do not change an in-flight chat/upload's endpoint on navigation.
+   if(desktop && url.origin===location.origin && url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/collaboration/")){
     url.pathname="/desktop"+url.pathname;
     return original.call(window,input instanceof Request?new Request(url,input):url,init);
    }
