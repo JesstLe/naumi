@@ -14,6 +14,7 @@ import type { ImagegenRequest, ImagegenResult } from "../src/lib/imagegen/types"
 const arg = (name: string) => { const n = process.argv.indexOf(name); return n < 0 ? undefined : process.argv[n + 1]; };
 const root = resolve(arg("--source-root") || process.cwd());
 const baseline = process.argv.includes("--baseline");
+const overlap = process.argv.includes("--overlap");
 const load = (name: string): Promise<any> => import(pathToFileURL(join(root, name)).href);
 const pause = (ms: number) => new Promise<void>(done => setTimeout(done, ms));
 
@@ -117,6 +118,7 @@ async function main() {
     const { planImagegen, imagegenFingerprint } = await load("src/lib/imagegen/plan.ts");
     const { submitImagegen, getImagegenResult } = await load("src/lib/imagegen/dispatch.ts");
     const requests: ImagegenRequest[] = [], receipts: ImagegenResult[] = [];
+    const finish: Array<() => Promise<void>> = [];
     for (const quality of (baseline ? ["high"] : ["high", "medium"]) as ("high" | "medium")[]) {
       const before = posts.length, requestedCredits = quality === "high" ? 12 : 8;
       const request = imagegenRequestSchema.parse({ version: 1, operationId: randomUUID(), entry: "canvas", mode: "generate", modelId: "image-a",
@@ -137,23 +139,38 @@ async function main() {
       eq(posts.length, before + 1, "one supplier POST per new child: " + JSON.stringify(receipt));
       const expectedWire = baseline && quality === "high" ? "low" : quality === "high" ? "medium" : "low";
       eq(posts[before].quality, expectedWire, "actual SDK request quality"); eq(posts[before].resolution, "2k", "actual SDK request resolution");
-      eq(reservationSnapshots[before], { reserved: requestedCredits, quoted: [requestedCredits], qualities: [quality], resolutions: ["4K"] }, "real reserved ledger before supplier completion");
-      tasks.get("mapping-task-" + posts.length)!.complete = true;
+      if(overlap && before === 1) {
+        eq(reservationSnapshots[before].reserved, 20, "A remains reserved while new B is accepted");
+        eq([...reservationSnapshots[before].quoted].sort((a,b)=>a-b), [8,12], "two independent original quotes remain reserved");
+        eq((await db!.getPool().query("SELECT count(*)::int AS n FROM app_ledger WHERE email=$1 AND kind='consume'",[owner])).rows[0].n,0,"no premature debit or refund while both tasks run");
+      } else eq(reservationSnapshots[before], { reserved: requestedCredits, quoted: [requestedCredits], qualities: [quality], resolutions: ["4K"] }, "real reserved ledger before supplier completion");
+      const supplierTaskId = "mapping-task-" + (before+1);
+      const complete = async () => {
+      tasks.get(supplierTaskId)!.complete = true;
       await waitFor(async () => { receipt = await getImagegenResult(request.operationId, owner); return ["succeeded", "failed", "needs_attention"].includes(receipt.status); }, "parent did not finish");
       eq(receipt.status, "succeeded", JSON.stringify(receipt)); eq(receipt.chargedCredits, requestedCredits, "final raw-tier settlement");
       eq([receipt.artifacts[0].width, receipt.artifacts[0].height], [2048, 2048], "actual persisted output pixels");
       const { readCanvasOutput } = await load("src/lib/canvas-image-input.ts"), stored = await readCanvasOutput(receipt.artifacts[0].url, "http://internal", owner);
       const meta = await sharp(stored.buffer).metadata(); eq([meta.width, meta.height], [2048, 2048], "saved bytes decode");
-      const supplier = (await db!.getPool().query("SELECT task_id,parameters FROM app_supplier_calls WHERE task_id=$1", ["mapping-task-" + posts.length])).rows[0];
+      const supplier = (await db!.getPool().query("SELECT task_id,parameters FROM app_supplier_calls WHERE task_id=$1", [supplierTaskId])).rows[0];
       eq(supplier.parameters.acceptedOutputs, 1, "supplier result accepted once"); eq(supplier.parameters.upstream.quality, expectedWire, "durable wire audit");
       const auditPlan = supplier.parameters.parameterPlan;
       assert.ok(auditPlan, "actual supplier ledger records the parameter plan");
       if (!baseline) { eq(auditPlan.requested.quality, quality, "supplier plan audit retains semantic quality"); eq(auditPlan.wire.quality, expectedWire, "supplier plan audit agrees with actual wire"); }
 
+      const postCount = posts.length;
       const replay = await submitImagegen(request, owner); await getImagegenResult(request.operationId, owner);
-      eq(replay.jobId, receipt.jobId, "repeat uses original parent ID"); eq(posts.length, before + 1, "repeat creates no additional POST");
+      eq(replay.jobId, receipt.jobId, "repeat uses original parent ID"); eq(posts.length, postCount, "repeat creates no additional POST");
       eq(JSON.stringify(quoted), savedQuote, "accepted quote object stays unchanged");
       requests.push(request); receipts.push(receipt);
+      };
+      if(overlap) finish.push(complete); else await complete();
+    }
+    if(overlap) {
+      eq(posts.length,2,"both new operations reach real SDK before either completes");
+      for(const complete of [...finish].reverse()) await complete();
+      eq(receipts.map(r=>r.chargedCredits),[8,12],"new B finishes before original A; both settle once");
+      console.log("CANVAS_BACKGROUND_BILLING=PASS OVERLAP=2 RESERVED=20 B_SETTLED=8 A_SETTLED=12 EDIT_REFUND=0 REPLAY_POSTS=0 DATABASE=real-postgres EXTERNAL_CALLS=0");
     }
     const settled = (await db!.getPool().query("SELECT state,charged_credits,reserved_credits,quote FROM app_billing_operations WHERE email=$1 AND feature IN ('canvas.image','image.generate') ORDER BY charged_credits DESC", [owner])).rows;
     eq(settled.map(r => ({ state: r.state, charged: r.charged_credits, reserved: r.reserved_credits })), baseline ? [{ state: "settled", charged: 12, reserved: 0 }] : [{ state: "settled", charged: 12, reserved: 0 }, { state: "settled", charged: 8, reserved: 0 }], "independent final settlements");

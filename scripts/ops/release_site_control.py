@@ -55,6 +55,25 @@ class Release(base.Release):
     def __init__(self,tx,c):
         self.tx,self.c=tx,c;self.root=tx.folder;self.initial=CANON.read_bytes();self.disk=sha(self.initial);self.state=json.loads(self.initial)
         require(self.disk==c['canonicalSha256'] and self.state['revision']==c['canonicalRevision'],'CANONICAL_REVIEW_CHANGED')
+        previous,prior_id=self.predecessor(c)
+        require(previous.get('phase')=='COMPLETE' and previous.get('commit')==c['oldCommit'],'PREDECESSOR_NOT_COMPLETE')
+        require(all(o.get('phase') in ['ACKNOWLEDGED','REJECTED_PRECONDITION'] for o in previous.get('operations',{}).values()),'PREDECESSOR_OPERATION_UNKNOWN')
+        require(all(r.get('phase') in ['COMPLETE','ABORTED'] for r in self.state.get('siteControlReleases',{}).values()),'SITE_ROLLOUT_UNRESOLVED')
+        self.rows=json.loads(tx.run(['docker','inspect',*tx.run(['docker','ps','-aq','--no-trunc']).decode().split()]))
+        self.byname={r['Name'].lstrip('/'):r for r in self.rows};self.old={role:self.byname[name] for role,name in c['oldNames'].items()}
+        require(sorted(r['Id'] for r in self.rows if r['State']['Running'])==sorted(c['runningIds']),'RUNNING_BASELINE_CHANGED')
+        for role,r in self.old.items():
+            require(public_identity(r)==c['oldPins'][role],'PINNED_INSTANCE_CHANGED')
+            if role!='portal':require(r['Image']==c['oldImage'] and environment(r).get('SOURCE_COMMIT')==c['oldCommit'],'SOURCE_BASELINE_CHANGED')
+        self.db=self.byname['naumi-staging-db-1'];self.de=environment(self.db)
+        self.new={};self.switched=self.old_stopped=self.worker_paused=self.app_drained=False
+        self.record={'releaseId':c['releaseId'],'phase':'PREPARED','commit':c['commit'],'image':c['image'],'buildVersion':c['buildVersion'],'startedAt':base.now(),'operations':{},'databaseRestored':False,'tasksReplayed':False}
+        if c.get('abortedPredecessor') is not None:self.record.update(abortedPredecessor=c['abortedPredecessor'],predecessorReleaseId=prior_id)
+        self.extra=[]
+
+    def predecessor(self,c):
+        """Select the original predecessor; subclasses may verify an explicit successor."""
+        prior_id=None
         key,active=('normalBlueGreenReleases','activeNormalBlueGreenReleaseId') if c['target'].startswith('47.') else ('blueGreen103Releases','active103BlueGreenReleaseId')
         previous=(self.state.get('siteControlReleases',{}).get(self.state.get('activeSiteControlReleaseId')) or self.state[key][self.state[active]])
         if c.get('abortedPredecessor') is not None:
@@ -76,20 +95,7 @@ class Release(base.Release):
             prior_id=before.get('activeSiteControlReleaseId');prior=before.get('siteControlReleases',{}).get(prior_id)
             require(prior is not None and prior==self.state.get('siteControlReleases',{}).get(prior_id), 'ABORTED_PREDECESSOR_HISTORY_CHANGED')
             previous=prior
-        require(previous.get('phase')=='COMPLETE' and previous.get('commit')==c['oldCommit'],'PREDECESSOR_NOT_COMPLETE')
-        require(all(o.get('phase') in ['ACKNOWLEDGED','REJECTED_PRECONDITION'] for o in previous.get('operations',{}).values()),'PREDECESSOR_OPERATION_UNKNOWN')
-        require(all(r.get('phase') in ['COMPLETE','ABORTED'] for r in self.state.get('siteControlReleases',{}).values()),'SITE_ROLLOUT_UNRESOLVED')
-        self.rows=json.loads(tx.run(['docker','inspect',*tx.run(['docker','ps','-aq','--no-trunc']).decode().split()]))
-        self.byname={r['Name'].lstrip('/'):r for r in self.rows};self.old={role:self.byname[name] for role,name in c['oldNames'].items()}
-        require(sorted(r['Id'] for r in self.rows if r['State']['Running'])==sorted(c['runningIds']),'RUNNING_BASELINE_CHANGED')
-        for role,r in self.old.items():
-            require(public_identity(r)==c['oldPins'][role],'PINNED_INSTANCE_CHANGED')
-            if role!='portal':require(r['Image']==c['oldImage'] and environment(r).get('SOURCE_COMMIT')==c['oldCommit'],'SOURCE_BASELINE_CHANGED')
-        self.db=self.byname['naumi-staging-db-1'];self.de=environment(self.db)
-        self.new={};self.switched=self.old_stopped=self.worker_paused=self.app_drained=False
-        self.record={'releaseId':c['releaseId'],'phase':'PREPARED','commit':c['commit'],'image':c['image'],'buildVersion':c['buildVersion'],'startedAt':base.now(),'operations':{},'databaseRestored':False,'tasksReplayed':False}
-        if c.get('abortedPredecessor') is not None:self.record.update(abortedPredecessor=c['abortedPredecessor'],predecessorReleaseId=prior_id)
-        self.extra=[]
+        return previous,prior_id
 
     def reconcile(self):
         self.tx.save('canonical-before.private.json',self.initial);self.tx.save('containers-before.private.json',self.rows)

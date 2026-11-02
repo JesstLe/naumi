@@ -96,7 +96,8 @@ import {useImageReferenceDraft} from './use-image-reference-draft';
 import { ImageReferenceComposer } from './image-reference-composer';
 import { resolveCanvasImageReferences, changeImageReferenceRole, imageReferenceManifest, inheritableImagePrompt, type CanvasImageReference, type ImageReferenceCandidate } from '@/lib/canvas/image-references';
 import { canvasReferenceManifestSchema, compileReferenceInstructions, referenceManifestError } from '@/lib/imagegen/reference-labels';
-import { imageDraftScope } from '@/lib/canvas/image-node-drafts';
+import { imageDraftScope, imageDraftKey } from '@/lib/canvas/image-node-drafts';
+import { newCanvasImageAttempt, forkPendingImageDraft } from '@/lib/canvas/background-generation';
 import { CanvasRenderLayerGuard } from './canvas-render-layer-guard';
 import { CanvasGroupLayer } from "./group-layer";
 import { CanvasEdgeHoverHint, type CanvasEdgeHoverHandle } from './canvas-edge-hover-hint';
@@ -2047,6 +2048,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     generationSize?: { width: number; height: number };
     generationCount?: number;
     generating?: boolean; // 该空白节点正在文生图/合并生成中
+    generationSubmitted?: boolean; // Durable receipt received; editing/new generation is independent.
     operationKey?: string; // 编辑任务锁自己的源节点，普通空白节点仅锁自己
     taskId?: string; // 视频等后台任务 ID，刷新后可从任务表恢复占位节点
     taskKind?: "video" | "image-edit"; // 不同后台任务独立恢复，避免彼此清理占位节点
@@ -3659,6 +3661,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     ) || (!!selectedId && pendNodes.some(node => node.generating && !node.generationFailure && node.parentId === selectedId));
   const selectedGenerationFailure = generationTasks.find(task => task.failure && task.sourceId === selectedId)?.failure
     || pendNodes.find(node => node.generationFailure && node.parentId === selectedId)?.generationFailure;
+  const selectedImageSubmitting = !!selectedId && generationTasks.some(task => task.sourceId === selectedId && !task.failure && task.stage === "preparing");
   // Updating this node still uses its current image as the default edit target.
   const dockReferenceState = useMemo(() => {
     try { return { references: generationMode==="standard"?canvasRegenerationReferences(selected, active?.members ?? []):canvasGenerationReferences(selected, active?.members ?? []), error: "" }; }
@@ -4688,6 +4691,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       replaceNode?: boolean;
       fanout?: boolean;
       placement?: CanvasFanoutPlacement;
+      onSubmitted?: () => void;
     }
   ): Promise<GeneratedResult[]> {
     if (readOnly || !user || isNodeLocked(source.id)) return [];
@@ -4830,6 +4834,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         previous => ({...previous,slots:previous.slots.map((slot,index)=>({...slot,...(generationTaskPosRef.current[taskIds[index]]||slot)}))})) || placement;
       else rememberGenerationDrag(taskId, generationTaskPosRef.current[taskId] ?? taskPosition, true, operationKey);
       setGenerationTasks(current => current.map(task => taskSet.has(task.id) ? { ...task, stage: "generating" } : task));
+      opts?.onSubmitted?.();
       const deadline = Date.now() + 6 * 60 * 1000;
       let newIds: string[] = [];
       let generated: GeneratedResult[] = [];
@@ -4988,7 +4993,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
 
   // One image updates in place; multi-image requests branch into independent children.
-  async function generateSelectedImage() {
+  async function generateSelectedImage(onSubmitted?: () => void) {
     if (!selected) return;
     if (dockReferenceState.error) { setGenError(dockReferenceState.error); return; }
     if (referenceError) { setGenError(referenceError); return; }
@@ -5034,6 +5039,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     // 若用户在 dock 删掉了自动引用图、改上传了自己的图:用上传图作参考。
     const useUploadAsBase = visibleDockRefs.length === 0 && extraFiles.length > 0;
     await runGen(selected, text, {
+      operationKey: newCanvasImageAttempt(selected.id),
+      onSubmitted,
       replaceNode: destination.replaceNode,
       fanout: destination.fanout,
       ratio: genRatio,
@@ -8622,6 +8629,28 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     void runDelete([id]);
   }
   // 空白节点生成(文生图 / 合并多输入):用 dock 的提示词 + 输入图(若有)生成,填充本节点
+  /** A deliberate new Generate action is separate from a failed run's recovery.
+   * An active blank node keeps its own task; the next click owns a sibling. */
+  async function generatePendingImage(onSubmitted?: () => void) {
+    const source = pendNodesRef.current.find(node => node.id === selectedPendIdRef.current);
+    if (!source || readOnly || !user || source.uploading || source.needsAttention) return false;
+    if (generationMode !== "standard") return generatePend();
+    if (source.generating && !source.generationSubmitted) return false;
+    let target = source;
+    if (source.generating || source.generationFailure) {
+      const size = generationPlaceholderSize(genRatio);
+      const position = placeGenerationPreview({x:source.x + size.width + X_GAP,y:source.y},size,
+        (rfRef.current?.getNodes() ?? rfNodes).map(node=>({...node.position,...flowNodeSize(node)})));
+      target = forkPendingImageDraft(source,`pend-${browserRandomUUID()}`,position);
+      imageDraft.seed(target.id,{prompt:editPrompt,ratio:genRatio,referenceBindings:imageDraft.referenceBindings,hiddenReferenceIds:imageDraft.hiddenReferenceIds});
+      referenceDraft.copyTo(imageDraftKey(imageDraftScope(user.email,targetEmail,activeKey,currentWorkspace()),target.id));
+      pendNodesRef.current=[...pendNodesRef.current,target];
+      setPendNodes(nodes=>[...nodes,target]);
+      selectedPendIdRef.current=target.id;setSelectedPendId(target.id);
+    }
+    return generatePend({pend:target,prompt:editPrompt,referenceInputs:composerReferences,onSubmitted});
+  }
+
   async function generatePend(opts?: {
     pend?: Pend;
     prompt?: string;
@@ -8629,6 +8658,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     forceStandard?: boolean;
     referenceInputs?: CanvasImageReference[];
     isCurrent?: () => boolean;
+    onSubmitted?: () => void;
   }): Promise<boolean> {
     if (readOnly || !user) return false;
     // 可传入指定的空白节点(拉线「生成衍生图」用,避免依赖尚未刷新的 state)
@@ -8685,7 +8715,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const livePend = rfRef.current?.getNode(pend.id)?.position ?? pendNodesRef.current.find(node => node.id === pend.id) ?? pend;
     const generationPosition = generationPositionForTask(livePend, livePend, generationSize, []);
     setPendNodes((prev) =>
-      prev.map((p) => (p.id === pend.id ? { ...p, generationFailure: undefined, onGenerationRetry: undefined, generating: true, generationStage: "preparing", generationStartedAt: Date.now(),
+        prev.map((p) => (p.id === pend.id ? { ...p, generationFailure: undefined, onGenerationRetry: undefined, generating: true, generationSubmitted: false, generationStage: "preparing", generationStartedAt: Date.now(),
         ...generationPosition, generationSize, generationCount: normalizeCanvasCount(genCount) } : p))
     );
     let receiptComplete = false;
@@ -8747,7 +8777,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if (!jobId) throw new Error(t("canvas.genFail"));
       if (!current()) return false;
       rememberGenerationDrag(pend.id, rfRef.current?.getNode(pend.id)?.position ?? generationPosition, true);
-      setPendNodes(current => current.map(p => p.id === pend.id ? { ...p, generationStage: "generating" } : p));
+      setPendNodes(current => current.map(p => p.id === pend.id ? { ...p, generationStage: "generating", generationSubmitted: true } : p));
+      opts?.onSubmitted?.();
       const deadline = Date.now() + 6 * 60 * 1000;
       let newIds: string[] = [];
       let generatedSizes: { id: string; width?: number; height?: number }[] = [];
@@ -8815,6 +8846,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if (!current()) return false;
       assertGenerationResultsPresent(newIds, fresh);
       if(jobId&&receiptComplete&&newIds.every(id=>fresh.some(art=>art.id===id&&!!art.image)))completeCanvasImagegen(jobId,{owner:requestOwner,project:requestProject||"workspace",workspace:requestWorkspace});
+      // Completion moves the live draft, not the frozen generation prompt.
+      // A different selected task keeps its own composer and selection.
+      const draftScope=imageDraftScope(requestOwner,targetEmail,requestProject,requestWorkspace);
+      const nextId=newIds[0],liveDraft=imageDraft.read(pend.id,draftScope);
+      if(nextId){
+        const nextArtwork=fresh.find(art=>art.id===nextId)!;
+        const destinationProject=requestProject||projectKey(nextArtwork,new Map([...(worksRef.current||[]),...fresh].map(art=>[art.id,art])));
+        const destinationScope=imageDraftScope(requestOwner,targetEmail,destinationProject,requestWorkspace);
+        imageDraft.seed(nextId,{prompt:text,ratio:opts?.ratio||genRatio,...liveDraft,...imageDraft.read(nextId,destinationScope)},destinationScope);
+        referenceDraft.copyTo(imageDraftKey(destinationScope,nextId),imageDraftKey(draftScope,pend.id));
+        if(selectedPendIdRef.current===pend.id){setSelectedId(nextId);selectedIdRef.current=nextId;}
+      }
       consumePendingNodeHistory(pend.id);
       setPendNodes((prev) => prev.filter((p) => p.id !== pend.id));
 
@@ -12225,7 +12268,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         : t("canvas.viewSheetCount")}
                     </span>
                   )}
-                  <CanvasPromptOptimizer contextKey={imageDraft.key} prompt={editPrompt} disabled={readOnly || !nodeSettingsReady || selectedGenerating || isNodeLocked(selected.id)} english={locale === "en"}
+                  <CanvasPromptOptimizer contextKey={imageDraft.key} prompt={editPrompt} disabled={readOnly || !nodeSettingsReady || generationMode !== "standard" && selectedGenerating || isNodeLocked(selected.id)} english={locale === "en"}
                     onOptimize={(prompt, signal) => optimizeCanvasPrompt("canvas-image", prompt, signal)} onApply={setEditPrompt}/>
                   <CanvasComposerOptions label={L("更多图片参数", "More image settings")}><DarkSelect
                         dir="up"
@@ -12277,9 +12320,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   <ImageVersionControl contextKey={`${historyScope}:${selected.id}`} revision={selected.canvasImageRevision||0}
                     disabled={readOnly||historySaving||isNodeLocked(selected.id)} english={locale==="en"}
                     load={()=>loadImageVersions(selected.id)} onSelect={(version,from)=>selectImageVersion(selected.id,version,from)}/>
-                  <GenerationSubmitAction generating={selectedGenerating} failure={selectedGenerationFailure}
+                  <GenerationSubmitAction key={`image:${selected.id}`} generating={generationMode === "standard" ? selectedImageSubmitting : selectedGenerating} failure={generationMode === "standard" ? undefined : selectedGenerationFailure}
+                    allowBackground={generationMode === "standard"}
                     ariaLabel={L("生成","Generate")}
-                    onGenerate={()=>{const failed=generationTasks.find(task=>task.sourceId===selected.id&&task.operationKey===`node:${selected.id}`&&task.failure);return generationMode==="standard"&&failed?.onRetry?failed.onRetry():generateSelectedImage();}} english={locale === "en"} />
+                    onGenerate={onSubmitted=>generateSelectedImage(onSubmitted)} english={locale === "en"} />
                  </>}/>
               )}
             </CanvasComposerShell>
@@ -12338,11 +12382,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   onChange={setGenCount}
                   light={lightCanvas}
                 />
-                <CanvasPromptOptimizer contextKey={imageDraft.key} prompt={editPrompt} disabled={readOnly || !nodeSettingsReady || selectedPendGenerating || isNodeLocked(selectedPend.id)} english={locale === "en"}
+                <CanvasPromptOptimizer contextKey={imageDraft.key} prompt={editPrompt} disabled={readOnly || !nodeSettingsReady || generationMode !== "standard" && selectedPendGenerating || isNodeLocked(selectedPend.id)} english={locale === "en"}
                   onOptimize={(prompt, signal) => optimizeCanvasPrompt("canvas-image", prompt, signal)} onApply={setEditPrompt}/>
                  </>} actions={<>
-                <GenerationSubmitAction generating={selectedPendGenerating} failure={selectedPend.generationFailure}
-                  onGenerate={() => generatePend()} english={locale === "en"} />
+                <GenerationSubmitAction key={`pending:${selectedPend.id}`} generating={generationMode === "standard" ? selectedPendGenerating && !selectedPend.generationSubmitted : selectedPendGenerating}
+                  allowBackground={generationMode === "standard"} failure={generationMode === "standard" ? undefined : selectedPend.generationFailure}
+                  onGenerate={onSubmitted => generatePendingImage(onSubmitted)} english={locale === "en"} />
                </>}/>
             </CanvasComposerShell>
           )}

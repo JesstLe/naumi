@@ -18,6 +18,7 @@ import release103_refactor as base
 import release47_controls as controls
 import release47_task_snapshot as tasks
 import release_runtime_recovery as startup
+import release103_mapping_predecessor as predecessor
 from release47_host import HostTransaction, Hold, require, public_identity, environment, sha, file_sha
 
 TARGET = '103.30.76.93'
@@ -65,6 +66,7 @@ def validate(c):
     require(isinstance(c.get('runningIds'), list) and c['runningIds'] and
             len(c['runningIds']) == len(set(c['runningIds'])) and
             all(re.fullmatch('[a-f0-9]{64}', i) for i in c['runningIds']), 'FIXED_RUNNING_IDS_REQUIRED')
+    predecessor.validate_config(c)
 
 
 def fresh_tick(status, commit, resumed_at):
@@ -81,6 +83,13 @@ def fresh_tick(status, commit, resumed_at):
 
 
 class Release(shared.Release):
+    def predecessor(self, c):
+        if c.get('direct103Predecessor') is None:
+            return super().predecessor(c)
+        previous, proof = predecessor.recognize(self.state, c, shared.EVIDENCE_ROOT, self.tx.inspect)
+        self.direct_predecessor_proof = proof
+        return previous, None
+
     def __init__(self, tx, c):
         validate(c)
         super().__init__(tx, c)
@@ -91,6 +100,9 @@ class Release(shared.Release):
         require(all(row['State']['Running'] for row in self.old.values()), 'OLD_PAIR_NOT_RUNNING')
         self.record.update(taskKind='model-mapping-103', branch=BRANCH, releaseMode='BLUE_GREEN',
                            supplierSubmissions=0, configurationPublication=False)
+        if c.get('direct103Predecessor') is not None:
+            self.record.update(predecessorReleaseId=c['direct103Predecessor']['releaseId'],
+                               direct103PredecessorEvidence=self.direct_predecessor_proof)
 
     def prepare(self):
         # Run cheap gates before recording any new lifecycle/backup intent.
