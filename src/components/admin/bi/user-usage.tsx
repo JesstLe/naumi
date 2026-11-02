@@ -5,12 +5,14 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
 import { ArrowLeft, ArrowUpRight, BarChart3, CalendarDays, ChevronLeft, ChevronRight, Download, ImageIcon, Loader2, RefreshCw, Search, Users, Wallet, X } from "lucide-react";
 import { AdminCenterShell } from "@/components/admin/center-shell";
+import { useAuth } from "@/lib/auth-context";
 import { biCsvCell } from "@/lib/bi/contracts";
 import type { UsageMetrics, UsageResponse, UsageSort, UsageUser } from "@/lib/bi/usage-contracts";
+import { isUsageAccessError, readUsageResponse } from "@/lib/bi/usage-client";
 import styles from "./user-usage.module.css";
 
 type Filter = { from: string; to: string; email: string; tenantId: string; q: string; sort: UsageSort; page: number };
-type Props = { embedded?: boolean; enterpriseId?: string };
+type Props = { embedded?: boolean; enterpriseId?: string; refreshRevision?: number };
 const dayMs = 86400_000;
 const numberFormat = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 });
 const dateFormat = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
@@ -57,8 +59,9 @@ function csvForUsers(rows: UsageUser[]) {
 }
 
 /** System usage/output evidence only: does not infer employee performance or working hours. */
-export function UserUsage({ embedded = false, enterpriseId }: Props) {
+export function UserUsage({ embedded = false, enterpriseId, refreshRevision = 0 }: Props) {
   const router = useRouter(), pathname = usePathname(), params = useSearchParams();
+  const { user, ready } = useAuth();
   const [defaults] = useState(() => recentDates(30));
   const prefix = embedded ? "usage" : "";
   const key = (name: string) => prefix ? prefix + name[0].toUpperCase() + name.slice(1) : name;
@@ -73,26 +76,37 @@ export function UserUsage({ embedded = false, enterpriseId }: Props) {
       page: Number.isSafeInteger(page) && page > 0 ? page : 1,
     };
   }, [parameterText, prefix, defaults, enterpriseId]);
-  const [draft, setDraft] = useState(filter), [data, setData] = useState<UsageResponse | null>(null);
-  const [busy, setBusy] = useState(true), [error, setError] = useState(""), [reload, setReload] = useState(0);
+  const [draft, setDraft] = useState(filter);
+  const [snapshot, setSnapshot] = useState<{ key: string; body: UsageResponse } | null>(null);
+  const [request, setRequest] = useState<{ key: string; busy: boolean; error: string } | null>(null);
+  const [reload, setReload] = useState(0);
   const [exporting, setExporting] = useState(false), [exported, setExported] = useState(0), [exportError, setExportError] = useState("");
   const exportAbort = useRef<AbortController | null>(null);
   const endpoint = enterpriseId ? "/api/enterprise/usage" : "/api/admin/bi/usage";
   const apiQuery = queryParameters(filter, enterpriseId).toString();
+  const requestUrl = `${endpoint}?${apiQuery}`;
+  const requestKey = `${ready ? user?.email || "local-admin" : "auth-pending"}\0${requestUrl}`;
+  // Rendering is identity-bound too: a new filter never gets even one render of old results.
+  const data = snapshot?.key === requestKey ? snapshot.body : null;
+  const busy = request?.key !== requestKey || request.busy;
+  const error = request?.key === requestKey ? request.error : "";
   useEffect(() => { setDraft(filter); }, [filter]);
   useEffect(() => {
-    const controller = new AbortController();
+    const controller = new AbortController(); let current = true;
     exportAbort.current?.abort(); setExportError(""); setExporting(false); setExported(0);
-    setBusy(true); setError(""); setData(null);
-    void fetch(`${endpoint}?${apiQuery}`, { cache: "no-store", signal: controller.signal }).then(async response => {
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error || "用量数据读取失败，请重试");
-      if (!Array.isArray(body.users) || !Array.isArray(body.daily) || !body.summary || !body.coverage) throw new Error("用量数据格式异常，请重试");
-      if (!controller.signal.aborted) setData(body as UsageResponse);
-    }).catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "用量数据读取失败，请重试"); })
-      .finally(() => { if (!controller.signal.aborted) setBusy(false); });
-    return () => { controller.abort(); exportAbort.current?.abort(); };
-  }, [endpoint, apiQuery, reload]);
+    setRequest({ key: requestKey, busy: true, error: "" });
+    setSnapshot(previous => previous?.key === requestKey ? previous : null);
+    void readUsageResponse(requestUrl, controller.signal).then(body => {
+      if (current && !controller.signal.aborted) setSnapshot({ key: requestKey, body });
+    }).catch(reason => {
+      if (!current || controller.signal.aborted) return;
+      if (isUsageAccessError(reason)) setSnapshot(null);
+      setRequest({ key: requestKey, busy: false, error: reason instanceof Error ? reason.message : "用量数据读取失败，请重试" });
+    }).finally(() => {
+      if (current && !controller.signal.aborted) setRequest(previous => previous?.key === requestKey ? { ...previous, busy: false } : previous);
+    });
+    return () => { current = false; controller.abort(); exportAbort.current?.abort(); };
+  }, [requestKey, requestUrl, ready, reload, refreshRevision]);
 
   function navigate(next: Partial<Filter>) {
     const updated = { ...filter, ...next }, search = new URLSearchParams(parameterText);
@@ -118,10 +132,7 @@ export function UserUsage({ embedded = false, enterpriseId }: Props) {
       const rows: UsageUser[] = [], seen = new Set<string>(); let total: number | undefined;
       for (let page = 1; ; page++) {
         const query = queryParameters({ ...filter, page }, enterpriseId); query.set("size", "100");
-        const response = await fetch(`${endpoint}?${query}`, { cache: "no-store", signal: controller.signal });
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.error || "导出失败，请重试");
-        const result = body as UsageResponse;
+        const result = await readUsageResponse(`${endpoint}?${query}`, controller.signal);
         if (!Array.isArray(result.users) || !Number.isSafeInteger(result.total)) throw new Error("导出数据格式异常");
         if (result.total > 10000) throw new Error("当前筛选超过 10,000 个账号，请缩小范围后导出");
         if (total !== undefined && result.total !== total) throw new Error("账号列表在导出期间发生变化，请重新导出");
@@ -136,7 +147,10 @@ export function UserUsage({ embedded = false, enterpriseId }: Props) {
       const url = URL.createObjectURL(new Blob([csvForUsers(rows)], { type: "text/csv;charset=utf-8" })), anchor = document.createElement("a");
       anchor.href = url; anchor.download = csvFilename(filter); document.body.appendChild(anchor); anchor.click(); anchor.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (reason) { if (!controller.signal.aborted) setExportError(reason instanceof Error ? reason.message : "导出失败，请重试"); }
+    } catch (reason) { if (!controller.signal.aborted) {
+      if (isUsageAccessError(reason)) { setSnapshot(null); setRequest({ key: requestKey, busy: false, error: reason.message }); }
+      setExportError(reason instanceof Error ? reason.message : "导出失败，请重试");
+    } }
     finally { if (exportAbort.current === controller) { setExporting(false); exportAbort.current = null; } }
   }
 
@@ -145,9 +159,9 @@ export function UserUsage({ embedded = false, enterpriseId }: Props) {
   const Root = embedded ? "section" : "main";
   const content = <Root className={styles.main} data-admin-usage="true" aria-label="用户用量统计" aria-busy={busy}>
     <header className={styles.header}>
-      <div className={styles.titleBlock}><h1>{filter.email ? "用户用量明细" : "用户用量"}</h1>{data && <span className={styles.updated}>更新于 {localTime(data.generatedAt)}</span>}</div>
+      <div className={styles.titleBlock}><h1>{filter.email ? "用户用量明细" : "用户用量"}</h1>{data && <span className={styles.updated} role={busy ? "status" : undefined}>{busy ? "更新中…" : `更新于 ${localTime(data.generatedAt)}`}</span>}</div>
       <div className={styles.headerActions}>
-        <button className={styles.button} type="button" disabled={busy || !data || exporting || !data.total} onClick={() => void exportUsers()}><Download size={16}/>{exporting ? `导出中 ${exported}` : "导出用量"}</button>
+        <button className={styles.button} type="button" disabled={busy || Boolean(error) || !data || exporting || !data.total} onClick={() => void exportUsers()}><Download size={16}/>{exporting ? `导出中 ${exported}` : "导出用量"}</button>
         <button className={styles.button} type="button" disabled={busy} onClick={() => setReload(value => value + 1)}><RefreshCw size={16} className={busy ? styles.spin : ""}/>刷新</button>
       </div>
     </header>
@@ -156,14 +170,15 @@ export function UserUsage({ embedded = false, enterpriseId }: Props) {
       <div className={styles.dateFields}><label>开始日期<input type="date" value={draft.from} max={draft.to} onChange={event => setDraft(value => ({ ...value, from: event.target.value }))} required/></label><span className={styles.dateSeparator}>—</span><label>结束日期<input type="date" value={draft.to} min={draft.from} onChange={event => setDraft(value => ({ ...value, to: event.target.value }))} required/></label></div>
       {!enterpriseId && <label className={styles.companyField}>企业<select value={draft.tenantId} onChange={event => setDraft(value => ({ ...value, tenantId: event.target.value }))}><option value="">全部企业与个人</option>{data?.tenants.map(tenant => <option key={tenant.id} value={tenant.id}>{tenant.name}</option>)}</select></label>}
       <label className={styles.searchField}>用户<div className={styles.searchInput}><Search size={16}/><input type="search" placeholder="搜索花名、账号" value={draft.q} onChange={event => setDraft(value => ({ ...value, q: event.target.value }))}/></div></label>
-      <button className={styles.primary} type="submit" disabled={busy}>查询</button>
-      <div className={styles.presets} aria-label="快捷日期">{[{ days: 7, label: "近 7 天" }, { days: 30, label: "近 30 天" }, { days: 90, label: "近 90 天" }].map(item => <button type="button" key={item.days} onClick={() => preset(item.days)} disabled={busy}>{item.label}</button>)}</div>
+      <button className={styles.primary} type="submit">查询</button>
+      <div className={styles.presets} aria-label="快捷日期">{[{ days: 7, label: "近 7 天" }, { days: 30, label: "近 30 天" }, { days: 90, label: "近 90 天" }].map(item => <button type="button" key={item.days} onClick={() => preset(item.days)}>{item.label}</button>)}</div>
     </form>
 
     {filter.email && <div className={styles.selectedUser}><button className={styles.back} type="button" onClick={() => navigate({ email: "", page: 1 })}><ArrowLeft size={15}/>全部用户</button><span className={styles.avatar}>{(selected?.name || filter.email).slice(0, 1)}</span><strong>{selected?.name || filter.email}</strong>{selected?.name && <span>{filter.email}</span>}{selected?.company && <span className={styles.companyPill}>{selected.company}</span>}<button type="button" className={styles.clear} aria-label="清除用户筛选" onClick={() => navigate({ email: "", page: 1 })}><X size={16}/></button></div>}
     {exportError && <div role="alert" className={styles.error}>{exportError}</div>}
-    {error ? <div className={styles.errorState} role="alert"><BarChart3 size={29}/><h2>用量数据暂未载入</h2><p>{error}</p><button className={styles.button} onClick={() => setReload(value => value + 1)}>重新加载</button></div>
-      : busy ? <div className={styles.loading} role="status"><Loader2 className={styles.spin} size={24}/><span>正在读取用量数据</span></div>
+    {error && (data ? <div className={styles.error} role="alert">{error} <button className={styles.button} onClick={() => setReload(value => value + 1)}>重新加载</button></div>
+      : <div className={styles.errorState} role="alert"><BarChart3 size={29}/><h2>用量数据暂未载入</h2><p>{error}</p><button className={styles.button} onClick={() => setReload(value => value + 1)}>重新加载</button></div>)}
+    {!data && busy ? <div className={styles.loading} role="status"><Loader2 className={styles.spin} size={24}/><span>正在读取用量数据</span></div>
       : data && <>
         {unavailable.length > 0 && <div role="status" className={styles.coverageAlert}>部分历史来源暂不可用：{unavailable.map(source => source.label).join("、")}</div>}
         <Metrics metrics={data.summary} singleUser={Boolean(filter.email)}/>

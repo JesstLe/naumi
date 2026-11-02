@@ -1,4 +1,6 @@
 "use client";
+import { CanvasCollaborationActions } from "@/components/collaboration/collaboration-entry";
+import { useCollaboration } from "@/components/collaboration/collaboration-provider";
 import {readCanvasGenerationReceipt} from "@/lib/canvas/generation-receipt";
 import { updateAssistantTimeline, restoreAssistantTimeline, type AssistantTimelineTurn } from "@/lib/canvas/assistant-timeline";
 import { CachedImage } from "@/components/cached-image";
@@ -149,6 +151,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import NextImage from "@/components/cached-next-image";
 import { useWorkspaceRouter as useRouter } from "@/lib/desktop/navigation";
@@ -1663,6 +1666,11 @@ function layoutGraph(
 }
 
 export function CanvasClient({ initialProject, desktopAppearance = false }: { initialProject?: string; desktopAppearance?: boolean } = {}) {
+  const collaboration = useCollaboration();
+  const projectSearchParams = useSearchParams();
+  const requestedProject = initialProject || projectSearchParams.get("project") || undefined;
+  const loadedProjectRequest = useRef<string | null>(null);
+  const desktopProjectOpened = useRef<string | null>(null);
   const { can: canFeature } = useFeatureAccess();
   const billing=useBilling();
   async function privateFetch(input:RequestInfo|URL,init:RequestInit & { isCurrent?: () => boolean }={}){
@@ -1742,6 +1750,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [targetEmail, setTargetEmail] = useState<string | null>(null);
   const [readOnly, setReadOnly] = useState(false);
   const canvasAccountRef=useRef("");canvasAccountRef.current=JSON.stringify([user?.email?.toLowerCase(),targetEmail?.toLowerCase()]);
+  // Accepted text work belongs to its account/workspace, not the visible project.
+  // A monotonic owner epoch also fences A -> B -> A response continuations.
+  const canvasOwner = JSON.stringify([canvasAccountRef.current, currentWorkspaceRevision()]);
+  const canvasOwnerEpochRef = useRef({ key: canvasOwner, revision: 0 });
+  if (canvasOwnerEpochRef.current.key !== canvasOwner) canvasOwnerEpochRef.current = { key: canvasOwner, revision: canvasOwnerEpochRef.current.revision + 1 };
   const [nodeSettings, setNodeSettings] = useState<Record<string, CanvasNodeSettings>>({});
   const nodeSettingsRef = useRef(nodeSettings); nodeSettingsRef.current = nodeSettings;
   const [nodeSettingsReady, setNodeSettingsReady] = useState(false);
@@ -2610,12 +2623,16 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 余额轮询会回写新的 user 对象；仅账号变化才重载画布，避免覆盖正在编辑的内容。
   const authenticatedEmail = user?.email;
   useEffect(() => {
+    loadedProjectRequest.current = null;
+    desktopProjectOpened.current = null;
     setWorks(null); setNames({}); setTextNodes([]); setTextNodesReady(false);
     if (!ready || !authenticatedEmail) return;
     let cancelled = false;
     const sp = new URLSearchParams(window.location.search);
     const emailParam = sp.get("email");
     const target = emailParam || authenticatedEmail;
+    // An approved share can create this project after the warm account cache.
+    if (requestedProject) invalidateBrowserData(target);
     const ro =
       !!emailParam && emailParam.toLowerCase() !== authenticatedEmail.toLowerCase();
     pendingNodeRef.current = sp.get("node");
@@ -2693,6 +2710,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             setTextNodes([]);
           }
         }
+        loadedProjectRequest.current = JSON.stringify([authenticatedEmail, requestedProject]);
         setTextNodesReady(true);
 
       })
@@ -2705,7 +2723,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     return () => {
       cancelled = true;
     };
-  }, [ready, authenticatedEmail]);
+  }, [ready, authenticatedEmail, requestedProject]);
 
   useEffect(() => {
     const email = (targetEmail || user?.email || "").toLowerCase();
@@ -2939,7 +2957,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (proj) {
       setActiveKey(proj.key);
       setCreatingNew(false);
-      setSelectedId(openWithoutSelection ? null : node);
+      const textSelection = proj.textNodes?.some(item => item.id === node);
+      setSelectedId(openWithoutSelection || textSelection ? null : node);
+      setSelectedTextId(!openWithoutSelection && textSelection ? node : null);
       // 只有后台深链进入才自动聚焦;日常新建/上传/生成不动画布
       if (deepFocusRef.current) {
         setFocusId(node);
@@ -2949,15 +2969,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
   }, [projects,videoNodesStore.ready,directorNodesStore.ready,characterNodesStore.ready,sceneNodesStore.ready,audioNodesStore.ready,timelineNodesStore.ready,textNodesReady,works]);
 
-  // Optional desktop deep link; the original /canvas defaults are unchanged.
-  const desktopProjectOpened = useRef<string | null>(null);
+  // Share results and desktop both use the native persisted project identity.
+  // Do not consume a pending key before this account's actual nodes arrive.
   useEffect(() => {
-    if (!initialProject || desktopProjectOpened.current === initialProject) return;
-    const project = projects.find(p => p.key === initialProject);
+    if (!requestedProject || loadedProjectRequest.current !== JSON.stringify([user?.email, requestedProject]) || !textNodesReady || works === null) return;
+    if (desktopProjectOpened.current === `${user?.email}:${requestedProject}`) return;
+    const project = projects.find(p => p.key === requestedProject);
     if (!project) return;
-    desktopProjectOpened.current = initialProject;
+    desktopProjectOpened.current = `${user?.email}:${requestedProject}`;
+    setSelectedId(null); setSelectedTextId(null); setSelectedPendId(null); setMultiSel([]);
     setCreatingNew(false); setActiveKey(project.key); setBrowsing(false);
-  }, [initialProject, projects]);
+  }, [requestedProject, projects, user?.email, textNodesReady, works]);
 
   // 同步当前打开的项目到本地(供刷新恢复);只写不清,清除交给返回/删除路径,
   // 避免初始挂载时(browsing=true)误清掉上次保存的项目。
@@ -8184,8 +8206,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const target = options?.node ?? selectedText, prompt = (options?.prompt ?? textPrompt).trim();
     if (!target || readOnly || !nodeSettingsReady || isNodeLocked(target.id) || !prompt || target.status === "generating" || generationOperationRef.current.has(`text:${target.id}`)) return false;
     generationOperationRef.current.add(`text:${target.id}`);
-    const epoch = canvasContextEpochRef.current, account = canvasAccountRef.current;
-    const isCurrent = () => batchRunMountedRef.current && epoch === canvasContextEpochRef.current && account === canvasAccountRef.current;
+    const epoch = canvasOwnerEpochRef.current.revision, account = canvasAccountRef.current;
+    const workspace = currentWorkspace(), workspaceRevision = currentWorkspaceRevision();
+    const isCurrent = () => batchRunMountedRef.current && epoch === canvasOwnerEpochRef.current.revision && account === canvasAccountRef.current && workspaceRevision === currentWorkspaceRevision();
     const pending: CanvasTextNode = {
       ...target,
       prompt,
@@ -8201,6 +8224,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     try {
       const response = await privateFetch("/api/canvas/text-generate", {
         method: "POST",
+        isCurrent,
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prompt, sourceIds: pending.sourceIds ?? [] }),
       });
@@ -8220,7 +8244,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       setTextNodes((current) =>
         current.map((node) => (node.id === completed.id ? completed : node))
       );
-      return !!await persistTextNode(completed);
+      return !!await persistTextNode(completed, { workspace, isCurrent });
     } catch (error) {
       if (!isCurrent()) return false;
       const message = error instanceof Error ? error.message : t("canvas.textGenerateFail");
@@ -8234,7 +8258,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         current.map((node) => (node.id === failed.id ? failed : node))
       );
       if (!options?.silent) setTextError(message);
-      await persistTextNode(failed);
+      await persistTextNode(failed, { workspace, isCurrent });
       return false;
     } finally { generationOperationRef.current.delete(`text:${target.id}`); }
   }
@@ -9602,6 +9626,23 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       : null;
 
   const recoveryScope={owner:user.email.toLowerCase(),workspace:currentWorkspace(),project:activeKey||"workspace"};
+  // Sharing consumes native saved IDs only. Pending generation placeholders are
+  // not a share source and opening chat never writes canvas selection/viewport.
+  const collaborationSource = !readOnly && !browsing && active ? { projectKey: active.key, kind: "workflow" as const } : null;
+  const collaborationNodeIds = new Set([
+    ...(active?.members.map(node => node.id) || []),
+    ...textNodes.filter(node => node.projectKey === active?.key).map(node => node.id),
+    ...[videoNodesStore, directorNodesStore, characterNodesStore, sceneNodesStore, audioNodesStore, timelineNodesStore].flatMap(store => store.nodes.filter(node => node.projectKey === active?.key).map(node => node.id)),
+  ]);
+  const collaborationSelected = [...new Set(multiSel.length ? multiSel : selectedBatchIds.length ? selectedBatchIds : [selectedId, selectedTextId, selectedPendId].filter((id): id is string => !!id))];
+  const collaborationSelectionPending = collaborationSelected.some(id => !collaborationNodeIds.has(id));
+  const collaborationSelection = collaborationSource && collaborationSelected.length && collaborationSelected.every(id => collaborationNodeIds.has(id)) ? { ...collaborationSource, nodeIds: collaborationSelected } : null;
+  function shareCanvasNodes(ids?: string[]) {
+    if (!collaborationSource) return;
+    if (ids?.some(id => !collaborationNodeIds.has(id))) { flashTip("请先保存所选节点，再发送"); return; }
+    collaboration.share({ ...collaborationSource, ...(ids?.length ? { nodeIds: ids } : {}), kind: ids?.length === 1 && active?.members.some(node => node.id === ids[0]) ? "artwork" : "workflow", title: active?.name });
+    setCtxMenu(null);
+  }
   const recoveryAccount=canvasAccountRef.current,recoveryEpoch=canvasContextEpochRef.current;
   const recoveryCurrent=()=>recoveryAccount===canvasAccountRef.current&&recoveryEpoch===canvasContextEpochRef.current&&recoveryScope.workspace===currentWorkspace()&&recoveryScope.project===(activeProjectRef.current?.key||"workspace");
   return (
@@ -9658,7 +9699,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         onChange={(e) => doUploadPend(e.target.files)}
       />
       {/* 顶栏:仅项目网格落地页显示(进入项目后用全屏悬浮挂件,见下) */}
-      {browsing && (
+      {browsing && !desktopAppearance && (
         <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
           {/* 左上:画布专属 logo(回主页) */}
           <Link href="/" className="flex min-w-0 items-center gap-2">
@@ -9676,6 +9717,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           </Link>
           {/* 右上:与画布右上角一致(分享暂无项目,故只放 模板/会员/头像) */}
           <div className="flex flex-none items-center gap-2">
+            <CanvasCollaborationActions source={null} />
             <button
               type="button"
               onClick={() => openModal("templates")}
@@ -10533,11 +10575,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     className="flex flex-none items-center gap-1 rounded-lg px-1 pr-0.5 transition-colors hover:bg-white/5"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <CachedImage
+                    {desktopAppearance ? <LayoutGrid className="h-5 w-5 text-muted-foreground" /> : <CachedImage
                       src={BRAND_CANVAS_LOGO}
                       alt={BRAND}
                       className="h-7 w-auto max-w-[108px] flex-none rounded-lg object-contain sm:max-w-[140px]"
-                    />
+                    />}
                     <ChevronDown
                       className={cn(
                         "h-4 w-4 flex-none text-muted-foreground transition-transform",
@@ -10599,6 +10641,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
               {/* 右上:分享(下载)/ 模板库 / 会员特惠+积分 / 头像 */}
               <div data-testid="canvas-top-actions" style={{ top: canvasSize.width > 0 && canvasSize.width < 768 ? 60 : 12 }} className="absolute right-3 z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-1.5 overflow-visible">
+                <CanvasCollaborationActions source={collaborationSource} selection={collaborationSelection} selectionPending={collaborationSelectionPending} title={active?.name} />
                 {!readOnly && canFeature("agent") && <CanvasAgentToggle open={assistantVisible} label={t("canvas.assistant.entry")} onClick={toggleAssistant} />}
                 {active && (
                   <button
@@ -10623,6 +10666,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 >
                   <ShoppingBag className="h-4 w-4" />
                 </button>
+                {!desktopAppearance && <>
                 {commerceVisible ? (
                   <button
                     type="button"
@@ -10668,6 +10712,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     />
                   )}
                 </div>
+                </>}
               </div>
 
               {/* 常用工具常驻底部，完整创建菜单与设置向上飞出。 */}
@@ -11253,6 +11298,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               );
               const menu = (
                 <ContextMenuSurface x={ctxMenu.cx} y={ctxMenu.cy} light={lightCanvas} onClose={() => setCtxMenu(null)}>
+                    {collaboration.available && collaborationSource && <>
+                      {ctxMenu.nodeId && collaborationNodeIds.has(ctxMenu.nodeId) && <Item label={collaborationSelected.length > 1 && collaborationSelected.includes(ctxMenu.nodeId) ? "发送所选节点给同事" : "发送作品给同事"} onClick={() => shareCanvasNodes(collaborationSelected.includes(ctxMenu.nodeId!) ? collaborationSelected : [ctxMenu.nodeId!])} />}
+                      <Item label="发送整个画布给同事" onClick={() => shareCanvasNodes()} />
+                      <Sep />
+                    </>}
                     {ctxMenu.nodeId && multiSel.length > 1 && multiSel.includes(ctxMenu.nodeId) && !batchContextSelection ? (
                       <><p className="canvas-ui-muted px-3 py-2 text-xs font-semibold">{L(`已选择 ${multiSel.length} 个节点`,`${multiSel.length} nodes selected`)}</p>
                         <Item label={t("canvas.delete")} disabled={mutationDisabled} danger onClick={() => batchDelete(multiSel)} /></>

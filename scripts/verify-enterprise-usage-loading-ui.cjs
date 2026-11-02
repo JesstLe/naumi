@@ -1,0 +1,38 @@
+// Complete EnterpriseConsole module, React and browser; auth/HTTP/child panels are fixture boundaries.
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),crypto=require('node:crypto'),{pathToFileURL}=require('node:url');
+const {build}=require('esbuild'),{chromium}=require('@playwright/test');
+const root=path.resolve(__dirname,'..'),out=path.resolve(process.argv[2]||'output/enterprise-usage-loading-ui');
+const report={actualEnterpriseConsole:true,actualNext:false,checks:[],pageErrors:[],external:[],loaded:[],supplierCalls:0};
+async function main(){fs.mkdirSync(out,{recursive:true});
+ const entry=`import React from 'react';import {createRoot} from 'react-dom/client';import {EnterpriseConsole} from './src/components/enterprise/enterprise-console';
+ window.__requests=[];window.__usageMounts=0;window.__scopeRevision=1;window.__roleAllowed=true;
+ window.history.replaceState=()=>{};window.history.pushState=()=>{};
+ const id='11111111-1111-1111-1111-111111111111';
+ const enterprise={id,name:'示例企业',owner_email:'owner@fixture.test',authorized_until:null,owner:true};
+ window.fetch=async(url)=>{window.__requests.push(String(url));if(String(url)==='/api/enterprise')return Response.json({enterprises:[enterprise]});if(String(url).startsWith('/api/enterprise/saas-overview'))return Response.json({tenantId:id,name:'示例企业',version:1,scope:'tenant',members:{visible:1,effective:1,expiring:0},activities:[],generatedAt:new Date().toISOString()});if(String(url).startsWith('/api/enterprise?'))return Response.json({enterprise,members:[{email:'member@fixture.test',name:'云杉',supervisor_email:enterprise.owner_email,role_id:null,role_name:'成员',level:999,employment:'permanent',version:window.__scopeRevision,membership_status:'active',membership_expires_at:null,banned:false,account_expires_at:null,canManage:false}],roles:[],actor:{owner:true,manageMembers:true,viewRecords:window.__roleAllowed,level:0,scopeLabel:'本企业'},ownerAvailable:99,entitlement:{name:null,seatLimit:null,featurePolicy:{}}});throw Error('UNEXPECTED_FIXTURE_REQUEST '+url)};
+ createRoot(document.getElementById('root')).render(<EnterpriseConsole/>);`;
+ const stubs={
+  '@/lib/site-control/client':`export const useSiteProfile=()=>({mode:'enterprise',policy:{brand:'示例企业'}});`,
+  '@/lib/auth-context':`export const useAuth=()=>({ready:true,user:{email:'owner@fixture.test',name:'老板'}});`,
+  '@/lib/supabase':`export const authHeader=async()=>({});`,
+  '@/components/admin/bi/user-usage':`import React from 'react';export function UserUsage({enterpriseId,refreshRevision}){React.useEffect(()=>{window.__usageMounts++},[]);return <div data-usage-stub data-enterprise={enterpriseId} data-revision={refreshRevision}>用户用量内容</div>}`,
+  './member-manager':`export const EnterpriseMemberManager=()=>null;`,
+  './enterprise-health':`export const EnterpriseHealthPanel=()=>null;`,
+  '@/components/saas/tenant-usage-panel':`export const TenantUsagePanel=()=>null;`,
+  '@/components/saas/creation-browser':`export const CreationBrowser=()=>null;`,
+  './enterprise-artworks':`export const EnterpriseArtworks=()=>null;`,
+  './enterprise-analytics':`export const EnterpriseAnalyticsPanel=()=>null;`,
+  './enterprise-saas-overview':`export const EnterpriseEntitlement=()=>null;export const EnterpriseSaasOverview=()=>null;`,
+ };
+ const result=await build({absWorkingDir:root,stdin:{contents:entry,sourcefile:'enterprise-usage-loading-fixture.tsx',resolveDir:root,loader:'tsx'},bundle:true,platform:'browser',format:'iife',jsx:'automatic',outfile:path.join(out,'fixture.js'),metafile:true,define:{'process.env.NODE_ENV':'"production"','process.env.NEXT_PUBLIC_PHONE_EMAIL_DOMAIN':'"phone.naumi.local"','process.env.NEXT_PUBLIC_USERNAME_EMAIL_DOMAIN':'"username.naumi.local"'},plugins:[{name:'fixture-boundaries',setup(b){b.onResolve({filter:/.*/},a=>Object.hasOwn(stubs,a.path)?({path:a.path,namespace:'fixture'}):null);b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:stubs[a.path],loader:'tsx',resolveDir:root}));}}]});
+ for(const file of Object.keys(result.metafile.inputs)){const p=path.resolve(root,file);if(p.startsWith(root)&&!p.includes('node_modules')&&fs.existsSync(p))report.loaded.push({path:p,sha256:crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex')});}
+ fs.writeFileSync(path.join(out,'index.html'),'<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="fixture.css"><style>body{margin:0;background:#f7f8fa;font:13px system-ui}*{box-sizing:border-box}button,input,select{font:inherit}</style><div id="root"></div><script src="fixture.js"></script></html>');
+ const browser=await chromium.launch({channel:'msedge',headless:true});try{const page=await browser.newPage({viewport:{width:1440,height:1050}});page.on('pageerror',e=>report.pageErrors.push(e.message));await page.route(/^https?:/,route=>{report.external.push(route.request().url());return route.abort()});await page.goto(pathToFileURL(path.join(out,'index.html')).href);await page.locator('[data-usage-stub]').waitFor();await page.waitForFunction(()=>window.__usageMounts===1);
+ assert.equal(await page.evaluate(()=>window.__requests.some(u=>u.includes('/saas-overview'))),false);report.checks.push('Dedicated overview does not request unused saas-overview metadata');
+ await page.getByRole('button',{name:'刷新数据',exact:true}).click();await page.waitForFunction(()=>document.querySelector('[data-usage-stub]')?.getAttribute('data-revision')==='1');assert.equal(await page.evaluate(()=>window.__usageMounts),1);report.checks.push('Parent refresh reaches UserUsage via revision without remounting current data');
+ await page.getByRole('button',{name:'系统设置',exact:true}).click();await page.getByRole('heading',{name:'公司资料',exact:true}).waitFor();await page.waitForFunction(()=>window.__requests.some(u=>u.includes('/saas-overview')));assert.equal(await page.getByRole('button',{name:'预览变更',exact:true}).isEnabled(),false);await page.getByRole('textbox',{name:'公司名称',exact:true}).fill('新的示例企业');await page.waitForFunction(()=>Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='预览变更')?.disabled===false);report.checks.push('Settings still requests required metadata and enables edits after it arrives');
+ await page.getByRole('button',{name:'经营概览',exact:true}).click();await page.locator('[data-usage-stub]').waitFor();const mounts=await page.evaluate(()=>window.__usageMounts);await page.evaluate(()=>window.__scopeRevision++);await page.getByRole('button',{name:'刷新数据',exact:true}).click();await page.waitForFunction(n=>window.__usageMounts>n,mounts);report.checks.push('Changed permission/member scope remounts usage instead of retaining the former scope');
+ await page.evaluate(()=>window.__roleAllowed=false);await page.getByRole('button',{name:'刷新数据',exact:true}).click();await page.locator('[data-usage-stub]').waitFor({state:'detached'});report.checks.push('Revoked view permission removes the usage component and retained data');
+ assert.deepEqual(report.pageErrors,[]);assert.deepEqual(report.external,[]);report.result='PASS';report.exit=0;fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify(report,null,2));const line='ENTERPRISE_USAGE_LOADING_UI=PASS CHECKS='+report.checks.length+' ACTUAL_CONSOLE=1 ACTUAL_NEXT=0 SUPPLIER_CALLS=0 PAGEERRORS=0 EXTERNAL=0 EXIT=0';fs.writeFileSync(path.join(out,'stdout.txt'),line+'\n');console.log(line);
+ }finally{await browser.close()}}
+main().catch(error=>{report.result='FAIL';report.exit=1;report.error=error.stack;fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify(report,null,2));console.error(error);process.exitCode=1});
