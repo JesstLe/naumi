@@ -29,3 +29,15 @@
 - 103只读现场确认当前实际版本 `0fcbbc8084b1c483cb66be541643142e90283da7` / build1793587166，Web/Worker来自独立 `codex/model-mapping-103-20261029`，canonical activeSiteControlReleaseId对应COMPLETE，revision339，双部署锁当前无持有。
 - 当前103包含未合main的后台并行生成/像素Dock修复，且该验证线AGENTS明确禁止反合main。不得用较旧主线制品覆盖掉在线增量；企业协作先合main，若发布103则仅main→103隔离线单向整合，遵循原103固定分支蓝绿特例。隔离线不推广47，不删除其worktree。
 - 新公开候选说明绑定BUILD_VERSION=1793594332，仅含同事聊天/文件/经批准独立画布/跨路由草稿与上传体验，无内部信息；本节不是已上线声明。线上认证、任务/账务、模型配置和蓝绿验收仍须刷新实测。
+
+## 2026-11-02 main已推、固定生产镜像已上传（未切流）
+
+- main普通合并后推送固定 `80ec8e5c14050942dd4501c7bdaf0f77c7633619`。首次push因同事刚推47验收文档而被拒，刷新并普通合入 `7ec5844d` 后正常push；没有强推或覆盖对方文档。
+- 103验证线工作树clean后，只做 `main → codex/model-mapping-103-20261029` 普通merge，得到并推送 `9d687bf07c244050c0b5423e36282225ac717654`。main没有接收隔离增量；当前103后台生成及像素Dock逻辑保持，其5项提交组件和6项像素接线检查通过。
+- 固定Linux生产build127.96秒exit0；SOURCE=9d687bf0、BUILD_VERSION=1793594332。Docker Desktop OCI index `sha256:17c32177250aafb1a3139127953c4a8a1f937d083d1e69c64a208077364993bb`，运行config `sha256:5889829df8f6d3e14efea3e1cca4a153310148c4072dcc95128e4b00823f24e4`，两者区别保留。
+- 完整镜像包260324954字节，SHA256 `432d5b62fbd7792b7b2b21de3ee17e7733d2078d0e67dc05284b3dd2d4c58a78`；35成员/30 OCI blob重开验证。构建与镜像大文件在E盘，不清理共享Docker资源。
+- 实际生产镜像新增验收8项：真实Next production SSR/JS hydration、原生口令登录、双context消息/SSE、真实UI分享→申请→批准→独立画布编辑重载、Desktop同Provider；pageerror0、外部浏览器请求0、账本0。不是原esbuild框架适配测试。准确命令 `node output/release103-collaboration-20261102/production-image-smoke/run.mjs`，`PRODUCTION_NEXT_COLLABORATION=PASS checks=8 cleanup_owned=2`、exit0；自有Web/PG/匿名卷/network/browser均清理。初始网络/定位脚手架差异保留日志，无产品改动凑通过。
+- 候选包和1521个固定运维脚本已上传103并经远端hash校验，结果 `STAGED_NOT_DEPLOYED`。准备spec结果 `PREPARED_NOT_DEPLOYED`，RID `release103-mapping-collaboration-20261102-r1`，新回环port13110；未调用run，不启动候选、不drain旧槽、不切网关、不更新canonical活动指针。
+- 最新只读103现场仍为0fcbbc80/build1793587166、model117、pending publication0、live lease0、当前Worker lastTick complete/unknown0；当前siteControl前任COMPLETE/revision339，双锁无持有只是观测，不作发布持锁证明。
+- 已向用户给出两个异步选择：本批继续叠加103验证线或仅合main；公开说明文案取舍。尚未收到选择时，线上继续原版本。后续实际发布须取得全程双锁、刷新canonical/实例/任务、候选真实浏览器前后验收、切流/排空/旧槽停止与最终版本核对，不能拿本地8项替代线上门禁。
+- 本次准备与验证汇总在 `output/release103-collaboration-20261102/`；对应生产截图在 `E:/Workspace/naumi-task-evidence/enterprise-collaboration-20261102/production-image/3feddb94-df42-4d3e-9456-40dad1dd72e9/`，父已打开两张并核对。
