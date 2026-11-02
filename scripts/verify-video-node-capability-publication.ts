@@ -35,9 +35,10 @@ async function main(){
   assert.equal(plan.missing.length,0);assert.equal(new Set(plan.patches.map(p=>p.upstreamId)).size,32);
   assert.deepEqual(plan.config.providers,old.config.providers);assert.deepEqual(plan.config.publicModels,old.config.publicModels);assert.deepEqual(plan.config.bindings,old.config.bindings);
   async function publish(config:ModelConfig,expectedVersion:number){
-   const draft=await f.repo.draft('capability-fixture');
-   const saved=await f.repo.saveDraft({id:draft.id,expectedRevision:draft.revision,actor:'capability-fixture',config});
-   const staged=await f.repo.stage({id:randomUUID(),draftId:saved.id,expectedRevision:saved.revision,expectedVersion,actor:'capability-fixture',reason:'Isolated capability publication'});
+   const actor='capability-fixture:'+expectedVersion;
+   const draft=await f.repo.draft(actor);
+   const saved=await f.repo.saveDraft({id:draft.id,expectedRevision:draft.revision,actor,config});
+   const staged=await f.repo.stage({id:randomUUID(),draftId:saved.id,expectedRevision:saved.revision,expectedVersion,actor,reason:'Isolated capability publication'});
    return f.repo.markApplied(staged.id,staged.digest);
   }
   const next=await publish(plan.config,old.version);assert(next.version>old.version);
