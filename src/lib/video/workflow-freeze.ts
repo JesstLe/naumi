@@ -30,9 +30,15 @@ export async function withFrozenWorkflowStage<T>(actor:string,stage:FrozenWorkfl
   return runFrozenLegacyBilling(billing,()=>runPrivateVideoProvider({config:stage.legacy!,manifest:{version:1,kind:"comfyui",inputs:[]}},action));
 }
 export async function freezeVideoWorkflow(actor:string,plan:VideoWorkflowPlan){
-  const managed=await modelConfigurationEnabled(),admin=managed?await getModelAdministration():null,billing=await(await getBillingRuntime()).config.current(),snapshot=admin?await admin.repo.current():null,executor=admin?await getModelExecutor():null;
+  const billing=await(await getBillingRuntime()).config.current();
   const result:Record<string,FrozenWorkflowStage>={};
+  if(plan.nodes.every(node=>node.existingArtworkId)){
+    for(const node of plan.nodes)result[node.id]={billingVersion:billing.version,texts:{},quote:{version:billing.version,credits:0,authorizedCredits:0}};
+    return result;
+  }
+  const managed=await modelConfigurationEnabled(),admin=managed?await getModelAdministration():null,snapshot=admin?await admin.repo.current():null,executor=admin?await getModelExecutor():null;
   for(const node of plan.nodes){
+    if(node.existingArtworkId){result[node.id]={billingVersion:billing.version,texts:{},quote:{version:billing.version,credits:0,authorizedCredits:0}};continue;}
     const request=node.request,values:Record<string,string>={};
     for(const input of request.orderedInputs||[])if(input.kind==="text"&&!input.nodeId.startsWith("inline:")){const id=input.nodeId.replace(/^text:/,"");values[id]=await requireOwnedVideoText(actor,id);input.value=values[id];}
     for(const shot of request.shots||[])if(shot.textNodeId){const id=shot.textNodeId.replace(/^text:/,"");values[id]=await requireOwnedVideoText(actor,id);shot.prompt=values[id];}

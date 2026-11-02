@@ -5,7 +5,7 @@ import {ModelConfigError,type ModelConfig} from "./types";
 
 export type VideoCapabilityReviewRow = {
   publicId:string; label:string; status:"ready"|"current"|"conflict";
-  beforeModes:string[]; afterModes:string[]; fields:string[]; reason?:string;
+  beforeModes:string[]; afterModes:string[]; beforeMultiShot?:boolean; afterMultiShot?:boolean; fields:string[]; reason?:string;
 };
 export type VideoCapabilityReview = {version:number; rows:VideoCapabilityReviewRow[]; publicIds:string[]; reviewDigest:string};
 
@@ -16,7 +16,7 @@ export function reviewVideoCapabilityUpgrade(config:ModelConfig,version:number):
     const model=config.publicModels.find(model=>model.id===entry.publicId);
     if(!model)continue;
     const upstream=config.upstreamModels.find(upstream=>upstream.id===model.target.id);
-    const row={publicId:entry.publicId,label:model.label,beforeModes:upstream?.capabilities.video?.modes||[],afterModes:entry.definition.modes||[]};
+    const row={publicId:entry.publicId,label:model.label,beforeModes:upstream?.capabilities.video?.modes||[],afterModes:entry.definition.modes||[],beforeMultiShot:upstream?.capabilities.video?.supportsMultiShot===true,afterMultiShot:entry.definition.supportsMultiShot===true};
     try{
       const plan=makeVideoFamilyCapabilityUpgradePlan(config,[entry]);
       if(plan.missing.length||plan.skipped.length){rows.push({...row,status:"conflict",fields:[],reason:"现有通道与已核对定义不一致"});continue;}

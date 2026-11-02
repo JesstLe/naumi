@@ -195,6 +195,15 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
         return {status:response.status,body:await response.json()};
       },
       async mediaTemporaryExists(id:string){if(!/^[0-9a-f-]{36}$/.test(id))throw new Error("Invalid fixture media job ID");return stat(path.join(env.MEDIA_JOB_DIR!,id)).then(()=>true).catch(()=>false);},
+      async failOwnedQueuedAssembly(id:string){
+        if(!/^[0-9a-f-]{36}$/i.test(id))throw new Error("Invalid fixture assembly ID");
+        const row=(await sql.query("SELECT status,request FROM app_video_media_jobs WHERE email=$1 AND id=$2",[seed.accounts.a,id])).rows[0];
+        if(row?.status!=="queued"||row.request.action!=="concat"||row.request.source!=="workflow")throw new Error("Owned queued fixture assembly required");
+        // Real local filesystem fault: the actual media engine cannot create its
+        // output directory beneath this file. No task success/state is fabricated.
+        const directory=path.join(env.MEDIA_JOB_DIR!,id,"fixture-sandbox");await mkdir(directory,{recursive:true});
+        await writeFile(path.join(directory,"work"),"owned fixture assembly failure",{flag:"wx"});
+      },
       async mediaWorkerMode(mode:"drain"|"resume"){const response=await fetch(`${mediaOrigin}/${mode}`,{method:"POST",headers:{authorization:`Bearer ${mediaSecret}`},signal:AbortSignal.timeout(5000)});if(!response.ok)throw new Error("Fixture media control failed");return response.json();},
       async blockVideoOutput(id:string,index:number,extension:string){
         if(!/^vid-[0-9a-f-]{36}$/.test(id)||!Number.isSafeInteger(index)||index<1||!['wav','png','mp4'].includes(extension))throw new Error("Invalid fixture storage fault");

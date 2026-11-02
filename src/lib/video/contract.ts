@@ -135,6 +135,11 @@ export function normalizeVideoInput(raw:Record<string,unknown>,cap:ResolvedVideo
   if(input.shots?.length){
     if(cap.supportsMultiShot!==true||cap.maxShots==null||input.shots.length>cap.maxShots)reject("SHOTS_UNSUPPORTED","分镜能力或数量限制未满足","shots");
     if(input.durationSeconds<0||Math.abs(input.shots.reduce((n,shot)=>n+shot.durationSeconds,0)-input.durationSeconds)>0.001)reject("SHOT_DURATION_MISMATCH","分镜时长之和必须等于本次视频时长","shots");
+    for(const shot of input.shots){
+      if(cap.maxShotPromptChars!=null&&shot.prompt.length>cap.maxShotPromptChars)reject("SHOT_PROMPT_TOO_LONG",`单镜头描述超过 ${cap.maxShotPromptChars} 字，未截断或提交`,"shots");
+      if(cap.minShotDurationSeconds!=null&&shot.durationSeconds<cap.minShotDurationSeconds)reject("SHOT_DURATION_UNSUPPORTED",`单镜头时长至少为 ${cap.minShotDurationSeconds} 秒`,"shots");
+      if(cap.shotDurationStep!=null&&Math.abs(shot.durationSeconds/cap.shotDurationStep-Math.round(shot.durationSeconds/cap.shotDurationStep))>1e-8)reject("SHOT_DURATION_UNSUPPORTED",`单镜头时长须为 ${cap.shotDurationStep} 秒的倍数`,"shots");
+    }
   }
   const providerOptions:Record<string,string|number|boolean|null>={},omittedProviderOptions:string[]=[];
   for(const key of Object.keys(input.providerOptions||{}))if(!cap.providerOptions?.[key])reject("UNKNOWN_PROVIDER_OPTION",`模型未声明参数${key}`,"providerOptions");

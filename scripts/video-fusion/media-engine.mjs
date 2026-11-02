@@ -25,7 +25,12 @@ export function parseProbe(json){
   const audios=streams.filter(item=>item.codec_type==='audio');
   const durations=[Number(value.format?.duration),...streams.map(item=>Number(item.duration))].filter(n=>Number.isFinite(n)&&n>0);
   const rate=String(video?.avg_frame_rate||'0/1').split('/').map(Number);
-  return {durationSeconds:durations.length?Math.max(...durations):0,width:Number(video?.width)||0,height:Number(video?.height)||0,
+  const timeBase=String(video?.time_base||'0/1').split('/').map(Number),clock=String(video?.tags?.DURATION||video?.tags?.duration||'').match(/^(\d+):(\d+):(\d+(?:\.\d+)?)$/);
+  // Container duration may include an audio tail beyond the final video frame.
+  // Keep its existing meaning while exposing a separately verified video length.
+  const videoDurations=[Number(video?.duration),Number(video?.duration_ts)*timeBase[0]/timeBase[1],clock?Number(clock[1])*3600+Number(clock[2])*60+Number(clock[3]):0,Number(video?.nb_frames)*rate[1]/rate[0]];
+  const videoDurationSeconds=videoDurations.find(n=>Number.isFinite(n)&&n>0)??null;
+  return {durationSeconds:durations.length?Math.max(...durations):0,videoDurationSeconds,width:Number(video?.width)||0,height:Number(video?.height)||0,
     videoCodec:video?.codec_name||null,audioCodecs:audios.map(item=>item.codec_name||'unknown'),formatName:String(value.format?.format_name||''),
     frameRate:rate[1]&&rate[0]>0?rate[0]/rate[1]:null};
 }
@@ -94,8 +99,19 @@ export function presetMediaCommand(request,inputs,outputs,probes){
     }
     case 'concat':{
       if(probes.length<2||probes.some(p=>!p.videoCodec))throw new Error('CONCAT_VIDEO_INPUTS_REQUIRED');
-      const audio=probes.every(p=>p.audioCodecs.length>0),width=first.width-widthParity(first.width),height=first.height-widthParity(first.height);
-      const chains=probes.map((_p,i)=>`[${i}:v:0]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=25,setpts=PTS-STARTPTS[v${i}]${audio?`;[${i}:a:0]aformat=sample_rates=48000:channel_layouts=stereo,asetpts=PTS-STARTPTS[a${i}]`:''}`);
+      // The admission path may hold a legacy cached probe; the Worker always
+      // probes owned bytes again and supplies the stream-specific duration.
+      const durations=probes.map(p=>p.videoDurationSeconds===undefined?p.durationSeconds:p.videoDurationSeconds);
+      if(durations.some(seconds=>!Number.isFinite(seconds)||seconds<=0))throw new Error('CONCAT_VIDEO_DURATION_REQUIRED');
+      const audio=probes.some(p=>p.audioCodecs.length>0),width=first.width-widthParity(first.width),height=first.height-widthParity(first.height);
+      const chains=probes.map((probe,i)=>{
+        const seconds=durations[i],video=`[${i}:v:0]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=25,setpts=PTS-STARTPTS[v${i}]`;
+        if(!audio)return video;
+        // Bound both real and synthetic audio to this video segment. An unbound
+        // anullsrc/apad would never end; an overlong source would delay every cut.
+        const sound=probe.audioCodecs.length?`[${i}:a:0]asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo,apad,atrim=duration=${seconds}`:`anullsrc=r=48000:cl=stereo,atrim=duration=${seconds}`;
+        return `${video};${sound},asetpts=PTS-STARTPTS[a${i}]`;
+      });
       const joined=probes.map((_p,i)=>`[v${i}]${audio?`[a${i}]`:''}`).join('');
       return [...inputs.flatMap((_p,i)=>['-i',`asset:${i}`]),'-filter_complex',`${chains.join(';')};${joined}concat=n=${inputs.length}:v=1:a=${audio?1:0}[v]${audio?'[a]':''}`,'-map','[v]',...(audio?['-map','[a]']:[]),...encode,'output:0'];
     }

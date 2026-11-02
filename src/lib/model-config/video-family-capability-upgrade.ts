@@ -1,5 +1,6 @@
 import smokePresets from "./video-family-presets.json";
 import documentedV2 from "./video-family-capabilities.json";
+import documentedV3 from "./video-family-multimodal.json";
 import type { VideoModelDefinition, VideoWireProfile } from "../video/capability-schema";
 import { ModelConfigError, type ModelConfig, type UpstreamModel } from "./types";
 
@@ -103,6 +104,7 @@ export function makeVideoFamilyCapabilityUpgradePlan(
 
     const patchIdentity = { ...identity, upstreamId: row.id };
     const priorDocumented = documentedV2.items.find(item => item.publicId === entry.publicId && item.providerId === entry.providerId && item.model === entry.model);
+    const priorMultimodal = documentedV3.items.find(item => item.publicId === entry.publicId && item.providerId === entry.providerId && item.model === entry.model);
     const candidates: VideoFamilyCapabilityUpgradePatch[] = [
       { ...patchIdentity, field: "capabilities.video", before: structuredClone(smoke.definition) as VideoModelDefinition, after: structuredClone(entry.definition) },
       { ...patchIdentity, field: "capabilities.maxReferenceImages", before: smoke.definition.limits?.images ?? 0, after: entry.definition.limits?.images ?? 0 },
@@ -114,7 +116,9 @@ export function makeVideoFamilyCapabilityUpgradePlan(
       const previousValue = patch.field === "capabilities.video" ? priorDocumented?.definition
         : patch.field === "capabilities.maxReferenceImages" ? priorDocumented?.definition.limits?.images
         : priorDocumented?.profile;
-      if (!same(current, patch.before) && !(priorDocumented && same(current, previousValue))) {
+      const multimodalValue = patch.field === "capabilities.video" ? priorMultimodal?.definition
+        : patch.field === "capabilities.maxReferenceImages" ? priorMultimodal?.definition.limits?.images : priorMultimodal?.profile;
+      if (!same(current, patch.before) && !(priorDocumented && same(current, previousValue)) && !(priorMultimodal && same(current,multimodalValue))) {
         conflict(entry.publicId, `upstreamModels.${row.id}.${patch.field}`, "管理员已改动此字段，不匹配原始或已发布版本");
       }
       // Remember the actual starting field (smoke or the immutable v2 release),

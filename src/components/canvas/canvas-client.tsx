@@ -44,6 +44,8 @@ import {ImagePixelSize} from "./image-pixel-size";
 import {VideoGenerationNode} from "./video/generation-node";
 import {generateCanvasVideoBatch,hasCanvasVideoBatch} from "@/lib/video/canvas-batch-client";
 import {VideoSettingsDialog,type VideoNodeDraft} from "./video/settings-dialog";
+import {StoryboardPanel,StoryboardPlanButton} from "./video/storyboard-panel";
+import {storyboardPlanningRequest} from "@/lib/video/storyboard-client";
 import {VideoNodeToolbar} from "./video/node-toolbar";
 import {VideoResultDock} from "./video/result-dock";
 import {useVideoCatalog} from "./video/use-video-catalog";
@@ -2133,6 +2135,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [expandAnchor, setExpandAnchor] = useState("center");
   // 持久视频节点与公开能力目录；规范请求经独立节点设置面板提交。
   const [videoDockAdvancedId,setVideoDockAdvancedId]=useState<string|null>(null);
+  const [storyboardPanel,setStoryboardPanel]=useState<{projectKey:string;nodeIds:string[]}|null>(null);
   const [videoHistoryId,setVideoHistoryId]=useState<string|null>(null);
   const videoResultAttempts=useRef(new Map<string,{operationId:string;operations:Record<string,unknown>[];from:string|null;to:string|null}>());
   const [videoMedia,setVideoMedia]=useState<{id:string;projectKey:string;initial:VideoPlayerAction}|null>(null);
@@ -2198,6 +2201,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   useEffect(() => {
     if (assistantProject.current.key === activeKey && assistantProject.current.email === user?.email) return;
     assistantProject.current = { key: activeKey, email: user?.email };
+    setStoryboardPanel(null);
     assistantRequestEpoch.current += 1;
     assistantController.current?.abort();
     assistantSessionId.current=browserRandomUUID();
@@ -5835,12 +5839,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     finally{if(assistantUploadToken.current===token){assistantUploadToken.current=null;setAssistantUploading(false);}}
   }
 
-  async function sendAssistantMessage(continueText = false) {
+  function planTextStoryboard(source:CanvasTextNode){
+    if(readOnly||assistantBusy||assistantUploading||source.projectKey!==activeKey||!canFeature("agent")||!canFeature("video"))return;
+    try{const prepared=storyboardPlanningRequest(source,locale==="en");setPropertiesOpen(false);setOcrArtworkId(null);setAssistantArtworkId(source.id);discloseAssistant(true);void sendAssistantMessage(false,prepared);}
+    catch(cause){flashTip(cause instanceof Error?cause.message:"分镜规划未开始");}
+  }
+
+  async function sendAssistantMessage(continueText = false, prepared?:ReturnType<typeof storyboardPlanningRequest>) {
     const continueFromTurnId = continueText ? assistantContinueTurn : null;
     if (continueText && !continueFromTurnId) return;
-    const text = continueText ? "继续输出" : assistantInput.trim();
+    const text = prepared?.text ?? (continueText ? "继续输出" : assistantInput.trim());
     if (assistantBusy || assistantUploadToken.current || !text) return;
-    const references=currentAssistantReferences();
+    const references=prepared?[]:currentAssistantReferences();
     const source = references[0];
     const anchorId=source?.id||"";
     const referencesKey=JSON.stringify(references.map(art=>art.id));
@@ -5852,7 +5862,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     ];
     const attempt = reuseAttempt ? previousAttempt : {
       input: text, anchorId, referencesKey, history,
-      body: JSON.stringify({ mode: "agent", continueText, continueFromTurnId, skill: assistantSkill ? { id: assistantSkill.id, revision: assistantSkill.revision } : null, sessionId: assistantSessionId.current, turnId: browserRandomUUID(), anchorId, videoNodeId:videoNodesStore.getNode(assistantArtworkId||selectedId||"")?.id,textNodeId:textNodes.find(node=>node.id===(assistantArtworkId||selectedId))?.id, projectKey: activeKey||"workspace", contextIds: references.map(artwork=>artwork.id), messages: continueText ? [] : history.slice(-12).map(({ role, content }) => ({ role, content: content.slice(0, 4000) })), imageModelId: chosenFeatureModel("canvas.image") || genModel, ratio: genRatio, resolution: genResolution, quality: genQuality }),
+      body: JSON.stringify({ mode: "agent", continueText, continueFromTurnId, skill: !prepared&&assistantSkill ? { id: assistantSkill.id, revision: assistantSkill.revision } : null, sessionId: assistantSessionId.current, turnId: browserRandomUUID(), anchorId, videoNodeId:prepared?undefined:videoNodesStore.getNode(assistantArtworkId||selectedId||"")?.id,textNodeId:prepared?.textNodeId??textNodes.find(node=>node.id===(assistantArtworkId||selectedId))?.id, projectKey: activeKey||"workspace", contextIds: references.map(artwork=>artwork.id), messages: continueText ? [] : history.slice(-12).map(({ role, content }) => ({ role, content: content.slice(0, 4000) })), imageModelId: chosenFeatureModel("canvas.image") || genModel, ratio: genRatio, resolution: genResolution, quality: genQuality }),
     };
     assistantRetry.current = attempt;
     const epoch = ++assistantRequestEpoch.current;
@@ -5871,12 +5881,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     let recoveryTurn: string | null = null;
     setAssistantContinueTurn(null);
     const artifactIds = new Set<string>();
+    const plannedNodeIds = new Set<string>();
     let videoProjectResult:{key:string;nodeId:string}|undefined;
     const acceptedVideoProject=activeKey;
     let orbFailureCode: string | undefined;
     // Show this turn immediately, including image/session preparation before SSE opens.
     setAssistantTurns([...history,{id:`as-a-${Date.now()}`,role:"assistant",content:""}]);
-    setAssistantInput("");
+    if(!prepared)setAssistantInput("");
     try {
       const response = await privateFetch("/api/canvas/assistant", {
         method: "POST",
@@ -5944,6 +5955,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             setAssistantSteps(current => reduceAgentProgress(current, { ...data, type }, locale === "en"));
           } else if(type==="video_nodes"&&Array.isArray(data.nodes)){
             const nodes=data.nodes as {id:string;projectKey:string}[];
+            if(prepared)for(const node of nodes)if(node.projectKey===acceptedVideoProject)plannedNodeIds.add(node.id);
             if(acceptedVideoProject){if(nodes.some(node=>node.projectKey===acceptedVideoProject))await videoNodesStore.refresh();}
             else if(nodes[0])videoProjectResult={key:nodes[0].projectKey,nodeId:nodes[0].id};
           } else if(type==="text_nodes"&&Array.isArray(data.nodes)){
@@ -5982,11 +5994,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       assistantSessionId.current = serverSessionId;
       setAssistantOutcome("done");
       orbCue({ type: "done" });
+      if(prepared&&acceptedVideoProject&&plannedNodeIds.size){await videoNodesStore.refresh();if(epoch===assistantRequestEpoch.current)setStoryboardPanel({projectKey:acceptedVideoProject,nodeIds:[...plannedNodeIds]});}
       if(videoProjectResult&&!activeProjectRef.current?.key){await videoNodesStore.refresh();if(epoch===assistantRequestEpoch.current){setCreatingNew(false);setBrowsing(false);setActiveKey(videoProjectResult.key);setSelectedId(videoProjectResult.nodeId);}}
     } catch (error) {
       if (epoch !== assistantRequestEpoch.current) return;
       if(acceptedSession!==assistantSessionId.current)return;
-      if (assistantRetry.current === attempt && !recoveryTurn && !receivedText) setAssistantInput(continueText ? "" : text);
+      if (!prepared && assistantRetry.current === attempt && !recoveryTurn && !receivedText) setAssistantInput(continueText ? "" : text);
       setAssistantContinueTurn(controller.signal.aborted ? null : recoveryTurn);
       assistantSessionId.current=serverSessionId;
       const failureCode = orbFailureCode || classifyAgentFailure(error).code;
@@ -12192,6 +12205,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               </div>
             )}
 
+          {storyboardPanel&&storyboardPanel.projectKey===activeKey&&!readOnly&&canFeature("video")&&<StoryboardPanel
+            key={JSON.stringify([user?.email,targetEmail,storyboardPanel])} projectKey={storyboardPanel.projectKey} scope={JSON.stringify([user?.email,targetEmail])}
+            nodes={videoNodesStore.nodes} initialNodeIds={storyboardPanel.nodeIds} request={privateFetchRaw} english={locale==='en'}
+            onClose={()=>setStoryboardPanel(null)} onEditNode={id=>{setStoryboardPanel(null);openVideoEditor(id);}}
+            onChanged={run=>{void videoNodesStore.refresh();const ids=(run.assembly?.outputs||[]).map(output=>output.artworkId).filter((id):id is string=>!!id);if(ids.length)void mergeWorks(ids);}}/>}
           {selectedVideo&&multiSel.length<=1&&!propertiesOpen&&canFeature("video")&&<VideoSettingsDialog
             key={`${user?.email}:${targetEmail}:${activeKey}:${selectedVideo.id}`} node={selectedVideo} presentation="dock"
             dockRef={panelRef} dockStyle={dockStyle??{left:12,bottom:12,maxHeight:"60%"}} draftScope={JSON.stringify([user?.email,targetEmail,activeKey])} advanced={videoDockAdvancedId===selectedVideo.id} onCloseAdvanced={()=>setVideoDockAdvancedId(null)}
@@ -12200,6 +12218,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             onCancel={()=>{if(selectedVideo.lastTaskId)void videoTaskStore.cancel(selectedVideo.lastTaskId).catch(error=>flashTip(error.message));}}
             email={targetEmail||user?.email} models={videoCatalog} catalogLoading={videoModelCatalog.loading} catalogError={videoModelCatalog.error} onRetryCatalog={videoModelCatalog.refresh}
             choices={videoInputChoices} light={lightCanvas} readOnly={readOnly||!nodeSettingsReady||isNodeLocked(selectedVideo.id)} onClose={()=>{setVideoDockAdvancedId(null);setSelectedId(null);}}
+            onStoryboard={()=>setStoryboardPanel({projectKey:selectedVideo.projectKey,nodeIds:[selectedVideo.id]})}
             onSave={draft=>saveVideoDraft(selectedVideo.id,draft)} onGenerate={(draft,quote,onPersisted,count)=>generateVideoDraft(selectedVideo.id,draft,quote,onPersisted,count)}
             onOptimize={async(prompt,signal)=>{const response=await privateFetchRaw('/api/prompt-assist',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({idea:prompt,mode:'optimize',tool:'canvas-video'}),signal});const data=await readJsonSafe(response);if(!response.ok||typeof data?.prompt!=='string')throw new Error(data?.error||'提示词优化失败，原文已保留');return data.prompt;}}
             onImport={async files=>{try{const choices=await videoAssetStore.upload(files,selectedVideo.projectKey);await mergeWorks(choices.map(choice=>choice.nodeId));return choices;}catch(cause){if(cause instanceof VideoAssetImportError&&cause.choices.length)await mergeWorks(cause.choices.map(choice=>choice.nodeId));throw cause;}}}
@@ -12653,6 +12672,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 <p className="canvas-ui-error px-12 pb-2 text-xs font-medium">{textError}</p>
               )}
               <CanvasComposerFooter testId="text-node-dock-footer" controls={<>
+                {canFeature("agent")&&canFeature("video")&&<StoryboardPlanButton english={locale==='en'} disabled={!nodeSettingsReady||assistantBusy||assistantUploading||isNodeLocked(selectedText.id)||selectedText.status!=="completed"||!selectedText.content.trim()} onClick={()=>planTextStoryboard(selectedText)}/>}
                 <TextModelSelect feature="canvas.text-generate" compact dark={!lightCanvas} direction="up" />
                 <CanvasPromptOptimizer contextKey={JSON.stringify([user?.email, targetEmail, activeKey, selectedText.id])} prompt={textPrompt}
                   disabled={readOnly || !nodeSettingsReady || selectedText.status === "generating" || assistBusy || isNodeLocked(selectedText.id)} english={locale === "en"}
