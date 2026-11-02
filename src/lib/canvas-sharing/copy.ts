@@ -1,5 +1,7 @@
 import "server-only";
 import type { PoolClient } from "pg";
+import { writeCopiedImagePromptTx } from "../canvas/image-prompt-repository";
+import { remapImagePromptDocument } from "../canvas/image-prompt-schema";
 import { saveVideoNodeTx } from "../canvas/video-node-repository";
 import { saveDirectorNodeTx } from "../canvas/director-node-repository";
 import { saveCharacterNodeTx } from "../canvas/character-node-repository";
@@ -96,6 +98,10 @@ export async function createShareCopyTx(tx: PoolClient, shareId: string, recipie
         } }
         await saveTimelineNodeTx(tx, recipient, { ...base, timeline: p, adopted: null }, key); break;
       }
+    }
+    if (node.imagePrompt) {
+      if(node.imagePrompt.activeKeys.some(key=>!mapping.has(key.slice(5))))fail("SHARE_REFERENCE_MISSING","分享引用未完整冻结",422);
+      await writeCopiedImagePromptTx(tx,recipient,id,key,remapImagePromptDocument(node.imagePrompt,mapping,{detached:snapshot.source.kind==="artwork"}),{scopeKind:"tenant",tenantId:enterpriseId});
     }
     if (node.settings) await tx.query("INSERT INTO app_canvas_node_settings(email,node_id,kind,settings) VALUES($1,$2,$3,$4::jsonb)", [recipient, id, node.kind === "text" ? "text" : "image", JSON.stringify(node.settings)]);
     await creationLinkTx(tx, creation, recipient, node.kind === "artwork" ? "artwork" : `${node.kind}-node`, id, "output");

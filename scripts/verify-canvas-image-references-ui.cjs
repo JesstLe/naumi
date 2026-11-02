@@ -72,10 +72,10 @@ async function main(){
   await page.screenshot({path:path.join(out,'reference-only-desktop.png'),fullPage:true});
   await page.getByLabel('图1用途').selectOption('edit-target');await page.getByLabel('图1用途').selectOption('reference');await expect(page.getByLabel('图1用途')).toHaveValue('reference');await prompt.fill('');
   await page.getByRole('button',{name:'节点 A',exact:true}).click();await page.getByLabel('图1用途').selectOption('edit-target');requests.length=0;
-  await prompt.fill('按钮引用');await page.getByRole('button',{name:'引用图片',exact:true}).click();await page.getByRole('listbox').getByRole('option').nth(1).click();await expect(prompt).toHaveValue('按钮引用【图2】');
+  await prompt.fill('按钮引用');await page.getByRole('button',{name:'引用图片',exact:true}).click();await page.getByRole('listbox').getByRole('option').nth(1).click();await expect.poll(()=>page.evaluate(()=>qa.state().prompt)).toBe('按钮引用【图2】');
   await prompt.fill('@');await prompt.press('Escape');await expect(page.getByRole('listbox')).toHaveCount(0);
-  await prompt.fill('@风');await prompt.dispatchEvent('compositionstart');await expect(page.getByRole('listbox')).toHaveCount(0);await prompt.dispatchEvent('keydown',{key:'Enter',isComposing:true});await expect(prompt).toHaveValue('@风');await prompt.dispatchEvent('compositionend');await expect(page.getByRole('listbox').getByRole('option')).toHaveCount(1);
-  await prompt.fill('采用@场景');await page.getByRole('listbox').getByRole('option').click();await expect(prompt).toHaveValue('采用【图2】');
+  await prompt.fill('@风');await prompt.dispatchEvent('compositionstart');await expect(page.getByRole('listbox')).toHaveCount(0);await prompt.dispatchEvent('keydown',{key:'Enter',isComposing:true});await expect.poll(()=>page.evaluate(()=>qa.state().prompt)).toBe('@风');await prompt.dispatchEvent('compositionend');await expect(page.getByRole('listbox').getByRole('option')).toHaveCount(1);
+  await prompt.fill('采用@场景');await page.getByRole('listbox').getByRole('option').click();await expect.poll(()=>page.evaluate(()=>qa.state().prompt)).toBe('采用【图2】');
   await page.getByLabel('图2用途').selectOption('edit-target');await page.getByLabel('图1用途').selectOption('insert');await page.getByLabel('图3用途').selectOption('style');
   assert.deepEqual(await page.locator('[data-reference-number]').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('data-reference-number'))),['2','1','3']);
   await prompt.fill('把【图1】的产品放到【图2】，采用【图3】的光线');await page.getByRole('button',{name:'定位图2来源节点'}).click();assert.equal(await page.evaluate(()=>qa.state().located),'source-1');
@@ -89,11 +89,11 @@ async function main(){
   await page.getByRole('button',{name:'添加图片',exact:true}).click();await expect(page.locator('[data-reference-number="4"]')).toBeVisible();await expect(page.locator('[data-reference-number="2"]')).toHaveCount(0);
   await page.getByLabel('图4用途').selectOption('edit-target');await prompt.fill('保留【图4】，采用【图3】的风格');await page.getByRole('button',{name:'生成',exact:true}).click();await expect.poll(()=>requests.filter(r=>r.route==='/api/imagegen').length).toBe(2);
   assert.equal(requests.filter(r=>r.route==='/api/imagegen').at(-1).request.inputs[0].reference.title,'上传图片.png');
-  await page.getByRole('button',{name:'节点 B',exact:true}).click();await expect(prompt).toHaveValue('');await page.getByRole('button',{name:'节点 A',exact:true}).click();await expect(prompt).toHaveValue('保留【图4】，采用【图3】的风格');
+  await page.getByRole('button',{name:'节点 B',exact:true}).click();await expect.poll(()=>page.evaluate(()=>qa.state().prompt)).toBe('');await page.getByRole('button',{name:'节点 A',exact:true}).click();await expect.poll(()=>page.evaluate(()=>qa.state().prompt)).toBe('保留【图4】，采用【图3】的风格');
   await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:path.join(out,'mobile.png'),fullPage:true});
-  await prompt.fill('@');await prompt.press('ArrowDown');await prompt.press('Enter');await expect(prompt).toHaveValue('【图1】');
+  await prompt.fill('@');await prompt.press('ArrowDown');await prompt.press('Enter');await expect.poll(()=>page.evaluate(()=>qa.state().prompt)).toBe('【图1】');
   const beforeInvalid=requests.length;assert.equal(await page.evaluate(async()=>{const form=new FormData();form.set('canvasReferences','not-json');try{await qa.submitForm(form,'A',undefined,{owner:'fixture@example.test',project:'fixture'});return null}catch(error){return error.accepted}}),false);assert.equal(requests.length,beforeInvalid);
-  await page.reload();await expect(prompt).toHaveValue('【图1】');await expect(page.getByRole('alert')).toHaveCount(0);
+  await page.reload();await expect.poll(()=>page.evaluate(()=>qa.state().prompt)).toBe('【图1】');await expect(page.getByRole('alert')).toHaveCount(0);
   await page.evaluate(()=>qa.readOnly(true));await expect(page.getByLabel('图1用途')).toBeDisabled();await expect(page.getByRole('button',{name:'移除图1',exact:true})).toHaveCount(0);
   assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'receipt.json'),JSON.stringify({fixture:true,supplierCalls:0,checks:['default original role unlocked','single reference-only submit','original can be reselected and demoted','mention picker','reference button','IME and escape','target reorder','source locate','roles and actual image bytes','preview/submit identity','dangling reference blocks submit','removed numbers not reused','uploaded reference target','node drafts','keyboard','mobile width','preflight not accepted','refresh missing upload target','read-only'],requests,errors},null,2));
   console.log('PASS canvas reference UI and transport fixture; supplier calls=0; evidence='+out);
