@@ -1,0 +1,1465 @@
+{
+  "schemaVersion": 1,
+  "items": [
+    {
+      "providerId": "apib-video",
+      "model": "seedance-2.0",
+      "publicId": "video-apib-seedance-2-0",
+      "profile": "apib-video-v3",
+      "definition": {
+        "modes": [
+          "text",
+          "single_image",
+          "frames_required",
+          "reference"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ],
+            "resolutions": [
+              "480p",
+              "720p",
+              "1080p",
+              "4k"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4",
+          "21:9",
+          "adaptive"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 9,
+          "videos": 3,
+          "audios": 3,
+          "audioMaxDurationSeconds": 15,
+          "totalAudioDurationSeconds": 15
+        },
+        "defaultDurationSeconds": 4,
+        "defaultResolution": "480p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": true,
+        "supportsLastFrame": true,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": 4000,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {},
+        "modeParameters": {
+          "text": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9"
+            ]
+          },
+          "single_image": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "frames_required": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "reference": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9",
+              "adaptive"
+            ]
+          }
+        }
+      },
+      "documentation": {
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md"
+        ],
+        "checkedAt": "2026-11-02",
+        "coverage": "documented-contract-local-wire-http-tested-not-paid-provider-acceptance",
+        "sources": [
+          {
+            "url": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md",
+            "sha256": "f4b08460166bd480ea8e3e45db84c76ed2d8021615a163826692902cf28f652e"
+          }
+        ]
+      },
+      "smokeInput": {
+        "mode": "text",
+        "durationSeconds": 4,
+        "resolution": "480p",
+        "aspectRatio": "16:9"
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "seedance-2.0-fast",
+      "publicId": "video-apib-seedance-2-0-fast",
+      "profile": "apib-video-v3",
+      "definition": {
+        "modes": [
+          "text",
+          "single_image",
+          "frames_required",
+          "reference"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ],
+            "resolutions": [
+              "480p",
+              "720p"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4",
+          "21:9",
+          "adaptive"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 9,
+          "videos": 3,
+          "audios": 3,
+          "audioMaxDurationSeconds": 15,
+          "totalAudioDurationSeconds": 15
+        },
+        "defaultDurationSeconds": 4,
+        "defaultResolution": "480p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": true,
+        "supportsLastFrame": true,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": 4000,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {},
+        "modeParameters": {
+          "text": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9"
+            ]
+          },
+          "single_image": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "frames_required": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "reference": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9",
+              "adaptive"
+            ]
+          }
+        }
+      },
+      "documentation": {
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md"
+        ],
+        "checkedAt": "2026-11-02",
+        "coverage": "documented-contract-local-wire-http-tested-not-paid-provider-acceptance",
+        "sources": [
+          {
+            "url": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md",
+            "sha256": "f4b08460166bd480ea8e3e45db84c76ed2d8021615a163826692902cf28f652e"
+          }
+        ]
+      },
+      "smokeInput": {
+        "mode": "text",
+        "durationSeconds": 4,
+        "resolution": "480p",
+        "aspectRatio": "16:9"
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "seedance-2.0-mini",
+      "publicId": "video-apib-seedance-2-0-mini",
+      "profile": "apib-video-v3",
+      "definition": {
+        "modes": [
+          "text",
+          "single_image",
+          "frames_required",
+          "reference"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ],
+            "resolutions": [
+              "480p",
+              "720p"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4",
+          "21:9",
+          "adaptive"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 9,
+          "videos": 3,
+          "audios": 3,
+          "audioMaxDurationSeconds": 15,
+          "totalAudioDurationSeconds": 15
+        },
+        "defaultDurationSeconds": 4,
+        "defaultResolution": "480p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": true,
+        "supportsLastFrame": true,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {},
+        "modeParameters": {
+          "text": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9"
+            ]
+          },
+          "single_image": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "frames_required": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "reference": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9",
+              "adaptive"
+            ]
+          }
+        }
+      },
+      "documentation": {
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md"
+        ],
+        "checkedAt": "2026-11-02",
+        "coverage": "documented-contract-local-wire-http-tested-not-paid-provider-acceptance",
+        "sources": [
+          {
+            "url": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md",
+            "sha256": "f4b08460166bd480ea8e3e45db84c76ed2d8021615a163826692902cf28f652e"
+          }
+        ]
+      },
+      "smokeInput": {
+        "mode": "text",
+        "durationSeconds": 4,
+        "resolution": "480p",
+        "aspectRatio": "16:9"
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "seedance-2.5",
+      "publicId": "video-apib-seedance-2-5",
+      "profile": "apib-video-v3",
+      "definition": {
+        "modes": [
+          "text",
+          "single_image",
+          "frames_required",
+          "reference"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30
+            ],
+            "resolutions": [
+              "480p",
+              "720p",
+              "1080p"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4",
+          "21:9",
+          "adaptive"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 30,
+          "videos": 10,
+          "audios": 10,
+          "videoMaxDurationSeconds": 30,
+          "totalVideoDurationSeconds": 30,
+          "audioMaxDurationSeconds": 30,
+          "totalAudioDurationSeconds": 30,
+          "imageMaxBytes": 31457280,
+          "videoMaxBytes": 209715200,
+          "audioMaxBytes": 15728640
+        },
+        "defaultDurationSeconds": 4,
+        "defaultResolution": "480p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": true,
+        "supportsLastFrame": true,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {},
+        "modeParameters": {
+          "text": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9"
+            ]
+          },
+          "single_image": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "frames_required": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "reference": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9",
+              "adaptive"
+            ]
+          }
+        }
+      },
+      "documentation": {
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/seedance-2-5/generation.md"
+        ],
+        "checkedAt": "2026-11-02",
+        "coverage": "documented-contract-local-wire-http-tested-not-paid-provider-acceptance",
+        "sources": [
+          {
+            "url": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-5/generation.md",
+            "sha256": "9121efbb4b4464c0935006760d7bdafb6a312b0ddd1fd04414ed18834dbfff5a"
+          }
+        ]
+      },
+      "smokeInput": {
+        "mode": "text",
+        "durationSeconds": 4,
+        "resolution": "480p",
+        "aspectRatio": "16:9"
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "kling-v3-omni",
+      "publicId": "video-apib-kling-v3-omni",
+      "profile": "apib-video-v3",
+      "definition": {
+        "modes": [
+          "text",
+          "single_image",
+          "frames_required",
+          "reference"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ],
+            "resolutions": [
+              "720p",
+              "1080p",
+              "4k"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "adaptive"
+        ],
+        "audio": "disabled",
+        "limits": {
+          "images": 2,
+          "videos": 1,
+          "audios": 0,
+          "videoMaxBytes": 209715200
+        },
+        "defaultDurationSeconds": 3,
+        "defaultResolution": "720p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": true,
+        "supportsLastFrame": true,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {},
+        "modeParameters": {
+          "text": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1"
+            ]
+          },
+          "single_image": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "frames_required": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "reference": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1"
+            ]
+          }
+        },
+        "supportsReferenceFirstFrame": true
+      },
+      "documentation": {
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/kling-v3-omni/generation.md"
+        ],
+        "checkedAt": "2026-11-02",
+        "coverage": "documented-contract-local-wire-http-tested-not-paid-provider-acceptance",
+        "sources": [
+          {
+            "url": "https://docs.apimart.ai/en/api-reference/videos/kling-v3-omni/generation.md",
+            "sha256": "dfbcb9105981e478ee3226cbef3055f9122bad48eae3eea9f90753ebfda0972e"
+          }
+        ]
+      },
+      "smokeInput": {
+        "mode": "text",
+        "durationSeconds": 3,
+        "resolution": "720p",
+        "aspectRatio": "16:9"
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "wan3.0-video",
+      "publicId": "video-apib-wan3-0-video",
+      "profile": "apib-video-v3",
+      "definition": {
+        "modes": [
+          "text",
+          "single_image",
+          "frames_required",
+          "reference"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30
+            ],
+            "resolutions": [
+              "480P",
+              "720P",
+              "1080P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4",
+          "adaptive"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 10,
+          "videos": 5,
+          "audios": 5,
+          "imageMaxBytes": 20971520,
+          "videoMaxBytes": 104857600,
+          "audioMaxBytes": 15728640,
+          "videoMaxDurationSeconds": 15,
+          "totalVideoDurationSeconds": 15,
+          "audioMaxDurationSeconds": 15,
+          "totalAudioDurationSeconds": 15
+        },
+        "defaultDurationSeconds": 2,
+        "defaultResolution": "480P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": true,
+        "supportsLastFrame": true,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {},
+        "modeParameters": {
+          "text": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4"
+            ]
+          },
+          "single_image": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "frames_required": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "reference": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "adaptive"
+            ]
+          }
+        }
+      },
+      "documentation": {
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation.md"
+        ],
+        "checkedAt": "2026-11-02",
+        "coverage": "documented-contract-local-wire-http-tested-not-paid-provider-acceptance",
+        "sources": [
+          {
+            "url": "https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation.md",
+            "sha256": "ba274589774b20a59dbd55184ec58b0263ac3f159b07599d506e470e5aef6717"
+          }
+        ]
+      },
+      "smokeInput": {
+        "mode": "text",
+        "durationSeconds": 2,
+        "resolution": "480P",
+        "aspectRatio": "16:9"
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "wan3.0-video-prime",
+      "publicId": "video-apib-wan3-0-video-prime",
+      "profile": "apib-video-v3",
+      "definition": {
+        "modes": [
+          "text",
+          "single_image",
+          "frames_required",
+          "reference"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30
+            ],
+            "resolutions": [
+              "480P",
+              "720P",
+              "1080P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4",
+          "adaptive"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 10,
+          "videos": 5,
+          "audios": 5,
+          "imageMaxBytes": 20971520,
+          "videoMaxBytes": 104857600,
+          "audioMaxBytes": 15728640,
+          "videoMaxDurationSeconds": 15,
+          "totalVideoDurationSeconds": 15,
+          "audioMaxDurationSeconds": 15,
+          "totalAudioDurationSeconds": 15
+        },
+        "defaultDurationSeconds": 2,
+        "defaultResolution": "480P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": true,
+        "supportsLastFrame": true,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {},
+        "modeParameters": {
+          "text": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4"
+            ]
+          },
+          "single_image": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "frames_required": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "reference": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "adaptive"
+            ]
+          }
+        }
+      },
+      "documentation": {
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation.md"
+        ],
+        "checkedAt": "2026-11-02",
+        "coverage": "documented-contract-local-wire-http-tested-not-paid-provider-acceptance",
+        "sources": [
+          {
+            "url": "https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation.md",
+            "sha256": "ba274589774b20a59dbd55184ec58b0263ac3f159b07599d506e470e5aef6717"
+          }
+        ]
+      },
+      "smokeInput": {
+        "mode": "text",
+        "durationSeconds": 2,
+        "resolution": "480P",
+        "aspectRatio": "16:9"
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "MiniMax-H3",
+      "publicId": "video-apib-minimax-h3",
+      "profile": "apib-video-v3",
+      "definition": {
+        "modes": [
+          "text",
+          "single_image",
+          "frames_required",
+          "first_optional",
+          "reference"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ],
+            "resolutions": [
+              "768P",
+              "2K"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4",
+          "21:9",
+          "adaptive"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 9,
+          "videos": 3,
+          "audios": 3,
+          "imageMaxBytes": 31457280,
+          "videoMaxBytes": 52428800,
+          "audioMaxBytes": 15728640,
+          "videoMaxDurationSeconds": 15,
+          "totalVideoDurationSeconds": 15,
+          "audioMaxDurationSeconds": 15,
+          "totalAudioDurationSeconds": 15
+        },
+        "defaultDurationSeconds": 4,
+        "defaultResolution": "768P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": true,
+        "supportsLastFrame": true,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": 7000,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {},
+        "modeParameters": {
+          "text": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9"
+            ]
+          },
+          "single_image": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "frames_required": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "first_optional": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "reference": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9",
+              "adaptive"
+            ]
+          }
+        }
+      },
+      "documentation": {
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/minimax-h3/generation.md"
+        ],
+        "checkedAt": "2026-11-02",
+        "coverage": "documented-contract-local-wire-http-tested-not-paid-provider-acceptance",
+        "sources": [
+          {
+            "url": "https://docs.apimart.ai/en/api-reference/videos/minimax-h3/generation.md",
+            "sha256": "0cafe0bd19a9d47be418e93da6f907d84534416c02670ca50fe8fe5a07350782"
+          }
+        ]
+      },
+      "smokeInput": {
+        "mode": "text",
+        "durationSeconds": 4,
+        "resolution": "768P",
+        "aspectRatio": "16:9"
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "MiniMax-H3-Max",
+      "publicId": "video-apib-minimax-h3-max",
+      "profile": "apib-video-v3",
+      "definition": {
+        "modes": [
+          "text",
+          "single_image",
+          "frames_required",
+          "first_optional",
+          "reference"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ],
+            "resolutions": [
+              "480P",
+              "768P",
+              "1080P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4",
+          "21:9",
+          "adaptive"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 9,
+          "videos": 3,
+          "audios": 3,
+          "imageMaxBytes": 31457280,
+          "videoMaxBytes": 52428800,
+          "audioMaxBytes": 15728640,
+          "videoMaxDurationSeconds": 15,
+          "totalVideoDurationSeconds": 15,
+          "audioMaxDurationSeconds": 15,
+          "totalAudioDurationSeconds": 15
+        },
+        "defaultDurationSeconds": 5,
+        "defaultResolution": "480P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": true,
+        "supportsLastFrame": true,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": 7000,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {},
+        "modeParameters": {
+          "text": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9"
+            ]
+          },
+          "single_image": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "frames_required": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "first_optional": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "reference": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9",
+              "adaptive"
+            ]
+          }
+        }
+      },
+      "documentation": {
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/minimax-h3/max.md"
+        ],
+        "checkedAt": "2026-11-02",
+        "coverage": "documented-contract-local-wire-http-tested-not-paid-provider-acceptance",
+        "sources": [
+          {
+            "url": "https://docs.apimart.ai/en/api-reference/videos/minimax-h3/max.md",
+            "sha256": "a36208b712dc63cd455c47b87ea68d3473428af1ea9493671aeca7d17d08dc62"
+          }
+        ]
+      },
+      "smokeInput": {
+        "mode": "text",
+        "durationSeconds": 5,
+        "resolution": "480P",
+        "aspectRatio": "16:9"
+      }
+    },
+    {
+      "providerId": "geeknow-video",
+      "model": "wan3.0-video",
+      "publicId": "video-geek-wan3-0-video",
+      "profile": "geek-wan3-v3",
+      "definition": {
+        "modes": [
+          "text",
+          "single_image",
+          "frames_required",
+          "reference"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30
+            ],
+            "resolutions": [
+              "480P",
+              "720P",
+              "1080P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4",
+          "adaptive"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 10,
+          "videos": 5,
+          "audios": 5
+        },
+        "defaultDurationSeconds": 2,
+        "defaultResolution": "480P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": true,
+        "supportsLastFrame": true,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {},
+        "modeParameters": {
+          "single_image": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "frames_required": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "text": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4"
+            ]
+          }
+        }
+      },
+      "documentation": {
+        "sourceURLs": [
+          "https://docs.geeknow.ai/api-reference/videos/wan3/generation.md",
+          "https://docs.geeknow.ai/api-reference/videos/wan3/overview.md",
+          "https://docs.geeknow.ai/api-reference/videos/model-matrix.md"
+        ],
+        "checkedAt": "2026-11-02",
+        "coverage": "documented-contract-local-wire-http-tested-not-paid-provider-acceptance",
+        "sources": [
+          {
+            "url": "https://docs.geeknow.ai/api-reference/videos/wan3/generation.md",
+            "sha256": "55aa0bf678505745038f5250b101ca69dda5715c9ba164646c84808b7088517d"
+          },
+          {
+            "url": "https://docs.geeknow.ai/api-reference/videos/wan3/overview.md",
+            "sha256": "76cda27707ee0525338252fd872823b7ccde9243649b7fefcfe8595b21b2d39f"
+          },
+          {
+            "url": "https://docs.geeknow.ai/api-reference/videos/model-matrix.md",
+            "sha256": "ae8f5016fabbed6ec40d43bac55a9a3bacd2d538a1d458e308a6914f2a75c01d"
+          }
+        ]
+      },
+      "smokeInput": {
+        "mode": "text",
+        "durationSeconds": 2,
+        "resolution": "480P",
+        "aspectRatio": "16:9"
+      }
+    },
+    {
+      "providerId": "geeknow-video-h3",
+      "model": "MiniMax-H3",
+      "publicId": "video-geek-minimax-h3",
+      "profile": "geek-h3-v3",
+      "definition": {
+        "modes": [
+          "text",
+          "single_image",
+          "frames_required",
+          "first_optional",
+          "reference"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ],
+            "resolutions": [
+              "768P"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "audio": null,
+        "limits": {
+          "images": 9,
+          "videos": 3,
+          "audios": 3,
+          "imageMaxBytes": 31457280,
+          "videoMaxBytes": 52428800,
+          "audioMaxBytes": 15728640,
+          "videoMaxDurationSeconds": 15,
+          "totalVideoDurationSeconds": 15,
+          "audioMaxDurationSeconds": 15,
+          "totalAudioDurationSeconds": 15
+        },
+        "defaultDurationSeconds": 1,
+        "defaultResolution": "768P",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": true,
+        "supportsLastFrame": true,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": false,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": 7000,
+        "maxNegativePromptChars": 0,
+        "maxShots": 0,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {}
+      },
+      "documentation": {
+        "sourceURLs": [
+          "https://docs.geeknow.ai/api-reference/videos/minimax-h3/generation.md",
+          "https://docs.geeknow.ai/api-reference/videos/minimax-h3/overview.md",
+          "https://docs.geeknow.ai/api-reference/videos/model-matrix.md"
+        ],
+        "checkedAt": "2026-11-02",
+        "coverage": "documented-contract-local-wire-http-tested-not-paid-provider-acceptance",
+        "sources": [
+          {
+            "url": "https://docs.geeknow.ai/api-reference/videos/minimax-h3/generation.md",
+            "sha256": "9a3a8c4bdb8b6b85be17b706a4d76c7bdeb37c248bb569d575efd4ff8eb0ce03"
+          },
+          {
+            "url": "https://docs.geeknow.ai/api-reference/videos/minimax-h3/overview.md",
+            "sha256": "1fd08e6eb87af038da477cecab50cdcbbe55d3565afa5f3dc962923572708cd5"
+          },
+          {
+            "url": "https://docs.geeknow.ai/api-reference/videos/model-matrix.md",
+            "sha256": "ae8f5016fabbed6ec40d43bac55a9a3bacd2d538a1d458e308a6914f2a75c01d"
+          }
+        ]
+      },
+      "smokeInput": {
+        "mode": "text",
+        "durationSeconds": 1,
+        "resolution": "768P",
+        "aspectRatio": "16:9"
+      }
+    }
+  ]
+}
