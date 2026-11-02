@@ -70,7 +70,7 @@ export function UpscaleClient() {
         });
         const data = await res.json();
         if (!res.ok || !data.url) throw new Error(data.error ?? "放大失败");
-        return { url: data.url, user: data.user, creditsUsed: data.creditsUsed };
+        return { url: data.url, user: data.user, creditsUsed: data.creditsUsed, replayed: data.replayed === true };
       }}
     />
   );

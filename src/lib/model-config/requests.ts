@@ -123,14 +123,15 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     // The internal imagegen step already owns a frozen frame, including a
     // published native-auto contract. Do not turn that auto into square here.
     const ratio = currentImagegenStep()?.request.parameters.ratio || quotedImage?.facts.ratio || (/^\d+:\d+$/.test(String(parsed.body.ratio||parsed.body.size||"")) ? String(parsed.body.ratio||parsed.body.size) : Number(parsed.body.targetWidth)>0&&Number(parsed.body.targetHeight)>0 ? imageRatio(Number(parsed.body.targetWidth),Number(parsed.body.targetHeight)) : "1:1");
-    // A signed imagegen step has already selected/quoted its public identity.
-    // A nearest ratio must not choose a different directional alias on execution.
-    const routedModelId = currentImagegenStep()?.billing ? configuredModelId : routeImageModel(
+    // Server-owned browser quotes and imagegen steps already fixed their public
+    // model identity. Directional aliases are selected only before that quote;
+    // an execution-time frame must not silently select another priced model.
+    const routedModelId = quotedImage || currentImagegenStep()?.billing ? configuredModelId : routeImageModel(
       configuredModelId,
       ratio,
       snapshot.config.publicModels.filter(model => model.enabled && model.modality === "image"),
     );
-    const requestedModelId = requestedFeatureModel(mainFeature, (explicitModelId || featureDefault || routedModelId !== configuredModelId) ? routedModelId : undefined);
+    const requestedModelId = requestedFeatureModel(mainFeature, (quotedImage || explicitModelId || featureDefault || routedModelId !== configuredModelId) ? routedModelId : undefined);
     const preset = selectedImagePreset(snapshot.config, mainFeature, requestedModelId, purpose.image);
     const option = selectedBusinessOption(snapshot.config, mainFeature, requestedModelId);
     if (option?.parameters?.inputTypes && ((parsed.references > 0 && !option.parameters.inputTypes.includes("image")) || (parsed.body.needsMask && !option.parameters.inputTypes.includes("mask")))) throw new ModelConfigError("MODEL_INCOMPATIBLE", "本功能模型未开放该输入类型", 400);
