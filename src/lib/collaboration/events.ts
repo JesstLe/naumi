@@ -43,18 +43,23 @@ export class CollaborationEventHub {
     this.running = true;
     try {
       if (Date.now() - this.lastMaintenance > 15_000) { this.lastMaintenance = Date.now(); await this.maintain(); }
-      const entries = [...this.heads];
+      // Fix the audience and cursor used for this particular SQL snapshot. A new
+      // subscriber with an older cursor must catch up on the next poll, not jump
+      // forward when a query already in flight returns only newer events.
+      const entries = [...this.heads].map(([enterprise, head]) => ({ enterprise, head, after: head.seq, listeners: new Set(head.listeners) }));
+      const batches = new Map(entries.map(entry => [entry.enterprise, entry]));
       if (!entries.length) return;
       // Tenant and sequence indexes bound the query; 256 events/tenant per page.
       const rows = (await getPool().query(`SELECT q.enterprise_id,h.seq AS high,e.seq,e.topics,e.audience,e.conversation_id
         FROM unnest($1::uuid[],$2::bigint[]) q(enterprise_id,after_seq)
         LEFT JOIN app_collab_event_heads h USING(enterprise_id)
         LEFT JOIN LATERAL(SELECT * FROM app_collab_events e WHERE e.enterprise_id=q.enterprise_id
-          AND e.seq>q.after_seq ORDER BY e.seq LIMIT 256)e ON true ORDER BY q.enterprise_id,e.seq`, [entries.map(([e]) => e), entries.map(([, h]) => String(h.seq))])).rows;
+          AND e.seq>q.after_seq ORDER BY e.seq LIMIT 256)e ON true ORDER BY q.enterprise_id,e.seq`, [entries.map(e => e.enterprise), entries.map(e => String(e.after))])).rows;
       for (const row of rows) {
-        const head = this.heads.get(row.enterprise_id); if (!head) continue;
+        const head = this.heads.get(row.enterprise_id), batch = batches.get(row.enterprise_id); if (!head || head !== batch?.head) continue;
         const high = BigInt(row.high || 0);
-        for (const sub of [...head.listeners]) {
+        for (const sub of batch.listeners) {
+          if (!head.listeners.has(sub)) continue;
           if (sub.seq > high || high - sub.seq > BigInt(10000) || row.seq === null && sub.seq < high) {
             sub.seq = high; sub.enqueue({ id: cursor(sub.enterprise, sub.actor, String(high)), type: 'reset', topics: ['members','conversations','messages','shares'] });
           } else if (row.seq !== null && BigInt(row.seq) > sub.seq) {

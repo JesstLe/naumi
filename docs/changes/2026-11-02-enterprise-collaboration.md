@@ -137,3 +137,15 @@ collaborationFailure(error: unknown): Response;
 - 修复后作者通讯20组及共享23组各集中复跑一次均通过；两套保留原外部fixture的证据层级，新增10组才是双方真实接线。修复前合并双模块全项目tsc已实际exit0；最终UI整合仍须再做一次集中类型检查/固定构建。
 - 资源：各轮一个自有256MiB/1CPU随机端口PG，SELECT1就绪，finally按完整ID+label停止删除及volume清理；没有同时启动本父任务多个数据库，无生产连接或真实模型调用。
 - 父修复证据：`output/enterprise-collaboration-integration-20261102/repair-artifacts/{MODIFIED_FILE.tar,DIFF_FILE.patch,VERIFICATION.txt,ROLLBACK.sh}`。封包/回滚入口为 `node scripts/verify-enterprise-collaboration-integration.artifacts.mjs`。当前仍待UI交回、独立复核、浏览器双账号端测与main/发布，不将后端集成通过写成整批完成。
+
+## 2026-11-02 UI交回与独立复核修复
+
+- UI固定提交 `c141ab694609bce8545a2e3cb74608356c8d5ac7` 已普通 merge；修复前集成基线 `aa9e4d2956cabd67ce78107c3ce66633c986e66c`。三个实现模块均已进入本任务分支，仍未合共享main或上线。
+- UI作者23文件、React19＋双身份HTTP合同fixture浏览器29项通过、pageerror0、完整tsc通过；真实Canvas背景/认证为fixture，实际双方后端尚待浏览器集中联调。草稿可刷新恢复，上传仅覆盖当前应用生命周期/跨路由暂停续传；刷新后的File字节恢复及未加载会话的全量未读合计尚未实现，不能写成已支持。
+- UI证据54文件已逐hash归档到 `output/enterprise-collaboration-integration-20261102/ui/`；独立后端审查16文件归档到 `output/enterprise-collaboration-review-fixes-20261102/independent-review/`。没有删除子任务或审查现场。
+- 独立复核发现2个P1与1个P2，父直接复现修复：①`conversationTx`先锁会话，再以新READ COMMITTED语句读当前成员，退群锁竞争读写均404、committed_rows=0；②event poll固定本次查询的订阅者集合/起点，新加入旧cursor留待下一轮追赶，实际card_delivered由false变true；③complete在归还DB连接后逐块流式核对长度/hash，缺块返回409并将该块ready清为false以便同上传续传，不再ready后发送再断流。
+- 最后完成事务复核原不可变块清单；完整文件从不concat到内存，单次仅流读取一个块、保留256B嗅探头。暂时网络失败不冒充文件不存在、不删除已确认业务文件。
+- 原反例通过 `scripts/verify-enterprise-collaboration-review-fixes.{mjs,ts}` 固化：BASELINE输出 `COLLABORATION_REVIEW_BASELINE=REPRODUCED findings=3 healthy_controls=5 suppliers=0`，exit0只表示3缺陷复现；MODIFIED输出 `COLLABORATION_REVIEW_FIXES=PASS repaired_findings=3 healthy_controls=5 suppliers=0`，exit0。缺块恢复后逐字节下载hash通过；未完成附件发消息沿原语义403，首次脚手架误期望409已修正并保留失败日志。
+- 修复后三模块真实HTTP集成仍10/10，通讯原20组集中回归通过。审查回归脚本首轮tsc出现target不支持 `1n`，已改为 `BigInt(1)`；产品改动没有该诊断，最终检查以typecheck-final日志为准。
+- 本切片四产物目录 `output/enterprise-collaboration-review-fixes-20261102/repair-artifacts/`，逐文件原/改hash、完整命令及literal输出、独立副本回滚和后改零写入记录均由对应artifacts脚本保存。恢复副本重新出现原3反例，源码保持修复。
+- 下一步：实际组件＋真实双方后端浏览器端测、共享快照/审批独立复核、固定生产构建及发布。当前只声明源码整合和已列本地验收，未声明全站容量或上线。

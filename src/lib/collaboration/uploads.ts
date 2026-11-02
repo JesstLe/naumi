@@ -96,17 +96,40 @@ export async function completeUpload(email: string, enterprise: string, uploadId
   });
   if (snapshot.row.status === 'ready') return attachmentWire(snapshot.row);
   let bytes = Buffer.alloc(0);
-  if (snapshot.parts[0]) {
-    const response = await collaborationStorage().backend(snapshot.row.backend).get(snapshot.parts[0].object_key, 'bytes=0-255');
-    try { if (!response.ok) throw new TeamError('文件存储读取失败', 503); bytes = await readBoundedBody(new Request('http://local/part', { method: 'POST', body: response.body, duplex: 'half' } as RequestInit), 256); }
-    finally { if (!response.body?.locked) await response.body?.cancel().catch(() => {}); }
+  const backend = collaborationStorage().backend(snapshot.row.backend);
+  for (const part of snapshot.parts) {
+    // Constant-memory, one-object-at-a-time verification with no checked-out DB
+    // connection. A catalog acknowledgement alone is not current readable bytes.
+    const response = await backend.get(part.object_key); let invalid = response.status === 404;
+    let read = 0; const digest = createHash('sha256'), reader = response.body?.getReader();
+    try {
+      if (!response.ok && !invalid) throw new TeamError('文件存储暂不可读，请重试完成上传', 503);
+      if (!invalid && reader) for (;;) {
+        const next = await reader.read(); if (next.done) break;
+        read += next.value.byteLength; if (read > part.bytes) { invalid = true; break; }
+        digest.update(next.value);
+        if (part.part === 0 && bytes.length < 256) bytes = Buffer.concat([bytes, Buffer.from(next.value.subarray(0, 256 - bytes.length))]);
+      }
+      if (!invalid && (read !== part.bytes || digest.digest('hex') !== part.sha256)) invalid = true;
+    } finally { if (reader) { await reader.cancel().catch(() => {}); reader.releaseLock(); } }
+    if (invalid) {
+      // Reopen only the unchanged missing/corrupt part so the same upload can
+      // resume. Temporary transport failure does not rewrite its durable state.
+      await collaborationScope(email, enterprise, async (tx, scope) => {
+        const row = await uploadTx(tx, scope, uploadId, true); requireUploading(row);
+        await tx.query('UPDATE app_collab_parts SET ready=false WHERE upload_id=$1 AND part=$2 AND object_key=$3 AND sha256=$4', [uploadId, part.part, part.object_key, part.sha256]);
+      });
+      throw new TeamError('文件分块缺失或损坏，请续传后重试', 409);
+    }
   }
   const media = detectedMedia(bytes, snapshot.row.name);
   // Completion is metadata-only; the immutable chunk manifest is the file. Never concatenate a big Buffer.
   return collaborationScope(email, enterprise, async (tx, scope) => {
     const row = await uploadTx(tx, scope, uploadId, true); if (row.status === 'ready') return attachmentWire(row); requireUploading(row);
-    const complete = (await tx.query('SELECT count(*)::int AS n,COALESCE(sum(bytes),0)::text AS bytes FROM app_collab_parts WHERE upload_id=$1 AND ready', [uploadId])).rows[0];
-    if (complete.n !== totalParts(row) || Number(complete.bytes) !== Number(row.bytes)) throw new TeamError('文件分块不完整', 409);
+    const complete: PartRow[] = (await tx.query('SELECT * FROM app_collab_parts WHERE upload_id=$1 ORDER BY part', [uploadId])).rows;
+    if (complete.length !== snapshot.parts.length || complete.reduce((n, p) => n + Number(p.bytes), 0) !== Number(row.bytes) ||
+      complete.some((p, i) => !p.ready || p.part !== i || p.object_key !== snapshot.parts[i].object_key || p.sha256 !== snapshot.parts[i].sha256 || p.bytes !== snapshot.parts[i].bytes))
+      throw new TeamError('文件分块不完整', 409);
     const updated = (await tx.query("UPDATE app_collab_uploads SET status='ready',mime=$2,inline_ok=$3 WHERE id=$1 RETURNING *", [uploadId, media.mime, media.inline])).rows[0];
     return attachmentWire(updated);
   });

@@ -22,11 +22,15 @@ type MessageRow = { id: string; conversation_id: string; seq: string; sender_id:
   reply_to: string | null; attachment_ids: string[]; mention_ids: string[]; share_id: string | null; created_at: Date; withdrawn_at: Date | null };
 export async function conversationTx(tx: PoolClient, scope: CollaborationScope, rawId: string, lock = false): Promise<ConversationRow> {
   const conversationId = id.parse(rawId);
-  const row = (await tx.query(`SELECT c.*,m.joined_seq,m.read_seq,m.pinned,m.muted FROM app_collab_conversations c
-    JOIN app_collab_members m ON m.conversation_id=c.id AND m.actor_id=$2 AND m.left_seq IS NULL
-    WHERE c.id=$1 AND c.enterprise_id=$3 ${lock ? 'FOR UPDATE OF c' : 'FOR SHARE OF c'}`, [conversationId, scope.actorId, scope.enterpriseId])).rows[0];
+  // Lock first, THEN read membership using a fresh READ COMMITTED snapshot.
+  // A JOIN evaluated before waiting can retain a removed member's old row.
+  const row = (await tx.query(`SELECT * FROM app_collab_conversations
+    WHERE id=$1 AND enterprise_id=$2 ${lock ? 'FOR UPDATE' : 'FOR SHARE'}`, [conversationId, scope.enterpriseId])).rows[0];
   if (!row) throw new TeamError('会话不存在或已退出', 404);
-  return row;
+  const member = (await tx.query(`SELECT joined_seq,read_seq,pinned,muted FROM app_collab_members
+    WHERE conversation_id=$1 AND actor_id=$2 AND left_seq IS NULL`, [conversationId, scope.actorId])).rows[0];
+  if (!member) throw new TeamError('会话不存在或已退出', 404);
+  return { ...row, ...member };
 }
 async function participantIdsTx(tx: PoolClient, scope: CollaborationScope, conversation: string) {
   return (await tx.query('SELECT actor_id FROM app_collab_members WHERE conversation_id=$1 AND left_seq IS NULL ORDER BY actor_id', [conversation])).rows
