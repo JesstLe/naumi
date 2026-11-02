@@ -46,7 +46,6 @@ node scripts/verify-enterprise-collaboration-e2e.mjs MODIFIED
 node node_modules/typescript/bin/tsc --noEmit --incremental false --pretty false
 node scripts/verify-enterprise-collaboration-integration.mjs E2E_REGRESSION
 node scripts/verify-enterprise-collaboration-server.cjs
-node scripts/verify-enterprise-collaboration-review-fixes.mjs E2E_REGRESSION
 python scripts/verify-enterprise-collaboration-e2e.artifacts.py
 ```
 
@@ -73,6 +72,13 @@ python scripts/verify-enterprise-collaboration-e2e.artifacts.py
 
 字面结果：`COLLABORATION_E2E=PASS checks=16 full_canvas=1 real_auth=1 real_pg=1 suppliers=0`，exit0；pageerror=0、external=0、ledger=0、copies=1。
 
+### 父复核提交的最终整合
+
+- 本切片先固定为 `f87ca3240aa43ba12663e56a7a4ba2ce60d2541f`；随后按父新指令普通 merge `21e7f1b6c45be390ee5229e69cea4f41d99cd867`，整合业务固定 `ef530dfb1ee67d620d0afa10bd1e00bee21e8741`。没有冲突，没有覆盖父树。
+- 在此整合固定版本重跑完整浏览器 16 组，仍为上述 PASS，pageerror=0；完整 `tsc --noEmit --incremental false --pretty false` exit0，字面输出为空。随后只封包和更新此交接，不修改产品逻辑。
+- 父的 canonical tenant/suite/parent evidence、数值 max_tokens、timeline 历史来源及隐藏历史作品修复保持原样；本轮没有重复父共享12/23后端矩阵。
+- 本切片合并前额外集中回归：父真实双方 HTTP integration 10/10；通讯原20组通过（其共享 external-port fixture 层级保留，不当成新增真实共享证据）。对应完整日志随 VERIFICATION 打包索引。
+
 脚手架修正记录保留在 `*-attempt-*`：初次点击项目标题文字不是封面按钮、Canvas Agent 和聊天同名发送按钮需 scoped locator、审批 Link 导航后等待项目网格、文字生成按钮实际名为“文字生成”、Locale 类型 `zh`。这些失败不是靠产品 mock 绕过；真实 project 参数/异步账号消费顺序/生成项目归属缺陷另按上文产品修复记录。账号切换瞬间旧请求 401、旧 SSE cursor 400 属于真实鉴权拒绝，未写成所有 HTTP 均 200。
 
 ## 四产物与回滚
@@ -86,10 +92,12 @@ python scripts/verify-enterprise-collaboration-e2e.artifacts.py
 
 副本回滚仅恢复源码、重现原两个缺口；不恢复数据库或媒体、不重放付费请求。原3项父修复仍是固定父基线的一部分。
 
+实际封包结果：`ARTIFACTS=PASS TARGETS=15 COPY_ROLLBACK=RESTORED LATER_EDIT_EXIT=73 ZERO_WRITES=YES SOURCE_MODIFIED=YES REOPEN=PASS`。8 个已有产品文件恢复父基线、7 个新增脚本/文档在副本删除；原件 archive 被改、最后一个目标 later-edit 和原工作树三类拒绝均 exit73，整个副本 SHA 清单保持不变。补丁在全新目录实际 apply 后与修改版逐文件 SHA 一致。
+
 ## 截图及未完成事项
 
-当前真实截图位于 `output/enterprise-collaboration-e2e/MODIFIED/`：`author-approved-canvas-chat.png`、`desktop-chat-upload.png`、`recipient-independent-canvas-reloaded.png`。已实际打开检查；图片中的 PG 账号/素材是本轮隔离合成数据。
+当前真实截图位于 `output/enterprise-collaboration-e2e/MODIFIED/`：`author-approved-canvas-chat.png`、`desktop-chat-upload.png`、`recipient-independent-canvas-reloaded.png`。已实际打开检查；图片中的 PG 账号/素材是本轮隔离合成数据。实际下载还保存 `downloaded-design.zip` 和 `downloaded-screenshot.png`；两端 SHA256 数值写入 `browser-result.json` 并收录 VERIFICATION。
 
-- 刷新后上传 File 字节及恢复列表/重新选同文件续传本轮未实现；仅草稿刷新、同应用生命周期上传暂停/跨路由续传通过。没有无用户动作的自动文件上传。
+- 刷新后上传 File 字节及恢复列表/重新选同文件续传本轮未实现；本轮证明同应用生命周期草稿/上传暂停/跨路由续传，正文草稿刷新沿原实现保留，不把原 mock29 的结论扩大为本轮新增证明。没有无用户动作的自动文件上传。
 - 完整 Next 生产构建、父固定候选整合、真实供应商、站点代理/持久媒体挂载和发布验收交由父任务；这里不冒充上线或 10 万用户容量通过。
 - 测试导航适配不是 Next App Router 的 SSR/hydration 验收；父固定生产构建仍须覆盖实际两入口。

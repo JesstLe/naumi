@@ -6,7 +6,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import JSZip from 'jszip';
 
 export async function runBrowser({ origin, info, out, phase, log }) {
-  let browser; const contexts = [], checks = [], errors = [], external = [], pages = [];
+  let browser; const contexts = [], checks = [], errors = [], external = [], pages = [], hashes = [];
+  const sha = bytes => createHash('sha256').update(bytes).digest('hex');
   const pass = s => { checks.push(s); log(`PASS ${s}`); };
   const api = async (context, route, data, method = data === undefined ? 'GET' : 'POST', expected = 200) => {
     const res = await context.request.fetch(`${origin}${route}${route.includes('?') ? '&' : '?'}enterpriseId=${info.enterprise}`, { method, data, headers: { origin, 'x-naumi-workspace': info.enterprise } });
@@ -161,7 +162,9 @@ export async function runBrowser({ origin, info, out, phase, log }) {
     await expect(a.locator('.co-attachment-chips')).toContainText('产品设计.zip');
     await a.locator('.co-composer').getByRole('button', { name: '发送消息', exact: true }).click();
     const downloadWait = b.waitForEvent('download'); await b.getByRole('button', { name: '下载 产品设计.zip', exact: true }).click();
-    const downloaded = await downloadWait; assert.equal(createHash('sha256').update(await readFile(await downloaded.path())).digest('hex'), createHash('sha256').update(archive).digest('hex'));
+    const downloaded = await downloadWait; await downloaded.saveAs(path.join(out, 'downloaded-design.zip'));
+    const zipHash = { name: '产品设计.zip', bytes: archive.length, upload: sha(archive), download: sha(await readFile(path.join(out, 'downloaded-design.zip'))) };
+    assert.equal(zipHash.download, zipHash.upload); hashes.push(zipHash);
     const uploaded = await api(ac, `/api/collaboration/uploads/${upload.id}`); assert.deepEqual(uploaded.upload.uploadedParts, [0, 1, 2, 3]);
     await a.screenshot({ path: path.join(out, 'desktop-chat-upload.png') });
     pass('Actual ZIP/private storage 0-based chunks pause + project/desktop draft preservation + same-upload resume + real download SHA256');
@@ -172,7 +175,9 @@ export async function runBrowser({ origin, info, out, phase, log }) {
     const imageMessage = (await api(bc, `/api/collaboration/conversations/${direct}/messages`)).items.find(m => m.attachments.some(at => at.name === '截图.png'));
     assert.equal(imageMessage.attachments[0].mime, 'image/png');
     const screenshotDownload = b.waitForEvent('download'); await b.getByRole('button', { name: '下载 截图.png', exact: true }).click();
-    assert.equal(createHash('sha256').update(await readFile(await (await screenshotDownload).path())).digest('hex'), createHash('sha256').update(png).digest('hex'));
+    await (await screenshotDownload).saveAs(path.join(out, 'downloaded-screenshot.png'));
+    const imageHash = { name: '截图.png', bytes: png.length, upload: sha(png), download: sha(await readFile(path.join(out, 'downloaded-screenshot.png'))) };
+    assert.equal(imageHash.download, imageHash.upload); hashes.push(imageHash);
     pass('Screenshot clipboard uses real upload signature MIME and actual authorized download hash');
 
     await close(a); await a.evaluate(key => window.__route('/canvas?project=' + encodeURIComponent(key)), info.projectKey);
@@ -249,7 +254,7 @@ export async function runBrowser({ origin, info, out, phase, log }) {
     return { checks, errors, external };
   } finally {
     for (let n = 0; n < pages.length; n++) { await pages[n].screenshot({ path: path.join(out, `final-${n}.png`) }).catch(() => {}); await writeFile(path.join(out, `final-${n}.txt`), await pages[n].locator('body').innerText().catch(() => '')).catch(() => {}); await writeFile(path.join(out, `final-state-${n}.json`), JSON.stringify(await pages[n].evaluate(() => window.__e2e?.client.state).catch(() => null), null, 2)); }
-    await writeFile(path.join(out, 'browser-result.json'), JSON.stringify({ checks, errors, external }, null, 2));
+    await writeFile(path.join(out, 'browser-result.json'), JSON.stringify({ checks, errors, external, hashes }, null, 2));
     for (const context of contexts) await context.close(); if (browser) await browser.close(); log(`BROWSER_CLEANUP=PASS contexts=${contexts.length} browser_closed=1`);
   }
 }

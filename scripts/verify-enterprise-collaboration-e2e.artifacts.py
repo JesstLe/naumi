@@ -118,6 +118,15 @@ with (guard/records[-1]['path']).open('ab') as f:
 guard_before = hashes(guard)
 guard_result = run([bash, str(OUT/'ROLLBACK.sh'), str(guard)])
 assert guard_result['exit'] == 73 and hashes(guard) == guard_before, guard_result
+archive_guard = copy('archive-tamper')
+archive_guard_before = hashes(archive_guard)
+original_zip = (OUT/'BASELINE.zip').read_bytes()
+try:
+    (OUT/'BASELINE.zip').write_bytes(original_zip+b'tampered')
+    archive_guard_result = run([bash, str(OUT/'ROLLBACK.sh'), str(archive_guard)])
+    assert archive_guard_result['exit'] == 73 and hashes(archive_guard) == archive_guard_before
+finally:
+    (OUT/'BASELINE.zip').write_bytes(original_zip)
 source_before = {e['path']: digest((ROOT/e['path']).read_bytes()) for e in records}
 source_guard = run([bash, str(OUT/'ROLLBACK.sh'), str(ROOT)])
 assert source_guard['exit'] == 73
@@ -133,10 +142,11 @@ assert source_before == {e['path']: digest((ROOT/e['path']).read_bytes()) for e 
 
 four = [OUT/n for n in ['MODIFIED_FILE.zip', 'DIFF_FILE.patch', 'VERIFICATION.txt', 'ROLLBACK.sh']]
 verification = 'Branch: '+run(['git','branch','--show-current'])['stdout'].strip()+'\nFixed HEAD: '+run(['git','rev-parse','HEAD'])['stdout'].strip()+'\nBase: '+BASE+'\nChanged fields: '+FIELDS+'\nFour paths:\n'+'\n'.join(map(str,four))+'\n'
-for name,result in [('BASELINE',baseline),('MODIFIED',modified),('ROLLBACK_COMMAND',rollback),('ROLLBACK_BEHAVIOR',behavior),('LATER_EDIT',guard_result),('SOURCE_GUARD',source_guard),('PATCH_CHECK',patch_check),('PATCH_APPLY',patch_apply)]:
+for name,result in [('BASELINE',baseline),('MODIFIED',modified),('ROLLBACK_COMMAND',rollback),('ROLLBACK_BEHAVIOR',behavior),('LATER_EDIT',guard_result),('ARCHIVE_GUARD',archive_guard_result),('SOURCE_GUARD',source_guard),('PATCH_CHECK',patch_check),('PATCH_APPLY',patch_apply)]:
     verification += '\n'+name+'\n'+json.dumps(result, ensure_ascii=False, indent=2)+'\n'
 for name in ['typecheck-final.txt', 'integration-regression.txt', 'server-regression.txt']:
     verification += '\nREGRESSION '+name+'\n'+(OUT.parent/name).read_text(encoding='utf-8-sig')+'\n'
+verification += '\nBROWSER_HASHES_AND_ERRORS\n'+(OUT.parent/'MODIFIED/browser-result.json').read_text(encoding='utf-8')+'\n'
 verification += '\nSOURCE_MODIFIED=YES COPY_ROLLBACK=RESTORED_ORIGINAL_TWO_DEFECTS FULL_PREFLIGHT=YES LATER_EDIT_ZERO_WRITES=YES\n'+json.dumps(manifest,ensure_ascii=False,indent=2)+'\n'
 with zipfile.ZipFile(four[0]) as z:
     assert z.testzip() is None
@@ -146,6 +156,6 @@ assert four[1].read_bytes()==diff and four[3].read_text(encoding='utf-8').starts
 verification += '\nREOPEN=PASS ZIP_CRC_AND_ALL_FILE_HASHES PATCH_BYTES EXECUTABLE_ROLLBACK\n'
 (OUT/'VERIFICATION.txt').write_text(verification,encoding='utf-8',newline='\n')
 assert (OUT/'VERIFICATION.txt').read_text(encoding='utf-8')==verification
-(OUT/'ROLLBACK_RESULT.json').write_text(json.dumps({'rollback':rollback,'behavior':behavior,'guards':[guard_result,source_guard],'restoredCopy':str(restored)},indent=2),encoding='utf-8')
+(OUT/'ROLLBACK_RESULT.json').write_text(json.dumps({'rollback':rollback,'behavior':behavior,'guards':[guard_result,archive_guard_result,source_guard],'restoredCopy':str(restored)},indent=2),encoding='utf-8')
 print(f'ARTIFACTS=PASS TARGETS={len(records)} COPY_ROLLBACK=RESTORED LATER_EDIT_EXIT=73 ZERO_WRITES=YES SOURCE_MODIFIED=YES REOPEN=PASS')
 print('ROLLBACK_COPY='+str(restored))
