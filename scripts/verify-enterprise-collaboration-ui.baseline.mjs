@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+const root = resolve(process.argv[2] || '.');
+const present = existsSync(resolve(root, 'src/components/collaboration/collaboration-provider.tsx'));
+const layout = readFileSync(resolve(root, 'src/app/layout.tsx'), 'utf8');
+const expected = process.argv.includes('--modified');
+assert.equal(present, expected);
+assert.equal(layout.includes('<CollaborationProvider>'), expected);
+console.log(expected ? 'MODIFIED_FEATURE=ROOT_PROVIDER_PRESENT' : 'BASELINE_FEATURE=ABSENT (no enterprise chat provider or canvas messaging entry)');
