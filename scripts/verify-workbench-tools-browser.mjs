@@ -8,6 +8,8 @@ import {chromium,expect as baseExpect} from '@playwright/test';
 
 const baseline=process.argv.includes('--baseline');
 const round2=process.argv.includes('--round2');
+const toolRecovery=process.argv.includes('--tool-recovery');
+const recoveryFixture={phase:'pending',gets:0,posts:0};
 const round2Fixture={};
 const managedFixture=process.argv.includes('--managed-fixture');
 const only=process.argv.find(a=>a.startsWith('--only='))?.slice(7).split(',');
@@ -16,7 +18,7 @@ await mkdir(output,{recursive:true});
 const originalConfig=await readFile('tsconfig.json');
 const tools=JSON.parse(execFileSync(process.execPath,['node_modules/tsx/dist/cli.mjs','-e','import {TOOLS} from "./src/lib/tool-meta";console.log(JSON.stringify(TOOLS.map(({slug,href,key})=>({slug,href,key}))))'],{encoding:'utf8'}));
 const expect=baseExpect.configure({timeout:45000}),results=[],errors=[],logs=[],requests=[];
-let app,browser,page,writes=0,success=false,historyFailure=false,videoFixture=false,videoCatalogFailure=false,downloadFixture=false;
+let app,browser,page,writes=0,success=false,historyFailure=false,videoFixture=false,videoCatalogFailure=false,downloadFixture=false,upscaleAvailable=true;
 const interactions=[],submissions=[];
 const dist='.next-workbench-acceptance';
 try {
@@ -38,6 +40,12 @@ try {
  page=await context.newPage();page.on('pageerror',e=>errors.push({url:page.url(),message:e.stack||e.message}));
  await page.route('**/api/**',async route=>{
   const req=route.request(),url=new URL(req.url()),p=url.pathname;requests.push([req.method(),p, url.search]);
+  if(toolRecovery&&p==='/api/generate-image'){
+   if(req.method()==='POST'){writes++;recoveryFixture.posts++;return route.fulfill({json:{jobId:'job-browser-recovery-'+recoveryFixture.posts}});}
+   recoveryFixture.gets++;
+   if(recoveryFixture.phase==='truncated'&&recoveryFixture.gets===1)return route.fulfill({status:200,contentType:'application/json',body:'{"status":'});
+   return route.fulfill({json:recoveryFixture.phase==='pending'?{status:'pending'}:{status:'done',images:[{id:'art-browser-recovery',url:image,prompt:'fixture',ratio:'1:1',createdAt:new Date().toISOString(),gradient:''}],user}});
+  }
   if(round2&&p==='/api/download'){if(round2Fixture.delay)await new Promise(r=>setTimeout(r,round2Fixture.delay));return route.fulfill(round2Fixture.download==='image'?{contentType:'image/png',body:await readFile('public/demos/suite-demo/suppl-src.png')}:{status:round2Fixture.download==='html'?200:503,contentType:'text/html',body:'download fixture unavailable'});}
   if(p==='/api/download')return route.fulfill(downloadFixture?{contentType:'image/png',body:await readFile('public/demos/suite-demo/suppl-src.png')}:{status:503,json:{error:'fixture download failed'}});
   if(round2&&p==='/api/video/tasks'&&round2Fixture.video){
@@ -61,9 +69,11 @@ try {
   if(p==='/api/competitors')return route.fulfill({json:{items:[{id:'00000000-0000-4000-8000-000000000001',batchId:'fixture-folder',path:'folder/fixture.png',image,width:600,height:600,prompt:'商品图',regions:[],versions:[],activeVersion:'',revision:1,busy:false,createdAt:new Date().toISOString()}]}});
   if(p==='/api/config')return route.fulfill({json:{db:true,authMode:'mock',multiUser:true,openai:true,defaultImageModel:model.id,imageModels:[model],imageQualityCapable:true}});
   if(p==='/api/auth/session')return route.fulfill({json:{user}});
+  if(p==='/api/feature-access')return route.fulfill({json:{email:user.email,policy:{mode:'default',allowed:[],version:1}}});
   if(p==='/api/account')return route.fulfill({json:{persisted:true,user,artworks,suiteGroups:[{id:'suite-history',name:'验收套图',images:[{url:image,role:'主图'}],createdAt:new Date().toISOString()}]}});
   if(p==='/api/models'){
    const feature=url.searchParams.get('feature'),text=feature==='text.titles'||feature?.includes('text')||feature==='agent.plan'||feature==='tool.ipcheck';
+   if(feature==='tool.upscale'&&managedFixture)return route.fulfill({json:{managed:true,supported:false,feature,available:upscaleAvailable,models:[]}});
    const item=text?{...model,id:'gpt-4o',label:'GPT-4o',modality:'text'}:model;
    return route.fulfill({json:{managed:managedFixture,supported:true,feature,version:1,models:[item],defaultModelId:item.id}});
   }
@@ -82,7 +92,30 @@ try {
  await page.route('**/_next/static/chunks/**',async route=>{const relative=new URL(route.request().url()).pathname.replace('/_next/','');const file=path.resolve(dist,relative);assert.ok(file.startsWith(path.resolve(dist)+path.sep));await route.fulfill({contentType:'application/javascript',body:await readFile(file)});});
  await page.route('**/demos/**',async route=>{const relative=decodeURIComponent(new URL(route.request().url()).pathname);const file=path.resolve('public','.'+relative);assert.ok(file.startsWith(path.resolve('public')+path.sep));try{await route.fulfill({contentType:'image/png',body:await readFile(file)});}catch{await route.abort();}});
  if(round2){await (await import('./verify-workbench-tools-round2-browser.mjs')).runRound2({page,context,base,expect,assert,fixture:round2Fixture,requests,errors,interactions,baseline,output});}
- if(!round2)for(const tool of [...tools,{slug:'tools',href:'/tools',key:'工具中心'}].filter(t=>!only||only.includes(t.slug))){
+ if(toolRecovery){
+  const png=await readFile('public/demos/suite-demo/suppl-src.png');
+  for(const slug of ['fuse','variations']){
+   await page.goto(base+'/'+slug);
+   await expect(page.getByRole('button',{name:'UI',exact:true}).or(page.getByRole('button',{name:'U',exact:true})).first()).toBeVisible();
+   await expect(page.locator('.tool-layout-grid')).toBeVisible();
+   const input=page.locator('main input[type=file]').first(),cta=page.locator('.tool-layout-grid > :first-child button[class*="shadow-btn"], .tool-layout-grid > :first-child button.h-12').last();
+   const files=[{name:'fixture-'+slug+'.png',mimeType:'image/png',buffer:png}];if(slug==='fuse')files.push({name:'second.png',mimeType:'image/png',buffer:png});
+   await input.setInputFiles(files);await expect(cta).toBeEnabled();
+   recoveryFixture.phase='truncated';recoveryFixture.gets=0;const before=recoveryFixture.posts;
+   await cta.click();await expect(page.getByAltText(slug==='fuse'?'fused':'variation',{exact:true})).toBeVisible();
+   assert.equal(recoveryFixture.posts,before+1);assert.ok(recoveryFixture.gets>=2);interactions.push({tool:slug,test:'truncated GET resumes same job and renders actual image'});
+   await input.setInputFiles(files.map(f=>({...f,name:'new-'+f.name})));await expect(cta).toBeEnabled();
+   recoveryFixture.phase='pending';recoveryFixture.gets=0;const oldPosts=recoveryFixture.posts;
+   await cta.click();await expect.poll(()=>recoveryFixture.gets).toBeGreaterThan(0);
+   await page.reload();await expect.poll(()=>recoveryFixture.gets).toBeGreaterThan(1);
+   recoveryFixture.phase='done';await expect(page.getByAltText(slug==='fuse'?'fused':'variation',{exact:true})).toBeVisible();
+   assert.equal(recoveryFixture.posts,oldPosts+1);interactions.push({tool:slug,test:'refresh restores accepted job by GET only'});
+   const picture=page.getByAltText(slug==='fuse'?'fused':'variation',{exact:true});await expect.poll(()=>picture.evaluate(i=>i.complete&&i.naturalWidth>0)).toBe(true);
+   await page.screenshot({path:path.join(output,slug+'-recovered.png'),fullPage:true});
+   console.log('TOOL_RECOVERY_BROWSER '+slug+' PASS');
+  }
+ }
+ if(!round2&&!toolRecovery)for(const tool of [...tools,{slug:'tools',href:'/tools',key:'工具中心'}].filter(t=>!only||only.includes(t.slug))){
   await page.setViewportSize({width:1440,height:900});
   await page.goto(base+tool.href);await expect(page.locator('main h1').first()).toBeVisible();
   // Wait for actual auth hydration and initial query state, not only SSR markup.
@@ -192,12 +225,19 @@ try {
    }
   }
  }
- if(!baseline&&!round2){
+ if(!baseline&&!round2&&!toolRecovery){
+  if(managedFixture&&only?.includes('upscale')){
+   upscaleAvailable=false;await page.goto(base+'/upscale');
+   await expect(page.getByRole('alert').filter({hasText:'当前功能暂不可用'})).toBeVisible();
+   await expect(page.locator('main button[class*="shadow-btn"]').first()).toBeDisabled();
+   interactions.push({tool:'upscale',test:'missing dedicated processor shows actual unavailable reason and disables submission'});
+  }
   historyFailure=true;await page.goto(base+'/avatar');await expect(page.getByRole('alert').filter({hasText:'记录加载失败'})).toBeVisible();historyFailure=false;await page.getByRole('button',{name:'重试',exact:true}).click();await expect(page.getByRole('button',{name:'查看历史图片'})).toBeVisible();interactions.push({tool:'avatar',test:'failed history retry'});
  }
  await writeFile(path.join(output,'result.json'),JSON.stringify({baseline,managedFixture,tools:tools.length,results,errors,writes,requests,interactions,submissions},null,2));
  if(!baseline){assert.deepEqual(errors,[]);assert.ok(results.every(r=>r.overflow<=1),JSON.stringify(results.filter(r=>r.overflow>1)));}
- if(round2)console.log(`${baseline?'BASELINE':'MODIFIED'}_ROUND2_BROWSER=PASS CASES=${interactions.length} CONFIRMED_GAPS=${baseline?6:0} REAL_UPSTREAM=0`);
+ if(toolRecovery)console.log(`TOOL_RECOVERY_BROWSER=PASS TOOLS=2 CASES=${interactions.length} CLIENT_ERRORS=${errors.length} FIXTURE_POSTS=${writes} REAL_UPSTREAM=0`);
+ else if(round2)console.log(`${baseline?'BASELINE':'MODIFIED'}_ROUND2_BROWSER=PASS CASES=${interactions.length} CONFIRMED_GAPS=${baseline?6:0} REAL_UPSTREAM=0`);
  else console.log(`${baseline?'BASELINE':'MODIFIED'}_BROWSER=${errors.length?'ERRORS':'PASS'} TOOLS=${new Set(results.filter(r=>r.tool!=='tools').map(r=>r.tool)).size} VIEWPORTS=3 OVERFLOW_CASES=${results.filter(r=>r.overflow>1).length} CLIENT_ERRORS=${errors.length} FIXTURE_POSTS=${writes} INTERACTIONS=${interactions.length} REAL_UPSTREAM=0${managedFixture?' MODEL_MODE=MANAGED':''}`);
 }catch(error){await page?.screenshot({path:path.join(output,'failure.png'),fullPage:true}).catch(()=>{});await writeFile(path.join(output,'failure.json'),JSON.stringify({results,errors,requests,interactions,submissions},null,2));throw error;}
 finally{await browser?.close();if(app?.pid){if(process.platform==='win32'){try{execFileSync('taskkill',['/PID',String(app.pid),'/T','/F'],{stdio:'pipe'});}catch{}}else app.kill('SIGTERM');}await writeFile('tsconfig.json',originalConfig);await writeFile(path.join(output,'next.log'),logs.join(''));}

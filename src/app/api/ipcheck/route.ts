@@ -20,6 +20,7 @@ import { resolveUserEmail } from "@/lib/admin-auth";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { safeError } from "@/lib/api-error";
+import { parseIpCheckResult, ToolTextResultError } from "@/lib/tool-text-results";
 
 // 侵权检测:视觉模型筛查图片的版权/IP 风险(知名卡通形象、品牌 logo、商标、明星肖像、名画等),
 // 给出 高/中/低 风险 + 风险点 + 商用建议。**非生图**,不落作品库。计费 1 积分。
@@ -98,19 +99,18 @@ async function handleObservedPost(req: Request) {
       temperature: 0.2,
       max_tokens: 600,
     });
-    const raw = resp.choices[0]?.message?.content ?? "{}";
-    let data: Record<string, unknown>;
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      data = { risk: "low", riskLabel: "低风险", summary: "未识别到明显风险", items: [], advice: "" };
-    }
+    const data = parseIpCheckResult(resp.choices[0]?.message?.content);
     if (useDb) {
       await addLedgerEntry(email, -COST, "侵权检测").catch(() => {});
     }
     const user = useDb ? await getUser(email).catch(() => null) : null;
     return NextResponse.json({ ok: true, result: data, creditsUsed: useDb ? synchronousChargedCredits(COST) : 0, user });
   } catch (e) {
+    if (e instanceof ToolTextResultError) {
+      // A provider response already arrived. Invalid content proves neither
+      // nonacceptance nor a refund; the billing wrapper retains that evidence.
+      return NextResponse.json({ error: e.message, code: e.code }, { status: 502 });
+    }
     if (useDb) await refundCredits(email, COST).catch(() => {});
     return NextResponse.json(
       { error: safeError(e, "侵权检测服务暂时不可用,请稍后重试") },
