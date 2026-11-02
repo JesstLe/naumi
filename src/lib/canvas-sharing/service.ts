@@ -1,4 +1,5 @@
 import "server-only";
+import { emitCollaborationEventTx } from "../enterprise/collaboration-events";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import type { CanvasShare, CanvasShareSource, CollaborationPage } from "../collaboration/contracts";
@@ -48,7 +49,9 @@ export async function createShareTx(tx: PoolClient, scope: ShareScope, raw: unkn
   const row = (await tx.query(`INSERT INTO app_canvas_shares(id,enterprise_id,author_id,requester_id,status,title,kind,source,preview)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb) RETURNING *`, [randomUUID(), scope.enterpriseId, author, requester,
     input.action === "offer" ? "offered" : "requested", snapshot?.title || "画布申请", snapshot?.source.kind || "workflow", snapshot ? JSON.stringify(snapshot.source) : null, snapshot ? JSON.stringify(selectedPreview(snapshot)) : null])).rows[0] as ShareRow;
-  await saveOperationTx(tx, scope, input.operationId, operation.digest, row.id); return shareCard(row, scope.actorId);
+  await saveOperationTx(tx, scope, input.operationId, operation.digest, row.id);
+  await emitCollaborationEventTx(tx, scope.enterpriseId, ["shares"], [author, requester]);
+  return shareCard(row, scope.actorId);
 }
 function authorizeChange(row: ShareRow, scope: ShareScope, input: ReturnType<typeof shareChangeSchema.parse>) {
   if (Number(row.version) !== input.expectedVersion) fail("SHARE_VERSION_CONFLICT", "分享状态已更新，请刷新后操作");
@@ -99,7 +102,9 @@ export async function changeShareTx(tx: PoolClient, scope: ShareScope, id: strin
     saved.preview = { ...saved.preview, key: copied.targetKey };
     await tx.query("UPDATE app_canvas_shares SET preview=$2::jsonb WHERE id=$1", [id, JSON.stringify(saved.preview)]);
   }
-  await saveOperationTx(tx, scope, input.operationId, operation.digest, row.id); return shareCard(saved, scope.actorId);
+  await saveOperationTx(tx, scope, input.operationId, operation.digest, row.id);
+  await emitCollaborationEventTx(tx, scope.enterpriseId, ["shares"], [row.author_id, row.requester_id]);
+  return shareCard(saved, scope.actorId);
 }
 export async function listSharesTx(tx: PoolClient, scope: ShareScope, direction: string, cursor?: string | null): Promise<CollaborationPage<CanvasShare>> {
   if (!["sent", "received"].includes(direction)) fail("SHARE_DIRECTION_INVALID", "分享列表方向无效", 400);

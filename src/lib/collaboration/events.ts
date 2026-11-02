@@ -4,15 +4,9 @@ import { getPool } from '@/lib/db';
 import type { CollaborationEvent } from './contracts';
 import { decodeCursor, encodeCursor } from './validation';
 import { activeCollaborationLeases, type CollaborationScope } from '@/lib/enterprise/collaboration-access';
+import { emitCollaborationEventTx } from '@/lib/enterprise/collaboration-events';
+export { emitCollaborationEventTx } from '@/lib/enterprise/collaboration-events';
 
-type Topic = CollaborationEvent['topics'][number];
-/** Head lock serializes allocation through commit, avoiding BIGSERIAL commit-order gaps. */
-export async function emitCollaborationEventTx(tx: PoolClient, enterpriseId: string, topics: Topic[], audience: string[] | null = null, conversationId?: string) {
-  const head = (await tx.query(`INSERT INTO app_collab_event_heads(enterprise_id,seq) VALUES($1,1)
-    ON CONFLICT(enterprise_id) DO UPDATE SET seq=app_collab_event_heads.seq+1 RETURNING seq`, [enterpriseId])).rows[0];
-  await tx.query(`INSERT INTO app_collab_events(enterprise_id,seq,topics,audience,conversation_id) VALUES($1,$2,$3,$4,$5)`,
-    [enterpriseId, head.seq, topics, audience, conversationId || null]);
-}
 export async function eventCursorTx(tx: PoolClient, scope: CollaborationScope) {
   const row = (await tx.query('SELECT seq FROM app_collab_event_heads WHERE enterprise_id=$1', [scope.enterpriseId])).rows[0];
   return cursor(scope.enterpriseId, scope.actorId, String(row?.seq || '0'));

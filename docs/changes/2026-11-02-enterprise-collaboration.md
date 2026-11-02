@@ -124,3 +124,16 @@ collaborationFailure(error: unknown): Response;
 - 父已复制并逐文件 hash 核对作者完整 ignored 证据到 `output/enterprise-collaboration-integration-20261102/server/`，重新读取四产物；保留作者失败迭代、fixture资源回执及 rollback 副本，不依赖未来清理子 worktree 后消失的路径。
 - 已向另两个原实现任务发送固定后端提交和实际分页/上传/SSE接口信息。首批通讯录100人、会话50条，界面须加载后续游标，不遗漏第101位成员。
 - 保留后续事项：源码独立复核、真实共享卡片联调、已上传文件引用回收策略、部署媒体挂载/代理 body 与 SSE idle限制核验；不将本地HTTP通过等同生产容量。
+
+## 2026-11-02 第二模块与父集成修复
+
+- 画布共享固定提交 `c7e1e88ee7f565c77d3d89a5c774c23cf6b62680` 已普通 merge，修复前集成基线 `416615e0dfd41e42870378cd2792367aacb60df5`。作者18文件、23组真实PG/native repository/私有存储验证；身份仍为明确fixture。作者完整证据130文件已复制到 `output/enterprise-collaboration-integration-20261102/sharing/`，逐文件hash一致，四产物重开。
+- 父新增 `scripts/verify-enterprise-collaboration-integration.{mjs,ts}`：不替换企业身份或共享模块，用实际签名cookie、真实企业/成员/负责人grant、真实双方route、回环HTTP/SSE、私有存储与原画布项目/文字读取写入接口联调。
+- 修复前实际发现两个根因：①分享创建/申请/批准无 durable shares 事件，`SHARE_EVENTS durable=0 streamed=0`；②分享额外按内部 Request.url 比较 Origin，合法反向代理 Host/HTTPS 归一化后仍 `SHARE_ORIGIN` 403。首次代理测试被 undici 重写 Host，已在本地代理fixture显式归一化 Host再复现，保留两次日志。
+- 父修复：公共事务事件 outbox 收敛到 `src/lib/enterprise/collaboration-events.ts`，消息与共享单向依赖同一企业基础接口；共享创建/状态变化与事件同事务提交，重放不额外发事件，收件人限定作者/申请者。事件表初始化在checkout前，媒体流I/O仍在DB连接归还后。
+- 分享来源规则复用现有 `teamMutationOrigin` 的实际Host/forwarded protocol逻辑；保留显式企业public origin的额外固定校验，跨站仍403。
+- 同一最终10组矩阵：BASELINE `passed=7 failed=3`、exit1；3项失败属于上述2个根因（其中1项为事件写失败整体回滚断言）。MODIFIED（普通池仅1槽）`passed=10 failed=0 real_scope=1 real_sharing=1 real_routes=1 supplier_calls=0`、exit0；`SHARE_EVENTS durable=3 streamed=3`。副本ROLLBACK恢复相同3项失败及原hash，源保持修复版。准确命令/完整stdout/stderr/exit由封包脚本写入修复四产物。
+- 集成用例实际覆盖作者offer→真实分享卡片→申请→批准→接收者新项目→原文字API独立编辑、同请求不重复、第三人/外企/两人群聊拒绝、源文件删除后目标hash保持、即时停用/grant关闭、撤回不删已成副本、事件写失败整体回滚、供应商与账本新增0。
+- 修复后作者通讯20组及共享23组各集中复跑一次均通过；两套保留原外部fixture的证据层级，新增10组才是双方真实接线。修复前合并双模块全项目tsc已实际exit0；最终UI整合仍须再做一次集中类型检查/固定构建。
+- 资源：各轮一个自有256MiB/1CPU随机端口PG，SELECT1就绪，finally按完整ID+label停止删除及volume清理；没有同时启动本父任务多个数据库，无生产连接或真实模型调用。
+- 父修复证据：`output/enterprise-collaboration-integration-20261102/repair-artifacts/{MODIFIED_FILE.tar,DIFF_FILE.patch,VERIFICATION.txt,ROLLBACK.sh}`。封包/回滚入口为 `node scripts/verify-enterprise-collaboration-integration.artifacts.mjs`。当前仍待UI交回、独立复核、浏览器双账号端测与main/发布，不将后端集成通过写成整批完成。

@@ -9,11 +9,13 @@ import { ensureTimelineNodeSchema } from "../canvas/timeline-node-repository";
 import { ensureCanvasImageVersions } from "../canvas/image-version-store";
 import { ensureMediaSchema } from "../media-assets";
 import { ensureMediaInspectionSchema } from "../video/media-inspection";
+import { ensureCollaborationEventSchema } from "../enterprise/collaboration-events";
 
 let ready: Promise<void> | undefined;
 /** Must run before checkout. No schema initialization inside an authorization transaction. */
 export async function ensureCanvasSharingSchema() {
   if (!ready) ready = (async () => {
+    await ensureCollaborationEventSchema();
     for (const ensure of [ensureVideoNodeSchema, ensureDirectorNodeSchema, ensureCharacterNodeSchema, ensureSceneNodeSchema,
       ensureAudioNodeSchema, ensureTimelineNodeSchema, ensureCanvasImageVersions, ensureMediaSchema, ensureMediaInspectionSchema]) await ensure();
     await getPool().query(`

@@ -2,12 +2,13 @@ import "server-only";
 import { z } from "zod";
 import { authorizeCollaborationRequest, collaborationFailure } from "../enterprise/collaboration-access";
 import { CanvasShareError, fail } from "./domain";
+import { teamMutationOrigin } from "../teams/access";
 
 const headers = { "cache-control": "private, no-store", "x-content-type-options": "nosniff" };
 function sameOrigin(request: Request) {
-  if (request.headers.get("sec-fetch-site") === "cross-site") return false;
+  if (!teamMutationOrigin(request)) return false;
   const configured = process.env.NAUMI_ENTERPRISE_PUBLIC_ORIGIN;
-  if (!configured) return request.headers.get("origin") === new URL(request.url).origin;
+  if (!configured) return true;
   try {
     const origin = new URL(configured);
     return !origin.username && !origin.password && !origin.search && !origin.hash && origin.pathname === "/" &&

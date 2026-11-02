@@ -2,11 +2,13 @@ import 'server-only';
 import { getPool } from '@/lib/db';
 import { withSchemaInitialization } from '@/lib/schema-initialization';
 import { ensureEnterpriseSchema } from '@/lib/enterprise/server';
+import { ensureCollaborationEventSchema } from '@/lib/enterprise/collaboration-events';
 
 let ready: Promise<void> | undefined;
 /** Additive module-owned tables. Initialization precedes all business transactions. */
 export async function ensureCollaborationSchema() {
   await ensureEnterpriseSchema();
+  await ensureCollaborationEventSchema();
   if (!ready) ready = withSchemaInitialization(getPool(), tx => tx.query(`
     CREATE TABLE IF NOT EXISTS app_collab_conversations (
       id uuid PRIMARY KEY, enterprise_id uuid NOT NULL REFERENCES app_enterprise_settings(team_id),
@@ -53,11 +55,6 @@ export async function ensureCollaborationSchema() {
       state text NOT NULL CHECK(state IN ('online','away')), expires_at timestamptz NOT NULL,
       PRIMARY KEY(enterprise_id,actor_id,session_id));
     CREATE INDEX IF NOT EXISTS app_collab_presence_expiry ON app_collab_presence(expires_at);
-    CREATE TABLE IF NOT EXISTS app_collab_event_heads (enterprise_id uuid PRIMARY KEY, seq bigint NOT NULL DEFAULT 0);
-    CREATE TABLE IF NOT EXISTS app_collab_events (
-      enterprise_id uuid NOT NULL, seq bigint NOT NULL, topics text[] NOT NULL, audience text[],
-      conversation_id uuid, created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
-      PRIMARY KEY(enterprise_id,seq));
   `)).then(() => {}).catch(error => { ready = undefined; throw error; });
   await ready;
 }
