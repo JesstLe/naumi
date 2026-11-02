@@ -69,5 +69,5 @@
 - 前端正常 JSON 若缺应有 jobId/图片，也保留原 intent，不因 HTTP 200 就释放成另一笔新生成。只读恢复和真正新建明确区分。
 - 浏览器原首跑 fixture 漏 `/api/feature-access` 导致测试用户页面无授权；补齐真实权限响应结构后10工具通过。恢复测试首跑在登录水合完成前上传而触发登录弹框，改为等待实际用户按钮和工具区后通过；失败截图/日志保留，不改生产权限或掩盖 pageerror。
 - 新 helper 的 TypeScript 联合返回类型曾导致4条字段类型错误；显式声明 `Record<string, unknown>` 后全项目类型检查通过。
-- 代码完成后按仓库规则普通合 main；副本回滚的真实 baseline → modified → restored-copy、完整字节/补丁重放/晚改零写结果记录于四制品 `seal/artifacts/VERIFICATION.txt`，不冒充生产回切。
+- 代码完成后按仓库规则普通合 main；副本回滚的真实 baseline → modified → restored-copy、完整字节/补丁重放/晚改零写结果记录于四制品 `VERIFICATION.txt`，最终绝对路径以交付报告为准，不冒充生产回切。封存首跑已按预期复现前两个模块，随后因封存器尚未识别报价报告的 `modules` 键停止；新增等价路径/hash核验入口后在独立输出目录重跑，原失败目录保留。
 - **尚未完成的外部事项**：专用超分配置；12张历史截图逐笔 operation 对应；本轮没有新的供应商付费生成，也没有47部署。这些均没有用本地PASS替代。
