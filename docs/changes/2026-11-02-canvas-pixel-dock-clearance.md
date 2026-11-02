@@ -29,3 +29,14 @@
 `dock-layout`是纯屏幕坐标布局，`CanvasClient`拥有实际DOM测量和选择/viewport桥接。无网络、DB或新状态平台；视频/文本/空白节点沿原未opt-in几何。对应动作按钮业务和新后台生成任务保持。
 
 四产物、独立副本回滚、固定构建及103真实部署在收尾追加；本地fixture不是线上验收。
+
+
+## 最终交付：103已上线
+
+固定程序0fcbbc8084b1c483cb66be541643142e90283da7/build1793587166，Web/Worker同imagee82498413f0666321f6b62a64397eff55db2c180c3f5220b385965d636953241。91页Linux构建、37资源smoke通过；隔离分支已推，main未反合、47未写。
+
+release103-mapping-pixel-dock-20261102-r1于2026-11-02北京时间10:56:10 COMPLETE；新Webf782c574/13109、新Worker6f33a1a8，旧background两实例排空停止restart=no。旧网页跨切流保存200、新网页准确读回，原配置和任务preservation通过。10:58只读复核canonical339、7容器、两锁free、HTTP200/db.ok=true、可用磁盘约36.9GiB。
+
+真实103浏览器两屏×50/100/200%六项通过，使用上一模块已生成QA图片，无mock API：原图尺寸/标题不被toolbar或Dock遮住，生成按钮完整可点，原两任务回执和积分不变。新生成0/取消0/退款0/节点写0。截图、bbox与响应hash在output/canvas-pixel-dock-20261102/real103-r1，FINAL_ACCEPTANCE.json分层收据已重开。
+
+四件proof/MODIFIED_FILE.zip、DIFF_FILE.patch、VERIFICATION.txt、可执行ROLLBACK.sh：另一个完整副本恢复3原hash、删除4新增，再现旧render/live标题遮挡；正式产品保留修复态。后写入doc收尾不重新构建/发布。
