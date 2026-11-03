@@ -60,3 +60,7 @@ exit 0
 `output/browser-stability-goal-20261103/node-reads/{baseline,modified}/RESULT.json` 含逐项结果、源码 SHA、请求／写 raw body 与明确 fixture 边界；`extracted-gates.tsx` 是对应源码 AST 提取内容。浏览器 pageerror、外部网络、供应商调用均为 0。
 
 测试中的写回执、任务状态和 operation ID 是隔离 fixture，不是线上数据库或真实供应商验收。该子模块未自行 commit、SSH、建候选或发布；源码副本回退、完整构建和最终提交由稳定性主线程集中封存。本地 hook／AST 通过不替代整站部署与真实用户旧页面验收。
+
+## 统一收尾回执
+
+本模块已经并入本分支功能提交 `f770015e`；main固定 `dede3933` 仅单向同步到本分支后，受影响集中13命令和完整Next画布/文字UI通过。最终状态以 `2026-11-03-browser-stability-goal.md` 与证据 `output/browser-stability-goal-20261103/FINAL_STATUS.json` 为准；上文“未提交/待父任务”记录对应子模块交接时点。未反向合main，未服务器部署或真实供应商生成。

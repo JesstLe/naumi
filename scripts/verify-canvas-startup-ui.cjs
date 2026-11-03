@@ -169,6 +169,17 @@ async function scenario(name, fault, viewport) {
       ['text-body', { path: '/api/canvas/text-nodes', mode: 'body' }, desktop], ['text-failure-mobile', { path: '/api/canvas/text-nodes', mode: 'status' }, mobile],
     ];
     for (const entry of cases) await scenario(...entry);
+    if (args.includes('--with-text-ux')) {
+      // Reuse this owned Next snapshot for the newly synchronized main text UI.
+      // Its script still drives real CanvasClient and intercepts business I/O.
+      const cmd = [path.join(root, 'scripts/verify-canvas-text-node-ux.cjs'), '--source-root', source];
+      const result = cp.spawnSync(process.execPath, cmd, { cwd: root, encoding: 'utf8', timeout: 300000,
+        windowsHide: true, env: { ...process.env, CANVAS_TEXT_UX_URL: base, CANVAS_TEXT_UX_OUT: path.join(out, 'text-ux') } });
+      fs.writeFileSync(path.join(out, 'TEXT_UX_COMMAND.json'), JSON.stringify({ command: [process.execPath, ...cmd],
+        input: { source, base, businessHttp: 'fixture', supplierCalls: 0 }, stdout: result.stdout, stderr: result.stderr, exit: result.status }, null, 2));
+      assert.equal(result.status, 0, result.stderr || result.stdout || String(result.error));
+      checks.push('MERGED_MAIN_TEXT_UI:PASS');
+    }
   } catch (e) { error = e.stack; console.error(error); }
   finally {
     await browser?.close();

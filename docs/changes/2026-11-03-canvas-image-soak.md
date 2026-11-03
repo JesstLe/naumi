@@ -78,3 +78,7 @@ CANVAS_IMAGE_SOAK=PASS LABEL=current CYCLES=20 DURATION_MS=311943 SUPPLIER_CALLS
 - 质量断言核对原始响应字节/源文件 SHA256、实际解码 3072×2048 尺寸和原图档位；没有进行浏览器屏幕颜色／像素级差异测量。
 - 引用及时释放不证明浏览器工作集或 GPU 内存立即下降；本报告只展示真实采样，不承诺浏览器内存归还策略。
 - 无服务器部署或付费生成；生产状态由独立发布任务验证。
+
+## 统一收尾回执
+
+本模块已经并入本分支功能提交 `f770015e`；main固定 `dede3933` 仅单向同步到本分支后，受影响集中13命令和完整Next画布/文字UI通过。最终状态以 `2026-11-03-browser-stability-goal.md` 与证据 `output/browser-stability-goal-20261103/FINAL_STATUS.json` 为准；上文“未提交/待父任务”记录对应子模块交接时点。未反向合main，未服务器部署或真实供应商生成。
