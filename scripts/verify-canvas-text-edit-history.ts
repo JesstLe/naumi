@@ -13,9 +13,11 @@ assert.equal(canvasTextEditPatch(current, 'explicit change')?.from.content, curr
 const long = canvasTextEditPatch(current, 'a'.repeat(13000), 'old'); assert.equal(long?.to.content.length, 12000);
 assert.equal(current.content, 'new draft'); assert.equal(current.width, 420);
 const source = readFileSync('src/components/canvas/canvas-client.tsx', 'utf8');
-assert.match(source, /onFocus=\{\(\) => \{ editInitialContent.current = d.content; \}\}/);
+assert.match(source, /onFocus=\{\(\) => \{ editInitialContent.current = body; \}\}/);
 assert.match(source, /onContentCommit\(d.__id, event.currentTarget.value, editInitialContent.current\)/);
 assert.match(source, /editInitialContent.current = undefined/);
 assert.match(source, /canvasTextEditPatch\(textPatchOf\(node\), updated.content, initialContent\)/);
-assert.match(source, /void persistTextNode\(updated\)/);
+assert.match(source, /textAutosave.schedule\(id, textEditContext\(\)\)/);
+assert.match(source, /void textAutosave.flush\(id\)/);
+assert.match(source, /save: persistTextNode/);
 console.log('TEXT_EDIT_HISTORY=PASS CONTROLLED_DRAFT_UNDO=FOCUS_BASELINE EMPTY_BASELINE=RETAINED UNCHANGED_BLUR=NO_HISTORY CURRENT_NONCONTENT_FIELDS=RETAINED MAX12000=PASS ORIGINAL_PERSISTENCE=UNCHANGED');
