@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：Core runtime 测试端口自碰撞
+
+[runtime端口fixture](changes/2026-11-03-refactor-runtime-test-ports.md)定位旧3c Core42PASS后失败：临时端口close后OS再次发放已配置Worker端口，派生API配置自碰撞。生产拒绝正确，产品源码0改动；测试allocator全程去重且100探测有界，保留原启动/业务预算。actual allocator确定性基线/修改/回滚和完整runtime结果见output/pr8-core-runtime-ports-20261103，不以窄6项合同冒充237目录完整通过。
+
 ## 当前推进：Verify 普通 JSON 回放合同
 
 [JSON回放修复](changes/2026-11-03-refactor-json-replay-wire.md)在3c新头Verify发现并于真实PG复现产品wire回归：内部replayed metadata被泛化到text/OCR公开JSON，违反两个整合输入的原exact合同。修复HTTP投影，图片恢复body和assistant SSE原marker保留；原canvas-extra断言逐字节不改。本轮集中验证/副本rollback/新头CI归output/pr8-verify-canvas-replay-20261103，整体ACTIVE、未合main/未部署。

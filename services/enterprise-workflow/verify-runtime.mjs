@@ -6,6 +6,7 @@ import {resolve,join} from 'node:path';
 const name='naumi-runtime-test-'+randomBytes(6).toString('hex'),password=randomBytes(32).toString('hex'),cwd=fileURLToPath(new URL('.',import.meta.url));let started=false,containerId;
 const docker=args=>execFileSync('docker',args,{encoding:'utf8',timeout:60000,stdio:['ignore','pipe','pipe']}).trim();
 try{
+ execFileSync(process.execPath,['--import','tsx','../../scripts/verify-enterprise-runtime-ports.cjs'],{cwd,stdio:'inherit',timeout:60000});
  if(!process.env.RUNTIME_BUNDLE_DIR)execFileSync(process.execPath,['build.mjs'],{cwd,stdio:'inherit',timeout:60000});else console.log('RUNTIME_PREBUILT_VERIFY: bundle_files_used_without_rebuild=1');
  containerId=execFileSync('docker',['run','-d','--name',name,'--label','naumi.fixture=enterprise-runtime','-e','POSTGRES_PASSWORD','-e','POSTGRES_DB=runtime_fixture','-p','127.0.0.1::5432','postgres:16-alpine'],{env:{...process.env,POSTGRES_PASSWORD:password},stdio:['ignore','pipe','pipe']}).toString().trim();started=true;
  let ready=false;for(let i=0;i<60;i++){try{docker(['exec',name,'pg_isready','-h','127.0.0.1','-U','postgres']);ready=true;break;}catch{await new Promise(r=>setTimeout(r,500));}}if(!ready)throw Error('DATABASE_NOT_READY');
