@@ -116,9 +116,11 @@ class Release:
         self.tx.save('historical-reconciliation.json',{'priorRelease':p,'retiredObserved':retired,'legacyDrainProven':False,'historicalTasksResolved':False,'originalCanonicalSha256':sha(self.initial)})
         self.state.setdefault('blueGreen103Releases',{})[self.c['releaseId']]=self.record;self.state['active103BlueGreenReleaseId']=self.c['releaseId'];self.persist()
     def prepare(self):
+        activity_scope=self.c.get('taskActivityScope','all')
+        require(activity_scope=='all' or self.c.get('target')==TARGET and activity_scope=='nonfinished-and-prior','103_TASK_ACTIVITY_SCOPE_REQUIRED')
         self.reconcile();self.configuration=self.config();self.tx.save('configuration-before.json',self.configuration)
         self.op('database-backup',lambda _:self.tx.backup_database(public_identity(self.db)))
-        self.task_before=tasks.collect_task_snapshot(self.tx.run,public_identity(self.db),self.tx.save,projection='proof',row_limit=5000,allow_absent_tables=tasks.ADDITIVE_TABLES,statement_timeout_ms=15000)
+        self.task_before=tasks.collect_task_snapshot(self.tx.run,public_identity(self.db),self.tx.save,projection='proof',row_limit=5000,allow_absent_tables=tasks.ADDITIVE_TABLES,statement_timeout_ms=15000,activity_scope=activity_scope)
         self.dump=self.tx.run(['nginx','-T']).decode();require(sha(self.dump.encode())==self.c['nginxSha256'],'NGINX_BASELINE_CHANGED')
         parsed=compat.Dump(self.dump);self.before={p:pathlib.Path(p).read_bytes()for p in parsed.files};self.real={p:str(pathlib.Path(p).resolve())for p in self.before}
         self.tx.save('nginx-before.private.txt',self.dump.encode());self.tx.save('nginx-files-before.private.json',{p:base64.b64encode(b).decode()for p,b in self.before.items()})
@@ -308,7 +310,7 @@ class Release:
         state=next(m['Source']for m in w['Mounts']if m['Destination']=='/release-state');startup.write_activation(pathlib.Path(state)/'activation.json',startup.activation_marker(spec,{'name':self.c['newNames']['web']},True))
         for r in self.new.values():self.tx.run(['docker','update','--restart=unless-stopped',r['Id']])
         require(self.config()==self.configuration,'INDEPENDENT_CONFIGURATION_CHANGED')
-        task_after=tasks.collect_task_snapshot(self.tx.run,public_identity(self.db),self.tx.save,previous=self.task_before.private,projection='proof',row_limit=5000,allow_absent_tables=tasks.ADDITIVE_TABLES,statement_timeout_ms=15000)
+        task_after=tasks.collect_task_snapshot(self.tx.run,public_identity(self.db),self.tx.save,previous=self.task_before.private,projection='proof',row_limit=5000,allow_absent_tables=tasks.ADDITIVE_TABLES,statement_timeout_ms=15000,activity_scope=self.c.get('taskActivityScope','all'))
         preservation=tasks.compare_task_snapshots(self.task_before,task_after);self.tx.save('task-preservation.json',preservation);require(preservation['preservationVerified'],'TASK_PRESERVATION_FAILED')
         self.phase('COMPLETE',new={k:public_identity(self.tx.inspect(r['Id']))for k,r in self.new.items()},old={k:public_identity(self.tx.inspect(r['Id']))for k,r in self.old.items()},sameImage=True,allInternalOriginsVerified=True,configurationPreserved=True,legacyHistoricalUncertaintyRetained=True)
         self.tx.save('FINAL_STATUS.json',self.record)

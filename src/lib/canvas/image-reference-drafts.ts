@@ -22,5 +22,11 @@ export class ImageReferenceDraftStore {
     const next=old.filter(file=>file.key!==id);if(next.length)this.drafts.set(key,next);else this.drafts.delete(key);
     for(const file of removed)this.urls.revokeObjectURL(file.url);
   }
+  /** Fork the draft, not its preview ownership. Each node revokes only its own
+   * URLs; stable reference keys retain roles and prompt mentions. */
+  copy(source:string|null,target:string|null){
+    if(!source||!target||source===target||this.drafts.has(target))return;
+    this.add(target,this.read(source).map(({key,file})=>({key,file})));
+  }
   clear(){for(const files of this.drafts.values())for(const file of files)this.urls.revokeObjectURL(file.url);this.drafts.clear();}
 }

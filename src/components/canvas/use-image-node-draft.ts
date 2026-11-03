@@ -34,5 +34,6 @@ export function useImageNodeDraft(scope: string | null, nodeId: string | null, d
     setPrompt: (value: SetStateAction<string>) => setField('prompt', value),
     setRatio: (value: SetStateAction<string>) => setField('ratio', value),
     seed,
+    read: (node: string, targetScope = scope) => store.read(imageDraftKey(targetScope, node)),
   };
 }

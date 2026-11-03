@@ -340,14 +340,14 @@ def page_state(budget):
     return f"{STATE} || CASE WHEN NOT ({STATE}->>'ok')::boolean THEN '{{}}'::jsonb WHEN extract(epoch FROM clock_timestamp()-transaction_timestamp())>={budget['seconds']} THEN '{{\"ok\":false,\"reason\":\"unknown-time-budget\"}}'::jsonb WHEN ({STATE}->>'pages')::int>={budget['pages']} THEN '{{\"ok\":false,\"reason\":\"unknown-page-budget\"}}'::jsonb ELSE '{{}}'::jsonb END"
 
 
-def page_graph_sql(index, name, reg, key, budget, *, first=False, previous_ids=()):
+def page_graph_sql(index, name, reg, key, budget, *, first=False, previous_ids=(), activity_filter=''):
     seek = 'true' if first else f':table_{index}_seek'
     source_predicate = native_scan_predicate(name, previous_ids)
     # MATERIALIZED PK page comes before ANY snapshot/payload expression. No
     # all-table source/proof CTE and no timestamp/OFFSET pagination.
     base = f"""WITH s AS MATERIALIZED (SELECT {page_state(budget)} AS s),
     page_keys AS MATERIALIZED (SELECT :table_{index}_order_pk FROM {reg} t
-      WHERE ({source_predicate}) AND {seek} AND (SELECT (s->>'ok')::boolean FROM s)
+      WHERE {('('+source_predicate+') AND ') if source_predicate!='true' or not activity_filter else ''}{seek} AND (SELECT (s->>'ok')::boolean FROM s){' AND ('+activity_filter+')' if activity_filter else ''}
       ORDER BY :table_{index}_order_pk LIMIT {budget['page_rows']}),
     page AS MATERIALIZED (SELECT to_jsonb(t) AS j FROM page_keys k CROSS JOIN LATERAL
       (SELECT :table_{index}_projection FROM {reg} t WHERE :table_{index}_join_pk LIMIT 1) t),
@@ -427,11 +427,15 @@ def page_proof_sql(index, name, reg, key, projection, budget, row_limit):
     SELECT jsonb_build_object('kind','page','phase','proof','table',{literal(name)},'count',n,'bytes',bytes,'ok',reason='') FROM saved,checked;"""
 
 
-def build_sql(*, previous=None, schema='public', row_limit=1000, projection='full', statement_timeout_ms=5000, budget=None):
+def build_sql(*, previous=None, schema='public', row_limit=1000, projection='full', statement_timeout_ms=5000, budget=None, activity_scope='all'):
     if not re.fullmatch('[a-z_][a-z0-9_]{0,62}', schema) or type(row_limit) is not int or not 1<=row_limit<=5000:
         raise ValueError('BOUNDED_SQL_SCOPE_REQUIRED')
     if projection not in ['full','proof']:
         raise ValueError('UNKNOWN_TASK_PROJECTION')
+    if activity_scope not in ['all','nonfinished-and-prior']:
+        raise ValueError('UNKNOWN_TASK_ACTIVITY_SCOPE')
+    if activity_scope!='all' and ACTIVITY_INSTANCE_SCOPE:
+        raise ValueError('AMBIGUOUS_TASK_ACTIVITY_SCOPE')
     if type(statement_timeout_ms) is not int or not 1000<=statement_timeout_ms<=15000:
         raise ValueError('BOUNDED_STATEMENT_TIMEOUT_REQUIRED')
     b=budgets(budget)
@@ -450,6 +454,14 @@ def build_sql(*, previous=None, schema='public', row_limit=1000, projection='ful
     empty_summary="'{\"count\":0,\"sumA\":\"0\",\"sumB\":\"0\",\"algorithm\":\"sha256-leaf-two-64bit-sums\"}'::jsonb"
     for i,(name,key) in enumerate(KEYS.items()):
         reg=schema+'.'+name
+        # 103 opt-in only: finished activities are neither graph roots nor
+        # incoming graph targets (graph_links is empty for this table). Retain
+        # every original protected ID even after completion, and all unknown /
+        # active rows across every instance and old boot. No history is deleted.
+        activity_filter = ''
+        if activity_scope=='nonfinished-and-prior' and name=='app_release_activities':
+            ids=','.join(literal(v) for v in prior.get(name,[]))
+            activity_filter="t.state IS DISTINCT FROM 'finished'"+(f' OR t.id IN ({ids})' if ids else '')
         source_predicate=native_scan_predicate(name,prior.get(name,[]))
         source_fields=(('instance_id','state') if name=='app_release_activities' else ('phase',)) if name in ['app_release_activities','app_worker_tick_receipts'] and ACTIVITY_INSTANCE_SCOPE else ()
         scan_guard=f"{STATE} || CASE WHEN :table_{i}_scan_count+({STATE}->>'scanRows')::int>{b['scan_rows']} THEN '{{\"ok\":false,\"reason\":\"unknown-scan-budget\"}}'::jsonb ELSE '{{}}'::jsonb END"
@@ -459,15 +471,15 @@ def build_sql(*, previous=None, schema='public', row_limit=1000, projection='ful
           graph_projection_sql(reg)+f' \\gset table_{i}_']
         if projection=='proof' and name!='app_ledger':lines += [proof_projection_sql(reg)+f' \\gset table_{i}_']
         lines += [deadline_sql(b,statement_timeout_ms),
-          f"SELECT count(*) AS scan_count FROM (SELECT :table_{i}_order_pk FROM {reg} t WHERE ({source_predicate}) AND ({STATE}->>'ok')::boolean ORDER BY :table_{i}_order_pk LIMIT {b['scan_rows']+1}) q \\gset table_{i}_",
+          f"SELECT count(*) AS scan_count FROM (SELECT :table_{i}_order_pk FROM {reg} t WHERE {('('+source_predicate+') AND ') if source_predicate!='true' or not activity_filter else ''}({STATE}->>'ok')::boolean{' AND ('+activity_filter+')' if activity_filter else ''} ORDER BY :table_{i}_order_pk LIMIT {b['scan_rows']+1}) q \\gset table_{i}_",
           f"SELECT {save_setting('state',scan_guard)} \\gset scan_gate_{i}_",
           f"SELECT {save_setting('cursor',empty_array)} \\gset cursor_{i}_"]
         if name in ['app_ledger','app_billing_operations']:
             lines += [f"SELECT {save_setting('summary_'+str(i),empty_summary)} \\gset summary_{i}_"]
         # Render query templates with catalog fragments in psql, not SQL values.
         # \gexec itself only executes SQL; no generated psql meta commands.
-        first=page_graph_sql(i,name,reg,key,b,first=True,previous_ids=prior.get(name,[]))
-        more=page_graph_sql(i,name,reg,key,b,previous_ids=prior.get(name,[]))
+        first=page_graph_sql(i,name,reg,key,b,first=True,previous_ids=prior.get(name,[]),activity_filter=activity_filter)
+        more=page_graph_sql(i,name,reg,key,b,previous_ids=prior.get(name,[]),activity_filter=activity_filter)
         lines += [deadline_sql(b,statement_timeout_ms),first]
         lines += generated_pages(more,i,f'ceil(:table_{i}_scan_count::numeric/{b["page_rows"]})::int-1',b,statement_timeout_ms)
         lines += ['\\endif','\\endif']
@@ -681,7 +693,7 @@ def frozen(row):
     return result
 
 
-def collect_task_snapshot(command, db_identity, private_save=None, *, previous=None, schema='public', expected_database=None, row_limit=1000, projection='full', allow_absent_tables=(), statement_timeout_ms=5000, budget=None):
+def collect_task_snapshot(command, db_identity, private_save=None, *, previous=None, schema='public', expected_database=None, row_limit=1000, projection='full', allow_absent_tables=(), statement_timeout_ms=5000, budget=None, activity_scope='all'):
     if set(allow_absent_tables) - ADDITIVE_TABLES:
         raise ValueError('ONLY_SOURCE_AUDITED_NEW_RELEASE_TABLES_MAY_BE_ABSENT')
     if not isinstance(db_identity, dict) or not re.fullmatch('[a-f0-9]{64}', db_identity.get('id', '')):
@@ -701,7 +713,7 @@ def collect_task_snapshot(command, db_identity, private_save=None, *, previous=N
     effective_budget = budgets(budget)
     if projection=='full':
         effective_budget['page_bytes']=min(effective_budget['page_bytes'],524288)
-    sql = build_sql(previous=previous, schema=schema, row_limit=row_limit, projection=projection, statement_timeout_ms=statement_timeout_ms, budget=effective_budget)
+    sql = build_sql(previous=previous, schema=schema, row_limit=row_limit, projection=projection, statement_timeout_ms=statement_timeout_ms, budget=effective_budget, activity_scope=activity_scope)
     args = ['docker', 'exec', '-i', db_identity['id'], 'psql', '-X', '-qAt', '--no-password', '-v', 'ON_ERROR_STOP=1', '-U', user, '-d', database]
     def failure(reason):
         record={'kind':'task-preservation-incomplete-v2','status':'incomplete',
@@ -751,6 +763,7 @@ def collect_task_snapshot(command, db_identity, private_save=None, *, previous=N
                               'consistency':'bounded-repeatable-read','coverage':last['coverage'],
                               'elapsedMs':last.get('elapsedMs'),'budget':effective_budget,
                               'pageEvidence':[item for item in lines if item.get('kind')=='page']}}
+    if activity_scope!='all':private['collection']['activityScope']=activity_scope
     public = summarize(private, row_limit=row_limit)
     public['sqlSha256'], public['originalOutputSha256'] = sha(sql), sha(raw)
     if private_save:
@@ -768,6 +781,8 @@ def compare_task_snapshots(before, after):
         raise ValueError('PRIVATE_BOUND_SNAPSHOTS_REQUIRED')
     summaries = [summarize(value, row_limit=value.get('rowLimit', 1000)) for value in [before, after]]
     violations, unknown, additions, completions = [], [], 0, 0
+    if before.get('collection',{}).get('activityScope','all')!=after.get('collection',{}).get('activityScope','all'):
+        violations.append({'reason':'TASK_ACTIVITY_SCOPE_CHANGED'})
     if any(value.get('collection') for value in [before,after]) and any(
             value.get('collection',{}).get('version')!=PROOF_VERSION or value.get('collection',{}).get('status')!='complete'
             for value in [before,after]):
