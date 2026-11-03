@@ -1,5 +1,9 @@
 # 整体退出审计
 
+## 当前增量：引用保留原适配器的完整测试闭包
+
+[375引用fixture](../changes/2026-11-04-refactor-reference-retention-fixture.md)确认145PASS后的reference-retention在VM未绑定canvasAccountRef时中止，未执行原引用合同。测试补齐真实提交锁/新attempt owner与可变身份/save端口，不删除产品flush/epoch fence；原40检查及新11准备case/85检查通过。提交前ABA和token-CAS释放不等于受理后恢复、UNKNOWN或真实账务验收；正式目录246、完整Core、R04/同case页面/固定WebWorker/runtime/performance与main整合门槛保持。375 Verify远端SUCCESS独立保留，未合main/未部署、47 HOLD。
+
 ## 当前增量：59d 验收导航与异步受理边界
 
 [59d合同跟进](../changes/2026-11-03-refactor-ci59d-test-contracts.md)只改测试，不把即时posts0误报为整个任务生命周期零POST。原异步prepare与身份fence保留，显式原submit-entry握手后再变更身份；原业务UI先进入AI写作模式，30秒预算及发布/鉴权/mobile断言不缩减。完整Core owner/React17场景95检查与真实隔离Next/PG/GoRouter业务UI分别通过。全源copy oracle只复跑完整Core harness，business副本恢复为字节级证据，不冒称第三次PG浏览器执行。正式目录仍246、完整Core/Verify新头CI与整体R04/同case页面/运行性能验收独立；mainMerged=false、deployed=false、47 HOLD。

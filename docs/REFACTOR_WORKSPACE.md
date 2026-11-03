@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：375 Core 引用保留测试闭包
+
+[引用保留fixture](changes/2026-11-04-refactor-reference-retention-fixture.md)处理当前375 Core145PASS/1FAIL/100NOT_RUN：原VM遗漏Canvas适配器10项身份/保存/提交依赖，在引用断言前ReferenceError。仅补测试边界并导入实际background-generation token锁/attempt，不改产品guard。原40引用检查保留；新增11个提交准备case/85检查，完整125通过，scope空assert/恒true端口不当作受理后ABA或财务证据。正式原case、最终静态/独立窄审/四产物归output/pr8-reference-retention-ci375-20261104；目录仍246，375远端Verify SUCCESS保留原身份，不贴给未来新头。整体ACTIVE、未合main/未部署、47 HOLD。
+
 ## 当前推进：59d Core/Verify 验收合同跟进
 
 [异步受理与业务模型入口](changes/2026-11-03-refactor-ci59d-test-contracts.md)保留59d两条真实失败身份：Core18PASS/1FAIL与Verify原模型入口30秒超时。只修测试：原submit端口实际进入后再切换身份、先进入文字Dock的AI写作再选模型，不动产品prepare/scope fence或原断言预算。完整owner/React17场景95检查与完整本地Next/PG/pinned GoRouter业务UI已通过，供应商调用0；setup ERROR与原失败保留。正式原case、最终集中检查与副本三相四产物归output/pr8-ci59d-followup-20261103；目录仍246，不把copy oracle登记成替代case。整体ACTIVE、未合main/未部署、47 HOLD。
