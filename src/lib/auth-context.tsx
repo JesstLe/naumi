@@ -8,12 +8,14 @@ import {
   useRef,
   useState,
 } from "react";
+import { usePathname } from "next/navigation";
 import { type PlanKey } from "@/lib/mock-data";
 import { BRAND } from "@/lib/brand";
 import { supabaseEnabled } from "@/lib/auth-mode";
 import { activateBrowserData, invalidateBrowserData, installBrowserDataObserver } from "@/lib/browser-data-cache";
 import { activateBrowserImages, clearBrowserImages, configureBrowserImageCache } from "@/lib/browser-image-cache";
 import { authHeader } from "@/lib/supabase";
+import { AuthBootstrapReadError, bootstrapConfig, bootstrapSessionUser, readAuthBootstrapJson } from "./auth-bootstrap";
 
 // ---------------------------------------------------------------------------
 // Session + membership state.
@@ -105,8 +107,25 @@ function loadUser(email: string): SessionUser | null {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname() || "";
+  // These entry points use their own authoritative admin cookie/setup checks.
+  // Broken model/config discovery must not prevent an operator repairing it.
+  const independentAccess = pathname === "/setup" || pathname === "/admin" || pathname.startsWith("/admin/");
   const [user, setUser] = useState<SessionUser | null>(null);
   const [ready, setReady] = useState(false);
+  const [bootstrapState, setBootstrapState] = useState<"loading" | "ready" | "error">("loading");
+  const bootstrapStateRef = useRef(bootstrapState);
+  const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
+  const retryBootstrap = useCallback(() => {
+    bootstrapStateRef.current = "loading";
+    setBootstrapState("loading");
+    setReady(false);
+    setBootstrapAttempt(value => value + 1);
+  }, []);
+  const refreshPendingIdentity = useCallback(() => {
+    // A bridge/login identity change supersedes the pending READ, not a POST.
+    if (bootstrapStateRef.current !== "ready") retryBootstrap();
+  }, [retryBootstrap]);
   const [persistMode, setPersistMode] = useState<"local" | "server">(
     "local"
   );
@@ -139,10 +158,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [persist]);
 
   useEffect(() => {
-    const clear = () => { identityEpoch.current++; clearBrowserImages(); persist(null); };
+    const clear = () => { identityEpoch.current++; clearBrowserImages(); persist(null); refreshPendingIdentity(); };
     window.addEventListener("naumi:cache-session-ended", clear);
     return () => window.removeEventListener("naumi:cache-session-ended", clear);
-  }, [persist]);
+  }, [persist, refreshPendingIdentity]);
 
   // Server helper: POST /api/account. Returns the user or null on any failure
   // (the caller then keeps the optimistic local copy).
@@ -166,94 +185,80 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  // Detect persistence mode, then hydrate the last session.
+  // Keep descendants (including SessionBridge and editor drafts) mounted while
+  // discovering the mode. Only a successful read can complete this bootstrap.
   useEffect(() => {
     installBrowserDataObserver();
-    let cancelled = false;
+    const controller = new AbortController();
     const bootstrapEpoch = identityEpoch.current;
-    const current = () => !cancelled && bootstrapEpoch === identityEpoch.current;
-    (async () => {
+    const current = () => !controller.signal.aborted && bootstrapEpoch === identityEpoch.current;
+    bootstrapStateRef.current = "loading";
+    setBootstrapState("loading");
+    setReady(false);
+    void (async () => {
       let lastEmail: string | null = null;
+      try { lastEmail = localStorage.getItem(LAST_KEY); } catch { /* Optional warm identity. */ }
       try {
-        lastEmail = localStorage.getItem(LAST_KEY);
-        if (lastEmail) {
+        const cfg = bootstrapConfig(await readAuthBootstrapJson("/api/config", { signal: controller.signal }));
+        if (!current()) return;
+        configureBrowserImageCache(cfg.db);
+        serverRef.current = cfg.db;
+        setPersistMode(cfg.db ? "server" : "local");
+        multiUserRef.current = cfg.multiUser;
+        setMultiUser(cfg.multiUser);
+        const clearAnonymous = () => {
+          if (!current()) return;
+          activateBrowserData(null); activateBrowserImages(null); persist(null);
+        };
+        const readAccount = async (explicitAnonymousSession = false) => {
+          try {
+            const data = await readAuthBootstrapJson(`/api/account?email=${encodeURIComponent(lastEmail!)}`, {
+              signal: controller.signal, headers: authHeader,
+            });
+            if (!data || typeof data !== "object" || (data as { persisted?: unknown }).persisted !== true) {
+              throw new Error("账号资料读取失败");
+            }
+            const account = bootstrapSessionUser(data);
+            if (!account) throw new Error("账号资料读取失败");
+            if (String(account.email).toLowerCase() !== lastEmail!.toLowerCase()) throw new Error("账号资料读取失败");
+            if (current()) verifiedPersist(account as SessionUser);
+          } catch (error) {
+            // Keep the legacy mock account lookup, but an already-confirmed
+            // anonymous session plus its denied old cache is not an outage.
+            if (explicitAnonymousSession && error instanceof AuthBootstrapReadError && [401, 403].includes(error.status)) clearAnonymous();
+            else throw error;
+          }
+        };
+        if (cfg.multiUser || cfg.db && cfg.authMode === "mock") {
+          const session = bootstrapSessionUser(await readAuthBootstrapJson("/api/auth/session", { signal: controller.signal }));
+          if (!current()) return;
+          if (session) verifiedPersist(session as SessionUser);
+          else if (!cfg.multiUser && lastEmail) await readAccount(true);
+          else {
+            // This is an explicit HTTP 200 {user:null}, never a failed read.
+            clearAnonymous();
+          }
+        } else if (cfg.db && lastEmail) {
+          await readAccount();
+        } else if (!cfg.db && lastEmail) {
           const cached = loadUser(lastEmail);
-          if (cached && current()) setUser(cached);
+          if (cached && current()) persist(cached);
         }
+        if (!current()) return;
+        bootstrapStateRef.current = "ready";
+        setBootstrapState("ready");
+        setReady(true);
       } catch {
-        /* ignore */
+        if (!current()) return;
+        // Retain stored identity/cache/drafts. Unknown mode is not local mode;
+        // service failure is not logout. Retry only these bootstrap GETs.
+        bootstrapStateRef.current = "error";
+        setBootstrapState("error");
+        setReady(false);
       }
-
-      try {
-        const cfg = await fetch("/api/config").then((r) => r.json());
-        if(current() && typeof cfg?.db==='boolean')configureBrowserImageCache(cfg.db);
-        if (current() && cfg?.db) {
-          serverRef.current = true;
-          setPersistMode("server");
-        }
-        // 原生多用户:身份来自服务端会话 cookie(权威),不用 localStorage lastEmail。
-        if (current() && cfg?.multiUser) {
-          multiUserRef.current = true;
-          setMultiUser(true);
-          try {
-            const s = await fetch("/api/auth/session", { cache: "no-store" }).then((r) => r.ok ? r.json() : { user: null });
-            if (current()) {
-              if (s?.user) verifiedPersist(s.user as SessionUser);
-              else {
-                // 会话无效 → 清掉可能残留的本地态
-                activateBrowserData(null); activateBrowserImages(null);
-                setUser(null);
-                try {
-                  localStorage.removeItem(LAST_KEY);
-                } catch {
-                  /* ignore */
-                }
-              }
-            }
-          } catch {
-            /* session unreachable — leave as-is */
-          }
-        } else if (current() && cfg?.db && cfg?.authMode === "mock") {
-          // 开源版单用户:身份以本地管理员会话(服务端 nv_admin cookie)为权威,
-          // 不依赖 localStorage —— 覆盖「只从 /admin 登录、主站 auth-context 未 signIn」
-          // 的情况(否则主站 user=null,作品/历史全拉不出)。
-          try {
-            const s = await fetch("/api/auth/session", { cache: "no-store" }).then((r) => r.ok ? r.json() : { user: null });
-            if (current()) {
-              if (s?.user) {
-                verifiedPersist(s.user as SessionUser);
-              } else if (lastEmail) {
-                const res = await fetch(
-                  `/api/account?email=${encodeURIComponent(lastEmail)}`,
-                  { headers: await authHeader() }
-                ).then((r) => r.ok ? r.json() : null);
-                if (current() && res?.persisted && res.user) {
-                  verifiedPersist(res.user as SessionUser);
-                }
-              }
-            }
-          } catch {
-            /* session unreachable — leave as-is */
-          }
-        } else if (current() && cfg?.db && lastEmail) {
-          const res = await fetch(
-            `/api/account?email=${encodeURIComponent(lastEmail)}`,
-            { headers: await authHeader() }
-          ).then((r) => r.ok ? r.json() : null);
-          if (current() && res?.persisted && res.user) {
-            verifiedPersist(res.user as SessionUser);
-          }
-        }
-      } catch {
-        /* config unreachable — stay in local mode */
-      }
-
-      if (current()) setReady(true);
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [persist, verifiedPersist]);
+    return () => controller.abort();
+  }, [bootstrapAttempt, persist, verifiedPersist]);
 
   const startSession = useCallback(
     (name: string, email: string) => {
@@ -267,6 +272,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ? { ...existing, name: name || existing.name }
           : makeUser(name, email)
       );
+      refreshPendingIdentity();
       // Authoritative server copy when the DB is live.
       if (serverRef.current) {
         serverPost({ action: "sync", email, name }).then((r) => {
@@ -274,7 +280,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
       }
     },
-    [persist, verifiedPersist, serverPost]
+    [persist, verifiedPersist, serverPost, refreshPendingIdentity]
   );
 
   const signUp = useCallback(
@@ -294,6 +300,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         activateBrowserData(null); activateBrowserImages(null);
         setUser(null);
         currentEmail.current = null;
+        refreshPendingIdentity();
         try {
           localStorage.removeItem(LAST_KEY);
         } catch {
@@ -303,7 +310,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       startSession(identity.name, identity.email);
     },
-    [startSession]
+    [startSession, refreshPendingIdentity]
   );
 
   const signOut = useCallback(() => {
@@ -323,12 +330,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setUser(null);
     currentEmail.current = null;
+    refreshPendingIdentity();
     try {
       localStorage.removeItem(LAST_KEY);
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [refreshPendingIdentity]);
 
   const bindSignOut = useCallback((fn: (() => void) | null) => {
     externalSignOut.current = fn;
@@ -342,16 +350,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Only the login form may establish a new identity. A late generation or
       // balance response after logout/switch must not resurrect the old account.
       if (!establishSession && next.email.toLowerCase() !== currentEmail.current) return;
-      if (establishSession) { identityEpoch.current++; setReady(true); }
+      if (establishSession) { identityEpoch.current++; setReady(true); refreshPendingIdentity(); }
       invalidateBrowserData(next.email);
       verifiedPersist(next);
     },
-    [verifiedPersist, renderedIdentityEpoch]
+    [verifiedPersist, renderedIdentityEpoch, refreshPendingIdentity]
   );
 
   const changePlan = useCallback(
     async (planKey: PlanKey): Promise<Invoice | null> => {
-      if (!user) return null;
+      if (!user || bootstrapStateRef.current !== "ready") return null;
 
       if (serverRef.current) {
         const requestEpoch = identityEpoch.current;
@@ -373,7 +381,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const consumeCredits = useCallback(
     (n: number): boolean => {
-      if (!user || renderedIdentityEpoch !== identityEpoch.current || currentEmail.current !== user.email.toLowerCase()) return false;
+      if (bootstrapStateRef.current !== "ready" || !user || renderedIdentityEpoch !== identityEpoch.current || currentEmail.current !== user.email.toLowerCase()) return false;
       if (user.creditsUsed + n > user.creditsTotal) return false;
       // In server mode the generate route reserves credits and returns the
       // authoritative user (applied via applyServerUser); this optimistic
@@ -385,12 +393,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const remaining = user ? user.creditsTotal - user.creditsUsed : 0;
+  const bootstrapReady = ready && bootstrapState === "ready";
+  const blockBootstrapInteraction = !bootstrapReady && !independentAccess;
+  const blockPendingInteraction = (event: React.SyntheticEvent) => {
+    // React events from dialogs portaled outside this inert DOM wrapper also
+    // pass through here. Keep drafts mounted without permitting mock actions.
+    if (blockBootstrapInteraction) { event.preventDefault(); event.stopPropagation(); }
+  };
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        ready,
+        ready: bootstrapReady,
         remaining,
         persistMode,
         multiUser,
@@ -404,7 +419,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         bindSignOut,
       }}
     >
-      {children}
+      <div style={{ display: "contents" }} inert={blockBootstrapInteraction || undefined}
+        onClickCapture={blockPendingInteraction} onPointerDownCapture={blockPendingInteraction}
+        onKeyDownCapture={blockPendingInteraction} onSubmitCapture={blockPendingInteraction}>
+        {children}
+      </div>
+      {blockBootstrapInteraction && (
+        <div className="fixed inset-0 z-[2147483000] flex items-center justify-center bg-white/90 p-6">
+          <div role={bootstrapState === "error" ? "alert" : "status"} className="flex flex-col items-center gap-4 rounded-xl border border-slate-200 bg-white px-8 py-6 text-slate-900 shadow-sm">
+            <span>{bootstrapState === "error" ? "账号连接中断" : "正在连接账号…"}</span>
+            {bootstrapState === "error" && <button type="button" autoFocus onClick={retryBootstrap} className="rounded-lg bg-slate-900 px-5 py-2 text-sm font-medium text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-slate-900">重新连接</button>}
+          </div>
+        </div>
+      )}
     </AuthContext.Provider>
   );
 }

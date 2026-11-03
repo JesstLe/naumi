@@ -1,12 +1,13 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { readNodeList, useNodeListRead } from "../use-node-list-read";
 import { browserRandomUUID } from "@/lib/browser-crypto";
 import type { CanvasDirectorNode, DirectorNodeWrite } from "@/lib/canvas/director-node-schema";
 import type { VideoPrivateFetch } from "../video/use-video-nodes";
 
 export class DirectorClientError extends Error { constructor(message: string, public status: number, public code?: string) { super(message); } }
 export function useDirectorNodes({ email, readOnly, request }: { email?: string; readOnly: boolean; request: VideoPrivateFetch }) {
-  const [allNodes, setNodes] = useState<CanvasDirectorNode[]>([]), [ready, setReady] = useState(false), [error, setError] = useState(""),[pending,setPending]=useState(0);
+  const [allNodes, setNodes] = useState<CanvasDirectorNode[]>([]), [error, setError] = useState(""),[pending,setPending]=useState(0);
   const nodesRef = useRef(allNodes), identity = useRef({ email, readOnly, epoch: 0 }), queues = useRef(new Map<string, Promise<unknown>>()), attempts = useRef(new Map<string,string>()); nodesRef.current = allNodes;
   if (identity.current.email !== email || identity.current.readOnly !== readOnly) identity.current = { email, readOnly, epoch: identity.current.epoch + 1 };
   const epoch = identity.current.epoch;
@@ -16,17 +17,16 @@ export function useDirectorNodes({ email, readOnly, request }: { email?: string;
     for (const node of incoming) { const old = map.get(node.id); if (!old || old.revision < node.revision) { map.set(node.id, node); changed = true; } }
     if (changed) { nodesRef.current = [...map.values()]; setNodes(nodesRef.current); }
   }, []);
-  const refresh = useCallback(async () => {
-    if (!email) return; const response = await request(`/api/canvas/director-nodes?includeDeleted=1&email=${encodeURIComponent(email)}`, { cache: "no-store" }), data = await response.json();
-    if (!response.ok) throw new DirectorClientError(data.error || "导演工程加载失败", response.status);
-    if (identity.current.epoch === epoch) { merge(data.nodes || [], epoch); setReady(true); setError(""); }
-  }, [email, epoch, request, merge]);
+  const read = useCallback((signal: AbortSignal) => readNodeList<CanvasDirectorNode>(request,
+    `/api/canvas/director-nodes?includeDeleted=1&email=${encodeURIComponent(email || "")}`, signal,
+    (message, status, code) => new DirectorClientError(message, status, code)), [email, epoch, request]);
+  const acceptRead = useCallback((incoming: CanvasDirectorNode[]) => merge(incoming, epoch), [merge, epoch]);
+  const { ready, readError, loading, refresh } = useNodeListRead({
+    identityKey: JSON.stringify([email, readOnly, epoch]), enabled: !!email, read, accept: acceptRead,
+  });
   useEffect(() => {
-    nodesRef.current = []; setNodes([]); setError("");setPending(0); setReady(!email); queues.current.clear(); attempts.current.clear(); let stopped = false;
-    const load = () => { if (!email) return; void refresh().catch(cause => { if (!stopped && identity.current.epoch === epoch) { setReady(true); setError(cause instanceof Error ? cause.message : "导演工程加载失败"); } }); };
-    load(); const resume = () => { if (document.visibilityState === "visible") load(); }; window.addEventListener("focus", resume); document.addEventListener("visibilitychange", resume);
-    return () => { stopped = true; window.removeEventListener("focus", resume); document.removeEventListener("visibilitychange", resume); };
-  }, [email, epoch, refresh]);
+    nodesRef.current = []; setNodes([]); setError(""); setPending(0); queues.current.clear(); attempts.current.clear();
+  }, [email, epoch]);
   const save = useCallback((id: string, patch: Partial<Omit<DirectorNodeWrite, "id" | "operationId">>): Promise<CanvasDirectorNode> => {
     if(!email||readOnly)return Promise.reject(new Error("画布账号或编辑状态已改变"));setPending(value=>value+1);
     const execute = async () => {
@@ -50,5 +50,5 @@ export function useDirectorNodes({ email, readOnly, request }: { email?: string;
   }, [email, readOnly, epoch, request, merge]);
   const getNode = useCallback((id: string) => nodesRef.current.find(node => node.id === id), []);
   const flush = useCallback(() => Promise.all([...queues.current.values()]), []);
-  return { nodes: useMemo(() => allNodes.filter(node => !node.deletedAt), [allNodes]), allNodes, ready, error,saving:pending>0, refresh, save, attachOutput, getNode, flush };
+  return { nodes: useMemo(() => allNodes.filter(node => !node.deletedAt), [allNodes]), allNodes, ready, readError, loading, error:error||readError,saving:pending>0, refresh, save, attachOutput, getNode, flush };
 }

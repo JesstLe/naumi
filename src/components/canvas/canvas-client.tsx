@@ -159,7 +159,7 @@ import {
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import dynamic from "next/dynamic";
+import { recoverablePanel } from "./recoverable-panel";
 import NextImage from "@/components/cached-next-image";
 import { useWorkspaceRouter as useRouter } from "@/lib/desktop/navigation";
 import {
@@ -254,23 +254,23 @@ import { ImageLightbox } from "@/components/image-lightbox";
 import type { ComfyRunPayload, ComfyRunResult } from "@/components/canvas/canvas-comfy-dialog";
 import { BRAND, BRAND_CANVAS_LOGO } from "@/lib/brand";
 const panelLoading = () => <div role="status" className="p-4 text-sm text-slate-500">加载中…</div>;
-const AssistantRichText = dynamic(() => import("./assistant-richtext").then(module => module.AssistantRichText), { ssr: false, loading: panelLoading });
-const ImageCropDialog = dynamic(() => import("./image-crop-dialog").then(module => module.ImageCropDialog), { ssr: false, loading: panelLoading });
-const CharacterEditor = dynamic(() => import("./character/character-editor").then(module => module.CharacterEditor), { ssr: false, loading: panelLoading });
-const TimelineEditor = dynamic(() => import("./timeline/timeline-editor").then(module=>module.TimelineEditor),{ssr:false,loading:panelLoading});
-const AudioEditor = dynamic(() => import("./audio/audio-editor").then(module => module.AudioEditor), {ssr:false,loading:panelLoading});
-const SceneEditor = dynamic(() => import("./scene/scene-editor").then(module => module.SceneEditor), { ssr: false, loading: panelLoading });
-const DirectorEditor = dynamic(() => import("./director/director-editor").then(module => module.DirectorEditor), { ssr: false, loading: panelLoading });
-const NodePropertiesPanel = dynamic(() => import("./node-properties-panel").then(module => module.NodePropertiesPanel), { ssr: false, loading: panelLoading });
-const AnnotateEditorModal = dynamic(() => import("./annotate-editor").then(module => module.AnnotateEditorModal), { ssr: false, loading: panelLoading });
-const CanvasComfyDialog = dynamic(() => import("./canvas-comfy-dialog").then(module => module.CanvasComfyDialog), { ssr: false, loading: panelLoading });
-const TemplatesClient = dynamic(() => import("@/components/templates/templates-client").then(module => module.TemplatesClient), { ssr: false, loading: panelLoading });
-const CreditPacks = dynamic(() => import("@/components/credits/credit-packs").then(module => module.CreditPacks), { ssr: false, loading: panelLoading });
-const PayQrModal = dynamic(() => import("@/components/credits/pay-qr-modal").then(module => module.PayQrModal), { ssr: false, loading: panelLoading });
-const AccountClient = dynamic(() => import("@/components/account/account-client").then(module => module.AccountClient), { ssr: false, loading: panelLoading });
-const SecurityClient = dynamic(() => import("@/components/account/security-client").then(module => module.SecurityClient), { ssr: false, loading: panelLoading });
-const GenerateClient = dynamic(() => import("@/components/generate/generate-client").then(module => module.GenerateClient), { ssr: false, loading: panelLoading });
-const CheckoutClient = dynamic(() => import("@/components/checkout/checkout-client").then(module => module.CheckoutClient), { ssr: false, loading: panelLoading });
+const AssistantRichText = recoverablePanel(() => import("./assistant-richtext").then(module => module.AssistantRichText), { loading: panelLoading });
+const ImageCropDialog = recoverablePanel(() => import("./image-crop-dialog").then(module => module.ImageCropDialog), { loading: panelLoading });
+const CharacterEditor = recoverablePanel(() => import("./character/character-editor").then(module => module.CharacterEditor), { loading: panelLoading });
+const TimelineEditor = recoverablePanel(() => import("./timeline/timeline-editor").then(module=>module.TimelineEditor),{loading:panelLoading});
+const AudioEditor = recoverablePanel(() => import("./audio/audio-editor").then(module => module.AudioEditor), {loading:panelLoading});
+const SceneEditor = recoverablePanel(() => import("./scene/scene-editor").then(module => module.SceneEditor), { loading: panelLoading });
+const DirectorEditor = recoverablePanel(() => import("./director/director-editor").then(module => module.DirectorEditor), { loading: panelLoading });
+const NodePropertiesPanel = recoverablePanel(() => import("./node-properties-panel").then(module => module.NodePropertiesPanel), { loading: panelLoading });
+const AnnotateEditorModal = recoverablePanel(() => import("./annotate-editor").then(module => module.AnnotateEditorModal), { loading: panelLoading });
+const CanvasComfyDialog = recoverablePanel(() => import("./canvas-comfy-dialog").then(module => module.CanvasComfyDialog), { loading: panelLoading });
+const TemplatesClient = recoverablePanel(() => import("@/components/templates/templates-client").then(module => module.TemplatesClient), { loading: panelLoading });
+const CreditPacks = recoverablePanel(() => import("@/components/credits/credit-packs").then(module => module.CreditPacks), { loading: panelLoading });
+const PayQrModal = recoverablePanel(() => import("@/components/credits/pay-qr-modal").then(module => module.PayQrModal), { loading: panelLoading });
+const AccountClient = recoverablePanel(() => import("@/components/account/account-client").then(module => module.AccountClient), { loading: panelLoading });
+const SecurityClient = recoverablePanel(() => import("@/components/account/security-client").then(module => module.SecurityClient), { loading: panelLoading });
+const GenerateClient = recoverablePanel(() => import("@/components/generate/generate-client").then(module => module.GenerateClient), { loading: panelLoading });
+const CheckoutClient = recoverablePanel(() => import("@/components/checkout/checkout-client").then(module => module.CheckoutClient), { loading: panelLoading });
 import { usePaymentConfig } from "@/lib/payment-context";
 import { useRecharge } from "@/lib/recharge-modal-context";
 import {
@@ -302,6 +302,7 @@ async function privateFetchRaw(input: RequestInfo | URL, init: RequestInit = {})
   const headers = new Headers(init.headers);
   const workspace=headers.get('x-naumi-workspace');
   const auth = await authHeader();
+  init.signal?.throwIfAborted();
   for (const [key, value] of Object.entries(auth)) headers.set(key, value);
   if(workspace)headers.set('x-naumi-workspace',workspace);
   return fetch(input, { ...init, headers });
@@ -1768,6 +1769,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [nodeSettings, setNodeSettings] = useState<Record<string, CanvasNodeSettings>>({});
   const nodeSettingsRef = useRef(nodeSettings); nodeSettingsRef.current = nodeSettings;
   const [nodeSettingsReady, setNodeSettingsReady] = useState(false);
+  const [nodeSettingsError,setNodeSettingsError] = useState(false),[nodeSettingsAttempt,setNodeSettingsAttempt] = useState(0);
+  const nodeSettingsOwner=canvasOwnerEpochRef.current.revision;
+  const nodeSettingsLoadedOwner=useRef(-1);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
   const [cropArtwork, setCropArtwork] = useState<Artwork | null>(null);
   const [localEditBusy, setLocalEditBusy] = useState(false);
@@ -1782,20 +1786,28 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   useEffect(() => {
     if (!ready || !user) return;
     const email=(targetEmail || user.email).toLowerCase();
-    let stopped=false;setNodeSettingsReady(false);setNodeSettings({});
-    void privateFetchRaw(`/api/canvas/node-settings?email=${encodeURIComponent(email)}`).then(async response=>{
-      const data=await expectJsonOk(response,"节点属性读取失败");if(stopped)return;
+    const controller=new AbortController();
+    const current=()=>!controller.signal.aborted&&canvasOwnerEpochRef.current.revision===nodeSettingsOwner;
+    setNodeSettingsReady(false);setNodeSettingsError(false);
+    if(nodeSettingsLoadedOwner.current!==nodeSettingsOwner)setNodeSettings({});
+    void withBrowserReadDeadline(async signal=>{
+      const response=await privateFetchRaw(`/api/canvas/node-settings?email=${encodeURIComponent(email)}`,{signal});
+      signal.throwIfAborted();
+      const data=await expectJsonOk(response,"节点属性读取失败");signal.throwIfAborted();
+      if(typeof data?.persisted!=="boolean")throw new Error("节点属性响应无效");
       const raw=data.persisted ? data.settings : JSON.parse(localStorage.getItem(`naumi:node-settings:${email}`) || '{}');
-      setNodeSettings(Object.fromEntries(Object.entries(raw || {}).map(([id,value])=>[id,validNodeSettings(value)])));
-      setNodeSettingsReady(true);
-    }).catch(()=>{if(!stopped)flashTip(L("节点属性读取失败，请刷新重试","Properties failed to load. Refresh to retry."));});
-    return ()=>{stopped=true;};
+      if(!raw||typeof raw!=="object"||Array.isArray(raw))throw new Error("节点属性响应无效");
+      if(!current())return;
+      setNodeSettings(Object.fromEntries(Object.entries(raw).map(([id,value])=>[id,validNodeSettings(value)])));
+      nodeSettingsLoadedOwner.current=nodeSettingsOwner;setNodeSettingsReady(true);
+    },{timeoutMs:15000,signal:controller.signal}).catch(()=>{if(current())setNodeSettingsError(true);});
+    return ()=>controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[ready,user?.email,targetEmail]);
+  },[ready,user?.email,targetEmail,nodeSettingsOwner,nodeSettingsAttempt]);
   useEffect(()=>{
-    if(!nodeSettingsReady || !user || readOnly)return;
+    if(!nodeSettingsReady || !user || readOnly || nodeSettingsLoadedOwner.current!==nodeSettingsOwner)return;
     try{localStorage.setItem(`naumi:node-settings:${user.email.toLowerCase()}`,JSON.stringify(nodeSettings));}catch{/* best effort */}
-  },[nodeSettings,nodeSettingsReady,user,readOnly]);
+  },[nodeSettings,nodeSettingsReady,user,readOnly,nodeSettingsOwner]);
   const pendingNodeRef = useRef<string | null>(null);
   // 文件拖入完成后只打开对应项目，不自动弹出节点功能；用户点击图片后再显示。
   const openPendingNodeWithoutSelectionRef = useRef(false);
@@ -2161,6 +2173,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const sceneNodesStore=useSceneNodes({email:targetEmail||user?.email,readOnly,request:privateFetchRaw});
   const [sceneEditorId,setSceneEditorId]=useState<string|null>(null),sceneCreating=useRef(false);
   useEffect(()=>{if(sceneNodesStore.error)flashTip(sceneNodesStore.error);},[sceneNodesStore.error]);
+  // A failed node-list read is not an empty project. Keep the restore key and
+  // expose GET-only retry separately from the existing unsaved-write action.
+  const failedNodeReads=[videoNodesStore,directorNodesStore,characterNodesStore,sceneNodesStore,audioNodesStore,timelineNodesStore].filter(store=>!!store.readError);
   const directorOutputAttempts=useRef(new WeakMap<File,{artworkId?:string;operationId:string;expectedRevision?:number;position?:{x:number;y:number};positionOperationId?:string;addedToHistory?:boolean}>());
   const videoAssetStore=useVideoAssets({email:targetEmail||user?.email,readOnly,request:privateFetchRaw});
   const imageMoreRef = useRef<HTMLButtonElement>(null);
@@ -9754,6 +9769,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
         return current()&&ids.every(id=>fresh.some(art=>art.id===id&&!!art.image));
       }}/>}
+      {nodeSettingsError && <div role="alert" data-testid="canvas-node-settings-error" className="fixed left-1/2 top-36 z-[200] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-amber-300 bg-white px-4 py-3 text-sm text-slate-700 shadow-lg">
+        <span>{L("节点属性读取失败", "Node properties failed to load")}</span>
+        <button type="button" className="font-semibold underline" onClick={()=>{setNodeSettingsError(false);setNodeSettingsAttempt(value=>value+1);}}>{L("重新读取", "Retry loading")}</button>
+      </div>}
+      {failedNodeReads.length>0 && <div role="alert" data-testid="canvas-node-read-error" className="fixed left-1/2 top-20 z-[200] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-amber-300 bg-white px-4 py-3 text-sm text-slate-700 shadow-lg">
+        <span>{L("部分节点读取失败", "Some nodes failed to load")}</span>
+        <button type="button" className="font-semibold underline" disabled={failedNodeReads.some(store=>store.loading)}
+          onClick={()=>void Promise.allSettled(failedNodeReads.map(store=>store.refresh()))}>{L("重新读取", "Retry loading")}</button>
+      </div>}
       {(unsavedTextCount>0||videoNodesStore.unsavedCount>0) && <div role="alert" className="fixed bottom-6 left-1/2 z-[200] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-amber-500 bg-background px-4 py-3 text-sm shadow-lg">
         <span>{videoNodesStore.error||t("canvas.unsavedChanges")} ({unsavedTextCount+videoNodesStore.unsavedCount})</span>
         <button className="font-semibold underline" onClick={()=>void Promise.all([videoNodesStore.retryPending(),...Array.from(unsavedTextRef.current.values()).map(node=>persistTextNode(node))]).catch(error=>flashTip(error instanceof Error?error.message:t("canvas.saveFailed")))}>{t("canvas.retrySave")}</button>

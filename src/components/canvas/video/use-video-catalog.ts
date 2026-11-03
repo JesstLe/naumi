@@ -1,5 +1,6 @@
 "use client";
 import {useCallback,useEffect,useRef,useState} from "react";
+import {withBrowserReadDeadline} from "@/lib/browser-read-deadline";
 import {MODEL_CATALOG_REFRESH} from "@/lib/model-config/public-client";
 import type {VideoCatalogModel} from "@/lib/video/client-settings";
 import type {VideoPrivateFetch} from "./use-video-nodes";
@@ -15,8 +16,13 @@ export function useVideoCatalog({email,ready,request}:{email?:string;ready:boole
     const current=()=>identity.current.revision===expected&&attempt.current===ticket&&!abort.signal.aborted;
     setState({revision:expected,models:[],loading:true,error:""});
     try{
-      const response=await request("/api/video/catalog",{cache:"no-store",signal:abort.signal}),data=await response.json();
-      if(!response.ok||!Array.isArray(data.models))throw new Error("Video catalog unavailable");
+      const data=await withBrowserReadDeadline(async signal=>{
+        const response=await request("/api/video/catalog",{cache:"no-store",signal});signal.throwIfAborted();
+        const value=await response.json();signal.throwIfAborted();
+        if(!response.ok)throw new Error("Video catalog unavailable");
+        return value;
+      },{timeoutMs:15000,signal:abort.signal});
+      if(!Array.isArray(data?.models))throw new Error("Video catalog unavailable");
       if(current())setState({revision:expected,models:data.models,loading:false,error:""});
     }catch{if(current())setState({revision:expected,models:[],loading:false,error:"视频模型加载失败"});}
   },[email,ready,revision,request]);

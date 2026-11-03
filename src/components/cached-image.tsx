@@ -2,6 +2,7 @@
 import { forwardRef, useEffect, useLayoutEffect, useRef, useState, useCallback, type ImgHTMLAttributes } from 'react';
 import { type BrowserImageReadOptions, acquireCanvasImageByteSlot, acquireBrowserImage, borrowActiveBrowserImage, imageCacheAccount, imageCacheSource, publicCachedImage } from '@/lib/browser-image-cache';
 import { withBrowserReadDeadline } from '@/lib/browser-read-deadline';
+import { acquireCanvasImageDecodeSlot } from '@/lib/canvas/image-decode-queue';
 
 type ImageLease = Awaited<ReturnType<typeof acquireBrowserImage>>;
 type Display = ImageLease & { identity: string; source: string; owner: string; revision: number };
@@ -14,20 +15,26 @@ type Props = ImgHTMLAttributes<HTMLImageElement> & {
   reuseActivePreview?: boolean;
 };
 
-async function decodeImage(url: string, crossOrigin: Props['crossOrigin'], signal: AbortSignal) {
-  const image = new Image();
-  if (crossOrigin) image.crossOrigin = crossOrigin;
-  const cancel = () => { image.src = ''; };
-  await withBrowserReadDeadline(async decodeSignal => {
-    decodeSignal.addEventListener('abort', cancel, { once: true });
-    try {
-      decodeSignal.throwIfAborted();
-      image.src = url;
-      await image.decode();
-      decodeSignal.throwIfAborted();
-      if (!image.naturalWidth) throw new Error('Image decode failed');
-    } finally { decodeSignal.removeEventListener('abort', cancel); }
-  }, { timeoutMs: 20000, signal });
+async function decodeImage(url: string, crossOrigin: Props['crossOrigin'], signal: AbortSignal, canvas: boolean) {
+  const release = canvas ? await acquireCanvasImageDecodeSlot(signal) : undefined;
+  try {
+    signal.throwIfAborted();
+    // Do not assign src before owning a decode ticket: a hot cached URL can
+    // otherwise start pixel work while still waiting in the application queue.
+    const image = new Image();
+    if (crossOrigin) image.crossOrigin = crossOrigin;
+    const cancel = () => { image.src = ''; };
+    await withBrowserReadDeadline(async decodeSignal => {
+      decodeSignal.addEventListener('abort', cancel, { once: true });
+      try {
+        decodeSignal.throwIfAborted();
+        image.src = url;
+        await image.decode();
+        decodeSignal.throwIfAborted();
+        if (!image.naturalWidth) throw new Error('Image decode failed');
+      } finally { decodeSignal.removeEventListener('abort', cancel); }
+    }, { timeoutMs: 20000, signal });
+  } finally { release?.(); }
 }
 
 /** Keep an authorized, decoded frame until its replacement is ready. Byte
@@ -105,7 +112,7 @@ export const CachedImage = forwardRef<HTMLImageElement, Props>(function CachedIm
       candidate = managed ? await acquireBrowserImage(src, controller.signal, { networkQueue }) :
         { url: src, release: await acquireCanvasImageByteSlot(controller.signal) };
       if (controller.signal.aborted) { candidate.release(); return; }
-      try { await decodeImage(candidate.url, props.crossOrigin, controller.signal); }
+      try { await decodeImage(candidate.url, props.crossOrigin, controller.signal, networkQueue === 'canvas'); }
       catch (error) {
         candidate.release(); candidate = undefined;
         if (!managed || controller.signal.aborted || (error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name))) throw error;
@@ -113,7 +120,7 @@ export const CachedImage = forwardRef<HTMLImageElement, Props>(function CachedIm
         // clear drafts/session data, reuse a denied frame, or retry in a loop.
         candidate = await acquireBrowserImage(src, controller.signal, { networkQueue, bypassCache: true });
         if (controller.signal.aborted) { candidate.release(); return; }
-        await decodeImage(candidate.url, props.crossOrigin, controller.signal);
+        await decodeImage(candidate.url, props.crossOrigin, controller.signal, networkQueue === 'canvas');
       }
       candidate.networkComplete?.();
       if (!managed) candidate.release(); // native byte slot is done after decode

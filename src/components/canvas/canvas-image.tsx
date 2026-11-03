@@ -13,7 +13,6 @@ export function CanvasImage({source,forceOriginal,hasDimensions,...props}:Omit<I
 }) {
   const {locale}=useI18n();
   const ref=useRef<HTMLImageElement>(null);
-  const [settled,setSettled]=useState('');
   const [failed,setFailed]=useState(false),[retry,setRetry]=useState(0);
   useEffect(()=>{setFailed(false);setRetry(0);},[source]);
   const [visibility,setVisibility]=useState({key:'',visible:false}),[localWidth,setLocalWidth]=useState(0);
@@ -38,15 +37,15 @@ export function CanvasImage({source,forceOriginal,hasDimensions,...props}:Omit<I
     const key=`${source}:${retry}`;
     const lease=registerCanvasImageResidency(element,()=>{
       if(!active||residency.current?.lease!==lease)return;
-      setResidentKey(current=>current===key?'':current);setSettled('');setFailed(false);
+      setResidentKey(current=>current===key?'':current);setFailed(false);
     });
     residency.current={key,lease};
     // A new source must await its own observer event, not inherit prior visibility.
-    setVisibility({key,visible:false});setResidentKey('');setSettled('');
+    setVisibility({key,visible:false});setResidentKey('');
     const stop=observeCanvasImageVisibility(element,value=>{
       if(!active)return;lease.setVisible(value);setVisibility({key,visible:value});
     });
-    const reset=()=>{lease.clearFrame();setResidentKey('');setSettled('');};
+    const reset=()=>{lease.clearFrame();setResidentKey('');};
     window.addEventListener('naumi:image-cache-session',reset);
     return()=>{active=false;stop();window.removeEventListener('naumi:image-cache-session',reset);lease.dispose();if(residency.current?.lease===lease)residency.current=null;};
   },[retry,source]);
@@ -60,18 +59,14 @@ export function CanvasImage({source,forceOriginal,hasDimensions,...props}:Omit<I
   const hasFrame=residentKey===frameKey;
   const canLoad=!!source&&(hasFrame||(visible&&localWidth>0));
   useEffect(()=>{setFailed(false);},[url]);
-  const loadKey=`${url}:${retry}`;
-  useEffect(()=>{
-    // A slow quality upgrade must not cover an already usable frame in white.
-    if(!canLoad||hasFrame||settled===loadKey)return;
-    const timer=window.setTimeout(()=>setFailed(true),20000);
-    return()=>window.clearTimeout(timer);
-  },[canLoad,hasFrame,loadKey,settled]);
+  // CachedImage bounds authorization, transfer, queue wait and active decode.
+  // A separate wall clock here would report a healthy queued image as failed
+  // before its decode ticket is granted. Only the final onError shows retry.
   // All visible nodes authorize in bounded metadata batches; only cache misses
   // enter the six-slot byte queue. Cached pixels need no network slot.
   return <><CachedImage key={`${source}:${retry}`} imageIdentity={source} networkQueue="canvas" crossOrigin="anonymous" {...props} ref={ref} src={canLoad?url:undefined} decoding="async"
     data-media-variant={variant} data-media-visible={visible?'true':'false'}
-    onLoad={event=>{if(residency.current?.key!==frameKey)return;setSettled(loadKey);setFailed(false);setResidentKey(frameKey);setLoaded(current=>current?.source===source&&current.variant===variant?current:{source,variant});residency.current.lease.setFrame(event.currentTarget.naturalWidth,event.currentTarget.naturalHeight);props.onLoad?.(event);}}
+    onLoad={event=>{if(residency.current?.key!==frameKey)return;setFailed(false);setResidentKey(frameKey);setLoaded(current=>current?.source===source&&current.variant===variant?current:{source,variant});residency.current.lease.setFrame(event.currentTarget.naturalWidth,event.currentTarget.naturalHeight);props.onLoad?.(event);}}
     onError={event=>{if(residency.current?.key!==frameKey)return;residency.current.lease.clearFrame();setResidentKey('');setFailed(true);props.onError?.(event);}} />
     {failed && <div className="nodrag nopan absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white/95 text-slate-600" role="status">
       <span className="text-xs">{locale==='en'?'Image not loaded':'图片暂未加载'}</span>
