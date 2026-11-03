@@ -10,6 +10,7 @@ export type TextImageGenerationDialogProps = {
   textCount: number;
   referenceCount: number;
   busy?: boolean;
+  preview?: (options: {combine: boolean; useReferences: boolean}) => {prompts: string[]; error?: string};
   onGenerate: (mode: "general" | "pure" | "replicate", options: { combine: boolean; useReferences: boolean }) => void;
   onClose: () => void;
   locale?: "zh" | "en";
@@ -17,7 +18,7 @@ export type TextImageGenerationDialogProps = {
 
 /** Collects generation options only; the caller validates products and submits. */
 export function TextImageGenerationDialog({
-  textCount, referenceCount, busy = false, onGenerate, onClose, locale = "zh",
+  textCount, referenceCount, busy = false, preview, onGenerate, onClose, locale = "zh",
 }: TextImageGenerationDialogProps) {
   const appearance = useSurfaceAppearance() ?? "light";
   const id = useId();
@@ -29,6 +30,7 @@ export function TextImageGenerationDialog({
   const [useReferences, setUseReferences] = useState(true);
   const hasReferences = referenceCount > 0;
   const L = (zh: string, en: string) => locale === "en" ? en : zh;
+  const content = preview?.({combine, useReferences: hasReferences && useReferences});
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -52,7 +54,7 @@ export function TextImageGenerationDialog({
   }, [busy]);
 
   const generate = (mode: "general" | "pure" | "replicate") => {
-    if (busy) return;
+    if (busy || (mode === "general" && content?.error)) return;
     onGenerate(mode, { combine: mode === "general" ? combine : false, useReferences: hasReferences && useReferences });
   };
 
@@ -92,7 +94,7 @@ export function TextImageGenerationDialog({
         }
         if (event.key !== "Tab") return;
         const elements = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), input:not(:disabled), summary:not([aria-disabled="true"])',
+          'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), summary:not([aria-disabled="true"])',
         )).filter(element => {
           const closedDetails = element.closest("details:not([open])");
           return element.tabIndex >= 0 && element.getClientRects().length > 0
@@ -143,7 +145,11 @@ export function TextImageGenerationDialog({
           {L("纯文字", "Text only")}
         </span>}
 
-        <button ref={generateRef} type="button" disabled={busy} onClick={() => generate("general")}
+        {content?.prompts.map((prompt, index) => <textarea key={index} readOnly value={prompt}
+          aria-label={content.prompts.length > 1 ? L(`图片提示词预览 ${index + 1}`, `Image prompt preview ${index + 1}`) : L("图片提示词预览", "Image prompt preview")}
+          className="canvas-ui-input max-h-48 min-h-24 w-full resize-y rounded-lg border px-3 py-2 text-sm leading-6 outline-none" />)}
+        {content?.error && <p role="alert" className="canvas-ui-error text-xs">{content.error}</p>}
+        <button ref={generateRef} type="button" disabled={busy || !!content?.error} onClick={() => generate("general")}
           className="canvas-ui-primary flex h-10 w-full items-center justify-center gap-2 rounded-xl text-[13px] font-semibold transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--canvas-ui-accent)] disabled:cursor-not-allowed disabled:opacity-50">
           {busy ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <ImageIcon className="h-4 w-4" aria-hidden="true" />}
           {L("生成图片", "Generate images")}

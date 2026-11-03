@@ -32,6 +32,8 @@ import { canvasFocusViewport } from "@/lib/canvas/upload-visibility";
 import { runReversePromptBatch } from "@/lib/canvas/reverse-prompt-batch";
 import { stableArtworkPositions, canvasNodePosition, readPlacementCache, type CanvasPoint } from "@/lib/canvas/stable-placement";
 import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
+import { canvasTextContent, nextCanvasTextTimestamp, CANVAS_TEXT_CONTENT_LIMIT, CANVAS_TEXT_INSTRUCTION_LIMIT } from "@/lib/canvas/text-content";
+import { useTextNodeAutosave } from "./use-text-node-autosave";
 import { smartLayout } from "@/lib/canvas/smart-layout";
 import { SurfaceAppearanceProvider } from "@/components/ui/surface-appearance";
 import { CanvasComposerShell, CanvasComposerFooter, CanvasComposerOptions } from "./composer-shell";
@@ -876,6 +878,7 @@ function TextCanvasNode({ data, selected }: NodeProps) {
     prompt: string;
     content: string;
     status: CanvasTextNode["status"];
+    busy?: boolean;
     error?: string;
     sourceRefs?: Array<{ id: string; title: string }>;
     selected?: boolean;
@@ -886,8 +889,7 @@ function TextCanvasNode({ data, selected }: NodeProps) {
     workflowPresentation?: { rotation: number; flipX: boolean; opacity: number };
   };
   const active = selected || d.selected;
-  const body = d.content || d.prompt;
-  const editableBody = d.status === "completed" || Boolean(d.content);
+  const body = canvasTextContent(d);
   return (
     <div className="group relative flex h-full w-full flex-col" style={d.workflowPresentation ? { transform: `rotate(${d.workflowPresentation.rotation}deg) scaleX(${d.workflowPresentation.flipX ? -1 : 1})`, opacity: d.workflowPresentation.opacity } : undefined}>
       <NodeResizer
@@ -916,8 +918,8 @@ function TextCanvasNode({ data, selected }: NodeProps) {
           d.lightCanvas ? "text-[#303641]" : "text-[#e2e6ed]"
         )}
       >
-        <span className="min-w-0 flex-1 truncate" title={d.title || "文字生成"}>
-          {d.title || "文字生成"}
+        <span className="min-w-0 flex-1 truncate" title={d.title || "文字"}>
+          {d.title || "文字"}
         </span>
         {d.status === "generating" && (
           <Loader2 className="h-3.5 w-3.5 flex-none animate-spin text-[#6bd7ec]" />
@@ -952,35 +954,25 @@ function TextCanvasNode({ data, selected }: NodeProps) {
             ))}
           </div>
         )}
-        {d.status === "generating" ? (
-          <div className="canvas-ui-muted flex h-[108px] items-center justify-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin text-[#6366f1]" /> 正在生成文字…
-          </div>
-        ) : d.status === "failed" ? (
-          <div role="alert" className="flex min-h-[108px] flex-col justify-center gap-2 canvas-ui-warning-text">
-            <span className="font-medium">文字生成失败</span>
-            <p className="whitespace-pre-wrap break-words">{d.error || "本次未取得文字结果，请重试"}</p>
-          </div>
-        ) : editableBody ? (
-          <textarea
-            aria-label="编辑生成文本"
-            readOnly={d.readOnly || d.settings?.locked}
-            style={nodeTextStyle(d.settings || DEFAULT_CANVAS_SETTINGS)}
-            value={d.content}
-            onChange={(event) => ctx?.onContentChange(d.__id, event.target.value)}
-            onFocus={() => { editInitialContent.current = d.content; }}
-            onBlur={(event) => {
-              ctx?.onContentCommit(d.__id, event.currentTarget.value, editInitialContent.current);
-              editInitialContent.current = undefined;
-            }}
-            onPointerDown={(event) => event.stopPropagation()}
-            className={cn(!d.settings?.text.color && "canvas-ui-text", "nodrag nowheel h-full min-h-[96px] w-full resize-none overflow-auto border-0 bg-transparent p-0 text-[12px] leading-[1.65] outline-none")}
-          />
-        ) : body ? (
-          <p style={nodeTextStyle(d.settings || DEFAULT_CANVAS_SETTINGS)} className="whitespace-pre-wrap break-words">{body}</p>
-        ) : (
-          <p className="canvas-ui-muted">输入需求后生成文字内容</p>
-        )}
+        {d.status === "generating" && <div role="status" className="canvas-ui-muted mb-2 flex items-center gap-2 text-xs"><Loader2 className="h-3.5 w-3.5 animate-spin" />正在生成文字…</div>}
+        {d.busy && d.status !== "generating" && <div role="status" className="canvas-ui-muted mb-2 text-xs">正在保存文字…</div>}
+        {d.status === "failed" && <div role="alert" className="canvas-ui-warning-text mb-2 text-xs">{d.error || "文字生成失败，原文已保留"}</div>}
+        <textarea
+          aria-label="文字内容"
+          placeholder="输入文字"
+          maxLength={CANVAS_TEXT_CONTENT_LIMIT}
+          readOnly={d.readOnly || d.settings?.locked || d.status === "generating" || d.busy}
+          style={nodeTextStyle(d.settings || DEFAULT_CANVAS_SETTINGS)}
+          value={body}
+          onChange={(event) => ctx?.onContentChange(d.__id, event.target.value)}
+          onFocus={() => { editInitialContent.current = body; }}
+          onBlur={(event) => {
+            ctx?.onContentCommit(d.__id, event.currentTarget.value, editInitialContent.current);
+            editInitialContent.current = undefined;
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          className={cn(!d.settings?.text.color && "canvas-ui-text", "nodrag nowheel h-full min-h-[96px] w-full resize-none overflow-auto border-0 bg-transparent p-0 text-[12px] leading-[1.65] outline-none")}
+        />
       </div>
       <div className={cn("canvas-ui-surface-solid absolute right-1.5 top-1.5 hidden items-center gap-1 rounded-md pl-1 group-hover:flex", d.lightCanvas ? "canvas-ui-light" : "canvas-ui-dark")}>
         <button
@@ -2097,8 +2089,20 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const textNodesRef = useRef(textNodes); textNodesRef.current = textNodes;
   const [textNodesReady, setTextNodesReady] = useState(false);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
+  const selectedTextIdRef = useRef(selectedTextId); selectedTextIdRef.current = selectedTextId;
+  // AI instructions never double as node content or downstream image prompts.
   const [textPrompt, setTextPrompt] = useState("");
+  const [textComposerMode, setTextComposerMode] = useState<"content" | "write">("content");
+  const textInstructionDrafts = useRef(new Map<string, string>());
+  const textInstructionOwner = useRef(canvasOwner);
+  if (textInstructionOwner.current !== canvasOwner) {
+    textInstructionOwner.current = canvasOwner; textInstructionDrafts.current.clear();
+  }
+  const textBodyEditInitial = useRef<string | undefined>(undefined);
+  const textEditOwnerRevision = canvasOwnerEpochRef.current.revision;
   const [textError, setTextError] = useState<string | null>(null);
+  const [textSubmissionIds, setTextSubmissionIds] = useState<Set<string>>(new Set());
+  useEffect(() => setTextSubmissionIds(new Set()), [canvasOwner]);
   // 文字节点一键放大/还原只改变当前画布视图，不写回节点尺寸；刷新后仍使用用户保存的原尺寸。
   const [expandedTextIds, setExpandedTextIds] = useState<Set<string>>(new Set());
   const [textComposerExpanded, setTextComposerExpanded] = useState(false);
@@ -3738,20 +3742,22 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     textarea.style.height = "0px";
     textarea.style.height = `${Math.min(maxHeight, Math.max(minHeight, textarea.scrollHeight))}px`;
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
-  }, [textPrompt, textComposerExpanded, textComposerManuallySized, selectedTextId]);
+  }, [textPrompt, selectedText?.content, textComposerMode, textComposerExpanded, textComposerManuallySized, selectedTextId]);
+  const selectedTextLoadedId = selectedText?.id;
   useEffect(() => {
     setTextComposerExpanded(false);
     setTextComposerManuallySized(false);
-    // 自动带上节点现有内容:方便"看着原文改一改再生成";切换节点时整体替换。
-    // 旧逻辑在下方又用 node.prompt 写了一次,会把已有 content 覆盖为空。
-    setTextPrompt(selectedText?.content || selectedText?.prompt || "");
+    setTextComposerMode("content");
+    setTextPrompt(selectedTextId ? textInstructionDrafts.current.get(selectedTextId) ?? textNodesRef.current.find(node => node.id === selectedTextId)?.prompt ?? "" : "");
+    textBodyEditInitial.current = undefined;
+    setMentionState(null); setTextReferenceMenuOpen(false);
     setTextError(null);
     // 切换节点时清掉上一节点手动拖出的固定高度:否则新节点继承"两行小窗",
     // 且 ResizeObserver 会立刻把 manuallySized 重新置真,自适应从此失效。
     if (textComposerDockRef.current?.style.height) {
       textComposerDockRef.current.style.height = "";
     }
-  }, [selectedTextId, selectedText?.content, selectedText?.prompt]);
+  }, [selectedTextId, selectedTextLoadedId, canvasOwner]);
   useEffect(() => {
     const dock = textComposerDockRef.current;
     const body = textComposerBodyRef.current;
@@ -3773,7 +3779,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     observer.observe(dock);
     observer.observe(body);
     return () => observer.disconnect();
-  }, [selectedTextId, textComposerExpanded, textComposerManuallySized]);
+  }, [selectedTextId, textComposerMode, textComposerExpanded, textComposerManuallySized]);
   const selectedTextRefs = useMemo(
     () =>
       (selectedText?.sourceIds ?? [])
@@ -4048,6 +4054,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           prompt: textNode.prompt,
           content: textNode.content,
           status: textNode.status,
+          busy: textSubmissionIds.has(textNode.id),
           error: textNode.error,
           sourceRefs: [...sourceRefs, ...productRefs].map((reference) => ({
             id: reference.id,
@@ -4175,6 +4182,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     activeKey,
     pendNodes,
     textNodes,
+    textSubmissionIds,
     expandedTextIds,
     lightCanvas,
     nodeSettings,
@@ -4204,7 +4212,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const nodesSig = useMemo(() => displayNodes
     .map(
       (n) =>
-        `${JSON.stringify([n.data.inspectOriginal,n.data.image,n.data.videoUrl,n.data.missingAsset,n.data.workflowPresentation,n.data.title,n.data.prompt,n.data.content,n.data.cutoutBusy,n.data.cutoutBlocked,n.data.regenerating,n.data.regenerationFailure])}:${JSON.stringify([n.data.generationFailure,n.data.generationStage, n.data.generationStartedAt, n.data.generationCount, n.data.generationCompleted, n.data.generationSize, n.data.generationKind])}:${JSON.stringify((n.data as {settings?:CanvasNodeSettings}).settings)}:${n.draggable}:${n.zIndex}:${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${
+        `${JSON.stringify([n.data.inspectOriginal,n.data.image,n.data.videoUrl,n.data.missingAsset,n.data.workflowPresentation,n.data.title,n.data.prompt,n.data.content,n.data.busy,n.data.cutoutBusy,n.data.cutoutBlocked,n.data.regenerating,n.data.regenerationFailure])}:${JSON.stringify([n.data.generationFailure,n.data.generationStage, n.data.generationStartedAt, n.data.generationCount, n.data.generationCompleted, n.data.generationSize, n.data.generationKind])}:${JSON.stringify((n.data as {settings?:CanvasNodeSettings}).settings)}:${n.draggable}:${n.zIndex}:${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${
           (n.data as { pending?: boolean }).pending ? 1 : 0
         }:${(n.data as { inChain?: boolean }).inChain ? 1 : 0}:${n.className ?? ""}:${
           Math.round((n.data as { progress?: number }).progress ?? -1)
@@ -6445,7 +6453,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     return [...new Set(ids.filter(Boolean))].filter(id => {
       // Queued reverse-prompt slots already belong to a batch. Removing them
       // here is not cancellation and would let a later result recreate them.
-      if (textNodesRef.current.find(node => node.id === id)?.status === "generating") return false;
+      if (textNodesRef.current.find(node => node.id === id)?.status === "generating" || generationOperationRef.current.has(`text:${id}`)) return false;
       const pending = pendNodesRef.current.find(node => node.id === id);
       if (pending) return !pending.generating && !pending.uploading && !pending.needsAttention;
       const task = generationTasksRef.current.find(node => node.id === id);
@@ -6482,7 +6490,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     let pendingRecords = pendNodesRef.current.filter(node => deleting.has(node.id)).map(node => ({ ...node, inputs: [...node.inputs] }));
     let taskRecords = generationTasksRef.current.filter(node => deleting.has(node.id)).map(node => ({ ...node, position: generationTaskPosRef.current[node.id] ?? node.position }));
     const artworkRecords = (works ?? []).filter((work) => deleting.has(work.id));
-    const textRecords = textNodes.filter((node) => deleting.has(node.id));
+    const textRecords = textNodesRef.current.filter((node) => deleting.has(node.id));
     const videoRecords=videoNodesStore.nodes.filter(node=>deleting.has(node.id)),directorRecords=directorNodesStore.nodes.filter(node=>deleting.has(node.id)),characterRecords=characterNodesStore.nodes.filter(node=>deleting.has(node.id)),sceneRecords=sceneNodesStore.nodes.filter(node=>deleting.has(node.id)),audioRecords=audioNodesStore.nodes.filter(node=>deleting.has(node.id)),timelineRecords=timelineNodesStore.nodes.filter(node=>deleting.has(node.id));
     const artworkIds = artworkRecords.map((record) => record.id);
     const textIds = textRecords.map((record) => record.id);
@@ -6495,6 +6503,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const requestKey=JSON.stringify([scope,workspace,[...uniqueIds].sort()]);
       let attempt=nodeDeleteAttemptRef.current.get(requestKey);
       if(!attempt){const operationId=browserRandomUUID();attempt={operationId,body:JSON.stringify({artworkIds,textIds,videoIds,directorIds,characterIds,sceneIds,audioIds,timelineIds,operationId})};nodeDeleteAttemptRef.current.set(requestKey,attempt);}
+      await textAutosave.flushAll();
       await Promise.all(Array.from(textSaveQueuesRef.current.values()));
       if(account!==canvasAccountRef.current||workspaceRevision!==currentWorkspaceRevision()||scope!==historyScopeRef.current)return;
       const response = await privateFetchRaw("/api/canvas/nodes/delete", {
@@ -6577,6 +6586,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       setPendNodes(current => current.map(node => node.id === act.id ? { ...node, ...act[undo ? "from" : "to"] } : node));
       return;
     }
+    await textAutosave.flushAll();
     await Promise.all(Array.from(textSaveQueuesRef.current.values()));
     await videoNodesStore.flush();await directorNodesStore.flush();await characterNodesStore.flush();await sceneNodesStore.flush();await audioNodesStore.flush();await timelineNodesStore.flush();
     const side = undo ? "from" : "to";
@@ -6627,6 +6637,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     else if (act.kind === "mark") act.changes.forEach(change => operations.push({type:"mark",id:change.id,marked:change[side]}));
     else if (act.kind === "node-settings") operations.push({type:"node-settings",id:act.id,text:act.text,video:act.video,director:act.director,character:act.character,scene:act.scene,audio:act.audio,timeline:act.timeline,settings:act[side]});
     else if (act.kind === "workflow-fill") operations.push({type:"workflow-asset",id:act.id,assetOperationId:act.assetOperationId,filled:!undo});
+    if (operations.some(op => ["text-patch", "text-delete", "text-restore"].includes(String(op.type)) && generationOperationRef.current.has(`text:${op.id || (op.node as CanvasTextNode | undefined)?.id}`))) throw new Error(L("文字正在生成或保存，请完成后再撤销", "Text is generating or saving; undo after it finishes"));
     let attempt=historyAttemptsRef.current.get(act);
     if(!attempt){attempt={operationId:browserRandomUUID(),operations:structuredClone(operations)};historyAttemptsRef.current.set(act,attempt);}
     const operationId=attempt.operationId;operations=attempt.operations;
@@ -6785,6 +6796,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(JSON.stringify(from)===JSON.stringify(to))return true;
     historyBusyRef.current=true;setHistorySaving(true);
     try {
+      await textAutosave.flushAll();
       await Promise.all(Array.from(textSaveQueuesRef.current.values()));
       const response=await privateFetchRaw("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json"},
         body:JSON.stringify({operationId:browserRandomUUID(),operations:[{type:"node-settings",id,text:id.startsWith("text-"),video:!!videoNodesStore.getNode(id),director:!!directorNodesStore.getNode(id),character:!!characterNodesStore.getNode(id),scene:!!sceneNodesStore.getNode(id),audio:!!audioNodesStore.getNode(id),timeline:!!timelineNodesStore.getNode(id),settings:to}]}),signal:AbortSignal.timeout(20000)});
@@ -7309,7 +7321,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       } else if (edge.source.startsWith("text-") || edge.target.startsWith("text-")) {
         // A product binding draws the same line as a reference: remove both fields.
         // Complete queued text saves first so an older draft cannot recreate the edge.
-        await Promise.all(Array.from(textSaveQueuesRef.current.values()));
+        await textAutosave.flushAll();
+      await Promise.all(Array.from(textSaveQueuesRef.current.values()));
         const inbound = edge.target.startsWith("text-");
         const textNode = textNodesRef.current.find(node => node.id === (inbound ? edge.target : edge.source));
         if (!textNode) return;
@@ -7387,7 +7400,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     } else {
       // 「图片」:落点建好节点后,把光标落进提示词框,写"改什么"→点生成出衍生(img2img)
       const textSource = textNodes.find((node) => node.id === sourceId);
-      imageDraft.seed(pend.id, { prompt: textSource?.content || textSource?.prompt || "" });
+      imageDraft.seed(pend.id, { prompt: textSource ? canvasTextContent(textSource) : "" });
       wantFocusPendPrompt.current = true;
     }
   }
@@ -7443,6 +7456,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     historyBusyRef.current = true;
     setHistorySaving(true);
     try {
+      await textAutosave.flushAll();
       await Promise.all(Array.from(textSaveQueuesRef.current.values()));
       if (unsavedTextRef.current.size) throw new Error(L("请先保存未保存的文字节点", "Save pending text changes first"));
       const currentNodes = (rfRef.current?.getNodes() ?? rfNodes).filter(node => node.type !== "workflowGroup");
@@ -8037,9 +8051,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const unsavedTextRef=useRef(new Map<string,CanvasTextNode>());
   const textSaveQueuesRef=useRef(new Map<string,Promise<unknown>>());
   const [unsavedTextCount,setUnsavedTextCount]=useState(0);
+  useEffect(() => { unsavedTextRef.current.clear(); setUnsavedTextCount(0); }, [canvasOwner]);
   async function persistTextNode(node: CanvasTextNode, context?: { workspace: string; isCurrent: () => boolean }) {
     if (!user || readOnly) return node;
-    if (context && !context.isCurrent()) return null;
+    if (!context) {
+      const owner = canvasAccountRef.current, epoch = canvasOwnerEpochRef.current.revision, revision = currentWorkspaceRevision();
+      context = { workspace: currentWorkspace(), isCurrent: () => owner === canvasAccountRef.current && epoch === canvasOwnerEpochRef.current.revision && revision === currentWorkspaceRevision() };
+    }
+    if (!context.isCurrent()) return null;
     unsavedTextRef.current.set(node.id,node);
     const stale = () => {
       if (!context || context.isCurrent()) return false;
@@ -8075,7 +8094,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     sourceId: string,
     add: boolean
   ) {
-    const textNode = textNodes.find((node) => node.id === textNodeId);
+    const textNode = textNodesRef.current.find((node) => node.id === textNodeId);
     if (!textNode || sourceId === textNodeId || (!active?.members.some((member) => member.id === sourceId) && !textNodes.some(node => node.id === sourceId && node.projectKey === textNode.projectKey))) return;
     if (add) {
       const todo = [textNodeId], visited = new Set<string>();
@@ -8103,9 +8122,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         to: textPatchOf(updated),
       });
     }
-    setTextNodes((items) =>
-      items.map((item) => (item.id === updated.id ? updated : item))
-    );
+    textNodesRef.current = textNodesRef.current.map(item => item.id === updated.id ? updated : item);
+    setTextNodes(textNodesRef.current);
     await persistTextNode(updated);
   }
   function resizeTextNode(
@@ -8171,7 +8189,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const node: CanvasTextNode = {
       id,
       projectKey,
-      title: options?.title || t("canvas.textGenerate"),
+      title: options?.title || L("文字", "Text"),
       prompt: options?.prompt || "",
       content: "",
       status: "idle",
@@ -8206,100 +8224,132 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     await runDelete([id]);
   }
 
-  function changeTextNodeContent(id: string, content: string) {
-    if(readOnly || isNodeLocked(id))return;
-    setTextNodes((current) =>
-      current.map((node) =>
-        node.id === id
-          ? { ...node, content: content.slice(0, 12000), updatedAt: new Date().toISOString() }
-          : node
-      )
-    );
+  const textAutosave = useTextNodeAutosave<CanvasTextNode, {workspace: string; isCurrent: () => boolean}>({
+    getNode: id => textNodesRef.current.find(node => node.id === id),
+    save: persistTextNode,
+    hasUnsaved: () => unsavedTextRef.current.size > 0,
+  });
+  function textEditContext() {
+    const workspace = currentWorkspace(), revision = currentWorkspaceRevision();
+    return {workspace, isCurrent: () => canvasOwnerEpochRef.current.revision === textEditOwnerRevision && revision === currentWorkspaceRevision()};
   }
-
+  function changeTextNodeContent(id: string, content: string) {
+    if (readOnly || !nodeSettingsReady || nodeDeletingRef.current || historyBusyRef.current || isNodeLocked(id) || !textEditContext().isCurrent()) return;
+    const node = textNodesRef.current.find(item => item.id === id);
+    if (!node || node.status === "generating" || generationOperationRef.current.has(`text:${id}`)) return;
+    const updated: CanvasTextNode = {...node, content: content.slice(0, CANVAS_TEXT_CONTENT_LIMIT), status: "completed", error: "", updatedAt: nextCanvasTextTimestamp(node.updatedAt)};
+    textNodesRef.current = textNodesRef.current.map(item => item.id === id ? updated : item);
+    setTextNodes(textNodesRef.current);
+    textAutosave.schedule(id, textEditContext());
+  }
   function commitTextNodeContent(id: string, content: string, initialContent?: string) {
-    if(readOnly || isNodeLocked(id))return;
-    const node = textNodes.find((item) => item.id === id);
-    if (node) {
-      const updated = {
-        ...node,
-        content: content.slice(0, 12000),
-        updatedAt: new Date().toISOString(),
-      };
-      // onChange already updates controlled state. Preserve the focus-time text
-      // instead of mistaking the latest draft for the undo baseline on blur.
-      const patch = canvasTextEditPatch(textPatchOf(node), updated.content, initialContent);
-      if (patch) {
-        pushUndo({
-          kind: "text-patch",
-          id,
-          from: patch.from,
-          to: patch.to,
-        });
-      }
-      setTextNodes((current) => current.map((item) => (item.id === id ? updated : item)));
-      void persistTextNode(updated);
-    }
+    if (readOnly || !nodeSettingsReady || nodeDeletingRef.current || historyBusyRef.current || isNodeLocked(id) || !textEditContext().isCurrent()) return;
+    const node = textNodesRef.current.find(item => item.id === id);
+    if (!node || node.status === "generating" || generationOperationRef.current.has(`text:${id}`)) return;
+    // Focus without edits must not migrate a legacy prompt-only node or erase a failure.
+    if (initialContent !== undefined && content === initialContent) { void textAutosave.flush(id); return; }
+    const updated: CanvasTextNode = {...node, content: content.slice(0, CANVAS_TEXT_CONTENT_LIMIT), status: "completed", error: "", updatedAt: nextCanvasTextTimestamp(node.updatedAt)};
+    const patch = canvasTextEditPatch(textPatchOf(node), updated.content, initialContent);
+    if (patch) pushUndo({kind: "text-patch", id, from: patch.from, to: patch.to});
+    textNodesRef.current = textNodesRef.current.map(item => item.id === id ? updated : item);
+    setTextNodes(textNodesRef.current);
+    textAutosave.schedule(id, textEditContext());
+    void textAutosave.flush(id);
+  }
+  function changeTextInstruction(value: string) {
+    if (readOnly || !nodeSettingsReady || nodeDeletingRef.current || historyBusyRef.current || !selectedTextId || isNodeLocked(selectedTextId) || !textEditContext().isCurrent()) return;
+    const node = textNodesRef.current.find(item => item.id === selectedTextId);
+    if (!node || node.status === "generating") return;
+    const next = value.slice(0, CANVAS_TEXT_INSTRUCTION_LIMIT);
+    textInstructionDrafts.current.set(selectedTextId, next); setTextPrompt(next);
+    // Materialize old prompt-only bodies once; a new instruction never becomes content.
+    const updated: CanvasTextNode = {...node, content: canvasTextContent(node), prompt: next, status: node.status === "idle" ? "completed" : node.status, updatedAt: nextCanvasTextTimestamp(node.updatedAt)};
+    textNodesRef.current = textNodesRef.current.map(item => item.id === node.id ? updated : item);
+    setTextNodes(textNodesRef.current); textAutosave.schedule(node.id, textEditContext());
   }
   async function generateTextNode(options?: { node: CanvasTextNode; prompt: string; silent?: boolean }): Promise<boolean> {
-    const target = options?.node ?? selectedText, prompt = (options?.prompt ?? textPrompt).trim();
-    if (!target || readOnly || !nodeSettingsReady || isNodeLocked(target.id) || !prompt || target.status === "generating" || generationOperationRef.current.has(`text:${target.id}`)) return false;
+    const id = options?.node.id ?? selectedTextId;
+    const target = textNodesRef.current.find(node => node.id === id), prompt = (options?.prompt ?? textPrompt).trim();
+    if (!target || readOnly || !nodeSettingsReady || nodeDeletingRef.current || historyBusyRef.current || isNodeLocked(target.id) || !prompt || target.status === "generating" || generationOperationRef.current.has(`text:${target.id}`)) return false;
     generationOperationRef.current.add(`text:${target.id}`);
+    setTextSubmissionIds(current => new Set([...current, target.id]));
+    textAutosave.cancel([target.id]);
     const epoch = canvasOwnerEpochRef.current.revision, account = canvasAccountRef.current;
     const workspace = currentWorkspace(), workspaceRevision = currentWorkspaceRevision();
     const isCurrent = () => batchRunMountedRef.current && epoch === canvasOwnerEpochRef.current.revision && account === canvasAccountRef.current && workspaceRevision === currentWorkspaceRevision();
     const pending: CanvasTextNode = {
       ...target,
+      content: canvasTextContent(target),
       prompt,
-      title: prompt.replace(/\s+/g, " ").slice(0, 22) || t("canvas.textGenerate"),
+      title: target.title || L("文字", "Text"),
       status: "generating",
       error: "",
-      updatedAt: new Date().toISOString(),
+      updatedAt: nextCanvasTextTimestamp(target.updatedAt),
     };
     if (!options?.silent) setTextError(null);
-    setTextNodes((current) =>
-      current.map((node) => (node.id === pending.id ? pending : node))
-    );
+    textNodesRef.current = textNodesRef.current.map(node => node.id === pending.id ? pending : node);
+    setTextNodes(textNodesRef.current);
     try {
+      // Linked text is read by the server; drain its saves before freezing input.
+      await textAutosave.flushAll();
+      await Promise.all(Array.from(textSaveQueuesRef.current.values()));
+      const sourceTextIds = new Set((target.sourceIds ?? []).filter(sourceId => sourceId.startsWith("text-")));
+      if ([...unsavedTextRef.current.keys()].some(sourceId => sourceTextIds.has(sourceId))) throw new Error(L("关联文字尚未保存，请先重试保存", "Linked text has not been saved; retry saving first"));
+      // Preserve the current original before making a billable text request.
+      if (!await persistTextNode(target, {workspace, isCurrent})) throw new Error(L("正文尚未保存，请重试", "Text has not been saved; try again"));
+      if (!isCurrent()) return false;
+      if (nodeDeletingRef.current || historyBusyRef.current || nodeSettingsRef.current[target.id]?.locked || !textNodesRef.current.some(node => node.id === target.id && node.projectKey === target.projectKey)) throw new Error(L("节点状态已变更，请重新操作", "Node state changed; try again"));
       const response = await privateFetch("/api/canvas/text-generate", {
         method: "POST",
         isCurrent,
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ prompt, sourceIds: pending.sourceIds ?? [] }),
+        body: JSON.stringify({ prompt, content: canvasTextContent(target), sourceIds: pending.sourceIds ?? [], projectKey: target.projectKey }),
       });
       const data = await readJsonSafe(response);
       if (!response.ok || !data?.text) {
         throw new Error(data?.error || t("canvas.textGenerateFail"));
       }
+      const latest = textNodesRef.current.find(node => node.id === target.id && node.projectKey === target.projectKey);
+      if (!isCurrent() || !latest) return false;
       const completed: CanvasTextNode = {
-        ...pending,
+        ...latest,
+        prompt,
         content: String(data.text),
         status: "completed",
         error: "",
-        updatedAt: new Date().toISOString(),
+        updatedAt: nextCanvasTextTimestamp(latest.updatedAt),
       };
       if (!isCurrent()) return false;
       setTextModel(String(data.model || textModel));
-      setTextNodes((current) =>
-        current.map((node) => (node.id === completed.id ? completed : node))
-      );
-      return !!await persistTextNode(completed, { workspace, isCurrent });
+      textNodesRef.current = textNodesRef.current.map(node => node.id === completed.id ? completed : node);
+      setTextNodes(textNodesRef.current);
+      const saved = await persistTextNode(completed, { workspace, isCurrent });
+      if (saved && isCurrent()) {
+        if (completed.content !== target.content) pushUndo({kind: "text-patch", id: target.id, from: {...textPatchOf(completed), content: canvasTextContent(target)}, to: textPatchOf(completed)});
+        if (!options?.silent && selectedTextIdRef.current === target.id) setTextComposerMode("content");
+      }
+      return !!saved;
     } catch (error) {
       if (!isCurrent()) return false;
       const message = error instanceof Error ? error.message : t("canvas.textGenerateFail");
+      const latest = textNodesRef.current.find(node => node.id === target.id && node.projectKey === target.projectKey);
+      if (!latest) return false;
       const failed: CanvasTextNode = {
-        ...pending,
+        ...latest,
+        prompt,
         status: "failed",
         error: message.slice(0, 2000),
-        updatedAt: new Date().toISOString(),
+        updatedAt: nextCanvasTextTimestamp(latest.updatedAt),
       };
-      setTextNodes((current) =>
-        current.map((node) => (node.id === failed.id ? failed : node))
-      );
-      if (!options?.silent) setTextError(message);
+      textNodesRef.current = textNodesRef.current.map(node => node.id === failed.id ? failed : node);
+      setTextNodes(textNodesRef.current);
+      if (!options?.silent && selectedTextIdRef.current === target.id) setTextError(message);
       await persistTextNode(failed, { workspace, isCurrent });
       return false;
-    } finally { generationOperationRef.current.delete(`text:${target.id}`); }
+    } finally {
+      generationOperationRef.current.delete(`text:${target.id}`);
+      if (isCurrent()) setTextSubmissionIds(current => { const next = new Set(current); next.delete(target.id); return next; });
+    }
   }
 
   // ===== 竞品反推 → 智能帮写 → 成套生成 链路 =====
@@ -8321,9 +8371,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       from: textPatchOf(node),
       to: textPatchOf(updated),
     });
-    setTextNodes((items) =>
-      items.map((item) => (item.id === updated.id ? updated : item))
-    );
+    textNodesRef.current = textNodesRef.current.map(item => item.id === updated.id ? updated : item);
+    setTextNodes(textNodesRef.current);
     await persistTextNode(updated);
   }
 
@@ -8438,8 +8487,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const busy = (id: string) => busyIds.has(id) || generationOperationRef.current.has(`node:${id}`) || generationOperationRef.current.has(`retry:${id}`) || pendNodesRef.current.some(node => node.generating && node.operationKey === `node:${id}`);
     return selectionRunTargets(ids, [
       ...(activeProjectRef.current?.members || []).filter(art => selectedIds.has(art.id)).map(art => ({ id: art.id, kind: "image" as const, ...point(art.id, art.canvasX ?? 0, art.canvasY ?? 0), locked: isNodeLocked(art.id), busy: busy(art.id), runnable: canFeature("generate") && art.status === "completed" && !art.videoUrl && art.category !== "audio" && art.category !== "media" && !["workflow-decoration", "workflow-placeholder"].includes(art.source || "") && hasRenderableImage(art.image) })),
-      ...textNodesRef.current.filter(node => selectedIds.has(node.id) && node.projectKey === activeKey).map(node => ({ id: node.id, kind: "text" as const, ...point(node.id, node.canvasX, node.canvasY), locked: isNodeLocked(node.id), busy: node.status === "generating" || generationOperationRef.current.has(`text:${node.id}`), runnable: !!(node.content || node.prompt).trim() })),
-      ...pendNodesRef.current.filter(node => selectedIds.has(node.id)).map(node => ({ id: node.id, kind: "pending" as const, ...point(node.id, node.x, node.y), busy: node.generating || node.uploading || node.needsAttention || generationOperationRef.current.has(`pend:${node.id}`), runnable: canFeature("generate") && !node.taskId && node.inputs.some(id => activeProjectRef.current?.members.some(art => art.id === id && hasRenderableImage(art.image) && !art.videoUrl) || textNodesRef.current.some(text => text.id === id && text.projectKey === activeKey && text.status !== "generating" && !!(text.content || text.prompt).trim())) })),
+      ...textNodesRef.current.filter(node => selectedIds.has(node.id) && node.projectKey === activeKey).map(node => ({ id: node.id, kind: "text" as const, ...point(node.id, node.canvasX, node.canvasY), locked: isNodeLocked(node.id), busy: node.status === "generating" || generationOperationRef.current.has(`text:${node.id}`), runnable: !!node.prompt.trim() })),
+      ...pendNodesRef.current.filter(node => selectedIds.has(node.id)).map(node => ({ id: node.id, kind: "pending" as const, ...point(node.id, node.x, node.y), busy: node.generating || node.uploading || node.needsAttention || generationOperationRef.current.has(`pend:${node.id}`), runnable: canFeature("generate") && !node.taskId && node.inputs.some(id => activeProjectRef.current?.members.some(art => art.id === id && hasRenderableImage(art.image) && !art.videoUrl) || textNodesRef.current.some(text => text.id === id && text.projectKey === activeKey && text.status !== "generating" && !!canvasTextContent(text).trim())) })),
     ]);
   }
 
@@ -8461,7 +8510,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         run: async target => {
           if (target.kind === "text") {
             const node = textNodesRef.current.find(node => node.id === target.id);
-            return node ? generateTextNode({ node, prompt: node.content || node.prompt, silent: true }) : false;
+            return node ? generateTextNode({ node, prompt: node.prompt, silent: true }) : false;
           }
           if (target.kind === "pending") {
             const pend = pendNodesRef.current.find(node => node.id === target.id);
@@ -8614,9 +8663,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const project = activeProjectRef.current;
     if (!user || readOnly || !project || !canFeature("generate") || !nodeSettingsReady || textImageSubmittingRef.current) return;
     const ids = Array.from(new Set(textNodeIds)).filter(id => textNodesRef.current.some(node => node.id === id && node.projectKey === project.key));
-    if (!ids.length || ids.some(id => isNodeLocked(id) || textNodesRef.current.find(node => node.id === id)?.status === "generating")) return;
+    if (!ids.length || ids.some(id => generationOperationRef.current.has(`text:${id}`) || isNodeLocked(id) || textNodesRef.current.find(node => node.id === id)?.status === "generating")) return;
     setGenImageMenu({textNodeIds: ids, imageIds: Array.from(new Set(imageIds)),
-      drafts: selectedTextId && ids.includes(selectedTextId) ? {[selectedTextId]: textPrompt} : {},
+      drafts: {},
       account: canvasAccountRef.current, project: project.key, workspace: currentWorkspace(), epoch: canvasContextEpochRef.current, revision: textImageContextRef.current.revision});
   }
   function textImageRequests(menu: NonNullable<typeof genImageMenu>, mode: TextImageMode, options: {combine: boolean; useReferences: boolean}) {
@@ -8789,7 +8838,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const promptToUse =
       text ||
       inputTextNodes
-        .map((node) => node.content.trim() || node.prompt.trim())
+        .map((node) => canvasTextContent(node).trim())
         .filter(Boolean)
         .join("\n\n") ||
       inheritableImagePrompt(inputArts[0]?.prompt) ||
@@ -10119,7 +10168,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                                         <Type className="h-3.5 w-3.5" /> {t("canvas.textGenerate")}
                                       </div>
                                       <p className="line-clamp-4 whitespace-pre-wrap text-[10px] leading-relaxed">
-                                        {p.textNodes[0]?.content || p.textNodes[0]?.prompt || t("canvas.textEmpty")}
+                                        {(p.textNodes[0] ? canvasTextContent(p.textNodes[0]) : "") || t("canvas.textEmpty")}
                                       </p>
                                     </div>
                                   </div>
@@ -11968,9 +12017,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               <button
                 type="button"
                 disabled={assistBusy || !nodeSettingsReady || isNodeLocked(selectedText.id)}
-                onClick={() => textPromptRef.current?.focus()}
-                aria-label={L("文字创作", "Write text")}
-                title={L("文字创作", "Write text")}
+                onClick={() => { setTextComposerMode("write"); requestAnimationFrame(() => textPromptRef.current?.focus()); }}
+                aria-label={L("AI 写作", "AI writing")}
+                title={L("AI 写作", "AI writing")}
                 className="canvas-ui-action flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-40"
               >
                 {assistBusy ? (
@@ -11978,11 +12027,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 ) : (
                   <PenLine className="h-4 w-4" />
                 )}
-                {L("文字创作", "Write text")}
+                {L("AI 写作", "AI writing")}
               </button>
               <FeatureVisible feature="generate"><button
                 type="button"
-                disabled={!nodeSettingsReady || textImageSubmitting || isNodeLocked(selectedText.id) || selectedText.status === "generating"}
+                disabled={!nodeSettingsReady || textImageSubmitting || textSubmissionIds.has(selectedText.id) || isNodeLocked(selectedText.id) || selectedText.status === "generating"}
                 onClick={() => openTextImageMenu([selectedText.id])}
                 aria-label={t("canvas.toolbar.textToImages")}
                 title={t("canvas.genImagesHint")}
@@ -12548,7 +12597,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     }
               }
               className={textComposerExpanded ? "resize-none" : "resize-y"}
-             kind="text" heading={selectedText.title || L("文字生成", "Text generation")} onDismiss={() => setSelectedTextId(null)} expanded={textComposerExpanded} onToggleExpand={() => { if (textComposerDockRef.current) textComposerDockRef.current.style.height = ""; setTextComposerManuallySized(false); setTextComposerExpanded(value => !value); }} expandLabel={L("展开文字编辑窗口", "Expand text editor")} collapseLabel={L("收起文字编辑窗口", "Collapse text editor")} closeLabel={L("关闭创作栏", "Close composer")}>
+             kind="text" heading={selectedText.title || L("文字", "Text")} onDismiss={() => setSelectedTextId(null)} expanded={textComposerExpanded} onToggleExpand={() => { if (textComposerDockRef.current) textComposerDockRef.current.style.height = ""; setTextComposerManuallySized(false); setTextComposerExpanded(value => !value); }} expandLabel={L("展开文字编辑窗口", "Expand text editor")} collapseLabel={L("收起文字编辑窗口", "Collapse text editor")} closeLabel={L("关闭创作栏", "Close composer")}>
+              <div role="tablist" aria-label={L("文字编辑方式", "Text editing mode")} className="flex gap-1 px-3.5 pt-2">
+                {(["content", "write"] as const).map(mode => <button key={mode} type="button" role="tab" aria-selected={textComposerMode === mode}
+                  className={cn("rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors", textComposerMode === mode ? "bg-[#edf2ff] text-[#315fc8]" : "canvas-ui-action")}
+                  onClick={() => { setTextComposerMode(mode); setMentionState(null); }}>{mode === "content" ? L("正文", "Content") : L("AI 写作", "AI writing")}</button>)}
+              </div>
               <div
                 ref={textComposerBodyRef} data-composer-body="true"
                 className="flex min-h-0 flex-1 items-stretch gap-2 overflow-hidden px-3.5 pb-2 pt-3"
@@ -12569,12 +12623,22 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   <Plus className="h-3.5 w-3.5" />
                 </button>
                 <Textarea
+                  key={textComposerMode}
                   autoFocus
                   ref={textPromptRef}
-                  value={textPrompt}
-                  placeholder={t("canvas.textPromptPlaceholder")}
+                  value={textComposerMode === "content" ? canvasTextContent(selectedText) : textPrompt}
+                  aria-label={textComposerMode === "content" ? L("文字内容", "Text content") : L("AI 写作要求", "AI writing instructions")}
+                  placeholder={textComposerMode === "content" ? L("输入文字", "Write text") : L("输入写作或修改要求", "Describe what to write or change")}
+                  maxLength={textComposerMode === "content" ? CANVAS_TEXT_CONTENT_LIMIT : CANVAS_TEXT_INSTRUCTION_LIMIT}
+                  readOnly={selectedText.status === "generating" || textSubmissionIds.has(selectedText.id)}
+                  onFocus={() => { if (textComposerMode === "content") textBodyEditInitial.current = canvasTextContent(selectedText); }}
+                  onBlur={event => {
+                    if (textComposerMode === "content") { commitTextNodeContent(selectedText.id, event.currentTarget.value, textBodyEditInitial.current); textBodyEditInitial.current = undefined; }
+                    else void textAutosave.flush(selectedText.id);
+                  }}
                   onChange={(event) => {
-                    setTextPrompt(event.target.value);
+                    if (textComposerMode === "content") changeTextNodeContent(selectedText.id, event.target.value);
+                    else changeTextInstruction(event.target.value);
                     // 检测光标前未完成的 "@关键词" → 弹出图片选择框
                     const el = event.target;
                     const caret = el.selectionStart ?? event.target.value.length;
@@ -12592,7 +12656,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     }
                     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
                       event.preventDefault();
-                      void generateTextNode();
+                      if (event.nativeEvent.isComposing) return;
+                      if (textComposerMode === "write") void generateTextNode();
+                      else { commitTextNodeContent(selectedText.id, event.currentTarget.value, textBodyEditInitial.current); textBodyEditInitial.current = event.currentTarget.value; }
                     }
                   }}
                   className={cn(
@@ -12645,11 +12711,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                             onClick={() => {
                               const insert = `@${member.title || t("canvas.imageNode")} `;
                               const end = mentionState.start + 1 + mentionState.query.length;
-                              setTextPrompt(
-                                textPrompt.slice(0, mentionState.start) +
-                                  insert +
-                                  textPrompt.slice(end)
-                              );
+                              const value = textComposerMode === "content" ? canvasTextContent(selectedText) : textPrompt;
+                              const next = value.slice(0, mentionState.start) + insert + value.slice(end);
+                              if (textComposerMode === "content") changeTextNodeContent(selectedText.id, next);
+                              else changeTextInstruction(next);
                               setMentionState(null);
                               void updateTextReference(selectedText.id, member.id, true);
                             }}
@@ -12766,15 +12831,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 <p className="canvas-ui-error px-12 pb-2 text-xs font-medium">{textError}</p>
               )}
               <CanvasComposerFooter testId="text-node-dock-footer" controls={<>
-                {canFeature("agent")&&canFeature("video")&&<StoryboardPlanButton english={locale==='en'} disabled={!nodeSettingsReady||assistantBusy||assistantUploading||isNodeLocked(selectedText.id)||selectedText.status!=="completed"||!selectedText.content.trim()} onClick={()=>planTextStoryboard(selectedText)}/>}
-                <TextModelSelect feature="canvas.text-generate" compact dark={!lightCanvas} direction="up" />
-                <CanvasPromptOptimizer contextKey={JSON.stringify([user?.email, targetEmail, activeKey, selectedText.id])} prompt={textPrompt}
-                  disabled={readOnly || !nodeSettingsReady || selectedText.status === "generating" || assistBusy || isNodeLocked(selectedText.id)} english={locale === "en"}
-                  onOptimize={(prompt, signal) => optimizeCanvasPrompt("canvas-text", prompt, signal)} onApply={setTextPrompt}/>
+                {canFeature("agent")&&canFeature("video")&&<StoryboardPlanButton english={locale==='en'} disabled={!nodeSettingsReady||textSubmissionIds.has(selectedText.id)||assistantBusy||assistantUploading||isNodeLocked(selectedText.id)||selectedText.status!=="completed"||!selectedText.content.trim()} onClick={()=>planTextStoryboard(selectedText)}/>}
+                {textComposerMode === "write" && <TextModelSelect feature="canvas.text-generate" compact dark={!lightCanvas} direction="up" />}
+                <CanvasPromptOptimizer contextKey={JSON.stringify([user?.email, targetEmail, activeKey, selectedText.id])} prompt={canvasTextContent(selectedText)}
+                  disabled={readOnly || !nodeSettingsReady || textSubmissionIds.has(selectedText.id) || selectedText.status === "generating" || assistBusy || isNodeLocked(selectedText.id)} english={locale === "en"}
+                  onOptimize={(prompt, signal) => optimizeCanvasPrompt("canvas-text", prompt, signal)} onApply={value => commitTextNodeContent(selectedText.id, value, canvasTextContent(selectedText))}/>
 
                 <FeatureVisible feature="generate"><button
                   type="button"
-                  disabled={!nodeSettingsReady || textImageSubmitting || isNodeLocked(selectedText.id) || selectedText.status === "generating"}
+                  disabled={!nodeSettingsReady || textImageSubmitting || textSubmissionIds.has(selectedText.id) || isNodeLocked(selectedText.id) || selectedText.status === "generating"}
                   onClick={() => openTextImageMenu([selectedText.id])}
                   title={t("canvas.genImagesHint")}
                   className={cn(
@@ -12787,30 +12852,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   <ImageIcon className="h-3.5 w-3.5" />
                   {t("canvas.genImages")}
                 </button></FeatureVisible>
-                 </>} actions={<> <span
-                  className={cn(
-                    "text-[11px] font-semibold",
-                    lightCanvas ? "text-[#547886]" : "text-[#6bd7ec]"
-                  )}
-                >
-                  {selectedTextRefs.length}/5
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void generateTextNode()}
-                  disabled={!textPrompt.trim() || selectedText.status === "generating"}
-                  title={t("canvas.textGenerate")} aria-label={t("canvas.textGenerate")}
-                  className={cn(
-                    "flex h-10 w-10 items-center justify-center rounded-[11px] transition-opacity hover:opacity-90 disabled:opacity-45",
-                    lightCanvas ? "bg-[#20242c] text-white" : "bg-white text-[#111]"
-                  )}
-                >
-                  {selectedText.status === "generating" ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ArrowUp aria-hidden="true" className="h-4 w-4" />
-                  )}
-                </button>
+                 </>} actions={<>
+                {textComposerMode === "write" && <button
+                  data-text-primary="true" type="button" onClick={() => void generateTextNode()}
+                  disabled={!nodeSettingsReady || historySaving || textSubmissionIds.has(selectedText.id) || !textPrompt.trim() || selectedText.status === "generating"}
+                  aria-label={L("生成文字", "Generate text")}
+                  title={L("生成文字 · Ctrl/⌘ + Enter", "Generate text · Ctrl/⌘ + Enter")}
+                  className="canvas-ui-primary flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 text-xs font-semibold disabled:opacity-45">
+                  {selectedText.status === "generating" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp aria-hidden="true" className="h-4 w-4" />}
+                  {L("生成文字", "Generate text")}
+                </button>}
+
                </>}/>
             </CanvasComposerShell>
           )}
@@ -12821,7 +12873,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         {propertiesOpen && !browsing && (selectedText || selected || selectedVideo || selectedDirector || selectedCharacter || selectedScene || selectedAudio || selectedTimeline) && <NodePropertiesPanel
           key={(selectedText || selected || selectedVideo || selectedDirector || selectedCharacter || selectedScene || selectedAudio || selectedTimeline)!.id} title={(selectedText || selected || selectedVideo || selectedDirector || selectedCharacter || selectedScene || selectedAudio || selectedTimeline)!.title} kind={selectedText ? "text" : "image"}
           settings={nodeSettings[(selectedText || selected || selectedVideo || selectedDirector || selectedCharacter || selectedScene || selectedAudio || selectedTimeline)!.id] || DEFAULT_CANVAS_SETTINGS} light={lightCanvas} english={locale==='en'} busy={historySaving || localEditBusy} readOnly={readOnly || !nodeSettingsReady}
-          content={selectedText?.content || selectedText?.prompt}
+          content={selectedText ? canvasTextContent(selectedText) : undefined}
           displaySize={selectedText ? {width:selectedText.width,height:selectedText.height} : selectedVideo?{width:selectedVideo.width,height:selectedVideo.height}:selectedDirector?{width:selectedDirector.width,height:selectedDirector.height}:selectedCharacter?{width:selectedCharacter.width,height:selectedCharacter.height}:selectedScene?{width:selectedScene.width,height:selectedScene.height}:selectedAudio?{width:selectedAudio.width,height:selectedAudio.height}:selectedTimeline?{width:selectedTimeline.width,height:selectedTimeline.height}:artworkNodeSize(selected!)}
           imageEditable={!selectedVideo&&!selectedDirector&&!selectedCharacter&&!selectedScene&&!selectedAudio&&!selectedTimeline&&!selected?.videoUrl}
           imageSize={selected?.width && selected?.height ? {width:selected.width,height:selected.height} : undefined}
@@ -12936,6 +12988,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       {/* Universal text-to-image; specialized product modes are optional. */}
       {canFeature("generate") && genImageMenu && textImageScopeCurrent(genImageMenu) && (
         <TextImageGenerationDialog textCount={genImageMenu.textNodeIds.length} referenceCount={textImageReferenceCount(genImageMenu)}
+          preview={options => { try { return {prompts: textImageRequests(genImageMenu, "general", options).map(request => request.prompt)}; } catch (error) { return {prompts: [], error: error instanceof Error ? error.message : L("文字内容无效", "Invalid text content")}; } }}
           locale={locale === "en" ? "en" : "zh"} busy={textImageSubmitting}
           onClose={() => setGenImageMenu(null)} onGenerate={(mode, options) => void generateImagesFromTextNodes(mode, options)} />
       )}
