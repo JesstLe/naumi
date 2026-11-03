@@ -7,8 +7,8 @@ const args = process.argv.slice(2), value = (key, fallback) => args.includes(key
 const root = path.resolve(value('--source-root', process.cwd()));
 const out = path.resolve(value('--out', 'output/mapping-ui-integration'));
 const suite = value('--suite', 'all'), source = path.join(out, 'source');
-assert(['all', 'background', 'pixel', 'zoom'].includes(suite), 'Unknown UI suite');
-const baseline = suite === 'zoom' && args.includes('--baseline');
+assert(['all', 'background', 'pixel', 'zoom', 'compact-dock', 'text-ux'].includes(suite), 'Unknown UI suite');
+const baseline = ['zoom', 'compact-dock'].includes(suite) && args.includes('--baseline');
 assert(!fs.existsSync(source), 'New run output required');
 fs.mkdirSync(source, { recursive: true });
 const sourceFiles = value('--files-from', '') ? JSON.parse(fs.readFileSync(value('--files-from', ''), 'utf8')) : cp.execFileSync('git', ['ls-files', '--deduplicate', '-z'], { cwd: root }).toString().split('\0').filter(Boolean);
@@ -28,6 +28,9 @@ if (suite === 'zoom' || suite === 'all') for (const name of ['verify-canvas-zoom
   const b = fs.readFileSync(path.join(__dirname, name));
   fs.writeFileSync(path.join(source, 'scripts', name), b);
 }
+if (suite === 'compact-dock' || suite === 'all') for (const name of ['verify-canvas-compact-dock-ui.cjs', 'canvas-mapping-ui-fixture.cjs']) {
+  fs.writeFileSync(path.join(source, 'scripts', name), fs.readFileSync(path.join(__dirname, name)));
+}
 fs.symlinkSync(path.join(root, 'node_modules'), path.join(source, 'node_modules'), 'junction');
 fs.writeFileSync(path.join(out, 'SOURCE.json'), JSON.stringify({ source: root, copiedSource: source, hashes }, null, 2));
 const env = {};
@@ -44,7 +47,9 @@ async function run(name, script, extra = []) {
   const output = path.join(out, name); fs.mkdirSync(output, { recursive: true });
   const runEnv = { ...env, CANVAS_BACKGROUND_URL: 'http://127.0.0.1:' + port, CANVAS_PIXEL_DOCK_URL: 'http://127.0.0.1:' + port,
     CANVAS_BACKGROUND_OUT: output, CANVAS_PIXEL_DOCK_OUT: output,
-    CANVAS_ZOOM_URL: 'http://127.0.0.1:' + port, CANVAS_ZOOM_OUT: output };
+    CANVAS_ZOOM_URL: 'http://127.0.0.1:' + port, CANVAS_ZOOM_OUT: output,
+    CANVAS_COMPACT_DOCK_URL: 'http://127.0.0.1:' + port, CANVAS_COMPACT_DOCK_OUT: output,
+    CANVAS_TEXT_UX_URL: 'http://127.0.0.1:' + port, CANVAS_TEXT_UX_OUT: output };
   const command = [process.execPath, path.join(source, script), ...extra];
   const result = await new Promise(resolve => {
     const process = cp.spawn(command[0], command.slice(1), { cwd: source, env: runEnv, windowsHide: true });
@@ -86,6 +91,11 @@ async function run(name, script, extra = []) {
     if (suite === 'all' || suite === 'background') await run('background', 'scripts/verify-canvas-background-ui.cjs', args.includes('--multi-unknown-only') ? ['--multi-unknown-only'] : args.includes('--recovery-only') ? ['--recovery-only'] : []);
     if (suite === 'all' || suite === 'pixel') await run('pixel', 'scripts/verify-canvas-pixel-dock-ui.cjs');
     if (suite === 'zoom' || suite === 'all') await run('zoom', 'scripts/verify-canvas-zoom-ui.cjs', baseline ? ['--baseline'] : []);
+    if (suite === 'compact-dock' || suite === 'all') await run('compact-dock', 'scripts/verify-canvas-compact-dock-ui.cjs', [
+      ...(baseline ? ['--baseline'] : []), ...(value('--only', '') ? ['--only', value('--only', '')] : []),
+      ...(value('--baseline-report', '') ? ['--baseline-report', value('--baseline-report', '')] : []),
+    ]);
+    if (suite === 'text-ux' || suite === 'all') await run('text-ux', 'scripts/verify-canvas-text-node-ux.cjs');
   } catch (error) { results.push({ error: error.stack, exit: 1 }); }
   finally {
     if (server && server.exitCode === null) {
@@ -97,7 +107,7 @@ async function run(name, script, extra = []) {
     let portClosed = false;
     try { await fetch('http://127.0.0.1:' + port + '/api/version', { signal: AbortSignal.timeout(1500) }); } catch { portClosed = true; }
     const expectedExit = baseline ? 1 : 0;
-    const reproduced = !baseline || fs.existsSync(path.join(out, 'zoom', 'RESULT.json')) && JSON.parse(fs.readFileSync(path.join(out, 'zoom', 'RESULT.json'))).status === 'REPRODUCED';
+    const reproduced = !baseline || fs.existsSync(path.join(out, suite, 'RESULT.json')) && JSON.parse(fs.readFileSync(path.join(out, suite, 'RESULT.json'))).status === 'REPRODUCED';
     const status = results.length && results.every(r => r.command && r.exit === expectedExit) && portClosed && reproduced ? baseline ? 'REPRODUCED' : 'PASS' : 'FAIL';
     const report = { status, results, serverStopped: server?.exitCode !== null, portClosed, supplierCalls: 0, productionActions: 0,
       originalSourceUntouchedByNext: true, snapshot: source, at: new Date().toISOString() };
