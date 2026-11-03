@@ -64,7 +64,14 @@ const platformMetadata: Metadata = {
 
 export async function generateMetadata(): Promise<Metadata> {
   const site = await siteProfile();
-  return site.mode === 'enterprise' ? { title: site.policy.brand, description: `${site.policy.brand}创作协作系统`, robots: { index: false, follow: false } } : platformMetadata;
+  return site.mode === 'enterprise'
+    ? {
+        title: site.policy.brand,
+        description: `${site.policy.brand}创作协作系统`,
+        robots: { index: false, follow: false },
+        icons: platformMetadata.icons,
+      }
+    : platformMetadata;
 }
 
 export default async function RootLayout({
