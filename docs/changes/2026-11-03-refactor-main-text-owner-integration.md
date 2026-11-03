@@ -36,3 +36,5 @@ root为文本正文、generation-input、actual React autosave、model参考、�
 - reviewer四合同窄审通过，唯一实际P2已修且复验；并非整条R04签字。正式6项新目录、原runner31/426通过与完整Next17/真实PG是不同层级，正式6项最终执行结果以主集成记录为准。
 
 副本回滚仅恢复独立副本，当前候选仍保留修改。原936已经包含restore-context、JSON回放和runtime fixture修复，不回退这些；最新main仅同步进候选，未反向合入或部署。
+
+正式6项首轮在44e535c0全部PASS/顶层PARTIAL exit2；PG默认12项而agent显式instruction-history为13项。root已将该原第13项flag纳入正式case，并加runner参数断言，最终clean-source执行另行记录，不把首轮12重标13。
