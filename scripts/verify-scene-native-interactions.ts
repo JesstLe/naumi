@@ -1,3 +1,4 @@
+import { assertPlainPendingPrompt } from "./verification/native-pending-prompt";
 import { selectReferenceMention } from "./verification/reference-mention-locator";
 import assert from "node:assert/strict";
 import {dragCanvasNode} from "./verification/canvas-node-drag";
@@ -86,7 +87,8 @@ export async function verifySceneInteractions(h: Awaited<ReturnType<typeof creat
     await editor.getByRole("button", {name: "生成参考图", exact: true}).click(); await editor.waitFor({state: "hidden"});
     // This opens the existing image composer. It is not an automatic paid call.
     await expect(page.getByTestId("pending-node-dock")).toContainText("生成");
-    const pendingText = await page.getByTestId("pending-node-dock").locator("textarea").evaluateAll(items => items.map(item => (item as HTMLTextAreaElement).value));
+    const pendingPrompt = await assertPlainPendingPrompt(page.getByTestId("pending-node-dock"), "庭院 · 交互\n石阶连接木廊，石桌靠东，跨镜头保持布局\n夜景：木廊暖灯照明，空间位置保持");
+    const pendingText = [pendingPrompt.text];
     assert.ok(pendingText.some(text => text.includes("木廊暖灯照明") && text.includes("石桌靠东")), JSON.stringify(pendingText));
     assert.deepEqual(await h.creditState("a"), freeBefore); assert.equal(h.supplierCalls().filter(call => call.phase === "create").length, createsBefore);
     await page.reload({waitUntil: "domcontentloaded"}); await title.waitFor();
@@ -250,7 +252,7 @@ export async function verifySceneInteractions(h: Awaited<ReturnType<typeof creat
     assert.equal(h.supplierCalls().filter(call => call.phase === "create").length, calls);
     assert.deepEqual(errors, []);
     const evidence = {
-      mentionSelection,realBrowserCanvas: true, nativeSceneDirectorConnection:true, actualImageAndPanoramaWebgl:true, directorImageVideoOutputsFree:true, directorSnapshotSurvivesSceneDeletion:true, directorApplyTrustedAndReplayAfterDeletion:true, mixedDirectorSnapshotRemap:true, menuCreateUploadSaveRefresh: true, statesAndDefault: true, imageGenerationDraftOnly: true, dragLockDuplicateDeleteUndoRedo: true, nativeHandleConnection: true, namedMentionAndLookSwitch: true, uiVideoGeneration: true, mixedCopyAliasAndImagesRemapped: true, mixedDeletionRestoreBeforeImageAtomic: true, failedHistoryRollsBackAll: true, workflowRolesFrozen: true, laterEditDeleteLeavesQueuedStageUnchanged: true, replayNoNewCalls: true, taskIds: [uiTaskId, ...((await run()).nodes.map((item: any) => item.taskId))], simulatedCreatesAdded: calls - createsBefore, paidCalls: 0, pageErrors: errors};
+      pendingPrompt,mentionSelection,realBrowserCanvas: true, nativeSceneDirectorConnection:true, actualImageAndPanoramaWebgl:true, directorImageVideoOutputsFree:true, directorSnapshotSurvivesSceneDeletion:true, directorApplyTrustedAndReplayAfterDeletion:true, mixedDirectorSnapshotRemap:true, menuCreateUploadSaveRefresh: true, statesAndDefault: true, imageGenerationDraftOnly: true, dragLockDuplicateDeleteUndoRedo: true, nativeHandleConnection: true, namedMentionAndLookSwitch: true, uiVideoGeneration: true, mixedCopyAliasAndImagesRemapped: true, mixedDeletionRestoreBeforeImageAtomic: true, failedHistoryRollsBackAll: true, workflowRolesFrozen: true, laterEditDeleteLeavesQueuedStageUnchanged: true, replayNoNewCalls: true, taskIds: [uiTaskId, ...((await run()).nodes.map((item: any) => item.taskId))], simulatedCreatesAdded: calls - createsBefore, paidCalls: 0, pageErrors: errors};
     await writeFile(path.join(out, "interaction-result.json"), JSON.stringify(evidence, null, 2));
     return evidence;
   } catch (error) {
