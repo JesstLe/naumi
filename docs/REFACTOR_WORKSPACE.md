@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：Verify 视频描述编辑器断言
+
+[视频描述UI回归](changes/2026-11-03-refactor-video-prompt-ui-assertion.md)处理旧2bd的billing UI14PASS/2FAIL：原测试对contenteditable用toHaveValue。两处改为实际role/editable与原字符串精确textContent检查，原身份/上传/冻结价/零确认断言及预算保留；产品0改动。实际production-mode Next原样复现、完整16项及副本rollback见output/pr8-video-prompt-assertion-20261103；不将本地构建代替Linux镜像/完整core/部署。
+
 ## 当前推进：Core runtime 测试端口自碰撞
 
 [runtime端口fixture](changes/2026-11-03-refactor-runtime-test-ports.md)定位旧3c Core42PASS后失败：临时端口close后OS再次发放已配置Worker端口，派生API配置自碰撞。生产拒绝正确，产品源码0改动；测试allocator全程去重且100探测有界，保留原启动/业务预算。actual allocator确定性基线/修改/回滚和完整runtime结果见output/pr8-core-runtime-ports-20261103，不以窄6项合同冒充237目录完整通过。
