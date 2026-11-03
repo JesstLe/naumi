@@ -1,5 +1,9 @@
 # 整体退出审计
 
+## 当前增量：main 紧凑图片 Dock，不替代整体退出
+
+[紧凑 Dock owner 整合](../changes/2026-11-03-refactor-main-compact-dock-integration.md)保持4d文本阶段与原paid合同，普通整合main ca00b1f1。新正式纯geometry case使目录243→244；source-root行为oracle在原有canvasDockLayout上比较真实820→620、展开734→420，text/video原值不变。完整集中报告/独立审阅/副本全raw回滚归本阶段output，不把登记数、局部PARTIAL或SCC0写成全重构完成。R04、M01/M02/M05—M08、当前完整244与固定Web/Worker/runtime/performance门槛仍独立，mainMerged=false、deployed=false、47 HOLD。
+
 ## 2026-11-03 main 文本增量同步
 
 最新汇合见[main文本owner记录](../changes/2026-11-03-refactor-main-text-owner-integration.md)。main dede3933同步进936候选，原paidID/UNKNOWN、restore、JSON wire与已知结果恢复保持；同ID终态失败与裸输出错误分别验证。四合同独立窄审与Next17不是整体R04；243正式目录新增不表示完整执行。最终source、四产物和copy-only rollback以output/pr8-main-text-sync-20261103为准。本轮仍未反向合main或部署，不改历史source证据。

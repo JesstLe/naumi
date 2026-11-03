@@ -18,12 +18,14 @@ type Props = HTMLAttributes<HTMLDivElement> & {
   collapseLabel?: string;
   expanded?: boolean;
   onToggleExpand?: () => void;
+  tools?: ReactNode;
+  compact?: boolean;
 };
 
 /** Presentation only: node drafts, permissions, quotation and submission stay with each caller. */
 export const CanvasComposerShell = forwardRef<HTMLDivElement, Props>(function CanvasComposerShell({
   kind, heading, onDismiss, closeLabel = "关闭创作栏", expandLabel = "展开输入区", collapseLabel = "收起输入区",
-  expanded: controlledExpanded, onToggleExpand, className, children, ...props
+  expanded: controlledExpanded, onToggleExpand, compact = false, tools, className, children, ...props
 }, ref) {
   const appearance = useSurfaceAppearance() ?? "light";
   const [localExpanded, setLocalExpanded] = useState(false);
@@ -41,10 +43,11 @@ export const CanvasComposerShell = forwardRef<HTMLDivElement, Props>(function Ca
   },[expanded]);
   const Icon = kind === "text" ? Type : kind === "image" ? ImageIcon : Video;
   return <div {...props} ref={element=>{shell.current=element;if(typeof ref==='function')ref(element);else if(ref)ref.current=element;}} data-composer-kind={kind} data-composer-expanded={expanded}
-    data-canvas-hotkeys-blocked="true" className={cn(surfaceAppearanceClass(appearance), "canvas-dock-entry", styles.shell, className)}>
+    data-composer-density={compact && kind === "image" ? "compact" : undefined} data-canvas-hotkeys-blocked="true" className={cn(surfaceAppearanceClass(appearance), "canvas-dock-entry", styles.shell, className)}>
     <header className={styles.header} data-composer-header="true">
       <span className={styles.identity}><Icon size={14} aria-hidden="true"/><span title={heading}>{heading}</span></span>
       <span className={styles.headerActions}>
+        {tools}
         <button type="button" aria-label={expanded ? collapseLabel : expandLabel} title={expanded ? collapseLabel : expandLabel}
           aria-expanded={expanded} onMouseDown={event=>event.preventDefault()} onClick={toggleExpand}>
           {expanded ? <Minimize2 size={14}/> : <Maximize2 size={14}/>}

@@ -9,7 +9,7 @@ import {Box,Focus,MapPin,Upload} from "lucide-react";
 import {cn} from "@/lib/utils";
 import {GENERATION_STYLES} from "@/lib/mock-data";
 import {useI18n} from "@/lib/i18n/locale-context";
-import {CanvasComposerShell,CanvasComposerFooter,CanvasComposerOptions} from "./composer-shell";
+import {CanvasComposerShell,CanvasComposerFooter} from "./composer-shell";
 import {CanvasSelect} from "./composer-controls";
 import {ImageReferenceComposer} from "./image-reference-composer";
 import {GenerationSubmitAction} from "./generation-submit-action";
@@ -24,7 +24,7 @@ export type CanvasImageComposerProps={
   promptRecovery?:{error:string;retry:()=>void;reload:()=>void};
   recovery?:{identity:string;tasks:CanvasGenerationTask[];busy:(key:string)=>boolean;check:(task:CanvasGenerationTask)=>unknown};
   restoreReferences?:{disabled:boolean;onRestore:()=>void};
-  controls:Omit<CanvasImageGenerationControlsProps,"pending">;
+  controls:Omit<CanvasImageGenerationControlsProps,"pending"|"secondary">;
   imageActions?:{style:string;marked:boolean;onStyle:(value:string)=>void;onMark:()=>unknown;onFocus:()=>void};
   generation:Omit<ComponentProps<typeof GenerationSubmitAction>,"english">;error?:string|null;
 };
@@ -35,13 +35,16 @@ export function CanvasImageComposer({versions,pending,title,readOnly=false,optim
   const {identity,...references}=referenceEditor;
   return <CanvasComposerShell data-testid={pending?"pending-node-dock":"image-node-dock"} ref={dockRef}
     style={style??(pending?{left:12,bottom:12}:{left:12,bottom:12,maxHeight:"60%"})}
-    kind="image" expanded={expanded} onToggleExpand={onToggleExpand} heading={title||L("图片生成","Image generation")} onDismiss={onDismiss} closeLabel={L("关闭创作栏","Close composer")}>
+    tools={!readOnly&&<>
+      <CanvasPromptOptimizer iconOnly contextKey={identity} prompt={references.prompt} disabled={readOnly||optimizationDisabled||generation.generating} english={locale==="en"} onOptimize={(prompt,signal)=>optimizeCanvasPrompt("canvas-image",prompt,signal)} onApply={references.onPrompt}/>
+      {versions&&<ImageVersionControl iconOnly {...versions}/>}
+    </>} kind="image" compact expanded={expanded} onToggleExpand={onToggleExpand} heading={title||L("图片生成","Image generation")} onDismiss={onDismiss} closeLabel={L("关闭创作栏","Close composer")}>
     <div data-composer-body="true" className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
-      <ImageReferenceComposer key={identity} {...references}>
+      <ImageReferenceComposer compact key={identity} {...references}>
         {!readOnly&&upload&&<>
           <input ref={upload.inputRef} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={event=>upload.onFiles(event.target.files)}/>
           {upload.available&&<button type="button" disabled={upload.disabled} onClick={()=>upload.inputRef.current?.click()} title={t("canvas.toolbar.addReference")} aria-label={t("canvas.toolbar.addReference")}
-            className={cn("canvas-ui-action flex flex-none items-center justify-center rounded-[10px] border border-dashed border-[var(--canvas-ui-border)] hover:!border-[#6366f1]/60",references.references.length?"h-[68px] w-12":"h-8 gap-1.5 px-2.5 text-xs")}><Upload className="h-4 w-4"/>{!references.references.length&&L("参考图","Reference")}</button>}
+            className={cn("canvas-ui-action flex flex-none items-center justify-center rounded-[10px] border border-dashed border-[var(--canvas-ui-border)] hover:!border-[#6366f1]/60",references.references.length?"h-14 w-11":"h-8 gap-1.5 px-2.5 text-xs")}><Upload className="h-4 w-4"/>{!references.references.length&&L("参考图","Reference")}</button>}
         </>}
         {!readOnly&&restoreReferences&&<button type="button" onClick={restoreReferences.onRestore} disabled={restoreReferences.disabled} className="canvas-ui-action h-8 rounded-lg border border-[var(--canvas-ui-border)] px-2 text-xs disabled:opacity-40">{L("恢复节点参考","Restore node references")}</button>}
       </ImageReferenceComposer>
@@ -49,10 +52,7 @@ export function CanvasImageComposer({versions,pending,title,readOnly=false,optim
       {error&&<p className="pb-1 text-xs font-medium text-red-400">{error}</p>}
     </div>
     {!readOnly&&<CanvasComposerFooter controls={<>
-      <CanvasImageGenerationControls {...controls} pending={pending}/>
-      <CanvasPromptOptimizer contextKey={identity} prompt={references.prompt} disabled={readOnly||optimizationDisabled||generation.generating} english={locale==="en"} onOptimize={(prompt,signal)=>optimizeCanvasPrompt("canvas-image",prompt,signal)} onApply={references.onPrompt}/>
-      {imageActions&&(
-                  <CanvasComposerOptions label={L("更多图片参数", "More image settings")}><CanvasSelect
+      <CanvasImageGenerationControls {...controls} pending={pending} secondary={imageActions&&<><CanvasSelect
                         dir="up"
                         light={controls.light}
                         value={imageActions.style}
@@ -97,9 +97,8 @@ export function CanvasImageComposer({versions,pending,title,readOnly=false,optim
                       >
                         <Focus aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
                         {t("canvas.dockFocus")}
-                      </button></CanvasComposerOptions>
-      )}{imageActions&&" "}
-    </>} actions={<>{versions&&<ImageVersionControl {...versions}/>}
+                      </button></>}/>
+    </>} actions={<>
       {recovery&&recovery.tasks.length>1?<span data-testid="generation-original-task-menu" className="min-w-0 max-w-[144px]">
         <SelectMenu key={recovery.identity} value="__original_task__" label={L("检查原任务","Check original task")} className="h-10 max-w-full rounded-[11px] px-2.5 text-xs"
           options={[{value:"__original_task__",label:`${L("检查原任务","Check original task")} · ${recovery.tasks.length}`,disabled:true},...recovery.tasks.map((task,index)=>({value:task.operationKey,label:`${L("任务","Task")} ${index+1} · ${task.failure?.message||""}`,disabled:recovery.busy(task.operationKey)}))]}

@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：main 紧凑图片 Dock owner 同步
+
+[紧凑 Dock 整合](changes/2026-11-03-refactor-main-compact-dock-integration.md)以4d1eb60a为5687文件基线普通整合main ca00b1f1。图片620/360与展开420/480进入纯geometry，naturalHeight与render/live width进入原overlay owner，版本/优化器/参数保留原composer职责，不恢复Canvas单体。原text/video几何、paid/UNKNOWN/save-ACK/undo合同保留。正式目录244仅代表登记数；实际集中验证、完整Next、独立窄审和四产物以output/pr8-main-compact-dock-sync-20261103为准。前一文本阶段封存，不将旧报告重标新头；整体ACTIVE、未合main/未部署、47 HOLD。
+
 ## 当前推进：main 文本工作流 owner 同步
 
 [文本owner汇合](changes/2026-11-03-refactor-main-text-owner-integration.md)固定936fe80e并普通合入main dede3933（23路径/5冲突），正文、AI要求、自动保存和下游读取进入既有document/task/history/route owners。真实linked-source save-null误POST已修并独立0POST复验；同ID财务终态helper共用，四裸TEXT_OUTPUT502仍UNKNOWN，不按错误码重购。实际Next17、SQL/PG13、route33/model7、tasks30/202及原owner回归通过。最终5604类型输入稳定、lint0/6旧warn、四SCC0、Worker2440通过；正式目录243不等于243已全跑。四产物/正式6case/副本rollback和新头CI归output/pr8-main-text-sync-20261103；整体ACTIVE，未合main、未部署、47 HOLD。

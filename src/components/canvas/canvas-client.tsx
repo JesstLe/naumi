@@ -1215,7 +1215,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   const {nodeScreen,dockStyle,topbarStyle,overlaySafeArea,panelRef,textComposerDockRef,nodeToolbarRef,nodeRenamePositionRef,updateLiveViewport}=useCanvasOverlayLayout({
     flow:rfRef,viewport:viewportRef,nodes:rfNodes,size:canvasSize,selection:{selectedId,selectedPendId,selectedTextId},contextMenuOpen:!!ctxMenu,
-    textComposerExpanded,mediaComposerExpanded,readOnly,nodeTitleHeight:selectedVideo||selected?.videoUrl?38:0,anchorTitleHeight:selectedVideo?38:0,protectImageNodeTitle:!!selected&&!selected.videoUrl,
+    textComposerExpanded,mediaComposerExpanded,readOnly,nodeTitleHeight:selectedVideo||selected?.videoUrl?38:0,anchorTitleHeight:selectedVideo?38:0,protectImageNodeTitle:!!selected&&!selected.videoUrl,compactImage:!!selected&&!selected.videoUrl||!!selectedPend,
     measurementKey:JSON.stringify([selectedBatchArts.length,selectedTextBatchNodes.length,browsing]),
     contextKey:JSON.stringify([canvasArtworkDocument.scope.key,canvasContextEpochRef.current]),syncZoom:viewControls.syncZoom});
 
@@ -2622,7 +2622,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         <div
           ref={canvasAreaRef}
           data-testid="canvas-drop-zone"
-          className={cn("canvas-stage relative min-w-0 flex-1 overflow-hidden", lightCanvas && "canvas-light")}
+          className={cn("canvas-stage relative min-w-0 flex-1 overflow-clip", lightCanvas && "canvas-light")}
           onDragEnter={(event) => {
             if (!event.dataTransfer.types.includes("Files")) return;
             event.preventDefault();
@@ -3535,7 +3535,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               ref={nodeToolbarRef}
               style={{ left: topbarStyle.left, top: topbarStyle.top }}
               className={cn(
-                "canvas-ui-surface canvas-dock-entry absolute z-20 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-0.5 rounded-[14px] border p-1.5 [&>*]:shrink-0 [&_button]:whitespace-nowrap",
+                "canvas-ui-surface canvas-dock-entry absolute z-20 flex max-w-[min(780px,calc(100%-1rem))] -translate-x-1/2 items-center gap-0.5 rounded-[14px] border p-1.5 [&>*]:shrink-0 [&_button]:whitespace-nowrap",
                 "overflow-x-auto"
               )}
             >
@@ -3543,29 +3543,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               <button type="button" data-action="rename" aria-label={t("canvas.editName")} title={t("canvas.toolbar.renameHint")}
                 disabled={!selected || !nodeSettingsReady || isNodeLocked(selected.id)} onClick={() => { if (selected) { setNodeRenameValue(selected.title); setRenamingNodeId(selected.id); } }}
                 className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40">
-                <Pencil className="h-4 w-4 shrink-0" aria-hidden="true" /> {t("canvas.editName")}
+                <Pencil className="h-4 w-4 shrink-0" aria-hidden="true" />
               </button>
               <FeatureVisible feature="agent"><button type="button" data-action="assistant" aria-label={t("canvas.toolbar.assistant")} title={t("canvas.toolbar.assistantHint")}
                 disabled={!selected || readOnly} onClick={() => selected && openAssistant(selected)}
                 className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40">
-                <MessageSquareText className="h-4 w-4 shrink-0" aria-hidden="true" /> {t("canvas.toolbar.assistant")}
+                <MessageSquareText className="h-4 w-4 shrink-0" aria-hidden="true" />
               </button></FeatureVisible>
-              {QUICK_ACTIONS.filter(
-                (a) => canFeature("generate") && ["bg", "angle", "caption"].includes(a.key)
-              ).map((a) => (
-                <button
-                  key={a.key}
-                  data-action={a.key}
-                  type="button"
-                  disabled={selectedGenerating || !selected}
-                  title={!selected ? t("canvas.toolNeedImage") : t(`canvas.toolbar.${a.key}Hint`)}
-                  onClick={() => onQuickAction(a.key)}
-                  className="canvas-ui-action flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-40"
-                >
-                  <a.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  {t(`canvas.qa.${a.key}`)}
-                </button>
-              ))}
               {/* 抠图:发丝级,扣 1 积分/张(已去掉免费极速档) */}
               <FeatureVisible feature="cutout"><button
                 type="button"
@@ -3631,16 +3615,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 }
               /></FeatureVisible>
               <span className="canvas-ui-divider mx-1.5 h-5 w-px flex-none" />
-              {/* 内容编辑与生成变换使用不同名称，避免暗示只是修改参数。 */}
-              <FeatureVisible feature="generate"><button
-                type="button"
-                title={t("canvas.toolbar.editTextHint")}
-                disabled={!selected || selectedGenerating || readOnly}
-                onClick={() => selected && void openImageTextEditor(selected)}
-                className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
-              >
-                <Type className="h-4 w-4 shrink-0" aria-hidden="true" /> {t("canvas.toolbar.editText")}
-              </button></FeatureVisible>
               {/* 扩图:选目标比例 + 原图锚点,outpaint 保原图内容补全四周 */}
               <FeatureVisible feature="generate"><div className="relative flex items-center">
                 <button
@@ -3724,25 +3698,20 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     </CanvasActionPanel>
                 )}
               </div></FeatureVisible>
-              {/* 标注编辑:箭头/涂抹/编号标注 + 逐条指令改图 */}
-              <FeatureVisible feature="generate"><button
-                type="button"
-                title={t("canvas.toolbar.annotateHint")}
-                disabled={!selected || selectedGenerating || readOnly}
-                onClick={() => selected && setAnnotateArtwork(selected)}
-                className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
-              >
-                <PenLine className="h-4 w-4 shrink-0" aria-hidden="true" /> {t("canvas.toolbar.annotate")}
-              </button></FeatureVisible>
               {/* 低频处理与节点管理使用一个可访问的Portal菜单。 */}
 
               </>}
               <CanvasActionMenu triggerRef={imageMoreRef} label={t("canvas.toolbar.imageMore")} light={lightCanvas}
                 items={[
-                  ...QUICK_ACTIONS.filter(a => canFeature("generate") && a.key === "relight").map(a => ({
+                  ...QUICK_ACTIONS.filter(a => canFeature("generate") && ["bg", "angle", "caption", "relight"].includes(a.key)).map(a => ({
                     id: a.key, icon: a.icon, label: t(`canvas.qa.${a.key}`), hint: t(`canvas.toolbar.${a.key}Hint`),
                     disabled: selectedGenerating || !selected, onSelect: () => onQuickAction(a.key),
                   })),
+                  ...(canFeature("generate") ? [
+                    { id:"edit-text",icon:Type,label:t("canvas.toolbar.editText"),hint:t("canvas.toolbar.editTextHint"),disabled:!selected||selectedGenerating||readOnly,onSelect:()=>{if(selected)void openImageTextEditor(selected);} },
+                    { id:"annotate",icon:PenLine,label:t("canvas.toolbar.annotate"),hint:t("canvas.toolbar.annotateHint"),disabled:!selected||selectedGenerating||readOnly,onSelect:()=>{if(selected)setAnnotateArtwork(selected);} },
+                  ] : []),
+                  ...(selected&&!selected.videoUrl ? [{id:"replace",icon:ImagePlus,label:L("替换图片","Replace image"),disabled:localEditBusy||!nodeSettingsReady||isNodeLocked(selected.id),onSelect:()=>requestReplace(selected)}] : []),
                   { id: "workflow", icon: Workflow, label: t("canvas.toolbar.workflow"), hint: t("canvas.toolbar.workflowHint"),
                     disabled: !selected || readOnly, onSelect: () => setComfyOpen(true) },
                   { id: "video", icon: Video, label: videoNodeCreationReady?t("canvas.toolbar.video"):videoNodeCreateLabel, hint: t("canvas.toolbar.videoHint"),
@@ -3765,9 +3734,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 <button type="button" aria-label={L("裁剪图片","Crop image")} title={L("裁剪为新版本","Crop to a new version")}
                   disabled={localEditBusy || !nodeSettingsReady || isNodeLocked(selected.id)} onClick={()=>localEdits.openCrop(selected,canvasLocalEditContext())}
                   className="canvas-ui-action flex h-[34px] items-center gap-1.5 whitespace-nowrap rounded-[9px] px-2.5 text-[13px] font-semibold disabled:opacity-40"><Crop className="h-4 w-4" />{L("裁剪","Crop")}</button>
-                <button type="button" aria-label={L("替换图片","Replace image")} title={L("替换为新版本","Replace with a new version")}
-                  disabled={localEditBusy || !nodeSettingsReady || isNodeLocked(selected.id)} onClick={()=>requestReplace(selected)}
-                  className="canvas-ui-action flex h-[34px] items-center gap-1.5 whitespace-nowrap rounded-[9px] px-2.5 text-[13px] font-semibold disabled:opacity-40"><ImagePlus className="h-4 w-4" />{L("替换","Replace")}</button>
+
               </>}
               <button
                 type="button"

@@ -57,6 +57,7 @@ export const refactorCases=[
  node('canvas-text-reference-model','canvas','scripts/verify-canvas-text-reference-model.cjs','CANVAS_TEXT_REFERENCE_MODEL=PASS'),
  {...node('canvas-text-node-ux-pg','canvas','scripts/verify-canvas-text-node-ux-pg.cjs','CANVAS_TEXT_NODE_UX_PG=PASS',['--verify-instruction-history']),pg:true},
  node('main-text-server-owners','canvas','scripts/verify-main-text-server-owners.cjs','MAIN_TEXT_SERVER_OWNERS=PASS'),
+ {...ts('canvas-compact-dock-layout','canvas','scripts/verify-canvas-compact-dock-layout.ts','COMPACT_IMAGE_DOCK_LAYOUT=PASS'),pg:false},
  node('canvas-stitch','canvas','scripts/verify-canvas-stitch.cjs','CANVAS_STITCH=PASS'),
  ts('canvas-stitch-pg','canvas','scripts/verify-canvas-stitch-pg.ts','CANVAS_STITCH_PG=PASS'),
  node('canvas-text-editing-dom','canvas','scripts/verify-canvas-text-editing-dom.cjs','CANVAS_TEXT_EDITING_DOM=PASS'),

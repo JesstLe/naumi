@@ -44,6 +44,34 @@
 .actions > button:last-child, .actions > div > button:last-child { display: flex; width: 36px; height: 36px; flex-shrink: 0; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 10px; background: var(--canvas-ui-primary-bg, var(--canvas-ui-text)) !important; color: var(--canvas-ui-primary-text, var(--canvas-ui-panel-solid)) !important; }
 .actions button:disabled { cursor: not-allowed; opacity: .45; }
 .actions button:last-child svg { width: 17px; height: 17px; }
+
+/* Image dock density is opt-in; text/video and full-size image composers keep
+ * their existing layout. The body remains the only vertical scroll surface. */
+.shell[data-composer-kind="image"][data-composer-density="compact"] .header { min-height: 32px; padding: 1px 10px 1px 12px; }
+.shell[data-composer-kind="image"][data-composer-density="compact"] [data-composer-body] { padding: 2px 12px 8px; }
+.shell[data-composer-kind="image"][data-composer-density="compact"] [data-composer-body] [role="textbox"][contenteditable] { min-height: 56px; }
+.shell[data-composer-kind="image"][data-composer-density="compact"][data-composer-expanded="true"] [data-composer-body] [role="textbox"][contenteditable] { min-height: 160px; }
+.shell[data-composer-kind="image"][data-composer-density="compact"] .footer { min-height: 62px; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; }
+.shell[data-composer-kind="image"][data-composer-density="compact"] .controls { flex: 1 1 300px; }
+.shell[data-composer-kind="image"][data-composer-density="compact"] .actions { max-width: 100%; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+.shell[data-composer-kind="image"][data-composer-density="compact"] [data-testid="canvas-model-control"] { max-width: 150px; }
+.shell[data-composer-kind="image"][data-composer-density="compact"] .controls { gap: 5px; }
+.shell[data-composer-kind="image"][data-composer-density="compact"] .controls button { padding-left: 7px; padding-right: 7px; }
+.shell[data-composer-kind="image"][data-composer-density="compact"] .headerActions button { width: 28px; height: 28px; min-height: 28px; padding: 0; border-color: transparent; background: transparent; }
+
+.referenceStrip { display: flex; min-width: 0; flex-wrap: nowrap; align-items: center; gap: 6px; margin-bottom: 6px; padding: 2px 2px 4px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; }
+.referenceStrip > button { height: 44px; max-height: 44px; flex: 0 0 auto; }
+.referenceCard { position: relative; display: flex; width: 170px; height: 48px; flex: 0 0 170px; align-items: center; gap: 6px; padding: 4px; border: 1px solid var(--canvas-ui-border); border-radius: 9px; background: var(--canvas-ui-panel); }
+.referenceDetails { min-width: 0; flex: 1 1 auto; }
+.referenceInsert { width: calc(100% - 40px); height: 17px; line-height: 17px; }
+.referenceSource { position: absolute; top: 3px; right: 23px; color: var(--canvas-ui-muted); }
+.referenceSource button, .referenceRemove { display: flex; width: 20px; height: 20px; align-items: center; justify-content: center; border-radius: 5px; }
+.referenceSource button:hover, .referenceRemove:hover { color: var(--canvas-ui-text); background: var(--canvas-ui-soft-hover); }
+.referenceRemove { position: absolute; top: 3px; right: 3px; color: var(--canvas-ui-muted); }
+.referenceRole { display: block; height: 20px; margin-top: 1px; padding-top: 0; padding-bottom: 0; line-height: 18px; }
+.referencePrompt { height: auto; min-height: 56px; max-height: none; overflow: visible; }
+.referenceTools { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+.referenceTools > button { flex-shrink: 0; }
 .shell[data-composer-kind="text"] .actions > button[data-text-primary] { width: auto; min-width: 94px; padding: 0 12px; white-space: nowrap; }
 @container (max-width: 480px) {
   /* Controls must wrap across the whole composer, not the narrow space left
@@ -54,6 +82,9 @@
   .controls button:not([role="menuitem"]), .controls > label { font-size: 11px; }
   .actions { margin-left: auto; max-width: 100%; gap: 5px; }
   .shell [data-composer-body] { padding-right: 12px; padding-left: 12px; }
+  .shell[data-composer-kind="image"][data-composer-density="compact"] .footer { gap: 6px; padding: 8px 10px; }
+  .shell[data-composer-kind="image"][data-composer-density="compact"] .controls { flex-basis: 100%; }
+  .shell[data-composer-kind="image"][data-composer-density="compact"] .actions { flex: 1 1 100%; }
 }
 @media (max-height: 600px) {
   /* A short/keyboard-sized viewport cannot show every control at once.
