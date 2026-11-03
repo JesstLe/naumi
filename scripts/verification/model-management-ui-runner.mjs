@@ -3,6 +3,7 @@
  * a later developer edit. The child handle/IPC, not any found file, owns cleanup. */
 import fs from 'node:fs/promises';import path from 'node:path';import {spawn} from 'node:child_process';import {randomUUID} from 'node:crypto';import {createRequire} from 'node:module';import {createServer} from 'node:net';import {pathToFileURL} from 'node:url';
 import {sourceIdentity,hash} from './refactor-runner.mjs';
+import {prepareOwnedModelUiProduction} from './model-ui-production-build.mjs';
 const loader=pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href;
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const observed=child=>new Promise(resolve=>{child.once('error',error=>resolve({exit:1,error:String(error)}));child.once('exit',(exit,signal)=>resolve({exit:exit??1,signal}));});
@@ -43,10 +44,18 @@ export async function runModelManagementUi(verificationFile,{root=process.cwd(),
     // Windows rather than nesting another full evidence path inside it.
     // This input belongs to the invoking checkout, not the owned source copy's
     // cwd. CI supplies a relative pinned Router path under the original root.
-    const childEnv={...env,...(env.NAUMI_VERIFY_ROUTER_SOURCE?{NAUMI_VERIFY_ROUTER_SOURCE:path.resolve(root,env.NAUMI_VERIFY_ROUTER_SOURCE)}:{}),NEXT_DIST_DIR:'.next',NAUMI_MODEL_UI_RUN_ID:runId,NAUMI_MODEL_UI_PORT:String(port),NAUMI_MODEL_UI_BASE_URL:origin,NAUMI_MODEL_UI_SOURCE_MANIFEST:'output/model-ui-source.json'};
+    const started=Date.now();let production;
+    if(profile==='model-config'&&verificationFile==='scripts/verify-business-ui.ts'){
+      if(env.NAUMI_MODEL_UI_DEV_IMAGE)throw Error('MODEL_UI_BUSINESS_REQUIRES_PRODUCTION');
+      production=await prepareOwnedModelUiProduction({root,source:identity,target:path.join(run,'production'),manifestFile:env.NAUMI_MODEL_UI_PRODUCTION_MANIFEST,env});
+      result.production=production.evidence;
+      await fs.writeFile(path.join(run,'PRODUCTION.json'),JSON.stringify(production.evidence,null,2)+'\n');
+      if(Date.now()-started>=startupTimeoutMs)throw Error('MODEL_UI_PRODUCTION_PREPARATION_TIMEOUT');
+    }
+    const childEnv={...env,...production?.environment,...(production?{NAUMI_MODEL_UI_PRODUCTION_DIR:production.directory,NAUMI_MODEL_UI_PRODUCTION_BUILD_ID:production.evidence.buildId}:{}),...(env.NAUMI_VERIFY_ROUTER_SOURCE?{NAUMI_VERIFY_ROUTER_SOURCE:path.resolve(root,env.NAUMI_VERIFY_ROUTER_SOURCE)}:{}),NEXT_DIST_DIR:'.next',NAUMI_MODEL_UI_RUN_ID:runId,NAUMI_MODEL_UI_PORT:String(port),NAUMI_MODEL_UI_BASE_URL:origin,NAUMI_MODEL_UI_SOURCE_MANIFEST:'output/model-ui-source.json'};
     const spawnTs=(file,server=false,ipc=false)=>spawn(process.execPath,[...(server?['--conditions=react-server']:[]),'--import',loader,file],{cwd:source,env:childEnv,windowsHide:true,stdio:ipc?['ignore','inherit','inherit','ipc']:['ignore','inherit','inherit']});
     fixture=spawnTs(selected.fixture,true,true);fixtureDone=observed(fixture);
-    const metadata=path.join(source,selected.metadata),started=Date.now();let ready=false,readyMetadata;
+    const metadata=path.join(source,selected.metadata);let ready=false,readyMetadata;
     while(Date.now()-started<startupTimeoutMs){
       if(fixture.exitCode!==null||fixture.signalCode!==null)throw Error('Fixture exited during setup: '+JSON.stringify(await fixtureDone));
       let state;try{state=JSON.parse(await fs.readFile(metadata,'utf8'));}catch{}
@@ -55,13 +64,14 @@ export async function runModelManagementUi(verificationFile,{root=process.cwd(),
     }
     if(!ready)throw Error('Fixture startup timed out');
     if(profile==='model-config'&&verificationFile==='scripts/verify-business-ui.ts'){
-      // Next dev compiles Canvas on its first request. That is fixture startup,
-      // not the original browser navigation/price-control acceptance deadline.
-      // Keep it inside the EXISTING startup budget and use the owned real user.
+      // Production output is sealed/copied before startup, not compiled during
+      // the original browser deadline. Keep authenticated readiness in the same
+      // startup budget; no retry/reload is added to the acceptance checker.
+      if(readyMetadata?.runtime!=='production-standalone'||readyMetadata?.buildId!==production.evidence.buildId)throw Error('MODEL_UI_PRODUCTION_METADATA_MISMATCH');
       if(typeof readyMetadata?.userCookie!=='string')throw Error('MODEL_UI_PREPARATION_USER_MISSING');
       const begun=Date.now(),response=await fetch(origin+'/canvas',{headers:{cookie:'nv_user='+readyMetadata.userCookie},redirect:'manual',signal:AbortSignal.timeout(Math.max(1,startupTimeoutMs-(Date.now()-started)))});
       await response.arrayBuffer();if(response.status!==200)throw Error('MODEL_UI_CANVAS_PREPARATION_FAILED:'+response.status);
-      result.preparedPages=[{path:'/canvas',status:response.status,ms:Date.now()-begun,startupBudgetMs:startupTimeoutMs}];
+      result.preparedPages=[{path:'/canvas',status:response.status,ms:Date.now()-begun,startupBudgetMs:startupTimeoutMs,runtime:'production-standalone',buildId:production.evidence.buildId}];
     }
     checker=spawnTs(verificationFile);checkerDone=observed(checker);const checked=await checkerDone;result={...result,status:checked.exit===0?'PASS':'FAIL',exit:checked.exit,check:checked};
   }catch(error){result={...result,status:'FAIL',error:String(error),stack:error.stack};}

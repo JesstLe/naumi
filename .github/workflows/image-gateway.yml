@@ -127,6 +127,7 @@ jobs:
           mkdir -p output/image-gateway-build
           git rev-parse HEAD > output/image-gateway-build/SOURCE.txt
           git status --porcelain > output/image-gateway-build/SOURCE_TREE.txt
+          node scripts/prepare-model-ui-production.mjs before-build --out output/model-ui-production
           if npm run build > output/image-gateway-build/build.log 2>&1; then
             status=0
           else
@@ -139,6 +140,9 @@ jobs:
             details="${details//$'\r'/'%0D'}"
             details="${details//$'\n'/'%0A'}"
             printf '::error title=Full application build failed::%s\n' "$details"
+          fi
+          if [ "$status" -eq 0 ]; then
+            node scripts/prepare-model-ui-production.mjs seal --out output/model-ui-production
           fi
           exit "$status"
       - name: Configurable billing and transactional regressions
@@ -210,6 +214,7 @@ jobs:
           name: image-gateway-build-${{ github.sha }}
           path: |
             output/image-gateway-build/
+            output/model-ui-production/
             output/image-gateway-billing/
             output/image-gateway-regression/*.json
             output/credit-billing-regression/*.json

@@ -74,8 +74,8 @@ try{
  await fs.writeFile(sdkFile,JSON.stringify(sdk));report=await run('native-sdk-valid',[native],{nativeSdkManifest:sdkFile,commandFor:c=>[process.execPath,c.file,'--out','placeholder']});eq(report.status,'PARTIAL');eq(report.passed,1);eq(report.cases[0].command.at(-1),path.join(dir,'output/native-sdk-valid/native'));assert.ok((await fs.readFile(report.cases[0].log,'utf8')).includes(JSON.stringify(report.cases[0].command)));checks++;cases++;
  await fs.writeFile(sdkFile,JSON.stringify({...sdk,sdkImageId:'changed-explicit-fixture-port'}));report=await run('native-sdk-resume-mismatch',[native],{nativeSdkManifest:sdkFile,commandFor:c=>[process.execPath,c.file,'--out','placeholder'],resume:path.join(dir,'output/native-sdk-valid/REPORT.json')});eq(report.error,'RESUME_SOURCE_MISMATCH');eq(report.notRun,1);cases++;
  eq((await sourceIdentity(dir)).commit,sha);eq(git('status','--porcelain'),'');
- // Preserve the actual npm exit and literal build evidence. These two children
- // test only the CI shell contract with an explicit npm fixture, not Next build.
+ // Preserve the actual npm exit and literal build evidence. These children test
+ // the CI shell contract with explicit npm and production-seal ports, not Next.
  const gateway=yaml.load(await fs.readFile(path.join(root,'.github/workflows/image-gateway.yml'),'utf8'));
  const buildStep=gateway.jobs.verify.steps.find(s=>s.name==='Build full application');
  assert.ok(buildStep?.run.includes('if npm run build > output/image-gateway-build/build.log 2>&1; then'));checks++;
@@ -87,15 +87,26 @@ try{
  const billingStep=gateway.jobs.verify.steps.find(s=>s.name==='Configurable billing and transactional regressions');
  eq(billingStep.run,'npm run verify:billing-all');eq(billingStep.env.BILLING_VERIFY_EVIDENCE,'output/image-gateway-billing');
  const bash=process.platform==='win32'?'D:/DEV/Git/bin/bash.exe':'bash';
- const fixture='npm(){ test "$*" = "run build" || return 9; test "$NODE_OPTIONS" = "--max-old-space-size=4096" || return 13; printf "fixture build 100%%\\n"; printf "fixture detail\\n" >&2; return "$NAUMI_FIXTURE_BUILD_EXIT"; }\n';
+ const fixture='node(){ test "$1" = "scripts/prepare-model-ui-production.mjs" || return 17; test "$3 $4" = "--out output/model-ui-production" || return 18; case "$2" in before-build|seal) ;; *) return 19;; esac; printf "%s\\n" "$2" >> output/production-shell-actions.log; if test "$NAUMI_FIXTURE_PREPARATION_FAIL" = "$2"; then return 11; fi; }\nnpm(){ test "$*" = "run build" || return 9; test "$NODE_OPTIONS" = "--max-old-space-size=4096" || return 13; printf "fixture build 100%%\\n"; printf "fixture detail\\n" >&2; return "$NAUMI_FIXTURE_BUILD_EXIT"; }\n';
  for(const exit of [0,7]){
+  await fs.rm(path.join(dir,'output/production-shell-actions.log'),{force:true});
   const child=spawnSync(bash,['-e','-o','pipefail','-c',fixture+buildStep.run],{cwd:dir,env:{...process.env,...buildStep.env,NAUMI_FIXTURE_BUILD_EXIT:String(exit)},encoding:'utf8',windowsHide:true});
   eq(child.status,exit);const literal=await fs.readFile(path.join(dir,'output/image-gateway-build/build.log'),'utf8');
   eq(literal,'fixture build 100%\nfixture detail\n');assert.ok(child.stdout.includes(literal));checks++;
   eq(child.stdout.includes('::error title=Full application build failed::'),exit!==0);
   if(exit){assert.ok(child.stdout.includes('100%25%0Afixture detail'));checks++;}
   eq((await fs.readFile(path.join(dir,'output/image-gateway-build/SOURCE.txt'),'utf8')).trim(),sha);
+  eq((await fs.readFile(path.join(dir,'output/production-shell-actions.log'),'utf8')).trim().split('\n'),exit?['before-build']:['before-build','seal'],'seal only a successful original build');
   await fs.writeFile(path.join(out,'BUILD_CONTRACT_'+exit+'.json'),JSON.stringify({fixture:true,command:[bash,'-e','-o','pipefail','-c',buildStep.run],npmFixtureExit:exit,exit:child.status,stdout:child.stdout,stderr:child.stderr,literal},null,2)+'\n');cases++;
+ }
+ for(const phase of ['before-build','seal']){
+  await fs.rm(path.join(dir,'output/production-shell-actions.log'),{force:true});
+  await fs.rm(path.join(dir,'output/image-gateway-build/build.log'),{force:true});
+  const child=spawnSync(bash,['-e','-o','pipefail','-c',fixture+buildStep.run],{cwd:dir,env:{...process.env,...buildStep.env,NAUMI_FIXTURE_BUILD_EXIT:'0',NAUMI_FIXTURE_PREPARATION_FAIL:phase},encoding:'utf8',windowsHide:true});
+  eq(child.status,11,'production '+phase+' failure stays failed');
+  eq((await fs.readFile(path.join(dir,'output/production-shell-actions.log'),'utf8')).trim().split('\n'),phase==='seal'?['before-build','seal']:['before-build']);
+  eq(await fs.stat(path.join(dir,'output/image-gateway-build/build.log')).then(()=>true,()=>false),phase==='seal','capture failure never invokes npm');
+  await fs.writeFile(path.join(out,'BUILD_PREPARATION_FAILURE_'+phase+'.json'),JSON.stringify({fixture:true,phase,command:[bash,'-e','-o','pipefail','-c',buildStep.run],exit:child.status,stdout:child.stdout,stderr:child.stderr},null,2)+'\n');cases++;
  }
  // Actual billing driver + explicit child port: fail fast and retain both raw
  // streams, the original exit and untouched NOT_RUN cases; no PG acceptance.

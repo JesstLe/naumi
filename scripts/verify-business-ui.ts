@@ -2,7 +2,22 @@ import {observeAdminBrowser} from "./verification/admin-browser-diagnostics";
 /** Browser acceptance against the isolated app + pinned real Go Router. No paid provider calls. */
 import assert from "node:assert/strict";
 import { readFile, mkdir } from "node:fs/promises";
-import { chromium,expect } from "@playwright/test";
+import { chromium,expect,type Page } from "@playwright/test";
+
+async function enterCanvasTextTool(user: Page) {
+  const deadline=performance.now()+30000;
+  const remaining=()=>{
+    const ms=Math.ceil(deadline-performance.now());
+    if(ms<=0)throw new Error("Canvas text tool readiness exceeded the original 30000ms budget");
+    return ms;
+  };
+  const canvas=user.getByTestId("canvas-drop-zone"),textTool=canvas.locator('button[data-tool="text"]');
+  const newProject=canvas.getByTestId("canvas-project-browser").getByRole("button",{name:"创建新项目",exact:true});
+  // Loading is neither an open editor nor an actionable project browser.
+  await textTool.or(newProject).filter({visible:true}).first().waitFor({timeout:remaining()});
+  if(await newProject.isVisible())await newProject.click({timeout:remaining()});
+  await textTool.waitFor({timeout:remaining()});await textTool.click({timeout:remaining()});
+}
 
 async function main() {
   if(process.env.NAUMI_VERIFY_ISOLATED_DB!=="1")throw new Error("Isolated fixture required");
@@ -55,8 +70,7 @@ async function main() {
     assert.ok(!JSON.stringify(catalog).includes("wire-image"));
     const quoted=await member.request.post(`${origin}/api/billing/quote`,{data:{feature:"image.generate",quantity:1,modelId:"enterprise-image"}});assert.equal(quoted.status(),200);assert.equal((await quoted.json()).credits,credits);
     await user.goto(`${origin}/canvas`,{waitUntil:"domcontentloaded"});
-    if (!await user.locator('button[data-tool="text"]').isVisible()) await user.getByTestId("canvas-drop-zone").getByRole("button",{name:"创建新项目",exact:true}).click();
-    await user.locator('button[data-tool="text"]').waitFor();await user.locator('button[data-tool="text"]').click();
+    await enterCanvasTextTool(user);
     // New text nodes open in body-editing mode; the model catalog belongs to AI writing.
     const textDock=user.getByTestId("text-node-dock");await textDock.getByRole("tab",{name:"AI 写作",exact:true}).click();
     const textModel=textDock.getByRole("button",{name:"业务文字",exact:true});await textModel.first().waitFor();await textModel.first().click();

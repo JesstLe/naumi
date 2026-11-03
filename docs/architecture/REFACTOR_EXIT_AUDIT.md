@@ -1,5 +1,9 @@
 # 整体退出审计
 
+## 当前增量：业务 UI 等待与固定 production fixture
+
+[cb2业务fixture](../changes/2026-11-04-refactor-business-canvas-production-fixture.md)确认原Verify业务步骤58行timeout并伴dev worker阈值重启。入口visible-union修正与production standalone运行边界分别验证，不将一条局部PASS抹掉另一条生命周期失败。原完整dev本机PASS、原CI FAIL、受控入口FAIL→4/13 PASS均保持自身来源。唯一真实production build/seal及完整Next/PG/Router业务模块PASS，Windows显式锁定外部依赖不当Linux embedded CI；65/156和framework33/440为各自端口单元层。新增readiness/production正式单元使目录248，完整业务、最终source桥和新头CI独立，不替代完整Core、R04/同case页面/固定WebWorker/runtime/performance与main整合；未合main/未部署，47 HOLD。
+
 ## 当前增量：引用保留原适配器的完整测试闭包
 
 [375引用fixture](../changes/2026-11-04-refactor-reference-retention-fixture.md)确认145PASS后的reference-retention在VM未绑定canvasAccountRef时中止，未执行原引用合同。测试补齐真实提交锁/新attempt owner与可变身份/save端口，不删除产品flush/epoch fence；原40检查及新11准备case/85检查通过。提交前ABA和token-CAS释放不等于受理后恢复、UNKNOWN或真实账务验收；正式目录246、完整Core、R04/同case页面/固定WebWorker/runtime/performance与main整合门槛保持。375 Verify远端SUCCESS独立保留，未合main/未部署、47 HOLD。

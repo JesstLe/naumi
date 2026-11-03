@@ -133,6 +133,7 @@ async function main() {
     f.config.business={"canvas.text-generate":{enabled:true,defaultModelId:"text-public",options:[{modelId:"text-public",enabled:true,sort:0,unit:"task",pricing:{mode:"cny-fixed",amountMicros:"500000",creditsPerCnyMicros:"100000000",rounding:"ceil"}}]}};
   }
   const hostOrigin=f.origin.replace('127.0.0.1','host.docker.internal');
+  if(process.env.NAUMI_MODEL_UI_PRODUCTION_DIR&&process.env.NAUMI_MODEL_UI_DEV_IMAGE)throw Error('MODEL_UI_PRODUCTION_OWNER_REQUIRED');
   if(process.env.NAUMI_MODEL_UI_DEV_IMAGE){
     // Linux Next reaches the owned fixture through Docker's host bridge. The
     // host Go Router validates that exact same provider origin independently.
@@ -187,7 +188,14 @@ async function main() {
     stdio: ["ignore", "inherit", "inherit"],
     windowsHide: true,
   });
-  if(process.env.NAUMI_MODEL_UI_DEV_IMAGE){
+  if(process.env.NAUMI_MODEL_UI_PRODUCTION_DIR){
+    if(!runId||process.env.NAUMI_MODEL_UI_DEV_IMAGE)throw Error('MODEL_UI_PRODUCTION_OWNER_REQUIRED');
+    const production=path.resolve(process.env.NAUMI_MODEL_UI_PRODUCTION_DIR);
+    if(production!==path.join(path.dirname(process.cwd()),'production'))throw Error('MODEL_UI_PRODUCTION_PATH_OWNER_MISMATCH');
+    const buildId=(await readFile(path.join(production,'.next/BUILD_ID'),'utf8')).trim();
+    if(buildId!==process.env.NAUMI_MODEL_UI_PRODUCTION_BUILD_ID)throw Error('MODEL_UI_PRODUCTION_BUILD_ID_MISMATCH');
+    next=spawn(process.execPath,[path.join(production,'server.js')],{cwd:production,env:{...process.env,NODE_ENV:'production',HOSTNAME:'127.0.0.1',PORT:String(appPort)},stdio:['ignore','inherit','inherit'],windowsHide:true});
+  }else if(process.env.NAUMI_MODEL_UI_DEV_IMAGE){
     if(!runId)throw Error("LINUX_UI_MANAGED_OWNER_REQUIRED");
     const keys=["DATABASE_URL","PGOPTIONS","SETTINGS_SECRET","VIDEO_WORKER_SECRET","MODEL_CONFIG_ENVELOPE_SECRET","NAUMI_ROUTER_MANAGEMENT_TOKEN"];
     const environment:Record<string,string>=Object.fromEntries(keys.flatMap(key=>process.env[key]===undefined?[]:[[key,process.env[key]!]]));
@@ -220,7 +228,7 @@ async function main() {
       controlOrigin: f.origin,
       routerPID: router.pid,
       nextPID: next.pid,
-      runId,appOrigin,routerPort,managementPort,
+      runId,appOrigin,routerPort,managementPort,runtime:process.env.NAUMI_MODEL_UI_PRODUCTION_DIR?'production-standalone':'development',buildId:process.env.NAUMI_MODEL_UI_PRODUCTION_BUILD_ID||null,
     }),
   );
   console.log(

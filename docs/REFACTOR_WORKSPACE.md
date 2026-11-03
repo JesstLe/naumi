@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：cb2 Verify 的 Canvas 握手与 production fixture
+
+[业务Canvas验收fixture](changes/2026-11-04-refactor-business-canvas-production-fixture.md)分开保留瞬时isVisible错误分支和Next dev内存阈值重启两条证据。原5703源完整本地dev baseline首轮PASS，不改写为CI FAIL；原CI白屏/拒连及worker重启保留。入口改为真实visible-union/shared30s，不reload/retry；实际源码入口+Playwright gated DOM原30秒FAIL、修改4场景13检查PASS，不冒称内存复现。business runtime转向同源capture/seal的production standalone，保留startup120s/真实PG/Router/全部断言；唯一build/seal及完整modified业务模块PASS，Windows locked-external模式不当Linux自包含镜像。production单元65、原model-ui-runner156、framework33/440及tsc5606/lint11通过；正式selected和四产物归output/pr8-business-canvas-readiness-cb2-20261104。目录248不是全跑，整体ACTIVE、未合main/未部署、47 HOLD。
+
 ## 当前推进：375 Core 引用保留测试闭包
 
 [引用保留fixture](changes/2026-11-04-refactor-reference-retention-fixture.md)处理当前375 Core145PASS/1FAIL/100NOT_RUN：原VM遗漏Canvas适配器10项身份/保存/提交依赖，在引用断言前ReferenceError。仅补测试边界并导入实际background-generation token锁/attempt，不改产品guard。原40引用检查保留；新增11个提交准备case/85检查，完整125通过，scope空assert/恒true端口不当作受理后ABA或财务证据。正式原case、最终静态/独立窄审/四产物归output/pr8-reference-retention-ci375-20261104；目录仍246，375远端Verify SUCCESS保留原身份，不贴给未来新头。整体ACTIVE、未合main/未部署、47 HOLD。
