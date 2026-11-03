@@ -1887,18 +1887,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const nodeToolbarRef = useRef<HTMLDivElement | null>(null);
   const nodeRenamePositionRef = useRef<HTMLDivElement | null>(null);
   const [dockMetrics, setDockMetrics] = useState({ dockHeight: 0, toolbarHeight: 50, toolbarWidth: 0 });
-  // 底部 dock 提示词框:随内容自适应长高。显式写入最小高度，避免 macOS
-  // Chromium/Safari 在 flex + max-height 组合下把 textarea 压缩成约两行。
+  // The Dock body owns scrolling; the inline editor grows with its content.
   const promptAreaRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = promptAreaRef.current;
-    if (!el) return;
-    const minHeight = 112;
-    const maxHeight = 220;
-    el.style.height = "0px";
-    el.style.height = `${Math.min(maxHeight, Math.max(minHeight, el.scrollHeight))}px`;
-    el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
-  }, [editPrompt]);
   // 追加参考图(与节点图一起参与图生图)
   const referenceDraft=useImageReferenceDraft(imageDraft.key,user?.email?JSON.stringify([user.email.toLowerCase(),(targetEmail||user.email).toLowerCase()]):null,readOnly);
   const extraFiles=referenceDraft.files;
@@ -2105,6 +2095,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 文字节点一键放大/还原只改变当前画布视图，不写回节点尺寸；刷新后仍使用用户保存的原尺寸。
   const [expandedTextIds, setExpandedTextIds] = useState<Set<string>>(new Set());
   const [textComposerExpanded, setTextComposerExpanded] = useState(false);
+  const [mediaComposerExpanded, setMediaComposerExpanded] = useState(false);
+  useEffect(()=>setMediaComposerExpanded(false),[selectedId,selectedPendId,activeKey,canvasOwner]);
   const [textComposerManuallySized, setTextComposerManuallySized] = useState(false);
   const textComposerDockRef = useRef<HTMLDivElement>(null);
   const textComposerBodyRef = useRef<HTMLDivElement>(null);
@@ -2219,16 +2211,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   useEffect(() => () => { assistantRequestEpoch.current += 1; assistantController.current?.abort(); assistantUploadToken.current=null; }, []);
   // 拉线「生成衍生图」:建好空白节点后,把光标自动落进提示词框,引导用户写"改什么"
   const pendPromptRef = useRef<HTMLDivElement>(null);
-  // 占位 dock 与已生成节点保持同一自适应视野。
-  useEffect(() => {
-    const el = pendPromptRef.current;
-    if (!el) return;
-    const minHeight = 112;
-    const maxHeight = 220;
-    el.style.height = "0px";
-    el.style.height = `${Math.min(maxHeight, Math.max(minHeight, el.scrollHeight))}px`;
-    el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
-  }, [editPrompt]);
   const wantFocusPendPrompt = useRef(false);
   // 重命名节点(改作品标题):正在改的节点 id + 输入值
   const [renamingNodeId, setRenamingNodeId] = useState<string | null>(null);
@@ -4308,7 +4290,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   const nodeScreen=selectedNodeScreen(viewportRef.current);
   const overlaySafeArea=useMemo(()=>canvasOverlaySafeArea(canvasSize),[canvasSize.width]);
-  const {dock:dockStyle,toolbar:topbarStyle}=canvasDockLayout({nodeScreen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,readOnly,nodeTitleHeight:selectedVideo||selected?.videoUrl?38:0});
+  const {dock:dockStyle,toolbar:topbarStyle}=canvasDockLayout({nodeScreen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,mediaComposerExpanded,readOnly,nodeTitleHeight:selectedVideo||selected?.videoUrl?38:0});
 
   // 窗口缩放、分屏、旋转或切换选中节点时，React Flow 会保留旧 viewport，可能让
   // 新锚点留在安全区外。尺寸或锚点变化时做最小平移；拖动同一节点不会触发，
@@ -4411,7 +4393,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     observer.observe(dock);
     observer.observe(toolbar);
     return () => observer.disconnect();
-  }, [docksReady, canvasSize.width, canvasSize.height, selectedId, selectedPendId, selectedTextId, selectedBatchArts.length, selectedTextBatchNodes.length, readOnly, browsing, textComposerExpanded]);
+  }, [docksReady, canvasSize.width, canvasSize.height, selectedId, selectedPendId, selectedTextId, selectedBatchArts.length, selectedTextBatchNodes.length, readOnly, browsing, textComposerExpanded, mediaComposerExpanded]);
 
   function updateLiveViewport(vp:{x:number;y:number;zoom:number}) {
     const label=zoomPercentLabel(vp.zoom);
@@ -4420,12 +4402,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(zoomInputRef.current&&document.activeElement!==zoomInputRef.current)zoomInputRef.current.value=zoomPercentInput(vp.zoom);
     const screen=selectedNodeScreen(vp);
     if(!screen)return;
-    const layout=canvasDockLayout({nodeScreen:screen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,readOnly,nodeTitleHeight:selectedVideo||selected?.videoUrl?38:0});
+    const layout=canvasDockLayout({nodeScreen:screen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,mediaComposerExpanded,readOnly,nodeTitleHeight:selectedVideo||selected?.videoUrl?38:0});
     const dock=selectedTextId?textComposerDockRef.current:panelRef.current;
     if(dock&&layout.dock){
       if(!(textComposerExpanded&&selectedTextId))dock.style.left=layout.dock.left+'px';
       dock.style.top=layout.dock.top+'px';
       dock.style.maxHeight=layout.dock.maxHeight==null?'':layout.dock.maxHeight+'px';
+      if(!selectedTextId)dock.style.height=layout.dock.height==null?'':layout.dock.height+'px';
       if(selectedTextId)dock.style.minHeight=Math.min(218,layout.dock.maxHeight??218)+'px';
     }
     if(nodeToolbarRef.current&&layout.toolbar){nodeToolbarRef.current.style.left=layout.toolbar.left+'px';nodeToolbarRef.current.style.top=layout.toolbar.top+'px';}
@@ -12212,7 +12195,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             onChanged={run=>{void videoNodesStore.refresh();const ids=(run.assembly?.outputs||[]).map(output=>output.artworkId).filter((id):id is string=>!!id);if(ids.length)void mergeWorks(ids);}}/>}
           {selectedVideo&&multiSel.length<=1&&!propertiesOpen&&canFeature("video")&&<VideoSettingsDialog
             key={`${user?.email}:${targetEmail}:${activeKey}:${selectedVideo.id}`} node={selectedVideo} presentation="dock"
-            dockRef={panelRef} dockStyle={dockStyle??{left:12,bottom:12,maxHeight:"60%"}} draftScope={JSON.stringify([user?.email,targetEmail,activeKey])} advanced={videoDockAdvancedId===selectedVideo.id} onCloseAdvanced={()=>setVideoDockAdvancedId(null)}
+            dockRef={panelRef} dockStyle={dockStyle??{left:12,bottom:12,maxHeight:"60%"}} expanded={mediaComposerExpanded} onToggleExpand={()=>setMediaComposerExpanded(value=>!value)} draftScope={JSON.stringify([user?.email,targetEmail,activeKey])} advanced={videoDockAdvancedId===selectedVideo.id} onCloseAdvanced={()=>setVideoDockAdvancedId(null)}
             task={videoTaskStore.tasks.find(task=>task.id===selectedVideo.lastTaskId)}
             generationBlocked={!!selectedVideo.lastTaskId&&!videoTaskStore.tasks.some(task=>task.id===selectedVideo.lastTaskId)}
             onCancel={()=>{if(selectedVideo.lastTaskId)void videoTaskStore.cancel(selectedVideo.lastTaskId).catch(error=>flashTip(error.message));}}
@@ -12235,7 +12218,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               ref={panelRef}
               style={dockStyle ?? { left: 12, bottom: 12, maxHeight: "60%" }}
 
-             kind="image" heading={selected.title || L("图片生成", "Image generation")} onDismiss={() => setSelectedId(null)} closeLabel={L("关闭创作栏", "Close composer")}>
+             kind="image" expanded={mediaComposerExpanded} onToggleExpand={()=>setMediaComposerExpanded(value=>!value)} heading={selected.title || L("图片生成", "Image generation")} onDismiss={() => setSelectedId(null)} closeLabel={L("关闭创作栏", "Close composer")}>
               {/* dbody:风格/标记/聚焦 chips + 引用图 + 提示词(对齐原型 .cz-dock .dbody) */}
               <div data-composer-body="true" className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
                 <ImageReferenceComposer key={imageDraft.key || imageDraftNodeId} references={composerReferences} prompt={editPrompt} onPrompt={setEditPrompt}
@@ -12376,7 +12359,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               key={`pdock-${selectedPend.id}`}
               style={dockStyle ?? { left: 12, bottom: 12 }}
 
-             kind="image" heading={L("图片生成", "Image generation")} onDismiss={() => setSelectedPendId(null)} closeLabel={L("关闭创作栏", "Close composer")}>
+             kind="image" expanded={mediaComposerExpanded} onToggleExpand={()=>setMediaComposerExpanded(value=>!value)} heading={L("图片生成", "Image generation")} onDismiss={() => setSelectedPendId(null)} closeLabel={L("关闭创作栏", "Close composer")}>
               <div data-composer-body="true" className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
                 <ImageReferenceComposer key={imageDraft.key || imageDraftNodeId} references={composerReferences} prompt={editPrompt} onPrompt={setEditPrompt}
                   onRole={(key,role)=>imageDraft.setReferenceBindings(changeImageReferenceRole(imageReferenceState.bindings,key,role))}
