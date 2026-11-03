@@ -7,7 +7,7 @@ const args = process.argv.slice(2), value = (key, fallback) => args.includes(key
 const root = path.resolve(value('--source-root', process.cwd()));
 const out = path.resolve(value('--out', 'output/mapping-ui-integration'));
 const suite = value('--suite', 'all'), source = path.join(out, 'source');
-assert(['all', 'background', 'pixel', 'zoom', 'compact-dock'].includes(suite), 'Unknown UI suite');
+assert(['all', 'background', 'pixel', 'zoom', 'compact-dock', 'text-ux'].includes(suite), 'Unknown UI suite');
 const baseline = ['zoom', 'compact-dock'].includes(suite) && args.includes('--baseline');
 assert(!fs.existsSync(source), 'New run output required');
 fs.mkdirSync(source, { recursive: true });
@@ -48,7 +48,8 @@ async function run(name, script, extra = []) {
   const runEnv = { ...env, CANVAS_BACKGROUND_URL: 'http://127.0.0.1:' + port, CANVAS_PIXEL_DOCK_URL: 'http://127.0.0.1:' + port,
     CANVAS_BACKGROUND_OUT: output, CANVAS_PIXEL_DOCK_OUT: output,
     CANVAS_ZOOM_URL: 'http://127.0.0.1:' + port, CANVAS_ZOOM_OUT: output,
-    CANVAS_COMPACT_DOCK_URL: 'http://127.0.0.1:' + port, CANVAS_COMPACT_DOCK_OUT: output };
+    CANVAS_COMPACT_DOCK_URL: 'http://127.0.0.1:' + port, CANVAS_COMPACT_DOCK_OUT: output,
+    CANVAS_TEXT_UX_URL: 'http://127.0.0.1:' + port, CANVAS_TEXT_UX_OUT: output };
   const command = [process.execPath, path.join(source, script), ...extra];
   const result = await new Promise(resolve => {
     const process = cp.spawn(command[0], command.slice(1), { cwd: source, env: runEnv, windowsHide: true });
@@ -94,6 +95,7 @@ async function run(name, script, extra = []) {
       ...(baseline ? ['--baseline'] : []), ...(value('--only', '') ? ['--only', value('--only', '')] : []),
       ...(value('--baseline-report', '') ? ['--baseline-report', value('--baseline-report', '')] : []),
     ]);
+    if (suite === 'text-ux' || suite === 'all') await run('text-ux', 'scripts/verify-canvas-text-node-ux.cjs');
   } catch (error) { results.push({ error: error.stack, exit: 1 }); }
   finally {
     if (server && server.exitCode === null) {
