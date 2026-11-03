@@ -2,7 +2,101 @@ import { separateCanvasDocks, type DockPlacement, type ToolbarPlacement } from '
 export type NodeScreen = {left:number;top:number;bottom:number;cx:number};
 export type CanvasSize = {width:number;height:number};
 export type SafeArea = {left:number;right:number;top:number;bottom:number};
-export type DockMetrics = {dockHeight:number;toolbarHeight:number;toolbarWidth:number;dockMinimumHeight?:number};
+export type DockMetrics = {dockHeight:number;toolbarHeight:number;toolbarWidth:number;dockMinimumHeight?:number;dockNaturalHeight?:number};
+
+const COMPACT_IMAGE_DOCK_WIDTH = 620;
+const COMPACT_IMAGE_SIDE_MIN_WIDTH = 600;
+const COMPACT_IMAGE_DOCK_MAX_HEIGHT = 360;
+const COMPACT_IMAGE_EXPANDED_HEIGHT = 420;
+const COMPACT_IMAGE_EXPANDED_MAX_HEIGHT = 480;
+
+type CompactDockSlot = {
+ left:number;width:number;start:number;end:number;align:'start'|'end'|'node';
+};
+
+/** Image-only screen-space placement. Slots and their height limits depend on
+ * geometry, never on the previous rendered Dock height. The latter only picks
+ * a fitting slot and bottom-aligns an upper Dock, so clipping cannot feed a
+ * different maximum height back into ResizeObserver on every frame. */
+function compactImageDockLayout(node:NodeScreen|undefined,canvas:CanvasSize,metrics:DockMetrics,
+ safe:SafeArea,titleHeight:number,expanded:boolean):{dock:DockPlacement|undefined;toolbar:ToolbarPlacement|undefined} {
+ if(!node)return {dock:undefined,toolbar:undefined};
+ const gap=12,nodeGap=14;
+ const availableWidth=canvas.width?Math.max(1,canvas.width-safe.left-safe.right):COMPACT_IMAGE_DOCK_WIDTH;
+ const width=Math.min(COMPACT_IMAGE_DOCK_WIDTH,availableWidth);
+ const leftBound=safe.left,rightBound=canvas.width?canvas.width-safe.right:leftBound+availableWidth;
+ const topBound=safe.top,bottomBound=canvas.height?Math.max(topBound+1,canvas.height-safe.bottom):Infinity;
+ const clamp=(value:number,min:number,max:number)=>Math.max(min,Math.min(value,Math.max(min,max)));
+ const left=clamp(node.cx-width/2,leftBound,rightBound-width);
+ const nodeRight=node.left+Math.max(0,2*(node.cx-node.left));
+ const titleTop=node.top-Math.max(0,titleHeight);
+ const toolbarHeight=metrics.toolbarHeight>0?metrics.toolbarHeight:50;
+ const toolbarWidth=Math.min(metrics.toolbarWidth>0?metrics.toolbarWidth:620,availableWidth);
+ const toolbarLeft=clamp(node.cx-toolbarWidth/2,leftBound,rightBound-toolbarWidth);
+ const toolbar:ToolbarPlacement={left:toolbarLeft+toolbarWidth/2,
+  top:clamp(titleTop-gap-toolbarHeight,topBound,bottomBound-toolbarHeight)};
+ // A title clamped against the top chrome has no room for an action bar above
+ // it. Try below the picture, then beside it, before covering picture pixels.
+ if(toolbar.top+toolbarHeight+gap>titleTop&&toolbar.top<node.top+gap){
+  if(node.bottom+gap+toolbarHeight<=bottomBound)toolbar.top=Math.max(topBound,node.bottom+gap);
+  else if(nodeRight+gap+toolbarWidth<=rightBound){
+   toolbar.left=nodeRight+gap+toolbarWidth/2;
+   toolbar.top=clamp(node.top,topBound,bottomBound-toolbarHeight);
+  }else if(node.left-gap-toolbarWidth>=leftBound){
+   toolbar.left=node.left-gap-toolbarWidth/2;
+   toolbar.top=clamp(node.top,topBound,bottomBound-toolbarHeight);
+  }else toolbar.top=clamp(node.top+gap,topBound,bottomBound-toolbarHeight);
+ }
+ const measuredMinimum=metrics.dockMinimumHeight??0;
+ const minimum=measuredMinimum>0?measuredMinimum:availableWidth<480?260:178;
+ // Normal mode follows the real content height. Expanded mode deliberately
+ // ignores dockHeight, including the stale height from the preceding mode.
+ const desired=expanded
+  ?Math.min(COMPACT_IMAGE_EXPANDED_MAX_HEIGHT,Math.max(COMPACT_IMAGE_EXPANDED_HEIGHT,minimum))
+  :Math.min(COMPACT_IMAGE_DOCK_MAX_HEIGHT,Math.max(minimum,metrics.dockNaturalHeight||metrics.dockHeight||220));
+ const heightLimit=expanded?desired:COMPACT_IMAGE_DOCK_MAX_HEIGHT;
+ const splitAround=(slot:CompactDockSlot,obstacle:{left:number;right:number;top:number;bottom:number})=>{
+  if(slot.left+slot.width+gap<=obstacle.left||slot.left>=obstacle.right+gap||slot.end<=obstacle.top-gap||slot.start>=obstacle.bottom+gap)return [slot];
+  return [{...slot,end:Math.min(slot.end,obstacle.top-gap)},
+   {...slot,start:Math.max(slot.start,obstacle.bottom+gap)}].filter(part=>part.end>part.start);
+ };
+ const toolbarRect={left:toolbar.left-toolbarWidth/2,right:toolbar.left+toolbarWidth/2,
+  top:toolbar.top,bottom:toolbar.top+toolbarHeight};
+ const clearToolbar=(slots:CompactDockSlot[])=>slots.flatMap(slot=>splitAround(slot,toolbarRect));
+ const vertical:CompactDockSlot[]=[
+  {left,width,start:Math.max(topBound,node.bottom+nodeGap),end:bottomBound,align:'start'},
+  {left,width,start:topBound,end:Math.min(bottomBound,titleTop-nodeGap),align:'end'},
+ ];
+ const sides:CompactDockSlot[]=[];
+ const rightSpace=rightBound-nodeRight-nodeGap,leftSpace=node.left-nodeGap-leftBound;
+ if(rightSpace>=COMPACT_IMAGE_SIDE_MIN_WIDTH)sides.push({left:nodeRight+nodeGap,width:Math.min(width,rightSpace),start:topBound,end:bottomBound,align:'node'});
+ if(leftSpace>=COMPACT_IMAGE_SIDE_MIN_WIDTH){
+  const sideWidth=Math.min(width,leftSpace);
+  sides.push({left:node.left-nodeGap-sideWidth,width:sideWidth,start:topBound,end:bottomBound,align:'node'});
+ }
+ const slots=clearToolbar((expanded?[...sides,...vertical]:[...vertical,...sides]).filter(slot=>slot.end>slot.start));
+ const capacity=(slot:CompactDockSlot)=>Math.max(0,Math.min(heightLimit,slot.end-slot.start));
+ let chosen=slots.find(slot=>capacity(slot)>=desired);
+ if(!chosen){
+  // No full-height slot: keep the whole picture visible if the fixed chrome
+  // still fits. A long prompt scrolls instead of making a full-screen sheet.
+  chosen=slots.filter(slot=>capacity(slot)>=minimum).sort((a,b)=>capacity(b)-capacity(a))[0];
+ }
+ if(!chosen){
+  // The viewport cannot show image + minimum composer simultaneously. Keep
+  // title and action bar clear; the bounded sheet may cover image body pixels.
+  // If even fixed chrome cannot fit, report the real remaining maxHeight
+  // (possibly below minimum) rather than moving a node or the canvas viewport.
+  const titleRect={left:node.left,right:nodeRight,top:titleTop,bottom:node.top};
+  const fallback=clearToolbar(splitAround({left,width,start:topBound,end:bottomBound,align:'end'},titleRect));
+  chosen=[...slots,...fallback].sort((a,b)=>capacity(b)-capacity(a))[0];
+ }
+ const slot=chosen??{left,width,start:topBound,end:topBound+1,align:'start' as const};
+ const maxHeight=Math.max(1,capacity(slot)),height=Math.min(desired,maxHeight);
+ const top=slot.align==='end'?slot.end-height:slot.align==='node'?clamp(node.top,slot.start,slot.end-height):slot.start;
+ return {dock:{left:slot.left,top,width:slot.width,maxHeight,...(expanded?{height}: {})},toolbar};
+}
+
 export function canvasOverlaySafeArea(canvasSize:CanvasSize):SafeArea {
  return {left:8,right:8,top:canvasSize.width>0&&canvasSize.width<768?108:64,bottom:canvasSize.width>0&&canvasSize.width<1000?128:84};
 }
@@ -190,8 +284,9 @@ function expandAroundImageTitle(dock:DockPlacement,toolbar:ToolbarPlacement,node
  return best?{dock:{...dock,top:best.dockTop,height:best.dockHeight,maxHeight:best.dockHeight},toolbar:{...toolbar,top:best.toolbarTop}}:undefined;
 }
 
-export function canvasDockLayout(input:{nodeScreen:NodeScreen|undefined;canvasSize:CanvasSize;dockMetrics:DockMetrics;selectedTextId:string|null;textComposerExpanded:boolean;mediaComposerExpanded?:boolean;readOnly:boolean;nodeTitleHeight?:number;protectNodeTitle?:boolean}) {
+export function canvasDockLayout(input:{nodeScreen:NodeScreen|undefined;canvasSize:CanvasSize;dockMetrics:DockMetrics;selectedTextId:string|null;textComposerExpanded:boolean;mediaComposerExpanded?:boolean;readOnly:boolean;nodeTitleHeight?:number;protectNodeTitle?:boolean;compactImage?:boolean}) {
  const {nodeScreen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,readOnly}=input;
+ if(input.compactImage&&!selectedTextId)return compactImageDockLayout(nodeScreen,canvasSize,dockMetrics,canvasOverlaySafeArea(canvasSize),input.nodeTitleHeight??0,!!input.mediaComposerExpanded);
  const overlaySafeArea=canvasOverlaySafeArea(canvasSize),dockWidth=canvasDockWidth(canvasSize,overlaySafeArea);
  const measured=input.protectNodeTitle?(dockMetrics.toolbarHeight>0?dockMetrics.toolbarHeight:50):undefined;
  const dock=preferredCanvasDock(nodeScreen,canvasSize,dockWidth,overlaySafeArea,selectedTextId,input.nodeTitleHeight,measured),toolbar=preferredCanvasToolbar(nodeScreen,canvasSize,overlaySafeArea,dockMetrics,input.nodeTitleHeight,measured);

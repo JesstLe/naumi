@@ -7,11 +7,11 @@ import {CanvasActionPanel} from "./canvas-action-menu";
 import {WORKSPACE_SELECTION} from "@/lib/saas/workspace-client";
 import type {CanvasImageVersion,CanvasImageVersionList} from "@/lib/canvas/image-versions";
 
-type Props={contextKey:string;revision:number;disabled:boolean;english?:boolean;
+type Props={contextKey:string;revision:number;disabled:boolean;english?:boolean;iconOnly?:boolean;
   load:()=>Promise<CanvasImageVersionList>;
   onSelect:(version:CanvasImageVersion,from:CanvasImageVersionList)=>Promise<void>};
 /** Fetch only when opened; late reads never populate a different node/workspace. */
-export function ImageVersionControl({contextKey,revision,disabled,english,load,onSelect}:Props){
+export function ImageVersionControl({contextKey,revision,disabled,english,iconOnly=false,load,onSelect}:Props){
   const appearance = useSurfaceAppearance() ?? "light";
   const L=(zh:string,en:string)=>english?en:zh;
   const anchor=useRef<HTMLButtonElement>(null),epoch=useRef(0);
@@ -34,8 +34,8 @@ export function ImageVersionControl({contextKey,revision,disabled,english,load,o
     finally{if(ticket===epoch.current)setBusy(false);}
   }
   return <>
-    <button ref={anchor} type="button" data-testid="image-version-control" aria-label={L("历史版本","Image history")} aria-expanded={open}
-      disabled={disabled} onClick={()=>open?close():void show()} className="canvas-ui-control flex h-10 shrink-0 items-center gap-1.5 rounded-[11px] border px-2.5 text-xs font-medium disabled:opacity-40"><History size={15}/>{L("历史版本","History")}</button>
+    <button ref={anchor} type="button" data-testid="image-version-control" title={L("历史版本","Image history")} aria-label={L("历史版本","Image history")} aria-expanded={open}
+      disabled={disabled} onClick={()=>open?close():void show()} className="canvas-ui-control flex h-10 shrink-0 items-center gap-1.5 rounded-[11px] border px-2.5 text-xs font-medium disabled:opacity-40"><History size={15}/>{!iconOnly&&L("历史版本","History")}</button>
     {open&&<CanvasActionPanel anchorRef={anchor} label={L("图片历史版本","Image versions")} light={appearance === "light"} width={400} onClose={close}>
       <div className="mb-3 flex items-center justify-between text-sm font-semibold"><span>{L("历史版本","History")}</span><button type="button" aria-label={L("关闭历史版本","Close history")} className="canvas-ui-action rounded-lg p-2" onClick={close}><X size={16}/></button></div>
       {busy&&<p role="status" className="flex items-center gap-2 py-3 text-xs canvas-ui-muted"><Loader2 size={15} className="animate-spin"/>{L("处理中…","Loading…")}</p>}

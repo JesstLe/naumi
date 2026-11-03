@@ -1892,7 +1892,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const panelRef = useRef<HTMLDivElement | null>(null);
   const nodeToolbarRef = useRef<HTMLDivElement | null>(null);
   const nodeRenamePositionRef = useRef<HTMLDivElement | null>(null);
-  const [dockMetrics, setDockMetrics] = useState({ dockHeight: 0, toolbarHeight: 50, toolbarWidth: 0, dockMinimumHeight: 0 });
+  const [dockMetrics, setDockMetrics] = useState({ dockHeight: 0, toolbarHeight: 50, toolbarWidth: 0, dockMinimumHeight: 0, dockNaturalHeight: 0 });
   // The Dock body owns scrolling; the inline editor grows with its content.
   const promptAreaRef = useRef<HTMLDivElement>(null);
   // 追加参考图(与节点图一起参与图生图)
@@ -4304,8 +4304,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const nodeScreen=selectedNodeScreen(viewportRef.current);
   const overlaySafeArea=useMemo(()=>canvasOverlaySafeArea(canvasSize),[canvasSize.width]);
   const protectImageNodeTitle=!!selected&&!selected.videoUrl;
+  const compactImageDock=protectImageNodeTitle||!!selectedPend;
   const {dock:dockStyle,toolbar:topbarStyle}=canvasDockLayout({nodeScreen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,mediaComposerExpanded,readOnly,
-    nodeTitleHeight:protectImageNodeTitle?canvasImageTitleInset(viewportRef.current.zoom):selectedVideo||selected?.videoUrl?38:0,protectNodeTitle:protectImageNodeTitle});
+    nodeTitleHeight:protectImageNodeTitle?canvasImageTitleInset(viewportRef.current.zoom):selectedVideo||selected?.videoUrl?38:0,protectNodeTitle:protectImageNodeTitle,compactImage:compactImageDock});
 
   // 窗口缩放、分屏、旋转或切换选中节点时，React Flow 会保留旧 viewport，可能让
   // 新锚点留在安全区外。尺寸或锚点变化时做最小平移；拖动同一节点不会触发，
@@ -4364,7 +4365,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const nodeWidth = right - left;
     const nodeHeight = bottom - top;
     const safeTop =
-      safeBottom - stackedSafeTop >= nodeHeight ? stackedSafeTop : defaultSafeTop;
+      !compactImageDock && safeBottom - stackedSafeTop >= nodeHeight ? stackedSafeTop : defaultSafeTop;
     const visibleHeight = safeBottom - safeTop;
     if (nodeWidth > visibleWidth) {
       dx = safeLeft + (visibleWidth - nodeWidth) / 2 - left;
@@ -4404,10 +4405,20 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (!dock || !toolbar) return;
     const header=dock.querySelector<HTMLElement>('[data-composer-header]');
     const footer=dock.querySelector<HTMLElement>('[data-composer-footer]');
+    const body=dock.querySelector<HTMLElement>('[data-composer-body]');
     const measure = () => setDockMetrics((previous) => {
+      // Use intrinsic content, not a previously clipped/expanded border box,
+      // when choosing compact slots. Expansion/collapse must converge to the
+      // same placement for the same text and references.
+      const bodyStyle=body?getComputedStyle(body):null;
+      const naturalBody=body?Array.from(body.children).reduce((height,child)=>{
+        const style=getComputedStyle(child);
+        return height+(child as HTMLElement).offsetHeight+(parseFloat(style.marginTop)||0)+(parseFloat(style.marginBottom)||0);
+      },(parseFloat(bodyStyle!.paddingTop)||0)+(parseFloat(bodyStyle!.paddingBottom)||0)):0;
       const next = { dockHeight: dock.offsetHeight, toolbarHeight: toolbar.offsetHeight, toolbarWidth: toolbar.offsetWidth,
-        dockMinimumHeight:(header?.offsetHeight||38)+(footer?.offsetHeight||90)+50 };
-      return previous.dockHeight === next.dockHeight && previous.toolbarHeight === next.toolbarHeight && previous.toolbarWidth === next.toolbarWidth && previous.dockMinimumHeight === next.dockMinimumHeight ? previous : next;
+        dockMinimumHeight:(header?.offsetHeight||38)+(footer?.offsetHeight||90)+50,
+        dockNaturalHeight:compactImageDock?Math.ceil((header?.offsetHeight||0)+(footer?.offsetHeight||0)+naturalBody+2):0 };
+      return previous.dockHeight === next.dockHeight && previous.toolbarHeight === next.toolbarHeight && previous.toolbarWidth === next.toolbarWidth && previous.dockMinimumHeight === next.dockMinimumHeight && previous.dockNaturalHeight === next.dockNaturalHeight ? previous : next;
     });
     measure();
     const observer = new ResizeObserver(measure);
@@ -4415,6 +4426,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     observer.observe(toolbar);
     if(header)observer.observe(header);
     if(footer)observer.observe(footer);
+    if(compactImageDock&&body)for(const child of Array.from(body.children))observer.observe(child);
     return () => observer.disconnect();
   }, [docksReady, canvasSize.width, canvasSize.height, selectedId, selectedPendId, selectedTextId, selectedBatchArts.length, selectedTextBatchNodes.length, readOnly, browsing, textComposerExpanded, mediaComposerExpanded]);
 
@@ -4426,11 +4438,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const screen=selectedNodeScreen(vp);
     if(!screen)return;
     const layout=canvasDockLayout({nodeScreen:screen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,mediaComposerExpanded,readOnly,
-      nodeTitleHeight:protectImageNodeTitle?canvasImageTitleInset(vp.zoom):selectedVideo||selected?.videoUrl?38:0,protectNodeTitle:protectImageNodeTitle});
+      nodeTitleHeight:protectImageNodeTitle?canvasImageTitleInset(vp.zoom):selectedVideo||selected?.videoUrl?38:0,protectNodeTitle:protectImageNodeTitle,compactImage:compactImageDock});
     const dock=selectedTextId?textComposerDockRef.current:panelRef.current;
     if(dock&&layout.dock){
       if(!(textComposerExpanded&&selectedTextId))dock.style.left=layout.dock.left+'px';
       dock.style.top=layout.dock.top+'px';
+      if(compactImageDock)dock.style.width=layout.dock.width+'px';
       dock.style.maxHeight=layout.dock.maxHeight==null?'':layout.dock.maxHeight+'px';
       if(!selectedTextId)dock.style.height=layout.dock.height==null?'':layout.dock.height+'px';
       if(selectedTextId)dock.style.minHeight=Math.min(218,layout.dock.maxHeight??218)+'px';
@@ -11682,7 +11695,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               ref={nodeToolbarRef}
               style={{ left: topbarStyle.left, top: topbarStyle.top }}
               className={cn(
-                "canvas-ui-surface canvas-dock-entry absolute z-20 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-0.5 rounded-[14px] border p-1.5 [&>*]:shrink-0 [&_button]:whitespace-nowrap",
+                "canvas-ui-surface canvas-dock-entry absolute z-20 flex max-w-[min(780px,calc(100%-1rem))] -translate-x-1/2 items-center gap-0.5 rounded-[14px] border p-1.5 [&>*]:shrink-0 [&_button]:whitespace-nowrap",
                 "overflow-x-auto"
               )}
             >
@@ -11690,29 +11703,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               <button type="button" data-action="rename" aria-label={t("canvas.editName")} title={t("canvas.toolbar.renameHint")}
                 disabled={!selected || !nodeSettingsReady || isNodeLocked(selected.id)} onClick={() => { if (selected) { setNodeRenameValue(selected.title); setRenamingNodeId(selected.id); } }}
                 className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40">
-                <Pencil className="h-4 w-4 shrink-0" aria-hidden="true" /> {t("canvas.editName")}
+                <Pencil className="h-4 w-4 shrink-0" aria-hidden="true" />
               </button>
               <FeatureVisible feature="agent"><button type="button" data-action="assistant" aria-label={t("canvas.toolbar.assistant")} title={t("canvas.toolbar.assistantHint")}
                 disabled={!selected || readOnly} onClick={() => selected && openAssistant(selected)}
                 className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40">
-                <MessageSquareText className="h-4 w-4 shrink-0" aria-hidden="true" /> {t("canvas.toolbar.assistant")}
+                <MessageSquareText className="h-4 w-4 shrink-0" aria-hidden="true" />
               </button></FeatureVisible>
-              {QUICK_ACTIONS.filter(
-                (a) => canFeature("generate") && ["bg", "angle", "caption"].includes(a.key)
-              ).map((a) => (
-                <button
-                  key={a.key}
-                  data-action={a.key}
-                  type="button"
-                  disabled={selectedGenerating || !selected}
-                  title={!selected ? t("canvas.toolNeedImage") : t(`canvas.toolbar.${a.key}Hint`)}
-                  onClick={() => onQuickAction(a.key)}
-                  className="canvas-ui-action flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-40"
-                >
-                  <a.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  {t(`canvas.qa.${a.key}`)}
-                </button>
-              ))}
               {/* 抠图:发丝级,扣 1 积分/张(已去掉免费极速档) */}
               <FeatureVisible feature="cutout"><button
                 type="button"
@@ -11778,16 +11775,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 }
               /></FeatureVisible>
               <span className="canvas-ui-divider mx-1.5 h-5 w-px flex-none" />
-              {/* 内容编辑与生成变换使用不同名称，避免暗示只是修改参数。 */}
-              <FeatureVisible feature="generate"><button
-                type="button"
-                title={t("canvas.toolbar.editTextHint")}
-                disabled={!selected || selectedGenerating || readOnly}
-                onClick={() => selected && void openImageTextEditor(selected)}
-                className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
-              >
-                <Type className="h-4 w-4 shrink-0" aria-hidden="true" /> {t("canvas.toolbar.editText")}
-              </button></FeatureVisible>
               {/* 扩图:选目标比例 + 原图锚点,outpaint 保原图内容补全四周 */}
               <FeatureVisible feature="generate"><div className="relative flex items-center">
                 <button
@@ -11871,25 +11858,20 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     </CanvasActionPanel>
                 )}
               </div></FeatureVisible>
-              {/* 标注编辑:箭头/涂抹/编号标注 + 逐条指令改图 */}
-              <FeatureVisible feature="generate"><button
-                type="button"
-                title={t("canvas.toolbar.annotateHint")}
-                disabled={!selected || selectedGenerating || readOnly}
-                onClick={() => selected && setAnnotateArtwork(selected)}
-                className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
-              >
-                <PenLine className="h-4 w-4 shrink-0" aria-hidden="true" /> {t("canvas.toolbar.annotate")}
-              </button></FeatureVisible>
               {/* 低频处理与节点管理使用一个可访问的Portal菜单。 */}
 
               </>}
               <CanvasActionMenu triggerRef={imageMoreRef} label={t("canvas.toolbar.imageMore")} light={lightCanvas}
                 items={[
-                  ...QUICK_ACTIONS.filter(a => canFeature("generate") && a.key === "relight").map(a => ({
+                  ...QUICK_ACTIONS.filter(a => canFeature("generate") && ["bg", "angle", "caption", "relight"].includes(a.key)).map(a => ({
                     id: a.key, icon: a.icon, label: t(`canvas.qa.${a.key}`), hint: t(`canvas.toolbar.${a.key}Hint`),
                     disabled: selectedGenerating || !selected, onSelect: () => onQuickAction(a.key),
                   })),
+                  ...(canFeature("generate") ? [
+                    { id:"edit-text",icon:Type,label:t("canvas.toolbar.editText"),hint:t("canvas.toolbar.editTextHint"),disabled:!selected||selectedGenerating||readOnly,onSelect:()=>{if(selected)void openImageTextEditor(selected);} },
+                    { id:"annotate",icon:PenLine,label:t("canvas.toolbar.annotate"),hint:t("canvas.toolbar.annotateHint"),disabled:!selected||selectedGenerating||readOnly,onSelect:()=>{if(selected)setAnnotateArtwork(selected);} },
+                  ] : []),
+                  ...(selected&&!selected.videoUrl ? [{id:"replace",icon:ImagePlus,label:L("替换图片","Replace image"),disabled:localEditBusy||!nodeSettingsReady||isNodeLocked(selected.id),onSelect:()=>requestReplace(selected)}] : []),
                   { id: "workflow", icon: Workflow, label: t("canvas.toolbar.workflow"), hint: t("canvas.toolbar.workflowHint"),
                     disabled: !selected || readOnly, onSelect: () => setComfyOpen(true) },
                   { id: "video", icon: Video, label: videoNodeCreationReady?t("canvas.toolbar.video"):videoNodeCreateLabel, hint: t("canvas.toolbar.videoHint"),
@@ -11912,9 +11894,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 <button type="button" aria-label={L("裁剪图片","Crop image")} title={L("裁剪为新版本","Crop to a new version")}
                   disabled={localEditBusy || !nodeSettingsReady || isNodeLocked(selected.id)} onClick={()=>setCropArtwork(selected)}
                   className="canvas-ui-action flex h-[34px] items-center gap-1.5 whitespace-nowrap rounded-[9px] px-2.5 text-[13px] font-semibold disabled:opacity-40"><Crop className="h-4 w-4" />{L("裁剪","Crop")}</button>
-                <button type="button" aria-label={L("替换图片","Replace image")} title={L("替换为新版本","Replace with a new version")}
-                  disabled={localEditBusy || !nodeSettingsReady || isNodeLocked(selected.id)} onClick={()=>requestReplace(selected)}
-                  className="canvas-ui-action flex h-[34px] items-center gap-1.5 whitespace-nowrap rounded-[9px] px-2.5 text-[13px] font-semibold disabled:opacity-40"><ImagePlus className="h-4 w-4" />{L("替换","Replace")}</button>
+
               </>}
               <button
                 type="button"
@@ -12317,10 +12297,16 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               ref={panelRef}
               style={dockStyle ?? { left: 12, bottom: 12, maxHeight: "60%" }}
 
-             kind="image" expanded={mediaComposerExpanded} onToggleExpand={()=>setMediaComposerExpanded(value=>!value)} heading={selected.title || L("图片生成", "Image generation")} onDismiss={() => setSelectedId(null)} closeLabel={L("关闭创作栏", "Close composer")}>
+             tools={!readOnly&&<>
+<CanvasPromptOptimizer iconOnly contextKey={imageDraft.key} prompt={editPrompt} disabled={readOnly || !nodeSettingsReady || generationMode !== "standard" && selectedGenerating || isNodeLocked(selected.id)} english={locale === "en"}
+                    onOptimize={(prompt, signal) => optimizeCanvasPrompt("canvas-image", prompt, signal)} onApply={setEditPrompt}/>
+<ImageVersionControl iconOnly contextKey={`${historyScope}:${selected.id}`} revision={selected.canvasImageRevision||0}
+                    disabled={readOnly||historySaving||isNodeLocked(selected.id)} english={locale==="en"}
+                    load={()=>loadImageVersions(selected.id)} onSelect={(version,from)=>selectImageVersion(selected.id,version,from)}/>
+</>} kind="image" compact expanded={mediaComposerExpanded} onToggleExpand={()=>setMediaComposerExpanded(value=>!value)} heading={selected.title || L("图片生成", "Image generation")} onDismiss={() => setSelectedId(null)} closeLabel={L("关闭创作栏", "Close composer")}>
               {/* dbody:风格/标记/聚焦 chips + 引用图 + 提示词(对齐原型 .cz-dock .dbody) */}
               <div data-composer-body="true" className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
-                <ImageReferenceComposer key={imageDraft.key || imageDraftNodeId} references={composerReferences} prompt={editPrompt} onPrompt={setEditPrompt}
+                <ImageReferenceComposer compact key={imageDraft.key || imageDraftNodeId} references={composerReferences} prompt={editPrompt} onPrompt={setEditPrompt}
                   onRole={(key,role)=>imageDraft.setReferenceBindings(changeImageReferenceRole(imageReferenceState.bindings,key,role))}
                   onRemove={removeComposerReference} onPreview={ref=>setLightbox({src:ref.url,alt:ref.title})}
                   onLocate={locateComposerReference} english={locale === "en"} error={referenceError||promptSync.error}
@@ -12329,7 +12315,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     <input ref={extraInputRef} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={event=>pickExtra(event.target.files)} />
                     {composerReferences.length < MAX_TOTAL_IMAGES && <button type="button" disabled={!promptSync.ready||referenceUploading} onClick={()=>extraInputRef.current?.click()}
                       title={t("canvas.toolbar.addReference")} aria-label={t("canvas.toolbar.addReference")}
-                      className={cn("canvas-ui-action flex flex-none items-center justify-center rounded-[10px] border border-dashed border-[var(--canvas-ui-border)] hover:!border-[#6366f1]/60",composerReferences.length?"h-[68px] w-12":"h-8 gap-1.5 px-2.5 text-xs")}><Upload className="h-4 w-4" />{!composerReferences.length&&L("参考图","Reference")}</button>}
+                      className={cn("canvas-ui-action flex flex-none items-center justify-center rounded-[10px] border border-dashed border-[var(--canvas-ui-border)] hover:!border-[#6366f1]/60",composerReferences.length?"h-11 w-10":"h-8 gap-1.5 px-2.5 text-xs")}><Upload className="h-4 w-4" />{!composerReferences.length&&L("参考图","Reference")}</button>}
                     {!!hiddenRefIds?.some(id=>dockRefs.some(ref=>ref.id===id))&&<button type="button" onClick={()=>imageDraft.setHiddenReferenceIds([])} disabled={dockRefs.length+extraFiles.length>MAX_TOTAL_IMAGES} className="canvas-ui-action h-8 rounded-lg border border-[var(--canvas-ui-border)] px-2 text-xs disabled:opacity-40">{L("恢复节点参考","Restore node references")}</button>}
                   </>}
                 </ImageReferenceComposer>
@@ -12345,7 +12331,23 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               {!readOnly && (
                 <CanvasComposerFooter controls={<>
                   {modelControl(false)}
-                  <DarkSelect
+                  {ratioControl}
+                  <ImageQualityControl compact feature="canvas.image" modelId={genModel} resolution={genResolution} ratio={generationMode === "triptych" ? "16:9" : genRatio} quantity={selectedGenerationCount} />
+                  {generationMode === "standard" || generationMode === "detail" ? (
+                    <ImageCountControl
+                      value={genCount}
+                      onChange={setGenCount}
+                      light={lightCanvas}
+                    />
+                  ) : (
+                    <span className="canvas-ui-control inline-flex h-8 items-center gap-1.5 rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold">
+                      <ImageIcon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                      {generationMode === "split"
+                        ? t("canvas.viewNodesCount")
+                        : t("canvas.viewSheetCount")}
+                    </span>
+                  )}
+                  <CanvasComposerOptions label={L("更多图片参数", "More image settings")}>                  <DarkSelect
                     dir="up"
                     light={lightCanvas}
                     value={generationMode}
@@ -12374,25 +12376,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       </>
                     }
                   />
-                  {ratioControl}
-                  <ImageQualityControl compact feature="canvas.image" modelId={genModel} resolution={genResolution} ratio={generationMode === "triptych" ? "16:9" : genRatio} quantity={selectedGenerationCount} />
-                  {generationMode === "standard" || generationMode === "detail" ? (
-                    <ImageCountControl
-                      value={genCount}
-                      onChange={setGenCount}
-                      light={lightCanvas}
-                    />
-                  ) : (
-                    <span className="canvas-ui-control inline-flex h-8 items-center gap-1.5 rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold">
-                      <ImageIcon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-                      {generationMode === "split"
-                        ? t("canvas.viewNodesCount")
-                        : t("canvas.viewSheetCount")}
-                    </span>
-                  )}
-                  <CanvasPromptOptimizer contextKey={imageDraft.key} prompt={editPrompt} disabled={readOnly || !nodeSettingsReady || generationMode !== "standard" && selectedGenerating || isNodeLocked(selected.id)} english={locale === "en"}
-                    onOptimize={(prompt, signal) => optimizeCanvasPrompt("canvas-image", prompt, signal)} onApply={setEditPrompt}/>
-                  <CanvasComposerOptions label={L("更多图片参数", "More image settings")}><DarkSelect
+<DarkSelect
                         dir="up"
                         light={lightCanvas}
                         value={genStyle}
@@ -12439,9 +12423,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         {t("canvas.dockFocus")}
                       </button></CanvasComposerOptions> </>} actions={<>
 
-                  <ImageVersionControl contextKey={`${historyScope}:${selected.id}`} revision={selected.canvasImageRevision||0}
-                    disabled={readOnly||historySaving||isNodeLocked(selected.id)} english={locale==="en"}
-                    load={()=>loadImageVersions(selected.id)} onSelect={(version,from)=>selectImageVersion(selected.id,version,from)}/>
                   {selectedImageAttempts.recoverable.length>1?<span data-testid="generation-original-task-menu" className="min-w-0 max-w-[144px]">
                     <SelectMenu key={`${canvasAccountRef.current}:${activeKey}:${selected.id}`} value="__original_task__"
                       label={L('检查原任务','Check original task')} className="h-10 max-w-full rounded-[11px] px-2.5 text-xs"
@@ -12469,9 +12450,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               key={`pdock-${selectedPend.id}`}
               style={dockStyle ?? { left: 12, bottom: 12 }}
 
-             kind="image" expanded={mediaComposerExpanded} onToggleExpand={()=>setMediaComposerExpanded(value=>!value)} heading={L("图片生成", "Image generation")} onDismiss={() => setSelectedPendId(null)} closeLabel={L("关闭创作栏", "Close composer")}>
+             tools={!readOnly&&<>
+<CanvasPromptOptimizer iconOnly contextKey={imageDraft.key} prompt={editPrompt} disabled={readOnly || !nodeSettingsReady || generationMode !== "standard" && selectedPendGenerating || isNodeLocked(selectedPend.id)} english={locale === "en"}
+                  onOptimize={(prompt, signal) => optimizeCanvasPrompt("canvas-image", prompt, signal)} onApply={setEditPrompt}/>
+</>} kind="image" compact expanded={mediaComposerExpanded} onToggleExpand={()=>setMediaComposerExpanded(value=>!value)} heading={L("图片生成", "Image generation")} onDismiss={() => setSelectedPendId(null)} closeLabel={L("关闭创作栏", "Close composer")}>
               <div data-composer-body="true" className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
-                <ImageReferenceComposer key={imageDraft.key || imageDraftNodeId} references={composerReferences} prompt={editPrompt} onPrompt={setEditPrompt}
+                <ImageReferenceComposer compact key={imageDraft.key || imageDraftNodeId} references={composerReferences} prompt={editPrompt} onPrompt={setEditPrompt}
                   onRole={(key,role)=>imageDraft.setReferenceBindings(changeImageReferenceRole(imageReferenceState.bindings,key,role))}
                   onRemove={removeComposerReference} onPreview={ref=>setLightbox({src:ref.url,alt:ref.title})}
                   onLocate={locateComposerReference} english={locale === "en"} error={referenceError||promptSync.error}
@@ -12484,6 +12468,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               </div>
               <CanvasComposerFooter controls={<>
                 {modelControl(false)}
+                {ratioControl}
+                <ImageQualityControl compact feature="canvas.image" modelId={genModel} resolution={genResolution} ratio={genRatio} quantity={genCount} />
+                <ImageCountControl
+                  value={genCount}
+                  onChange={setGenCount}
+                  light={lightCanvas}
+                />
+                <CanvasComposerOptions label={L("更多图片参数", "More image settings")}>
                 <DarkSelect
                   dir="up"
                   light={lightCanvas}
@@ -12507,15 +12499,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     </>
                   }
                 />
-                {ratioControl}
-                <ImageQualityControl compact feature="canvas.image" modelId={genModel} resolution={genResolution} ratio={genRatio} quantity={genCount} />
-                <ImageCountControl
-                  value={genCount}
-                  onChange={setGenCount}
-                  light={lightCanvas}
-                />
-                <CanvasPromptOptimizer contextKey={imageDraft.key} prompt={editPrompt} disabled={readOnly || !nodeSettingsReady || generationMode !== "standard" && selectedPendGenerating || isNodeLocked(selectedPend.id)} english={locale === "en"}
-                  onOptimize={(prompt, signal) => optimizeCanvasPrompt("canvas-image", prompt, signal)} onApply={setEditPrompt}/>
+                </CanvasComposerOptions>
                  </>} actions={<>
                 <GenerationSubmitAction key={`pending:${selectedPend.id}`} generating={selectedPendingSubmitting || (generationMode === "standard" ? selectedPendGenerating && !selectedPend.generationSubmitted : selectedPendGenerating)}
                   allowBackground={generationMode === "standard"} failure={generationMode === "standard" ? undefined : selectedPend.generationFailure}
