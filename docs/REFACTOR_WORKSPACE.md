@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：aaa Core 节点创建 locale fixture
+
+[节点创建locale绑定](changes/2026-11-04-refactor-node-creation-locale-fixture.md)保留162PASS/1FAIL/85NOT_RUN：前generation各项已真通过，随后node-creation VM漏Canvas实际L/locale，在创建ports时失败而非保存/undo失败。只抽真实L initializer并声明locale，不改产品；原27common轨迹对恢复绑定的旧driver EXACT，新增9双语cases，compare106检查；默认无compare独立记数。ops19/59、view18/35、实际React viewDOM19、history16及entry通过；记录scope/project端口不当作PG或LocaleProvider验收。目录仍249、最终同SHAselected与四产物归本轮output。整体ACTIVE、未合main/未部署、47 HOLD。
+
 ## 当前推进：9fe Verify 封版构建隔离
 
 [账单/业务UI隔离](changes/2026-11-04-refactor-billing-ui-production-isolation.md)确认真实production seal通过后，前一billing测试向sealed standalone复制static/public，后续业务copy前full-tree guard失败而未启动页面。保留原guard和原ZIP/RUN，billing改用同一seal的owned production副本及owned server；CI投影673新增路径不是伪造aftertree。受控原前缀精确FAIL→修改46检查/两个最小HTTP child PASS，原owner65/framework33-441通过。新增正式case使目录249；另一次全量源码fixture构建与顺序UI结果、最终source桥/四产物归本轮output，不把Windows外部依赖/派生Git身份冒称Linux CI或PR同头构建。整体ACTIVE、未合main/未部署、47 HOLD。
