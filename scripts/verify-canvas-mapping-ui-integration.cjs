@@ -7,16 +7,26 @@ const args = process.argv.slice(2), value = (key, fallback) => args.includes(key
 const root = path.resolve(value('--source-root', process.cwd()));
 const out = path.resolve(value('--out', 'output/mapping-ui-integration'));
 const suite = value('--suite', 'all'), source = path.join(out, 'source');
+assert(['all', 'background', 'pixel', 'zoom'].includes(suite), 'Unknown UI suite');
+const baseline = suite === 'zoom' && args.includes('--baseline');
 assert(!fs.existsSync(source), 'New run output required');
 fs.mkdirSync(source, { recursive: true });
-const files = [...new Set(cp.execFileSync('git', ['ls-files', '--deduplicate', '-z'], { cwd: root }).toString().split('\0').filter(Boolean)
+const sourceFiles = value('--files-from', '') ? JSON.parse(fs.readFileSync(value('--files-from', ''), 'utf8')) : cp.execFileSync('git', ['ls-files', '--deduplicate', '-z'], { cwd: root }).toString().split('\0').filter(Boolean);
+const files = [...new Set(sourceFiles
   .concat(['scripts/canvas-mapping-ui-fixture.cjs', 'scripts/verify-canvas-mapping-ui-integration.cjs']))];
 const hashes = [];
 for (const rel of files) {
+  assert(!path.isAbsolute(rel) && !rel.split(/[\\/]/).includes('..'), 'Source path must be relative');
   if (path.basename(rel).startsWith('.env') || !fs.existsSync(path.join(root, rel))) continue;
   const b = fs.readFileSync(path.join(root, rel)), target = path.join(source, rel);
   fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, b);
   hashes.push({ path: rel, sha256: crypto.createHash('sha256').update(b).digest('hex') });
+}
+// The same current runner must exercise real baseline/rollback sources too.
+// Only test files are overlaid; product files always come from --source-root.
+if (suite === 'zoom' || suite === 'all') for (const name of ['verify-canvas-zoom-ui.cjs', 'canvas-mapping-ui-fixture.cjs']) {
+  const b = fs.readFileSync(path.join(__dirname, name));
+  fs.writeFileSync(path.join(source, 'scripts', name), b);
 }
 fs.symlinkSync(path.join(root, 'node_modules'), path.join(source, 'node_modules'), 'junction');
 fs.writeFileSync(path.join(out, 'SOURCE.json'), JSON.stringify({ source: root, copiedSource: source, hashes }, null, 2));
@@ -33,7 +43,8 @@ async function run(name, script, extra = []) {
   const started = new Date().toISOString();
   const output = path.join(out, name); fs.mkdirSync(output, { recursive: true });
   const runEnv = { ...env, CANVAS_BACKGROUND_URL: 'http://127.0.0.1:' + port, CANVAS_PIXEL_DOCK_URL: 'http://127.0.0.1:' + port,
-    CANVAS_BACKGROUND_OUT: output, CANVAS_PIXEL_DOCK_OUT: output };
+    CANVAS_BACKGROUND_OUT: output, CANVAS_PIXEL_DOCK_OUT: output,
+    CANVAS_ZOOM_URL: 'http://127.0.0.1:' + port, CANVAS_ZOOM_OUT: output };
   const command = [process.execPath, path.join(source, script), ...extra];
   const result = await new Promise(resolve => {
     const process = cp.spawn(command[0], command.slice(1), { cwd: source, env: runEnv, windowsHide: true });
@@ -74,6 +85,7 @@ async function run(name, script, extra = []) {
     fs.writeFileSync(path.join(out, 'PREWARM.json'), JSON.stringify({ status: 'PASS', assets: warmAssets }, null, 2));
     if (suite === 'all' || suite === 'background') await run('background', 'scripts/verify-canvas-background-ui.cjs', args.includes('--multi-unknown-only') ? ['--multi-unknown-only'] : args.includes('--recovery-only') ? ['--recovery-only'] : []);
     if (suite === 'all' || suite === 'pixel') await run('pixel', 'scripts/verify-canvas-pixel-dock-ui.cjs');
+    if (suite === 'zoom' || suite === 'all') await run('zoom', 'scripts/verify-canvas-zoom-ui.cjs', baseline ? ['--baseline'] : []);
   } catch (error) { results.push({ error: error.stack, exit: 1 }); }
   finally {
     if (server && server.exitCode === null) {
@@ -84,7 +96,9 @@ async function run(name, script, extra = []) {
     if (stream !== undefined) fs.closeSync(stream);
     let portClosed = false;
     try { await fetch('http://127.0.0.1:' + port + '/api/version', { signal: AbortSignal.timeout(1500) }); } catch { portClosed = true; }
-    const status = results.length && results.every(r => r.exit === 0) && portClosed ? 'PASS' : 'FAIL';
+    const expectedExit = baseline ? 1 : 0;
+    const reproduced = !baseline || fs.existsSync(path.join(out, 'zoom', 'RESULT.json')) && JSON.parse(fs.readFileSync(path.join(out, 'zoom', 'RESULT.json'))).status === 'REPRODUCED';
+    const status = results.length && results.every(r => r.command && r.exit === expectedExit) && portClosed && reproduced ? baseline ? 'REPRODUCED' : 'PASS' : 'FAIL';
     const report = { status, results, serverStopped: server?.exitCode !== null, portClosed, supplierCalls: 0, productionActions: 0,
       originalSourceUntouchedByNext: true, snapshot: source, at: new Date().toISOString() };
     fs.writeFileSync(path.join(out, 'RUN.json'), JSON.stringify(report, null, 2));
