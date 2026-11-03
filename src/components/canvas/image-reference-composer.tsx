@@ -3,6 +3,7 @@
 import { useId, useRef, useState, type ReactNode, type RefObject } from "react";
 import { AtSign, LocateFixed, X } from "lucide-react";
 import { CachedImage } from "@/components/cached-image";
+import { ReferenceMentionPanel } from "./reference-mention-panel";
 import { InlineReferenceEditor, type InlineReferenceEditorHandle } from "./inline-reference-editor";
 import type { InlineReferenceToken } from "./inline-reference-dom";
 import { cdnThumb } from "@/lib/cdn";
@@ -44,7 +45,7 @@ export function ImageReferenceComposer(props: Props) {
     });
   }
   return <div className="min-w-0" data-testid="image-reference-composer">
-    <div className="mb-3 flex max-h-48 flex-wrap gap-2 overflow-y-auto" aria-label={english ? "Input images" : "输入图片"}>
+    <div className="mb-3 flex flex-wrap gap-2" aria-label={english ? "Input images" : "输入图片"}>
       {references.map(ref => <div key={ref.key} className="relative flex w-[calc(50%-4px)] min-w-[138px] gap-2 sm:w-[166px] rounded-[10px] border border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-panel)] p-2" data-reference-number={ref.number}>
         <button type="button" onClick={() => props.onPreview(ref)} className="relative h-12 w-12 shrink-0 overflow-hidden rounded-md" aria-label={`${english ? "Preview image" : "预览图"}${ref.number}`}>
           <CachedImage src={cdnThumb(ref.url, 128)} reuseActivePreview alt="" className="h-full w-full object-cover" />
@@ -80,13 +81,13 @@ export function ImageReferenceComposer(props: Props) {
           else if (event.key === "ArrowUp") setActive(index => options.length ? (index + options.length - 1) % options.length : 0);
           else if (event.key === "Enter" && options.length) insert(options[Math.min(active, options.length - 1)]);
         }}
-        className="canvas-ui-text min-h-[112px] max-h-[220px] overflow-y-auto border-0 bg-transparent px-0 py-0.5 text-sm leading-7 shadow-none" />
-      {query !== null && !readOnly && <div id={menuId} role="listbox" aria-label={english ? "Choose an image reference" : "选择图片引用"} className="canvas-ui-control mt-1 max-h-40 overflow-y-auto rounded-lg border p-1 shadow-sm">
-        {options.map((ref, index) => <button key={ref.key} id={`${menuId}-${index}`} type="button" role="option" aria-selected={index === active} onMouseDown={event => event.preventDefault()} onClick={() => insert(ref)} className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs ${index === active ? "bg-indigo-500/10" : ""}`}>
-          <CachedImage src={cdnThumb(ref.url,64)} alt="" className="h-7 w-7 shrink-0 rounded object-cover"/><span className="truncate">{ref.title}</span><span className="shrink-0 text-[10px] opacity-60">{english ? "Img " : "图"}{ref.number}</span><span className="ml-auto shrink-0 text-[10px] opacity-60">{referenceRoleLabels[ref.role][english ? "en" : "zh"]}</span>
+        className="canvas-ui-text min-h-[112px] border-0 bg-transparent px-0 py-0.5 text-sm leading-7 shadow-none" />
+      {query !== null && !readOnly && <ReferenceMentionPanel id={menuId} label={english ? "Choose an image reference" : "选择图片引用"} editorRef={textareaRef} optionCount={options.length} revision={`${query}:${caret.start}`} activeOption={options.length ? `${menuId}-${Math.min(active, options.length - 1)}` : undefined} onClose={() => setQuery(null)}>
+        {options.map((ref, index) => <button key={ref.key} id={`${menuId}-${index}`} type="button" role="option" aria-selected={index === active} onMouseDown={event => event.preventDefault()} onClick={() => insert(ref)} title={ref.title} style={{ minHeight: 66 }} className={`flex min-w-0 w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs ${index === active ? "bg-indigo-500/10 ring-1 ring-inset ring-indigo-300" : "hover:bg-slate-500/5"}`}>
+          <CachedImage src={cdnThumb(ref.url,128)} reuseActivePreview alt="" className="h-10 w-10 shrink-0 rounded-md object-cover"/><span className="min-w-0 flex-1"><span className="block truncate">{ref.title}</span><span className="mt-1 block truncate text-[10px] opacity-60">{english ? "Img " : "图"}{ref.number} · {referenceRoleLabels[ref.role][english ? "en" : "zh"]}</span></span>
         </button>)}
-        {!options.length && <span className="block p-2 text-xs opacity-60">{english ? "No matching image" : "没有匹配的图片"}</span>}
-      </div>}
+        {!options.length && <span className="col-span-full block p-2 text-xs opacity-60">{english ? "No matching image" : "没有匹配的图片"}</span>}
+      </ReferenceMentionPanel>}
     </div>
     {!!references.length && !readOnly && <button type="button" onMouseDown={event => event.preventDefault()} onClick={() => { editor.current?.replace("@"); setQuery(""); setActive(0); }} className="canvas-ui-text mt-1 flex items-center gap-1 rounded px-1 py-1 text-xs opacity-70 hover:opacity-100"><AtSign size={13} />{english ? "Reference image" : "引用图片"}</button>}
     {props.error && <p id={errorId} role="alert" className="py-1 text-xs text-red-500">{props.error}</p>}

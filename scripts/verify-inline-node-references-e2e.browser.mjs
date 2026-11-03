@@ -30,6 +30,22 @@ export async function runBrowser({origin,info,out,phase,log}){
     const[a,b]=pages,[ac,bc]=contexts;
     await a.goto(origin+'/canvas?project='+encodeURIComponent(info.projectKey));
     let prompt=await selectImage(a,'e2e-source');
+    // Real CanvasClient must pass the expanded state to the layout and shell;
+    // a standalone shell fixture cannot prove that production wiring.
+    await prompt.fill(Array.from({length:50},(_,i)=>`第${i+1}行，保持商品与文字，仅调整参考构图。`).join('\n'));
+    const dock=a.getByTestId('image-node-dock'), viewportBefore=await a.locator('.react-flow__viewport').getAttribute('style');
+    const sourceBefore=await a.locator('.react-flow__node[data-id="e2e-source"]').getAttribute('style');
+    const collapsedHeight=(await dock.boundingBox()).height;
+    await dock.getByRole('button',{name:'展开输入区',exact:true}).click();
+    await expect.poll(async()=>(await dock.boundingBox()).height).toBeGreaterThan(collapsedHeight+100);
+    assert.equal(await a.locator('.react-flow__viewport').getAttribute('style'),viewportBefore);
+    assert.equal(await a.locator('.react-flow__node[data-id="e2e-source"]').getAttribute('style'),sourceBefore);
+    const scrollOwners=await dock.evaluate(el=>[el,...el.querySelectorAll('*')].filter(n=>/auto|scroll/.test(getComputedStyle(n).overflowY)&&n.scrollHeight>n.clientHeight+2).map(n=>n.hasAttribute('data-composer-body')));
+    assert.deepEqual(scrollOwners,[true]);
+    await dock.getByRole('button',{name:'收起输入区',exact:true}).click();
+    await expect.poll(async()=>(await dock.boundingBox()).height).toBeLessThanOrEqual(collapsedHeight+2);
+    assert.equal(await a.locator('.react-flow__viewport').getAttribute('style'),viewportBefore);
+    pass('Actual Canvas expansion grows editor with one body scroller and never changes node coordinates or viewport zoom');
     await prompt.fill('保留@');await a.getByRole('listbox').getByRole('option').first().click();
     await expect.poll(async()=>(await getPrompt(ac,'e2e-source')).document?.prompt).toBe('保留【图1】');
     const chips=prompt.locator('[data-reference-key], [data-inline-reference-key], [data-mention-key]');

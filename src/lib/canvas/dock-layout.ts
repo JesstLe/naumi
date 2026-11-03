@@ -122,10 +122,18 @@ export function preferredCanvasToolbar(nodeScreen:NodeScreen|undefined,canvasSiz
     const top = Math.max(overlaySafeArea.top, nodeScreen.top - TBAR_H - 12 - nodeTitleHeight);
     return { left, top };
 }
-export function canvasDockLayout(input:{nodeScreen:NodeScreen|undefined;canvasSize:CanvasSize;dockMetrics:DockMetrics;selectedTextId:string|null;textComposerExpanded:boolean;readOnly:boolean;nodeTitleHeight?:number}) {
+export function canvasDockLayout(input:{nodeScreen:NodeScreen|undefined;canvasSize:CanvasSize;dockMetrics:DockMetrics;selectedTextId:string|null;textComposerExpanded:boolean;mediaComposerExpanded?:boolean;readOnly:boolean;nodeTitleHeight?:number}) {
  const {nodeScreen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,readOnly}=input;
  const overlaySafeArea=canvasOverlaySafeArea(canvasSize),dockWidth=canvasDockWidth(canvasSize,overlaySafeArea);
  const dock=preferredCanvasDock(nodeScreen,canvasSize,dockWidth,overlaySafeArea,selectedTextId,input.nodeTitleHeight),toolbar=preferredCanvasToolbar(nodeScreen,canvasSize,overlaySafeArea,dockMetrics,input.nodeTitleHeight);
+ // Expand the composer, never the canvas viewport or its node. Keep the native
+ // node toolbar and fixed composer header/footer inside the same safe area.
+ if(dock&&toolbar&&canvasSize.height&&input.mediaComposerExpanded&&!selectedTextId){
+  const safeBottom=Math.max(overlaySafeArea.top+1,canvasSize.height-overlaySafeArea.bottom);
+  const top=Math.min(safeBottom-1,overlaySafeArea.top+Math.max(0,dockMetrics.toolbarHeight)+12);
+  const height=Math.max(1,safeBottom-top);
+  return {dock:{...dock,top,height,maxHeight:height},toolbar:{...toolbar,top:overlaySafeArea.top}};
+ }
  if(!dock||!toolbar||!canvasSize.height||readOnly)return {dock,toolbar};
  return separateCanvasDocks({dock:textComposerExpanded&&selectedTextId?{...dock,top:overlaySafeArea.top,maxHeight:canvasSize.height-overlaySafeArea.bottom-overlaySafeArea.top}:dock,toolbar,
  dockHeight:textComposerExpanded&&selectedTextId?canvasSize.height-overlaySafeArea.bottom-overlaySafeArea.top:dockMetrics.dockHeight||(selectedTextId?360:310),toolbarHeight:dockMetrics.toolbarHeight,safeTop:overlaySafeArea.top,safeBottom:canvasSize.height-overlaySafeArea.bottom});
