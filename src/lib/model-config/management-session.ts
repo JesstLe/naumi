@@ -22,9 +22,9 @@ export type ManagementSessionPorts = {
   setNotice(message: string): void;
 };
 
-const refreshedActions = new Set(["pricing", "parameters", "video-parameters", "resolutions", "channels", "order", "scope", "switch", "rename"]);
+const refreshedActions = new Set(["video-capability-upgrade", "pricing", "parameters", "video-parameters", "resolutions", "channels", "order", "scope", "switch", "rename"]);
 function appliedNotice(action: string) {
-  return action === "video-parameters" ? "视频能力已生效。" : action === "channels" ? "供应通道已生效，新任务使用新策略，已接受任务保留原配置。" : action === "resolutions" ? "分辨率显示与供应通道映射已生效。新任务使用新配置，已接受任务保留原参数。" : action === "order" ? "模型排序已生效，前端各工具按此顺序展示可用模型。" : action === "parameters" ? "显示档位与上游映射已生效。新请求使用新参数，已接受的任务保留原映射。" : action === "pricing" ? "积分售价已生效。前端报价与实际扣费使用同一配置，已开始的任务保留原报价。" : action === "scope" ? "工具范围已生效。新请求使用新范围，已经开始的任务保留原配置。" : action === "rename" ? "显示名称已更新，前端刷新模型列表后生效。" : action === "switch" ? "实际模型已切换。新请求使用新配置，已经开始的任务保留原模型。" : action === "connect" ? "上游已接入，正在自动发现模型 ID。" : "模型已添加到可切换列表。";
+  return action === "video-capability-upgrade" ? "视频能力已更新。" : action === "video-parameters" ? "视频能力已生效。" : action === "channels" ? "供应通道已生效，新任务使用新策略，已接受任务保留原配置。" : action === "resolutions" ? "分辨率显示与供应通道映射已生效。新任务使用新配置，已接受任务保留原参数。" : action === "order" ? "模型排序已生效，前端各工具按此顺序展示可用模型。" : action === "parameters" ? "显示档位与上游映射已生效。新请求使用新参数，已接受的任务保留原映射。" : action === "pricing" ? "积分售价已生效。前端报价与实际扣费使用同一配置，已开始的任务保留原报价。" : action === "scope" ? "工具范围已生效。新请求使用新范围，已经开始的任务保留原配置。" : action === "rename" ? "显示名称已更新，前端刷新模型列表后生效。" : action === "switch" ? "实际模型已切换。新请求使用新配置，已经开始的任务保留原模型。" : action === "connect" ? "上游已接入，正在自动发现模型 ID。" : "模型已添加到可切换列表。";
 }
 
 /** One browser management session. It owns observation and original publication

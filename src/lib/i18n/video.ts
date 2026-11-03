@@ -1,6 +1,6 @@
 /** Canvas video UI; user prompts, workflow JSON and model labels are never translated. */
 export const videoEn:Record<string,string>={
-  "已保存":"Saved",
+  "已保存":"Saved","分镜制作":"Storyboard production",
   "场景":"Scene","场景或状态素材已不可用":"Scene or state is unavailable","场景参考图片尚未完成或已不可用":"Scene reference image is pending or unavailable",
   "角色或外观素材已不可用":"Character or look is unavailable",
   "角色参考图片尚未完成或已不可用":"Character reference image is pending or unavailable",
@@ -23,6 +23,11 @@ export const videoEn:Record<string,string>={
   "视频媒体处理":"Video media processing","关闭媒体处理":"Close media processing","媒体处理方式":"Media action","有序输入":"Ordered inputs","素材已不可用":"Asset unavailable","添加媒体输入":"Add media input","添加素材…":"Add asset…","帧位置":"Frame position","抽帧位置":"Frame position","指定秒数":"At time","抽帧秒数":"Frame time in seconds","开始秒数":"Start in seconds","裁剪开始秒数":"Trim start in seconds","结束秒数":"End in seconds","裁剪结束秒数":"Trim end in seconds","参数数组 JSON":"Argument array JSON","FFmpeg FFprobe 参数":"FFmpeg / FFprobe arguments","输出文件数组 JSON":"Output file array JSON","媒体输出文件":"Media outputs","辅助文件与输出":"Auxiliary files and outputs","辅助文件 JSON":"Auxiliary file JSON","媒体辅助文件":"Media auxiliary files","辅助输出 JSON":"Auxiliary outputs JSON","媒体辅助输出":"Media auxiliary outputs","· 已处理":"· Processed","用作输入":"Use as input","查询结果":"Query result","价格已更新：":"Price updated:","提交中…":"Submitting…","视频放大预览":"Video preview","关闭视频预览":"Close video preview","· 尚未完成":"· Not completed","（尚未完成）":" (not completed)","生成视频 ·":"Generate video ·","0 积分":"0 credits","· 自定义输出":"· Custom output","未配置":"Not configured","生成声音":"Generate audio","必须开启":"Required","不生成":"Disabled","视频宽度":"Video width","视频高度":"Video height","视频负面提示词":"Negative prompt",
 };
 Object.assign(videoEn, {
+  "选择视频模型":"Choose a video model", "取消切换模型":"Cancel model change", "暂无已配置模型支持此模式":"No configured model supports this mode",
+  "素材已保留，请选择支持这些素材的视频模式":"References kept. Choose a mode that supports these media.",
+  "图片参考仅使用图片，请移除视频或音频，或选择全能参考":"Image reference uses images only. Remove video or audio, or choose multimodal reference.",
+  "此模型未开放所选视频模式":"This model does not offer the selected video mode", "视频模式切换失败":"Could not change video mode",
+  "首帧可选":"Optional first frame", "尾帧可选":"Optional last frame", "编辑视频":"Edit video",
   "全能参考":"Multimodal reference", "图片参考":"Image reference", "图生视频":"Image to video", "首尾帧":"First and last frames",
   "视频生成参数":"Video parameters", "比例":"Aspect ratio", "清晰度":"Resolution", "选择视频秒数":"Select video seconds", "生成数量":"Number of videos", "个视频":"videos", "声音跟随模型":"Model default audio",
   "提示词优化":"Optimize prompt", "正在优化提示词…":"Optimizing prompt…", "优化预览":"Prompt preview", "重新优化":"Try again", "应用提示词":"Apply prompt", "原提示词已修改，请重新优化":"Prompt changed. Optimize again.", "提示词优化失败":"Could not optimize prompt",

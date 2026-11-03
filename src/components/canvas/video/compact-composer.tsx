@@ -1,13 +1,14 @@
 "use client";
-import {useRef,useState,type ReactNode} from "react";
-import {Plus,X,ChevronDown,AtSign,Upload,Film,Music2,Type,SlidersHorizontal,Volume2,VolumeX,RectangleHorizontal,Clock3,UserRound,Mountain} from "lucide-react";
+import {useEffect,useRef,useState,type ReactNode} from "react";
+import {Clapperboard,Plus,X,ChevronDown,AtSign,Upload,Film,Music2,Type,SlidersHorizontal,Volume2,VolumeX,RectangleHorizontal,Clock3,UserRound,Mountain} from "lucide-react";
 import {CachedImage} from "@/components/cached-image";
 import {CanvasComposerFooter} from "../composer-shell";
 import {SelectMenu} from "@/components/ui/select-menu";
 import {CanvasModelSelect} from "../model-select";
 import {CanvasActionPanel} from "../canvas-action-menu";
 import {browserRandomUUID} from "@/lib/browser-crypto";
-import {catalogCapability,selectedVideoCatalogModel,reconcileVideoSettings,videoModeRoles,videoDurations,VIDEO_MODE_LABELS,VIDEO_ROLE_LABELS,type VideoNodeConfig,type VideoCatalogModel,type VideoInputChoice} from "@/lib/video/client-settings";
+import {catalogCapability,selectedVideoCatalogModel,reconcileVideoSettings,videoModeRoles,videoDurations,VIDEO_ROLE_LABELS,type VideoNodeConfig,type VideoCatalogModel,type VideoInputChoice} from "@/lib/video/client-settings";
+import {attachVideoInputs,currentVideoIntent,selectVideoIntent,VIDEO_CREATION_LABELS,type VideoCreationIntent} from "@/lib/video/mode-selection";
 import {numberVideoInputs,type OrderedInput} from "@/lib/video/references";
 import {insertVideoPromptReference,remapVideoPromptReferences,videoReferenceNames} from "@/lib/video/prompt-references";
 import {VideoAssetImportError} from "./use-video-assets";
@@ -16,19 +17,44 @@ import {VideoParameterPanel} from "./parameter-panel";
 import {VideoPromptOptimizer} from "./prompt-optimizer";
 import {videoButtonClass} from "./form-controls";
 import {VideoPromptEditor,type VideoPromptEditorHandle} from "./prompt-editor";
+import {VideoModeSelect} from "./mode-select";
 
 /** Reference-first composer; capabilities remain backed by the published catalog. */
-export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,blocked,onConfig,onInputs,onImport,onImportBusyChange,onAdvanced,actions,feedback,advancedOpen=false,onCloseAdvanced,advancedContent,count,onCount,onOptimize}:{
+export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,blocked,onConfig,onInputs,onImport,onImportBusyChange,onAdvanced,actions,feedback,advancedOpen=false,onCloseAdvanced,advancedContent,count,onCount,onOptimize,onStoryboard}:{
  config:VideoNodeConfig;inputs:OrderedInput[];models:VideoCatalogModel[];choices:VideoInputChoice[];nodeId:string;light:boolean;blocked:boolean;
  onConfig:(value:VideoNodeConfig)=>void;onInputs:(value:OrderedInput[])=>void;onImport?:(files:File[])=>Promise<VideoInputChoice[]>;onImportBusyChange:(value:boolean)=>void;onAdvanced:()=>void;
- count:number;onCount:(value:number)=>void;onOptimize:(prompt:string,signal:AbortSignal)=>Promise<string>;
+ onStoryboard?:()=>void;count:number;onCount:(value:number)=>void;onOptimize:(prompt:string,signal:AbortSignal)=>Promise<string>;
  actions:ReactNode;feedback:ReactNode;advancedOpen?:boolean;onCloseAdvanced?:()=>void;advancedContent?:ReactNode;
 }){
  const V=useVideoI18n(),[picker,setPicker]=useState(false),[parameters,setParameters]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const addRef=useRef<HTMLButtonElement>(null),parameterRef=useRef<HTMLButtonElement>(null),advancedRef=useRef<HTMLButtonElement>(null),editor=useRef<VideoPromptEditorHandle>(null),file=useRef<HTMLInputElement>(null);
  const importing=useRef(false),model=selectedVideoCatalogModel(models,config),cap=catalogCapability(model);
+ const [referenceIntent,setReferenceIntent]=useState<{scope:string;value:"image_reference"|"omni_reference"}>();
+ const referenceScope=JSON.stringify([nodeId,config.providerId,config.modelId]);
+ const modeIntent=currentVideoIntent(config.mode,cap,inputs,referenceIntent?.scope===referenceScope?referenceIntent.value:undefined);
  const numbered=numberVideoInputs(inputs).all,names=videoReferenceNames(inputs,choices);
- function changeInputs(next:OrderedInput[],preserveRoles=false){const ordered=preserveRoles?next:videoModeRoles(next,config.mode);onInputs(ordered);onConfig({...config,prompt:remapVideoPromptReferences(config.prompt||'',inputs,ordered),references:[]});}
+ function prepareInputs(next:OrderedInput[],preserveRoles=false){
+  const attached=!preserveRoles&&next.some(input=>input.kind!=='text'&&!inputs.some(previous=>previous.id===input.id));
+  const result=attached&&!config.comfyWorkflowId?attachVideoInputs(config,next,cap):{config,inputs:preserveRoles?next:videoModeRoles(next,config.mode),changed:false};
+  if(result.changed){setReferenceIntent(undefined);setNotice(`${V('已调整')}：${V(VIDEO_CREATION_LABELS[currentVideoIntent(result.config.mode,cap,result.inputs)])}`);}
+  else if(attached&&config.mode==='text')setNotice(V('素材已保留，请选择支持这些素材的视频模式'));
+  return result;
+ }
+ function changeInputs(next:OrderedInput[],preserveRoles=false){const prepared=prepareInputs(next,preserveRoles);setError('');onInputs(prepared.inputs);onConfig({...prepared.config,prompt:remapVideoPromptReferences(config.prompt||'',inputs,prepared.inputs),references:[]});}
+ // A connection made while this composer is open is the same explicit attach
+ // action as picking/uploading. Reopening an old draft alone does not mutate it.
+ const observedInputs=useRef({nodeId,ids:new Set(inputs.map(input=>input.id))});
+ useEffect(()=>{
+  const previous=observedInputs.current;observedInputs.current={nodeId,ids:new Set(inputs.map(input=>input.id))};
+  if(blocked||config.comfyWorkflowId||previous.nodeId!==nodeId||!inputs.some(input=>input.kind!=='text'&&!previous.ids.has(input.id)))return;
+  const next=attachVideoInputs(config,inputs,cap);
+  if(next.changed){onInputs(next.inputs);onConfig({...next.config,references:[]});setReferenceIntent(undefined);setNotice(`${V('已调整')}：${V(VIDEO_CREATION_LABELS[currentVideoIntent(next.config.mode,cap,next.inputs)])}`);}
+ },[inputs,nodeId,blocked,config,cap,onInputs,onConfig,V]);
+ function chooseMode(intent:VideoCreationIntent,chosen:VideoCatalogModel){
+  if(blocked||config.comfyWorkflowId)return;
+  try{const result=selectVideoIntent(config,inputs,chosen,intent);onInputs(result.inputs);onConfig(result.config);setReferenceIntent(intent==='image_reference'||intent==='omni_reference'?{scope:JSON.stringify([nodeId,chosen.providerId,chosen.modelId]),value:intent}:undefined);setError('');setNotice(result.changes.length?`${V('已调整')}：${result.changes.map(V).join('、')}`:'');}
+  catch(cause){setError(cause instanceof Error?V(cause.message):V('视频模式切换失败'));}
+ }
  function reconcile(next:VideoNodeConfig){const result=reconcileVideoSettings(next,catalogCapability(selectedVideoCatalogModel(models,next)));if(result.config.mode!==config.mode)onInputs(videoModeRoles(inputs,result.config.mode));onConfig(result.config);setNotice(result.changes.length?`${V('已调整')}：${result.changes.map(V).join('、')}`:'');}
  function add(choice:VideoInputChoice){
   if(blocked||!choice.available)return;
@@ -38,8 +64,8 @@ export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,
  function mention(choice:VideoInputChoice,start:number,end:number){
   if(blocked||!choice.available)return;
   const next=inputs.some(input=>input.nodeId===choice.nodeId)?inputs:videoModeRoles([...inputs,{id:`ref-${browserRandomUUID()}`,nodeId:choice.nodeId,kind:choice.kind,role:choice.kind==='text'?'context':choice.kind==='video'?'source_video':choice.kind==='audio'?'source_audio':'reference',value:choice.value}],config.mode);
-  const input=next.find(item=>item.nodeId===choice.nodeId)!,inserted=insertVideoPromptReference(config.prompt||'',inputs,next,choices,input.id,start,end);
-  onInputs(next);onConfig({...config,prompt:inserted.prompt,references:[]});return inserted.caret;
+  const prepared=prepareInputs(next),input=prepared.inputs.find(item=>item.nodeId===choice.nodeId)!,inserted=insertVideoPromptReference(config.prompt||'',inputs,prepared.inputs,choices,input.id,start,end);
+  onInputs(prepared.inputs);onConfig({...prepared.config,prompt:inserted.prompt,references:[]});return inserted.caret;
  }
  async function upload(files:File[]){if(blocked||importing.current||!onImport||!files.length)return;importing.current=true;onImportBusyChange(true);setError('');
   const append=(items:VideoInputChoice[])=>{const next=[...inputs];for(const choice of items)if(!next.some(input=>input.nodeId===choice.nodeId))next.push({id:`ref-${browserRandomUUID()}`,nodeId:choice.nodeId,kind:choice.kind,role:choice.kind==='text'?'context':choice.kind==='video'?'source_video':choice.kind==='audio'?'source_audio':'reference',value:choice.value});changeInputs(next);};
@@ -52,7 +78,7 @@ export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,
    <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1" data-testid="video-reference-strip">
     {numbered.map(input=>{const choice=choices.find(c=>c.nodeId===input.nodeId),thumbnail=choice?.thumbnail||(input.kind==='image'?input.value:undefined),name=names.get(input.id)!;
      const scene=input.nodeId.startsWith('scene:'),character=input.nodeId.startsWith('character:'),visual=scene||character;
-     const roles:OrderedInput['role'][]=visual?['context']:input.kind==='text'?['context','author']:input.kind==='image'?['reference','first_frame','last_frame','element']:input.kind==='video'?['source_video','reference','element']:['source_audio','reference','element'];
+     const roles:OrderedInput['role'][]=visual?['context']:input.nodeId.startsWith('audio-node:')?['source_audio']:input.nodeId.startsWith('timeline-node:')?['source_video']:input.kind==='text'?['context','author']:input.kind==='image'?['reference','first_frame','last_frame','element']:input.kind==='video'?['source_video','reference','element']:['source_audio','reference','element'];
      return <div key={input.id} data-testid="video-compact-reference" className="group relative w-28 shrink-0 rounded-[10px] border border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-soft)] p-1.5" title={name}>
       <button type="button" disabled={blocked} aria-label={`${V('引用素材')} ${name}`} onClick={()=>editor.current?.insert(choice||{id:input.id,nodeId:input.nodeId,kind:input.kind,title:name,value:input.value,available:true})} className="flex w-full items-center gap-1.5 text-left disabled:opacity-50">
        {thumbnail?<CachedImage src={thumbnail} alt="" className="h-8 w-8 shrink-0 rounded object-cover"/>:<span className="canvas-ui-muted flex h-8 w-8 shrink-0 items-center justify-center">{scene?<Mountain size={17}/>:character?<UserRound size={17}/>:input.kind==='video'?<Film size={17}/>:input.kind==='audio'?<Music2 size={17}/>:<Type size={17}/>}</span>}
@@ -75,11 +101,12 @@ export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,
     placeholder={config.comfyWorkflowId?V('自备视频工作流'):V('未选择模型')} disabled={blocked||!!config.comfyWorkflowId}
     options={models.map(m=>({value:`${m.providerId}/${m.modelId}`,modelId:m.modelId,label:m.label}))}
     onChange={value=>{const chosen=models.find(m=>`${m.providerId}/${m.modelId}`===value);if(chosen)reconcile({...config,workflowTaskId:undefined,providerId:chosen.providerId,modelId:chosen.modelId});}} />
-   <SelectMenu label={V('视频生成模式')} size="sm" className={chip} popoverClassName="canvas-ui-light" disabled={blocked||!!config.comfyWorkflowId} value={config.mode||''} onChange={value=>{const mode=value as VideoNodeConfig['mode'];onInputs(videoModeRoles(inputs,mode));reconcile({...config,mode,references:[]});}} options={(cap.modes||[]).map(mode=>({value:mode,label:V(mode==='reference'?(cap.limits?.videos||cap.limits?.audios?'全能参考':'图片参考'):mode==='single_image'?'图生视频':mode==='frames_required'?'首尾帧':VIDEO_MODE_LABELS[mode])}))}/>
+   <VideoModeSelect key={nodeId} className={chip} disabled={blocked||!!config.comfyWorkflowId} value={modeIntent} model={model} models={models} onSelect={chooseMode}/>
    <SelectMenu label={V('视频时长')} size="sm" className={chip} popoverClassName="canvas-ui-light" disabled={blocked||!!config.comfyWorkflowId} value={String(config.durationSeconds??'')} onChange={value=>reconcile({...config,durationSeconds:Number(value)})} options={videoDurations(cap, config.mode).map(value=>({value:String(value),label:<span className="flex items-center gap-1.5"><Clock3 size={13}/>{value===-1?V('自动'):V(`${value} 秒`)}</span>}))}/>
    <button ref={parameterRef} type="button" className={chip} aria-label={V('视频生成参数')} aria-expanded={parameters} disabled={blocked} onClick={()=>setParameters(true)}><RectangleHorizontal size={13}/><span className="truncate">{[config.aspectRatio==='adaptive'?V('自动'):config.aspectRatio,config.resolution?.toUpperCase(),config.durationSeconds===-1?V('自动'):config.durationSeconds?`${config.durationSeconds}s`:undefined,`${count} ${V('个视频')}`].filter(Boolean).join(' · ')}</span>{cap.audio&&<span title={V(config.generateAudio===undefined&&cap.audio==='optional'?'声音跟随模型':config.generateAudio===true||cap.audio==='required'?'开启':'关闭声音')}>{config.generateAudio===false||cap.audio==='disabled'?<VolumeX size={13}/>:<Volume2 size={13}/>}</span>}<ChevronDown size={12}/></button>
    <VideoPromptOptimizer prompt={config.prompt||''} disabled={blocked} light={light} onOptimize={onOptimize} onApply={prompt=>onConfig({...config,prompt})}/>
    <button type="button" className={chip} aria-label={V('引用素材')} title={V('引用素材')} disabled={blocked} onClick={()=>editor.current?.openMentions()}><AtSign size={15}/></button>
+   {onStoryboard&&<button type="button" className={chip} aria-label={V('分镜制作')} title={V('分镜制作')} disabled={blocked} onClick={onStoryboard}><Clapperboard size={15}/><span>{V('分镜')}</span></button>}
    <button ref={advancedRef} type="button" className={chip} aria-expanded={advancedOpen} aria-label={V('更多视频参数')} title={V('更多视频参数')} onClick={onAdvanced}><SlidersHorizontal size={15}/></button>
   </>} actions={actions}/>
   {(error||notice)&&<p role={error?'alert':'status'} className="px-4 py-2 text-xs text-amber-600">{error||notice}</p>}

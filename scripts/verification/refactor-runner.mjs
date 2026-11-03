@@ -38,6 +38,12 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='legacy-generation-session')stageEnv.GENERATION_SESSION_EVIDENCE=evidence;
    if(spec.id==='model-management-session')stageEnv.MODEL_MANAGEMENT_SESSION_EVIDENCE=evidence;
    if(spec.id==='published-draft-continuation')stageEnv.MODEL_DRAFT_CONTINUATION_EVIDENCE=evidence;
+   if(spec.id==='main-sync-boundaries')stageEnv.MAIN_SYNC_BOUNDARY_EVIDENCE=evidence;
+   if(spec.id==='video-capability-upgrade-ui')stageEnv.VIDEO_UPGRADE_UI_OUT=evidence;
+   if(spec.id==='collaboration-ui')stageEnv.COLLAB_UI_EVIDENCE=evidence;
+   if(spec.id==='main-sync-assistant-navigation')stageEnv.MAIN_SYNC_ASSISTANT_EVIDENCE=evidence;
+   if(spec.id==='main-sync-canvas-owners')stageEnv.MAIN_SYNC_CANVAS_EVIDENCE=evidence;
+   if(spec.id==='model-management-concurrency'||spec.id==='model-management-distinct')stageEnv.MODEL_MANAGEMENT_CONCURRENCY_EVIDENCE=evidence;
    if(spec.id==='protocol-application-ownership')stageEnv.W3_PROTOCOL_EVIDENCE=evidence;
    if(spec.id==='media-metadata-ownership')stageEnv.MEDIA_METADATA_EVIDENCE=evidence;
    if(spec.id==='billing-task-ownership')stageEnv.BILLING_TASK_OWNERSHIP_EVIDENCE=evidence;

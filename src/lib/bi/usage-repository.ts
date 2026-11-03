@@ -70,9 +70,13 @@ export async function readUserUsage(tx: ReadClient, query: UsageQuery, scope?: U
       LEFT JOIN known_child_links k ON k.email=c.email AND k.child_id=c.id WHERE c.kind='generate' AND k.child_id IS NULL)`);
     sourceCtes.push(`legacy_parent_candidates AS MATERIALIZED (SELECT p.email,p.snapshot->'children' children FROM app_image_jobs p
       JOIN unlinked_child_owners o ON o.email=p.email WHERE p.kind='imagegen' AND p.created_at<$2::timestamptz)`);
-    sourceCtes.push(`legacy_parent_links AS MATERIALIZED (SELECT DISTINCT p.email,c.id child_id FROM legacy_parent_candidates p
-      CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(p.children)='object' THEN p.children ELSE '{}'::jsonb END) l
-      JOIN candidate_images c ON c.email=p.email AND c.id=l.value->>'jobId' AND c.kind='generate')`);
+    // Expand each legacy parent once before joining candidate children. Without
+    // this materialization fence PostgreSQL can join by owner first, multiplying
+    // jsonb_each work by every child belonging to a prolific account.
+    sourceCtes.push(`legacy_parent_edges AS MATERIALIZED (SELECT p.email,l.value->>'jobId' child_id FROM legacy_parent_candidates p
+      CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(p.children)='object' THEN p.children ELSE '{}'::jsonb END) l)`);
+    sourceCtes.push(`legacy_parent_links AS MATERIALIZED (SELECT DISTINCT p.email,c.id child_id FROM legacy_parent_edges p
+      JOIN candidate_images c ON c.email=p.email AND c.id=p.child_id AND c.kind='generate')`);
     sourceCtes.push(`child_links AS MATERIALIZED (SELECT email,child_id FROM known_child_links UNION SELECT email,child_id FROM legacy_parent_links)`);
     facts.push(selectFact("j.email", "j.created_at", "imageJobs", { tasks: "1" }, "true", `FROM candidate_images j
       LEFT JOIN child_links k ON k.email=j.email AND k.child_id=j.id WHERE j.kind<>'generate' OR k.child_id IS NULL`));

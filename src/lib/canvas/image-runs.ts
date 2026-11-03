@@ -26,7 +26,7 @@ export type CanvasImageRunContext=Pick<CanvasGenerationRunContext,'generation'|'
   attachTextImages:(sourceIds:string[],images:CanvasGeneratedImage[])=>Promise<void>;
   clearError:()=>void;errorText:string;saveErrorText:string;pendingLabel:string;resultGap:number;
 };
-export type CanvasBlankImageOptions={pend?:CanvasPendingNode;prompt?:string;ratio?:string;forceStandard?:boolean;referenceInputs?:CanvasImageReference[];isCurrent?:()=>boolean};
+export type CanvasBlankImageOptions={pend?:CanvasPendingNode;prompt?:string;ratio?:string;forceStandard?:boolean;referenceInputs?:CanvasImageReference[];isCurrent?:()=>boolean;onSubmitted?:()=>void};
 
 /** Derived/replacement application flow; request and recovery stay in the
  * original image-task request/controller, including explicit attachment retry. */
@@ -68,7 +68,7 @@ export async function runCanvasDerivedImage(input:{source:Artwork;prompt:string;
   const task=createCanvasImageTask({scope,replacement:opts?.replaceNode?{nodeId:source.id,history:ctx.replacementHistory}:undefined,
     ...(placement?{fanout:{count,bind:synchronizePlacement,point:(id:string)=>placement?.slots.find(slot=>slot.artworkId===id)}}:{}),
     prepare:()=>prepareCanvasImageTask({kind:'derived',scope,operationKey,position,prompt:text,source,options:{...opts,placement},models:input.models,model:input.model,quality:input.quality,referenceInputs:opts?.referenceInputs,retainedAttempt}),
-    submit:ctx.submit,position:()=>view.position(taskId,position),...ctx.document,
+    submit:ctx.submit,submitted:opts?.onSubmitted,position:()=>view.position(taskId,position),...ctx.document,
     stage:stage=>{if(stage==='generating')synchronizePlacement();for(const id of taskIds)view.update(id,{stage,failure:undefined});},user:ctx.user,notice:ctx.notice,errorText:ctx.errorText,saveErrorText:ctx.saveErrorText,resultGap:ctx.resultGap,
   });
   const activity=view.activity({operationKey,canRetry:scope.isCurrent,clear:()=>taskIds.forEach(id=>view.remove(id)),
@@ -93,7 +93,7 @@ export async function runCanvasDerivedImage(input:{source:Artwork;prompt:string;
 export async function runCanvasBlankImage(input:{pend:CanvasPendingNode;prompt:string;settings:Settings;members:Artwork[];textNodes:CanvasTextNode[];
   detail:boolean;referenceInputs?:CanvasImageReference[];invalid:(message:string)=>void;needReferences:string;needPrompt:string;
   runDetail:(source:Artwork,inputs:Artwork[],prompt:string,pend:CanvasPendingNode,refs?:CanvasImageReference[])=>Promise<unknown>;
-  failed:(failure:GenerationFailure)=>void;attached:(images:CanvasGeneratedImage[])=>void;completed:()=>void;
+  failed:(failure:GenerationFailure)=>void;attached:(images:CanvasGeneratedImage[],artworks:Artwork[])=>void;completed:()=>void;onSubmitted?:()=>void;
 },ctx:CanvasImageRunContext):Promise<boolean>{
   const {pend,referenceInputs,settings}=input;
   if(pend.generating||pend.uploading||pend.needsAttention)return false;
@@ -108,10 +108,10 @@ export async function runCanvasBlankImage(input:{pend:CanvasPendingNode;prompt:s
   const operationKey=`pend:${pend.id}`,view=ctx.generation,pending=ctx.pending;if(view.busy(operationKey))return false;
   const prompt=canvasBlankImagePrompt(text,texts,inputs);ctx.clearError();
   const size=generationPlaceholderSize(settings.ratio),live=ctx.geometry.position(pend.id,pend),position=generationPositionForTask(live,live,size,[]);
-  pending.set(nodes=>nodes.map(node=>node.id===pend.id?{...node,generationFailure:undefined,onGenerationRetry:undefined,generating:true,generationStage:'preparing',generationStartedAt:Date.now(),...position,generationSize:size,generationCount:normalizeCanvasCount(settings.count)}:node));
+  pending.set(nodes=>nodes.map(node=>node.id===pend.id?{...node,generationFailure:undefined,onGenerationRetry:undefined,generating:true,generationSubmitted:false,generationStage:'preparing',generationStartedAt:Date.now(),...position,generationSize:size,generationCount:normalizeCanvasCount(settings.count)}:node));
   const scope=ctx.capture(),task=createCanvasImageTask({scope,
     prepare:()=>prepareCanvasImageTask({kind:'blank',scope,operationKey,position,prompt,...settings,inputs,referenceInputs,textParentId:pend.parentId?.startsWith('text-')&&texts.some(node=>node.id===pend.parentId)?pend.parentId:undefined}),
-    submit:ctx.submit,position:()=>ctx.geometry.position(pend.id,position),...ctx.document,
+    submit:ctx.submit,submitted:()=>{pending.set(nodes=>nodes.map(node=>node.id===pend.id?{...node,generationSubmitted:true}:node));input.onSubmitted?.();},position:()=>ctx.geometry.position(pend.id,position),...ctx.document,
     attached:images=>texts.length?ctx.attachTextImages(texts.map(node=>node.id),images):undefined,
     stage:stage=>pending.set(nodes=>nodes.map(node=>node.id===pend.id?{...node,generating:true,generationStage:stage,generationFailure:undefined}:node)),
     user:ctx.user,notice:ctx.notice,errorText:ctx.errorText,saveErrorText:ctx.saveErrorText,resultGap:ctx.resultGap,
@@ -121,7 +121,7 @@ export async function runCanvasBlankImage(input:{pend:CanvasPendingNode;prompt:s
       const result=await task.run();if(result.status==='stale')return false;
       if(result.status==='cancelled'){pending.set(nodes=>nodes.map(node=>node.id===pend.id?{...node,generating:false,generationFailure:undefined}:node));return false;}
       if(result.status==='failed'){input.failed(result.failure);pending.set(nodes=>nodes.map(node=>node.id===pend.id?{...node,generating:false,generationFailure:result.failure,onGenerationRetry:retry}:node));return false;}
-      input.attached(result.images);pending.set(nodes=>nodes.filter(node=>node.id!==pend.id));input.completed();return result.status==='succeeded';
+      input.attached(result.images,result.artworks);pending.set(nodes=>nodes.filter(node=>node.id!==pend.id));input.completed();return result.status==='succeeded';
     },
   }).run()??false;
 }

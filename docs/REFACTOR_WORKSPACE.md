@@ -1,5 +1,11 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：main owner 集群整合
+
+[集群汇合记录](changes/2026-11-03-refactor-main-owner-integration.md)从64ff修复头普通整合main c4b1e267的319路径/14冲突，保留main新增图像后台/引用/分享/视频能力，同时接回Canvas/Assistant/导航/计费/媒体已有owner，而非恢复巨型组件。管理applied回执409、同id/不同id首写pool5/8并发耗尽已实际复现并修；原锁/CAS、零重放与UNKNOWN原id保持。独立审阅发现的等待身份误证明和CONNECT异步投影拒绝均已窄修复验。
+
+各模块集中回归与分阶段源hash已落盘；新正式case注册包括管理真实PG并发、main Canvas/Assistant owner与四类依赖图检查。全树/最终source构建、四产物及副本回滚以output/refactor-main-owner-sync-20261103终稿为准。整体ACTIVE，main->分支同步不等于分支合main；R04/同case整版退出继续，本轮未部署，47HOLD保持。
+
 ## 当前推进：PR #8 restore 草稿合同正式整合
 
 [整合记录](changes/2026-11-03-pr8-restore-context-integration.md)固定 d09b93a，在自有真实 PG 再次复现原 restore 反例 exit1（base1/revision1→base3/revision2）及正式 runtime 反例 exit1。普通 merge 纳入已审 PR9 固定71202c9 的 publish-only来源草稿上下文与 PR10 固定d5101f2 的Router正式回归，不把旧头CI改记为新头验收。

@@ -42,9 +42,9 @@ export function useCanvasViewControls(options:Options){
   useEffect(()=>{liveZoom.current=options.zoom;if(document.activeElement!==zoomInputRef.current)setZoomInput(zoomPercentInput(options.zoom||1));},[options.zoom]);
   useEffect(()=>{setZoomMenuOpen(false);},[options.contextKey,options.browsing]);
   useEffect(()=>{
-    if(!options.enabled)return;const element=options.area.current;if(!element)return;
+    if(!options.enabled||options.browsing)return;
     const wheel=(event:WheelEvent)=>{if(event.ctrlKey||event.metaKey)event.preventDefault();};
-    element.addEventListener("wheel",wheel,{passive:false});return()=>element.removeEventListener("wheel",wheel);
+    document.addEventListener("wheel",wheel,{passive:false,capture:true});return()=>document.removeEventListener("wheel",wheel,true);
   },[options.area,options.enabled,options.browsing]);
   function selectTool(next:CanvasPrimaryTool){setTool(next);if(next==="marquee")latest.current.onMarquee();}
   function toggleTheme(){setLightCanvas(value=>{const next=!value;try{localStorage.setItem("nv:canvas:bg",next?"light":"dark");}catch{/* Local preference is best effort. */}return next;});}

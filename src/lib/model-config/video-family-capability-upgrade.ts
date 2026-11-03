@@ -1,4 +1,6 @@
 import smokePresets from "./video-family-presets.json";
+import documentedV2 from "./video-family-capabilities.json";
+import documentedV3 from "./video-family-multimodal.json";
 import type { VideoModelDefinition, VideoWireProfile } from "../video/capability-schema";
 import { ModelConfigError, type ModelConfig, type UpstreamModel } from "./types";
 
@@ -70,8 +72,8 @@ export function makeVideoFamilyCapabilityUpgradePlan(
   for (const entry of entries) {
     if (seen.has(entry.publicId)) conflict(entry.publicId, "entries", "升级条目重复");
     seen.add(entry.publicId);
-    // This immutable smoke file is the ONLY upgrade baseline. In particular,
-    // never derive it from the installer, which may already use newer entries.
+    // Identity is anchored in immutable smoke; eligible field values may also
+    // match immutable v2. Never derive either baseline from the current installer.
     const smoke = smokePresets.items.find(item => item.publicId === entry.publicId);
     if (!smoke || smoke.providerId !== entry.providerId || smoke.model !== entry.model) {
       conflict(entry.publicId, "entries", "条目不匹配原 smoke 的 providerId/model");
@@ -101,6 +103,8 @@ export function makeVideoFamilyCapabilityUpgradePlan(
     if (!providers.length) { missing.push({ ...identity, reason: "PROVIDER_MISSING" }); continue; }
 
     const patchIdentity = { ...identity, upstreamId: row.id };
+    const priorDocumented = documentedV2.items.find(item => item.publicId === entry.publicId && item.providerId === entry.providerId && item.model === entry.model);
+    const priorMultimodal = documentedV3.items.find(item => item.publicId === entry.publicId && item.providerId === entry.providerId && item.model === entry.model);
     const candidates: VideoFamilyCapabilityUpgradePatch[] = [
       { ...patchIdentity, field: "capabilities.video", before: structuredClone(smoke.definition) as VideoModelDefinition, after: structuredClone(entry.definition) },
       { ...patchIdentity, field: "capabilities.maxReferenceImages", before: smoke.definition.limits?.images ?? 0, after: entry.definition.limits?.images ?? 0 },
@@ -109,11 +113,19 @@ export function makeVideoFamilyCapabilityUpgradePlan(
     for (const patch of candidates) {
       const current = read(row, patch.field);
       if (same(current, patch.after)) continue;
-      if (!same(current, patch.before)) {
-        conflict(entry.publicId, `upstreamModels.${row.id}.${patch.field}`, "管理员已改动此字段，既非原 smoke 也非本轮目标");
+      const previousValue = patch.field === "capabilities.video" ? priorDocumented?.definition
+        : patch.field === "capabilities.maxReferenceImages" ? priorDocumented?.definition.limits?.images
+        : priorDocumented?.profile;
+      const multimodalValue = patch.field === "capabilities.video" ? priorMultimodal?.definition
+        : patch.field === "capabilities.maxReferenceImages" ? priorMultimodal?.definition.limits?.images : priorMultimodal?.profile;
+      if (!same(current, patch.before) && !(priorDocumented && same(current, previousValue)) && !(priorMultimodal && same(current,multimodalValue))) {
+        conflict(entry.publicId, `upstreamModels.${row.id}.${patch.field}`, "管理员已改动此字段，不匹配原始或已发布版本");
       }
-      write(row, patch, "after");
-      patches.push(patch);
+      // Remember the actual starting field (smoke or the immutable v2 release),
+      // not a synthetic smoke value: rollback must restore this installation.
+      const actualPatch = {...patch,before:structuredClone(current)} as VideoFamilyCapabilityUpgradePatch;
+      write(row, actualPatch, "after");
+      patches.push(actualPatch);
     }
   }
   return { config, patches, missing, skipped };

@@ -2,8 +2,9 @@
 import { readBrowserImage } from "@/lib/browser-image-cache";
 import { CachedImage } from "@/components/cached-image";
 import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
-import {toolImageError, validToolImages} from "@/lib/tool-ui";
+import {toolImageError} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
+import {useToolGenerationReceipt} from "@/lib/tool-generation-receipt";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 
@@ -23,11 +24,9 @@ import {
 } from "lucide-react";
 import { PromptAssistPopup } from "@/components/tools/prompt-assist-popup";
 import type { GeneratedImage } from "@/lib/imagegen/generation-types";
-import type { SessionUser } from "@/lib/auth-context";
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { useI18n } from "@/lib/i18n/locale-context";
-import { authHeader } from "@/lib/supabase";
 import { downloadImage } from "@/lib/download";
 import { cn } from "@/lib/utils";
 import { ToolShell } from "@/components/tools/tool-shell";
@@ -53,7 +52,7 @@ type Ratio = "1:1" | "3:4" | "4:3" | "16:9" | "9:16" | "auto";
 const RATIOS: Ratio[] = ["1:1", "3:4", "4:3", "16:9", "9:16", "auto"];
 
 export function FuseClient() {
-  const { user, remaining, consumeCredits, applyServerUser } = useAuth();
+  const { user, remaining, applyServerUser } = useAuth();
   const { openAuth } = useAuthModal();
   const { locale } = useI18n();
   const router = useRouter();
@@ -66,8 +65,6 @@ export function FuseClient() {
   const { quality, imageCost } = useImageQuality();
   const [count, setCount] = useState(1);
   const [loading, setLoading] = useState(false);
-  const mounted = useRef(true);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<GeneratedImage[]>([]);
   // AI帮写/智能优化(贴按钮弹窗,全站统一)
@@ -84,8 +81,18 @@ export function FuseClient() {
     setAssistRun({ mode, nonce: Date.now() });
   }
 
-  const billing=useFeatureBilling("image.generate",{quantity:count,resolution:RESOLUTION});
+  const billing=useFeatureBilling("image.generate",{quantity:count,resolution:RESOLUTION,ratio});
   const cost=billing.cost;
+  const receipt=useToolGenerationReceipt({
+    tool:"fusion",owner:user?.email,modelId:billing.quote?.modelId,locale,
+    draftKey:JSON.stringify([slots.map(s=>s.id),prompt,ratio,count,quality]),canRestore:slots.length===0,
+    restoreDraftKey:JSON.stringify([slots.map(s=>s.id),prompt,ratio,count]),
+    onBusy:setLoading,onError:setError,onReset:()=>setResults([]),
+    onResult:data=>{
+      if(data.user)applyServerUser(data.user as Parameters<typeof applyServerUser>[0]);
+      setResults(data.images);
+    },
+  });
 
   // 卸载时释放 objectURL,避免内存泄漏
   useObjectUrlCleanup(slots.map(slot => slot.url));
@@ -179,76 +186,27 @@ export function FuseClient() {
       setError(L("请至少上传 2 张图片再融合", "Upload at least 2 images to fuse"));
       return;
     }
-    if (remaining < cost) {
-      setError(
-        L(
-          `积分不足:本次需 ${cost},剩余 ${remaining}`,
-          `Not enough credits: need ${cost}, have ${remaining}`
-        )
-      );
-      return;
-    }
-    setError(null);
-    setLoading(true);
-    try {
-      const fd = new FormData();
-      fd.append("prompt", prompt.trim() || DEFAULT_FUSE);
-      // 落库只存用户原始提示词(可能为空),不存系统兜底词 DEFAULT_FUSE
-      fd.append("userPrompt", prompt.trim());
-      fd.append("category", "fusion");
-      fd.append("ratio", ratio);
-      fd.append("resolution", RESOLUTION);
-      fd.append("quality", quality);
-      fd.append("count", String(count));
-      fd.append("email", user.email);
-      slots.forEach((s) => fd.append("image", s.file));
+    const fd = new FormData();
+    fd.append("prompt", prompt.trim() || DEFAULT_FUSE);
+    // 落库只存用户原始提示词(可能为空),不存系统兜底词 DEFAULT_FUSE
+    fd.append("userPrompt", prompt.trim());
+    fd.append("category", "fusion");
+    fd.append("ratio", ratio);
+    fd.append("resolution", RESOLUTION);
+    fd.append("quality", quality);
+    fd.append("count", String(count));
+    fd.append("email", user.email);
+    slots.forEach((s) => fd.append("image", s.file));
 
-      // 异步任务:POST 拿 jobId,再轮询 GET,保证每个请求都短(不撞 CDN ~100s 超时)。
-      const startRes = await billing.submit("/api/generate-image", {
-        method: "POST",
-        headers: await authHeader(),
-        body: fd,
-      });
-      const start = await startRes.json();
-      if (!startRes.ok) throw new Error(start.error ?? L("融合失败", "Failed"));
-      const jobId: string | undefined = start.jobId;
-      if (typeof jobId !== "string" || !jobId.trim()) throw new Error(L("任务创建失败,请重试", "Could not start job"));
-
-      const deadline = Date.now() + 6 * 60 * 1000;
-      let data: { images: GeneratedImage[]; user?: SessionUser | null } | null =
-        null;
-      while (!data) {
-        await new Promise((r) => setTimeout(r, 2500));
-        if (!mounted.current) return;
-        if (Date.now() > deadline)
-          throw new Error(L("生成超时,请重试", "Timed out, please retry"));
-        const sres = await fetch(
-          `/api/generate-image?job=${encodeURIComponent(jobId)}`,
-          { cache: "no-store", headers: await authHeader() }
-        );
-        const s = await sres.json();
-        if (!mounted.current) return;
-          if (!sres.ok) throw new Error(s.error || L("任务读取失败，请重试", "Could not read job; retry"));
-        if (sres.ok && s.user) applyServerUser(s.user);
-        if (s.status === "done") {
-          if (!validToolImages(s.images)) throw new Error(L("生成结果异常，请重试", "Invalid image result; retry"));
-          data = s;
-        }
-        else if (s.status === "error")
-          throw new Error(s.error ?? L("融合失败", "Failed"));
-      }
-
-      if (data.user) applyServerUser(data.user);
-      else consumeCredits(cost);
-      setResults(data.images);
-    } catch (e) {
-      if (!mounted.current) return;
-      setError(
-        e instanceof Error ? e.message : L("融合失败,请重试", "Failed, please retry")
-      );
-    } finally {
-      if (mounted.current) setLoading(false);
-    }
+    await receipt.submit(fd, headers => billing.submit("/api/generate-image", {
+      method: "POST", headers, body: fd,
+    }), () => {
+      if (remaining < cost) throw new Error(L(
+        `积分不足:本次需 ${cost},剩余 ${remaining}`,
+        `Not enough credits: need ${cost}, have ${remaining}`
+      ));
+      setResults([]);
+    });
   }
 
   // 选中态/未选态统一样式(accent 描边 + 浅底)。

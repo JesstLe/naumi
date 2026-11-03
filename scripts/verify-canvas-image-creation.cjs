@@ -21,7 +21,7 @@ if(!blank&&fs.existsSync(path.join(root,'src/lib/canvas/image-runs.ts'))){
 const primary=fns.generateSelectedImage?'generateSelectedImage':'generateChild',hasRedo=!!fns.retrySelected;assert.ok(blank&&fns[primary]&&fns.genFromAssistant);assert.equal(!!fns.generateSplitViews,baseline);
 const transpile=text=>ts.transpileModule(text,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
 async function bundled(){
- const entry=['export * from "./src/lib/canvas/image-references";','export * from "./src/lib/canvas/image-task-scope";',...(!baseline?['export * from "./src/lib/canvas/image-creation";']:[])].join('\n');
+ const entry=['export * from "./src/lib/canvas/image-references";','export * from "./src/lib/canvas/image-task-scope";',...(!baseline?['export * from "./src/lib/canvas/image-creation";','export * from "./src/lib/canvas/background-generation";']:[])].join('\n');
  return (await build({stdin:{contents:entry,loader:'ts',resolveDir:root},bundle:true,platform:'node',format:'cjs',write:false,tsconfig:path.join(root,'tsconfig.json'),nodePaths:[path.resolve('node_modules')],plugins:[{name:'browser-ports',setup(b){b.onResolve({filter:/supabase$/},()=>({path:'auth',namespace:'ports'}));b.onResolve({filter:/saas\/workspace-client$/},()=>({path:'workspace',namespace:'ports'}));b.onLoad({filter:/.*/,namespace:'ports'},a=>({contents:a.path==='auth'?'export const authHeader=async()=>({});':'export const currentWorkspace=()=>__workspace.value;export const currentWorkspaceRevision=()=>__workspace.revision;',loader:'js'}));}}]})).outputFiles[0].text;
 }
 async function plain(value){
@@ -35,11 +35,11 @@ let checks=0;const eq=(a,b,label)=>{assert.deepEqual(a,b,label);checks++;};
 function fixture(code,options={}){
  const source={id:'source',image:'/media/source.png',prompt:'原始配方',title:'原图',category:'main',ratio:'3:4',resolution:'2K',style:'原风格',parentId:'parent',parentIds:['other-parent']},parent={...source,id:'parent',image:'/media/parent.png',parentId:undefined,prompt:'父配方'};
  const ref={key:'node:source',sourceNodeId:'source',title:'目标',url:source.image,number:3,role:'edit-target'},file=new File([new Uint8Array([0,255,18,41])],'reference-original.png',{type:'image/png'});
- const c={console,Buffer,File,Blob,URL,FormData,Headers,Request,Response,AbortSignal,Promise,Map,Set,Math,Date:class extends Date{static now(){return 123456;}},__workspace:{value:'personal',revision:0},module:{exports:{}},exports:{},
+ const c={console,Buffer,File,Blob,URL,FormData,Headers,Request,Response,AbortSignal,Promise,Map,Set,Math,crypto:require('node:crypto').webcrypto,Date:class extends Date{static now(){return 123456;}},__workspace:{value:'personal',revision:0},module:{exports:{}},exports:{},
   selected:source,active:{members:[source,parent]},assistantArtworkId:'source',editPrompt:'  用户要求  ',generationMode:'standard',genRatio:'3:4',genStyle:'当前风格',genCount:2,genResolution:'4K',visibleDockRefs:[source],extraFiles:[],composerReferences:[ref],dockReferenceState:{error:null},referenceError:null,
-  user:{email:'owner@fixture.test'},canvasAccountRef:{current:'owner@fixture.test'},activeProjectRef:{current:{key:'tree:source'}},canvasContextEpochRef:{current:0},batchRunMountedRef:{current:true},errors:[],calls:[],renames:[],details:[],pending:[],MAX_TOTAL_IMAGES:16,
+  user:{email:'owner@fixture.test'},canvasAccountRef:{current:'owner@fixture.test'},activeProjectRef:{current:{key:'tree:source'}},canvasContextEpochRef:{current:0},batchRunMountedRef:{current:true},imageSubmissionRef:{current:new Map()},setImageSubmissionEpoch:()=>{},flushImagePrompts:async()=>{},errors:[],calls:[],renames:[],details:[],pending:[],MAX_TOTAL_IMAGES:16,
  };
- c.exports=c.module.exports;vm.createContext(c);vm.runInContext(code,c);Object.assign(c,c.module.exports);
+ c.exports=c.module.exports;vm.createContext(c);vm.runInContext(code,c);Object.assign(c,c.module.exports);c.currentWorkspace=()=>c.__workspace.value;
  const entered=deferred(),release=deferred();let used=false;
  c.runGen=(art,prompt,opts)=>{
   const index=c.calls.length;c.calls.push(null);const suffix=opts.operationKey?.split(':').at(-1),id=['front','side','back'].includes(suffix)?suffix:'result';
@@ -75,7 +75,7 @@ async function main(){
   ['retry-numbered-recipe',f=>{f.source.prompt='错误引用【图3】';f.c.editPrompt='';},'retry'],['retry-invalid-reference',f=>{f.c.referenceError='原引用冲突';},'retry'],
   ['assistant-original-source',()=>{},'assistant'],['assistant-empty-prompt',f=>{f.c.editPrompt=' ';},'assistant'],['assistant-anchor-not-loaded',f=>{f.c.assistantArtworkId='missing';},'assistant'],
  ];
- for(const [name,configure,kind] of cases){if(kind==='retry'&&!hasRedo)continue;const f=fixture(code);configure(f);const result=await f.run(kind);if(name==='split-anchor-then-side-back'){
+ for(const [name,configure,kind] of cases){if(kind==='retry'&&!hasRedo)continue;const f=fixture(code);configure(f);const result=await f.run(kind);if(!baseline&&name.startsWith('standard-')){eq(result.calls.every(call=>/^node:source:attempt:[a-f0-9-]{36}$/.test(call.options.operationKey)),true,name+' deliberate new purchase identity');}if(name==='split-anchor-then-side-back'){
    eq(result.calls.length,3,name);eq(result.calls[1].options.parentIds,['front'],'anchor lineage');eq(result.calls[1].options.referenceInputs.at(-1).number,12,'anchor ordinal');eq(result.calls[1].options.referenceInputs.at(-1).role,'reference','anchor role');eq(result.renames,[['front','正面视图'],['side','侧面视图'],['back','背面视图']],'view titles');
   }common.push({name,result});checks++;}
  for(const [name,opts,mode,expected]of [['front-empty',{fail:'front'},'split',1],['side-empty',{fail:'side'},'split',3],['triptych-empty',{fail:'result'},'triptych',1]]){
@@ -88,7 +88,7 @@ async function main(){
   const follows=result.calls.length-1;eq(follows,baseline||kind==='selection'?2:0,'follow-up after '+kind);races.push({kind,followupCalls:follows,renames:result.renames});
  }
  for(const action of hasRedo?['dock','retry']:['dock']){const f=fixture(code,{hold:'generate'});f.c.generationMode='triptych';const work=f.run(action);await f.entered;f.switch('project');f.release();const result=await work;eq(result.renames.length,baseline?1:0,'stale final title '+action);races.push({kind:'final-title-'+action,renames:result.renames.length});}
- const priorPath=arg('--baseline-report');if(priorPath){const prior=JSON.parse(fs.readFileSync(priorPath,'utf8'));eq(JSON.parse(JSON.stringify(common)),prior.common,'all original creative instructions/options/file bytes/order/lineage');}
+ const priorPath=arg('--baseline-report');if(priorPath){const prior=JSON.parse(fs.readFileSync(priorPath,'utf8'));const legacy=items=>JSON.parse(JSON.stringify(items),(key,value)=>key==='operationKey'&&typeof value==='string'&&/^node:source:attempt:/.test(value)?undefined:value);eq(legacy(common),legacy(prior.common),'all original creative instructions/options/file bytes/order/lineage; explicit purchase attempt identity checked separately');}
  const report={status:'PASS',mode:baseline?'BASELINE':'MODIFIED',checks,common,races,primary,blankSource,retiredRedo:!hasRedo,scope:'ACTUAL_CANVAS_ADAPTERS_AND_APPLICATION_WITH_TASK_PORTS',supplier:0,network:0,pg:false};
  fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify(report,null,2)+'\n');
  console.log(`CANVAS_IMAGE_CREATION=PASS MODE=${report.mode} CHECKS=${checks} COMMON_CASES=${common.length} RACES=${races.length} CREATIVE_BODY=${baseline?'INLINE':'OWNED'} ORIGINAL_FILE_BYTES=RETAINED STALE_FOLLOWUPS=${baseline?12:0} SELECTION_CONTINUES=1 TASK_OWNER=REUSED NETWORK=0 SUPPLIER=0`);

@@ -111,6 +111,7 @@ export type CanvasPendingNode = {
     generationSize?: { width: number; height: number };
     generationCount?: number;
     generating?: boolean; // 该空白节点正在文生图/合并生成中
+    generationSubmitted?: boolean; // Durable receipt received; editing/new generation is independent.
     operationKey?: string; // 编辑任务锁自己的源节点，普通空白节点仅锁自己
     taskId?: string; // 视频等后台任务 ID，刷新后可从任务表恢复占位节点
     taskKind?: "video" | "image-edit"; // 不同后台任务独立恢复，避免彼此清理占位节点
@@ -123,6 +124,7 @@ export type CanvasPendingNode = {
 
 export type CanvasGenerationTask = {
   replaceNode?:boolean;
+  displaySuperseded?:boolean;
   slotIndex?:number;
   isVisible?: () => boolean;
   failure?: GenerationFailure;

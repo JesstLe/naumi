@@ -44,6 +44,9 @@ function projectKey(a: Artwork, byId: Map<string, Artwork>, resolveRoot = (art: 
   // 没有 group_id 的老数据回退到"血缘树根 id"。
   return `tree:${a.groupId || r.id}`;
 }
+// Blank image completion migrates its live draft to the same authoritative
+// project projection as cards and deep links, including suite batches/old trees.
+export {projectKey as canvasArtworkProjectKey};
 
 /** Pure projection shared by browser cards and active project selection. */
 export function canvasProjects({works,names,t,readOnly,pinnedNode,textNodes,videoNodes,directorNodes=[],characterNodes=[],sceneNodes=[],audioNodes=[],timelineNodes=[]}:{works:Artwork[]|null;names:Record<string,string>;t:(key:string)=>string;readOnly:boolean;pinnedNode:string|null;textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];timelineNodes?:CanvasTimelineNode[]}):CanvasProject[]{

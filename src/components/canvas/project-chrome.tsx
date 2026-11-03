@@ -8,7 +8,7 @@ import {cn} from "@/lib/utils";
 import type {CanvasProject} from "@/lib/canvas/project-catalog";
 import type {CanvasProjectCatalog} from "./use-canvas-project-catalog";
 import {CanvasProjectNameInput} from "./project-name-input";
-type TitleProps={active:CanvasProject|null;catalog:CanvasProjectCatalog;readOnly:boolean;open:boolean;setOpen:Dispatch<SetStateAction<boolean>>;t:(key:string)=>string};
+type TitleProps={active:CanvasProject|null;catalog:CanvasProjectCatalog;readOnly:boolean;open:boolean;setOpen:Dispatch<SetStateAction<boolean>>;t:(key:string)=>string;desktopAppearance?:boolean};
 type MenuProps=TitleProps&{lightCanvas:boolean;onBrowse:()=>void;onTrash:()=>void;onNew:()=>void;onDelete:(project:CanvasProject)=>void};
 
 export function CanvasProjectMenu({active,catalog,readOnly,open,setOpen,t,lightCanvas,onBrowse,onTrash,onNew,onDelete}:MenuProps){return <>
@@ -105,7 +105,7 @@ export function CanvasProjectMenu({active,catalog,readOnly,open,setOpen,t,lightC
 
 </>;}
 
-export function CanvasProjectTitle({active,catalog,readOnly,open,setOpen,t}:TitleProps){return <>
+export function CanvasProjectTitle({active,catalog,readOnly,open,setOpen,t,desktopAppearance=false}:TitleProps){return <>
               {/* 左上:logo(点开项目菜单) + 项目名(点进入内联编辑,失焦/回车确定) */}
               <div className="absolute left-3 top-3 z-30 max-w-[calc(100%-1.5rem)]">
                 <div
@@ -123,11 +123,11 @@ export function CanvasProjectTitle({active,catalog,readOnly,open,setOpen,t}:Titl
                     className="flex flex-none items-center gap-1 rounded-lg px-1 pr-0.5 transition-colors hover:bg-white/5"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <CachedImage
+                    {desktopAppearance ? <LayoutGrid className="h-5 w-5 text-muted-foreground" /> : <CachedImage
                       src={BRAND_CANVAS_LOGO}
                       alt={BRAND}
                       className="h-7 w-auto max-w-[108px] flex-none rounded-lg object-contain sm:max-w-[140px]"
-                    />
+                    />}
                     <ChevronDown
                       className={cn(
                         "h-4 w-4 flex-none text-muted-foreground transition-transform",

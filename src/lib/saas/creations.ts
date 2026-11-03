@@ -10,6 +10,7 @@ import {publicCreationParameters} from './creation-writer';
 import {creationStatus,type CreationFilters,type CreationPage,type CreationSummary,type CreationDetail,type CreationAsset} from './creation-contracts';
 import {creationFailures,hasCreationFailure} from './creation-failures';
 import {creationAssetViewSql,creationAssetViewOrder} from './creation-asset-view';
+import {workflowOutcomeStagesSql} from '../video/workflow-outcome';
 
 export type CreationReader={platform:true;boundTenantId?:string}|{platform:false;actor:TeamActor;tenantId:string};
 async function scoped<T>(reader:CreationReader,run:(tx:PoolClient,visible:string[]|null)=>Promise<T>){
@@ -38,7 +39,7 @@ async function recordSelect(tx:PoolClient,includeBilling=true){
  WHEN bool_and(n.status IN ('completed','blocked','cancelled')) THEN CASE WHEN bool_or(n.status='completed') THEN 'partial' WHEN bool_or(n.status='blocked') THEN 'failed' ELSE 'cancelled' END
  WHEN bool_or(n.status IN ('needs_attention','needs_confirmation')) THEN 'needs_review' WHEN r.cancellation_requested_at IS NOT NULL THEN 'cancel_requested' ELSE 'running' END AS status
  FROM app_creation_links l JOIN app_video_workflow_runs r ON r.id::text=l.target_id AND r.email=l.actor_email
- LEFT JOIN app_video_workflow_run_nodes n ON n.run_id=r.id WHERE l.creation_id=c.id AND l.target_type='video-workflow' GROUP BY r.id LIMIT 1)wf ON true`;
+ LEFT JOIN LATERAL(${workflowOutcomeStagesSql})n ON true WHERE l.creation_id=c.id AND l.target_type='video-workflow' GROUP BY r.id LIMIT 1)wf ON true`;
 }
 function summary(row:Record<string,any>):CreationSummary{return {id:row.id,title:(row.request_snapshot?.title||row.request_snapshot?.text?.trim().split(/[\n。！？]/)[0])?.slice(0,64)||sourceLabel(row.source_kind),actorEmail:row.actor_email,actorName:row.actor_name,tenantId:row.tenant_id,scopeKind:row.scope_kind,sourceKind:row.source_kind,status:creationStatus(row.live_status||row.status),acceptedAt:new Date(row.accepted_at).toISOString(),settledCredits:row.charged===null||row.charged===undefined?null:Number(row.charged),thumbnailAssetId:row.thumbnail_asset_id||null,completeness:row.request_snapshot?.state==='recorded'?'recorded':'not_recorded'};}
 export function sourceLabel(kind:string){return ({'image:imagegen':'图像创作','image:generate':'图片生成','image:suite':'商品套图','image:aplus':'A+ 详情','video':'视频创作'} as Record<string,string>)[kind]||kind.replace(/^\/api\//,'')||'创作记录';}

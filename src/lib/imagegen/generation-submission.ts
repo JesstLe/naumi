@@ -89,7 +89,9 @@ export async function submitGeneration(p: GenParams, context: GenerationContext)
     : null;
   const catalog = await getImageModelCatalog(actorEmail);
   const imageScope = currentModelExecution("image");
-  const acceptedModel = p.origin === "canvas" || imageScope?.imagePreset ? imageScope?.frozen.publicModelId : undefined;
+  // Managed admission already resolved the public model against the frozen
+  // quote/frame. Tool entry points must not route a second directional alias.
+  const acceptedModel = imageScope?.frozen.publicModelId;
   const requestedModel = acceptedModel || p.model || userDefaultModel || defaultModel;
   const model = acceptedModel || routeImageModel(requestedModel, p.ratio, catalog);
   const imageModel = catalog.find((item) => item.id === model);

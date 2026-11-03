@@ -174,10 +174,12 @@ export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];
   const videoTaskById=new Map(videoTasks.map(task=>[task.id,task])),workById=new Map((works||[]).map(art=>[art.id,art]));
     const baseNodes = [...nodes];
     const baseEdges = [...edges];
+    const currentReplacement=new Map<string,string>();
+    for(const task of generationTasks)if(task.replaceNode&&!task.displaySuperseded)currentReplacement.set(task.sourceId,task.id);
     // 每个生成任务都有自己的占位节点。后端超过并发上限时自行排队，画布不再全局锁死。
     for (const task of generationTasks) {
       if (!baseIds.has(task.sourceId)) continue;
-      if(task.replaceNode){const index=baseNodes.findIndex(node=>node.id===task.sourceId);if(index>=0)baseNodes[index]={...baseNodes[index],data:{...baseNodes[index].data,regenerating:!task.failure,regenerationFailure:!!task.failure,generationStage:task.stage,generationStartedAt:task.startedAt,generationCount:task.count,generationCompleted:task.completed}};continue;}
+      if(task.replaceNode){if(currentReplacement.get(task.sourceId)!==task.id)continue;const index=baseNodes.findIndex(node=>node.id===task.sourceId);if(index>=0)baseNodes[index]={...baseNodes[index],data:{...baseNodes[index].data,regenerating:!task.failure,regenerationFailure:!!task.failure,generationStage:task.stage,generationStartedAt:task.startedAt,generationCount:task.count,generationCompleted:task.completed}};continue;}
       const pos = taskPositions[task.id] ?? task.position;
       const previewSize = task.previewSize ?? generationPlaceholderSize("1:1");
       baseNodes.push({

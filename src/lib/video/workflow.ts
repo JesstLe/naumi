@@ -21,6 +21,9 @@ import {videoWorkflowPlanSchema,workflowVideoRequestSchema,type VideoWorkflowPla
 import {getVideoNode} from "../canvas/video-node-repository";
 import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 import type {VideoGenerationRequest,VideoReference} from "./types";
+import {existingWorkflowResult} from "./workflow-reuse";
+import {advanceWorkflowAssembly,publicWorkflowAssembly,resetWorkflowAssembly} from "./workflow-assembly";
+import {mediaBillingQuote} from "./media-billing";
 
 export type VideoWorkflowNodeStatus="pending"|"processing"|"completed"|"blocked"|"needs_confirmation"|"needs_attention"|"cancelled";
 
@@ -44,7 +47,9 @@ export function validateVideoWorkflow(raw:unknown):VideoWorkflowPlan{
   if(!parsed.success)throw new ModelConfigError("INVALID_VIDEO_WORKFLOW","视频工作流字段无效",422,parsed.error.issues.map(issue=>issue.path.join(".")));
   const plan=parsed.data,ids=new Set(plan.nodes.map(node=>node.id));
   if(ids.size!==plan.nodes.length)throw new ModelConfigError("INVALID_VIDEO_WORKFLOW","工作流节点重复",422);
+  if(plan.assembly&&(new Set(plan.assembly.nodeIds).size!==ids.size||plan.assembly.nodeIds.length!==ids.size||plan.assembly.nodeIds.some(id=>!ids.has(id))))throw new ModelConfigError("INVALID_VIDEO_WORKFLOW","成片顺序必须完整包含本次镜头且不重复",422);
   for(const node of plan.nodes){
+    if(node.existingArtworkId&&(node.dependsOn.length||node.mediaBindings?.length))throw new ModelConfigError("INVALID_VIDEO_WORKFLOW","复用镜头不得再执行前序依赖",422);
     if(new Set(node.dependsOn).size!==node.dependsOn.length||node.dependsOn.some(id=>id===node.id||!ids.has(id)))throw new ModelConfigError("INVALID_VIDEO_WORKFLOW","工作流存在自引用、重复依赖或缺失节点",422);
     if(node.mediaBindings?.some(binding=>!node.dependsOn.includes(binding.fromNodeId)))throw new ModelConfigError("INVALID_VIDEO_WORKFLOW","媒体来源必须是已声明的前序节点",422);
     node.request=requestWithVariables(node.request,plan.variables);
@@ -58,16 +63,20 @@ async function authorizeProject(actor:string,key:string){const {authorizeVideoPr
 export async function authorizeWorkflowInputs(actor:string,plan:VideoWorkflowPlan){
   for(const node of plan.nodes){
     if(node.canvasNodeId){const current=await getVideoNode(actor,node.canvasNodeId);if(!current||current.projectKey!==plan.projectKey||current.revision!==node.canvasNodeRevision)throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT","制作链节点不存在或已更新",409);node.canvasContentDigest=createHash("sha256").update(canonicalConfig({config:current.config,inputs:current.inputs})).digest("hex");node.canvasLastTaskId=current.lastTaskId;}
+    if(node.existingArtworkId){await existingWorkflowResult(actor,node.existingArtworkId);continue;}
     const input=node.request,request:VideoGenerationRequest={...input,source:"workflow",providerId:input.providerId||"managed-video",modelId:input.modelId||"",prompt:input.prompt,
       durationSeconds:input.durationSeconds??(input.seconds?Number(input.seconds):-1),resolution:input.resolution||input.size,references:input.references||[],idempotencyKey:operationId(plan.id,node.id)};
     const owned=await authorizeVideoReferences(actor,request);node.request={...input,references:owned.references,...(input.elements?{elements:owned.elements}:{})};
   }
 }
-export async function scheduleVideoWorkflow(actor:string,raw:unknown,canvasIntent?:unknown,preparedFrozen?:Record<string,FrozenWorkflowStage>,signal?:AbortSignal):Promise<{runId:string;taskIds:string[]}>{
+export async function scheduleVideoWorkflow(actor:string,raw:unknown,canvasIntent?:unknown,preparedFrozen?:Record<string,FrozenWorkflowStage>,signal?:AbortSignal,frozenAssemblyQuote?:import("../billing/types").BillingQuote):Promise<{runId:string;taskIds:string[]}>{
   actor=actor.toLowerCase();const plan=validateVideoWorkflow(raw);await ensureWorkflowSchema();const inputDigest=createHash("sha256").update(canonicalConfig(plan)).digest("hex"),known=(await getPool().query("SELECT email,input_digest,creation_scope FROM app_video_workflow_runs WHERE id=$1",[plan.id])).rows[0];
   if(known?.input_digest){assertWorkflowCreationScope(known.creation_scope,actor);if(known.email!==actor||known.input_digest!==inputDigest)throw new ModelConfigError("WORKFLOW_OPERATION_CONFLICT","工作流编号已用于另一请求",409);const resumed=await resumeVideoWorkflow(plan.id,actor);return {runId:plan.id,taskIds:resumed.nodes.map(node=>node.taskId).filter((id):id is string=>!!id)};}
   if(known&&known.email!==actor)throw new ModelConfigError("WORKFLOW_OPERATION_CONFLICT","工作流编号已用于另一请求",409);
   await authorizeProject(actor,plan.projectKey);await bindWorkflowCreationProject(actor,plan.projectKey);await validateWorkflowCreationInputs(actor,plan);await authorizeWorkflowInputs(actor,plan);const frozen=known?null:preparedFrozen||await freezeVideoWorkflow(actor,plan),frozenEnc=frozen?encryptAtRest(JSON.stringify(frozen)):null,publicFrozen=frozen?Object.fromEntries(Object.entries(frozen).map(([id,stage])=>[id,stage.quote])):{};
+  const reused=new Map<string,import("./result-assets").SavedVideoResultAsset>();
+  for(const node of plan.nodes)if(node.existingArtworkId)reused.set(node.id,await existingWorkflowResult(actor,node.existingArtworkId));
+  const assemblyQuote=plan.assembly?frozenAssemblyQuote||await mediaBillingQuote(actor,"concat"):null;
   const digest=createHash("sha256").update(canonicalConfig(plan)).digest("hex"),pool=getPool(),tx=await pool.connect();
   if(signal?.aborted){tx.release();throw new DOMException("制作链提交已停止","AbortError");}
   try{await tx.query("BEGIN");
@@ -78,7 +87,8 @@ export async function scheduleVideoWorkflow(actor:string,raw:unknown,canvasInten
     await tx.query("INSERT INTO app_video_workflow_runs(id,email,project_key,plan,plan_digest,input_digest,frozen_nodes_enc,public_frozen_nodes,canvas_intent_digest,creation_scope) VALUES($1,$2,$3,$4::jsonb,$5,$6,$7,$8::jsonb,$9,$10::jsonb) ON CONFLICT(id) DO NOTHING",[plan.id,actor,plan.projectKey,JSON.stringify(plan),digest,inputDigest,frozenEnc,JSON.stringify(publicFrozen),canvasIntent?createHash("sha256").update(canonicalConfig(canvasIntent)).digest("hex"):null,scope?JSON.stringify(scope):null]);
     const row=(await tx.query("SELECT email,plan_digest,input_digest FROM app_video_workflow_runs WHERE id=$1 FOR UPDATE",[plan.id])).rows[0];
     if(row?.email!==actor||(row.input_digest?row.input_digest!==inputDigest:row.plan_digest!==digest))throw new ModelConfigError("WORKFLOW_OPERATION_CONFLICT","工作流编号已用于另一请求",409);
-    for(const node of plan.nodes)await tx.query("INSERT INTO app_video_workflow_run_nodes(run_id,node_id) VALUES($1,$2) ON CONFLICT DO NOTHING",[plan.id,node.id]);
+    if(plan.assembly)await tx.query("UPDATE app_video_workflow_runs SET assembly_quote=COALESCE(assembly_quote,$2::jsonb) WHERE id=$1",[plan.id,JSON.stringify(assemblyQuote)]);
+    for(const node of plan.nodes){const asset=reused.get(node.id);await tx.query("INSERT INTO app_video_workflow_run_nodes(run_id,node_id,status,result_assets) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT DO NOTHING",[plan.id,node.id,asset?"completed":"pending",JSON.stringify(asset?[asset]:[])]);}
     await tx.query("COMMIT");
   }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
   const result=await resumeVideoWorkflow(plan.id,actor);return {runId:plan.id,taskIds:result.nodes.map(node=>node.taskId).filter((id):id is string=>!!id)};
@@ -88,9 +98,9 @@ export async function getVideoWorkflow(actor:string,runId:string){
   await ensureWorkflowSchema();const pool=getPool(),run=(await pool.query("SELECT * FROM app_video_workflow_runs WHERE id=$1 AND email=$2",[runId,actor])).rows[0];
   if(!run)throw new ModelConfigError("WORKFLOW_UNAVAILABLE","工作流不存在",404);
   const rows=(await pool.query<StoredNode>("SELECT * FROM app_video_workflow_run_nodes WHERE run_id=$1 ORDER BY created_at,node_id",[runId])).rows;
-  const nodes=rows.map(node=>({id:node.node_id,status:node.status,taskId:node.task_id,error:node.error,quote:run.public_frozen_nodes?.[node.node_id]||null}));
+  const nodes=rows.map(node=>({id:node.node_id,status:node.status,taskId:node.task_id,error:node.error,quote:run.public_frozen_nodes?.[node.node_id]||null})),assembly=publicWorkflowAssembly(run.plan,run.assembly_state);
   return {runId,projectKey:String(run.project_key),plan:run.plan as VideoWorkflowPlan,cancellationRequestedAt:run.cancellation_requested_at,
-    progress:Math.round(nodes.filter(node=>node.status==="completed").length/Math.max(1,nodes.length)*100),nodes};
+    progress:Math.round((nodes.filter(node=>node.status==="completed").length+(assembly?.status==="completed"?1:0))/Math.max(1,nodes.length+(assembly?1:0))*100),nodes,assembly};
 }
 async function dependencyReference(actor:string,runId:string,binding:NonNullable<VideoWorkflowPlan["nodes"][number]["mediaBindings"]>[number],states:Map<string,StoredNode>):Promise<VideoReference>{
   const cached=states.get(binding.fromNodeId);if(cached?.status==="completed"&&cached.result_assets?.length){const asset=cached.result_assets[binding.outputIndex||0];if(!asset||asset.kind!==binding.kind)throw new ModelConfigError("WORKFLOW_OUTPUT_UNAVAILABLE","前序产物类型或序号不符",422);const art=(await listArtworksByIds(actor,[asset.artworkId]))[0];if(!art||art.status!=="completed")throw new ModelConfigError("WORKFLOW_OUTPUT_UNAVAILABLE","前序产物已删除",422);return {id:workflowBindingId(runId,binding),kind:binding.kind,role:binding.role,artworkId:art.id,url:asset.url,sha256:asset.sha256};}
@@ -153,6 +163,7 @@ async function resumeVideoWorkflowLocal(runId:string,actor?:string){
       }
     };
     if(!run.cancellation_requested_at)for(let offset=0;offset<readyNodes.length;offset+=3)await Promise.allSettled(readyNodes.slice(offset,offset+3).map(submitNode));
+    if(plan.assembly)await runWorkflowCreation(creationScope,()=>advanceWorkflowAssembly(run,[...states.values()]));
     await pool.query("UPDATE app_video_workflow_runs SET updated_at=now() WHERE id=$1",[runId]);await creationTransaction(tx=>updateWorkflowCreationTx(tx,run.email,runId)).catch(()=>{});return getVideoWorkflow(run.email,runId);
   }finally{await lock.release();}
 }
@@ -161,8 +172,13 @@ export async function recoverVideoWorkflows(limit=2){
   if(await deferApplicationTask())return 0;
   const direct=process.env.NAUMI_APPLICATION_TASK_EXECUTION==="worker",available=direct?Math.max(0,limit-recoveringVideoWorkflows.size):limit;
   if(!available)return 0;
-  await ensureWorkflowSchema();const runs=(await getPool().query(`SELECT r.id FROM app_video_workflow_runs r WHERE EXISTS (
-    SELECT 1 FROM app_video_workflow_run_nodes n WHERE n.run_id=r.id AND n.status IN ('pending','processing')) ORDER BY r.updated_at LIMIT $1`,[Math.max(1,Math.min(10,available))])).rows;
+  await ensureWorkflowSchema();const pool=getPool(),bounded=Math.max(1,Math.min(10,available));
+  // Terminal evidence repair is not execution: retain its original identity
+  // and never enter task creation or supplier/media submission to repair it.
+  const evidence=(await pool.query("SELECT id,email FROM app_video_workflow_runs WHERE creation_evidence_pending ORDER BY updated_at LIMIT $1",[bounded])).rows;
+  for(const row of evidence){try{await creationTransaction(tx=>updateWorkflowCreationTx(tx,row.email,row.id));await pool.query("UPDATE app_video_workflow_runs SET updated_at=now() WHERE id=$1",[row.id]);}catch{console.error("[video-worker] workflow evidence remains pending");}}
+  const runs=(await pool.query(`SELECT r.id FROM app_video_workflow_runs r WHERE EXISTS (
+    SELECT 1 FROM app_video_workflow_run_nodes n WHERE n.run_id=r.id AND n.status IN ('pending','processing')) OR (r.plan ? 'assembly' AND COALESCE(r.assembly_state->>'status','waiting') IN ('waiting','queued','processing','needs_attention') AND NOT EXISTS (SELECT 1 FROM app_video_workflow_run_nodes n WHERE n.run_id=r.id AND n.status<>'completed')) ORDER BY r.updated_at LIMIT $1`,[bounded])).rows;
   if(direct){
     let admitted=0;
     for(const run of runs){
@@ -210,10 +226,14 @@ export async function cancelVideoWorkflow(actor:string,runId:string){
   const current=await getVideoWorkflow(actor,runId),{requestVideoCancellation}=await import("./cancellation");
   for(const node of current.nodes)if(node.taskId&&node.status==="processing")await requestVideoCancellation(actor,node.taskId);
   await getPool().query("UPDATE app_video_workflow_run_nodes SET status='cancelled',error='已停止，未提交' WHERE run_id=$1 AND task_id IS NULL AND status IN ('pending','needs_confirmation')",[runId]);
-  await creationTransaction(tx=>updateWorkflowCreationTx(tx,actor,runId)).catch(()=>{});return getVideoWorkflow(actor,runId);
+  await creationTransaction(tx=>updateWorkflowCreationTx(tx,actor,runId)).catch(()=>{});return resumeVideoWorkflow(runId,actor);
 }
 
 export {ensureWorkflowSchema as ensureVideoWorkflowSchema};
+
+export async function retryVideoWorkflowAssembly(actor:string,runId:string,expectedAttempt:number){
+  await ensureWorkflowSchema();await resetWorkflowAssembly(actor,runId,expectedAttempt);return resumeVideoWorkflow(runId,actor);
+}
 
 export async function resumeVideoWorkflow(runId:string,actor?:string) {
   const view=async () => {

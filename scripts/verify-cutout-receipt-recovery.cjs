@@ -22,7 +22,8 @@ const json = (value, status = 200) => Response.json(value, { status });
 const quote = { requestedCredits: 7, tariff: { pricing: { mode: 'credits' } } };
 const fixtures = {
   'server-only': {},
-  '@/lib/db': { dbEnabled: true, getPool: () => pool, ensureSchema: async () => {}, isBanned: async () => false },
+  '@/lib/db': { dbEnabled: true, getPool: () => pool, ensureSchema: async () => {}, isBanned: async () => false,
+    getUser: async () => { if (state.failUserRead) throw Error('fixture-user-read-unavailable'); return { email: state.owner, creditsUsed: 7 }; } },
   '@/lib/admin-auth': { resolveUserEmail: async () => state.owner },
   './server': { getBillingRuntime: async () => ({ config: { current: () => ({}) } }), quoteForRequest: async () => quote },
   '../model-config/accepted-context': { acceptedModelVersions: async () => null },
@@ -81,7 +82,7 @@ const sync = load('src/lib/billing/synchronous.ts');
 function request(id, body = { parentId: 'source-image' }) { return new Request('http://fixture.local/api/cutout', { method: 'POST', headers: { 'content-type': 'application/json', 'x-naumi-billing-operation-id': id }, body: JSON.stringify(body) }); }
 async function insertOperation(id, extra = {}) {
   const req = request(id), identity = await sync.billingRequestIdentity(req), full = 'tool-' + id;
-  await pool.query('INSERT INTO app_billing_operations VALUES($1,$2,$3,$4,$5,$6,$7,$8)', [full, state.owner, 'tool.cutout', quote, extra.state || 'settled', extra.receipt || null, fingerprint({ email: state.owner, quote, ledgerId: 'led-' + full, fingerprint: identity.hash }), 7]);
+  await pool.query('INSERT INTO app_billing_operations(id,email,feature,quote,state,result_response,request_fingerprint,charged_credits) VALUES($1,$2,$3,$4,$5,$6,$7,$8)', [full, state.owner, 'tool.cutout', quote, extra.state || 'settled', extra.receipt || null, fingerprint({ email: state.owner, quote, ledgerId: 'led-' + full, fingerprint: identity.hash }), 7]);
   await pool.query('INSERT INTO app_creation_records VALUES($1,$2,$3,$4,$5,$6)', ['creation-' + id, state.owner, 'tool.cutout', full, 'personal', null]);
   return full;
 }
@@ -99,7 +100,7 @@ async function check(name, action) { await action(); checks.push(name); }
   const admin = new Pool({ connectionString: url.href });
   await admin.query('CREATE SCHEMA ' + schema); await admin.end();
   try {
-    await pool.query(`CREATE TABLE app_billing_operations(id text PRIMARY KEY,email text,feature text,quote jsonb,state text,result_response jsonb,request_fingerprint text,charged_credits int);
+    await pool.query(`CREATE TABLE app_billing_operations(id text PRIMARY KEY,email text,feature text,quote jsonb,state text,result_response jsonb,request_fingerprint text,charged_credits int,settlement_result jsonb);
       CREATE TABLE app_creation_records(id text,actor_email text,source_kind text,source_id text,scope_kind text,tenant_id text);
       CREATE TABLE app_creation_links(creation_id text,target_type text,target_id text,actor_email text);
       CREATE TABLE app_artworks(id text PRIMARY KEY,email text,image_url text,status text,deleted_at timestamptz,creation_provenance jsonb);`);
@@ -111,6 +112,13 @@ async function check(name, action) { await action(); checks.push(name); }
       else { assert.equal(got.body.id, id); assert.equal(got.body.creditsUsed, 7); assert.ok(got.body.url.length > 262144); }
     });
     if (!baseline) {
+      await check('replay-does-not-recharge-if-user-refresh-fails', async () => {
+        state.failUserRead = true;
+        const got = await replay('legacy-large-0001');
+        state.failUserRead = false;
+        assert.equal(got.status, 200); assert.equal(got.body.replayed, true); assert.equal(got.body.user, null);
+        assert.equal(got.body.creditsUsed, 7); assert.equal(state.settles, 0);
+      });
       await check('compact-checkpoint-before-settlement-and-replay', async () => {
         const id = 'new-cutout-0001';
         const first = await sync.withBillingRequest(request(id), 'tool.cutout', async () => {

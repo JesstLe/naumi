@@ -10,7 +10,7 @@ import type {CanvasImageTaskScope} from "./image-task-scope";
 
 export type CanvasImageGenerationOptions={ratio?:string;style?:string;count?:number;resolution?:string;transparent?:boolean;ratiogen?:boolean;
   extra?:File[];baseFile?:File;refUrls?:string[];referenceInputs?:CanvasImageReference[];parentId?:string;parentIds?:string[];
-  replaceNode?:boolean;fanout?:boolean;placement?:import("./generation-fanout").CanvasFanoutPlacement;operationKey?:string;taskLabel?:string;taskOffset?:number;userPrompt?:string;isCurrent?:()=>boolean};
+  replaceNode?:boolean;fanout?:boolean;placement?:import("./generation-fanout").CanvasFanoutPlacement;operationKey?:string;taskLabel?:string;taskOffset?:number;userPrompt?:string;isCurrent?:()=>boolean;onSubmitted?:()=>void};
 export type CanvasImageModelOption={id:string;label:string;supportsEdit:boolean;generationParameters?:{ratios?:string[];resolutions?:string[];combinations?:string[]}};
 type RequestBase={scope:CanvasImageTaskScope;operationKey:string;position:CanvasPoint;prompt:string;quality:string;model:string;referenceInputs?:CanvasImageReference[];retainedAttempt?:boolean};
 export type CanvasImageTaskRequest=RequestBase&({

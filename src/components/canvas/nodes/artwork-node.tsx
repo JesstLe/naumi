@@ -7,6 +7,7 @@ import {useFeatureAccess} from "@/lib/feature-access/client";
 import {IMAGE_NODE_MIN_W,IMAGE_NODE_MIN_H,IMAGE_NODE_MAX_W,IMAGE_NODE_MAX_H} from "@/lib/canvas/node-geometry";
 import type {CanvasArtNodeData} from "@/lib/canvas/scene-types";
 import {CanvasImage} from "../canvas-image";
+import {ImagePixelSize} from "../image-pixel-size";
 import {GenerationPlaceholder} from "../generation-placeholder";
 import {VideoPlayer,mediaDownloadHref,type VideoPlayerAction} from "../video/player";
 function VideoNodeSurface({url,selected,kind,onExtract}:{url:string;selected:boolean;kind:"video"|"audio";onExtract?:(action:VideoPlayerAction)=>void}) {
@@ -29,6 +30,11 @@ const ArtworkContent=memo(function ArtworkContent({ data, selected, id: nodeId }
   const [forceOriginal, setForceOriginal] = useState(false);
   const preview = !forceOriginal && !!d.intrinsicWidth && !!d.intrinsicHeight;
   const previousImage = useRef(d.image);
+  // Reuse original metadata or the current image's already-loaded dimensions.
+  // Node/viewport resizing never changes this value or requests the original.
+  const pixelSize = d.intrinsicWidth && d.intrinsicHeight
+    ? {width:d.intrinsicWidth,height:d.intrinsicHeight}
+    : previousImage.current === d.image ? naturalSize : null;
   useEffect(() => {
     if (previousImage.current === d.image) return;
     previousImage.current = d.image;
@@ -89,6 +95,7 @@ const ArtworkContent=memo(function ArtworkContent({ data, selected, id: nodeId }
 
       {/* 标题悬在图片上方(节点边界外):选中框/缩放框只框图片,不框标题。未选中时仅显示文件名,点击后显示标记/分组/版本。 */}
       <div className="art-title absolute -top-[38px] left-0 right-0 z-10 flex h-[30px] items-center gap-1.5 truncate pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold leading-none text-[#e2e6ed]">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
         <span
           className="nodrag min-w-0 flex-1 cursor-text truncate"
           title={`${d.label} · 双击编辑`}
@@ -111,6 +118,8 @@ const ArtworkContent=memo(function ArtworkContent({ data, selected, id: nodeId }
             v{d.version}
           </span>
         )}
+        </div>
+        {selected&&d.image&&!d.pending&&!d.videoUrl&&!d.missingAsset&&<ImagePixelSize width={pixelSize?.width} height={pixelSize?.height}/>}
       </div>
 
       {/* 图片卡使用单层边框；选中态为稿定式蓝色描边与外环。 */}

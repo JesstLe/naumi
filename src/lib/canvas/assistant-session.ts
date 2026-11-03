@@ -18,6 +18,7 @@ export type CanvasAssistantState={anchorId:string|null;turns:AssistantTimelineTu
 const initial=():CanvasAssistantState=>({anchorId:null,turns:[],input:"",attachments:[],excluded:[],uploading:false,uploadError:null,skill:null,
   busy:false,responding:false,activity:{phase:"connecting"},steps:[],outcome:"idle",error:null,continueTurn:null,syncIds:[]});
 export const EMPTY_CANVAS_ASSISTANT=initial();
+export type CanvasAssistantPrepared={text:string;textNodeId:string};
 export type CanvasAssistantContext={
   english:boolean;members:Artwork[];imageModelId:string;ratio:string;resolution:string;quality:string;videoNodeId?:string;textNodeId?:string;
   submit:(body:string,signal:AbortSignal,submission:RetainedBillingSubmission,current:()=>boolean)=>Promise<Response>;
@@ -27,8 +28,9 @@ export type CanvasAssistantContext={
   video:(nodes:{id:string;projectKey:string}[],current:()=>boolean)=>Promise<void>;
   text:(nodes:{id:string;projectKey:string}[],signal:AbortSignal,current:()=>boolean)=>Promise<void>;
   revealVideo:(result:{key:string;nodeId:string},current:()=>boolean)=>Promise<void>;
+  storyboard?:(result:{projectKey:string;nodeIds:string[]},current:()=>boolean)=>Promise<void>;
 };
-type Attempt={input:string;anchorId:string;referencesKey:string;history:AssistantTimelineTurn[];body:string;submission:RetainedBillingSubmission};
+type Attempt={input:string;anchorId:string;referencesKey:string;history:AssistantTimelineTurn[];body:string;submission:RetainedBillingSubmission;preparedTextNodeId?:string};
 async function jsonOk(response:Response,message:string){const body=await response.json();if(!response.ok)throw Error(body?.error||message);return body;}
 
 /** Only decodes this response. No reconnection, repeat POST or tool execution. */
@@ -85,17 +87,17 @@ export function createCanvasAssistant(){
       }catch(error){if(current())set({uploadError:error instanceof Error?error.message:'图片添加失败，已有图片已保留'});}
       finally{if(uploadToken===token){uploadToken=null;set({uploading:false});}}
     }
-    async function send(context:CanvasAssistantContext,continueText=false){
+    async function send(context:CanvasAssistantContext,continueText=false,prepared?:CanvasAssistantPrepared){
       if(!visible()||state.busy||uploadToken)return;if(state.syncIds.length){await synchronize(context);return;}
-      const continuation=continueText?state.continueTurn:null;if(continueText&&!continuation)return;const inputText=continueText?"继续输出":state.input.trim();if(!inputText)return;
-      const references=refs(context),anchorId=references[0]?.id||"",referencesKey=JSON.stringify(references.map(art=>art.id));
-      const reuse=!continueText&&attempt?.input===inputText&&attempt.anchorId===anchorId&&attempt.referencesKey===referencesKey;
+      const continuation=continueText?state.continueTurn:null;if(continueText&&!continuation)return;const inputText=prepared?.text??(continueText?"继续输出":state.input.trim());if(!inputText)return;
+      const references=prepared?[]:refs(context),anchorId=references[0]?.id||"",referencesKey=JSON.stringify(references.map(art=>art.id));
+      const reuse=!continueText&&attempt?.input===inputText&&attempt.anchorId===anchorId&&attempt.referencesKey===referencesKey&&attempt.preparedTextNodeId===prepared?.textNodeId;
       const history=reuse?attempt!.history:[...state.turns,{id:`as-u-${Date.now()}`,role:"user" as const,content:inputText}];
-      const saved=reuse?attempt!:{input:inputText,anchorId,referencesKey,history,submission:createRetainedBillingSubmission(),body:JSON.stringify({mode:"agent",continueText,continueFromTurnId:continuation,skill:state.skill?{id:state.skill.id,revision:state.skill.revision}:null,sessionId,turnId:browserRandomUUID(),anchorId,videoNodeId:context.videoNodeId,textNodeId:context.textNodeId,projectKey:bound.project||"workspace",contextIds:references.map(art=>art.id),messages:continueText?[]:history.slice(-12).map(({role,content})=>({role,content:content.slice(0,4000)})),imageModelId:context.imageModelId,ratio:context.ratio,resolution:context.resolution,quality:context.quality})};
+      const saved=reuse?attempt!:{input:inputText,anchorId,referencesKey,history,preparedTextNodeId:prepared?.textNodeId,submission:createRetainedBillingSubmission(),body:JSON.stringify({mode:"agent",continueText,continueFromTurnId:continuation,skill:!prepared&&state.skill?{id:state.skill.id,revision:state.skill.revision}:null,sessionId,turnId:browserRandomUUID(),anchorId,videoNodeId:prepared?undefined:context.videoNodeId,textNodeId:prepared?.textNodeId??context.textNodeId,projectKey:bound.project||"workspace",contextIds:references.map(art=>art.id),messages:continueText?[]:history.slice(-12).map(({role,content})=>({role,content:content.slice(0,4000)})),imageModelId:context.imageModelId,ratio:context.ratio,resolution:context.resolution,quality:context.quality})};
       attempt=saved;const requestEpoch=++epoch,acceptedSession=sessionId,active=new AbortController();controller=active;liveSessionId=acceptedSession;
       const current=()=>visible()&&requestEpoch===epoch&&acceptedSession===sessionId&&!active.signal.aborted;
-      let serverSession=acceptedSession,receivedText="",recoveryTurn:string|null=null,orbFailureCode:string|undefined,videoProject:{key:string;nodeId:string}|undefined;const artifactIds=new Set<string>();
-      set({error:null,busy:true,responding:false,activity:{phase:"connecting"},steps:[],outcome:"running",continueTurn:null,input:"",turns:[...history,{id:`as-a-${Date.now()}`,role:"assistant",content:""}]});context.cue({type:"submit"});
+      let serverSession=acceptedSession,receivedText="",recoveryTurn:string|null=null,orbFailureCode:string|undefined,videoProject:{key:string;nodeId:string}|undefined;const artifactIds=new Set<string>(),plannedNodeIds=new Set<string>();
+      set({error:null,busy:true,responding:false,activity:{phase:"connecting"},steps:[],outcome:"running",continueTurn:null,...(!prepared?{input:""}:{}),turns:[...history,{id:`as-a-${Date.now()}`,role:"assistant",content:""}]});context.cue({type:"submit"});
       try{
         const response=await context.submit(saved.body,active.signal,saved.submission,current);if(!current()){await response.body?.cancel().catch(()=>{});return;}
         if(!response.ok||!response.body){let data;try{data=await response.json();}catch{}orbFailureCode=response.status===401||response.status===403?"AUTH":response.status===402?"CREDITS":response.status===400?"VALIDATION":undefined;throw Error(data?.error||"画布助手暂时不可用");}
@@ -111,15 +113,17 @@ export function createCanvasAssistant(){
           if(type==="delta"){if(Date.now()-lastOrbDelta>650){lastOrbDelta=Date.now();context.cue({type:"delta"});}text+=String(data.text||"");receivedText=text;set({responding:true});setLast({content:text});}
           else if(type==="error"){if(data.canContinue===true&&typeof data.continueFromTurnId==="string")recoveryTurn=data.continueFromTurnId;if(typeof data.code==="string")orbFailureCode=data.code;streamError=String(data.error||data.message||"画布助手暂时不可用");}
           else if(type==="tool_start"||type==="tool_end"){context.cue(type==="tool_start"?{type:"tool-start",tool:String(data.tool||"")}:{type:"tool-end",error:!!data.isError});set({responding:false,steps:reduceAgentProgress(state.steps,{...data,type},context.english)});}
-          else if(type==="video_nodes"&&Array.isArray(data.nodes)){const nodes=data.nodes as {id:string;projectKey:string}[];if(bound.project)await context.video(nodes,current);else if(nodes[0])videoProject={key:nodes[0].projectKey,nodeId:nodes[0].id};}
+          else if(type==="video_nodes"&&Array.isArray(data.nodes)){const nodes=data.nodes as {id:string;projectKey:string}[];if(prepared)for(const node of nodes)if(node.projectKey===bound.project)plannedNodeIds.add(node.id);if(bound.project)await context.video(nodes,current);else if(nodes[0])videoProject={key:nodes[0].projectKey,nodeId:nodes[0].id};}
           else if(type==="text_nodes"&&Array.isArray(data.nodes))await context.text(data.nodes as {id:string;projectKey:string}[],active.signal,current);
           else if(type==="artifacts"&&Array.isArray(data.artifacts)){const arts=data.artifacts as {id:string;image:string;title:string}[];arts.forEach(art=>artifactIds.add(art.id));set({steps:reduceAgentProgress(state.steps,{...data,type},context.english)});context.cue({type:"artifacts",count:artifactIds.size});setLast({artifacts:[...new Map([...(state.turns.at(-1)?.artifacts||[]),...arts].map(art=>[art.id,art])).values()]});}
           else if(type==="final"){text=String(data.reply||text);setLast({content:text});}
         }
-        if(!current())return;if(streamError)throw Error(streamError);if(!completed)throw Error("任务连接已中断，请从历史核对执行结果，避免重复生图");if(!text.trim())throw Error("助手没有返回内容，请重试");setLast({content:text.trim()});if(attempt===saved)attempt=undefined;set({outcome:"done"});context.cue({type:"done"});if(videoProject)await context.revealVideo(videoProject,current);
+        if(!current())return;if(streamError)throw Error(streamError);if(!completed)throw Error("任务连接已中断，请从历史核对执行结果，避免重复生图");if(!text.trim())throw Error("助手没有返回内容，请重试");setLast({content:text.trim()});if(attempt===saved)attempt=undefined;set({outcome:"done"});context.cue({type:"done"});
+        if(prepared&&bound.project&&plannedNodeIds.size)await context.storyboard?.({projectKey:bound.project,nodeIds:[...plannedNodeIds]},current);
+        if(videoProject&&current())await context.revealVideo(videoProject,current);
       }catch(error){if(!visible()||requestEpoch!==epoch||acceptedSession!==sessionId)return;
         const aborted=active.signal.aborted||classifyAgentFailure(error).code==="ABORTED";
-        set({...(attempt===saved&&!recoveryTurn&&!receivedText?{input:continueText?"":inputText}:{}),continueTurn:aborted?null:recoveryTurn,outcome:aborted?"stopped":"error",error:active.signal.aborted?"任务已停止，可从历史继续。已生成的结果会保留。":error instanceof Error?error.message:"画布助手暂时不可用"});context.cue(aborted?{type:"stop"}:{type:"failure",code:orbFailureCode||classifyAgentFailure(error).code});
+        set({...(!prepared&&attempt===saved&&!recoveryTurn&&!receivedText?{input:continueText?"":inputText}:{}),continueTurn:aborted?null:recoveryTurn,outcome:aborted?"stopped":"error",error:active.signal.aborted?"任务已停止，可从历史继续。已生成的结果会保留。":error instanceof Error?error.message:"画布助手暂时不可用"});context.cue(aborted?{type:"stop"}:{type:"failure",code:orbFailureCode||classifyAgentFailure(error).code});
       }finally{
         if(visible()&&requestEpoch===epoch){sessionId=serverSession;if(artifactIds.size){syncContext=context;syncHistory=false;syncCompletion={outcome:state.outcome,error:state.error};set({syncIds:[...artifactIds]});await synchronize(context);}}
         if(controller===active){controller=null;set({busy:false,responding:false});}

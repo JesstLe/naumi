@@ -19,6 +19,7 @@ import { requestedTextModel } from "@/lib/text-models";
 import {currentCreationContext} from "@/lib/saas/creation-scope";
 import {startCreation,finishCreation,prepareOriginalCreationInput} from '@/lib/saas/creation-writer';
 import {operationIdFor} from '@/lib/billing/request';
+import { parseTitleResult, ToolTextResultError } from "@/lib/tool-text-results";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -135,25 +136,7 @@ async function handleObservedPost(req: Request) {
       temperature: 0.85,
       max_tokens: 1300,
     });
-    const raw = (resp.choices[0]?.message?.content ?? "").trim();
-    let parsed: { titles?: unknown; sellingPoints?: unknown } = {};
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      return NextResponse.json({ error: "没生成出来,请重试" }, { status: 502 });
-    }
-    const titles = Array.isArray(parsed.titles)
-      ? parsed.titles.filter((x) => typeof x === "string" && x.trim()).slice(0, 12)
-      : [];
-    const sellingPoints = Array.isArray(parsed.sellingPoints)
-      ? parsed.sellingPoints
-          .filter((x) => typeof x === "string" && x.trim())
-          .slice(0, 8)
-      : [];
-    if (titles.length === 0) {
-      await finishCreation(creation,email,'failed',{summary:'模型未返回可用标题'});
-      return NextResponse.json({ error: "没生成出来,请重试" }, { status: 502 });
-    }
+    const { titles, sellingPoints } = parseTitleResult(resp.choices[0]?.message?.content);
     // 落库为「本工具记录」(仅有原图时):存原图 + 第一条标题。免费,不扣分,失败不影响返回。
     if (dbEnabled && email && imageBuf && storageEnabled) {
       try {
@@ -189,6 +172,10 @@ async function handleObservedPost(req: Request) {
     await finishCreation(creation,email,'succeeded',{text:JSON.stringify({titles,sellingPoints})});
     return NextResponse.json({ titles, sellingPoints });
   } catch (e) {
+    if (e instanceof ToolTextResultError) {
+      await finishCreation(creation,email,'failed',{summary:e.message});
+      return NextResponse.json({ error: e.message, code: e.code }, { status: 502 });
+    }
     await finishCreation(creation,email,'needs_review',{summary:'标题生成执行中断，需核对原始来源'});
     return NextResponse.json(
       { error: safeError(e, "标题生成失败,请稍后重试") },

@@ -19,7 +19,7 @@ type CachedComposer = { title:string; config:VideoNodeConfig; inputs:OrderedInpu
 const localComposerDrafts = new Map<string,CachedComposer>();
 import type {VideoNodeDraft} from "@/lib/video/canvas-draft";
 export type {VideoNodeDraft} from "@/lib/video/canvas-draft";
-export function VideoSettingsDialog({ node, models, choices, light, email, readOnly = false, onClose, onSave, onGenerate, onImport, onLoadMoreAssets, canLoadMoreAssets = false, catalogLoading=false, catalogError="", onRetryCatalog, presentation="dialog", dockStyle, dockRef, advanced=false, onCloseAdvanced, draftScope, task, onCancel, generationBlocked=false, onOptimize }: {
+export function VideoSettingsDialog({ node, models, choices, light, email, readOnly = false, onClose, onSave, onGenerate, onImport, onLoadMoreAssets, canLoadMoreAssets = false, catalogLoading=false, catalogError="", onRetryCatalog, presentation="dialog", dockStyle, dockRef, expanded, onToggleExpand, advanced=false, onCloseAdvanced, draftScope, task, onCancel, generationBlocked=false, onOptimize, onStoryboard }: {
     node: CanvasVideoNode;
     models: VideoCatalogModel[];
     choices: VideoInputChoice[];
@@ -30,6 +30,7 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
     onSave: (draft: VideoNodeDraft) => Promise<void | {revision:number}>;
     onGenerate: (draft: VideoNodeDraft, quote: PublicQuote | null, onPersisted: (revision: number) => void, count: number) => Promise<void>;
     onOptimize: (prompt:string,signal:AbortSignal)=>Promise<string>;
+    onStoryboard?:()=>void;
     onImport?: (files: File[]) => Promise<VideoInputChoice[]>;
     onLoadMoreAssets?: () => Promise<void>;
     canLoadMoreAssets?: boolean;
@@ -39,6 +40,8 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
     presentation?: "dialog" | "dock";
     dockStyle?: CSSProperties;
     dockRef?: RefObject<HTMLDivElement|null>;
+    expanded?: boolean;
+    onToggleExpand?: () => void;
     advanced?: boolean;
     onCloseAdvanced?: () => void;
     draftScope?: string;
@@ -134,6 +137,13 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
         submitting.current=false;
         setBusy(false);
     } }
+    async function openStoryboard(){
+        if(!onStoryboard||readOnly||busy||importing||submitting.current)return;
+        submitting.current=true;setBusy(true);setError("");
+        try{const saved=await onSave({title,config,inputs:resolvedInputs,expectedRevision:revision.current});if(saved)revision.current=saved.revision;baseline.current=JSON.stringify({title,config,inputs:resolvedInputs});setSaved(true);onStoryboard();}
+        catch(cause){setError(cause instanceof Error?cause.message:"镜头保存失败");}
+        finally{submitting.current=false;setBusy(false);}
+    }
     const dockActions=(<>
           <span role="status" className="min-w-0 truncate text-xs canvas-ui-muted">{active?V(generationBlocked||task?.status==='needs_attention'?"等待核查":"生成中"):saved?V("已保存"):''}{active&&task&&task.progress>0?` · ${task.progress}%`:''}</span>
 
@@ -142,10 +152,10 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
             {active?<button type="button" aria-label={V(task?.cancellationRequestedAt?"正在停止":"停止")} title={V(task?.cancellationRequestedAt?"正在停止":"停止")} className="canvas-ui-primary flex h-9 w-9 shrink-0 items-center justify-center rounded-full disabled:opacity-40" disabled={readOnly||busy||generationBlocked||!!task?.cancellationRequestedAt||!onCancel||['needs_attention','creation_unknown'].includes(task?.status||'')} onClick={onCancel}><Square size={13} fill="currentColor"/></button>:<button type="button" aria-label={V("生成视频")} title={V("生成视频")} className="canvas-ui-primary flex h-9 w-9 shrink-0 items-center justify-center rounded-full disabled:opacity-40" disabled={readOnly||busy||importing||catalogLoading||!!invalid||!config.comfyWorkflowId&&!estimate.quote} onClick={()=>void submit(true)}>{busy?<Loader2 size={17} className="animate-spin"/>:<ArrowUp size={19}/>}</button>}
         </>);
     const dockFeedback=((error||task?.error||invalid||estimate.error)&&<p role={error?"alert":"status"} className="mb-2 break-words text-xs text-amber-600">{V(error||task?.error||invalid||estimate.error||"")}</p>);
-    if(dock)return <CanvasComposerShell ref={dockRef} style={dockStyle} kind="video" heading={node.title||V('视频生成')} onDismiss={onClose} closeLabel={V('关闭创作栏')} expandLabel={V('展开输入区')} collapseLabel={V('收起输入区')} data-testid="video-node-dock" role="region" aria-label={V('视频节点设置')} onKeyDown={event=>event.stopPropagation()}>
+    if(dock)return <CanvasComposerShell ref={dockRef} style={dockStyle} expanded={expanded} onToggleExpand={onToggleExpand} kind="video" heading={node.title||V('视频生成')} onDismiss={onClose} closeLabel={V('关闭创作栏')} expandLabel={V('展开输入区')} collapseLabel={V('收起输入区')} data-testid="video-node-dock" role="region" aria-label={V('视频节点设置')} onKeyDown={event=>event.stopPropagation()}>
       <VideoCompactComposer count={count} onCount={value=>{setSaved(false);setCount(value);}} onOptimize={onOptimize} config={config} inputs={resolvedInputs} models={models} choices={choices} nodeId={node.id} light={light} blocked={readOnly||busy||importing}
         onConfig={value=>{setSaved(false);setConfig(value);}} onInputs={value=>{setSaved(false);setInputs(value);setConfig(current=>({...current,references:[]}));}} onImport={onImport} onImportBusyChange={setImporting}
-        onAdvanced={()=>setInlineAdvanced(true)} advancedOpen={advanced||inlineAdvanced} onCloseAdvanced={()=>{setInlineAdvanced(false);onCloseAdvanced?.();}}
+        onStoryboard={onStoryboard?()=>void openStoryboard():undefined} onAdvanced={()=>setInlineAdvanced(true)} advancedOpen={advanced||inlineAdvanced} onCloseAdvanced={()=>{setInlineAdvanced(false);onCloseAdvanced?.();}}
         advancedContent={<VideoSettingsFields hideComposerFields config={config} inputs={resolvedInputs} models={models} choices={choices} nodeId={node.id} email={email} readOnly={readOnly} busy={busy} onConfig={value=>{setSaved(false);setConfig(value);}} onInputs={value=>{setSaved(false);setInputs(value);}} onImport={onImport} onImportBusyChange={setImporting} onLoadMoreAssets={onLoadMoreAssets} canLoadMoreAssets={canLoadMoreAssets}/>}
         actions={dockActions} feedback={<>{catalogError&&<p role="alert" className="mb-2 text-xs text-red-500">{V(catalogError)}{onRetryCatalog&&<button type="button" className={videoButtonClass} onClick={()=>void onRetryCatalog()}>{V('重试视频模型')}</button>}</p>}{dockFeedback}</>}/>
     </CanvasComposerShell>;

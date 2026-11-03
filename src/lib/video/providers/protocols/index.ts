@@ -16,6 +16,9 @@ import {GEEK_VERIFIED_PROFILES,geekVerifiedCodec} from "./geek-verified";
 import {apibDocumentedCodec} from "./apib-documented";
 import {geekDocumentedCodec} from "./geek-documented";
 import {geekH3DocumentedCodec} from "./geek-h3-documented";
+import {apibMultimodalCodec} from "./apib-multimodal-v3";
+import {geekWanMultimodalCodec,geekH3MultimodalCodec} from "./geek-multimodal-v3";
+import {apibStoryboardCodec} from "./apib-storyboard-v4";
 let installed=false;
 export function installVideoWireCodecs(){
   if(installed)return;installed=true;
@@ -33,4 +36,8 @@ export function installVideoWireCodecs(){
   registerVideoWireProfile("apib-video-v2",apibDocumentedCodec);
   registerVideoWireProfile("geek-video-v2",geekDocumentedCodec);
   registerVideoWireProfile("geek-h3-v2",geekH3DocumentedCodec);
+  registerVideoWireProfile("apib-video-v3",apibMultimodalCodec);
+  registerVideoWireProfile("geek-wan3-v3",geekWanMultimodalCodec);
+  registerVideoWireProfile("geek-h3-v3",geekH3MultimodalCodec);
+  registerVideoWireProfile("apib-storyboard-v4",apibStoryboardCodec);
 }

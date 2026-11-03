@@ -206,6 +206,12 @@ async function billingRoutePost(request: Request) {
       input.email = tokenEmail;
     }
     const useDb = dbEnabled && input.email.length > 0;
+    const token = process.env.REPLICATE_API_TOKEN?.trim() || "";
+    // A missing dedicated processor is known before accepting/reserving paid work.
+    if (!token) return NextResponse.json(
+      { error: "当前高清修复服务尚未配置，请联系管理员", code: "TOOL_NOT_CONFIGURED" },
+      { status: 503 }
+    );
     const cost = await configuredToolCost();
 
     if (dbEnabled && (await isBanned(input.email, ip))) {
@@ -220,16 +226,6 @@ async function billingRoutePost(request: Request) {
           { status: 402 }
         );
       }
-    }
-
-    const token = process.env.REPLICATE_API_TOKEN || "";
-    if (!token) {
-      if (useDb && cost > 0)
-        await refundCredits(input.email, cost).catch(() => {});
-      return NextResponse.json(
-        { error: "变清晰服务未配置(缺 Replicate token)" },
-        { status: 503 }
-      );
     }
 
     let out: { buf: Buffer; contentType: string };

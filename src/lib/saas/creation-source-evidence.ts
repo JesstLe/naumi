@@ -1,6 +1,7 @@
 import 'server-only';
 import {createHash} from 'node:crypto';
 import type {PoolClient} from 'pg';
+import {workflowCreatedAssets} from '../video/workflow-outcome';
 const family=`WITH RECURSIVE family AS(SELECT id,actor_email,tenant_id FROM app_creation_records WHERE id=$1
  UNION ALL SELECT c.id,c.actor_email,c.tenant_id FROM app_creation_records c JOIN family p ON c.parent_id=p.id
  AND c.actor_email=p.actor_email AND c.tenant_id IS NOT DISTINCT FROM p.tenant_id), links AS(
@@ -40,12 +41,12 @@ export async function creationSourceEvidence(tx:PoolClient,rootId:string){
   for(const row of batches)for(const[i,output]of (Array.isArray(row.outputs)?row.outputs:[]).entries())add(row,output.artworkId||output.id,i);
  }
  if(await videoWorkflowEvidenceAvailable(tx)){
-  const workflows=(await tx.query(`${family} SELECT l.*,n.result_assets AS outputs FROM links l
+  const workflows=(await tx.query(`${family} SELECT l.*,r.plan,to_jsonb(r)->'assembly_state' AS assembly_state,
+   COALESCE((SELECT jsonb_agg(jsonb_build_object('node_id',n.node_id,'result_assets',n.result_assets) ORDER BY n.node_id) FROM app_video_workflow_run_nodes n WHERE n.run_id=r.id),'[]'::jsonb) AS nodes FROM links l
    JOIN app_video_workflow_runs r ON r.id::text=l.target_id AND r.email=l.actor_email
-   LEFT JOIN app_video_workflow_run_nodes n ON n.run_id=r.id
-   WHERE l.target_type='video-workflow' AND r.creation_evidence_pending ORDER BY n.node_id`,[rootId])).rows;
+   WHERE l.target_type='video-workflow' AND r.creation_evidence_pending`,[rootId])).rows;
   if(workflows.length)pending=true;
-  for(const row of workflows)for(const[i,output]of (Array.isArray(row.outputs)?row.outputs:[]).entries())add(row,output.artworkId,i,['image','video','audio'].includes(output.kind)?output.kind:'video');
+  for(const row of workflows)for(const[i,output]of workflowCreatedAssets(row.plan||{nodes:[]},row.nodes||[],row.assembly_state).entries())add(row,output.artworkId,i,['image','video','audio'].includes(output.kind||'')?output.kind:'video');
  }
  if(!pending)pending=!!(await tx.query(`${family} SELECT 1 FROM app_billing_operations b JOIN links l ON l.target_type='billing' AND l.target_id=b.id AND l.actor_email=b.email WHERE b.result_response->>'creationEvidencePending'='true' LIMIT 1`,[rootId])).rowCount;
  if(!pending)pending=!!(await tx.query(`${family} SELECT 1 FROM app_creation_events e JOIN family f ON f.id=e.creation_id

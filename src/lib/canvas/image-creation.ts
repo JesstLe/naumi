@@ -11,6 +11,7 @@ export type CanvasImageCreationParameters={ratio:string;style:string;count:numbe
 export type CanvasImageCreationInput={
   source:Artwork;prompt:string;mode:CanvasImageCreationMode;parameters:CanvasImageCreationParameters;
   references:Artwork[];files:File[];referenceInputs:CanvasImageReference[];referenceError?:string|null;
+  operationKey?:string;onSubmitted?:()=>void;
 };
 export type CanvasImageCreationServices={
   isCurrent:()=>boolean;
@@ -53,6 +54,7 @@ export async function executeCanvasImageCreation(input:CanvasImageCreationInput,
   const uploadAsBase=!input.references.length&&input.files.length>0;
   const destination=canvasGenerationDestination(parameters.count);
   await services.generate(source,feedback||canvasInheritedImagePrompt(source.prompt),{
+    operationKey:input.operationKey,onSubmitted:input.onSubmitted,
     ...parameters,...destination,parentId:source.id,parentIds:input.references.filter(ref=>ref.id!==source.id).map(ref=>ref.id),
     baseFile:uploadAsBase?input.files[0]:undefined,extra:uploadAsBase?input.files.slice(1):input.files,
     refUrls:uploadAsBase?[]:input.references.map(ref=>ref.image),userPrompt:feedback||canvasInheritedImagePrompt(source.prompt),referenceInputs,isCurrent:services.isCurrent,

@@ -29,9 +29,11 @@ export const videoDefinitionSchema=z.strictObject({
   aspectRatios:z.array(ratio).max(100).nullable().optional(),audio:z.enum(["required","disabled","optional"]).nullable().optional(),
   limits:videoLimitsSchema.nullable().optional(),defaultDurationSeconds:duration.nullable().optional(),defaultResolution:stringValue.nullable().optional(),
   defaultAspectRatio:ratio.nullable().optional(),supportsAutoDuration:tri,requiresPrompt:tri,
-  supportsFirstFrame:tri,supportsLastFrame:tri,supportsFrameAudio:tri,supportsNegativePrompt:tri,supportsWatermark:tri,supportsMultiShot:tri,
+  supportsFirstFrame:tri,supportsLastFrame:tri,supportsFrameAudio:tri,supportsReferenceFirstFrame:tri,supportsNegativePrompt:tri,supportsWatermark:tri,supportsMultiShot:tri,
   supportsElements:tri,supportsCamera:tri,supportsExactSize:tri,supportsCancellation:tri,
   maxPromptChars:number(65536),maxNegativePromptChars:number(16384),maxShots:number(100),maxElements:number(100),maxElementReferences:number(128),
+  maxShotPromptChars:number(16384),minShotDurationSeconds:z.number().finite().min(0).max(3600).nullable().optional(),
+  shotDurationStep:z.number().finite().positive().max(3600).nullable().optional(),
   providerOptions:z.record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]{0,60}$/),videoOptionSchema).nullable().optional(),
 });
 export type VideoModelDefinition=z.infer<typeof videoDefinitionSchema>;
@@ -42,13 +44,13 @@ export const VIDEO_WIRE_PROFILES=["openai-videos","grok2api","cogvideox3","agnes
   "apimart-generic","apimart-kling","apimart-kling-v26","apimart-kling-omni","apimart-motion-control","gemini","minimax","metaso","autodl","runninghub","comfyui",
   "tokendance-seedance","tokendance-kling-text","tokendance-kling-image","tokendance-kling-motion","tokendance-kling-omni","tokendance-wan3","tokendance-happyhorse","tokendance-minimax",
   "tfrouter-generic","tfrouter-kling","tfrouter-kling-omni","tfrouter-grok","compshare-h3","compshare-hailuo","compshare-vidu","compshare-vidu-extend","compshare-vidu-lip-sync","compshare-wan","compshare-seedance",
-  "apimart-apib-seedance","apimart-apib-kling","apimart-apib-wan","apimart-apib-h3","geek-kling","geek-wan3","apib-video-v2","geek-video-v2","geek-h3-v2"] as const;
+  "apimart-apib-seedance","apimart-apib-kling","apimart-apib-wan","apimart-apib-h3","geek-kling","geek-wan3","apib-video-v2","geek-video-v2","geek-h3-v2","apib-video-v3","geek-wan3-v3","geek-h3-v3","apib-storyboard-v4"] as const;
 export const videoWireProfileSchema=z.enum(VIDEO_WIRE_PROFILES);
 export type VideoWireProfile=typeof VIDEO_WIRE_PROFILES[number];
 export const VIDEO_PROTOCOLS=["openai-videos","ark","kie","apimart","gemini","minimax","metaso","tokendance","tfrouter","compshare","comfyui","autodl","runninghub"] as const;
 export function videoProfileProtocol(profile:VideoWireProfile):typeof VIDEO_PROTOCOLS[number]{
-  if(profile==="apib-video-v2")return "apimart";
-  if(profile==="geek-h3-v2")return "minimax";
+  if(profile==="apib-video-v2"||profile==="apib-video-v3"||profile==="apib-storyboard-v4")return "apimart";
+  if(profile==="geek-h3-v2"||profile==="geek-h3-v3")return "minimax";
   if(profile.startsWith("geek-"))return "openai-videos";
   if(profile.startsWith("kie-"))return "kie";if(profile.startsWith("apimart-"))return "apimart";
   if(profile.startsWith("tokendance-"))return "tokendance";if(profile.startsWith("tfrouter-"))return "tfrouter";

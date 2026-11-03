@@ -52,7 +52,11 @@ export async function ensureVideoWorkflowSchema(){
  ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS frozen_nodes_enc text;
  ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS creation_scope jsonb;
  ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS creation_evidence_pending boolean NOT NULL DEFAULT false;
+ CREATE INDEX IF NOT EXISTS app_video_workflow_evidence_pending_idx ON app_video_workflow_runs(updated_at) WHERE creation_evidence_pending;
  ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS public_frozen_nodes jsonb NOT NULL DEFAULT '{}'::jsonb;
+ ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS assembly_state jsonb NOT NULL DEFAULT '{}'::jsonb;
+ ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS assembly_quote jsonb;
+ CREATE INDEX IF NOT EXISTS app_video_workflow_assembly_pending_idx ON app_video_workflow_runs(updated_at) WHERE plan ? 'assembly' AND COALESCE(assembly_state->>'status','waiting') IN ('waiting','queued','processing','needs_attention');
  CREATE TABLE IF NOT EXISTS app_video_workflow_run_nodes(run_id uuid NOT NULL REFERENCES app_video_workflow_runs(id),node_id text NOT NULL,status text NOT NULL DEFAULT 'pending',
    task_id text,error text,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(run_id,node_id));
  ALTER TABLE app_video_workflow_run_nodes ADD COLUMN IF NOT EXISTS result_assets jsonb NOT NULL DEFAULT '[]'::jsonb;

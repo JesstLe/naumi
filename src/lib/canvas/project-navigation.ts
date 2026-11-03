@@ -14,7 +14,7 @@ const legacy='nv:canvas:last',claim='nv:canvas:last:scope:v1';
 export function createCanvasProjectNavigation(identity:string,ports:Ports){
  const storedKey=`nv:canvas:last:v2:${encodeURIComponent(identity)}`;
  let state:CanvasProjectView={activeKey:null,browsing:true,creatingNew:false,pinnedNode:null,pendingNode:null};
- let pending:Pending|undefined,restored=false,lastSaved:string|null|undefined,desktop:string|undefined,pushed=false,epoch=0,cancel:(()=>void)|undefined;
+ let pending:Pending|undefined,restored=false,lastSaved:string|null|undefined,desktop:string|undefined,requestedProject:string|undefined,pushed=false,epoch=0,cancel:(()=>void)|undefined;
  const listeners=new Set<()=>void>();
  const publish=(patch:Partial<CanvasProjectView>)=>{if(!ports.current())return;const next={...state,...patch};if((Object.keys(next) as Array<keyof CanvasProjectView>).every(key=>next[key]===state[key]))return;state=next;for(const fn of listeners)fn();};
  const invalidate=()=>{epoch++;cancel?.();cancel=undefined;};
@@ -40,15 +40,20 @@ export function createCanvasProjectNavigation(identity:string,ports:Ports){
   start(){if(!ports.current())return;invalidate();pending=undefined;publish({activeKey:null,creatingNew:true,browsing:false,pendingNode:null});history();},
   empty(){if(ports.current())publish({creatingNew:true});},
   requestNode(id:string|null,select=true){if(!ports.current())return;invalidate();pending=id?{id,select,focus:false}:undefined;publish({pendingNode:id});},
+  requestProject(project?:string){if(ports.current())requestedProject=project&&desktop!==project?project:undefined;},
   reconcile(projects:readonly CanvasProject[],loaded:boolean,initialProject?:string){
    if(!restored||!ports.current())return;
+   if(initialProject&&desktop!==initialProject)requestedProject=initialProject;
    if(!pending&&!state.creatingNew&&!state.browsing&&loaded&&state.activeKey&&!projects.some(p=>p.key===state.activeKey)){browse(true);ports.missing();}
-   if(pending){
+   if(pending&&(!requestedProject||loaded)){
     const intent=pending,project=projects.find(p=>p.members.some(n=>n.id===intent.id)||p.textNodes.some(n=>n.id===intent.id)||[p.videoNodes,p.directorNodes,p.characterNodes,p.sceneNodes,p.audioNodes,p.timelineNodes].some(nodes=>nodes?.some(n=>n.id===intent.id)));
     if(project){ports.select(project.key,intent.select?intent.id:null);if(intent.focus)ports.focus(intent.id,project.key);open(project.key);}
     else if(loaded){pending=undefined;publish({pendingNode:null});}
    }
-   if(initialProject&&desktop!==initialProject&&projects.some(p=>p.key===initialProject)){desktop=initialProject;open(initialProject);}
+   // Warm catalogue presence alone does not authorize opening a shared project.
+   if(requestedProject&&loaded&&projects.some(p=>p.key===requestedProject)){
+    const project=requestedProject;requestedProject=undefined;desktop=project;ports.select(project,null);open(project);
+   }
    if(state.creatingNew&&state.activeKey&&projects.some(p=>p.key===state.activeKey))publish({creatingNew:false});
    remember();
   },

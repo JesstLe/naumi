@@ -27,11 +27,13 @@ export function useImageNodeDraft(scope: string | null, nodeId: string | null, d
     render(value => value + 1);
   }
   return {
-    key, prompt: draft.prompt, ratio: draft.ratio, referenceBindings: draft.referenceBindings,hiddenReferenceIds:draft.hiddenReferenceIds,
+    key, prompt: draft.prompt, ratio: draft.ratio, referenceBindings: draft.referenceBindings,hiddenReferenceIds:draft.hiddenReferenceIds,additionalReferenceIds:draft.additionalReferenceIds,
     setReferenceBindings: (value: ImageNodeDraft['referenceBindings']) => setField('referenceBindings', value),
     setHiddenReferenceIds:(value:string[])=>setField('hiddenReferenceIds',value),
+    setAdditionalReferenceIds:(value:string[])=>setField('additionalReferenceIds',value),
     setPrompt: (value: SetStateAction<string>) => setField('prompt', value),
     setRatio: (value: SetStateAction<string>) => setField('ratio', value),
     seed,
+    read: (node: string, targetScope = scope) => store.read(imageDraftKey(targetScope, node)),
   };
 }

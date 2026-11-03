@@ -1,10 +1,13 @@
 import "server-only";
 import {cutoutReceiptCheckpoint,isCutoutReceiptCheckpoint,readSettledCutoutReceipt} from "./cutout-receipt";
+import {hasToolImageReceipt,readSettledToolImageReceipt,toolImageReceiptCheckpoint} from "./tool-image-receipt";
+import {isSynchronousFailureCheckpoint,settledSynchronousFailure,synchronousFailureCheckpoint} from "./synchronous-failure-receipt";
 import {AsyncLocalStorage} from "node:async_hooks";
 import {withArtworkCreation} from "../artwork-provenance-context";
 import {dbEnabled,getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
 import {isBanned} from "@/lib/accounts/repository";
+import {getUser} from "@/lib/accounts/session";
 import {createBillingService,withBillingTransaction} from "./service";
 import {BillingError,type FeatureId,type OperationInput,type Tx,type BillingFacts,type BillingQuote,type ConfigSnapshot} from "./types";
 import {billingFailure} from "./failure";
@@ -31,6 +34,7 @@ type Context = {
     error?: BillingError;
     upstream: "unobserved" | "started" | "succeeded" | "rejected" | "unknown";
     creationId?:string;
+    resultCheckpointed?: boolean;
 };
 const storage = new AsyncLocalStorage<Context>(), service = createBillingService();
 export function currentSynchronousBilling() { return storage.getStore(); }
@@ -78,20 +82,32 @@ export async function withSynchronousOperation(input:SynchronousOperation,action
         if(await isBanned(email,input.ip||""))return synchronousResult({error:"账号已被封禁"},403);
         await ensureSchema();
         const identity=await input.identity();
-        const previous = (await getPool().query("SELECT email,feature,quote,state,result_response,request_fingerprint,charged_credits FROM app_billing_operations WHERE id=$1", [id])).rows[0];
+        const previous = (await getPool().query("SELECT email,feature,quote,state,result_response,request_fingerprint,charged_credits,settlement_result FROM app_billing_operations WHERE id=$1", [id])).rows[0];
         if (previous) {
+            let receiptScopeVerified=false;
             const creation=currentCreationContext();
             if(creation){const old=(await getPool().query(`SELECT DISTINCT c.scope_kind,c.tenant_id FROM app_creation_records c LEFT JOIN app_creation_links l ON l.creation_id=c.id
               WHERE c.actor_email=$2 AND ((c.source_kind=$3 AND c.source_id=$1) OR (l.target_type='billing' AND l.target_id=$1 AND l.actor_email=$2))`,[id,email.toLowerCase(),feature])).rows;
               if(old.some(r=>r.scope_kind!==creation.scopeKind||r.tenant_id!==creation.tenantId))throw new TeamError('原操作的工作空间已固定，不能跨空间重用',409);
+              receiptScopeVerified=old.length>0;
             }
             const expected = fingerprint({ email: email.toLowerCase(), quote: previous.quote, ledgerId: `led-${id}`, fingerprint: identity.hash });
             if (previous.email !== email.toLowerCase() || previous.feature !== feature || previous.request_fingerprint !== expected)
                 throw new BillingError("OPERATION_CONFLICT", "该操作编号已用于不同请求", 409);
-            if(feature==="tool.cutout"&&previous.state==="settled"&&(!previous.result_response||isCutoutReceiptCheckpoint(previous.result_response))){
-                const recovered=await readSettledCutoutReceipt(getPool(),{id,email,chargedCredits:Number(previous.charged_credits),checkpoint:previous.result_response});
-                if(recovered)return {...synchronousResult(recovered),replayed:true};
-                return synchronousResult({error:"原抠图结果尚未恢复，请保留原任务稍后查询",code:"OPERATION_PENDING",operationId:id},409);
+            const failed = settledSynchronousFailure({ ...previous, id });
+            if (failed && receiptScopeVerified) return synchronousResult(failed.body, failed.httpStatus);
+            if (failed || isSynchronousFailureCheckpoint(previous.result_response))
+                return synchronousResult({ error: "原操作的结果或归属尚待核实，请保留原操作核查", code: "OPERATION_PENDING", operationId: id }, 409);
+            if (feature === "tool.cutout" && previous.state === "settled" && (!previous.result_response || isCutoutReceiptCheckpoint(previous.result_response))) {
+                const recovered = await readSettledCutoutReceipt(getPool(), { id, email, chargedCredits: Number(previous.charged_credits), checkpoint: previous.result_response });
+                if (recovered) return {...synchronousResult({...recovered,user:await getUser(email).catch(()=>null)}),replayed:true};
+                return synchronousResult({ error: "原抠图结果尚未恢复，请保留原任务稍后查询", code: "OPERATION_PENDING", operationId: id }, 409);
+            }
+            if (hasToolImageReceipt(feature) && previous.state === "settled") {
+                if (!receiptScopeVerified) return synchronousResult({ error: "原工具操作的归属记录尚未核实，请保留原操作核查", code: "OPERATION_PENDING", operationId: id }, 409);
+                const recovered = await readSettledToolImageReceipt(getPool(), { id, email, feature, chargedCredits: Number(previous.charged_credits), checkpoint: previous.result_response });
+                if (recovered) return {...synchronousResult({...recovered,user:await getUser(email).catch(()=>null)}),replayed:true};
+                return synchronousResult({ error: "原工具结果尚未恢复，请保留原操作核查；不会重复生成", code: "OPERATION_PENDING", operationId: id }, 409);
             }
             if (previous.result_response && previous.state === "settled") {
                 return {...synchronousResult(previous.result_response),replayed:true};
@@ -131,12 +147,23 @@ export async function withSynchronousOperation(input:SynchronousOperation,action
                     await settleSynchronous("工具完成");
                 else if (!(response.status>=200&&response.status<300) && context.charge === undefined) {
                     const known = context.feature === "tool.printfile" || context.upstream === "rejected" || context.upstream === "unobserved";
-                    await withBillingTransaction(getPool(), tx => service.settleTx(tx, context.operation!, { state: known ? "failed" : "unknown", items: [] }));
+                    const failureCheckpoint = known ? synchronousFailureCheckpoint(response.status, payload) : undefined;
+                    const settled = await withBillingTransaction(getPool(), async tx => {
+                        // Failure receipt and final billing outcome commit together.
+                        // A saved error alone never converts an UNKNOWN into failure.
+                        if (failureCheckpoint) await tx.query("UPDATE app_billing_operations SET result_response=$2::jsonb WHERE id=$1 AND email=$3", [id, JSON.stringify(failureCheckpoint), email]);
+                        return service.settleTx(tx, context.operation!, { state: known ? "failed" : "unknown", items: [] });
+                    });
+                    if (known && !settled.replayed) {
+                        const failed = settledSynchronousFailure({ id, state: settled.state, charged_credits: settled.charge,
+                            settlement_result: { state: "failed", items: [] }, result_response: failureCheckpoint });
+                        if (failed) response = synchronousResult(failed.body, failed.httpStatus);
+                    }
                     if (!known && context.operation.quote.modelVersion && ["cny-fixed","usage"].includes(context.operation.quote.tariff.pricing.mode)) return synchronousResult({code:"OPERATION_PENDING",error:"供应商结果及付费状态需要核查，请查询原任务；不会重复提交",operationId:id},409);
                 }
                 } catch {
                     await getPool().query("UPDATE app_billing_operations SET state='manual',updated_at=now() WHERE id=$1 AND state IN ('reserved','hold','manual')",[id]);
-                    return synchronousResult({code:"OPERATION_PENDING",error:"结果已保留，账务需要核查；请勿重复创建任务",operationId:id},409);
+                    return synchronousResult({code:"OPERATION_PENDING",error:context.resultCheckpointed?"结果已保留，账务需要核查；请勿重复创建任务":"任务结果及账务需要核查；请保留原操作，不要重复创建任务",operationId:id},409);
                 }
             }
             await finishCreation(context.creationId,email,(response.status>=200&&response.status<300)?(payload?.jobId?'queued':'succeeded'):context.upstream==='unknown'?'needs_review':'failed',{
@@ -152,13 +179,33 @@ export async function withSynchronousOperation(input:SynchronousOperation,action
     }
 }
 /** Persist the original paid result before early wallet settlement. */
-export async function checkpointSynchronousResult(payload:unknown){
-    const context=storage.getStore();
-    if(!context?.operation)return;
-    const compact=context.feature==="tool.cutout"?cutoutReceiptCheckpoint(payload):null;
-    const serialized=JSON.stringify(compact||payload);
-    if(serialized.length>=262144)return;
-    await getPool().query("UPDATE app_billing_operations SET result_response=$2::jsonb WHERE id=$1",[context.id,serialized]);
+export async function checkpointSynchronousResult(payload: unknown) {
+    const context = storage.getStore();
+    if (!context?.operation) return;
+    if (hasToolImageReceipt(context.feature)) {
+        const value = payload as { ok?: unknown; id?: unknown; url?: unknown } | null;
+        if (value?.ok !== true || typeof value.url !== "string" || !value.url)
+            throw new BillingError("INVALID_RESULT", "工具输出尚未确认，请保留原操作核查", 409);
+        await checkpointToolArtwork(context, undefined, typeof value.id === "string" ? value.id : undefined);
+        return;
+    }
+    const value = context.feature === "tool.cutout" ? cutoutReceiptCheckpoint(payload) || payload : payload;
+    const serialized = JSON.stringify(value);
+    if (serialized && serialized.length < 262144) {
+        await getPool().query("UPDATE app_billing_operations SET result_response=$2::jsonb WHERE id=$1 AND email=$3", [context.id, serialized, context.email]);
+        context.resultCheckpointed = true;
+    }
+}
+async function checkpointToolArtwork(context: Context, tx?: Tx, expectedId?: string) {
+    // Once saved, do not rebind the receipt to later canvas replacements while
+    // the same handler is constructing its response or repeating settlement.
+    if (context.resultCheckpointed) return;
+    const client = tx || getPool();
+    const checkpoint = await toolImageReceiptCheckpoint(client, context, expectedId);
+    if (!checkpoint) throw new BillingError("INVALID_RESULT", "作品保存尚未确认，结果和账务需要核查；请保留原操作", 409);
+    const stored = await client.query("UPDATE app_billing_operations SET result_response=$2::jsonb WHERE id=$1 AND email=$3 RETURNING id", [context.id, JSON.stringify(checkpoint), context.email]);
+    if (stored.rowCount !== 1) throw new BillingError("INVALID_RESULT", "原操作回执保存尚未确认，请保留原操作核查", 409);
+    context.resultCheckpointed = true;
 }
 /** Expired request ownership never permits a supplier resubmission or a refund. */
 export async function exposeAbandonedBillingOperations() {
@@ -197,6 +244,10 @@ export async function settleSynchronous(reason: string, quality?: ResolvedImageQ
     const context = storage.getStore();
     if (!context?.operation)
         return null;
+    // Legacy routes settle before constructing their HTTP response. Close that
+    // window centrally, including routes which swallowed addArtworks failures.
+    // A caller-owned transaction is reused; never nest a pool checkout in it.
+    if (hasToolImageReceipt(context.feature)) await checkpointToolArtwork(context, tx);
     const result = { usage: context.usageIncomplete ? undefined : context.usage, state: "succeeded" as const, items: [{ id: context.id, state: "succeeded" as const, executedQuality: quality?.executed || context.quality?.executed || "medium" }] };
     const settled = tx ? await service.settleTx(tx, { ...context.operation, reason }, result) : await withBillingTransaction(getPool(), client => service.settleTx(client, { ...context.operation!, reason }, result));
     context.charge = settled.charge;

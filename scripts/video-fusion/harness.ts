@@ -25,7 +25,7 @@ function privateChild(args:string[],env:NodeJS.ProcessEnv):Promise<string>{retur
 });}
 
 /** Uses real Naumi HTTP and Worker processes; only upstream services are simulated. */
-export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot?:string;startWorker?:boolean;routerUrl?:string;routerBinary?:string;videoProfile?:VideoWireProfile;legacyGemini?:boolean;videoDefinition?:VideoModelDefinition;extraVideoModels?:Array<{id:string;definition:VideoModelDefinition}>;fullWorkflow?:boolean;uiModels?:boolean;referenceModels?:boolean;validateWire?:(call:unknown)=>void|Promise<void>;validatePoll?:(call:unknown)=>void|Promise<void>;agentReply?:(request:any)=>any|Promise<any>}={}) {
+export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot?:string;startWorker?:boolean;routerUrl?:string;routerBinary?:string;videoProfile?:VideoWireProfile;videoWireModel?:string;legacyGemini?:boolean;videoDefinition?:VideoModelDefinition;extraVideoModels?:Array<{id:string;definition:VideoModelDefinition}>;fullWorkflow?:boolean;uiModels?:boolean;referenceModels?:boolean;validateWire?:(call:unknown)=>void|Promise<void>;validatePoll?:(call:unknown)=>void|Promise<void>;agentReply?:(request:any)=>any|Promise<any>}={}) {
   if(options.legacyGemini&&options.videoProfile!=="gemini")throw new Error("Native legacy fixture is limited to Gemini");
   if(options.fullWorkflow&&!['autodl','runninghub'].includes(options.videoProfile||''))throw new Error("Full workflow fixture requires AutoDL or RunningHub");
   let databaseUrl=options.databaseUrl||process.env.VIDEO_FIXTURE_DATABASE_URL||process.env.DATABASE_URL||"";
@@ -50,7 +50,7 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
   const assetsRoot=path.resolve(options.assetsRoot||process.env.VIDEO_FIXTURE_ASSETS_ROOT||defaultAssetsRoot);
   let app:ChildProcess|undefined,worker:ChildProcess|undefined,routerProcess:ChildProcess|undefined,mediaWorker:ChildProcess|undefined;
   const manifest=await loadVideoAssets(assetsRoot).catch(async error=>{await sql.end();throw error;});
-  const output=path.join(root,"output/canvas-video-fusion-20261013/runs",namespace);
+  const output=path.join(process.env.VIDEO_FIXTURE_OUTPUT_ROOT||path.join(root,"output/canvas-video-fusion-20261013/runs"),namespace);
   await mkdir(output,{recursive:true});
   const objectCalls:Array<Record<string,unknown>>=[];
   const accessKeyId=`fixture-${randomUUID()}`,secretAccessKey=randomUUID()+randomUUID(),bucket=`fixture-${namespace}`;
@@ -66,7 +66,7 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
     S3_ENDPOINT:supplier.origin+"/objects",S3_REGION:"us-east-1",S3_BUCKET:bucket,S3_FORCE_PATH_STYLE:"1",S3_ACCESS_KEY_ID:accessKeyId,S3_SECRET_ACCESS_KEY:secretAccessKey,
     NAUMI_VIDEO_WORKER:"0",VIDEO_WORKER_SECRET:workerSecret,NAUMI_APP_ORIGIN:baseUrl,INTERNAL_APP_ORIGIN:baseUrl,VIDEO_WORKER_INTERVAL_MS:"5000",
     MEDIA_WORKER_ORIGIN:mediaOrigin,MEDIA_WORKER_SECRET:mediaSecret,MEDIA_JOB_DIR:path.join(output,"media-jobs"),
-    MODEL_CONFIG_TRUSTED_ORIGINS:[supplier.origin,router.origin].join(","),VIDEO_FIXTURE_SUPPLIER_ORIGIN:supplier.origin,VIDEO_FIXTURE_VIDEO_PROFILE:options.videoProfile||"ark",VIDEO_FIXTURE_LEGACY_GEMINI:options.legacyGemini?"1":"0",VIDEO_FIXTURE_FULL_WORKFLOW:options.fullWorkflow?"1":"0",VIDEO_FIXTURE_VIDEO_DEFINITION:options.videoDefinition?JSON.stringify(options.videoDefinition):"",VIDEO_FIXTURE_EXTRA_VIDEO_MODELS:JSON.stringify(options.extraVideoModels||[]),
+    MODEL_CONFIG_TRUSTED_ORIGINS:[supplier.origin,router.origin].join(","),VIDEO_FIXTURE_SUPPLIER_ORIGIN:supplier.origin,VIDEO_FIXTURE_VIDEO_PROFILE:options.videoProfile||"ark",VIDEO_FIXTURE_WIRE_MODEL:options.videoWireModel||"",VIDEO_FIXTURE_LEGACY_GEMINI:options.legacyGemini?"1":"0",VIDEO_FIXTURE_FULL_WORKFLOW:options.fullWorkflow?"1":"0",VIDEO_FIXTURE_VIDEO_DEFINITION:options.videoDefinition?JSON.stringify(options.videoDefinition):"",VIDEO_FIXTURE_EXTRA_VIDEO_MODELS:JSON.stringify(options.extraVideoModels||[]),
     NAUMI_ROUTER_MANAGEMENT_URL:routerUrl,NAUMI_ROUTER_MANAGEMENT_TOKEN:routerToken,
     MODEL_CONFIG_ENVELOPE_SECRET:routerEnvelope,VIDEO_API_BASE_URL:supplier.origin+"/protocol/openai-videos/v1",VIDEO_API_KEY:supplier.token,VIDEO_API_MODEL:"fixture-video",
     OPENAI_BASE_URL:supplier.origin+"/protocol/image/v1",OPENAI_API_KEY:supplier.token,OPENAI_IMAGE_MODEL:"fixture-image"};
@@ -190,6 +190,15 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
         return {status:response.status,body:await response.json()};
       },
       async mediaTemporaryExists(id:string){if(!/^[0-9a-f-]{36}$/.test(id))throw new Error("Invalid fixture media job ID");return stat(path.join(env.MEDIA_JOB_DIR!,id)).then(()=>true).catch(()=>false);},
+      async failOwnedQueuedAssembly(id:string){
+        if(!/^[0-9a-f-]{36}$/i.test(id))throw new Error("Invalid fixture assembly ID");
+        const row=(await sql.query("SELECT status,request FROM app_video_media_jobs WHERE email=$1 AND id=$2",[seed.accounts.a,id])).rows[0];
+        if(row?.status!=="queued"||row.request.action!=="concat"||row.request.source!=="workflow")throw new Error("Owned queued fixture assembly required");
+        // Real local filesystem fault: the actual media engine cannot create its
+        // output directory beneath this file. No task success/state is fabricated.
+        const directory=path.join(env.MEDIA_JOB_DIR!,id,"fixture-sandbox");await mkdir(directory,{recursive:true});
+        await writeFile(path.join(directory,"work"),"owned fixture assembly failure",{flag:"wx"});
+      },
       async mediaWorkerMode(mode:"drain"|"resume"){const response=await fetch(`${mediaOrigin}/${mode}`,{method:"POST",headers:{authorization:`Bearer ${mediaSecret}`},signal:AbortSignal.timeout(5000)});if(!response.ok)throw new Error("Fixture media control failed");return response.json();},
       async blockVideoOutput(id:string,index:number,extension:string){
         if(!/^vid-[0-9a-f-]{36}$/.test(id)||!Number.isSafeInteger(index)||index<1||!['wav','png','mp4'].includes(extension))throw new Error("Invalid fixture storage fault");
@@ -243,6 +252,10 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
       async mediaBillingEvidence(account:Account,id:string){
         if(!/^[0-9a-f-]{36}$/.test(id)||!(await sql.query("SELECT 1 FROM app_video_media_jobs WHERE email=$1 AND id=$2",[seed.accounts[account],id])).rowCount)throw new Error("Owned fixture media job required");
         return {operation:(await sql.query("SELECT state,reserved_credits,charged_credits,quote->>'configVersion' AS quote_version FROM app_billing_operations WHERE email=$1 AND id=$2",[seed.accounts[account],id])).rows[0],reservation:(await sql.query("SELECT cost FROM app_gen_reservations WHERE email=$1 AND job_id=$2",[seed.accounts[account],id])).rows,ledger:(await sql.query("SELECT delta,kind FROM app_ledger WHERE email=$1 AND id=$2",[seed.accounts[account],`led-media-${id}`])).rows};
+      },
+      async videoBillingEvidence(account:Account,id:string){
+        if(!/^vid-[0-9a-f-]{36}$/i.test(id)||!(await sql.query("SELECT 1 FROM app_video_tasks WHERE email=$1 AND id=$2",[seed.accounts[account],id])).rowCount)throw new Error("Owned fixture video task required");
+        return {operation:(await sql.query("SELECT state,reserved_credits,charged_credits FROM app_billing_operations WHERE email=$1 AND id=$2",[seed.accounts[account],id])).rows[0],reservation:(await sql.query("SELECT cost FROM app_gen_reservations WHERE email=$1 AND job_id=$2",[seed.accounts[account],id])).rows,ledger:(await sql.query("SELECT delta,kind FROM app_ledger WHERE email=$1 AND id=$2",[seed.accounts[account],`led-video-${id}`])).rows};
       },
       async creditState(account:Account){return (await sql.query("SELECT credits_total,credits_used FROM app_users WHERE email=$1",[seed.accounts[account]])).rows[0];},
       async prepareQueued(account:Account,sourceTask:string){return JSON.parse(await privateChild(["--conditions=react-server","--import","tsx","scripts/video-fusion/fixture-actions.ts","--prepare-queued"],{...env,VIDEO_FIXTURE_ACTION_ACTOR:seed.accounts[account],VIDEO_FIXTURE_ACTION_SOURCE:sourceTask})) as {taskId:string};},

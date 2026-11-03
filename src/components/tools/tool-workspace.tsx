@@ -43,6 +43,7 @@ export type ToolProcessResult = {
   url: string;
   user?: SessionUser | null;
   creditsUsed?: number;
+  replayed?: boolean;
 };
 
 type RecordItem = {
@@ -290,7 +291,7 @@ export function ToolWorkspace({
       const data = await onProcess(file);
       if (!data.url) throw new Error("处理失败");
       if (data.user) applyServerUser(data.user);
-      else if (data.creditsUsed) consumeCredits(data.creditsUsed);
+      else if (data.creditsUsed && !data.replayed) consumeCredits(data.creditsUsed);
       setResult(data.url);
     } catch (e) {
       setError(e instanceof Error ? e.message : "处理失败");
@@ -464,7 +465,7 @@ export function ToolWorkspace({
                     ? L(`${action}(消耗 ${cost} 积分)`, `${action} (${cost} credits)`)
                     : action}
             </button>
-            {(error || billing.error) && <p role="alert" className="break-words text-[12.5px] text-c-danger">{error || billing.error}</p>}
+            {(error || billing.error || executionBlock && executionBlock !== "loading") && <p role="alert" className="break-words text-[12.5px] text-c-danger">{error || billing.error || featureExecutionMessage(executionBlock!, locale)}</p>}
           </div>
         </div>
 

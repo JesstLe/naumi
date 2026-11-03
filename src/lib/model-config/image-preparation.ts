@@ -29,12 +29,14 @@ export function prepareImageOperation(input:ImagePreparationInput,snapshot:Model
     const configuredModelId = quotedImage?.facts.modelId || explicitModelId || featureDefault || snapshot.config.bindings[purpose.image];
     const outputResolution = quotedImage?.effectiveParameters?.resolution || quotedImage?.requestedParameters?.resolution || quotedImage?.facts.resolution || (Number(parsed.body.targetWidth) > 0 && Number(parsed.body.targetHeight) > 0 ? resolutionForLongSide(Math.max(Number(parsed.body.targetWidth), Number(parsed.body.targetHeight))) : String(parsed.body.resolution || "1K"));
     const ratio = input.resolvedFrame?.ratio || quotedImage?.facts.ratio || (/^\d+:\d+$/.test(String(parsed.body.ratio||parsed.body.size||"")) ? String(parsed.body.ratio||parsed.body.size) : Number(parsed.body.targetWidth)>0&&Number(parsed.body.targetHeight)>0 ? imageRatio(Number(parsed.body.targetWidth),Number(parsed.body.targetHeight)) : "1:1");
-    const routedModelId = input.resolvedFrame?.preserveModelIdentity ? configuredModelId : routeImageModel(
+    // A server quote already selected its priced public identity. Routing a
+    // directional alias belongs before quotation, never during execution.
+    const routedModelId = quotedImage || input.resolvedFrame?.preserveModelIdentity ? configuredModelId : routeImageModel(
       configuredModelId,
       ratio,
       snapshot.config.publicModels.filter(model => model.enabled && model.modality === "image"),
     );
-    const requestedModelId = requestedFeatureModel(mainFeature, (explicitModelId || featureDefault || routedModelId !== configuredModelId) ? routedModelId : undefined);
+    const requestedModelId = requestedFeatureModel(mainFeature, (quotedImage || explicitModelId || featureDefault || routedModelId !== configuredModelId) ? routedModelId : undefined);
     const selection=selectFeatureModel(snapshot.config,{feature:mainFeature,binding:purpose.image!,requestedModelId,scopeSystem:parsed.body.origin==="canvas"?"canvas":undefined})!;
     const {preset,option,model}=selection;
     if (option?.parameters?.inputTypes && ((parsed.references > 0 && !option.parameters.inputTypes.includes("image")) || (parsed.body.needsMask && !option.parameters.inputTypes.includes("mask")))) throw new ModelConfigError("MODEL_INCOMPATIBLE", "本功能模型未开放该输入类型", 400);

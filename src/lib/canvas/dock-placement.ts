@@ -1,4 +1,4 @@
-export type DockPlacement = { left: number; top: number; width: number; maxHeight?: number };
+export type DockPlacement = { left: number; top: number; width: number; maxHeight?: number; height?: number };
 export type ToolbarPlacement = { left: number; top: number };
 
 /** Resolve both overlays together, including the bottom-sheet fallback. Dimensions

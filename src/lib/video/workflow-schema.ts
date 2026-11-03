@@ -19,8 +19,9 @@ export const workflowVideoRequestSchema=videoInputSchema.omit({durationSeconds:t
   orderedInputs:z.array(orderedInputSchema).max(256).optional(),providerOptions:z.record(z.string(),z.json()).optional(),
   billingConfirmation:z.strictObject({version:z.number().int().positive().optional(),credits:z.number().int().nonnegative().optional()}).optional()});
 export const videoWorkflowPlanSchema=z.strictObject({id:z.uuid(),projectKey:z.string().regex(/^(?:tree|batch):[A-Za-z0-9._:-]{1,160}$/),
+  assembly:z.strictObject({nodeIds:z.array(id).min(2).max(100)}).optional(),
   variables:z.record(id,z.union([z.string().max(16384),z.number().finite(),z.boolean()])).optional(),
-  nodes:z.array(z.strictObject({id,canvasNodeId:id.optional(),canvasNodeRevision:z.number().int().nonnegative().optional(),canvasContentDigest:z.string().regex(/^[a-f0-9]{64}$/).optional(),canvasLastTaskId:id.nullable().optional(),request:workflowVideoRequestSchema,dependsOn:z.array(id).max(100),
+  nodes:z.array(z.strictObject({id,existingArtworkId:id.optional(),canvasNodeId:id.optional(),canvasNodeRevision:z.number().int().nonnegative().optional(),canvasContentDigest:z.string().regex(/^[a-f0-9]{64}$/).optional(),canvasLastTaskId:id.nullable().optional(),request:workflowVideoRequestSchema,dependsOn:z.array(id).max(100),
     mediaBindings:z.array(z.strictObject({fromNodeId:id,inputId:id.optional(),outputIndex:z.number().int().min(0).max(127).optional(),kind:z.enum(["image","video","audio"]),
       role:z.enum(["first_frame","last_frame","reference","element","source_video","source_audio"])})).max(128).optional()})).min(1).max(100)});
 export type VideoWorkflowPlan=z.infer<typeof videoWorkflowPlanSchema>;

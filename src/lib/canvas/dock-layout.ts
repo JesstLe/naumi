@@ -2,7 +2,7 @@ import { separateCanvasDocks, type DockPlacement, type ToolbarPlacement } from '
 export type NodeScreen = {left:number;top:number;bottom:number;cx:number};
 export type CanvasSize = {width:number;height:number};
 export type SafeArea = {left:number;right:number;top:number;bottom:number};
-export type DockMetrics = {dockHeight:number;toolbarHeight:number;toolbarWidth:number};
+export type DockMetrics = {dockHeight:number;toolbarHeight:number;toolbarWidth:number;dockMinimumHeight?:number};
 export function canvasOverlaySafeArea(canvasSize:CanvasSize):SafeArea {
  return {left:8,right:8,top:canvasSize.width>0&&canvasSize.width<768?108:64,bottom:canvasSize.width>0&&canvasSize.width<1000?128:84};
 }
@@ -33,7 +33,7 @@ export function canvasAnchorCenter(nodeScreen:NodeScreen|undefined,canvasSize:Ca
     }
     return cx;
 }
-export function preferredCanvasDock(nodeScreen:NodeScreen|undefined,canvasSize:CanvasSize,dockWidth:number,overlaySafeArea:SafeArea,selectedTextId:string|null,nodeTitleHeight=0,readOnly=false):DockPlacement|undefined {
+export function preferredCanvasDock(nodeScreen:NodeScreen|undefined,canvasSize:CanvasSize,dockWidth:number,overlaySafeArea:SafeArea,selectedTextId:string|null,nodeTitleHeight=0,readOnly=false,measuredToolbarHeight?:number):DockPlacement|undefined {
  const anchorCenterX=canvasAnchorCenter(nodeScreen,canvasSize,dockWidth,overlaySafeArea);
  if(!nodeScreen||anchorCenterX==null)return undefined;
     const ch = canvasSize.height;
@@ -49,14 +49,14 @@ export function preferredCanvasDock(nodeScreen:NodeScreen|undefined,canvasSize:C
     // top safe area (notably 390px wide screens), the node itself can sit
     // underneath it, so positioning the Dock from the node bottom alone lets
     // the two overlays overlap. Reserve the rendered toolbar plus an 8px gap.
-    const topbarHeight = 50;
+    const topbarHeight = measuredToolbarHeight ?? 50;
     const topbarTop = Math.max(safeTop, nodeScreen.top - topbarHeight - 12 - nodeTitleHeight);
     const belowTop = Math.max(
       nodeScreen.bottom + 14,
       topbarTop + topbarHeight + 8
     );
     const belowSpace = Math.max(0, safeBottom - belowTop);
-    const nodeToolbarReserve = 70;
+    const nodeToolbarReserve = measuredToolbarHeight === undefined ? 70 : topbarHeight + 24;
     const aboveBottom = nodeScreen.top - nodeToolbarReserve - nodeTitleHeight;
     const aboveSpace = Math.max(0, aboveBottom - safeTop);
     const narrowImage = !readOnly && !selectedTextId && canvasSize.width > 0 && canvasSize.width < 480;
@@ -106,9 +106,9 @@ export function preferredCanvasDock(nodeScreen:NodeScreen|undefined,canvasSize:C
       maxHeight: sheetHeight,
     };
 }
-export function preferredCanvasToolbar(nodeScreen:NodeScreen|undefined,canvasSize:CanvasSize,overlaySafeArea:SafeArea,dockMetrics:DockMetrics,nodeTitleHeight=0):ToolbarPlacement|undefined {
+export function preferredCanvasToolbar(nodeScreen:NodeScreen|undefined,canvasSize:CanvasSize,overlaySafeArea:SafeArea,dockMetrics:DockMetrics,nodeTitleHeight=0,measuredToolbarHeight?:number):ToolbarPlacement|undefined {
     if (!nodeScreen) return undefined;
-    const TBAR_H = 46;
+    const TBAR_H = measuredToolbarHeight ?? 46;
     const cw = canvasSize.width;
     const availableWidth = Math.max(
       1,
@@ -128,13 +128,97 @@ export function preferredCanvasToolbar(nodeScreen:NodeScreen|undefined,canvasSiz
     const top = Math.max(overlaySafeArea.top, nodeScreen.top - TBAR_H - 12 - nodeTitleHeight);
     return { left, top };
 }
-export function canvasDockLayout(input:{nodeScreen:NodeScreen|undefined;canvasSize:CanvasSize;dockMetrics:DockMetrics;selectedTextId:string|null;textComposerExpanded:boolean;readOnly:boolean;nodeTitleHeight?:number}) {
+/** Header sits outside the React Flow image box and scales with the canvas,
+ * whereas the composer and toolbar are unscaled screen-space overlays. */
+export function canvasImageTitleInset(zoom:number) {
+ return 38 * (Number.isFinite(zoom) && zoom > 0 ? zoom : 1);
+}
+
+function protectImageTitle(layout:{dock:DockPlacement;toolbar:ToolbarPlacement},node:NodeScreen,titleHeight:number,
+  metrics:DockMetrics,safeTop:number,safeBottom:number) {
+ const gap=12,h=metrics.toolbarHeight>0?metrics.toolbarHeight:50;
+ const minimum=metrics.dockMinimumHeight||120;
+ const titleTop=node.top-titleHeight,titleBottom=node.top;
+ const dh=Math.min(metrics.dockHeight||310,layout.dock.maxHeight??310);
+ const intersects=(top:number,height:number)=>top<titleBottom&&top+height>titleTop;
+ const titleCollision=intersects(layout.toolbar.top,h)||intersects(layout.dock.top,dh);
+ const bodyCollision=layout.dock.top<node.bottom&&layout.dock.top+dh>node.top;
+ if(!titleCollision&&!bodyCollision)return layout;
+ const upperEnd=Math.min(safeBottom,titleTop-gap),lowerStart=Math.max(safeTop,titleBottom+gap);
+ const above=Math.max(0,upperEnd-safeTop),below=Math.max(0,safeBottom-lowerStart);
+ const clamp=(n:number,lo:number,hi:number)=>Math.max(lo,Math.min(n,Math.max(lo,hi)));
+ const belowImage=Math.max(0,safeBottom-node.bottom-gap);
+ // Prefer leaving the picture itself visible too. A bounded scrollable
+ // composer above the action bar beats covering the selected image with a sheet.
+ if(above>=h+gap+minimum){
+   const maxHeight=Math.min(layout.dock.maxHeight??310,above-h-gap);
+   const toolbar={...layout.toolbar,top:upperEnd-h};
+   return {toolbar,dock:{...layout.dock,maxHeight,top:toolbar.top-gap-Math.min(dh,maxHeight)}};
+ }
+ if(above>=h&&belowImage>=minimum)return {
+   toolbar:{...layout.toolbar,top:upperEnd-h},
+   dock:{...layout.dock,top:node.bottom+gap,maxHeight:Math.min(layout.dock.maxHeight??310,belowImage)},
+ };
+ if(!titleCollision)return layout;
+ // Split the two overlays around the title when both sides have useful room.
+ if(above>=h&&below>=minimum)return {
+   toolbar:{...layout.toolbar,top:clamp(layout.toolbar.top,safeTop,upperEnd-h)},
+   dock:{...layout.dock,top:lowerStart,maxHeight:Math.min(layout.dock.maxHeight??310,below)},
+ };
+ if(below>=h&&above>=minimum){
+   const maxHeight=Math.min(layout.dock.maxHeight??310,above);
+   return {toolbar:{...layout.toolbar,top:lowerStart},dock:{...layout.dock,maxHeight,top:upperEnd-Math.min(dh,maxHeight)}};
+ }
+ // A short viewport has one usable side. Keep the header visible and shrink
+ // only the scrollable composer; never raise the title over interactive buttons.
+ const lo=above>=below?safeTop:lowerStart,hi=above>=below?upperEnd:safeBottom;
+ if(hi-lo<h+gap+1)return layout;
+ return separateCanvasDocks({...layout,dockHeight:dh,toolbarHeight:h,safeTop:lo,safeBottom:hi});
+}
+
+/** Expanded images use the largest title-free interval. The current measured
+ * dock height must not choose this interval: it changes after expansion and
+ * would otherwise make ResizeObserver repeatedly shrink/reposition the panel. */
+function expandAroundImageTitle(dock:DockPlacement,toolbar:ToolbarPlacement,node:NodeScreen,titleHeight:number,
+  metrics:DockMetrics,safeTop:number,safeBottom:number) {
+ const gap=12,h=metrics.toolbarHeight>0?metrics.toolbarHeight:50;
+ const upperEnd=Math.max(safeTop,Math.min(safeBottom,node.top-titleHeight-gap));
+ const lowerStart=Math.min(safeBottom,Math.max(safeTop,node.top+gap));
+ const above=upperEnd-safeTop,below=safeBottom-lowerStart;
+ const options:Array<{dockTop:number;dockHeight:number;toolbarTop:number}>=[];
+ // Putting the action bar on the other side leaves the entire interval for
+ // editing. If only one side is usable, stack the two overlays on that side.
+ if(above>=h&&below>0)options.push({dockTop:lowerStart,dockHeight:below,toolbarTop:upperEnd-h});
+ if(below>=h&&above>0)options.push({dockTop:safeTop,dockHeight:above,toolbarTop:lowerStart});
+ if(above>h+gap)options.push({dockTop:safeTop,dockHeight:above-h-gap,toolbarTop:upperEnd-h});
+ if(below>h+gap)options.push({dockTop:lowerStart+h+gap,dockHeight:below-h-gap,toolbarTop:lowerStart});
+ const best=options.sort((a,b)=>b.dockHeight-a.dockHeight)[0];
+ return best?{dock:{...dock,top:best.dockTop,height:best.dockHeight,maxHeight:best.dockHeight},toolbar:{...toolbar,top:best.toolbarTop}}:undefined;
+}
+
+export function canvasDockLayout(input:{nodeScreen:NodeScreen|undefined;canvasSize:CanvasSize;dockMetrics:DockMetrics;selectedTextId:string|null;textComposerExpanded:boolean;mediaComposerExpanded?:boolean;readOnly:boolean;nodeTitleHeight?:number;protectNodeTitle?:boolean}) {
  const {nodeScreen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,readOnly}=input;
  const overlaySafeArea=canvasOverlaySafeArea(canvasSize),dockWidth=canvasDockWidth(canvasSize,overlaySafeArea);
- const dock=preferredCanvasDock(nodeScreen,canvasSize,dockWidth,overlaySafeArea,selectedTextId,input.nodeTitleHeight,readOnly),toolbar=preferredCanvasToolbar(nodeScreen,canvasSize,overlaySafeArea,dockMetrics,input.nodeTitleHeight);
+ const measured=input.protectNodeTitle?(dockMetrics.toolbarHeight>0?dockMetrics.toolbarHeight:50):undefined;
+ const dock=preferredCanvasDock(nodeScreen,canvasSize,dockWidth,overlaySafeArea,selectedTextId,input.nodeTitleHeight,readOnly,measured),toolbar=preferredCanvasToolbar(nodeScreen,canvasSize,overlaySafeArea,dockMetrics,input.nodeTitleHeight,measured);
+ // Expand the composer, never the canvas viewport or its node. For images,
+ // retain the title/pixel clearance instead of returning the full-screen
+ // sheet before the opt-in title protection has had a chance to run.
+ if(dock&&toolbar&&canvasSize.height&&input.mediaComposerExpanded&&!selectedTextId){
+  const safeBottom=Math.max(overlaySafeArea.top+1,canvasSize.height-overlaySafeArea.bottom);
+  if(input.protectNodeTitle&&nodeScreen&&input.nodeTitleHeight){
+   const protectedExpansion=expandAroundImageTitle(dock,toolbar,nodeScreen,input.nodeTitleHeight,dockMetrics,overlaySafeArea.top,safeBottom);
+   if(protectedExpansion)return protectedExpansion;
+  }
+  const top=Math.min(safeBottom-1,overlaySafeArea.top+Math.max(0,dockMetrics.toolbarHeight)+12);
+  const height=Math.max(1,safeBottom-top);
+  return {dock:{...dock,top,height,maxHeight:height},toolbar:{...toolbar,top:overlaySafeArea.top}};
+ }
  if(!dock||!toolbar||!canvasSize.height||readOnly)return {dock,toolbar};
- return separateCanvasDocks({dock:textComposerExpanded&&selectedTextId?{...dock,top:overlaySafeArea.top,maxHeight:canvasSize.height-overlaySafeArea.bottom-overlaySafeArea.top}:dock,toolbar,
+ const placed=separateCanvasDocks({dock:textComposerExpanded&&selectedTextId?{...dock,top:overlaySafeArea.top,maxHeight:canvasSize.height-overlaySafeArea.bottom-overlaySafeArea.top}:dock,toolbar,
  dockHeight:textComposerExpanded&&selectedTextId?canvasSize.height-overlaySafeArea.bottom-overlaySafeArea.top:dockMetrics.dockHeight||(selectedTextId?360:310),toolbarHeight:dockMetrics.toolbarHeight,safeTop:overlaySafeArea.top,safeBottom:canvasSize.height-overlaySafeArea.bottom});
+ return input.protectNodeTitle&&nodeScreen&&input.nodeTitleHeight
+   ?protectImageTitle(placed,nodeScreen,input.nodeTitleHeight,dockMetrics,overlaySafeArea.top,canvasSize.height-overlaySafeArea.bottom):placed;
 }
 
 export type CanvasOverlayViewport={x:number;y:number;zoom:number};
@@ -149,17 +233,19 @@ export function canvasOverlayNodeScreen(node:CanvasOverlayNode|undefined,viewpor
 
 /** Minimal pan after selection/area changes. Never changes zoom or node data.
  * The view hook decides when to run; pure geometry cannot initiate navigation. */
-export function canvasAnchorViewport(input:{node:CanvasOverlayNode|undefined;viewport:CanvasOverlayViewport;size:CanvasSize;safeArea:SafeArea;selectedText:boolean;titleHeight:number}):CanvasOverlayViewport|undefined{
+export function canvasAnchorViewport(input:{node:CanvasOverlayNode|undefined;viewport:CanvasOverlayViewport;size:CanvasSize;safeArea:SafeArea;selectedText:boolean;titleHeight:number;protectNodeTitle?:boolean;metrics?:DockMetrics}):CanvasOverlayViewport|undefined{
  const {node,viewport:current,size:canvasSize,safeArea:overlaySafeArea,selectedText,titleHeight}=input;
  if(!node||!canvasSize.width||!canvasSize.height)return;
  const left=node.x*current.zoom+current.x,top=node.y*current.zoom+current.y;
  const right=left+node.width*current.zoom,bottom=top+node.height*current.zoom;
- const safeLeft=overlaySafeArea.left,safeRight=canvasSize.width-overlaySafeArea.right,defaultSafeTop=overlaySafeArea.top+58;
+ const safeLeft=overlaySafeArea.left,safeRight=canvasSize.width-overlaySafeArea.right,defaultSafeTop=overlaySafeArea.top+(input.protectNodeTitle?(input.metrics?.toolbarHeight||50)+12+titleHeight:58);
  // The view toolbar occupies only the left224px, not the complete canvas width.
  const nodeIntersectsViewToolbar=left<=224&&right>=overlaySafeArea.left;
  const safeBottom=canvasSize.height-(nodeIntersectsViewToolbar?overlaySafeArea.bottom:overlaySafeArea.right);
  const estimatedDockHeight=selectedText?(canvasSize.width<480?240:218):220;
- const stackedSafeTop=overlaySafeArea.top+estimatedDockHeight+70+titleHeight;
+ const stackedSafeTop=input.protectNodeTitle
+  ?overlaySafeArea.top+Math.max(estimatedDockHeight,input.metrics?.dockMinimumHeight||(canvasSize.width<480?300:178))+(input.metrics?.toolbarHeight||50)+24+titleHeight
+  :overlaySafeArea.top+estimatedDockHeight+70+titleHeight;
  let dx=0,dy=0;
  const visibleWidth=safeRight-safeLeft,nodeWidth=right-left,nodeHeight=bottom-top;
  const safeTop=safeBottom-stackedSafeTop>=nodeHeight?stackedSafeTop:defaultSafeTop,visibleHeight=safeBottom-safeTop;

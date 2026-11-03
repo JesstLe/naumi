@@ -22,6 +22,7 @@ type Services={
   merge:(ids:string[],current:()=>boolean)=>Promise<Artwork[]>;
   history:(ids:string[],artworks:Artwork[])=>void;
   attached?:(images:CanvasGeneratedImage[],artworks:Artwork[])=>Promise<void>|void;
+  submitted?:()=>void;
   stage:(stage:GenerationStage)=>void;user:(user:unknown)=>void;notice:(message:string)=>void;
   errorText:string;saveErrorText:string;resultGap:number;
 };
@@ -67,6 +68,9 @@ export function createCanvasImageTask(input:Services){
         if(!response.ok)throw new ImagegenHttpError(body.error||input.errorText,response.status,body.accepted===false||[400,401,403,409,413,422,429].includes(response.status)?false:undefined);
         if(typeof body.jobId!=="string"||!body.jobId)throw new Error(input.errorText);jobId=body.jobId;
       }
+      // A durable job receipt releases only its submitting composer. Polling,
+      // original-input recovery and paid result attachment keep this owner alive.
+      input.submitted?.();
       refreshPartial=false;
       input.stage("generating");const deadline=Date.now()+6*60*1000;
       for(;;){

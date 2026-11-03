@@ -8,6 +8,7 @@ import {applyDisplayResolutions} from "./resolution-options";
 import {videoDefinitionSchema,videoWireProfileSchema} from "../video/capability-schema";
 import {applyVideoParameters,videoParametersSchema} from "./video-policy";
 import {freezeManagedVideoCapability} from "../video/frozen-capability";
+import {reviewVideoCapabilityUpgrade,applyReviewedVideoCapabilityUpgrade} from "./video-capability-review";
 import "server-only";
 import {channelHealthSummary} from "./channel-scheduler";
 import {providerCapacitySummary} from "./capacity";
@@ -15,7 +16,7 @@ import {channelPolicySchema,applyChannelPolicy} from "./channel-policy";
 import {readQualityDefaults} from "../supplier-models/quality-access";
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import type { PoolClient } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { biAuthorize, biJson, sameSiteBiMutation } from "../bi/access";
 import { readBounded } from "../supplier-cost/io";
 import { getModelAdministration } from "./server";
@@ -32,7 +33,7 @@ import {editManagedModelCredits,managedModelPriceViews,modelCreditGrid} from "./
 import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 import { validateModelConfig, validateModelEndpoint } from "./schema";
 import { compileRouterProjection } from "./projection";
-import { ModelConfigError, type ModelSnapshot } from "./types";
+import { ModelConfigError, type ModelSnapshot, type ModelPublication } from "./types";
 import { modelConfigurationEnabled } from "./availability";
 import {isNewApiFlowImageModel} from "@/lib/image-model-legacy-catalog";
 
@@ -41,6 +42,7 @@ const common = { id: z.uuid(), expectedVersion: z.number().int().positive() };
 const credits=z.number().int().min(0).max(2147483647);
 const creditPricing=z.discriminatedUnion("mode",[z.strictObject({mode:z.literal("matrix"),prices:z.record(z.enum(QUALITY_IDS),z.record(z.enum(RESOLUTION_IDS),credits.nullable()))}),z.strictObject({mode:z.literal("fixed"),credits}),z.strictObject({mode:z.literal("quality-resolution"),quality:z.record(z.enum(QUALITY_IDS),credits),resolutionExtra:z.record(z.enum(RESOLUTION_IDS),credits)})]);
 const input = z.discriminatedUnion("action", [
+  z.strictObject({action:z.literal("video-capability-upgrade"),...common,reviewDigest:z.string().regex(/^[a-f0-9]{64}$/),publicIds:z.array(identifier).min(1).max(100)}),
   z.strictObject({action:z.literal("video-parameters"),...common,rowId:identifier,routes:videoParametersSchema}),
   z.strictObject({action:z.literal("imagegen-parameters"),...common,rowId:identifier,routes:z.array(imagegenRoutePolicySchema).max(100).nullable()}),
   z.strictObject({action:z.literal("channels"),...common,rowId:identifier,policy:channelPolicySchema.nullable()}),
@@ -59,20 +61,71 @@ const input = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("register"), ...common, providerId: identifier, model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$/), confirmed: z.literal(true), capabilityVerified:z.boolean().optional(), qualityPolicy:qualityPolicySchema.optional(), edit: z.boolean(), vision: z.boolean(), qualityRank: z.number().int().min(1).max(5).default(2), qualities: z.array(z.enum(["low", "medium", "high", "xhigh", "max", "auto"])).max(6), resolutions: z.array(z.enum(["1K", "2K", "4K"])).max(3), maxReferenceImages: z.number().int().min(0).max(128),videoDefinition:videoDefinitionSchema.optional(),videoProfile:videoWireProfileSchema.optional() }),
 ]);
 type Administration = Awaited<ReturnType<typeof getModelAdministration>>;
+type ManagementMutationTurn={held:boolean;waiters:Array<{grant():void}>};
+const managementMutationKey=Symbol.for("naumi.model-management.mutation-turns.v1");
+const managementHost=globalThis as typeof globalThis&{[managementMutationKey]?:WeakMap<Pool,ManagementMutationTurn>};
+const managementMutationTurns=managementHost[managementMutationKey]??(managementHost[managementMutationKey]=new WeakMap<Pool,ManagementMutationTurn>());
+const managementBusy=()=>new ModelConfigError("PUBLICATION_LOCK_PENDING","模型设置正在发布，请使用同一操作稍后重试",409);
+function acquireManagementMutationTurn(pool:Pool,signal:AbortSignal,deadline:number):Promise<()=>void>{
+  if(signal.aborted||Date.now()>=deadline)return Promise.reject(managementBusy());
+  const state=managementMutationTurns.get(pool)??{held:false,waiters:[]};managementMutationTurns.set(pool,state);
+  return new Promise((resolve,reject)=>{
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    const cleanup=()=>{if(timer)clearTimeout(timer);signal.removeEventListener("abort",cancel);};
+    const cancel=()=>{const index=state.waiters.indexOf(waiter);if(index<0)return;state.waiters.splice(index,1);cleanup();reject(managementBusy());};
+    const advance=()=>{const next=state.waiters.shift();if(next)next.grant();else{state.held=false;managementMutationTurns.delete(pool);}};
+    const waiter={grant(){
+      cleanup();if(signal.aborted||Date.now()>=deadline){reject(managementBusy());advance();return;}state.held=true;let released=false;
+      resolve(()=>{if(released)return;released=true;advance();});
+    }};
+    if(!state.held){waiter.grant();return;}
+    state.waiters.push(waiter);signal.addEventListener("abort",cancel,{once:true});timer=setTimeout(cancel,Math.max(0,deadline-Date.now()));
+  });
+}
+function managementLockClient(pool:Pool,signal:AbortSignal,deadline:number):Promise<PoolClient>{
+  return new Promise((resolve,reject)=>{
+    let settled=false;const cleanup=()=>{clearTimeout(timer);signal.removeEventListener("abort",cancel);};
+    const cancel=()=>{if(settled)return;settled=true;cleanup();reject(managementBusy());};
+    const timer=setTimeout(cancel,Math.max(0,deadline-Date.now()));signal.addEventListener("abort",cancel,{once:true});
+    pool.connect().then(client=>{if(settled){client.release();return;}settled=true;cleanup();resolve(client);},error=>{if(settled)return;settled=true;cleanup();reject(error);});
+  });
+}
+async function acquireManagementLock(pool:Pool,key:string,signal:AbortSignal,deadline:number):Promise<PoolClient>{
+  // The publication owner needs further repository connections. Waiting on a
+  // blocking session lock would let duplicate requests consume the entire
+  // business pool before the owner can stage or activate its publication.
+  // Keep the cross-process lock, but never retain a connection as a waiter.
+  for(;;){
+    if(signal.aborted||Date.now()>=deadline)throw managementBusy();
+    const client=await managementLockClient(pool,signal,deadline);
+    try{
+      const result=await client.query("SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS acquired",[key]);
+      if(result.rows[0]?.acquired){
+        if(!signal.aborted&&Date.now()<deadline)return client;
+        await client.query("SELECT pg_advisory_unlock(hashtextextended($1,0))",[key]);
+      }
+    }catch(error){client.release(true);throw error;}
+    client.release();
+    await new Promise(resolve=>setTimeout(resolve,25));
+  }
+}
 function rows(snapshot: ModelSnapshot) {
   return managedModelRows(snapshot, Object.entries(FEATURE_BINDINGS).map(([feature, binding]) => ({ ...publicModelCatalog(snapshot, MODEL_BINDINGS[binding!].modality, feature as keyof typeof FEATURE_BINDINGS), feature })));
 }
 // Persisted provider IDs, actor markers and locks retain their original namespace.
 // Reasons also participate in historical publication fingerprints; keep their wire format.
-export function createModelManagementHandler(deps: { authorize: typeof biAuthorize; administration: () => Promise<Administration>; managed: () => Promise<boolean>; fetcher?: typeof fetch }) {
+export function createModelManagementHandler(deps: { authorize: typeof biAuthorize; administration: () => Promise<Administration>; managed: () => Promise<boolean>; fetcher?: typeof fetch; mutationWaitMs?:number }) {
   return async (request: Request) => {
     const auth = await deps.authorize(request); if (auth instanceof Response) return auth;
     if (request.method !== "GET" && !sameSiteBiMutation(request)) return biJson({ error: "不允许跨站修改" }, 403);
     let staged = false;
     let lock: PoolClient | undefined, lockKey: string | undefined;
+    let releaseMutationTurn:(()=>void)|undefined;
     try {
       const admin = await deps.administration();
       const snapshot = await admin.repo.current();
+      if(request.method==="GET" && new URL(request.url).searchParams.get("view")==="video-capability-upgrade")
+        return biJson(reviewVideoCapabilityUpgrade(snapshot.config,snapshot.version));
       if(request.method==="GET" && new URL(request.url).searchParams.has("rowId")){
         const params=new URL(request.url).searchParams,rowId=identifier.parse(params.get("rowId")),feature=z.enum(FEATURE_IDS).parse(params.get("feature"));
         const row=rows(snapshot).find(r=>r.id===rowId);if(!row || !row.features.some(f=>f.id===feature))throw new ModelConfigError("MODEL_UNAVAILABLE","该模型未应用到此工具",400);
@@ -104,6 +157,8 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
         for(const row of modelRows)for(const route of row.qualityConfig?.routes || []){const d=defaults.get(route.upstreamId);route.metadataDefaults=d || null;if(!route.configured&&d?.available){route.mode=d.mode;route.values={...d.values};route.metadataRef={id:d.id,revision:d.revision};}else if(!route.configured){route.mode="omit";route.values={};}}
         return biJson({ version: snapshot.version,billingVersion:billing.version, managed, rows: modelRows.map(row=>({...row,pricing:managedModelPriceViews(billing,snapshot,row)})), candidates: managedModelCandidates(snapshot.config), channelHealth,providerCapacity,providers: snapshot.config.providers.map(p => ({ id: p.id, name: p.name, protocol: p.protocol, maxConcurrent:p.maxConcurrent, baseUrl: p.baseUrl, enabled: p.enabled, configured: !!p.credentialRef })), catalogs });}
       const body = input.parse(JSON.parse(await readBounded(new Response(request.body), 48000)));
+      if(body.action==="video-capability-upgrade"&&!await deps.managed())
+        throw new ModelConfigError("CONFIG_UNAVAILABLE","请先启用统一模型配置",409);
       if (body.action === "credential") {
         if (!!body.ciphertext === !!body.keyPlain || !/^mvp-[0-9a-f-]{36}$/i.test(body.providerId)) throw new ModelConfigError("INVALID_CREDENTIAL", "凭据参数无效");
         // Match the existing system settings' HTTP fallback, without retaining plaintext in operation drafts or browser storage.
@@ -114,8 +169,38 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
         if (!p) throw new ModelConfigError("PROVIDER_UNAVAILABLE", "上游来源不存在", 404);
         return biJson(await refreshProviderCatalog(admin.pool, p, admin.credentials, admin.trustedOrigins, deps.fetcher, body.force));
       }
-      lock = await admin.pool.connect(); lockKey = `admin-mvp:${body.id}`;
-      await lock.query("SELECT pg_advisory_lock(hashtextextended($1,0))", [lockKey]);
+      const publicationResponse=async(publication:ModelPublication)=>{
+        let discovery;
+        if(body.action==="connect"&&publication.phase==="applied"){
+          const provider=(await admin.repo.current()).config.providers.find(p=>p.id===`mvp-${body.id}`);
+          if(provider)discovery=await refreshProviderCatalog(admin.pool,provider,admin.credentials,admin.trustedOrigins,deps.fetcher)
+            .then(r=>({status:r.status,metadataSaved:r.metadataSaved===true}),()=>({status:"error",metadataSaved:false}));
+        }
+        return biJson({publication,...(discovery?{discovery}:{})},publication.phase==="applied"?200:publication.phase==="failed"?422:202);
+      };
+      const assertReceiptOwner=async(publication:ModelPublication,actor:string)=>{
+        const owner=(await admin.pool.query("SELECT actor FROM app_model_config_versions WHERE version=$1 AND operation_id=$2",[publication.version,body.id])).rows[0];
+        if(owner?.actor!==actor)throw new ModelConfigError("OPERATION_CONFLICT","该操作编号已用于不同发布",409);
+      };
+      if(body.action!=="pricing"){
+        // A finalized receipt is a read, not a mutation. Do not hold a pool
+        // connection while acquiring another for its immutable identity lookup.
+        // Concurrent reads must not fill the pool with advisory-lock waiters.
+        let receipt;
+        try{receipt=await admin.repo.publication(body.id);}catch(e){if(!(e instanceof ModelConfigError)||e.code!=="PUBLICATION_UNAVAILABLE")throw e;}
+        staged=!!receipt;
+        if(receipt?.phase==="applied"){
+          staged=true;
+          const actor=`${auth.actor.slice(0,150)}#mvp:${body.id}:${createHash("sha256").update(canonicalConfig(body)).digest("hex").slice(0,20)}`;
+          await assertReceiptOwner(receipt,actor);return await publicationResponse(receipt);
+        }
+      }
+      // Model publication already has one global pending version/CAS owner.
+      // Serialize only this management mutation orchestration per actual pool;
+      // reads and unrelated business transactions keep their existing concurrency.
+      const deadline=Date.now()+(deps.mutationWaitMs??30000);
+      releaseMutationTurn=await acquireManagementMutationTurn(admin.pool,request.signal,deadline);
+      lockKey = `admin-mvp:${body.id}`;lock=await acquireManagementLock(admin.pool,lockKey,request.signal,deadline);
       if(body.action==="pricing"){
         const billing=await admin.billing.current();
         const actor=`${auth.actor.slice(0,180)}#mvp-price:${createHash("sha256").update(canonicalConfig(body)).digest("hex").slice(0,32)}`,reason=`MVP 积分售价 ${body.rowId}`;
@@ -134,11 +219,23 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
       let previous;
       try { previous = await admin.repo.publication(body.id); } catch (e) { if (!(e instanceof ModelConfigError) || e.code !== "PUBLICATION_UNAVAILABLE") throw e; }
       staged = !!previous;
+      if(previous?.phase==="applied"){
+        // The dedicated draft revision advances after publish. Reconstructing
+        // StageInput from that mutable revision changes its fingerprint. Bind
+        // the immutable receipt to this actor + original management input instead.
+        await assertReceiptOwner(previous,actor);
+      }
+      // Applied receipts do not rebuild StageInput from the advanced private
+      // draft, but still pass through the original connect discovery projection.
+      let publication = previous;
+      if(previous?.phase!=="applied"){
       if (!previous && snapshot.version !== body.expectedVersion) throw new ModelConfigError("CONFIG_CONFLICT", "配置已被其他管理员更新，请刷新后重试", 409);
       let draft = await admin.repo.draft(actor);
       if (!previous && draft.revision === 1) {
         let config = structuredClone(snapshot.config);
-        if(body.action === "scope-compat") {
+        if(body.action === "video-capability-upgrade") {
+          config=applyReviewedVideoCapabilityUpgrade(config,snapshot.version,body.reviewDigest,body.publicIds).config;
+        } else if(body.action === "scope-compat") {
           // Deployment rollback expands the system grant before an older image
           // reads this config. Preserve ordinary tool scope and every price.
           for(const model of config.publicModels)if(model.toolScope?.systems?.includes("canvas")){
@@ -195,14 +292,14 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
         draft = await admin.repo.saveDraft({ id: draft.id, expectedRevision: draft.revision, config, actor });
       }
       staged = true;
-      const publication = await admin.runtime.publish({ id: body.id, draftId: draft.id, expectedRevision: draft.revision, expectedVersion: body.expectedVersion, actor, reason: `MVP ${body.action === "image-mapping" ? `图片参数映射 ${body.rowId}` : body.action === "video-parameters" ? `视频能力 ${body.rowId}` : body.action === "imagegen-parameters" ? `图像高级参数 ${body.rowId}` : body.action === "scope-compat" ? "回滚兼容：展开画布系统范围" : body.action === "order" ? "模型展示排序" : body.action === "channels" ? `供应通道 ${body.rowId}` : body.action === "resolutions" ? `分辨率选项 ${body.rowId}` : body.action === "parameters" ? `参数映射 ${body.rowId}` : body.action === "scope" ? `工具范围 ${body.rowId}` : body.action === "switch" ? `切换 ${body.rowId} → ${body.upstreamId}` : body.action === "rename" ? `改名 ${body.rowId} → ${body.label}` : body.action === "connect" ? `接入来源 ${body.name}` : `添加模型 ${body.model}`}` });
-      let discovery;
-      if (body.action === "connect" && publication.phase === "applied") {
-        const provider = (await admin.repo.current()).config.providers.find(p=>p.id===`mvp-${body.id}`);
-        if(provider) discovery = await refreshProviderCatalog(admin.pool,provider,admin.credentials,admin.trustedOrigins,deps.fetcher).then(r=>({status:r.status,metadataSaved:r.metadataSaved===true}),()=>({status:"error",metadataSaved:false}));
+      publication = await admin.runtime.publish({ id: body.id, draftId: draft.id, expectedRevision: draft.revision, expectedVersion: body.expectedVersion, actor, reason: `MVP ${body.action === "video-capability-upgrade" ? "更新已核对的视频能力" : body.action === "image-mapping" ? `图片参数映射 ${body.rowId}` : body.action === "video-parameters" ? `视频能力 ${body.rowId}` : body.action === "imagegen-parameters" ? `图像高级参数 ${body.rowId}` : body.action === "scope-compat" ? "回滚兼容：展开画布系统范围" : body.action === "order" ? "模型展示排序" : body.action === "channels" ? `供应通道 ${body.rowId}` : body.action === "resolutions" ? `分辨率选项 ${body.rowId}` : body.action === "parameters" ? `参数映射 ${body.rowId}` : body.action === "scope" ? `工具范围 ${body.rowId}` : body.action === "switch" ? `切换 ${body.rowId} → ${body.upstreamId}` : body.action === "rename" ? `改名 ${body.rowId} → ${body.label}` : body.action === "connect" ? `接入来源 ${body.name}` : `添加模型 ${body.model}`}` });
       }
-      return biJson({ publication, ...(discovery?{discovery}:{}) }, publication.phase === "applied" ? 200 : publication.phase === "failed" ? 422 : 202);
+      if(!publication)throw new ModelConfigError("PUBLICATION_UNAVAILABLE","发布记录不存在",404);
+      return await publicationResponse(publication);
     } catch (e) {
+      // A lock/permit timeout proves no rejection of this operation. Another
+      // process may already own or stage it; keep its original retry identity.
+      if(e instanceof ModelConfigError&&e.code==="PUBLICATION_LOCK_PENDING")return biJson({error:e.message,code:e.code,operationNotStaged:false},e.status);
       if(e instanceof BillingError)return biJson({error:e.message,code:e.code,operationNotStaged:["CONFIG_CONFLICT","INVALID_CONFIG","OPERATION_CONFLICT"].includes(e.code)},e.status);
       if (e instanceof ModelConfigError) return biJson({ error: e.message, code: e.code, operationNotStaged: !staged || ["CONFIG_CONFLICT", "DRAFT_CONFLICT", "PUBLICATION_PENDING"].includes(e.code) }, e.status);
       if (e instanceof z.ZodError || e instanceof SyntaxError) return biJson({ error: "参数无效，请检查填写内容", operationNotStaged: true }, 400);
@@ -210,6 +307,7 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
       return biJson({ error: "操作结果待核对，请使用同一操作重试", operationNotStaged: false }, 503);
     } finally {
       if (lock) { try { await lock.query("SELECT pg_advisory_unlock(hashtextextended($1,0))", [lockKey]); lock.release(); } catch { lock.release(true); } }
+      releaseMutationTurn?.();
     }
   };
 }

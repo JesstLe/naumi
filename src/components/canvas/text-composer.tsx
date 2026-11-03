@@ -17,6 +17,7 @@ import type {CanvasTextTaskState} from "@/lib/canvas/text-task";
 import type {DockPlacement} from "@/lib/canvas/dock-placement";
 import type {CanvasSize,SafeArea} from "@/lib/canvas/dock-layout";
 import {CanvasComposerShell,CanvasComposerFooter} from "./composer-shell";
+import {StoryboardPlanButton} from "./video/storyboard-panel";
 
 type ComposerReference=Pick<Artwork,"id"|"image"|"title">;
 export type CanvasTextComposerProps={
@@ -27,10 +28,11 @@ export type CanvasTextComposerProps={
   layout:{dockRef:RefObject<HTMLDivElement|null>;style?:DockPlacement;safeArea:SafeArea;canvasSize:CanvasSize;expanded:boolean;onExpandedChange:Dispatch<SetStateAction<boolean>>};
   focusRevision?:number;onDismiss:()=>void;onReference:(id:string,enabled:boolean)=>unknown;onMenuOpenChange:(open:boolean)=>void;
   assist:{busy:boolean;onPickProduct:()=>void};image:{disabled:boolean;onGenerate:()=>void};
+  storyboard?:{disabled:boolean;onPlan:()=>void};
 };
 /** Owns only composer presentation. Draft, document and paid task remain with
  * their existing owners; callbacks do not create a second execution path. */
-export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,draft,optimization,task,layout,focusRevision,onDismiss,onReference,onMenuOpenChange,assist,image}:CanvasTextComposerProps){
+export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,draft,optimization,task,layout,focusRevision,onDismiss,onReference,onMenuOpenChange,assist,image,storyboard}:CanvasTextComposerProps){
   const {locale,t}=useI18n(),L=(zh:string,en:string)=>locale==="en"?en:zh;
   const {prompt:textPrompt,onChange:setTextPrompt}=draft;
   const {dockRef:textComposerDockRef,style:dockStyle,safeArea:overlaySafeArea,canvasSize,expanded:textComposerExpanded,onExpandedChange:setTextComposerExpanded}=layout;
@@ -331,6 +333,7 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
                 <p className="canvas-ui-error px-12 pb-2 text-xs font-medium">{task.state.error}</p>
               )}
               <CanvasComposerFooter testId="text-node-dock-footer" controls={<>
+                {storyboard&&<StoryboardPlanButton english={locale==='en'} disabled={storyboard.disabled} onClick={storyboard.onPlan}/>}
                 <TextModelSelect feature="canvas.text-generate" compact dark={!lightCanvas} direction="up" />
                 <CanvasPromptOptimizer contextKey={optimization?.contextKey??null} prompt={textPrompt}
                   disabled={!optimization || optimization.disabled || task.state.busy || selectedText.status === "generating" || assistBusy} english={locale === "en"}

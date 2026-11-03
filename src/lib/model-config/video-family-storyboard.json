@@ -1,0 +1,237 @@
+{
+  "schemaVersion": 1,
+  "items": [
+    {
+      "providerId": "apib-video",
+      "model": "kling-v3",
+      "publicId": "video-apib-kling-v3",
+      "profile": "apib-storyboard-v4",
+      "definition": {
+        "modes": [
+          "text",
+          "single_image",
+          "frames_required"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ],
+            "resolutions": [
+              "720p",
+              "1080p",
+              "4k"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "adaptive"
+        ],
+        "audio": "disabled",
+        "limits": {
+          "images": 2,
+          "videos": 0,
+          "audios": 0
+        },
+        "defaultDurationSeconds": 3,
+        "defaultResolution": "720p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": true,
+        "supportsLastFrame": true,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": true,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 6,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {},
+        "modeParameters": {
+          "text": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1"
+            ]
+          },
+          "single_image": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "frames_required": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          }
+        },
+        "minShotDurationSeconds": 1,
+        "maxShotPromptChars": 512
+      },
+      "documentation": {
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/kling-v3/generation.md"
+        ],
+        "checkedAt": "2026-11-02",
+        "coverage": "documented-storyboard-contract-local-wire-http-not-paid-provider-acceptance",
+        "sources": [
+          {
+            "url": "https://docs.apimart.ai/en/api-reference/videos/kling-v3/generation.md",
+            "sha256": "7bd1c29ba668a387983cc9ab845c8fdcedba75004d73be00f9b2cadbf2d7ecae"
+          }
+        ]
+      },
+      "smokeInput": {
+        "mode": "text",
+        "durationSeconds": 3,
+        "resolution": "720p",
+        "aspectRatio": "16:9"
+      },
+      "previousProfile": "apib-video-v2"
+    },
+    {
+      "providerId": "apib-video",
+      "model": "kling-v3-omni",
+      "publicId": "video-apib-kling-v3-omni",
+      "profile": "apib-storyboard-v4",
+      "definition": {
+        "modes": [
+          "text",
+          "single_image",
+          "frames_required",
+          "reference"
+        ],
+        "durationResolutionMap": [
+          {
+            "durations": [
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ],
+            "resolutions": [
+              "720p",
+              "1080p",
+              "4k"
+            ]
+          }
+        ],
+        "aspectRatios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "adaptive"
+        ],
+        "audio": "disabled",
+        "limits": {
+          "images": 2,
+          "videos": 1,
+          "audios": 0,
+          "videoMaxBytes": 209715200
+        },
+        "defaultDurationSeconds": 3,
+        "defaultResolution": "720p",
+        "defaultAspectRatio": "16:9",
+        "supportsAutoDuration": false,
+        "requiresPrompt": true,
+        "supportsFirstFrame": true,
+        "supportsLastFrame": true,
+        "supportsFrameAudio": false,
+        "supportsNegativePrompt": false,
+        "supportsWatermark": false,
+        "supportsMultiShot": true,
+        "supportsElements": false,
+        "supportsCamera": false,
+        "supportsExactSize": false,
+        "supportsCancellation": false,
+        "maxPromptChars": null,
+        "maxNegativePromptChars": 0,
+        "maxShots": 6,
+        "maxElements": 0,
+        "maxElementReferences": 0,
+        "providerOptions": {},
+        "modeParameters": {
+          "text": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1"
+            ]
+          },
+          "single_image": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "frames_required": {
+            "aspectRatios": [
+              "adaptive"
+            ]
+          },
+          "reference": {
+            "aspectRatios": [
+              "16:9",
+              "9:16",
+              "1:1"
+            ]
+          }
+        },
+        "supportsReferenceFirstFrame": true,
+        "minShotDurationSeconds": 1,
+        "shotDurationStep": 1
+      },
+      "documentation": {
+        "sourceURLs": [
+          "https://docs.apimart.ai/en/api-reference/videos/kling-v3-omni/generation.md"
+        ],
+        "checkedAt": "2026-11-02",
+        "coverage": "documented-storyboard-contract-local-wire-http-not-paid-provider-acceptance",
+        "sources": [
+          {
+            "url": "https://docs.apimart.ai/en/api-reference/videos/kling-v3-omni/generation.md",
+            "sha256": "dfbcb9105981e478ee3226cbef3055f9122bad48eae3eea9f90753ebfda0972e"
+          }
+        ]
+      },
+      "smokeInput": {
+        "mode": "text",
+        "durationSeconds": 3,
+        "resolution": "720p",
+        "aspectRatio": "16:9"
+      },
+      "previousProfile": "apib-video-v3"
+    }
+  ]
+}
