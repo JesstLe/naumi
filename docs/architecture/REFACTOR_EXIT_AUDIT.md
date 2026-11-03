@@ -1,5 +1,9 @@
 # 整体退出审计
 
+## 当前增量：9fe Verify 封版构建隔离
+
+[账单/业务UI隔离](../changes/2026-11-04-refactor-billing-ui-production-isolation.md)确认真实production seal通过后，前一billing测试向sealed standalone复制static/public，后续业务copy前full-tree guard失败而未启动页面。保留原guard和原ZIP/RUN，billing改用同一seal的owned production副本及owned server；CI投影673新增路径不是伪造aftertree。受控原前缀精确FAIL→修改46检查/两个最小HTTP child PASS，原owner65/framework33-441通过。新增正式case使目录249；另一次全量源码fixture构建与顺序UI结果、最终source桥/四产物归本轮output，不把Windows外部依赖/派生Git身份冒称Linux CI或PR同头构建。整体ACTIVE、未合main/未部署、47 HOLD。
+
 ## 当前增量：cb2 Core 生成活动回执 fixture
 
 [生成活动回执边界](../changes/2026-11-04-refactor-generation-activity-receipt-fixture.md)保留原 Core149PASS/1FAIL/96NOT_RUN 与当前9fe原样exit1。诊断副本确认真实 BillingProvider submit 在旧VM缺 readBillingSubmissionResponse，尚未进入 poll/position；只补测试真实owner、完整成功回执和可取消的独立body deadline，不改产品或history1合同。新增16个坏回执/断体/受控超时/缺字段原身份恢复组合，boundary90/772及activity38/182通过；secondary/image/text与实际React/本机读体浏览器相邻模块集中通过。正式目录仍248，最终SHA绑定selected、静态、独立窄审与四产物归本轮output；selected不是完整Core，受控30秒推进不是墙钟超时测量，fixture supplier不是线上账务。整体ACTIVE、未合main/未部署、47 HOLD。

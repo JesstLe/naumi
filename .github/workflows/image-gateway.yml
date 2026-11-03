@@ -222,6 +222,7 @@ jobs:
             output/billing-20261003/ui-results.json
             output/billing-20261003/ui-app.*.log
             output/billing-20261003/ui-provider.json
+            output/billing-20261003/runs/*/PRODUCTION.json
             output/billing-20261003/ui-frozen-price.json
             output/billing-20261003/navigation-*.json
             output/billing-20261003/*.png

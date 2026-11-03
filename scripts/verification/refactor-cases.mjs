@@ -6,6 +6,7 @@ const node=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:false,
 export const refactorCases=[
  node('business-canvas-readiness','foundation','scripts/verify-business-canvas-readiness.cjs','BUSINESS_CANVAS_READINESS=PASS'),
  node('model-ui-production','foundation','scripts/verify-model-ui-production.mjs','MODEL_UI_PRODUCTION=PASS'),
+ node('billing-ui-production-isolation','foundation','scripts/verify-billing-ui-production-isolation.mjs','BILLING_UI_PRODUCTION_ISOLATION=PASS'),
  node('canvas-theme-prompt-fixture','canvas','scripts/verify-canvas-theme-prompt-fixture.cjs','CANVAS_THEME_PROMPT_FIXTURE=PASS'),
  node('billing-response-body-lifetime','pricing','scripts/verify-billing-response-body-lifetime.cjs','BILLING_RESPONSE_BODY_LIFETIME=PASS'),
  ts('protocol-application-ownership','pricing','scripts/verify-protocol-application-ownership.ts','PROTOCOL_APPLICATION_OWNERSHIP=MODIFIED PASS'),

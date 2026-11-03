@@ -43,6 +43,7 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='collaboration-ui')stageEnv.COLLAB_UI_EVIDENCE=evidence;
    if(spec.id==='main-sync-assistant-navigation')stageEnv.MAIN_SYNC_ASSISTANT_EVIDENCE=evidence;
    if(spec.id==='business-canvas-readiness')stageEnv.BUSINESS_CANVAS_READINESS_EVIDENCE=evidence;
+   if(spec.id==='billing-ui-production-isolation')stageEnv.BILLING_UI_PRODUCTION_ISOLATION_EVIDENCE=evidence;
    if(spec.id==='model-ui-production')stageEnv.MODEL_UI_PRODUCTION_EVIDENCE=evidence;
    if(spec.id==='main-sync-canvas-owners')stageEnv.MAIN_SYNC_CANVAS_EVIDENCE=evidence;
    if(spec.id==='model-management-concurrency'||spec.id==='model-management-distinct')stageEnv.MODEL_MANAGEMENT_CONCURRENCY_EVIDENCE=evidence;

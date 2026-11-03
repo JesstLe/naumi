@@ -1,4 +1,4 @@
-/** Source-bound production output for the business UI fixture only.
+/** Source-bound production output shared by isolated UI verification fixtures.
  * This copies the already-required build; it never builds, starts Next, changes
  * heap policy, rewrites source or falls back to a development server. */
 import fs from 'node:fs/promises';
