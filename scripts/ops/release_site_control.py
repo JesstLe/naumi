@@ -16,6 +16,7 @@ import release47_task_snapshot as tasks
 from release47_saas_successor import syntax_check
 
 CANON=base.CANON
+EVIDENCE_ROOT=pathlib.Path('/opt/naumi-staging/evidence')
 HOSTS={'47.105.59.142':'eb32806db06dfe9ec55f17a3be5c59476ca0a45fec8ce442e0437530212cb3df',
        '103.30.76.93':'26721373f7ecea7a5a9173a43bb017cd362d1f7ed9864b402874576a9e4fee35'}
 AUTHORIZATION='103统一管理47的功能开放，47的/admin做企业管理、/enterprise做协作交付，把真实数据和权限链路接通，验收后再上线，别影响正在使用的员工。'
@@ -54,8 +55,7 @@ class Release(base.Release):
     def __init__(self,tx,c):
         self.tx,self.c=tx,c;self.root=tx.folder;self.initial=CANON.read_bytes();self.disk=sha(self.initial);self.state=json.loads(self.initial)
         require(self.disk==c['canonicalSha256'] and self.state['revision']==c['canonicalRevision'],'CANONICAL_REVIEW_CHANGED')
-        key,active=('normalBlueGreenReleases','activeNormalBlueGreenReleaseId') if c['target'].startswith('47.') else ('blueGreen103Releases','active103BlueGreenReleaseId')
-        previous=(self.state.get('siteControlReleases',{}).get(self.state.get('activeSiteControlReleaseId')) or self.state[key][self.state[active]])
+        previous,prior_id=self.predecessor(c)
         require(previous.get('phase')=='COMPLETE' and previous.get('commit')==c['oldCommit'],'PREDECESSOR_NOT_COMPLETE')
         require(all(o.get('phase') in ['ACKNOWLEDGED','REJECTED_PRECONDITION'] for o in previous.get('operations',{}).values()),'PREDECESSOR_OPERATION_UNKNOWN')
         require(all(r.get('phase') in ['COMPLETE','ABORTED'] for r in self.state.get('siteControlReleases',{}).values()),'SITE_ROLLOUT_UNRESOLVED')
@@ -68,7 +68,34 @@ class Release(base.Release):
         self.db=self.byname['naumi-staging-db-1'];self.de=environment(self.db)
         self.new={};self.switched=self.old_stopped=self.worker_paused=self.app_drained=False
         self.record={'releaseId':c['releaseId'],'phase':'PREPARED','commit':c['commit'],'image':c['image'],'buildVersion':c['buildVersion'],'startedAt':base.now(),'operations':{},'databaseRestored':False,'tasksReplayed':False}
+        if c.get('abortedPredecessor') is not None:self.record.update(abortedPredecessor=c['abortedPredecessor'],predecessorReleaseId=prior_id)
         self.extra=[]
+
+    def predecessor(self,c):
+        """Select the original predecessor; subclasses may verify an explicit successor."""
+        prior_id=None
+        key,active=('normalBlueGreenReleases','activeNormalBlueGreenReleaseId') if c['target'].startswith('47.') else ('blueGreen103Releases','active103BlueGreenReleaseId')
+        previous=(self.state.get('siteControlReleases',{}).get(self.state.get('activeSiteControlReleaseId')) or self.state[key][self.state[active]])
+        if c.get('abortedPredecessor') is not None:
+            rid=c['abortedPredecessor'];ops=previous.get('operations',{})
+            require(all(o.get('phase') in ['ACKNOWLEDGED','REJECTED_PRECONDITION'] for r in self.state.get('siteControlReleases',{}).values()
+                        for o in r.get('operations',{}).values()), 'SITE_ROLLOUT_OPERATION_UNKNOWN')
+            require(c['target']=='103.30.76.93' and re.fullmatch('release103-mapping-[a-z0-9-]{6,50}',c['releaseId']) and
+                    re.fullmatch('release103-mapping-[a-z0-9-]{6,50}',rid) and self.state.get('activeSiteControlReleaseId')==rid and
+                    previous.get('releaseId')==rid and previous.get('phase')=='ABORTED' and
+                    previous.get('candidatesRetained') is False and previous.get('gatewaySwitched') is False and not previous.get('new') and
+                    set(ops)<={'database-backup'} and all(o.get('phase')=='ACKNOWLEDGED' for o in ops.values()) and
+                    previous.get('gatewayObservedSha256')==c['nginxSha256'], 'ABORTED_PREDECESSOR_NOT_PRISTINE')
+            folder=EVIDENCE_ROOT/rid;original=json.loads((folder/'release-config.private.json').read_bytes())
+            raw=(folder/'canonical-before.private.json').read_bytes();before=json.loads(raw)
+            require(original.get('target')==c['target'] and original.get('releaseId')==rid and sha(raw)==original.get('canonicalSha256') and
+                    before.get('revision')==original.get('canonicalRevision') and
+                    all(original.get(k)==c.get(k) for k in ['oldCommit','oldImage','oldNames','oldPins','runningIds','nginxSha256']),
+                    'ABORTED_PREDECESSOR_BASELINE_CHANGED')
+            prior_id=before.get('activeSiteControlReleaseId');prior=before.get('siteControlReleases',{}).get(prior_id)
+            require(prior is not None and prior==self.state.get('siteControlReleases',{}).get(prior_id), 'ABORTED_PREDECESSOR_HISTORY_CHANGED')
+            previous=prior
+        return previous,prior_id
 
     def reconcile(self):
         self.tx.save('canonical-before.private.json',self.initial);self.tx.save('containers-before.private.json',self.rows)
@@ -316,7 +343,7 @@ class Release(base.Release):
                 require(count==0,'PORTAL_DATABASE_TRANSACTION_ACTIVE');checks.append({'at':base.now(),'active':count});time.sleep(5)
             self.tx.save('portal-quiescence.json',{'scope':'fleet-only-no-background-workers','observations':checks,'ingressRemoved':True})
             require(all(('http://127.0.0.1:'+str(p)) not in self.tx.run(['nginx','-T']).decode() for p in [self.c['oldPort'],13062]),'OLD_GATEWAY_REFERENCE_REMAINS')
-            after=tasks.collect_task_snapshot(self.tx.run,public_identity(self.db),self.tx.save,previous=self.task_before.private,projection='proof',row_limit=5000,allow_absent_tables=tasks.ADDITIVE_TABLES,statement_timeout_ms=15000)
+            after=tasks.collect_task_snapshot(self.tx.run,public_identity(self.db),self.tx.save,previous=self.task_before.private,projection='proof',row_limit=5000,allow_absent_tables=tasks.ADDITIVE_TABLES,statement_timeout_ms=15000,activity_scope=self.c.get('taskActivityScope','all'))
             preservation=tasks.compare_task_snapshots(self.task_before,after);self.tx.save('task-preservation.json',preservation);require(preservation['preservationVerified'],'TASK_PRESERVATION_FAILED')
             for role in ['worker','media','portal','web']:
                 row=self.old[role]

@@ -26,5 +26,9 @@ export function useImageReferenceDraft(draftKey:string|null,ownerScope:string|nu
     if(!alive.current||!key||readOnly||currentWorkspace()!==workspace||current.current.store!==store||current.current.key!==key||current.current.readOnly)return;
     store.remove(key,id);render(value=>value+1);
   },[key,readOnly,store,workspace]);
-  return {uploads,files,add,remove};
+  const copyTo=useCallback((targetDraftKey:string|null,sourceDraftKey=draftKey)=>{
+    if(!alive.current||!sourceDraftKey||!targetDraftKey||readOnly||currentWorkspace()!==workspace||current.current.store!==store||current.current.readOnly)return;
+    store.copy(JSON.stringify([workspace,sourceDraftKey]),JSON.stringify([workspace,targetDraftKey]));render(value=>value+1);
+  },[draftKey,readOnly,store,workspace]);
+  return {uploads,files,add,remove,copyTo};
 }
