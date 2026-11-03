@@ -1,5 +1,9 @@
 # 整体退出审计
 
+## 当前增量：Core主题矩阵测试协议，不放宽产品门禁
+
+[主题fixture合同](../changes/2026-11-03-refactor-theme-fixture-contract.md)从4560/5696完整基线补image-prompts fixture的document/revision/CAS/replay并保留legacy mapping接口；适配现主线AI写作/更多菜单。98原主题检查、色彩数学/对比阈值/原预算保持；提交禁用在显式原POST preACK gate测，ACK后沿原后台并行语义。完整Next4主题98PASS；实际client+route+原gate端口回归不冒称browser/PG/paid验收，历史原POST次数UNKNOWN保留。目录246仍非完整core通过，整体退出门槛与47 HOLD保持。
+
 ## 当前增量：账务 UI 原响应生命周期，产品零修改
 
 [账务UI观察合同](../changes/2026-11-03-refactor-billing-response-body-lifetime.md)确认936/44e/4d/59d的旧晚读片段相同，不能只以过时通知忽略。真实旧CI15PASS/1FAIL；early-only本地候选2/4仍FAIL，最终有界durable buffer保留原Playwright body后4/4 PASS，完整账务UI16 PASS。产品src/services/public路径集/hash/mode不变；原200/原ID/冻结价/一POST一ledger/实际PNG/restore与时限不放宽，纯测试生命周期修复。目录244→245不是完整core通过；整体R04/同case页面/当前完整固定WebWorker/runtime/performance与main整合门槛保持，47 HOLD。

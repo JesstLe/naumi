@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：Core主题矩阵fixture与主线交互合同
+
+[主题fixture收敛](changes/2026-11-03-refactor-theme-fixture-contract.md)处理旧936 Core78PASS/1FAIL/158NOT_RUN。旧产物明确prompt回执不完整，current原脚本又真实卡主线文字模型旧入口；只抽专属prompt测试owner/补合法receipt，显式AI写作与更多菜单，不放宽产品保存fence。保留原98主题检查及阈值，确定preACK提交禁用与原ACK后后台释放不同阶段，当前完整Next4组合/98/0viol通过，原POST1/ID不变，实际client/gate窄合同及旧mapping差分独立。产品零改动，tsc5606/0、lint5/0、runner31/430；登记246不是全跑。正式/四产物/新头CI归output/pr8-core-theme-fixture-20261103；整体ACTIVE，未合main/未部署、47 HOLD。
+
 ## 当前推进：账务 UI 原响应生命周期
 
 [原响应观察修复](changes/2026-11-03-refactor-billing-response-body-lifetime.md)处理旧936 Verify真实15PASS/1FAIL：body经CDP读取失败发生在200断言消息求值，后续头并未覆盖。仅提前读取仍在实际浏览器2/4失败，原失败保留；最终test-only有界durable buffer+原Response单读+finally detach，四时序实际4PASS。未route替换、未重发POST、产品2393路径raw零漂移；当前产品59d完整production-mode Next构建和真实PG账务UI原16项通过，原冻结价格/账本/restore/预算保持。正式目录245为登记数；最终类型、formal selected、四产物和新头CI归output/pr8-verify-response-body-lifetime-20261103。整体ACTIVE、未合main/未部署、47 HOLD。
