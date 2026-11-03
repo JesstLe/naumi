@@ -9527,16 +9527,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     nodeSettingsReady,
   ]);
 
-  // Ctrl/⌘ + 滚轮:阻止浏览器整页缩放(画布内由 React Flow 自己缩放)
+  // The editing workspace includes sibling panels and body portals, not only
+  // canvasAreaRef. Cancel browser wheel zoom before either React or D3 stops
+  // propagation; leave the event to its owner for canvas zoom / normal scroll.
+  // Browser keyboard/menu zoom stays unchanged, and the project list opts out.
   useEffect(() => {
-    if (!ready || !user) return;
-    const el = canvasAreaRef.current;
-    if (!el) return;
+    if (!ready || !user || browsing) return;
     const onWheel = (e: WheelEvent) => {
       if (e.ctrlKey || e.metaKey) e.preventDefault();
     };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
+    document.addEventListener("wheel", onWheel, { passive: false, capture: true });
+    return () => document.removeEventListener("wheel", onWheel, true);
   }, [ready, user, browsing]);
 
   useEffect(() => {

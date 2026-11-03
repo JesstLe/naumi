@@ -29,7 +29,10 @@ pass("platform detection selects macOS Command or Windows Control labels");
 assert.match(client, /zoomActivationKeyCode=\{\["Control", "Meta"\]\}/);
 assert.match(client, /if \(e\.ctrlKey \|\| e\.metaKey\) e\.preventDefault\(\)/);
 assert.match(client, /zoomOnPinch/);
-pass("Control wheel, Command wheel, and trackpad pinch stay inside the canvas");
+assert.match(client, /if \(!ready \|\| !user \|\| browsing\) return;\s*const onWheel/);
+assert.match(client, /document\.addEventListener\("wheel", onWheel, \{ passive: false, capture: true \}\)/);
+assert.match(client, /document\.removeEventListener\("wheel", onWheel, true\)/);
+pass("source wiring: active-workspace capture covers sibling panels and portals; runtime proof is in verify-canvas-zoom-ui.cjs");
 
 assert.match(client, /panActivationKeyCode="Space"/);
 assert.match(client, /panOnDrag=\{canvasTool === "hand" \? \[0, 1\] : \[1\]\}/);
