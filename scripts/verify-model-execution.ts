@@ -112,8 +112,11 @@ async function main() {
     config.upstreamModels.find(m => m.id === "video-u1")!.model = "wire-video-two";
     const saved = await f.repo.saveDraft({ id: draft.id, expectedRevision: draft.revision, config, actor: "fixture-admin" });
     const staged = await f.repo.stage({ id: randomUUID(), draftId: saved.id, expectedRevision: saved.revision, expectedVersion: first.version, reason: "执行快照验收", actor: "fixture-admin" });
-    await f.repo.markApplied(staged.id, staged.digest);
+    await f.repo.markApplied(staged.id, staged.digest, saved.id);
     const second = await f.repo.current();
+    const publishedOwnDraft = await f.repo.draft("fixture-admin");
+    assert.equal(publishedOwnDraft.basedOnVersion, second.version, "Publishing continues the exact staged draft");
+    assert.equal(publishedOwnDraft.revision, saved.revision + 1, "Publishing advances the staged draft CAS revision once");
     const { client: oldClient, wireModel: oldWire } = await executor.clientFor(oldTask);
     await oldClient.images.generate({ model: oldWire, prompt: "fixture product", quality: "high", size: "1024x1024", n: 1 });
     const newTask = await executor.resolve({ binding: "image.generate", requestedModelId: "image-a", snapshot: second, billing, facts });
@@ -219,7 +222,7 @@ async function main() {
     finalConfig.providers.find(p => p.id === "video-provider")!.credentialRef = (await f.credentials.importPlain({ providerId: "video-provider", plain: "fixture-video-final-key", actor: "fixture" })).id;
     const finalSaved = await f.repo.saveDraft({ id: finalDraft.id, expectedRevision: finalDraft.revision, config: finalConfig, actor: finalActor });
     const finalStaged = await f.repo.stage({ id: randomUUID(), draftId: finalSaved.id, expectedRevision: finalSaved.revision, expectedVersion: second.version, reason: "视频接单后轮换", actor: finalActor });
-    await f.repo.markApplied(finalStaged.id, finalStaged.digest);
+    await f.repo.markApplied(finalStaged.id, finalStaged.digest, finalSaved.id);
     const afterRotation = calls.length;
     assert.equal((await videoService.createVideoGeneration(email, input)).taskId, created.taskId);
     assert.equal(calls.length, afterRotation);
@@ -248,7 +251,7 @@ async function main() {
     rotateConfig.providers[0].credentialRef = (await f.credentials.importPlain({ providerId: "p1", plain: "fixture-image-final-key", actor: "fixture" })).id;
     const rotateSaved = await f.repo.saveDraft({ id: rotateDraft.id, expectedRevision: rotateDraft.revision, config: rotateConfig, actor: rotateActor });
     const rotateStaged = await f.repo.stage({ id: randomUUID(), draftId: rotateSaved.id, expectedRevision: rotateSaved.revision, expectedVersion: finalStaged.version, reason: "画布排队后轮换", actor: rotateActor });
-    await f.repo.markApplied(rotateStaged.id, rotateStaged.digest);
+    await f.repo.markApplied(rotateStaged.id, rotateStaged.digest, rotateSaved.id);
     const claimedCanvas = await globalDb.claimNextCanvasImageTask(); assert.ok(claimedCanvas);
     await canvasService.processCanvasImageTask(claimedCanvas);
     assert.equal((await globalDb.getCanvasImageTask(email, canvasTask.id))!.status, "completed");
@@ -341,7 +344,7 @@ async function main() {
     const reducedConfig = structuredClone(reducedDraft.config); reducedConfig.providers[0].maxConcurrent = 1;
     const reducedSaved = await f.repo.saveDraft({ id: reducedDraft.id, expectedRevision: reducedDraft.revision, config: reducedConfig, actor: reducedActor });
     const reduced = await f.repo.stage({ id: randomUUID(), draftId: reducedSaved.id, expectedRevision: reducedSaved.revision, expectedVersion: reducedVersion, reason: "配置降低并发", actor: reducedActor });
-    await f.repo.markApplied(reduced.id, reduced.digest);
+    await f.repo.markApplied(reduced.id, reduced.digest, reducedSaved.id);
     const retainedLease = await capacity.acquire({ providerId: "p1", baseUrl: `${f.origin}/v1`, maxConcurrent: 4, timeoutMs: 5000 });
     try { await assert.rejects(capacity.acquire({ providerId: "p1", baseUrl: `${f.origin}/v1`, maxConcurrent: 4, timeoutMs: 5000 }), (e: any) => e.code === "PROVIDER_BUSY", "An old task must observe a newly published lower limit before any new-version supplier call"); }
     finally { await retainedLease.release(); }
