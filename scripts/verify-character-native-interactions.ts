@@ -1,3 +1,4 @@
+import { selectReferenceMention } from "./verification/reference-mention-locator";
 import assert from "node:assert/strict";
 import {dragCanvasNode} from "./verification/canvas-node-drag";
 import {createHash, randomUUID} from "node:crypto";
@@ -120,8 +121,8 @@ export async function verifyCharacterInteractions(h: Awaited<ReturnType<typeof c
     const dock = page.getByTestId("video-node-dock"); await dock.waitFor();
     await dock.getByLabel("引用1外观", {exact: true}).selectOption(characterInputIdentity(id, look.id));
     await dock.getByTestId("video-composer-prompt").fill("跟随 @林舟");
-    await dock.getByRole("listbox", {name: "选择引用素材", exact: true}).getByRole("option", {name: "林舟 · 交互 · 外套", exact: true}).click();
-    await expect(dock.getByTestId("video-composer-prompt")).toHaveValue("跟随 @【林舟 · 交互 · 外套】");
+    const mentionSelection = await selectReferenceMention(page, dock.getByTestId("video-composer-prompt"), '林舟 · 交互 · 外套');
+    const mentionChip = dock.getByTestId("video-composer-prompt").getByRole("button", { name: '林舟 · 交互 · 外套', exact: true }); await expect(mentionChip).toBeVisible(); await expect(mentionChip).toHaveAttribute("data-inline-token", "{{ref 1}}"); await expect(mentionChip).toHaveAttribute("data-reference-missing", "false");
     await dock.getByRole("button", {name: "保存设置", exact: true}).click();
     await expect.poll(async () => (await video(videoId)).config.prompt).toBe("跟随 {{ref 1}}");
     assert.equal((await video(videoId)).inputs[0].nodeId, characterInputIdentity(id, look.id));
@@ -199,7 +200,8 @@ export async function verifyCharacterInteractions(h: Awaited<ReturnType<typeof c
     assert.equal((await h.request("a", "POST", "/api/canvas/video-workflows", intent)).status, 202);
     assert.equal(h.supplierCalls().filter(call => call.phase === "create").length, calls);
     assert.deepEqual(errors, []);
-    const evidence = {realBrowserCanvas: true, menuCreateUploadSaveRefresh: true, looksAndDefault: true, imageGenerationDraftOnly: true, dragLockDuplicateDeleteUndoRedo: true, nativeHandleConnection: true, namedMentionAndLookSwitch: true, uiVideoGeneration: true, mixedCopyAliasAndImagesRemapped: true, mixedDeletionRestoreBeforeImageAtomic: true, failedHistoryRollsBackAll: true, workflowRolesFrozen: true, laterEditDeleteLeavesQueuedStageUnchanged: true, replayNoNewCalls: true, taskIds: [uiTaskId, ...((await run()).nodes.map((item: any) => item.taskId))], simulatedCreatesAdded: calls - createsBefore, paidCalls: 0, pageErrors: errors};
+    const evidence = {
+      mentionSelection,realBrowserCanvas: true, menuCreateUploadSaveRefresh: true, looksAndDefault: true, imageGenerationDraftOnly: true, dragLockDuplicateDeleteUndoRedo: true, nativeHandleConnection: true, namedMentionAndLookSwitch: true, uiVideoGeneration: true, mixedCopyAliasAndImagesRemapped: true, mixedDeletionRestoreBeforeImageAtomic: true, failedHistoryRollsBackAll: true, workflowRolesFrozen: true, laterEditDeleteLeavesQueuedStageUnchanged: true, replayNoNewCalls: true, taskIds: [uiTaskId, ...((await run()).nodes.map((item: any) => item.taskId))], simulatedCreatesAdded: calls - createsBefore, paidCalls: 0, pageErrors: errors};
     await writeFile(path.join(out, "interaction-result.json"), JSON.stringify(evidence, null, 2));
     return evidence;
   } catch (error) {

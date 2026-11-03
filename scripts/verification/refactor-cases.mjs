@@ -168,6 +168,7 @@ export const refactorCases=[
  node('task-boundaries','canvas','scripts/verify-canvas-task-boundaries.cjs','CANVAS_TASK_BOUNDARIES=PASS'),
  node('canvas-node-entry-models','canvas','scripts/verify-canvas-node-entry-models.cjs','MODIFIED=PASS'),
  node('canvas-node-creation','canvas','scripts/verify-canvas-node-creation.cjs','CANVAS_NODE_CREATION=PASS'),
+ {id:'reference-mention-locator',group:'canvas',file:'scripts/verify-reference-mention-locator.tsx',args:['--current'],expect:'REFERENCE_MENTION_LOCATOR=PASS',pg:false,tsx:true},
  node('image-creation','canvas','scripts/verify-canvas-image-creation.cjs','CANVAS_IMAGE_CREATION=PASS'),
  node('request-workflow','canvas','scripts/verify-canvas-request-workflow.cjs','CANVAS_REQUEST_WORKFLOW=PASS MODE=MODIFIED'),
  node('video-submission','canvas','scripts/verify-canvas-video-submission.cjs','CANVAS_VIDEO_SUBMISSION=PASS MODE=MODIFIED'),
