@@ -120,10 +120,14 @@ export function WorksClient() {
     setSelected(new Set()); setActive(null);
     if (!ready || !user?.email) return;
     let cancelled = false;
+    let displayedSnapshot = false;
     const apply = (d: { artworks: Artwork[] }) => {
-      if (!cancelled) setWorks(d.artworks.filter(a => a.image && a.status !== "failed"));
+      if (!cancelled) { displayedSnapshot = true; setWorks(d.artworks.filter(a => a.image && a.status !== "failed")); }
     };
-    loadAccountSnapshot<Artwork>(user.email, "", apply).then(apply).catch(() => {
+    loadAccountSnapshot<Artwork>(user.email, "", apply).then(apply).catch((cause) => {
+      // A slow revalidation is not an empty library. Authorization failures and
+      // account switches still follow the existing clear/cancellation behavior.
+      if (displayedSnapshot && cause instanceof Error && cause.name === 'TimeoutError') return;
       if (!cancelled) setWorks([]);
     });
     return () => { cancelled = true; };

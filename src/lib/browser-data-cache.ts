@@ -2,6 +2,7 @@
 
 import { authHeader } from "@/lib/supabase";
 import { BrowserCacheStorage } from "./browser-cache-storage";
+import { withBrowserReadDeadline } from "./browser-read-deadline";
 
 // Explicit private metadata cache, NOT an HTTP/auth/payment cache.
 const DB = "naumi-business-cache-v1";
@@ -107,10 +108,17 @@ export async function loadAccountSnapshot<T>(email: string, query = "", onStale?
   if (cached && valid(account, token, rev) && cached.revision === rev && Date.now() - cached.at < STALE_MS) onStale?.(cached.value as AccountSnapshot<T>);
   const flightKey = `${id}|${token}|${rev}`;
   if (allowed && inflight.has(flightKey)) return inflight.get(flightKey) as Promise<AccountSnapshot<T>>;
-  const request = (async () => {
-    const response = await fetch(`/api/account?email=${encodeURIComponent(email)}${query ? `&${query}` : ""}`, { cache: "no-store", headers: await authHeader() });
+  const request = withBrowserReadDeadline(async signal => {
+    const headers = await authHeader();
+    signal.throwIfAborted();
+    const response = await fetch(`/api/account?email=${encodeURIComponent(email)}${query ? `&${query}` : ""}`, { cache: "no-store", headers, signal });
+    signal.throwIfAborted();
     if (!response.ok) { if ([401, 403].includes(response.status)) invalidateBrowserData(account, true); throw new Error(`Account load ${response.status}`); }
     const data = await response.json();
+    signal.throwIfAborted();
+    // The native no-database mode explicitly returns {persisted:false}; that
+    // is a valid local-mode response, unlike a malformed server document.
+    if (!data || (data.persisted !== false && !Array.isArray(data.artworks))) throw new Error('Account snapshot response invalid');
     // Intentionally drop user, balance, invoices and all unrecognized account fields.
     const value: AccountSnapshot<T> = { artworks: Array.isArray(data.artworks) ? data.artworks : [] };
     if (query && data.stats) value.stats = { today: Number(data.stats.today) || 0, total: Number(data.stats.total) || 0 };
@@ -122,7 +130,7 @@ export async function loadAccountSnapshot<T>(email: string, query = "", onStale?
     // Never deliver a pre-mutation/account-switch response into a new render.
     if (allowed && !valid(account, token, rev)) throw new Error("Account snapshot superseded");
     return value;
-  })();
+  }, { timeoutMs: 30_000 });
   if (allowed) inflight.set(flightKey, request);
   try { return await request; } finally { if (inflight.get(flightKey) === request) inflight.delete(flightKey); }
 }

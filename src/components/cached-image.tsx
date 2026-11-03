@@ -1,6 +1,7 @@
 'use client';
 import { forwardRef, useEffect, useLayoutEffect, useRef, useState, useCallback, type ImgHTMLAttributes } from 'react';
 import { type BrowserImageReadOptions, acquireCanvasImageByteSlot, acquireBrowserImage, borrowActiveBrowserImage, imageCacheAccount, imageCacheSource, publicCachedImage } from '@/lib/browser-image-cache';
+import { withBrowserReadDeadline } from '@/lib/browser-read-deadline';
 
 type ImageLease = Awaited<ReturnType<typeof acquireBrowserImage>>;
 type Display = ImageLease & { identity: string; source: string; owner: string; revision: number };
@@ -17,13 +18,16 @@ async function decodeImage(url: string, crossOrigin: Props['crossOrigin'], signa
   const image = new Image();
   if (crossOrigin) image.crossOrigin = crossOrigin;
   const cancel = () => { image.src = ''; };
-  signal.addEventListener('abort', cancel, { once: true });
-  try {
-    if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-    image.src = url;
-    await image.decode();
-    if (!image.naturalWidth) throw new Error('Image decode failed');
-  } finally { signal.removeEventListener('abort', cancel); }
+  await withBrowserReadDeadline(async decodeSignal => {
+    decodeSignal.addEventListener('abort', cancel, { once: true });
+    try {
+      decodeSignal.throwIfAborted();
+      image.src = url;
+      await image.decode();
+      decodeSignal.throwIfAborted();
+      if (!image.naturalWidth) throw new Error('Image decode failed');
+    } finally { decodeSignal.removeEventListener('abort', cancel); }
+  }, { timeoutMs: 20000, signal });
 }
 
 /** Keep an authorized, decoded frame until its replacement is ready. Byte
@@ -104,7 +108,7 @@ export const CachedImage = forwardRef<HTMLImageElement, Props>(function CachedIm
       try { await decodeImage(candidate.url, props.crossOrigin, controller.signal); }
       catch (error) {
         candidate.release(); candidate = undefined;
-        if (!managed || controller.signal.aborted) throw error;
+        if (!managed || controller.signal.aborted || (error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name))) throw error;
         // One fresh, authorized read repairs a corrupt local entry. Do not
         // clear drafts/session data, reuse a denied frame, or retry in a loop.
         candidate = await acquireBrowserImage(src, controller.signal, { networkQueue, bypassCache: true });
@@ -119,9 +123,15 @@ export const CachedImage = forwardRef<HTMLImageElement, Props>(function CachedIm
       candidate = undefined; // display now owns this lease, not the request effect
       if (held.current) retired.current.push(held.current);
       held.current = next; setResolved(next);
-    })().catch(() => {
+    })().catch(error => {
       candidate?.release(); candidate = undefined;
-      if (!controller.signal.aborted) { releaseDisplay(); setResolved(null); setDenied(src); }
+      if (!controller.signal.aborted) {
+        // A timed-out upgrade is not evidence that a current, same-identity
+        // authorized frame became invalid. Denials/account resets still clear it.
+        const previous=held.current;
+        const retain=error instanceof Error && error.name==='TimeoutError' && previous?.identity===identity && previous.owner===owner && previous.revision===revision;
+        if (!retain) { releaseDisplay(); setResolved(null); setDenied(src); }
+      }
     }).finally(() => { if (!controller.signal.aborted) callbacks.current.onCacheSettled?.(); });
     return () => { controller.abort(); candidate?.release(); };
   }, [src, managed, controlled, identity, owner, visible, revision, networkQueue, props.crossOrigin, releaseDisplay]);

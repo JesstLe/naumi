@@ -10,6 +10,7 @@ import { useFeatureAccess, FeatureVisible } from "@/lib/feature-access/client";
 
 
 import { loadAccountSnapshot, invalidateBrowserData } from "@/lib/browser-data-cache";
+import { withBrowserReadDeadline } from "@/lib/browser-read-deadline";
 import { isHostedImageUrl as hasRenderableImage } from "@/lib/media-url";
 import {useBilling} from "@/lib/billing/client";
 import { browserRandomUUID } from "@/lib/browser-crypto";
@@ -1745,6 +1746,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const router = useRouter();
   const { commerceVisible } = usePaymentConfig();
   const [works, setWorks] = useState<Artwork[] | null>(null);
+  const [canvasLoadAttempt, setCanvasLoadAttempt] = useState(0);
+  const [canvasLoadError, setCanvasLoadError] = useState<'timeout' | 'failed' | null>(null);
   // works 的同步镜像:供 useCallback(如缩放撤销记录)读取最新值而不重挂回调
   const worksRef = useRef<Artwork[] | null>(null);
   useEffect(() => {
@@ -2642,9 +2645,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   useEffect(() => {
     loadedProjectRequest.current = null;
     desktopProjectOpened.current = null;
-    setWorks(null); setNames({}); setTextNodes([]); setTextNodesReady(false);
+    setWorks(null); setNames({}); setTextNodes([]); setTextNodesReady(false); setCanvasLoadError(null);
     if (!ready || !authenticatedEmail) return;
     let cancelled = false;
+    const controller = new AbortController();
     const sp = new URLSearchParams(window.location.search);
     const emailParam = sp.get("email");
     const target = emailParam || authenticatedEmail;
@@ -2672,27 +2676,45 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     restoredRef.current = true;
     setTargetEmail(target);
     setReadOnly(ro);
-    async function loadCurrentAccount() {
+    async function loadCurrentAccount(signal: AbortSignal) {
       // Cache activation or a completed mutation can supersede the initial read.
       // Re-read the current revision without delivering stale data or another account.
       for (let attempt = 0; attempt < 3; attempt++) {
+        signal.throwIfAborted();
         try { return await loadAccountSnapshot<Artwork>(target); }
         catch (cause) {
-          if (cancelled || attempt === 2 || !(cause instanceof Error) || cause.message !== "Account snapshot superseded") throw cause;
+          if (cancelled || signal.aborted || attempt === 2 || !(cause instanceof Error) || cause.message !== "Account snapshot superseded") throw cause;
         }
       }
       throw new Error("Canvas account initialization unavailable");
     }
-    Promise.all([
-      // Cross-account requests bypass the browser cache; canvas never applies stale revalidation over edits.
-      loadCurrentAccount(),
-      privateFetchRaw(`/api/projects?email=${encodeURIComponent(target)}`)
-        .then((r) => r.json())
-        .catch(() => ({ names: {} })),
-      privateFetchRaw(`/api/canvas/text-nodes?email=${encodeURIComponent(target)}`)
-        .then((r) => r.json())
-        .catch(() => ({ persisted: false, nodes: [] })),
-    ])
+    // Reads have a complete header/body budget. An unavailable document is not
+    // an empty document: do not enable persistence until all required data is known.
+    // Cancelling this mount only stops its account waiter, never another consumer
+    // of the shared account request (which owns its independent 30s deadline).
+    withBrowserReadDeadline(async signal => {
+      const readJson = (path: string) => withBrowserReadDeadline(async owned => {
+        const headers = await authHeader();
+        owned.throwIfAborted();
+        const response = await fetch(path, { cache: "no-store", headers, signal: owned });
+        owned.throwIfAborted();
+        if (!response.ok) throw new Error(`Canvas read ${response.status}`);
+        const result = await response.json();
+        owned.throwIfAborted();
+        return result;
+      }, { timeoutMs: 30_000, signal });
+      const [acc, proj, textData] = await Promise.all([
+        loadCurrentAccount(signal),
+        readJson(`/api/projects?email=${encodeURIComponent(target)}`),
+        readJson(`/api/canvas/text-nodes?email=${encodeURIComponent(target)}`),
+      ]);
+      signal.throwIfAborted();
+      if (!proj?.names || typeof proj.names !== 'object' || Array.isArray(proj.names)
+        || typeof textData?.persisted !== 'boolean' || !Array.isArray(textData.nodes)) {
+        throw new Error('Canvas initial response invalid');
+      }
+      return [acc, proj, textData] as const;
+    }, { timeoutMs: 35_000, signal: controller.signal })
       .then(([acc, proj, textData]) => {
         if (cancelled) return;
         setWorks((acc?.artworks ?? []) as Artwork[]);
@@ -2731,16 +2753,16 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         setTextNodesReady(true);
 
       })
-      .catch(() => {
+      .catch((cause) => {
         if (!cancelled) {
-          setWorks([]);
-          setTextNodesReady(true);
+          setCanvasLoadError(cause instanceof Error && cause.name === 'TimeoutError' ? 'timeout' : 'failed');
         }
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [ready, authenticatedEmail, requestedProject]);
+  }, [ready, authenticatedEmail, requestedProject, canvasLoadAttempt]);
 
   useEffect(() => {
     const email = (targetEmail || user?.email || "").toLowerCase();
@@ -9970,8 +9992,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         >
           {!browsing && workflowPaste.status}
           {loading && (
-            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-              {t("canvas.loading")}
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground" role="status">
+              {canvasLoadError ? <>
+                <span>{locale === 'en' ? (canvasLoadError === 'timeout' ? 'Canvas loading timed out' : 'Canvas could not be loaded') : (canvasLoadError === 'timeout' ? '画布读取超时' : '画布读取失败')}</span>
+                <button type="button" className="rounded-lg border border-border bg-background px-4 py-2 text-foreground hover:bg-muted"
+                  onClick={() => { setCanvasLoadError(null); setCanvasLoadAttempt(value => value + 1); }}>
+                  {locale === 'en' ? 'Reload canvas' : '重新加载'}
+                </button>
+              </> : t("canvas.loading")}
             </div>
           )}
             <ProjectBrowserSurface key={`${user?.email || ''}:${currentWorkspace()}`} visible={!loading && browsing}>

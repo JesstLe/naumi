@@ -1,6 +1,7 @@
 'use client';
 import { authHeader } from './supabase';
 import { BrowserCacheStorage } from './browser-cache-storage';
+import { withBrowserReadDeadline } from './browser-read-deadline';
 import { MediaLoadQueue, acquireMediaSlot } from './canvas/media-loading';
 import { managedImageSource, publicImageSource, type BrowserImageDescriptor } from './browser-image-source';
 import { VerifiedImageContentPool, verifiedImageContentKey, authorizedImageSourceKey } from './browser-image-content';
@@ -204,19 +205,23 @@ async function flushDescriptors(){
     const group:typeof queued=[];let bodyBytes=32;
     while(offset<queued.length&&group.length<64){const next=queued[offset];const bytes=new TextEncoder().encode(JSON.stringify(next[0].split('\n')[2])).length+1;if(group.length&&bodyBytes+bytes>12000)break;group.push(next);offset++;bodyBytes+=bytes;}
     const generation=epoch;
-    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
     try{
       const sources=group.map(([key])=>key.split('\n')[2]);
       const publicOnly=partition==='public';
-      const response=await fetch(publicOnly?'/api/public-image-cache':'/api/media/image-cache',{method:'POST',cache:'no-store',credentials:publicOnly?'omit':'same-origin',headers:{'content-type':'application/json',...(publicOnly?{}:await authHeader())},body:JSON.stringify({sources}),signal:controller.signal});
-      if(response.status===401||response.status===403)throw new ImageCacheDenied('素材尚未授权');
-      if(!response.ok)throw new Error('素材缓存暂时不可用');
-      const data=await response.json();
+      const data=await withBrowserReadDeadline(async readSignal=>{
+        const headers={'content-type':'application/json',...(publicOnly?{}:await authHeader())};
+        readSignal.throwIfAborted();if(!valid(partition,generation))throw new ImageCacheDenied('登录状态已改变');
+        const response=await fetch(publicOnly?'/api/public-image-cache':'/api/media/image-cache',{method:'POST',cache:'no-store',credentials:publicOnly?'omit':'same-origin',headers,body:JSON.stringify({sources}),signal:readSignal});
+        if(readSignal.aborted){void response.body?.cancel().catch(()=>{});readSignal.throwIfAborted();}
+        if(response.status===401||response.status===403)throw new ImageCacheDenied('素材尚未授权');
+        if(!response.ok)throw new Error('素材缓存暂时不可用');
+        const data=await response.json();readSignal.throwIfAborted();return data;
+      },{timeoutMs:15000});
       if(!data||typeof data.account!=='string'||!data.results||typeof data.results!=='object'||Array.isArray(data.results)||sources.some(source=>!Object.prototype.hasOwnProperty.call(data.results,source)))throw new Error('素材校验响应不完整');
       if(sources.some(source=>{const value=data.results[source];return value!==null&&(!value||typeof value!=='object'||value.account!==data.account||value.source!==source||typeof value.version!=='string'||!value.version||typeof value.fetchUrl!=='string'||!value.fetchUrl||typeof value.bytes!=='number'||!Number.isFinite(value.bytes)||value.bytes<0||typeof value.contentType!=='string');}))throw new Error('素材校验响应无效');
       if(data.account!==partition||!valid(partition,generation))throw new ImageCacheDenied('登录状态已改变');
       for(const [key,waiters]of group){const [captured,capturedEpoch,source]=key.split('\n');const value=captured===partition&&Number(capturedEpoch)===generation?data.results?.[source]:null;for(const w of waiters)w.resolve(value||null);}
-    }catch(error){for(const [,waiters]of group)for(const w of waiters)w.reject(error instanceof Error?error:new Error('缓存校验失败'));}finally{clearTimeout(timer);}
+    }catch(error){for(const [,waiters]of group)for(const w of waiters)w.reject(error instanceof Error?error:new Error('缓存校验失败'));}
   }
   }
 }
@@ -236,7 +241,7 @@ async function imageBlob(source:string,signal?:AbortSignal,options?:BrowserImage
     else {const hot=verifiedContent.peek(byteKey);if(hot&&warmSources.has(id)){rememberSource(id);return{blob:hot,owner,generation};}}
   }
   const pendingKey=options?.bypassCache?'reload:'+id:id;
-  let task=pending.get(pendingKey);if(!task||task.controller.signal.aborted){const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),60000);const promise=(async()=>{
+  let task=pending.get(pendingKey);if(!task||task.controller.signal.aborted){const controller=new AbortController();const promise=withBrowserReadDeadline(async readSignal=>{
     if(options?.bypassCache)void discard(id);
     const cached=options?.bypassCache?undefined:await timedImageStage("idbRead",()=>read(id));
     if(cached&&cached.account===owner&&cached.blob instanceof Blob&&cached.bytes===cached.blob.size&&(info.bytes===0||cached.blob.size===info.bytes)&&Date.now()-cached.created<MAX_AGE){
@@ -244,33 +249,47 @@ async function imageBlob(source:string,signal?:AbortSignal,options?:BrowserImage
       // length match this freshly authorized descriptor. Never trust IDB alone.
       let verified=false;
       try{verified=!contentKey||bytesToHex(sha256(new Uint8Array(await cached.blob.arrayBuffer())))===info.version;}catch{/* unreadable local bytes are a cache miss */}
+      readSignal.throwIfAborted();
       if(!verified)void discard(id);
-      if(verified){void touch(cached,generation);if(byteKey&&valid(owner,generation)&&!controller.signal.aborted){verifiedContent.remember(byteKey,cached.blob);rememberSource(id);}return cached.blob;}
+      if(verified){if(!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');void touch(cached,generation);if(byteKey){verifiedContent.remember(byteKey,cached.blob);rememberSource(id);}return cached.blob;}
     }
-    if(!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
+    readSignal.throwIfAborted();if(!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
     const download=async(downloadSignal:AbortSignal)=>{
     const target=new URL(info.fetchUrl,location.origin);
     if(!['http:','https:'].includes(target.protocol)||target.username||target.password)throw new Error('素材地址无效');
-    const releaseSlot=await timedImageStage("slotWait",()=>byteSlot(options,downloadSignal));
+    // A content-shared transfer keeps its own cancellation identity. One node
+    // leaving must not abort peers; its final waiter/transfer deadline does.
+    let releaseSlot:(()=>void)|undefined;
     try {
-    if(!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
-    const response=await fetch(target.href,{credentials:target.origin===location.origin?'same-origin':'omit',headers:target.origin===location.origin?await authHeader():{},cache:'no-store',signal:downloadSignal});
-    if([401,403,404].includes(response.status))throw new ImageCacheDenied('素材已不可用');
-    if(!response.ok||response.type==='opaque'||!/^image\/(png|jpeg|webp|avif|gif)(;|$)/.test(response.headers.get('content-type')||''))throw new Error('素材响应无效');
-    const reader=response.body?.getReader();if(!reader)throw new Error('素材响应为空');const parts:Uint8Array[]=[];let total=0;
-    for(;;){const chunk=await reader.read();if(chunk.done)break;total+=chunk.value.length;if(total>MAX_IMAGE){await reader.cancel();throw new Error('素材超过缓存上限');}parts.push(new Uint8Array(chunk.value));}
-    const blob=new Blob(parts,{type:info.contentType});if(!blob.size||(info.bytes>0&&blob.size!==info.bytes))throw new Error('素材版本已改变');
-    if(/^[a-f0-9]{64}$/.test(info.version) && bytesToHex(sha256(new Uint8Array(await blob.arrayBuffer())))!==info.version)throw new Error('素材版本校验失败');
-    if(downloadSignal.aborted||!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
-    return blob;
-    }finally{releaseSlot();}
+      return await withBrowserReadDeadline(async transferSignal=>{
+        const release=await timedImageStage("slotWait",()=>byteSlot(options,transferSignal));
+        if(transferSignal.aborted){release();transferSignal.throwIfAborted();}releaseSlot=release;
+        if(!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
+        const headers=target.origin===location.origin?await authHeader():{};transferSignal.throwIfAborted();
+        if(!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
+        const response=await fetch(target.href,{credentials:target.origin===location.origin?'same-origin':'omit',headers,cache:'no-store',signal:transferSignal});
+        if(transferSignal.aborted){void response.body?.cancel().catch(()=>{});transferSignal.throwIfAborted();}
+        if([401,403,404].includes(response.status))throw new ImageCacheDenied('素材已不可用');
+        if(!response.ok||response.type==='opaque'||!/^image\/(png|jpeg|webp|avif|gif)(;|$)/.test(response.headers.get('content-type')||''))throw new Error('素材响应无效');
+        const reader=response.body?.getReader();if(!reader)throw new Error('素材响应为空');
+        const cancel=()=>{void reader.cancel().catch(()=>{});};transferSignal.addEventListener('abort',cancel,{once:true});
+        try{
+          transferSignal.throwIfAborted();const parts:Uint8Array[]=[];let total=0;
+          for(;;){const chunk=await reader.read();transferSignal.throwIfAborted();if(chunk.done)break;total+=chunk.value.length;if(total>MAX_IMAGE){await reader.cancel();throw new Error('素材超过缓存上限');}parts.push(new Uint8Array(chunk.value));}
+          const blob=new Blob(parts,{type:info.contentType});if(!blob.size||(info.bytes>0&&blob.size!==info.bytes))throw new Error('素材版本已改变');
+          if(/^[a-f0-9]{64}$/.test(info.version) && bytesToHex(sha256(new Uint8Array(await blob.arrayBuffer())))!==info.version)throw new Error('素材版本校验失败');
+          transferSignal.throwIfAborted();if(!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
+          return blob;
+        }finally{transferSignal.removeEventListener('abort',cancel);}
+      },{timeoutMs:60000,signal:downloadSignal});
+    }finally{releaseSlot?.();}
     };
-    const blob=byteKey&&!options?.bypassCache?await verifiedContent.acquire(byteKey,source,download,controller.signal):await download(controller.signal);
-    if(controller.signal.aborted||!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
+    const blob=byteKey&&!options?.bypassCache?await verifiedContent.acquire(byteKey,source,download,readSignal):await download(readSignal);
+    readSignal.throwIfAborted();if(!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
     if(byteKey){verifiedContent.remember(byteKey,blob);rememberSource(id);}
     void timedImageStage("idbStore",()=>store({id,account:owner,source:info.source,version:info.version,blob,bytes:blob.size,at:Date.now(),created:Date.now()},generation));
     return blob;
-  })();task={promise,controller,users:0};pending.set(pendingKey,task);const captured=task;void promise.finally(()=>{clearTimeout(timeout);if(pending.get(pendingKey)===captured)pending.delete(pendingKey);}).catch(()=>{});}
+  },{timeoutMs:60000,signal:controller.signal});task={promise,controller,users:0};pending.set(pendingKey,task);const captured=task;void promise.finally(()=>{if(pending.get(pendingKey)===captured)pending.delete(pendingKey);}).catch(()=>{});}
   const current=task;current.users++;let released=false;
   const leave=()=>{if(released)return;released=true;current.users--;if(!current.users&&pending.get(pendingKey)===current)current.controller.abort();};
   signal?.addEventListener('abort',leave,{once:true});
@@ -290,15 +309,30 @@ export async function acquireBrowserImage(raw:string,signal?:AbortSignal,options
       return{url,source,release:lease.release,networkComplete:releaseSlot};}
     // Descriptor/storage outages fall back to the authenticated media endpoint,
     // explicitly bypassing HTTP cache. Never reuse a previous account's pixels.
-    const releaseSlot=await byteSlot(options,signal);
+    // Own the slot outside the async work: even a stalled auth/body reader that
+    // ignores abort must not keep all six canvas byte tickets occupied forever.
+    let releaseSlot:(()=>void)|undefined;
     try{
-    if(!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
-    const response=await fetch(source,{cache:'no-store',headers:await authHeader(),credentials:'same-origin',signal});
-    if(!response.ok||response.type==='opaque'||!/^image\/(png|jpeg|webp|avif|gif)(;|$)/.test(response.headers.get('content-type')||''))throw new ImageCacheDenied('素材暂时不可用');
-    const reader=response.body?.getReader();if(!reader)throw new Error('素材响应为空');const parts:Uint8Array[]=[];let size=0;
-    for(;;){const chunk=await reader.read();if(chunk.done)break;size+=chunk.value.length;if(size>MAX_IMAGE){await reader.cancel();throw new Error('素材超过浏览器缓存上限');}parts.push(new Uint8Array(chunk.value));}
-    result={blob:new Blob(parts,{type:response.headers.get('content-type')!}),owner,generation};
-    }finally{releaseSlot();}
+      result=await withBrowserReadDeadline(async readSignal=>{
+        const release=await byteSlot(options,readSignal);
+        if(readSignal.aborted){release();readSignal.throwIfAborted();}
+        releaseSlot=release;
+        if(!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
+        const headers=await authHeader();readSignal.throwIfAborted();
+        if(!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
+        const response=await fetch(source,{cache:'no-store',headers,credentials:'same-origin',signal:readSignal});
+        if(readSignal.aborted){void response.body?.cancel().catch(()=>{});readSignal.throwIfAborted();}
+        if(!response.ok||response.type==='opaque'||!/^image\/(png|jpeg|webp|avif|gif)(;|$)/.test(response.headers.get('content-type')||''))throw new ImageCacheDenied('素材暂时不可用');
+        const reader=response.body?.getReader();if(!reader)throw new Error('素材响应为空');
+        const cancel=()=>{void reader.cancel().catch(()=>{});};
+        readSignal.addEventListener('abort',cancel,{once:true});
+        try{
+          readSignal.throwIfAborted();const parts:Uint8Array[]=[];let size=0;
+          for(;;){const chunk=await reader.read();readSignal.throwIfAborted();if(chunk.done)break;size+=chunk.value.length;if(size>MAX_IMAGE){await reader.cancel();throw new Error('素材超过浏览器缓存上限');}parts.push(new Uint8Array(chunk.value));}
+          return{blob:new Blob(parts,{type:response.headers.get('content-type')!}),owner,generation};
+        }finally{readSignal.removeEventListener('abort',cancel);}
+      },{timeoutMs:60000,signal});
+    }finally{releaseSlot?.();}
   }
   if(signal?.aborted||!valid(result.owner,result.generation))throw new ImageCacheDenied('素材显示已取消');
   const url=URL.createObjectURL(result.blob);objects.add(url);

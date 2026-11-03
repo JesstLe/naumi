@@ -556,13 +556,16 @@ export function WorkbenchClient() {
     const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
     const dayEnd = new Date(dayStart); dayEnd.setDate(dayEnd.getDate() + 1);
     const query = new URLSearchParams({ view: "workbench", dayStart: dayStart.toISOString(), dayEnd: dayEnd.toISOString() });
+    let displayedSnapshot = false;
     const apply = (d: { artworks: RecentWork[]; stats?: { today: number; total: number } }) => {
       if (cancelled) return;
+      displayedSnapshot = true;
       const done = d.artworks.filter(a => a.image && a.status !== "failed");
       setStats(d.stats ?? { today: done.filter(a => a.createdAt && new Date(a.createdAt).toDateString() === dayStart.toDateString()).length, total: done.length });
       setRecent(done.slice(0, 8));
     };
-    loadAccountSnapshot<RecentWork>(user.email, query.toString(), apply).then(apply).catch(() => {
+    loadAccountSnapshot<RecentWork>(user.email, query.toString(), apply).then(apply).catch((cause) => {
+      if (displayedSnapshot && cause instanceof Error && cause.name === 'TimeoutError') return;
       if (!cancelled) { setRecent([]); setStats({ today: 0, total: 0 }); }
     });
     return () => { cancelled = true; };
