@@ -2,7 +2,7 @@
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
 const crypto = require('node:crypto'), assert = require('node:assert/strict');
 const esbuild = require('esbuild'), sharp = require('sharp');
-const { chromium } = require('@playwright/test');
+const { chromium, expect } = require('@playwright/test');
 const args = process.argv.slice(2), arg = (key, fallback) => args.includes(key) ? args[args.indexOf(key) + 1] : fallback;
 const sourceRoot = path.resolve(arg('--source-root', path.join(__dirname, '..')));
 const outputRoot = path.resolve(arg('--output-root', 'output/browser-cache-efficiency'));
@@ -266,7 +266,10 @@ async function main() {
     try {
       await image(f); await image(f, source2);
       assert.equal(f.calls.media, 1); assert.equal(f.calls.manifest, 2);
-      await f.page.waitForFunction(async ({ owner, source, version }) => {
+      // waitForFunction tests the returned Promise as truthy before its async
+      // IDB result resolves. Poll the resolved transaction result explicitly:
+      // a missing/unfinished B record must not let reload cancel its pending write.
+      await expect.poll(() => f.page.evaluate(async ({ owner, source, version }) => {
         const db = await new Promise((resolve, reject) => {
           const request = indexedDB.open('naumi-image-bytes-v1', 2);
           request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
@@ -277,7 +280,7 @@ async function main() {
           tx.oncomplete = () => resolve(!!request.result?.blob && metadata.result?.bytes === request.result.blob.size);
           tx.onerror = tx.onabort = () => resolve(false);
         }); } finally { db.close(); }
-      }, { owner, source: source2, version: digest });
+      }, { owner, source: source2, version: digest }), { timeout: 4000 }).toBe(true);
       for(let round=0;round<3;round++){
         await f.page.reload(); await f.page.waitForFunction(() => window.fixtureReady);
         await f.page.evaluate(owner => window.fixture.images.activateBrowserImages(owner), owner);
