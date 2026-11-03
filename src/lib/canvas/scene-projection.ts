@@ -159,7 +159,7 @@ import type {CanvasDirectorNode} from "./director-node-schema";
 export type CanvasSceneInput={
   nodes:Node[];edges:Edge[];active:{members:Artwork[]}|null;activeKey:string|null;
   generationTasks:Omit<CanvasGenerationTask,"isVisible">[];taskPositions:Record<string,CanvasPoint>;pendNodes:CanvasPendingNode[];
-  textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];timelineNodes?:CanvasTimelineNode[];videoTasks:PublicVideoTaskView[];works:Artwork[]|null;
+  textBusyIds?:ReadonlySet<string>;textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];timelineNodes?:CanvasTimelineNode[];videoTasks:PublicVideoTaskView[];works:Artwork[]|null;
   selectedId:string|null;selectedPendId:string|null;selectedTextId:string|null;multiSel:string[];expandedTextIds:Set<string>;
   locale:string;lightCanvas:boolean;nodeSettings:Record<string,CanvasNodeSettings>;nodeSettingsReady:boolean;readOnly:boolean;
   cutoutAvailable:boolean;operations:ReadonlySet<string>;workflowManifests:ImportedManifest[];actions:CanvasSceneActions;
@@ -348,7 +348,7 @@ export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];
           title: textNode.title,
           prompt: textNode.prompt,
           content: textNode.content,
-          status: textNode.status,
+          status: textNode.status,busy:input.textBusyIds?.has(textNode.id),
           error: textNode.error,
           sourceRefs: [...sourceRefs, ...productRefs].map((reference) => ({
             id: reference.id,

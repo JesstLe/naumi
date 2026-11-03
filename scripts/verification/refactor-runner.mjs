@@ -60,6 +60,9 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='billing-presentation')stageEnv.BILLING_PRESENTATION_EVIDENCE=evidence;
    if(spec.id==='canvas-video-follow')stageEnv.CANVAS_VIDEO_FOLLOW_EVIDENCE=evidence;
    if(spec.id==='canvas-text-editing')stageEnv.CANVAS_TEXT_EDITING_EVIDENCE=evidence;
+   if(spec.id==='canvas-text-autosave')stageEnv.CANVAS_TEXT_AUTOSAVE_EVIDENCE=evidence;
+   if(spec.id==='canvas-text-node-ux-pg')stageEnv.CANVAS_TEXT_NODE_UX_PG_EVIDENCE=evidence;
+   if(spec.id==='main-text-server-owners')stageEnv.MAIN_TEXT_SERVER_EVIDENCE=evidence;
    if(spec.id==='canvas-stitch')stageEnv.CANVAS_STITCH_EVIDENCE=evidence;
    if(spec.id==='canvas-stitch-pg')stageEnv.CANVAS_STITCH_PG_EVIDENCE=evidence;
    if(spec.id==='media-representation')stageEnv.MEDIA_REPRESENTATION_EVIDENCE=evidence;

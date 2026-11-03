@@ -1,4 +1,5 @@
 import type {Artwork} from "../mock-data";
+import {canvasTextContent} from "./text-content";
 import type {CanvasTextNode} from "./text-document-model";
 import type {CanvasPendingNode} from "./scene-types";
 import type {CanvasVideoNode} from "./video-node-schema";
@@ -43,7 +44,7 @@ export function canvasSelectionProperties(nodes:ReturnType<typeof canvasSelectio
   if(!target)return null;
   const sized=text||video||director||character||scene||timeline||audio;
   return {id:target.id,title:target.title,kind:text?"text" as const:"image" as const,
-    content:text?.content||text?.prompt,
+    content:text?canvasTextContent(text):undefined,
     displaySize:sized?{width:sized.width,height:sized.height}:artworkNodeSize(artwork!),
     imageEditable:!video&&!director&&!character&&!scene&&!audio&&!timeline&&!artwork?.videoUrl,
     imageSize:artwork?.width&&artwork?.height?{width:artwork.width,height:artwork.height}:undefined};

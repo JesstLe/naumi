@@ -11,7 +11,7 @@ async function load(){const files=['src/lib/canvas/document-scope.ts','src/lib/b
 function setup(c,request){
  const context=c.createCanvasDocumentContext(),scope=context.render('user','tree:A'),state={nodes:[node()],posts:[],quotes:0,currentPrice:3,saveCalls:0,saveOk:true,supplier:0,histories:[],models:[],error:'',beforeReply:async()=>{},beforeSubmit:async()=>{},save:async()=>{},lost:false};
  const receipts=new Map();const quote=async()=>{state.quotes++;return {feature:'canvas.text-generate',credits:state.currentPrice,reserveCredits:state.currentPrice,quantity:1,version:1}};
- c.fetch=async(url,init)=>{const headers=new Headers(init.headers),id=headers.get('x-naumi-billing-operation-id');state.posts.push({id,body:JSON.parse(init.body),price:Number(headers.get('x-naumi-billing-credits'))});if(state.rejectOnce){state.rejectOnce=false;return Response.json({accepted:false,error:'invalid input'},{status:422})}let result=receipts.get(id);if(!result){state.supplier++;result={text:'generated answer',model:'text-model'};receipts.set(id,result);}await state.beforeReply();if(state.lost){state.lost=false;throw Error('response lost')}return Response.json(result);};
+ c.fetch=async(url,init)=>{const headers=new Headers(init.headers),id=headers.get('x-naumi-billing-operation-id');state.posts.push({id,body:JSON.parse(init.body),price:Number(headers.get('x-naumi-billing-credits'))});if(state.rejectOnce){state.rejectOnce=false;return Response.json({accepted:false,error:'invalid input'},{status:422})}if(state.failureOnce){const failure=state.failureOnce;state.failureOnce=undefined;return Response.json({...failure,operationId:failure.operationId==='CURRENT'?`tool-${id}`:failure.operationId},{status:502});}let result=receipts.get(id);if(!result){state.supplier++;result={text:'generated answer',model:'text-model'};receipts.set(id,result);}await state.beforeReply();if(state.lost){state.lost=false;throw Error('response lost')}return Response.json(result);};
  const storage=new Map();Object.assign(c,{useCallback:f=>f,user:{email:'user'},intents:{current:new Map()},localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},browserRandomUUID:()=>crypto.randomUUID(),invalidateBrowserData(){},refresh:async()=>{},toast(){},window:{dispatchEvent(){}},MODEL_CATALOG_REFRESH:'refresh',getQuote:quote});
  vm.runInContext(compile(`{const submit=${callbacks.submit};const quoteAndSubmit=${callbacks.quoteAndSubmit};globalThis.billing={quote:getQuote,submit,quoteAndSubmit};}`),c);
  const submit=c.billing.submit;
@@ -44,6 +44,47 @@ function setup(c,request){
     const requests=[0,1,2,3,4].map(i=>c.derivedTextTask({source:{id:'art-'+i},mode:'reverse',project:'tree:A',title:'Reverse',productTitle:'',position:{x:10,y:i*280,width:300},gap:96}));
     const ports={...f.ports,historyBatch:records=>history.push(records),submit:async r=>{calls++;entered.resolve();await g.promise;const id=r.payload.sourceIds[0];return id==='art-2'?Response.json({accepted:false,error:'fixture model unavailable'},{status:422}):Response.json({text:id==='art-3'?'   ':'prompt-'+id});}};
     const running=owner.batch(f.scope,'reverse',requests,ports);await entered.promise;eq(f.state.nodes.filter(n=>requests.some(r=>r.node.id===n.id)).length,5);eq(calls,2);g.resolve();eq(await running,{succeeded:3,failed:2,skipped:0});eq(calls,5);eq(history.length,1);eq(history[0].length,5);eq(history[0].filter(n=>n.status==='failed').length,2);ok(history[0].filter(n=>n.status==='failed').every(n=>n.error&&n.content===''));eq(f.state.saveCalls,5);
+  });
+  await test('terminal-receipt-shared-helper-strict-identity-and-charge',()=>{
+    const receipt={terminal:true,status:'failed',operationId:'tool-original',chargedCredits:0};
+    for(const charge of [0,3,Number.MAX_SAFE_INTEGER])eq(c.isTerminalBillingFailure({...receipt,chargedCredits:charge},'original'),true);
+    for(const charge of [-1,0.5,NaN,Infinity,'0',undefined])eq(c.isTerminalBillingFailure({...receipt,chargedCredits:charge},'original'),false);
+    for(const value of [{...receipt,terminal:false},{...receipt,status:'unknown'},{...receipt,operationId:'tool-foreign'},null,[]])eq(c.isTerminalBillingFailure(value,'original'),false);
+    eq(c.isTerminalBillingFailure(receipt,undefined),false);eq(c.isTerminalBillingFailure(receipt,''),false);
+  });
+  for(const chargedCredits of [0,3])await test('identity-bound-terminal-failure-explicit-new-content-'+chargedCredits,async()=>{
+    const f=setup(c),owner=c.createCanvasTextTasks();f.state.failureOnce={code:'TEXT_OUTPUT_LIMIT',terminal:true,status:'failed',operationId:'CURRENT',chargedCredits};
+    eq(await owner.execute(f.scope,c.generalTextTask(f.state.nodes[0],'old prompt','Text'),f.ports),false);eq(owner.state(f.scope,'text-a').phase,'rejected');eq(f.state.posts.length,1);
+    f.state.nodes=[{...f.state.nodes[0],content:'new explicitly edited body'}];f.state.currentPrice=99;
+    eq(await owner.execute(f.scope,c.generalTextTask(f.state.nodes[0],'new prompt','Text'),f.ports),true);eq(f.state.posts.length,2);ok(f.state.posts[0].id!==f.state.posts[1].id);eq(f.state.posts[1].body.content,'new explicitly edited body');eq(f.state.posts[1].body.prompt,'new prompt');eq(f.state.posts.map(p=>p.price),[3,99]);
+  });
+  for(const failure of ['TEXT_OUTPUT_IMAGE','TEXT_OUTPUT_REFUSED','TEXT_OUTPUT_LIMIT','TEXT_OUTPUT_EMPTY'].map(code=>({code})).concat([{code:'TEXT_OUTPUT_LIMIT',terminal:true,status:'failed',operationId:'tool-foreign',chargedCredits:0},{code:'TEXT_OUTPUT_LIMIT',terminal:true,status:'failed',operationId:'CURRENT',chargedCredits:-1}]))await test('unknown-output-error-keeps-original-id-body-price-'+failure.code+'-'+(failure.operationId||'bare')+'-'+(failure.chargedCredits??'none'),async()=>{
+    const f=setup(c),owner=c.createCanvasTextTasks();f.state.failureOnce=failure;
+    eq(await owner.execute(f.scope,c.generalTextTask(f.state.nodes[0],'original prompt','Text'),f.ports),false);eq(owner.state(f.scope,'text-a').phase,'retry');eq(f.state.posts.length,1);
+    f.state.currentPrice=99;f.state.nodes=[{...f.state.nodes[0],content:'later edited body'}];
+    eq(await owner.execute(f.scope,c.generalTextTask(f.state.nodes[0],'changed prompt','Text'),f.ports),true);eq(f.state.posts.length,2);eq(f.state.posts[1].id,f.state.posts[0].id);eq(f.state.posts[1].body,f.state.posts[0].body);eq(f.state.posts.map(p=>p.price),[3,3]);eq(f.state.quotes,1);eq(f.state.supplier,1);
+  });
+  // Execute the actual Canvas admission callback as well as the retained task.
+  // Save failure has no CAS conflict; a generic unsaved draft still blocks POST.
+  let prepareExpression;
+  (function find(n){if(ts.isCallExpression(n)&&n.expression.getText(ast)==='useCanvasTextTasks'){const p=n.arguments[1]?.properties?.find(p=>p.name?.getText(ast)==='prepare');if(p)prepareExpression=p.initializer.getText(ast);}ts.forEachChild(n,find);})(ast);
+  ok(prepareExpression,'actual Canvas prepare callback');
+  function admission(f,document,autosave={flushAll:async()=>[]}){
+    return vm.runInNewContext(compile('('+prepareExpression+')'),{Error,textAutosave:autosave,canvasTextDocument:document,textWriteBarrierRef:{current:0},historyBusyRef:{current:false},isNodeLocked:()=>false});
+  }
+  await test('linked-source-save-null-no-cas-conflict-blocks-paid-post',async()=>{
+    const f=setup(c),source={...node('text-source'),content:'unsaved linked body',status:'completed'};
+    f.task.request.node.sourceIds=['text-source'];f.task.request.payload.sourceIds=['text-source'];f.state.nodes.push(source);
+    let sourceSaves=0;const document={...f.ports.document,conflicts:{},flush:async()=>[null],getSnapshot:()=>({nodes:f.state.nodes,unsaved:1}),save:async n=>{if(n.id===source.id){sourceSaves++;return null;}return n;}};
+    f.ports.document=document;f.ports.prepare=admission(f,document);
+    eq(await f.run(),false);eq(sourceSaves,1);eq(f.state.posts.length,0);eq(f.state.supplier,0);eq(f.task.getSnapshot().phase,'retry');eq(f.task.request.payload.sourceIds,['text-source']);eq(f.task.request.payload.projectKey,'tree:A');
+  });
+  await test('source-save-ack-precedes-paid-post-result-save-retry-history-once',async()=>{
+    const f=setup(c),source={...node('text-source'),content:'linked body',status:'completed'},entered=gate(),ack=gate(),events=[],history=[];
+    f.task.request.node.sourceIds=['text-source'];f.task.request.payload.sourceIds=['text-source'];f.state.nodes.push(source);
+    let firstResult=true;const document={...f.ports.document,conflicts:{},flush:async()=>[],save:async n=>{if(n.id===source.id){events.push('source:start');entered.resolve();await ack.promise;events.push('source:ack');return n;}if(n.content==='generated answer'&&firstResult){firstResult=false;return null;}return n;}};
+    f.ports.document=document;f.ports.prepare=admission(f,document);f.ports.historyEdit=(before,after)=>history.push({before,after});f.state.beforeSubmit=async()=>events.push('paid:post');
+    const first=f.run();await entered.promise;eq(f.state.posts.length,0);ack.resolve();eq(await first,false);eq(f.task.getSnapshot().hasResult,true);eq(history.length,0);eq(await f.run(),true);eq(await f.run(),true);eq(events,['source:start','source:ack','paid:post']);eq(f.state.posts.length,1);eq(f.state.supplier,1);eq(history.length,1);eq(history[0].before.content,'before');eq(history[0].after.content,'generated answer');
   });
   await test('all-actual-callers-use-task-owner',()=>{ok(fn.generateTextNode.includes('textTasks.run'));ok(fn.reversePromptsForSelection.includes('textTasks.batch'));ok(fn.assistWriteForNodes.includes('textTasks.batch'));ok(!fn.reversePromptsForSelection.includes('privateFetch'));ok(src.includes('submission,isCurrent:scope.viewCurrent'));ok(src.includes('textTasks.retryable(selectedText.id)'));});
  }

@@ -15,7 +15,7 @@ const functionText=name=>{assert.ok(functions[name]?.body,'actual '+name);return
 const transpile=s=>ts.transpileModule(s,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
 function load(file,ports={}){
  const output=buildSync({entryPoints:[path.join(root,file)],bundle:true,write:false,platform:'node',format:'cjs',external:['../supabase','../saas/workspace-client']}).outputFiles[0].text;
- const module={exports:{}},box={module,exports:module.exports,Error,Map,Set,Date:class extends Date{static now(){return 1793318400000;}},console,require:name=>{if(name in ports)return ports[name];throw Error('unexpected runtime dependency '+name);}};vm.createContext(box);vm.runInContext(output,box,{filename:file});return module.exports;
+ const loadedModule={exports:{}},box={module:loadedModule,exports:loadedModule.exports,Error,Map,Set,Date:class extends Date{static now(){return 1793318400000;}},console,require:name=>{if(name in ports)return ports[name];throw Error('unexpected runtime dependency '+name);}};vm.createContext(box);vm.runInContext(output,box,{filename:file});return loadedModule.exports;
 }
 const inputs=load('src/lib/canvas/text-image-inputs.ts'),media=load('src/lib/media-url.ts');
 const ownerModule=baseline?null:load('src/lib/canvas/text-image-runs.ts');
@@ -37,6 +37,7 @@ function harness(options={}){
   setTextImageSubmitting:value=>{c.textImageSubmitting=value;c.submittingUpdates.push(value);},
   setPendNodes:updater=>{c.pendSetterCalls++;if(options.deferPending)c.pendingUpdaters.push(updater);else c.pending=updater(c.pending);},
   generatePend:async opts=>{c.calls.push(opts);return options.generatePend?options.generatePend(opts,c,c.calls.length):true;},...inputs,
+  textBusy:new Set(options.busy||[]),textTasks:{state:id=>({busy:c.textBusy.has(id)})},
   canvasTextDocument:{getSnapshot:()=>({nodes:c.textNodesRef.current})},
  };
  const scopes=load('src/lib/canvas/document-scope.ts',{'../supabase':{authHeader:()=>({})},'../saas/workspace-client':{currentWorkspace:()=>c.workspace,currentWorkspaceRevision:()=>c.workspaceRevision}}).createCanvasDocumentContext();
@@ -80,7 +81,7 @@ async function run(){
   ['max-prompt',{nodes:[node('text-a','字'.repeat(6000))]},['text-a'],[],'general',{}],
   ['max-references',{members:Array.from({length:16},(_,i)=>art('image-'+i))},['text-a'],Array.from({length:16},(_,i)=>'image-'+i),'general',{}],
  ])await test(name,async()=>{const h=harness(options),before=JSON.stringify([h.c.textNodesRef.current,h.c.activeProjectRef.current]);h.open(ids,images);ok(h.c.genImageMenu);await h.submit(mode,settings);eq(h.c.calls.length,settings.combine===false?2:1);eq(JSON.stringify([h.c.textNodesRef.current,h.c.activeProjectRef.current]),before,'inputs immutable');eq(h.c.textImageSubmittingRef.current,false);return h;});
- for(const [name,content,draft,prompt,expected] of [['draft','','saved draft','','saved draft'],['output','output','draft','old','output'],['prompt','','','saved prompt','saved prompt']])await test(name,async()=>{const h=harness({nodes:[node('text-a',content,{prompt})]});h.c.selectedTextId='text-a';h.c.textPrompt=draft;h.open();h.c.textPrompt='later draft';await h.submit();eq(h.c.calls[0].prompt,expected);return h;});
+ for(const [name,content,draft,prompt,expected,status] of [['draft','','saved draft','',baseline?'saved draft':null,'completed'],['output','output','draft','old','output','completed'],['prompt','','','saved prompt','saved prompt','idle'],...(!baseline?[['completed-empty','','AI draft','old instruction',null,'completed']]:[])])await test(name,async()=>{const h=harness({nodes:[node('text-a',content,{prompt,status})]});h.c.selectedTextId='text-a';h.c.textPrompt=draft;h.open();h.c.textPrompt='later draft';await h.submit();if(expected===null)blocked(h,/先输入/);else eq(h.c.calls[0].prompt,expected);return h;});
  for(const [name,nodes,members,ids,images,settings,tip] of [
   ['empty',[node('text-a','')],[],['text-a'],[],{},/先输入/],
   ['oversize',[node('text-a','字'.repeat(6001))],[],['text-a'],[],{},/6000/],
@@ -92,7 +93,7 @@ async function run(){
   ...[['video',{videoUrl:'/video.mp4'}],['decoration',{source:'workflow-decoration'}],['placeholder',{source:'workflow-placeholder'}],['unrenderable',{image:''}]].map(([label,extra])=>[label,[node()],[art('bad',extra)],['text-a'],['bad'],{},/引用图片/]),
  ])await test(name,async()=>{const h=harness({nodes,members});h.open(ids,images);await h.submit('general',settings);blocked(h,tip);return h;});
  for(const mode of ['pure','replicate'])await test(mode+'-no-product',async()=>{const h=harness();h.open();await h.submit(mode);blocked(h,/canvas.textNoProduct/);return h;});
- for(const [name,change] of [['readonly',c=>c.readOnly=true],['no-user',c=>c.user=null],['feature',c=>c.allowed=false],['not-ready',c=>c.nodeSettingsReady=false],['locked',c=>c.locked.add('text-a')],['busy-text',c=>c.textNodesRef.current[0].status='generating'],['no-project',c=>c.activeProjectRef.current=null]])await test('open-'+name,async()=>{const h=harness();change(h.c);h.open();await h.submit();blocked(h);return h;});
+ for(const [name,change] of [['readonly',c=>c.readOnly=true],['no-user',c=>c.user=null],['feature',c=>c.allowed=false],['not-ready',c=>c.nodeSettingsReady=false],['locked',c=>c.locked.add('text-a')],['busy-text',c=>c.textNodesRef.current[0].status='generating'],...(!baseline? [['saving-text',c=>c.textBusy.add('text-a')]]:[]),['no-project',c=>c.activeProjectRef.current=null]])await test('open-'+name,async()=>{const h=harness();change(h.c);h.open();await h.submit();blocked(h);return h;});
  for(const [name,change] of [['readonly',c=>c.readOnly=true],['feature',c=>c.allowed=false],['not-ready',c=>c.nodeSettingsReady=false],['locked',c=>c.locked.add('text-a')]])await test('submit-'+name,async()=>{const h=harness();h.open();change(h.c);await h.submit();blocked(h);return h;});
  await test('upstream-locked',async()=>{const h=harness({nodes:[node('text-a','主',{sourceIds:['text-b']}),node('text-b','upstream')]});h.open();h.c.locked.add('text-b');await h.submit();blocked(h,/已锁定/);return h;});
  for(const stop of ['false','undefined','throw'])await test('stop-'+stop,async()=>{const h=harness({nodes:[node(),node('text-b','乙')],generatePend:()=>{if(stop==='throw')throw Error('fixture failure');return stop==='false'?false:undefined;}});h.open(['text-a','text-b']);await h.submit('general',{combine:false});eq(h.c.calls.length,1);eq(h.c.pending.length,1);eq(h.c.textImageSubmittingRef.current,false);return h;});

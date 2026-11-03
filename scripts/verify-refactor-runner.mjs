@@ -49,6 +49,9 @@ try{
  report=await run('spawn-failure',[spec('one')],{commandFor:()=>[path.join(dir,'missing-node'),'ok.mjs']});eq(report.status,'FAIL');eq(report.cases[0].status,'FAIL');cases++;
  const evidencePorts=[];
  for(const [id,name] of [
+  ['canvas-text-autosave','CANVAS_TEXT_AUTOSAVE_EVIDENCE'],
+  ['canvas-text-node-ux-pg','CANVAS_TEXT_NODE_UX_PG_EVIDENCE'],
+  ['main-text-server-owners','MAIN_TEXT_SERVER_EVIDENCE'],
   ['main-sync-boundaries','MAIN_SYNC_BOUNDARY_EVIDENCE'],
   ['main-sync-assistant-navigation','MAIN_SYNC_ASSISTANT_EVIDENCE'],
   ['main-sync-canvas-owners','MAIN_SYNC_CANVAS_EVIDENCE'],

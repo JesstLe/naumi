@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：main 文本工作流 owner 同步
+
+[文本owner汇合](changes/2026-11-03-refactor-main-text-owner-integration.md)固定936fe80e并普通合入main dede3933（23路径/5冲突），正文、AI要求、自动保存和下游读取进入既有document/task/history/route owners。真实linked-source save-null误POST已修并独立0POST复验；同ID财务终态helper共用，四裸TEXT_OUTPUT502仍UNKNOWN，不按错误码重购。实际Next17、SQL/PG13、route33/model7、tasks30/202及原owner回归通过。最终5604类型输入稳定、lint0/6旧warn、四SCC0、Worker2440通过；正式目录243不等于243已全跑。四产物/正式6case/副本rollback和新头CI归output/pr8-main-text-sync-20261103；整体ACTIVE，未合main、未部署、47 HOLD。
+
 ## 当前推进：Verify 视频描述编辑器断言
 
 [视频描述UI回归](changes/2026-11-03-refactor-video-prompt-ui-assertion.md)处理旧2bd的billing UI14PASS/2FAIL：原测试对contenteditable用toHaveValue。两处改为实际role/editable与原字符串精确textContent检查，原身份/上传/冻结价/零确认断言及预算保留；产品0改动。实际production-mode Next原样复现、完整16项及副本rollback见output/pr8-video-prompt-assertion-20261103；不将本地构建代替Linux镜像/完整core/部署。

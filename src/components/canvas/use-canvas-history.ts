@@ -18,6 +18,7 @@ import type {CanvasLocalHistoryAction} from "@/lib/canvas/node-commands";
 type Input = {
   native?:{accept:(receipt:import("@/lib/canvas/native-node-records").CanvasNativeRecords,current:()=>boolean)=>void};
   account: string; project: string | null; readOnly: boolean;
+  validateOperations?:(operations:import("@/lib/canvas/history-contract").CanvasHistoryOperation[])=>void;
   artworkDocument?:import("@/lib/canvas/artwork-document").CanvasArtworkHistoryPort;
   works: Dispatch<SetStateAction<Artwork[] | null>>; textDocument: CanvasTextHistoryPort;
   settings: (update: (current: Record<string,CanvasNodeSettings>) => Record<string,CanvasNodeSettings>, persisted: boolean) => void;
@@ -41,6 +42,7 @@ export function useCanvasHistory(input: Input) {
   if (!controller.current) controller.current = createCanvasHistoryController({
     changed: () => { if (mounted.current) render(n => n + 1); },
     readOnly: () => latest.current.readOnly,
+    validateOperations:operations=>latest.current.validateOperations?.(operations),
     flush: () => latest.current.flush(), transaction: (scope,work) => latest.current.textDocument.transaction(scope,()=>latest.current.artworkDocument?latest.current.artworkDocument.transaction(scope,work):work()),
     video: id => latest.current.video(id),director:id=>latest.current.director?.(id),character:id=>latest.current.character?.(id),scene:id=>latest.current.scene?.(id),artwork:id=>latest.current.artwork?.(id),audio:id=>latest.current.audio?.(id),timeline:id=>latest.current.timeline?.(id), refresh: () => latest.current.refresh(),
     warning: message => latest.current.warning(message),

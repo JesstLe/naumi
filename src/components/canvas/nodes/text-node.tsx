@@ -1,4 +1,5 @@
 "use client";
+import {canvasTextContent,CANVAS_TEXT_CONTENT_LIMIT} from "@/lib/canvas/text-content";
 import {createContext,useContext,useRef} from "react";
 import {Handle,NodeResizer,Position,type NodeProps} from "@xyflow/react";
 import {Loader2,Minimize2,Maximize2,X} from "lucide-react";
@@ -22,8 +23,7 @@ export function TextCanvasNode({ data, selected }: NodeProps) {
   const editSession=useRef<{id:string;initial:string;draft:string;change:TextNodeCtx['onContentChange'];commit:TextNodeCtx['onContentCommit']}|null>(null);
   const d = data as CanvasTextNodeData;
   const active = selected || d.selected;
-  const body = d.content || d.prompt;
-  const editableBody = d.status === "completed" || Boolean(d.content);
+  const body = canvasTextContent(d);
   return (
     <div className="group relative flex h-full w-full flex-col" style={d.workflowPresentation ? { transform: `rotate(${d.workflowPresentation.rotation}deg) scaleX(${d.workflowPresentation.flipX ? -1 : 1})`, opacity: d.workflowPresentation.opacity } : undefined}>
       <NodeResizer
@@ -52,8 +52,8 @@ export function TextCanvasNode({ data, selected }: NodeProps) {
           d.lightCanvas ? "text-[#303641]" : "text-[#e2e6ed]"
         )}
       >
-        <span className="min-w-0 flex-1 truncate" title={d.title || "文字生成"}>
-          {d.title || "文字生成"}
+        <span className="min-w-0 flex-1 truncate" title={d.title || "文字"}>
+          {d.title || "文字"}
         </span>
         {d.status === "generating" && (
           <Loader2 className="h-3.5 w-3.5 flex-none animate-spin text-[#6bd7ec]" />
@@ -88,32 +88,18 @@ export function TextCanvasNode({ data, selected }: NodeProps) {
             ))}
           </div>
         )}
-        {d.status === "generating" ? (
-          <div className="canvas-ui-muted flex h-[108px] items-center justify-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin text-[#6366f1]" /> 正在生成文字…
-          </div>
-        ) : d.status === "failed" ? (
-          <div role="alert" className="flex min-h-[108px] flex-col justify-center gap-2 canvas-ui-warning-text">
-            <span className="font-medium">文字生成失败</span>
-            <p className="whitespace-pre-wrap break-words">{d.error || "本次未取得文字结果，请重试"}</p>
-          </div>
-        ) : editableBody ? (
-          <textarea
-            aria-label="编辑生成文本"
-            readOnly={d.readOnly || d.settings?.locked}
-            style={nodeTextStyle(d.settings || DEFAULT_CANVAS_SETTINGS)}
-            value={d.content}
-            onChange={(event)=>{const value=event.target.value,session=editSession.current;if(session){session.draft=value;session.change(session.id,value);}else ctx?.onContentChange(d.__id,value);}}
-            onFocus={()=>{if(ctx)editSession.current={id:d.__id,initial:d.content,draft:d.content,change:ctx.onContentChange,commit:ctx.onContentCommit};}}
-            onBlur={(event)=>{const session=editSession.current;editSession.current=null;if(session)session.commit(session.id,session.draft,session.initial);else ctx?.onContentCommit(d.__id,event.currentTarget.value);}}
-            onPointerDown={(event) => event.stopPropagation()}
-            className={cn(!d.settings?.text.color && "canvas-ui-text", "nodrag nowheel h-full min-h-[96px] w-full resize-none overflow-auto border-0 bg-transparent p-0 text-[12px] leading-[1.65] outline-none")}
-          />
-        ) : body ? (
-          <p style={nodeTextStyle(d.settings || DEFAULT_CANVAS_SETTINGS)} className="whitespace-pre-wrap break-words">{body}</p>
-        ) : (
-          <p className="canvas-ui-muted">输入需求后生成文字内容</p>
-        )}
+        {d.status === "generating" && <div role="status" className="canvas-ui-muted mb-2 flex items-center gap-2 text-xs"><Loader2 className="h-4 w-4 animate-spin"/>正在生成文字…</div>}
+        {d.busy && d.status !== "generating" && <div role="status" className="canvas-ui-muted mb-2 text-xs">正在保存文字…</div>}
+        {d.status === "failed" && <div role="alert" className="canvas-ui-warning-text mb-2 text-xs">{d.error || "文字生成失败，原文已保留"}</div>}
+        <textarea aria-label="文字内容" placeholder="输入文字" maxLength={CANVAS_TEXT_CONTENT_LIMIT}
+          readOnly={d.readOnly || d.settings?.locked || d.status === "generating" || d.busy}
+          style={nodeTextStyle(d.settings || DEFAULT_CANVAS_SETTINGS)} value={body}
+          onChange={event=>{const value=event.target.value,session=editSession.current;if(session){session.draft=value;session.change(session.id,value);}else ctx?.onContentChange(d.__id,value);}}
+          onFocus={()=>{if(ctx)editSession.current={id:d.__id,initial:body,draft:body,change:ctx.onContentChange,commit:ctx.onContentCommit};}}
+          onBlur={event=>{const session=editSession.current;editSession.current=null;if(session)session.commit(session.id,session.draft,session.initial);else ctx?.onContentCommit(d.__id,event.currentTarget.value);}}
+          onPointerDown={event=>event.stopPropagation()}
+          className={cn(!d.settings?.text.color&&"canvas-ui-text","nodrag nowheel h-full min-h-[96px] w-full resize-none overflow-auto border-0 bg-transparent p-0 text-[12px] leading-[1.65] outline-none")}/>
+
       </div>
       <div className={cn("canvas-ui-surface-solid absolute right-1.5 top-1.5 hidden items-center gap-1 rounded-md pl-1 group-hover:flex", d.lightCanvas ? "canvas-ui-light" : "canvas-ui-dark")}>
         <button

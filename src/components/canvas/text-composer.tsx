@@ -1,4 +1,5 @@
 "use client";
+import {canvasTextContent,CANVAS_TEXT_CONTENT_LIMIT,CANVAS_TEXT_INSTRUCTION_LIMIT} from "@/lib/canvas/text-content";
 import {useEffect,useLayoutEffect,useMemo,useRef,useState,type RefObject,type Dispatch,type SetStateAction} from "react";
 import {ArrowUp,Image as ImageIcon,Loader2,PenLine,Plus,X} from "lucide-react";
 import {CanvasPromptOptimizer} from "./prompt-optimizer";
@@ -23,6 +24,7 @@ type ComposerReference=Pick<Artwork,"id"|"image"|"title">;
 export type CanvasTextComposerProps={
   node:CanvasTextNode; members:ComposerReference[]; light:boolean;
   draft:{prompt:string;onChange:(value:string)=>void};
+  content:{onChange:(value:string)=>void;onCommit:(value:string,initial?:string)=>void;onFlush:()=>unknown};
   optimization?:{contextKey:string|null;disabled:boolean};
   task:{state:CanvasTextTaskState;retryable:boolean;onGenerate:()=>unknown};
   layout:{dockRef:RefObject<HTMLDivElement|null>;style?:DockPlacement;safeArea:SafeArea;canvasSize:CanvasSize;expanded:boolean;onExpandedChange:Dispatch<SetStateAction<boolean>>};
@@ -32,14 +34,18 @@ export type CanvasTextComposerProps={
 };
 /** Owns only composer presentation. Draft, document and paid task remain with
  * their existing owners; callbacks do not create a second execution path. */
-export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,draft,optimization,task,layout,focusRevision,onDismiss,onReference,onMenuOpenChange,assist,image,storyboard}:CanvasTextComposerProps){
+export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,draft,content,optimization,task,layout,focusRevision,onDismiss,onReference,onMenuOpenChange,assist,image,storyboard}:CanvasTextComposerProps){
   const {locale,t}=useI18n(),L=(zh:string,en:string)=>locale==="en"?en:zh;
   const {prompt:textPrompt,onChange:setTextPrompt}=draft;
   const {dockRef:textComposerDockRef,style:dockStyle,safeArea:overlaySafeArea,canvasSize,expanded:textComposerExpanded,onExpandedChange:setTextComposerExpanded}=layout;
   const assistBusy=assist.busy;
+  const [mode,setMode]=useState<"content"|"write">("content");
+  const bodyEdit=useRef<{initial:string;draft:string;change:typeof content.onChange;commit:typeof content.onCommit}|null>(null);
+  const value=mode==="content"?canvasTextContent(selectedText):textPrompt;
+  const setValue=(next:string)=>{if(mode==="content"){const session=bodyEdit.current;if(session){session.draft=next;session.change(next);}else content.onChange(next);}else setTextPrompt(next);};
   const [textComposerManuallySized,setTextComposerManuallySized]=useState(false);
   const textComposerBodyRef=useRef<HTMLDivElement>(null),textPromptRef=useRef<HTMLTextAreaElement>(null);
-  useEffect(()=>{if(focusRevision)textPromptRef.current?.focus();},[focusRevision]);
+  useEffect(()=>{if(focusRevision){setMode("write");requestAnimationFrame(()=>textPromptRef.current?.focus());}},[focusRevision]);
   const [textReferenceMenuOpen,setTextReferenceMenuOpen]=useState(false);
   const [mentionState,setMentionState]=useState<{query:string;start:number}|null>(null);
   useLayoutEffect(()=>{onMenuOpenChange(textReferenceMenuOpen||!!mentionState);return()=>onMenuOpenChange(false);},[textReferenceMenuOpen,mentionState,onMenuOpenChange]);
@@ -58,11 +64,11 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
     textarea.style.height = "0px";
     textarea.style.height = `${Math.min(maxHeight, Math.max(minHeight, textarea.scrollHeight))}px`;
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
-  }, [textPrompt, textComposerExpanded, textComposerManuallySized, selectedText.id]);
+  }, [textPrompt,selectedText.content,mode,textComposerExpanded,textComposerManuallySized,selectedText.id]);
   useEffect(() => {
     setTextComposerManuallySized(false);
     if (textComposerDockRef.current) textComposerDockRef.current.style.height = "";
-  }, [selectedText.id, selectedText.content, selectedText.prompt, textComposerDockRef]);
+  }, [selectedText.id,textComposerDockRef]);
   useEffect(() => {
     const dock = textComposerDockRef.current;
     const body = textComposerBodyRef.current;
@@ -84,7 +90,8 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
     observer.observe(dock);
     observer.observe(body);
     return () => observer.disconnect();
-  }, [selectedText.id, textComposerExpanded, textComposerManuallySized, textComposerDockRef]);
+  }, [selectedText.id,mode,textComposerExpanded,textComposerManuallySized,textComposerDockRef]);
+  useEffect(()=>{if(task.state.phase==="succeeded")setMode("content");},[task.state.phase]);
   const selectedTextRefs = useMemo(
     () =>
       (selectedText?.sourceIds ?? [])
@@ -115,7 +122,10 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
                     }
               }
               className={textComposerExpanded ? "resize-none" : "resize-y"}
-             kind="text" heading={selectedText.title || L("文字生成", "Text generation")} onDismiss={onDismiss} expanded={textComposerExpanded} onToggleExpand={() => { if (textComposerDockRef.current) textComposerDockRef.current.style.height = ""; setTextComposerManuallySized(false); setTextComposerExpanded(value => !value); }} expandLabel={L("展开文字编辑窗口", "Expand text editor")} collapseLabel={L("收起文字编辑窗口", "Collapse text editor")} closeLabel={L("关闭创作栏", "Close composer")}>
+             kind="text" heading={selectedText.title || L("文字", "Text")} onDismiss={onDismiss} expanded={textComposerExpanded} onToggleExpand={() => { if (textComposerDockRef.current) textComposerDockRef.current.style.height = ""; setTextComposerManuallySized(false); setTextComposerExpanded(value => !value); }} expandLabel={L("展开文字编辑窗口", "Expand text editor")} collapseLabel={L("收起文字编辑窗口", "Collapse text editor")} closeLabel={L("关闭创作栏", "Close composer")}>
+              <div role="tablist" aria-label={L("文字编辑方式","Text editing mode")} className="flex gap-1 px-3.5 pt-2">
+                {(["content","write"] as const).map(item=><button key={item} type="button" role="tab" aria-selected={mode===item} onClick={()=>{setMode(item);setMentionState(null);}} className={cn("rounded-lg px-3 py-1.5 text-xs font-semibold",mode===item?"bg-[#edf2ff] text-[#315fc8]":"canvas-ui-action")}>{item==="content"?L("正文","Content"):L("AI 写作","AI writing")}</button>)}
+              </div>
               <div
                 ref={textComposerBodyRef} data-composer-body="true"
                 className="flex min-h-0 flex-1 items-stretch gap-2 overflow-hidden px-3.5 pb-2 pt-3"
@@ -138,10 +148,14 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
                 <Textarea
                   autoFocus
                   ref={textPromptRef}
-                  value={textPrompt}
-                  placeholder={t("canvas.textPromptPlaceholder")}
+                  key={mode} value={value} aria-label={mode==="content"?L("文字内容","Text content"):L("AI 写作要求","AI writing instructions")}
+                  placeholder={mode==="content"?L("输入文字","Write text"):L("输入写作或修改要求","Describe what to write or change")}
+                  maxLength={mode==="content"?CANVAS_TEXT_CONTENT_LIMIT:CANVAS_TEXT_INSTRUCTION_LIMIT}
+                  readOnly={task.state.busy || selectedText.status==="generating"}
+                  onFocus={()=>{if(mode==="content")bodyEdit.current={initial:canvasTextContent(selectedText),draft:canvasTextContent(selectedText),change:content.onChange,commit:content.onCommit};}}
+                  onBlur={()=>{const session=bodyEdit.current;bodyEdit.current=null;if(mode==="content"&&session)session.commit(session.draft,session.initial);else if(mode==="write")void content.onFlush();}}
                   onChange={(event) => {
-                    setTextPrompt(event.target.value);
+                    setValue(event.target.value);
                     // 检测光标前未完成的 "@关键词" → 弹出图片选择框
                     const el = event.target;
                     const caret = el.selectionStart ?? event.target.value.length;
@@ -159,7 +173,8 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
                     }
                     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
                       event.preventDefault();
-                      void task.onGenerate();
+                      if(event.nativeEvent.isComposing)return;
+                      if(mode==="write")void task.onGenerate();else {const session=bodyEdit.current;content.onCommit(event.currentTarget.value,session?.initial);if(session)session.initial=event.currentTarget.value;}
                     }
                   }}
                   className={cn(
@@ -212,11 +227,7 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
                             onClick={() => {
                               const insert = `@${member.title || t("canvas.imageNode")} `;
                               const end = mentionState.start + 1 + mentionState.query.length;
-                              setTextPrompt(
-                                textPrompt.slice(0, mentionState.start) +
-                                  insert +
-                                  textPrompt.slice(end)
-                              );
+                              setValue(value.slice(0,mentionState.start)+insert+value.slice(end));
                               setMentionState(null);
                               void onReference(member.id, true);
                             }}
@@ -334,10 +345,10 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
               )}
               <CanvasComposerFooter testId="text-node-dock-footer" controls={<>
                 {storyboard&&<StoryboardPlanButton english={locale==='en'} disabled={storyboard.disabled} onClick={storyboard.onPlan}/>}
-                <TextModelSelect feature="canvas.text-generate" compact dark={!lightCanvas} direction="up" />
-                <CanvasPromptOptimizer contextKey={optimization?.contextKey??null} prompt={textPrompt}
+                {mode==="write"&&<TextModelSelect feature="canvas.text-generate" compact dark={!lightCanvas} direction="up" />}
+                <CanvasPromptOptimizer contextKey={optimization?.contextKey??null} prompt={canvasTextContent(selectedText)}
                   disabled={!optimization || optimization.disabled || task.state.busy || selectedText.status === "generating" || assistBusy} english={locale === "en"}
-                  onOptimize={(prompt, signal) => optimizeCanvasPrompt("canvas-text", prompt, signal)} onApply={setTextPrompt}/>
+                  onOptimize={(prompt, signal) => optimizeCanvasPrompt("canvas-text", prompt, signal)} onApply={value=>content.onCommit(value,canvasTextContent(selectedText))}/>
 
                 <FeatureVisible feature="generate"><button
                   type="button"
@@ -354,30 +365,15 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
                   <ImageIcon className="h-3.5 w-3.5" />
                   {t("canvas.genImages")}
                 </button></FeatureVisible>
-                 </>} actions={<> <span
-                  className={cn(
-                    "text-[11px] font-semibold",
-                    lightCanvas ? "text-[#547886]" : "text-[#6bd7ec]"
-                  )}
-                >
-                  {selectedTextRefs.length}/5
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void task.onGenerate()}
-                  disabled={(!textPrompt.trim()&&!task.retryable) || task.state.busy || selectedText.status==="generating"&&task.state.phase==="idle"}
-                  title={task.retryable?L("继续原任务","Resume original task"):t("canvas.textGenerate")} aria-label={task.retryable?L("继续原任务","Resume original task"):t("canvas.textGenerate")}
-                  className={cn(
-                    "flex h-10 w-10 items-center justify-center rounded-[11px] transition-opacity hover:opacity-90 disabled:opacity-45",
-                    lightCanvas ? "bg-[#20242c] text-white" : "bg-white text-[#111]"
-                  )}
-                >
-                  {task.state.busy ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ArrowUp aria-hidden="true" className="h-4 w-4" />
-                  )}
-                </button>
+                 </>} actions={<>
+                {mode==="write"&&<button data-text-primary="true" type="button" onClick={()=>void task.onGenerate()}
+                  disabled={optimization?.disabled||(!textPrompt.trim()&&!task.retryable)||task.state.busy||selectedText.status==="generating"&&task.state.phase==="idle"}
+                  title={task.retryable?L("继续原任务","Resume original task"):L("生成文字 · Ctrl/⌘ + Enter","Generate text · Ctrl/⌘ + Enter")}
+                  aria-label={task.retryable?L("继续原任务","Resume original task"):L("生成文字","Generate text")}
+                  className="canvas-ui-primary flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 text-xs font-semibold disabled:opacity-45">
+                  {task.state.busy?<Loader2 className="h-4 w-4 animate-spin"/>:<ArrowUp aria-hidden="true" className="h-4 w-4"/>}{task.retryable?L("继续原任务","Resume original task"):L("生成文字","Generate text")}
+                </button>}
+
                </>}/>
             </CanvasComposerShell>
   );

@@ -1,4 +1,5 @@
 import {ensureVideoScriptSchema as ensureScriptSchema} from "@/lib/video/storage-schema";
+import {canvasTextContent} from "../canvas/text-content";
 import "server-only";
 import {createHash} from "node:crypto";
 import {z} from "zod";
@@ -51,7 +52,7 @@ export async function saveVideoScriptAsset(actorRaw:string,raw:unknown){
       const source=(await client.query("SELECT content,prompt,status FROM app_canvas_text_nodes WHERE email=$1 AND id=$2 AND project_key=$3 FOR SHARE",[actor,sourceId,input.projectKey])).rows[0];
       if(!source)throw new ModelConfigError("VIDEO_SCRIPT_SOURCE_UNAVAILABLE","剧本来源不存在或无权访问",404);
       if(source.status!=="completed")throw new ModelConfigError("VIDEO_SCRIPT_SOURCE_PENDING","剧本来源尚未完成",422);
-      const original=source.content||source.prompt||"";
+      const original=canvasTextContent(source);
       if(input.expectedSourceSha256&&hash(original)!==input.expectedSourceSha256)throw new ModelConfigError("VIDEO_SCRIPT_SOURCE_CHANGED","原稿已修改，请读取最新原文后重新规划",409);
       if(input.sourceNodeId){
         if(input.end!>original.length||dividesSurrogate(original,input.start!)||dividesSurrogate(original,input.end!))throw new ModelConfigError("VIDEO_SCRIPT_RANGE_INVALID","原文片段起止位置无效，不能截断字符",422);

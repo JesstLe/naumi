@@ -1,3 +1,5 @@
+import { canvasTextContent } from "./text-content";
+
 export type TextImageMode = "general" | "pure" | "replicate";
 
 export type TextImageSource = {
@@ -65,11 +67,14 @@ function stripMentionLines(content: string): string {
 }
 
 function textBody(node: TextImageSource, drafts?: Readonly<Record<string, string>>): string {
-  // A completed output is authoritative; drafts describe input, not output.
+  // A cleared saved body is intentional: never revive its last AI instruction.
+  if (node.status && node.status !== "idle") return canvasTextContent(node).trim();
+  // Compatibility for old prompt-only nodes and callers with a draft input.
   return node.content.trim() || drafts?.[node.id]?.trim() || node.prompt?.trim() || "";
 }
 
 function legacyTextBody(node: TextImageSource, drafts?: Readonly<Record<string, string>>): string {
+  if (node.status && node.status !== "idle") return stripMentionLines(canvasTextContent(node));
   // Strip each raw candidate before checking fallback: pre-trimming changes
   // the old rule when a blank first line precedes an @ line.
   return stripMentionLines(node.content)

@@ -1,3 +1,4 @@
+import {canvasTextContent} from "./text-content";
 import {canvasGenerationDestination} from "./generation-fanout";
 import type {Artwork} from "../mock-data";
 import type {CanvasTextNode} from "./text-document-model";
@@ -89,7 +90,7 @@ export async function generateCanvasAssistantImage(source:Artwork|undefined|null
 }
 
 export function canvasBlankImagePrompt(prompt:string,textNodes:CanvasTextNode[],images:Artwork[]){
-  return prompt.trim()||textNodes.map(node=>node.content.trim()||node.prompt.trim()).filter(Boolean).join("\n\n")||canvasInheritedImagePrompt(images[0]?.prompt);
+  return prompt.trim()||textNodes.map(node=>canvasTextContent(node).trim()).filter(Boolean).join("\n\n")||canvasInheritedImagePrompt(images[0]?.prompt);
 }
 
 export function canvasInheritedImagePrompt(prompt?:string){return inheritableImagePrompt(prompt)||FAITHFUL_REGEN_PROMPT;}

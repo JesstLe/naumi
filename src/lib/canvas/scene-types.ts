@@ -60,6 +60,7 @@ export type CanvasTextNodeData = {
     prompt: string;
     content: string;
     status: CanvasTextNode["status"];
+      busy?: boolean;
     error?: string;
     sourceRefs?: Array<{ id: string; title: string }>;
     selected?: boolean;

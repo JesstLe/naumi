@@ -23,7 +23,7 @@ function setup(built){
  const hooks={ref(value){const i=cursor++;return slots[i]??(slots[i]={current:value});},state(value){const i=cursor++;if(!(i in slots))slots[i]=typeof value==='function'?value():value;return [slots[i],v=>{slots[i]=typeof v==='function'?v(slots[i]):v;state.renderWrites++;}];},effect(f){const i=cursor++;if(!(i in slots)){slots[i]=true;effects.push(f());}}};
  const ports={workspace:'personal',revision:0,async auth(){await state.auth();return {'x-naumi-workspace':ports.workspace,'x-naumi-project-context':'tree:WRONG','authorization':'fixture'};}};
  const projectedModule={exports:{}};
- const c={canvasArtworkDocument:{history:undefined},__ports:ports,__hooks:hooks,module:projectedModule,exports:projectedModule.exports,console,Promise,Error,Map,Set,WeakMap,Headers,Request,Response,AbortSignal,structuredClone,crypto:globalThis.crypto,localStorage:{setItem(){}},
+ const c={textWriteBarrierRef:{current:0},textAutosave:{flushAll:async()=>[]},textTasks:{state:()=>({busy:false})},canvasArtworkDocument:{history:undefined},__ports:ports,__hooks:hooks,module:projectedModule,exports:projectedModule.exports,console,Promise,Error,Map,Set,WeakMap,Headers,Request,Response,AbortSignal,structuredClone,crypto:globalThis.crypto,localStorage:{setItem(){}},
   historyScopesRef:{current:new WeakMap()},historyScopeRef:{current:''},historyBusyRef:{current:false},historyAttemptsRef:{current:new WeakMap()},
   canvasAccountRef:{current:state.account},activeProjectRef:{current:{key:state.project}},videoResultAttempts:{current:new Map()},unsavedTextRef:{current:new Map()},textSaveQueuesRef:{current:new Map()},
   pendNodesRef:{current:state.pending},textNodesRef:{current:state.texts},nodeSettingsRef:{current:{}},nodeSettingsReady:true,

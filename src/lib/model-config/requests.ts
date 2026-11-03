@@ -33,6 +33,14 @@ async function requestFacts(request: Request) {
       const parsed = await copy.json();
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) body = parsed;
       references = Array.isArray(body.images) ? body.images.length : Array.isArray(body.sourceIds) ? body.sourceIds.length : Array.isArray(body.contextIds) ? body.contextIds.length : body.anchorId ? 1 : body.image || body.imageUrl || body.originalUrl || body.artworkId ? 1 : 0;
+      if (new URL(request.url).pathname === "/api/canvas/text-generate") {
+        // Only this route supports text-node IDs as text context. Product
+        // images still require vision, even when no source image was selected.
+        const general = body.mode !== "reverse" && body.mode !== "assist";
+        const sourceIds = (Array.isArray(body.sourceIds) ? body.sourceIds : []).map((id: unknown) => String(id).trim()).filter(Boolean);
+        const productIds = (Array.isArray(body.productIds) ? body.productIds : []).map((id: unknown) => String(id).trim()).filter(Boolean);
+        references = new Set([...sourceIds.filter((id: string) => !general || !id.startsWith("text-")), ...productIds]).size;
+      }
     }
   } catch { /* The route owns detailed payload validation; no generation is performed here. */ }
   // Expand can edit the padded reference without a mask: the handler restores
@@ -130,7 +138,7 @@ async function runModelOperation<T>(input:ModelOperationInput,run:()=>Promise<T>
     const scope = await executor.describe(bundle.text);
     if (parsed.references && scope.businessOption?.parameters?.inputTypes && !scope.businessOption.parameters.inputTypes.includes("image")) throw new ModelConfigError("MODEL_INCOMPATIBLE", "本功能未开放图片输入", 400);
     if (scope.capabilities.vision) bundle.vision = bundle.text;
-    else if (parsed.references || (Array.isArray(parsed.body.sourceIds) && parsed.body.sourceIds.length) || parsed.body.anchorId) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选功能模型不支持图片输入", 400);
+    else if (parsed.references || (input.path !== "/api/canvas/text-generate" && Array.isArray(parsed.body.sourceIds) && parsed.body.sourceIds.length) || parsed.body.anchorId) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选功能模型不支持图片输入", 400);
   }
   // A visible, explicitly selected OCR model does not require an additional
   // legacy default binding. resolve still enforces vision capability/tool scope.

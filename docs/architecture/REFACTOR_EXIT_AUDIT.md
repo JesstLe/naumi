@@ -1,5 +1,10 @@
 # 整体退出审计
 
+## 2026-11-03 main 文本增量同步
+
+最新汇合见[main文本owner记录](../changes/2026-11-03-refactor-main-text-owner-integration.md)。main dede3933同步进936候选，原paidID/UNKNOWN、restore、JSON wire与已知结果恢复保持；同ID终态失败与裸输出错误分别验证。四合同独立窄审与Next17不是整体R04；243正式目录新增不表示完整执行。最终source、四产物和copy-only rollback以output/pr8-main-text-sync-20261103为准。本轮仍未反向合main或部署，不改历史source证据。
+
+
 ## 2026-11-03 main-owner 集群整合的证据边界
 
 本轮固定64ff并普通整合main c4b1e267/af877f15，实际owner汇合与管理回执/锁/UNKNOWN/CONNECT修复见[汇合记录](../changes/2026-11-03-refactor-main-owner-integration.md)。真实PG、React与完整Next各按自身输入hash验收；最终副本回滚/四产物归output/refactor-main-owner-sync-20261103。原restore证据不删除；64ff本身已含publish-only context，回滚该基线仍正确保留restore草稿。

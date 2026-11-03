@@ -1,4 +1,5 @@
 import {applicationTasksRunHere} from "../application/task-execution";
+import {canvasTextContent} from "../canvas/text-content";
 import "server-only";
 import {createHash,randomUUID} from "node:crypto";
 import {z} from "zod";
@@ -37,7 +38,7 @@ export async function requireOwnedVideoText(email:string,id:string){
   const row=(await getPool().query("SELECT content,prompt,status FROM app_canvas_text_nodes WHERE email=$1 AND id=$2",[email,id.replace(/^text:/,"")])).rows[0];
   if(!row)throw new VideoContractError("TEXT_REFERENCE_UNAVAILABLE","引用文字节点不存在或无权访问");
   if(["generating","processing","queued"].includes(String(row.status)))throw new VideoContractError("TEXT_DEPENDENCY_PENDING","前序文字尚未完成");
-  return String(row.content||row.prompt||"");
+  return canvasTextContent(row);
 }
 export function videoCreationInputDigest(input:CreateVideoInput){const {billingConfirmation:_confirmation,idempotencyKey:_key,...intent}=input;return createHash("sha256").update(canonicalConfig(intent)).digest("hex");}
 export async function createValidatedVideo(email:string,input:CreateVideoInput,hooks:{submit:(email:string,task:VideoTaskRow,request:VideoGenerationRequest)=>Promise<void>;creationError:(email:string,task:VideoTaskRow,error:unknown)=>Promise<void>}):Promise<{taskId:string;cost:number}>{

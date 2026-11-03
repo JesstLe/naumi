@@ -2,12 +2,14 @@ import type {CanvasDocumentScope} from './document-scope';
 import type {CanvasTextNode} from './text-document-model';
 import {textPatchOf,type CanvasHistoryAction} from './history-model';
 import {canvasTextEditPatch} from './text-edit-history';
+import {canvasTextContent,nextCanvasTextTimestamp,CANVAS_TEXT_CONTENT_LIMIT,CANVAS_TEXT_INSTRUCTION_LIMIT} from './text-content';
 import {estimateTextNodeHeight,TEXT_NODE_MIN_W,TEXT_NODE_MIN_H,TEXT_NODE_MAX_W,TEXT_NODE_MAX_H} from './node-geometry';
 
 type Bounds={x:number;y:number;width:number;height:number};
 type Ports={writable:()=>boolean;locked:(id:string)=>boolean;
  document:{getSnapshot:()=>{nodes:CanvasTextNode[]};set:(update:(nodes:CanvasTextNode[])=>CanvasTextNode[])=>void;save:(node:CanvasTextNode)=>Promise<unknown>};
  history:{record:(scope:CanvasDocumentScope,action:CanvasHistoryAction)=>void};
+ autosave?:{schedule:(id:string)=>void;flush:(id:string)=>Promise<unknown>};
 };
 /** Manual editing owns decisions and ephemeral expansion, not text storage or
  * another save queue. Original document/history keep drafts, conflicts and ACKs. */
@@ -25,15 +27,22 @@ export function createCanvasTextEditing(){
   const record=(action:CanvasHistoryAction)=>history.record(scope,action);
   return {
    getSnapshot:()=>active===scope?expanded:empty,subscribe(fn:()=>void){listeners.add(fn);return()=>{listeners.delete(fn);};},
-   change(id:string,content:string){const node=current(id);if(node)replace({...node,content:content.slice(0,12000),updatedAt:new Date().toISOString()});},
+   change(id:string,content:string){const node=current(id);if(node&&node.status!=="generating"){
+    replace({...node,content:content.slice(0,CANVAS_TEXT_CONTENT_LIMIT),status:"completed",error:"",updatedAt:nextCanvasTextTimestamp(node.updatedAt)});ports().autosave?.schedule(id);
+   }},
+   instruction(id:string,value:string){const node=current(id);if(!node||node.status==="generating")return;
+    replace({...node,content:canvasTextContent(node),prompt:value.slice(0,CANVAS_TEXT_INSTRUCTION_LIMIT),status:node.status==="idle"?"completed":node.status,updatedAt:nextCanvasTextTimestamp(node.updatedAt)});
+    ports().autosave?.schedule(id);
+   },
    commit(id:string,content:string,initialContent?:string){
     // A blur belongs to its focus session. It may finish in the original
     // document after project navigation, never in another actor/workspace.
     if(!scope.documentCurrent()||!ports().writable()||ports().locked(id))return;
     const node=document.getSnapshot().nodes.find(node=>node.id===id&&(!scope.project||node.projectKey===scope.project));if(!node)return;
-    if(initialContent!==undefined&&content===initialContent&&node.content!==content)return;
-    const updated={...node,content:content.slice(0,12000),updatedAt:new Date().toISOString()},patch=canvasTextEditPatch(textPatchOf(node),updated.content,initialContent);
-    if(patch)record({kind:'text-patch',id,from:patch.from,to:patch.to});replace(updated);void document.save(updated);
+    if(initialContent!==undefined&&content===initialContent){void ports().autosave?.flush(id);return;}
+    if(node.status==="generating")return;
+    const updated:CanvasTextNode={...node,content:content.slice(0,CANVAS_TEXT_CONTENT_LIMIT),status:"completed",error:"",updatedAt:nextCanvasTextTimestamp(node.updatedAt)},patch=canvasTextEditPatch(textPatchOf(node),updated.content,initialContent);
+    if(patch)record({kind:'text-patch',id,from:patch.from,to:patch.to});replace(updated);if(ports().autosave){ports().autosave!.schedule(id);void ports().autosave!.flush(id);}else void document.save(updated);
    },
    async rename(id:string,title:string){const node=current(id),name=title.trim();if(!node||!name||node.title===name)return;
     const updated={...node,title:name,updatedAt:new Date().toISOString()};record({kind:'text-patch',id,from:textPatchOf(node),to:textPatchOf(updated)});replace(updated);

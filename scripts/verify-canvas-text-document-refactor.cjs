@@ -19,8 +19,8 @@ function setup(built,storageMap=new Map()){
  const slots=[],effects=[];let index=0;
  const hooks={ref(v){const i=index++;return slots[i]??(slots[i]={current:v});},state(v){const i=index++;if(!(i in slots))slots[i]=v;return [slots[i],u=>slots[i]=typeof u==='function'?u(slots[i]):u];},effect(f){const i=index++;if(!(i in slots)){slots[i]=true;effects.push(f());}}};
  const ports={workspace:'personal',revision:0,async auth(){await state.auth();return {'x-naumi-workspace':ports.workspace,authorization:state.account};}};
- const module={exports:{}};
- const c={__ports:ports,__hooks:hooks,module,exports:module.exports,console,Error,Map,Set,WeakMap,Promise,Headers,Response,Request,AbortSignal,URLSearchParams,structuredClone,crypto:globalThis.crypto,window:{location:{search:''}},localStorage:storage,
+ const loadedModule={exports:{}};
+ const c={textWriteBarrierRef:{current:0},textAutosave:{flushAll:async()=>[]},textTasks:{state:()=>({busy:false})},__ports:ports,__hooks:hooks,module:loadedModule,exports:loadedModule.exports,console,Error,Map,Set,WeakMap,Promise,Headers,Response,Request,AbortSignal,URLSearchParams,structuredClone,crypto:globalThis.crypto,window:{location:{search:''}},localStorage:storage,
   ready:true,authenticatedEmail:state.account,targetEmail:state.account,user:{email:state.account},readOnly:false,canvasAccountRef:{current:state.account},nodeSettingsReady:true,
   unsavedTextRef:{current:new Map()},textSaveQueuesRef:{current:new Map()},nodeSettingsRef:{current:{}},textNodesRef:{current:state.texts},pendNodesRef:{current:[]},
   setWorks:()=>{},setNames:()=>{},setNodeSettings:()=>{},setSelectedTextId:()=>{},setSelectedId:()=>{},setSidebarOpen:()=>{},removeWorksLocal:()=>{},setCreatingNew:()=>state.views++,setActiveKey:()=>state.views++,setBrowsing:()=>state.views++,setTargetEmail:()=>{},setReadOnly:()=>{},setPinnedNode:()=>{},setTextNodesReady:v=>state.phase=v?'ready':'loading',restoredRef:{current:false},pendingNodeRef:{current:null},deepFocusRef:{current:false},
@@ -37,7 +37,7 @@ function setup(built,storageMap=new Map()){
   if(url.startsWith('/api/projects'))return Response.json({names:{}});
   const responseNodes=structuredClone(state.server);await state.get();return Response.json(state.status>=400?{error:'read unavailable'}:{persisted:state.persisted,nodes:responseNodes},{status:state.status});
  };
- vm.createContext(c);vm.runInContext(built,c);Object.assign(c,module.exports);if(!baseline){const p=c.createCanvasPendingPresentation().bind('fixture'),g=c.createCanvasGenerationPresentation().bind('fixture');c.pendingPresentation={...p,atScope:()=>p};c.generationPresentation={...g,atScope:()=>g};c.projectCatalog={remove(){}};}vm.runInContext(compile(fn.privateFetchRaw),c);
+ vm.createContext(c);vm.runInContext(built,c);Object.assign(c,loadedModule.exports);if(!baseline){const p=c.createCanvasPendingPresentation().bind('fixture'),g=c.createCanvasGenerationPresentation().bind('fixture');c.pendingPresentation={...p,atScope:()=>p};c.generationPresentation={...g,atScope:()=>g};c.projectCatalog={remove(){}};}vm.runInContext(compile(fn.privateFetchRaw),c);
  // The text-only fixture supplies all real native document ports; no native
  // records are seeded. The adapter is the same one used by Canvas.
  for(const kind of ['director','character','scene','audio','timeline'])c[kind+'NodesStore']={allNodes:[],accept(){},flush:async()=>{},getNode:()=>undefined,refresh:async()=>{}};

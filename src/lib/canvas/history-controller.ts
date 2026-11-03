@@ -16,6 +16,7 @@ type Attempt = { undo: boolean; operationId: string; operations: CanvasHistoryOp
 export type HistoryCommit = {nativeNodes?:CanvasNativeRecords;artworkNodes?:import("./artwork-write").CanvasArtworkReceipt[];artworkIds?:string[];action: CanvasHistoryAction; undo: boolean; operations: CanvasHistoryOperation[]; persisted: boolean; initial?:boolean;textNodes?:import("./text-document-model").CanvasTextNode[]};
 type Services = {
   changed: () => void; readOnly: () => boolean;
+  validateOperations?:(operations:CanvasHistoryOperation[])=>void;
   flush: () => Promise<unknown>; video: (id: string) => CanvasVideoNode | undefined;director?:(id:string)=>CanvasDirectorNode|undefined;character?:(id:string)=>CanvasCharacterNode|undefined;scene?:(id:string)=>CanvasSceneNode|undefined;artwork?:(id:string)=>Artwork|undefined;audio?:(id:string)=>CanvasAudioNode|undefined;timeline?:(id:string)=>CanvasTimelineNode|undefined;
   transaction: <T>(scope:CanvasHistoryScope,work:()=>Promise<T>)=>Promise<T>;
   commit: (scope: CanvasHistoryScope, value: HistoryCommit) => void;
@@ -60,7 +61,7 @@ export function createCanvasHistoryController(services: Services) {
         if (attempt && attempt.undo !== reverse) throw new Error("请先核实原画布操作");
         if (!attempt) {
           attempt = {undo:reverse,operationId:browserRandomUUID(),operations:structuredClone(compileCanvasHistory(action,reverse,services.video,initialRevision,services.director,services.character,services.scene,services.artwork,services.audio,services.timeline))};
-          attempts.set(action,attempt);
+          services.validateOperations?.(attempt.operations);attempts.set(action,attempt);
         }
         let response;
         try{response=await postCanvasHistory(scope,{operationId:attempt.operationId,operations:attempt.operations});}

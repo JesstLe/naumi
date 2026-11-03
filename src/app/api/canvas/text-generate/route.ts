@@ -7,6 +7,7 @@ import path from "path";
 import {dbEnabled} from "@/platform/db/pool";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {type ArtworkRecord} from "@/lib/artworks/types";
+import {listCanvasTextNodes} from "@/lib/canvas/text-node-repository";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
@@ -21,6 +22,8 @@ import {withBillingRequest} from "@/lib/billing/synchronous";
 import {configuredToolCost} from "@/lib/billing/synchronous-operation";
 import { CANVAS_TEXT_OUTPUT_INSTRUCTION, canvasTextInput, canvasAnswerText, canvasTextFailure, reportCanvasTextFailure } from "@/lib/canvas-text-output";
 import { currentModelExecution } from "@/lib/model-config/context";
+import { CanvasTextContentError, canvasTextGenerationInput, parseCanvasTextContent } from "@/lib/canvas/text-generation-input";
+import { CanvasTextReferenceError, canvasTextReferenceContext, splitCanvasTextReferences } from "@/lib/canvas/text-generation-references";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -110,24 +113,43 @@ async function handleObservedPost(request: Request) {
     return NextResponse.json({ error: "操作过于频繁，请稍后再试" }, { status: 429 });
   }
   let prompt = "";
+  let content = "";
   let sourceIds: string[] = [];
+  let textSourceIds: string[] = [];
+  let projectKey = "";
   let productIds: string[] = [];
   let mode: "general" | "reverse" | "assist" = "general";
   try {
     const body = (await request.json()) as {
       prompt?: string;
+      content?: unknown;
       sourceIds?: unknown;
+      projectKey?: unknown;
       productIds?: unknown;
       mode?: unknown;
     };
     prompt = String(body.prompt || "").trim().slice(0, 4000);
+    content = parseCanvasTextContent(body.content);
+    mode = body.mode === "reverse" || body.mode === "assist" ? body.mode : "general";
+    projectKey = typeof body.projectKey === "string" ? body.projectKey.trim() : "";
     sourceIds = Array.from(
       new Set(
         (Array.isArray(body.sourceIds) ? body.sourceIds : [])
           .map((id) => String(id).trim())
           .filter(Boolean)
       )
-    ).slice(0, MAX_REFERENCE_IMAGES);
+    );
+    if (mode === "general") {
+      const references = splitCanvasTextReferences(sourceIds);
+      sourceIds = references.imageIds;
+      textSourceIds = references.textIds;
+      if (textSourceIds.length && !projectKey) {
+        throw new CanvasTextReferenceError("TEXT_REFERENCE_PROJECT_REQUIRED", "关联文字需要当前画布项目");
+      }
+    } else {
+      // Product recipes still accept their original image-only inputs.
+      sourceIds = sourceIds.slice(0, MAX_REFERENCE_IMAGES);
+    }
     productIds = Array.from(
       new Set(
         (Array.isArray(body.productIds) ? body.productIds : [])
@@ -135,9 +157,10 @@ async function handleObservedPost(request: Request) {
           .filter(Boolean)
       )
     ).slice(0, 2);
-    mode =
-      body.mode === "reverse" || body.mode === "assist" ? body.mode : "general";
-  } catch {
+  } catch (error) {
+    if (error instanceof CanvasTextContentError || error instanceof CanvasTextReferenceError) {
+      return NextResponse.json({ code: error.code, error: error.message }, { status: 400 });
+    }
     return NextResponse.json({ error: "请求格式不正确" }, { status: 400 });
   }
   // reverse(竞品图反推提示词)可以不带用户指令;其余模式要求 prompt。
@@ -149,6 +172,9 @@ async function handleObservedPost(request: Request) {
   }
   if (mode === "assist" && !productIds.length) {
     return NextResponse.json({ error: "智能帮写需要先选择产品图" }, { status: 400 });
+  }
+  if (textSourceIds.length && (!dbEnabled || !email)) {
+    return NextResponse.json({ code: "TEXT_REFERENCE_STORAGE_REQUIRED", error: "当前环境未启用文字引用存储" }, { status: 400 });
   }
 
   const model = requestedTextModel(
@@ -162,6 +188,15 @@ async function handleObservedPost(request: Request) {
   }
 
   try {
+    let textReferences = "";
+    if (textSourceIds.length) {
+      textReferences = canvasTextReferenceContext({
+        textIds: textSourceIds,
+        projectKey,
+        nodes: await listCanvasTextNodes(email!),
+        contentLength: content.length,
+      });
+    }
     let references: ArtworkRecord[] = [];
     let referenceImages: string[] = [];
     if (sourceIds.length) {
@@ -214,7 +249,7 @@ async function handleObservedPost(request: Request) {
         : mode === "assist"
           ? "你是电商提示词改写助手。用户会给出一段从竞品图逆向出来的提示词,以及用户自己产品的白底图。把提示词中所有与竞品产品相关的描述(产品形态、卖点、品牌、文案内容)替换为用户产品图中的真实产品与卖点,保持原有构图、布光、场景、色调与风格不变,并剔除一切竞品品牌名与标识。只输出改写后的完整中文提示词,不要解释。画面文案要求必须与用户产品匹配、可直接使用。"
           : "你是电商创作画布里的文字生成助手。直接完成用户要求，可写标题、卖点、脚本、详情文案、提示词或结构化方案。内容要清晰、可直接复制使用；除非用户要求，不要解释过程，不要添加空泛口号。";
-    let userText = prompt;
+    let userText = canvasTextGenerationInput(prompt, content);
     if (mode === "reverse") {
       userText = `${prompt || "请反推这张竞品图的生图提示词。"}\n\n以下是待反推的竞品参考图。\n${referenceMetadata(references)}`;
     } else if (mode === "assist") {
@@ -223,8 +258,9 @@ async function handleObservedPost(request: Request) {
         : "";
       userText = `待改写的逆向提示词:\n${prompt}\n\n以下是用户自己产品的白底图(改写后的提示词必须描述这个产品):\n${referenceMetadata(products)}${competitorNote}`;
     } else if (references.length) {
-      userText = `${prompt}\n\n以下图片已由用户通过画布连线加入当前节点上下文。请结合图片内容和元数据完成任务。\n\n${referenceMetadata(references)}`;
+      userText = `${userText}\n\n以下图片已由用户通过画布连线加入当前节点上下文。请结合图片内容和元数据完成任务。\n\n${referenceMetadata(references)}`;
     }
+    if (textReferences) userText = `${userText}\n\n${textReferences}`;
     const allImages = [...referenceImages, ...productImages];
     const userContent: Array<
       | { type: "text"; text: string }
@@ -257,8 +293,11 @@ async function handleObservedPost(request: Request) {
       reportCanvasTextFailure("text-generate", failure.code);
       return NextResponse.json(failure, { status: 502 });
     }
-    return NextResponse.json({ text, model, referenceCount: references.length });
+    return NextResponse.json({ text, model, referenceCount: references.length, textReferenceCount: textSourceIds.length });
   } catch (error) {
+    if (error instanceof CanvasTextReferenceError) {
+      return NextResponse.json({ code: error.code, error: error.message }, { status: 400 });
+    }
     return NextResponse.json(
       { error: safeError(error, "文字生成失败，请稍后重试") },
       { status: 502 }

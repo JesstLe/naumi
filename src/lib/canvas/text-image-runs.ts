@@ -46,6 +46,10 @@ export function createCanvasTextImageRuns(){
         publish({menu:{textNodeIds:ids,imageIds:[...new Set(imageIds)],drafts:ctx.draft.id&&ids.includes(ctx.draft.id)?{[ctx.draft.id]:ctx.draft.text}:{},scope:ctx.scope,current:ctx.current}});
       },
       close(){if(scope.viewCurrent())publish({menu:null});},
+      preview(mode:TextImageMode,options:{combine:boolean;useReferences:boolean},ctx:CanvasTextImageContext){
+        const menu=state.snapshot.menu;if(!menu)return {prompts:[]};
+        try{return {prompts:requests(menu,mode,options,ctx).map(request=>request.prompt)};}catch(error){return {prompts:[],error:error instanceof Error?error.message:"文字内容无效"};}
+      },
       referenceCount(ctx:CanvasTextImageContext){
         const menu=state.snapshot.menu,project=ctx.project();if(!menu||!project||!isCurrent(menu,ctx))return 0;
         return countTextImageReferences({projectKey:project.key,nodes:ctx.texts(),textNodeIds:menu.textNodeIds,selectedImageIds:menu.imageIds});

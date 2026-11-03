@@ -5,7 +5,7 @@ import { authHeader } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import type { FeatureId } from "./types";
 import {clientIntentKey,frozenIntentBody} from "./client-intent";
-import {readBillingSubmissionResponse} from "./client-response";
+import {readBillingSubmissionResponse,isTerminalBillingFailure} from "./client-response";
 import { MODEL_CATALOG_REFRESH } from "../model-config/public-client";
 import { chosenFeatureModel, FEATURE_MODEL_SELECTION } from "../model-config/feature-client";
 import { browserRandomUUID } from "../browser-crypto";
@@ -186,8 +186,7 @@ export function BillingProvider({ children }: {
         const receipt=await readBillingSubmissionResponse(response,id,undefined,url);
         response=receipt.response;
         const data=receipt.data;
-        const terminalFailure = data.terminal === true && data.status === "failed" && data.operationId === `tool-${id}` &&
-            Number.isSafeInteger(data.chargedCredits) && Number(data.chargedCredits) >= 0;
+        const terminalFailure = isTerminalBillingFailure(data,id);
         // Only an identity-bound terminal server receipt releases this local
         // intent. A future explicit click may start anew; never auto-resubmit.
         if(terminalFailure || data.code!=="OPERATION_PENDING"&&data.code!=="OPERATION_CONFLICT"&&(response.ok||response.status<500&&!displayed.quote))clearIntent();

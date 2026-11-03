@@ -1,13 +1,14 @@
+import {canvasTextContent} from "./text-content";
 import type {Artwork} from "../mock-data";
 import {browserRandomUUID} from "../browser-crypto";
 import {CANVAS_TEXT_DEFAULT_HEIGHT,CANVAS_TEXT_DEFAULT_WIDTH,type CanvasTextNode} from "./text-document-model";
 
-export type CanvasTextPayload={mode?:"general"|"reverse"|"assist";prompt:string;sourceIds:string[];productIds?:string[]};
+export type CanvasTextPayload={mode?:"general"|"reverse"|"assist";prompt:string;content?:string;projectKey?:string;sourceIds:string[];productIds?:string[]};
 export type CanvasTextTaskRequest={node:CanvasTextNode;payload:CanvasTextPayload;created:boolean;productTitle?:string;operationId?:string};
 export function stripTextMentions(content:string){const lines=content.split("\n");let i=0;while(i<lines.length&&lines[i].trim().startsWith("@"))i++;return lines.slice(i).join("\n").trim();}
 export function withTextProduct(content:string,title:string){return `@${title}\n\n${stripTextMentions(content)}`.trim();}
 export function generalTextTask(node:CanvasTextNode,prompt:string,title:string):CanvasTextTaskRequest{
-  const value=prompt.trim();return {node:{...node,prompt:value,title:value.replace(/\s+/g," ").slice(0,22)||title},payload:{prompt:value,sourceIds:[...(node.sourceIds||[])]},created:false};
+  const value=prompt.trim();return {node:{...node,content:canvasTextContent(node),prompt:value,title:node.title||title},payload:{prompt:value,content:canvasTextContent(node),projectKey:node.projectKey,sourceIds:[...(node.sourceIds||[])]},created:false};
 }
 export function derivedTextTask(input:{source:Artwork|CanvasTextNode;mode:"reverse"|"assist";product?:Artwork;project:string;title:string;productTitle:string;position:{x:number;y:number;width:number};gap:number}):CanvasTextTaskRequest{
   const {source,mode,product,position}=input,now=new Date().toISOString(),text=source as CanvasTextNode;
