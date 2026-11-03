@@ -4,6 +4,7 @@ import { readFileSync,writeFileSync } from "node:fs";
 import { randomUUID, randomBytes, scryptSync, createHash } from "node:crypto";
 import { Pool } from "pg";
 import { CAP_RICH } from "./video-fusion/profiles";
+import { captureBillingResponseBody } from "./billing-response-body";
 const navigationDiagnostics=new WeakMap<object,unknown[]>();
 async function fixtureVideoCatalog(page:any){
     // Billing-client fault regression only; full supplier E2E uses the video harness.
@@ -131,11 +132,12 @@ test("publish preserves the user's frozen price, conflict draft and restore", as
         await a.getByRole("button", { name: "发布配置", exact: true }).click();
         await expect(a.getByRole("status")).toContainText("已发布版本");
         const published=await (await admin.request.get("/api/admin/billing")).json();expect(published.snapshot.config.features["image.generate"].pricing.quality.medium).toBe(8);
-        const response = u.waitForResponse(r => r.url().includes("/api/generate-image") && r.request().method() === "POST");
-        await u.getByTestId("billing-estimate").click();
-        const accepted=await response;
-        expect(accepted.status(),await accepted.text()).toBe(200);
-        const originalId=accepted.request().headers()["x-naumi-billing-operation-id"],quoteId=accepted.request().headers()["x-naumi-image-quote"],jobId=(await accepted.json()).jobId;
+        // Retain and consume the original browser body before click/navigation
+        // completes; status diagnostics and JSON parsing share the same text.
+        const response = await captureBillingResponseBody(u,r => r.url().includes("/api/generate-image") && r.request().method() === "POST");
+        const [{accepted,text}]=await Promise.all([response.result,u.getByTestId("billing-estimate").click()]).finally(response.dispose);
+        expect(accepted.status(),text).toBe(200);
+        const originalId=accepted.request().headers()["x-naumi-billing-operation-id"],quoteId=accepted.request().headers()["x-naumi-image-quote"],jobId=JSON.parse(text).jobId;
         expect(originalId).toBeTruthy();expect(quoteId).toBeTruthy();expect(jobId).toBeTruthy();
         const savedQuote=(await pool.query("SELECT owner,quote FROM app_image_billing_quotes WHERE id=$1",[quoteId])).rows[0];
         expect(savedQuote.owner).toBe(fixture.email);expect(savedQuote.quote.requestedCredits).toBe(6);

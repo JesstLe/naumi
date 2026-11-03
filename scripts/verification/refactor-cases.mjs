@@ -4,6 +4,7 @@ import path from "node:path";
 const ts=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:true,tsx:true});
 const node=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:false,tsx:false});
 export const refactorCases=[
+ node('billing-response-body-lifetime','pricing','scripts/verify-billing-response-body-lifetime.cjs','BILLING_RESPONSE_BODY_LIFETIME=PASS'),
  ts('protocol-application-ownership','pricing','scripts/verify-protocol-application-ownership.ts','PROTOCOL_APPLICATION_OWNERSHIP=MODIFIED PASS'),
  ts('media-metadata-ownership','canvas','scripts/verify-media-metadata-ownership.ts','MEDIA_METADATA_OWNERSHIP=MODIFIED PASS'),
  ts('billing-task-ownership','pricing','scripts/verify-billing-task-ownership.ts','BILLING_TASK_OWNERSHIP=MODIFIED PASS'),

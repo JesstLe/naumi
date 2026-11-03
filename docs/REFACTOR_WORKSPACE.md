@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：账务 UI 原响应生命周期
+
+[原响应观察修复](changes/2026-11-03-refactor-billing-response-body-lifetime.md)处理旧936 Verify真实15PASS/1FAIL：body经CDP读取失败发生在200断言消息求值，后续头并未覆盖。仅提前读取仍在实际浏览器2/4失败，原失败保留；最终test-only有界durable buffer+原Response单读+finally detach，四时序实际4PASS。未route替换、未重发POST、产品2393路径raw零漂移；当前产品59d完整production-mode Next构建和真实PG账务UI原16项通过，原冻结价格/账本/restore/预算保持。正式目录245为登记数；最终类型、formal selected、四产物和新头CI归output/pr8-verify-response-body-lifetime-20261103。整体ACTIVE、未合main/未部署、47 HOLD。
+
 ## 当前推进：main 紧凑图片 Dock owner 同步
 
 [紧凑 Dock 整合](changes/2026-11-03-refactor-main-compact-dock-integration.md)以4d1eb60a为5687文件基线普通整合main ca00b1f1。图片620/360与展开420/480进入纯geometry，naturalHeight与render/live width进入原overlay owner，版本/优化器/参数保留原composer职责，不恢复Canvas单体。原text/video几何、paid/UNKNOWN/save-ACK/undo合同保留。正式目录244仅代表登记数；实际集中验证、完整Next、独立窄审和四产物以output/pr8-main-compact-dock-sync-20261103为准。前一文本阶段封存，不将旧报告重标新头；整体ACTIVE、未合main/未部署、47 HOLD。

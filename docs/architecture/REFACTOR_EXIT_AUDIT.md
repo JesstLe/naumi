@@ -1,5 +1,9 @@
 # 整体退出审计
 
+## 当前增量：账务 UI 原响应生命周期，产品零修改
+
+[账务UI观察合同](../changes/2026-11-03-refactor-billing-response-body-lifetime.md)确认936/44e/4d/59d的旧晚读片段相同，不能只以过时通知忽略。真实旧CI15PASS/1FAIL；early-only本地候选2/4仍FAIL，最终有界durable buffer保留原Playwright body后4/4 PASS，完整账务UI16 PASS。产品src/services/public路径集/hash/mode不变；原200/原ID/冻结价/一POST一ledger/实际PNG/restore与时限不放宽，纯测试生命周期修复。目录244→245不是完整core通过；整体R04/同case页面/当前完整固定WebWorker/runtime/performance与main整合门槛保持，47 HOLD。
+
 ## 当前增量：main 紧凑图片 Dock，不替代整体退出
 
 [紧凑 Dock owner 整合](../changes/2026-11-03-refactor-main-compact-dock-integration.md)保持4d文本阶段与原paid合同，普通整合main ca00b1f1。新正式纯geometry case使目录243→244；source-root行为oracle在原有canvasDockLayout上比较真实820→620、展开734→420，text/video原值不变。完整集中报告/独立审阅/副本全raw回滚归本阶段output，不把登记数、局部PARTIAL或SCC0写成全重构完成。R04、M01/M02/M05—M08、当前完整244与固定Web/Worker/runtime/performance门槛仍独立，mainMerged=false、deployed=false、47 HOLD。
