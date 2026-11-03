@@ -83,10 +83,10 @@ async function ownerCases(api){
  });
  const textNode=()=>({id:'text-a',projectKey:'tree:A',title:'Text',prompt:'',content:'',status:'idle',canvasX:0,canvasY:0,width:380,height:240,sourceIds:[],productIds:[],targetIds:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
  for(const change of ['project','account-ABA','workspace-ABA'])await test('accepted-text-'+change+'-retains-original-answer-and-document-identity',async()=>{
-  scopeState.name='personal';scopeState.revision=0;const context=api.createCanvasDocumentContext(),scope=context.render('actor','tree:A'),held=gate();let nodes=[textNode()],posts=0,saves=0,headers,models=0;
+  scopeState.name='personal';scopeState.revision=0;const context=api.createCanvasDocumentContext(),scope=context.render('actor','tree:A'),held=gate(),entered=gate();let nodes=[textNode()],posts=0,saves=0,headers,models=0,dispatched=false;
   const task=api.createCanvasTextTask(api.generalTextTask(nodes[0],'生成文本','Text'));
-  const makePorts=bound=>({submit:async()=>{posts++;await held.promise;return Response.json({text:'原任务已生成的文本',model:'text-original'});},document:{getSnapshot:()=>({nodes}),set:update=>{if(bound.documentCurrent())nodes=update(nodes);},save:async node=>{headers=Object.fromEntries((await api.canvasDocumentHeaders(bound)).entries());saves++;return node;}},history:()=>{},model:()=>models++,changed:()=>{},errorText:'failed'});
-  const running=task.run(scope,makePorts(scope));eq(posts,1);
+  const makePorts=bound=>({submit:async()=>{posts++;dispatched=true;entered.resolve();await held.promise;return Response.json({text:'原任务已生成的文本',model:'text-original'});},document:{getSnapshot:()=>({nodes}),set:update=>{if(bound.documentCurrent())nodes=update(nodes);},save:async node=>{headers=Object.fromEntries((await api.canvasDocumentHeaders(bound)).entries());saves++;return node;}},history:()=>{},model:()=>models++,changed:()=>{},errorText:'failed'});
+  const running=task.run(scope,makePorts(scope));await Promise.race([entered.promise,running.then(()=>{assert.equal(dispatched,true,'accepted-text fixture must enter the original submit port before changing identity');})]);eq(posts,1);
   if(change==='project')context.render('actor','tree:B');else if(change==='account-ABA'){context.render('other','tree:A');context.render('actor','tree:A');}else{scopeState.name='team';scopeState.revision++;scopeState.name='personal';scopeState.revision++;}
   held.resolve();eq(await running,change==='project');eq(posts,1);eq(saves,change==='project'?1:0);eq(models,0);eq(task.getSnapshot().hasResult,true);
   if(change==='project'){eq(headers['x-naumi-project-context'],'tree:A');eq(headers['x-naumi-workspace'],'personal');}

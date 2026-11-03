@@ -1,5 +1,9 @@
 # 整体退出审计
 
+## 当前增量：59d 验收导航与异步受理边界
+
+[59d合同跟进](../changes/2026-11-03-refactor-ci59d-test-contracts.md)只改测试，不把即时posts0误报为整个任务生命周期零POST。原异步prepare与身份fence保留，显式原submit-entry握手后再变更身份；原业务UI先进入AI写作模式，30秒预算及发布/鉴权/mobile断言不缩减。完整Core owner/React17场景95检查与真实隔离Next/PG/GoRouter业务UI分别通过。全源copy oracle只复跑完整Core harness，business副本恢复为字节级证据，不冒称第三次PG浏览器执行。正式目录仍246、完整Core/Verify新头CI与整体R04/同case页面/运行性能验收独立；mainMerged=false、deployed=false、47 HOLD。
+
 ## 当前增量：Core主题矩阵测试协议，不放宽产品门禁
 
 [主题fixture合同](../changes/2026-11-03-refactor-theme-fixture-contract.md)从4560/5696完整基线补image-prompts fixture的document/revision/CAS/replay并保留legacy mapping接口；适配现主线AI写作/更多菜单。98原主题检查、色彩数学/对比阈值/原预算保持；提交禁用在显式原POST preACK gate测，ACK后沿原后台并行语义。完整Next4主题98PASS；实际client+route+原gate端口回归不冒称browser/PG/paid验收，历史原POST次数UNKNOWN保留。目录246仍非完整core通过，整体退出门槛与47 HOLD保持。

@@ -57,7 +57,9 @@ async function main() {
     await user.goto(`${origin}/canvas`,{waitUntil:"domcontentloaded"});
     if (!await user.locator('button[data-tool="text"]').isVisible()) await user.getByTestId("canvas-drop-zone").getByRole("button",{name:"创建新项目",exact:true}).click();
     await user.locator('button[data-tool="text"]').waitFor();await user.locator('button[data-tool="text"]').click();
-    const textModel=user.getByRole("button",{name:"业务文字",exact:true});await textModel.first().waitFor();await textModel.first().click();
+    // New text nodes open in body-editing mode; the model catalog belongs to AI writing.
+    const textDock=user.getByTestId("text-node-dock");await textDock.getByRole("tab",{name:"AI 写作",exact:true}).click();
+    const textModel=textDock.getByRole("button",{name:"业务文字",exact:true});await textModel.first().waitFor();await textModel.first().click();
     assert.equal(await user.getByRole("button",{name:"自定义模型 ID",exact:true}).count(),0);
     await user.screenshot({path:`${folder}/business-canvas-text-model.png`,fullPage:true});
     assert.equal((await member.request.post(`${origin}/api/admin/bi/model-config`,{data:{}})).status(),404);

@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：59d Core/Verify 验收合同跟进
+
+[异步受理与业务模型入口](changes/2026-11-03-refactor-ci59d-test-contracts.md)保留59d两条真实失败身份：Core18PASS/1FAIL与Verify原模型入口30秒超时。只修测试：原submit端口实际进入后再切换身份、先进入文字Dock的AI写作再选模型，不动产品prepare/scope fence或原断言预算。完整owner/React17场景95检查与完整本地Next/PG/pinned GoRouter业务UI已通过，供应商调用0；setup ERROR与原失败保留。正式原case、最终集中检查与副本三相四产物归output/pr8-ci59d-followup-20261103；目录仍246，不把copy oracle登记成替代case。整体ACTIVE、未合main/未部署、47 HOLD。
+
 ## 当前推进：Core主题矩阵fixture与主线交互合同
 
 [主题fixture收敛](changes/2026-11-03-refactor-theme-fixture-contract.md)处理旧936 Core78PASS/1FAIL/158NOT_RUN。旧产物明确prompt回执不完整，current原脚本又真实卡主线文字模型旧入口；只抽专属prompt测试owner/补合法receipt，显式AI写作与更多菜单，不放宽产品保存fence。保留原98主题检查及阈值，确定preACK提交禁用与原ACK后后台释放不同阶段，当前完整Next4组合/98/0viol通过，原POST1/ID不变，实际client/gate窄合同及旧mapping差分独立。产品零改动，tsc5606/0、lint5/0、runner31/430；登记246不是全跑。正式/四产物/新头CI归output/pr8-core-theme-fixture-20261103；整体ACTIVE，未合main/未部署、47 HOLD。
