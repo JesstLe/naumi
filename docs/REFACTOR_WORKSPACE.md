@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：cb2 Core 生成活动回执 fixture
+
+[生成活动回执边界](changes/2026-11-04-refactor-generation-activity-receipt-fixture.md)保留原 Core149PASS/1FAIL/96NOT_RUN 与当前9fe原样exit1。诊断副本确认真实 BillingProvider submit 在旧VM缺 readBillingSubmissionResponse，尚未进入 poll/position；只补测试真实owner、完整成功回执和可取消的独立body deadline，不改产品或history1合同。新增16个坏回执/断体/受控超时/缺字段原身份恢复组合，boundary90/772及activity38/182通过；secondary/image/text与实际React/本机读体浏览器相邻模块集中通过。正式目录仍248，最终SHA绑定selected、静态、独立窄审与四产物归本轮output；selected不是完整Core，受控30秒推进不是墙钟超时测量，fixture supplier不是线上账务。整体ACTIVE、未合main/未部署、47 HOLD。
+
 ## 当前推进：cb2 Verify 的 Canvas 握手与 production fixture
 
 [业务Canvas验收fixture](changes/2026-11-04-refactor-business-canvas-production-fixture.md)分开保留瞬时isVisible错误分支和Next dev内存阈值重启两条证据。原5703源完整本地dev baseline首轮PASS，不改写为CI FAIL；原CI白屏/拒连及worker重启保留。入口改为真实visible-union/shared30s，不reload/retry；实际源码入口+Playwright gated DOM原30秒FAIL、修改4场景13检查PASS，不冒称内存复现。business runtime转向同源capture/seal的production standalone，保留startup120s/真实PG/Router/全部断言；唯一build/seal及完整modified业务模块PASS，Windows locked-external模式不当Linux自包含镜像。production单元65、原model-ui-runner156、framework33/440及tsc5606/lint11通过；正式selected和四产物归output/pr8-business-canvas-readiness-cb2-20261104。目录248不是全跑，整体ACTIVE、未合main/未部署、47 HOLD。

@@ -1,5 +1,9 @@
 # 整体退出审计
 
+## 当前增量：cb2 Core 生成活动回执 fixture
+
+[生成活动回执边界](../changes/2026-11-04-refactor-generation-activity-receipt-fixture.md)保留原 Core149PASS/1FAIL/96NOT_RUN 与当前9fe原样exit1。诊断副本确认真实 BillingProvider submit 在旧VM缺 readBillingSubmissionResponse，尚未进入 poll/position；只补测试真实owner、完整成功回执和可取消的独立body deadline，不改产品或history1合同。新增16个坏回执/断体/受控超时/缺字段原身份恢复组合，boundary90/772及activity38/182通过；secondary/image/text与实际React/本机读体浏览器相邻模块集中通过。正式目录仍248，最终SHA绑定selected、静态、独立窄审与四产物归本轮output；selected不是完整Core，受控30秒推进不是墙钟超时测量，fixture supplier不是线上账务。整体ACTIVE、未合main/未部署、47 HOLD。
+
 ## 当前增量：业务 UI 等待与固定 production fixture
 
 [cb2业务fixture](../changes/2026-11-04-refactor-business-canvas-production-fixture.md)确认原Verify业务步骤58行timeout并伴dev worker阈值重启。入口visible-union修正与production standalone运行边界分别验证，不将一条局部PASS抹掉另一条生命周期失败。原完整dev本机PASS、原CI FAIL、受控入口FAIL→4/13 PASS均保持自身来源。唯一真实production build/seal及完整Next/PG/Router业务模块PASS，Windows显式锁定外部依赖不当Linux embedded CI；65/156和framework33/440为各自端口单元层。新增readiness/production正式单元使目录248，完整业务、最终source桥和新头CI独立，不替代完整Core、R04/同case页面/固定WebWorker/runtime/performance与main整合；未合main/未部署，47 HOLD。

@@ -36,11 +36,15 @@ async function main(){
  for(const kind of ['detail','detail-blank','cutout','expand','annotate'])for(const scenario of ['done','position-fails','submit-unknown','project-switch']){
   const f=detail.setup(kind,scenario,db);await f.run();eq(f.c.generationOperationRef.current.size,0,'detail/edit release');
   if(scenario==='position-fails'){
+   eq(f.state.positions.length,1,kind+' known result reaches failing position port');eq(f.state.history.length,0,'failed attachment has no undo');
+   const failure=kind==='detail'?f.c.generationTasks[0]?.failure:f.c.pendNodes[0]?.generationFailure;
+   eq(failure?.kind,'sync',kind+' retains known job/result before retry');
    const retry=f.retry();eq(typeof retry,'function','original detail/edit retry remains');f.state.retried=true;await Promise.all([retry(),retry()]);
+   eq(f.state.posts,1,'known result retry never POSTs');eq(f.state.quotes,1,'known result retry never re-quotes');
    eq(f.state.supplier,1,'known results retry does not regenerate');eq(f.state.history.length,1,'known results are added once');
   }
   if(scenario==='project-switch')eq(f.state.positions.length,0,'late result does not write another project');
-  eq(f.state.intervals.size,0,'edit timer is disposed');rows.push({name:kind+'-'+scenario,posts:f.state.posts,supplier:f.state.supplier,history:f.state.history.length});
+  eq(f.state.intervals.size,0,'edit timer is disposed');eq(f.state.timeouts.size,0,'body and poll timers are disposed');rows.push({name:kind+'-'+scenario,posts:f.state.posts,supplier:f.state.supplier,history:f.state.history.length});
  }
  const source=fs.readFileSync(path.join(root,'src/components/canvas/canvas-client.tsx'),'utf8'),ast=ts.createSourceFile('canvas.tsx',source,99,true,4),callers={};
  (function walk(n){if(ts.isFunctionDeclaration(n)&&n.name&&['runGen','generatePend','generateDetailSequence','landEditResult','runComfyWorkflow'].includes(n.name.text))callers[n.name.text]=n.getText(ast);ts.forEachChild(n,walk);})(ast);
@@ -56,9 +60,9 @@ async function main(){
   if(!baseline){eq(/generationOperationRef\.current\.(add|delete)\(/.test(body),false,name+' does not privately mutate activity state');}
  }
  if(!baseline){
-  const file=path.join(root,'src/lib/canvas/generation-activity.ts'),module={exports:{}};
+  const file=path.join(root,'src/lib/canvas/generation-activity.ts'),loadedModule={exports:{}};
   const code=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:1,target:9}}).outputText;
-  vm.runInNewContext(code,{module,exports:module.exports,Promise});const {createCanvasGenerationActivity}=module.exports;
+  vm.runInNewContext(code,{module:loadedModule,exports:loadedModule.exports,Promise});const {createCanvasGenerationActivity}=loadedModule.exports;
   const operations=new Set();let allow=true,calls=0,clears=0,retry,unblock;
   const held=new Promise(r=>unblock=r);
   const activity=createCanvasGenerationActivity({operations,operationKey:'node:source',canRetry:()=>allow,clear:()=>clears++,execute:async a=>{calls++;retry=a.retry;if(calls===1){a.retain();await held;return 'retained';}return 'done';}});
