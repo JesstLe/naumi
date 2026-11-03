@@ -99,4 +99,3 @@ node scripts/verify-canvas-zoom-ui.cjs
 ```
 
 三者依赖 `scripts/canvas-mapping-ui-fixture.cjs`、`@playwright/test`、`sharp` 和已安装的 `msedge` channel。业务 HTTP、媒体、报价和执行回执由脚本拦截；这些依旧是完整客户端 HTTP-fixture 层，不是收费供应商或真实 PG。
-

@@ -3,7 +3,7 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),http=require('node:http');
 const {build}=require('esbuild'),{chromium}=require('@playwright/test');
 const arg=(name,fallback)=>{const i=process.argv.indexOf(name);return i<0?fallback:process.argv[i+1];};
-const root=path.resolve(arg('--source-root','.')),out=path.resolve(arg('--out','output/main-sync-assistant-navigation'));
+const root=path.resolve(arg('--source-root','.')),out=path.resolve(arg('--out',process.env.MAIN_SYNC_ASSISTANT_EVIDENCE||'output/main-sync-assistant-navigation'));
 fs.mkdirSync(out,{recursive:true});
 let checks=0,cases=0,browser,server;
 const details=[],eq=(a,b,message)=>{assert.deepEqual(a,b,message);checks++;},ok=(value,message)=>{assert.ok(value,message);checks++;};

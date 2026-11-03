@@ -49,6 +49,20 @@
 
 各 agent 的 module / final microfix 命令、字面 stdout/stderr、退出码、输入 hash 与未跑项分别保留在同一 output 子目录；全树类型、原 catalogue、图谱、固定 source 构建与副本回滚由主集成汇合后执行，结果以最终 `VERIFICATION.txt` / `DELIVERY.json` 为准。
 
+## 最终集中复核与补修
+
+- main 最后一次模块间刷新为 `af877f1507061d5c92702f67785c29438c5f8bbe`，仅 favicon 三路径；普通合并，没有写 main。该 metadata / Next icon renderer 10 场景 exit0；安装版本 Next renderer 自带 React key warnings 原样保留。
+- 完整本地 Next / CanvasClient / ReactFlow 已实际执行：后台生成10项、缩放14项通过。首个启动因无数据库却配置 worker 模式退出，浏览器场景未运行；保留日志后改为 local，无生产数据库/供应商凭据，显式拒绝加载本地 `.env` 文件。业务 HTTP/media/quote/settlement 为明确 fixtures，不是线上或真实钱包验收。
+- 像素 Dock 首轮在390×844 / 50%缩放真实检出147.4609375平方像素标签遮挡。根因是采样高度缩小后又放开 maxHeight 的反馈循环；`protectImageTitle` 改按允许高度判断标题/操作条碰撞。只改该纯 geometry owner，未改业务、浏览器等待预算或遮挡断言。
+- 新窄屏2缩放×8反馈帧回归与原555布局场景通过；完整 Next 像素 Dock 最终18项通过。原192主线展开、192重构折叠、174标题展开对照，以及 actual React overlay13项/31原traces全部通过。失败阶段与最终阶段分目录封存，不把首轮输出覆盖成PASS。
+- 正式目录为237项；runner 28case/411check通过，新增7个真实子进程 evidence env 路由检查。assistant脚本现在按 `--out > MAIN_SYNC_ASSISTANT_EVIDENCE > 原默认` 写证据。该改动不改17-case业务输入或断言。
+- 整树非增量类型首轮0errors；实际5199输入，预解析5197的pre/post一致，2项是并行Next新增generated routes、只有post-hash。lint首轮11 errors均来自8个测试harness的局部module命名；scope-aware改名11声明/43引用，8/8规范AST token等价。原18warnings保留。最终Dock源变化后由主集成另做最终集中静态复验，结果记录 parent-final-static。
+- 已保留一次PowerShell执行链错误：stage check发现4个EOF空行、修正helper assertion失败后复合命令仍创建本地merge；当时未推送。4个EOF已经修正，最终diff-check另行执行，原日志保存在WHITESPACE_CORRECTION.json。
+
+最终稳定源码集中复验：非增量tsc exit0 / 5205实际program输入前后hash一致；定向ESLint278路径 exit0 / 0error / 18warning / 输入不变。runner28/411、四类SCC0、新Canvas5/32、assistant17/95及管理same/distinct真实PG全部exit0；8命令批次4090源码输入pre/post一致。独立Worker构建2439输入、无HTTP route输入，通过；该bundle不等于固定完整Web+Worker镜像。
+
+完整 Next三入口与4个native PG/分享入口当前未直接登记core目录；手工集中结果不冒充core自动覆盖。完整core、固定Web+Worker镜像及运行/性能退出继续开放，以精确新头CI为准；本地类型、图谱与Worker构建不代替固定整版验收。
+
 ## 退出边界
 
 整体 **ACTIVE**。main 同步进重构分支不等于整条重构合入 main，不自动部署，不解除本线程 47 HOLD。

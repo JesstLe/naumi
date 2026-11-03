@@ -7,11 +7,11 @@ const args=process.argv.slice(2),arg=(k,d)=>{const i=args.indexOf(k);return i<0?
 const source=path.resolve(arg('--source-root',process.cwd())),out=path.resolve(arg('--output-root','output/tool-quote-identity'));
 const baseline=args.includes('--baseline'),loaded=new Map(),results=[];
 function moduleAt(relative,mocks={}){
- const file=path.join(source,relative),bytes=fs.readFileSync(file),module={exports:{}};
+ const file=path.join(source,relative),bytes=fs.readFileSync(file),loadedModule={exports:{}};
  loaded.set(relative,{path:file,sha256:crypto.createHash('sha256').update(bytes).digest('hex')});
- const context={module,exports:module.exports,require:name=>Object.hasOwn(mocks,name)?mocks[name]:{},console,Request,Response,Headers,FormData,File,Blob,URL,Buffer,structuredClone,crypto,Date,JSON,Map,Set,process:{env:{NAUMI_ROUTER_MANAGEMENT_URL:'http://fixture.invalid'}},setTimeout,clearTimeout};
+ const context={module: loadedModule,exports:loadedModule.exports,require:name=>Object.hasOwn(mocks,name)?mocks[name]:{},console,Request,Response,Headers,FormData,File,Blob,URL,Buffer,structuredClone,crypto,Date,JSON,Map,Set,process:{env:{NAUMI_ROUTER_MANAGEMENT_URL:'http://fixture.invalid'}},setTimeout,clearTimeout};
  vm.runInNewContext(ts.transpileModule(bytes.toString('utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,context,{filename:file});
- return module.exports;
+ return loadedModule.exports;
 }
 const types=moduleAt('src/lib/billing/types.ts'),modelTypes=moduleAt('src/lib/model-config/types.ts');
 const routing=moduleAt('src/lib/image-model-routing.ts');

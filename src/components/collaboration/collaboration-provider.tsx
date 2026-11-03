@@ -28,4 +28,3 @@ export function CollaborationProvider({ children }: { children: React.ReactNode 
   const value = useMemo(() => ({ client }), [client]);
   return <CollaborationContext.Provider value={value}>{children}<CollaborationWindow /></CollaborationContext.Provider>;
 }
-

@@ -26,7 +26,15 @@ eq(sdkStep.run,'python -X utf8 scripts/verify-native-application.py prepare --im
 eq(ci.jobs.core.steps.find(s=>s.uses==='actions/upload-artifact@v4').with.name,'refactor-core-${{ inputs.source_commit || github.sha }}');
 eq(oldWorkflow.jobs.docker.needs,['resolve','regression']);eq(oldWorkflow.jobs.regression.uses,'./.github/workflows/refactor-regression.yml');eq(oldWorkflow.jobs.regression.with.source_commit,'${{ needs.resolve.outputs.sha }}');eq(ci.jobs.core.steps[0].with.ref,'${{ inputs.source_commit || github.sha }}');eq(ci.jobs.core.steps[0].with['fetch-depth'],0,'HISTORICAL_ORIGINAL_COMPARISONS_REQUIRE_ANCESTOR_OBJECTS');for(const type of ['push','pull_request'])for(const p of ['src/**','scripts/**','services/**','.github/workflows/**']){assert.ok(ci.on[type].paths.includes(p));checks++;}assert.ok(ci.jobs.core.steps.some(s=>s.if==='always()'&&s.uses==='actions/upload-artifact@v4'));checks++;cases++;
 const {runRefactorVerification,sourceIdentity}=await import(pathToFileURL(path.join(root,'scripts/verification/refactor-runner.mjs')).href),{refactorCases,selectRefactorCases}=await import(pathToFileURL(path.join(root,'scripts/verification/refactor-cases.mjs')).href);eq(new Set(refactorCases.map(c=>c.id)).size,refactorCases.length);for(const c of refactorCases){assert.ok(c.expect);await fs.stat(path.join(root,c.file));checks++;}assert.throws(()=>selectRefactorCases('missing'));checks++;cases++;
-const dir=await fs.mkdtemp(path.join(out,'fixture-')),git=(...a)=>execFileSync('git',a,{cwd:dir,encoding:'utf8',stdio:['ignore','pipe','pipe'],windowsHide:true}).trim();await fs.writeFile(path.join(dir,'.gitignore'),'output/\n');await fs.writeFile(path.join(dir,'ok.mjs'),"console.log('FIXTURE_OK');\n");await fs.writeFile(path.join(dir,'fail.mjs'),"console.log('FIXTURE_FAIL');process.exitCode=7;\n");await fs.writeFile(path.join(dir,'mutate.mjs'),"import fs from'node:fs';fs.writeFileSync('marker.txt','changed');console.log('FIXTURE_OK');\n");git('init');git('config','user.name','Fixture');git('config','user.email','fixture@example.test');git('add','.');git('commit','-m','fixture');const sha=git('rev-parse','HEAD');await fs.mkdir(path.join(dir,'output'));
+// New main-owner cases must keep evidence inside their runner-assigned case
+// directory. Distinct-first concurrency is an explicit mode, not an output path.
+for(const [id,expect,args] of [
+ ['model-management-concurrency','MODEL_MANAGEMENT_CONCURRENCY=PASS',[]],
+ ['model-management-distinct','MODEL_MANAGEMENT_DISTINCT_FIRST=PASS',['--distinct-first']],
+]){const entry=refactorCases.find(c=>c.id===id);eq(entry.expect,expect);eq(entry.args,args);eq(entry.pg,true);eq(entry.tsx,true);}cases++;
+const assistantSource=await fs.readFile(path.join(root,'scripts/verify-main-sync-assistant-navigation.cjs'),'utf8');
+assert.match(assistantSource,/arg\('--out',process\.env\.MAIN_SYNC_ASSISTANT_EVIDENCE\|\|'output\/main-sync-assistant-navigation'\)/);checks++;
+const dir=await fs.mkdtemp(path.join(out,'fixture-')),git=(...a)=>execFileSync('git',a,{cwd:dir,encoding:'utf8',stdio:['ignore','pipe','pipe'],windowsHide:true}).trim();await fs.writeFile(path.join(dir,'.gitignore'),'output/\n');await fs.writeFile(path.join(dir,'ok.mjs'),"console.log('FIXTURE_OK');\n");await fs.writeFile(path.join(dir,'fail.mjs'),"console.log('FIXTURE_FAIL');process.exitCode=7;\n");await fs.writeFile(path.join(dir,'mutate.mjs'),"import fs from'node:fs';fs.writeFileSync('marker.txt','changed');console.log('FIXTURE_OK');\n");await fs.writeFile(path.join(dir,'evidence.mjs'),"import fs from'node:fs';import path from'node:path';const name=process.argv[2],out=process.env[name];if(!out)throw Error('EVIDENCE_ENV_MISSING: '+name);fs.writeFileSync(path.join(out,'EVIDENCE_PORT.json'),JSON.stringify({name,out}));console.log('FIXTURE_OK');\n");git('init');git('config','user.name','Fixture');git('config','user.email','fixture@example.test');git('add','.');git('commit','-m','fixture');const sha=git('rev-parse','HEAD');await fs.mkdir(path.join(dir,'output'));
 const spec=(id,file='ok.mjs',pg=false)=>({id,file,pg,group:'fixture',expect:'FIXTURE_OK'}),run=(name,selected,opts={})=>runRefactorVerification({root:dir,out:path.join(dir,'output',name),cases:selected,commandFor:c=>[process.execPath,c.file],expectedSha:sha,scope:'fixture',env:{...process.env,NAUMI_VERIFY_ISOLATED_DB:undefined,DATABASE_URL:undefined},...opts});
 try{
  let report=await run('pass',[spec('one')]);eq(report.status,'PARTIAL');eq(report.passed,1);eq(report.cases[0].exit,0);eq(report.completeCore,false);cases++;
@@ -39,6 +47,22 @@ try{
  report=await run('reused',[spec('one')],{resume:path.join(dir,'output/pass/REPORT.json')});eq(report.cases[0].reused,true);eq(report.passed,1);cases++;
  await fs.appendFile(path.join(dir,'output/pass/one.log'),'tampered');report=await run('tampered-log',[spec('one')],{resume:path.join(dir,'output/pass/REPORT.json')});eq(report.cases[0].reused,undefined);eq(report.passed,1);cases++;
  report=await run('spawn-failure',[spec('one')],{commandFor:()=>[path.join(dir,'missing-node'),'ok.mjs']});eq(report.status,'FAIL');eq(report.cases[0].status,'FAIL');cases++;
+ const evidencePorts=[];
+ for(const [id,name] of [
+  ['main-sync-boundaries','MAIN_SYNC_BOUNDARY_EVIDENCE'],
+  ['main-sync-assistant-navigation','MAIN_SYNC_ASSISTANT_EVIDENCE'],
+  ['main-sync-canvas-owners','MAIN_SYNC_CANVAS_EVIDENCE'],
+  ['video-capability-upgrade-ui','VIDEO_UPGRADE_UI_OUT'],
+  ['collaboration-ui','COLLAB_UI_EVIDENCE'],
+  ['model-management-concurrency','MODEL_MANAGEMENT_CONCURRENCY_EVIDENCE'],
+  ['model-management-distinct','MODEL_MANAGEMENT_CONCURRENCY_EVIDENCE'],
+ ]){
+  const runName='evidence-'+id;report=await run(runName,[spec(id,'evidence.mjs')],{commandFor:c=>[process.execPath,c.file,name]});
+  eq(report.status,'PARTIAL');eq(report.passed,1);
+  const assigned=path.join(dir,'output',runName,id),port=JSON.parse(await fs.readFile(path.join(assigned,'EVIDENCE_PORT.json'),'utf8'));
+  eq(port,{name,out:assigned});evidencePorts.push({id,...port,actualChild:true});cases++;
+ }
+ await fs.writeFile(path.join(out,'MAIN_OWNER_EVIDENCE_PORTS.json'),JSON.stringify(evidencePorts,null,2)+'\n');
  const native={...spec('native'),'nativeCase':'scene'},sdkFile=path.join(dir,'output/sdk.json');
  report=await run('native-sdk-missing',[native]);eq(report.error,'FIXED_NATIVE_SDK_REQUIRED');eq(report.notRun,1);cases++;
  const sdk={status:'PASS',source:await sourceIdentity(dir),sdkImageId:'explicit-fixture-port-not-real-image'};await fs.writeFile(sdkFile,JSON.stringify({...sdk,source:{...sdk.source,commit:'f'.repeat(40)}}));

@@ -4,7 +4,7 @@
 
 [集群汇合记录](changes/2026-11-03-refactor-main-owner-integration.md)从64ff修复头普通整合main c4b1e267的319路径/14冲突，保留main新增图像后台/引用/分享/视频能力，同时接回Canvas/Assistant/导航/计费/媒体已有owner，而非恢复巨型组件。管理applied回执409、同id/不同id首写pool5/8并发耗尽已实际复现并修；原锁/CAS、零重放与UNKNOWN原id保持。独立审阅发现的等待身份误证明和CONNECT异步投影拒绝均已窄修复验。
 
-各模块集中回归与分阶段源hash已落盘；新正式case注册包括管理真实PG并发、main Canvas/Assistant owner与四类依赖图检查。全树/最终source构建、四产物及副本回滚以output/refactor-main-owner-sync-20261103终稿为准。整体ACTIVE，main->分支同步不等于分支合main；R04/同case整版退出继续，本轮未部署，47HOLD保持。
+各模块集中回归与分阶段源hash已落盘；完整Next后台10/缩放14及像素Dock最终18项通过，390窄屏50%真实遮挡已在纯geometry owner修复并补反馈循环回归，原失败保留。正式目录237项，runner28/411、四类SCC0；完整Next与4个native PG/分享入口的手工结果不当作core自动覆盖。8个harness仅scope改名，AST等价8/8、原18warning保留。新正式case注册包括管理真实PG并发、main Canvas/Assistant owner与四类依赖图检查。全树/最终source构建、四产物及副本回滚以output/refactor-main-owner-sync-20261103终稿为准。整体ACTIVE，main->分支同步不等于分支合main；R04/同case整版退出继续，本轮未部署，47HOLD保持。
 
 ## 当前推进：PR #8 restore 草稿合同正式整合
 

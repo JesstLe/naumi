@@ -30,9 +30,9 @@ function setup(kind,scenario,built){
  const state={post:0,polls:0,positions:[],history:[],merges:0,forms:[],headers:[],notices:[],user:0,clock:1,authCalls:0,storage:new Map(),retried:false};
  const operation='12345678-1234-4234-a234-123456789012',jobId='imagegen-'+operation;
  const ports={workspace:'personal',revision:0,async auth(){state.authCalls++;if(scenario==='workspace-aba'&&state.authCalls===2){ports.workspace='tenant-B';ports.revision++;ports.workspace='personal';ports.revision++;}return {'x-naumi-workspace':'wrong-current','x-naumi-project-context':'tree:wrong'};},async read(){if(scenario==='reference-fails')throw Error('reference failed');return new Blob(['fixture pixels'],{type:'image/png'});}};
- const module={exports:{}};
+ const loadedModule={exports:{}};
  const c={canvasHistory:{consumePending(){}},canvasTextDocument:{async attachImageResults(){}},pushUndo:()=>{},artworkNodeSize:()=>({width:320,height:320}),__ports:ports,console,Buffer,Date:class extends Date{static now(){return state.clock;}},Math,Promise,Set,Map,Response,Request,Headers,AbortSignal,AbortController,FormData,File,Blob,URL,crypto:globalThis.crypto,TextEncoder,encodeURIComponent,structuredClone,
-  setTimeout:(f,ms)=>{if(ms===30000)return setTimeout(f,10);state.clock+=2500;queueMicrotask(f);return 1},clearTimeout:token=>{if(typeof token!=='number')clearTimeout(token);},module,exports:module.exports,require,
+  setTimeout:(f,ms)=>{if(ms===30000)return setTimeout(f,10);state.clock+=2500;queueMicrotask(f);return 1},clearTimeout:token=>{if(typeof token!=='number')clearTimeout(token);},module: loadedModule,exports:loadedModule.exports,require,
   sessionStorage:{getItem:k=>state.storage.get(k)||null,setItem:(k,v)=>state.storage.set(k,v),removeItem:k=>state.storage.delete(k),get length(){return state.storage.size},key:i=>Array.from(state.storage.keys())[i]},
   imageSubmissionRef:{current:new Map()},originalImageChecksRef:{current:new Map()},setImageSubmissionEpoch:()=>{},imageDraft:{read:()=>({}),seed:()=>{}},referenceDraft:{copyTo:()=>{}},
   composerReferences:undefined,readOnly:false,user:{email:'fixture@example.test'},t:k=>k,genQuality:'medium',genCount:2,genRatio:'3:4',genStyle:'default',genResolution:'2K',genModel:'fixture',imageModels:[],generationMode:'standard',editPrompt:'fixture prompt',textNodes:[],pendNodes:[pend],generationTasks:[],rfNodes:[],works:[src],worksRef:{current:[src]},active:{key:'tree:source',members:[src]},activeKey:'tree:source',targetEmail:null,
@@ -58,9 +58,9 @@ function setup(kind,scenario,built){
  };
  c.privateFetchRaw=save;
  c.mergeWorks=async(ids,current=()=>true)=>{state.merges++;if(scenario==='sync-missing'&&!state.retried)return [src];if(!current())return[];const works=[src,...results.map(r=>({...r,image:r.url}))];c.worksRef.current=works;return works;};
- vm.createContext(c);vm.runInContext(built,c);Object.assign(c,module.exports);
+ vm.createContext(c);vm.runInContext(built,c);Object.assign(c,loadedModule.exports);
  if(shared)c.appendComposerReferences=c.appendCanvasImageReferences;
- const presentation=require('./verification/canvas-generation-presentation-fixture.cjs').bindGenerationPresentation(c,module.exports,()=>ports.workspace);
+ const presentation=require('./verification/canvas-generation-presentation-fixture.cjs').bindGenerationPresentation(c,loadedModule.exports,()=>ports.workspace);
  c.privateFetch=async(_url,init)=>{
   state.post++;const fields=[];for(const [key,value]of init.body)fields.push([key,typeof value==='string'?value:{name:value.name,type:value.type,bytes:await value.text()}]);state.forms.push(fields);
   if(scenario==='cancelled')throw new c.ImagegenPreparationCancelled();

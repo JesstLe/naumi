@@ -19,12 +19,12 @@ assert.equal(selected.length, 2, 'Expected actual platformMetadata and generateM
 const metadataSource = selected.map(node => node.getText(ast)).join('\n');
 
 function executeModule(code, globals = {}) {
-  const module = { exports: {} };
+  const loadedModule = { exports: {} };
   const compiled = ts.transpileModule(code, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  vm.runInNewContext(compiled, { module, exports: module.exports, ...globals }, { timeout: 1000 });
-  return module.exports;
+  vm.runInNewContext(compiled, { module: loadedModule, exports: loadedModule.exports, ...globals }, { timeout: 1000 });
+  return loadedModule.exports;
 }
 
 function load(env, siteProfile) {

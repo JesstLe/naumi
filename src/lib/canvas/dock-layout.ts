@@ -139,11 +139,15 @@ function protectImageTitle(layout:{dock:DockPlacement;toolbar:ToolbarPlacement},
  const gap=12,h=metrics.toolbarHeight>0?metrics.toolbarHeight:50;
  const minimum=metrics.dockMinimumHeight||120;
  const titleTop=node.top-titleHeight,titleBottom=node.top;
- const dh=Math.min(metrics.dockHeight||310,layout.dock.maxHeight??310);
+ // Reserve the allowed height, not the current ResizeObserver sample. A dock
+ // shortened by this clearance can grow to maxHeight again on the next render;
+ // using its sampled height here alternates between clear and colliding layouts.
+ const dh=layout.dock.maxHeight??(metrics.dockHeight||310);
  const intersects=(top:number,height:number)=>top<titleBottom&&top+height>titleTop;
  const titleCollision=intersects(layout.toolbar.top,h)||intersects(layout.dock.top,dh);
  const bodyCollision=layout.dock.top<node.bottom&&layout.dock.top+dh>node.top;
- if(!titleCollision&&!bodyCollision)return layout;
+ const overlayCollision=layout.dock.top<layout.toolbar.top+h+gap&&layout.dock.top+dh+gap>layout.toolbar.top;
+ if(!titleCollision&&!bodyCollision&&!overlayCollision)return layout;
  const upperEnd=Math.min(safeBottom,titleTop-gap),lowerStart=Math.max(safeTop,titleBottom+gap);
  const above=Math.max(0,upperEnd-safeTop),below=Math.max(0,safeBottom-lowerStart);
  const clamp=(n:number,lo:number,hi:number)=>Math.max(lo,Math.min(n,Math.max(lo,hi)));

@@ -1,5 +1,12 @@
 # 整体退出审计
 
+## 2026-11-03 main-owner 集群整合的证据边界
+
+本轮固定64ff并普通整合main c4b1e267/af877f15，实际owner汇合与管理回执/锁/UNKNOWN/CONNECT修复见[汇合记录](../changes/2026-11-03-refactor-main-owner-integration.md)。真实PG、React与完整Next各按自身输入hash验收；最终副本回滚/四产物归output/refactor-main-owner-sync-20261103。原restore证据不删除；64ff本身已含publish-only context，回滚该基线仍正确保留restore草稿。
+
+本轮不是整体R04签字、不是M01/M02/M05—M08同case页面矩阵闭合，也不是当前237目录完整执行或固定Web+Worker/运行/性能全部通过。完整Next的后台10、缩放14、像素Dock18是业务HTTP fixtures的本地真实组件证据；native PG脚本另有证据，二者不拼接成同一次线上业务。main→候选同步不等于候选→main，本轮无部署，47 HOLD。旧验收表继续保持对应历史source，不改标为本轮新头。
+
+
 ## R10I 当前状态：命名 W1—W3 实施完成，整体退出仍 ACTIVE
 
 - W1账务/任务与W2媒体的修改产品raw逐项保持；W3实际PG/handler原64、新67通过，Agent去Request/cookie再认证且保留原价/余额，聊天锁、模板原参数/归属继续。新的source/原始hash及副本回滚以R10I DELIVERY为准。
