@@ -92,4 +92,3 @@ async function run(name, script, extra = []) {
     process.exitCode = status === 'PASS' ? 0 : 1;
   }
 })();
-

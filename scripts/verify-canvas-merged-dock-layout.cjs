@@ -26,4 +26,3 @@ for(const width of [390,768,1024,1438])for(const height of [480,659,844,1000])fo
  }
 }
 console.log('MERGED_DOCK_COMPOSITION=PASS UNPROTECTED_MAIN_EXACT='+sameMain+' COLLAPSED_MAPPING_EXACT='+sameMapping+' EXPANDED_TITLE_CASES='+expanded+' MEASUREMENT_STABLE=YES');
-

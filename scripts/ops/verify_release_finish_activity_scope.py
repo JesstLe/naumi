@@ -33,4 +33,3 @@ if __name__=='__main__':
     result={'status':'REPRODUCED' if a.baseline else 'PASS','checks':checks,'sourceRoot':str(pathlib.Path(a.source_root).resolve()),'hostActions':0}
     if a.output:pathlib.Path(a.output).write_text(json.dumps(result,indent=2),encoding='utf8')
     print('RELEASE_FINISH_ACTIVITY_SCOPE='+result['status']+' CHECKS='+str(len(checks))+' DEFAULT_ALL=UNCHANGED HOST_ACTIONS=0 EXIT=0')
-

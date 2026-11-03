@@ -69,4 +69,3 @@ function commonFixture({ account, artworks, state }) {
   return { handle, prompts };
 }
 module.exports = { fixtureAccount, requireLoopback, commonFixture };
-

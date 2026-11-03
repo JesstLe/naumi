@@ -65,4 +65,3 @@ BASELINE.json固定来源和原始Git archive SHA；ops-before保留两处修正
 以上本地fixture、真实本地PG、真实Next浏览器分别记录，不扩大为全部模型或生产全链路验收。
 
 完整源码副本回滚、补丁重放、四制品及最终Git SHA登记在同证据根proof/和FINAL_INTEGRATION.json。服务器发布本轮未执行。
-
