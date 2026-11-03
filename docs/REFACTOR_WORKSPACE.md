@@ -1,5 +1,11 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：PR #8 restore 草稿合同正式整合
+
+[整合记录](changes/2026-11-03-pr8-restore-context-integration.md)固定 d09b93a，在自有真实 PG 再次复现原 restore 反例 exit1（base1/revision1→base3/revision2）及正式 runtime 反例 exit1。普通 merge 纳入已审 PR9 固定71202c9 的 publish-only来源草稿上下文与 PR10 固定d5101f2 的Router正式回归，不把旧头CI改记为新头验收。
+
+最新 main 3ac639d9 增量278路径、试合14文件冲突，独立实验已保存并 abort，不混入本次已知PG修复。共享工作树与原始证据保持；本轮四产物、集中验证和副本回滚归 output/pr8-restore-integration-20261103。整体ACTIVE，主线冲突、R04最终语义及整版/页面/运行验收仍开放，未合main、本轮未部署、47HOLD不解除。
+
 ## 当前推进：R10I 工作台文档用例与 Agent typed 报价
 
 [R10I](changes/2026-11-02-refactor-r10i-protocol-application-ownership.md)推进W3：settings/chat/template规则归reference-workbench/documents，HTTP入口仅对这些用例适配；软删除归repository，原聊天/项目锁与同Tx保持。Agent generic报价直接调用既有quoteForActor，不再用内存Request/cookie重新取身份；其他真实协议调用的session凭据保留。
