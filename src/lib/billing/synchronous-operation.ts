@@ -100,13 +100,13 @@ export async function withSynchronousOperation(input:SynchronousOperation,action
                 return synchronousResult({ error: "原操作的结果或归属尚待核实，请保留原操作核查", code: "OPERATION_PENDING", operationId: id }, 409);
             if (feature === "tool.cutout" && previous.state === "settled" && (!previous.result_response || isCutoutReceiptCheckpoint(previous.result_response))) {
                 const recovered = await readSettledCutoutReceipt(getPool(), { id, email, chargedCredits: Number(previous.charged_credits), checkpoint: previous.result_response });
-                if (recovered) return {...synchronousResult({...recovered,user:await getUser(email).catch(()=>null)}),replayed:true};
+                if (recovered) return {...synchronousResult({...recovered,replayed:true,user:await getUser(email).catch(()=>null)}),replayed:true};
                 return synchronousResult({ error: "原抠图结果尚未恢复，请保留原任务稍后查询", code: "OPERATION_PENDING", operationId: id }, 409);
             }
             if (hasToolImageReceipt(feature) && previous.state === "settled") {
                 if (!receiptScopeVerified) return synchronousResult({ error: "原工具操作的归属记录尚未核实，请保留原操作核查", code: "OPERATION_PENDING", operationId: id }, 409);
                 const recovered = await readSettledToolImageReceipt(getPool(), { id, email, feature, chargedCredits: Number(previous.charged_credits), checkpoint: previous.result_response });
-                if (recovered) return {...synchronousResult({...recovered,user:await getUser(email).catch(()=>null)}),replayed:true};
+                if (recovered) return {...synchronousResult({...recovered,replayed:true,user:await getUser(email).catch(()=>null)}),replayed:true};
                 return synchronousResult({ error: "原工具结果尚未恢复，请保留原操作核查；不会重复生成", code: "OPERATION_PENDING", operationId: id }, 409);
             }
             if (previous.result_response && previous.state === "settled") {

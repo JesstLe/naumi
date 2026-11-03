@@ -75,6 +75,6 @@ export async function withBillingRequest(request:Request,feature:FeatureId,actio
             const events=`event: delta\ndata: ${JSON.stringify({text:saved?.text||""})}\n\nevent: done\ndata: ${JSON.stringify({ok:true,replayed:true})}\n\n`;
             return new Response(events,{headers:{"content-type":"text/event-stream; charset=utf-8","cache-control":"private, no-store"}});
         }
-        return billingJson(result.replayed?{...result.body,replayed:true}:result.body,result.status);
+        return billingJson(result.body,result.status);
     }catch(error){if(error instanceof TeamError)return billingJson({error:error.message},error.status);return billingErrorResponse(error);}
 }

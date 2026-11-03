@@ -57,7 +57,25 @@ async function main(){
  // Execute the actual models/upscale routes with absent processor configuration.
  const counters={quote:0,reserve:0,refund:0,fetch:0};let token='';const moduleCache=new Map();
  function load(rel){if(moduleCache.has(rel))return moduleCache.get(rel).exports;const m={exports:{}};moduleCache.set(rel,m);const code=ts.transpileModule(read(rel),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
-  const req=id=>{
+  const req=originalId=>{
+   // The same explicit boundary fixtures follow the current production owners.
+   // No route body, business assertion, timer or network policy is replaced.
+   const ports={
+    '@/lib/model-config/availability':'@/lib/model-config/requests',
+    '@/lib/model-config/feature-model-policy':'@/lib/model-config/business',
+    '@/lib/billing/synchronous-operation':'@/lib/billing/synchronous',
+    '@/lib/billing/legacy-credit-reservation':'@/lib/db',
+    '@/platform/db/pool':'@/lib/db',
+    '@/lib/accounts/repository':'@/lib/db',
+    '@/lib/object-storage/runtime':'@/lib/storage',
+   };
+   const id=ports[originalId]||originalId;
+   if(id==='@/lib/model-config/published')return {readPublishedModelSnapshot:async()=>{throw Error('dedicated upscale processor must not read model snapshot')}};
+   if(id==='@/lib/model-config/catalog-query')return {readPublishedModelCatalog:async()=>{throw Error('dedicated upscale processor must not read model catalogue')}};
+   if(id==='@/lib/billing/legacy-ledger')return {addLedgerEntry:async()=>{throw Error('unconfigured upscale must not write ledger')}};
+   if(id==='@/lib/artworks/writer')return {addArtworks:async()=>{throw Error('unconfigured upscale must not create artwork')}};
+   if(id==='@/lib/accounts/session')return {getUser:async()=>{throw Error('unconfigured upscale must not read completion user')}};
+   if(id==='@/lib/media-upload')return {uploadImage:async()=>{throw Error('unconfigured upscale must not upload media')}};
    if(id==='next/server')return {NextResponse:Response};if(id==='server-only')return {};
    if(id==='@/lib/billing/synchronous')return {withBillingRequest:async(_r,_f,run)=>run(),configuredToolCost:async()=>{counters.quote++;return 6},synchronousChargedCredits:n=>n,markBillingUpstream:()=>{}};
    if(id==='@/lib/db')return {dbEnabled:true,reserveCredits:async()=>{counters.reserve++;return true},refundCredits:async()=>{counters.refund++},isBanned:async()=>false};

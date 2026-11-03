@@ -1,5 +1,9 @@
 # 重构工作区：当前交付快照
 
+## 当前推进：Verify 普通 JSON 回放合同
+
+[JSON回放修复](changes/2026-11-03-refactor-json-replay-wire.md)在3c新头Verify发现并于真实PG复现产品wire回归：内部replayed metadata被泛化到text/OCR公开JSON，违反两个整合输入的原exact合同。修复HTTP投影，图片恢复body和assistant SSE原marker保留；原canvas-extra断言逐字节不改。本轮集中验证/副本rollback/新头CI归output/pr8-verify-canvas-replay-20261103，整体ACTIVE、未合main/未部署。
+
 ## 当前推进：main owner 集群整合
 
 [集群汇合记录](changes/2026-11-03-refactor-main-owner-integration.md)从64ff修复头普通整合main c4b1e267的319路径/14冲突，保留main新增图像后台/引用/分享/视频能力，同时接回Canvas/Assistant/导航/计费/媒体已有owner，而非恢复巨型组件。管理applied回执409、同id/不同id首写pool5/8并发耗尽已实际复现并修；原锁/CAS、零重放与UNKNOWN原id保持。独立审阅发现的等待身份误证明和CONNECT异步投影拒绝均已窄修复验。
