@@ -39,10 +39,11 @@ export async function applyFleetCommand(input: FleetCommand, localInstanceId: st
   const operation=operationSchema.parse(command.operation);
   // A read-only connector upgrade must not bootstrap/refactor the enterprise
   // application's schema. Fleet receipt metadata already belongs to this
-  // installed connector; missing metadata remains an execution failure.
+  // installed connector. Missing read metadata is acknowledged as unavailable
+  // without writing a receipt, so a dashboard query cannot block controls.
   if(operation.type==='business.query'){
     const columns=(await getPool().query("SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='app_fleet_applied'")).rows.map(r=>r.column_name);
-    if(!['id','fingerprint','result','instance_id','actor','operation'].every(c=>columns.includes(c)))throw Error('FLEET_RECEIPT_SCHEMA_UNAVAILABLE');
+    if(!['id','fingerprint','result','instance_id','actor','operation'].every(c=>columns.includes(c)))return {status:'failed',code:'UNAVAILABLE'};
   }else await ensureFleetSchema();
   if(operation.type.startsWith('site.policy.')) await ensureSitePolicySchema();
   const fingerprint=digest(canonical({id:command.id,instanceId:command.instanceId,actor:command.actor,operation}));

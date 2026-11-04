@@ -1,10 +1,10 @@
 name: Fleet business read regression
 on:
   pull_request:
-    paths: ['src/lib/fleet/**', 'src/lib/billing/consumption-read.ts', 'src/lib/bi/usage-repository.ts', 'src/components/admin/business-data/**', 'src/components/admin/navigation.ts', 'src/app/admin/center/**', 'src/app/admin/usage/**', 'src/app/api/admin/business/**', 'scripts/verify-fleet-business*', 'scripts/verify-fleet-local-*', 'scripts/verify-admin-ui-integration.cjs', 'scripts/verify-admin-usage-pg.cjs', 'scripts/verify-admin-usage-skew.cjs', 'prototypes/admin-console/fleet-business-navigation.json', '.github/workflows/fleet-business.yml', 'package*.json']
+    paths: ['src/lib/fleet/**', 'src/lib/billing/consumption-read.ts', 'src/lib/bi/usage-repository.ts', 'src/components/admin/business-data/**', 'src/components/admin/navigation.ts', 'src/app/admin/center/**', 'src/app/admin/usage/**', 'src/app/api/admin/business/**', 'scripts/verify-fleet-business*', 'scripts/verify-fleet-local-*', 'scripts/lib/fleet-business*', 'scripts/fixtures/fleet-business*', 'scripts/verify-admin-ui-integration.cjs', 'scripts/verify-admin-usage-pg.cjs', 'scripts/verify-admin-usage-skew.cjs', 'prototypes/admin-console/fleet-business-navigation.json', '.github/workflows/fleet-business.yml', 'package*.json']
   push:
     branches: [main]
-    paths: ['src/lib/fleet/**', 'src/lib/billing/consumption-read.ts', 'src/lib/bi/usage-repository.ts', 'src/components/admin/business-data/**', 'src/components/admin/navigation.ts', 'src/app/admin/center/**', 'src/app/admin/usage/**', 'src/app/api/admin/business/**', 'scripts/verify-fleet-business*', 'scripts/verify-fleet-local-*', 'scripts/verify-admin-ui-integration.cjs', 'scripts/verify-admin-usage-pg.cjs', 'scripts/verify-admin-usage-skew.cjs', 'prototypes/admin-console/fleet-business-navigation.json', '.github/workflows/fleet-business.yml', 'package*.json']
+    paths: ['src/lib/fleet/**', 'src/lib/billing/consumption-read.ts', 'src/lib/bi/usage-repository.ts', 'src/components/admin/business-data/**', 'src/components/admin/navigation.ts', 'src/app/admin/center/**', 'src/app/admin/usage/**', 'src/app/api/admin/business/**', 'scripts/verify-fleet-business*', 'scripts/verify-fleet-local-*', 'scripts/lib/fleet-business*', 'scripts/fixtures/fleet-business*', 'scripts/verify-admin-ui-integration.cjs', 'scripts/verify-admin-usage-pg.cjs', 'scripts/verify-admin-usage-skew.cjs', 'prototypes/admin-console/fleet-business-navigation.json', '.github/workflows/fleet-business.yml', 'package*.json']
   workflow_dispatch:
 permissions:
   contents: read
@@ -53,6 +53,8 @@ jobs:
           DATABASE_URL: postgresql://postgres:fleet_protocol_fixture@127.0.0.1:65298/fleet_protocol_fixture
       - name: Verify source-aware UI and rapid filter navigation
         run: node --import tsx scripts/verify-fleet-business-data-ui.ts
+      - name: Verify actual React hook refresh revisions and HTTP error states
+        run: node scripts/verify-fleet-business-data-review-hook.mjs . output/fleet-business-data-20261104/hook-review
       - name: Verify existing admin shell and native management destinations
         run: node scripts/verify-admin-ui-integration.cjs --output-root "$PWD/output/fleet-business-data-20261104/compat-shell"
       - name: Verify existing usage SQL and source module dependencies
@@ -78,4 +80,5 @@ jobs:
             output/fleet-business-data-20261104/compat-shell/RESULT.json
             output/fleet-business-data-20261104/compat-usage-pg/RESULT.json
             output/fleet-business-data-20261104/compat-usage-skew/RESULT.json
+            output/fleet-business-data-20261104/hook-review/HOOK_RESULT.json
           if-no-files-found: warn

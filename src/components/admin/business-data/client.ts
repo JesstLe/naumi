@@ -41,7 +41,7 @@ export async function readBusinessResponse(url: string, signal: AbortSignal, inp
     });
     if ([401, 403, 404].includes(response.status)) throw new BusinessReadError(response.status === 401 ? "登录已失效，请重新登录" : "当前账号没有跨站数据访问权限", response.status);
     const reader = response.body?.getReader();
-    if (!reader) throw new BusinessReadError("站点数据响应为空");
+    if (!reader) throw new BusinessReadError(response.ok ? "站点数据响应为空" : "站点数据读取失败", response.ok ? undefined : response.status);
     const chunks: Uint8Array[] = []; let bytes = 0;
     try {
       for (;;) {
@@ -52,8 +52,13 @@ export async function readBusinessResponse(url: string, signal: AbortSignal, inp
     } finally { await reader.cancel().catch(() => {}); }
     const data = new Uint8Array(bytes); let offset = 0;
     for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.length; }
-    const body = JSON.parse(new TextDecoder().decode(data));
-    if (!response.ok) throw new BusinessReadError(typeof body.error === "string" ? body.error : "站点数据读取失败", response.status);
+    let body: unknown;
+    try { body = JSON.parse(new TextDecoder().decode(data)); }
+    catch { throw new BusinessReadError(response.ok ? "站点数据格式异常，请重试" : "站点数据读取失败", response.ok ? undefined : response.status); }
+    if (!response.ok) {
+      const message = body && typeof body === "object" ? (body as { error?: unknown }).error : undefined;
+      throw new BusinessReadError(typeof message === "string" ? message : "站点数据读取失败", response.status);
+    }
     try { return parseResponse(body); }
     catch (error) { if (error instanceof BusinessReadError) throw error; throw new BusinessReadError("站点数据格式异常，请重试"); }
   } catch (error) {

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BusinessReadError, readBusinessResponse } from "./client";
 import type { BusinessFilter, BusinessResponse } from "./types";
 
@@ -13,6 +13,7 @@ const wait = (ms: number, signal: AbortSignal) => new Promise<void>((resolve, re
 export function useBusinessData(filter: BusinessFilter, identity: string, ready: boolean, revision: number) {
   const filterKey = JSON.stringify(filter), key = identity + "\0" + filterKey;
   const [state, setState] = useState<State>({ key: "", data: null, busy: true, error: "" });
+  const usedRevision = useRef(0);
   useEffect(() => {
     const controller = new AbortController(); let current = true;
     if (!ready) return () => controller.abort();
@@ -23,7 +24,9 @@ export function useBusinessData(filter: BusinessFilter, identity: string, ready:
     void (async () => {
       let latest: BusinessResponse | null = null;
       try {
-        latest = await readBusinessResponse("/api/admin/business", controller.signal, { ...JSON.parse(filterKey), refresh: revision > 0 });
+        const refresh = revision !== usedRevision.current;
+        usedRevision.current = revision;
+        latest = await readBusinessResponse("/api/admin/business", controller.signal, { ...JSON.parse(filterKey), refresh });
         update(latest, latest.sources.some(source => source.status === "pending"));
         const deadline = Date.now() + 90_000;
         while (latest.sources.some(source => source.status === "pending") && Date.now() < deadline) {

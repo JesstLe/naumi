@@ -4,6 +4,7 @@ import { accountIdentity, businessFilter, businessNavigation, combinedTotals, ha
 import { businessEntryView, businessLocalDetail, businessPresentation } from "../src/components/admin/business-data/entry";
 import { adminLinkActive, adminModuleLinks } from "../src/components/admin/navigation";
 import { readBusinessResponse, BusinessReadError } from "../src/components/admin/business-data/client";
+import { fleetBusinessClientCases } from "./lib/fleet-business-client-cases";
 import type { BusinessResponse, BusinessSnapshot } from "../src/components/admin/business-data/types";
 
 const remote = "47105059-0142-4000-8000-000000000047";
@@ -91,6 +92,9 @@ async function main() {
     globalThis.fetch = async () => new Response("not-json", { status: 403 });
     await assert.rejects(() => readBusinessResponse("/api/admin/business", new AbortController().signal), error => error instanceof BusinessReadError && error.status === 403); assertions++;
   } finally { globalThis.fetch = fetchBefore; }
+  const transportCases = await fleetBusinessClientCases(readBusinessResponse, BusinessReadError);
+  assert.deepEqual(transportCases.filter(item => !item.passed), [], "HTTP failures preserve normalized messages and status");
+  assertions += transportCases.length;
   console.log(`FLEET_BUSINESS_DATA_UI_CONTRACT=PASS assertions=${assertions} realBusinessWrites=0 SSH=0`);
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

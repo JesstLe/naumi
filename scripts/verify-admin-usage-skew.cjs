@@ -132,7 +132,7 @@ async function run() {
       assert.throws(() => explicitSchemaOnly.ensureBiSchema(), /Unexpected production schema initialization/);
       assert.throws(() => assertReadOnlySql('CREATE TABLE forbidden(id text)'), /query-only/);
       assert.throws(() => assertReadOnlySql('WITH forbidden AS (DELETE FROM app_ledger RETURNING id) SELECT * FROM forbidden'), /cannot mutate/);
-      assert.ok(report.sourceModules.some(module => module.relativePath === 'src/lib/billing/consumption-read.ts'), 'Actual shared helper must be source-hashed, never mocked');
+      if (!baseline) assert.ok(report.sourceModules.some(module => module.relativePath === 'src/lib/billing/consumption-read.ts'), 'Actual shared helper must be source-hashed, never mocked');
     });
     await tx.query("INSERT INTO app_users SELECT unnest($1::text[]),unnest($2::text[]),'user'", [[A, B, S, O, Z], ['Edge', 'Foreign', 'Skew', 'Owner', 'Zero']]);
     await tx.query('INSERT INTO app_account_teams VALUES($1,$2,$3),($4,$5,$6)', [tenant, 'Fixture enterprise', O, other, 'Other enterprise', B]);

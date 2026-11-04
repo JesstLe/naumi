@@ -217,7 +217,20 @@ try {
   for(let i=4;i<=101;i++)fixture.members.push({id:`employee${String(i).padStart(3,'0')}@fixture.test`,name:`员工${i}`,roleName:'创意设计',presence:'offline'});
   const template=fixture.conversations.get('direct-ab');
   for(let i=0;i<55;i++)fixture.conversations.set(`extra-${i}`,{...template,kind:'group',id:`extra-${i}`,title:`分页会话 ${i}`,read:{},preferences:{},updatedAt:new Date(Date.UTC(2026,10,3,0,0,i)).toISOString()});
-  await a.reload();await waitReady(a);await a.evaluate(()=>window.__client.open({section:'members'}));
+  await a.reload();await waitReady(a);
+  // This phase tests paging after the panel's initial query has settled, not
+  // early-click behavior while its mount refresh is still pending. Bootstrap
+  // already renders100, so that count alone cannot acknowledge this GET.
+  const initialMemberRefresh=a.waitForResponse(response=>{
+    const url=new URL(response.url());
+    return response.request().method()==='GET' && url.pathname.endsWith('/collaboration/members') &&
+      !url.searchParams.has('cursor') && !url.searchParams.has('q') &&
+      response.request().headers().authorization==='Bearer a@fixture.test';
+  });
+  await a.evaluate(()=>window.__client.open({section:'members'}));
+  const initialMemberResponse=await initialMemberRefresh;
+  assert.equal(initialMemberResponse.status(),200);assert.equal(await initialMemberResponse.finished(),null);
+  await a.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   await expect(a.locator('.co-member')).toHaveCount(100);await a.getByRole('button',{name:'加载更多成员',exact:true}).click();await expect(a.locator('.co-member')).toHaveCount(101);await expect(a.getByRole('button',{name:'私聊 员工101',exact:true})).toBeVisible();
   await a.getByRole('textbox',{name:'搜索姓名或岗位',exact:true}).fill('员工101');await expect(a.locator('.co-member')).toHaveCount(1);await a.getByRole('button',{name:'私聊 员工101',exact:true}).click();await expect(a.locator('.co-thread-header h2')).toHaveText('员工101');
   await a.getByRole('button',{name:'更多会话',exact:true}).click();await expect.poll(()=>a.evaluate(()=>window.__client.state.conversations.some(c=>c.id==='direct-ab'))).toBe(true);

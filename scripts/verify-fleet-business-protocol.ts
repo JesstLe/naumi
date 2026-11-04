@@ -5,6 +5,7 @@ import {fleetBusinessQuerySchema,parseFleetBusinessSnapshot,FLEET_BUSINESS_MAX_B
 import {operationSchema,statusSchema,commandCapability,signCommand,verifyCommand,resultSchema} from '../src/lib/fleet/contracts';
 import {readFleetBusinessQuery} from '../src/lib/fleet/business-read-model';
 import {localAppOrigin,localAppHost,localFleetStatus} from '../src/lib/fleet/local-status';
+import {verifyFleetBusinessQueueCompatibility} from './verify-fleet-business-queue-compat';
 
 let checks=0;
 function check(value:unknown,message:string){assert.ok(value,message);checks++;}
@@ -80,7 +81,6 @@ async function main(){
     const orphan=await readFleetBusinessQuery(pool,query('usage',{email:'deleted@fixture.test'}));check(orphan.totals.balance===null&&orphan.totals.credits===2,'orphan selected known consumption/unknown balance');
     const search=await readFleetBusinessQuery(pool,query('users',{search:"' OR true --"}));check(search.users.length===0&&search.totals.credits===0,'search parameterized');
     const {applyFleetCommand}=await import('../src/lib/fleet/connector');
-    const {getPool,closeDatabasePools}=await import('../src/platform/db/pool');
     const command={id:randomUUID(),instanceId:randomUUID(),actor:'admin@central.fixture',expiresAt:Date.now()+300000,operation:query()};
     const first=await applyFleetCommand(command,command.instanceId);check(first.status==='succeeded','real metadata receipt on poolmax1');
     await pool.query("INSERT INTO app_ledger VALUES('after-receipt','alice@fixture.test',-1,'consume','later live activity','2026-11-03T16:30:00Z')");
@@ -156,8 +156,8 @@ async function main(){
     }
     delete process.env.FLEET_SINGLE_APP_HOST;
     process.env.FLEET_SINGLE_APP_ORIGIN='http://169.254.169.254';const invalid=await localFleetStatus('s3');check(invalid.source==='unknown'&&fetches===2,'untrusted origin blocked before fetch');
-    await closeDatabasePools();
+    checks+=await verifyFleetBusinessQueueCompatibility(pool,usage);
     console.log(`FLEET_BUSINESS_PROTOCOL=PASS assertions=${checks} REAL_PG=1 POOL_MAX=1 READ_ONLY_BUSINESS=1 APP_DDL=0 PAID_CALLS=0`);
-  }finally{globalThis.fetch=originalFetch;for(const key of envKeys){const value=beforeEnv[key];if(value===undefined)delete process.env[key];else process.env[key]=value;}await pool.end();}
+  }finally{globalThis.fetch=originalFetch;for(const key of envKeys){const value=beforeEnv[key];if(value===undefined)delete process.env[key];else process.env[key]=value;}await(await import('../src/platform/db/pool')).closeDatabasePools();await pool.end();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
