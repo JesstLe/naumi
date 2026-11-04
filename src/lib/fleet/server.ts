@@ -166,7 +166,7 @@ export async function connectorExchange(request: Request, ack = false) {
   const token = request.headers.get('authorization')?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1]; if(!token) throw new FleetError('实例认证失败',401);
   await ensureFleetSchema();
   const tx = await getPool().connect();
-  try { await tx.query('BEGIN'); const instance = await tx.query('SELECT token_hash,enabled FROM app_fleet_instances WHERE id=$1 FOR UPDATE',[instanceId]);
+  try { await tx.query('BEGIN'); const instance = await tx.query('SELECT token_hash,enabled,status FROM app_fleet_instances WHERE id=$1 FOR UPDATE',[instanceId]);
     const actual = digest(token); if(!instance.rowCount || !instance.rows[0].enabled || !timingSafeEqual(Buffer.from(actual),Buffer.from(instance.rows[0].token_hash))) throw new FleetError('实例认证失败',401);
     const body = ack ? ackSchema.parse(await limitedJson(request)) : pollSchema.parse(await limitedJson(request,12000));
     if(Math.abs(Date.now()-body.timestamp)>120000) throw new FleetError('连接时间失效',409);
@@ -183,7 +183,14 @@ export async function connectorExchange(request: Request, ack = false) {
     }
     if(!('status' in body)) throw new FleetError('连接格式无效');
     const businessSupport=signFleetBusinessSupport(instanceId,body.nonce,token);
-    await tx.query('UPDATE app_fleet_instances SET last_seen=now(),status=$2 WHERE id=$1',[instanceId,JSON.stringify(body.status)]);
+    // A compatibility probe is not a downgrade. Carry forward only an already
+    // advertised capability for the same source/version, never other stale data.
+    // Dispatch still depends on this request's actual status below.
+    const previous=instance.rows[0].status;
+    const retainBusiness=body.status.business===undefined&&request.headers.get('x-naumi-fleet-business-probe')==='1'
+      &&previous?.business===1&&previous.source===body.status.source&&previous.version===body.status.version;
+    const storedStatus=retainBusiness?{...body.status,business:1}:body.status;
+    await tx.query('UPDATE app_fleet_instances SET last_seen=now(),status=$2 WHERE id=$1',[instanceId,JSON.stringify(storedStatus)]);
     const pending = await tx.query("SELECT * FROM app_fleet_commands WHERE instance_id=$1 AND state IN ('queued','leased') AND (operation->>'type'<>'business.query' OR ($2::boolean AND (operation->>'asOf')::timestamptz > $3::timestamptz)) ORDER BY (COALESCE(operation->>'type','')='business.query'),created_at,id LIMIT 1 FOR UPDATE",[instanceId,body.status.business===1,new Date(Date.now()-FLEET_BUSINESS_QUERY_MAX_AGE_MS).toISOString()]);
     let command = null, leaseId: string | null = null;
     const row = pending.rows[0];

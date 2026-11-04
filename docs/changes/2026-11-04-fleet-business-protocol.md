@@ -34,12 +34,15 @@
 
 ## 查询性能、幂等与权限
 
+**发布状态：PREPARATION ONLY / HOLD。** `business:1` 和跨站业务查询的生产 rollout 继续暂停，保留 `PREPARATION_ONLY=True`。只有 producer admission、共享命令库的 legacy-consumer 隔离，以及 retained business.query 的实际回退行为都实现并验证后，才可重新评估发布；下述协议和本地验证不是启用指令。`businessSupport` 只确认心跳协议，不满足共享 `app_fleet_commands` 的 candidate/cutback gate，也不建立生产可回退结论。
+
 - `candidate_ledger`、管理员调整键与分类账本使用 MATERIALIZED CTE，避免逐条账本重复扫描操作来源。
 - 查询不在持有外层 checkout 或 advisory lock 时再次借连接，`PGPOOL_MAX=1` 可运行。
 - 相同 command 的第一份持久化回执获胜；lost ACK 和并发重复保持同一结果。不同 fingerprint 使用同一 id 明确冲突。
 - 新 capability 为 `business`；委托账号同时拥有有效 `read + business` 且未被停用才可读取。普通 read grant 不泄漏新查询/结果。
 - `fleetReadCommand` 最终 SELECT 在同一 SQL 内再次检查实例启用和授权状态，覆盖预检查后的撤权窗口。
 - `business:1` 是可选心跳字段。新 connector 每个 tick 先发不含该字段的旧兼容 poll；只有收到中央使用实例 token 签名、绑定本次 nonce/instance 的 `businessSupport` 确认，且首响应没有控制命令时，才发送带 `business:1` 的第二次 poll。没有跨 tick/origin 的支持缓存，旧中央不返回该确认。旧 connector 忽略新响应字段，继续处理旧操作。
+- 兼容探测通过已认证请求的 `x-naumi-fleet-business-probe: 1` header 标识，旧中央忽略该 header。新中央仅在原状态已含 business=1 且 source/version 未变时，为该探测保留能力元数据；其余状态来自当前请求。新来源/版本、首次探测、真实旧 connector 或无效 header 不继承该能力。派发始终依据当前 wire status.business，不因保留元数据而绕过协商。
 - 本地版本状态本身不广告中央能力，独立 runner 显式声明本地支持业务协议。第二 poll 仅在明确 HTTP 400 时回退一次旧格式；网络、认证、限流和服务未知错误不触发此重试。ACK/lease/结果回执规则不变。协商只解决心跳格式，不证明旧 central 可读取保留的新业务行；共享 command DB 的 candidate/cutback gate 仍待实现。升级、回退和发布 HOLD 详见 [心跳协商记录](2026-11-05-fleet-business-heartbeat-negotiation.md)。
 
 ## 单 Web 版本来源

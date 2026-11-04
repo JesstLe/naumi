@@ -106,9 +106,9 @@ export async function applyFleetCommand(input: FleetCommand, localInstanceId: st
 export async function connectorTick(options: {central: string; instanceId: string; token: string; status: unknown; isolated?: boolean; business?: boolean}) {
   const central=centralUrl(options.central,options.isolated),status=statusSchema.parse(options.status);
   if(!/^[A-Za-z0-9_-]{43}$/.test(options.token)) throw new Error('FLEET_INVALID_TOKEN');
-  async function send(endpoint: string, data: unknown) {
+  async function send(endpoint: string, data: unknown, probe=false) {
     const nonce=randomUUID();
-    const response=await fleetFetch(central+'/api/fleet/'+endpoint,{method:'POST',redirect:'error',signal:AbortSignal.timeout(30000),headers:{'content-type':'application/json','authorization':'Bearer '+options.token,'x-naumi-instance':options.instanceId},body:JSON.stringify({nonce,timestamp:Date.now(),...data as object})});
+    const response=await fleetFetch(central+'/api/fleet/'+endpoint,{method:'POST',redirect:'error',signal:AbortSignal.timeout(30000),headers:{'content-type':'application/json','authorization':'Bearer '+options.token,'x-naumi-instance':options.instanceId,...(probe?{'x-naumi-fleet-business-probe':'1'}:{})},body:JSON.stringify({nonce,timestamp:Date.now(),...data as object})});
     if(!response.ok) throw Object.assign(new Error('FLEET_CONNECTION_'+response.status),{fleetResponseStatus:response.status});
     const reader=response.body?.getReader();if(!reader)throw new Error('FLEET_EMPTY_RESPONSE');const chunks:Uint8Array[]=[];let bytes=0;
     try {for(;;){const next=await reader.read();if(next.done)break;bytes+=next.value.byteLength;if(bytes>48000)throw new Error('FLEET_RESPONSE_TOO_LARGE');chunks.push(next.value);}}
@@ -116,15 +116,16 @@ export async function connectorTick(options: {central: string; instanceId: strin
     return {data:JSON.parse(Buffer.concat(chunks).toString('utf8')),nonce};
   }
   const {business,...legacyStatus}=status;
-  let exchange=await send('poll',{status:legacyStatus}),businessAdvertised=false;
-  if(!exchange.data.command&&(options.business===true||business===1)&&verifyFleetBusinessSupport(exchange.data.businessSupport,options.instanceId,exchange.nonce,options.token)){
+  const supportsBusiness=options.business===true||business===1;
+  let exchange=await send('poll',{status:legacyStatus},supportsBusiness),businessAdvertised=false;
+  if(!exchange.data.command&&supportsBusiness&&verifyFleetBusinessSupport(exchange.data.businessSupport,options.instanceId,exchange.nonce,options.token)){
     try{exchange=await send('poll',{status:{...legacyStatus,business:1}});businessAdvertised=true;}
     catch(error){
       // A pre-PR central can replace the confirmed peer between these polls.
       // Only an explicit HTTP schema rejection retries the legacy shape; timeouts,
       // authentication/rate-limit and unknown service failures remain unknown.
       if(!(error instanceof Error)||!('fleetResponseStatus' in error)||error.fleetResponseStatus!==400)throw error;
-      exchange=await send('poll',{status:legacyStatus});
+      exchange=await send('poll',{status:legacyStatus},supportsBusiness);
     }
   }
   const response=exchange.data;

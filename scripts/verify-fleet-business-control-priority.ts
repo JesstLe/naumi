@@ -205,6 +205,25 @@ export async function verifyFleetBusinessControlPriority(f:Fixture){
     await assert.rejects(()=>service.enqueueCommand('root',instance.id,randomUUID(),readAt("'; DROP TABLE app_users; --")));freshnessChecks++;
     scenarios.push({name:'central-90s-boundary',before:beforeDeadline.sources[0].status,at:atDeadline.sources[0].status,after:afterDeadline.sources[0].status});
   }
+  {
+    const {instance,email}=await setup('probe-status');
+    const warm=await f.tick(instance);
+    check(warm.code===0&&JSON.parse(warm.stdout).state==='idle','capability probe fixture completes its initial signed negotiation');
+    const status=async()=>(await f.central.query('SELECT status FROM app_fleet_instances WHERE id=$1',[instance.id])).rows[0].status;
+    check((await status()).business===1,'initial confirmed business poll persists capability');
+    const controlId=randomUUID();await service.enqueueCommand('root',instance.id,controlId,ban(email,true));
+    const control=await f.tick(instance);
+    check(tickId(control)===controlId&&(await user(email)).banned===true,'first legacy probe still executes the signed fixture control');
+    check((await status()).business===1,'control-first compatibility probe preserves prior confirmed capability');
+    const {startFleetBusinessQuery}=await import('../src/lib/fleet/business-central');
+    const view=await startFleetBusinessQuery({actor:'root',root:true},{site:instance.id,view:'usage',days:30,refresh:true});
+    check(view.sources[0].status==='pending','actual business central does not misreport the updated connector as unsupported');
+    const readId=view.sources[0].commandId;
+    const legacy=await exchange(instance,false,{status:{source:'a'.repeat(40),version:'1',storage:'s3',nas:'unknown',connector:1}});
+    check(legacy.status===200&&(await status()).business===undefined,'a real legacy heartbeat without probe intent clears obsolete capability');
+    check(legacy.body.command===null&&readId&&(await row(readId)).state==='queued','stored capability never enables business dispatch on a legacy wire poll');
+    scenarios.push({name:'probe-status-control',controlId,controlFirst:true,capabilityPreserved:true,centralView:view.sources[0].status,legacyDowngradeClears:true});
+  }
   for(const scenario of scenarios)console.log('FLEET_CONTROL_PRIORITY_SCENARIO='+JSON.stringify(scenario));
   console.log(`FLEET_CONTROL_PRIORITY=${failures.length?'REPRODUCED':'PASS'} assertions=${checks} failures=${failures.length} REAL_PG=2 REAL_HTTP=1 PAID_CALLS=0 CREDITS_APPLY=0`);
   console.log(`FLEET_BUSINESS_FRESHNESS=${freshnessFailures.length?'REPRODUCED':'PASS'} assertions=${freshnessChecks} failures=${freshnessFailures.length} REAL_PG=2 REAL_HTTP=1 CLOCK_ADVANCE_MS=45000 STATE_REWRITES=0`);

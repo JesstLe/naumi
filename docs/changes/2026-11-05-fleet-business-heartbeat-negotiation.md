@@ -23,15 +23,19 @@
 
 确认只证明该受认证中央对本次 poll 支持新协议，**不证明它的 image 是生产允许回退的目标**。新的确认字段不清理旧 query、不终结未知结果、不调整任何积分。
 
-## 验证方式与四产物
+## CI 结果与本地作者证据
 
 新增正式 `scripts/verify-fleet-business-heartbeat-negotiation.mjs`，接入现有 fleet-business CI。专项执行实际 connectorTick/localFleetStatus 函数和实际合同/crypto，在有限 transport/apply/本地版本采集边界验证旧中央、新中央、nonce/instance/token 错误、跨 tick 降级、首控制命令、第二 poll 400 与其他错误。证据明确不冒充真实 HTTP/PG。
 
-集中真实 PG/HTTP protocol 继续覆盖新中央与新 connector 的正常查询、控制优先、source 只读、lost ACK、lease/幂等及物理连接关闭。全库类型和真实本地 TLS 单独检查。baseline、modified、实际恢复副本、后续编辑零写守卫、所有字面输出/退出状态及四产物复开结果统一保存在：
+**CI 配置的上传目标（仅实际运行并产生文件后）**：现有 workflow 的 `fleet-business-read-${{ github.sha }}` artifact 上传专项实际生成的 `output/fleet-business-heartbeat-negotiation-20261105/tests/MODIFIED_RESULT.json`。该 JSON 包含本次实际源码 hash/origin、逐项断言、场景及结果。它不是完整的作者本地 baseline/rollback 封装，也不能证明 CI 没有执行的步骤通过。CI 若因账号门禁未启动，就没有该次运行的生成产物；此路径不是已存在的远端下载链接。
+
+集中真实 PG/HTTP protocol 另覆盖新中央与新 connector 的正常查询、控制优先、source 只读、lost ACK、lease/幂等及物理连接关闭；全库类型和真实本地 TLS 单独检查。**下面是作者本地交付归档，不是 workflow 已上传或会自动生成的文件**：baseline、modified、实际恢复副本、后续编辑零写守卫、所有字面输出/退出状态及四产物复开记录保存在本地工作树的
 
 `output/fleet-business-heartbeat-negotiation-20261105/final/VERIFICATION.txt`
 
-实际集中结果：专项原版 79 项中 39 项失败、exit 1；修改版 79/79、exit 0；真实 PG/HTTP protocol 最终 144/144（其中 control-priority 23/23、freshness 20/20）、exit 0；真实本地 TLS 8/8、exit 0；全库 tsc stdout/stderr 空、exit 0。原 preparation 原命令仍输出 `PREPARATION_ONLY:ROOT_FILL_AND_REVIEW_REQUIRED`、exit 78。完整输入、字面输出与副本回滚结果以该验证文件和 `COMMANDS.json` 为准。GitHub 账号执行门禁未解除时，本地验证不替代当前提交的远端 CI。
+同目录的 `COMMANDS.json` 也只属于该作者本地归档。CI upload 配置没有承诺这两个本地文件；远端审阅应引用前述实际上传的 `MODIFIED_RESULT.json` 和 Actions 日志，不应把本地路径当成远端 artifact 链接。原 MODIFIED_RESULT 上传保持不变。
+
+提交 `1933112a` 的本地集中结果：专项原版 79 项中 39 项失败、exit 1；修改版 79/79、exit 0；真实 PG/HTTP protocol 最终 144/144（其中 control-priority 23/23、freshness 20/20）、exit 0；真实本地 TLS 8/8、exit 0；全库 tsc stdout/stderr 空、exit 0。原 preparation 原命令仍输出 `PREPARATION_ONLY:ROOT_FILL_AND_REVIEW_REQUIRED`、exit 78。这是固定提交的作者本地结果；后续 [兼容探测状态修复](2026-11-05-fleet-business-probe-status.md) 的新增断言与结果另记。GitHub 账号执行门禁未解除时，本地验证不替代当前提交的远端 CI。
 
 集中回归的首次 PG/HTTP 执行真实发现两项 control-priority 断言失败：撤权控制的空响应附带确认，导致同一个 tick 再领到了后面的业务读，原先下一 tick 才领取的行为被改变。修正只移除了该撤权分支的确认字段，保留原零命令响应与 grant 检查，未放宽既有测试。首次 `MODIFIED_PG` exit 1 的完整输出继续保留，成功复测另记 `MODIFIED_PG_RETEST`，不覆盖失败记录。
 

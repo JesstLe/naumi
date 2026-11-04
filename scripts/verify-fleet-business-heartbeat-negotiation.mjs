@@ -4,7 +4,7 @@
  * them into the proposed implementation. A new helper absent at the old baseline
  * is used only to model the supporting central and is recorded as harness code. */
 import assert from 'node:assert/strict';
-import {createHash,createHmac,randomUUID} from 'node:crypto';
+import {createHash,createHmac,randomUUID,timingSafeEqual} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {readFile,mkdir,writeFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
@@ -13,6 +13,7 @@ import {fileURLToPath} from 'node:url';
 import vm from 'node:vm';
 import ts from 'typescript';
 import {build} from 'esbuild';
+import {z} from 'zod';
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const baseline=process.argv.find(a=>a.startsWith('--baseline='))?.slice(11);
@@ -25,7 +26,7 @@ assert.ok(process.argv.slice(2).every(a=>a.startsWith('--baseline=')||a.startsWi
 assert.ok(!process.argv.includes('--baseline=')&&!process.argv.includes('--source-root=')&&!process.argv.includes('--output-dir='));
 assert.ok(!(baseline&&sourceRoot));if(baseline)assert.match(baseline,/^[a-zA-Z0-9_./-]+$/);
 assert.ok(!sourceRoot||sourceRoot!==ROOT);assert.ok(!process.argv.includes('--expect-baseline')||sourceRoot);
-const connector='src/lib/fleet/connector.ts',local='src/lib/fleet/local-status.ts',support='src/lib/fleet/business-support.ts',contracts='src/lib/fleet/contracts.ts';
+const connector='src/lib/fleet/connector.ts',server='src/lib/fleet/server.ts',local='src/lib/fleet/local-status.ts',support='src/lib/fleet/business-support.ts',contracts='src/lib/fleet/contracts.ts';
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const sourceSHA256={},sourceOrigins={},sourceRoles={},loaded=new Map();
 async function source(file){
@@ -56,15 +57,16 @@ function extract(text,names,file){
 const transpile=text=>ts.transpileModule(text,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
 
 async function main(){
-  const connectorText=await source(connector),localText=await source(local);
+  const connectorText=await source(connector),localText=await source(local),serverText=await source(server);
   await source(contracts);await source(support);
-  const built=await build({absWorkingDir:ROOT,stdin:{contents:`export {statusSchema,centralUrl,signCommand,verifyCommand,resultSchema} from './${contracts}';export {signFleetBusinessSupport,verifyFleetBusinessSupport} from './${support}';`,resolveDir:ROOT,sourcefile:'heartbeat-real-contracts.ts'},bundle:true,write:false,platform:'node',format:'cjs',target:'node20',logLevel:'silent',plugins:[{name:'actual-contract-sources',setup(p){
+  const built=await build({absWorkingDir:ROOT,stdin:{contents:`export {statusSchema,pollSchema,ackSchema,centralUrl,signCommand,verifyCommand,resultSchema,digest,canonical,commandCapability} from './${contracts}';export {signFleetBusinessSupport,verifyFleetBusinessSupport} from './${support}';`,resolveDir:ROOT,sourcefile:'heartbeat-real-contracts.ts'},bundle:true,write:false,platform:'node',format:'cjs',target:'node20',logLevel:'silent',plugins:[{name:'actual-contract-sources',setup(p){
     p.onLoad({filter:/\.[jt]s$/},async args=>{const relative=path.relative(ROOT,args.path).replaceAll('\\','/');if([contracts,support].includes(relative))return{contents:await source(relative),loader:'ts',resolveDir:path.dirname(args.path)};});
   }}]});
   const module={exports:{}};new Function('require','module','exports',built.outputFiles[0].text)(createRequire(import.meta.url),module,module.exports);
   const real=module.exports;
   for(const name of ['statusSchema','centralUrl','signCommand','verifyCommand','resultSchema','signFleetBusinessSupport','verifyFleetBusinessSupport'])assert.ok(real[name],'real '+name+' loaded');
   const tickSource=transpile(extract(connectorText,['connectorTick'],connector)+'\nglobalThis.actualTick=connectorTick;');
+  const serverSource=transpile(extract(serverText,['connectorExchange'],server)+'\nglobalThis.actualExchange=connectorExchange;');
   const localSource=transpile(extract(localText,['localAppOrigin','localAppHost','localVersionText','localFleetStatus'],local)+'\nglobalThis.actualLocalStatus=localFleetStatus;');
   const instance='47105059-0142-4000-8000-000000000047',other='10330076-0093-4000-8000-000000000103',token='A'.repeat(43),wrongToken='B'.repeat(43);
   const status={source:'a'.repeat(40),version:'fixture',storage:'s3',nas:'unknown',connector:1,business:1};
@@ -85,7 +87,7 @@ async function main(){
       verifyFleetBusinessSupport:real.verifyFleetBusinessSupport,
       fleetFetch:async(url,init)=>{
         const data=JSON.parse(init.body),endpoint=new URL(url).pathname.split('/').at(-1);
-        nonces.push(data.nonce);state.requests.push({endpoint,nonce:data.nonce,...(data.status?{status:{...data.status}}:{}),...(data.commandId?{commandId:data.commandId,leaseId:data.leaseId,result:data.result}:{})});
+        nonces.push(data.nonce);state.requests.push({endpoint,nonce:data.nonce,probe:new Headers(init.headers).get('x-naumi-fleet-business-probe'),...(data.status?{status:{...data.status}}:{}),...(data.commandId?{commandId:data.commandId,leaseId:data.leaseId,result:data.result}:{})});
         assert.equal(init.method,'POST');assert.equal(init.redirect,'error');assert.ok(init.signal instanceof AbortSignal);
         assert.equal(new Headers(init.headers).get('authorization'),'Bearer '+token);
         assert.equal(new Headers(init.headers).get('x-naumi-instance'),instance);
@@ -109,6 +111,7 @@ async function main(){
     const r=await s.tick(options);
     check(r.result?.state==='succeeded',name+': old strict central still executes control');
     check(polls(s).length===1&&!Object.hasOwn(polls(s)[0].status,'business'),name+': first poll uses exact legacy-compatible status');
+    check(polls(s)[0].probe==='1',name+': locally supported connector marks a compatibility probe in a header');
     check(s.applied.length===1&&s.applied[0].id===c.id&&acks(s).length===1,name+': signed control applies and ACKs once');
     check(acks(s)[0]?.commandId===c.id&&acks(s)[0]?.leaseId===leased.leaseId,name+': original command and lease identity retained');save(name,s,r);
   }
@@ -141,6 +144,7 @@ async function main(){
     const s=runner((_endpoint,data)=>reply({command:null,leaseId:null,businessSupport:proof(data)}));const r=await s.tick({status:legacyStatus});
     check(r.result?.state==='idle'&&polls(s).length===1,'no local capability: central proof alone does not enable business');
     check(polls(s).every(p=>!Object.hasOwn(p.status,'business')),'no local capability: only legacy status is sent');save('no-local-capability',s,r);
+    check(polls(s).every(p=>p.probe===null),'no local capability: no compatibility-probe intent is claimed');
   }
   {
     const c=control(),leased=envelope(c);const s=runner((endpoint,data)=>reply(endpoint==='ack'?{ok:true}:{...leased,businessSupport:proof(data)}));const r=await s.tick();
@@ -193,6 +197,47 @@ async function main(){
   check(!real.verifyFleetBusinessSupport(null,instance,fixedNonce,token),'real HMAC helper rejects malformed proof');
   check(nonces.length===new Set(nonces).size&&nonces.every(n=>/^[a-f0-9-]{36}$/.test(n)),'every actual poll and ACK uses a fresh UUID nonce');
 
+  // Execute the actual server exchange, not a copy of its status merge rule.
+  // The finite transaction records the JSON status and dispatch boolean. It does
+  // not pretend to prove a real database lock, transport or user mutation.
+  const metadataCases=[
+    ['confirmed-probe-control',status,legacyStatus,'1',{...legacyStatus,business:1}],
+    ['legacy-connector-clears-capability',status,legacyStatus,null,legacyStatus],
+    ['new-probe-does-not-create-capability',legacyStatus,legacyStatus,'1',legacyStatus],
+    ['wrong-header-does-not-preserve',status,legacyStatus,'0',legacyStatus],
+    ['changed-source-clears-capability',status,{...legacyStatus,source:'b'.repeat(40)},'1',{...legacyStatus,source:'b'.repeat(40)}],
+    ['changed-version-clears-capability',status,{...legacyStatus,version:'changed'},'1',{...legacyStatus,version:'changed'}],
+    ['only-capability-carried-forward',{...status,nas:'degraded'},{...legacyStatus,nas:'ok'},'1',{...legacyStatus,nas:'ok',business:1}],
+    ['fresh-advertisement-establishes-capability',legacyStatus,status,null,status],
+  ];
+  for(const[name,previous,next,probe,expected]of metadataCases){
+    const c=control(),state={stored:null,dispatchBusiness:null,committed:false,released:false};
+    const tx={release(){state.released=true;},async query(sql,values=[]){
+      if(sql==='BEGIN'||sql==='ROLLBACK')return{rows:[],rowCount:0};
+      if(sql==='COMMIT'){state.committed=true;return{rows:[],rowCount:0};}
+      if(sql.startsWith('SELECT token_hash,enabled'))return{rows:[{token_hash:real.digest(token),enabled:true,...(sql.includes('enabled,status')?{status:previous}:{})}],rowCount:1};
+      if(sql.startsWith('INSERT INTO app_fleet_nonces'))return{rows:[{nonce:values[1]}],rowCount:1};
+      if(sql.startsWith('DELETE FROM app_fleet_nonces'))return{rows:[],rowCount:0};
+      if(sql.startsWith('UPDATE app_fleet_instances SET last_seen')){state.stored=JSON.parse(values[1]);return{rows:[],rowCount:1};}
+      if(sql.startsWith('SELECT * FROM app_fleet_commands')){state.dispatchBusiness=values[1];return{rows:[{id:c.id,actor:c.actor,operation:c.operation,state:'queued',requested_by_root:true}],rowCount:1};}
+      if(sql.startsWith("UPDATE app_fleet_commands SET state='leased'"))return{rows:[],rowCount:1};
+      throw Error('UNEXPECTED_FINITE_SERVER_QUERY:'+sql);
+    }};
+    const context=vm.createContext({exports:{},Buffer,Date,URL,Error,z,randomUUID,timingSafeEqual,
+      process:{env:{FLEET_CONTROL_ENABLED:'1'}},FleetError:class extends Error{constructor(message,status){super(message);this.status=status;}},
+      rateLimit:async()=>true,clientIp:()=>null,ensureFleetSchema:async()=>{},getPool:()=>({connect:async()=>tx}),limitedJson:request=>request.json(),
+      ...Object.fromEntries(['pollSchema','ackSchema','digest','canonical','signCommand','commandCapability','signFleetBusinessSupport'].map(n=>[n,real[n]])),
+      FLEET_BUSINESS_QUERY_MAX_AGE_MS:90000,assertInstanceAccess:async()=>{},
+    });
+    vm.runInContext(serverSource,context,{timeout:2000});
+    const result=await context.actualExchange(new Request('https://central.fixture/api/fleet/poll',{method:'POST',headers:{authorization:'Bearer '+token,'x-naumi-instance':instance,'content-type':'application/json',...(probe===null?{}:{'x-naumi-fleet-business-probe':probe})},body:JSON.stringify({nonce:randomUUID(),timestamp:Date.now(),status:next})}));
+    check(real.canonical(state.stored)===real.canonical(expected),'stored '+name+': exact expected fresh status and capability');
+    check(state.dispatchBusiness===(next.business===1),'stored '+name+': dispatch uses current wire advertisement, not preserved metadata');
+    check(real.verifyCommand(result.command,token,instance).id===c.id,'stored '+name+': control command still signed and leased');
+    check(state.committed&&state.released,'stored '+name+': transaction completes and releases');
+    scenarios.push({name:'stored-'+name,stored:state.stored,dispatchBusiness:state.dispatchBusiness});
+  }
+
   // The actual local-status return paths must not pre-advertise support before
   // the authenticated central confirmation, even when local version is unknown.
   for(const mode of ['normal','unknown-version','invalid-slots']){
@@ -208,7 +253,7 @@ async function main(){
   }
   const failures=checks.filter(c=>!c.passed),result=failures.length?(expectBaseline?'REPRODUCED':'FAIL'):'PASS',exit=failures.length?1:0;
   const literal=`FLEET_BUSINESS_HEARTBEAT_NEGOTIATION=${result} assertions=${checks.length} failures=${failures.length} ACTUAL_SOURCE_FUNCTIONS=1 REAL_CONTRACT_HMAC=1 FINITE_TRANSPORT_APPLY=1 PG=0 HTTP=0 NETWORK=0`;
-  const record={result,exitStatus:exit,layer:'actual connectorTick/localFleetStatus source functions + real contracts and HMAC; finite transport/apply/local I/O; no real PG or HTTP',sourceMode:sourceRoot?'actual-restored-copy':baseline?'git-baseline':'working-tree',sourceRef:baseline||null,sourceRoot:sourceRoot||null,sourceSHA256,sourceOrigins,sourceRoles,scriptSHA256:hash(await readFile(fileURLToPath(import.meta.url))),checks,scenarios,literalOutput:literal};
+  const record={result,exitStatus:exit,layer:'actual connectorTick/connectorExchange/localFleetStatus functions + real contracts and HMAC; finite transaction/transport/apply/local I/O; no real PG or HTTP',sourceMode:sourceRoot?'actual-restored-copy':baseline?'git-baseline':'working-tree',sourceRef:baseline||null,sourceRoot:sourceRoot||null,sourceSHA256,sourceOrigins,sourceRoles,scriptSHA256:hash(await readFile(fileURLToPath(import.meta.url))),checks,scenarios,literalOutput:literal};
   await mkdir(OUT,{recursive:true});const output=path.join(OUT,sourceRoot?'ROLLBACK_RESULT.json':baseline?'BASELINE_RESULT.json':'MODIFIED_RESULT.json');await writeFile(output,JSON.stringify(record,null,2)+'\n');assert.equal(JSON.parse(await readFile(output,'utf8')).literalOutput,literal);console.log(literal);if(failures.length)console.log('FAILED='+failures.map(c=>c.name).join('; '));process.exitCode=exit;
 }
 await main();
