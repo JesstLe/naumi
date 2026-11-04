@@ -6,6 +6,7 @@ import {createServer} from 'node:http';
 import path from 'node:path';
 import {Pool} from 'pg';
 import {parseFleetBusinessSnapshot,type FleetBusinessSnapshot} from '../src/lib/fleet/business-contracts';
+import {verifyFleetBusinessControlPriority,type WithheldAck} from './verify-fleet-business-control-priority';
 
 const workerFlag='--receipt-schema-worker';
 async function worker(){
@@ -33,13 +34,13 @@ export async function verifyFleetBusinessQueueCompatibility(central:Pool,sample:
   const sourceDisconnects:Promise<void>[]=[];
   source.on('connect',client=>sourceDisconnects.push(new Promise<void>(resolve=>client.once('end',resolve))));
   const service=await import('../src/lib/fleet/server');
-  let droppedAck:string|null=null,polls=0,acks=0,checks=0;
+  let droppedAck:string|null=null,lastWithheldAck:WithheldAck|null=null,polls=0,acks=0,checks=0;
   const check=(value:unknown,message:string)=>{assert.ok(value,message);checks++;};
   const server=createServer(async(request,response)=>{
     try{
       const chunks:Buffer[]=[];for await(const chunk of request)chunks.push(Buffer.from(chunk));const body=Buffer.concat(chunks).toString('utf8');
       const ack=request.url==='/api/fleet/ack';assert.ok(ack||request.url==='/api/fleet/poll');
-      if(ack){acks++;if(JSON.parse(body).commandId===droppedAck){droppedAck=null;response.destroy();return;}}else polls++;
+      if(ack){acks++;const parsed=JSON.parse(body);if(parsed.commandId===droppedAck){lastWithheldAck=parsed;droppedAck=null;response.destroy();return;}}else polls++;
       const input=new Request('http://127.0.0.1:'+port+request.url,{method:'POST',headers:request.headers as Record<string,string>,body});
       const result=await service.connectorExchange(input,ack);response.writeHead(200,{'content-type':'application/json'});response.end(JSON.stringify(result));
     }catch(error){const failure=service.fleetFailure(error);response.writeHead(failure.status);response.end(await failure.text());}
@@ -64,11 +65,12 @@ export async function verifyFleetBusinessQueueCompatibility(central:Pool,sample:
       else await source.query(`CREATE TABLE IF NOT EXISTS app_fleet_applied(id uuid PRIMARY KEY,fingerprint text NOT NULL,result jsonb NOT NULL,instance_id uuid,actor text,operation jsonb,created_at timestamptz DEFAULT now());ALTER TABLE app_fleet_applied DROP COLUMN IF EXISTS operation`);
       const instance=await service.createInstance('root','Receipt '+mode,'enterprise'),businessId=randomUUID(),controlId=randomUUID();
       await service.enqueueCommand('root',instance.id,businessId,{type:'business.query',view:'usage',days:30,asOf:sample.asOf,page:1,search:''});
-      await service.enqueueCommand('root',instance.id,controlId,{type:'users.ban',email:'receipt-target@fixture.test',banned:true,expectedBanned:false});
-      // Force queue order even when the two fixture INSERTs share a clock tick.
+      // Exercise the missing-schema read alone; priority between ready controls
+      // and queued/leased reads has its own complete matrix below.
       await central.query("UPDATE app_fleet_commands SET created_at=now()-interval '1 minute' WHERE id=$1",[businessId]);
       const before=await sourceState(),firstTick=await tick(instance),after=await sourceState();
       const business=(await central.query('SELECT state,result FROM app_fleet_commands WHERE id=$1',[businessId])).rows[0];
+      await service.enqueueCommand('root',instance.id,controlId,{type:'users.ban',email:'receipt-target@fixture.test',banned:true,expectedBanned:false});
       droppedAck=controlId;const lost=await tick(instance);
       await central.query("UPDATE app_fleet_commands SET leased_until=now()-interval '1 second' WHERE id=$1 AND state='leased'",[controlId]);
       const retry=await tick(instance);droppedAck=null;
@@ -106,6 +108,8 @@ export async function verifyFleetBusinessQueueCompatibility(central:Pool,sample:
     check(history.rootBusiness===0&&history.rootPreservesControls,'root generic history excludes business before LIMIT100');
     check(history.delegatedBusiness===0&&history.delegatedPreservesControl,'business grant does not flood generic control history');
     check(history.readOnlyPreservesControl&&history.scopedPayloadAvailable,'ordinary read control history and explicit scoped business read remain available');
+    checks+=await verifyFleetBusinessControlPriority({central,source,asOf:sample.asOf,origin:'http://127.0.0.1:'+port,tick,
+      dropAck:id=>{droppedAck=id;lastWithheldAck=null;},withheldAck:()=>lastWithheldAck});
     console.log(`FLEET_BUSINESS_QUEUE_COMPAT=PASS assertions=${checks} REAL_PG=2 REAL_HTTP=1 POOL_MAX=1 MISSING_TABLE_ACK=1 MISSING_COLUMN_ACK=1 READ_PHASE_DDL=0 READ_PHASE_USER_WRITES=0 CONTROL_BAN_EXPECTED=1 CONTROL_LOST_ACK_ONCE=1 BUSINESS_HISTORY_SEEDED=120 GENERIC_BUSINESS=0`);
     return checks;
   }finally{

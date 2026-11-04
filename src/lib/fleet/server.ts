@@ -151,6 +151,8 @@ export async function enqueueCommand(actor: string, instanceId: string, id: stri
     await tx.query("INSERT INTO app_fleet_audit(instance_id,actor,action,command_id) VALUES($1,$2,'enqueue',$3)",[instanceId,actor,id]); await tx.query('COMMIT'); return {id,state:'queued',replayed:false};
   } catch(error) { await tx.query('ROLLBACK'); throw error; } finally {tx.release();}
 }
+/** Authenticate poll/ACK per instance. Controls precede business reads; each
+ * class retains FIFO and active leases. ACKs keep their original lease checks. */
 export async function connectorExchange(request: Request, ack = false) {
   if(process.env.FLEET_CONTROL_ENABLED!=='1') throw new FleetError('实例连接未启用',404);
   if(!(await rateLimit('fleet-connect-ip:'+(clientIp(request)||'local'),600,60000)))throw new FleetError('连接过于频繁',429);
@@ -178,7 +180,7 @@ export async function connectorExchange(request: Request, ack = false) {
     }
     if(!('status' in body)) throw new FleetError('连接格式无效');
     await tx.query('UPDATE app_fleet_instances SET last_seen=now(),status=$2 WHERE id=$1',[instanceId,JSON.stringify(body.status)]);
-    const pending = await tx.query("SELECT * FROM app_fleet_commands WHERE instance_id=$1 AND state IN ('queued','leased') AND (operation->>'type'<>'business.query' OR $2::boolean) ORDER BY created_at,id LIMIT 1 FOR UPDATE",[instanceId,body.status.business===1]);
+    const pending = await tx.query("SELECT * FROM app_fleet_commands WHERE instance_id=$1 AND state IN ('queued','leased') AND (operation->>'type'<>'business.query' OR $2::boolean) ORDER BY (COALESCE(operation->>'type','')='business.query'),created_at,id LIMIT 1 FOR UPDATE",[instanceId,body.status.business===1]);
     let command = null, leaseId: string | null = null;
     const row = pending.rows[0];
     if(row&&!row.requested_by_root&&(row.state==='queued'||new Date(row.leased_until).getTime()<=Date.now())){
