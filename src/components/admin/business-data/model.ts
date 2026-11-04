@@ -23,13 +23,15 @@ export function businessFilter(params: URLSearchParams, initialView: BusinessVie
   };
 }
 
-/** Merge against the latest URL, never against a previous render's filter. */
+/** Merge against the latest URL; account links retain their explicit fleet scope on reload. */
 export function businessNavigation(params: URLSearchParams, patch: Partial<BusinessFilter>, initialView: BusinessView = "usage") {
   const next = { ...businessFilter(params, initialView), ...patch }, search = new URLSearchParams(params);
   search.delete("detail");
+  const scoped = Boolean(next.email);
   for (const key of ["site", "view", "days", "search", "page", "email"] as const) {
     const value = next[key];
-    if (!value || key === "site" && value === "all" || key === "view" && value === initialView || key === "days" && value === 30 || key === "page" && value === 1) search.delete(key);
+    const defaultScope = key === "site" && value === "all" || key === "view" && value === initialView;
+    if (!value || !scoped && defaultScope || key === "days" && value === 30 || key === "page" && value === 1) search.delete(key);
     else search.set(key, String(value));
   }
   return search;
