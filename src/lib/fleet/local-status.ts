@@ -53,7 +53,7 @@ export async function localFleetStatus(storage:'local'|'r2'|'s3'){
         if(new Set(ports).size!==3||!ports.every(p=>Number.isInteger(p)&&p>=1024&&p<=65535))throw Error('LOCAL_STATUS_PORTS');
         origins=ports.map(p=>'http://127.0.0.1:'+p);
       }finally{await handle.close();}
-    }catch{return statusSchema.parse({source,version,storage,nas:'unknown',connector:1,business:1});}
+    }catch{return statusSchema.parse({source,version,storage,nas:'unknown',connector:1});}
   }
   if(origins.every(Boolean)){
     try{const host=single&&process.env.FLEET_SINGLE_APP_HOST?localAppHost(process.env.FLEET_SINGLE_APP_HOST):undefined;
@@ -61,5 +61,5 @@ export async function localFleetStatus(storage:'local'|'r2'|'s3'){
       if(states.every(s=>s.source===states[0].source&&s.version===states[0].version)){source=states[0].source;version=states[0].version;}
     }catch{/* Unknown state blocks registration/follow; does not stop enterprise business. */}
   }
-  return statusSchema.parse({source,version,storage,nas:'unknown',connector:1,business:1});
+  return statusSchema.parse({source,version,storage,nas:'unknown',connector:1});
 }

@@ -39,7 +39,8 @@
 - 相同 command 的第一份持久化回执获胜；lost ACK 和并发重复保持同一结果。不同 fingerprint 使用同一 id 明确冲突。
 - 新 capability 为 `business`；委托账号同时拥有有效 `read + business` 且未被停用才可读取。普通 read grant 不泄漏新查询/结果。
 - `fleetReadCommand` 最终 SELECT 在同一 SQL 内再次检查实例启用和授权状态，覆盖预检查后的撤权窗口。
-- `business:1` 是可选心跳字段。旧 connector 不会收到 `business.query`，仍可处理兼容旧操作；只有明确广告支持的新 connector 才会领取新查询。应先部署新中央，再部署新 connector。
+- `business:1` 是可选心跳字段。新 connector 每个 tick 先发不含该字段的旧兼容 poll；只有收到中央使用实例 token 签名、绑定本次 nonce/instance 的 `businessSupport` 确认，且首响应没有控制命令时，才发送带 `business:1` 的第二次 poll。没有跨 tick/origin 的支持缓存，旧中央不返回该确认。旧 connector 忽略新响应字段，继续处理旧操作。
+- 本地版本状态本身不广告中央能力，独立 runner 显式声明本地支持业务协议。第二 poll 仅在明确 HTTP 400 时回退一次旧格式；网络、认证、限流和服务未知错误不触发此重试。ACK/lease/结果回执规则不变。协商只解决心跳格式，不证明旧 central 可读取保留的新业务行；共享 command DB 的 candidate/cutback gate 仍待实现。升级、回退和发布 HOLD 详见 [心跳协商记录](2026-11-05-fleet-business-heartbeat-negotiation.md)。
 
 ## 单 Web 版本来源
 

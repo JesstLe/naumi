@@ -7,6 +7,7 @@ import { requireAdmin, resolveUserEmail } from '@/lib/admin-auth';
 import { sameSiteBillingMutation, PRIVATE_HEADERS } from '@/lib/billing/access';
 import { digest, canonical, signCommand, operationSchema, pollSchema, ackSchema, commandCapability, type FleetOperation, type FleetActor } from './contracts';
 import {FLEET_BUSINESS_QUERY_MAX_AGE_MS} from './business-contracts';
+import {signFleetBusinessSupport} from './business-support';
 import type { PoolClient } from 'pg';
 import { rateLimit } from '@/lib/rate-limit';
 import { checkRateLimit, rateLimitFailureResponse } from "@/lib/rate-limit-http";
@@ -181,6 +182,7 @@ export async function connectorExchange(request: Request, ack = false) {
       await tx.query('COMMIT'); return {ok:true};
     }
     if(!('status' in body)) throw new FleetError('连接格式无效');
+    const businessSupport=signFleetBusinessSupport(instanceId,body.nonce,token);
     await tx.query('UPDATE app_fleet_instances SET last_seen=now(),status=$2 WHERE id=$1',[instanceId,JSON.stringify(body.status)]);
     const pending = await tx.query("SELECT * FROM app_fleet_commands WHERE instance_id=$1 AND state IN ('queued','leased') AND (operation->>'type'<>'business.query' OR ($2::boolean AND (operation->>'asOf')::timestamptz > $3::timestamptz)) ORDER BY (COALESCE(operation->>'type','')='business.query'),created_at,id LIMIT 1 FOR UPDATE",[instanceId,body.status.business===1,new Date(Date.now()-FLEET_BUSINESS_QUERY_MAX_AGE_MS).toISOString()]);
     let command = null, leaseId: string | null = null;
@@ -197,6 +199,6 @@ export async function connectorExchange(request: Request, ack = false) {
       await tx.query("UPDATE app_fleet_commands SET state='leased',lease_id=$2,leased_until=$3 WHERE id=$1",[row.id,leaseId,new Date(expiresAt)]);
       command=signCommand({id:row.id,instanceId,actor:row.actor,expiresAt,operation:row.operation},token);
     }
-    await tx.query('COMMIT'); return {command,leaseId};
+    await tx.query('COMMIT'); return {command,leaseId,businessSupport};
   } catch(error) {await tx.query('ROLLBACK');throw error;} finally {tx.release();}
 }

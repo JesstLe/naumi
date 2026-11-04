@@ -142,7 +142,7 @@ async function main(){
     for(const key of envKeys)delete process.env[key];
     process.env.FLEET_SINGLE_APP_ORIGIN='http://naumi-app:3000';process.env.FLEET_ACTIVE_SLOTS_FILE='stale-file-must-not-be-used';
     let fetches=0;globalThis.fetch=async input=>{check(String(input)==='http://naumi-app:3000/api/version','explicit single origin used');fetches++;return Response.json({commit:'a'.repeat(40),version:'1793743896'});};
-    const single=await localFleetStatus('s3');check(single.source==='a'.repeat(40)&&single.business===1&&fetches===1,'single Web actual source, not connector source');
+    const single=await localFleetStatus('s3');check(single.source==='a'.repeat(40)&&!Object.hasOwn(single,'business')&&fetches===1,'single Web actual source with legacy-compatible status before central confirmation');
     check(localAppOrigin('http://host.docker.internal:80')==='http://host.docker.internal','known same-host gateway supported without opening arbitrary origins');
     process.env.FLEET_SINGLE_APP_ORIGIN='http://host.docker.internal:80';process.env.FLEET_SINGLE_APP_HOST='47.105.59.142';
     globalThis.fetch=async(input,init)=>{

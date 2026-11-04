@@ -14,6 +14,7 @@ import { ensureFleetSchema } from './server';
 import {fleetFetch} from './transport';
 import {readFleetBusinessQuery} from './business-read-model';
 import type {FleetBusinessQuery} from './business-contracts';
+import {verifyFleetBusinessSupport} from './business-support';
 
 /** Read-only duplication is harmless; the first metadata receipt remains the
  * stable winner. No outer checkout/lock is held while the RR reader uses a pool
@@ -100,21 +101,37 @@ export async function applyFleetCommand(input: FleetCommand, localInstanceId: st
   } catch(error) {await tx.query('ROLLBACK');throw error;} finally {tx.release();}
 }
 
-export async function connectorTick(options: {central: string; instanceId: string; token: string; status: unknown; isolated?: boolean}) {
+/** Probe with the legacy status shape on every tick; never cache central support
+ * across ticks or origins. Only a nonce-bound confirmation admits business. */
+export async function connectorTick(options: {central: string; instanceId: string; token: string; status: unknown; isolated?: boolean; business?: boolean}) {
   const central=centralUrl(options.central,options.isolated),status=statusSchema.parse(options.status);
   if(!/^[A-Za-z0-9_-]{43}$/.test(options.token)) throw new Error('FLEET_INVALID_TOKEN');
   async function send(endpoint: string, data: unknown) {
-    const response=await fleetFetch(central+'/api/fleet/'+endpoint,{method:'POST',redirect:'error',signal:AbortSignal.timeout(30000),headers:{'content-type':'application/json','authorization':'Bearer '+options.token,'x-naumi-instance':options.instanceId},body:JSON.stringify({nonce:randomUUID(),timestamp:Date.now(),...data as object})});
-    if(!response.ok) throw new Error('FLEET_CONNECTION_'+response.status);
+    const nonce=randomUUID();
+    const response=await fleetFetch(central+'/api/fleet/'+endpoint,{method:'POST',redirect:'error',signal:AbortSignal.timeout(30000),headers:{'content-type':'application/json','authorization':'Bearer '+options.token,'x-naumi-instance':options.instanceId},body:JSON.stringify({nonce,timestamp:Date.now(),...data as object})});
+    if(!response.ok) throw Object.assign(new Error('FLEET_CONNECTION_'+response.status),{fleetResponseStatus:response.status});
     const reader=response.body?.getReader();if(!reader)throw new Error('FLEET_EMPTY_RESPONSE');const chunks:Uint8Array[]=[];let bytes=0;
     try {for(;;){const next=await reader.read();if(next.done)break;bytes+=next.value.byteLength;if(bytes>48000)throw new Error('FLEET_RESPONSE_TOO_LARGE');chunks.push(next.value);}}
     finally{await reader.cancel().catch(()=>{});}
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    return {data:JSON.parse(Buffer.concat(chunks).toString('utf8')),nonce};
   }
-  const response=await send('poll',{status});
+  const {business,...legacyStatus}=status;
+  let exchange=await send('poll',{status:legacyStatus}),businessAdvertised=false;
+  if(!exchange.data.command&&(options.business===true||business===1)&&verifyFleetBusinessSupport(exchange.data.businessSupport,options.instanceId,exchange.nonce,options.token)){
+    try{exchange=await send('poll',{status:{...legacyStatus,business:1}});businessAdvertised=true;}
+    catch(error){
+      // A pre-PR central can replace the confirmed peer between these polls.
+      // Only an explicit HTTP schema rejection retries the legacy shape; timeouts,
+      // authentication/rate-limit and unknown service failures remain unknown.
+      if(!(error instanceof Error)||!('fleetResponseStatus' in error)||error.fleetResponseStatus!==400)throw error;
+      exchange=await send('poll',{status:legacyStatus});
+    }
+  }
+  const response=exchange.data;
   if(!response.command) return {state:'idle'};
   if(typeof response.leaseId!=='string') throw new Error('FLEET_INVALID_LEASE');
   const command=verifyCommand(response.command as SignedFleetCommand,options.token,options.instanceId);
+  if(command.operation.type==='business.query'&&!businessAdvertised)throw new Error('FLEET_BUSINESS_NOT_NEGOTIATED');
   const result=await applyFleetCommand(command,options.instanceId);
   await send('ack',{commandId:command.id,leaseId:response.leaseId,result});
   return {state:result.status,commandId:command.id};

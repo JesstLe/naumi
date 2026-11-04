@@ -1,5 +1,7 @@
 # Fleet 业务查询：保留状态的回退兼容性审计
 
+> 后续状态：本文的源码链和纯内存输出固定描述 `92bc0166` 审计时点。后续 [心跳协商修复](2026-11-05-fleet-business-heartbeat-negotiation.md) 处理了无条件发送 `business:1` 的路径；它没有解决本文的旧 consumer/保留业务行问题，也没有建立可用生产 rollback image floor。该 Major 和正式发布 gate 继续保持未完成。
+
 ## 状态与证据边界
 
 - 审计对象为 PR #11 的 Fleet 业务查询切片。只读核对时工作树 HEAD 为 `92bc0166e8458a949de3ab017767f01a096294da`；`git diff --quiet 429a3d85470e0217647532845882d3b0ad1b274f HEAD -- src` 返回 0，生产 `src` 与已审 `429a3d85` 相同。

@@ -49,6 +49,8 @@ jobs:
           NODE
       - name: Verify fixture read timestamps are fresh at each enqueue
         run: node scripts/verify-fleet-business-enqueue-clock.mjs
+      - name: Verify nonce-bound central confirmation and legacy connector heartbeat compatibility
+        run: node scripts/verify-fleet-business-heartbeat-negotiation.mjs
       - name: Verify read-only source protocol and compatibility
         run: node --require ./scripts/fixtures/fleet-business-delay-pg-close.cjs --import tsx --conditions react-server scripts/verify-fleet-business-protocol.ts
         env:
@@ -89,4 +91,5 @@ jobs:
             output/fleet-business-data-20261104/hook-review/HOOK_RESULT.json
             output/fleet-business-usage-entry-20261105/MODIFIED_RESULT.json
             output/fleet-business-enqueue-clock-20261105/MODIFIED_RESULT.json
+            output/fleet-business-heartbeat-negotiation-20261105/tests/MODIFIED_RESULT.json
           if-no-files-found: warn
