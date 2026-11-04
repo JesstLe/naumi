@@ -1,0 +1,65 @@
+name: Fleet business read regression
+on:
+  pull_request:
+    paths: ['src/lib/fleet/**', 'src/lib/billing/consumption-read.ts', 'src/lib/bi/usage-repository.ts', 'src/components/admin/business-data/**', 'src/components/admin/navigation.ts', 'src/app/admin/center/**', 'src/app/admin/usage/**', 'src/app/api/admin/business/**', 'scripts/verify-fleet-business*', 'scripts/verify-fleet-local-*', '.github/workflows/fleet-business.yml', 'package*.json']
+  push:
+    branches: [main]
+    paths: ['src/lib/fleet/**', 'src/lib/billing/consumption-read.ts', 'src/lib/bi/usage-repository.ts', 'src/components/admin/business-data/**', 'src/components/admin/navigation.ts', 'src/app/admin/center/**', 'src/app/admin/usage/**', 'src/app/api/admin/business/**', 'scripts/verify-fleet-business*', 'scripts/verify-fleet-local-*', '.github/workflows/fleet-business.yml', 'package*.json']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fleet-business:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fleet_protocol_fixture
+          POSTGRES_DB: postgres
+        ports: ['65298:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    env:
+      NAUMI_VERIFY_ISOLATED_DB: '1'
+      SETTINGS_SECRET: fleet-business-ci-fixture-only-20261104-not-production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Create explicitly named isolated databases
+        run: |
+          node --input-type=module - <<'NODE'
+          import pg from 'pg';
+          const client = new pg.Client({connectionString:'postgresql://postgres:fleet_protocol_fixture@127.0.0.1:65298/postgres'});
+          await client.connect();
+          try {
+            for (const name of ['fleet_protocol_fixture','fleet_central_103_20261104','fleet_source_47_20261104']) await client.query('CREATE DATABASE '+name);
+          } finally { await client.end(); }
+          NODE
+      - name: Verify read-only source protocol and compatibility
+        run: node --import tsx --conditions react-server scripts/verify-fleet-business-protocol.ts
+        env:
+          DATABASE_URL: postgresql://postgres:fleet_protocol_fixture@127.0.0.1:65298/fleet_protocol_fixture
+      - name: Verify source-aware UI and rapid filter navigation
+        run: node --import tsx scripts/verify-fleet-business-data-ui.ts
+      - name: Verify trusted local HTTPS identity
+        run: node --import tsx --conditions react-server scripts/verify-fleet-local-https.ts
+      - name: Verify central API through HTTP connector and independent source PG
+        run: node --import tsx --conditions react-server scripts/verify-fleet-business-central.ts
+        env:
+          DATABASE_URL: postgresql://postgres:fleet_protocol_fixture@127.0.0.1:65298/fleet_central_103_20261104
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fleet-business-read-${{ github.sha }}
+          path: output/fleet-business-data-20261104/central-integration/RESULT.json
+          if-no-files-found: warn

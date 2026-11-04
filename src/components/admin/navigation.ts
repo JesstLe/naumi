@@ -14,9 +14,9 @@ export const adminEntries:{id:AdminSection;label:string;icon:typeof Users;href:s
 {id:'settings',label:'系统与审计',icon:ShieldCheck,href:'/admin?view=settings'},
 {id:'deployments',label:'部署管理',icon:Building2,href:'/admin/deployments'}];
 export const adminModuleLinks:Partial<Record<AdminSection,AdminLink[]>>={
-creations:[{label:'统一创作',href:'/admin/creations'},{label:'历史业务任务',href:'/admin/center?section=operations'},{label:'图片',href:'/admin/center?section=artworks'},{label:'对话',href:'/admin/center?section=conversations'},{label:'调用审计',href:'/admin/center?section=calls'}],
+creations:[{label:'统一创作',href:'/admin/creations'},{label:'作品数据',href:'/admin/center?section=artworks'},{label:'历史业务任务',href:'/admin/center?section=operations'},{label:'对话',href:'/admin/center?section=conversations'},{label:'调用审计',href:'/admin/center?section=calls'}],
 tenants:[{label:'租户',href:'/admin/tenants'},{label:'既有团队',href:'/admin/teams'},{label:'入口授权',href:'/admin/team-access'}],
-users:[{label:'用户',href:'/admin/center?section=users'},{label:'功能权限',href:'/admin/feature-access'}],
+users:[{label:'用户数据',href:'/admin/center?section=users'},{label:'本站用户管理',href:'/admin/center?section=users&detail=local'},{label:'功能权限',href:'/admin/feature-access'}],
 billing:[{label:'账务配置',href:'/admin/billing'},{label:'钱包与充值',href:'/admin/billing?section=wallet'},{label:'充值订单',href:'/admin/center?section=orders'},{label:'积分流水',href:'/admin/center?section=ledger'},{label:'价格表',href:'/admin/billing/price-table'},{label:'采购与对账',href:'/admin/billing/supplier-cost'},{label:'定价测算',href:'/admin/pricing'}],
 'model-management':[{label:'模型管理',href:'/admin/model-management'},{label:'供应商余额',href:'/admin/supplier-balances'},{label:'完整配置',href:'/admin/bi/models'},{label:'健康巡检',href:'/admin/model-health'},{label:'质量审计',href:'/admin/center?section=models'}],
 settings:[{label:'站点与接口',href:'/admin?view=settings'},{label:'管理日志',href:'/admin/center?section=management'},{label:'访问记录',href:'/admin/center?section=access'}]};
@@ -25,5 +25,5 @@ export function adminCategory(section:AdminSection):AdminSection{return ['operat
 export function adminLinkActive(href:string,pathname:string,search:URLSearchParams):boolean{
 const [path,query]=href.split('?');if(href==='/admin/model-management')return pathname===path||pathname.startsWith(path+'/');if(path!==pathname)return false;
 if(path==='/admin/billing'){const wallet=['wallet','recharge','products','prices','costs','rules','credits','history','operations'].includes(search.get('section')||'')||['prices','costs','rules','products','credits','history','operations'].includes(search.get('tab')||'');return query==='section=wallet'?wallet:!wallet;}
-const expected=new URLSearchParams(query);return expected.size?[...expected].every(([key,value])=>search.get(key)===value):!search.get('section')&&!search.get('view');}
+const expected=new URLSearchParams(query);return expected.size?[...expected].every(([key,value])=>search.get(key)===value)&&(!search.has('detail')||expected.has('detail')):!search.get('section')&&!search.get('view');}
 export function adminSearchLinks(deploymentsOnly:boolean,fleetEnabled:boolean){const links:(AdminLink&{group:string})[]=[];for(const entry of adminEntries){if(deploymentsOnly&&entry.id!=='deployments'||entry.id==='deployments'&&!fleetEnabled)continue;for(const link of [{label:entry.label,href:entry.href},...(adminModuleLinks[entry.id]||[])])if(!links.some(item=>item.href===link.href))links.push({...link,group:entry.label});}return links;}

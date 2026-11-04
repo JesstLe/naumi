@@ -106,11 +106,24 @@ export async function fleetSnapshot(actor:FleetActor={actor:'internal',root:true
   const scope=actor.root?null:actor.actor;
   const [instances,commands,audit,grants] = await Promise.all([
     getPool().query(`SELECT i.id,i.name,i.kind,i.enabled,i.last_seen,i.status,i.created_at,COALESCE(g.allowed,'[]') AS capabilities FROM app_fleet_instances i LEFT JOIN app_fleet_grants g ON g.instance_id=i.id AND g.email=$1 WHERE $1::text IS NULL OR (g.allowed ? 'read' AND (g.expires_at IS NULL OR g.expires_at>now())) ORDER BY i.created_at LIMIT 200`,[scope]),
-    getPool().query(`SELECT c.id,c.instance_id,c.actor,c.operation,c.state,c.result,c.created_at,c.finished_at FROM app_fleet_commands c WHERE $1::text IS NULL OR EXISTS(SELECT 1 FROM app_fleet_grants g WHERE g.instance_id=c.instance_id AND g.email=$1 AND g.allowed ? 'read' AND ((c.operation->>'type') NOT IN ('creations.list','creations.media') OR g.allowed ? 'creations') AND (g.expires_at IS NULL OR g.expires_at>now())) ORDER BY c.created_at DESC LIMIT 100`,[scope]),
+    getPool().query(`SELECT c.id,c.instance_id,c.actor,c.operation,c.state,c.result,c.created_at,c.finished_at FROM app_fleet_commands c WHERE $1::text IS NULL OR EXISTS(SELECT 1 FROM app_fleet_grants g WHERE g.instance_id=c.instance_id AND g.email=$1 AND g.allowed ? 'read' AND ((c.operation->>'type') NOT IN ('creations.list','creations.media') OR g.allowed ? 'creations') AND ((c.operation->>'type')<>'business.query' OR g.allowed ? 'business') AND (g.expires_at IS NULL OR g.expires_at>now())) ORDER BY c.created_at DESC LIMIT 100`,[scope]),
     getPool().query(`SELECT a.instance_id,a.actor,a.action,a.command_id,a.created_at FROM app_fleet_audit a WHERE $1::text IS NULL OR EXISTS(SELECT 1 FROM app_fleet_grants g WHERE g.instance_id=a.instance_id AND g.email=$1 AND g.allowed ? 'read' AND (g.expires_at IS NULL OR g.expires_at>now())) ORDER BY a.id DESC LIMIT 100`,[scope]),
     actor.root?getPool().query('SELECT instance_id,email,allowed,version,expires_at FROM app_fleet_grants ORDER BY instance_id,email LIMIT 500'):Promise.resolve({rows:[]}),
   ]);
   return { instances:instances.rows, commands:commands.rows, audit:audit.rows, grants:grants.rows, root:actor.root, now:Date.now() };
+}
+/** Narrow read-side boundary for central business aggregation; no credential
+ * columns or unrelated command results leave the fleet owner. */
+export async function fleetBusinessInstances(actor:FleetActor){
+  await ensureFleetSchema();
+  return (await getPool().query(`SELECT i.id,i.name,i.kind,i.enabled,i.last_seen,i.status FROM app_fleet_instances i WHERE $1::text IS NULL OR EXISTS(SELECT 1 FROM app_fleet_grants g JOIN app_users u ON u.email=g.email WHERE g.instance_id=i.id AND g.email=$1 AND NOT u.banned AND g.allowed ? 'read' AND g.allowed ? 'business' AND (g.expires_at IS NULL OR g.expires_at>now())) ORDER BY i.created_at,i.id LIMIT 200`,[actor.root?null:actor.actor])).rows as {id:string;name:string;kind:'main'|'enterprise';enabled:boolean;last_seen:Date|null;status:Record<string,unknown>}[];
+}
+export async function fleetReadCommand(actor:FleetActor,instanceId:string,id:string){
+  z.string().uuid().parse(instanceId);z.string().uuid().parse(id);await ensureFleetSchema();
+  const pool=getPool();const instance=(await pool.query('SELECT enabled FROM app_fleet_instances WHERE id=$1',[instanceId])).rows[0];
+  if(!instance||!instance.enabled)throw new FleetError('实例未启用',409);
+  await assertInstanceAccess(pool,actor,instanceId,'business');
+  return (await pool.query(`SELECT c.id,c.instance_id,c.operation,c.state,c.result,c.created_at,c.finished_at FROM app_fleet_commands c JOIN app_fleet_instances i ON i.id=c.instance_id AND i.enabled WHERE c.id=$1 AND c.instance_id=$2 AND c.operation->>'type'='business.query' AND ($3::text IS NULL OR EXISTS(SELECT 1 FROM app_fleet_grants g JOIN app_users u ON u.email=g.email WHERE g.instance_id=c.instance_id AND g.email=$3 AND NOT u.banned AND g.allowed ? 'read' AND g.allowed ? 'business' AND (g.expires_at IS NULL OR g.expires_at>now())))`,[id,instanceId,actor.root?null:actor.actor])).rows[0]??null;
 }
 export async function saveGrant(actor:string,command:{instanceId:string;email:string;allowed:string[];expectedVersion:number;expiresAt:string|null}) {
   await ensureFleetSchema();const tx=await getPool().connect();
@@ -163,7 +176,7 @@ export async function connectorExchange(request: Request, ack = false) {
     }
     if(!('status' in body)) throw new FleetError('连接格式无效');
     await tx.query('UPDATE app_fleet_instances SET last_seen=now(),status=$2 WHERE id=$1',[instanceId,JSON.stringify(body.status)]);
-    const pending = await tx.query("SELECT * FROM app_fleet_commands WHERE instance_id=$1 AND state IN ('queued','leased') ORDER BY created_at,id LIMIT 1 FOR UPDATE",[instanceId]);
+    const pending = await tx.query("SELECT * FROM app_fleet_commands WHERE instance_id=$1 AND state IN ('queued','leased') AND (operation->>'type'<>'business.query' OR $2::boolean) ORDER BY created_at,id LIMIT 1 FOR UPDATE",[instanceId,body.status.business===1]);
     let command = null, leaseId: string | null = null;
     const row = pending.rows[0];
     if(row&&!row.requested_by_root&&(row.state==='queued'||new Date(row.leased_until).getTime()<=Date.now())){

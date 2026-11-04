@@ -12,15 +12,41 @@ import { BillingError } from '@/lib/billing/types';
 import { operationSchema, commandSchema, canonical, digest, centralUrl, verifyCommand, resultSchema, statusSchema, type FleetCommand, type FleetResult, type SignedFleetCommand } from './contracts';
 import { ensureFleetSchema } from './server';
 import {fleetFetch} from './transport';
+import {readFleetBusinessQuery} from './business-read-model';
+import type {FleetBusinessQuery} from './business-contracts';
+
+/** Read-only duplication is harmless; the first metadata receipt remains the
+ * stable winner. No outer checkout/lock is held while the RR reader uses a pool
+ * connection, including pools configured with max=1. */
+async function applyBusinessQuery(command:FleetCommand,operation:FleetBusinessQuery,fingerprint:string):Promise<FleetResult>{
+  const pool=getPool();
+  const existing=await pool.query('SELECT fingerprint,result FROM app_fleet_applied WHERE id=$1',[command.id]);
+  if(existing.rowCount){if(existing.rows[0].fingerprint!==fingerprint)throw Error('FLEET_ID_CONFLICT');return resultSchema.parse(existing.rows[0].result);}
+  let result:FleetResult;
+  try{result={status:'succeeded',data:{business:await readFleetBusinessQuery(pool,operation)}};}
+  catch{result={status:'failed',code:'UNAVAILABLE'};}
+  result=resultSchema.parse(result);
+  await pool.query('INSERT INTO app_fleet_applied(id,fingerprint,result,instance_id,actor,operation) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO NOTHING',[command.id,fingerprint,JSON.stringify(result),command.instanceId,command.actor,JSON.stringify(operation)]);
+  const winner=(await pool.query('SELECT fingerprint,result FROM app_fleet_applied WHERE id=$1',[command.id])).rows[0];
+  if(!winner||winner.fingerprint!==fingerprint)throw Error('FLEET_ID_CONFLICT');
+  return resultSchema.parse(winner.result);
+}
 
 /** Persistent receipts and existing billing idempotency survive connector restarts. */
 export async function applyFleetCommand(input: FleetCommand, localInstanceId: string): Promise<FleetResult> {
   const command = commandSchema.parse(input);
   if(command.instanceId!==localInstanceId || command.expiresAt<Date.now()) throw new Error('FLEET_WRONG_INSTANCE_OR_EXPIRED');
   const operation=operationSchema.parse(command.operation);
-  await ensureFleetSchema();
+  // A read-only connector upgrade must not bootstrap/refactor the enterprise
+  // application's schema. Fleet receipt metadata already belongs to this
+  // installed connector; missing metadata remains an execution failure.
+  if(operation.type==='business.query'){
+    const columns=(await getPool().query("SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='app_fleet_applied'")).rows.map(r=>r.column_name);
+    if(!['id','fingerprint','result','instance_id','actor','operation'].every(c=>columns.includes(c)))throw Error('FLEET_RECEIPT_SCHEMA_UNAVAILABLE');
+  }else await ensureFleetSchema();
   if(operation.type.startsWith('site.policy.')) await ensureSitePolicySchema();
   const fingerprint=digest(canonical({id:command.id,instanceId:command.instanceId,actor:command.actor,operation}));
+  if(operation.type==='business.query')return applyBusinessQuery(command,operation,fingerprint);
   const tx=await getPool().connect();
   try {
     await tx.query('BEGIN'); await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))',['fleet:'+command.id]);
