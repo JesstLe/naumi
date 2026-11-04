@@ -67,7 +67,7 @@ jobs:
           DATABASE_URL: postgresql://postgres:fleet_protocol_fixture@127.0.0.1:65298/fleet_protocol_fixture
       - name: Verify source-aware UI and rapid filter navigation
         run: node --import tsx scripts/verify-fleet-business-data-ui.ts
-      - name: Verify actual usage page legacy email and explicit fleet entry routing
+      - name: Verify actual center/usage local defaults and explicit Fleet reload routing
         run: node scripts/verify-fleet-business-usage-entry.mjs
       - name: Verify aggregate response budget through actual central assembly and client
         run: node scripts/verify-fleet-business-response-budget.mjs

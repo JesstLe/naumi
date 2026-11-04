@@ -53,7 +53,7 @@ try{
     await expect(page.getByRole('status').filter({hasText:HOLD}).first()).toBeVisible();
     await expect(page.locator(`tbody[data-source-id="${fixture.instance.id}"] [data-account-identity]`)).toHaveCount(0);
   }
-  await page.goto(origin.origin+'/admin/usage?days='+DAYS,{waitUntil:'domcontentloaded'});
+  await page.goto(origin.origin+'/admin/usage?view=usage&days='+DAYS,{waitUntil:'domcontentloaded'});
   await held('usage');
   await expect(page.locator('[data-metric="退回积分"]')).toHaveText('—');
   await expect(page.locator('[data-metric="当前余额"]')).toHaveText('—');

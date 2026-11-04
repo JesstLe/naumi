@@ -5,17 +5,19 @@ import { requireAdminPage } from "@/lib/admin-page";
 import { BI_SECTIONS, type BiSection } from "@/lib/bi/contracts";
 import { BiDashboard } from "@/components/admin/bi/dashboard";
 import { FleetBusinessDashboard } from "@/components/admin/business-data/business-dashboard";
-import { businessEntryView, businessLocalDetail, type BusinessEntry } from "@/components/admin/business-data/entry";
+import { businessEntryView, businessExplicitEntry, businessLocalDetail, type BusinessEntry } from "@/components/admin/business-data/entry";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "管理中心 — Naumi", robots: { index: false, follow: false } };
 
 export default async function AdminCenterPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const query = await searchParams;
-  const section = BI_SECTIONS.includes(query.section as BiSection) ? query.section as BiSection : "overview";
-  await requireAdminPage(`/admin/center?section=${section}`);
+  const explicitSection = BI_SECTIONS.includes(query.section as BiSection);
+  const section = explicitSection ? query.section as BiSection : "overview";
+  const explicitScope = Object.hasOwn(query, "site") || Object.hasOwn(query, "view");
+  await requireAdminPage(explicitSection || explicitScope ? `/admin/center?section=${section}` : "/admin/center");
   const initialView = businessEntryView(section);
-  if (process.env.FLEET_CONTROL_ENABLED === "1" && initialView && !businessLocalDetail(query, true)) {
+  if (process.env.FLEET_CONTROL_ENABLED === "1" && initialView && businessExplicitEntry(query, true) && !businessLocalDetail(query, true)) {
     return <Suspense><FleetBusinessDashboard initialView={initialView} entry={section as BusinessEntry}/></Suspense>;
   }
   // The SaaS summary cards stay on top; the full operations overview

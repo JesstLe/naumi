@@ -1,4 +1,5 @@
 import type { BusinessFilter, BusinessResponse, BusinessSource, BusinessTotals, BusinessView, Sourced } from "./types";
+import { businessExplicitEntry } from "./entry";
 
 export const businessViews: { id: BusinessView; label: string }[] = [
   { id: "usage", label: "积分消耗" },
@@ -34,6 +35,8 @@ export function businessNavigation(params: URLSearchParams, patch: Partial<Busin
     if (!value || !scoped && defaultScope || key === "days" && value === 30 || key === "page" && value === 1) search.delete(key);
     else search.set(key, String(value));
   }
+  // Default Fleet filters must not collapse into a bare native entry on reload.
+  if (!businessExplicitEntry({ section: search.get("section") ?? undefined }, true) && !search.has("site") && !search.has("view")) search.set("view", initialView);
   return search;
 }
 

@@ -11,6 +11,13 @@ export function businessEntryView(section: string): BusinessView | null {
   return Object.hasOwn(entryViews, section) ? entryViews[section as BusinessEntry] : null;
 }
 
+/** Bare legacy entries stay native; Fleet requires an explicit section or scope. */
+export function businessExplicitEntry(params: Parameters, center = false) {
+  const section = typeof params.section === "string" ? params.section : "";
+  return Object.hasOwn(params, "site") || Object.hasOwn(params, "view")
+    || Boolean(businessEntryView(section) && (!center || section !== "usage"));
+}
+
 /** Native BI deep links keep their complete owner, including local mutations. */
 export function businessLocalDetail(params: Parameters, center = false) {
   return params.detail === "local" || [...localFilters, ...(center ? localBiFilters : [])].some(key => Object.hasOwn(params, key))

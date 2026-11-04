@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { accountIdentity, businessFilter, businessNavigation, combinedTotals, hasNextSourcePage, localTime, money, number, sourceRows } from "../src/components/admin/business-data/model";
-import { businessEntryView, businessLocalDetail, businessPresentation } from "../src/components/admin/business-data/entry";
+import { businessEntryView, businessExplicitEntry, businessLocalDetail, businessPresentation } from "../src/components/admin/business-data/entry";
 import { adminLinkActive, adminModuleLinks } from "../src/components/admin/navigation";
 import { readBusinessResponse, BusinessReadError } from "../src/components/admin/business-data/client";
 import { fleetBusinessClientCases } from "./lib/fleet-business-client-cases";
@@ -28,6 +28,11 @@ async function main() {
   let assertions = 0;
   const check = (predicate: unknown, message: string) => { assert.ok(predicate, message); assertions++; };
   const response = full();
+  check(!businessExplicitEntry({}) && !businessExplicitEntry({}, true), "bare usage/center entries keep native local owners");
+  check(!businessExplicitEntry({ section: "usage" }, true) && !businessExplicitEntry({ section: ["overview"] }, true), "invalid BI section cannot become explicit overview through normalization");
+  check(businessExplicitEntry({ site: "all" }) && businessExplicitEntry({ view: "usage" }) && businessExplicitEntry({ section: "overview" }, true), "explicit Fleet scope and valid overview remain available");
+  const fleetDefault = businessNavigation(new URLSearchParams("site=all"), { days: 30, page: 1 });
+  check(businessExplicitEntry(Object.fromEntries(fleetDefault)) && businessExplicitEntry(Object.fromEntries(fleetDefault), true), "default navigation retains Fleet ownership on both page reloads");
   check(businessFilter(new URLSearchParams()).site === "all", "all sites is the default");
   check(businessFilter(new URLSearchParams("view=bad&days=8&page=-1&site=https://evil.test")).site === "all", "invalid source falls back to registered source selection");
   check(businessFilter(new URLSearchParams("view=bad&days=8&page=-1")).view === "usage", "invalid view cannot select arbitrary data");

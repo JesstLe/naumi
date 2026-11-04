@@ -76,7 +76,7 @@ async function main(file) {
       const bytes = await fs.readFile(destination); assert.ok(bytes.length > 1000); record.screenshots.push({ path: destination, bytes: bytes.length });
     }
     const metric = name => page.locator(`[data-metric="${name}"]`);
-    await page.goto(origin.origin + "/admin/usage", { waitUntil: "domcontentloaded" });
+    await page.goto(origin.origin + "/admin/usage?view=usage", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: "用户用量", exact: true })).toBeVisible();
     await expect(metric("消费积分")).toHaveText("—"); record.assertions.push("pending_remote_is_not_zero_or_local_total");
     await expect(metric("消费积分")).toHaveText("49", { timeout: 20_000 });
@@ -129,7 +129,7 @@ async function main(file) {
       }
     }
     record.assertions.push("five_existing_center_entries_dispatch_cross_site_views", "native_local_analysis_and_user_management_links_preserved", "initial_user_entry_can_switch_back_to_consumption");
-    await page.goto(origin.origin + "/admin/usage", { waitUntil: "domcontentloaded" });
+    await page.goto(origin.origin + "/admin/usage?view=usage", { waitUntil: "domcontentloaded" });
     await expect(metric("消费积分")).toHaveText("49");
     await page.setViewportSize({ width: 390, height: 1000 });
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
