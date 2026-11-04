@@ -29,7 +29,7 @@
 
 **CI 配置的上传目标（仅实际运行并产生文件后）**：现有 workflow 的 `fleet-business-read-${{ github.sha }}` artifact 上传专项实际生成的 `output/fleet-business-heartbeat-negotiation-20261105/tests/MODIFIED_RESULT.json`。该 JSON 包含本次实际源码 hash/origin、逐项断言、场景及结果。它不是完整的作者本地 baseline/rollback 封装，也不能证明 CI 没有执行的步骤通过。CI 若因账号门禁未启动，就没有该次运行的生成产物；此路径不是已存在的远端下载链接。
 
-集中真实 PG/HTTP protocol 另覆盖新中央与新 connector 的正常查询、控制优先、source 只读、lost ACK、lease/幂等及物理连接关闭；全库类型和真实本地 TLS 单独检查。**下面是作者本地交付归档，不是 workflow 已上传或会自动生成的文件**：baseline、modified、实际恢复副本、后续编辑零写守卫、所有字面输出/退出状态及四产物复开记录保存在本地工作树的
+集中真实 PG/HTTP protocol 另覆盖新中央与新 connector 的正常查询、控制优先、source 只读、lost ACK、lease/幂等及物理连接关闭；全库类型和真实本地 TLS 单独检查。**下面是作者本地交付归档，不是 workflow 已上传或会自动生成的文件**：baseline、modified、实际恢复副本、后续编辑零写守卫、所有字面输出/退出状态及四份产物的复开记录保存在本地工作树的
 
 `output/fleet-business-heartbeat-negotiation-20261105/final/VERIFICATION.txt`
 
