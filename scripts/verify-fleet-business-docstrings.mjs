@@ -53,11 +53,13 @@ function complexity(node){
   visit(node);return value;
 }
 
-/** Preserve parsed syntax and literal spellings without scanning regex/JSX as raw code. */
+/** Preserve parsed syntax, declaration kinds and literal spellings without scanning regex/JSX as raw code. */
 function syntaxShape(node,source){
   const children=[];ts.forEachChild(node,child=>{children.push(syntaxShape(child,source));});
   const semanticFlags={};
   for(const key of ['isTypeOnly','isExportEquals','isThisTypeOfTypeGuard'])if(node[key]!==undefined)semanticFlags[key]=node[key];
+  // Keep declaration bits, not parser-context/JSDoc flags that can change with comments.
+  if(ts.isVariableDeclarationList(node))semanticFlags.declarationKind=node.flags&ts.NodeFlags.BlockScoped;
   return [node.kind,semanticFlags,children.length?children:node.getText(source)];
 }
 
