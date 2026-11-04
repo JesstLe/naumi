@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "baselineCoverageSha256": "9c477d740a7c137650fbad231b89955f06154c44636be6cdc43f5e449c8b4d2a",
+  "renamedLinks": [
+    { "url": "/admin/center?section=artworks", "before": "图片", "after": "作品数据" },
+    { "url": "/admin/center?section=users", "before": "用户", "after": "用户数据" }
+  ],
+  "addedLinks": [
+    { "label": "本站用户管理", "url": "/admin/center?section=users&detail=local" }
+  ]
+}

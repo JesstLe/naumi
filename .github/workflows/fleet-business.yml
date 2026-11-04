@@ -1,10 +1,10 @@
 name: Fleet business read regression
 on:
   pull_request:
-    paths: ['src/lib/fleet/**', 'src/lib/billing/consumption-read.ts', 'src/lib/bi/usage-repository.ts', 'src/components/admin/business-data/**', 'src/components/admin/navigation.ts', 'src/app/admin/center/**', 'src/app/admin/usage/**', 'src/app/api/admin/business/**', 'scripts/verify-fleet-business*', 'scripts/verify-fleet-local-*', '.github/workflows/fleet-business.yml', 'package*.json']
+    paths: ['src/lib/fleet/**', 'src/lib/billing/consumption-read.ts', 'src/lib/bi/usage-repository.ts', 'src/components/admin/business-data/**', 'src/components/admin/navigation.ts', 'src/app/admin/center/**', 'src/app/admin/usage/**', 'src/app/api/admin/business/**', 'scripts/verify-fleet-business*', 'scripts/verify-fleet-local-*', 'scripts/verify-admin-ui-integration.cjs', 'scripts/verify-admin-usage-pg.cjs', 'scripts/verify-admin-usage-skew.cjs', 'prototypes/admin-console/fleet-business-navigation.json', '.github/workflows/fleet-business.yml', 'package*.json']
   push:
     branches: [main]
-    paths: ['src/lib/fleet/**', 'src/lib/billing/consumption-read.ts', 'src/lib/bi/usage-repository.ts', 'src/components/admin/business-data/**', 'src/components/admin/navigation.ts', 'src/app/admin/center/**', 'src/app/admin/usage/**', 'src/app/api/admin/business/**', 'scripts/verify-fleet-business*', 'scripts/verify-fleet-local-*', '.github/workflows/fleet-business.yml', 'package*.json']
+    paths: ['src/lib/fleet/**', 'src/lib/billing/consumption-read.ts', 'src/lib/bi/usage-repository.ts', 'src/components/admin/business-data/**', 'src/components/admin/navigation.ts', 'src/app/admin/center/**', 'src/app/admin/usage/**', 'src/app/api/admin/business/**', 'scripts/verify-fleet-business*', 'scripts/verify-fleet-local-*', 'scripts/verify-admin-ui-integration.cjs', 'scripts/verify-admin-usage-pg.cjs', 'scripts/verify-admin-usage-skew.cjs', 'prototypes/admin-console/fleet-business-navigation.json', '.github/workflows/fleet-business.yml', 'package*.json']
   workflow_dispatch:
 permissions:
   contents: read
@@ -35,6 +35,8 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - name: Install browser for existing admin shell compatibility
+        run: npx --no-install playwright install --with-deps chromium
       - name: Create explicitly named isolated databases
         run: |
           node --input-type=module - <<'NODE'
@@ -42,7 +44,7 @@ jobs:
           const client = new pg.Client({connectionString:'postgresql://postgres:fleet_protocol_fixture@127.0.0.1:65298/postgres'});
           await client.connect();
           try {
-            for (const name of ['fleet_protocol_fixture','fleet_central_103_20261104','fleet_source_47_20261104']) await client.query('CREATE DATABASE '+name);
+            for (const name of ['fleet_protocol_fixture','fleet_central_103_20261104','fleet_source_47_20261104','usage_fixture']) await client.query('CREATE DATABASE '+name);
           } finally { await client.end(); }
           NODE
       - name: Verify read-only source protocol and compatibility
@@ -51,6 +53,16 @@ jobs:
           DATABASE_URL: postgresql://postgres:fleet_protocol_fixture@127.0.0.1:65298/fleet_protocol_fixture
       - name: Verify source-aware UI and rapid filter navigation
         run: node --import tsx scripts/verify-fleet-business-data-ui.ts
+      - name: Verify existing admin shell and native management destinations
+        run: node scripts/verify-admin-ui-integration.cjs --output-root "$PWD/output/fleet-business-data-20261104/compat-shell"
+      - name: Verify existing usage SQL and source module dependencies
+        run: node scripts/verify-admin-usage-pg.cjs output/fleet-business-data-20261104/compat-usage-pg
+        env:
+          ADMIN_USAGE_FIXTURE_DATABASE_URL: postgresql://postgres:fleet_protocol_fixture@127.0.0.1:65298/usage_fixture
+      - name: Verify skewed legacy usage query and fail-closed test boundaries
+        run: node scripts/verify-admin-usage-skew.cjs --output-root "$PWD/output/fleet-business-data-20261104/compat-usage-skew"
+        env:
+          ADMIN_USAGE_FIXTURE_DATABASE_URL: postgresql://postgres:fleet_protocol_fixture@127.0.0.1:65298/usage_fixture
       - name: Verify trusted local HTTPS identity
         run: node --import tsx --conditions react-server scripts/verify-fleet-local-https.ts
       - name: Verify central API through HTTP connector and independent source PG
@@ -61,5 +73,9 @@ jobs:
         if: always()
         with:
           name: fleet-business-read-${{ github.sha }}
-          path: output/fleet-business-data-20261104/central-integration/RESULT.json
+          path: |
+            output/fleet-business-data-20261104/central-integration/RESULT.json
+            output/fleet-business-data-20261104/compat-shell/RESULT.json
+            output/fleet-business-data-20261104/compat-usage-pg/RESULT.json
+            output/fleet-business-data-20261104/compat-usage-skew/RESULT.json
           if-no-files-found: warn

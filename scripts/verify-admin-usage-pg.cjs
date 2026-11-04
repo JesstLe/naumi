@@ -7,6 +7,19 @@ assert.equal(new URL(url).hostname, '127.0.0.1');
 assert.ok(process.env.ADMIN_USAGE_FIXTURE_DATABASE_URL || process.env.NAUMI_VERIFY_ISOLATED_DB === '1', 'Explicit isolated fixture required');
 const checks = [], loaded = [], cache = new Map();
 const scale = process.argv.includes('--scale');
+const explicitPoolOnly = { getPool() { throw new Error('Only explicit test client is allowed'); } };
+const explicitSchemaOnly = { ensureBiSchema() { throw new Error('Test SQL schema is explicit'); } };
+let externalNetworkCalls = 0;
+globalThis.fetch = async () => { externalNetworkCalls++; throw new Error('Unexpected application fetch'); };
+for (const name of ['node:http', 'node:https']) {
+  const transport = require(name);
+  transport.request = transport.get = () => { externalNetworkCalls++; throw new Error('Unexpected application HTTP'); };
+}
+function assertReadOnlySql(sql) {
+  assert.match(String(sql), /^(SELECT|WITH)\b/i, 'Analytics module remains query-only');
+  const withoutLiterals = String(sql).replace(/'(?:''|[^'])*'/g, "''");
+  assert.doesNotMatch(withoutLiterals, /\b(?:INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|COPY|GRANT|REVOKE|CALL|DO)\b/i, 'Analytics cannot mutate business or schema state');
+}
 function load(relative, mocks = {}) {
   const filename = path.resolve(root, relative), key = filename;
   if (cache.has(key)) return cache.get(key).exports;
@@ -16,9 +29,10 @@ function load(relative, mocks = {}) {
   const localRequire = name => {
     if (name === 'server-only') return {};
     if (Object.hasOwn(mocks, name)) return mocks[name];
+    if (name === '@/lib/billing/consumption-read') return load('src/lib/billing/consumption-read.ts', mocks);
     if (name.startsWith('./')) return load(path.relative(root, path.resolve(path.dirname(filename), name + '.ts')), mocks);
-    if (name === '@/lib/db' || name === '@/platform/db/pool') return { getPool() { throw new Error('Only explicit test client is allowed'); } };
-    if (name === './repository' || name === './schema') return { ensureBiSchema() { throw new Error('Test SQL schema is explicit'); } };
+    if (name === '@/lib/db' || name === '@/platform/db/pool') return explicitPoolOnly;
+    if (name === './repository' || name === './schema') return explicitSchemaOnly;
     return require(name);
   };
   new vm.Script(`(function(require,module,exports){${code}\n})`, { filename }).runInThisContext()(localRequire, module, module.exports);
@@ -49,9 +63,17 @@ async function main() {
       CREATE TABLE app_creation_records(id text PRIMARY KEY,actor_email text,source_kind text,source_id text,parent_id text);
       CREATE INDEX creation_source ON app_creation_records(actor_email,source_kind,source_id);`);
     const { parseUsageQuery } = load('src/lib/bi/usage-contracts.ts');
-    const { readUserUsage } = load('src/lib/bi/usage-repository.ts', { './schema': { ensureBiSchema: async () => {} } });
+    const usage = load('src/lib/bi/usage-repository.ts', { './schema': explicitSchemaOnly });
+    const readUserUsage = (client, ...args) => usage.readUserUsage({ query(sql, values) { assertReadOnlySql(sql); return client.query(sql, values); } }, ...args);
     const query = extra => parseUsageQuery(new URLSearchParams({ from: '2026-10-28', to: '2026-10-29', ...extra }));
     const check = async (name, fn) => { await fn(); checks.push(name); console.log('PASS ' + name); };
+    await check('EXPLICIT_READ_PORTS_DENY_CHECKOUT_SCHEMA_AND_BUSINESS_WRITES', async () => {
+      assert.throws(() => explicitPoolOnly.getPool(), /Only explicit test client/);
+      assert.throws(() => explicitSchemaOnly.ensureBiSchema(), /Test SQL schema is explicit/);
+      assert.throws(() => assertReadOnlySql('UPDATE app_users SET role=role'), /query-only/);
+      assert.throws(() => assertReadOnlySql('WITH forbidden AS (DELETE FROM app_ledger RETURNING id) SELECT * FROM forbidden'), /cannot mutate/);
+      assert.ok(loaded.some(module => module.path === path.join(root, 'src/lib/billing/consumption-read.ts')), 'Actual shared helper must be source-hashed, never mocked');
+    });
     await check('DATE_VALIDATION_AND_BJT_EXCLUSIVE_END', async () => {
       assert.equal(query().start, '2026-10-28T00:00:00+08:00'); assert.equal(query().end, '2026-10-30T00:00:00+08:00');
       for (const extra of [{ from: '2026-02-30' }, { to: '2026-10-27' }, { from: '2020-01-01' }, { sort: 'failures' }, { page: '0' }, { tenantId: 'not-a-uuid' }]) assert.throws(() => query(extra));
@@ -181,7 +203,11 @@ async function main() {
     });
     const final = await readUserUsage(tx, query());
     assert.equal(JSON.stringify(final).includes('/media/local'), false);
-    const result = { result: 'PASS', checks, realPostgres: true, loaded, supplierCalls: 0, productionWrites: 0, ...(scaleEvidence?{scale:{elapsedMs:scaleEvidence.elapsedMs,totalCost:scaleEvidence.totalCost,baselineTotalCost:scaleEvidence.baselineTotalCost}}:{}),output: final, exit: 0 };
+    await check('LOADED_MODULE_BYTES_STABLE_AND_NO_EXTERNAL_CALLS', async () => {
+      for (const module of loaded) assert.equal(createHash('sha256').update(fs.readFileSync(module.path, 'utf8')).digest('hex'), module.sha256, 'Loaded module changed during test');
+      assert.equal(externalNetworkCalls, 0);
+    });
+    const result = { result: 'PASS', checks, realPostgres: true, loaded, externalNetworkCalls, supplierCalls: 0, productionWrites: 0, ...(scaleEvidence?{scale:{elapsedMs:scaleEvidence.elapsedMs,totalCost:scaleEvidence.totalCost,baselineTotalCost:scaleEvidence.baselineTotalCost}}:{}),output: final, exit: 0 };
     fs.writeFileSync(path.join(out, 'RESULT.json'), JSON.stringify(result, null, 2));
     console.log(`ADMIN_USAGE_PG=PASS CHECKS=${checks.length} REAL_SQL=1 SUPPLIER_CALLS=0 EXIT=0`);
   } finally { await tx.query(`DROP SCHEMA ${schema} CASCADE`); tx.release(); await pool.end(); }

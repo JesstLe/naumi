@@ -18,11 +18,27 @@ async function main(){fs.mkdirSync(out,{recursive:true});
  if(baseline){checks('Old actual sidebar is dark, not the accepted light layout',()=>assert.equal(color,'rgb(24, 50, 79)'));checks('Existing creation subpages are present positive control',()=>{});assert.equal(await page.getByRole('navigation',{name:'模块功能'}).getByRole('link').count(),5);report.result='REPRODUCED';report.exit=1;
  }else{
  checks('Actual shell stays light under an inherited dark document',()=>assert.equal(color,'rgb(255, 255, 255)'));
- const coverage=JSON.parse(fs.readFileSync(path.join(root,'prototypes/admin-console/coverage.json'),'utf8')).sideSubpages;
- let visited=0;
+ // Keep the original coverage snapshot immutable. Apply only the explicit fleet
+ // label migration and one additive native-management link, then compare both
+ // directions; an accidentally removed or extra destination must still fail.
+ const coverageBytes=fs.readFileSync(path.join(root,'prototypes/admin-console/coverage.json'));
+ const originalCoverage=JSON.parse(coverageBytes.toString('utf8')).sideSubpages;
+ const migration=JSON.parse(fs.readFileSync(path.join(root,'prototypes/admin-console/fleet-business-navigation.json'),'utf8'));
+ assert.equal(migration.schemaVersion,1);assert.equal(crypto.createHash('sha256').update(coverageBytes).digest('hex'),migration.baselineCoverageSha256);
+ assert.equal(originalCoverage.length,25);assert.equal(migration.renamedLinks.length,2);assert.equal(migration.addedLinks.length,1);
+ const coverage=originalCoverage.map(link=>({...link}));
+ for(const rename of migration.renamedLinks){const matches=coverage.filter(link=>link.url===rename.url&&link.label===rename.before);assert.equal(matches.length,1);matches[0].label=rename.after;}
+ for(const addition of migration.addedLinks){assert.ok(!coverage.some(link=>link.url===addition.url));coverage.push(addition);}
+ assert.equal(new Set(coverage.map(link=>link.url)).size,26);
+ const visited=[];
  for(const [active,url]of [['creations','/admin/creations'],['tenants','/admin/tenants'],['users','/admin/center'],['billing','/admin/billing'],['model-management','/admin/model-management'],['settings','/admin']]){
- await navigate(active,url);await page.getByRole('navigation',{name:'模块功能'}).waitFor();const links=await page.getByRole('navigation',{name:'模块功能'}).getByRole('link').evaluateAll(a=>a.map(x=>({label:x.textContent,url:x.getAttribute('href')})));for(const link of links)assert.ok(coverage.some(x=>x.label===link.label&&x.url===link.url),JSON.stringify(link));visited+=links.length;}
- checks('All 25 original secondary labels and destinations preserved',()=>assert.equal(visited,25));
+ await navigate(active,url);await page.getByRole('navigation',{name:'模块功能'}).waitFor();const links=await page.getByRole('navigation',{name:'模块功能'}).getByRole('link').evaluateAll(a=>a.map(x=>({label:x.textContent,url:x.getAttribute('href')})));for(const link of links)assert.ok(coverage.some(x=>x.label===link.label&&x.url===link.url),JSON.stringify(link));visited.push(...links);}
+ const ordered=links=>links.map(link=>[link.url,link.label]).sort((a,b)=>a[0].localeCompare(b[0]));
+ checks('All 26 current secondary labels and destinations match the explicit migration',()=>assert.deepEqual(ordered(visited),ordered(coverage)));
+ checks('All 25 original destinations remain reachable',()=>assert.ok(originalCoverage.every(link=>visited.some(actual=>actual.url===link.url))));
+ await navigate('users','/admin/center','section=users');assert.equal(await page.getByRole('navigation',{name:'模块功能'}).locator('[aria-current=page]').innerText(),'用户数据');checks('Cross-site user data has exactly one current link',()=>{});
+ await navigate('users','/admin/center','section=users&detail=local');assert.equal(await page.getByRole('navigation',{name:'模块功能'}).locator('[aria-current=page]').innerText(),'本站用户管理');await page.getByRole('navigation',{name:'模块功能'}).getByRole('link',{name:'本站用户管理',exact:true}).click();assert.equal(await page.evaluate(()=>window.__clicked),'/admin/center?section=users&detail=local');checks('Native local user management remains distinct and operable',()=>{});
+ await navigate('artworks','/admin/center','section=artworks');assert.equal(await page.getByRole('navigation',{name:'模块功能'}).locator('[aria-current=page]').innerText(),'作品数据');checks('Cross-site artwork data keeps its existing destination',()=>{});
  await navigate('feature-access','/admin/feature-access');assert.equal(await page.locator('aside a[aria-current=page]').innerText(),'用户管理');checks('Feature permissions retain their parent navigation highlight',()=>{});
  await navigate('billing','/admin/billing','tab=history');assert.equal(await page.getByRole('navigation',{name:'模块功能'}).locator('[aria-current=page]').innerText(),'钱包与充值');checks('Wallet deep tab preserves its correct navigation',()=>{});
  await navigate('tenants','/admin/tenants/fixture-id','tab=members');assert.equal(await page.getByRole('navigation',{name:'模块功能'}).count(),0);checks('Tenant detail owns its nested tabs without duplicate parent strip',()=>{});

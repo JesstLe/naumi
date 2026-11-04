@@ -32,6 +32,13 @@ const report = {
 const cache = new Map();
 const digest = value => createHash('sha256').update(value).digest('hex');
 const save = (name, value) => fs.writeFileSync(path.join(outputRoot, name), JSON.stringify(value, null, 2) + '\n');
+const explicitPoolOnly = { getPool() { throw new Error('Unexpected nested database checkout'); } };
+const explicitSchemaOnly = { ensureBiSchema() { throw new Error('Unexpected production schema initialization'); } };
+function assertReadOnlySql(sql) {
+  assert.match(String(sql), /^(SELECT|WITH)\b/i, 'Analytics module remains query-only');
+  const withoutLiterals = String(sql).replace(/'(?:''|[^'])*'/g, "''");
+  assert.doesNotMatch(withoutLiterals, /\b(?:INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|COPY|GRANT|REVOKE|CALL|DO)\b/i, 'Analytics cannot mutate business or schema state');
+}
 
 // pg uses its explicit loopback socket; all application HTTP routes are disabled in this runner.
 globalThis.fetch = async () => { report.externalNetworkCalls++; throw new Error('Unexpected application fetch'); };
@@ -51,9 +58,10 @@ function load(relative) {
   }).outputText;
   const req = name => {
     if (name === 'server-only') return {};
-    if (name === '@/lib/db') return { getPool() { throw new Error('Unexpected nested database checkout'); } };
-    if (name === './repository') return { ensureBiSchema() { throw new Error('Unexpected production schema initialization'); } };
+    if (name === '@/lib/db' || name === '@/platform/db/pool') return explicitPoolOnly;
+    if (name === './repository' || name === './schema') return explicitSchemaOnly;
     if (name === './usage-contracts') return load('src/lib/bi/usage-contracts.ts');
+    if (name === '@/lib/billing/consumption-read') return load('src/lib/billing/consumption-read.ts');
     throw new Error(`Unexpected application import ${name}`);
   };
   new vm.Script(`(function(require,module,exports){${code}\n})`, { filename }).runInThisContext()(req, loadedModule, loadedModule.exports);
@@ -117,8 +125,15 @@ async function run() {
     const day1 = '2026-10-27T16:00:00Z', day2 = '2026-10-28T16:00:00Z', before = '2026-10-26T00:00:00Z', end = '2026-10-29T16:00:00Z';
     const query = more => parseUsageQuery(new URLSearchParams({ from, to, sort: 'tasks', size: '100', ...more }));
     const scope = emails => ({ allowedEmails: emails, tenantId: tenant, tenantName: 'Fixture enterprise' });
-    const reader = { query(sql, values) { assert.match(String(sql), /^(SELECT|WITH)\b/i, 'Analytics module remains query-only'); return tx.query(sql, values); } };
+    const reader = { query(sql, values) { assertReadOnlySql(sql); return tx.query(sql, values); } };
     const read = (more = {}, allowed) => readUserUsage(reader, query(more), allowed);
+    await check('EXPLICIT_READ_PORTS_DENY_CHECKOUT_SCHEMA_AND_BUSINESS_WRITES', async () => {
+      assert.throws(() => explicitPoolOnly.getPool(), /Unexpected nested database checkout/);
+      assert.throws(() => explicitSchemaOnly.ensureBiSchema(), /Unexpected production schema initialization/);
+      assert.throws(() => assertReadOnlySql('CREATE TABLE forbidden(id text)'), /query-only/);
+      assert.throws(() => assertReadOnlySql('WITH forbidden AS (DELETE FROM app_ledger RETURNING id) SELECT * FROM forbidden'), /cannot mutate/);
+      assert.ok(report.sourceModules.some(module => module.relativePath === 'src/lib/billing/consumption-read.ts'), 'Actual shared helper must be source-hashed, never mocked');
+    });
     await tx.query("INSERT INTO app_users SELECT unnest($1::text[]),unnest($2::text[]),'user'", [[A, B, S, O, Z], ['Edge', 'Foreign', 'Skew', 'Owner', 'Zero']]);
     await tx.query('INSERT INTO app_account_teams VALUES($1,$2,$3),($4,$5,$6)', [tenant, 'Fixture enterprise', O, other, 'Other enterprise', B]);
     await tx.query('INSERT INTO app_enterprise_members SELECT unnest($1::text[]),$2::uuid', [[A, S, Z], tenant]);
