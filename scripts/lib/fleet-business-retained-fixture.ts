@@ -18,6 +18,7 @@ export async function seedRetainedFleetBusinessCommand(pool:Pool,actor:string,in
   assert.ok(url.protocol==='postgres:'||url.protocol==='postgresql:');
   assert.ok(['127.0.0.1','localhost','[::1]'].includes(url.hostname),'retained history must stay on loopback');
   assert.equal(url.port,'65298','retained history uses only the named disposable PG endpoint');
+  assert.ok(!url.searchParams.has('host')&&!url.searchParams.has('port'),'retained history rejects host or port query overrides');
   const database=decodeURIComponent(url.pathname.slice(1));
   assert.ok(databases.has(database),'retained history rejects noncentral or unnamed fixture databases');
   assert.match(instanceId,uuid);assert.match(id,uuid);assert.ok(actor.length>0&&actor.length<=254);
