@@ -30,6 +30,8 @@ export async function verifyFleetBusinessQueueCompatibility(central:Pool,sample:
   const database='fleet_receipt_compat_'+randomUUID().replaceAll('-','');assert.match(database,/^fleet_receipt_compat_[a-f0-9]{32}$/);
   await central.query('CREATE DATABASE '+database);
   url.pathname='/'+database;const source=new Pool({connectionString:url.toString(),max:1});
+  const sourceDisconnects:Promise<void>[]=[];
+  source.on('connect',client=>sourceDisconnects.push(new Promise<void>(resolve=>client.once('end',resolve))));
   const service=await import('../src/lib/fleet/server');
   let droppedAck:string|null=null,polls=0,acks=0,checks=0;
   const check=(value:unknown,message:string)=>{assert.ok(value,message);checks++;};
@@ -107,8 +109,15 @@ export async function verifyFleetBusinessQueueCompatibility(central:Pool,sample:
     console.log(`FLEET_BUSINESS_QUEUE_COMPAT=PASS assertions=${checks} REAL_PG=2 REAL_HTTP=1 POOL_MAX=1 MISSING_TABLE_ACK=1 MISSING_COLUMN_ACK=1 READ_PHASE_DDL=0 READ_PHASE_USER_WRITES=0 CONTROL_BAN_EXPECTED=1 CONTROL_LOST_ACK_ONCE=1 BUSINESS_HISTORY_SEEDED=120 GENERIC_BUSINESS=0`);
     return checks;
   }finally{
-    await new Promise<void>(resolve=>server.close(()=>resolve()));await source.end();
-    assert.match(database,/^fleet_receipt_compat_[a-f0-9]{32}$/);await central.query('DROP DATABASE '+database+' WITH (FORCE)');
-    if(previousIsolated===undefined)delete process.env.FLEET_ISOLATED_TEST;else process.env.FLEET_ISOLATED_TEST=previousIsolated;
+    try{
+      await new Promise<void>(resolve=>server.close(()=>resolve()));await source.end();
+      // pg-pool end() drains its bookkeeping before every physical socket ends.
+      // Do not terminate a still-closing idle client with DROP ... WITH (FORCE).
+      await Promise.all(sourceDisconnects);
+      assert.match(database,/^fleet_receipt_compat_[a-f0-9]{32}$/);await central.query('DROP DATABASE '+database);
+      console.log(`FLEET_RECEIPT_FIXTURE_TEARDOWN=PASS PHYSICAL_ENDS=${sourceDisconnects.length} FORCED_DISCONNECTS=0`);
+    }finally{
+      if(previousIsolated===undefined)delete process.env.FLEET_ISOLATED_TEST;else process.env.FLEET_ISOLATED_TEST=previousIsolated;
+    }
   }
 }

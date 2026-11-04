@@ -17,7 +17,7 @@ export function BusinessTrend({ data }: { data: BusinessResponse | null }) {
   const y = (value: number) => top + (1 - value / max) * (height - top - bottom);
   return <section className={styles.trend} aria-label="积分消耗趋势">
     <div className={styles.panelTitle}><h2>消费趋势</h2><span>积分</span></div>
-    {!ready ? <div className={styles.chartPending}><Activity size={27}/><span>{data?.sources.some(source => ["offline", "failed", "unknown"].includes(source.status)) ? "站点数据未完整返回" : "等待站点数据"}</span></div>
+    {!ready ? <div className={styles.chartPending}><Activity size={27}/><span>{data?.sources.some(source => ["offline", "failed", "unknown", "unavailable"].includes(source.status)) ? "站点数据未完整返回" : "等待站点数据"}</span></div>
       : !dates.length ? <div className={styles.chartPending}><Activity size={27}/><span>该时段暂无消费记录</span></div>
       : <>
         <svg className={styles.chart} viewBox={`0 0 ${width} ${height}`} role="img" aria-labelledby={id + "title"}>

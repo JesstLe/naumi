@@ -5,6 +5,7 @@ import {getPool} from '@/platform/db/pool';
 import {businessQuerySchema,businessSnapshotSchema,type FleetBusinessQuery,type FleetBusinessSnapshot} from './business-contracts';
 import {readFleetBusinessQuery} from './business-read-model';
 import {businessRequestSchema,type BusinessSite,type BusinessSource,type FleetBusinessRequest,type FleetBusinessResponse} from './business-central-contracts';
+import {boundFleetBusinessResponse} from './business-response';
 import {canonical,type FleetActor} from './contracts';
 import {enqueueCommand,fleetBusinessInstances,fleetReadCommand,FleetError} from './server';
 
@@ -104,8 +105,10 @@ async function response(actor:FleetActor,token:RequestToken,rows:RegistryRow[],n
   if(token.site==='all'||token.site==='local')sources.push(await localResult(token,now));
   // Bound concurrent metadata work without limiting the number of registered sites.
   for(let i=0;i<targets.length;i+=4)sources.push(...await Promise.all(targets.slice(i,i+4).map(r=>remoteResult(actor,r,token,now))));
-  return{requestId:encode(token),query:token.query,sites:[localSite(),...rows.map(publicSite)],sources,
-    complete:sources.length>0&&sources.every(s=>s.status==='succeeded')};
+  const result=boundFleetBusinessResponse({requestId:encode(token),query:token.query,sites:[localSite(),...rows.map(publicSite)],sources,
+    complete:sources.length>0&&sources.every(s=>s.status==='succeeded')});
+  if(!result)throw new FleetError('站点目录超出响应大小上限，请联系管理员',503);
+  return result;
 }
 export async function startFleetBusinessQuery(actor:FleetActor,input:unknown,now=Date.now()){
   if(!actor.root)throw new FleetError('业务总览需要总后台管理员身份',403);

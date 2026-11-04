@@ -27,7 +27,7 @@ export function FleetBusinessDashboard({ initialView = "usage", entry = "usage" 
   const totals = useMemo(() => combinedTotals(data), [data]);
   const returned = data?.sources.filter(source => source.status === "succeeded").length || 0;
   const sourceCount = data?.sources.length || 0;
-  const unavailable = data?.sources.filter(source => ["failed", "offline", "unknown"].includes(source.status)) || [];
+  const unavailable = data?.sources.filter(source => ["failed", "offline", "unknown", "unavailable"].includes(source.status)) || [];
 
   function navigate(patch: Partial<BusinessFilter>) {
     const search = businessNavigation(new URLSearchParams(window.location.search), patch, initialView);

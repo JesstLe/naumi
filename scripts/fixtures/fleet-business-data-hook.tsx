@@ -19,11 +19,33 @@ function reply(request: Request, credits = 42): BusinessResponse {
   };
 }
 
+function budgetReply(request: Request, phase: "terminal" | "pending" | "finished"): BusinessResponse {
+  const value = reply(request), data = value.sources[0].data!;
+  value.sites.push({ id: "remote-budget", name: "47 企业站", kind: "enterprise", enabled: true, lastSeen: asOf });
+  value.sources.push({ id: "remote-budget", name: "47 企业站", kind: "enterprise", status: phase === "pending" ? "pending" : phase === "finished" ? "succeeded" : "unavailable", ...(phase === "pending" ? {} : { data }), error: "汇总结果达到大小上限，请选择该站点查看" });
+  if (phase !== "terminal") {
+    value.sites.push({ id: "extra-budget", name: "其他站点", kind: "enterprise", enabled: true, lastSeen: asOf });
+    value.sources.push({ id: "extra-budget", name: "其他站点", kind: "enterprise", status: "unavailable", data, error: "汇总结果达到大小上限，请选择该站点查看" });
+  }
+  if (phase === "finished") value.sources[0] = { ...value.sources[0], status: "unavailable", error: "汇总结果达到大小上限，请选择该站点查看" };
+  value.complete = false;
+  return value;
+}
+
 async function main() {
   const requests: Request[] = [], assertions: { name: string; passed: boolean; observed?: unknown }[] = [];
   let status = 200, delayed: (() => void) | undefined;
+  let budgetMode: "normal" | "terminal" | "pending" = "normal", polls = 0, lastRequest: Request | undefined, pollReached: (() => void) | undefined;
   globalThis.fetch = async (_url, init) => {
+    if (!init?.body) {
+      polls++;
+      if (budgetMode !== "pending" || !lastRequest) throw new Error("unexpected fixture poll");
+      pollReached?.();
+      return new Response(JSON.stringify(budgetReply(lastRequest, "finished")), { status: 200 });
+    }
     const request = JSON.parse(String(init?.body)) as Request; requests.push(request);
+    lastRequest = request;
+    if (budgetMode !== "normal") return new Response(JSON.stringify(budgetReply(request, budgetMode)), { status: 200 });
     if (request.search === "slow") return new Promise(resolve => { delayed = () => resolve(new Response(JSON.stringify(reply(request, 999)), { status: 200 })); });
     return new Response(status === 200 ? JSON.stringify(reply(request)) : status === 401 ? "<html>login</html>" : "null", { status });
   };
@@ -52,6 +74,15 @@ async function main() {
   props.identity = "admin-c@example.test"; props.filter = { ...props.filter, search: "fast" }; await render();
   await act(async () => { delayed?.(); });
   check("cancelled_old_identity_result_never_overwrites_new_identity", current?.key.startsWith("admin-c@example.test\0") === true && current.data?.sources[0]?.data?.totals.credits === 42);
+  budgetMode = "terminal"; props.revision = 8; await render();
+  check("unavailable_is_terminal_without_poll_or_global_error", !current?.busy && current?.error === "" && polls === 0);
+  check("unavailable_clears_stale_payload_but_preserves_healthy_source", current?.data?.sources[0].data?.totals.credits === 42 && current.data.sources[1].status === "unavailable" && current.data.sources[1].data === undefined);
+  const reached = new Promise<void>(resolve => { pollReached = resolve; });
+  budgetMode = "pending"; props.revision = 9; await render();
+  check("pending_still_polls_alongside_unavailable", current?.busy === true && current.data?.sources[1].status === "pending");
+  await act(async () => { await reached; });
+  check("pending_finishes_with_bounded_terminal_response", polls === 1 && !current?.busy && current?.data?.sources[1].status === "succeeded");
+  check("later_response_removes_previously_successful_source_payload", current?.data?.sources[0].status === "unavailable" && current.data.sources[0].data === undefined && current.data.sources[2].data === undefined);
   await act(async () => { root.unmount(); });
   const failures = assertions.filter(item => !item.passed).length;
   scope.__HOOK_REVIEW = { layer: "actual-react-dom-hook-finite-fetch-fixture", result: failures ? "FAIL" : "PASS", assertions, failures, requests, businessWrites: 0, providerCalls: 0, HTTPServersStarted: 0, SSH: 0 };

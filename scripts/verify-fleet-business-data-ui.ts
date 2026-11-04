@@ -67,6 +67,11 @@ async function main() {
   const partial = full(); partial.complete = false; partial.sources[1] = { ...partial.sources[1], status: "unknown", data: undefined, error: "数据连接器待更新" };
   check(combinedTotals(partial) === null, "missing remote is not zero or complete local-only total");
   check(sourceRows(partial.sources[1], "users").length === 0, "unknown source has no invented rows");
+  const capped = full(); capped.complete = false; capped.sources[1] = { ...capped.sources[1], status: "unavailable", error: "汇总结果达到大小上限，请选择该站点查看" };
+  check(combinedTotals(capped) === null, "budget-limited source never becomes a complete global total");
+  check(sourceRows(capped.sources[1], "users").length === 0 && sourceRows(capped.sources[0], "users").length === 1, "unavailable stale rows are excluded while healthy rows remain visible");
+  capped.sources[1].data!.total = 100;
+  check(!hasNextSourcePage(capped), "unavailable stale data cannot enable next page");
   const orphan = full(); orphan.sources[1].data = data(42, null);
   check(combinedTotals(orphan)?.credits === 49, "known consumption survives unknown orphan balance");
   check(combinedTotals(orphan)?.balance === null, "unknown balance never becomes zero");
@@ -80,6 +85,11 @@ async function main() {
   try {
     globalThis.fetch = async () => new Response(JSON.stringify(full()), { status: 200, headers: { "content-type": "application/json" } });
     check((await readBusinessResponse("/api/admin/business", new AbortController().signal)).sources[1].data?.totals.credits === 42, "validated source result reaches client");
+    globalThis.fetch = async () => new Response(JSON.stringify(capped), { status: 200 });
+    const acceptedCap = await readBusinessResponse("/api/admin/business", new AbortController().signal);
+    check(acceptedCap.sources[1].status === "unavailable" && acceptedCap.sources[1].data === undefined && acceptedCap.sources[0].data?.totals.credits === 7, "explicit response budget state strips stale data without rejecting healthy sites");
+    globalThis.fetch = async () => new Response(JSON.stringify({ ...capped, complete: true }), { status: 200 });
+    await assert.rejects(() => readBusinessResponse("/api/admin/business", new AbortController().signal), /尚未完整返回/); assertions++;
     const mismatch = full(); mismatch.sources[1].data = { ...mismatch.sources[1].data!, asOf: "2026-11-03T08:00:00.000Z" };
     globalThis.fetch = async () => new Response(JSON.stringify(mismatch), { status: 200 });
     await assert.rejects(() => readBusinessResponse("/api/admin/business", new AbortController().signal), /回执与当前查询不一致/); assertions++;

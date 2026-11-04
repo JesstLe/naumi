@@ -3,7 +3,7 @@ import { accountIdentity, localTime, money, number, sourceRows, viewNames } from
 import type { BusinessResponse, BusinessSource, BusinessView } from "./types";
 import styles from "./business-data.module.css";
 
-export const statusLabels = { pending: "查询中", succeeded: "已更新", failed: "查询失败", offline: "离线", unknown: "未确认" };
+export const statusLabels: Record<BusinessSource["status"], string> = { pending: "查询中", succeeded: "已更新", failed: "查询失败", offline: "离线", unknown: "未确认", unavailable: "结果超限" };
 const columns: Record<BusinessView, string[]> = {
   usage: ["账户", "消费积分", "消费次数", "当前余额", "最近消费", "明细"],
   users: ["账户", "角色 / 套餐", "当前余额", "预留积分", "账户状态", "明细"],

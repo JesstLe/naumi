@@ -1,6 +1,8 @@
 import {z} from 'zod';
 import type {FleetBusinessQuery,FleetBusinessSnapshot} from './business-contracts';
 
+export const FLEET_BUSINESS_RESPONSE_MAX_BYTES=2*1024*1024;
+
 export const businessRequestSchema=z.object({
   site:z.union([z.literal('all'),z.literal('local'),z.string().uuid()]).default('all'),
   view:z.enum(['overview','usage','users','orders','ledger','creations']),
@@ -12,7 +14,7 @@ export const businessRequestSchema=z.object({
 export type FleetBusinessRequest=z.infer<typeof businessRequestSchema>;
 export type BusinessSite={id:string;name:string;kind:'local'|'main'|'enterprise';enabled:boolean;lastSeen:string|null};
 export type BusinessSource=Pick<BusinessSite,'id'|'name'|'kind'>&{
-  status:'pending'|'succeeded'|'failed'|'offline'|'unknown';commandId?:string;
+  status:'pending'|'succeeded'|'failed'|'offline'|'unknown'|'unavailable';commandId?:string;
   data?:FleetBusinessSnapshot;error?:string;
 };
 export type FleetBusinessResponse={requestId:string;query:FleetBusinessQuery;sites:BusinessSite[];sources:BusinessSource[];complete:boolean};

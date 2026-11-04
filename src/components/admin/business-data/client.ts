@@ -1,7 +1,7 @@
 import { fleetBusinessSnapshotSchema, fleetBusinessQuerySchema } from "@/lib/fleet/business-contracts";
+import { FLEET_BUSINESS_RESPONSE_MAX_BYTES } from "@/lib/fleet/business-central-contracts";
 import type { BusinessResponse } from "./types";
 
-const maxResponseBytes = 2 * 1024 * 1024;
 export class BusinessReadError extends Error {
   constructor(message: string, readonly status?: number) { super(message); this.name = "BusinessReadError"; }
 }
@@ -17,7 +17,7 @@ function parseResponse(input: unknown): BusinessResponse {
     siteIds.add(site.id);
   }
   const sources = body.sources.map(source => {
-    if (!source || typeof source.id !== "string" || sourceIds.has(source.id) || !siteIds.has(source.id) || typeof source.name !== "string" || !["local", "main", "enterprise"].includes(source.kind) || !["pending", "succeeded", "failed", "offline", "unknown"].includes(source.status) || source.error !== undefined && typeof source.error !== "string") throw new BusinessReadError("站点回执格式异常");
+    if (!source || typeof source.id !== "string" || sourceIds.has(source.id) || !siteIds.has(source.id) || typeof source.name !== "string" || !["local", "main", "enterprise"].includes(source.kind) || !["pending", "succeeded", "failed", "offline", "unknown", "unavailable"].includes(source.status) || source.error !== undefined && typeof source.error !== "string") throw new BusinessReadError("站点回执格式异常");
     sourceIds.add(source.id);
     if (source.status !== "succeeded") return { ...source, data: undefined };
     const data = fleetBusinessSnapshotSchema.parse(source.data);
@@ -46,7 +46,7 @@ export async function readBusinessResponse(url: string, signal: AbortSignal, inp
     try {
       for (;;) {
         const part = await reader.read(); if (part.done) break;
-        bytes += part.value.byteLength; if (bytes > maxResponseBytes) throw new BusinessReadError("查询结果过大，请筛选站点或账号");
+        bytes += part.value.byteLength; if (bytes > FLEET_BUSINESS_RESPONSE_MAX_BYTES) throw new BusinessReadError("查询结果过大，请筛选站点或账号");
         chunks.push(part.value);
       }
     } finally { await reader.cancel().catch(() => {}); }
