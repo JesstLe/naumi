@@ -2,14 +2,14 @@ import 'server-only';
 import {createHmac,timingSafeEqual} from 'node:crypto';
 import {z} from 'zod';
 import {getPool} from '@/platform/db/pool';
-import {businessQuerySchema,businessSnapshotSchema,type FleetBusinessQuery,type FleetBusinessSnapshot} from './business-contracts';
+import {businessQuerySchema,businessSnapshotSchema,FLEET_BUSINESS_QUERY_MAX_AGE_MS,type FleetBusinessQuery,type FleetBusinessSnapshot} from './business-contracts';
 import {readFleetBusinessQuery} from './business-read-model';
 import {businessRequestSchema,type BusinessSite,type BusinessSource,type FleetBusinessRequest,type FleetBusinessResponse} from './business-central-contracts';
 import {boundFleetBusinessResponse} from './business-response';
 import {canonical,type FleetActor} from './contracts';
 import {enqueueCommand,fleetBusinessInstances,fleetReadCommand,FleetError} from './server';
 
-const WINDOW_MS=30_000,REQUEST_LIFE_MS=180_000,REMOTE_WAIT_MS=90_000;
+const WINDOW_MS=30_000,REQUEST_LIFE_MS=180_000,REMOTE_WAIT_MS=FLEET_BUSINESS_QUERY_MAX_AGE_MS;
 const tokenSchema=z.object({v:z.literal(1),actor:z.string().regex(/^[a-f0-9]{64}$/),issuedAt:z.number().int(),
   site:businessRequestSchema.shape.site,registry:z.string().regex(/^[a-f0-9]{64}$/),query:businessQuerySchema}).strict();
 type RequestToken=z.infer<typeof tokenSchema>;
@@ -76,13 +76,13 @@ async function remoteResult(actor:FleetActor,row:RegistryRow,token:RequestToken,
       }
       if(command.state==='failed')return{...base,status:'failed',error:'站点业务数据读取失败'};
       if(command.state==='blocked')return{...base,status:'unknown',error:'查询回执状态未知'};
-      if(now-token.issuedAt>REMOTE_WAIT_MS)return{...base,status:'unknown',error:'尚未收到站点查询回执'};
+      if(now-token.issuedAt>=REMOTE_WAIT_MS)return{...base,status:'unknown',error:'尚未收到站点查询回执'};
       return{...base,status:'pending'};
     }
     const lastSeen=row.last_seen?new Date(row.last_seen).getTime():0;
     if(!Number.isFinite(lastSeen)||now-lastSeen>90_000)return{...base,status:'offline',error:'站点当前离线'};
     if(row.status?.business!==1)return{...base,status:'unknown',error:'数据连接器待更新'};
-    if(now-token.issuedAt>REMOTE_WAIT_MS)return{...base,status:'unknown',error:'查询等待已结束，请重新查询'};
+    if(now-token.issuedAt>=REMOTE_WAIT_MS)return{...base,status:'unknown',error:'查询等待已结束，请重新查询'};
     // Stable IDs coalesce concurrent readers. Only a signed read query is queued;
     // no billing, wallet, account or provider mutation is performed here.
     await enqueueCommand(actor.actor,row.id,id,token.query,actor);

@@ -53,6 +53,8 @@ jobs:
           DATABASE_URL: postgresql://postgres:fleet_protocol_fixture@127.0.0.1:65298/fleet_protocol_fixture
       - name: Verify source-aware UI and rapid filter navigation
         run: node --import tsx scripts/verify-fleet-business-data-ui.ts
+      - name: Verify actual usage page legacy email and explicit fleet entry routing
+        run: node scripts/verify-fleet-business-usage-entry.mjs
       - name: Verify aggregate response budget through actual central assembly and client
         run: node scripts/verify-fleet-business-response-budget.mjs
       - name: Verify actual React hook refresh revisions and HTTP error states
@@ -83,4 +85,5 @@ jobs:
             output/fleet-business-data-20261104/compat-usage-pg/RESULT.json
             output/fleet-business-data-20261104/compat-usage-skew/RESULT.json
             output/fleet-business-data-20261104/hook-review/HOOK_RESULT.json
+            output/fleet-business-usage-entry-20261105/MODIFIED_RESULT.json
           if-no-files-found: warn

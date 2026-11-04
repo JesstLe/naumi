@@ -99,7 +99,7 @@ async function main(){
     await pool.query("INSERT INTO app_users(email,name) VALUES('delegate@fixture.test','Delegate')");
     const instance=await createInstance('root','Fixture enterprise','enterprise');
     await saveGrant('root',{instanceId:instance.id,email:'delegate@fixture.test',allowed:['read'],expectedVersion:0,expiresAt:null});
-    const queuedId=randomUUID();await enqueueCommand('root',instance.id,queuedId,query());
+    const queuedId=randomUUID();await enqueueCommand('root',instance.id,queuedId,{...query(),asOf:new Date().toISOString()});
     check((await fleetBusinessInstances({actor:'delegate@fixture.test',root:false})).length===0,'read-only grant cannot see business source');
     await assert.rejects(()=>fleetReadCommand({actor:'delegate@fixture.test',root:false},instance.id,queuedId),/实例操作未授权/);checks++;
     check(!(await fleetSnapshot({actor:'delegate@fixture.test',root:false})).commands.some(c=>c.id===queuedId),'generic fleet snapshot does not leak business command result');

@@ -1,5 +1,8 @@
 import {z} from 'zod';
 
+/** Shared central waiting/dispatch deadline; expiry never cancels durable ACKs. */
+export const FLEET_BUSINESS_QUERY_MAX_AGE_MS=90_000;
+
 export const fleetBusinessViews=['overview','usage','users','orders','ledger','creations'] as const;
 export const fleetBusinessQuerySchema=z.object({
   type:z.literal('business.query'), view:z.enum(fleetBusinessViews),

@@ -19,8 +19,10 @@ export async function verifyFleetBusinessControlPriority(f:Fixture){
   const service=await import('../src/lib/fleet/server');
   const failures:string[]=[],scenarios:Record<string,unknown>[]=[];let checks=0;
   const check=(value:unknown,name:string)=>{checks++;if(!value)failures.push(name);};
+  const freshnessFailures:string[]=[];let freshnessChecks=0;
+  const freshCheck=(value:unknown,name:string)=>{freshnessChecks++;if(!value)freshnessFailures.push(name);};
   const read={type:'business.query' as const,view:'usage' as const,days:30 as const,asOf:f.asOf,page:1,search:''};
-  const row=async(id:string)=>(await f.central.query('SELECT state,result,lease_id,leased_until FROM app_fleet_commands WHERE id=$1',[id])).rows[0];
+  const row=async(id:string)=>(await f.central.query('SELECT state,result,lease_id,leased_until,operation,fingerprint FROM app_fleet_commands WHERE id=$1',[id])).rows[0];
   const user=async(email:string)=>(await f.source.query('SELECT to_jsonb(u) value FROM app_users u WHERE email=$1',[email])).rows[0].value;
   const setup=async(name:string)=>{
     const instance=await service.createInstance('root','Priority '+name,'enterprise'),email='priority-'+name+'@fixture.test';
@@ -38,6 +40,11 @@ export async function verifyFleetBusinessControlPriority(f:Fixture){
     request.end(JSON.stringify({...input,nonce:randomUUID(),timestamp:Date.now()}));
   });
   const tickId=(value:Tick)=>value.code===0?JSON.parse(value.stdout).commandId:undefined;
+  const shiftedClock=async<T,>(milliseconds:number,work:()=>Promise<T>)=>{
+    const original=Date.now;
+    try{Date.now=()=>original()+milliseconds;return await work();}
+    finally{Date.now=original;}
+  };
 
   // Two equally old reads prove the id tie-breaker as well as the read FIFO.
   {
@@ -127,7 +134,79 @@ export async function verifyFleetBusinessControlPriority(f:Fixture){
     check(JSON.stringify(await user(email))===JSON.stringify(before),'credit dispatch-only verification applies no source account mutation');
     scenarios.push({name:'credits-dispatch-only',creditFirst:command.id===creditId,signed:true,creditApply:0});
   }
+  // asOf, not created_at, is the read's durable admission deadline.
+  {
+    const {instance}=await setup('expired-queued'),stale=randomUUID(),fresh=randomUUID();
+    await service.enqueueCommand('root',instance.id,stale,{...read,asOf:new Date(Date.now()-120000).toISOString()});
+    await service.enqueueCommand('root',instance.id,fresh,{...read,asOf:new Date().toISOString()});
+    await f.central.query("UPDATE app_fleet_commands SET created_at=now()-interval '1 minute' WHERE id=$1",[stale]);
+    const before=await row(stale),first=await f.tick(instance),after=await row(stale);
+    freshCheck(tickId(first)===fresh,'expired queued read is bypassed for a fresh query');
+    freshCheck(canonical(before)===canonical(after),'excluded queued read retains its original state/operation/fingerprint/lease');
+    const next=await f.tick(instance);
+    freshCheck(next.code===0&&JSON.parse(next.stdout).state==='idle'&&canonical(await row(stale))===canonical(before),'expired queued read is not dispatched on a later poll either');
+    scenarios.push({name:'expired-queued-read',freshFirst:tickId(first)===fresh,staleUnchanged:canonical(before)===canonical(after),followingState:next.code===0?JSON.parse(next.stdout).state:'error'});
+  }
+  {
+    const {instance,email}=await setup('fresh-old-created'),fresh=randomUUID(),control=randomUUID();
+    await service.enqueueCommand('root',instance.id,fresh,{...read,asOf:new Date().toISOString()});
+    await f.central.query("UPDATE app_fleet_commands SET created_at='2000-01-01T00:00:00Z' WHERE id=$1",[fresh]);
+    freshCheck(tickId(await f.tick(instance))===fresh,'fresh asOf remains eligible even with an ancient created_at');
+    await service.enqueueCommand('root',instance.id,control,ban(email,true));
+    await f.central.query("UPDATE app_fleet_commands SET created_at='2000-01-01T00:00:00Z' WHERE id=$1",[control]);
+    freshCheck(tickId(await f.tick(instance))===control&&(await user(email)).banned===true,'non-business control has no new age cutoff');
+  }
+  // Execute while fresh, genuinely lose its ACK, then advance only this fixture
+  // process's clock 45s. The stored operation and real source receipt never change.
+  {
+    const {instance}=await setup('expired-leased'),stale=randomUUID(),fresh=randomUUID();
+    await service.enqueueCommand('root',instance.id,stale,{...read,asOf:new Date(Date.now()-60000).toISOString()});
+    f.dropAck(stale);const lost=await f.tick(instance),ack=f.withheldAck();assert.ok(ack&&ack.commandId===stale);
+    const original=await row(stale);freshCheck(lost.code===1&&original.state==='leased','fresh read execution really loses its ACK before expiry');
+    await shiftedClock(45000,async()=>{
+      assert.ok(Date.now()-Date.parse(original.operation.asOf)>90000&&+new Date(original.leased_until)>Date.now());
+      await service.enqueueCommand('root',instance.id,fresh,{...read,asOf:new Date().toISOString()});
+      const status={source:'a'.repeat(40),version:'1',storage:'s3',nas:'unknown',connector:1,business:1};
+      const first=await exchange(instance,false,{status});
+      const firstId=first.body.command?verifyCommand(first.body.command,instance.token,instance.id).id:null;
+      freshCheck(first.status===200&&firstId===fresh,'expired active read lease does not hold a new business query');
+      freshCheck(canonical(await row(stale))===canonical(original),'bypassing an expired active read preserves its complete row');
+      await f.central.query("UPDATE app_fleet_commands SET leased_until=now()-interval '1 second' WHERE id=$1",[stale]);
+      const expired=await row(stale),second=await exchange(instance,false,{status});
+      const secondId=second.body.command?verifyCommand(second.body.command,instance.token,instance.id).id:null;
+      freshCheck(second.status===200&&secondId!==stale,'expired business read is not redispatched when its lease also expires');
+      freshCheck(canonical(await row(stale))===canonical(expired),'ignored expired lease keeps original lease id, operation, fingerprint and state');
+      const wrong=await exchange(instance,true,{...ack,leaseId:randomUUID()});
+      freshCheck(wrong.status===409,'expired read ACK still rejects a wrong lease');
+      const late=await exchange(instance,true,ack),finished=await row(stale);
+      freshCheck(late.status===200&&late.body.ok===true&&canonical(finished.result)===canonical(ack.result),'matching original late ACK is accepted after query and lease expiry');
+      const repeated=await exchange(instance,true,ack);
+      freshCheck(repeated.status===200&&canonical(await row(stale))===canonical(finished),'expired read duplicate late ACK remains idempotent');
+      scenarios.push({name:'expired-leased-read',lostAckExit:lost.code,clockAdvanceMs:45000,freshDispatched:firstId===fresh,staleRedispatched:secondId===stale,wrongLeaseStatus:wrong.status,lateAckStatus:late.status,duplicateStatus:repeated.status});
+    });
+  }
+  // The public central waiting boundary and dispatch use one 90-second policy.
+  {
+    const {instance,email}=await setup('central-deadline');
+    await exchange(instance,false,{status:{source:'a'.repeat(40),version:'1',storage:'s3',nas:'unknown',connector:1,business:1}});
+    const {startFleetBusinessQuery,pollFleetBusinessQuery}=await import('../src/lib/fleet/business-central');
+    const actor={actor:'root',root:true},now=Date.now(),beforeUser=await user(email);
+    const started=await startFleetBusinessQuery(actor,{site:instance.id,view:'usage',days:30,page:1,search:'',refresh:true},now);
+    const commandId=started.sources[0].commandId!;const before=await row(commandId);
+    freshCheck(started.sources[0].status==='pending','public central starts a fresh pending read');
+    const beforeDeadline=await pollFleetBusinessQuery(actor,started.requestId,now+89999);
+    const atDeadline=await pollFleetBusinessQuery(actor,started.requestId,now+90000);
+    const afterDeadline=await pollFleetBusinessQuery(actor,started.requestId,now+90001);
+    freshCheck(beforeDeadline.sources[0].status==='pending','read remains pending immediately before 90 seconds');
+    freshCheck(atDeadline.sources[0].status==='unknown'&&!atDeadline.sources[0].data,'exactly 90 seconds is UNKNOWN, not pending or fabricated failure');
+    freshCheck(afterDeadline.sources[0].status==='unknown'&&!afterDeadline.sources[0].data,'expired central query remains UNKNOWN, never zero data');
+    freshCheck(canonical(await row(commandId))===canonical(before),'central expiry never rewrites the durable queued command');
+    freshCheck(canonical(await user(email))===canonical(beforeUser),'central deadline checks write no source account fields');
+    await assert.rejects(()=>service.enqueueCommand('root',instance.id,randomUUID(),{...read,asOf:"'; DROP TABLE app_users; --"}));freshnessChecks++;
+    scenarios.push({name:'central-90s-boundary',before:beforeDeadline.sources[0].status,at:atDeadline.sources[0].status,after:afterDeadline.sources[0].status});
+  }
   for(const scenario of scenarios)console.log('FLEET_CONTROL_PRIORITY_SCENARIO='+JSON.stringify(scenario));
   console.log(`FLEET_CONTROL_PRIORITY=${failures.length?'REPRODUCED':'PASS'} assertions=${checks} failures=${failures.length} REAL_PG=2 REAL_HTTP=1 PAID_CALLS=0 CREDITS_APPLY=0`);
-  assert.deepEqual(failures,[],'control-priority regression matrix');return checks;
+  console.log(`FLEET_BUSINESS_FRESHNESS=${freshnessFailures.length?'REPRODUCED':'PASS'} assertions=${freshnessChecks} failures=${freshnessFailures.length} REAL_PG=2 REAL_HTTP=1 CLOCK_ADVANCE_MS=45000 STATE_REWRITES=0`);
+  assert.deepEqual(failures,[],'control-priority regression matrix');assert.deepEqual(freshnessFailures,[],'business-read freshness regression matrix');return checks+freshnessChecks;
 }

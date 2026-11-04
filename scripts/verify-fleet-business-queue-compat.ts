@@ -64,7 +64,7 @@ export async function verifyFleetBusinessQueueCompatibility(central:Pool,sample:
       if(mode==='missing-table')await source.query('DROP TABLE IF EXISTS app_fleet_applied');
       else await source.query(`CREATE TABLE IF NOT EXISTS app_fleet_applied(id uuid PRIMARY KEY,fingerprint text NOT NULL,result jsonb NOT NULL,instance_id uuid,actor text,operation jsonb,created_at timestamptz DEFAULT now());ALTER TABLE app_fleet_applied DROP COLUMN IF EXISTS operation`);
       const instance=await service.createInstance('root','Receipt '+mode,'enterprise'),businessId=randomUUID(),controlId=randomUUID();
-      await service.enqueueCommand('root',instance.id,businessId,{type:'business.query',view:'usage',days:30,asOf:sample.asOf,page:1,search:''});
+      await service.enqueueCommand('root',instance.id,businessId,{type:'business.query',view:'usage',days:30,asOf:new Date().toISOString(),page:1,search:''});
       // Exercise the missing-schema read alone; priority between ready controls
       // and queued/leased reads has its own complete matrix below.
       await central.query("UPDATE app_fleet_commands SET created_at=now()-interval '1 minute' WHERE id=$1",[businessId]);
@@ -108,7 +108,7 @@ export async function verifyFleetBusinessQueueCompatibility(central:Pool,sample:
     check(history.rootBusiness===0&&history.rootPreservesControls,'root generic history excludes business before LIMIT100');
     check(history.delegatedBusiness===0&&history.delegatedPreservesControl,'business grant does not flood generic control history');
     check(history.readOnlyPreservesControl&&history.scopedPayloadAvailable,'ordinary read control history and explicit scoped business read remain available');
-    checks+=await verifyFleetBusinessControlPriority({central,source,asOf:sample.asOf,origin:'http://127.0.0.1:'+port,tick,
+    checks+=await verifyFleetBusinessControlPriority({central,source,asOf:new Date().toISOString(),origin:'http://127.0.0.1:'+port,tick,
       dropAck:id=>{droppedAck=id;lastWithheldAck=null;},withheldAck:()=>lastWithheldAck});
     console.log(`FLEET_BUSINESS_QUEUE_COMPAT=PASS assertions=${checks} REAL_PG=2 REAL_HTTP=1 POOL_MAX=1 MISSING_TABLE_ACK=1 MISSING_COLUMN_ACK=1 READ_PHASE_DDL=0 READ_PHASE_USER_WRITES=0 CONTROL_BAN_EXPECTED=1 CONTROL_LOST_ACK_ONCE=1 BUSINESS_HISTORY_SEEDED=120 GENERIC_BUSINESS=0`);
     return checks;
