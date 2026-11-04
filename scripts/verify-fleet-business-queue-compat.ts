@@ -108,7 +108,7 @@ export async function verifyFleetBusinessQueueCompatibility(central:Pool,sample:
     check(history.rootBusiness===0&&history.rootPreservesControls,'root generic history excludes business before LIMIT100');
     check(history.delegatedBusiness===0&&history.delegatedPreservesControl,'business grant does not flood generic control history');
     check(history.readOnlyPreservesControl&&history.scopedPayloadAvailable,'ordinary read control history and explicit scoped business read remain available');
-    checks+=await verifyFleetBusinessControlPriority({central,source,asOf:new Date().toISOString(),origin:'http://127.0.0.1:'+port,tick,
+    checks+=await verifyFleetBusinessControlPriority({central,source,origin:'http://127.0.0.1:'+port,tick,
       dropAck:id=>{droppedAck=id;lastWithheldAck=null;},withheldAck:()=>lastWithheldAck});
     console.log(`FLEET_BUSINESS_QUEUE_COMPAT=PASS assertions=${checks} REAL_PG=2 REAL_HTTP=1 POOL_MAX=1 MISSING_TABLE_ACK=1 MISSING_COLUMN_ACK=1 READ_PHASE_DDL=0 READ_PHASE_USER_WRITES=0 CONTROL_BAN_EXPECTED=1 CONTROL_LOST_ACK_ONCE=1 BUSINESS_HISTORY_SEEDED=120 GENERIC_BUSINESS=0`);
     return checks;

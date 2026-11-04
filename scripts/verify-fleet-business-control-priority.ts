@@ -7,7 +7,7 @@ import {canonical,verifyCommand} from '../src/lib/fleet/contracts';
 type Instance={id:string;token:string};
 type Tick={code:number;stdout:string;stderr:string};
 export type WithheldAck={commandId:string;leaseId:string;result:unknown};
-type Fixture={central:Pool;source:Pool;asOf:string;origin:string;tick:(instance:Instance)=>Promise<Tick>;
+type Fixture={central:Pool;source:Pool;origin:string;tick:(instance:Instance)=>Promise<Tick>;
   dropAck:(id:string)=>void;withheldAck:()=>WithheldAck|null};
 
 /** Real isolated PG + authenticated HTTP + separate connector processes.
@@ -21,7 +21,7 @@ export async function verifyFleetBusinessControlPriority(f:Fixture){
   const check=(value:unknown,name:string)=>{checks++;if(!value)failures.push(name);};
   const freshnessFailures:string[]=[];let freshnessChecks=0;
   const freshCheck=(value:unknown,name:string)=>{freshnessChecks++;if(!value)freshnessFailures.push(name);};
-  const read={type:'business.query' as const,view:'usage' as const,days:30 as const,asOf:f.asOf,page:1,search:''};
+  const readAt=(asOf=new Date().toISOString())=>({type:'business.query' as const,view:'usage' as const,days:30 as const,asOf,page:1,search:''});
   const row=async(id:string)=>(await f.central.query('SELECT state,result,lease_id,leased_until,operation,fingerprint FROM app_fleet_commands WHERE id=$1',[id])).rows[0];
   const user=async(email:string)=>(await f.source.query('SELECT to_jsonb(u) value FROM app_users u WHERE email=$1',[email])).rows[0].value;
   const setup=async(name:string)=>{
@@ -49,7 +49,7 @@ export async function verifyFleetBusinessControlPriority(f:Fixture){
   // Two equally old reads prove the id tie-breaker as well as the read FIFO.
   {
     const {instance,email}=await setup('queued'),reads=[randomUUID(),randomUUID()].sort(),control=randomUUID();
-    for(const id of reads)await service.enqueueCommand('root',instance.id,id,read);
+    for(const id of reads)await service.enqueueCommand('root',instance.id,id,readAt());
     await service.enqueueCommand('root',instance.id,control,ban(email,true));
     await f.central.query("UPDATE app_fleet_commands SET created_at=CASE WHEN id=$1 THEN now()-interval '1 minute' ELSE now()-interval '2 minutes' END WHERE id=ANY($2::uuid[])",[control,[...reads,control]]);
     const first=await f.tick(instance),firstState=await row(control),firstUser=await user(email);
@@ -64,7 +64,7 @@ export async function verifyFleetBusinessControlPriority(f:Fixture){
   // Keep a real lost read ACK and active lease; a ban must not wait five minutes.
   {
     const {instance,email}=await setup('leased-read'),readId=randomUUID(),control=randomUUID();
-    await service.enqueueCommand('root',instance.id,readId,read);f.dropAck(readId);
+    await service.enqueueCommand('root',instance.id,readId,readAt());f.dropAck(readId);
     const lost=await f.tick(instance),ack=f.withheldAck();assert.ok(ack&&ack.commandId===readId);
     const leased=await row(readId);check(lost.code===1&&leased.state==='leased'&&new Date(leased.leased_until).getTime()>Date.now(),'real read lost ACK retains a future five-minute lease');
     await service.enqueueCommand('root',instance.id,control,ban(email,true));
@@ -88,7 +88,7 @@ export async function verifyFleetBusinessControlPriority(f:Fixture){
     const {instance,email}=await setup('leased-control'),firstId=randomUUID(),secondId=randomUUID(),readId=randomUUID();
     await service.enqueueCommand('root',instance.id,firstId,ban(email,true));f.dropAck(firstId);
     const lost=await f.tick(instance),before=await user(email),leased=await row(firstId);
-    await service.enqueueCommand('root',instance.id,readId,read);
+    await service.enqueueCommand('root',instance.id,readId,readAt());
     await service.enqueueCommand('root',instance.id,secondId,ban(email,false));
     await f.central.query("UPDATE app_fleet_commands SET created_at=CASE WHEN id=$1 THEN now()-interval '3 minutes' WHEN id=$2 THEN now()-interval '2 minutes' ELSE now()-interval '1 minute' END WHERE id=ANY($3::uuid[])",[firstId,readId,[firstId,readId,secondId]]);
     const waiting=await f.tick(instance);
@@ -110,7 +110,7 @@ export async function verifyFleetBusinessControlPriority(f:Fixture){
     await f.central.query('INSERT INTO app_users(email,name) VALUES($1,$2)',[operator,'Priority operator']);
     await service.saveGrant('root',{instanceId:instance.id,email:operator,allowed:['read','users','business'],expectedVersion:0,expiresAt:null});
     await service.enqueueCommand(operator,instance.id,control,ban(email,true),authority);
-    await service.enqueueCommand(operator,instance.id,readId,read,authority);
+    await service.enqueueCommand(operator,instance.id,readId,readAt(),authority);
     await f.central.query("UPDATE app_fleet_commands SET created_at=now()-interval '1 minute' WHERE id=$1",[control]);
     await service.saveGrant('root',{instanceId:instance.id,email:operator,allowed:['read','business'],expectedVersion:1,expiresAt:null});
     const before=await user(email),denied=await f.tick(instance),controlState=await row(control);
@@ -123,7 +123,7 @@ export async function verifyFleetBusinessControlPriority(f:Fixture){
   // Credits use the same priority class, without executing a credit adjustment.
   {
     const {instance,email}=await setup('credits'),readId=randomUUID(),creditId=randomUUID();
-    await service.enqueueCommand('root',instance.id,readId,read);
+    await service.enqueueCommand('root',instance.id,readId,readAt());
     await service.enqueueCommand('root',instance.id,creditId,{type:'credits.adjust',email,delta:1,reason:'isolated dispatch verification'});
     await f.central.query("UPDATE app_fleet_commands SET created_at=now()-interval '1 minute' WHERE id=$1",[readId]);
     const before=await user(email),response=await exchange(instance,false,{status:{source:'a'.repeat(40),version:'1',storage:'s3',nas:'unknown',connector:1,business:1}});
@@ -137,8 +137,8 @@ export async function verifyFleetBusinessControlPriority(f:Fixture){
   // asOf, not created_at, is the read's durable admission deadline.
   {
     const {instance}=await setup('expired-queued'),stale=randomUUID(),fresh=randomUUID();
-    await service.enqueueCommand('root',instance.id,stale,{...read,asOf:new Date(Date.now()-120000).toISOString()});
-    await service.enqueueCommand('root',instance.id,fresh,{...read,asOf:new Date().toISOString()});
+    await service.enqueueCommand('root',instance.id,stale,readAt(new Date(Date.now()-120000).toISOString()));
+    await service.enqueueCommand('root',instance.id,fresh,readAt(new Date().toISOString()));
     await f.central.query("UPDATE app_fleet_commands SET created_at=now()-interval '1 minute' WHERE id=$1",[stale]);
     const before=await row(stale),first=await f.tick(instance),after=await row(stale);
     freshCheck(tickId(first)===fresh,'expired queued read is bypassed for a fresh query');
@@ -149,7 +149,7 @@ export async function verifyFleetBusinessControlPriority(f:Fixture){
   }
   {
     const {instance,email}=await setup('fresh-old-created'),fresh=randomUUID(),control=randomUUID();
-    await service.enqueueCommand('root',instance.id,fresh,{...read,asOf:new Date().toISOString()});
+    await service.enqueueCommand('root',instance.id,fresh,readAt(new Date().toISOString()));
     await f.central.query("UPDATE app_fleet_commands SET created_at='2000-01-01T00:00:00Z' WHERE id=$1",[fresh]);
     freshCheck(tickId(await f.tick(instance))===fresh,'fresh asOf remains eligible even with an ancient created_at');
     await service.enqueueCommand('root',instance.id,control,ban(email,true));
@@ -160,12 +160,12 @@ export async function verifyFleetBusinessControlPriority(f:Fixture){
   // process's clock 45s. The stored operation and real source receipt never change.
   {
     const {instance}=await setup('expired-leased'),stale=randomUUID(),fresh=randomUUID();
-    await service.enqueueCommand('root',instance.id,stale,{...read,asOf:new Date(Date.now()-60000).toISOString()});
+    await service.enqueueCommand('root',instance.id,stale,readAt(new Date(Date.now()-60000).toISOString()));
     f.dropAck(stale);const lost=await f.tick(instance),ack=f.withheldAck();assert.ok(ack&&ack.commandId===stale);
     const original=await row(stale);freshCheck(lost.code===1&&original.state==='leased','fresh read execution really loses its ACK before expiry');
     await shiftedClock(45000,async()=>{
       assert.ok(Date.now()-Date.parse(original.operation.asOf)>90000&&+new Date(original.leased_until)>Date.now());
-      await service.enqueueCommand('root',instance.id,fresh,{...read,asOf:new Date().toISOString()});
+      await service.enqueueCommand('root',instance.id,fresh,readAt(new Date().toISOString()));
       const status={source:'a'.repeat(40),version:'1',storage:'s3',nas:'unknown',connector:1,business:1};
       const first=await exchange(instance,false,{status});
       const firstId=first.body.command?verifyCommand(first.body.command,instance.token,instance.id).id:null;
@@ -202,7 +202,7 @@ export async function verifyFleetBusinessControlPriority(f:Fixture){
     freshCheck(afterDeadline.sources[0].status==='unknown'&&!afterDeadline.sources[0].data,'expired central query remains UNKNOWN, never zero data');
     freshCheck(canonical(await row(commandId))===canonical(before),'central expiry never rewrites the durable queued command');
     freshCheck(canonical(await user(email))===canonical(beforeUser),'central deadline checks write no source account fields');
-    await assert.rejects(()=>service.enqueueCommand('root',instance.id,randomUUID(),{...read,asOf:"'; DROP TABLE app_users; --"}));freshnessChecks++;
+    await assert.rejects(()=>service.enqueueCommand('root',instance.id,randomUUID(),readAt("'; DROP TABLE app_users; --")));freshnessChecks++;
     scenarios.push({name:'central-90s-boundary',before:beforeDeadline.sources[0].status,at:atDeadline.sources[0].status,after:afterDeadline.sources[0].status});
   }
   for(const scenario of scenarios)console.log('FLEET_CONTROL_PRIORITY_SCENARIO='+JSON.stringify(scenario));
