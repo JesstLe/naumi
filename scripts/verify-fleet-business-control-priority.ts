@@ -3,6 +3,7 @@ import {randomUUID} from 'node:crypto';
 import {request as httpRequest} from 'node:http';
 import type {Pool} from 'pg';
 import {canonical,verifyCommand} from '../src/lib/fleet/contracts';
+import {seedRetainedFleetBusinessCommand} from './lib/fleet-business-retained-fixture';
 
 type Instance={id:string;token:string};
 type Tick={code:number;stdout:string;stderr:string};
@@ -11,12 +12,16 @@ type Fixture={central:Pool;source:Pool;origin:string;tick:(instance:Instance)=>P
   dropAck:(id:string)=>void;withheldAck:()=>WithheldAck|null};
 
 /** Real isolated PG + authenticated HTTP + separate connector processes.
+ * Business commands below are explicit retained-history fixtures, not successful
+ * public admissions. All controls still use the actual enqueue implementation.
  * Lease expiry is advanced only in the disposable central fixture, never by
  * sleeping or changing production clocks. Credit dispatch is signed but not
  * applied; actual user mutations below are fixture-only ban operations. */
 export async function verifyFleetBusinessControlPriority(f:Fixture){
   assert.equal(new URL(f.origin).hostname,'127.0.0.1');assert.equal(new URL(f.origin).protocol,'http:');
-  const service=await import('../src/lib/fleet/server');
+  const liveService=await import('../src/lib/fleet/server');
+  const service={...liveService,enqueueCommand:(...args:Parameters<typeof liveService.enqueueCommand>)=>
+    args[3].type==='business.query'?seedRetainedFleetBusinessCommand(f.central,...args):liveService.enqueueCommand(...args)};
   const failures:string[]=[],scenarios:Record<string,unknown>[]=[];let checks=0;
   const check=(value:unknown,name:string)=>{checks++;if(!value)failures.push(name);};
   const freshnessFailures:string[]=[];let freshnessChecks=0;
@@ -191,9 +196,13 @@ export async function verifyFleetBusinessControlPriority(f:Fixture){
     await exchange(instance,false,{status:{source:'a'.repeat(40),version:'1',storage:'s3',nas:'unknown',connector:1,business:1}});
     const {startFleetBusinessQuery,pollFleetBusinessQuery}=await import('../src/lib/fleet/business-central');
     const actor={actor:'root',root:true},now=Date.now(),beforeUser=await user(email);
-    const started=await startFleetBusinessQuery(actor,{site:instance.id,view:'usage',days:30,page:1,search:'',refresh:true},now);
-    const commandId=started.sources[0].commandId!;const before=await row(commandId);
-    freshCheck(started.sources[0].status==='pending','public central starts a fresh pending read');
+    const held=await startFleetBusinessQuery(actor,{site:instance.id,view:'usage',days:30,page:1,search:'',refresh:true},now);
+    const commandId=held.sources[0].commandId!;
+    freshCheck(held.sources[0].status==='unknown'&&held.sources[0].error===liveService.FLEET_BUSINESS_ADMISSION_HOLD&&!held.sources[0].data,'public central remains UNKNOWN with preparation HOLD, not pending or zero');
+    freshCheck(await row(commandId)===undefined,'public central HOLD creates no business command');
+    await seedRetainedFleetBusinessCommand(f.central,actor.actor,instance.id,commandId,held.query,actor);
+    const started=await pollFleetBusinessQuery(actor,held.requestId,now),before=await row(commandId);
+    freshCheck(started.sources[0].status==='pending','actual getter reads the explicit retained-history pending row');
     const beforeDeadline=await pollFleetBusinessQuery(actor,started.requestId,now+89999);
     const atDeadline=await pollFleetBusinessQuery(actor,started.requestId,now+90000);
     const afterDeadline=await pollFleetBusinessQuery(actor,started.requestId,now+90001);
@@ -215,17 +224,21 @@ export async function verifyFleetBusinessControlPriority(f:Fixture){
     const control=await f.tick(instance);
     check(tickId(control)===controlId&&(await user(email)).banned===true,'first legacy probe still executes the signed fixture control');
     check((await status()).business===1,'control-first compatibility probe preserves prior confirmed capability');
-    const {startFleetBusinessQuery}=await import('../src/lib/fleet/business-central');
+    const {startFleetBusinessQuery,pollFleetBusinessQuery}=await import('../src/lib/fleet/business-central');
     const view=await startFleetBusinessQuery({actor:'root',root:true},{site:instance.id,view:'usage',days:30,refresh:true});
-    check(view.sources[0].status==='pending','actual business central does not misreport the updated connector as unsupported');
+    check(view.sources[0].status==='unknown'&&view.sources[0].error===liveService.FLEET_BUSINESS_ADMISSION_HOLD&&!view.sources[0].data,'confirmed connector still observes public business admission HOLD');
     const readId=view.sources[0].commandId;
+    check(readId&&await row(readId)===undefined,'public capability probe view creates no business command');
+    assert.ok(readId);await seedRetainedFleetBusinessCommand(f.central,'root',instance.id,readId,view.query);
+    const retainedView=await pollFleetBusinessQuery({actor:'root',root:true},view.requestId);
+    check(retainedView.sources[0].status==='pending','actual getter retains an explicitly seeded historical business row');
     const legacy=await exchange(instance,false,{status:{source:'a'.repeat(40),version:'1',storage:'s3',nas:'unknown',connector:1}});
     check(legacy.status===200&&(await status()).business===undefined,'a real legacy heartbeat without probe intent clears obsolete capability');
     check(legacy.body.command===null&&readId&&(await row(readId)).state==='queued','stored capability never enables business dispatch on a legacy wire poll');
-    scenarios.push({name:'probe-status-control',controlId,controlFirst:true,capabilityPreserved:true,centralView:view.sources[0].status,legacyDowngradeClears:true});
+    scenarios.push({name:'probe-status-control',controlId,controlFirst:true,capabilityPreserved:true,publicView:view.sources[0].status,retainedView:retainedView.sources[0].status,legacyDowngradeClears:true});
   }
   for(const scenario of scenarios)console.log('FLEET_CONTROL_PRIORITY_SCENARIO='+JSON.stringify(scenario));
-  console.log(`FLEET_CONTROL_PRIORITY=${failures.length?'REPRODUCED':'PASS'} assertions=${checks} failures=${failures.length} REAL_PG=2 REAL_HTTP=1 PAID_CALLS=0 CREDITS_APPLY=0`);
-  console.log(`FLEET_BUSINESS_FRESHNESS=${freshnessFailures.length?'REPRODUCED':'PASS'} assertions=${freshnessChecks} failures=${freshnessFailures.length} REAL_PG=2 REAL_HTTP=1 CLOCK_ADVANCE_MS=45000 STATE_REWRITES=0`);
+  console.log(`FLEET_CONTROL_PRIORITY=${failures.length?'REPRODUCED':'PASS'} assertions=${checks} failures=${failures.length} REAL_PG=2 REAL_HTTP=1 PAID_CALLS=0 CREDITS_APPLY=0 NEW_BUSINESS_ADMISSION=HOLD RETAINED_ROW_INTEGRATION=1`);
+  console.log(`FLEET_BUSINESS_FRESHNESS=${freshnessFailures.length?'REPRODUCED':'PASS'} assertions=${freshnessChecks} failures=${freshnessFailures.length} REAL_PG=2 REAL_HTTP=1 CLOCK_ADVANCE_MS=45000 STATE_REWRITES=0 NEW_BUSINESS_ADMISSION=HOLD RETAINED_ROW_INTEGRATION=1`);
   assert.deepEqual(failures,[],'control-priority regression matrix');assert.deepEqual(freshnessFailures,[],'business-read freshness regression matrix');return checks+freshnessChecks;
 }

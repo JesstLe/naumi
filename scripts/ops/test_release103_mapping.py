@@ -286,9 +286,12 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(r.events, [])
         r.gateway.assert_not_called()
 
-    def test_pre_switch_known_original_gateway_only_resumes_original_worker(self):
+    @patch.object(mapping, 'assert_legacy_fleet_rollback_clear', return_value={'businessRows': 0})
+    def test_pre_switch_known_original_gateway_only_resumes_original_worker(self, guard):
         r = self.release(); r.worker_paused = True; r.tx.run.return_value = b'old gateway'
+        r.db = row('fixture-db', '6')
         r.rollback()
+        guard.assert_called_once_with(r.tx, public_identity(r.db))
         self.assertEqual(r.events, ['resume-original-worker'])
         r.worker.assert_called_once_with(r.old['worker'], 'resume')
         self.assertEqual(r.record['phase'], 'CLEANUP_PENDING')

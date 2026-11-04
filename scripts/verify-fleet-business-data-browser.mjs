@@ -1,4 +1,5 @@
-/** Real Next/Chromium rendering with finite, explicit dual-site response fixtures.
+/** Real Next/Chromium rendering with finite, explicit retained-snapshot fixtures.
+ * Successful synthetic responses do not exercise production business admission.
  * The parent starts an isolated Next server. This runner never starts a server,
  * connects to production, changes balances, or invokes a provider.
  */
@@ -29,7 +30,7 @@ async function main(file) {
   assert.ok(["127.0.0.1", "localhost"].includes(origin.hostname) && origin.protocol === "http:" && origin.port && origin.pathname === "/", "ISOLATED_LOOPBACK_ORIGIN_REQUIRED");
   assert.ok(path.isAbsolute(config.outputDir), "ABSOLUTE_OUTPUT_REQUIRED");
   const output = config.outputDir; await fs.mkdir(output, { recursive: true });
-  const record = { layer: "isolated-real-next-browser-fixture", result: "RUNNING", screenshots: [], assertions: [], pageErrors: [], requests: [], blockedWrites: [], paidSupplierCalls: 0, SSH: 0, businessDatabaseWrites: 0 };
+  const record = { layer: "isolated-real-next-browser-finite-retained-snapshot-fixture", publicBusinessAdmission: "not-exercised-finite-response-fixture", result: "RUNNING", screenshots: [], assertions: [], pageErrors: [], requests: [], blockedWrites: [], paidSupplierCalls: 0, SSH: 0, businessDatabaseWrites: 0 };
   const browser = await chromium.launch({ headless: true, ...(config.channel === "chromium" ? {} : { channel: config.channel || "msedge" }) });
   try {
     const context = await browser.newContext({ viewport: { width: 1440, height: 1080 }, reducedMotion: "reduce" });

@@ -204,8 +204,11 @@ def retire_one(tx,m,root,observe,task_proof,inspect_maps,final_references):
     tx.save(journal_name(m,'stopped'),result);return result
 
 
-def restore_one(tx,m,intent,probe,*,required_available_mib):
+def restore_one(tx,m,intent,probe,*,required_available_mib,database_identity=None):
     check_manifest(m);old.require_binding_format(intent);require_lock(tx,m)
+    require(database_identity is not None, 'FLEET_ROLLBACK_DATABASE_IDENTITY_REQUIRED')
+    try: old.assert_legacy_fleet_rollback_clear(tx,database_identity)
+    except Exception: raise Hold('FLEET_LEGACY_ROLLBACK_BLOCKED_OR_UNVERIFIED') from None
     require(intent.get('identity')==m['identity'] and intent.get('immutableSha256')==m['immutableSha256'] and intent.get('networkSha256')==m['networkSha256'] and callable(probe), 'PINNED_RESTORE_INTENT_REQUIRED')
     require(not (tx.folder/journal_name(m,'restore-intent')).exists(), 'EXPLICIT_RECONCILIATION_REQUIRED')
     require(type(required_available_mib) is int and required_available_mib>=1024 and resources(tx)['MemAvailableKiB']//1024>=required_available_mib, 'RESTORE_MEMORY_SHORTFALL_KEEP_MAINTENANCE')

@@ -20,6 +20,7 @@ import release47_task_snapshot as tasks
 import release_runtime_recovery as startup
 import release103_mapping_predecessor as predecessor
 from release47_host import HostTransaction, Hold, require, public_identity, environment, sha, file_sha
+from release_fleet_business_guard import assert_legacy_fleet_rollback_clear
 
 TARGET = '103.30.76.93'
 BRANCH = 'codex/model-mapping-103-20261029'
@@ -245,6 +246,7 @@ class Release(shared.Release):
         unknown = any(op.get('phase') in ['UNKNOWN', 'INTENT_RECORDED']
                       for op in self.record['operations'].values())
         if not self.switched and observed == self.c['nginxSha256'] and self.worker_paused and not unknown:
+            assert_legacy_fleet_rollback_clear(self.tx, public_identity(self.db))
             self.op('resume-original-worker', lambda _: self.worker(self.old['worker'], 'resume'))
         phase = ('UNKNOWN' if unknown or not self.switched and observed != self.c['nginxSha256']
                  else 'CLEANUP_PENDING' if self.new or self.switched else 'ABORTED')

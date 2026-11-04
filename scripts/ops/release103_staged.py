@@ -15,6 +15,7 @@ import release47_task_snapshot as tasks
 import release_runtime_recovery as startup
 import release_video_media as video
 import worker_handoff
+from release_fleet_business_guard import assert_legacy_fleet_rollback_clear
 
 TARGET='103.30.76.93'
 MACHINE=retirement.MACHINE
@@ -310,6 +311,7 @@ class Release:
   self.tx.save('FINAL_STATUS.json',self.record)
 
  def rollback(self):
+  assert_legacy_fleet_rollback_clear(self.tx,public_identity(self.db))
   # Start retained exact old UI containers before re-exposing their origins.
   for old in self.retired:
    row=self.tx.inspect(old['Id']);require(row['Image']==old['Image'],'ROLLBACK_IMAGE_CHANGED')

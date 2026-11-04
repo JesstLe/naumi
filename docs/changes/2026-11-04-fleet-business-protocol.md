@@ -36,6 +36,8 @@
 
 **发布状态：PREPARATION ONLY / HOLD。** `business:1` 和跨站业务查询的生产 rollout 继续暂停，保留 `PREPARATION_ONLY=True`。只有 producer admission、共享命令库的 legacy-consumer 隔离，以及 retained business.query 的实际回退行为都实现并验证后，才可重新评估发布；下述协议和本地验证不是启用指令。`businessSupport` 只确认心跳协议，不满足共享 `app_fleet_commands` 的 candidate/cutback gate，也不建立生产可回退结论。
 
+当前公共 `enqueueCommand` 已在 schema/bootstrap、取连接和业务 INSERT 前硬性拒绝全部 `business.query`，返回 503；没有环境开关、root 权限或 heartbeat 可打开它。公共业务页对该拒绝显示 `unknown + 准备阶段`，不返回远端 data 或零值。保留行仍可经原权限 getter、原 lease/ACK 读取与完成。本轮新增的 tracked 103 恢复入口会在任意 retained business 行或状态未知时拒绝旧 consumer 恢复，但历史部署 bundle/外部入口、外部 producer 冻结和实际 image/DB 绑定尚未形成生产闭包，仍不得解除 HOLD。详见 [默认关闭入队与回退拦截](2026-11-05-fleet-business-admission-and-rollback-guard.md)。
+
 - `candidate_ledger`、管理员调整键与分类账本使用 MATERIALIZED CTE，避免逐条账本重复扫描操作来源。
 - 查询不在持有外层 checkout 或 advisory lock 时再次借连接，`PGPOOL_MAX=1` 可运行。
 - 相同 command 的第一份持久化回执获胜；lost ACK 和并发重复保持同一结果。不同 fingerprint 使用同一 id 明确冲突。

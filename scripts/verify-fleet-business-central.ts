@@ -1,4 +1,5 @@
-/** Actual central API -> HTTP poll/ACK -> independent source PG integration.
+/** Actual central API HOLD + explicit retained-row HTTP/ACK/source PG integration.
+ * Positive business rows model previously accepted history, not open admission.
  * Only these two named loopback databases may be reset. No provider or SSH. */
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -8,6 +9,8 @@ import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {homedir} from 'node:os';
 import {Pool} from 'pg';
+import type {FleetBusinessResponse} from '../src/lib/fleet/business-central-contracts';
+import {seedRetainedFleetBusinessCommand} from './lib/fleet-business-retained-fixture';
 
 const CENTRAL='fleet_central_103_20261104',SOURCE='fleet_source_47_20261104';
 const FIXTURE='postgresql://postgres:fleet_protocol_fixture@127.0.0.1:65298/';
@@ -65,7 +68,7 @@ async function main(){
     for(const pool of [central,source])await pool.query('DROP SCHEMA public CASCADE;CREATE SCHEMA public');
     await seedSource(source);
     const {ensureSchema}=await import('../src/lib/persistence/schema');await ensureSchema();
-    const {ensureFleetSchema,createInstance,changeInstance,FleetError}=await import('../src/lib/fleet/server');await ensureFleetSchema();
+    const {ensureFleetSchema,createInstance,changeInstance,FleetError,FLEET_BUSINESS_ADMISSION_HOLD}=await import('../src/lib/fleet/server');await ensureFleetSchema();
     const {ensurePostgresRateLimitSchema}=await import('../src/lib/rate-limit-store');await ensurePostgresRateLimitSchema(getPool());
     const {hashPassword,signSession}=await import('../src/lib/admin-auth');
     const {signUserSession}=await import('../src/lib/native-auth');
@@ -82,6 +85,7 @@ async function main(){
     const instance=await createInstance(ROOT,'47 企业站','enterprise');
     const actor={actor:ROOT,root:true};
     const businessRoute=await import('../src/app/api/admin/business/route');
+    const genericFleetRoute=await import('../src/app/api/admin/fleet/route');
     const {startFleetBusinessQuery,pollFleetBusinessQuery}=await import('../src/lib/fleet/business-central');
     const pollRoute=await import('../src/app/api/fleet/poll/route');
     const ackRoute=await import('../src/app/api/fleet/ack/route');
@@ -94,6 +98,7 @@ async function main(){
         const pathname=new URL(url).pathname;
         let response:Response;
         if(pathname==='/api/admin/business')response=await (req.method==='POST'?businessRoute.POST(request):businessRoute.GET(request));
+        else if(pathname==='/api/admin/fleet')response=await genericFleetRoute.POST(request);
         else if(pathname==='/api/fleet/poll'){httpPolls++;response=await pollRoute.POST(request);}
         else if(pathname==='/api/fleet/ack'){httpAcks++;response=await ackRoute.POST(request);}
         else response=new Response('not found',{status:404});
@@ -104,6 +109,24 @@ async function main(){
     const origin=`http://127.0.0.1:${(server.address() as {port:number}).port}`;
     const post=async(input:unknown,cookieValue=rootCookie,headers:Record<string,string>={})=>fetch(origin+'/api/admin/business',{method:'POST',headers:{'content-type':'application/json',cookie:cookieValue,origin,...headers},body:JSON.stringify(input)});
     const get=async(id:string,cookieValue=rootCookie)=>fetch(origin+'/api/admin/business?requestId='+encodeURIComponent(id),{headers:{cookie:cookieValue}});
+    const businessCount=async()=>Number((await central.query("SELECT count(*)::int n FROM app_fleet_commands WHERE operation->>'type'='business.query'")).rows[0].n);
+    // Only these explicitly named retained-history helpers seed synthetic rows.
+    // Ordinary post/start and every rejected or unauthorized request stay raw.
+    const seedHeldHistory=async(held:FleetBusinessResponse,before:number,label:string)=>{
+      const remotes=held.sources.filter(s=>s.id!=='local');
+      check(remotes.length===1&&remotes[0].id===instance.id&&remotes.every(s=>s.status==='unknown'&&s.error===FLEET_BUSINESS_ADMISSION_HOLD&&!s.data),label+': public API reports UNKNOWN/preparation HOLD without data');
+      check(await businessCount()===before,label+': actual public call created zero business rows');
+      for(const item of remotes){assert.ok(item.commandId);await seedRetainedFleetBusinessCommand(central,ROOT,item.id,item.commandId,held.query,actor);}
+    };
+    const postRetained=async(input:unknown)=>{
+      const before=await businessCount(),raw=await post(input);assert.equal(raw.status,200);
+      const held=await raw.json() as FleetBusinessResponse;await seedHeldHistory(held,before,'explicit postRetained');
+      const response=await get(held.requestId);return{response,value:await response.json() as FleetBusinessResponse,held};
+    };
+    const startRetained=async(input:unknown)=>{
+      const before=await businessCount(),held=await startFleetBusinessQuery(actor,input);await seedHeldHistory(held,before,'explicit startRetained');
+      return pollFleetBusinessQuery(actor,held.requestId);
+    };
     const request={site:'all',view:'usage',days:30,page:1,search:''};
     const status={source:'a'.repeat(40),version:'fixture',storage:'s3',nas:'unknown',connector:1};
     const tick=(advertise=true)=>worker({mode:'tick',options:{central:origin,instanceId:instance.id,token:instance.token,status:{...status,...(advertise?{business:1}:{})}}},SOURCE);
@@ -120,7 +143,11 @@ async function main(){
     const legacy=await legacyResponse.json();check(legacy.sources.find((s:any)=>s.id===instance.id)?.status==='unknown','missing business:1 is unknown, not zero');
     check((await central.query('SELECT count(*)::int n FROM app_fleet_commands')).rows[0].n===0,'legacy connector does not enqueue business command');
     await tick();
-    const startedResponse=await post(request);const started=await startedResponse.json();check(startedResponse.status===200&&started.sources[1].status==='pending','business:1 enables actual queued query');
+    const genericId=randomUUID();
+    const genericHeld=await fetch(origin+'/api/admin/fleet',{method:'POST',headers:{'content-type':'application/json',cookie:rootCookie,origin},body:JSON.stringify({action:'command',instanceId:instance.id,id:genericId,operation:{type:'business.query',view:'usage',days:30,asOf:new Date().toISOString(),page:1,search:''}})});
+    check(genericHeld.status===503&&(await genericHeld.json()).error===FLEET_BUSINESS_ADMISSION_HOLD,'actual generic Fleet POST cannot bypass common closed business admission');
+    check((await central.query('SELECT count(*)::int n FROM app_fleet_commands WHERE id=$1',[genericId])).rows[0].n===0,'generic Fleet rejection writes no command');
+    const {response:startedResponse,value:started}=await postRetained(request);check(startedResponse.status===200&&started.sources[1].status==='pending','actual GET returns explicit retained pending query while public admission stays closed');
     const repeated=await startFleetBusinessQuery(actor,request,Date.parse(started.query.asOf)+100);check(repeated.sources[1].commandId===started.sources[1].commandId&&repeated.query.asOf===started.query.asOf,'same query window coalesces command ID');
     const executed=await tick();check(executed.state==='succeeded'&&executed.commandId===started.sources[1].commandId,'separate source process verifies signed command and ACKs');
     const response=await get(started.requestId);const finished=await response.json();check(response.status===200&&finished.complete,'central GET returns both actual database receipts');
@@ -135,8 +162,8 @@ async function main(){
     check(!JSON.stringify(finished).includes('private.invalid')&&!JSON.stringify(finished).includes(instance.token),'business result excludes private media URLs and connector credential');
 
     for(const view of ['overview','users','orders','ledger','creations'] as const){
-      const queryResponse=await post({...request,site:instance.id,view,email:EMAIL,refresh:true});const pending=await queryResponse.json();
-      check(queryResponse.status===200&&pending.sources[0].status==='pending','actual remote view enqueued: '+view);
+      const {response:queryResponse,value:pending}=await postRetained({...request,site:instance.id,view,email:EMAIL,refresh:true});
+      check(queryResponse.status===200&&pending.sources[0].status==='pending','actual remote retained-row getter: '+view);
       await tick();const selected=await (await get(pending.requestId)).json();
       check(selected.complete&&selected.sources[0].data.view===view&&selected.sources[0].data.totals.credits===42,'actual source receipt selected: '+view);
       if(view==='users')check(selected.sources[0].data.users.length===1&&selected.sources[0].data.users[0].email===EMAIL,'site-specific user query preserves identity');
@@ -151,7 +178,7 @@ async function main(){
     check((await get(started.requestId,otherCookie)).status===403,'opaque request bound to original actor');
     await assert.rejects(()=>pollFleetBusinessQuery({actor:ROOT,root:false},started.requestId),(e:any)=>e instanceof FleetError&&e.status===403);checks++;names.push('revoked root context denied');
     await assert.rejects(()=>pollFleetBusinessQuery(actor,started.requestId,Date.now()+181000),(e:any)=>e.status===409);checks++;names.push('expired opaque request denied');
-    const refresh=await startFleetBusinessQuery(actor,{...request,site:instance.id,refresh:true});
+    const refresh=await startRetained({...request,site:instance.id,refresh:true});
     check(refresh.query.asOf!==started.query.asOf&&refresh.sources[0].commandId!==started.sources[1].commandId,'refresh makes new asOf and command');
     const timeout=await pollFleetBusinessQuery(actor,refresh.requestId,Date.parse(refresh.query.asOf)+91000);
     check(timeout.sources[0].status==='unknown'&&!timeout.sources[0].data,'timed out receipt remains unknown without zero snapshot');
@@ -174,7 +201,7 @@ async function main(){
     // Leave reusable fixture receipts: no queued timed-out command steals the
     // browser's next query, but retain the successful usage receipt.
     await central.query("DELETE FROM app_fleet_commands WHERE state='queued'");
-    const manifest={result:'PASS',layer:'real-dual-PG-HTTP-connector-admin-API',assertions:checks,checks:names,localCredits:7,remoteCredits:42,totalCredits:49,localBalance:93,remoteBalance:195,refundCredits:5,businessWrites:0,sourceDDL:0,paidCalls:0,httpPolls,httpAcks,databases:{central:CENTRAL,source:SOURCE},baseline:{central:beforeCentral,source:beforeSource},instanceId:instance.id,cookieFile};
+    const manifest={result:'PASS',layer:'real-dual-PG-HTTP-connector-admin-API-retained-row-integration',publicBusinessAdmission:'HOLD',positiveBusinessRows:'explicit fixture-only previously accepted history',assertions:checks,checks:names,localCredits:7,remoteCredits:42,totalCredits:49,localBalance:93,remoteBalance:195,refundCredits:5,businessWrites:0,sourceDDL:0,paidCalls:0,httpPolls,httpAcks,databases:{central:CENTRAL,source:SOURCE},baseline:{central:beforeCentral,source:beforeSource},instanceId:instance.id,cookieFile};
     await writeFile(path.join(OUT,'RESULT.json'),JSON.stringify(manifest,null,2)+'\n');
     await writeFile(path.join(OUT,'RESPONSE.json'),JSON.stringify(finished,null,2)+'\n');
     await writeFile(path.join(PRIVATE,'fixture.json'),JSON.stringify({env,central:DATABASE_URL_FOR_UI(),source:FIXTURE+SOURCE,instance,actor,cookieFile},null,2)+'\n');
@@ -186,7 +213,7 @@ async function main(){
     manifest.assertions=checks;
     await writeFile(path.join(OUT,'RESULT.json'),JSON.stringify(manifest,null,2)+'\n');
     assert.equal(JSON.parse(await readFile(path.join(OUT,'RESULT.json'),'utf8')).assertions,checks);
-    console.log(`FLEET_BUSINESS_CENTRAL=PASS assertions=${checks} REAL_PG=2 HTTP_POLL_ACK=1 LOCAL=7 REMOTE=42 TOTAL=49 BUSINESS_WRITES=0 SOURCE_DDL=0 PAID_CALLS=0`);
+    console.log(`FLEET_BUSINESS_CENTRAL=PASS assertions=${checks} REAL_PG=2 HTTP_POLL_ACK=1 LOCAL=7 REMOTE=42 TOTAL=49 BUSINESS_WRITES=0 SOURCE_DDL=0 PAID_CALLS=0 NEW_BUSINESS_ADMISSION=HOLD RETAINED_ROW_INTEGRATION=1`);
     console.log('RESULT='+path.join(OUT,'RESULT.json'));console.log('UI_FIXTURE='+path.join(PRIVATE,'fixture.json'));
   }finally{if(server)await new Promise<void>(resolve=>server!.close(()=>resolve()));await closeDatabasePools();await Promise.all([central.end(),source.end()]);}
 }

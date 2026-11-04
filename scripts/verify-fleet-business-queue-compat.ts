@@ -7,6 +7,7 @@ import path from 'node:path';
 import {Pool} from 'pg';
 import {parseFleetBusinessSnapshot,type FleetBusinessSnapshot} from '../src/lib/fleet/business-contracts';
 import {verifyFleetBusinessControlPriority,type WithheldAck} from './verify-fleet-business-control-priority';
+import {seedRetainedFleetBusinessCommand} from './lib/fleet-business-retained-fixture';
 
 const workerFlag='--receipt-schema-worker';
 async function worker(){
@@ -64,7 +65,7 @@ export async function verifyFleetBusinessQueueCompatibility(central:Pool,sample:
       if(mode==='missing-table')await source.query('DROP TABLE IF EXISTS app_fleet_applied');
       else await source.query(`CREATE TABLE IF NOT EXISTS app_fleet_applied(id uuid PRIMARY KEY,fingerprint text NOT NULL,result jsonb NOT NULL,instance_id uuid,actor text,operation jsonb,created_at timestamptz DEFAULT now());ALTER TABLE app_fleet_applied DROP COLUMN IF EXISTS operation`);
       const instance=await service.createInstance('root','Receipt '+mode,'enterprise'),businessId=randomUUID(),controlId=randomUUID();
-      await service.enqueueCommand('root',instance.id,businessId,{type:'business.query',view:'usage',days:30,asOf:new Date().toISOString(),page:1,search:''});
+      await seedRetainedFleetBusinessCommand(central,'root',instance.id,businessId,{type:'business.query',view:'usage',days:30,asOf:new Date().toISOString(),page:1,search:''});
       // Exercise the missing-schema read alone; priority between ready controls
       // and queued/leased reads has its own complete matrix below.
       await central.query("UPDATE app_fleet_commands SET created_at=now()-interval '1 minute' WHERE id=$1",[businessId]);
@@ -84,8 +85,8 @@ export async function verifyFleetBusinessQueueCompatibility(central:Pool,sample:
     const target=scenarios[0];
     const large=parseFleetBusinessSnapshot({...sample,users:Array.from({length:30},(_,i)=>({...sample.users[0],email:`fixture-${i}-`+'x'.repeat(230),name:'字'.repeat(80),role:'x'.repeat(24),plan:'x'.repeat(32)})),daily:Array.from({length:250},(_,i)=>({date:new Date(Date.UTC(2026,0,i+1)).toISOString().slice(0,10),credits:1000000,operations:10000}))});
     const payload={status:'succeeded',data:{business:large}},businessIds=Array.from({length:120},()=>randomUUID());
-    await central.query(`INSERT INTO app_fleet_commands(id,instance_id,actor,operation,fingerprint,state,result,created_at,requested_by_root)
-      SELECT id,$2,'root',$3,'fixture-history-'||id,'succeeded',$4,now()+interval '1 minute',true FROM unnest($1::uuid[]) id`,[businessIds,target.instanceId,JSON.stringify({type:'business.query',view:'usage',days:30,asOf:sample.asOf,page:1,search:''}),JSON.stringify(payload)]);
+    for(const id of businessIds)await seedRetainedFleetBusinessCommand(central,'root',target.instanceId,id,{type:'business.query',view:'usage',days:30,asOf:sample.asOf,page:1,search:''},undefined,
+      {state:'succeeded',result:payload as {status:'succeeded';data:{business:FleetBusinessSnapshot}},createdAt:new Date(Date.now()+60000).toISOString()});
     const root=await service.fleetSnapshot(),operator='receipt-operator@fixture.test';
     await central.query('INSERT INTO app_users(email,name) VALUES($1,$2) ON CONFLICT(email) DO NOTHING',[operator,'Receipt operator']);
     await service.saveGrant('root',{instanceId:target.instanceId,email:operator,allowed:['read','business'],expectedVersion:0,expiresAt:null});
@@ -110,7 +111,7 @@ export async function verifyFleetBusinessQueueCompatibility(central:Pool,sample:
     check(history.readOnlyPreservesControl&&history.scopedPayloadAvailable,'ordinary read control history and explicit scoped business read remain available');
     checks+=await verifyFleetBusinessControlPriority({central,source,origin:'http://127.0.0.1:'+port,tick,
       dropAck:id=>{droppedAck=id;lastWithheldAck=null;},withheldAck:()=>lastWithheldAck});
-    console.log(`FLEET_BUSINESS_QUEUE_COMPAT=PASS assertions=${checks} REAL_PG=2 REAL_HTTP=1 POOL_MAX=1 MISSING_TABLE_ACK=1 MISSING_COLUMN_ACK=1 READ_PHASE_DDL=0 READ_PHASE_USER_WRITES=0 CONTROL_BAN_EXPECTED=1 CONTROL_LOST_ACK_ONCE=1 BUSINESS_HISTORY_SEEDED=120 GENERIC_BUSINESS=0`);
+    console.log(`FLEET_BUSINESS_QUEUE_COMPAT=PASS assertions=${checks} REAL_PG=2 REAL_HTTP=1 POOL_MAX=1 MISSING_TABLE_ACK=1 MISSING_COLUMN_ACK=1 READ_PHASE_DDL=0 READ_PHASE_USER_WRITES=0 CONTROL_BAN_EXPECTED=1 CONTROL_LOST_ACK_ONCE=1 BUSINESS_HISTORY_SEEDED=120 GENERIC_BUSINESS=0 NEW_BUSINESS_ADMISSION=HOLD RETAINED_ROW_INTEGRATION=1`);
     return checks;
   }finally{
     try{

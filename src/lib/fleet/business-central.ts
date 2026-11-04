@@ -94,6 +94,7 @@ async function remoteResult(actor:FleetActor,row:RegistryRow,token:RequestToken,
     }
     return{...base,status:command.state==='failed'?'failed':'pending',...(command.state==='failed'?{error:'站点业务数据读取失败'}:{})};
   }catch(error){
+    if(error instanceof FleetError&&error.status===503)return{...base,status:'unknown',error:error.message};
     if(error instanceof FleetError&&(error.status===403||error.status===404||error.status===409))return{...base,status:'unknown',error:'站点查询权限或状态已变化'};
     return{...base,status:'unknown',error:'站点数据暂未确认'};
   }

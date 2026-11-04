@@ -6,6 +6,7 @@ import {operationSchema,statusSchema,commandCapability,signCommand,verifyCommand
 import {readFleetBusinessQuery} from '../src/lib/fleet/business-read-model';
 import {localAppOrigin,localAppHost,localFleetStatus} from '../src/lib/fleet/local-status';
 import {verifyFleetBusinessQueueCompatibility} from './verify-fleet-business-queue-compat';
+import {seedRetainedFleetBusinessCommand} from './lib/fleet-business-retained-fixture';
 
 let checks=0;
 function check(value:unknown,message:string){assert.ok(value,message);checks++;}
@@ -48,6 +49,12 @@ async function main(){
       INSERT INTO app_artworks(id,email,title,created_at,group_id,video_url,status,deleted_at) SELECT 'art-'||lpad(i::text,2,'0'),'alice@fixture.test','作品'||i,'2026-11-03T08:00:00Z'::timestamptz,'project-one',CASE WHEN i=1 THEN 'https://private.invalid/movie' ELSE '' END,'completed',NULL FROM generate_series(1,35)i;
       INSERT INTO app_artworks(id,email,title,created_at,group_id,video_url,status,deleted_at) VALUES('deleted-work','alice@fixture.test','已删除','2026-11-03T08:00:00Z','project-one','','completed',now());
       UPDATE app_artworks SET image_url=NULL WHERE id='art-35';`);
+    const {fleetBusinessInstances,fleetReadCommand,ensureFleetSchema,createInstance,saveGrant,enqueueCommand,fleetSnapshot,connectorExchange,FleetError,FLEET_BUSINESS_ADMISSION_HOLD}=await import('../src/lib/fleet/server');
+    const commandTable=async()=>(await pool.query("SELECT to_regclass('public.app_fleet_commands') AS name")).rows[0].name;
+    check(await commandTable()===null,'fixture starts without central command schema');
+    await assert.rejects(()=>enqueueCommand('root',randomUUID(),randomUUID(),{...query(),asOf:new Date().toISOString()}),
+      (error:unknown)=>error instanceof FleetError&&error.status===503&&error.message===FLEET_BUSINESS_ADMISSION_HOLD);checks++;
+    check(await commandTable()===null,'actual business admission HOLD performs no command-schema bootstrap or insert');
     const fingerprint=async()=>{
       const result:Record<string,string>={};for(const table of ['app_users','app_ledger','app_credit_batches','app_billing_operations','app_orders','app_artworks'])
         result[table]=(await pool.query(`SELECT md5(COALESCE(string_agg(to_jsonb(t)::text,'' ORDER BY to_jsonb(t)::text),'')) hash FROM ${table} t`)).rows[0].hash;
@@ -94,12 +101,12 @@ async function main(){
     await pool.query('ALTER TABLE app_billing_operations RENAME TO hidden_billing_operations');
     const missing=await applyFleetCommand({...command,id:randomUUID()},command.instanceId);check(missing.status==='failed'&&missing.code==='UNAVAILABLE','missing provenance produces explicit unavailable, not zero usage');
     await pool.query('ALTER TABLE hidden_billing_operations RENAME TO app_billing_operations');
-    const {fleetBusinessInstances,fleetReadCommand,ensureFleetSchema,createInstance,saveGrant,enqueueCommand,fleetSnapshot,connectorExchange}=await import('../src/lib/fleet/server');
     await ensureFleetSchema();
     await pool.query("INSERT INTO app_users(email,name) VALUES('delegate@fixture.test','Delegate')");
     const instance=await createInstance('root','Fixture enterprise','enterprise');
     await saveGrant('root',{instanceId:instance.id,email:'delegate@fixture.test',allowed:['read'],expectedVersion:0,expiresAt:null});
-    const queuedId=randomUUID();await enqueueCommand('root',instance.id,queuedId,{...query(),asOf:new Date().toISOString()});
+    check((await pool.query("SELECT count(*)::int n FROM app_fleet_commands WHERE operation->>'type'='business.query'")).rows[0].n===0,'public admission created zero new business rows before retained fixtures');
+    const queuedId=randomUUID();await seedRetainedFleetBusinessCommand(pool,'root',instance.id,queuedId,{...query(),asOf:new Date().toISOString()});
     check((await fleetBusinessInstances({actor:'delegate@fixture.test',root:false})).length===0,'read-only grant cannot see business source');
     await assert.rejects(()=>fleetReadCommand({actor:'delegate@fixture.test',root:false},instance.id,queuedId),/实例操作未授权/);checks++;
     check(!(await fleetSnapshot({actor:'delegate@fixture.test',root:false})).commands.some(c=>c.id===queuedId),'generic fleet snapshot does not leak business command result');
@@ -157,7 +164,7 @@ async function main(){
     delete process.env.FLEET_SINGLE_APP_HOST;
     process.env.FLEET_SINGLE_APP_ORIGIN='http://169.254.169.254';const invalid=await localFleetStatus('s3');check(invalid.source==='unknown'&&fetches===2,'untrusted origin blocked before fetch');
     checks+=await verifyFleetBusinessQueueCompatibility(pool,usage);
-    console.log(`FLEET_BUSINESS_PROTOCOL=PASS assertions=${checks} REAL_PG=1 POOL_MAX=1 READ_ONLY_BUSINESS=1 APP_DDL=0 PAID_CALLS=0`);
+    console.log(`FLEET_BUSINESS_PROTOCOL=PASS assertions=${checks} REAL_PG=1 POOL_MAX=1 READ_ONLY_BUSINESS=1 APP_DDL=0 PAID_CALLS=0 NEW_BUSINESS_ADMISSION=HOLD RETAINED_ROW_INTEGRATION=1`);
   }finally{globalThis.fetch=originalFetch;for(const key of envKeys){const value=beforeEnv[key];if(value===undefined)delete process.env[key];else process.env[key]=value;}await(await import('../src/platform/db/pool')).closeDatabasePools();await pool.end();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

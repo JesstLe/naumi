@@ -14,6 +14,12 @@ import { checkRateLimit, rateLimitFailureResponse } from "@/lib/rate-limit-http"
 import { clientIp } from '@/lib/ip';
 
 export class FleetError extends Error { constructor(message: string, readonly status = 400) { super(message); } }
+export const FLEET_BUSINESS_ADMISSION_HOLD='跨站业务查询仍处于兼容准备阶段';
+/** Closed until a real producer/legacy-consumer release admission is implemented.
+ * No environment flag, heartbeat or caller authority opens this write boundary. */
+export function requireFleetBusinessAdmission(operation:FleetOperation){
+  if(operation.type==='business.query')throw new FleetError(FLEET_BUSINESS_ADMISSION_HOLD,503);
+}
 export const fleetJson = (data: unknown, status = 200) => Response.json(data, { status, headers: PRIVATE_HEADERS });
 export async function fleetAdmin(request: Request, mutation = false):Promise<FleetActor|Response> {
   if (process.env.FLEET_CONTROL_ENABLED !== '1') return fleetJson({ error: '中央控制台未启用' }, 404);
@@ -142,7 +148,9 @@ export async function saveGrant(actor:string,command:{instanceId:string;email:st
   }catch(error){await tx.query('ROLLBACK');throw error;}finally{tx.release();}
 }
 export async function enqueueCommand(actor: string, instanceId: string, id: string, raw: FleetOperation,authority:FleetActor={actor,root:true}) {
-  await ensureFleetSchema(); const operation = operationSchema.parse(raw), fingerprint = digest(canonical({instanceId,actor,operation}));
+  const operation=operationSchema.parse(raw);
+  requireFleetBusinessAdmission(operation);
+  await ensureFleetSchema(); const fingerprint = digest(canonical({instanceId,actor,operation}));
   const tx = await getPool().connect();
   try { await tx.query('BEGIN'); await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))',[id]);
     const instance = await tx.query('SELECT enabled FROM app_fleet_instances WHERE id=$1 FOR UPDATE',[instanceId]); if(!instance.rowCount || !instance.rows[0].enabled) throw new FleetError('实例未启用',409);

@@ -85,6 +85,6 @@ async function main() {
   check("later_response_removes_previously_successful_source_payload", current?.data?.sources[0].status === "unavailable" && current.data.sources[0].data === undefined && current.data.sources[2].data === undefined);
   await act(async () => { root.unmount(); });
   const failures = assertions.filter(item => !item.passed).length;
-  scope.__HOOK_REVIEW = { layer: "actual-react-dom-hook-finite-fetch-fixture", result: failures ? "FAIL" : "PASS", assertions, failures, requests, businessWrites: 0, providerCalls: 0, HTTPServersStarted: 0, SSH: 0 };
+  scope.__HOOK_REVIEW = { layer: "actual-react-dom-hook-finite-retained-snapshot-fixture", publicBusinessAdmission: "not-exercised-finite-response-fixture", result: failures ? "FAIL" : "PASS", assertions, failures, requests, businessWrites: 0, providerCalls: 0, HTTPServersStarted: 0, SSH: 0 };
 }
 void main().catch(error => { scope.__HOOK_REVIEW = { result: "ERROR", error: error instanceof Error ? error.stack : String(error) }; });

@@ -17,16 +17,25 @@ class FakeTx:
         self.rows = {x['Id']: copy.deepcopy(x) for x in (row('a'*64, 13033), row('b'*64, 13037))}
         self.rows[module.DB] = row(module.DB, 5432)
         self.rows[module.DB]['Image'] = 'sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229'
+        self.rows[module.DB]['Config']['Env'] = ['POSTGRES_USER=fixture', 'POSTGRES_DB=fleet_guard_fixture']
+        self.target = '103.30.76.93'; self.business_rows = 0
         self.saved = {}; self.commands = []; self.memory = 2923; self.stop_error = False; self.exit_code = 0; self.closed = False; self.gain = 3300; self.fail_start = None; self.changed_network = False
     def __enter__(self): return self
     def __exit__(self, *args): self.closed = True
     def inspect(self, cid): return copy.deepcopy(self.rows[cid])
+    def pin(self, identity):
+        result = self.inspect(identity['id'])
+        if module.public_identity(result) != identity: raise RuntimeError('Fixture identity changed')
+        return result
     def save(self, name, value):
         if name in self.saved: raise AssertionError('Duplicate durable intent')
         self.saved[name] = copy.deepcopy(value); return {'path': name, 'sha256': 'e'*64}
     def backup_database(self, identity): self.saved['backup'] = identity; return {'path': 'fixture.dump', 'sha256': 'e'*64}
     def run(self, args, **kwargs):
         self.commands.append(args)
+        if args[1] == 'exec' and 'psql' in args:
+            import json
+            return (json.dumps({'database': 'fleet_guard_fixture', 'readOnly': 'on', 'isolation': 'repeatable read', 'schema': 'public', 'table': 'app_fleet_commands', 'businessRows': self.business_rows})+'\n').encode()
         if args[1] == 'update':
             policy = args[2].split('=', 1)[1]; self.rows[args[-1]]['HostConfig']['RestartPolicy']['Name'] = policy
         elif args[1] == 'stop':

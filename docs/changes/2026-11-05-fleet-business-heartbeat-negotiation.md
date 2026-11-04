@@ -41,6 +41,8 @@
 
 ## 第二条 Major：实施设计已核对，尚未实现
 
+后续状态：本节记录 `1933112a` 时的未实现设计；后续 [admission/rollback guard 切片](2026-11-05-fleet-business-admission-and-rollback-guard.md) 已硬性关闭公共新入队，并在指定 tracked 103 恢复入口实现 retained-state 拒绝。该切片没有发行生产 permit、更新已部署 bundle，或证明外部 producer 冻结及正式 image floor，生产级闭包仍未完成，HOLD 不变。
+
 旧 `268076b` 不认识 business.query，也不认识任何未来新增 flag，因此只在 remoteResult 查开关或让租约到期都不能防止旧 dispatcher 读到它。旧 generic GET 还可能读取已终态的业务结果，故 gate 需要检查任意 retained business 行，不只 queued/leased。
 
 后续最窄闭环必须一次交付：**低层 producer enforcement + 真正发布 controller 的发行/回退拒绝 + 同 DB race 与 controller 回归**。不能先造一个无人发行或只靠手填 SHA 的 permit 来把测试变绿。

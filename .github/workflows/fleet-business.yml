@@ -1,10 +1,10 @@
 name: Fleet business read regression
 on:
   pull_request:
-    paths: ['src/lib/fleet/**', 'src/lib/billing/consumption-read.ts', 'src/lib/bi/usage-repository.ts', 'src/components/admin/business-data/**', 'src/components/admin/navigation.ts', 'src/app/admin/center/**', 'src/app/admin/usage/**', 'src/app/api/admin/business/**', 'scripts/verify-fleet-business*', 'scripts/verify-fleet-local-*', 'scripts/lib/fleet-business*', 'scripts/fixtures/fleet-business*', 'scripts/verify-admin-ui-integration.cjs', 'scripts/verify-admin-usage-pg.cjs', 'scripts/verify-admin-usage-skew.cjs', 'prototypes/admin-console/fleet-business-navigation.json', '.github/workflows/fleet-business.yml', 'package*.json']
+    paths: ['src/lib/fleet/**', 'src/lib/billing/consumption-read.ts', 'src/lib/bi/usage-repository.ts', 'src/components/admin/business-data/**', 'src/components/admin/navigation.ts', 'src/app/admin/center/**', 'src/app/admin/usage/**', 'src/app/api/admin/business/**', 'scripts/verify-fleet-business*', 'scripts/verify-fleet-local-*', 'scripts/lib/fleet-business*', 'scripts/fixtures/fleet-business*', 'scripts/ops/release_fleet_business_guard.py', 'scripts/ops/test_release_fleet_business_guard.py', 'scripts/ops/release103*.py', 'scripts/ops/release_site_control.py', 'scripts/ops/release_*ui_retirement.py', 'scripts/verify-admin-ui-integration.cjs', 'scripts/verify-admin-usage-pg.cjs', 'scripts/verify-admin-usage-skew.cjs', 'prototypes/admin-console/fleet-business-navigation.json', '.github/workflows/fleet-business.yml', 'package*.json']
   push:
     branches: [main]
-    paths: ['src/lib/fleet/**', 'src/lib/billing/consumption-read.ts', 'src/lib/bi/usage-repository.ts', 'src/components/admin/business-data/**', 'src/components/admin/navigation.ts', 'src/app/admin/center/**', 'src/app/admin/usage/**', 'src/app/api/admin/business/**', 'scripts/verify-fleet-business*', 'scripts/verify-fleet-local-*', 'scripts/lib/fleet-business*', 'scripts/fixtures/fleet-business*', 'scripts/verify-admin-ui-integration.cjs', 'scripts/verify-admin-usage-pg.cjs', 'scripts/verify-admin-usage-skew.cjs', 'prototypes/admin-console/fleet-business-navigation.json', '.github/workflows/fleet-business.yml', 'package*.json']
+    paths: ['src/lib/fleet/**', 'src/lib/billing/consumption-read.ts', 'src/lib/bi/usage-repository.ts', 'src/components/admin/business-data/**', 'src/components/admin/navigation.ts', 'src/app/admin/center/**', 'src/app/admin/usage/**', 'src/app/api/admin/business/**', 'scripts/verify-fleet-business*', 'scripts/verify-fleet-local-*', 'scripts/lib/fleet-business*', 'scripts/fixtures/fleet-business*', 'scripts/ops/release_fleet_business_guard.py', 'scripts/ops/test_release_fleet_business_guard.py', 'scripts/ops/release103*.py', 'scripts/ops/release_site_control.py', 'scripts/ops/release_*ui_retirement.py', 'scripts/verify-admin-ui-integration.cjs', 'scripts/verify-admin-usage-pg.cjs', 'scripts/verify-admin-usage-skew.cjs', 'prototypes/admin-console/fleet-business-navigation.json', '.github/workflows/fleet-business.yml', 'package*.json']
   workflow_dispatch:
 permissions:
   contents: read
@@ -47,6 +47,12 @@ jobs:
             for (const name of ['fleet_protocol_fixture','fleet_central_103_20261104','fleet_source_47_20261104','usage_fixture']) await client.query('CREATE DATABASE '+name);
           } finally { await client.end(); }
           NODE
+      - name: Verify closed common business admission
+        run: node scripts/verify-fleet-business-admission.mjs
+      - name: Verify retained-state guards before tracked legacy restores
+        run: python3 -B -m unittest test_release_fleet_business_guard
+        env:
+          PYTHONPATH: scripts/ops
       - name: Verify fixture read timestamps are fresh at each enqueue
         run: node scripts/verify-fleet-business-enqueue-clock.mjs
       - name: Verify nonce-bound central confirmation and legacy connector heartbeat compatibility
@@ -92,4 +98,5 @@ jobs:
             output/fleet-business-usage-entry-20261105/MODIFIED_RESULT.json
             output/fleet-business-enqueue-clock-20261105/MODIFIED_RESULT.json
             output/fleet-business-heartbeat-negotiation-20261105/tests/MODIFIED_RESULT.json
+            output/fleet-business-admission-guard-20261105/tests/MODIFIED_RESULT.json
           if-no-files-found: warn
