@@ -15,7 +15,13 @@ export default async function AdminCenterPage({ searchParams }: { searchParams: 
   const explicitSection = BI_SECTIONS.includes(query.section as BiSection);
   const section = explicitSection ? query.section as BiSection : "overview";
   const explicitScope = Object.hasOwn(query, "site") || Object.hasOwn(query, "view");
-  await requireAdminPage(explicitSection || explicitScope ? `/admin/center?section=${section}` : "/admin/center");
+  const returnQuery = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    for (const item of Array.isArray(value) ? value : [value]) {
+      if (item !== undefined) returnQuery.append(key, item);
+    }
+  }
+  await requireAdminPage(explicitSection || explicitScope ? `/admin/center?${returnQuery}` : "/admin/center");
   const initialView = businessEntryView(section);
   if (process.env.FLEET_CONTROL_ENABLED === "1" && initialView && businessExplicitEntry(query, true) && !businessLocalDetail(query, true)) {
     return <Suspense><FleetBusinessDashboard initialView={initialView} entry={section as BusinessEntry}/></Suspense>;
