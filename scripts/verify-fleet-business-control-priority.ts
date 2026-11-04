@@ -4,6 +4,7 @@ import {request as httpRequest} from 'node:http';
 import type {Pool} from 'pg';
 import {canonical,verifyCommand} from '../src/lib/fleet/contracts';
 import {seedRetainedFleetBusinessCommand} from './lib/fleet-business-retained-fixture';
+import {fleetFixtureUrl,fleetFixtureApplicationPool} from './lib/fleet-business-fixture-url';
 
 type Instance={id:string;token:string};
 type Tick={code:number;stdout:string;stderr:string};
@@ -19,6 +20,8 @@ type Fixture={central:Pool;source:Pool;origin:string;tick:(instance:Instance)=>P
  * applied; actual user mutations below are fixture-only ban operations. */
 export async function verifyFleetBusinessControlPriority(f:Fixture){
   assert.equal(new URL(f.origin).hostname,'127.0.0.1');assert.equal(new URL(f.origin).protocol,'http:');
+  fleetFixtureApplicationPool(f.central);
+  fleetFixtureUrl(f.source.options.connectionString,'receipt');
   const liveService=await import('../src/lib/fleet/server');
   const service={...liveService,enqueueCommand:(...args:Parameters<typeof liveService.enqueueCommand>)=>
     args[3].type==='business.query'?seedRetainedFleetBusinessCommand(f.central,...args):liveService.enqueueCommand(...args)};

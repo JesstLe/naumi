@@ -7,14 +7,15 @@ import {readFleetBusinessQuery} from '../src/lib/fleet/business-read-model';
 import {localAppOrigin,localAppHost,localFleetStatus} from '../src/lib/fleet/local-status';
 import {verifyFleetBusinessQueueCompatibility} from './verify-fleet-business-queue-compat';
 import {seedRetainedFleetBusinessCommand} from './lib/fleet-business-retained-fixture';
+import {fleetFixtureUrl} from './lib/fleet-business-fixture-url';
 
 let checks=0;
 function check(value:unknown,message:string){assert.ok(value,message);checks++;}
 const asOf='2026-11-04T08:00:00.000Z';
 const query=(view:'overview'|'usage'|'users'|'orders'|'ledger'|'creations'='usage',extra:Record<string,unknown>={})=>fleetBusinessQuerySchema.parse({type:'business.query',view,days:30,asOf,page:1,search:'',...extra});
 async function main(){
-  assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');
-  const url=new URL(process.env.DATABASE_URL!);assert.equal(url.hostname,'127.0.0.1');assert.equal(url.pathname,'/fleet_protocol_fixture');
+  const url=fleetFixtureUrl(process.env.DATABASE_URL,'protocol');
+  process.env.DATABASE_URL=url.toString();
   process.env.PGPOOL_MAX='1';process.env.FLEET_PORTAL_ONLY='1';
   const pool=new Pool({connectionString:url.toString(),max:1,connectionTimeoutMillis:3000});
   const envKeys=['FLEET_SINGLE_APP_ORIGIN','FLEET_SINGLE_APP_HOST','FLEET_APP_ORIGIN','FLEET_DESKTOP_ORIGIN','FLEET_ENTERPRISE_ORIGIN','FLEET_ACTIVE_SLOTS_FILE'] as const;

@@ -8,12 +8,12 @@ import {Pool} from 'pg';
 import {parseFleetBusinessSnapshot,type FleetBusinessSnapshot} from '../src/lib/fleet/business-contracts';
 import {verifyFleetBusinessControlPriority,type WithheldAck} from './verify-fleet-business-control-priority';
 import {seedRetainedFleetBusinessCommand} from './lib/fleet-business-retained-fixture';
+import {fleetFixtureUrl,fleetFixtureApplicationPool} from './lib/fleet-business-fixture-url';
 
 const workerFlag='--receipt-schema-worker';
 async function worker(){
-  const url=new URL(process.env.DATABASE_URL||'');
-  assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');assert.equal(url.hostname,'127.0.0.1');assert.equal(url.port,'65298');
-  assert.match(url.pathname,/^\/fleet_receipt_compat_[a-f0-9]{32}$/);
+  const url=fleetFixtureUrl(process.env.DATABASE_URL,'receipt');
+  process.env.DATABASE_URL=url.toString();
   const {closeDatabasePools}=await import('../src/platform/db/pool');
   try{
     const input=JSON.parse(readFileSync(0,'utf8'));
@@ -26,12 +26,11 @@ if(process.argv.includes(workerFlag))void worker().catch(error=>{console.error(e
 /** Real central HTTP and a separate max=1 connector process, using only a new
  * randomly named loopback DB. Existing central/source fixtures are untouched. */
 export async function verifyFleetBusinessQueueCompatibility(central:Pool,sample:FleetBusinessSnapshot){
-  const url=new URL(process.env.DATABASE_URL||'');
-  assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');assert.equal(url.hostname,'127.0.0.1');assert.equal(url.port,'65298');assert.equal(url.pathname,'/fleet_protocol_fixture');
+  const url=fleetFixtureApplicationPool(central);
   const previousIsolated=process.env.FLEET_ISOLATED_TEST;process.env.FLEET_ISOLATED_TEST='1';
   const database='fleet_receipt_compat_'+randomUUID().replaceAll('-','');assert.match(database,/^fleet_receipt_compat_[a-f0-9]{32}$/);
   await central.query('CREATE DATABASE '+database);
-  url.pathname='/'+database;const source=new Pool({connectionString:url.toString(),max:1});
+  url.pathname='/'+database;const source=new Pool({connectionString:fleetFixtureUrl(url.toString(),'receipt').toString(),max:1});
   const sourceDisconnects:Promise<void>[]=[];
   source.on('connect',client=>sourceDisconnects.push(new Promise<void>(resolve=>client.once('end',resolve))));
   const service=await import('../src/lib/fleet/server');

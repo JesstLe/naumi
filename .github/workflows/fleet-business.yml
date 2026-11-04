@@ -51,6 +51,8 @@ jobs:
         run: node scripts/verify-fleet-business-admission.mjs
       - name: Verify retained fixture URLs reject routing query overrides before checkout
         run: node scripts/verify-fleet-business-retained-url.mjs
+      - name: Verify fixture entry isolation before Pool, DDL or product imports
+        run: node scripts/verify-fleet-business-fixture-entry.mjs
       - name: Verify retained-state guards before tracked legacy restores
         run: python3 -B -m unittest test_release_fleet_business_guard
         env:
@@ -102,4 +104,5 @@ jobs:
             output/fleet-business-heartbeat-negotiation-20261105/tests/MODIFIED_RESULT.json
             output/fleet-business-admission-guard-20261105/tests/MODIFIED_RESULT.json
             output/fleet-business-retained-url-20261105/tests/MODIFIED_RESULT.json
+            output/fleet-business-fixture-entry-20261105/tests/MODIFIED_RESULT.json
           if-no-files-found: warn
