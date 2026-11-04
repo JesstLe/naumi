@@ -12,7 +12,7 @@
 - 不为匿名回调堆占位说明，不向 UI 增加文案，不改既有参数、SQL、权限、断言、阈值、配置、业务 token 或 Python 控制流。Python `__doc__` 元数据按设计增加；剥离文档字符串后的 AST 保持相同。
 - 新增 `scripts/verify-fleet-business-docstrings.mjs`，只读取固定 Git cohort 和待检查源码，依赖现有 TypeScript parser、Git 和 Python AST；它不 import 应用模块，不运行部署脚本，不连接数据库或网络。
 - 本地规则：固定 `base..scope-ref` 的 66 个代码文件，只检查函数声明/函数体与修改行相交、复杂度至少 2 的具名函数。复杂度包括逻辑/nullish、条件、循环、case 和 catch；跳过嵌套函数的分支。该规则产生 **172 个**函数，基线 **30 有文档 / 142 缺失**。这是可复核的本地偏宽口径，不是 CodeRabbit 的 153 函数算法或远端新评分。
-- 对全部 66 文件同时比较 JS/TS 解析后去 JSDoc 的语法树结构、叶节点 kind/原始 text、声明种类与 type-only 等语义字段，或 Python 去 docstring 的 AST 哈希。JS/TS 不使用裸 scanner 处理 regex/JSX，以免错误的词法上下文把注释当作字符串。函数对应使用固定基线的词法名称和出现次序，避免加注释导致行号变化后错配。
+- 对全部 66 文件同时比较 JS/TS 解析后去 JSDoc 的语法树结构、叶节点 kind/原始 text、声明种类、一元 operator 与 type-only 等语义字段，或 Python 去 docstring 的 AST 哈希。JS/TS 不使用裸 scanner 处理 regex/JSX，以免错误的词法上下文把注释当作字符串。函数对应使用固定基线的词法名称和出现次序，避免加注释导致行号变化后错配。
 - `--source-root` 强制从指定副本读取每一份源文件，缺失即失败，无工作树 fallback；源哈希、来源、检查器自身哈希、缺失函数及真实退出码落盘。
 - 首次写入前已将全部 66 文件原始字节与 SHA-256 保存到 `output/fleet-business-docstrings-20261105/original/` 和 `ORIGINAL_INVENTORY.json`，新增两个路径的原始不存在状态另记 `NEW_FILES.json`。
 - 本轮对 54 份原有源码补充 179 份函数文档（生产 TS/TSX 65、Python 43、验证脚本 71），另增本检查器与记录，共 56 个修改路径。各分组报告均保留具体函数、原始位置、哈希及文档附着/结构等价证据。
@@ -56,4 +56,19 @@ git diff --check
 ```powershell
 node scripts/verify-fleet-business-docstrings-shape.mjs --baseline=58a90b346dbbc6818711f43234278ef54d4350b0 --output-dir=output/fleet-business-docstring-declaration-kind-20261105/tests/baseline
 node scripts/verify-fleet-business-docstrings-shape.mjs --output-dir=output/fleet-business-docstring-declaration-kind-20261105/tests/modified
+```
+
+## 后续审查：前置及后置一元 operator
+
+- 审查 `5777397176` 覆盖 `abbfcfa8fe7763801ef79b8a81f8c7d8702c254f`，新意见 `4474617484` 指出 `PrefixUnaryExpression` / `PostfixUnaryExpression` 的 `operator` 是标量，不能仅靠 `forEachChild` 读取。父提交的远端文档覆盖率本次已报告 97.90%；这不代表新修复提交或整个 PR 已通过。
+- 在真实旧函数上扩展回归后，`+ / - / ~ / ! / ++ / --` 六种前置操作的十五种两两比较，以及后置 `++ / --` 比较，均错误地产生相同哈希：总 44 项中复现 16 项失败，exit 1。原 22 项声明种类与既有字段测试继续保留，另覆盖前后置位置差异及四种注释等价。
+- 本次只对两类一元表达式添加 `semanticFlags.operator = node.operator`；保留声明位掩码、type-only 等字段、子节点和叶节点处理。既有有限 VM runner 继续提取真实源码函数，不替换被测实现，不执行 fixture 的增减操作。
+- 修改后 44 项全部通过；更严格的完整检查器重新核对 66 文件，仍为 `eligible=172 documented=172 missing=0 semanticChanges=0`，均 exit 0；两脚本语法及差异检查通过。
+- 本轮原始三文件字节/hash在首次修改前保存于 `output/fleet-business-docstring-unary-operator-20261105/original/`。四份交付产物及完整 BASELINE / MODIFIED / ROLLBACK 命令、输入、输出、退出码单独保存在该轮 `final/`，不覆盖历史封存。
+- 独立副本完整检查器负对照仅把已有 UI 验证脚本中的 `assertions++` 改为 `assertions--`，要求只检出该路径的语义变化。副本回滚恢复真实旧函数和 44/16 基线，后续修改拒绝且零写，缺源即失败而不回退工作树。
+- 本轮只验证静态检查模块；没有产品代码、CI 配置、阈值或生产状态变更，PREPARATION ONLY / HOLD 保持。
+
+```powershell
+node scripts/verify-fleet-business-docstrings-shape.mjs --baseline=abbfcfa8fe7763801ef79b8a81f8c7d8702c254f --output-dir=output/fleet-business-docstring-unary-operator-20261105/tests/baseline
+node scripts/verify-fleet-business-docstrings-shape.mjs --output-dir=output/fleet-business-docstring-unary-operator-20261105/tests/modified
 ```

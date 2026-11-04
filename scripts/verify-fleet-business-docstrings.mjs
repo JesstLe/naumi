@@ -53,11 +53,12 @@ function complexity(node){
   visit(node);return value;
 }
 
-/** Preserve parsed syntax, declaration kinds and literal spellings without scanning regex/JSX as raw code. */
+/** Preserve parsed syntax, declaration/unary kinds and literal spellings without scanning regex/JSX as raw code. */
 function syntaxShape(node,source){
   const children=[];ts.forEachChild(node,child=>{children.push(syntaxShape(child,source));});
   const semanticFlags={};
   for(const key of ['isTypeOnly','isExportEquals','isThisTypeOfTypeGuard'])if(node[key]!==undefined)semanticFlags[key]=node[key];
+  if(ts.isPrefixUnaryExpression(node)||ts.isPostfixUnaryExpression(node))semanticFlags.operator=node.operator;
   // Keep declaration bits, not parser-context/JSDoc flags that can change with comments.
   if(ts.isVariableDeclarationList(node))semanticFlags.declarationKind=node.flags&ts.NodeFlags.BlockScoped;
   return [node.kind,semanticFlags,children.length?children:node.getText(source)];

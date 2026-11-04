@@ -57,6 +57,16 @@ compare('type-only import flag remains significant','import {Value} from "./valu
 compare('type-only export flag remains significant','export {Value} from "./value";','export type {Value} from "./value";',false);
 compare('literal text remains significant','const value=1;','const value=2;',false);
 compare('operator kind remains significant','const value=left+right;','const value=left-right;',false);
+const prefixOperators=['+','-','~','!','++','--'];
+for(let left=0;left<prefixOperators.length;left++)for(let right=left+1;right<prefixOperators.length;right++){
+  compare('prefix unary '+prefixOperators[left]+' vs '+prefixOperators[right],prefixOperators[left]+'value;',prefixOperators[right]+'value;',false);
+}
+compare('postfix unary operator remains significant','value++;','value--;',false);
+compare('increment placement remains significant','++value;','value++;',false);
+compare('decrement placement remains significant','--value;','value--;',false);
+for(const text of ['++value;','value--;','!value;','-value;']){
+  compare('unary comment equivalence '+text,text,'/* unchanged operator */ '+text,true);
+}
 const plain=parse('let value=resource;'),contextual=parse('let value=resource;');
 const list=contextual.statements[0].declarationList,flagsBefore=list.flags;
 list.flags|=ts.NodeFlags.AwaitContext|ts.NodeFlags.JSDoc;
